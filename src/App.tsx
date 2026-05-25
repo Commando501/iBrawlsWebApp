@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { GameStats, UniversalSettings, UiElementPos } from './types';
 import { GrifballGame } from './components/GrifballGame';
 import { HUD } from './components/HUD';
@@ -18,6 +18,102 @@ interface OnlineClient {
   spaceAvailable?: boolean;
 }
 
+interface LobbyChatPanelProps {
+  messages: ChatMessage[];
+  onSendMessage: (text: string) => void;
+}
+
+const LobbyChatPanel = ({ messages, onSendMessage }: LobbyChatPanelProps) => {
+  const [inputText, setInputText] = useState('');
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [messages]);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!inputText.trim()) return;
+    onSendMessage(inputText);
+    setInputText('');
+  };
+
+  return (
+    <div className="flex-1 flex flex-col justify-between min-h-0">
+      <div className="flex items-center gap-2 mb-2 shrink-0">
+        <span className="w-1.5 h-3 bg-[#38bdf8]" />
+        <h2 className="text-xs uppercase font-bold tracking-[0.25em] text-white">
+          Real-Time Lobby Chat Room
+        </h2>
+      </div>
+
+      {/* Message history container */}
+      <div 
+        ref={scrollRef}
+        className="flex-1 min-h-[220px] max-h-[300px] overflow-y-auto bg-black/45 border border-white/10 rounded-lg p-3.5 flex flex-col gap-2.5 mb-3 scrollbar-thin scrollbar-thumb-white/10 pr-1.5"
+      >
+        {messages.length === 0 ? (
+          <p className="text-[10.5px] font-mono text-white/35 uppercase tracking-widest text-center my-auto italic select-none">
+            📡 No broadcasts active. Type below to ping online combatants.
+          </p>
+        ) : (
+          messages.map((msg) => (
+            <div 
+              key={msg.id} 
+              className={`flex flex-col gap-0.5 max-w-[90%] animate-fade-in ${
+                msg.isLocal ? 'self-end bg-[#38bdf8]/10 p-2 rounded-lg border border-[#38bdf8]/20' : 'self-start'
+              }`}
+            >
+              <div className="flex items-center gap-1.5 select-none">
+                <span className={`text-[9.5px] font-mono font-black ${
+                  msg.isLocal ? 'text-[#38bdf8]' : 'text-slate-400'
+                }`}>
+                  {msg.sender} {msg.isLocal ? '(You)' : ''}
+                </span>
+                <span className="text-[8px] font-mono text-white/20">
+                  {msg.timestamp}
+                </span>
+              </div>
+              <p className="text-[11.5px] font-sans text-slate-100 break-words leading-relaxed select-text font-medium leading-[1.3] pl-0.5">
+                {msg.text}
+              </p>
+            </div>
+          ))
+        )}
+      </div>
+
+      {/* Message input form */}
+      <form 
+        onSubmit={handleSubmit}
+        className="flex items-center gap-2 bg-black/40 border border-white/10 rounded-lg p-2 shrink-0 pointer-events-auto"
+      >
+        <input
+          type="text"
+          value={inputText}
+          onChange={(e) => setInputText(e.target.value)}
+          placeholder="Send coordinates... [Press Enter]"
+          className="flex-grow bg-black/50 border border-white/5 rounded px-3 py-2 text-xs text-white placeholder:text-white/30 focus:border-[#38bdf8]/40 outline-none transition-all font-sans"
+          maxLength={120}
+          autoComplete="off"
+        />
+        <button
+          type="submit"
+          disabled={!inputText.trim()}
+          className={`px-4 py-2 rounded text-xs font-sans font-bold uppercase tracking-wider transition-all flex items-center justify-center shrink-0 ${
+            inputText.trim()
+              ? 'bg-[#38bdf8] hover:bg-[#38bdf8]/80 text-slate-950 font-black cursor-pointer shadow-[0_0_12px_rgba(56,189,248,0.25)] hover:shadow-[0_0_18px_rgba(56,189,248,0.4)] active:scale-95'
+              : 'bg-white/5 text-white/20 border border-transparent cursor-not-allowed'
+          }`}
+        >
+          Send
+        </button>
+      </form>
+    </div>
+  );
+};
+
 export default function App() {
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const [isPaused, setIsPaused] = useState<boolean>(false);
@@ -29,6 +125,14 @@ export default function App() {
 
   // Chat message state
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [lobbyChatMessages, setLobbyChatMessages] = useState<ChatMessage[]>([]);
+  const [rightPanelTab, setRightPanelTab] = useState<'manual' | 'chat'>('manual');
+  const [unreadLobbyMessages, setUnreadLobbyMessages] = useState<number>(0);
+  const rightPanelTabRef = useRef<'manual' | 'chat'>('manual');
+
+  useEffect(() => {
+    rightPanelTabRef.current = rightPanelTab;
+  }, [rightPanelTab]);
 
   // Multiplayer States
   const [connectionMode, setConnectionMode] = useState<'relay' | 'local'>('relay');
@@ -316,6 +420,21 @@ export default function App() {
             setTimeout(() => {
               setInviteNotifications(prev => prev.filter(n => n !== declString));
             }, 5000);
+          } else if (data.type === 'lobby_chat') {
+            setLobbyChatMessages(prev => {
+              if (prev.some(m => m.id === data.id)) return prev;
+              return [...prev, {
+                id: data.id,
+                sender: data.sender,
+                text: data.text,
+                timestamp: data.timestamp,
+                role: 'client',
+                isLocal: data.clientId === clientId
+              }];
+            });
+            if (rightPanelTabRef.current !== 'chat') {
+              setUnreadLobbyMessages(prev => prev + 1);
+            }
           }
         } catch (e) {
           console.error('Lobby network parsing error:', e);
@@ -466,6 +585,18 @@ export default function App() {
         isLocal: true
       }
     ]);
+  };
+
+  const sendLobbyChatMessage = (text: string) => {
+    if (!menuSocket || menuSocket.readyState !== WebSocket.OPEN) return;
+    
+    const packet = {
+      type: 'lobby_chat',
+      sender: `Client ${clientId}`,
+      text: text
+    };
+    
+    menuSocket.send(JSON.stringify(packet));
   };
 
   const handleHostGame = () => {
@@ -1114,123 +1245,164 @@ export default function App() {
                 )}
             </div>
 
-            {/* COLUMN 2: FULL COMPREHENSIVE HOTKEY DIRECTORY (col-span-7) */}
-            <div className="md:col-span-7 border-t md:border-t-0 md:border-l border-white/10 pt-6 md:pt-0 md:pl-8 flex flex-col justify-between">
-              <div>
-                <div className="flex items-center gap-2 mb-4">
-                  <span className="w-1.5 h-3 bg-[#38bdf8]" />
-                  <h2 className="text-xs uppercase font-bold tracking-[0.25em] text-white">
-                    Combat manual & Gameplay Hotkeys
-                  </h2>
-                </div>
-
-                <div className="flex flex-col gap-4 font-sans text-xs">
-                  
-                  {/* Category: Movement */}
-                  <div className="bg-white/5 border border-white/5 rounded-lg p-3">
-                    <p className="text-[10px] font-bold text-[#38bdf8] uppercase tracking-wider mb-2.5">Arena Navigation</p>
-                    <div className="grid grid-cols-2 gap-y-3 gap-x-4 text-white/80">
-                      <div className="flex items-center gap-3">
-                        <div className="flex gap-1">
-                          <kbd className="min-w-6 h-6 bg-black/50 border border-white/20 rounded flex items-center justify-center font-mono font-bold text-[10px] shadow-sm select-none text-[#38bdf8]">W</kbd>
-                          <kbd className="min-w-6 h-6 bg-black/50 border border-white/20 rounded flex items-center justify-center font-mono font-bold text-[10px] shadow-sm select-none text-[#38bdf8]">A</kbd>
-                          <kbd className="min-w-6 h-6 bg-black/50 border border-white/20 rounded flex items-center justify-center font-mono font-bold text-[10px] shadow-sm select-none text-[#38bdf8]">S</kbd>
-                          <kbd className="min-w-6 h-6 bg-black/50 border border-white/20 rounded flex items-center justify-center font-mono font-bold text-[10px] shadow-sm select-none text-[#38bdf8]">D</kbd>
-                        </div>
-                        <span className="text-white/60 text-[11px] font-medium">Move Combatant</span>
-                      </div>
-
-                      <div className="flex items-center gap-3">
-                        <kbd className="min-w-[4.5rem] h-6 bg-black/50 border border-white/20 rounded flex items-center justify-center font-mono font-bold text-[9px] shadow-sm select-none text-amber-500 uppercase">Space</kbd>
-                        <span className="text-white/60 text-[11px] font-medium">Jump (Normal/Boost)</span>
-                      </div>
-
-                      <div className="flex items-center gap-3">
-                        <kbd className="min-w-6 h-6 bg-black/50 border border-white/20 rounded flex items-center justify-center font-mono font-bold text-[10px] shadow-sm select-none text-[#38bdf8]">Q</kbd>
-                        <span className="text-white/60 text-[11px] font-medium">Sonic Dash (Evade)</span>
-                      </div>
-
-                      <div className="flex items-center gap-3">
-                        <kbd className="min-w-6 h-6 bg-black/50 border border-white/20 rounded flex items-center justify-center font-mono font-bold text-[10px] shadow-sm select-none text-[#38bdf8]">C</kbd>
-                        <span className="text-white/60 text-[11px] font-medium">Crouch (Slide Profile)</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Category: Weaponry */}
-                  <div className="bg-white/5 border border-white/5 rounded-lg p-3">
-                    <p className="text-[10px] font-bold text-[#38bdf8] uppercase tracking-wider mb-2.5">Arsenal Control & Swapping</p>
-                    <div className="grid grid-cols-2 gap-y-3 gap-x-4 text-white/80">
-                      <div className="flex items-center gap-3">
-                        <div className="flex gap-1.5 items-center">
-                          <kbd className="min-w-6 h-6 bg-black/50 border border-white/20 rounded flex items-center justify-center font-mono font-bold text-[10px] shadow-sm text-cyan-400">1</kbd>
-                        </div>
-                        <span className="text-white/60 text-[11px] font-medium">Equip Grav Hammer</span>
-                      </div>
-
-                      <div className="flex items-center gap-3">
-                        <div className="flex gap-1.5 items-center">
-                          <kbd className="min-w-6 h-6 bg-black/50 border border-white/20 rounded flex items-center justify-center font-mono font-bold text-[10px] shadow-sm text-purple-400">2</kbd>
-                        </div>
-                        <span className="text-white/60 text-[11px] font-medium">Equip Energy Sword</span>
-                      </div>
-
-                      <div className="flex items-center gap-3 col-span-2 border-t border-white/5 pt-2 mt-1">
-                        <span className="text-amber-400 font-mono text-[9px] uppercase tracking-widest mr-1">Switch:</span>
-                        <span className="text-white/70 text-[11px]">Use <kbd className="bg-black/30 px-1 border border-white/10 rounded font-bold text-[10px]">SCROLL WHEEL</kbd> to quickly cycle weapons anytime</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Category: Offensive Actions */}
-                  <div className="bg-white/5 border border-white/5 rounded-lg p-3">
-                    <p className="text-[10px] font-bold text-[#38bdf8] uppercase tracking-wider mb-2.5">Combat Techniques</p>
-                    <div className="flex flex-col gap-2.5">
-                      <div className="flex items-start gap-2.5 text-white/70">
-                        <kbd className="min-w-[2.5rem] h-6 bg-cyan-950/40 border border-cyan-500/30 rounded flex items-center justify-center font-mono font-black text-[9px] shadow-sm text-cyan-400 select-none shrink-0">LMB</kbd>
-                        <div>
-                          <p className="text-[11px] text-white/90 font-bold"><strong className="text-cyan-400">Grav Slam</strong> (With Hammer)</p>
-                          <p className="text-[10px] text-white/55">Blows back the ball, repels hostile bots, and deals massive radial kinetic shockwaves.</p>
-                        </div>
-                      </div>
-
-                      <div className="flex items-start gap-2.5 text-white/70 border-t border-white/5 pt-2">
-                        <kbd className="min-w-[2.5rem] h-6 bg-red-950/40 border border-red-500/30 rounded flex items-center justify-center font-mono font-black text-[9px] shadow-sm text-red-400 select-none shrink-0">LMB</kbd>
-                        <div>
-                          <p className="text-[11px] text-white/90 font-bold"><strong className="text-red-400">Assault Lunge</strong> (With Sword + Red Reticle)</p>
-                          <p className="text-[10px] text-white/55">Dashes directly to targeted enemies instantly with high locking distance velocity.</p>
-                        </div>
-                      </div>
-
-                      <div className="flex items-start gap-2.5 text-white/70 border-t border-white/5 pt-2">
-                        <kbd className="min-w-[2.5rem] h-6 bg-purple-950/40 border border-purple-500/30 rounded flex items-center justify-center font-mono font-black text-[9px] shadow-sm text-purple-400 select-none shrink-0">RMB</kbd>
-                        <div>
-                          <p className="text-[11px] text-white/90 font-bold"><strong className="text-purple-400">Quick Slash</strong> (With Sword)</p>
-                          <p className="text-[10px] text-white/55">Swipes front arc swiftly for close-quarters counter attacks without lock-on requirements.</p>
-                        </div>
-                      </div>
-
-                      {/* Special Combo */}
-                      <div className="flex items-center gap-2 border-t border-amber-500/10 bg-amber-500/5 p-2 rounded mt-1">
-                        <span className="text-amber-500 text-[12px] font-bold select-none">🔥 Combo:</span>
-                        <span className="text-white/80 text-[10px]">
-                          <strong>Hammer Jump</strong>: Left Click to swing Hammer, then immediately press <kbd className="bg-black/30 px-1 font-bold rounded">SPACE</kbd> to launch high up!
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Category: System */}
-                  <div className="flex items-center justify-between px-3 py-2 border-t border-white/5 mt-1 font-mono text-[10px] text-white/40">
-                    <div className="flex items-center gap-1.5">
-                      <kbd className="min-w-6 h-5 bg-black/60 border border-white/20 rounded flex items-center justify-center font-mono font-bold text-[9px] shadow-sm text-amber-500">ESC</kbd>
-                      <span>PAUSE & LIGHTING SETTINGS</span>
-                    </div>
-                    <span>VERSION 1.4 PROTOTYPE</span>
-                  </div>
-
-                </div>
+            {/* COLUMN 2: FULL COMPREHENSIVE HOTKEY DIRECTORY OR LOBBY CHAT (col-span-7) */}
+            <div className="md:col-span-7 border-t md:border-t-0 md:border-l border-white/10 pt-6 md:pt-0 md:pl-8 flex flex-col min-h-[480px]">
+              {/* Tabs header */}
+              <div className="flex gap-4 border-b border-white/10 pb-3 mb-4 select-none shrink-0">
+                <button
+                  onClick={() => setRightPanelTab('manual')}
+                  className={`pb-1 font-sans font-bold text-xs uppercase tracking-widest border-b-2 transition-all cursor-pointer flex items-center gap-1.5 ${
+                    rightPanelTab === 'manual'
+                      ? 'border-[#38bdf8] text-white'
+                      : 'border-transparent text-white/40 hover:text-white/70'
+                  }`}
+                >
+                  📖 Combat Manual
+                </button>
+                <button
+                  onClick={() => {
+                    setRightPanelTab('chat');
+                    setUnreadLobbyMessages(0);
+                  }}
+                  className={`pb-1 font-sans font-bold text-xs uppercase tracking-widest border-b-2 transition-all cursor-pointer flex items-center gap-1.5 ${
+                    rightPanelTab === 'chat'
+                      ? 'border-[#38bdf8] text-white'
+                      : 'border-transparent text-white/40 hover:text-white/70'
+                  }`}
+                >
+                  💬 Real-Time Lobby Chat
+                  {unreadLobbyMessages > 0 && (
+                    <span className="bg-[#38bdf8] text-slate-950 font-black font-mono text-[9px] px-1.5 py-0.5 rounded-full animate-bounce">
+                      {unreadLobbyMessages}
+                    </span>
+                  )}
+                </button>
               </div>
+
+              {rightPanelTab === 'manual' ? (
+                <div className="flex-grow flex flex-col justify-between min-h-0">
+                  <div>
+                    <div className="flex items-center gap-2 mb-4 shrink-0">
+                      <span className="w-1.5 h-3 bg-[#38bdf8]" />
+                      <h2 className="text-xs uppercase font-bold tracking-[0.25em] text-white">
+                        Combat manual & Gameplay Hotkeys
+                      </h2>
+                    </div>
+
+                    <div className="flex flex-col gap-4 font-sans text-xs">
+                      
+                      {/* Category: Movement */}
+                      <div className="bg-white/5 border border-white/5 rounded-lg p-3">
+                        <p className="text-[10px] font-bold text-[#38bdf8] uppercase tracking-wider mb-2.5">Arena Navigation</p>
+                        <div className="grid grid-cols-2 gap-y-3 gap-x-4 text-white/80">
+                          <div className="flex items-center gap-3">
+                            <div className="flex gap-1">
+                              <kbd className="min-w-6 h-6 bg-black/50 border border-white/20 rounded flex items-center justify-center font-mono font-bold text-[10px] shadow-sm select-none text-[#38bdf8]">W</kbd>
+                              <kbd className="min-w-6 h-6 bg-black/50 border border-white/20 rounded flex items-center justify-center font-mono font-bold text-[10px] shadow-sm select-none text-[#38bdf8]">A</kbd>
+                              <kbd className="min-w-6 h-6 bg-black/50 border border-white/20 rounded flex items-center justify-center font-mono font-bold text-[10px] shadow-sm select-none text-[#38bdf8]">S</kbd>
+                              <kbd className="min-w-6 h-6 bg-black/50 border border-white/20 rounded flex items-center justify-center font-mono font-bold text-[10px] shadow-sm select-none text-[#38bdf8]">D</kbd>
+                            </div>
+                            <span className="text-white/60 text-[11px] font-medium">Move Combatant</span>
+                          </div>
+
+                          <div className="flex items-center gap-3">
+                            <kbd className="min-w-[4.5rem] h-6 bg-black/50 border border-white/20 rounded flex items-center justify-center font-mono font-bold text-[9px] shadow-sm select-none text-amber-500 uppercase">Space</kbd>
+                            <span className="text-white/60 text-[11px] font-medium">Jump (Normal/Boost)</span>
+                          </div>
+
+                          <div className="flex items-center gap-3">
+                            <kbd className="min-w-6 h-6 bg-black/50 border border-white/20 rounded flex items-center justify-center font-mono font-bold text-[10px] shadow-sm select-none text-[#38bdf8]">Q</kbd>
+                            <span className="text-white/60 text-[11px] font-medium">Sonic Dash (Evade)</span>
+                          </div>
+
+                          <div className="flex items-center gap-3">
+                            <kbd className="min-w-6 h-6 bg-black/50 border border-white/20 rounded flex items-center justify-center font-mono font-bold text-[10px] shadow-sm select-none text-[#38bdf8]">C</kbd>
+                            <span className="text-white/60 text-[11px] font-medium">Crouch (Slide Profile)</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Category: Weaponry */}
+                      <div className="bg-white/5 border border-white/5 rounded-lg p-3">
+                        <p className="text-[10px] font-bold text-[#38bdf8] uppercase tracking-wider mb-2.5">Arsenal Control & Swapping</p>
+                        <div className="grid grid-cols-2 gap-y-3 gap-x-4 text-white/80">
+                          <div className="flex items-center gap-3">
+                            <div className="flex gap-1.5 items-center">
+                              <kbd className="min-w-6 h-6 bg-black/50 border border-white/20 rounded flex items-center justify-center font-mono font-bold text-[10px] shadow-sm text-cyan-400">1</kbd>
+                            </div>
+                            <span className="text-white/60 text-[11px] font-medium">Equip Grav Hammer</span>
+                          </div>
+
+                          <div className="flex items-center gap-3">
+                            <div className="flex gap-1.5 items-center">
+                              <kbd className="min-w-6 h-6 bg-black/50 border border-white/20 rounded flex items-center justify-center font-mono font-bold text-[10px] shadow-sm text-purple-400">2</kbd>
+                            </div>
+                            <span className="text-white/60 text-[11px] font-medium">Equip Energy Sword</span>
+                          </div>
+
+                          <div className="flex items-center gap-3 col-span-2 border-t border-white/5 pt-2 mt-1">
+                            <span className="text-amber-400 font-mono text-[9px] uppercase tracking-widest mr-1">Switch:</span>
+                            <span className="text-white/70 text-[11px]">Use <kbd className="bg-black/30 px-1 border border-white/10 rounded font-bold text-[10px]">SCROLL WHEEL</kbd> to quickly cycle weapons anytime</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Category: Offensive Actions */}
+                      <div className="bg-white/5 border border-white/5 rounded-lg p-3">
+                        <p className="text-[10px] font-bold text-[#38bdf8] uppercase tracking-wider mb-2.5">Combat Techniques</p>
+                        <div className="flex flex-col gap-2.5">
+                          <div className="flex items-start gap-2.5 text-white/70">
+                            <kbd className="min-w-[2.5rem] h-6 bg-cyan-950/40 border border-cyan-500/30 rounded flex items-center justify-center font-mono font-black text-[9px] shadow-sm text-cyan-400 select-none shrink-0">LMB</kbd>
+                            <div>
+                              <p className="text-[11px] text-white/90 font-bold"><strong className="text-cyan-400">Grav Slam</strong> (With Hammer)</p>
+                              <p className="text-[10px] text-white/55">Blows back the ball, repels hostile bots, and deals massive radial kinetic shockwaves.</p>
+                            </div>
+                          </div>
+
+                          <div className="flex items-start gap-2.5 text-white/70 border-t border-white/5 pt-2">
+                            <kbd className="min-w-[2.5rem] h-6 bg-red-950/40 border border-red-500/30 rounded flex items-center justify-center font-mono font-black text-[9px] shadow-sm text-red-400 select-none shrink-0">LMB</kbd>
+                            <div>
+                              <p className="text-[11px] text-white/90 font-bold"><strong className="text-red-400">Assault Lunge</strong> (With Sword + Red Reticle)</p>
+                              <p className="text-[10px] text-white/55">Dashes directly to targeted enemies instantly with high locking distance velocity.</p>
+                            </div>
+                          </div>
+
+                          <div className="flex items-start gap-2.5 text-white/70 border-t border-white/5 pt-2">
+                            <kbd className="min-w-[2.5rem] h-6 bg-purple-950/40 border border-purple-500/30 rounded flex items-center justify-center font-mono font-black text-[9px] shadow-sm text-purple-400 select-none shrink-0">RMB</kbd>
+                            <div>
+                              <p className="text-[11px] text-white/90 font-bold"><strong className="text-purple-400">Quick Slash</strong> (With Sword)</p>
+                              <p className="text-[10px] text-white/55">Swipes front arc swiftly for close-quarters counter attacks without lock-on requirements.</p>
+                            </div>
+                          </div>
+
+                          {/* Special Combo */}
+                          <div className="flex items-center gap-2 border-t border-amber-500/10 bg-amber-500/5 p-2 rounded mt-1">
+                            <span className="text-amber-500 text-[12px] font-bold select-none">🔥 Combo:</span>
+                            <span className="text-white/80 text-[10px]">
+                              <strong>Hammer Jump</strong>: Left Click to swing Hammer, then immediately press <kbd className="bg-black/30 px-1 font-bold rounded">SPACE</kbd> to launch high up!
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Category: System */}
+                      <div className="flex items-center justify-between px-3 py-2 border-t border-white/5 mt-1 font-mono text-[10px] text-white/40 shrink-0">
+                        <div className="flex items-center gap-1.5">
+                          <kbd className="min-w-6 h-5 bg-black/60 border border-white/20 rounded flex items-center justify-center font-mono font-bold text-[9px] shadow-sm text-amber-500">ESC</kbd>
+                          <span>PAUSE & LIGHTING SETTINGS</span>
+                        </div>
+                        <span>VERSION 1.4 PROTOTYPE</span>
+                      </div>
+
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <LobbyChatPanel
+                  messages={lobbyChatMessages}
+                  onSendMessage={sendLobbyChatMessage}
+                />
+              )}
             </div>
 
           </div>

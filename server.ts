@@ -109,6 +109,25 @@ async function startServer() {
             break;
           }
 
+          case "lobby_chat": {
+            const { text, sender } = message;
+            console.log(`Lobby chat message from ${wsId} (${sender}): ${text}`);
+            const chatPayload = JSON.stringify({
+              type: "lobby_chat",
+              id: Math.random().toString(36).substring(2, 9),
+              sender: sender || `Client ${wsId}`,
+              text,
+              timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+              clientId: wsId
+            });
+            wss.clients.forEach(client => {
+              if (client.readyState === WebSocket.OPEN) {
+                client.send(chatPayload);
+              }
+            });
+            break;
+          }
+
           case "ping": {
             const { timestamp } = message;
             ws.send(JSON.stringify({ type: "pong", timestamp }));
