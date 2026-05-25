@@ -1,0 +1,6 @@
+{
+  "name": "Grifball Voxel Arena",
+  "description": "A 3D first-person voxel prototype of the classic Grifball game using Three.js and Tailwind CSS featuring overhand gravity hammer attacks, visual explosions, AI fencing behavior, and a frosted glass theme.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
