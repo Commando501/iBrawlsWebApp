@@ -115,6 +115,23 @@ const LobbyChatPanel = ({ messages, onSendMessage }: LobbyChatPanelProps) => {
 };
 
 export default function App() {
+  const getWsUrl = () => {
+    const envWsUrl = import.meta.env.VITE_WS_URL;
+    if (envWsUrl) return envWsUrl;
+
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws';
+    let host = window.location.host;
+    if (host.includes('localhost') || host.includes('127.0.0.1')) {
+      host = 'ais-pre-tjrfoohpldxg7i2a3ncqfn-194609500028.us-west2.run.app';
+    }
+    return `${protocol}//${host}`;
+  };
+
+  const getApiUrl = () => {
+    const wsUrl = getWsUrl();
+    return wsUrl.replace(/^ws/, 'http');
+  };
+
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const [isPaused, setIsPaused] = useState<boolean>(false);
   const [debugMode, setDebugMode] = useState<boolean>(false);
@@ -311,7 +328,7 @@ export default function App() {
     setHostIdCode(randCode);
 
     setConnectionStatus('fetching_ip');
-    fetch('/api/my-ip')
+    fetch(`${getApiUrl()}/api/my-ip`)
       .then(res => res.json())
       .then(async (data) => {
         let detectedIp = data.ip || '127.0.0.1';
@@ -368,15 +385,6 @@ export default function App() {
     let reconnectTimeout: any = null;
     let pingInterval: any = null;
     let isDestroyed = false;
-
-    const getWsUrl = () => {
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws';
-      let host = window.location.host;
-      if (host.includes('localhost') || host.includes('127.0.0.1')) {
-        host = 'ais-pre-tjrfoohpldxg7i2a3ncqfn-194609500028.us-west2.run.app';
-      }
-      return `${protocol}//${host}`;
-    };
 
     function connect() {
       if (isDestroyed) return;
@@ -604,14 +612,7 @@ export default function App() {
     setConnectionStatus('hosting');
     setChatMessages([]);
 
-    const protocol = (window.location.protocol === 'https:' || connectionMode === 'relay') ? 'wss:' : 'ws:';
-    let host = window.location.host;
-    if (connectionMode === 'relay') {
-      if (host.includes('localhost') || host.includes('127.0.0.1')) {
-        host = 'ais-pre-tjrfoohpldxg7i2a3ncqfn-194609500028.us-west2.run.app';
-      }
-    }
-    const wsUrl = `${protocol}//${host}`;
+    const wsUrl = connectionMode === 'relay' ? getWsUrl() : `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}`;
     console.log('WS Host connection target URL resolved to:', wsUrl);
     const ws = new WebSocket(wsUrl);
 
@@ -688,11 +689,7 @@ export default function App() {
     let wsUrl = '';
 
     if (connectionMode === 'relay') {
-      let host = window.location.host;
-      if (host.includes('localhost') || host.includes('127.0.0.1')) {
-        host = 'ais-pre-tjrfoohpldxg7i2a3ncqfn-194609500028.us-west2.run.app';
-      }
-      wsUrl = `${protocol}//${host}`;
+      wsUrl = getWsUrl();
     } else {
       if (isDirectAddress) {
         // Direct LAN IP connection

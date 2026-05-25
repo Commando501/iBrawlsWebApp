@@ -1,0 +1,14 @@
+name = "ibrawls-backend"
+main = "src/index.ts"
+compatibility_date = "2024-03-20"
+
+# Bindings to Durable Objects
+[durable_objects]
+bindings = [
+  { name = "GAME_LOBBY", class_name = "GameLobby" }
+]
+
+# Durable Object migrations (required for instantiation)
+[[migrations]]
+tag = "v1"
+new_classes = ["GameLobby"]

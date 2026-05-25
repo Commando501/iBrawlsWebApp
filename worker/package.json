@@ -1,0 +1,15 @@
+{
+  "name": "ibrawls-backend",
+  "version": "1.0.0",
+  "description": "iBrawls multiplayer matchmaking and relay server running on Cloudflare Workers and Durable Objects",
+  "main": "src/index.ts",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20240320.0",
+    "typescript": "^5.3.3",
+    "wrangler": "^3.35.0"
+  }
+}
