@@ -33,6 +33,10 @@ export interface UniversalSettings {
   swordTradeWindow: number;               // Timing window for Sword vs Sword in ms (e.g. 50ms to 800ms)
   hammerSwordTradeWindow: number;         // Timing window for Hammer vs Sword in ms (e.g. 50ms to 800ms)
   playerHue?: number;                     // Color hue of the player's character / armor (0 to 360)
+  nameVisibilityDistance?: number;        // How close the player needs to be to other player for name to appear
+  nameVisibilityColor?: string;           // Color of the floating name
+  nameVisibilityOpacity?: number;         // Opacity of the floating name
+  nameVisibilityFontSize?: number;        // Font size of the floating name
 }
 
 export type GameState = 'menu' | 'playing' | 'paused';
@@ -108,6 +112,8 @@ export interface GameStats {
   playerDeaths?: number;
   enemyKills?: number;
   enemyDeaths?: number;
+  playerClientId?: string;
+  opponentClientId?: string;
 }
 
 export interface UiElementPos {

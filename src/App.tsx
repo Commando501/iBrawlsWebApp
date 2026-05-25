@@ -180,6 +180,8 @@ export default function App() {
   const [connectionError, setConnectionError] = useState<string>('');
   const [quickPlayStatus, setQuickPlayStatus] = useState<'idle' | 'searching' | 'matching'>('idle');
 
+  const [opponentClientId, setOpponentClientId] = useState<string>('');
+
   // Persisting network metadata and lobby invitation parameters
   const [menuSocket, setMenuSocket] = useState<WebSocket | null>(null);
   const [clientId, setClientId] = useState<string>('');
@@ -281,6 +283,10 @@ export default function App() {
     swordTradeWindow: 350,
     hammerSwordTradeWindow: 350,
     playerHue: getSavedPlayerHue(),
+    nameVisibilityDistance: 15.0,
+    nameVisibilityColor: '#00ffff',
+    nameVisibilityOpacity: 0.8,
+    nameVisibilityFontSize: 16,
   });
 
   // Standard initial dummy stats to render HUD beautifully before game starts
@@ -686,6 +692,7 @@ export default function App() {
           setIsMultiplayer(true);
           setMultiplayerRole('host');
           setConnectionStatus('connected');
+          setOpponentClientId(data.clientClientId || 'Opponent');
 
           sfx.init();
           sfx.resume();
@@ -774,6 +781,7 @@ export default function App() {
           setIsMultiplayer(true);
           setMultiplayerRole('client');
           setConnectionStatus('connected');
+          setOpponentClientId(data.hostClientId || 'Opponent');
 
           sfx.init();
           sfx.resume();
@@ -896,6 +904,7 @@ export default function App() {
     setShowAdminPanel(false);
     setShowUiAdjustment(false);
     setShowLightingMenu(false);
+    setOpponentClientId('');
   };
 
   const toggleDebugMode = () => {
@@ -908,7 +917,9 @@ export default function App() {
       ...stats,
       isMultiplayer,
       multiplayerRole,
-      opponentConnected: isMultiplayer && !!multiplayerSocket
+      opponentConnected: isMultiplayer && !!multiplayerSocket,
+      playerClientId: clientId || 'Player',
+      opponentClientId: opponentClientId || 'Opponent'
     });
   };
 
@@ -951,6 +962,7 @@ export default function App() {
           isMultiplayer={isMultiplayer}
           multiplayerRole={multiplayerRole}
           multiplayerSocket={multiplayerSocket}
+          opponentClientId={opponentClientId}
         />
       )}
 
@@ -2291,6 +2303,88 @@ export default function App() {
                           />
                         </div>
                       )}
+                    </div>
+                  </div>
+
+                  {/* Name Visibility Controls (New!) */}
+                  <div className="border border-white/5 rounded-xl p-2.5 bg-white/1 flex flex-col gap-2.5">
+                    <p className="text-[10px] text-cyan-400 font-bold uppercase tracking-widest border-b border-white/5 pb-1 font-mono flex items-center justify-between">
+                      <span>8. Name Visibility</span>
+                      <span className="text-[8px] bg-cyan-500/20 text-cyan-300 px-1.5 py-0.2 rounded font-sans tracking-normal uppercase border border-cyan-500/30">Visuals</span>
+                    </p>
+                    
+                    {/* Name Appearance Distance */}
+                    <div className="flex flex-col gap-1">
+                      <div className="flex justify-between text-[11px] font-bold uppercase tracking-wider text-white/80">
+                        <span>Appearance Distance</span>
+                        <span className="text-cyan-400 font-mono">{adminSettings.nameVisibilityDistance?.toFixed(1) ?? '15.0'}m</span>
+                      </div>
+                      <input 
+                        type="range" 
+                        min="1.0" 
+                        max="50.0" 
+                        step="1.0"
+                        value={adminSettings.nameVisibilityDistance ?? 15.0} 
+                        onChange={(e) => setAdminSettings(prev => ({ ...prev, nameVisibilityDistance: parseFloat(e.target.value) }))}
+                        className="w-full accent-cyan-400 h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
+                      />
+                    </div>
+
+                    {/* Name Font Size */}
+                    <div className="flex flex-col gap-1">
+                      <div className="flex justify-between text-[11px] font-bold uppercase tracking-wider text-white/80">
+                        <span>Font Size</span>
+                        <span className="text-cyan-400 font-mono">{adminSettings.nameVisibilityFontSize ?? 16}px</span>
+                      </div>
+                      <input 
+                        type="range" 
+                        min="10" 
+                        max="36" 
+                        step="1"
+                        value={adminSettings.nameVisibilityFontSize ?? 16} 
+                        onChange={(e) => setAdminSettings(prev => ({ ...prev, nameVisibilityFontSize: parseInt(e.target.value) }))}
+                        className="w-full accent-cyan-400 h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
+                      />
+                    </div>
+
+                    {/* Name Opacity */}
+                    <div className="flex flex-col gap-1">
+                      <div className="flex justify-between text-[11px] font-bold uppercase tracking-wider text-white/80">
+                        <span>Opacity</span>
+                        <span className="text-cyan-400 font-mono">{Math.round((adminSettings.nameVisibilityOpacity ?? 0.8) * 100)}%</span>
+                      </div>
+                      <input 
+                        type="range" 
+                        min="0.10" 
+                        max="1.00" 
+                        step="0.05"
+                        value={adminSettings.nameVisibilityOpacity ?? 0.8} 
+                        onChange={(e) => setAdminSettings(prev => ({ ...prev, nameVisibilityOpacity: parseFloat(e.target.value) }))}
+                        className="w-full accent-cyan-400 h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
+                      />
+                    </div>
+
+                    {/* Name Color */}
+                    <div className="flex justify-between items-center text-xs pt-1.5 border-t border-white/5 gap-2">
+                      <div className="flex flex-col text-left">
+                        <span className="font-bold text-white/90">Name Color</span>
+                        <span className="text-[9px] text-white/40">HUD text fill</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <input 
+                          type="color" 
+                          value={adminSettings.nameVisibilityColor ?? '#00ffff'} 
+                          onChange={(e) => setAdminSettings(prev => ({ ...prev, nameVisibilityColor: e.target.value }))}
+                          className="w-8 h-8 rounded border border-white/20 bg-transparent cursor-pointer p-0 animate-fade-in"
+                          title="Choose Color"
+                        />
+                        <input 
+                          type="text" 
+                          value={adminSettings.nameVisibilityColor ?? '#00ffff'} 
+                          onChange={(e) => setAdminSettings(prev => ({ ...prev, nameVisibilityColor: e.target.value }))}
+                          className="w-20 h-7 bg-black/40 border border-white/10 rounded px-2 font-mono text-[10px] tracking-wide text-white focus:border-cyan-400 outline-none text-center"
+                        />
+                      </div>
                     </div>
                   </div>
                 </div>

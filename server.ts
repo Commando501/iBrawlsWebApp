@@ -318,8 +318,8 @@ async function startServer() {
             socketToRoom.set(ws, room);
 
             // Notify both parties that they have paired successfully
-            ws.send(JSON.stringify({ type: "connected", role: "client" }));
-            room.host.send(JSON.stringify({ type: "connected", role: "host" }));
+            ws.send(JSON.stringify({ type: "connected", role: "client", hostClientId: (room.host as any).id, clientClientId: wsId }));
+            room.host.send(JSON.stringify({ type: "connected", role: "host", hostClientId: (room.host as any).id, clientClientId: wsId }));
             break;
           }
 

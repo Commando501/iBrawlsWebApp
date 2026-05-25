@@ -21,6 +21,7 @@ interface GrifballGameProps {
   isMultiplayer?: boolean;
   multiplayerRole?: 'host' | 'client' | null;
   multiplayerSocket?: WebSocket | null;
+  opponentClientId?: string;
 }
 
 export const GrifballGame: React.FC<GrifballGameProps> = ({
@@ -33,8 +34,10 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
   isMultiplayer = false,
   multiplayerRole = null,
   multiplayerSocket = null,
+  opponentClientId = '',
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
+  const nameplateRef = useRef<HTMLDivElement>(null);
   const requestRef = useRef<number | null>(null);
 
   // Core Game State refs to avoid state-delay in the animation/render loop
@@ -1036,6 +1039,9 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
       // Render loop
       renderGame();
+
+      // Update floating nameplate positioning and appearance
+      updateFloatingNameplate();
 
       // Trigger stats sync
       pushStatsUpdate();
@@ -3287,6 +3293,73 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     });
   };
 
+  const updateFloatingNameplate = () => {
+    const s = stateRef.current;
+    const camera = threeRef.current.camera;
+    const container = containerRef.current;
+    const nameplate = nameplateRef.current;
+
+    if (!s || !camera || !container || !nameplate) return;
+
+    let showNameplate = false;
+    const nameplateScreenPos = { x: 0, y: 0 };
+
+    if (s.playerHP > 0 && s.aiHP > 0 && s.aiState !== 'RESPAWNING') {
+      const eyePos = new THREE.Vector3(
+        s.playerPos.x,
+        1.65 - s.crouchAmount + s.playerPos.y,
+        s.playerPos.z
+      );
+      const enemyCenter = new THREE.Vector3(s.aiPos.x, s.aiPos.y + 0.825, s.aiPos.z);
+      const toEnemy = enemyCenter.clone().sub(eyePos);
+      const dist = toEnemy.length();
+      
+      const appDist = s.settings.nameVisibilityDistance !== undefined ? s.settings.nameVisibilityDistance : 15.0;
+      if (dist <= appDist) {
+        const toEnemyDir = toEnemy.clone().normalize();
+        
+        const cameraLookDir = new THREE.Vector3(0, 0, -1)
+          .applyAxisAngle(new THREE.Vector3(1, 0, 0), s.pitch)
+          .applyAxisAngle(new THREE.Vector3(0, 1, 0), s.yaw)
+          .normalize();
+          
+        const dot = cameraLookDir.dot(toEnemyDir);
+        const angle = Math.acos(Math.max(-1.0, Math.min(1.0, dot)));
+        
+        // Holding crosshair over them
+        if (angle < 0.12) {
+          showNameplate = true;
+          
+          // Calculate projected 2D coordinates
+          const headPos = new THREE.Vector3(s.aiPos.x, s.aiPos.y + 1.75, s.aiPos.z);
+          headPos.project(camera);
+          
+          // Check if in front of camera
+          if (headPos.z <= 1) {
+            const widthHalf = container.clientWidth / 2;
+            const heightHalf = container.clientHeight / 2;
+            nameplateScreenPos.x = (headPos.x * widthHalf) + widthHalf;
+            nameplateScreenPos.y = -(headPos.y * heightHalf) + heightHalf;
+          } else {
+            showNameplate = false;
+          }
+        }
+      }
+    }
+
+    if (showNameplate) {
+      nameplate.style.display = 'block';
+      nameplate.style.left = `${nameplateScreenPos.x}px`;
+      nameplate.style.top = `${nameplateScreenPos.y}px`;
+      nameplate.style.color = s.settings.nameVisibilityColor || '#00ffff';
+      nameplate.style.opacity = (s.settings.nameVisibilityOpacity !== undefined ? s.settings.nameVisibilityOpacity : 0.8).toString();
+      nameplate.style.fontSize = `${s.settings.nameVisibilityFontSize || 16}px`;
+      nameplate.textContent = isMultiplayer ? (opponentClientId || 'Opponent') : 'AI Bot';
+    } else {
+      nameplate.style.display = 'none';
+    }
+  };
+
   // Direct high-performance HUD Radar Syncing method
   const updateRadarDOM = () => {
     const s = stateRef.current;
@@ -3412,6 +3485,23 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
   return (
     <div className="absolute inset-0 z-0 w-full h-full" style={{ outline: 'none' }}>
+      {/* Floating Nameplate Overlay (New!) */}
+      <div 
+        ref={nameplateRef}
+        style={{
+          position: 'absolute',
+          display: 'none',
+          transform: 'translate(-50%, -100%)',
+          fontWeight: 'black',
+          fontFamily: 'monospace',
+          pointerEvents: 'none',
+          textShadow: '0 0 4px rgba(0,0,0,0.85), 0 0 10px rgba(0,0,0,0.5)',
+          zIndex: 10,
+          whiteSpace: 'nowrap',
+          transition: 'color 0.15s, font-size 0.15s, opacity 0.15s'
+        }}
+      />
+
       {/* 3D Render Canvas container */}
       <div 
         ref={containerRef} 
