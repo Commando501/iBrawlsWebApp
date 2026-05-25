@@ -10,6 +10,7 @@ import { HUD } from './components/HUD';
 import { sfx } from './components/AudioEngine';
 import { RotateCcw, Check } from 'lucide-react';
 import { ChatOverlay, ChatMessage } from './components/ChatOverlay';
+import { CharacterPreview } from './components/CharacterPreview';
 
 interface OnlineClient {
   id: string;
@@ -143,13 +144,24 @@ export default function App() {
   // Chat message state
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [lobbyChatMessages, setLobbyChatMessages] = useState<ChatMessage[]>([]);
-  const [rightPanelTab, setRightPanelTab] = useState<'manual' | 'chat'>('manual');
+  const [rightPanelTab, setRightPanelTab] = useState<'manual' | 'chat' | 'customize'>('manual');
   const [unreadLobbyMessages, setUnreadLobbyMessages] = useState<number>(0);
-  const rightPanelTabRef = useRef<'manual' | 'chat'>('manual');
+  const [customizerWeapon, setCustomizerWeapon] = useState<'none' | 'hammer' | 'sword'>('none');
+  const rightPanelTabRef = useRef<'manual' | 'chat' | 'customize'>('manual');
 
   useEffect(() => {
     rightPanelTabRef.current = rightPanelTab;
   }, [rightPanelTab]);
+
+  // Retrieve saved player hue on startup
+  const getSavedPlayerHue = (): number => {
+    try {
+      const saved = localStorage.getItem('grifball_player_hue');
+      return saved ? parseInt(saved, 10) : 200;
+    } catch (e) {
+      return 200;
+    }
+  };
 
   // Multiplayer States
   const [connectionMode, setConnectionMode] = useState<'relay' | 'local'>('relay');
@@ -255,6 +267,7 @@ export default function App() {
     enableHammerSwordTrade: true,
     swordTradeWindow: 350,
     hammerSwordTradeWindow: 350,
+    playerHue: getSavedPlayerHue(),
   });
 
   // Standard initial dummy stats to render HUD beautifully before game starts
@@ -307,6 +320,7 @@ export default function App() {
       enableHammerSwordTrade: true,
       swordTradeWindow: 350,
       hammerSwordTradeWindow: 350,
+      playerHue: getSavedPlayerHue(),
     },
     lastDeaths: [],
     playerX: 0,
@@ -1248,7 +1262,7 @@ export default function App() {
             {/* COLUMN 2: FULL COMPREHENSIVE HOTKEY DIRECTORY OR LOBBY CHAT (col-span-7) */}
             <div className="md:col-span-7 border-t md:border-t-0 md:border-l border-white/10 pt-6 md:pt-0 md:pl-8 flex flex-col min-h-[480px]">
               {/* Tabs header */}
-              <div className="flex gap-4 border-b border-white/10 pb-3 mb-4 select-none shrink-0">
+              <div className="flex gap-4 border-b border-white/10 pb-3 mb-4 select-none shrink-0 flex-wrap">
                 <button
                   onClick={() => setRightPanelTab('manual')}
                   className={`pb-1 font-sans font-bold text-xs uppercase tracking-widest border-b-2 transition-all cursor-pointer flex items-center gap-1.5 ${
@@ -1258,6 +1272,16 @@ export default function App() {
                   }`}
                 >
                   📖 Combat Manual
+                </button>
+                <button
+                  onClick={() => setRightPanelTab('customize')}
+                  className={`pb-1 font-sans font-bold text-xs uppercase tracking-widest border-b-2 transition-all cursor-pointer flex items-center gap-1.5 ${
+                    rightPanelTab === 'customize'
+                      ? 'border-[#38bdf8] text-white'
+                      : 'border-transparent text-white/40 hover:text-white/70'
+                  }`}
+                >
+                  🎨 Customize Armor
                 </button>
                 <button
                   onClick={() => {
@@ -1270,7 +1294,7 @@ export default function App() {
                       : 'border-transparent text-white/40 hover:text-white/70'
                   }`}
                 >
-                  💬 Real-Time Lobby Chat
+                  💬 Lobby Chat
                   {unreadLobbyMessages > 0 && (
                     <span className="bg-[#38bdf8] text-slate-950 font-black font-mono text-[9px] px-1.5 py-0.5 rounded-full animate-bounce">
                       {unreadLobbyMessages}
@@ -1279,7 +1303,7 @@ export default function App() {
                 </button>
               </div>
 
-              {rightPanelTab === 'manual' ? (
+              {rightPanelTab === 'manual' && (
                 <div className="flex-grow flex flex-col justify-between min-h-0">
                   <div>
                     <div className="flex items-center gap-2 mb-4 shrink-0">
@@ -1397,7 +1421,128 @@ export default function App() {
                     </div>
                   </div>
                 </div>
-              ) : (
+              )}
+
+              {rightPanelTab === 'customize' && (
+                <div className="flex-grow flex flex-col justify-between min-h-0 bg-slate-950/20 rounded-xl border border-white/5 p-4 md:p-5 select-none">
+                  <div className="flex flex-col gap-4">
+                    {/* Header */}
+                    <div className="flex justify-between items-center pb-2 border-b border-white/5">
+                      <div className="flex items-center gap-2">
+                        <span className="w-1.5 h-3 bg-[#38bdf8]" />
+                        <h2 className="text-xs uppercase font-bold tracking-[0.25em] text-white">
+                          Character Customizer & Armor Hue
+                        </h2>
+                      </div>
+                      <span className="text-[9px] font-mono text-emerald-400 font-extrabold uppercase tracking-widest bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded">
+                        Visualizing 3D
+                      </span>
+                    </div>
+
+                    {/* 3D Model Rotating Preview */}
+                    <CharacterPreview hue={adminSettings.playerHue ?? 200} heldWeapon={customizerWeapon} />
+
+                    {/* Controls Grid */}
+                    <div className="flex flex-col gap-3 font-sans text-xs">
+                      {/* Interactive HSL slider */}
+                      <div className="bg-white/5 border border-white/5 rounded-lg p-3">
+                        <div className="flex justify-between items-center mb-2">
+                          <span className="text-[10px] font-bold text-[#38bdf8] uppercase tracking-wider">Armor Color Hue angle</span>
+                          <span 
+                            className="font-mono text-[10px] font-black uppercase px-2 py-0.5 rounded border shadow"
+                            style={{ 
+                              color: `hsl(${adminSettings.playerHue}, 100%, 65%)`,
+                              backgroundColor: `hsl(${adminSettings.playerHue}, 90%, 12%)`,
+                              borderColor: `hsl(${adminSettings.playerHue}, 50%, 30%)`
+                            }}
+                          >
+                            {adminSettings.playerHue}°
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0"
+                          max="360"
+                          value={adminSettings.playerHue ?? 200}
+                          onChange={(e) => {
+                            const newHue = parseInt(e.target.value, 10);
+                            setAdminSettings(prev => ({ ...prev, playerHue: newHue }));
+                            try {
+                              localStorage.setItem('grifball_player_hue', newHue.toString());
+                            } catch (err) {
+                              console.error(err);
+                            }
+                          }}
+                          className="w-full h-2 bg-gradient-to-r from-red-500 via-yellow-500 via-green-500 via-cyan-500 via-blue-500 via-purple-500 to-red-500 rounded-lg appearance-none cursor-pointer outline-none"
+                          style={{ WebkitAppearance: 'none' }}
+                        />
+                      </div>
+
+                      {/* Presets */}
+                      <div className="bg-white/5 border border-white/5 rounded-lg p-3">
+                        <span className="text-[10px] font-bold text-[#38bdf8] uppercase tracking-wider block mb-2">Color presets Swatches</span>
+                        <div className="flex flex-wrap gap-2 justify-between">
+                          {[
+                            { name: 'Red', hue: 0, bg: 'bg-[#ef4444]' },
+                            { name: 'Orange', hue: 20, bg: 'bg-[#f97316]' },
+                            { name: 'Gold', hue: 45, bg: 'bg-[#fbbf24]' },
+                            { name: 'Green', hue: 120, bg: 'bg-[#22c55e]' },
+                            { name: 'Cyan', hue: 180, bg: 'bg-[#06b6d4]' },
+                            { name: 'Blue', hue: 200, bg: 'bg-[#3b82f6]' },
+                            { name: 'Purple', hue: 270, bg: 'bg-[#a855f7]' },
+                            { name: 'Magenta', hue: 300, bg: 'bg-[#d946ef]' },
+                            { name: 'Pink', hue: 330, bg: 'bg-[#ec4899]' },
+                          ].map((p) => (
+                            <button
+                              key={p.name}
+                              onClick={() => {
+                                setAdminSettings(prev => ({ ...prev, playerHue: p.hue }));
+                                try {
+                                  localStorage.setItem('grifball_player_hue', p.hue.toString());
+                                } catch (err) {
+                                  console.error(err);
+                                }
+                              }}
+                              title={p.name}
+                              className={`w-6 h-6 rounded-full cursor-pointer transition-all active:scale-90 relative ${p.bg} ${
+                                adminSettings.playerHue === p.hue 
+                                  ? 'ring-2 ring-white ring-offset-2 ring-offset-slate-950 scale-110 shadow-lg' 
+                                  : 'hover:scale-105 hover:opacity-90'
+                              }`}
+                            />
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Held Weapon Selection */}
+                      <div className="bg-white/5 border border-white/5 rounded-lg p-3">
+                        <span className="text-[10px] font-bold text-[#38bdf8] uppercase tracking-wider block mb-2.5">Pose Weapon preview</span>
+                        <div className="grid grid-cols-3 gap-2">
+                          {[
+                            { id: 'none', label: '🛡️ Fists' },
+                            { id: 'hammer', label: '🔨 Hammer' },
+                            { id: 'sword', label: '⚔️ Sword' },
+                          ].map((w) => (
+                            <button
+                              key={w.id}
+                              onClick={() => setCustomizerWeapon(w.id as any)}
+                              className={`py-2 text-[10px] font-black uppercase tracking-wider border rounded cursor-pointer transition-all active:scale-98 ${
+                                customizerWeapon === w.id
+                                  ? 'bg-[#38bdf8]/15 border-[#38bdf8] text-[#38bdf8] shadow-[0_0_10px_rgba(56,189,248,0.2)]'
+                                  : 'bg-black/30 border-white/10 text-white/50 hover:text-white hover:border-white/20'
+                              }`}
+                            >
+                              {w.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {rightPanelTab === 'chat' && (
                 <LobbyChatPanel
                   messages={lobbyChatMessages}
                   onSendMessage={sendLobbyChatMessage}

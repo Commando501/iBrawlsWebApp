@@ -298,6 +298,11 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
               if (data.yaw !== undefined) s.aiYaw = data.yaw;
               if (data.pitch !== undefined) s.aiPitch = data.pitch;
               
+              if (data.hue !== undefined && data.hue !== lastOpponentHue.current) {
+                lastOpponentHue.current = data.hue;
+                rebuildEnemyModel(data.hue);
+              }
+              
               if (data.hp !== undefined) {
                 const prevAiHP = s.aiHP;
                 s.aiHP = data.hp;
@@ -449,6 +454,51 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
   // Track if mouse/pointer lock instructions should be displayed
   const [showPointerLockAlert, setShowPointerLockAlert] = useState(true);
+
+  // Track opponent's custom hue for rebuilding their Spartan model dynamically
+  const lastOpponentHue = useRef<number | null>(null);
+
+  const rebuildEnemyModel = (hue: number) => {
+    const s = stateRef.current;
+    const scene = threeRef.current.scene;
+    if (!scene || !threeRef.current.enemyGroup) return;
+
+    // Remove old group
+    scene.remove(threeRef.current.enemyGroup);
+
+    // Build new spartan with custom hue.
+    // In single player, it's the AI enemy (crimson red bot). In multiplayer, it's the custom player.
+    const isEnemyBot = !isMultiplayer;
+    const enemyGroup = buildVoxelSpartanModel(isEnemyBot, hue);
+    enemyGroup.position.copy(s.aiPos);
+    scene.add(enemyGroup);
+    threeRef.current.enemyGroup = enemyGroup;
+
+    // Rebuild & attach hammer
+    const enemyHammer = buildGravityHammerModel(isEnemyBot ? undefined : hue);
+    enemyHammer.scale.set(0.6, 0.6, 0.6);
+    enemyHammer.position.set(0.5, 1.0 - 0.64, -0.4);
+    enemyHammer.rotation.set(Math.PI / 2, 0, 0);
+    if (enemyGroup.userData.upperTorso) {
+      enemyGroup.userData.upperTorso.add(enemyHammer);
+    } else {
+      enemyGroup.add(enemyHammer);
+    }
+    threeRef.current.enemyHammer = enemyHammer;
+
+    // Rebuild & attach sword
+    const enemySword = buildKatarSwordModel(isEnemyBot ? undefined : hue);
+    enemySword.scale.set(0.6, 0.6, 0.6);
+    enemySword.position.set(0.5, 1.0 - 0.64, -0.32);
+    enemySword.rotation.set(Math.PI / 2, 0, -Math.PI / 8);
+    enemySword.visible = s.aiActiveWeapon === 'sword';
+    if (enemyGroup.userData.upperTorso) {
+      enemyGroup.userData.upperTorso.add(enemySword);
+    } else {
+      enemyGroup.add(enemySword);
+    }
+    threeRef.current.enemySword = enemySword;
+  };
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -644,7 +694,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     camera.add(fpWeaponContainer); // Anchored as camera child
     
     // Build the gravity hammer model
-    const playerHammer = buildGravityHammerModel();
+    const playerHammer = buildGravityHammerModel(adminSettings.playerHue);
     // Neutral positioning (placed on right of screen, angled neatly forward)
     playerHammer.position.set(0.35, -0.38, -0.65);
     playerHammer.rotation.set(0.15, -0.3, -0.15); // standard idle poise
@@ -652,7 +702,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     threeRef.current.playerHammer = playerHammer;
 
     // Build the katar sword model
-    const playerSword = buildKatarSwordModel();
+    const playerSword = buildKatarSwordModel(adminSettings.playerHue);
     // Neutral positioning (placed on right side, angled forward)
     playerSword.position.set(0.35, -0.38, -0.5);
     playerSword.rotation.set(Math.PI / 2, 0, -Math.PI / 8); // Points forward, tilted slightly inwards
@@ -1007,6 +1057,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
           isCrouching: s.isCrouching,
           activeWeapon: s.activeWeapon,
           respawnTimer: s.playerRespawnTimer,
+          hue: s.settings.playerHue,
           
           ...(multiplayerRole === 'host' ? {
             scoreHost: s.scorePlayer,

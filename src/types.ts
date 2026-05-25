@@ -32,6 +32,7 @@ export interface UniversalSettings {
   enableHammerSwordTrade: boolean;         // Toggle for Hammer vs Sword trades
   swordTradeWindow: number;               // Timing window for Sword vs Sword in ms (e.g. 50ms to 800ms)
   hammerSwordTradeWindow: number;         // Timing window for Hammer vs Sword in ms (e.g. 50ms to 800ms)
+  playerHue?: number;                     // Color hue of the player's character / armor (0 to 360)
 }
 
 export type GameState = 'menu' | 'playing' | 'paused';

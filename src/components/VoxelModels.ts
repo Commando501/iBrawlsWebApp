@@ -59,7 +59,7 @@ export function createVoxelGroup(data: VoxelData[], scale: number = 0.1): THREE.
 /**
  * Builds the Gravity Hammer 3D Voxel Model
  */
-export function buildGravityHammerModel(): THREE.Group {
+export function buildGravityHammerModel(customHue?: number): THREE.Group {
   const data: VoxelData[] = [];
 
   // SHAFT: long dark grey handle
@@ -107,15 +107,16 @@ export function buildGravityHammerModel(): THREE.Group {
 
   // GLOWING GRAVITY ENERGY PLATATES (on the slam face)
   // These glow neon blue, representing the gravity generators
+  const energyColor = customHue !== undefined ? `hsl(${customHue}, 85%, 60%)` : '#38bdf8';
   for (let hx = -1; hx <= 1; hx++) {
     for (let hy = 17; hy <= 19; hy++) {
-      data.push({ x: hx, y: hy, z: -5, color: '#38bdf8', emissive: true }); // glowing sky blue
+      data.push({ x: hx, y: hy, z: -5, color: energyColor, emissive: true }); // glowing sky blue
     }
   }
   // Side trim charging pipes
   for (let hy = 15; hy <= 21; hy++) {
-    data.push({ x: -3, y: hy, z: -1, color: '#38bdf8', emissive: true });
-    data.push({ x: 3, y: hy, z: -1, color: '#38bdf8', emissive: true });
+    data.push({ x: -3, y: hy, z: -1, color: energyColor, emissive: true });
+    data.push({ x: 3, y: hy, z: -1, color: energyColor, emissive: true });
   }
 
   // Build the group
@@ -137,8 +138,11 @@ export function buildGravityHammerModel(): THREE.Group {
  * Builds the Voxel Spartan/Enemy Robot Model
  * Red or Slate Theme
  */
-export function buildVoxelSpartanModel(isEnemy: boolean = true): THREE.Group {
-  const primaryColor = isEnemy ? '#ef4444' : '#3b82f6'; // Crimson red Enemy, Blue Player
+export function buildVoxelSpartanModel(isEnemy: boolean = true, customHue?: number): THREE.Group {
+  let primaryColor = isEnemy ? '#ef4444' : '#3b82f6'; // Crimson red Enemy, Blue Player
+  if (customHue !== undefined) {
+    primaryColor = `hsl(${customHue}, 85%, 50%)`;
+  }
   const secondaryColor = '#1e293b'; // Slate background skeleton/joints
   const visorColor = isEnemy ? '#facc15' : '#10b981'; // Glowing yellow vs green
   const scale = 0.08;
@@ -329,7 +333,7 @@ export function buildVoxelSpartanModel(isEnemy: boolean = true): THREE.Group {
 /**
  * Builds the Procedural Voxel Katar Sword (Indian Push Dagger)
  */
-export function buildKatarSwordModel(): THREE.Group {
+export function buildKatarSwordModel(customHue?: number): THREE.Group {
   const data: VoxelData[] = [];
 
   // SIDE GUARD BARS (dark steel '#475569' and slate '#334155')
@@ -359,6 +363,7 @@ export function buildKatarSwordModel(): THREE.Group {
 
   // BLADE (Tapered triangle pointing upwards (+Y))
   // Central column is silver '#94a3b8', cutting edge is glowing cyan plasma '#22d3ee'
+  const swordEdgeColor = customHue !== undefined ? `hsl(${customHue}, 85%, 60%)` : '#22d3ee';
   for (let y = 11; y <= 26; y++) {
     let w = 0;
     if (y <= 13) w = 3;
@@ -368,7 +373,7 @@ export function buildKatarSwordModel(): THREE.Group {
 
     for (let x = -w; x <= w; x++) {
       const isEdge = x === -w || x === w || y === 26;
-      const color = isEdge ? '#22d3ee' : '#64748b'; // glowing cyan edge, steel slate center
+      const color = isEdge ? swordEdgeColor : '#64748b'; // glowing custom edge, steel slate center
       data.push({ x: x, y: y, z: 0, color: color, emissive: isEdge });
     }
   }
