@@ -1233,9 +1233,14 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       if (s.playerRespawnTimer <= 0) {
         // Respawn!
         s.playerHP = s.playerMaxHP;
-        s.playerPos.set(0, 0, 12); // Reset to base blue spawn point
+        if (isMultiplayer && multiplayerRole === 'client') {
+          s.playerPos.set(0, 0, -12); // Guest (Red) spawn point
+          s.yaw = 0;
+        } else {
+          s.playerPos.set(0, 0, 12); // Host (Blue) spawn point
+          s.yaw = Math.PI;
+        }
         s.playerVel.set(0, 0, 0);
-        s.yaw = Math.PI;
         s.pitch = 0;
         s.playerInvulnerabilityTimer = s.settings.respawnInvulnerabilityDuration;
         sfx.playRespawn();

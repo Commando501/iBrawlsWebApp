@@ -26,10 +26,16 @@ async function startServer() {
   const server = http.createServer(app);
   const PORT = 3000;
 
-  // Track active matchmaking rooms: Map<ipOrId, { host: WebSocket; client?: WebSocket }>
-  const rooms = new Map<string, { host: WebSocket; client?: WebSocket }>();
-  // Inverse tracking map to find which key(s) a socket is registered for
-  const socketToKeys = new Map<WebSocket, string[]>();
+  interface Room {
+    host: WebSocket;
+    client?: WebSocket;
+    keys: string[];
+  }
+
+  // Track active matchmaking rooms by string identifier key
+  const rooms = new Map<string, Room>();
+  // Direct tracking lookup from socket reference to its active room
+  const socketToRoom = new Map<WebSocket, Room>();
 
   // API to fetch user's public IP & internal LAN IP
   app.get("/api/my-ip", (req, res) => {
@@ -67,6 +73,9 @@ async function startServer() {
 
             console.log(`Registering host with keys: ${keysToRegister.join(", ")}`);
 
+            // Create a single Room instance shared by reference across all registration keys
+            const room: Room = { host: ws, keys: keysToRegister };
+
             // Register room under all given keys
             keysToRegister.forEach(key => {
               // Clean up existing room under this key if any
@@ -80,10 +89,10 @@ async function startServer() {
                 }
               }
 
-              rooms.set(key, { host: ws });
+              rooms.set(key, room);
             });
 
-            socketToKeys.set(ws, keysToRegister);
+            socketToRoom.set(ws, room);
             ws.send(JSON.stringify({ type: "hosted", keys: keysToRegister }));
             break;
           }
@@ -97,7 +106,7 @@ async function startServer() {
             // Local network fallback: If target is not found by exact string match,
             // but this server hosts exactly ONE active room (which always happens on local direct plays),
             // auto-fallback to that single lobby.
-            if (!room && rooms.size === 1) {
+            if (!room && rooms.size > 0) {
               const singleKey = Array.from(rooms.keys())[0];
               room = rooms.get(singleKey);
               console.log(`Fallback: Lobby lookup under "${targetIpOrId}" not found. Auto-paired with active lobby (key: ${singleKey})`);
@@ -113,9 +122,9 @@ async function startServer() {
               return;
             }
 
-            // Bind client to room
+            // Bind client to room reference
             room.client = ws;
-            socketToKeys.set(ws, [targetIpOrId]);
+            socketToRoom.set(ws, room);
 
             // Notify both parties that they have paired successfully
             ws.send(JSON.stringify({ type: "connected", role: "client" }));
@@ -124,11 +133,8 @@ async function startServer() {
           }
 
           case "sync": {
-            // Forward gameplay simulation sync data to the opposite party in the same room
-            const keys = socketToKeys.get(ws);
-            if (!keys || keys.length === 0) return;
-
-            const room = rooms.get(keys[0]);
+            // Forward gameplay simulation sync data directly to the opposite party in the same Room
+            const room = socketToRoom.get(ws);
             if (!room) return;
 
             const target = (ws === room.host) ? room.client : room.host;
@@ -148,22 +154,24 @@ async function startServer() {
 
     ws.on("close", () => {
       console.log("WebSocket connection closed.");
-      // Identify rooms associated with this socket
-      const keys = socketToKeys.get(ws);
-      if (keys) {
-        keys.forEach(key => {
-          const room = rooms.get(key);
-          if (room) {
-            // Tell the remaining peer that the connection dissolved
-            const survivor = (ws === room.host) ? room.client : room.host;
-            if (survivor && survivor.readyState === WebSocket.OPEN) {
-              survivor.send(JSON.stringify({ type: "disconnected", reason: "Opponent left the match." }));
-              survivor.close();
-            }
-            rooms.delete(key);
-          }
+      
+      const room = socketToRoom.get(ws);
+      if (room) {
+        // Tell the remaining peer that the connection dissolved
+        const survivor = (ws === room.host) ? room.client : room.host;
+        if (survivor && survivor.readyState === WebSocket.OPEN) {
+          survivor.send(JSON.stringify({ type: "disconnected", reason: "Opponent left the match." }));
+          survivor.close();
+        }
+        
+        // Remove room listings from memory
+        room.keys.forEach(key => {
+          rooms.delete(key);
         });
-        socketToKeys.delete(ws);
+        
+        // Remove socket bindings
+        if (room.host) socketToRoom.delete(room.host);
+        if (room.client) socketToRoom.delete(room.client);
       }
     });
 
