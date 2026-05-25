@@ -95,17 +95,6 @@ export class GameLobby implements DurableObject {
   constructor(state: DurableObjectState, env: Env) {
     this.state = state;
     this.env = env;
-
-    // Server-side keepalive interval to keep the Durable Object alive and active
-    setInterval(() => {
-      this.sessions.forEach(ws => {
-        if (ws.readyState === WebSocket.OPEN) {
-          try {
-            ws.send(JSON.stringify({ type: "ping_keepalive" }));
-          } catch(e) {}
-        }
-      });
-    }, 1000);
   }
 
   async fetch(request: Request): Promise<Response> {

@@ -168,6 +168,15 @@ export default function App() {
   // Persisting network metadata and lobby invitation parameters
   const [menuSocket, setMenuSocket] = useState<WebSocket | null>(null);
   const [clientId, setClientId] = useState<string>('');
+  const clientIdRef = useRef<string>('');
+  const handleHostGameRef = useRef<(overrideCode?: string) => void>(() => {});
+  const handleJoinGameRef = useRef<(target: string) => void>(() => {});
+
+  useEffect(() => {
+    handleHostGameRef.current = handleHostGame;
+    handleJoinGameRef.current = handleJoinGame;
+  });
+
   const [onlineCount, setOnlineCount] = useState<number>(0);
   const [onlineClients, setOnlineClients] = useState<OnlineClient[]>([]);
   const [activeInvite, setActiveInvite] = useState<{ fromId: string; roomCode: string } | null>(null);
@@ -389,7 +398,6 @@ export default function App() {
   useEffect(() => {
     let ws: WebSocket | null = null;
     let reconnectTimeout: any = null;
-    let pingInterval: any = null;
     let isDestroyed = false;
 
     function connect() {
@@ -414,10 +422,11 @@ export default function App() {
           
           if (data.type === 'welcome') {
             setClientId(data.clientId);
+            clientIdRef.current = data.clientId;
           } else if (data.type === 'presence') {
             setOnlineCount(data.onlineCount || 0);
             // Capture list of online client info (excluding this browser's self)
-            const others = (data.clients || []).filter((c: OnlineClient) => c.id !== data.clientId && c.id !== clientId);
+            const others = (data.clients || []).filter((c: OnlineClient) => c.id !== clientIdRef.current);
             setOnlineClients(others);
           } else if (data.type === 'pong') {
             const calculatedPing = Date.now() - data.timestamp;
@@ -443,17 +452,17 @@ export default function App() {
                 text: data.text,
                 timestamp: data.timestamp,
                 role: 'client',
-                isLocal: data.clientId === clientId
+                isLocal: data.clientId === clientIdRef.current
               }];
             });
           } else if (data.type === 'quickplay_queued') {
             setQuickPlayStatus('searching');
           } else if (data.type === 'quickplay_host') {
             setQuickPlayStatus('matching');
-            handleHostGame(data.roomCode);
+            handleHostGameRef.current(data.roomCode);
           } else if (data.type === 'quickplay_match_found') {
             setQuickPlayStatus('idle');
-            handleJoinGame(data.roomCode);
+            handleJoinGameRef.current(data.roomCode);
           }
         } catch (e) {
           console.error('Lobby network parsing error:', e);
@@ -474,27 +483,34 @@ export default function App() {
 
     connect();
 
-    // Heartbeat to measure RTT latency
-    pingInterval = setInterval(() => {
-      const activeSock = (multiplayerSocket && multiplayerSocket.readyState === WebSocket.OPEN) 
-        ? multiplayerSocket 
-        : (ws && ws.readyState === WebSocket.OPEN) ? ws : null;
-      
-      if (activeSock && activeSock.readyState === WebSocket.OPEN) {
-        activeSock.send(JSON.stringify({
-          type: 'ping',
-          timestamp: Date.now()
-        }));
-      }
-    }, 2000);
-
     return () => {
       isDestroyed = true;
       if (ws) ws.close();
       clearTimeout(reconnectTimeout);
-      clearInterval(pingInterval);
     };
-  }, [multiplayerSocket, clientId]);
+  }, []);
+
+  // Heartbeat to measure RTT latency
+  useEffect(() => {
+    const pingInterval = setInterval(() => {
+      const activeSock = (multiplayerSocket && multiplayerSocket.readyState === WebSocket.OPEN) 
+        ? multiplayerSocket 
+        : (menuSocket && menuSocket.readyState === WebSocket.OPEN) ? menuSocket : null;
+      
+      if (activeSock && activeSock.readyState === WebSocket.OPEN) {
+        try {
+          activeSock.send(JSON.stringify({
+            type: 'ping',
+            timestamp: Date.now()
+          }));
+        } catch (e) {
+          console.error('Error sending ping:', e);
+        }
+      }
+    }, 2000);
+
+    return () => clearInterval(pingInterval);
+  }, [multiplayerSocket, menuSocket]);
 
   // Synchronize player state with central lobby server
   useEffect(() => {
