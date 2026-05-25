@@ -188,14 +188,50 @@ export default function App() {
     setConnectionStatus('fetching_ip');
     fetch('/api/my-ip')
       .then(res => res.json())
-      .then(data => {
-        setUserIp(data.ip || '127.0.0.1');
-        setLanIp(data.lanIp || '127.0.0.1');
+      .then(async (data) => {
+        let detectedIp = data.ip || '127.0.0.1';
+        let detectedLan = data.lanIp || '127.0.0.1';
+        
+        // If detected IP is loopback or local network range (like 127.0.0.1 or ::1),
+        // try to query a public WAN IP echo service to show the real internet address.
+        if (detectedIp === '127.0.0.1' || detectedIp === '::1' || detectedIp.startsWith('192.168.') || detectedIp.startsWith('10.')) {
+          try {
+            const ipifyRes = await fetch('https://api.ipify.org?format=json');
+            const ipifyData = await ipifyRes.json();
+            if (ipifyData && ipifyData.ip) {
+              detectedIp = ipifyData.ip;
+            }
+          } catch (e) {
+            console.warn('Failed to fetch from ipify, trying backup ipapi...', e);
+            try {
+              const ipapiRes = await fetch('https://ipapi.co/json/');
+              const ipapiData = await ipapiRes.json();
+              if (ipapiData && ipapiData.ip) {
+                detectedIp = ipapiData.ip;
+              }
+            } catch (e2) {
+              console.warn('Backup IP fetch failed:', e2);
+            }
+          }
+        }
+        
+        setUserIp(detectedIp);
+        setLanIp(detectedLan);
         setConnectionStatus('idle');
       })
-      .catch(err => {
-        console.error('Error fetching IP:', err);
-        setUserIp('127.0.0.1');
+      .catch(async (err) => {
+        console.error('Error fetching API my-ip:', err);
+        let fallbackIp = '127.0.0.1';
+        try {
+          const ipifyRes = await fetch('https://api.ipify.org?format=json');
+          const ipifyData = await ipifyRes.json();
+          if (ipifyData && ipifyData.ip) {
+            fallbackIp = ipifyData.ip;
+          }
+        } catch (e) {
+          console.warn('Direct ipify fetch failed:', e);
+        }
+        setUserIp(fallbackIp);
         setLanIp('127.0.0.1');
         setConnectionStatus('idle');
       });
