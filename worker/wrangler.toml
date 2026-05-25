@@ -1,4 +1,4 @@
-name = "ibrawls-backend"
+name = "ibrawlswebapp"
 main = "src/index.ts"
 compatibility_date = "2024-03-20"
 
@@ -8,7 +8,7 @@ bindings = [
   { name = "GAME_LOBBY", class_name = "GameLobby" }
 ]
 
-# Durable Object migrations (required for instantiation)
+# Durable Object migrations (required for instantiation on the Free plan)
 [[migrations]]
 tag = "v1"
-new_classes = ["GameLobby"]
+new_sqlite_classes = ["GameLobby"]
