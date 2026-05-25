@@ -12,3 +12,8 @@ bindings = [
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["GameLobby"]
+
+# Enable native observability logs on the Workers dashboard
+[observability.logs]
+enabled = true
+invocation_logs = true

@@ -49,7 +49,13 @@ export default {
       // Forward the request to the Durable Object
       const response = await stub.fetch(request);
       
-      // Inject CORS headers into the response
+      // For WebSocket upgrades, we MUST return the DO response object directly 
+      // to preserve the native upgraded `webSocket` property!
+      if (request.headers.get("Upgrade") === "websocket") {
+        return response;
+      }
+
+      // Inject CORS headers into standard HTTP responses
       const newHeaders = new Headers(response.headers);
       Object.entries(corsHeaders).forEach(([key, value]) => {
         newHeaders.set(key, value);
@@ -120,8 +126,10 @@ export class GameLobby implements DurableObject {
       return new Response("Expected Upgrade: websocket", { status: 426 });
     }
 
-    // Create a new WebSocket client/server pair
-    const [clientSocket, serverSocket] = Object.values(new WebSocketPair());
+    // Create a new WebSocket client/server pair using robust native properties
+    const pair = new WebSocketPair();
+    const clientSocket = pair[0];
+    const serverSocket = pair[1];
 
     // Connect the socket server end to the Durable Object
     await this.handleSession(serverSocket);
