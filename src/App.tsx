@@ -109,25 +109,40 @@ const GlobalChatPanel = ({ messages, onSendMessage }: GlobalChatPanelProps) => {
 };
 
 
+const getSavedMatchmakerUrl = () => {
+  const saved = localStorage.getItem('ibrawls_matchmaker_url');
+  if (saved) return saved;
+
+  const envWsUrl = import.meta.env.VITE_WS_URL;
+  if (envWsUrl) return envWsUrl;
+
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  let host = window.location.host;
+  if (host.includes('localhost') || host.includes('127.0.0.1')) {
+    host = 'ais-pre-tjrfoohpldxg7i2a3ncqfn-194609500028.us-west2.run.app';
+  } else if (host.includes('ibrawlswebapp.pages.dev')) {
+    host = 'ibrawlswebapp.commando501.workers.dev';
+  }
+  return `${protocol}//${host}/ws`;
+};
+
 export default function App() {
   const getWsUrl = () => {
-    const envWsUrl = import.meta.env.VITE_WS_URL;
-    if (envWsUrl) return envWsUrl;
-
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws';
-    let host = window.location.host;
-    if (host.includes('localhost') || host.includes('127.0.0.1')) {
-      host = 'ais-pre-tjrfoohpldxg7i2a3ncqfn-194609500028.us-west2.run.app';
-    }
-    return `${protocol}//${host}`;
+    return getSavedMatchmakerUrl();
   };
 
   const getApiUrl = () => {
     const wsUrl = getWsUrl();
-    return wsUrl.replace(/^ws/, 'http');
+    let apiUrl = wsUrl.replace(/^ws/, 'http');
+    if (apiUrl.endsWith('/ws')) {
+      apiUrl = apiUrl.slice(0, -3);
+    }
+    return apiUrl;
   };
 
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
+  const [matchmakerUrl, setMatchmakerUrl] = useState<string>(getSavedMatchmakerUrl());
+  const [customUrlInput, setCustomUrlInput] = useState<string>(matchmakerUrl);
   const [isPaused, setIsPaused] = useState<boolean>(false);
   const [debugMode, setDebugMode] = useState<boolean>(false);
   const [isTerminated, setIsTerminated] = useState<boolean>(false);
@@ -1238,6 +1253,65 @@ export default function App() {
                           <p className="text-[9px] text-white/70">{connectionError || 'Connection failed.'}</p>
                         </div>
                       )}
+
+                      {/* Collapsible Advanced Settings Panel */}
+                      <div className="mt-3 border-t border-white/5 pt-3">
+                        <details className="group">
+                          <summary className="flex justify-between items-center text-[9px] text-[#38bdf8] font-bold uppercase tracking-wider cursor-pointer select-none hover:text-white transition-colors">
+                            <span>⚙️ Advanced Settings</span>
+                            <span className="text-[8px] transition-transform group-open:rotate-180 font-sans">▼</span>
+                          </summary>
+                          
+                          <div className="flex flex-col gap-2 mt-2 bg-black/30 p-2 rounded border border-white/5">
+                            <label className="text-[8px] text-white/50 uppercase tracking-widest font-mono">Matchmaker Server URL:</label>
+                            <input
+                              type="text"
+                              value={customUrlInput}
+                              onChange={(e) => setCustomUrlInput(e.target.value)}
+                              placeholder="wss://..."
+                              className="w-full h-8 bg-black/60 border border-white/10 rounded px-2 font-mono text-[10px] tracking-wide text-white focus:border-[#38bdf8] outline-none transition-all"
+                            />
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => {
+                                  let cleanUrl = customUrlInput.trim();
+                                  if (cleanUrl) {
+                                    if (!cleanUrl.startsWith('ws://') && !cleanUrl.startsWith('wss://')) {
+                                      const protocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
+                                      cleanUrl = protocol + cleanUrl;
+                                    }
+                                    localStorage.setItem('ibrawls_matchmaker_url', cleanUrl);
+                                    setMatchmakerUrl(cleanUrl);
+                                    setCustomUrlInput(cleanUrl);
+                                    setConnectionError('Matchmaker updated. Reconnecting...');
+                                    if (menuSocket) {
+                                      menuSocket.close();
+                                    }
+                                  }
+                                }}
+                                className="flex-1 h-7 bg-[#38bdf8] hover:bg-[#38bdf8]/80 text-slate-950 font-sans font-black text-[9px] uppercase tracking-wider rounded cursor-pointer transition-all active:scale-[0.97]"
+                              >
+                                Apply
+                              </button>
+                              <button
+                                onClick={() => {
+                                  localStorage.removeItem('ibrawls_matchmaker_url');
+                                  const defaultUrl = getSavedMatchmakerUrl();
+                                  setMatchmakerUrl(defaultUrl);
+                                  setCustomUrlInput(defaultUrl);
+                                  setConnectionError('Reset to default. Reconnecting...');
+                                  if (menuSocket) {
+                                    menuSocket.close();
+                                  }
+                                }}
+                                className="h-7 px-2.5 bg-white/5 hover:bg-white/10 text-white/60 hover:text-white border border-white/10 rounded text-[9px] font-bold uppercase tracking-wider cursor-pointer transition-all"
+                              >
+                                Reset
+                              </button>
+                            </div>
+                          </div>
+                        </details>
+                      </div>
                     </div>
 
                     {/* Online clients */}
