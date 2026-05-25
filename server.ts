@@ -1,8 +1,25 @@
 import express from "express";
 import path from "path";
 import http from "http";
+import os from "os";
 import { createServer as createViteServer } from "vite";
 import { WebSocketServer, WebSocket } from "ws";
+
+// Helper to resolve the host machine's physical LAN IP address
+function getLocalIpAddress() {
+  const interfaces = os.networkInterfaces();
+  for (const interfaceName in interfaces) {
+    const addresses = interfaces[interfaceName];
+    if (addresses) {
+      for (const address of addresses) {
+        if (address.family === "IPv4" && !address.internal) {
+          return address.address;
+        }
+      }
+    }
+  }
+  return "127.0.0.1";
+}
 
 async function startServer() {
   const app = express();
@@ -14,7 +31,7 @@ async function startServer() {
   // Inverse tracking map to find which key(s) a socket is registered for
   const socketToKeys = new Map<WebSocket, string[]>();
 
-  // API to fetch user's public IP
+  // API to fetch user's public IP & internal LAN IP
   app.get("/api/my-ip", (req, res) => {
     const forwarded = req.headers['x-forwarded-for'];
     let ip = typeof forwarded === 'string' ? forwarded.split(',')[0].trim() : req.socket.remoteAddress;
@@ -24,7 +41,10 @@ async function startServer() {
       ip = '127.0.0.1';
     }
     
-    res.json({ ip });
+    res.json({ 
+      ip,
+      lanIp: getLocalIpAddress()
+    });
   });
 
   // Attach WebSocket Server
@@ -39,9 +59,10 @@ async function startServer() {
 
         switch (message.type) {
           case "host": {
-            const { ip, customId } = message;
+            const { ip, lanIp, customId } = message;
             const keysToRegister = [];
             if (ip) keysToRegister.push(ip);
+            if (lanIp && lanIp !== '127.0.0.1') keysToRegister.push(lanIp);
             if (customId) keysToRegister.push(customId);
 
             console.log(`Registering host with keys: ${keysToRegister.join(", ")}`);
@@ -71,7 +92,17 @@ async function startServer() {
             const { targetIpOrId } = message;
             console.log(`Client attempting to join room matching: ${targetIpOrId}`);
 
-            const room = rooms.get(targetIpOrId);
+            let room = rooms.get(targetIpOrId);
+            
+            // Local network fallback: If target is not found by exact string match,
+            // but this server hosts exactly ONE active room (which always happens on local direct plays),
+            // auto-fallback to that single lobby.
+            if (!room && rooms.size === 1) {
+              const singleKey = Array.from(rooms.keys())[0];
+              room = rooms.get(singleKey);
+              console.log(`Fallback: Lobby lookup under "${targetIpOrId}" not found. Auto-paired with active lobby (key: ${singleKey})`);
+            }
+
             if (!room) {
               ws.send(JSON.stringify({ type: "error", message: `Match not found for: ${targetIpOrId}` }));
               return;

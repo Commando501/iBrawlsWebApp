@@ -25,6 +25,7 @@ export default function App() {
   const [multiplayerRole, setMultiplayerRole] = useState<'host' | 'client' | null>(null);
   const [multiplayerSocket, setMultiplayerSocket] = useState<WebSocket | null>(null);
   const [userIp, setUserIp] = useState<string>('127.0.0.1');
+  const [lanIp, setLanIp] = useState<string>('127.0.0.1');
   const [hostIdCode, setHostIdCode] = useState<string>('');
   const [joinIpOrId, setJoinIpOrId] = useState<string>('');
   const [connectionStatus, setConnectionStatus] = useState<'idle' | 'fetching_ip' | 'hosting' | 'connecting' | 'connected' | 'error'>('idle');
@@ -189,11 +190,13 @@ export default function App() {
       .then(res => res.json())
       .then(data => {
         setUserIp(data.ip || '127.0.0.1');
+        setLanIp(data.lanIp || '127.0.0.1');
         setConnectionStatus('idle');
       })
       .catch(err => {
         console.error('Error fetching IP:', err);
         setUserIp('127.0.0.1');
+        setLanIp('127.0.0.1');
         setConnectionStatus('idle');
       });
   }, []);
@@ -211,6 +214,7 @@ export default function App() {
       ws.send(JSON.stringify({
         type: 'host',
         ip: userIp,
+        lanIp: lanIp,
         customId: hostIdCode
       }));
     };
@@ -265,8 +269,25 @@ export default function App() {
     setConnectionError('');
     setConnectionStatus('connecting');
 
+    const cleanTarget = target.trim().replace(/^(hw|http|https|ws|wss):\/\//i, '');
+    const isDirectAddress = cleanTarget.includes('.') || cleanTarget.includes(':') || isNaN(Number(cleanTarget));
+
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}`;
+    let wsUrl = '';
+
+    if (isDirectAddress) {
+      // Direct LAN IP connection
+      let hostWithPort = cleanTarget;
+      if (!hostWithPort.includes(':')) {
+        hostWithPort = `${hostWithPort}:3000`;
+      }
+      wsUrl = `${protocol}//${hostWithPort}`;
+    } else {
+      // Centralized matchmaking Room Code connection
+      wsUrl = `${protocol}//${window.location.host}`;
+    }
+
+    console.log('WS Join connection target URL resolved to:', wsUrl);
     const ws = new WebSocket(wsUrl);
 
     ws.onopen = () => {
@@ -539,16 +560,22 @@ export default function App() {
                       <p className="text-[10px] text-[#38bdf8] font-bold uppercase tracking-wider mb-2"> Your Credentials</p>
                       <div className="flex flex-col gap-1.5 font-mono text-xs">
                         <div className="flex justify-between items-center bg-black/40 px-2.5 py-1.5 rounded border border-white/5">
-                          <span className="text-white/45 uppercase text-[9px] font-bold">Host IP:</span>
-                          <span className="text-[#38bdf8] font-black">{userIp === '127.0.0.1' ? 'Local Host (127.0.0.1)' : userIp}</span>
+                          <span className="text-white/45 uppercase text-[9px] font-bold">Web/Host IP:</span>
+                          <span className="text-[#38bdf8] font-black">{userIp === '127.0.0.1' ? '127.0.0.1' : userIp}</span>
                         </div>
+                        {lanIp && lanIp !== '127.0.0.1' && (
+                          <div className="flex justify-between items-center bg-emerald-500/10 px-2.5 py-1.5 rounded border border-emerald-500/10">
+                            <span className="text-emerald-400 uppercase text-[9px] font-bold">LAN Network IP:</span>
+                            <span className="text-emerald-400 font-extrabold">{lanIp}</span>
+                          </div>
+                        )}
                         <div className="flex justify-between items-center bg-black/40 px-2.5 py-1.5 rounded border border-white/5">
                           <span className="text-white/45 uppercase text-[9px] font-bold">Room Code:</span>
                           <span className="text-amber-400 font-black tracking-widest">{hostIdCode}</span>
                         </div>
                       </div>
                       <p className="text-[10px] text-white/40 mt-2 italic leading-tight">
-                        Give this IP or Room Code to other players so they can connect directly to your game scene.
+                        To connect on the same home network/Wi-Fi, share your <strong>LAN Network IP</strong> (e.g., <code>{lanIp !== '127.0.0.1' ? lanIp : '192.168.1.X'}</code>). For sandbox plays, use the Room Code!
                       </p>
                     </div>
 
