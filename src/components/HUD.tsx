@@ -259,6 +259,12 @@ export const HUD: React.FC<HUDProps> = ({
           <div className="bg-white/10 backdrop-blur-md border border-white/20 px-4 py-2 rounded-lg text-right">
             <p className="text-[10px] uppercase tracking-widest text-emerald-400 font-bold">Map Status</p>
             <p className="text-lg font-bold tracking-tight uppercase font-display">Circular Arena</p>
+            {stats.isMultiplayer && (
+              <p className="text-[10.5px] font-mono mt-1 text-sky-400 font-extrabold flex items-center justify-end gap-1.5">
+                <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse" />
+                PING: {stats.ping !== undefined ? `${stats.ping}ms` : 'calc...'}
+              </p>
+            )}
           </div>
           
           {/* Pause Button (Interactive pointer-events toggled!) */}

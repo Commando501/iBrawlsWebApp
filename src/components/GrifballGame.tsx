@@ -683,6 +683,32 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
     // Setup input listeners
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Handle Enter key for multiplayer chat activation
+      if (e.key === 'Enter') {
+        const chatInput = document.getElementById('chat-input-field') as HTMLInputElement | null;
+        if (chatInput) {
+          if (document.activeElement === chatInput) {
+            // Already active, click the send button to broadcast
+            const sendBtn = document.getElementById('chat-send-btn');
+            if (sendBtn) sendBtn.click();
+          } else {
+            // Remove pointer-lock with backward-compatibility safety
+            if (document.exitPointerLock) {
+              document.exitPointerLock();
+            }
+            chatInput.focus();
+            e.preventDefault();
+            e.stopPropagation();
+          }
+          return;
+        }
+      }
+
+      // Block any further action if they are focused in the input element typing
+      if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') {
+        return;
+      }
+
       const key = e.key.toLowerCase();
       keysPressed.current[key] = true;
 
@@ -756,6 +782,9 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     };
 
     const handleKeyUp = (e: KeyboardEvent) => {
+      if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') {
+        return;
+      }
       const key = e.key.toLowerCase();
       keysPressed.current[key] = false;
 

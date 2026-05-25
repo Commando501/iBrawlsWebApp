@@ -56,14 +56,85 @@ async function startServer() {
   // Attach WebSocket Server
   const wss = new WebSocketServer({ server });
 
+  // Broadcast updated presence count and clients list to everyone
+  function updatePresence() {
+    const onlineCount = wss.clients.size;
+    const clientIds = Array.from(wss.clients)
+      .map((client: any) => client.id)
+      .filter(Boolean);
+    const presencePayload = JSON.stringify({
+      type: "presence",
+      onlineCount,
+      clients: clientIds
+    });
+    wss.clients.forEach(client => {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(presencePayload);
+      }
+    });
+  }
+
   wss.on("connection", (ws, req) => {
-    console.log("New WebSocket connection received.");
+    const wsId = Math.random().toString(36).substring(2, 9);
+    (ws as any).id = wsId;
+    console.log(`New WebSocket connection received. Assigned Socket ID: ${wsId}`);
+
+    // Send immediate welcome greeting carrying the socket's client identity
+    ws.send(JSON.stringify({ type: "welcome", clientId: wsId }));
+    
+    // Broadcast active roster update to everyone connected
+    updatePresence();
 
     ws.on("message", (rawMessage) => {
       try {
         const message = JSON.parse(rawMessage.toString());
 
         switch (message.type) {
+          case "ping": {
+            const { timestamp } = message;
+            ws.send(JSON.stringify({ type: "pong", timestamp }));
+            break;
+          }
+
+          case "send_invite": {
+            const { targetId, roomCode } = message;
+            console.log(`Direct invite from ${wsId} to ${targetId} referencing room ${roomCode}`);
+            let destSocket: WebSocket | null = null;
+            for (const client of wss.clients) {
+              if ((client as any).id === targetId) {
+                destSocket = client;
+                break;
+              }
+            }
+            if (destSocket && destSocket.readyState === WebSocket.OPEN) {
+              destSocket.send(JSON.stringify({
+                type: "receive_invite",
+                fromId: wsId,
+                roomCode
+              }));
+            }
+            break;
+          }
+
+          case "decline_invite": {
+            const { targetId } = message;
+            console.log(`Direct invite declined from ${wsId} targeting original host ${targetId}`);
+            let destSocket: WebSocket | null = null;
+            for (const client of wss.clients) {
+              if ((client as any).id === targetId) {
+                destSocket = client;
+                break;
+              }
+            }
+            if (destSocket && destSocket.readyState === WebSocket.OPEN) {
+              destSocket.send(JSON.stringify({
+                type: "invite_declined",
+                fromId: wsId
+              }));
+            }
+            break;
+          }
+
           case "host": {
             const { ip, lanIp, customId } = message;
             const keysToRegister = [];
@@ -117,7 +188,7 @@ async function startServer() {
               return;
             }
 
-            if (room.client && room.client !== ws) {
+            if (room.client && room.client !== ws && (room.client as any).id !== wsId) {
               ws.send(JSON.stringify({ type: "error", message: `Match is already full (2/2 players present).` }));
               return;
             }
@@ -134,10 +205,21 @@ async function startServer() {
 
           case "sync": {
             // Forward gameplay simulation sync data directly to the opposite party in the same Room
-            const room = socketToRoom.get(ws);
+            let room = socketToRoom.get(ws);
+            if (!room) {
+              // Fallback socket-to-room lookup to heal connections
+              for (const r of Array.from(rooms.values())) {
+                if (r.host === ws || r.client === ws || (r.host && (r.host as any).id === wsId) || (r.client && (r.client as any).id === wsId)) {
+                  room = r;
+                  socketToRoom.set(ws, r);
+                  break;
+                }
+              }
+            }
             if (!room) return;
 
-            const target = (ws === room.host) ? room.client : room.host;
+            const isHost = (ws === room.host || (ws as any).id === (room.host as any).id);
+            const target = isHost ? room.client : room.host;
             if (target && target.readyState === WebSocket.OPEN) {
               target.send(rawMessage.toString());
             }
@@ -173,6 +255,9 @@ async function startServer() {
         if (room.host) socketToRoom.delete(room.host);
         if (room.client) socketToRoom.delete(room.client);
       }
+
+      // Update active roster information for all surviving connections
+      updatePresence();
     });
 
     ws.on("error", (err) => {

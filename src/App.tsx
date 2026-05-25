@@ -9,6 +9,7 @@ import { GrifballGame } from './components/GrifballGame';
 import { HUD } from './components/HUD';
 import { sfx } from './components/AudioEngine';
 import { RotateCcw, Check } from 'lucide-react';
+import { ChatOverlay, ChatMessage } from './components/ChatOverlay';
 
 export default function App() {
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
@@ -18,6 +19,9 @@ export default function App() {
   const [showAdminPanel, setShowAdminPanel] = useState<boolean>(false);
   const [showUiAdjustment, setShowUiAdjustment] = useState<boolean>(false);
   const [showLightingMenu, setShowLightingMenu] = useState<boolean>(false);
+
+  // Chat message state
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
 
   // Multiplayer States
   const [connectionMode, setConnectionMode] = useState<'relay' | 'local'>('relay');
@@ -31,6 +35,15 @@ export default function App() {
   const [joinIpOrId, setJoinIpOrId] = useState<string>('');
   const [connectionStatus, setConnectionStatus] = useState<'idle' | 'fetching_ip' | 'hosting' | 'connecting' | 'connected' | 'error'>('idle');
   const [connectionError, setConnectionError] = useState<string>('');
+
+  // Persisting network metadata and lobby invitation parameters
+  const [menuSocket, setMenuSocket] = useState<WebSocket | null>(null);
+  const [clientId, setClientId] = useState<string>('');
+  const [onlineCount, setOnlineCount] = useState<number>(0);
+  const [onlineClients, setOnlineClients] = useState<string[]>([]);
+  const [activeInvite, setActiveInvite] = useState<{ fromId: string; roomCode: string } | null>(null);
+  const [inviteNotifications, setInviteNotifications] = useState<string[]>([]);
+  const [ping, setPing] = useState<number | undefined>(undefined);
 
   // Default positions for customizable HUD items (percentages of viewport)
   const DEFAULT_UI_POSITIONS: UiElementPos[] = [
@@ -238,9 +251,182 @@ export default function App() {
       });
   }, []);
 
+  // Dedicated background central server connection for counting players, measuring ping, and carrying match invitations
+  useEffect(() => {
+    let ws: WebSocket | null = null;
+    let reconnectTimeout: any = null;
+    let pingInterval: any = null;
+    let isDestroyed = false;
+
+    const getWsUrl = () => {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws';
+      let host = window.location.host;
+      if (host.includes('localhost') || host.includes('127.0.0.1')) {
+        host = 'ais-pre-tjrfoohpldxg7i2a3ncqfn-194609500028.us-west2.run.app';
+      }
+      return `${protocol}//${host}`;
+    };
+
+    function connect() {
+      if (isDestroyed) return;
+      
+      const wsUrl = getWsUrl();
+      console.log('Connecting persistent lobby socket to:', wsUrl);
+      ws = new WebSocket(wsUrl);
+
+      ws.onopen = () => {
+        console.log('Lobby network established.');
+        if (isDestroyed) {
+          ws?.close();
+          return;
+        }
+        setMenuSocket(ws);
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          
+          if (data.type === 'welcome') {
+            setClientId(data.clientId);
+          } else if (data.type === 'presence') {
+            setOnlineCount(data.onlineCount || 0);
+            // Capture list of online client IDs (excluding this browser's self)
+            const others = (data.clients || []).filter((id: string) => id !== data.clientId && id !== clientId);
+            setOnlineClients(others);
+          } else if (data.type === 'pong') {
+            const calculatedPing = Date.now() - data.timestamp;
+            setPing(calculatedPing);
+          } else if (data.type === 'receive_invite') {
+            setActiveInvite({
+              fromId: data.fromId,
+              roomCode: data.roomCode
+            });
+            sfx.playRespawn(); // Custom prompt trigger sound
+          } else if (data.type === 'invite_declined') {
+            const declString = `Client ${data.fromId} declined your match invite.`;
+            setInviteNotifications(prev => [...prev, declString]);
+            setTimeout(() => {
+              setInviteNotifications(prev => prev.filter(n => n !== declString));
+            }, 5000);
+          }
+        } catch (e) {
+          console.error('Lobby network parsing error:', e);
+        }
+      };
+
+      ws.onclose = () => {
+        setMenuSocket(null);
+        if (!isDestroyed) {
+          reconnectTimeout = setTimeout(connect, 2000);
+        }
+      };
+
+      ws.onerror = (err) => {
+        ws?.close();
+      };
+    }
+
+    connect();
+
+    // Heartbeat to measure RTT latency
+    pingInterval = setInterval(() => {
+      const activeSock = (multiplayerSocket && multiplayerSocket.readyState === WebSocket.OPEN) 
+        ? multiplayerSocket 
+        : (ws && ws.readyState === WebSocket.OPEN) ? ws : null;
+      
+      if (activeSock && activeSock.readyState === WebSocket.OPEN) {
+        activeSock.send(JSON.stringify({
+          type: 'ping',
+          timestamp: Date.now()
+        }));
+      }
+    }, 2000);
+
+    return () => {
+      isDestroyed = true;
+      if (ws) ws.close();
+      clearTimeout(reconnectTimeout);
+      clearInterval(pingInterval);
+    };
+  }, [multiplayerSocket, clientId]);
+
+  // Sync the real-time calculated ping to HUD stats immediately
+  useEffect(() => {
+    setCurrentStats(prev => ({
+      ...prev,
+      ping
+    }));
+  }, [ping]);
+
+  // Dedicated in-game chat message sync listener
+  useEffect(() => {
+    if (!multiplayerSocket) return;
+
+    const handleChatMessage = (event: MessageEvent) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.type === 'sync' && data.action === 'chat') {
+          setChatMessages(prev => {
+            if (prev.some(m => m.id === data.id)) return prev;
+            return [...prev, {
+              id: data.id,
+              sender: data.sender || 'Opponent',
+              text: data.text || '',
+              timestamp: data.timestamp || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+              role: data.role || 'client',
+              isLocal: false
+            }];
+          });
+        }
+      } catch (err) {
+        // Safe catch
+      }
+    };
+
+    multiplayerSocket.addEventListener('message', handleChatMessage);
+    return () => {
+      multiplayerSocket.removeEventListener('message', handleChatMessage);
+    };
+  }, [multiplayerSocket]);
+
+  const sendChatMessage = (text: string) => {
+    if (!multiplayerSocket || multiplayerSocket.readyState !== WebSocket.OPEN) return;
+    
+    const senderName = multiplayerRole === 'host' ? 'Blue (Host)' : 'Red (Guest)';
+    const msgId = Math.random().toString(36).substring(2, 9);
+    const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    
+    const packet = {
+      type: 'sync',
+      action: 'chat',
+      id: msgId,
+      sender: senderName,
+      text: text,
+      timestamp: timestamp,
+      role: multiplayerRole
+    };
+    
+    multiplayerSocket.send(JSON.stringify(packet));
+    
+    // Append locally immediately
+    setChatMessages(prev => [
+      ...prev,
+      {
+        id: msgId,
+        sender: `${senderName} (You)`,
+        text: text,
+        timestamp: timestamp,
+        role: multiplayerRole!,
+        isLocal: true
+      }
+    ]);
+  };
+
   const handleHostGame = () => {
     setConnectionError('');
     setConnectionStatus('hosting');
+    setChatMessages([]);
 
     const protocol = (window.location.protocol === 'https:' || connectionMode === 'relay') ? 'wss:' : 'ws:';
     let host = window.location.host;
@@ -263,13 +449,15 @@ export default function App() {
       }));
     };
 
-    ws.onmessage = (event) => {
+    const handleHostMessage = (event: MessageEvent) => {
       try {
         const data = JSON.parse(event.data);
         if (data.type === 'hosted') {
           console.log('Successfully hosted lobby inside room of keys:', data.keys);
         } else if (data.type === 'connected') {
-          // Client successfully connected, launch match!
+          // Unsubscribe to prevent packet intercept or duplication
+          ws.removeEventListener('message', handleHostMessage);
+
           setMultiplayerSocket(ws);
           setIsMultiplayer(true);
           setMultiplayerRole('host');
@@ -292,6 +480,8 @@ export default function App() {
       }
     };
 
+    ws.addEventListener('message', handleHostMessage);
+
     ws.onclose = () => {
       console.log('Host socket disconnected.');
       setConnectionStatus('idle');
@@ -312,6 +502,7 @@ export default function App() {
     }
     setConnectionError('');
     setConnectionStatus('connecting');
+    setChatMessages([]);
 
     const cleanTarget = target.trim().replace(/^(hw|http|https|ws|wss):\/\//i, '');
     const isDirectAddress = cleanTarget.includes('.') || cleanTarget.includes(':') || isNaN(Number(cleanTarget));
@@ -351,10 +542,13 @@ export default function App() {
       }));
     };
 
-    ws.onmessage = (event) => {
+    const handleJoinMessage = (event: MessageEvent) => {
       try {
         const data = JSON.parse(event.data);
         if (data.type === 'connected') {
+          // Unsubscribe to prevent packet intercept or duplication
+          ws.removeEventListener('message', handleJoinMessage);
+
           setMultiplayerSocket(ws);
           setIsMultiplayer(true);
           setMultiplayerRole('client');
@@ -376,6 +570,8 @@ export default function App() {
         console.error(e);
       }
     };
+
+    ws.addEventListener('message', handleJoinMessage);
 
     ws.onclose = () => {
       console.log('Guest join socket disconnected.');
@@ -528,37 +724,55 @@ export default function App() {
         />
       )}
 
+      {/* IN-GAME MULTIPLAYER CHAT PANEL */}
+      {isPlaying && isMultiplayer && (
+        <ChatOverlay 
+          messages={chatMessages}
+          onSendMessage={sendChatMessage}
+          isMultiplayer={isMultiplayer}
+          multiplayerRole={multiplayerRole}
+        />
+      )}
+
       {/* START MENU CONTROLLER SCREEN */}
       {!isPlaying && !isTerminated && (
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-slate-950/85 backdrop-blur-xl p-4 md:p-8 transition-all duration-300 overflow-y-auto">
           <div className="w-full max-w-4xl bg-slate-900/40 border border-white/10 rounded-2xl p-6 md:p-10 backdrop-blur-md flex flex-col md:grid md:grid-cols-12 gap-8 shadow-2xl select-none max-h-[95vh] overflow-y-auto">
             
             {/* TAB SELECTOR HEADER - FULL SPAN */}
-            <div className="col-span-12 flex justify-center md:justify-start gap-4 border-b border-white/10 pb-4 mb-2">
-              <button
-                onClick={() => setActiveMenuTab('single')}
-                className={`pb-2 px-4 font-bold text-xs uppercase tracking-widest border-b-2 transition-all cursor-pointer ${
-                  activeMenuTab === 'single'
-                    ? 'border-blue-500 text-white shadow-[inset_0_-8px_8px_-8px_rgba(56,189,248,0.3)]'
-                    : 'border-transparent text-white/40 hover:text-white/70'
-                }`}
-              >
-                🎮 Training Sandbox
-              </button>
-              <button
-                onClick={() => setActiveMenuTab('multi')}
-                className={`pb-2 px-4 font-bold text-xs uppercase tracking-widest border-b-2 transition-all cursor-pointer ${
-                  activeMenuTab === 'multi'
-                    ? 'border-[#38bdf8] text-white shadow-[inset_0_-8px_8px_-8px_rgba(56,189,248,0.3)]'
-                    : 'border-transparent text-white/40 hover:text-white/70'
-                }`}
-              >
-                📡 Direct IP Multiplayer (P2P)
-              </button>
+            <div className="col-span-12 flex flex-col sm:flex-row justify-between items-center gap-4 border-b border-white/10 pb-4 mb-2">
+              <div className="flex gap-4">
+                <button
+                  onClick={() => setActiveMenuTab('single')}
+                  className={`pb-2 px-4 font-bold text-xs uppercase tracking-widest border-b-2 transition-all cursor-pointer ${
+                    activeMenuTab === 'single'
+                      ? 'border-blue-500 text-white shadow-[inset_0_-8px_8px_-8px_rgba(56,189,248,0.3)]'
+                      : 'border-transparent text-white/40 hover:text-white/70'
+                  }`}
+                >
+                  🎮 Training Sandbox
+                </button>
+                <button
+                  onClick={() => setActiveMenuTab('multi')}
+                  className={`pb-2 px-4 font-bold text-xs uppercase tracking-widest border-b-2 transition-all cursor-pointer ${
+                    activeMenuTab === 'multi'
+                      ? 'border-[#38bdf8] text-white shadow-[inset_0_-8px_8px_-8px_rgba(56,189,248,0.3)]'
+                      : 'border-transparent text-white/40 hover:text-white/70'
+                  }`}
+                >
+                  📡 Direct IP Multiplayer (P2P)
+                </button>
+              </div>
+
+              {/* Online Player Count */}
+              <div className="flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/30 px-3.5 py-1.5 rounded-full text-xs font-mono font-bold text-emerald-400">
+                <span className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse" />
+                ONLINE PLAYERS: {onlineCount || 1}
+              </div>
             </div>
 
             {/* COLUMN 1: BRANDING & PRIMARY ACTIONS (col-span-5) */}
-            <div className="md:col-span-12 lg:col-span-5 flex flex-col justify-center text-center md:text-left h-full">
+            <div className="md:col-span-12 lg:col-span-5 flex flex-col justify-start text-center md:text-left h-full lg:min-h-[520px]">
               {/* Header / Title block */}
               <div className="mb-6">
                 <h1 className="text-4xl md:text-5xl lg:text-6xl font-sans font-black tracking-tighter italic text-transparent bg-clip-text bg-gradient-to-b from-white to-slate-500 uppercase select-none">
@@ -754,6 +968,64 @@ export default function App() {
                         <p className="text-[10px] text-white/70">{connectionError || 'Connection could not be established.'}</p>
                       </div>
                     )}
+
+                    {/* List of Connected Clients */}
+                    <div className="bg-slate-950/40 border border-white/10 rounded-lg p-3.5 mt-2 flex flex-col gap-2 h-[190px]">
+                      <div className="flex justify-between items-center pb-2 border-b border-white/5 shrink-0">
+                        <p className="text-[10px] text-[#38bdf8] font-black uppercase tracking-wider flex items-center gap-1.5">
+                          <span className="w-1 px-1 h-2.5 bg-[#38bdf8] inline-block rounded-sm" />
+                          Online Clients ({onlineClients.length})
+                        </p>
+                        {clientId && (
+                          <span className="text-[9px] font-mono text-white/45 bg-white/5 px-2 py-0.5 rounded border border-white/5">
+                            ID: {clientId}
+                          </span>
+                        )}
+                      </div>
+                      
+                      <div className="flex-1 overflow-y-auto min-h-0 flex flex-col gap-2 pt-1 pr-1">
+                        {onlineClients.length === 0 ? (
+                          <p className="text-[10.5px] text-white/45 italic font-medium m-auto text-center py-4">No other players online yet.</p>
+                        ) : (
+                          onlineClients.map(clientTargetId => (
+                            <div key={clientTargetId} className="flex justify-between items-center bg-black/45 px-3 py-2 rounded border border-white/5 text-xs font-mono shrink-0">
+                              <span className="text-white/80 font-semibold truncate max-w-[140px]">
+                                Client {clientTargetId}
+                              </span>
+                              
+                              {connectionStatus === 'hosting' && connectionMode === 'relay' ? (
+                                <button
+                                  onClick={() => {
+                                    if (menuSocket && menuSocket.readyState === WebSocket.OPEN) {
+                                      menuSocket.send(JSON.stringify({
+                                        type: 'send_invite',
+                                        targetId: clientTargetId,
+                                        roomCode: hostIdCode
+                                      }));
+                                      // notify host that invite was sent
+                                      setInviteNotifications(prev => [
+                                        ...prev,
+                                        `Lobby invite dispatched to Client ${clientTargetId}.`
+                                      ]);
+                                      setTimeout(() => {
+                                        setInviteNotifications(prev => prev.filter(n => !n.includes(clientTargetId)));
+                                      }, 5000);
+                                    }
+                                  }}
+                                  className="px-2.5 py-1 bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-[10px] font-sans font-black uppercase tracking-wider text-white rounded cursor-pointer transition-all active:scale-95 border border-sky-400/20"
+                                >
+                                  Invite
+                                </button>
+                              ) : (
+                                <span className="text-[9px] text-[#38bdf8]/40 font-bold uppercase tracking-widest select-none">
+                                  {connectionStatus === 'hosting' ? 'No Relay' : 'Lobby Idle'}
+                                </span>
+                              )}
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
 
                   </div>
                 )}
@@ -1655,6 +1927,67 @@ export default function App() {
               Save & Exit
             </button>
           </div>
+        </div>
+      )}
+
+      {/* DIRECT MULTIPLAYER INVITE POPUP MODAL */}
+      {activeInvite && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/90 backdrop-blur-md p-4 select-none">
+          <div className="w-full max-w-sm bg-slate-900 border border-sky-500/35 rounded-2xl p-6 shadow-2xl text-center flex flex-col gap-5">
+            <div className="flex justify-center flex-col items-center gap-1">
+              <span className="text-[10px] text-[#38bdf8] font-bold uppercase tracking-[0.2em] mb-1">Combat Invitation</span>
+              <div className="w-12 h-12 rounded-full bg-sky-500/10 border border-sky-500/20 flex items-center justify-center text-sky-400 mb-2">
+                <svg className="w-5 h-5 animate-bounce" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                </svg>
+              </div>
+              <h3 className="text-lg font-black tracking-tight text-white uppercase font-display">Match invite received!</h3>
+            </div>
+            
+            <p className="text-xs text-white/70 leading-relaxed">
+              Client <strong className="text-amber-400 font-mono text-sm font-black">{activeInvite.fromId}</strong> has invited you. Do you join?
+            </p>
+            
+            <div className="flex gap-4 mt-2">
+              <button
+                onClick={() => {
+                  const roomToJoin = activeInvite.roomCode;
+                  setActiveInvite(null);
+                  setConnectionMode('relay'); // force relay connection
+                  handleJoinGame(roomToJoin);
+                }}
+                className="flex-1 py-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 active:scale-95 text-xs text-white uppercase font-black tracking-widest transition-all rounded-lg border border-emerald-400/20 shadow-lg cursor-pointer flex items-center justify-center gap-2"
+              >
+                🎮 Yes
+              </button>
+              <button
+                onClick={() => {
+                  if (menuSocket && menuSocket.readyState === WebSocket.OPEN) {
+                    menuSocket.send(JSON.stringify({
+                      type: 'decline_invite',
+                      targetId: activeInvite.fromId
+                    }));
+                  }
+                  setActiveInvite(null);
+                }}
+                className="flex-1 py-3 bg-white/5 hover:bg-white/10 active:scale-95 text-xs text-white/70 hover:text-white uppercase font-black tracking-widest transition-all rounded-lg border border-white/10 cursor-pointer"
+              >
+                ❌ No
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* FLOATING INVITE NOTIFICATIONS DRAWER */}
+      {inviteNotifications.length > 0 && (
+        <div className="fixed top-6 right-6 z-[101] flex flex-col gap-3 pointer-events-none select-none max-w-sm">
+          {inviteNotifications.map((notif, index) => (
+            <div key={index} className="bg-slate-950/95 border border-sky-400/40 rounded-xl px-4 py-3 shadow-xl backdrop-blur-md flex items-center gap-3 pointer-events-auto">
+              <span className="w-2 h-2 rounded-full bg-sky-454 bg-sky-400 animate-ping shrink-0" />
+              <p className="text-[11px] font-bold text-sky-200 mt-0.5">{notif}</p>
+            </div>
+          ))}
         </div>
       )}
     </div>

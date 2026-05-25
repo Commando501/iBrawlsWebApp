@@ -101,6 +101,7 @@ export interface GameStats {
   isMultiplayer?: boolean;
   multiplayerRole?: 'host' | 'client' | null;
   opponentConnected?: boolean;
+  ping?: number;
 }
 
 export interface UiElementPos {
