@@ -20,6 +20,7 @@ export default function App() {
   const [showLightingMenu, setShowLightingMenu] = useState<boolean>(false);
 
   // Multiplayer States
+  const [connectionMode, setConnectionMode] = useState<'relay' | 'local'>('relay');
   const [activeMenuTab, setActiveMenuTab] = useState<'single' | 'multi'>('single');
   const [isMultiplayer, setIsMultiplayer] = useState<boolean>(false);
   const [multiplayerRole, setMultiplayerRole] = useState<'host' | 'client' | null>(null);
@@ -241,8 +242,15 @@ export default function App() {
     setConnectionError('');
     setConnectionStatus('hosting');
 
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}`;
+    const protocol = (window.location.protocol === 'https:' || connectionMode === 'relay') ? 'wss:' : 'ws:';
+    let host = window.location.host;
+    if (connectionMode === 'relay') {
+      if (host.includes('localhost') || host.includes('127.0.0.1')) {
+        host = 'ais-pre-tjrfoohpldxg7i2a3ncqfn-194609500028.us-west2.run.app';
+      }
+    }
+    const wsUrl = `${protocol}//${host}`;
+    console.log('WS Host connection target URL resolved to:', wsUrl);
     const ws = new WebSocket(wsUrl);
 
     ws.onopen = () => {
@@ -308,19 +316,28 @@ export default function App() {
     const cleanTarget = target.trim().replace(/^(hw|http|https|ws|wss):\/\//i, '');
     const isDirectAddress = cleanTarget.includes('.') || cleanTarget.includes(':') || isNaN(Number(cleanTarget));
 
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const protocol = (window.location.protocol === 'https:' || connectionMode === 'relay') ? 'wss:' : 'ws:';
     let wsUrl = '';
 
-    if (isDirectAddress) {
-      // Direct LAN IP connection
-      let hostWithPort = cleanTarget;
-      if (!hostWithPort.includes(':')) {
-        hostWithPort = `${hostWithPort}:3000`;
+    if (connectionMode === 'relay') {
+      let host = window.location.host;
+      if (host.includes('localhost') || host.includes('127.0.0.1')) {
+        host = 'ais-pre-tjrfoohpldxg7i2a3ncqfn-194609500028.us-west2.run.app';
       }
-      wsUrl = `${protocol}//${hostWithPort}`;
+      wsUrl = `${protocol}//${host}`;
     } else {
-      // Centralized matchmaking Room Code connection
-      wsUrl = `${protocol}//${window.location.host}`;
+      if (isDirectAddress) {
+        // Direct LAN IP connection
+        let hostWithPort = cleanTarget;
+        if (!hostWithPort.includes(':')) {
+          hostWithPort = `${hostWithPort}:3000`;
+        }
+        const directProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        wsUrl = `${directProtocol}//${hostWithPort}`;
+      } else {
+        // Centralized matchmaking Room Code connection
+        wsUrl = `${protocol}//${window.location.host}`;
+      }
     }
 
     console.log('WS Join connection target URL resolved to:', wsUrl);
@@ -591,15 +608,48 @@ export default function App() {
                   /* HIGH-TECH P2P DIRECT-IP MATCHMAKER INTERFACE */
                   <div className="w-full flex flex-col gap-4 text-left pointer-events-auto">
                     
+                    {/* CONNECTION MODE SELECTOR */}
+                    <div className="flex bg-black/40 p-1 rounded-lg border border-white/5 gap-1 select-none">
+                      <button
+                        onClick={() => setConnectionMode('relay')}
+                        className={`flex-1 py-2 text-[10px] font-black uppercase tracking-wider rounded transition-all cursor-pointer text-center ${
+                          connectionMode === 'relay'
+                            ? 'bg-gradient-to-r from-sky-600 to-indigo-600 text-white shadow-md'
+                            : 'text-white/40 hover:text-white/70'
+                        }`}
+                      >
+                        🌐 Cloud Relay
+                      </button>
+                      <button
+                        onClick={() => setConnectionMode('local')}
+                        className={`flex-1 py-2 text-[10px] font-black uppercase tracking-wider rounded transition-all cursor-pointer text-center ${
+                          connectionMode === 'local'
+                            ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md'
+                            : 'text-white/40 hover:text-white/70'
+                        }`}
+                      >
+                        📶 Local LAN IP
+                      </button>
+                    </div>
+
                     {/* Your IP Block */}
-                    <div className="bg-white/5 border border-white/10 rounded-lg p-3">
-                      <p className="text-[10px] text-[#38bdf8] font-bold uppercase tracking-wider mb-2"> Your Credentials</p>
-                      <div className="flex flex-col gap-1.5 font-mono text-xs">
-                        <div className="flex justify-between items-center bg-black/40 px-2.5 py-1.5 rounded border border-white/5">
-                          <span className="text-white/45 uppercase text-[9px] font-bold">Web/Host IP:</span>
-                          <span className="text-[#38bdf8] font-black">{userIp === '127.0.0.1' ? '127.0.0.1' : userIp}</span>
-                        </div>
-                        {lanIp && lanIp !== '127.0.0.1' && (
+                    <div className={connectionMode === 'relay' ? "bg-sky-500/5 border border-sky-500/20 rounded-lg p-3" : "bg-white/5 border border-white/10 rounded-lg p-3"}>
+                      <p className="text-[10px] text-[#38bdf8] font-bold uppercase tracking-wider mb-2"> Your Connection Coordinates</p>
+                      <div className="flex flex-col gap-1.5 font-mono text-xs font-semibold">
+                        {connectionMode === 'relay' ? (
+                          <div className="flex justify-between items-center bg-black/40 px-2.5 py-1.5 rounded border border-white/5">
+                            <span className="text-white/45 uppercase text-[9px] font-bold font-sans">Relay Status:</span>
+                            <span className="text-sky-400 font-extrabold flex items-center gap-1.5">
+                              <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse inline-block" /> ONLINE (SECURE)
+                            </span>
+                          </div>
+                        ) : (
+                          <div className="flex justify-between items-center bg-black/40 px-2.5 py-1.5 rounded border border-white/5">
+                            <span className="text-white/45 uppercase text-[9px] font-bold">Web/Host IP:</span>
+                            <span className="text-[#38bdf8] font-black">{userIp === '127.0.0.1' ? '127.0.0.1' : userIp}</span>
+                          </div>
+                        )}
+                        {connectionMode === 'local' && lanIp && lanIp !== '127.0.0.1' && (
                           <div className="flex justify-between items-center bg-emerald-500/10 px-2.5 py-1.5 rounded border border-emerald-500/10">
                             <span className="text-emerald-400 uppercase text-[9px] font-bold">LAN Network IP:</span>
                             <span className="text-emerald-400 font-extrabold">{lanIp}</span>
@@ -610,8 +660,16 @@ export default function App() {
                           <span className="text-amber-400 font-black tracking-widest">{hostIdCode}</span>
                         </div>
                       </div>
-                      <p className="text-[10px] text-white/40 mt-2 italic leading-tight">
-                        To connect on the same home network/Wi-Fi, share your <strong>LAN Network IP</strong> (e.g., <code>{lanIp !== '127.0.0.1' ? lanIp : '192.168.1.X'}</code>). For sandbox plays, use the Room Code!
+                      <p className="text-[10px] text-white/50 mt-2.5 leading-relaxed font-sans">
+                        {connectionMode === 'relay' ? (
+                          <>
+                            📡 <strong>Cloud Relay:</strong> Bypasses restrictive firewalls and cellular CGNAT setups globally. No port-forwarding needed! Enter your partner's <strong>Room Code ({hostIdCode})</strong> below.
+                          </>
+                        ) : (
+                          <>
+                            📶 <strong>Local LAN:</strong> Pure local network. Ensure you're both connected to the same Wi-Fi router and run the game using standard <code>http://localhost:3000</code>.
+                          </>
+                        )}
                       </p>
                     </div>
 
