@@ -19,12 +19,12 @@ interface OnlineClient {
   spaceAvailable?: boolean;
 }
 
-interface LobbyChatPanelProps {
+interface GlobalChatPanelProps {
   messages: ChatMessage[];
   onSendMessage: (text: string) => void;
 }
 
-const LobbyChatPanel = ({ messages, onSendMessage }: LobbyChatPanelProps) => {
+const GlobalChatPanel = ({ messages, onSendMessage }: GlobalChatPanelProps) => {
   const [inputText, setInputText] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -43,21 +43,14 @@ const LobbyChatPanel = ({ messages, onSendMessage }: LobbyChatPanelProps) => {
 
   return (
     <div className="flex-1 flex flex-col justify-between min-h-0">
-      <div className="flex items-center gap-2 mb-2 shrink-0">
-        <span className="w-1.5 h-3 bg-[#38bdf8]" />
-        <h2 className="text-xs uppercase font-bold tracking-[0.25em] text-white">
-          Real-Time Lobby Chat Room
-        </h2>
-      </div>
-
       {/* Message history container */}
       <div 
         ref={scrollRef}
-        className="flex-1 min-h-[220px] max-h-[300px] overflow-y-auto bg-black/45 border border-white/10 rounded-lg p-3.5 flex flex-col gap-2.5 mb-3 scrollbar-thin scrollbar-thumb-white/10 pr-1.5"
+        className="flex-1 min-h-0 overflow-y-auto bg-black/45 border border-white/10 rounded-lg p-3 flex flex-col gap-2 mb-3 scrollbar-thin scrollbar-thumb-white/10 pr-1.5"
       >
         {messages.length === 0 ? (
           <p className="text-[10.5px] font-mono text-white/35 uppercase tracking-widest text-center my-auto italic select-none">
-            📡 No broadcasts active. Type below to ping online combatants.
+            📡 No active broadcast logs. Type below to transmit message.
           </p>
         ) : (
           messages.map((msg) => (
@@ -94,7 +87,7 @@ const LobbyChatPanel = ({ messages, onSendMessage }: LobbyChatPanelProps) => {
           type="text"
           value={inputText}
           onChange={(e) => setInputText(e.target.value)}
-          placeholder="Send coordinates... [Press Enter]"
+          placeholder="Type global message... [Press Enter]"
           className="flex-grow bg-black/50 border border-white/5 rounded px-3 py-2 text-xs text-white placeholder:text-white/30 focus:border-[#38bdf8]/40 outline-none transition-all font-sans"
           maxLength={120}
           autoComplete="off"
@@ -114,6 +107,7 @@ const LobbyChatPanel = ({ messages, onSendMessage }: LobbyChatPanelProps) => {
     </div>
   );
 };
+
 
 export default function App() {
   const getWsUrl = () => {
@@ -144,14 +138,8 @@ export default function App() {
   // Chat message state
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [lobbyChatMessages, setLobbyChatMessages] = useState<ChatMessage[]>([]);
-  const [rightPanelTab, setRightPanelTab] = useState<'manual' | 'chat' | 'customize'>('manual');
-  const [unreadLobbyMessages, setUnreadLobbyMessages] = useState<number>(0);
+  const [rightPanelTab, setRightPanelTab] = useState<'manual' | 'customize'>('manual');
   const [customizerWeapon, setCustomizerWeapon] = useState<'none' | 'hammer' | 'sword'>('none');
-  const rightPanelTabRef = useRef<'manual' | 'chat' | 'customize'>('manual');
-
-  useEffect(() => {
-    rightPanelTabRef.current = rightPanelTab;
-  }, [rightPanelTab]);
 
   // Retrieve saved player hue on startup
   const getSavedPlayerHue = (): number => {
@@ -175,6 +163,7 @@ export default function App() {
   const [joinIpOrId, setJoinIpOrId] = useState<string>('');
   const [connectionStatus, setConnectionStatus] = useState<'idle' | 'fetching_ip' | 'hosting' | 'connecting' | 'connected' | 'error'>('idle');
   const [connectionError, setConnectionError] = useState<string>('');
+  const [quickPlayStatus, setQuickPlayStatus] = useState<'idle' | 'searching' | 'matching'>('idle');
 
   // Persisting network metadata and lobby invitation parameters
   const [menuSocket, setMenuSocket] = useState<WebSocket | null>(null);
@@ -457,9 +446,14 @@ export default function App() {
                 isLocal: data.clientId === clientId
               }];
             });
-            if (rightPanelTabRef.current !== 'chat') {
-              setUnreadLobbyMessages(prev => prev + 1);
-            }
+          } else if (data.type === 'quickplay_queued') {
+            setQuickPlayStatus('searching');
+          } else if (data.type === 'quickplay_host') {
+            setQuickPlayStatus('matching');
+            handleHostGame(data.roomCode);
+          } else if (data.type === 'quickplay_match_found') {
+            setQuickPlayStatus('idle');
+            handleJoinGame(data.roomCode);
           }
         } catch (e) {
           console.error('Lobby network parsing error:', e);
@@ -624,10 +618,15 @@ export default function App() {
     menuSocket.send(JSON.stringify(packet));
   };
 
-  const handleHostGame = () => {
+  const handleHostGame = (overrideCode?: string) => {
     setConnectionError('');
     setConnectionStatus('hosting');
     setChatMessages([]);
+
+    const activeCode = overrideCode || hostIdCode;
+    if (overrideCode) {
+      setHostIdCode(overrideCode);
+    }
 
     const wsUrl = connectionMode === 'relay' ? getWsUrl() : `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}`;
     console.log('WS Host connection target URL resolved to:', wsUrl);
@@ -639,7 +638,7 @@ export default function App() {
         type: 'host',
         ip: userIp,
         lanIp: lanIp,
-        customId: hostIdCode
+        customId: activeCode
       }));
     };
 
@@ -784,6 +783,24 @@ export default function App() {
     setConnectionStatus('idle');
     setConnectionError('');
     setMultiplayerSocket(null);
+    setQuickPlayStatus('idle');
+  };
+
+  const handleQuickPlay = () => {
+    if (!menuSocket || menuSocket.readyState !== WebSocket.OPEN) {
+      setConnectionError('Matchmaker connection offline. Retrying...');
+      return;
+    }
+    setConnectionError('');
+    setQuickPlayStatus('searching');
+    menuSocket.send(JSON.stringify({ type: 'quickplay_join' }));
+  };
+
+  const handleCancelQuickPlay = () => {
+    if (menuSocket && menuSocket.readyState === WebSocket.OPEN) {
+      menuSocket.send(JSON.stringify({ type: 'quickplay_leave' }));
+    }
+    setQuickPlayStatus('idle');
   };
 
   const handleStartGame = () => {
@@ -817,6 +834,7 @@ export default function App() {
     setShowAdminPanel(false);
     setShowUiAdjustment(false);
     setShowLightingMenu(false);
+    setQuickPlayStatus('idle');
   };
 
   const handleResumeGame = () => {
@@ -843,6 +861,7 @@ export default function App() {
     setMultiplayerRole(null);
     setMultiplayerSocket(null);
     setConnectionStatus('idle');
+    setQuickPlayStatus('idle');
     setShowAdminPanel(false);
     setShowUiAdjustment(false);
     setShowLightingMenu(false);
@@ -927,274 +946,318 @@ export default function App() {
 
       {/* START MENU CONTROLLER SCREEN */}
       {!isPlaying && !isTerminated && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-slate-950/85 backdrop-blur-xl p-4 md:p-8 transition-all duration-300 overflow-y-auto">
-          <div className="w-full max-w-4xl bg-slate-900/40 border border-white/10 rounded-2xl p-6 md:p-10 backdrop-blur-md flex flex-col md:grid md:grid-cols-12 gap-8 shadow-2xl select-none max-h-[95vh] overflow-y-auto">
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-slate-950/85 backdrop-blur-xl p-4 lg:p-6 transition-all duration-300 overflow-y-auto">
+          <div className="w-full max-w-6xl bg-slate-900/40 border border-white/10 rounded-2xl p-6 backdrop-blur-md flex flex-col gap-6 shadow-2xl select-none lg:h-[680px] max-h-[95vh] overflow-y-auto lg:overflow-hidden">
             
-            {/* TAB SELECTOR HEADER - FULL SPAN */}
-            <div className="col-span-12 flex flex-col sm:flex-row justify-between items-center gap-4 border-b border-white/10 pb-4 mb-2">
-              <div className="flex gap-4">
+            {/* UNIFIED CARD HEADER */}
+            <div className="flex flex-col sm:flex-row justify-between items-center gap-4 border-b border-white/10 pb-4 shrink-0">
+              {/* Brand Branding Section */}
+              <div className="flex items-center gap-3">
+                <h1 className="text-3xl font-sans font-black tracking-tighter italic text-transparent bg-clip-text bg-gradient-to-b from-white to-slate-400 uppercase select-none">
+                  GRIFPROTO
+                </h1>
+                <span className="text-[#38bdf8] tracking-[0.2em] uppercase text-[9px] font-bold font-display select-none px-2.5 py-0.5 border border-[#38bdf8]/30 rounded bg-[#38bdf8]/5 hidden sm:inline-block">
+                  Voxel Combat Simulation
+                </span>
+              </div>
+
+              {/* Pill Segmented Mode Switcher */}
+              <div className="flex bg-black/40 p-1 rounded-full border border-white/10 gap-1 select-none shrink-0 shadow-[inset_0_2px_4px_rgba(0,0,0,0.4)]">
                 <button
                   onClick={() => setActiveMenuTab('single')}
-                  className={`pb-2 px-4 font-bold text-xs uppercase tracking-widest border-b-2 transition-all cursor-pointer ${
+                  className={`px-4 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wider transition-all duration-200 cursor-pointer ${
                     activeMenuTab === 'single'
-                      ? 'border-blue-500 text-white shadow-[inset_0_-8px_8px_-8px_rgba(56,189,248,0.3)]'
-                      : 'border-transparent text-white/40 hover:text-white/70'
+                      ? 'bg-blue-600 text-white shadow-[0_0_12px_rgba(37,99,235,0.4)]'
+                      : 'text-white/50 hover:text-white/80'
                   }`}
                 >
                   🎮 Training Sandbox
                 </button>
                 <button
                   onClick={() => setActiveMenuTab('multi')}
-                  className={`pb-2 px-4 font-bold text-xs uppercase tracking-widest border-b-2 transition-all cursor-pointer ${
+                  className={`px-4 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wider transition-all duration-200 cursor-pointer ${
                     activeMenuTab === 'multi'
-                      ? 'border-[#38bdf8] text-white shadow-[inset_0_-8px_8px_-8px_rgba(56,189,248,0.3)]'
-                      : 'border-transparent text-white/40 hover:text-white/70'
+                      ? 'bg-[#38bdf8] text-slate-900 shadow-[0_0_12px_rgba(56,189,248,0.4)]'
+                      : 'text-white/50 hover:text-white/80'
                   }`}
                 >
-                  📡 Direct IP Multiplayer (P2P)
+                  📡 Multiplayer (P2P)
                 </button>
               </div>
 
               {/* Online Player Count */}
-              <div className="flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/30 px-3.5 py-1.5 rounded-full text-xs font-mono font-bold text-emerald-400">
-                <span className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse" />
+              <div className="flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/30 px-3.5 py-1.5 rounded-full text-[10px] font-mono font-bold text-emerald-400 shrink-0">
+                <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse" />
                 ONLINE PLAYERS: {onlineCount || 1}
               </div>
             </div>
 
-            {/* COLUMN 1: BRANDING & PRIMARY ACTIONS (col-span-5) */}
-            <div className="md:col-span-12 lg:col-span-5 flex flex-col justify-start text-center md:text-left h-full lg:min-h-[520px]">
-              {/* Header / Title block */}
-              <div className="mb-6">
-                <h1 className="text-4xl md:text-5xl lg:text-6xl font-sans font-black tracking-tighter italic text-transparent bg-clip-text bg-gradient-to-b from-white to-slate-500 uppercase select-none">
-                  GRIFPROTOTYPE
-                </h1>
-                <p className="text-[#38bdf8] tracking-[0.34em] uppercase text-[10px] md:text-xs mt-2 font-bold font-display select-none">
-                  Voxel Combat Simulation
-                </p>
-                <div className="h-[2px] w-12 bg-[#38bdf8] mt-4 mx-auto md:mx-0 opacity-80" />
-              </div>
-
-              {activeMenuTab === 'single' ? (
-                <>
-                  <p className="text-white/60 text-xs md:text-sm leading-relaxed mb-6 md:max-w-xs text-left">
-                    Welcome to the futuristic simulation battlefield. Grab your Grav Hammer and Energy Sword to train against tactical defensive AI bots in responsive first-person combat!
-                  </p>
-                  
-                  {/* Primary Action Button Containers */}
-                  <div className="w-full flex flex-col gap-3.5">
-                    <button 
-                      id="play-game-btn"
-                      onClick={handleStartGame}
-                      className="group relative w-full h-14 bg-white hover:bg-sky-400 transition-all duration-300 flex items-center justify-center overflow-hidden cursor-pointer rounded shadow-2xl border border-white/20 select-none pointer-events-auto"
-                    >
-                      {/* Background hover dynamic animation slide */}
-                      <div className="absolute inset-0 bg-blue-600 translate-x-[-100%] group-hover:translate-x-0 transition-transform duration-300" />
-                      <span className="relative z-10 text-slate-900 font-sans font-black text-sm uppercase tracking-widest group-hover:text-white pointer-events-none flex items-center gap-2">
-                        Start Local Training
-                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
-                        </svg>
-                      </span>
-                    </button>
-                    
-                    <button 
-                      id="close-game-btn"
-                      onClick={handleCloseGame}
-                      className="w-full h-12 bg-white/5 border border-white/10 backdrop-blur-md flex items-center justify-center hover:bg-white/10 hover:border-white/25 active:scale-[0.99] transition-all cursor-pointer rounded pointer-events-auto select-none"
-                    >
-                      <span className="text-white/80 font-sans font-bold text-xs uppercase tracking-widest pointer-events-none">
-                        Close Sandbox
-                      </span>
-                    </button>
-                  </div>
-                </>
-              ) : (
-                  /* HIGH-TECH P2P DIRECT-IP MATCHMAKER INTERFACE */
-                  <div className="w-full flex flex-col gap-4 text-left pointer-events-auto">
-                    
-                    {/* CONNECTION MODE SELECTOR */}
-                    <div className="flex bg-black/40 p-1 rounded-lg border border-white/5 gap-1 select-none">
-                      <button
-                        onClick={() => setConnectionMode('relay')}
-                        className={`flex-1 py-2 text-[10px] font-black uppercase tracking-wider rounded transition-all cursor-pointer text-center ${
-                          connectionMode === 'relay'
-                            ? 'bg-gradient-to-r from-sky-600 to-indigo-600 text-white shadow-md'
-                            : 'text-white/40 hover:text-white/70'
-                        }`}
-                      >
-                        🌐 Cloud Relay
-                      </button>
-                      <button
-                        onClick={() => setConnectionMode('local')}
-                        className={`flex-1 py-2 text-[10px] font-black uppercase tracking-wider rounded transition-all cursor-pointer text-center ${
-                          connectionMode === 'local'
-                            ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md'
-                            : 'text-white/40 hover:text-white/70'
-                        }`}
-                      >
-                        📶 Local LAN IP
-                      </button>
-                    </div>
-
-                    {/* Your IP Block */}
-                    <div className={connectionMode === 'relay' ? "bg-sky-500/5 border border-sky-500/20 rounded-lg p-3" : "bg-white/5 border border-white/10 rounded-lg p-3"}>
-                      <p className="text-[10px] text-[#38bdf8] font-bold uppercase tracking-wider mb-2"> Your Connection Coordinates</p>
-                      <div className="flex flex-col gap-1.5 font-mono text-xs font-semibold">
-                        {connectionMode === 'relay' ? (
-                          <div className="flex justify-between items-center bg-black/40 px-2.5 py-1.5 rounded border border-white/5">
-                            <span className="text-white/45 uppercase text-[9px] font-bold font-sans">Relay Status:</span>
-                            <span className="text-sky-400 font-extrabold flex items-center gap-1.5">
-                              <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse inline-block" /> ONLINE (SECURE)
-                            </span>
-                          </div>
-                        ) : (
-                          <div className="flex justify-between items-center bg-black/40 px-2.5 py-1.5 rounded border border-white/5">
-                            <span className="text-white/45 uppercase text-[9px] font-bold">Web/Host IP:</span>
-                            <span className="text-[#38bdf8] font-black">{userIp === '127.0.0.1' ? '127.0.0.1' : userIp}</span>
-                          </div>
-                        )}
-                        {connectionMode === 'local' && lanIp && lanIp !== '127.0.0.1' && (
-                          <div className="flex justify-between items-center bg-emerald-500/10 px-2.5 py-1.5 rounded border border-emerald-500/10">
-                            <span className="text-emerald-400 uppercase text-[9px] font-bold">LAN Network IP:</span>
-                            <span className="text-emerald-400 font-extrabold">{lanIp}</span>
-                          </div>
-                        )}
-                        <div className="flex justify-between items-center bg-black/40 px-2.5 py-1.5 rounded border border-white/5">
-                          <span className="text-white/45 uppercase text-[9px] font-bold">Room Code:</span>
-                          <span className="text-amber-400 font-black tracking-widest">{hostIdCode}</span>
-                        </div>
+            {/* MAIN 3-COLUMN RESPONSIVE GRID */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 flex-1 min-h-0 overflow-y-auto lg:overflow-hidden">
+              
+              {/* COLUMN 1: GAME SETUP & ACTIONS */}
+              <div className="flex flex-col h-full min-h-0 justify-between">
+                {activeMenuTab === 'single' ? (
+                  <div className="flex flex-col h-full min-h-0 justify-between">
+                    <div className="flex flex-col gap-4">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="w-1.5 h-3 bg-blue-500" />
+                        <h2 className="text-xs uppercase font-bold tracking-[0.25em] text-white">
+                          Training Sandbox Setup
+                        </h2>
                       </div>
-                      <p className="text-[10px] text-white/50 mt-2.5 leading-relaxed font-sans">
-                        {connectionMode === 'relay' ? (
-                          <>
-                            📡 <strong>Cloud Relay:</strong> Bypasses restrictive firewalls and cellular CGNAT setups globally. No port-forwarding needed! Enter your partner's <strong>Room Code ({hostIdCode})</strong> below.
-                          </>
-                        ) : (
-                          <>
-                            📶 <strong>Local LAN:</strong> Pure local network. Ensure you're both connected to the same Wi-Fi router and run the game using standard <code>http://localhost:3000</code>.
-                          </>
-                        )}
+                      <p className="text-white/60 text-xs leading-relaxed bg-white/5 border border-white/5 rounded-lg p-4 leading-normal select-text">
+                        Welcome to the futuristic simulation battlefield. Grab your Grav Hammer and Energy Sword to train against tactical defensive AI bots in responsive first-person combat!
                       </p>
                     </div>
-
-                    {/* MATCHMAKING CONNECTION STATUS */}
-                    {connectionStatus === 'hosting' && (
-                      <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-lg p-3 flex flex-col items-center justify-center text-center gap-1.5 animate-pulse">
-                        <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-[0_0_10px_#10b981]" />
-                        <p className="text-xs font-bold text-emerald-400 uppercase tracking-widest">Lobby Live & Broadcasting</p>
-                        <p className="text-[10px] text-white/60">Awaiting target player to join match...</p>
+                    
+                    {/* Training Actions */}
+                    <div className="flex flex-col gap-3 mt-auto shrink-0 pt-4">
+                      <button 
+                        id="play-game-btn"
+                        onClick={handleStartGame}
+                        className="group relative w-full h-14 bg-white hover:bg-sky-400 transition-all duration-300 flex items-center justify-center overflow-hidden cursor-pointer rounded shadow-2xl border border-white/20 select-none pointer-events-auto"
+                      >
+                        <div className="absolute inset-0 bg-blue-600 translate-x-[-100%] group-hover:translate-x-0 transition-transform duration-300" />
+                        <span className="relative z-10 text-slate-900 font-sans font-black text-xs uppercase tracking-widest group-hover:text-white pointer-events-none flex items-center gap-2">
+                          Start Local Training
+                          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
+                          </svg>
+                        </span>
+                      </button>
+                      
+                      <button 
+                        id="close-game-btn"
+                        onClick={handleCloseGame}
+                        className="w-full h-12 bg-white/5 border border-white/10 backdrop-blur-md flex items-center justify-center hover:bg-white/10 hover:border-white/25 active:scale-[0.99] transition-all cursor-pointer rounded pointer-events-auto select-none"
+                      >
+                        <span className="text-white/80 font-sans font-bold text-xs uppercase tracking-widest pointer-events-none">
+                          Close Sandbox
+                        </span>
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex flex-col h-full min-h-0 justify-between gap-4">
+                    <div className="flex flex-col gap-3 shrink-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="w-1.5 h-3 bg-[#38bdf8]" />
+                        <h2 className="text-xs uppercase font-bold tracking-[0.25em] text-white">
+                          Multiplayer Setup
+                        </h2>
+                      </div>
+                      
+                      {/* CONNECTION MODE SELECTOR */}
+                      <div className="flex bg-black/40 p-1 rounded-lg border border-white/5 gap-1 select-none shadow-[inset_0_1px_3px_rgba(0,0,0,0.3)]">
                         <button
-                          onClick={handleCancelHostOrJoin}
-                          className="mt-2.5 px-4 py-1.5 bg-white/10 hover:bg-white/20 text-[10px] font-bold uppercase tracking-widest text-white border border-white/10 rounded cursor-pointer transition-all"
+                          onClick={() => setConnectionMode('relay')}
+                          className={`flex-1 py-1.5 text-[9px] font-black uppercase tracking-wider rounded transition-all cursor-pointer text-center ${
+                            connectionMode === 'relay'
+                              ? 'bg-gradient-to-r from-sky-600 to-indigo-600 text-white shadow-md'
+                              : 'text-white/40 hover:text-white/70'
+                          }`}
                         >
-                          Cancel Broadcast
+                          🌐 Cloud Relay
+                        </button>
+                        <button
+                          onClick={() => setConnectionMode('local')}
+                          className={`flex-1 py-1.5 text-[9px] font-black uppercase tracking-wider rounded transition-all cursor-pointer text-center ${
+                            connectionMode === 'local'
+                              ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md'
+                              : 'text-white/40 hover:text-white/70'
+                          }`}
+                        >
+                          📶 Local LAN IP
                         </button>
                       </div>
-                    )}
 
-                    {connectionStatus === 'connecting' && (
-                      <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-3 flex flex-col items-center justify-center text-center gap-1.5 animate-pulse">
-                        <span className="w-2.5 h-2.5 rounded-full bg-blue-500 shadow-[0_0_10px_#3b82f6]" />
-                        <p className="text-xs font-bold text-blue-400 uppercase tracking-widest">Connecting Protocol</p>
-                        <p className="text-[10px] text-white/60">Attaching to target host session...</p>
-                        <button
-                          onClick={handleCancelHostOrJoin}
-                          className="mt-2.5 px-4 py-1.5 bg-white/10 hover:bg-white/20 text-[10px] font-bold uppercase tracking-widest text-white border border-white/10 rounded cursor-pointer transition-all"
-                        >
-                          Cancel Connection
-                        </button>
-                      </div>
-                    )}
-
-                    {/* NORMAL CONNECT/HOST ACTION KEYBOARD */}
-                    {(connectionStatus === 'idle' || connectionStatus === 'error' || connectionStatus === 'fetching_ip') && (
-                      <div className="flex flex-col gap-3.5">
-                        {/* Host Event Button */}
-                        <button
-                          onClick={handleHostGame}
-                          className="w-full h-11 bg-white hover:bg-emerald-500 text-slate-900 hover:text-white hover:border-emerald-400 font-sans font-black text-xs uppercase tracking-widest transition-all rounded shadow-lg border border-white/10 cursor-pointer flex items-center justify-center gap-2"
-                        >
-                          🎙️ Host New Match
-                        </button>
-
-                        <div className="flex items-center gap-2 py-0.5">
-                          <hr className="flex-grow border-white/10" />
-                          <span className="text-[9px] text-white/30 uppercase tracking-widest font-mono">OR DIRECT JOIN</span>
-                          <hr className="flex-grow border-white/10" />
+                      {/* Connection coordinates */}
+                      <div className={`p-2.5 rounded-lg border text-[10px] ${connectionMode === 'relay' ? "bg-sky-500/5 border-sky-500/20" : "bg-white/5 border-white/10"}`}>
+                        <p className="text-[9px] text-[#38bdf8] font-bold uppercase tracking-wider mb-1.5">Your Connection Coordinates</p>
+                        <div className="flex flex-col gap-1 font-mono text-[11px] font-semibold">
+                          {connectionMode === 'relay' ? (
+                            <div className="flex justify-between items-center bg-black/40 px-2.5 py-1 rounded border border-white/5">
+                              <span className="text-white/45 uppercase text-[8px] font-bold">Relay Status:</span>
+                              <span className="text-sky-400 font-extrabold flex items-center gap-1.5">
+                                <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse inline-block" /> ONLINE
+                              </span>
+                            </div>
+                          ) : (
+                            <div className="flex justify-between items-center bg-black/40 px-2.5 py-1 rounded border border-white/5">
+                              <span className="text-white/45 uppercase text-[8px] font-bold">Web/Host IP:</span>
+                              <span className="text-[#38bdf8] font-black">{userIp === '127.0.0.1' ? '127.0.0.1' : userIp}</span>
+                            </div>
+                          )}
+                          {connectionMode === 'local' && lanIp && lanIp !== '127.0.0.1' && (
+                            <div className="flex justify-between items-center bg-emerald-500/10 px-2.5 py-1 rounded border border-emerald-500/10">
+                              <span className="text-emerald-400 uppercase text-[8px] font-bold">LAN Network IP:</span>
+                              <span className="text-emerald-400 font-extrabold">{lanIp}</span>
+                            </div>
+                          )}
+                          <div className="flex justify-between items-center bg-black/40 px-2.5 py-1 rounded border border-white/5">
+                            <span className="text-white/45 uppercase text-[8px] font-bold">Room Code:</span>
+                            <span className="text-amber-400 font-black tracking-widest">{hostIdCode}</span>
+                          </div>
                         </div>
+                      </div>
 
-                        {/* Join Direct IP */}
-                        <div className="flex flex-col gap-1.5">
-                          <input
-                            type="text"
-                            value={joinIpOrId}
-                            onChange={(e) => setJoinIpOrId(e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') handleJoinGame(joinIpOrId);
-                            }}
-                            placeholder="Host IP address or Room Code..."
-                            className="w-full h-11 bg-black/60 border border-white/10 rounded px-4 py-1 text-center font-mono text-sm tracking-wide text-[#38bdf8] placeholder:text-white/20 focus:border-[#38bdf8] outline-none transition-all"
-                          />
-                          
+                      {/* Connection States */}
+                      {connectionStatus === 'hosting' && (
+                        <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-lg p-2.5 flex flex-col items-center justify-center text-center gap-1 animate-pulse">
+                          <span className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_10px_#10b981]" />
+                          <p className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest">Lobby Live & Broadcasting</p>
+                          <p className="text-[9px] text-white/60">Awaiting player to join...</p>
                           <button
-                            onClick={() => handleJoinGame(joinIpOrId)}
-                            disabled={!joinIpOrId}
-                            className={`w-full h-11 font-sans font-black text-xs uppercase tracking-widest rounded transition-all border outline-none ${
-                              joinIpOrId 
-                                ? 'bg-[#38bdf8]/15 hover:bg-[#38bdf8]/35 border-[#38bdf8]/50 text-[#38bdf8] cursor-pointer hover:shadow-[0_0_15px_rgba(56,189,248,0.25)]' 
-                                : 'bg-white/5 border-white/5 text-white/20 cursor-not-allowed'
-                            }`}
+                            onClick={handleCancelHostOrJoin}
+                            className="mt-1.5 px-3 py-1 bg-white/10 hover:bg-white/20 text-[9px] font-bold uppercase tracking-widest text-white border border-white/10 rounded cursor-pointer transition-all"
                           >
-                            ⚡ Direct Connect to match
+                            Cancel
                           </button>
                         </div>
-                      </div>
-                    )}
+                      )}
 
-                    {/* error message logging */}
-                    {connectionStatus === 'error' && (
-                      <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-2.5 text-center mt-1">
-                        <p className="text-[10px] text-red-400 font-black uppercase tracking-wider mb-0.5">⚠️ Sync Timeout</p>
-                        <p className="text-[10px] text-white/70">{connectionError || 'Connection could not be established.'}</p>
-                      </div>
-                    )}
+                      {connectionStatus === 'connecting' && (
+                        <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-2.5 flex flex-col items-center justify-center text-center gap-1 animate-pulse">
+                          <span className="w-2 h-2 rounded-full bg-blue-500 shadow-[0_0_10px_#3b82f6]" />
+                          <p className="text-[10px] font-bold text-blue-400 uppercase tracking-widest">Connecting Protocol</p>
+                          <p className="text-[9px] text-white/60">Attaching to host session...</p>
+                          <button
+                            onClick={handleCancelHostOrJoin}
+                            className="mt-1.5 px-3 py-1 bg-white/10 hover:bg-white/20 text-[9px] font-bold uppercase tracking-widest text-white border border-white/10 rounded cursor-pointer transition-all"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      )}
 
-                    {/* List of Connected Clients */}
-                    <div className="bg-slate-950/40 border border-white/10 rounded-lg p-3.5 mt-2 flex flex-col gap-2 h-[190px]">
+                      {/* Quick Play Search State */}
+                      {quickPlayStatus === 'searching' && (
+                        <div className="bg-sky-500/10 border border-sky-500/30 rounded-lg p-4 flex flex-col items-center justify-center text-center gap-3 relative overflow-hidden">
+                          {/* Pulsing radar scanning animation */}
+                          <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
+                            <div className="w-24 h-24 border border-sky-500/20 rounded-full animate-ping absolute" />
+                            <div className="w-16 h-16 border border-sky-500/30 rounded-full animate-pulse absolute" />
+                          </div>
+                          
+                          <span className="text-2xl animate-spin inline-block">📡</span>
+                          <p className="text-xs font-black text-sky-400 uppercase tracking-widest">Searching for Match...</p>
+                          <p className="text-[10px] text-white/60">Scanning open rooms and queuing players</p>
+                          
+                          <button
+                            onClick={handleCancelQuickPlay}
+                            className="z-10 px-4 py-1.5 bg-red-500/25 hover:bg-red-500/40 text-[9px] font-bold uppercase tracking-widest text-red-400 border border-red-500/30 rounded cursor-pointer transition-all active:scale-[0.97]"
+                          >
+                            Cancel Search
+                          </button>
+                        </div>
+                      )}
+
+                      {quickPlayStatus === 'matching' && (
+                        <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-4 flex flex-col items-center justify-center text-center gap-2 animate-pulse">
+                          <span className="text-xl">⚡</span>
+                          <p className="text-xs font-black text-amber-400 uppercase tracking-widest font-bold">Match Found!</p>
+                          <p className="text-[10px] text-white/60">Configuring arena host credentials...</p>
+                        </div>
+                      )}
+
+                      {/* Host/Connect triggers */}
+                      {(connectionStatus === 'idle' || connectionStatus === 'error' || connectionStatus === 'fetching_ip') && quickPlayStatus === 'idle' && (
+                        <div className="flex flex-col gap-2">
+                          <button
+                            onClick={handleQuickPlay}
+                            className="w-full h-12 bg-gradient-to-r from-sky-400 via-indigo-400 to-purple-500 hover:from-sky-500 hover:to-purple-600 text-slate-950 hover:text-white font-sans font-black text-[10px] uppercase tracking-[0.2em] transition-all rounded shadow-lg shadow-sky-500/25 border border-sky-300/30 cursor-pointer flex items-center justify-center gap-2 hover:shadow-indigo-500/40 active:scale-[0.98] select-none"
+                          >
+                            ⚡ Quick Play Matchmaking
+                          </button>
+
+                          <div className="flex items-center gap-1.5 py-0.5">
+                            <hr className="flex-grow border-white/5" />
+                            <span className="text-[8px] text-white/20 uppercase tracking-widest font-mono">OR DIRECT PLAY</span>
+                            <hr className="flex-grow border-white/5" />
+                          </div>
+
+                          <button
+                            onClick={() => handleHostGame()}
+                            className="w-full h-10 bg-white hover:bg-emerald-500 text-slate-900 hover:text-white hover:border-emerald-400 font-sans font-black text-[10px] uppercase tracking-widest transition-all rounded shadow border border-white/10 cursor-pointer flex items-center justify-center gap-1.5"
+                          >
+                            🎙️ Host New Match
+                          </button>
+
+                          <div className="flex items-center gap-1.5 py-0.5">
+                            <hr className="flex-grow border-white/10" />
+                            <span className="text-[8px] text-white/30 uppercase tracking-widest font-mono">OR JOIN ROOM</span>
+                            <hr className="flex-grow border-white/10" />
+                          </div>
+
+                          <div className="flex gap-1.5">
+                            <input
+                              type="text"
+                              value={joinIpOrId}
+                              onChange={(e) => setJoinIpOrId(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') handleJoinGame(joinIpOrId);
+                              }}
+                              placeholder="Room Code or IP..."
+                              className="flex-1 h-10 bg-black/60 border border-white/10 rounded px-3 text-center font-mono text-xs tracking-wide text-[#38bdf8] placeholder:text-white/20 focus:border-[#38bdf8] outline-none transition-all"
+                            />
+                            <button
+                              onClick={() => handleJoinGame(joinIpOrId)}
+                              disabled={!joinIpOrId}
+                              className={`px-3 h-10 font-sans font-black text-[10px] uppercase tracking-widest rounded transition-all border outline-none ${
+                                joinIpOrId 
+                                  ? 'bg-[#38bdf8]/15 hover:bg-[#38bdf8]/35 border-[#38bdf8]/50 text-[#38bdf8] cursor-pointer' 
+                                  : 'bg-white/5 border-white/5 text-white/20 cursor-not-allowed'
+                              }`}
+                            >
+                              Connect
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {connectionStatus === 'error' && (
+                        <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-2 text-center">
+                          <p className="text-[9px] text-red-400 font-black uppercase tracking-wider mb-0.5">⚠️ Sync Timeout</p>
+                          <p className="text-[9px] text-white/70">{connectionError || 'Connection failed.'}</p>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Online clients */}
+                    <div className="bg-slate-950/40 border border-white/10 rounded-lg p-3 flex flex-col gap-2 flex-grow min-h-[140px] overflow-hidden lg:h-[220px]">
                       <div className="flex justify-between items-center pb-2 border-b border-white/5 shrink-0">
-                        <p className="text-[10px] text-[#38bdf8] font-black uppercase tracking-wider flex items-center gap-1.5">
-                          <span className="w-1 px-1 h-2.5 bg-[#38bdf8] inline-block rounded-sm" />
+                        <p className="text-[9px] text-[#38bdf8] font-black uppercase tracking-wider flex items-center gap-1.5">
+                          <span className="w-1 px-0.5 h-2.5 bg-[#38bdf8] inline-block rounded-sm" />
                           Online Clients ({onlineClients.length})
                         </p>
                         {clientId && (
-                          <span className="text-[9px] font-mono text-white/45 bg-white/5 px-2 py-0.5 rounded border border-white/5">
+                          <span className="text-[8px] font-mono text-white/45 bg-white/5 px-2 py-0.5 rounded border border-white/5">
                             ID: {clientId}
                           </span>
                         )}
                       </div>
                       
-                      <div className="flex-1 overflow-y-auto min-h-0 flex flex-col gap-2 pt-1 pr-1">
+                      <div className="flex-1 overflow-y-auto min-h-0 flex flex-col gap-1.5 pr-1">
                         {onlineClients.length === 0 ? (
-                          <p className="text-[10.5px] text-white/45 italic font-medium m-auto text-center py-4">No other players online yet.</p>
+                          <p className="text-[10px] text-white/45 italic font-medium m-auto text-center py-4">No other players online yet.</p>
                         ) : (
                           onlineClients.map(client => (
-                            <div key={client.id} className="flex justify-between items-center bg-black/45 px-3 py-2.5 rounded border border-white/5 text-xs font-mono shrink-0">
+                            <div key={client.id} className="flex justify-between items-center bg-black/45 px-2.5 py-2 rounded border border-white/5 text-[11px] font-mono shrink-0">
                               <div className="flex flex-col gap-0.5 min-w-0">
-                                <span className="text-white/80 font-semibold truncate max-w-[130px]">
+                                <span className="text-white/80 font-semibold truncate max-w-[90px]">
                                   Client {client.id}
                                 </span>
-                                {/* Player state indicator */}
-                                <div className="flex items-center gap-1.5 mt-0.5">
+                                <div className="flex items-center gap-1.5">
                                   {client.state === 'menu' && (
-                                    <span className="text-[9px] text-slate-400/80 font-bold uppercase tracking-wider flex items-center gap-1">
-                                      <span className="w-1.5 h-1.5 rounded-full bg-slate-500" />
+                                    <span className="text-[8px] text-slate-400/80 font-bold uppercase tracking-wider flex items-center gap-1">
+                                      <span className="w-1 h-1 rounded-full bg-slate-500" />
                                       In Menu
                                     </span>
                                   )}
                                   {client.state === 'solo' && (
-                                    <span className="text-[9px] text-amber-400 font-bold uppercase tracking-wider flex items-center gap-1">
-                                      <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                                    <span className="text-[8px] text-amber-400 font-bold uppercase tracking-wider flex items-center gap-1">
+                                      <span className="w-1 h-1 rounded-full bg-amber-500 animate-pulse" />
                                       Solo Training
                                     </span>
                                   )}
@@ -1206,24 +1269,22 @@ export default function App() {
                                             handleJoinGame(client.roomCode);
                                           }
                                         }}
-                                        title="Click to join this player's match"
-                                        className="text-[9px] bg-emerald-500/20 hover:bg-emerald-500/35 border border-emerald-500/40 text-emerald-400 font-bold uppercase tracking-wider px-2 py-0.5 rounded cursor-pointer transition-all flex items-center gap-1 animate-pulse hover:shadow-[0_0_8px_rgba(16,185,129,0.3)] active:scale-95 text-left"
+                                        className="text-[8px] bg-emerald-500/20 hover:bg-emerald-500/35 border border-emerald-500/40 text-emerald-400 font-bold uppercase tracking-wider px-1.5 py-0.5 rounded cursor-pointer transition-all flex items-center gap-1"
                                       >
-                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block animate-ping" />
-                                        Match Open (Join)
+                                        <span className="w-1 h-1 rounded-full bg-emerald-400 inline-block animate-ping" />
+                                        Join
                                       </button>
                                     ) : (
-                                      <span className="text-[9px] text-blue-400 font-bold uppercase tracking-wider flex items-center gap-1">
-                                        <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
-                                        In Match (Full)
+                                      <span className="text-[8px] text-blue-400 font-bold uppercase tracking-wider flex items-center gap-1">
+                                        <span className="w-1 h-1 rounded-full bg-blue-500" />
+                                        In Match
                                       </span>
                                     )
                                   )}
                                 </div>
                               </div>
                               
-                              {/* Actions (Invite button) */}
-                              <div className="flex items-center gap-2 shrink-0">
+                              <div className="flex items-center gap-1 shrink-0">
                                 {connectionStatus === 'hosting' && connectionMode === 'relay' && (
                                   <button
                                     onClick={() => {
@@ -1233,7 +1294,6 @@ export default function App() {
                                           targetId: client.id,
                                           roomCode: hostIdCode
                                         }));
-                                        // notify host that invite was sent
                                         setInviteNotifications(prev => [
                                           ...prev,
                                           `Lobby invite dispatched to Client ${client.id}.`
@@ -1243,7 +1303,7 @@ export default function App() {
                                         }, 5000);
                                       }
                                     }}
-                                    className="px-2 py-1 bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-[10px] font-sans font-black uppercase tracking-wider text-white rounded cursor-pointer transition-all active:scale-95 border border-sky-400/20"
+                                    className="px-2 py-0.5 bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-[9px] font-sans font-black uppercase tracking-wider text-white rounded cursor-pointer transition-all border border-sky-400/20 active:scale-95"
                                   >
                                     Invite
                                   </button>
@@ -1254,302 +1314,270 @@ export default function App() {
                         )}
                       </div>
                     </div>
-
                   </div>
                 )}
-            </div>
-
-            {/* COLUMN 2: FULL COMPREHENSIVE HOTKEY DIRECTORY OR LOBBY CHAT (col-span-7) */}
-            <div className="md:col-span-7 border-t md:border-t-0 md:border-l border-white/10 pt-6 md:pt-0 md:pl-8 flex flex-col min-h-[480px]">
-              {/* Tabs header */}
-              <div className="flex gap-4 border-b border-white/10 pb-3 mb-4 select-none shrink-0 flex-wrap">
-                <button
-                  onClick={() => setRightPanelTab('manual')}
-                  className={`pb-1 font-sans font-bold text-xs uppercase tracking-widest border-b-2 transition-all cursor-pointer flex items-center gap-1.5 ${
-                    rightPanelTab === 'manual'
-                      ? 'border-[#38bdf8] text-white'
-                      : 'border-transparent text-white/40 hover:text-white/70'
-                  }`}
-                >
-                  📖 Combat Manual
-                </button>
-                <button
-                  onClick={() => setRightPanelTab('customize')}
-                  className={`pb-1 font-sans font-bold text-xs uppercase tracking-widest border-b-2 transition-all cursor-pointer flex items-center gap-1.5 ${
-                    rightPanelTab === 'customize'
-                      ? 'border-[#38bdf8] text-white'
-                      : 'border-transparent text-white/40 hover:text-white/70'
-                  }`}
-                >
-                  🎨 Customize Armor
-                </button>
-                <button
-                  onClick={() => {
-                    setRightPanelTab('chat');
-                    setUnreadLobbyMessages(0);
-                  }}
-                  className={`pb-1 font-sans font-bold text-xs uppercase tracking-widest border-b-2 transition-all cursor-pointer flex items-center gap-1.5 ${
-                    rightPanelTab === 'chat'
-                      ? 'border-[#38bdf8] text-white'
-                      : 'border-transparent text-white/40 hover:text-white/70'
-                  }`}
-                >
-                  💬 Lobby Chat
-                  {unreadLobbyMessages > 0 && (
-                    <span className="bg-[#38bdf8] text-slate-950 font-black font-mono text-[9px] px-1.5 py-0.5 rounded-full animate-bounce">
-                      {unreadLobbyMessages}
-                    </span>
-                  )}
-                </button>
               </div>
 
-              {rightPanelTab === 'manual' && (
-                <div className="flex-grow flex flex-col justify-between min-h-0">
-                  <div>
-                    <div className="flex items-center gap-2 mb-4 shrink-0">
-                      <span className="w-1.5 h-3 bg-[#38bdf8]" />
-                      <h2 className="text-xs uppercase font-bold tracking-[0.25em] text-white">
-                        Combat manual & Gameplay Hotkeys
-                      </h2>
-                    </div>
+              {/* COLUMN 2: COMBAT MANUAL & CUSTOMIZER */}
+              <div className="flex flex-col h-full min-h-0 border-t lg:border-t-0 lg:border-l lg:border-r border-white/10 pt-6 lg:pt-0 lg:px-6">
+                {/* Segmented Middle Switcher */}
+                <div className="flex bg-black/40 p-1 rounded-lg border border-white/5 gap-1 select-none shrink-0 mb-4 shadow-[inset_0_1px_3px_rgba(0,0,0,0.3)]">
+                  <button
+                    onClick={() => setRightPanelTab('manual')}
+                    className={`flex-1 py-1.5 text-[10px] font-bold uppercase tracking-wider rounded transition-all cursor-pointer text-center flex items-center justify-center gap-1.5 ${
+                      rightPanelTab === 'manual'
+                        ? 'bg-[#38bdf8] text-slate-900 shadow-md font-bold'
+                        : 'text-white/40 hover:text-white/70'
+                    }`}
+                  >
+                    📖 Combat Manual
+                  </button>
+                  <button
+                    onClick={() => setRightPanelTab('customize')}
+                    className={`flex-1 py-1.5 text-[10px] font-bold uppercase tracking-wider rounded transition-all cursor-pointer text-center flex items-center justify-center gap-1.5 ${
+                      rightPanelTab === 'customize'
+                        ? 'bg-[#38bdf8] text-slate-900 shadow-md font-bold'
+                        : 'text-white/40 hover:text-white/70'
+                    }`}
+                  >
+                    🎨 Customize Armor
+                  </button>
+                </div>
 
-                    <div className="flex flex-col gap-4 font-sans text-xs">
+                {rightPanelTab === 'manual' && (
+                  <div className="flex-grow flex flex-col min-h-0 overflow-y-auto pr-1">
+                    <div className="flex flex-col gap-3 font-sans text-xs">
                       
-                      {/* Category: Movement */}
+                      {/* Arena Navigation */}
                       <div className="bg-white/5 border border-white/5 rounded-lg p-3">
                         <p className="text-[10px] font-bold text-[#38bdf8] uppercase tracking-wider mb-2.5">Arena Navigation</p>
                         <div className="grid grid-cols-2 gap-y-3 gap-x-4 text-white/80">
                           <div className="flex items-center gap-3">
-                            <div className="flex gap-1">
-                              <kbd className="min-w-6 h-6 bg-black/50 border border-white/20 rounded flex items-center justify-center font-mono font-bold text-[10px] shadow-sm select-none text-[#38bdf8]">W</kbd>
-                              <kbd className="min-w-6 h-6 bg-black/50 border border-white/20 rounded flex items-center justify-center font-mono font-bold text-[10px] shadow-sm select-none text-[#38bdf8]">A</kbd>
-                              <kbd className="min-w-6 h-6 bg-black/50 border border-white/20 rounded flex items-center justify-center font-mono font-bold text-[10px] shadow-sm select-none text-[#38bdf8]">S</kbd>
-                              <kbd className="min-w-6 h-6 bg-black/50 border border-white/20 rounded flex items-center justify-center font-mono font-bold text-[10px] shadow-sm select-none text-[#38bdf8]">D</kbd>
+                            <div className="flex gap-0.5">
+                              <kbd className="min-w-5 h-5 bg-black/50 border border-white/20 rounded flex items-center justify-center font-mono font-bold text-[9px] text-[#38bdf8]">W</kbd>
+                              <kbd className="min-w-5 h-5 bg-black/50 border border-white/20 rounded flex items-center justify-center font-mono font-bold text-[9px] text-[#38bdf8]">A</kbd>
+                              <kbd className="min-w-5 h-5 bg-black/50 border border-white/20 rounded flex items-center justify-center font-mono font-bold text-[9px] text-[#38bdf8]">S</kbd>
+                              <kbd className="min-w-5 h-5 bg-black/50 border border-white/20 rounded flex items-center justify-center font-mono font-bold text-[9px] text-[#38bdf8]">D</kbd>
                             </div>
-                            <span className="text-white/60 text-[11px] font-medium">Move Combatant</span>
+                            <span className="text-white/60 text-[10px] font-medium">Move</span>
                           </div>
 
-                          <div className="flex items-center gap-3">
-                            <kbd className="min-w-[4.5rem] h-6 bg-black/50 border border-white/20 rounded flex items-center justify-center font-mono font-bold text-[9px] shadow-sm select-none text-amber-500 uppercase">Space</kbd>
-                            <span className="text-white/60 text-[11px] font-medium">Jump (Normal/Boost)</span>
+                          <div className="flex items-center gap-2">
+                            <kbd className="min-w-[3.5rem] h-5 bg-black/50 border border-white/20 rounded flex items-center justify-center font-mono font-bold text-[8px] text-amber-500 uppercase">Space</kbd>
+                            <span className="text-white/60 text-[10px] font-medium">Jump (Boost)</span>
                           </div>
 
-                          <div className="flex items-center gap-3">
-                            <kbd className="min-w-6 h-6 bg-black/50 border border-white/20 rounded flex items-center justify-center font-mono font-bold text-[10px] shadow-sm select-none text-[#38bdf8]">Q</kbd>
-                            <span className="text-white/60 text-[11px] font-medium">Sonic Dash (Evade)</span>
+                          <div className="flex items-center gap-2">
+                            <kbd className="min-w-5 h-5 bg-black/50 border border-white/20 rounded flex items-center justify-center font-mono font-bold text-[9px] text-[#38bdf8]">Q</kbd>
+                            <span className="text-white/60 text-[10px] font-medium">Sonic Dash</span>
                           </div>
 
-                          <div className="flex items-center gap-3">
-                            <kbd className="min-w-6 h-6 bg-black/50 border border-white/20 rounded flex items-center justify-center font-mono font-bold text-[10px] shadow-sm select-none text-[#38bdf8]">C</kbd>
-                            <span className="text-white/60 text-[11px] font-medium">Crouch (Slide Profile)</span>
+                          <div className="flex items-center gap-2">
+                            <kbd className="min-w-5 h-5 bg-black/50 border border-white/20 rounded flex items-center justify-center font-mono font-bold text-[9px] text-[#38bdf8]">C</kbd>
+                            <span className="text-white/60 text-[10px] font-medium">Crouch / Slide</span>
                           </div>
                         </div>
                       </div>
 
-                      {/* Category: Weaponry */}
+                      {/* Arsenal Control */}
                       <div className="bg-white/5 border border-white/5 rounded-lg p-3">
                         <p className="text-[10px] font-bold text-[#38bdf8] uppercase tracking-wider mb-2.5">Arsenal Control & Swapping</p>
                         <div className="grid grid-cols-2 gap-y-3 gap-x-4 text-white/80">
                           <div className="flex items-center gap-3">
-                            <div className="flex gap-1.5 items-center">
-                              <kbd className="min-w-6 h-6 bg-black/50 border border-white/20 rounded flex items-center justify-center font-mono font-bold text-[10px] shadow-sm text-cyan-400">1</kbd>
-                            </div>
-                            <span className="text-white/60 text-[11px] font-medium">Equip Grav Hammer</span>
+                            <kbd className="min-w-5 h-5 bg-black/50 border border-white/20 rounded flex items-center justify-center font-mono font-bold text-[9px] text-cyan-400">1</kbd>
+                            <span className="text-white/60 text-[10px] font-medium">Grav Hammer</span>
                           </div>
 
                           <div className="flex items-center gap-3">
-                            <div className="flex gap-1.5 items-center">
-                              <kbd className="min-w-6 h-6 bg-black/50 border border-white/20 rounded flex items-center justify-center font-mono font-bold text-[10px] shadow-sm text-purple-400">2</kbd>
-                            </div>
-                            <span className="text-white/60 text-[11px] font-medium">Equip Energy Sword</span>
+                            <kbd className="min-w-5 h-5 bg-black/50 border border-white/20 rounded flex items-center justify-center font-mono font-bold text-[9px] text-purple-400">2</kbd>
+                            <span className="text-white/60 text-[10px] font-medium">Energy Sword</span>
                           </div>
 
                           <div className="flex items-center gap-3 col-span-2 border-t border-white/5 pt-2 mt-1">
-                            <span className="text-amber-400 font-mono text-[9px] uppercase tracking-widest mr-1">Switch:</span>
-                            <span className="text-white/70 text-[11px]">Use <kbd className="bg-black/30 px-1 border border-white/10 rounded font-bold text-[10px]">SCROLL WHEEL</kbd> to quickly cycle weapons anytime</span>
+                            <span className="text-amber-400 font-mono text-[8px] uppercase tracking-widest mr-1">Switch:</span>
+                            <span className="text-white/70 text-[10px]">Use <kbd className="bg-black/30 px-1 border border-white/10 rounded font-bold text-[9px]">SCROLL WHEEL</kbd> to cycle weapons</span>
                           </div>
                         </div>
                       </div>
 
-                      {/* Category: Offensive Actions */}
+                      {/* Combat Techniques */}
                       <div className="bg-white/5 border border-white/5 rounded-lg p-3">
                         <p className="text-[10px] font-bold text-[#38bdf8] uppercase tracking-wider mb-2.5">Combat Techniques</p>
                         <div className="flex flex-col gap-2.5">
                           <div className="flex items-start gap-2.5 text-white/70">
-                            <kbd className="min-w-[2.5rem] h-6 bg-cyan-950/40 border border-cyan-500/30 rounded flex items-center justify-center font-mono font-black text-[9px] shadow-sm text-cyan-400 select-none shrink-0">LMB</kbd>
+                            <kbd className="min-w-[2.2rem] h-5 bg-cyan-950/40 border border-cyan-500/30 rounded flex items-center justify-center font-mono font-black text-[8px] text-cyan-400 select-none shrink-0">LMB</kbd>
                             <div>
-                              <p className="text-[11px] text-white/90 font-bold"><strong className="text-cyan-400">Grav Slam</strong> (With Hammer)</p>
-                              <p className="text-[10px] text-white/55">Blows back the ball, repels hostile bots, and deals massive radial kinetic shockwaves.</p>
+                              <p className="text-[10px] text-white/90 font-bold"><strong className="text-cyan-400">Grav Slam</strong> (With Hammer)</p>
+                              <p className="text-[9px] text-white/55">Repels balls, hosts, bots with radial shockwaves.</p>
                             </div>
                           </div>
 
                           <div className="flex items-start gap-2.5 text-white/70 border-t border-white/5 pt-2">
-                            <kbd className="min-w-[2.5rem] h-6 bg-red-950/40 border border-red-500/30 rounded flex items-center justify-center font-mono font-black text-[9px] shadow-sm text-red-400 select-none shrink-0">LMB</kbd>
+                            <kbd className="min-w-[2.2rem] h-5 bg-red-950/40 border border-red-500/30 rounded flex items-center justify-center font-mono font-black text-[8px] text-red-400 select-none shrink-0">LMB</kbd>
                             <div>
-                              <p className="text-[11px] text-white/90 font-bold"><strong className="text-red-400">Assault Lunge</strong> (With Sword + Red Reticle)</p>
-                              <p className="text-[10px] text-white/55">Dashes directly to targeted enemies instantly with high locking distance velocity.</p>
+                              <p className="text-[10px] text-white/90 font-bold"><strong className="text-red-400">Assault Lunge</strong> (Sword + Red Reticle)</p>
+                              <p className="text-[9px] text-white/55">Dash lock-on instantly with targeted enemies.</p>
                             </div>
                           </div>
 
                           <div className="flex items-start gap-2.5 text-white/70 border-t border-white/5 pt-2">
-                            <kbd className="min-w-[2.5rem] h-6 bg-purple-950/40 border border-purple-500/30 rounded flex items-center justify-center font-mono font-black text-[9px] shadow-sm text-purple-400 select-none shrink-0">RMB</kbd>
+                            <kbd className="min-w-[2.2rem] h-5 bg-purple-950/40 border border-purple-500/30 rounded flex items-center justify-center font-mono font-black text-[8px] text-purple-400 select-none shrink-0">RMB</kbd>
                             <div>
-                              <p className="text-[11px] text-white/90 font-bold"><strong className="text-purple-400">Quick Slash</strong> (With Sword)</p>
-                              <p className="text-[10px] text-white/55">Swipes front arc swiftly for close-quarters counter attacks without lock-on requirements.</p>
+                              <p className="text-[10px] text-white/90 font-bold"><strong className="text-purple-400">Quick Slash</strong> (With Sword)</p>
+                              <p className="text-[9px] text-white/55">Swift front slash for immediate counter attacks.</p>
                             </div>
                           </div>
 
                           {/* Special Combo */}
                           <div className="flex items-center gap-2 border-t border-amber-500/10 bg-amber-500/5 p-2 rounded mt-1">
-                            <span className="text-amber-500 text-[12px] font-bold select-none">🔥 Combo:</span>
-                            <span className="text-white/80 text-[10px]">
-                              <strong>Hammer Jump</strong>: Left Click to swing Hammer, then immediately press <kbd className="bg-black/30 px-1 font-bold rounded">SPACE</kbd> to launch high up!
+                            <span className="text-amber-500 text-[10px] font-bold select-none">Combo:</span>
+                            <span className="text-white/80 text-[9.5px]">
+                              <strong>Hammer Jump</strong>: Left Click then immediately press <kbd className="bg-black/30 px-1 font-bold rounded">SPACE</kbd> to launch high!
                             </span>
                           </div>
                         </div>
                       </div>
 
-                      {/* Category: System */}
-                      <div className="flex items-center justify-between px-3 py-2 border-t border-white/5 mt-1 font-mono text-[10px] text-white/40 shrink-0">
-                        <div className="flex items-center gap-1.5">
-                          <kbd className="min-w-6 h-5 bg-black/60 border border-white/20 rounded flex items-center justify-center font-mono font-bold text-[9px] shadow-sm text-amber-500">ESC</kbd>
-                          <span>PAUSE & LIGHTING SETTINGS</span>
+                      {/* System footer */}
+                      <div className="flex items-center justify-between px-2 py-1.5 border-t border-white/5 mt-1 font-mono text-[9px] text-white/40 shrink-0">
+                        <div className="flex items-center gap-1">
+                          <kbd className="min-w-5 h-4.5 bg-black/60 border border-white/20 rounded flex items-center justify-center font-mono font-bold text-[8px] text-amber-500">ESC</kbd>
+                          <span>SETTINGS</span>
                         </div>
                         <span>VERSION 1.4 PROTOTYPE</span>
                       </div>
 
                     </div>
                   </div>
-                </div>
-              )}
+                )}
 
-              {rightPanelTab === 'customize' && (
-                <div className="flex-grow flex flex-col justify-between min-h-0 bg-slate-950/20 rounded-xl border border-white/5 p-4 md:p-5 select-none">
-                  <div className="flex flex-col gap-4">
-                    {/* Header */}
-                    <div className="flex justify-between items-center pb-2 border-b border-white/5">
-                      <div className="flex items-center gap-2">
-                        <span className="w-1.5 h-3 bg-[#38bdf8]" />
-                        <h2 className="text-xs uppercase font-bold tracking-[0.25em] text-white">
-                          Character Customizer & Armor Hue
-                        </h2>
-                      </div>
-                      <span className="text-[9px] font-mono text-emerald-400 font-extrabold uppercase tracking-widest bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded">
-                        Visualizing 3D
-                      </span>
-                    </div>
-
-                    {/* 3D Model Rotating Preview */}
-                    <CharacterPreview hue={adminSettings.playerHue ?? 200} heldWeapon={customizerWeapon} />
-
-                    {/* Controls Grid */}
-                    <div className="flex flex-col gap-3 font-sans text-xs">
-                      {/* Interactive HSL slider */}
-                      <div className="bg-white/5 border border-white/5 rounded-lg p-3">
-                        <div className="flex justify-between items-center mb-2">
-                          <span className="text-[10px] font-bold text-[#38bdf8] uppercase tracking-wider">Armor Color Hue angle</span>
-                          <span 
-                            className="font-mono text-[10px] font-black uppercase px-2 py-0.5 rounded border shadow"
-                            style={{ 
-                              color: `hsl(${adminSettings.playerHue}, 100%, 65%)`,
-                              backgroundColor: `hsl(${adminSettings.playerHue}, 90%, 12%)`,
-                              borderColor: `hsl(${adminSettings.playerHue}, 50%, 30%)`
-                            }}
-                          >
-                            {adminSettings.playerHue}°
-                          </span>
-                        </div>
-                        <input
-                          type="range"
-                          min="0"
-                          max="360"
-                          value={adminSettings.playerHue ?? 200}
-                          onChange={(e) => {
-                            const newHue = parseInt(e.target.value, 10);
-                            setAdminSettings(prev => ({ ...prev, playerHue: newHue }));
-                            try {
-                              localStorage.setItem('grifball_player_hue', newHue.toString());
-                            } catch (err) {
-                              console.error(err);
-                            }
-                          }}
-                          className="w-full h-2 bg-gradient-to-r from-red-500 via-yellow-500 via-green-500 via-cyan-500 via-blue-500 via-purple-500 to-red-500 rounded-lg appearance-none cursor-pointer outline-none"
-                          style={{ WebkitAppearance: 'none' }}
-                        />
+                {rightPanelTab === 'customize' && (
+                  <div className="flex-grow flex flex-col min-h-0 overflow-y-auto pr-1 justify-between gap-4">
+                    <div className="flex flex-col gap-4">
+                      {/* Rotating 3D character */}
+                      <div className="relative bg-slate-950/30 border border-white/5 rounded-xl p-2 select-none overflow-hidden h-[180px] shrink-0">
+                        <CharacterPreview hue={adminSettings.playerHue ?? 200} heldWeapon={customizerWeapon} />
                       </div>
 
-                      {/* Presets */}
-                      <div className="bg-white/5 border border-white/5 rounded-lg p-3">
-                        <span className="text-[10px] font-bold text-[#38bdf8] uppercase tracking-wider block mb-2">Color presets Swatches</span>
-                        <div className="flex flex-wrap gap-2 justify-between">
-                          {[
-                            { name: 'Red', hue: 0, bg: 'bg-[#ef4444]' },
-                            { name: 'Orange', hue: 20, bg: 'bg-[#f97316]' },
-                            { name: 'Gold', hue: 45, bg: 'bg-[#fbbf24]' },
-                            { name: 'Green', hue: 120, bg: 'bg-[#22c55e]' },
-                            { name: 'Cyan', hue: 180, bg: 'bg-[#06b6d4]' },
-                            { name: 'Blue', hue: 200, bg: 'bg-[#3b82f6]' },
-                            { name: 'Purple', hue: 270, bg: 'bg-[#a855f7]' },
-                            { name: 'Magenta', hue: 300, bg: 'bg-[#d946ef]' },
-                            { name: 'Pink', hue: 330, bg: 'bg-[#ec4899]' },
-                          ].map((p) => (
-                            <button
-                              key={p.name}
-                              onClick={() => {
-                                setAdminSettings(prev => ({ ...prev, playerHue: p.hue }));
-                                try {
-                                  localStorage.setItem('grifball_player_hue', p.hue.toString());
-                                } catch (err) {
-                                  console.error(err);
-                                }
+                      {/* Controls grid */}
+                      <div className="flex flex-col gap-3 font-sans text-xs">
+                        
+                        {/* Interactive HSL slider */}
+                        <div className="bg-white/5 border border-white/5 rounded-lg p-3">
+                          <div className="flex justify-between items-center mb-2">
+                            <span className="text-[9px] font-bold text-[#38bdf8] uppercase tracking-wider">Armor Color Hue angle</span>
+                            <span 
+                              className="font-mono text-[9px] font-black uppercase px-1.5 py-0.5 rounded border shadow"
+                              style={{ 
+                                color: `hsl(${adminSettings.playerHue}, 100%, 65%)`,
+                                backgroundColor: `hsl(${adminSettings.playerHue}, 90%, 12%)`,
+                                borderColor: `hsl(${adminSettings.playerHue}, 50%, 30%)`
                               }}
-                              title={p.name}
-                              className={`w-6 h-6 rounded-full cursor-pointer transition-all active:scale-90 relative ${p.bg} ${
-                                adminSettings.playerHue === p.hue 
-                                  ? 'ring-2 ring-white ring-offset-2 ring-offset-slate-950 scale-110 shadow-lg' 
-                                  : 'hover:scale-105 hover:opacity-90'
-                              }`}
-                            />
-                          ))}
-                        </div>
-                      </div>
-
-                      {/* Held Weapon Selection */}
-                      <div className="bg-white/5 border border-white/5 rounded-lg p-3">
-                        <span className="text-[10px] font-bold text-[#38bdf8] uppercase tracking-wider block mb-2.5">Pose Weapon preview</span>
-                        <div className="grid grid-cols-3 gap-2">
-                          {[
-                            { id: 'none', label: '🛡️ Fists' },
-                            { id: 'hammer', label: '🔨 Hammer' },
-                            { id: 'sword', label: '⚔️ Sword' },
-                          ].map((w) => (
-                            <button
-                              key={w.id}
-                              onClick={() => setCustomizerWeapon(w.id as any)}
-                              className={`py-2 text-[10px] font-black uppercase tracking-wider border rounded cursor-pointer transition-all active:scale-98 ${
-                                customizerWeapon === w.id
-                                  ? 'bg-[#38bdf8]/15 border-[#38bdf8] text-[#38bdf8] shadow-[0_0_10px_rgba(56,189,248,0.2)]'
-                                  : 'bg-black/30 border-white/10 text-white/50 hover:text-white hover:border-white/20'
-                              }`}
                             >
-                              {w.label}
-                            </button>
-                          ))}
+                              {adminSettings.playerHue}°
+                            </span>
+                          </div>
+                          <input
+                            type="range"
+                            min="0"
+                            max="360"
+                            value={adminSettings.playerHue ?? 200}
+                            onChange={(e) => {
+                              const newHue = parseInt(e.target.value, 10);
+                              setAdminSettings(prev => ({ ...prev, playerHue: newHue }));
+                              try {
+                                localStorage.setItem('grifball_player_hue', newHue.toString());
+                              } catch (err) {
+                                console.error(err);
+                              }
+                            }}
+                            className="w-full h-2 bg-gradient-to-r from-red-500 via-yellow-500 via-green-500 via-cyan-500 via-blue-500 via-purple-500 to-red-500 rounded-lg appearance-none cursor-pointer outline-none shadow-inner"
+                            style={{ WebkitAppearance: 'none' }}
+                          />
                         </div>
+
+                        {/* Presets */}
+                        <div className="bg-white/5 border border-white/5 rounded-lg p-3">
+                          <span className="text-[9px] font-bold text-[#38bdf8] uppercase tracking-wider block mb-2">Color presets Swatches</span>
+                          <div className="flex flex-wrap gap-2 justify-between">
+                            {[
+                              { name: 'Red', hue: 0, bg: 'bg-[#ef4444]' },
+                              { name: 'Orange', hue: 20, bg: 'bg-[#f97316]' },
+                              { name: 'Gold', hue: 45, bg: 'bg-[#fbbf24]' },
+                              { name: 'Green', hue: 120, bg: 'bg-[#22c55e]' },
+                              { name: 'Cyan', hue: 180, bg: 'bg-[#06b6d4]' },
+                              { name: 'Blue', hue: 200, bg: 'bg-[#3b82f6]' },
+                              { name: 'Purple', hue: 270, bg: 'bg-[#a855f7]' },
+                              { name: 'Magenta', hue: 300, bg: 'bg-[#d946ef]' },
+                              { name: 'Pink', hue: 330, bg: 'bg-[#ec4899]' },
+                            ].map((p) => (
+                              <button
+                                key={p.name}
+                                onClick={() => {
+                                  setAdminSettings(prev => ({ ...prev, playerHue: p.hue }));
+                                  try {
+                                    localStorage.setItem('grifball_player_hue', p.hue.toString());
+                                  } catch (err) {
+                                    console.error(err);
+                                  }
+                                }}
+                                title={p.name}
+                                className={`w-5 h-5 rounded-full cursor-pointer transition-all active:scale-90 relative ${p.bg} ${
+                                  adminSettings.playerHue === p.hue 
+                                    ? 'ring-1 ring-white ring-offset-2 ring-offset-slate-950 scale-110 shadow-lg' 
+                                    : 'hover:scale-105 hover:opacity-90'
+                                }`}
+                              />
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Held Weapon Selection */}
+                        <div className="bg-white/5 border border-white/5 rounded-lg p-3">
+                          <span className="text-[9px] font-bold text-[#38bdf8] uppercase tracking-wider block mb-2">Pose Weapon preview</span>
+                          <div className="grid grid-cols-3 gap-2">
+                            {[
+                              { id: 'none', label: '🛡️ Fists' },
+                              { id: 'hammer', label: '🔨 Hammer' },
+                              { id: 'sword', label: '⚔️ Sword' },
+                            ].map((w) => (
+                              <button
+                                key={w.id}
+                                onClick={() => setCustomizerWeapon(w.id as any)}
+                                className={`py-1.5 text-[9px] font-black uppercase tracking-wider border rounded cursor-pointer transition-all active:scale-98 ${
+                                  customizerWeapon === w.id
+                                    ? 'bg-[#38bdf8]/15 border-[#38bdf8] text-[#38bdf8] shadow-[0_0_10px_rgba(56,189,248,0.2)] font-bold'
+                                    : 'bg-black/30 border-white/10 text-white/50 hover:text-white hover:border-white/20'
+                                }`}
+                              >
+                                {w.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
                       </div>
                     </div>
                   </div>
-                </div>
-              )}
+                )}
+              </div>
 
-              {rightPanelTab === 'chat' && (
-                <LobbyChatPanel
+              {/* COLUMN 3: GLOBAL CHAT (ALWAYS VISIBLE!) */}
+              <div className="flex flex-col h-full min-h-0 border-t lg:border-t-0 lg:border-l border-white/10 pt-6 lg:pt-0 lg:pl-6">
+                <div className="flex items-center gap-2 mb-3 shrink-0">
+                  <span className="w-1.5 h-3 bg-[#38bdf8]" />
+                  <h2 className="text-xs uppercase font-bold tracking-[0.25em] text-white">
+                    🌐 Global Chat
+                  </h2>
+                </div>
+
+                <GlobalChatPanel
                   messages={lobbyChatMessages}
                   onSendMessage={sendLobbyChatMessage}
                 />
-              )}
-            </div>
+              </div>
 
+            </div>
           </div>
         </div>
       )}
