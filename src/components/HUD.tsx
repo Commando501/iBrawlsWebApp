@@ -686,6 +686,110 @@ export const HUD: React.FC<HUDProps> = ({
         </div>
       </DraggableHUDItem>
 
+      {/* 9. FULL IN-GAME SCOREBOARD OVERLAY */}
+      {stats.showScoreboard && (
+        <div className="fixed inset-0 flex items-center justify-center bg-slate-950/65 backdrop-blur-md z-[999] pointer-events-none animate-fade-in">
+          <div className="w-full max-w-2xl bg-gradient-to-b from-slate-900/90 to-slate-950/95 border-2 border-cyan-500/30 rounded-2xl p-8 md:p-10 shadow-[0_0_60px_rgba(6,182,212,0.25)] relative overflow-hidden backdrop-blur-2xl">
+            {/* Holographic grid lines inside scoreboard container */}
+            <div className="absolute inset-0 bg-[linear-gradient(rgba(34,211,238,0.02)_1px,transparent_1px)] bg-[size:100%_4px] pointer-events-none" />
+            
+            {/* Top decorative cyan line notches */}
+            <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-transparent via-cyan-400 to-transparent" />
+
+            {/* Scoreboard Header */}
+            <div className="text-center mb-8 relative z-10">
+              <span className="text-[10px] font-mono font-bold tracking-[0.4em] text-cyan-400 uppercase">TACTICAL SIMULATION</span>
+              <h2 className="text-4xl font-sans font-black italic tracking-tighter uppercase text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-white to-indigo-300 drop-shadow-[0_0_12px_rgba(34,211,238,0.4)] mt-1">
+                COMBAT SCOREBOARD
+              </h2>
+              <div className="h-[2px] w-24 bg-gradient-to-r from-transparent via-cyan-400/60 to-transparent mt-3 mx-auto" />
+            </div>
+
+            {/* Main Scoreboard Rows Grid */}
+            <div className="flex flex-col gap-4 relative z-10 w-full font-sans">
+              {/* Header Titles */}
+              <div className="grid grid-cols-12 px-6 py-2 text-[10px] font-mono font-extrabold tracking-[0.2em] text-white/30 uppercase border-b border-white/5">
+                <div className="col-span-6 text-left">Combatant</div>
+                <div className="col-span-2 text-center">Score</div>
+                <div className="col-span-2 text-center">Kills</div>
+                <div className="col-span-2 text-center">Deaths</div>
+              </div>
+
+              {/* Blue Team Row */}
+              <div className={`grid grid-cols-12 items-center px-6 py-4 rounded-xl border transition-all duration-200 ${
+                stats.scorePlayer >= stats.scoreEnemy 
+                  ? 'bg-sky-500/10 border-sky-500/30 shadow-[0_0_15px_rgba(56,189,248,0.1)]' 
+                  : 'bg-black/20 border-white/5'
+              }`}>
+                <div className="col-span-6 flex items-center gap-3">
+                  <div className="w-3.5 h-3.5 rounded-full bg-sky-500 border-2 border-white/20 shadow-[0_0_8px_#38bdf8]" />
+                  <div className="flex flex-col">
+                    <span className="text-sm font-black tracking-tight text-white flex items-center gap-2">
+                      {stats.isMultiplayer
+                        ? (stats.multiplayerRole === 'host' ? 'Blue (You - Host)' : 'Blue (Opponent)')
+                        : 'Blue (You)'}
+                      {stats.scorePlayer >= stats.scoreEnemy && (
+                        <span className="text-[9px] font-mono font-bold bg-sky-400/20 text-sky-300 px-2 py-0.5 rounded border border-sky-400/35">LEADER</span>
+                      )}
+                    </span>
+                    <span className="text-[9px] font-mono text-white/30 uppercase mt-0.5">SANDBOX TEAM ALPHA</span>
+                  </div>
+                </div>
+                <div className="col-span-2 text-center text-xl font-black font-display text-sky-400 drop-shadow-[0_0_4px_rgba(56,189,248,0.3)]">
+                  {stats.scorePlayer}
+                </div>
+                <div className="col-span-2 text-center text-base font-bold font-mono text-white/80">
+                  {stats.playerKills ?? 0}
+                </div>
+                <div className="col-span-2 text-center text-base font-bold font-mono text-white/60">
+                  {stats.playerDeaths ?? 0}
+                </div>
+              </div>
+
+              {/* Red Team Row */}
+              <div className={`grid grid-cols-12 items-center px-6 py-4 rounded-xl border transition-all duration-200 ${
+                stats.scoreEnemy >= stats.scorePlayer 
+                  ? 'bg-red-500/10 border-red-500/30 shadow-[0_0_15px_rgba(239,68,68,0.1)]' 
+                  : 'bg-black/20 border-white/5'
+              }`}>
+                <div className="col-span-6 flex items-center gap-3">
+                  <div className="w-3.5 h-3.5 rounded-full bg-red-500 border-2 border-white/20 shadow-[0_0_8px_#ef4444]" />
+                  <div className="flex flex-col">
+                    <span className="text-sm font-black tracking-tight text-white flex items-center gap-2">
+                      {stats.isMultiplayer
+                        ? (stats.multiplayerRole === 'client' ? 'Red (You - Guest)' : 'Red (Opponent)')
+                        : 'Red (AI)'}
+                      {stats.scoreEnemy >= stats.scorePlayer && (
+                        <span className="text-[9px] font-mono font-bold bg-red-400/20 text-red-300 px-2 py-0.5 rounded border border-red-400/35">LEADER</span>
+                      )}
+                    </span>
+                    <span className="text-[9px] font-mono text-white/30 uppercase mt-0.5">SANDBOX TEAM BETA</span>
+                  </div>
+                </div>
+                <div className="col-span-2 text-center text-xl font-black font-display text-red-400 drop-shadow-[0_0_4px_rgba(239,68,68,0.3)]">
+                  {stats.scoreEnemy}
+                </div>
+                <div className="col-span-2 text-center text-base font-bold font-mono text-white/80">
+                  {stats.enemyKills ?? 0}
+                </div>
+                <div className="col-span-2 text-center text-base font-bold font-mono text-white/60">
+                  {stats.enemyDeaths ?? 0}
+                </div>
+              </div>
+            </div>
+
+            {/* Footer game state indicator */}
+            <div className="mt-8 pt-4 border-t border-white/5 flex justify-between items-center text-[9px] font-mono text-white/30 relative z-10">
+              <span className="uppercase tracking-wider">ELAPSED TIME: {formatTime(stats.gameTime)}</span>
+              <span className="uppercase tracking-wider flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping inline-block" />
+                HOLD [U] TO KEEP OPEN
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };

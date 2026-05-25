@@ -102,6 +102,11 @@ export interface GameStats {
   multiplayerRole?: 'host' | 'client' | null;
   opponentConnected?: boolean;
   ping?: number;
+  showScoreboard?: boolean;
+  playerKills?: number;
+  playerDeaths?: number;
+  enemyKills?: number;
+  enemyDeaths?: number;
 }
 
 export interface UiElementPos {

@@ -105,6 +105,11 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     playerMaxHP: number;
     scorePlayer: number;
     scoreEnemy: number;
+    playerKills: number;
+    playerDeaths: number;
+    enemyKills: number;
+    enemyDeaths: number;
+    showScoreboard: boolean;
     playerRespawnTimer: number;
     enemyRespawnTimer: number;
     playerInvulnerabilityTimer: number;
@@ -194,6 +199,11 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     playerMaxHP: 1,
     scorePlayer: 0,
     scoreEnemy: 0,
+    playerKills: 0,
+    playerDeaths: 0,
+    enemyKills: 0,
+    enemyDeaths: 0,
+    showScoreboard: false,
     playerRespawnTimer: 0,
     enemyRespawnTimer: 0,
     playerInvulnerabilityTimer: 0,
@@ -264,6 +274,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
                   } else {
                     s.scoreEnemy += 1;
                   }
+                  s.playerDeaths += 1;
+                  s.enemyKills += 1;
                   sfx.playDeath();
                   
                   // Record death events
@@ -298,6 +310,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
                   } else {
                     s.scorePlayer += 1;
                   }
+                  s.playerKills += 1;
+                  s.enemyDeaths += 1;
                   
                   // Record death events for local client's kill feed
                   const newDeath: DeathEvent = {
@@ -319,6 +333,10 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
               if (multiplayerRole === 'client') {
                 if (data.scoreHost !== undefined) s.scoreEnemy = data.scoreHost;
                 if (data.scoreClient !== undefined) s.scorePlayer = data.scoreClient;
+                if (data.killsHost !== undefined) s.enemyKills = data.killsHost;
+                if (data.deathsHost !== undefined) s.enemyDeaths = data.deathsHost;
+                if (data.killsClient !== undefined) s.playerKills = data.killsClient;
+                if (data.deathsClient !== undefined) s.playerDeaths = data.deathsClient;
                 if (data.gameTime !== undefined) s.gameTime = data.gameTime;
               }
             }
@@ -723,6 +741,12 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         sfx.playCrouch();
       }
 
+      // Scoreboard toggles (holding U)
+      if (key === 'u') {
+        stateRef.current.showScoreboard = true;
+        pushStatsUpdate();
+      }
+
       // Weapon swapping hotkeys
       if (key === '1') {
         swapPlayerWeapon('hammer');
@@ -790,6 +814,11 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
       if (key === 'c') {
         stateRef.current.isCrouching = false;
+      }
+
+      if (key === 'u') {
+        stateRef.current.showScoreboard = false;
+        pushStatsUpdate();
       }
     };
 
@@ -982,6 +1011,10 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
           ...(multiplayerRole === 'host' ? {
             scoreHost: s.scorePlayer,
             scoreClient: s.scoreEnemy,
+            killsHost: s.playerKills,
+            deathsHost: s.playerDeaths,
+            killsClient: s.enemyKills,
+            deathsClient: s.enemyDeaths,
             gameTime: s.gameTime
           } : {
             clientHP: s.playerHP
@@ -1161,6 +1194,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       s.playerHP = 0;
       s.playerRespawnTimer = 3.0;
       s.scoreEnemy += 1;
+      s.playerDeaths += 1;
+      s.enemyKills += 1;
     }
     s.pWeaponState = 'ready';
     s.pWeaponTimer = 0;
@@ -1177,6 +1212,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       s.aiState = 'RESPAWNING';
       s.enemyRespawnTimer = 3.0;
       s.scorePlayer += 1;
+      s.playerKills += 1;
+      s.enemyDeaths += 1;
     }
     s.aiWeaponState = 'ready';
     s.aiWeaponTimer = 0;
@@ -1382,6 +1419,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
           s.aiState = 'RESPAWNING';
           s.enemyRespawnTimer = 3.0;
           s.scorePlayer += 1;
+          s.playerKills += 1;
+          s.enemyDeaths += 1;
           sfx.playDeath();
           s.aiWeaponState = 'ready';
           s.aiWeaponTimer = 0;
@@ -1752,6 +1791,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
                       s.aiState = 'RESPAWNING';
                       s.enemyRespawnTimer = 3.0;
                       s.scorePlayer += 1;
+                      s.playerKills += 1;
+                      s.enemyDeaths += 1;
                       sfx.playDeath();
                       s.aiWeaponState = 'ready';
                       s.aiWeaponTimer = 0;
@@ -2123,6 +2164,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
             s.aiState = 'RESPAWNING';
             s.enemyRespawnTimer = 3.0; // 3 seconds respawn time
             s.scorePlayer += 1;
+            s.playerKills += 1;
+            s.enemyDeaths += 1;
             sfx.playDeath();
             s.aiWeaponState = 'ready';
             s.aiWeaponTimer = 0;
@@ -2192,6 +2235,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
             s.playerHP = 0;
             s.playerRespawnTimer = 3.0;
             s.scoreEnemy += 1;
+            s.playerDeaths += 1;
+            s.enemyKills += 1;
             sfx.playDeath();
             s.pWeaponState = 'ready';
             s.pWeaponTimer = 0;
@@ -2266,6 +2311,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
           s.playerHP = 0;
           s.playerRespawnTimer = 3.0;
           s.scoreEnemy += 1;
+          s.playerDeaths += 1;
+          s.enemyKills += 1;
           sfx.playDeath();
           s.pWeaponState = 'ready';
           s.pWeaponTimer = 0;
@@ -2477,6 +2524,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
           s.playerHP = 0;
           s.playerRespawnTimer = 3.0;
           s.scoreEnemy += 1;
+          s.playerDeaths += 1;
+          s.enemyKills += 1;
           sfx.playDeath();
           s.pWeaponState = 'ready';
           s.pWeaponTimer = 0;
@@ -3179,6 +3228,11 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       isMultiplayer: isMultiplayer,
       multiplayerRole: multiplayerRole,
       opponentConnected: isMultiplayer && multiplayerSocket?.readyState === WebSocket.OPEN,
+      showScoreboard: s.showScoreboard,
+      playerKills: s.playerKills,
+      playerDeaths: s.playerDeaths,
+      enemyKills: s.enemyKills,
+      enemyDeaths: s.enemyDeaths,
     });
   };
 
