@@ -285,7 +285,31 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
               if (data.vel) s.aiVel.set(data.vel.x, data.vel.y, data.vel.z);
               if (data.yaw !== undefined) s.aiYaw = data.yaw;
               if (data.pitch !== undefined) s.aiPitch = data.pitch;
-              if (data.hp !== undefined) s.aiHP = data.hp;
+              
+              if (data.hp !== undefined) {
+                const prevAiHP = s.aiHP;
+                s.aiHP = data.hp;
+                
+                // Authoritative Transition: Opponent death check on incoming authoritative client HP updates
+                if (prevAiHP > 0 && s.aiHP <= 0) {
+                  sfx.playDeath();
+                  if (multiplayerRole === 'host') {
+                    s.scorePlayer += 1;
+                  } else {
+                    s.scorePlayer += 1;
+                  }
+                  
+                  // Record death events for local client's kill feed
+                  const newDeath: DeathEvent = {
+                    id: Math.random().toString(36).substring(2, 9),
+                    attacker: multiplayerRole === 'host' ? 'Blue (You - Host)' : 'Red (You - Guest)',
+                    victim: multiplayerRole === 'host' ? 'Red (Guest)' : 'Blue (Host)',
+                  };
+                  s.lastDeaths = [newDeath, ...s.lastDeaths].slice(0, 3);
+                  spawnVoxelShockwaveParticles(s.aiPos, '#ef4444');
+                }
+              }
+              
               if (data.maxHp !== undefined) s.aiMaxHP = data.maxHp;
               if (data.isCrouching !== undefined) s.aiIsCrouching = data.isCrouching;
               if (data.activeWeapon !== undefined) s.aiActiveWeapon = data.activeWeapon;
@@ -1278,11 +1302,30 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
           (Date.now() - s.lastAIHammerAttackTime <= hammerThreshold)
         );
 
-        if (isAISwordActiveAttack) {
+        if (isAISwordActiveAttack && !isMultiplayer) {
           executeTrade('sword_vs_sword');
           return;
-        } else if (isAIHammerActiveAttack) {
+        } else if (isAIHammerActiveAttack && !isMultiplayer) {
           executeTrade('sword_lunge_vs_hammer');
+          return;
+        }
+
+        // If multiplayer, we play feedback particles and send hit_taken, but let the remote client update health on coordinate packets
+        if (isMultiplayer) {
+          s.isLunging = false;
+          sfx.playExplosion();
+          spawnVoxelShockwaveParticles(s.aiPos, '#22d3ee');
+          s.lastStrikePos = s.aiPos.clone();
+          s.lastStrikeTick = 1.2;
+          
+          if (multiplayerSocket && multiplayerSocket.readyState === WebSocket.OPEN) {
+            multiplayerSocket.send(JSON.stringify({ type: 'sync', action: 'hit_taken', damage: 1 }));
+          }
+          
+          s.pSwordState = 'recovering';
+          s.pSwordTimer = 0;
+          s.pSwordReady = false;
+          s.pSwordRecoverDuration = s.settings.swordLungeReload ?? 1.2;
           return;
         }
 
@@ -1568,12 +1611,12 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       if (playerHammer) {
         playerHammer.position.set(0.35, -0.38 + idleYBob, -0.65 + idleXBob);
         playerHammer.rotation.set(0.15, -0.3, -0.15 + idleZRotBob);
-        playerHammer.visible = s.activeWeapon === 'hammer';
+        playerHammer.visible = false;
       }
       if (playerSword) {
         playerSword.position.set(0.35, -0.38 + idleYBob, -0.5 + idleXBob);
         playerSword.rotation.set(Math.PI / 2, 0, -Math.PI / 8 + idleZRotBob);
-        playerSword.visible = s.activeWeapon === 'sword';
+        playerSword.visible = false;
       }
     } else {
       // 2. KATAR SWORD MULTI-ATTACK ANIMATION STATE MACHINE
@@ -1633,6 +1676,18 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
                   
                   // Allowed slash reach cone: +/- 58 degrees
                   if (angle <= 1.0) {
+                    if (isMultiplayer) {
+                      sfx.playSwing();
+                      spawnVoxelShockwaveParticles(s.aiPos, '#22d3ee');
+                      s.lastStrikePos = s.aiPos.clone();
+                      s.lastStrikeTick = 1.0;
+
+                      if (multiplayerSocket && multiplayerSocket.readyState === WebSocket.OPEN) {
+                        multiplayerSocket.send(JSON.stringify({ type: 'sync', action: 'hit_taken', damage: 1 }));
+                      }
+                      return;
+                    }
+
                     // Evaluate trades FIRST
                     const swordThreshold = s.settings.swordTradeWindow ?? 350;
                     const isAISwordActiveAttack = s.settings.enableSwordTrade && s.aiActiveWeapon === 'sword' && (
@@ -1642,7 +1697,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
                       (Date.now() - s.lastAISwordAttackTime <= swordThreshold)
                     );
 
-                    if (isAISwordActiveAttack) {
+                    if (isAISwordActiveAttack && !isMultiplayer) {
                       executeTrade('sword_vs_sword');
                       return;
                     }
@@ -2013,6 +2068,15 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         const dist = impactPos.distanceTo(enemyBodyCenter);
         
         if (dist <= s.settings.attackRadius) {
+          if (isMultiplayer) {
+            if (multiplayerSocket && multiplayerSocket.readyState === WebSocket.OPEN) {
+              multiplayerSocket.send(JSON.stringify({ type: 'sync', action: 'hit_taken', damage: 1 }));
+            }
+            sfx.playSwing();
+            spawnVoxelShockwaveParticles(s.aiPos, '#e2e8f0');
+            return;
+          }
+
           // Reduce HP by 1 (universal settings health adjustment support)
           s.aiHP -= 1;
 
@@ -2051,6 +2115,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         }
       }
     } else {
+      if (isMultiplayer) return; // In multiplayer, we do not run AI strike simulations!
       if (s.aiHP <= 0 || s.aiState === 'RESPAWNING') return; // Prevent dead enemies' attacks from executing
       // ENEMY AI IS STRIKING
       // The AI tracks the player with its "cursor" in 3D, OR aims beneath itself for a hammer jump!
@@ -2136,6 +2201,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     
     sfx.playSwing();
     spawnVoxelShockwaveParticles(impactPos, '#ef4444');
+    
+    if (isMultiplayer) return; // In multiplayer, we do not run AI damage checks against local player!
     
     if (s.playerHP > 0 && s.playerInvulnerabilityTimer <= 0) {
       const playerBodyCenter = new THREE.Vector3(
