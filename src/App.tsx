@@ -11,13 +11,6 @@ import { sfx } from './components/AudioEngine';
 import { RotateCcw, Check } from 'lucide-react';
 import { ChatOverlay, ChatMessage } from './components/ChatOverlay';
 
-interface OnlineClient {
-  id: string;
-  state: 'menu' | 'solo' | 'multi';
-  roomCode?: string;
-  spaceAvailable?: boolean;
-}
-
 export default function App() {
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const [isPaused, setIsPaused] = useState<boolean>(false);
@@ -47,7 +40,7 @@ export default function App() {
   const [menuSocket, setMenuSocket] = useState<WebSocket | null>(null);
   const [clientId, setClientId] = useState<string>('');
   const [onlineCount, setOnlineCount] = useState<number>(0);
-  const [onlineClients, setOnlineClients] = useState<OnlineClient[]>([]);
+  const [onlineClients, setOnlineClients] = useState<string[]>([]);
   const [activeInvite, setActiveInvite] = useState<{ fromId: string; roomCode: string } | null>(null);
   const [inviteNotifications, setInviteNotifications] = useState<string[]>([]);
   const [ping, setPing] = useState<number | undefined>(undefined);
@@ -298,8 +291,8 @@ export default function App() {
             setClientId(data.clientId);
           } else if (data.type === 'presence') {
             setOnlineCount(data.onlineCount || 0);
-            // Capture list of online client info (excluding this browser's self)
-            const others = (data.clients || []).filter((c: OnlineClient) => c.id !== data.clientId && c.id !== clientId);
+            // Capture list of online client IDs (excluding this browser's self)
+            const others = (data.clients || []).filter((id: string) => id !== data.clientId && id !== clientId);
             setOnlineClients(others);
           } else if (data.type === 'pong') {
             const calculatedPing = Date.now() - data.timestamp;
@@ -357,44 +350,6 @@ export default function App() {
       clearInterval(pingInterval);
     };
   }, [multiplayerSocket, clientId]);
-
-  // Synchronize player state with central lobby server
-  useEffect(() => {
-    if (!menuSocket || menuSocket.readyState !== WebSocket.OPEN) return;
-
-    let status: 'menu' | 'solo' | 'multi' = 'menu';
-    let roomCode: string | undefined = undefined;
-    let spaceAvailable = false;
-
-    if (isPlaying) {
-      if (isMultiplayer) {
-        status = 'multi';
-        roomCode = multiplayerRole === 'host' ? hostIdCode : joinIpOrId;
-        spaceAvailable = false; // Playing is already 2/2
-      } else {
-        status = 'solo';
-      }
-    } else {
-      if (connectionStatus === 'hosting') {
-        status = 'multi';
-        roomCode = hostIdCode;
-        spaceAvailable = true; // Hosting lobby is open (1/2)
-      } else if (connectionStatus === 'connecting') {
-        status = 'multi';
-        roomCode = joinIpOrId;
-        spaceAvailable = false;
-      } else {
-        status = 'menu';
-      }
-    }
-
-    menuSocket.send(JSON.stringify({
-      type: 'update_status',
-      status,
-      roomCode,
-      spaceAvailable
-    }));
-  }, [menuSocket, isPlaying, isMultiplayer, connectionStatus, hostIdCode, joinIpOrId, multiplayerRole]);
 
   // Sync the real-time calculated ping to HUD stats immediately
   useEffect(() => {
@@ -545,7 +500,6 @@ export default function App() {
       setConnectionError('Please provide a Host IP address or Room Code.');
       return;
     }
-    setJoinIpOrId(target);
     setConnectionError('');
     setConnectionStatus('connecting');
     setChatMessages([]);
@@ -1033,77 +987,40 @@ export default function App() {
                         {onlineClients.length === 0 ? (
                           <p className="text-[10.5px] text-white/45 italic font-medium m-auto text-center py-4">No other players online yet.</p>
                         ) : (
-                          onlineClients.map(client => (
-                            <div key={client.id} className="flex justify-between items-center bg-black/45 px-3 py-2.5 rounded border border-white/5 text-xs font-mono shrink-0">
-                              <div className="flex flex-col gap-0.5 min-w-0">
-                                <span className="text-white/80 font-semibold truncate max-w-[130px]">
-                                  Client {client.id}
-                                </span>
-                                {/* Player state indicator */}
-                                <div className="flex items-center gap-1.5 mt-0.5">
-                                  {client.state === 'menu' && (
-                                    <span className="text-[9px] text-slate-400/80 font-bold uppercase tracking-wider flex items-center gap-1">
-                                      <span className="w-1.5 h-1.5 rounded-full bg-slate-500" />
-                                      In Menu
-                                    </span>
-                                  )}
-                                  {client.state === 'solo' && (
-                                    <span className="text-[9px] text-amber-400 font-bold uppercase tracking-wider flex items-center gap-1">
-                                      <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
-                                      Solo Training
-                                    </span>
-                                  )}
-                                  {client.state === 'multi' && (
-                                    client.spaceAvailable ? (
-                                      <button
-                                        onClick={() => {
-                                          if (client.roomCode) {
-                                            handleJoinGame(client.roomCode);
-                                          }
-                                        }}
-                                        title="Click to join this player's match"
-                                        className="text-[9px] bg-emerald-500/20 hover:bg-emerald-500/35 border border-emerald-500/40 text-emerald-400 font-bold uppercase tracking-wider px-2 py-0.5 rounded cursor-pointer transition-all flex items-center gap-1 animate-pulse hover:shadow-[0_0_8px_rgba(16,185,129,0.3)] active:scale-95 text-left"
-                                      >
-                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block animate-ping" />
-                                        Match Open (Join)
-                                      </button>
-                                    ) : (
-                                      <span className="text-[9px] text-blue-400 font-bold uppercase tracking-wider flex items-center gap-1">
-                                        <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
-                                        In Match (Full)
-                                      </span>
-                                    )
-                                  )}
-                                </div>
-                              </div>
+                          onlineClients.map(clientTargetId => (
+                            <div key={clientTargetId} className="flex justify-between items-center bg-black/45 px-3 py-2 rounded border border-white/5 text-xs font-mono shrink-0">
+                              <span className="text-white/80 font-semibold truncate max-w-[140px]">
+                                Client {clientTargetId}
+                              </span>
                               
-                              {/* Actions (Invite button) */}
-                              <div className="flex items-center gap-2 shrink-0">
-                                {connectionStatus === 'hosting' && connectionMode === 'relay' && (
-                                  <button
-                                    onClick={() => {
-                                      if (menuSocket && menuSocket.readyState === WebSocket.OPEN) {
-                                        menuSocket.send(JSON.stringify({
-                                          type: 'send_invite',
-                                          targetId: client.id,
-                                          roomCode: hostIdCode
-                                        }));
-                                        // notify host that invite was sent
-                                        setInviteNotifications(prev => [
-                                          ...prev,
-                                          `Lobby invite dispatched to Client ${client.id}.`
-                                        ]);
-                                        setTimeout(() => {
-                                          setInviteNotifications(prev => prev.filter(n => !n.includes(client.id)));
-                                        }, 5000);
-                                      }
-                                    }}
-                                    className="px-2 py-1 bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-[10px] font-sans font-black uppercase tracking-wider text-white rounded cursor-pointer transition-all active:scale-95 border border-sky-400/20"
-                                  >
-                                    Invite
-                                  </button>
-                                )}
-                              </div>
+                              {connectionStatus === 'hosting' && connectionMode === 'relay' ? (
+                                <button
+                                  onClick={() => {
+                                    if (menuSocket && menuSocket.readyState === WebSocket.OPEN) {
+                                      menuSocket.send(JSON.stringify({
+                                        type: 'send_invite',
+                                        targetId: clientTargetId,
+                                        roomCode: hostIdCode
+                                      }));
+                                      // notify host that invite was sent
+                                      setInviteNotifications(prev => [
+                                        ...prev,
+                                        `Lobby invite dispatched to Client ${clientTargetId}.`
+                                      ]);
+                                      setTimeout(() => {
+                                        setInviteNotifications(prev => prev.filter(n => !n.includes(clientTargetId)));
+                                      }, 5000);
+                                    }
+                                  }}
+                                  className="px-2.5 py-1 bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-[10px] font-sans font-black uppercase tracking-wider text-white rounded cursor-pointer transition-all active:scale-95 border border-sky-400/20"
+                                >
+                                  Invite
+                                </button>
+                              ) : (
+                                <span className="text-[9px] text-[#38bdf8]/40 font-bold uppercase tracking-widest select-none">
+                                  {connectionStatus === 'hosting' ? 'No Relay' : 'Lobby Idle'}
+                                </span>
+                              )}
                             </div>
                           ))
                         )}

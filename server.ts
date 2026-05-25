@@ -59,19 +59,13 @@ async function startServer() {
   // Broadcast updated presence count and clients list to everyone
   function updatePresence() {
     const onlineCount = wss.clients.size;
-    const clientPayloads = Array.from(wss.clients)
-      .map((client: any) => ({
-        id: client.id,
-        state: client.playerState || 'menu',
-        roomCode: client.roomCode,
-        spaceAvailable: client.spaceAvailable !== undefined ? client.spaceAvailable : false
-      }))
-      .filter(c => Boolean(c.id));
-
+    const clientIds = Array.from(wss.clients)
+      .map((client: any) => client.id)
+      .filter(Boolean);
     const presencePayload = JSON.stringify({
       type: "presence",
       onlineCount,
-      clients: clientPayloads
+      clients: clientIds
     });
     wss.clients.forEach(client => {
       if (client.readyState === WebSocket.OPEN) {
@@ -83,9 +77,6 @@ async function startServer() {
   wss.on("connection", (ws, req) => {
     const wsId = Math.random().toString(36).substring(2, 9);
     (ws as any).id = wsId;
-    (ws as any).playerState = 'menu';
-    (ws as any).roomCode = undefined;
-    (ws as any).spaceAvailable = false;
     console.log(`New WebSocket connection received. Assigned Socket ID: ${wsId}`);
 
     // Send immediate welcome greeting carrying the socket's client identity
@@ -99,16 +90,6 @@ async function startServer() {
         const message = JSON.parse(rawMessage.toString());
 
         switch (message.type) {
-          case "update_status": {
-            const { status, roomCode, spaceAvailable } = message;
-            console.log(`Client ${wsId} updating playerState to: ${status}, roomCode: ${roomCode}, spaceAvailable: ${spaceAvailable}`);
-            (ws as any).playerState = status;
-            (ws as any).roomCode = roomCode;
-            (ws as any).spaceAvailable = spaceAvailable;
-            updatePresence();
-            break;
-          }
-
           case "ping": {
             const { timestamp } = message;
             ws.send(JSON.stringify({ type: "pong", timestamp }));
