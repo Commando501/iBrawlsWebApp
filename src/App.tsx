@@ -329,7 +329,10 @@ export default function App() {
 
     setConnectionStatus('fetching_ip');
     fetch(`${getApiUrl()}/api/my-ip`)
-      .then(res => res.json())
+      .then(res => {
+        if (!res.ok) throw new Error(`API returned status ${res.status}`);
+        return res.json();
+      })
       .then(async (data) => {
         let detectedIp = data.ip || '127.0.0.1';
         let detectedLan = data.lanIp || '127.0.0.1';
