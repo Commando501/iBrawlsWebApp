@@ -6,6 +6,7 @@ interface Room {
   host: GameWebSocket;
   client?: GameWebSocket;
   keys: string[];
+  quickplayReserved?: boolean;
 }
 
 interface GameWebSocket extends WebSocket {
@@ -78,9 +79,33 @@ export class GameLobby implements DurableObject {
   socketToRoom = new Map<GameWebSocket, Room>();
   sessions = new Set<GameWebSocket>();
 
+  // Quick Play matchmaking structures
+  quickPlayQueue = new Set<GameWebSocket>();
+  waitingQuickPlayClients = new Map<string, GameWebSocket>();
+
+  // Helper to clean up dead sockets from the quickplay queue
+  cleanQuickPlayQueue() {
+    for (const socket of this.quickPlayQueue) {
+      if (socket.readyState !== WebSocket.OPEN) {
+        this.quickPlayQueue.delete(socket);
+      }
+    }
+  }
+
   constructor(state: DurableObjectState, env: Env) {
     this.state = state;
     this.env = env;
+
+    // Server-side keepalive interval to keep the Durable Object alive and active
+    setInterval(() => {
+      this.sessions.forEach(ws => {
+        if (ws.readyState === WebSocket.OPEN) {
+          try {
+            ws.send(JSON.stringify({ type: "ping_keepalive" }));
+          } catch(e) {}
+        }
+      });
+    }, 1000);
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -229,6 +254,74 @@ export class GameLobby implements DurableObject {
             break;
           }
 
+          case "quickplay_join": {
+            console.log(`Client ${wsId} requested Quick Play matchmaking.`);
+            
+            // 1. Search for any hosted match waiting for a player (not full, not reserved)
+            let foundRoomKey: string | null = null;
+            for (const [key, room] of this.rooms.entries()) {
+              if (!room.client && !room.quickplayReserved) {
+                foundRoomKey = key;
+                room.quickplayReserved = true; // Mark it as reserved
+                break;
+              }
+            }
+
+            if (foundRoomKey) {
+              console.log(`Quick Play Matchmaker found open hosted lobby for client ${wsId} under key: ${foundRoomKey}`);
+              try {
+                gameWs.send(JSON.stringify({ type: "quickplay_match_found", roomCode: foundRoomKey }));
+              } catch(e) {}
+              break;
+            }
+
+            // 2. Clean dead sockets in queue and check if anyone else is waiting
+            this.cleanQuickPlayQueue();
+
+            if (this.quickPlayQueue.size > 0) {
+              const peerWs = this.quickPlayQueue.values().next().value;
+              if (peerWs) {
+                this.quickPlayQueue.delete(peerWs);
+
+                if (peerWs.readyState === WebSocket.OPEN) {
+                  const qpRoomCode = "QP_" + Math.floor(100000 + Math.random() * 900000).toString();
+                  console.log(`Quick Play Matchmaker pairing client ${wsId} with peer ${peerWs.id}. Generated Room Code: ${qpRoomCode}`);
+
+                  // Send matching coordinates
+                  try {
+                    peerWs.send(JSON.stringify({ type: "quickplay_host", roomCode: qpRoomCode }));
+                  } catch(e) {}
+                  this.waitingQuickPlayClients.set(qpRoomCode, gameWs);
+                  
+                  // Let the joining player know we are configuring the arena
+                  try {
+                    gameWs.send(JSON.stringify({ type: "quickplay_queued" }));
+                  } catch(e) {}
+                  break;
+                }
+              }
+            }
+
+            // 3. No matches or peers available, enter queue
+            this.quickPlayQueue.add(gameWs);
+            console.log(`Client ${wsId} entered the Quick Play queue.`);
+            try {
+              gameWs.send(JSON.stringify({ type: "quickplay_queued" }));
+            } catch(e) {}
+            break;
+          }
+
+          case "quickplay_leave": {
+            this.quickPlayQueue.delete(gameWs);
+            for (const [code, clientWs] of this.waitingQuickPlayClients.entries()) {
+              if (clientWs === gameWs) {
+                this.waitingQuickPlayClients.delete(code);
+              }
+            }
+            console.log(`Client ${wsId} left Quick Play queue.`);
+            break;
+          }
+
           case "host": {
             const { ip, lanIp, customId } = message;
             const keysToRegister = [];
@@ -259,6 +352,18 @@ export class GameLobby implements DurableObject {
             try {
               gameWs.send(JSON.stringify({ type: "hosted", keys: keysToRegister }));
             } catch(e) {}
+
+            // Trigger the waiting Quick Play client if this is a custom quickplay room code
+            if (customId && this.waitingQuickPlayClients.has(customId)) {
+              const guestWs = this.waitingQuickPlayClients.get(customId);
+              this.waitingQuickPlayClients.delete(customId);
+              if (guestWs && guestWs.readyState === WebSocket.OPEN) {
+                console.log(`Quick Play Host registered. Dispatching match found to guest client ${guestWs.id}`);
+                try {
+                  guestWs.send(JSON.stringify({ type: "quickplay_match_found", roomCode: customId }));
+                } catch(e) {}
+              }
+            }
             break;
           }
 
@@ -344,6 +449,14 @@ export class GameLobby implements DurableObject {
     gameWs.addEventListener("close", () => {
       console.log("WebSocket connection closed.");
       this.sessions.delete(gameWs);
+
+      // Clean up Quick Play matchmaking states
+      this.quickPlayQueue.delete(gameWs);
+      for (const [code, clientWs] of this.waitingQuickPlayClients.entries()) {
+        if (clientWs === gameWs) {
+          this.waitingQuickPlayClients.delete(code);
+        }
+      }
       
       const room = this.socketToRoom.get(gameWs);
       if (room) {
