@@ -222,11 +222,11 @@ export default function App() {
       const savedName = localStorage.getItem('grifball_player_name');
       if (savedName) return savedName;
     } catch (e) {}
-    return `Spartan-${Math.floor(1000 + Math.random() * 9000)}`;
+    return `Sptn-${Math.floor(1000 + Math.random() * 9000)}`;
   });
 
   const handlePlayerNameChange = (newName: string) => {
-    const trimmed = newName.substring(0, 16);
+    const trimmed = newName.substring(0, 10);
     setPlayerName(trimmed);
     setAdminSettings(prev => ({ ...prev, playerName: trimmed }));
     try {
@@ -288,7 +288,7 @@ export default function App() {
       const playerHue = savedHue ? parseInt(savedHue, 10) : 200;
 
       const savedName = localStorage.getItem('grifball_player_name');
-      const nameVal = savedName || `Spartan-${Math.floor(1000 + Math.random() * 9000)}`;
+      const nameVal = savedName || `Sptn-${Math.floor(1000 + Math.random() * 9000)}`;
 
       return {
         ...defaultSettings,
@@ -389,7 +389,7 @@ export default function App() {
         localStorage.removeItem('grifball_admin_settings');
         
         // Reset states
-        const defaultName = `Spartan-${Math.floor(1000 + Math.random() * 9000)}`;
+        const defaultName = `Sptn-${Math.floor(1000 + Math.random() * 9000)}`;
         setPlayerName(defaultName);
         setUiPositions(DEFAULT_UI_POSITIONS);
         
@@ -1297,6 +1297,33 @@ export default function App() {
               
               {/* COLUMN 1: GAME SETUP & ACTIONS */}
               <div className="flex flex-col h-full min-h-0 justify-between">
+                
+                {/* 🆔 SPARTAN IDENTITY PROFILE CARD */}
+                <div className="bg-slate-950/45 border border-white/10 rounded-xl p-3.5 flex flex-col gap-2 shrink-0 mb-4 shadow-[inset_0_1px_3px_rgba(0,0,0,0.3)] select-none text-left">
+                  <div className="flex justify-between items-center pb-1.5 border-b border-white/5">
+                    <span className="text-[9px] font-bold text-[#38bdf8] uppercase tracking-wider flex items-center gap-1.5 font-display">
+                      🆔 Spartan Pilot Identity
+                    </span>
+                    <span className="text-[8px] font-mono text-cyan-400 bg-cyan-950/40 border border-cyan-500/20 px-1.5 py-0.5 rounded">
+                      MAX_10_CHARS
+                    </span>
+                  </div>
+                  <div className="flex flex-col gap-1 text-left mt-1">
+                    <span className="text-[8px] text-white/40 uppercase tracking-widest font-mono">Customize Nameplate Callout:</span>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        maxLength={10}
+                        value={playerName}
+                        onChange={(e) => handlePlayerNameChange(e.target.value)}
+                        placeholder="Spartan Tag..."
+                        className="w-full h-9 bg-black/60 border border-white/10 rounded px-3 text-xs tracking-wide text-[#38bdf8] placeholder:text-white/20 focus:border-[#38bdf8] outline-none transition-all font-semibold uppercase pr-8 font-sans"
+                      />
+                      <div className="absolute right-2.5 top-2.5 w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
+                    </div>
+                  </div>
+                </div>
+
                 {activeMenuTab === 'single' ? (
                   <div className="flex flex-col h-full min-h-0 justify-between">
                     <div className="flex flex-col gap-4">
@@ -1921,10 +1948,10 @@ export default function App() {
                           <div className="relative">
                             <input
                               type="text"
-                              maxLength={16}
+                              maxLength={10}
                               value={playerName}
                               onChange={(e) => handlePlayerNameChange(e.target.value)}
-                              placeholder="Enter Spartan Name..."
+                              placeholder="Max 10 characters..."
                               className="w-full h-9 bg-black/60 border border-white/10 rounded px-3 text-xs tracking-wide text-white focus:border-[#38bdf8] outline-none transition-all font-sans"
                             />
                             <div className="absolute right-2.5 top-2.5 w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
