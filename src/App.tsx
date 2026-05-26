@@ -187,6 +187,19 @@ function decryptSaveCode(code: string): SaveData {
 }
 
 
+const BOT_COLOR_PRESETS = [
+  { label: 'Red',     hue: 0   },
+  { label: 'Orange',  hue: 28  },
+  { label: 'Yellow',  hue: 55  },
+  { label: 'Lime',    hue: 85  },
+  { label: 'Green',   hue: 120 },
+  { label: 'Teal',    hue: 168 },
+  { label: 'Cyan',    hue: 190 },
+  { label: 'Blue',    hue: 215 },
+  { label: 'Purple',  hue: 275 },
+  { label: 'Magenta', hue: 310 },
+] as const;
+
 export default function App() {
   const getWsUrl = () => {
     return getSavedMatchmakerUrl();
@@ -219,6 +232,15 @@ export default function App() {
     bot_5: 'normal',
     bot_6: 'normal',
     bot_7: 'normal',
+  });
+  const [botColors, setBotColors] = useState<Record<string, number>>({
+    main_ai: 0,
+    bot_2: 120,
+    bot_3: 280,
+    bot_4: 45,
+    bot_5: 60,
+    bot_6: 320,
+    bot_7: 180,
   });
   const [showBotSetupMenu, setShowBotSetupMenu] = useState<boolean>(false);
 
@@ -1353,6 +1375,7 @@ export default function App() {
           keybindings={keybindings}
           offlineBotCount={offlineBotCount}
           botDifficulties={botDifficulties}
+          botColors={botColors}
         />
       )}
 
@@ -3460,16 +3483,37 @@ export default function App() {
                 </div>
 
                 {/* Slot 2: Main AI (DoomBot Blue) */}
-                <div className={`rounded-lg p-3 flex flex-col items-center gap-1.5 text-center transition-all ${1 <= offlineBotCount ? 'bg-cyan-500/10 border border-cyan-500/20' : 'bg-white/3 border border-white/5 opacity-30'}`}>
-                  <div className="w-8 h-8 rounded-full border-2 border-cyan-500/40 flex items-center justify-center text-sm bg-cyan-950/40">
+                <div className={`rounded-lg p-3 flex flex-col items-center gap-1.5 text-center transition-all ${1 <= offlineBotCount ? 'bg-white/5 border border-white/10' : 'bg-white/2 border border-white/5 opacity-20'}`}>
+                  <div
+                    className="w-8 h-8 rounded-full border-2 flex items-center justify-center text-sm"
+                    style={{
+                      borderColor: `hsl(${botColors.main_ai ?? 0}, 60%, 50%)`,
+                      backgroundColor: `hsl(${botColors.main_ai ?? 0}, 60%, 15%)`,
+                    }}
+                  >
                     🤖
                   </div>
-                  <span className="text-[10px] font-bold text-cyan-300 uppercase tracking-wide">DoomBot Blue</span>
+                  <span className="text-[10px] font-bold text-white/60 uppercase tracking-wide">DoomBot</span>
+                  <div className="flex flex-wrap justify-center gap-0.5">
+                    {BOT_COLOR_PRESETS.map((preset) => (
+                      <button
+                        key={preset.hue}
+                        title={preset.label}
+                        onClick={() => setBotColors(prev => ({ ...prev, main_ai: preset.hue }))}
+                        className="w-3 h-3 rounded-full cursor-pointer transition-transform hover:scale-125"
+                        style={{
+                          backgroundColor: `hsl(${preset.hue}, 75%, 50%)`,
+                          outline: (botColors.main_ai ?? 0) === preset.hue ? '2px solid white' : '2px solid transparent',
+                          outlineOffset: '1px',
+                        }}
+                      />
+                    ))}
+                  </div>
                   {1 <= offlineBotCount && (
                     <select
                       value={botDifficulties.main_ai || 'normal'}
                       onChange={(e) => setBotDifficulties(prev => ({ ...prev, main_ai: e.target.value as any }))}
-                      className="w-full h-7 bg-black/60 border border-white/10 rounded px-1.5 text-[10px] text-cyan-400 font-bold uppercase outline-none focus:border-cyan-400 cursor-pointer transition-all font-sans"
+                      className="w-full h-7 bg-black/60 border border-white/10 rounded px-1.5 text-[10px] text-white/70 font-bold uppercase outline-none focus:border-blue-400 cursor-pointer transition-all font-sans"
                     >
                       <option value="easy">🟢 Easy</option>
                       <option value="normal">🔵 Normal</option>
@@ -3497,13 +3541,28 @@ export default function App() {
                       <div
                         className="w-8 h-8 rounded-full border-2 flex items-center justify-center text-sm"
                         style={{
-                          borderColor: slotActive ? `hsl(${bot.hue}, 60%, 50%)` : 'rgba(255,255,255,0.1)',
-                          backgroundColor: slotActive ? `hsl(${bot.hue}, 60%, 15%)` : 'transparent',
+                          borderColor: `hsl(${botColors[bot.id] ?? bot.hue}, 60%, 50%)`,
+                          backgroundColor: `hsl(${botColors[bot.id] ?? bot.hue}, 60%, 15%)`,
                         }}
                       >
                         🤖
                       </div>
                       <span className="text-[10px] font-bold text-white/60 uppercase tracking-wide truncate max-w-full">{bot.name}</span>
+                      <div className="flex flex-wrap justify-center gap-0.5">
+                        {BOT_COLOR_PRESETS.map((preset) => (
+                          <button
+                            key={preset.hue}
+                            title={preset.label}
+                            onClick={() => setBotColors(prev => ({ ...prev, [bot.id]: preset.hue }))}
+                            className="w-3 h-3 rounded-full cursor-pointer transition-transform hover:scale-125"
+                            style={{
+                              backgroundColor: `hsl(${preset.hue}, 75%, 50%)`,
+                              outline: (botColors[bot.id] ?? bot.hue) === preset.hue ? '2px solid white' : '2px solid transparent',
+                              outlineOffset: '1px',
+                            }}
+                          />
+                        ))}
+                      </div>
                       {slotActive && (
                         <select
                           value={botDifficulties[bot.id] || 'normal'}

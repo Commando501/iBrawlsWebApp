@@ -24,6 +24,7 @@ interface GrifballGameProps {
   opponentClientId?: string;
   offlineBotCount?: number;
   botDifficulties?: Record<string, 'easy' | 'normal' | 'hard' | 'nightmare'>;
+  botColors?: Record<string, number>;
   keybindings?: Keybindings;
 }
 
@@ -40,6 +41,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
   opponentClientId = '',
   offlineBotCount = 3,
   botDifficulties = {},
+  botColors = {},
   keybindings = DEFAULT_KEYBINDINGS,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -616,7 +618,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
       for (let i = currentCustomBotCount; i < targetCustomBotCount; i++) {
         const botId = `bot_${i+2}`;
-        const hue = botHues[i % botHues.length];
+        const hue = botColors[botId] ?? botHues[i % botHues.length];
         const name = botNames[i % botNames.length];
         const diff = botDifficulties[botId] || 'normal';
         
@@ -676,6 +678,66 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     pushStatsUpdate();
 
   }, [offlineBotCount, botDifficulties, isMultiplayer, isPlaying]);
+
+  // Reactive effect: rebuild bot meshes when colors change while game is running
+  useEffect(() => {
+    if (isMultiplayer || !isPlaying) return;
+    const s = stateRef.current;
+    const scene = threeRef.current.scene;
+    if (!scene) return;
+
+    // Rebuild custom bot (otherPlayers) meshes whose hue changed
+    s.otherPlayers.forEach((bot, id) => {
+      const newHue = botColors[id];
+      if (newHue !== undefined && newHue !== bot.hue) {
+        bot.hue = newHue;
+        const oldMeshes = threeRef.current.otherPlayerMeshes.get(id);
+        if (oldMeshes?.group) scene.remove(oldMeshes.group);
+        threeRef.current.otherPlayerMeshes.delete(id);
+        createOrUpdateRemotePlayer(id, bot);
+      }
+    });
+
+    // Rebuild main AI mesh if its hue changed
+    const mainAiHue = botColors['main_ai'];
+    const oldEnemy = threeRef.current.enemyGroup;
+    if (mainAiHue !== undefined && oldEnemy && oldEnemy.userData.appliedHue !== mainAiHue) {
+      const pos = oldEnemy.position.clone();
+      const visible = oldEnemy.visible;
+      scene.remove(oldEnemy);
+
+      const newEnemy = buildVoxelSpartanModel(true, mainAiHue);
+      newEnemy.position.copy(pos);
+      newEnemy.visible = visible;
+      newEnemy.userData.appliedHue = mainAiHue;
+      scene.add(newEnemy);
+      threeRef.current.enemyGroup = newEnemy;
+
+      const newHammer = buildGravityHammerModel(mainAiHue);
+      newHammer.scale.set(0.6, 0.6, 0.6);
+      newHammer.position.set(0.5, 1.0 - 0.64, -0.4);
+      newHammer.rotation.set(Math.PI / 2, 0, 0);
+      if (newEnemy.userData.upperTorso) {
+        newEnemy.userData.upperTorso.add(newHammer);
+      } else {
+        newEnemy.add(newHammer);
+      }
+      threeRef.current.enemyHammer = newHammer;
+
+      const prevSwordVisible = threeRef.current.enemySword?.visible ?? false;
+      const newSword = buildKatarSwordModel(mainAiHue);
+      newSword.scale.set(0.6, 0.6, 0.6);
+      newSword.position.set(0.5, 1.0 - 0.64, -0.32);
+      newSword.rotation.set(Math.PI / 2, 0, -Math.PI / 8);
+      newSword.visible = prevSwordVisible;
+      if (newEnemy.userData.upperTorso) {
+        newEnemy.userData.upperTorso.add(newSword);
+      } else {
+        newEnemy.add(newSword);
+      }
+      threeRef.current.enemySword = newSword;
+    }
+  }, [botColors, isPlaying, isMultiplayer]);
 
   const onStatsUpdateRef = useRef(onStatsUpdate);
   useEffect(() => {
@@ -1268,8 +1330,9 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     }
 
     // 4. PROGRAMMATIC VOXEL CHARACTER ENEMY
-    const enemyGroup = buildVoxelSpartanModel(true); // Red team AI enemy
+    const enemyGroup = buildVoxelSpartanModel(true, botColors['main_ai']);
     enemyGroup.position.copy(stateRef.current.aiPos);
+    enemyGroup.userData.appliedHue = botColors['main_ai'];
     scene.add(enemyGroup);
     threeRef.current.enemyGroup = enemyGroup;
 
@@ -1286,7 +1349,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       for (let i = 0; i < customBotCount; i++) {
         const botId = `bot_${i+2}`;
         const name = botNames[i % botNames.length];
-        const hue = botHues[i % botHues.length];
+        const hue = botColors[botId] ?? botHues[i % botHues.length];
         const diff = botDifficulties[botId] || 'normal';
 
         s.otherPlayers.set(botId, {
@@ -1320,6 +1383,11 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         const spawnPos = getOptimalSpawnPoint(exclude);
         bot.pos.copy(spawnPos);
         exclude.push(spawnPos);
+      });
+
+      // Build Three.js meshes for all bots now that positions are set
+      s.otherPlayers.forEach((bot) => {
+        createOrUpdateRemotePlayer(bot.id, bot);
       });
 
       // Resize arena dynamically for total player count
