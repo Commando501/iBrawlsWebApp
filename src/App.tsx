@@ -126,6 +126,66 @@ const getSavedMatchmakerUrl = () => {
   return `${protocol}//${host}/ws`;
 };
 
+interface SaveData {
+  version: number;
+  playerName: string;
+  playerHue: number;
+  uiPositions: UiElementPos[];
+  adminSettings: Omit<UniversalSettings, 'playerHue' | 'playerName'>;
+}
+
+const ENCRYPTION_KEY = "GRIFBALL_NEURAL_LINK_2026";
+
+function encryptSaveData(data: SaveData): string {
+  try {
+    const jsonStr = JSON.stringify(data);
+    const encoder = new TextEncoder();
+    const bytes = encoder.encode(jsonStr);
+    const keyBytes = encoder.encode(ENCRYPTION_KEY);
+    
+    for (let i = 0; i < bytes.length; i++) {
+      bytes[i] = bytes[i] ^ keyBytes[i % keyBytes.length];
+    }
+    
+    let binary = "";
+    const len = bytes.byteLength;
+    for (let i = 0; i < len; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    return "GRIF-DEC-" + btoa(binary);
+  } catch (e) {
+    console.error("Encryption failed:", e);
+    throw new Error("Failed to encode neural backup.");
+  }
+}
+
+function decryptSaveCode(code: string): SaveData {
+  if (!code || !code.startsWith("GRIF-DEC-")) {
+    throw new Error("Invalid format. Code must begin with 'GRIF-DEC-'.");
+  }
+  try {
+    const base64Str = code.substring(9).trim();
+    const binary = atob(base64Str);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    
+    const keyBytes = new TextEncoder().encode(ENCRYPTION_KEY);
+    
+    for (let i = 0; i < bytes.length; i++) {
+      bytes[i] = bytes[i] ^ keyBytes[i % keyBytes.length];
+    }
+    
+    const decryptedJson = new TextDecoder().decode(bytes);
+    return JSON.parse(decryptedJson) as SaveData;
+  } catch (e) {
+    console.error("Decryption failed:", e);
+    throw new Error("Failed to decrypt neural code. Ensure it is correct and untampered.");
+  }
+}
+
+
 export default function App() {
   const getWsUrl = () => {
     return getSavedMatchmakerUrl();
@@ -156,13 +216,229 @@ export default function App() {
   const [rightPanelTab, setRightPanelTab] = useState<'manual' | 'customize'>('manual');
   const [customizerWeapon, setCustomizerWeapon] = useState<'none' | 'hammer' | 'sword'>('none');
 
-  // Retrieve saved player hue on startup
+  // Retrieve saved player name or generate one
+  const [playerName, setPlayerName] = useState<string>(() => {
+    try {
+      const savedName = localStorage.getItem('grifball_player_name');
+      if (savedName) return savedName;
+    } catch (e) {}
+    return `Spartan-${Math.floor(1000 + Math.random() * 9000)}`;
+  });
+
+  const handlePlayerNameChange = (newName: string) => {
+    const trimmed = newName.substring(0, 16);
+    setPlayerName(trimmed);
+    setAdminSettings(prev => ({ ...prev, playerName: trimmed }));
+    try {
+      localStorage.setItem('grifball_player_name', trimmed);
+    } catch (e) {}
+  };
+
   const getSavedPlayerHue = (): number => {
     try {
       const saved = localStorage.getItem('grifball_player_hue');
       return saved ? parseInt(saved, 10) : 200;
     } catch (e) {
       return 200;
+    }
+  };
+
+  const getSavedAdminSettings = (): UniversalSettings => {
+    const defaultSettings: UniversalSettings = {
+      maxHP: 1,
+      speedForward: 100,
+      speedSide: 100,
+      speedBackward: 100,
+      attackRange: 3.2,
+      attackRadius: 4.5,
+      dashDistance: 6.0,
+      dashDuration: 0.25,
+      dashCooldown: 2.0,
+      respawnInvulnerabilityDuration: 1.0,
+      hammerReloadTime: 0.6,
+      swordLungeDistance: 14.5,
+      swordLungeSpeed: 24.0,
+      swordSlashSpeed: 0.22,
+      swordSlashReload: 0.6,
+      swordLungeReload: 1.2,
+      hammerJumpPower: 6.5,
+      hammerJumpTriggerRadius: 3.5,
+      hammerJumpWindow: 0.6,
+      visualizeJumpZone: true,
+      directLightIntensity: 1.6,
+      ambientLightIntensity: 0.82,
+      skyboxBrightness: 4.0,
+      skyboxHue: 224,
+      enableSwordTrade: true,
+      enableHammerSwordTrade: true,
+      swordTradeWindow: 350,
+      hammerSwordTradeWindow: 350,
+      playerHue: 200,
+      nameVisibilityDistance: 15.0,
+      nameVisibilityColor: '#00ffff',
+      nameVisibilityOpacity: 0.8,
+      nameVisibilityFontSize: 16,
+    };
+
+    try {
+      const savedAdmin = localStorage.getItem('grifball_admin_settings');
+      let admin = savedAdmin ? JSON.parse(savedAdmin) : {};
+      
+      const savedHue = localStorage.getItem('grifball_player_hue');
+      const playerHue = savedHue ? parseInt(savedHue, 10) : 200;
+
+      const savedName = localStorage.getItem('grifball_player_name');
+      const nameVal = savedName || `Spartan-${Math.floor(1000 + Math.random() * 9000)}`;
+
+      return {
+        ...defaultSettings,
+        ...admin,
+        playerHue,
+        playerName: nameVal
+      };
+    } catch (e) {
+      return defaultSettings;
+    }
+  };
+
+  const [saveCodeImportInput, setSaveCodeImportInput] = useState<string>("");
+  const [saveSystemStatus, setSaveSystemStatus] = useState<{ type: 'success' | 'error' | null, message: string }>({ type: null, message: "" });
+
+  const handleExportSaveCode = () => {
+    try {
+      const { playerHue, playerName: sName, ...restSettings } = adminSettings;
+      const dataToSave: SaveData = {
+        version: 1,
+        playerName: playerName,
+        playerHue: playerHue ?? 200,
+        uiPositions: uiPositions,
+        adminSettings: restSettings
+      };
+      
+      const code = encryptSaveData(dataToSave);
+      navigator.clipboard.writeText(code);
+      
+      setSaveSystemStatus({
+        type: 'success',
+        message: 'Neural Backup Copied to Clipboard!'
+      });
+      setTimeout(() => setSaveSystemStatus({ type: null, message: "" }), 4000);
+    } catch (err: any) {
+      setSaveSystemStatus({
+        type: 'error',
+        message: err.message || 'Export failed.'
+      });
+    }
+  };
+
+  const handleImportSaveCode = (code: string) => {
+    if (!code) {
+      setSaveSystemStatus({ type: 'error', message: 'Please paste a save code first.' });
+      return;
+    }
+    try {
+      const decrypted = decryptSaveCode(code);
+      if (!decrypted || !decrypted.playerName || decrypted.playerHue === undefined) {
+        throw new Error("Malformed save data structure.");
+      }
+
+      // Apply Name
+      handlePlayerNameChange(decrypted.playerName);
+
+      // Apply Hue
+      localStorage.setItem('grifball_player_hue', decrypted.playerHue.toString());
+
+      // Apply UI Positions
+      if (decrypted.uiPositions && Array.isArray(decrypted.uiPositions)) {
+        setUiPositions(decrypted.uiPositions);
+        localStorage.setItem('grifball_ui_positions', JSON.stringify(decrypted.uiPositions));
+      }
+
+      // Apply Admin Settings
+      if (decrypted.adminSettings) {
+        const fullSettings: UniversalSettings = {
+          ...adminSettings,
+          ...decrypted.adminSettings,
+          playerHue: decrypted.playerHue,
+          playerName: decrypted.playerName
+        };
+        setAdminSettings(fullSettings);
+        localStorage.setItem('grifball_admin_settings', JSON.stringify(decrypted.adminSettings));
+      }
+
+      setSaveSystemStatus({
+        type: 'success',
+        message: `Neural Link Synced! Welcome back, ${decrypted.playerName}.`
+      });
+      setSaveCodeImportInput("");
+      setTimeout(() => setSaveSystemStatus({ type: null, message: "" }), 6000);
+    } catch (err: any) {
+      setSaveSystemStatus({
+        type: 'error',
+        message: err.message || 'Import failed.'
+      });
+    }
+  };
+
+  const handleResetAllSettings = () => {
+    if (confirm("Are you sure you want to completely erase all client saves, custom layout configurations, and restore all default values?")) {
+      try {
+        localStorage.removeItem('grifball_player_name');
+        localStorage.removeItem('grifball_player_hue');
+        localStorage.removeItem('grifball_ui_positions');
+        localStorage.removeItem('grifball_admin_settings');
+        
+        // Reset states
+        const defaultName = `Spartan-${Math.floor(1000 + Math.random() * 9000)}`;
+        setPlayerName(defaultName);
+        setUiPositions(DEFAULT_UI_POSITIONS);
+        
+        const defaultAdmin: UniversalSettings = {
+          maxHP: 1,
+          speedForward: 100,
+          speedSide: 100,
+          speedBackward: 100,
+          attackRange: 3.2,
+          attackRadius: 4.5,
+          dashDistance: 6.0,
+          dashDuration: 0.25,
+          dashCooldown: 2.0,
+          respawnInvulnerabilityDuration: 1.0,
+          hammerReloadTime: 0.6,
+          swordLungeDistance: 14.5,
+          swordLungeSpeed: 24.0,
+          swordSlashSpeed: 0.22,
+          swordSlashReload: 0.6,
+          swordLungeReload: 1.2,
+          hammerJumpPower: 6.5,
+          hammerJumpTriggerRadius: 3.5,
+          hammerJumpWindow: 0.6,
+          visualizeJumpZone: true,
+          directLightIntensity: 1.6,
+          ambientLightIntensity: 0.82,
+          skyboxBrightness: 4.0,
+          skyboxHue: 224,
+          enableSwordTrade: true,
+          enableHammerSwordTrade: true,
+          swordTradeWindow: 350,
+          hammerSwordTradeWindow: 350,
+          playerHue: 200,
+          nameVisibilityDistance: 15.0,
+          nameVisibilityColor: '#00ffff',
+          nameVisibilityOpacity: 0.8,
+          nameVisibilityFontSize: 16,
+          playerName: defaultName
+        };
+        setAdminSettings(defaultAdmin);
+        
+        setSaveSystemStatus({
+          type: 'success',
+          message: 'All saves purged. Neural connection reset.'
+        });
+        setTimeout(() => setSaveSystemStatus({ type: null, message: "" }), 4000);
+      } catch (err) {
+        console.error(err);
+      }
     }
   };
 
@@ -253,41 +529,20 @@ export default function App() {
 
 
   // Configuration settings for simulated health, speed percentage, attack offsets and impact sizes
-  const [adminSettings, setAdminSettings] = useState<UniversalSettings>({
-    maxHP: 1,
-    speedForward: 100,
-    speedSide: 100,
-    speedBackward: 100,
-    attackRange: 3.2,
-    attackRadius: 4.5,
-    dashDistance: 6.0,
-    dashDuration: 0.25,
-    dashCooldown: 2.0,
-    respawnInvulnerabilityDuration: 1.0,
-    hammerReloadTime: 0.6,
-    swordLungeDistance: 14.5,
-    swordLungeSpeed: 24.0,
-    swordSlashSpeed: 0.22,
-    swordSlashReload: 0.6,
-    swordLungeReload: 1.2,
-    hammerJumpPower: 6.5,
-    hammerJumpTriggerRadius: 3.5,
-    hammerJumpWindow: 0.6,
-    visualizeJumpZone: true,
-    directLightIntensity: 1.6,
-    ambientLightIntensity: 0.82,
-    skyboxBrightness: 4.0,
-    skyboxHue: 224,
-    enableSwordTrade: true,
-    enableHammerSwordTrade: true,
-    swordTradeWindow: 350,
-    hammerSwordTradeWindow: 350,
-    playerHue: getSavedPlayerHue(),
-    nameVisibilityDistance: 15.0,
-    nameVisibilityColor: '#00ffff',
-    nameVisibilityOpacity: 0.8,
-    nameVisibilityFontSize: 16,
-  });
+  const [adminSettings, setAdminSettings] = useState<UniversalSettings>(() => getSavedAdminSettings());
+
+  // Automatically save admin settings and hue changes locally
+  useEffect(() => {
+    try {
+      const { playerHue, playerName: sName, ...restSettings } = adminSettings;
+      localStorage.setItem('grifball_admin_settings', JSON.stringify(restSettings));
+      if (playerHue !== undefined) {
+        localStorage.setItem('grifball_player_hue', playerHue.toString());
+      }
+    } catch (e) {
+      console.error('Failed to save settings locally:', e);
+    }
+  }, [adminSettings]);
 
   // Standard initial dummy stats to render HUD beautifully before game starts
   const [currentStats, setCurrentStats] = useState<GameStats>({
@@ -567,9 +822,10 @@ export default function App() {
       type: 'update_status',
       status,
       roomCode,
-      spaceAvailable
+      spaceAvailable,
+      name: playerName
     }));
-  }, [menuSocket, isPlaying, isMultiplayer, connectionStatus, hostIdCode, joinIpOrId, multiplayerRole]);
+  }, [menuSocket, isPlaying, isMultiplayer, connectionStatus, hostIdCode, joinIpOrId, multiplayerRole, playerName]);
 
   // Sync the real-time calculated ping to HUD stats immediately
   useEffect(() => {
@@ -613,7 +869,8 @@ export default function App() {
   const sendChatMessage = (text: string) => {
     if (!multiplayerSocket || multiplayerSocket.readyState !== WebSocket.OPEN) return;
     
-    const senderName = multiplayerRole === 'host' ? 'Blue (Host)' : 'Red (Guest)';
+    const baseSender = multiplayerRole === 'host' ? 'Blue (Host)' : 'Red (Guest)';
+    const senderName = playerName ? `${playerName} (${multiplayerRole === 'host' ? 'Host' : 'Guest'})` : baseSender;
     const msgId = Math.random().toString(36).substring(2, 9);
     const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     
@@ -648,7 +905,7 @@ export default function App() {
     
     const packet = {
       type: 'lobby_chat',
-      sender: `Client ${clientId}`,
+      sender: playerName || `Client ${clientId}`,
       text: text
     };
     
@@ -996,11 +1253,11 @@ export default function App() {
             <div className="flex flex-col sm:flex-row justify-between items-center gap-4 border-b border-white/10 pb-4 shrink-0">
               {/* Brand Branding Section */}
               <div className="flex items-center gap-3">
-                <h1 className="text-3xl font-sans font-black tracking-tighter italic text-transparent bg-clip-text bg-gradient-to-b from-white to-slate-400 uppercase select-none">
-                  GRIFPROTO
+                <h1 className="text-3xl font-sans font-black tracking-tighter italic text-transparent bg-clip-text bg-gradient-to-b from-white to-slate-400 select-none">
+                  iBrawls
                 </h1>
                 <span className="text-[#38bdf8] tracking-[0.2em] uppercase text-[9px] font-bold font-display select-none px-2.5 py-0.5 border border-[#38bdf8]/30 rounded bg-[#38bdf8]/5 hidden sm:inline-block">
-                  Voxel Combat Simulation
+                  Voxel Grifball Tech Demo
                 </span>
               </div>
 
@@ -1050,7 +1307,7 @@ export default function App() {
                         </h2>
                       </div>
                       <p className="text-white/60 text-xs leading-relaxed bg-white/5 border border-white/5 rounded-lg p-4 leading-normal select-text">
-                        Welcome to the futuristic simulation battlefield. Grab your Grav Hammer and Energy Sword to train against tactical defensive AI bots in responsive first-person combat!
+                        This is a Grifball iBrawls simulator. The game can be played solo against AI or online against other players. All Admin Controls only impact you, so coordinate with your opponent on the dials you want to match.
                       </p>
                     </div>
                     
@@ -1347,8 +1604,8 @@ export default function App() {
                           onlineClients.map(client => (
                             <div key={client.id} className="flex justify-between items-center bg-black/45 px-2.5 py-2 rounded border border-white/5 text-[11px] font-mono shrink-0">
                               <div className="flex flex-col gap-0.5 min-w-0">
-                                <span className="text-white/80 font-semibold truncate max-w-[90px]">
-                                  Client {client.id}
+                                <span className="text-white/80 font-semibold truncate max-w-[130px]" title={client.name ? `${client.name} (${client.id})` : `Client ${client.id}`}>
+                                  {client.name ? client.name : `Client ${client.id}`}
                                 </span>
                                 <div className="flex items-center gap-1.5">
                                   {client.state === 'menu' && (
@@ -1557,7 +1814,7 @@ export default function App() {
                   <div className="flex-grow flex flex-col min-h-0 overflow-y-auto pr-1 justify-between gap-4">
                     <div className="flex flex-col gap-4">
                       {/* Rotating 3D character */}
-                      <div className="relative bg-slate-950/30 border border-white/5 rounded-xl p-2 select-none overflow-hidden h-[180px] shrink-0">
+                      <div className="relative bg-slate-950/30 border border-white/5 rounded-xl select-none overflow-hidden h-[300px] shrink-0">
                         <CharacterPreview hue={adminSettings.playerHue ?? 200} heldWeapon={customizerWeapon} />
                       </div>
 
@@ -1655,6 +1912,90 @@ export default function App() {
                                 {w.label}
                               </button>
                             ))}
+                          </div>
+                        </div>
+
+                        {/* Spartan Nickname Handle */}
+                        <div className="bg-white/5 border border-white/5 rounded-lg p-3">
+                          <span className="text-[9px] font-bold text-[#38bdf8] uppercase tracking-wider block mb-2">Spartan Nickname Handle</span>
+                          <div className="relative">
+                            <input
+                              type="text"
+                              maxLength={16}
+                              value={playerName}
+                              onChange={(e) => handlePlayerNameChange(e.target.value)}
+                              placeholder="Enter Spartan Name..."
+                              className="w-full h-9 bg-black/60 border border-white/10 rounded px-3 text-xs tracking-wide text-white focus:border-[#38bdf8] outline-none transition-all font-sans"
+                            />
+                            <div className="absolute right-2.5 top-2.5 w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                          </div>
+                        </div>
+
+                        {/* Neural Save System Panel */}
+                        <div className="bg-white/5 border border-white/5 rounded-lg p-3 flex flex-col gap-2.5">
+                          <div className="flex justify-between items-center border-b border-white/5 pb-2">
+                            <span className="text-[9px] font-bold text-[#38bdf8] uppercase tracking-wider flex items-center gap-1.5">
+                              💾 Neural Backup System
+                            </span>
+                            <span className="text-[8px] font-mono text-emerald-400 bg-emerald-950/40 border border-emerald-500/20 px-1.5 py-0.5 rounded flex items-center gap-1 shrink-0 select-none animate-pulse">
+                              <span className="w-1 h-1 bg-emerald-400 rounded-full inline-block" />
+                              LOCAL_COOKIE_ACTIVE
+                            </span>
+                          </div>
+                          
+                          <p className="text-[9px] text-white/50 leading-normal">
+                            All configs, layouts, colors, and Spartan handles are synced locally. Export a decryption code to share or migrate your profile!
+                          </p>
+
+                          {saveSystemStatus.type && (
+                            <div className={`p-2 rounded text-[10px] font-mono border ${
+                              saveSystemStatus.type === 'success' 
+                                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' 
+                                : 'bg-red-500/10 border-red-500/30 text-red-400'
+                            }`}>
+                              {saveSystemStatus.type === 'success' ? '⚡ ' : '⚠️ '}
+                              {saveSystemStatus.message}
+                            </div>
+                          )}
+
+                          <div className="flex gap-2">
+                            <button
+                              onClick={handleExportSaveCode}
+                              className="flex-1 py-1.5 bg-[#38bdf8]/15 hover:bg-[#38bdf8]/30 border border-[#38bdf8]/30 text-[#38bdf8] font-bold text-[9px] uppercase tracking-wider rounded cursor-pointer transition-all active:scale-[0.98]"
+                            >
+                              📋 Export Save Code
+                            </button>
+                            <button
+                              onClick={handleResetAllSettings}
+                              className="py-1.5 px-3 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 hover:border-red-500/40 text-red-400 font-bold text-[9px] uppercase tracking-wider rounded cursor-pointer transition-all active:scale-[0.98]"
+                              title="Wipe client database"
+                            >
+                              💥 Wipe Saves
+                            </button>
+                          </div>
+
+                          <div className="flex flex-col gap-1.5 mt-1 border-t border-white/5 pt-2.5">
+                            <span className="text-[8px] text-white/30 uppercase tracking-widest font-mono">Import Cybernetic Code:</span>
+                            <div className="flex gap-1.5">
+                              <input
+                                type="text"
+                                value={saveCodeImportInput}
+                                onChange={(e) => setSaveCodeImportInput(e.target.value)}
+                                placeholder="Paste GRIF-DEC- code here..."
+                                className="flex-1 h-8 bg-black/60 border border-white/10 rounded px-2.5 font-mono text-[9px] text-white placeholder:text-white/20 focus:border-[#38bdf8] outline-none transition-all"
+                              />
+                              <button
+                                onClick={() => handleImportSaveCode(saveCodeImportInput)}
+                                disabled={!saveCodeImportInput}
+                                className={`px-3 h-8 font-sans font-bold text-[9px] uppercase tracking-wider rounded transition-all border outline-none ${
+                                  saveCodeImportInput
+                                    ? 'bg-emerald-500/15 hover:bg-emerald-500/35 border-emerald-500/40 text-emerald-400 cursor-pointer'
+                                    : 'bg-white/5 border-white/5 text-white/20 cursor-not-allowed'
+                                }`}
+                              >
+                                Decrypt
+                              </button>
+                            </div>
                           </div>
                         </div>
 

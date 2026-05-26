@@ -301,6 +301,10 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
               if (data.yaw !== undefined) s.aiYaw = data.yaw;
               if (data.pitch !== undefined) s.aiPitch = data.pitch;
               
+              if (data.playerName !== undefined) {
+                opponentNameRef.current = data.playerName;
+              }
+              
               if (data.hue !== undefined && data.hue !== lastOpponentHue.current) {
                 lastOpponentHue.current = data.hue;
                 rebuildEnemyModel(data.hue);
@@ -460,6 +464,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
   // Track opponent's custom hue for rebuilding their Spartan model dynamically
   const lastOpponentHue = useRef<number | null>(null);
+  const opponentNameRef = useRef<string>('');
 
   const rebuildEnemyModel = (hue: number) => {
     const s = stateRef.current;
@@ -1064,6 +1069,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
           activeWeapon: s.activeWeapon,
           respawnTimer: s.playerRespawnTimer,
           hue: s.settings.playerHue,
+          playerName: s.settings.playerName, // Send custom name!
           
           ...(multiplayerRole === 'host' ? {
             scoreHost: s.scorePlayer,
@@ -3290,6 +3296,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       playerDeaths: s.playerDeaths,
       enemyKills: s.enemyKills,
       enemyDeaths: s.enemyDeaths,
+      opponentPlayerName: opponentNameRef.current || undefined,
     });
   };
 
@@ -3354,7 +3361,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       nameplate.style.color = s.settings.nameVisibilityColor || '#00ffff';
       nameplate.style.opacity = (s.settings.nameVisibilityOpacity !== undefined ? s.settings.nameVisibilityOpacity : 0.8).toString();
       nameplate.style.fontSize = `${s.settings.nameVisibilityFontSize || 16}px`;
-      nameplate.textContent = isMultiplayer ? (opponentClientId || 'Opponent') : 'AI Bot';
+      nameplate.textContent = isMultiplayer ? (opponentNameRef.current || opponentClientId || 'Opponent') : 'AI Bot';
     } else {
       nameplate.style.display = 'none';
     }

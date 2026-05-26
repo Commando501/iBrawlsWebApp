@@ -76,6 +76,7 @@ async function startServer() {
     const clientPayloads = Array.from(wss.clients)
       .map((client: any) => ({
         id: client.id,
+        name: client.playerName || undefined,
         state: client.playerState || 'menu',
         roomCode: client.roomCode,
         spaceAvailable: client.spaceAvailable !== undefined ? client.spaceAvailable : false
@@ -114,11 +115,14 @@ async function startServer() {
 
         switch (message.type) {
           case "update_status": {
-            const { status, roomCode, spaceAvailable } = message;
-            console.log(`Client ${wsId} updating playerState to: ${status}, roomCode: ${roomCode}, spaceAvailable: ${spaceAvailable}`);
+            const { status, roomCode, spaceAvailable, name } = message;
+            console.log(`Client ${wsId} updating playerState to: ${status}, roomCode: ${roomCode}, spaceAvailable: ${spaceAvailable}, name: ${name}`);
             (ws as any).playerState = status;
             (ws as any).roomCode = roomCode;
             (ws as any).spaceAvailable = spaceAvailable;
+            if (name) {
+              (ws as any).playerName = name;
+            }
             updatePresence();
             break;
           }

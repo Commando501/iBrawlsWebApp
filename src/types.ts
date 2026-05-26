@@ -37,6 +37,7 @@ export interface UniversalSettings {
   nameVisibilityColor?: string;           // Color of the floating name
   nameVisibilityOpacity?: number;         // Opacity of the floating name
   nameVisibilityFontSize?: number;        // Font size of the floating name
+  playerName?: string;                    // Persistent customized player name / handle
 }
 
 export type GameState = 'menu' | 'playing' | 'paused';
@@ -114,6 +115,7 @@ export interface GameStats {
   enemyDeaths?: number;
   playerClientId?: string;
   opponentClientId?: string;
+  opponentPlayerName?: string;            // Retained in-game synchronized opponent player name
 }
 
 export interface UiElementPos {

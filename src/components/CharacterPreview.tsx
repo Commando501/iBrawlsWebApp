@@ -24,16 +24,18 @@ export const CharacterPreview: React.FC<CharacterPreviewProps> = ({ hue, heldWea
   useEffect(() => {
     if (!containerRef.current) return;
 
+    const container = containerRef.current;
+
     // 1. Scene setup
     const scene = new THREE.Scene();
     
     // Set aspect ratio based on element size
-    const width = containerRef.current.clientWidth || 300;
-    const height = containerRef.current.clientHeight || 320;
+    const width = container.clientWidth || 300;
+    const height = container.clientHeight || 320;
     const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 100);
     
-    // Position camera to fit the spartan nicely
-    camera.position.set(0, 1.0, 3.2);
+    // Position camera to fit the spartan nicely with some breathing room
+    camera.position.set(0, 0.9, 3.5);
     camera.lookAt(0, 0.8, 0);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
@@ -42,7 +44,7 @@ export const CharacterPreview: React.FC<CharacterPreviewProps> = ({ hue, heldWea
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     
-    containerRef.current.appendChild(renderer.domElement);
+    container.appendChild(renderer.domElement);
 
     // 2. Lighting setup
     const ambientLight = new THREE.AmbientLight('#ffffff', 0.65);
@@ -127,6 +129,54 @@ export const CharacterPreview: React.FC<CharacterPreviewProps> = ({ hue, heldWea
     // Initial build
     buildCharacter(currentHue, currentWeapon);
 
+    // Track states inside effect scope for responsive updates
+    let isHovering = false;
+    let isDragging = false;
+    let previousPointerX = 0;
+
+    const onPointerDown = (e: PointerEvent) => {
+      isDragging = true;
+      previousPointerX = e.clientX;
+      container.setPointerCapture(e.pointerId);
+    };
+
+    const onPointerMove = (e: PointerEvent) => {
+      if (isDragging) {
+        const deltaX = e.clientX - previousPointerX;
+        previousPointerX = e.clientX;
+        
+        // Manual rotation along the axis
+        const rotationSpeed = 0.008;
+        if (characterGroup) {
+          characterGroup.rotation.y += deltaX * rotationSpeed;
+        }
+        platform.rotation.y += deltaX * rotationSpeed;
+        platformRing.rotation.y += deltaX * rotationSpeed;
+      }
+    };
+
+    const onPointerUp = (e: PointerEvent) => {
+      if (isDragging) {
+        isDragging = false;
+        container.releasePointerCapture(e.pointerId);
+      }
+    };
+
+    const onPointerEnter = () => {
+      isHovering = true;
+    };
+
+    const onPointerLeave = () => {
+      isHovering = false;
+    };
+
+    container.addEventListener('pointerdown', onPointerDown);
+    container.addEventListener('pointermove', onPointerMove);
+    container.addEventListener('pointerup', onPointerUp);
+    container.addEventListener('pointercancel', onPointerUp);
+    container.addEventListener('pointerenter', onPointerEnter);
+    container.addEventListener('pointerleave', onPointerLeave);
+
     // 4. Animation loop
     let animationFrameId: number;
     const animate = () => {
@@ -143,13 +193,14 @@ export const CharacterPreview: React.FC<CharacterPreviewProps> = ({ hue, heldWea
         ringMat.color.set(new THREE.Color(`hsl(${currentHue}, 85%, 60%)`));
       }
 
-      // Rotate character model slowly
-      if (characterGroup) {
-        characterGroup.rotation.y += 0.012;
+      // Rotate character model slowly if not hovered and not manually dragging
+      if (!isHovering && !isDragging) {
+        if (characterGroup) {
+          characterGroup.rotation.y += 0.012;
+        }
+        platform.rotation.y += 0.012;
+        platformRing.rotation.y += 0.012;
       }
-      
-      platform.rotation.y += 0.012;
-      platformRing.rotation.y += 0.012;
 
       renderer.render(scene, camera);
       animationFrameId = requestAnimationFrame(animate);
@@ -159,9 +210,9 @@ export const CharacterPreview: React.FC<CharacterPreviewProps> = ({ hue, heldWea
 
     // 5. Handle resizing
     const handleResize = () => {
-      if (!containerRef.current) return;
-      const w = containerRef.current.clientWidth;
-      const h = containerRef.current.clientHeight;
+      if (!container) return;
+      const w = container.clientWidth;
+      const h = container.clientHeight;
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
       renderer.setSize(w, h);
@@ -172,8 +223,16 @@ export const CharacterPreview: React.FC<CharacterPreviewProps> = ({ hue, heldWea
     return () => {
       cancelAnimationFrame(animationFrameId);
       window.removeEventListener('resize', handleResize);
-      if (containerRef.current && renderer.domElement) {
-        containerRef.current.removeChild(renderer.domElement);
+      
+      container.removeEventListener('pointerdown', onPointerDown);
+      container.removeEventListener('pointermove', onPointerMove);
+      container.removeEventListener('pointerup', onPointerUp);
+      container.removeEventListener('pointercancel', onPointerUp);
+      container.removeEventListener('pointerenter', onPointerEnter);
+      container.removeEventListener('pointerleave', onPointerLeave);
+
+      if (container && renderer.domElement && container.contains(renderer.domElement)) {
+        container.removeChild(renderer.domElement);
       }
       renderer.dispose();
       platformMat.dispose();
@@ -186,7 +245,7 @@ export const CharacterPreview: React.FC<CharacterPreviewProps> = ({ hue, heldWea
   return (
     <div 
       ref={containerRef} 
-      className="w-full h-[320px] rounded-xl border border-white/5 bg-slate-950/40 relative flex items-center justify-center overflow-hidden shadow-inner"
+      className="w-full h-full rounded-xl border border-white/5 bg-slate-950/40 relative flex items-center justify-center overflow-hidden shadow-inner cursor-grab active:cursor-grabbing select-none"
     >
       {/* Decorative hud corners */}
       <div className="absolute top-3 left-3 w-3 h-3 border-t border-l border-[#38bdf8]/40" />

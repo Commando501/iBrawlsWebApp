@@ -225,8 +225,8 @@ export const HUD: React.FC<HUDProps> = ({
           <div className="text-center">
             <p className="text-[10px] text-blue-400 font-bold tracking-tighter uppercase">
               {stats.isMultiplayer
-                ? (stats.multiplayerRole === 'host' ? `${stats.playerClientId || 'Host'} (You)` : stats.opponentClientId || 'Host')
-                : `${stats.playerClientId || 'Player'} (You)`}
+                ? (stats.multiplayerRole === 'host' ? `${stats.settings.playerName || stats.playerClientId || 'Host'} (You)` : stats.opponentPlayerName || stats.opponentClientId || 'Host')
+                : `${stats.settings.playerName || stats.playerClientId || 'Player'} (You)`}
             </p>
             <p className="text-3xl font-black font-display">{stats.scorePlayer.toString().padStart(2, '0')}</p>
           </div>
@@ -239,7 +239,7 @@ export const HUD: React.FC<HUDProps> = ({
           <div className="text-center">
             <p className="text-[10px] text-red-500 font-bold tracking-tighter uppercase">
               {stats.isMultiplayer
-                ? (stats.multiplayerRole === 'client' ? `${stats.playerClientId || 'Client'} (You)` : stats.opponentClientId || 'Client')
+                ? (stats.multiplayerRole === 'client' ? `${stats.settings.playerName || stats.playerClientId || 'Client'} (You)` : stats.opponentPlayerName || stats.opponentClientId || 'Client')
                 : 'AI Bot'}
             </p>
             <p className="text-3xl font-black font-display">{stats.scoreEnemy.toString().padStart(2, '0')}</p>
@@ -726,8 +726,8 @@ export const HUD: React.FC<HUDProps> = ({
                   <div className="flex flex-col">
                     <span className="text-sm font-black tracking-tight text-white flex items-center gap-2">
                       {stats.isMultiplayer
-                        ? (stats.multiplayerRole === 'host' ? `${stats.playerClientId || 'Host'} (You)` : stats.opponentClientId || 'Host')
-                        : `${stats.playerClientId || 'Player'} (You)`}
+                        ? (stats.multiplayerRole === 'host' ? `${stats.settings.playerName || stats.playerClientId || 'Host'} (You)` : stats.opponentPlayerName || stats.opponentClientId || 'Host')
+                        : `${stats.settings.playerName || stats.playerClientId || 'Player'} (You)`}
                       {stats.scorePlayer >= stats.scoreEnemy && (
                         <span className="text-[9px] font-mono font-bold bg-sky-400/20 text-sky-300 px-2 py-0.5 rounded border border-sky-400/35">LEADER</span>
                       )}
@@ -757,7 +757,7 @@ export const HUD: React.FC<HUDProps> = ({
                   <div className="flex flex-col">
                     <span className="text-sm font-black tracking-tight text-white flex items-center gap-2">
                       {stats.isMultiplayer
-                        ? (stats.multiplayerRole === 'client' ? `${stats.playerClientId || 'Client'} (You)` : stats.opponentClientId || 'Client')
+                        ? (stats.multiplayerRole === 'client' ? `${stats.settings.playerName || stats.playerClientId || 'Client'} (You)` : stats.opponentPlayerName || stats.opponentClientId || 'Client')
                         : 'AI Bot'}
                       {stats.scoreEnemy >= stats.scorePlayer && (
                         <span className="text-[9px] font-mono font-bold bg-red-400/20 text-red-300 px-2 py-0.5 rounded border border-red-400/35">LEADER</span>
