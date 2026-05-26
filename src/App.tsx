@@ -42,11 +42,11 @@ const GlobalChatPanel = ({ messages, onSendMessage }: GlobalChatPanelProps) => {
   };
 
   return (
-    <div className="flex-1 flex flex-col justify-between min-h-0">
+    <div className="flex-1 flex flex-col justify-between min-h-0 gap-3">
       {/* Message history container */}
-      <div 
+      <div
         ref={scrollRef}
-        className="flex-1 min-h-0 overflow-y-auto bg-black/45 border border-white/10 rounded-xl p-4 flex flex-col gap-3 mb-4 scrollbar-thin scrollbar-thumb-white/10 pr-1.5"
+        className="flex-1 min-h-0 overflow-y-auto bg-black/45 border border-white/10 rounded-xl p-3.5 flex flex-col gap-2.5 scrollbar-thin scrollbar-thumb-white/10 pr-1.5"
       >
         {messages.length === 0 ? (
           <p className="text-xs font-mono text-white/35 uppercase tracking-widest text-center my-auto italic select-none">
@@ -199,6 +199,204 @@ const BOT_COLOR_PRESETS = [
   { label: 'Purple',  hue: 275 },
   { label: 'Magenta', hue: 310 },
 ] as const;
+
+// ─── Visual Keyboard + Mouse keybind editor component ────────────────────────
+interface KbVisualizerProps {
+  bindings: Keybindings;
+  rebinding: keyof Keybindings | null;
+  onPick: (action: keyof Keybindings) => void;
+}
+
+const ACTION_LABELS: Record<string, string> = {
+  moveForward: 'FWD', moveLeft: 'LEFT', moveBackward: 'BACK', moveRight: 'RIGHT',
+  jump: 'JUMP', dash: 'THRUST', crouch: 'CROUCH', scoreboard: 'SCORE',
+  weapon1: 'HAMMER', weapon2: 'SWORD',
+};
+
+function KbKey({ label, size = 'md', action, muted, bindings, rebinding, onPick }: {
+  label: string; size?: 'sm' | 'md' | 'lg' | 'space'; action?: keyof Keybindings;
+  muted?: boolean; bindings: Keybindings; rebinding: keyof Keybindings | null; onPick: (a: keyof Keybindings) => void;
+}) {
+  const isHi = !!action && !muted;
+  const isActive = !!action && rebinding === action;
+  const subLbl = action ? ACTION_LABELS[action] : '';
+  const w = size === 'sm' ? 32 : size === 'lg' ? 48 : size === 'space' ? 220 : 40;
+  const h = size === 'space' ? 32 : size === 'lg' ? 32 : size === 'sm' ? 32 : 40;
+  const fz = size === 'md' ? 14 : 11;
+  return (
+    <button
+      onClick={() => action && !muted && onPick(action)}
+      disabled={muted || !action}
+      style={{
+        width: w, height: h, borderRadius: 6, padding: 0, cursor: action && !muted ? 'pointer' : 'default',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column',
+        fontFamily: "'JetBrains Mono', monospace", fontWeight: 800, fontSize: fz, letterSpacing: '0.05em',
+        transition: 'all 150ms',
+        background: isActive ? 'rgba(245,158,11,0.30)' : isHi ? 'rgba(34,211,238,0.18)' : muted ? 'rgba(255,255,255,0.03)' : 'rgba(15,23,42,0.65)',
+        border: isActive ? '1px solid rgba(245,158,11,0.7)' : isHi ? '1px solid rgba(34,211,238,0.55)' : muted ? '1px solid rgba(255,255,255,0.05)' : '1px solid rgba(255,255,255,0.10)',
+        color: isHi ? '#22d3ee' : muted ? 'rgba(255,255,255,0.20)' : 'rgba(255,255,255,0.55)',
+        boxShadow: isHi ? '0 0 8px rgba(34,211,238,0.30)' : 'none',
+      }}
+    >
+      <span>{label}</span>
+      {subLbl && (
+        <span style={{ fontSize: 7, fontWeight: 700, opacity: 0.85, letterSpacing: '0.1em', marginTop: 1, color: isHi ? '#67e8f9' : 'rgba(255,255,255,0.40)' }}>
+          {subLbl}
+        </span>
+      )}
+    </button>
+  );
+}
+
+function KbBindRow({ label, action, bindings, rebinding, onPick }: {
+  label: string; action: keyof Keybindings; bindings: Keybindings; rebinding: keyof Keybindings | null; onPick: (a: keyof Keybindings) => void;
+}) {
+  const isActive = rebinding === action;
+  const val = bindings[action];
+  const display = (val === ' ' ? 'Space' : (val || '—')).toString().toUpperCase();
+  return (
+    <button onClick={() => onPick(action)} style={{
+      display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+      padding: '6px 10px', borderRadius: 4, cursor: 'pointer', width: '100%',
+      background: isActive ? 'rgba(245,158,11,0.15)' : 'rgba(0,0,0,0.35)',
+      border: isActive ? '1px solid rgba(245,158,11,0.55)' : '1px solid rgba(255,255,255,0.05)',
+    }}>
+      <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: 'rgba(255,255,255,0.55)', letterSpacing: '0.1em', textTransform: 'uppercase' }}>
+        {label}
+      </span>
+      <span style={{
+        fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fontWeight: 900,
+        color: isActive ? '#fbbf24' : '#22d3ee',
+        background: isActive ? 'rgba(245,158,11,0.10)' : 'rgba(34,211,238,0.10)',
+        border: isActive ? '1px solid rgba(245,158,11,0.40)' : '1px solid rgba(34,211,238,0.30)',
+        padding: '2px 8px', borderRadius: 3, letterSpacing: '0.05em', minWidth: 42, textAlign: 'center' as const,
+      }}>
+        {isActive ? '…' : `[${display}]`}
+      </span>
+    </button>
+  );
+}
+
+function KeyboardVisualizer({ bindings, rebinding, onPick }: KbVisualizerProps) {
+  const boundLookup: Record<string, keyof Keybindings> = {};
+  for (const [action, key] of Object.entries(bindings)) {
+    boundLookup[key as string] = action as keyof Keybindings;
+  }
+  const rowGap = { display: 'flex' as const, gap: 5 };
+  return (
+    <div style={{ background: 'rgba(2,6,23,0.45)', border: '1px solid rgba(255,255,255,0.10)', borderRadius: 12, padding: 18, boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.30)' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: 10, marginBottom: 14, borderBottom: '1px solid rgba(255,255,255,0.05)', gap: 8, flexWrap: 'wrap' as const }}>
+        <span style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 12, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase' as const, color: '#38bdf8', whiteSpace: 'nowrap' as const }}>
+          ⌨ Keyboard + Mouse Layout
+        </span>
+        <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: rebinding ? '#fbbf24' : 'rgba(255,255,255,0.40)', background: rebinding ? 'rgba(245,158,11,0.10)' : 'rgba(255,255,255,0.05)', border: rebinding ? '1px solid rgba(245,158,11,0.30)' : '1px solid rgba(255,255,255,0.10)', padding: '2px 8px', borderRadius: 4, letterSpacing: '0.15em', textTransform: 'uppercase' as const }}>
+          {rebinding ? 'PRESS ANY KEY…' : 'CLICK A KEY TO REBIND'}
+        </span>
+      </div>
+
+      {/* Keyboard + Mouse row */}
+      <div style={{ display: 'flex', gap: 18, alignItems: 'flex-start', flexWrap: 'wrap' as const }}>
+        {/* Keyboard */}
+        <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 5 }}>
+          <div style={rowGap}>
+            <KbKey size="lg" label="Esc" muted bindings={bindings} rebinding={rebinding} onPick={onPick} />
+            <div style={{ width: 32 }} />
+            <KbKey size="sm" label="1" action={boundLookup['1']} bindings={bindings} rebinding={rebinding} onPick={onPick} />
+            <KbKey size="sm" label="2" action={boundLookup['2']} bindings={bindings} rebinding={rebinding} onPick={onPick} />
+            <KbKey size="sm" label="3" muted bindings={bindings} rebinding={rebinding} onPick={onPick} />
+            <KbKey size="sm" label="4" muted bindings={bindings} rebinding={rebinding} onPick={onPick} />
+          </div>
+          <div style={rowGap}>
+            <KbKey label="Q" action={boundLookup['q']} bindings={bindings} rebinding={rebinding} onPick={onPick} />
+            <KbKey label="W" action={boundLookup['w']} bindings={bindings} rebinding={rebinding} onPick={onPick} />
+            <KbKey label="E" muted bindings={bindings} rebinding={rebinding} onPick={onPick} />
+            <KbKey label="R" muted bindings={bindings} rebinding={rebinding} onPick={onPick} />
+            <KbKey label="T" muted bindings={bindings} rebinding={rebinding} onPick={onPick} />
+            <KbKey label="Y" muted bindings={bindings} rebinding={rebinding} onPick={onPick} />
+            <KbKey label="U" action={boundLookup['u']} bindings={bindings} rebinding={rebinding} onPick={onPick} />
+          </div>
+          <div style={rowGap}>
+            <KbKey label="A" action={boundLookup['a']} bindings={bindings} rebinding={rebinding} onPick={onPick} />
+            <KbKey label="S" action={boundLookup['s']} bindings={bindings} rebinding={rebinding} onPick={onPick} />
+            <KbKey label="D" action={boundLookup['d']} bindings={bindings} rebinding={rebinding} onPick={onPick} />
+            <KbKey label="F" muted bindings={bindings} rebinding={rebinding} onPick={onPick} />
+            <KbKey label="G" muted bindings={bindings} rebinding={rebinding} onPick={onPick} />
+            <KbKey label="H" muted bindings={bindings} rebinding={rebinding} onPick={onPick} />
+          </div>
+          <div style={rowGap}>
+            <div style={{ width: 16 }} />
+            <KbKey label="Z" muted bindings={bindings} rebinding={rebinding} onPick={onPick} />
+            <KbKey label="X" muted bindings={bindings} rebinding={rebinding} onPick={onPick} />
+            <KbKey label="C" action={boundLookup['c']} bindings={bindings} rebinding={rebinding} onPick={onPick} />
+            <KbKey label="V" muted bindings={bindings} rebinding={rebinding} onPick={onPick} />
+            <KbKey label="B" muted bindings={bindings} rebinding={rebinding} onPick={onPick} />
+          </div>
+          <div style={rowGap}>
+            <KbKey size="space" label="SPACE"
+              action={boundLookup[' '] || boundLookup['space'] || (Object.entries(bindings).find(([, v]) => v === ' ')?.[0] as keyof Keybindings | undefined)}
+              bindings={bindings} rebinding={rebinding} onPick={onPick} />
+          </div>
+        </div>
+
+        {/* Mouse SVG */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <svg viewBox="0 0 80 110" style={{ width: 56, height: 78 }}>
+            <path d="M 16 22 Q 16 8, 40 8 Q 64 8, 64 22 L 64 86 Q 64 102, 40 102 Q 16 102, 16 86 Z" fill="rgba(15,23,42,0.65)" stroke="rgba(255,255,255,0.20)" strokeWidth="1.5"/>
+            <line x1="40" y1="8" x2="40" y2="44" stroke="rgba(255,255,255,0.15)" strokeWidth="1"/>
+            <path d="M 16 22 Q 16 8, 40 8 L 40 44 L 16 44 Z"
+              fill={rebinding === 'attack' ? 'rgba(34,211,238,0.35)' : 'rgba(34,211,238,0.18)'}
+              stroke="rgba(34,211,238,0.6)" strokeWidth="1" style={{ cursor: 'pointer' }}
+              onClick={() => onPick('attack')} />
+            <path d="M 40 8 Q 64 8, 64 22 L 64 44 L 40 44 Z"
+              fill={rebinding === 'altAttack' ? 'rgba(34,211,238,0.35)' : 'rgba(34,211,238,0.18)'}
+              stroke="rgba(34,211,238,0.6)" strokeWidth="1" style={{ cursor: 'pointer' }}
+              onClick={() => onPick('altAttack')} />
+            <rect x="36" y="22" width="8" height="14" rx="3" fill="rgba(34,211,238,0.30)" stroke="rgba(34,211,238,0.7)" strokeWidth="1"/>
+            <line x1="36" y1="28" x2="44" y2="28" stroke="rgba(255,255,255,0.3)" strokeWidth="0.5"/>
+            <line x1="36" y1="31" x2="44" y2="31" stroke="rgba(255,255,255,0.3)" strokeWidth="0.5"/>
+          </svg>
+          <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 4 }}>
+            {[
+              { label: 'LMB', action: 'ATTACK', key: 'attack' as keyof Keybindings },
+              { label: 'RMB', action: 'ALT-ATK', key: 'altAttack' as keyof Keybindings },
+            ].map(({ label, action, key }) => (
+              <div key={key} onClick={() => onPick(key)} style={{
+                cursor: 'pointer', padding: '5px 8px', borderRadius: 4, display: 'flex', flexDirection: 'column' as const, gap: 1,
+                background: rebinding === key ? 'rgba(245,158,11,0.20)' : 'rgba(34,211,238,0.10)',
+                border: rebinding === key ? '1px solid rgba(245,158,11,0.5)' : '1px solid rgba(34,211,238,0.30)',
+                fontFamily: "'JetBrains Mono', monospace", fontSize: 9, fontWeight: 800, color: '#22d3ee', letterSpacing: '0.1em',
+              }}>
+                <span style={{ fontSize: 10, color: '#67e8f9' }}>{label}</span>
+                <span style={{ fontSize: 8, opacity: 0.7 }}>{action}</span>
+              </div>
+            ))}
+            <div style={{ padding: '5px 8px', borderRadius: 4, background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', fontFamily: "'JetBrains Mono', monospace", fontSize: 9, fontWeight: 800, color: 'rgba(255,255,255,0.30)', letterSpacing: '0.1em' }}>
+              <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.40)' }}>WHEEL</span>
+              <div style={{ fontSize: 8, opacity: 0.7 }}>SWAP WEAP</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Compact chip grid */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 6, marginTop: 14, paddingTop: 14, borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+        <KbBindRow label="FWD"    action="moveForward"  bindings={bindings} rebinding={rebinding} onPick={onPick} />
+        <KbBindRow label="LEFT"   action="moveLeft"     bindings={bindings} rebinding={rebinding} onPick={onPick} />
+        <KbBindRow label="BACK"   action="moveBackward" bindings={bindings} rebinding={rebinding} onPick={onPick} />
+        <KbBindRow label="RIGHT"  action="moveRight"    bindings={bindings} rebinding={rebinding} onPick={onPick} />
+        <KbBindRow label="JUMP"   action="jump"         bindings={bindings} rebinding={rebinding} onPick={onPick} />
+        <KbBindRow label="THRUST" action="dash"         bindings={bindings} rebinding={rebinding} onPick={onPick} />
+        <KbBindRow label="CROUCH" action="crouch"       bindings={bindings} rebinding={rebinding} onPick={onPick} />
+        <KbBindRow label="SCORE"  action="scoreboard"   bindings={bindings} rebinding={rebinding} onPick={onPick} />
+        <KbBindRow label="HAMMER" action="weapon1"      bindings={bindings} rebinding={rebinding} onPick={onPick} />
+        <KbBindRow label="SWORD"  action="weapon2"      bindings={bindings} rebinding={rebinding} onPick={onPick} />
+        <KbBindRow label="ATTACK" action="attack"       bindings={bindings} rebinding={rebinding} onPick={onPick} />
+        <KbBindRow label="ALT-ATK" action="altAttack"  bindings={bindings} rebinding={rebinding} onPick={onPick} />
+      </div>
+    </div>
+  );
+}
+// ─────────────────────────────────────────────────────────────────────────────
 
 export default function App() {
   const getWsUrl = () => {
@@ -548,7 +746,7 @@ export default function App() {
 
   // Multiplayer States
   const [connectionMode, setConnectionMode] = useState<'relay' | 'local'>('relay');
-  const [activeMenuTab, setActiveMenuTab] = useState<'single' | 'multi'>('single');
+  const [activeMenuTab, setActiveMenuTab] = useState<'single' | 'multi' | 'spec'>('single');
   const [isMultiplayer, setIsMultiplayer] = useState<boolean>(false);
   const [multiplayerRole, setMultiplayerRole] = useState<'host' | 'client' | 'observer' | null>(null);
   const [multiplayerSocket, setMultiplayerSocket] = useState<WebSocket | null>(null);
@@ -1402,57 +1600,56 @@ export default function App() {
 
       {/* START MENU CONTROLLER SCREEN */}
       {!isPlaying && !isTerminated && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-slate-950/85 backdrop-blur-xl p-4 lg:p-8 transition-all duration-300 overflow-y-auto">
-          <div className="w-full max-w-7xl bg-slate-900/40 border border-white/10 rounded-3xl p-8 backdrop-blur-md flex flex-col gap-8 shadow-2xl select-none lg:h-[780px] max-h-[95vh] overflow-y-auto lg:overflow-hidden">
+        <div className="absolute inset-0 z-50 flex items-stretch justify-center bg-slate-950/85 backdrop-blur-xl p-6 transition-all duration-300">
+          <div className="w-full bg-slate-900/40 border border-white/10 rounded-3xl p-8 backdrop-blur-md flex flex-col gap-7 shadow-2xl select-none overflow-hidden">
             
             {/* UNIFIED CARD HEADER */}
-            <div className="flex flex-col sm:flex-row justify-between items-center gap-6 border-b border-white/10 pb-5 shrink-0">
+            <div className="flex flex-wrap justify-between items-center gap-6 border-b border-white/10 pb-5 shrink-0">
               {/* Brand Branding Section */}
               <div className="flex items-center gap-4">
-                <h1 className="text-4xl font-sans font-black tracking-tighter italic text-transparent bg-clip-text bg-gradient-to-b from-white to-slate-400 select-none">
+                <h1 style={{ fontFamily: 'Inter, sans-serif', fontSize: 36, fontWeight: 900, fontStyle: 'italic', letterSpacing: '-0.03em', background: 'linear-gradient(180deg, #fff, #94a3b8)', WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent', margin: 0, lineHeight: 1, paddingRight: 16 }}>
                   iBrawls
                 </h1>
-                <span className="text-[#38bdf8] tracking-[0.2em] uppercase text-xs font-bold font-display select-none px-3.5 py-1 border border-[#38bdf8]/30 rounded bg-[#38bdf8]/5 hidden sm:inline-block">
+                <span style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 11, fontWeight: 700, letterSpacing: '0.2em', textTransform: 'uppercase', color: '#38bdf8', background: 'rgba(56,189,248,0.05)', border: '1px solid rgba(56,189,248,0.30)', padding: '6px 12px', borderRadius: 4 }}>
                   Voxel Grifball Tech Demo
                 </span>
               </div>
 
               {/* Pill Segmented Mode Switcher */}
               <div className="flex bg-black/40 p-1.5 rounded-full border border-white/10 gap-2 select-none shrink-0 shadow-[inset_0_2px_4px_rgba(0,0,0,0.4)]">
-                <button
-                  onClick={() => setActiveMenuTab('single')}
-                  className={`px-5 py-2 rounded-full text-xs font-bold uppercase tracking-wider transition-all duration-200 cursor-pointer ${
-                    activeMenuTab === 'single'
-                      ? 'bg-blue-600 text-white shadow-[0_0_12px_rgba(37,99,235,0.4)]'
-                      : 'text-white/50 hover:text-white/80'
-                  }`}
-                >
-                  🎮 Training Sandbox
-                </button>
-                <button
-                  onClick={() => setActiveMenuTab('multi')}
-                  className={`px-5 py-2 rounded-full text-xs font-bold uppercase tracking-wider transition-all duration-200 cursor-pointer ${
-                    activeMenuTab === 'multi'
-                      ? 'bg-[#38bdf8] text-slate-900 shadow-[0_0_12px_rgba(56,189,248,0.4)]'
-                      : 'text-white/50 hover:text-white/80'
-                  }`}
-                >
-                  📡 Multiplayer (P2P)
-                </button>
+                {([
+                  { id: 'single', label: 'Single Player' },
+                  { id: 'multi',  label: 'Multiplayer'   },
+                  { id: 'spec',   label: 'Spectator'     },
+                ] as const).map(m => (
+                  <button
+                    key={m.id}
+                    onClick={() => setActiveMenuTab(m.id)}
+                    className={`px-5 py-2 rounded-full text-xs font-bold font-display uppercase tracking-wider transition-all duration-200 cursor-pointer ${
+                      activeMenuTab === m.id
+                        ? 'bg-gradient-to-b from-[#22d3ee] to-[#0891b2] text-white shadow-[0_0_12px_rgba(34,211,238,0.60)] font-black'
+                        : 'text-white/50 hover:text-white/80'
+                    }`}
+                  >
+                    {m.label}
+                  </button>
+                ))}
               </div>
 
               {/* Online Player Count */}
-              <div className="flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/30 px-4 py-2 rounded-full text-xs font-mono font-bold text-emerald-400 shrink-0">
-                <span className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse" />
-                ONLINE PLAYERS: {onlineCount || 1}
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: 'rgba(16,185,129,0.10)', border: '1px solid rgba(16,185,129,0.30)', color: '#10b981', padding: '8px 16px', borderRadius: 9999, fontFamily: "'JetBrains Mono', monospace", fontWeight: 800, fontSize: 11, letterSpacing: '0.15em', textTransform: 'uppercase' }}>
+                <span style={{ width: 8, height: 8, borderRadius: 9999, background: '#34d399', animation: 'pulse 1.4s infinite' }} />
+                Online Players: {onlineCount || 1}
               </div>
             </div>
 
-            {/* MAIN 3-COLUMN RESPONSIVE GRID */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 flex-1 min-h-0 overflow-y-auto lg:overflow-hidden">
-              
+            {/* MAIN LAYOUT: 2-col content area + right chat rail */}
+            <div className="flex gap-7 flex-1 min-h-0 overflow-hidden">
+              {/* 2-column content grid */}
+              <div className="flex-1 grid min-h-0 gap-7" style={{ gridTemplateColumns: 'minmax(280px, 1fr) minmax(480px, 1.8fr)', minWidth: 0 }}>
+
               {/* COLUMN 1: GAME SETUP & ACTIONS */}
-              <div className="flex flex-col h-full min-h-0 justify-between">
+              <div className="flex flex-col h-full min-h-0 overflow-y-auto pr-0.5">
                 
                 {/* 🆔 SPARTAN IDENTITY PROFILE CARD */}
                 <div className="bg-slate-950/45 border border-white/10 rounded-xl p-4.5 flex flex-col gap-2 shrink-0 mb-4 shadow-[inset_0_1px_3px_rgba(0,0,0,0.3)] select-none text-left">
@@ -1493,106 +1690,6 @@ export default function App() {
                         This is a Grifball iBrawls simulator. The game can be played solo against AI or online against other players. All Admin Controls only impact you, so coordinate with your opponent on the dials you want to match.
                       </p>
 
-                      {/* AI Difficulty Neural Configuration */}
-                      <div className="bg-slate-950/45 border border-white/10 rounded-xl p-4.5 flex flex-col gap-3.5 text-left">
-                        <div className="flex justify-between items-center pb-2 border-b border-white/5">
-                          <span className="text-xs font-bold text-[#38bdf8] uppercase tracking-wider flex items-center gap-1.5 font-display">
-                            🤖 AI Combat Neural Net
-                          </span>
-                          <span className="text-[10px] font-mono text-[#38bdf8] bg-[#38bdf8]/10 border border-[#38bdf8]/20 px-2 py-0.5 rounded uppercase font-black">
-                            Offline Play
-                          </span>
-                        </div>
-
-                        {/* Difficulty Selector */}
-                        <div className="flex flex-col gap-1.5">
-                          <span className="text-[10.5px] text-white/50 uppercase tracking-widest font-mono">Cognitive Matrix Preset:</span>
-                          <select
-                            value={adminSettings.aiDifficulty || 'normal'}
-                            onChange={(e) => setAdminSettings(prev => ({ ...prev, aiDifficulty: e.target.value as any }))}
-                            className="w-full h-11 bg-black/60 border border-white/10 rounded px-2.5 text-sm text-[#38bdf8] font-bold uppercase outline-none focus:border-[#38bdf8] transition-all cursor-pointer font-sans"
-                          >
-                            <option value="easy">🟢 Easy (Sub-Normal)</option>
-                            <option value="normal">🔵 Normal (Adaptive)</option>
-                            <option value="hard">🟡 Hard (Punishing)</option>
-                            <option value="nightmare">🔴 Nightmare (Grandmaster)</option>
-                            <option value="custom">⚙️ Custom Matrix Override</option>
-                          </select>
-                        </div>
-
-                        {/* Custom Parameter Sliders */}
-                        {(adminSettings.aiDifficulty === 'custom') && (
-                          <div className="flex flex-col gap-4 pt-1 animate-fade-in">
-                            {/* Reaction Latency */}
-                            <div className="flex flex-col gap-1.5">
-                              <div className="flex justify-between text-xs font-mono uppercase tracking-wider text-white/60">
-                                <span>Reflex Latency</span>
-                                <span className="text-cyan-400 font-bold">{(adminSettings.aiReactionLatency ?? 0.25).toFixed(2)}s</span>
-                              </div>
-                              <input 
-                                type="range" 
-                                min="0.00" 
-                                max="1.50" 
-                                step="0.05"
-                                value={adminSettings.aiReactionLatency ?? 0.25} 
-                                onChange={(e) => setAdminSettings(prev => ({ ...prev, aiReactionLatency: parseFloat(e.target.value) }))}
-                                className="w-full accent-cyan-400 h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
-                              />
-                            </div>
-
-                            {/* Anticipation Factor */}
-                            <div className="flex flex-col gap-1.5">
-                              <div className="flex justify-between text-xs font-mono uppercase tracking-wider text-white/60">
-                                <span>Anticipation Engine</span>
-                                <span className="text-cyan-400 font-bold">{Math.round((adminSettings.aiAnticipationFactor ?? 0.40) * 100)}%</span>
-                              </div>
-                              <input 
-                                type="range" 
-                                min="0.00" 
-                                max="1.00" 
-                                step="0.05"
-                                value={adminSettings.aiAnticipationFactor ?? 0.40} 
-                                onChange={(e) => setAdminSettings(prev => ({ ...prev, aiAnticipationFactor: parseFloat(e.target.value) }))}
-                                className="w-full accent-cyan-400 h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
-                              />
-                            </div>
-
-                            {/* Movement Complexity */}
-                            <div className="flex flex-col gap-1.5">
-                              <div className="flex justify-between text-xs font-mono uppercase tracking-wider text-white/60">
-                                <span>Strafe & Evade Complexity</span>
-                                <span className="text-cyan-400 font-bold">{adminSettings.aiMovementComplexity ?? 50}%</span>
-                              </div>
-                              <input 
-                                type="range" 
-                                min="0" 
-                                max="100" 
-                                step="5"
-                                value={adminSettings.aiMovementComplexity ?? 50} 
-                                onChange={(e) => setAdminSettings(prev => ({ ...prev, aiMovementComplexity: parseInt(e.target.value) }))}
-                                className="w-full accent-cyan-400 h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
-                              />
-                            </div>
-
-                            {/* Weapon Swap IQ */}
-                            <div className="flex flex-col gap-1.5">
-                              <div className="flex justify-between text-xs font-mono uppercase tracking-wider text-white/60">
-                                <span>Weapon Swapping IQ</span>
-                                <span className="text-cyan-400 font-bold">{adminSettings.aiWeaponSwapIQ ?? 50}%</span>
-                              </div>
-                              <input 
-                                type="range" 
-                                min="0" 
-                                max="100" 
-                                step="5"
-                                value={adminSettings.aiWeaponSwapIQ ?? 50} 
-                                onChange={(e) => setAdminSettings(prev => ({ ...prev, aiWeaponSwapIQ: parseInt(e.target.value) }))}
-                                className="w-full accent-cyan-400 h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
-                              />
-                            </div>
-                          </div>
-                        )}
-                      </div>
                     </div>
                     
                     {/* Training Actions */}
@@ -1622,7 +1719,7 @@ export default function App() {
                       </button>
                     </div>
                   </div>
-                ) : (
+                ) : activeMenuTab === 'multi' ? (
                   <div className="flex flex-col h-full min-h-0 justify-between gap-5">
                     <div className="flex flex-col gap-4 shrink-0">
                       <div className="flex items-center gap-2.5 mb-1">
@@ -1969,28 +2066,53 @@ export default function App() {
                       </div>
                     </div>
                   </div>
+                ) : (
+                  /* SPECTATOR MODE */
+                  <div className="flex flex-col gap-4">
+                    <div className="bg-slate-950/45 border border-white/10 rounded-xl p-5 flex flex-col gap-3 shadow-[inset_0_1px_3px_rgba(0,0,0,0.30)]">
+                      <span className="text-[10px] font-mono font-bold tracking-[0.4em] uppercase text-[#22d3ee]">OBSERVER MODE</span>
+                      <h2 className="text-2xl font-display font-black italic uppercase tracking-tight" style={{ background: 'linear-gradient(90deg,#22d3ee,#fff,#a5b4fc)', WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent', lineHeight: 1 }}>
+                        FLIGHT ENGINE
+                      </h2>
+                      <p className="text-sm text-white/65 leading-relaxed">
+                        Camera-only access. Maneuver between active brawlers with <code className="bg-[#22d3ee]/10 border border-[#22d3ee]/25 text-[#22d3ee] px-1.5 py-0.5 rounded text-xs font-mono">[W][A][S][D]</code>, rise with <code className="bg-[#22d3ee]/10 border border-[#22d3ee]/25 text-[#22d3ee] px-1.5 py-0.5 rounded text-xs font-mono">[SPACE]</code>, cycle targets with ◀ ▶.
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => { setActiveMenuTab('multi'); }}
+                      className="w-full h-14 bg-[#22d3ee]/12 border border-[#22d3ee]/45 rounded text-[#22d3ee] font-sans font-black text-sm italic uppercase tracking-wider cursor-pointer shadow-[0_0_18px_rgba(34,211,238,0.25)] hover:bg-[#22d3ee]/20 transition-all"
+                    >
+                      Spectate Live Match
+                    </button>
+                    <div className="bg-white/4 border border-white/5 rounded-lg p-3">
+                      <span className="text-[9px] font-mono text-[#a5b4fc] uppercase tracking-widest">MANEUVER OVERRIDE SYSTEMS</span>
+                      <p className="text-xs text-white/65 mt-1 leading-relaxed">
+                        Join an active multiplayer session as an observer. You cannot interact with the match — just watch and analyze brawl patterns.
+                      </p>
+                    </div>
+                  </div>
                 )}
               </div>
 
               {/* COLUMN 2: KEYBIND REFERENCE & CUSTOMIZER */}
-              <div className="flex flex-col h-full min-h-0 border-t lg:border-t-0 lg:border-l lg:border-r border-white/10 pt-6 lg:pt-0 lg:px-6">
-                {/* Segmented Middle Switcher */}
-                <div className="flex bg-black/40 p-1.5 rounded-lg border border-white/5 gap-2 select-none shrink-0 mb-4 shadow-[inset_0_1px_3px_rgba(0,0,0,0.3)]">
+              <div className="flex flex-col h-full min-h-0 overflow-y-auto gap-4">
+                {/* Segmented Tab Switcher */}
+                <div className="flex bg-black/40 p-1.5 rounded-lg border border-white/5 gap-2 select-none shrink-0 shadow-[inset_0_1px_3px_rgba(0,0,0,0.3)]">
                   <button
                     onClick={() => setRightPanelTab('manual')}
-                    className={`flex-1 py-2 text-xs font-bold uppercase tracking-wider rounded transition-all cursor-pointer text-center flex items-center justify-center gap-1.5 ${
+                    className={`flex-1 py-2 text-xs font-bold font-display uppercase tracking-wider rounded transition-all cursor-pointer text-center flex items-center justify-center gap-1.5 ${
                       rightPanelTab === 'manual'
-                        ? 'bg-[#38bdf8] text-slate-900 shadow-md font-bold'
+                        ? 'bg-gradient-to-b from-[#22d3ee] to-[#0891b2] text-white shadow-md font-black'
                         : 'text-white/40 hover:text-white/70'
                     }`}
                   >
-                    ⌨️ Keybind Reference
+                    ⌨ Keyboard + Mouse
                   </button>
                   <button
                     onClick={() => setRightPanelTab('customize')}
-                    className={`flex-1 py-2 text-xs font-bold uppercase tracking-wider rounded transition-all cursor-pointer text-center flex items-center justify-center gap-1.5 ${
+                    className={`flex-1 py-2 text-xs font-bold font-display uppercase tracking-wider rounded transition-all cursor-pointer text-center flex items-center justify-center gap-1.5 ${
                       rightPanelTab === 'customize'
-                        ? 'bg-[#38bdf8] text-slate-900 shadow-md font-bold'
+                        ? 'bg-gradient-to-b from-[#22d3ee] to-[#0891b2] text-white shadow-md font-black'
                         : 'text-white/40 hover:text-white/70'
                     }`}
                   >
@@ -1999,9 +2121,78 @@ export default function App() {
                 </div>
 
                 {rightPanelTab === 'manual' && (
-                  <div className="flex-grow flex flex-col min-h-0 overflow-y-auto pr-1">
-                    <div className="flex flex-col gap-3 font-sans text-sm">
+                  <div className="flex flex-col gap-4">
+                    {/* Visual Keyboard + Mouse layout */}
+                    <KeyboardVisualizer
+                      bindings={keybindings}
+                      rebinding={rebindingAction}
+                      onPick={(action) => setRebindingAction(prev => prev === action ? null : action)}
+                    />
 
+                    {/* Reset footer */}
+                    <div className="flex items-center justify-between px-2 py-1.5 border-t border-white/5 font-mono text-xs text-white/40">
+                      <button
+                        onClick={() => {
+                          setKeybindings({ ...DEFAULT_KEYBINDINGS });
+                          setRebindingAction(null);
+                          try { localStorage.setItem('grifball_keybindings', JSON.stringify(DEFAULT_KEYBINDINGS)); } catch (e) {}
+                        }}
+                        className="text-[10px] text-amber-400/70 hover:text-amber-400 font-bold uppercase tracking-wider cursor-pointer transition-colors bg-transparent border-none p-0"
+                      >
+                        ↻ Reset All Keybinds
+                      </button>
+                      <span>VERSION 1.4 PROTOTYPE</span>
+                    </div>
+
+                    {/* AI combat panel in single player mode */}
+                    {activeMenuTab === 'single' && (
+                    <div className="bg-slate-950/45 border border-white/10 rounded-xl p-4.5 flex flex-col gap-3.5 text-left">
+                      <div className="flex justify-between items-center pb-2 border-b border-white/5">
+                        <span className="text-xs font-bold text-[#38bdf8] uppercase tracking-wider flex items-center gap-1.5 font-display">🤖 AI Combat Neural Net</span>
+                        <span className="text-[10px] font-mono text-[#38bdf8] bg-[#38bdf8]/10 border border-[#38bdf8]/20 px-2 py-0.5 rounded uppercase font-black">Offline Play</span>
+                      </div>
+                      <div className="flex flex-col gap-1.5">
+                        <span className="text-[10.5px] text-white/50 uppercase tracking-widest font-mono">Cognitive Matrix Preset:</span>
+                        <select
+                          value={adminSettings.aiDifficulty || 'normal'}
+                          onChange={(e) => setAdminSettings(prev => ({ ...prev, aiDifficulty: e.target.value as any }))}
+                          className="w-full h-11 bg-black/60 border border-white/10 rounded px-2.5 text-sm text-[#38bdf8] font-bold uppercase outline-none focus:border-[#38bdf8] transition-all cursor-pointer font-sans"
+                        >
+                          <option value="easy">🟢 Easy (Sub-Normal)</option>
+                          <option value="normal">🟡 Normal · Standard Combat</option>
+                          <option value="hard">🔴 Hard (Calibrated)</option>
+                          <option value="nightmare">🟣 Nightmare · Override</option>
+                          <option value="custom">⚙️ Custom</option>
+                        </select>
+                      </div>
+                      {adminSettings.aiDifficulty === 'custom' && (
+                        <div className="flex flex-col gap-3 pt-1">
+                          {([
+                            { key: 'aiReactionLatency' as const, label: 'Reflex Latency', unit: 's', min: 0, max: 1.5, step: 0.05, fmt: (v: number) => v.toFixed(2) },
+                            { key: 'aiAnticipationFactor' as const, label: 'Anticipation Engine', unit: '%', min: 0, max: 1, step: 0.05, fmt: (v: number) => Math.round(v * 100).toString() },
+                            { key: 'aiMovementComplexity' as const, label: 'Strafe & Evade', unit: '%', min: 0, max: 100, step: 5, fmt: (v: number) => v.toString() },
+                            { key: 'aiWeaponSwapIQ' as const, label: 'Weapon Swapping IQ', unit: '%', min: 0, max: 100, step: 5, fmt: (v: number) => v.toString() },
+                          ]).map(({ key, label, unit, min, max, step, fmt }) => (
+                            <div key={key} className="flex flex-col gap-1.5">
+                              <div className="flex justify-between text-xs font-mono uppercase tracking-wider text-white/60">
+                                <span>{label}</span>
+                                <span className="text-cyan-400 font-bold">{fmt(adminSettings[key] as number ?? 0)}{unit}</span>
+                              </div>
+                              <input type="range" min={min} max={max} step={step}
+                                value={adminSettings[key] as number ?? 0}
+                                onChange={(e) => setAdminSettings(prev => ({ ...prev, [key]: parseFloat(e.target.value) }))}
+                                className="w-full accent-cyan-400 h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    )}
+
+                    <div className="flex flex-col gap-3 font-sans text-sm">
+                      {/* kept for legacy compat – hidden */}
+                      <div className="hidden">
                       {/* Rebind Instructions */}
                       <div className="flex items-center gap-2 px-2 py-1.5 bg-amber-500/5 border border-amber-500/15 rounded text-[11px] text-amber-400/80 font-medium select-none">
                         <span>⚡</span>
@@ -2163,21 +2354,7 @@ export default function App() {
                         </div>
                       </div>
 
-                      {/* Reset + Footer */}
-                      <div className="flex items-center justify-between px-2 py-2 border-t border-white/5 mt-1 font-mono text-xs text-white/40 shrink-0">
-                        <button
-                          onClick={() => {
-                            setKeybindings({ ...DEFAULT_KEYBINDINGS });
-                            setRebindingAction(null);
-                            try { localStorage.setItem('grifball_keybindings', JSON.stringify(DEFAULT_KEYBINDINGS)); } catch (e) {}
-                          }}
-                          className="text-[10px] text-amber-400/70 hover:text-amber-400 font-bold uppercase tracking-wider cursor-pointer transition-colors bg-transparent border-none p-0"
-                        >
-                          ↻ Reset All Keybinds
-                        </button>
-                        <span>VERSION 1.4 PROTOTYPE</span>
-                      </div>
-
+                      </div>{/* end hidden legacy */}
                     </div>
                   </div>
                 )}
@@ -2377,22 +2554,29 @@ export default function App() {
                 )}
               </div>
 
-              {/* COLUMN 3: GLOBAL CHAT (ALWAYS VISIBLE!) */}
-              <div className="flex flex-col h-full min-h-0 border-t lg:border-t-0 lg:border-l border-white/10 pt-8 lg:pt-0 lg:pl-8">
-                <div className="flex items-center gap-2.5 mb-4 shrink-0">
-                  <span className="w-2 h-4 bg-[#38bdf8]" />
-                  <h2 className="text-sm uppercase font-bold tracking-[0.25em] text-white">
-                    🌐 Global Chat
-                  </h2>
+              </div>{/* end 2-column content grid */}
+
+              {/* RIGHT RAIL: GLOBAL CHAT (ALWAYS VISIBLE) */}
+              <aside style={{ width: 360, flexShrink: 0, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'rgba(2,6,23,0.45)', border: '1px solid rgba(255,255,255,0.10)', borderRadius: 12, padding: 16, gap: 12, boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.30)', overflow: 'hidden' }}>
+                  {/* Chat header */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: 10, borderBottom: '1px solid rgba(255,255,255,0.05)', gap: 8, flexShrink: 0 }}>
+                    <span style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 12, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#38bdf8', whiteSpace: 'nowrap' }}>
+                      📡 Global Broadcast
+                    </span>
+                    <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fontWeight: 800, color: '#34d399', display: 'inline-flex', alignItems: 'center', gap: 6, letterSpacing: '0.15em', textTransform: 'uppercase' }}>
+                      <span style={{ width: 6, height: 6, borderRadius: 9999, background: '#34d399', boxShadow: '0 0 6px #34d399', animation: 'pulse 1.4s infinite' }} />
+                      LIVE
+                    </span>
+                  </div>
+                  <GlobalChatPanel
+                    messages={lobbyChatMessages}
+                    onSendMessage={sendLobbyChatMessage}
+                  />
                 </div>
+              </aside>
 
-                <GlobalChatPanel
-                  messages={lobbyChatMessages}
-                  onSendMessage={sendLobbyChatMessage}
-                />
-              </div>
-
-            </div>
+            </div>{/* end flex layout */}
           </div>
         </div>
       )}

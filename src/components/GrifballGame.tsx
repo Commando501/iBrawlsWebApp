@@ -1179,6 +1179,14 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     const scene = new THREE.Scene();
     threeRef.current.scene = scene;
 
+    // Clear stale mesh references from any previous scene so createOrUpdateRemotePlayer
+    // always builds fresh meshes in this scene rather than reusing orphaned ones.
+    threeRef.current.otherPlayerMeshes.clear();
+    threeRef.current.damageExplosionParticles = [];
+    threeRef.current.hostGroup = null;
+    threeRef.current.hostHammer = null;
+    threeRef.current.hostSword = null;
+
     // Dark slate space background configured via skybox settings
     const initialHue = adminSettings.skyboxHue !== undefined ? adminSettings.skyboxHue : 224;
     const initialBrightness = adminSettings.skyboxBrightness !== undefined ? adminSettings.skyboxBrightness : 4;
@@ -3397,6 +3405,191 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       return;
     }
 
+    // Dynamic chaser-attacker AI logic for additional offline bots.
+    // Runs unconditionally (before main-AI early-returns) so bots keep moving and
+    // respawning even when the main AI is dead, respawning, or lunging.
+    if (s.otherPlayers) {
+      s.otherPlayers.forEach((bot) => {
+        if (bot.id.startsWith('bot_')) {
+          const botMesh = threeRef.current.otherPlayerMeshes?.get(bot.id)?.group;
+          if (!botMesh) return;
+
+          if (bot.hp <= 0) {
+            botMesh.visible = false;
+            bot.respawnTimer = Math.max(0, bot.respawnTimer - dt);
+            if (bot.respawnTimer <= 0) {
+              bot.hp = bot.maxHp;
+
+              const exclude: THREE.Vector3[] = [s.playerPos, s.aiPos];
+              s.otherPlayers.forEach(o => {
+                if (o.id !== bot.id && o.hp > 0 && o.respawnTimer <= 0) {
+                  exclude.push(new THREE.Vector3(o.pos.x, o.pos.y, o.pos.z));
+                }
+              });
+              const spawnPos = getOptimalSpawnPoint(exclude);
+              bot.pos.copy(spawnPos);
+              bot.vel.set(0, 0, 0);
+              bot.yaw = Math.random() * Math.PI * 2;
+              bot.weaponState = 'ready';
+              bot.weaponTimer = 0;
+              botMesh.visible = true;
+              sfx.playRespawn();
+            }
+            return;
+          }
+
+          botMesh.visible = true;
+
+          // Find closest target (either local player or other bots or main AI)
+          let closestTargetPos = s.playerPos;
+          let closestDist = bot.pos.distanceTo(s.playerPos);
+
+          if (s.aiHP > 0 && s.aiState !== 'RESPAWNING') {
+            const distToMainAI = bot.pos.distanceTo(s.aiPos);
+            if (distToMainAI < closestDist) {
+              closestDist = distToMainAI;
+              closestTargetPos = s.aiPos;
+            }
+          }
+
+          s.otherPlayers.forEach((other) => {
+            if (other.id !== bot.id && other.hp > 0 && other.respawnTimer <= 0) {
+              const distToOther = bot.pos.distanceTo(new THREE.Vector3(other.pos.x, other.pos.y, other.pos.z));
+              if (distToOther < closestDist) {
+                closestDist = distToOther;
+                closestTargetPos = new THREE.Vector3(other.pos.x, other.pos.y, other.pos.z);
+              }
+            }
+          });
+
+          // Look at closest target
+          const toTarget = closestTargetPos.clone().sub(bot.pos);
+          toTarget.y = 0;
+          bot.yaw = Math.atan2(toTarget.x, toTarget.z);
+          botMesh.rotation.y = bot.yaw;
+
+          // Move towards closest target
+          const moveDir = toTarget.clone().normalize();
+
+          // Speed and attack frequency scale based on individual bot difficulty
+          const botDiff = bot.difficulty || 'normal';
+          let botBaseSpeed = 5.8;
+          let attackChance = 0.05;
+
+          if (botDiff === 'easy') {
+            botBaseSpeed = 4.5;
+            attackChance = 0.02;
+          } else if (botDiff === 'hard') {
+            botBaseSpeed = 6.8;
+            attackChance = 0.09;
+          } else if (botDiff === 'nightmare') {
+            botBaseSpeed = 8.0;
+            attackChance = 0.15;
+          }
+
+          const baseSpeed = bot.isCrouching ? botBaseSpeed * 0.43 : botBaseSpeed;
+          bot.vel.copy(moveDir).multiplyScalar(baseSpeed);
+          bot.pos.addScaledVector(bot.vel, dt);
+          botMesh.position.copy(bot.pos);
+
+          // Boundaries
+          const distFromCenter = Math.sqrt(bot.pos.x * bot.pos.x + bot.pos.z * bot.pos.z);
+          if (distFromCenter > s.arenaRadius - 0.6) {
+            const angle = Math.atan2(bot.pos.z, bot.pos.x);
+            bot.pos.x = Math.cos(angle) * (s.arenaRadius - 0.6);
+            bot.pos.z = Math.sin(angle) * (s.arenaRadius - 0.6);
+            botMesh.position.copy(bot.pos);
+          }
+
+          // Attack logic
+          if (closestDist <= 3.5 && Math.random() < attackChance) {
+            bot.activeWeapon = Math.random() > 0.5 ? 'hammer' : 'sword';
+            bot.weaponState = 'swing_up';
+            bot.weaponTimer = 0;
+            const hammerMesh = threeRef.current.otherPlayerMeshes?.get(bot.id)?.hammer;
+            const swordMesh = threeRef.current.otherPlayerMeshes?.get(bot.id)?.sword;
+
+            if (hammerMesh && swordMesh) {
+              hammerMesh.visible = bot.activeWeapon === 'hammer';
+              swordMesh.visible = bot.activeWeapon === 'sword';
+            }
+
+            sfx.playSwing();
+            const impactPos = bot.pos.clone().addScaledVector(moveDir, 1.8);
+            spawnVoxelShockwaveParticles(impactPos, bot.activeWeapon === 'hammer' ? '#f97316' : '#ef4444');
+
+            // Apply damage to player
+            if (s.playerHP > 0 && s.playerInvulnerabilityTimer <= 0) {
+              const playerBody = new THREE.Vector3(s.playerPos.x, s.playerPos.y + 0.825, s.playerPos.z);
+              if (impactPos.distanceTo(playerBody) <= s.settings.attackRadius) {
+                s.playerHP -= 1;
+                if (s.playerHP <= 0) {
+                  s.playerHP = 0;
+                  s.playerRespawnTimer = 3.0;
+                  s.scoreEnemy += 1;
+                  s.playerDeaths += 1;
+                  bot.kills += 1;
+                  sfx.playDeath();
+                  const newDeath = {
+                    id: Math.random().toString(36).substring(2, 9),
+                    attacker: bot.playerName,
+                    victim: s.settings.playerName || 'Blue (You)'
+                  };
+                  s.lastDeaths = [newDeath, ...s.lastDeaths].slice(0, 3);
+                }
+              }
+            }
+
+            // Apply damage to main AI
+            if (s.aiHP > 0 && s.aiState !== 'RESPAWNING' && s.aiInvulnerabilityTimer <= 0) {
+              const aiBody = new THREE.Vector3(s.aiPos.x, s.aiPos.y + 0.825, s.aiPos.z);
+              if (impactPos.distanceTo(aiBody) <= s.settings.attackRadius) {
+                s.aiHP -= 1;
+                if (s.aiHP <= 0) {
+                  s.aiHP = 0;
+                  s.aiState = 'RESPAWNING';
+                  s.enemyRespawnTimer = 3.0;
+                  bot.kills += 1;
+                  sfx.playDeath();
+                  const newDeath = {
+                    id: Math.random().toString(36).substring(2, 9),
+                    attacker: bot.playerName,
+                    victim: 'Red (AI)'
+                  };
+                  s.lastDeaths = [newDeath, ...s.lastDeaths].slice(0, 3);
+                }
+              }
+            }
+
+            // Apply damage to other bots
+            s.otherPlayers.forEach((other) => {
+              if (other.id !== bot.id && other.hp > 0 && other.respawnTimer <= 0) {
+                const otherBody = new THREE.Vector3(other.pos.x, other.pos.y + 0.825, other.pos.z);
+                if (impactPos.distanceTo(otherBody) <= s.settings.attackRadius) {
+                  other.hp -= 1;
+                  if (other.hp <= 0) {
+                    other.hp = 0;
+                    other.respawnTimer = 3.0;
+                    bot.kills += 1;
+                    other.deaths += 1;
+                    sfx.playDeath();
+                    const newDeath = {
+                      id: Math.random().toString(36).substring(2, 9),
+                      attacker: bot.playerName,
+                      victim: other.playerName
+                    };
+                    s.lastDeaths = [newDeath, ...s.lastDeaths].slice(0, 3);
+                  }
+                }
+              }
+            });
+
+            pushStatsUpdate();
+          }
+        }
+      });
+    }
+
     // Is the enemy currently dead and counting down respawn?
     if (s.aiHP <= 0 || s.aiState === 'RESPAWNING') {
       // Hide model
@@ -4028,189 +4221,6 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
           }
         }
       }
-    }
-
-    // Dynamic chaser-attacker AI logic for additional offline bots
-    if (!isMultiplayer && s.otherPlayers) {
-      s.otherPlayers.forEach((bot) => {
-        if (bot.id.startsWith('bot_')) {
-          const botMesh = threeRef.current.otherPlayerMeshes?.get(bot.id)?.group;
-          if (!botMesh) return;
-
-          if (bot.hp <= 0) {
-            botMesh.visible = false;
-            bot.respawnTimer = Math.max(0, bot.respawnTimer - dt);
-            if (bot.respawnTimer <= 0) {
-              // Respawn!
-              bot.hp = bot.maxHp;
-              
-              const exclude: THREE.Vector3[] = [s.playerPos, s.aiPos];
-              s.otherPlayers.forEach(o => {
-                if (o.id !== bot.id && o.hp > 0 && o.respawnTimer <= 0) {
-                  exclude.push(new THREE.Vector3(o.pos.x, o.pos.y, o.pos.z));
-                }
-              });
-              const spawnPos = getOptimalSpawnPoint(exclude);
-              bot.pos.copy(spawnPos);
-              bot.vel.set(0, 0, 0);
-              bot.yaw = Math.random() * Math.PI * 2;
-              botMesh.visible = true;
-              sfx.playRespawn();
-            }
-            return;
-          }
-
-          botMesh.visible = true;
-
-          // Find closest target (either local player or other bots or main AI)
-          let closestTargetPos = s.playerPos;
-          let closestDist = bot.pos.distanceTo(s.playerPos);
-
-          if (s.aiHP > 0 && s.aiState !== 'RESPAWNING') {
-            const distToMainAI = bot.pos.distanceTo(s.aiPos);
-            if (distToMainAI < closestDist) {
-              closestDist = distToMainAI;
-              closestTargetPos = s.aiPos;
-            }
-          }
-
-          s.otherPlayers.forEach((other) => {
-            if (other.id !== bot.id && other.hp > 0 && other.respawnTimer <= 0) {
-              const distToOther = bot.pos.distanceTo(new THREE.Vector3(other.pos.x, other.pos.y, other.pos.z));
-              if (distToOther < closestDist) {
-                closestDist = distToOther;
-                closestTargetPos = new THREE.Vector3(other.pos.x, other.pos.y, other.pos.z);
-              }
-            }
-          });
-
-          // Look at closest target
-          const toTarget = closestTargetPos.clone().sub(bot.pos);
-          toTarget.y = 0;
-          bot.yaw = Math.atan2(toTarget.x, toTarget.z);
-          botMesh.rotation.y = bot.yaw;
-
-          // Move towards closest target
-          const moveDir = toTarget.clone().normalize();
-
-          // Speed and attack frequency scale based on individual bot difficulty
-          const botDiff = bot.difficulty || 'normal';
-          let botBaseSpeed = 5.8;
-          let attackChance = 0.05;
-
-          if (botDiff === 'easy') {
-            botBaseSpeed = 4.5;
-            attackChance = 0.02;
-          } else if (botDiff === 'hard') {
-            botBaseSpeed = 6.8;
-            attackChance = 0.09;
-          } else if (botDiff === 'nightmare') {
-            botBaseSpeed = 8.0;
-            attackChance = 0.15;
-          }
-
-          const baseSpeed = bot.isCrouching ? botBaseSpeed * 0.43 : botBaseSpeed;
-          bot.vel.copy(moveDir).multiplyScalar(baseSpeed);
-          bot.pos.addScaledVector(bot.vel, dt);
-          botMesh.position.copy(bot.pos);
-
-          // Boundaries
-          const distFromCenter = Math.sqrt(bot.pos.x * bot.pos.x + bot.pos.z * bot.pos.z);
-          if (distFromCenter > s.arenaRadius - 0.6) {
-            const angle = Math.atan2(bot.pos.z, bot.pos.x);
-            bot.pos.x = Math.cos(angle) * (s.arenaRadius - 0.6);
-            bot.pos.z = Math.sin(angle) * (s.arenaRadius - 0.6);
-            botMesh.position.copy(bot.pos);
-          }
-
-          // Attack logic
-          if (closestDist <= 3.5 && Math.random() < attackChance) {
-            // Swing hammer or sword!
-            bot.activeWeapon = Math.random() > 0.5 ? 'hammer' : 'sword';
-            bot.weaponState = 'swing_up';
-            bot.weaponTimer = 0;
-            const hammerMesh = threeRef.current.otherPlayerMeshes?.get(bot.id)?.hammer;
-            const swordMesh = threeRef.current.otherPlayerMeshes?.get(bot.id)?.sword;
-            
-            if (hammerMesh && swordMesh) {
-              hammerMesh.visible = bot.activeWeapon === 'hammer';
-              swordMesh.visible = bot.activeWeapon === 'sword';
-            }
-
-            sfx.playSwing();
-            const impactPos = bot.pos.clone().addScaledVector(moveDir, 1.8);
-            spawnVoxelShockwaveParticles(impactPos, bot.activeWeapon === 'hammer' ? '#f97316' : '#ef4444');
-
-            // Apply damage to player
-            if (s.playerHP > 0 && s.playerInvulnerabilityTimer <= 0) {
-              const playerBody = new THREE.Vector3(s.playerPos.x, s.playerPos.y + 0.825, s.playerPos.z);
-              if (impactPos.distanceTo(playerBody) <= s.settings.attackRadius) {
-                s.playerHP -= 1;
-                if (s.playerHP <= 0) {
-                  s.playerHP = 0;
-                  s.playerRespawnTimer = 3.0;
-                  s.scoreEnemy += 1;
-                  s.playerDeaths += 1;
-                  bot.kills += 1;
-                  sfx.playDeath();
-                  const newDeath = {
-                    id: Math.random().toString(36).substring(2, 9),
-                    attacker: bot.playerName,
-                    victim: s.settings.playerName || 'Blue (You)'
-                  };
-                  s.lastDeaths = [newDeath, ...s.lastDeaths].slice(0, 3);
-                }
-              }
-            }
-
-            // Apply damage to main AI
-            if (s.aiHP > 0 && s.aiState !== 'RESPAWNING' && s.aiInvulnerabilityTimer <= 0) {
-              const aiBody = new THREE.Vector3(s.aiPos.x, s.aiPos.y + 0.825, s.aiPos.z);
-              if (impactPos.distanceTo(aiBody) <= s.settings.attackRadius) {
-                s.aiHP -= 1;
-                if (s.aiHP <= 0) {
-                  s.aiHP = 0;
-                  s.aiState = 'RESPAWNING';
-                  s.enemyRespawnTimer = 3.0;
-                  bot.kills += 1;
-                  sfx.playDeath();
-                  const newDeath = {
-                    id: Math.random().toString(36).substring(2, 9),
-                    attacker: bot.playerName,
-                    victim: 'Red (AI)'
-                  };
-                  s.lastDeaths = [newDeath, ...s.lastDeaths].slice(0, 3);
-                }
-              }
-            }
-
-            // Apply damage to other bots
-            s.otherPlayers.forEach((other) => {
-              if (other.id !== bot.id && other.hp > 0 && other.respawnTimer <= 0) {
-                const otherBody = new THREE.Vector3(other.pos.x, other.pos.y + 0.825, other.pos.z);
-                if (impactPos.distanceTo(otherBody) <= s.settings.attackRadius) {
-                  other.hp -= 1;
-                  if (other.hp <= 0) {
-                    other.hp = 0;
-                    other.respawnTimer = 3.0;
-                    bot.kills += 1;
-                    other.deaths += 1;
-                    sfx.playDeath();
-                    const newDeath = {
-                      id: Math.random().toString(36).substring(2, 9),
-                      attacker: bot.playerName,
-                      victim: other.playerName
-                    };
-                    s.lastDeaths = [newDeath, ...s.lastDeaths].slice(0, 3);
-                  }
-                }
-              }
-            });
-
-            pushStatsUpdate();
-          }
-        }
-      });
     }
 
     // Keep enemy inside arena radius boundary
