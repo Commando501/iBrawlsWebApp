@@ -378,63 +378,14 @@ export const HUD: React.FC<HUDProps> = ({
               <div className="h-[1px] w-full bg-cyan-500/5" />
             </div>
 
-            {/* Radar edge compass indicators */}
-            {(() => {
-              const cosYaw = Math.cos(stats.playerYaw);
-              const sinYaw = Math.sin(stats.playerYaw);
-              const r = 58; // compass offset radius from center (72px)
-              const center = 72; // half of 144px diameter
-              return (
-                <>
-                  <span id="radar-compass-n" className="absolute text-[8px] font-mono text-cyan-400/50 font-extrabold transition-all duration-75" style={{ left: `${center + r * sinYaw - 3.5}px`, top: `${center - r * cosYaw - 5}px` }}>N</span>
-                  <span id="radar-compass-e" className="absolute text-[8px] font-mono text-cyan-400/30 font-extrabold transition-all duration-75" style={{ left: `${center + r * cosYaw - 3.5}px`, top: `${center + r * sinYaw - 5}px` }}>E</span>
-                  <span id="radar-compass-s" className="absolute text-[8px] font-mono text-cyan-400/30 font-extrabold transition-all duration-75" style={{ left: `${center - r * sinYaw - 3.5}px`, top: `${center + r * cosYaw - 5}px` }}>S</span>
-                  <span id="radar-compass-w" className="absolute text-[8px] font-mono text-cyan-400/30 font-extrabold transition-all duration-75" style={{ left: `${center - r * cosYaw - 3.5}px`, top: `${center - r * sinYaw - 5}px` }}>W</span>
-                </>
-              );
-            })()}
+            {/* Radar edge compass indicators — positioned via transform in updateRadarDOM (GPU-composited, no transition lag) */}
+            <span id="radar-compass-n" className="absolute text-[8px] font-mono text-cyan-400/50 font-extrabold" style={{ left: 0, top: 0 }}>N</span>
+            <span id="radar-compass-e" className="absolute text-[8px] font-mono text-cyan-400/30 font-extrabold" style={{ left: 0, top: 0 }}>E</span>
+            <span id="radar-compass-s" className="absolute text-[8px] font-mono text-cyan-400/30 font-extrabold" style={{ left: 0, top: 0 }}>S</span>
+            <span id="radar-compass-w" className="absolute text-[8px] font-mono text-cyan-400/30 font-extrabold" style={{ left: 0, top: 0 }}>W</span>
 
-            {/* Math calculation & plot of enemy dot */}
-            {(() => {
-              // Compute real-time fallback layout calculations on mount
-              const maxRange = 25; 
-              const radarRadius = 72; 
-              const scale = radarRadius / maxRange;
-
-              const dx = stats.enemyX - stats.playerX;
-              const dz = stats.enemyZ - stats.playerZ;
-              const dist = Math.sqrt(dx * dx + dz * dz);
-
-              const forward_x = -Math.sin(stats.playerYaw);
-              const forward_z = -Math.cos(stats.playerYaw);
-              const right_x = Math.cos(stats.playerYaw);
-              const right_z = -Math.sin(stats.playerYaw);
-
-              const local_y = dx * forward_x + dz * forward_z;
-              const local_x = dx * right_x + dz * right_z;
-
-              const ex = local_x * scale;
-              const ey = -local_y * scale;
-
-              const eLeft = radarRadius + ex - 6;
-              const eTop = radarRadius + ey - 6;
-
-              const showEnemy = stats.playerHP > 0 && stats.enemyHP > 0 && !stats.enemyIsCrouchMoving && dist <= maxRange;
-
-              return (
-                <div 
-                  id="radar-enemy-dot-container"
-                  className="absolute w-3 h-3 bg-red-500 rounded-full border border-white/40 shadow-[0_0_12px_#ef4444] animate-pulse z-30 flex items-center justify-center transition-all duration-75"
-                  style={{ 
-                    left: `${eLeft}px`, 
-                    top: `${eTop}px`,
-                    display: showEnemy ? 'flex' : 'none' 
-                  }}
-                >
-                  <div className="w-1.5 h-1.5 bg-white rounded-full" />
-                </div>
-              );
-            })()}
+            {/* Enemy dots — dynamically populated per-frame by updateRadarDOM (supports N enemies) */}
+            <div id="radar-enemies-container" className="absolute inset-0 pointer-events-none" />
 
             {/* Player friendly indicator arrow centered */}
             <svg 

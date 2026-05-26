@@ -441,6 +441,7 @@ export default function App() {
     bot_7: 180,
   });
   const [showBotSetupMenu, setShowBotSetupMenu] = useState<boolean>(false);
+  const [showKeybindsMenu, setShowKeybindsMenu] = useState<boolean>(false);
 
   // Chat message state
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
@@ -1540,6 +1541,7 @@ export default function App() {
     if (isPaused) {
       setShowAdminPanel(false);
       setShowLightingMenu(false);
+      setShowKeybindsMenu(false);
     }
   };
 
@@ -2129,6 +2131,61 @@ export default function App() {
                       onPick={(action) => setRebindingAction(prev => prev === action ? null : action)}
                     />
 
+                    {/* Mouse sensitivity & acceleration */}
+                    <div style={{ background: 'rgba(2,6,23,0.45)', border: '1px solid rgba(255,255,255,0.10)', borderRadius: 12, padding: 18, boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.30)' }}>
+                      <span style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 12, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase' as const, color: '#38bdf8', display: 'block', marginBottom: 14, paddingBottom: 10, borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                        🖱 Mouse Settings
+                      </span>
+                      <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 14 }}>
+                        {/* Sensitivity */}
+                        <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 6 }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '0.1em', color: 'rgba(255,255,255,0.70)' }}>
+                            <span>Sensitivity</span>
+                            <span style={{ color: '#22d3ee' }}>{(keybindings.mouseSensitivity ?? 1.0).toFixed(1)}x</span>
+                          </div>
+                          <input type="range" min="0.1" max="5.0" step="0.1"
+                            value={keybindings.mouseSensitivity ?? 1.0}
+                            onChange={(e) => {
+                              const v = parseFloat(e.target.value);
+                              setKeybindings(prev => {
+                                const updated = { ...prev, mouseSensitivity: v };
+                                try { localStorage.setItem('grifball_keybindings', JSON.stringify(updated)); } catch (_) {}
+                                return updated;
+                              });
+                            }}
+                            className="w-full accent-cyan-400 h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
+                          />
+                          <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: 'rgba(255,255,255,0.35)' }}>
+                            0.1 (slow) — 5.0 (fast). Default: 1.0
+                          </span>
+                        </div>
+                        {/* Acceleration */}
+                        <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 6 }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '0.1em', color: 'rgba(255,255,255,0.70)' }}>
+                            <span>Acceleration</span>
+                            <span style={{ color: (keybindings.mouseAcceleration ?? 0) > 0 ? '#fbbf24' : 'rgba(255,255,255,0.40)' }}>
+                              {(keybindings.mouseAcceleration ?? 0.0).toFixed(1)}{(keybindings.mouseAcceleration ?? 0) === 0 ? ' (OFF)' : ''}
+                            </span>
+                          </div>
+                          <input type="range" min="0.0" max="2.0" step="0.1"
+                            value={keybindings.mouseAcceleration ?? 0.0}
+                            onChange={(e) => {
+                              const v = parseFloat(e.target.value);
+                              setKeybindings(prev => {
+                                const updated = { ...prev, mouseAcceleration: v };
+                                try { localStorage.setItem('grifball_keybindings', JSON.stringify(updated)); } catch (_) {}
+                                return updated;
+                              });
+                            }}
+                            className="w-full accent-amber-400 h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
+                          />
+                          <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: 'rgba(255,255,255,0.35)' }}>
+                            0.0 = linear (off). Higher = faster as you move faster.
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
                     {/* Reset footer */}
                     <div className="flex items-center justify-between px-2 py-1.5 border-t border-white/5 font-mono text-xs text-white/40">
                       <button
@@ -2612,7 +2669,7 @@ export default function App() {
       {/* PAUSE DRAWER MODAL COVER (FROSTED GLASS PANEL OVERLAY) */}
       {isPaused && isPlaying && !showUiAdjustment && (
         <div className="absolute inset-0 z-40 flex items-center justify-center bg-slate-950/80 backdrop-blur-xl transition-all duration-300">
-          {!showAdminPanel && !showLightingMenu ? (
+          {!showAdminPanel && !showLightingMenu && !showKeybindsMenu ? (
             <div className="bg-white/5 border border-white/10 backdrop-blur-md rounded-2xl p-8 w-[380px] shadow-2xl flex flex-col items-center select-none">
               {/* Logo header */}
               <div className="text-center mb-8 border-b border-white/5 pb-5 w-full">
@@ -2660,8 +2717,17 @@ export default function App() {
                   </button>
                 )}
 
+                {/* KEYBOARD & MOUSE SETTINGS BUTTON */}
+                <button
+                  id="keybinds-btn"
+                  onClick={() => setShowKeybindsMenu(true)}
+                  className="w-full h-12 bg-cyan-950/30 hover:bg-cyan-900/40 border border-cyan-500/30 text-cyan-400 hover:text-cyan-200 font-bold text-xs uppercase tracking-widest transition-all cursor-pointer rounded flex items-center justify-center gap-2"
+                >
+                  ⌨ Keyboard & Mouse
+                </button>
+
                 {/* UI ADJUSTMENT CONTROLLER BUTTON */}
-                <button 
+                <button
                   id="ui-adjustment-btn"
                   onClick={() => setShowUiAdjustment(true)}
                   className="w-full h-12 bg-cyan-950/30 hover:bg-cyan-900/40 border border-cyan-500/30 text-cyan-400 hover:text-cyan-200 font-bold text-xs uppercase tracking-widest transition-all cursor-pointer rounded flex items-center justify-center gap-2"
@@ -3421,6 +3487,101 @@ export default function App() {
               >
                 <Check className="w-4 h-4" />
                 Apply Changes & Resume Sandbox
+              </button>
+            </div>
+          ) : showKeybindsMenu ? (
+            /* KEYBOARD & MOUSE SETTINGS PANEL */
+            <div className="bg-slate-950/95 border border-white/10 backdrop-blur-2xl rounded-2xl p-6 w-[640px] max-w-[95vw] shadow-2xl flex flex-col select-none max-h-[95vh] overflow-y-auto">
+              {/* Header */}
+              <div className="flex items-center justify-between mb-5 border-b border-white/5 pb-4">
+                <div className="flex flex-col items-start text-left">
+                  <p className="text-[9px] text-cyan-400 font-bold tracking-[0.3em] uppercase mb-0.5 font-display">INPUT CONFIG</p>
+                  <h3 className="text-xl font-sans font-black tracking-tight uppercase text-white">⌨ Keyboard & Mouse</h3>
+                </div>
+                <div className="text-[10px] text-white/50 bg-white/5 px-2.5 py-1 rounded-full border border-white/10 font-mono">
+                  Press ESC to close
+                </div>
+              </div>
+
+              {/* Keyboard visualizer */}
+              <div className="pointer-events-auto mb-5">
+                <KeyboardVisualizer
+                  bindings={keybindings}
+                  rebinding={rebindingAction}
+                  onPick={(action) => setRebindingAction(prev => prev === action ? null : action)}
+                />
+              </div>
+
+              {/* Mouse settings */}
+              <div className="pointer-events-auto border border-white/10 rounded-xl p-4 bg-white/[0.02] flex flex-col gap-4 mb-5">
+                <p className="text-[10px] text-cyan-400 font-bold uppercase tracking-widest border-b border-white/5 pb-2 font-mono">🖱 Mouse Settings</p>
+
+                {/* Sensitivity */}
+                <div className="flex flex-col gap-1.5">
+                  <div className="flex justify-between text-[11px] font-bold uppercase tracking-wider text-white/80">
+                    <span>Sensitivity</span>
+                    <span className="text-cyan-400 font-mono">{(keybindings.mouseSensitivity ?? 1.0).toFixed(1)}x</span>
+                  </div>
+                  <input type="range" min="0.1" max="5.0" step="0.1"
+                    value={keybindings.mouseSensitivity ?? 1.0}
+                    onChange={(e) => {
+                      const v = parseFloat(e.target.value);
+                      setKeybindings(prev => {
+                        const updated = { ...prev, mouseSensitivity: v };
+                        try { localStorage.setItem('grifball_keybindings', JSON.stringify(updated)); } catch (_) {}
+                        return updated;
+                      });
+                    }}
+                    className="w-full accent-cyan-400 h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
+                  />
+                  <span className="text-[9px] text-white/35 font-mono">0.1 (slow) — 5.0 (fast). Default: 1.0</span>
+                </div>
+
+                {/* Acceleration */}
+                <div className="flex flex-col gap-1.5">
+                  <div className="flex justify-between text-[11px] font-bold uppercase tracking-wider text-white/80">
+                    <span>Acceleration</span>
+                    <span className={`font-mono ${(keybindings.mouseAcceleration ?? 0) > 0 ? 'text-amber-400' : 'text-white/40'}`}>
+                      {(keybindings.mouseAcceleration ?? 0.0).toFixed(1)}{(keybindings.mouseAcceleration ?? 0) === 0 ? ' (OFF)' : ''}
+                    </span>
+                  </div>
+                  <input type="range" min="0.0" max="2.0" step="0.1"
+                    value={keybindings.mouseAcceleration ?? 0.0}
+                    onChange={(e) => {
+                      const v = parseFloat(e.target.value);
+                      setKeybindings(prev => {
+                        const updated = { ...prev, mouseAcceleration: v };
+                        try { localStorage.setItem('grifball_keybindings', JSON.stringify(updated)); } catch (_) {}
+                        return updated;
+                      });
+                    }}
+                    className="w-full accent-amber-400 h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
+                  />
+                  <span className="text-[9px] text-white/35 font-mono">0.0 = linear (off). Higher = faster as you move faster.</span>
+                </div>
+              </div>
+
+              {/* Reset keybinds */}
+              <div className="pointer-events-auto flex items-center justify-between px-1 mb-5 text-[10px] font-mono text-white/40">
+                <button
+                  onClick={() => {
+                    setKeybindings({ ...DEFAULT_KEYBINDINGS });
+                    setRebindingAction(null);
+                    try { localStorage.setItem('grifball_keybindings', JSON.stringify(DEFAULT_KEYBINDINGS)); } catch (_) {}
+                  }}
+                  className="text-amber-400/70 hover:text-amber-400 font-bold uppercase tracking-wider cursor-pointer transition-colors bg-transparent border-none p-0"
+                >
+                  ↻ Reset All Keybinds & Mouse
+                </button>
+              </div>
+
+              {/* Close button */}
+              <button
+                onClick={() => { setShowKeybindsMenu(false); setRebindingAction(null); }}
+                className="w-full h-11 bg-white hover:bg-cyan-400 hover:text-white text-slate-900 text-xs font-black uppercase tracking-widest rounded cursor-pointer transition-colors active:scale-98 flex items-center justify-center gap-2 shadow-lg"
+              >
+                <Check className="w-4 h-4" />
+                Save & Return
               </button>
             </div>
           ) : (

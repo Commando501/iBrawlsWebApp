@@ -58,6 +58,8 @@ export interface Keybindings {
   weapon2: string;
   attack: string;
   altAttack: string;
+  mouseSensitivity?: number;  // multiplier applied to base sensitivity (0.1 – 5.0, default 1.0)
+  mouseAcceleration?: number; // power-curve exponent offset (0.0 – 2.0, default 0.0 = linear)
 }
 
 export const DEFAULT_KEYBINDINGS: Keybindings = {
@@ -73,6 +75,8 @@ export const DEFAULT_KEYBINDINGS: Keybindings = {
   weapon2: '2',
   attack: 'lmb',
   altAttack: 'rmb',
+  mouseSensitivity: 1.0,
+  mouseAcceleration: 0.0,
 };
 
 export type GameState = 'menu' | 'playing' | 'paused';

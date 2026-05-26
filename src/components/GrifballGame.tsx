@@ -809,6 +809,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
   // Track opponent's custom hue for rebuilding their Spartan model dynamically
   const lastOpponentHue = useRef<number | null>(null);
   const opponentNameRef = useRef<string>('');
+  const radarDotPoolRef = useRef<Map<string, HTMLElement>>(new Map());
 
   const getSpectateTargetData = (target: 'host' | 'client') => {
     const s = stateRef.current;
@@ -1740,9 +1741,15 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
       if (isPointerLocked.current) {
         // Pointer Lock movement (standard FPS mouse feel)
-        const mouseSensitivity = 0.0022;
-        stateRef.current.yaw -= e.movementX * mouseSensitivity;
-        stateRef.current.pitch -= e.movementY * mouseSensitivity;
+        const baseSens = 0.0022 * (keybindings.mouseSensitivity ?? 1.0);
+        const accel = keybindings.mouseAcceleration ?? 0.0;
+        const applyAccel = (delta: number) => {
+          if (accel === 0) return delta * baseSens;
+          const sign = delta < 0 ? -1 : 1;
+          return sign * Math.pow(Math.abs(delta), 1 + accel * 0.5) * baseSens;
+        };
+        stateRef.current.yaw -= applyAccel(e.movementX);
+        stateRef.current.pitch -= applyAccel(e.movementY);
 
         // Constraint pitch (cannot look fully upside down or inside floor)
         stateRef.current.pitch = Math.max(-Math.PI / 2.3, Math.min(Math.PI / 2.3, stateRef.current.pitch));
@@ -1750,8 +1757,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         // Fallback: Drag to look around
         const dx = e.clientX - lastMousePos.current.x;
         const dy = e.clientY - lastMousePos.current.y;
-        
-        const dragSensitivity = 0.005;
+
+        const dragSensitivity = 0.005 * (keybindings.mouseSensitivity ?? 1.0);
         stateRef.current.yaw -= dx * dragSensitivity;
         stateRef.current.pitch -= dy * dragSensitivity;
         stateRef.current.pitch = Math.max(-Math.PI / 2.3, Math.min(Math.PI / 2.3, stateRef.current.pitch));
@@ -4820,8 +4827,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     if (!s) return;
 
     const isPlayerAlive = s.playerHP > 0;
-    
-    // 1. Compass Rotation HUD Coordinates mapping
+
+    // 1. Compass Rotation — use transform:translate (GPU-composited, no layout thrash, no transition lag)
     const nElem = document.getElementById('radar-compass-n');
     const eElem = document.getElementById('radar-compass-e');
     const sElem = document.getElementById('radar-compass-s');
@@ -4830,67 +4837,82 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     if (nElem || eElem || sElem || wElem) {
       const cosYaw = Math.cos(s.yaw);
       const sinYaw = Math.sin(s.yaw);
-      const r = 58; // compass offset radius from center (72px)
-      const center = 72; // half of 144px diameter
+      const r = 58;
+      const center = 72;
 
-      if (nElem) {
-        nElem.style.left = `${center + r * sinYaw - 3.5}px`;
-        nElem.style.top = `${center - r * cosYaw - 5}px`;
-      }
-      if (eElem) {
-        eElem.style.left = `${center + r * cosYaw - 3.5}px`;
-        eElem.style.top = `${center + r * sinYaw - 5}px`;
-      }
-      if (sElem) {
-        sElem.style.left = `${center - r * sinYaw - 3.5}px`;
-        sElem.style.top = `${center + r * cosYaw - 5}px`;
-      }
-      if (wElem) {
-        wElem.style.left = `${center - r * cosYaw - 3.5}px`;
-        wElem.style.top = `${center - r * sinYaw - 5}px`;
-      }
+      if (nElem) nElem.style.transform = `translate(${center + r * sinYaw - 3.5}px, ${center - r * cosYaw - 5}px)`;
+      if (eElem) eElem.style.transform = `translate(${center + r * cosYaw - 3.5}px, ${center + r * sinYaw - 5}px)`;
+      if (sElem) sElem.style.transform = `translate(${center - r * sinYaw - 3.5}px, ${center + r * cosYaw - 5}px)`;
+      if (wElem) wElem.style.transform = `translate(${center - r * cosYaw - 3.5}px, ${center - r * sinYaw - 5}px)`;
     }
 
-    // 2. Math calculations & positioning of the enemy dot on the client's radar HUD
-    const dotContainer = document.getElementById('radar-enemy-dot-container');
-    if (dotContainer) {
-      if (!isPlayerAlive || s.aiHP <= 0) {
-        dotContainer.style.display = 'none';
-      } else {
-        const maxRange = 25; 
-        const radarRadius = 72; 
-        const scale = radarRadius / maxRange;
+    // 2. Multi-enemy dot rendering with element pooling
+    const enemiesContainer = document.getElementById('radar-enemies-container');
+    if (enemiesContainer) {
+      const maxRange = 25;
+      const radarRadius = 72;
+      const scale = radarRadius / maxRange;
+      const forward_x = -Math.sin(s.yaw);
+      const forward_z = -Math.cos(s.yaw);
+      const right_x = Math.cos(s.yaw);
+      const right_z = -Math.sin(s.yaw);
 
-        const dx = s.aiPos.x - s.playerPos.x;
-        const dz = s.aiPos.z - s.playerPos.z;
+      // Build the full enemy list: main AI + all otherPlayers bots
+      type RadarEnemy = { id: string; pos: THREE.Vector3; hp: number; vel: THREE.Vector3 | null; isCrouching: boolean };
+      const enemies: RadarEnemy[] = [];
+      if (!isMultiplayer) {
+        enemies.push({ id: 'main_ai', pos: s.aiPos, hp: s.aiHP, vel: s.aiVel, isCrouching: s.aiIsCrouching });
+        s.otherPlayers.forEach((bot, id) => {
+          enemies.push({ id, pos: bot.pos, hp: bot.hp, vel: bot.vel, isCrouching: bot.isCrouching });
+        });
+      } else {
+        // In multiplayer, only show the single opponent (aiPos)
+        enemies.push({ id: 'main_ai', pos: s.aiPos, hp: s.aiHP, vel: s.aiVel, isCrouching: s.aiIsCrouching });
+      }
+
+      const pool = radarDotPoolRef.current;
+      const activeIds = new Set<string>();
+
+      for (const enemy of enemies) {
+        if (!isPlayerAlive || enemy.hp <= 0) continue;
+
+        const dx = enemy.pos.x - s.playerPos.x;
+        const dz = enemy.pos.z - s.playerPos.z;
         const dist = Math.sqrt(dx * dx + dz * dz);
 
-        const forward_x = -Math.sin(s.yaw);
-        const forward_z = -Math.cos(s.yaw);
-        const right_x = Math.cos(s.yaw);
-        const right_z = -Math.sin(s.yaw);
+        const velLength = enemy.vel ? enemy.vel.length() : 0;
+        const isCrouchMoving = enemy.isCrouching && velLength > 0.15;
+        if (isCrouchMoving || dist > maxRange) continue;
 
-        const local_y = dx * forward_x + dz * forward_z;
         const local_x = dx * right_x + dz * right_z;
-
+        const local_y = dx * forward_x + dz * forward_z;
         const ex = local_x * scale;
         const ey = -local_y * scale;
+        const left = radarRadius + ex - 6;
+        const top = radarRadius + ey - 6;
 
-        const eLeft = radarRadius + ex - 6;
-        const eTop = radarRadius + ey - 6;
-
-        const aiVelLength = s.aiVel ? s.aiVel.length() : 0;
-        const enemyIsCrouchMoving = s.aiIsCrouching && aiVelLength > 0.15;
-        const showEnemy = !enemyIsCrouchMoving && dist <= maxRange;
-
-        if (showEnemy) {
-          dotContainer.style.display = 'flex';
-          dotContainer.style.left = `${eLeft}px`;
-          dotContainer.style.top = `${eTop}px`;
-        } else {
-          dotContainer.style.display = 'none';
+        let dot = pool.get(enemy.id);
+        if (!dot) {
+          dot = document.createElement('div');
+          dot.className = 'absolute w-3 h-3 bg-red-500 rounded-full border border-white/40 shadow-[0_0_12px_#ef4444] animate-pulse z-30 flex items-center justify-center';
+          dot.style.willChange = 'transform';
+          const inner = document.createElement('div');
+          inner.className = 'w-1.5 h-1.5 bg-white rounded-full';
+          dot.appendChild(inner);
+          enemiesContainer.appendChild(dot);
+          pool.set(enemy.id, dot);
         }
+
+        // Use transform:translate for GPU-composited, zero-layout positioning
+        dot.style.transform = `translate(${left}px, ${top}px)`;
+        dot.style.display = 'flex';
+        activeIds.add(enemy.id);
       }
+
+      // Hide dots for enemies that are dead, out of range, or no longer in the game
+      pool.forEach((dot, id) => {
+        if (!activeIds.has(id)) dot.style.display = 'none';
+      });
     }
 
     // 3. Update center player arrow visibility and crouch-cloaking styles
