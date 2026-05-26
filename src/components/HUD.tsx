@@ -45,6 +45,8 @@ export const DraggableHUDItem: React.FC<DraggableHUDItemProps> = ({
         return 'translate(-100%, -100%)';
       case 'crosshair':
         return 'translate(-50%, -50%)';
+      case 'spectatorCard':
+        return 'translate(-50%, -50%)';
       default:
         return 'none';
     }
@@ -466,126 +468,168 @@ export const HUD: React.FC<HUDProps> = ({
         onToggleLock={handleToggleLock}
         onMouseDown={handleMouseDown}
       >
-        <div className="flex flex-col md:flex-row items-start md:items-end gap-4 md:gap-6">
-          <div className="bg-black/45 backdrop-blur-md border border-white/10 p-4 rounded-xl shadow-2xl min-w-[240px]">
+        {stats.isObserverMode ? (
+          <div className="bg-black/60 backdrop-blur-md border border-cyan-500/30 p-4 rounded-xl shadow-2xl min-w-[280px]">
             <div className="flex items-center gap-3 mb-2">
-              <div className={`w-2.5 h-2.5 rounded-full ${stats.weaponReady ? 'bg-emerald-500 shadow-[0_0_10px_#10b981]' : 'bg-yellow-500 animate-pulse'}`} />
-              <span className="text-[10px] font-bold text-white/70 uppercase tracking-widest">
-                {stats.weaponReady ? 'Weapon Charged' : 'Chambering Rebound...'}
+              <div className="w-2.5 h-2.5 rounded-full bg-cyan-400 shadow-[0_0_10px_#22d3ee] animate-pulse" />
+              <span className="text-[10px] font-bold text-cyan-300 uppercase tracking-widest">
+                Spectator Controls
               </span>
             </div>
-            <h2 className="text-2xl font-black uppercase tracking-tight font-display text-transparent bg-clip-text bg-gradient-to-r from-white via-slate-100 to-indigo-300">
-              {stats.activeWeapon === 'sword' ? 'Katar Sword' : 'Gravity Hammer'}
+            <h2 className="text-xl font-black uppercase tracking-tight font-display text-transparent bg-clip-text bg-gradient-to-r from-white to-cyan-300">
+              FLIGHT ENGINE ACTIVE
             </h2>
             <p className="text-[9.5px] font-mono tracking-widest text-[#94a3b8] uppercase mt-0.5">
-              {stats.playerHP <= 0 
-                ? 'SYSTEM SHUT DOWN' 
-                : stats.activeWeapon === 'sword' 
-                  ? 'Katar Indian Push Dagger' 
-                  : 'Overhand Impact Wave Detector'}
+              MANEUVER OVERRIDE SYSTEMS
             </p>
-            {/* Visual keybindings overlay */}
-            <div className="mt-2.5 pt-2 border-t border-white/5 flex flex-col gap-1 text-[8.5px] font-mono text-slate-400">
-              {stats.activeWeapon === 'sword' ? (
-                <>
-                  <div className="flex justify-between">
-                    <span>LUNGING ATTACK:</span>
-                    <span className="text-cyan-400 font-extrabold">[LEFT CLICK]</span>
-                  </div>
-                  <div className="flex justify-between text-slate-500">
-                    <span className="italic">(requires hovering enemy)</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>SLASH SWEEP:</span>
-                    <span className="text-cyan-400 font-extrabold">[RIGHT CLICK]</span>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div className="flex justify-between">
-                    <span>VERTICAL CRUSH:</span>
-                    <span className="text-amber-400 font-extrabold">[LEFT CLICK]</span>
-                  </div>
-                  <div className="flex justify-between text-slate-500">
-                    <span>(shocks ground area)</span>
-                  </div>
-                </>
+            
+            <div className="mt-2.5 pt-2 border-t border-white/5 flex flex-col gap-1 text-[8.5px] font-mono text-slate-300">
+              <div className="flex justify-between py-0.5 border-b border-white/5">
+                <span>MOVE CAMERA:</span>
+                <span className="text-cyan-400 font-extrabold">[W][A][S][D]</span>
+              </div>
+              <div className="flex justify-between py-0.5 border-b border-white/5">
+                <span>RISE UP:</span>
+                <span className="text-cyan-400 font-extrabold">[SPACE]</span>
+              </div>
+              <div className="flex justify-between py-0.5 border-b border-white/5">
+                <span>LOWER DOWN:</span>
+                <span className="text-cyan-400 font-extrabold">[C]</span>
+              </div>
+              <div className="flex justify-between py-0.5 border-b border-white/5">
+                <span>SPEED MULTIPLIER:</span>
+                <span className="text-cyan-400 font-extrabold">[LSHIFT]</span>
+              </div>
+              {stats.observerCamMode === 'third' && (
+                <div className="flex justify-between py-0.5 text-cyan-300 animate-pulse">
+                  <span>ORBIT ZOOM:</span>
+                  <span className="text-cyan-300 font-extrabold">[SCROLL WHEEL]</span>
+                </div>
               )}
-              <div className="flex justify-between border-t border-white/5 pt-1 mt-0.5 text-[8s] text-indigo-300">
-                <span>SWAP WEAPONS:</span>
-                <span>[1] or [2] / [SCROLL]</span>
+            </div>
+          </div>
+        ) : (
+          <div className="flex flex-col md:flex-row items-start md:items-end gap-4 md:gap-6">
+            <div className="bg-black/45 backdrop-blur-md border border-white/10 p-4 rounded-xl shadow-2xl min-w-[240px]">
+              <div className="flex items-center gap-3 mb-2">
+                <div className={`w-2.5 h-2.5 rounded-full ${stats.weaponReady ? 'bg-emerald-500 shadow-[0_0_10px_#10b981]' : 'bg-yellow-500 animate-pulse'}`} />
+                <span className="text-[10px] font-bold text-white/70 uppercase tracking-widest">
+                  {stats.weaponReady ? 'Weapon Charged' : 'Chambering Rebound...'}
+                </span>
+              </div>
+              <h2 className="text-2xl font-black uppercase tracking-tight font-display text-transparent bg-clip-text bg-gradient-to-r from-white via-slate-100 to-indigo-300">
+                {stats.activeWeapon === 'sword' ? 'Katar Sword' : 'Gravity Hammer'}
+              </h2>
+              <p className="text-[9.5px] font-mono tracking-widest text-[#94a3b8] uppercase mt-0.5">
+                {stats.playerHP <= 0 
+                  ? 'SYSTEM SHUT DOWN' 
+                  : stats.activeWeapon === 'sword' 
+                    ? 'Katar Indian Push Dagger' 
+                    : 'Overhand Impact Wave Detector'}
+              </p>
+              {/* Visual keybindings overlay */}
+              <div className="mt-2.5 pt-2 border-t border-white/5 flex flex-col gap-1 text-[8.5px] font-mono text-slate-400">
+                {stats.activeWeapon === 'sword' ? (
+                  <>
+                    <div className="flex justify-between">
+                      <span>LUNGING ATTACK:</span>
+                      <span className="text-cyan-400 font-extrabold">[LEFT CLICK]</span>
+                    </div>
+                    <div className="flex justify-between text-slate-500">
+                      <span className="italic">(requires hovering enemy)</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>SLASH SWEEP:</span>
+                      <span className="text-cyan-400 font-extrabold">[RIGHT CLICK]</span>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="flex justify-between">
+                      <span>VERTICAL CRUSH:</span>
+                      <span className="text-amber-400 font-extrabold">[LEFT CLICK]</span>
+                    </div>
+                    <div className="flex justify-between text-slate-500">
+                      <span>(shocks ground area)</span>
+                    </div>
+                  </>
+                )}
+                <div className="flex justify-between border-t border-white/5 pt-1 mt-0.5 text-[8s] text-indigo-300">
+                  <span>SWAP WEAPONS:</span>
+                  <span>[1] or [2] / [SCROLL]</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Cooldown Sliding Progress Meter & Dash System */}
+            <div className="flex flex-col gap-3">
+              {/* Weapon Energy cooling */}
+              <div className="flex flex-col">
+                <span className="text-[9px] font-mono text-white/40 uppercase mb-1">
+                  {stats.activeWeapon === 'sword' ? 'SWORD CAPACITOR' : 'COOLING SYSTEM'} ({cooldownPct}%)
+                </span>
+                <div className="w-44 h-2.5 bg-white/10 rounded-full overflow-hidden border border-white/10 shadow-inner">
+                  <div 
+                    className={`h-full transition-all duration-75 ${
+                      stats.weaponReady 
+                        ? stats.activeWeapon === 'sword'
+                          ? 'bg-cyan-400 shadow-[0_0_12px_rgba(34,211,238,0.9)]'
+                          : 'bg-blue-500 shadow-[0_0_12px_rgba(59,130,246,0.9)]' 
+                        : 'bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.7)]'
+                    }`}
+                    style={{ width: `${cooldownPct}%` }}
+                  />
+                </div>
+              </div>
+
+              {/* Dash Jetpack Thruster ready bar */}
+              <div className="flex flex-col">
+                <div className="flex justify-between w-44 mb-1">
+                  <span className="text-[9px] font-mono text-white/40 uppercase">
+                    THRUST BOOST [Q]
+                  </span>
+                  <span className={`text-[9.5px] font-mono font-bold tracking-tight ${stats.playerDashReady ? 'text-cyan-400 drop-shadow-[0_0_4px_rgba(34,211,238,0.5)]' : 'text-amber-400'}`}>
+                    {stats.playerDashReady ? 'READY' : `${stats.playerDashCooldownTimer.toFixed(1)}s`}
+                  </span>
+                </div>
+                <div className="w-44 h-2.5 bg-white/10 rounded-full overflow-hidden border border-white/10 shadow-inner">
+                  <div 
+                    className={`h-full transition-all duration-75 ${
+                      stats.playerDashReady 
+                        ? 'bg-cyan-400 shadow-[0_0_12px_rgba(34,211,238,0.9)]' 
+                        : 'bg-amber-500/50'
+                    }`}
+                    style={{ 
+                      width: stats.playerDashReady 
+                        ? '100%' 
+                        : `${Math.max(0, Math.min(100, Math.round(((stats.settings.dashCooldown - stats.playerDashCooldownTimer) / stats.settings.dashCooldown) * 100)))}%` 
+                    }}
+                  />
+                </div>
+              </div>
+
+              {/* Sword Lunge Distance Tracker */}
+              <div className="flex flex-col">
+                <div className="flex justify-between w-44 mb-1">
+                  <span className="text-[9px] font-mono text-white/40 uppercase">
+                    SWORD LUNGE LMT
+                  </span>
+                  <span className="text-[9.5px] font-mono font-bold tracking-tight text-cyan-400 drop-shadow-[0_0_4px_rgba(34,211,238,0.5)]">
+                    {stats.settings?.swordLungeDistance !== undefined ? `${stats.settings.swordLungeDistance.toFixed(1)}m` : '14.5m'}
+                  </span>
+                </div>
+                <div className="w-44 h-2.5 bg-white/10 rounded-full overflow-hidden border border-white/10 shadow-inner bg-black/10">
+                  <div 
+                    className="h-full bg-cyan-400 shadow-[0_0_12px_rgba(34,211,238,0.9)] transition-all duration-300"
+                    style={{ 
+                      width: `${Math.max(0, Math.min(100, Math.round(((stats.settings?.swordLungeDistance ?? 14.5) / 25.0) * 100)))}%` 
+                    }}
+                  />
+                </div>
               </div>
             </div>
           </div>
-
-          {/* Cooldown Sliding Progress Meter & Dash System */}
-          <div className="flex flex-col gap-3">
-            {/* Weapon Energy cooling */}
-            <div className="flex flex-col">
-              <span className="text-[9px] font-mono text-white/40 uppercase mb-1">
-                {stats.activeWeapon === 'sword' ? 'SWORD CAPACITOR' : 'COOLING SYSTEM'} ({cooldownPct}%)
-              </span>
-              <div className="w-44 h-2.5 bg-white/10 rounded-full overflow-hidden border border-white/10 shadow-inner">
-                <div 
-                  className={`h-full transition-all duration-75 ${
-                    stats.weaponReady 
-                      ? stats.activeWeapon === 'sword'
-                        ? 'bg-cyan-400 shadow-[0_0_12px_rgba(34,211,238,0.9)]'
-                        : 'bg-blue-500 shadow-[0_0_12px_rgba(59,130,246,0.9)]' 
-                      : 'bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.7)]'
-                  }`}
-                  style={{ width: `${cooldownPct}%` }}
-                />
-              </div>
-            </div>
-
-            {/* Dash Jetpack Thruster ready bar */}
-            <div className="flex flex-col">
-              <div className="flex justify-between w-44 mb-1">
-                <span className="text-[9px] font-mono text-white/40 uppercase">
-                  THRUST BOOST [Q]
-                </span>
-                <span className={`text-[9.5px] font-mono font-bold tracking-tight ${stats.playerDashReady ? 'text-cyan-400 drop-shadow-[0_0_4px_rgba(34,211,238,0.5)]' : 'text-amber-400'}`}>
-                  {stats.playerDashReady ? 'READY' : `${stats.playerDashCooldownTimer.toFixed(1)}s`}
-                </span>
-              </div>
-              <div className="w-44 h-2.5 bg-white/10 rounded-full overflow-hidden border border-white/10 shadow-inner">
-                <div 
-                  className={`h-full transition-all duration-75 ${
-                    stats.playerDashReady 
-                      ? 'bg-cyan-400 shadow-[0_0_12px_rgba(34,211,238,0.9)]' 
-                      : 'bg-amber-500/50'
-                  }`}
-                  style={{ 
-                    width: stats.playerDashReady 
-                      ? '100%' 
-                      : `${Math.max(0, Math.min(100, Math.round(((stats.settings.dashCooldown - stats.playerDashCooldownTimer) / stats.settings.dashCooldown) * 100)))}%` 
-                  }}
-                />
-              </div>
-            </div>
-
-            {/* Sword Lunge Distance Tracker */}
-            <div className="flex flex-col">
-              <div className="flex justify-between w-44 mb-1">
-                <span className="text-[9px] font-mono text-white/40 uppercase">
-                  SWORD LUNGE LMT
-                </span>
-                <span className="text-[9.5px] font-mono font-bold tracking-tight text-cyan-400 drop-shadow-[0_0_4px_rgba(34,211,238,0.5)]">
-                  {stats.settings?.swordLungeDistance !== undefined ? `${stats.settings.swordLungeDistance.toFixed(1)}m` : '14.5m'}
-                </span>
-              </div>
-              <div className="w-44 h-2.5 bg-white/10 rounded-full overflow-hidden border border-white/10 shadow-inner bg-black/10">
-                <div 
-                  className="h-full bg-cyan-400 shadow-[0_0_12px_rgba(34,211,238,0.9)] transition-all duration-300"
-                  style={{ 
-                    width: `${Math.max(0, Math.min(100, Math.round(((stats.settings?.swordLungeDistance ?? 14.5) / 25.0) * 100)))}%` 
-                  }}
-                />
-              </div>
-            </div>
-          </div>
-        </div>
+        )}
       </DraggableHUDItem>
 
       {/* 7. HEALTH POINTS, LIVES AND STATUS FLAGS ROW */}
@@ -596,95 +640,117 @@ export const HUD: React.FC<HUDProps> = ({
         onToggleLock={handleToggleLock}
         onMouseDown={handleMouseDown}
       >
-        <div className="inline-flex flex-col md:flex-row items-end md:items-center gap-3">
-          <div className="bg-black/30 backdrop-blur-md border border-white/10 px-4 py-2.5 rounded-lg text-right shadow-lg">
-            <p className="text-[9px] text-white/55 font-bold uppercase tracking-wider mb-0.5">Physic Frame</p>
-            <p className="font-mono text-xs tracking-wide text-indigo-300">{getStanceLabel()}</p>
-          </div>
+        {stats.isObserverMode ? (
+          <div className="inline-flex flex-col md:flex-row items-end md:items-center gap-3">
+            <div className="bg-black/45 backdrop-blur-md border border-cyan-500/30 px-4 py-2.5 rounded-lg text-right shadow-lg">
+              <p className="text-[9px] text-cyan-400 font-bold uppercase tracking-wider mb-0.5">ROLE</p>
+              <p className="font-mono text-xs tracking-wide text-white font-extrabold">SPECTATOR</p>
+            </div>
 
-          <div className={`px-6 py-2.5 rounded-lg flex flex-col justify-center transition-all duration-300 shadow-xl border ${
-            stats.playerHP <= 0 
-              ? 'bg-red-950/60 border-red-500/40 text-red-200' 
-              : 'bg-white text-slate-900 border-white'
-          }`}>
-            <p className="text-[10px] font-black uppercase leading-none mb-1 text-center font-mono">
-              {stats.playerHP <= 0 ? 'STATUS: DEAD' : 'VITALITY'}
-            </p>
-            <div className="flex items-baseline justify-center gap-1">
-              {stats.playerHP <= 0 ? (
-                <p className="text-xl font-black leading-none font-display text-[#ef4444]">
-                  RESPAWN: {stats.playerRespawnTimer.toFixed(1)}S
+            <div className="px-6 py-2.5 rounded-lg flex flex-col justify-center transition-all duration-300 shadow-xl border bg-cyan-950/60 border-cyan-500/40 text-cyan-200">
+              <p className="text-[10px] font-black uppercase leading-none mb-1 text-center font-mono text-cyan-400/80">
+                CAMERA VIEW
+              </p>
+              <div className="flex items-baseline justify-center gap-1">
+                <p className="text-xs font-black tracking-tight text-white uppercase font-mono">
+                  {stats.observerCamMode === 'free' ? 'Free Camera' : stats.observerCamMode === 'third' ? 'Third Person (Orbital)' : 'First Person'}
                 </p>
-              ) : (
-                <p className="text-2xl font-black leading-none font-display tracking-tight text-slate-900">
-                  {stats.playerHP} / {stats.playerMaxHP} HP
-                </p>
-              )}
+              </div>
             </div>
           </div>
-        </div>
+        ) : (
+          <div className="inline-flex flex-col md:flex-row items-end md:items-center gap-3">
+            <div className="bg-black/30 backdrop-blur-md border border-white/10 px-4 py-2.5 rounded-lg text-right shadow-lg">
+              <p className="text-[9px] text-white/55 font-bold uppercase tracking-wider mb-0.5">Physic Frame</p>
+              <p className="font-mono text-xs tracking-wide text-indigo-300">{getStanceLabel()}</p>
+            </div>
+
+            <div className={`px-6 py-2.5 rounded-lg flex flex-col justify-center transition-all duration-300 shadow-xl border ${
+              stats.playerHP <= 0 
+                ? 'bg-red-950/60 border-red-500/40 text-red-200' 
+                : 'bg-white text-slate-900 border-white'
+            }`}>
+              <p className="text-[10px] font-black uppercase leading-none mb-1 text-center font-mono">
+                {stats.playerHP <= 0 ? 'STATUS: DEAD' : 'VITALITY'}
+              </p>
+              <div className="flex items-baseline justify-center gap-1">
+                {stats.playerHP <= 0 ? (
+                  <p className="text-xl font-black leading-none font-display text-[#ef4444]">
+                    RESPAWN: {stats.playerRespawnTimer.toFixed(1)}S
+                  </p>
+                ) : (
+                  <p className="text-2xl font-black leading-none font-display tracking-tight text-slate-900">
+                    {stats.playerHP} / {stats.playerMaxHP} HP
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
       </DraggableHUDItem>
 
       {/* 8. CENTER ROW COMPRESS CROSSHAIR */}
-      <DraggableHUDItem
-        id="crosshair"
-        uiItem={uiPositions.find(p => p.id === 'crosshair')}
-        isAdjustmentMode={isAdjustmentMode}
-        onToggleLock={handleToggleLock}
-        onMouseDown={handleMouseDown}
-      >
-        <div className="relative flex items-center justify-center pointer-events-none">
-          {/* Crosshair Outer Ring */}
-          {stats.activeWeapon === 'sword' ? (
-            <div 
-              className={`w-12 h-12 border-2 rounded-full flex items-center justify-center transition-all duration-150 ${
-                stats.crosshairColor === 'red'
-                  ? 'border-red-500 bg-red-500/15 shadow-[0_0_15px_rgba(239,68,68,0.85)] scale-110'
-                  : 'border-white bg-white/5 shadow-[0_0_8px_rgba(255,255,255,0.25)]'
-              }`}
-            >
-              {/* Inner dot or target bracket/lines */}
-              <div className={`w-1.5 h-1.5 rounded-full ${stats.crosshairColor === 'red' ? 'bg-red-500 animate-pulse' : 'bg-white/70'}`} />
-              
-              {/* Decorative crosshair notches for Sword locking */}
-              <div className={`absolute w-0.5 h-2 -top-1 ${stats.crosshairColor === 'red' ? 'bg-red-500' : 'bg-white/30'}`} />
-              <div className={`absolute w-0.5 h-2 -bottom-1 ${stats.crosshairColor === 'red' ? 'bg-red-500' : 'bg-white/30'}`} />
-              <div className={`absolute h-0.5 w-2 -left-1 ${stats.crosshairColor === 'red' ? 'bg-red-500' : 'bg-white/30'}`} />
-              <div className={`absolute h-0.5 w-2 -right-1 ${stats.crosshairColor === 'red' ? 'bg-red-500' : 'bg-white/30'}`} />
-              
-              {/* Lunge Prompter text overlay */}
-              {stats.crosshairColor === 'red' && (
-                <div className="absolute text-[8px] font-mono text-red-400 font-extrabold top-14 whitespace-nowrap animate-bounce uppercase">
-                  Lunge Ready
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="w-10 h-10 border-2 border-white/40 rounded-full flex items-center justify-center transition-all duration-200">
-              {/* Center target node */}
-              <div className={`w-1 h-1 rounded-full ${stats.playerHP <= 0 ? 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,1)]' : 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,1)]'}`} />
-            </div>
-          )}
-
-          {/* SPREAD INDICATOR RINGS IF STRIKE RECENTLY OCCURRED (DEBUG TRACE RADIUS ON HUD) */}
-          {stats.debugMode && (
-            <>
-              {/* Radius Circle Viz (dash border matches 4.5m debug mockup scaling) */}
-              <div className="absolute w-80 h-80 border-2 border-dashed border-red-500/10 rounded-full animate-pulse pointer-events-none"></div>
-              <div className="absolute w-40 h-40 border border-red-500/20 rounded-full pointer-events-none"></div>
-              
-              <div className="absolute bottom-[-100px] bg-black/60 backdrop-blur-md px-3 py-1.5 border border-red-500/50 rounded text-[9px] font-mono tracking-widest text-red-400 uppercase text-center shadow-lg whitespace-nowrap">
-                DEBUG: DAMAGE_TRACE_RADIUS = {stats.debugDamageRadius.toFixed(1)}M
-                {stats.lastStrikePos && (
-                  <div className="text-[8px] text-white/50 lowercase">
-                    impact [x: {stats.lastStrikePos[0].toFixed(1)}, z: {stats.lastStrikePos[2].toFixed(1)}]
+      {!stats.isObserverMode && (
+        <DraggableHUDItem
+          id="crosshair"
+          uiItem={uiPositions.find(p => p.id === 'crosshair')}
+          isAdjustmentMode={isAdjustmentMode}
+          onToggleLock={handleToggleLock}
+          onMouseDown={handleMouseDown}
+        >
+          <div className="relative flex items-center justify-center pointer-events-none">
+            {/* Crosshair Outer Ring */}
+            {stats.activeWeapon === 'sword' ? (
+              <div 
+                className={`w-12 h-12 border-2 rounded-full flex items-center justify-center transition-all duration-150 ${
+                  stats.crosshairColor === 'red'
+                    ? 'border-red-500 bg-red-500/15 shadow-[0_0_15px_rgba(239,68,68,0.85)] scale-110'
+                    : 'border-white bg-white/5 shadow-[0_0_8px_rgba(255,255,255,0.25)]'
+                }`}
+              >
+                {/* Inner dot or target bracket/lines */}
+                <div className={`w-1.5 h-1.5 rounded-full ${stats.crosshairColor === 'red' ? 'bg-red-500 animate-pulse' : 'bg-white/70'}`} />
+                
+                {/* Decorative crosshair notches for Sword locking */}
+                <div className={`absolute w-0.5 h-2 -top-1 ${stats.crosshairColor === 'red' ? 'bg-red-500' : 'bg-white/30'}`} />
+                <div className={`absolute w-0.5 h-2 -bottom-1 ${stats.crosshairColor === 'red' ? 'bg-red-500' : 'bg-white/30'}`} />
+                <div className={`absolute h-0.5 w-2 -left-1 ${stats.crosshairColor === 'red' ? 'bg-red-500' : 'bg-white/30'}`} />
+                <div className={`absolute h-0.5 w-2 -right-1 ${stats.crosshairColor === 'red' ? 'bg-red-500' : 'bg-white/30'}`} />
+                
+                {/* Lunge Prompter text overlay */}
+                {stats.crosshairColor === 'red' && (
+                  <div className="absolute text-[8px] font-mono text-red-400 font-extrabold top-14 whitespace-nowrap animate-bounce uppercase">
+                    Lunge Ready
                   </div>
                 )}
               </div>
-            </>
-          )}
-        </div>
-      </DraggableHUDItem>
+            ) : (
+              <div className="w-10 h-10 border-2 border-white/40 rounded-full flex items-center justify-center transition-all duration-200">
+                {/* Center target node */}
+                <div className={`w-1 h-1 rounded-full ${stats.playerHP <= 0 ? 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,1)]' : 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,1)]'}`} />
+              </div>
+            )}
+
+            {/* SPREAD INDICATOR RINGS IF STRIKE RECENTLY OCCURRED (DEBUG TRACE RADIUS ON HUD) */}
+            {stats.debugMode && (
+              <>
+                {/* Radius Circle Viz (dash border matches 4.5m debug mockup scaling) */}
+                <div className="absolute w-80 h-80 border-2 border-dashed border-red-500/10 rounded-full animate-pulse pointer-events-none"></div>
+                <div className="absolute w-40 h-40 border border-red-500/20 rounded-full pointer-events-none"></div>
+                
+                <div className="absolute bottom-[-100px] bg-black/60 backdrop-blur-md px-3 py-1.5 border border-red-500/50 rounded text-[9px] font-mono tracking-widest text-red-400 uppercase text-center shadow-lg whitespace-nowrap">
+                  DEBUG: DAMAGE_TRACE_RADIUS = {stats.debugDamageRadius.toFixed(1)}M
+                  {stats.lastStrikePos && (
+                    <div className="text-[8px] text-white/50 lowercase">
+                      impact [x: {stats.lastStrikePos[0].toFixed(1)}, z: {stats.lastStrikePos[2].toFixed(1)}]
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        </DraggableHUDItem>
+      )}
 
       {/* 9. FULL IN-GAME SCOREBOARD OVERLAY */}
       {stats.showScoreboard && (
@@ -715,67 +781,101 @@ export const HUD: React.FC<HUDProps> = ({
                 <div className="col-span-2 text-center">Deaths</div>
               </div>
 
-              {/* Blue Team Row */}
-              <div className={`grid grid-cols-12 items-center px-6 py-4 rounded-xl border transition-all duration-200 ${
-                stats.scorePlayer >= stats.scoreEnemy 
-                  ? 'bg-sky-500/10 border-sky-500/30 shadow-[0_0_15px_rgba(56,189,248,0.1)]' 
-                  : 'bg-black/20 border-white/5'
-              }`}>
-                <div className="col-span-6 flex items-center gap-3">
-                  <div className="w-3.5 h-3.5 rounded-full bg-sky-500 border-2 border-white/20 shadow-[0_0_8px_#38bdf8]" />
-                  <div className="flex flex-col">
-                    <span className="text-sm font-black tracking-tight text-white flex items-center gap-2">
-                      {stats.isMultiplayer
-                        ? (stats.multiplayerRole === 'host' ? `${stats.settings.playerName || stats.playerClientId || 'Host'} (You)` : stats.opponentPlayerName || stats.opponentClientId || 'Host')
-                        : `${stats.settings.playerName || stats.playerClientId || 'Player'} (You)`}
-                      {stats.scorePlayer >= stats.scoreEnemy && (
-                        <span className="text-[9px] font-mono font-bold bg-sky-400/20 text-sky-300 px-2 py-0.5 rounded border border-sky-400/35">LEADER</span>
-                      )}
-                    </span>
-                    <span className="text-[9px] font-mono text-white/30 uppercase mt-0.5">SANDBOX TEAM ALPHA</span>
-                  </div>
-                </div>
-                <div className="col-span-2 text-center text-xl font-black font-display text-sky-400 drop-shadow-[0_0_4px_rgba(56,189,248,0.3)]">
-                  {stats.scorePlayer}
-                </div>
-                <div className="col-span-2 text-center text-base font-bold font-mono text-white/80">
-                  {stats.playerKills ?? 0}
-                </div>
-                <div className="col-span-2 text-center text-base font-bold font-mono text-white/60">
-                  {stats.playerDeaths ?? 0}
-                </div>
-              </div>
+              {(() => {
+                const playersList = [
+                  {
+                    id: 'local_player',
+                    name: stats.isMultiplayer
+                      ? (stats.multiplayerRole === 'host' ? `${stats.settings.playerName || stats.playerClientId || 'Host'} (You)` : `${stats.settings.playerName || stats.playerClientId || 'Client'} (You)`)
+                      : `${stats.settings.playerName || 'Player'} (You)`,
+                    score: stats.scorePlayer,
+                    kills: stats.playerKills ?? 0,
+                    deaths: stats.playerDeaths ?? 0,
+                    isLocal: true,
+                    hue: stats.settings.playerHue ?? 200,
+                    hp: stats.playerHP
+                  }
+                ];
 
-              {/* Red Team Row */}
-              <div className={`grid grid-cols-12 items-center px-6 py-4 rounded-xl border transition-all duration-200 ${
-                stats.scoreEnemy >= stats.scorePlayer 
-                  ? 'bg-red-500/10 border-red-500/30 shadow-[0_0_15px_rgba(239,68,68,0.1)]' 
-                  : 'bg-black/20 border-white/5'
-              }`}>
-                <div className="col-span-6 flex items-center gap-3">
-                  <div className="w-3.5 h-3.5 rounded-full bg-red-500 border-2 border-white/20 shadow-[0_0_8px_#ef4444]" />
-                  <div className="flex flex-col">
-                    <span className="text-sm font-black tracking-tight text-white flex items-center gap-2">
-                      {stats.isMultiplayer
-                        ? (stats.multiplayerRole === 'client' ? `${stats.settings.playerName || stats.playerClientId || 'Client'} (You)` : stats.opponentPlayerName || stats.opponentClientId || 'Client')
-                        : 'AI Bot'}
-                      {stats.scoreEnemy >= stats.scorePlayer && (
-                        <span className="text-[9px] font-mono font-bold bg-red-400/20 text-red-300 px-2 py-0.5 rounded border border-red-400/35">LEADER</span>
-                      )}
-                    </span>
-                    <span className="text-[9px] font-mono text-white/30 uppercase mt-0.5">SANDBOX TEAM BETA</span>
-                  </div>
-                </div>
-                <div className="col-span-2 text-center text-xl font-black font-display text-red-400 drop-shadow-[0_0_4px_rgba(239,68,68,0.3)]">
-                  {stats.scoreEnemy}
-                </div>
-                <div className="col-span-2 text-center text-base font-bold font-mono text-white/80">
-                  {stats.enemyKills ?? 0}
-                </div>
-                <div className="col-span-2 text-center text-base font-bold font-mono text-white/60">
-                  {stats.enemyDeaths ?? 0}
-                </div>
-              </div>
+                if (!stats.isMultiplayer) {
+                  // Single player main AI bot
+                  playersList.push({
+                    id: 'main_ai',
+                    name: 'AI Bot',
+                    score: stats.scoreEnemy,
+                    kills: stats.enemyKills ?? 0,
+                    deaths: stats.enemyDeaths ?? 0,
+                    isLocal: false,
+                    hue: 0,
+                    hp: stats.enemyHP
+                  });
+                }
+
+                if (stats.otherPlayers) {
+                  stats.otherPlayers.forEach((player) => {
+                    playersList.push({
+                      id: player.id,
+                      name: player.playerName,
+                      score: player.score ?? 0,
+                      kills: player.kills ?? 0,
+                      deaths: player.deaths ?? 0,
+                      isLocal: false,
+                      hue: player.hue,
+                      hp: player.hp
+                    });
+                  });
+                }
+
+                // Sort by score descending
+                playersList.sort((a, b) => b.score - a.score);
+
+                return playersList.map((player, index) => {
+                  const isLeader = index === 0 && player.score > 0;
+                  return (
+                    <div 
+                      key={player.id}
+                      className={`grid grid-cols-12 items-center px-6 py-4 rounded-xl border transition-all duration-200 ${
+                        player.isLocal 
+                          ? 'bg-sky-500/10 border-sky-500/30 shadow-[0_0_15px_rgba(56,189,248,0.1)]' 
+                          : 'bg-black/20 border-white/5'
+                      }`}
+                    >
+                      <div className="col-span-6 flex items-center gap-3">
+                        <div 
+                          className="w-3.5 h-3.5 rounded-full border-2 border-white/20 shadow-md"
+                          style={{ 
+                            backgroundColor: `hsl(${player.hue}, 80%, 50%)`,
+                            boxShadow: `0 0 8px hsl(${player.hue}, 80%, 50%)`
+                          }}
+                        />
+                        <div className="flex flex-col">
+                          <span className="text-sm font-black tracking-tight text-white flex items-center gap-2">
+                            {player.name}
+                            {isLeader && (
+                              <span className="text-[8px] font-mono font-bold bg-amber-400/20 text-amber-300 px-1.5 py-0.5 rounded border border-amber-400/35">LEADER</span>
+                            )}
+                            {player.hp <= 0 && (
+                              <span className="text-[8px] font-mono font-bold bg-red-500/20 text-red-300 px-1.5 py-0.5 rounded border border-red-500/35">DEAD</span>
+                            )}
+                          </span>
+                          <span className="text-[9px] font-mono text-white/30 uppercase mt-0.5">
+                            {player.isLocal ? 'SANDBOX TEAM ALPHA' : 'SANDBOX TEAM BETA'}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="col-span-2 text-center text-xl font-black font-display text-cyan-400 drop-shadow-[0_0_4px_rgba(6,182,212,0.3)]">
+                        {player.score}
+                      </div>
+                      <div className="col-span-2 text-center text-base font-bold font-mono text-white/80">
+                        {player.kills}
+                      </div>
+                      <div className="col-span-2 text-center text-base font-bold font-mono text-white/60">
+                        {player.deaths}
+                      </div>
+                    </div>
+                  );
+                });
+              })()}
             </div>
 
             {/* Footer game state indicator */}
@@ -788,6 +888,64 @@ export const HUD: React.FC<HUDProps> = ({
             </div>
           </div>
         </div>
+      )}
+      {/* 10. HOLOGRAPHIC SPECTATE SELECTOR */}
+      {stats.isObserverMode && (
+        <DraggableHUDItem
+          id="spectatorCard"
+          uiItem={uiPositions.find(p => p.id === 'spectatorCard')}
+          isAdjustmentMode={isAdjustmentMode}
+          onToggleLock={handleToggleLock}
+          onMouseDown={handleMouseDown}
+        >
+          <div className="bg-black/60 backdrop-blur-lg border border-cyan-500/40 p-4 rounded-xl shadow-[0_0_20px_rgba(6,182,212,0.25)] flex flex-col items-center gap-3 min-w-[280px]">
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping" />
+              <span className="text-[10px] font-mono font-bold tracking-[0.2em] text-cyan-400 uppercase">
+                SPECTATE PANEL
+              </span>
+            </div>
+            
+            <div className="flex items-center justify-between w-full gap-4 py-1.5 px-3 bg-cyan-950/40 border border-cyan-500/20 rounded-lg">
+              {/* Previous target button */}
+              <button
+                onClick={() => window.dispatchEvent(new CustomEvent('cycle-observer-target'))}
+                className="pointer-events-auto text-cyan-400 hover:text-cyan-300 font-black text-lg transition-all p-1 hover:scale-125 cursor-pointer bg-transparent border-none animate-pulse"
+                title="Select Previous Target"
+              >
+                ◀
+              </button>
+              
+              <div className="text-center flex flex-col justify-center min-w-[150px]">
+                <p className="text-[8px] font-mono text-cyan-400/50 uppercase tracking-widest leading-none mb-1">
+                  SPECTATING
+                </p>
+                <p className="text-sm font-black text-white tracking-tight uppercase leading-none truncate max-w-[180px]">
+                  {stats.observerTargetName || 'Spartan'}
+                </p>
+                <p className="text-[9px] font-mono text-cyan-300 uppercase mt-0.5 leading-none font-extrabold">
+                  {stats.observerTargetRole === 'host' ? 'ALPHA (BLUE)' : 'BETA (RED)'}
+                </p>
+              </div>
+              
+              {/* Next target button */}
+              <button
+                onClick={() => window.dispatchEvent(new CustomEvent('cycle-observer-target'))}
+                className="pointer-events-auto text-cyan-400 hover:text-cyan-300 font-black text-lg transition-all p-1 hover:scale-125 cursor-pointer bg-transparent border-none animate-pulse"
+                title="Select Next Target"
+              >
+                ▶
+              </button>
+            </div>
+            
+            <button
+              onClick={() => window.dispatchEvent(new CustomEvent('cycle-observer-mode'))}
+              className="pointer-events-auto w-full py-2 bg-gradient-to-r from-cyan-600/30 to-blue-600/30 hover:from-cyan-500/40 hover:to-blue-500/40 border border-cyan-500/30 hover:border-cyan-400 rounded-lg text-xs font-mono font-bold tracking-wider text-cyan-300 transition-all cursor-pointer flex items-center justify-center gap-2 hover:shadow-[0_0_12px_rgba(6,182,212,0.3)]"
+            >
+              <span>SWITCH CAMERA [V]</span>
+            </button>
+          </div>
+        </DraggableHUDItem>
       )}
 
     </div>

@@ -278,6 +278,11 @@ export default function App() {
       nameVisibilityColor: '#00ffff',
       nameVisibilityOpacity: 0.8,
       nameVisibilityFontSize: 16,
+      aiDifficulty: 'normal',
+      aiReactionLatency: 0.25,
+      aiAnticipationFactor: 0.40,
+      aiMovementComplexity: 50,
+      aiWeaponSwapIQ: 50,
     };
 
     try {
@@ -427,7 +432,12 @@ export default function App() {
           nameVisibilityColor: '#00ffff',
           nameVisibilityOpacity: 0.8,
           nameVisibilityFontSize: 16,
-          playerName: defaultName
+          playerName: defaultName,
+          aiDifficulty: 'normal',
+          aiReactionLatency: 0.25,
+          aiAnticipationFactor: 0.40,
+          aiMovementComplexity: 50,
+          aiWeaponSwapIQ: 50,
         };
         setAdminSettings(defaultAdmin);
         
@@ -446,7 +456,7 @@ export default function App() {
   const [connectionMode, setConnectionMode] = useState<'relay' | 'local'>('relay');
   const [activeMenuTab, setActiveMenuTab] = useState<'single' | 'multi'>('single');
   const [isMultiplayer, setIsMultiplayer] = useState<boolean>(false);
-  const [multiplayerRole, setMultiplayerRole] = useState<'host' | 'client' | null>(null);
+  const [multiplayerRole, setMultiplayerRole] = useState<'host' | 'client' | 'observer' | null>(null);
   const [multiplayerSocket, setMultiplayerSocket] = useState<WebSocket | null>(null);
   const [userIp, setUserIp] = useState<string>('127.0.0.1');
   const [lanIp, setLanIp] = useState<string>('127.0.0.1');
@@ -486,6 +496,7 @@ export default function App() {
     { id: 'weaponDash', name: 'Gear & Thrusters', x: 3, y: 82, locked: true },
     { id: 'vitality', name: 'Vitality Indicator', x: 97, y: 90, locked: true },
     { id: 'crosshair', name: 'Reticle / Target Dot', x: 50, y: 50, locked: true },
+    { id: 'spectatorCard', name: 'Spectator Controller', x: 50, y: 88, locked: true },
   ];
 
   const [uiPositions, setUiPositions] = useState<UiElementPos[]>(() => {
@@ -595,6 +606,11 @@ export default function App() {
       swordTradeWindow: 350,
       hammerSwordTradeWindow: 350,
       playerHue: getSavedPlayerHue(),
+      aiDifficulty: 'normal',
+      aiReactionLatency: 0.25,
+      aiAnticipationFactor: 0.40,
+      aiMovementComplexity: 50,
+      aiWeaponSwapIQ: 50,
     },
     lastDeaths: [],
     playerX: 0,
@@ -835,11 +851,11 @@ export default function App() {
     }));
   }, [ping]);
 
-  // Dedicated in-game chat message sync listener
+  // Dedicated in-game message and role listener
   useEffect(() => {
     if (!multiplayerSocket) return;
 
-    const handleChatMessage = (event: MessageEvent) => {
+    const handleMultiplayerMessage = (event: MessageEvent) => {
       try {
         const data = JSON.parse(event.data);
         if (data.type === 'sync' && data.action === 'chat') {
@@ -854,15 +870,30 @@ export default function App() {
               isLocal: false
             }];
           });
+        } else if (data.type === 'role_changed') {
+          console.log('Role authoritatively updated to:', data.role);
+          setMultiplayerRole(data.role);
+          if (data.role === 'observer') {
+            setIsPaused(false); // Unpause upon transitioning to observer
+          }
+        } else if (data.type === 'opponent_role_changed') {
+          console.log('Opponent role updated to:', data.role);
+          if (data.role === 'observer') {
+            setOpponentClientId('Opponent (Spectating)');
+          } else {
+            setOpponentClientId('Opponent');
+          }
+        } else if (data.type === 'error') {
+          alert(data.message);
         }
       } catch (err) {
         // Safe catch
       }
     };
 
-    multiplayerSocket.addEventListener('message', handleChatMessage);
+    multiplayerSocket.addEventListener('message', handleMultiplayerMessage);
     return () => {
-      multiplayerSocket.removeEventListener('message', handleChatMessage);
+      multiplayerSocket.removeEventListener('message', handleMultiplayerMessage);
     };
   }, [multiplayerSocket]);
 
@@ -983,7 +1014,7 @@ export default function App() {
     };
   };
 
-  const handleJoinGame = (target: string) => {
+  const handleJoinGame = (target: string, isObserver: boolean = false) => {
     if (!target) {
       setConnectionError('Please provide a Host IP address or Room Code.');
       return;
@@ -1016,14 +1047,15 @@ export default function App() {
       }
     }
 
-    console.log('WS Join connection target URL resolved to:', wsUrl);
+    console.log('WS Join connection target URL resolved to:', wsUrl, 'isObserver:', isObserver);
     const ws = new WebSocket(wsUrl);
 
     ws.onopen = () => {
-      console.log('WS Connection opened. Joining:', target);
+      console.log('WS Connection opened. Joining:', target, 'isObserver:', isObserver);
       ws.send(JSON.stringify({
         type: 'join',
-        targetIpOrId: target.trim()
+        targetIpOrId: target.trim(),
+        isObserver
       }));
     };
 
@@ -1036,7 +1068,7 @@ export default function App() {
 
           setMultiplayerSocket(ws);
           setIsMultiplayer(true);
-          setMultiplayerRole('client');
+          setMultiplayerRole(data.role || 'client');
           setConnectionStatus('connected');
           setOpponentClientId(data.hostClientId || 'Opponent');
 
@@ -1139,6 +1171,32 @@ export default function App() {
     setShowAdminPanel(false);
     setShowUiAdjustment(false);
     setShowLightingMenu(false);
+  };
+
+  const handleJoinObserver = () => {
+    if (isMultiplayer && multiplayerSocket && multiplayerSocket.readyState === WebSocket.OPEN) {
+      multiplayerSocket.send(JSON.stringify({
+        type: 'change_role',
+        role: 'observer'
+      }));
+    } else {
+      // Singleplayer observer mode toggle
+      setMultiplayerRole('observer');
+      setIsPaused(false);
+    }
+  };
+
+  const handleJoinPlayer = () => {
+    if (isMultiplayer && multiplayerSocket && multiplayerSocket.readyState === WebSocket.OPEN) {
+      multiplayerSocket.send(JSON.stringify({
+        type: 'change_role',
+        role: 'player'
+      }));
+    } else {
+      // Singleplayer player mode toggle
+      setMultiplayerRole(null);
+      setIsPaused(false);
+    }
   };
 
   const handleResetMatch = () => {
@@ -1336,6 +1394,107 @@ export default function App() {
                       <p className="text-white/60 text-xs leading-relaxed bg-white/5 border border-white/5 rounded-lg p-4 leading-normal select-text">
                         This is a Grifball iBrawls simulator. The game can be played solo against AI or online against other players. All Admin Controls only impact you, so coordinate with your opponent on the dials you want to match.
                       </p>
+
+                      {/* AI Difficulty Neural Configuration */}
+                      <div className="bg-slate-950/45 border border-white/10 rounded-xl p-3.5 flex flex-col gap-3 text-left">
+                        <div className="flex justify-between items-center pb-1.5 border-b border-white/5">
+                          <span className="text-[9px] font-bold text-[#38bdf8] uppercase tracking-wider flex items-center gap-1.5 font-display">
+                            🤖 AI Combat Neural Net
+                          </span>
+                          <span className="text-[8px] font-mono text-[#38bdf8] bg-[#38bdf8]/10 border border-[#38bdf8]/20 px-1.5 py-0.5 rounded uppercase font-black">
+                            Offline Play
+                          </span>
+                        </div>
+
+                        {/* Difficulty Selector */}
+                        <div className="flex flex-col gap-1.5">
+                          <span className="text-[9px] text-white/50 uppercase tracking-widest font-mono">Cognitive Matrix Preset:</span>
+                          <select
+                            value={adminSettings.aiDifficulty || 'normal'}
+                            onChange={(e) => setAdminSettings(prev => ({ ...prev, aiDifficulty: e.target.value as any }))}
+                            className="w-full h-9 bg-black/60 border border-white/10 rounded px-2.5 text-xs text-[#38bdf8] font-bold uppercase outline-none focus:border-[#38bdf8] transition-all cursor-pointer font-sans"
+                          >
+                            <option value="easy">🟢 Easy (Sub-Normal)</option>
+                            <option value="normal">🔵 Normal (Adaptive)</option>
+                            <option value="hard">🟡 Hard (Punishing)</option>
+                            <option value="nightmare">🔴 Nightmare (Grandmaster)</option>
+                            <option value="custom">⚙️ Custom Matrix Override</option>
+                          </select>
+                        </div>
+
+                        {/* Custom Parameter Sliders */}
+                        {(adminSettings.aiDifficulty === 'custom') && (
+                          <div className="flex flex-col gap-3.5 pt-1 animate-fade-in">
+                            {/* Reaction Latency */}
+                            <div className="flex flex-col gap-1">
+                              <div className="flex justify-between text-[9px] font-mono uppercase tracking-wider text-white/60">
+                                <span>Reflex Latency</span>
+                                <span className="text-cyan-400 font-bold">{(adminSettings.aiReactionLatency ?? 0.25).toFixed(2)}s</span>
+                              </div>
+                              <input 
+                                type="range" 
+                                min="0.00" 
+                                max="1.50" 
+                                step="0.05"
+                                value={adminSettings.aiReactionLatency ?? 0.25} 
+                                onChange={(e) => setAdminSettings(prev => ({ ...prev, aiReactionLatency: parseFloat(e.target.value) }))}
+                                className="w-full accent-cyan-400 h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
+                              />
+                            </div>
+
+                            {/* Anticipation Factor */}
+                            <div className="flex flex-col gap-1">
+                              <div className="flex justify-between text-[9px] font-mono uppercase tracking-wider text-white/60">
+                                <span>Anticipation Engine</span>
+                                <span className="text-cyan-400 font-bold">{Math.round((adminSettings.aiAnticipationFactor ?? 0.40) * 100)}%</span>
+                              </div>
+                              <input 
+                                type="range" 
+                                min="0.00" 
+                                max="1.00" 
+                                step="0.05"
+                                value={adminSettings.aiAnticipationFactor ?? 0.40} 
+                                onChange={(e) => setAdminSettings(prev => ({ ...prev, aiAnticipationFactor: parseFloat(e.target.value) }))}
+                                className="w-full accent-cyan-400 h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
+                              />
+                            </div>
+
+                            {/* Movement Complexity */}
+                            <div className="flex flex-col gap-1">
+                              <div className="flex justify-between text-[9px] font-mono uppercase tracking-wider text-white/60">
+                                <span>Strafe & Evade Complexity</span>
+                                <span className="text-cyan-400 font-bold">{adminSettings.aiMovementComplexity ?? 50}%</span>
+                              </div>
+                              <input 
+                                type="range" 
+                                min="0" 
+                                max="100" 
+                                step="5"
+                                value={adminSettings.aiMovementComplexity ?? 50} 
+                                onChange={(e) => setAdminSettings(prev => ({ ...prev, aiMovementComplexity: parseInt(e.target.value) }))}
+                                className="w-full accent-cyan-400 h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
+                              />
+                            </div>
+
+                            {/* Weapon Swap IQ */}
+                            <div className="flex flex-col gap-1">
+                              <div className="flex justify-between text-[9px] font-mono uppercase tracking-wider text-white/60">
+                                <span>Weapon Swapping IQ</span>
+                                <span className="text-cyan-400 font-bold">{adminSettings.aiWeaponSwapIQ ?? 50}%</span>
+                              </div>
+                              <input 
+                                type="range" 
+                                min="0" 
+                                max="100" 
+                                step="5"
+                                value={adminSettings.aiWeaponSwapIQ ?? 50} 
+                                onChange={(e) => setAdminSettings(prev => ({ ...prev, aiWeaponSwapIQ: parseInt(e.target.value) }))}
+                                className="w-full accent-cyan-400 h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     </div>
                     
                     {/* Training Actions */}
@@ -1538,6 +1697,17 @@ export default function App() {
                               }`}
                             >
                               Connect
+                            </button>
+                            <button
+                              onClick={() => handleJoinGame(joinIpOrId, true)}
+                              disabled={!joinIpOrId}
+                              className={`px-3 h-10 font-sans font-black text-[10px] uppercase tracking-widest rounded transition-all border outline-none ${
+                                joinIpOrId 
+                                  ? 'bg-amber-500/10 hover:bg-amber-500/30 border-amber-500/50 text-amber-400 cursor-pointer shadow-[0_0_12px_rgba(245,158,11,0.1)]' 
+                                  : 'bg-white/5 border-white/5 text-white/20 cursor-not-allowed'
+                              }`}
+                            >
+                              Spectate
                             </button>
                           </div>
                         </div>
@@ -2103,6 +2273,24 @@ export default function App() {
                   Resume Game
                 </button>
 
+                {multiplayerRole === 'observer' ? (
+                  <button 
+                    id="join-player-btn"
+                    onClick={handleJoinPlayer}
+                    className="w-full h-12 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs uppercase tracking-widest transition-all cursor-pointer rounded flex items-center justify-center gap-2 border border-emerald-400/30"
+                  >
+                    🚀 Join As Player
+                  </button>
+                ) : (
+                  <button 
+                    id="join-observer-btn"
+                    onClick={handleJoinObserver}
+                    className="w-full h-12 bg-amber-600/30 hover:bg-amber-500/40 border border-amber-500/30 text-amber-400 font-bold text-xs uppercase tracking-widest transition-all cursor-pointer rounded flex items-center justify-center gap-2"
+                  >
+                    👁️ Join Observer
+                  </button>
+                )}
+
                 {/* UI ADJUSTMENT CONTROLLER BUTTON */}
                 <button 
                   id="ui-adjustment-btn"
@@ -2506,6 +2694,103 @@ export default function App() {
                         }`} />
                       </button>
                     </div>
+                  </div>
+
+                  {/* AI Neural Configuration Section (New!) */}
+                  <div className="border border-white/5 rounded-xl p-2.5 bg-white/1 flex flex-col gap-2.5">
+                    <p className="text-[10px] text-cyan-400 font-bold uppercase tracking-widest border-b border-white/5 pb-1 font-mono flex items-center justify-between">
+                      <span>9. AI Combat Neural Matrix</span>
+                      <span className="text-[8px] bg-cyan-500/20 text-cyan-300 px-1.5 py-0.2 rounded font-sans tracking-normal uppercase border border-cyan-500/30">Intelligence</span>
+                    </p>
+
+                    {/* Preset dropdown */}
+                    <div className="flex flex-col gap-1">
+                      <span className="text-[9px] text-white/50 uppercase tracking-widest font-mono">Cognitive Matrix Preset:</span>
+                      <select
+                        value={adminSettings.aiDifficulty || 'normal'}
+                        onChange={(e) => setAdminSettings(prev => ({ ...prev, aiDifficulty: e.target.value as any }))}
+                        className="w-full h-8 bg-black/60 border border-white/10 rounded px-2 text-xs text-cyan-400 font-bold uppercase outline-none focus:border-cyan-400 cursor-pointer transition-all font-sans"
+                      >
+                        <option value="easy">🟢 Easy (Sub-Normal)</option>
+                        <option value="normal">🔵 Normal (Adaptive)</option>
+                        <option value="hard">🟡 Hard (Punishing)</option>
+                        <option value="nightmare">🔴 Nightmare (Grandmaster)</option>
+                        <option value="custom">⚙️ Custom Matrix Override</option>
+                      </select>
+                    </div>
+
+                    {/* Custom Matrix Override Controls */}
+                    {adminSettings.aiDifficulty === 'custom' && (
+                      <div className="flex flex-col gap-2.5 pt-1 border-t border-white/5 mt-1 animate-fade-in">
+                        {/* Reaction Latency */}
+                        <div className="flex flex-col gap-1">
+                          <div className="flex justify-between text-[9px] font-mono uppercase tracking-wider text-white/60">
+                            <span>Reflex Latency</span>
+                            <span className="text-cyan-400 font-bold">{(adminSettings.aiReactionLatency ?? 0.25).toFixed(2)}s</span>
+                          </div>
+                          <input 
+                            type="range" 
+                            min="0.00" 
+                            max="1.50" 
+                            step="0.05"
+                            value={adminSettings.aiReactionLatency ?? 0.25} 
+                            onChange={(e) => setAdminSettings(prev => ({ ...prev, aiReactionLatency: parseFloat(e.target.value) }))}
+                            className="w-full accent-cyan-400 h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
+                          />
+                        </div>
+
+                        {/* Anticipation Factor */}
+                        <div className="flex flex-col gap-1">
+                          <div className="flex justify-between text-[9px] font-mono uppercase tracking-wider text-white/60">
+                            <span>Anticipation Engine</span>
+                            <span className="text-cyan-400 font-bold">{Math.round((adminSettings.aiAnticipationFactor ?? 0.40) * 100)}%</span>
+                          </div>
+                          <input 
+                            type="range" 
+                            min="0.00" 
+                            max="1.00" 
+                            step="0.05"
+                            value={adminSettings.aiAnticipationFactor ?? 0.40} 
+                            onChange={(e) => setAdminSettings(prev => ({ ...prev, aiAnticipationFactor: parseFloat(e.target.value) }))}
+                            className="w-full accent-cyan-400 h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
+                          />
+                        </div>
+
+                        {/* Movement Complexity */}
+                        <div className="flex flex-col gap-1">
+                          <div className="flex justify-between text-[9px] font-mono uppercase tracking-wider text-white/60">
+                            <span>Strafe & Evade Complexity</span>
+                            <span className="text-cyan-400 font-bold">{adminSettings.aiMovementComplexity ?? 50}%</span>
+                          </div>
+                          <input 
+                            type="range" 
+                            min="0" 
+                            max="100" 
+                            step="5"
+                            value={adminSettings.aiMovementComplexity ?? 50} 
+                            onChange={(e) => setAdminSettings(prev => ({ ...prev, aiMovementComplexity: parseInt(e.target.value) }))}
+                            className="w-full accent-cyan-400 h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
+                          />
+                        </div>
+
+                        {/* Weapon Swap IQ */}
+                        <div className="flex flex-col gap-1">
+                          <div className="flex justify-between text-[9px] font-mono uppercase tracking-wider text-white/60">
+                            <span>Weapon Swapping IQ</span>
+                            <span className="text-cyan-400 font-bold">{adminSettings.aiWeaponSwapIQ ?? 50}%</span>
+                          </div>
+                          <input 
+                            type="range" 
+                            min="0" 
+                            max="100" 
+                            step="5"
+                            value={adminSettings.aiWeaponSwapIQ ?? 50} 
+                            onChange={(e) => setAdminSettings(prev => ({ ...prev, aiWeaponSwapIQ: parseInt(e.target.value) }))}
+                            className="w-full accent-cyan-400 h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
+                          />
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
 

@@ -28,10 +28,12 @@ async function startServer() {
 
   interface Room {
     host: WebSocket;
-    client?: WebSocket;
+    clients: WebSocket[]; // Array of up to 7 guest clients (8 players total)
+    observers: Set<WebSocket>;
     keys: string[];
     quickplayReserved?: boolean;
   }
+
 
   // Track active matchmaking rooms by string identifier key
   const rooms = new Map<string, Room>();
@@ -197,12 +199,13 @@ async function startServer() {
             // 1. Search for any hosted match waiting for a player (not full, not reserved)
             let foundRoomKey: string | null = null;
             for (const [key, room] of rooms.entries()) {
-              if (!room.client && !room.quickplayReserved) {
+              if (room.clients.length === 0 && !room.quickplayReserved) {
                 foundRoomKey = key;
                 room.quickplayReserved = true; // Mark it as reserved
                 break;
               }
             }
+
 
             if (foundRoomKey) {
               console.log(`Quick Play Matchmaker found open hosted lobby for client ${wsId} under key: ${foundRoomKey}`);
@@ -259,7 +262,7 @@ async function startServer() {
             console.log(`Registering host with keys: ${keysToRegister.join(", ")}`);
 
             // Create a single Room instance shared by reference across all registration keys
-            const room: Room = { host: ws, keys: keysToRegister };
+            const room: Room = { host: ws, clients: [], observers: new Set<WebSocket>(), keys: keysToRegister };
 
             // Register room under all given keys
             keysToRegister.forEach(key => {
@@ -269,13 +272,14 @@ async function startServer() {
                 if (existing.host !== ws) {
                   existing.host.close();
                 }
-                if (existing.client) {
-                  existing.client.close();
+                if (existing.clients) {
+                  existing.clients.forEach(c => c.close());
                 }
               }
 
               rooms.set(key, room);
             });
+
 
             socketToRoom.set(ws, room);
             ws.send(JSON.stringify({ type: "hosted", keys: keysToRegister }));
@@ -293,8 +297,8 @@ async function startServer() {
           }
 
           case "join": {
-            const { targetIpOrId } = message;
-            console.log(`Client attempting to join room matching: ${targetIpOrId}`);
+            const { targetIpOrId, isObserver } = message;
+            console.log(`Client attempting to join room matching: ${targetIpOrId} (isObserver: ${isObserver})`);
 
             let room = rooms.get(targetIpOrId);
             
@@ -312,28 +316,172 @@ async function startServer() {
               return;
             }
 
-            if (room.client && room.client !== ws && (room.client as any).id !== wsId) {
-              ws.send(JSON.stringify({ type: "error", message: `Match is already full (2/2 players present).` }));
+            if (isObserver) {
+              room.observers.add(ws);
+              socketToRoom.set(ws, room);
+              console.log(`Client ${wsId} connected as observer to room.`);
+              ws.send(JSON.stringify({ 
+                type: "connected", 
+                role: "observer", 
+                hostClientId: (room.host as any).id, 
+                clientClientId: room.clients.length > 0 ? (room.clients[0] as any).id : undefined,
+                otherPlayerIds: [
+                  (room.host as any).id,
+                  ...room.clients.map(c => (c as any).id)
+                ]
+              }));
+              
+              // Notify host and clients
+              const obsJoinedPayload = JSON.stringify({ type: "observer_joined", observerId: wsId });
+              if (room.host && room.host.readyState === WebSocket.OPEN) {
+                room.host.send(obsJoinedPayload);
+              }
+              room.clients.forEach(c => {
+                if (c.readyState === WebSocket.OPEN) {
+                  c.send(obsJoinedPayload);
+                }
+              });
+              break;
+            }
+
+            if (room.clients.length >= 7) { // 8 players total (1 host + 7 clients)
+              ws.send(JSON.stringify({ type: "error", message: `Match is already full (8/8 players present).` }));
               return;
             }
 
-            // Bind client to room reference
-            room.client = ws;
+            if (!room.clients.includes(ws) && !room.clients.some((c: any) => c.id === wsId)) {
+              room.clients.push(ws);
+            }
             socketToRoom.set(ws, room);
 
             // Notify both parties that they have paired successfully
-            ws.send(JSON.stringify({ type: "connected", role: "client", hostClientId: (room.host as any).id, clientClientId: wsId }));
-            room.host.send(JSON.stringify({ type: "connected", role: "host", hostClientId: (room.host as any).id, clientClientId: wsId }));
+            ws.send(JSON.stringify({ 
+              type: "connected", 
+              role: "client", 
+              hostClientId: (room.host as any).id, 
+              clientClientId: wsId,
+              otherPlayerIds: [
+                (room.host as any).id,
+                ...room.clients.filter(c => (c as any).id !== wsId).map(c => (c as any).id)
+              ]
+            }));
+
+            // Notify host and all other clients of this new player joining
+            const clientJoinedPayload = JSON.stringify({
+              type: "player_joined",
+              role: "client",
+              clientId: wsId,
+              playerName: (ws as any).playerName || `Guest ${wsId}`
+            });
+
+            if (room.host && room.host.readyState === WebSocket.OPEN) {
+              room.host.send(clientJoinedPayload);
+            }
+            room.clients.forEach(client => {
+              if (client !== ws && client.readyState === WebSocket.OPEN) {
+                client.send(clientJoinedPayload);
+              }
+            });
             break;
           }
 
-          case "sync": {
-            // Forward gameplay simulation sync data directly to the opposite party in the same Room
+          case "change_role": {
+            const { role } = message;
             let room = socketToRoom.get(ws);
             if (!room) {
-              // Fallback socket-to-room lookup to heal connections
               for (const r of Array.from(rooms.values())) {
-                if (r.host === ws || r.client === ws || (r.host && (r.host as any).id === wsId) || (r.client && (r.client as any).id === wsId)) {
+                if (r.host === ws || r.clients.includes(ws) || r.observers.has(ws)) {
+                  room = r;
+                  socketToRoom.set(ws, r);
+                  break;
+                }
+              }
+            }
+            if (!room) {
+              ws.send(JSON.stringify({ type: "error", message: "Room matching reference lost." }));
+              break;
+            }
+
+            if (role === 'observer') {
+              // Transitioning from Player (client) to Observer
+              const clientIdx = room.clients.indexOf(ws);
+              if (clientIdx !== -1) {
+                room.clients.splice(clientIdx, 1);
+                room.observers.add(ws);
+                ws.send(JSON.stringify({ type: "role_changed", role: "observer" }));
+                
+                // Let host know opponent went observer
+                const changedPayload = JSON.stringify({ type: "opponent_role_changed", clientId: wsId, role: "observer" });
+                if (room.host && room.host.readyState === WebSocket.OPEN) {
+                  room.host.send(changedPayload);
+                }
+                room.clients.forEach(c => {
+                  if (c.readyState === WebSocket.OPEN) {
+                    c.send(changedPayload);
+                  }
+                });
+              } else if (room.host === ws || (room.host && (room.host as any).id === wsId)) {
+                // Host becomes observer locally, doesn't vacate room.host reference
+                room.observers.add(ws);
+                ws.send(JSON.stringify({ type: "role_changed", role: "observer" }));
+                
+                const changedPayload = JSON.stringify({ type: "opponent_role_changed", clientId: wsId, role: "observer" });
+                room.clients.forEach(c => {
+                  if (c.readyState === WebSocket.OPEN) {
+                    c.send(changedPayload);
+                  }
+                });
+              }
+            } else if (role === 'player') {
+              // Transitioning from Observer to Player
+              if (room.observers.has(ws)) {
+                // Check if vacant slot available in clients
+                if (room.clients.length < 7) {
+                  room.observers.delete(ws);
+                  if (!room.clients.includes(ws)) {
+                    room.clients.push(ws);
+                  }
+                  ws.send(JSON.stringify({ 
+                    type: "role_changed", 
+                    role: "client", 
+                    hostClientId: (room.host as any).id, 
+                    clientClientId: wsId 
+                  }));
+                  
+                  // Notify Host and all clients of this observer becoming player
+                  const playerJoinedPayload = JSON.stringify({
+                    type: "player_joined",
+                    role: "client",
+                    clientId: wsId,
+                    playerName: (ws as any).playerName || `Guest ${wsId}`
+                  });
+                  if (room.host && room.host.readyState === WebSocket.OPEN) {
+                    room.host.send(playerJoinedPayload);
+                  }
+                  room.clients.forEach(c => {
+                    if (c !== ws && c.readyState === WebSocket.OPEN) {
+                      c.send(playerJoinedPayload);
+                    }
+                  });
+                } else {
+                  // Player slots are fully occupied (secure server check)
+                  ws.send(JSON.stringify({ 
+                    type: "error", 
+                    message: "Cannot join as player. Both player slots are occupied." 
+                  }));
+                }
+              }
+            }
+            break;
+          }
+
+
+          case "sync": {
+            // Forward gameplay simulation sync data directly to all other parties
+            let room = socketToRoom.get(ws);
+            if (!room) {
+              for (const r of Array.from(rooms.values())) {
+                if (r.host === ws || r.clients.includes(ws) || r.observers.has(ws) || (r.host && (r.host as any).id === wsId) || r.clients.some((c: any) => c.id === wsId)) {
                   room = r;
                   socketToRoom.set(ws, r);
                   break;
@@ -343,9 +491,50 @@ async function startServer() {
             if (!room) return;
 
             const isHost = (ws === room.host || (ws as any).id === (room.host as any).id);
-            const target = isHost ? room.client : room.host;
-            if (target && target.readyState === WebSocket.OPEN) {
-              target.send(rawMessage.toString());
+            const isClient = room.clients.includes(ws) || room.clients.some((c: any) => c.id === wsId);
+            const senderRole = isHost ? 'host' : (isClient ? 'client' : 'observer');
+
+            // Package coordination parameters with sender role tag and senderId
+            let parsedMessage = message;
+            try {
+              parsedMessage = {
+                ...message,
+                senderRole,
+                senderId: wsId
+              };
+            } catch (err) {}
+            const syncPayload = JSON.stringify(parsedMessage);
+
+            if (isHost) {
+              // Send to all clients
+              room.clients.forEach(client => {
+                if (client.readyState === WebSocket.OPEN) {
+                  client.send(syncPayload);
+                }
+              });
+              // Send to observers
+              room.observers.forEach(obs => {
+                if (obs.readyState === WebSocket.OPEN) {
+                  obs.send(syncPayload);
+                }
+              });
+            } else if (isClient) {
+              // Send to host
+              if (room.host && room.host.readyState === WebSocket.OPEN) {
+                room.host.send(syncPayload);
+              }
+              // Send to all other clients
+              room.clients.forEach(client => {
+                if (client !== ws && (client as any).id !== wsId && client.readyState === WebSocket.OPEN) {
+                  client.send(syncPayload);
+                }
+              });
+              // Send to observers
+              room.observers.forEach(obs => {
+                if (obs.readyState === WebSocket.OPEN) {
+                  obs.send(syncPayload);
+                }
+              });
             }
             break;
           }
@@ -371,22 +560,69 @@ async function startServer() {
       
       const room = socketToRoom.get(ws);
       if (room) {
-        // Tell the remaining peer that the connection dissolved
-        const survivor = (ws === room.host) ? room.client : room.host;
-        if (survivor && survivor.readyState === WebSocket.OPEN) {
-          survivor.send(JSON.stringify({ type: "disconnected", reason: "Opponent left the match." }));
-          survivor.close();
+        // If it is an observer, safely clean it up and do not close the lobby match!
+        if (room.observers.has(ws)) {
+          room.observers.delete(ws);
+          socketToRoom.delete(ws);
+          updatePresence();
+          return;
         }
+
+        const isHost = (ws === room.host);
         
-        // Remove room listings from memory
-        room.keys.forEach(key => {
-          rooms.delete(key);
-        });
-        
-        // Remove socket bindings
-        if (room.host) socketToRoom.delete(room.host);
-        if (room.client) socketToRoom.delete(room.client);
+        if (isHost) {
+          // Tell all clients and observers that the host left and match dissolved
+          const disconnectPayload = JSON.stringify({ type: "disconnected", reason: "Host left the match." });
+          room.clients.forEach(client => {
+            if (client.readyState === WebSocket.OPEN) {
+              client.send(disconnectPayload);
+              client.close();
+            }
+          });
+          room.observers.forEach(obs => {
+            if (obs.readyState === WebSocket.OPEN) {
+              obs.send(disconnectPayload);
+              obs.close();
+            }
+          });
+          
+          // Remove room listings from memory
+          room.keys.forEach(key => {
+            rooms.delete(key);
+          });
+          
+          // Remove socket bindings
+          socketToRoom.delete(room.host);
+          room.clients.forEach(client => socketToRoom.delete(client));
+          room.observers.forEach(obs => socketToRoom.delete(obs));
+        } else {
+          // Client left
+          room.clients = room.clients.filter(c => c !== ws && (c as any).id !== wsId);
+          socketToRoom.delete(ws);
+
+          // Tell host and other clients that this player left
+          const playerLeftPayload = JSON.stringify({
+            type: "player_left",
+            leftPlayerId: wsId,
+            reason: "A player left the match."
+          });
+
+          if (room.host && room.host.readyState === WebSocket.OPEN) {
+            room.host.send(playerLeftPayload);
+          }
+          room.clients.forEach(client => {
+            if (client.readyState === WebSocket.OPEN) {
+              client.send(playerLeftPayload);
+            }
+          });
+          room.observers.forEach(obs => {
+            if (obs.readyState === WebSocket.OPEN) {
+              obs.send(playerLeftPayload);
+            }
+          });
+        }
       }
+
 
       // Update active roster information for all surviving connections
       updatePresence();

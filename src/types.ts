@@ -38,6 +38,11 @@ export interface UniversalSettings {
   nameVisibilityOpacity?: number;         // Opacity of the floating name
   nameVisibilityFontSize?: number;        // Font size of the floating name
   playerName?: string;                    // Persistent customized player name / handle
+  aiDifficulty?: 'easy' | 'normal' | 'hard' | 'nightmare' | 'custom';
+  aiReactionLatency?: number;             // Reaction latency in seconds (0.0 to 1.5)
+  aiAnticipationFactor?: number;          // How aggressively it predicts player action (0.0 to 1.0)
+  aiMovementComplexity?: number;          // 0 to 100%
+  aiWeaponSwapIQ?: number;                // 0 to 100%
 }
 
 export type GameState = 'menu' | 'playing' | 'paused';
@@ -71,6 +76,26 @@ export interface DeathEvent {
   victim: string;
 }
 
+export interface RemotePlayerState {
+
+  id: string;
+  playerName: string;
+  pos: { x: number; y: number; z: number };
+  vel: { x: number; y: number; z: number };
+  yaw: number;
+  pitch: number;
+  hp: number;
+  maxHp: number;
+  isCrouching: boolean;
+  activeWeapon: 'hammer' | 'sword';
+  respawnTimer: number;
+  hue: number;
+  score: number;
+  kills: number;
+  deaths: number;
+  isObserver?: boolean;
+}
+
 export interface GameStats {
   playerHP: number;
   playerMaxHP: number;
@@ -78,6 +103,8 @@ export interface GameStats {
   enemyMaxHP: number;
   scorePlayer: number;
   scoreEnemy: number;
+  otherPlayers?: RemotePlayerState[];
+
   gameTime: number; // in seconds
   debugMode: boolean;
   debugDamageRadius: number; // constant viz size (4.5m / current attackRadius)
@@ -105,7 +132,7 @@ export interface GameStats {
   activeWeapon: 'hammer' | 'sword';
   crosshairColor: 'white' | 'red';
   isMultiplayer?: boolean;
-  multiplayerRole?: 'host' | 'client' | null;
+  multiplayerRole?: 'host' | 'client' | 'observer' | null;
   opponentConnected?: boolean;
   ping?: number;
   showScoreboard?: boolean;
@@ -116,6 +143,10 @@ export interface GameStats {
   playerClientId?: string;
   opponentClientId?: string;
   opponentPlayerName?: string;            // Retained in-game synchronized opponent player name
+  isObserverMode?: boolean;
+  observerCamMode?: 'free' | 'third' | 'first';
+  observerTargetName?: string;
+  observerTargetRole?: 'host' | 'client';
 }
 
 export interface UiElementPos {
