@@ -4899,8 +4899,11 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
           const inner = document.createElement('div');
           inner.className = 'w-1.5 h-1.5 bg-white rounded-full';
           dot.appendChild(inner);
-          enemiesContainer.appendChild(dot);
           pool.set(enemy.id, dot);
+        }
+        // Re-append if detached (happens when React re-renders the container after e.g. escape menu)
+        if (dot.parentElement !== enemiesContainer) {
+          enemiesContainer.appendChild(dot);
         }
 
         // Use transform:translate for GPU-composited, zero-layout positioning

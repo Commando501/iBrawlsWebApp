@@ -12,8 +12,11 @@ import { RotateCcw, Check } from 'lucide-react';
 import { ChatOverlay, ChatMessage } from './components/ChatOverlay';
 import { CharacterPreview } from './components/CharacterPreview';
 
+const APP_VERSION = '0.100';
+
 interface OnlineClient {
   id: string;
+  name?: string;
   state: 'menu' | 'solo' | 'multi';
   roomCode?: string;
   spaceAvailable?: boolean;
@@ -210,43 +213,8 @@ interface KbVisualizerProps {
 const ACTION_LABELS: Record<string, string> = {
   moveForward: 'FWD', moveLeft: 'LEFT', moveBackward: 'BACK', moveRight: 'RIGHT',
   jump: 'JUMP', dash: 'THRUST', crouch: 'CROUCH', scoreboard: 'SCORE',
-  weapon1: 'HAMMER', weapon2: 'SWORD',
+  weapon1: 'HAMMER', weapon2: 'SWORD', attack: 'ATTACK', altAttack: 'ALT-ATK',
 };
-
-function KbKey({ label, size = 'md', action, muted, bindings, rebinding, onPick }: {
-  label: string; size?: 'sm' | 'md' | 'lg' | 'space'; action?: keyof Keybindings;
-  muted?: boolean; bindings: Keybindings; rebinding: keyof Keybindings | null; onPick: (a: keyof Keybindings) => void;
-}) {
-  const isHi = !!action && !muted;
-  const isActive = !!action && rebinding === action;
-  const subLbl = action ? ACTION_LABELS[action] : '';
-  const w = size === 'sm' ? 32 : size === 'lg' ? 48 : size === 'space' ? 220 : 40;
-  const h = size === 'space' ? 32 : size === 'lg' ? 32 : size === 'sm' ? 32 : 40;
-  const fz = size === 'md' ? 14 : 11;
-  return (
-    <button
-      onClick={() => action && !muted && onPick(action)}
-      disabled={muted || !action}
-      style={{
-        width: w, height: h, borderRadius: 6, padding: 0, cursor: action && !muted ? 'pointer' : 'default',
-        display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column',
-        fontFamily: "'JetBrains Mono', monospace", fontWeight: 800, fontSize: fz, letterSpacing: '0.05em',
-        transition: 'all 150ms',
-        background: isActive ? 'rgba(245,158,11,0.30)' : isHi ? 'rgba(34,211,238,0.18)' : muted ? 'rgba(255,255,255,0.03)' : 'rgba(15,23,42,0.65)',
-        border: isActive ? '1px solid rgba(245,158,11,0.7)' : isHi ? '1px solid rgba(34,211,238,0.55)' : muted ? '1px solid rgba(255,255,255,0.05)' : '1px solid rgba(255,255,255,0.10)',
-        color: isHi ? '#22d3ee' : muted ? 'rgba(255,255,255,0.20)' : 'rgba(255,255,255,0.55)',
-        boxShadow: isHi ? '0 0 8px rgba(34,211,238,0.30)' : 'none',
-      }}
-    >
-      <span>{label}</span>
-      {subLbl && (
-        <span style={{ fontSize: 7, fontWeight: 700, opacity: 0.85, letterSpacing: '0.1em', marginTop: 1, color: isHi ? '#67e8f9' : 'rgba(255,255,255,0.40)' }}>
-          {subLbl}
-        </span>
-      )}
-    </button>
-  );
-}
 
 function KbBindRow({ label, action, bindings, rebinding, onPick }: {
   label: string; action: keyof Keybindings; bindings: Keybindings; rebinding: keyof Keybindings | null; onPick: (a: keyof Keybindings) => void;
@@ -280,9 +248,50 @@ function KbBindRow({ label, action, bindings, rebinding, onPick }: {
 function KeyboardVisualizer({ bindings, rebinding, onPick }: KbVisualizerProps) {
   const boundLookup: Record<string, keyof Keybindings> = {};
   for (const [action, key] of Object.entries(bindings)) {
-    boundLookup[key as string] = action as keyof Keybindings;
+    if (typeof key === 'string') boundLookup[key] = action as keyof Keybindings;
   }
-  const rowGap = { display: 'flex' as const, gap: 5 };
+
+  const KS = 24;
+  const KG = 3;
+
+  const mkKey = (val: string | null, label: string, w: number = KS, h: number = KS, locked: boolean = false) => {
+    const action = val ? boundLookup[val] : undefined;
+    const isActive = !!action && rebinding === action;
+    const isBound = !!action && !locked;
+    const subLbl = action ? ACTION_LABELS[action] : '';
+    return (
+      <button
+        onClick={() => action && !locked && onPick(action)}
+        disabled={!action || locked}
+        style={{
+          width: w, height: h, minWidth: w, minHeight: h, flexShrink: 0,
+          borderRadius: 4, padding: 0, cursor: (action && !locked) ? 'pointer' : 'default',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column' as const,
+          fontFamily: "'JetBrains Mono', monospace", fontWeight: 800, fontSize: 8,
+          letterSpacing: '0.03em', transition: 'all 150ms',
+          background: isActive ? 'rgba(245,158,11,0.30)' : isBound ? 'rgba(34,211,238,0.18)' : locked ? 'rgba(255,255,255,0.02)' : 'rgba(15,23,42,0.55)',
+          border: isActive ? '1px solid rgba(245,158,11,0.7)' : isBound ? '1px solid rgba(34,211,238,0.55)' : locked ? '1px solid rgba(255,255,255,0.04)' : '1px solid rgba(255,255,255,0.08)',
+          color: isActive ? '#fbbf24' : isBound ? '#22d3ee' : locked ? 'rgba(255,255,255,0.14)' : 'rgba(255,255,255,0.38)',
+          boxShadow: isBound ? '0 0 5px rgba(34,211,238,0.18)' : 'none',
+        }}
+      >
+        <span>{label}</span>
+        {subLbl && (
+          <span style={{ fontSize: 6, fontWeight: 700, opacity: 0.9, letterSpacing: '0.06em', marginTop: 1, color: isActive ? '#fde68a' : '#67e8f9' }}>
+            {subLbl}
+          </span>
+        )}
+      </button>
+    );
+  };
+
+  const R = (children: React.ReactNode) => (
+    <div style={{ display: 'flex', gap: KG }}>{children}</div>
+  );
+
+  const attackBoundToLmb = bindings.attack === 'lmb';
+  const altAttackBoundToRmb = bindings.altAttack === 'rmb';
+
   return (
     <div style={{ background: 'rgba(2,6,23,0.45)', border: '1px solid rgba(255,255,255,0.10)', borderRadius: 12, padding: 18, boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.30)' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: 10, marginBottom: 14, borderBottom: '1px solid rgba(255,255,255,0.05)', gap: 8, flexWrap: 'wrap' as const }}>
@@ -294,85 +303,146 @@ function KeyboardVisualizer({ bindings, rebinding, onPick }: KbVisualizerProps) 
         </span>
       </div>
 
-      {/* Keyboard + Mouse row */}
-      <div style={{ display: 'flex', gap: 18, alignItems: 'flex-start', flexWrap: 'wrap' as const }}>
-        {/* Keyboard */}
-        <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 5 }}>
-          <div style={rowGap}>
-            <KbKey size="lg" label="Esc" muted bindings={bindings} rebinding={rebinding} onPick={onPick} />
-            <div style={{ width: 32 }} />
-            <KbKey size="sm" label="1" action={boundLookup['1']} bindings={bindings} rebinding={rebinding} onPick={onPick} />
-            <KbKey size="sm" label="2" action={boundLookup['2']} bindings={bindings} rebinding={rebinding} onPick={onPick} />
-            <KbKey size="sm" label="3" muted bindings={bindings} rebinding={rebinding} onPick={onPick} />
-            <KbKey size="sm" label="4" muted bindings={bindings} rebinding={rebinding} onPick={onPick} />
-          </div>
-          <div style={rowGap}>
-            <KbKey label="Q" action={boundLookup['q']} bindings={bindings} rebinding={rebinding} onPick={onPick} />
-            <KbKey label="W" action={boundLookup['w']} bindings={bindings} rebinding={rebinding} onPick={onPick} />
-            <KbKey label="E" muted bindings={bindings} rebinding={rebinding} onPick={onPick} />
-            <KbKey label="R" muted bindings={bindings} rebinding={rebinding} onPick={onPick} />
-            <KbKey label="T" muted bindings={bindings} rebinding={rebinding} onPick={onPick} />
-            <KbKey label="Y" muted bindings={bindings} rebinding={rebinding} onPick={onPick} />
-            <KbKey label="U" action={boundLookup['u']} bindings={bindings} rebinding={rebinding} onPick={onPick} />
-          </div>
-          <div style={rowGap}>
-            <KbKey label="A" action={boundLookup['a']} bindings={bindings} rebinding={rebinding} onPick={onPick} />
-            <KbKey label="S" action={boundLookup['s']} bindings={bindings} rebinding={rebinding} onPick={onPick} />
-            <KbKey label="D" action={boundLookup['d']} bindings={bindings} rebinding={rebinding} onPick={onPick} />
-            <KbKey label="F" muted bindings={bindings} rebinding={rebinding} onPick={onPick} />
-            <KbKey label="G" muted bindings={bindings} rebinding={rebinding} onPick={onPick} />
-            <KbKey label="H" muted bindings={bindings} rebinding={rebinding} onPick={onPick} />
-          </div>
-          <div style={rowGap}>
-            <div style={{ width: 16 }} />
-            <KbKey label="Z" muted bindings={bindings} rebinding={rebinding} onPick={onPick} />
-            <KbKey label="X" muted bindings={bindings} rebinding={rebinding} onPick={onPick} />
-            <KbKey label="C" action={boundLookup['c']} bindings={bindings} rebinding={rebinding} onPick={onPick} />
-            <KbKey label="V" muted bindings={bindings} rebinding={rebinding} onPick={onPick} />
-            <KbKey label="B" muted bindings={bindings} rebinding={rebinding} onPick={onPick} />
-          </div>
-          <div style={rowGap}>
-            <KbKey size="space" label="SPACE"
-              action={boundLookup[' '] || boundLookup['space'] || (Object.entries(bindings).find(([, v]) => v === ' ')?.[0] as keyof Keybindings | undefined)}
-              bindings={bindings} rebinding={rebinding} onPick={onPick} />
+      <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start', flexWrap: 'wrap' as const }}>
+
+        {/* ── Main keyboard block ── */}
+        <div style={{ display: 'flex', flexDirection: 'column' as const, gap: KG }}>
+
+          {/* Function row */}
+          {R(<>
+            {mkKey(null, 'Esc', 32, KS, true)}
+            <div style={{ width: 7 }} />
+            {mkKey('f1', 'F1', KS, 21)} {mkKey('f2', 'F2', KS, 21)} {mkKey('f3', 'F3', KS, 21)} {mkKey('f4', 'F4', KS, 21)}
+            <div style={{ width: 5 }} />
+            {mkKey('f5', 'F5', KS, 21)} {mkKey('f6', 'F6', KS, 21)} {mkKey('f7', 'F7', KS, 21)} {mkKey('f8', 'F8', KS, 21)}
+            <div style={{ width: 5 }} />
+            {mkKey('f9', 'F9', KS, 21)} {mkKey('f10', 'F10', KS, 21)} {mkKey('f11', 'F11', KS, 21)} {mkKey('f12', 'F12', KS, 21)}
+          </>)}
+
+          {/* Number row */}
+          {R(<>
+            {mkKey('`', '`')} {mkKey('1', '1')} {mkKey('2', '2')} {mkKey('3', '3')} {mkKey('4', '4')}
+            {mkKey('5', '5')} {mkKey('6', '6')} {mkKey('7', '7')} {mkKey('8', '8')} {mkKey('9', '9')}
+            {mkKey('0', '0')} {mkKey('-', '-')} {mkKey('=', '=')}
+            {mkKey('backspace', '⌫', KS * 2 + KG)}
+          </>)}
+
+          {/* QWERTY row */}
+          {R(<>
+            {mkKey(null, 'Tab', 38, KS, true)}
+            {mkKey('q', 'Q')} {mkKey('w', 'W')} {mkKey('e', 'E')} {mkKey('r', 'R')} {mkKey('t', 'T')}
+            {mkKey('y', 'Y')} {mkKey('u', 'U')} {mkKey('i', 'I')} {mkKey('o', 'O')} {mkKey('p', 'P')}
+            {mkKey('[', '[')} {mkKey(']', ']')}
+            {mkKey('\\', '\\', 38, KS)}
+          </>)}
+
+          {/* ASDF row */}
+          {R(<>
+            {mkKey(null, 'Caps', 44, KS, true)}
+            {mkKey('a', 'A')} {mkKey('s', 'S')} {mkKey('d', 'D')} {mkKey('f', 'F')} {mkKey('g', 'G')}
+            {mkKey('h', 'H')} {mkKey('j', 'J')} {mkKey('k', 'K')} {mkKey('l', 'L')}
+            {mkKey(';', ';')} {mkKey("'", "'")}
+            {mkKey('enter', '↵', 57, KS)}
+          </>)}
+
+          {/* ZXCV row */}
+          {R(<>
+            {mkKey(null, '⇧', 57, KS, true)}
+            {mkKey('z', 'Z')} {mkKey('x', 'X')} {mkKey('c', 'C')} {mkKey('v', 'V')} {mkKey('b', 'B')}
+            {mkKey('n', 'N')} {mkKey('m', 'M')} {mkKey(',', ',')} {mkKey('.', '.')} {mkKey('/', '/')}
+            {mkKey(null, '⇧', 69, KS, true)}
+          </>)}
+
+          {/* Bottom row */}
+          {R(<>
+            {mkKey(null, 'Ctrl', 33, KS, true)}
+            {mkKey(null, '❖', 28, KS, true)}
+            {mkKey(null, 'Alt', 33, KS, true)}
+            {mkKey(' ', 'Space', 160, KS)}
+            {mkKey(null, 'Alt', 33, KS, true)}
+            {mkKey(null, '☰', 28, KS, true)}
+            {mkKey(null, 'Ctrl', 33, KS, true)}
+          </>)}
+        </div>
+
+        {/* ── Nav cluster ── */}
+        <div style={{ display: 'flex', flexDirection: 'column' as const, gap: KG }}>
+          <div style={{ height: 21 + KG }} />
+          {R(<>{mkKey('insert', 'Ins', KS)} {mkKey('home', 'Hm', KS)} {mkKey('pageup', 'PgU', KS)}</>)}
+          {R(<>{mkKey('delete', 'Del', KS)} {mkKey('end', 'End', KS)} {mkKey('pagedown', 'PgD', KS)}</>)}
+          <div style={{ height: KS + KG }} />
+          <div style={{ display: 'flex', gap: KG }}><div style={{ width: KS + KG }} />{mkKey('arrowup', '↑', KS)}</div>
+          {R(<>{mkKey('arrowleft', '←', KS)} {mkKey('arrowdown', '↓', KS)} {mkKey('arrowright', '→', KS)}</>)}
+        </div>
+
+        {/* ── Numpad (CSS grid for tall + and Enter) ── */}
+        <div style={{ display: 'flex', flexDirection: 'column' as const, gap: KG }}>
+          <div style={{ height: 21 + KG }} />
+          <div style={{ display: 'grid', gridTemplateColumns: `repeat(4, ${KS}px)`, gridTemplateRows: `repeat(5, ${KS}px)`, gap: KG }}>
+            {mkKey('numlock', 'NmLk')}
+            {mkKey('/', '/')}
+            {mkKey('*', '*')}
+            {mkKey('-', '-')}
+            {mkKey('7', '7')}
+            {mkKey('8', '8')}
+            {mkKey('9', '9')}
+            <div style={{ gridRow: 'span 2', display: 'flex' }}>
+              {mkKey('+', '+', KS, KS * 2 + KG)}
+            </div>
+            {mkKey('4', '4')}
+            {mkKey('5', '5')}
+            {mkKey('6', '6')}
+            {mkKey('1', '1')}
+            {mkKey('2', '2')}
+            {mkKey('3', '3')}
+            <div style={{ gridRow: 'span 2', display: 'flex' }}>
+              {mkKey('enter', '↵', KS, KS * 2 + KG)}
+            </div>
+            <div style={{ gridColumn: 'span 2', display: 'flex' }}>
+              {mkKey('0', '0', KS * 2 + KG, KS)}
+            </div>
+            {mkKey('.', '.')}
           </div>
         </div>
 
-        {/* Mouse SVG */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <svg viewBox="0 0 80 110" style={{ width: 56, height: 78 }}>
+        {/* ── Mouse ── */}
+        <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 8, alignItems: 'center' }}>
+          <div style={{ height: 21 + KG }} />
+          <svg viewBox="0 0 80 110" style={{ width: 50, height: 70 }}>
             <path d="M 16 22 Q 16 8, 40 8 Q 64 8, 64 22 L 64 86 Q 64 102, 40 102 Q 16 102, 16 86 Z" fill="rgba(15,23,42,0.65)" stroke="rgba(255,255,255,0.20)" strokeWidth="1.5"/>
             <line x1="40" y1="8" x2="40" y2="44" stroke="rgba(255,255,255,0.15)" strokeWidth="1"/>
             <path d="M 16 22 Q 16 8, 40 8 L 40 44 L 16 44 Z"
-              fill={rebinding === 'attack' ? 'rgba(34,211,238,0.35)' : 'rgba(34,211,238,0.18)'}
-              stroke="rgba(34,211,238,0.6)" strokeWidth="1" style={{ cursor: 'pointer' }}
-              onClick={() => onPick('attack')} />
+              fill={rebinding === 'attack' ? 'rgba(245,158,11,0.35)' : attackBoundToLmb ? 'rgba(34,211,238,0.22)' : 'rgba(255,255,255,0.04)'}
+              stroke={rebinding === 'attack' ? 'rgba(245,158,11,0.7)' : attackBoundToLmb ? 'rgba(34,211,238,0.55)' : 'rgba(255,255,255,0.12)'}
+              strokeWidth="1" style={{ cursor: 'pointer' }} onClick={() => onPick('attack')} />
             <path d="M 40 8 Q 64 8, 64 22 L 64 44 L 40 44 Z"
-              fill={rebinding === 'altAttack' ? 'rgba(34,211,238,0.35)' : 'rgba(34,211,238,0.18)'}
-              stroke="rgba(34,211,238,0.6)" strokeWidth="1" style={{ cursor: 'pointer' }}
-              onClick={() => onPick('altAttack')} />
+              fill={rebinding === 'altAttack' ? 'rgba(245,158,11,0.35)' : altAttackBoundToRmb ? 'rgba(34,211,238,0.22)' : 'rgba(255,255,255,0.04)'}
+              stroke={rebinding === 'altAttack' ? 'rgba(245,158,11,0.7)' : altAttackBoundToRmb ? 'rgba(34,211,238,0.55)' : 'rgba(255,255,255,0.12)'}
+              strokeWidth="1" style={{ cursor: 'pointer' }} onClick={() => onPick('altAttack')} />
             <rect x="36" y="22" width="8" height="14" rx="3" fill="rgba(34,211,238,0.30)" stroke="rgba(34,211,238,0.7)" strokeWidth="1"/>
             <line x1="36" y1="28" x2="44" y2="28" stroke="rgba(255,255,255,0.3)" strokeWidth="0.5"/>
             <line x1="36" y1="31" x2="44" y2="31" stroke="rgba(255,255,255,0.3)" strokeWidth="0.5"/>
           </svg>
-          <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 4 }}>
-            {[
-              { label: 'LMB', action: 'ATTACK', key: 'attack' as keyof Keybindings },
-              { label: 'RMB', action: 'ALT-ATK', key: 'altAttack' as keyof Keybindings },
-            ].map(({ label, action, key }) => (
-              <div key={key} onClick={() => onPick(key)} style={{
-                cursor: 'pointer', padding: '5px 8px', borderRadius: 4, display: 'flex', flexDirection: 'column' as const, gap: 1,
-                background: rebinding === key ? 'rgba(245,158,11,0.20)' : 'rgba(34,211,238,0.10)',
-                border: rebinding === key ? '1px solid rgba(245,158,11,0.5)' : '1px solid rgba(34,211,238,0.30)',
-                fontFamily: "'JetBrains Mono', monospace", fontSize: 9, fontWeight: 800, color: '#22d3ee', letterSpacing: '0.1em',
+          <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 3 }}>
+            {([
+              { label: 'LMB', sub: 'ATTACK',  bk: 'attack' as keyof Keybindings,    isBound: attackBoundToLmb },
+              { label: 'RMB', sub: 'ALT-ATK', bk: 'altAttack' as keyof Keybindings, isBound: altAttackBoundToRmb },
+            ] as const).map(({ label, sub, bk, isBound }) => (
+              <div key={bk} onClick={() => onPick(bk)} style={{
+                cursor: 'pointer', padding: '4px 7px', borderRadius: 4,
+                display: 'flex', flexDirection: 'column' as const, gap: 1,
+                background: rebinding === bk ? 'rgba(245,158,11,0.20)' : isBound ? 'rgba(34,211,238,0.10)' : 'rgba(15,23,42,0.55)',
+                border: rebinding === bk ? '1px solid rgba(245,158,11,0.5)' : isBound ? '1px solid rgba(34,211,238,0.30)' : '1px solid rgba(255,255,255,0.08)',
+                fontFamily: "'JetBrains Mono', monospace", fontSize: 9, fontWeight: 800,
+                color: rebinding === bk ? '#fbbf24' : isBound ? '#22d3ee' : 'rgba(255,255,255,0.38)', letterSpacing: '0.1em',
               }}>
-                <span style={{ fontSize: 10, color: '#67e8f9' }}>{label}</span>
-                <span style={{ fontSize: 8, opacity: 0.7 }}>{action}</span>
+                <span style={{ fontSize: 10 }}>{label}</span>
+                <span style={{ fontSize: 7, opacity: 0.7 }}>{sub}</span>
               </div>
             ))}
-            <div style={{ padding: '5px 8px', borderRadius: 4, background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', fontFamily: "'JetBrains Mono', monospace", fontSize: 9, fontWeight: 800, color: 'rgba(255,255,255,0.30)', letterSpacing: '0.1em' }}>
-              <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.40)' }}>WHEEL</span>
-              <div style={{ fontSize: 8, opacity: 0.7 }}>SWAP WEAP</div>
+            <div style={{ padding: '4px 7px', borderRadius: 4, background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', fontFamily: "'JetBrains Mono', monospace", fontSize: 9, fontWeight: 800, color: 'rgba(255,255,255,0.25)', letterSpacing: '0.1em' }}>
+              <span style={{ fontSize: 10, display: 'block', color: 'rgba(255,255,255,0.35)' }}>WHEEL</span>
+              <span style={{ fontSize: 7, opacity: 0.7 }}>SWAP WEAP</span>
             </div>
           </div>
         </div>
@@ -380,18 +450,18 @@ function KeyboardVisualizer({ bindings, rebinding, onPick }: KbVisualizerProps) 
 
       {/* Compact chip grid */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 6, marginTop: 14, paddingTop: 14, borderTop: '1px solid rgba(255,255,255,0.05)' }}>
-        <KbBindRow label="FWD"    action="moveForward"  bindings={bindings} rebinding={rebinding} onPick={onPick} />
-        <KbBindRow label="LEFT"   action="moveLeft"     bindings={bindings} rebinding={rebinding} onPick={onPick} />
-        <KbBindRow label="BACK"   action="moveBackward" bindings={bindings} rebinding={rebinding} onPick={onPick} />
-        <KbBindRow label="RIGHT"  action="moveRight"    bindings={bindings} rebinding={rebinding} onPick={onPick} />
-        <KbBindRow label="JUMP"   action="jump"         bindings={bindings} rebinding={rebinding} onPick={onPick} />
-        <KbBindRow label="THRUST" action="dash"         bindings={bindings} rebinding={rebinding} onPick={onPick} />
-        <KbBindRow label="CROUCH" action="crouch"       bindings={bindings} rebinding={rebinding} onPick={onPick} />
-        <KbBindRow label="SCORE"  action="scoreboard"   bindings={bindings} rebinding={rebinding} onPick={onPick} />
-        <KbBindRow label="HAMMER" action="weapon1"      bindings={bindings} rebinding={rebinding} onPick={onPick} />
-        <KbBindRow label="SWORD"  action="weapon2"      bindings={bindings} rebinding={rebinding} onPick={onPick} />
-        <KbBindRow label="ATTACK" action="attack"       bindings={bindings} rebinding={rebinding} onPick={onPick} />
-        <KbBindRow label="ALT-ATK" action="altAttack"  bindings={bindings} rebinding={rebinding} onPick={onPick} />
+        <KbBindRow label="FWD"     action="moveForward"  bindings={bindings} rebinding={rebinding} onPick={onPick} />
+        <KbBindRow label="LEFT"    action="moveLeft"     bindings={bindings} rebinding={rebinding} onPick={onPick} />
+        <KbBindRow label="BACK"    action="moveBackward" bindings={bindings} rebinding={rebinding} onPick={onPick} />
+        <KbBindRow label="RIGHT"   action="moveRight"    bindings={bindings} rebinding={rebinding} onPick={onPick} />
+        <KbBindRow label="JUMP"    action="jump"         bindings={bindings} rebinding={rebinding} onPick={onPick} />
+        <KbBindRow label="THRUST"  action="dash"         bindings={bindings} rebinding={rebinding} onPick={onPick} />
+        <KbBindRow label="CROUCH"  action="crouch"       bindings={bindings} rebinding={rebinding} onPick={onPick} />
+        <KbBindRow label="SCORE"   action="scoreboard"   bindings={bindings} rebinding={rebinding} onPick={onPick} />
+        <KbBindRow label="HAMMER"  action="weapon1"      bindings={bindings} rebinding={rebinding} onPick={onPick} />
+        <KbBindRow label="SWORD"   action="weapon2"      bindings={bindings} rebinding={rebinding} onPick={onPick} />
+        <KbBindRow label="ATTACK"  action="attack"       bindings={bindings} rebinding={rebinding} onPick={onPick} />
+        <KbBindRow label="ALT-ATK" action="altAttack"   bindings={bindings} rebinding={rebinding} onPick={onPick} />
       </div>
     </div>
   );
@@ -1614,6 +1684,9 @@ export default function App() {
                 </h1>
                 <span style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 11, fontWeight: 700, letterSpacing: '0.2em', textTransform: 'uppercase', color: '#38bdf8', background: 'rgba(56,189,248,0.05)', border: '1px solid rgba(56,189,248,0.30)', padding: '6px 12px', borderRadius: 4 }}>
                   Voxel Grifball Tech Demo
+                </span>
+                <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fontWeight: 700, letterSpacing: '0.15em', color: 'rgba(255,255,255,0.35)', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.10)', padding: '5px 10px', borderRadius: 4 }}>
+                  v{APP_VERSION}
                 </span>
               </div>
 

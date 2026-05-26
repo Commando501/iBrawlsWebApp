@@ -14,6 +14,7 @@ interface GameWebSocket extends WebSocket {
   playerState?: 'menu' | 'solo' | 'multi';
   roomCode?: string;
   spaceAvailable?: boolean;
+  playerName?: string;
 }
 
 // 1. Entrypoint Worker
@@ -170,11 +171,12 @@ export class GameLobby implements DurableObject {
 
         switch (message.type) {
           case "update_status": {
-            const { status, roomCode, spaceAvailable } = message;
+            const { status, roomCode, spaceAvailable, name } = message;
             console.log(`Client ${wsId} updating playerState to: ${status}, roomCode: ${roomCode}, spaceAvailable: ${spaceAvailable}`);
             gameWs.playerState = status;
             gameWs.roomCode = roomCode;
             gameWs.spaceAvailable = spaceAvailable;
+            if (name) gameWs.playerName = name;
             this.updatePresence();
             break;
           }
@@ -491,6 +493,7 @@ export class GameLobby implements DurableObject {
     const clientPayloads = Array.from(this.sessions)
       .map((client) => ({
         id: client.id,
+        name: client.playerName,
         state: client.playerState || 'menu',
         roomCode: client.roomCode,
         spaceAvailable: client.spaceAvailable !== undefined ? client.spaceAvailable : false
