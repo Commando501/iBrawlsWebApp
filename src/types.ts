@@ -45,6 +45,36 @@ export interface UniversalSettings {
   aiWeaponSwapIQ?: number;                // 0 to 100%
 }
 
+export interface Keybindings {
+  moveForward: string;
+  moveLeft: string;
+  moveBackward: string;
+  moveRight: string;
+  jump: string;
+  dash: string;
+  crouch: string;
+  scoreboard: string;
+  weapon1: string;
+  weapon2: string;
+  attack: string;
+  altAttack: string;
+}
+
+export const DEFAULT_KEYBINDINGS: Keybindings = {
+  moveForward: 'w',
+  moveLeft: 'a',
+  moveBackward: 's',
+  moveRight: 'd',
+  jump: ' ',
+  dash: 'q',
+  crouch: 'c',
+  scoreboard: 'u',
+  weapon1: '1',
+  weapon2: '2',
+  attack: 'lmb',
+  altAttack: 'rmb',
+};
+
 export type GameState = 'menu' | 'playing' | 'paused';
 
 export type Stance = 'STANDING' | 'CROUCHING' | 'JUMPING';

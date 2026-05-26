@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
-import { GameStats, UniversalSettings, UiElementPos } from './types';
+import { GameStats, UniversalSettings, UiElementPos, Keybindings, DEFAULT_KEYBINDINGS } from './types';
 import { GrifballGame } from './components/GrifballGame';
 import { HUD } from './components/HUD';
 import { sfx } from './components/AudioEngine';
@@ -46,31 +46,31 @@ const GlobalChatPanel = ({ messages, onSendMessage }: GlobalChatPanelProps) => {
       {/* Message history container */}
       <div 
         ref={scrollRef}
-        className="flex-1 min-h-0 overflow-y-auto bg-black/45 border border-white/10 rounded-lg p-3 flex flex-col gap-2 mb-3 scrollbar-thin scrollbar-thumb-white/10 pr-1.5"
+        className="flex-1 min-h-0 overflow-y-auto bg-black/45 border border-white/10 rounded-xl p-4 flex flex-col gap-3 mb-4 scrollbar-thin scrollbar-thumb-white/10 pr-1.5"
       >
         {messages.length === 0 ? (
-          <p className="text-[10.5px] font-mono text-white/35 uppercase tracking-widest text-center my-auto italic select-none">
+          <p className="text-xs font-mono text-white/35 uppercase tracking-widest text-center my-auto italic select-none">
             📡 No active broadcast logs. Type below to transmit message.
           </p>
         ) : (
           messages.map((msg) => (
             <div 
               key={msg.id} 
-              className={`flex flex-col gap-0.5 max-w-[90%] animate-fade-in ${
-                msg.isLocal ? 'self-end bg-[#38bdf8]/10 p-2 rounded-lg border border-[#38bdf8]/20' : 'self-start'
+              className={`flex flex-col gap-1 max-w-[90%] animate-fade-in ${
+                msg.isLocal ? 'self-end bg-[#38bdf8]/10 p-2.5 rounded-lg border border-[#38bdf8]/20' : 'self-start'
               }`}
             >
-              <div className="flex items-center gap-1.5 select-none">
-                <span className={`text-[9.5px] font-mono font-black ${
+              <div className="flex items-center gap-2 select-none">
+                <span className={`text-[11px] font-mono font-black ${
                   msg.isLocal ? 'text-[#38bdf8]' : 'text-slate-400'
                 }`}>
                   {msg.sender} {msg.isLocal ? '(You)' : ''}
                 </span>
-                <span className="text-[8px] font-mono text-white/20">
+                <span className="text-[10px] font-mono text-white/20">
                   {msg.timestamp}
                 </span>
               </div>
-              <p className="text-[11.5px] font-sans text-slate-100 break-words leading-relaxed select-text font-medium leading-[1.3] pl-0.5">
+              <p className="text-sm font-sans text-slate-100 break-words leading-relaxed select-text font-medium leading-[1.3] pl-0.5">
                 {msg.text}
               </p>
             </div>
@@ -81,24 +81,24 @@ const GlobalChatPanel = ({ messages, onSendMessage }: GlobalChatPanelProps) => {
       {/* Message input form */}
       <form 
         onSubmit={handleSubmit}
-        className="flex items-center gap-2 bg-black/40 border border-white/10 rounded-lg p-2 shrink-0 pointer-events-auto"
+        className="flex items-center gap-2.5 bg-black/40 border border-white/10 rounded-lg p-2.5 shrink-0 pointer-events-auto"
       >
         <input
           type="text"
           value={inputText}
           onChange={(e) => setInputText(e.target.value)}
           placeholder="Type global message... [Press Enter]"
-          className="flex-grow bg-black/50 border border-white/5 rounded px-3 py-2 text-xs text-white placeholder:text-white/30 focus:border-[#38bdf8]/40 outline-none transition-all font-sans"
+          className="flex-grow h-11 bg-black/50 border border-white/5 rounded px-3.5 text-sm text-white placeholder:text-white/30 focus:border-[#38bdf8]/40 outline-none transition-all font-sans"
           maxLength={120}
           autoComplete="off"
         />
         <button
           type="submit"
           disabled={!inputText.trim()}
-          className={`px-4 py-2 rounded text-xs font-sans font-bold uppercase tracking-wider transition-all flex items-center justify-center shrink-0 ${
+          className={`h-11 px-5 rounded text-sm font-sans font-bold uppercase tracking-wider transition-all flex items-center justify-center shrink-0 ${
             inputText.trim()
               ? 'bg-[#38bdf8] hover:bg-[#38bdf8]/80 text-slate-950 font-black cursor-pointer shadow-[0_0_12px_rgba(56,189,248,0.25)] hover:shadow-[0_0_18px_rgba(56,189,248,0.4)] active:scale-95'
-              : 'bg-white/5 text-white/20 border border-transparent cursor-not-allowed'
+              : 'bg-white/5 text-white/20 border border-white/5 cursor-not-allowed'
           }`}
         >
           Send
@@ -132,6 +132,7 @@ interface SaveData {
   playerHue: number;
   uiPositions: UiElementPos[];
   adminSettings: Omit<UniversalSettings, 'playerHue' | 'playerName'>;
+  keybindings?: Keybindings;
 }
 
 const ENCRYPTION_KEY = "GRIFBALL_NEURAL_LINK_2026";
@@ -209,12 +210,31 @@ export default function App() {
   const [showAdminPanel, setShowAdminPanel] = useState<boolean>(false);
   const [showUiAdjustment, setShowUiAdjustment] = useState<boolean>(false);
   const [showLightingMenu, setShowLightingMenu] = useState<boolean>(false);
+  const [offlineBotCount, setOfflineBotCount] = useState<number>(3); // Default to 3 bots (total 4 combatants)
+  const [botDifficulties, setBotDifficulties] = useState<Record<string, 'easy' | 'normal' | 'hard' | 'nightmare'>>({
+    main_ai: 'normal',
+    bot_2: 'normal',
+    bot_3: 'normal',
+    bot_4: 'normal',
+    bot_5: 'normal',
+    bot_6: 'normal',
+    bot_7: 'normal',
+  });
+  const [showBotSetupMenu, setShowBotSetupMenu] = useState<boolean>(false);
 
   // Chat message state
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [lobbyChatMessages, setLobbyChatMessages] = useState<ChatMessage[]>([]);
   const [rightPanelTab, setRightPanelTab] = useState<'manual' | 'customize'>('manual');
   const [customizerWeapon, setCustomizerWeapon] = useState<'none' | 'hammer' | 'sword'>('none');
+  const [keybindings, setKeybindings] = useState<Keybindings>(() => {
+    try {
+      const saved = localStorage.getItem('grifball_keybindings');
+      if (saved) return { ...DEFAULT_KEYBINDINGS, ...JSON.parse(saved) };
+    } catch (e) {}
+    return { ...DEFAULT_KEYBINDINGS };
+  });
+  const [rebindingAction, setRebindingAction] = useState<keyof Keybindings | null>(null);
 
   // Retrieve saved player name or generate one
   const [playerName, setPlayerName] = useState<string>(() => {
@@ -317,7 +337,8 @@ export default function App() {
         playerName: playerName,
         playerHue: playerHue ?? 200,
         uiPositions: uiPositions,
-        adminSettings: restSettings
+        adminSettings: restSettings,
+        keybindings: keybindings
       };
       
       const code = encryptSaveData(dataToSave);
@@ -371,6 +392,13 @@ export default function App() {
         localStorage.setItem('grifball_admin_settings', JSON.stringify(decrypted.adminSettings));
       }
 
+      // Apply Keybindings
+      if (decrypted.keybindings) {
+        const merged = { ...DEFAULT_KEYBINDINGS, ...decrypted.keybindings };
+        setKeybindings(merged);
+        localStorage.setItem('grifball_keybindings', JSON.stringify(merged));
+      }
+
       setSaveSystemStatus({
         type: 'success',
         message: `Neural Link Synced! Welcome back, ${decrypted.playerName}.`
@@ -392,11 +420,13 @@ export default function App() {
         localStorage.removeItem('grifball_player_hue');
         localStorage.removeItem('grifball_ui_positions');
         localStorage.removeItem('grifball_admin_settings');
+        localStorage.removeItem('grifball_keybindings');
         
         // Reset states
         const defaultName = `Sptn-${Math.floor(1000 + Math.random() * 9000)}`;
         setPlayerName(defaultName);
         setUiPositions(DEFAULT_UI_POSITIONS);
+        setKeybindings({ ...DEFAULT_KEYBINDINGS });
         
         const defaultAdmin: UniversalSettings = {
           maxHP: 1,
@@ -451,6 +481,48 @@ export default function App() {
       }
     }
   };
+
+  // Keybind rebinding listener
+  useEffect(() => {
+    if (!rebindingAction) return;
+
+    const handleRebindKey = (e: KeyboardEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.key === 'Escape') {
+        setRebindingAction(null);
+        return;
+      }
+      const newKey = e.key.toLowerCase();
+      setKeybindings(prev => {
+        const updated = { ...prev, [rebindingAction]: newKey };
+        try { localStorage.setItem('grifball_keybindings', JSON.stringify(updated)); } catch (err) {}
+        return updated;
+      });
+      setRebindingAction(null);
+    };
+
+    const handleRebindMouse = (e: MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const mouseMap: Record<number, string> = { 0: 'lmb', 2: 'rmb', 1: 'mmb' };
+      const newKey = mouseMap[e.button];
+      if (!newKey) return;
+      setKeybindings(prev => {
+        const updated = { ...prev, [rebindingAction]: newKey };
+        try { localStorage.setItem('grifball_keybindings', JSON.stringify(updated)); } catch (err) {}
+        return updated;
+      });
+      setRebindingAction(null);
+    };
+
+    window.addEventListener('keydown', handleRebindKey, true);
+    window.addEventListener('mousedown', handleRebindMouse, true);
+    return () => {
+      window.removeEventListener('keydown', handleRebindKey, true);
+      window.removeEventListener('mousedown', handleRebindMouse, true);
+    };
+  }, [rebindingAction]);
 
   // Multiplayer States
   const [connectionMode, setConnectionMode] = useState<'relay' | 'local'>('relay');
@@ -1278,6 +1350,9 @@ export default function App() {
           multiplayerRole={multiplayerRole}
           multiplayerSocket={multiplayerSocket}
           opponentClientId={opponentClientId}
+          keybindings={keybindings}
+          offlineBotCount={offlineBotCount}
+          botDifficulties={botDifficulties}
         />
       )}
 
@@ -1304,26 +1379,26 @@ export default function App() {
 
       {/* START MENU CONTROLLER SCREEN */}
       {!isPlaying && !isTerminated && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-slate-950/85 backdrop-blur-xl p-4 lg:p-6 transition-all duration-300 overflow-y-auto">
-          <div className="w-full max-w-6xl bg-slate-900/40 border border-white/10 rounded-2xl p-6 backdrop-blur-md flex flex-col gap-6 shadow-2xl select-none lg:h-[680px] max-h-[95vh] overflow-y-auto lg:overflow-hidden">
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-slate-950/85 backdrop-blur-xl p-4 lg:p-8 transition-all duration-300 overflow-y-auto">
+          <div className="w-full max-w-7xl bg-slate-900/40 border border-white/10 rounded-3xl p-8 backdrop-blur-md flex flex-col gap-8 shadow-2xl select-none lg:h-[780px] max-h-[95vh] overflow-y-auto lg:overflow-hidden">
             
             {/* UNIFIED CARD HEADER */}
-            <div className="flex flex-col sm:flex-row justify-between items-center gap-4 border-b border-white/10 pb-4 shrink-0">
+            <div className="flex flex-col sm:flex-row justify-between items-center gap-6 border-b border-white/10 pb-5 shrink-0">
               {/* Brand Branding Section */}
-              <div className="flex items-center gap-3">
-                <h1 className="text-3xl font-sans font-black tracking-tighter italic text-transparent bg-clip-text bg-gradient-to-b from-white to-slate-400 select-none">
+              <div className="flex items-center gap-4">
+                <h1 className="text-4xl font-sans font-black tracking-tighter italic text-transparent bg-clip-text bg-gradient-to-b from-white to-slate-400 select-none">
                   iBrawls
                 </h1>
-                <span className="text-[#38bdf8] tracking-[0.2em] uppercase text-[9px] font-bold font-display select-none px-2.5 py-0.5 border border-[#38bdf8]/30 rounded bg-[#38bdf8]/5 hidden sm:inline-block">
+                <span className="text-[#38bdf8] tracking-[0.2em] uppercase text-xs font-bold font-display select-none px-3.5 py-1 border border-[#38bdf8]/30 rounded bg-[#38bdf8]/5 hidden sm:inline-block">
                   Voxel Grifball Tech Demo
                 </span>
               </div>
 
               {/* Pill Segmented Mode Switcher */}
-              <div className="flex bg-black/40 p-1 rounded-full border border-white/10 gap-1 select-none shrink-0 shadow-[inset_0_2px_4px_rgba(0,0,0,0.4)]">
+              <div className="flex bg-black/40 p-1.5 rounded-full border border-white/10 gap-2 select-none shrink-0 shadow-[inset_0_2px_4px_rgba(0,0,0,0.4)]">
                 <button
                   onClick={() => setActiveMenuTab('single')}
-                  className={`px-4 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wider transition-all duration-200 cursor-pointer ${
+                  className={`px-5 py-2 rounded-full text-xs font-bold uppercase tracking-wider transition-all duration-200 cursor-pointer ${
                     activeMenuTab === 'single'
                       ? 'bg-blue-600 text-white shadow-[0_0_12px_rgba(37,99,235,0.4)]'
                       : 'text-white/50 hover:text-white/80'
@@ -1333,7 +1408,7 @@ export default function App() {
                 </button>
                 <button
                   onClick={() => setActiveMenuTab('multi')}
-                  className={`px-4 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wider transition-all duration-200 cursor-pointer ${
+                  className={`px-5 py-2 rounded-full text-xs font-bold uppercase tracking-wider transition-all duration-200 cursor-pointer ${
                     activeMenuTab === 'multi'
                       ? 'bg-[#38bdf8] text-slate-900 shadow-[0_0_12px_rgba(56,189,248,0.4)]'
                       : 'text-white/50 hover:text-white/80'
@@ -1344,30 +1419,30 @@ export default function App() {
               </div>
 
               {/* Online Player Count */}
-              <div className="flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/30 px-3.5 py-1.5 rounded-full text-[10px] font-mono font-bold text-emerald-400 shrink-0">
-                <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse" />
+              <div className="flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/30 px-4 py-2 rounded-full text-xs font-mono font-bold text-emerald-400 shrink-0">
+                <span className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse" />
                 ONLINE PLAYERS: {onlineCount || 1}
               </div>
             </div>
 
             {/* MAIN 3-COLUMN RESPONSIVE GRID */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 flex-1 min-h-0 overflow-y-auto lg:overflow-hidden">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 flex-1 min-h-0 overflow-y-auto lg:overflow-hidden">
               
               {/* COLUMN 1: GAME SETUP & ACTIONS */}
               <div className="flex flex-col h-full min-h-0 justify-between">
                 
                 {/* 🆔 SPARTAN IDENTITY PROFILE CARD */}
-                <div className="bg-slate-950/45 border border-white/10 rounded-xl p-3.5 flex flex-col gap-2 shrink-0 mb-4 shadow-[inset_0_1px_3px_rgba(0,0,0,0.3)] select-none text-left">
+                <div className="bg-slate-950/45 border border-white/10 rounded-xl p-4.5 flex flex-col gap-2 shrink-0 mb-4 shadow-[inset_0_1px_3px_rgba(0,0,0,0.3)] select-none text-left">
                   <div className="flex justify-between items-center pb-1.5 border-b border-white/5">
-                    <span className="text-[9px] font-bold text-[#38bdf8] uppercase tracking-wider flex items-center gap-1.5 font-display">
+                    <span className="text-xs font-bold text-[#38bdf8] uppercase tracking-wider flex items-center gap-1.5 font-display">
                       🆔 Spartan Pilot Identity
                     </span>
-                    <span className="text-[8px] font-mono text-cyan-400 bg-cyan-950/40 border border-cyan-500/20 px-1.5 py-0.5 rounded">
+                    <span className="text-[10px] font-mono text-cyan-400 bg-cyan-950/40 border border-cyan-500/20 px-2 py-0.5 rounded">
                       MAX_10_CHARS
                     </span>
                   </div>
-                  <div className="flex flex-col gap-1 text-left mt-1">
-                    <span className="text-[8px] text-white/40 uppercase tracking-widest font-mono">Customize Nameplate Callout:</span>
+                  <div className="flex flex-col gap-1.5 text-left mt-1">
+                    <span className="text-[10.5px] text-white/40 uppercase tracking-widest font-mono">Customize Nameplate Callout:</span>
                     <div className="relative">
                       <input
                         type="text"
@@ -1375,44 +1450,44 @@ export default function App() {
                         value={playerName}
                         onChange={(e) => handlePlayerNameChange(e.target.value)}
                         placeholder="Spartan Tag..."
-                        className="w-full h-9 bg-black/60 border border-white/10 rounded px-3 text-xs tracking-wide text-[#38bdf8] placeholder:text-white/20 focus:border-[#38bdf8] outline-none transition-all font-semibold uppercase pr-8 font-sans"
+                        className="w-full h-11 bg-black/60 border border-white/10 rounded px-3.5 text-sm tracking-wide text-[#38bdf8] placeholder:text-white/20 focus:border-[#38bdf8] outline-none transition-all font-semibold uppercase pr-8 font-sans"
                       />
-                      <div className="absolute right-2.5 top-2.5 w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
+                      <div className="absolute right-3.5 top-3.5 w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
                     </div>
                   </div>
                 </div>
 
                 {activeMenuTab === 'single' ? (
                   <div className="flex flex-col h-full min-h-0 justify-between">
-                    <div className="flex flex-col gap-4">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="w-1.5 h-3 bg-blue-500" />
-                        <h2 className="text-xs uppercase font-bold tracking-[0.25em] text-white">
+                    <div className="flex flex-col gap-5">
+                      <div className="flex items-center gap-2.5 mb-1">
+                        <span className="w-2 h-4 bg-blue-500" />
+                        <h2 className="text-sm uppercase font-bold tracking-[0.25em] text-white">
                           Training Sandbox Setup
                         </h2>
                       </div>
-                      <p className="text-white/60 text-xs leading-relaxed bg-white/5 border border-white/5 rounded-lg p-4 leading-normal select-text">
+                      <p className="text-white/60 text-sm leading-relaxed bg-white/5 border border-white/5 rounded-lg p-4 leading-normal select-text">
                         This is a Grifball iBrawls simulator. The game can be played solo against AI or online against other players. All Admin Controls only impact you, so coordinate with your opponent on the dials you want to match.
                       </p>
 
                       {/* AI Difficulty Neural Configuration */}
-                      <div className="bg-slate-950/45 border border-white/10 rounded-xl p-3.5 flex flex-col gap-3 text-left">
-                        <div className="flex justify-between items-center pb-1.5 border-b border-white/5">
-                          <span className="text-[9px] font-bold text-[#38bdf8] uppercase tracking-wider flex items-center gap-1.5 font-display">
+                      <div className="bg-slate-950/45 border border-white/10 rounded-xl p-4.5 flex flex-col gap-3.5 text-left">
+                        <div className="flex justify-between items-center pb-2 border-b border-white/5">
+                          <span className="text-xs font-bold text-[#38bdf8] uppercase tracking-wider flex items-center gap-1.5 font-display">
                             🤖 AI Combat Neural Net
                           </span>
-                          <span className="text-[8px] font-mono text-[#38bdf8] bg-[#38bdf8]/10 border border-[#38bdf8]/20 px-1.5 py-0.5 rounded uppercase font-black">
+                          <span className="text-[10px] font-mono text-[#38bdf8] bg-[#38bdf8]/10 border border-[#38bdf8]/20 px-2 py-0.5 rounded uppercase font-black">
                             Offline Play
                           </span>
                         </div>
 
                         {/* Difficulty Selector */}
                         <div className="flex flex-col gap-1.5">
-                          <span className="text-[9px] text-white/50 uppercase tracking-widest font-mono">Cognitive Matrix Preset:</span>
+                          <span className="text-[10.5px] text-white/50 uppercase tracking-widest font-mono">Cognitive Matrix Preset:</span>
                           <select
                             value={adminSettings.aiDifficulty || 'normal'}
                             onChange={(e) => setAdminSettings(prev => ({ ...prev, aiDifficulty: e.target.value as any }))}
-                            className="w-full h-9 bg-black/60 border border-white/10 rounded px-2.5 text-xs text-[#38bdf8] font-bold uppercase outline-none focus:border-[#38bdf8] transition-all cursor-pointer font-sans"
+                            className="w-full h-11 bg-black/60 border border-white/10 rounded px-2.5 text-sm text-[#38bdf8] font-bold uppercase outline-none focus:border-[#38bdf8] transition-all cursor-pointer font-sans"
                           >
                             <option value="easy">🟢 Easy (Sub-Normal)</option>
                             <option value="normal">🔵 Normal (Adaptive)</option>
@@ -1424,10 +1499,10 @@ export default function App() {
 
                         {/* Custom Parameter Sliders */}
                         {(adminSettings.aiDifficulty === 'custom') && (
-                          <div className="flex flex-col gap-3.5 pt-1 animate-fade-in">
+                          <div className="flex flex-col gap-4 pt-1 animate-fade-in">
                             {/* Reaction Latency */}
-                            <div className="flex flex-col gap-1">
-                              <div className="flex justify-between text-[9px] font-mono uppercase tracking-wider text-white/60">
+                            <div className="flex flex-col gap-1.5">
+                              <div className="flex justify-between text-xs font-mono uppercase tracking-wider text-white/60">
                                 <span>Reflex Latency</span>
                                 <span className="text-cyan-400 font-bold">{(adminSettings.aiReactionLatency ?? 0.25).toFixed(2)}s</span>
                               </div>
@@ -1443,8 +1518,8 @@ export default function App() {
                             </div>
 
                             {/* Anticipation Factor */}
-                            <div className="flex flex-col gap-1">
-                              <div className="flex justify-between text-[9px] font-mono uppercase tracking-wider text-white/60">
+                            <div className="flex flex-col gap-1.5">
+                              <div className="flex justify-between text-xs font-mono uppercase tracking-wider text-white/60">
                                 <span>Anticipation Engine</span>
                                 <span className="text-cyan-400 font-bold">{Math.round((adminSettings.aiAnticipationFactor ?? 0.40) * 100)}%</span>
                               </div>
@@ -1460,8 +1535,8 @@ export default function App() {
                             </div>
 
                             {/* Movement Complexity */}
-                            <div className="flex flex-col gap-1">
-                              <div className="flex justify-between text-[9px] font-mono uppercase tracking-wider text-white/60">
+                            <div className="flex flex-col gap-1.5">
+                              <div className="flex justify-between text-xs font-mono uppercase tracking-wider text-white/60">
                                 <span>Strafe & Evade Complexity</span>
                                 <span className="text-cyan-400 font-bold">{adminSettings.aiMovementComplexity ?? 50}%</span>
                               </div>
@@ -1477,8 +1552,8 @@ export default function App() {
                             </div>
 
                             {/* Weapon Swap IQ */}
-                            <div className="flex flex-col gap-1">
-                              <div className="flex justify-between text-[9px] font-mono uppercase tracking-wider text-white/60">
+                            <div className="flex flex-col gap-1.5">
+                              <div className="flex justify-between text-xs font-mono uppercase tracking-wider text-white/60">
                                 <span>Weapon Swapping IQ</span>
                                 <span className="text-cyan-400 font-bold">{adminSettings.aiWeaponSwapIQ ?? 50}%</span>
                               </div>
@@ -1498,16 +1573,16 @@ export default function App() {
                     </div>
                     
                     {/* Training Actions */}
-                    <div className="flex flex-col gap-3 mt-auto shrink-0 pt-4">
+                    <div className="flex flex-col gap-3.5 mt-auto shrink-0 pt-4">
                       <button 
                         id="play-game-btn"
-                        onClick={handleStartGame}
-                        className="group relative w-full h-14 bg-white hover:bg-sky-400 transition-all duration-300 flex items-center justify-center overflow-hidden cursor-pointer rounded shadow-2xl border border-white/20 select-none pointer-events-auto"
+                        onClick={() => setShowBotSetupMenu(true)}
+                        className="group relative w-full h-16 bg-white hover:bg-sky-400 transition-all duration-300 flex items-center justify-center overflow-hidden cursor-pointer rounded shadow-2xl border border-white/20 select-none pointer-events-auto"
                       >
                         <div className="absolute inset-0 bg-blue-600 translate-x-[-100%] group-hover:translate-x-0 transition-transform duration-300" />
-                        <span className="relative z-10 text-slate-900 font-sans font-black text-xs uppercase tracking-widest group-hover:text-white pointer-events-none flex items-center gap-2">
+                        <span className="relative z-10 text-slate-900 font-sans font-black text-sm uppercase tracking-widest group-hover:text-white pointer-events-none flex items-center gap-2">
                           Start Local Training
-                          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                          <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
                             <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
                           </svg>
                         </span>
@@ -1516,29 +1591,29 @@ export default function App() {
                       <button 
                         id="close-game-btn"
                         onClick={handleCloseGame}
-                        className="w-full h-12 bg-white/5 border border-white/10 backdrop-blur-md flex items-center justify-center hover:bg-white/10 hover:border-white/25 active:scale-[0.99] transition-all cursor-pointer rounded pointer-events-auto select-none"
+                        className="w-full h-14 bg-white/5 border border-white/10 backdrop-blur-md flex items-center justify-center hover:bg-white/10 hover:border-white/25 active:scale-[0.99] transition-all cursor-pointer rounded pointer-events-auto select-none"
                       >
-                        <span className="text-white/80 font-sans font-bold text-xs uppercase tracking-widest pointer-events-none">
+                        <span className="text-white/80 font-sans font-bold text-sm uppercase tracking-widest pointer-events-none">
                           Close Sandbox
                         </span>
                       </button>
                     </div>
                   </div>
                 ) : (
-                  <div className="flex flex-col h-full min-h-0 justify-between gap-4">
-                    <div className="flex flex-col gap-3 shrink-0">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="w-1.5 h-3 bg-[#38bdf8]" />
-                        <h2 className="text-xs uppercase font-bold tracking-[0.25em] text-white">
+                  <div className="flex flex-col h-full min-h-0 justify-between gap-5">
+                    <div className="flex flex-col gap-4 shrink-0">
+                      <div className="flex items-center gap-2.5 mb-1">
+                        <span className="w-2 h-4 bg-[#38bdf8]" />
+                        <h2 className="text-sm uppercase font-bold tracking-[0.25em] text-white">
                           Multiplayer Setup
                         </h2>
                       </div>
                       
                       {/* CONNECTION MODE SELECTOR */}
-                      <div className="flex bg-black/40 p-1 rounded-lg border border-white/5 gap-1 select-none shadow-[inset_0_1px_3px_rgba(0,0,0,0.3)]">
+                      <div className="flex bg-black/40 p-1.5 rounded-lg border border-white/5 gap-2 select-none shadow-[inset_0_1px_3px_rgba(0,0,0,0.3)]">
                         <button
                           onClick={() => setConnectionMode('relay')}
-                          className={`flex-1 py-1.5 text-[9px] font-black uppercase tracking-wider rounded transition-all cursor-pointer text-center ${
+                          className={`flex-1 py-2 text-xs font-black uppercase tracking-wider rounded transition-all cursor-pointer text-center ${
                             connectionMode === 'relay'
                               ? 'bg-gradient-to-r from-sky-600 to-indigo-600 text-white shadow-md'
                               : 'text-white/40 hover:text-white/70'
@@ -1548,7 +1623,7 @@ export default function App() {
                         </button>
                         <button
                           onClick={() => setConnectionMode('local')}
-                          className={`flex-1 py-1.5 text-[9px] font-black uppercase tracking-wider rounded transition-all cursor-pointer text-center ${
+                          className={`flex-1 py-2 text-xs font-black uppercase tracking-wider rounded transition-all cursor-pointer text-center ${
                             connectionMode === 'local'
                               ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md'
                               : 'text-white/40 hover:text-white/70'
@@ -1559,30 +1634,30 @@ export default function App() {
                       </div>
 
                       {/* Connection coordinates */}
-                      <div className={`p-2.5 rounded-lg border text-[10px] ${connectionMode === 'relay' ? "bg-sky-500/5 border-sky-500/20" : "bg-white/5 border-white/10"}`}>
-                        <p className="text-[9px] text-[#38bdf8] font-bold uppercase tracking-wider mb-1.5">Your Connection Coordinates</p>
-                        <div className="flex flex-col gap-1 font-mono text-[11px] font-semibold">
+                      <div className={`p-3.5 rounded-lg border text-xs ${connectionMode === 'relay' ? "bg-sky-500/5 border-sky-500/20" : "bg-white/5 border-white/10"}`}>
+                        <p className="text-[11px] text-[#38bdf8] font-bold uppercase tracking-wider mb-2">Your Connection Coordinates</p>
+                        <div className="flex flex-col gap-1.5 font-mono text-xs font-semibold">
                           {connectionMode === 'relay' ? (
-                            <div className="flex justify-between items-center bg-black/40 px-2.5 py-1 rounded border border-white/5">
-                              <span className="text-white/45 uppercase text-[8px] font-bold">Relay Status:</span>
+                            <div className="flex justify-between items-center bg-black/40 px-3 py-1.5 rounded border border-white/5">
+                              <span className="text-white/45 uppercase text-[10px] font-bold">Relay Status:</span>
                               <span className="text-sky-400 font-extrabold flex items-center gap-1.5">
-                                <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse inline-block" /> ONLINE
+                                <span className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse inline-block" /> ONLINE
                               </span>
                             </div>
                           ) : (
-                            <div className="flex justify-between items-center bg-black/40 px-2.5 py-1 rounded border border-white/5">
-                              <span className="text-white/45 uppercase text-[8px] font-bold">Web/Host IP:</span>
+                            <div className="flex justify-between items-center bg-black/40 px-3 py-1.5 rounded border border-white/5">
+                              <span className="text-white/45 uppercase text-[10px] font-bold">Web/Host IP:</span>
                               <span className="text-[#38bdf8] font-black">{userIp === '127.0.0.1' ? '127.0.0.1' : userIp}</span>
                             </div>
                           )}
                           {connectionMode === 'local' && lanIp && lanIp !== '127.0.0.1' && (
-                            <div className="flex justify-between items-center bg-emerald-500/10 px-2.5 py-1 rounded border border-emerald-500/10">
-                              <span className="text-emerald-400 uppercase text-[8px] font-bold">LAN Network IP:</span>
+                            <div className="flex justify-between items-center bg-emerald-500/10 px-3 py-1.5 rounded border border-emerald-500/10">
+                              <span className="text-emerald-400 uppercase text-[10px] font-bold">LAN Network IP:</span>
                               <span className="text-emerald-400 font-extrabold">{lanIp}</span>
                             </div>
                           )}
-                          <div className="flex justify-between items-center bg-black/40 px-2.5 py-1 rounded border border-white/5">
-                            <span className="text-white/45 uppercase text-[8px] font-bold">Room Code:</span>
+                          <div className="flex justify-between items-center bg-black/40 px-3 py-1.5 rounded border border-white/5">
+                            <span className="text-white/45 uppercase text-[10px] font-bold">Room Code:</span>
                             <span className="text-amber-400 font-black tracking-widest">{hostIdCode}</span>
                           </div>
                         </div>
@@ -1590,13 +1665,13 @@ export default function App() {
 
                       {/* Connection States */}
                       {connectionStatus === 'hosting' && (
-                        <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-lg p-2.5 flex flex-col items-center justify-center text-center gap-1 animate-pulse">
+                        <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-lg p-3.5 flex flex-col items-center justify-center text-center gap-1.5 animate-pulse">
                           <span className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_10px_#10b981]" />
-                          <p className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest">Lobby Live & Broadcasting</p>
-                          <p className="text-[9px] text-white/60">Awaiting player to join...</p>
+                          <p className="text-xs font-bold text-emerald-400 uppercase tracking-widest">Lobby Live & Broadcasting</p>
+                          <p className="text-[10px] text-white/60">Awaiting player to join...</p>
                           <button
                             onClick={handleCancelHostOrJoin}
-                            className="mt-1.5 px-3 py-1 bg-white/10 hover:bg-white/20 text-[9px] font-bold uppercase tracking-widest text-white border border-white/10 rounded cursor-pointer transition-all"
+                            className="mt-2 px-4 py-1.5 bg-white/10 hover:bg-white/20 text-xs font-bold uppercase tracking-widest text-white border border-white/10 rounded cursor-pointer transition-all"
                           >
                             Cancel
                           </button>
@@ -1604,13 +1679,13 @@ export default function App() {
                       )}
 
                       {connectionStatus === 'connecting' && (
-                        <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-2.5 flex flex-col items-center justify-center text-center gap-1 animate-pulse">
+                        <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-3.5 flex flex-col items-center justify-center text-center gap-1.5 animate-pulse">
                           <span className="w-2 h-2 rounded-full bg-blue-500 shadow-[0_0_10px_#3b82f6]" />
-                          <p className="text-[10px] font-bold text-blue-400 uppercase tracking-widest">Connecting Protocol</p>
-                          <p className="text-[9px] text-white/60">Attaching to host session...</p>
+                          <p className="text-xs font-bold text-blue-400 uppercase tracking-widest">Connecting Protocol</p>
+                          <p className="text-[10px] text-white/60">Attaching to host session...</p>
                           <button
                             onClick={handleCancelHostOrJoin}
-                            className="mt-1.5 px-3 py-1 bg-white/10 hover:bg-white/20 text-[9px] font-bold uppercase tracking-widest text-white border border-white/10 rounded cursor-pointer transition-all"
+                            className="mt-2 px-4 py-1.5 bg-white/10 hover:bg-white/20 text-xs font-bold uppercase tracking-widest text-white border border-white/10 rounded cursor-pointer transition-all"
                           >
                             Cancel
                           </button>
@@ -1619,20 +1694,20 @@ export default function App() {
 
                       {/* Quick Play Search State */}
                       {quickPlayStatus === 'searching' && (
-                        <div className="bg-sky-500/10 border border-sky-500/30 rounded-lg p-4 flex flex-col items-center justify-center text-center gap-3 relative overflow-hidden">
+                        <div className="bg-sky-500/10 border border-sky-500/30 rounded-lg p-6 flex flex-col items-center justify-center text-center gap-4 relative overflow-hidden">
                           {/* Pulsing radar scanning animation */}
                           <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-                            <div className="w-24 h-24 border border-sky-500/20 rounded-full animate-ping absolute" />
-                            <div className="w-16 h-16 border border-sky-500/30 rounded-full animate-pulse absolute" />
+                            <div className="w-32 h-32 border border-sky-500/20 rounded-full animate-ping absolute" />
+                            <div className="w-20 h-20 border border-sky-500/30 rounded-full animate-pulse absolute" />
                           </div>
                           
-                          <span className="text-2xl animate-spin inline-block">📡</span>
-                          <p className="text-xs font-black text-sky-400 uppercase tracking-widest">Searching for Match...</p>
-                          <p className="text-[10px] text-white/60">Scanning open rooms and queuing players</p>
+                          <span className="text-3xl animate-spin inline-block">📡</span>
+                          <p className="text-sm font-black text-sky-400 uppercase tracking-widest">Searching for Match...</p>
+                          <p className="text-xs text-white/60">Scanning open rooms and queuing players</p>
                           
                           <button
                             onClick={handleCancelQuickPlay}
-                            className="z-10 px-4 py-1.5 bg-red-500/25 hover:bg-red-500/40 text-[9px] font-bold uppercase tracking-widest text-red-400 border border-red-500/30 rounded cursor-pointer transition-all active:scale-[0.97]"
+                            className="z-10 px-5 py-2 bg-red-500/25 hover:bg-red-500/40 text-xs font-bold uppercase tracking-widest text-red-400 border border-red-500/30 rounded cursor-pointer transition-all active:scale-[0.97]"
                           >
                             Cancel Search
                           </button>
@@ -1640,43 +1715,43 @@ export default function App() {
                       )}
 
                       {quickPlayStatus === 'matching' && (
-                        <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-4 flex flex-col items-center justify-center text-center gap-2 animate-pulse">
-                          <span className="text-xl">⚡</span>
-                          <p className="text-xs font-black text-amber-400 uppercase tracking-widest font-bold">Match Found!</p>
-                          <p className="text-[10px] text-white/60">Configuring arena host credentials...</p>
+                        <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-6 flex flex-col items-center justify-center text-center gap-2 animate-pulse">
+                          <span className="text-2xl">⚡</span>
+                          <p className="text-sm font-black text-amber-400 uppercase tracking-widest font-bold">Match Found!</p>
+                          <p className="text-xs text-white/60">Configuring arena host credentials...</p>
                         </div>
                       )}
 
                       {/* Host/Connect triggers */}
                       {(connectionStatus === 'idle' || connectionStatus === 'error' || connectionStatus === 'fetching_ip') && quickPlayStatus === 'idle' && (
-                        <div className="flex flex-col gap-2">
+                        <div className="flex flex-col gap-2.5">
                           <button
                             onClick={handleQuickPlay}
-                            className="w-full h-12 bg-gradient-to-r from-sky-400 via-indigo-400 to-purple-500 hover:from-sky-500 hover:to-purple-600 text-slate-950 hover:text-white font-sans font-black text-[10px] uppercase tracking-[0.2em] transition-all rounded shadow-lg shadow-sky-500/25 border border-sky-300/30 cursor-pointer flex items-center justify-center gap-2 hover:shadow-indigo-500/40 active:scale-[0.98] select-none"
+                            className="w-full h-14 bg-gradient-to-r from-sky-400 via-indigo-400 to-purple-500 hover:from-sky-500 hover:to-purple-600 text-slate-950 hover:text-white font-sans font-black text-xs uppercase tracking-[0.2em] transition-all rounded shadow-lg shadow-sky-500/25 border border-sky-300/30 cursor-pointer flex items-center justify-center gap-2 hover:shadow-indigo-500/40 active:scale-[0.98] select-none"
                           >
                             ⚡ Quick Play Matchmaking
                           </button>
 
-                          <div className="flex items-center gap-1.5 py-0.5">
+                          <div className="flex items-center gap-2 py-0.5">
                             <hr className="flex-grow border-white/5" />
-                            <span className="text-[8px] text-white/20 uppercase tracking-widest font-mono">OR DIRECT PLAY</span>
+                            <span className="text-[10px] text-white/20 uppercase tracking-widest font-mono">OR DIRECT PLAY</span>
                             <hr className="flex-grow border-white/5" />
                           </div>
 
                           <button
                             onClick={() => handleHostGame()}
-                            className="w-full h-10 bg-white hover:bg-emerald-500 text-slate-900 hover:text-white hover:border-emerald-400 font-sans font-black text-[10px] uppercase tracking-widest transition-all rounded shadow border border-white/10 cursor-pointer flex items-center justify-center gap-1.5"
+                            className="w-full h-12 bg-white hover:bg-emerald-500 text-slate-900 hover:text-white hover:border-emerald-400 font-sans font-black text-xs uppercase tracking-widest transition-all rounded shadow border border-white/10 cursor-pointer flex items-center justify-center gap-1.5"
                           >
                             🎙️ Host New Match
                           </button>
 
-                          <div className="flex items-center gap-1.5 py-0.5">
+                          <div className="flex items-center gap-2 py-0.5">
                             <hr className="flex-grow border-white/10" />
-                            <span className="text-[8px] text-white/30 uppercase tracking-widest font-mono">OR JOIN ROOM</span>
+                            <span className="text-[10px] text-white/30 uppercase tracking-widest font-mono">OR JOIN ROOM</span>
                             <hr className="flex-grow border-white/10" />
                           </div>
 
-                          <div className="flex gap-1.5">
+                          <div className="flex gap-2">
                             <input
                               type="text"
                               value={joinIpOrId}
@@ -1685,12 +1760,12 @@ export default function App() {
                                 if (e.key === 'Enter') handleJoinGame(joinIpOrId);
                               }}
                               placeholder="Room Code or IP..."
-                              className="flex-1 h-10 bg-black/60 border border-white/10 rounded px-3 text-center font-mono text-xs tracking-wide text-[#38bdf8] placeholder:text-white/20 focus:border-[#38bdf8] outline-none transition-all"
+                              className="flex-1 h-12 bg-black/60 border border-white/10 rounded px-3.5 text-center font-mono text-sm tracking-wide text-[#38bdf8] placeholder:text-white/20 focus:border-[#38bdf8] outline-none transition-all"
                             />
                             <button
                               onClick={() => handleJoinGame(joinIpOrId)}
                               disabled={!joinIpOrId}
-                              className={`px-3 h-10 font-sans font-black text-[10px] uppercase tracking-widest rounded transition-all border outline-none ${
+                              className={`px-4.5 h-12 font-sans font-black text-xs uppercase tracking-widest rounded transition-all border outline-none ${
                                 joinIpOrId 
                                   ? 'bg-[#38bdf8]/15 hover:bg-[#38bdf8]/35 border-[#38bdf8]/50 text-[#38bdf8] cursor-pointer' 
                                   : 'bg-white/5 border-white/5 text-white/20 cursor-not-allowed'
@@ -1701,7 +1776,7 @@ export default function App() {
                             <button
                               onClick={() => handleJoinGame(joinIpOrId, true)}
                               disabled={!joinIpOrId}
-                              className={`px-3 h-10 font-sans font-black text-[10px] uppercase tracking-widest rounded transition-all border outline-none ${
+                              className={`px-4.5 h-12 font-sans font-black text-xs uppercase tracking-widest rounded transition-all border outline-none ${
                                 joinIpOrId 
                                   ? 'bg-amber-500/10 hover:bg-amber-500/30 border-amber-500/50 text-amber-400 cursor-pointer shadow-[0_0_12px_rgba(245,158,11,0.1)]' 
                                   : 'bg-white/5 border-white/5 text-white/20 cursor-not-allowed'
@@ -1714,30 +1789,30 @@ export default function App() {
                       )}
 
                       {connectionStatus === 'error' && (
-                        <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-2 text-center">
-                          <p className="text-[9px] text-red-400 font-black uppercase tracking-wider mb-0.5">⚠️ Sync Timeout</p>
-                          <p className="text-[9px] text-white/70">{connectionError || 'Connection failed.'}</p>
+                        <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-2.5 text-center animate-pulse">
+                          <p className="text-xs text-red-400 font-black uppercase tracking-wider mb-0.5">⚠️ Sync Timeout</p>
+                          <p className="text-xs text-white/70">{connectionError || 'Connection failed.'}</p>
                         </div>
                       )}
 
                       {/* Collapsible Advanced Settings Panel */}
-                      <div className="mt-3 border-t border-white/5 pt-3">
+                      <div className="mt-3.5 border-t border-white/5 pt-3.5">
                         <details className="group">
-                          <summary className="flex justify-between items-center text-[9px] text-[#38bdf8] font-bold uppercase tracking-wider cursor-pointer select-none hover:text-white transition-colors">
+                          <summary className="flex justify-between items-center text-xs text-[#38bdf8] font-bold uppercase tracking-wider cursor-pointer select-none hover:text-white transition-colors">
                             <span>⚙️ Advanced Settings</span>
-                            <span className="text-[8px] transition-transform group-open:rotate-180 font-sans">▼</span>
+                            <span className="text-[10px] transition-transform group-open:rotate-180 font-sans">▼</span>
                           </summary>
                           
-                          <div className="flex flex-col gap-2 mt-2 bg-black/30 p-2 rounded border border-white/5">
-                            <label className="text-[8px] text-white/50 uppercase tracking-widest font-mono">Matchmaker Server URL:</label>
+                          <div className="flex flex-col gap-2.5 mt-2.5 bg-black/30 p-3 rounded border border-white/5">
+                            <label className="text-[10px] text-white/50 uppercase tracking-widest font-mono">Matchmaker Server URL:</label>
                             <input
                               type="text"
                               value={customUrlInput}
                               onChange={(e) => setCustomUrlInput(e.target.value)}
                               placeholder="wss://..."
-                              className="w-full h-8 bg-black/60 border border-white/10 rounded px-2 font-mono text-[10px] tracking-wide text-white focus:border-[#38bdf8] outline-none transition-all"
+                              className="w-full h-10 bg-black/60 border border-white/10 rounded px-2.5 font-mono text-xs tracking-wide text-white focus:border-[#38bdf8] outline-none transition-all"
                             />
-                            <div className="flex gap-2">
+                            <div className="flex gap-2.5">
                               <button
                                 onClick={() => {
                                   let cleanUrl = customUrlInput.trim();
@@ -1755,7 +1830,7 @@ export default function App() {
                                     }
                                   }
                                 }}
-                                className="flex-1 h-7 bg-[#38bdf8] hover:bg-[#38bdf8]/80 text-slate-950 font-sans font-black text-[9px] uppercase tracking-wider rounded cursor-pointer transition-all active:scale-[0.97]"
+                                className="flex-1 h-9 bg-[#38bdf8] hover:bg-[#38bdf8]/80 text-slate-950 font-sans font-black text-xs uppercase tracking-wider rounded cursor-pointer transition-all active:scale-[0.97]"
                               >
                                 Apply
                               </button>
@@ -1770,7 +1845,7 @@ export default function App() {
                                     menuSocket.close();
                                   }
                                 }}
-                                className="h-7 px-2.5 bg-white/5 hover:bg-white/10 text-white/60 hover:text-white border border-white/10 rounded text-[9px] font-bold uppercase tracking-wider cursor-pointer transition-all"
+                                className="h-9 px-3 bg-white/5 hover:bg-white/10 text-white/60 hover:text-white border border-white/10 rounded text-xs font-bold uppercase tracking-wider cursor-pointer transition-all"
                               >
                                 Reset
                               </button>
@@ -1781,39 +1856,39 @@ export default function App() {
                     </div>
 
                     {/* Online clients */}
-                    <div className="bg-slate-950/40 border border-white/10 rounded-lg p-3 flex flex-col gap-2 flex-grow min-h-[140px] overflow-hidden lg:h-[220px]">
+                    <div className="bg-slate-950/40 border border-white/10 rounded-lg p-3.5 flex flex-col gap-2 flex-grow min-h-[160px] overflow-hidden lg:h-[260px]">
                       <div className="flex justify-between items-center pb-2 border-b border-white/5 shrink-0">
-                        <p className="text-[9px] text-[#38bdf8] font-black uppercase tracking-wider flex items-center gap-1.5">
+                        <p className="text-xs text-[#38bdf8] font-black uppercase tracking-wider flex items-center gap-1.5">
                           <span className="w-1 px-0.5 h-2.5 bg-[#38bdf8] inline-block rounded-sm" />
                           Online Clients ({onlineClients.length})
                         </p>
                         {clientId && (
-                          <span className="text-[8px] font-mono text-white/45 bg-white/5 px-2 py-0.5 rounded border border-white/5">
+                          <span className="text-[10px] font-mono text-white/45 bg-white/5 px-2.5 py-0.5 rounded border border-white/5">
                             ID: {clientId}
                           </span>
                         )}
                       </div>
                       
-                      <div className="flex-1 overflow-y-auto min-h-0 flex flex-col gap-1.5 pr-1">
+                      <div className="flex-1 overflow-y-auto min-h-0 flex flex-col gap-2 pr-1">
                         {onlineClients.length === 0 ? (
-                          <p className="text-[10px] text-white/45 italic font-medium m-auto text-center py-4">No other players online yet.</p>
+                          <p className="text-xs text-white/45 italic font-medium m-auto text-center py-4">No other players online yet.</p>
                         ) : (
                           onlineClients.map(client => (
-                            <div key={client.id} className="flex justify-between items-center bg-black/45 px-2.5 py-2 rounded border border-white/5 text-[11px] font-mono shrink-0">
-                              <div className="flex flex-col gap-0.5 min-w-0">
+                            <div key={client.id} className="flex justify-between items-center bg-black/45 px-3 py-2.5 rounded border border-white/5 text-xs font-mono shrink-0">
+                              <div className="flex flex-col gap-1 min-w-0">
                                 <span className="text-white/80 font-semibold truncate max-w-[130px]" title={client.name ? `${client.name} (${client.id})` : `Client ${client.id}`}>
                                   {client.name ? client.name : `Client ${client.id}`}
                                 </span>
                                 <div className="flex items-center gap-1.5">
                                   {client.state === 'menu' && (
-                                    <span className="text-[8px] text-slate-400/80 font-bold uppercase tracking-wider flex items-center gap-1">
-                                      <span className="w-1 h-1 rounded-full bg-slate-500" />
+                                    <span className="text-[10px] text-slate-400/80 font-bold uppercase tracking-wider flex items-center gap-1">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-slate-500" />
                                       In Menu
                                     </span>
                                   )}
                                   {client.state === 'solo' && (
-                                    <span className="text-[8px] text-amber-400 font-bold uppercase tracking-wider flex items-center gap-1">
-                                      <span className="w-1 h-1 rounded-full bg-amber-500 animate-pulse" />
+                                    <span className="text-[10px] text-amber-400 font-bold uppercase tracking-wider flex items-center gap-1">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
                                       Solo Training
                                     </span>
                                   )}
@@ -1825,14 +1900,14 @@ export default function App() {
                                             handleJoinGame(client.roomCode);
                                           }
                                         }}
-                                        className="text-[8px] bg-emerald-500/20 hover:bg-emerald-500/35 border border-emerald-500/40 text-emerald-400 font-bold uppercase tracking-wider px-1.5 py-0.5 rounded cursor-pointer transition-all flex items-center gap-1"
+                                        className="text-[10px] bg-emerald-500/20 hover:bg-emerald-500/35 border border-emerald-500/40 text-emerald-400 font-bold uppercase tracking-wider px-2 py-0.5 rounded cursor-pointer transition-all flex items-center gap-1"
                                       >
-                                        <span className="w-1 h-1 rounded-full bg-emerald-400 inline-block animate-ping" />
+                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block animate-ping" />
                                         Join
                                       </button>
                                     ) : (
-                                      <span className="text-[8px] text-blue-400 font-bold uppercase tracking-wider flex items-center gap-1">
-                                        <span className="w-1 h-1 rounded-full bg-blue-500" />
+                                      <span className="text-[10px] text-blue-400 font-bold uppercase tracking-wider flex items-center gap-1">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
                                         In Match
                                       </span>
                                     )
@@ -1859,7 +1934,7 @@ export default function App() {
                                         }, 5000);
                                       }
                                     }}
-                                    className="px-2 py-0.5 bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-[9px] font-sans font-black uppercase tracking-wider text-white rounded cursor-pointer transition-all border border-sky-400/20 active:scale-95"
+                                    className="px-2.5 py-1 bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-[9px] font-sans font-black uppercase tracking-wider text-white rounded cursor-pointer transition-all border border-sky-400/20 active:scale-95"
                                   >
                                     Invite
                                   </button>
@@ -1874,23 +1949,23 @@ export default function App() {
                 )}
               </div>
 
-              {/* COLUMN 2: COMBAT MANUAL & CUSTOMIZER */}
+              {/* COLUMN 2: KEYBIND REFERENCE & CUSTOMIZER */}
               <div className="flex flex-col h-full min-h-0 border-t lg:border-t-0 lg:border-l lg:border-r border-white/10 pt-6 lg:pt-0 lg:px-6">
                 {/* Segmented Middle Switcher */}
-                <div className="flex bg-black/40 p-1 rounded-lg border border-white/5 gap-1 select-none shrink-0 mb-4 shadow-[inset_0_1px_3px_rgba(0,0,0,0.3)]">
+                <div className="flex bg-black/40 p-1.5 rounded-lg border border-white/5 gap-2 select-none shrink-0 mb-4 shadow-[inset_0_1px_3px_rgba(0,0,0,0.3)]">
                   <button
                     onClick={() => setRightPanelTab('manual')}
-                    className={`flex-1 py-1.5 text-[10px] font-bold uppercase tracking-wider rounded transition-all cursor-pointer text-center flex items-center justify-center gap-1.5 ${
+                    className={`flex-1 py-2 text-xs font-bold uppercase tracking-wider rounded transition-all cursor-pointer text-center flex items-center justify-center gap-1.5 ${
                       rightPanelTab === 'manual'
                         ? 'bg-[#38bdf8] text-slate-900 shadow-md font-bold'
                         : 'text-white/40 hover:text-white/70'
                     }`}
                   >
-                    📖 Combat Manual
+                    ⌨️ Keybind Reference
                   </button>
                   <button
                     onClick={() => setRightPanelTab('customize')}
-                    className={`flex-1 py-1.5 text-[10px] font-bold uppercase tracking-wider rounded transition-all cursor-pointer text-center flex items-center justify-center gap-1.5 ${
+                    className={`flex-1 py-2 text-xs font-bold uppercase tracking-wider rounded transition-all cursor-pointer text-center flex items-center justify-center gap-1.5 ${
                       rightPanelTab === 'customize'
                         ? 'bg-[#38bdf8] text-slate-900 shadow-md font-bold'
                         : 'text-white/40 hover:text-white/70'
@@ -1902,104 +1977,181 @@ export default function App() {
 
                 {rightPanelTab === 'manual' && (
                   <div className="flex-grow flex flex-col min-h-0 overflow-y-auto pr-1">
-                    <div className="flex flex-col gap-3 font-sans text-xs">
-                      
-                      {/* Arena Navigation */}
-                      <div className="bg-white/5 border border-white/5 rounded-lg p-3">
-                        <p className="text-[10px] font-bold text-[#38bdf8] uppercase tracking-wider mb-2.5">Arena Navigation</p>
+                    <div className="flex flex-col gap-3 font-sans text-sm">
+
+                      {/* Rebind Instructions */}
+                      <div className="flex items-center gap-2 px-2 py-1.5 bg-amber-500/5 border border-amber-500/15 rounded text-[11px] text-amber-400/80 font-medium select-none">
+                        <span>⚡</span>
+                        <span>Click any key below to rebind. Press <kbd className="bg-black/40 px-1.5 py-0.5 rounded border border-white/10 text-[10px] font-mono font-bold">ESC</kbd> to cancel.</span>
+                      </div>
+
+                      {/* Movement Controls */}
+                      <div className="bg-white/5 border border-white/5 rounded-lg p-4">
+                        <p className="text-xs font-bold text-[#38bdf8] uppercase tracking-wider mb-3">Arena Navigation</p>
                         <div className="grid grid-cols-2 gap-y-3 gap-x-4 text-white/80">
-                          <div className="flex items-center gap-3">
-                            <div className="flex gap-0.5">
-                              <kbd className="min-w-5 h-5 bg-black/50 border border-white/20 rounded flex items-center justify-center font-mono font-bold text-[9px] text-[#38bdf8]">W</kbd>
-                              <kbd className="min-w-5 h-5 bg-black/50 border border-white/20 rounded flex items-center justify-center font-mono font-bold text-[9px] text-[#38bdf8]">A</kbd>
-                              <kbd className="min-w-5 h-5 bg-black/50 border border-white/20 rounded flex items-center justify-center font-mono font-bold text-[9px] text-[#38bdf8]">S</kbd>
-                              <kbd className="min-w-5 h-5 bg-black/50 border border-white/20 rounded flex items-center justify-center font-mono font-bold text-[9px] text-[#38bdf8]">D</kbd>
+                          {([
+                            { action: 'moveForward' as keyof Keybindings, label: 'Move Forward' },
+                            { action: 'moveLeft' as keyof Keybindings, label: 'Move Left' },
+                            { action: 'moveBackward' as keyof Keybindings, label: 'Move Backward' },
+                            { action: 'moveRight' as keyof Keybindings, label: 'Move Right' },
+                            { action: 'jump' as keyof Keybindings, label: 'Jump (Boost)' },
+                            { action: 'dash' as keyof Keybindings, label: 'Sonic Dash' },
+                            { action: 'crouch' as keyof Keybindings, label: 'Crouch / Slide' },
+                            { action: 'scoreboard' as keyof Keybindings, label: 'Scoreboard' },
+                          ]).map(({ action, label }) => (
+                            <div key={action} className="flex items-center gap-2.5">
+                              <button
+                                onClick={() => setRebindingAction(rebindingAction === action ? null : action)}
+                                className={`min-w-[3rem] h-7 rounded flex items-center justify-center font-mono font-bold text-xs border cursor-pointer transition-all select-none ${
+                                  rebindingAction === action
+                                    ? 'bg-amber-500/20 border-amber-500/60 text-amber-400 animate-pulse shadow-[0_0_12px_rgba(245,158,11,0.3)]'
+                                    : 'bg-black/50 border-white/20 text-[#38bdf8] hover:border-[#38bdf8]/50 hover:bg-[#38bdf8]/10'
+                                }`}
+                              >
+                                {rebindingAction === action ? '...' : (
+                                  keybindings[action] === ' ' ? 'SPACE' : keybindings[action].toUpperCase()
+                                )}
+                              </button>
+                              <span className="text-white/60 text-xs font-medium">{label}</span>
                             </div>
-                            <span className="text-white/60 text-[10px] font-medium">Move</span>
-                          </div>
+                          ))}
+                        </div>
+                      </div>
 
-                          <div className="flex items-center gap-2">
-                            <kbd className="min-w-[3.5rem] h-5 bg-black/50 border border-white/20 rounded flex items-center justify-center font-mono font-bold text-[8px] text-amber-500 uppercase">Space</kbd>
-                            <span className="text-white/60 text-[10px] font-medium">Jump (Boost)</span>
-                          </div>
-
-                          <div className="flex items-center gap-2">
-                            <kbd className="min-w-5 h-5 bg-black/50 border border-white/20 rounded flex items-center justify-center font-mono font-bold text-[9px] text-[#38bdf8]">Q</kbd>
-                            <span className="text-white/60 text-[10px] font-medium">Sonic Dash</span>
-                          </div>
-
-                          <div className="flex items-center gap-2">
-                            <kbd className="min-w-5 h-5 bg-black/50 border border-white/20 rounded flex items-center justify-center font-mono font-bold text-[9px] text-[#38bdf8]">C</kbd>
-                            <span className="text-white/60 text-[10px] font-medium">Crouch / Slide</span>
+                      {/* Weapon Controls */}
+                      <div className="bg-white/5 border border-white/5 rounded-lg p-4">
+                        <p className="text-xs font-bold text-[#38bdf8] uppercase tracking-wider mb-3">Arsenal Control & Swapping</p>
+                        <div className="grid grid-cols-2 gap-y-3 gap-x-4 text-white/80">
+                          {([
+                            { action: 'weapon1' as keyof Keybindings, label: 'Grav Hammer', color: 'text-cyan-400' },
+                            { action: 'weapon2' as keyof Keybindings, label: 'Energy Sword', color: 'text-purple-400' },
+                          ]).map(({ action, label, color }) => (
+                            <div key={action} className="flex items-center gap-2.5">
+                              <button
+                                onClick={() => setRebindingAction(rebindingAction === action ? null : action)}
+                                className={`min-w-[3rem] h-7 rounded flex items-center justify-center font-mono font-bold text-xs border cursor-pointer transition-all select-none ${
+                                  rebindingAction === action
+                                    ? 'bg-amber-500/20 border-amber-500/60 text-amber-400 animate-pulse shadow-[0_0_12px_rgba(245,158,11,0.3)]'
+                                    : `bg-black/50 border-white/20 ${color} hover:border-[#38bdf8]/50 hover:bg-[#38bdf8]/10`
+                                }`}
+                              >
+                                {rebindingAction === action ? '...' : (
+                                  keybindings[action] === ' ' ? 'SPACE' : keybindings[action].toUpperCase()
+                                )}
+                              </button>
+                              <span className="text-white/60 text-xs font-medium">{label}</span>
+                            </div>
+                          ))}
+                          <div className="flex items-center gap-2.5 col-span-2 border-t border-white/5 pt-2.5 mt-1">
+                            <span className="text-amber-400 font-mono text-[10px] uppercase tracking-widest mr-1.5">Switch:</span>
+                            <span className="text-white/70 text-xs">Use <kbd className="bg-black/30 px-1.5 py-0.5 border border-white/10 rounded font-bold text-xs">SCROLL WHEEL</kbd> to cycle weapons</span>
                           </div>
                         </div>
                       </div>
 
-                      {/* Arsenal Control */}
-                      <div className="bg-white/5 border border-white/5 rounded-lg p-3">
-                        <p className="text-[10px] font-bold text-[#38bdf8] uppercase tracking-wider mb-2.5">Arsenal Control & Swapping</p>
-                        <div className="grid grid-cols-2 gap-y-3 gap-x-4 text-white/80">
-                          <div className="flex items-center gap-3">
-                            <kbd className="min-w-5 h-5 bg-black/50 border border-white/20 rounded flex items-center justify-center font-mono font-bold text-[9px] text-cyan-400">1</kbd>
-                            <span className="text-white/60 text-[10px] font-medium">Grav Hammer</span>
-                          </div>
-
-                          <div className="flex items-center gap-3">
-                            <kbd className="min-w-5 h-5 bg-black/50 border border-white/20 rounded flex items-center justify-center font-mono font-bold text-[9px] text-purple-400">2</kbd>
-                            <span className="text-white/60 text-[10px] font-medium">Energy Sword</span>
-                          </div>
-
-                          <div className="flex items-center gap-3 col-span-2 border-t border-white/5 pt-2 mt-1">
-                            <span className="text-amber-400 font-mono text-[8px] uppercase tracking-widest mr-1">Switch:</span>
-                            <span className="text-white/70 text-[10px]">Use <kbd className="bg-black/30 px-1 border border-white/10 rounded font-bold text-[9px]">SCROLL WHEEL</kbd> to cycle weapons</span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Combat Techniques */}
-                      <div className="bg-white/5 border border-white/5 rounded-lg p-3">
-                        <p className="text-[10px] font-bold text-[#38bdf8] uppercase tracking-wider mb-2.5">Combat Techniques</p>
-                        <div className="flex flex-col gap-2.5">
-                          <div className="flex items-start gap-2.5 text-white/70">
-                            <kbd className="min-w-[2.2rem] h-5 bg-cyan-950/40 border border-cyan-500/30 rounded flex items-center justify-center font-mono font-black text-[8px] text-cyan-400 select-none shrink-0">LMB</kbd>
+                      {/* Combat Controls */}
+                      <div className="bg-white/5 border border-white/5 rounded-lg p-4">
+                        <p className="text-xs font-bold text-[#38bdf8] uppercase tracking-wider mb-3">Combat Techniques</p>
+                        <div className="flex flex-col gap-3">
+                          <div className="flex items-start gap-3 text-white/70">
+                            <button
+                              onClick={() => setRebindingAction(rebindingAction === 'attack' ? null : 'attack')}
+                              className={`min-w-[3rem] h-7 rounded flex items-center justify-center font-mono font-black text-[10px] border cursor-pointer transition-all select-none shrink-0 ${
+                                rebindingAction === 'attack'
+                                  ? 'bg-amber-500/20 border-amber-500/60 text-amber-400 animate-pulse shadow-[0_0_12px_rgba(245,158,11,0.3)]'
+                                  : 'bg-cyan-950/40 border-cyan-500/30 text-cyan-400 hover:border-cyan-400/60 hover:bg-cyan-500/15'
+                              }`}
+                            >
+                              {rebindingAction === 'attack' ? '...' : keybindings.attack.toUpperCase()}
+                            </button>
                             <div>
-                              <p className="text-[10px] text-white/90 font-bold"><strong className="text-cyan-400">Grav Slam</strong> (With Hammer)</p>
-                              <p className="text-[9px] text-white/55">Repels balls, hosts, bots with radial shockwaves.</p>
+                              <p className="text-xs text-white/90 font-bold"><strong className="text-cyan-400">Grav Slam</strong> (With Hammer) / <strong className="text-red-400">Assault Lunge</strong> (Sword)</p>
+                              <p className="text-[11px] text-white/55 leading-normal">Primary attack — context-sensitive by equipped weapon.</p>
                             </div>
                           </div>
 
-                          <div className="flex items-start gap-2.5 text-white/70 border-t border-white/5 pt-2">
-                            <kbd className="min-w-[2.2rem] h-5 bg-red-950/40 border border-red-500/30 rounded flex items-center justify-center font-mono font-black text-[8px] text-red-400 select-none shrink-0">LMB</kbd>
+                          <div className="flex items-start gap-3 text-white/70 border-t border-white/5 pt-2.5">
+                            <button
+                              onClick={() => setRebindingAction(rebindingAction === 'altAttack' ? null : 'altAttack')}
+                              className={`min-w-[3rem] h-7 rounded flex items-center justify-center font-mono font-black text-[10px] border cursor-pointer transition-all select-none shrink-0 ${
+                                rebindingAction === 'altAttack'
+                                  ? 'bg-amber-500/20 border-amber-500/60 text-amber-400 animate-pulse shadow-[0_0_12px_rgba(245,158,11,0.3)]'
+                                  : 'bg-purple-950/40 border-purple-500/30 text-purple-400 hover:border-purple-400/60 hover:bg-purple-500/15'
+                              }`}
+                            >
+                              {rebindingAction === 'altAttack' ? '...' : keybindings.altAttack.toUpperCase()}
+                            </button>
                             <div>
-                              <p className="text-[10px] text-white/90 font-bold"><strong className="text-red-400">Assault Lunge</strong> (Sword + Red Reticle)</p>
-                              <p className="text-[9px] text-white/55">Dash lock-on instantly with targeted enemies.</p>
-                            </div>
-                          </div>
-
-                          <div className="flex items-start gap-2.5 text-white/70 border-t border-white/5 pt-2">
-                            <kbd className="min-w-[2.2rem] h-5 bg-purple-950/40 border border-purple-500/30 rounded flex items-center justify-center font-mono font-black text-[8px] text-purple-400 select-none shrink-0">RMB</kbd>
-                            <div>
-                              <p className="text-[10px] text-white/90 font-bold"><strong className="text-purple-400">Quick Slash</strong> (With Sword)</p>
-                              <p className="text-[9px] text-white/55">Swift front slash for immediate counter attacks.</p>
+                              <p className="text-xs text-white/90 font-bold"><strong className="text-purple-400">Quick Slash</strong> (With Sword)</p>
+                              <p className="text-[11px] text-white/55 leading-normal">Swift front slash for immediate counter attacks.</p>
                             </div>
                           </div>
 
                           {/* Special Combo */}
-                          <div className="flex items-center gap-2 border-t border-amber-500/10 bg-amber-500/5 p-2 rounded mt-1">
-                            <span className="text-amber-500 text-[10px] font-bold select-none">Combo:</span>
-                            <span className="text-white/80 text-[9.5px]">
-                              <strong>Hammer Jump</strong>: Left Click then immediately press <kbd className="bg-black/30 px-1 font-bold rounded">SPACE</kbd> to launch high!
+                          <div className="flex items-center gap-2.5 border-t border-amber-500/10 bg-amber-500/5 p-2.5 rounded mt-1">
+                            <span className="text-amber-500 text-xs font-bold select-none">Combo:</span>
+                            <span className="text-white/80 text-[11px] leading-relaxed">
+                              <strong>Hammer Jump</strong>: {keybindings.attack.toUpperCase()} then immediately press <kbd className="bg-black/30 px-1.5 py-0.5 font-bold rounded text-[10px]">{keybindings.jump === ' ' ? 'SPACE' : keybindings.jump.toUpperCase()}</kbd> to launch high!
                             </span>
                           </div>
                         </div>
                       </div>
 
-                      {/* System footer */}
-                      <div className="flex items-center justify-between px-2 py-1.5 border-t border-white/5 mt-1 font-mono text-[9px] text-white/40 shrink-0">
-                        <div className="flex items-center gap-1">
-                          <kbd className="min-w-5 h-4.5 bg-black/60 border border-white/20 rounded flex items-center justify-center font-mono font-bold text-[8px] text-amber-500">ESC</kbd>
-                          <span>SETTINGS</span>
+                      {/* Mouse Diagram */}
+                      <div className="bg-white/5 border border-white/5 rounded-lg p-4">
+                        <p className="text-xs font-bold text-[#38bdf8] uppercase tracking-wider mb-3">Mouse Controls</p>
+                        <div className="flex items-center justify-center gap-6">
+                          <div className="relative w-20 h-28 flex flex-col rounded-[2rem] border-2 border-white/15 bg-black/40 overflow-hidden select-none">
+                            {/* Left Button */}
+                            <div className={`flex-1 flex items-center justify-center border-b border-r border-white/10 text-[9px] font-mono font-black uppercase tracking-wider transition-colors ${
+                              keybindings.attack === 'lmb' ? 'bg-cyan-500/15 text-cyan-400' : 'bg-white/5 text-white/30'
+                            }`}>
+                              {keybindings.attack === 'lmb' ? 'ATK' : ''}
+                            </div>
+                            {/* Right Button */}
+                            <div className={`flex-1 flex items-center justify-center border-b border-l border-white/10 text-[9px] font-mono font-black uppercase tracking-wider transition-colors absolute top-0 right-0 w-1/2 h-1/2 ${
+                              keybindings.altAttack === 'rmb' ? 'bg-purple-500/15 text-purple-400' : 'bg-white/5 text-white/30'
+                            }`}>
+                              {keybindings.altAttack === 'rmb' ? 'ALT' : ''}
+                            </div>
+                            {/* Scroll Wheel */}
+                            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-3 h-5 bg-white/10 rounded-full border border-white/20" />
+                            {/* Body */}
+                            <div className="flex-1" />
+                          </div>
+                          <div className="flex flex-col gap-1.5 text-[11px] text-white/60">
+                            <div className="flex items-center gap-1.5">
+                              <span className="w-2 h-2 rounded-full bg-cyan-500/60" />
+                              <span>Left Click — <span className="text-cyan-400 font-bold">Attack</span></span>
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <span className="w-2 h-2 rounded-full bg-purple-500/60" />
+                              <span>Right Click — <span className="text-purple-400 font-bold">Alt Attack</span></span>
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <span className="w-2 h-2 rounded-full bg-amber-500/60" />
+                              <span>Scroll Wheel — <span className="text-amber-400 font-bold">Swap Weapon</span></span>
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <span className="w-2 h-2 rounded-full bg-white/30" />
+                              <span>Mouse Move — <span className="text-white/80 font-bold">Aim / Look</span></span>
+                            </div>
+                          </div>
                         </div>
+                      </div>
+
+                      {/* Reset + Footer */}
+                      <div className="flex items-center justify-between px-2 py-2 border-t border-white/5 mt-1 font-mono text-xs text-white/40 shrink-0">
+                        <button
+                          onClick={() => {
+                            setKeybindings({ ...DEFAULT_KEYBINDINGS });
+                            setRebindingAction(null);
+                            try { localStorage.setItem('grifball_keybindings', JSON.stringify(DEFAULT_KEYBINDINGS)); } catch (e) {}
+                          }}
+                          className="text-[10px] text-amber-400/70 hover:text-amber-400 font-bold uppercase tracking-wider cursor-pointer transition-colors bg-transparent border-none p-0"
+                        >
+                          ↻ Reset All Keybinds
+                        </button>
                         <span>VERSION 1.4 PROTOTYPE</span>
                       </div>
 
@@ -2011,7 +2163,7 @@ export default function App() {
                   <div className="flex-grow flex flex-col min-h-0 overflow-y-auto pr-1 justify-between gap-4">
                     <div className="flex flex-col gap-4">
                       {/* Rotating 3D character */}
-                      <div className="relative bg-slate-950/30 border border-white/5 rounded-xl select-none overflow-hidden h-[300px] shrink-0">
+                      <div className="relative bg-slate-950/30 border border-white/5 rounded-xl select-none overflow-hidden h-[380px] shrink-0">
                         <CharacterPreview hue={adminSettings.playerHue ?? 200} heldWeapon={customizerWeapon} />
                       </div>
 
@@ -2021,9 +2173,9 @@ export default function App() {
                         {/* Interactive HSL slider */}
                         <div className="bg-white/5 border border-white/5 rounded-lg p-3">
                           <div className="flex justify-between items-center mb-2">
-                            <span className="text-[9px] font-bold text-[#38bdf8] uppercase tracking-wider">Armor Color Hue angle</span>
+                            <span className="text-xs font-bold text-[#38bdf8] uppercase tracking-wider">Armor Color Hue angle</span>
                             <span 
-                              className="font-mono text-[9px] font-black uppercase px-1.5 py-0.5 rounded border shadow"
+                              className="font-mono text-xs font-black uppercase px-2 py-0.5 rounded border shadow"
                               style={{ 
                                 color: `hsl(${adminSettings.playerHue}, 100%, 65%)`,
                                 backgroundColor: `hsl(${adminSettings.playerHue}, 90%, 12%)`,
@@ -2047,14 +2199,14 @@ export default function App() {
                                 console.error(err);
                               }
                             }}
-                            className="w-full h-2 bg-gradient-to-r from-red-500 via-yellow-500 via-green-500 via-cyan-500 via-blue-500 via-purple-500 to-red-500 rounded-lg appearance-none cursor-pointer outline-none shadow-inner"
+                            className="w-full h-2.5 bg-gradient-to-r from-red-500 via-yellow-500 via-green-500 via-cyan-500 via-blue-500 via-purple-500 to-red-500 rounded-lg appearance-none cursor-pointer outline-none shadow-inner"
                             style={{ WebkitAppearance: 'none' }}
                           />
                         </div>
 
                         {/* Presets */}
                         <div className="bg-white/5 border border-white/5 rounded-lg p-3">
-                          <span className="text-[9px] font-bold text-[#38bdf8] uppercase tracking-wider block mb-2">Color presets Swatches</span>
+                          <span className="text-xs font-bold text-[#38bdf8] uppercase tracking-wider block mb-2">Color presets Swatches</span>
                           <div className="flex flex-wrap gap-2 justify-between">
                             {[
                               { name: 'Red', hue: 0, bg: 'bg-[#ef4444]' },
@@ -2078,7 +2230,7 @@ export default function App() {
                                   }
                                 }}
                                 title={p.name}
-                                className={`w-5 h-5 rounded-full cursor-pointer transition-all active:scale-90 relative ${p.bg} ${
+                                className={`w-6 h-6 rounded-full cursor-pointer transition-all active:scale-90 relative ${p.bg} ${
                                   adminSettings.playerHue === p.hue 
                                     ? 'ring-1 ring-white ring-offset-2 ring-offset-slate-950 scale-110 shadow-lg' 
                                     : 'hover:scale-105 hover:opacity-90'
@@ -2090,7 +2242,7 @@ export default function App() {
 
                         {/* Held Weapon Selection */}
                         <div className="bg-white/5 border border-white/5 rounded-lg p-3">
-                          <span className="text-[9px] font-bold text-[#38bdf8] uppercase tracking-wider block mb-2">Pose Weapon preview</span>
+                          <span className="text-xs font-bold text-[#38bdf8] uppercase tracking-wider block mb-2">Pose Weapon preview</span>
                           <div className="grid grid-cols-3 gap-2">
                             {[
                               { id: 'none', label: '🛡️ Fists' },
@@ -2100,9 +2252,9 @@ export default function App() {
                               <button
                                 key={w.id}
                                 onClick={() => setCustomizerWeapon(w.id as any)}
-                                className={`py-1.5 text-[9px] font-black uppercase tracking-wider border rounded cursor-pointer transition-all active:scale-98 ${
+                                className={`py-2 text-xs font-bold uppercase tracking-wider border rounded cursor-pointer transition-all active:scale-98 ${
                                   customizerWeapon === w.id
-                                    ? 'bg-[#38bdf8]/15 border-[#38bdf8] text-[#38bdf8] shadow-[0_0_10px_rgba(56,189,248,0.2)] font-bold'
+                                    ? 'bg-[#38bdf8]/15 border-[#38bdf8] text-[#38bdf8] shadow-[0_0_10px_rgba(56,189,248,0.2)] font-black'
                                     : 'bg-black/30 border-white/10 text-white/50 hover:text-white hover:border-white/20'
                                 }`}
                               >
@@ -2114,7 +2266,7 @@ export default function App() {
 
                         {/* Spartan Nickname Handle */}
                         <div className="bg-white/5 border border-white/5 rounded-lg p-3">
-                          <span className="text-[9px] font-bold text-[#38bdf8] uppercase tracking-wider block mb-2">Spartan Nickname Handle</span>
+                          <span className="text-xs font-bold text-[#38bdf8] uppercase tracking-wider block mb-2">Spartan Nickname Handle</span>
                           <div className="relative">
                             <input
                               type="text"
@@ -2122,30 +2274,30 @@ export default function App() {
                               value={playerName}
                               onChange={(e) => handlePlayerNameChange(e.target.value)}
                               placeholder="Max 10 characters..."
-                              className="w-full h-9 bg-black/60 border border-white/10 rounded px-3 text-xs tracking-wide text-white focus:border-[#38bdf8] outline-none transition-all font-sans"
+                              className="w-full h-11 bg-black/60 border border-white/10 rounded px-3.5 text-sm tracking-wide text-white focus:border-[#38bdf8] outline-none transition-all font-sans"
                             />
-                            <div className="absolute right-2.5 top-2.5 w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                            <div className="absolute right-3.5 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
                           </div>
                         </div>
 
                         {/* Neural Save System Panel */}
                         <div className="bg-white/5 border border-white/5 rounded-lg p-3 flex flex-col gap-2.5">
                           <div className="flex justify-between items-center border-b border-white/5 pb-2">
-                            <span className="text-[9px] font-bold text-[#38bdf8] uppercase tracking-wider flex items-center gap-1.5">
+                            <span className="text-xs font-bold text-[#38bdf8] uppercase tracking-wider flex items-center gap-1.5">
                               💾 Neural Backup System
                             </span>
-                            <span className="text-[8px] font-mono text-emerald-400 bg-emerald-950/40 border border-emerald-500/20 px-1.5 py-0.5 rounded flex items-center gap-1 shrink-0 select-none animate-pulse">
-                              <span className="w-1 h-1 bg-emerald-400 rounded-full inline-block" />
+                            <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950/40 border border-emerald-500/20 px-2 py-0.5 rounded flex items-center gap-1.5 shrink-0 select-none animate-pulse">
+                              <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full inline-block" />
                               LOCAL_COOKIE_ACTIVE
                             </span>
                           </div>
                           
-                          <p className="text-[9px] text-white/50 leading-normal">
+                          <p className="text-xs text-white/50 leading-normal">
                             All configs, layouts, colors, and Spartan handles are synced locally. Export a decryption code to share or migrate your profile!
                           </p>
 
                           {saveSystemStatus.type && (
-                            <div className={`p-2 rounded text-[10px] font-mono border ${
+                            <div className={`p-2.5 rounded text-xs font-mono border ${
                               saveSystemStatus.type === 'success' 
                                 ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' 
                                 : 'bg-red-500/10 border-red-500/30 text-red-400'
@@ -2158,13 +2310,13 @@ export default function App() {
                           <div className="flex gap-2">
                             <button
                               onClick={handleExportSaveCode}
-                              className="flex-1 py-1.5 bg-[#38bdf8]/15 hover:bg-[#38bdf8]/30 border border-[#38bdf8]/30 text-[#38bdf8] font-bold text-[9px] uppercase tracking-wider rounded cursor-pointer transition-all active:scale-[0.98]"
+                              className="flex-1 py-2 bg-[#38bdf8]/15 hover:bg-[#38bdf8]/30 border border-[#38bdf8]/30 text-[#38bdf8] font-bold text-xs uppercase tracking-wider rounded cursor-pointer transition-all active:scale-[0.98]"
                             >
                               📋 Export Save Code
                             </button>
                             <button
                               onClick={handleResetAllSettings}
-                              className="py-1.5 px-3 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 hover:border-red-500/40 text-red-400 font-bold text-[9px] uppercase tracking-wider rounded cursor-pointer transition-all active:scale-[0.98]"
+                              className="py-2 px-3.5 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 hover:border-red-500/40 text-red-400 font-bold text-xs uppercase tracking-wider rounded cursor-pointer transition-all active:scale-[0.98]"
                               title="Wipe client database"
                             >
                               💥 Wipe Saves
@@ -2172,19 +2324,19 @@ export default function App() {
                           </div>
 
                           <div className="flex flex-col gap-1.5 mt-1 border-t border-white/5 pt-2.5">
-                            <span className="text-[8px] text-white/30 uppercase tracking-widest font-mono">Import Cybernetic Code:</span>
+                            <span className="text-[10px] text-white/30 uppercase tracking-widest font-mono">Import Cybernetic Code:</span>
                             <div className="flex gap-1.5">
                               <input
                                 type="text"
                                 value={saveCodeImportInput}
                                 onChange={(e) => setSaveCodeImportInput(e.target.value)}
                                 placeholder="Paste GRIF-DEC- code here..."
-                                className="flex-1 h-8 bg-black/60 border border-white/10 rounded px-2.5 font-mono text-[9px] text-white placeholder:text-white/20 focus:border-[#38bdf8] outline-none transition-all"
+                                className="flex-1 h-10 bg-black/60 border border-white/10 rounded px-3 font-mono text-xs text-white placeholder:text-white/20 focus:border-[#38bdf8] outline-none transition-all"
                               />
                               <button
                                 onClick={() => handleImportSaveCode(saveCodeImportInput)}
                                 disabled={!saveCodeImportInput}
-                                className={`px-3 h-8 font-sans font-bold text-[9px] uppercase tracking-wider rounded transition-all border outline-none ${
+                                className={`px-4 h-10 font-sans font-bold text-xs uppercase tracking-wider rounded transition-all border outline-none ${
                                   saveCodeImportInput
                                     ? 'bg-emerald-500/15 hover:bg-emerald-500/35 border-emerald-500/40 text-emerald-400 cursor-pointer'
                                     : 'bg-white/5 border-white/5 text-white/20 cursor-not-allowed'
@@ -2203,10 +2355,10 @@ export default function App() {
               </div>
 
               {/* COLUMN 3: GLOBAL CHAT (ALWAYS VISIBLE!) */}
-              <div className="flex flex-col h-full min-h-0 border-t lg:border-t-0 lg:border-l border-white/10 pt-6 lg:pt-0 lg:pl-6">
-                <div className="flex items-center gap-2 mb-3 shrink-0">
-                  <span className="w-1.5 h-3 bg-[#38bdf8]" />
-                  <h2 className="text-xs uppercase font-bold tracking-[0.25em] text-white">
+              <div className="flex flex-col h-full min-h-0 border-t lg:border-t-0 lg:border-l border-white/10 pt-8 lg:pt-0 lg:pl-8">
+                <div className="flex items-center gap-2.5 mb-4 shrink-0">
+                  <span className="w-2 h-4 bg-[#38bdf8]" />
+                  <h2 className="text-sm uppercase font-bold tracking-[0.25em] text-white">
                     🌐 Global Chat
                   </h2>
                 </div>
@@ -2288,6 +2440,16 @@ export default function App() {
                     className="w-full h-12 bg-amber-600/30 hover:bg-amber-500/40 border border-amber-500/30 text-amber-400 font-bold text-xs uppercase tracking-widest transition-all cursor-pointer rounded flex items-center justify-center gap-2"
                   >
                     👁️ Join Observer
+                  </button>
+                )}
+
+                {!isMultiplayer && (
+                  <button 
+                    id="bot-config-btn"
+                    onClick={() => setShowBotSetupMenu(true)}
+                    className="w-full h-12 bg-blue-950/30 hover:bg-blue-900/40 border border-blue-500/30 text-blue-400 font-bold text-xs uppercase tracking-widest transition-all cursor-pointer rounded flex items-center justify-center gap-2"
+                  >
+                    🤖 Bot Configuration
                   </button>
                 )}
 
@@ -3238,6 +3400,196 @@ export default function App() {
                 className="flex-1 py-3 bg-white/5 hover:bg-white/10 active:scale-95 text-xs text-white/70 hover:text-white uppercase font-black tracking-widest transition-all rounded-lg border border-white/10 cursor-pointer"
               >
                 ❌ No
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* BOT SETUP MENU MODAL OVERLAY */}
+      {showBotSetupMenu && (
+        <div className="fixed inset-0 z-[99] flex items-center justify-center bg-slate-950/90 backdrop-blur-xl p-4 select-none">
+          <div className="w-full max-w-2xl bg-slate-900/60 border border-blue-500/20 backdrop-blur-2xl rounded-2xl p-6 shadow-[0_0_60px_rgba(56,189,248,0.08)] flex flex-col gap-5 max-h-[95vh] overflow-y-auto">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-white/5 pb-4">
+              <div className="flex flex-col">
+                <p className="text-[10px] text-blue-400 font-bold tracking-[0.3em] uppercase mb-1 font-display">COMBAT SIMULATION</p>
+                <h3 className="text-xl font-sans font-black tracking-tight uppercase text-white">
+                  AI Combatant Grid Setup
+                </h3>
+              </div>
+              <button
+                onClick={() => setShowBotSetupMenu(false)}
+                className="text-white/40 hover:text-white text-lg font-bold cursor-pointer transition-colors px-2 py-1 rounded hover:bg-white/5"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Bot Count Slider */}
+            <div className="bg-white/5 border border-white/5 rounded-xl p-4 flex flex-col gap-3">
+              <div className="flex justify-between items-center">
+                <span className="text-xs font-bold text-blue-400 uppercase tracking-wider">Active AI Combatants</span>
+                <span className="text-lg font-black font-mono text-blue-400">{offlineBotCount} <span className="text-xs text-white/40 font-normal">BOTS</span></span>
+              </div>
+              <input
+                type="range"
+                min="1"
+                max="7"
+                value={offlineBotCount}
+                onChange={(e) => setOfflineBotCount(parseInt(e.target.value))}
+                className="w-full accent-blue-400 h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer"
+              />
+              <div className="flex justify-between text-[10px] font-mono text-white/30 uppercase">
+                <span>1 Bot</span>
+                <span>7 Bots</span>
+              </div>
+            </div>
+
+            {/* Holographic Combatant Grid */}
+            <div className="bg-white/5 border border-white/5 rounded-xl p-4 flex flex-col gap-3">
+              <span className="text-xs font-bold text-blue-400 uppercase tracking-wider mb-1">Holographic Combatant Grid</span>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {/* Slot 1: Player */}
+                <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-3 flex flex-col items-center gap-1.5 text-center">
+                  <div className="w-8 h-8 rounded-full border-2 border-blue-400 flex items-center justify-center text-sm" style={{ backgroundColor: `hsl(${adminSettings.playerHue}, 80%, 25%)` }}>
+                    👤
+                  </div>
+                  <span className="text-[10px] font-black text-blue-300 uppercase tracking-wider truncate max-w-full">{playerName}</span>
+                  <span className="text-[8px] font-mono text-blue-400/60 uppercase">PLAYER</span>
+                </div>
+
+                {/* Slot 2: Main AI (DoomBot Blue) */}
+                <div className={`rounded-lg p-3 flex flex-col items-center gap-1.5 text-center transition-all ${1 <= offlineBotCount ? 'bg-cyan-500/10 border border-cyan-500/20' : 'bg-white/3 border border-white/5 opacity-30'}`}>
+                  <div className="w-8 h-8 rounded-full border-2 border-cyan-500/40 flex items-center justify-center text-sm bg-cyan-950/40">
+                    🤖
+                  </div>
+                  <span className="text-[10px] font-bold text-cyan-300 uppercase tracking-wide">DoomBot Blue</span>
+                  {1 <= offlineBotCount && (
+                    <select
+                      value={botDifficulties.main_ai || 'normal'}
+                      onChange={(e) => setBotDifficulties(prev => ({ ...prev, main_ai: e.target.value as any }))}
+                      className="w-full h-7 bg-black/60 border border-white/10 rounded px-1.5 text-[10px] text-cyan-400 font-bold uppercase outline-none focus:border-cyan-400 cursor-pointer transition-all font-sans"
+                    >
+                      <option value="easy">🟢 Easy</option>
+                      <option value="normal">🔵 Normal</option>
+                      <option value="hard">🟡 Hard</option>
+                      <option value="nightmare">🔴 Nightmare</option>
+                    </select>
+                  )}
+                </div>
+
+                {/* Slots 3-8: Custom bots */}
+                {[
+                  { id: 'bot_2', name: 'DoomBot Green', hue: 120 },
+                  { id: 'bot_3', name: 'DoomBot Purple', hue: 280 },
+                  { id: 'bot_4', name: 'DoomBot Orange', hue: 45 },
+                  { id: 'bot_5', name: 'DoomBot Yellow', hue: 60 },
+                  { id: 'bot_6', name: 'DoomBot Magenta', hue: 320 },
+                  { id: 'bot_7', name: 'DoomBot Cyan', hue: 180 },
+                ].map((bot, idx) => {
+                  const slotActive = idx + 2 <= offlineBotCount;
+                  return (
+                    <div
+                      key={bot.id}
+                      className={`rounded-lg p-3 flex flex-col items-center gap-1.5 text-center transition-all ${slotActive ? 'bg-white/5 border border-white/10' : 'bg-white/2 border border-white/5 opacity-20'}`}
+                    >
+                      <div
+                        className="w-8 h-8 rounded-full border-2 flex items-center justify-center text-sm"
+                        style={{
+                          borderColor: slotActive ? `hsl(${bot.hue}, 60%, 50%)` : 'rgba(255,255,255,0.1)',
+                          backgroundColor: slotActive ? `hsl(${bot.hue}, 60%, 15%)` : 'transparent',
+                        }}
+                      >
+                        🤖
+                      </div>
+                      <span className="text-[10px] font-bold text-white/60 uppercase tracking-wide truncate max-w-full">{bot.name}</span>
+                      {slotActive && (
+                        <select
+                          value={botDifficulties[bot.id] || 'normal'}
+                          onChange={(e) => setBotDifficulties(prev => ({ ...prev, [bot.id]: e.target.value as any }))}
+                          className="w-full h-7 bg-black/60 border border-white/10 rounded px-1.5 text-[10px] text-white/70 font-bold uppercase outline-none focus:border-blue-400 cursor-pointer transition-all font-sans"
+                        >
+                          <option value="easy">🟢 Easy</option>
+                          <option value="normal">🔵 Normal</option>
+                          <option value="hard">🟡 Hard</option>
+                          <option value="nightmare">🔴 Nightmare</option>
+                        </select>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Quick Presets */}
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] text-white/40 uppercase tracking-widest font-mono shrink-0">Presets:</span>
+              <button
+                onClick={() => {
+                  const all: Record<string, 'easy' | 'normal' | 'hard' | 'nightmare'> = {};
+                  ['main_ai', 'bot_2', 'bot_3', 'bot_4', 'bot_5', 'bot_6', 'bot_7'].forEach(k => all[k] = 'normal');
+                  setBotDifficulties(all);
+                }}
+                className="px-3 py-1.5 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 text-blue-400 text-[10px] font-bold uppercase tracking-wider rounded cursor-pointer transition-all"
+              >
+                All Normal
+              </button>
+              <button
+                onClick={() => {
+                  const all: Record<string, 'easy' | 'normal' | 'hard' | 'nightmare'> = {};
+                  ['main_ai', 'bot_2', 'bot_3', 'bot_4', 'bot_5', 'bot_6', 'bot_7'].forEach(k => all[k] = 'nightmare');
+                  setBotDifficulties(all);
+                }}
+                className="px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 text-[10px] font-bold uppercase tracking-wider rounded cursor-pointer transition-all"
+              >
+                All Nightmare
+              </button>
+              <button
+                onClick={() => {
+                  const levels: ('easy' | 'normal' | 'hard' | 'nightmare')[] = ['easy', 'normal', 'normal', 'hard', 'hard', 'nightmare', 'nightmare'];
+                  const keys = ['main_ai', 'bot_2', 'bot_3', 'bot_4', 'bot_5', 'bot_6', 'bot_7'];
+                  const grad: Record<string, 'easy' | 'normal' | 'hard' | 'nightmare'> = {};
+                  keys.forEach((k, i) => grad[k] = levels[i]);
+                  setBotDifficulties(grad);
+                }}
+                className="px-3 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 text-amber-400 text-[10px] font-bold uppercase tracking-wider rounded cursor-pointer transition-all"
+              >
+                Graduated
+              </button>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex gap-3 mt-1">
+              {isPlaying ? (
+                <button
+                  onClick={() => {
+                    setShowBotSetupMenu(false);
+                    setIsPaused(false);
+                  }}
+                  className="flex-1 h-12 bg-white hover:bg-blue-400 hover:text-white text-slate-900 font-black text-xs uppercase tracking-widest rounded cursor-pointer transition-all active:scale-[0.98] shadow-lg"
+                >
+                  Apply & Resume
+                </button>
+              ) : (
+                <button
+                  onClick={() => {
+                    setShowBotSetupMenu(false);
+                    handleStartGame();
+                  }}
+                  className="flex-1 h-12 bg-white hover:bg-blue-400 hover:text-white text-slate-900 font-black text-xs uppercase tracking-widest rounded cursor-pointer transition-all active:scale-[0.98] shadow-lg flex items-center justify-center gap-2"
+                >
+                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
+                  </svg>
+                  Initialize Simulation
+                </button>
+              )}
+              <button
+                onClick={() => setShowBotSetupMenu(false)}
+                className="px-5 h-12 bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 font-bold text-xs uppercase tracking-widest rounded cursor-pointer transition-all"
+              >
+                Cancel
               </button>
             </div>
           </div>

@@ -7,7 +7,7 @@ import React, { useRef, useEffect, useState } from 'react';
 import * as THREE from 'three';
 import { sfx } from './AudioEngine';
 import { buildGravityHammerModel, buildVoxelSpartanModel, buildKatarSwordModel } from './VoxelModels';
-import { GameStats, Stance, WeaponState, AIBehaviorState, UniversalSettings, DeathEvent } from '../types';
+import { GameStats, Stance, WeaponState, AIBehaviorState, UniversalSettings, DeathEvent, Keybindings, DEFAULT_KEYBINDINGS } from '../types';
 
 const whiteBlinkMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
 
@@ -22,6 +22,9 @@ interface GrifballGameProps {
   multiplayerRole?: 'host' | 'client' | null;
   multiplayerSocket?: WebSocket | null;
   opponentClientId?: string;
+  offlineBotCount?: number;
+  botDifficulties?: Record<string, 'easy' | 'normal' | 'hard' | 'nightmare'>;
+  keybindings?: Keybindings;
 }
 
 export const GrifballGame: React.FC<GrifballGameProps> = ({
@@ -35,6 +38,9 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
   multiplayerRole = null,
   multiplayerSocket = null,
   opponentClientId = '',
+  offlineBotCount = 3,
+  botDifficulties = {},
+  keybindings = DEFAULT_KEYBINDINGS,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const nameplateRef = useRef<HTMLDivElement>(null);
@@ -578,6 +584,98 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       }
     }
   }, [adminSettings]);
+
+  // Dynamically synchronize the offline bot count and difficulties mid-game
+  useEffect(() => {
+    if (isMultiplayer) return;
+    const s = stateRef.current;
+    const scene = threeRef.current.scene;
+    if (!scene || !isPlaying) return;
+
+    const targetCustomBotCount = Math.max(0, offlineBotCount - 1);
+    
+    // 1. Calculate how many custom bots are currently spawned
+    let currentCustomBotCount = 0;
+    s.otherPlayers.forEach((bot, id) => {
+      if (id.startsWith('bot_')) {
+        currentCustomBotCount++;
+      }
+    });
+
+    const botHues = [120, 280, 45, 60, 320, 180];
+    const botNames = ["DoomBot Green", "DoomBot Purple", "DoomBot Orange", "DoomBot Yellow", "DoomBot Magenta", "DoomBot Cyan"];
+
+    // 2. If we need to ADD bots
+    if (targetCustomBotCount > currentCustomBotCount) {
+      const exclude: THREE.Vector3[] = [s.playerPos, s.aiPos];
+      s.otherPlayers.forEach((bot) => {
+        if (bot.hp > 0 && bot.respawnTimer <= 0) {
+          exclude.push(new THREE.Vector3(bot.pos.x, bot.pos.y, bot.pos.z));
+        }
+      });
+
+      for (let i = currentCustomBotCount; i < targetCustomBotCount; i++) {
+        const botId = `bot_${i+2}`;
+        const hue = botHues[i % botHues.length];
+        const name = botNames[i % botNames.length];
+        const diff = botDifficulties[botId] || 'normal';
+        
+        const spawnPos = getOptimalSpawnPoint(exclude);
+        exclude.push(spawnPos);
+
+        const newBotState = {
+          id: botId,
+          playerName: name,
+          pos: spawnPos.clone(),
+          vel: new THREE.Vector3(0, 0, 0),
+          yaw: Math.random() * Math.PI * 2,
+          pitch: 0,
+          hp: 1,
+          maxHp: 1,
+          isCrouching: false,
+          activeWeapon: 'hammer' as const,
+          respawnTimer: 0,
+          hue: hue,
+          difficulty: diff,
+          score: 0,
+          kills: 0,
+          deaths: 0
+        };
+
+        s.otherPlayers.set(botId, newBotState);
+
+        // Build Three.js meshes immediately for the new bot
+        createOrUpdateRemotePlayer(botId, newBotState);
+        sfx.playRespawn();
+      }
+    } 
+    // 3. If we need to REMOVE bots
+    else if (targetCustomBotCount < currentCustomBotCount) {
+      for (let i = currentCustomBotCount - 1; i >= targetCustomBotCount; i--) {
+        const botId = `bot_${i+2}`;
+        if (s.otherPlayers.has(botId)) {
+          s.otherPlayers.delete(botId);
+        }
+        const meshes = threeRef.current.otherPlayerMeshes.get(botId);
+        if (meshes) {
+          if (meshes.group) scene.remove(meshes.group);
+          threeRef.current.otherPlayerMeshes.delete(botId);
+        }
+      }
+    }
+
+    // 4. Update the difficulty level of all active bots reactively
+    s.otherPlayers.forEach((bot, id) => {
+      if (id.startsWith('bot_') || id === 'main_ai') {
+        bot.difficulty = botDifficulties[id] || 'normal';
+      }
+    });
+
+    // 5. Resize the arena for the new combatant count
+    resizeArena(1 + offlineBotCount);
+    pushStatsUpdate();
+
+  }, [offlineBotCount, botDifficulties, isMultiplayer, isPlaying]);
 
   const onStatsUpdateRef = useRef(onStatsUpdate);
   useEffect(() => {
@@ -1178,17 +1276,22 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     if (isMultiplayer) {
       enemyGroup.visible = false; // Hide main singleplayer bot mesh in multiplayer
     } else {
-      // In singleplayer, initialize 3 additional custom AI bots and set positions
+      // In singleplayer, initialize additional custom AI bots and set positions based on offlineBotCount
       const s = stateRef.current;
-      const botHues = [120, 280, 45]; // Green, Purple, Orange
-      const botNames = ["DoomBot Green", "DoomBot Purple", "DoomBot Orange"];
+      const botHues = [120, 280, 45, 60, 320, 180]; 
+      const botNames = ["DoomBot Green", "DoomBot Purple", "DoomBot Orange", "DoomBot Yellow", "DoomBot Magenta", "DoomBot Cyan"];
       s.otherPlayers.clear();
       
-      for (let i = 0; i < 3; i++) {
+      const customBotCount = Math.max(0, offlineBotCount - 1);
+      for (let i = 0; i < customBotCount; i++) {
         const botId = `bot_${i+2}`;
+        const name = botNames[i % botNames.length];
+        const hue = botHues[i % botHues.length];
+        const diff = botDifficulties[botId] || 'normal';
+
         s.otherPlayers.set(botId, {
           id: botId,
-          playerName: botNames[i],
+          playerName: name,
           pos: new THREE.Vector3(0, 0, 0),
           vel: new THREE.Vector3(0, 0, 0),
           yaw: 0,
@@ -1198,7 +1301,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
           isCrouching: false,
           activeWeapon: 'hammer',
           respawnTimer: 0,
-          hue: botHues[i],
+          hue: hue,
+          difficulty: diff,
           score: 0,
           kills: 0,
           deaths: 0
@@ -1218,8 +1322,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         exclude.push(spawnPos);
       });
 
-      // Resize arena dynamically for 5 players (1 local + 1 main bot + 3 custom bots)
-      resizeArena(5);
+      // Resize arena dynamically for total player count
+      resizeArena(1 + offlineBotCount);
     }
 
 
@@ -1374,7 +1478,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         }
 
         // Allow Space and C to fall through to keysPressed for flying rises/descends
-        if (key === 'c' || e.key === ' ' || key === 'spacebar' || key === 'w' || key === 'a' || key === 's' || key === 'd' || key === 'shift') {
+        if (key === keybindings.crouch || key === keybindings.jump || key === 'spacebar' || key === keybindings.moveForward || key === keybindings.moveLeft || key === keybindings.moveBackward || key === keybindings.moveRight || key === 'shift') {
           // let flyer keys pass
         } else {
           return; // Ignore other standard hotkeys
@@ -1387,27 +1491,27 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       }
 
       // Crouch toggles
-      if (key === 'c') {
+      if (key === keybindings.crouch) {
         stateRef.current.isCrouching = true;
         sfx.playCrouch();
       }
 
       // Scoreboard toggles (holding U)
-      if (key === 'u') {
+      if (key === keybindings.scoreboard) {
         stateRef.current.showScoreboard = true;
         pushStatsUpdate();
       }
 
       // Weapon swapping hotkeys
-      if (key === '1') {
+      if (key === keybindings.weapon1) {
         swapPlayerWeapon('hammer');
       }
-      if (key === '2') {
+      if (key === keybindings.weapon2) {
         swapPlayerWeapon('sword');
       }
 
       // Jump initiates
-      if (e.key === ' ' || key === 'spacebar') {
+      if (key === keybindings.jump || key === 'spacebar') {
         const s = stateRef.current;
         if (s.playerHP > 0 && !isPaused && isPlaying) {
           if (s.pHammerJumpWindowTimer > 0) {
@@ -1428,15 +1532,15 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       }
 
       // Dash initiates
-      if (key === 'q') {
+      if (key === keybindings.dash) {
         const s = stateRef.current;
         if (s.playerHP > 0 && !isPaused && isPlaying && s.playerDashCooldownTimer <= 0 && s.playerDashRemaining <= 0) {
           let fMove = 0;
           let rMove = 0;
-          if (keysPressed.current['w'] || keysPressed.current['arrowup']) fMove += 1;
-          if (keysPressed.current['s'] || keysPressed.current['arrowdown']) fMove -= 1;
-          if (keysPressed.current['d'] || keysPressed.current['arrowright']) rMove += 1;
-          if (keysPressed.current['a'] || keysPressed.current['arrowleft']) rMove -= 1;
+          if (keysPressed.current[keybindings.moveForward] || keysPressed.current['arrowup']) fMove += 1;
+          if (keysPressed.current[keybindings.moveBackward] || keysPressed.current['arrowdown']) fMove -= 1;
+          if (keysPressed.current[keybindings.moveRight] || keysPressed.current['arrowright']) rMove += 1;
+          if (keysPressed.current[keybindings.moveLeft] || keysPressed.current['arrowleft']) rMove -= 1;
 
           const forwardDir = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), s.yaw);
           const rightDir = new THREE.Vector3(1, 0, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), s.yaw);
@@ -1463,11 +1567,11 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       const key = e.key.toLowerCase();
       keysPressed.current[key] = false;
 
-      if (key === 'c') {
+      if (key === keybindings.crouch) {
         stateRef.current.isCrouching = false;
       }
 
-      if (key === 'u') {
+      if (key === keybindings.scoreboard) {
         stateRef.current.showScoreboard = false;
         pushStatsUpdate();
       }
@@ -1494,8 +1598,11 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
       if (s.playerHP <= 0) return;
 
-      if (e.button === 0) {
-        // LEFT CLICK: Hammer Slam or Sword Lunge
+      const mouseMap: Record<number, string> = { 0: 'lmb', 2: 'rmb', 1: 'mmb' };
+      const clickedBtn = mouseMap[e.button] || '';
+
+      if (clickedBtn === keybindings.attack) {
+        // PRIMARY ATTACK: Hammer Slam or Sword Lunge
         if (s.activeWeapon === 'hammer') {
           if (s.pWeaponReady && s.pWeaponState === 'ready' && s.playerDashRemaining <= 0) {
             triggerPlayerHammerSwing();
@@ -1506,8 +1613,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
             triggerPlayerSwordLunge();
           }
         }
-      } else if (e.button === 2) {
-        // RIGHT CLICK: Sword Slash
+      } else if (clickedBtn === keybindings.altAttack) {
+        // ALT ATTACK: Sword Slash
         if (s.activeWeapon === 'sword') {
           if (s.pSwordReady && s.pSwordState === 'ready' && !s.isLunging) {
             triggerPlayerSwordSlash();
@@ -2016,14 +2123,14 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         let moveForward = 0;
         let moveRight = 0;
         let moveUp = 0;
-        if (keysPressed.current['w'] || keysPressed.current['arrowup']) moveForward += 1;
-        if (keysPressed.current['s'] || keysPressed.current['arrowdown']) moveForward -= 1;
-        if (keysPressed.current['d'] || keysPressed.current['arrowright']) moveRight += 1;
-        if (keysPressed.current['a'] || keysPressed.current['arrowleft']) moveRight -= 1;
+        if (keysPressed.current[keybindings.moveForward] || keysPressed.current['arrowup']) moveForward += 1;
+        if (keysPressed.current[keybindings.moveBackward] || keysPressed.current['arrowdown']) moveForward -= 1;
+        if (keysPressed.current[keybindings.moveRight] || keysPressed.current['arrowright']) moveRight += 1;
+        if (keysPressed.current[keybindings.moveLeft] || keysPressed.current['arrowleft']) moveRight -= 1;
         
         // Rise and Lower controls
-        if (keysPressed.current[' '] || keysPressed.current['spacebar']) moveUp += 1;
-        if (keysPressed.current['c']) moveUp -= 1;
+        if (keysPressed.current[keybindings.jump] || keysPressed.current['spacebar']) moveUp += 1;
+        if (keysPressed.current[keybindings.crouch]) moveUp -= 1;
 
         const speedMultiplier = keysPressed.current['shift'] ? 2.8 : 1.0;
         const flySpeed = 11.0 * speedMultiplier * dt;
@@ -2301,10 +2408,10 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       
       let moveForward = 0;
       let moveRight = 0;
-      if (keysPressed.current['w'] || keysPressed.current['arrowup']) moveForward += 1;
-      if (keysPressed.current['s'] || keysPressed.current['arrowdown']) moveForward -= 1;
-      if (keysPressed.current['d'] || keysPressed.current['arrowright']) moveRight += 1;
-      if (keysPressed.current['a'] || keysPressed.current['arrowleft']) moveRight -= 1;
+      if (keysPressed.current[keybindings.moveForward] || keysPressed.current['arrowup']) moveForward += 1;
+      if (keysPressed.current[keybindings.moveBackward] || keysPressed.current['arrowdown']) moveForward -= 1;
+      if (keysPressed.current[keybindings.moveRight] || keysPressed.current['arrowright']) moveRight += 1;
+      if (keysPressed.current[keybindings.moveLeft] || keysPressed.current['arrowleft']) moveRight -= 1;
 
       // Normalise movement input first so diagonals aren't faster
       let inputLength = Math.sqrt(moveForward * moveForward + moveRight * moveRight);
@@ -2386,6 +2493,12 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     const camera = threeRef.current.camera;
 
     if (!playerHammer || !camera) return;
+
+    if (s.isObserverMode) {
+      if (playerHammer) playerHammer.visible = false;
+      if (playerSword) playerSword.visible = false;
+      return;
+    }
 
     // Bobbing/Sway configurations
     const isMoving = Math.sqrt(s.playerVel.x * s.playerVel.x + s.playerVel.z * s.playerVel.z) > 0.5;
@@ -3256,7 +3369,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     enemyMesh.visible = true;
 
     // 1. Resolve AI Settings & Parameters based on difficulty presets or custom parameters
-    const difficultyPreset = s.settings.aiDifficulty || 'normal';
+    const difficultyPreset = (botDifficulties as any)?.main_ai || s.settings.aiDifficulty || 'normal';
     let reactionLatency = s.settings.aiReactionLatency ?? 0.25;
     let anticipationFactor = s.settings.aiAnticipationFactor ?? 0.40;
     let movementComplexity = s.settings.aiMovementComplexity ?? 50; // 0 to 100
@@ -3911,7 +4024,24 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
           // Move towards closest target
           const moveDir = toTarget.clone().normalize();
-          const baseSpeed = bot.isCrouching ? 2.5 : 5.8;
+
+          // Speed and attack frequency scale based on individual bot difficulty
+          const botDiff = bot.difficulty || 'normal';
+          let botBaseSpeed = 5.8;
+          let attackChance = 0.05;
+
+          if (botDiff === 'easy') {
+            botBaseSpeed = 4.5;
+            attackChance = 0.02;
+          } else if (botDiff === 'hard') {
+            botBaseSpeed = 6.8;
+            attackChance = 0.09;
+          } else if (botDiff === 'nightmare') {
+            botBaseSpeed = 8.0;
+            attackChance = 0.15;
+          }
+
+          const baseSpeed = bot.isCrouching ? botBaseSpeed * 0.43 : botBaseSpeed;
           bot.vel.copy(moveDir).multiplyScalar(baseSpeed);
           bot.pos.addScaledVector(bot.vel, dt);
           botMesh.position.copy(bot.pos);
@@ -3926,7 +4056,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
           }
 
           // Attack logic
-          if (closestDist <= 3.5 && Math.random() < 0.05) {
+          if (closestDist <= 3.5 && Math.random() < attackChance) {
             // Swing hammer or sword!
             bot.activeWeapon = Math.random() > 0.5 ? 'hammer' : 'sword';
             bot.weaponState = 'swing_up';
@@ -4479,7 +4609,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       enemyMaxHP: s.aiMaxHP,
       scorePlayer: s.scorePlayer,
       scoreEnemy: s.scoreEnemy,
-      otherPlayers: s.otherPlayers ? Array.from(s.otherPlayers.values()).map(p => ({
+      otherPlayers: s.otherPlayers ? Array.from(s.otherPlayers.values()).map((p: any) => ({
         id: p.id,
         playerName: p.playerName,
         pos: { x: p.pos.x, y: p.pos.y, z: p.pos.z },
