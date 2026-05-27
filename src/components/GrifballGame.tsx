@@ -7,7 +7,7 @@ import React, { useRef, useEffect, useState } from 'react';
 import * as THREE from 'three';
 import { sfx } from './AudioEngine';
 import { buildGravityHammerModel, buildVoxelSpartanModel, buildKatarSwordModel } from './VoxelModels';
-import { GameStats, Stance, WeaponState, AIBehaviorState, UniversalSettings, DeathEvent, Keybindings, DEFAULT_KEYBINDINGS, DeviceInfo } from '../types';
+import { GameStats, Stance, WeaponState, AIBehaviorState, UniversalSettings, DeathEvent, Keybindings, DEFAULT_KEYBINDINGS, DeviceInfo, AIBehaviorPreset } from '../types';
 
 const whiteBlinkMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
 
@@ -23,8 +23,10 @@ interface GrifballGameProps {
   multiplayerSocket?: WebSocket | null;
   opponentClientId?: string;
   offlineBotCount?: number;
-  botDifficulties?: Record<string, 'easy' | 'normal' | 'hard' | 'nightmare'>;
+  botDifficulties?: Record<string, string>;
   botColors?: Record<string, number>;
+  botBehaviors?: Record<string, AIBehaviorPreset>;
+  aiPresets?: any[];
   keybindings?: Keybindings;
   deviceInfo: DeviceInfo;
   forceMobileControls: boolean;
@@ -86,6 +88,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
   offlineBotCount = 3,
   botDifficulties = {},
   botColors = {},
+  botBehaviors = {},
+  aiPresets = [],
   keybindings = DEFAULT_KEYBINDINGS,
   deviceInfo,
   forceMobileControls,
@@ -349,6 +353,1176 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     clientPlayerName: 'Red (Guest)',
     clientHue: 200,
   });
+
+  function updateAI(dt: number) {
+    const s = stateRef.current;
+    const enemyMesh = threeRef.current.enemyGroup;
+
+    if (!enemyMesh) return;
+
+    if (isMultiplayer) {
+      // In multiplayer, the remote Spartan coordinates and actions guide the render state
+      if (s.aiHP <= 0) {
+        enemyMesh.visible = false;
+        s.enemyRespawnTimer = Math.max(0, s.enemyRespawnTimer - dt);
+        return;
+      }
+
+      enemyMesh.visible = true;
+
+      if (s.aiInvulnerabilityTimer > 0) {
+        s.aiInvulnerabilityTimer = Math.max(0, s.aiInvulnerabilityTimer - dt);
+      }
+
+      enemyMesh.rotation.y = s.aiYaw;
+
+      if (s.aiIsCrouching) {
+        enemyMesh.scale.set(1, 0.65, 1);
+      } else {
+        enemyMesh.scale.set(1, 1, 1);
+      }
+
+      enemyMesh.position.copy(s.aiPos);
+
+      // Support rendering custom sword trail particles if the opponent is in active lunge state
+      if (s.aiState === 'LUNGING') {
+        s.aiLungeTimer += dt;
+        const lungeSpeed = s.settings.swordLungeSpeed ?? 24.0;
+        s.aiVel.copy(s.aiLungeTargetDir).multiplyScalar(lungeSpeed);
+        
+        s.aiPos.addScaledVector(s.aiVel, dt);
+        s.aiPos.y = Math.max(0, s.aiPos.y);
+        enemyMesh.position.copy(s.aiPos);
+
+        if (Math.random() > 0.1) {
+          const trailPos = s.aiPos.clone();
+          trailPos.y += 0.825;
+          spawnVoxelShockwaveParticles(trailPos, '#ef4444');
+        }
+
+        if (s.aiLungeTimer > 0.8) {
+          s.aiState = 'APPROACHING';
+        }
+      }
+      return;
+    }
+
+    // Dynamic chaser-attacker AI logic for additional offline bots.
+    // Runs unconditionally so bots keep moving and respawning
+    if (s.otherPlayers) {
+      s.otherPlayers.forEach((bot) => {
+        if (bot.id.startsWith('bot_')) {
+          const botMesh = threeRef.current.otherPlayerMeshes?.get(bot.id)?.group;
+          if (!botMesh) return;
+
+          if (bot.hp <= 0) {
+            botMesh.visible = false;
+            bot.respawnTimer = Math.max(0, bot.respawnTimer - dt);
+            if (bot.respawnTimer <= 0) {
+              bot.hp = bot.maxHp;
+
+              const exclude: THREE.Vector3[] = [s.playerPos, s.aiPos];
+              s.otherPlayers.forEach(o => {
+                if (o.id !== bot.id && o.hp > 0 && o.respawnTimer <= 0) {
+                  exclude.push(new THREE.Vector3(o.pos.x, o.pos.y, o.pos.z));
+                }
+              });
+              const spawnPos = getOptimalSpawnPoint(exclude);
+              bot.pos.copy(spawnPos);
+              bot.vel.set(0, 0, 0);
+              bot.yaw = getInwardSpawnYaw(spawnPos);
+              bot.weaponState = 'ready';
+              bot.weaponTimer = 0;
+              bot.invulnerabilityTimer = s.settings.respawnInvulnerabilityDuration; // Spawn protection!
+              botMesh.visible = true;
+              sfx.playRespawn();
+            }
+            return;
+          }
+
+          botMesh.visible = true;
+          updateSingleAIEntity(bot.id, false, dt);
+        }
+      });
+    }
+
+    // Is the enemy currently dead and counting down respawn?
+    if (s.aiHP <= 0 || s.aiState === 'RESPAWNING') {
+      // Hide model
+      enemyMesh.visible = false;
+      
+      s.enemyRespawnTimer -= dt;
+      if (s.enemyRespawnTimer <= 0) {
+        s.aiHP = s.aiMaxHP;
+        s.aiState = 'APPROACHING';
+        
+        const exclude: THREE.Vector3[] = [s.playerPos];
+        if (s.otherPlayers) {
+          s.otherPlayers.forEach((other) => {
+            if (other.hp > 0 && other.respawnTimer <= 0) {
+              exclude.push(new THREE.Vector3(other.pos.x, other.pos.y, other.pos.z));
+            }
+          });
+        }
+        
+        const spawnPos = getOptimalSpawnPoint(exclude);
+        s.aiPos.copy(spawnPos);
+        s.aiVel.set(0, 0, 0);
+        s.aiYaw = getInwardSpawnYaw(spawnPos);
+        enemyMesh.visible = true;
+        s.aiWeaponState = 'ready';
+        s.aiInvulnerabilityTimer = s.settings.respawnInvulnerabilityDuration;
+        sfx.playRespawn();
+
+      }
+      return;
+    }
+
+    // Main AI Combat update
+    enemyMesh.visible = true;
+    
+    // Main AI Sword Lunge state execution
+    if (s.aiState === 'LUNGING') {
+      s.aiLungeTimer += dt;
+      const lungeSpeed = s.settings.swordLungeSpeed ?? 24.0;
+      s.aiVel.copy(s.aiLungeTargetDir).multiplyScalar(lungeSpeed);
+      
+      s.aiPos.addScaledVector(s.aiVel, dt);
+      s.aiPos.y = Math.max(0, s.aiPos.y);
+      enemyMesh.position.copy(s.aiPos);
+      
+      if (Math.random() > 0.1) {
+        const trailPos = s.aiPos.clone();
+        trailPos.y += 0.825;
+        const scene = threeRef.current.scene;
+        if (scene) {
+          const geo = new THREE.BoxGeometry(0.12, 0.12, 0.12);
+          const mat = new THREE.MeshBasicMaterial({
+            color: new THREE.Color('#ef4444'),
+            transparent: true,
+            opacity: 0.75,
+          });
+          const mesh = new THREE.Mesh(geo, mat);
+          mesh.position.copy(trailPos);
+          scene.add(mesh);
+          threeRef.current.damageExplosionParticles.push({
+            mesh,
+            velocity: new THREE.Vector3((Math.random() - 0.5) * 0.1, Math.random() * 0.15, (Math.random() - 0.5) * 0.1),
+            life: 0.0,
+            maxLife: 0.18,
+          });
+        }
+      }
+      
+      const target = getBestTacticalTarget('main_ai', s.aiPos, (botDifficulties as any)?.main_ai || s.settings.aiDifficulty || 'normal');
+      if (target) {
+        const dist = getCombatBodyCenter(s.aiPos, s.aiIsCrouching).distanceTo(getCombatBodyCenter(target.pos, target.isCrouching));
+        if (target.hp <= 0) {
+          s.aiState = 'COOLDOWN';
+          s.aiTimer = s.settings.swordLungeReload ?? 1.2;
+          s.aiWeaponState = 'ready';
+        } else if (dist <= 1.5) {
+          const swordThreshold = s.settings.swordTradeWindow ?? 350;
+          const hammerThreshold = s.settings.hammerSwordTradeWindow ?? 350;
+          const isPlayerSwordActiveAttack = s.settings.enableSwordTrade && s.activeWeapon === 'sword' && (
+            s.isLunging ||
+            s.pSwordState === 'slashing' ||
+            (Date.now() - s.lastPlayerSwordAttackTime <= swordThreshold)
+          );
+          const isPlayerHammerActiveAttack = s.settings.enableHammerSwordTrade && s.activeWeapon === 'hammer' && (
+            s.pWeaponState === 'swing_up' ||
+            s.pWeaponState === 'swing_down' ||
+            (Date.now() - s.lastPlayerHammerAttackTime <= hammerThreshold)
+          );
+
+          if (target.id === 'player' && isPlayerSwordActiveAttack) {
+            executeTrade('sword_vs_sword');
+            return;
+          } else if (target.id === 'player' && isPlayerHammerActiveAttack) {
+            executeTrade('sword_lunge_vs_hammer');
+            return;
+          }
+
+          if (target.id === 'player') {
+            s.playerHP -= 1;
+            s.aiState = 'COOLDOWN';
+            s.aiTimer = s.settings.swordLungeReload ?? 1.2;
+            s.aiWeaponState = 'ready';
+            
+            sfx.playExplosion();
+            spawnVoxelShockwaveParticles(s.playerPos, '#ef4444');
+            
+            s.lastAIStrikePos = s.playerPos.clone();
+            s.lastAIStrikeTick = 1.2;
+            
+            if (s.playerHP <= 0) {
+              s.playerHP = 0;
+              s.playerRespawnTimer = 3.0;
+              s.scoreEnemy += 1;
+              s.playerDeaths += 1;
+              s.enemyKills += 1;
+              sfx.playDeath();
+              s.pWeaponState = 'ready';
+              s.pWeaponTimer = 0;
+              s.pWeaponReady = true;
+              s.pSwordState = 'ready';
+              s.pSwordTimer = 0;
+              s.pSwordReady = true;
+              s.isLunging = false;
+              s.lungeTimer = 0;
+              
+              const newDeath = {
+                id: Math.random().toString(36).substring(2, 9),
+                attacker: 'Red (AI) [Lunge]',
+                victim: 'Blue (You)',
+              };
+              s.lastDeaths = [newDeath, ...s.lastDeaths].slice(0, 3);
+              spawnVoxelShockwaveParticles(s.playerPos, '#3b82f6');
+            } else {
+              sfx.playSwing();
+              spawnVoxelShockwaveParticles(s.playerPos, '#e2e8f0');
+            }
+          } else {
+            const other = s.otherPlayers?.get(target.id);
+            if (other) {
+              other.hp -= 1;
+              s.aiState = 'COOLDOWN';
+              s.aiTimer = s.settings.swordLungeReload ?? 1.2;
+              s.aiWeaponState = 'ready';
+              
+              sfx.playExplosion();
+              spawnVoxelShockwaveParticles(new THREE.Vector3(other.pos.x, other.pos.y, other.pos.z), '#ef4444');
+              
+              s.lastAIStrikePos = new THREE.Vector3(other.pos.x, other.pos.y, other.pos.z);
+              s.lastAIStrikeTick = 1.2;
+              
+              if (other.hp <= 0) {
+                other.hp = 0;
+                other.respawnTimer = 3.0;
+                s.scoreEnemy += 1;
+                s.enemyKills += 1;
+                other.deaths = (other.deaths || 0) + 1;
+                sfx.playDeath();
+                
+                const newDeath = {
+                  id: Math.random().toString(36).substring(2, 9),
+                  attacker: 'Red (AI) [Lunge]',
+                  victim: other.playerName
+                };
+                s.lastDeaths = [newDeath, ...s.lastDeaths].slice(0, 3);
+                spawnVoxelShockwaveParticles(new THREE.Vector3(other.pos.x, other.pos.y, other.pos.z), '#ef4444');
+              } else {
+                sfx.playSwing();
+                spawnVoxelShockwaveParticles(new THREE.Vector3(other.pos.x, other.pos.y, other.pos.z), '#e2e8f0');
+              }
+              pushStatsUpdate();
+            }
+          }
+        }
+      }
+
+      const startDist = s.aiPos.distanceTo(s.aiLungeStartPos);
+      if (startDist > 16.0 || s.aiLungeTimer > 0.8) {
+        s.aiState = 'COOLDOWN';
+        s.aiTimer = s.settings.swordLungeReload ?? 1.2;
+        s.aiWeaponState = 'ready';
+        s.aiIsJumping = s.aiPos.y > 0.01;
+        if (s.aiIsJumping) {
+          s.aiVel.y = Math.min(s.aiVel.y, 0);
+        }
+      }
+      
+      const distFromCenter = Math.sqrt(s.aiPos.x * s.aiPos.x + s.aiPos.z * s.aiPos.z);
+      if (distFromCenter > s.arenaRadius - 0.6) {
+        const angle = Math.atan2(s.aiPos.z, s.aiPos.x);
+        s.aiPos.x = Math.cos(angle) * (s.arenaRadius - 0.6);
+        s.aiPos.z = Math.sin(angle) * (s.arenaRadius - 0.6);
+        s.aiState = 'COOLDOWN';
+        s.aiTimer = s.settings.swordLungeReload ?? 1.2;
+        s.aiWeaponState = 'ready';
+        s.aiIsJumping = s.aiPos.y > 0.01;
+        if (s.aiIsJumping) {
+          s.aiVel.y = Math.min(s.aiVel.y, 0);
+        }
+      }
+      return;
+    }
+
+    updateSingleAIEntity('main_ai', true, dt);
+  };
+
+  function updateCharacterSkeletalAnimations(dt: number) {
+    const s = stateRef.current;
+
+    if (s.isObserverMode) {
+      // Animate Host Group (Blue Spartan)
+      if (threeRef.current.hostGroup) {
+        const hostData = getSpectateTargetData('host');
+        animateSpartanModel(
+          threeRef.current.hostGroup,
+          multiplayerRole === 'observer' ? s.hostVel : s.playerVel,
+          hostData.yaw,
+          hostData.hp,
+          (multiplayerRole === 'observer' && s.hostActiveWeapon === 'sword') ? 'ready' : s.pWeaponState,
+          (multiplayerRole === 'observer') ? 0 : s.pWeaponTimer,
+          dt
+        );
+      }
+
+      // Animate Client Group (Red Spartan)
+      if (threeRef.current.enemyGroup) {
+        const clientData = getSpectateTargetData('client');
+        animateSpartanModel(
+          threeRef.current.enemyGroup,
+          multiplayerRole === 'observer' ? s.clientVel : s.aiVel,
+          clientData.yaw,
+          clientData.hp,
+          (multiplayerRole === 'observer' && s.clientActiveWeapon === 'sword') ? 'ready' : s.aiWeaponState,
+          (multiplayerRole === 'observer') ? 0 : s.aiWeaponTimer,
+          dt
+        );
+      }
+    } else {
+      // Standard Player vs Bot animation
+      animateSpartanModel(
+        threeRef.current.enemyGroup,
+        s.aiVel,
+        s.aiYaw,
+        s.aiHP,
+        s.aiWeaponState,
+        s.aiWeaponTimer,
+        dt
+      );
+    }
+
+    // Animate custom other players / bots
+    if (threeRef.current.otherPlayerMeshes && s.otherPlayers) {
+      s.otherPlayers.forEach((player, clientId) => {
+        const meshes = threeRef.current.otherPlayerMeshes.get(clientId);
+        if (meshes && meshes.group) {
+          let wState = player.weaponState || 'ready';
+          let wTimer = player.weaponTimer || 0;
+
+          if (wState === 'swing_up') {
+            wTimer += dt;
+            if (wTimer >= 0.15) {
+              wState = 'swing_down';
+              wTimer = 0;
+            }
+          } else if (wState === 'swing_down') {
+            wTimer += dt;
+            if (wTimer >= 0.15) {
+              wState = 'recovering';
+              wTimer = 0;
+            }
+          } else if (wState === 'recovering') {
+            wTimer += dt;
+            if (wTimer >= 0.3) {
+              wState = 'ready';
+              wTimer = 0;
+            }
+          }
+          player.weaponState = wState;
+          player.weaponTimer = wTimer;
+
+          animateSpartanModel(
+            meshes.group,
+            new THREE.Vector3(player.vel.x, player.vel.y, player.vel.z),
+            player.yaw,
+            player.hp,
+            wState,
+            wTimer,
+            dt
+          );
+        }
+      });
+    }
+  };
+
+  function spawnBurnDecal(pos: THREE.Vector3, radius: number) {
+    const scene = threeRef.current.scene;
+    if (!scene) return;
+
+    const decalGeo = new THREE.PlaneGeometry(2, 2);
+    decalGeo.rotateX(-Math.PI / 2);
+
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 256;
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      ctx.clearRect(0, 0, 256, 256);
+
+      const coreGrad = ctx.createRadialGradient(128, 128, 0, 128, 128, 128);
+      coreGrad.addColorStop(0, 'rgba(6, 182, 212, 0.45)');
+      coreGrad.addColorStop(0.3, 'rgba(56, 189, 248, 0.22)');
+      coreGrad.addColorStop(0.7, 'rgba(56, 189, 248, 0.08)');
+      coreGrad.addColorStop(0.85, 'rgba(6, 182, 212, 0.6)');
+      coreGrad.addColorStop(0.93, 'rgba(255, 255, 255, 0.9)');
+      coreGrad.addColorStop(1.0, 'rgba(0, 0, 0, 0)');
+      
+      ctx.fillStyle = coreGrad;
+      ctx.beginPath();
+      ctx.arc(128, 128, 124, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.strokeStyle = 'rgba(6, 182, 212, 0.85)';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(128, 128, 90, 0, Math.PI * 2);
+      ctx.stroke();
+
+      ctx.strokeStyle = 'rgba(56, 189, 248, 0.5)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(128, 128, 50, 0, Math.PI * 2);
+      ctx.stroke();
+
+      ctx.strokeStyle = 'rgba(6, 182, 212, 0.45)';
+      ctx.lineWidth = 2;
+      for (let i = 0; i < 8; i++) {
+        const angle = (i * Math.PI) / 4;
+        const startRad = 20;
+        const endRad = 115;
+        const xStart = 128 + Math.cos(angle) * startRad;
+        const yStart = 128 + Math.sin(angle) * startRad;
+        const xEnd = 128 + Math.cos(angle) * endRad;
+        const yEnd = 128 + Math.sin(angle) * endRad;
+        ctx.beginPath();
+        ctx.moveTo(xStart, yStart);
+        ctx.lineTo(xEnd, yEnd);
+        ctx.stroke();
+      }
+    }
+
+    const texture = new THREE.CanvasTexture(canvas);
+    const decalMat = new THREE.MeshBasicMaterial({
+      map: texture,
+      transparent: true,
+      opacity: 1.0,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      side: THREE.DoubleSide
+    });
+
+    const mesh = new THREE.Mesh(decalGeo, decalMat);
+    mesh.position.set(pos.x, 0.012 + Math.random() * 0.005, pos.z);
+    mesh.scale.set(radius, 1, radius);
+
+    scene.add(mesh);
+
+    threeRef.current.burnDecals.push({
+      mesh,
+      life: 0,
+      maxLife: 3.5,
+    });
+  };
+
+  function updateBurnDecals(dt: number) {
+    const list = threeRef.current.burnDecals;
+    const scene = threeRef.current.scene;
+    if (!scene || !list) return;
+
+    for (let i = list.length - 1; i >= 0; i--) {
+      const d = list[i];
+      d.life += dt;
+
+      if (d.life >= d.maxLife) {
+        scene.remove(d.mesh);
+        d.mesh.geometry.dispose();
+        if (Array.isArray(d.mesh.material)) {
+          d.mesh.material.forEach((m: any) => {
+            if (m.map) m.map.dispose();
+            m.dispose();
+          });
+        } else {
+          const m = d.mesh.material as THREE.MeshBasicMaterial;
+          if (m.map) m.map.dispose();
+          m.dispose();
+        }
+        list.splice(i, 1);
+      } else {
+        const ratio = 1.0 - (d.life / d.maxLife);
+        const mat = d.mesh.material as THREE.MeshBasicMaterial;
+        mat.opacity = ratio;
+      }
+    }
+  };
+
+  function updateExplosionParticles(dt: number) {
+    const list = threeRef.current.damageExplosionParticles;
+    const scene = threeRef.current.scene;
+
+    if (!scene) return;
+
+    for (let i = list.length - 1; i >= 0; i--) {
+      const p = list[i];
+      p.life += dt;
+
+      if (p.life >= p.maxLife) {
+        // Clean from screen
+        scene.remove(p.mesh);
+        p.mesh.geometry.dispose();
+        list.splice(i, 1);
+      } else {
+        // Accelerate downwards (Gravity pulling voxel chunks back to arena)
+        p.velocity.y -= 15 * dt;
+
+        // Apply translations
+        p.mesh.position.addScaledVector(p.velocity, dt);
+
+        // Voxel shrink size decay
+        const ratio = 1.0 - p.life / p.maxLife;
+        p.mesh.scale.set(ratio, ratio, ratio);
+      }
+    }
+  };
+
+  function updateMatchTimers(dt: number) {
+    const s = stateRef.current;
+    
+    // Decrement remaining game timer count (08:42 to start)
+    s.gameTime -= dt;
+    if (s.gameTime < 0) s.gameTime = 0;
+
+    // Decrement trace visuals linger
+    if (s.lastStrikeTick > 0) s.lastStrikeTick -= dt * 1.5;
+    if (s.lastAIStrikeTick > 0) s.lastAIStrikeTick -= dt * 1.5;
+
+    // Decrement hammer jump windows
+    if (s.pHammerJumpWindowTimer > 0) s.pHammerJumpWindowTimer = Math.max(0, s.pHammerJumpWindowTimer - dt);
+    if (s.aiHammerJumpWindowTimer > 0) s.aiHammerJumpWindowTimer = Math.max(0, s.aiHammerJumpWindowTimer - dt);
+  };
+
+  function renderGame() {
+    const s = stateRef.current;
+    const camera = threeRef.current.camera;
+    const renderer = threeRef.current.renderer;
+    const scene = threeRef.current.scene;
+
+    if (!camera || !renderer || !scene) return;
+
+    // Update blinking transitions during invulnerability windows
+    const blinkCycle = Math.floor(performance.now() / 120) % 2 === 0;
+
+    const updateBlinking = (group: THREE.Group | null, active: boolean) => {
+      if (!group) return;
+      
+      const isAlreadyBlinking = group.userData.isBlinking === true;
+      const shouldShowBlink = active && blinkCycle;
+      
+      if (!active && !isAlreadyBlinking) {
+        return;
+      }
+      
+      group.userData.isBlinking = active;
+      
+      group.traverse((child) => {
+        if (child instanceof THREE.Mesh) {
+          // Skip general helper meshes
+          if (child === threeRef.current.debugPlayerSphere || child === threeRef.current.debugEnemySphere) {
+            return;
+          }
+          
+          if (!child.userData.originalMaterial) {
+            child.userData.originalMaterial = child.material;
+          }
+          
+          if (shouldShowBlink) {
+            child.material = whiteBlinkMaterial;
+          } else {
+            child.material = child.userData.originalMaterial;
+          }
+        }
+      });
+    };
+
+    updateBlinking(threeRef.current.enemyGroup, s.aiInvulnerabilityTimer > 0);
+    updateBlinking(threeRef.current.playerHammer, s.playerInvulnerabilityTimer > 0);
+
+    if (threeRef.current.otherPlayerMeshes && s.otherPlayers) {
+      s.otherPlayers.forEach((player, id) => {
+        const meshes = threeRef.current.otherPlayerMeshes.get(id);
+        if (meshes && meshes.group) {
+          updateBlinking(meshes.group, (player.invulnerabilityTimer || 0) > 0);
+        }
+      });
+    }
+
+    // Manage spectator model visibility to prevent camera head clipping
+    if (s.isObserverMode) {
+      const hostData = getSpectateTargetData('host');
+      const clientData = getSpectateTargetData('client');
+      
+      if (threeRef.current.hostGroup) {
+        threeRef.current.hostGroup.visible = (s.observerCamMode !== 'first' || s.observerTarget !== 'host') && (hostData.hp > 0);
+        
+        // Update host weapons visibility
+        const hammer = threeRef.current.hostHammer;
+        const sword = threeRef.current.hostSword;
+        if (hammer && sword) {
+          hammer.visible = hostData.activeWeapon === 'hammer';
+          sword.visible = hostData.activeWeapon === 'sword';
+        }
+      }
+      
+      if (threeRef.current.enemyGroup) {
+        threeRef.current.enemyGroup.visible = (s.observerCamMode !== 'first' || s.observerTarget !== 'client') && (clientData.hp > 0);
+        
+        // Update client weapons visibility
+        const hammer = threeRef.current.enemyHammer;
+        const sword = threeRef.current.enemySword;
+        if (hammer && sword) {
+          hammer.visible = clientData.activeWeapon === 'hammer';
+          sword.visible = clientData.activeWeapon === 'sword';
+        }
+      }
+    } else {
+      if (threeRef.current.enemyGroup) {
+        threeRef.current.enemyGroup.visible = s.aiHP > 0 && s.aiState !== 'RESPAWNING';
+      }
+    }
+
+    // Apply Camera transforms based on Observer Mode and Camera Mode settings
+    if (s.isObserverMode) {
+      if (s.observerCamMode === 'free') {
+        // Free Camera spectator mode
+        const lookTarget = new THREE.Vector3(0, 0, -1);
+        lookTarget.applyAxisAngle(new THREE.Vector3(1, 0, 0), s.pitch);
+        lookTarget.applyAxisAngle(new THREE.Vector3(0, 1, 0), s.yaw);
+        
+        camera.position.copy(s.playerPos);
+        const centerLookAt = camera.position.clone().add(lookTarget);
+        camera.lookAt(centerLookAt);
+      } else if (s.observerCamMode === 'third') {
+        // Third Person orbital spectator mode
+        const targetData = getSpectateTargetData(s.observerTarget);
+        const targetEyePos = targetData.pos.clone();
+        targetEyePos.y += 1.65 - (targetData.isCrouching ? 0.72 : 0); // Eye height level
+
+        // Compute orbit offset using s.yaw and s.pitch as orbit angles
+        const offset = new THREE.Vector3(0, 0, s.observerOrbitDistance);
+        offset.applyAxisAngle(new THREE.Vector3(1, 0, 0), s.pitch);
+        offset.applyAxisAngle(new THREE.Vector3(0, 1, 0), s.yaw);
+
+        const cameraPos = targetEyePos.clone().add(offset);
+        camera.position.copy(cameraPos);
+        camera.lookAt(targetEyePos);
+      } else if (s.observerCamMode === 'first') {
+        // First Person spectator mode in sync with player being spectated
+        const targetData = getSpectateTargetData(s.observerTarget);
+        const currentCameraY = 1.65 - (targetData.isCrouching ? 0.72 : 0) + targetData.pos.y;
+        camera.position.set(targetData.pos.x, currentCameraY, targetData.pos.z);
+
+        const lookTarget = new THREE.Vector3(0, 0, -1);
+        lookTarget.applyAxisAngle(new THREE.Vector3(1, 0, 0), targetData.pitch);
+        lookTarget.applyAxisAngle(new THREE.Vector3(0, 1, 0), targetData.yaw);
+
+        const centerLookAt = camera.position.clone().add(lookTarget);
+        camera.lookAt(centerLookAt);
+      }
+    } else {
+      // Standard local Player First Person view
+      const lookTarget = new THREE.Vector3(0, 0, -1);
+      lookTarget.applyAxisAngle(new THREE.Vector3(1, 0, 0), s.pitch);
+      lookTarget.applyAxisAngle(new THREE.Vector3(0, 1, 0), s.yaw);
+      
+      const currentCameraY = 1.65 - s.crouchAmount + s.playerPos.y;
+      camera.position.set(s.playerPos.x, currentCameraY, s.playerPos.z);
+      
+      const centerLookAt = camera.position.clone().add(lookTarget);
+      camera.lookAt(centerLookAt);
+    }
+
+    // Sync Debug Mode Traces (wireframe red impact zone circles)
+    const playerSphere = threeRef.current.debugPlayerSphere;
+    if (playerSphere) {
+      if (s.debugMode && s.lastStrikePos && s.lastStrikeTick > 0) {
+        playerSphere.visible = true;
+        playerSphere.position.copy(s.lastStrikePos);
+        
+        // Pulse ring scale & opacity fading
+        const fade = Math.max(0, s.lastStrikeTick);
+        const mat = playerSphere.material as THREE.MeshBasicMaterial;
+        mat.opacity = fade * 0.45;
+        
+        // Scale the sphere mesh based on our custom attackRadius versus default radius
+        const scaleFactor = s.settings.attackRadius / 4.5;
+        playerSphere.scale.setScalar(scaleFactor);
+      } else {
+        playerSphere.visible = false;
+      }
+    }
+
+    const enemySphere = threeRef.current.debugEnemySphere;
+    if (enemySphere) {
+      if (s.debugMode && s.lastAIStrikePos && s.lastAIStrikeTick > 0) {
+        enemySphere.visible = true;
+        enemySphere.position.copy(s.lastAIStrikePos);
+        const fade = Math.max(0, s.lastAIStrikeTick);
+        const mat = enemySphere.material as THREE.MeshBasicMaterial;
+        mat.opacity = fade * 0.45;
+        
+        const scaleFactor = s.settings.attackRadius / 4.5;
+        enemySphere.scale.setScalar(scaleFactor);
+      } else {
+        enemySphere.visible = false;
+      }
+    }
+
+    // Sync Hammer Jump Zone Visualizer
+    const jumpZoneMesh = threeRef.current.playerJumpZoneMesh;
+    if (jumpZoneMesh) {
+      if (s.settings.visualizeJumpZone && s.playerHP > 0) {
+        jumpZoneMesh.visible = true;
+        // Position flatly on the ground floor beneath player
+        jumpZoneMesh.position.set(s.playerPos.x, 0.02, s.playerPos.z);
+        // Scale matched perfectly to the trigger radius slider
+        const triggerRad = s.settings.hammerJumpTriggerRadius ?? 3.5;
+        jumpZoneMesh.scale.set(triggerRad, 1, triggerRad);
+
+        const mat = jumpZoneMesh.material as THREE.MeshBasicMaterial;
+        if (s.pHammerJumpWindowTimer > 0) {
+          // Inside jump window! Fast bright flashing glow alert
+          const flash = 0.6 + Math.sin(performance.now() * 0.016) * 0.25;
+          mat.opacity = flash;
+          mat.color.setHex(0xfca5a5); // glow warm pinkish/gold for alert highlight
+        } else {
+          // Neutral state: soft warm aesthetic glow
+          const pulse = 0.22 + Math.sin(performance.now() * 0.003) * 0.07;
+          mat.opacity = pulse;
+          mat.color.setHex(0xf59e0b); // warm amber
+        }
+      } else {
+        jumpZoneMesh.visible = false;
+      }
+    }
+
+    // Dynamic emissive glow pulsing: pulses visor and weapons in sync
+    const elapsed = performance.now() / 1000;
+    scene.traverse((child) => {
+      if (child instanceof THREE.Mesh && child.material) {
+        const materials = Array.isArray(child.material) ? child.material : [child.material];
+        materials.forEach((mat) => {
+          if (
+            'emissive' in mat &&
+            mat.emissive &&
+            ((mat.emissive as THREE.Color).r > 0 ||
+              (mat.emissive as THREE.Color).g > 0 ||
+              (mat.emissive as THREE.Color).b > 0)
+          ) {
+            const standardMat = mat as THREE.MeshStandardMaterial;
+            // Skip the white blinking material if it's active during invulnerability flashing
+            if (mat !== whiteBlinkMaterial) {
+              standardMat.emissiveIntensity = 2.0 + Math.sin(elapsed * 4.0) * 0.8;
+            }
+          }
+        });
+      }
+    });
+
+    renderer.render(scene, camera);
+  };
+
+  function pushStatsUpdate() {
+    const s = stateRef.current;
+
+    // Translate stance string for HUD feedback
+    let computedStance: Stance = 'STANDING';
+    if (s.isJumping) computedStance = 'JUMPING';
+    else if (s.isCrouching) computedStance = 'CROUCHING';
+
+    onStatsUpdateRef.current({
+      playerHP: s.playerHP,
+      playerMaxHP: s.playerMaxHP,
+      enemyHP: s.aiHP,
+      enemyMaxHP: s.aiMaxHP,
+      scorePlayer: s.scorePlayer,
+      scoreEnemy: s.scoreEnemy,
+      otherPlayers: s.otherPlayers ? Array.from(s.otherPlayers.values()).map((p: any) => ({
+        id: p.id,
+        playerName: p.playerName,
+        pos: { x: p.pos.x, y: p.pos.y, z: p.pos.z },
+        vel: { x: p.vel.x, y: p.vel.y, z: p.vel.z },
+        yaw: p.yaw,
+        pitch: p.pitch,
+        hp: p.hp,
+        maxHp: p.maxHp,
+        isCrouching: p.isCrouching,
+        activeWeapon: p.activeWeapon,
+        respawnTimer: p.respawnTimer,
+        hue: p.hue,
+        score: p.score ?? 0,
+        kills: p.kills ?? 0,
+        deaths: p.deaths ?? 0,
+        isObserver: p.isObserver
+      })) : undefined,
+      gameTime: s.gameTime,
+      debugMode: s.debugMode,
+      debugDamageRadius: s.settings.attackRadius, // Show actual damage radius
+      weaponReady: s.activeWeapon === 'hammer' ? s.pWeaponReady : s.pSwordReady,
+      weaponCooldown: s.activeWeapon === 'hammer' ? (s.pWeaponCooldown ?? 1.0) : s.pSwordCooldown,
+      activeWeapon: s.activeWeapon,
+      crosshairColor: s.crosshairColor,
+      lastStrikePos: s.lastStrikePos ? [s.lastStrikePos.x, s.lastStrikePos.y, s.lastStrikePos.z] : null,
+      lastStrikeTick: s.lastStrikeTick,
+      isCrouching: s.isCrouching,
+      isJumping: s.isJumping,
+      playerRespawnTimer: s.playerHP <= 0 ? s.playerRespawnTimer : 0,
+      enemyRespawnTimer: s.aiHP <= 0 ? s.enemyRespawnTimer : 0,
+      playerDashCooldownTimer: s.playerDashCooldownTimer,
+      playerDashReady: s.playerDashCooldownTimer <= 0 && s.playerDashRemaining <= 0,
+      settings: s.settings, // Propagate the current admin settings to HUD
+      lastDeaths: s.lastDeaths,
+      playerX: s.playerPos.x,
+      playerZ: s.playerPos.z,
+      playerYaw: s.yaw,
+      enemyX: s.aiPos.x,
+      enemyZ: s.aiPos.z,
+      enemyYaw: s.aiYaw,
+      enemyIsCrouching: s.aiIsCrouching,
+      playerIsCrouchMoving: s.isCrouching && s.playerVel.length() > 0.15,
+      enemyIsCrouchMoving: s.aiIsCrouching && s.aiVel.length() > 0.15,
+      isMultiplayer: isMultiplayer,
+      multiplayerRole: multiplayerRole,
+      opponentConnected: isMultiplayer && multiplayerSocket?.readyState === WebSocket.OPEN,
+      fps: fpsRef.current.value,
+      showScoreboard: s.showScoreboard,
+      isObserverMode: s.isObserverMode,
+      observerCamMode: s.observerCamMode,
+      observerTargetName: getSpectateTargetData(s.observerTarget).name,
+      observerTargetRole: s.observerTarget,
+      playerKills: s.playerKills,
+      playerDeaths: s.playerDeaths,
+      enemyKills: s.enemyKills,
+      enemyDeaths: s.enemyDeaths,
+      opponentPlayerName: opponentNameRef.current || undefined,
+    });
+  };
+
+  function updateFloatingNameplate() {
+    const s = stateRef.current;
+    const camera = threeRef.current.camera;
+    const container = containerRef.current;
+    const nameplate = nameplateRef.current;
+
+    if (!s || !camera || !container || !nameplate) return;
+
+    let showNameplate = false;
+    const nameplateScreenPos = { x: 0, y: 0 };
+
+    if (s.playerHP > 0 && s.aiHP > 0 && s.aiState !== 'RESPAWNING') {
+      const eyePos = new THREE.Vector3(
+        s.playerPos.x,
+        1.65 - s.crouchAmount + s.playerPos.y,
+        s.playerPos.z
+      );
+      const enemyCenter = new THREE.Vector3(s.aiPos.x, s.aiPos.y + 0.825, s.aiPos.z);
+      const toEnemy = enemyCenter.clone().sub(eyePos);
+      const dist = toEnemy.length();
+      
+      const appDist = s.settings.nameVisibilityDistance !== undefined ? s.settings.nameVisibilityDistance : 15.0;
+      if (dist <= appDist) {
+        const toEnemyDir = toEnemy.clone().normalize();
+        
+        const cameraLookDir = new THREE.Vector3(0, 0, -1)
+          .applyAxisAngle(new THREE.Vector3(1, 0, 0), s.pitch)
+          .applyAxisAngle(new THREE.Vector3(0, 1, 0), s.yaw)
+          .normalize();
+          
+        const dot = cameraLookDir.dot(toEnemyDir);
+        const angle = Math.acos(Math.max(-1.0, Math.min(1.0, dot)));
+        
+        // Holding crosshair over them
+        if (angle < 0.12) {
+          showNameplate = true;
+          
+          // Calculate projected 2D coordinates
+          const headPos = new THREE.Vector3(s.aiPos.x, s.aiPos.y + 1.75, s.aiPos.z);
+          headPos.project(camera);
+          
+          // Check if in front of camera
+          if (headPos.z <= 1) {
+            const widthHalf = container.clientWidth / 2;
+            const heightHalf = container.clientHeight / 2;
+            nameplateScreenPos.x = (headPos.x * widthHalf) + widthHalf;
+            nameplateScreenPos.y = -(headPos.y * heightHalf) + heightHalf;
+          } else {
+            showNameplate = false;
+          }
+        }
+      }
+    }
+
+    if (showNameplate) {
+      nameplate.style.display = 'block';
+      nameplate.style.left = `${nameplateScreenPos.x}px`;
+      nameplate.style.top = `${nameplateScreenPos.y}px`;
+      nameplate.style.color = s.settings.nameVisibilityColor || '#00ffff';
+      nameplate.style.opacity = (s.settings.nameVisibilityOpacity !== undefined ? s.settings.nameVisibilityOpacity : 0.8).toString();
+      nameplate.style.fontSize = `${s.settings.nameVisibilityFontSize || 16}px`;
+      nameplate.textContent = isMultiplayer ? (opponentNameRef.current || opponentClientId || 'Opponent') : 'AI Bot';
+    } else {
+      nameplate.style.display = 'none';
+    }
+  };
+
+  function updateRadarDOM() {
+    const s = stateRef.current;
+    if (!s) return;
+
+    const isPlayerAlive = s.playerHP > 0;
+
+    // 1. Compass Rotation — use transform:translate (GPU-composited, no layout thrash, no transition lag)
+    const nElem = document.getElementById('radar-compass-n');
+    const eElem = document.getElementById('radar-compass-e');
+    const sElem = document.getElementById('radar-compass-s');
+    const wElem = document.getElementById('radar-compass-w');
+
+    if (nElem || eElem || sElem || wElem) {
+      const cosYaw = Math.cos(s.yaw);
+      const sinYaw = Math.sin(s.yaw);
+      const r = 58;
+      const center = 72;
+
+      if (nElem) nElem.style.transform = `translate(${center + r * sinYaw - 3.5}px, ${center - r * cosYaw - 5}px)`;
+      if (eElem) eElem.style.transform = `translate(${center + r * cosYaw - 3.5}px, ${center + r * sinYaw - 5}px)`;
+      if (sElem) sElem.style.transform = `translate(${center - r * sinYaw - 3.5}px, ${center + r * cosYaw - 5}px)`;
+      if (wElem) wElem.style.transform = `translate(${center - r * cosYaw - 3.5}px, ${center - r * sinYaw - 5}px)`;
+    }
+
+    // 2. Multi-enemy dot rendering with element pooling
+    const enemiesContainer = document.getElementById('radar-enemies-container');
+    if (enemiesContainer) {
+      const maxRange = 25;
+      const radarRadius = 72;
+      const scale = radarRadius / maxRange;
+      const forward_x = -Math.sin(s.yaw);
+      const forward_z = -Math.cos(s.yaw);
+      const right_x = Math.cos(s.yaw);
+      const right_z = -Math.sin(s.yaw);
+
+      // Build the full enemy list: main AI + all otherPlayers bots
+      type RadarEnemy = { id: string; pos: THREE.Vector3; hp: number; vel: THREE.Vector3 | null; isCrouching: boolean };
+      const enemies: RadarEnemy[] = [];
+      if (!isMultiplayer) {
+        enemies.push({ id: 'main_ai', pos: s.aiPos, hp: s.aiHP, vel: s.aiVel, isCrouching: s.aiIsCrouching });
+        s.otherPlayers.forEach((bot, id) => {
+          enemies.push({ id, pos: bot.pos, hp: bot.hp, vel: bot.vel, isCrouching: bot.isCrouching });
+        });
+      } else {
+        // In multiplayer, only show the single opponent (aiPos)
+        enemies.push({ id: 'main_ai', pos: s.aiPos, hp: s.aiHP, vel: s.aiVel, isCrouching: s.aiIsCrouching });
+      }
+
+      const pool = radarDotPoolRef.current;
+      const activeIds = new Set<string>();
+
+      for (const enemy of enemies) {
+        if (!isPlayerAlive || enemy.hp <= 0) continue;
+
+        const dx = enemy.pos.x - s.playerPos.x;
+        const dz = enemy.pos.z - s.playerPos.z;
+        const dist = Math.sqrt(dx * dx + dz * dz);
+
+        const velLength = enemy.vel ? enemy.vel.length() : 0;
+        const isCrouchMoving = enemy.isCrouching && velLength > 0.15;
+        if (isCrouchMoving || dist > maxRange) continue;
+
+        const local_x = dx * right_x + dz * right_z;
+        const local_y = dx * forward_x + dz * forward_z;
+        const ex = local_x * scale;
+        const ey = -local_y * scale;
+        const left = radarRadius + ex - 6;
+        const top = radarRadius + ey - 6;
+
+        let dot = pool.get(enemy.id);
+        if (!dot) {
+          dot = document.createElement('div');
+          dot.className = 'absolute w-3 h-3 bg-red-500 rounded-full border border-white/40 shadow-[0_0_12px_#ef4444] animate-pulse z-30 flex items-center justify-center';
+          dot.style.willChange = 'transform';
+          const inner = document.createElement('div');
+          inner.className = 'w-1.5 h-1.5 bg-white rounded-full';
+          dot.appendChild(inner);
+          pool.set(enemy.id, dot);
+        }
+        // Re-append if detached (happens when React re-renders the container after e.g. escape menu)
+        if (dot.parentElement !== enemiesContainer) {
+          enemiesContainer.appendChild(dot);
+        }
+
+        // Use transform:translate for GPU-composited, zero-layout positioning
+        dot.style.transform = `translate(${left}px, ${top}px)`;
+        dot.style.display = 'flex';
+        activeIds.add(enemy.id);
+      }
+
+      // Hide dots for enemies that are dead, out of range, or no longer in the game
+      pool.forEach((dot, id) => {
+        if (!activeIds.has(id)) dot.style.display = 'none';
+      });
+    }
+
+    // 3. Update center player arrow visibility and crouch-cloaking styles
+    const playerArrow = document.getElementById('radar-player-arrow');
+    if (playerArrow) {
+      if (!isPlayerAlive) {
+        playerArrow.style.display = 'none';
+      } else {
+        playerArrow.style.display = 'block';
+        const playerVelLength = s.playerVel ? s.playerVel.length() : 0;
+        const playerIsCrouchMoving = s.isCrouching && playerVelLength > 0.15;
+
+        if (playerIsCrouchMoving) {
+          playerArrow.setAttribute('class', 'absolute w-3.5 h-3.5 text-white/20 z-20');
+          playerArrow.setAttribute('fill', 'none');
+          playerArrow.setAttribute('stroke', 'currentColor');
+          playerArrow.setAttribute('stroke-width', '2');
+        } else {
+          playerArrow.setAttribute('class', 'absolute w-3.5 h-3.5 text-[#22d3ee] drop-shadow-[0_0_4px_rgba(34,211,238,0.7)] z-20');
+          playerArrow.setAttribute('fill', 'currentColor');
+          playerArrow.removeAttribute('stroke');
+          playerArrow.removeAttribute('stroke-width');
+        }
+      }
+    }
+
+    // 4. Update status indicator badges and text node names
+    const badgeText = document.getElementById('radar-status-text');
+    const badgeContainer = document.getElementById('radar-status-badge');
+    if (badgeText && badgeContainer) {
+      const playerVelLength = s.playerVel ? s.playerVel.length() : 0;
+      const playerIsCrouchMoving = s.isCrouching && playerVelLength > 0.15;
+
+      if (!isPlayerAlive) {
+        badgeText.textContent = 'OFFLINE';
+        badgeContainer.className = 'text-[8px] font-mono font-bold px-1.5 py-0.5 rounded border bg-slate-900/40 text-slate-500 border-slate-500/20';
+      } else if (playerIsCrouchMoving) {
+        badgeText.textContent = 'SIGNAL STEALTH';
+        badgeContainer.className = 'text-[8px] font-mono font-bold px-1.5 py-0.5 rounded border bg-amber-950/40 text-amber-400 border-amber-500/20';
+      } else {
+        badgeText.textContent = 'ACTIVE';
+        badgeContainer.className = 'text-[8px] font-mono font-bold px-1.5 py-0.5 rounded border bg-cyan-950/40 text-cyan-400 border-cyan-500/20';
+      }
+    }
+  };
+
+  function animateSpartanModel(
+    mesh: THREE.Group | null,
+    vel: THREE.Vector3,
+    yaw: number,
+    hp: number,
+    weaponState: string,
+    weaponTimer: number,
+    dt: number
+  ) {
+    if (!mesh) return;
+
+    const lowerTorso = mesh.userData.lowerTorso as THREE.Group | undefined;
+    const upperTorso = mesh.userData.upperTorso as THREE.Group | undefined;
+    const leftLeg = mesh.userData.leftLeg as THREE.Group | undefined;
+    const rightLeg = mesh.userData.rightLeg as THREE.Group | undefined;
+
+    if (!lowerTorso || !upperTorso || !leftLeg || !rightLeg) return;
+
+    // 1. Dynamic Feet & Leg Walk-Sprint Cycles
+    const speed = Math.sqrt(vel.x * vel.x + vel.z * vel.z);
+
+    if (hp > 0) {
+      if (speed > 0.15) {
+        if (mesh.userData.walkPhase === undefined) {
+          mesh.userData.walkPhase = 0;
+        }
+
+        const frequency = 5.2 * (speed / 4.0);
+        mesh.userData.walkPhase += dt * frequency * Math.PI * 2;
+
+        const phase = mesh.userData.walkPhase;
+        const maxSwing = 0.52; // max leg angle (~30 degrees)
+
+        leftLeg.rotation.x = Math.sin(phase) * maxSwing;
+        rightLeg.rotation.x = -Math.sin(phase) * maxSwing;
+        leftLeg.rotation.z = Math.cos(phase) * 0.05;
+        rightLeg.rotation.z = -Math.cos(phase) * 0.05;
+
+        const bobAmount = Math.abs(Math.sin(phase)) * 0.04;
+        lowerTorso.position.y = -bobAmount;
+      } else {
+        leftLeg.rotation.x = THREE.MathUtils.lerp(leftLeg.rotation.x, 0, dt * 10.0);
+        leftLeg.rotation.z = THREE.MathUtils.lerp(leftLeg.rotation.z, 0, dt * 10.0);
+        rightLeg.rotation.x = THREE.MathUtils.lerp(rightLeg.rotation.x, 0, dt * 10.0);
+        rightLeg.rotation.z = THREE.MathUtils.lerp(rightLeg.rotation.z, 0, dt * 10.0);
+        lowerTorso.position.y = THREE.MathUtils.lerp(lowerTorso.position.y, 0, dt * 10.0);
+        mesh.userData.walkPhase = 0;
+      }
+    } else {
+      leftLeg.rotation.x = 0;
+      leftLeg.rotation.z = 0;
+      rightLeg.rotation.x = 0;
+      rightLeg.rotation.z = 0;
+      lowerTorso.position.y = 0;
+    }
+
+    // 2. Cohesion Lower Torso Directional Rotation
+    let targetLowerTorsoYaw = 0;
+    if (speed > 0.15 && hp > 0) {
+      const moveYaw = Math.atan2(vel.x, vel.z);
+      let diff = moveYaw - yaw;
+      diff = Math.atan2(Math.sin(diff), Math.cos(diff));
+
+      const maxTwist = Math.PI / 3;
+      if (Math.abs(diff) > maxTwist) {
+        targetLowerTorsoYaw = Math.sign(diff) * maxTwist;
+      } else {
+        targetLowerTorsoYaw = diff;
+      }
+    }
+
+    lowerTorso.rotation.y = THREE.MathUtils.lerp(
+      lowerTorso.rotation.y,
+      targetLowerTorsoYaw,
+      dt * 9.0
+    );
+
+    // 3. Cohesion Upper Torso (Aiming & Shoulder weapon swing twists)
+    let targetUpperTorsoYaw = 0;
+    let targetUpperTorsoPitch = 0;
+    let targetUpperTorsoRoll = 0;
+
+    if (hp > 0) {
+      if (weaponState === 'swing_up') {
+        targetUpperTorsoYaw = -0.32;
+        targetUpperTorsoPitch = -0.12;
+      } else if (weaponState === 'swing_down') {
+        targetUpperTorsoYaw = 0.42;
+        targetUpperTorsoPitch = 0.22;
+        targetUpperTorsoRoll = -0.08;
+      } else if (weaponState === 'recovering') {
+        const recoveryDuration = stateRef.current.settings.hammerReloadTime ?? 0.6;
+        const recoveredPct = Math.min(1.0, weaponTimer / recoveryDuration);
+        targetUpperTorsoYaw = THREE.MathUtils.lerp(0.42, 0, recoveredPct);
+        targetUpperTorsoPitch = THREE.MathUtils.lerp(0.22, 0, recoveredPct);
+      }
+    }
+
+    upperTorso.rotation.y = THREE.MathUtils.lerp(upperTorso.rotation.y, targetUpperTorsoYaw, dt * 10.0);
+    upperTorso.rotation.x = THREE.MathUtils.lerp(upperTorso.rotation.x, targetUpperTorsoPitch, dt * 10.0);
+    upperTorso.rotation.z = THREE.MathUtils.lerp(upperTorso.rotation.z, targetUpperTorsoRoll, dt * 10.0);
+  };
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
   // Keep debug mode ref in sync
   useEffect(() => {
@@ -3727,6 +4901,21 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
   // ADVANCED TACTICAL TARGET SELECTION SCORING
   const getBestTacticalTarget = (botId: string, botPos: THREE.Vector3, difficulty: string) => {
     const s = stateRef.current;
+    let playstyleVal = 50;
+    if (['easy', 'normal', 'hard', 'nightmare'].includes(difficulty)) {
+      const behavior = botBehaviors[botId] || 'defensive';
+      if (behavior === 'passive') playstyleVal = 0;
+      else if (behavior === 'defensive') playstyleVal = 50;
+      else if (behavior === 'aggressive') playstyleVal = 100;
+    } else if (difficulty === 'custom') {
+      playstyleVal = s.settings.aiPlaystyle ?? 50;
+    } else {
+      const preset = aiPresets.find(p => p.id === difficulty);
+      if (preset) playstyleVal = preset.tuning.aiPlaystyle ?? 50;
+    }
+    const playstyleFactor = playstyleVal / 100;
+    const recoveringTargetBonus = (1.0 - Math.abs(playstyleFactor - 0.5) * 2.0) * 200.0;
+
     let bestTarget: any = null;
     let bestScore = -Infinity;
 
@@ -3804,7 +4993,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
           score -= 2000;
         }
         if (target.weaponState === 'recovering') {
-          score += 150;
+          score += 150 + Math.max(0, recoveringTargetBonus);
         }
       } 
       else {
@@ -3816,7 +5005,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         }
 
         if (target.weaponState === 'recovering') {
-          score += 350; 
+          score += 350 + Math.max(0, recoveringTargetBonus); 
         } else if (target.weaponState === 'swing_up' || target.weaponState === 'swing_down') {
           score += 100;
         }
@@ -3924,16 +5113,13 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     }
 
     if (dist > maxLunge) {
-      return 'hammer';
+      return null;
     }
 
     return null;
   };
-
-  // UNIFIED TACTICAL AI BEHAVIOR CONTROLLER
   const updateSingleAIEntity = (botId: string, isMainAI: boolean, dt: number) => {
     const s = stateRef.current;
-    
     const botState = isMainAI ? null : s.otherPlayers.get(botId);
     if (!isMainAI && !botState) return;
 
@@ -3979,53 +5165,82 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     let activeWeapon = isMainAI ? s.aiActiveWeapon : botState!.activeWeapon;
     let weaponState = isMainAI ? s.aiWeaponState : (botState!.weaponState || 'ready');
 
-    let state = isMainAI ? s.aiState : botState!.aiState!;
-    let timer = isMainAI ? s.aiTimer : botState!.aiTimer!;
-    let swayTimer = isMainAI ? s.aiSwayTimer : botState!.aiSwayTimer!;
-    let dashCooldownTimer = isMainAI ? s.aiDashCooldownTimer : botState!.aiDashCooldownTimer!;
-    let dashRemaining = isMainAI ? s.aiDashRemaining : botState!.aiDashRemaining!;
-    const dashDir = isMainAI ? s.aiDashDir : new THREE.Vector3(botState!.aiDashDir!.x, botState!.aiDashDir!.y, botState!.aiDashDir!.z);
+    // Declare local state variables and sync them from global/bot state
+    let state = isMainAI ? s.aiState : botState!.aiState;
+    let timer = isMainAI ? s.aiTimer : botState!.aiTimer;
+    let swayTimer = isMainAI ? s.aiSwayTimer : botState!.aiSwayTimer;
+    let dashCooldownTimer = isMainAI ? s.aiDashCooldownTimer : botState!.aiDashCooldownTimer;
+    let dashRemaining = isMainAI ? s.aiDashRemaining : botState!.aiDashRemaining;
+    const dashDir = isMainAI 
+      ? s.aiDashDir.clone() 
+      : new THREE.Vector3(botState!.aiDashDir.x, botState!.aiDashDir.y, botState!.aiDashDir.z);
 
+    // Resolve difficulty and specific parameters
     const difficulty = isMainAI 
-      ? ((botDifficulties as any)?.main_ai || s.settings.aiDifficulty || 'normal')
-      : (botState!.difficulty || 'normal');
+      ? (s.settings.aiDifficulty || 'normal')
+      : (botDifficulties[botId] || 'normal');
 
-    let reactionLatency = s.settings.aiReactionLatency ?? 0.25;
-    let anticipationFactor = s.settings.aiAnticipationFactor ?? 0.40;
-    let movementComplexity = s.settings.aiMovementComplexity ?? 50; 
-    let weaponSwapIQ = s.settings.aiWeaponSwapIQ ?? 50;
+    let reactionLatency = 0.25;
+    let anticipationFactor = 0.40;
+    let movementComplexity = 50;
+    let weaponSwapIQ = 50;
+    let aiPlaystyle = 50;
 
-    if (difficulty === 'easy') {
-      reactionLatency = 0.55;
-      anticipationFactor = 0.08;
-      movementComplexity = 20;
-      weaponSwapIQ = 15;
-    } else if (difficulty === 'normal') {
-      reactionLatency = 0.25;
-      anticipationFactor = 0.40;
-      movementComplexity = 50;
-      weaponSwapIQ = 50;
-    } else if (difficulty === 'hard') {
-      reactionLatency = 0.08;
-      anticipationFactor = 0.78;
-      movementComplexity = 80;
-      weaponSwapIQ = 88;
-    } else if (difficulty === 'nightmare') {
-      reactionLatency = 0.01;
-      anticipationFactor = 0.98;
-      movementComplexity = 98;
-      weaponSwapIQ = 98;
+    if (difficulty === 'custom') {
+      reactionLatency = adminSettings.aiReactionLatency ?? 0.25;
+      anticipationFactor = adminSettings.aiAnticipationFactor ?? 0.40;
+      movementComplexity = adminSettings.aiMovementComplexity ?? 50;
+      weaponSwapIQ = adminSettings.aiWeaponSwapIQ ?? 50;
+      aiPlaystyle = adminSettings.aiPlaystyle ?? 50;
+    } else if (['easy', 'normal', 'hard', 'nightmare'].includes(difficulty)) {
+      if (difficulty === 'easy') {
+        reactionLatency = 0.55;
+        anticipationFactor = 0.05;
+        movementComplexity = 15;
+        weaponSwapIQ = 10;
+      } else if (difficulty === 'normal') {
+        reactionLatency = 0.25;
+        anticipationFactor = 0.40;
+        movementComplexity = 50;
+        weaponSwapIQ = 50;
+      } else if (difficulty === 'hard') {
+        reactionLatency = 0.12;
+        anticipationFactor = 0.70;
+        movementComplexity = 80;
+        weaponSwapIQ = 80;
+      } else if (difficulty === 'nightmare') {
+        reactionLatency = 0.02;
+        anticipationFactor = 0.95;
+        movementComplexity = 95;
+        weaponSwapIQ = 95;
+      }
+      
+      const behavior = botBehaviors[botId] || 'defensive';
+      if (behavior === 'passive') aiPlaystyle = 0;
+      else if (behavior === 'defensive') aiPlaystyle = 50;
+      else if (behavior === 'aggressive') aiPlaystyle = 100;
+    } else {
+      // Custom saved preset ID
+      const preset = aiPresets.find(p => p.id === difficulty);
+      if (preset) {
+        reactionLatency = preset.tuning.aiReactionLatency ?? 0.25;
+        anticipationFactor = preset.tuning.aiAnticipationFactor ?? 0.40;
+        movementComplexity = preset.tuning.aiMovementComplexity ?? 50;
+        weaponSwapIQ = preset.tuning.aiWeaponSwapIQ ?? 50;
+        aiPlaystyle = preset.tuning.aiPlaystyle ?? 50;
+      }
     }
 
-    const target = getBestTacticalTarget(botId, pos, difficulty);
+    // Playstyle calculations
+    const playstyleFactor = aiPlaystyle / 100; // range 0 to 1
 
-    // Spawn Anticipation (No living targets)
+    const target = getBestTacticalTarget(botId, pos, difficulty);
     if (!target) {
       const livingPositions: THREE.Vector3[] = [];
       if (s.playerHP > 0 && s.playerRespawnTimer <= 0 && !s.isObserverMode) {
         livingPositions.push(s.playerPos);
       }
-      if (s.aiHP > 0 && s.aiState !== 'RESPAWNING') {
+      if (s.aiHP > 0 && botId !== 'main_ai' && s.aiState !== 'RESPAWNING') {
         livingPositions.push(s.aiPos);
       }
       if (s.otherPlayers) {
@@ -4123,12 +5338,23 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     const toTarget = movementTargetPos.clone().sub(pos);
     toTarget.y = 0;
     const distanceToTarget = toTarget.length();
-    
+
     yaw = Math.atan2(toTarget.x, toTarget.z);
     botMesh.rotation.y = yaw;
 
     const playerDangerZone = s.settings.attackRange + s.settings.attackRadius * 0.85;
     const aiReach = s.settings.attackRange + s.settings.attackRadius * 0.75;
+
+    // Playstyle combat spacing adjustments
+    const spacingFactor = 1.35 - 0.60 * playstyleFactor;
+    const resolvedDangerZone = playerDangerZone * spacingFactor;
+    const resolvedAiReach = aiReach * (0.8 + 0.4 * playstyleFactor);
+
+    // Evasion, lunge and recovery/cooldown playstyle modifiers
+    const defensiveEvasionMult = difficulty !== 'easy' ? (1.5 - Math.abs(playstyleFactor - 0.5) * 1.0) : 1.0;
+    const aggressiveLungeMult = 0.4 + 1.6 * playstyleFactor;
+    const cooldownMult = 1.3 - 0.8 * playstyleFactor;
+
     const targetIsProtected = target.invulnerabilityTimer > 0;
     const targetIsLunging = target.isLunging;
 
@@ -4161,7 +5387,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       const sidewayHeading = new THREE.Vector3(-lookHeading.z, 0, lookHeading.x);
 
       // Perpendicular evasive dash
-      if (dashCooldownTimer <= 0 && Math.random() < (difficulty === 'nightmare' ? 0.95 : 0.65)) {
+      if (dashCooldownTimer <= 0 && Math.random() < (difficulty === 'nightmare' ? 0.95 : 0.65) * defensiveEvasionMult) {
         const sideDir = Math.random() > 0.5 ? 1 : -1;
         dashDir.copy(sidewayHeading).multiplyScalar(sideDir).normalize();
         dashRemaining = s.settings.dashDuration || 0.25;
@@ -4170,7 +5396,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         isEvadingLunge = true;
       } 
       // Hammer Jump evasion
-      else if (activeWeapon === 'hammer' && weaponState === 'ready' && Math.random() < 0.70) {
+      else if (activeWeapon === 'hammer' && weaponState === 'ready' && Math.random() < 0.70 * defensiveEvasionMult) {
         if (isMainAI) {
           s.aiHammerJumpPlanned = true;
           s.aiHammerJumpType = 'defensive';
@@ -4249,12 +5475,12 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       target.hp > 0 &&
       !targetIsProtected
     ) {
-      const fallingIntoHammer = (target.vel?.y ?? 0) <= 0.75 && distanceToTarget <= playerDangerZone + 2.5;
-      const canReachBody = combatDistanceToTarget <= aiReach + anticipationFactor * 1.5;
+      const fallingIntoHammer = (target.vel?.y ?? 0) <= 0.75 && distanceToTarget <= resolvedDangerZone + 2.5;
+      const canReachBody = combatDistanceToTarget <= resolvedAiReach + anticipationFactor * 1.5;
 
       if ((fallingIntoHammer || canReachBody) && Math.random() < 0.18 + anticipationFactor * 0.42) {
         state = 'COOLDOWN';
-        timer = 1.0;
+        timer = 1.0 * cooldownMult;
         if (isMainAI) {
           triggerEnemyHammerSwing();
         } else {
@@ -4262,7 +5488,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
           botState!.weaponTimer = 0;
           sfx.playSwing();
         }
-      } else if (verticalDeltaToTarget > 2.0 && distanceToTarget <= playerDangerZone + 4.5 && Math.random() < 0.012 + anticipationFactor * 0.035) {
+      } else if (verticalDeltaToTarget > 2.0 && distanceToTarget <= resolvedDangerZone + 4.5 && Math.random() < 0.012 + anticipationFactor * 0.035) {
         if (isMainAI) {
           s.aiHammerJumpPlanned = true;
           s.aiHammerJumpType = 'offensive';
@@ -4310,7 +5536,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       if (target.hp <= 0) {
         botState!.isLunging = false;
         botState!.aiState = 'COOLDOWN';
-        botState!.aiTimer = s.settings.swordLungeReload ?? 1.2;
+        botState!.aiTimer = (s.settings.swordLungeReload ?? 1.2) * cooldownMult;
         botState!.weaponState = 'ready';
       } else if (dist <= 1.5) {
         const swordThreshold = s.settings.swordTradeWindow ?? 350;
@@ -4342,7 +5568,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
           s.playerHP -= 1;
           botState!.isLunging = false;
           botState!.aiState = 'COOLDOWN';
-          botState!.aiTimer = s.settings.swordLungeReload ?? 1.2;
+          botState!.aiTimer = (s.settings.swordLungeReload ?? 1.2) * cooldownMult;
           botState!.weaponState = 'ready';
           sfx.playExplosion();
           spawnVoxelShockwaveParticles(s.playerPos, '#ef4444');
@@ -4366,7 +5592,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
           s.aiHP -= 1;
           botState!.isLunging = false;
           botState!.aiState = 'COOLDOWN';
-          botState!.aiTimer = s.settings.swordLungeReload ?? 1.2;
+          botState!.aiTimer = (s.settings.swordLungeReload ?? 1.2) * cooldownMult;
           botState!.weaponState = 'ready';
           sfx.playExplosion();
           spawnVoxelShockwaveParticles(s.aiPos, '#ef4444');
@@ -4386,7 +5612,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
             oBot.hp -= 1;
             botState!.isLunging = false;
             botState!.aiState = 'COOLDOWN';
-            botState!.aiTimer = s.settings.swordLungeReload ?? 1.2;
+            botState!.aiTimer = (s.settings.swordLungeReload ?? 1.2) * cooldownMult;
             botState!.weaponState = 'ready';
             sfx.playExplosion();
             spawnVoxelShockwaveParticles(oBot.pos, '#ef4444');
@@ -4408,14 +5634,33 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       if (startDist > 16.0 || botState!.lungeTimer > 0.8) {
         botState!.isLunging = false;
         botState!.aiState = 'COOLDOWN';
-        botState!.aiTimer = s.settings.swordLungeReload ?? 1.2;
+        botState!.aiTimer = (s.settings.swordLungeReload ?? 1.2) * cooldownMult;
         botState!.weaponState = 'ready';
         if (pos.y > 0.01) {
           botState!.vel.y = Math.min(botState!.vel.y, 0);
         }
       }
-      return;
-    }
+    } else {
+      if (isMainAI && s.aiIsJumping && s.aiHP > 0) {
+        if (movementComplexity >= 45) {
+          const lookHeading = toTarget.clone().normalize();
+          const sidewayHeading = new THREE.Vector3(-lookHeading.z, 0, lookHeading.x);
+          const sideDir = Math.sin(swayTimer * 3.0) > 0 ? 1 : -1;
+          s.aiVel.x += (sidewayHeading.x * 2.0 * sideDir + lookHeading.x * 0.4) * dt;
+          s.aiVel.z += (sidewayHeading.z * 2.0 * sideDir + lookHeading.z * 0.4) * dt;
+        }
+      }
+
+      if (!isMainAI && botState!.vel.y > 0) {
+        if (movementComplexity >= 45) {
+          const lookHeading = toTarget.clone().normalize();
+          const sidewayHeading = new THREE.Vector3(-lookHeading.z, 0, lookHeading.x);
+          const sideDir = Math.sin(swayTimer * 3.0) > 0 ? 1 : -1;
+          botState!.vel.x += (sidewayHeading.x * 2.0 * sideDir + lookHeading.x * 0.4) * dt;
+          botState!.vel.z += (sidewayHeading.z * 2.0 * sideDir + lookHeading.z * 0.4) * dt;
+        }
+        return;
+      }
 
     if (isEvadingLunge) {
       return;
@@ -4475,12 +5720,12 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       const sidewayHeading = new THREE.Vector3(-lookHeading.z, 0, lookHeading.x);
 
       // Sword Lunge Opportunity
-      const minLungeRange = playerDangerZone * 0.85;
+      const minLungeRange = resolvedDangerZone * 0.85;
       const maxLungeRange = Math.min(18.0, s.settings.swordLungeDistance ?? 14.5);
       const lungeDistanceToTarget = targetAirborne ? combatDistanceToTarget : distanceToTarget;
       const hasVerticalLungeLine = !targetAirborne || movementComplexity >= 60;
       if (activeWeapon === 'sword' && weaponState === 'ready' && hasVerticalLungeLine && lungeDistanceToTarget >= minLungeRange && lungeDistanceToTarget <= maxLungeRange && target.hp > 0 && !targetIsProtected) {
-        const lungeChance = targetAirborne ? 0.08 + (anticipationFactor * 0.18) : 0.04 + (anticipationFactor * 0.08);
+        const lungeChance = (targetAirborne ? 0.08 + (anticipationFactor * 0.18) : 0.04 + (anticipationFactor * 0.08)) * aggressiveLungeMult;
         if (Math.random() < lungeChance) {
           const lungeDir = targetBodyCenter.clone().sub(pos);
           if (!targetAirborne) lungeDir.y = 0;
@@ -4501,7 +5746,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         }
       }
 
-      if (weaponState === 'ready' && distanceToTarget > (playerDangerZone + 1.5) && distanceToTarget <= (playerDangerZone + 5.5) && Math.random() < 0.015 && (movementComplexity >= 40) && !targetIsProtected) {
+      if (weaponState === 'ready' && distanceToTarget > (resolvedDangerZone + 1.5) && distanceToTarget <= (resolvedDangerZone + 5.5) && Math.random() < 0.015 && (movementComplexity >= 40) && !targetIsProtected) {
         if (isMainAI) {
           s.aiHammerJumpPlanned = true;
           s.aiHammerJumpType = 'offensive';
@@ -4521,7 +5766,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         vel.copy(lookHeading).multiplyScalar(4.0 * (s.settings.speedForward / 100));
         pos.addScaledVector(vel, dt);
 
-        if (distanceToTarget <= (playerDangerZone + 3.2)) {
+        if (distanceToTarget <= (resolvedDangerZone + 3.2)) {
           state = 'SIDE_STEPPING';
           timer = Math.random() * 0.7 + 0.3;
         }
@@ -4530,7 +5775,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         const dir = Math.sin(swayTimer * 2.2) > 0 ? 1 : -1;
         vel.copy(sidewayHeading).multiplyScalar(3.2 * (s.settings.speedSide / 100) * dir);
         
-        const desiredDist = activeWeapon === 'sword' ? (maxLungeRange * 0.7) : (playerDangerZone + 1.2);
+        const desiredDist = activeWeapon === 'sword' ? (maxLungeRange * 0.7) : (resolvedDangerZone + 1.2);
         const approachBias = distanceToTarget > desiredDist ? 0.35 : -0.45;
         const approachSpeed = approachBias * 1.5 * (approachBias > 0 ? (s.settings.speedForward / 100) : (s.settings.speedBackward / 100));
         vel.addScaledVector(lookHeading, approachSpeed);
@@ -4540,7 +5785,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         }
         pos.addScaledVector(vel, dt);
 
-        if (dashCooldownTimer <= 0 && distanceToTarget < (playerDangerZone + 2.0) && Math.random() < 0.015 && (movementComplexity >= 40)) {
+        if (dashCooldownTimer <= 0 && distanceToTarget < (resolvedDangerZone + 2.0) && Math.random() < 0.015 && (movementComplexity >= 40)) {
           const sideDir = Math.random() > 0.5 ? 1 : -1;
           dashDir.copy(sidewayHeading).multiplyScalar(sideDir).normalize();
           dashRemaining = s.settings.dashDuration || 0.25;
@@ -4553,7 +5798,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
           
           const myHP = isMainAI ? s.aiHP : botState!.hp;
           const targetHP = target.hp;
-          const shouldAvoidTrade = (myHP <= targetHP) && (difficulty === 'hard' || difficulty === 'nightmare');
+          const shouldAvoidTrade = (playstyleFactor < 0.8) && (myHP <= targetHP) && (difficulty === 'hard' || difficulty === 'nightmare');
 
           if (shouldAvoidTrade || Math.random() < reactChance) {
             state = 'DANCING_BACKWARD';
@@ -4574,7 +5819,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         }
 
         if (timer <= 0) {
-          if (attackDistanceToTarget <= (aiReach + 0.5) && weaponState === 'ready' && target.hp > 0 && !targetIsProtected) {
+          if (attackDistanceToTarget <= (resolvedAiReach + 0.5) && weaponState === 'ready' && target.hp > 0 && !targetIsProtected) {
             state = 'CHARGE_ATTACK';
           } else {
             state = 'DANCING_FORWARD';
@@ -4595,7 +5840,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
             dashCooldownTimer = s.settings.dashCooldown || 2.0;
             sfx.playDash();
           }
-        } else if (attackDistanceToTarget <= aiReach && weaponState === 'ready' && target.hp > 0 && !targetIsProtected) {
+        } else if (attackDistanceToTarget <= resolvedAiReach && weaponState === 'ready' && target.hp > 0 && !targetIsProtected) {
           state = 'CHARGE_ATTACK';
         }
 
@@ -4613,7 +5858,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         vel.copy(lookHeading).multiplyScalar(-6.2 * (s.settings.speedBackward / 100));
         pos.addScaledVector(vel, dt);
 
-        if (target.weaponState === 'recovering' && attackDistanceToTarget <= (aiReach + 2.5) && !targetIsProtected) {
+        if (target.weaponState === 'recovering' && attackDistanceToTarget <= (resolvedAiReach + 2.5) && !targetIsProtected) {
           state = 'CHARGE_ATTACK';
         }
 
@@ -4633,10 +5878,10 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         vel.copy(lookHeading).multiplyScalar(6.5 * (s.settings.speedForward / 100));
         pos.addScaledVector(vel, dt);
 
-        if (attackDistanceToTarget <= aiReach && weaponState === 'ready' && target.hp > 0 && !targetIsProtected) {
+        if (attackDistanceToTarget <= resolvedAiReach && weaponState === 'ready' && target.hp > 0 && !targetIsProtected) {
           const myHP = isMainAI ? s.aiHP : botState!.hp;
           const targetHP = target.hp;
-          const shouldAvoidTrade = (myHP <= targetHP) && (difficulty === 'hard' || difficulty === 'nightmare') && isTargetOnCooldown(target);
+          const shouldAvoidTrade = (playstyleFactor < 0.8) && (myHP <= targetHP) && (difficulty === 'hard' || difficulty === 'nightmare') && isTargetOnCooldown(target);
           const targetIsSwinging = target.weaponState === 'swing_up' || target.weaponState === 'swing_down';
 
           if (shouldAvoidTrade && targetIsSwinging) {
@@ -4650,7 +5895,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
             }
           } else {
             state = 'COOLDOWN';
-            timer = activeWeapon === 'sword' ? (s.settings.swordSlashReload ?? 0.6) : 1.1;
+            timer = (activeWeapon === 'sword' ? (s.settings.swordSlashReload ?? 0.6) : 1.1) * cooldownMult;
             if (isMainAI) {
               if (activeWeapon === 'sword') {
                 triggerEnemySwordSlash();
@@ -4663,7 +5908,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
               sfx.playSwing();
             }
           }
-        } else if (attackDistanceToTarget > (aiReach + 2.0) || targetIsProtected) {
+        } else if (attackDistanceToTarget > (resolvedAiReach + 2.0) || targetIsProtected) {
           state = 'SIDE_STEPPING';
           timer = 0.4;
         }
@@ -4723,1167 +5968,22 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
   };
 
   // ENEMY AI PATHFINDING & FENCING STRATEGY
-  const updateAI = (dt: number) => {
-    const s = stateRef.current;
-    const enemyMesh = threeRef.current.enemyGroup;
 
-    if (!enemyMesh) return;
-
-    if (isMultiplayer) {
-      // In multiplayer, the remote Spartan coordinates and actions guide the render state
-      if (s.aiHP <= 0) {
-        enemyMesh.visible = false;
-        s.enemyRespawnTimer = Math.max(0, s.enemyRespawnTimer - dt);
-        return;
-      }
-
-      enemyMesh.visible = true;
-
-      if (s.aiInvulnerabilityTimer > 0) {
-        s.aiInvulnerabilityTimer = Math.max(0, s.aiInvulnerabilityTimer - dt);
-      }
-
-      enemyMesh.rotation.y = s.aiYaw;
-
-      if (s.aiIsCrouching) {
-        enemyMesh.scale.set(1, 0.65, 1);
-      } else {
-        enemyMesh.scale.set(1, 1, 1);
-      }
-
-      enemyMesh.position.copy(s.aiPos);
-
-      // Support rendering custom sword trail particles if the opponent is in active lunge state
-      if (s.aiState === 'LUNGING') {
-        s.aiLungeTimer += dt;
-        const lungeSpeed = s.settings.swordLungeSpeed ?? 24.0;
-        s.aiVel.copy(s.aiLungeTargetDir).multiplyScalar(lungeSpeed);
-        
-        s.aiPos.addScaledVector(s.aiVel, dt);
-        s.aiPos.y = Math.max(0, s.aiPos.y);
-        enemyMesh.position.copy(s.aiPos);
-
-        if (Math.random() > 0.1) {
-          const trailPos = s.aiPos.clone();
-          trailPos.y += 0.825;
-          spawnVoxelShockwaveParticles(trailPos, '#ef4444');
-        }
-
-        if (s.aiLungeTimer > 0.8) {
-          s.aiState = 'APPROACHING';
-        }
-      }
-      return;
-    }
-
-    // Dynamic chaser-attacker AI logic for additional offline bots.
-    // Runs unconditionally so bots keep moving and respawning
-    if (s.otherPlayers) {
-      s.otherPlayers.forEach((bot) => {
-        if (bot.id.startsWith('bot_')) {
-          const botMesh = threeRef.current.otherPlayerMeshes?.get(bot.id)?.group;
-          if (!botMesh) return;
-
-          if (bot.hp <= 0) {
-            botMesh.visible = false;
-            bot.respawnTimer = Math.max(0, bot.respawnTimer - dt);
-            if (bot.respawnTimer <= 0) {
-              bot.hp = bot.maxHp;
-
-              const exclude: THREE.Vector3[] = [s.playerPos, s.aiPos];
-              s.otherPlayers.forEach(o => {
-                if (o.id !== bot.id && o.hp > 0 && o.respawnTimer <= 0) {
-                  exclude.push(new THREE.Vector3(o.pos.x, o.pos.y, o.pos.z));
-                }
-              });
-              const spawnPos = getOptimalSpawnPoint(exclude);
-              bot.pos.copy(spawnPos);
-              bot.vel.set(0, 0, 0);
-              bot.yaw = getInwardSpawnYaw(spawnPos);
-              bot.weaponState = 'ready';
-              bot.weaponTimer = 0;
-              bot.invulnerabilityTimer = s.settings.respawnInvulnerabilityDuration; // Spawn protection!
-              botMesh.visible = true;
-              sfx.playRespawn();
-            }
-            return;
-          }
-
-          botMesh.visible = true;
-          updateSingleAIEntity(bot.id, false, dt);
-        }
-      });
-    }
-
-    // Is the enemy currently dead and counting down respawn?
-    if (s.aiHP <= 0 || s.aiState === 'RESPAWNING') {
-      // Hide model
-      enemyMesh.visible = false;
-      
-      s.enemyRespawnTimer -= dt;
-      if (s.enemyRespawnTimer <= 0) {
-        s.aiHP = s.aiMaxHP;
-        s.aiState = 'APPROACHING';
-        
-        const exclude: THREE.Vector3[] = [s.playerPos];
-        if (s.otherPlayers) {
-          s.otherPlayers.forEach((other) => {
-            if (other.hp > 0 && other.respawnTimer <= 0) {
-              exclude.push(new THREE.Vector3(other.pos.x, other.pos.y, other.pos.z));
-            }
-          });
-        }
-        
-        const spawnPos = getOptimalSpawnPoint(exclude);
-        s.aiPos.copy(spawnPos);
-        s.aiVel.set(0, 0, 0);
-        s.aiYaw = getInwardSpawnYaw(spawnPos);
-        enemyMesh.visible = true;
-        s.aiWeaponState = 'ready';
-        s.aiInvulnerabilityTimer = s.settings.respawnInvulnerabilityDuration;
-        sfx.playRespawn();
-
-      }
-      return;
-    }
-
-    // Main AI Combat update
-    enemyMesh.visible = true;
-    
-    // Main AI Sword Lunge state execution
-    if (s.aiState === 'LUNGING') {
-      s.aiLungeTimer += dt;
-      const lungeSpeed = s.settings.swordLungeSpeed ?? 24.0;
-      s.aiVel.copy(s.aiLungeTargetDir).multiplyScalar(lungeSpeed);
-      
-      s.aiPos.addScaledVector(s.aiVel, dt);
-      s.aiPos.y = Math.max(0, s.aiPos.y);
-      enemyMesh.position.copy(s.aiPos);
-      
-      if (Math.random() > 0.1) {
-        const trailPos = s.aiPos.clone();
-        trailPos.y += 0.825;
-        const scene = threeRef.current.scene;
-        if (scene) {
-          const geo = new THREE.BoxGeometry(0.12, 0.12, 0.12);
-          const mat = new THREE.MeshBasicMaterial({
-            color: new THREE.Color('#ef4444'),
-            transparent: true,
-            opacity: 0.75,
-          });
-          const mesh = new THREE.Mesh(geo, mat);
-          mesh.position.copy(trailPos);
-          scene.add(mesh);
-          threeRef.current.damageExplosionParticles.push({
-            mesh,
-            velocity: new THREE.Vector3((Math.random() - 0.5) * 0.1, Math.random() * 0.15, (Math.random() - 0.5) * 0.1),
-            life: 0.0,
-            maxLife: 0.18,
-          });
-        }
-      }
-      
-      const target = getBestTacticalTarget('main_ai', s.aiPos, (botDifficulties as any)?.main_ai || s.settings.aiDifficulty || 'normal');
-      if (target) {
-        const dist = getCombatBodyCenter(s.aiPos, s.aiIsCrouching).distanceTo(getCombatBodyCenter(target.pos, target.isCrouching));
-        if (target.hp <= 0) {
-          s.aiState = 'COOLDOWN';
-          s.aiTimer = s.settings.swordLungeReload ?? 1.2;
-          s.aiWeaponState = 'ready';
-        } else if (dist <= 1.5) {
-          const swordThreshold = s.settings.swordTradeWindow ?? 350;
-          const hammerThreshold = s.settings.hammerSwordTradeWindow ?? 350;
-          const isPlayerSwordActiveAttack = s.settings.enableSwordTrade && s.activeWeapon === 'sword' && (
-            s.isLunging ||
-            s.pSwordState === 'slashing' ||
-            (Date.now() - s.lastPlayerSwordAttackTime <= swordThreshold)
-          );
-          const isPlayerHammerActiveAttack = s.settings.enableHammerSwordTrade && s.activeWeapon === 'hammer' && (
-            s.pWeaponState === 'swing_up' ||
-            s.pWeaponState === 'swing_down' ||
-            (Date.now() - s.lastPlayerHammerAttackTime <= hammerThreshold)
-          );
-
-          if (target.id === 'player' && isPlayerSwordActiveAttack) {
-            executeTrade('sword_vs_sword');
-            return;
-          } else if (target.id === 'player' && isPlayerHammerActiveAttack) {
-            executeTrade('sword_lunge_vs_hammer');
-            return;
-          }
-
-          if (target.id === 'player') {
-            s.playerHP -= 1;
-            s.aiState = 'COOLDOWN';
-            s.aiTimer = s.settings.swordLungeReload ?? 1.2;
-            s.aiWeaponState = 'ready';
-            
-            sfx.playExplosion();
-            spawnVoxelShockwaveParticles(s.playerPos, '#ef4444');
-            
-            s.lastAIStrikePos = s.playerPos.clone();
-            s.lastAIStrikeTick = 1.2;
-            
-            if (s.playerHP <= 0) {
-              s.playerHP = 0;
-              s.playerRespawnTimer = 3.0;
-              s.scoreEnemy += 1;
-              s.playerDeaths += 1;
-              s.enemyKills += 1;
-              sfx.playDeath();
-              s.pWeaponState = 'ready';
-              s.pWeaponTimer = 0;
-              s.pWeaponReady = true;
-              s.pSwordState = 'ready';
-              s.pSwordTimer = 0;
-              s.pSwordReady = true;
-              s.isLunging = false;
-              s.lungeTimer = 0;
-              
-              const newDeath = {
-                id: Math.random().toString(36).substring(2, 9),
-                attacker: 'Red (AI) [Lunge]',
-                victim: 'Blue (You)',
-              };
-              s.lastDeaths = [newDeath, ...s.lastDeaths].slice(0, 3);
-              spawnVoxelShockwaveParticles(s.playerPos, '#3b82f6');
-            } else {
-              sfx.playSwing();
-              spawnVoxelShockwaveParticles(s.playerPos, '#e2e8f0');
-            }
-          } else {
-            const other = s.otherPlayers?.get(target.id);
-            if (other) {
-              other.hp -= 1;
-              s.aiState = 'COOLDOWN';
-              s.aiTimer = s.settings.swordLungeReload ?? 1.2;
-              s.aiWeaponState = 'ready';
-              
-              sfx.playExplosion();
-              spawnVoxelShockwaveParticles(new THREE.Vector3(other.pos.x, other.pos.y, other.pos.z), '#ef4444');
-              
-              s.lastAIStrikePos = new THREE.Vector3(other.pos.x, other.pos.y, other.pos.z);
-              s.lastAIStrikeTick = 1.2;
-              
-              if (other.hp <= 0) {
-                other.hp = 0;
-                other.respawnTimer = 3.0;
-                s.scoreEnemy += 1;
-                s.enemyKills += 1;
-                other.deaths = (other.deaths || 0) + 1;
-                sfx.playDeath();
-                
-                const newDeath = {
-                  id: Math.random().toString(36).substring(2, 9),
-                  attacker: 'Red (AI) [Lunge]',
-                  victim: other.playerName
-                };
-                s.lastDeaths = [newDeath, ...s.lastDeaths].slice(0, 3);
-                spawnVoxelShockwaveParticles(new THREE.Vector3(other.pos.x, other.pos.y, other.pos.z), '#ef4444');
-              } else {
-                sfx.playSwing();
-                spawnVoxelShockwaveParticles(new THREE.Vector3(other.pos.x, other.pos.y, other.pos.z), '#e2e8f0');
-              }
-              pushStatsUpdate();
-            }
-          }
-        }
-      }
-
-      const startDist = s.aiPos.distanceTo(s.aiLungeStartPos);
-      if (startDist > 16.0 || s.aiLungeTimer > 0.8) {
-        s.aiState = 'COOLDOWN';
-        s.aiTimer = s.settings.swordLungeReload ?? 1.2;
-        s.aiWeaponState = 'ready';
-        s.aiIsJumping = s.aiPos.y > 0.01;
-        if (s.aiIsJumping) {
-          s.aiVel.y = Math.min(s.aiVel.y, 0);
-        }
-      }
-      
-      const distFromCenter = Math.sqrt(s.aiPos.x * s.aiPos.x + s.aiPos.z * s.aiPos.z);
-      if (distFromCenter > s.arenaRadius - 0.6) {
-        const angle = Math.atan2(s.aiPos.z, s.aiPos.x);
-        s.aiPos.x = Math.cos(angle) * (s.arenaRadius - 0.6);
-        s.aiPos.z = Math.sin(angle) * (s.arenaRadius - 0.6);
-        s.aiState = 'COOLDOWN';
-        s.aiTimer = s.settings.swordLungeReload ?? 1.2;
-        s.aiWeaponState = 'ready';
-        s.aiIsJumping = s.aiPos.y > 0.01;
-        if (s.aiIsJumping) {
-          s.aiVel.y = Math.min(s.aiVel.y, 0);
-        }
-      }
-      return;
-    }
-
-    updateSingleAIEntity('main_ai', true, dt);
-  };
-
-  const animateSpartanModel = (
-    mesh: THREE.Group | null,
-    vel: THREE.Vector3,
-    yaw: number,
-    hp: number,
-    weaponState: string,
-    weaponTimer: number,
-    dt: number
-  ) => {
-    if (!mesh) return;
-
-    const lowerTorso = mesh.userData.lowerTorso as THREE.Group | undefined;
-    const upperTorso = mesh.userData.upperTorso as THREE.Group | undefined;
-    const leftLeg = mesh.userData.leftLeg as THREE.Group | undefined;
-    const rightLeg = mesh.userData.rightLeg as THREE.Group | undefined;
-
-    if (!lowerTorso || !upperTorso || !leftLeg || !rightLeg) return;
-
-    // 1. Dynamic Feet & Leg Walk-Sprint Cycles
-    const speed = Math.sqrt(vel.x * vel.x + vel.z * vel.z);
-
-    if (hp > 0) {
-      if (speed > 0.15) {
-        if (mesh.userData.walkPhase === undefined) {
-          mesh.userData.walkPhase = 0;
-        }
-
-        const frequency = 5.2 * (speed / 4.0);
-        mesh.userData.walkPhase += dt * frequency * Math.PI * 2;
-
-        const phase = mesh.userData.walkPhase;
-        const maxSwing = 0.52; // max leg angle (~30 degrees)
-
-        leftLeg.rotation.x = Math.sin(phase) * maxSwing;
-        rightLeg.rotation.x = -Math.sin(phase) * maxSwing;
-        leftLeg.rotation.z = Math.cos(phase) * 0.05;
-        rightLeg.rotation.z = -Math.cos(phase) * 0.05;
-
-        const bobAmount = Math.abs(Math.sin(phase)) * 0.04;
-        lowerTorso.position.y = -bobAmount;
-      } else {
-        leftLeg.rotation.x = THREE.MathUtils.lerp(leftLeg.rotation.x, 0, dt * 10.0);
-        leftLeg.rotation.z = THREE.MathUtils.lerp(leftLeg.rotation.z, 0, dt * 10.0);
-        rightLeg.rotation.x = THREE.MathUtils.lerp(rightLeg.rotation.x, 0, dt * 10.0);
-        rightLeg.rotation.z = THREE.MathUtils.lerp(rightLeg.rotation.z, 0, dt * 10.0);
-        lowerTorso.position.y = THREE.MathUtils.lerp(lowerTorso.position.y, 0, dt * 10.0);
-        mesh.userData.walkPhase = 0;
-      }
-    } else {
-      leftLeg.rotation.x = 0;
-      leftLeg.rotation.z = 0;
-      rightLeg.rotation.x = 0;
-      rightLeg.rotation.z = 0;
-      lowerTorso.position.y = 0;
-    }
-
-    // 2. Cohesion Lower Torso Directional Rotation
-    let targetLowerTorsoYaw = 0;
-    if (speed > 0.15 && hp > 0) {
-      const moveYaw = Math.atan2(vel.x, vel.z);
-      let diff = moveYaw - yaw;
-      diff = Math.atan2(Math.sin(diff), Math.cos(diff));
-
-      const maxTwist = Math.PI / 3;
-      if (Math.abs(diff) > maxTwist) {
-        targetLowerTorsoYaw = Math.sign(diff) * maxTwist;
-      } else {
-        targetLowerTorsoYaw = diff;
-      }
-    }
-
-    lowerTorso.rotation.y = THREE.MathUtils.lerp(
-      lowerTorso.rotation.y,
-      targetLowerTorsoYaw,
-      dt * 9.0
-    );
-
-    // 3. Cohesion Upper Torso (Aiming & Shoulder weapon swing twists)
-    let targetUpperTorsoYaw = 0;
-    let targetUpperTorsoPitch = 0;
-    let targetUpperTorsoRoll = 0;
-
-    if (hp > 0) {
-      if (weaponState === 'swing_up') {
-        targetUpperTorsoYaw = -0.32;
-        targetUpperTorsoPitch = -0.12;
-      } else if (weaponState === 'swing_down') {
-        targetUpperTorsoYaw = 0.42;
-        targetUpperTorsoPitch = 0.22;
-        targetUpperTorsoRoll = -0.08;
-      } else if (weaponState === 'recovering') {
-        const recoveryDuration = stateRef.current.settings.hammerReloadTime ?? 0.6;
-        const recoveredPct = Math.min(1.0, weaponTimer / recoveryDuration);
-        targetUpperTorsoYaw = THREE.MathUtils.lerp(0.42, 0, recoveredPct);
-        targetUpperTorsoPitch = THREE.MathUtils.lerp(0.22, 0, recoveredPct);
-      }
-    }
-
-    upperTorso.rotation.y = THREE.MathUtils.lerp(upperTorso.rotation.y, targetUpperTorsoYaw, dt * 10.0);
-    upperTorso.rotation.x = THREE.MathUtils.lerp(upperTorso.rotation.x, targetUpperTorsoPitch, dt * 10.0);
-    upperTorso.rotation.z = THREE.MathUtils.lerp(upperTorso.rotation.z, targetUpperTorsoRoll, dt * 10.0);
-  };
 
   // PROCEDURAL SKELETAL JOINTS ANIMATIONS (Torso Twist, Walk Jog Leg/Foot Swing, Spine Bend)
-  const updateCharacterSkeletalAnimations = (dt: number) => {
-    const s = stateRef.current;
 
-    if (s.isObserverMode) {
-      // Animate Host Group (Blue Spartan)
-      if (threeRef.current.hostGroup) {
-        const hostData = getSpectateTargetData('host');
-        animateSpartanModel(
-          threeRef.current.hostGroup,
-          multiplayerRole === 'observer' ? s.hostVel : s.playerVel,
-          hostData.yaw,
-          hostData.hp,
-          (multiplayerRole === 'observer' && s.hostActiveWeapon === 'sword') ? 'ready' : s.pWeaponState,
-          (multiplayerRole === 'observer') ? 0 : s.pWeaponTimer,
-          dt
-        );
-      }
 
-      // Animate Client Group (Red Spartan)
-      if (threeRef.current.enemyGroup) {
-        const clientData = getSpectateTargetData('client');
-        animateSpartanModel(
-          threeRef.current.enemyGroup,
-          multiplayerRole === 'observer' ? s.clientVel : s.aiVel,
-          clientData.yaw,
-          clientData.hp,
-          (multiplayerRole === 'observer' && s.clientActiveWeapon === 'sword') ? 'ready' : s.aiWeaponState,
-          (multiplayerRole === 'observer') ? 0 : s.aiWeaponTimer,
-          dt
-        );
-      }
-    } else {
-      // Standard Player vs Bot animation
-      animateSpartanModel(
-        threeRef.current.enemyGroup,
-        s.aiVel,
-        s.aiYaw,
-        s.aiHP,
-        s.aiWeaponState,
-        s.aiWeaponTimer,
-        dt
-      );
-    }
-
-    // Animate custom other players / bots
-    if (threeRef.current.otherPlayerMeshes && s.otherPlayers) {
-      s.otherPlayers.forEach((player, clientId) => {
-        const meshes = threeRef.current.otherPlayerMeshes.get(clientId);
-        if (meshes && meshes.group) {
-          let wState = player.weaponState || 'ready';
-          let wTimer = player.weaponTimer || 0;
-
-          if (wState === 'swing_up') {
-            wTimer += dt;
-            if (wTimer >= 0.15) {
-              wState = 'swing_down';
-              wTimer = 0;
-            }
-          } else if (wState === 'swing_down') {
-            wTimer += dt;
-            if (wTimer >= 0.15) {
-              wState = 'recovering';
-              wTimer = 0;
-            }
-          } else if (wState === 'recovering') {
-            wTimer += dt;
-            if (wTimer >= 0.3) {
-              wState = 'ready';
-              wTimer = 0;
-            }
-          }
-          player.weaponState = wState;
-          player.weaponTimer = wTimer;
-
-          animateSpartanModel(
-            meshes.group,
-            new THREE.Vector3(player.vel.x, player.vel.y, player.vel.z),
-            player.yaw,
-            player.hp,
-            wState,
-            wTimer,
-            dt
-          );
-        }
-      });
-    }
-  };
-
-  const spawnBurnDecal = (pos: THREE.Vector3, radius: number) => {
-    const scene = threeRef.current.scene;
-    if (!scene) return;
-
-    const decalGeo = new THREE.PlaneGeometry(2, 2);
-    decalGeo.rotateX(-Math.PI / 2);
-
-    const canvas = document.createElement('canvas');
-    canvas.width = 256;
-    canvas.height = 256;
-    const ctx = canvas.getContext('2d');
-    if (ctx) {
-      ctx.clearRect(0, 0, 256, 256);
-
-      const coreGrad = ctx.createRadialGradient(128, 128, 0, 128, 128, 128);
-      coreGrad.addColorStop(0, 'rgba(6, 182, 212, 0.45)');
-      coreGrad.addColorStop(0.3, 'rgba(56, 189, 248, 0.22)');
-      coreGrad.addColorStop(0.7, 'rgba(56, 189, 248, 0.08)');
-      coreGrad.addColorStop(0.85, 'rgba(6, 182, 212, 0.6)');
-      coreGrad.addColorStop(0.93, 'rgba(255, 255, 255, 0.9)');
-      coreGrad.addColorStop(1.0, 'rgba(0, 0, 0, 0)');
-      
-      ctx.fillStyle = coreGrad;
-      ctx.beginPath();
-      ctx.arc(128, 128, 124, 0, Math.PI * 2);
-      ctx.fill();
-
-      ctx.strokeStyle = 'rgba(6, 182, 212, 0.85)';
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.arc(128, 128, 90, 0, Math.PI * 2);
-      ctx.stroke();
-
-      ctx.strokeStyle = 'rgba(56, 189, 248, 0.5)';
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.arc(128, 128, 50, 0, Math.PI * 2);
-      ctx.stroke();
-
-      ctx.strokeStyle = 'rgba(6, 182, 212, 0.45)';
-      ctx.lineWidth = 2;
-      for (let i = 0; i < 8; i++) {
-        const angle = (i * Math.PI) / 4;
-        const startRad = 20;
-        const endRad = 115;
-        const xStart = 128 + Math.cos(angle) * startRad;
-        const yStart = 128 + Math.sin(angle) * startRad;
-        const xEnd = 128 + Math.cos(angle) * endRad;
-        const yEnd = 128 + Math.sin(angle) * endRad;
-        ctx.beginPath();
-        ctx.moveTo(xStart, yStart);
-        ctx.lineTo(xEnd, yEnd);
-        ctx.stroke();
-      }
-    }
-
-    const texture = new THREE.CanvasTexture(canvas);
-    const decalMat = new THREE.MeshBasicMaterial({
-      map: texture,
-      transparent: true,
-      opacity: 1.0,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-      side: THREE.DoubleSide
-    });
-
-    const mesh = new THREE.Mesh(decalGeo, decalMat);
-    mesh.position.set(pos.x, 0.012 + Math.random() * 0.005, pos.z);
-    mesh.scale.set(radius, 1, radius);
-
-    scene.add(mesh);
-
-    threeRef.current.burnDecals.push({
-      mesh,
-      life: 0,
-      maxLife: 3.5,
-    });
-  };
-
-  const updateBurnDecals = (dt: number) => {
-    const list = threeRef.current.burnDecals;
-    const scene = threeRef.current.scene;
-    if (!scene || !list) return;
-
-    for (let i = list.length - 1; i >= 0; i--) {
-      const d = list[i];
-      d.life += dt;
-
-      if (d.life >= d.maxLife) {
-        scene.remove(d.mesh);
-        d.mesh.geometry.dispose();
-        if (Array.isArray(d.mesh.material)) {
-          d.mesh.material.forEach((m: any) => {
-            if (m.map) m.map.dispose();
-            m.dispose();
-          });
-        } else {
-          const m = d.mesh.material as THREE.MeshBasicMaterial;
-          if (m.map) m.map.dispose();
-          m.dispose();
-        }
-        list.splice(i, 1);
-      } else {
-        const ratio = 1.0 - (d.life / d.maxLife);
-        const mat = d.mesh.material as THREE.MeshBasicMaterial;
-        mat.opacity = ratio;
-      }
-    }
-  };
 
   // TICK EXPLOSION VOXEL PARTICLES (Gravity, Physics translation and sizing decay)
-  const updateExplosionParticles = (dt: number) => {
-    const list = threeRef.current.damageExplosionParticles;
-    const scene = threeRef.current.scene;
-
-    if (!scene) return;
-
-    for (let i = list.length - 1; i >= 0; i--) {
-      const p = list[i];
-      p.life += dt;
-
-      if (p.life >= p.maxLife) {
-        // Clean from screen
-        scene.remove(p.mesh);
-        p.mesh.geometry.dispose();
-        list.splice(i, 1);
-      } else {
-        // Accelerate downwards (Gravity pulling voxel chunks back to arena)
-        p.velocity.y -= 15 * dt;
-
-        // Apply translations
-        p.mesh.position.addScaledVector(p.velocity, dt);
-
-        // Voxel shrink size decay
-        const ratio = 1.0 - p.life / p.maxLife;
-        p.mesh.scale.set(ratio, ratio, ratio);
-      }
-    }
-  };
 
   // TICK GAME CLOCK TIMERS
-  const updateMatchTimers = (dt: number) => {
-    const s = stateRef.current;
-    
-    // Decrement remaining game timer count (08:42 to start)
-    s.gameTime -= dt;
-    if (s.gameTime < 0) s.gameTime = 0;
-
-    // Decrement trace visuals linger
-    if (s.lastStrikeTick > 0) s.lastStrikeTick -= dt * 1.5;
-    if (s.lastAIStrikeTick > 0) s.lastAIStrikeTick -= dt * 1.5;
-
-    // Decrement hammer jump windows
-    if (s.pHammerJumpWindowTimer > 0) s.pHammerJumpWindowTimer = Math.max(0, s.pHammerJumpWindowTimer - dt);
-    if (s.aiHammerJumpWindowTimer > 0) s.aiHammerJumpWindowTimer = Math.max(0, s.aiHammerJumpWindowTimer - dt);
-  };
 
   // RENDER STEP
-  const renderGame = () => {
-    const s = stateRef.current;
-    const camera = threeRef.current.camera;
-    const renderer = threeRef.current.renderer;
-    const scene = threeRef.current.scene;
-
-    if (!camera || !renderer || !scene) return;
-
-    // Update blinking transitions during invulnerability windows
-    const blinkCycle = Math.floor(performance.now() / 120) % 2 === 0;
-
-    const updateBlinking = (group: THREE.Group | null, active: boolean) => {
-      if (!group) return;
-      
-      const isAlreadyBlinking = group.userData.isBlinking === true;
-      const shouldShowBlink = active && blinkCycle;
-      
-      if (!active && !isAlreadyBlinking) {
-        return;
-      }
-      
-      group.userData.isBlinking = active;
-      
-      group.traverse((child) => {
-        if (child instanceof THREE.Mesh) {
-          // Skip general helper meshes
-          if (child === threeRef.current.debugPlayerSphere || child === threeRef.current.debugEnemySphere) {
-            return;
-          }
-          
-          if (!child.userData.originalMaterial) {
-            child.userData.originalMaterial = child.material;
-          }
-          
-          if (shouldShowBlink) {
-            child.material = whiteBlinkMaterial;
-          } else {
-            child.material = child.userData.originalMaterial;
-          }
-        }
-      });
-    };
-
-    updateBlinking(threeRef.current.enemyGroup, s.aiInvulnerabilityTimer > 0);
-    updateBlinking(threeRef.current.playerHammer, s.playerInvulnerabilityTimer > 0);
-
-    if (threeRef.current.otherPlayerMeshes && s.otherPlayers) {
-      s.otherPlayers.forEach((player, id) => {
-        const meshes = threeRef.current.otherPlayerMeshes.get(id);
-        if (meshes && meshes.group) {
-          updateBlinking(meshes.group, (player.invulnerabilityTimer || 0) > 0);
-        }
-      });
-    }
-
-    // Manage spectator model visibility to prevent camera head clipping
-    if (s.isObserverMode) {
-      const hostData = getSpectateTargetData('host');
-      const clientData = getSpectateTargetData('client');
-      
-      if (threeRef.current.hostGroup) {
-        threeRef.current.hostGroup.visible = (s.observerCamMode !== 'first' || s.observerTarget !== 'host') && (hostData.hp > 0);
-        
-        // Update host weapons visibility
-        const hammer = threeRef.current.hostHammer;
-        const sword = threeRef.current.hostSword;
-        if (hammer && sword) {
-          hammer.visible = hostData.activeWeapon === 'hammer';
-          sword.visible = hostData.activeWeapon === 'sword';
-        }
-      }
-      
-      if (threeRef.current.enemyGroup) {
-        threeRef.current.enemyGroup.visible = (s.observerCamMode !== 'first' || s.observerTarget !== 'client') && (clientData.hp > 0);
-        
-        // Update client weapons visibility
-        const hammer = threeRef.current.enemyHammer;
-        const sword = threeRef.current.enemySword;
-        if (hammer && sword) {
-          hammer.visible = clientData.activeWeapon === 'hammer';
-          sword.visible = clientData.activeWeapon === 'sword';
-        }
-      }
-    } else {
-      if (threeRef.current.enemyGroup) {
-        threeRef.current.enemyGroup.visible = s.aiHP > 0 && s.aiState !== 'RESPAWNING';
-      }
-    }
-
-    // Apply Camera transforms based on Observer Mode and Camera Mode settings
-    if (s.isObserverMode) {
-      if (s.observerCamMode === 'free') {
-        // Free Camera spectator mode
-        const lookTarget = new THREE.Vector3(0, 0, -1);
-        lookTarget.applyAxisAngle(new THREE.Vector3(1, 0, 0), s.pitch);
-        lookTarget.applyAxisAngle(new THREE.Vector3(0, 1, 0), s.yaw);
-        
-        camera.position.copy(s.playerPos);
-        const centerLookAt = camera.position.clone().add(lookTarget);
-        camera.lookAt(centerLookAt);
-      } else if (s.observerCamMode === 'third') {
-        // Third Person orbital spectator mode
-        const targetData = getSpectateTargetData(s.observerTarget);
-        const targetEyePos = targetData.pos.clone();
-        targetEyePos.y += 1.65 - (targetData.isCrouching ? 0.72 : 0); // Eye height level
-
-        // Compute orbit offset using s.yaw and s.pitch as orbit angles
-        const offset = new THREE.Vector3(0, 0, s.observerOrbitDistance);
-        offset.applyAxisAngle(new THREE.Vector3(1, 0, 0), s.pitch);
-        offset.applyAxisAngle(new THREE.Vector3(0, 1, 0), s.yaw);
-
-        const cameraPos = targetEyePos.clone().add(offset);
-        camera.position.copy(cameraPos);
-        camera.lookAt(targetEyePos);
-      } else if (s.observerCamMode === 'first') {
-        // First Person spectator mode in sync with player being spectated
-        const targetData = getSpectateTargetData(s.observerTarget);
-        const currentCameraY = 1.65 - (targetData.isCrouching ? 0.72 : 0) + targetData.pos.y;
-        camera.position.set(targetData.pos.x, currentCameraY, targetData.pos.z);
-
-        const lookTarget = new THREE.Vector3(0, 0, -1);
-        lookTarget.applyAxisAngle(new THREE.Vector3(1, 0, 0), targetData.pitch);
-        lookTarget.applyAxisAngle(new THREE.Vector3(0, 1, 0), targetData.yaw);
-
-        const centerLookAt = camera.position.clone().add(lookTarget);
-        camera.lookAt(centerLookAt);
-      }
-    } else {
-      // Standard local Player First Person view
-      const lookTarget = new THREE.Vector3(0, 0, -1);
-      lookTarget.applyAxisAngle(new THREE.Vector3(1, 0, 0), s.pitch);
-      lookTarget.applyAxisAngle(new THREE.Vector3(0, 1, 0), s.yaw);
-      
-      const currentCameraY = 1.65 - s.crouchAmount + s.playerPos.y;
-      camera.position.set(s.playerPos.x, currentCameraY, s.playerPos.z);
-      
-      const centerLookAt = camera.position.clone().add(lookTarget);
-      camera.lookAt(centerLookAt);
-    }
-
-    // Sync Debug Mode Traces (wireframe red impact zone circles)
-    const playerSphere = threeRef.current.debugPlayerSphere;
-    if (playerSphere) {
-      if (s.debugMode && s.lastStrikePos && s.lastStrikeTick > 0) {
-        playerSphere.visible = true;
-        playerSphere.position.copy(s.lastStrikePos);
-        
-        // Pulse ring scale & opacity fading
-        const fade = Math.max(0, s.lastStrikeTick);
-        const mat = playerSphere.material as THREE.MeshBasicMaterial;
-        mat.opacity = fade * 0.45;
-        
-        // Scale the sphere mesh based on our custom attackRadius versus default radius
-        const scaleFactor = s.settings.attackRadius / 4.5;
-        playerSphere.scale.setScalar(scaleFactor);
-      } else {
-        playerSphere.visible = false;
-      }
-    }
-
-    const enemySphere = threeRef.current.debugEnemySphere;
-    if (enemySphere) {
-      if (s.debugMode && s.lastAIStrikePos && s.lastAIStrikeTick > 0) {
-        enemySphere.visible = true;
-        enemySphere.position.copy(s.lastAIStrikePos);
-        const fade = Math.max(0, s.lastAIStrikeTick);
-        const mat = enemySphere.material as THREE.MeshBasicMaterial;
-        mat.opacity = fade * 0.45;
-        
-        const scaleFactor = s.settings.attackRadius / 4.5;
-        enemySphere.scale.setScalar(scaleFactor);
-      } else {
-        enemySphere.visible = false;
-      }
-    }
-
-    // Sync Hammer Jump Zone Visualizer
-    const jumpZoneMesh = threeRef.current.playerJumpZoneMesh;
-    if (jumpZoneMesh) {
-      if (s.settings.visualizeJumpZone && s.playerHP > 0) {
-        jumpZoneMesh.visible = true;
-        // Position flatly on the ground floor beneath player
-        jumpZoneMesh.position.set(s.playerPos.x, 0.02, s.playerPos.z);
-        // Scale matched perfectly to the trigger radius slider
-        const triggerRad = s.settings.hammerJumpTriggerRadius ?? 3.5;
-        jumpZoneMesh.scale.set(triggerRad, 1, triggerRad);
-
-        const mat = jumpZoneMesh.material as THREE.MeshBasicMaterial;
-        if (s.pHammerJumpWindowTimer > 0) {
-          // Inside jump window! Fast bright flashing glow alert
-          const flash = 0.6 + Math.sin(performance.now() * 0.016) * 0.25;
-          mat.opacity = flash;
-          mat.color.setHex(0xfca5a5); // glow warm pinkish/gold for alert highlight
-        } else {
-          // Neutral state: soft warm aesthetic glow
-          const pulse = 0.22 + Math.sin(performance.now() * 0.003) * 0.07;
-          mat.opacity = pulse;
-          mat.color.setHex(0xf59e0b); // warm amber
-        }
-      } else {
-        jumpZoneMesh.visible = false;
-      }
-    }
-
-    // Dynamic emissive glow pulsing: pulses visor and weapons in sync
-    const elapsed = performance.now() / 1000;
-    scene.traverse((child) => {
-      if (child instanceof THREE.Mesh && child.material) {
-        const materials = Array.isArray(child.material) ? child.material : [child.material];
-        materials.forEach((mat) => {
-          if (
-            'emissive' in mat &&
-            mat.emissive &&
-            ((mat.emissive as THREE.Color).r > 0 ||
-              (mat.emissive as THREE.Color).g > 0 ||
-              (mat.emissive as THREE.Color).b > 0)
-          ) {
-            const standardMat = mat as THREE.MeshStandardMaterial;
-            // Skip the white blinking material if it's active during invulnerability flashing
-            if (mat !== whiteBlinkMaterial) {
-              standardMat.emissiveIntensity = 2.0 + Math.sin(elapsed * 4.0) * 0.8;
-            }
-          }
-        });
-      }
-    });
-
-    renderer.render(scene, camera);
-  };
 
   // PROPAGATE STATS UPDATE BACK TO CENTRAL HUD CORES
-  const pushStatsUpdate = () => {
-    const s = stateRef.current;
 
-    // Translate stance string for HUD feedback
-    let computedStance: Stance = 'STANDING';
-    if (s.isJumping) computedStance = 'JUMPING';
-    else if (s.isCrouching) computedStance = 'CROUCHING';
-
-    onStatsUpdateRef.current({
-      playerHP: s.playerHP,
-      playerMaxHP: s.playerMaxHP,
-      enemyHP: s.aiHP,
-      enemyMaxHP: s.aiMaxHP,
-      scorePlayer: s.scorePlayer,
-      scoreEnemy: s.scoreEnemy,
-      otherPlayers: s.otherPlayers ? Array.from(s.otherPlayers.values()).map((p: any) => ({
-        id: p.id,
-        playerName: p.playerName,
-        pos: { x: p.pos.x, y: p.pos.y, z: p.pos.z },
-        vel: { x: p.vel.x, y: p.vel.y, z: p.vel.z },
-        yaw: p.yaw,
-        pitch: p.pitch,
-        hp: p.hp,
-        maxHp: p.maxHp,
-        isCrouching: p.isCrouching,
-        activeWeapon: p.activeWeapon,
-        respawnTimer: p.respawnTimer,
-        hue: p.hue,
-        score: p.score ?? 0,
-        kills: p.kills ?? 0,
-        deaths: p.deaths ?? 0,
-        isObserver: p.isObserver
-      })) : undefined,
-      gameTime: s.gameTime,
-      debugMode: s.debugMode,
-      debugDamageRadius: s.settings.attackRadius, // Show actual damage radius
-      weaponReady: s.activeWeapon === 'hammer' ? s.pWeaponReady : s.pSwordReady,
-      weaponCooldown: s.activeWeapon === 'hammer' ? (s.pWeaponCooldown ?? 1.0) : s.pSwordCooldown,
-      activeWeapon: s.activeWeapon,
-      crosshairColor: s.crosshairColor,
-      lastStrikePos: s.lastStrikePos ? [s.lastStrikePos.x, s.lastStrikePos.y, s.lastStrikePos.z] : null,
-      lastStrikeTick: s.lastStrikeTick,
-      isCrouching: s.isCrouching,
-      isJumping: s.isJumping,
-      playerRespawnTimer: s.playerHP <= 0 ? s.playerRespawnTimer : 0,
-      enemyRespawnTimer: s.aiHP <= 0 ? s.enemyRespawnTimer : 0,
-      playerDashCooldownTimer: s.playerDashCooldownTimer,
-      playerDashReady: s.playerDashCooldownTimer <= 0 && s.playerDashRemaining <= 0,
-      settings: s.settings, // Propagate the current admin settings to HUD
-      lastDeaths: s.lastDeaths,
-      playerX: s.playerPos.x,
-      playerZ: s.playerPos.z,
-      playerYaw: s.yaw,
-      enemyX: s.aiPos.x,
-      enemyZ: s.aiPos.z,
-      enemyYaw: s.aiYaw,
-      enemyIsCrouching: s.aiIsCrouching,
-      playerIsCrouchMoving: s.isCrouching && s.playerVel.length() > 0.15,
-      enemyIsCrouchMoving: s.aiIsCrouching && s.aiVel.length() > 0.15,
-      isMultiplayer: isMultiplayer,
-      multiplayerRole: multiplayerRole,
-      opponentConnected: isMultiplayer && multiplayerSocket?.readyState === WebSocket.OPEN,
-      fps: fpsRef.current.value,
-      showScoreboard: s.showScoreboard,
-      isObserverMode: s.isObserverMode,
-      observerCamMode: s.observerCamMode,
-      observerTargetName: getSpectateTargetData(s.observerTarget).name,
-      observerTargetRole: s.observerTarget,
-      playerKills: s.playerKills,
-      playerDeaths: s.playerDeaths,
-      enemyKills: s.enemyKills,
-      enemyDeaths: s.enemyDeaths,
-      opponentPlayerName: opponentNameRef.current || undefined,
-    });
-  };
-
-  const updateFloatingNameplate = () => {
-    const s = stateRef.current;
-    const camera = threeRef.current.camera;
-    const container = containerRef.current;
-    const nameplate = nameplateRef.current;
-
-    if (!s || !camera || !container || !nameplate) return;
-
-    let showNameplate = false;
-    const nameplateScreenPos = { x: 0, y: 0 };
-
-    if (s.playerHP > 0 && s.aiHP > 0 && s.aiState !== 'RESPAWNING') {
-      const eyePos = new THREE.Vector3(
-        s.playerPos.x,
-        1.65 - s.crouchAmount + s.playerPos.y,
-        s.playerPos.z
-      );
-      const enemyCenter = new THREE.Vector3(s.aiPos.x, s.aiPos.y + 0.825, s.aiPos.z);
-      const toEnemy = enemyCenter.clone().sub(eyePos);
-      const dist = toEnemy.length();
-      
-      const appDist = s.settings.nameVisibilityDistance !== undefined ? s.settings.nameVisibilityDistance : 15.0;
-      if (dist <= appDist) {
-        const toEnemyDir = toEnemy.clone().normalize();
-        
-        const cameraLookDir = new THREE.Vector3(0, 0, -1)
-          .applyAxisAngle(new THREE.Vector3(1, 0, 0), s.pitch)
-          .applyAxisAngle(new THREE.Vector3(0, 1, 0), s.yaw)
-          .normalize();
-          
-        const dot = cameraLookDir.dot(toEnemyDir);
-        const angle = Math.acos(Math.max(-1.0, Math.min(1.0, dot)));
-        
-        // Holding crosshair over them
-        if (angle < 0.12) {
-          showNameplate = true;
-          
-          // Calculate projected 2D coordinates
-          const headPos = new THREE.Vector3(s.aiPos.x, s.aiPos.y + 1.75, s.aiPos.z);
-          headPos.project(camera);
-          
-          // Check if in front of camera
-          if (headPos.z <= 1) {
-            const widthHalf = container.clientWidth / 2;
-            const heightHalf = container.clientHeight / 2;
-            nameplateScreenPos.x = (headPos.x * widthHalf) + widthHalf;
-            nameplateScreenPos.y = -(headPos.y * heightHalf) + heightHalf;
-          } else {
-            showNameplate = false;
-          }
-        }
-      }
-    }
-
-    if (showNameplate) {
-      nameplate.style.display = 'block';
-      nameplate.style.left = `${nameplateScreenPos.x}px`;
-      nameplate.style.top = `${nameplateScreenPos.y}px`;
-      nameplate.style.color = s.settings.nameVisibilityColor || '#00ffff';
-      nameplate.style.opacity = (s.settings.nameVisibilityOpacity !== undefined ? s.settings.nameVisibilityOpacity : 0.8).toString();
-      nameplate.style.fontSize = `${s.settings.nameVisibilityFontSize || 16}px`;
-      nameplate.textContent = isMultiplayer ? (opponentNameRef.current || opponentClientId || 'Opponent') : 'AI Bot';
-    } else {
-      nameplate.style.display = 'none';
-    }
-  };
 
   // Direct high-performance HUD Radar Syncing method
-  const updateRadarDOM = () => {
-    const s = stateRef.current;
-    if (!s) return;
-
-    const isPlayerAlive = s.playerHP > 0;
-
-    // 1. Compass Rotation — use transform:translate (GPU-composited, no layout thrash, no transition lag)
-    const nElem = document.getElementById('radar-compass-n');
-    const eElem = document.getElementById('radar-compass-e');
-    const sElem = document.getElementById('radar-compass-s');
-    const wElem = document.getElementById('radar-compass-w');
-
-    if (nElem || eElem || sElem || wElem) {
-      const cosYaw = Math.cos(s.yaw);
-      const sinYaw = Math.sin(s.yaw);
-      const r = 58;
-      const center = 72;
-
-      if (nElem) nElem.style.transform = `translate(${center + r * sinYaw - 3.5}px, ${center - r * cosYaw - 5}px)`;
-      if (eElem) eElem.style.transform = `translate(${center + r * cosYaw - 3.5}px, ${center + r * sinYaw - 5}px)`;
-      if (sElem) sElem.style.transform = `translate(${center - r * sinYaw - 3.5}px, ${center + r * cosYaw - 5}px)`;
-      if (wElem) wElem.style.transform = `translate(${center - r * cosYaw - 3.5}px, ${center - r * sinYaw - 5}px)`;
-    }
-
-    // 2. Multi-enemy dot rendering with element pooling
-    const enemiesContainer = document.getElementById('radar-enemies-container');
-    if (enemiesContainer) {
-      const maxRange = 25;
-      const radarRadius = 72;
-      const scale = radarRadius / maxRange;
-      const forward_x = -Math.sin(s.yaw);
-      const forward_z = -Math.cos(s.yaw);
-      const right_x = Math.cos(s.yaw);
-      const right_z = -Math.sin(s.yaw);
-
-      // Build the full enemy list: main AI + all otherPlayers bots
-      type RadarEnemy = { id: string; pos: THREE.Vector3; hp: number; vel: THREE.Vector3 | null; isCrouching: boolean };
-      const enemies: RadarEnemy[] = [];
-      if (!isMultiplayer) {
-        enemies.push({ id: 'main_ai', pos: s.aiPos, hp: s.aiHP, vel: s.aiVel, isCrouching: s.aiIsCrouching });
-        s.otherPlayers.forEach((bot, id) => {
-          enemies.push({ id, pos: bot.pos, hp: bot.hp, vel: bot.vel, isCrouching: bot.isCrouching });
-        });
-      } else {
-        // In multiplayer, only show the single opponent (aiPos)
-        enemies.push({ id: 'main_ai', pos: s.aiPos, hp: s.aiHP, vel: s.aiVel, isCrouching: s.aiIsCrouching });
-      }
-
-      const pool = radarDotPoolRef.current;
-      const activeIds = new Set<string>();
-
-      for (const enemy of enemies) {
-        if (!isPlayerAlive || enemy.hp <= 0) continue;
-
-        const dx = enemy.pos.x - s.playerPos.x;
-        const dz = enemy.pos.z - s.playerPos.z;
-        const dist = Math.sqrt(dx * dx + dz * dz);
-
-        const velLength = enemy.vel ? enemy.vel.length() : 0;
-        const isCrouchMoving = enemy.isCrouching && velLength > 0.15;
-        if (isCrouchMoving || dist > maxRange) continue;
-
-        const local_x = dx * right_x + dz * right_z;
-        const local_y = dx * forward_x + dz * forward_z;
-        const ex = local_x * scale;
-        const ey = -local_y * scale;
-        const left = radarRadius + ex - 6;
-        const top = radarRadius + ey - 6;
-
-        let dot = pool.get(enemy.id);
-        if (!dot) {
-          dot = document.createElement('div');
-          dot.className = 'absolute w-3 h-3 bg-red-500 rounded-full border border-white/40 shadow-[0_0_12px_#ef4444] animate-pulse z-30 flex items-center justify-center';
-          dot.style.willChange = 'transform';
-          const inner = document.createElement('div');
-          inner.className = 'w-1.5 h-1.5 bg-white rounded-full';
-          dot.appendChild(inner);
-          pool.set(enemy.id, dot);
-        }
-        // Re-append if detached (happens when React re-renders the container after e.g. escape menu)
-        if (dot.parentElement !== enemiesContainer) {
-          enemiesContainer.appendChild(dot);
-        }
-
-        // Use transform:translate for GPU-composited, zero-layout positioning
-        dot.style.transform = `translate(${left}px, ${top}px)`;
-        dot.style.display = 'flex';
-        activeIds.add(enemy.id);
-      }
-
-      // Hide dots for enemies that are dead, out of range, or no longer in the game
-      pool.forEach((dot, id) => {
-        if (!activeIds.has(id)) dot.style.display = 'none';
-      });
-    }
-
-    // 3. Update center player arrow visibility and crouch-cloaking styles
-    const playerArrow = document.getElementById('radar-player-arrow');
-    if (playerArrow) {
-      if (!isPlayerAlive) {
-        playerArrow.style.display = 'none';
-      } else {
-        playerArrow.style.display = 'block';
-        const playerVelLength = s.playerVel ? s.playerVel.length() : 0;
-        const playerIsCrouchMoving = s.isCrouching && playerVelLength > 0.15;
-
-        if (playerIsCrouchMoving) {
-          playerArrow.setAttribute('class', 'absolute w-3.5 h-3.5 text-white/20 z-20');
-          playerArrow.setAttribute('fill', 'none');
-          playerArrow.setAttribute('stroke', 'currentColor');
-          playerArrow.setAttribute('stroke-width', '2');
-        } else {
-          playerArrow.setAttribute('class', 'absolute w-3.5 h-3.5 text-[#22d3ee] drop-shadow-[0_0_4px_rgba(34,211,238,0.7)] z-20');
-          playerArrow.setAttribute('fill', 'currentColor');
-          playerArrow.removeAttribute('stroke');
-          playerArrow.removeAttribute('stroke-width');
-        }
-      }
-    }
-
-    // 4. Update status indicator badges and text node names
-    const badgeText = document.getElementById('radar-status-text');
-    const badgeContainer = document.getElementById('radar-status-badge');
-    if (badgeText && badgeContainer) {
-      const playerVelLength = s.playerVel ? s.playerVel.length() : 0;
-      const playerIsCrouchMoving = s.isCrouching && playerVelLength > 0.15;
-
-      if (!isPlayerAlive) {
-        badgeText.textContent = 'OFFLINE';
-        badgeContainer.className = 'text-[8px] font-mono font-bold px-1.5 py-0.5 rounded border bg-slate-900/40 text-slate-500 border-slate-500/20';
-      } else if (playerIsCrouchMoving) {
-        badgeText.textContent = 'SIGNAL STEALTH';
-        badgeContainer.className = 'text-[8px] font-mono font-bold px-1.5 py-0.5 rounded border bg-amber-950/40 text-amber-400 border-amber-500/20';
-      } else {
-        badgeText.textContent = 'ACTIVE';
-        badgeContainer.className = 'text-[8px] font-mono font-bold px-1.5 py-0.5 rounded border bg-cyan-950/40 text-cyan-400 border-cyan-500/20';
-      }
-    }
-  };
 
   return (
     <div className="absolute inset-0 z-0 w-full h-full" style={{ outline: 'none' }}>
@@ -5933,3 +6033,4 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     </div>
   );
 };
+}

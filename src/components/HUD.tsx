@@ -4,8 +4,15 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Lock, Unlock } from 'lucide-react';
-import { GameStats, UiElementPos, DeviceInfo } from '../types';
+import { Lock, Minus, Plus, RotateCcw, Unlock } from 'lucide-react';
+import {
+  GameStats,
+  UiElementPos,
+  DeviceInfo,
+  UI_ELEMENT_SCALE_MAX,
+  UI_ELEMENT_SCALE_MIN,
+  UI_ELEMENT_SCALE_STEP,
+} from '../types';
 import { LeftAnalogStick, RightActionButtonPad } from './MobileGamepad';
 
 interface HUDProps {
@@ -13,6 +20,7 @@ interface HUDProps {
   onPauseClick: () => void;
   onThemeToggle?: () => void;
   uiPositions: UiElementPos[];
+  uiDefaultPositions: UiElementPos[];
   onUpdateUiPositions: (positions: UiElementPos[]) => void;
   isAdjustmentMode: boolean;
   deviceInfo: DeviceInfo;
@@ -27,47 +35,105 @@ interface DraggableHUDItemProps {
   uiItem?: UiElementPos;
   isAdjustmentMode: boolean;
   onToggleLock: (id: string) => void;
+  onUpdateScale: (id: string, scale: number) => void;
   onPointerDown: (id: string, e: React.PointerEvent) => void;
+  defaultScale: number;
+  isMobileLayout: boolean;
   children: React.ReactNode;
 }
+
+const clampUiScale = (scale: number) => (
+  Math.round(Math.max(UI_ELEMENT_SCALE_MIN, Math.min(UI_ELEMENT_SCALE_MAX, scale)) * 100) / 100
+);
 
 export const DraggableHUDItem: React.FC<DraggableHUDItemProps> = ({
   id,
   uiItem,
   isAdjustmentMode,
   onToggleLock,
+  onUpdateScale,
   onPointerDown,
+  defaultScale,
+  isMobileLayout,
   children
 }) => {
   if (!uiItem) return null;
 
-  const getTransformStyle = (id: string) => {
+  const getTransformStyle = (id: string, scale: number) => {
+    let baseTransform = 'none';
     switch (id) {
       case 'scoreboard':
-        return 'translate(-50%, 0)';
+        baseTransform = 'translate(-50%, 0)';
+        break;
       case 'arenaStatus':
       case 'technicalSpecs':
-        return 'translate(-100%, 0)';
+        baseTransform = 'translate(-100%, 0)';
+        break;
       case 'vitality':
-        return 'translate(-100%, -100%)';
+        baseTransform = 'translate(-100%, -100%)';
+        break;
       case 'crosshair':
-        return 'translate(-50%, -50%)';
       case 'spectatorCard':
-        return 'translate(-50%, -50%)';
+        baseTransform = 'translate(-50%, -50%)';
+        break;
+      case 'mobileLeftAnalog':
+        baseTransform = isMobileLayout ? 'translate(0, -100%)' : 'none';
+        break;
+      case 'mobileRightButtons':
+        baseTransform = isMobileLayout ? 'translate(-100%, -100%)' : 'none';
+        break;
+      case 'weaponDash':
+        baseTransform = isMobileLayout ? 'translate(-50%, -100%)' : 'none';
+        break;
+      case 'eliminationFeed':
+        baseTransform = isMobileLayout ? 'translate(-50%, -50%)' : 'none';
+        break;
+      case 'radar':
+        baseTransform = isMobileLayout ? 'translate(0, -100%)' : 'none';
+        break;
+    }
+    const scaleTransform = `scale(${scale})`;
+    return baseTransform === 'none' ? scaleTransform : `${scaleTransform} ${baseTransform}`;
+  };
+
+  const getTransformOrigin = (id: string) => {
+    switch (id) {
+      case 'scoreboard':
+        return 'top center';
+      case 'arenaStatus':
+      case 'technicalSpecs':
+        return 'top right';
+      case 'vitality':
+        return 'bottom right';
+      case 'crosshair':
+      case 'spectatorCard':
+      case 'eliminationFeed':
+        return 'center';
+      case 'mobileLeftAnalog':
+      case 'radar':
+        return 'bottom left';
+      case 'mobileRightButtons':
+        return 'bottom right';
+      case 'weaponDash':
+        return isMobileLayout ? 'bottom center' : 'top left';
       default:
-        return 'none';
+        return 'top left';
     }
   };
 
+  const scale = clampUiScale(uiItem.scale ?? 1);
   const style: React.CSSProperties = {
     position: 'absolute',
     left: `${uiItem.x}%`,
     top: `${uiItem.y}%`,
-    transform: getTransformStyle(id),
+    transform: getTransformStyle(id, scale),
+    transformOrigin: getTransformOrigin(id),
     zIndex: isAdjustmentMode ? 50 : undefined,
-    willChange: isAdjustmentMode && !uiItem.locked ? 'left, top' : undefined,
+    willChange: isAdjustmentMode && !uiItem.locked ? 'left, top, transform' : undefined,
     touchAction: isAdjustmentMode ? 'none' : undefined,
   };
+
+  const updateScale = (nextScale: number) => onUpdateScale(id, clampUiScale(nextScale));
 
   if (!isAdjustmentMode) {
     return (
@@ -118,6 +184,48 @@ export const DraggableHUDItem: React.FC<DraggableHUDItemProps> = ({
         </button>
       </div>
 
+      {!uiItem.locked && (
+        <div className="absolute -bottom-8 left-0 h-7 flex items-center gap-1 rounded-md border border-slate-800 bg-slate-950/90 px-1.5 text-[9px] font-mono font-bold text-slate-200 shadow-md z-50 pointer-events-auto">
+          <button
+            type="button"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              updateScale(scale - UI_ELEMENT_SCALE_STEP);
+            }}
+            className="w-5 h-5 rounded bg-slate-800 hover:bg-slate-700 flex items-center justify-center cursor-pointer"
+            title="Decrease size"
+          >
+            <Minus className="w-3 h-3" />
+          </button>
+          <span className="min-w-10 text-center tabular-nums">{Math.round(scale * 100)}%</span>
+          <button
+            type="button"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              updateScale(scale + UI_ELEMENT_SCALE_STEP);
+            }}
+            className="w-5 h-5 rounded bg-slate-800 hover:bg-slate-700 flex items-center justify-center cursor-pointer"
+            title="Increase size"
+          >
+            <Plus className="w-3 h-3" />
+          </button>
+          <button
+            type="button"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              updateScale(defaultScale);
+            }}
+            className="w-5 h-5 rounded bg-cyan-950/70 hover:bg-cyan-900 text-cyan-300 flex items-center justify-center cursor-pointer"
+            title="Reset size"
+          >
+            <RotateCcw className="w-3 h-3" />
+          </button>
+        </div>
+      )}
+
       {/* Dragging Overlay shield to optimize dragging and prevent sub-clicks */}
       {!uiItem.locked && (
         <div className="absolute inset-0 z-30 bg-cyan-500/5 cursor-move rounded-xl pointer-events-none" />
@@ -132,6 +240,7 @@ export const HUD: React.FC<HUDProps> = ({
   stats, 
   onPauseClick, 
   uiPositions, 
+  uiDefaultPositions,
   onUpdateUiPositions, 
   isAdjustmentMode,
   deviceInfo,
@@ -181,6 +290,17 @@ export const HUD: React.FC<HUDProps> = ({
   const handleToggleLock = (id: string) => {
     const nextPositions = draftUiPositionsRef.current.map((ui) => (
       ui.id === id ? { ...ui, locked: !ui.locked } : ui
+    ));
+    updateDraftUiPositions(nextPositions);
+    onUpdateUiPositions(nextPositions);
+  };
+
+  const handleUpdateScale = (id: string, scale: number) => {
+    const nextScale = clampUiScale(scale);
+    const nextPositions = draftUiPositionsRef.current.map((ui) => (
+      ui.id === id && ui.scale !== nextScale
+        ? { ...ui, scale: nextScale }
+        : ui
     ));
     updateDraftUiPositions(nextPositions);
     onUpdateUiPositions(nextPositions);
@@ -258,7 +378,20 @@ export const HUD: React.FC<HUDProps> = ({
     };
   }, [draggingId]);
 
-  const usesMobileHud = deviceInfo.isMobile || forceMobileControls;
+  const usesMobileHud = deviceInfo.isMobile;
+  const showsMobileControls = deviceInfo.isMobile || forceMobileControls;
+  const getUiItem = (id: string) => draftUiPositions.find(p => p.id === id);
+  const getDefaultScale = (id: string) => clampUiScale(uiDefaultPositions.find(p => p.id === id)?.scale ?? 1);
+  const getDraggableProps = (id: string) => ({
+    id,
+    uiItem: getUiItem(id),
+    isAdjustmentMode,
+    onToggleLock: handleToggleLock,
+    onUpdateScale: handleUpdateScale,
+    onPointerDown: handlePointerDown,
+    defaultScale: getDefaultScale(id),
+    isMobileLayout: usesMobileHud,
+  });
 
   return (
     <div className={`absolute inset-0 z-10 select-none font-sans text-white ${usesMobileHud ? 'mobile-hud' : 'desktop-hud'} ${isAdjustmentMode ? 'hud-adjusting pointer-events-auto bg-slate-900/10' : 'pointer-events-none'}`}>
@@ -269,13 +402,7 @@ export const HUD: React.FC<HUDProps> = ({
       )}
 
       {/* 1. OBJECTIVES / GAMEMODE */}
-      <DraggableHUDItem
-        id="objective"
-        uiItem={draftUiPositions.find(p => p.id === 'objective')}
-        isAdjustmentMode={isAdjustmentMode}
-        onToggleLock={handleToggleLock}
-        onPointerDown={handlePointerDown}
-      >
+      <DraggableHUDItem {...getDraggableProps('objective')}>
         <div className="flex flex-col gap-1 items-center md:items-start w-full md:w-auto">
           <div className="bg-white/10 backdrop-blur-md border border-white/20 px-4 py-2 rounded-lg">
             <p className="text-[10px] uppercase tracking-widest text-blue-400 font-bold">Objective</p>
@@ -289,13 +416,7 @@ export const HUD: React.FC<HUDProps> = ({
       </DraggableHUDItem>
 
       {/* 2. CORE SCOREBOARD */}
-      <DraggableHUDItem
-        id="scoreboard"
-        uiItem={draftUiPositions.find(p => p.id === 'scoreboard')}
-        isAdjustmentMode={isAdjustmentMode}
-        onToggleLock={handleToggleLock}
-        onPointerDown={handlePointerDown}
-      >
+      <DraggableHUDItem {...getDraggableProps('scoreboard')}>
         <div className="bg-black/50 backdrop-blur-lg border border-white/10 px-8 py-3 rounded-2xl flex items-center gap-6 md:gap-8 shadow-2xl">
           <div className="text-center">
             <p className="text-[10px] text-blue-400 font-bold tracking-tighter uppercase">
@@ -323,13 +444,7 @@ export const HUD: React.FC<HUDProps> = ({
       </DraggableHUDItem>
 
       {/* 3. ARENA STATUS INFO ON RIGHT */}
-      <DraggableHUDItem
-        id="arenaStatus"
-        uiItem={draftUiPositions.find(p => p.id === 'arenaStatus')}
-        isAdjustmentMode={isAdjustmentMode}
-        onToggleLock={handleToggleLock}
-        onPointerDown={handlePointerDown}
-      >
+      <DraggableHUDItem {...getDraggableProps('arenaStatus')}>
         <div className="flex flex-col items-end gap-1">
           <div className="bg-white/10 backdrop-blur-md border border-white/20 px-4 py-2 rounded-lg text-right">
             <p className="text-[10px] uppercase tracking-widest text-emerald-400 font-bold">Map Status</p>
@@ -351,13 +466,7 @@ export const HUD: React.FC<HUDProps> = ({
       </DraggableHUDItem>
 
       {/* 4. TECHNICAL SPECIFICS */}
-      <DraggableHUDItem
-        id="technicalSpecs"
-        uiItem={draftUiPositions.find(p => p.id === 'technicalSpecs')}
-        isAdjustmentMode={isAdjustmentMode}
-        onToggleLock={handleToggleLock}
-        onPointerDown={handlePointerDown}
-      >
+      <DraggableHUDItem {...getDraggableProps('technicalSpecs')}>
         <div className="bg-slate-950/65 backdrop-blur-md border border-cyan-400/20 px-4 py-2.5 rounded-lg text-right shadow-lg min-w-40">
           <p className="text-[10px] uppercase tracking-widest text-cyan-400 font-bold">Technical Specs</p>
           <div className="mt-2 grid grid-cols-[auto_auto] gap-x-4 gap-y-1.5 items-baseline font-mono">
@@ -374,13 +483,7 @@ export const HUD: React.FC<HUDProps> = ({
       </DraggableHUDItem>
 
       {/* 4. DRAGGABLE KILL FEED */}
-      <DraggableHUDItem
-        id="eliminationFeed"
-        uiItem={draftUiPositions.find(p => p.id === 'eliminationFeed')}
-        isAdjustmentMode={isAdjustmentMode}
-        onToggleLock={handleToggleLock}
-        onPointerDown={handlePointerDown}
-      >
+      <DraggableHUDItem {...getDraggableProps('eliminationFeed')}>
         {((stats.lastDeaths && stats.lastDeaths.length > 0) || isAdjustmentMode) ? (
           <div id="death-feed" className="flex flex-col items-start gap-2 max-w-xs pointer-events-none">
             <p className="text-[9px] font-mono font-bold tracking-[0.2em] text-white/30 uppercase ml-1">
@@ -426,13 +529,7 @@ export const HUD: React.FC<HUDProps> = ({
       </DraggableHUDItem>
 
       {/* 5. MOTION TRACKER RADAR */}
-      <DraggableHUDItem
-        id="radar"
-        uiItem={draftUiPositions.find(p => p.id === 'radar')}
-        isAdjustmentMode={isAdjustmentMode}
-        onToggleLock={handleToggleLock}
-        onPointerDown={handlePointerDown}
-      >
+      <DraggableHUDItem {...getDraggableProps('radar')}>
         <div id="motion-tracker-radar" className="flex flex-col items-start gap-1 pointer-events-none select-none">
           <div className="flex items-center gap-2 mb-0.5">
             <span className="text-[9px] font-mono font-bold tracking-[0.2em] text-[#22d3ee]/60 uppercase ml-1">
@@ -502,13 +599,7 @@ export const HUD: React.FC<HUDProps> = ({
       </DraggableHUDItem>
 
       {/* 6. WEAPON CHARGING SYSTEMS & DASH SYSTEM */}
-      <DraggableHUDItem
-        id="weaponDash"
-        uiItem={draftUiPositions.find(p => p.id === 'weaponDash')}
-        isAdjustmentMode={isAdjustmentMode}
-        onToggleLock={handleToggleLock}
-        onPointerDown={handlePointerDown}
-      >
+      <DraggableHUDItem {...getDraggableProps('weaponDash')}>
         {stats.isObserverMode ? (
           <div className="bg-black/60 backdrop-blur-md border border-cyan-500/30 p-4 rounded-xl shadow-2xl min-w-[280px]">
             <div className="flex items-center gap-3 mb-2">
@@ -674,13 +765,7 @@ export const HUD: React.FC<HUDProps> = ({
       </DraggableHUDItem>
 
       {/* 7. HEALTH POINTS, LIVES AND STATUS FLAGS ROW */}
-      <DraggableHUDItem
-        id="vitality"
-        uiItem={draftUiPositions.find(p => p.id === 'vitality')}
-        isAdjustmentMode={isAdjustmentMode}
-        onToggleLock={handleToggleLock}
-        onPointerDown={handlePointerDown}
-      >
+      <DraggableHUDItem {...getDraggableProps('vitality')}>
         {stats.isObserverMode ? (
           <div className="inline-flex flex-col md:flex-row items-end md:items-center gap-3">
             <div className="bg-black/45 backdrop-blur-md border border-cyan-500/30 px-4 py-2.5 rounded-lg text-right shadow-lg">
@@ -732,13 +817,7 @@ export const HUD: React.FC<HUDProps> = ({
 
       {/* 8. CENTER ROW COMPRESS CROSSHAIR */}
       {!stats.isObserverMode && (
-        <DraggableHUDItem
-          id="crosshair"
-          uiItem={draftUiPositions.find(p => p.id === 'crosshair')}
-          isAdjustmentMode={isAdjustmentMode}
-          onToggleLock={handleToggleLock}
-          onPointerDown={handlePointerDown}
-        >
+        <DraggableHUDItem {...getDraggableProps('crosshair')}>
           <div className="relative flex items-center justify-center pointer-events-none">
             {/* Crosshair Outer Ring */}
             {stats.activeWeapon === 'sword' ? (
@@ -932,13 +1011,7 @@ export const HUD: React.FC<HUDProps> = ({
       )}
       {/* 10. HOLOGRAPHIC SPECTATE SELECTOR */}
       {stats.isObserverMode && (
-        <DraggableHUDItem
-          id="spectatorCard"
-          uiItem={draftUiPositions.find(p => p.id === 'spectatorCard')}
-          isAdjustmentMode={isAdjustmentMode}
-          onToggleLock={handleToggleLock}
-          onPointerDown={handlePointerDown}
-        >
+        <DraggableHUDItem {...getDraggableProps('spectatorCard')}>
           <div className="bg-black/60 backdrop-blur-lg border border-cyan-500/40 p-4 rounded-xl shadow-[0_0_20px_rgba(6,182,212,0.25)] flex flex-col items-center gap-3 min-w-[280px]">
             <div className="flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping" />
@@ -990,16 +1063,10 @@ export const HUD: React.FC<HUDProps> = ({
       )}
 
       {/* 🔟 MOBILE VIRTUAL GAMEPAD INTERFACES */}
-      {(deviceInfo.isMobile || forceMobileControls) && (
+      {showsMobileControls && (
         <>
           {/* MOBILE LEFT JOYSTICK */}
-          <DraggableHUDItem
-            id="mobileLeftAnalog"
-            uiItem={draftUiPositions.find(p => p.id === 'mobileLeftAnalog')}
-            isAdjustmentMode={isAdjustmentMode}
-            onToggleLock={handleToggleLock}
-            onPointerDown={handlePointerDown}
-          >
+          <DraggableHUDItem {...getDraggableProps('mobileLeftAnalog')}>
             <LeftAnalogStick
               mobileJoystickRef={mobileJoystickRef}
               isAdjustmentMode={isAdjustmentMode}
@@ -1007,13 +1074,7 @@ export const HUD: React.FC<HUDProps> = ({
           </DraggableHUDItem>
 
           {/* MOBILE RIGHT GAMEPAD BUTTONS & LOOK JOYSTICK */}
-          <DraggableHUDItem
-            id="mobileRightButtons"
-            uiItem={draftUiPositions.find(p => p.id === 'mobileRightButtons')}
-            isAdjustmentMode={isAdjustmentMode}
-            onToggleLock={handleToggleLock}
-            onPointerDown={handlePointerDown}
-          >
+          <DraggableHUDItem {...getDraggableProps('mobileRightButtons')}>
             <RightActionButtonPad
               mobileRightJoystickRef={mobileRightJoystickRef}
               mobileRightJoystickActiveRef={mobileRightJoystickActiveRef}

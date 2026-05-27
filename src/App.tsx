@@ -4,7 +4,18 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
-import { GameStats, UniversalSettings, UiElementPos, Keybindings, DEFAULT_KEYBINDINGS, DeviceOS, DeviceInfo } from './types';
+import {
+  GameStats,
+  UniversalSettings,
+  UiElementPos,
+  Keybindings,
+  DEFAULT_KEYBINDINGS,
+  DeviceOS,
+  DeviceInfo,
+  UI_ELEMENT_SCALE_MAX,
+  UI_ELEMENT_SCALE_MIN,
+  AIBehaviorPreset,
+} from './types';
 import { GrifballGame } from './components/GrifballGame';
 import { HUD } from './components/HUD';
 import { sfx } from './components/AudioEngine';
@@ -13,7 +24,7 @@ import { ChatOverlay, ChatMessage } from './components/ChatOverlay';
 import { CharacterPreview } from './components/CharacterPreview';
 import { CharacterLoadout, DEFAULT_LOADOUT, AVAILABLE_PRESETS, HelmetPreset, TorsoPreset, ArmPreset, LegPreset } from './components/VoxelModels';
 
-const APP_VERSION = '0.222a';
+const APP_VERSION = '0.240';
 const MAX_PLAYER_NAME_LENGTH = 10;
 
 interface OnlineClient {
@@ -145,9 +156,15 @@ interface SaveData {
   version: number;
   playerName: string;
   playerHue: number;
-  uiPositions: UiElementPos[];
+  uiPositions?: UiElementPos[];
+  uiLayouts?: UiLayoutState;
   adminSettings: Omit<UniversalSettings, 'playerHue' | 'playerName'>;
   keybindings?: Keybindings;
+}
+
+interface UiLayoutState {
+  desktop: UiElementPos[];
+  mobile: UiElementPos[];
 }
 
 const ENCRYPTION_KEY = "GRIFBALL_NEURAL_LINK_2026";
@@ -626,7 +643,7 @@ export default function App() {
   const [showUiAdjustment, setShowUiAdjustment] = useState<boolean>(false);
   const [showLightingMenu, setShowLightingMenu] = useState<boolean>(false);
   const [offlineBotCount, setOfflineBotCount] = useState<number>(3); // Default to 3 bots (total 4 combatants)
-  const [botDifficulties, setBotDifficulties] = useState<Record<string, 'easy' | 'normal' | 'hard' | 'nightmare'>>({
+  const [botDifficulties, setBotDifficulties] = useState<Record<string, string>>({
     main_ai: 'normal',
     bot_2: 'normal',
     bot_3: 'normal',
@@ -634,6 +651,15 @@ export default function App() {
     bot_5: 'normal',
     bot_6: 'normal',
     bot_7: 'normal',
+  });
+  const [botBehaviors, setBotBehaviors] = useState<Record<string, AIBehaviorPreset>>({
+    main_ai: 'defensive',
+    bot_2: 'defensive',
+    bot_3: 'defensive',
+    bot_4: 'defensive',
+    bot_5: 'defensive',
+    bot_6: 'defensive',
+    bot_7: 'defensive',
   });
   const [botColors, setBotColors] = useState<Record<string, number>>({
     main_ai: 0,
@@ -734,6 +760,7 @@ export default function App() {
       aiAnticipationFactor: 0.40,
       aiMovementComplexity: 50,
       aiWeaponSwapIQ: 50,
+      aiPlaystyle: 50,
       enableBurnDecals: true,
     };
 
@@ -765,10 +792,10 @@ export default function App() {
     try {
       const { playerHue, playerName: sName, ...restSettings } = adminSettings;
       const dataToSave: SaveData = {
-        version: 1,
+        version: 2,
         playerName: playerName,
         playerHue: playerHue ?? 200,
-        uiPositions: uiPositions,
+        uiLayouts: uiLayouts,
         adminSettings: restSettings,
         keybindings: keybindings
       };
@@ -807,9 +834,12 @@ export default function App() {
       localStorage.setItem('grifball_player_hue', decrypted.playerHue.toString());
 
       // Apply UI Positions
-      if (decrypted.uiPositions && Array.isArray(decrypted.uiPositions)) {
-        setUiPositions(decrypted.uiPositions);
-        localStorage.setItem('grifball_ui_positions', JSON.stringify(decrypted.uiPositions));
+      if (decrypted.uiLayouts) {
+        const migratedLayouts = normalizeUiLayouts(decrypted.uiLayouts);
+        applyUiLayouts(migratedLayouts);
+      } else if (decrypted.uiPositions && Array.isArray(decrypted.uiPositions)) {
+        const migratedLayouts = normalizeUiLayouts(decrypted.uiPositions);
+        applyUiLayouts(migratedLayouts);
       }
 
       // Apply Admin Settings
@@ -857,7 +887,7 @@ export default function App() {
         // Reset states
         const defaultName = `Sptn-${Math.floor(1000 + Math.random() * 9000)}`;
         setPlayerName(defaultName);
-        setUiPositions(DEFAULT_UI_POSITIONS);
+        applyUiLayouts(getDefaultUiLayouts());
         setKeybindings({ ...DEFAULT_KEYBINDINGS });
         
         const defaultAdmin: UniversalSettings = {
@@ -900,6 +930,7 @@ export default function App() {
           aiAnticipationFactor: 0.40,
           aiMovementComplexity: 50,
           aiWeaponSwapIQ: 50,
+          aiPlaystyle: 50,
           enableBurnDecals: true,
         };
         setAdminSettings(defaultAdmin);
@@ -992,77 +1023,147 @@ export default function App() {
   const [ping, setPing] = useState<number | undefined>(undefined);
 
   // Default positions for customizable HUD items (percentages of viewport)
-  const DEFAULT_UI_POSITIONS: UiElementPos[] = [
-    { id: 'objective', name: 'Objective Block', x: 3, y: 3, locked: true },
-    { id: 'scoreboard', name: 'Scoreboard', x: 50, y: 3, locked: true },
-    { id: 'arenaStatus', name: 'Arena Status & Controls', x: 97, y: 3, locked: true },
-    { id: 'technicalSpecs', name: 'Technical Specs', x: 97, y: 19, locked: true },
-    { id: 'eliminationFeed', name: 'Elimination Feed', x: 3, y: 45, locked: true },
-    { id: 'radar', name: 'Tactical Radar', x: 3, y: 65, locked: true },
-    { id: 'weaponDash', name: 'Gear & Thrusters', x: 3, y: 82, locked: true },
-    { id: 'vitality', name: 'Vitality Indicator', x: 97, y: 90, locked: true },
-    { id: 'crosshair', name: 'Reticle / Target Dot', x: 50, y: 50, locked: true },
-    { id: 'spectatorCard', name: 'Spectator Controller', x: 50, y: 88, locked: true },
-    { id: 'mobileLeftAnalog', name: 'Mobile Left Stick', x: 15, y: 75, locked: true },
-    { id: 'mobileRightButtons', name: 'Mobile Right Buttons', x: 80, y: 75, locked: true },
-    { id: 'hudAdjuster', name: 'HUD Canvas Adjuster', x: 50, y: 3, locked: false },
+  const DEFAULT_DESKTOP_UI_POSITIONS: UiElementPos[] = [
+    { id: 'objective', name: 'Objective Block', x: 3, y: 3, locked: true, scale: 1 },
+    { id: 'scoreboard', name: 'Scoreboard', x: 50, y: 3, locked: true, scale: 1 },
+    { id: 'arenaStatus', name: 'Arena Status & Controls', x: 97, y: 3, locked: true, scale: 1 },
+    { id: 'technicalSpecs', name: 'Technical Specs', x: 97, y: 19, locked: true, scale: 1 },
+    { id: 'eliminationFeed', name: 'Elimination Feed', x: 3, y: 45, locked: true, scale: 1 },
+    { id: 'radar', name: 'Tactical Radar', x: 3, y: 65, locked: true, scale: 1 },
+    { id: 'weaponDash', name: 'Gear & Thrusters', x: 3, y: 82, locked: true, scale: 1 },
+    { id: 'vitality', name: 'Vitality Indicator', x: 97, y: 90, locked: true, scale: 1 },
+    { id: 'crosshair', name: 'Reticle / Target Dot', x: 50, y: 50, locked: true, scale: 1 },
+    { id: 'spectatorCard', name: 'Spectator Controller', x: 50, y: 88, locked: true, scale: 1 },
+    { id: 'mobileLeftAnalog', name: 'Mobile Left Stick', x: 15, y: 75, locked: true, scale: 1 },
+    { id: 'mobileRightButtons', name: 'Mobile Right Buttons', x: 80, y: 75, locked: true, scale: 1 },
+    { id: 'hudAdjuster', name: 'HUD Canvas Adjuster', x: 50, y: 3, locked: false, scale: 1 },
   ];
 
-  const [uiPositions, setUiPositions] = useState<UiElementPos[]>(() => {
+  const DEFAULT_MOBILE_UI_POSITIONS: UiElementPos[] = [
+    { id: 'objective', name: 'Objective Block', x: 4, y: 3, locked: true, scale: 0.7 },
+    { id: 'scoreboard', name: 'Scoreboard', x: 50, y: 1.5, locked: true, scale: 0.62 },
+    { id: 'arenaStatus', name: 'Arena Status & Controls', x: 98, y: 1.5, locked: true, scale: 0.7 },
+    { id: 'technicalSpecs', name: 'Technical Specs', x: 98, y: 16, locked: true, scale: 0.68 },
+    { id: 'eliminationFeed', name: 'Elimination Feed', x: 50, y: 42, locked: true, scale: 0.72 },
+    { id: 'radar', name: 'Tactical Radar', x: 2, y: 76, locked: true, scale: 0.62 },
+    { id: 'weaponDash', name: 'Gear & Thrusters', x: 50, y: 97, locked: true, scale: 0.66 },
+    { id: 'vitality', name: 'Vitality Indicator', x: 98, y: 96, locked: true, scale: 0.72 },
+    { id: 'crosshair', name: 'Reticle / Target Dot', x: 50, y: 50, locked: true, scale: 1 },
+    { id: 'spectatorCard', name: 'Spectator Controller', x: 50, y: 88, locked: true, scale: 0.82 },
+    { id: 'mobileLeftAnalog', name: 'Mobile Left Stick', x: 3, y: 97, locked: true, scale: 1 },
+    { id: 'mobileRightButtons', name: 'Mobile Right Buttons', x: 99, y: 98, locked: true, scale: 0.68 },
+    { id: 'hudAdjuster', name: 'HUD Canvas Adjuster', x: 50, y: 3, locked: false, scale: 1 },
+  ];
+
+  const clampUiScale = (scale: unknown, fallback = 1) => {
+    const numeric = typeof scale === 'number' && Number.isFinite(scale) ? scale : fallback;
+    return Math.round(Math.max(UI_ELEMENT_SCALE_MIN, Math.min(UI_ELEMENT_SCALE_MAX, numeric)) * 100) / 100;
+  };
+
+  const cloneUiPositions = (positions: UiElementPos[]) => positions.map(position => ({
+    ...position,
+    scale: clampUiScale(position.scale),
+  }));
+
+  const mergeUiPositions = (defaults: UiElementPos[], saved?: UiElementPos[]) => {
+    const positions = cloneUiPositions(defaults);
+    if (!Array.isArray(saved)) return positions;
+
+    saved.forEach(item => {
+      const index = positions.findIndex(position => position.id === item.id);
+      if (index !== -1) {
+        positions[index] = {
+          ...positions[index],
+          ...item,
+          scale: clampUiScale(item.scale, positions[index].scale ?? 1),
+        };
+      }
+    });
+    return positions;
+  };
+
+  const getDefaultUiLayouts = (): UiLayoutState => ({
+    desktop: cloneUiPositions(DEFAULT_DESKTOP_UI_POSITIONS),
+    mobile: cloneUiPositions(DEFAULT_MOBILE_UI_POSITIONS),
+  });
+
+  const normalizeUiLayouts = (raw: unknown): UiLayoutState => {
+    const defaults = getDefaultUiLayouts();
+    if (Array.isArray(raw)) {
+      return {
+        desktop: mergeUiPositions(DEFAULT_DESKTOP_UI_POSITIONS, raw),
+        mobile: defaults.mobile,
+      };
+    }
+
+    if (raw && typeof raw === 'object') {
+      const saved = raw as Partial<UiLayoutState>;
+      return {
+        desktop: mergeUiPositions(DEFAULT_DESKTOP_UI_POSITIONS, saved.desktop),
+        mobile: mergeUiPositions(DEFAULT_MOBILE_UI_POSITIONS, saved.mobile),
+      };
+    }
+
+    return defaults;
+  };
+
+  const activeUiLayoutMode: keyof UiLayoutState = deviceInfo.isMobile ? 'mobile' : 'desktop';
+  const activeUiDefaults = activeUiLayoutMode === 'mobile' ? DEFAULT_MOBILE_UI_POSITIONS : DEFAULT_DESKTOP_UI_POSITIONS;
+
+  const [uiLayouts, setUiLayouts] = useState<UiLayoutState>(() => {
     try {
       const saved = localStorage.getItem('grifball_ui_positions');
       if (saved) {
-        // Fallback merge to guarantee newly introduced elements exist
-        const parsed = JSON.parse(saved) as UiElementPos[];
-        const positions = [...DEFAULT_UI_POSITIONS];
-        parsed.forEach(item => {
-          const index = positions.findIndex(p => p.id === item.id);
-          if (index !== -1) {
-            positions[index] = item;
-          }
-        });
-        return positions;
+        return normalizeUiLayouts(JSON.parse(saved));
       }
     } catch (e) {
       console.error(e);
     }
-    return DEFAULT_UI_POSITIONS;
+    return getDefaultUiLayouts();
   });
-  const uiPositionsRef = useRef<UiElementPos[]>(uiPositions);
+  const uiLayoutsRef = useRef<UiLayoutState>(uiLayouts);
+  const activeUiPositions = uiLayouts[activeUiLayoutMode];
 
   useEffect(() => {
-    uiPositionsRef.current = uiPositions;
-  }, [uiPositions]);
+    uiLayoutsRef.current = uiLayouts;
+  }, [uiLayouts]);
 
-  const persistUiPositions = (positions: UiElementPos[]) => {
+  const persistUiLayouts = (layouts: UiLayoutState) => {
     try {
-      localStorage.setItem('grifball_ui_positions', JSON.stringify(positions));
+      localStorage.setItem('grifball_ui_positions', JSON.stringify(layouts));
     } catch (e) {
       console.error(e);
     }
   };
 
-  const applyUiPositions = (newPositions: UiElementPos[], shouldPersist = true) => {
-    uiPositionsRef.current = newPositions;
-    setUiPositions(newPositions);
+  const applyUiLayouts = (newLayouts: UiLayoutState, shouldPersist = true) => {
+    uiLayoutsRef.current = newLayouts;
+    setUiLayouts(newLayouts);
     if (shouldPersist) {
-      persistUiPositions(newPositions);
+      persistUiLayouts(newLayouts);
     }
   };
 
+  const applyActiveUiPositions = (newPositions: UiElementPos[], shouldPersist = true) => {
+    applyUiLayouts({
+      ...uiLayoutsRef.current,
+      [activeUiLayoutMode]: mergeUiPositions(activeUiDefaults, newPositions),
+    }, shouldPersist);
+  };
+
   const handleUpdateUiPositions = (newPositions: UiElementPos[]) => {
-    applyUiPositions(newPositions);
+    applyActiveUiPositions(newPositions);
   };
 
   const handleResetUiPositions = () => {
-    applyUiPositions(DEFAULT_UI_POSITIONS);
+    applyActiveUiPositions(activeUiDefaults);
   };
 
   const [isDraggingUiAdjuster, setIsDraggingUiAdjuster] = useState<boolean>(false);
   const uiAdjusterPointerIdRef = useRef<number | null>(null);
-  const defaultUiAdjusterPosition = DEFAULT_UI_POSITIONS.find((position) => position.id === 'hudAdjuster');
+  const defaultUiAdjusterPosition = activeUiDefaults.find((position) => position.id === 'hudAdjuster');
   const uiAdjusterPosition =
-    uiPositions.find((position) => position.id === 'hudAdjuster') ??
+    activeUiPositions.find((position) => position.id === 'hudAdjuster') ??
     defaultUiAdjusterPosition;
 
   const handleUiAdjusterPointerDown = (e: React.PointerEvent) => {
@@ -1084,7 +1185,7 @@ export default function App() {
 
       const { x, y } = pendingPosition;
       pendingPosition = null;
-      const currentPositions = uiPositionsRef.current;
+      const currentPositions = uiLayoutsRef.current[activeUiLayoutMode];
 
       const nextPositions = currentPositions.some((position) => position.id === 'hudAdjuster')
         ? currentPositions.map((position) =>
@@ -1097,7 +1198,7 @@ export default function App() {
             { ...defaultUiAdjusterPosition, x, y },
           ];
 
-      applyUiPositions(nextPositions, false);
+      applyActiveUiPositions(nextPositions, false);
     };
 
     const handleWindowPointerMove = (e: PointerEvent) => {
@@ -1119,7 +1220,7 @@ export default function App() {
         window.cancelAnimationFrame(animationFrameId);
         flushPendingPosition();
       }
-      persistUiPositions(uiPositionsRef.current);
+      persistUiLayouts(uiLayoutsRef.current);
       uiAdjusterPointerIdRef.current = null;
       setIsDraggingUiAdjuster(false);
     };
@@ -1250,6 +1351,120 @@ export default function App() {
     }
   }, [adminSettings, gameplayPresets, selectedPresetName]);
 
+  // AI-only presets state and helper functions
+  interface AITuning {
+    aiReactionLatency?: number;
+    aiAnticipationFactor?: number;
+    aiMovementComplexity?: number;
+    aiWeaponSwapIQ?: number;
+    aiPlaystyle?: number;
+  }
+  interface AIPreset {
+    id: string;
+    name: string;
+    tuning: AITuning;
+  }
+
+  const [aiPresets, setAiPresets] = useState<AIPreset[]>(() => {
+    try {
+      const saved = localStorage.getItem('grifball_ai_presets');
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      console.error('Failed to load AI presets:', e);
+      return [];
+    }
+  });
+
+  const [newAiPresetNameInput, setNewAiPresetNameInput] = useState<string>('');
+
+  const handleSaveAIPreset = (name: string) => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+
+    const id = 'ai_preset_' + Date.now();
+    const newPreset: AIPreset = {
+      id,
+      name: trimmed,
+      tuning: {
+        aiReactionLatency: adminSettings.aiReactionLatency ?? 0.25,
+        aiAnticipationFactor: adminSettings.aiAnticipationFactor ?? 0.40,
+        aiMovementComplexity: adminSettings.aiMovementComplexity ?? 50,
+        aiWeaponSwapIQ: adminSettings.aiWeaponSwapIQ ?? 50,
+        aiPlaystyle: adminSettings.aiPlaystyle ?? 50,
+      }
+    };
+
+    setAiPresets(prev => {
+      const updated = [...prev, newPreset];
+      try {
+        localStorage.setItem('grifball_ai_presets', JSON.stringify(updated));
+      } catch (e) {
+        console.error('Failed to save AI presets:', e);
+      }
+      return updated;
+    });
+
+    setAdminSettings(prev => ({
+      ...prev,
+      aiDifficulty: id
+    }));
+    setNewAiPresetNameInput('');
+  };
+
+  const handleDeleteAIPreset = (idToDelete: string) => {
+    setAiPresets(prev => {
+      const updated = prev.filter(p => p.id !== idToDelete);
+      try {
+        localStorage.setItem('grifball_ai_presets', JSON.stringify(updated));
+      } catch (e) {
+        console.error('Failed to delete AI preset:', e);
+      }
+      return updated;
+    });
+
+    // Fallback bot difficulties using this preset
+    setBotDifficulties(prev => {
+      const updated = { ...prev };
+      Object.keys(updated).forEach(key => {
+        if (updated[key] === idToDelete) {
+          updated[key] = 'normal';
+        }
+      });
+      return updated;
+    });
+
+    // Fallback main ai difficulty if using this preset
+    if (adminSettings.aiDifficulty === idToDelete) {
+      setAdminSettings(prev => ({
+        ...prev,
+        aiDifficulty: 'normal'
+      }));
+    }
+  };
+
+  const handleSelectAIPreset = (id: string) => {
+    if (['easy', 'normal', 'hard', 'nightmare', 'custom'].includes(id)) {
+      setAdminSettings(prev => ({
+        ...prev,
+        aiDifficulty: id
+      }));
+      return;
+    }
+
+    const preset = aiPresets.find(p => p.id === id);
+    if (preset) {
+      setAdminSettings(prev => ({
+        ...prev,
+        aiDifficulty: id,
+        aiReactionLatency: preset.tuning.aiReactionLatency ?? 0.25,
+        aiAnticipationFactor: preset.tuning.aiAnticipationFactor ?? 0.40,
+        aiMovementComplexity: preset.tuning.aiMovementComplexity ?? 50,
+        aiWeaponSwapIQ: preset.tuning.aiWeaponSwapIQ ?? 50,
+        aiPlaystyle: preset.tuning.aiPlaystyle ?? 50,
+      }));
+    }
+  };
+
 
 
   // Standard initial dummy stats to render HUD beautifully before game starts
@@ -1308,6 +1523,7 @@ export default function App() {
       aiAnticipationFactor: 0.40,
       aiMovementComplexity: 50,
       aiWeaponSwapIQ: 50,
+      aiPlaystyle: 50,
     },
     lastDeaths: [],
     playerX: 0,
@@ -2001,6 +2217,8 @@ export default function App() {
           offlineBotCount={offlineBotCount}
           botDifficulties={botDifficulties}
           botColors={botColors}
+          botBehaviors={botBehaviors}
+          aiPresets={aiPresets}
           deviceInfo={deviceInfo}
           forceMobileControls={forceMobileControls}
           mobileJoystickRef={mobileJoystickRef}
@@ -2014,7 +2232,8 @@ export default function App() {
         <HUD 
           stats={currentStats}
           onPauseClick={handlePauseToggle}
-          uiPositions={uiPositions}
+          uiPositions={activeUiPositions}
+          uiDefaultPositions={activeUiDefaults}
           onUpdateUiPositions={handleUpdateUiPositions}
           isAdjustmentMode={showUiAdjustment}
           deviceInfo={deviceInfo}
@@ -2159,17 +2378,35 @@ export default function App() {
                         </div>
                         <div className="flex flex-col gap-1.5">
                           <span className="text-[10.5px] text-white/50 uppercase tracking-widest font-mono">Cognitive Matrix Preset:</span>
-                          <select
-                            value={adminSettings.aiDifficulty || 'normal'}
-                            onChange={(e) => setAdminSettings(prev => ({ ...prev, aiDifficulty: e.target.value as any }))}
-                            className="w-full h-11 bg-black/60 border border-white/10 rounded px-2.5 text-sm text-[#38bdf8] font-bold uppercase outline-none focus:border-[#38bdf8] transition-all cursor-pointer font-sans"
-                          >
-                            <option value="easy">🟢 Easy (Sub-Normal)</option>
-                            <option value="normal">🟡 Normal · Standard Combat</option>
-                            <option value="hard">🔴 Hard (Calibrated)</option>
-                            <option value="nightmare">🟣 Nightmare · Override</option>
-                            <option value="custom">⚙️ Custom</option>
-                          </select>
+                          <div className="flex gap-2">
+                            <select
+                              value={adminSettings.aiDifficulty || 'normal'}
+                              onChange={(e) => handleSelectAIPreset(e.target.value)}
+                              className="flex-1 h-11 bg-black/60 border border-white/10 rounded px-2.5 text-sm text-[#38bdf8] font-bold uppercase outline-none focus:border-[#38bdf8] transition-all cursor-pointer font-sans"
+                            >
+                              <option value="easy">🟢 Easy (Sub-Normal)</option>
+                              <option value="normal">🟡 Normal · Standard Combat</option>
+                              <option value="hard">🔴 Hard (Calibrated)</option>
+                              <option value="nightmare">🟣 Nightmare · Override</option>
+                              <option value="custom">⚙️ Custom Matrix Override</option>
+                              {aiPresets.length > 0 && (
+                                <optgroup label="Saved Presets">
+                                  {aiPresets.map(preset => (
+                                    <option key={preset.id} value={preset.id}>🤖 {preset.name}</option>
+                                  ))}
+                                </optgroup>
+                              )}
+                            </select>
+                            {!['easy', 'normal', 'hard', 'nightmare', 'custom'].includes(adminSettings.aiDifficulty || '') && (
+                              <button
+                                onClick={() => handleDeleteAIPreset(adminSettings.aiDifficulty!)}
+                                className="px-3.5 h-11 bg-red-950/40 hover:bg-red-900/60 border border-red-500/30 hover:border-red-500/50 text-red-400 text-xs font-bold uppercase rounded cursor-pointer transition-all"
+                                title="Delete this AI preset"
+                              >
+                                🗑️
+                              </button>
+                            )}
+                          </div>
                         </div>
                         {adminSettings.aiDifficulty === 'custom' && (
                           <div className="flex flex-col gap-3 pt-1">
@@ -2191,6 +2428,48 @@ export default function App() {
                                 />
                               </div>
                             ))}
+
+                            {/* Playstyle Slider */}
+                            <div className="flex flex-col gap-1.5">
+                              <div className="flex justify-between text-xs font-mono uppercase tracking-wider text-white/60">
+                                <span>Combat Playstyle</span>
+                                <span className="text-cyan-400 font-bold">
+                                  {(() => {
+                                    const p = adminSettings.aiPlaystyle ?? 50;
+                                    if (p === 0) return 'Passive (0)';
+                                    if (p < 50) return `Blended (Passive-Defensive) (${p})`;
+                                    if (p === 50) return 'Defensive (50)';
+                                    if (p < 100) return `Blended (Defensive-Aggressive) (${p})`;
+                                    return 'Aggressive (100)';
+                                  })()}
+                                </span>
+                              </div>
+                              <input type="range" min="0" max="100" step="5"
+                                value={adminSettings.aiPlaystyle ?? 50}
+                                onChange={(e) => setAdminSettings(prev => ({ ...prev, aiPlaystyle: parseInt(e.target.value) }))}
+                                className="w-full accent-cyan-400 h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
+                              />
+                            </div>
+
+                            {/* Save Custom AI Presets */}
+                            <div className="flex flex-col gap-1.5 pt-2 border-t border-white/5 mt-2">
+                              <span className="text-[10px] text-white/50 uppercase tracking-widest font-mono">Save Custom AI Preset:</span>
+                              <div className="flex gap-2">
+                                <input
+                                  type="text"
+                                  placeholder="Preset Name (e.g. AggroBot)"
+                                  value={newAiPresetNameInput}
+                                  onChange={(e) => setNewAiPresetNameInput(e.target.value)}
+                                  className="flex-1 h-9 bg-black/60 border border-white/10 rounded px-2.5 text-xs text-white outline-none focus:border-[#38bdf8] transition-all font-sans"
+                                />
+                                <button
+                                  onClick={() => handleSaveAIPreset(newAiPresetNameInput)}
+                                  className="px-4 h-9 bg-[#38bdf8]/10 hover:bg-[#38bdf8]/20 border border-[#38bdf8]/30 hover:border-[#38bdf8]/50 text-[#38bdf8] text-[10.5px] font-bold uppercase rounded cursor-pointer transition-all font-sans"
+                                >
+                                  Save
+                                </button>
+                              </div>
+                            </div>
                           </div>
                         )}
                       </div>
@@ -3813,7 +4092,6 @@ export default function App() {
                       </button>
                     </div>
                   </div>
-
                   {/* AI Neural Configuration Section (New!) */}
                   <div className="border border-white/5 rounded-xl p-2.5 bg-white/1 flex flex-col gap-2.5">
                     <p className="text-[10px] text-cyan-400 font-bold uppercase tracking-widest border-b border-white/5 pb-1 font-mono flex items-center justify-between">
@@ -3824,17 +4102,35 @@ export default function App() {
                     {/* Preset dropdown */}
                     <div className="flex flex-col gap-1">
                       <span className="text-[9px] text-white/50 uppercase tracking-widest font-mono">Cognitive Matrix Preset:</span>
-                      <select
-                        value={adminSettings.aiDifficulty || 'normal'}
-                        onChange={(e) => setAdminSettings(prev => ({ ...prev, aiDifficulty: e.target.value as any }))}
-                        className="w-full h-8 bg-black/60 border border-white/10 rounded px-2 text-xs text-cyan-400 font-bold uppercase outline-none focus:border-cyan-400 cursor-pointer transition-all font-sans"
-                      >
-                        <option value="easy">🟢 Easy (Sub-Normal)</option>
-                        <option value="normal">🔵 Normal (Adaptive)</option>
-                        <option value="hard">🟡 Hard (Punishing)</option>
-                        <option value="nightmare">🔴 Nightmare (Grandmaster)</option>
-                        <option value="custom">⚙️ Custom Matrix Override</option>
-                      </select>
+                      <div className="flex gap-2">
+                        <select
+                          value={adminSettings.aiDifficulty || 'normal'}
+                          onChange={(e) => handleSelectAIPreset(e.target.value)}
+                          className="flex-1 h-8 bg-black/60 border border-white/10 rounded px-2 text-xs text-cyan-400 font-bold uppercase outline-none focus:border-cyan-400 cursor-pointer transition-all font-sans"
+                        >
+                          <option value="easy">🟢 Easy (Sub-Normal)</option>
+                          <option value="normal">🔵 Normal (Adaptive)</option>
+                          <option value="hard">🟡 Hard (Punishing)</option>
+                          <option value="nightmare">🔴 Nightmare (Grandmaster)</option>
+                          <option value="custom">⚙️ Custom Matrix Override</option>
+                          {aiPresets.length > 0 && (
+                            <optgroup label="Saved Presets">
+                              {aiPresets.map(preset => (
+                                <option key={preset.id} value={preset.id}>🤖 {preset.name}</option>
+                              ))}
+                            </optgroup>
+                          )}
+                        </select>
+                        {!['easy', 'normal', 'hard', 'nightmare', 'custom'].includes(adminSettings.aiDifficulty || '') && (
+                          <button
+                            onClick={() => handleDeleteAIPreset(adminSettings.aiDifficulty!)}
+                            className="px-2 h-8 bg-red-950/40 hover:bg-red-900/60 border border-red-500/30 hover:border-red-500/50 text-red-400 text-xs font-bold uppercase rounded cursor-pointer transition-all"
+                            title="Delete this AI preset"
+                          >
+                            🗑️
+                          </button>
+                        )}
+                      </div>
                     </div>
 
                     {/* Custom Matrix Override Controls */}
@@ -3906,6 +4202,48 @@ export default function App() {
                             onChange={(e) => setAdminSettings(prev => ({ ...prev, aiWeaponSwapIQ: parseInt(e.target.value) }))}
                             className="w-full accent-cyan-400 h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
                           />
+                        </div>
+
+                        {/* Playstyle Slider */}
+                        <div className="flex flex-col gap-1">
+                          <div className="flex justify-between text-[9px] font-mono uppercase tracking-wider text-white/60">
+                            <span>Combat Playstyle</span>
+                            <span className="text-cyan-400 font-bold">
+                              {(() => {
+                                const p = adminSettings.aiPlaystyle ?? 50;
+                                if (p === 0) return 'Passive (0)';
+                                if (p < 50) return `Passive-Defensive (${p})`;
+                                if (p === 50) return 'Defensive (50)';
+                                if (p < 100) return `Defensive-Aggro (${p})`;
+                                return 'Aggressive (100)';
+                              })()}
+                            </span>
+                          </div>
+                          <input type="range" min="0" max="100" step="5"
+                            value={adminSettings.aiPlaystyle ?? 50}
+                            onChange={(e) => setAdminSettings(prev => ({ ...prev, aiPlaystyle: parseInt(e.target.value) }))}
+                            className="w-full accent-cyan-400 h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
+                          />
+                        </div>
+
+                        {/* Save Custom AI Presets */}
+                        <div className="flex flex-col gap-1 pt-1.5 border-t border-white/5 mt-1">
+                          <span className="text-[8.5px] text-white/50 uppercase tracking-widest font-mono">Save Custom AI Preset:</span>
+                          <div className="flex gap-1.5">
+                            <input
+                              type="text"
+                              placeholder="Preset Name"
+                              value={newAiPresetNameInput}
+                              onChange={(e) => setNewAiPresetNameInput(e.target.value)}
+                              className="flex-1 h-7 bg-black/60 border border-white/10 rounded px-2 text-[10px] text-white outline-none focus:border-cyan-400 transition-all font-sans"
+                            />
+                            <button
+                              onClick={() => handleSaveAIPreset(newAiPresetNameInput)}
+                              className="px-2.5 h-7 bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/20 hover:border-cyan-500/40 text-cyan-400 text-[9px] font-bold uppercase rounded cursor-pointer transition-all font-sans"
+                            >
+                              Save
+                            </button>
+                          </div>
                         </div>
                       </div>
                     )}
@@ -4613,16 +4951,37 @@ export default function App() {
                     ))}
                   </div>
                   {1 <= offlineBotCount && (
-                    <select
-                      value={botDifficulties.main_ai || 'normal'}
-                      onChange={(e) => setBotDifficulties(prev => ({ ...prev, main_ai: e.target.value as any }))}
-                      className="w-full h-7 bg-black/60 border border-white/10 rounded px-1.5 text-[10px] text-white/70 font-bold uppercase outline-none focus:border-blue-400 cursor-pointer transition-all font-sans"
-                    >
-                      <option value="easy">🟢 Easy</option>
-                      <option value="normal">🔵 Normal</option>
-                      <option value="hard">🟡 Hard</option>
-                      <option value="nightmare">🔴 Nightmare</option>
-                    </select>
+                    <div className="w-full flex flex-col gap-1 mt-auto">
+                      <select
+                        value={botDifficulties.main_ai || 'normal'}
+                        onChange={(e) => setBotDifficulties(prev => ({ ...prev, main_ai: e.target.value }))}
+                        className="w-full h-7 bg-black/60 border border-white/10 rounded px-1.5 text-[10px] text-white/70 font-bold uppercase outline-none focus:border-blue-400 cursor-pointer transition-all font-sans"
+                      >
+                        <option value="easy">🟢 Easy</option>
+                        <option value="normal">🔵 Normal</option>
+                        <option value="hard">🟡 Hard</option>
+                        <option value="nightmare">🔴 Nightmare</option>
+                        {aiPresets.length > 0 && (
+                          <optgroup label="Custom Presets">
+                            {aiPresets.map(preset => (
+                              <option key={preset.id} value={preset.id}>🤖 {preset.name}</option>
+                            ))}
+                          </optgroup>
+                        )}
+                      </select>
+                      {['easy', 'normal', 'hard', 'nightmare'].includes(botDifficulties.main_ai || 'normal') && (
+                        <select
+                          value={botBehaviors.main_ai || 'defensive'}
+                          onChange={(e) => setBotBehaviors(prev => ({ ...prev, main_ai: e.target.value as AIBehaviorPreset }))}
+                          className="w-full h-7 bg-black/60 border border-white/10 rounded px-1.5 text-[10px] text-cyan-400 font-bold uppercase outline-none focus:border-cyan-400 cursor-pointer transition-all font-sans"
+                          title="Bot Behavior Playstyle"
+                        >
+                          <option value="passive">🛡️ Passive</option>
+                          <option value="defensive">🛡️ Defensive</option>
+                          <option value="aggressive">⚔️ Aggressive</option>
+                        </select>
+                      )}
+                    </div>
                   )}
                 </div>
 
@@ -4667,16 +5026,37 @@ export default function App() {
                         ))}
                       </div>
                       {slotActive && (
-                        <select
-                          value={botDifficulties[bot.id] || 'normal'}
-                          onChange={(e) => setBotDifficulties(prev => ({ ...prev, [bot.id]: e.target.value as any }))}
-                          className="w-full h-7 bg-black/60 border border-white/10 rounded px-1.5 text-[10px] text-white/70 font-bold uppercase outline-none focus:border-blue-400 cursor-pointer transition-all font-sans"
-                        >
-                          <option value="easy">🟢 Easy</option>
-                          <option value="normal">🔵 Normal</option>
-                          <option value="hard">🟡 Hard</option>
-                          <option value="nightmare">🔴 Nightmare</option>
-                        </select>
+                        <div className="w-full flex flex-col gap-1 mt-auto">
+                          <select
+                            value={botDifficulties[bot.id] || 'normal'}
+                            onChange={(e) => setBotDifficulties(prev => ({ ...prev, [bot.id]: e.target.value }))}
+                            className="w-full h-7 bg-black/60 border border-white/10 rounded px-1.5 text-[10px] text-white/70 font-bold uppercase outline-none focus:border-blue-400 cursor-pointer transition-all font-sans"
+                          >
+                            <option value="easy">🟢 Easy</option>
+                            <option value="normal">🔵 Normal</option>
+                            <option value="hard">🟡 Hard</option>
+                            <option value="nightmare">🔴 Nightmare</option>
+                            {aiPresets.length > 0 && (
+                              <optgroup label="Custom Presets">
+                                {aiPresets.map(preset => (
+                                  <option key={preset.id} value={preset.id}>🤖 {preset.name}</option>
+                                ))}
+                              </optgroup>
+                            )}
+                          </select>
+                          {['easy', 'normal', 'hard', 'nightmare'].includes(botDifficulties[bot.id] || 'normal') && (
+                            <select
+                              value={botBehaviors[bot.id] || 'defensive'}
+                              onChange={(e) => setBotBehaviors(prev => ({ ...prev, [bot.id]: e.target.value as AIBehaviorPreset }))}
+                              className="w-full h-7 bg-black/60 border border-white/10 rounded px-1.5 text-[10px] text-cyan-400 font-bold uppercase outline-none focus:border-cyan-400 cursor-pointer transition-all font-sans"
+                              title="Bot Behavior Playstyle"
+                            >
+                              <option value="passive">🛡️ Passive</option>
+                              <option value="defensive">🛡️ Defensive</option>
+                              <option value="aggressive">⚔️ Aggressive</option>
+                            </select>
+                          )}
+                        </div>
                       )}
                     </div>
                   );

@@ -38,11 +38,12 @@ export interface UniversalSettings {
   nameVisibilityOpacity?: number;         // Opacity of the floating name
   nameVisibilityFontSize?: number;        // Font size of the floating name
   playerName?: string;                    // Persistent customized player name / handle
-  aiDifficulty?: 'easy' | 'normal' | 'hard' | 'nightmare' | 'custom';
+  aiDifficulty?: 'easy' | 'normal' | 'hard' | 'nightmare' | 'custom' | string;
   aiReactionLatency?: number;             // Reaction latency in seconds (0.0 to 1.5)
   aiAnticipationFactor?: number;          // How aggressively it predicts player action (0.0 to 1.0)
   aiMovementComplexity?: number;          // 0 to 100%
   aiWeaponSwapIQ?: number;                // 0 to 100%
+  aiPlaystyle?: number;                   // Custom AI playstyle slider: 0 = Passive, 50 = Defensive, 100 = Aggressive
   enableBurnDecals?: boolean;
 }
 
@@ -85,6 +86,8 @@ export type GameState = 'menu' | 'playing' | 'paused';
 export type Stance = 'STANDING' | 'CROUCHING' | 'JUMPING';
 
 export type WeaponState = 'ready' | 'swing_up' | 'swing_down' | 'recovering';
+
+export type AIBehaviorPreset = 'passive' | 'defensive' | 'aggressive';
 
 export type AIBehaviorState =
   | 'APPROACHING' // AI moves toward the player
@@ -202,7 +205,12 @@ export interface UiElementPos {
   x: number; // percentage of screen width (0-100)
   y: number; // percentage of screen height (0-100)
   locked: boolean;
+  scale?: number; // multiplier for the rendered HUD element, default 1
 }
+
+export const UI_ELEMENT_SCALE_MIN = 0.5;
+export const UI_ELEMENT_SCALE_MAX = 1.6;
+export const UI_ELEMENT_SCALE_STEP = 0.05;
 
 export type DeviceOS = 'ios' | 'android' | 'desktop' | 'unknown';
 
