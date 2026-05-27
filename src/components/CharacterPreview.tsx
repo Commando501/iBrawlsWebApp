@@ -178,6 +178,7 @@ export const CharacterPreview: React.FC<CharacterPreviewProps> = ({ hue, heldWea
     container.addEventListener('pointerleave', onPointerLeave);
 
     // 4. Animation loop
+    const clock = new THREE.Clock();
     let animationFrameId: number;
     const animate = () => {
       // Check if parameters have updated reactively
@@ -201,6 +202,26 @@ export const CharacterPreview: React.FC<CharacterPreviewProps> = ({ hue, heldWea
         platform.rotation.y += 0.012;
         platformRing.rotation.y += 0.012;
       }
+
+      // Dynamic emissive glow pulsing: pulses visor and weapons in sync
+      const elapsed = clock.getElapsedTime();
+      scene.traverse((child) => {
+        if (child instanceof THREE.Mesh && child.material) {
+          const materials = Array.isArray(child.material) ? child.material : [child.material];
+          materials.forEach((mat) => {
+            if (
+              'emissive' in mat &&
+              mat.emissive &&
+              ((mat.emissive as THREE.Color).r > 0 ||
+                (mat.emissive as THREE.Color).g > 0 ||
+                (mat.emissive as THREE.Color).b > 0)
+            ) {
+              const standardMat = mat as THREE.MeshStandardMaterial;
+              standardMat.emissiveIntensity = 2.0 + Math.sin(elapsed * 4.0) * 0.8;
+            }
+          });
+        }
+      });
 
       renderer.render(scene, camera);
       animationFrameId = requestAnimationFrame(animate);

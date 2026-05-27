@@ -12,7 +12,7 @@ import { Move, RotateCcw, Check } from 'lucide-react';
 import { ChatOverlay, ChatMessage } from './components/ChatOverlay';
 import { CharacterPreview } from './components/CharacterPreview';
 
-const APP_VERSION = '0.201a';
+const APP_VERSION = '0.202a';
 const MAX_PLAYER_NAME_LENGTH = 10;
 
 interface OnlineClient {

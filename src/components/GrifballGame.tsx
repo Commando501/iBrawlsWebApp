@@ -3361,7 +3361,11 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       spawnVoxelShockwaveParticles(impactPos, '#38bdf8');
 
       if (s.settings.enableBurnDecals) {
-        spawnBurnDecal(impactPos, s.settings.attackRadius);
+        const H = impactPos.y; // Sphere center height relative to ground (y=0)
+        const R = s.settings.attackRadius;
+        if (Math.abs(H) <= R) {
+          spawnBurnDecal(impactPos, R);
+        }
       }
 
       // 2. Damage Application Check: Check main AI bot in singleplayer
@@ -3480,7 +3484,11 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       spawnVoxelShockwaveParticles(impactPos, '#f97316');
 
       if (s.settings.enableBurnDecals) {
-        spawnBurnDecal(impactPos, s.settings.attackRadius);
+        const H = impactPos.y; // Sphere center height relative to ground (y=0)
+        const R = s.settings.attackRadius;
+        if (Math.abs(H) <= R) {
+          spawnBurnDecal(impactPos, R);
+        }
       }
 
       // Damage target check: Compare strike sphere coordinate with target's 3D body center
@@ -5440,6 +5448,29 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         jumpZoneMesh.visible = false;
       }
     }
+
+    // Dynamic emissive glow pulsing: pulses visor and weapons in sync
+    const elapsed = performance.now() / 1000;
+    scene.traverse((child) => {
+      if (child instanceof THREE.Mesh && child.material) {
+        const materials = Array.isArray(child.material) ? child.material : [child.material];
+        materials.forEach((mat) => {
+          if (
+            'emissive' in mat &&
+            mat.emissive &&
+            ((mat.emissive as THREE.Color).r > 0 ||
+              (mat.emissive as THREE.Color).g > 0 ||
+              (mat.emissive as THREE.Color).b > 0)
+          ) {
+            const standardMat = mat as THREE.MeshStandardMaterial;
+            // Skip the white blinking material if it's active during invulnerability flashing
+            if (mat !== whiteBlinkMaterial) {
+              standardMat.emissiveIntensity = 2.0 + Math.sin(elapsed * 4.0) * 0.8;
+            }
+          }
+        });
+      }
+    });
 
     renderer.render(scene, camera);
   };

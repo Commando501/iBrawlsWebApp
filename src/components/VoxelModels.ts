@@ -4,6 +4,7 @@
  */
 
 import * as THREE from 'three';
+import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 
 interface VoxelData {
   x: number;
@@ -14,45 +15,154 @@ interface VoxelData {
 }
 
 /**
- * Helper to build custom grouped voxel models
+ * Creates a beautifully beveled 3D Box Geometry using extruded rounded 2D shapes.
+ * Specular light catches these edges, delivering a high-end physical voxel look.
+ */
+export function createBeveledBoxGeometry(
+  width: number,
+  height: number,
+  depth: number,
+  radius: number
+): THREE.BufferGeometry {
+  const shape = new THREE.Shape();
+  const x = -width / 2;
+  const y = -height / 2;
+  const w = width;
+  const h = height;
+  const r = Math.min(radius, width * 0.4); // Clamp to prevent visual overlapping anomalies
+
+  // Draw 2D shape with rounded corners
+  shape.moveTo(x + r, y);
+  shape.lineTo(x + w - r, y);
+  shape.quadraticCurveTo(x + w, y, x + w, y + r);
+  shape.lineTo(x + w, y + h - r);
+  shape.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  shape.lineTo(x + r, y + h);
+  shape.quadraticCurveTo(x, y + h, x, y + h - r);
+  shape.lineTo(x, y + r);
+  shape.quadraticCurveTo(x, y, x + r, y);
+
+  const extrudeSettings = {
+    depth: depth - r * 2,
+    steps: 1,
+    bevelEnabled: true,
+    bevelSegments: 2,
+    bevelSize: r,
+    bevelThickness: r,
+    curveSegments: 4,
+  };
+
+  const geo = new THREE.ExtrudeGeometry(shape, extrudeSettings);
+  geo.center(); // Center geometry pivot
+  return geo;
+}
+
+/**
+ * Translates and merges voxel geometries of the same category into a single BufferGeometry,
+ * assigning vertex colors so multiple colors can be rendered in a single draw call.
+ */
+function mergeVoxelGeometries(
+  voxels: VoxelData[],
+  scale: number,
+  baseGeo: THREE.BufferGeometry,
+  pivotX: number,
+  pivotY: number,
+  pivotZ: number
+): THREE.BufferGeometry {
+  if (voxels.length === 0) {
+    return new THREE.BufferGeometry();
+  }
+
+  const geometries: THREE.BufferGeometry[] = [];
+
+  voxels.forEach((v) => {
+    const geo = baseGeo.clone();
+    
+    // Rigging pivot offset: translate vertices relative to the joint's center point
+    geo.translate(
+      (v.x - pivotX) * scale,
+      (v.y - pivotY) * scale,
+      (v.z - pivotZ) * scale
+    );
+
+    // Apply color values to geometry vertices for unified vertex colors rendering
+    const color = new THREE.Color(v.color);
+    const count = geo.attributes.position.count;
+    const colors = new Float32Array(count * 3);
+    for (let i = 0; i < count; i++) {
+      colors[i * 3] = color.r;
+      colors[i * 3 + 1] = color.g;
+      colors[i * 3 + 2] = color.b;
+    }
+    geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+    geometries.push(geo);
+  });
+
+  const merged = BufferGeometryUtils.mergeGeometries(geometries, false);
+  
+  // Clean up references to individual geometries to prevent WebGL memory leaks
+  geometries.forEach((g) => g.dispose());
+
+  return merged;
+}
+
+/**
+ * Helper to build custom grouped voxel models with maximum performance.
+ * Merges all standard voxels into one mesh, and emissive voxels by glow color.
  */
 export function createVoxelGroup(data: VoxelData[], scale: number = 0.1): THREE.Group {
   const group = new THREE.Group();
-  const boxGeo = new THREE.BoxGeometry(scale, scale, scale);
   
-  // Cache materials to avoid redundant creation
-  const materialMap = new Map<string, THREE.Material>();
+  const bevelRadius = scale * 0.15;
+  const baseBeveledGeo = createBeveledBoxGeometry(scale, scale, scale, bevelRadius);
+  
+  const standardVoxels = data.filter((v) => !v.emissive);
+  const emissiveVoxels = data.filter((v) => v.emissive);
 
-  data.forEach(v => {
-    const matKey = `${v.color}_${v.emissive ? 'glow' : 'standard'}`;
-    let material = materialMap.get(matKey);
-
-    if (!material) {
-      if (v.emissive) {
-        material = new THREE.MeshStandardMaterial({
-          color: new THREE.Color(v.color),
-          emissive: new THREE.Color(v.color),
-          emissiveIntensity: 1.5,
-          roughness: 0.2,
-          metalness: 0.1
-        });
-      } else {
-        material = new THREE.MeshStandardMaterial({
-          color: new THREE.Color(v.color),
-          roughness: 0.7,
-          metalness: 0.3
-        });
-      }
-      materialMap.set(matKey, material);
-    }
-
-    const mesh = new THREE.Mesh(boxGeo, material);
-    mesh.position.set(v.x * scale, v.y * scale, v.z * scale);
+  // 1. Render all standard colored parts in exactly 1 draw call
+  if (standardVoxels.length > 0) {
+    const stdGeo = mergeVoxelGeometries(standardVoxels, scale, baseBeveledGeo, 0, 0, 0);
+    const material = new THREE.MeshStandardMaterial({
+      vertexColors: true,
+      roughness: 0.35,
+      metalness: 0.65,
+    });
+    const mesh = new THREE.Mesh(stdGeo, material);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     group.add(mesh);
-  });
+  }
 
+  // 2. Render glowing parts grouped by color (1 draw call per glow color)
+  if (emissiveVoxels.length > 0) {
+    const emissiveColorsMap = new Map<string, VoxelData[]>();
+    emissiveVoxels.forEach((v) => {
+      let list = emissiveColorsMap.get(v.color);
+      if (!list) {
+        list = [];
+        emissiveColorsMap.set(v.color, list);
+      }
+      list.push(v);
+    });
+
+    emissiveColorsMap.forEach((voxels, colorStr) => {
+      const emGeo = mergeVoxelGeometries(voxels, scale, baseBeveledGeo, 0, 0, 0);
+      const material = new THREE.MeshStandardMaterial({
+        color: new THREE.Color(colorStr),
+        emissive: new THREE.Color(colorStr),
+        emissiveIntensity: 2.5,
+        roughness: 0.15,
+        metalness: 0.1,
+      });
+      const mesh = new THREE.Mesh(emGeo, material);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      group.add(mesh);
+    });
+  }
+
+  baseBeveledGeo.dispose();
   return group;
 }
 
@@ -119,12 +229,10 @@ export function buildGravityHammerModel(customHue?: number): THREE.Group {
     data.push({ x: 3, y: hy, z: -1, color: energyColor, emissive: true });
   }
 
-  // Build the group
-  // We want the handle bottom to be near origin initially for swinging
+  // Build the group using the optimized layout
   const hammer = createVoxelGroup(data, 0.08); // 8cm voxels
   
   // Reposition the hammer model so the pivot is around the lower grip (y=3)
-  // This makes the rotation point natural for swinging
   hammer.traverse((child) => {
     if (child instanceof THREE.Mesh) {
       child.position.y -= 0.3; // Offset down so pivot is at hands
@@ -136,7 +244,7 @@ export function buildGravityHammerModel(customHue?: number): THREE.Group {
 
 /**
  * Builds the Voxel Spartan/Enemy Robot Model
- * Red or Slate Theme
+ * Optimized with limb geometry merging and beveled specular edges
  */
 export function buildVoxelSpartanModel(isEnemy: boolean = true, customHue?: number): THREE.Group {
   let primaryColor = isEnemy ? '#ef4444' : '#3b82f6'; // Crimson red Enemy, Blue Player
@@ -147,7 +255,11 @@ export function buildVoxelSpartanModel(isEnemy: boolean = true, customHue?: numb
   const visorColor = isEnemy ? '#facc15' : '#10b981'; // Glowing yellow vs green
   const scale = 0.08;
 
-  // We will create individual parts using a custom helper to set their pivots nicely
+  // Shared beveled geometry to minimize vertex creation and memory fragmentation
+  const bevelRadius = scale * 0.15;
+  const baseBeveledGeo = createBeveledBoxGeometry(scale, scale, scale, bevelRadius);
+
+  // Helper to build a limb/segment in exactly 1 or 2 draw calls
   const createSegmentGroup = (
     voxels: VoxelData[],
     pivotX: number,
@@ -155,43 +267,51 @@ export function buildVoxelSpartanModel(isEnemy: boolean = true, customHue?: numb
     pivotZ: number
   ): THREE.Group => {
     const group = new THREE.Group();
-    const boxGeo = new THREE.BoxGeometry(scale, scale, scale);
-    const materialMap = new Map<string, THREE.Material>();
 
-    voxels.forEach(v => {
-      const matKey = `${v.color}_${v.emissive ? 'glow' : 'standard'}`;
-      let material = materialMap.get(matKey);
+    const standardVoxels = voxels.filter((v) => !v.emissive);
+    const emissiveVoxels = voxels.filter((v) => v.emissive);
 
-      if (!material) {
-        if (v.emissive) {
-          material = new THREE.MeshStandardMaterial({
-            color: new THREE.Color(v.color),
-            emissive: new THREE.Color(v.color),
-            emissiveIntensity: 1.5,
-            roughness: 0.2,
-            metalness: 0.1
-          });
-        } else {
-          material = new THREE.MeshStandardMaterial({
-            color: new THREE.Color(v.color),
-            roughness: 0.7,
-            metalness: 0.3
-          });
-        }
-        materialMap.set(matKey, material);
-      }
-
-      const mesh = new THREE.Mesh(boxGeo, material);
-      // Offset mesh so its pivot is at the segment's joint center
-      mesh.position.set(
-        (v.x - pivotX) * scale,
-        (v.y - pivotY) * scale,
-        (v.z - pivotZ) * scale
-      );
+    // 1. Merge standard painted parts with dynamic metallic PBR reflection
+    if (standardVoxels.length > 0) {
+      const stdGeo = mergeVoxelGeometries(standardVoxels, scale, baseBeveledGeo, pivotX, pivotY, pivotZ);
+      const material = new THREE.MeshStandardMaterial({
+        vertexColors: true,
+        roughness: 0.35, // Glossy metallic paint sheen
+        metalness: 0.65,
+      });
+      const mesh = new THREE.Mesh(stdGeo, material);
       mesh.castShadow = true;
       mesh.receiveShadow = true;
       group.add(mesh);
-    });
+    }
+
+    // 2. Merge glowing components (e.g. glowing visors)
+    if (emissiveVoxels.length > 0) {
+      const emissiveColorsMap = new Map<string, VoxelData[]>();
+      emissiveVoxels.forEach((v) => {
+        let list = emissiveColorsMap.get(v.color);
+        if (!list) {
+          list = [];
+          emissiveColorsMap.set(v.color, list);
+        }
+        list.push(v);
+      });
+
+      emissiveColorsMap.forEach((voxelsList, colorStr) => {
+        const emGeo = mergeVoxelGeometries(voxelsList, scale, baseBeveledGeo, pivotX, pivotY, pivotZ);
+        const material = new THREE.MeshStandardMaterial({
+          color: new THREE.Color(colorStr),
+          emissive: new THREE.Color(colorStr),
+          emissiveIntensity: 2.5,
+          roughness: 0.15,
+          metalness: 0.1,
+        });
+        const mesh = new THREE.Mesh(emGeo, material);
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        group.add(mesh);
+      });
+    }
 
     return group;
   };
@@ -205,7 +325,6 @@ export function buildVoxelSpartanModel(isEnemy: boolean = true, customHue?: numb
       }
     }
   }
-  // Pivot at hips: x = -1.5, y = 7, z = 0
   const leftLegGroup = createSegmentGroup(leftLegVoxels, -1.5, 7, 0);
   leftLegGroup.position.set(-1.5 * scale, 7 * scale, 0);
 
@@ -217,7 +336,6 @@ export function buildVoxelSpartanModel(isEnemy: boolean = true, customHue?: numb
       }
     }
   }
-  // Pivot at hips: x = 1.5, y = 7, z = 0
   const rightLegGroup = createSegmentGroup(rightLegVoxels, 1.5, 7, 0);
   rightLegGroup.position.set(1.5 * scale, 7 * scale, 0);
 
@@ -230,7 +348,6 @@ export function buildVoxelSpartanModel(isEnemy: boolean = true, customHue?: numb
       }
     }
   }
-  // Pivot of lower torso is at y=0 so legs match properly
   const lowerTorsoGroup = createSegmentGroup(hipVoxels, 0, 0, 0);
   lowerTorsoGroup.add(leftLegGroup);
   lowerTorsoGroup.add(rightLegGroup);
@@ -246,7 +363,6 @@ export function buildVoxelSpartanModel(isEnemy: boolean = true, customHue?: numb
       }
     }
   }
-  // Pivot chest at waist (y = 8)
   const upperTorsoGroup = createSegmentGroup(torsoVoxels, 0, 8, 0);
   upperTorsoGroup.position.set(0, 8 * scale, 0);
 
@@ -259,8 +375,6 @@ export function buildVoxelSpartanModel(isEnemy: boolean = true, customHue?: numb
       }
     }
   }
-  // Left arm pivot in chest coordinates (relative to chest pivot at y=8):
-  // joint is at x = -4.5, y = 15, z = 0. In chest coordinates, position is at (-4.5, 7, 0) relative to (0, 8, 0)
   const leftArmGroup = createSegmentGroup(leftArmVoxels, -4.5, 15, 0);
   leftArmGroup.position.set(-4.5 * scale, (15 - 8) * scale, 0);
   upperTorsoGroup.add(leftArmGroup);
@@ -273,7 +387,6 @@ export function buildVoxelSpartanModel(isEnemy: boolean = true, customHue?: numb
       }
     }
   }
-  // Right arm pivot in chest coordinates: position is at (4.5, 7, 0) relative to (0, 8, 0)
   const rightArmGroup = createSegmentGroup(rightArmVoxels, 4.5, 15, 0);
   rightArmGroup.position.set(4.5 * scale, (15 - 8) * scale, 0);
   upperTorsoGroup.add(rightArmGroup);
@@ -288,7 +401,7 @@ export function buildVoxelSpartanModel(isEnemy: boolean = true, customHue?: numb
       }
     }
   }
-  // helmet
+  // Helmet
   for (let y = 17; y <= 21; y++) {
     for (let x = -2; x <= 2; x++) {
       for (let z = -2; z <= 2; z++) {
@@ -305,8 +418,6 @@ export function buildVoxelSpartanModel(isEnemy: boolean = true, customHue?: numb
     headVoxels.push({ x: 0, y, z: 1, color: '#f97316' });
   }
 
-  // Head pivot in chest coordinates: neck base is at y = 16. Chest pivot is y = 8.
-  // Relative position of neck base is (0, 8 * scale, 0)
   const headGroup = createSegmentGroup(headVoxels, 0, 16, 0);
   headGroup.position.set(0, (16 - 8) * scale, 0);
   upperTorsoGroup.add(headGroup);
@@ -316,7 +427,7 @@ export function buildVoxelSpartanModel(isEnemy: boolean = true, customHue?: numb
   Spartan.add(lowerTorsoGroup);
   Spartan.add(upperTorsoGroup);
 
-  // Rig the references inside userData for dynamic procedural animation
+  // Rig references inside userData for seamless animations compatibility
   Spartan.userData = {
     lowerTorso: lowerTorsoGroup,
     upperTorso: upperTorsoGroup,
@@ -327,6 +438,7 @@ export function buildVoxelSpartanModel(isEnemy: boolean = true, customHue?: numb
     head: headGroup,
   };
 
+  baseBeveledGeo.dispose();
   return Spartan;
 }
 
@@ -378,6 +490,7 @@ export function buildKatarSwordModel(customHue?: number): THREE.Group {
     }
   }
 
+  // Build the katar using the optimized layout
   const katar = createVoxelGroup(data, 0.08); // 8cm voxels
   
   // Pivot katar around center of the hand grips (y = 4.5)
@@ -389,3 +502,4 @@ export function buildKatarSwordModel(customHue?: number): THREE.Group {
 
   return katar;
 }
+
