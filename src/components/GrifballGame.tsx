@@ -676,6 +676,18 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
           let wState = player.weaponState || 'ready';
           let wTimer = player.weaponTimer || 0;
 
+          // Opponent sword lunge VFX trail
+          if (player.isLunging) {
+            player.lungeTimer = (player.lungeTimer || 0) + dt;
+            if (Math.random() > 0.1) {
+              const trailPos = new THREE.Vector3(player.pos.x, player.pos.y + 0.825, player.pos.z);
+              spawnVoxelShockwaveParticles(trailPos, '#ef4444'); // Red energy trail particles!
+            }
+            if (player.lungeTimer > 0.8) {
+              player.isLunging = false;
+            }
+          }
+
           if (wState === 'swing_up') {
             wTimer += dt;
             if (wTimer >= 0.15) {
@@ -964,7 +976,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       }
     } else {
       if (threeRef.current.enemyGroup) {
-        threeRef.current.enemyGroup.visible = s.aiHP > 0 && s.aiState !== 'RESPAWNING';
+        threeRef.current.enemyGroup.visible = !isMultiplayer && s.aiHP > 0 && s.aiState !== 'RESPAWNING';
       }
     }
 
@@ -1597,6 +1609,15 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
                   player.weaponState = 'swing_up';
                   player.weaponTimer = 0;
                   sfx.playSwing();
+                  
+                  // Spawn hammer impact VFX for opposing players
+                  const lookHeading = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), player.yaw).normalize();
+                  const eyePos = new THREE.Vector3(player.pos.x, player.pos.y + 1.65, player.pos.z);
+                  const impactPos = eyePos.clone().addScaledVector(lookHeading, s.settings.attackRange ?? 3.2);
+                  impactPos.y = 0; // Slam floor
+                  
+                  spawnVoxelShockwaveParticles(impactPos, '#f97316'); // Glowing orange hammer shockwave for enemies!
+                  spawnBurnDecal(impactPos, s.settings.attackRadius ?? 4.5);
                 }
               } else {
                 triggerEnemyHammerSwing();
@@ -1608,6 +1629,13 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
                   player.weaponState = 'swing_up';
                   player.weaponTimer = 0;
                   sfx.playSwing();
+                  
+                  // Spawn red slash energy burst VFX for opposing players
+                  const lookHeading = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), player.yaw).normalize();
+                  const eyePos = new THREE.Vector3(player.pos.x, player.pos.y + 1.2, player.pos.z);
+                  const slashPos = eyePos.clone().addScaledVector(lookHeading, 1.8);
+                  
+                  spawnVoxelShockwaveParticles(slashPos, '#ef4444'); // Red slash energy burst!
                 }
               } else {
                 triggerEnemySwordSlash();
@@ -1618,6 +1646,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
                 if (player) {
                   player.weaponState = 'ready';
                   player.weaponTimer = 0;
+                  player.isLunging = true;
+                  player.lungeTimer = 0;
                   sfx.playDash();
                 }
               } else {
