@@ -27,7 +27,7 @@ interface DraggableHUDItemProps {
   uiItem?: UiElementPos;
   isAdjustmentMode: boolean;
   onToggleLock: (id: string) => void;
-  onMouseDown: (id: string, e: React.MouseEvent) => void;
+  onPointerDown: (id: string, e: React.PointerEvent) => void;
   children: React.ReactNode;
 }
 
@@ -36,7 +36,7 @@ export const DraggableHUDItem: React.FC<DraggableHUDItemProps> = ({
   uiItem,
   isAdjustmentMode,
   onToggleLock,
-  onMouseDown,
+  onPointerDown,
   children
 }) => {
   if (!uiItem) return null;
@@ -66,6 +66,7 @@ export const DraggableHUDItem: React.FC<DraggableHUDItemProps> = ({
     transform: getTransformStyle(id),
     zIndex: isAdjustmentMode ? 50 : undefined,
     willChange: isAdjustmentMode && !uiItem.locked ? 'left, top' : undefined,
+    touchAction: isAdjustmentMode ? 'none' : undefined,
   };
 
   if (!isAdjustmentMode) {
@@ -85,13 +86,14 @@ export const DraggableHUDItem: React.FC<DraggableHUDItemProps> = ({
           ? 'border-dashed border-white/20 bg-slate-950/40 hover:border-white/40' 
           : 'border-dashed border-cyan-400 bg-cyan-950/40 shadow-[0_0_15px_rgba(6,182,212,0.35)] hover:border-cyan-300 cursor-move'
       }`}
-      onMouseDown={(e) => onMouseDown(id, e)}
+      onPointerDown={(e) => onPointerDown(id, e)}
     >
       {/* Label and Lock toggle buttons */}
       <div className="absolute -top-7 left-0 right-0 h-6 flex items-center justify-between px-1.5 bg-slate-950/90 border border-slate-800 rounded-md text-[9px] font-mono font-bold z-50 pointer-events-auto shadow-md">
         <span className="text-slate-300 uppercase tracking-tight truncate max-w-[125px]">{uiItem.name}</span>
         
         <button
+          onPointerDown={(e) => e.stopPropagation()}
           onClick={(e) => {
             e.stopPropagation();
             onToggleLock(id);
@@ -142,6 +144,7 @@ export const HUD: React.FC<HUDProps> = ({
   const [draftUiPositions, setDraftUiPositions] = useState<UiElementPos[]>(uiPositions);
   const draftUiPositionsRef = useRef<UiElementPos[]>(uiPositions);
   const onUpdateUiPositionsRef = useRef(onUpdateUiPositions);
+  const draggingPointerIdRef = useRef<number | null>(null);
 
   useEffect(() => {
     onUpdateUiPositionsRef.current = onUpdateUiPositions;
@@ -183,9 +186,10 @@ export const HUD: React.FC<HUDProps> = ({
     onUpdateUiPositions(nextPositions);
   };
 
-  const handleMouseDown = (id: string, e: React.MouseEvent) => {
+  const handlePointerDown = (id: string, e: React.PointerEvent) => {
     const item = draftUiPositionsRef.current.find((ui) => ui.id === id);
     if (!item || item.locked) return;
+    draggingPointerIdRef.current = e.pointerId;
     setDraggingId(id);
     e.stopPropagation();
     e.preventDefault();
@@ -213,7 +217,8 @@ export const HUD: React.FC<HUDProps> = ({
       updateDraftUiPositions(nextPositions);
     };
 
-    const handleWindowMouseMove = (e: MouseEvent) => {
+    const handleWindowPointerMove = (e: PointerEvent) => {
+      if (draggingPointerIdRef.current !== null && e.pointerId !== draggingPointerIdRef.current) return;
       // Calculate cursor position in percentages of the window space
       const pctX = (e.clientX / window.innerWidth) * 100;
       const pctY = (e.clientY / window.innerHeight) * 100;
@@ -228,24 +233,28 @@ export const HUD: React.FC<HUDProps> = ({
       }
     };
 
-    const handleWindowMouseUp = () => {
+    const handleWindowPointerUp = (e: PointerEvent) => {
+      if (draggingPointerIdRef.current !== null && e.pointerId !== draggingPointerIdRef.current) return;
       if (animationFrameId !== null) {
         window.cancelAnimationFrame(animationFrameId);
         flushPendingPosition();
       }
       onUpdateUiPositionsRef.current(draftUiPositionsRef.current);
+      draggingPointerIdRef.current = null;
       setDraggingId(null);
     };
 
-    window.addEventListener('mousemove', handleWindowMouseMove);
-    window.addEventListener('mouseup', handleWindowMouseUp);
+    window.addEventListener('pointermove', handleWindowPointerMove);
+    window.addEventListener('pointerup', handleWindowPointerUp);
+    window.addEventListener('pointercancel', handleWindowPointerUp);
 
     return () => {
       if (animationFrameId !== null) {
         window.cancelAnimationFrame(animationFrameId);
       }
-      window.removeEventListener('mousemove', handleWindowMouseMove);
-      window.removeEventListener('mouseup', handleWindowMouseUp);
+      window.removeEventListener('pointermove', handleWindowPointerMove);
+      window.removeEventListener('pointerup', handleWindowPointerUp);
+      window.removeEventListener('pointercancel', handleWindowPointerUp);
     };
   }, [draggingId]);
 
@@ -265,7 +274,7 @@ export const HUD: React.FC<HUDProps> = ({
         uiItem={draftUiPositions.find(p => p.id === 'objective')}
         isAdjustmentMode={isAdjustmentMode}
         onToggleLock={handleToggleLock}
-        onMouseDown={handleMouseDown}
+        onPointerDown={handlePointerDown}
       >
         <div className="flex flex-col gap-1 items-center md:items-start w-full md:w-auto">
           <div className="bg-white/10 backdrop-blur-md border border-white/20 px-4 py-2 rounded-lg">
@@ -285,7 +294,7 @@ export const HUD: React.FC<HUDProps> = ({
         uiItem={draftUiPositions.find(p => p.id === 'scoreboard')}
         isAdjustmentMode={isAdjustmentMode}
         onToggleLock={handleToggleLock}
-        onMouseDown={handleMouseDown}
+        onPointerDown={handlePointerDown}
       >
         <div className="bg-black/50 backdrop-blur-lg border border-white/10 px-8 py-3 rounded-2xl flex items-center gap-6 md:gap-8 shadow-2xl">
           <div className="text-center">
@@ -319,7 +328,7 @@ export const HUD: React.FC<HUDProps> = ({
         uiItem={draftUiPositions.find(p => p.id === 'arenaStatus')}
         isAdjustmentMode={isAdjustmentMode}
         onToggleLock={handleToggleLock}
-        onMouseDown={handleMouseDown}
+        onPointerDown={handlePointerDown}
       >
         <div className="flex flex-col items-end gap-1">
           <div className="bg-white/10 backdrop-blur-md border border-white/20 px-4 py-2 rounded-lg text-right">
@@ -347,7 +356,7 @@ export const HUD: React.FC<HUDProps> = ({
         uiItem={draftUiPositions.find(p => p.id === 'technicalSpecs')}
         isAdjustmentMode={isAdjustmentMode}
         onToggleLock={handleToggleLock}
-        onMouseDown={handleMouseDown}
+        onPointerDown={handlePointerDown}
       >
         <div className="bg-slate-950/65 backdrop-blur-md border border-cyan-400/20 px-4 py-2.5 rounded-lg text-right shadow-lg min-w-40">
           <p className="text-[10px] uppercase tracking-widest text-cyan-400 font-bold">Technical Specs</p>
@@ -370,7 +379,7 @@ export const HUD: React.FC<HUDProps> = ({
         uiItem={draftUiPositions.find(p => p.id === 'eliminationFeed')}
         isAdjustmentMode={isAdjustmentMode}
         onToggleLock={handleToggleLock}
-        onMouseDown={handleMouseDown}
+        onPointerDown={handlePointerDown}
       >
         {((stats.lastDeaths && stats.lastDeaths.length > 0) || isAdjustmentMode) ? (
           <div id="death-feed" className="flex flex-col items-start gap-2 max-w-xs pointer-events-none">
@@ -422,7 +431,7 @@ export const HUD: React.FC<HUDProps> = ({
         uiItem={draftUiPositions.find(p => p.id === 'radar')}
         isAdjustmentMode={isAdjustmentMode}
         onToggleLock={handleToggleLock}
-        onMouseDown={handleMouseDown}
+        onPointerDown={handlePointerDown}
       >
         <div id="motion-tracker-radar" className="flex flex-col items-start gap-1 pointer-events-none select-none">
           <div className="flex items-center gap-2 mb-0.5">
@@ -498,7 +507,7 @@ export const HUD: React.FC<HUDProps> = ({
         uiItem={draftUiPositions.find(p => p.id === 'weaponDash')}
         isAdjustmentMode={isAdjustmentMode}
         onToggleLock={handleToggleLock}
-        onMouseDown={handleMouseDown}
+        onPointerDown={handlePointerDown}
       >
         {stats.isObserverMode ? (
           <div className="bg-black/60 backdrop-blur-md border border-cyan-500/30 p-4 rounded-xl shadow-2xl min-w-[280px]">
@@ -670,7 +679,7 @@ export const HUD: React.FC<HUDProps> = ({
         uiItem={draftUiPositions.find(p => p.id === 'vitality')}
         isAdjustmentMode={isAdjustmentMode}
         onToggleLock={handleToggleLock}
-        onMouseDown={handleMouseDown}
+        onPointerDown={handlePointerDown}
       >
         {stats.isObserverMode ? (
           <div className="inline-flex flex-col md:flex-row items-end md:items-center gap-3">
@@ -728,7 +737,7 @@ export const HUD: React.FC<HUDProps> = ({
           uiItem={draftUiPositions.find(p => p.id === 'crosshair')}
           isAdjustmentMode={isAdjustmentMode}
           onToggleLock={handleToggleLock}
-          onMouseDown={handleMouseDown}
+          onPointerDown={handlePointerDown}
         >
           <div className="relative flex items-center justify-center pointer-events-none">
             {/* Crosshair Outer Ring */}
@@ -928,7 +937,7 @@ export const HUD: React.FC<HUDProps> = ({
           uiItem={draftUiPositions.find(p => p.id === 'spectatorCard')}
           isAdjustmentMode={isAdjustmentMode}
           onToggleLock={handleToggleLock}
-          onMouseDown={handleMouseDown}
+          onPointerDown={handlePointerDown}
         >
           <div className="bg-black/60 backdrop-blur-lg border border-cyan-500/40 p-4 rounded-xl shadow-[0_0_20px_rgba(6,182,212,0.25)] flex flex-col items-center gap-3 min-w-[280px]">
             <div className="flex items-center gap-2">
@@ -989,7 +998,7 @@ export const HUD: React.FC<HUDProps> = ({
             uiItem={draftUiPositions.find(p => p.id === 'mobileLeftAnalog')}
             isAdjustmentMode={isAdjustmentMode}
             onToggleLock={handleToggleLock}
-            onMouseDown={handleMouseDown}
+            onPointerDown={handlePointerDown}
           >
             <LeftAnalogStick
               mobileJoystickRef={mobileJoystickRef}
@@ -1003,7 +1012,7 @@ export const HUD: React.FC<HUDProps> = ({
             uiItem={draftUiPositions.find(p => p.id === 'mobileRightButtons')}
             isAdjustmentMode={isAdjustmentMode}
             onToggleLock={handleToggleLock}
-            onMouseDown={handleMouseDown}
+            onPointerDown={handlePointerDown}
           >
             <RightActionButtonPad
               mobileRightJoystickRef={mobileRightJoystickRef}

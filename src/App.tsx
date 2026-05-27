@@ -13,7 +13,7 @@ import { ChatOverlay, ChatMessage } from './components/ChatOverlay';
 import { CharacterPreview } from './components/CharacterPreview';
 import { CharacterLoadout, DEFAULT_LOADOUT, AVAILABLE_PRESETS, HelmetPreset, TorsoPreset, ArmPreset, LegPreset } from './components/VoxelModels';
 
-const APP_VERSION = '0.212a';
+const APP_VERSION = '0.222a';
 const MAX_PLAYER_NAME_LENGTH = 10;
 
 interface OnlineClient {
@@ -538,15 +538,24 @@ function CompactKeybindList({ bindings, rebinding, onPick }: KbVisualizerProps) 
 const detectDeviceOS = (): DeviceInfo => {
   if (typeof window === 'undefined') return { isMobile: false, os: 'desktop' };
   const ua = navigator.userAgent || navigator.vendor || (window as any).opera;
+  const navWithUaData = navigator as Navigator & { userAgentData?: { mobile?: boolean } };
   const coarsePointer = window.matchMedia?.('(pointer: coarse)').matches ?? false;
+  const noHover = window.matchMedia?.('(hover: none)').matches ?? false;
   const compactViewport = Math.min(window.innerWidth, window.innerHeight) <= 520;
-  const touchCapable = navigator.maxTouchPoints > 0 || 'ontouchstart' in window;
-  const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua)
+  const maxTouchPoints = navigator.maxTouchPoints || 0;
+  const touchCapable = maxTouchPoints > 0 || 'ontouchstart' in window;
+  const reportsMobile = navWithUaData.userAgentData?.mobile === true;
+  const mobileUserAgent = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua);
+  const iPadDesktopMode = /Macintosh/i.test(ua) && maxTouchPoints > 1;
+  const isMobile = reportsMobile
+    || mobileUserAgent
+    || iPadDesktopMode
     || (touchCapable && coarsePointer)
+    || (touchCapable && noHover)
     || compactViewport;
   let os: DeviceOS = 'desktop';
 
-  if (/iPhone|iPad|iPod/i.test(ua)) {
+  if (/iPhone|iPad|iPod/i.test(ua) || iPadDesktopMode) {
     os = 'ios';
   } else if (/Android/i.test(ua)) {
     os = 'android';
@@ -1050,12 +1059,14 @@ export default function App() {
   };
 
   const [isDraggingUiAdjuster, setIsDraggingUiAdjuster] = useState<boolean>(false);
+  const uiAdjusterPointerIdRef = useRef<number | null>(null);
   const defaultUiAdjusterPosition = DEFAULT_UI_POSITIONS.find((position) => position.id === 'hudAdjuster');
   const uiAdjusterPosition =
     uiPositions.find((position) => position.id === 'hudAdjuster') ??
     defaultUiAdjusterPosition;
 
-  const handleUiAdjusterMouseDown = (e: React.MouseEvent) => {
+  const handleUiAdjusterPointerDown = (e: React.PointerEvent) => {
+    uiAdjusterPointerIdRef.current = e.pointerId;
     setIsDraggingUiAdjuster(true);
     e.stopPropagation();
     e.preventDefault();
@@ -1089,7 +1100,8 @@ export default function App() {
       applyUiPositions(nextPositions, false);
     };
 
-    const handleWindowMouseMove = (e: MouseEvent) => {
+    const handleWindowPointerMove = (e: PointerEvent) => {
+      if (uiAdjusterPointerIdRef.current !== null && e.pointerId !== uiAdjusterPointerIdRef.current) return;
       const pctX = (e.clientX / window.innerWidth) * 100;
       const pctY = (e.clientY / window.innerHeight) * 100;
       const clampedX = Math.max(5, Math.min(95, pctX));
@@ -1101,24 +1113,28 @@ export default function App() {
       }
     };
 
-    const handleWindowMouseUp = () => {
+    const handleWindowPointerUp = (e: PointerEvent) => {
+      if (uiAdjusterPointerIdRef.current !== null && e.pointerId !== uiAdjusterPointerIdRef.current) return;
       if (animationFrameId !== null) {
         window.cancelAnimationFrame(animationFrameId);
         flushPendingPosition();
       }
       persistUiPositions(uiPositionsRef.current);
+      uiAdjusterPointerIdRef.current = null;
       setIsDraggingUiAdjuster(false);
     };
 
-    window.addEventListener('mousemove', handleWindowMouseMove);
-    window.addEventListener('mouseup', handleWindowMouseUp);
+    window.addEventListener('pointermove', handleWindowPointerMove);
+    window.addEventListener('pointerup', handleWindowPointerUp);
+    window.addEventListener('pointercancel', handleWindowPointerUp);
 
     return () => {
       if (animationFrameId !== null) {
         window.cancelAnimationFrame(animationFrameId);
       }
-      window.removeEventListener('mousemove', handleWindowMouseMove);
-      window.removeEventListener('mouseup', handleWindowMouseUp);
+      window.removeEventListener('pointermove', handleWindowPointerMove);
+      window.removeEventListener('pointerup', handleWindowPointerUp);
+      window.removeEventListener('pointercancel', handleWindowPointerUp);
     };
   }, [isDraggingUiAdjuster]);
 
@@ -4429,12 +4445,13 @@ export default function App() {
             left: `${uiAdjusterPosition.x}%`,
             top: `${uiAdjusterPosition.y}%`,
             transform: 'translate(-50%, 0)',
+            touchAction: 'none',
           }}
         >
           <div
             id="ui-adjustment-drag-handle"
             className="flex items-start gap-3 cursor-move"
-            onMouseDown={handleUiAdjusterMouseDown}
+            onPointerDown={handleUiAdjusterPointerDown}
             title="Move HUD Canvas Adjuster"
           >
             <Move className="w-4 h-4 text-cyan-400 mt-0.5 shrink-0" />
