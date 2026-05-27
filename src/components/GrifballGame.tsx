@@ -1394,7 +1394,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
           difficulty: diff,
           score: 0,
           kills: 0,
-          deaths: 0
+          deaths: 0,
+          invulnerabilityTimer: s.settings.respawnInvulnerabilityDuration
         });
       }
 
@@ -3863,6 +3864,17 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
     const hp = isMainAI ? s.aiHP : botState!.hp;
     if (hp <= 0) return;
+
+    // Tick down invulnerability timer
+    if (isMainAI) {
+      if (s.aiInvulnerabilityTimer > 0) {
+        s.aiInvulnerabilityTimer = Math.max(0, s.aiInvulnerabilityTimer - dt);
+      }
+    } else {
+      if (botState!.invulnerabilityTimer && botState!.invulnerabilityTimer > 0) {
+        botState!.invulnerabilityTimer = Math.max(0, botState!.invulnerabilityTimer - dt);
+      }
+    }
 
     if (isMainAI) {
       if (!s.aiState) s.aiState = 'APPROACHING';
