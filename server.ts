@@ -391,9 +391,23 @@ async function startServer() {
               playerName: normalizePlayerName((ws as any).playerName) || `Client ${wsId}`
             });
 
-            if (room.host && room.host.readyState === WebSocket.OPEN) {
-              room.host.send(clientJoinedPayload);
+            if (room.clients.length === 1) {
+              if (room.host && room.host.readyState === WebSocket.OPEN) {
+                room.host.send(JSON.stringify({
+                  type: "connected",
+                  role: "host",
+                  clientClientId: wsId,
+                  otherPlayerIds: [
+                    wsId
+                  ]
+                }));
+              }
+            } else {
+              if (room.host && room.host.readyState === WebSocket.OPEN) {
+                room.host.send(clientJoinedPayload);
+              }
             }
+
             room.clients.forEach(client => {
               if (client !== ws && client.readyState === WebSocket.OPEN) {
                 client.send(clientJoinedPayload);

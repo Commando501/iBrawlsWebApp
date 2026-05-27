@@ -1669,12 +1669,15 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
                       if (attacker) {
                         attacker.score = (attacker.score || 0) + 1;
                         attacker.kills = (attacker.kills || 0) + 1;
+                      } else {
+                        s.scorePlayer += 1;
+                        s.playerKills += 1;
                       }
                     }
                     sfx.playDeath();
                     const newDeath: DeathEvent = {
                       id: Math.random().toString(36).substring(2, 9),
-                      attacker: data.senderId ? (s.otherPlayers.get(data.senderId)?.playerName || 'Player') : 'Player',
+                      attacker: data.senderId ? (s.otherPlayers.get(data.senderId)?.playerName || s.settings.playerName || 'Blue (You)') : 'Player',
                       victim: targetPlayer.playerName,
                     };
                     s.lastDeaths = [newDeath, ...s.lastDeaths].slice(0, 3);

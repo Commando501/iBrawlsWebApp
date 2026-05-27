@@ -4,7 +4,8 @@ export interface Env {
 
 interface Room {
   host: GameWebSocket;
-  client?: GameWebSocket;
+  clients: GameWebSocket[]; // Array of up to 7 guest clients (8 players total)
+  observers: Set<GameWebSocket>;
   keys: string[];
   quickplayReserved?: boolean;
 }
@@ -271,7 +272,7 @@ export class GameLobby implements DurableObject {
             // 1. Search for any hosted match waiting for a player (not full, not reserved)
             let foundRoomKey: string | null = null;
             for (const [key, room] of this.rooms.entries()) {
-              if (!room.client && !room.quickplayReserved) {
+              if (room.clients.length === 0 && !room.quickplayReserved) {
                 foundRoomKey = key;
                 room.quickplayReserved = true; // Mark it as reserved
                 break;
@@ -343,7 +344,7 @@ export class GameLobby implements DurableObject {
             console.log(`Registering host with keys: ${keysToRegister.join(", ")}`);
 
             // Create a Room instance shared across registration keys
-            const room: Room = { host: gameWs, keys: keysToRegister };
+            const room: Room = { host: gameWs, clients: [], observers: new Set<GameWebSocket>(), keys: keysToRegister };
 
             // Register room under all given keys
             keysToRegister.forEach(key => {
@@ -352,8 +353,10 @@ export class GameLobby implements DurableObject {
                 if (existing.host !== gameWs) {
                   try { existing.host.close(); } catch(e) {}
                 }
-                if (existing.client) {
-                  try { existing.client.close(); } catch(e) {}
+                if (existing.clients) {
+                  existing.clients.forEach(c => {
+                    try { c.close(); } catch(e) {}
+                  });
                 }
               }
               this.rooms.set(key, room);
@@ -379,8 +382,8 @@ export class GameLobby implements DurableObject {
           }
 
           case "join": {
-            const { targetIpOrId } = message;
-            console.log(`Client attempting to join room matching: ${targetIpOrId}`);
+            const { targetIpOrId, isObserver } = message;
+            console.log(`Client attempting to join room matching: ${targetIpOrId} (isObserver: ${isObserver})`);
 
             let room = this.rooms.get(targetIpOrId);
             
@@ -398,38 +401,108 @@ export class GameLobby implements DurableObject {
               return;
             }
 
-            if (room.client && room.client !== gameWs && room.client.id !== wsId) {
+            if (isObserver) {
+              room.observers.add(gameWs);
+              this.socketToRoom.set(gameWs, room);
+              console.log(`Client ${wsId} connected as observer to room.`);
               try {
-                gameWs.send(JSON.stringify({ type: "error", message: `Match is already full (2/2 players present).` }));
+                gameWs.send(JSON.stringify({ 
+                  type: "connected", 
+                  role: "observer", 
+                  hostClientId: room.host.id, 
+                  clientClientId: room.clients.length > 0 ? room.clients[0].id : undefined,
+                  otherPlayerIds: [
+                    room.host.id,
+                    ...room.clients.map(c => c.id)
+                  ]
+                }));
+              } catch (e) {}
+              
+              // Notify host and clients
+              const obsJoinedPayload = JSON.stringify({ type: "observer_joined", observerId: wsId });
+              if (room.host && room.host.readyState === WebSocket.OPEN) {
+                try { room.host.send(obsJoinedPayload); } catch (e) {}
+              }
+              room.clients.forEach(c => {
+                if (c.readyState === WebSocket.OPEN) {
+                  try { c.send(obsJoinedPayload); } catch (e) {}
+                }
+              });
+              break;
+            }
+
+            if (room.clients.length >= 7) { // 8 players total (1 host + 7 clients)
+              try {
+                gameWs.send(JSON.stringify({ type: "error", message: `Match is already full (8/8 players present).` }));
               } catch(e) {}
               return;
             }
 
-            // Bind client to room reference
-            room.client = gameWs;
+            if (!room.clients.includes(gameWs) && !room.clients.some((c: any) => c.id === wsId)) {
+              room.clients.push(gameWs);
+            }
             this.socketToRoom.set(gameWs, room);
 
             // Notify both parties that they have paired successfully
             try {
-              gameWs.send(JSON.stringify({ type: "connected", role: "client" }));
-            } catch(e) {}
-            try {
-              room.host.send(JSON.stringify({ type: "connected", role: "host" }));
-            } catch(e) {}
+              gameWs.send(JSON.stringify({ 
+                type: "connected", 
+                role: "client", 
+                hostClientId: room.host.id, 
+                clientClientId: wsId,
+                otherPlayerIds: [
+                  room.host.id,
+                  ...room.clients.filter(c => c.id !== wsId).map(c => c.id)
+                ]
+              }));
+            } catch (e) {}
+
+            // Notify host and all other clients of this new player joining
+            const clientJoinedPayload = JSON.stringify({
+              type: "player_joined",
+              role: "client",
+              clientId: wsId,
+              playerName: normalizePlayerName(gameWs.playerName) || `Client ${wsId}`
+            });
+
+            if (room.clients.length === 1) {
+              if (room.host && room.host.readyState === WebSocket.OPEN) {
+                try {
+                  room.host.send(JSON.stringify({
+                    type: "connected",
+                    role: "host",
+                    clientClientId: wsId,
+                    otherPlayerIds: [
+                      wsId
+                    ]
+                  }));
+                } catch (e) {}
+              }
+            } else {
+              if (room.host && room.host.readyState === WebSocket.OPEN) {
+                try { room.host.send(clientJoinedPayload); } catch (e) {}
+              }
+            }
+
+            room.clients.forEach(client => {
+              if (client !== gameWs && client.readyState === WebSocket.OPEN) {
+                try { client.send(clientJoinedPayload); } catch (e) {}
+              }
+            });
             break;
           }
 
           case "sync": {
-            // Forward gameplay simulation sync data directly to the opposite party in the same Room
+            // Forward gameplay simulation sync data directly to all other parties in the same Room
             let room = this.socketToRoom.get(gameWs);
             if (!room) {
-              // Fallback socket-to-room lookup to heal connections
               for (const r of Array.from(this.rooms.values())) {
                 if (
                   r.host === gameWs || 
-                  r.client === gameWs || 
+                  r.clients.includes(gameWs) || 
+                  r.observers.has(gameWs) || 
                   (r.host && r.host.id === wsId) || 
-                  (r.client && r.client.id === wsId)
+                  r.clients.some((c: any) => c.id === wsId)
                 ) {
                   room = r;
                   this.socketToRoom.set(gameWs, r);
@@ -440,11 +513,50 @@ export class GameLobby implements DurableObject {
             if (!room) return;
 
             const isHost = (gameWs === room.host || gameWs.id === room.host.id);
-            const target = isHost ? room.client : room.host;
-            if (target && target.readyState === WebSocket.OPEN) {
-              try {
-                target.send(rawMessage);
-              } catch (e) {}
+            const isClient = room.clients.includes(gameWs) || room.clients.some((c: any) => c.id === wsId);
+            const senderRole = isHost ? 'host' : (isClient ? 'client' : 'observer');
+
+            // Package coordination parameters with sender role tag and senderId
+            let parsedMessage = message;
+            try {
+              parsedMessage = {
+                ...message,
+                senderRole,
+                senderId: wsId
+              };
+            } catch (err) {}
+            const syncPayload = JSON.stringify(parsedMessage);
+
+            if (isHost) {
+              // Send to all clients
+              room.clients.forEach(client => {
+                if (client.readyState === WebSocket.OPEN) {
+                  try { client.send(syncPayload); } catch (e) {}
+                }
+              });
+              // Send to observers
+              room.observers.forEach(obs => {
+                if (obs.readyState === WebSocket.OPEN) {
+                  try { obs.send(syncPayload); } catch (e) {}
+                }
+              });
+            } else if (isClient) {
+              // Send to host
+              if (room.host && room.host.readyState === WebSocket.OPEN) {
+                try { room.host.send(syncPayload); } catch (e) {}
+              }
+              // Send to all other clients
+              room.clients.forEach(client => {
+                if (client !== gameWs && client.id !== wsId && client.readyState === WebSocket.OPEN) {
+                  try { client.send(syncPayload); } catch (e) {}
+                }
+              });
+              // Send to observers
+              room.observers.forEach(obs => {
+                if (obs.readyState === WebSocket.OPEN) {
+                  try { obs.send(syncPayload); } catch (e) {}
+                }
+              });
             }
             break;
           }
@@ -471,23 +583,71 @@ export class GameLobby implements DurableObject {
       
       const room = this.socketToRoom.get(gameWs);
       if (room) {
-        // Tell the remaining peer that the connection dissolved
-        const survivor = (gameWs === room.host) ? room.client : room.host;
-        if (survivor && survivor.readyState === WebSocket.OPEN) {
-          try {
-            survivor.send(JSON.stringify({ type: "disconnected", reason: "Opponent left the match." }));
-            survivor.close();
-          } catch (e) {}
+        // If it is an observer, safely clean it up
+        if (room.observers.has(gameWs)) {
+          room.observers.delete(gameWs);
+          this.socketToRoom.delete(gameWs);
+          this.updatePresence();
+          return;
         }
+
+        const isHost = (gameWs === room.host);
         
-        // Remove room listings from memory
-        room.keys.forEach(key => {
-          this.rooms.delete(key);
-        });
-        
-        // Remove socket bindings
-        if (room.host) this.socketToRoom.delete(room.host);
-        if (room.client) this.socketToRoom.delete(room.client);
+        if (isHost) {
+          // Tell all clients and observers that the host left and match dissolved
+          const disconnectPayload = JSON.stringify({ type: "disconnected", reason: "Host left the match." });
+          room.clients.forEach(client => {
+            if (client.readyState === WebSocket.OPEN) {
+              try {
+                client.send(disconnectPayload);
+                client.close();
+              } catch (e) {}
+            }
+          });
+          room.observers.forEach(obs => {
+            if (obs.readyState === WebSocket.OPEN) {
+              try {
+                obs.send(disconnectPayload);
+                obs.close();
+              } catch (e) {}
+            }
+          });
+          
+          // Remove room listings from memory
+          room.keys.forEach(key => {
+            this.rooms.delete(key);
+          });
+          
+          // Remove socket bindings
+          this.socketToRoom.delete(room.host);
+          room.clients.forEach(client => this.socketToRoom.delete(client));
+          room.observers.forEach(obs => this.socketToRoom.delete(obs));
+        } else {
+          // Client left
+          room.clients = room.clients.filter(c => c !== gameWs && c.id !== wsId);
+          this.socketToRoom.delete(gameWs);
+
+          // Tell host and other clients that this player left
+          const playerLeftPayload = JSON.stringify({
+            type: "player_left",
+            leftPlayerId: wsId,
+            reason: "A player left the match."
+          });
+
+          if (room.host && room.host.readyState === WebSocket.OPEN) {
+            try { room.host.send(playerLeftPayload); } catch (e) {}
+          }
+          room.clients.forEach(client => {
+            if (client.readyState === WebSocket.OPEN) {
+              try { client.send(playerLeftPayload); } catch (e) {}
+            }
+          });
+          room.observers.forEach(obs => {
+            if (obs.readyState === WebSocket.OPEN) {
+              try { obs.send(playerLeftPayload); } catch (e) {}
+            }
+          });
+        }
       }
 
       // Update active roster information for all surviving connections
