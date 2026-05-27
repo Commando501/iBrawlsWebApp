@@ -218,3 +218,35 @@ export interface DeviceInfo {
   isMobile: boolean;
   os: DeviceOS;
 }
+
+export interface TournamentOpponent {
+  id: string;
+  name: string;
+  hue: number;
+  difficulty: 'easy' | 'normal' | 'hard' | 'nightmare';
+  reactionLatency: number;
+  anticipationFactor: number;
+  movementComplexity: number;
+  weaponSwapIQ: number;
+  playstyle: number; // 0 = passive, 50 = defensive, 100 = aggressive
+  behavior: 'passive' | 'defensive' | 'aggressive';
+}
+
+export interface TournamentMatch {
+  opponent1: string; // "player" or bot ID
+  opponent2: string; // bot ID
+  winner?: string; // "player" or bot ID
+  score1?: number; // kills of opponent1
+  score2?: number; // kills of opponent2
+  isCompleted: boolean;
+}
+
+export interface TournamentState {
+  difficulty: 'easy' | 'normal' | 'hard' | 'nightmare';
+  currentRound: number; // 0 = Quarterfinals, 1 = Semifinals, 2 = Finals
+  currentMatchIndex: number; // Index of the player's match in the current round
+  opponents: Record<string, TournamentOpponent>; // bot ID -> bot details
+  rounds: TournamentMatch[][]; // 3 rounds (Quarterfinals, Semifinals, Finals)
+  status: 'idle' | 'bracket' | 'playing' | 'gameover' | 'victory';
+}
+

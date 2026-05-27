@@ -15,6 +15,9 @@ import {
   UI_ELEMENT_SCALE_MAX,
   UI_ELEMENT_SCALE_MIN,
   AIBehaviorPreset,
+  TournamentOpponent,
+  TournamentMatch,
+  TournamentState,
 } from './types';
 import { GrifballGame } from './components/GrifballGame';
 import { HUD } from './components/HUD';
@@ -24,7 +27,7 @@ import { ChatOverlay, ChatMessage } from './components/ChatOverlay';
 import { CharacterPreview } from './components/CharacterPreview';
 import { CharacterLoadout, DEFAULT_LOADOUT, AVAILABLE_PRESETS, HelmetPreset, TorsoPreset, ArmPreset, LegPreset } from './components/VoxelModels';
 
-const APP_VERSION = '0.256';
+const APP_VERSION = '0.300';
 const MAX_PLAYER_NAME_LENGTH = 10;
 const MOBILE_HUD_LAYOUT_VERSION = '5';
 const MOBILE_HUD_LAYOUT_VERSION_KEY = 'grifball_mobile_hud_layout_version';
@@ -218,6 +221,75 @@ function decryptSaveCode(code: string): SaveData {
     console.error("Decryption failed:", e);
     throw new Error("Failed to decrypt neural code. Ensure it is correct and untampered.");
   }
+}
+
+
+const TOURNAMENT_BOT_NAMES = [
+  'Talon', 'Malcom', 'Sark', 'Brock', 'Lauren', 'Xan', 'Ravage', 'Diva', 'Gorge', 'Ares', 'Kraken'
+];
+
+function generateTournamentOpponents(difficulty: 'easy' | 'normal' | 'hard' | 'nightmare'): Record<string, TournamentOpponent> {
+  const shuffledNames = [...TOURNAMENT_BOT_NAMES].sort(() => Math.random() - 0.5);
+  const opponents: Record<string, TournamentOpponent> = {};
+
+  const botIds = ['bot_1', 'bot_2', 'bot_3', 'bot_4', 'bot_5', 'bot_6', 'bot_7'];
+  const behaviors: ('passive' | 'defensive' | 'aggressive')[] = [
+    'passive', 'defensive', 'aggressive', 'defensive', 'aggressive', 'defensive', 'aggressive'
+  ];
+  const shuffledBehaviors = behaviors.sort(() => Math.random() - 0.5);
+
+  botIds.forEach((id, index) => {
+    const name = shuffledNames[index % shuffledNames.length];
+    const hue = Math.floor(Math.random() * 360);
+    const behavior = shuffledBehaviors[index];
+
+    let reactionLatency = 0.25;
+    let anticipationFactor = 0.40;
+    let movementComplexity = 50;
+    let weaponSwapIQ = 50;
+    let playstyle = 50;
+
+    if (difficulty === 'easy') {
+      reactionLatency = 0.5 + Math.random() * 0.15;
+      anticipationFactor = Math.random() * 0.1;
+      movementComplexity = 10 + Math.floor(Math.random() * 15);
+      weaponSwapIQ = 5 + Math.floor(Math.random() * 15);
+    } else if (difficulty === 'normal') {
+      reactionLatency = 0.2 + Math.random() * 0.1;
+      anticipationFactor = 0.3 + Math.random() * 0.2;
+      movementComplexity = 40 + Math.floor(Math.random() * 20);
+      weaponSwapIQ = 40 + Math.floor(Math.random() * 20);
+    } else if (difficulty === 'hard') {
+      reactionLatency = 0.08 + Math.random() * 0.06;
+      anticipationFactor = 0.65 + Math.random() * 0.15;
+      movementComplexity = 70 + Math.floor(Math.random() * 15);
+      weaponSwapIQ = 70 + Math.floor(Math.random() * 15);
+    } else if (difficulty === 'nightmare') {
+      reactionLatency = 0.01 + Math.random() * 0.02;
+      anticipationFactor = 0.9 + Math.random() * 0.09;
+      movementComplexity = 90 + Math.floor(Math.random() * 10);
+      weaponSwapIQ = 90 + Math.floor(Math.random() * 10);
+    }
+
+    if (behavior === 'passive') playstyle = 0 + Math.floor(Math.random() * 15);
+    else if (behavior === 'defensive') playstyle = 40 + Math.floor(Math.random() * 20);
+    else if (behavior === 'aggressive') playstyle = 85 + Math.floor(Math.random() * 15);
+
+    opponents[id] = {
+      id,
+      name,
+      hue,
+      difficulty,
+      reactionLatency,
+      anticipationFactor,
+      movementComplexity,
+      weaponSwapIQ,
+      playstyle,
+      behavior
+    };
+  });
+
+  return opponents;
 }
 
 
@@ -636,6 +708,25 @@ export default function App() {
   }, []);
 
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
+  const [singlePlayerMode, setSinglePlayerMode] = useState<'sandbox' | 'tournament'>('sandbox');
+  const [tournamentState, setTournamentState] = useState<TournamentState | null>(() => {
+    try {
+      const saved = localStorage.getItem('ibrawls_tournament_state');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
+
+  const saveTournamentState = (state: TournamentState | null) => {
+    setTournamentState(state);
+    if (state) {
+      localStorage.setItem('ibrawls_tournament_state', JSON.stringify(state));
+    } else {
+      localStorage.removeItem('ibrawls_tournament_state');
+    }
+  };
+
   const [matchmakerUrl, setMatchmakerUrl] = useState<string>(getSavedMatchmakerUrl());
   const [customUrlInput, setCustomUrlInput] = useState<string>(matchmakerUrl);
   const [isPaused, setIsPaused] = useState<boolean>(false);
@@ -2131,6 +2222,194 @@ export default function App() {
     setQuickPlayStatus('idle');
   };
 
+  const simulateBotMatch = (match: TournamentMatch, opponents: Record<string, TournamentOpponent>): TournamentMatch => {
+    const opp1 = opponents[match.opponent1];
+    const opp2 = opponents[match.opponent2];
+
+    const getPower = (opp: TournamentOpponent) => {
+      return (1.5 - opp.reactionLatency) * 40 + opp.anticipationFactor * 30 + opp.movementComplexity * 0.2 + opp.weaponSwapIQ * 0.1;
+    };
+
+    const power1 = getPower(opp1);
+    const power2 = getPower(opp2);
+    const prob1 = power1 / (power1 + power2);
+
+    const winnerId = Math.random() < prob1 ? match.opponent1 : match.opponent2;
+    const scoreWinner = 25;
+    const scoreLoser = 12 + Math.floor(Math.random() * 13); // 12 to 24 kills
+
+    return {
+      ...match,
+      winner: winnerId,
+      score1: winnerId === match.opponent1 ? scoreWinner : scoreLoser,
+      score2: winnerId === match.opponent2 ? scoreWinner : scoreLoser,
+      isCompleted: true
+    };
+  };
+
+  const handleInitializeTournament = (difficulty: 'easy' | 'normal' | 'hard' | 'nightmare') => {
+    const opponents = generateTournamentOpponents(difficulty);
+    
+    const round0: TournamentMatch[] = [
+      { opponent1: 'player', opponent2: 'bot_1', isCompleted: false },
+      { opponent1: 'bot_2', opponent2: 'bot_3', isCompleted: false },
+      { opponent1: 'bot_4', opponent2: 'bot_5', isCompleted: false },
+      { opponent1: 'bot_6', opponent2: 'bot_7', isCompleted: false },
+    ];
+
+    const round1: TournamentMatch[] = [
+      { opponent1: 'TBD', opponent2: 'TBD', isCompleted: false },
+      { opponent1: 'TBD', opponent2: 'TBD', isCompleted: false },
+    ];
+
+    const round2: TournamentMatch[] = [
+      { opponent1: 'TBD', opponent2: 'TBD', isCompleted: false },
+    ];
+
+    const state: TournamentState = {
+      difficulty,
+      currentRound: 0,
+      currentMatchIndex: 0,
+      opponents,
+      rounds: [round0, round1, round2],
+      status: 'bracket'
+    };
+
+    saveTournamentState(state);
+    setSinglePlayerMode('tournament');
+  };
+
+  const handleStartTournamentMatch = () => {
+    if (!tournamentState) return;
+
+    const roundIndex = tournamentState.currentRound;
+    const matchIndex = tournamentState.currentMatchIndex;
+    const match = tournamentState.rounds[roundIndex][matchIndex];
+    const opponent = tournamentState.opponents[match.opponent2];
+
+    sfx.init();
+    sfx.resume();
+    sfx.playRespawn();
+
+    setIsMultiplayer(false);
+    setMultiplayerRole(null);
+    if (multiplayerSocket) {
+      multiplayerSocket.close();
+    }
+    setMultiplayerSocket(null);
+
+    setOfflineBotCount(1);
+    
+    setBotColors({
+      main_ai: opponent.hue
+    });
+
+    setBotDifficulties({
+      main_ai: 'custom'
+    });
+
+    setBotBehaviors({
+      main_ai: opponent.behavior
+    });
+
+    setAdminSettings(prev => ({
+      ...prev,
+      aiDifficulty: 'custom',
+      aiReactionLatency: opponent.reactionLatency,
+      aiAnticipationFactor: opponent.anticipationFactor,
+      aiMovementComplexity: opponent.movementComplexity,
+      aiWeaponSwapIQ: opponent.weaponSwapIQ,
+      aiPlaystyle: opponent.playstyle,
+      playerName: playerName
+    }));
+
+    const nextState: TournamentState = {
+      ...tournamentState,
+      status: 'playing'
+    };
+    saveTournamentState(nextState);
+
+    setIsPlaying(true);
+    setIsPaused(false);
+    setIsTerminated(false);
+    setShowAdminPanel(false);
+    setShowUiAdjustment(false);
+    setShowLightingMenu(false);
+  };
+
+  const handleCompleteTournamentMatch = (playerWon: boolean, scorePlayer: number, scoreEnemy: number) => {
+    if (!tournamentState) return;
+
+    const roundIndex = tournamentState.currentRound;
+    const matchIndex = tournamentState.currentMatchIndex;
+    const rounds = [...tournamentState.rounds];
+    const opponents = tournamentState.opponents;
+
+    const playerMatch = {
+      ...rounds[roundIndex][matchIndex],
+      winner: playerWon ? 'player' : rounds[roundIndex][matchIndex].opponent2,
+      score1: scorePlayer,
+      score2: scoreEnemy,
+      isCompleted: true
+    };
+    rounds[roundIndex][matchIndex] = playerMatch;
+
+    if (!playerWon) {
+      const nextState: TournamentState = {
+        ...tournamentState,
+        rounds,
+        status: 'gameover'
+      };
+      saveTournamentState(nextState);
+      handleCloseGame();
+      return;
+    }
+
+    const simulatedMatches = rounds[roundIndex].map((match, idx) => {
+      if (idx === 0) return playerMatch;
+      return simulateBotMatch(match, opponents);
+    });
+    rounds[roundIndex] = simulatedMatches;
+
+    if (roundIndex === 2) {
+      const nextState: TournamentState = {
+        ...tournamentState,
+        rounds,
+        status: 'victory'
+      };
+      saveTournamentState(nextState);
+      handleCloseGame();
+    } else {
+      const nextRoundIndex = roundIndex + 1;
+      const currentWinners = simulatedMatches.map(m => m.winner!);
+
+      if (nextRoundIndex === 1) {
+        rounds[nextRoundIndex] = [
+          { opponent1: 'player', opponent2: currentWinners[1], isCompleted: false },
+          { opponent1: currentWinners[2], opponent2: currentWinners[3], isCompleted: false }
+        ];
+      } else if (nextRoundIndex === 2) {
+        rounds[nextRoundIndex] = [
+          { opponent1: 'player', opponent2: currentWinners[1], isCompleted: false }
+        ];
+      }
+
+      const nextState: TournamentState = {
+        ...tournamentState,
+        currentRound: nextRoundIndex,
+        rounds,
+        status: 'bracket'
+      };
+      saveTournamentState(nextState);
+      handleCloseGame();
+    }
+  };
+
+  const handleResetTournament = () => {
+    saveTournamentState(null);
+    setSinglePlayerMode('tournament');
+  };
+
   const handleStartGame = () => {
     // Initialise and resume synthesizer context securely on user click gesture!
     sfx.init();
@@ -2228,6 +2507,16 @@ export default function App() {
 
   // Callback to sync game stats live
   const handleStatsUpdate = (stats: GameStats) => {
+    if (singlePlayerMode === 'tournament' && tournamentState && tournamentState.status === 'playing') {
+      if (stats.scorePlayer >= 25) {
+        handleCompleteTournamentMatch(true, stats.scorePlayer, stats.scoreEnemy);
+        return;
+      } else if (stats.scoreEnemy >= 25) {
+        handleCompleteTournamentMatch(false, stats.scorePlayer, stats.scoreEnemy);
+        return;
+      }
+    }
+
     setCurrentStats({
       ...stats,
       isMultiplayer,
@@ -2280,6 +2569,11 @@ export default function App() {
           multiplayerRole={multiplayerRole}
           multiplayerSocket={multiplayerSocket}
           opponentClientId={opponentClientId}
+  opponentPlayerName={
+    singlePlayerMode === 'tournament' && tournamentState && tournamentState.status === 'playing'
+      ? tournamentState.opponents[tournamentState.rounds[tournamentState.currentRound][tournamentState.currentMatchIndex].opponent2]?.name
+      : undefined
+  }
           keybindings={keybindings}
           offlineBotCount={offlineBotCount}
           botDifficulties={botDifficulties}
@@ -2426,148 +2720,392 @@ export default function App() {
 
                 {activeMenuTab === 'single' ? (
                   <div className="flex flex-col h-full min-h-0 justify-between">
-                    <div className="flex flex-col gap-5">
-                      <div className="flex items-center gap-2.5 mb-1">
-                        <span className="w-2 h-4 bg-blue-500" />
-                        <h2 className="text-sm uppercase font-bold tracking-[0.25em] text-white">
-                          Training Sandbox Setup
-                        </h2>
-                      </div>
-                      <p className="text-white/60 text-sm leading-relaxed bg-white/5 border border-white/5 rounded-lg p-4 leading-normal select-text">
-                        This is a Grifball iBrawls simulator. The game can be played solo against AI or online against other players. All Gameplay/Mechanics Options only impact you, so coordinate with your opponent on the dials you want to match.
-                      </p>
+                    {/* Segmented Mode Selector for Sandbox vs Tournament */}
+                    <div className="flex bg-black/50 p-1.5 rounded-xl border border-white/10 gap-2 shrink-0 shadow-[inset_0_1px_3px_rgba(0,0,0,0.3)] mb-4 select-none">
+                      <button
+                        onClick={() => setSinglePlayerMode('sandbox')}
+                        className={`flex-1 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all duration-200 cursor-pointer ${
+                          singlePlayerMode === 'sandbox'
+                            ? 'bg-gradient-to-b from-[#22d3ee] to-[#0891b2] text-white shadow-[0_0_10px_rgba(34,211,238,0.4)] font-black'
+                            : 'text-white/40 hover:text-white/70'
+                        }`}
+                      >
+                        Sandbox Mode
+                      </button>
+                      <button
+                        onClick={() => setSinglePlayerMode('tournament')}
+                        className={`flex-1 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all duration-200 cursor-pointer ${
+                          singlePlayerMode === 'tournament'
+                            ? 'bg-gradient-to-b from-emerald-400 to-emerald-600 text-slate-955 font-black text-white shadow-[0_0_10px_rgba(16,185,129,0.4)]'
+                            : 'text-white/40 hover:text-white/70'
+                        }`}
+                      >
+                        Tournament Mode
+                      </button>
+                    </div>
 
-                      {/* AI combat panel in single player mode */}
-                      <div className="bg-slate-950/45 border border-white/10 rounded-xl p-4.5 flex flex-col gap-3.5 text-left">
-                        <div className="flex justify-between items-center pb-2 border-b border-white/5">
-                          <span className="text-xs font-bold text-[#38bdf8] uppercase tracking-wider flex items-center gap-1.5 font-display">🤖 AI Combat Neural Net</span>
-                          <span className="text-[10px] font-mono text-[#38bdf8] bg-[#38bdf8]/10 border border-[#38bdf8]/20 px-2 py-0.5 rounded uppercase font-black">Offline Play</span>
-                        </div>
-                        <div className="flex flex-col gap-1.5">
-                          <span className="text-[10.5px] text-white/50 uppercase tracking-widest font-mono">Cognitive Matrix Preset:</span>
-                          <div className="flex gap-2">
-                            <select
-                              value={adminSettings.aiDifficulty || 'normal'}
-                              onChange={(e) => handleSelectAIPreset(e.target.value)}
-                              className="flex-1 h-11 bg-black/60 border border-white/10 rounded px-2.5 text-sm text-[#38bdf8] font-bold uppercase outline-none focus:border-[#38bdf8] transition-all cursor-pointer font-sans"
-                            >
-                              <option value="easy">🟢 Easy (Sub-Normal)</option>
-                              <option value="normal">🟡 Normal · Standard Combat</option>
-                              <option value="hard">🔴 Hard (Calibrated)</option>
-                              <option value="nightmare">🟣 Nightmare · Override</option>
-                              <option value="custom">⚙️ Custom Matrix Override</option>
-                              {aiPresets.length > 0 && (
-                                <optgroup label="Saved Presets">
-                                  {aiPresets.map(preset => (
-                                    <option key={preset.id} value={preset.id}>🤖 {preset.name}</option>
-                                  ))}
-                                </optgroup>
-                              )}
-                            </select>
-                            {!['easy', 'normal', 'hard', 'nightmare', 'custom'].includes(adminSettings.aiDifficulty || '') && (
-                              <button
-                                onClick={() => handleDeleteAIPreset(adminSettings.aiDifficulty!)}
-                                className="px-3.5 h-11 bg-red-950/40 hover:bg-red-900/60 border border-red-500/30 hover:border-red-500/50 text-red-400 text-xs font-bold uppercase rounded cursor-pointer transition-all"
-                                title="Delete this AI preset"
-                              >
-                                🗑️
-                              </button>
+                    {singlePlayerMode === 'sandbox' ? (
+                      <div className="flex flex-col h-full min-h-0 justify-between">
+                        <div className="flex flex-col gap-5 min-h-0 overflow-y-auto pr-0.5">
+                          <div className="flex items-center gap-2.5 mb-1 shrink-0">
+                            <span className="w-2 h-4 bg-blue-500" />
+                            <h2 className="text-sm uppercase font-bold tracking-[0.25em] text-white">
+                              Training Sandbox Setup
+                            </h2>
+                          </div>
+                          <p className="text-white/60 text-xs leading-relaxed bg-white/5 border border-white/5 rounded-lg p-3.5 leading-normal select-text shrink-0">
+                            This is a Grifball iBrawls simulator. The game can be played solo against AI or online against other players. All Gameplay/Mechanics Options only impact you, so coordinate with your opponent on the dials you want to match.
+                          </p>
+
+                          {/* AI combat panel in single player mode */}
+                          <div className="bg-slate-950/45 border border-white/10 rounded-xl p-4.5 flex flex-col gap-3.5 text-left shrink-0">
+                            <div className="flex justify-between items-center pb-2 border-b border-white/5">
+                              <span className="text-xs font-bold text-[#38bdf8] uppercase tracking-wider flex items-center gap-1.5 font-display">🤖 AI Combat Neural Net</span>
+                              <span className="text-[10px] font-mono text-[#38bdf8] bg-[#38bdf8]/10 border border-[#38bdf8]/20 px-2 py-0.5 rounded uppercase font-black">Offline Play</span>
+                            </div>
+                            <div className="flex flex-col gap-1.5">
+                              <span className="text-[10.5px] text-white/50 uppercase tracking-widest font-mono">Cognitive Matrix Preset:</span>
+                              <div className="flex gap-2">
+                                <select
+                                  value={adminSettings.aiDifficulty || 'normal'}
+                                  onChange={(e) => handleSelectAIPreset(e.target.value)}
+                                  className="flex-1 h-11 bg-black/60 border border-white/10 rounded px-2.5 text-sm text-[#38bdf8] font-bold uppercase outline-none focus:border-[#38bdf8] transition-all cursor-pointer font-sans"
+                                >
+                                  <option value="easy">🟢 Easy (Sub-Normal)</option>
+                                  <option value="normal">🟡 Normal · Standard Combat</option>
+                                  <option value="hard">🔴 Hard (Calibrated)</option>
+                                  <option value="nightmare">🟣 Nightmare · Override</option>
+                                  <option value="custom">⚙️ Custom Matrix Override</option>
+                                  {aiPresets.length > 0 && (
+                                    <optgroup label="Saved Presets">
+                                      {aiPresets.map(preset => (
+                                        <option key={preset.id} value={preset.id}>🤖 {preset.name}</option>
+                                      ))}
+                                    </optgroup>
+                                  )}
+                                </select>
+                                {!['easy', 'normal', 'hard', 'nightmare', 'custom'].includes(adminSettings.aiDifficulty || '') && (
+                                  <button
+                                    onClick={() => handleDeleteAIPreset(adminSettings.aiDifficulty!)}
+                                    className="px-3.5 h-11 bg-red-950/40 hover:bg-red-900/60 border border-red-500/30 hover:border-red-500/50 text-red-400 text-xs font-bold uppercase rounded cursor-pointer transition-all"
+                                    title="Delete this AI preset"
+                                  >
+                                    🗑️
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                            {adminSettings.aiDifficulty === 'custom' && (
+                              <div className="flex flex-col gap-3 pt-1">
+                                {([
+                                  { key: 'aiReactionLatency' as const, label: 'Reflex Latency', unit: 's', min: 0, max: 1.5, step: 0.05, fmt: (v: number) => v.toFixed(2) },
+                                  { key: 'aiAnticipationFactor' as const, label: 'Anticipation Engine', unit: '%', min: 0, max: 1, step: 0.05, fmt: (v: number) => Math.round(v * 100).toString() },
+                                  { key: 'aiMovementComplexity' as const, label: 'Strafe & Evade', unit: '%', min: 0, max: 100, step: 5, fmt: (v: number) => v.toString() },
+                                  { key: 'aiWeaponSwapIQ' as const, label: 'Weapon Swapping IQ', unit: '%', min: 0, max: 100, step: 5, fmt: (v: number) => v.toString() },
+                                ]).map(({ key, label, unit, min, max, step, fmt }) => (
+                                  <div key={key} className="flex flex-col gap-1.5">
+                                    <div className="flex justify-between text-xs font-mono uppercase tracking-wider text-white/60">
+                                      <span>{label}</span>
+                                      <span className="text-cyan-400 font-bold">{fmt(adminSettings[key] as number ?? 0)}{unit}</span>
+                                    </div>
+                                    <input type="range" min={min} max={max} step={step}
+                                      value={adminSettings[key] as number ?? 0}
+                                      onChange={(e) => setAdminSettings(prev => ({ ...prev, [key]: parseFloat(e.target.value) }))}
+                                      className="w-full accent-cyan-400 h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
+                                    />
+                                  </div>
+                                ))}
+
+                                {/* Playstyle Slider */}
+                                <div className="flex flex-col gap-1.5">
+                                  <div className="flex justify-between text-xs font-mono uppercase tracking-wider text-white/60">
+                                    <span>Combat Playstyle</span>
+                                    <span className="text-cyan-400 font-bold">
+                                      {(() => {
+                                        const p = adminSettings.aiPlaystyle ?? 50;
+                                        if (p === 0) return 'Passive (0)';
+                                        if (p < 50) return `Blended (Passive-Defensive) (${p})`;
+                                        if (p === 50) return 'Defensive (50)';
+                                        if (p < 100) return `Blended (Defensive-Aggressive) (${p})`;
+                                        return 'Aggressive (100)';
+                                      })()}
+                                    </span>
+                                  </div>
+                                  <input type="range" min="0" max="100" step="5"
+                                    value={adminSettings.aiPlaystyle ?? 50}
+                                    onChange={(e) => setAdminSettings(prev => ({ ...prev, aiPlaystyle: parseInt(e.target.value) }))}
+                                    className="w-full accent-cyan-400 h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
+                                  />
+                                </div>
+
+                                {/* Save Custom AI Presets */}
+                                <div className="flex flex-col gap-1.5 pt-2 border-t border-white/5 mt-2">
+                                  <span className="text-[10px] text-white/50 uppercase tracking-widest font-mono">Save Custom AI Preset:</span>
+                                  <div className="flex gap-2">
+                                    <input
+                                      type="text"
+                                      placeholder="Preset Name (e.g. AggroBot)"
+                                      value={newAiPresetNameInput}
+                                      onChange={(e) => setNewAiPresetNameInput(e.target.value)}
+                                      className="flex-1 h-9 bg-black/60 border border-white/10 rounded px-2.5 text-xs text-white outline-none focus:border-[#38bdf8] transition-all font-sans"
+                                    />
+                                    <button
+                                      onClick={() => handleSaveAIPreset(newAiPresetNameInput)}
+                                      className="px-4 h-9 bg-[#38bdf8]/10 hover:bg-[#38bdf8]/20 border border-[#38bdf8]/30 hover:border-[#38bdf8]/50 text-[#38bdf8] text-[10.5px] font-bold uppercase rounded cursor-pointer transition-all font-sans"
+                                    >
+                                      Save
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
                             )}
                           </div>
                         </div>
-                        {adminSettings.aiDifficulty === 'custom' && (
-                          <div className="flex flex-col gap-3 pt-1">
-                            {([
-                              { key: 'aiReactionLatency' as const, label: 'Reflex Latency', unit: 's', min: 0, max: 1.5, step: 0.05, fmt: (v: number) => v.toFixed(2) },
-                              { key: 'aiAnticipationFactor' as const, label: 'Anticipation Engine', unit: '%', min: 0, max: 1, step: 0.05, fmt: (v: number) => Math.round(v * 100).toString() },
-                              { key: 'aiMovementComplexity' as const, label: 'Strafe & Evade', unit: '%', min: 0, max: 100, step: 5, fmt: (v: number) => v.toString() },
-                              { key: 'aiWeaponSwapIQ' as const, label: 'Weapon Swapping IQ', unit: '%', min: 0, max: 100, step: 5, fmt: (v: number) => v.toString() },
-                            ]).map(({ key, label, unit, min, max, step, fmt }) => (
-                              <div key={key} className="flex flex-col gap-1.5">
-                                <div className="flex justify-between text-xs font-mono uppercase tracking-wider text-white/60">
-                                  <span>{label}</span>
-                                  <span className="text-cyan-400 font-bold">{fmt(adminSettings[key] as number ?? 0)}{unit}</span>
-                                </div>
-                                <input type="range" min={min} max={max} step={step}
-                                  value={adminSettings[key] as number ?? 0}
-                                  onChange={(e) => setAdminSettings(prev => ({ ...prev, [key]: parseFloat(e.target.value) }))}
-                                  className="w-full accent-cyan-400 h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
-                                />
+                        
+                        {/* Training Actions */}
+                        <div className="flex flex-col gap-3.5 mt-auto shrink-0 pt-4">
+                          <button 
+                            id="play-game-btn"
+                            onClick={() => setShowBotSetupMenu(true)}
+                            className="group relative w-full h-16 bg-white hover:bg-sky-400 transition-all duration-300 flex items-center justify-center overflow-hidden cursor-pointer rounded shadow-2xl border border-white/20 select-none pointer-events-auto"
+                          >
+                            <div className="absolute inset-0 bg-blue-600 translate-x-[-100%] group-hover:translate-x-0 transition-transform duration-300" />
+                            <span className="relative z-10 text-slate-900 font-sans font-black text-sm uppercase tracking-widest group-hover:text-white pointer-events-none flex items-center gap-2">
+                              Start Local Training
+                              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
+                              </svg>
+                            </span>
+                          </button>
+                          
+                          <button 
+                            id="close-game-btn"
+                            onClick={handleCloseGame}
+                            className="w-full h-14 bg-white/5 border border-white/10 backdrop-blur-md flex items-center justify-center hover:bg-white/10 hover:border-white/25 active:scale-[0.99] transition-all cursor-pointer rounded pointer-events-auto select-none"
+                          >
+                            <span className="text-white/80 font-sans font-bold text-sm uppercase tracking-widest pointer-events-none">
+                              Close Sandbox
+                            </span>
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      /* Tournament Mode setup or active views */
+                      <div className="flex flex-col h-full min-h-0 justify-between">
+                        {!tournamentState ? (
+                          /* 1. Difficulty Picker */
+                          <div className="flex flex-col gap-4">
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="w-2 h-4 bg-emerald-500" />
+                              <h2 className="text-sm uppercase font-bold tracking-[0.25em] text-white">
+                                Tournament Difficulty
+                              </h2>
+                            </div>
+                            <p className="text-white/60 text-xs leading-normal bg-white/5 border border-white/5 rounded-lg p-3.5 leading-normal">
+                              Advance through a simulated 1v1 bracket of 8 brawlers. Each match is first to 25 kills. If you lose, it's Game Over! AI bots are procedurally customized each playthrough.
+                            </p>
+                            <div className="flex flex-col gap-3 pointer-events-auto">
+                              {([
+                                { id: 'easy', label: 'Easy', color: 'text-emerald-400 border-emerald-500/20 bg-emerald-950/20 hover:bg-emerald-950/40 shadow-[0_0_8px_rgba(16,185,129,0.1)]', desc: 'Sub-Normal combat reflex latency, simple spacing behavior.' },
+                                { id: 'normal', label: 'Normal', color: 'text-cyan-400 border-cyan-500/20 bg-cyan-950/20 hover:bg-cyan-950/40 shadow-[0_0_8px_rgba(6,182,212,0.1)]', desc: 'Standard combat matrix dials, average anticipation calculations.' },
+                                { id: 'hard', label: 'Hard', color: 'text-amber-400 border-amber-500/20 bg-amber-950/20 hover:bg-amber-950/40 shadow-[0_0_8px_rgba(245,158,11,0.1)]', desc: 'Calibrated prediction systems, fast pacing & evading.' },
+                                { id: 'nightmare', label: 'Nightmare', color: 'text-purple-400 border-purple-500/20 bg-purple-950/20 hover:bg-purple-950/40 shadow-[0_0_8px_rgba(168,85,247,0.1)]', desc: 'Hyper-responsive matrix overrides. Zero anticipation errors.' }
+                              ] as const).map(diff => (
+                                <button
+                                  key={diff.id}
+                                  onClick={() => handleInitializeTournament(diff.id)}
+                                  className={`group text-left p-4.5 rounded-xl border transition-all duration-300 cursor-pointer flex justify-between items-center ${diff.color} hover:scale-[1.01] hover:border-white/20`}
+                                >
+                                  <div className="flex flex-col gap-1 pr-4">
+                                    <span className="text-base font-black uppercase tracking-wider">{diff.label}</span>
+                                    <span className="text-[10px] text-white/50 lowercase leading-normal">{diff.desc}</span>
+                                  </div>
+                                  <span className="text-[10px] font-mono font-black tracking-widest uppercase opacity-40 group-hover:opacity-100 group-hover:text-white transition-opacity shrink-0">
+                                    SELECT &rarr;
+                                  </span>
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        ) : (
+                          /* 2. Bracket Display (UT2004 simulated cyber bracket style) */
+                          <div className="flex flex-col h-full min-h-0 justify-between">
+                            <div className="flex flex-col gap-4 min-h-0 overflow-y-auto pr-0.5">
+                              <div className="flex justify-between items-center pb-2 border-b border-white/5 shrink-0">
+                                <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5 font-display">🏆 simulated bracket</span>
+                                <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950/40 border border-emerald-500/20 px-2 py-0.5 rounded uppercase font-black">{tournamentState.difficulty}</span>
                               </div>
-                            ))}
 
-                            {/* Playstyle Slider */}
-                            <div className="flex flex-col gap-1.5">
-                              <div className="flex justify-between text-xs font-mono uppercase tracking-wider text-white/60">
-                                <span>Combat Playstyle</span>
-                                <span className="text-cyan-400 font-bold">
-                                  {(() => {
-                                    const p = adminSettings.aiPlaystyle ?? 50;
-                                    if (p === 0) return 'Passive (0)';
-                                    if (p < 50) return `Blended (Passive-Defensive) (${p})`;
-                                    if (p === 50) return 'Defensive (50)';
-                                    if (p < 100) return `Blended (Defensive-Aggressive) (${p})`;
-                                    return 'Aggressive (100)';
-                                  })()}
-                                </span>
-                              </div>
-                              <input type="range" min="0" max="100" step="5"
-                                value={adminSettings.aiPlaystyle ?? 50}
-                                onChange={(e) => setAdminSettings(prev => ({ ...prev, aiPlaystyle: parseInt(e.target.value) }))}
-                                className="w-full accent-cyan-400 h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
-                              />
+                              {tournamentState.status === 'gameover' ? (
+                                <div className="text-center py-6 flex flex-col items-center gap-4 bg-red-950/20 border border-red-500/20 rounded-xl p-5 shadow-inner">
+                                  <div className="w-12 h-12 rounded-full border border-red-500/30 flex items-center justify-center bg-red-950/40 animate-pulse">
+                                    <svg className="w-6 h-6 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
+                                  </div>
+                                  <h3 className="text-xl font-black uppercase tracking-wider text-red-400 font-display">SIMULATION OVER</h3>
+                                  <p className="text-xs text-white/60 leading-relaxed max-w-xs select-text">
+                                    You were eliminated in Round {tournamentState.currentRound + 1} by <span className="text-red-400 font-bold uppercase">{tournamentState.opponents[tournamentState.rounds[tournamentState.currentRound][0].opponent2]?.name}</span>. The tournament data has closed.
+                                  </p>
+                                  <button
+                                    onClick={handleResetTournament}
+                                    className="mt-2 w-full h-12 bg-red-600 hover:bg-red-500 text-white font-black text-xs uppercase tracking-widest rounded transition-all active:scale-[0.98] cursor-pointer pointer-events-auto shadow-lg"
+                                  >
+                                    Restart Tournament
+                                  </button>
+                                </div>
+                              ) : tournamentState.status === 'victory' ? (
+                                <div className="text-center py-6 flex flex-col items-center gap-4 bg-amber-950/20 border border-amber-500/20 rounded-xl p-5 shadow-inner">
+                                  <div className="w-14 h-14 rounded-full border border-amber-500/30 flex items-center justify-center bg-amber-950/40 shadow-[0_0_15px_rgba(245,158,11,0.25)] animate-pulse">
+                                    <span className="text-2xl">🏆</span>
+                                  </div>
+                                  <h3 className="text-xl font-black uppercase tracking-widest text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-yellow-200 font-display">CHAMPION DECREED</h3>
+                                  <p className="text-xs text-white/60 leading-relaxed max-w-xs select-text">
+                                    Congratulations! You have completed the iBrawls simulated tournament brackets and asserted yourself as the Grifball Champion.
+                                  </p>
+
+                                  <div className="w-full text-left bg-black/40 border border-white/5 rounded-lg p-3 flex flex-col gap-2">
+                                    <span className="text-[9px] font-mono font-bold tracking-widest uppercase text-amber-400">Teased Rewards Unlocked:</span>
+                                    <div className="flex flex-col gap-1.5 font-mono text-[9.5px]">
+                                      <div className="flex justify-between border-b border-white/5 pb-1">
+                                        <span className="text-white/60">🏆 TITLE:</span>
+                                        <span className="text-amber-300 font-extrabold">ARENA CHAMPION</span>
+                                      </div>
+                                      <div className="flex justify-between border-b border-white/5 pb-1">
+                                        <span className="text-white/60">🛡️ ARMOR:</span>
+                                        <span className="text-indigo-300 font-extrabold">CENTURION VOXEL</span>
+                                      </div>
+                                      <div className="flex justify-between">
+                                        <span className="text-white/60">💫 VFX TRAIL:</span>
+                                        <span className="text-cyan-300 font-extrabold">CRIMSON PLASMA</span>
+                                      </div>
+                                    </div>
+                                    <span className="text-[8.5px] text-white/30 text-center italic mt-1 uppercase">Rewards will be equipable in sandbox in the next build!</span>
+                                  </div>
+
+                                  <button
+                                    onClick={handleResetTournament}
+                                    className="w-full h-12 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs uppercase tracking-widest rounded transition-all active:scale-[0.98] cursor-pointer pointer-events-auto shadow-lg"
+                                  >
+                                    Begin New Run
+                                  </button>
+                                </div>
+                              ) : (
+                                <div className="flex flex-col gap-4">
+                                  {/* Simulated UT2004 Bracket round tabs */}
+                                  <div className="flex gap-2 font-mono text-[10px] select-none uppercase font-bold shrink-0">
+                                    {['Quarterfinals', 'Semifinals', 'Finals'].map((roundName, rIdx) => (
+                                      <div
+                                        key={rIdx}
+                                        className={`flex-1 text-center py-1.5 rounded border transition-colors ${
+                                          tournamentState.currentRound === rIdx
+                                            ? 'bg-emerald-600/10 text-emerald-400 border-emerald-500/30'
+                                            : rIdx < tournamentState.currentRound
+                                              ? 'bg-white/5 text-white/60 border-white/5'
+                                              : 'text-white/20 border-white/5'
+                                        }`}
+                                      >
+                                        {roundName}
+                                      </div>
+                                    ))}
+                                  </div>
+
+                                  {/* List of matches in round */}
+                                  <div className="flex flex-col gap-3.5 shrink-0">
+                                    {tournamentState.rounds[tournamentState.currentRound].map((match, mIdx) => {
+                                      const isPlayerMatch = match.opponent1 === 'player' || match.opponent2 === 'player';
+                                      const opp1Name = match.opponent1 === 'player' ? `${playerName} (You)` : (tournamentState.opponents[match.opponent1]?.name || 'TBD');
+                                      const opp2Name = tournamentState.opponents[match.opponent2]?.name || 'TBD';
+
+                                      const opp1Hue = match.opponent1 === 'player' ? (adminSettings.playerHue ?? 200) : (tournamentState.opponents[match.opponent1]?.hue ?? 0);
+                                      const opp2Hue = tournamentState.opponents[match.opponent2]?.hue ?? 0;
+
+                                      const isCompleted = match.isCompleted;
+                                      const winnerId = match.winner;
+
+                                      return (
+                                        <div
+                                          key={mIdx}
+                                          className={`bg-slate-950/60 rounded-xl p-3 border transition-all flex flex-col gap-2.5 relative select-none ${
+                                            isPlayerMatch && !isCompleted
+                                              ? 'border-emerald-400 shadow-[0_0_12px_rgba(52,211,153,0.15)] bg-slate-900/30'
+                                              : 'border-white/10'
+                                          }`}
+                                        >
+                                          {isPlayerMatch && !isCompleted && (
+                                            <span className="absolute -top-2.5 right-4 bg-emerald-500 text-slate-950 text-[8px] font-black uppercase px-2 py-0.5 rounded tracking-widest shadow-md">
+                                              YOUR MATCH
+                                            </span>
+                                          )}
+
+                                          {/* Competitor 1 */}
+                                          <div className="flex justify-between items-center text-left">
+                                            <div className="flex items-center gap-2 max-w-[70%]">
+                                              <div className="w-3.5 h-3.5 rounded-full border border-white/20 shadow-inner shrink-0" style={{ backgroundColor: `hsl(${opp1Hue}, 80%, 50%)` }} />
+                                              <span className={`text-xs font-black truncate uppercase ${winnerId === match.opponent1 ? 'text-white' : winnerId ? 'text-white/30' : 'text-white/80'}`}>
+                                                {opp1Name}
+                                              </span>
+                                            </div>
+                                            <span className="text-xs font-mono font-black tracking-tight tabular-nums">
+                                              {isCompleted ? match.score1 : '-'}
+                                            </span>
+                                          </div>
+
+                                          {/* Divider */}
+                                          <div className="h-[1px] bg-white/5 flex items-center justify-center">
+                                            <span className="text-[7.5px] font-mono font-bold tracking-widest text-white/25 px-2 bg-slate-950 uppercase shrink-0">VS</span>
+                                          </div>
+
+                                          {/* Competitor 2 */}
+                                          <div className="flex justify-between items-center text-left">
+                                            <div className="flex items-center gap-2 max-w-[70%]">
+                                              <div className="w-3.5 h-3.5 rounded-full border border-white/20 shadow-inner shrink-0" style={{ backgroundColor: `hsl(${opp2Hue}, 80%, 50%)` }} />
+                                              <span className={`text-xs font-black truncate uppercase ${winnerId === match.opponent2 ? 'text-white' : winnerId ? 'text-white/30' : 'text-white/80'}`}>
+                                                {opp2Name}
+                                              </span>
+                                            </div>
+                                            <span className="text-xs font-mono font-black tracking-tight tabular-nums">
+                                              {isCompleted ? match.score2 : '-'}
+                                            </span>
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              )}
                             </div>
 
-                            {/* Save Custom AI Presets */}
-                            <div className="flex flex-col gap-1.5 pt-2 border-t border-white/5 mt-2">
-                              <span className="text-[10px] text-white/50 uppercase tracking-widest font-mono">Save Custom AI Preset:</span>
-                              <div className="flex gap-2">
-                                <input
-                                  type="text"
-                                  placeholder="Preset Name (e.g. AggroBot)"
-                                  value={newAiPresetNameInput}
-                                  onChange={(e) => setNewAiPresetNameInput(e.target.value)}
-                                  className="flex-1 h-9 bg-black/60 border border-white/10 rounded px-2.5 text-xs text-white outline-none focus:border-[#38bdf8] transition-all font-sans"
-                                />
+                            {/* bottom actions when bracket is active */}
+                            {tournamentState.status === 'bracket' && (
+                              <div className="flex flex-col gap-3 mt-auto shrink-0 pt-4">
                                 <button
-                                  onClick={() => handleSaveAIPreset(newAiPresetNameInput)}
-                                  className="px-4 h-9 bg-[#38bdf8]/10 hover:bg-[#38bdf8]/20 border border-[#38bdf8]/30 hover:border-[#38bdf8]/50 text-[#38bdf8] text-[10.5px] font-bold uppercase rounded cursor-pointer transition-all font-sans"
+                                  id="start-tournament-match-btn"
+                                  onClick={handleStartTournamentMatch}
+                                  className="group relative w-full h-16 bg-emerald-500 hover:bg-emerald-400 transition-all duration-300 flex items-center justify-center overflow-hidden cursor-pointer rounded shadow-2xl border border-emerald-400/20 select-none pointer-events-auto"
                                 >
-                                  Save
+                                  <span className="relative z-10 text-slate-950 font-sans font-black text-sm uppercase tracking-widest pointer-events-none flex items-center gap-2">
+                                    Start Next Match
+                                    <svg className="w-5 h-5 text-slate-950" fill="currentColor" viewBox="0 0 20 20">
+                                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
+                                    </svg>
+                                  </span>
+                                </button>
+
+                                <button
+                                  onClick={handleResetTournament}
+                                  className="w-full h-12 bg-white/5 border border-white/10 flex items-center justify-center hover:bg-white/10 hover:border-white/20 active:scale-[0.99] transition-all cursor-pointer rounded pointer-events-auto select-none"
+                                >
+                                  <span className="text-white/40 font-sans font-bold text-xs uppercase tracking-widest pointer-events-none">
+                                    Reset Tournament
+                                  </span>
                                 </button>
                               </div>
-                            </div>
+                            )}
                           </div>
                         )}
                       </div>
-                    </div>
-                    
-                    {/* Training Actions */}
-                    <div className="flex flex-col gap-3.5 mt-auto shrink-0 pt-4">
-                      <button 
-                        id="play-game-btn"
-                        onClick={() => setShowBotSetupMenu(true)}
-                        className="group relative w-full h-16 bg-white hover:bg-sky-400 transition-all duration-300 flex items-center justify-center overflow-hidden cursor-pointer rounded shadow-2xl border border-white/20 select-none pointer-events-auto"
-                      >
-                        <div className="absolute inset-0 bg-blue-600 translate-x-[-100%] group-hover:translate-x-0 transition-transform duration-300" />
-                        <span className="relative z-10 text-slate-900 font-sans font-black text-sm uppercase tracking-widest group-hover:text-white pointer-events-none flex items-center gap-2">
-                          Start Local Training
-                          <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
-                          </svg>
-                        </span>
-                      </button>
-                      
-                      <button 
-                        id="close-game-btn"
-                        onClick={handleCloseGame}
-                        className="w-full h-14 bg-white/5 border border-white/10 backdrop-blur-md flex items-center justify-center hover:bg-white/10 hover:border-white/25 active:scale-[0.99] transition-all cursor-pointer rounded pointer-events-auto select-none"
-                      >
-                        <span className="text-white/80 font-sans font-bold text-sm uppercase tracking-widest pointer-events-none">
-                          Close Sandbox
-                        </span>
-                      </button>
-                    </div>
+                    )}
                   </div>
                 ) : activeMenuTab === 'multi' ? (
                   <div className="flex flex-col h-full min-h-0 justify-between gap-5">

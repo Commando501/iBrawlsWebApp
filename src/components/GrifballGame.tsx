@@ -22,6 +22,7 @@ interface GrifballGameProps {
   multiplayerRole?: 'host' | 'client' | null;
   multiplayerSocket?: WebSocket | null;
   opponentClientId?: string;
+  opponentPlayerName?: string;
   offlineBotCount?: number;
   botDifficulties?: Record<string, string>;
   botColors?: Record<string, number>;
@@ -85,6 +86,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
   multiplayerRole = null,
   multiplayerSocket = null,
   opponentClientId = '',
+  opponentPlayerName = '',
   offlineBotCount = 3,
   botDifficulties = {},
   botColors = {},
@@ -1262,7 +1264,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       nameplate.style.color = s.settings.nameVisibilityColor || '#00ffff';
       nameplate.style.opacity = (s.settings.nameVisibilityOpacity !== undefined ? s.settings.nameVisibilityOpacity : 0.8).toString();
       nameplate.style.fontSize = `${s.settings.nameVisibilityFontSize || 16}px`;
-      nameplate.textContent = isMultiplayer ? (opponentNameRef.current || opponentClientId || 'Opponent') : 'AI Bot';
+      nameplate.textContent = isMultiplayer ? (opponentNameRef.current || opponentClientId || 'Opponent') : (opponentPlayerName || opponentNameRef.current || 'AI Bot');
     } else {
       nameplate.style.display = 'none';
     }
@@ -2058,6 +2060,10 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
   const lastOpponentHue = useRef<number | null>(null);
   const opponentNameRef = useRef<string>('');
   const radarDotPoolRef = useRef<Map<string, HTMLElement>>(new Map());
+
+  useEffect(() => {
+    opponentNameRef.current = opponentPlayerName || '';
+  }, [opponentPlayerName]);
 
   const getSpectateTargetData = (target: 'host' | 'client') => {
     const s = stateRef.current;

@@ -439,7 +439,7 @@ export const HUD: React.FC<HUDProps> = ({
             <p className="text-[10px] text-red-500 font-bold tracking-tighter uppercase">
               {stats.isMultiplayer
                 ? (stats.multiplayerRole === 'client' ? `${stats.settings.playerName || stats.playerClientId || 'Client'} (You)` : stats.opponentPlayerName || stats.opponentClientId || 'Client')
-                : 'AI Bot'}
+                : (stats.opponentPlayerName || 'AI Bot')}
             </p>
             <p className="text-3xl font-black font-display">{stats.scoreEnemy.toString().padStart(2, '0')}</p>
           </div>
@@ -468,7 +468,6 @@ export const HUD: React.FC<HUDProps> = ({
         </div>
       </DraggableHUDItem>
 
-      {/* 4. TECHNICAL SPECIFICS */}
       <DraggableHUDItem {...getDraggableProps('technicalSpecs')}>
         <div className="bg-slate-950/65 backdrop-blur-md border border-cyan-400/20 px-4 py-2.5 rounded-lg text-right shadow-lg min-w-40">
           <p className="text-[10px] uppercase tracking-widest text-cyan-400 font-bold">Technical Specs</p>
@@ -924,7 +923,7 @@ export const HUD: React.FC<HUDProps> = ({
                   // Single player main AI bot
                   playersList.push({
                     id: 'main_ai',
-                    name: 'AI Bot',
+                    name: stats.opponentPlayerName || 'AI Bot',
                     score: stats.scoreEnemy,
                     kills: stats.enemyKills ?? 0,
                     deaths: stats.enemyDeaths ?? 0,
