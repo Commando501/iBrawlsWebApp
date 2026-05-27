@@ -207,7 +207,7 @@ export const RightActionButtonPad: React.FC<RightPadProps> = ({
   const primaryBtnColor = activeWeapon === 'sword' ? 'from-cyan-400 to-indigo-500' : 'from-amber-400 to-orange-500';
 
   return (
-    <div className="mobile-right-pad relative w-[340px] h-[260px] flex items-center justify-center select-none pointer-events-none">
+    <div className="mobile-right-pad relative flex items-center justify-center select-none pointer-events-none">
       
       {/* 1. RIGHT ANALOG JOYSTICK (Continuous Aim/Pan) */}
       <div 
@@ -215,7 +215,7 @@ export const RightActionButtonPad: React.FC<RightPadProps> = ({
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
-        className={`absolute left-0 bottom-4 w-28 h-28 rounded-full border-2 transition-all duration-300 flex items-center justify-center pointer-events-auto ${
+        className={`mobile-right-stick absolute rounded-full border-2 transition-all duration-300 flex items-center justify-center pointer-events-auto ${
           active 
             ? 'border-indigo-400/80 bg-slate-950/45 shadow-[0_0_25px_rgba(99,102,241,0.3)] scale-[1.03]' 
             : 'border-white/10 bg-slate-950/25 shadow-[inset_0_1px_3px_rgba(0,0,0,0.5)]'
@@ -228,7 +228,7 @@ export const RightActionButtonPad: React.FC<RightPadProps> = ({
         {/* Thumb Knob */}
         <div 
           ref={knobRef}
-          className={`w-12 h-12 rounded-full flex items-center justify-center transition-shadow duration-300 cursor-pointer ${
+          className={`mobile-right-knob rounded-full flex items-center justify-center transition-shadow duration-300 cursor-pointer ${
             active 
               ? 'bg-gradient-to-b from-indigo-400 to-purple-600 shadow-[0_0_15px_rgba(99,102,241,0.8)] border border-indigo-300/40' 
               : 'bg-gradient-to-b from-slate-700 to-slate-900 border border-white/10 shadow-lg'
@@ -243,7 +243,7 @@ export const RightActionButtonPad: React.FC<RightPadProps> = ({
       {/* CROUCH / SLIDE BUTTON */}
       <button 
         onTouchStart={handleCrouchToggle}
-        className={`absolute left-28 bottom-4 w-12 h-12 rounded-full pointer-events-auto flex flex-col items-center justify-center border transition-all duration-150 active:scale-90 font-mono text-[9px] font-black ${
+        className={`mobile-crouch-button absolute rounded-full pointer-events-auto flex flex-col items-center justify-center border transition-all duration-150 active:scale-90 font-mono text-[9px] font-black ${
           isCrouched 
             ? 'bg-amber-500 border-amber-400 text-slate-950 shadow-[0_0_12px_rgba(245,158,11,0.5)]' 
             : 'bg-slate-950/50 backdrop-blur-md border-white/10 text-white/70 hover:text-white'
@@ -258,7 +258,7 @@ export const RightActionButtonPad: React.FC<RightPadProps> = ({
       <button 
         onTouchStart={() => triggerKeyAction('dash')}
         disabled={!stats.playerDashReady}
-        className={`absolute left-[110px] top-[75px] w-13 h-13 rounded-full pointer-events-auto flex flex-col items-center justify-center border backdrop-blur-md transition-all duration-150 active:scale-90 ${
+        className={`mobile-dash-button absolute rounded-full pointer-events-auto flex flex-col items-center justify-center border backdrop-blur-md transition-all duration-150 active:scale-90 ${
           stats.playerDashReady 
             ? 'bg-cyan-500/15 border-cyan-400/50 text-cyan-400 shadow-[0_0_15px_rgba(34,211,238,0.25)]' 
             : 'bg-slate-950/40 border-white/5 text-white/20'
@@ -272,7 +272,7 @@ export const RightActionButtonPad: React.FC<RightPadProps> = ({
       {/* JUMP / BOOST BUTTON */}
       <button 
         onTouchStart={() => triggerKeyAction('jump')}
-        className="absolute right-16 bottom-[75px] w-14 h-14 rounded-full pointer-events-auto flex flex-col items-center justify-center bg-indigo-600/20 backdrop-blur-md border border-indigo-400/40 text-indigo-300 shadow-[0_0_15px_rgba(99,102,241,0.15)] transition-all duration-150 active:scale-90"
+        className="mobile-boost-button absolute rounded-full pointer-events-auto flex flex-col items-center justify-center bg-indigo-600/20 backdrop-blur-md border border-indigo-400/40 text-indigo-300 shadow-[0_0_15px_rgba(99,102,241,0.15)] transition-all duration-150 active:scale-90"
         style={{ pointerEvents: isAdjustmentMode ? 'none' : 'auto' }}
       >
         <Sparkles className="w-6 h-6 mb-0.5" />
@@ -280,11 +280,11 @@ export const RightActionButtonPad: React.FC<RightPadProps> = ({
       </button>
 
       {/* SWAP WEAPON SELECTION WHEEL BUTTONS */}
-      <div className="absolute left-[180px] top-4 flex gap-1.5 pointer-events-auto">
+      <div className="mobile-weapon-switcher absolute flex gap-1.5 pointer-events-auto">
         {/* Hammer Swapper */}
         <button
           onTouchStart={() => triggerKeyAction('weapon1')}
-          className={`w-11 h-11 rounded-lg flex flex-col items-center justify-center border backdrop-blur-md transition-all duration-150 active:scale-90 ${
+          className={`mobile-weapon-button rounded-lg flex flex-col items-center justify-center border backdrop-blur-md transition-all duration-150 active:scale-90 ${
             activeWeapon === 'hammer'
               ? 'bg-amber-500/25 border-amber-400 text-amber-400 shadow-[0_0_10px_rgba(245,158,11,0.3)]'
               : 'bg-slate-950/50 border-white/10 text-white/50'
@@ -298,7 +298,7 @@ export const RightActionButtonPad: React.FC<RightPadProps> = ({
         {/* Sword Swapper */}
         <button
           onTouchStart={() => triggerKeyAction('weapon2')}
-          className={`w-11 h-11 rounded-lg flex flex-col items-center justify-center border backdrop-blur-md transition-all duration-150 active:scale-90 ${
+          className={`mobile-weapon-button rounded-lg flex flex-col items-center justify-center border backdrop-blur-md transition-all duration-150 active:scale-90 ${
             activeWeapon === 'sword'
               ? 'bg-cyan-500/25 border-cyan-400 text-cyan-400 shadow-[0_0_10px_rgba(34,211,238,0.3)]'
               : 'bg-slate-950/50 border-white/10 text-white/50'
@@ -313,7 +313,7 @@ export const RightActionButtonPad: React.FC<RightPadProps> = ({
       {/* SCOREBOARD / STATS TOGGLE */}
       <button
         onTouchStart={() => triggerKeyAction('scoreboard')}
-        className={`absolute left-[105px] top-6 px-3 py-1 rounded border pointer-events-auto backdrop-blur-md text-[7px] font-black tracking-widest transition-all ${
+        className={`mobile-stats-button absolute rounded border pointer-events-auto backdrop-blur-md text-[7px] font-black tracking-widest transition-all ${
           stats.showScoreboard
             ? 'bg-emerald-500 border-emerald-400 text-slate-950'
             : 'bg-slate-950/60 border-white/10 text-white/50'
@@ -327,7 +327,7 @@ export const RightActionButtonPad: React.FC<RightPadProps> = ({
       {activeWeapon === 'sword' && (
         <button
           onTouchStart={triggerAltAttack}
-          className="absolute right-4 bottom-28 w-13 h-13 rounded-full pointer-events-auto flex flex-col items-center justify-center bg-cyan-600/35 backdrop-blur-md border-2 border-cyan-400/50 text-cyan-300 shadow-[0_0_15px_rgba(34,211,238,0.35)] transition-all duration-150 active:scale-90 font-mono"
+          className="mobile-alt-attack-button absolute rounded-full pointer-events-auto flex flex-col items-center justify-center bg-cyan-600/35 backdrop-blur-md border-2 border-cyan-400/50 text-cyan-300 shadow-[0_0_15px_rgba(34,211,238,0.35)] transition-all duration-150 active:scale-90 font-mono"
           style={{ pointerEvents: isAdjustmentMode ? 'none' : 'auto' }}
         >
           <div className="text-[12px] font-bold tracking-tighter leading-none mb-0.5">⚔️</div>
@@ -338,13 +338,13 @@ export const RightActionButtonPad: React.FC<RightPadProps> = ({
       {/* 💥 LARGE PRIMARY ATTACK BUTTON */}
       <button 
         onTouchStart={triggerPrimaryAttack}
-        className={`absolute right-4 bottom-4 w-20 h-20 rounded-full pointer-events-auto flex flex-col items-center justify-center bg-gradient-to-b ${primaryBtnColor} text-slate-950 border-2 border-white/40 transition-all duration-150 active:scale-95`}
+        className={`mobile-primary-attack-button absolute rounded-full pointer-events-auto flex flex-col items-center justify-center bg-gradient-to-b ${primaryBtnColor} text-slate-950 border-2 border-white/40 transition-all duration-150 active:scale-95`}
         style={{
           boxShadow: `0 0 25px ${primaryGlowColor}, inset 0 2px 4px rgba(255,255,255,0.4)`,
           pointerEvents: isAdjustmentMode ? 'none' : 'auto'
         }}
       >
-        <div className="text-[26px] font-bold leading-none mb-0.5">
+        <div className="mobile-primary-attack-icon font-bold leading-none mb-0.5">
           {activeWeapon === 'sword' ? '⚡' : '🔨'}
         </div>
         <span className="text-[9px] font-black font-sans tracking-widest uppercase">

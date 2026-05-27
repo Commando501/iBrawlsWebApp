@@ -53,6 +53,84 @@ body {
   touch-action: none;
 }
 
+.mobile-right-pad {
+  width: clamp(14.5rem, 38vw, 21.25rem);
+  height: clamp(10.5rem, 29vw, 16.25rem);
+}
+
+.mobile-right-stick {
+  left: 0;
+  bottom: clamp(0.5rem, 3vmin, 1rem);
+  width: clamp(4.75rem, 12vmin, 7rem);
+  height: clamp(4.75rem, 12vmin, 7rem);
+}
+
+.mobile-right-knob {
+  width: clamp(2.25rem, 5.5vmin, 3rem);
+  height: clamp(2.25rem, 5.5vmin, 3rem);
+}
+
+.mobile-crouch-button {
+  left: 34%;
+  bottom: clamp(0.5rem, 3vmin, 1rem);
+  width: clamp(2.5rem, 7vmin, 3rem);
+  height: clamp(2.5rem, 7vmin, 3rem);
+}
+
+.mobile-dash-button {
+  left: 33%;
+  top: 34%;
+  width: clamp(2.75rem, 7.5vmin, 3.25rem);
+  height: clamp(2.75rem, 7.5vmin, 3.25rem);
+}
+
+.mobile-boost-button {
+  right: 19%;
+  bottom: 32%;
+  width: clamp(3rem, 8vmin, 3.5rem);
+  height: clamp(3rem, 8vmin, 3.5rem);
+}
+
+.mobile-weapon-switcher {
+  left: 53%;
+  top: clamp(0.4rem, 3vmin, 1rem);
+}
+
+.mobile-weapon-button {
+  width: clamp(2.35rem, 6.5vmin, 2.75rem);
+  height: clamp(2.35rem, 6.5vmin, 2.75rem);
+}
+
+.mobile-stats-button {
+  left: 31%;
+  top: clamp(0.65rem, 4vmin, 1.5rem);
+  padding: clamp(0.2rem, 1vmin, 0.25rem) clamp(0.45rem, 1.8vmin, 0.75rem);
+}
+
+.mobile-alt-attack-button {
+  right: clamp(0.55rem, 3vmin, 1rem);
+  bottom: 43%;
+  width: clamp(2.75rem, 7.5vmin, 3.25rem);
+  height: clamp(2.75rem, 7.5vmin, 3.25rem);
+}
+
+.mobile-primary-attack-button {
+  right: clamp(0.55rem, 3vmin, 1rem);
+  bottom: clamp(0.5rem, 3vmin, 1rem);
+  width: clamp(4.25rem, 11vmin, 5rem);
+  height: clamp(4.25rem, 11vmin, 5rem);
+}
+
+.mobile-primary-attack-icon {
+  font-size: clamp(1.25rem, 5vmin, 1.625rem);
+}
+
+.mobile-ui-adjust-toolbar {
+  max-height: calc(100dvh - 1rem - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
 @media (max-width: 980px) {
   .mobile-start-overlay {
     padding: max(0.75rem, env(safe-area-inset-top)) max(0.75rem, env(safe-area-inset-right)) max(0.75rem, env(safe-area-inset-bottom)) max(0.75rem, env(safe-area-inset-left));
@@ -178,14 +256,11 @@ body {
   }
 
   .mobile-ui-adjust-toolbar {
-    left: 50% !important;
-    right: auto;
-    top: max(0.75rem, env(safe-area-inset-top)) !important;
-    transform: translateX(-50%) !important;
     flex-direction: column;
     align-items: stretch;
-    gap: 0.75rem;
-    width: min(26rem, calc(100vw - 1.5rem));
+    gap: 0.6rem;
+    width: min(24rem, calc(100vw - 1rem - env(safe-area-inset-left) - env(safe-area-inset-right)));
+    padding: 0.75rem;
   }
 
   .mobile-ui-adjust-toolbar > div:last-child {
@@ -194,6 +269,31 @@ body {
 
   .desktop-keyboard-visualizer {
     display: none;
+  }
+}
+
+@media (max-width: 980px) and (orientation: landscape), (pointer: coarse) and (orientation: landscape) {
+  .mobile-ui-adjust-toolbar {
+    flex-direction: row;
+    align-items: center;
+    gap: 0.75rem;
+    width: min(34rem, calc(100vw - 1rem - env(safe-area-inset-left) - env(safe-area-inset-right)));
+    padding: 0.65rem 0.75rem;
+  }
+
+  .mobile-ui-adjust-toolbar > div:first-child {
+    min-width: 0;
+  }
+
+  .mobile-ui-adjust-toolbar > div:last-child {
+    flex-shrink: 0;
+  }
+}
+
+@media (max-height: 520px) and (orientation: landscape) {
+  .mobile-ui-adjust-toolbar {
+    gap: 0.5rem;
+    padding: 0.55rem 0.65rem;
   }
 }
 

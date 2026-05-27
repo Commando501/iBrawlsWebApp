@@ -122,6 +122,9 @@ export const DraggableHUDItem: React.FC<DraggableHUDItemProps> = ({
   };
 
   const scale = clampUiScale(uiItem.scale ?? 1);
+  const scaleControlsPlacementClass = isMobileLayout && uiItem.y > 64
+    ? 'bottom-full mb-1 left-0'
+    : '-bottom-8 left-0';
   const style: React.CSSProperties = {
     position: 'absolute',
     left: `${uiItem.x}%`,
@@ -185,7 +188,7 @@ export const DraggableHUDItem: React.FC<DraggableHUDItemProps> = ({
       </div>
 
       {!uiItem.locked && (
-        <div className="absolute -bottom-8 left-0 h-7 flex items-center gap-1 rounded-md border border-slate-800 bg-slate-950/90 px-1.5 text-[9px] font-mono font-bold text-slate-200 shadow-md z-50 pointer-events-auto">
+        <div className={`absolute ${scaleControlsPlacementClass} h-7 flex items-center gap-1 rounded-md border border-slate-800 bg-slate-950/90 px-1.5 text-[9px] font-mono font-bold text-slate-200 shadow-md z-50 pointer-events-auto`}>
           <button
             type="button"
             onPointerDown={(e) => e.stopPropagation()}

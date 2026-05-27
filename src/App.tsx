@@ -24,8 +24,10 @@ import { ChatOverlay, ChatMessage } from './components/ChatOverlay';
 import { CharacterPreview } from './components/CharacterPreview';
 import { CharacterLoadout, DEFAULT_LOADOUT, AVAILABLE_PRESETS, HelmetPreset, TorsoPreset, ArmPreset, LegPreset } from './components/VoxelModels';
 
-const APP_VERSION = '0.250';
+const APP_VERSION = '0.255a';
 const MAX_PLAYER_NAME_LENGTH = 10;
+const MOBILE_HUD_LAYOUT_VERSION = '5';
+const MOBILE_HUD_LAYOUT_VERSION_KEY = 'grifball_mobile_hud_layout_version';
 
 interface OnlineClient {
   id: string;
@@ -1040,19 +1042,19 @@ export default function App() {
   ];
 
   const DEFAULT_MOBILE_UI_POSITIONS: UiElementPos[] = [
-    { id: 'objective', name: 'Objective Block', x: 4, y: 3, locked: true, scale: 0.7 },
-    { id: 'scoreboard', name: 'Scoreboard', x: 50, y: 1.5, locked: true, scale: 0.62 },
-    { id: 'arenaStatus', name: 'Arena Status & Controls', x: 98, y: 1.5, locked: true, scale: 0.7 },
-    { id: 'technicalSpecs', name: 'Technical Specs', x: 98, y: 16, locked: true, scale: 0.68 },
-    { id: 'eliminationFeed', name: 'Elimination Feed', x: 50, y: 42, locked: true, scale: 0.72 },
-    { id: 'radar', name: 'Tactical Radar', x: 2, y: 76, locked: true, scale: 0.62 },
-    { id: 'weaponDash', name: 'Gear & Thrusters', x: 50, y: 97, locked: true, scale: 0.66 },
-    { id: 'vitality', name: 'Vitality Indicator', x: 98, y: 96, locked: true, scale: 0.72 },
+    { id: 'objective', name: 'Objective Block', x: 3, y: 4, locked: true, scale: 0.58 },
+    { id: 'scoreboard', name: 'Scoreboard', x: 50, y: 2, locked: true, scale: 0.56 },
+    { id: 'arenaStatus', name: 'Arena Status & Controls', x: 80, y: 4, locked: true, scale: 0.56 },
+    { id: 'technicalSpecs', name: 'Technical Specs', x: 76, y: 18, locked: true, scale: 0.52 },
+    { id: 'eliminationFeed', name: 'Elimination Feed', x: 50, y: 38, locked: true, scale: 0.56 },
+    { id: 'radar', name: 'Tactical Radar', x: 3, y: 76, locked: true, scale: 0.52 },
+    { id: 'weaponDash', name: 'Gear & Thrusters', x: 50, y: 76, locked: true, scale: 0.56 },
+    { id: 'vitality', name: 'Vitality Indicator', x: 82, y: 86, locked: true, scale: 0.58 },
     { id: 'crosshair', name: 'Reticle / Target Dot', x: 50, y: 50, locked: true, scale: 1 },
-    { id: 'spectatorCard', name: 'Spectator Controller', x: 50, y: 88, locked: true, scale: 0.82 },
-    { id: 'mobileLeftAnalog', name: 'Mobile Left Stick', x: 3, y: 97, locked: true, scale: 1 },
-    { id: 'mobileRightButtons', name: 'Mobile Right Buttons', x: 99, y: 98, locked: true, scale: 0.68 },
-    { id: 'hudAdjuster', name: 'HUD Canvas Adjuster', x: 50, y: 3, locked: false, scale: 1 },
+    { id: 'spectatorCard', name: 'Spectator Controller', x: 50, y: 86, locked: true, scale: 0.7 },
+    { id: 'mobileLeftAnalog', name: 'Mobile Left Stick', x: 3, y: 96, locked: true, scale: 1 },
+    { id: 'mobileRightButtons', name: 'Mobile Right Buttons', x: 98, y: 96, locked: true, scale: 1 },
+    { id: 'hudAdjuster', name: 'HUD Canvas Adjuster', x: 50, y: 4, locked: false, scale: 1 },
   ];
 
   const clampUiScale = (scale: unknown, fallback = 1) => {
@@ -1087,7 +1089,7 @@ export default function App() {
     mobile: cloneUiPositions(DEFAULT_MOBILE_UI_POSITIONS),
   });
 
-  const normalizeUiLayouts = (raw: unknown): UiLayoutState => {
+  const normalizeUiLayouts = (raw: unknown, resetSavedMobileLayout = false): UiLayoutState => {
     const defaults = getDefaultUiLayouts();
     if (Array.isArray(raw)) {
       return {
@@ -1100,7 +1102,9 @@ export default function App() {
       const saved = raw as Partial<UiLayoutState>;
       return {
         desktop: mergeUiPositions(DEFAULT_DESKTOP_UI_POSITIONS, saved.desktop),
-        mobile: mergeUiPositions(DEFAULT_MOBILE_UI_POSITIONS, saved.mobile),
+        mobile: resetSavedMobileLayout
+          ? defaults.mobile
+          : mergeUiPositions(DEFAULT_MOBILE_UI_POSITIONS, saved.mobile),
       };
     }
 
@@ -1112,10 +1116,19 @@ export default function App() {
 
   const [uiLayouts, setUiLayouts] = useState<UiLayoutState>(() => {
     try {
+      const shouldResetSavedMobileLayout =
+        localStorage.getItem(MOBILE_HUD_LAYOUT_VERSION_KEY) !== MOBILE_HUD_LAYOUT_VERSION;
       const saved = localStorage.getItem('grifball_ui_positions');
-      if (saved) {
-        return normalizeUiLayouts(JSON.parse(saved));
+      const layouts = saved
+        ? normalizeUiLayouts(JSON.parse(saved), shouldResetSavedMobileLayout)
+        : getDefaultUiLayouts();
+
+      if (shouldResetSavedMobileLayout) {
+        localStorage.setItem(MOBILE_HUD_LAYOUT_VERSION_KEY, MOBILE_HUD_LAYOUT_VERSION);
+        localStorage.setItem('grifball_ui_positions', JSON.stringify(layouts));
       }
+
+      return layouts;
     } catch (e) {
       console.error(e);
     }
@@ -1160,11 +1173,33 @@ export default function App() {
   };
 
   const [isDraggingUiAdjuster, setIsDraggingUiAdjuster] = useState<boolean>(false);
+  const uiAdjusterToolbarRef = useRef<HTMLDivElement>(null);
   const uiAdjusterPointerIdRef = useRef<number | null>(null);
   const defaultUiAdjusterPosition = activeUiDefaults.find((position) => position.id === 'hudAdjuster');
   const uiAdjusterPosition =
     activeUiPositions.find((position) => position.id === 'hudAdjuster') ??
     defaultUiAdjusterPosition;
+
+  const clampUiAdjusterPositionToViewport = (clientX: number, clientY: number) => {
+    const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 1;
+    const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 1;
+    const toolbarRect = uiAdjusterToolbarRef.current?.getBoundingClientRect();
+    const toolbarWidth = toolbarRect?.width ?? 0;
+    const toolbarHeight = toolbarRect?.height ?? 0;
+    const margin = deviceInfo.isMobile ? 8 : 16;
+
+    const minX = ((toolbarWidth / 2 + margin) / viewportWidth) * 100;
+    const maxX = ((viewportWidth - toolbarWidth / 2 - margin) / viewportWidth) * 100;
+    const minY = (margin / viewportHeight) * 100;
+    const maxY = ((viewportHeight - toolbarHeight - margin) / viewportHeight) * 100;
+    const pctX = (clientX / viewportWidth) * 100;
+    const pctY = (clientY / viewportHeight) * 100;
+
+    return {
+      x: Math.max(minX, Math.min(Math.max(minX, maxX), pctX)),
+      y: Math.max(minY, Math.min(Math.max(minY, maxY), pctY)),
+    };
+  };
 
   const handleUiAdjusterPointerDown = (e: React.PointerEvent) => {
     uiAdjusterPointerIdRef.current = e.pointerId;
@@ -1203,12 +1238,9 @@ export default function App() {
 
     const handleWindowPointerMove = (e: PointerEvent) => {
       if (uiAdjusterPointerIdRef.current !== null && e.pointerId !== uiAdjusterPointerIdRef.current) return;
-      const pctX = (e.clientX / window.innerWidth) * 100;
-      const pctY = (e.clientY / window.innerHeight) * 100;
-      const clampedX = Math.max(5, Math.min(95, pctX));
-      const clampedY = Math.max(2, Math.min(92, pctY));
+      const clampedPosition = clampUiAdjusterPositionToViewport(e.clientX, e.clientY);
 
-      pendingPosition = { x: clampedX, y: clampedY };
+      pendingPosition = clampedPosition;
       if (animationFrameId === null) {
         animationFrameId = window.requestAnimationFrame(flushPendingPosition);
       }
@@ -1238,6 +1270,41 @@ export default function App() {
       window.removeEventListener('pointercancel', handleWindowPointerUp);
     };
   }, [isDraggingUiAdjuster]);
+
+  useEffect(() => {
+    if (!showUiAdjustment || !uiAdjusterPosition || !defaultUiAdjusterPosition) return;
+
+    const animationFrameId = window.requestAnimationFrame(() => {
+      const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 1;
+      const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 1;
+      const clampedPosition = clampUiAdjusterPositionToViewport(
+        (uiAdjusterPosition.x / 100) * viewportWidth,
+        (uiAdjusterPosition.y / 100) * viewportHeight
+      );
+
+      if (
+        Math.abs(clampedPosition.x - uiAdjusterPosition.x) < 0.1 &&
+        Math.abs(clampedPosition.y - uiAdjusterPosition.y) < 0.1
+      ) {
+        return;
+      }
+
+      const nextPositions = activeUiPositions.some((position) => position.id === 'hudAdjuster')
+        ? activeUiPositions.map((position) =>
+            position.id === 'hudAdjuster'
+              ? { ...position, x: clampedPosition.x, y: clampedPosition.y }
+              : position
+          )
+        : [
+            ...activeUiPositions,
+            { ...defaultUiAdjusterPosition, x: clampedPosition.x, y: clampedPosition.y },
+          ];
+
+      applyActiveUiPositions(nextPositions);
+    });
+
+    return () => window.cancelAnimationFrame(animationFrameId);
+  }, [showUiAdjustment, activeUiLayoutMode]);
 
 
   // Configuration settings for simulated health, speed percentage, attack offsets and impact sizes
@@ -4776,6 +4843,7 @@ export default function App() {
       {/* FLOATING ACTION TOOLBAR DURING UI CUSTOMIZATION MODE */}
       {showUiAdjustment && uiAdjusterPosition && (
         <div
+          ref={uiAdjusterToolbarRef}
           id="ui-adjustment-toolbar"
           className="mobile-ui-adjust-toolbar absolute z-50 bg-slate-950/90 border border-cyan-500/50 backdrop-blur-md rounded-xl p-4 shadow-2xl flex items-center gap-6 pointer-events-auto max-w-[90vw] select-none"
           style={{
