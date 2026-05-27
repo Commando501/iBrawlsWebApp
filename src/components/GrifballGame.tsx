@@ -1972,6 +1972,19 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     onStatsUpdateRef.current = onStatsUpdate;
   }, [onStatsUpdate]);
 
+  // Mutable refs for isPaused and keybindings so the heavy Three.js mounting
+  // useEffect does NOT re-run (destroy + recreate the WebGL canvas) every time
+  // the user pauses/unpauses or changes keybindings.
+  const isPausedRef = useRef(isPaused);
+  useEffect(() => {
+    isPausedRef.current = isPaused;
+  }, [isPaused]);
+
+  const keybindingsRef = useRef(keybindings);
+  useEffect(() => {
+    keybindingsRef.current = keybindings;
+  }, [keybindings]);
+
   // Keys active dictionary
   const keysPressed = useRef<{ [key: string]: boolean }>({});
   
@@ -2295,7 +2308,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     // Scale floor cylinder mesh
     scene.traverse((child) => {
       if (child instanceof THREE.Mesh && child.geometry instanceof THREE.CylinderGeometry) {
-        if (child.geometry.parameters.radialSegments === 64 && child.geometry.parameters.height === 0.2) {
+        const params = (child.geometry as any).parameters;
+        if (params && params.radialSegments === 64 && params.height === 0.2) {
           child.scale.set(scale, 1, scale);
         }
       }
@@ -2798,7 +2812,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         }
 
         // Allow Space and C to fall through to keysPressed for flying rises/descends
-        if (key === keybindings.crouch || key === keybindings.jump || key === 'spacebar' || key === keybindings.moveForward || key === keybindings.moveLeft || key === keybindings.moveBackward || key === keybindings.moveRight || key === 'shift') {
+        if (key === keybindingsRef.current.crouch || key === keybindingsRef.current.jump || key === 'spacebar' || key === keybindingsRef.current.moveForward || key === keybindingsRef.current.moveLeft || key === keybindingsRef.current.moveBackward || key === keybindingsRef.current.moveRight || key === 'shift') {
           // let flyer keys pass
         } else {
           return; // Ignore other standard hotkeys
@@ -2811,29 +2825,29 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       }
 
       // Crouch toggles
-      if (key === keybindings.crouch) {
+      if (key === keybindingsRef.current.crouch) {
         stateRef.current.isCrouching = true;
         sfx.playCrouch();
       }
 
       // Scoreboard toggles (holding U)
-      if (key === keybindings.scoreboard) {
+      if (key === keybindingsRef.current.scoreboard) {
         stateRef.current.showScoreboard = true;
         pushStatsUpdate();
       }
 
       // Weapon swapping hotkeys
-      if (key === keybindings.weapon1) {
+      if (key === keybindingsRef.current.weapon1) {
         swapPlayerWeapon('hammer');
       }
-      if (key === keybindings.weapon2) {
+      if (key === keybindingsRef.current.weapon2) {
         swapPlayerWeapon('sword');
       }
 
       // Jump initiates
-      if (key === keybindings.jump || key === 'spacebar') {
+      if (key === keybindingsRef.current.jump || key === 'spacebar') {
         const s = stateRef.current;
-        if (s.playerHP > 0 && !isPaused && isPlaying) {
+        if (s.playerHP > 0 && !isPausedRef.current && isPlaying) {
           if (s.pHammerJumpWindowTimer > 0) {
             // Hammer jump boost!
             s.isJumping = true;
@@ -2852,15 +2866,15 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       }
 
       // Dash initiates
-      if (key === keybindings.dash) {
+      if (key === keybindingsRef.current.dash) {
         const s = stateRef.current;
-        if (s.playerHP > 0 && !isPaused && isPlaying && s.playerDashCooldownTimer <= 0 && s.playerDashRemaining <= 0) {
+        if (s.playerHP > 0 && !isPausedRef.current && isPlaying && s.playerDashCooldownTimer <= 0 && s.playerDashRemaining <= 0) {
           let fMove = 0;
           let rMove = 0;
-          if (keysPressed.current[keybindings.moveForward] || keysPressed.current['arrowup']) fMove += 1;
-          if (keysPressed.current[keybindings.moveBackward] || keysPressed.current['arrowdown']) fMove -= 1;
-          if (keysPressed.current[keybindings.moveRight] || keysPressed.current['arrowright']) rMove += 1;
-          if (keysPressed.current[keybindings.moveLeft] || keysPressed.current['arrowleft']) rMove -= 1;
+          if (keysPressed.current[keybindingsRef.current.moveForward] || keysPressed.current['arrowup']) fMove += 1;
+          if (keysPressed.current[keybindingsRef.current.moveBackward] || keysPressed.current['arrowdown']) fMove -= 1;
+          if (keysPressed.current[keybindingsRef.current.moveRight] || keysPressed.current['arrowright']) rMove += 1;
+          if (keysPressed.current[keybindingsRef.current.moveLeft] || keysPressed.current['arrowleft']) rMove -= 1;
 
           const forwardDir = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), s.yaw);
           const rightDir = new THREE.Vector3(1, 0, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), s.yaw);
@@ -2887,11 +2901,11 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       const key = e.key.toLowerCase();
       keysPressed.current[key] = false;
 
-      if (key === keybindings.crouch) {
+      if (key === keybindingsRef.current.crouch) {
         stateRef.current.isCrouching = false;
       }
 
-      if (key === keybindings.scoreboard) {
+      if (key === keybindingsRef.current.scoreboard) {
         stateRef.current.showScoreboard = false;
         pushStatsUpdate();
       }
@@ -2899,7 +2913,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
     // Pointer Lock Handlers
     const handleCanvasMouseDown = (e: MouseEvent) => {
-      if (!isPlaying || isPaused) return;
+      if (!isPlaying || isPausedRef.current) return;
 
       // Request pointer lock on container
       if (renderer.domElement.requestPointerLock) {
@@ -2921,7 +2935,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       const mouseMap: Record<number, string> = { 0: 'lmb', 2: 'rmb', 1: 'mmb' };
       const clickedBtn = mouseMap[e.button] || '';
 
-      if (clickedBtn === keybindings.attack) {
+      if (clickedBtn === keybindingsRef.current.attack) {
         // PRIMARY ATTACK: Hammer Slam or Sword Lunge
         if (s.activeWeapon === 'hammer') {
           if (s.pWeaponReady && s.pWeaponState === 'ready' && s.playerDashRemaining <= 0) {
@@ -2933,7 +2947,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
             triggerPlayerSwordLunge();
           }
         }
-      } else if (clickedBtn === keybindings.altAttack) {
+      } else if (clickedBtn === keybindingsRef.current.altAttack) {
         // ALT ATTACK: Sword Slash
         if (s.activeWeapon === 'sword') {
           if (s.pSwordReady && s.pSwordState === 'ready' && !s.isLunging) {
@@ -2944,7 +2958,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     };
 
     const handleWheel = (e: WheelEvent) => {
-      if (!isPlaying || isPaused) return;
+      if (!isPlaying || isPausedRef.current) return;
 
       const s = stateRef.current;
       if (s.isObserverMode) {
@@ -2980,12 +2994,12 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     };
 
     const handleMouseMove = (e: MouseEvent) => {
-      if (!isPlaying || isPaused) return;
+      if (!isPlaying || isPausedRef.current) return;
 
       if (isPointerLocked.current) {
         // Pointer Lock movement (standard FPS mouse feel)
-        const baseSens = 0.0022 * (keybindings.mouseSensitivity ?? 1.0);
-        const accel = keybindings.mouseAcceleration ?? 0.0;
+        const baseSens = 0.0022 * (keybindingsRef.current.mouseSensitivity ?? 1.0);
+        const accel = keybindingsRef.current.mouseAcceleration ?? 0.0;
         const applyAccel = (delta: number) => {
           if (accel === 0) return delta * baseSens;
           const sign = delta < 0 ? -1 : 1;
@@ -3001,7 +3015,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         const dx = e.clientX - lastMousePos.current.x;
         const dy = e.clientY - lastMousePos.current.y;
 
-        const dragSensitivity = 0.005 * (keybindings.mouseSensitivity ?? 1.0);
+        const dragSensitivity = 0.005 * (keybindingsRef.current.mouseSensitivity ?? 1.0);
         stateRef.current.yaw -= dx * dragSensitivity;
         stateRef.current.pitch -= dy * dragSensitivity;
         stateRef.current.pitch = Math.max(-Math.PI / 2.3, Math.min(Math.PI / 2.3, stateRef.current.pitch));
@@ -3027,7 +3041,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     let lastTouchY = 0;
 
     const handleTouchStart = (e: TouchEvent) => {
-      if (isPaused || !isPlaying) return;
+      if (isPausedRef.current || !isPlaying) return;
       for (let i = 0; i < e.changedTouches.length; i++) {
         const touch = e.changedTouches[i];
         // If it starts on the right half of the screen
@@ -3042,7 +3056,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     };
 
     const handleTouchMove = (e: TouchEvent) => {
-      if (isPaused || !isPlaying || lookTouchId === null) return;
+      if (isPausedRef.current || !isPlaying || lookTouchId === null) return;
       for (let i = 0; i < e.touches.length; i++) {
         const touch = e.touches[i];
         if (touch.identifier === lookTouchId) {
@@ -3050,7 +3064,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
           const dy = touch.clientY - lastTouchY;
 
           // Swipe sensitivity tracks keybindings
-          const swipeSens = 0.003 * (keybindings.mouseSensitivity ?? 1.0);
+          const swipeSens = 0.003 * (keybindingsRef.current.mouseSensitivity ?? 1.0);
           stateRef.current.yaw -= dx * swipeSens;
           stateRef.current.pitch -= dy * swipeSens;
           stateRef.current.pitch = Math.max(-Math.PI / 2.3, Math.min(Math.PI / 2.3, stateRef.current.pitch));
@@ -3074,7 +3088,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     // Mobile attack handlers triggered by custom overlay events
     const handleMobileAttackPrimary = () => {
       const s = stateRef.current;
-      if (s.playerHP <= 0 || !isPlaying || isPaused) return;
+      if (s.playerHP <= 0 || !isPlaying || isPausedRef.current) return;
 
       if (s.activeWeapon === 'hammer') {
         if (s.pWeaponReady && s.pWeaponState === 'ready' && s.playerDashRemaining <= 0) {
@@ -3089,7 +3103,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
     const handleMobileAttackAlt = () => {
       const s = stateRef.current;
-      if (s.playerHP <= 0 || !isPlaying || isPaused) return;
+      if (s.playerHP <= 0 || !isPlaying || isPausedRef.current) return;
 
       if (s.activeWeapon === 'sword') {
         if (s.pSwordReady && s.pSwordState === 'ready' && !s.isLunging) {
@@ -3192,7 +3206,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         cancelAnimationFrame(requestRef.current);
       }
     };
-  }, [isPlaying, isPaused]);
+  }, [isPlaying]);
 
   // Handle active game cycles
   useEffect(() => {
