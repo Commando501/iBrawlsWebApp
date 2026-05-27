@@ -524,6 +524,10 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
           s.aiState = 'COOLDOWN';
           s.aiTimer = s.settings.swordLungeReload ?? 1.2;
           s.aiWeaponState = 'ready';
+          s.aiIsJumping = s.aiPos.y > 0.01;
+          if (s.aiIsJumping) {
+            s.aiVel.y = Math.min(s.aiVel.y, 0);
+          }
         } else if (dist <= 1.5) {
           const swordThreshold = s.settings.swordTradeWindow ?? 350;
           const hammerThreshold = s.settings.hammerSwordTradeWindow ?? 350;
@@ -551,6 +555,10 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
             s.aiState = 'COOLDOWN';
             s.aiTimer = s.settings.swordLungeReload ?? 1.2;
             s.aiWeaponState = 'ready';
+            s.aiIsJumping = s.aiPos.y > 0.01;
+            if (s.aiIsJumping) {
+              s.aiVel.y = Math.min(s.aiVel.y, 0);
+            }
             
             sfx.playExplosion();
             spawnVoxelShockwaveParticles(s.playerPos, '#ef4444');
@@ -592,6 +600,10 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
               s.aiState = 'COOLDOWN';
               s.aiTimer = s.settings.swordLungeReload ?? 1.2;
               s.aiWeaponState = 'ready';
+              s.aiIsJumping = s.aiPos.y > 0.01;
+              if (s.aiIsJumping) {
+                s.aiVel.y = Math.min(s.aiVel.y, 0);
+              }
               
               sfx.playExplosion();
               spawnVoxelShockwaveParticles(new THREE.Vector3(other.pos.x, other.pos.y, other.pos.z), '#ef4444');
@@ -1981,6 +1993,11 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
   const isPausedRef = useRef(isPaused);
   useEffect(() => {
     isPausedRef.current = isPaused;
+    if (isPaused) {
+      if (document.exitPointerLock) {
+        document.exitPointerLock();
+      }
+    }
   }, [isPaused]);
 
   const keybindingsRef = useRef(keybindings);
@@ -3176,6 +3193,9 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
     // 7. INITIAL WORKSPACE DESTROY/CLEANUP SCOPING
     return () => {
+      if (document.exitPointerLock) {
+        document.exitPointerLock();
+      }
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
       if (renderer?.domElement) {
@@ -5623,6 +5643,9 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
           state = 'COOLDOWN';
           timer = (s.settings.swordLungeReload ?? 1.2) * cooldownMult;
           weaponState = 'ready';
+          if (pos.y > 0.01) {
+            botState!.vel.y = Math.min(botState!.vel.y, 0);
+          }
           sfx.playExplosion();
           spawnVoxelShockwaveParticles(s.playerPos, '#ef4444');
 
@@ -5648,6 +5671,9 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
           state = 'COOLDOWN';
           timer = (s.settings.swordLungeReload ?? 1.2) * cooldownMult;
           weaponState = 'ready';
+          if (pos.y > 0.01) {
+            botState!.vel.y = Math.min(botState!.vel.y, 0);
+          }
           sfx.playExplosion();
           spawnVoxelShockwaveParticles(s.aiPos, '#ef4444');
 
@@ -5669,6 +5695,9 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
             state = 'COOLDOWN';
             timer = (s.settings.swordLungeReload ?? 1.2) * cooldownMult;
             weaponState = 'ready';
+            if (pos.y > 0.01) {
+              botState!.vel.y = Math.min(botState!.vel.y, 0);
+            }
             sfx.playExplosion();
             spawnVoxelShockwaveParticles(oBot.pos, '#ef4444');
 
@@ -5998,6 +6027,16 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       vel.y = botState!.vel.y;
     } else if (state !== 'LUNGING') {
       vel.y = 0;
+    }
+
+    const isAirborne = isMainAI 
+      ? (s.aiIsJumping || s.aiPos.y > 0.01) 
+      : (pos.y > 0.01 || Math.abs(botState!.vel.y) > 0.01);
+
+    if (isAirborne && state !== 'LUNGING') {
+      // Heavily restrict horizontal movement in the air so they don't "walk across the air"
+      vel.x *= 0.05;
+      vel.z *= 0.05;
     }
 
     syncStateAndMesh();

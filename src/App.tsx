@@ -27,7 +27,7 @@ import { ChatOverlay, ChatMessage } from './components/ChatOverlay';
 import { CharacterPreview } from './components/CharacterPreview';
 import { CharacterLoadout, DEFAULT_LOADOUT, AVAILABLE_PRESETS, HelmetPreset, TorsoPreset, ArmPreset, LegPreset } from './components/VoxelModels';
 
-const APP_VERSION = '0.302';
+const APP_VERSION = '0.304';
 const MAX_PLAYER_NAME_LENGTH = 10;
 const MOBILE_HUD_LAYOUT_VERSION = '5';
 const MOBILE_HUD_LAYOUT_VERSION_KEY = 'grifball_mobile_hud_layout_version';
@@ -228,15 +228,87 @@ const TOURNAMENT_BOT_NAMES = [
   'Talon', 'Malcom', 'Sark', 'Brock', 'Lauren', 'Xan', 'Ravage', 'Diva', 'Gorge', 'Ares', 'Kraken'
 ];
 
-function generateTournamentOpponents(difficulty: 'easy' | 'normal' | 'hard' | 'nightmare'): Record<string, TournamentOpponent> {
+const TOURNAMENT_DEFAULT_KILLS_TO_WIN = 25;
+const TOURNAMENT_MIN_KILLS_TO_WIN = 5;
+const TOURNAMENT_MAX_KILLS_TO_WIN = 50;
+const TOURNAMENT_DEFAULT_ROUND_COUNT = 3;
+const TOURNAMENT_MIN_ROUND_COUNT = 1;
+const TOURNAMENT_MAX_ROUND_COUNT = 4;
+
+function getTournamentBotCount(roundCount: number): number {
+  return Math.pow(2, roundCount) - 1;
+}
+
+function getTournamentRoundLabels(roundCount: number): string[] {
+  const labels: string[] = [];
+  for (let roundIndex = 0; roundIndex < roundCount; roundIndex++) {
+    const roundsRemaining = roundCount - roundIndex;
+    if (roundsRemaining === 1) labels.push('Final');
+    else if (roundsRemaining === 2) labels.push('Semifinals');
+    else if (roundsRemaining === 3) labels.push('Quarterfinals');
+    else labels.push(`Round of ${Math.pow(2, roundsRemaining)}`);
+  }
+  return labels;
+}
+
+function buildInitialTournamentRounds(roundCount: number): TournamentMatch[][] {
+  const rounds: TournamentMatch[][] = [];
+  const firstRoundMatchCount = Math.pow(2, roundCount - 1);
+
+  const round0: TournamentMatch[] = [
+    { opponent1: 'player', opponent2: 'bot_1', isCompleted: false }
+  ];
+
+  for (let botIndex = 2; botIndex <= firstRoundMatchCount * 2 - 1; botIndex += 2) {
+    round0.push({
+      opponent1: `bot_${botIndex}`,
+      opponent2: `bot_${botIndex + 1}`,
+      isCompleted: false
+    });
+  }
+
+  rounds.push(round0);
+
+  for (let roundIndex = 1; roundIndex < roundCount; roundIndex++) {
+    const matchCount = Math.pow(2, roundCount - roundIndex - 1);
+    rounds.push(
+      Array.from({ length: matchCount }, () => ({
+        opponent1: 'TBD',
+        opponent2: 'TBD',
+        isCompleted: false
+      }))
+    );
+  }
+
+  return rounds;
+}
+
+function buildNextTournamentRoundMatches(winners: string[]): TournamentMatch[] {
+  const matches: TournamentMatch[] = [];
+  for (let i = 0; i < winners.length; i += 2) {
+    matches.push({
+      opponent1: winners[i],
+      opponent2: winners[i + 1],
+      isCompleted: false
+    });
+  }
+  return matches;
+}
+
+function generateTournamentOpponents(
+  difficulty: 'easy' | 'normal' | 'hard' | 'nightmare',
+  botCount: number
+): Record<string, TournamentOpponent> {
   const shuffledNames = [...TOURNAMENT_BOT_NAMES].sort(() => Math.random() - 0.5);
   const opponents: Record<string, TournamentOpponent> = {};
 
-  const botIds = ['bot_1', 'bot_2', 'bot_3', 'bot_4', 'bot_5', 'bot_6', 'bot_7'];
-  const behaviors: ('passive' | 'defensive' | 'aggressive')[] = [
+  const botIds = Array.from({ length: botCount }, (_, index) => `bot_${index + 1}`);
+  const behaviorPool: ('passive' | 'defensive' | 'aggressive')[] = [
     'passive', 'defensive', 'aggressive', 'defensive', 'aggressive', 'defensive', 'aggressive'
   ];
-  const shuffledBehaviors = behaviors.sort(() => Math.random() - 0.5);
+  const shuffledBehaviors = Array.from({ length: botCount }, (_, index) =>
+    behaviorPool[index % behaviorPool.length]
+  ).sort(() => Math.random() - 0.5);
 
   botIds.forEach((id, index) => {
     const name = shuffledNames[index % shuffledNames.length];
@@ -717,6 +789,8 @@ export default function App() {
       return null;
     }
   });
+  const [tournamentKillsToWin, setTournamentKillsToWin] = useState(TOURNAMENT_DEFAULT_KILLS_TO_WIN);
+  const [tournamentRoundCount, setTournamentRoundCount] = useState(TOURNAMENT_DEFAULT_ROUND_COUNT);
 
   const saveTournamentState = (state: TournamentState | null) => {
     setTournamentState(state);
@@ -2230,7 +2304,11 @@ export default function App() {
     setQuickPlayStatus('idle');
   };
 
-  const simulateBotMatch = (match: TournamentMatch, opponents: Record<string, TournamentOpponent>): TournamentMatch => {
+  const simulateBotMatch = (
+    match: TournamentMatch,
+    opponents: Record<string, TournamentOpponent>,
+    killsToWin: number
+  ): TournamentMatch => {
     const opp1 = opponents[match.opponent1];
     const opp2 = opponents[match.opponent2];
 
@@ -2243,8 +2321,9 @@ export default function App() {
     const prob1 = power1 / (power1 + power2);
 
     const winnerId = Math.random() < prob1 ? match.opponent1 : match.opponent2;
-    const scoreWinner = 25;
-    const scoreLoser = 12 + Math.floor(Math.random() * 13); // 12 to 24 kills
+    const scoreWinner = killsToWin;
+    const minLoser = Math.max(1, Math.ceil(killsToWin / 2));
+    const scoreLoser = minLoser + Math.floor(Math.random() * Math.max(1, killsToWin - minLoser));
 
     return {
       ...match,
@@ -2255,31 +2334,22 @@ export default function App() {
     };
   };
 
-  const handleInitializeTournament = (difficulty: 'easy' | 'normal' | 'hard' | 'nightmare') => {
-    const opponents = generateTournamentOpponents(difficulty);
-    
-    const round0: TournamentMatch[] = [
-      { opponent1: 'player', opponent2: 'bot_1', isCompleted: false },
-      { opponent1: 'bot_2', opponent2: 'bot_3', isCompleted: false },
-      { opponent1: 'bot_4', opponent2: 'bot_5', isCompleted: false },
-      { opponent1: 'bot_6', opponent2: 'bot_7', isCompleted: false },
-    ];
-
-    const round1: TournamentMatch[] = [
-      { opponent1: 'TBD', opponent2: 'TBD', isCompleted: false },
-      { opponent1: 'TBD', opponent2: 'TBD', isCompleted: false },
-    ];
-
-    const round2: TournamentMatch[] = [
-      { opponent1: 'TBD', opponent2: 'TBD', isCompleted: false },
-    ];
+  const handleInitializeTournament = (
+    difficulty: 'easy' | 'normal' | 'hard' | 'nightmare',
+    killsToWin: number = TOURNAMENT_DEFAULT_KILLS_TO_WIN,
+    roundCount: number = TOURNAMENT_DEFAULT_ROUND_COUNT
+  ) => {
+    const opponents = generateTournamentOpponents(difficulty, getTournamentBotCount(roundCount));
+    const rounds = buildInitialTournamentRounds(roundCount);
 
     const state: TournamentState = {
       difficulty,
+      killsToWin,
+      roundCount,
       currentRound: 0,
       currentMatchIndex: 0,
       opponents,
-      rounds: [round0, round1, round2],
+      rounds,
       status: 'bracket'
     };
 
@@ -2373,13 +2443,15 @@ export default function App() {
       return;
     }
 
+    const killsToWin = tournamentState.killsToWin ?? TOURNAMENT_DEFAULT_KILLS_TO_WIN;
     const simulatedMatches = rounds[roundIndex].map((match, idx) => {
       if (idx === 0) return playerMatch;
-      return simulateBotMatch(match, opponents);
+      return simulateBotMatch(match, opponents, killsToWin);
     });
     rounds[roundIndex] = simulatedMatches;
 
-    if (roundIndex === 2) {
+    const totalRounds = tournamentState.roundCount ?? tournamentState.rounds.length;
+    if (roundIndex === totalRounds - 1) {
       const nextState: TournamentState = {
         ...tournamentState,
         rounds,
@@ -2390,17 +2462,7 @@ export default function App() {
     } else {
       const nextRoundIndex = roundIndex + 1;
       const currentWinners = simulatedMatches.map(m => m.winner!);
-
-      if (nextRoundIndex === 1) {
-        rounds[nextRoundIndex] = [
-          { opponent1: 'player', opponent2: currentWinners[1], isCompleted: false },
-          { opponent1: currentWinners[2], opponent2: currentWinners[3], isCompleted: false }
-        ];
-      } else if (nextRoundIndex === 2) {
-        rounds[nextRoundIndex] = [
-          { opponent1: 'player', opponent2: currentWinners[1], isCompleted: false }
-        ];
-      }
+      rounds[nextRoundIndex] = buildNextTournamentRoundMatches(currentWinners);
 
       const nextState: TournamentState = {
         ...tournamentState,
@@ -2516,7 +2578,8 @@ export default function App() {
   // Callback to sync game stats live
   const handleStatsUpdate = (stats: GameStats) => {
     if (singlePlayerMode === 'tournament' && tournamentState && tournamentState.status === 'playing') {
-      if (stats.scorePlayer >= 25 && !matchResult) {
+      const killsToWin = tournamentState.killsToWin ?? TOURNAMENT_DEFAULT_KILLS_TO_WIN;
+      if (stats.scorePlayer >= killsToWin && !matchResult) {
         setMatchResult({
           winner: 'player',
           opponentName: tournamentState.opponents[tournamentState.rounds[tournamentState.currentRound][tournamentState.currentMatchIndex].opponent2]?.name || 'AI Bot',
@@ -2525,7 +2588,7 @@ export default function App() {
         });
         setIsPaused(true);
         return;
-      } else if (stats.scoreEnemy >= 25) {
+      } else if (stats.scoreEnemy >= killsToWin) {
         handleCompleteTournamentMatch(false, stats.scorePlayer, stats.scoreEnemy);
         return;
       }
@@ -2967,8 +3030,44 @@ export default function App() {
                               </h2>
                             </div>
                             <p className="text-white/60 text-xs leading-normal bg-white/5 border border-white/5 rounded-lg p-3.5 leading-normal">
-                              Advance through a simulated 1v1 bracket of 8 brawlers. Each match is first to 25 kills. If you lose, it's Game Over! AI bots are procedurally customized each playthrough.
+                              Advance through a simulated 1v1 elimination bracket across {tournamentRoundCount} {tournamentRoundCount === 1 ? 'round' : 'rounds'} ({getTournamentBotCount(tournamentRoundCount) + 1} brawlers). Each match is first to {tournamentKillsToWin} kills. If you lose, it's Game Over! AI bots are procedurally customized each playthrough.
                             </p>
+                            <div className="flex flex-col gap-1.5 bg-white/5 border border-white/5 rounded-lg p-3.5 pointer-events-auto">
+                              <div className="flex justify-between text-xs font-mono uppercase tracking-wider text-white/60">
+                                <span>Tournament Rounds</span>
+                                <span className="text-emerald-400 font-bold">{tournamentRoundCount}</span>
+                              </div>
+                              <input
+                                type="range"
+                                min={TOURNAMENT_MIN_ROUND_COUNT}
+                                max={TOURNAMENT_MAX_ROUND_COUNT}
+                                step="1"
+                                value={tournamentRoundCount}
+                                onChange={(e) => setTournamentRoundCount(parseInt(e.target.value, 10))}
+                                className="w-full accent-emerald-400 h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
+                              />
+                              <span className="text-[9px] font-mono text-white/35 uppercase tracking-widest">
+                                {TOURNAMENT_MIN_ROUND_COUNT} – {TOURNAMENT_MAX_ROUND_COUNT} elimination rounds
+                              </span>
+                            </div>
+                            <div className="flex flex-col gap-1.5 bg-white/5 border border-white/5 rounded-lg p-3.5 pointer-events-auto">
+                              <div className="flex justify-between text-xs font-mono uppercase tracking-wider text-white/60">
+                                <span>Kills to Win</span>
+                                <span className="text-emerald-400 font-bold">{tournamentKillsToWin}</span>
+                              </div>
+                              <input
+                                type="range"
+                                min={TOURNAMENT_MIN_KILLS_TO_WIN}
+                                max={TOURNAMENT_MAX_KILLS_TO_WIN}
+                                step="1"
+                                value={tournamentKillsToWin}
+                                onChange={(e) => setTournamentKillsToWin(parseInt(e.target.value, 10))}
+                                className="w-full accent-emerald-400 h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
+                              />
+                              <span className="text-[9px] font-mono text-white/35 uppercase tracking-widest">
+                                {TOURNAMENT_MIN_KILLS_TO_WIN} – {TOURNAMENT_MAX_KILLS_TO_WIN} kills per match
+                              </span>
+                            </div>
                             <div className="flex flex-col gap-3 pointer-events-auto">
                               {([
                                 { id: 'easy', label: 'Easy', color: 'text-emerald-400 border-emerald-500/20 bg-emerald-950/20 hover:bg-emerald-950/40 shadow-[0_0_8px_rgba(16,185,129,0.1)]', desc: 'Sub-Normal combat reflex latency, simple spacing behavior.' },
@@ -2978,7 +3077,7 @@ export default function App() {
                               ] as const).map(diff => (
                                 <button
                                   key={diff.id}
-                                  onClick={() => handleInitializeTournament(diff.id)}
+                                  onClick={() => handleInitializeTournament(diff.id, tournamentKillsToWin, tournamentRoundCount)}
                                   className={`group text-left p-4.5 rounded-xl border transition-all duration-300 cursor-pointer flex justify-between items-center ${diff.color} hover:scale-[1.01] hover:border-white/20`}
                                 >
                                   <div className="flex flex-col gap-1 pr-4">
@@ -2998,7 +3097,12 @@ export default function App() {
                             <div className="flex flex-col gap-4 min-h-0 overflow-y-auto pr-0.5">
                               <div className="flex justify-between items-center pb-2 border-b border-white/5 shrink-0">
                                 <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5 font-display">🏆 simulated bracket</span>
-                                <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950/40 border border-emerald-500/20 px-2 py-0.5 rounded uppercase font-black">{tournamentState.difficulty}</span>
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950/40 border border-emerald-500/20 px-2 py-0.5 rounded uppercase font-black">{tournamentState.difficulty}</span>
+                                  <span className="text-[10px] font-mono text-white/50 bg-white/5 border border-white/10 px-2 py-0.5 rounded uppercase font-black">
+                                    FT{tournamentState.killsToWin ?? TOURNAMENT_DEFAULT_KILLS_TO_WIN}
+                                  </span>
+                                </div>
                               </div>
 
                               {tournamentState.status === 'gameover' ? (
@@ -3059,7 +3163,7 @@ export default function App() {
                                 <div className="flex flex-col gap-4">
                                   {/* Simulated UT2004 Bracket round tabs */}
                                   <div className="flex gap-2 font-mono text-[10px] select-none uppercase font-bold shrink-0">
-                                    {['Quarterfinals', 'Semifinals', 'Finals'].map((roundName, rIdx) => (
+                                    {getTournamentRoundLabels(tournamentState.roundCount ?? tournamentState.rounds.length).map((roundName, rIdx) => (
                                       <div
                                         key={rIdx}
                                         className={`flex-1 text-center py-1.5 rounded border transition-colors ${

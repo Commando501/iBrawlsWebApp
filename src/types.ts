@@ -243,10 +243,12 @@ export interface TournamentMatch {
 
 export interface TournamentState {
   difficulty: 'easy' | 'normal' | 'hard' | 'nightmare';
-  currentRound: number; // 0 = Quarterfinals, 1 = Semifinals, 2 = Finals
+  killsToWin: number;
+  roundCount: number; // Total elimination rounds in this bracket
+  currentRound: number;
   currentMatchIndex: number; // Index of the player's match in the current round
   opponents: Record<string, TournamentOpponent>; // bot ID -> bot details
-  rounds: TournamentMatch[][]; // 3 rounds (Quarterfinals, Semifinals, Finals)
+  rounds: TournamentMatch[][];
   status: 'idle' | 'bracket' | 'playing' | 'gameover' | 'victory';
 }
 
