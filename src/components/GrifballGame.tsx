@@ -98,6 +98,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
   mobileRightJoystickActiveRef,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const nameplateRef = useRef<HTMLDivElement>(null);
   const requestRef = useRef<number | null>(null);
   const fpsRef = useRef({
@@ -2424,7 +2425,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
   };
 
   useEffect(() => {
-    if (!containerRef.current) return;
+    if (!containerRef.current || !canvasRef.current) return;
 
     // 1. INITIALIZE THREE.JS
     const scene = new THREE.Scene();
@@ -2454,16 +2455,17 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     scene.add(camera);
 
     // Renderer
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+    const renderer = new THREE.WebGLRenderer({
+      canvas: canvasRef.current,
+      antialias: true,
+      alpha: false,
+    });
     renderer.setSize(width, height);
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.0;
     
-    // Add canvas to container
-    containerRef.current.innerHTML = '';
-    containerRef.current.appendChild(renderer.domElement);
     threeRef.current.renderer = renderer;
 
     // 2. SCENE LIGHTS
@@ -5982,6 +5984,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
     botMesh.position.copy(pos);
   };
+  };
 
   // ENEMY AI PATHFINDING & FENCING STRATEGY
 
@@ -6026,7 +6029,9 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         id="canvas-viewport" 
         className="w-full h-full cursor-crosshair selection:bg-transparent"
         style={{ outline: 'none' }}
-      />
+      >
+        <canvas ref={canvasRef} id="game-canvas" />
+      </div>
 
       {/* Dynamic Instruction Overlay when Pointer Lock is not active */}
       {showPointerLockAlert && isPlaying && !isPaused && (
@@ -6049,4 +6054,3 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     </div>
   );
 };
-}
