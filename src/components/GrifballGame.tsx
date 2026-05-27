@@ -5199,6 +5199,31 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       ? s.aiDashDir.clone() 
       : new THREE.Vector3(botState!.aiDashDir.x, botState!.aiDashDir.y, botState!.aiDashDir.z);
 
+    const syncStateAndMesh = () => {
+      if (isMainAI) {
+        s.aiPos.copy(pos);
+        s.aiVel.copy(vel);
+        s.aiYaw = yaw;
+        s.aiState = state;
+        s.aiTimer = timer;
+        s.aiSwayTimer = swayTimer;
+        s.aiDashCooldownTimer = dashCooldownTimer;
+        s.aiDashRemaining = dashRemaining;
+        s.aiDashDir.copy(dashDir);
+      } else {
+        botState!.pos.copy(pos);
+        botState!.vel.copy(vel);
+        botState!.yaw = yaw;
+        botState!.aiState = state;
+        botState!.aiTimer = timer;
+        botState!.aiSwayTimer = swayTimer;
+        botState!.aiDashCooldownTimer = dashCooldownTimer;
+        botState!.aiDashRemaining = dashRemaining;
+        botState!.aiDashDir = { x: dashDir.x, y: dashDir.y, z: dashDir.z };
+      }
+      botMesh.position.copy(pos);
+    };
+
     // Resolve difficulty and specific parameters
     const difficulty = isMainAI 
       ? (s.settings.aiDifficulty || 'normal')
@@ -5687,13 +5712,15 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
           const lookHeading = toTarget.clone().normalize();
           const sidewayHeading = new THREE.Vector3(-lookHeading.z, 0, lookHeading.x);
           const sideDir = Math.sin(swayTimer * 3.0) > 0 ? 1 : -1;
-          botState!.vel.x += (sidewayHeading.x * 2.0 * sideDir + lookHeading.x * 0.4) * dt;
-          botState!.vel.z += (sidewayHeading.z * 2.0 * sideDir + lookHeading.z * 0.4) * dt;
+          vel.x += (sidewayHeading.x * 2.0 * sideDir + lookHeading.x * 0.4) * dt;
+          vel.z += (sidewayHeading.z * 2.0 * sideDir + lookHeading.z * 0.4) * dt;
         }
+        syncStateAndMesh();
         return;
       }
 
     if (isEvadingLunge) {
+      syncStateAndMesh();
       return;
     }
 
@@ -5973,29 +6000,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       vel.y = 0;
     }
 
-    if (isMainAI) {
-      s.aiPos.copy(pos);
-      s.aiVel.copy(vel);
-      s.aiYaw = yaw;
-      s.aiState = state;
-      s.aiTimer = timer;
-      s.aiSwayTimer = swayTimer;
-      s.aiDashCooldownTimer = dashCooldownTimer;
-      s.aiDashRemaining = dashRemaining;
-      s.aiDashDir.copy(dashDir);
-    } else {
-      botState!.pos.copy(pos);
-      botState!.vel.copy(vel);
-      botState!.yaw = yaw;
-      botState!.aiState = state;
-      botState!.aiTimer = timer;
-      botState!.aiSwayTimer = swayTimer;
-      botState!.aiDashCooldownTimer = dashCooldownTimer;
-      botState!.aiDashRemaining = dashRemaining;
-      botState!.aiDashDir = { x: dashDir.x, y: dashDir.y, z: dashDir.z };
-    }
-
-    botMesh.position.copy(pos);
+    syncStateAndMesh();
   };
   };
 
