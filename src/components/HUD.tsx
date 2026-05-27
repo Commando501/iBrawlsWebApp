@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Lock, Unlock } from 'lucide-react';
 import { GameStats, UiElementPos } from '../types';
 
@@ -59,6 +59,7 @@ export const DraggableHUDItem: React.FC<DraggableHUDItemProps> = ({
     top: `${uiItem.y}%`,
     transform: getTransformStyle(id),
     zIndex: isAdjustmentMode ? 50 : undefined,
+    willChange: isAdjustmentMode && !uiItem.locked ? 'left, top' : undefined,
   };
 
   if (!isAdjustmentMode) {
@@ -72,7 +73,7 @@ export const DraggableHUDItem: React.FC<DraggableHUDItemProps> = ({
   return (
     <div 
       style={style}
-      className={`group select-none relative pointer-events-auto transition-all p-2 rounded-xl border ${
+      className={`group select-none relative pointer-events-auto transition-colors p-2 rounded-xl border ${
         uiItem.locked 
           ? 'border-dashed border-white/20 bg-slate-950/40 hover:border-white/40' 
           : 'border-dashed border-cyan-400 bg-cyan-950/40 shadow-[0_0_15px_rgba(6,182,212,0.35)] hover:border-cyan-300 cursor-move'
@@ -126,6 +127,24 @@ export const HUD: React.FC<HUDProps> = ({
   isAdjustmentMode 
 }) => {
   const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [draftUiPositions, setDraftUiPositions] = useState<UiElementPos[]>(uiPositions);
+  const draftUiPositionsRef = useRef<UiElementPos[]>(uiPositions);
+  const onUpdateUiPositionsRef = useRef(onUpdateUiPositions);
+
+  useEffect(() => {
+    onUpdateUiPositionsRef.current = onUpdateUiPositions;
+  }, [onUpdateUiPositions]);
+
+  useEffect(() => {
+    if (draggingId) return;
+    draftUiPositionsRef.current = uiPositions;
+    setDraftUiPositions(uiPositions);
+  }, [draggingId, uiPositions]);
+
+  const updateDraftUiPositions = (nextPositions: UiElementPos[]) => {
+    draftUiPositionsRef.current = nextPositions;
+    setDraftUiPositions(nextPositions);
+  };
 
   // Format seconds to MM:SS
   const formatTime = (totalSeconds: number) => {
@@ -145,13 +164,15 @@ export const HUD: React.FC<HUDProps> = ({
   const cooldownPct = Math.round(stats.weaponCooldown * 100);
 
   const handleToggleLock = (id: string) => {
-    onUpdateUiPositions(
-      uiPositions.map((ui) => (ui.id === id ? { ...ui, locked: !ui.locked } : ui))
-    );
+    const nextPositions = draftUiPositionsRef.current.map((ui) => (
+      ui.id === id ? { ...ui, locked: !ui.locked } : ui
+    ));
+    updateDraftUiPositions(nextPositions);
+    onUpdateUiPositions(nextPositions);
   };
 
   const handleMouseDown = (id: string, e: React.MouseEvent) => {
-    const item = uiPositions.find((ui) => ui.id === id);
+    const item = draftUiPositionsRef.current.find((ui) => ui.id === id);
     if (!item || item.locked) return;
     setDraggingId(id);
     e.stopPropagation();
@@ -160,6 +181,25 @@ export const HUD: React.FC<HUDProps> = ({
 
   useEffect(() => {
     if (!draggingId) return;
+
+    let animationFrameId: number | null = null;
+    let pendingPosition: { x: number; y: number } | null = null;
+
+    const flushPendingPosition = () => {
+      animationFrameId = null;
+      if (!pendingPosition) return;
+
+      const { x, y } = pendingPosition;
+      pendingPosition = null;
+
+      const nextPositions = draftUiPositionsRef.current.map((ui) => (
+        ui.id === draggingId && (ui.x !== x || ui.y !== y)
+          ? { ...ui, x, y }
+          : ui
+      ));
+
+      updateDraftUiPositions(nextPositions);
+    };
 
     const handleWindowMouseMove = (e: MouseEvent) => {
       // Calculate cursor position in percentages of the window space
@@ -170,12 +210,18 @@ export const HUD: React.FC<HUDProps> = ({
       const clampedX = Math.max(1, Math.min(99, pctX));
       const clampedY = Math.max(1, Math.min(99, pctY));
 
-      onUpdateUiPositions(
-        uiPositions.map((ui) => (ui.id === draggingId ? { ...ui, x: clampedX, y: clampedY } : ui))
-      );
+      pendingPosition = { x: clampedX, y: clampedY };
+      if (animationFrameId === null) {
+        animationFrameId = window.requestAnimationFrame(flushPendingPosition);
+      }
     };
 
     const handleWindowMouseUp = () => {
+      if (animationFrameId !== null) {
+        window.cancelAnimationFrame(animationFrameId);
+        flushPendingPosition();
+      }
+      onUpdateUiPositionsRef.current(draftUiPositionsRef.current);
       setDraggingId(null);
     };
 
@@ -183,10 +229,13 @@ export const HUD: React.FC<HUDProps> = ({
     window.addEventListener('mouseup', handleWindowMouseUp);
 
     return () => {
+      if (animationFrameId !== null) {
+        window.cancelAnimationFrame(animationFrameId);
+      }
       window.removeEventListener('mousemove', handleWindowMouseMove);
       window.removeEventListener('mouseup', handleWindowMouseUp);
     };
-  }, [draggingId, uiPositions, onUpdateUiPositions]);
+  }, [draggingId]);
 
   return (
     <div className={`absolute inset-0 z-10 select-none font-sans text-white ${isAdjustmentMode ? 'pointer-events-auto bg-slate-900/10' : 'pointer-events-none'}`}>
@@ -199,7 +248,7 @@ export const HUD: React.FC<HUDProps> = ({
       {/* 1. OBJECTIVES / GAMEMODE */}
       <DraggableHUDItem
         id="objective"
-        uiItem={uiPositions.find(p => p.id === 'objective')}
+        uiItem={draftUiPositions.find(p => p.id === 'objective')}
         isAdjustmentMode={isAdjustmentMode}
         onToggleLock={handleToggleLock}
         onMouseDown={handleMouseDown}
@@ -219,7 +268,7 @@ export const HUD: React.FC<HUDProps> = ({
       {/* 2. CORE SCOREBOARD */}
       <DraggableHUDItem
         id="scoreboard"
-        uiItem={uiPositions.find(p => p.id === 'scoreboard')}
+        uiItem={draftUiPositions.find(p => p.id === 'scoreboard')}
         isAdjustmentMode={isAdjustmentMode}
         onToggleLock={handleToggleLock}
         onMouseDown={handleMouseDown}
@@ -253,7 +302,7 @@ export const HUD: React.FC<HUDProps> = ({
       {/* 3. ARENA STATUS INFO ON RIGHT */}
       <DraggableHUDItem
         id="arenaStatus"
-        uiItem={uiPositions.find(p => p.id === 'arenaStatus')}
+        uiItem={draftUiPositions.find(p => p.id === 'arenaStatus')}
         isAdjustmentMode={isAdjustmentMode}
         onToggleLock={handleToggleLock}
         onMouseDown={handleMouseDown}
@@ -281,7 +330,7 @@ export const HUD: React.FC<HUDProps> = ({
       {/* 4. TECHNICAL SPECIFICS */}
       <DraggableHUDItem
         id="technicalSpecs"
-        uiItem={uiPositions.find(p => p.id === 'technicalSpecs')}
+        uiItem={draftUiPositions.find(p => p.id === 'technicalSpecs')}
         isAdjustmentMode={isAdjustmentMode}
         onToggleLock={handleToggleLock}
         onMouseDown={handleMouseDown}
@@ -304,7 +353,7 @@ export const HUD: React.FC<HUDProps> = ({
       {/* 4. DRAGGABLE KILL FEED */}
       <DraggableHUDItem
         id="eliminationFeed"
-        uiItem={uiPositions.find(p => p.id === 'eliminationFeed')}
+        uiItem={draftUiPositions.find(p => p.id === 'eliminationFeed')}
         isAdjustmentMode={isAdjustmentMode}
         onToggleLock={handleToggleLock}
         onMouseDown={handleMouseDown}
@@ -356,7 +405,7 @@ export const HUD: React.FC<HUDProps> = ({
       {/* 5. MOTION TRACKER RADAR */}
       <DraggableHUDItem
         id="radar"
-        uiItem={uiPositions.find(p => p.id === 'radar')}
+        uiItem={draftUiPositions.find(p => p.id === 'radar')}
         isAdjustmentMode={isAdjustmentMode}
         onToggleLock={handleToggleLock}
         onMouseDown={handleMouseDown}
@@ -432,7 +481,7 @@ export const HUD: React.FC<HUDProps> = ({
       {/* 6. WEAPON CHARGING SYSTEMS & DASH SYSTEM */}
       <DraggableHUDItem
         id="weaponDash"
-        uiItem={uiPositions.find(p => p.id === 'weaponDash')}
+        uiItem={draftUiPositions.find(p => p.id === 'weaponDash')}
         isAdjustmentMode={isAdjustmentMode}
         onToggleLock={handleToggleLock}
         onMouseDown={handleMouseDown}
@@ -604,7 +653,7 @@ export const HUD: React.FC<HUDProps> = ({
       {/* 7. HEALTH POINTS, LIVES AND STATUS FLAGS ROW */}
       <DraggableHUDItem
         id="vitality"
-        uiItem={uiPositions.find(p => p.id === 'vitality')}
+        uiItem={draftUiPositions.find(p => p.id === 'vitality')}
         isAdjustmentMode={isAdjustmentMode}
         onToggleLock={handleToggleLock}
         onMouseDown={handleMouseDown}
@@ -662,7 +711,7 @@ export const HUD: React.FC<HUDProps> = ({
       {!stats.isObserverMode && (
         <DraggableHUDItem
           id="crosshair"
-          uiItem={uiPositions.find(p => p.id === 'crosshair')}
+          uiItem={draftUiPositions.find(p => p.id === 'crosshair')}
           isAdjustmentMode={isAdjustmentMode}
           onToggleLock={handleToggleLock}
           onMouseDown={handleMouseDown}
@@ -862,7 +911,7 @@ export const HUD: React.FC<HUDProps> = ({
       {stats.isObserverMode && (
         <DraggableHUDItem
           id="spectatorCard"
-          uiItem={uiPositions.find(p => p.id === 'spectatorCard')}
+          uiItem={draftUiPositions.find(p => p.id === 'spectatorCard')}
           isAdjustmentMode={isAdjustmentMode}
           onToggleLock={handleToggleLock}
           onMouseDown={handleMouseDown}

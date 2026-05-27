@@ -12,7 +12,7 @@ import { Move, RotateCcw, Check } from 'lucide-react';
 import { ChatOverlay, ChatMessage } from './components/ChatOverlay';
 import { CharacterPreview } from './components/CharacterPreview';
 
-const APP_VERSION = '0.100';
+const APP_VERSION = '0.101.0';
 
 interface OnlineClient {
   id: string;
@@ -885,23 +885,34 @@ export default function App() {
     }
     return DEFAULT_UI_POSITIONS;
   });
+  const uiPositionsRef = useRef<UiElementPos[]>(uiPositions);
 
-  const handleUpdateUiPositions = (newPositions: UiElementPos[]) => {
-    setUiPositions(newPositions);
+  useEffect(() => {
+    uiPositionsRef.current = uiPositions;
+  }, [uiPositions]);
+
+  const persistUiPositions = (positions: UiElementPos[]) => {
     try {
-      localStorage.setItem('grifball_ui_positions', JSON.stringify(newPositions));
+      localStorage.setItem('grifball_ui_positions', JSON.stringify(positions));
     } catch (e) {
       console.error(e);
     }
   };
 
-  const handleResetUiPositions = () => {
-    setUiPositions(DEFAULT_UI_POSITIONS);
-    try {
-      localStorage.setItem('grifball_ui_positions', JSON.stringify(DEFAULT_UI_POSITIONS));
-    } catch (e) {
-      console.error(e);
+  const applyUiPositions = (newPositions: UiElementPos[], shouldPersist = true) => {
+    uiPositionsRef.current = newPositions;
+    setUiPositions(newPositions);
+    if (shouldPersist) {
+      persistUiPositions(newPositions);
     }
+  };
+
+  const handleUpdateUiPositions = (newPositions: UiElementPos[]) => {
+    applyUiPositions(newPositions);
+  };
+
+  const handleResetUiPositions = () => {
+    applyUiPositions(DEFAULT_UI_POSITIONS);
   };
 
   const [isDraggingUiAdjuster, setIsDraggingUiAdjuster] = useState<boolean>(false);
@@ -919,28 +930,49 @@ export default function App() {
   useEffect(() => {
     if (!isDraggingUiAdjuster) return;
 
+    let animationFrameId: number | null = null;
+    let pendingPosition: { x: number; y: number } | null = null;
+
+    const flushPendingPosition = () => {
+      animationFrameId = null;
+      if (!pendingPosition || !defaultUiAdjusterPosition) return;
+
+      const { x, y } = pendingPosition;
+      pendingPosition = null;
+      const currentPositions = uiPositionsRef.current;
+
+      const nextPositions = currentPositions.some((position) => position.id === 'hudAdjuster')
+        ? currentPositions.map((position) =>
+            position.id === 'hudAdjuster' && (position.x !== x || position.y !== y)
+              ? { ...position, x, y }
+              : position
+          )
+        : [
+            ...currentPositions,
+            { ...defaultUiAdjusterPosition, x, y },
+          ];
+
+      applyUiPositions(nextPositions, false);
+    };
+
     const handleWindowMouseMove = (e: MouseEvent) => {
       const pctX = (e.clientX / window.innerWidth) * 100;
       const pctY = (e.clientY / window.innerHeight) * 100;
       const clampedX = Math.max(5, Math.min(95, pctX));
       const clampedY = Math.max(2, Math.min(92, pctY));
-      if (!defaultUiAdjusterPosition) return;
 
-      const nextPositions = uiPositions.some((position) => position.id === 'hudAdjuster')
-        ? uiPositions.map((position) =>
-            position.id === 'hudAdjuster'
-              ? { ...position, x: clampedX, y: clampedY }
-              : position
-          )
-        : [
-            ...uiPositions,
-            { ...defaultUiAdjusterPosition, x: clampedX, y: clampedY },
-          ];
-
-      handleUpdateUiPositions(nextPositions);
+      pendingPosition = { x: clampedX, y: clampedY };
+      if (animationFrameId === null) {
+        animationFrameId = window.requestAnimationFrame(flushPendingPosition);
+      }
     };
 
     const handleWindowMouseUp = () => {
+      if (animationFrameId !== null) {
+        window.cancelAnimationFrame(animationFrameId);
+        flushPendingPosition();
+      }
+      persistUiPositions(uiPositionsRef.current);
       setIsDraggingUiAdjuster(false);
     };
 
@@ -948,10 +980,13 @@ export default function App() {
     window.addEventListener('mouseup', handleWindowMouseUp);
 
     return () => {
+      if (animationFrameId !== null) {
+        window.cancelAnimationFrame(animationFrameId);
+      }
       window.removeEventListener('mousemove', handleWindowMouseMove);
       window.removeEventListener('mouseup', handleWindowMouseUp);
     };
-  }, [isDraggingUiAdjuster, uiPositions]);
+  }, [isDraggingUiAdjuster]);
 
 
   // Configuration settings for simulated health, speed percentage, attack offsets and impact sizes
