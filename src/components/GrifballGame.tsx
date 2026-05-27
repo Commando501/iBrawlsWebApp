@@ -364,49 +364,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     if (!enemyMesh) return;
 
     if (isMultiplayer) {
-      // In multiplayer, the remote Spartan coordinates and actions guide the render state
-      if (s.aiHP <= 0) {
-        enemyMesh.visible = false;
-        s.enemyRespawnTimer = Math.max(0, s.enemyRespawnTimer - dt);
-        return;
-      }
-
-      enemyMesh.visible = true;
-
-      if (s.aiInvulnerabilityTimer > 0) {
-        s.aiInvulnerabilityTimer = Math.max(0, s.aiInvulnerabilityTimer - dt);
-      }
-
-      enemyMesh.rotation.y = s.aiYaw;
-
-      if (s.aiIsCrouching) {
-        enemyMesh.scale.set(1, 0.65, 1);
-      } else {
-        enemyMesh.scale.set(1, 1, 1);
-      }
-
-      enemyMesh.position.copy(s.aiPos);
-
-      // Support rendering custom sword trail particles if the opponent is in active lunge state
-      if (s.aiState === 'LUNGING') {
-        s.aiLungeTimer += dt;
-        const lungeSpeed = s.settings.swordLungeSpeed ?? 24.0;
-        s.aiVel.copy(s.aiLungeTargetDir).multiplyScalar(lungeSpeed);
-        
-        s.aiPos.addScaledVector(s.aiVel, dt);
-        s.aiPos.y = Math.max(0, s.aiPos.y);
-        enemyMesh.position.copy(s.aiPos);
-
-        if (Math.random() > 0.1) {
-          const trailPos = s.aiPos.clone();
-          trailPos.y += 0.825;
-          spawnVoxelShockwaveParticles(trailPos, '#ef4444');
-        }
-
-        if (s.aiLungeTimer > 0.8) {
-          s.aiState = 'APPROACHING';
-        }
-      }
+      enemyMesh.visible = false;
       return;
     }
 
@@ -907,6 +865,18 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     // Decrement hammer jump windows
     if (s.pHammerJumpWindowTimer > 0) s.pHammerJumpWindowTimer = Math.max(0, s.pHammerJumpWindowTimer - dt);
     if (s.aiHammerJumpWindowTimer > 0) s.aiHammerJumpWindowTimer = Math.max(0, s.aiHammerJumpWindowTimer - dt);
+
+    // Decrement other players' respawn and invulnerability timers
+    if (s.otherPlayers) {
+      s.otherPlayers.forEach((other) => {
+        if (other.respawnTimer > 0) {
+          other.respawnTimer = Math.max(0, other.respawnTimer - dt);
+        }
+        if (other.invulnerabilityTimer > 0) {
+          other.invulnerabilityTimer = Math.max(0, other.invulnerabilityTimer - dt);
+        }
+      });
+    }
   };
 
   function renderGame() {
@@ -3306,6 +3276,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
           isCrouching: s.isCrouching,
           activeWeapon: s.activeWeapon,
           respawnTimer: s.playerRespawnTimer,
+          invulnerabilityTimer: s.playerInvulnerabilityTimer,
           hue: s.settings.playerHue,
           playerName: s.settings.playerName, // Send custom name!
           
