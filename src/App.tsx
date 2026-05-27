@@ -12,7 +12,7 @@ import { Move, RotateCcw, Check } from 'lucide-react';
 import { ChatOverlay, ChatMessage } from './components/ChatOverlay';
 import { CharacterPreview } from './components/CharacterPreview';
 
-const APP_VERSION = '0.101.0';
+const APP_VERSION = '0.201a';
 const MAX_PLAYER_NAME_LENGTH = 10;
 
 interface OnlineClient {
@@ -639,6 +639,7 @@ export default function App() {
       aiAnticipationFactor: 0.40,
       aiMovementComplexity: 50,
       aiWeaponSwapIQ: 50,
+      enableBurnDecals: true,
     };
 
     try {
@@ -804,6 +805,7 @@ export default function App() {
           aiAnticipationFactor: 0.40,
           aiMovementComplexity: 50,
           aiWeaponSwapIQ: 50,
+          enableBurnDecals: true,
         };
         setAdminSettings(defaultAdmin);
         
@@ -3517,6 +3519,24 @@ export default function App() {
                         onChange={(e) => setAdminSettings(prev => ({ ...prev, hammerReloadTime: parseFloat(e.target.value) }))}
                         className="w-full accent-amber-400 h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
                       />
+                    </div>
+
+                    {/* Floor burn decal toggle */}
+                    <div className="flex justify-between items-center text-xs pt-1.5 border-t border-white/5">
+                      <div className="flex flex-col">
+                        <span className="font-bold text-white/90 font-mono text-[10px]">Draw Floor Burn Decals</span>
+                        <span className="text-[9px] text-white/40 font-mono">Flat neon blue blast decal</span>
+                      </div>
+                      <button 
+                        onClick={() => setAdminSettings(prev => ({ ...prev, enableBurnDecals: !prev.enableBurnDecals }))}
+                        className={`relative inline-flex h-4 w-8 shrink-0 cursor-pointer rounded-full border border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                          adminSettings.enableBurnDecals ? 'bg-[#38bdf8]' : 'bg-white/10'
+                        }`}
+                      >
+                        <span className={`pointer-events-none inline-block h-3.5 w-3.5 transform rounded-full bg-slate-900 shadow transition duration-200 ease-in-out ${
+                          adminSettings.enableBurnDecals ? 'translate-x-4' : 'translate-x-0'
+                        }`} />
+                      </button>
                     </div>
                   </div>
 

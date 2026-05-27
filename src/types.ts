@@ -43,6 +43,7 @@ export interface UniversalSettings {
   aiAnticipationFactor?: number;          // How aggressively it predicts player action (0.0 to 1.0)
   aiMovementComplexity?: number;          // 0 to 100%
   aiWeaponSwapIQ?: number;                // 0 to 100%
+  enableBurnDecals?: boolean;
 }
 
 export interface Keybindings {

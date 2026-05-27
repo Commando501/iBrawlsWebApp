@@ -791,6 +791,11 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       life: number;
       maxLife: number;
     }[];
+    burnDecals: {
+      mesh: THREE.Mesh;
+      life: number;
+      maxLife: number;
+    }[];
     otherPlayerMeshes: Map<string, {
       group: THREE.Group;
       hammer: THREE.Group;
@@ -816,6 +821,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     ambientLight: null,
     dirLight: null,
     damageExplosionParticles: [],
+    burnDecals: [],
   });
 
   // Track if mouse/pointer lock instructions should be displayed
@@ -1201,6 +1207,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     // always builds fresh meshes in this scene rather than reusing orphaned ones.
     threeRef.current.otherPlayerMeshes.clear();
     threeRef.current.damageExplosionParticles = [];
+    threeRef.current.burnDecals = [];
     threeRef.current.hostGroup = null;
     threeRef.current.hostHammer = null;
     threeRef.current.hostSword = null;
@@ -1950,6 +1957,19 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       window.removeEventListener('cycle-observer-mode', handleCycleObserverMode);
       window.removeEventListener('cycle-observer-target', handleCycleObserverTarget);
 
+      if (threeRef.current.burnDecals) {
+        threeRef.current.burnDecals.forEach(decal => {
+          if (scene) scene.remove(decal.mesh);
+          decal.mesh.geometry.dispose();
+          if (Array.isArray(decal.mesh.material)) {
+            decal.mesh.material.forEach((m: any) => m.dispose());
+          } else {
+            decal.mesh.material.dispose();
+          }
+        });
+        threeRef.current.burnDecals = [];
+      }
+
       if (requestRef.current) {
         cancelAnimationFrame(requestRef.current);
       }
@@ -1994,6 +2014,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       updateAI(dt);
       updateCharacterSkeletalAnimations(dt);
       updateExplosionParticles(dt);
+      updateBurnDecals(dt);
       updateMatchTimers(dt);
 
       // Render loop
@@ -3339,6 +3360,10 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       // Spawn glorious voxel particles (Glowing Cyan for cyber theme)
       spawnVoxelShockwaveParticles(impactPos, '#38bdf8');
 
+      if (s.settings.enableBurnDecals) {
+        spawnBurnDecal(impactPos, s.settings.attackRadius);
+      }
+
       // 2. Damage Application Check: Check main AI bot in singleplayer
       if (!isMultiplayer && s.aiHP > 0 && s.aiState !== 'RESPAWNING' && s.aiInvulnerabilityTimer <= 0) {
         const enemyBodyCenter = new THREE.Vector3(s.aiPos.x, s.aiPos.y + 0.825, s.aiPos.z);
@@ -3453,6 +3478,10 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
       // Spawn Solar Orange explosion particles
       spawnVoxelShockwaveParticles(impactPos, '#f97316');
+
+      if (s.settings.enableBurnDecals) {
+        spawnBurnDecal(impactPos, s.settings.attackRadius);
+      }
 
       // Damage target check: Compare strike sphere coordinate with target's 3D body center
       if (target.hp > 0 && target.invuln <= 0) {
@@ -5047,6 +5076,116 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
           );
         }
       });
+    }
+  };
+
+  const spawnBurnDecal = (pos: THREE.Vector3, radius: number) => {
+    const scene = threeRef.current.scene;
+    if (!scene) return;
+
+    const decalGeo = new THREE.PlaneGeometry(2, 2);
+    decalGeo.rotateX(-Math.PI / 2);
+
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 256;
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      ctx.clearRect(0, 0, 256, 256);
+
+      const coreGrad = ctx.createRadialGradient(128, 128, 0, 128, 128, 128);
+      coreGrad.addColorStop(0, 'rgba(6, 182, 212, 0.45)');
+      coreGrad.addColorStop(0.3, 'rgba(56, 189, 248, 0.22)');
+      coreGrad.addColorStop(0.7, 'rgba(56, 189, 248, 0.08)');
+      coreGrad.addColorStop(0.85, 'rgba(6, 182, 212, 0.6)');
+      coreGrad.addColorStop(0.93, 'rgba(255, 255, 255, 0.9)');
+      coreGrad.addColorStop(1.0, 'rgba(0, 0, 0, 0)');
+      
+      ctx.fillStyle = coreGrad;
+      ctx.beginPath();
+      ctx.arc(128, 128, 124, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.strokeStyle = 'rgba(6, 182, 212, 0.85)';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(128, 128, 90, 0, Math.PI * 2);
+      ctx.stroke();
+
+      ctx.strokeStyle = 'rgba(56, 189, 248, 0.5)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(128, 128, 50, 0, Math.PI * 2);
+      ctx.stroke();
+
+      ctx.strokeStyle = 'rgba(6, 182, 212, 0.45)';
+      ctx.lineWidth = 2;
+      for (let i = 0; i < 8; i++) {
+        const angle = (i * Math.PI) / 4;
+        const startRad = 20;
+        const endRad = 115;
+        const xStart = 128 + Math.cos(angle) * startRad;
+        const yStart = 128 + Math.sin(angle) * startRad;
+        const xEnd = 128 + Math.cos(angle) * endRad;
+        const yEnd = 128 + Math.sin(angle) * endRad;
+        ctx.beginPath();
+        ctx.moveTo(xStart, yStart);
+        ctx.lineTo(xEnd, yEnd);
+        ctx.stroke();
+      }
+    }
+
+    const texture = new THREE.CanvasTexture(canvas);
+    const decalMat = new THREE.MeshBasicMaterial({
+      map: texture,
+      transparent: true,
+      opacity: 1.0,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      side: THREE.DoubleSide
+    });
+
+    const mesh = new THREE.Mesh(decalGeo, decalMat);
+    mesh.position.set(pos.x, 0.012 + Math.random() * 0.005, pos.z);
+    mesh.scale.set(radius, 1, radius);
+
+    scene.add(mesh);
+
+    threeRef.current.burnDecals.push({
+      mesh,
+      life: 0,
+      maxLife: 3.5,
+    });
+  };
+
+  const updateBurnDecals = (dt: number) => {
+    const list = threeRef.current.burnDecals;
+    const scene = threeRef.current.scene;
+    if (!scene || !list) return;
+
+    for (let i = list.length - 1; i >= 0; i--) {
+      const d = list[i];
+      d.life += dt;
+
+      if (d.life >= d.maxLife) {
+        scene.remove(d.mesh);
+        d.mesh.geometry.dispose();
+        if (Array.isArray(d.mesh.material)) {
+          d.mesh.material.forEach((m: any) => {
+            if (m.map) m.map.dispose();
+            m.dispose();
+          });
+        } else {
+          const m = d.mesh.material as THREE.MeshBasicMaterial;
+          if (m.map) m.map.dispose();
+          m.dispose();
+        }
+        list.splice(i, 1);
+      } else {
+        const ratio = 1.0 - (d.life / d.maxLife);
+        const mat = d.mesh.material as THREE.MeshBasicMaterial;
+        mat.opacity = ratio;
+      }
     }
   };
 
