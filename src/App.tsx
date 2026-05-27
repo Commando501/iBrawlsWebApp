@@ -3000,7 +3000,6 @@ export default function App() {
                       >
                         ↻ Reset All Keybinds
                       </button>
-                      <span>VERSION 1.4 PROTOTYPE</span>
                     </div>
                     <div className="flex flex-col gap-3 font-sans text-sm">
                       {/* kept for legacy compat – hidden */}
