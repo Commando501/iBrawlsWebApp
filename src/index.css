@@ -14,6 +14,8 @@ body {
   overflow: hidden;
   background-color: #050b1a;
   user-select: none;
+  min-height: 100dvh;
+  -webkit-tap-highlight-color: transparent;
 }
 
 /* Canvas styling */
@@ -40,4 +42,333 @@ body {
 
 .animate-pulse-ring {
   animation: pulse-ring 3s infinite ease-in-out;
+}
+
+.compact-keybind-list {
+  display: none;
+}
+
+.mobile-left-stick,
+.mobile-right-pad {
+  touch-action: none;
+}
+
+@media (max-width: 980px) {
+  .mobile-start-overlay {
+    padding: max(0.75rem, env(safe-area-inset-top)) max(0.75rem, env(safe-area-inset-right)) max(0.75rem, env(safe-area-inset-bottom)) max(0.75rem, env(safe-area-inset-left));
+    align-items: stretch;
+  }
+
+  .mobile-menu-card {
+    border-radius: 1rem;
+    padding: 1rem;
+    gap: 1rem;
+    overflow-y: auto;
+    overflow-x: hidden;
+    max-height: calc(100dvh - 1.5rem);
+  }
+
+  .mobile-menu-header {
+    align-items: stretch;
+    gap: 0.85rem;
+  }
+
+  .mobile-brand {
+    width: 100%;
+    flex-wrap: wrap;
+    gap: 0.65rem;
+  }
+
+  .mobile-brand h1 {
+    font-size: clamp(2rem, 10vw, 2.65rem) !important;
+  }
+
+  .mobile-tabs {
+    order: 3;
+    width: 100%;
+    display: grid !important;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    overflow: hidden;
+    border-radius: 0.875rem;
+    scrollbar-width: none;
+  }
+
+  .mobile-tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .mobile-tabs button {
+    min-width: 0;
+    padding-left: 0.5rem;
+    padding-right: 0.5rem;
+    font-size: 0.68rem;
+    white-space: nowrap;
+    letter-spacing: 0.04em;
+  }
+
+  .mobile-online-pill {
+    order: 2;
+    width: fit-content;
+    max-width: 100%;
+  }
+
+  .mobile-menu-layout {
+    flex-direction: column;
+    min-height: auto !important;
+    overflow: visible;
+    gap: 1rem;
+  }
+
+  .mobile-content-grid {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) !important;
+    min-height: auto !important;
+    gap: 1rem;
+    overflow: visible;
+  }
+
+  .mobile-content-grid > div,
+  .mobile-reference-panel {
+    min-width: 0;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
+  .mobile-content-grid > div > .h-full,
+  .mobile-content-grid > div > .min-h-0 {
+    height: auto !important;
+    min-height: 0 !important;
+  }
+
+  .mobile-content-grid .justify-between {
+    justify-content: flex-start !important;
+  }
+
+  .mobile-reference-panel .desktop-keyboard-visualizer {
+    display: none;
+  }
+
+  .compact-keybind-list {
+    display: flex;
+  }
+
+  .mobile-lobby-chat {
+    width: 100% !important;
+    min-height: 18rem !important;
+  }
+
+  .mobile-modal {
+    border-radius: 1rem;
+    padding: 1rem;
+    width: min(100%, calc(100vw - 1.5rem)) !important;
+    max-width: calc(100vw - 1.5rem) !important;
+    max-height: calc(100dvh - 1.5rem) !important;
+    overflow-x: hidden;
+  }
+
+  .mobile-modal-actions,
+  .mobile-bot-presets {
+    flex-wrap: wrap;
+  }
+
+  .mobile-modal-actions > button {
+    min-width: min(12rem, 100%);
+  }
+
+  .mobile-ui-adjust-toolbar {
+    left: 50% !important;
+    right: auto;
+    top: max(0.75rem, env(safe-area-inset-top)) !important;
+    transform: translateX(-50%) !important;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.75rem;
+    width: min(26rem, calc(100vw - 1.5rem));
+  }
+
+  .mobile-ui-adjust-toolbar > div:last-child {
+    justify-content: flex-end;
+  }
+
+  .desktop-keyboard-visualizer {
+    display: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .mobile-brand {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .mobile-tabs button {
+    min-width: 0;
+    padding-left: 0.35rem;
+    padding-right: 0.35rem;
+    font-size: 0.62rem;
+  }
+
+  .mobile-lobby-chat {
+    display: none !important;
+  }
+}
+
+@media (max-width: 740px), (pointer: coarse) {
+  .battle-chat-mobile {
+    left: max(0.75rem, env(safe-area-inset-left));
+    right: max(0.75rem, env(safe-area-inset-right));
+    bottom: calc(max(0.75rem, env(safe-area-inset-bottom)) + 0.25rem);
+    width: auto;
+    max-width: none;
+  }
+
+  .battle-chat-mobile:not(.h-\[40px\]) {
+    height: min(17rem, 46dvh);
+  }
+}
+
+@media (max-width: 900px), (pointer: coarse) {
+  .mobile-left-stick {
+    width: clamp(5.75rem, 18vmin, 8rem);
+    height: clamp(5.75rem, 18vmin, 8rem);
+  }
+
+  .mobile-left-knob {
+    width: clamp(2.5rem, 8vmin, 3.5rem);
+    height: clamp(2.5rem, 8vmin, 3.5rem);
+  }
+
+  .mobile-right-pad {
+    --mobile-pad-scale: 0.78;
+    transform: scale(var(--mobile-pad-scale));
+    transform-origin: right bottom;
+  }
+
+  .mobile-hud:not(.hud-adjusting) [data-hud-id="objective"],
+  .mobile-hud:not(.hud-adjusting) [data-hud-id="technicalSpecs"] {
+    display: none;
+  }
+
+  .mobile-hud:not(.hud-adjusting) [data-hud-id="scoreboard"] {
+    left: 50% !important;
+    top: max(0.35rem, env(safe-area-inset-top)) !important;
+    transform: translate(-50%, 0) scale(0.68) !important;
+    transform-origin: top center;
+  }
+
+  .mobile-hud:not(.hud-adjusting) [data-hud-id="arenaStatus"] {
+    left: auto !important;
+    right: max(0.45rem, env(safe-area-inset-right)) !important;
+    top: max(0.45rem, env(safe-area-inset-top)) !important;
+    transform: scale(0.78) !important;
+    transform-origin: top right;
+  }
+
+  .mobile-hud:not(.hud-adjusting) [data-hud-id="eliminationFeed"] {
+    left: 50% !important;
+    top: 42% !important;
+    transform: translate(-50%, -50%) scale(0.72) !important;
+    transform-origin: center;
+    max-width: min(25rem, 92vw);
+  }
+
+  .mobile-hud:not(.hud-adjusting) [data-hud-id="radar"] {
+    left: max(0.45rem, env(safe-area-inset-left)) !important;
+    top: auto !important;
+    bottom: calc(max(0.45rem, env(safe-area-inset-bottom)) + 5.75rem) !important;
+    transform: scale(0.62) !important;
+    transform-origin: bottom left;
+  }
+
+  .mobile-hud:not(.hud-adjusting) [data-hud-id="weaponDash"] {
+    left: 50% !important;
+    top: auto !important;
+    bottom: calc(max(0.45rem, env(safe-area-inset-bottom)) + 0.3rem) !important;
+    transform: translateX(-50%) scale(0.66) !important;
+    transform-origin: bottom center;
+  }
+
+  .mobile-hud:not(.hud-adjusting) [data-hud-id="vitality"] {
+    left: auto !important;
+    right: max(0.45rem, env(safe-area-inset-right)) !important;
+    top: auto !important;
+    bottom: calc(max(0.45rem, env(safe-area-inset-bottom)) + 0.2rem) !important;
+    transform: scale(0.76) !important;
+    transform-origin: bottom right;
+  }
+
+  .mobile-hud:not(.hud-adjusting) [data-hud-id="mobileLeftAnalog"] {
+    left: max(0.75rem, env(safe-area-inset-left)) !important;
+    top: auto !important;
+    bottom: max(0.75rem, env(safe-area-inset-bottom)) !important;
+    transform: none !important;
+  }
+
+  .mobile-hud:not(.hud-adjusting) [data-hud-id="mobileRightButtons"] {
+    left: auto !important;
+    right: max(0.35rem, env(safe-area-inset-right)) !important;
+    top: auto !important;
+    bottom: max(0.35rem, env(safe-area-inset-bottom)) !important;
+    transform: none !important;
+  }
+}
+
+@media (max-width: 620px) and (orientation: portrait) {
+  .mobile-hud:not(.hud-adjusting) [data-hud-id="radar"],
+  .mobile-hud:not(.hud-adjusting) [data-hud-id="weaponDash"] {
+    display: none;
+  }
+
+  .mobile-hud:not(.hud-adjusting) [data-hud-id="scoreboard"] {
+    transform: translate(-50%, 0) scale(0.58) !important;
+  }
+
+  .mobile-hud:not(.hud-adjusting) [data-hud-id="arenaStatus"] {
+    top: 4.5rem !important;
+    transform: scale(0.68) !important;
+  }
+
+  .mobile-right-pad {
+    --mobile-pad-scale: 0.68;
+  }
+}
+
+@media (max-height: 520px) and (orientation: landscape) {
+  .mobile-start-overlay {
+    padding: 0.5rem;
+  }
+
+  .mobile-menu-card {
+    max-height: calc(100dvh - 1rem);
+    padding: 0.85rem;
+  }
+
+  .mobile-hud:not(.hud-adjusting) [data-hud-id="radar"],
+  .mobile-hud:not(.hud-adjusting) [data-hud-id="weaponDash"],
+  .mobile-hud:not(.hud-adjusting) [data-hud-id="eliminationFeed"] {
+    display: none;
+  }
+
+  .mobile-hud:not(.hud-adjusting) [data-hud-id="scoreboard"] {
+    transform: translate(-50%, 0) scale(0.58) !important;
+  }
+
+  .mobile-hud:not(.hud-adjusting) [data-hud-id="arenaStatus"] {
+    transform: scale(0.66) !important;
+  }
+
+  .mobile-hud:not(.hud-adjusting) [data-hud-id="vitality"] {
+    transform: scale(0.62) !important;
+  }
+
+  .mobile-left-stick {
+    width: clamp(5rem, 22vh, 6.5rem);
+    height: clamp(5rem, 22vh, 6.5rem);
+  }
+
+  .mobile-right-pad {
+    --mobile-pad-scale: 0.62;
+  }
 }

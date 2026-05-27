@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">iBrawls app icon</title>
+  <desc id="desc">A neon cyan and amber voxel arena badge on a deep navy background.</desc>
+  <rect width="512" height="512" rx="112" fill="#050b1a"/>
+  <rect x="48" y="48" width="416" height="416" rx="88" fill="#081327" stroke="#164e63" stroke-width="10"/>
+  <path d="M132 328h248l36-72-36-72H132l-36 72 36 72Z" fill="#0f172a" stroke="#22d3ee" stroke-width="12" stroke-linejoin="round"/>
+  <path d="M174 256h164" stroke="#f59e0b" stroke-width="22" stroke-linecap="round"/>
+  <path d="M204 210h104l36 46-36 46H204l-36-46 36-46Z" fill="#020617" stroke="#e0f2fe" stroke-width="10" stroke-linejoin="round"/>
+  <circle cx="256" cy="256" r="34" fill="#22d3ee"/>
+  <path d="M256 174v164M174 256h164" stroke="#082f49" stroke-width="12" stroke-linecap="round"/>
+  <path d="M120 118h272M120 394h272" stroke="#38bdf8" stroke-width="10" stroke-linecap="round" opacity=".55"/>
+</svg>

@@ -5,48 +5,44 @@
 
 import React, { useEffect, useRef } from 'react';
 import * as THREE from 'three';
-import { buildVoxelSpartanModel, buildGravityHammerModel, buildKatarSwordModel } from './VoxelModels';
+import { buildVoxelSpartanModel, buildGravityHammerModel, buildKatarSwordModel, CharacterLoadout, DEFAULT_LOADOUT } from './VoxelModels';
 
 interface CharacterPreviewProps {
   hue: number;
   heldWeapon: 'none' | 'hammer' | 'sword';
+  loadout?: CharacterLoadout;
 }
 
-export const CharacterPreview: React.FC<CharacterPreviewProps> = ({ hue, heldWeapon }) => {
+export const CharacterPreview: React.FC<CharacterPreviewProps> = ({ hue, heldWeapon, loadout }) => {
   const containerRef = useRef<HTMLDivElement>(null);
-  
-  // Track reactive state updates inside animation loops securely
-  const paramsRef = useRef({ hue, heldWeapon });
+
+  const paramsRef = useRef({ hue, heldWeapon, loadout });
   useEffect(() => {
-    paramsRef.current = { hue, heldWeapon };
-  }, [hue, heldWeapon]);
+    paramsRef.current = { hue, heldWeapon, loadout };
+  }, [hue, heldWeapon, loadout]);
 
   useEffect(() => {
     if (!containerRef.current) return;
 
     const container = containerRef.current;
 
-    // 1. Scene setup
     const scene = new THREE.Scene();
-    
-    // Set aspect ratio based on element size
+
     const width = container.clientWidth || 300;
     const height = container.clientHeight || 320;
-    const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 100);
-    
-    // Position camera to fit the spartan nicely with some breathing room
-    camera.position.set(0, 0.9, 3.5);
-    camera.lookAt(0, 0.8, 0);
+    // Slightly wider FOV and further back camera to frame the broader pauldrons
+    const camera = new THREE.PerspectiveCamera(42, width / height, 0.1, 100);
+    camera.position.set(0, 0.95, 4.2);
+    camera.lookAt(0, 0.85, 0);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setSize(width, height);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    
     container.appendChild(renderer.domElement);
 
-    // 2. Lighting setup
+    // Lighting
     const ambientLight = new THREE.AmbientLight('#ffffff', 0.65);
     scene.add(ambientLight);
 
@@ -57,25 +53,24 @@ export const CharacterPreview: React.FC<CharacterPreviewProps> = ({ hue, heldWea
     dirLight.shadow.mapSize.height = 512;
     scene.add(dirLight);
 
-    // A subtle rim light or spotlight to look premium
     const spotLight = new THREE.SpotLight('#38bdf8', 2.0, 10, Math.PI / 6, 0.5, 1);
     spotLight.position.set(-3, 5, 2);
     scene.add(spotLight);
 
-    // Floor platform (cyberpunk metal pedestal)
-    const platformGeo = new THREE.CylinderGeometry(0.8, 0.9, 0.15, 32);
-    const platformMat = new THREE.MeshStandardMaterial({
-      color: '#0f172a',
-      roughness: 0.4,
-      metalness: 0.8,
-    });
+    // Right-side fill light for pauldron highlights
+    const fillLight = new THREE.PointLight('#ffffff', 0.5, 8);
+    fillLight.position.set(3, 3, 1);
+    scene.add(fillLight);
+
+    // Floor platform
+    const platformGeo = new THREE.CylinderGeometry(0.9, 1.0, 0.15, 32);
+    const platformMat = new THREE.MeshStandardMaterial({ color: '#0f172a', roughness: 0.4, metalness: 0.8 });
     const platform = new THREE.Mesh(platformGeo, platformMat);
     platform.position.y = -0.075;
     platform.receiveShadow = true;
     scene.add(platform);
 
-    // Subtle neon ring detailing the pedestal
-    const ringGeo = new THREE.RingGeometry(0.78, 0.8, 32);
+    const ringGeo = new THREE.RingGeometry(0.88, 0.9, 32);
     ringGeo.rotateX(-Math.PI / 2);
     const ringMat = new THREE.MeshBasicMaterial({
       color: new THREE.Color(`hsl(${hue}, 85%, 60%)`),
@@ -87,27 +82,23 @@ export const CharacterPreview: React.FC<CharacterPreviewProps> = ({ hue, heldWea
     platformRing.position.y = 0.005;
     scene.add(platformRing);
 
-    // 3. Voxel Spartan Generation & Weapons References
     let characterGroup: THREE.Group | null = null;
     let currentHue = paramsRef.current.hue;
     let currentWeapon = paramsRef.current.heldWeapon;
+    let currentLoadout = paramsRef.current.loadout;
 
-    const buildCharacter = (h: number, w: 'none' | 'hammer' | 'sword') => {
-      if (characterGroup) {
-        scene.remove(characterGroup);
-      }
+    const buildCharacter = (h: number, w: 'none' | 'hammer' | 'sword', lo: CharacterLoadout | undefined) => {
+      if (characterGroup) scene.remove(characterGroup);
 
-      // Local player spartan (isEnemy = false, customHue = h)
-      characterGroup = buildVoxelSpartanModel(false, h);
+      characterGroup = buildVoxelSpartanModel(false, h, lo ?? DEFAULT_LOADOUT);
       characterGroup.position.set(0, 0, 0);
       scene.add(characterGroup);
 
-      // Attach requested weapon to upperTorso relative joints
       if (w === 'hammer') {
         const hammer = buildGravityHammerModel(h);
         hammer.scale.set(0.6, 0.6, 0.6);
         hammer.position.set(0.5, 1.0 - 0.64, -0.4);
-        hammer.rotation.set(Math.PI / 2.5, 0, 0); // Cool stance holding hammer
+        hammer.rotation.set(Math.PI / 2.5, 0, 0);
         if (characterGroup.userData.upperTorso) {
           characterGroup.userData.upperTorso.add(hammer);
         } else {
@@ -126,10 +117,8 @@ export const CharacterPreview: React.FC<CharacterPreviewProps> = ({ hue, heldWea
       }
     };
 
-    // Initial build
-    buildCharacter(currentHue, currentWeapon);
+    buildCharacter(currentHue, currentWeapon, currentLoadout);
 
-    // Track states inside effect scope for responsive updates
     let isHovering = false;
     let isDragging = false;
     let previousPointerX = 0;
@@ -144,14 +133,9 @@ export const CharacterPreview: React.FC<CharacterPreviewProps> = ({ hue, heldWea
       if (isDragging) {
         const deltaX = e.clientX - previousPointerX;
         previousPointerX = e.clientX;
-        
-        // Manual rotation along the axis
-        const rotationSpeed = 0.008;
-        if (characterGroup) {
-          characterGroup.rotation.y += deltaX * rotationSpeed;
-        }
-        platform.rotation.y += deltaX * rotationSpeed;
-        platformRing.rotation.y += deltaX * rotationSpeed;
+        if (characterGroup) characterGroup.rotation.y += deltaX * 0.008;
+        platform.rotation.y += deltaX * 0.008;
+        platformRing.rotation.y += deltaX * 0.008;
       }
     };
 
@@ -162,48 +146,36 @@ export const CharacterPreview: React.FC<CharacterPreviewProps> = ({ hue, heldWea
       }
     };
 
-    const onPointerEnter = () => {
-      isHovering = true;
-    };
-
-    const onPointerLeave = () => {
-      isHovering = false;
-    };
-
     container.addEventListener('pointerdown', onPointerDown);
     container.addEventListener('pointermove', onPointerMove);
     container.addEventListener('pointerup', onPointerUp);
     container.addEventListener('pointercancel', onPointerUp);
-    container.addEventListener('pointerenter', onPointerEnter);
-    container.addEventListener('pointerleave', onPointerLeave);
+    container.addEventListener('pointerenter', () => { isHovering = true; });
+    container.addEventListener('pointerleave', () => { isHovering = false; });
 
-    // 4. Animation loop
     const clock = new THREE.Clock();
     let animationFrameId: number;
+
     const animate = () => {
-      // Check if parameters have updated reactively
       const newHue = paramsRef.current.hue;
       const newWeapon = paramsRef.current.heldWeapon;
+      const newLoadout = paramsRef.current.loadout;
 
-      if (newHue !== currentHue || newWeapon !== currentWeapon) {
+      const loadoutChanged = JSON.stringify(newLoadout) !== JSON.stringify(currentLoadout);
+      if (newHue !== currentHue || newWeapon !== currentWeapon || loadoutChanged) {
         currentHue = newHue;
         currentWeapon = newWeapon;
-        buildCharacter(currentHue, currentWeapon);
-        
-        // Dynamically update the platform neon ring color as well!
+        currentLoadout = newLoadout;
+        buildCharacter(currentHue, currentWeapon, currentLoadout);
         ringMat.color.set(new THREE.Color(`hsl(${currentHue}, 85%, 60%)`));
       }
 
-      // Rotate character model slowly if not hovered and not manually dragging
       if (!isHovering && !isDragging) {
-        if (characterGroup) {
-          characterGroup.rotation.y += 0.012;
-        }
+        if (characterGroup) characterGroup.rotation.y += 0.012;
         platform.rotation.y += 0.012;
         platformRing.rotation.y += 0.012;
       }
 
-      // Dynamic emissive glow pulsing: pulses visor and weapons in sync
       const elapsed = clock.getElapsedTime();
       scene.traverse((child) => {
         if (child instanceof THREE.Mesh && child.material) {
@@ -212,12 +184,9 @@ export const CharacterPreview: React.FC<CharacterPreviewProps> = ({ hue, heldWea
             if (
               'emissive' in mat &&
               mat.emissive &&
-              ((mat.emissive as THREE.Color).r > 0 ||
-                (mat.emissive as THREE.Color).g > 0 ||
-                (mat.emissive as THREE.Color).b > 0)
+              ((mat.emissive as THREE.Color).r > 0 || (mat.emissive as THREE.Color).g > 0 || (mat.emissive as THREE.Color).b > 0)
             ) {
-              const standardMat = mat as THREE.MeshStandardMaterial;
-              standardMat.emissiveIntensity = 2.0 + Math.sin(elapsed * 4.0) * 0.8;
+              (mat as THREE.MeshStandardMaterial).emissiveIntensity = 2.0 + Math.sin(elapsed * 4.0) * 0.8;
             }
           });
         }
@@ -229,7 +198,6 @@ export const CharacterPreview: React.FC<CharacterPreviewProps> = ({ hue, heldWea
 
     animate();
 
-    // 5. Handle resizing
     const handleResize = () => {
       if (!container) return;
       const w = container.clientWidth;
@@ -240,18 +208,13 @@ export const CharacterPreview: React.FC<CharacterPreviewProps> = ({ hue, heldWea
     };
     window.addEventListener('resize', handleResize);
 
-    // Clean up
     return () => {
       cancelAnimationFrame(animationFrameId);
       window.removeEventListener('resize', handleResize);
-      
       container.removeEventListener('pointerdown', onPointerDown);
       container.removeEventListener('pointermove', onPointerMove);
       container.removeEventListener('pointerup', onPointerUp);
       container.removeEventListener('pointercancel', onPointerUp);
-      container.removeEventListener('pointerenter', onPointerEnter);
-      container.removeEventListener('pointerleave', onPointerLeave);
-
       if (container && renderer.domElement && container.contains(renderer.domElement)) {
         container.removeChild(renderer.domElement);
       }
@@ -264,25 +227,22 @@ export const CharacterPreview: React.FC<CharacterPreviewProps> = ({ hue, heldWea
   }, []);
 
   return (
-    <div 
-      ref={containerRef} 
+    <div
+      ref={containerRef}
       className="w-full h-full rounded-xl border border-white/5 bg-slate-950/40 relative flex items-center justify-center overflow-hidden shadow-inner cursor-grab active:cursor-grabbing select-none"
     >
-      {/* Decorative hud corners */}
       <div className="absolute top-3 left-3 w-3 h-3 border-t border-l border-[#38bdf8]/40" />
       <div className="absolute top-3 right-3 w-3 h-3 border-t border-r border-[#38bdf8]/40" />
       <div className="absolute bottom-3 left-3 w-3 h-3 border-b border-l border-[#38bdf8]/40" />
       <div className="absolute bottom-3 right-3 w-3 h-3 border-b border-r border-[#38bdf8]/40" />
-      
-      {/* Grid crosshair backdrop */}
       <div className="absolute inset-0 pointer-events-none z-0 bg-[radial-gradient(circle_at_center,transparent_45%,rgba(5,11,26,0.5))] opacity-80" />
-      <div 
+      <div
         className="absolute inset-0 pointer-events-none z-0 opacity-15"
         style={{
           backgroundImage: `
             repeating-linear-gradient(0deg, #38bdf8 0px, #38bdf8 1px, transparent 1px, transparent 20px),
             repeating-linear-gradient(90deg, #38bdf8 0px, #38bdf8 1px, transparent 1px, transparent 20px)
-          `
+          `,
         }}
       />
     </div>

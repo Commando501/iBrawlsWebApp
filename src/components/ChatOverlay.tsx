@@ -5,6 +5,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { Send, MessageSquare, ChevronDown, ChevronUp } from 'lucide-react';
+import { DeviceInfo } from '../types';
 
 export interface ChatMessage {
   id: string;
@@ -20,6 +21,7 @@ interface ChatOverlayProps {
   onSendMessage: (text: string) => void;
   isMultiplayer: boolean;
   multiplayerRole: 'host' | 'client' | null;
+  deviceInfo: DeviceInfo;
 }
 
 export const ChatOverlay: React.FC<ChatOverlayProps> = ({
@@ -27,9 +29,10 @@ export const ChatOverlay: React.FC<ChatOverlayProps> = ({
   onSendMessage,
   isMultiplayer,
   multiplayerRole,
+  deviceInfo,
 }) => {
   const [inputText, setInputText] = useState('');
-  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(() => deviceInfo.isMobile);
   const [isFocused, setIsFocused] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -39,6 +42,12 @@ export const ChatOverlay: React.FC<ChatOverlayProps> = ({
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages, isCollapsed]);
+
+  useEffect(() => {
+    if (deviceInfo.isMobile) {
+      setIsCollapsed(true);
+    }
+  }, [deviceInfo.isMobile]);
 
   if (!isMultiplayer) return null;
 
@@ -63,7 +72,9 @@ export const ChatOverlay: React.FC<ChatOverlayProps> = ({
 
   return (
     <div 
-      className={`fixed bottom-[240px] left-[20px] z-40 flex flex-col w-[320px] font-sans transition-all duration-300 pointer-events-auto ${
+      className={`battle-chat-overlay fixed bottom-[240px] left-[20px] z-40 flex flex-col w-[320px] font-sans transition-all duration-300 pointer-events-auto ${
+        deviceInfo.isMobile ? 'battle-chat-mobile' : ''
+      } ${
         isCollapsed ? 'h-[40px]' : 'h-[230px]'
       }`}
     >

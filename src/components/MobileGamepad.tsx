@@ -70,7 +70,7 @@ export const LeftAnalogStick: React.FC<LeftStickProps> = ({
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
-      className={`w-32 h-32 rounded-full border-2 transition-all duration-300 flex items-center justify-center relative select-none ${
+      className={`mobile-left-stick w-32 h-32 rounded-full border-2 transition-all duration-300 flex items-center justify-center relative select-none ${
         active 
           ? 'border-cyan-400/80 bg-slate-950/45 shadow-[0_0_25px_rgba(6,182,212,0.3)] scale-[1.03]' 
           : 'border-white/15 bg-slate-950/25 shadow-[inset_0_1px_3px_rgba(0,0,0,0.5)]'
@@ -89,7 +89,7 @@ export const LeftAnalogStick: React.FC<LeftStickProps> = ({
       {/* Thumb Knob */}
       <div 
         ref={knobRef}
-        className={`w-14 h-14 rounded-full flex items-center justify-center transition-shadow duration-300 cursor-pointer ${
+        className={`mobile-left-knob w-14 h-14 rounded-full flex items-center justify-center transition-shadow duration-300 cursor-pointer ${
           active 
             ? 'bg-gradient-to-b from-cyan-400 to-blue-600 shadow-[0_0_15px_rgba(6,182,212,0.8)] border border-cyan-300/40' 
             : 'bg-gradient-to-b from-slate-700 to-slate-900 border border-white/10 shadow-lg'
@@ -207,7 +207,7 @@ export const RightActionButtonPad: React.FC<RightPadProps> = ({
   const primaryBtnColor = activeWeapon === 'sword' ? 'from-cyan-400 to-indigo-500' : 'from-amber-400 to-orange-500';
 
   return (
-    <div className="relative w-[340px] h-[260px] flex items-center justify-center select-none pointer-events-none">
+    <div className="mobile-right-pad relative w-[340px] h-[260px] flex items-center justify-center select-none pointer-events-none">
       
       {/* 1. RIGHT ANALOG JOYSTICK (Continuous Aim/Pan) */}
       <div 

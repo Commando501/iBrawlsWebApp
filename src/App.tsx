@@ -11,8 +11,9 @@ import { sfx } from './components/AudioEngine';
 import { Move, RotateCcw, Check } from 'lucide-react';
 import { ChatOverlay, ChatMessage } from './components/ChatOverlay';
 import { CharacterPreview } from './components/CharacterPreview';
+import { CharacterLoadout, DEFAULT_LOADOUT, AVAILABLE_PRESETS, HelmetPreset, TorsoPreset, ArmPreset, LegPreset } from './components/VoxelModels';
 
-const APP_VERSION = '0.202a';
+const APP_VERSION = '0.212a';
 const MAX_PLAYER_NAME_LENGTH = 10;
 
 interface OnlineClient {
@@ -479,10 +480,70 @@ function KeyboardVisualizer({ bindings, rebinding, onPick }: KbVisualizerProps) 
   );
 }
 // ─────────────────────────────────────────────────────────────────────────────
+const COMPACT_KEYBIND_SECTIONS: Array<{
+  title: string;
+  actions: Array<{ action: keyof Keybindings; label: string }>;
+}> = [
+  {
+    title: 'Movement',
+    actions: [
+      { action: 'moveForward', label: 'Move Forward' },
+      { action: 'moveLeft', label: 'Move Left' },
+      { action: 'moveBackward', label: 'Move Backward' },
+      { action: 'moveRight', label: 'Move Right' },
+      { action: 'jump', label: 'Jump / Boost' },
+      { action: 'dash', label: 'Dash' },
+      { action: 'crouch', label: 'Crouch / Slide' },
+    ],
+  },
+  {
+    title: 'Combat',
+    actions: [
+      { action: 'weapon1', label: 'Hammer' },
+      { action: 'weapon2', label: 'Sword' },
+      { action: 'attack', label: 'Primary Attack' },
+      { action: 'altAttack', label: 'Alt Attack' },
+      { action: 'scoreboard', label: 'Scoreboard' },
+    ],
+  },
+];
+
+function CompactKeybindList({ bindings, rebinding, onPick }: KbVisualizerProps) {
+  return (
+    <div className="compact-keybind-list bg-slate-950/55 border border-white/10 rounded-xl p-3.5 flex-col gap-3">
+      {COMPACT_KEYBIND_SECTIONS.map((section) => (
+        <div key={section.title} className="flex flex-col gap-2">
+          <p className="text-[10px] text-cyan-400 font-black uppercase tracking-widest border-b border-white/5 pb-1.5">
+            {section.title}
+          </p>
+          <div className="grid grid-cols-1 min-[420px]:grid-cols-2 gap-2">
+            {section.actions.map(({ action, label }) => (
+              <div key={action}>
+                <KbBindRow
+                  label={label}
+                  action={action}
+                  bindings={bindings}
+                  rebinding={rebinding}
+                  onPick={onPick}
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 const detectDeviceOS = (): DeviceInfo => {
   if (typeof window === 'undefined') return { isMobile: false, os: 'desktop' };
   const ua = navigator.userAgent || navigator.vendor || (window as any).opera;
-  const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua);
+  const coarsePointer = window.matchMedia?.('(pointer: coarse)').matches ?? false;
+  const compactViewport = Math.min(window.innerWidth, window.innerHeight) <= 520;
+  const touchCapable = navigator.maxTouchPoints > 0 || 'ontouchstart' in window;
+  const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua)
+    || (touchCapable && coarsePointer)
+    || compactViewport;
   let os: DeviceOS = 'desktop';
 
   if (/iPhone|iPad|iPod/i.test(ua)) {
@@ -497,7 +558,8 @@ const detectDeviceOS = (): DeviceInfo => {
 };
 
 export default function App() {
-  const [deviceInfo] = useState<DeviceInfo>(() => detectDeviceOS());
+  const [deviceInfo, setDeviceInfo] = useState<DeviceInfo>(() => detectDeviceOS());
+  const [isOnline, setIsOnline] = useState<boolean>(() => typeof navigator === 'undefined' ? true : navigator.onLine);
   const [forceMobileControls, setForceMobileControls] = useState<boolean>(false);
 
   // Mobile touch joysticks references for 60fps low-latency input
@@ -526,6 +588,24 @@ export default function App() {
     }
     return apiUrl;
   };
+
+  useEffect(() => {
+    const refreshDeviceInfo = () => setDeviceInfo(detectDeviceOS());
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+
+    window.addEventListener('resize', refreshDeviceInfo);
+    window.addEventListener('orientationchange', refreshDeviceInfo);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('resize', refreshDeviceInfo);
+      window.removeEventListener('orientationchange', refreshDeviceInfo);
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
 
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const [matchmakerUrl, setMatchmakerUrl] = useState<string>(getSavedMatchmakerUrl());
@@ -563,6 +643,12 @@ export default function App() {
   const [lobbyChatMessages, setLobbyChatMessages] = useState<ChatMessage[]>([]);
   const [rightPanelTab, setRightPanelTab] = useState<'manual' | 'customize'>('manual');
   const [customizerWeapon, setCustomizerWeapon] = useState<'none' | 'hammer' | 'sword'>('none');
+  const [playerLoadout, setPlayerLoadout] = useState<CharacterLoadout>(() => {
+    try {
+      const saved = localStorage.getItem('grifball_player_loadout');
+      return saved ? { ...DEFAULT_LOADOUT, ...JSON.parse(saved) } : DEFAULT_LOADOUT;
+    } catch { return DEFAULT_LOADOUT; }
+  });
   const [keybindings, setKeybindings] = useState<Keybindings>(() => {
     try {
       const saved = localStorage.getItem('grifball_keybindings');
@@ -1228,6 +1314,14 @@ export default function App() {
     const randCode = Math.floor(100000 + Math.random() * 900000).toString();
     setHostIdCode(randCode);
 
+    if (!navigator.onLine) {
+      setUserIp('127.0.0.1');
+      setLanIp('127.0.0.1');
+      setConnectionStatus('idle');
+      setConnectionError('Offline mode active. Solo training is available; multiplayer needs a network connection.');
+      return;
+    }
+
     setConnectionStatus('fetching_ip');
     fetch(`${getApiUrl()}/api/my-ip`)
       .then(res => {
@@ -1266,22 +1360,24 @@ export default function App() {
         setConnectionStatus('idle');
       })
       .catch(async (err) => {
-        console.error('Error fetching API my-ip:', err);
+        console.warn('Network metadata unavailable; using offline-safe localhost fallback:', err);
         let fallbackIp = '127.0.0.1';
-        try {
-          const ipifyRes = await fetch('https://api.ipify.org?format=json');
-          const ipifyData = await ipifyRes.json();
-          if (ipifyData && ipifyData.ip) {
-            fallbackIp = ipifyData.ip;
+        if (navigator.onLine) {
+          try {
+            const ipifyRes = await fetch('https://api.ipify.org?format=json');
+            const ipifyData = await ipifyRes.json();
+            if (ipifyData && ipifyData.ip) {
+              fallbackIp = ipifyData.ip;
+            }
+          } catch (e) {
+            console.warn('Direct ipify fetch failed:', e);
           }
-        } catch (e) {
-          console.warn('Direct ipify fetch failed:', e);
         }
         setUserIp(fallbackIp);
         setLanIp('127.0.0.1');
         setConnectionStatus('idle');
       });
-  }, []);
+  }, [isOnline]);
 
   // Dedicated background central server connection for counting players, measuring ping, and carrying match invitations
   useEffect(() => {
@@ -1291,6 +1387,14 @@ export default function App() {
 
     function connect() {
       if (isDestroyed) return;
+
+      if (!navigator.onLine) {
+        setMenuSocket(null);
+        setOnlineCount(0);
+        setOnlineClients([]);
+        reconnectTimeout = setTimeout(connect, 5000);
+        return;
+      }
       
       const wsUrl = buildWsUrl(getWsUrl(), 'lobby', playerName);
       console.log('Connecting persistent lobby socket to:', wsUrl);
@@ -1377,7 +1481,7 @@ export default function App() {
       if (ws) ws.close();
       clearTimeout(reconnectTimeout);
     };
-  }, []);
+  }, [isOnline, playerName]);
 
   // Heartbeat to measure RTT latency
   useEffect(() => {
@@ -1851,7 +1955,7 @@ export default function App() {
   };
 
   return (
-    <div className="relative w-full h-screen bg-[#050b1a] text-white overflow-hidden select-none font-sans flex flex-col">
+    <div className="relative w-full h-[100dvh] bg-[#050b1a] text-white overflow-hidden select-none font-sans flex flex-col">
       {/* BACKGROUND ARENA SIMULATION GRID */}
       <div 
         className="absolute inset-0 z-0 opacity-20 pointer-events-none" 
@@ -1912,18 +2016,19 @@ export default function App() {
           onSendMessage={sendChatMessage}
           isMultiplayer={isMultiplayer}
           multiplayerRole={multiplayerRole}
+          deviceInfo={deviceInfo}
         />
       )}
 
       {/* START MENU CONTROLLER SCREEN */}
       {!isPlaying && !isTerminated && (
-        <div className="absolute inset-0 z-50 flex items-stretch justify-center bg-slate-950/85 backdrop-blur-xl p-6 transition-all duration-300">
-          <div className="w-full bg-slate-900/40 border border-white/10 rounded-3xl p-8 backdrop-blur-md flex flex-col gap-7 shadow-2xl select-none overflow-hidden">
+        <div className="mobile-start-overlay absolute inset-0 z-50 flex items-stretch justify-center bg-slate-950/85 backdrop-blur-xl p-6 transition-all duration-300">
+          <div className="mobile-menu-card w-full bg-slate-900/40 border border-white/10 rounded-3xl p-8 backdrop-blur-md flex flex-col gap-7 shadow-2xl select-none overflow-hidden">
             
             {/* UNIFIED CARD HEADER */}
-            <div className="flex flex-wrap justify-between items-center gap-6 border-b border-white/10 pb-5 shrink-0">
+            <div className="mobile-menu-header flex flex-wrap justify-between items-center gap-6 border-b border-white/10 pb-5 shrink-0">
               {/* Brand Branding Section */}
-              <div className="flex items-center gap-4">
+              <div className="mobile-brand flex items-center gap-4">
                 <h1 style={{ fontFamily: 'Inter, sans-serif', fontSize: 36, fontWeight: 900, fontStyle: 'italic', letterSpacing: '-0.03em', background: 'linear-gradient(180deg, #fff, #94a3b8)', WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent', margin: 0, lineHeight: 1, paddingRight: 16 }}>
                   iBrawls
                 </h1>
@@ -1956,7 +2061,7 @@ export default function App() {
               </div>
 
               {/* Pill Segmented Mode Switcher */}
-              <div className="flex bg-black/40 p-1.5 rounded-full border border-white/10 gap-2 select-none shrink-0 shadow-[inset_0_2px_4px_rgba(0,0,0,0.4)]">
+              <div className="mobile-tabs flex bg-black/40 p-1.5 rounded-full border border-white/10 gap-2 select-none shrink-0 shadow-[inset_0_2px_4px_rgba(0,0,0,0.4)]">
                 {([
                   { id: 'single', label: 'Single Player' },
                   { id: 'multi',  label: 'Multiplayer'   },
@@ -1977,16 +2082,16 @@ export default function App() {
               </div>
 
               {/* Online Player Count */}
-              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: 'rgba(16,185,129,0.10)', border: '1px solid rgba(16,185,129,0.30)', color: '#10b981', padding: '8px 16px', borderRadius: 9999, fontFamily: "'JetBrains Mono', monospace", fontWeight: 800, fontSize: 11, letterSpacing: '0.15em', textTransform: 'uppercase' }}>
+              <div className="mobile-online-pill" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: 'rgba(16,185,129,0.10)', border: '1px solid rgba(16,185,129,0.30)', color: '#10b981', padding: '8px 16px', borderRadius: 9999, fontFamily: "'JetBrains Mono', monospace", fontWeight: 800, fontSize: 11, letterSpacing: '0.15em', textTransform: 'uppercase' }}>
                 <span style={{ width: 8, height: 8, borderRadius: 9999, background: '#34d399', animation: 'pulse 1.4s infinite' }} />
-                Online Players: {onlineCount || 1}
+                {isOnline ? `Online Players: ${onlineCount || 1}` : 'Offline Mode'}
               </div>
             </div>
 
             {/* MAIN LAYOUT: 2-col content area + right chat rail */}
-            <div className="flex gap-7 flex-1 min-h-0 overflow-hidden">
+            <div className="mobile-menu-layout flex gap-7 flex-1 min-h-0 overflow-hidden">
               {/* 2-column content grid */}
-              <div className="flex-1 grid min-h-0 gap-7" style={{ gridTemplateColumns: 'minmax(280px, 1fr) minmax(480px, 1.8fr)', minWidth: 0 }}>
+              <div className="mobile-content-grid flex-1 grid min-h-0 gap-7" style={{ gridTemplateColumns: 'minmax(280px, 1fr) minmax(480px, 1.8fr)', minWidth: 0 }}>
 
               {/* COLUMN 1: GAME SETUP & ACTIONS */}
               <div className="flex flex-col h-full min-h-0 overflow-y-auto pr-0.5">
@@ -2135,6 +2240,15 @@ export default function App() {
                           📶 Local LAN IP
                         </button>
                       </div>
+
+                      {!isOnline && (
+                        <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-3 text-left">
+                          <p className="text-xs font-black uppercase tracking-widest text-amber-300">Offline Mode</p>
+                          <p className="mt-1 text-xs text-white/60 leading-relaxed">
+                            Solo training remains available from the installed app cache. Multiplayer, matchmaker chat, invites, and public IP discovery will reconnect when the network is back.
+                          </p>
+                        </div>
+                      )}
 
                       {/* Connection coordinates */}
                       <div className={`p-3.5 rounded-lg border text-xs ${connectionMode === 'relay' ? "bg-sky-500/5 border-sky-500/20" : "bg-white/5 border-white/10"}`}>
@@ -2482,7 +2596,7 @@ export default function App() {
               </div>
 
               {/* COLUMN 2: KEYBIND REFERENCE & CUSTOMIZER */}
-              <div className="flex flex-col h-full min-h-0 overflow-y-auto gap-4">
+              <div className="mobile-reference-panel flex flex-col h-full min-h-0 overflow-y-auto gap-4">
                 {/* Segmented Tab Switcher */}
                 <div className="flex bg-black/40 p-1.5 rounded-lg border border-white/5 gap-2 select-none shrink-0 shadow-[inset_0_1px_3px_rgba(0,0,0,0.3)]">
                   <button
@@ -2509,12 +2623,20 @@ export default function App() {
 
                 {rightPanelTab === 'manual' && (
                   <div className="flex flex-col gap-4">
-                    {/* Visual Keyboard + Mouse layout */}
-                    <KeyboardVisualizer
+                    <CompactKeybindList
                       bindings={keybindings}
                       rebinding={rebindingAction}
                       onPick={(action) => setRebindingAction(prev => prev === action ? null : action)}
                     />
+
+                    {/* Visual Keyboard + Mouse layout */}
+                    <div className="desktop-keyboard-visualizer">
+                      <KeyboardVisualizer
+                        bindings={keybindings}
+                        rebinding={rebindingAction}
+                        onPick={(action) => setRebindingAction(prev => prev === action ? null : action)}
+                      />
+                    </div>
 
                     {/* Mouse sensitivity & acceleration */}
                     <div style={{ background: 'rgba(2,6,23,0.45)', border: '1px solid rgba(255,255,255,0.10)', borderRadius: 12, padding: 18, boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.30)' }}>
@@ -2759,7 +2881,7 @@ export default function App() {
                     <div className="flex flex-col gap-4">
                       {/* Rotating 3D character */}
                       <div className="relative bg-slate-950/30 border border-white/5 rounded-xl select-none overflow-hidden h-[380px] shrink-0">
-                        <CharacterPreview hue={adminSettings.playerHue ?? 200} heldWeapon={customizerWeapon} />
+                        <CharacterPreview hue={adminSettings.playerHue ?? 200} heldWeapon={customizerWeapon} loadout={playerLoadout} />
                       </div>
 
                       {/* Controls grid */}
@@ -2859,6 +2981,68 @@ export default function App() {
                           </div>
                         </div>
 
+                        {/* Armor Loadout Selector */}
+                        {(() => {
+                          const updateLoadout = (patch: Partial<CharacterLoadout>) => {
+                            setPlayerLoadout(prev => {
+                              const next = { ...prev, ...patch };
+                              try { localStorage.setItem('grifball_player_loadout', JSON.stringify(next)); } catch {}
+                              return next;
+                            });
+                          };
+                          const slotLabel: Record<string, string> = {
+                            helmet: 'Helmet',
+                            torso: 'Chest',
+                            arm: 'Arms',
+                            leg: 'Legs',
+                          };
+                          const presetLabel: Record<string, string> = {
+                            'mark-vi': 'Mk.VI',
+                            'odst': 'ODST',
+                            'recon': 'Recon',
+                            'eva': 'EVA',
+                            'gungnir': 'Gungnir',
+                            'scout': 'Scout',
+                            'jump-jet': 'JmpJet',
+                          };
+                          const slots = [
+                            { key: 'helmet', options: AVAILABLE_PRESETS.helmet },
+                            { key: 'torso',  options: AVAILABLE_PRESETS.torso },
+                            { key: 'arm',    options: AVAILABLE_PRESETS.arm },
+                            { key: 'leg',    options: AVAILABLE_PRESETS.leg },
+                          ] as const;
+                          return (
+                            <div className="bg-white/5 border border-white/5 rounded-lg p-3">
+                              <span className="text-xs font-bold text-[#38bdf8] uppercase tracking-wider block mb-2.5">Armor Loadout</span>
+                              <div className="flex flex-col gap-2">
+                                {slots.map(({ key, options }) => (
+                                  <div key={key} className="flex items-center gap-2">
+                                    <span className="text-[10px] font-black uppercase tracking-widest text-white/40 w-14 shrink-0">{slotLabel[key]}</span>
+                                    <div className="flex flex-wrap gap-1.5 flex-1">
+                                      {options.map((opt) => {
+                                        const isActive = playerLoadout[key as keyof CharacterLoadout] === opt;
+                                        return (
+                                          <button
+                                            key={opt}
+                                            onClick={() => updateLoadout({ [key]: opt } as Partial<CharacterLoadout>)}
+                                            className={`px-2 py-1 text-[10px] font-black uppercase tracking-widest border rounded transition-all active:scale-95 ${
+                                              isActive
+                                                ? 'bg-[#38bdf8]/15 border-[#38bdf8] text-[#38bdf8] shadow-[0_0_8px_rgba(56,189,248,0.25)]'
+                                                : 'bg-black/30 border-white/10 text-white/40 hover:text-white/70 hover:border-white/20'
+                                            }`}
+                                          >
+                                            {presetLabel[opt] ?? opt}
+                                          </button>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        })()}
+
                         {/* Spartan Nickname Handle */}
                         <div className="bg-white/5 border border-white/5 rounded-lg p-3">
                           <span className="text-xs font-bold text-[#38bdf8] uppercase tracking-wider block mb-2">Spartan Nickname Handle</span>
@@ -2952,7 +3136,7 @@ export default function App() {
               </div>{/* end 2-column content grid */}
 
               {/* RIGHT RAIL: GLOBAL CHAT (ALWAYS VISIBLE) */}
-              <aside style={{ width: 360, flexShrink: 0, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+              <aside className="mobile-lobby-chat" style={{ width: 360, flexShrink: 0, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
                 <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'rgba(2,6,23,0.45)', border: '1px solid rgba(255,255,255,0.10)', borderRadius: 12, padding: 16, gap: 12, boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.30)', overflow: 'hidden' }}>
                   {/* Chat header */}
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: 10, borderBottom: '1px solid rgba(255,255,255,0.05)', gap: 8, flexShrink: 0 }}>
@@ -3006,9 +3190,9 @@ export default function App() {
 
       {/* PAUSE DRAWER MODAL COVER (FROSTED GLASS PANEL OVERLAY) */}
       {isPaused && isPlaying && !showUiAdjustment && (
-        <div className="absolute inset-0 z-40 flex items-center justify-center bg-slate-950/80 backdrop-blur-xl transition-all duration-300">
+        <div className="absolute inset-0 z-40 flex items-center justify-center bg-slate-950/80 backdrop-blur-xl transition-all duration-300 p-3">
           {!showAdminPanel && !showLightingMenu && !showKeybindsMenu ? (
-            <div className="relative bg-slate-950/80 border border-white/10 backdrop-blur-2xl rounded-2xl p-6 w-[460px] shadow-[0_20px_50px_rgba(0,0,0,0.5)] flex flex-col select-none overflow-hidden animate-in fade-in duration-200">
+            <div className="mobile-modal relative bg-slate-950/80 border border-white/10 backdrop-blur-2xl rounded-2xl p-6 w-[460px] max-w-[calc(100vw-1.5rem)] max-h-[calc(100dvh-1.5rem)] shadow-[0_20px_50px_rgba(0,0,0,0.5)] flex flex-col select-none overflow-hidden animate-in fade-in duration-200">
               {/* Decorative ambient glows */}
               <div className="absolute -top-10 -left-10 w-40 h-40 bg-blue-500/10 rounded-full blur-3xl pointer-events-none" />
               <div className="absolute -bottom-10 -right-10 w-40 h-40 bg-purple-500/10 rounded-full blur-3xl pointer-events-none" />
@@ -3198,7 +3382,7 @@ export default function App() {
             </div>
           ) : showAdminPanel ? (
             /* GAMEPLAY/MECHANICS OPTIONS MULTIPANEL DENSE DASHBOARD */
-            <div className="bg-slate-950/95 border border-white/10 backdrop-blur-2xl rounded-2xl p-5 w-[940px] max-w-[95vw] shadow-2xl flex flex-col select-none max-h-[95vh] overflow-y-auto">
+            <div className="mobile-modal bg-slate-950/95 border border-white/10 backdrop-blur-2xl rounded-2xl p-5 w-[940px] max-w-[calc(100vw-1.5rem)] shadow-2xl flex flex-col select-none max-h-[calc(100dvh-1.5rem)] overflow-y-auto overflow-x-hidden">
               {/* Header */}
               <div className="flex items-center justify-between mb-4 border-b border-white/5 pb-3">
                 <div className="flex flex-col items-start text-left">
@@ -3974,7 +4158,7 @@ export default function App() {
             </div>
           ) : showKeybindsMenu ? (
             /* HOTKEY ADJUSTMENTS SETTINGS PANEL */
-            <div className="bg-slate-950/95 border border-white/10 backdrop-blur-2xl rounded-2xl p-6 w-[640px] max-w-[95vw] shadow-2xl flex flex-col select-none max-h-[95vh] overflow-y-auto">
+            <div className="mobile-modal mobile-keybind-modal bg-slate-950/95 border border-white/10 backdrop-blur-2xl rounded-2xl p-6 w-[640px] max-w-[95vw] shadow-2xl flex flex-col select-none max-h-[95vh] overflow-y-auto">
               {/* Header */}
               <div className="flex items-center justify-between mb-5 border-b border-white/5 pb-4">
                 <div className="flex flex-col items-start text-left">
@@ -3987,12 +4171,19 @@ export default function App() {
               </div>
 
               {/* Keyboard visualizer */}
+              <CompactKeybindList
+                bindings={keybindings}
+                rebinding={rebindingAction}
+                onPick={(action) => setRebindingAction(prev => prev === action ? null : action)}
+              />
               <div className="pointer-events-auto mb-5">
-                <KeyboardVisualizer
-                  bindings={keybindings}
-                  rebinding={rebindingAction}
-                  onPick={(action) => setRebindingAction(prev => prev === action ? null : action)}
-                />
+                <div className="desktop-keyboard-visualizer">
+                  <KeyboardVisualizer
+                    bindings={keybindings}
+                    rebinding={rebindingAction}
+                    onPick={(action) => setRebindingAction(prev => prev === action ? null : action)}
+                  />
+                </div>
               </div>
 
               {/* Mouse settings */}
@@ -4120,7 +4311,7 @@ export default function App() {
             </div>
           ) : (
             /* LIGHTING CONTROLS SLIDERS CONTAINER */
-            <div className="bg-slate-950/90 border border-white/10 backdrop-blur-2xl rounded-2xl p-6 w-[400px] max-w-full shadow-2xl flex flex-col select-none">
+            <div className="mobile-modal bg-slate-950/90 border border-white/10 backdrop-blur-2xl rounded-2xl p-6 w-[400px] max-w-[calc(100vw-1.5rem)] max-h-[calc(100dvh-1.5rem)] shadow-2xl flex flex-col select-none overflow-y-auto overflow-x-hidden">
               {/* Header */}
               <div className="text-center mb-6 border-b border-white/5 pb-4">
                 <p className="text-[9px] text-amber-400 font-bold tracking-[0.3em] uppercase mb-1 font-display">ATMOSPHERE & CONFIG</p>
@@ -4233,7 +4424,7 @@ export default function App() {
       {showUiAdjustment && uiAdjusterPosition && (
         <div
           id="ui-adjustment-toolbar"
-          className="absolute z-50 bg-slate-950/90 border border-cyan-500/50 backdrop-blur-md rounded-xl p-4 shadow-2xl flex items-center gap-6 pointer-events-auto max-w-[90vw] select-none"
+          className="mobile-ui-adjust-toolbar absolute z-50 bg-slate-950/90 border border-cyan-500/50 backdrop-blur-md rounded-xl p-4 shadow-2xl flex items-center gap-6 pointer-events-auto max-w-[90vw] select-none"
           style={{
             left: `${uiAdjusterPosition.x}%`,
             top: `${uiAdjusterPosition.y}%`,
@@ -4278,7 +4469,7 @@ export default function App() {
       {/* DIRECT MULTIPLAYER INVITE POPUP MODAL */}
       {activeInvite && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/90 backdrop-blur-md p-4 select-none">
-          <div className="w-full max-w-sm bg-slate-900 border border-sky-500/35 rounded-2xl p-6 shadow-2xl text-center flex flex-col gap-5">
+          <div className="mobile-modal w-full max-w-sm bg-slate-900 border border-sky-500/35 rounded-2xl p-6 shadow-2xl text-center flex flex-col gap-5 max-h-[calc(100dvh-2rem)] overflow-y-auto">
             <div className="flex justify-center flex-col items-center gap-1">
               <span className="text-[10px] text-[#38bdf8] font-bold uppercase tracking-[0.2em] mb-1">Combat Invitation</span>
               <div className="w-12 h-12 rounded-full bg-sky-500/10 border border-sky-500/20 flex items-center justify-center text-sky-400 mb-2">
@@ -4327,7 +4518,7 @@ export default function App() {
       {/* BOT SETUP MENU MODAL OVERLAY */}
       {showBotSetupMenu && (
         <div className="fixed inset-0 z-[99] flex items-center justify-center bg-slate-950/90 backdrop-blur-xl p-4 select-none">
-          <div className="w-full max-w-2xl bg-slate-900/60 border border-blue-500/20 backdrop-blur-2xl rounded-2xl p-6 shadow-[0_0_60px_rgba(56,189,248,0.08)] flex flex-col gap-5 max-h-[95vh] overflow-y-auto">
+          <div className="mobile-modal w-full max-w-2xl bg-slate-900/60 border border-blue-500/20 backdrop-blur-2xl rounded-2xl p-6 shadow-[0_0_60px_rgba(56,189,248,0.08)] flex flex-col gap-5 max-h-[calc(100dvh-2rem)] overflow-y-auto overflow-x-hidden">
             {/* Header */}
             <div className="flex items-center justify-between border-b border-white/5 pb-4">
               <div className="flex flex-col">
@@ -4477,7 +4668,7 @@ export default function App() {
             </div>
 
             {/* Quick Presets */}
-            <div className="flex items-center gap-2">
+            <div className="mobile-bot-presets flex items-center gap-2">
               <span className="text-[10px] text-white/40 uppercase tracking-widest font-mono shrink-0">Presets:</span>
               <button
                 onClick={() => {
@@ -4514,7 +4705,7 @@ export default function App() {
             </div>
 
             {/* Action Buttons */}
-            <div className="flex gap-3 mt-1">
+            <div className="mobile-modal-actions flex gap-3 mt-1">
               {isPlaying ? (
                 <button
                   onClick={() => {

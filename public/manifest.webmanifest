@@ -1,0 +1,36 @@
+{
+  "name": "iBrawls",
+  "short_name": "iBrawls",
+  "description": "A mobile-ready voxel Grifball arena with solo training and multiplayer lobby support.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone", "minimal-ui"],
+  "orientation": "landscape-primary",
+  "background_color": "#050b1a",
+  "theme_color": "#050b1a",
+  "categories": ["games", "entertainment"],
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Solo Training",
+      "short_name": "Training",
+      "description": "Open iBrawls for local solo training.",
+      "url": "/?mode=solo",
+      "icons": [
+        {
+          "src": "/icon.svg",
+          "sizes": "any",
+          "type": "image/svg+xml"
+        }
+      ]
+    }
+  ]
+}

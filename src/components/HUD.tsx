@@ -70,7 +70,7 @@ export const DraggableHUDItem: React.FC<DraggableHUDItemProps> = ({
 
   if (!isAdjustmentMode) {
     return (
-      <div style={style} className="transition-all duration-300">
+      <div data-hud-id={id} style={style} className="transition-all duration-300">
         {children}
       </div>
     );
@@ -78,6 +78,7 @@ export const DraggableHUDItem: React.FC<DraggableHUDItemProps> = ({
 
   return (
     <div 
+      data-hud-id={id}
       style={style}
       className={`group select-none relative pointer-events-auto transition-colors p-2 rounded-xl border ${
         uiItem.locked 
@@ -248,8 +249,10 @@ export const HUD: React.FC<HUDProps> = ({
     };
   }, [draggingId]);
 
+  const usesMobileHud = deviceInfo.isMobile || forceMobileControls;
+
   return (
-    <div className={`absolute inset-0 z-10 select-none font-sans text-white ${isAdjustmentMode ? 'pointer-events-auto bg-slate-900/10' : 'pointer-events-none'}`}>
+    <div className={`absolute inset-0 z-10 select-none font-sans text-white ${usesMobileHud ? 'mobile-hud' : 'desktop-hud'} ${isAdjustmentMode ? 'hud-adjusting pointer-events-auto bg-slate-900/10' : 'pointer-events-none'}`}>
       
       {/* Grid editor overlay line effect */}
       {isAdjustmentMode && (
