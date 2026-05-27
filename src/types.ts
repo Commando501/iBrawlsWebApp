@@ -168,6 +168,7 @@ export interface GameStats {
   isMultiplayer?: boolean;
   multiplayerRole?: 'host' | 'client' | 'observer' | null;
   opponentConnected?: boolean;
+  fps?: number;
   ping?: number;
   showScoreboard?: boolean;
   playerKills?: number;

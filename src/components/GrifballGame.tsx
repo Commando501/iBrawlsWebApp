@@ -47,6 +47,11 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const nameplateRef = useRef<HTMLDivElement>(null);
   const requestRef = useRef<number | null>(null);
+  const fpsRef = useRef({
+    frameCount: 0,
+    lastSampleTime: 0,
+    value: 0,
+  });
 
   // Core Game State refs to avoid state-delay in the animation/render loop
   const stateRef = useRef<{
@@ -495,7 +500,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
                   if (data.killsHost !== undefined) s.playerKills = data.killsHost;
                   if (data.deathsHost !== undefined) s.playerDeaths = data.deathsHost;
                   if (data.killsClient !== undefined) s.enemyKills = data.killsClient;
-                  if (data.deathsClient !== undefined) s.playerDeaths = data.deathsClient;
+                  if (data.deathsClient !== undefined) s.enemyDeaths = data.deathsClient;
                   if (data.gameTime !== undefined) s.gameTime = data.gameTime;
                 } else if (data.senderRole === 'client') {
                   if (data.pos) s.clientPos.set(data.pos.x, data.pos.y, data.pos.z);
@@ -1861,6 +1866,18 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       let dt = (time - lastTime) / 1000;
       lastTime = time;
 
+      const fpsSample = fpsRef.current;
+      if (fpsSample.lastSampleTime === 0) {
+        fpsSample.lastSampleTime = time;
+      }
+      fpsSample.frameCount += 1;
+      const fpsElapsed = time - fpsSample.lastSampleTime;
+      if (fpsElapsed >= 500) {
+        fpsSample.value = Math.round((fpsSample.frameCount * 1000) / fpsElapsed);
+        fpsSample.frameCount = 0;
+        fpsSample.lastSampleTime = time;
+      }
+
       // Anti-jump lag spike limit
       if (dt > 0.1) dt = 0.1;
 
@@ -1932,6 +1949,51 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     };
   }, [isPlaying, isPaused, isMultiplayer, multiplayerRole, multiplayerSocket]);
 
+  const getPlayerSwordLockTarget = () => {
+    const s = stateRef.current;
+    if (s.playerHP <= 0) return null;
+
+    const eyePos = new THREE.Vector3(
+      s.playerPos.x,
+      1.65 - s.crouchAmount + s.playerPos.y,
+      s.playerPos.z
+    );
+    const cameraLookDir = new THREE.Vector3(0, 0, -1)
+      .applyAxisAngle(new THREE.Vector3(1, 0, 0), s.pitch)
+      .applyAxisAngle(new THREE.Vector3(0, 1, 0), s.yaw)
+      .normalize();
+    const maxDistance = s.settings.swordLungeDistance ?? 14.5;
+    const maxAngle = 0.12;
+    let bestTarget: { pos: THREE.Vector3; dist: number; angle: number } | null = null;
+
+    const considerTarget = (pos: THREE.Vector3) => {
+      const center = new THREE.Vector3(pos.x, pos.y + 0.825, pos.z);
+      const toTarget = center.clone().sub(eyePos);
+      const dist = toTarget.length();
+      if (dist <= 0.001 || dist > maxDistance) return;
+
+      const dot = cameraLookDir.dot(toTarget.normalize());
+      const angle = Math.acos(Math.max(-1.0, Math.min(1.0, dot)));
+      if (angle > maxAngle) return;
+
+      if (!bestTarget || angle < bestTarget.angle || (Math.abs(angle - bestTarget.angle) < 0.01 && dist < bestTarget.dist)) {
+        bestTarget = { pos: pos.clone(), dist, angle };
+      }
+    };
+
+    if ((!isMultiplayer || s.otherPlayers.size === 0) && s.aiHP > 0 && s.aiState !== 'RESPAWNING') {
+      considerTarget(s.aiPos);
+    }
+
+    s.otherPlayers.forEach((other) => {
+      if (other.hp > 0 && !other.isObserver && other.respawnTimer <= 0) {
+        considerTarget(new THREE.Vector3(other.pos.x, other.pos.y, other.pos.z));
+      }
+    });
+
+    return bestTarget;
+  };
+
   // TRIGGERS PLAYER SWING
   const triggerPlayerHammerSwing = () => {
     const s = stateRef.current;
@@ -1991,12 +2053,16 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
   const triggerPlayerSwordLunge = () => {
     const s = stateRef.current;
     if (s.playerDashRemaining > 0) return;
+    const lockTarget = getPlayerSwordLockTarget();
+    if (!lockTarget) return;
+    const lungeDir = lockTarget.pos.clone().sub(s.playerPos);
+    lungeDir.y = 0;
+    if (lungeDir.lengthSq() <= 0.0001) return;
+
     s.isLunging = true;
     s.lungeTimer = 0;
     s.lungeStartPos.copy(s.playerPos);
-    s.lungeTargetDir.copy(s.aiPos).sub(s.playerPos);
-    s.lungeTargetDir.y = 0;
-    s.lungeTargetDir.normalize();
+    s.lungeTargetDir.copy(lungeDir).normalize();
     s.pSwordState = 'ready'; // reset weapon timing states during lunge glide
     s.lastPlayerSwordAttackTime = Date.now();
     sfx.playDash(); // play speed dash trail sound
@@ -2603,38 +2669,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     }
 
     // 1. DYNAMIC WEAPON TARGET HOVER DETECTION (White to Red Lock-on)
-    if (s.playerHP > 0 && s.aiHP > 0 && s.aiState !== 'RESPAWNING') {
-      const eyePos = new THREE.Vector3(
-        s.playerPos.x,
-        1.65 - s.crouchAmount + s.playerPos.y,
-        s.playerPos.z
-      );
-      const enemyCenter = new THREE.Vector3(s.aiPos.x, s.aiPos.y + 0.825, s.aiPos.z);
-      const toEnemy = enemyCenter.clone().sub(eyePos);
-      const dist = toEnemy.length();
-      
-      if (dist <= (s.settings.swordLungeDistance ?? 14.5)) {
-        const toEnemyDir = toEnemy.clone().normalize();
-        
-        const cameraLookDir = new THREE.Vector3(0, 0, -1)
-          .applyAxisAngle(new THREE.Vector3(1, 0, 0), s.pitch)
-          .applyAxisAngle(new THREE.Vector3(0, 1, 0), s.yaw)
-          .normalize();
-          
-        const dot = cameraLookDir.dot(toEnemyDir);
-        const angle = Math.acos(Math.max(-1.0, Math.min(1.0, dot)));
-        
-        if (angle < 0.12) {
-          s.crosshairColor = 'red';
-        } else {
-          s.crosshairColor = 'white';
-        }
-      } else {
-        s.crosshairColor = 'white';
-      }
-    } else {
-      s.crosshairColor = 'white';
-    }
+    s.crosshairColor = getPlayerSwordLockTarget() ? 'red' : 'white';
 
     // 2. KATAR SWORD MULTI-ATTACK & GRAVITY HAMMER ANIMATION STATE MACHINE
     if (s.playerHP <= 0) {
@@ -3447,9 +3482,15 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
           botMesh.visible = true;
 
-          // Find closest target (either local player or other bots or main AI)
-          let closestTargetPos = s.playerPos;
-          let closestDist = bot.pos.distanceTo(s.playerPos);
+          // Find closest living target (either local player, other bots, or main AI).
+          // Dead/respawning players must not remain as AI targets at their last position.
+          let closestTargetPos: THREE.Vector3 | null = null;
+          let closestDist = Infinity;
+
+          if (s.playerHP > 0 && s.playerRespawnTimer <= 0) {
+            closestTargetPos = s.playerPos;
+            closestDist = bot.pos.distanceTo(s.playerPos);
+          }
 
           if (s.aiHP > 0 && s.aiState !== 'RESPAWNING') {
             const distToMainAI = bot.pos.distanceTo(s.aiPos);
@@ -3468,6 +3509,14 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
               }
             }
           });
+
+          if (!closestTargetPos) {
+            bot.vel.set(0, 0, 0);
+            bot.weaponState = 'ready';
+            bot.weaponTimer = 0;
+            botMesh.position.copy(bot.pos);
+            return;
+          }
 
           // Look at closest target
           const toTarget = closestTargetPos.clone().sub(bot.pos);
@@ -3533,9 +3582,9 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
                 if (s.playerHP <= 0) {
                   s.playerHP = 0;
                   s.playerRespawnTimer = 3.0;
-                  s.scoreEnemy += 1;
                   s.playerDeaths += 1;
-                  bot.kills += 1;
+                  bot.score = (bot.score || 0) + 1;
+                  bot.kills = (bot.kills || 0) + 1;
                   sfx.playDeath();
                   const newDeath = {
                     id: Math.random().toString(36).substring(2, 9),
@@ -3556,7 +3605,9 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
                   s.aiHP = 0;
                   s.aiState = 'RESPAWNING';
                   s.enemyRespawnTimer = 3.0;
-                  bot.kills += 1;
+                  bot.score = (bot.score || 0) + 1;
+                  bot.kills = (bot.kills || 0) + 1;
+                  s.enemyDeaths += 1;
                   sfx.playDeath();
                   const newDeath = {
                     id: Math.random().toString(36).substring(2, 9),
@@ -3577,8 +3628,9 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
                   if (other.hp <= 0) {
                     other.hp = 0;
                     other.respawnTimer = 3.0;
-                    bot.kills += 1;
-                    other.deaths += 1;
+                    bot.score = (bot.score || 0) + 1;
+                    bot.kills = (bot.kills || 0) + 1;
+                    other.deaths = (other.deaths || 0) + 1;
                     sfx.playDeath();
                     const newDeath = {
                       id: Math.random().toString(36).substring(2, 9),
@@ -3626,6 +3678,29 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         sfx.playRespawn();
 
       }
+      return;
+    }
+
+    if (s.playerHP <= 0 || s.playerRespawnTimer > 0) {
+      if (s.aiInvulnerabilityTimer > 0) {
+        s.aiInvulnerabilityTimer = Math.max(0, s.aiInvulnerabilityTimer - dt);
+      }
+
+      s.aiVel.x = 0;
+      s.aiVel.z = 0;
+      s.aiDashRemaining = 0;
+      s.aiHammerJumpWindowTimer = 0;
+      s.aiHammerJumpPlanned = false;
+      s.aiHammerJumpType = undefined;
+      s.aiIsCrouching = false;
+      s.aiWeaponState = 'ready';
+      s.aiWeaponTimer = 0;
+      s.aiState = 'COOLDOWN';
+      s.aiTimer = 0.4;
+
+      enemyMesh.scale.set(1, 1, 1);
+      enemyMesh.position.copy(s.aiPos);
+      enemyMesh.rotation.y = s.aiYaw;
       return;
     }
 
@@ -4741,6 +4816,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       isMultiplayer: isMultiplayer,
       multiplayerRole: multiplayerRole,
       opponentConnected: isMultiplayer && multiplayerSocket?.readyState === WebSocket.OPEN,
+      fps: fpsRef.current.value,
       showScoreboard: s.showScoreboard,
       isObserverMode: s.isObserverMode,
       observerCamMode: s.observerCamMode,

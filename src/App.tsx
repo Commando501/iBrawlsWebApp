@@ -8,7 +8,7 @@ import { GameStats, UniversalSettings, UiElementPos, Keybindings, DEFAULT_KEYBIN
 import { GrifballGame } from './components/GrifballGame';
 import { HUD } from './components/HUD';
 import { sfx } from './components/AudioEngine';
-import { RotateCcw, Check } from 'lucide-react';
+import { Move, RotateCcw, Check } from 'lucide-react';
 import { ChatOverlay, ChatMessage } from './components/ChatOverlay';
 import { CharacterPreview } from './components/CharacterPreview';
 
@@ -251,8 +251,9 @@ function KeyboardVisualizer({ bindings, rebinding, onPick }: KbVisualizerProps) 
     if (typeof key === 'string') boundLookup[key] = action as keyof Keybindings;
   }
 
-  const KS = 24;
-  const KG = 3;
+  const KS = 32;
+  const KG = 4;
+  const FKH = 28;
 
   const mkKey = (val: string | null, label: string, w: number = KS, h: number = KS, locked: boolean = false) => {
     const action = val ? boundLookup[val] : undefined;
@@ -265,19 +266,19 @@ function KeyboardVisualizer({ bindings, rebinding, onPick }: KbVisualizerProps) 
         disabled={!action || locked}
         style={{
           width: w, height: h, minWidth: w, minHeight: h, flexShrink: 0,
-          borderRadius: 4, padding: 0, cursor: (action && !locked) ? 'pointer' : 'default',
+          borderRadius: 5, padding: 0, cursor: (action && !locked) ? 'pointer' : 'default',
           display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column' as const,
-          fontFamily: "'JetBrains Mono', monospace", fontWeight: 800, fontSize: 8,
-          letterSpacing: '0.03em', transition: 'all 150ms',
+          fontFamily: "'JetBrains Mono', monospace", fontWeight: 800, fontSize: 10,
+          lineHeight: 1, letterSpacing: '0.02em', transition: 'all 150ms',
           background: isActive ? 'rgba(245,158,11,0.30)' : isBound ? 'rgba(34,211,238,0.18)' : locked ? 'rgba(255,255,255,0.02)' : 'rgba(15,23,42,0.55)',
           border: isActive ? '1px solid rgba(245,158,11,0.7)' : isBound ? '1px solid rgba(34,211,238,0.55)' : locked ? '1px solid rgba(255,255,255,0.04)' : '1px solid rgba(255,255,255,0.08)',
           color: isActive ? '#fbbf24' : isBound ? '#22d3ee' : locked ? 'rgba(255,255,255,0.14)' : 'rgba(255,255,255,0.38)',
           boxShadow: isBound ? '0 0 5px rgba(34,211,238,0.18)' : 'none',
         }}
       >
-        <span>{label}</span>
+        <span style={{ lineHeight: 1 }}>{label}</span>
         {subLbl && (
-          <span style={{ fontSize: 6, fontWeight: 700, opacity: 0.9, letterSpacing: '0.06em', marginTop: 1, color: isActive ? '#fde68a' : '#67e8f9' }}>
+          <span style={{ fontSize: 8, fontWeight: 800, opacity: 0.95, letterSpacing: '0.03em', marginTop: 3, lineHeight: 1, color: isActive ? '#fde68a' : '#67e8f9' }}>
             {subLbl}
           </span>
         )}
@@ -303,20 +304,20 @@ function KeyboardVisualizer({ bindings, rebinding, onPick }: KbVisualizerProps) 
         </span>
       </div>
 
-      <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start', flexWrap: 'wrap' as const }}>
+      <div style={{ display: 'flex', gap: 18, alignItems: 'flex-start', flexWrap: 'wrap' as const }}>
 
         {/* ── Main keyboard block ── */}
         <div style={{ display: 'flex', flexDirection: 'column' as const, gap: KG }}>
 
           {/* Function row */}
           {R(<>
-            {mkKey(null, 'Esc', 32, KS, true)}
+            {mkKey(null, 'Esc', 42, KS, true)}
+            <div style={{ width: 9 }} />
+            {mkKey('f1', 'F1', KS, FKH)} {mkKey('f2', 'F2', KS, FKH)} {mkKey('f3', 'F3', KS, FKH)} {mkKey('f4', 'F4', KS, FKH)}
             <div style={{ width: 7 }} />
-            {mkKey('f1', 'F1', KS, 21)} {mkKey('f2', 'F2', KS, 21)} {mkKey('f3', 'F3', KS, 21)} {mkKey('f4', 'F4', KS, 21)}
-            <div style={{ width: 5 }} />
-            {mkKey('f5', 'F5', KS, 21)} {mkKey('f6', 'F6', KS, 21)} {mkKey('f7', 'F7', KS, 21)} {mkKey('f8', 'F8', KS, 21)}
-            <div style={{ width: 5 }} />
-            {mkKey('f9', 'F9', KS, 21)} {mkKey('f10', 'F10', KS, 21)} {mkKey('f11', 'F11', KS, 21)} {mkKey('f12', 'F12', KS, 21)}
+            {mkKey('f5', 'F5', KS, FKH)} {mkKey('f6', 'F6', KS, FKH)} {mkKey('f7', 'F7', KS, FKH)} {mkKey('f8', 'F8', KS, FKH)}
+            <div style={{ width: 7 }} />
+            {mkKey('f9', 'F9', KS, FKH)} {mkKey('f10', 'F10', KS, FKH)} {mkKey('f11', 'F11', KS, FKH)} {mkKey('f12', 'F12', KS, FKH)}
           </>)}
 
           {/* Number row */}
@@ -329,16 +330,16 @@ function KeyboardVisualizer({ bindings, rebinding, onPick }: KbVisualizerProps) 
 
           {/* QWERTY row */}
           {R(<>
-            {mkKey(null, 'Tab', 38, KS, true)}
+            {mkKey(null, 'Tab', 50, KS, true)}
             {mkKey('q', 'Q')} {mkKey('w', 'W')} {mkKey('e', 'E')} {mkKey('r', 'R')} {mkKey('t', 'T')}
             {mkKey('y', 'Y')} {mkKey('u', 'U')} {mkKey('i', 'I')} {mkKey('o', 'O')} {mkKey('p', 'P')}
             {mkKey('[', '[')} {mkKey(']', ']')}
-            {mkKey('\\', '\\', 38, KS)}
+            {mkKey('\\', '\\', 50, KS)}
           </>)}
 
           {/* ASDF row */}
           {R(<>
-            {mkKey(null, 'Caps', 44, KS, true)}
+            {mkKey(null, 'Caps', 59, KS, true)}
             {mkKey('a', 'A')} {mkKey('s', 'S')} {mkKey('d', 'D')} {mkKey('f', 'F')} {mkKey('g', 'G')}
             {mkKey('h', 'H')} {mkKey('j', 'J')} {mkKey('k', 'K')} {mkKey('l', 'L')}
             {mkKey(';', ';')} {mkKey("'", "'")}
@@ -355,19 +356,19 @@ function KeyboardVisualizer({ bindings, rebinding, onPick }: KbVisualizerProps) 
 
           {/* Bottom row */}
           {R(<>
-            {mkKey(null, 'Ctrl', 33, KS, true)}
+            {mkKey(null, 'Ctrl', 44, KS, true)}
             {mkKey(null, '❖', 28, KS, true)}
-            {mkKey(null, 'Alt', 33, KS, true)}
-            {mkKey(' ', 'Space', 160, KS)}
-            {mkKey(null, 'Alt', 33, KS, true)}
+            {mkKey(null, 'Alt', 44, KS, true)}
+            {mkKey(' ', 'Space', 214, KS)}
+            {mkKey(null, 'Alt', 44, KS, true)}
             {mkKey(null, '☰', 28, KS, true)}
-            {mkKey(null, 'Ctrl', 33, KS, true)}
+            {mkKey(null, 'Ctrl', 44, KS, true)}
           </>)}
         </div>
 
         {/* ── Nav cluster ── */}
         <div style={{ display: 'flex', flexDirection: 'column' as const, gap: KG }}>
-          <div style={{ height: 21 + KG }} />
+          <div style={{ height: FKH + KG }} />
           {R(<>{mkKey('insert', 'Ins', KS)} {mkKey('home', 'Hm', KS)} {mkKey('pageup', 'PgU', KS)}</>)}
           {R(<>{mkKey('delete', 'Del', KS)} {mkKey('end', 'End', KS)} {mkKey('pagedown', 'PgD', KS)}</>)}
           <div style={{ height: KS + KG }} />
@@ -377,7 +378,7 @@ function KeyboardVisualizer({ bindings, rebinding, onPick }: KbVisualizerProps) 
 
         {/* ── Numpad (CSS grid for tall + and Enter) ── */}
         <div style={{ display: 'flex', flexDirection: 'column' as const, gap: KG }}>
-          <div style={{ height: 21 + KG }} />
+          <div style={{ height: FKH + KG }} />
           <div style={{ display: 'grid', gridTemplateColumns: `repeat(4, ${KS}px)`, gridTemplateRows: `repeat(5, ${KS}px)`, gap: KG }}>
             {mkKey('numlock', 'NmLk')}
             {mkKey('/', '/')}
@@ -406,9 +407,9 @@ function KeyboardVisualizer({ bindings, rebinding, onPick }: KbVisualizerProps) 
         </div>
 
         {/* ── Mouse ── */}
-        <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 8, alignItems: 'center' }}>
-          <div style={{ height: 21 + KG }} />
-          <svg viewBox="0 0 80 110" style={{ width: 50, height: 70 }}>
+        <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 10, alignItems: 'center' }}>
+          <div style={{ height: FKH + KG }} />
+          <svg viewBox="0 0 80 110" style={{ width: 68, height: 94 }}>
             <path d="M 16 22 Q 16 8, 40 8 Q 64 8, 64 22 L 64 86 Q 64 102, 40 102 Q 16 102, 16 86 Z" fill="rgba(15,23,42,0.65)" stroke="rgba(255,255,255,0.20)" strokeWidth="1.5"/>
             <line x1="40" y1="8" x2="40" y2="44" stroke="rgba(255,255,255,0.15)" strokeWidth="1"/>
             <path d="M 16 22 Q 16 8, 40 8 L 40 44 L 16 44 Z"
@@ -423,26 +424,26 @@ function KeyboardVisualizer({ bindings, rebinding, onPick }: KbVisualizerProps) 
             <line x1="36" y1="28" x2="44" y2="28" stroke="rgba(255,255,255,0.3)" strokeWidth="0.5"/>
             <line x1="36" y1="31" x2="44" y2="31" stroke="rgba(255,255,255,0.3)" strokeWidth="0.5"/>
           </svg>
-          <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 3 }}>
+          <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 4 }}>
             {([
               { label: 'LMB', sub: 'ATTACK',  bk: 'attack' as keyof Keybindings,    isBound: attackBoundToLmb },
               { label: 'RMB', sub: 'ALT-ATK', bk: 'altAttack' as keyof Keybindings, isBound: altAttackBoundToRmb },
             ] as const).map(({ label, sub, bk, isBound }) => (
               <div key={bk} onClick={() => onPick(bk)} style={{
-                cursor: 'pointer', padding: '4px 7px', borderRadius: 4,
-                display: 'flex', flexDirection: 'column' as const, gap: 1,
+                cursor: 'pointer', padding: '6px 10px', borderRadius: 5,
+                display: 'flex', flexDirection: 'column' as const, gap: 2,
                 background: rebinding === bk ? 'rgba(245,158,11,0.20)' : isBound ? 'rgba(34,211,238,0.10)' : 'rgba(15,23,42,0.55)',
                 border: rebinding === bk ? '1px solid rgba(245,158,11,0.5)' : isBound ? '1px solid rgba(34,211,238,0.30)' : '1px solid rgba(255,255,255,0.08)',
-                fontFamily: "'JetBrains Mono', monospace", fontSize: 9, fontWeight: 800,
-                color: rebinding === bk ? '#fbbf24' : isBound ? '#22d3ee' : 'rgba(255,255,255,0.38)', letterSpacing: '0.1em',
+                fontFamily: "'JetBrains Mono', monospace", fontSize: 11, fontWeight: 800,
+                color: rebinding === bk ? '#fbbf24' : isBound ? '#22d3ee' : 'rgba(255,255,255,0.38)', letterSpacing: '0.06em', lineHeight: 1,
               }}>
-                <span style={{ fontSize: 10 }}>{label}</span>
-                <span style={{ fontSize: 7, opacity: 0.7 }}>{sub}</span>
+                <span style={{ fontSize: 12 }}>{label}</span>
+                <span style={{ fontSize: 9, opacity: 0.78 }}>{sub}</span>
               </div>
             ))}
-            <div style={{ padding: '4px 7px', borderRadius: 4, background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', fontFamily: "'JetBrains Mono', monospace", fontSize: 9, fontWeight: 800, color: 'rgba(255,255,255,0.25)', letterSpacing: '0.1em' }}>
-              <span style={{ fontSize: 10, display: 'block', color: 'rgba(255,255,255,0.35)' }}>WHEEL</span>
-              <span style={{ fontSize: 7, opacity: 0.7 }}>SWAP WEAP</span>
+            <div style={{ padding: '6px 10px', borderRadius: 5, background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', fontFamily: "'JetBrains Mono', monospace", fontSize: 11, fontWeight: 800, color: 'rgba(255,255,255,0.25)', letterSpacing: '0.06em', lineHeight: 1 }}>
+              <span style={{ fontSize: 12, display: 'block', color: 'rgba(255,255,255,0.35)' }}>WHEEL</span>
+              <span style={{ fontSize: 9, opacity: 0.72, display: 'block', marginTop: 3 }}>SWAP WEAP</span>
             </div>
           </div>
         </div>
@@ -854,12 +855,14 @@ export default function App() {
     { id: 'objective', name: 'Objective Block', x: 3, y: 3, locked: true },
     { id: 'scoreboard', name: 'Scoreboard', x: 50, y: 3, locked: true },
     { id: 'arenaStatus', name: 'Arena Status & Controls', x: 97, y: 3, locked: true },
+    { id: 'technicalSpecs', name: 'Technical Specs', x: 97, y: 19, locked: true },
     { id: 'eliminationFeed', name: 'Elimination Feed', x: 3, y: 45, locked: true },
     { id: 'radar', name: 'Tactical Radar', x: 3, y: 65, locked: true },
     { id: 'weaponDash', name: 'Gear & Thrusters', x: 3, y: 82, locked: true },
     { id: 'vitality', name: 'Vitality Indicator', x: 97, y: 90, locked: true },
     { id: 'crosshair', name: 'Reticle / Target Dot', x: 50, y: 50, locked: true },
     { id: 'spectatorCard', name: 'Spectator Controller', x: 50, y: 88, locked: true },
+    { id: 'hudAdjuster', name: 'HUD Canvas Adjuster', x: 50, y: 3, locked: false },
   ];
 
   const [uiPositions, setUiPositions] = useState<UiElementPos[]>(() => {
@@ -900,6 +903,55 @@ export default function App() {
       console.error(e);
     }
   };
+
+  const [isDraggingUiAdjuster, setIsDraggingUiAdjuster] = useState<boolean>(false);
+  const defaultUiAdjusterPosition = DEFAULT_UI_POSITIONS.find((position) => position.id === 'hudAdjuster');
+  const uiAdjusterPosition =
+    uiPositions.find((position) => position.id === 'hudAdjuster') ??
+    defaultUiAdjusterPosition;
+
+  const handleUiAdjusterMouseDown = (e: React.MouseEvent) => {
+    setIsDraggingUiAdjuster(true);
+    e.stopPropagation();
+    e.preventDefault();
+  };
+
+  useEffect(() => {
+    if (!isDraggingUiAdjuster) return;
+
+    const handleWindowMouseMove = (e: MouseEvent) => {
+      const pctX = (e.clientX / window.innerWidth) * 100;
+      const pctY = (e.clientY / window.innerHeight) * 100;
+      const clampedX = Math.max(5, Math.min(95, pctX));
+      const clampedY = Math.max(2, Math.min(92, pctY));
+      if (!defaultUiAdjusterPosition) return;
+
+      const nextPositions = uiPositions.some((position) => position.id === 'hudAdjuster')
+        ? uiPositions.map((position) =>
+            position.id === 'hudAdjuster'
+              ? { ...position, x: clampedX, y: clampedY }
+              : position
+          )
+        : [
+            ...uiPositions,
+            { ...defaultUiAdjusterPosition, x: clampedX, y: clampedY },
+          ];
+
+      handleUpdateUiPositions(nextPositions);
+    };
+
+    const handleWindowMouseUp = () => {
+      setIsDraggingUiAdjuster(false);
+    };
+
+    window.addEventListener('mousemove', handleWindowMouseMove);
+    window.addEventListener('mouseup', handleWindowMouseUp);
+
+    return () => {
+      window.removeEventListener('mousemove', handleWindowMouseMove);
+      window.removeEventListener('mouseup', handleWindowMouseUp);
+    };
+  }, [isDraggingUiAdjuster, uiPositions]);
 
 
   // Configuration settings for simulated health, speed percentage, attack offsets and impact sizes
@@ -987,6 +1039,8 @@ export default function App() {
     enemyIsCrouchMoving: false,
     activeWeapon: 'hammer',
     crosshairColor: 'white',
+    fps: 0,
+    ping,
   });
 
   // Fetch client IP on initialization and generate a quick room custom ID
@@ -1596,6 +1650,7 @@ export default function App() {
       isMultiplayer,
       multiplayerRole,
       opponentConnected: isMultiplayer && !!multiplayerSocket,
+      ping,
       playerClientId: clientId || 'Player',
       opponentClientId: opponentClientId || 'Opponent'
     });
@@ -3769,11 +3824,27 @@ export default function App() {
       )}
 
       {/* FLOATING ACTION TOOLBAR DURING UI CUSTOMIZATION MODE */}
-      {showUiAdjustment && (
-        <div className="absolute top-6 left-1/2 -track-x-1/2 -translate-x-1/2 z-50 bg-slate-950/90 border border-cyan-500/50 backdrop-blur-md rounded-xl p-4 shadow-2xl flex items-center gap-6 pointer-events-auto max-w-[90vw] select-none">
-          <div className="flex flex-col">
-            <h4 className="text-xs font-sans font-black tracking-widest text-cyan-400 uppercase">HUD Canvas Adjuster</h4>
-            <p className="text-[10px] text-white/55 font-medium">Click UNLOCKED on an element to drag it. Click LOCK/UNLOCK to toggle attributes.</p>
+      {showUiAdjustment && uiAdjusterPosition && (
+        <div
+          id="ui-adjustment-toolbar"
+          className="absolute z-50 bg-slate-950/90 border border-cyan-500/50 backdrop-blur-md rounded-xl p-4 shadow-2xl flex items-center gap-6 pointer-events-auto max-w-[90vw] select-none"
+          style={{
+            left: `${uiAdjusterPosition.x}%`,
+            top: `${uiAdjusterPosition.y}%`,
+            transform: 'translate(-50%, 0)',
+          }}
+        >
+          <div
+            id="ui-adjustment-drag-handle"
+            className="flex items-start gap-3 cursor-move"
+            onMouseDown={handleUiAdjusterMouseDown}
+            title="Move HUD Canvas Adjuster"
+          >
+            <Move className="w-4 h-4 text-cyan-400 mt-0.5 shrink-0" />
+            <div className="flex flex-col">
+              <h4 className="text-xs font-sans font-black tracking-widest text-cyan-400 uppercase">HUD Canvas Adjuster</h4>
+              <p className="text-[10px] text-white/55 font-medium">Click UNLOCKED on an element to drag it. Click LOCK/UNLOCK to toggle attributes.</p>
+            </div>
           </div>
           
           <div className="flex items-center gap-2">
