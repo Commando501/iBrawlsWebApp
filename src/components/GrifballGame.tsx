@@ -2432,14 +2432,16 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     scene.background = new THREE.Color(skyColorString); 
     scene.fog = new THREE.FogExp2(skyColorString, 0.025);
 
-    const aspect = containerRef.current.clientWidth / containerRef.current.clientHeight;
+    const width = containerRef.current.clientWidth || window.innerWidth;
+    const height = containerRef.current.clientHeight || window.innerHeight;
+    const aspect = width / height;
     const camera = new THREE.PerspectiveCamera(75, aspect, 0.1, 100);
     threeRef.current.camera = camera;
     scene.add(camera);
 
     // Renderer
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
-    renderer.setSize(containerRef.current.clientWidth, containerRef.current.clientHeight);
+    renderer.setSize(width, height);
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -3115,8 +3117,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
     const handleResize = () => {
       if (!containerRef.current || !renderer || !camera) return;
-      const w = containerRef.current.clientWidth;
-      const h = containerRef.current.clientHeight;
+      const w = containerRef.current.clientWidth || window.innerWidth;
+      const h = containerRef.current.clientHeight || window.innerHeight;
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
       renderer.setSize(w, h);
