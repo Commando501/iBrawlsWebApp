@@ -4906,11 +4906,11 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         return s.pSwordState === 'recovering' || s.pSwordState === 'slashing' || s.isLunging;
       }
     } else if (target.id === 'main_ai') {
-      return s.aiWeaponState === 'recovering' || s.aiWeaponState === 'swing_up' || s.aiWeaponState === 'swing_down' || s.aiState === 'LUNGING';
+      return s.aiWeaponState === 'recovering' || s.aiWeaponState === 'swing_up' || s.aiWeaponState === 'swing_down' || s.aiState === 'LUNGING' || (s.aiState === 'COOLDOWN' && s.aiTimer > 0);
     } else {
       const other = s.otherPlayers.get(target.id);
       if (other) {
-        return other.weaponState === 'recovering' || other.weaponState === 'swing_up' || other.weaponState === 'swing_down' || other.isLunging;
+        return other.weaponState === 'recovering' || other.weaponState === 'swing_up' || other.weaponState === 'swing_down' || other.isLunging || (other.aiState === 'COOLDOWN' && (other.aiTimer || 0) > 0);
       }
     }
     return false;
@@ -4965,7 +4965,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         maxHp: s.aiMaxHP,
         invulnerabilityTimer: s.aiInvulnerabilityTimer,
         activeWeapon: s.aiActiveWeapon,
-        weaponState: s.aiWeaponState,
+        weaponState: s.aiState === 'COOLDOWN' && s.aiTimer > 0 ? 'recovering' : s.aiWeaponState,
         isLunging: s.aiState === 'LUNGING',
         vel: s.aiVel,
         isCrouching: s.aiIsCrouching,
@@ -4984,7 +4984,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
             maxHp: other.maxHp,
             invulnerabilityTimer: other.invulnerabilityTimer || 0,
             activeWeapon: other.activeWeapon,
-            weaponState: other.weaponState || 'ready',
+            weaponState: other.aiState === 'COOLDOWN' && (other.aiTimer || 0) > 0 ? 'recovering' : (other.weaponState || 'ready'),
             isLunging: other.isLunging || other.weaponState === 'swing_up' || other.weaponState === 'swing_down',
             vel: new THREE.Vector3(other.vel.x, other.vel.y, other.vel.z),
             isCrouching: other.isCrouching || false,
@@ -5375,6 +5375,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
     const targetIsProtected = target.invulnerabilityTimer > 0;
     const targetIsLunging = target.isLunging;
+    const canStartWeaponAction = state !== 'COOLDOWN' || timer <= 0;
 
     const isTacticalState = state === 'SIDE_STEPPING' || state === 'COOLDOWN';
     const crouchCycle = (swayTimer % 4.0) < 1.5;
@@ -5414,7 +5415,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         isEvadingLunge = true;
       } 
       // Hammer Jump evasion
-      else if (activeWeapon === 'hammer' && weaponState === 'ready' && Math.random() < 0.70 * defensiveEvasionMult) {
+      else if (canStartWeaponAction && activeWeapon === 'hammer' && weaponState === 'ready' && Math.random() < 0.70 * defensiveEvasionMult) {
         if (isMainAI) {
           s.aiHammerJumpPlanned = true;
           s.aiHammerJumpType = 'defensive';
@@ -5450,7 +5451,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       }
 
       // Timing-based counter swing (Bulltrue)
-      if (activeWeapon === 'hammer' && weaponState === 'ready') {
+      if (canStartWeaponAction && activeWeapon === 'hammer' && weaponState === 'ready') {
         const lungeSpeed = s.settings.swordLungeSpeed ?? 24.0;
         const hammerWindup = 0.32;
         const triggerDist = lungeSpeed * hammerWindup + (s.settings.attackRadius * 0.85);
@@ -5488,6 +5489,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       targetAirborne &&
       difficulty !== 'easy' &&
       movementComplexity >= 50 &&
+      canStartWeaponAction &&
       activeWeapon === 'hammer' &&
       weaponState === 'ready' &&
       target.hp > 0 &&
@@ -5553,9 +5555,10 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       const dist = getCombatBodyCenter(pos, botState!.isCrouching).distanceTo(getCombatBodyCenter(target.pos, target.isCrouching));
       if (target.hp <= 0) {
         botState!.isLunging = false;
-        botState!.aiState = 'COOLDOWN';
-        botState!.aiTimer = (s.settings.swordLungeReload ?? 1.2) * cooldownMult;
         botState!.weaponState = 'ready';
+        state = 'COOLDOWN';
+        timer = (s.settings.swordLungeReload ?? 1.2) * cooldownMult;
+        weaponState = 'ready';
       } else if (dist <= 1.5) {
         const swordThreshold = s.settings.swordTradeWindow ?? 350;
         
@@ -5585,9 +5588,10 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         if (target.id === 'player') {
           s.playerHP -= 1;
           botState!.isLunging = false;
-          botState!.aiState = 'COOLDOWN';
-          botState!.aiTimer = (s.settings.swordLungeReload ?? 1.2) * cooldownMult;
           botState!.weaponState = 'ready';
+          state = 'COOLDOWN';
+          timer = (s.settings.swordLungeReload ?? 1.2) * cooldownMult;
+          weaponState = 'ready';
           sfx.playExplosion();
           spawnVoxelShockwaveParticles(s.playerPos, '#ef4444');
 
@@ -5609,9 +5613,10 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         } else if (target.id === 'main_ai') {
           s.aiHP -= 1;
           botState!.isLunging = false;
-          botState!.aiState = 'COOLDOWN';
-          botState!.aiTimer = (s.settings.swordLungeReload ?? 1.2) * cooldownMult;
           botState!.weaponState = 'ready';
+          state = 'COOLDOWN';
+          timer = (s.settings.swordLungeReload ?? 1.2) * cooldownMult;
+          weaponState = 'ready';
           sfx.playExplosion();
           spawnVoxelShockwaveParticles(s.aiPos, '#ef4444');
 
@@ -5629,9 +5634,10 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
           if (oBot) {
             oBot.hp -= 1;
             botState!.isLunging = false;
-            botState!.aiState = 'COOLDOWN';
-            botState!.aiTimer = (s.settings.swordLungeReload ?? 1.2) * cooldownMult;
             botState!.weaponState = 'ready';
+            state = 'COOLDOWN';
+            timer = (s.settings.swordLungeReload ?? 1.2) * cooldownMult;
+            weaponState = 'ready';
             sfx.playExplosion();
             spawnVoxelShockwaveParticles(oBot.pos, '#ef4444');
 
@@ -5651,9 +5657,10 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       const startDist = pos.distanceTo(new THREE.Vector3(botState!.lungeStartPos!.x, botState!.lungeStartPos!.y, botState!.lungeStartPos!.z));
       if (startDist > 16.0 || botState!.lungeTimer > 0.8) {
         botState!.isLunging = false;
-        botState!.aiState = 'COOLDOWN';
-        botState!.aiTimer = (s.settings.swordLungeReload ?? 1.2) * cooldownMult;
         botState!.weaponState = 'ready';
+        state = 'COOLDOWN';
+        timer = (s.settings.swordLungeReload ?? 1.2) * cooldownMult;
+        weaponState = 'ready';
         if (pos.y > 0.01) {
           botState!.vel.y = Math.min(botState!.vel.y, 0);
         }
@@ -5742,7 +5749,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       const maxLungeRange = Math.min(18.0, s.settings.swordLungeDistance ?? 14.5);
       const lungeDistanceToTarget = targetAirborne ? combatDistanceToTarget : distanceToTarget;
       const hasVerticalLungeLine = !targetAirborne || movementComplexity >= 60;
-      if (activeWeapon === 'sword' && weaponState === 'ready' && hasVerticalLungeLine && lungeDistanceToTarget >= minLungeRange && lungeDistanceToTarget <= maxLungeRange && target.hp > 0 && !targetIsProtected) {
+      if (canStartWeaponAction && activeWeapon === 'sword' && weaponState === 'ready' && hasVerticalLungeLine && lungeDistanceToTarget >= minLungeRange && lungeDistanceToTarget <= maxLungeRange && target.hp > 0 && !targetIsProtected) {
         const lungeChance = (targetAirborne ? 0.08 + (anticipationFactor * 0.18) : 0.04 + (anticipationFactor * 0.08)) * aggressiveLungeMult;
         if (Math.random() < lungeChance) {
           const lungeDir = targetBodyCenter.clone().sub(pos);
