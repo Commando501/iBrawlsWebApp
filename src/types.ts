@@ -93,7 +93,8 @@ export type AIBehaviorState =
   | 'CHARGE_ATTACK' // AI rushes in for swing
   | 'LUNGING' // AI is executing a high velocity sword lunge
   | 'COOLDOWN' // AI retreats or stands still while recovering
-  | 'RESPAWNING'; // AI is dead and respawning
+  | 'RESPAWNING' // AI is dead and respawning
+  | 'SPAWN_GUARDING'; // AI is guarding and spacing an anticipated spawn
 
 export interface Particle {
   position: [number, number, number];
@@ -111,7 +112,6 @@ export interface DeathEvent {
 }
 
 export interface RemotePlayerState {
-
   id: string;
   playerName: string;
   pos: { x: number; y: number; z: number };
@@ -128,6 +128,17 @@ export interface RemotePlayerState {
   kills: number;
   deaths: number;
   isObserver?: boolean;
+  invulnerabilityTimer?: number;
+  aiState?: AIBehaviorState;
+  aiTimer?: number;
+  aiSwayTimer?: number;
+  aiDashRemaining?: number;
+  aiDashCooldownTimer?: number;
+  aiDashDir?: { x: number; y: number; z: number };
+  isLunging?: boolean;
+  lungeTimer?: number;
+  lungeTargetDir?: { x: number; y: number; z: number };
+  lungeStartPos?: { x: number; y: number; z: number };
 }
 
 export interface GameStats {
@@ -192,3 +203,9 @@ export interface UiElementPos {
   locked: boolean;
 }
 
+export type DeviceOS = 'ios' | 'android' | 'desktop' | 'unknown';
+
+export interface DeviceInfo {
+  isMobile: boolean;
+  os: DeviceOS;
+}

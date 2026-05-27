@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
-import { GameStats, UniversalSettings, UiElementPos, Keybindings, DEFAULT_KEYBINDINGS } from './types';
+import { GameStats, UniversalSettings, UiElementPos, Keybindings, DEFAULT_KEYBINDINGS, DeviceOS, DeviceInfo } from './types';
 import { GrifballGame } from './components/GrifballGame';
 import { HUD } from './components/HUD';
 import { sfx } from './components/AudioEngine';
@@ -479,10 +479,43 @@ function KeyboardVisualizer({ bindings, rebinding, onPick }: KbVisualizerProps) 
   );
 }
 // ─────────────────────────────────────────────────────────────────────────────
+const detectDeviceOS = (): DeviceInfo => {
+  if (typeof window === 'undefined') return { isMobile: false, os: 'desktop' };
+  const ua = navigator.userAgent || navigator.vendor || (window as any).opera;
+  const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua);
+  let os: DeviceOS = 'desktop';
+
+  if (/iPhone|iPad|iPod/i.test(ua)) {
+    os = 'ios';
+  } else if (/Android/i.test(ua)) {
+    os = 'android';
+  } else if (isMobile) {
+    os = 'unknown';
+  }
+
+  return { isMobile, os };
+};
 
 export default function App() {
+  const [deviceInfo] = useState<DeviceInfo>(() => detectDeviceOS());
+  const [forceMobileControls, setForceMobileControls] = useState<boolean>(false);
+
+  // Mobile touch joysticks references for 60fps low-latency input
+  const mobileJoystickRef = useRef<{ x: number, y: number }>({ x: 0, y: 0 });
+  const mobileRightJoystickRef = useRef<{ x: number, y: number }>({ x: 0, y: 0 });
+  const mobileRightJoystickActiveRef = useRef<boolean>(false);
+
   const getWsUrl = () => {
     return getSavedMatchmakerUrl();
+  };
+
+  const buildWsUrl = (baseUrl: string, type: 'lobby' | 'gameplay', name?: string) => {
+    const separator = baseUrl.includes('?') ? '&' : '?';
+    let url = `${baseUrl}${separator}type=${type}`;
+    if (name) {
+      url += `&name=${encodeURIComponent(name)}`;
+    }
+    return url;
   };
 
   const getApiUrl = () => {
@@ -873,6 +906,8 @@ export default function App() {
     { id: 'vitality', name: 'Vitality Indicator', x: 97, y: 90, locked: true },
     { id: 'crosshair', name: 'Reticle / Target Dot', x: 50, y: 50, locked: true },
     { id: 'spectatorCard', name: 'Spectator Controller', x: 50, y: 88, locked: true },
+    { id: 'mobileLeftAnalog', name: 'Mobile Left Stick', x: 15, y: 75, locked: true },
+    { id: 'mobileRightButtons', name: 'Mobile Right Buttons', x: 80, y: 75, locked: true },
     { id: 'hudAdjuster', name: 'HUD Canvas Adjuster', x: 50, y: 3, locked: false },
   ];
 
@@ -1016,6 +1051,103 @@ export default function App() {
     }
   }, [adminSettings]);
 
+  // Gameplay presets state and helper functions
+  interface GameplayPreset {
+    name: string;
+    settings: Omit<UniversalSettings, 'playerHue' | 'playerName'>;
+  }
+  
+  const [gameplayPresets, setGameplayPresets] = useState<GameplayPreset[]>(() => {
+    try {
+      const saved = localStorage.getItem('grifball_gameplay_presets');
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      console.error('Failed to load gameplay presets:', e);
+      return [];
+    }
+  });
+  const [selectedPresetName, setSelectedPresetName] = useState<string>('');
+  const [newPresetNameInput, setNewPresetNameInput] = useState<string>('');
+
+  const settingsAreEqual = (s1: any, s2: any) => {
+    const keys = new Set([...Object.keys(s1), ...Object.keys(s2)]);
+    for (const key of keys) {
+      if (key === 'playerHue' || key === 'playerName') continue;
+      if (s1[key] !== s2[key]) return false;
+    }
+    return true;
+  };
+
+  const handleSavePreset = (name: string) => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    
+    const { playerHue, playerName: sName, ...restSettings } = adminSettings;
+    const newPreset: GameplayPreset = {
+      name: trimmed,
+      settings: restSettings
+    };
+
+    setGameplayPresets(prev => {
+      const index = prev.findIndex(p => p.name.toLowerCase() === trimmed.toLowerCase());
+      let updated;
+      if (index >= 0) {
+        updated = [...prev];
+        updated[index] = newPreset;
+      } else {
+        updated = [...prev, newPreset];
+      }
+      try {
+        localStorage.setItem('grifball_gameplay_presets', JSON.stringify(updated));
+      } catch (e) {
+        console.error('Failed to save gameplay presets:', e);
+      }
+      return updated;
+    });
+    setSelectedPresetName(trimmed);
+    setNewPresetNameInput('');
+  };
+
+  const handleDeletePreset = (nameToDelete: string) => {
+    setGameplayPresets(prev => {
+      const updated = prev.filter(p => p.name !== nameToDelete);
+      try {
+        localStorage.setItem('grifball_gameplay_presets', JSON.stringify(updated));
+      } catch (e) {
+        console.error('Failed to delete gameplay preset:', e);
+      }
+      return updated;
+    });
+    if (selectedPresetName === nameToDelete) {
+      setSelectedPresetName('');
+    }
+  };
+
+  const handleSelectPreset = (name: string) => {
+    setSelectedPresetName(name);
+    if (!name) return;
+    const preset = gameplayPresets.find(p => p.name === name);
+    if (preset) {
+      setAdminSettings(prev => ({
+        ...prev,
+        ...preset.settings
+      }));
+    }
+  };
+
+  useEffect(() => {
+    if (!selectedPresetName) return;
+    const activePreset = gameplayPresets.find(p => p.name === selectedPresetName);
+    if (activePreset) {
+      const { playerHue, playerName: sName, ...restSettings } = adminSettings;
+      if (!settingsAreEqual(restSettings, activePreset.settings)) {
+        setSelectedPresetName('');
+      }
+    }
+  }, [adminSettings, gameplayPresets, selectedPresetName]);
+
+
+
   // Standard initial dummy stats to render HUD beautifully before game starts
   const [currentStats, setCurrentStats] = useState<GameStats>({
     playerHP: 1,
@@ -1158,7 +1290,7 @@ export default function App() {
     function connect() {
       if (isDestroyed) return;
       
-      const wsUrl = getWsUrl();
+      const wsUrl = buildWsUrl(getWsUrl(), 'lobby', playerName);
       console.log('Connecting persistent lobby socket to:', wsUrl);
       ws = new WebSocket(wsUrl);
 
@@ -1418,7 +1550,7 @@ export default function App() {
 
     const wsUrl = connectionMode === 'relay' ? getWsUrl() : `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}`;
     console.log('WS Host connection target URL resolved to:', wsUrl);
-    const ws = new WebSocket(wsUrl);
+    const ws = new WebSocket(buildWsUrl(wsUrl, 'gameplay'));
 
     ws.onopen = () => {
       console.log('WS Connection opened. Registering host...');
@@ -1511,7 +1643,7 @@ export default function App() {
     }
 
     console.log('WS Join connection target URL resolved to:', wsUrl, 'isObserver:', isObserver);
-    const ws = new WebSocket(wsUrl);
+    const ws = new WebSocket(buildWsUrl(wsUrl, 'gameplay'));
 
     ws.onopen = () => {
       console.log('WS Connection opened. Joining:', target, 'isObserver:', isObserver);
@@ -1747,6 +1879,11 @@ export default function App() {
           offlineBotCount={offlineBotCount}
           botDifficulties={botDifficulties}
           botColors={botColors}
+          deviceInfo={deviceInfo}
+          forceMobileControls={forceMobileControls}
+          mobileJoystickRef={mobileJoystickRef}
+          mobileRightJoystickRef={mobileRightJoystickRef}
+          mobileRightJoystickActiveRef={mobileRightJoystickActiveRef}
         />
       )}
 
@@ -1758,6 +1895,11 @@ export default function App() {
           uiPositions={uiPositions}
           onUpdateUiPositions={handleUpdateUiPositions}
           isAdjustmentMode={showUiAdjustment}
+          deviceInfo={deviceInfo}
+          forceMobileControls={forceMobileControls}
+          mobileJoystickRef={mobileJoystickRef}
+          mobileRightJoystickRef={mobileRightJoystickRef}
+          mobileRightJoystickActiveRef={mobileRightJoystickActiveRef}
         />
       )}
 
@@ -1786,9 +1928,29 @@ export default function App() {
                 <span style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 11, fontWeight: 700, letterSpacing: '0.2em', textTransform: 'uppercase', color: '#38bdf8', background: 'rgba(56,189,248,0.05)', border: '1px solid rgba(56,189,248,0.30)', padding: '6px 12px', borderRadius: 4 }}>
                   Voxel Grifball Tech Demo
                 </span>
-                <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fontWeight: 700, letterSpacing: '0.15em', color: 'rgba(255,255,255,0.35)', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.10)', padding: '5px 10px', borderRadius: 4 }}>
+                 <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fontWeight: 700, letterSpacing: '0.15em', color: 'rgba(255,255,255,0.35)', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.10)', padding: '5px 10px', borderRadius: 4 }}>
                   v{APP_VERSION}
                 </span>
+                {deviceInfo.isMobile && (
+                  <span style={{ 
+                    fontFamily: "'Space Grotesk', sans-serif", 
+                    fontSize: 10, 
+                    fontWeight: 700, 
+                    letterSpacing: '0.1em', 
+                    textTransform: 'uppercase', 
+                    color: deviceInfo.os === 'ios' ? '#ff4d4d' : '#34d399', 
+                    background: deviceInfo.os === 'ios' ? 'rgba(255,77,77,0.08)' : 'rgba(52,211,153,0.08)', 
+                    border: deviceInfo.os === 'ios' ? '1px solid rgba(255,77,77,0.30)' : '1px solid rgba(52,211,153,0.30)', 
+                    padding: '5px 10px', 
+                    borderRadius: 4,
+                    boxShadow: deviceInfo.os === 'ios' ? '0 0 10px rgba(255,77,77,0.15)' : '0 0 10px rgba(52,211,153,0.15)',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px'
+                  }}>
+                    {deviceInfo.os === 'ios' ? '🍏 iOS Web Client' : deviceInfo.os === 'android' ? '🤖 Android Web Client' : '📱 Mobile Client'}
+                  </span>
+                )}
               </div>
 
               {/* Pill Segmented Mode Switcher */}
@@ -1863,9 +2025,52 @@ export default function App() {
                         </h2>
                       </div>
                       <p className="text-white/60 text-sm leading-relaxed bg-white/5 border border-white/5 rounded-lg p-4 leading-normal select-text">
-                        This is a Grifball iBrawls simulator. The game can be played solo against AI or online against other players. All Admin Controls only impact you, so coordinate with your opponent on the dials you want to match.
+                        This is a Grifball iBrawls simulator. The game can be played solo against AI or online against other players. All Gameplay/Mechanics Options only impact you, so coordinate with your opponent on the dials you want to match.
                       </p>
 
+                      {/* AI combat panel in single player mode */}
+                      <div className="bg-slate-950/45 border border-white/10 rounded-xl p-4.5 flex flex-col gap-3.5 text-left">
+                        <div className="flex justify-between items-center pb-2 border-b border-white/5">
+                          <span className="text-xs font-bold text-[#38bdf8] uppercase tracking-wider flex items-center gap-1.5 font-display">🤖 AI Combat Neural Net</span>
+                          <span className="text-[10px] font-mono text-[#38bdf8] bg-[#38bdf8]/10 border border-[#38bdf8]/20 px-2 py-0.5 rounded uppercase font-black">Offline Play</span>
+                        </div>
+                        <div className="flex flex-col gap-1.5">
+                          <span className="text-[10.5px] text-white/50 uppercase tracking-widest font-mono">Cognitive Matrix Preset:</span>
+                          <select
+                            value={adminSettings.aiDifficulty || 'normal'}
+                            onChange={(e) => setAdminSettings(prev => ({ ...prev, aiDifficulty: e.target.value as any }))}
+                            className="w-full h-11 bg-black/60 border border-white/10 rounded px-2.5 text-sm text-[#38bdf8] font-bold uppercase outline-none focus:border-[#38bdf8] transition-all cursor-pointer font-sans"
+                          >
+                            <option value="easy">🟢 Easy (Sub-Normal)</option>
+                            <option value="normal">🟡 Normal · Standard Combat</option>
+                            <option value="hard">🔴 Hard (Calibrated)</option>
+                            <option value="nightmare">🟣 Nightmare · Override</option>
+                            <option value="custom">⚙️ Custom</option>
+                          </select>
+                        </div>
+                        {adminSettings.aiDifficulty === 'custom' && (
+                          <div className="flex flex-col gap-3 pt-1">
+                            {([
+                              { key: 'aiReactionLatency' as const, label: 'Reflex Latency', unit: 's', min: 0, max: 1.5, step: 0.05, fmt: (v: number) => v.toFixed(2) },
+                              { key: 'aiAnticipationFactor' as const, label: 'Anticipation Engine', unit: '%', min: 0, max: 1, step: 0.05, fmt: (v: number) => Math.round(v * 100).toString() },
+                              { key: 'aiMovementComplexity' as const, label: 'Strafe & Evade', unit: '%', min: 0, max: 100, step: 5, fmt: (v: number) => v.toString() },
+                              { key: 'aiWeaponSwapIQ' as const, label: 'Weapon Swapping IQ', unit: '%', min: 0, max: 100, step: 5, fmt: (v: number) => v.toString() },
+                            ]).map(({ key, label, unit, min, max, step, fmt }) => (
+                              <div key={key} className="flex flex-col gap-1.5">
+                                <div className="flex justify-between text-xs font-mono uppercase tracking-wider text-white/60">
+                                  <span>{label}</span>
+                                  <span className="text-cyan-400 font-bold">{fmt(adminSettings[key] as number ?? 0)}{unit}</span>
+                                </div>
+                                <input type="range" min={min} max={max} step={step}
+                                  value={adminSettings[key] as number ?? 0}
+                                  onChange={(e) => setAdminSettings(prev => ({ ...prev, [key]: parseFloat(e.target.value) }))}
+                                  className="w-full accent-cyan-400 h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
+                                />
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     </div>
                     
                     {/* Training Actions */}
@@ -2378,53 +2583,6 @@ export default function App() {
                       </button>
                       <span>VERSION 1.4 PROTOTYPE</span>
                     </div>
-
-                    {/* AI combat panel in single player mode */}
-                    {activeMenuTab === 'single' && (
-                    <div className="bg-slate-950/45 border border-white/10 rounded-xl p-4.5 flex flex-col gap-3.5 text-left">
-                      <div className="flex justify-between items-center pb-2 border-b border-white/5">
-                        <span className="text-xs font-bold text-[#38bdf8] uppercase tracking-wider flex items-center gap-1.5 font-display">🤖 AI Combat Neural Net</span>
-                        <span className="text-[10px] font-mono text-[#38bdf8] bg-[#38bdf8]/10 border border-[#38bdf8]/20 px-2 py-0.5 rounded uppercase font-black">Offline Play</span>
-                      </div>
-                      <div className="flex flex-col gap-1.5">
-                        <span className="text-[10.5px] text-white/50 uppercase tracking-widest font-mono">Cognitive Matrix Preset:</span>
-                        <select
-                          value={adminSettings.aiDifficulty || 'normal'}
-                          onChange={(e) => setAdminSettings(prev => ({ ...prev, aiDifficulty: e.target.value as any }))}
-                          className="w-full h-11 bg-black/60 border border-white/10 rounded px-2.5 text-sm text-[#38bdf8] font-bold uppercase outline-none focus:border-[#38bdf8] transition-all cursor-pointer font-sans"
-                        >
-                          <option value="easy">🟢 Easy (Sub-Normal)</option>
-                          <option value="normal">🟡 Normal · Standard Combat</option>
-                          <option value="hard">🔴 Hard (Calibrated)</option>
-                          <option value="nightmare">🟣 Nightmare · Override</option>
-                          <option value="custom">⚙️ Custom</option>
-                        </select>
-                      </div>
-                      {adminSettings.aiDifficulty === 'custom' && (
-                        <div className="flex flex-col gap-3 pt-1">
-                          {([
-                            { key: 'aiReactionLatency' as const, label: 'Reflex Latency', unit: 's', min: 0, max: 1.5, step: 0.05, fmt: (v: number) => v.toFixed(2) },
-                            { key: 'aiAnticipationFactor' as const, label: 'Anticipation Engine', unit: '%', min: 0, max: 1, step: 0.05, fmt: (v: number) => Math.round(v * 100).toString() },
-                            { key: 'aiMovementComplexity' as const, label: 'Strafe & Evade', unit: '%', min: 0, max: 100, step: 5, fmt: (v: number) => v.toString() },
-                            { key: 'aiWeaponSwapIQ' as const, label: 'Weapon Swapping IQ', unit: '%', min: 0, max: 100, step: 5, fmt: (v: number) => v.toString() },
-                          ]).map(({ key, label, unit, min, max, step, fmt }) => (
-                            <div key={key} className="flex flex-col gap-1.5">
-                              <div className="flex justify-between text-xs font-mono uppercase tracking-wider text-white/60">
-                                <span>{label}</span>
-                                <span className="text-cyan-400 font-bold">{fmt(adminSettings[key] as number ?? 0)}{unit}</span>
-                              </div>
-                              <input type="range" min={min} max={max} step={step}
-                                value={adminSettings[key] as number ?? 0}
-                                onChange={(e) => setAdminSettings(prev => ({ ...prev, [key]: parseFloat(e.target.value) }))}
-                                className="w-full accent-cyan-400 h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
-                              />
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                    )}
-
                     <div className="flex flex-col gap-3 font-sans text-sm">
                       {/* kept for legacy compat – hidden */}
                       <div className="hidden">
@@ -2848,148 +3006,275 @@ export default function App() {
       {isPaused && isPlaying && !showUiAdjustment && (
         <div className="absolute inset-0 z-40 flex items-center justify-center bg-slate-950/80 backdrop-blur-xl transition-all duration-300">
           {!showAdminPanel && !showLightingMenu && !showKeybindsMenu ? (
-            <div className="bg-white/5 border border-white/10 backdrop-blur-md rounded-2xl p-8 w-[380px] shadow-2xl flex flex-col items-center select-none">
+            <div className="relative bg-slate-950/80 border border-white/10 backdrop-blur-2xl rounded-2xl p-6 w-[460px] shadow-[0_20px_50px_rgba(0,0,0,0.5)] flex flex-col select-none overflow-hidden animate-in fade-in duration-200">
+              {/* Decorative ambient glows */}
+              <div className="absolute -top-10 -left-10 w-40 h-40 bg-blue-500/10 rounded-full blur-3xl pointer-events-none" />
+              <div className="absolute -bottom-10 -right-10 w-40 h-40 bg-purple-500/10 rounded-full blur-3xl pointer-events-none" />
+
               {/* Logo header */}
-              <div className="text-center mb-8 border-b border-white/5 pb-5 w-full">
-                <p className="text-[10px] text-blue-400 font-bold tracking-[0.3em] uppercase mb-1 font-display">SIMULATION PAUSED</p>
-                <h3 className="text-3xl font-sans font-black tracking-tighter italic uppercase text-transparent bg-clip-text bg-gradient-to-b from-white to-slate-300">
+              <div className="text-center mb-5 border-b border-white/10 pb-4 w-full relative z-10">
+                <p className="text-[10px] text-blue-400 font-black tracking-[0.3em] uppercase mb-1 font-display">SIMULATION PAUSED</p>
+                <h3 className="text-3xl font-sans font-black tracking-tighter italic uppercase text-transparent bg-clip-text bg-gradient-to-r from-white via-slate-100 to-slate-400">
                   GRIFVX PROTO
                 </h3>
               </div>
  
               {/* Primary Pause utility actions */}
-              <div className="w-full flex flex-col gap-3.5 pointer-events-auto">
+              <div className="w-full flex flex-col gap-4 pointer-events-auto relative z-10">
                 <button 
                   id="resume-btn"
                   onClick={handleResumeGame}
-                  className="w-full h-12 bg-white text-slate-900 font-bold text-sm uppercase tracking-widest hover:bg-blue-400 hover:text-white active:scale-98 transition-all duration-150 cursor-pointer rounded"
+                  className="w-full h-12 bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600 text-white font-black text-xs uppercase tracking-widest active:scale-[0.98] transition-all duration-200 cursor-pointer rounded-lg shadow-[0_4px_20px_rgba(6,182,212,0.25)] hover:shadow-[0_4px_25px_rgba(6,182,212,0.4)] flex items-center justify-center gap-2 border border-cyan-400/30"
                 >
+                  <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
+                    <path d="M8 5v14l11-7z" />
+                  </svg>
                   Resume Game
                 </button>
 
-                {multiplayerRole === 'observer' ? (
+                {/* Match Operations Section */}
+                <div className="w-full mt-2 flex flex-col gap-2">
+                  <div className="flex items-center gap-2 w-full">
+                    <span className="text-[10px] font-bold text-slate-500 tracking-wider uppercase font-mono">Match Operations</span>
+                    <div className="h-[1px] bg-slate-800/80 flex-1" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 w-full">
+                    {multiplayerRole === 'observer' ? (
+                      <button 
+                        id="join-player-btn"
+                        onClick={handleJoinPlayer}
+                        className="h-10 bg-emerald-950/40 hover:bg-emerald-900/50 border border-emerald-500/30 text-emerald-400 hover:text-emerald-200 font-bold text-xs uppercase tracking-wide transition-all duration-150 cursor-pointer rounded-lg flex items-center justify-center gap-1.5"
+                      >
+                        🚀 Join As Player
+                      </button>
+                    ) : (
+                      <button 
+                        id="join-observer-btn"
+                        onClick={handleJoinObserver}
+                        className="h-10 bg-amber-950/40 hover:bg-amber-900/50 border border-amber-500/30 text-amber-400 hover:text-amber-200 font-bold text-xs uppercase tracking-wide transition-all duration-150 cursor-pointer rounded-lg flex items-center justify-center gap-1.5"
+                      >
+                        👁️ Join Observer
+                      </button>
+                    )}
+
+                    <button 
+                      id="reset-match-btn"
+                      onClick={handleResetMatch}
+                      className="h-10 bg-slate-900/40 hover:bg-slate-800/60 border border-slate-700/40 text-slate-300 hover:text-white font-bold text-xs uppercase tracking-wide transition-all duration-150 cursor-pointer rounded-lg flex items-center justify-center gap-1.5"
+                    >
+                      🔄 Reset Match
+                    </button>
+                  </div>
+
+                  {!isMultiplayer && (
+                    <button 
+                      id="bot-config-btn"
+                      onClick={() => setShowBotSetupMenu(true)}
+                      className="w-full h-10 bg-blue-950/40 hover:bg-blue-900/50 border border-blue-500/30 text-blue-400 hover:text-blue-200 font-bold text-xs uppercase tracking-wide transition-all duration-150 cursor-pointer rounded-lg flex items-center justify-center gap-1.5"
+                    >
+                      🤖 Bot Configuration
+                    </button>
+                  )}
+                </div>
+
+                {/* Adjustments & Options Section */}
+                <div className="w-full mt-2 flex flex-col gap-2">
+                  <div className="flex items-center gap-2 w-full">
+                    <span className="text-[10px] font-bold text-slate-500 tracking-wider uppercase font-mono">Adjustments & Options</span>
+                    <div className="h-[1px] bg-slate-800/80 flex-1" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2.5 w-full">
+                    {/* HOTKEY ADJUSTMENTS */}
+                    <button
+                      id="keybinds-btn"
+                      onClick={() => setShowKeybindsMenu(true)}
+                      className="group flex items-center gap-2.5 p-2.5 bg-slate-950/20 hover:bg-cyan-950/10 border border-white/5 hover:border-cyan-500/40 transition-all duration-150 cursor-pointer rounded-xl text-left pointer-events-auto active:scale-[0.98]"
+                    >
+                      <div className="w-8 h-8 rounded-lg bg-cyan-950/50 border border-cyan-500/30 flex items-center justify-center shrink-0">
+                        <svg className="w-4.5 h-4.5 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" d="M3 10h18M7 15h1m4 0h1m-7 4h12a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                        </svg>
+                      </div>
+                      <span className="font-bold text-xs text-cyan-400 group-hover:text-cyan-200 tracking-wide uppercase leading-tight select-none">
+                        Hotkey Adjustments
+                      </span>
+                    </button>
+
+                    {/* UI ADJUSTMENT */}
+                    <button
+                      id="ui-adjustment-btn"
+                      onClick={() => setShowUiAdjustment(true)}
+                      className="group flex items-center gap-2.5 p-2.5 bg-slate-950/20 hover:bg-cyan-950/10 border border-white/5 hover:border-cyan-500/40 transition-all duration-150 cursor-pointer rounded-xl text-left pointer-events-auto active:scale-[0.98]"
+                    >
+                      <div className="w-8 h-8 rounded-lg bg-cyan-950/50 border border-cyan-500/30 flex items-center justify-center shrink-0">
+                        <svg className="w-4.5 h-4.5 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" />
+                        </svg>
+                      </div>
+                      <span className="font-bold text-xs text-cyan-400 group-hover:text-cyan-200 tracking-wide uppercase leading-tight select-none">
+                        UI Adjustment
+                      </span>
+                    </button>
+
+                    {/* LIGHTING & SHADOWS */}
+                    <button 
+                      id="lighting-controls-btn"
+                      onClick={() => setShowLightingMenu(true)}
+                      className="group flex items-center gap-2.5 p-2.5 bg-slate-950/20 hover:bg-amber-950/10 border border-white/5 hover:border-amber-500/40 transition-all duration-150 cursor-pointer rounded-xl text-left pointer-events-auto active:scale-[0.98]"
+                    >
+                      <div className="w-8 h-8 rounded-lg bg-amber-950/50 border border-amber-500/30 flex items-center justify-center shrink-0">
+                        <svg className="w-4.5 h-4.5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364-6.364l-.707.707M6.343 17.657l-.707.707m0-11.314l.707.707m11.314 11.314l.707-.707M12 17a5 5 0 100-10 5 5 0 000 10z" />
+                        </svg>
+                      </div>
+                      <span className="font-bold text-xs text-amber-400 group-hover:text-amber-200 tracking-wide uppercase leading-tight select-none">
+                        Lighting & Shadows
+                      </span>
+                    </button>
+
+                    {/* GAMEPLAY / MECHANICS OPTIONS */}
+                    <button 
+                      id="admin-controls-btn"
+                      onClick={() => setShowAdminPanel(true)}
+                      className="group flex items-center gap-2.5 p-2.5 bg-slate-950/20 hover:bg-blue-950/10 border border-white/5 hover:border-blue-500/40 transition-all duration-150 cursor-pointer rounded-xl text-left pointer-events-auto active:scale-[0.98]"
+                    >
+                      <div className="w-8 h-8 rounded-lg bg-blue-950/50 border border-blue-500/30 flex items-center justify-center shrink-0">
+                        <svg className="w-4.5 h-4.5 text-blue-400 animate-spin-slow" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        </svg>
+                      </div>
+                      <span className="font-bold text-[10px] text-blue-400 group-hover:text-blue-300 tracking-wide uppercase leading-none select-none">
+                        Gameplay / Mechanics Options
+                      </span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* System & Dev Section */}
+                <div className="w-full mt-2 flex flex-col gap-2">
+                  <div className="flex items-center gap-2 w-full">
+                    <span className="text-[10px] font-bold text-slate-500 tracking-wider uppercase font-mono">System & Dev</span>
+                    <div className="h-[1px] bg-slate-800/85 flex-1" />
+                  </div>
+                  
+                  {/* Damage Traces Toggle */}
                   <button 
-                    id="join-player-btn"
-                    onClick={handleJoinPlayer}
-                    className="w-full h-12 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs uppercase tracking-widest transition-all cursor-pointer rounded flex items-center justify-center gap-2 border border-emerald-400/30"
+                    id="toggle-debug-btn"
+                    onClick={toggleDebugMode}
+                    className={`w-full h-10 border rounded-lg font-bold text-xs uppercase tracking-widest transition-all duration-150 cursor-pointer flex items-center justify-between px-4 pointer-events-auto ${
+                      debugMode 
+                        ? 'bg-red-500/10 border-red-500/40 text-red-400 hover:bg-red-500/20' 
+                        : 'bg-slate-950/20 border-white/5 text-white/50 hover:bg-white/5'
+                    }`}
                   >
-                    🚀 Join As Player
+                    <span className="select-none">Damage Traces</span>
+                    <div className="flex items-center gap-2">
+                      <span className={`text-[10px] font-mono font-bold ${debugMode ? 'text-red-400' : 'text-white/30'}`}>
+                        {debugMode ? 'ENABLED' : 'DISABLED'}
+                      </span>
+                      <div className={`w-3.5 h-3.5 rounded flex items-center justify-center border transition-all ${
+                        debugMode ? 'bg-red-500 border-red-400 shadow-[0_0_8px_rgba(239,68,68,0.5)]' : 'bg-transparent border-white/20'
+                      }`} />
+                    </div>
                   </button>
-                ) : (
+
                   <button 
-                    id="join-observer-btn"
-                    onClick={handleJoinObserver}
-                    className="w-full h-12 bg-amber-600/30 hover:bg-amber-500/40 border border-amber-500/30 text-amber-400 font-bold text-xs uppercase tracking-widest transition-all cursor-pointer rounded flex items-center justify-center gap-2"
+                    id="quit-btn"
+                    onClick={handleReturnToMain}
+                    className="w-full h-10 bg-red-950/20 border border-red-500/20 hover:bg-red-950/40 hover:border-red-500/40 text-red-400 font-bold text-xs uppercase tracking-widest transition-all duration-150 cursor-pointer rounded-lg mt-1 pointer-events-auto active:scale-[0.98]"
                   >
-                    👁️ Join Observer
+                    Quit to Title Screen
                   </button>
-                )}
-
-                {!isMultiplayer && (
-                  <button 
-                    id="bot-config-btn"
-                    onClick={() => setShowBotSetupMenu(true)}
-                    className="w-full h-12 bg-blue-950/30 hover:bg-blue-900/40 border border-blue-500/30 text-blue-400 font-bold text-xs uppercase tracking-widest transition-all cursor-pointer rounded flex items-center justify-center gap-2"
-                  >
-                    🤖 Bot Configuration
-                  </button>
-                )}
-
-                {/* KEYBOARD & MOUSE SETTINGS BUTTON */}
-                <button
-                  id="keybinds-btn"
-                  onClick={() => setShowKeybindsMenu(true)}
-                  className="w-full h-12 bg-cyan-950/30 hover:bg-cyan-900/40 border border-cyan-500/30 text-cyan-400 hover:text-cyan-200 font-bold text-xs uppercase tracking-widest transition-all cursor-pointer rounded flex items-center justify-center gap-2"
-                >
-                  ⌨ Keyboard & Mouse
-                </button>
-
-                {/* UI ADJUSTMENT CONTROLLER BUTTON */}
-                <button
-                  id="ui-adjustment-btn"
-                  onClick={() => setShowUiAdjustment(true)}
-                  className="w-full h-12 bg-cyan-950/30 hover:bg-cyan-900/40 border border-cyan-500/30 text-cyan-400 hover:text-cyan-200 font-bold text-xs uppercase tracking-widest transition-all cursor-pointer rounded flex items-center justify-center gap-2"
-                >
-                  <svg className="w-4 h-4 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" />
-                  </svg>
-                  UI Adjustment
-                </button>
-
-                {/* LIGHTING & SHADOWS CONTROLLER BUTTON */}
-                <button 
-                  id="lighting-controls-btn"
-                  onClick={() => setShowLightingMenu(true)}
-                  className="w-full h-12 bg-amber-950/30 hover:bg-amber-900/40 border border-amber-500/30 text-amber-400 font-bold text-xs uppercase tracking-widest transition-all cursor-pointer rounded flex items-center justify-center gap-2"
-                >
-                  <svg className="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364-6.364l-.707.707M6.343 17.657l-.707.707m0-11.314l.707.707m11.314 11.314l.707-.707M12 17a5 5 0 100-10 5 5 0 000 10z" />
-                  </svg>
-                  Lighting & Shadows
-                </button>
- 
-                {/* ADMIN CONTROLLER TOGGLE BUTTON */}
-                <button 
-                  id="admin-controls-btn"
-                  onClick={() => setShowAdminPanel(true)}
-                  className="w-full h-12 bg-[#38bdf8]/10 hover:bg-[#38bdf8]/20 border border-[#38bdf8]/30 text-[#38bdf8] font-bold text-xs uppercase tracking-widest transition-all cursor-pointer rounded flex items-center justify-center gap-2"
-                >
-                  <svg className="w-4 h-4 animate-spin-slow" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                  </svg>
-                  Admin Controls
-                </button>
-
-                <button 
-                  id="reset-match-btn"
-                  onClick={handleResetMatch}
-                  className="w-full h-12 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-bold text-xs uppercase tracking-widest transition-all cursor-pointer rounded"
-                >
-                  Reset Match
-                </button>
-
-                {/* Debug toggle controls */}
-                <button 
-                  id="toggle-debug-btn"
-                  onClick={toggleDebugMode}
-                  className={`w-full h-12 border rounded font-semibold text-xs uppercase tracking-widest transition-all cursor-pointer flex items-center justify-center gap-2 ${
-                    debugMode 
-                      ? 'bg-red-500/20 border-red-500 text-red-200 hover:bg-red-500/30' 
-                      : 'bg-white/5 border-white/10 text-white/70 hover:bg-white/10'
-                  }`}
-                >
-                  <div className={`w-2 h-2 rounded-full ${debugMode ? 'bg-red-500 shadow-[0_0_8px_red]' : 'bg-white/30'}`} />
-                  {debugMode ? 'DISABLE DAMAGE TRACES' : 'ENABLE DAMAGE TRACES'}
-                </button>
-
-                <button 
-                  id="quit-btn"
-                  onClick={handleReturnToMain}
-                  className="w-full h-12 bg-red-950/30 border border-red-500/20 hover:bg-red-950/50 text-red-400 font-bold text-xs uppercase tracking-widest transition-all cursor-pointer rounded mt-3"
-                >
-                  Quit to Title Screen
-                </button>
+                </div>
               </div>
 
               {/* Tiny escape instructions */}
-              <p className="mt-6 text-[9px] text-white/50 tracking-wider">
+              <p className="mt-5 text-[9px] text-white/40 tracking-wider text-center relative z-10">
                 Press <span className="font-mono text-[10px] text-blue-400 font-bold">ESC</span> inside game window to pause/unpause
               </p>
             </div>
           ) : showAdminPanel ? (
-            /* ADMIN CONTROLS MULTIPANEL DENSE DASHBOARD */
+            /* GAMEPLAY/MECHANICS OPTIONS MULTIPANEL DENSE DASHBOARD */
             <div className="bg-slate-950/95 border border-white/10 backdrop-blur-2xl rounded-2xl p-5 w-[940px] max-w-[95vw] shadow-2xl flex flex-col select-none max-h-[95vh] overflow-y-auto">
               {/* Header */}
               <div className="flex items-center justify-between mb-4 border-b border-white/5 pb-3">
                 <div className="flex flex-col items-start text-left">
                   <p className="text-[9px] text-[#38bdf8] font-bold tracking-[0.3em] uppercase mb-0.5 font-display">SYSTEM OVERRIDE</p>
                   <h3 className="text-xl font-sans font-black tracking-tight uppercase text-white">
-                    Admin Controls
+                    Gameplay / Mechanics Options
                   </h3>
                 </div>
                 <div className="text-[10px] text-white/50 bg-white/5 px-2.5 py-1 rounded-full border border-white/10 font-mono">
                   Press ESC to close
+                </div>
+              </div>
+
+              {/* Gameplay Presets Bar */}
+              <div className="mb-4 pointer-events-auto border border-white/10 rounded-xl p-3 bg-white/[0.02] backdrop-blur-md flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 text-left">
+                <div className="flex flex-col min-w-[200px]">
+                  <span className="text-[10px] text-[#38bdf8] font-bold uppercase tracking-widest font-mono flex items-center gap-1.5 animate-pulse">
+                    🎛️ Gameplay Presets
+                  </span>
+                  <span className="text-[9px] text-white/40">Load, save, or manage your custom rulesets</span>
+                </div>
+                
+                <div className="flex flex-1 flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                  {/* Select Dropdown */}
+                  <div className="flex-1 min-w-[200px]">
+                    <select
+                      value={selectedPresetName}
+                      onChange={(e) => handleSelectPreset(e.target.value)}
+                      className="w-full h-9 bg-black/60 border border-white/10 rounded px-2.5 text-xs text-[#38bdf8] font-bold uppercase outline-none focus:border-[#38bdf8] cursor-pointer transition-all font-sans"
+                    >
+                      <option value="" disabled={!selectedPresetName}>
+                        {gameplayPresets.length === 0 
+                          ? '📁 No Presets Saved' 
+                          : selectedPresetName 
+                            ? '⚙️ Custom/Modified Config' 
+                            : '📁 Select a Saved Preset...'}
+                      </option>
+                      {gameplayPresets.map((preset) => (
+                        <option key={preset.name} value={preset.name}>
+                          📦 {preset.name.toUpperCase()}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Save Preset Input & Button */}
+                  <div className="flex items-center gap-1.5 flex-1 max-w-sm">
+                    <input
+                      type="text"
+                      placeholder="Preset name..."
+                      value={newPresetNameInput}
+                      onChange={(e) => setNewPresetNameInput(e.target.value)}
+                      className="flex-1 h-9 bg-black/60 border border-white/10 rounded px-3 text-xs text-white placeholder:text-white/30 focus:border-[#38bdf8]/50 outline-none transition-all"
+                      maxLength={20}
+                    />
+                    <button
+                      onClick={() => handleSavePreset(newPresetNameInput)}
+                      disabled={!newPresetNameInput.trim()}
+                      className={`h-9 px-3 rounded text-xs font-sans font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1 shrink-0 ${
+                        newPresetNameInput.trim()
+                          ? 'bg-emerald-500/15 hover:bg-emerald-500/35 border border-emerald-500/40 text-emerald-400 cursor-pointer active:scale-95'
+                          : 'bg-white/5 border border-white/5 text-white/20 cursor-not-allowed'
+                      }`}
+                    >
+                      Save
+                    </button>
+                  </div>
+
+                  {/* Delete Button */}
+                  {selectedPresetName && (
+                    <button
+                      onClick={() => handleDeletePreset(selectedPresetName)}
+                      className="h-9 px-3 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 hover:border-red-500/40 text-red-400 font-bold text-xs uppercase tracking-wider rounded cursor-pointer transition-all active:scale-[0.98] flex items-center justify-center gap-1 animate-fade-in"
+                      title={`Delete "${selectedPresetName}" preset`}
+                    >
+                      Delete
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -3668,13 +3953,13 @@ export default function App() {
               </button>
             </div>
           ) : showKeybindsMenu ? (
-            /* KEYBOARD & MOUSE SETTINGS PANEL */
+            /* HOTKEY ADJUSTMENTS SETTINGS PANEL */
             <div className="bg-slate-950/95 border border-white/10 backdrop-blur-2xl rounded-2xl p-6 w-[640px] max-w-[95vw] shadow-2xl flex flex-col select-none max-h-[95vh] overflow-y-auto">
               {/* Header */}
               <div className="flex items-center justify-between mb-5 border-b border-white/5 pb-4">
                 <div className="flex flex-col items-start text-left">
                   <p className="text-[9px] text-cyan-400 font-bold tracking-[0.3em] uppercase mb-0.5 font-display">INPUT CONFIG</p>
-                  <h3 className="text-xl font-sans font-black tracking-tight uppercase text-white">⌨ Keyboard & Mouse</h3>
+                  <h3 className="text-xl font-sans font-black tracking-tight uppercase text-white">⌨ Hotkey Adjustments</h3>
                 </div>
                 <div className="text-[10px] text-white/50 bg-white/5 px-2.5 py-1 rounded-full border border-white/10 font-mono">
                   Press ESC to close
@@ -3737,6 +4022,57 @@ export default function App() {
                   />
                   <span className="text-[9px] text-white/35 font-mono">0.0 = linear (off). Higher = faster as you move faster.</span>
                 </div>
+              </div>
+
+              {/* Mobile Gamepad settings */}
+              <div className="pointer-events-auto border border-white/10 rounded-xl p-4 bg-white/[0.02] flex flex-col gap-4 mb-5">
+                <p className="text-[10px] text-cyan-400 font-bold uppercase tracking-widest border-b border-white/5 pb-2 font-mono">📱 Mobile Touch controls</p>
+                <div className="flex items-center justify-between">
+                  <div className="flex flex-col text-left">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-white/80">Force Gamepad Overlay</span>
+                    <span className="text-[9px] text-white/35 font-mono">Force show touch joysticks & buttons on desktop</span>
+                  </div>
+                  <button
+                    onClick={() => setForceMobileControls(prev => !prev)}
+                    className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out outline-none ${
+                      forceMobileControls ? 'bg-cyan-500' : 'bg-slate-800'
+                    }`}
+                    style={{
+                      position: 'relative',
+                      display: 'inline-flex',
+                      height: '24px',
+                      width: '44px',
+                      cursor: 'pointer',
+                      borderRadius: '9999px',
+                      borderWidth: '2px',
+                      borderColor: 'transparent',
+                      transitionProperty: 'color, background-color, border-color, text-decoration-color, fill, stroke',
+                      transitionDuration: '200ms',
+                      outline: 'none',
+                      backgroundColor: forceMobileControls ? '#06b6d4' : '#1e293b'
+                    }}
+                  >
+                    <span
+                      className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                        forceMobileControls ? 'translate-x-5' : 'translate-x-0'
+                      }`}
+                      style={{
+                        pointerEvents: 'none',
+                        display: 'inline-block',
+                        height: '20px',
+                        width: '20px',
+                        transform: forceMobileControls ? 'translateX(20px)' : 'translateX(0)',
+                        borderRadius: '9999px',
+                        backgroundColor: '#ffffff',
+                        transitionProperty: 'transform',
+                        transitionDuration: '200ms'
+                      }}
+                    />
+                  </button>
+                </div>
+                <p className="text-[9.5px] text-white/40 leading-normal text-left font-mono">
+                  💡 <span className="text-[#38bdf8] font-bold">Custom HUD Editor</span>: Go in-game, tap <span className="text-amber-400 font-bold">PAUSE [ESC]</span> &gt; <span className="text-cyan-400 font-bold">HUD CANVAS ADJUSTER</span>. Drag the Left Analog stick and Right Button pads to layout your custom mobile gamepad position!
+                </p>
               </div>
 
               {/* Reset keybinds */}

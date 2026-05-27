@@ -7,7 +7,7 @@ import React, { useRef, useEffect, useState } from 'react';
 import * as THREE from 'three';
 import { sfx } from './AudioEngine';
 import { buildGravityHammerModel, buildVoxelSpartanModel, buildKatarSwordModel } from './VoxelModels';
-import { GameStats, Stance, WeaponState, AIBehaviorState, UniversalSettings, DeathEvent, Keybindings, DEFAULT_KEYBINDINGS } from '../types';
+import { GameStats, Stance, WeaponState, AIBehaviorState, UniversalSettings, DeathEvent, Keybindings, DEFAULT_KEYBINDINGS, DeviceInfo } from '../types';
 
 const whiteBlinkMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
 
@@ -26,6 +26,11 @@ interface GrifballGameProps {
   botDifficulties?: Record<string, 'easy' | 'normal' | 'hard' | 'nightmare'>;
   botColors?: Record<string, number>;
   keybindings?: Keybindings;
+  deviceInfo: DeviceInfo;
+  forceMobileControls: boolean;
+  mobileJoystickRef: React.MutableRefObject<{ x: number; y: number }>;
+  mobileRightJoystickRef: React.MutableRefObject<{ x: number; y: number }>;
+  mobileRightJoystickActiveRef: React.MutableRefObject<boolean>;
 }
 
 export const GrifballGame: React.FC<GrifballGameProps> = ({
@@ -43,6 +48,11 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
   botDifficulties = {},
   botColors = {},
   keybindings = DEFAULT_KEYBINDINGS,
+  deviceInfo,
+  forceMobileControls,
+  mobileJoystickRef,
+  mobileRightJoystickRef,
+  mobileRightJoystickActiveRef,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const nameplateRef = useRef<HTMLDivElement>(null);
@@ -1116,7 +1126,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         hue: data.hue !== undefined ? data.hue : Math.floor(Math.random() * 360),
         score: 0,
         kills: 0,
-        deaths: 0
+        deaths: 0,
+        invulnerabilityTimer: data.invulnerabilityTimer !== undefined ? data.invulnerabilityTimer : s.settings.respawnInvulnerabilityDuration
       };
       s.otherPlayers.set(clientId, playerState);
     }
@@ -1132,6 +1143,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     if (data.respawnTimer !== undefined) playerState.respawnTimer = data.respawnTimer;
     if (data.hue !== undefined) playerState.hue = data.hue;
     if (data.playerName) playerState.playerName = data.playerName;
+    if (data.invulnerabilityTimer !== undefined) playerState.invulnerabilityTimer = data.invulnerabilityTimer;
 
     let meshes = threeRef.current.otherPlayerMeshes.get(clientId);
     if (!meshes) {
@@ -1783,6 +1795,83 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       isMouseDown.current = false;
     };
 
+    // Touch swipe-to-aim look around on the right side of the screen
+    let lookTouchId: number | null = null;
+    let lastTouchX = 0;
+    let lastTouchY = 0;
+
+    const handleTouchStart = (e: TouchEvent) => {
+      if (isPaused || !isPlaying) return;
+      for (let i = 0; i < e.changedTouches.length; i++) {
+        const touch = e.changedTouches[i];
+        // If it starts on the right half of the screen
+        if (touch.clientX > window.innerWidth / 2) {
+          if (lookTouchId === null) {
+            lookTouchId = touch.identifier;
+            lastTouchX = touch.clientX;
+            lastTouchY = touch.clientY;
+          }
+        }
+      }
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      if (isPaused || !isPlaying || lookTouchId === null) return;
+      for (let i = 0; i < e.touches.length; i++) {
+        const touch = e.touches[i];
+        if (touch.identifier === lookTouchId) {
+          const dx = touch.clientX - lastTouchX;
+          const dy = touch.clientY - lastTouchY;
+
+          // Swipe sensitivity tracks keybindings
+          const swipeSens = 0.003 * (keybindings.mouseSensitivity ?? 1.0);
+          stateRef.current.yaw -= dx * swipeSens;
+          stateRef.current.pitch -= dy * swipeSens;
+          stateRef.current.pitch = Math.max(-Math.PI / 2.3, Math.min(Math.PI / 2.3, stateRef.current.pitch));
+
+          lastTouchX = touch.clientX;
+          lastTouchY = touch.clientY;
+        }
+      }
+    };
+
+    const handleTouchEnd = (e: TouchEvent) => {
+      if (lookTouchId === null) return;
+      for (let i = 0; i < e.changedTouches.length; i++) {
+        const touch = e.changedTouches[i];
+        if (touch.identifier === lookTouchId) {
+          lookTouchId = null;
+        }
+      }
+    };
+
+    // Mobile attack handlers triggered by custom overlay events
+    const handleMobileAttackPrimary = () => {
+      const s = stateRef.current;
+      if (s.playerHP <= 0 || !isPlaying || isPaused) return;
+
+      if (s.activeWeapon === 'hammer') {
+        if (s.pWeaponReady && s.pWeaponState === 'ready' && s.playerDashRemaining <= 0) {
+          triggerPlayerHammerSwing();
+        }
+      } else {
+        if (s.crosshairColor === 'red' && s.pSwordReady && s.pSwordState === 'ready' && !s.isLunging) {
+          triggerPlayerSwordLunge();
+        }
+      }
+    };
+
+    const handleMobileAttackAlt = () => {
+      const s = stateRef.current;
+      if (s.playerHP <= 0 || !isPlaying || isPaused) return;
+
+      if (s.activeWeapon === 'sword') {
+        if (s.pSwordReady && s.pSwordState === 'ready' && !s.isLunging) {
+          triggerPlayerSwordSlash();
+        }
+      }
+    };
+
     // Window events setup
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
@@ -1793,6 +1882,12 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mousedown', handleMouseDownFallback);
     window.addEventListener('mouseup', handleMouseUpFallback);
+    window.addEventListener('touchstart', handleTouchStart, { passive: false });
+    window.addEventListener('touchmove', handleTouchMove, { passive: false });
+    window.addEventListener('touchend', handleTouchEnd);
+    window.addEventListener('touchcancel', handleTouchEnd);
+    window.addEventListener('mobile-attack-primary', handleMobileAttackPrimary);
+    window.addEventListener('mobile-attack-alt', handleMobileAttackAlt);
 
     const handleResize = () => {
       if (!containerRef.current || !renderer || !camera) return;
@@ -1844,6 +1939,12 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mousedown', handleMouseDownFallback);
       window.removeEventListener('mouseup', handleMouseUpFallback);
+      window.removeEventListener('touchstart', handleTouchStart);
+      window.removeEventListener('touchmove', handleTouchMove);
+      window.removeEventListener('touchend', handleTouchEnd);
+      window.removeEventListener('touchcancel', handleTouchEnd);
+      window.removeEventListener('mobile-attack-primary', handleMobileAttackPrimary);
+      window.removeEventListener('mobile-attack-alt', handleMobileAttackAlt);
       window.removeEventListener('resize', handleResize);
       window.removeEventListener('cycle-observer-mode', handleCycleObserverMode);
       window.removeEventListener('cycle-observer-target', handleCycleObserverTarget);
@@ -1994,6 +2095,57 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     return bestTarget;
   };
 
+  const getEnemyAITarget = () => {
+    const s = stateRef.current;
+    if (!s.isObserverMode) {
+      return {
+        id: 'player',
+        pos: s.playerPos,
+        hp: s.playerHP,
+        invuln: s.playerInvulnerabilityTimer,
+        isLunging: s.isLunging,
+        weaponState: s.pWeaponState,
+        respawnTimer: s.playerRespawnTimer,
+        vel: s.playerVel,
+        isObserver: false,
+        playerName: s.settings.playerName || 'Blue (You)'
+      };
+    }
+    
+    // Find closest bot
+    let closestBot: any = null;
+    let closestDist = Infinity;
+    if (s.otherPlayers) {
+      s.otherPlayers.forEach((other) => {
+        if (other.hp > 0 && other.respawnTimer <= 0) {
+          const dist = s.aiPos.distanceTo(new THREE.Vector3(other.pos.x, other.pos.y, other.pos.z));
+          if (dist < closestDist) {
+            closestDist = dist;
+            closestBot = other;
+          }
+        }
+      });
+    }
+    
+    if (closestBot) {
+      return {
+        id: closestBot.id,
+        pos: new THREE.Vector3(closestBot.pos.x, closestBot.pos.y, closestBot.pos.z),
+        hp: closestBot.hp,
+        invuln: 0,
+        isLunging: closestBot.weaponState === 'swing_up' || closestBot.weaponState === 'swing_down',
+        weaponState: closestBot.weaponState,
+        respawnTimer: closestBot.respawnTimer,
+        vel: new THREE.Vector3(closestBot.vel.x, closestBot.vel.y, closestBot.vel.z),
+        isObserver: false,
+        playerName: closestBot.playerName
+      };
+    }
+    
+    return null;
+  };
+
+
   // TRIGGERS PLAYER SWING
   const triggerPlayerHammerSwing = () => {
     const s = stateRef.current;
@@ -2101,7 +2253,9 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     if (customDir) {
       s.aiLungeTargetDir.copy(customDir);
     } else {
-      s.aiLungeTargetDir.copy(s.playerPos).sub(s.aiPos);
+      const target = getEnemyAITarget();
+      const targetPos = target ? target.pos : s.playerPos;
+      s.aiLungeTargetDir.copy(targetPos).sub(s.aiPos);
     }
     s.aiLungeTargetDir.y = 0;
     s.aiLungeTargetDir.normalize();
@@ -2256,6 +2410,14 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
   // PHYSICS UPDATE (Player relative to WASD & Crouch heights)
   const updatePhysics = (dt: number) => {
     const s = stateRef.current;
+
+    // Right Joystick continuous aim/look around (frame-rate-independent aiming)
+    if ((deviceInfo.isMobile || forceMobileControls) && mobileRightJoystickActiveRef.current && mobileRightJoystickRef.current) {
+      const baseAimSens = 2.4 * (keybindings.mouseSensitivity ?? 1.0);
+      s.yaw -= mobileRightJoystickRef.current.x * baseAimSens * dt;
+      s.pitch -= mobileRightJoystickRef.current.y * baseAimSens * dt;
+      s.pitch = Math.max(-Math.PI / 2.3, Math.min(Math.PI / 2.3, s.pitch));
+    }
 
     // Handle Observer Spectator movement controls
     if (s.isObserverMode) {
@@ -2441,7 +2603,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
             }
           } else {
             const other = s.otherPlayers.get(closestTarget.id);
-            if (other) {
+            if (other && (!other.invulnerabilityTimer || other.invulnerabilityTimer <= 0)) {
               other.hp -= 1;
               if (other.hp <= 0) {
                 other.hp = 0;
@@ -2562,6 +2724,12 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       if (keysPressed.current[keybindings.moveRight] || keysPressed.current['arrowright']) moveRight += 1;
       if (keysPressed.current[keybindings.moveLeft] || keysPressed.current['arrowleft']) moveRight -= 1;
 
+      // Mobile joystick movement overrides keyboard
+      if ((deviceInfo.isMobile || forceMobileControls) && mobileJoystickRef.current) {
+        moveForward += mobileJoystickRef.current.y;
+        moveRight += mobileJoystickRef.current.x;
+      }
+
       // Normalise movement input first so diagonals aren't faster
       let inputLength = Math.sqrt(moveForward * moveForward + moveRight * moveRight);
       if (inputLength > 0) {
@@ -2575,9 +2743,12 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         
         const sMultiplier = s.settings.speedSide / 100;
 
+        // Analog scaling: Deflecting the virtual analog stick slightly walks slower
+        const analogScale = ((deviceInfo.isMobile || forceMobileControls) && inputLength < 1.0) ? inputLength : 1.0;
+
         // Combine vectors with their respective multipliers
-        moveDirection.addScaledVector(forwardDir, normForward * fMultiplier * baseSpeed);
-        moveDirection.addScaledVector(rightDir, normRight * sMultiplier * baseSpeed);
+        moveDirection.addScaledVector(forwardDir, normForward * fMultiplier * baseSpeed * analogScale);
+        moveDirection.addScaledVector(rightDir, normRight * sMultiplier * baseSpeed * analogScale);
       }
 
       // Set horizontal velocities with dynamic response friction
@@ -2794,7 +2965,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
               // Check other players/bots
               if (s.otherPlayers) {
                 s.otherPlayers.forEach((other) => {
-                  if (other.hp > 0 && !other.isObserver && other.respawnTimer <= 0) {
+                  if (other.hp > 0 && !other.isObserver && other.respawnTimer <= 0 && (!other.invulnerabilityTimer || other.invulnerabilityTimer <= 0)) {
                     const otherCenter = new THREE.Vector3(other.pos.x, other.pos.y + 0.825, other.pos.z);
                     const toOther = otherCenter.clone().sub(eyePos);
                     const dist = toOther.length();
@@ -3204,7 +3375,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       // Check other players/bots in room
       if (s.otherPlayers) {
         s.otherPlayers.forEach((other) => {
-          if (other.hp > 0 && !other.isObserver && other.respawnTimer <= 0) {
+          if (other.hp > 0 && !other.isObserver && other.respawnTimer <= 0 && (!other.invulnerabilityTimer || other.invulnerabilityTimer <= 0)) {
             const otherBodyCenter = new THREE.Vector3(other.pos.x, other.pos.y + 0.825, other.pos.z);
             const dist = impactPos.distanceTo(otherBodyCenter);
             
@@ -3250,19 +3421,22 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       if (isMultiplayer) return; // In multiplayer, we do not run AI strike simulations!
       if (s.aiHP <= 0 || s.aiState === 'RESPAWNING') return; // Prevent dead enemies' attacks from executing
       // ENEMY AI IS STRIKING
-      // The AI tracks the player with its "cursor" in 3D, OR aims beneath itself for a hammer jump!
+      // The AI tracks the resolved target in 3D, OR aims beneath itself for a hammer jump!
+      const target = getEnemyAITarget();
+      if (!target) return;
+
       const aiEyePos = new THREE.Vector3(s.aiPos.x, s.aiPos.y + 1.2, s.aiPos.z);
-      const playerBodyCenter = new THREE.Vector3(
-        s.playerPos.x,
-        s.playerPos.y + (1.65 - s.crouchAmount) / 2 + 0.4,
-        s.playerPos.z
+      const targetBodyCenter = new THREE.Vector3(
+        target.pos.x,
+        target.pos.y + 0.825,
+        target.pos.z
       );
       
       let aiHeading3D: THREE.Vector3;
       if (s.aiHammerJumpPlanned) {
         aiHeading3D = new THREE.Vector3(0, -1, 0);
       } else {
-        aiHeading3D = playerBodyCenter.clone().sub(aiEyePos).normalize();
+        aiHeading3D = targetBodyCenter.clone().sub(aiEyePos).normalize();
       }
       
       const impactPos = aiEyePos.clone().addScaledVector(aiHeading3D, s.settings.attackRange * 0.875);
@@ -3279,12 +3453,120 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       // Spawn Solar Orange explosion particles
       spawnVoxelShockwaveParticles(impactPos, '#f97316');
 
-      // Damage player check: Compare strike sphere coordinate with player's 3D body center
-      if (s.playerHP > 0 && s.playerInvulnerabilityTimer <= 0) {
-        const dist = impactPos.distanceTo(playerBodyCenter);
+      // Damage target check: Compare strike sphere coordinate with target's 3D body center
+      if (target.hp > 0 && target.invuln <= 0) {
+        const dist = impactPos.distanceTo(targetBodyCenter);
 
         if (dist <= s.settings.attackRadius) {
-          // Reduce player health
+          if (target.id === 'player') {
+            // Reduce player health
+            s.playerHP -= 1;
+            if (s.playerHP <= 0) {
+              s.playerHP = 0;
+              s.playerRespawnTimer = 3.0;
+              s.scoreEnemy += 1;
+              s.playerDeaths += 1;
+              s.enemyKills += 1;
+              sfx.playDeath();
+              s.pWeaponState = 'ready';
+              s.pWeaponTimer = 0;
+              s.pWeaponReady = true;
+              s.pSwordState = 'ready';
+              s.pSwordTimer = 0;
+              s.pSwordReady = true;
+              s.isLunging = false;
+              s.lungeTimer = 0;
+
+              // Record death event (last 3 entries)
+              const newDeath: DeathEvent = {
+                id: Math.random().toString(36).substring(2, 9),
+                attacker: 'Red (AI)',
+                victim: 'Blue (You)',
+              };
+              s.lastDeaths = [newDeath, ...s.lastDeaths].slice(0, 3);
+
+              // Spawn death particles on player
+              spawnVoxelShockwaveParticles(s.playerPos, '#3b82f6');
+            } else {
+              // Non-lethal player hit
+              sfx.playSwing();
+              spawnVoxelShockwaveParticles(s.playerPos, '#e2e8f0');
+            }
+          } else {
+            // Target is another bot!
+            const other = s.otherPlayers?.get(target.id);
+            if (other && (!other.invulnerabilityTimer || other.invulnerabilityTimer <= 0)) {
+              other.hp -= 1;
+              if (other.hp <= 0) {
+                other.hp = 0;
+                other.respawnTimer = 3.0;
+                s.scoreEnemy += 1;
+                s.enemyKills += 1;
+                other.deaths = (other.deaths || 0) + 1;
+                sfx.playDeath();
+
+                const newDeath = {
+                  id: Math.random().toString(36).substring(2, 9),
+                  attacker: 'Red (AI)',
+                  victim: other.playerName
+                };
+                s.lastDeaths = [newDeath, ...s.lastDeaths].slice(0, 3);
+                spawnVoxelShockwaveParticles(new THREE.Vector3(other.pos.x, other.pos.y, other.pos.z), '#ef4444');
+              } else {
+                sfx.playSwing();
+                spawnVoxelShockwaveParticles(new THREE.Vector3(other.pos.x, other.pos.y, other.pos.z), '#e2e8f0');
+              }
+              pushStatsUpdate();
+            }
+          }
+        }
+      }
+    }
+  };
+
+  const applyEnemySwordSlashImpact = () => {
+    const s = stateRef.current;
+    if (s.aiHP <= 0 || s.aiState === 'RESPAWNING') return;
+    
+    const target = getEnemyAITarget();
+    if (!target) return;
+
+    // Slash trace centering forward in front of the AI
+    const lookHeading = target.pos.clone().sub(s.aiPos).normalize();
+    const impactPos = s.aiPos.clone().addScaledVector(lookHeading, 2.2); // sweet spot distance
+    
+    s.lastAIStrikePos = impactPos;
+    s.lastAIStrikeTick = 1.0;
+    
+    sfx.playSwing();
+    spawnVoxelShockwaveParticles(impactPos, '#ef4444');
+    
+    if (isMultiplayer) return; // In multiplayer, we do not run AI damage checks against local player!
+    
+    if (target.hp > 0 && target.invuln <= 0) {
+      const targetBodyCenter = new THREE.Vector3(
+        target.pos.x,
+        target.pos.y + 0.825,
+        target.pos.z
+      );
+      const dist = impactPos.distanceTo(targetBodyCenter);
+      
+      if (dist <= 2.8) {
+        // Evaluate trades FIRST
+        const swordThreshold = s.settings.swordTradeWindow ?? 350;
+        const isPlayerSwordActiveAttack = s.settings.enableSwordTrade && s.activeWeapon === 'sword' && (
+          s.isLunging ||
+          s.pSwordState === 'slashing' ||
+          (Date.now() - s.lastPlayerSwordAttackTime <= swordThreshold)
+        );
+
+        if (target.id === 'player' && isPlayerSwordActiveAttack) {
+          executeTrade('sword_vs_sword');
+          return;
+        }
+
+        // Red team AI hits the target!
+        if (target.id === 'player') {
           s.playerHP -= 1;
           if (s.playerHP <= 0) {
             s.playerHP = 0;
@@ -3301,96 +3583,974 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
             s.pSwordReady = true;
             s.isLunging = false;
             s.lungeTimer = 0;
-
-            // Record death event (last 3 entries)
-            const newDeath: DeathEvent = {
+            
+            const newDeath = {
               id: Math.random().toString(36).substring(2, 9),
-              attacker: 'Red (AI)',
+              attacker: 'Red (AI) [Slash]',
               victim: 'Blue (You)',
             };
             s.lastDeaths = [newDeath, ...s.lastDeaths].slice(0, 3);
-
-            // Spawn death particles on player
             spawnVoxelShockwaveParticles(s.playerPos, '#3b82f6');
           } else {
-            // Non-lethal player hit
             sfx.playSwing();
             spawnVoxelShockwaveParticles(s.playerPos, '#e2e8f0');
+          }
+        } else {
+          // Target is another bot!
+          const other = s.otherPlayers?.get(target.id);
+          if (other && (!other.invulnerabilityTimer || other.invulnerabilityTimer <= 0)) {
+            other.hp -= 1;
+            if (other.hp <= 0) {
+              other.hp = 0;
+              other.respawnTimer = 3.0;
+              s.scoreEnemy += 1;
+              s.enemyKills += 1;
+              other.deaths = (other.deaths || 0) + 1;
+              sfx.playDeath();
+              
+              const newDeath = {
+                id: Math.random().toString(36).substring(2, 9),
+                attacker: 'Red (AI) [Slash]',
+                victim: other.playerName
+              };
+              s.lastDeaths = [newDeath, ...s.lastDeaths].slice(0, 3);
+              spawnVoxelShockwaveParticles(new THREE.Vector3(other.pos.x, other.pos.y, other.pos.z), '#ef4444');
+            } else {
+              sfx.playSwing();
+              spawnVoxelShockwaveParticles(new THREE.Vector3(other.pos.x, other.pos.y, other.pos.z), '#e2e8f0');
+            }
+            pushStatsUpdate();
           }
         }
       }
     }
   };
 
-  const applyEnemySwordSlashImpact = () => {
+  // TACTICAL COMBAT COOLDOWN ENGINE
+  const isTargetOnCooldown = (target: any) => {
     const s = stateRef.current;
-    if (s.aiHP <= 0 || s.aiState === 'RESPAWNING') return;
-    
-    // Slash trace centering forward in front of the AI
-    const lookHeading = s.playerPos.clone().sub(s.aiPos).normalize();
-    const impactPos = s.aiPos.clone().addScaledVector(lookHeading, 2.2); // sweet spot distance
-    
-    s.lastAIStrikePos = impactPos;
-    s.lastAIStrikeTick = 1.0;
-    
-    sfx.playSwing();
-    spawnVoxelShockwaveParticles(impactPos, '#ef4444');
-    
-    if (isMultiplayer) return; // In multiplayer, we do not run AI damage checks against local player!
-    
-    if (s.playerHP > 0 && s.playerInvulnerabilityTimer <= 0) {
-      const playerBodyCenter = new THREE.Vector3(
-        s.playerPos.x,
-        s.playerPos.y + (1.65 - s.crouchAmount) / 2 + 0.4,
-        s.playerPos.z
-      );
-      const dist = impactPos.distanceTo(playerBodyCenter);
-      
-      if (dist <= 2.8) {
-        // Evaluate trades FIRST
-        const swordThreshold = s.settings.swordTradeWindow ?? 350;
-        const isPlayerSwordActiveAttack = s.settings.enableSwordTrade && s.activeWeapon === 'sword' && (
-          s.isLunging ||
-          s.pSwordState === 'slashing' ||
-          (Date.now() - s.lastPlayerSwordAttackTime <= swordThreshold)
-        );
+    if (target.id === 'player') {
+      if (s.activeWeapon === 'hammer') {
+        return s.pWeaponState === 'recovering' || s.pWeaponState === 'swing_up' || s.pWeaponState === 'swing_down';
+      } else {
+        return s.pSwordState === 'recovering' || s.pSwordState === 'slashing' || s.isLunging;
+      }
+    } else if (target.id === 'main_ai') {
+      return s.aiWeaponState === 'recovering' || s.aiWeaponState === 'swing_up' || s.aiWeaponState === 'swing_down' || s.aiState === 'LUNGING';
+    } else {
+      const other = s.otherPlayers.get(target.id);
+      if (other) {
+        return other.weaponState === 'recovering' || other.weaponState === 'swing_up' || other.weaponState === 'swing_down' || other.isLunging;
+      }
+    }
+    return false;
+  };
 
-        if (isPlayerSwordActiveAttack) {
+  // ADVANCED TACTICAL TARGET SELECTION SCORING
+  const getBestTacticalTarget = (botId: string, botPos: THREE.Vector3, difficulty: string) => {
+    const s = stateRef.current;
+    let bestTarget: any = null;
+    let bestScore = -Infinity;
+
+    const potentialTargets: any[] = [];
+
+    // 1. Local Player
+    if (s.playerHP > 0 && s.playerRespawnTimer <= 0 && !s.isObserverMode) {
+      potentialTargets.push({
+        id: 'player',
+        pos: s.playerPos,
+        hp: s.playerHP,
+        maxHp: s.playerMaxHP,
+        invulnerabilityTimer: s.playerInvulnerabilityTimer,
+        activeWeapon: s.activeWeapon,
+        weaponState: s.activeWeapon === 'hammer' ? s.pWeaponState : s.pSwordState,
+        isLunging: s.isLunging,
+        vel: s.playerVel,
+        playerName: s.settings.playerName || 'Blue (You)'
+      });
+    }
+
+    // 2. Main AI
+    if (botId !== 'main_ai' && s.aiHP > 0 && s.aiState !== 'RESPAWNING') {
+      potentialTargets.push({
+        id: 'main_ai',
+        pos: s.aiPos,
+        hp: s.aiHP,
+        maxHp: s.aiMaxHP,
+        invulnerabilityTimer: s.aiInvulnerabilityTimer,
+        activeWeapon: s.aiActiveWeapon,
+        weaponState: s.aiWeaponState,
+        isLunging: s.aiState === 'LUNGING',
+        vel: s.aiVel,
+        playerName: 'Red (AI)'
+      });
+    }
+
+    // 3. Other Bots
+    if (s.otherPlayers) {
+      s.otherPlayers.forEach((other) => {
+        if (other.id !== botId && other.hp > 0 && other.respawnTimer <= 0) {
+          potentialTargets.push({
+            id: other.id,
+            pos: new THREE.Vector3(other.pos.x, other.pos.y, other.pos.z),
+            hp: other.hp,
+            maxHp: other.maxHp,
+            invulnerabilityTimer: other.invulnerabilityTimer || 0,
+            activeWeapon: other.activeWeapon,
+            weaponState: other.weaponState || 'ready',
+            isLunging: other.isLunging || other.weaponState === 'swing_up' || other.weaponState === 'swing_down',
+            vel: new THREE.Vector3(other.vel.x, other.vel.y, other.vel.z),
+            playerName: other.playerName
+          });
+        }
+      });
+    }
+
+    potentialTargets.forEach((target) => {
+      const dist = botPos.distanceTo(target.pos);
+      let score = 1000;
+
+      if (difficulty === 'easy') {
+        score -= dist * 20;
+        if (target.invulnerabilityTimer > 0) {
+          score -= 300;
+        }
+      } 
+      else if (difficulty === 'normal') {
+        score -= dist * 15;
+        score += (target.maxHp - target.hp) * 50;
+        if (target.invulnerabilityTimer > 0) {
+          score -= 2000;
+        }
+        if (target.weaponState === 'recovering') {
+          score += 150;
+        }
+      } 
+      else {
+        score -= dist * 10;
+        score += (target.maxHp - target.hp) * 150;
+
+        if (target.invulnerabilityTimer > 0) {
+          score -= 99999;
+        }
+
+        if (target.weaponState === 'recovering') {
+          score += 350; 
+        } else if (target.weaponState === 'swing_up' || target.weaponState === 'swing_down') {
+          score += 100;
+        }
+
+        const myActiveWeapon = botId === 'main_ai' ? s.aiActiveWeapon : s.otherPlayers.get(botId)?.activeWeapon;
+        if (myActiveWeapon === 'sword') {
+          if (target.activeWeapon === 'hammer') {
+            score += 100; 
+          }
+        }
+
+        let nearbyEnemiesCount = 0;
+        potentialTargets.forEach((otherT) => {
+          if (otherT.id !== target.id) {
+            if (target.pos.distanceTo(otherT.pos) < 6.0) {
+              nearbyEnemiesCount++;
+            }
+          }
+        });
+
+        if (myActiveWeapon === 'hammer') {
+          score += nearbyEnemiesCount * 80;
+        } else {
+          score -= nearbyEnemiesCount * 120;
+        }
+      }
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestTarget = target;
+      }
+    });
+
+    return bestTarget;
+  };
+
+  // DYNAMIC WEAPON SWAPPING ENGINE
+  const evaluateTacticalWeaponChoice = (botId: string, target: any, difficulty: string): 'hammer' | 'sword' | null => {
+    const s = stateRef.current;
+    
+    if (difficulty === 'easy') {
+      return null;
+    }
+
+    const botState = botId === 'main_ai' ? null : s.otherPlayers.get(botId);
+    const currentWeapon = botId === 'main_ai' ? s.aiActiveWeapon : botState?.activeWeapon;
+    const botHP = botId === 'main_ai' ? s.aiHP : botState?.hp || 1;
+    const botMaxHP = botId === 'main_ai' ? s.aiMaxHP : botState?.maxHp || 1;
+    const botPos = botId === 'main_ai' ? s.aiPos : (botState ? new THREE.Vector3(botState.pos.x, botState.pos.y, botState.pos.z) : new THREE.Vector3());
+
+    const dist = botPos.distanceTo(target.pos);
+    const targetIsProtected = target.invulnerabilityTimer > 0;
+
+    let nearbyEnemiesCount = 0;
+    if (s.playerHP > 0 && s.playerRespawnTimer <= 0 && !s.isObserverMode && botId !== 'player') {
+      if (botPos.distanceTo(s.playerPos) < 6.0) nearbyEnemiesCount++;
+    }
+    if (botId !== 'main_ai' && s.aiHP > 0 && s.aiState !== 'RESPAWNING') {
+      if (botPos.distanceTo(s.aiPos) < 6.0) nearbyEnemiesCount++;
+    }
+    if (s.otherPlayers) {
+      s.otherPlayers.forEach((other) => {
+        if (other.id !== botId && other.hp > 0 && other.respawnTimer <= 0) {
+          const otherPos = new THREE.Vector3(other.pos.x, other.pos.y, other.pos.z);
+          if (botPos.distanceTo(otherPos) < 6.0) nearbyEnemiesCount++;
+        }
+      });
+    }
+
+    const weaponSwapIQ = s.settings.aiWeaponSwapIQ ?? 50;
+    if (Math.random() * 100 > weaponSwapIQ + 10) return null;
+
+    if (targetIsProtected) {
+      return 'hammer';
+    }
+
+    if (nearbyEnemiesCount >= 2 && difficulty !== 'easy') {
+      return 'hammer';
+    }
+
+    const swordLungeDistance = s.settings.swordLungeDistance ?? 14.5;
+    if (target.hp <= 1 && dist <= Math.min(18.0, swordLungeDistance) && target.hp > 0) {
+      return 'sword';
+    }
+
+    if (target.isLunging) {
+      return 'hammer';
+    }
+
+    const playerAttackRange = s.settings.attackRange;
+    const playerAttackRadius = s.settings.attackRadius;
+    const playerDangerZone = playerAttackRange + playerAttackRadius * 0.85;
+    const minLunge = playerDangerZone * 0.85;
+    const maxLunge = Math.min(18.0, swordLungeDistance);
+    if (target.weaponState === 'recovering' && dist >= minLunge && dist <= maxLunge) {
+      return 'sword';
+    }
+
+    if (dist >= minLunge && dist <= maxLunge && Math.random() < 0.3) {
+      return 'sword';
+    }
+
+    if (dist < playerDangerZone * 0.7 && botHP >= botMaxHP * 0.35 && nearbyEnemiesCount < 2) {
+      return 'sword';
+    }
+
+    if (dist > maxLunge) {
+      return 'hammer';
+    }
+
+    return null;
+  };
+
+  // UNIFIED TACTICAL AI BEHAVIOR CONTROLLER
+  const updateSingleAIEntity = (botId: string, isMainAI: boolean, dt: number) => {
+    const s = stateRef.current;
+    
+    const botState = isMainAI ? null : s.otherPlayers.get(botId);
+    if (!isMainAI && !botState) return;
+
+    const botMesh = isMainAI 
+      ? threeRef.current.enemyGroup 
+      : threeRef.current.otherPlayerMeshes?.get(botId)?.group;
+    if (!botMesh) return;
+
+    const hp = isMainAI ? s.aiHP : botState!.hp;
+    if (hp <= 0) return;
+
+    if (isMainAI) {
+      if (!s.aiState) s.aiState = 'APPROACHING';
+      if (s.aiTimer === undefined) s.aiTimer = 0;
+      if (s.aiSwayTimer === undefined) s.aiSwayTimer = 0;
+      if (s.aiDashCooldownTimer === undefined) s.aiDashCooldownTimer = 0;
+      if (s.aiDashRemaining === undefined) s.aiDashRemaining = 0;
+      if (s.aiDashDir === undefined) s.aiDashDir = new THREE.Vector3();
+    } else {
+      const b = botState!;
+      if (!b.aiState) b.aiState = 'APPROACHING';
+      if (b.aiTimer === undefined) b.aiTimer = 0;
+      if (b.aiSwayTimer === undefined) b.aiSwayTimer = Math.random() * Math.PI;
+      if (b.aiDashCooldownTimer === undefined) b.aiDashCooldownTimer = 0;
+      if (b.aiDashRemaining === undefined) b.aiDashRemaining = 0;
+      if (b.aiDashDir === undefined) b.aiDashDir = { x: 0, y: 0, z: 0 };
+    }
+
+    const pos = isMainAI ? s.aiPos : new THREE.Vector3(botState!.pos.x, botState!.pos.y, botState!.pos.z);
+    const vel = isMainAI ? s.aiVel : new THREE.Vector3(botState!.vel.x, botState!.vel.y, botState!.vel.z);
+    let yaw = isMainAI ? s.aiYaw : botState!.yaw;
+    const activeWeapon = isMainAI ? s.aiActiveWeapon : botState!.activeWeapon;
+    const weaponState = isMainAI ? s.aiWeaponState : (botState!.weaponState || 'ready');
+
+    let state = isMainAI ? s.aiState : botState!.aiState!;
+    let timer = isMainAI ? s.aiTimer : botState!.aiTimer!;
+    let swayTimer = isMainAI ? s.aiSwayTimer : botState!.aiSwayTimer!;
+    let dashCooldownTimer = isMainAI ? s.aiDashCooldownTimer : botState!.aiDashCooldownTimer!;
+    let dashRemaining = isMainAI ? s.aiDashRemaining : botState!.aiDashRemaining!;
+    const dashDir = isMainAI ? s.aiDashDir : new THREE.Vector3(botState!.aiDashDir!.x, botState!.aiDashDir!.y, botState!.aiDashDir!.z);
+
+    const difficulty = isMainAI 
+      ? ((botDifficulties as any)?.main_ai || s.settings.aiDifficulty || 'normal')
+      : (botState!.difficulty || 'normal');
+
+    let reactionLatency = s.settings.aiReactionLatency ?? 0.25;
+    let anticipationFactor = s.settings.aiAnticipationFactor ?? 0.40;
+    let movementComplexity = s.settings.aiMovementComplexity ?? 50; 
+    let weaponSwapIQ = s.settings.aiWeaponSwapIQ ?? 50;
+
+    if (difficulty === 'easy') {
+      reactionLatency = 0.55;
+      anticipationFactor = 0.08;
+      movementComplexity = 20;
+      weaponSwapIQ = 15;
+    } else if (difficulty === 'normal') {
+      reactionLatency = 0.25;
+      anticipationFactor = 0.40;
+      movementComplexity = 50;
+      weaponSwapIQ = 50;
+    } else if (difficulty === 'hard') {
+      reactionLatency = 0.08;
+      anticipationFactor = 0.78;
+      movementComplexity = 80;
+      weaponSwapIQ = 88;
+    } else if (difficulty === 'nightmare') {
+      reactionLatency = 0.01;
+      anticipationFactor = 0.98;
+      movementComplexity = 98;
+      weaponSwapIQ = 98;
+    }
+
+    const target = getBestTacticalTarget(botId, pos, difficulty);
+
+    // Spawn Anticipation (No living targets)
+    if (!target) {
+      const livingPositions: THREE.Vector3[] = [];
+      if (s.playerHP > 0 && s.playerRespawnTimer <= 0 && !s.isObserverMode) {
+        livingPositions.push(s.playerPos);
+      }
+      if (s.aiHP > 0 && s.aiState !== 'RESPAWNING') {
+        livingPositions.push(s.aiPos);
+      }
+      if (s.otherPlayers) {
+        s.otherPlayers.forEach((other) => {
+          if (other.id !== botId && other.hp > 0 && other.respawnTimer <= 0) {
+            livingPositions.push(new THREE.Vector3(other.pos.x, other.pos.y, other.pos.z));
+          }
+        });
+      }
+
+      const anticipatedSpawn = getOptimalSpawnPoint(livingPositions);
+      const toSpawn = anticipatedSpawn.clone().sub(pos);
+      toSpawn.y = 0;
+      const spawnDist = toSpawn.length();
+
+      if (spawnDist > 0.1) {
+        yaw = Math.atan2(toSpawn.x, toSpawn.z);
+      }
+
+      state = 'SPAWN_GUARDING';
+      
+      if (spawnDist > 6.0) {
+        const moveHeading = toSpawn.clone().normalize();
+        vel.copy(moveHeading).multiplyScalar(3.5 * (s.settings.speedForward / 100));
+        pos.addScaledVector(vel, dt);
+      } else if (spawnDist < 5.0) {
+        const moveHeading = toSpawn.clone().normalize();
+        vel.copy(moveHeading).multiplyScalar(-2.5 * (s.settings.speedBackward / 100));
+        pos.addScaledVector(vel, dt);
+      } else {
+        vel.set(0, 0, 0);
+      }
+
+      if (isMainAI) {
+        s.aiYaw = yaw;
+        s.aiState = state;
+        s.aiTimer = 0;
+      } else {
+        botState!.yaw = yaw;
+        botState!.aiState = state;
+        botState!.aiTimer = 0;
+        botState!.pos.copy(pos);
+        botState!.vel.copy(vel);
+      }
+      botMesh.rotation.y = yaw;
+      botMesh.position.copy(pos);
+      return;
+    }
+
+    // Gravity Integration for Offline Bots
+    if (!isMainAI) {
+      if (botState!.vel.y !== 0 || botState!.pos.y > 0) {
+        botState!.vel.y -= 18.0 * dt; 
+        pos.y += botState!.vel.y * dt;
+        
+        pos.x += botState!.vel.x * dt;
+        pos.z += botState!.vel.z * dt;
+
+        if (pos.y <= 0) {
+          pos.y = 0;
+          botState!.vel.y = 0;
+          botState!.vel.x = 0;
+          botState!.vel.z = 0;
+        }
+      } else {
+        pos.y = 0;
+        botState!.vel.y = 0;
+      }
+    }
+
+    const anticipationBonus = anticipationFactor * 0.42;
+    const predictedTargetPos = target.pos.clone();
+    if (target.vel && target.vel.length() > 0.15 && anticipationFactor > 0.1) {
+      predictedTargetPos.addScaledVector(target.vel, reactionLatency + anticipationBonus);
+    }
+    
+    const predDistFromCenter = Math.sqrt(predictedTargetPos.x * predictedTargetPos.x + predictedTargetPos.z * predictedTargetPos.z);
+    if (predDistFromCenter > s.arenaRadius - 0.6) {
+      const angle = Math.atan2(predictedTargetPos.z, predictedTargetPos.x);
+      predictedTargetPos.x = Math.cos(angle) * (s.arenaRadius - 0.6);
+      predictedTargetPos.z = Math.sin(angle) * (s.arenaRadius - 0.6);
+    }
+
+    const toTarget = predictedTargetPos.clone().sub(pos);
+    toTarget.y = 0;
+    const distanceToTarget = toTarget.length();
+    
+    yaw = Math.atan2(toTarget.x, toTarget.z);
+    botMesh.rotation.y = yaw;
+
+    const playerDangerZone = s.settings.attackRange + s.settings.attackRadius * 0.85;
+    const aiReach = s.settings.attackRange + s.settings.attackRadius * 0.75;
+    const targetIsProtected = target.invulnerabilityTimer > 0;
+    const targetIsLunging = target.isLunging;
+
+    const isTacticalState = state === 'SIDE_STEPPING' || state === 'COOLDOWN';
+    const crouchCycle = (swayTimer % 4.0) < 1.5;
+    const isCrouching = isTacticalState && crouchCycle && (movementComplexity > 30);
+
+    if (isCrouching) {
+      botMesh.scale.set(1, 0.65, 1);
+    } else {
+      botMesh.scale.set(1, 1, 1);
+    }
+    if (!isMainAI) botState!.isCrouching = isCrouching;
+
+    if (dashCooldownTimer > 0) {
+      dashCooldownTimer = Math.max(0, dashCooldownTimer - dt);
+    }
+
+    // LUNGE DETECTION, COUNTER-KILLING (BULLTRUE) & EVASIVE DODGES
+    let isEvadingLunge = false;
+    if (targetIsLunging && distanceToTarget < 15.0 && difficulty !== 'easy') {
+      const lookHeading = toTarget.clone().normalize();
+      const sidewayHeading = new THREE.Vector3(-lookHeading.z, 0, lookHeading.x);
+
+      // Perpendicular evasive dash
+      if (dashCooldownTimer <= 0 && Math.random() < (difficulty === 'nightmare' ? 0.95 : 0.65)) {
+        const sideDir = Math.random() > 0.5 ? 1 : -1;
+        dashDir.copy(sidewayHeading).multiplyScalar(sideDir).normalize();
+        dashRemaining = s.settings.dashDuration || 0.25;
+        dashCooldownTimer = s.settings.dashCooldown || 2.0;
+        sfx.playDash();
+        isEvadingLunge = true;
+      } 
+      // Hammer Jump evasion
+      else if (activeWeapon === 'hammer' && weaponState === 'ready' && Math.random() < 0.70) {
+        if (isMainAI) {
+          s.aiHammerJumpPlanned = true;
+          s.aiHammerJumpType = 'defensive';
+          triggerEnemyHammerSwing();
+        } else {
+          botState!.weaponState = 'swing_up';
+          botState!.weaponTimer = 0;
+          botState!.vel.y = 7.2 + (s.settings.hammerJumpPower ?? 6.5);
+          sfx.playSwing();
+          sfx.playJump();
+          spawnVoxelShockwaveParticles(pos, '#f59e0b');
+        }
+        isEvadingLunge = true;
+      }
+      // Sidestep & Jump
+      else {
+        const sideDir = Math.sin(swayTimer * 5.0) > 0 ? 1 : -1;
+        vel.copy(sidewayHeading).multiplyScalar(7.5 * sideDir);
+        if (isMainAI) {
+          if (!s.aiIsJumping) {
+            s.aiIsJumping = true;
+            s.aiVel.y = 5.5;
+            sfx.playJump();
+          }
+        } else {
+          if (botState!.vel.y === 0) {
+            botState!.vel.y = 5.5;
+            sfx.playJump();
+          }
+        }
+        pos.addScaledVector(vel, dt);
+        isEvadingLunge = true;
+      }
+
+      // Timing-based counter swing (Bulltrue)
+      if (activeWeapon === 'hammer' && weaponState === 'ready') {
+        const lungeSpeed = s.settings.swordLungeSpeed ?? 24.0;
+        const hammerWindup = 0.32;
+        const triggerDist = lungeSpeed * hammerWindup + (s.settings.attackRadius * 0.85);
+
+        if (distanceToTarget <= triggerDist && distanceToTarget >= (triggerDist - 3.5)) {
+          if (isMainAI) {
+            triggerEnemyHammerSwing();
+          } else {
+            botState!.weaponState = 'swing_up';
+            botState!.weaponTimer = 0;
+            sfx.playSwing();
+          }
+        }
+      }
+    }
+
+    // Dynamic weapon swapping
+    const tacticalWeapon = evaluateTacticalWeaponChoice(botId, target, difficulty);
+    if (tacticalWeapon && tacticalWeapon !== activeWeapon) {
+      if (isMainAI) {
+        swapEnemyWeapon(tacticalWeapon);
+      } else {
+        botState!.activeWeapon = tacticalWeapon;
+        const meshes = threeRef.current.otherPlayerMeshes?.get(botId);
+        if (meshes) {
+          meshes.hammer.visible = tacticalWeapon === 'hammer';
+          meshes.sword.visible = tacticalWeapon === 'sword';
+        }
+      }
+    }
+
+    timer -= dt;
+    swayTimer += dt;
+
+    if (isMainAI && s.aiState === 'LUNGING') {
+      return;
+    }
+
+    // Bot Lunging state for additional bots!
+    if (!isMainAI && botState!.isLunging) {
+      botState!.lungeTimer = (botState!.lungeTimer || 0) + dt;
+      const lungeSpeed = s.settings.swordLungeSpeed ?? 24.0;
+      const targetDir = new THREE.Vector3(botState!.lungeTargetDir!.x, botState!.lungeTargetDir!.y, botState!.lungeTargetDir!.z);
+      
+      vel.copy(targetDir).multiplyScalar(lungeSpeed);
+      pos.addScaledVector(vel, dt);
+      pos.y = 0;
+      vel.y = 0;
+      botState!.pos.copy(pos);
+      botState!.vel.copy(vel);
+      botMesh.position.copy(pos);
+
+      if (Math.random() > 0.1) {
+        const trailPos = pos.clone();
+        trailPos.y += 0.825;
+        spawnVoxelShockwaveParticles(trailPos, '#ef4444');
+      }
+
+      const dist = pos.distanceTo(target.pos);
+      if (target.hp <= 0) {
+        botState!.isLunging = false;
+        botState!.aiState = 'COOLDOWN';
+        botState!.aiTimer = s.settings.swordLungeReload ?? 1.2;
+        botState!.weaponState = 'ready';
+      } else if (dist <= 1.5) {
+        const swordThreshold = s.settings.swordTradeWindow ?? 350;
+        
+        let targetIsAttacking = false;
+        if (target.id === 'player') {
+          targetIsAttacking = s.settings.enableSwordTrade && s.activeWeapon === 'sword' && (
+            s.isLunging || s.pSwordState === 'slashing' || (Date.now() - s.lastPlayerSwordAttackTime <= swordThreshold)
+          );
+        } else if (target.id === 'main_ai') {
+          targetIsAttacking = s.settings.enableSwordTrade && s.aiActiveWeapon === 'sword' && (
+            s.aiState === 'LUNGING' || s.aiWeaponState === 'swing_up' || s.aiWeaponState === 'swing_down' || (Date.now() - s.lastAISwordAttackTime <= swordThreshold)
+          );
+        } else {
+          const tBot = s.otherPlayers.get(target.id);
+          if (tBot) {
+            targetIsAttacking = s.settings.enableSwordTrade && tBot.activeWeapon === 'sword' && (
+              tBot.isLunging || tBot.weaponState === 'swing_up' || tBot.weaponState === 'swing_down'
+            );
+          }
+        }
+
+        if (targetIsAttacking) {
           executeTrade('sword_vs_sword');
           return;
         }
 
-        // Red team AI hits the player with sword slash!
-        s.playerHP -= 1;
-        if (s.playerHP <= 0) {
-          s.playerHP = 0;
-          s.playerRespawnTimer = 3.0;
-          s.scoreEnemy += 1;
-          s.playerDeaths += 1;
-          s.enemyKills += 1;
-          sfx.playDeath();
-          s.pWeaponState = 'ready';
-          s.pWeaponTimer = 0;
-          s.pWeaponReady = true;
-          s.pSwordState = 'ready';
-          s.pSwordTimer = 0;
-          s.pSwordReady = true;
-          s.isLunging = false;
-          s.lungeTimer = 0;
-          
-          const newDeath = {
-            id: Math.random().toString(36).substring(2, 9),
-            attacker: 'Red (AI) [Slash]',
-            victim: 'Blue (You)',
-          };
-          s.lastDeaths = [newDeath, ...s.lastDeaths].slice(0, 3);
-          spawnVoxelShockwaveParticles(s.playerPos, '#3b82f6');
+        if (target.id === 'player') {
+          s.playerHP -= 1;
+          botState!.isLunging = false;
+          botState!.aiState = 'COOLDOWN';
+          botState!.aiTimer = s.settings.swordLungeReload ?? 1.2;
+          botState!.weaponState = 'ready';
+          sfx.playExplosion();
+          spawnVoxelShockwaveParticles(s.playerPos, '#ef4444');
+
+          if (s.playerHP <= 0) {
+            s.playerHP = 0;
+            s.playerRespawnTimer = 3.0;
+            s.playerDeaths += 1;
+            botState!.score = (botState!.score || 0) + 1;
+            botState!.kills = (botState!.kills || 0) + 1;
+            sfx.playDeath();
+            
+            const newDeath = {
+              id: Math.random().toString(36).substring(2, 9),
+              attacker: botState!.playerName,
+              victim: s.settings.playerName || 'Blue (You)'
+            };
+            s.lastDeaths = [newDeath, ...s.lastDeaths].slice(0, 3);
+          }
+        } else if (target.id === 'main_ai') {
+          s.aiHP -= 1;
+          botState!.isLunging = false;
+          botState!.aiState = 'COOLDOWN';
+          botState!.aiTimer = s.settings.swordLungeReload ?? 1.2;
+          botState!.weaponState = 'ready';
+          sfx.playExplosion();
+          spawnVoxelShockwaveParticles(s.aiPos, '#ef4444');
+
+          if (s.aiHP <= 0) {
+            s.aiHP = 0;
+            s.aiState = 'RESPAWNING';
+            s.enemyRespawnTimer = 3.0;
+            botState!.score = (botState!.score || 0) + 1;
+            botState!.kills = (botState!.kills || 0) + 1;
+            s.enemyDeaths += 1;
+            sfx.playDeath();
+          }
         } else {
+          const oBot = s.otherPlayers.get(target.id);
+          if (oBot) {
+            oBot.hp -= 1;
+            botState!.isLunging = false;
+            botState!.aiState = 'COOLDOWN';
+            botState!.aiTimer = s.settings.swordLungeReload ?? 1.2;
+            botState!.weaponState = 'ready';
+            sfx.playExplosion();
+            spawnVoxelShockwaveParticles(oBot.pos, '#ef4444');
+
+            if (oBot.hp <= 0) {
+              oBot.hp = 0;
+              oBot.respawnTimer = 3.0;
+              botState!.score = (botState!.score || 0) + 1;
+              botState!.kills = (botState!.kills || 0) + 1;
+              oBot.deaths = (oBot.deaths || 0) + 1;
+              sfx.playDeath();
+            }
+          }
+        }
+        pushStatsUpdate();
+      }
+
+      const startDist = pos.distanceTo(new THREE.Vector3(botState!.lungeStartPos!.x, botState!.lungeStartPos!.y, botState!.lungeStartPos!.z));
+      if (startDist > 16.0 || botState!.lungeTimer > 0.8) {
+        botState!.isLunging = false;
+        botState!.aiState = 'COOLDOWN';
+        botState!.aiTimer = s.settings.swordLungeReload ?? 1.2;
+        botState!.weaponState = 'ready';
+      }
+      return;
+    }
+
+    if (isEvadingLunge) {
+      return;
+    }
+
+    const isAIDashing = dashRemaining > 0;
+    if (isAIDashing) {
+      dashRemaining = Math.max(0, dashRemaining - dt);
+      const speed = s.settings.dashDistance / (s.settings.dashDuration || 0.25);
+      vel.copy(dashDir).multiplyScalar(speed);
+      pos.addScaledVector(vel, dt);
+
+      if (Math.random() > 0.15) {
+        const trailPos = pos.clone();
+        trailPos.y += 0.5;
+        const scene = threeRef.current.scene;
+        if (scene) {
+          const geo = new THREE.BoxGeometry(0.12, 0.12, 0.12);
+          const mat = new THREE.MeshBasicMaterial({
+            color: new THREE.Color(activeWeapon === 'hammer' ? '#f97316' : '#ef4444'),
+            transparent: true,
+            opacity: 0.75,
+          });
+          const mesh = new THREE.Mesh(geo, mat);
+          mesh.position.copy(trailPos);
+          scene.add(mesh);
+          threeRef.current.damageExplosionParticles.push({
+            mesh,
+            velocity: new THREE.Vector3((Math.random() - 0.5) * 0.4, Math.random() * 0.2, (Math.random() - 0.5) * 0.4),
+            life: 0.0,
+            maxLife: 0.25 + Math.random() * 0.15,
+          });
+        }
+      }
+    } else {
+      if (isMainAI && s.aiIsJumping && s.aiHP > 0) {
+        if (movementComplexity >= 45) {
+          const lookHeading = toTarget.clone().normalize();
+          const sidewayHeading = new THREE.Vector3(-lookHeading.z, 0, lookHeading.x);
+          const sideDir = Math.sin(swayTimer * 3.0) > 0 ? 1 : -1;
+          s.aiVel.x += (sidewayHeading.x * 2.0 * sideDir + lookHeading.x * 0.4) * dt;
+          s.aiVel.z += (sidewayHeading.z * 2.0 * sideDir + lookHeading.z * 0.4) * dt;
+        }
+      }
+
+      if (!isMainAI && botState!.vel.y > 0) {
+        if (movementComplexity >= 45) {
+          const lookHeading = toTarget.clone().normalize();
+          const sidewayHeading = new THREE.Vector3(-lookHeading.z, 0, lookHeading.x);
+          const sideDir = Math.sin(swayTimer * 3.0) > 0 ? 1 : -1;
+          botState!.vel.x += (sidewayHeading.x * 2.0 * sideDir + lookHeading.x * 0.4) * dt;
+          botState!.vel.z += (sidewayHeading.z * 2.0 * sideDir + lookHeading.z * 0.4) * dt;
+        }
+      }
+
+      const lookHeading = toTarget.clone().normalize();
+      const sidewayHeading = new THREE.Vector3(-lookHeading.z, 0, lookHeading.x);
+
+      // Sword Lunge Opportunity
+      const minLungeRange = playerDangerZone * 0.85;
+      const maxLungeRange = Math.min(18.0, s.settings.swordLungeDistance ?? 14.5);
+      if (activeWeapon === 'sword' && weaponState === 'ready' && distanceToTarget >= minLungeRange && distanceToTarget <= maxLungeRange && target.hp > 0 && !targetIsProtected) {
+        const lungeChance = 0.04 + (anticipationFactor * 0.08);
+        if (Math.random() < lungeChance) {
+          if (isMainAI) {
+            triggerEnemySwordLunge();
+          } else {
+            botState!.isLunging = true;
+            botState!.lungeTimer = 0;
+            botState!.lungeStartPos = { x: pos.x, y: pos.y, z: pos.z };
+            botState!.lungeTargetDir = { x: lookHeading.x, y: lookHeading.y, z: lookHeading.z };
+            botState!.weaponState = 'ready';
+            sfx.playDash();
+          }
+          return;
+        }
+      }
+
+      if (weaponState === 'ready' && distanceToTarget > (playerDangerZone + 1.5) && distanceToTarget <= (playerDangerZone + 5.5) && Math.random() < 0.015 && (movementComplexity >= 40) && !targetIsProtected) {
+        if (isMainAI) {
+          s.aiHammerJumpPlanned = true;
+          s.aiHammerJumpType = 'offensive';
+          triggerEnemyHammerSwing();
+        } else {
+          botState!.weaponState = 'swing_up';
+          botState!.weaponTimer = 0;
+          botState!.vel.y = 7.2 + (s.settings.hammerJumpPower ?? 6.5);
+          botState!.vel.x = lookHeading.x * 6.5;
+          botState!.vel.z = lookHeading.z * 6.5;
           sfx.playSwing();
-          spawnVoxelShockwaveParticles(s.playerPos, '#e2e8f0');
+          sfx.playJump();
+        }
+      }
+
+      if (state === 'APPROACHING') {
+        vel.copy(lookHeading).multiplyScalar(4.0 * (s.settings.speedForward / 100));
+        pos.addScaledVector(vel, dt);
+
+        if (distanceToTarget <= (playerDangerZone + 3.2)) {
+          state = 'SIDE_STEPPING';
+          timer = Math.random() * 0.7 + 0.3;
+        }
+      } 
+      else if (state === 'SIDE_STEPPING') {
+        const dir = Math.sin(swayTimer * 2.2) > 0 ? 1 : -1;
+        vel.copy(sidewayHeading).multiplyScalar(3.2 * (s.settings.speedSide / 100) * dir);
+        
+        const desiredDist = activeWeapon === 'sword' ? (maxLungeRange * 0.7) : (playerDangerZone + 1.2);
+        const approachBias = distanceToTarget > desiredDist ? 0.35 : -0.45;
+        const approachSpeed = approachBias * 1.5 * (approachBias > 0 ? (s.settings.speedForward / 100) : (s.settings.speedBackward / 100));
+        vel.addScaledVector(lookHeading, approachSpeed);
+        
+        if (isCrouching) {
+          vel.multiplyScalar(0.45);
+        }
+        pos.addScaledVector(vel, dt);
+
+        if (dashCooldownTimer <= 0 && distanceToTarget < (playerDangerZone + 2.0) && Math.random() < 0.015 && (movementComplexity >= 40)) {
+          const sideDir = Math.random() > 0.5 ? 1 : -1;
+          dashDir.copy(sidewayHeading).multiplyScalar(sideDir).normalize();
+          dashRemaining = s.settings.dashDuration || 0.25;
+          dashCooldownTimer = s.settings.dashCooldown || 2.0;
+          sfx.playDash();
+        }
+
+        if (target.weaponState === 'swing_up' && !targetIsProtected) {
+          const reactChance = 0.45 + (anticipationFactor * 0.4);
+          
+          const myHP = isMainAI ? s.aiHP : botState!.hp;
+          const targetHP = target.hp;
+          const shouldAvoidTrade = (myHP <= targetHP) && (difficulty === 'hard' || difficulty === 'nightmare');
+
+          if (shouldAvoidTrade || Math.random() < reactChance) {
+            state = 'DANCING_BACKWARD';
+            timer = reactionLatency + 0.35;
+
+            if (dashCooldownTimer <= 0) {
+              dashDir.copy(lookHeading).multiplyScalar(-1).normalize();
+              dashRemaining = s.settings.dashDuration || 0.25;
+              dashCooldownTimer = s.settings.dashCooldown || 2.0;
+              sfx.playDash();
+            }
+          }
+        }
+
+        if (targetIsProtected) {
+          state = 'DANCING_BACKWARD';
+          timer = 0.5;
+        }
+
+        if (timer <= 0) {
+          if (distanceToTarget <= (aiReach + 0.5) && weaponState === 'ready' && target.hp > 0 && !targetIsProtected) {
+            state = 'CHARGE_ATTACK';
+          } else {
+            state = 'DANCING_FORWARD';
+            timer = Math.random() * 0.5 + 0.25;
+          }
+        }
+      } 
+      else if (state === 'DANCING_FORWARD') {
+        vel.copy(lookHeading).multiplyScalar(5.0 * (s.settings.speedForward / 100));
+        pos.addScaledVector(vel, dt);
+
+        if (target.weaponState === 'swing_up' && !targetIsProtected) {
+          state = 'DANCING_BACKWARD';
+          timer = 0.65;
+          if (dashCooldownTimer <= 0 && Math.random() < 0.7) {
+            dashDir.copy(lookHeading).multiplyScalar(-1).normalize();
+            dashRemaining = s.settings.dashDuration || 0.25;
+            dashCooldownTimer = s.settings.dashCooldown || 2.0;
+            sfx.playDash();
+          }
+        } else if (distanceToTarget <= aiReach && weaponState === 'ready' && target.hp > 0 && !targetIsProtected) {
+          state = 'CHARGE_ATTACK';
+        }
+
+        if (targetIsProtected) {
+          state = 'DANCING_BACKWARD';
+          timer = 0.5;
+        }
+
+        if (timer <= 0) {
+          state = 'SIDE_STEPPING';
+          timer = Math.random() * 0.7 + 0.3;
+        }
+      } 
+      else if (state === 'DANCING_BACKWARD') {
+        vel.copy(lookHeading).multiplyScalar(-6.2 * (s.settings.speedBackward / 100));
+        pos.addScaledVector(vel, dt);
+
+        if (target.weaponState === 'recovering' && distanceToTarget <= (aiReach + 2.5) && !targetIsProtected) {
+          state = 'CHARGE_ATTACK';
+        }
+
+        if (timer <= 0) {
+          state = 'SIDE_STEPPING';
+          timer = 0.4;
+        }
+      } 
+      else if (state === 'CHARGE_ATTACK') {
+        if (dashCooldownTimer <= 0 && (movementComplexity >= 40) && !targetIsProtected) {
+          dashDir.copy(lookHeading).normalize();
+          dashRemaining = s.settings.dashDuration || 0.25;
+          dashCooldownTimer = s.settings.dashCooldown || 2.0;
+          sfx.playDash();
+        }
+
+        vel.copy(lookHeading).multiplyScalar(6.5 * (s.settings.speedForward / 100));
+        pos.addScaledVector(vel, dt);
+
+        if (distanceToTarget <= aiReach && weaponState === 'ready' && target.hp > 0 && !targetIsProtected) {
+          const myHP = isMainAI ? s.aiHP : botState!.hp;
+          const targetHP = target.hp;
+          const shouldAvoidTrade = (myHP <= targetHP) && (difficulty === 'hard' || difficulty === 'nightmare') && isTargetOnCooldown(target);
+          const targetIsSwinging = target.weaponState === 'swing_up' || target.weaponState === 'swing_down';
+
+          if (shouldAvoidTrade && targetIsSwinging) {
+            state = 'DANCING_BACKWARD';
+            timer = 0.6;
+            if (dashCooldownTimer <= 0) {
+              dashDir.copy(lookHeading).multiplyScalar(-1).normalize();
+              dashRemaining = s.settings.dashDuration || 0.25;
+              dashCooldownTimer = s.settings.dashCooldown || 2.0;
+              sfx.playDash();
+            }
+          } else {
+            state = 'COOLDOWN';
+            timer = activeWeapon === 'sword' ? (s.settings.swordSlashReload ?? 0.6) : 1.1;
+            if (isMainAI) {
+              if (activeWeapon === 'sword') {
+                triggerEnemySwordSlash();
+              } else {
+                triggerEnemyHammerSwing();
+              }
+            } else {
+              botState!.weaponState = 'swing_up';
+              botState!.weaponTimer = 0;
+              sfx.playSwing();
+            }
+          }
+        } else if (distanceToTarget > (aiReach + 2.0) || targetIsProtected) {
+          state = 'SIDE_STEPPING';
+          timer = 0.4;
+        }
+      } 
+      else if (state === 'COOLDOWN') {
+        vel.copy(lookHeading).multiplyScalar(-1.5 * (s.settings.speedBackward / 100));
+        if (isCrouching) {
+          vel.multiplyScalar(0.45);
+        }
+        pos.addScaledVector(vel, dt);
+
+        if (timer <= 0) {
+          state = 'SIDE_STEPPING';
+          timer = 0.7;
         }
       }
     }
+
+    const distFromCenter = Math.sqrt(pos.x * pos.x + pos.z * pos.z);
+    if (distFromCenter > s.arenaRadius - 0.6) {
+      const angle = Math.atan2(pos.z, pos.x);
+      pos.x = Math.cos(angle) * (s.arenaRadius - 0.6);
+      pos.z = Math.sin(angle) * (s.arenaRadius - 0.6);
+    }
+
+    if (isMainAI) {
+      s.aiPos.copy(pos);
+      s.aiVel.copy(vel);
+      s.aiYaw = yaw;
+      s.aiState = state;
+      s.aiTimer = timer;
+      s.aiSwayTimer = swayTimer;
+      s.aiDashCooldownTimer = dashCooldownTimer;
+      s.aiDashRemaining = dashRemaining;
+      s.aiDashDir.copy(dashDir);
+    } else {
+      botState!.pos.copy(pos);
+      botState!.vel.copy(vel);
+      botState!.yaw = yaw;
+      botState!.aiState = state;
+      botState!.aiTimer = timer;
+      botState!.aiSwayTimer = swayTimer;
+      botState!.aiDashCooldownTimer = dashCooldownTimer;
+      botState!.aiDashRemaining = dashRemaining;
+      botState!.aiDashDir = { x: dashDir.x, y: dashDir.y, z: dashDir.z };
+    }
+
+    botMesh.position.copy(pos);
   };
 
   // ENEMY AI PATHFINDING & FENCING STRATEGY
@@ -3448,8 +4608,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     }
 
     // Dynamic chaser-attacker AI logic for additional offline bots.
-    // Runs unconditionally (before main-AI early-returns) so bots keep moving and
-    // respawning even when the main AI is dead, respawning, or lunging.
+    // Runs unconditionally so bots keep moving and respawning
     if (s.otherPlayers) {
       s.otherPlayers.forEach((bot) => {
         if (bot.id.startsWith('bot_')) {
@@ -3474,6 +4633,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
               bot.yaw = Math.random() * Math.PI * 2;
               bot.weaponState = 'ready';
               bot.weaponTimer = 0;
+              bot.invulnerabilityTimer = s.settings.respawnInvulnerabilityDuration; // Spawn protection!
               botMesh.visible = true;
               sfx.playRespawn();
             }
@@ -3481,170 +4641,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
           }
 
           botMesh.visible = true;
-
-          // Find closest living target (either local player, other bots, or main AI).
-          // Dead/respawning players must not remain as AI targets at their last position.
-          let closestTargetPos: THREE.Vector3 | null = null;
-          let closestDist = Infinity;
-
-          if (s.playerHP > 0 && s.playerRespawnTimer <= 0) {
-            closestTargetPos = s.playerPos;
-            closestDist = bot.pos.distanceTo(s.playerPos);
-          }
-
-          if (s.aiHP > 0 && s.aiState !== 'RESPAWNING') {
-            const distToMainAI = bot.pos.distanceTo(s.aiPos);
-            if (distToMainAI < closestDist) {
-              closestDist = distToMainAI;
-              closestTargetPos = s.aiPos;
-            }
-          }
-
-          s.otherPlayers.forEach((other) => {
-            if (other.id !== bot.id && other.hp > 0 && other.respawnTimer <= 0) {
-              const distToOther = bot.pos.distanceTo(new THREE.Vector3(other.pos.x, other.pos.y, other.pos.z));
-              if (distToOther < closestDist) {
-                closestDist = distToOther;
-                closestTargetPos = new THREE.Vector3(other.pos.x, other.pos.y, other.pos.z);
-              }
-            }
-          });
-
-          if (!closestTargetPos) {
-            bot.vel.set(0, 0, 0);
-            bot.weaponState = 'ready';
-            bot.weaponTimer = 0;
-            botMesh.position.copy(bot.pos);
-            return;
-          }
-
-          // Look at closest target
-          const toTarget = closestTargetPos.clone().sub(bot.pos);
-          toTarget.y = 0;
-          bot.yaw = Math.atan2(toTarget.x, toTarget.z);
-          botMesh.rotation.y = bot.yaw;
-
-          // Move towards closest target
-          const moveDir = toTarget.clone().normalize();
-
-          // Speed and attack frequency scale based on individual bot difficulty
-          const botDiff = bot.difficulty || 'normal';
-          let botBaseSpeed = 5.8;
-          let attackChance = 0.05;
-
-          if (botDiff === 'easy') {
-            botBaseSpeed = 4.5;
-            attackChance = 0.02;
-          } else if (botDiff === 'hard') {
-            botBaseSpeed = 6.8;
-            attackChance = 0.09;
-          } else if (botDiff === 'nightmare') {
-            botBaseSpeed = 8.0;
-            attackChance = 0.15;
-          }
-
-          const baseSpeed = bot.isCrouching ? botBaseSpeed * 0.43 : botBaseSpeed;
-          bot.vel.copy(moveDir).multiplyScalar(baseSpeed);
-          bot.pos.addScaledVector(bot.vel, dt);
-          botMesh.position.copy(bot.pos);
-
-          // Boundaries
-          const distFromCenter = Math.sqrt(bot.pos.x * bot.pos.x + bot.pos.z * bot.pos.z);
-          if (distFromCenter > s.arenaRadius - 0.6) {
-            const angle = Math.atan2(bot.pos.z, bot.pos.x);
-            bot.pos.x = Math.cos(angle) * (s.arenaRadius - 0.6);
-            bot.pos.z = Math.sin(angle) * (s.arenaRadius - 0.6);
-            botMesh.position.copy(bot.pos);
-          }
-
-          // Attack logic
-          if (closestDist <= 3.5 && Math.random() < attackChance) {
-            bot.activeWeapon = Math.random() > 0.5 ? 'hammer' : 'sword';
-            bot.weaponState = 'swing_up';
-            bot.weaponTimer = 0;
-            const hammerMesh = threeRef.current.otherPlayerMeshes?.get(bot.id)?.hammer;
-            const swordMesh = threeRef.current.otherPlayerMeshes?.get(bot.id)?.sword;
-
-            if (hammerMesh && swordMesh) {
-              hammerMesh.visible = bot.activeWeapon === 'hammer';
-              swordMesh.visible = bot.activeWeapon === 'sword';
-            }
-
-            sfx.playSwing();
-            const impactPos = bot.pos.clone().addScaledVector(moveDir, 1.8);
-            spawnVoxelShockwaveParticles(impactPos, bot.activeWeapon === 'hammer' ? '#f97316' : '#ef4444');
-
-            // Apply damage to player
-            if (s.playerHP > 0 && s.playerInvulnerabilityTimer <= 0) {
-              const playerBody = new THREE.Vector3(s.playerPos.x, s.playerPos.y + 0.825, s.playerPos.z);
-              if (impactPos.distanceTo(playerBody) <= s.settings.attackRadius) {
-                s.playerHP -= 1;
-                if (s.playerHP <= 0) {
-                  s.playerHP = 0;
-                  s.playerRespawnTimer = 3.0;
-                  s.playerDeaths += 1;
-                  bot.score = (bot.score || 0) + 1;
-                  bot.kills = (bot.kills || 0) + 1;
-                  sfx.playDeath();
-                  const newDeath = {
-                    id: Math.random().toString(36).substring(2, 9),
-                    attacker: bot.playerName,
-                    victim: s.settings.playerName || 'Blue (You)'
-                  };
-                  s.lastDeaths = [newDeath, ...s.lastDeaths].slice(0, 3);
-                }
-              }
-            }
-
-            // Apply damage to main AI
-            if (s.aiHP > 0 && s.aiState !== 'RESPAWNING' && s.aiInvulnerabilityTimer <= 0) {
-              const aiBody = new THREE.Vector3(s.aiPos.x, s.aiPos.y + 0.825, s.aiPos.z);
-              if (impactPos.distanceTo(aiBody) <= s.settings.attackRadius) {
-                s.aiHP -= 1;
-                if (s.aiHP <= 0) {
-                  s.aiHP = 0;
-                  s.aiState = 'RESPAWNING';
-                  s.enemyRespawnTimer = 3.0;
-                  bot.score = (bot.score || 0) + 1;
-                  bot.kills = (bot.kills || 0) + 1;
-                  s.enemyDeaths += 1;
-                  sfx.playDeath();
-                  const newDeath = {
-                    id: Math.random().toString(36).substring(2, 9),
-                    attacker: bot.playerName,
-                    victim: 'Red (AI)'
-                  };
-                  s.lastDeaths = [newDeath, ...s.lastDeaths].slice(0, 3);
-                }
-              }
-            }
-
-            // Apply damage to other bots
-            s.otherPlayers.forEach((other) => {
-              if (other.id !== bot.id && other.hp > 0 && other.respawnTimer <= 0) {
-                const otherBody = new THREE.Vector3(other.pos.x, other.pos.y + 0.825, other.pos.z);
-                if (impactPos.distanceTo(otherBody) <= s.settings.attackRadius) {
-                  other.hp -= 1;
-                  if (other.hp <= 0) {
-                    other.hp = 0;
-                    other.respawnTimer = 3.0;
-                    bot.score = (bot.score || 0) + 1;
-                    bot.kills = (bot.kills || 0) + 1;
-                    other.deaths = (other.deaths || 0) + 1;
-                    sfx.playDeath();
-                    const newDeath = {
-                      id: Math.random().toString(36).substring(2, 9),
-                      attacker: bot.playerName,
-                      victim: other.playerName
-                    };
-                    s.lastDeaths = [newDeath, ...s.lastDeaths].slice(0, 3);
-                  }
-                }
-              }
-            });
-
-            pushStatsUpdate();
-          }
+          updateSingleAIEntity(bot.id, false, dt);
         }
       });
     }
@@ -3681,133 +4678,10 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       return;
     }
 
-    if (s.playerHP <= 0 || s.playerRespawnTimer > 0) {
-      if (s.aiInvulnerabilityTimer > 0) {
-        s.aiInvulnerabilityTimer = Math.max(0, s.aiInvulnerabilityTimer - dt);
-      }
-
-      s.aiVel.x = 0;
-      s.aiVel.z = 0;
-      s.aiDashRemaining = 0;
-      s.aiHammerJumpWindowTimer = 0;
-      s.aiHammerJumpPlanned = false;
-      s.aiHammerJumpType = undefined;
-      s.aiIsCrouching = false;
-      s.aiWeaponState = 'ready';
-      s.aiWeaponTimer = 0;
-      s.aiState = 'COOLDOWN';
-      s.aiTimer = 0.4;
-
-      enemyMesh.scale.set(1, 1, 1);
-      enemyMesh.position.copy(s.aiPos);
-      enemyMesh.rotation.y = s.aiYaw;
-      return;
-    }
-
-    // Tick down ai invulnerability timer
-    if (s.aiInvulnerabilityTimer > 0) {
-      s.aiInvulnerabilityTimer = Math.max(0, s.aiInvulnerabilityTimer - dt);
-    }
-
+    // Main AI Combat update
     enemyMesh.visible = true;
-
-    // 1. Resolve AI Settings & Parameters based on difficulty presets or custom parameters
-    const difficultyPreset = (botDifficulties as any)?.main_ai || s.settings.aiDifficulty || 'normal';
-    let reactionLatency = s.settings.aiReactionLatency ?? 0.25;
-    let anticipationFactor = s.settings.aiAnticipationFactor ?? 0.40;
-    let movementComplexity = s.settings.aiMovementComplexity ?? 50; // 0 to 100
-    let weaponSwapIQ = s.settings.aiWeaponSwapIQ ?? 50; // 0 to 100
-
-    if (difficultyPreset === 'easy') {
-      reactionLatency = 0.55;
-      anticipationFactor = 0.08;
-      movementComplexity = 20;
-      weaponSwapIQ = 15;
-    } else if (difficultyPreset === 'normal') {
-      reactionLatency = 0.25;
-      anticipationFactor = 0.40;
-      movementComplexity = 50;
-      weaponSwapIQ = 50;
-    } else if (difficultyPreset === 'hard') {
-      reactionLatency = 0.08;
-      anticipationFactor = 0.78;
-      movementComplexity = 80;
-      weaponSwapIQ = 88;
-    } else if (difficultyPreset === 'nightmare') {
-      reactionLatency = 0.01;
-      anticipationFactor = 0.98;
-      movementComplexity = 98;
-      weaponSwapIQ = 98;
-    }
-
-    // 2. Trajectory Prediction Engine (Anticipate Player Movements)
-    // Higher anticipation factor means the AI projects further ahead, while reaction latency introduces a lag.
-    const anticipationBonus = anticipationFactor * 0.42; // scale prediction projection
-    const predictedPlayerPos = s.playerPos.clone();
-    if (s.playerVel && s.playerVel.length() > 0.15 && anticipationFactor > 0.1) {
-      predictedPlayerPos.addScaledVector(s.playerVel, reactionLatency + anticipationBonus);
-    }
     
-    // Maintain arena boundaries for prediction so AI doesn't lunge outside arena
-    const predDistFromCenter = Math.sqrt(predictedPlayerPos.x * predictedPlayerPos.x + predictedPlayerPos.z * predictedPlayerPos.z);
-    if (predDistFromCenter > s.arenaRadius - 0.6) {
-      const angle = Math.atan2(predictedPlayerPos.z, predictedPlayerPos.x);
-      predictedPlayerPos.x = Math.cos(angle) * (s.arenaRadius - 0.6);
-      predictedPlayerPos.z = Math.sin(angle) * (s.arenaRadius - 0.6);
-    }
-
-    // Vector to predicted player position
-    const toPlayer = predictedPlayerPos.clone().sub(s.aiPos);
-    toPlayer.y = 0; // maintain horizon plane
-    const distanceToPlayer = toPlayer.length();
-    
-    // Look and face at predicted trajectory heading (leading the player!)
-    s.aiYaw = Math.atan2(toPlayer.x, toPlayer.z);
-    enemyMesh.rotation.y = s.aiYaw;
-
-    // 3. Dynamic Mechanics Understanding & Admin Settings Coupling
-    const playerAttackRange = s.settings.attackRange;
-    const playerAttackRadius = s.settings.attackRadius;
-    const playerDangerZone = playerAttackRange + playerAttackRadius * 0.85;
-
-    const aiAttackRange = s.settings.attackRange;
-    const aiAttackRadius = s.settings.attackRadius;
-    const aiReach = aiAttackRange + aiAttackRadius * 0.75;
-
-    const playerIsProtected = s.playerInvulnerabilityTimer > 0;
-    const playerAimedAtAI = s.crosshairColor === 'red';
-
-    // AI Crouching state tracking & visual Y scale contraction
-    const isTacticalState = s.aiState === 'SIDE_STEPPING' || s.aiState === 'COOLDOWN';
-    const crouchCycle = (s.aiSwayTimer % 4.0) < 1.5;
-    s.aiIsCrouching = isTacticalState && crouchCycle && (movementComplexity > 30);
-
-    // Hyper-strafe & Crouch Dodge when player is aiming directly at the AI
-    if (playerAimedAtAI && (movementComplexity >= 70) && Math.random() < 0.18) {
-      s.aiIsCrouching = !s.aiIsCrouching; // Toggle crouch dodge
-      s.aiSwayTimer += Math.PI; // Instantly invert strafe sway direction
-      
-      // Evasive dash if off cooldown
-      if (s.aiDashCooldownTimer <= 0 && Math.random() < 0.4) {
-        const sideDir = Math.random() > 0.5 ? 1 : -1;
-        const lookHeading = toPlayer.clone().normalize();
-        const sidewayHeading = new THREE.Vector3(-lookHeading.z, 0, lookHeading.x);
-        s.aiDashDir.copy(sidewayHeading).multiplyScalar(sideDir).normalize();
-        s.aiDashRemaining = s.settings.dashDuration || 0.25;
-        s.aiDashCooldownTimer = s.settings.dashCooldown || 2.0;
-        sfx.playDash();
-      }
-    }
-
-    if (s.aiIsCrouching) {
-      enemyMesh.scale.set(1, 0.65, 1);
-    } else {
-      enemyMesh.scale.set(1, 1, 1);
-    }
-
-    // Sync AI vertical jump positions
-    enemyMesh.position.copy(s.aiPos);
-
+    // Main AI Sword Lunge state execution
     if (s.aiState === 'LUNGING') {
       s.aiLungeTimer += dt;
       const lungeSpeed = s.settings.swordLungeSpeed ?? 24.0;
@@ -3820,15 +4694,14 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       s.aiIsJumping = false;
       enemyMesh.position.copy(s.aiPos);
       
-      // Spawn beautiful cyber sword trail particles for AI (Glowing crimson red/rust)
       if (Math.random() > 0.1) {
         const trailPos = s.aiPos.clone();
-        trailPos.y += 0.825; // center torso
+        trailPos.y += 0.825;
         const scene = threeRef.current.scene;
         if (scene) {
           const geo = new THREE.BoxGeometry(0.12, 0.12, 0.12);
           const mat = new THREE.MeshBasicMaterial({
-            color: new THREE.Color('#ef4444'), // Red
+            color: new THREE.Color('#ef4444'),
             transparent: true,
             opacity: 0.75,
           });
@@ -3844,78 +4717,113 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         }
       }
       
-      // Check distance to player body center
-      const dist = s.aiPos.distanceTo(s.playerPos);
-      if (s.playerHP <= 0) {
-        s.aiState = 'COOLDOWN';
-        s.aiTimer = s.settings.swordLungeReload ?? 1.2;
-        s.aiWeaponState = 'ready';
-      } else if (dist <= 1.5) {
-        // Evaluate trades FIRST
-        const swordThreshold = s.settings.swordTradeWindow ?? 350;
-        const hammerThreshold = s.settings.hammerSwordTradeWindow ?? 350;
-        const isPlayerSwordActiveAttack = s.settings.enableSwordTrade && s.activeWeapon === 'sword' && (
-          s.isLunging ||
-          s.pSwordState === 'slashing' ||
-          (Date.now() - s.lastPlayerSwordAttackTime <= swordThreshold)
-        );
-        const isPlayerHammerActiveAttack = s.settings.enableHammerSwordTrade && s.activeWeapon === 'hammer' && (
-          s.pWeaponState === 'swing_up' ||
-          s.pWeaponState === 'swing_down' ||
-          (Date.now() - s.lastPlayerHammerAttackTime <= hammerThreshold)
-        );
+      const target = getBestTacticalTarget('main_ai', s.aiPos, (botDifficulties as any)?.main_ai || s.settings.aiDifficulty || 'normal');
+      if (target) {
+        const dist = s.aiPos.distanceTo(target.pos);
+        if (target.hp <= 0) {
+          s.aiState = 'COOLDOWN';
+          s.aiTimer = s.settings.swordLungeReload ?? 1.2;
+          s.aiWeaponState = 'ready';
+        } else if (dist <= 1.5) {
+          const swordThreshold = s.settings.swordTradeWindow ?? 350;
+          const hammerThreshold = s.settings.hammerSwordTradeWindow ?? 350;
+          const isPlayerSwordActiveAttack = s.settings.enableSwordTrade && s.activeWeapon === 'sword' && (
+            s.isLunging ||
+            s.pSwordState === 'slashing' ||
+            (Date.now() - s.lastPlayerSwordAttackTime <= swordThreshold)
+          );
+          const isPlayerHammerActiveAttack = s.settings.enableHammerSwordTrade && s.activeWeapon === 'hammer' && (
+            s.pWeaponState === 'swing_up' ||
+            s.pWeaponState === 'swing_down' ||
+            (Date.now() - s.lastPlayerHammerAttackTime <= hammerThreshold)
+          );
 
-        if (isPlayerSwordActiveAttack) {
-          executeTrade('sword_vs_sword');
-          return;
-        } else if (isPlayerHammerActiveAttack) {
-          executeTrade('sword_lunge_vs_hammer');
-          return;
-        }
+          if (target.id === 'player' && isPlayerSwordActiveAttack) {
+            executeTrade('sword_vs_sword');
+            return;
+          } else if (target.id === 'player' && isPlayerHammerActiveAttack) {
+            executeTrade('sword_lunge_vs_hammer');
+            return;
+          }
 
-        // Deal 1 damage to player on lunge connect!
-        s.playerHP -= 1;
-        s.aiState = 'COOLDOWN';
-        s.aiTimer = s.settings.swordLungeReload ?? 1.2;
-        s.aiWeaponState = 'ready';
-        
-        sfx.playExplosion();
-        spawnVoxelShockwaveParticles(s.playerPos, '#ef4444');
-        
-        s.lastAIStrikePos = s.playerPos.clone();
-        s.lastAIStrikeTick = 1.2;
-        
-        if (s.playerHP <= 0) {
-          s.playerHP = 0;
-          s.playerRespawnTimer = 3.0;
-          s.scoreEnemy += 1;
-          s.playerDeaths += 1;
-          s.enemyKills += 1;
-          sfx.playDeath();
-          s.pWeaponState = 'ready';
-          s.pWeaponTimer = 0;
-          s.pWeaponReady = true;
-          s.pSwordState = 'ready';
-          s.pSwordTimer = 0;
-          s.pSwordReady = true;
-          s.isLunging = false;
-          s.lungeTimer = 0;
-          
-          const newDeath = {
-            id: Math.random().toString(36).substring(2, 9),
-            attacker: 'Red (AI) [Lunge]',
-            victim: 'Blue (You)',
-          };
-          s.lastDeaths = [newDeath, ...s.lastDeaths].slice(0, 3);
-          spawnVoxelShockwaveParticles(s.playerPos, '#3b82f6');
-        } else {
-          // Play swift hit sound
-          sfx.playSwing();
-          spawnVoxelShockwaveParticles(s.playerPos, '#e2e8f0');
+          if (target.id === 'player') {
+            s.playerHP -= 1;
+            s.aiState = 'COOLDOWN';
+            s.aiTimer = s.settings.swordLungeReload ?? 1.2;
+            s.aiWeaponState = 'ready';
+            
+            sfx.playExplosion();
+            spawnVoxelShockwaveParticles(s.playerPos, '#ef4444');
+            
+            s.lastAIStrikePos = s.playerPos.clone();
+            s.lastAIStrikeTick = 1.2;
+            
+            if (s.playerHP <= 0) {
+              s.playerHP = 0;
+              s.playerRespawnTimer = 3.0;
+              s.scoreEnemy += 1;
+              s.playerDeaths += 1;
+              s.enemyKills += 1;
+              sfx.playDeath();
+              s.pWeaponState = 'ready';
+              s.pWeaponTimer = 0;
+              s.pWeaponReady = true;
+              s.pSwordState = 'ready';
+              s.pSwordTimer = 0;
+              s.pSwordReady = true;
+              s.isLunging = false;
+              s.lungeTimer = 0;
+              
+              const newDeath = {
+                id: Math.random().toString(36).substring(2, 9),
+                attacker: 'Red (AI) [Lunge]',
+                victim: 'Blue (You)',
+              };
+              s.lastDeaths = [newDeath, ...s.lastDeaths].slice(0, 3);
+              spawnVoxelShockwaveParticles(s.playerPos, '#3b82f6');
+            } else {
+              sfx.playSwing();
+              spawnVoxelShockwaveParticles(s.playerPos, '#e2e8f0');
+            }
+          } else {
+            const other = s.otherPlayers?.get(target.id);
+            if (other) {
+              other.hp -= 1;
+              s.aiState = 'COOLDOWN';
+              s.aiTimer = s.settings.swordLungeReload ?? 1.2;
+              s.aiWeaponState = 'ready';
+              
+              sfx.playExplosion();
+              spawnVoxelShockwaveParticles(new THREE.Vector3(other.pos.x, other.pos.y, other.pos.z), '#ef4444');
+              
+              s.lastAIStrikePos = new THREE.Vector3(other.pos.x, other.pos.y, other.pos.z);
+              s.lastAIStrikeTick = 1.2;
+              
+              if (other.hp <= 0) {
+                other.hp = 0;
+                other.respawnTimer = 3.0;
+                s.scoreEnemy += 1;
+                s.enemyKills += 1;
+                other.deaths = (other.deaths || 0) + 1;
+                sfx.playDeath();
+                
+                const newDeath = {
+                  id: Math.random().toString(36).substring(2, 9),
+                  attacker: 'Red (AI) [Lunge]',
+                  victim: other.playerName
+                };
+                s.lastDeaths = [newDeath, ...s.lastDeaths].slice(0, 3);
+                spawnVoxelShockwaveParticles(new THREE.Vector3(other.pos.x, other.pos.y, other.pos.z), '#ef4444');
+              } else {
+                sfx.playSwing();
+                spawnVoxelShockwaveParticles(new THREE.Vector3(other.pos.x, other.pos.y, other.pos.z), '#e2e8f0');
+              }
+              pushStatsUpdate();
+            }
+          }
         }
       }
-      
-      // Safeguard limits to break out of lunge
+
       const startDist = s.aiPos.distanceTo(s.aiLungeStartPos);
       if (startDist > 16.0 || s.aiLungeTimer > 0.8) {
         s.aiState = 'COOLDOWN';
@@ -3923,7 +4831,6 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         s.aiWeaponState = 'ready';
       }
       
-      // Keep inside arena check
       const distFromCenter = Math.sqrt(s.aiPos.x * s.aiPos.x + s.aiPos.z * s.aiPos.z);
       if (distFromCenter > s.arenaRadius - 0.6) {
         const angle = Math.atan2(s.aiPos.z, s.aiPos.x);
@@ -3933,386 +4840,10 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         s.aiTimer = s.settings.swordLungeReload ?? 1.2;
         s.aiWeaponState = 'ready';
       }
-      
-      return; // Skip normal movement behavior while lunging!
+      return;
     }
 
-    // AI combat decision-making ticker
-    s.aiTimer -= dt;
-    s.aiSwayTimer += dt;
-
-    const lookHeading = toPlayer.clone().normalize();
-    const sidewayHeading = new THREE.Vector3(-lookHeading.z, 0, lookHeading.x); // perpendicular relative path
-
-    // 4. Air Strafing & Jump Physics Mechanics
-    if (s.aiIsJumping && s.aiHP > 0) {
-      // Air strafing dynamic controls
-      if (movementComplexity >= 45) {
-        const sideDir = Math.sin(s.aiSwayTimer * 3.0) > 0 ? 1 : -1;
-        s.aiVel.x += (sidewayHeading.x * 2.0 * sideDir + lookHeading.x * 0.4) * dt;
-        s.aiVel.z += (sidewayHeading.z * 2.0 * sideDir + lookHeading.z * 0.4) * dt;
-      }
-    }
-
-    // AI Hammer jump trigger!
-    if (s.aiHammerJumpWindowTimer > 0) {
-      s.aiIsJumping = true;
-      s.aiVel.y = 7.2 + (s.settings.hammerJumpPower ?? 6.5);
-      
-      if (s.aiHammerJumpType === 'offensive') {
-        // Boost forward to slam or close distance with momentum
-        s.aiVel.x = lookHeading.x * (7.2 + (s.settings.speedForward / 120) * 1.5);
-        s.aiVel.z = lookHeading.z * (7.2 + (s.settings.speedForward / 120) * 1.5);
-      } else if (s.aiHammerJumpType === 'defensive') {
-        // Boost backwards or sidewards away from the player
-        s.aiVel.x = -lookHeading.x * (6.2 + (s.settings.speedBackward / 120) * 1.2);
-        s.aiVel.z = -lookHeading.z * (6.2 + (s.settings.speedBackward / 120) * 1.2);
-      }
-      
-      s.aiHammerJumpWindowTimer = 0; // Consume the window
-      s.aiHammerJumpPlanned = false;
-      s.aiHammerJumpType = undefined;
-      sfx.playJump();
-      // Spawn glorious golden shockwave particles under AI feet
-      spawnVoxelShockwaveParticles(s.aiPos, '#f59e0b');
-    }
-
-    // Process AI dash timers
-    if (s.aiDashCooldownTimer > 0) {
-      s.aiDashCooldownTimer = Math.max(0, s.aiDashCooldownTimer - dt);
-    }
-
-    const isAIDashing = s.aiDashRemaining > 0;
-    if (isAIDashing) {
-      s.aiDashRemaining = Math.max(0, s.aiDashRemaining - dt);
-      
-      const speed = s.settings.dashDistance / (s.settings.dashDuration || 0.25);
-      s.aiVel.copy(s.aiDashDir).multiplyScalar(speed);
-      s.aiPos.addScaledVector(s.aiVel, dt);
-
-      // Spawn beautiful solar orange tail particles
-      if (Math.random() > 0.15) {
-        const trailPos = s.aiPos.clone();
-        trailPos.y += 0.5;
-        const scene = threeRef.current.scene;
-        if (scene) {
-          const geo = new THREE.BoxGeometry(0.12, 0.12, 0.12);
-          const mat = new THREE.MeshBasicMaterial({
-            color: new THREE.Color('#f97316'), // Orange
-            transparent: true,
-            opacity: 0.75,
-          });
-          const mesh = new THREE.Mesh(geo, mat);
-          mesh.position.copy(trailPos);
-          mesh.position.x += (Math.random() - 0.5) * 0.3;
-          mesh.position.y += (Math.random() - 0.5) * 0.5;
-          mesh.position.z += (Math.random() - 0.5) * 0.3;
-          scene.add(mesh);
-          threeRef.current.damageExplosionParticles.push({
-            mesh,
-            velocity: new THREE.Vector3((Math.random() - 0.5) * 0.4, Math.random() * 0.2, (Math.random() - 0.5) * 0.4),
-            life: 0.0,
-            maxLife: 0.25 + Math.random() * 0.15,
-          });
-        }
-      }
-    } else {
-      // 5. STRATEGIC WEAPON SWAPPING ENGINE (Guided by Weapon Swap IQ and Player states)
-      const evaluateAIWeaponChoice = () => {
-        if (s.aiHP <= 0 || s.aiState === 'RESPAWNING') return;
-        if (s.aiState === 'LUNGING') return;
-
-        // Swapping decisions can fail or delay if weaponSwapIQ is low
-        if (Math.random() * 100 > weaponSwapIQ + 10) return;
-
-        const dist = distanceToPlayer;
-
-        // ESCENARIO A: Player spawn shield is active!
-        // Swap to Hammer so we have defensive blast jump readiness
-        if (playerIsProtected) {
-          if (s.aiActiveWeapon !== 'hammer') {
-            swapEnemyWeapon('hammer');
-          }
-          return;
-        }
-
-        // ESCENARIO B: Player is low HP (One-hit execute!)
-        // Swap to sword to engage rapid execute lunges
-        if (s.playerHP <= 1 && dist <= Math.min(18.0, s.settings.swordLungeDistance) && s.playerHP > 0) {
-          if (s.aiActiveWeapon !== 'sword') {
-            swapEnemyWeapon('sword');
-          }
-          return;
-        }
-
-        // ESCENARIO C: Player is lunging towards AI with sword!
-        // Switch to hammer to prepare a counter-trade or a defensive jump
-        if (s.isLunging) {
-          if (s.aiActiveWeapon !== 'hammer') {
-            swapEnemyWeapon('hammer');
-          }
-          return;
-        }
-
-        // ESCENARIO D: Player missed swing (vulnerable during recovering phase)
-        // Swap to sword and prepare to execute a punishing lunge
-        const minLunge = playerDangerZone * 0.85;
-        const maxLunge = Math.min(18.0, s.settings.swordLungeDistance ?? 14.5);
-        if (s.pWeaponState === 'recovering' && dist >= minLunge && dist <= maxLunge) {
-          if (s.aiActiveWeapon !== 'sword') {
-            swapEnemyWeapon('sword');
-          }
-          return;
-        }
-
-        // ESCENARIO E: Player is in sword-lunge range
-        if (dist >= minLunge && dist <= maxLunge && s.aiWeaponState === 'ready') {
-          if (s.aiActiveWeapon !== 'sword' && Math.random() < 0.22) {
-            swapEnemyWeapon('sword');
-          }
-          return;
-        }
-
-        // ESCENARIO F: Extremely close quarters
-        // Sword slash is faster than hammer swing, so swap to sword
-        if (dist < playerDangerZone * 0.7 && s.aiHP >= s.aiMaxHP * 0.35 && Math.random() < 0.15) {
-          if (s.aiActiveWeapon !== 'sword') {
-            swapEnemyWeapon('sword');
-          }
-          return;
-        }
-
-        // DEFAULT: Switch back to hammer at longer range or while recovering
-        if (dist > maxLunge || s.aiState === 'COOLDOWN') {
-          if (s.aiActiveWeapon !== 'hammer' && Math.random() < 0.20) {
-            swapEnemyWeapon('hammer');
-          }
-        }
-      };
-      evaluateAIWeaponChoice();
-
-      // Fencing combat state machine
-      if (s.aiIsJumping) {
-        // While airborne, AI targets player with high-altitude overhead strike!
-        if (distanceToPlayer <= aiReach && s.aiWeaponState === 'ready' && s.playerHP > 0) {
-          if (s.aiActiveWeapon === 'sword') {
-            triggerEnemySwordSlash();
-          } else {
-            triggerEnemyHammerSwing();
-          }
-        }
-      } else {
-        // AI Sword Lunge Opportunity:
-        const minLungeRange = playerDangerZone * 0.85;
-        const maxLungeRange = Math.min(18.0, s.settings.swordLungeDistance ?? 14.5);
-        if (s.aiActiveWeapon === 'sword' && s.aiWeaponState === 'ready' && distanceToPlayer >= minLungeRange && distanceToPlayer <= maxLungeRange && s.playerHP > 0 && !playerIsProtected) {
-          // Lunge probability scales with difficulty/reflexes
-          const lungeChance = 0.04 + (anticipationFactor * 0.08);
-          if (Math.random() < lungeChance) {
-            triggerEnemySwordLunge();
-            return;
-          }
-        }
-
-        // Decide to execute an offensive hammer jump!
-        if (s.aiWeaponState === 'ready' && !s.aiHammerJumpPlanned && distanceToPlayer > (playerDangerZone + 1.5) && distanceToPlayer <= (playerDangerZone + 5.5) && Math.random() < 0.015 && (movementComplexity >= 40) && !playerIsProtected) {
-          swapEnemyWeapon('hammer');
-          s.aiHammerJumpPlanned = true;
-          s.aiHammerJumpType = 'offensive';
-          triggerEnemyHammerSwing();
-        }
-
-        // Decide to execute a defensive hammer jump when low on health and player gets too close!
-        if (s.aiWeaponState === 'ready' && !s.aiHammerJumpPlanned && s.aiHP <= s.aiMaxHP * 0.55 && distanceToPlayer < (playerDangerZone + 0.8) && Math.random() < 0.038 && (movementComplexity >= 50)) {
-          swapEnemyWeapon('hammer');
-          s.aiHammerJumpPlanned = true;
-          s.aiHammerJumpType = 'defensive';
-          triggerEnemyHammerSwing();
-        }
-
-        if (s.aiState === 'APPROACHING') {
-          // Walk towards player (using Forward multiplier)
-          s.aiVel.copy(lookHeading).multiplyScalar(4.0 * (s.settings.speedForward / 100)); // full move speed
-          s.aiPos.addScaledVector(s.aiVel, dt);
-
-          // Transition to fencing dance posture once inside combat range
-          if (distanceToPlayer <= (playerDangerZone + 3.2)) {
-            s.aiState = 'SIDE_STEPPING';
-            s.aiTimer = Math.random() * 0.7 + 0.3; // set dynamic duration
-          }
-        } 
-        else if (s.aiState === 'SIDE_STEPPING') {
-          // Dynamic Strafe Spacing Coupling (Back away if player has high attack reach)
-          const dir = Math.sin(s.aiSwayTimer * 2.2) > 0 ? 1 : -1;
-          s.aiVel.copy(sidewayHeading).multiplyScalar(3.2 * (s.settings.speedSide / 100) * dir);
-          
-          // Also slight step back or forward
-          const spaceThreshold = playerDangerZone + 1.2;
-          const approachBias = distanceToPlayer > spaceThreshold ? 0.35 : -0.45;
-          const approachSpeed = approachBias * 1.5 * (approachBias > 0 ? (s.settings.speedForward / 100) : (s.settings.speedBackward / 100));
-          s.aiVel.addScaledVector(lookHeading, approachSpeed);
-          
-          if (s.aiIsCrouching) {
-            s.aiVel.multiplyScalar(0.45);
-          }
-          
-          s.aiPos.addScaledVector(s.aiVel, dt);
-
-          // Occasional sideways dodge/strafing dash
-          if (s.aiDashCooldownTimer <= 0 && distanceToPlayer < (playerDangerZone + 2.0) && Math.random() < 0.015 && (movementComplexity >= 40)) {
-            const sideDir = Math.random() > 0.5 ? 1 : -1;
-            s.aiDashDir.copy(sidewayHeading).multiplyScalar(sideDir).normalize();
-            s.aiDashRemaining = s.settings.dashDuration || 0.25;
-            s.aiDashCooldownTimer = s.settings.dashCooldown || 2.0;
-            sfx.playDash();
-          }
-
-          // AI reacts to player swinging!
-          // If player is swinging-up or holding forward attack, AI attempts to QUICK BAIT/RETREAT or HAMMER JUMP DEFENSIVELY!
-          if (s.pWeaponState === 'swing_up' && !playerIsProtected) {
-            // Reaction check based on reactionLatency
-            const reactChance = 0.45 + (anticipationFactor * 0.4);
-            if (s.aiWeaponState === 'ready' && !s.aiIsJumping && !s.aiHammerJumpPlanned && Math.random() < reactChance * 0.8 && distanceToPlayer <= (playerDangerZone + 1.5) && (movementComplexity >= 50)) {
-              s.aiState = 'DANCING_BACKWARD';
-              swapEnemyWeapon('hammer');
-              s.aiHammerJumpPlanned = true;
-              s.aiHammerJumpType = 'defensive';
-              triggerEnemyHammerSwing();
-            } else {
-              s.aiState = 'DANCING_BACKWARD';
-              s.aiTimer = reactionLatency + 0.35; // retreat safety window
-
-              // Active evade dash backward!
-              if (s.aiDashCooldownTimer <= 0 && Math.random() < reactChance) {
-                s.aiDashDir.copy(lookHeading).multiplyScalar(-1).normalize();
-                s.aiDashRemaining = s.settings.dashDuration || 0.25;
-                s.aiDashCooldownTimer = s.settings.dashCooldown || 2.0;
-                sfx.playDash();
-              }
-            }
-          }
-
-          if (playerIsProtected) {
-            // Forced retreating when player is invulnerable
-            s.aiState = 'DANCING_BACKWARD';
-            s.aiTimer = 0.5;
-          }
-
-          if (s.aiTimer <= 0) {
-            // Decide to approach again or attack directly
-            if (distanceToPlayer <= (aiReach + 0.5) && s.aiWeaponState === 'ready' && s.playerHP > 0 && !playerIsProtected) {
-              s.aiState = 'CHARGE_ATTACK';
-            } else {
-              s.aiState = 'DANCING_FORWARD';
-              s.aiTimer = Math.random() * 0.5 + 0.25;
-            }
-          }
-        } 
-        else if (s.aiState === 'DANCING_FORWARD') {
-          // Move forward slightly inside player's danger range to bait them to miss-time swing (using Forward multiplier)
-          s.aiVel.copy(lookHeading).multiplyScalar(5.0 * (s.settings.speedForward / 100)); // fast lurch
-          s.aiPos.addScaledVector(s.aiVel, dt);
-
-          // React to player whiff swing immediately!
-          if (s.pWeaponState === 'swing_up' && !playerIsProtected) {
-            if (s.aiWeaponState === 'ready' && !s.aiIsJumping && !s.aiHammerJumpPlanned && Math.random() < 0.6 && distanceToPlayer <= (playerDangerZone + 1.5)) {
-              s.aiState = 'DANCING_BACKWARD';
-              swapEnemyWeapon('hammer');
-              s.aiHammerJumpPlanned = true;
-              s.aiHammerJumpType = 'defensive';
-              triggerEnemyHammerSwing();
-            } else {
-              s.aiState = 'DANCING_BACKWARD';
-              s.aiTimer = 0.65;
-              
-              if (s.aiDashCooldownTimer <= 0 && Math.random() < 0.7) {
-                s.aiDashDir.copy(lookHeading).multiplyScalar(-1).normalize();
-                s.aiDashRemaining = s.settings.dashDuration || 0.25;
-                s.aiDashCooldownTimer = s.settings.dashCooldown || 2.0;
-                sfx.playDash();
-              }
-            }
-          } else if (distanceToPlayer <= aiReach && s.aiWeaponState === 'ready' && s.playerHP > 0 && !playerIsProtected) {
-            // Close enough! Launch our own overhand slam
-            s.aiState = 'CHARGE_ATTACK';
-          }
-
-          if (playerIsProtected) {
-            s.aiState = 'DANCING_BACKWARD';
-            s.aiTimer = 0.5;
-          }
-
-          if (s.aiTimer <= 0) {
-            s.aiState = 'SIDE_STEPPING';
-            s.aiTimer = Math.random() * 0.7 + 0.3;
-          }
-        } 
-        else if (s.aiState === 'DANCING_BACKWARD') {
-          // Retreat quickly (using Backward multiplier)
-          s.aiVel.copy(lookHeading).multiplyScalar(-6.2 * (s.settings.speedBackward / 100)); // high back-pedal speed
-          s.aiPos.addScaledVector(s.aiVel, dt);
-
-          // If player's weapon is recovering (the swing impact completed and player is vulnerable!), AI PUNISH RUSHES in
-          if (s.pWeaponState === 'recovering' && distanceToPlayer <= (aiReach + 2.5) && !playerIsProtected) {
-            s.aiState = 'CHARGE_ATTACK';
-          }
-
-          if (s.aiTimer <= 0) {
-            s.aiState = 'SIDE_STEPPING';
-            s.aiTimer = 0.4;
-          }
-        } 
-        else if (s.aiState === 'CHARGE_ATTACK') {
-          // Check for closing gap using a rapid forward-dash thrust
-          if (s.aiDashCooldownTimer <= 0 && (movementComplexity >= 40) && !playerIsProtected) {
-            s.aiDashDir.copy(lookHeading).normalize();
-            s.aiDashRemaining = s.settings.dashDuration || 0.25;
-            s.aiDashCooldownTimer = s.settings.dashCooldown || 2.0;
-            sfx.playDash();
-          }
-
-          // Lunge in at high speed to deliver attack (using Forward multiplier)
-          s.aiVel.copy(lookHeading).multiplyScalar(6.5 * (s.settings.speedForward / 100));
-          s.aiPos.addScaledVector(s.aiVel, dt);
-
-          if (distanceToPlayer <= aiReach && s.aiWeaponState === 'ready' && s.playerHP > 0 && !playerIsProtected) {
-            s.aiState = 'COOLDOWN';
-            s.aiTimer = s.aiActiveWeapon === 'sword' ? (s.settings.swordSlashReload ?? 0.6) : 1.1; // attack lock duration
-            if (s.aiActiveWeapon === 'sword') {
-              triggerEnemySwordSlash();
-            } else {
-              triggerEnemyHammerSwing();
-            }
-          } else if (distanceToPlayer > (aiReach + 2.0) || playerIsProtected) {
-            // Player backed up too fast or is protected, retreat to strafe
-            s.aiState = 'SIDE_STEPPING';
-            s.aiTimer = 0.4;
-          }
-        } 
-        else if (s.aiState === 'COOLDOWN') {
-          // While AI hammer animation resolves, AI moves sluggishly backpedaling (using Backward multiplier)
-          s.aiVel.copy(lookHeading).multiplyScalar(-1.5 * (s.settings.speedBackward / 100));
-          if (s.aiIsCrouching) {
-            s.aiVel.multiplyScalar(0.45);
-          }
-          s.aiPos.addScaledVector(s.aiVel, dt);
-
-          if (s.aiTimer <= 0) {
-            s.aiState = 'SIDE_STEPPING';
-            s.aiTimer = 0.7;
-          }
-        }
-      }
-    }
-
-    // Keep enemy inside arena radius boundary
-
-    const distFromCenter = Math.sqrt(s.aiPos.x * s.aiPos.x + s.aiPos.z * s.aiPos.z);
-    if (distFromCenter > s.arenaRadius - 0.6) {
-      const angle = Math.atan2(s.aiPos.z, s.aiPos.x);
-      s.aiPos.x = Math.cos(angle) * (s.arenaRadius - 0.6);
-      s.aiPos.z = Math.sin(angle) * (s.arenaRadius - 0.6);
-    }
+    updateSingleAIEntity('main_ai', true, dt);
   };
 
   const animateSpartanModel = (
@@ -4600,6 +5131,15 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
     updateBlinking(threeRef.current.enemyGroup, s.aiInvulnerabilityTimer > 0);
     updateBlinking(threeRef.current.playerHammer, s.playerInvulnerabilityTimer > 0);
+
+    if (threeRef.current.otherPlayerMeshes && s.otherPlayers) {
+      s.otherPlayers.forEach((player, id) => {
+        const meshes = threeRef.current.otherPlayerMeshes.get(id);
+        if (meshes && meshes.group) {
+          updateBlinking(meshes.group, (player.invulnerabilityTimer || 0) > 0);
+        }
+      });
+    }
 
     // Manage spectator model visibility to prevent camera head clipping
     if (s.isObserverMode) {

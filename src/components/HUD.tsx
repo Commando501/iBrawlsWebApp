@@ -5,7 +5,8 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { Lock, Unlock } from 'lucide-react';
-import { GameStats, UiElementPos } from '../types';
+import { GameStats, UiElementPos, DeviceInfo } from '../types';
+import { LeftAnalogStick, RightActionButtonPad } from './MobileGamepad';
 
 interface HUDProps {
   stats: GameStats;
@@ -14,6 +15,11 @@ interface HUDProps {
   uiPositions: UiElementPos[];
   onUpdateUiPositions: (positions: UiElementPos[]) => void;
   isAdjustmentMode: boolean;
+  deviceInfo: DeviceInfo;
+  forceMobileControls: boolean;
+  mobileJoystickRef: React.MutableRefObject<{ x: number; y: number }>;
+  mobileRightJoystickRef: React.MutableRefObject<{ x: number; y: number }>;
+  mobileRightJoystickActiveRef: React.MutableRefObject<boolean>;
 }
 
 interface DraggableHUDItemProps {
@@ -124,7 +130,12 @@ export const HUD: React.FC<HUDProps> = ({
   onPauseClick, 
   uiPositions, 
   onUpdateUiPositions, 
-  isAdjustmentMode 
+  isAdjustmentMode,
+  deviceInfo,
+  forceMobileControls,
+  mobileJoystickRef,
+  mobileRightJoystickRef,
+  mobileRightJoystickActiveRef
 }) => {
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [draftUiPositions, setDraftUiPositions] = useState<UiElementPos[]>(uiPositions);
@@ -964,6 +975,42 @@ export const HUD: React.FC<HUDProps> = ({
             </button>
           </div>
         </DraggableHUDItem>
+      )}
+
+      {/* 🔟 MOBILE VIRTUAL GAMEPAD INTERFACES */}
+      {(deviceInfo.isMobile || forceMobileControls) && (
+        <>
+          {/* MOBILE LEFT JOYSTICK */}
+          <DraggableHUDItem
+            id="mobileLeftAnalog"
+            uiItem={draftUiPositions.find(p => p.id === 'mobileLeftAnalog')}
+            isAdjustmentMode={isAdjustmentMode}
+            onToggleLock={handleToggleLock}
+            onMouseDown={handleMouseDown}
+          >
+            <LeftAnalogStick
+              mobileJoystickRef={mobileJoystickRef}
+              isAdjustmentMode={isAdjustmentMode}
+            />
+          </DraggableHUDItem>
+
+          {/* MOBILE RIGHT GAMEPAD BUTTONS & LOOK JOYSTICK */}
+          <DraggableHUDItem
+            id="mobileRightButtons"
+            uiItem={draftUiPositions.find(p => p.id === 'mobileRightButtons')}
+            isAdjustmentMode={isAdjustmentMode}
+            onToggleLock={handleToggleLock}
+            onMouseDown={handleMouseDown}
+          >
+            <RightActionButtonPad
+              mobileRightJoystickRef={mobileRightJoystickRef}
+              mobileRightJoystickActiveRef={mobileRightJoystickActiveRef}
+              isAdjustmentMode={isAdjustmentMode}
+              activeWeapon={stats.activeWeapon}
+              stats={stats}
+            />
+          </DraggableHUDItem>
+        </>
       )}
 
     </div>

@@ -82,8 +82,10 @@ async function startServer() {
 
   // Broadcast updated presence count and clients list to everyone
   function updatePresence() {
-    const onlineCount = wss.clients.size;
-    const clientPayloads = Array.from(wss.clients)
+    const lobbyClients = Array.from(wss.clients)
+      .filter((client: any) => client.connectionType === 'lobby');
+    const onlineCount = lobbyClients.length;
+    const clientPayloads = lobbyClients
       .map((client: any) => ({
         id: client.id,
         name: normalizePlayerName(client.playerName),
@@ -108,10 +110,19 @@ async function startServer() {
   wss.on("connection", (ws, req) => {
     const wsId = Math.random().toString(36).substring(2, 9);
     (ws as any).id = wsId;
+    
+    // Parse connection query parameters
+    const urlParams = new URLSearchParams(req.url?.split("?")[1]);
+    const connectionType = urlParams.get("type") || "lobby";
+    const nameParam = urlParams.get("name");
+
+    (ws as any).connectionType = connectionType;
     (ws as any).playerState = 'menu';
     (ws as any).roomCode = undefined;
     (ws as any).spaceAvailable = false;
-    console.log(`New WebSocket connection received. Assigned Socket ID: ${wsId}`);
+    (ws as any).playerName = normalizePlayerName(nameParam);
+    
+    console.log(`New WebSocket connection received. Assigned Socket ID: ${wsId}, Type: ${connectionType}, Name: ${nameParam}`);
 
     // Send immediate welcome greeting carrying the socket's client identity
     ws.send(JSON.stringify({ type: "welcome", clientId: wsId }));

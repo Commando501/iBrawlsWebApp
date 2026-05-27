@@ -141,7 +141,9 @@ export class GameLobby implements DurableObject {
     const serverSocket = pair[1];
 
     // Connect the socket server end to the Durable Object
-    await this.handleSession(serverSocket);
+    const connectionType = url.searchParams.get("type") || "lobby";
+    const nameParam = url.searchParams.get("name");
+    await this.handleSession(serverSocket, connectionType, nameParam);
 
     // Return the 101 Switching Protocols response to upgrade the client connection
     return new Response(null, {
@@ -150,7 +152,7 @@ export class GameLobby implements DurableObject {
     });
   }
 
-  async handleSession(ws: WebSocket) {
+  async handleSession(ws: WebSocket, connectionType: string, nameParam: string | null) {
     const gameWs = ws as GameWebSocket;
     
     // Accept the WebSocket connection inside the Worker
@@ -160,11 +162,13 @@ export class GameLobby implements DurableObject {
     // Generate unique random socket ID (same as original backend)
     const wsId = Math.random().toString(36).substring(2, 9);
     gameWs.id = wsId;
+    (gameWs as any).connectionType = connectionType;
     gameWs.playerState = 'menu';
     gameWs.roomCode = undefined;
     gameWs.spaceAvailable = false;
+    gameWs.playerName = normalizePlayerName(nameParam);
     
-    console.log(`New WebSocket connection received. Assigned Socket ID: ${wsId}`);
+    console.log(`New WebSocket connection received. Assigned Socket ID: ${wsId}, Type: ${connectionType}, Name: ${nameParam}`);
 
     // Send immediate welcome greeting carrying the socket's client identity
     gameWs.send(JSON.stringify({ type: "welcome", clientId: wsId }));
@@ -497,8 +501,10 @@ export class GameLobby implements DurableObject {
 
   // Broadcast updated presence count and clients list to everyone
   updatePresence() {
-    const onlineCount = this.sessions.size;
-    const clientPayloads = Array.from(this.sessions)
+    const lobbyClients = Array.from(this.sessions)
+      .filter((client: any) => client.connectionType === 'lobby');
+    const onlineCount = lobbyClients.length;
+    const clientPayloads = lobbyClients
       .map((client) => ({
         id: client.id,
         name: normalizePlayerName(client.playerName),
