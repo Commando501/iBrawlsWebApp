@@ -5,6 +5,14 @@ import os from "os";
 import { createServer as createViteServer } from "vite";
 import { WebSocketServer, WebSocket } from "ws";
 
+const MAX_PLAYER_NAME_LENGTH = 10;
+
+function normalizePlayerName(name: unknown): string | undefined {
+  if (typeof name !== "string") return undefined;
+  const normalized = name.trim().substring(0, MAX_PLAYER_NAME_LENGTH);
+  return normalized.length > 0 ? normalized : undefined;
+}
+
 // Helper to resolve the host machine's physical LAN IP address
 function getLocalIpAddress() {
   const interfaces = os.networkInterfaces();
@@ -78,7 +86,7 @@ async function startServer() {
     const clientPayloads = Array.from(wss.clients)
       .map((client: any) => ({
         id: client.id,
-        name: client.playerName || undefined,
+        name: normalizePlayerName(client.playerName),
         state: client.playerState || 'menu',
         roomCode: client.roomCode,
         spaceAvailable: client.spaceAvailable !== undefined ? client.spaceAvailable : false
@@ -122,9 +130,7 @@ async function startServer() {
             (ws as any).playerState = status;
             (ws as any).roomCode = roomCode;
             (ws as any).spaceAvailable = spaceAvailable;
-            if (name) {
-              (ws as any).playerName = name;
-            }
+            (ws as any).playerName = normalizePlayerName(name);
             updatePresence();
             break;
           }
@@ -371,7 +377,7 @@ async function startServer() {
               type: "player_joined",
               role: "client",
               clientId: wsId,
-              playerName: (ws as any).playerName || `Guest ${wsId}`
+              playerName: normalizePlayerName((ws as any).playerName) || `Client ${wsId}`
             });
 
             if (room.host && room.host.readyState === WebSocket.OPEN) {
@@ -453,7 +459,7 @@ async function startServer() {
                     type: "player_joined",
                     role: "client",
                     clientId: wsId,
-                    playerName: (ws as any).playerName || `Guest ${wsId}`
+                    playerName: normalizePlayerName((ws as any).playerName) || `Client ${wsId}`
                   });
                   if (room.host && room.host.readyState === WebSocket.OPEN) {
                     room.host.send(playerJoinedPayload);

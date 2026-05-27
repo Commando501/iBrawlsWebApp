@@ -13,6 +13,7 @@ import { ChatOverlay, ChatMessage } from './components/ChatOverlay';
 import { CharacterPreview } from './components/CharacterPreview';
 
 const APP_VERSION = '0.101.0';
+const MAX_PLAYER_NAME_LENGTH = 10;
 
 interface OnlineClient {
   id: string;
@@ -21,6 +22,16 @@ interface OnlineClient {
   roomCode?: string;
   spaceAvailable?: boolean;
 }
+
+const normalizePlayerName = (name: unknown): string | undefined => {
+  if (typeof name !== 'string') return undefined;
+  const normalized = name.trim().substring(0, MAX_PLAYER_NAME_LENGTH);
+  return normalized.length > 0 ? normalized : undefined;
+};
+
+const getOnlineClientDisplayName = (client: OnlineClient): string => {
+  return normalizePlayerName(client.name) || `Client ${client.id}`;
+};
 
 interface GlobalChatPanelProps {
   messages: ChatMessage[];
@@ -538,7 +549,7 @@ export default function App() {
   });
 
   const handlePlayerNameChange = (newName: string) => {
-    const trimmed = newName.substring(0, 10);
+    const trimmed = newName.substring(0, MAX_PLAYER_NAME_LENGTH);
     setPlayerName(trimmed);
     setAdminSettings(prev => ({ ...prev, playerName: trimmed }));
     try {
@@ -1291,7 +1302,7 @@ export default function App() {
       status,
       roomCode,
       spaceAvailable,
-      name: playerName
+      name: normalizePlayerName(playerName)
     }));
   }, [menuSocket, isPlaying, isMultiplayer, connectionStatus, hostIdCode, joinIpOrId, multiplayerRole, playerName]);
 
@@ -2158,11 +2169,14 @@ export default function App() {
                         {onlineClients.length === 0 ? (
                           <p className="text-xs text-white/45 italic font-medium m-auto text-center py-4">No other players online yet.</p>
                         ) : (
-                          onlineClients.map(client => (
+                          onlineClients.map(client => {
+                            const displayName = getOnlineClientDisplayName(client);
+                            const customName = normalizePlayerName(client.name);
+                            return (
                             <div key={client.id} className="flex justify-between items-center bg-black/45 px-3 py-2.5 rounded border border-white/5 text-xs font-mono shrink-0">
                               <div className="flex flex-col gap-1 min-w-0">
-                                <span className="text-white/80 font-semibold truncate max-w-[130px]" title={client.name ? `${client.name} (${client.id})` : `Client ${client.id}`}>
-                                  {client.name ? client.name : `Client ${client.id}`}
+                                <span className="text-white/80 font-semibold truncate max-w-[130px]" title={customName ? `${displayName} (${client.id})` : displayName}>
+                                  {displayName}
                                 </span>
                                 <div className="flex items-center gap-1.5">
                                   {client.state === 'menu' && (
@@ -2226,7 +2240,8 @@ export default function App() {
                                 )}
                               </div>
                             </div>
-                          ))
+                            );
+                          })
                         )}
                       </div>
                     </div>

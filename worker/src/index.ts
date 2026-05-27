@@ -17,6 +17,14 @@ interface GameWebSocket extends WebSocket {
   playerName?: string;
 }
 
+const MAX_PLAYER_NAME_LENGTH = 10;
+
+function normalizePlayerName(name: unknown): string | undefined {
+  if (typeof name !== "string") return undefined;
+  const normalized = name.trim().substring(0, MAX_PLAYER_NAME_LENGTH);
+  return normalized.length > 0 ? normalized : undefined;
+}
+
 // 1. Entrypoint Worker
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
@@ -176,7 +184,7 @@ export class GameLobby implements DurableObject {
             gameWs.playerState = status;
             gameWs.roomCode = roomCode;
             gameWs.spaceAvailable = spaceAvailable;
-            if (name) gameWs.playerName = name;
+            gameWs.playerName = normalizePlayerName(name);
             this.updatePresence();
             break;
           }
@@ -493,7 +501,7 @@ export class GameLobby implements DurableObject {
     const clientPayloads = Array.from(this.sessions)
       .map((client) => ({
         id: client.id,
-        name: client.playerName,
+        name: normalizePlayerName(client.playerName),
         state: client.playerState || 'menu',
         roomCode: client.roomCode,
         spaceAvailable: client.spaceAvailable !== undefined ? client.spaceAvailable : false
