@@ -124,6 +124,7 @@ export interface DeathEvent {
   attacker: string;
   victim: string;
   medals?: MedalInfo[];
+  weapon?: 'sword' | 'hammer' | 'sword_vs_sword' | 'sword_vs_hammer' | 'hammer_vs_hammer';
 }
 
 export interface RemotePlayerState {

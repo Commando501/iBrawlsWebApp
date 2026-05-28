@@ -27,7 +27,7 @@ import { ChatOverlay, ChatMessage } from './components/ChatOverlay';
 import { CharacterPreview } from './components/CharacterPreview';
 import { CharacterLoadout, DEFAULT_LOADOUT, AVAILABLE_PRESETS, HelmetPreset, TorsoPreset, ArmPreset, LegPreset } from './components/VoxelModels';
 
-const APP_VERSION = '0.323';
+const APP_VERSION = '0.330';
 const MAX_PLAYER_NAME_LENGTH = 10;
 const MOBILE_HUD_LAYOUT_VERSION = '5';
 const MOBILE_HUD_LAYOUT_VERSION_KEY = 'grifball_mobile_hud_layout_version';
@@ -1224,6 +1224,7 @@ export default function App() {
     { id: 'spectatorCard', name: 'Spectator Controller', x: 50, y: 88, locked: true, scale: 1 },
     { id: 'mobileLeftAnalog', name: 'Mobile Left Stick', x: 15, y: 75, locked: true, scale: 1 },
     { id: 'mobileRightButtons', name: 'Mobile Right Buttons', x: 80, y: 75, locked: true, scale: 1 },
+    { id: 'medalPopup', name: 'Medal Popup Notification', x: 50, y: 67, locked: true, scale: 1 },
     { id: 'hudAdjuster', name: 'HUD Canvas Adjuster', x: 50, y: 3, locked: false, scale: 1 },
   ];
 
@@ -1240,6 +1241,7 @@ export default function App() {
     { id: 'spectatorCard', name: 'Spectator Controller', x: 50, y: 86, locked: true, scale: 0.7 },
     { id: 'mobileLeftAnalog', name: 'Mobile Left Stick', x: 3, y: 96, locked: true, scale: 1 },
     { id: 'mobileRightButtons', name: 'Mobile Right Buttons', x: 98, y: 96, locked: true, scale: 1 },
+    { id: 'medalPopup', name: 'Medal Popup Notification', x: 50, y: 62, locked: true, scale: 0.8 },
     { id: 'hudAdjuster', name: 'HUD Canvas Adjuster', x: 50, y: 4, locked: false, scale: 1 },
   ];
 

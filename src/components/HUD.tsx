@@ -120,6 +120,112 @@ export const renderMedalIcon = (iconName: string) => {
   }
 };
 
+// Sleek glowing Energy Sword SVG
+export const SwordIcon: React.FC<{ className?: string }> = ({ className }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M4 20l2.5-2.5" stroke="rgba(255,255,255,0.7)" strokeWidth="3" />
+    <path d="M6 17.5c2 -1 3.5 -2.5 4 -4.5" stroke="rgba(255,255,255,0.9)" />
+    <path d="M5.5 18.5L16 8c1.5 -1.5 3 -2.5 5 -3c-0.5 2 -1.5 3.5 -3 5L8 20.5z" fill="rgba(34, 211, 238, 0.25)" stroke="rgb(34, 211, 238)" />
+    <path d="M8.5 15.5L17 7c1 -1 2 -1.8 3.5 -2.2c-0.4 1.5 -1.2 2.5 -2.2 3.5L9.5 17z" fill="rgba(6, 182, 212, 0.4)" stroke="rgb(6, 182, 212)" />
+  </svg>
+);
+
+// Sleek glowing Gravity Hammer SVG
+export const HammerIcon: React.FC<{ className?: string }> = ({ className }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M4 20L15 9" stroke="rgba(255,255,255,0.8)" strokeWidth="2.5" />
+    <path d="M5 19l1.5-1.5M7.5 16.5l1.5-1.5" stroke="rgba(255,255,255,0.4)" />
+    <path d="M14 6l4-4l4 4l-4 4z" fill="rgba(59, 130, 246, 0.35)" stroke="rgb(59, 130, 246)" strokeWidth="2" />
+    <path d="M13 7l2-2m2 8l2-2" stroke="rgb(59, 130, 246)" strokeWidth="2" />
+    <path d="M12 8l-2.5-2.5L12 3" fill="rgba(29, 78, 216, 0.2)" stroke="rgb(29, 78, 216)" />
+    <circle cx="18" cy="6" r="1.5" fill="rgb(191, 219, 254)" stroke="rgb(96, 165, 250)" strokeWidth="1" />
+  </svg>
+);
+
+// Crossed Sword & Sword clashing trade SVG
+export const SwordVsSwordIcon: React.FC<{ className?: string }> = ({ className }) => (
+  <div className={`relative flex items-center justify-center ${className}`}>
+    <svg className="w-full h-full absolute transform -rotate-12 scale-90 translate-x-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 20l2.5-2.5" stroke="rgba(255,255,255,0.7)" strokeWidth="2.5" />
+      <path d="M5.5 18.5L16 8c1.5 -1.5 3 -2.5 5 -3c-0.5 2 -1.5 3.5 -3 5L8 20.5z" fill="rgba(34, 211, 238, 0.2)" stroke="rgb(34, 211, 238)" />
+    </svg>
+    <svg className="w-full h-full absolute transform rotate-75 scale-90 translate-y-0.5 -translate-x-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 20l2.5-2.5" stroke="rgba(255,255,255,0.7)" strokeWidth="2.5" />
+      <path d="M5.5 18.5L16 8c1.5 -1.5 3 -2.5 5 -3c-0.5 2 -1.5 3.5 -3 5L8 20.5z" fill="rgba(34, 211, 238, 0.2)" stroke="rgb(34, 211, 238)" />
+    </svg>
+    <svg className="w-6 h-6 absolute text-yellow-400 drop-shadow-[0_0_8px_rgba(234,179,8,1)] animate-ping" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1" strokeLinecap="round" />
+    </svg>
+    <svg className="w-5 h-5 absolute text-red-500 drop-shadow-[0_0_6px_rgba(239,68,68,0.8)]" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M12 7l1.5 3.5h3.5l-2.8 2.2l1.1 3.3l-3.3-2l-3.3 2l1.1-3.3l-2.8-2.2h3.5z" />
+    </svg>
+  </div>
+);
+
+// Crossed Sword & Hammer clashing trade SVG
+export const SwordVsHammerIcon: React.FC<{ className?: string }> = ({ className }) => (
+  <div className={`relative flex items-center justify-center ${className}`}>
+    <svg className="w-full h-full absolute transform -rotate-12 scale-90 translate-x-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 20l2.5-2.5" stroke="rgba(255,255,255,0.7)" strokeWidth="2.5" />
+      <path d="M5.5 18.5L16 8c1.5 -1.5 3 -2.5 5 -3c-0.5 2 -1.5 3.5 -3 5L8 20.5z" fill="rgba(34, 211, 238, 0.2)" stroke="rgb(34, 211, 238)" />
+    </svg>
+    <svg className="w-full h-full absolute transform rotate-75 scale-90 translate-y-0.5 -translate-x-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 20L15 9" stroke="rgba(255,255,255,0.7)" strokeWidth="2" />
+      <path d="M14 6l4-4l4 4l-4 4z" fill="rgba(59, 130, 246, 0.2)" stroke="rgb(59, 130, 246)" />
+    </svg>
+    <svg className="w-6 h-6 absolute text-yellow-400 drop-shadow-[0_0_8px_rgba(234,179,8,1)] animate-ping" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1" strokeLinecap="round" />
+    </svg>
+    <svg className="w-5 h-5 absolute text-amber-500 drop-shadow-[0_0_6px_rgba(245,158,11,0.8)]" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M12 7l1.5 3.5h3.5l-2.8 2.2l1.1 3.3l-3.3-2l-3.3 2l1.1-3.3l-2.8-2.2h3.5z" />
+    </svg>
+  </div>
+);
+
+// Crossed Hammer & Hammer clashing trade SVG
+export const HammerVsHammerIcon: React.FC<{ className?: string }> = ({ className }) => (
+  <div className={`relative flex items-center justify-center ${className}`}>
+    <svg className="w-full h-full absolute transform -rotate-12 scale-90 translate-x-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 20L15 9" stroke="rgba(255,255,255,0.7)" />
+      <path d="M14 6l4-4l4 4l-4 4z" fill="rgba(59, 130, 246, 0.2)" stroke="rgb(59, 130, 246)" />
+    </svg>
+    <svg className="w-full h-full absolute transform rotate-75 scale-90 translate-y-0.5 -translate-x-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 20L15 9" stroke="rgba(255,255,255,0.7)" />
+      <path d="M14 6l4-4l4 4l-4 4z" fill="rgba(59, 130, 246, 0.2)" stroke="rgb(59, 130, 246)" />
+    </svg>
+    <svg className="w-6 h-6 absolute text-yellow-400 drop-shadow-[0_0_8px_rgba(234,179,8,1)] animate-ping" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1" strokeLinecap="round" />
+    </svg>
+    <svg className="w-5 h-5 absolute text-blue-400 drop-shadow-[0_0_6px_rgba(96,165,250,0.8)]" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M12 7l1.5 3.5h3.5l-2.8 2.2l1.1 3.3l-3.3-2l-3.3 2l1.1-3.3l-2.8-2.2h3.5z" />
+    </svg>
+  </div>
+);
+
+// Helper function to clean bracketed weapon info from attacker name
+export const cleanFeedName = (name: string): string => {
+  return name.replace(/\s*\[.*?\]$/, '');
+};
+
+// Render correct kill feed weapon/clashing icon
+export const renderKillFeedIcon = (weaponType: string) => {
+  switch (weaponType) {
+    case 'sword':
+      return <SwordIcon className="w-6 h-6 text-cyan-400 drop-shadow-[0_0_4px_rgba(34,211,238,0.7)]" />;
+    case 'hammer':
+      return <HammerIcon className="w-6 h-6 text-blue-400 drop-shadow-[0_0_4px_rgba(59,130,246,0.7)]" />;
+    case 'sword_vs_sword':
+      return <SwordVsSwordIcon className="w-8 h-8" />;
+    case 'sword_vs_hammer':
+    case 'hammer_vs_sword':
+      return <SwordVsHammerIcon className="w-8 h-8" />;
+    case 'hammer_vs_hammer':
+      return <HammerVsHammerIcon className="w-8 h-8" />;
+    default:
+      return <SwordIcon className="w-6 h-6 text-cyan-400 drop-shadow-[0_0_4px_rgba(34,211,238,0.7)]" />;
+  }
+};
+
 const clampUiScale = (scale: number) => (
   Math.round(Math.max(UI_ELEMENT_SCALE_MIN, Math.min(UI_ELEMENT_SCALE_MAX, scale)) * 100) / 100
 );
@@ -152,6 +258,7 @@ export const DraggableHUDItem: React.FC<DraggableHUDItemProps> = ({
         break;
       case 'crosshair':
       case 'spectatorCard':
+      case 'medalPopup':
         baseTransform = 'translate(-50%, -50%)';
         break;
       case 'mobileLeftAnalog':
@@ -186,6 +293,7 @@ export const DraggableHUDItem: React.FC<DraggableHUDItemProps> = ({
       case 'crosshair':
       case 'spectatorCard':
       case 'eliminationFeed':
+      case 'medalPopup':
         return 'center';
       case 'mobileLeftAnalog':
       case 'radar':
@@ -572,18 +680,36 @@ export const HUD: React.FC<HUDProps> = ({
             <div className="flex flex-col items-start gap-1.5 w-full">
               {stats.lastDeaths && stats.lastDeaths.length > 0 ? (
                 stats.lastDeaths.map((death) => {
-                  const attackerIsBlue = death.attacker.includes('Blue');
+                  const attackerClean = cleanFeedName(death.attacker);
+                  const attackerIsBlue = death.attacker.includes('Blue') || death.attacker.includes('You');
+                  
+                  // Graceful weapon fallback detection if weapon is not set
+                  let weaponType = death.weapon;
+                  if (!weaponType) {
+                    const lowerAttacker = death.attacker.toLowerCase();
+                    if (lowerAttacker.includes('sword trade')) {
+                      weaponType = 'sword_vs_sword';
+                    } else if (lowerAttacker.includes('lunge/hammer trade')) {
+                      weaponType = 'sword_vs_hammer';
+                    } else if (lowerAttacker.includes('lunge') || lowerAttacker.includes('slash')) {
+                      weaponType = 'sword';
+                    } else {
+                      weaponType = 'sword'; // default fallback
+                    }
+                  }
+
                   return (
                     <div 
                       key={death.id} 
                       className="bg-slate-950/70 backdrop-blur-md border border-white/10 rounded-md px-3 py-1.5 flex items-center gap-2 shadow-lg text-[11px] font-bold whitespace-nowrap pointer-events-auto"
                     >
                       <span className={attackerIsBlue ? 'text-sky-400 drop-shadow-[0_0_2px_rgba(56,189,248,0.3)]' : 'text-orange-400'}>
-                        {death.attacker}
+                        {attackerClean}
                       </span>
                       
-                      <span className="text-[9.5px] font-mono text-white/50 lowercase italic">
-                        slammed
+                      {/* Premium glowing weapon/trade SVG icon */}
+                      <span className="w-8 h-8 flex items-center justify-center">
+                        {renderKillFeedIcon(weaponType)}
                       </span>
                       
                       <span className={attackerIsBlue ? 'text-orange-400' : 'text-sky-400 drop-shadow-[0_0_2px_rgba(56,189,248,0.3)]'}>
@@ -621,7 +747,9 @@ export const HUD: React.FC<HUDProps> = ({
                 /* Mock preview item for user alignment edit mode */
                 <div className="bg-slate-950/70 backdrop-blur-md border border-cyan-500/30 rounded-md px-3 py-1.5 flex items-center gap-2 shadow-lg text-[11px] font-bold whitespace-nowrap opacity-80 pointer-events-auto">
                   <span className="text-sky-400">Blue Player (You)</span>
-                  <span className="text-[9.5px] font-mono text-white/50 lowercase italic">slammed</span>
+                  <span className="w-8 h-8 flex items-center justify-center">
+                    <SwordIcon className="w-6 h-6 text-cyan-400 drop-shadow-[0_0_4px_rgba(34,211,238,0.7)]" />
+                  </span>
                   <span className="text-orange-400">Red AI Player</span>
                   
                   {/* Mock medals preview inside HUD editor */}
@@ -1209,19 +1337,19 @@ export const HUD: React.FC<HUDProps> = ({
         @keyframes medal-slide-up {
           0% {
             opacity: 0;
-            transform: translate(-50%, 35px) scale(0.8);
+            transform: translateY(35px) scale(0.8);
           }
           8% {
             opacity: 1;
-            transform: translate(-50%, 0) scale(1);
+            transform: translateY(0) scale(1);
           }
           85% {
             opacity: 1;
-            transform: translate(-50%, 0) scale(1);
+            transform: translateY(0) scale(1);
           }
           100% {
             opacity: 0;
-            transform: translate(-50%, -45px) scale(0.85);
+            transform: translateY(-45px) scale(0.85);
           }
         }
         .animate-bounce-slow {
@@ -1238,54 +1366,58 @@ export const HUD: React.FC<HUDProps> = ({
       `}</style>
 
       {/* 12. HALO-STYLE CENTRAL MEDAL POPUP */}
-      {stats.activeMedalPopup && (
-        <div 
-          key={stats.activeMedalPopup.key}
-          className="fixed left-1/2 bottom-[33%] -translate-x-1/2 flex flex-col items-center pointer-events-none select-none z-[9999]"
-          style={{
-            animation: 'medal-slide-up 2.4s cubic-bezier(0.19, 1, 0.22, 1) forwards'
-          }}
-        >
-          {/* Outer glowing glassmorphic card */}
+      {(stats.activeMedalPopup || isAdjustmentMode) && (
+        <DraggableHUDItem {...getDraggableProps('medalPopup')}>
           <div 
-            className="flex flex-col items-center bg-slate-950/80 border border-white/20 rounded-2xl px-10 py-5.5 shadow-[0_15px_45px_rgba(0,0,0,0.65),0_0_35px_var(--medal-glow)] backdrop-blur-xl relative overflow-hidden min-w-[260px]"
-            style={{ '--medal-glow': stats.activeMedalPopup.medal.color } as any}
+            key={stats.activeMedalPopup?.key ?? 'preview'}
+            className="flex flex-col items-center pointer-events-none select-none"
+            style={{
+              animation: isAdjustmentMode ? 'none' : 'medal-slide-up 2.4s cubic-bezier(0.19, 1, 0.22, 1) forwards'
+            }}
           >
-            {/* Holographic scanning laser line */}
-            <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.04)_1px,transparent_1px)] bg-[size:100%_3px] pointer-events-none" />
-            <div className="absolute top-0 left-0 right-0 h-[1.5px] bg-gradient-to-r from-transparent via-white/50 to-transparent" />
-            
-            {/* Rotating/pulsing starburst background flare */}
+            {/* Outer glowing glassmorphic card */}
             <div 
-              className="absolute w-36 h-36 rounded-full filter blur-2xl opacity-30 animate-pulse"
-              style={{ background: stats.activeMedalPopup.medal.color }}
-            />
-
-            {/* Glowing Medal SVG Icon */}
-            <div 
-              className="w-16 h-16 relative flex items-center justify-center animate-bounce-slow"
-              style={{ filter: `drop-shadow(0 0 8px ${stats.activeMedalPopup.medal.color})` }}
+              className="flex flex-col items-center bg-slate-950/85 border border-white/20 rounded-xl px-5 py-3 shadow-[0_10px_30px_rgba(0,0,0,0.6),0_0_20px_var(--medal-glow)] backdrop-blur-xl relative overflow-hidden min-w-[170px] max-w-[220px]"
+              style={{
+                '--medal-glow': stats.activeMedalPopup?.medal.color ?? 'rgb(249, 115, 22)'
+              } as any}
             >
-              {renderMedalIcon(stats.activeMedalPopup.medal.icon)}
-            </div>
+              {/* Holographic scanning laser line */}
+              <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.03)_1px,transparent_1px)] bg-[size:100%_3px] pointer-events-none" />
+              <div className="absolute top-0 left-0 right-0 h-[1.5px] bg-gradient-to-r from-transparent via-white/50 to-transparent" />
+              
+              {/* Rotating/pulsing starburst background flare */}
+              <div 
+                className="absolute w-20 h-20 rounded-full filter blur-xl opacity-25 animate-pulse"
+                style={{ background: stats.activeMedalPopup?.medal.color ?? 'rgb(249, 115, 22)' }}
+              />
 
-            {/* Medal Details */}
-            <div className="text-center mt-3 z-10 flex flex-col gap-0.5 font-sans">
-              <span className="text-[9.5px] font-mono font-black tracking-[0.25em] text-white/40">
-                MEDAL EARNED
-              </span>
-              <h3 
-                className="text-2xl font-black italic tracking-tighter uppercase drop-shadow-[0_0_8px_rgba(255,255,255,0.3)] mt-0.5"
-                style={{ color: stats.activeMedalPopup.medal.color }}
+              {/* Glowing Medal SVG Icon */}
+              <div 
+                className="w-10 h-10 relative flex items-center justify-center animate-bounce-slow"
+                style={{ filter: `drop-shadow(0 0 5px ${stats.activeMedalPopup?.medal.color ?? 'rgb(249, 115, 22)'})` }}
               >
-                {stats.activeMedalPopup.medal.name}
-              </h3>
-              <p className="text-[9.5px] font-mono tracking-widest text-[#94a3b8] uppercase font-bold mt-1 max-w-[210px] leading-tight">
-                {stats.activeMedalPopup.medal.description}
-              </p>
+                {renderMedalIcon(stats.activeMedalPopup?.medal.icon ?? 'killingspree')}
+              </div>
+
+              {/* Medal Details */}
+              <div className="text-center mt-1.5 z-10 flex flex-col gap-0.5 font-sans">
+                <span className="text-[7.5px] font-mono font-black tracking-[0.25em] text-white/40 leading-none">
+                  {stats.activeMedalPopup ? 'MEDAL EARNED' : 'PREVIEW NOTIFICATION'}
+                </span>
+                <h3 
+                  className="text-base font-black italic tracking-tighter uppercase drop-shadow-[0_0_6px_rgba(255,255,255,0.3)] mt-0.5 leading-none"
+                  style={{ color: stats.activeMedalPopup?.medal.color ?? 'rgb(249, 115, 22)' }}
+                >
+                  {stats.activeMedalPopup?.medal.name ?? 'Killing Spree'}
+                </h3>
+                <p className="text-[8px] font-mono tracking-widest text-[#94a3b8] uppercase font-bold mt-1 max-w-[150px] leading-tight mx-auto">
+                  {stats.activeMedalPopup?.medal.description ?? '5 KILLS WITHOUT DYING'}
+                </p>
+              </div>
             </div>
           </div>
-        </div>
+        </DraggableHUDItem>
       )}
 
     </div>

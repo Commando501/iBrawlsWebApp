@@ -638,10 +638,11 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
               s.isLunging = false;
               s.lungeTimer = 0;
               
-              const newDeath = {
+              const newDeath: DeathEvent = {
                 id: Math.random().toString(36).substring(2, 9),
                 attacker: 'Red (AI) [Lunge]',
                 victim: 'Blue (You)',
+                weapon: 'sword',
               };
               s.lastDeaths = [newDeath, ...s.lastDeaths].slice(0, 3);
               spawnVoxelShockwaveParticles(s.playerPos, '#3b82f6');
@@ -669,10 +670,11 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
                 other.deaths = (other.deaths || 0) + 1;
                 sfx.playDeath();
                 
-                const newDeath = {
+                const newDeath: DeathEvent = {
                   id: Math.random().toString(36).substring(2, 9),
                   attacker: 'Red (AI) [Lunge]',
-                  victim: other.playerName
+                  victim: other.playerName,
+                  weapon: 'sword'
                 };
                 s.lastDeaths = [newDeath, ...s.lastDeaths].slice(0, 3);
                 spawnVoxelShockwaveParticles(new THREE.Vector3(other.pos.x, other.pos.y, other.pos.z), '#ef4444');
@@ -1823,6 +1825,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
                       id: Math.random().toString(36).substring(2, 9),
                       attacker: data.senderId ? (s.otherPlayers.get(data.senderId)?.playerName || s.settings.playerName || 'Blue (You)') : 'Player',
                       victim: targetPlayer.playerName,
+                      weapon: data.weapon || 'sword',
                     };
                     s.lastDeaths = [newDeath, ...s.lastDeaths].slice(0, 3);
                     spawnVoxelShockwaveParticles(new THREE.Vector3(targetPlayer.pos.x, targetPlayer.pos.y, targetPlayer.pos.z), '#ef4444');
@@ -1853,6 +1856,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
                       id: Math.random().toString(36).substring(2, 9),
                       attacker: data.senderId ? (s.otherPlayers.get(data.senderId)?.playerName || 'Player') : 'Player',
                       victim: s.settings.playerName || 'Blue (You)',
+                      weapon: data.weapon || 'sword',
                     };
                     s.lastDeaths = [newDeath, ...s.lastDeaths].slice(0, 3);
                     spawnVoxelShockwaveParticles(s.playerPos, '#ef4444');
@@ -3796,13 +3800,19 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     return multiplayerRole === 'client' ? 'Red (You)' : 'Blue (You)';
   };
 
-  const recordDeathEvent = (attacker: string, victim: string, medals?: MedalInfo[]) => {
+  const recordDeathEvent = (
+    attacker: string, 
+    victim: string, 
+    medals?: MedalInfo[], 
+    weapon?: 'sword' | 'hammer' | 'sword_vs_sword' | 'sword_vs_hammer' | 'hammer_vs_hammer'
+  ) => {
     const s = stateRef.current;
     const newDeath: DeathEvent = {
       id: Math.random().toString(36).substring(2, 9),
       attacker,
       victim,
       medals,
+      weapon,
     };
     s.lastDeaths = [newDeath, ...s.lastDeaths].slice(0, 3);
     return newDeath;
@@ -3822,7 +3832,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       s.playerKills += 1;
       sfx.playDeath();
       const medals = evaluatePlayerKillMedals(targetId);
-      recordDeathEvent(getLocalPlayerFeedName(), target.playerName, medals);
+      recordDeathEvent(getLocalPlayerFeedName(), target.playerName, medals, s.activeWeapon);
       spawnVoxelShockwaveParticles(new THREE.Vector3(target.pos.x, target.pos.y, target.pos.z), '#ef4444');
     }
   };
@@ -3855,17 +3865,17 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         s.scorePlayer += 1;
         s.playerKills += 1;
         const medals = evaluatePlayerKillMedals(attackerBot.id);
-        recordDeathEvent(`${getLocalPlayerFeedName()} [${tradeText}]`, attackerBot.playerName, medals);
+        recordDeathEvent(`${getLocalPlayerFeedName()} [${tradeText}]`, attackerBot.playerName, medals, 'sword_vs_sword');
       } else if (target.id === 'main_ai') {
         s.scoreEnemy += 1;
         s.enemyKills += 1;
-        recordDeathEvent(`Red (AI) [${tradeText}]`, attackerBot.playerName);
+        recordDeathEvent(`Red (AI) [${tradeText}]`, attackerBot.playerName, undefined, 'sword_vs_sword');
       } else {
         const targetBot = s.otherPlayers.get(target.id);
         if (targetBot) {
           targetBot.score = (targetBot.score || 0) + 1;
           targetBot.kills = (targetBot.kills || 0) + 1;
-          recordDeathEvent(`${targetBot.playerName} [${tradeText}]`, attackerBot.playerName);
+          recordDeathEvent(`${targetBot.playerName} [${tradeText}]`, attackerBot.playerName, undefined, 'sword_vs_sword');
         }
       }
       spawnVoxelShockwaveParticles(new THREE.Vector3(attackerBot.pos.x, attackerBot.pos.y, attackerBot.pos.z), '#ef4444');
@@ -3877,7 +3887,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       s.playerDeaths += 1;
       attackerBot.score = (attackerBot.score || 0) + 1;
       attackerBot.kills = (attackerBot.kills || 0) + 1;
-      recordDeathEvent(`${attackerBot.playerName} [${tradeText}]`, getLocalPlayerFeedName());
+      recordDeathEvent(`${attackerBot.playerName} [${tradeText}]`, getLocalPlayerFeedName(), undefined, 'sword_vs_sword');
       spawnVoxelShockwaveParticles(s.playerPos, '#3b82f6');
     } else if (target.id === 'main_ai' && s.aiHP <= 0) {
       s.aiHP = 0;
@@ -3886,7 +3896,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       s.enemyDeaths += 1;
       attackerBot.score = (attackerBot.score || 0) + 1;
       attackerBot.kills = (attackerBot.kills || 0) + 1;
-      recordDeathEvent(`${attackerBot.playerName} [${tradeText}]`, 'Red (AI)');
+      recordDeathEvent(`${attackerBot.playerName} [${tradeText}]`, 'Red (AI)', undefined, 'sword_vs_sword');
       spawnVoxelShockwaveParticles(s.aiPos, '#ef4444');
     } else if (target.id !== 'player' && target.id !== 'main_ai') {
       const targetBot = s.otherPlayers.get(target.id);
@@ -3896,7 +3906,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         targetBot.deaths = (targetBot.deaths || 0) + 1;
         attackerBot.score = (attackerBot.score || 0) + 1;
         attackerBot.kills = (attackerBot.kills || 0) + 1;
-        recordDeathEvent(`${attackerBot.playerName} [${tradeText}]`, targetBot.playerName);
+        recordDeathEvent(`${attackerBot.playerName} [${tradeText}]`, targetBot.playerName, undefined, 'sword_vs_sword');
         spawnVoxelShockwaveParticles(new THREE.Vector3(targetBot.pos.x, targetBot.pos.y, targetBot.pos.z), '#ef4444');
       }
     }
@@ -4106,16 +4116,19 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
     // Record death events for the kill feed (last 3 entries)
     const attackerText = reason === 'sword_vs_sword' ? 'Sword Trade' : 'Lunge/Hammer Trade';
-    const newDeath1 = {
+    const tradeWeapon = reason === 'sword_vs_sword' ? 'sword_vs_sword' : 'sword_vs_hammer';
+    const newDeath1: DeathEvent = {
       id: Math.random().toString(36).substring(2, 9),
       attacker: `Blue (You) [${attackerText}]`,
       victim: 'Red (AI)',
       medals: playerMedals,
+      weapon: tradeWeapon,
     };
-    const newDeath2 = {
+    const newDeath2: DeathEvent = {
       id: Math.random().toString(36).substring(2, 9),
       attacker: `Red (AI) [${attackerText}]`,
       victim: 'Blue (You)',
+      weapon: tradeWeapon,
     };
 
     s.lastDeaths = [newDeath1, newDeath2, ...s.lastDeaths].slice(0, 3);
@@ -4487,17 +4500,18 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
                 other.kills = (other.kills || 0) + 1;
               }
               
-              const newDeath = {
+              const newDeath: DeathEvent = {
                 id: Math.random().toString(36).substring(2, 9),
                 attacker: (other && other.playerName) || 'Player',
                 victim: s.settings.playerName || 'Blue (You)',
+                weapon: isOtherSwordActiveAttack ? 'sword_vs_sword' : 'sword_vs_hammer',
               };
               s.lastDeaths = [newDeath, ...s.lastDeaths].slice(0, 3);
             }
             
             // Notify the remote player that they took damage too
             if (multiplayerSocket && multiplayerSocket.readyState === WebSocket.OPEN) {
-              multiplayerSocket.send(JSON.stringify({ type: 'sync', action: 'hit_taken', damage: 1, targetId: closestTarget.id }));
+              multiplayerSocket.send(JSON.stringify({ type: 'sync', action: 'hit_taken', damage: 1, targetId: closestTarget.id, weapon: s.activeWeapon }));
               applyOutgoingMultiplayerHitLocally(closestTarget.id, 1);
             }
             
@@ -4546,11 +4560,12 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
               s.aiWeaponTimer = 0;
 
               const medals = evaluatePlayerKillMedals('main_ai');
-              const newDeath = {
+              const newDeath: DeathEvent = {
                 id: Math.random().toString(36).substring(2, 9),
                 attacker: s.settings.playerName || 'Blue (You)',
                 victim: 'Red (AI)',
-                medals
+                medals,
+                weapon: 'sword',
               };
               s.lastDeaths = [newDeath, ...s.lastDeaths].slice(0, 3);
               spawnVoxelShockwaveParticles(s.aiPos, '#ef4444');
@@ -4570,11 +4585,12 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
                 sfx.playDeath();
 
                 const medals = evaluatePlayerKillMedals(closestTarget.id);
-                const newDeath = {
+                const newDeath: DeathEvent = {
                   id: Math.random().toString(36).substring(2, 9),
                   attacker: s.settings.playerName || 'Blue (You)',
                   victim: other.playerName,
-                  medals
+                  medals,
+                  weapon: 'sword',
                 };
                 s.lastDeaths = [newDeath, ...s.lastDeaths].slice(0, 3);
                 spawnVoxelShockwaveParticles(closestTarget.pos, '#ef4444');
@@ -4904,11 +4920,12 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
                       s.aiWeaponTimer = 0;
                       
                       const medals = evaluatePlayerKillMedals('main_ai');
-                      const newDeath = {
+                      const newDeath: DeathEvent = {
                         id: Math.random().toString(36).substring(2, 9),
                         attacker: s.settings.playerName || 'Blue (You)',
                         victim: 'Red (AI)',
-                        medals
+                        medals,
+                        weapon: s.activeWeapon,
                       };
                       s.lastDeaths = [newDeath, ...s.lastDeaths].slice(0, 3);
                       spawnVoxelShockwaveParticles(s.aiPos, '#ef4444');
@@ -4957,11 +4974,12 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
                             sfx.playDeath();
                             
                             const medals = evaluatePlayerKillMedals(other.id);
-                            const newDeath = {
+                            const newDeath: DeathEvent = {
                               id: Math.random().toString(36).substring(2, 9),
                               attacker: s.settings.playerName || 'Blue (You)',
                               victim: other.playerName,
-                              medals
+                              medals,
+                              weapon: s.activeWeapon
                             };
                             s.lastDeaths = [newDeath, ...s.lastDeaths].slice(0, 3);
                             spawnVoxelShockwaveParticles(new THREE.Vector3(other.pos.x, other.pos.y, other.pos.z), '#ef4444');
@@ -5329,11 +5347,12 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
             s.aiWeaponTimer = 0;
             
             const medals = evaluatePlayerKillMedals('main_ai');
-            const newDeath = {
+            const newDeath: DeathEvent = {
               id: Math.random().toString(36).substring(2, 9),
               attacker: s.settings.playerName || 'Blue (You)',
               victim: 'Red (AI)',
-              medals
+              medals,
+              weapon: s.activeWeapon,
             };
             s.lastDeaths = [newDeath, ...s.lastDeaths].slice(0, 3);
             spawnVoxelShockwaveParticles(s.aiPos, '#ef4444');
@@ -5375,11 +5394,12 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
                   sfx.playDeath();
                   
                   const medals = evaluatePlayerKillMedals(other.id);
-                  const newDeath = {
+                  const newDeath: DeathEvent = {
                     id: Math.random().toString(36).substring(2, 9),
                     attacker: s.settings.playerName || 'Blue (You)',
                     victim: other.playerName,
-                    medals
+                    medals,
+                    weapon: s.activeWeapon,
                   };
                   s.lastDeaths = [newDeath, ...s.lastDeaths].slice(0, 3);
                   spawnVoxelShockwaveParticles(new THREE.Vector3(other.pos.x, other.pos.y, other.pos.z), '#ef4444');
@@ -5451,6 +5471,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
                 id: Math.random().toString(36).substring(2, 9),
                 attacker: 'Red (AI)',
                 victim: 'Blue (You)',
+                weapon: s.aiActiveWeapon,
               };
               s.lastDeaths = [newDeath, ...s.lastDeaths].slice(0, 3);
 
@@ -5474,10 +5495,11 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
                 other.deaths = (other.deaths || 0) + 1;
                 sfx.playDeath();
 
-                const newDeath = {
+                const newDeath: DeathEvent = {
                   id: Math.random().toString(36).substring(2, 9),
                   attacker: 'Red (AI)',
-                  victim: other.playerName
+                  victim: other.playerName,
+                  weapon: s.aiActiveWeapon,
                 };
                 s.lastDeaths = [newDeath, ...s.lastDeaths].slice(0, 3);
                 spawnVoxelShockwaveParticles(new THREE.Vector3(other.pos.x, other.pos.y, other.pos.z), '#ef4444');
@@ -5550,10 +5572,11 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
             s.isLunging = false;
             s.lungeTimer = 0;
             
-            const newDeath = {
+            const newDeath: DeathEvent = {
               id: Math.random().toString(36).substring(2, 9),
               attacker: 'Red (AI) [Slash]',
               victim: 'Blue (You)',
+              weapon: 'sword',
             };
             s.lastDeaths = [newDeath, ...s.lastDeaths].slice(0, 3);
             spawnVoxelShockwaveParticles(s.playerPos, '#3b82f6');
@@ -5574,10 +5597,11 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
               other.deaths = (other.deaths || 0) + 1;
               sfx.playDeath();
               
-              const newDeath = {
+              const newDeath: DeathEvent = {
                 id: Math.random().toString(36).substring(2, 9),
                 attacker: 'Red (AI) [Slash]',
-                victim: other.playerName
+                victim: other.playerName,
+                weapon: 'sword',
               };
               s.lastDeaths = [newDeath, ...s.lastDeaths].slice(0, 3);
               spawnVoxelShockwaveParticles(new THREE.Vector3(other.pos.x, other.pos.y, other.pos.z), '#ef4444');
@@ -6401,10 +6425,11 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
             botState!.kills = (botState!.kills || 0) + 1;
             sfx.playDeath();
             
-            const newDeath = {
+            const newDeath: DeathEvent = {
               id: Math.random().toString(36).substring(2, 9),
               attacker: botState!.playerName,
-              victim: s.settings.playerName || 'Blue (You)'
+              victim: s.settings.playerName || 'Blue (You)',
+              weapon: 'sword',
             };
             s.lastDeaths = [newDeath, ...s.lastDeaths].slice(0, 3);
           }
@@ -6423,7 +6448,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
             s.enemyDeaths += 1;
             sfx.playDeath();
             
-            recordDeathEvent(botState!.playerName, 'Red (AI)');
+            recordDeathEvent(botState!.playerName, 'Red (AI)', undefined, 'sword');
           }
         } else {
           const oBot = s.otherPlayers.get(target.id);
@@ -6441,7 +6466,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
               oBot.deaths = (oBot.deaths || 0) + 1;
               sfx.playDeath();
               
-              recordDeathEvent(botState!.playerName, oBot.playerName);
+              recordDeathEvent(botState!.playerName, oBot.playerName, undefined, 'sword');
             }
           }
         }
