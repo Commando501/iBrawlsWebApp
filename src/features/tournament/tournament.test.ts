@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   buildInitialTournamentRounds,
   buildNextTournamentRoundMatches,
+  generateTournamentOpponents,
   getTournamentBotCount,
   getTournamentRoundLabels,
   simulateBotMatch,
@@ -59,4 +60,13 @@ test('simulates bot matches without changing match identity', () => {
   assert.ok(result.winner === 'bot_1' || result.winner === 'bot_2');
   assert.ok(result.score1 !== undefined);
   assert.ok(result.score2 !== undefined);
+});
+
+test('generateTournamentOpponents assigns a combat archetype to each bot', () => {
+  const opponents = generateTournamentOpponents('hard', 7);
+  assert.equal(Object.keys(opponents).length, 7);
+  for (const opp of Object.values(opponents)) {
+    assert.ok(opp.archetype);
+    assert.ok(['passive', 'defensive', 'aggressive'].includes(opp.behavior));
+  }
 });

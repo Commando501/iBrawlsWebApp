@@ -45,6 +45,7 @@ export const DEFAULT_ADMIN_SETTINGS: UniversalSettings = {
   aiWeaponSwapIQ: 50,
   aiPlaystyle: 50,
   aiWeaponPrioritization: 50,
+  aiArchetype: 'none',
   enableBurnDecals: true,
   weaponReadyTime: 0.5,
   weaponSwapLockout: 1.0,

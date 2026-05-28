@@ -33,3 +33,42 @@ Useful commands:
 ## Build Note
 
 This workspace has previously had Windows `EPERM` locks on stale files under `dist\assets`. Vite is configured with `build.emptyOutDir: false` so `npm run build` can still produce a fresh `index.html`, CSS bundle, JS bundle, and server bundle. Run `npm run clean` when no process is holding `dist` files open.
+
+## AI Systems
+
+Combat AI is orchestrated from `GrifballGame.tsx` (10-state FSM including `PRESSURING`) with pure decision logic in `src/game/`.
+
+| Module | Role |
+|--------|------|
+| `aiCombatDecision.ts` | Tactical weapon choice; punish-window gates when opponents are dash- or swap-locked (mechanic-aware difficulties) |
+| `aiTuning.ts` | Hybrid tuning: derives spatial IQ, feint chance, and pressure aggression from the 7 base knobs, with optional Custom Matrix overrides; score-aware match multipliers for leads, deficits, close games, and match point |
+| `aiMatchContext.ts` | Per-match memory (player models, feint cooldowns, combo state, skill calibration, multi-bot coordinator) reset on match start |
+| `aiComboEngine.ts` | Mid-combat weapon combo strings (Mixup, Safe Finish, Bait & Smash, Double Tap); gated by weapon-swap IQ ≥ 70/90 and weapon prioritization |
+| `aiPlayerModel.ts` | Adaptive opponent modeling via EMA observations (lunge habits, dodge bias, counters); feeds combat and FSM movement |
+| `aiPressure.ts` | Post-hit pressure chains: enter/exit gates, approach speed, and follow-up attack timing driven by `pressureAggression` |
+| `aiFeints.ts` | Mind-game feints: approach abort, weapon-swap fake, charge abort, and lunge fake-out; gated by `feintChance`, per-bot cooldowns, and player-model counter feedback |
+| `aiSpatialStrategy.ts` | Arena spatial control and evasion: edge/center scoring, cut-off intercepts, spawn-guard aim, target selection bonuses; perpendicular dodges away from arena edges, variable lunge trigger range (±20%), bait dodges at ~12m, post-dodge punish commits, and player-model dodge timing |
+| `aiPersonalities.ts` | Six combat archetypes with knob presets and flags (spacing, pressure skip, feint bias); sandbox UI + tournament assignment |
+| `aiPsychologicalPressure.ts` | Mind-game tempo: post-kill spawn camping, slow/fast reaction bands, lunge-kill sword telegraphs, escalating standoff commits |
+| `aiBotCoordinator.ts` | Multi-bot coordination: shared focus target after damage tags, pincer approach offsets, staggered attack phases, pressure/flanker/punisher roles at 3+ bots |
+| `aiSkillCalibration.ts` | Rolling engagement window (last 10) tracking K/D, dodge/counter success, and death pacing; subtle ±12.5% drift on `reactionLatency`, `anticipationFactor`, and lunge aggression for standard difficulties only |
+
+Custom difficulty exposes derived-parameter overrides (`aiSpatialIQ`, `aiFeintChance`, `aiPressureAggression`) alongside the existing neural matrix sliders. **`aiPersonalities.ts`** provides six combat archetypes (Berserker, Counter-Fighter, Zoner, Mixup Artist, Assassin, Brawler) that overlay difficulty tuning with distinct knob presets and behavioral flags (`skipPressure`, `feintBias`, `spacingBand`). Sandbox and admin settings expose an archetype dropdown; tournament opponents receive a random archetype per bracket entrant.
+
+**PRESSURING state:** When a bot lands a non-lethal hit and `pressureAggression` is above threshold (passive bots skip), it enters `PRESSURING` instead of retreating through a full `COOLDOWN`. The bot closes faster, uses shorter attack timers, prefers hammer re-swings or sword lunges, and exits when the target dies, becomes invulnerable, leaves range, or the pressure timer expires. Chain length scales with score context (longer when behind, shorter when protecting a large lead).
+
+**Match state awareness:** `deriveMatchStateMultipliers()` reads `scorePlayer` / `scoreEnemy` (and tournament `killsToWin`) to modulate aggression, spacing, cooldowns, weapon-swap IQ, coin-flip trade avoidance, and PRESSURING duration. Large leads play safer; large deficits press harder; scores within 2 get peak tactical IQ; match point behavior splits between extreme commit (aggressive playstyle) and extreme patience (passive playstyle).
+
+**Weapon combo strings (IQ ≥ 70):** High weapon-swap IQ bots chain mid-combat sequences stored in `aiMatchContext.comboState`. **Mixup** (hammer hit → sword lunge), **Safe Finish** (double hammer), **Bait & Smash** (IQ ≥ 90: sword flash → hammer punish), and **Double Tap** (sword hit → hammer finish) respect swap lockouts, abort on target state changes, and override tactical swaps while active. Mixup Artist tournament/sandbox opponents initiate combos most often.
+
+**Feinting (Hard+/Custom IQ ≥ 60):** Bots with non-zero `feintChance` can abort forward approaches, flash a sword swap before reverting to hammer, sideways-dash out of committed charges when the opponent swings, or rush in without lunging. Each feint respects a 3–5s per-bot cooldown stored in `aiMatchContext`. Counter-heavy players (high `counterRate` in the adaptive model) see reduced feint pressure.
+
+**Smart evasion:** Incoming sword lunges trigger perpendicular dashes (or hammer jumps / sidestep jumps as fallbacks) using `aiSpatialStrategy` to pick a side away from the arena boundary and informed by learned dodge bias. Detection range jitters ±20% with `spatialIQ`; bait dodges can fire near 12m when an opponent holds sword. After a successful evasive dash, bots may enter `CHARGE_ATTACK` when the target is recovering and in range. Learned opponent `reactionTime` slightly scales evasion trigger distance.
+
+**Arena spatial control:** `scorePosition` and `getSpatialMovementBias` (gated by `spatialIQ`) steer `APPROACHING` and `SIDE_STEPPING` movement: bots recentre when exposed on the edge, cut off retreat paths when targets are pinned, and press harder when an opponent is cornered. `SPAWN_GUARDING` uses a corridor-aware aim angle and recentres when too close to the boundary. Hard+ target selection adds a bonus for edge-pinned opponents.
+
+**Psychological pressure (Hard+, aggression ≥ 15):** After a lethal hit, bots rush the victim’s anticipated spawn (`aiPsychologicalPressure` + `aiMatchContext.psychState`) instead of resetting—lunge kills hold sword at the spawn lip as a telegraph. During neutral exchanges, tempo alternation toggles effective `reactionLatency` every ~9s (slow vs fast bands), and mid-range standoff timers in `SIDE_STEPPING` escalate commit chance using match-state multipliers from `aiTuning`.
+
+**Multi-bot coordination (Hard+ offline):** When one bot tags damage, `aiBotCoordinator` sets a shared priority target for ~8s so allies focus fire. Two or more bots on the same target pincer with lateral offsets; attack commits stagger by role (pressure → flanker → punisher). Three or more assign punisher bots that wait for recovery windows before swinging. Easy difficulty skips coordination.
+
+**Dynamic skill calibration (Normal/Hard/Nightmare):** `aiSkillCalibration` maintains a rolling window of the last 10 engagements per bot (kills, deaths, dodge/counter outcomes, time-between-deaths). When the player dominates, bots receive a subtle buff to reaction speed, anticipation, and lunge aggression; when the bot dominates, those knobs drift down slightly (±12.5% max). Disabled for Custom difficulty (including tournament opponents with explicit tuning) and Easy mode.

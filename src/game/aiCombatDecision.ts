@@ -1,3 +1,10 @@
+import { applyPlayerModelCombatAdjustments, type PlayerModelSnapshot } from './aiPlayerModel';
+import {
+  getEffectiveWeaponSwapIQ,
+  NEUTRAL_MATCH_MULTIPLIERS,
+  type MatchStateMultipliers,
+} from './aiTuning';
+
 export type AICombatWeapon = 'hammer' | 'sword';
 
 export type AILungeOutcome = 'hit' | 'miss_timeout' | 'miss_arena' | 'target_dead';
@@ -15,6 +22,17 @@ export interface AITacticalTarget {
   weaponState: string;
   isLunging: boolean;
   invulnerabilityTimer?: number;
+  /** Seconds until dash is available again (0 = ready). */
+  dashCooldownRemaining?: number;
+  /** Seconds until weapon swap is allowed again (0 = ready). */
+  swapLockoutRemaining?: number;
+}
+
+/** Extended target snapshot used by target selection and the FSM orchestrator. */
+export interface AITacticalTargetSnapshot extends AITacticalTarget {
+  maxHp: number;
+  isCrouching: boolean;
+  playerName: string;
 }
 
 export interface AICombatDecisionInput {
@@ -37,8 +55,14 @@ export interface AICombatDecisionInput {
   weaponState: string;
   recentLungeMemory?: AILungeMemory | null;
   weaponPrioritization: number;
+  /** Learned opponent habits from adaptive player modeling (PR-B). */
+  playerModel?: PlayerModelSnapshot | null;
+  /** Score-aware trade and IQ modulation (PR-D). */
+  matchMultipliers?: MatchStateMultipliers;
   random?: () => number;
 }
+
+export type { PlayerModelSnapshot };
 
 export interface AICombatDecision {
   weapon: AICombatWeapon | null;
@@ -75,6 +99,9 @@ export function evaluateAICombatDecision(input: AICombatDecisionInput): AICombat
   const minLunge = playerDangerZone * 0.85;
   const maxLunge = Math.min(18.0, input.swordLungeDistance);
   const mechanicAware = isMechanicAwareDifficulty(input.difficulty, input.weaponSwapIQ);
+  const matchMultipliers = input.matchMultipliers ?? NEUTRAL_MATCH_MULTIPLIERS;
+  const effectiveWeaponSwapIQ = getEffectiveWeaponSwapIQ(input.weaponSwapIQ, matchMultipliers);
+  const commitBias = matchMultipliers.matchPointCommitBias;
   const decision: AICombatDecision = {
     weapon: null,
     bulltrueCounter: null,
@@ -107,7 +134,17 @@ export function evaluateAICombatDecision(input: AICombatDecisionInput): AICombat
       input.currentWeapon === 'sword' &&
       timeToImpact <= swordTradeWindow + 0.12;
 
-    if (swordCanCounter && !swordForbidden) {
+    if (
+      matchMultipliers.avoidCoinFlipTrades &&
+      !hammerCanCounter
+    ) {
+      decision.weapon = hammerForbidden ? 'sword' : 'hammer';
+      decision.postMissSpacing = true;
+      decision.bypassedRandomGate = true;
+      return decision;
+    }
+
+    if (swordCanCounter && !swordForbidden && commitBias >= 0.75) {
       decision.weapon = 'sword';
       decision.bulltrueCounter = 'sword';
       decision.bypassedRandomGate = true;
@@ -138,7 +175,58 @@ export function evaluateAICombatDecision(input: AICombatDecisionInput): AICombat
     }
   }
 
-  if (random() * 100 > input.weaponSwapIQ + 10) {
+  const dashLocked = (input.target.dashCooldownRemaining ?? 0) > 0;
+  const swapLocked = (input.target.swapLockoutRemaining ?? 0) > 0;
+  const inLungeBand = minDistance >= minLunge && minDistance <= maxLunge;
+  const inCloseBand = minDistance < playerDangerZone * 0.85;
+
+  if (
+    mechanicAware &&
+    !targetIsProtected &&
+    !input.target.isLunging &&
+    input.canStartWeaponAction &&
+    (dashLocked || swapLocked) &&
+    (inLungeBand || inCloseBand)
+  ) {
+    let punishWeapon: AICombatWeapon | null = null;
+
+    if (dashLocked) {
+      punishWeapon = 'sword';
+    } else if (swapLocked && input.target.activeWeapon === 'hammer') {
+      punishWeapon = 'hammer';
+    } else if (swapLocked && input.target.activeWeapon === 'sword') {
+      punishWeapon = 'sword';
+    }
+
+    if (punishWeapon === 'sword' && swordForbidden) {
+      punishWeapon = hammerForbidden ? null : 'hammer';
+    } else if (punishWeapon === 'hammer' && hammerForbidden) {
+      punishWeapon = swordForbidden ? null : 'sword';
+    }
+
+    if (punishWeapon) {
+      decision.weapon = punishWeapon;
+      decision.bypassedRandomGate = true;
+      return decision;
+    }
+  }
+
+  const modelAdjusted = applyPlayerModelCombatAdjustments(
+    decision,
+    input,
+    mechanicAware,
+    minDistance,
+    minLunge,
+    maxLunge,
+    pSword,
+    hammerForbidden,
+    swordForbidden,
+  );
+  if (modelAdjusted.weapon) {
+    return modelAdjusted;
+  }
+
+  if (random() * 100 > effectiveWeaponSwapIQ + 10) {
     return decision;
   }
 

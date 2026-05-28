@@ -47,6 +47,14 @@ export interface UniversalSettings {
   aiWeaponSwapIQ?: number;                // 0 to 100%
   aiPlaystyle?: number;                   // Custom AI playstyle slider: 0 = Passive, 50 = Defensive, 100 = Aggressive
   aiWeaponPrioritization?: number;        // Weapon prioritization weight: 0 = 100% Hammer, 100 = 100% Sword, 50 = Balanced
+  /** Custom override for derived spatial IQ (0–100); unset uses deriveAIParams(). */
+  aiSpatialIQ?: number;
+  /** Custom override for derived feint chance (0–100); unset uses deriveAIParams(). */
+  aiFeintChance?: number;
+  /** Custom override for derived pressure aggression (0–100); unset uses deriveAIParams(). */
+  aiPressureAggression?: number;
+  /** Combat personality archetype overlay; 'none' uses difficulty knobs only. */
+  aiArchetype?: 'none' | 'berserker' | 'counter_fighter' | 'zoner' | 'mixup_artist' | 'assassin' | 'brawler' | string;
   enableBurnDecals?: boolean;
   weaponReadyTime: number;
   weaponSwapLockout: number;
@@ -108,6 +116,7 @@ export type AIBehaviorState =
   | 'DANCING_BACKWARD' // AI fast-retreats to evade counter attack
   | 'SIDE_STEPPING' // AI circles player
   | 'CHARGE_ATTACK' // AI rushes in for swing
+  | 'PRESSURING' // AI chains follow-up attacks after landing a non-lethal hit
   | 'LUNGING' // AI is executing a high velocity sword lunge
   | 'COOLDOWN' // AI retreats or stands still while recovering
   | 'RESPAWNING' // AI is dead and respawning
@@ -162,6 +171,8 @@ export interface RemotePlayerState {
   aiDashRemaining?: number;
   aiDashCooldownTimer?: number;
   aiDashDir?: { x: number; y: number; z: number };
+  swapLockoutTimer?: number;
+  weaponState?: WeaponState | 'slashing' | 'recovering';
   isLunging?: boolean;
   lungeTimer?: number;
   lungeTargetDir?: { x: number; y: number; z: number };
@@ -169,6 +180,8 @@ export interface RemotePlayerState {
   aiLastLungeOutcome?: 'hit' | 'miss_timeout' | 'miss_arena' | 'target_dead';
   aiLastLungeTargetId?: string;
   aiPostLungeDecisionTimer?: number;
+  aiPendingPostEvasionCharge?: boolean;
+  aiPressureTargetId?: string;
 }
 
 export interface GameStats {
@@ -257,6 +270,8 @@ export interface TournamentOpponent {
   weaponSwapIQ: number;
   playstyle: number; // 0 = passive, 50 = defensive, 100 = aggressive
   behavior: 'passive' | 'defensive' | 'aggressive';
+  /** Optional combat personality for distinct bracket opponents. */
+  archetype?: 'berserker' | 'counter_fighter' | 'zoner' | 'mixup_artist' | 'assassin' | 'brawler' | string;
 }
 
 export interface TournamentMatch {

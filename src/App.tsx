@@ -50,6 +50,7 @@ import {
   getTournamentRoundLabels,
   simulateBotMatch,
 } from './features/tournament/tournament';
+import { AI_ARCHETYPE_OPTIONS, applyArchetypeToSettings, getArchetypeDef, type AIArchetypeId } from './game/aiPersonalities';
 import { GrifballGame } from './components/GrifballGame';
 import { HUD } from './components/HUD';
 import { sfx } from './components/AudioEngine';
@@ -58,7 +59,7 @@ import { ChatOverlay, ChatMessage } from './components/ChatOverlay';
 import { CharacterPreview } from './components/CharacterPreview';
 import { CharacterLoadout, DEFAULT_LOADOUT, AVAILABLE_PRESETS, HelmetPreset, TorsoPreset, ArmPreset, LegPreset } from './components/VoxelModels';
 
-const APP_VERSION = '0.429';
+const APP_VERSION = '0.450';
 const MAX_PLAYER_NAME_LENGTH = 10;
 
 interface OnlineClient {
@@ -1251,6 +1252,7 @@ export default function App() {
     aiMovementComplexity?: number;
     aiWeaponSwapIQ?: number;
     aiPlaystyle?: number;
+    aiWeaponPrioritization?: number;
   }
   interface AIPreset {
     id: string;
@@ -1284,6 +1286,7 @@ export default function App() {
         aiMovementComplexity: adminSettings.aiMovementComplexity ?? 50,
         aiWeaponSwapIQ: adminSettings.aiWeaponSwapIQ ?? 50,
         aiPlaystyle: adminSettings.aiPlaystyle ?? 50,
+        aiWeaponPrioritization: adminSettings.aiWeaponPrioritization ?? 50,
       }
     };
 
@@ -1354,8 +1357,18 @@ export default function App() {
         aiMovementComplexity: preset.tuning.aiMovementComplexity ?? 50,
         aiWeaponSwapIQ: preset.tuning.aiWeaponSwapIQ ?? 50,
         aiPlaystyle: preset.tuning.aiPlaystyle ?? 50,
+        aiWeaponPrioritization: preset.tuning.aiWeaponPrioritization ?? 50,
       }));
     }
+  };
+
+  const handleSelectAIArchetype = (archetypeId: string) => {
+    if (archetypeId === 'none') {
+      setAdminSettings(prev => ({ ...prev, aiArchetype: 'none' }));
+      return;
+    }
+
+    setAdminSettings(prev => applyArchetypeToSettings(prev, archetypeId as Exclude<AIArchetypeId, 'none'>));
   };
 
 
@@ -2023,6 +2036,8 @@ export default function App() {
       aiMovementComplexity: opponent.movementComplexity,
       aiWeaponSwapIQ: opponent.weaponSwapIQ,
       aiPlaystyle: opponent.playstyle,
+      aiWeaponPrioritization: getArchetypeDef(opponent.archetype)?.knobOverrides.aiWeaponPrioritization ?? prev.aiWeaponPrioritization ?? 50,
+      aiArchetype: opponent.archetype ?? 'none',
       playerName: playerName
     }));
 
@@ -2389,6 +2404,28 @@ export default function App() {
           );
         }
 
+        if (def.key === 'aiArchetype') {
+          return (
+            <div key={def.key} className="flex flex-col gap-1">
+              <span className="text-[9px] text-white/50 uppercase tracking-widest font-mono">{def.description}</span>
+              <select
+                value={(value as string) || 'none'}
+                onChange={(e) => handleSelectAIArchetype(e.target.value)}
+                className={`w-full h-8 bg-black/60 border border-white/10 rounded px-2 text-xs text-[#38bdf8] font-bold uppercase outline-none ${focusClass} cursor-pointer transition-all font-sans`}
+              >
+                {def.options?.map((opt: any) => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
+              {adminSettings.aiArchetype && adminSettings.aiArchetype !== 'none' && (
+                <span className="text-[8.5px] text-white/45 leading-snug">
+                  {getArchetypeDef(adminSettings.aiArchetype)?.description}
+                </span>
+              )}
+            </div>
+          );
+        }
+
         return (
           <div key={def.key} className="flex flex-col gap-1">
             <div className="flex justify-between text-[11px] font-bold uppercase tracking-wider text-white/80">
@@ -2524,6 +2561,16 @@ export default function App() {
           botBehaviors={botBehaviors}
           botWeaponBehaviors={botWeaponBehaviors}
           aiPresets={aiPresets}
+          aiMatchSessionKey={
+            singlePlayerMode === 'tournament' && tournamentState?.status === 'playing'
+              ? `tournament-r${tournamentState.currentRound}-m${tournamentState.currentMatchIndex}`
+              : 'sandbox'
+          }
+          matchKillsToWin={
+            singlePlayerMode === 'tournament' && tournamentState?.status === 'playing'
+              ? (tournamentState.killsToWin ?? TOURNAMENT_DEFAULT_KILLS_TO_WIN)
+              : undefined
+          }
           deviceInfo={deviceInfo}
           forceMobileControls={forceMobileControls}
           mobileJoystickRef={mobileJoystickRef}
@@ -2789,6 +2836,25 @@ export default function App() {
                                   </button>
                                 )}
                               </div>
+                            </div>
+                            <div className="flex flex-col gap-1.5">
+                              <span className="text-[10.5px] text-white/50 uppercase tracking-widest font-mono">Combat Archetype:</span>
+                              <select
+                                value={adminSettings.aiArchetype || 'none'}
+                                onChange={(e) => handleSelectAIArchetype(e.target.value)}
+                                className="w-full h-11 bg-black/60 border border-white/10 rounded px-2.5 text-sm text-[#38bdf8] font-bold uppercase outline-none focus:border-[#38bdf8] transition-all cursor-pointer font-sans"
+                              >
+                                {AI_ARCHETYPE_OPTIONS.map((option) => (
+                                  <option key={option.value} value={option.value}>
+                                    {option.label}
+                                  </option>
+                                ))}
+                              </select>
+                              {adminSettings.aiArchetype && adminSettings.aiArchetype !== 'none' && (
+                                <span className="text-[10px] text-white/45 leading-snug">
+                                  {getArchetypeDef(adminSettings.aiArchetype)?.description}
+                                </span>
+                              )}
                             </div>
                             {adminSettings.aiDifficulty === 'custom' && (
                               <div className="flex flex-col gap-3 pt-1">

@@ -1,4 +1,9 @@
 import { TournamentMatch, TournamentOpponent } from '../../types';
+import {
+  applyPersonalityKnobs,
+  pickRandomArchetype,
+  playstyleToBehavior,
+} from '../../game/aiPersonalities';
 
 export const TOURNAMENT_BOT_NAMES = [
   'Talon', 'Malcom', 'Sark', 'Brock', 'Lauren', 'Xan', 'Ravage', 'Diva', 'Gorge', 'Ares', 'Kraken'
@@ -125,6 +130,27 @@ export function generateTournamentOpponents(
     else if (behavior === 'defensive') playstyle = 40 + Math.floor(Math.random() * 20);
     else if (behavior === 'aggressive') playstyle = 85 + Math.floor(Math.random() * 15);
 
+    const archetype = pickRandomArchetype();
+    const personalityKnobs = applyPersonalityKnobs(
+      {
+        difficulty,
+        reactionLatency,
+        anticipationFactor,
+        movementComplexity,
+        weaponSwapIQ,
+        aiPlaystyle: playstyle,
+        weaponPrioritization: 50,
+      },
+      archetype
+    );
+
+    reactionLatency = personalityKnobs.reactionLatency;
+    anticipationFactor = personalityKnobs.anticipationFactor;
+    movementComplexity = personalityKnobs.movementComplexity;
+    weaponSwapIQ = personalityKnobs.weaponSwapIQ;
+    playstyle = personalityKnobs.aiPlaystyle;
+    const resolvedBehavior = playstyleToBehavior(playstyle);
+
     opponents[id] = {
       id,
       name,
@@ -135,7 +161,8 @@ export function generateTournamentOpponents(
       movementComplexity,
       weaponSwapIQ,
       playstyle,
-      behavior
+      behavior: resolvedBehavior,
+      archetype,
     };
   });
 

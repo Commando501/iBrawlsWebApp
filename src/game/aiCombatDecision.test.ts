@@ -77,6 +77,57 @@ test('incoming sword lunge uses sword counter when hammer is unavailable', () =>
   assert.equal(decision.bulltrueCounter, 'sword');
 });
 
+test('incoming lunge avoids sword coin-flip when protecting a large lead', () => {
+  const decision = evaluateAICombatDecision({
+    ...baseInput,
+    currentWeapon: 'sword',
+    distanceToTarget: 4.5,
+    combatDistanceToTarget: 4.5,
+    canUseHammerCounter: false,
+    target: {
+      ...baseInput.target,
+      isLunging: true,
+    },
+    matchMultipliers: {
+      aggressionMult: 0.72,
+      cooldownMult: 1.25,
+      spacingMult: 1.2,
+      iqGateBonus: 0,
+      avoidCoinFlipTrades: true,
+      matchPointCommitBias: 1,
+      pressureDurationMult: 0.85,
+    },
+  });
+
+  assert.equal(decision.postMissSpacing, true);
+  assert.equal(decision.bulltrueCounter, null);
+});
+
+test('close match score boosts weapon swap IQ gate pass rate', () => {
+  const neutral = evaluateAICombatDecision({
+    ...baseInput,
+    weaponSwapIQ: 60,
+    random: () => 0.75,
+  });
+  const close = evaluateAICombatDecision({
+    ...baseInput,
+    weaponSwapIQ: 60,
+    random: () => 0.75,
+    matchMultipliers: {
+      aggressionMult: 1,
+      cooldownMult: 1,
+      spacingMult: 1,
+      iqGateBonus: 15,
+      avoidCoinFlipTrades: false,
+      matchPointCommitBias: 1,
+      pressureDurationMult: 1,
+    },
+  });
+
+  assert.equal(neutral.weapon, null);
+  assert.notEqual(close.weapon, null);
+});
+
 test('normal difficulty does not bypass the weapon-swap random gate', () => {
   const decision = evaluateAICombatDecision({
     ...baseInput,
@@ -181,4 +232,160 @@ test('weapon prioritization 100 (100% Sword) overrides hammer when target is pro
   });
 
   assert.equal(decision.weapon, 'sword');
+});
+
+test('dash lockout in lunge range commits sword and bypasses random gate', () => {
+  const decision = evaluateAICombatDecision({
+    ...baseInput,
+    weaponSwapIQ: 10,
+    target: {
+      ...baseInput.target,
+      dashCooldownRemaining: 1.5,
+      swapLockoutRemaining: 0,
+    },
+    random: () => 0.99,
+  });
+
+  assert.equal(decision.weapon, 'sword');
+  assert.equal(decision.bypassedRandomGate, true);
+});
+
+test('hammer weapon with swap lockout chooses safe hammer close', () => {
+  const decision = evaluateAICombatDecision({
+    ...baseInput,
+    weaponSwapIQ: 10,
+    distanceToTarget: 4.5,
+    combatDistanceToTarget: 4.5,
+    target: {
+      ...baseInput.target,
+      activeWeapon: 'hammer',
+      dashCooldownRemaining: 0,
+      swapLockoutRemaining: 1.2,
+    },
+    random: () => 0.99,
+  });
+
+  assert.equal(decision.weapon, 'hammer');
+  assert.equal(decision.bypassedRandomGate, true);
+});
+
+test('sword weapon with swap lockout commits sword lunge punish', () => {
+  const decision = evaluateAICombatDecision({
+    ...baseInput,
+    weaponSwapIQ: 10,
+    target: {
+      ...baseInput.target,
+      activeWeapon: 'sword',
+      dashCooldownRemaining: 0,
+      swapLockoutRemaining: 1.2,
+    },
+    random: () => 0.99,
+  });
+
+  assert.equal(decision.weapon, 'sword');
+  assert.equal(decision.bypassedRandomGate, true);
+});
+
+test('opponent lockout punish window does not apply on normal difficulty', () => {
+  const decision = evaluateAICombatDecision({
+    ...baseInput,
+    difficulty: 'normal',
+    weaponSwapIQ: 50,
+    target: {
+      ...baseInput.target,
+      dashCooldownRemaining: 2.0,
+      swapLockoutRemaining: 2.0,
+    },
+    random: () => 0.99,
+  });
+
+  assert.equal(decision.weapon, null);
+  assert.equal(decision.bypassedRandomGate, false);
+});
+
+test('player model steers sword choice toward learned lunge distance', () => {
+  const decision = evaluateAICombatDecision({
+    ...baseInput,
+    weaponSwapIQ: 10,
+    swordLungeDistance: 14.5,
+    distanceToTarget: 10.5,
+    combatDistanceToTarget: 10.5,
+    playerModel: {
+      avgLungeDistance: 10.5,
+      lungeFrequency: 0.7,
+      dodgeBiasX: 0,
+      dodgeBiasZ: 0,
+      counterRate: 0.15,
+      approachSpeed: 0.7,
+      edgeProximity: 0.3,
+      reactionTime: 0.3,
+      sampleCount: 12,
+    },
+    random: () => 0.99,
+  });
+
+  assert.equal(decision.weapon, 'sword');
+});
+
+test('player model prefers hammer against counter-heavy opponents', () => {
+  const decision = evaluateAICombatDecision({
+    ...baseInput,
+    weaponSwapIQ: 10,
+    distanceToTarget: 8.0,
+    combatDistanceToTarget: 8.0,
+    playerModel: {
+      avgLungeDistance: 8.0,
+      lungeFrequency: 0.5,
+      dodgeBiasX: 0,
+      dodgeBiasZ: 0,
+      counterRate: 0.75,
+      approachSpeed: 0.5,
+      edgeProximity: 0.3,
+      reactionTime: 0.3,
+      sampleCount: 15,
+    },
+    random: () => 0.99,
+  });
+
+  assert.equal(decision.weapon, 'hammer');
+});
+
+test('player model bait hammer at learned lunge distance when opponent lunges often', () => {
+  const decision = evaluateAICombatDecision({
+    ...baseInput,
+    weaponSwapIQ: 10,
+    swordLungeDistance: 14.5,
+    distanceToTarget: 9.2,
+    combatDistanceToTarget: 9.2,
+    playerModel: {
+      avgLungeDistance: 9.5,
+      lungeFrequency: 0.8,
+      dodgeBiasX: 0,
+      dodgeBiasZ: 0,
+      counterRate: 0.45,
+      approachSpeed: 0.4,
+      edgeProximity: 0.3,
+      reactionTime: 0.3,
+      sampleCount: 20,
+    },
+    random: () => 0.99,
+  });
+
+  assert.equal(decision.weapon, 'hammer');
+});
+
+test('dash lockout punish is skipped when target is invulnerable', () => {
+  const decision = evaluateAICombatDecision({
+    ...baseInput,
+    weaponSwapIQ: 10,
+    target: {
+      ...baseInput.target,
+      dashCooldownRemaining: 2.0,
+      invulnerabilityTimer: 1.5,
+    },
+    random: () => 0.99,
+  });
+
+  assert.equal(decision.weapon, null);
+  assert.equal(decision.bypassedRandomGate, false);
 });
