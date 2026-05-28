@@ -8,8 +8,11 @@
     "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
     "start": "node dist/server.cjs",
     "preview": "vite preview",
-    "clean": "rm -rf dist server.js",
-    "lint": "tsc --noEmit"
+    "clean": "node scripts/clean.mjs",
+    "lint": "tsc --noEmit",
+    "typecheck:worker": "cd worker && npm run typecheck",
+    "typecheck:all": "npm run lint && npm run typecheck:worker",
+    "test": "node --import tsx --test src/features/tournament/tournament.test.ts src/game/rewards.test.ts src/settings/saveCodec.test.ts src/ui/hudLayouts.test.ts"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",

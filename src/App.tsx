@@ -12,13 +12,43 @@ import {
   DEFAULT_KEYBINDINGS,
   DeviceOS,
   DeviceInfo,
-  UI_ELEMENT_SCALE_MAX,
-  UI_ELEMENT_SCALE_MIN,
   AIBehaviorPreset,
-  TournamentOpponent,
   TournamentMatch,
   TournamentState,
 } from './types';
+import {
+  DEFAULT_ADMIN_SETTINGS,
+  createDefaultAdminSettings,
+  gameplaySettingsAreEqual,
+  stripPlayerIdentitySettings,
+  withDefaultGameplaySettings,
+} from './settings/gameplaySettings';
+import { SaveData, buildSaveData, decryptSaveCode, encryptSaveData } from './settings/saveCodec';
+import {
+  DEFAULT_DESKTOP_UI_POSITIONS,
+  DEFAULT_MOBILE_UI_POSITIONS,
+  MOBILE_HUD_LAYOUT_VERSION,
+  MOBILE_HUD_LAYOUT_VERSION_KEY,
+  UiLayoutState,
+  getDefaultUiLayouts,
+  mergeUiPositions,
+  normalizeUiLayouts,
+} from './ui/hudLayouts';
+import {
+  TOURNAMENT_DEFAULT_KILLS_TO_WIN,
+  TOURNAMENT_DEFAULT_ROUND_COUNT,
+  TOURNAMENT_MAX_KILLS_TO_WIN,
+  TOURNAMENT_MAX_ROUND_COUNT,
+  TOURNAMENT_MIN_KILLS_TO_WIN,
+  TOURNAMENT_MIN_ROUND_COUNT,
+  TournamentDifficulty,
+  buildInitialTournamentRounds,
+  buildNextTournamentRoundMatches,
+  generateTournamentOpponents,
+  getTournamentBotCount,
+  getTournamentRoundLabels,
+  simulateBotMatch,
+} from './features/tournament/tournament';
 import { GrifballGame } from './components/GrifballGame';
 import { HUD } from './components/HUD';
 import { sfx } from './components/AudioEngine';
@@ -27,10 +57,8 @@ import { ChatOverlay, ChatMessage } from './components/ChatOverlay';
 import { CharacterPreview } from './components/CharacterPreview';
 import { CharacterLoadout, DEFAULT_LOADOUT, AVAILABLE_PRESETS, HelmetPreset, TorsoPreset, ArmPreset, LegPreset } from './components/VoxelModels';
 
-const APP_VERSION = '0.330';
+const APP_VERSION = '0.400';
 const MAX_PLAYER_NAME_LENGTH = 10;
-const MOBILE_HUD_LAYOUT_VERSION = '5';
-const MOBILE_HUD_LAYOUT_VERSION_KEY = 'grifball_mobile_hud_layout_version';
 
 interface OnlineClient {
   id: string;
@@ -156,222 +184,6 @@ const getSavedMatchmakerUrl = () => {
   }
   return `${protocol}//${host}/ws`;
 };
-
-interface SaveData {
-  version: number;
-  playerName: string;
-  playerHue: number;
-  uiPositions?: UiElementPos[];
-  uiLayouts?: UiLayoutState;
-  adminSettings: Omit<UniversalSettings, 'playerHue' | 'playerName'>;
-  keybindings?: Keybindings;
-}
-
-const withDefaultGameplaySettings = (
-  settings: Partial<Omit<UniversalSettings, 'playerHue' | 'playerName'>>
-): Omit<UniversalSettings, 'playerHue' | 'playerName'> => ({
-  hammerSplashVfx: 'current',
-  swordLungeVfx: 'current',
-  ...settings,
-}) as Omit<UniversalSettings, 'playerHue' | 'playerName'>;
-
-interface UiLayoutState {
-  desktop: UiElementPos[];
-  mobile: UiElementPos[];
-}
-
-const ENCRYPTION_KEY = "GRIFBALL_NEURAL_LINK_2026";
-
-function encryptSaveData(data: SaveData): string {
-  try {
-    const jsonStr = JSON.stringify(data);
-    const encoder = new TextEncoder();
-    const bytes = encoder.encode(jsonStr);
-    const keyBytes = encoder.encode(ENCRYPTION_KEY);
-    
-    for (let i = 0; i < bytes.length; i++) {
-      bytes[i] = bytes[i] ^ keyBytes[i % keyBytes.length];
-    }
-    
-    let binary = "";
-    const len = bytes.byteLength;
-    for (let i = 0; i < len; i++) {
-      binary += String.fromCharCode(bytes[i]);
-    }
-    return "GRIF-DEC-" + btoa(binary);
-  } catch (e) {
-    console.error("Encryption failed:", e);
-    throw new Error("Failed to encode neural backup.");
-  }
-}
-
-function decryptSaveCode(code: string): SaveData {
-  if (!code || !code.startsWith("GRIF-DEC-")) {
-    throw new Error("Invalid format. Code must begin with 'GRIF-DEC-'.");
-  }
-  try {
-    const base64Str = code.substring(9).trim();
-    const binary = atob(base64Str);
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) {
-      bytes[i] = binary.charCodeAt(i);
-    }
-    
-    const keyBytes = new TextEncoder().encode(ENCRYPTION_KEY);
-    
-    for (let i = 0; i < bytes.length; i++) {
-      bytes[i] = bytes[i] ^ keyBytes[i % keyBytes.length];
-    }
-    
-    const decryptedJson = new TextDecoder().decode(bytes);
-    return JSON.parse(decryptedJson) as SaveData;
-  } catch (e) {
-    console.error("Decryption failed:", e);
-    throw new Error("Failed to decrypt neural code. Ensure it is correct and untampered.");
-  }
-}
-
-
-const TOURNAMENT_BOT_NAMES = [
-  'Talon', 'Malcom', 'Sark', 'Brock', 'Lauren', 'Xan', 'Ravage', 'Diva', 'Gorge', 'Ares', 'Kraken'
-];
-
-const TOURNAMENT_DEFAULT_KILLS_TO_WIN = 25;
-const TOURNAMENT_MIN_KILLS_TO_WIN = 5;
-const TOURNAMENT_MAX_KILLS_TO_WIN = 50;
-const TOURNAMENT_DEFAULT_ROUND_COUNT = 3;
-const TOURNAMENT_MIN_ROUND_COUNT = 1;
-const TOURNAMENT_MAX_ROUND_COUNT = 4;
-
-function getTournamentBotCount(roundCount: number): number {
-  return Math.pow(2, roundCount) - 1;
-}
-
-function getTournamentRoundLabels(roundCount: number): string[] {
-  const labels: string[] = [];
-  for (let roundIndex = 0; roundIndex < roundCount; roundIndex++) {
-    const roundsRemaining = roundCount - roundIndex;
-    if (roundsRemaining === 1) labels.push('Final');
-    else if (roundsRemaining === 2) labels.push('Semifinals');
-    else if (roundsRemaining === 3) labels.push('Quarterfinals');
-    else labels.push(`Round of ${Math.pow(2, roundsRemaining)}`);
-  }
-  return labels;
-}
-
-function buildInitialTournamentRounds(roundCount: number): TournamentMatch[][] {
-  const rounds: TournamentMatch[][] = [];
-  const firstRoundMatchCount = Math.pow(2, roundCount - 1);
-
-  const round0: TournamentMatch[] = [
-    { opponent1: 'player', opponent2: 'bot_1', isCompleted: false }
-  ];
-
-  for (let botIndex = 2; botIndex <= firstRoundMatchCount * 2 - 1; botIndex += 2) {
-    round0.push({
-      opponent1: `bot_${botIndex}`,
-      opponent2: `bot_${botIndex + 1}`,
-      isCompleted: false
-    });
-  }
-
-  rounds.push(round0);
-
-  for (let roundIndex = 1; roundIndex < roundCount; roundIndex++) {
-    const matchCount = Math.pow(2, roundCount - roundIndex - 1);
-    rounds.push(
-      Array.from({ length: matchCount }, () => ({
-        opponent1: 'TBD',
-        opponent2: 'TBD',
-        isCompleted: false
-      }))
-    );
-  }
-
-  return rounds;
-}
-
-function buildNextTournamentRoundMatches(winners: string[]): TournamentMatch[] {
-  const matches: TournamentMatch[] = [];
-  for (let i = 0; i < winners.length; i += 2) {
-    matches.push({
-      opponent1: winners[i],
-      opponent2: winners[i + 1],
-      isCompleted: false
-    });
-  }
-  return matches;
-}
-
-function generateTournamentOpponents(
-  difficulty: 'easy' | 'normal' | 'hard' | 'nightmare',
-  botCount: number
-): Record<string, TournamentOpponent> {
-  const shuffledNames = [...TOURNAMENT_BOT_NAMES].sort(() => Math.random() - 0.5);
-  const opponents: Record<string, TournamentOpponent> = {};
-
-  const botIds = Array.from({ length: botCount }, (_, index) => `bot_${index + 1}`);
-  const behaviorPool: ('passive' | 'defensive' | 'aggressive')[] = [
-    'passive', 'defensive', 'aggressive', 'defensive', 'aggressive', 'defensive', 'aggressive'
-  ];
-  const shuffledBehaviors = Array.from({ length: botCount }, (_, index) =>
-    behaviorPool[index % behaviorPool.length]
-  ).sort(() => Math.random() - 0.5);
-
-  botIds.forEach((id, index) => {
-    const name = shuffledNames[index % shuffledNames.length];
-    const hue = Math.floor(Math.random() * 360);
-    const behavior = shuffledBehaviors[index];
-
-    let reactionLatency = 0.25;
-    let anticipationFactor = 0.40;
-    let movementComplexity = 50;
-    let weaponSwapIQ = 50;
-    let playstyle = 50;
-
-    if (difficulty === 'easy') {
-      reactionLatency = 0.5 + Math.random() * 0.15;
-      anticipationFactor = Math.random() * 0.1;
-      movementComplexity = 10 + Math.floor(Math.random() * 15);
-      weaponSwapIQ = 5 + Math.floor(Math.random() * 15);
-    } else if (difficulty === 'normal') {
-      reactionLatency = 0.2 + Math.random() * 0.1;
-      anticipationFactor = 0.3 + Math.random() * 0.2;
-      movementComplexity = 40 + Math.floor(Math.random() * 20);
-      weaponSwapIQ = 40 + Math.floor(Math.random() * 20);
-    } else if (difficulty === 'hard') {
-      reactionLatency = 0.08 + Math.random() * 0.06;
-      anticipationFactor = 0.65 + Math.random() * 0.15;
-      movementComplexity = 70 + Math.floor(Math.random() * 15);
-      weaponSwapIQ = 70 + Math.floor(Math.random() * 15);
-    } else if (difficulty === 'nightmare') {
-      reactionLatency = 0.01 + Math.random() * 0.02;
-      anticipationFactor = 0.9 + Math.random() * 0.09;
-      movementComplexity = 90 + Math.floor(Math.random() * 10);
-      weaponSwapIQ = 90 + Math.floor(Math.random() * 10);
-    }
-
-    if (behavior === 'passive') playstyle = 0 + Math.floor(Math.random() * 15);
-    else if (behavior === 'defensive') playstyle = 40 + Math.floor(Math.random() * 20);
-    else if (behavior === 'aggressive') playstyle = 85 + Math.floor(Math.random() * 15);
-
-    opponents[id] = {
-      id,
-      name,
-      hue,
-      difficulty,
-      reactionLatency,
-      anticipationFactor,
-      movementComplexity,
-      weaponSwapIQ,
-      playstyle,
-      behavior
-    };
-  });
-
-  return opponents;
-}
-
 
 const BOT_COLOR_PRESETS = [
   { label: 'Red',     hue: 0   },
@@ -904,51 +716,6 @@ export default function App() {
   };
 
   const getSavedAdminSettings = (): UniversalSettings => {
-    const defaultSettings: UniversalSettings = {
-      maxHP: 1,
-      speedForward: 100,
-      speedSide: 100,
-      speedBackward: 100,
-      attackRange: 3.2,
-      attackRadius: 4.5,
-      dashDistance: 6.0,
-      dashDuration: 0.25,
-      dashCooldown: 2.0,
-      respawnInvulnerabilityDuration: 1.0,
-      hammerReloadTime: 0.6,
-      hammerSplashVfx: 'current',
-      swordLungeVfx: 'current',
-      swordLungeDistance: 14.5,
-      swordLungeSpeed: 24.0,
-      swordSlashSpeed: 0.22,
-      swordSlashReload: 0.6,
-      swordLungeReload: 1.2,
-      hammerJumpPower: 6.5,
-      hammerJumpTriggerRadius: 3.5,
-      hammerJumpWindow: 0.6,
-      visualizeJumpZone: true,
-      directLightIntensity: 1.6,
-      ambientLightIntensity: 0.82,
-      skyboxBrightness: 4.0,
-      skyboxHue: 224,
-      enableSwordTrade: true,
-      enableHammerSwordTrade: true,
-      swordTradeWindow: 350,
-      hammerSwordTradeWindow: 350,
-      playerHue: 200,
-      nameVisibilityDistance: 15.0,
-      nameVisibilityColor: '#00ffff',
-      nameVisibilityOpacity: 0.8,
-      nameVisibilityFontSize: 16,
-      aiDifficulty: 'normal',
-      aiReactionLatency: 0.25,
-      aiAnticipationFactor: 0.40,
-      aiMovementComplexity: 50,
-      aiWeaponSwapIQ: 50,
-      aiPlaystyle: 50,
-      enableBurnDecals: true,
-    };
-
     try {
       const savedAdmin = localStorage.getItem('grifball_admin_settings');
       let admin = savedAdmin ? JSON.parse(savedAdmin) : {};
@@ -960,13 +727,13 @@ export default function App() {
       const nameVal = savedName || `Sptn-${Math.floor(1000 + Math.random() * 9000)}`;
 
       return {
-        ...defaultSettings,
+        ...DEFAULT_ADMIN_SETTINGS,
         ...admin,
         playerHue,
         playerName: nameVal
       };
     } catch (e) {
-      return defaultSettings;
+      return DEFAULT_ADMIN_SETTINGS;
     }
   };
 
@@ -975,16 +742,7 @@ export default function App() {
 
   const handleExportSaveCode = () => {
     try {
-      const { playerHue, playerName: sName, ...restSettings } = adminSettings;
-      const dataToSave: SaveData = {
-        version: 2,
-        playerName: playerName,
-        playerHue: playerHue ?? 200,
-        uiLayouts: uiLayouts,
-        adminSettings: restSettings,
-        keybindings: keybindings
-      };
-      
+      const dataToSave: SaveData = buildSaveData(adminSettings, playerName, uiLayouts, keybindings);
       const code = encryptSaveData(dataToSave);
       navigator.clipboard.writeText(code);
       
@@ -1075,53 +833,7 @@ export default function App() {
         setPlayerName(defaultName);
         applyUiLayouts(getDefaultUiLayouts());
         setKeybindings({ ...DEFAULT_KEYBINDINGS });
-        
-        const defaultAdmin: UniversalSettings = {
-          maxHP: 1,
-          speedForward: 100,
-          speedSide: 100,
-          speedBackward: 100,
-          attackRange: 3.2,
-          attackRadius: 4.5,
-          dashDistance: 6.0,
-          dashDuration: 0.25,
-          dashCooldown: 2.0,
-          respawnInvulnerabilityDuration: 1.0,
-          hammerReloadTime: 0.6,
-          hammerSplashVfx: 'current',
-          swordLungeVfx: 'current',
-          swordLungeDistance: 14.5,
-          swordLungeSpeed: 24.0,
-          swordSlashSpeed: 0.22,
-          swordSlashReload: 0.6,
-          swordLungeReload: 1.2,
-          hammerJumpPower: 6.5,
-          hammerJumpTriggerRadius: 3.5,
-          hammerJumpWindow: 0.6,
-          visualizeJumpZone: true,
-          directLightIntensity: 1.6,
-          ambientLightIntensity: 0.82,
-          skyboxBrightness: 4.0,
-          skyboxHue: 224,
-          enableSwordTrade: true,
-          enableHammerSwordTrade: true,
-          swordTradeWindow: 350,
-          hammerSwordTradeWindow: 350,
-          playerHue: 200,
-          nameVisibilityDistance: 15.0,
-          nameVisibilityColor: '#00ffff',
-          nameVisibilityOpacity: 0.8,
-          nameVisibilityFontSize: 16,
-          playerName: defaultName,
-          aiDifficulty: 'normal',
-          aiReactionLatency: 0.25,
-          aiAnticipationFactor: 0.40,
-          aiMovementComplexity: 50,
-          aiWeaponSwapIQ: 50,
-          aiPlaystyle: 50,
-          enableBurnDecals: true,
-        };
-        setAdminSettings(defaultAdmin);
+        setAdminSettings(createDefaultAdminSettings(defaultName));
         
         setSaveSystemStatus({
           type: 'success',
@@ -1209,95 +921,6 @@ export default function App() {
   const [activeInvite, setActiveInvite] = useState<{ fromId: string; roomCode: string } | null>(null);
   const [inviteNotifications, setInviteNotifications] = useState<string[]>([]);
   const [ping, setPing] = useState<number | undefined>(undefined);
-
-  // Default positions for customizable HUD items (percentages of viewport)
-  const DEFAULT_DESKTOP_UI_POSITIONS: UiElementPos[] = [
-    { id: 'objective', name: 'Objective Block', x: 3, y: 3, locked: true, scale: 1 },
-    { id: 'scoreboard', name: 'Scoreboard', x: 50, y: 3, locked: true, scale: 1 },
-    { id: 'arenaStatus', name: 'Arena Status & Controls', x: 97, y: 3, locked: true, scale: 1 },
-    { id: 'technicalSpecs', name: 'Technical Specs', x: 97, y: 19, locked: true, scale: 1 },
-    { id: 'eliminationFeed', name: 'Elimination Feed', x: 3, y: 45, locked: true, scale: 1 },
-    { id: 'radar', name: 'Tactical Radar', x: 3, y: 65, locked: true, scale: 1 },
-    { id: 'weaponDash', name: 'Gear & Thrusters', x: 3, y: 82, locked: true, scale: 1 },
-    { id: 'vitality', name: 'Vitality Indicator', x: 97, y: 90, locked: true, scale: 1 },
-    { id: 'crosshair', name: 'Reticle / Target Dot', x: 50, y: 50, locked: true, scale: 1 },
-    { id: 'spectatorCard', name: 'Spectator Controller', x: 50, y: 88, locked: true, scale: 1 },
-    { id: 'mobileLeftAnalog', name: 'Mobile Left Stick', x: 15, y: 75, locked: true, scale: 1 },
-    { id: 'mobileRightButtons', name: 'Mobile Right Buttons', x: 80, y: 75, locked: true, scale: 1 },
-    { id: 'medalPopup', name: 'Medal Popup Notification', x: 50, y: 67, locked: true, scale: 1 },
-    { id: 'hudAdjuster', name: 'HUD Canvas Adjuster', x: 50, y: 3, locked: false, scale: 1 },
-  ];
-
-  const DEFAULT_MOBILE_UI_POSITIONS: UiElementPos[] = [
-    { id: 'objective', name: 'Objective Block', x: 3, y: 4, locked: true, scale: 0.58 },
-    { id: 'scoreboard', name: 'Scoreboard', x: 50, y: 2, locked: true, scale: 0.56 },
-    { id: 'arenaStatus', name: 'Arena Status & Controls', x: 80, y: 4, locked: true, scale: 0.56 },
-    { id: 'technicalSpecs', name: 'Technical Specs', x: 76, y: 18, locked: true, scale: 0.52 },
-    { id: 'eliminationFeed', name: 'Elimination Feed', x: 50, y: 38, locked: true, scale: 0.56 },
-    { id: 'radar', name: 'Tactical Radar', x: 3, y: 76, locked: true, scale: 0.52 },
-    { id: 'weaponDash', name: 'Gear & Thrusters', x: 50, y: 76, locked: true, scale: 0.56 },
-    { id: 'vitality', name: 'Vitality Indicator', x: 82, y: 86, locked: true, scale: 0.58 },
-    { id: 'crosshair', name: 'Reticle / Target Dot', x: 50, y: 50, locked: true, scale: 1 },
-    { id: 'spectatorCard', name: 'Spectator Controller', x: 50, y: 86, locked: true, scale: 0.7 },
-    { id: 'mobileLeftAnalog', name: 'Mobile Left Stick', x: 3, y: 96, locked: true, scale: 1 },
-    { id: 'mobileRightButtons', name: 'Mobile Right Buttons', x: 98, y: 96, locked: true, scale: 1 },
-    { id: 'medalPopup', name: 'Medal Popup Notification', x: 50, y: 62, locked: true, scale: 0.8 },
-    { id: 'hudAdjuster', name: 'HUD Canvas Adjuster', x: 50, y: 4, locked: false, scale: 1 },
-  ];
-
-  const clampUiScale = (scale: unknown, fallback = 1) => {
-    const numeric = typeof scale === 'number' && Number.isFinite(scale) ? scale : fallback;
-    return Math.round(Math.max(UI_ELEMENT_SCALE_MIN, Math.min(UI_ELEMENT_SCALE_MAX, numeric)) * 100) / 100;
-  };
-
-  const cloneUiPositions = (positions: UiElementPos[]) => positions.map(position => ({
-    ...position,
-    scale: clampUiScale(position.scale),
-  }));
-
-  const mergeUiPositions = (defaults: UiElementPos[], saved?: UiElementPos[]) => {
-    const positions = cloneUiPositions(defaults);
-    if (!Array.isArray(saved)) return positions;
-
-    saved.forEach(item => {
-      const index = positions.findIndex(position => position.id === item.id);
-      if (index !== -1) {
-        positions[index] = {
-          ...positions[index],
-          ...item,
-          scale: clampUiScale(item.scale, positions[index].scale ?? 1),
-        };
-      }
-    });
-    return positions;
-  };
-
-  const getDefaultUiLayouts = (): UiLayoutState => ({
-    desktop: cloneUiPositions(DEFAULT_DESKTOP_UI_POSITIONS),
-    mobile: cloneUiPositions(DEFAULT_MOBILE_UI_POSITIONS),
-  });
-
-  const normalizeUiLayouts = (raw: unknown, resetSavedMobileLayout = false): UiLayoutState => {
-    const defaults = getDefaultUiLayouts();
-    if (Array.isArray(raw)) {
-      return {
-        desktop: mergeUiPositions(DEFAULT_DESKTOP_UI_POSITIONS, raw),
-        mobile: defaults.mobile,
-      };
-    }
-
-    if (raw && typeof raw === 'object') {
-      const saved = raw as Partial<UiLayoutState>;
-      return {
-        desktop: mergeUiPositions(DEFAULT_DESKTOP_UI_POSITIONS, saved.desktop),
-        mobile: resetSavedMobileLayout
-          ? defaults.mobile
-          : mergeUiPositions(DEFAULT_MOBILE_UI_POSITIONS, saved.mobile),
-      };
-    }
-
-    return defaults;
-  };
 
   const activeUiLayoutMode: keyof UiLayoutState = deviceInfo.isMobile ? 'mobile' : 'desktop';
   const activeUiDefaults = activeUiLayoutMode === 'mobile' ? DEFAULT_MOBILE_UI_POSITIONS : DEFAULT_DESKTOP_UI_POSITIONS;
@@ -1529,15 +1152,6 @@ export default function App() {
   const [selectedPresetName, setSelectedPresetName] = useState<string>('');
   const [newPresetNameInput, setNewPresetNameInput] = useState<string>('');
 
-  const settingsAreEqual = (s1: any, s2: any) => {
-    const keys = new Set([...Object.keys(s1), ...Object.keys(s2)]);
-    for (const key of keys) {
-      if (key === 'playerHue' || key === 'playerName') continue;
-      if (s1[key] !== s2[key]) return false;
-    }
-    return true;
-  };
-
   const handleSavePreset = (name: string) => {
     const trimmed = name.trim();
     if (!trimmed) return;
@@ -1599,8 +1213,8 @@ export default function App() {
     if (!selectedPresetName) return;
     const activePreset = gameplayPresets.find(p => p.name === selectedPresetName);
     if (activePreset) {
-      const { playerHue, playerName: sName, ...restSettings } = adminSettings;
-      if (!settingsAreEqual(restSettings, withDefaultGameplaySettings(activePreset.settings))) {
+      const restSettings = stripPlayerIdentitySettings(adminSettings);
+      if (!gameplaySettingsAreEqual(restSettings, withDefaultGameplaySettings(activePreset.settings))) {
         setSelectedPresetName('');
       }
     }
@@ -2321,38 +1935,8 @@ export default function App() {
     setQuickPlayStatus('idle');
   };
 
-  const simulateBotMatch = (
-    match: TournamentMatch,
-    opponents: Record<string, TournamentOpponent>,
-    killsToWin: number
-  ): TournamentMatch => {
-    const opp1 = opponents[match.opponent1];
-    const opp2 = opponents[match.opponent2];
-
-    const getPower = (opp: TournamentOpponent) => {
-      return (1.5 - opp.reactionLatency) * 40 + opp.anticipationFactor * 30 + opp.movementComplexity * 0.2 + opp.weaponSwapIQ * 0.1;
-    };
-
-    const power1 = getPower(opp1);
-    const power2 = getPower(opp2);
-    const prob1 = power1 / (power1 + power2);
-
-    const winnerId = Math.random() < prob1 ? match.opponent1 : match.opponent2;
-    const scoreWinner = killsToWin;
-    const minLoser = Math.max(1, Math.ceil(killsToWin / 2));
-    const scoreLoser = minLoser + Math.floor(Math.random() * Math.max(1, killsToWin - minLoser));
-
-    return {
-      ...match,
-      winner: winnerId,
-      score1: winnerId === match.opponent1 ? scoreWinner : scoreLoser,
-      score2: winnerId === match.opponent2 ? scoreWinner : scoreLoser,
-      isCompleted: true
-    };
-  };
-
   const handleInitializeTournament = (
-    difficulty: 'easy' | 'normal' | 'hard' | 'nightmare',
+    difficulty: TournamentDifficulty,
     killsToWin: number = TOURNAMENT_DEFAULT_KILLS_TO_WIN,
     roundCount: number = TOURNAMENT_DEFAULT_ROUND_COUNT
   ) => {

@@ -8,6 +8,12 @@ import * as THREE from 'three';
 import { sfx } from './AudioEngine';
 import { buildGravityHammerModel, buildVoxelSpartanModel, buildKatarSwordModel } from './VoxelModels';
 import { GameStats, Stance, WeaponState, AIBehaviorState, UniversalSettings, DeathEvent, Keybindings, DEFAULT_KEYBINDINGS, DeviceInfo, AIBehaviorPreset, MedalInfo } from '../types';
+import {
+  AI_FORCED_DESCENT_SPEED,
+  AI_MAX_AIRBORNE_HEIGHT,
+  recoverAIFromRunawayAltitude as applyAIAltitudeRecovery,
+} from '../game/aiAltitude';
+import { evaluateKillMedals } from '../game/rewards';
 
 const whiteBlinkMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
 
@@ -46,8 +52,6 @@ const CROUCH_BODY_CENTER_HEIGHT = 0.52;
 const AI_HAMMER_JUMP_COOLDOWN = 2.25;
 const AI_HAMMER_JUMP_START_MAX_HEIGHT = 0.08;
 const AI_HAMMER_JUMP_VERTICAL_VELOCITY_EPSILON = 0.1;
-const AI_MAX_AIRBORNE_HEIGHT = 14.0;
-const AI_FORCED_DESCENT_SPEED = -12.0;
 type SwordLungeCurrentTrailStyle = 'localCube' | 'enemyCube' | 'shockwave';
 
 const getCombatBodyCenter = (pos: THREE.Vector3, isCrouching = false): THREE.Vector3 => {
@@ -428,18 +432,11 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
   };
 
   const recoverAIFromRunawayAltitude = (pos: THREE.Vector3, vel: THREE.Vector3, botState?: any) => {
-    if (pos.y <= AI_MAX_AIRBORNE_HEIGHT) return;
-
-    pos.y = AI_MAX_AIRBORNE_HEIGHT;
-    vel.y = Math.min(vel.y, AI_FORCED_DESCENT_SPEED);
-    vel.x *= 0.25;
-    vel.z *= 0.25;
-
-    if (botState) {
-      botState.weaponState = 'ready';
-      botState.weaponTimer = 0;
-      botState.aiHammerJumpCooldownTimer = AI_HAMMER_JUMP_COOLDOWN;
-    }
+    applyAIAltitudeRecovery(pos, vel, botState, {
+      maxAirborneHeight: AI_MAX_AIRBORNE_HEIGHT,
+      forcedDescentSpeed: AI_FORCED_DESCENT_SPEED,
+      hammerJumpCooldown: AI_HAMMER_JUMP_COOLDOWN,
+    });
   };
 
   const recoverMainAIFromRunawayAltitude = () => {
@@ -3918,144 +3915,55 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
   function evaluatePlayerKillMedals(victimId: 'main_ai' | string): MedalInfo[] {
     const s = stateRef.current;
-    const medals: MedalInfo[] = [];
     const now = Date.now();
 
-    // 1. Get victim properties
     let isLunging = false;
     let spawnTime = 0;
-    let victimName = '';
 
     if (victimId === 'main_ai') {
       isLunging = s.aiState === 'LUNGING';
       spawnTime = s.aiSpawnTime || 0;
-      victimName = 'Red (AI)';
     } else {
       const other = s.otherPlayers.get(victimId);
       if (other) {
         isLunging = other.isLunging || other.aiState === 'LUNGING' || other.weaponState === 'swing_up' || other.weaponState === 'swing_down';
         spawnTime = other.spawnTime || 0;
-        victimName = other.playerName || 'Player';
       }
     }
 
-    // 2. Check SHOWSTOPPER (killed victim during lunge)
-    if (isLunging) {
-      medals.push({
-        id: 'showstopper',
-        name: 'Showstopper',
-        icon: 'showstopper',
-        color: 'rgb(239, 68, 68)',
-        description: 'Killed an opponent during their sword lunge!'
-      });
-    }
-
-    // 3. Check SPAWN SLAYER (1 second window)
-    if (spawnTime > 0 && (now - spawnTime <= 1000)) {
-      medals.push({
-        id: 'spawnslayer',
-        name: 'Spawn Slayer',
-        icon: 'spawnslayer',
-        color: 'rgb(34, 197, 94)',
-        description: 'Killed an opponent within 1 second of spawning!'
-      });
-    }
-
-    // 4. Check CLOSE CALL (player HP is 1 and playerMaxHP > 1)
-    if (s.playerMaxHP > 1 && s.playerHP === 1) {
-      medals.push({
-        id: 'closecall',
-        name: 'Close Call',
-        icon: 'closecall',
-        color: 'rgb(249, 115, 22)',
-        description: 'Killed an opponent while near death!'
-      });
-    }
-
-    // 5. Check MULTIKILL CHAIN (within 3 seconds of the last kill)
-    if (s.playerLastKillTime > 0 && (now - s.playerLastKillTime <= 3000)) {
-      s.playerMultikillCount += 1;
-    } else {
-      s.playerMultikillCount = 1;
-    }
-    s.playerLastKillTime = now;
-
-    if (s.playerMultikillCount === 2) {
-      medals.push({
-        id: 'double',
-        name: 'Double Kill',
-        icon: 'double',
-        color: 'rgb(34, 211, 238)',
-        description: '2 kills within 3 seconds!'
-      });
-    } else if (s.playerMultikillCount === 3) {
-      medals.push({
-        id: 'triple',
-        name: 'Triple Kill',
-        icon: 'triple',
-        color: 'rgb(234, 179, 8)',
-        description: '3 kills within 3 seconds!'
-      });
-    } else if (s.playerMultikillCount >= 4) {
-      medals.push({
-        id: 'overkill',
-        name: s.playerMultikillCount === 4 ? 'Overkill' : `Multikill x${s.playerMultikillCount}`,
-        icon: 'quadra',
-        color: 'rgb(168, 85, 247)',
-        description: `${s.playerMultikillCount} kills within 3 seconds of each other!`
-      });
-    }
-
-    // 6. Check KILLING SPREE (5 kills without dying)
-    s.playerSpreeCount += 1;
-    if (s.playerSpreeCount === 5) {
-      medals.push({
-        id: 'killingspree',
-        name: 'Killing Spree',
-        icon: 'killingspree',
-        color: 'rgb(249, 115, 22)',
-        description: '5 kills without dying!'
-      });
-    }
-
-    // 7. Check WEAPON SPECIALTY
-    if (s.activeWeapon === 'hammer') {
-      medals.push({
-        id: 'hammertime',
-        name: 'Hammer Time',
-        icon: 'hammertime',
-        color: 'rgb(244, 63, 94)',
-        description: 'Eliminated an opponent with the Gravity Hammer!'
-      });
-    } else if (s.activeWeapon === 'sword') {
-      medals.push({
-        id: 'swordslayer',
-        name: 'Sword Slayer',
-        icon: 'swordslayer',
-        color: 'rgb(6, 182, 212)',
-        description: 'Eliminated an opponent with the Katar Sword!'
-      });
-    }
+    const result = evaluateKillMedals({
+      isVictimLunging: isLunging,
+      victimSpawnTime: spawnTime,
+      playerHP: s.playerHP,
+      playerMaxHP: s.playerMaxHP,
+      playerLastKillTime: s.playerLastKillTime,
+      playerMultikillCount: s.playerMultikillCount,
+      playerSpreeCount: s.playerSpreeCount,
+      activeWeapon: s.activeWeapon,
+      now,
+    });
+    s.playerLastKillTime = result.playerLastKillTime;
+    s.playerMultikillCount = result.playerMultikillCount;
+    s.playerSpreeCount = result.playerSpreeCount;
+    const medals = result.medals;
 
     // Trigger visual + audio chimes for medals!
-    if (medals.length > 0) {
-      const priorityMedal = medals.find(m => ['double', 'triple', 'overkill', 'showstopper', 'spawnslayer', 'killingspree'].includes(m.id)) || medals[0];
-      if (priorityMedal) {
-        sfx.playMedal(priorityMedal.id);
-        s.activeMedalPopup = {
-          medal: priorityMedal,
-          key: Math.random()
-        };
+    if (result.priorityMedal) {
+      const priorityMedal = result.priorityMedal;
+      sfx.playMedal(priorityMedal.id);
+      s.activeMedalPopup = {
+        medal: priorityMedal,
+        key: Math.random()
+      };
 
-        // Reset active medal popup after 2.5 seconds
-        setTimeout(() => {
-          const innerS = stateRef.current;
-          if (innerS && innerS.activeMedalPopup && innerS.activeMedalPopup.medal.id === priorityMedal.id) {
-            innerS.activeMedalPopup = null;
-            pushStatsUpdate();
-          }
-        }, 2500);
-      }
+      // Reset active medal popup after 2.5 seconds
+      setTimeout(() => {
+        const innerS = stateRef.current;
+        if (innerS && innerS.activeMedalPopup && innerS.activeMedalPopup.medal.id === priorityMedal.id) {
+          innerS.activeMedalPopup = null;
+          pushStatsUpdate();
+        }
+      }, 2500);
     }
 
     return medals;
