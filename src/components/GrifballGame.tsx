@@ -43,6 +43,9 @@ const getInwardSpawnYaw = (spawnPos: THREE.Vector3): number => {
 const GRAVITY_ACCELERATION = 18.0;
 const BODY_CENTER_HEIGHT = 0.825;
 const CROUCH_BODY_CENTER_HEIGHT = 0.52;
+const AI_HAMMER_JUMP_COOLDOWN = 2.25;
+const AI_HAMMER_JUMP_START_MAX_HEIGHT = 0.08;
+const AI_HAMMER_JUMP_VERTICAL_VELOCITY_EPSILON = 0.1;
 
 const getCombatBodyCenter = (pos: THREE.Vector3, isCrouching = false): THREE.Vector3 => {
   return new THREE.Vector3(
@@ -203,6 +206,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     aiIsJumping: boolean;
     aiHammerJumpPlanned: boolean;
     aiHammerJumpType?: 'offensive' | 'defensive';
+    aiHammerJumpCooldownTimer: number;
 
     // Arena configs
     arenaRadius: number;
@@ -326,6 +330,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     aiHammerJumpWindowTimer: 0,
     aiIsJumping: false,
     aiHammerJumpPlanned: false,
+    aiHammerJumpCooldownTimer: 0,
 
     arenaRadius: 20, // 20m circle
     settings: adminSettings,
@@ -360,6 +365,68 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     isMultiplayer: isMultiplayer,
     multiplayerRole: multiplayerRole,
   });
+
+  const constrainCombatantToArena = (pos: THREE.Vector3, vel?: THREE.Vector3) => {
+    const s = stateRef.current;
+    const maxRadius = Math.max(0, s.arenaRadius - 0.6);
+    const distFromCenter = Math.sqrt(pos.x * pos.x + pos.z * pos.z);
+
+    if (distFromCenter > maxRadius && distFromCenter > 0) {
+      const normalX = pos.x / distFromCenter;
+      const normalZ = pos.z / distFromCenter;
+      pos.x = normalX * maxRadius;
+      pos.z = normalZ * maxRadius;
+
+      if (vel) {
+        const outwardSpeed = vel.x * normalX + vel.z * normalZ;
+        if (outwardSpeed > 0) {
+          vel.x -= normalX * outwardSpeed;
+          vel.z -= normalZ * outwardSpeed;
+        }
+      }
+    }
+
+    if (pos.y < 0) {
+      pos.y = 0;
+      if (vel && vel.y < 0) {
+        vel.y = 0;
+      }
+    }
+  };
+
+  const enforceArenaBounds = () => {
+    const s = stateRef.current;
+
+    if (!s.isObserverMode) {
+      constrainCombatantToArena(s.playerPos, s.playerVel);
+    }
+
+    constrainCombatantToArena(s.aiPos, s.aiVel);
+    constrainCombatantToArena(s.hostPos, s.hostVel);
+    constrainCombatantToArena(s.clientPos, s.clientVel);
+
+    s.otherPlayers?.forEach((other) => {
+      if (other.pos && other.vel) {
+        constrainCombatantToArena(other.pos, other.vel);
+      }
+    });
+  };
+
+  const finishMainAISwordLunge = (cooldownMultiplier = 1) => {
+    const s = stateRef.current;
+    s.aiState = 'COOLDOWN';
+    s.aiTimer = (s.settings.swordLungeReload ?? 1.2) * cooldownMultiplier;
+    s.aiWeaponState = 'ready';
+    s.aiIsJumping = s.aiPos.y > 0.01 || Math.abs(s.aiVel.y) > 0.01;
+
+    if (s.aiIsJumping) {
+      s.aiVel.x = 0;
+      s.aiVel.z = 0;
+      s.aiVel.y = Math.min(s.aiVel.y, 0);
+    } else {
+      s.aiVel.set(0, 0, 0);
+    }
+  };
 
   function updateAI(dt: number) {
     const s = stateRef.current;
@@ -398,6 +465,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
               bot.yaw = getInwardSpawnYaw(spawnPos);
               bot.weaponState = 'ready';
               bot.weaponTimer = 0;
+              bot.aiHammerJumpCooldownTimer = 0;
               bot.invulnerabilityTimer = s.settings.respawnInvulnerabilityDuration; // Spawn protection!
               botMesh.visible = true;
               sfx.playRespawn();
@@ -436,6 +504,9 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         s.aiYaw = getInwardSpawnYaw(spawnPos);
         enemyMesh.visible = true;
         s.aiWeaponState = 'ready';
+        s.aiHammerJumpPlanned = false;
+        s.aiHammerJumpType = undefined;
+        s.aiHammerJumpCooldownTimer = 0;
         s.aiInvulnerabilityTimer = s.settings.respawnInvulnerabilityDuration;
         sfx.playRespawn();
 
@@ -450,10 +521,16 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     if (s.aiState === 'LUNGING') {
       s.aiLungeTimer += dt;
       const lungeSpeed = s.settings.swordLungeSpeed ?? 24.0;
-      s.aiVel.copy(s.aiLungeTargetDir).multiplyScalar(lungeSpeed);
+      s.aiVel.x = s.aiLungeTargetDir.x * lungeSpeed;
+      s.aiVel.z = s.aiLungeTargetDir.z * lungeSpeed;
+      s.aiVel.y -= GRAVITY_ACCELERATION * dt;
       
       s.aiPos.addScaledVector(s.aiVel, dt);
-      s.aiPos.y = Math.max(0, s.aiPos.y);
+      if (s.aiPos.y <= 0) {
+        s.aiPos.y = 0;
+        s.aiVel.y = 0;
+      }
+      constrainCombatantToArena(s.aiPos, s.aiVel);
       enemyMesh.position.copy(s.aiPos);
       
       if (Math.random() > 0.1) {
@@ -483,13 +560,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       if (target) {
         const dist = getCombatBodyCenter(s.aiPos, s.aiIsCrouching).distanceTo(getCombatBodyCenter(target.pos, target.isCrouching));
         if (target.hp <= 0) {
-          s.aiState = 'COOLDOWN';
-          s.aiTimer = s.settings.swordLungeReload ?? 1.2;
-          s.aiWeaponState = 'ready';
-          s.aiIsJumping = s.aiPos.y > 0.01;
-          if (s.aiIsJumping) {
-            s.aiVel.y = Math.min(s.aiVel.y, 0);
-          }
+          finishMainAISwordLunge();
         } else if (dist <= 1.5) {
           const swordThreshold = s.settings.swordTradeWindow ?? 350;
           const hammerThreshold = s.settings.hammerSwordTradeWindow ?? 350;
@@ -514,13 +585,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
           if (target.id === 'player') {
             s.playerHP -= 1;
-            s.aiState = 'COOLDOWN';
-            s.aiTimer = s.settings.swordLungeReload ?? 1.2;
-            s.aiWeaponState = 'ready';
-            s.aiIsJumping = s.aiPos.y > 0.01;
-            if (s.aiIsJumping) {
-              s.aiVel.y = Math.min(s.aiVel.y, 0);
-            }
+            finishMainAISwordLunge();
             
             sfx.playExplosion();
             spawnVoxelShockwaveParticles(s.playerPos, '#ef4444');
@@ -559,13 +624,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
             const other = s.otherPlayers?.get(target.id);
             if (other) {
               other.hp -= 1;
-              s.aiState = 'COOLDOWN';
-              s.aiTimer = s.settings.swordLungeReload ?? 1.2;
-              s.aiWeaponState = 'ready';
-              s.aiIsJumping = s.aiPos.y > 0.01;
-              if (s.aiIsJumping) {
-                s.aiVel.y = Math.min(s.aiVel.y, 0);
-              }
+              finishMainAISwordLunge();
               
               sfx.playExplosion();
               spawnVoxelShockwaveParticles(new THREE.Vector3(other.pos.x, other.pos.y, other.pos.z), '#ef4444');
@@ -600,27 +659,13 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
       const startDist = s.aiPos.distanceTo(s.aiLungeStartPos);
       if (startDist > 16.0 || s.aiLungeTimer > 0.8) {
-        s.aiState = 'COOLDOWN';
-        s.aiTimer = s.settings.swordLungeReload ?? 1.2;
-        s.aiWeaponState = 'ready';
-        s.aiIsJumping = s.aiPos.y > 0.01;
-        if (s.aiIsJumping) {
-          s.aiVel.y = Math.min(s.aiVel.y, 0);
-        }
+        finishMainAISwordLunge();
       }
       
       const distFromCenter = Math.sqrt(s.aiPos.x * s.aiPos.x + s.aiPos.z * s.aiPos.z);
-      if (distFromCenter > s.arenaRadius - 0.6) {
-        const angle = Math.atan2(s.aiPos.z, s.aiPos.x);
-        s.aiPos.x = Math.cos(angle) * (s.arenaRadius - 0.6);
-        s.aiPos.z = Math.sin(angle) * (s.arenaRadius - 0.6);
-        s.aiState = 'COOLDOWN';
-        s.aiTimer = s.settings.swordLungeReload ?? 1.2;
-        s.aiWeaponState = 'ready';
-        s.aiIsJumping = s.aiPos.y > 0.01;
-        if (s.aiIsJumping) {
-          s.aiVel.y = Math.min(s.aiVel.y, 0);
-        }
+      if (distFromCenter >= s.arenaRadius - 0.6) {
+        constrainCombatantToArena(s.aiPos, s.aiVel);
+        finishMainAISwordLunge();
       }
       return;
     }
@@ -1938,7 +1983,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
           difficulty: diff,
           score: 0,
           kills: 0,
-          deaths: 0
+          deaths: 0,
+          aiHammerJumpCooldownTimer: 0
         };
 
         s.otherPlayers.set(botId, newBotState);
@@ -2456,6 +2502,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
     if (data.pos) playerState.pos.set(data.pos.x, data.pos.y, data.pos.z);
     if (data.vel) playerState.vel.set(data.vel.x, data.vel.y, data.vel.z);
+    constrainCombatantToArena(playerState.pos, playerState.vel);
     if (data.yaw !== undefined) playerState.yaw = data.yaw;
     if (data.pitch !== undefined) playerState.pitch = data.pitch;
     if (data.hp !== undefined) playerState.hp = data.hp;
@@ -2722,7 +2769,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
           score: 0,
           kills: 0,
           deaths: 0,
-          invulnerabilityTimer: s.settings.respawnInvulnerabilityDuration
+          invulnerabilityTimer: s.settings.respawnInvulnerabilityDuration,
+          aiHammerJumpCooldownTimer: 0
         });
       }
 
@@ -3356,6 +3404,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       updateHammerSplashFlashes(dt);
       updateBurnDecals(dt);
       updateMatchTimers(dt);
+      enforceArenaBounds();
 
       // Render loop
       renderGame();
@@ -3627,6 +3676,9 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       return;
     }
     s.aiLungeTargetDir.normalize();
+    const lungeSpeed = s.settings.swordLungeSpeed ?? 24.0;
+    s.aiVel.y = Math.max(s.aiVel.y, s.aiLungeTargetDir.y * lungeSpeed);
+    s.aiIsJumping = s.aiPos.y > 0.01 || s.aiVel.y > 0.01;
     s.aiWeaponState = 'ready';
     s.lastAISwordAttackTime = Date.now();
     sfx.playDash();
@@ -4020,6 +4072,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       s.playerVel.y = 0;
       s.isJumping = false;
       s.isCrouching = false;
+      constrainCombatantToArena(s.playerPos, s.playerVel);
 
       // Spawn beautiful energy trail particles
       const scene = threeRef.current.scene;
@@ -4224,10 +4277,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
       // Arena constraints
       const distFromCenter = Math.sqrt(s.playerPos.x * s.playerPos.x + s.playerPos.z * s.playerPos.z);
-      if (distFromCenter > s.arenaRadius - 0.6) {
-        const angle = Math.atan2(s.playerPos.z, s.playerPos.x);
-        s.playerPos.x = Math.cos(angle) * (s.arenaRadius - 0.6);
-        s.playerPos.z = Math.sin(angle) * (s.arenaRadius - 0.6);
+      if (distFromCenter >= s.arenaRadius - 0.6) {
+        constrainCombatantToArena(s.playerPos, s.playerVel);
         s.isLunging = false;
         s.pSwordState = 'recovering';
         s.pSwordTimer = 0;
@@ -4336,7 +4387,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
     // Handle Gravity Physics if jumping
     if (s.isJumping) {
-      s.playerVel.y -= 18.0 * dt; // gravity deceleration rate
+      s.playerVel.y -= GRAVITY_ACCELERATION * dt;
       s.playerPos.y += s.playerVel.y * dt;
 
       // Ground collision
@@ -4352,7 +4403,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
     // Handle AI Gravity Physics
     if (s.aiIsJumping) {
-      s.aiVel.y -= 18.0 * dt; // gravity deceleration rate
+      s.aiVel.y -= GRAVITY_ACCELERATION * dt;
       s.aiPos.y += s.aiVel.y * dt;
       
       // Integrate airborne horizontal velocities
@@ -4373,14 +4424,10 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     // Integrate absolute positions
     s.playerPos.x += s.playerVel.x * dt;
     s.playerPos.z += s.playerVel.z * dt;
+    constrainCombatantToArena(s.aiPos, s.aiVel);
 
     // Circular arena boundary restraint (Snap inside radius)
-    const distFromCenter = Math.sqrt(s.playerPos.x * s.playerPos.x + s.playerPos.z * s.playerPos.z);
-    if (distFromCenter > s.arenaRadius - 0.6) {
-      const angle = Math.atan2(s.playerPos.z, s.playerPos.x);
-      s.playerPos.x = Math.cos(angle) * (s.arenaRadius - 0.6);
-      s.playerPos.z = Math.sin(angle) * (s.arenaRadius - 0.6);
-    }
+    constrainCombatantToArena(s.playerPos, s.playerVel);
   };
 
   // HAMMER & SWORD ANIMATIONS & DAMAGE APPLICATION
@@ -5034,6 +5081,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       if (distToBase <= (s.settings.hammerJumpTriggerRadius ?? 3.5)) {
         s.aiHammerJumpWindowTimer = s.settings.hammerJumpWindow ?? 0.6;
       }
+      s.aiHammerJumpPlanned = false;
+      s.aiHammerJumpType = undefined;
 
       renderHammerSplashVfx(impactPos, '#f97316', s.settings.attackRadius ?? 4.5);
 
@@ -5447,6 +5496,55 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
     return null;
   };
+
+  const canStartAIHammerJump = (isMainAI: boolean, botState: any, pos: THREE.Vector3, vel: THREE.Vector3): boolean => {
+    const s = stateRef.current;
+    const cooldown = isMainAI ? s.aiHammerJumpCooldownTimer : (botState?.aiHammerJumpCooldownTimer ?? 0);
+    const isAirborne = isMainAI
+      ? (s.aiIsJumping || pos.y > AI_HAMMER_JUMP_START_MAX_HEIGHT || Math.abs(s.aiVel.y) > AI_HAMMER_JUMP_VERTICAL_VELOCITY_EPSILON)
+      : (pos.y > AI_HAMMER_JUMP_START_MAX_HEIGHT || Math.abs(vel.y) > AI_HAMMER_JUMP_VERTICAL_VELOCITY_EPSILON);
+
+    return cooldown <= 0 && !isAirborne;
+  };
+
+  const startAIHammerJump = (
+    isMainAI: boolean,
+    botState: any,
+    pos: THREE.Vector3,
+    vel: THREE.Vector3,
+    horizontalHeading?: THREE.Vector3,
+    jumpType: 'offensive' | 'defensive' = 'offensive'
+  ): boolean => {
+    const s = stateRef.current;
+    if (!canStartAIHammerJump(isMainAI, botState, pos, vel)) {
+      return false;
+    }
+
+    if (isMainAI) {
+      s.aiHammerJumpPlanned = true;
+      s.aiHammerJumpType = jumpType;
+      s.aiHammerJumpCooldownTimer = AI_HAMMER_JUMP_COOLDOWN;
+      triggerEnemyHammerSwing();
+    } else {
+      botState!.weaponState = 'swing_up';
+      botState!.weaponTimer = 0;
+      botState!.vel.y = 7.2 + (s.settings.hammerJumpPower ?? 6.5);
+      vel.y = botState!.vel.y;
+      if (horizontalHeading && horizontalHeading.lengthSq() > 0.0001) {
+        const jumpHeading = horizontalHeading.clone().normalize();
+        botState!.vel.x = jumpHeading.x * 6.5;
+        botState!.vel.z = jumpHeading.z * 6.5;
+        vel.x = botState!.vel.x;
+        vel.z = botState!.vel.z;
+      }
+      botState!.aiHammerJumpCooldownTimer = AI_HAMMER_JUMP_COOLDOWN;
+      sfx.playSwing();
+      sfx.playJump();
+    }
+
+    return true;
+  };
+
   const updateSingleAIEntity = (botId: string, isMainAI: boolean, dt: number) => {
     const s = stateRef.current;
     const botState = isMainAI ? null : s.otherPlayers.get(botId);
@@ -5486,6 +5584,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       if (b.aiDashCooldownTimer === undefined) b.aiDashCooldownTimer = 0;
       if (b.aiDashRemaining === undefined) b.aiDashRemaining = 0;
       if (b.aiDashDir === undefined) b.aiDashDir = { x: 0, y: 0, z: 0 };
+      if (b.aiHammerJumpCooldownTimer === undefined) b.aiHammerJumpCooldownTimer = 0;
     }
 
     const pos = isMainAI ? s.aiPos : new THREE.Vector3(botState!.pos.x, botState!.pos.y, botState!.pos.z);
@@ -5500,6 +5599,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     let swayTimer = isMainAI ? s.aiSwayTimer : botState!.aiSwayTimer;
     let dashCooldownTimer = isMainAI ? s.aiDashCooldownTimer : botState!.aiDashCooldownTimer;
     let dashRemaining = isMainAI ? s.aiDashRemaining : botState!.aiDashRemaining;
+    let hammerJumpCooldownTimer = isMainAI ? s.aiHammerJumpCooldownTimer : botState!.aiHammerJumpCooldownTimer;
     const dashDir = isMainAI 
       ? s.aiDashDir.clone() 
       : new THREE.Vector3(botState!.aiDashDir.x, botState!.aiDashDir.y, botState!.aiDashDir.z);
@@ -5515,6 +5615,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         s.aiDashCooldownTimer = dashCooldownTimer;
         s.aiDashRemaining = dashRemaining;
         s.aiDashDir.copy(dashDir);
+        s.aiHammerJumpCooldownTimer = hammerJumpCooldownTimer;
       } else {
         botState!.pos.copy(pos);
         botState!.vel.copy(vel);
@@ -5525,8 +5626,27 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         botState!.aiDashCooldownTimer = dashCooldownTimer;
         botState!.aiDashRemaining = dashRemaining;
         botState!.aiDashDir = { x: dashDir.x, y: dashDir.y, z: dashDir.z };
+        botState!.aiHammerJumpCooldownTimer = hammerJumpCooldownTimer;
       }
       botMesh.position.copy(pos);
+    };
+
+    const finishBotSwordLunge = (cooldownMultiplier = 1) => {
+      botState!.isLunging = false;
+      botState!.weaponState = 'ready';
+      state = 'COOLDOWN';
+      timer = (s.settings.swordLungeReload ?? 1.2) * cooldownMultiplier;
+      weaponState = 'ready';
+
+      if (pos.y > 0.01 || Math.abs(vel.y) > 0.01) {
+        vel.x = 0;
+        vel.z = 0;
+        vel.y = Math.min(vel.y, 0);
+      } else {
+        vel.set(0, 0, 0);
+      }
+
+      botState!.vel.copy(vel);
     };
 
     // Resolve difficulty and specific parameters
@@ -5590,6 +5710,27 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
     const target = getBestTacticalTarget(botId, pos, difficulty);
     if (!target) {
+      const isAirborneWithoutTarget = isMainAI
+        ? (s.aiIsJumping || pos.y > 0.01 || Math.abs(vel.y) > 0.01)
+        : (pos.y > 0.01 || Math.abs(vel.y) > 0.01);
+
+      if (isAirborneWithoutTarget) {
+        if (!isMainAI) {
+          vel.y -= GRAVITY_ACCELERATION * dt;
+          pos.addScaledVector(vel, dt);
+          if (pos.y <= 0) {
+            pos.y = 0;
+            vel.set(0, 0, 0);
+          }
+        }
+        const airDamping = Math.max(0, 1 - 5 * dt);
+        vel.x *= airDamping;
+        vel.z *= airDamping;
+        constrainCombatantToArena(pos, vel);
+        syncStateAndMesh();
+        return;
+      }
+
       const livingPositions: THREE.Vector3[] = [];
       if (s.playerHP > 0 && s.playerRespawnTimer <= 0 && !s.isObserverMode) {
         livingPositions.push(s.playerPos);
@@ -5627,6 +5768,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       } else {
         vel.set(0, 0, 0);
       }
+      constrainCombatantToArena(pos, vel);
 
       if (isMainAI) {
         s.aiYaw = yaw;
@@ -5647,7 +5789,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     // Gravity Integration for Offline Bots
     if (!isMainAI) {
       if (botState!.vel.y !== 0 || botState!.pos.y > 0) {
-        botState!.vel.y -= 18.0 * dt; 
+        botState!.vel.y -= GRAVITY_ACCELERATION * dt; 
         pos.y += botState!.vel.y * dt;
         
         pos.x += botState!.vel.x * dt;
@@ -5663,6 +5805,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         pos.y = 0;
         botState!.vel.y = 0;
       }
+      constrainCombatantToArena(pos, botState!.vel);
     }
 
     const anticipationBonus = anticipationFactor * 0.42;
@@ -5734,6 +5877,9 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     if (dashCooldownTimer > 0) {
       dashCooldownTimer = Math.max(0, dashCooldownTimer - dt);
     }
+    if (hammerJumpCooldownTimer > 0) {
+      hammerJumpCooldownTimer = Math.max(0, hammerJumpCooldownTimer - dt);
+    }
 
     // LUNGE DETECTION, COUNTER-KILLING (BULLTRUE) & EVASIVE DODGES
     let isEvadingLunge = false;
@@ -5752,19 +5898,12 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       } 
       // Hammer Jump evasion
       else if (canStartWeaponAction && activeWeapon === 'hammer' && weaponState === 'ready' && Math.random() < 0.70 * defensiveEvasionMult) {
-        if (isMainAI) {
-          s.aiHammerJumpPlanned = true;
-          s.aiHammerJumpType = 'defensive';
-          triggerEnemyHammerSwing();
-        } else {
-          botState!.weaponState = 'swing_up';
-          botState!.weaponTimer = 0;
-          botState!.vel.y = 7.2 + (s.settings.hammerJumpPower ?? 6.5);
-          sfx.playSwing();
-          sfx.playJump();
+        if (startAIHammerJump(isMainAI, botState, pos, vel, undefined, 'defensive')) {
+          weaponState = 'swing_up';
+          hammerJumpCooldownTimer = AI_HAMMER_JUMP_COOLDOWN;
           spawnVoxelShockwaveParticles(pos, '#f59e0b');
+          isEvadingLunge = true;
         }
-        isEvadingLunge = true;
       }
       // Sidestep & Jump
       else {
@@ -5845,19 +5984,9 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
           sfx.playSwing();
         }
       } else if (verticalDeltaToTarget > 2.0 && distanceToTarget <= resolvedDangerZone + 4.5 && Math.random() < 0.012 + anticipationFactor * 0.035) {
-        if (isMainAI) {
-          s.aiHammerJumpPlanned = true;
-          s.aiHammerJumpType = 'offensive';
-          triggerEnemyHammerSwing();
-        } else {
-          const jumpHeading = toTarget.lengthSq() > 0.0001 ? toTarget.clone().normalize() : new THREE.Vector3();
-          botState!.weaponState = 'swing_up';
-          botState!.weaponTimer = 0;
-          botState!.vel.y = 7.2 + (s.settings.hammerJumpPower ?? 6.5);
-          botState!.vel.x = jumpHeading.x * 6.5;
-          botState!.vel.z = jumpHeading.z * 6.5;
-          sfx.playSwing();
-          sfx.playJump();
+        if (startAIHammerJump(isMainAI, botState, pos, vel, toTarget, 'offensive')) {
+          weaponState = 'swing_up';
+          hammerJumpCooldownTimer = AI_HAMMER_JUMP_COOLDOWN;
         }
       }
     }
@@ -5875,9 +6004,15 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       const lungeSpeed = s.settings.swordLungeSpeed ?? 24.0;
       const targetDir = new THREE.Vector3(botState!.lungeTargetDir!.x, botState!.lungeTargetDir!.y, botState!.lungeTargetDir!.z);
       
-      vel.copy(targetDir).multiplyScalar(lungeSpeed);
+      vel.x = targetDir.x * lungeSpeed;
+      vel.z = targetDir.z * lungeSpeed;
+      vel.y -= GRAVITY_ACCELERATION * dt;
       pos.addScaledVector(vel, dt);
-      pos.y = Math.max(0, pos.y);
+      if (pos.y <= 0) {
+        pos.y = 0;
+        vel.y = 0;
+      }
+      constrainCombatantToArena(pos, vel);
       botState!.pos.copy(pos);
       botState!.vel.copy(vel);
       botMesh.position.copy(pos);
@@ -5890,11 +6025,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
       const dist = getCombatBodyCenter(pos, botState!.isCrouching).distanceTo(getCombatBodyCenter(target.pos, target.isCrouching));
       if (target.hp <= 0) {
-        botState!.isLunging = false;
-        botState!.weaponState = 'ready';
-        state = 'COOLDOWN';
-        timer = (s.settings.swordLungeReload ?? 1.2) * cooldownMult;
-        weaponState = 'ready';
+        finishBotSwordLunge(cooldownMult);
       } else if (dist <= 1.5) {
         const swordThreshold = s.settings.swordTradeWindow ?? 350;
         
@@ -5923,14 +6054,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
         if (target.id === 'player') {
           s.playerHP -= 1;
-          botState!.isLunging = false;
-          botState!.weaponState = 'ready';
-          state = 'COOLDOWN';
-          timer = (s.settings.swordLungeReload ?? 1.2) * cooldownMult;
-          weaponState = 'ready';
-          if (pos.y > 0.01) {
-            botState!.vel.y = Math.min(botState!.vel.y, 0);
-          }
+          finishBotSwordLunge(cooldownMult);
           sfx.playExplosion();
           spawnVoxelShockwaveParticles(s.playerPos, '#ef4444');
 
@@ -5951,14 +6075,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
           }
         } else if (target.id === 'main_ai') {
           s.aiHP -= 1;
-          botState!.isLunging = false;
-          botState!.weaponState = 'ready';
-          state = 'COOLDOWN';
-          timer = (s.settings.swordLungeReload ?? 1.2) * cooldownMult;
-          weaponState = 'ready';
-          if (pos.y > 0.01) {
-            botState!.vel.y = Math.min(botState!.vel.y, 0);
-          }
+          finishBotSwordLunge(cooldownMult);
           sfx.playExplosion();
           spawnVoxelShockwaveParticles(s.aiPos, '#ef4444');
 
@@ -5977,14 +6094,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
           const oBot = s.otherPlayers.get(target.id);
           if (oBot) {
             oBot.hp -= 1;
-            botState!.isLunging = false;
-            botState!.weaponState = 'ready';
-            state = 'COOLDOWN';
-            timer = (s.settings.swordLungeReload ?? 1.2) * cooldownMult;
-            weaponState = 'ready';
-            if (pos.y > 0.01) {
-              botState!.vel.y = Math.min(botState!.vel.y, 0);
-            }
+            finishBotSwordLunge(cooldownMult);
             sfx.playExplosion();
             spawnVoxelShockwaveParticles(oBot.pos, '#ef4444');
 
@@ -6005,16 +6115,22 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
       const startDist = pos.distanceTo(new THREE.Vector3(botState!.lungeStartPos!.x, botState!.lungeStartPos!.y, botState!.lungeStartPos!.z));
       if (startDist > 16.0 || botState!.lungeTimer > 0.8) {
-        botState!.isLunging = false;
-        botState!.weaponState = 'ready';
-        state = 'COOLDOWN';
-        timer = (s.settings.swordLungeReload ?? 1.2) * cooldownMult;
-        weaponState = 'ready';
-        if (pos.y > 0.01) {
-          botState!.vel.y = Math.min(botState!.vel.y, 0);
-        }
+        finishBotSwordLunge(cooldownMult);
       }
     } else {
+      const isAirborneBeforeGroundMovement = isMainAI
+        ? (s.aiIsJumping || pos.y > 0.01 || Math.abs(vel.y) > 0.01)
+        : (pos.y > 0.01 || Math.abs(botState!.vel.y) > 0.01);
+
+      if (isAirborneBeforeGroundMovement) {
+        const airDamping = Math.max(0, 1 - 5 * dt);
+        vel.x *= airDamping;
+        vel.z *= airDamping;
+        constrainCombatantToArena(pos, vel);
+        syncStateAndMesh();
+        return;
+      }
+
       if (isMainAI && s.aiIsJumping && s.aiHP > 0) {
         if (movementComplexity >= 45) {
           const lookHeading = toTarget.clone().normalize();
@@ -6115,6 +6231,9 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
             botState!.lungeStartPos = { x: pos.x, y: pos.y, z: pos.z };
             lungeDir.normalize();
             botState!.lungeTargetDir = { x: lungeDir.x, y: lungeDir.y, z: lungeDir.z };
+            const lungeSpeed = s.settings.swordLungeSpeed ?? 24.0;
+            botState!.vel.y = Math.max(botState!.vel.y, lungeDir.y * lungeSpeed);
+            vel.y = botState!.vel.y;
             botState!.weaponState = 'ready';
             sfx.playDash();
           }
@@ -6123,18 +6242,9 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       }
 
       if (weaponState === 'ready' && distanceToTarget > (resolvedDangerZone + 1.5) && distanceToTarget <= (resolvedDangerZone + 5.5) && Math.random() < 0.015 && (movementComplexity >= 40) && !targetIsProtected) {
-        if (isMainAI) {
-          s.aiHammerJumpPlanned = true;
-          s.aiHammerJumpType = 'offensive';
-          triggerEnemyHammerSwing();
-        } else {
-          botState!.weaponState = 'swing_up';
-          botState!.weaponTimer = 0;
-          botState!.vel.y = 7.2 + (s.settings.hammerJumpPower ?? 6.5);
-          botState!.vel.x = lookHeading.x * 6.5;
-          botState!.vel.z = lookHeading.z * 6.5;
-          sfx.playSwing();
-          sfx.playJump();
+        if (startAIHammerJump(isMainAI, botState, pos, vel, lookHeading, 'offensive')) {
+          weaponState = 'swing_up';
+          hammerJumpCooldownTimer = AI_HAMMER_JUMP_COOLDOWN;
         }
       }
 
@@ -6303,12 +6413,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       }
     }
 
-    const distFromCenter = Math.sqrt(pos.x * pos.x + pos.z * pos.z);
-    if (distFromCenter > s.arenaRadius - 0.6) {
-      const angle = Math.atan2(pos.z, pos.x);
-      pos.x = Math.cos(angle) * (s.arenaRadius - 0.6);
-      pos.z = Math.sin(angle) * (s.arenaRadius - 0.6);
-    }
+    constrainCombatantToArena(pos, vel);
 
     if (isMainAI && s.aiIsJumping && state !== 'LUNGING') {
       vel.y = s.aiVel.y;
