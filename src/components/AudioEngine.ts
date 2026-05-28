@@ -261,6 +261,80 @@ class AudioEngine {
     osc1.stop(now + 0.5);
     osc2.stop(now + 0.5);
   }
+
+  public playMedal(type?: string) {
+    this.init();
+    this.resume();
+    if (!this.ctx || !this.masterGain) return;
+
+    const now = this.ctx.currentTime;
+    
+    // ASCENDING retro sci-fi chord tones based on medal level
+    let notes = [330, 440, 550, 660]; // E major seventh arpeggio tones
+    let speed = 0.08;
+    
+    if (type === 'double') {
+      notes = [330, 495, 660]; // perfect 5th intervals
+      speed = 0.07;
+    } else if (type === 'triple') {
+      notes = [440, 554.37, 659.25, 880]; // A major
+      speed = 0.06;
+    } else if (type === 'quadra' || type === 'overkill') {
+      notes = [523.25, 659.25, 783.99, 1046.5]; // C major triad octaves
+      speed = 0.05;
+    } else if (type === 'showstopper') {
+      notes = [600, 450, 300]; // downward warning swoop
+      speed = 0.1;
+    } else if (type === 'spawnslayer') {
+      notes = [400, 400, 600]; // dual pip beep and flash
+      speed = 0.06;
+    } else if (type === 'killingspree') {
+      notes = [300, 450, 600, 900]; // epic rising fifths
+      speed = 0.07;
+    }
+
+    notes.forEach((freq, index) => {
+      const osc = this.ctx!.createOscillator();
+      const gain = this.ctx!.createGain();
+      const filter = this.ctx!.createBiquadFilter();
+
+      // Soft square/saw blend to give a retro synth pad sound
+      osc.type = index % 2 === 0 ? "triangle" : "sine";
+      osc.frequency.setValueAtTime(freq, now + index * speed);
+      
+      filter.type = "lowpass";
+      filter.frequency.setValueAtTime(2000, now);
+      filter.frequency.exponentialRampToValueAtTime(800, now + index * speed + 0.35);
+
+      gain.gain.setValueAtTime(0, now);
+      gain.gain.linearRampToValueAtTime(0.18, now + index * speed + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + index * speed + 0.4);
+
+      osc.connect(filter);
+      filter.connect(gain);
+      gain.connect(this.masterGain!);
+
+      osc.start(now + index * speed);
+      osc.stop(now + index * speed + 0.45);
+    });
+
+    // Deep power impact sub-bass slam
+    const subOsc = this.ctx.createOscillator();
+    const subGain = this.ctx.createGain();
+    
+    subOsc.type = "sine";
+    subOsc.frequency.setValueAtTime(85, now);
+    subOsc.frequency.linearRampToValueAtTime(40, now + 0.3);
+
+    subGain.gain.setValueAtTime(0.35, now);
+    subGain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+
+    subOsc.connect(subGain);
+    subGain.connect(this.masterGain);
+    
+    subOsc.start(now);
+    subOsc.stop(now + 0.35);
+  }
 }
 
 export const sfx = new AudioEngine();

@@ -7,7 +7,7 @@ import React, { useRef, useEffect, useState } from 'react';
 import * as THREE from 'three';
 import { sfx } from './AudioEngine';
 import { buildGravityHammerModel, buildVoxelSpartanModel, buildKatarSwordModel } from './VoxelModels';
-import { GameStats, Stance, WeaponState, AIBehaviorState, UniversalSettings, DeathEvent, Keybindings, DEFAULT_KEYBINDINGS, DeviceInfo, AIBehaviorPreset } from '../types';
+import { GameStats, Stance, WeaponState, AIBehaviorState, UniversalSettings, DeathEvent, Keybindings, DEFAULT_KEYBINDINGS, DeviceInfo, AIBehaviorPreset, MedalInfo } from '../types';
 
 const whiteBlinkMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
 
@@ -48,6 +48,7 @@ const AI_HAMMER_JUMP_START_MAX_HEIGHT = 0.08;
 const AI_HAMMER_JUMP_VERTICAL_VELOCITY_EPSILON = 0.1;
 const AI_MAX_AIRBORNE_HEIGHT = 14.0;
 const AI_FORCED_DESCENT_SPEED = -12.0;
+type SwordLungeCurrentTrailStyle = 'localCube' | 'enemyCube' | 'shockwave';
 
 const getCombatBodyCenter = (pos: THREE.Vector3, isCrouching = false): THREE.Vector3 => {
   return new THREE.Vector3(
@@ -191,6 +192,12 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     enemyRespawnTimer: number;
     playerInvulnerabilityTimer: number;
     aiInvulnerabilityTimer: number;
+    playerSpawnTime: number;
+    aiSpawnTime: number;
+    playerLastKillTime: number;
+    playerMultikillCount: number;
+    playerSpreeCount: number;
+    activeMedalPopup: { medal: MedalInfo; key: number } | null;
 
     // Match timers
     gameTime: number;
@@ -319,6 +326,12 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     enemyRespawnTimer: 0,
     playerInvulnerabilityTimer: 0,
     aiInvulnerabilityTimer: 0,
+    playerSpawnTime: Date.now(),
+    aiSpawnTime: Date.now(),
+    playerLastKillTime: 0,
+    playerMultikillCount: 0,
+    playerSpreeCount: 0,
+    activeMedalPopup: null,
 
     gameTime: 522, // 8:42 standard starting count (in seconds)
 
@@ -500,6 +513,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
               bot.weaponTimer = 0;
               bot.aiHammerJumpCooldownTimer = 0;
               bot.invulnerabilityTimer = s.settings.respawnInvulnerabilityDuration; // Spawn protection!
+              bot.spawnTime = Date.now();
               botMesh.visible = true;
               sfx.playRespawn();
             }
@@ -541,6 +555,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         s.aiHammerJumpType = undefined;
         s.aiHammerJumpCooldownTimer = 0;
         s.aiInvulnerabilityTimer = s.settings.respawnInvulnerabilityDuration;
+        s.aiSpawnTime = Date.now();
         sfx.playRespawn();
 
       }
@@ -566,28 +581,9 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       constrainCombatantToArena(s.aiPos, s.aiVel);
       enemyMesh.position.copy(s.aiPos);
       
-      if (Math.random() > 0.1) {
-        const trailPos = s.aiPos.clone();
-        trailPos.y += 0.825;
-        const scene = threeRef.current.scene;
-        if (scene) {
-          const geo = new THREE.BoxGeometry(0.12, 0.12, 0.12);
-          const mat = new THREE.MeshBasicMaterial({
-            color: new THREE.Color('#ef4444'),
-            transparent: true,
-            opacity: 0.75,
-          });
-          const mesh = new THREE.Mesh(geo, mat);
-          mesh.position.copy(trailPos);
-          scene.add(mesh);
-          threeRef.current.damageExplosionParticles.push({
-            mesh,
-            velocity: new THREE.Vector3((Math.random() - 0.5) * 0.1, Math.random() * 0.15, (Math.random() - 0.5) * 0.1),
-            life: 0.0,
-            maxLife: 0.18,
-          });
-        }
-      }
+      const trailPos = s.aiPos.clone();
+      trailPos.y += 0.825;
+      renderSwordLungeTrailVfx(trailPos, '#ef4444', s.aiLungeTargetDir, 'enemyCube');
       
       const target = getBestTacticalTarget('main_ai', s.aiPos, (botDifficulties as any)?.main_ai || s.settings.aiDifficulty || 'normal');
       if (target) {
@@ -761,10 +757,9 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
           // Opponent sword lunge VFX trail
           if (player.isLunging) {
             player.lungeTimer = (player.lungeTimer || 0) + dt;
-            if (Math.random() > 0.1) {
-              const trailPos = new THREE.Vector3(player.pos.x, player.pos.y + 0.825, player.pos.z);
-              spawnVoxelShockwaveParticles(trailPos, '#ef4444'); // Red energy trail particles!
-            }
+            const trailPos = new THREE.Vector3(player.pos.x, player.pos.y + 0.825, player.pos.z);
+            const trailDir = new THREE.Vector3(player.vel.x, player.vel.y, player.vel.z);
+            renderSwordLungeTrailVfx(trailPos, '#ef4444', trailDir, 'shockwave');
             if (player.lungeTimer > 0.8) {
               player.isLunging = false;
             }
@@ -972,6 +967,36 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
         const mat = flash.mesh.material as THREE.MeshBasicMaterial;
         mat.opacity = 0.9 * Math.pow(1 - pct, 2);
+      }
+    }
+  };
+
+  function updateSwordLungeSpeedLines(dt: number) {
+    const list = threeRef.current.swordLungeSpeedLines;
+    const scene = threeRef.current.scene;
+
+    if (!scene) return;
+
+    for (let i = list.length - 1; i >= 0; i--) {
+      const line = list[i];
+      line.life += dt;
+
+      if (line.life >= line.maxLife) {
+        scene.remove(line.mesh);
+        line.mesh.geometry.dispose();
+        if (Array.isArray(line.mesh.material)) {
+          line.mesh.material.forEach((m: any) => m.dispose());
+        } else {
+          line.mesh.material.dispose();
+        }
+        list.splice(i, 1);
+      } else {
+        const pct = line.life / line.maxLife;
+        line.mesh.position.addScaledVector(line.drift, dt);
+        line.mesh.scale.z = Math.max(0.18, 1 - pct * 0.72);
+
+        const mat = line.mesh.material as THREE.MeshBasicMaterial;
+        mat.opacity = line.startOpacity * Math.pow(1 - pct, 1.55);
       }
     }
   };
@@ -1307,6 +1332,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       enemyKills: s.enemyKills,
       enemyDeaths: s.enemyDeaths,
       opponentPlayerName: opponentNameRef.current || undefined,
+      activeMedalPopup: s.activeMedalPopup,
     });
   };
 
@@ -2017,7 +2043,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
           score: 0,
           kills: 0,
           deaths: 0,
-          aiHammerJumpCooldownTimer: 0
+          aiHammerJumpCooldownTimer: 0,
+          spawnTime: Date.now()
         };
 
         s.otherPlayers.set(botId, newBotState);
@@ -2176,6 +2203,13 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       maxLife: number;
       targetRadius: number;
     }[];
+    swordLungeSpeedLines: {
+      mesh: THREE.Mesh;
+      drift: THREE.Vector3;
+      life: number;
+      maxLife: number;
+      startOpacity: number;
+    }[];
     burnDecals: {
       mesh: THREE.Mesh;
       life: number;
@@ -2207,6 +2241,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     dirLight: null,
     damageExplosionParticles: [],
     hammerSplashFlashes: [],
+    swordLungeSpeedLines: [],
     burnDecals: [],
   });
 
@@ -2528,7 +2563,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         deaths: 0,
         invulnerabilityTimer: data.invulnerabilityTimer !== undefined ? data.invulnerabilityTimer : s.settings.respawnInvulnerabilityDuration,
         lastSwordAttackTime: 0,
-        lastHammerAttackTime: 0
+        lastHammerAttackTime: 0,
+        spawnTime: Date.now()
       };
       s.otherPlayers.set(clientId, playerState);
     }
@@ -2604,6 +2640,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     threeRef.current.otherPlayerMeshes.clear();
     threeRef.current.damageExplosionParticles = [];
     threeRef.current.hammerSplashFlashes = [];
+    threeRef.current.swordLungeSpeedLines = [];
     threeRef.current.burnDecals = [];
     threeRef.current.hostGroup = null;
     threeRef.current.hostHammer = null;
@@ -2803,7 +2840,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
           kills: 0,
           deaths: 0,
           invulnerabilityTimer: s.settings.respawnInvulnerabilityDuration,
-          aiHammerJumpCooldownTimer: 0
+          aiHammerJumpCooldownTimer: 0,
+          spawnTime: Date.now()
         });
       }
 
@@ -3390,6 +3428,19 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         threeRef.current.hammerSplashFlashes = [];
       }
 
+      if (threeRef.current.swordLungeSpeedLines) {
+        threeRef.current.swordLungeSpeedLines.forEach(line => {
+          if (scene) scene.remove(line.mesh);
+          line.mesh.geometry.dispose();
+          if (Array.isArray(line.mesh.material)) {
+            line.mesh.material.forEach((m: any) => m.dispose());
+          } else {
+            line.mesh.material.dispose();
+          }
+        });
+        threeRef.current.swordLungeSpeedLines = [];
+      }
+
       if (requestRef.current) {
         cancelAnimationFrame(requestRef.current);
       }
@@ -3435,6 +3486,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       updateCharacterSkeletalAnimations(dt);
       updateExplosionParticles(dt);
       updateHammerSplashFlashes(dt);
+      updateSwordLungeSpeedLines(dt);
       updateBurnDecals(dt);
       updateMatchTimers(dt);
       enforceArenaBounds();
@@ -3744,12 +3796,13 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     return multiplayerRole === 'client' ? 'Red (You)' : 'Blue (You)';
   };
 
-  const recordDeathEvent = (attacker: string, victim: string) => {
+  const recordDeathEvent = (attacker: string, victim: string, medals?: MedalInfo[]) => {
     const s = stateRef.current;
     const newDeath: DeathEvent = {
       id: Math.random().toString(36).substring(2, 9),
       attacker,
       victim,
+      medals,
     };
     s.lastDeaths = [newDeath, ...s.lastDeaths].slice(0, 3);
     return newDeath;
@@ -3768,7 +3821,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       s.scorePlayer += 1;
       s.playerKills += 1;
       sfx.playDeath();
-      recordDeathEvent(getLocalPlayerFeedName(), target.playerName);
+      const medals = evaluatePlayerKillMedals(targetId);
+      recordDeathEvent(getLocalPlayerFeedName(), target.playerName, medals);
       spawnVoxelShockwaveParticles(new THREE.Vector3(target.pos.x, target.pos.y, target.pos.z), '#ef4444');
     }
   };
@@ -3800,7 +3854,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       if (target.id === 'player') {
         s.scorePlayer += 1;
         s.playerKills += 1;
-        recordDeathEvent(`${getLocalPlayerFeedName()} [${tradeText}]`, attackerBot.playerName);
+        const medals = evaluatePlayerKillMedals(attackerBot.id);
+        recordDeathEvent(`${getLocalPlayerFeedName()} [${tradeText}]`, attackerBot.playerName, medals);
       } else if (target.id === 'main_ai') {
         s.scoreEnemy += 1;
         s.enemyKills += 1;
@@ -3851,6 +3906,151 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     pushStatsUpdate();
   };
 
+  function evaluatePlayerKillMedals(victimId: 'main_ai' | string): MedalInfo[] {
+    const s = stateRef.current;
+    const medals: MedalInfo[] = [];
+    const now = Date.now();
+
+    // 1. Get victim properties
+    let isLunging = false;
+    let spawnTime = 0;
+    let victimName = '';
+
+    if (victimId === 'main_ai') {
+      isLunging = s.aiState === 'LUNGING';
+      spawnTime = s.aiSpawnTime || 0;
+      victimName = 'Red (AI)';
+    } else {
+      const other = s.otherPlayers.get(victimId);
+      if (other) {
+        isLunging = other.isLunging || other.aiState === 'LUNGING' || other.weaponState === 'swing_up' || other.weaponState === 'swing_down';
+        spawnTime = other.spawnTime || 0;
+        victimName = other.playerName || 'Player';
+      }
+    }
+
+    // 2. Check SHOWSTOPPER (killed victim during lunge)
+    if (isLunging) {
+      medals.push({
+        id: 'showstopper',
+        name: 'Showstopper',
+        icon: 'showstopper',
+        color: 'rgb(239, 68, 68)',
+        description: 'Killed an opponent during their sword lunge!'
+      });
+    }
+
+    // 3. Check SPAWN SLAYER (1 second window)
+    if (spawnTime > 0 && (now - spawnTime <= 1000)) {
+      medals.push({
+        id: 'spawnslayer',
+        name: 'Spawn Slayer',
+        icon: 'spawnslayer',
+        color: 'rgb(34, 197, 94)',
+        description: 'Killed an opponent within 1 second of spawning!'
+      });
+    }
+
+    // 4. Check CLOSE CALL (player HP is 1 and playerMaxHP > 1)
+    if (s.playerMaxHP > 1 && s.playerHP === 1) {
+      medals.push({
+        id: 'closecall',
+        name: 'Close Call',
+        icon: 'closecall',
+        color: 'rgb(249, 115, 22)',
+        description: 'Killed an opponent while near death!'
+      });
+    }
+
+    // 5. Check MULTIKILL CHAIN (within 3 seconds of the last kill)
+    if (s.playerLastKillTime > 0 && (now - s.playerLastKillTime <= 3000)) {
+      s.playerMultikillCount += 1;
+    } else {
+      s.playerMultikillCount = 1;
+    }
+    s.playerLastKillTime = now;
+
+    if (s.playerMultikillCount === 2) {
+      medals.push({
+        id: 'double',
+        name: 'Double Kill',
+        icon: 'double',
+        color: 'rgb(34, 211, 238)',
+        description: '2 kills within 3 seconds!'
+      });
+    } else if (s.playerMultikillCount === 3) {
+      medals.push({
+        id: 'triple',
+        name: 'Triple Kill',
+        icon: 'triple',
+        color: 'rgb(234, 179, 8)',
+        description: '3 kills within 3 seconds!'
+      });
+    } else if (s.playerMultikillCount >= 4) {
+      medals.push({
+        id: 'overkill',
+        name: s.playerMultikillCount === 4 ? 'Overkill' : `Multikill x${s.playerMultikillCount}`,
+        icon: 'quadra',
+        color: 'rgb(168, 85, 247)',
+        description: `${s.playerMultikillCount} kills within 3 seconds of each other!`
+      });
+    }
+
+    // 6. Check KILLING SPREE (5 kills without dying)
+    s.playerSpreeCount += 1;
+    if (s.playerSpreeCount === 5) {
+      medals.push({
+        id: 'killingspree',
+        name: 'Killing Spree',
+        icon: 'killingspree',
+        color: 'rgb(249, 115, 22)',
+        description: '5 kills without dying!'
+      });
+    }
+
+    // 7. Check WEAPON SPECIALTY
+    if (s.activeWeapon === 'hammer') {
+      medals.push({
+        id: 'hammertime',
+        name: 'Hammer Time',
+        icon: 'hammertime',
+        color: 'rgb(244, 63, 94)',
+        description: 'Eliminated an opponent with the Gravity Hammer!'
+      });
+    } else if (s.activeWeapon === 'sword') {
+      medals.push({
+        id: 'swordslayer',
+        name: 'Sword Slayer',
+        icon: 'swordslayer',
+        color: 'rgb(6, 182, 212)',
+        description: 'Eliminated an opponent with the Katar Sword!'
+      });
+    }
+
+    // Trigger visual + audio chimes for medals!
+    if (medals.length > 0) {
+      const priorityMedal = medals.find(m => ['double', 'triple', 'overkill', 'showstopper', 'spawnslayer', 'killingspree'].includes(m.id)) || medals[0];
+      if (priorityMedal) {
+        sfx.playMedal(priorityMedal.id);
+        s.activeMedalPopup = {
+          medal: priorityMedal,
+          key: Math.random()
+        };
+
+        // Reset active medal popup after 2.5 seconds
+        setTimeout(() => {
+          const innerS = stateRef.current;
+          if (innerS && innerS.activeMedalPopup && innerS.activeMedalPopup.medal.id === priorityMedal.id) {
+            innerS.activeMedalPopup = null;
+            pushStatsUpdate();
+          }
+        }, 2500);
+      }
+    }
+
+    return medals;
+  }
+
   // MUTUAL TRADING FUNCTIONALITY
   const executeTrade = (reason: 'sword_vs_sword' | 'sword_lunge_vs_hammer') => {
     const s = stateRef.current;
@@ -3891,6 +4091,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     s.lungeTimer = 0;
 
     // Handle AI death state
+    let playerMedals: MedalInfo[] | undefined = undefined;
     if (s.aiHP <= 0) {
       s.aiHP = 0;
       s.aiState = 'RESPAWNING';
@@ -3898,6 +4099,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       s.scorePlayer += 1;
       s.playerKills += 1;
       s.enemyDeaths += 1;
+      playerMedals = evaluatePlayerKillMedals('main_ai');
     }
     s.aiWeaponState = 'ready';
     s.aiWeaponTimer = 0;
@@ -3908,6 +4110,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       id: Math.random().toString(36).substring(2, 9),
       attacker: `Blue (You) [${attackerText}]`,
       victim: 'Red (AI)',
+      medals: playerMedals,
     };
     const newDeath2 = {
       id: Math.random().toString(36).substring(2, 9),
@@ -4018,6 +4221,108 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     }
   };
 
+  const spawnCurrentSwordLungeCubeTrail = (
+    trailPos: THREE.Vector3,
+    color: string,
+    style: Extract<SwordLungeCurrentTrailStyle, 'localCube' | 'enemyCube'>
+  ) => {
+    const scene = threeRef.current.scene;
+    if (!scene) return;
+
+    const size = style === 'localCube' ? 0.08 : 0.12;
+    const opacity = style === 'localCube' ? 0.8 : 0.75;
+    const geo = new THREE.BoxGeometry(size, size, size);
+    const mat = new THREE.MeshBasicMaterial({
+      color: new THREE.Color(color),
+      transparent: true,
+      opacity,
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.copy(trailPos);
+    scene.add(mesh);
+    threeRef.current.damageExplosionParticles.push({
+      mesh,
+      velocity: new THREE.Vector3((Math.random() - 0.5) * 0.1, Math.random() * 0.15, (Math.random() - 0.5) * 0.1),
+      life: 0.0,
+      maxLife: 0.18,
+    });
+  };
+
+  const getSwordLungeTrailDirection = (direction?: THREE.Vector3) => {
+    const dir = direction?.clone() ?? new THREE.Vector3(0, 0, -1);
+    if (dir.lengthSq() <= 0.0001) {
+      dir.set(0, 0, -1);
+    }
+    return dir.normalize();
+  };
+
+  const spawnSwordLungeSpeedLines = (trailPos: THREE.Vector3, color: string, direction?: THREE.Vector3) => {
+    const scene = threeRef.current.scene;
+    if (!scene) return;
+
+    const dir = getSwordLungeTrailDirection(direction);
+    const side = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), dir);
+    if (side.lengthSq() <= 0.0001) {
+      side.set(1, 0, 0);
+    } else {
+      side.normalize();
+    }
+
+    const lineCount = 2 + Math.floor(Math.random() * 2);
+    const highlightColor = color === '#22d3ee' ? '#a5f3fc' : '#fb923c';
+
+    for (let i = 0; i < lineCount; i++) {
+      const length = 0.75 + Math.random() * 0.95;
+      const width = 0.018 + Math.random() * 0.025;
+      const startOpacity = 0.72 + Math.random() * 0.18;
+      const geo = new THREE.BoxGeometry(width, width, length);
+      const mat = new THREE.MeshBasicMaterial({
+        color: new THREE.Color(i === 0 ? highlightColor : color),
+        transparent: true,
+        opacity: startOpacity,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+      });
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.position.copy(trailPos);
+      mesh.position.addScaledVector(dir, -length * (0.45 + Math.random() * 0.35));
+      mesh.position.addScaledVector(side, (Math.random() - 0.5) * 0.72);
+      mesh.position.y += (Math.random() - 0.5) * 0.36;
+      mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), dir);
+      scene.add(mesh);
+
+      threeRef.current.swordLungeSpeedLines.push({
+        mesh,
+        drift: dir.clone().multiplyScalar(-1.8 - Math.random() * 1.4),
+        life: 0,
+        maxLife: 0.14 + Math.random() * 0.08,
+        startOpacity,
+      });
+    }
+  };
+
+  const renderSwordLungeTrailVfx = (
+    trailPos: THREE.Vector3,
+    color: string,
+    direction?: THREE.Vector3,
+    currentStyle: SwordLungeCurrentTrailStyle = 'localCube'
+  ) => {
+    if (Math.random() <= 0.1) return;
+
+    const lungeVfx = stateRef.current.settings.swordLungeVfx ?? 'current';
+    if (lungeVfx === 'speedLineTrail') {
+      spawnSwordLungeSpeedLines(trailPos, color, direction);
+      return;
+    }
+
+    if (currentStyle === 'shockwave') {
+      spawnVoxelShockwaveParticles(trailPos, color);
+      return;
+    }
+
+    spawnCurrentSwordLungeCubeTrail(trailPos, color, currentStyle);
+  };
+
   // PHYSICS UPDATE (Player relative to WASD & Crouch heights)
   const updatePhysics = (dt: number) => {
     const s = stateRef.current;
@@ -4066,6 +4371,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     
     // Check if player is alive. If dead, countdown respawn timer
     if (s.playerHP <= 0) {
+      s.playerSpreeCount = 0; // Reset killing spree when dead!
       s.playerRespawnTimer -= dt;
       if (s.playerRespawnTimer <= 0) {
         s.playerHP = s.playerMaxHP;
@@ -4087,6 +4393,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         s.playerVel.set(0, 0, 0);
         s.pitch = 0;
         s.playerInvulnerabilityTimer = s.settings.respawnInvulnerabilityDuration;
+        s.playerSpawnTime = Date.now();
         sfx.playRespawn();
 
       }
@@ -4107,27 +4414,10 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       s.isCrouching = false;
       constrainCombatantToArena(s.playerPos, s.playerVel);
 
-      // Spawn beautiful energy trail particles
-      const scene = threeRef.current.scene;
-      if (scene && Math.random() > 0.1) {
-        const trailPos = s.playerPos.clone();
-        trailPos.y += 0.5;
-        const geo = new THREE.BoxGeometry(0.08, 0.08, 0.08);
-        const mat = new THREE.MeshBasicMaterial({
-          color: new THREE.Color('#22d3ee'),
-          transparent: true,
-          opacity: 0.8,
-        });
-        const mesh = new THREE.Mesh(geo, mat);
-        mesh.position.copy(trailPos);
-        scene.add(mesh);
-        threeRef.current.damageExplosionParticles.push({
-          mesh,
-          velocity: new THREE.Vector3((Math.random() - 0.5) * 0.1, Math.random() * 0.15, (Math.random() - 0.5) * 0.1),
-          life: 0.0,
-          maxLife: 0.18,
-        });
-      }
+      // Spawn energy trail particles or selected lunge speed-line effect.
+      const trailPos = s.playerPos.clone();
+      trailPos.y += 0.5;
+      renderSwordLungeTrailVfx(trailPos, '#22d3ee', s.lungeTargetDir, 'localCube');
 
       // Check distance to enemy torso center
       let closestTarget: any = null;
@@ -4255,10 +4545,12 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
               s.aiWeaponState = 'ready';
               s.aiWeaponTimer = 0;
 
+              const medals = evaluatePlayerKillMedals('main_ai');
               const newDeath = {
                 id: Math.random().toString(36).substring(2, 9),
                 attacker: s.settings.playerName || 'Blue (You)',
                 victim: 'Red (AI)',
+                medals
               };
               s.lastDeaths = [newDeath, ...s.lastDeaths].slice(0, 3);
               spawnVoxelShockwaveParticles(s.aiPos, '#ef4444');
@@ -4277,10 +4569,12 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
                 other.deaths += 1;
                 sfx.playDeath();
 
+                const medals = evaluatePlayerKillMedals(closestTarget.id);
                 const newDeath = {
                   id: Math.random().toString(36).substring(2, 9),
                   attacker: s.settings.playerName || 'Blue (You)',
-                  victim: other.playerName
+                  victim: other.playerName,
+                  medals
                 };
                 s.lastDeaths = [newDeath, ...s.lastDeaths].slice(0, 3);
                 spawnVoxelShockwaveParticles(closestTarget.pos, '#ef4444');
@@ -4598,8 +4892,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
                     spawnVoxelShockwaveParticles(s.aiPos, '#22d3ee');
                     s.lastStrikePos = s.aiPos.clone();
                     s.lastStrikeTick = 1.0;
-                    
-                    if (s.aiHP <= 0) {
+                                       if (s.aiHP <= 0) {
                       s.aiHP = 0;
                       s.aiState = 'RESPAWNING';
                       s.enemyRespawnTimer = 3.0;
@@ -4610,10 +4903,12 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
                       s.aiWeaponState = 'ready';
                       s.aiWeaponTimer = 0;
                       
+                      const medals = evaluatePlayerKillMedals('main_ai');
                       const newDeath = {
                         id: Math.random().toString(36).substring(2, 9),
                         attacker: s.settings.playerName || 'Blue (You)',
-                        victim: 'Red (AI)'
+                        victim: 'Red (AI)',
+                        medals
                       };
                       s.lastDeaths = [newDeath, ...s.lastDeaths].slice(0, 3);
                       spawnVoxelShockwaveParticles(s.aiPos, '#ef4444');
@@ -4621,7 +4916,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
                   }
                 }
               }
-
+ 
               // Check other players/bots
               if (s.otherPlayers) {
                 s.otherPlayers.forEach((other) => {
@@ -4661,10 +4956,12 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
                             other.deaths += 1;
                             sfx.playDeath();
                             
+                            const medals = evaluatePlayerKillMedals(other.id);
                             const newDeath = {
                               id: Math.random().toString(36).substring(2, 9),
                               attacker: s.settings.playerName || 'Blue (You)',
-                              victim: other.playerName
+                              victim: other.playerName,
+                              medals
                             };
                             s.lastDeaths = [newDeath, ...s.lastDeaths].slice(0, 3);
                             spawnVoxelShockwaveParticles(new THREE.Vector3(other.pos.x, other.pos.y, other.pos.z), '#ef4444');
@@ -5031,10 +5328,12 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
             s.aiWeaponState = 'ready';
             s.aiWeaponTimer = 0;
             
+            const medals = evaluatePlayerKillMedals('main_ai');
             const newDeath = {
               id: Math.random().toString(36).substring(2, 9),
               attacker: s.settings.playerName || 'Blue (You)',
               victim: 'Red (AI)',
+              medals
             };
             s.lastDeaths = [newDeath, ...s.lastDeaths].slice(0, 3);
             spawnVoxelShockwaveParticles(s.aiPos, '#ef4444');
@@ -5075,10 +5374,12 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
                   other.deaths += 1;
                   sfx.playDeath();
                   
+                  const medals = evaluatePlayerKillMedals(other.id);
                   const newDeath = {
                     id: Math.random().toString(36).substring(2, 9),
                     attacker: s.settings.playerName || 'Blue (You)',
-                    victim: other.playerName
+                    victim: other.playerName,
+                    medals
                   };
                   s.lastDeaths = [newDeath, ...s.lastDeaths].slice(0, 3);
                   spawnVoxelShockwaveParticles(new THREE.Vector3(other.pos.x, other.pos.y, other.pos.z), '#ef4444');
@@ -6053,11 +6354,9 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       botState!.vel.copy(vel);
       botMesh.position.copy(pos);
 
-      if (Math.random() > 0.1) {
-        const trailPos = pos.clone();
-        trailPos.y += 0.825;
-        spawnVoxelShockwaveParticles(trailPos, '#ef4444');
-      }
+      const trailPos = pos.clone();
+      trailPos.y += 0.825;
+      renderSwordLungeTrailVfx(trailPos, '#ef4444', targetDir, 'shockwave');
 
       const dist = getCombatBodyCenter(pos, botState!.isCrouching).distanceTo(getCombatBodyCenter(target.pos, target.isCrouching));
       if (target.hp <= 0) {

@@ -27,7 +27,7 @@ import { ChatOverlay, ChatMessage } from './components/ChatOverlay';
 import { CharacterPreview } from './components/CharacterPreview';
 import { CharacterLoadout, DEFAULT_LOADOUT, AVAILABLE_PRESETS, HelmetPreset, TorsoPreset, ArmPreset, LegPreset } from './components/VoxelModels';
 
-const APP_VERSION = '0.312a';
+const APP_VERSION = '0.323';
 const MAX_PLAYER_NAME_LENGTH = 10;
 const MOBILE_HUD_LAYOUT_VERSION = '5';
 const MOBILE_HUD_LAYOUT_VERSION_KEY = 'grifball_mobile_hud_layout_version';
@@ -171,6 +171,7 @@ const withDefaultGameplaySettings = (
   settings: Partial<Omit<UniversalSettings, 'playerHue' | 'playerName'>>
 ): Omit<UniversalSettings, 'playerHue' | 'playerName'> => ({
   hammerSplashVfx: 'current',
+  swordLungeVfx: 'current',
   ...settings,
 }) as Omit<UniversalSettings, 'playerHue' | 'playerName'>;
 
@@ -916,6 +917,7 @@ export default function App() {
       respawnInvulnerabilityDuration: 1.0,
       hammerReloadTime: 0.6,
       hammerSplashVfx: 'current',
+      swordLungeVfx: 'current',
       swordLungeDistance: 14.5,
       swordLungeSpeed: 24.0,
       swordSlashSpeed: 0.22,
@@ -1087,6 +1089,7 @@ export default function App() {
           respawnInvulnerabilityDuration: 1.0,
           hammerReloadTime: 0.6,
           hammerSplashVfx: 'current',
+          swordLungeVfx: 'current',
           swordLungeDistance: 14.5,
           swordLungeSpeed: 24.0,
           swordSlashSpeed: 0.22,
@@ -1751,6 +1754,7 @@ export default function App() {
       respawnInvulnerabilityDuration: 1.0,
       hammerReloadTime: 0.6,
       hammerSplashVfx: 'current',
+      swordLungeVfx: 'current',
       swordLungeDistance: 14.5,
       swordLungeSpeed: 24.0,
       swordSlashSpeed: 0.22,
@@ -5094,6 +5098,27 @@ export default function App() {
                         onChange={(e) => setAdminSettings(prev => ({ ...prev, swordLungeSpeed: parseFloat(e.target.value) }))}
                         className="w-full accent-[#22d3ee] h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
                       />
+                    </div>
+
+                    {/* Sword Lunge VFX */}
+                    <div className="flex flex-col gap-1">
+                      <div className="flex justify-between text-[11px] font-bold uppercase tracking-wider text-white/80">
+                        <span>Sword Lunge VFX</span>
+                        <span className="text-[#22d3ee] font-mono">
+                          {(adminSettings.swordLungeVfx ?? 'current') === 'speedLineTrail' ? 'Speed Lines' : 'Current'}
+                        </span>
+                      </div>
+                      <select
+                        value={adminSettings.swordLungeVfx ?? 'current'}
+                        onChange={(e) => setAdminSettings(prev => ({
+                          ...prev,
+                          swordLungeVfx: e.target.value as UniversalSettings['swordLungeVfx']
+                        }))}
+                        className="w-full h-8 bg-black/60 border border-white/10 rounded px-2 text-[11px] text-[#22d3ee] font-bold uppercase outline-none focus:border-[#22d3ee] cursor-pointer transition-all font-sans"
+                      >
+                        <option value="current">Current Energy Trail</option>
+                        <option value="speedLineTrail">Speed Line Trail</option>
+                      </select>
                     </div>
 
                     {/* Row of quick values */}

@@ -42,6 +42,84 @@ interface DraggableHUDItemProps {
   children: React.ReactNode;
 }
 
+export const renderMedalIcon = (iconName: string) => {
+  switch (iconName) {
+    case 'double':
+      return (
+        <svg className="w-full h-full" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+          <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" fill="rgba(34, 211, 238, 0.4)" stroke="rgb(34, 211, 238)" />
+          <path d="M16 6l1.54 3.13L21 9.63l-2.5 2.43.59 3.44-3.09-1.62-3.09 1.62.59-3.44-2.5-2.43 3.46-.5L16 6z" fill="rgba(6, 182, 212, 0.6)" stroke="rgb(6, 182, 212)" />
+        </svg>
+      );
+    case 'triple':
+      return (
+        <svg className="w-full h-full" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M12 2C9.5 5.5 8 8.5 8 11.5c0 2.5 1.8 4.5 4 4.5s4-2 4-4.5c0-3-1.5-6-4-9.5z" fill="rgba(234, 179, 8, 0.4)" stroke="rgb(234, 179, 8)" />
+          <path d="M12 7c-1.5 2-2.5 4-2.5 5.5 0 1.4 1.1 2.5 2.5 2.5s2.5-1.1 2.5-2.5C14.5 11 13.5 9 12 7z" fill="rgba(250, 204, 21, 0.6)" stroke="rgb(250, 204, 21)" />
+          <path d="M12 11c-.6.8-1 1.6-1 2.2 0 .6.4 1 1 1s1-.4 1-1c0-.6-.4-1.4-1-2.2z" fill="rgb(254, 240, 138)" stroke="rgb(254, 240, 138)" />
+        </svg>
+      );
+    case 'quadra':
+    case 'overkill':
+      return (
+        <svg className="w-full h-full" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M9 14h6v2H9v-2z" fill="rgb(168, 85, 247)" />
+          <path d="M12 2C7.5 2 4 5.5 4 10c0 3 1.5 5.5 4 7v3a1 1 0 001 1h6a1 1 0 001-1v-3c2.5-1.5 4-4 4-7 0-4.5-3.5-8-8-8z" fill="rgba(168, 85, 247, 0.4)" stroke="rgb(168, 85, 247)" />
+          <circle cx="9" cy="10" r="1.5" fill="rgb(240, 230, 255)" />
+          <circle cx="15" cy="10" r="1.5" fill="rgb(240, 230, 255)" />
+        </svg>
+      );
+    case 'showstopper':
+      return (
+        <svg className="w-full h-full" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" fill="rgba(239, 68, 68, 0.4)" stroke="rgb(239, 68, 68)" />
+          <path d="M7 7l10 10M17 7L7 17" stroke="rgb(239, 68, 68)" strokeWidth="3" />
+        </svg>
+      );
+    case 'spawnslayer':
+      return (
+        <svg className="w-full h-full" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <circle cx="12" cy="12" r="9" fill="rgba(34, 197, 94, 0.3)" stroke="rgb(34, 197, 94)" />
+          <circle cx="12" cy="12" r="5" stroke="rgb(34, 197, 94)" strokeDasharray="3 3" />
+          <path d="M12 8v4l2.5 1.5" stroke="rgb(34, 197, 94)" strokeWidth="2.5" strokeLinecap="round" />
+        </svg>
+      );
+    case 'killingspree':
+      return (
+        <svg className="w-full h-full" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M5 21h14a1 1 0 001-1v-4l-3.5-3.5L12 17l-4.5-4.5L4 16v4a1 1 0 001 1z" fill="rgba(249, 115, 22, 0.4)" stroke="rgb(249, 115, 22)" />
+          <path d="M12 3l3 6.5L21 8.5l-4.5 4.5 1 6.5-5.5-3-5.5 3 1-6.5L3 8.5l6-1L12 3z" fill="rgba(251, 146, 60, 0.6)" stroke="rgb(251, 146, 60)" />
+        </svg>
+      );
+    case 'hammertime':
+      return (
+        <svg className="w-full h-full" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M15 4h5v4h-5V4zM4 17l11-11 3 3-11 11H4v-3z" fill="rgba(244, 63, 94, 0.4)" stroke="rgb(244, 63, 94)" />
+          <path d="M3 21c3-3 8-1 10-4" stroke="rgb(244, 63, 94)" strokeWidth="2" strokeLinecap="round" />
+        </svg>
+      );
+    case 'swordslayer':
+      return (
+        <svg className="w-full h-full" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M12 2L9 8h2v8H9l3 6 3-6h-2V8h2L12 2z" fill="rgba(6, 182, 212, 0.4)" stroke="rgb(6, 182, 212)" />
+          <path d="M7 12h10M5 16h14" stroke="rgb(6, 182, 212)" strokeWidth="1.5" />
+        </svg>
+      );
+    case 'closecall':
+      return (
+        <svg className="w-full h-full" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+          <path d="M3 12h4l2-6 3 12 2-8 2 2h5" stroke="rgb(249, 115, 22)" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      );
+    default:
+      return (
+        <svg className="w-full h-full" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <circle cx="12" cy="12" r="10" stroke="white" fill="none" />
+        </svg>
+      );
+  }
+};
+
 const clampUiScale = (scale: number) => (
   Math.round(Math.max(UI_ELEMENT_SCALE_MIN, Math.min(UI_ELEMENT_SCALE_MAX, scale)) * 100) / 100
 );
@@ -498,7 +576,7 @@ export const HUD: React.FC<HUDProps> = ({
                   return (
                     <div 
                       key={death.id} 
-                      className="bg-slate-950/70 backdrop-blur-md border border-white/10 rounded-md px-3 py-1.5 flex items-center gap-2 shadow-lg text-[11px] font-bold whitespace-nowrap"
+                      className="bg-slate-950/70 backdrop-blur-md border border-white/10 rounded-md px-3 py-1.5 flex items-center gap-2 shadow-lg text-[11px] font-bold whitespace-nowrap pointer-events-auto"
                     >
                       <span className={attackerIsBlue ? 'text-sky-400 drop-shadow-[0_0_2px_rgba(56,189,248,0.3)]' : 'text-orange-400'}>
                         {death.attacker}
@@ -511,18 +589,56 @@ export const HUD: React.FC<HUDProps> = ({
                       <span className={attackerIsBlue ? 'text-orange-400' : 'text-sky-400 drop-shadow-[0_0_2px_rgba(56,189,248,0.3)]'}>
                         {death.victim}
                       </span>
+
+                      {death.medals && death.medals.length > 0 && (
+                        <div className="flex items-center gap-1 border-l border-white/15 pl-1.5 ml-1">
+                          {death.medals.map((medal, index) => (
+                            <div 
+                              key={index} 
+                              className="group/medal relative w-5 h-5 flex items-center justify-center rounded bg-slate-900/50 border border-white/10 shadow-[0_0_5px_var(--medal-color)] hover:bg-slate-800/80 transition-all cursor-help"
+                              style={{ '--medal-color': medal.color } as any}
+                            >
+                              <div className="w-3.5 h-3.5" style={{ color: medal.color }}>
+                                {renderMedalIcon(medal.icon)}
+                              </div>
+                              
+                              {/* Glowing Tooltip Card */}
+                              <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 bg-slate-950/95 border border-white/20 text-white rounded-lg p-2 text-[9px] font-mono font-bold uppercase tracking-wider hidden group-hover/medal:flex flex-col gap-0.5 z-[9999] shadow-[0_10px_25px_rgba(0,0,0,0.5)] pointer-events-none whitespace-nowrap min-w-36 text-center">
+                                <span className="font-black text-xs drop-shadow-[0_0_6px_var(--medal-color)]" style={{ color: medal.color }}>{medal.name}</span>
+                                <span className="text-[8px] text-white/60 lowercase italic font-normal">{medal.description}</span>
+                                <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-slate-950" />
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                       
-                      <div className="w-1.5 h-1.5 rounded-full bg-red-400 shadow-[0_0_4px_rgba(248,113,113,0.5)] animate-pulse" />
+                      <div className="w-1.5 h-1.5 rounded-full bg-red-400 shadow-[0_0_4px_rgba(248,113,113,0.5)] animate-pulse ml-0.5" />
                     </div>
                   );
                 })
               ) : (
                 /* Mock preview item for user alignment edit mode */
-                <div className="bg-slate-950/70 backdrop-blur-md border border-cyan-500/30 rounded-md px-3 py-1.5 flex items-center gap-2 shadow-lg text-[11px] font-bold whitespace-nowrap opacity-60">
+                <div className="bg-slate-950/70 backdrop-blur-md border border-cyan-500/30 rounded-md px-3 py-1.5 flex items-center gap-2 shadow-lg text-[11px] font-bold whitespace-nowrap opacity-80 pointer-events-auto">
                   <span className="text-sky-400">Blue Player (You)</span>
                   <span className="text-[9.5px] font-mono text-white/50 lowercase italic">slammed</span>
                   <span className="text-orange-400">Red AI Player</span>
-                  <div className="w-1.5 h-1.5 rounded-full bg-red-400 shadow-[0_0_4px_rgba(248,113,113,0.5)] animate-pulse" />
+                  
+                  {/* Mock medals preview inside HUD editor */}
+                  <div className="flex items-center gap-1 border-l border-cyan-500/30 pl-1.5 ml-1">
+                    <div className="relative w-5 h-5 flex items-center justify-center rounded bg-slate-900/50 border border-white/10 shadow-[0_0_5px_cyan] cursor-help">
+                      <div className="w-3.5 h-3.5 text-cyan-400">
+                        {renderMedalIcon('double')}
+                      </div>
+                    </div>
+                    <div className="relative w-5 h-5 flex items-center justify-center rounded bg-slate-900/50 border border-white/10 shadow-[0_0_5px_crimson] cursor-help">
+                      <div className="w-3.5 h-3.5 text-red-500">
+                        {renderMedalIcon('showstopper')}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="w-1.5 h-1.5 rounded-full bg-red-400 shadow-[0_0_4px_rgba(248,113,113,0.5)] animate-pulse ml-0.5" />
                 </div>
               )}
             </div>
@@ -1086,6 +1202,90 @@ export const HUD: React.FC<HUDProps> = ({
             />
           </DraggableHUDItem>
         </>
+      )}
+
+      {/* 11. CSS Keyframe Animations for Medals */}
+      <style>{`
+        @keyframes medal-slide-up {
+          0% {
+            opacity: 0;
+            transform: translate(-50%, 35px) scale(0.8);
+          }
+          8% {
+            opacity: 1;
+            transform: translate(-50%, 0) scale(1);
+          }
+          85% {
+            opacity: 1;
+            transform: translate(-50%, 0) scale(1);
+          }
+          100% {
+            opacity: 0;
+            transform: translate(-50%, -45px) scale(0.85);
+          }
+        }
+        .animate-bounce-slow {
+          animation: bounce-slow 2s infinite ease-in-out;
+        }
+        @keyframes bounce-slow {
+          0%, 100% {
+            transform: translateY(0);
+          }
+          50% {
+            transform: translateY(-5px);
+          }
+        }
+      `}</style>
+
+      {/* 12. HALO-STYLE CENTRAL MEDAL POPUP */}
+      {stats.activeMedalPopup && (
+        <div 
+          key={stats.activeMedalPopup.key}
+          className="fixed left-1/2 bottom-[33%] -translate-x-1/2 flex flex-col items-center pointer-events-none select-none z-[9999]"
+          style={{
+            animation: 'medal-slide-up 2.4s cubic-bezier(0.19, 1, 0.22, 1) forwards'
+          }}
+        >
+          {/* Outer glowing glassmorphic card */}
+          <div 
+            className="flex flex-col items-center bg-slate-950/80 border border-white/20 rounded-2xl px-10 py-5.5 shadow-[0_15px_45px_rgba(0,0,0,0.65),0_0_35px_var(--medal-glow)] backdrop-blur-xl relative overflow-hidden min-w-[260px]"
+            style={{ '--medal-glow': stats.activeMedalPopup.medal.color } as any}
+          >
+            {/* Holographic scanning laser line */}
+            <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.04)_1px,transparent_1px)] bg-[size:100%_3px] pointer-events-none" />
+            <div className="absolute top-0 left-0 right-0 h-[1.5px] bg-gradient-to-r from-transparent via-white/50 to-transparent" />
+            
+            {/* Rotating/pulsing starburst background flare */}
+            <div 
+              className="absolute w-36 h-36 rounded-full filter blur-2xl opacity-30 animate-pulse"
+              style={{ background: stats.activeMedalPopup.medal.color }}
+            />
+
+            {/* Glowing Medal SVG Icon */}
+            <div 
+              className="w-16 h-16 relative flex items-center justify-center animate-bounce-slow"
+              style={{ filter: `drop-shadow(0 0 8px ${stats.activeMedalPopup.medal.color})` }}
+            >
+              {renderMedalIcon(stats.activeMedalPopup.medal.icon)}
+            </div>
+
+            {/* Medal Details */}
+            <div className="text-center mt-3 z-10 flex flex-col gap-0.5 font-sans">
+              <span className="text-[9.5px] font-mono font-black tracking-[0.25em] text-white/40">
+                MEDAL EARNED
+              </span>
+              <h3 
+                className="text-2xl font-black italic tracking-tighter uppercase drop-shadow-[0_0_8px_rgba(255,255,255,0.3)] mt-0.5"
+                style={{ color: stats.activeMedalPopup.medal.color }}
+              >
+                {stats.activeMedalPopup.medal.name}
+              </h3>
+              <p className="text-[9.5px] font-mono tracking-widest text-[#94a3b8] uppercase font-bold mt-1 max-w-[210px] leading-tight">
+                {stats.activeMedalPopup.medal.description}
+              </p>
+            </div>
+          </div>
+        </div>
       )}
 
     </div>
