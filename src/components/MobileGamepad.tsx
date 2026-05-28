@@ -18,23 +18,17 @@ export const LeftAnalogStick: React.FC<LeftStickProps> = ({
 }) => {
   const stickRef = useRef<HTMLDivElement>(null);
   const knobRef = useRef<HTMLDivElement>(null);
+  const activePointerIdRef = useRef<number | null>(null);
   const [active, setActive] = useState(false);
 
-  const handleTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
-    if (isAdjustmentMode) return;
-    setActive(true);
-    handleTouchMove(e);
-  };
-
-  const handleTouchMove = (e: React.TouchEvent<HTMLDivElement>) => {
+  const updateStickPosition = (clientX: number, clientY: number) => {
     if (isAdjustmentMode || !stickRef.current || !knobRef.current) return;
-    const touch = e.touches[0];
     const rect = stickRef.current.getBoundingClientRect();
     const centerX = rect.left + rect.width / 2;
     const centerY = rect.top + rect.height / 2;
 
-    const deltaX = touch.clientX - centerX;
-    const deltaY = touch.clientY - centerY;
+    const deltaX = clientX - centerX;
+    const deltaY = clientY - centerY;
     const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
     const maxRadius = rect.width / 2;
 
@@ -56,7 +50,27 @@ export const LeftAnalogStick: React.FC<LeftStickProps> = ({
     };
   };
 
-  const handleTouchEnd = () => {
+  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (isAdjustmentMode || activePointerIdRef.current !== null) return;
+    e.preventDefault();
+    activePointerIdRef.current = e.pointerId;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    setActive(true);
+    updateStickPosition(e.clientX, e.clientY);
+  };
+
+  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (activePointerIdRef.current !== e.pointerId) return;
+    e.preventDefault();
+    updateStickPosition(e.clientX, e.clientY);
+  };
+
+  const handlePointerEnd = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (activePointerIdRef.current !== e.pointerId) return;
+    activePointerIdRef.current = null;
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
     setActive(false);
     if (knobRef.current) {
       knobRef.current.style.transform = 'translate(0px, 0px)';
@@ -67,9 +81,10 @@ export const LeftAnalogStick: React.FC<LeftStickProps> = ({
   return (
     <div 
       ref={stickRef}
-      onTouchStart={handleTouchStart}
-      onTouchMove={handleTouchMove}
-      onTouchEnd={handleTouchEnd}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerEnd}
+      onPointerCancel={handlePointerEnd}
       className={`mobile-left-stick w-32 h-32 rounded-full border-2 transition-all duration-300 flex items-center justify-center relative select-none ${
         active 
           ? 'border-cyan-400/80 bg-slate-950/45 shadow-[0_0_25px_rgba(6,182,212,0.3)] scale-[1.03]' 
@@ -120,6 +135,7 @@ export const RightActionButtonPad: React.FC<RightPadProps> = ({
 }) => {
   const stickRef = useRef<HTMLDivElement>(null);
   const knobRef = useRef<HTMLDivElement>(null);
+  const activePointerIdRef = useRef<number | null>(null);
   const [active, setActive] = useState(false);
   const [isCrouched, setIsCrouched] = useState(false);
 
@@ -128,22 +144,14 @@ export const RightActionButtonPad: React.FC<RightPadProps> = ({
     setIsCrouched(stats.isCrouching);
   }, [stats.isCrouching]);
 
-  const handleTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
-    if (isAdjustmentMode) return;
-    setActive(true);
-    mobileRightJoystickActiveRef.current = true;
-    handleTouchMove(e);
-  };
-
-  const handleTouchMove = (e: React.TouchEvent<HTMLDivElement>) => {
+  const updateStickPosition = (clientX: number, clientY: number) => {
     if (isAdjustmentMode || !stickRef.current || !knobRef.current) return;
-    const touch = e.touches[0];
     const rect = stickRef.current.getBoundingClientRect();
     const centerX = rect.left + rect.width / 2;
     const centerY = rect.top + rect.height / 2;
 
-    const deltaX = touch.clientX - centerX;
-    const deltaY = touch.clientY - centerY;
+    const deltaX = clientX - centerX;
+    const deltaY = clientY - centerY;
     const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
     const maxRadius = rect.width / 2;
 
@@ -164,7 +172,28 @@ export const RightActionButtonPad: React.FC<RightPadProps> = ({
     };
   };
 
-  const handleTouchEnd = () => {
+  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (isAdjustmentMode || activePointerIdRef.current !== null) return;
+    e.preventDefault();
+    activePointerIdRef.current = e.pointerId;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    setActive(true);
+    mobileRightJoystickActiveRef.current = true;
+    updateStickPosition(e.clientX, e.clientY);
+  };
+
+  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (activePointerIdRef.current !== e.pointerId) return;
+    e.preventDefault();
+    updateStickPosition(e.clientX, e.clientY);
+  };
+
+  const handlePointerEnd = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (activePointerIdRef.current !== e.pointerId) return;
+    activePointerIdRef.current = null;
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
     setActive(false);
     mobileRightJoystickActiveRef.current = false;
     if (knobRef.current) {
@@ -192,6 +221,15 @@ export const RightActionButtonPad: React.FC<RightPadProps> = ({
     window.dispatchEvent(new CustomEvent('mobile-attack-alt'));
   };
 
+  const handleActionPointerDown = (
+    e: React.PointerEvent<HTMLButtonElement>,
+    action: () => void
+  ) => {
+    if (isAdjustmentMode || e.currentTarget.disabled) return;
+    e.preventDefault();
+    action();
+  };
+
   // Toggle Crouch Stance
   const handleCrouchToggle = () => {
     const key = keybindings.crouch;
@@ -212,9 +250,10 @@ export const RightActionButtonPad: React.FC<RightPadProps> = ({
       {/* 1. RIGHT ANALOG JOYSTICK (Continuous Aim/Pan) */}
       <div 
         ref={stickRef}
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerEnd}
+        onPointerCancel={handlePointerEnd}
         className={`mobile-right-stick absolute rounded-full border-2 transition-all duration-300 flex items-center justify-center pointer-events-auto ${
           active 
             ? 'border-indigo-400/80 bg-slate-950/45 shadow-[0_0_25px_rgba(99,102,241,0.3)] scale-[1.03]' 
@@ -242,7 +281,8 @@ export const RightActionButtonPad: React.FC<RightPadProps> = ({
 
       {/* CROUCH / SLIDE BUTTON */}
       <button 
-        onTouchStart={handleCrouchToggle}
+        type="button"
+        onPointerDown={(e) => handleActionPointerDown(e, handleCrouchToggle)}
         className={`mobile-crouch-button absolute rounded-full pointer-events-auto flex flex-col items-center justify-center border transition-all duration-150 active:scale-90 font-mono text-[9px] font-black ${
           isCrouched 
             ? 'bg-amber-500 border-amber-400 text-slate-950 shadow-[0_0_12px_rgba(245,158,11,0.5)]' 
@@ -256,7 +296,8 @@ export const RightActionButtonPad: React.FC<RightPadProps> = ({
 
       {/* SONIC DASH THICKNESS BUTTON */}
       <button 
-        onTouchStart={() => triggerKeyAction('dash')}
+        type="button"
+        onPointerDown={(e) => handleActionPointerDown(e, () => triggerKeyAction('dash'))}
         disabled={!stats.playerDashReady}
         className={`mobile-dash-button absolute rounded-full pointer-events-auto flex flex-col items-center justify-center border backdrop-blur-md transition-all duration-150 active:scale-90 ${
           stats.playerDashReady 
@@ -271,7 +312,8 @@ export const RightActionButtonPad: React.FC<RightPadProps> = ({
 
       {/* JUMP / BOOST BUTTON */}
       <button 
-        onTouchStart={() => triggerKeyAction('jump')}
+        type="button"
+        onPointerDown={(e) => handleActionPointerDown(e, () => triggerKeyAction('jump'))}
         className="mobile-boost-button absolute rounded-full pointer-events-auto flex flex-col items-center justify-center bg-indigo-600/20 backdrop-blur-md border border-indigo-400/40 text-indigo-300 shadow-[0_0_15px_rgba(99,102,241,0.15)] transition-all duration-150 active:scale-90"
         style={{ pointerEvents: isAdjustmentMode ? 'none' : 'auto' }}
       >
@@ -283,7 +325,8 @@ export const RightActionButtonPad: React.FC<RightPadProps> = ({
       <div className="mobile-weapon-switcher absolute flex gap-1.5 pointer-events-auto">
         {/* Hammer Swapper */}
         <button
-          onTouchStart={() => triggerKeyAction('weapon1')}
+          type="button"
+          onPointerDown={(e) => handleActionPointerDown(e, () => triggerKeyAction('weapon1'))}
           className={`mobile-weapon-button rounded-lg flex flex-col items-center justify-center border backdrop-blur-md transition-all duration-150 active:scale-90 ${
             activeWeapon === 'hammer'
               ? 'bg-amber-500/25 border-amber-400 text-amber-400 shadow-[0_0_10px_rgba(245,158,11,0.3)]'
@@ -297,7 +340,8 @@ export const RightActionButtonPad: React.FC<RightPadProps> = ({
 
         {/* Sword Swapper */}
         <button
-          onTouchStart={() => triggerKeyAction('weapon2')}
+          type="button"
+          onPointerDown={(e) => handleActionPointerDown(e, () => triggerKeyAction('weapon2'))}
           className={`mobile-weapon-button rounded-lg flex flex-col items-center justify-center border backdrop-blur-md transition-all duration-150 active:scale-90 ${
             activeWeapon === 'sword'
               ? 'bg-cyan-500/25 border-cyan-400 text-cyan-400 shadow-[0_0_10px_rgba(34,211,238,0.3)]'
@@ -312,7 +356,8 @@ export const RightActionButtonPad: React.FC<RightPadProps> = ({
 
       {/* SCOREBOARD / STATS TOGGLE */}
       <button
-        onTouchStart={() => triggerKeyAction('scoreboard')}
+        type="button"
+        onPointerDown={(e) => handleActionPointerDown(e, () => triggerKeyAction('scoreboard'))}
         className={`mobile-stats-button absolute rounded border pointer-events-auto backdrop-blur-md text-[7px] font-black tracking-widest transition-all ${
           stats.showScoreboard
             ? 'bg-emerald-500 border-emerald-400 text-slate-950'
@@ -326,7 +371,8 @@ export const RightActionButtonPad: React.FC<RightPadProps> = ({
       {/* ALT ATTACK (SECONDARY SLASH SWEEP) */}
       {activeWeapon === 'sword' && (
         <button
-          onTouchStart={triggerAltAttack}
+          type="button"
+          onPointerDown={(e) => handleActionPointerDown(e, triggerAltAttack)}
           className="mobile-alt-attack-button absolute rounded-full pointer-events-auto flex flex-col items-center justify-center bg-cyan-600/35 backdrop-blur-md border-2 border-cyan-400/50 text-cyan-300 shadow-[0_0_15px_rgba(34,211,238,0.35)] transition-all duration-150 active:scale-90 font-mono"
           style={{ pointerEvents: isAdjustmentMode ? 'none' : 'auto' }}
         >
@@ -337,7 +383,8 @@ export const RightActionButtonPad: React.FC<RightPadProps> = ({
 
       {/* 💥 LARGE PRIMARY ATTACK BUTTON */}
       <button 
-        onTouchStart={triggerPrimaryAttack}
+        type="button"
+        onPointerDown={(e) => handleActionPointerDown(e, triggerPrimaryAttack)}
         className={`mobile-primary-attack-button absolute rounded-full pointer-events-auto flex flex-col items-center justify-center bg-gradient-to-b ${primaryBtnColor} text-slate-950 border-2 border-white/40 transition-all duration-150 active:scale-95`}
         style={{
           boxShadow: `0 0 25px ${primaryGlowColor}, inset 0 2px 4px rgba(255,255,255,0.4)`,

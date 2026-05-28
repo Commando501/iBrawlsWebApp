@@ -34,6 +34,7 @@ interface GrifballGameProps {
   botDifficulties?: Record<string, string>;
   botColors?: Record<string, number>;
   botBehaviors?: Record<string, AIBehaviorPreset>;
+  botWeaponBehaviors?: Record<string, string>;
   aiPresets?: any[];
   keybindings?: Keybindings;
   deviceInfo: DeviceInfo;
@@ -102,6 +103,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
   botDifficulties = {},
   botColors = {},
   botBehaviors = {},
+  botWeaponBehaviors = {},
   aiPresets = [],
   keybindings = DEFAULT_KEYBINDINGS,
   deviceInfo,
@@ -134,6 +136,12 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     playerDashRemaining: number;
     playerDashDir: THREE.Vector3;
     playerDashCooldownTimer: number;
+
+    // Slide states
+    playerSlideActive: boolean;
+    playerSlideDistanceTraveled: number;
+    playerSlideCooldownTimer: number;
+    playerSlideLastPos: THREE.Vector3;
 
     aiDashRemaining: number;
     aiDashDir: THREE.Vector3;
@@ -278,6 +286,12 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
     playerDashDir: new THREE.Vector3(0, 0, 0),
     playerDashCooldownTimer: 0,
+
+    // Slide states
+    playerSlideActive: false,
+    playerSlideDistanceTraveled: 0,
+    playerSlideCooldownTimer: 0,
+    playerSlideLastPos: new THREE.Vector3(0, 0, 0),
 
     aiDashRemaining: 0,
     aiDashDir: new THREE.Vector3(0, 0, 0),
@@ -733,8 +747,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         if (keysPressed.current[keybindingsRef.current.moveForward] || keysPressed.current['arrowup']) moveForward += 1;
         if (keysPressed.current[keybindingsRef.current.moveBackward] || keysPressed.current['arrowdown']) moveForward -= 1;
         
-        const isHostSprinting = s.settings.enableSprint && (multiplayerRole === 'observer' ? hostSpeed > 6.0 : keysPressed.current['shift'] && moveForward > 0 && !s.isCrouching && !s.isJumping && s.playerDashRemaining <= 0);
-        const isHostSliding = s.settings.enableSlide && (multiplayerRole === 'observer' ? hostSpeed > 3.0 && hostData.isCrouching : s.isCrouching && moveForward > 0 && !s.isJumping && s.playerDashRemaining <= 0);
+        const isHostSprinting = s.settings.enableSprint && (multiplayerRole === 'observer' ? hostSpeed > 6.0 : keysPressed.current[keybindingsRef.current.sprint] && moveForward > 0 && !s.isCrouching && !s.isJumping && s.playerDashRemaining <= 0);
+        const isHostSliding = s.settings.enableSlide && (multiplayerRole === 'observer' ? hostSpeed > 3.0 && hostData.isCrouching : s.playerSlideActive);
 
         animateSpartanModel(
           threeRef.current.hostGroup,
@@ -1100,8 +1114,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       if (keysPressed.current[keybindingsRef.current.moveForward] || keysPressed.current['arrowup']) moveForward += 1;
       if (keysPressed.current[keybindingsRef.current.moveBackward] || keysPressed.current['arrowdown']) moveForward -= 1;
       
-      const isSprinting = s.settings.enableSprint && keysPressed.current['shift'] && moveForward > 0 && !s.isCrouching && !s.isJumping && s.playerDashRemaining <= 0;
-      const isSliding = s.settings.enableSlide && s.isCrouching && moveForward > 0 && !s.isJumping && s.playerDashRemaining <= 0;
+      const isSprinting = s.settings.enableSprint && keysPressed.current[keybindingsRef.current.sprint] && moveForward > 0 && !s.isCrouching && !s.isJumping && s.playerDashRemaining <= 0;
+      const isSliding = s.settings.enableSlide && s.playerSlideActive;
       
       targetFov = isSprinting ? 86 : (isSliding ? 78 : 75);
     }
@@ -4741,6 +4755,11 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       s.playerDashCooldownTimer = Math.max(0, s.playerDashCooldownTimer - dt);
     }
 
+    // Process slide cooldown
+    if (s.playerSlideCooldownTimer > 0) {
+      s.playerSlideCooldownTimer = Math.max(0, s.playerSlideCooldownTimer - dt);
+    }
+
     const isPlayerDashing = s.playerDashRemaining > 0;
     if (isPlayerDashing) {
       s.playerDashRemaining = Math.max(0, s.playerDashRemaining - dt);
@@ -4798,9 +4817,36 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         moveRight += mobileJoystickRef.current.x;
       }
 
+      // Check raw sliding conditions
+      const rawSlideConditionsMet = s.settings.enableSlide && s.isCrouching && moveForward > 0 && !s.isJumping && s.playerDashRemaining <= 0;
+
+      // Process Sliding State Machine
+      if (!s.playerSlideActive) {
+        if (rawSlideConditionsMet && s.playerSlideCooldownTimer <= 0) {
+          s.playerSlideActive = true;
+          s.playerSlideDistanceTraveled = 0.0;
+          s.playerSlideLastPos.copy(s.playerPos);
+        }
+      } else {
+        if (!rawSlideConditionsMet) {
+          s.playerSlideActive = false;
+          s.playerSlideCooldownTimer = s.settings.slideCooldown ?? 1.5;
+        } else {
+          // Measure horizontal distance traveled (ignore Y dimension)
+          const dist = new THREE.Vector2(s.playerPos.x, s.playerPos.z).distanceTo(new THREE.Vector2(s.playerSlideLastPos.x, s.playerSlideLastPos.z));
+          s.playerSlideDistanceTraveled += dist;
+          s.playerSlideLastPos.copy(s.playerPos);
+
+          if (s.playerSlideDistanceTraveled >= (s.settings.slideDistance ?? 8.0)) {
+            s.playerSlideActive = false;
+            s.playerSlideCooldownTimer = s.settings.slideCooldown ?? 1.5;
+          }
+        }
+      }
+
       // Check sprint & slide states
       const isSprinting = s.settings.enableSprint && keysPressed.current['shift'] && moveForward > 0 && !s.isCrouching && !s.isJumping && s.playerDashRemaining <= 0;
-      const isSliding = s.settings.enableSlide && s.isCrouching && moveForward > 0 && !s.isJumping && s.playerDashRemaining <= 0;
+      const isSliding = s.playerSlideActive;
 
       // Movement speed coefficients
       let baseSpeed = 5.8;
@@ -5927,6 +5973,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       weaponState?: string;
       weaponSwapIQ?: number;
       recentLungeMemory?: { outcome: AILungeOutcome; targetId?: string; timeRemaining: number } | null;
+      weaponPrioritization?: number;
     } = {}
   ) => {
     const s = stateRef.current;
@@ -5948,6 +5995,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         swordTradeWindowMs: s.settings.swordTradeWindow ?? 350,
         canStartWeaponAction: false,
         weaponState: 'ready',
+        weaponPrioritization: context.weaponPrioritization ?? 50,
       });
     }
 
@@ -6000,6 +6048,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       canStartWeaponAction: context.canStartWeaponAction ?? true,
       weaponState: context.weaponState ?? 'ready',
       recentLungeMemory: context.recentLungeMemory,
+      weaponPrioritization: context.weaponPrioritization ?? 50,
     });
   };
 
@@ -6170,6 +6219,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     let movementComplexity = 50;
     let weaponSwapIQ = 50;
     let aiPlaystyle = 50;
+    let weaponPrioritization = 50;
 
     if (difficulty === 'custom') {
       reactionLatency = adminSettings.aiReactionLatency ?? 0.25;
@@ -6177,6 +6227,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       movementComplexity = adminSettings.aiMovementComplexity ?? 50;
       weaponSwapIQ = adminSettings.aiWeaponSwapIQ ?? 50;
       aiPlaystyle = adminSettings.aiPlaystyle ?? 50;
+      weaponPrioritization = adminSettings.aiWeaponPrioritization ?? 50;
     } else if (['easy', 'normal', 'hard', 'nightmare'].includes(difficulty)) {
       if (difficulty === 'easy') {
         reactionLatency = 0.55;
@@ -6204,6 +6255,15 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       if (behavior === 'passive') aiPlaystyle = 0;
       else if (behavior === 'defensive') aiPlaystyle = 50;
       else if (behavior === 'aggressive') aiPlaystyle = 100;
+
+      const wBehavior = botWeaponBehaviors?.[botId] || 'balanced';
+      if (wBehavior === 'sword_75_25') {
+        weaponPrioritization = 75;
+      } else if (wBehavior === 'hammer_75_25') {
+        weaponPrioritization = 25;
+      } else {
+        weaponPrioritization = 50;
+      }
     } else {
       // Custom saved preset ID
       const preset = aiPresets.find(p => p.id === difficulty);
@@ -6213,6 +6273,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         movementComplexity = preset.tuning.aiMovementComplexity ?? 50;
         weaponSwapIQ = preset.tuning.aiWeaponSwapIQ ?? 50;
         aiPlaystyle = preset.tuning.aiPlaystyle ?? 50;
+        weaponPrioritization = preset.tuning.aiWeaponPrioritization ?? 50;
       }
     }
 
@@ -6435,6 +6496,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       weaponState,
       weaponSwapIQ,
       recentLungeMemory,
+      weaponPrioritization,
     });
 
     if (tacticalDecision.weapon) {

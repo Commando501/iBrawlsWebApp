@@ -53,6 +53,32 @@ body {
   touch-action: none;
 }
 
+.mobile-crouch-button,
+.mobile-dash-button,
+.mobile-boost-button,
+.mobile-weapon-button,
+.mobile-stats-button,
+.mobile-alt-attack-button,
+.mobile-primary-attack-button {
+  touch-action: manipulation;
+}
+
+.mobile-menu-card,
+.mobile-modal,
+.mobile-pause-scroll,
+.mobile-ui-adjust-toolbar {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+
+.mobile-pause-modal {
+  min-height: 0;
+}
+
+.mobile-pause-scroll {
+  scrollbar-gutter: stable;
+}
+
 .mobile-right-pad {
   width: clamp(14.5rem, 38vw, 21.25rem);
   height: clamp(10.5rem, 29vw, 16.25rem);
@@ -73,8 +99,8 @@ body {
 .mobile-crouch-button {
   left: 34%;
   bottom: clamp(0.5rem, 3vmin, 1rem);
-  width: clamp(2.5rem, 7vmin, 3rem);
-  height: clamp(2.5rem, 7vmin, 3rem);
+  width: clamp(2.75rem, 7vmin, 3rem);
+  height: clamp(2.75rem, 7vmin, 3rem);
 }
 
 .mobile-dash-button {
@@ -97,13 +123,15 @@ body {
 }
 
 .mobile-weapon-button {
-  width: clamp(2.35rem, 6.5vmin, 2.75rem);
-  height: clamp(2.35rem, 6.5vmin, 2.75rem);
+  width: clamp(2.75rem, 6.5vmin, 3rem);
+  height: clamp(2.75rem, 6.5vmin, 3rem);
 }
 
 .mobile-stats-button {
   left: 31%;
   top: clamp(0.65rem, 4vmin, 1.5rem);
+  min-width: 4rem;
+  min-height: 2.75rem;
   padding: clamp(0.2rem, 1vmin, 0.25rem) clamp(0.45rem, 1.8vmin, 0.75rem);
 }
 
@@ -177,6 +205,7 @@ body {
 
   .mobile-tabs button {
     min-width: 0;
+    min-height: 2.75rem;
     padding-left: 0.5rem;
     padding-right: 0.5rem;
     font-size: 0.68rem;
@@ -242,8 +271,20 @@ body {
     padding: 1rem;
     width: min(100%, calc(100vw - 1.5rem)) !important;
     max-width: calc(100vw - 1.5rem) !important;
-    max-height: calc(100dvh - 1.5rem) !important;
+    max-height: calc(100dvh - 1.5rem - env(safe-area-inset-top) - env(safe-area-inset-bottom)) !important;
     overflow-x: hidden;
+  }
+
+  .mobile-pause-modal {
+    height: min(100%, calc(100dvh - 1.5rem - env(safe-area-inset-top) - env(safe-area-inset-bottom)));
+  }
+
+  .mobile-pause-scroll {
+    padding-bottom: 0.25rem;
+  }
+
+  .mobile-pause-scroll button {
+    min-height: 2.75rem;
   }
 
   .mobile-modal-actions,
@@ -305,6 +346,7 @@ body {
 
   .mobile-tabs button {
     min-width: 0;
+    min-height: 2.75rem;
     padding-left: 0.35rem;
     padding-right: 0.35rem;
     font-size: 0.62rem;
@@ -333,6 +375,12 @@ body {
   .mobile-left-stick {
     width: clamp(5.75rem, 18vmin, 8rem);
     height: clamp(5.75rem, 18vmin, 8rem);
+  }
+
+  #pause-button {
+    min-height: 2.75rem;
+    padding: 0.5rem 0.75rem;
+    touch-action: manipulation;
   }
 
   .mobile-left-knob {

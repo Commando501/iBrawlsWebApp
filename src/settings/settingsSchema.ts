@@ -1,0 +1,611 @@
+import { UniversalSettings } from '../types';
+
+export interface SettingSection {
+  id: string;
+  title: string;
+  column: 1 | 2 | 3;
+  colorClass: string;
+  bgClass?: string;
+  badge?: string;
+  badgeClass?: string;
+}
+
+export interface SettingDefinition {
+  key: keyof UniversalSettings;
+  label: string;
+  type: 'slider' | 'toggle' | 'stepper' | 'select' | 'color';
+  sectionId: string;
+  min?: number;
+  max?: number;
+  step?: number;
+  unit?: string;
+  formatValue?: (val: any) => string;
+  options?: { value: string; label: string }[];
+  description?: string;
+  showIf?: (settings: UniversalSettings) => boolean;
+}
+
+export const SETTING_SECTIONS: SettingSection[] = [
+  // COLUMN 1
+  {
+    id: 'core',
+    title: '1. Core Systems',
+    column: 1,
+    colorClass: 'text-cyan-400',
+  },
+  {
+    id: 'health',
+    title: '2. Health & Protection',
+    column: 1,
+    colorClass: 'text-emerald-400',
+  },
+  {
+    id: 'velocity',
+    title: '3. Velocity Modifiers',
+    column: 1,
+    colorClass: 'text-blue-400',
+  },
+  {
+    id: 'dash',
+    title: '4. Dash Thrusters',
+    column: 1,
+    colorClass: 'text-cyan-400',
+  },
+  // COLUMN 2
+  {
+    id: 'hammer',
+    title: '5. Gravity Hammer',
+    column: 2,
+    colorClass: 'text-amber-400',
+  },
+  {
+    id: 'launch',
+    title: '6. Gravity Launch Jump',
+    column: 2,
+    colorClass: 'text-yellow-400',
+  },
+  {
+    id: 'ai',
+    title: '9. AI Combat Neural Matrix',
+    column: 2,
+    colorClass: 'text-cyan-400',
+    badge: 'INTELLIGENCE',
+    badgeClass: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30',
+  },
+  // COLUMN 3
+  {
+    id: 'sword',
+    title: '7. Energy Sword',
+    column: 3,
+    colorClass: 'text-[#22d3ee]',
+  },
+  {
+    id: 'trades',
+    title: '7. Combat Trades',
+    column: 3,
+    colorClass: 'text-red-400',
+    badge: 'LETHAL WINDOW',
+    badgeClass: 'bg-red-500/20 text-red-300 border-red-500/30',
+    bgClass: 'border-red-500/20 bg-red-950/10 shadow-[inset_0_0_12px_rgba(239,68,68,0.05)] border border-red-900/30',
+  },
+  {
+    id: 'name',
+    title: '8. Name Visibility',
+    column: 3,
+    colorClass: 'text-cyan-400',
+    badge: 'VISUALS',
+    badgeClass: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30',
+  },
+];
+
+export const SETTING_DEFINITIONS: SettingDefinition[] = [
+  // SECTION: Core Systems
+  {
+    key: 'weaponReadyTime',
+    label: 'Weapon Ready Time',
+    type: 'slider',
+    sectionId: 'core',
+    min: 0.0,
+    max: 3.0,
+    step: 0.1,
+    unit: 's',
+    formatValue: (v) => `${v.toFixed(1)}s`,
+  },
+  {
+    key: 'enableSprint',
+    label: 'Sprint (Movement)',
+    type: 'toggle',
+    sectionId: 'core',
+    description: 'Sprint by holding Shift forward',
+  },
+  {
+    key: 'enableSlide',
+    label: 'Slide (Movement)',
+    type: 'toggle',
+    sectionId: 'core',
+    description: 'Slide by crouching while running forward',
+  },
+
+  // SECTION: Health & Protection
+  {
+    key: 'maxHP',
+    label: 'Universal HP',
+    type: 'stepper',
+    sectionId: 'health',
+    min: 1,
+    max: 100,
+    step: 1,
+    unit: 'HP',
+    formatValue: (v) => `${v} HP`,
+    description: 'Hits needed to kill',
+  },
+  {
+    key: 'respawnInvulnerabilityDuration',
+    label: 'Spawn Shield',
+    type: 'stepper',
+    sectionId: 'health',
+    min: 0.0,
+    max: 5.0,
+    step: 0.1,
+    unit: 's',
+    formatValue: (v) => `${v.toFixed(1)}s`,
+    description: 'Protection duration',
+  },
+
+  // SECTION: Velocity Modifiers
+  {
+    key: 'speedForward',
+    label: 'Forward Speed',
+    type: 'slider',
+    sectionId: 'velocity',
+    min: 20,
+    max: 300,
+    step: 1,
+    unit: '%',
+    formatValue: (v) => `${v}%`,
+  },
+  {
+    key: 'speedSprint',
+    label: 'Sprint Speed',
+    type: 'slider',
+    sectionId: 'velocity',
+    min: 20,
+    max: 300,
+    step: 5,
+    unit: '%',
+    formatValue: (v) => `${v}%`,
+  },
+  {
+    key: 'speedSlide',
+    label: 'Slide Speed',
+    type: 'slider',
+    sectionId: 'velocity',
+    min: 20,
+    max: 300,
+    step: 5,
+    unit: '%',
+    formatValue: (v) => `${v}%`,
+  },
+  {
+    key: 'slideDistance',
+    label: 'Slide Max Distance',
+    type: 'slider',
+    sectionId: 'velocity',
+    min: 2.0,
+    max: 25.0,
+    step: 0.5,
+    unit: 'm',
+    formatValue: (v) => `${v.toFixed(1)}m`,
+  },
+  {
+    key: 'slideCooldown',
+    label: 'Slide Cooldown',
+    type: 'slider',
+    sectionId: 'velocity',
+    min: 0.0,
+    max: 10.0,
+    step: 0.1,
+    unit: 's',
+    formatValue: (v) => `${v.toFixed(1)}s`,
+  },
+  {
+    key: 'speedSide',
+    label: 'Strafe Speed',
+    type: 'slider',
+    sectionId: 'velocity',
+    min: 20,
+    max: 300,
+    step: 1,
+    unit: '%',
+    formatValue: (v) => `${v}%`,
+  },
+  {
+    key: 'speedBackward',
+    label: 'Backward Speed',
+    type: 'slider',
+    sectionId: 'velocity',
+    min: 20,
+    max: 300,
+    step: 1,
+    unit: '%',
+    formatValue: (v) => `${v}%`,
+  },
+
+  // SECTION: Dash Thrusters
+  {
+    key: 'dashDistance',
+    label: 'Dash Distance',
+    type: 'slider',
+    sectionId: 'dash',
+    min: 2.0,
+    max: 15.0,
+    step: 0.1,
+    unit: 'm',
+    formatValue: (v) => `${v.toFixed(1)}m`,
+  },
+  {
+    key: 'dashDuration',
+    label: 'Dash Travel Time',
+    type: 'slider',
+    sectionId: 'dash',
+    min: 0.10,
+    max: 1.00,
+    step: 0.05,
+    unit: 's',
+    formatValue: (v) => `${v.toFixed(2)}s`,
+  },
+  {
+    key: 'dashCooldown',
+    label: 'Dash Cooldown',
+    type: 'stepper',
+    sectionId: 'dash',
+    min: 0.5,
+    max: 10.0,
+    step: 0.1,
+    unit: 's',
+    formatValue: (v) => `${v.toFixed(1)}s`,
+    description: 'Time between boosts',
+  },
+
+  // SECTION: Gravity Hammer
+  {
+    key: 'attackRange',
+    label: 'Shockwave Reach',
+    type: 'slider',
+    sectionId: 'hammer',
+    min: 1.0,
+    max: 10.0,
+    step: 0.1,
+    unit: 'm',
+    formatValue: (v) => `${v.toFixed(1)}m`,
+  },
+  {
+    key: 'attackRadius',
+    label: 'Sphere Blast Radius',
+    type: 'slider',
+    sectionId: 'hammer',
+    min: 1.0,
+    max: 15.0,
+    step: 0.1,
+    unit: 'm',
+    formatValue: (v) => `${v.toFixed(1)}m`,
+  },
+  {
+    key: 'hammerReloadTime',
+    label: 'Hammer Recovery Delay',
+    type: 'slider',
+    sectionId: 'hammer',
+    min: 0.1,
+    max: 5.0,
+    step: 0.1,
+    unit: 's',
+    formatValue: (v) => `${v.toFixed(1)}s`,
+  },
+  {
+    key: 'hammerSplashVfx',
+    label: 'Hammer Splash VFX',
+    type: 'select',
+    sectionId: 'hammer',
+    options: [
+      { value: 'current', label: 'Current Shockwave' },
+      { value: 'neonBlueFlash', label: 'Neon Blue Flash' },
+    ],
+    formatValue: (v) => v === 'neonBlueFlash' ? 'Flash' : 'Current',
+  },
+  {
+    key: 'enableBurnDecals',
+    label: 'Draw Floor Burn Decals',
+    type: 'toggle',
+    sectionId: 'hammer',
+    description: 'Flat neon blue blast decal',
+  },
+
+  // SECTION: Gravity Launch Jump
+  {
+    key: 'hammerJumpPower',
+    label: 'Launch Upwards Boost',
+    type: 'slider',
+    sectionId: 'launch',
+    min: 0.0,
+    max: 15.0,
+    step: 0.5,
+    unit: ' m/s',
+    formatValue: (v) => `+${v.toFixed(1)} m/s`,
+  },
+  {
+    key: 'hammerJumpTriggerRadius',
+    label: 'Ground Trigger Zone',
+    type: 'slider',
+    sectionId: 'launch',
+    min: 1.0,
+    max: 10.0,
+    step: 0.1,
+    unit: 'm',
+    formatValue: (v) => `${v.toFixed(1)}m`,
+  },
+  {
+    key: 'hammerJumpWindow',
+    label: 'Timing Trigger Window',
+    type: 'slider',
+    sectionId: 'launch',
+    min: 0.10,
+    max: 2.00,
+    step: 0.05,
+    unit: 's',
+    formatValue: (v) => `${v.toFixed(2)}s`,
+  },
+  {
+    key: 'visualizeJumpZone',
+    label: 'Draw Blast Zone Ring',
+    type: 'toggle',
+    sectionId: 'launch',
+    description: 'Render circle on ground',
+  },
+
+  // SECTION: AI Combat Neural Matrix (Intel is handled specially, but standard custom parameters are below)
+  {
+    key: 'aiDifficulty',
+    label: 'Cognitive Matrix Preset',
+    type: 'select',
+    sectionId: 'ai',
+    description: 'Cognitive Matrix Preset:',
+    options: [
+      { value: 'easy', label: '🟢 Easy (Sub-Normal)' },
+      { value: 'normal', label: '🔵 Normal (Adaptive)' },
+      { value: 'hard', label: '🟡 Hard (Punishing)' },
+      { value: 'nightmare', label: '🔴 Nightmare (Grandmaster)' },
+      { value: 'custom', label: '⚙️ Custom Matrix Override' },
+    ],
+  },
+  {
+    key: 'aiReactionLatency',
+    label: 'Reflex Latency',
+    type: 'slider',
+    sectionId: 'ai',
+    min: 0.00,
+    max: 1.50,
+    step: 0.05,
+    unit: 's',
+    formatValue: (v) => `${(v ?? 0.25).toFixed(2)}s`,
+    showIf: (s) => s.aiDifficulty === 'custom',
+  },
+  {
+    key: 'aiAnticipationFactor',
+    label: 'Anticipation Engine',
+    type: 'slider',
+    sectionId: 'ai',
+    min: 0.00,
+    max: 1.00,
+    step: 0.05,
+    unit: '%',
+    formatValue: (v) => `${Math.round((v ?? 0.40) * 100)}%`,
+    showIf: (s) => s.aiDifficulty === 'custom',
+  },
+  {
+    key: 'aiMovementComplexity',
+    label: 'Strafe & Evade Complexity',
+    type: 'slider',
+    sectionId: 'ai',
+    min: 0,
+    max: 100,
+    step: 5,
+    unit: '%',
+    formatValue: (v) => `${v ?? 50}%`,
+    showIf: (s) => s.aiDifficulty === 'custom',
+  },
+  {
+    key: 'aiWeaponSwapIQ',
+    label: 'Weapon Swapping IQ',
+    type: 'slider',
+    sectionId: 'ai',
+    min: 0,
+    max: 100,
+    step: 5,
+    unit: '%',
+    formatValue: (v) => `${v ?? 50}%`,
+    showIf: (s) => s.aiDifficulty === 'custom',
+  },
+  {
+    key: 'aiPlaystyle',
+    label: 'Combat Playstyle',
+    type: 'slider',
+    sectionId: 'ai',
+    min: 0,
+    max: 100,
+    step: 5,
+    showIf: (s) => s.aiDifficulty === 'custom',
+    formatValue: (v) => {
+      const p = v ?? 50;
+      if (p === 0) return 'Passive (0)';
+      if (p < 50) return `Passive-Defensive (${p})`;
+      if (p === 50) return 'Defensive (50)';
+      if (p < 100) return `Defensive-Aggro (${p})`;
+      return `Aggressive (100)`;
+    },
+  },
+  {
+    key: 'aiWeaponPrioritization',
+    label: 'Weapon Prioritization',
+    type: 'slider',
+    sectionId: 'ai',
+    min: 0,
+    max: 100,
+    step: 5,
+    unit: '%',
+    showIf: (s) => s.aiDifficulty === 'custom',
+    formatValue: (v) => {
+      const val = v ?? 50;
+      if (val === 50) return 'Balanced (50/50)';
+      if (val > 50) return `Sword User (${val}/${100 - val})`;
+      return `Hammer User (${100 - val}/${val})`;
+    },
+  },
+
+  // SECTION: Energy Sword
+  {
+    key: 'swordLungeDistance',
+    label: 'Lunge Distance (Red Reticle)',
+    type: 'slider',
+    sectionId: 'sword',
+    min: 1.0,
+    max: 25.0,
+    step: 0.5,
+    unit: 'm',
+    formatValue: (v) => `${v.toFixed(1)}m`,
+  },
+  {
+    key: 'swordLungeSpeed',
+    label: 'Lunge Glide Velocity',
+    type: 'slider',
+    sectionId: 'sword',
+    min: 5.0,
+    max: 50.0,
+    step: 1.0,
+    unit: 'm/s',
+    formatValue: (v) => `${v.toFixed(1)}m/s`,
+  },
+  {
+    key: 'swordLungeVfx',
+    label: 'Sword Lunge VFX',
+    type: 'select',
+    sectionId: 'sword',
+    options: [
+      { value: 'current', label: 'Current Energy Trail' },
+      { value: 'speedLineTrail', label: 'Speed Line Trail' },
+    ],
+    formatValue: (v) => v === 'speedLineTrail' ? 'Speed Lines' : 'Current',
+  },
+  {
+    key: 'swordSlashSpeed',
+    label: 'Slash Duration',
+    type: 'slider',
+    sectionId: 'sword',
+    min: 0.05,
+    max: 1.00,
+    step: 0.01,
+    unit: 's',
+    formatValue: (v) => `${v.toFixed(2)}s`,
+  },
+  {
+    key: 'swordSlashReload',
+    label: 'Slash Reload',
+    type: 'slider',
+    sectionId: 'sword',
+    min: 0.1,
+    max: 3.0,
+    step: 0.1,
+    unit: 's',
+    formatValue: (v) => `${v.toFixed(1)}s`,
+  },
+  {
+    key: 'swordLungeReload',
+    label: 'Lunge Recovery Delay',
+    type: 'slider',
+    sectionId: 'sword',
+    min: 0.1,
+    max: 5.0,
+    step: 0.1,
+    unit: 's',
+    formatValue: (v) => `${v.toFixed(1)}s`,
+  },
+
+  // SECTION: Combat Trades
+  {
+    key: 'enableSwordTrade',
+    label: 'Sword vs. Sword Trades',
+    type: 'toggle',
+    sectionId: 'trades',
+  },
+  {
+    key: 'swordTradeWindow',
+    label: 'Sword Trade Timing',
+    type: 'slider',
+    sectionId: 'trades',
+    min: 50,
+    max: 1000,
+    step: 10,
+    unit: ' ms',
+    formatValue: (v) => `${v} ms`,
+    showIf: (s) => s.enableSwordTrade,
+  },
+  {
+    key: 'enableHammerSwordTrade',
+    label: 'Hammer vs. Sword Trades',
+    type: 'toggle',
+    sectionId: 'trades',
+  },
+  {
+    key: 'hammerSwordTradeWindow',
+    label: 'Hammer/Lunge Trade Timing',
+    type: 'slider',
+    sectionId: 'trades',
+    min: 50,
+    max: 1000,
+    step: 10,
+    unit: ' ms',
+    formatValue: (v) => `${v} ms`,
+    showIf: (s) => s.enableHammerSwordTrade,
+  },
+
+  // SECTION: Name Visibility
+  {
+    key: 'nameVisibilityDistance',
+    label: 'Appearance Distance',
+    type: 'slider',
+    sectionId: 'name',
+    min: 1.0,
+    max: 50.0,
+    step: 1.0,
+    unit: 'm',
+    formatValue: (v) => `${(v ?? 15.0).toFixed(1)}m`,
+  },
+  {
+    key: 'nameVisibilityFontSize',
+    label: 'Font Size',
+    type: 'slider',
+    sectionId: 'name',
+    min: 10,
+    max: 36,
+    step: 1,
+    unit: 'px',
+    formatValue: (v) => `${v ?? 16}px`,
+  },
+  {
+    key: 'nameVisibilityOpacity',
+    label: 'Opacity',
+    type: 'slider',
+    sectionId: 'name',
+    min: 0.10,
+    max: 1.00,
+    step: 0.05,
+    unit: '%',
+    formatValue: (v) => `${Math.round((v ?? 0.8) * 100)}%`,
+  },
+  {
+    key: 'nameVisibilityColor',
+    label: 'Name Color',
+    type: 'color',
+    sectionId: 'name',
+    description: 'HUD text fill',
+  },
+];

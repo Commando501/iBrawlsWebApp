@@ -26,6 +26,7 @@ const baseInput = {
   swordTradeWindowMs: 350,
   canStartWeaponAction: true,
   weaponState: 'ready',
+  weaponPrioritization: 50,
   random: () => 0.99,
 };
 
@@ -106,4 +107,28 @@ test('high-IQ custom preset gets mechanic-aware tactical overrides', () => {
 
   assert.equal(decision.weapon, 'hammer');
   assert.equal(decision.bypassedRandomGate, true);
+});
+
+test('weapon prioritization of 0 (100% Hammer) always chooses hammer in close combat', () => {
+  const decision = evaluateAICombatDecision({
+    ...baseInput,
+    weaponPrioritization: 0,
+    distanceToTarget: 2.0,
+    combatDistanceToTarget: 2.0,
+    random: () => 0.0, // Should still choose hammer
+  });
+
+  assert.equal(decision.weapon, 'hammer');
+});
+
+test('weapon prioritization of 100 (100% Sword) always chooses sword in close combat', () => {
+  const decision = evaluateAICombatDecision({
+    ...baseInput,
+    weaponPrioritization: 100,
+    distanceToTarget: 2.0,
+    combatDistanceToTarget: 2.0,
+    random: () => 0.0, // Should still choose sword
+  });
+
+  assert.equal(decision.weapon, 'sword');
 });

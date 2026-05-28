@@ -36,6 +36,7 @@ export interface AICombatDecisionInput {
   canUseHammerCounter?: boolean;
   weaponState: string;
   recentLungeMemory?: AILungeMemory | null;
+  weaponPrioritization: number;
   random?: () => number;
 }
 
@@ -65,6 +66,7 @@ export function isMissedLungeMemory(memory?: AILungeMemory | null): boolean {
 
 export function evaluateAICombatDecision(input: AICombatDecisionInput): AICombatDecision {
   const random = input.random ?? Math.random;
+  const pSword = input.weaponPrioritization / 100;
   const targetIsProtected = (input.target.invulnerabilityTimer ?? 0) > 0;
   const minDistance = Math.min(input.distanceToTarget, input.combatDistanceToTarget ?? input.distanceToTarget);
   const playerDangerZone = input.attackRange + input.attackRadius * 0.85;
@@ -149,7 +151,7 @@ export function evaluateAICombatDecision(input: AICombatDecisionInput): AICombat
   }
 
   if (input.target.hp <= 1 && input.distanceToTarget <= maxLunge && input.target.hp > 0) {
-    decision.weapon = 'sword';
+    decision.weapon = random() < pSword ? 'sword' : 'hammer';
     return decision;
   }
 
@@ -159,17 +161,17 @@ export function evaluateAICombatDecision(input: AICombatDecisionInput): AICombat
   }
 
   if (input.target.weaponState === 'recovering' && input.distanceToTarget >= minLunge && input.distanceToTarget <= maxLunge) {
-    decision.weapon = 'sword';
+    decision.weapon = random() < pSword ? 'sword' : 'hammer';
     return decision;
   }
 
-  if (input.distanceToTarget >= minLunge && input.distanceToTarget <= maxLunge && random() < 0.3) {
-    decision.weapon = 'sword';
+  if (input.distanceToTarget >= minLunge && input.distanceToTarget <= maxLunge) {
+    decision.weapon = random() < pSword ? 'sword' : 'hammer';
     return decision;
   }
 
   if (input.distanceToTarget < playerDangerZone * 0.7 && input.botHP >= input.botMaxHP * 0.35 && input.nearbyEnemiesCount < 2) {
-    decision.weapon = 'sword';
+    decision.weapon = random() < pSword ? 'sword' : 'hammer';
     return decision;
   }
 

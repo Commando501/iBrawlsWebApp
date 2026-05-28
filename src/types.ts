@@ -46,12 +46,15 @@ export interface UniversalSettings {
   aiMovementComplexity?: number;          // 0 to 100%
   aiWeaponSwapIQ?: number;                // 0 to 100%
   aiPlaystyle?: number;                   // Custom AI playstyle slider: 0 = Passive, 50 = Defensive, 100 = Aggressive
+  aiWeaponPrioritization?: number;        // Weapon prioritization weight: 0 = 100% Hammer, 100 = 100% Sword, 50 = Balanced
   enableBurnDecals?: boolean;
   weaponReadyTime: number;
   enableSlide: boolean;
   enableSprint: boolean;
   speedSprint: number;
   speedSlide: number;
+  slideDistance: number;
+  slideCooldown: number;
 }
 
 export interface Keybindings {
@@ -67,6 +70,7 @@ export interface Keybindings {
   weapon2: string;
   attack: string;
   altAttack: string;
+  sprint: string;
   mouseSensitivity?: number;  // multiplier applied to base sensitivity (0.1 – 5.0, default 1.0)
   mouseAcceleration?: number; // power-curve exponent offset (0.0 – 2.0, default 0.0 = linear)
 }
@@ -84,6 +88,7 @@ export const DEFAULT_KEYBINDINGS: Keybindings = {
   weapon2: '2',
   attack: 'lmb',
   altAttack: 'rmb',
+  sprint: 'shift',
   mouseSensitivity: 1.0,
   mouseAcceleration: 0.0,
 };

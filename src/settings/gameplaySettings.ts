@@ -44,12 +44,15 @@ export const DEFAULT_ADMIN_SETTINGS: UniversalSettings = {
   aiMovementComplexity: 50,
   aiWeaponSwapIQ: 50,
   aiPlaystyle: 50,
+  aiWeaponPrioritization: 50,
   enableBurnDecals: true,
   weaponReadyTime: 0.5,
-  enableSlide: true,
-  enableSprint: true,
+  enableSlide: false,
+  enableSprint: false,
   speedSprint: 140,
   speedSlide: 160,
+  slideDistance: 8.0,
+  slideCooldown: 1.5,
 };
 
 export const withDefaultGameplaySettings = (

@@ -23,6 +23,7 @@ import {
   stripPlayerIdentitySettings,
   withDefaultGameplaySettings,
 } from './settings/gameplaySettings';
+import { SETTING_SECTIONS, SETTING_DEFINITIONS } from './settings/settingsSchema';
 import { SaveData, buildSaveData, decryptSaveCode, encryptSaveData } from './settings/saveCodec';
 import {
   DEFAULT_DESKTOP_UI_POSITIONS,
@@ -57,7 +58,7 @@ import { ChatOverlay, ChatMessage } from './components/ChatOverlay';
 import { CharacterPreview } from './components/CharacterPreview';
 import { CharacterLoadout, DEFAULT_LOADOUT, AVAILABLE_PRESETS, HelmetPreset, TorsoPreset, ArmPreset, LegPreset } from './components/VoxelModels';
 
-const APP_VERSION = '0.415';
+const APP_VERSION = '0.425';
 const MAX_PLAYER_NAME_LENGTH = 10;
 
 interface OnlineClient {
@@ -656,6 +657,15 @@ export default function App() {
     bot_6: 'defensive',
     bot_7: 'defensive',
   });
+  const [botWeaponBehaviors, setBotWeaponBehaviors] = useState<Record<string, string>>({
+    main_ai: 'balanced',
+    bot_2: 'balanced',
+    bot_3: 'balanced',
+    bot_4: 'balanced',
+    bot_5: 'balanced',
+    bot_6: 'balanced',
+    bot_7: 'balanced',
+  });
   const [botColors, setBotColors] = useState<Record<string, number>>({
     main_ai: 0,
     bot_2: 120,
@@ -719,6 +729,17 @@ export default function App() {
     try {
       const savedAdmin = localStorage.getItem('grifball_admin_settings');
       let admin = savedAdmin ? JSON.parse(savedAdmin) : {};
+
+      const savedVersion = localStorage.getItem('grifball_settings_version');
+      if (savedVersion !== 'v2') {
+        admin.enableSprint = false;
+        admin.enableSlide = false;
+        try {
+          localStorage.setItem('grifball_settings_version', 'v2');
+          const { playerHue, playerName: _name, ...rest } = admin;
+          localStorage.setItem('grifball_admin_settings', JSON.stringify(rest));
+        } catch (e) {}
+      }
       
       const savedHue = localStorage.getItem('grifball_player_hue');
       const playerHue = savedHue ? parseInt(savedHue, 10) : 200;
@@ -827,6 +848,7 @@ export default function App() {
         localStorage.removeItem('grifball_ui_positions');
         localStorage.removeItem('grifball_admin_settings');
         localStorage.removeItem('grifball_keybindings');
+        localStorage.removeItem('grifball_settings_version');
         
         // Reset states
         const defaultName = `Sptn-${Math.floor(1000 + Math.random() * 9000)}`;
@@ -2220,6 +2242,247 @@ export default function App() {
     }
   };
 
+  // Render a single setting control dynamically based on its definition
+  const renderSetting = (def: any) => {
+    const value = adminSettings[def.key as keyof UniversalSettings];
+
+    switch (def.type) {
+      case 'slider': {
+        const displayValue = def.formatValue ? def.formatValue(value) : `${value}${def.unit || ''}`;
+        const accentClass = def.sectionId === 'hammer' ? 'accent-amber-400' 
+                          : def.sectionId === 'launch' ? 'accent-yellow-400'
+                          : def.sectionId === 'trades' ? 'accent-red-500'
+                          : def.sectionId === 'sword' ? 'accent-[#22d3ee]'
+                          : 'accent-[#38bdf8]';
+        const colorClass = def.sectionId === 'hammer' ? 'text-amber-400' 
+                          : def.sectionId === 'launch' ? 'text-yellow-400'
+                          : def.sectionId === 'trades' ? 'text-red-400'
+                          : def.sectionId === 'sword' ? 'text-[#22d3ee]'
+                          : 'text-[#38bdf8]';
+
+        return (
+          <div key={def.key} className="flex flex-col gap-1">
+            <div className="flex justify-between text-[11px] font-bold uppercase tracking-wider text-white/80">
+              <span>{def.label}</span>
+              <span className={`${colorClass} font-mono`}>{displayValue}</span>
+            </div>
+            <input 
+              type="range" 
+              min={def.min} 
+              max={def.max} 
+              step={def.step}
+              value={(value as number) ?? 0} 
+              onChange={(e) => setAdminSettings(prev => ({ ...prev, [def.key]: parseFloat(e.target.value) }))}
+              className={`w-full ${accentClass} h-1 bg-white/10 rounded-lg appearance-none cursor-pointer`}
+            />
+          </div>
+        );
+      }
+      case 'toggle': {
+        const activeColorClass = def.sectionId === 'hammer' ? 'bg-amber-400' 
+                               : def.sectionId === 'launch' ? 'bg-yellow-400'
+                               : def.sectionId === 'trades' ? 'bg-red-500'
+                               : def.sectionId === 'sword' ? 'bg-[#22d3ee]'
+                               : 'bg-[#38bdf8]';
+
+        return (
+          <div key={def.key} className="flex justify-between items-center text-xs pt-1.5 border-t border-white/5">
+            <div className="flex flex-col text-left">
+              <span className="font-bold text-white/90 font-mono text-[10px]">{def.label}</span>
+              {def.description && <span className="text-[9px] text-white/40 font-mono">{def.description}</span>}
+            </div>
+            <button 
+              onClick={() => setAdminSettings(prev => ({ ...prev, [def.key]: !prev[def.key as keyof UniversalSettings] }))}
+              className={`relative inline-flex h-4 w-8 shrink-0 cursor-pointer rounded-full border border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                value ? activeColorClass : 'bg-white/10'
+              }`}
+            >
+              <span className={`pointer-events-none inline-block h-3.5 w-3.5 transform rounded-full bg-slate-900 shadow transition duration-200 ease-in-out ${
+                value ? 'translate-x-4' : 'translate-x-0'
+              }`} />
+            </button>
+          </div>
+        );
+      }
+      case 'stepper': {
+        const step = def.step ?? 1;
+        const displayValue = def.formatValue ? def.formatValue(value) : `${value}${def.unit || ''}`;
+
+        return (
+          <div key={def.key} className="flex items-center justify-between text-xs py-0.5 border-t border-white/5 first:border-t-0">
+            <div className="flex flex-col text-left">
+              <span className="font-bold text-white/90">{def.label}</span>
+              {def.description && <span className="text-[9px] text-white/40">{def.description}</span>}
+            </div>
+            <div className="flex items-center gap-1.5">
+              <button 
+                onClick={() => setAdminSettings(prev => {
+                  const currentVal = (prev[def.key as keyof UniversalSettings] as number) ?? def.min;
+                  const newVal = Math.max(def.min, parseFloat((currentVal - step).toFixed(2)));
+                  return { ...prev, [def.key]: newVal };
+                })}
+                className="w-7 h-7 rounded bg-white/10 hover:bg-white/20 active:scale-90 flex items-center justify-center font-bold text-sm transition-all cursor-pointer select-none"
+              >
+                -
+              </button>
+              <span className="font-mono text-xs font-bold text-[#38bdf8] w-12 text-center bg-black/40 py-0.5 rounded border border-white/5">
+                {displayValue}
+              </span>
+              <button 
+                onClick={() => setAdminSettings(prev => {
+                  const currentVal = (prev[def.key as keyof UniversalSettings] as number) ?? def.min;
+                  const newVal = Math.min(def.max, parseFloat((currentVal + step).toFixed(2)));
+                  return { ...prev, [def.key]: newVal };
+                })}
+                className="w-7 h-7 rounded bg-white/10 hover:bg-white/20 active:scale-90 flex items-center justify-center font-bold text-sm transition-all cursor-pointer select-none"
+              >
+                +
+              </button>
+            </div>
+          </div>
+        );
+      }
+      case 'select': {
+        const colorClass = def.sectionId === 'hammer' ? 'text-amber-300' 
+                          : def.sectionId === 'launch' ? 'text-yellow-300'
+                          : def.sectionId === 'sword' ? 'text-[#22d3ee]'
+                          : 'text-[#38bdf8]';
+        const focusClass = def.sectionId === 'hammer' ? 'focus:border-amber-400' 
+                          : def.sectionId === 'launch' ? 'focus:border-yellow-400'
+                          : def.sectionId === 'sword' ? 'focus:border-[#22d3ee]'
+                          : 'focus:border-[#38bdf8]';
+
+        if (def.key === 'aiDifficulty') {
+          return (
+            <div key={def.key} className="flex flex-col gap-1">
+              <span className="text-[9px] text-white/50 uppercase tracking-widest font-mono">{def.description}</span>
+              <div className="flex gap-2">
+                <select
+                  value={(value as string) || 'normal'}
+                  onChange={(e) => handleSelectAIPreset(e.target.value)}
+                  className={`flex-1 h-8 bg-black/60 border border-white/10 rounded px-2 text-xs text-[#38bdf8] font-bold uppercase outline-none ${focusClass} cursor-pointer transition-all font-sans`}
+                >
+                  {def.options?.map((opt: any) => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                  {aiPresets.length > 0 && (
+                    <optgroup label="Saved Presets">
+                      {aiPresets.map(preset => (
+                        <option key={preset.id} value={preset.id}>🤖 {preset.name}</option>
+                      ))}
+                    </optgroup>
+                  )}
+                </select>
+                {!['easy', 'normal', 'hard', 'nightmare', 'custom'].includes((value as string) || '') && (
+                  <button
+                    onClick={() => handleDeleteAIPreset(value as string)}
+                    className="px-2 h-8 bg-red-950/40 hover:bg-red-900/60 border border-red-500/30 hover:border-red-500/50 text-red-400 text-xs font-bold uppercase rounded cursor-pointer transition-all"
+                    title="Delete this AI preset"
+                  >
+                    🗑️
+                  </button>
+                )}
+              </div>
+            </div>
+          );
+        }
+
+        return (
+          <div key={def.key} className="flex flex-col gap-1">
+            <div className="flex justify-between text-[11px] font-bold uppercase tracking-wider text-white/80">
+              <span>{def.label}</span>
+              <span className={`${colorClass} font-mono`}>
+                {def.formatValue ? def.formatValue(value) : value}
+              </span>
+            </div>
+            <select
+              value={value as string}
+              onChange={(e) => setAdminSettings(prev => ({ ...prev, [def.key]: e.target.value }))}
+              className={`w-full h-8 bg-black/60 border border-white/10 rounded px-2 text-[11px] ${colorClass} font-bold uppercase outline-none ${focusClass} cursor-pointer transition-all font-sans`}
+            >
+              {def.options?.map((opt: any) => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+          </div>
+        );
+      }
+      case 'color': {
+        const colorVal = (value as string) || '#00ffff';
+        return (
+          <div key={def.key} className="flex justify-between items-center text-xs pt-1.5 border-t border-white/5 gap-2">
+            <div className="flex flex-col text-left">
+              <span className="font-bold text-white/90">{def.label}</span>
+              {def.description && <span className="text-[9px] text-white/40">{def.description}</span>}
+            </div>
+            <div className="flex items-center gap-2">
+              <input 
+                type="color" 
+                value={colorVal} 
+                onChange={(e) => setAdminSettings(prev => ({ ...prev, [def.key]: e.target.value }))}
+                className="w-8 h-8 rounded border border-white/20 bg-transparent cursor-pointer p-0 animate-fade-in"
+                title="Choose Color"
+              />
+              <input 
+                type="text" 
+                value={colorVal} 
+                onChange={(e) => setAdminSettings(prev => ({ ...prev, [def.key]: e.target.value }))}
+                className="w-20 h-7 bg-black/40 border border-white/10 rounded px-2 font-mono text-[10px] tracking-wide text-white focus:border-[#38bdf8] outline-none text-center"
+              />
+            </div>
+          </div>
+        );
+      }
+      default:
+        return null;
+    }
+  };
+
+  const renderSection = (section: any) => {
+    const sectionSettings = SETTING_DEFINITIONS.filter(def => def.sectionId === section.id);
+    const visibleSettings = sectionSettings.filter(def => !def.showIf || def.showIf(adminSettings));
+
+    if (visibleSettings.length === 0) return null;
+
+    const baseClass = section.bgClass || "border border-white/5 rounded-xl p-2.5 bg-white/1 flex flex-col gap-2.5";
+
+    return (
+      <div key={section.id} className={baseClass}>
+        <p className={`text-[10px] ${section.colorClass} font-bold uppercase tracking-widest border-b border-white/5 pb-1 font-mono flex items-center justify-between`}>
+          <span>{section.title}</span>
+          {section.badge && (
+            <span className={`text-[8px] ${section.badgeClass} px-1.5 py-0.2 rounded font-sans tracking-normal uppercase border`}>
+              {section.badge}
+            </span>
+          )}
+        </p>
+
+        {visibleSettings.map(renderSetting)}
+
+        {section.id === 'ai' && adminSettings.aiDifficulty === 'custom' && (
+          <div className="flex flex-col gap-1 pt-1.5 border-t border-white/5 mt-1">
+            <span className="text-[8.5px] text-white/50 uppercase tracking-widest font-mono">Save Custom AI Preset:</span>
+            <div className="flex gap-1.5">
+              <input
+                type="text"
+                placeholder="Preset Name"
+                value={newAiPresetNameInput}
+                onChange={(e) => setNewAiPresetNameInput(e.target.value)}
+                className="flex-1 h-7 bg-black/60 border border-white/10 rounded px-2 text-[10px] text-white outline-none focus:border-[#38bdf8] transition-all font-sans"
+              />
+              <button
+                onClick={() => handleSaveAIPreset(newAiPresetNameInput)}
+                className="px-2.5 h-7 bg-[#38bdf8]/10 hover:bg-[#38bdf8]/20 border border-[#38bdf8]/20 hover:border-[#38bdf8]/40 text-[#38bdf8] text-[9px] font-bold uppercase rounded cursor-pointer transition-all font-sans"
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className="relative w-full h-[100dvh] bg-[#050b1a] text-white overflow-hidden select-none font-sans flex flex-col">
       {/* BACKGROUND ARENA SIMULATION GRID */}
@@ -2257,6 +2520,7 @@ export default function App() {
           botDifficulties={botDifficulties}
           botColors={botColors}
           botBehaviors={botBehaviors}
+          botWeaponBehaviors={botWeaponBehaviors}
           aiPresets={aiPresets}
           deviceInfo={deviceInfo}
           forceMobileControls={forceMobileControls}
@@ -2563,6 +2827,26 @@ export default function App() {
                                   <input type="range" min="0" max="100" step="5"
                                     value={adminSettings.aiPlaystyle ?? 50}
                                     onChange={(e) => setAdminSettings(prev => ({ ...prev, aiPlaystyle: parseInt(e.target.value) }))}
+                                    className="w-full accent-cyan-400 h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
+                                  />
+                                </div>
+
+                                {/* Weapon Prioritization Slider */}
+                                <div className="flex flex-col gap-1.5">
+                                  <div className="flex justify-between text-xs font-mono uppercase tracking-wider text-white/60">
+                                    <span>Weapon Prioritization</span>
+                                    <span className="text-cyan-400 font-bold">
+                                      {(() => {
+                                        const p = adminSettings.aiWeaponPrioritization ?? 50;
+                                        if (p === 50) return 'Balanced (50/50)';
+                                        if (p > 50) return `Sword User (${p}/${100 - p})`;
+                                        return `Hammer User (${100 - p}/${p})`;
+                                      })()}
+                                    </span>
+                                  </div>
+                                  <input type="range" min="0" max="100" step="5"
+                                    value={adminSettings.aiWeaponPrioritization ?? 50}
+                                    onChange={(e) => setAdminSettings(prev => ({ ...prev, aiWeaponPrioritization: parseInt(e.target.value) }))}
                                     className="w-full accent-cyan-400 h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
                                   />
                                 </div>
@@ -3861,13 +4145,13 @@ export default function App() {
       {isPaused && isPlaying && !showUiAdjustment && !matchResult && (
         <div className="absolute inset-0 z-40 flex items-center justify-center bg-slate-950/80 backdrop-blur-xl transition-all duration-300 p-3">
           {!showAdminPanel && !showLightingMenu && !showKeybindsMenu ? (
-            <div className="mobile-modal relative bg-slate-950/80 border border-white/10 backdrop-blur-2xl rounded-2xl p-6 w-[460px] max-w-[calc(100vw-1.5rem)] max-h-[calc(100dvh-1.5rem)] shadow-[0_20px_50px_rgba(0,0,0,0.5)] flex flex-col select-none overflow-hidden animate-in fade-in duration-200">
+            <div className="mobile-modal mobile-pause-modal relative bg-slate-950/80 border border-white/10 backdrop-blur-2xl rounded-2xl p-6 w-[460px] max-w-[calc(100vw-1.5rem)] max-h-[calc(100dvh-1.5rem)] shadow-[0_20px_50px_rgba(0,0,0,0.5)] flex flex-col select-none overflow-hidden animate-in fade-in duration-200">
               {/* Decorative ambient glows */}
               <div className="absolute -top-10 -left-10 w-40 h-40 bg-blue-500/10 rounded-full blur-3xl pointer-events-none" />
               <div className="absolute -bottom-10 -right-10 w-40 h-40 bg-purple-500/10 rounded-full blur-3xl pointer-events-none" />
 
               {/* Logo header */}
-              <div className="text-center mb-5 border-b border-white/10 pb-4 w-full relative z-10">
+              <div className="mobile-pause-header text-center mb-5 border-b border-white/10 pb-4 w-full relative z-10 shrink-0">
                 <p className="text-[10px] text-blue-400 font-black tracking-[0.3em] uppercase mb-1 font-display">SIMULATION PAUSED</p>
                 <h3 className="text-3xl font-sans font-black tracking-tighter italic uppercase text-transparent bg-clip-text bg-gradient-to-r from-white via-slate-100 to-slate-400">
                   GRIFVX PROTO
@@ -3875,7 +4159,7 @@ export default function App() {
               </div>
  
               {/* Primary Pause utility actions */}
-              <div className="w-full flex flex-col gap-4 pointer-events-auto relative z-10">
+              <div className="mobile-pause-scroll w-full flex flex-col gap-4 pointer-events-auto relative z-10 min-h-0 overflow-y-auto overscroll-contain pr-1">
                 <button 
                   id="resume-btn"
                   onClick={handleResumeGame}
@@ -4045,7 +4329,7 @@ export default function App() {
               </div>
 
               {/* Tiny escape instructions */}
-              <p className="mt-5 text-[9px] text-white/40 tracking-wider text-center relative z-10">
+              <p className="mobile-pause-footer mt-5 text-[9px] text-white/40 tracking-wider text-center relative z-10 shrink-0">
                 Press <span className="font-mono text-[10px] text-blue-400 font-bold">ESC</span> inside game window to pause/unpause
               </p>
             </div>
@@ -4135,877 +4419,20 @@ export default function App() {
 
               {/* 3-Column Dense Settings Grid */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pointer-events-auto mb-5 text-left">
-                
                 {/* COLUMN 1: LOCOMOTION, ACTIONS & HEALTH */}
                 <div className="flex flex-col gap-3">
-                  
-                  {/* Core Systems */}
-                  <div className="border border-white/5 rounded-xl p-2.5 bg-white/1 flex flex-col gap-2.5">
-                    <p className="text-[10px] text-cyan-400 font-bold uppercase tracking-widest border-b border-white/5 pb-1 font-mono">1. Core Systems</p>
-                    
-                    {/* Weapon Ready Time */}
-                    <div className="flex flex-col gap-1">
-                      <div className="flex justify-between text-[11px] font-bold uppercase tracking-wider text-white/80">
-                        <span>Weapon Ready Time</span>
-                        <span className="text-[#38bdf8] font-mono">{adminSettings.weaponReadyTime.toFixed(1)}s</span>
-                      </div>
-                      <input 
-                        type="range" 
-                        min="0.0" 
-                        max="3.0" 
-                        step="0.1"
-                        value={adminSettings.weaponReadyTime} 
-                        onChange={(e) => setAdminSettings(prev => ({ ...prev, weaponReadyTime: parseFloat(e.target.value) }))}
-                        className="w-full accent-[#38bdf8] h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
-                      />
-                    </div>
-
-                    {/* Sprint Toggle */}
-                    <div className="flex justify-between items-center text-xs pt-1.5 border-t border-white/5">
-                      <div className="flex flex-col">
-                        <span className="font-bold text-white/90 font-mono text-[10px]">Sprint (Movement)</span>
-                        <span className="text-[9px] text-white/40 font-mono">Sprint by holding Shift forward</span>
-                      </div>
-                      <button 
-                        onClick={() => setAdminSettings(prev => ({ ...prev, enableSprint: !prev.enableSprint }))}
-                        className={`relative inline-flex h-4 w-8 shrink-0 cursor-pointer rounded-full border border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                          adminSettings.enableSprint ? 'bg-[#38bdf8]' : 'bg-white/10'
-                        }`}
-                      >
-                        <span className={`pointer-events-none inline-block h-3.5 w-3.5 transform rounded-full bg-slate-900 shadow transition duration-200 ease-in-out ${
-                          adminSettings.enableSprint ? 'translate-x-4' : 'translate-x-0'
-                        }`} />
-                      </button>
-                    </div>
-
-                    {/* Slide Toggle */}
-                    <div className="flex justify-between items-center text-xs pt-1.5 border-t border-white/5">
-                      <div className="flex flex-col">
-                        <span className="font-bold text-white/90 font-mono text-[10px]">Slide (Movement)</span>
-                        <span className="text-[9px] text-white/40 font-mono">Slide by crouching while running forward</span>
-                      </div>
-                      <button 
-                        onClick={() => setAdminSettings(prev => ({ ...prev, enableSlide: !prev.enableSlide }))}
-                        className={`relative inline-flex h-4 w-8 shrink-0 cursor-pointer rounded-full border border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                          adminSettings.enableSlide ? 'bg-[#38bdf8]' : 'bg-white/10'
-                        }`}
-                      >
-                        <span className={`pointer-events-none inline-block h-3.5 w-3.5 transform rounded-full bg-slate-900 shadow transition duration-200 ease-in-out ${
-                          adminSettings.enableSlide ? 'translate-x-4' : 'translate-x-0'
-                        }`} />
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* General Configuration */}
-                  <div className="border border-white/5 rounded-xl p-2.5 bg-white/1 flex flex-col gap-2">
-                    <p className="text-[10px] text-emerald-400 font-bold uppercase tracking-widest border-b border-white/5 pb-1 font-mono">2. Health & Protection</p>
-                    
-                    {/* Universal HP */}
-                    <div className="flex items-center justify-between text-xs py-0.5">
-                      <div className="flex flex-col">
-                        <span className="font-bold text-white/90">Universal HP</span>
-                        <span className="text-[9px] text-white/40">Hits needed to kill</span>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <button 
-                          onClick={() => setAdminSettings(prev => ({ ...prev, maxHP: Math.max(1, prev.maxHP - 1) }))}
-                          className="w-7 h-7 rounded bg-white/10 hover:bg-white/20 active:scale-90 flex items-center justify-center font-bold text-sm transition-all cursor-pointer select-none"
-                        >
-                          -
-                        </button>
-                        <span className="font-mono text-xs font-bold text-[#38bdf8] w-12 text-center bg-black/40 py-0.5 rounded border border-white/5">
-                          {adminSettings.maxHP} HP
-                        </span>
-                        <button 
-                          onClick={() => setAdminSettings(prev => ({ ...prev, maxHP: Math.min(100, prev.maxHP + 1) }))}
-                          className="w-7 h-7 rounded bg-white/10 hover:bg-white/20 active:scale-90 flex items-center justify-center font-bold text-sm transition-all cursor-pointer select-none"
-                        >
-                          +
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Spawn Invulnerability Window */}
-                    <div className="flex items-center justify-between text-xs pt-1 border-t border-white/5">
-                      <div className="flex flex-col">
-                        <span className="font-bold text-white/90">Spawn Shield</span>
-                        <span className="text-[9px] text-white/40">Protection duration</span>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <button 
-                          onClick={() => setAdminSettings(prev => ({ ...prev, respawnInvulnerabilityDuration: Math.max(0.0, parseFloat((prev.respawnInvulnerabilityDuration - 0.1).toFixed(1))) }))}
-                          className="w-7 h-7 rounded bg-white/10 hover:bg-white/20 active:scale-90 flex items-center justify-center font-bold text-sm transition-all cursor-pointer select-none"
-                          title="Decrease Duration"
-                        >
-                          -
-                        </button>
-                        <span className="font-mono text-xs font-bold text-[#38bdf8] w-12 text-center bg-black/40 py-0.5 rounded border border-white/5">
-                          {adminSettings.respawnInvulnerabilityDuration.toFixed(1)}s
-                        </span>
-                        <button 
-                          onClick={() => setAdminSettings(prev => ({ ...prev, respawnInvulnerabilityDuration: Math.min(5.0, parseFloat((prev.respawnInvulnerabilityDuration + 0.1).toFixed(1))) }))}
-                          className="w-7 h-7 rounded bg-white/10 hover:bg-white/20 active:scale-90 flex items-center justify-center font-bold text-sm transition-all cursor-pointer select-none"
-                          title="Increase Duration"
-                        >
-                          +
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Velocity Modifiers */}
-                  <div className="border border-white/5 rounded-xl p-2.5 bg-white/1 flex flex-col gap-2.5">
-                    <p className="text-[10px] text-blue-400 font-bold uppercase tracking-widest border-b border-white/5 pb-1 font-mono">3. Velocity Modifiers</p>
-                    
-                    {/* Forward Speed */}
-                    <div className="flex flex-col gap-1">
-                      <div className="flex justify-between text-[11px] font-bold uppercase tracking-wider text-white/80">
-                        <span>Forward Speed</span>
-                        <span className="text-[#38bdf8] font-mono">{adminSettings.speedForward}%</span>
-                      </div>
-                      <input 
-                        type="range" 
-                        min="20" 
-                        max="300" 
-                        value={adminSettings.speedForward} 
-                        onChange={(e) => setAdminSettings(prev => ({ ...prev, speedForward: parseInt(e.target.value) }))}
-                        className="w-full accent-[#38bdf8] h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
-                      />
-                    </div>
-
-                    {/* Sprint Speed */}
-                    <div className="flex flex-col gap-1">
-                      <div className="flex justify-between text-[11px] font-bold uppercase tracking-wider text-white/80">
-                        <span>Sprint Speed</span>
-                        <span className="text-[#38bdf8] font-mono">{adminSettings.speedSprint}%</span>
-                      </div>
-                      <input 
-                        type="range" 
-                        min="20" 
-                        max="300" 
-                        step="5"
-                        value={adminSettings.speedSprint} 
-                        onChange={(e) => setAdminSettings(prev => ({ ...prev, speedSprint: parseInt(e.target.value) }))}
-                        className="w-full accent-[#38bdf8] h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
-                      />
-                    </div>
-
-                    {/* Slide Speed */}
-                    <div className="flex flex-col gap-1">
-                      <div className="flex justify-between text-[11px] font-bold uppercase tracking-wider text-white/80">
-                        <span>Slide Speed</span>
-                        <span className="text-[#38bdf8] font-mono">{adminSettings.speedSlide}%</span>
-                      </div>
-                      <input 
-                        type="range" 
-                        min="20" 
-                        max="300" 
-                        step="5"
-                        value={adminSettings.speedSlide} 
-                        onChange={(e) => setAdminSettings(prev => ({ ...prev, speedSlide: parseInt(e.target.value) }))}
-                        className="w-full accent-[#38bdf8] h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
-                      />
-                    </div>
-
-                    {/* Side Speed */}
-                    <div className="flex flex-col gap-1">
-                      <div className="flex justify-between text-[11px] font-bold uppercase tracking-wider text-white/80">
-                        <span>Strafe Speed</span>
-                        <span className="text-[#38bdf8] font-mono">{adminSettings.speedSide}%</span>
-                      </div>
-                      <input 
-                        type="range" 
-                        min="20" 
-                        max="300" 
-                        value={adminSettings.speedSide} 
-                        onChange={(e) => setAdminSettings(prev => ({ ...prev, speedSide: parseInt(e.target.value) }))}
-                        className="w-full accent-[#38bdf8] h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
-                      />
-                    </div>
-
-                    {/* Backward Speed */}
-                    <div className="flex flex-col gap-1">
-                      <div className="flex justify-between text-[11px] font-bold uppercase tracking-wider text-white/80">
-                        <span>Backward Speed</span>
-                        <span className="text-[#38bdf8] font-mono">{adminSettings.speedBackward}%</span>
-                      </div>
-                      <input 
-                        type="range" 
-                        min="20" 
-                        max="300" 
-                        value={adminSettings.speedBackward} 
-                        onChange={(e) => setAdminSettings(prev => ({ ...prev, speedBackward: parseInt(e.target.value) }))}
-                        className="w-full accent-[#38bdf8] h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Dash Evades */}
-                  <div className="border border-white/5 rounded-xl p-2.5 bg-white/1 flex flex-col gap-2.5">
-                    <p className="text-[10px] text-cyan-400 font-bold uppercase tracking-widest border-b border-white/5 pb-1 font-mono">4. Dash Thrusters</p>
-                    
-                    {/* Dash Distance */}
-                    <div className="flex flex-col gap-1">
-                      <div className="flex justify-between text-[11px] font-bold uppercase tracking-wider text-white/80">
-                        <span>Dash Distance</span>
-                        <span className="text-[#38bdf8] font-mono">{adminSettings.dashDistance.toFixed(1)}m</span>
-                      </div>
-                      <input 
-                        type="range" 
-                        min="2.0" 
-                        max="15.0" 
-                        step="0.1"
-                        value={adminSettings.dashDistance} 
-                        onChange={(e) => setAdminSettings(prev => ({ ...prev, dashDistance: parseFloat(e.target.value) }))}
-                        className="w-full accent-[#38bdf8] h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
-                      />
-                    </div>
-
-                    {/* Dash Duration */}
-                    <div className="flex flex-col gap-1">
-                      <div className="flex justify-between text-[11px] font-bold uppercase tracking-wider text-white/80">
-                        <span>Dash Travel Time</span>
-                        <span className="text-[#38bdf8] font-mono">{adminSettings.dashDuration.toFixed(2)}s</span>
-                      </div>
-                      <input 
-                        type="range" 
-                        min="0.10" 
-                        max="1.00" 
-                        step="0.05"
-                        value={adminSettings.dashDuration} 
-                        onChange={(e) => setAdminSettings(prev => ({ ...prev, dashDuration: parseFloat(e.target.value) }))}
-                        className="w-full accent-[#38bdf8] h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
-                      />
-                    </div>
-
-                    {/* Dash Cooldown */}
-                    <div className="flex justify-between items-center text-xs pt-1 border-t border-white/5">
-                      <div className="flex flex-col">
-                        <span className="font-bold text-white/90">Dash Cooldown</span>
-                        <span className="text-[9px] text-white/40">Time between boosts</span>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <button 
-                          onClick={() => setAdminSettings(prev => ({ ...prev, dashCooldown: Math.max(0.5, parseFloat((prev.dashCooldown - 0.1).toFixed(1))) }))}
-                          className="w-7 h-7 rounded bg-white/10 hover:bg-white/20 active:scale-90 flex items-center justify-center font-bold text-sm transition-all cursor-pointer select-none"
-                          title="Decrease Cooldown"
-                        >
-                          -
-                        </button>
-                        <span className="font-mono text-xs font-bold text-[#38bdf8] w-12 text-center bg-black/40 py-0.5 rounded border border-white/5">
-                          {adminSettings.dashCooldown.toFixed(1)}s
-                        </span>
-                        <button 
-                          onClick={() => setAdminSettings(prev => ({ ...prev, dashCooldown: Math.min(10.0, parseFloat((prev.dashCooldown + 0.1).toFixed(1))) }))}
-                          className="w-7 h-7 rounded bg-white/10 hover:bg-white/20 active:scale-90 flex items-center justify-center font-bold text-sm transition-all cursor-pointer select-none"
-                          title="Increase Cooldown"
-                        >
-                          +
-                        </button>
-                      </div>
-                    </div>
-                  </div>
+                  {SETTING_SECTIONS.filter(s => s.column === 1).map(renderSection)}
                 </div>
 
                 {/* COLUMN 2: GRAVITY HAMMER & JUMPING */}
                 <div className="flex flex-col gap-3">
-                  
-                  {/* Hammer Combat */}
-                  <div className="border border-white/5 rounded-xl p-2.5 bg-white/1 flex flex-col gap-2.5">
-                    <p className="text-[10px] text-amber-400 font-bold uppercase tracking-widest border-b border-white/5 pb-1 font-mono">5. Gravity Hammer</p>
-                    
-                    {/* Attack Range */}
-                    <div className="flex flex-col gap-1">
-                      <div className="flex justify-between text-[11px] font-bold uppercase tracking-wider text-white/80">
-                        <span>Shockwave Reach</span>
-                        <span className="text-amber-400 font-mono">{adminSettings.attackRange.toFixed(1)}m</span>
-                      </div>
-                      <input 
-                        type="range" 
-                        min="1.0" 
-                        max="10.0" 
-                        step="0.1"
-                        value={adminSettings.attackRange} 
-                        onChange={(e) => setAdminSettings(prev => ({ ...prev, attackRange: parseFloat(e.target.value) }))}
-                        className="w-full accent-amber-400 h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
-                      />
-                    </div>
-
-                    {/* Attack Sphere size */}
-                    <div className="flex flex-col gap-1">
-                      <div className="flex justify-between text-[11px] font-bold uppercase tracking-wider text-white/80">
-                        <span>Sphere Blast Radius</span>
-                        <span className="text-amber-400 font-mono">{adminSettings.attackRadius.toFixed(1)}m</span>
-                      </div>
-                      <input 
-                        type="range" 
-                        min="1.0" 
-                        max="15.0" 
-                        step="0.1"
-                        value={adminSettings.attackRadius} 
-                        onChange={(e) => setAdminSettings(prev => ({ ...prev, attackRadius: parseFloat(e.target.value) }))}
-                        className="w-full accent-amber-400 h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
-                      />
-                    </div>
-
-                    {/* Hammer Reload Time */}
-                    <div className="flex flex-col gap-1">
-                      <div className="flex justify-between text-[11px] font-bold uppercase tracking-wider text-white/80">
-                        <span>Hammer Recovery Delay</span>
-                        <span className="text-amber-400 font-mono">{adminSettings.hammerReloadTime.toFixed(1)}s</span>
-                      </div>
-                      <input 
-                        type="range" 
-                        min="0.1" 
-                        max="5.0" 
-                        step="0.1"
-                        value={adminSettings.hammerReloadTime} 
-                        onChange={(e) => setAdminSettings(prev => ({ ...prev, hammerReloadTime: parseFloat(e.target.value) }))}
-                        className="w-full accent-amber-400 h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
-                      />
-                    </div>
-
-                    {/* Hammer Splash VFX */}
-                    <div className="flex flex-col gap-1">
-                      <div className="flex justify-between text-[11px] font-bold uppercase tracking-wider text-white/80">
-                        <span>Hammer Splash VFX</span>
-                        <span className="text-amber-400 font-mono">
-                          {(adminSettings.hammerSplashVfx ?? 'current') === 'neonBlueFlash' ? 'Flash' : 'Current'}
-                        </span>
-                      </div>
-                      <select
-                        value={adminSettings.hammerSplashVfx ?? 'current'}
-                        onChange={(e) => setAdminSettings(prev => ({
-                          ...prev,
-                          hammerSplashVfx: e.target.value as UniversalSettings['hammerSplashVfx']
-                        }))}
-                        className="w-full h-8 bg-black/60 border border-white/10 rounded px-2 text-[11px] text-amber-300 font-bold uppercase outline-none focus:border-amber-400 cursor-pointer transition-all font-sans"
-                      >
-                        <option value="current">Current Shockwave</option>
-                        <option value="neonBlueFlash">Neon Blue Flash</option>
-                      </select>
-                    </div>
-
-                    {/* Floor burn decal toggle */}
-                    <div className="flex justify-between items-center text-xs pt-1.5 border-t border-white/5">
-                      <div className="flex flex-col">
-                        <span className="font-bold text-white/90 font-mono text-[10px]">Draw Floor Burn Decals</span>
-                        <span className="text-[9px] text-white/40 font-mono">Flat neon blue blast decal</span>
-                      </div>
-                      <button 
-                        onClick={() => setAdminSettings(prev => ({ ...prev, enableBurnDecals: !prev.enableBurnDecals }))}
-                        className={`relative inline-flex h-4 w-8 shrink-0 cursor-pointer rounded-full border border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                          adminSettings.enableBurnDecals ? 'bg-[#38bdf8]' : 'bg-white/10'
-                        }`}
-                      >
-                        <span className={`pointer-events-none inline-block h-3.5 w-3.5 transform rounded-full bg-slate-900 shadow transition duration-200 ease-in-out ${
-                          adminSettings.enableBurnDecals ? 'translate-x-4' : 'translate-x-0'
-                        }`} />
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Hammer Jumping */}
-                  <div className="border border-white/5 rounded-xl p-2.5 bg-white/1 flex flex-col gap-2.5">
-                    <p className="text-[10px] text-yellow-400 font-bold uppercase tracking-widest border-b border-white/5 pb-1 font-mono">6. Gravity Launch Jump</p>
-                    
-                    {/* Jump Power */}
-                    <div className="flex flex-col gap-1">
-                      <div className="flex justify-between text-[11px] font-bold uppercase tracking-wider text-white/80">
-                        <span>Launch Upwards Boost</span>
-                        <span className="text-yellow-400 font-mono">+{adminSettings.hammerJumpPower.toFixed(1)} m/s</span>
-                      </div>
-                      <input 
-                        type="range" 
-                        min="0.0" 
-                        max="15.0" 
-                        step="0.5"
-                        value={adminSettings.hammerJumpPower} 
-                        onChange={(e) => setAdminSettings(prev => ({ ...prev, hammerJumpPower: parseFloat(e.target.value) }))}
-                        className="w-full accent-yellow-400 h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
-                      />
-                    </div>
-
-                    {/* Trigger Radius */}
-                    <div className="flex flex-col gap-1">
-                      <div className="flex justify-between text-[11px] font-bold uppercase tracking-wider text-white/80">
-                        <span>Ground Trigger Zone</span>
-                        <span className="text-yellow-400 font-mono">{adminSettings.hammerJumpTriggerRadius.toFixed(1)}m</span>
-                      </div>
-                      <input 
-                        type="range" 
-                        min="1.0" 
-                        max="10.0" 
-                        step="0.1"
-                        value={adminSettings.hammerJumpTriggerRadius} 
-                        onChange={(e) => setAdminSettings(prev => ({ ...prev, hammerJumpTriggerRadius: parseFloat(e.target.value) }))}
-                        className="w-full accent-yellow-400 h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
-                      />
-                    </div>
-
-                    {/* Jump Window */}
-                    <div className="flex flex-col gap-1">
-                      <div className="flex justify-between text-[11px] font-bold uppercase tracking-wider text-white/80">
-                        <span>Timing Trigger Window</span>
-                        <span className="text-yellow-400 font-mono">{adminSettings.hammerJumpWindow.toFixed(2)}s</span>
-                      </div>
-                      <input 
-                        type="range" 
-                        min="0.10" 
-                        max="2.00" 
-                        step="0.05"
-                        value={adminSettings.hammerJumpWindow} 
-                        onChange={(e) => setAdminSettings(prev => ({ ...prev, hammerJumpWindow: parseFloat(e.target.value) }))}
-                        className="w-full accent-yellow-400 h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
-                      />
-                    </div>
-
-                    {/* Ground zone visualization toggle */}
-                    <div className="flex justify-between items-center text-xs pt-1 border-t border-white/5">
-                      <div className="flex flex-col">
-                        <span className="font-bold text-white/90 font-mono text-[10px]">Draw Blast Zone Ring</span>
-                        <span className="text-[9px] text-white/40 font-mono">Render circle on ground</span>
-                      </div>
-                      <button 
-                        onClick={() => setAdminSettings(prev => ({ ...prev, visualizeJumpZone: !prev.visualizeJumpZone }))}
-                        className={`relative inline-flex h-4 w-8 shrink-0 cursor-pointer rounded-full border border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                          adminSettings.visualizeJumpZone ? 'bg-yellow-400' : 'bg-white/10'
-                        }`}
-                      >
-                        <span className={`pointer-events-none inline-block h-3.5 w-3.5 transform rounded-full bg-slate-900 shadow transition duration-200 ease-in-out ${
-                          adminSettings.visualizeJumpZone ? 'translate-x-4' : 'translate-x-0'
-                        }`} />
-                      </button>
-                    </div>
-                  </div>
-                  {/* AI Neural Configuration Section (New!) */}
-                  <div className="border border-white/5 rounded-xl p-2.5 bg-white/1 flex flex-col gap-2.5">
-                    <p className="text-[10px] text-cyan-400 font-bold uppercase tracking-widest border-b border-white/5 pb-1 font-mono flex items-center justify-between">
-                      <span>9. AI Combat Neural Matrix</span>
-                      <span className="text-[8px] bg-cyan-500/20 text-cyan-300 px-1.5 py-0.2 rounded font-sans tracking-normal uppercase border border-cyan-500/30">Intelligence</span>
-                    </p>
-
-                    {/* Preset dropdown */}
-                    <div className="flex flex-col gap-1">
-                      <span className="text-[9px] text-white/50 uppercase tracking-widest font-mono">Cognitive Matrix Preset:</span>
-                      <div className="flex gap-2">
-                        <select
-                          value={adminSettings.aiDifficulty || 'normal'}
-                          onChange={(e) => handleSelectAIPreset(e.target.value)}
-                          className="flex-1 h-8 bg-black/60 border border-white/10 rounded px-2 text-xs text-cyan-400 font-bold uppercase outline-none focus:border-cyan-400 cursor-pointer transition-all font-sans"
-                        >
-                          <option value="easy">🟢 Easy (Sub-Normal)</option>
-                          <option value="normal">🔵 Normal (Adaptive)</option>
-                          <option value="hard">🟡 Hard (Punishing)</option>
-                          <option value="nightmare">🔴 Nightmare (Grandmaster)</option>
-                          <option value="custom">⚙️ Custom Matrix Override</option>
-                          {aiPresets.length > 0 && (
-                            <optgroup label="Saved Presets">
-                              {aiPresets.map(preset => (
-                                <option key={preset.id} value={preset.id}>🤖 {preset.name}</option>
-                              ))}
-                            </optgroup>
-                          )}
-                        </select>
-                        {!['easy', 'normal', 'hard', 'nightmare', 'custom'].includes(adminSettings.aiDifficulty || '') && (
-                          <button
-                            onClick={() => handleDeleteAIPreset(adminSettings.aiDifficulty!)}
-                            className="px-2 h-8 bg-red-950/40 hover:bg-red-900/60 border border-red-500/30 hover:border-red-500/50 text-red-400 text-xs font-bold uppercase rounded cursor-pointer transition-all"
-                            title="Delete this AI preset"
-                          >
-                            🗑️
-                          </button>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Custom Matrix Override Controls */}
-                    {adminSettings.aiDifficulty === 'custom' && (
-                      <div className="flex flex-col gap-2.5 pt-1 border-t border-white/5 mt-1 animate-fade-in">
-                        {/* Reaction Latency */}
-                        <div className="flex flex-col gap-1">
-                          <div className="flex justify-between text-[9px] font-mono uppercase tracking-wider text-white/60">
-                            <span>Reflex Latency</span>
-                            <span className="text-cyan-400 font-bold">{(adminSettings.aiReactionLatency ?? 0.25).toFixed(2)}s</span>
-                          </div>
-                          <input 
-                            type="range" 
-                            min="0.00" 
-                            max="1.50" 
-                            step="0.05"
-                            value={adminSettings.aiReactionLatency ?? 0.25} 
-                            onChange={(e) => setAdminSettings(prev => ({ ...prev, aiReactionLatency: parseFloat(e.target.value) }))}
-                            className="w-full accent-cyan-400 h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
-                          />
-                        </div>
-
-                        {/* Anticipation Factor */}
-                        <div className="flex flex-col gap-1">
-                          <div className="flex justify-between text-[9px] font-mono uppercase tracking-wider text-white/60">
-                            <span>Anticipation Engine</span>
-                            <span className="text-cyan-400 font-bold">{Math.round((adminSettings.aiAnticipationFactor ?? 0.40) * 100)}%</span>
-                          </div>
-                          <input 
-                            type="range" 
-                            min="0.00" 
-                            max="1.00" 
-                            step="0.05"
-                            value={adminSettings.aiAnticipationFactor ?? 0.40} 
-                            onChange={(e) => setAdminSettings(prev => ({ ...prev, aiAnticipationFactor: parseFloat(e.target.value) }))}
-                            className="w-full accent-cyan-400 h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
-                          />
-                        </div>
-
-                        {/* Movement Complexity */}
-                        <div className="flex flex-col gap-1">
-                          <div className="flex justify-between text-[9px] font-mono uppercase tracking-wider text-white/60">
-                            <span>Strafe & Evade Complexity</span>
-                            <span className="text-cyan-400 font-bold">{adminSettings.aiMovementComplexity ?? 50}%</span>
-                          </div>
-                          <input 
-                            type="range" 
-                            min="0" 
-                            max="100" 
-                            step="5"
-                            value={adminSettings.aiMovementComplexity ?? 50} 
-                            onChange={(e) => setAdminSettings(prev => ({ ...prev, aiMovementComplexity: parseInt(e.target.value) }))}
-                            className="w-full accent-cyan-400 h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
-                          />
-                        </div>
-
-                        {/* Weapon Swap IQ */}
-                        <div className="flex flex-col gap-1">
-                          <div className="flex justify-between text-[9px] font-mono uppercase tracking-wider text-white/60">
-                            <span>Weapon Swapping IQ</span>
-                            <span className="text-cyan-400 font-bold">{adminSettings.aiWeaponSwapIQ ?? 50}%</span>
-                          </div>
-                          <input 
-                            type="range" 
-                            min="0" 
-                            max="100" 
-                            step="5"
-                            value={adminSettings.aiWeaponSwapIQ ?? 50} 
-                            onChange={(e) => setAdminSettings(prev => ({ ...prev, aiWeaponSwapIQ: parseInt(e.target.value) }))}
-                            className="w-full accent-cyan-400 h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
-                          />
-                        </div>
-
-                        {/* Playstyle Slider */}
-                        <div className="flex flex-col gap-1">
-                          <div className="flex justify-between text-[9px] font-mono uppercase tracking-wider text-white/60">
-                            <span>Combat Playstyle</span>
-                            <span className="text-cyan-400 font-bold">
-                              {(() => {
-                                const p = adminSettings.aiPlaystyle ?? 50;
-                                if (p === 0) return 'Passive (0)';
-                                if (p < 50) return `Passive-Defensive (${p})`;
-                                if (p === 50) return 'Defensive (50)';
-                                if (p < 100) return `Defensive-Aggro (${p})`;
-                                return 'Aggressive (100)';
-                              })()}
-                            </span>
-                          </div>
-                          <input type="range" min="0" max="100" step="5"
-                            value={adminSettings.aiPlaystyle ?? 50}
-                            onChange={(e) => setAdminSettings(prev => ({ ...prev, aiPlaystyle: parseInt(e.target.value) }))}
-                            className="w-full accent-cyan-400 h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
-                          />
-                        </div>
-
-                        {/* Save Custom AI Presets */}
-                        <div className="flex flex-col gap-1 pt-1.5 border-t border-white/5 mt-1">
-                          <span className="text-[8.5px] text-white/50 uppercase tracking-widest font-mono">Save Custom AI Preset:</span>
-                          <div className="flex gap-1.5">
-                            <input
-                              type="text"
-                              placeholder="Preset Name"
-                              value={newAiPresetNameInput}
-                              onChange={(e) => setNewAiPresetNameInput(e.target.value)}
-                              className="flex-1 h-7 bg-black/60 border border-white/10 rounded px-2 text-[10px] text-white outline-none focus:border-cyan-400 transition-all font-sans"
-                            />
-                            <button
-                              onClick={() => handleSaveAIPreset(newAiPresetNameInput)}
-                              className="px-2.5 h-7 bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/20 hover:border-cyan-500/40 text-cyan-400 text-[9px] font-bold uppercase rounded cursor-pointer transition-all font-sans"
-                            >
-                              Save
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
+                  {SETTING_SECTIONS.filter(s => s.column === 2).map(renderSection)}
                 </div>
 
                 {/* COLUMN 3: ENERGY SWORD & TRADING CONFIGS */}
                 <div className="flex flex-col gap-3">
-                  
-                  {/* Energy Sword */}
-                  <div className="border border-white/5 rounded-xl p-2.5 bg-white/1 flex flex-col gap-2.5">
-                    <p className="text-[10px] text-[#22d3ee] font-bold uppercase tracking-widest border-b border-white/5 pb-1 font-mono">7. Energy Sword</p>
-                    
-                    {/* Lunge Distance */}
-                    <div className="flex flex-col gap-1">
-                      <div className="flex justify-between text-[11px] font-bold uppercase tracking-wider text-white/80">
-                        <span>Lunge Distance (Red Reticle)</span>
-                        <span className="text-[#22d3ee] font-mono">{adminSettings.swordLungeDistance.toFixed(1)}m</span>
-                      </div>
-                      <input 
-                        type="range" 
-                        min="1.0" 
-                        max="25.0" 
-                        step="0.5"
-                        value={adminSettings.swordLungeDistance} 
-                        onChange={(e) => setAdminSettings(prev => ({ ...prev, swordLungeDistance: parseFloat(e.target.value) }))}
-                        className="w-full accent-[#22d3ee] h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
-                      />
-                    </div>
-
-                    {/* Lunge Speed */}
-                    <div className="flex flex-col gap-1">
-                      <div className="flex justify-between text-[11px] font-bold uppercase tracking-wider text-white/80">
-                        <span>Lunge Glide Velocity</span>
-                        <span className="text-[#22d3ee] font-mono">{adminSettings.swordLungeSpeed.toFixed(1)}m/s</span>
-                      </div>
-                      <input 
-                        type="range" 
-                        min="5.0" 
-                        max="50.0" 
-                        step="1.0"
-                        value={adminSettings.swordLungeSpeed} 
-                        onChange={(e) => setAdminSettings(prev => ({ ...prev, swordLungeSpeed: parseFloat(e.target.value) }))}
-                        className="w-full accent-[#22d3ee] h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
-                      />
-                    </div>
-
-                    {/* Sword Lunge VFX */}
-                    <div className="flex flex-col gap-1">
-                      <div className="flex justify-between text-[11px] font-bold uppercase tracking-wider text-white/80">
-                        <span>Sword Lunge VFX</span>
-                        <span className="text-[#22d3ee] font-mono">
-                          {(adminSettings.swordLungeVfx ?? 'current') === 'speedLineTrail' ? 'Speed Lines' : 'Current'}
-                        </span>
-                      </div>
-                      <select
-                        value={adminSettings.swordLungeVfx ?? 'current'}
-                        onChange={(e) => setAdminSettings(prev => ({
-                          ...prev,
-                          swordLungeVfx: e.target.value as UniversalSettings['swordLungeVfx']
-                        }))}
-                        className="w-full h-8 bg-black/60 border border-white/10 rounded px-2 text-[11px] text-[#22d3ee] font-bold uppercase outline-none focus:border-[#22d3ee] cursor-pointer transition-all font-sans"
-                      >
-                        <option value="current">Current Energy Trail</option>
-                        <option value="speedLineTrail">Speed Line Trail</option>
-                      </select>
-                    </div>
-
-                    {/* Row of quick values */}
-                    <div className="grid grid-cols-2 gap-2 text-[10px] pt-1.5 border-t border-white/5">
-                      <div>
-                        <span className="text-white/40 block uppercase tracking-wider">Slash Duration</span>
-                        <input 
-                          type="range" 
-                          min="0.05" 
-                          max="1.00" 
-                          step="0.01"
-                          value={adminSettings.swordSlashSpeed} 
-                          onChange={(e) => setAdminSettings(prev => ({ ...prev, swordSlashSpeed: parseFloat(e.target.value) }))}
-                          className="w-full accent-[#22d3ee] h-1 mt-1 bg-white/10 rounded appearance-none cursor-pointer"
-                        />
-                        <span className="text-[#22d3ee] font-mono mt-0.5 block">{adminSettings.swordSlashSpeed.toFixed(2)}s</span>
-                      </div>
-                      <div>
-                        <span className="text-white/40 block uppercase tracking-wider">Slash Reload</span>
-                        <input 
-                          type="range" 
-                          min="0.1" 
-                          max="3.0" 
-                          step="0.1"
-                          value={adminSettings.swordSlashReload} 
-                          onChange={(e) => setAdminSettings(prev => ({ ...prev, swordSlashReload: parseFloat(e.target.value) }))}
-                          className="w-full accent-[#22d3ee] h-1 mt-1 bg-white/10 rounded appearance-none cursor-pointer"
-                        />
-                        <span className="text-[#22d3ee] font-mono mt-0.5 block">{adminSettings.swordSlashReload.toFixed(1)}s</span>
-                      </div>
-                    </div>
-
-                    {/* Lunge Reload */}
-                    <div className="flex flex-col gap-1 pt-1.5 border-t border-white/5">
-                      <div className="flex justify-between text-[11px] font-bold uppercase tracking-wider text-white/80">
-                        <span>Lunge Recovery Delay</span>
-                        <span className="text-[#22d3ee] font-mono">{adminSettings.swordLungeReload.toFixed(1)}s</span>
-                      </div>
-                      <input 
-                        type="range" 
-                        min="0.1" 
-                        max="5.0" 
-                        step="0.1"
-                        value={adminSettings.swordLungeReload} 
-                        onChange={(e) => setAdminSettings(prev => ({ ...prev, swordLungeReload: parseFloat(e.target.value) }))}
-                        className="w-full accent-[#22d3ee] h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Weapon Trading Controls Section (New!) */}
-                  <div className="border border-red-900/30 rounded-xl p-2.5 bg-red-950/10 flex flex-col gap-2 border-red-500/20 shadow-[inset_0_0_12px_rgba(239,68,68,0.05)]">
-                    <p className="text-[10px] text-red-400 font-bold uppercase tracking-widest border-b border-red-500/20 pb-1 font-mono flex items-center justify-between">
-                      <span>7. Combat Trades</span>
-                      <span className="text-[8px] bg-red-500/20 text-red-300 px-1.5 py-0.2 rounded font-sans tracking-normal uppercase border border-red-500/30">Lethal window</span>
-                    </p>
-                    
-                    {/* Sword vs Sword Group */}
-                    <div className="flex flex-col gap-1 text-xs">
-                      <div className="flex justify-between items-center">
-                        <span className="font-bold text-white/90">Sword vs. Sword Trades</span>
-                        <button 
-                          onClick={() => setAdminSettings(prev => ({ ...prev, enableSwordTrade: !prev.enableSwordTrade }))}
-                          className={`relative inline-flex h-4 w-8 shrink-0 cursor-pointer rounded-full border border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                            adminSettings.enableSwordTrade ? 'bg-red-500' : 'bg-white/10'
-                          }`}
-                        >
-                          <span className={`pointer-events-none inline-block h-3.5 w-3.5 transform rounded-full bg-slate-900 shadow transition duration-200 ease-in-out ${
-                            adminSettings.enableSwordTrade ? 'translate-x-4' : 'translate-x-0'
-                          }`} />
-                        </button>
-                      </div>
-                      {adminSettings.enableSwordTrade && (
-                        <div className="flex flex-col gap-0.5 mt-0.5 bg-black/30 p-1.5 rounded animate-fade-in border border-white/5">
-                          <div className="flex justify-between text-[10px] text-white/60">
-                            <span>Sword Trade Timing</span>
-                            <span className="text-red-400 font-mono font-bold">{adminSettings.swordTradeWindow} ms</span>
-                          </div>
-                          <input 
-                            type="range" 
-                            min="50" 
-                            max="1000" 
-                            step="10"
-                            value={adminSettings.swordTradeWindow} 
-                            onChange={(e) => setAdminSettings(prev => ({ ...prev, swordTradeWindow: parseInt(e.target.value) }))}
-                            className="w-full accent-red-500 h-1 bg-white/10 rounded appearance-none cursor-pointer"
-                          />
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Hammer vs Sword Group */}
-                    <div className="flex flex-col gap-1 text-xs pt-1.5 border-t border-red-500/10">
-                      <div className="flex justify-between items-center">
-                        <span className="font-bold text-white/90">Hammer vs. Sword Trades</span>
-                        <button 
-                          onClick={() => setAdminSettings(prev => ({ ...prev, enableHammerSwordTrade: !prev.enableHammerSwordTrade }))}
-                          className={`relative inline-flex h-4 w-8 shrink-0 cursor-pointer rounded-full border border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                            adminSettings.enableHammerSwordTrade ? 'bg-red-500' : 'bg-white/10'
-                          }`}
-                        >
-                          <span className={`pointer-events-none inline-block h-3.5 w-3.5 transform rounded-full bg-slate-900 shadow transition duration-200 ease-in-out ${
-                            adminSettings.enableHammerSwordTrade ? 'translate-x-4' : 'translate-x-0'
-                          }`} />
-                        </button>
-                      </div>
-                      {adminSettings.enableHammerSwordTrade && (
-                        <div className="flex flex-col gap-0.5 mt-0.5 bg-black/30 p-1.5 rounded animate-fade-in border border-white/5">
-                          <div className="flex justify-between text-[10px] text-white/60">
-                            <span>Hammer/Lunge Trade Timing</span>
-                            <span className="text-red-400 font-mono font-bold">{adminSettings.hammerSwordTradeWindow} ms</span>
-                          </div>
-                          <input 
-                            type="range" 
-                            min="50" 
-                            max="1000" 
-                            step="10"
-                            value={adminSettings.hammerSwordTradeWindow} 
-                            onChange={(e) => setAdminSettings(prev => ({ ...prev, hammerSwordTradeWindow: parseInt(e.target.value) }))}
-                            className="w-full accent-red-500 h-1 bg-white/10 rounded appearance-none cursor-pointer"
-                          />
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Name Visibility Controls (New!) */}
-                  <div className="border border-white/5 rounded-xl p-2.5 bg-white/1 flex flex-col gap-2.5">
-                    <p className="text-[10px] text-cyan-400 font-bold uppercase tracking-widest border-b border-white/5 pb-1 font-mono flex items-center justify-between">
-                      <span>8. Name Visibility</span>
-                      <span className="text-[8px] bg-cyan-500/20 text-cyan-300 px-1.5 py-0.2 rounded font-sans tracking-normal uppercase border border-cyan-500/30">Visuals</span>
-                    </p>
-                    
-                    {/* Name Appearance Distance */}
-                    <div className="flex flex-col gap-1">
-                      <div className="flex justify-between text-[11px] font-bold uppercase tracking-wider text-white/80">
-                        <span>Appearance Distance</span>
-                        <span className="text-cyan-400 font-mono">{adminSettings.nameVisibilityDistance?.toFixed(1) ?? '15.0'}m</span>
-                      </div>
-                      <input 
-                        type="range" 
-                        min="1.0" 
-                        max="50.0" 
-                        step="1.0"
-                        value={adminSettings.nameVisibilityDistance ?? 15.0} 
-                        onChange={(e) => setAdminSettings(prev => ({ ...prev, nameVisibilityDistance: parseFloat(e.target.value) }))}
-                        className="w-full accent-cyan-400 h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
-                      />
-                    </div>
-
-                    {/* Name Font Size */}
-                    <div className="flex flex-col gap-1">
-                      <div className="flex justify-between text-[11px] font-bold uppercase tracking-wider text-white/80">
-                        <span>Font Size</span>
-                        <span className="text-cyan-400 font-mono">{adminSettings.nameVisibilityFontSize ?? 16}px</span>
-                      </div>
-                      <input 
-                        type="range" 
-                        min="10" 
-                        max="36" 
-                        step="1"
-                        value={adminSettings.nameVisibilityFontSize ?? 16} 
-                        onChange={(e) => setAdminSettings(prev => ({ ...prev, nameVisibilityFontSize: parseInt(e.target.value) }))}
-                        className="w-full accent-cyan-400 h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
-                      />
-                    </div>
-
-                    {/* Name Opacity */}
-                    <div className="flex flex-col gap-1">
-                      <div className="flex justify-between text-[11px] font-bold uppercase tracking-wider text-white/80">
-                        <span>Opacity</span>
-                        <span className="text-cyan-400 font-mono">{Math.round((adminSettings.nameVisibilityOpacity ?? 0.8) * 100)}%</span>
-                      </div>
-                      <input 
-                        type="range" 
-                        min="0.10" 
-                        max="1.00" 
-                        step="0.05"
-                        value={adminSettings.nameVisibilityOpacity ?? 0.8} 
-                        onChange={(e) => setAdminSettings(prev => ({ ...prev, nameVisibilityOpacity: parseFloat(e.target.value) }))}
-                        className="w-full accent-cyan-400 h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
-                      />
-                    </div>
-
-                    {/* Name Color */}
-                    <div className="flex justify-between items-center text-xs pt-1.5 border-t border-white/5 gap-2">
-                      <div className="flex flex-col text-left">
-                        <span className="font-bold text-white/90">Name Color</span>
-                        <span className="text-[9px] text-white/40">HUD text fill</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <input 
-                          type="color" 
-                          value={adminSettings.nameVisibilityColor ?? '#00ffff'} 
-                          onChange={(e) => setAdminSettings(prev => ({ ...prev, nameVisibilityColor: e.target.value }))}
-                          className="w-8 h-8 rounded border border-white/20 bg-transparent cursor-pointer p-0 animate-fade-in"
-                          title="Choose Color"
-                        />
-                        <input 
-                          type="text" 
-                          value={adminSettings.nameVisibilityColor ?? '#00ffff'} 
-                          onChange={(e) => setAdminSettings(prev => ({ ...prev, nameVisibilityColor: e.target.value }))}
-                          className="w-20 h-7 bg-black/40 border border-white/10 rounded px-2 font-mono text-[10px] tracking-wide text-white focus:border-cyan-400 outline-none text-center"
-                        />
-                      </div>
-                    </div>
-                  </div>
+                  {SETTING_SECTIONS.filter(s => s.column === 3).map(renderSection)}
                 </div>
-
               </div>
 
               {/* Close and return */}
@@ -5106,6 +4533,8 @@ export default function App() {
                     <span className="text-[9px] text-white/35 font-mono">Force show touch joysticks & buttons on desktop</span>
                   </div>
                   <button
+                    id="force-mobile-controls-toggle"
+                    type="button"
                     onClick={() => setForceMobileControls(prev => !prev)}
                     className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out outline-none ${
                       forceMobileControls ? 'bg-cyan-500' : 'bg-slate-800'
@@ -5479,16 +4908,28 @@ export default function App() {
                         )}
                       </select>
                       {['easy', 'normal', 'hard', 'nightmare'].includes(botDifficulties.main_ai || 'normal') && (
-                        <select
-                          value={botBehaviors.main_ai || 'defensive'}
-                          onChange={(e) => setBotBehaviors(prev => ({ ...prev, main_ai: e.target.value as AIBehaviorPreset }))}
-                          className="w-full h-7 bg-black/60 border border-white/10 rounded px-1.5 text-[10px] text-cyan-400 font-bold uppercase outline-none focus:border-cyan-400 cursor-pointer transition-all font-sans"
-                          title="Bot Behavior Playstyle"
-                        >
-                          <option value="passive">🛡️ Passive</option>
-                          <option value="defensive">🛡️ Defensive</option>
-                          <option value="aggressive">⚔️ Aggressive</option>
-                        </select>
+                        <>
+                          <select
+                            value={botBehaviors.main_ai || 'defensive'}
+                            onChange={(e) => setBotBehaviors(prev => ({ ...prev, main_ai: e.target.value as AIBehaviorPreset }))}
+                            className="w-full h-7 bg-black/60 border border-white/10 rounded px-1.5 text-[10px] text-cyan-400 font-bold uppercase outline-none focus:border-cyan-400 cursor-pointer transition-all font-sans"
+                            title="Bot Behavior Playstyle"
+                          >
+                            <option value="passive">🛡️ Passive</option>
+                            <option value="defensive">🛡️ Defensive</option>
+                            <option value="aggressive">⚔️ Aggressive</option>
+                          </select>
+                          <select
+                            value={botWeaponBehaviors.main_ai || 'balanced'}
+                            onChange={(e) => setBotWeaponBehaviors(prev => ({ ...prev, main_ai: e.target.value }))}
+                            className="w-full h-7 bg-black/60 border border-white/10 rounded px-1.5 text-[10px] text-amber-400 font-bold uppercase outline-none focus:border-amber-400 cursor-pointer transition-all font-sans"
+                            title="Bot Weapon Behavior Preset"
+                          >
+                            <option value="sword_75_25">⚔️ Sword 75/25</option>
+                            <option value="balanced">⚖️ Balanced 50/50</option>
+                            <option value="hammer_75_25">🔨 Hammer 75/25</option>
+                          </select>
+                        </>
                       )}
                     </div>
                   )}
@@ -5554,16 +4995,28 @@ export default function App() {
                             )}
                           </select>
                           {['easy', 'normal', 'hard', 'nightmare'].includes(botDifficulties[bot.id] || 'normal') && (
-                            <select
-                              value={botBehaviors[bot.id] || 'defensive'}
-                              onChange={(e) => setBotBehaviors(prev => ({ ...prev, [bot.id]: e.target.value as AIBehaviorPreset }))}
-                              className="w-full h-7 bg-black/60 border border-white/10 rounded px-1.5 text-[10px] text-cyan-400 font-bold uppercase outline-none focus:border-cyan-400 cursor-pointer transition-all font-sans"
-                              title="Bot Behavior Playstyle"
-                            >
-                              <option value="passive">🛡️ Passive</option>
-                              <option value="defensive">🛡️ Defensive</option>
-                              <option value="aggressive">⚔️ Aggressive</option>
-                            </select>
+                            <>
+                              <select
+                                value={botBehaviors[bot.id] || 'defensive'}
+                                onChange={(e) => setBotBehaviors(prev => ({ ...prev, [bot.id]: e.target.value as AIBehaviorPreset }))}
+                                className="w-full h-7 bg-black/60 border border-white/10 rounded px-1.5 text-[10px] text-cyan-400 font-bold uppercase outline-none focus:border-cyan-400 cursor-pointer transition-all font-sans"
+                                title="Bot Behavior Playstyle"
+                              >
+                                <option value="passive">🛡️ Passive</option>
+                                <option value="defensive">🛡️ Defensive</option>
+                                <option value="aggressive">⚔️ Aggressive</option>
+                              </select>
+                              <select
+                                value={botWeaponBehaviors[bot.id] || 'balanced'}
+                                onChange={(e) => setBotWeaponBehaviors(prev => ({ ...prev, [bot.id]: e.target.value }))}
+                                className="w-full h-7 bg-black/60 border border-white/10 rounded px-1.5 text-[10px] text-amber-400 font-bold uppercase outline-none focus:border-amber-400 cursor-pointer transition-all font-sans"
+                                title="Bot Weapon Behavior Preset"
+                              >
+                                <option value="sword_75_25">⚔️ Sword 75/25</option>
+                                <option value="balanced">⚖️ Balanced 50/50</option>
+                                <option value="hammer_75_25">🔨 Hammer 75/25</option>
+                              </select>
+                            </>
                           )}
                         </div>
                       )}
