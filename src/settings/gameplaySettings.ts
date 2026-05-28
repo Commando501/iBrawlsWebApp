@@ -45,6 +45,11 @@ export const DEFAULT_ADMIN_SETTINGS: UniversalSettings = {
   aiWeaponSwapIQ: 50,
   aiPlaystyle: 50,
   enableBurnDecals: true,
+  weaponReadyTime: 0.5,
+  enableSlide: true,
+  enableSprint: true,
+  speedSprint: 140,
+  speedSlide: 160,
 };
 
 export const withDefaultGameplaySettings = (

@@ -54,7 +54,7 @@ export const renderMedalIcon = (iconName: string) => {
           <circle cx="15" cy="10" r="1.5" fill="rgb(240, 230, 255)" />
         </svg>
       );
-    case 'showstopper':
+    case 'bulltrue':
       return (
         <svg className="w-full h-full" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
           <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" fill="rgba(239, 68, 68, 0.4)" stroke="rgb(239, 68, 68)" />
@@ -547,7 +547,7 @@ export const HUD: React.FC<HUDProps> = ({
                     </div>
                     <div className="relative w-5 h-5 flex items-center justify-center rounded bg-slate-900/50 border border-white/10 shadow-[0_0_5px_crimson] cursor-help">
                       <div className="w-3.5 h-3.5 text-red-500">
-                        {renderMedalIcon('showstopper')}
+                        {renderMedalIcon('bulltrue')}
                       </div>
                     </div>
                   </div>

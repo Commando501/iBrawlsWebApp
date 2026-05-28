@@ -26,7 +26,7 @@ const PRIORITY_MEDAL_IDS = new Set([
   'double',
   'triple',
   'overkill',
-  'showstopper',
+  'bulltrue',
   'spawnslayer',
   'killingspree',
 ]);
@@ -40,9 +40,9 @@ export function evaluateKillMedals(input: MedalEvaluationInput): MedalEvaluation
 
   if (input.isVictimLunging) {
     medals.push({
-      id: 'showstopper',
-      name: 'Showstopper',
-      icon: 'showstopper',
+      id: 'bulltrue',
+      name: 'Bulltrue',
+      icon: 'bulltrue',
       color: 'rgb(239, 68, 68)',
       description: 'Killed an opponent during their sword lunge!'
     });

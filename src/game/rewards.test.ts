@@ -16,10 +16,10 @@ test('evaluates special, multikill, spree, and weapon medals', () => {
   });
 
   const ids = result.medals.map(medal => medal.id);
-  assert.deepEqual(ids, ['showstopper', 'spawnslayer', 'closecall', 'double', 'killingspree', 'swordslayer']);
+  assert.deepEqual(ids, ['bulltrue', 'spawnslayer', 'closecall', 'double', 'killingspree', 'swordslayer']);
   assert.equal(result.playerMultikillCount, 2);
   assert.equal(result.playerSpreeCount, 5);
-  assert.equal(result.priorityMedal?.id, 'showstopper');
+  assert.equal(result.priorityMedal?.id, 'bulltrue');
 });
 
 test('starts a fresh multikill chain outside the timeout', () => {

@@ -57,7 +57,7 @@ import { ChatOverlay, ChatMessage } from './components/ChatOverlay';
 import { CharacterPreview } from './components/CharacterPreview';
 import { CharacterLoadout, DEFAULT_LOADOUT, AVAILABLE_PRESETS, HelmetPreset, TorsoPreset, ArmPreset, LegPreset } from './components/VoxelModels';
 
-const APP_VERSION = '0.400';
+const APP_VERSION = '0.415';
 const MAX_PLAYER_NAME_LENGTH = 10;
 
 interface OnlineClient {
@@ -4139,9 +4139,67 @@ export default function App() {
                 {/* COLUMN 1: LOCOMOTION, ACTIONS & HEALTH */}
                 <div className="flex flex-col gap-3">
                   
+                  {/* Core Systems */}
+                  <div className="border border-white/5 rounded-xl p-2.5 bg-white/1 flex flex-col gap-2.5">
+                    <p className="text-[10px] text-cyan-400 font-bold uppercase tracking-widest border-b border-white/5 pb-1 font-mono">1. Core Systems</p>
+                    
+                    {/* Weapon Ready Time */}
+                    <div className="flex flex-col gap-1">
+                      <div className="flex justify-between text-[11px] font-bold uppercase tracking-wider text-white/80">
+                        <span>Weapon Ready Time</span>
+                        <span className="text-[#38bdf8] font-mono">{adminSettings.weaponReadyTime.toFixed(1)}s</span>
+                      </div>
+                      <input 
+                        type="range" 
+                        min="0.0" 
+                        max="3.0" 
+                        step="0.1"
+                        value={adminSettings.weaponReadyTime} 
+                        onChange={(e) => setAdminSettings(prev => ({ ...prev, weaponReadyTime: parseFloat(e.target.value) }))}
+                        className="w-full accent-[#38bdf8] h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
+                      />
+                    </div>
+
+                    {/* Sprint Toggle */}
+                    <div className="flex justify-between items-center text-xs pt-1.5 border-t border-white/5">
+                      <div className="flex flex-col">
+                        <span className="font-bold text-white/90 font-mono text-[10px]">Sprint (Movement)</span>
+                        <span className="text-[9px] text-white/40 font-mono">Sprint by holding Shift forward</span>
+                      </div>
+                      <button 
+                        onClick={() => setAdminSettings(prev => ({ ...prev, enableSprint: !prev.enableSprint }))}
+                        className={`relative inline-flex h-4 w-8 shrink-0 cursor-pointer rounded-full border border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                          adminSettings.enableSprint ? 'bg-[#38bdf8]' : 'bg-white/10'
+                        }`}
+                      >
+                        <span className={`pointer-events-none inline-block h-3.5 w-3.5 transform rounded-full bg-slate-900 shadow transition duration-200 ease-in-out ${
+                          adminSettings.enableSprint ? 'translate-x-4' : 'translate-x-0'
+                        }`} />
+                      </button>
+                    </div>
+
+                    {/* Slide Toggle */}
+                    <div className="flex justify-between items-center text-xs pt-1.5 border-t border-white/5">
+                      <div className="flex flex-col">
+                        <span className="font-bold text-white/90 font-mono text-[10px]">Slide (Movement)</span>
+                        <span className="text-[9px] text-white/40 font-mono">Slide by crouching while running forward</span>
+                      </div>
+                      <button 
+                        onClick={() => setAdminSettings(prev => ({ ...prev, enableSlide: !prev.enableSlide }))}
+                        className={`relative inline-flex h-4 w-8 shrink-0 cursor-pointer rounded-full border border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                          adminSettings.enableSlide ? 'bg-[#38bdf8]' : 'bg-white/10'
+                        }`}
+                      >
+                        <span className={`pointer-events-none inline-block h-3.5 w-3.5 transform rounded-full bg-slate-900 shadow transition duration-200 ease-in-out ${
+                          adminSettings.enableSlide ? 'translate-x-4' : 'translate-x-0'
+                        }`} />
+                      </button>
+                    </div>
+                  </div>
+
                   {/* General Configuration */}
                   <div className="border border-white/5 rounded-xl p-2.5 bg-white/1 flex flex-col gap-2">
-                    <p className="text-[10px] text-emerald-400 font-bold uppercase tracking-widest border-b border-white/5 pb-1 font-mono">1. Health & Protection</p>
+                    <p className="text-[10px] text-emerald-400 font-bold uppercase tracking-widest border-b border-white/5 pb-1 font-mono">2. Health & Protection</p>
                     
                     {/* Universal HP */}
                     <div className="flex items-center justify-between text-xs py-0.5">
@@ -4198,7 +4256,7 @@ export default function App() {
 
                   {/* Velocity Modifiers */}
                   <div className="border border-white/5 rounded-xl p-2.5 bg-white/1 flex flex-col gap-2.5">
-                    <p className="text-[10px] text-blue-400 font-bold uppercase tracking-widest border-b border-white/5 pb-1 font-mono">2. Velocity Modifiers</p>
+                    <p className="text-[10px] text-blue-400 font-bold uppercase tracking-widest border-b border-white/5 pb-1 font-mono">3. Velocity Modifiers</p>
                     
                     {/* Forward Speed */}
                     <div className="flex flex-col gap-1">
@@ -4212,6 +4270,40 @@ export default function App() {
                         max="300" 
                         value={adminSettings.speedForward} 
                         onChange={(e) => setAdminSettings(prev => ({ ...prev, speedForward: parseInt(e.target.value) }))}
+                        className="w-full accent-[#38bdf8] h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
+                      />
+                    </div>
+
+                    {/* Sprint Speed */}
+                    <div className="flex flex-col gap-1">
+                      <div className="flex justify-between text-[11px] font-bold uppercase tracking-wider text-white/80">
+                        <span>Sprint Speed</span>
+                        <span className="text-[#38bdf8] font-mono">{adminSettings.speedSprint}%</span>
+                      </div>
+                      <input 
+                        type="range" 
+                        min="20" 
+                        max="300" 
+                        step="5"
+                        value={adminSettings.speedSprint} 
+                        onChange={(e) => setAdminSettings(prev => ({ ...prev, speedSprint: parseInt(e.target.value) }))}
+                        className="w-full accent-[#38bdf8] h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
+                      />
+                    </div>
+
+                    {/* Slide Speed */}
+                    <div className="flex flex-col gap-1">
+                      <div className="flex justify-between text-[11px] font-bold uppercase tracking-wider text-white/80">
+                        <span>Slide Speed</span>
+                        <span className="text-[#38bdf8] font-mono">{adminSettings.speedSlide}%</span>
+                      </div>
+                      <input 
+                        type="range" 
+                        min="20" 
+                        max="300" 
+                        step="5"
+                        value={adminSettings.speedSlide} 
+                        onChange={(e) => setAdminSettings(prev => ({ ...prev, speedSlide: parseInt(e.target.value) }))}
                         className="w-full accent-[#38bdf8] h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
                       />
                     </div>
@@ -4251,7 +4343,7 @@ export default function App() {
 
                   {/* Dash Evades */}
                   <div className="border border-white/5 rounded-xl p-2.5 bg-white/1 flex flex-col gap-2.5">
-                    <p className="text-[10px] text-cyan-400 font-bold uppercase tracking-widest border-b border-white/5 pb-1 font-mono">3. Dash Thrusters</p>
+                    <p className="text-[10px] text-cyan-400 font-bold uppercase tracking-widest border-b border-white/5 pb-1 font-mono">4. Dash Thrusters</p>
                     
                     {/* Dash Distance */}
                     <div className="flex flex-col gap-1">
@@ -4321,7 +4413,7 @@ export default function App() {
                   
                   {/* Hammer Combat */}
                   <div className="border border-white/5 rounded-xl p-2.5 bg-white/1 flex flex-col gap-2.5">
-                    <p className="text-[10px] text-amber-400 font-bold uppercase tracking-widest border-b border-white/5 pb-1 font-mono">4. Gravity Hammer</p>
+                    <p className="text-[10px] text-amber-400 font-bold uppercase tracking-widest border-b border-white/5 pb-1 font-mono">5. Gravity Hammer</p>
                     
                     {/* Attack Range */}
                     <div className="flex flex-col gap-1">
@@ -4416,7 +4508,7 @@ export default function App() {
 
                   {/* Hammer Jumping */}
                   <div className="border border-white/5 rounded-xl p-2.5 bg-white/1 flex flex-col gap-2.5">
-                    <p className="text-[10px] text-yellow-400 font-bold uppercase tracking-widest border-b border-white/5 pb-1 font-mono">5. Gravity Launch Jump</p>
+                    <p className="text-[10px] text-yellow-400 font-bold uppercase tracking-widest border-b border-white/5 pb-1 font-mono">6. Gravity Launch Jump</p>
                     
                     {/* Jump Power */}
                     <div className="flex flex-col gap-1">
@@ -4650,7 +4742,7 @@ export default function App() {
                   
                   {/* Energy Sword */}
                   <div className="border border-white/5 rounded-xl p-2.5 bg-white/1 flex flex-col gap-2.5">
-                    <p className="text-[10px] text-[#22d3ee] font-bold uppercase tracking-widest border-b border-white/5 pb-1 font-mono">6. Energy Sword</p>
+                    <p className="text-[10px] text-[#22d3ee] font-bold uppercase tracking-widest border-b border-white/5 pb-1 font-mono">7. Energy Sword</p>
                     
                     {/* Lunge Distance */}
                     <div className="flex flex-col gap-1">

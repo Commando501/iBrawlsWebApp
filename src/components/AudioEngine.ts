@@ -282,7 +282,7 @@ class AudioEngine {
     } else if (type === 'quadra' || type === 'overkill') {
       notes = [523.25, 659.25, 783.99, 1046.5]; // C major triad octaves
       speed = 0.05;
-    } else if (type === 'showstopper') {
+    } else if (type === 'bulltrue') {
       notes = [600, 450, 300]; // downward warning swoop
       speed = 0.1;
     } else if (type === 'spawnslayer') {

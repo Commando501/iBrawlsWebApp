@@ -47,6 +47,11 @@ export interface UniversalSettings {
   aiWeaponSwapIQ?: number;                // 0 to 100%
   aiPlaystyle?: number;                   // Custom AI playstyle slider: 0 = Passive, 50 = Defensive, 100 = Aggressive
   enableBurnDecals?: boolean;
+  weaponReadyTime: number;
+  enableSlide: boolean;
+  enableSprint: boolean;
+  speedSprint: number;
+  speedSlide: number;
 }
 
 export interface Keybindings {
@@ -155,6 +160,9 @@ export interface RemotePlayerState {
   lungeTimer?: number;
   lungeTargetDir?: { x: number; y: number; z: number };
   lungeStartPos?: { x: number; y: number; z: number };
+  aiLastLungeOutcome?: 'hit' | 'miss_timeout' | 'miss_arena' | 'target_dead';
+  aiLastLungeTargetId?: string;
+  aiPostLungeDecisionTimer?: number;
 }
 
 export interface GameStats {

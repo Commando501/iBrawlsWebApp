@@ -12,7 +12,7 @@
     "lint": "tsc --noEmit",
     "typecheck:worker": "cd worker && npm run typecheck",
     "typecheck:all": "npm run lint && npm run typecheck:worker",
-    "test": "node --import tsx --test src/features/tournament/tournament.test.ts src/game/rewards.test.ts src/settings/saveCodec.test.ts src/ui/hudLayouts.test.ts"
+    "test": "node --import tsx --test src/features/tournament/tournament.test.ts src/game/aiCombatDecision.test.ts src/game/rewards.test.ts src/settings/saveCodec.test.ts src/ui/hudLayouts.test.ts"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",
