@@ -67,6 +67,8 @@ export function isMissedLungeMemory(memory?: AILungeMemory | null): boolean {
 export function evaluateAICombatDecision(input: AICombatDecisionInput): AICombatDecision {
   const random = input.random ?? Math.random;
   const pSword = input.weaponPrioritization / 100;
+  const swordForbidden = pSword <= 0;
+  const hammerForbidden = pSword >= 1;
   const targetIsProtected = (input.target.invulnerabilityTimer ?? 0) > 0;
   const minDistance = Math.min(input.distanceToTarget, input.combatDistanceToTarget ?? input.distanceToTarget);
   const playerDangerZone = input.attackRange + input.attackRadius * 0.85;
@@ -92,7 +94,7 @@ export function evaluateAICombatDecision(input: AICombatDecisionInput): AICombat
       input.weaponState === 'ready' &&
       minDistance <= hammerCounterDistance + 0.75;
 
-    if (hammerCanCounter) {
+    if (hammerCanCounter && !hammerForbidden) {
       decision.weapon = 'hammer';
       decision.bulltrueCounter = 'hammer';
       decision.bypassedRandomGate = true;
@@ -105,14 +107,14 @@ export function evaluateAICombatDecision(input: AICombatDecisionInput): AICombat
       input.currentWeapon === 'sword' &&
       timeToImpact <= swordTradeWindow + 0.12;
 
-    if (swordCanCounter) {
+    if (swordCanCounter && !swordForbidden) {
       decision.weapon = 'sword';
       decision.bulltrueCounter = 'sword';
       decision.bypassedRandomGate = true;
       return decision;
     }
 
-    decision.weapon = 'hammer';
+    decision.weapon = hammerForbidden ? 'sword' : 'hammer';
     decision.postMissSpacing = true;
     decision.bypassedRandomGate = true;
     return decision;
@@ -128,7 +130,7 @@ export function evaluateAICombatDecision(input: AICombatDecisionInput): AICombat
         input.distanceToTarget <= maxLunge + 1.5;
 
       if (input.target.hp <= 1 || input.distanceToTarget <= playerDangerZone + 1.2 || targetCanPunish) {
-        decision.weapon = 'hammer';
+        decision.weapon = hammerForbidden ? 'sword' : 'hammer';
         decision.postMissSpacing = input.distanceToTarget > playerDangerZone * 0.8 || targetCanPunish;
         decision.bypassedRandomGate = true;
         return decision;
@@ -141,12 +143,12 @@ export function evaluateAICombatDecision(input: AICombatDecisionInput): AICombat
   }
 
   if (targetIsProtected) {
-    decision.weapon = 'hammer';
+    decision.weapon = hammerForbidden ? 'sword' : 'hammer';
     return decision;
   }
 
   if (input.nearbyEnemiesCount >= 2) {
-    decision.weapon = 'hammer';
+    decision.weapon = hammerForbidden ? 'sword' : 'hammer';
     return decision;
   }
 
@@ -156,7 +158,7 @@ export function evaluateAICombatDecision(input: AICombatDecisionInput): AICombat
   }
 
   if (input.target.isLunging) {
-    decision.weapon = 'hammer';
+    decision.weapon = hammerForbidden ? 'sword' : 'hammer';
     return decision;
   }
 

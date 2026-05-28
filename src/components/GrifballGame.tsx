@@ -3954,8 +3954,12 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       s.aiLungeTargetDir.copy(customDir);
     } else {
       const target = getEnemyAITarget();
-      const targetPos = target ? getCombatBodyCenter(target.pos, target.isCrouching) : getCombatBodyCenter(s.playerPos, s.isCrouching);
+      const targetPos = target ? target.pos.clone() : s.playerPos.clone();
+      const targetAirborne = target ? (target.pos.y > 0.35 || (target.vel && Math.abs(target.vel.y) > 1.0)) : (s.playerPos.y > 0.35 || Math.abs(s.playerVel.y) > 1.0);
       s.aiLungeTargetDir.copy(targetPos).sub(s.aiPos);
+      if (!targetAirborne) {
+        s.aiLungeTargetDir.y = 0;
+      }
     }
     if (s.aiLungeTargetDir.lengthSq() <= 0.0001) {
       s.aiState = 'APPROACHING';
@@ -6864,7 +6868,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       if (canStartWeaponAction && activeWeapon === 'sword' && weaponState === 'ready' && hasVerticalLungeLine && lungeDistanceToTarget >= minLungeRange && lungeDistanceToTarget <= maxLungeRange && target.hp > 0 && !targetIsProtected) {
         const lungeChance = (targetAirborne ? 0.08 + (anticipationFactor * 0.18) : 0.04 + (anticipationFactor * 0.08)) * aggressiveLungeMult;
         if (Math.random() < lungeChance) {
-          const lungeDir = targetBodyCenter.clone().sub(pos);
+          const lungeDir = target.pos.clone().sub(pos);
           if (!targetAirborne) lungeDir.y = 0;
           if (lungeDir.lengthSq() <= 0.0001) return;
 

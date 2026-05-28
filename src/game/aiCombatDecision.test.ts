@@ -132,3 +132,53 @@ test('weapon prioritization of 100 (100% Sword) always chooses sword in close co
 
   assert.equal(decision.weapon, 'sword');
 });
+
+test('weapon prioritization 0 (100% Hammer) blocks sword counter even when target is lunging', () => {
+  const decision = evaluateAICombatDecision({
+    ...baseInput,
+    weaponPrioritization: 0,
+    currentWeapon: 'sword',
+    distanceToTarget: 3.2,
+    combatDistanceToTarget: 3.2,
+    target: {
+      ...baseInput.target,
+      isLunging: true,
+    },
+    canUseHammerCounter: false,
+    random: () => 0.0,
+  });
+
+  // Should NOT choose sword since sword is forbidden at prioritization 0
+  assert.notEqual(decision.weapon, 'sword');
+});
+
+test('weapon prioritization 100 (100% Sword) overrides hammer in target-lunging fallback', () => {
+  const decision = evaluateAICombatDecision({
+    ...baseInput,
+    weaponPrioritization: 100,
+    distanceToTarget: 7.5,
+    combatDistanceToTarget: 7.5,
+    target: {
+      ...baseInput.target,
+      isLunging: true,
+    },
+    random: () => 0.5,
+  });
+
+  // Should choose sword instead of hammer since hammer is forbidden at prioritization 100
+  assert.equal(decision.weapon, 'sword');
+});
+
+test('weapon prioritization 100 (100% Sword) overrides hammer when target is protected', () => {
+  const decision = evaluateAICombatDecision({
+    ...baseInput,
+    weaponPrioritization: 100,
+    target: {
+      ...baseInput.target,
+      invulnerabilityTimer: 2.0,
+    },
+    random: () => 0.0,
+  });
+
+  assert.equal(decision.weapon, 'sword');
+});
