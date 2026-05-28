@@ -27,7 +27,7 @@ import { ChatOverlay, ChatMessage } from './components/ChatOverlay';
 import { CharacterPreview } from './components/CharacterPreview';
 import { CharacterLoadout, DEFAULT_LOADOUT, AVAILABLE_PRESETS, HelmetPreset, TorsoPreset, ArmPreset, LegPreset } from './components/VoxelModels';
 
-const APP_VERSION = '0.306b';
+const APP_VERSION = '0.310';
 const MAX_PLAYER_NAME_LENGTH = 10;
 const MOBILE_HUD_LAYOUT_VERSION = '5';
 const MOBILE_HUD_LAYOUT_VERSION_KEY = 'grifball_mobile_hud_layout_version';
@@ -166,6 +166,13 @@ interface SaveData {
   adminSettings: Omit<UniversalSettings, 'playerHue' | 'playerName'>;
   keybindings?: Keybindings;
 }
+
+const withDefaultGameplaySettings = (
+  settings: Partial<Omit<UniversalSettings, 'playerHue' | 'playerName'>>
+): Omit<UniversalSettings, 'playerHue' | 'playerName'> => ({
+  hammerSplashVfx: 'current',
+  ...settings,
+}) as Omit<UniversalSettings, 'playerHue' | 'playerName'>;
 
 interface UiLayoutState {
   desktop: UiElementPos[];
@@ -908,6 +915,7 @@ export default function App() {
       dashCooldown: 2.0,
       respawnInvulnerabilityDuration: 1.0,
       hammerReloadTime: 0.6,
+      hammerSplashVfx: 'current',
       swordLungeDistance: 14.5,
       swordLungeSpeed: 24.0,
       swordSlashSpeed: 0.22,
@@ -1019,14 +1027,15 @@ export default function App() {
 
       // Apply Admin Settings
       if (decrypted.adminSettings) {
+        const importedAdminSettings = withDefaultGameplaySettings(decrypted.adminSettings);
         const fullSettings: UniversalSettings = {
           ...adminSettings,
-          ...decrypted.adminSettings,
+          ...importedAdminSettings,
           playerHue: decrypted.playerHue,
           playerName: decrypted.playerName
         };
         setAdminSettings(fullSettings);
-        localStorage.setItem('grifball_admin_settings', JSON.stringify(decrypted.adminSettings));
+        localStorage.setItem('grifball_admin_settings', JSON.stringify(importedAdminSettings));
       }
 
       // Apply Keybindings
@@ -1077,6 +1086,7 @@ export default function App() {
           dashCooldown: 2.0,
           respawnInvulnerabilityDuration: 1.0,
           hammerReloadTime: 0.6,
+          hammerSplashVfx: 'current',
           swordLungeDistance: 14.5,
           swordLungeSpeed: 24.0,
           swordSlashSpeed: 0.22,
@@ -1575,7 +1585,7 @@ export default function App() {
     if (preset) {
       setAdminSettings(prev => ({
         ...prev,
-        ...preset.settings
+        ...withDefaultGameplaySettings(preset.settings)
       }));
     }
   };
@@ -1585,7 +1595,7 @@ export default function App() {
     const activePreset = gameplayPresets.find(p => p.name === selectedPresetName);
     if (activePreset) {
       const { playerHue, playerName: sName, ...restSettings } = adminSettings;
-      if (!settingsAreEqual(restSettings, activePreset.settings)) {
+      if (!settingsAreEqual(restSettings, withDefaultGameplaySettings(activePreset.settings))) {
         setSelectedPresetName('');
       }
     }
@@ -1740,6 +1750,7 @@ export default function App() {
       dashCooldown: 2.0,
       respawnInvulnerabilityDuration: 1.0,
       hammerReloadTime: 0.6,
+      hammerSplashVfx: 'current',
       swordLungeDistance: 14.5,
       swordLungeSpeed: 24.0,
       swordSlashSpeed: 0.22,
@@ -4771,6 +4782,27 @@ export default function App() {
                         onChange={(e) => setAdminSettings(prev => ({ ...prev, hammerReloadTime: parseFloat(e.target.value) }))}
                         className="w-full accent-amber-400 h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
                       />
+                    </div>
+
+                    {/* Hammer Splash VFX */}
+                    <div className="flex flex-col gap-1">
+                      <div className="flex justify-between text-[11px] font-bold uppercase tracking-wider text-white/80">
+                        <span>Hammer Splash VFX</span>
+                        <span className="text-amber-400 font-mono">
+                          {(adminSettings.hammerSplashVfx ?? 'current') === 'neonBlueFlash' ? 'Flash' : 'Current'}
+                        </span>
+                      </div>
+                      <select
+                        value={adminSettings.hammerSplashVfx ?? 'current'}
+                        onChange={(e) => setAdminSettings(prev => ({
+                          ...prev,
+                          hammerSplashVfx: e.target.value as UniversalSettings['hammerSplashVfx']
+                        }))}
+                        className="w-full h-8 bg-black/60 border border-white/10 rounded px-2 text-[11px] text-amber-300 font-bold uppercase outline-none focus:border-amber-400 cursor-pointer transition-all font-sans"
+                      >
+                        <option value="current">Current Shockwave</option>
+                        <option value="neonBlueFlash">Neon Blue Flash</option>
+                      </select>
                     </div>
 
                     {/* Floor burn decal toggle */}

@@ -15,6 +15,7 @@ export interface UniversalSettings {
   dashCooldown: number; // Dash cooldown in seconds (e.g. 0.5s to 10.0s)
   respawnInvulnerabilityDuration: number; // Invulnerability window in seconds (e.g. 0.5s to 5.0s)
   hammerReloadTime: number;               // Recovery/reload duration for Gravity Hammer in seconds (e.g. 0.1s to 3.0s)
+  hammerSplashVfx: 'current' | 'neonBlueFlash'; // Gravity Hammer impact visual style
   swordLungeDistance: number;             // Lunge range distance mapping reticule lock on (e.g. 1.0m to 25.0m)
   swordLungeSpeed: number;                // Lunge glide movement speed (e.g. 5.0m/s to 50.0m/s)
   swordSlashSpeed: number;                // Slash duration sweep phase time (e.g. 0.05s to 1.0s)
@@ -251,4 +252,3 @@ export interface TournamentState {
   rounds: TournamentMatch[][];
   status: 'idle' | 'bracket' | 'playing' | 'gameover' | 'victory';
 }
-
