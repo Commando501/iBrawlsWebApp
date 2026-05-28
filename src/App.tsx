@@ -58,7 +58,7 @@ import { ChatOverlay, ChatMessage } from './components/ChatOverlay';
 import { CharacterPreview } from './components/CharacterPreview';
 import { CharacterLoadout, DEFAULT_LOADOUT, AVAILABLE_PRESETS, HelmetPreset, TorsoPreset, ArmPreset, LegPreset } from './components/VoxelModels';
 
-const APP_VERSION = '0.428a';
+const APP_VERSION = '0.429';
 const MAX_PLAYER_NAME_LENGTH = 10;
 
 interface OnlineClient {
@@ -208,7 +208,7 @@ interface KbVisualizerProps {
 
 const ACTION_LABELS: Record<string, string> = {
   moveForward: 'FWD', moveLeft: 'LEFT', moveBackward: 'BACK', moveRight: 'RIGHT',
-  jump: 'JUMP', dash: 'THRUST', crouch: 'CROUCH', scoreboard: 'SCORE',
+  jump: 'JUMP', dash: 'THRUST', crouch: 'CROUCH', sprint: 'SPRINT', scoreboard: 'SCORE',
   weapon1: 'HAMMER', weapon2: 'SWORD', attack: 'ATTACK', altAttack: 'ALT-ATK',
 };
 
@@ -344,10 +344,10 @@ function KeyboardVisualizer({ bindings, rebinding, onPick }: KbVisualizerProps) 
 
           {/* ZXCV row */}
           {R(<>
-            {mkKey(null, '⇧', 57, KS, true)}
+            {mkKey('shift', '⇧', 57, KS)}
             {mkKey('z', 'Z')} {mkKey('x', 'X')} {mkKey('c', 'C')} {mkKey('v', 'V')} {mkKey('b', 'B')}
             {mkKey('n', 'N')} {mkKey('m', 'M')} {mkKey(',', ',')} {mkKey('.', '.')} {mkKey('/', '/')}
-            {mkKey(null, '⇧', 69, KS, true)}
+            {mkKey('shift', '⇧', 69, KS)}
           </>)}
 
           {/* Bottom row */}
@@ -454,6 +454,7 @@ function KeyboardVisualizer({ bindings, rebinding, onPick }: KbVisualizerProps) 
         <KbBindRow label="JUMP"    action="jump"         bindings={bindings} rebinding={rebinding} onPick={onPick} />
         <KbBindRow label="THRUST"  action="dash"         bindings={bindings} rebinding={rebinding} onPick={onPick} />
         <KbBindRow label="CROUCH"  action="crouch"       bindings={bindings} rebinding={rebinding} onPick={onPick} />
+        <KbBindRow label="SPRINT"  action="sprint"       bindings={bindings} rebinding={rebinding} onPick={onPick} />
         <KbBindRow label="SCORE"   action="scoreboard"   bindings={bindings} rebinding={rebinding} onPick={onPick} />
         <KbBindRow label="HAMMER"  action="weapon1"      bindings={bindings} rebinding={rebinding} onPick={onPick} />
         <KbBindRow label="SWORD"   action="weapon2"      bindings={bindings} rebinding={rebinding} onPick={onPick} />
@@ -478,6 +479,7 @@ const COMPACT_KEYBIND_SECTIONS: Array<{
       { action: 'jump', label: 'Jump / Boost' },
       { action: 'dash', label: 'Dash' },
       { action: 'crouch', label: 'Crouch / Slide' },
+      { action: 'sprint', label: 'Sprint' },
     ],
   },
   {
@@ -3681,6 +3683,7 @@ export default function App() {
                             { action: 'jump' as keyof Keybindings, label: 'Jump (Boost)' },
                             { action: 'dash' as keyof Keybindings, label: 'Sonic Dash' },
                             { action: 'crouch' as keyof Keybindings, label: 'Crouch / Slide' },
+                            { action: 'sprint' as keyof Keybindings, label: 'Sprint' },
                             { action: 'scoreboard' as keyof Keybindings, label: 'Scoreboard' },
                           ]).map(({ action, label }) => (
                             <div key={action} className="flex items-center gap-2.5">

@@ -112,6 +112,18 @@ export const SETTING_DEFINITIONS: SettingDefinition[] = [
     formatValue: (v) => `${v.toFixed(1)}s`,
   },
   {
+    key: 'weaponSwapLockout',
+    label: 'Weapon Swap Lockout',
+    type: 'slider',
+    sectionId: 'core',
+    min: 0.0,
+    max: 5.0,
+    step: 0.1,
+    unit: 's',
+    formatValue: (v) => `${v.toFixed(1)}s`,
+    description: 'Time lockout before swapping weapons again',
+  },
+  {
     key: 'enableSprint',
     label: 'Sprint (Movement)',
     type: 'toggle',

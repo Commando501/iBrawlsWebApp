@@ -172,6 +172,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     swapCooldownTimer: number;
     swapCooldownDuration: number;
     aiSwapCooldownTimer: number;
+    swapLockoutTimer: number;
+    aiSwapLockoutTimer: number;
 
     // AI states
     aiPos: THREE.Vector3;
@@ -320,6 +322,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     swapCooldownTimer: 0,
     swapCooldownDuration: 0,
     aiSwapCooldownTimer: 0,
+    swapLockoutTimer: 0,
+    aiSwapLockoutTimer: 0,
 
     aiPos: new THREE.Vector3(0, 0, -12), // Start opposite side
     aiVel: new THREE.Vector3(0, 0, 0),
@@ -586,6 +590,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         s.aiPostLungeDecisionTimer = 0;
         s.aiInvulnerabilityTimer = s.settings.respawnInvulnerabilityDuration;
         s.aiSpawnTime = Date.now();
+        s.aiSwapLockoutTimer = 0;
+        s.aiSwapCooldownTimer = 0;
         sfx.playRespawn();
 
       }
@@ -3854,6 +3860,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     if (s.playerHP <= 0 || isPaused || !isPlaying) return;
     if (s.isLunging) return; // cannot switch weapon during lunge
 
+    if (s.swapLockoutTimer > 0) return;
+
     if (s.activeWeapon !== type) {
       s.activeWeapon = type;
       if (s.settings.weaponReadyTime > 0) {
@@ -3863,6 +3871,9 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         s.pSwordReady = false;
         s.pWeaponCooldown = 0.0;
         s.pSwordCooldown = 0.0;
+      }
+      if (s.settings.weaponSwapLockout > 0) {
+        s.swapLockoutTimer = s.settings.weaponSwapLockout;
       }
     }
 
@@ -3980,10 +3991,15 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     if (s.aiHP <= 0 || isPaused || !isPlaying) return;
     if (s.aiState === 'LUNGING') return;
 
+    if (s.aiSwapLockoutTimer > 0) return;
+
     if (s.aiActiveWeapon !== type) {
       s.aiActiveWeapon = type;
       if (s.settings.weaponReadyTime > 0) {
         s.aiSwapCooldownTimer = s.settings.weaponReadyTime;
+      }
+      if (s.settings.weaponSwapLockout > 0) {
+        s.aiSwapLockoutTimer = s.settings.weaponSwapLockout;
       }
     }
 
@@ -4524,6 +4540,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         s.pitch = 0;
         s.playerInvulnerabilityTimer = s.settings.respawnInvulnerabilityDuration;
         s.playerSpawnTime = Date.now();
+        s.swapLockoutTimer = 0;
+        s.swapCooldownTimer = 0;
         sfx.playRespawn();
 
       }
@@ -4849,7 +4867,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       }
 
       // Check sprint & slide states
-      const isSprinting = s.settings.enableSprint && keysPressed.current['shift'] && moveForward > 0 && !s.isCrouching && !s.isJumping && s.playerDashRemaining <= 0;
+      const isSprinting = s.settings.enableSprint && keysPressed.current[keybindingsRef.current.sprint] && moveForward > 0 && !s.isCrouching && !s.isJumping && s.playerDashRemaining <= 0;
       const isSliding = s.playerSlideActive;
 
       // Movement speed coefficients
@@ -4951,6 +4969,12 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     }
     if (s.aiSwapCooldownTimer > 0) {
       s.aiSwapCooldownTimer = Math.max(0, s.aiSwapCooldownTimer - dt);
+    }
+    if (s.swapLockoutTimer > 0) {
+      s.swapLockoutTimer = Math.max(0, s.swapLockoutTimer - dt);
+    }
+    if (s.aiSwapLockoutTimer > 0) {
+      s.aiSwapLockoutTimer = Math.max(0, s.aiSwapLockoutTimer - dt);
     }
 
     const playerHammer = threeRef.current.playerHammer;

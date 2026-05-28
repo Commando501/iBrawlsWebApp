@@ -47,6 +47,7 @@ export const DEFAULT_ADMIN_SETTINGS: UniversalSettings = {
   aiWeaponPrioritization: 50,
   enableBurnDecals: true,
   weaponReadyTime: 0.5,
+  weaponSwapLockout: 1.0,
   enableSlide: false,
   enableSprint: false,
   speedSprint: 140,

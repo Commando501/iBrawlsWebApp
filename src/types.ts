@@ -49,6 +49,7 @@ export interface UniversalSettings {
   aiWeaponPrioritization?: number;        // Weapon prioritization weight: 0 = 100% Hammer, 100 = 100% Sword, 50 = Balanced
   enableBurnDecals?: boolean;
   weaponReadyTime: number;
+  weaponSwapLockout: number;
   enableSlide: boolean;
   enableSprint: boolean;
   speedSprint: number;
