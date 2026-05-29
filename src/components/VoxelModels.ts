@@ -1035,3 +1035,50 @@ export function buildKatarSwordModel(customHue?: number): THREE.Group {
 
   return katar;
 }
+
+export function buildPistolModel(customHue?: number): THREE.Group {
+  const data: VoxelData[] = [];
+  
+  // Grip (slanted slightly back for a sleek design)
+  for (let y = 0; y <= 4; y++) {
+    const zOffset = Math.floor(y / 2);
+    data.push({ x: 0, y: y, z: zOffset, color: '#0f172a' }); // Dark polymer grip center
+    data.push({ x: -1, y: y, z: zOffset, color: '#1e293b' }); // Left grip plate
+    data.push({ x: 1, y: y, z: zOffset, color: '#1e293b' }); // Right grip plate
+  }
+
+  // Slide / Barrel receiver (main body of the pistol)
+  // y = 5 to 7, z = -4 to 2
+  for (let y = 5; y <= 7; y++) {
+    for (let z = -4; z <= 2; z++) {
+      const isTopSlide = y === 7;
+      const color = isTopSlide ? '#334155' : '#1e293b';
+      data.push({ x: 0, y: y, z: z, color: color });
+      data.push({ x: -1, y: y, z: z, color: '#334155' });
+      data.push({ x: 1, y: y, z: z, color: '#334155' });
+    }
+  }
+
+  // Trigger guard and trigger
+  data.push({ x: 0, y: 4, z: -1, color: '#475569' });
+  data.push({ x: 0, y: 3, z: -1, color: '#475569' });
+  data.push({ x: 0, y: 3, z: 0, color: '#475569' });
+  data.push({ x: 0, y: 4, z: 0, color: '#f97316' }); // Orange trigger
+
+  // Laser tactical light (emissive yellow/custom hue) under barrel
+  const laserColor = customHue !== undefined ? `hsl(${customHue}, 85%, 60%)` : '#22d3ee';
+  data.push({ x: 0, y: 4, z: -3, color: laserColor, emissive: true });
+  data.push({ x: 0, y: 6, z: -4, color: laserColor, emissive: true }); // glowing front sight
+
+  const pistol = createVoxelGroup(data, 0.08);
+  pistol.traverse((child) => {
+    if (child instanceof THREE.Mesh) {
+      // Adjust pivot so it is held at the grip in first-person
+      child.position.y -= 3.5 * 0.08;
+      child.position.z += 1.0 * 0.08;
+    }
+  });
+
+  return pistol;
+}
+

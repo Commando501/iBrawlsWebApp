@@ -6,7 +6,7 @@
 import React, { useRef, useEffect, useState } from 'react';
 import * as THREE from 'three';
 import { sfx } from './AudioEngine';
-import { buildGravityHammerModel, buildVoxelSpartanModel, buildKatarSwordModel } from './VoxelModels';
+import { buildGravityHammerModel, buildVoxelSpartanModel, buildKatarSwordModel, buildPistolModel } from './VoxelModels';
 import { GameStats, Stance, WeaponState, AIBehaviorState, UniversalSettings, DeathEvent, Keybindings, DEFAULT_KEYBINDINGS, DeviceInfo, AIBehaviorPreset, MedalInfo } from '../types';
 import {
   AI_FORCED_DESCENT_SPEED,
@@ -295,7 +295,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     pWeaponReady: boolean;
 
     // Sword & Combat states
-    activeWeapon: 'hammer' | 'sword';
+    activeWeapon: 'hammer' | 'sword' | 'pistol';
     crosshairColor: 'white' | 'red';
     isLunging: boolean;
     lungeTimer: number;
@@ -306,6 +306,12 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     pSwordReady: boolean;
     pSwordCooldown: number;
     pSwordRecoverDuration: number;
+
+    // Pistol states
+    pPistolState: 'ready' | 'firing' | 'recovering';
+    pPistolTimer: number;
+    pPistolReady: boolean;
+    pPistolCooldown: number;
     lastPlayerSwordAttackTime: number;
     lastAISwordAttackTime: number;
     lastPlayerHammerAttackTime: number;
@@ -464,6 +470,12 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     pSwordReady: true,
     pSwordCooldown: 1.0,
     pSwordRecoverDuration: 0.6,
+
+    // Pistol states
+    pPistolState: 'ready',
+    pPistolTimer: 0,
+    pPistolReady: true,
+    pPistolCooldown: 1.0,
     lastPlayerSwordAttackTime: 0,
     lastAISwordAttackTime: 0,
     lastPlayerHammerAttackTime: 0,
@@ -1500,6 +1512,53 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     }
   };
 
+  const playPistolSound = () => {
+    try {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(800, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(80, ctx.currentTime + 0.15);
+      
+      gain.gain.setValueAtTime(0.3, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.18);
+      
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      
+      osc.start();
+      osc.stop(ctx.currentTime + 0.2);
+    } catch (err) {
+      console.error("Failed to play pistol sound:", err);
+    }
+  };
+
+  function updateTracers(dt: number) {
+    const list = threeRef.current.tracers;
+    const scene = threeRef.current.scene;
+    if (!list || !scene) return;
+    
+    for (let i = list.length - 1; i >= 0; i--) {
+      const t = list[i];
+      t.life += dt;
+      if (t.life >= t.maxLife) {
+        scene.remove(t.mesh);
+        t.mesh.geometry.dispose();
+        t.material.dispose();
+        list.splice(i, 1);
+      } else {
+        const ratio = 1.0 - (t.life / t.maxLife);
+        if ('opacity' in t.material) {
+          t.material.opacity = ratio;
+        }
+      }
+    }
+  }
+
   function updateExplosionParticles(dt: number) {
     const list = threeRef.current.damageExplosionParticles;
     const scene = threeRef.current.scene;
@@ -1908,8 +1967,16 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       gameTime: s.gameTime,
       debugMode: s.debugMode,
       debugDamageRadius: s.settings.attackRadius, // Show actual damage radius
-      weaponReady: s.activeWeapon === 'hammer' ? s.pWeaponReady : s.pSwordReady,
-      weaponCooldown: s.activeWeapon === 'hammer' ? (s.pWeaponCooldown ?? 1.0) : s.pSwordCooldown,
+      weaponReady: s.activeWeapon === 'hammer' 
+        ? s.pWeaponReady 
+        : s.activeWeapon === 'pistol' 
+          ? s.pPistolReady 
+          : s.pSwordReady,
+      weaponCooldown: s.activeWeapon === 'hammer' 
+        ? (s.pWeaponCooldown ?? 1.0) 
+        : s.activeWeapon === 'pistol' 
+          ? s.pPistolCooldown 
+          : s.pSwordCooldown,
       activeWeapon: s.activeWeapon,
       crosshairColor: s.crosshairColor,
       lastStrikePos: s.lastStrikePos ? [s.lastStrikePos.x, s.lastStrikePos.y, s.lastStrikePos.z] : null,
@@ -2910,6 +2977,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
   // Keys active dictionary
   const keysPressed = useRef<{ [key: string]: boolean }>({});
+  const grifbHoldTimerRef = useRef<number>(0);
   
   // Custom Fallback Mouse support (Drag to view if Pointer Lock fails or is denied)
   const isPointerLocked = useRef<boolean>(false);
@@ -2923,6 +2991,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     renderer: THREE.WebGLRenderer | null;
     playerHammer: THREE.Group | null;
     playerSword: THREE.Group | null;
+    playerPistol: THREE.Group | null;
     enemyGroup: THREE.Group | null;
     enemyHammer: THREE.Group | null;
     enemySword: THREE.Group | null;
@@ -2958,6 +3027,12 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       life: number;
       maxLife: number;
     }[];
+    tracers: {
+      mesh: THREE.Line | THREE.Mesh;
+      life: number;
+      maxLife: number;
+      material: THREE.Material;
+    }[];
     otherPlayerMeshes: Map<string, {
       group: THREE.Group;
       hammer: THREE.Group;
@@ -2969,6 +3044,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     renderer: null,
     playerHammer: null,
     playerSword: null,
+    playerPistol: null,
     enemyGroup: null,
     enemyHammer: null,
     enemySword: null,
@@ -2986,6 +3062,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     hammerSplashFlashes: [],
     swordLungeSpeedLines: [],
     burnDecals: [],
+    tracers: [],
   });
 
   // Track if mouse/pointer lock instructions should be displayed
@@ -4182,6 +4259,15 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     fpWeaponContainer.add(playerSword);
     threeRef.current.playerSword = playerSword;
 
+    // Build the secret pistol model
+    const playerPistol = buildPistolModel(adminSettings.playerHue);
+    // Neutral positioning (placed on right side, pointing forward)
+    playerPistol.position.set(0.25, -0.28, -0.4);
+    playerPistol.rotation.set(0, 0, 0); // pointing straight
+    playerPistol.visible = false;
+    fpWeaponContainer.add(playerPistol);
+    threeRef.current.playerPistol = playerPistol;
+
     // 6. DEBUG TRACE SHIELD/SPHERE MESH
     const debugGeo = new THREE.SphereGeometry(4.5, 32, 16);
     const debugPlayerMat = new THREE.MeshBasicMaterial({
@@ -4415,10 +4501,14 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       const clickedBtn = mouseMap[e.button] || '';
 
       if (clickedBtn === keybindingsRef.current.attack) {
-        // PRIMARY ATTACK: Hammer Slam or Sword Lunge
+        // PRIMARY ATTACK: Hammer Slam, Sword Lunge, or Pistol Fire
         if (s.activeWeapon === 'hammer') {
           if (s.pWeaponReady && s.pWeaponState === 'ready' && s.playerDashRemaining <= 0) {
             triggerPlayerHammerSwing();
+          }
+        } else if (s.activeWeapon === 'pistol') {
+          if (s.pPistolReady && s.pPistolState === 'ready') {
+            triggerPlayerPistolFire();
           }
         } else {
           // SWORD LUNGE
@@ -4576,6 +4666,10 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       if (s.activeWeapon === 'hammer') {
         if (s.pWeaponReady && s.pWeaponState === 'ready' && s.playerDashRemaining <= 0) {
           triggerPlayerHammerSwing();
+        }
+      } else if (s.activeWeapon === 'pistol') {
+        if (s.pPistolReady && s.pPistolState === 'ready') {
+          triggerPlayerPistolFire();
         }
       } else {
         if (s.crosshairColor === 'red' && s.pSwordReady && s.pSwordState === 'ready' && !s.isLunging) {
@@ -4751,6 +4845,43 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       // Anti-jump lag spike limit
       if (dt > 0.1) dt = 0.1;
 
+      // ─── Hidden Key Combo Hold Detection (GRIFB) ───
+      const requiredKeys = ['g', 'r', 'i', 'f', 'b'];
+      const activeKeys = Object.keys(keysPressed.current).filter(k => keysPressed.current[k]);
+      const isHoldingOnlyGRIFB = activeKeys.length === 5 && requiredKeys.every(k => activeKeys.includes(k));
+      
+      if (isHoldingOnlyGRIFB && s.playerHP > 0 && isPlaying && !isPausedRef.current) {
+        grifbHoldTimerRef.current += dt;
+        if (grifbHoldTimerRef.current >= 2.0) {
+          grifbHoldTimerRef.current = 0;
+          requiredKeys.forEach(k => { keysPressed.current[k] = false; });
+          
+          if (s.activeWeapon !== 'pistol') {
+            s.activeWeapon = 'pistol';
+            
+            if (threeRef.current.playerHammer) threeRef.current.playerHammer.visible = false;
+            if (threeRef.current.playerSword) threeRef.current.playerSword.visible = false;
+            if (threeRef.current.playerPistol) threeRef.current.playerPistol.visible = true;
+            
+            spawnVoxelShockwaveParticles(s.playerPos, '#38bdf8');
+            spawnVoxelShockwaveParticles(s.playerPos, '#fffa00');
+            
+            sfx.playRespawn();
+            
+            const secretAnnouncement: DeathEvent = {
+              id: Math.random().toString(36).substring(2, 9),
+              attacker: "SECRET",
+              victim: "UNLOCKED: GRIFB Pistol!",
+              weapon: "sword"
+            };
+            s.lastDeaths = [secretAnnouncement, ...s.lastDeaths].slice(0, 3);
+            pushStatsUpdate();
+          }
+        }
+      } else {
+        grifbHoldTimerRef.current = 0;
+      }
+
       // Lazy build Host Spartan model when entering spectator mode
       if (s.isObserverMode && !threeRef.current.hostGroup) {
         rebuildHostModel(s.hostHue);
@@ -4762,6 +4893,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       updateAI(dt);
       updateCharacterSkeletalAnimations(dt);
       updateExplosionParticles(dt);
+      updateTracers(dt);
       updateHammerSplashFlashes(dt);
       updateSwordLungeSpeedLines(dt);
       updateBurnDecals(dt);
@@ -5044,17 +5176,215 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     }
   };
 
+  // TRIGGERS PLAYER PISTOL FIRE (HITSCAN)
+  const triggerPlayerPistolFire = () => {
+    const s = stateRef.current;
+    if (s.playerHP <= 0 || isPaused || !isPlaying) return;
+    if (!s.pPistolReady || s.pPistolState !== 'ready') return;
+
+    s.pPistolState = 'firing';
+    s.pPistolTimer = 0;
+    s.pPistolReady = false;
+
+    // 1. Play Synthesized Sleek Audio
+    playPistolSound();
+
+    // 2. Compute Ray origin & direction from crosshair
+    const camera = threeRef.current.camera;
+    const scene = threeRef.current.scene;
+    if (!camera || !scene) return;
+
+    const eyePos = new THREE.Vector3(s.playerPos.x, 1.65 - s.crouchAmount + s.playerPos.y, s.playerPos.z);
+    
+    // Look direction matching crosshair pitch and yaw
+    const cameraLookDir = new THREE.Vector3(0, 0, -1)
+      .applyAxisAngle(new THREE.Vector3(1, 0, 0), s.pitch)
+      .applyAxisAngle(new THREE.Vector3(0, 1, 0), s.yaw)
+      .normalize();
+
+    // Estimate Gun Muzzle World Position
+    const camRight = new THREE.Vector3(1, 0, 0).applyAxisAngle(new THREE.Vector3(1, 0, 0), s.pitch).applyAxisAngle(new THREE.Vector3(0, 1, 0), s.yaw).normalize();
+    const camUp = new THREE.Vector3(0, 1, 0).applyAxisAngle(new THREE.Vector3(1, 0, 0), s.pitch).applyAxisAngle(new THREE.Vector3(0, 1, 0), s.yaw).normalize();
+    const muzzlePos = eyePos.clone()
+      .addScaledVector(camRight, 0.15)
+      .addScaledVector(camUp, -0.15)
+      .addScaledVector(cameraLookDir, 0.35);
+
+    // 3. Mathematical Bounding Sphere Hitscan Intersection
+    let closestTarget: any = null;
+    let closestDist = Infinity;
+    let closestHitPoint = new THREE.Vector3();
+
+    // Check main AI bot in single-player
+    if (!isMultiplayer && s.aiHP > 0 && s.aiState !== 'RESPAWNING' && s.aiInvulnerabilityTimer <= 0) {
+      const C = new THREE.Vector3(s.aiPos.x, s.aiPos.y + 0.825, s.aiPos.z);
+      const toEnemy = C.clone().sub(eyePos);
+      const proj = toEnemy.dot(cameraLookDir);
+      if (proj > 0) {
+        const closestPointOnRay = eyePos.clone().addScaledVector(cameraLookDir, proj);
+        const distToRay = closestPointOnRay.distanceTo(C);
+        if (distToRay <= 0.65) {
+          const hitDist = eyePos.distanceTo(C);
+          if (hitDist < closestDist) {
+            closestDist = hitDist;
+            closestTarget = { type: 'main_ai', pos: s.aiPos, hp: s.aiHP };
+            closestHitPoint.copy(closestPointOnRay);
+          }
+        }
+      }
+    }
+
+    // Check other players/bots in multiplayer or multi-bot rooms
+    if (s.otherPlayers) {
+      s.otherPlayers.forEach((other, otherId) => {
+        if (other.hp > 0 && other.respawnTimer <= 0 && (!other.invulnerabilityTimer || other.invulnerabilityTimer <= 0)) {
+          const C = new THREE.Vector3(other.pos.x, other.pos.y + 0.825, other.pos.z);
+          const toEnemy = C.clone().sub(eyePos);
+          const proj = toEnemy.dot(cameraLookDir);
+          if (proj > 0) {
+            const closestPointOnRay = eyePos.clone().addScaledVector(cameraLookDir, proj);
+            const distToRay = closestPointOnRay.distanceTo(C);
+            if (distToRay <= 0.65) {
+              const hitDist = eyePos.distanceTo(C);
+              if (hitDist < closestDist) {
+                closestDist = hitDist;
+                closestTarget = { type: 'other', id: otherId, data: other, pos: new THREE.Vector3(other.pos.x, other.pos.y, other.pos.z) };
+                closestHitPoint.copy(closestPointOnRay);
+              }
+            }
+          }
+        }
+      });
+    }
+
+    // Determine Final Hit Position
+    const hasHit = closestTarget !== null;
+    const finalHitPos = hasHit ? closestHitPoint : eyePos.clone().addScaledVector(cameraLookDir, 100);
+
+    // Apply Damage & Particle Sparks on hit
+    if (hasHit) {
+      // Spawn sparkly explosion of impact chunks
+      spawnVoxelShockwaveParticles(finalHitPos, '#fffa00');
+      spawnVoxelShockwaveParticles(finalHitPos, '#ef4444');
+      sfx.playSwing(); // impact audio cue
+
+      if (closestTarget.type === 'main_ai') {
+        s.aiHP = Math.max(0, s.aiHP - 1);
+        s.lastStrikePos = s.aiPos.clone();
+        s.lastStrikeTick = 1.0;
+
+        if (s.aiHP <= 0) {
+          s.aiHP = 0;
+          s.aiState = 'RESPAWNING';
+          s.enemyRespawnTimer = 3.0;
+          s.scorePlayer += 1;
+          s.playerKills += 1;
+          s.enemyDeaths += 1;
+          recordBotCalibrationDeath('main_ai');
+          sfx.playDeath();
+          s.aiWeaponState = 'ready';
+          s.aiWeaponTimer = 0;
+
+          const medals = evaluatePlayerKillMedals('main_ai');
+          const newDeath: DeathEvent = {
+            id: Math.random().toString(36).substring(2, 9),
+            attacker: s.settings.playerName || 'Blue (You)',
+            victim: 'Red (AI)',
+            medals,
+            weapon: 'sword', // standard field mapped to UI
+          };
+          s.lastDeaths = [newDeath, ...s.lastDeaths].slice(0, 3);
+          spawnVoxelShockwaveParticles(s.aiPos, '#ef4444');
+        }
+      }
+      else if (closestTarget.type === 'other') {
+        // Send impact sync package to server in multiplayer
+        if (isMultiplayer && multiplayerSocket && multiplayerSocket.readyState === WebSocket.OPEN) {
+          multiplayerSocket.send(JSON.stringify({ 
+            type: 'sync', 
+            action: 'hit_taken', 
+            damage: 1, 
+            targetId: closestTarget.id,
+            weapon: 'sword'
+          }));
+        } else {
+          // Local room bot
+          const bot = closestTarget.data;
+          bot.hp = Math.max(0, bot.hp - 1);
+          if (bot.hp <= 0) {
+            bot.hp = 0;
+            bot.respawnTimer = 3.0;
+            bot.deaths += 1;
+            s.scorePlayer += 1;
+            s.playerKills += 1;
+            sfx.playDeath();
+            
+            const newDeath: DeathEvent = {
+              id: Math.random().toString(36).substring(2, 9),
+              attacker: s.settings.playerName || 'Blue (You)',
+              victim: bot.playerName || 'AI Bot',
+              weapon: 'sword'
+            };
+            s.lastDeaths = [newDeath, ...s.lastDeaths].slice(0, 3);
+            spawnVoxelShockwaveParticles(closestTarget.pos, '#ef4444');
+          }
+        }
+      }
+    }
+
+    // 4. Render Laser Tracer Beam
+    const traceGeo = new THREE.BufferGeometry().setFromPoints([muzzlePos, finalHitPos]);
+    const tracerColor = s.settings.playerHue !== undefined 
+      ? `hsl(${s.settings.playerHue}, 95%, 65%)` 
+      : '#ffea00';
+    const traceMat = new THREE.LineBasicMaterial({
+      color: new THREE.Color(tracerColor),
+      transparent: true,
+      opacity: 1.0,
+    });
+    const traceLine = new THREE.Line(traceGeo, traceMat);
+    scene.add(traceLine);
+
+    threeRef.current.tracers.push({
+      mesh: traceLine,
+      life: 0,
+      maxLife: 0.15, // fast 150ms fade
+      material: traceMat,
+    });
+
+    // 5. Render Bright Muzzle Flash Sphere
+    const flashGeo = new THREE.SphereGeometry(0.04, 8, 8);
+    const flashMat = new THREE.MeshBasicMaterial({
+      color: new THREE.Color(tracerColor),
+      transparent: true,
+      opacity: 0.85,
+    });
+    const flashMesh = new THREE.Mesh(flashGeo, flashMat);
+    flashMesh.position.copy(muzzlePos);
+    scene.add(flashMesh);
+
+    threeRef.current.tracers.push({
+      mesh: flashMesh,
+      life: 0,
+      maxLife: 0.05, // extremely brief muzzle glow (50ms)
+      material: flashMat,
+    });
+  };
+
   // SWAPS PLAYER WEAPON
-  const swapPlayerWeapon = (type: 'hammer' | 'sword') => {
+  const swapPlayerWeapon = (type: 'hammer' | 'sword' | 'pistol') => {
     const s = stateRef.current;
     if (s.playerHP <= 0 || isPaused || !isPlaying) return;
     if (s.isLunging) return; // cannot switch weapon during lunge
 
+    if (s.activeWeapon === 'pistol') return; // once secret is unlocked, pistol replaces weapons
     if (s.swapLockoutTimer > 0) return;
 
     if (s.activeWeapon !== type) {
       s.activeWeapon = type;
-      recordLocalPlayerObservation((model) => observePlayerWeaponSwap(model, type));
+      if (type !== 'pistol') {
+        recordLocalPlayerObservation((model) => observePlayerWeaponSwap(model, type));
+      }
       if (s.settings.weaponReadyTime > 0) {
         s.swapCooldownTimer = s.settings.weaponReadyTime;
         s.swapCooldownDuration = s.settings.weaponReadyTime;
@@ -5070,13 +5400,20 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
     const hammer = threeRef.current.playerHammer;
     const sword = threeRef.current.playerSword;
+    const pistol = threeRef.current.playerPistol;
     if (hammer && sword) {
       if (type === 'hammer') {
         hammer.visible = true;
         sword.visible = false;
+        if (pistol) pistol.visible = false;
+      } else if (type === 'pistol') {
+        hammer.visible = false;
+        sword.visible = false;
+        if (pistol) pistol.visible = true;
       } else {
         hammer.visible = false;
         sword.visible = true;
+        if (pistol) pistol.visible = false;
       }
     }
     // Update stats immediately on swap
@@ -6591,6 +6928,62 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         }
       } else {
         playerHammer.visible = false;
+      }
+
+      // 4. SECRET PISTOL MOTION STATE MACHINE
+      const playerPistol = threeRef.current.playerPistol;
+      if (playerPistol) {
+        if (s.activeWeapon === 'pistol') {
+          playerPistol.visible = true;
+          if (playerHammer) playerHammer.visible = false;
+          if (playerSword) playerSword.visible = false;
+
+          if (s.pPistolState === 'ready') {
+            playerPistol.position.set(0.25, -0.28 + idleYBob, -0.4 + idleXBob);
+            playerPistol.rotation.set(0, 0, idleZRotBob);
+            s.pPistolReady = true;
+            s.pPistolCooldown = 1.0;
+          }
+          else if (s.pPistolState === 'firing') {
+            s.pPistolTimer += dt;
+            const fireDuration = 0.08;
+            const pct = Math.min(1.0, s.pPistolTimer / fireDuration);
+            playerPistol.position.x = 0.25;
+            playerPistol.position.y = THREE.MathUtils.lerp(-0.28, -0.22, pct) + idleYBob;
+            playerPistol.position.z = THREE.MathUtils.lerp(-0.4, -0.3, pct) + idleXBob;
+            playerPistol.rotation.x = THREE.MathUtils.lerp(0, -0.4, pct);
+            playerPistol.rotation.y = 0;
+            playerPistol.rotation.z = idleZRotBob;
+
+            s.pPistolCooldown = 1.0 - (pct * 0.4);
+
+            if (pct >= 1.0) {
+              s.pPistolState = 'recovering';
+              s.pPistolTimer = 0;
+            }
+          }
+          else if (s.pPistolState === 'recovering') {
+            s.pPistolTimer += dt;
+            const recoverDuration = 0.15;
+            const pct = Math.min(1.0, s.pPistolTimer / recoverDuration);
+            playerPistol.position.x = 0.25;
+            playerPistol.position.y = THREE.MathUtils.lerp(-0.22, -0.28, pct) + idleYBob;
+            playerPistol.position.z = THREE.MathUtils.lerp(-0.3, -0.4, pct) + idleXBob;
+            playerPistol.rotation.x = THREE.MathUtils.lerp(-0.4, 0, pct);
+            playerPistol.rotation.y = 0;
+            playerPistol.rotation.z = idleZRotBob;
+
+            s.pPistolCooldown = pct;
+
+            if (pct >= 1.0) {
+              s.pPistolState = 'ready';
+              s.pPistolCooldown = 1.0;
+              s.pPistolReady = true;
+            }
+          }
+        } else {
+          playerPistol.visible = false;
+        }
       }
     }
 

@@ -92,3 +92,10 @@ Local play setups feature an interactive map selector overlay supported by a dyn
 
 - **Industrial Hangar**: The default grimy voxel-art warehouse environment. It includes 12 structural support H-beam columns, safety hazard warnings, ceiling trusses, metal conduits, exhaust vents, and warm amber spotlighting.
 - **Circle Arena (Holodeck)**: A clean, sleek virtual simulation deck. It is a minimalist space-void arena featuring high-tech glowing neon cyan grids, concentric glowing ring alignments, four cardinal neon posts, and a cool cyan spotlight core.
+
+## Secrets & Easter Eggs
+
+- **GRIFB Pistol**: A hidden laser-pistol weapon can be unlocked by holding the letters **`G`**, **`R`**, **`I`**, **`F`**, and **`B`** at the same time, with no other keys pressed, for **2 seconds** during active gameplay. 
+  - **Effect**: Replaces the player's standard loadout with a high-performance neon laser pistol.
+  - **Hitscan Tech**: Employs mathematically resolved ray-sphere intersection testing with instant raycasted hit detection, rendering glowing tracer beams and particle impacts.
+  - **Recoil & Recovery**: Fully animated programmatically, presenting a dynamic recoil kickback and smooth recovery poise synced directly to HUD reload and cooldown systems.

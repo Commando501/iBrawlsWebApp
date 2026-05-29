@@ -159,7 +159,7 @@ export interface RemotePlayerState {
   hp: number;
   maxHp: number;
   isCrouching: boolean;
-  activeWeapon: 'hammer' | 'sword';
+  activeWeapon: 'hammer' | 'sword' | 'pistol';
   respawnTimer: number;
   hue: number;
   score: number;
@@ -223,7 +223,7 @@ export interface GameStats {
   enemyIsCrouching: boolean;
   playerIsCrouchMoving: boolean;
   enemyIsCrouchMoving: boolean;
-  activeWeapon: 'hammer' | 'sword';
+  activeWeapon: 'hammer' | 'sword' | 'pistol';
   crosshairColor: 'white' | 'red';
   isMultiplayer?: boolean;
   multiplayerRole?: 'host' | 'client' | 'observer' | null;
