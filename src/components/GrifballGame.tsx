@@ -7989,6 +7989,18 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     const verticalThreat = Math.abs(verticalDeltaToTarget) > 1.1;
     const attackDistanceToTarget = verticalThreat ? combatDistanceToTarget : distanceToTarget;
 
+    // Point-blank kill detection (shared). An enemy within this 3D range is fully
+    // inside a forward-facing damage sphere (radius attackRadius, planted ~attackRange
+    // ahead), so a level swing is a guaranteed hit at zero self-risk. When one is this
+    // close the bot must NOT hammer-jump or dance — leaping makes its sphere point
+    // straight down and whiff (the group "jump around / spin / miss" loop), when a
+    // simple ground swing would connect. selfGrounded gates the commit so a bot only
+    // takes the free swing while planted, not mid-leap.
+    const pointBlankKillRange = (s.settings.attackRadius ?? 4.5) * 0.65;
+    const enemyAtPointBlank =
+      target.hp > 0 && !targetIsProtected && attackDistanceToTarget <= pointBlankKillRange;
+    const selfGrounded = pos.y <= 0.05 && (isMainAI ? !s.aiIsJumping : Math.abs(vel.y) <= 0.01);
+
     const inCoordCommitBand =
       attackDistanceToTarget <= resolvedAiReach + 0.5 &&
       weaponState === 'ready' &&
@@ -8558,7 +8570,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
           botState!.weaponTimer = 0;
           sfx.playSwing();
         }
-      } else if (verticalDeltaToTarget > 2.0 && distanceToTarget <= resolvedDangerZone + 4.5 && Math.random() < 0.012 + tunedAnticipationFactor * 0.035) {
+      } else if (!enemyAtPointBlank && verticalDeltaToTarget > 2.0 && distanceToTarget <= resolvedDangerZone + 4.5 && Math.random() < 0.012 + tunedAnticipationFactor * 0.035) {
         if (startAIHammerJump(isMainAI, botState, pos, vel, toTarget, 'offensive')) {
           weaponState = 'swing_up';
           hammerJumpCooldownTimer = AI_HAMMER_JUMP_COOLDOWN;
@@ -8865,25 +8877,16 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       const lungeDistanceToTarget = targetAirborne ? combatDistanceToTarget : distanceToTarget;
       const hasVerticalLungeLine = !targetAirborne || movementComplexity >= 60;
 
-      // Point-blank guaranteed-hit execution. A forward-facing swing plants its
-      // damage sphere (radius attackRadius) ~attackRange ahead of the bot, so an
-      // enemy this close is fully inside it, and a combatant never takes damage from
-      // its own sphere — the hit is guaranteed at zero self-risk, true even for a
-      // hammer whose blast overlaps the bot itself. Committing the swing here instead
-      // of dancing is what breaks the symmetric AI-vs-AI standoff (the circle /
-      // hammer-jump / thrust loop): at point-blank neither bot can win the spacing
-      // game, mutual trade-avoidance keeps both circling forever, so the correct play
-      // is to simply swing and take the free kill. Runs before the feint/lunge/dance
-      // logic so it preempts that whole cautious chain.
-      const pointBlankKillRange = (s.settings.attackRadius ?? 4.5) * 0.65;
+      // Point-blank guaranteed-hit execution (see enemyAtPointBlank above). Take the
+      // free level swing instead of feinting/lunging/dancing. Running before that whole
+      // cautious chain is what breaks the symmetric AI-vs-AI standoff — at point-blank
+      // neither bot can win the spacing game, so the correct play is to simply swing.
       if (
+        enemyAtPointBlank &&
+        selfGrounded &&
         canStartWeaponAction &&
         weaponState === 'ready' &&
-        !slideActive &&
-        !targetAirborne &&
-        target.hp > 0 &&
-        !targetIsProtected &&
-        attackDistanceToTarget <= pointBlankKillRange
+        !slideActive
       ) {
         vel.x = 0;
         vel.z = 0;
