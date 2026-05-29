@@ -62,7 +62,7 @@ import { ChatOverlay, ChatMessage } from './components/ChatOverlay';
 import { CharacterPreview } from './components/CharacterPreview';
 import { CharacterLoadout, DEFAULT_LOADOUT, AVAILABLE_PRESETS, HelmetPreset, TorsoPreset, ArmPreset, LegPreset } from './components/VoxelModels';
 
-const APP_VERSION = '0.467b';
+const APP_VERSION = '0.471';
 const MAX_PLAYER_NAME_LENGTH = 10;
 
 interface OnlineClient {
@@ -1570,6 +1570,8 @@ export default function App() {
       dashCooldown: 2.0,
       respawnInvulnerabilityDuration: 1.0,
       hammerReloadTime: 0.6,
+      hammerMeleeSpeed: 0.24,
+      hammerMeleeReload: 0.5,
       hammerSplashVfx: 'current',
       swordLungeVfx: 'current',
       swordLungeDistance: 14.5,

@@ -14,6 +14,8 @@ export const DEFAULT_ADMIN_SETTINGS: UniversalSettings = {
   dashCooldown: 2.0,
   respawnInvulnerabilityDuration: 1.0,
   hammerReloadTime: 0.6,
+  hammerMeleeSpeed: 0.24,
+  hammerMeleeReload: 0.5,
   hammerSplashVfx: 'current',
   swordLungeVfx: 'current',
   swordLungeDistance: 14.5,

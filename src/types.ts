@@ -15,6 +15,8 @@ export interface UniversalSettings {
   dashCooldown: number; // Dash cooldown in seconds (e.g. 0.5s to 10.0s)
   respawnInvulnerabilityDuration: number; // Invulnerability window in seconds (e.g. 0.5s to 5.0s)
   hammerReloadTime: number;               // Recovery/reload duration for Gravity Hammer in seconds (e.g. 0.1s to 3.0s)
+  hammerMeleeSpeed: number;               // Speed of the hammer melee side-swipe animation in seconds (e.g. 0.05s to 1.0s)
+  hammerMeleeReload: number;              // Recovery reload duration for Hammer Melee in seconds (e.g. 0.1s to 3.0s)
   hammerSplashVfx: 'current' | 'neonBlueFlash'; // Gravity Hammer impact visual style
   swordLungeVfx: 'current' | 'speedLineTrail'; // Energy Sword lunge visual style
   swordLungeDistance: number;             // Lunge range distance mapping reticule lock on (e.g. 1.0m to 25.0m)
@@ -106,7 +108,7 @@ export type GameState = 'menu' | 'playing' | 'paused';
 
 export type Stance = 'STANDING' | 'CROUCHING' | 'JUMPING';
 
-export type WeaponState = 'ready' | 'swing_up' | 'swing_down' | 'recovering';
+export type WeaponState = 'ready' | 'swing_up' | 'swing_down' | 'recovering' | 'melee_swing' | 'melee_recover' | 'melee_up' | 'melee_down';
 
 export type AIBehaviorPreset = 'passive' | 'defensive' | 'aggressive';
 
