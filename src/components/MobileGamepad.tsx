@@ -54,40 +54,47 @@ export const LeftAnalogStick: React.FC<LeftStickProps> = ({
     if (isAdjustmentMode || activePointerIdRef.current !== null) return;
     e.preventDefault();
     activePointerIdRef.current = e.pointerId;
-    e.currentTarget.setPointerCapture(e.pointerId);
     setActive(true);
     updateStickPosition(e.clientX, e.clientY);
   };
 
-  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (activePointerIdRef.current !== e.pointerId) return;
-    e.preventDefault();
-    updateStickPosition(e.clientX, e.clientY);
-  };
+  useEffect(() => {
+    if (activePointerIdRef.current === null) return;
 
-  const handlePointerEnd = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (activePointerIdRef.current !== e.pointerId) return;
-    activePointerIdRef.current = null;
-    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
-      e.currentTarget.releasePointerCapture(e.pointerId);
-    }
-    setActive(false);
-    if (knobRef.current) {
-      knobRef.current.style.transform = 'translate(0px, 0px)';
-    }
-    mobileJoystickRef.current = { x: 0, y: 0 };
-  };
+    const handlePointerMove = (e: PointerEvent) => {
+      if (e.pointerId !== activePointerIdRef.current) return;
+      e.preventDefault();
+      updateStickPosition(e.clientX, e.clientY);
+    };
+
+    const handlePointerEnd = (e: PointerEvent) => {
+      if (e.pointerId !== activePointerIdRef.current) return;
+      activePointerIdRef.current = null;
+      setActive(false);
+      if (knobRef.current) {
+        knobRef.current.style.transform = 'translate(0px, 0px)';
+      }
+      mobileJoystickRef.current = { x: 0, y: 0 };
+    };
+
+    window.addEventListener('pointermove', handlePointerMove, { passive: false });
+    window.addEventListener('pointerup', handlePointerEnd);
+    window.addEventListener('pointercancel', handlePointerEnd);
+
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerEnd);
+      window.removeEventListener('pointercancel', handlePointerEnd);
+    };
+  }, [active]);
 
   return (
     <div 
       ref={stickRef}
       onPointerDown={handlePointerDown}
-      onPointerMove={handlePointerMove}
-      onPointerUp={handlePointerEnd}
-      onPointerCancel={handlePointerEnd}
       className={`mobile-left-stick w-32 h-32 rounded-full border-2 transition-all duration-300 flex items-center justify-center relative select-none ${
         active 
-          ? 'border-cyan-400/80 bg-slate-950/45 shadow-[0_0_25px_rgba(6,182,212,0.3)] scale-[1.03]' 
+          ? 'border-cyan-400/80 bg-slate-950/45 shadow-[0_0_25px_rgba(6,182,212,0.35)] scale-[1.03]' 
           : 'border-white/15 bg-slate-950/25 shadow-[inset_0_1px_3px_rgba(0,0,0,0.5)]'
       }`}
       style={{ backdropFilter: 'blur(10px)', pointerEvents: isAdjustmentMode ? 'none' : 'auto' }}
@@ -176,31 +183,41 @@ export const RightActionButtonPad: React.FC<RightPadProps> = ({
     if (isAdjustmentMode || activePointerIdRef.current !== null) return;
     e.preventDefault();
     activePointerIdRef.current = e.pointerId;
-    e.currentTarget.setPointerCapture(e.pointerId);
     setActive(true);
     mobileRightJoystickActiveRef.current = true;
     updateStickPosition(e.clientX, e.clientY);
   };
 
-  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (activePointerIdRef.current !== e.pointerId) return;
-    e.preventDefault();
-    updateStickPosition(e.clientX, e.clientY);
-  };
+  useEffect(() => {
+    if (activePointerIdRef.current === null) return;
 
-  const handlePointerEnd = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (activePointerIdRef.current !== e.pointerId) return;
-    activePointerIdRef.current = null;
-    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
-      e.currentTarget.releasePointerCapture(e.pointerId);
-    }
-    setActive(false);
-    mobileRightJoystickActiveRef.current = false;
-    if (knobRef.current) {
-      knobRef.current.style.transform = 'translate(0px, 0px)';
-    }
-    mobileRightJoystickRef.current = { x: 0, y: 0 };
-  };
+    const handlePointerMove = (e: PointerEvent) => {
+      if (e.pointerId !== activePointerIdRef.current) return;
+      e.preventDefault();
+      updateStickPosition(e.clientX, e.clientY);
+    };
+
+    const handlePointerEnd = (e: PointerEvent) => {
+      if (e.pointerId !== activePointerIdRef.current) return;
+      activePointerIdRef.current = null;
+      setActive(false);
+      mobileRightJoystickActiveRef.current = false;
+      if (knobRef.current) {
+        knobRef.current.style.transform = 'translate(0px, 0px)';
+      }
+      mobileRightJoystickRef.current = { x: 0, y: 0 };
+    };
+
+    window.addEventListener('pointermove', handlePointerMove, { passive: false });
+    window.addEventListener('pointerup', handlePointerEnd);
+    window.addEventListener('pointercancel', handlePointerEnd);
+
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerEnd);
+      window.removeEventListener('pointercancel', handlePointerEnd);
+    };
+  }, [active]);
 
   // Simulate general keyboard inputs
   const triggerKeyAction = (keyName: string) => {
@@ -251,9 +268,6 @@ export const RightActionButtonPad: React.FC<RightPadProps> = ({
       <div 
         ref={stickRef}
         onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerUp={handlePointerEnd}
-        onPointerCancel={handlePointerEnd}
         className={`mobile-right-stick absolute rounded-full border-2 transition-all duration-300 flex items-center justify-center pointer-events-auto ${
           active 
             ? 'border-indigo-400/80 bg-slate-950/45 shadow-[0_0_25px_rgba(99,102,241,0.3)] scale-[1.03]' 

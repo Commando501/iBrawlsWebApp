@@ -229,6 +229,7 @@ export const HUD: React.FC<HUDProps> = ({
   const draftUiPositionsRef = useRef<UiElementPos[]>(uiPositions);
   const onUpdateUiPositionsRef = useRef(onUpdateUiPositions);
   const draggingPointerIdRef = useRef<number | null>(null);
+  const dragOffsetRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
 
   useEffect(() => {
     onUpdateUiPositionsRef.current = onUpdateUiPositions;
@@ -285,6 +286,15 @@ export const HUD: React.FC<HUDProps> = ({
     const item = draftUiPositionsRef.current.find((ui) => ui.id === id);
     if (!item || item.locked) return;
     draggingPointerIdRef.current = e.pointerId;
+    
+    // Compute starting offset in viewport percentage coords
+    const pctX = (e.clientX / window.innerWidth) * 100;
+    const pctY = (e.clientY / window.innerHeight) * 100;
+    dragOffsetRef.current = {
+      x: pctX - item.x,
+      y: pctY - item.y
+    };
+
     setDraggingId(id);
     e.stopPropagation();
     e.preventDefault();
@@ -319,8 +329,8 @@ export const HUD: React.FC<HUDProps> = ({
       const pctY = (e.clientY / window.innerHeight) * 100;
 
       // Restrict within the viewport boundaries (avoid flying completely offscreen)
-      const clampedX = Math.max(1, Math.min(99, pctX));
-      const clampedY = Math.max(1, Math.min(99, pctY));
+      const clampedX = Math.max(1, Math.min(99, pctX - dragOffsetRef.current.x));
+      const clampedY = Math.max(1, Math.min(99, pctY - dragOffsetRef.current.y));
 
       pendingPosition = { x: clampedX, y: clampedY };
       if (animationFrameId === null) {

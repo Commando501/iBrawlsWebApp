@@ -1012,6 +1012,24 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
             bot.aiHammerJumpCooldownTimer = 0;
             bot.invulnerabilityTimer = s.settings.respawnInvulnerabilityDuration;
             bot.spawnTime = Date.now();
+
+            // Reset combat state so the respawned bot re-acquires and closes on
+            // targets. Without this the bot keeps its pre-death micro-spacing
+            // state (SIDE_STEPPING/COOLDOWN/etc), which never returns to
+            // APPROACHING and only reacts once a target enters melee range.
+            bot.aiState = 'APPROACHING';
+            bot.aiTimer = 0;
+            bot.isLunging = false;
+            bot.aiDashRemaining = 0;
+            bot.aiLastLungeOutcome = undefined;
+            bot.aiLastLungeTargetId = undefined;
+            bot.aiPostLungeDecisionTimer = 0;
+            bot.aiPendingPostEvasionCharge = false;
+            bot.aiCoordCommitTimer = 0;
+            bot.swapLockoutTimer = 0;
+            clearBotComboState(s.aiMatchContext, bot.id);
+            clearPressureTarget(bot.id);
+
             botMesh.visible = true;
             sfx.playRespawn();
           }
@@ -1055,6 +1073,11 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         s.aiSpawnTime = Date.now();
         s.aiSwapLockoutTimer = 0;
         s.aiSwapCooldownTimer = 0;
+        s.aiTimer = 0;
+        s.aiDashRemaining = 0;
+        s.aiPendingPostEvasionCharge = false;
+        s.aiCoordCommitTimer = 0;
+        clearBotComboState(s.aiMatchContext, 'main_ai');
         sfx.playRespawn();
 
       }
@@ -5014,7 +5037,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     }
     
     // Check if player is alive. If dead, countdown respawn timer
-    if (s.playerHP <= 0) {
+    const playerIsDead = s.playerHP <= 0;
+    if (playerIsDead) {
       s.playerSpreeCount = 0; // Reset killing spree when dead!
       s.playerRespawnTimer -= dt;
       if (s.playerRespawnTimer <= 0) {
@@ -5041,12 +5065,11 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         s.swapLockoutTimer = 0;
         s.swapCooldownTimer = 0;
         sfx.playRespawn();
-
       }
-      return;
     }
 
-    // If player is currently lunging, glide directly towards the enemy on a locked linear path
+    if (!playerIsDead) {
+      // If player is currently lunging, glide directly towards the enemy on a locked linear path
     if (s.isLunging) {
       s.lungeTimer += dt;
       const lungeSpeed = s.settings.swordLungeSpeed ?? 24.0;
@@ -5434,6 +5457,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       s.playerPos.y = 0;
       s.playerVel.y = 0;
     }
+    }
 
     // Handle AI Gravity Physics
     if (s.aiIsJumping) {
@@ -5458,12 +5482,16 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     recoverMainAIFromRunawayAltitude();
 
     // Integrate absolute positions
-    s.playerPos.x += s.playerVel.x * dt;
-    s.playerPos.z += s.playerVel.z * dt;
+    if (!playerIsDead) {
+      s.playerPos.x += s.playerVel.x * dt;
+      s.playerPos.z += s.playerVel.z * dt;
+    }
     constrainCombatantToArena(s.aiPos, s.aiVel);
 
-    // Circular arena boundary restraint (Snap inside radius)
-    constrainCombatantToArena(s.playerPos, s.playerVel);
+    if (!playerIsDead) {
+      // Circular arena boundary restraint (Snap inside radius)
+      constrainCombatantToArena(s.playerPos, s.playerVel);
+    }
   };
 
   // HAMMER & SWORD ANIMATIONS & DAMAGE APPLICATION
@@ -6770,8 +6798,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     let dashRemaining = isMainAI ? s.aiDashRemaining : botState!.aiDashRemaining;
     let coordCommitTimer = isMainAI ? (s.aiCoordCommitTimer ?? 0) : (botState!.aiCoordCommitTimer ?? 0);
     let hammerJumpCooldownTimer = isMainAI ? s.aiHammerJumpCooldownTimer : botState!.aiHammerJumpCooldownTimer;
-    const dashDir = isMainAI 
-      ? s.aiDashDir.clone() 
+    const dashDir = isMainAI
+      ? s.aiDashDir.clone()
       : new THREE.Vector3(botState!.aiDashDir.x, botState!.aiDashDir.y, botState!.aiDashDir.z);
 
     const syncStateAndMesh = () => {
@@ -6924,6 +6952,10 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       const spawnSpatialIQ = derivedParams.spatialIQ;
       const holdDistance = getPostKillHoldDistance();
 
+      // This path returns early, so it never reaches the normal sway tick below.
+      // Advance it here so the post-kill strafe direction keeps changing.
+      swayTimer += dt;
+
       if (spawnDist > 0.1) {
         yaw = getSpawnGuardAimAngle({
           botX: pos.x,
@@ -6960,12 +6992,22 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         const approachSpeed = getPostKillApproachSpeed(postKillPressure.lungeKill, effectivePressureAggression);
         vel.copy(moveHeading).multiplyScalar(approachSpeed * (s.settings.speedForward / 100));
         pos.addScaledVector(vel, dt);
-      } else if (spawnDist < holdDistance - 0.8 && !postKillPressure.lungeKill) {
+      } else if (spawnDist < holdDistance - 0.8) {
         const moveHeading = toSpawn.clone().normalize();
         vel.copy(moveHeading).multiplyScalar(-2.0 * (s.settings.speedBackward / 100));
         pos.addScaledVector(vel, dt);
       } else {
-        vel.set(0, 0, 0);
+        // Stay mobile inside the hold band: orbit the spawn point with a periodic
+        // strafe-direction flip plus a small radial correction, so the AI keeps the
+        // player guessing instead of standing still.
+        const guardHeading = spawnDist > 0.001 ? toSpawn.clone().normalize() : new THREE.Vector3(1, 0, 0);
+        const strafeDir = new THREE.Vector3(-guardHeading.z, 0, guardHeading.x);
+        const sideSign = Math.sin(swayTimer * 2.4) > 0 ? 1 : -1;
+        const strafeSpeed = 3.2 * (s.settings.speedSide / 100);
+        const radialCorrection = Math.max(-1, Math.min(1, spawnDist - holdDistance));
+        vel.copy(strafeDir).multiplyScalar(strafeSpeed * sideSign);
+        vel.addScaledVector(guardHeading, radialCorrection * 1.5 * (s.settings.speedForward / 100));
+        pos.addScaledVector(vel, dt);
       }
       constrainCombatantToArena(pos, vel);
 
@@ -6974,11 +7016,13 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         s.aiState = state;
         s.aiTimer = postKillPressure.timerRemaining;
         s.aiActiveWeapon = activeWeapon;
+        s.aiSwayTimer = swayTimer;
       } else {
         botState!.yaw = yaw;
         botState!.aiState = state;
         botState!.aiTimer = postKillPressure.timerRemaining;
         botState!.activeWeapon = activeWeapon;
+        botState!.aiSwayTimer = swayTimer;
         botState!.pos.copy(pos);
         botState!.vel.copy(vel);
       }
@@ -6997,6 +7041,16 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     }
 
     if (!target) {
+      if (!isMainAI) {
+        if (botState!.isLunging) {
+          const localCooldownMult = (1.3 - 0.8 * playstyleFactor) * matchMultipliers.cooldownMult;
+          finishBotSwordLunge(localCooldownMult, 'target_dead', undefined);
+        }
+        botState!.aiDashRemaining = 0;
+      } else {
+        s.aiDashRemaining = 0;
+      }
+
       const isAirborneWithoutTarget = isMainAI
         ? (s.aiIsJumping || pos.y > 0.01 || Math.abs(vel.y) > 0.01)
         : (pos.y > 0.01 || Math.abs(vel.y) > 0.01);
@@ -7095,6 +7149,16 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     }
 
     registerBotEngagement(s.aiMatchContext.coordinator, botId, target.id);
+
+    // SPAWN_GUARDING is only driven by the post-kill-pressure / no-target early-return
+    // paths above. If we reach here we have a live target and those holds have expired,
+    // but the bottom combat state machine has no SPAWN_GUARDING branch — so a stale value
+    // would leave the AI frozen with no movement or transition (notably after a lunge
+    // kill in low-HP modes). Reset it back into normal engagement.
+    if (state === 'SPAWN_GUARDING') {
+      state = 'APPROACHING';
+      timer = 0;
+    }
 
     // Gravity Integration for Offline Bots
     if (!isMainAI) {

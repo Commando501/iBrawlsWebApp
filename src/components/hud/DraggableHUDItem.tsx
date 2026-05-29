@@ -112,7 +112,7 @@ export const DraggableHUDItem: React.FC<DraggableHUDItemProps> = ({
     transformOrigin: getTransformOrigin(id, isMobileLayout),
     zIndex: isAdjustmentMode ? 50 : undefined,
     willChange: isAdjustmentMode && !uiItem.locked ? 'left, top, transform' : undefined,
-    touchAction: isAdjustmentMode ? 'none' : undefined,
+    touchAction: (isAdjustmentMode || id === 'mobileLeftAnalog' || id === 'mobileRightButtons') ? 'none' : undefined,
   };
 
   const updateScale = (nextScale: number) => onUpdateScale(id, clampUiScale(nextScale));

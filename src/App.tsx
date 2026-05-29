@@ -59,7 +59,7 @@ import { ChatOverlay, ChatMessage } from './components/ChatOverlay';
 import { CharacterPreview } from './components/CharacterPreview';
 import { CharacterLoadout, DEFAULT_LOADOUT, AVAILABLE_PRESETS, HelmetPreset, TorsoPreset, ArmPreset, LegPreset } from './components/VoxelModels';
 
-const APP_VERSION = '0.450';
+const APP_VERSION = '0.455';
 const MAX_PLAYER_NAME_LENGTH = 10;
 
 interface OnlineClient {
