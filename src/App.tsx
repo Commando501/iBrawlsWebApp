@@ -62,7 +62,7 @@ import { ChatOverlay, ChatMessage } from './components/ChatOverlay';
 import { CharacterPreview } from './components/CharacterPreview';
 import { CharacterLoadout, DEFAULT_LOADOUT, AVAILABLE_PRESETS, HelmetPreset, TorsoPreset, ArmPreset, LegPreset } from './components/VoxelModels';
 
-const APP_VERSION = '0.475a';
+const APP_VERSION = '0.490';
 const MAX_PLAYER_NAME_LENGTH = 10;
 
 interface OnlineClient {
@@ -267,6 +267,30 @@ function KbBindRow({ label, action, bindings, rebinding, onPick }: {
     </button>
   );
 }
+
+const getGamepadButtonName = (idx: number | undefined): string => {
+  if (idx === undefined) return 'UNBOUND';
+  const names: Record<number, string> = {
+    0: 'A',
+    1: 'B',
+    2: 'X',
+    3: 'Y',
+    4: 'LB',
+    5: 'RB',
+    6: 'LT',
+    7: 'RT',
+    8: 'Back',
+    9: 'Start',
+    10: 'LS Click',
+    11: 'RS Click',
+    12: 'D-Pad Up',
+    13: 'D-Pad Down',
+    14: 'D-Pad Left',
+    15: 'D-Pad Right',
+    16: 'Guide'
+  };
+  return names[idx] ?? `Btn ${idx}`;
+};
 
 function KeyboardVisualizer({ bindings, rebinding, onPick }: KbVisualizerProps) {
   const boundLookup: Record<string, keyof Keybindings> = {};
@@ -862,7 +886,9 @@ export default function App() {
   // Chat message state
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [lobbyChatMessages, setLobbyChatMessages] = useState<ChatMessage[]>([]);
-  const [rightPanelTab, setRightPanelTab] = useState<'manual' | 'customize'>('manual');
+  const [rightPanelTab, setRightPanelTab] = useState<'manual' | 'gamepad' | 'customize'>('manual');
+  const [gamepadConnected, setGamepadConnected] = useState<boolean>(false);
+  const [gamepadName, setGamepadName] = useState<string>('');
   const [customizerWeapon, setCustomizerWeapon] = useState<'none' | 'hammer' | 'sword'>('none');
   const [playerLoadout, setPlayerLoadout] = useState<CharacterLoadout>(() => {
     try {
@@ -1053,6 +1079,71 @@ export default function App() {
   useEffect(() => {
     if (!rebindingAction) return;
 
+    // Handle gamepad rebinding specifically if the action name starts with 'gamepad'
+    if (rebindingAction.startsWith('gamepad')) {
+      let active = true;
+      let rafId: number;
+
+      // Filter out initially pressed buttons to avoid instant rebinding
+      const gps = navigator.getGamepads ? navigator.getGamepads() : [];
+      const initialPressed: boolean[] = [];
+      for (let i = 0; i < gps.length; i++) {
+        if (gps[i]) {
+          gps[i]!.buttons.forEach((b, idx) => {
+            if (b.pressed) initialPressed[idx] = true;
+          });
+          break;
+        }
+      }
+
+      const pollGamepadForRebind = () => {
+        if (!active) return;
+        const currentGps = navigator.getGamepads ? navigator.getGamepads() : [];
+        let activeGp = null;
+        for (let i = 0; i < currentGps.length; i++) {
+          if (currentGps[i]) {
+            activeGp = currentGps[i];
+            break;
+          }
+        }
+
+        if (activeGp) {
+          for (let idx = 0; idx < activeGp.buttons.length; idx++) {
+            const pressed = activeGp.buttons[idx].pressed;
+            if (pressed && !initialPressed[idx]) {
+              setKeybindings(prev => {
+                const updated = { ...prev, [rebindingAction]: idx };
+                try { localStorage.setItem('grifball_keybindings', JSON.stringify(updated)); } catch (_) {}
+                return updated;
+              });
+              setRebindingAction(null);
+              active = false;
+              return;
+            } else if (!pressed) {
+              initialPressed[idx] = false;
+            }
+          }
+        }
+        rafId = requestAnimationFrame(pollGamepadForRebind);
+      };
+
+      rafId = requestAnimationFrame(pollGamepadForRebind);
+
+      const handleGamepadEsc = (e: KeyboardEvent) => {
+        if (e.key === 'Escape') {
+          setRebindingAction(null);
+        }
+      };
+
+      window.addEventListener('keydown', handleGamepadEsc, true);
+      return () => {
+        active = false;
+        cancelAnimationFrame(rafId);
+        window.removeEventListener('keydown', handleGamepadEsc, true);
+      };
+    }
+
+    // Standard Keyboard + Mouse rebinding logic
     const handleRebindKey = (e: KeyboardEvent) => {
       e.preventDefault();
       e.stopPropagation();
@@ -1090,6 +1181,49 @@ export default function App() {
       window.removeEventListener('mousedown', handleRebindMouse, true);
     };
   }, [rebindingAction]);
+
+  // Gamepad Connection Listeners
+  useEffect(() => {
+    const handleGamepadConnect = (e: GamepadEvent) => {
+      setGamepadConnected(true);
+      setGamepadName(e.gamepad.id);
+    };
+
+    const handleGamepadDisconnect = (e: GamepadEvent) => {
+      const gps = navigator.getGamepads ? navigator.getGamepads() : [];
+      let found = false;
+      for (let i = 0; i < gps.length; i++) {
+        if (gps[i]) {
+          setGamepadConnected(true);
+          setGamepadName(gps[i]!.id);
+          found = true;
+          break;
+        }
+      }
+      if (!found) {
+        setGamepadConnected(false);
+        setGamepadName('');
+      }
+    };
+
+    window.addEventListener('gamepadconnected', handleGamepadConnect);
+    window.addEventListener('gamepaddisconnected', handleGamepadDisconnect);
+
+    // Initial check
+    const gps = navigator.getGamepads ? navigator.getGamepads() : [];
+    for (let i = 0; i < gps.length; i++) {
+      if (gps[i]) {
+        setGamepadConnected(true);
+        setGamepadName(gps[i]!.id);
+        break;
+      }
+    }
+
+    return () => {
+      window.removeEventListener('gamepadconnected', handleGamepadConnect);
+      window.removeEventListener('gamepaddisconnected', handleGamepadDisconnect);
+    };
+  }, []);
 
   // Multiplayer States
   const [connectionMode, setConnectionMode] = useState<'relay' | 'local'>('relay');
@@ -3893,26 +4027,36 @@ export default function App() {
               {/* COLUMN 2: KEYBIND REFERENCE & CUSTOMIZER */}
               <div className="mobile-reference-panel flex flex-col h-full min-h-0 overflow-y-auto gap-4">
                 {/* Segmented Tab Switcher */}
-                <div className="flex bg-black/40 p-1.5 rounded-lg border border-white/5 gap-2 select-none shrink-0 shadow-[inset_0_1px_3px_rgba(0,0,0,0.3)]">
+                <div className="flex bg-black/40 p-1.5 rounded-lg border border-white/5 gap-1.5 select-none shrink-0 shadow-[inset_0_1px_3px_rgba(0,0,0,0.3)]">
                   <button
                     onClick={() => setRightPanelTab('manual')}
-                    className={`flex-1 py-2 text-xs font-bold font-display uppercase tracking-wider rounded transition-all cursor-pointer text-center flex items-center justify-center gap-1.5 ${
+                    className={`flex-1 py-2 text-xs font-bold font-display uppercase tracking-wider rounded transition-all cursor-pointer text-center flex items-center justify-center gap-1 shrink-0 ${
                       rightPanelTab === 'manual'
-                        ? 'bg-gradient-to-b from-[#22d3ee] to-[#0891b2] text-white shadow-md font-black'
+                        ? 'bg-gradient-to-b from-[#22d3ee] to-[#0891b2] text-slate-950 shadow-md font-black'
                         : 'text-white/40 hover:text-white/70'
                     }`}
                   >
-                    ⌨ Keyboard + Mouse
+                    ⌨ Controls
+                  </button>
+                  <button
+                    onClick={() => setRightPanelTab('gamepad')}
+                    className={`flex-1 py-2 text-xs font-bold font-display uppercase tracking-wider rounded transition-all cursor-pointer text-center flex items-center justify-center gap-1 shrink-0 ${
+                      rightPanelTab === 'gamepad'
+                        ? 'bg-gradient-to-b from-[#22d3ee] to-[#0891b2] text-slate-950 shadow-md font-black'
+                        : 'text-white/40 hover:text-white/70'
+                    }`}
+                  >
+                    🎮 Gamepad
                   </button>
                   <button
                     onClick={() => setRightPanelTab('customize')}
-                    className={`flex-1 py-2 text-xs font-bold font-display uppercase tracking-wider rounded transition-all cursor-pointer text-center flex items-center justify-center gap-1.5 ${
+                    className={`flex-1 py-2 text-xs font-bold font-display uppercase tracking-wider rounded transition-all cursor-pointer text-center flex items-center justify-center gap-1 shrink-0 ${
                       rightPanelTab === 'customize'
-                        ? 'bg-gradient-to-b from-[#22d3ee] to-[#0891b2] text-white shadow-md font-black'
+                        ? 'bg-gradient-to-b from-[#22d3ee] to-[#0891b2] text-slate-950 shadow-md font-black'
                         : 'text-white/40 hover:text-white/70'
                     }`}
                   >
-                    🎨 Customize Armor
+                    🎨 Armor
                   </button>
                 </div>
 
@@ -4167,6 +4311,257 @@ export default function App() {
                       </div>
 
                       </div>{/* end hidden legacy */}
+                    </div>
+                  </div>
+                )}
+
+                {rightPanelTab === 'gamepad' && (
+                  <div className="flex flex-col gap-4">
+                    {/* Gamepad Connection Banner */}
+                    <div className={`p-4.5 rounded-xl border flex flex-col items-center justify-center text-center gap-2 transition-all ${
+                      gamepadConnected
+                        ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.06)]'
+                        : 'bg-amber-500/10 border-amber-500/30 text-amber-400 animate-pulse'
+                    }`}>
+                      {gamepadConnected ? (
+                        <>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xl">🎮</span>
+                            <span className="text-xs font-black uppercase tracking-widest">Gamepad Connected</span>
+                          </div>
+                          <span className="text-[10px] font-mono text-white/70 bg-black/40 px-3 py-1 rounded border border-white/5 truncate max-w-full">
+                            {gamepadName}
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xl">⚠️</span>
+                            <span className="text-xs font-black uppercase tracking-widest">No Gamepad Detected</span>
+                          </div>
+                          <span className="text-[10px] text-white/50 leading-relaxed max-w-[280px]">
+                            Connect an Xbox or PlayStation controller via USB or Bluetooth and press any button to link.
+                          </span>
+                        </>
+                      )}
+                    </div>
+
+                    {/* Highly stylized dark SVG Xbox Controller vector wireframe */}
+                    <div className="relative bg-slate-950/40 border border-white/10 rounded-xl p-4 flex flex-col items-center select-none shadow-[inset_0_1px_3px_rgba(0,0,0,0.30)] overflow-hidden">
+                      <span className="text-[9px] font-mono text-[#38bdf8] uppercase tracking-[0.2em] mb-4 self-start">
+                        🕹️ Console Input Diagnostics
+                      </span>
+
+                      {/* SVG representation */}
+                      <svg width="280" height="150" viewBox="0 0 280 150" className="drop-shadow-[0_0_12px_rgba(56,189,248,0.15)]">
+                        {/* Shadow and glow behind controller */}
+                        <defs>
+                          <radialGradient id="ctrlGlow" cx="50%" cy="50%" r="50%">
+                            <stop offset="0%" stopColor="#0284c7" stopOpacity="0.18" />
+                            <stop offset="100%" stopColor="#0f172a" stopOpacity="0" />
+                          </radialGradient>
+                        </defs>
+                        <ellipse cx="140" cy="80" rx="90" ry="50" fill="url(#ctrlGlow)" />
+
+                        {/* Controller Shell Outer Border */}
+                        <path
+                          d="M 80 40 
+                             C 90 35, 190 35, 200 40
+                             C 220 40, 240 50, 245 75
+                             C 250 100, 215 145, 195 145
+                             C 185 145, 175 130, 160 115
+                             C 150 105, 130 105, 120 115
+                             C 105 130, 95 145, 85 145
+                             C 65 145, 30 100, 35 75
+                             C 40 50, 60 40, 80 40 Z"
+                          fill="rgba(15, 23, 42, 0.85)"
+                          stroke="rgba(255, 255, 255, 0.15)"
+                          strokeWidth="2"
+                        />
+
+                        {/* Controller inner decorative panels */}
+                        <path
+                          d="M 90 47 C 120 42, 160 42, 190 47"
+                          fill="none"
+                          stroke="rgba(255,255,255,0.06)"
+                          strokeWidth="1.5"
+                        />
+
+                        {/* Hand Grips separations */}
+                        <path d="M 65 52 C 70 80, 85 110, 85 145" fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="1" />
+                        <path d="M 215 52 C 210 80, 195 110, 195 145" fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="1" />
+
+                        {/* Bumpers & Triggers (Visual Only) */}
+                        <rect x="70" y="27" width="35" height="7" rx="3" fill={rebindingAction === 'gamepadAltAttack' ? '#22d3ee' : 'rgba(255,255,255,0.1)'} className={rebindingAction === 'gamepadAltAttack' ? 'animate-pulse' : ''} stroke="rgba(255,255,255,0.15)" strokeWidth="0.8" />
+                        <rect x="175" y="27" width="35" height="7" rx="3" fill={rebindingAction === 'gamepadAltAttack' ? '#22d3ee' : 'rgba(255,255,255,0.1)'} className={rebindingAction === 'gamepadAltAttack' ? 'animate-pulse' : ''} stroke="rgba(255,255,255,0.15)" strokeWidth="0.8" />
+
+                        <rect x="75" y="16" width="22" height="9" rx="2" fill={rebindingAction === 'gamepadAttack' ? '#22d3ee' : 'rgba(255,255,255,0.06)'} className={rebindingAction === 'gamepadAttack' ? 'animate-pulse' : ''} stroke="rgba(255,255,255,0.1)" strokeWidth="0.8" />
+                        <rect x="183" y="16" width="22" height="9" rx="2" fill={rebindingAction === 'gamepadAttack' ? '#22d3ee' : 'rgba(255,255,255,0.06)'} className={rebindingAction === 'gamepadAttack' ? 'animate-pulse' : ''} stroke="rgba(255,255,255,0.1)" strokeWidth="0.8" />
+
+                        {/* D-Pad (Directional Cross) */}
+                        <g transform="translate(100, 95)" stroke="rgba(255,255,255,0.2)" strokeWidth="0.8">
+                          <rect x="-6" y="-18" width="12" height="36" rx="2" fill="rgba(15,23,42,0.9)" />
+                          <rect x="-18" y="-6" width="36" height="12" rx="2" fill="rgba(15,23,42,0.9)" />
+                          <circle cx="0" cy="0" r="4" fill="rgba(255,255,255,0.15)" />
+                        </g>
+
+                        {/* Left Joystick */}
+                        <g transform="translate(85, 68)">
+                          <circle cx="0" cy="0" r="14" fill="rgba(0,0,0,0.6)" stroke="rgba(255,255,255,0.1)" strokeWidth="1" />
+                          <circle cx="0" cy="0" r="10" fill={rebindingAction === 'gamepadSprint' ? '#22d3ee' : '#1e293b'} className={rebindingAction === 'gamepadSprint' ? 'animate-pulse' : ''} stroke="rgba(255,255,255,0.25)" strokeWidth="1.2" />
+                          <circle cx="0" cy="0" r="3" fill="rgba(255,255,255,0.4)" />
+                          {/* Movement Grid arrows */}
+                          <line x1="-7" y1="0" x2="7" y2="0" stroke="rgba(255,255,255,0.1)" strokeWidth="0.8" />
+                          <line x1="0" y1="-7" x2="0" y2="7" stroke="rgba(255,255,255,0.1)" strokeWidth="0.8" />
+                        </g>
+
+                        {/* Right Joystick */}
+                        <g transform="translate(155, 95)">
+                          <circle cx="0" cy="0" r="14" fill="rgba(0,0,0,0.6)" stroke="rgba(255,255,255,0.1)" strokeWidth="1" />
+                          <circle cx="0" cy="0" r="10" fill="rgba(30,41,59,0.95)" stroke="rgba(56,189,248,0.4)" strokeWidth="1.2" />
+                          <circle cx="0" cy="0" r="3" fill="rgba(56,189,248,0.8)" />
+                          {/* Look Target indicator */}
+                          <circle cx="0" cy="0" r="8" fill="none" stroke="rgba(56,189,248,0.2)" strokeWidth="0.8" />
+                        </g>
+
+                        {/* Select/Back button */}
+                        <rect x="120" y="60" width="10" height="5" rx="1.5" fill={rebindingAction === 'gamepadScoreboard' ? '#22d3ee' : 'rgba(255,255,255,0.2)'} className={rebindingAction === 'gamepadScoreboard' ? 'animate-pulse' : ''} stroke="rgba(255,255,255,0.15)" strokeWidth="0.5" />
+                        
+                        {/* Start button */}
+                        <polygon points="152,60 157,62.5 152,65" fill={rebindingAction === 'gamepadPause' ? '#22d3ee' : 'rgba(255,255,255,0.2)'} className={rebindingAction === 'gamepadPause' ? 'animate-pulse' : ''} stroke="rgba(255,255,255,0.15)" strokeWidth="0.5" />
+
+                        {/* ABXY Button Group */}
+                        <g transform="translate(195, 68)">
+                          {/* Outer shield container */}
+                          <circle cx="0" cy="0" r="18" fill="rgba(0,0,0,0.4)" stroke="rgba(255,255,255,0.06)" strokeWidth="1" />
+
+                          {/* Y Button (Top) */}
+                          <circle cx="0" cy="-10" r="4.5" fill={rebindingAction === 'gamepadSwapWeapon' ? '#22d3ee' : 'rgba(15,23,42,0.9)'} className={rebindingAction === 'gamepadSwapWeapon' ? 'animate-pulse' : ''} stroke="rgba(255,255,255,0.2)" strokeWidth="0.8" />
+                          <text x="0" y="-6.5" textAnchor="middle" fill={rebindingAction === 'gamepadSwapWeapon' ? '#0f172a' : '#facc15'} fontSize="7" fontWeight="bold" fontFamily="monospace">Y</text>
+
+                          {/* X Button (Left) */}
+                          <circle cx="-10" cy="0" r="4.5" fill={rebindingAction === 'gamepadDash' ? '#22d3ee' : 'rgba(15,23,42,0.9)'} className={rebindingAction === 'gamepadDash' ? 'animate-pulse' : ''} stroke="rgba(255,255,255,0.2)" strokeWidth="0.8" />
+                          <text x="-10" y="3.5" textAnchor="middle" fill={rebindingAction === 'gamepadDash' ? '#0f172a' : '#60a5fa'} fontSize="7" fontWeight="bold" fontFamily="monospace">X</text>
+
+                          {/* B Button (Right) */}
+                          <circle cx="10" cy="0" r="4.5" fill={rebindingAction === 'gamepadCrouch' ? '#22d3ee' : 'rgba(15,23,42,0.9)'} className={rebindingAction === 'gamepadCrouch' ? 'animate-pulse' : ''} stroke="rgba(255,255,255,0.2)" strokeWidth="0.8" />
+                          <text x="10" y="3.5" textAnchor="middle" fill={rebindingAction === 'gamepadCrouch' ? '#0f172a' : '#f87171'} fontSize="7" fontWeight="bold" fontFamily="monospace">B</text>
+
+                          {/* A Button (Bottom) */}
+                          <circle cx="0" cy="10" r="4.5" fill={rebindingAction === 'gamepadJump' ? '#22d3ee' : 'rgba(15,23,42,0.9)'} className={rebindingAction === 'gamepadJump' ? 'animate-pulse' : ''} stroke="rgba(255,255,255,0.2)" strokeWidth="0.8" />
+                          <text x="0" y="13.5" textAnchor="middle" fill={rebindingAction === 'gamepadJump' ? '#0f172a' : '#4ade80'} fontSize="7" fontWeight="bold" fontFamily="monospace">A</text>
+                        </g>
+                      </svg>
+
+                      {/* Diagnostic Overlay Info */}
+                      <div className="mt-2 text-center select-none leading-relaxed">
+                        <span className="text-[10px] text-white/40 block">
+                          Left Stick: <span className="text-white/80 font-bold">Move</span> | Right Stick: <span className="text-[#38bdf8] font-bold">Aim Camera</span>
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Gamepad settings and sensitivity */}
+                    <div className="bg-slate-950/45 border border-white/10 rounded-xl p-4.5 flex flex-col gap-4 shadow-[inset_0_1px_3px_rgba(0,0,0,0.30)]">
+                      <span className="text-[11px] font-mono font-bold tracking-[0.1em] uppercase text-[#38bdf8] pb-2 border-b border-white/5">
+                        🕹️ Gamepad Configuration
+                      </span>
+
+                      {/* Aim Sensitivity */}
+                      <div className="flex flex-col gap-1.5 mt-1">
+                        <div className="flex justify-between font-mono text-[10px] uppercase tracking-wider text-white/70">
+                          <span>Look / Aim Sensitivity</span>
+                          <span className="text-cyan-400 font-bold">{(keybindings.gamepadSensitivity ?? 3.0).toFixed(1)}x</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0.5"
+                          max="10.0"
+                          step="0.5"
+                          value={keybindings.gamepadSensitivity ?? 3.0}
+                          onChange={(e) => {
+                            const val = parseFloat(e.target.value);
+                            setKeybindings(prev => {
+                              const updated = { ...prev, gamepadSensitivity: val };
+                              try { localStorage.setItem('grifball_keybindings', JSON.stringify(updated)); } catch (_) {}
+                              return updated;
+                            });
+                          }}
+                          className="w-full accent-cyan-400 h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
+                        />
+                        <span className="text-[9px] font-mono text-white/35">
+                          Multiplier applied to digital stick look rate. Default is 3.0x.
+                        </span>
+                      </div>
+
+                      {/* Dedicated rebind notification alert */}
+                      {rebindingAction && rebindingAction.startsWith('gamepad') && (
+                        <div className="p-3 bg-amber-500/10 border border-amber-500/35 rounded-lg flex items-center gap-2.5 animate-pulse text-xs text-amber-400 font-medium">
+                          <span className="text-sm">⚡</span>
+                          <div>
+                            <p className="font-bold uppercase tracking-wider text-[10px]">Awaiting Controller Press...</p>
+                            <p className="text-[10px] text-white/60">Press any button on your controller for <strong>{rebindingAction.replace('gamepad', '').toUpperCase()}</strong>. Press <kbd className="bg-black/40 border border-white/10 px-1 py-0.5 rounded text-[8px]">ESC</kbd> to cancel.</p>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Gamepad action bind grid list */}
+                      <div className="flex flex-col gap-2 mt-2">
+                        {([
+                          { key: 'gamepadJump' as keyof Keybindings, label: 'Jump (Boost)', color: 'border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/5' },
+                          { key: 'gamepadCrouch' as keyof Keybindings, label: 'Crouch / Slide', color: 'border-red-500/30 text-red-400 hover:bg-red-500/5' },
+                          { key: 'gamepadDash' as keyof Keybindings, label: 'Sonic Dash', color: 'border-blue-500/30 text-blue-400 hover:bg-blue-500/5' },
+                          { key: 'gamepadSwapWeapon' as keyof Keybindings, label: 'Swap Weapon', color: 'border-yellow-500/30 text-yellow-400 hover:bg-yellow-500/5' },
+                          { key: 'gamepadAttack' as keyof Keybindings, label: 'Slam / Lunge (RT)', color: 'border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/5' },
+                          { key: 'gamepadAltAttack' as keyof Keybindings, label: 'Quick Slash (RB)', color: 'border-purple-500/30 text-purple-400 hover:bg-purple-500/5' },
+                          { key: 'gamepadSprint' as keyof Keybindings, label: 'Sprint (LS Click)', color: 'border-slate-500/30 text-slate-400 hover:bg-slate-500/5' },
+                          { key: 'gamepadScoreboard' as keyof Keybindings, label: 'Scoreboard', color: 'border-teal-500/30 text-teal-400 hover:bg-teal-500/5' },
+                          { key: 'gamepadPause' as keyof Keybindings, label: 'Pause / Menu', color: 'border-orange-500/30 text-orange-400 hover:bg-orange-500/5' },
+                        ]).map(({ key, label, color }) => (
+                          <div key={key} className="flex justify-between items-center bg-black/35 border border-white/5 rounded-lg px-3 py-2 text-xs">
+                            <span className="font-semibold text-white/70">{label}</span>
+                            <button
+                              onClick={() => setRebindingAction(prev => prev === key ? null : key)}
+                              className={`px-3 py-1 font-mono font-black rounded border text-xs cursor-pointer transition-all active:scale-[0.96] ${
+                                rebindingAction === key
+                                  ? 'bg-amber-500/25 border-amber-500 text-amber-400 animate-pulse shadow-[0_0_12px_rgba(245,158,11,0.25)]'
+                                  : `bg-slate-950/70 ${color}`
+                              }`}
+                            >
+                              {rebindingAction === key ? '...' : getGamepadButtonName(keybindings[key] as number | undefined)}
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Reset Footer */}
+                      <div className="flex justify-between items-center border-t border-white/5 pt-3 mt-1.5">
+                        <button
+                          onClick={() => {
+                            setKeybindings(prev => {
+                              const updated = {
+                                ...prev,
+                                gamepadSensitivity: 3.0,
+                                gamepadJump: 0,
+                                gamepadCrouch: 1,
+                                gamepadDash: 2,
+                                gamepadSwapWeapon: 3,
+                                gamepadAttack: 7,
+                                gamepadAltAttack: 5,
+                                gamepadSprint: 10,
+                                gamepadScoreboard: 8,
+                                gamepadPause: 9,
+                              };
+                              try { localStorage.setItem('grifball_keybindings', JSON.stringify(updated)); } catch (_) {}
+                              return updated;
+                            });
+                            setRebindingAction(null);
+                          }}
+                          className="text-[10px] text-amber-400/80 hover:text-amber-400 font-bold uppercase tracking-wider cursor-pointer bg-transparent border-none p-0 flex items-center gap-1.5 transition-colors"
+                        >
+                          ↻ Reset Gamepad Layout
+                        </button>
+                      </div>
                     </div>
                   </div>
                 )}

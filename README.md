@@ -76,6 +76,39 @@ Custom difficulty exposes derived-parameter overrides (`aiSpatialIQ`, `aiFeintCh
 
 **Dynamic skill calibration (Normal/Hard/Nightmare):** `aiSkillCalibration` maintains a rolling window of the last 10 engagements per bot (kills, deaths, dodge/counter outcomes, time-between-deaths). When the player dominates, bots receive a subtle buff to reaction speed, anticipation, and lunge aggression; when the bot dominates, those knobs drift down slightly (±12.5% max). Disabled for Custom difficulty (including tournament opponents with explicit tuning) and Easy mode.
 
+## Controls & Inputs
+
+iBrawls supports both classic Keyboard + Mouse inputs and native Gamepad (Xbox/PlayStation controller) support, configurable via the custom settings panel:
+
+### Keyboard + Mouse Controls
+- **Move**: `W`, `A`, `S`, `D` (or Arrows)
+- **Jump / Boost**: `Spacebar` (Launch hammer jump if pressed immediately after Slam)
+- **Dash**: `Q` (Quick dash in movement direction)
+- **Crouch / Slide**: `C` (Slide when running forward)
+- **Sprint**: `Shift` (Hold while moving forward)
+- **Scoreboard**: `U` (Hold to view current stats)
+- **Weapon 1 (Hammer)**: `1`
+- **Weapon 2 (Sword)**: `2`
+- **Switch Weapons**: `Scroll Wheel`
+- **Primary Attack**: `Left Mouse Button` (Hammer Slam / Sword Lunge)
+- **Alt Attack**: `Right Mouse Button` (Sword Quick Slash)
+- **Pause / Menu**: `Escape`
+
+### Gamepad (Xbox Controller Layout)
+- **Movement**: `Left Analog Stick`
+- **Aim / Camera**: `Right Analog Stick` (Continuous framerate-independent rotation)
+- **Jump / Boost**: `A` (Button 0)
+- **Crouch / Slide**: `B` (Button 1)
+- **Sonic Dash**: `X` (Button 2)
+- **Swap Weapon**: `Y` (Button 3)
+- **Slam / Lunge (Attack)**: `Right Trigger (RT)` (Button 7)
+- **Quick Slash (Alt Attack)**: `Right Shoulder (RB)` (Button 5)
+- **Sprint**: `Left Stick Click (LS)` (Button 10)
+- **Scoreboard**: `Back / View` (Button 8)
+- **Pause / Menu**: `Start` (Button 9)
+
+An interactive, high-tech vector diagnostics panel in the settings overlay visualizes all active controller bindings in real-time, flashing and pulsing button elements during rebinding.
+
 ## Physics & Collisions
 
 To prevent players and AI characters from passing straight through one another, iBrawls incorporates a 2.5D cylinder-based rigid-body collision system:

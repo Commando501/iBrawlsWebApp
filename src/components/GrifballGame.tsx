@@ -1397,6 +1397,17 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
             isPlayerSliding,
             isPlayerSprinting
           );
+
+          // Update remote player weapon visibility continuously at 60fps to prevent multiplayer desync
+          if (meshes.hammer) {
+            meshes.hammer.visible = player.hp > 0 && player.respawnTimer <= 0 && player.activeWeapon === 'hammer';
+          }
+          if (meshes.sword) {
+            meshes.sword.visible = player.hp > 0 && player.respawnTimer <= 0 && player.activeWeapon === 'sword';
+          }
+          if (meshes.pistol) {
+            meshes.pistol.visible = player.hp > 0 && player.respawnTimer <= 0 && player.activeWeapon === 'pistol';
+          }
         }
       });
     }
@@ -2027,13 +2038,31 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     let showNameplate = false;
     const nameplateScreenPos = { x: 0, y: 0 };
 
-    if (s.playerHP > 0 && s.aiHP > 0 && s.aiState !== 'RESPAWNING') {
+    let enemyPos = s.aiPos;
+    let enemyHP = s.aiHP;
+    let enemyCrouching = s.aiIsCrouching;
+    let enemyState = s.aiState;
+    let enemyName = opponentPlayerName || opponentNameRef.current || 'AI Bot';
+
+    if (isMultiplayer) {
+      // In multiplayer, track the actual remote opponent spartan
+      const remotePlayer = s.otherPlayers.get(opponentClientId) || Array.from(s.otherPlayers.values())[0];
+      if (remotePlayer) {
+        enemyPos = remotePlayer.pos;
+        enemyHP = remotePlayer.hp;
+        enemyCrouching = remotePlayer.isCrouching;
+        enemyState = remotePlayer.respawnTimer > 0 ? 'RESPAWNING' : 'ALIVE';
+        enemyName = remotePlayer.playerName || opponentNameRef.current || 'Opponent';
+      }
+    }
+
+    if (s.playerHP > 0 && enemyHP > 0 && enemyState !== 'RESPAWNING') {
       const eyePos = new THREE.Vector3(
         s.playerPos.x,
         1.65 - s.crouchAmount + s.playerPos.y,
         s.playerPos.z
       );
-      const enemyCenter = new THREE.Vector3(s.aiPos.x, s.aiPos.y + 0.825, s.aiPos.z);
+      const enemyCenter = new THREE.Vector3(enemyPos.x, enemyPos.y + 0.825, enemyPos.z);
       const toEnemy = enemyCenter.clone().sub(eyePos);
       const dist = toEnemy.length();
       
@@ -2054,7 +2083,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
           showNameplate = true;
           
           // Calculate projected 2D coordinates
-          const headPos = new THREE.Vector3(s.aiPos.x, s.aiPos.y + 1.75, s.aiPos.z);
+          const headPos = new THREE.Vector3(enemyPos.x, enemyPos.y + 1.75, enemyPos.z);
           headPos.project(camera);
           
           // Check if in front of camera
@@ -2077,7 +2106,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       nameplate.style.color = s.settings.nameVisibilityColor || '#00ffff';
       nameplate.style.opacity = (s.settings.nameVisibilityOpacity !== undefined ? s.settings.nameVisibilityOpacity : 0.8).toString();
       nameplate.style.fontSize = `${s.settings.nameVisibilityFontSize || 16}px`;
-      nameplate.textContent = isMultiplayer ? (opponentNameRef.current || opponentClientId || 'Opponent') : (opponentPlayerName || opponentNameRef.current || 'AI Bot');
+      nameplate.textContent = enemyName;
     } else {
       nameplate.style.display = 'none';
     }
@@ -2529,9 +2558,13 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
             pushStatsUpdate();
           } else if (data.type === 'sync') {
             if (data.action === 'unlock_secret') {
+              if (secretAudioRef.current) {
+                secretAudioRef.current.pause();
+              }
               const audio = new Audio('/Saudi Smurf Allah.mp3');
               audio.volume = 0.55;
               audio.play().catch(e => console.error("Error playing secret song:", e));
+              secretAudioRef.current = audio;
 
               if (data.senderId && s.otherPlayers.has(data.senderId)) {
                 const p = s.otherPlayers.get(data.senderId);
@@ -3004,7 +3037,9 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
   // Keys active dictionary
   const keysPressed = useRef<{ [key: string]: boolean }>({});
+  const prevGamepadButtonsRef = useRef<boolean[]>([]);
   const grifbHoldTimerRef = useRef<number>(0);
+  const secretAudioRef = useRef<HTMLAudioElement | null>(null);
   
   // Custom Fallback Mouse support (Drag to view if Pointer Lock fails or is denied)
   const isPointerLocked = useRef<boolean>(false);
@@ -3064,6 +3099,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       group: THREE.Group;
       hammer: THREE.Group;
       sword: THREE.Group;
+      pistol?: THREE.Group;
     }>;
   }>({
     scene: null,
@@ -3463,11 +3499,22 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         group.add(sword);
       }
 
-      meshes = { group, hammer, sword };
+      const pistol = buildPistolModel(playerState.hue);
+      pistol.scale.set(0.6, 0.6, 0.6);
+      pistol.position.set(0.5, 1.0 - 0.64, -0.32);
+      pistol.rotation.set(Math.PI / 2, 0, 0);
+      pistol.visible = false;
+      if (group.userData.upperTorso) {
+        group.userData.upperTorso.add(pistol);
+      } else {
+        group.add(pistol);
+      }
+
+      meshes = { group, hammer, sword, pistol };
       threeRef.current.otherPlayerMeshes.set(clientId, meshes);
     }
 
-    const { group, hammer, sword } = meshes;
+    const { group, hammer, sword, pistol } = meshes;
     group.position.copy(playerState.pos);
     group.rotation.y = playerState.yaw;
     
@@ -3479,6 +3526,9 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
     hammer.visible = playerState.hp > 0 && playerState.respawnTimer <= 0 && playerState.activeWeapon === 'hammer';
     sword.visible = playerState.hp > 0 && playerState.respawnTimer <= 0 && playerState.activeWeapon === 'sword';
+    if (pistol) {
+      pistol.visible = playerState.hp > 0 && playerState.respawnTimer <= 0 && playerState.activeWeapon === 'pistol';
+    }
     group.visible = playerState.hp > 0 && playerState.respawnTimer <= 0;
   };
 
@@ -4776,6 +4826,10 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
     // 7. INITIAL WORKSPACE DESTROY/CLEANUP SCOPING
     return () => {
+      if (secretAudioRef.current) {
+        secretAudioRef.current.pause();
+        secretAudioRef.current = null;
+      }
       if (document.exitPointerLock) {
         document.exitPointerLock();
       }
@@ -4896,9 +4950,13 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
             sfx.playRespawn();
 
             // Play secret song!
+            if (secretAudioRef.current) {
+              secretAudioRef.current.pause();
+            }
             const audio = new Audio('/Saudi Smurf Allah.mp3');
             audio.volume = 0.55;
             audio.play().catch(e => console.error("Error playing secret song:", e));
+            secretAudioRef.current = audio;
 
             // Sync with other players in match
             if (isMultiplayer && multiplayerSocket && multiplayerSocket.readyState === WebSocket.OPEN) {
@@ -6062,6 +6120,177 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       s.pitch = Math.max(-Math.PI / 2.3, Math.min(Math.PI / 2.3, s.pitch));
     }
 
+    // Gamepad connection & Right Stick continuous look aiming
+    const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
+    let gamepad = null;
+    for (let i = 0; i < gamepads.length; i++) {
+      if (gamepads[i]) {
+        gamepad = gamepads[i];
+        break;
+      }
+    }
+
+    if (gamepad) {
+      const rx = gamepad.axes[2];
+      const ry = gamepad.axes[3];
+      const aimDeadzone = 0.18;
+      if (Math.abs(rx) > aimDeadzone || Math.abs(ry) > aimDeadzone) {
+        const gpSens = keybindingsRef.current.gamepadSensitivity ?? 3.0;
+        const baseSpeed = 2.4; 
+        
+        let targetYawOffset = 0;
+        let targetPitchOffset = 0;
+
+        if (Math.abs(rx) > aimDeadzone) {
+          targetYawOffset = rx * baseSpeed * gpSens * dt;
+        }
+        if (Math.abs(ry) > aimDeadzone) {
+          targetPitchOffset = ry * baseSpeed * gpSens * dt;
+        }
+
+        s.yaw -= targetYawOffset;
+        s.pitch -= targetPitchOffset;
+        s.pitch = Math.max(-Math.PI / 2.3, Math.min(Math.PI / 2.3, s.pitch));
+      }
+
+      // Process edge-triggered gamepad buttons
+      const curButtons = gamepad.buttons.map(b => b.pressed);
+      const prevButtons = prevGamepadButtonsRef.current;
+
+      const isNewlyPressed = (btnIndex: number) => {
+        return curButtons[btnIndex] && !prevButtons[btnIndex];
+      };
+      const isNewlyReleased = (btnIndex: number) => {
+        return !curButtons[btnIndex] && prevButtons[btnIndex];
+      };
+
+      // Jump
+      const jumpBtn = keybindingsRef.current.gamepadJump ?? 0;
+      if (isNewlyPressed(jumpBtn)) {
+        if (s.playerHP > 0 && !isPausedRef.current && isPlaying) {
+          if (s.pHammerJumpWindowTimer > 0) {
+            s.isJumping = true;
+            s.playerVel.y = 7.2 + (s.settings.hammerJumpPower ?? 6.5);
+            s.pHammerJumpWindowTimer = 0; // Consume the window
+            sfx.playJump();
+            spawnVoxelShockwaveParticles(s.playerPos, '#f59e0b');
+          } else if (!s.isJumping) {
+            s.isJumping = true;
+            s.playerVel.y = 7.2;
+            sfx.playJump();
+          }
+        }
+      }
+
+      // Dash
+      const dashBtn = keybindingsRef.current.gamepadDash ?? 2;
+      if (isNewlyPressed(dashBtn)) {
+        if (s.playerHP > 0 && !isPausedRef.current && isPlaying && s.playerDashCooldownTimer <= 0 && s.playerDashRemaining <= 0) {
+          let lx = gamepad.axes[0];
+          let ly = gamepad.axes[1];
+          const moveDeadzone = 0.18;
+          
+          let fMove = 0;
+          let rMove = 0;
+          if (keysPressed.current[keybindingsRef.current.moveForward] || keysPressed.current['arrowup']) fMove += 1;
+          if (keysPressed.current[keybindingsRef.current.moveBackward] || keysPressed.current['arrowdown']) fMove -= 1;
+          if (keysPressed.current[keybindingsRef.current.moveRight] || keysPressed.current['arrowright']) rMove += 1;
+          if (keysPressed.current[keybindingsRef.current.moveLeft] || keysPressed.current['arrowleft']) rMove -= 1;
+
+          if (Math.abs(ly) > moveDeadzone) fMove -= ly;
+          if (Math.abs(lx) > moveDeadzone) rMove += lx;
+
+          const forwardDir = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), s.yaw);
+          const rightDir = new THREE.Vector3(1, 0, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), s.yaw);
+
+          const dDir = new THREE.Vector3(0, 0, 0);
+          if (fMove !== 0 || rMove !== 0) {
+            dDir.addScaledVector(forwardDir, fMove).addScaledVector(rightDir, rMove).normalize();
+          } else {
+            dDir.copy(forwardDir).normalize();
+          }
+
+          s.playerDashDir.copy(dDir);
+          s.playerDashRemaining = s.settings.dashDuration || 0.25;
+          s.playerDashCooldownTimer = s.settings.dashCooldown || 2.0;
+          recordLocalPlayerObservation((model) => {
+            observePlayerDash(model, dDir.x, dDir.z);
+            if (!isMultiplayer && s.aiHP > 0 && s.aiWeaponState === 'swing_up') {
+              observePlayerReaction(model, s.aiWeaponTimer ?? 0);
+            }
+          });
+          sfx.playDash();
+        }
+      }
+
+      // Crouch
+      const crouchBtn = keybindingsRef.current.gamepadCrouch ?? 1;
+      if (isNewlyPressed(crouchBtn)) {
+        s.isCrouching = true;
+        sfx.playCrouch();
+      } else if (isNewlyReleased(crouchBtn)) {
+        s.isCrouching = false;
+      }
+
+      // Swap Weapon
+      const swapBtn = keybindingsRef.current.gamepadSwapWeapon ?? 3;
+      if (isNewlyPressed(swapBtn)) {
+        if (s.playerHP > 0 && !s.isLunging) {
+          const current = s.activeWeapon;
+          const next = current === 'hammer' ? 'sword' : 'hammer';
+          swapPlayerWeapon(next);
+        }
+      }
+
+      // Attack (RT)
+      const attackBtn = keybindingsRef.current.gamepadAttack ?? 7;
+      if (isNewlyPressed(attackBtn)) {
+        if (s.playerHP > 0 && !isPausedRef.current && isPlaying) {
+          if (s.activeWeapon === 'hammer') {
+            if (s.pWeaponReady && s.pWeaponState === 'ready' && s.playerDashRemaining <= 0) {
+              triggerPlayerHammerSwing();
+            }
+          } else {
+            if (s.crosshairColor === 'red' && s.pSwordReady && s.pSwordState === 'ready' && !s.isLunging) {
+              triggerPlayerSwordLunge();
+            }
+          }
+        }
+      }
+
+      // Alt Attack (RB)
+      const altAttackBtn = keybindingsRef.current.gamepadAltAttack ?? 5;
+      if (isNewlyPressed(altAttackBtn)) {
+        if (s.playerHP > 0 && !isPausedRef.current && isPlaying) {
+          if (s.activeWeapon === 'sword') {
+            if (s.pSwordReady && s.pSwordState === 'ready' && !s.isLunging) {
+              triggerPlayerSwordSlash();
+            }
+          }
+        }
+      }
+
+      // Scoreboard
+      const scoreboardBtn = keybindingsRef.current.gamepadScoreboard ?? 8;
+      if (isNewlyPressed(scoreboardBtn)) {
+        s.showScoreboard = true;
+        pushStatsUpdate();
+      } else if (isNewlyReleased(scoreboardBtn)) {
+        s.showScoreboard = false;
+        pushStatsUpdate();
+      }
+
+      // Pause
+      const pauseBtn = keybindingsRef.current.gamepadPause ?? 9;
+      if (isNewlyPressed(pauseBtn)) {
+        onPauseToggle();
+      }
+
+      prevGamepadButtonsRef.current = curButtons;
+    } else {
+      prevGamepadButtonsRef.current = [];
+    }
+
     // Handle Observer Spectator movement controls
     if (s.isObserverMode) {
       if (s.observerCamMode === 'free') {
@@ -6082,11 +6311,24 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         if (keysPressed.current[keybindings.moveRight] || keysPressed.current['arrowright']) moveRight += 1;
         if (keysPressed.current[keybindings.moveLeft] || keysPressed.current['arrowleft']) moveRight -= 1;
         
-        // Rise and Lower controls
-        if (keysPressed.current[keybindings.jump] || keysPressed.current['spacebar']) moveUp += 1;
-        if (keysPressed.current[keybindings.crouch]) moveUp -= 1;
+        // Gamepad Left Stick in observer mode
+        if (gamepad) {
+          const lx = gamepad.axes[0];
+          const ly = gamepad.axes[1];
+          const moveDeadzone = 0.18;
+          if (Math.abs(ly) > moveDeadzone) moveForward -= ly;
+          if (Math.abs(lx) > moveDeadzone) moveRight += lx;
+        }
 
-        const speedMultiplier = keysPressed.current['shift'] ? 2.8 : 1.0;
+        // Rise and Lower controls
+        const gpJump = gamepad ? gamepad.buttons[keybindingsRef.current.gamepadJump ?? 0]?.pressed : false;
+        const gpCrouch = gamepad ? gamepad.buttons[keybindingsRef.current.gamepadCrouch ?? 1]?.pressed : false;
+
+        if (keysPressed.current[keybindings.jump] || keysPressed.current['spacebar'] || gpJump) moveUp += 1;
+        if (keysPressed.current[keybindings.crouch] || gpCrouch) moveUp -= 1;
+
+        const gpSprint = gamepad ? gamepad.buttons[keybindingsRef.current.gamepadSprint ?? 10]?.pressed : false;
+        const speedMultiplier = (keysPressed.current['shift'] || gpSprint) ? 2.8 : 1.0;
         const flySpeed = 11.0 * speedMultiplier * dt;
 
         s.playerPos.addScaledVector(forwardDir, moveForward * flySpeed);
@@ -6423,6 +6665,20 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       if (keysPressed.current[keybindings.moveRight] || keysPressed.current['arrowright']) moveRight += 1;
       if (keysPressed.current[keybindings.moveLeft] || keysPressed.current['arrowleft']) moveRight -= 1;
 
+      // Gamepad Left Stick movement
+      const gamepadsList = navigator.getGamepads ? navigator.getGamepads() : [];
+      let activeGp = null;
+      for (let i = 0; i < gamepadsList.length; i++) {
+        if (gamepadsList[i]) { activeGp = gamepadsList[i]; break; }
+      }
+      if (activeGp) {
+        const lx = activeGp.axes[0];
+        const ly = activeGp.axes[1];
+        const moveDeadzone = 0.18;
+        if (Math.abs(ly) > moveDeadzone) moveForward -= ly;
+        if (Math.abs(lx) > moveDeadzone) moveRight += lx;
+      }
+
       // Mobile joystick movement overrides keyboard
       if ((deviceInfo.isMobile || forceMobileControls) && mobileJoystickRef.current) {
         moveForward += mobileJoystickRef.current.y;
@@ -6457,7 +6713,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       }
 
       // Check sprint & slide states
-      const isSprinting = s.settings.enableSprint && keysPressed.current[keybindingsRef.current.sprint] && moveForward > 0 && !s.isCrouching && !s.isJumping && s.playerDashRemaining <= 0;
+      const gpSprint = activeGp ? activeGp.buttons[keybindingsRef.current.gamepadSprint ?? 10]?.pressed : false;
+      const isSprinting = s.settings.enableSprint && (keysPressed.current[keybindingsRef.current.sprint] || gpSprint) && moveForward > 0 && !s.isCrouching && !s.isJumping && s.playerDashRemaining <= 0;
       const isSliding = s.playerSlideActive;
 
       // Movement speed coefficients

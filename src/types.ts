@@ -84,6 +84,16 @@ export interface Keybindings {
   sprint: string;
   mouseSensitivity?: number;  // multiplier applied to base sensitivity (0.1 – 5.0, default 1.0)
   mouseAcceleration?: number; // power-curve exponent offset (0.0 – 2.0, default 0.0 = linear)
+  gamepadSensitivity?: number; // aim sensitivity scale for controller (0.5 – 10.0, default 3.0)
+  gamepadJump?: number;       // A button (index 0)
+  gamepadCrouch?: number;     // B button (index 1)
+  gamepadDash?: number;       // X button (index 2)
+  gamepadSwapWeapon?: number; // Y button (index 3)
+  gamepadAttack?: number;     // RT (index 7)
+  gamepadAltAttack?: number;  // RB (index 5)
+  gamepadSprint?: number;     // LS Click (index 10)
+  gamepadScoreboard?: number; // Back (index 8)
+  gamepadPause?: number;      // Start (index 9)
 }
 
 export const DEFAULT_KEYBINDINGS: Keybindings = {
@@ -102,6 +112,16 @@ export const DEFAULT_KEYBINDINGS: Keybindings = {
   sprint: 'shift',
   mouseSensitivity: 1.0,
   mouseAcceleration: 0.0,
+  gamepadSensitivity: 3.0,
+  gamepadJump: 0,
+  gamepadCrouch: 1,
+  gamepadDash: 2,
+  gamepadSwapWeapon: 3,
+  gamepadAttack: 7,
+  gamepadAltAttack: 5,
+  gamepadSprint: 10,
+  gamepadScoreboard: 8,
+  gamepadPause: 9,
 };
 
 export type GameState = 'menu' | 'playing' | 'paused';
