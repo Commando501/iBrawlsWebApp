@@ -48,6 +48,7 @@ Combat AI is orchestrated from `GrifballGame.tsx` (10-state FSM including `PRESS
 | `aiPressure.ts` | Post-hit pressure chains: enter/exit gates, approach speed, and follow-up attack timing driven by `pressureAggression` |
 | `aiFeints.ts` | Mind-game feints: approach abort, weapon-swap fake, charge abort, and lunge fake-out; gated by `feintChance`, per-bot cooldowns, and player-model counter feedback |
 | `aiSpatialStrategy.ts` | Arena spatial control and evasion: edge/center scoring, cut-off intercepts, spawn-guard aim, target selection bonuses; perpendicular dodges away from arena edges, variable lunge trigger range (±20%), bait dodges at ~12m, post-dodge punish commits, and player-model dodge timing |
+| `aiMovementMechanics.ts` | Locomotion-mechanic usage: sprint (close ground / chase fleeing targets) and committed slide gap-closers, gated by the live `enableSprint`/`enableSlide` toggles and scaled by `speedSprint`/`speedSlide`/`slideDistance`/`slideCooldown` |
 | `aiPersonalities.ts` | Six combat archetypes with knob presets and flags (spacing, pressure skip, feint bias); sandbox UI + tournament assignment |
 | `aiPsychologicalPressure.ts` | Mind-game tempo: post-kill spawn camping, slow/fast reaction bands, lunge-kill sword telegraphs, escalating standoff commits |
 | `aiBotCoordinator.ts` | Multi-bot coordination: shared focus target after damage tags, pincer approach offsets, staggered attack phases, pressure/flanker/punisher roles at 3+ bots |
@@ -67,8 +68,20 @@ Custom difficulty exposes derived-parameter overrides (`aiSpatialIQ`, `aiFeintCh
 
 **Arena spatial control:** `scorePosition` and `getSpatialMovementBias` (gated by `spatialIQ`) steer `APPROACHING` and `SIDE_STEPPING` movement: bots recentre when exposed on the edge, cut off retreat paths when targets are pinned, and press harder when an opponent is cornered. `SPAWN_GUARDING` uses a corridor-aware aim angle and recentres when too close to the boundary. Hard+ target selection adds a bonus for edge-pinned opponents.
 
+**Locomotion mechanics (sprint & slide):** `aiMovementMechanics.ts` lets bots use the same optional movement mechanics the player tunes in Gameplay / Mechanics Options. When `enableSprint` is on, bots sprint (scaled by `speedSprint`) to close ground while `APPROACHING`/`DANCING_FORWARD`/`PRESSURING` or to chase a fleeing target. When `enableSlide` is on, bots commit a `slideDistance`/`speedSlide` slide as a mid-range gap-closer and then respect `slideCooldown`. Both read live from settings each frame—toggling a mechanic off or retuning its speed/distance/cooldown takes effect immediately—and never stack with dashes. Sprint/slide also drive the bot’s crouch posture and run/slide animation.
+
 **Psychological pressure (Hard+, aggression ≥ 15):** After a lethal hit, bots rush the victim’s anticipated spawn (`aiPsychologicalPressure` + `aiMatchContext.psychState`) instead of resetting—lunge kills hold sword at the spawn lip as a telegraph. During neutral exchanges, tempo alternation toggles effective `reactionLatency` every ~9s (slow vs fast bands), and mid-range standoff timers in `SIDE_STEPPING` escalate commit chance using match-state multipliers from `aiTuning`.
 
 **Multi-bot coordination (Hard+ offline):** When one bot tags damage, `aiBotCoordinator` sets a shared priority target for ~8s so allies focus fire. Two or more bots on the same target pincer with lateral offsets; attack commits stagger by role (pressure → flanker → punisher). Three or more assign punisher bots that wait for recovery windows before swinging. Easy difficulty skips coordination.
 
 **Dynamic skill calibration (Normal/Hard/Nightmare):** `aiSkillCalibration` maintains a rolling window of the last 10 engagements per bot (kills, deaths, dodge/counter outcomes, time-between-deaths). When the player dominates, bots receive a subtle buff to reaction speed, anticipation, and lunge aggression; when the bot dominates, those knobs drift down slightly (±12.5% max). Disabled for Custom difficulty (including tournament opponents with explicit tuning) and Easy mode.
+
+## Physics & Collisions
+
+To prevent players and AI characters from passing straight through one another, iBrawls incorporates a 2.5D cylinder-based rigid-body collision system:
+
+- **Entity Cylinders**: Every active, living participant (local player, main AI, and custom bots/remote players) is bounded by a vertical collision cylinder with a radius of **0.55m** (diameter of **1.1m**) and state-dependent height ranges (**1.8m** standing, **1.2m** crouching).
+- **Kinematic Resolution**: When two participants overlap both horizontally and vertically, they are pushed apart by **50%** of the overlap depth each along the collision normal.
+- **Velocity Normal Damping**: To ensure collisions feel solid and prevent jittering or high-speed passthroughs, the relative velocity component along the collision normal is cancelled when entities are moving towards each other.
+- **Multi-iteration Solver**: The collision engine runs for **3 iterations** each frame inside `enforceArenaBounds` before bounding players to the circular arena, ensuring perfectly stable physics even in crowded multi-bot pincers.
+- **Zero-lag Rendering**: State positions are proactively synchronized to Three.js group meshes immediately following collision resolution to eliminate 1-frame rendering lag.

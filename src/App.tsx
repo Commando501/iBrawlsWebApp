@@ -61,7 +61,7 @@ import { ChatOverlay, ChatMessage } from './components/ChatOverlay';
 import { CharacterPreview } from './components/CharacterPreview';
 import { CharacterLoadout, DEFAULT_LOADOUT, AVAILABLE_PRESETS, HelmetPreset, TorsoPreset, ArmPreset, LegPreset } from './components/VoxelModels';
 
-const APP_VERSION = '0.459';
+const APP_VERSION = '0.462';
 const MAX_PLAYER_NAME_LENGTH = 10;
 
 interface OnlineClient {
@@ -80,6 +80,23 @@ const normalizePlayerName = (name: unknown): string | undefined => {
 
 const getOnlineClientDisplayName = (client: OnlineClient): string => {
   return normalizePlayerName(client.name) || `Client ${client.id}`;
+};
+
+const getPresetDescription = (val: string, customPresets: AIPreset[] = []): string => {
+  if (val === 'easy') return "Sub-Normal combat reflex latency, simple spacing behavior.";
+  if (val === 'normal') return "Standard combat matrix dials, average anticipation calculations.";
+  if (val === 'hard') return "Calibrated prediction systems, fast pacing & evading.";
+  if (val === 'nightmare') return "Hyper-responsive matrix overrides. Zero anticipation errors.";
+  if (val === 'custom') return "Configure custom neural matrix parameters below.";
+  const custom = customPresets.find(p => p.id === val);
+  if (custom) {
+    const rl = custom.tuning.aiReactionLatency !== undefined ? `${custom.tuning.aiReactionLatency.toFixed(2)}s` : 'default';
+    const anti = custom.tuning.aiAnticipationFactor !== undefined ? `${Math.round(custom.tuning.aiAnticipationFactor * 100)}%` : 'default';
+    const move = custom.tuning.aiMovementComplexity !== undefined ? `${custom.tuning.aiMovementComplexity}%` : 'default';
+    const swap = custom.tuning.aiWeaponSwapIQ !== undefined ? `${custom.tuning.aiWeaponSwapIQ}%` : 'default';
+    return `Custom Preset: Latency: ${rl}, Anticipation: ${anti}, Movement: ${move}, Weapon Swap: ${swap}`;
+  }
+  return "";
 };
 
 interface GlobalChatPanelProps {
@@ -2387,14 +2404,15 @@ export default function App() {
                   value={(value as string) || 'normal'}
                   onChange={(e) => handleSelectAIPreset(e.target.value)}
                   className={`flex-1 h-8 bg-black/60 border border-white/10 rounded px-2 text-xs text-[#38bdf8] font-bold uppercase outline-none ${focusClass} cursor-pointer transition-all font-sans`}
+                  title={getPresetDescription((value as string) || 'normal', aiPresets)}
                 >
                   {def.options?.map((opt: any) => (
-                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    <option key={opt.value} value={opt.value} title={getPresetDescription(opt.value, aiPresets)}>{opt.label}</option>
                   ))}
                   {aiPresets.length > 0 && (
                     <optgroup label="Saved Presets">
                       {aiPresets.map(preset => (
-                        <option key={preset.id} value={preset.id}>🤖 {preset.name}</option>
+                        <option key={preset.id} value={preset.id} title={getPresetDescription(preset.id, aiPresets)}>🤖 {preset.name}</option>
                       ))}
                     </optgroup>
                   )}
@@ -2409,6 +2427,11 @@ export default function App() {
                   </button>
                 )}
               </div>
+              {value && value !== 'custom' && (
+                <span className="text-[8.5px] text-white/45 leading-snug">
+                  {getPresetDescription(value as string, aiPresets)}
+                </span>
+              )}
             </div>
           );
         }
@@ -2822,16 +2845,17 @@ export default function App() {
                                   value={adminSettings.aiDifficulty || 'normal'}
                                   onChange={(e) => handleSelectAIPreset(e.target.value)}
                                   className="flex-1 h-11 bg-black/60 border border-white/10 rounded px-2.5 text-sm text-[#38bdf8] font-bold uppercase outline-none focus:border-[#38bdf8] transition-all cursor-pointer font-sans"
+                                  title={getPresetDescription(adminSettings.aiDifficulty || 'normal', aiPresets)}
                                 >
-                                  <option value="easy">🟢 Easy (Sub-Normal)</option>
-                                  <option value="normal">🟡 Normal · Standard Combat</option>
-                                  <option value="hard">🔴 Hard (Calibrated)</option>
-                                  <option value="nightmare">🟣 Nightmare · Override</option>
-                                  <option value="custom">⚙️ Custom Matrix Override</option>
+                                  <option value="easy" title={getPresetDescription('easy', aiPresets)}>🟢 Easy (Sub-Normal)</option>
+                                  <option value="normal" title={getPresetDescription('normal', aiPresets)}>🟡 Normal · Standard Combat</option>
+                                  <option value="hard" title={getPresetDescription('hard', aiPresets)}>🔴 Hard (Calibrated)</option>
+                                  <option value="nightmare" title={getPresetDescription('nightmare', aiPresets)}>🟣 Nightmare · Override</option>
+                                  <option value="custom" title={getPresetDescription('custom', aiPresets)}>⚙️ Custom Matrix Override</option>
                                   {aiPresets.length > 0 && (
                                     <optgroup label="Saved Presets">
                                       {aiPresets.map(preset => (
-                                        <option key={preset.id} value={preset.id}>🤖 {preset.name}</option>
+                                        <option key={preset.id} value={preset.id} title={getPresetDescription(preset.id, aiPresets)}>🤖 {preset.name}</option>
                                       ))}
                                     </optgroup>
                                   )}
@@ -2846,6 +2870,11 @@ export default function App() {
                                   </button>
                                 )}
                               </div>
+                              {adminSettings.aiDifficulty && adminSettings.aiDifficulty !== 'custom' && (
+                                <span className="text-[10px] text-white/45 leading-snug">
+                                  {getPresetDescription(adminSettings.aiDifficulty, aiPresets)}
+                                </span>
+                              )}
                             </div>
                             <div className="flex flex-col gap-1.5">
                               <span className="text-[10.5px] text-white/50 uppercase tracking-widest font-mono">Combat Archetype:</span>
@@ -3064,6 +3093,7 @@ export default function App() {
                                             ? 'bg-sky-500/10 border-sky-400/50 hover:bg-sky-500/15 text-sky-400 shadow-[0_0_10px_rgba(56,189,248,0.15)]'
                                             : 'bg-black/40 border-white/5 text-white/70 hover:bg-black/60 hover:border-white/10 hover:text-white'
                                         }`}
+                                        title={getPresetDescription(preset.id, aiPresets)}
                                       >
                                         <div className="flex flex-col min-w-0 pr-2">
                                           <span className="text-xs font-bold truncate">{preset.name}</span>
@@ -4495,7 +4525,7 @@ export default function App() {
             </div>
           ) : showAdminPanel ? (
             /* GAMEPLAY/MECHANICS OPTIONS MULTIPANEL DENSE DASHBOARD */
-            <div className="mobile-modal bg-slate-950/95 border border-white/10 backdrop-blur-2xl rounded-2xl p-5 w-[940px] max-w-[calc(100vw-1.5rem)] shadow-2xl flex flex-col select-none max-h-[calc(100dvh-1.5rem)] overflow-y-auto overflow-x-hidden">
+            <div className="mobile-modal bg-slate-950/95 border border-white/10 backdrop-blur-2xl rounded-2xl p-5 w-full max-w-[940px] xl:max-w-[1240px] 2xl:max-w-[1560px] shadow-2xl flex flex-col select-none max-h-[calc(100dvh-1.5rem)] overflow-y-auto overflow-x-hidden animate-in fade-in duration-200">
               {/* Header */}
               <div className="flex items-center justify-between mb-4 border-b border-white/5 pb-3">
                 <div className="flex flex-col items-start text-left">
@@ -4577,22 +4607,19 @@ export default function App() {
                 </div>
               </div>
 
-              {/* 3-Column Dense Settings Grid */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pointer-events-auto mb-5 text-left">
-                {/* COLUMN 1: LOCOMOTION, ACTIONS & HEALTH */}
-                <div className="flex flex-col gap-3">
-                  {SETTING_SECTIONS.filter(s => s.column === 1).map(renderSection)}
-                </div>
-
-                {/* COLUMN 2: GRAVITY HAMMER & JUMPING */}
-                <div className="flex flex-col gap-3">
-                  {SETTING_SECTIONS.filter(s => s.column === 2).map(renderSection)}
-                </div>
-
-                {/* COLUMN 3: ENERGY SWORD & TRADING CONFIGS */}
-                <div className="flex flex-col gap-3">
-                  {SETTING_SECTIONS.filter(s => s.column === 3).map(renderSection)}
-                </div>
+              {/* Responsive Dense Settings Grid */}
+              <div className="columns-1 md:columns-2 lg:columns-3 xl:columns-4 gap-3 pointer-events-auto mb-5 text-left [column-fill:auto]">
+                {(() => {
+                  const sectionOrder = ['core', 'health', 'velocity', 'dash', 'hammer', 'launch', 'sword', 'trades', 'name', 'ai'];
+                  const sorted = [...SETTING_SECTIONS].sort((a, b) => {
+                    return sectionOrder.indexOf(a.id) - sectionOrder.indexOf(b.id);
+                  });
+                  return sorted.map((section) => (
+                    <div key={section.id} className="break-inside-avoid mb-3">
+                      {renderSection(section)}
+                    </div>
+                  ));
+                })()}
               </div>
 
               {/* Close and return */}
@@ -5054,15 +5081,16 @@ export default function App() {
                         value={botDifficulties.main_ai || 'normal'}
                         onChange={(e) => setBotDifficulties(prev => ({ ...prev, main_ai: e.target.value }))}
                         className="w-full h-7 bg-black/60 border border-white/10 rounded px-1.5 text-[10px] text-white/70 font-bold uppercase outline-none focus:border-blue-400 cursor-pointer transition-all font-sans"
+                        title={getPresetDescription(botDifficulties.main_ai || 'normal', aiPresets)}
                       >
-                        <option value="easy">🟢 Easy</option>
-                        <option value="normal">🔵 Normal</option>
-                        <option value="hard">🟡 Hard</option>
-                        <option value="nightmare">🔴 Nightmare</option>
+                        <option value="easy" title={getPresetDescription('easy', aiPresets)}>🟢 Easy</option>
+                        <option value="normal" title={getPresetDescription('normal', aiPresets)}>🔵 Normal</option>
+                        <option value="hard" title={getPresetDescription('hard', aiPresets)}>🟡 Hard</option>
+                        <option value="nightmare" title={getPresetDescription('nightmare', aiPresets)}>🔴 Nightmare</option>
                         {aiPresets.length > 0 && (
                           <optgroup label="Custom Presets">
                             {aiPresets.map(preset => (
-                              <option key={preset.id} value={preset.id}>🤖 {preset.name}</option>
+                              <option key={preset.id} value={preset.id} title={getPresetDescription(preset.id, aiPresets)}>🤖 {preset.name}</option>
                             ))}
                           </optgroup>
                         )}
@@ -5139,15 +5167,16 @@ export default function App() {
                             value={botDifficulties[bot.id] || 'normal'}
                             onChange={(e) => setBotDifficulties(prev => ({ ...prev, [bot.id]: e.target.value }))}
                             className="w-full h-7 bg-black/60 border border-white/10 rounded px-1.5 text-[10px] text-white/70 font-bold uppercase outline-none focus:border-blue-400 cursor-pointer transition-all font-sans"
+                            title={getPresetDescription(botDifficulties[bot.id] || 'normal', aiPresets)}
                           >
-                            <option value="easy">🟢 Easy</option>
-                            <option value="normal">🔵 Normal</option>
-                            <option value="hard">🟡 Hard</option>
-                            <option value="nightmare">🔴 Nightmare</option>
+                            <option value="easy" title={getPresetDescription('easy', aiPresets)}>🟢 Easy</option>
+                            <option value="normal" title={getPresetDescription('normal', aiPresets)}>🔵 Normal</option>
+                            <option value="hard" title={getPresetDescription('hard', aiPresets)}>🟡 Hard</option>
+                            <option value="nightmare" title={getPresetDescription('nightmare', aiPresets)}>🔴 Nightmare</option>
                             {aiPresets.length > 0 && (
                               <optgroup label="Custom Presets">
                                 {aiPresets.map(preset => (
-                                  <option key={preset.id} value={preset.id}>🤖 {preset.name}</option>
+                                  <option key={preset.id} value={preset.id} title={getPresetDescription(preset.id, aiPresets)}>🤖 {preset.name}</option>
                                 ))}
                               </optgroup>
                             )}

@@ -171,6 +171,10 @@ export interface RemotePlayerState {
   aiDashRemaining?: number;
   aiDashCooldownTimer?: number;
   aiDashDir?: { x: number; y: number; z: number };
+  aiSlideActive?: boolean;
+  aiSlideDistanceTraveled?: number;
+  aiSlideCooldownTimer?: number;
+  aiIsSprinting?: boolean;
   swapLockoutTimer?: number;
   weaponState?: WeaponState | 'slashing' | 'recovering';
   isLunging?: boolean;
