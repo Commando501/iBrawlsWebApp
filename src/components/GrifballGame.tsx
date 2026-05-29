@@ -2528,7 +2528,34 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
             resizeArena(1 + s.otherPlayers.size);
             pushStatsUpdate();
           } else if (data.type === 'sync') {
-            if (data.action === 'swing_hammer') {
+            if (data.action === 'unlock_secret') {
+              const audio = new Audio('/Saudi Smurf Allah.wav');
+              audio.volume = 0.55;
+              audio.play().catch(e => console.error("Error playing secret song:", e));
+
+              if (data.senderId && s.otherPlayers.has(data.senderId)) {
+                const p = s.otherPlayers.get(data.senderId);
+                if (p) {
+                  p.activeWeapon = 'pistol';
+                  const meshes = threeRef.current.otherPlayerMeshes.get(data.senderId);
+                  if (meshes) {
+                    meshes.hammer.visible = false;
+                    meshes.sword.visible = false;
+                  }
+                  const announcement: DeathEvent = {
+                    id: Math.random().toString(36).substring(2, 9),
+                    attacker: "SECRET UNLOCKED",
+                    victim: `${p.playerName || 'Blue'} equipped GRIFB Pistol!`,
+                    weapon: 'sword'
+                  };
+                  s.lastDeaths = [announcement, ...s.lastDeaths].slice(0, 3);
+                  spawnVoxelShockwaveParticles(new THREE.Vector3(p.pos.x, p.pos.y, p.pos.z), '#38bdf8');
+                  spawnVoxelShockwaveParticles(new THREE.Vector3(p.pos.x, p.pos.y, p.pos.z), '#fffa00');
+                }
+              }
+              pushStatsUpdate();
+            }
+            else if (data.action === 'swing_hammer') {
               if (data.senderId) {
                 const player = s.otherPlayers.get(data.senderId);
                 if (player) {
@@ -4867,6 +4894,16 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
             spawnVoxelShockwaveParticles(s.playerPos, '#fffa00');
             
             sfx.playRespawn();
+
+            // Play secret song!
+            const audio = new Audio('/Saudi Smurf Allah.wav');
+            audio.volume = 0.55;
+            audio.play().catch(e => console.error("Error playing secret song:", e));
+
+            // Sync with other players in match
+            if (isMultiplayer && multiplayerSocket && multiplayerSocket.readyState === WebSocket.OPEN) {
+              multiplayerSocket.send(JSON.stringify({ type: 'sync', action: 'unlock_secret' }));
+            }
             
             const secretAnnouncement: DeathEvent = {
               id: Math.random().toString(36).substring(2, 9),
