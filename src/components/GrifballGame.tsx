@@ -2529,7 +2529,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
             pushStatsUpdate();
           } else if (data.type === 'sync') {
             if (data.action === 'unlock_secret') {
-              const audio = new Audio('/Saudi Smurf Allah.wav');
+              const audio = new Audio('/Saudi Smurf Allah.mp3');
               audio.volume = 0.55;
               audio.play().catch(e => console.error("Error playing secret song:", e));
 
@@ -4896,7 +4896,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
             sfx.playRespawn();
 
             // Play secret song!
-            const audio = new Audio('/Saudi Smurf Allah.wav');
+            const audio = new Audio('/Saudi Smurf Allah.mp3');
             audio.volume = 0.55;
             audio.play().catch(e => console.error("Error playing secret song:", e));
 
