@@ -70,3 +70,90 @@ test('generateTournamentOpponents assigns a combat archetype to each bot', () =>
     assert.ok(['passive', 'defensive', 'aggressive'].includes(opp.behavior));
   }
 });
+
+test('generateTournamentOpponents with single custom preset uses that preset for all bots', () => {
+  const mockPreset = {
+    id: 'ai_preset_1',
+    name: 'Custom Brawler',
+    tuning: {
+      aiReactionLatency: 0.12,
+      aiAnticipationFactor: 0.85,
+      aiMovementComplexity: 75,
+      aiWeaponSwapIQ: 80,
+      aiPlaystyle: 90,
+      aiWeaponPrioritization: 40,
+    }
+  };
+
+  const opponents = generateTournamentOpponents('custom', 3, [mockPreset]);
+  assert.equal(Object.keys(opponents).length, 3);
+  for (const opp of Object.values(opponents)) {
+    assert.equal(opp.difficulty, 'custom');
+    assert.equal(opp.reactionLatency, 0.12);
+    assert.equal(opp.anticipationFactor, 0.85);
+    assert.equal(opp.movementComplexity, 75);
+    assert.equal(opp.weaponSwapIQ, 80);
+    assert.equal(opp.playstyle, 90);
+    assert.equal(opp.behavior, 'aggressive');
+    assert.equal(opp.archetype, 'none');
+  }
+});
+
+test('generateTournamentOpponents with multiple custom presets randomly assigns them', () => {
+  const mockPreset1 = {
+    id: 'ai_preset_1',
+    name: 'Preset One',
+    tuning: {
+      aiReactionLatency: 0.1,
+      aiAnticipationFactor: 0.9,
+      aiMovementComplexity: 80,
+      aiWeaponSwapIQ: 80,
+      aiPlaystyle: 10,
+      aiWeaponPrioritization: 50,
+    }
+  };
+
+  const mockPreset2 = {
+    id: 'ai_preset_2',
+    name: 'Preset Two',
+    tuning: {
+      aiReactionLatency: 0.4,
+      aiAnticipationFactor: 0.2,
+      aiMovementComplexity: 30,
+      aiWeaponSwapIQ: 30,
+      aiPlaystyle: 90,
+      aiWeaponPrioritization: 50,
+    }
+  };
+
+  const opponents = generateTournamentOpponents('custom', 10, [mockPreset1, mockPreset2]);
+  assert.equal(Object.keys(opponents).length, 10);
+  
+  let usedPreset1 = false;
+  let usedPreset2 = false;
+
+  for (const opp of Object.values(opponents)) {
+    assert.equal(opp.difficulty, 'custom');
+    assert.equal(opp.archetype, 'none');
+    if (opp.reactionLatency === 0.1) {
+      assert.equal(opp.anticipationFactor, 0.9);
+      assert.equal(opp.movementComplexity, 80);
+      assert.equal(opp.weaponSwapIQ, 80);
+      assert.equal(opp.playstyle, 10);
+      assert.equal(opp.behavior, 'passive');
+      usedPreset1 = true;
+    } else if (opp.reactionLatency === 0.4) {
+      assert.equal(opp.anticipationFactor, 0.2);
+      assert.equal(opp.movementComplexity, 30);
+      assert.equal(opp.weaponSwapIQ, 30);
+      assert.equal(opp.playstyle, 90);
+      assert.equal(opp.behavior, 'aggressive');
+      usedPreset2 = true;
+    } else {
+      assert.fail('Generated bot tuning does not match any selected preset');
+    }
+  }
+
+  assert.ok(usedPreset1);
+  assert.ok(usedPreset2);
+});

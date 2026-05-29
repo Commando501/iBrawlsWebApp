@@ -15,6 +15,8 @@ import {
   AIBehaviorPreset,
   TournamentMatch,
   TournamentState,
+  AIPreset,
+  AITuning,
 } from './types';
 import {
   DEFAULT_ADMIN_SETTINGS,
@@ -59,7 +61,7 @@ import { ChatOverlay, ChatMessage } from './components/ChatOverlay';
 import { CharacterPreview } from './components/CharacterPreview';
 import { CharacterLoadout, DEFAULT_LOADOUT, AVAILABLE_PRESETS, HelmetPreset, TorsoPreset, ArmPreset, LegPreset } from './components/VoxelModels';
 
-const APP_VERSION = '0.455';
+const APP_VERSION = '0.459';
 const MAX_PLAYER_NAME_LENGTH = 10;
 
 interface OnlineClient {
@@ -615,6 +617,7 @@ export default function App() {
   });
   const [tournamentKillsToWin, setTournamentKillsToWin] = useState(TOURNAMENT_DEFAULT_KILLS_TO_WIN);
   const [tournamentRoundCount, setTournamentRoundCount] = useState(TOURNAMENT_DEFAULT_ROUND_COUNT);
+  const [selectedTournamentPresets, setSelectedTournamentPresets] = useState<string[]>([]);
 
   const saveTournamentState = (state: TournamentState | null) => {
     setTournamentState(state);
@@ -668,6 +671,15 @@ export default function App() {
     bot_5: 'balanced',
     bot_6: 'balanced',
     bot_7: 'balanced',
+  });
+  const [botArchetypes, setBotArchetypes] = useState<Record<string, AIArchetypeId>>({
+    main_ai: 'none',
+    bot_2: 'none',
+    bot_3: 'none',
+    bot_4: 'none',
+    bot_5: 'none',
+    bot_6: 'none',
+    bot_7: 'none',
   });
   const [botColors, setBotColors] = useState<Record<string, number>>({
     main_ai: 0,
@@ -1246,20 +1258,6 @@ export default function App() {
   }, [adminSettings, gameplayPresets, selectedPresetName]);
 
   // AI-only presets state and helper functions
-  interface AITuning {
-    aiReactionLatency?: number;
-    aiAnticipationFactor?: number;
-    aiMovementComplexity?: number;
-    aiWeaponSwapIQ?: number;
-    aiPlaystyle?: number;
-    aiWeaponPrioritization?: number;
-  }
-  interface AIPreset {
-    id: string;
-    name: string;
-    tuning: AITuning;
-  }
-
   const [aiPresets, setAiPresets] = useState<AIPreset[]>(() => {
     try {
       const saved = localStorage.getItem('grifball_ai_presets');
@@ -1973,11 +1971,12 @@ export default function App() {
   };
 
   const handleInitializeTournament = (
-    difficulty: TournamentDifficulty,
+    difficulty: TournamentDifficulty | 'custom',
     killsToWin: number = TOURNAMENT_DEFAULT_KILLS_TO_WIN,
-    roundCount: number = TOURNAMENT_DEFAULT_ROUND_COUNT
+    roundCount: number = TOURNAMENT_DEFAULT_ROUND_COUNT,
+    selectedPresets?: AIPreset[]
   ) => {
-    const opponents = generateTournamentOpponents(difficulty, getTournamentBotCount(roundCount));
+    const opponents = generateTournamentOpponents(difficulty, getTournamentBotCount(roundCount), selectedPresets);
     const rounds = buildInitialTournamentRounds(roundCount);
 
     const state: TournamentState = {
@@ -2026,6 +2025,16 @@ export default function App() {
 
     setBotBehaviors({
       main_ai: opponent.behavior
+    });
+
+    setBotArchetypes({
+      main_ai: opponent.archetype ?? 'none',
+      bot_2: 'none',
+      bot_3: 'none',
+      bot_4: 'none',
+      bot_5: 'none',
+      bot_6: 'none',
+      bot_7: 'none',
     });
 
     setAdminSettings(prev => ({
@@ -2560,6 +2569,7 @@ export default function App() {
           botColors={botColors}
           botBehaviors={botBehaviors}
           botWeaponBehaviors={botWeaponBehaviors}
+          botArchetypes={botArchetypes}
           aiPresets={aiPresets}
           aiMatchSessionKey={
             singlePlayerMode === 'tournament' && tournamentState?.status === 'playing'
@@ -3021,6 +3031,87 @@ export default function App() {
                                 {TOURNAMENT_MIN_KILLS_TO_WIN} – {TOURNAMENT_MAX_KILLS_TO_WIN} kills per match
                               </span>
                             </div>
+                            {/* Custom AI Presets Section */}
+                            {aiPresets.length > 0 && (
+                              <div className="flex flex-col gap-2.5 bg-white/5 border border-white/5 rounded-xl p-3.5 pointer-events-auto">
+                                <div className="flex items-center gap-2 mb-1 justify-between">
+                                  <div className="flex items-center gap-2">
+                                    <span className="w-1.5 h-3.5 bg-sky-400" />
+                                    <span className="text-xs uppercase font-bold tracking-wider text-white">
+                                      🧬 Custom AI Presets
+                                    </span>
+                                  </div>
+                                  <span className="text-[10px] font-mono text-white/40">
+                                    {selectedTournamentPresets.length} selected
+                                  </span>
+                                </div>
+                                
+                                <div className="grid grid-cols-2 gap-2 max-h-36 overflow-y-auto pr-1">
+                                  {aiPresets.map(preset => {
+                                    const isSelected = selectedTournamentPresets.includes(preset.id);
+                                    return (
+                                      <button
+                                        key={preset.id}
+                                        onClick={() => {
+                                          setSelectedTournamentPresets(prev =>
+                                            prev.includes(preset.id)
+                                              ? prev.filter(id => id !== preset.id)
+                                              : [...prev, preset.id]
+                                          );
+                                        }}
+                                        className={`flex items-center justify-between p-2.5 rounded-lg border text-left transition-all cursor-pointer font-sans ${
+                                          isSelected
+                                            ? 'bg-sky-500/10 border-sky-400/50 hover:bg-sky-500/15 text-sky-400 shadow-[0_0_10px_rgba(56,189,248,0.15)]'
+                                            : 'bg-black/40 border-white/5 text-white/70 hover:bg-black/60 hover:border-white/10 hover:text-white'
+                                        }`}
+                                      >
+                                        <div className="flex flex-col min-w-0 pr-2">
+                                          <span className="text-xs font-bold truncate">{preset.name}</span>
+                                          <span className="text-[9px] text-white/40 font-mono">
+                                            RL: {preset.tuning.aiReactionLatency?.toFixed(2)}s
+                                          </span>
+                                        </div>
+                                        <div className={`w-3.5 h-3.5 rounded border flex items-center justify-center transition-all shrink-0 ${
+                                          isSelected ? 'border-sky-400 bg-sky-400 text-slate-900' : 'border-white/20 bg-transparent'
+                                        }`}>
+                                          {isSelected && (
+                                            <svg className="w-2.5 h-2.5 font-bold" fill="none" stroke="currentColor" strokeWidth="3" viewBox="0 0 24 24">
+                                              <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                                            </svg>
+                                          )}
+                                        </div>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+
+                                {selectedTournamentPresets.length > 0 && (
+                                  <button
+                                    onClick={() => {
+                                      const presetsToUse = aiPresets.filter(p => selectedTournamentPresets.includes(p.id));
+                                      handleInitializeTournament('custom', tournamentKillsToWin, tournamentRoundCount, presetsToUse);
+                                    }}
+                                    className="group relative w-full h-11 mt-1 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 transition-all duration-300 flex items-center justify-center overflow-hidden cursor-pointer rounded shadow-[0_0_15px_rgba(16,185,129,0.3)] border border-emerald-400/20 select-none pointer-events-auto active:scale-[0.99]"
+                                  >
+                                    <span className="text-white font-sans font-black text-[11px] uppercase tracking-widest pointer-events-none flex items-center gap-1.5">
+                                      Start Tournament
+                                      <svg className="w-4 h-4 transition-transform group-hover:translate-x-1" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
+                                      </svg>
+                                    </span>
+                                  </button>
+                                )}
+                              </div>
+                            )}
+
+                            {aiPresets.length > 0 && selectedTournamentPresets.length === 0 && (
+                              <div className="flex items-center gap-3 py-1">
+                                <div className="h-[1px] flex-1 bg-white/5" />
+                                <span className="text-[9px] font-mono uppercase tracking-widest text-white/30 font-bold">OR SELECT Standard Difficulty</span>
+                                <div className="h-[1px] flex-1 bg-white/5" />
+                              </div>
+                            )}
+
                             <div className="flex flex-col gap-3 pointer-events-auto">
                               {([
                                 { id: 'easy', label: 'Easy', color: 'text-emerald-400 border-emerald-500/20 bg-emerald-950/20 hover:bg-emerald-950/40 shadow-[0_0_8px_rgba(16,185,129,0.1)]', desc: 'Sub-Normal combat reflex latency, simple spacing behavior.' },
@@ -4977,28 +5068,26 @@ export default function App() {
                         )}
                       </select>
                       {['easy', 'normal', 'hard', 'nightmare'].includes(botDifficulties.main_ai || 'normal') && (
-                        <>
-                          <select
-                            value={botBehaviors.main_ai || 'defensive'}
-                            onChange={(e) => setBotBehaviors(prev => ({ ...prev, main_ai: e.target.value as AIBehaviorPreset }))}
-                            className="w-full h-7 bg-black/60 border border-white/10 rounded px-1.5 text-[10px] text-cyan-400 font-bold uppercase outline-none focus:border-cyan-400 cursor-pointer transition-all font-sans"
-                            title="Bot Behavior Playstyle"
-                          >
-                            <option value="passive">🛡️ Passive</option>
-                            <option value="defensive">🛡️ Defensive</option>
-                            <option value="aggressive">⚔️ Aggressive</option>
-                          </select>
-                          <select
-                            value={botWeaponBehaviors.main_ai || 'balanced'}
-                            onChange={(e) => setBotWeaponBehaviors(prev => ({ ...prev, main_ai: e.target.value }))}
-                            className="w-full h-7 bg-black/60 border border-white/10 rounded px-1.5 text-[10px] text-amber-400 font-bold uppercase outline-none focus:border-amber-400 cursor-pointer transition-all font-sans"
-                            title="Bot Weapon Behavior Preset"
-                          >
-                            <option value="sword_75_25">⚔️ Sword 75/25</option>
-                            <option value="balanced">⚖️ Balanced 50/50</option>
-                            <option value="hammer_75_25">🔨 Hammer 75/25</option>
-                          </select>
-                        </>
+                        <select
+                          value={botArchetypes.main_ai || 'none'}
+                          onChange={(e) => {
+                            const newArch = e.target.value as AIArchetypeId;
+                            setBotArchetypes(prev => ({ ...prev, main_ai: newArch }));
+                            if (newArch === 'none') {
+                              setAdminSettings(prev => ({ ...prev, aiArchetype: 'none' }));
+                            } else {
+                              setAdminSettings(prev => applyArchetypeToSettings(prev, newArch));
+                            }
+                          }}
+                          className="w-full h-7 bg-black/60 border border-white/10 rounded px-1.5 text-[10px] text-cyan-400 font-bold uppercase outline-none focus:border-cyan-400 cursor-pointer transition-all font-sans"
+                          title="Bot Combat Archetype"
+                        >
+                          {AI_ARCHETYPE_OPTIONS.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.value === 'none' ? '👤 ' + option.label : option.label}
+                            </option>
+                          ))}
+                        </select>
                       )}
                     </div>
                   )}
@@ -5064,28 +5153,18 @@ export default function App() {
                             )}
                           </select>
                           {['easy', 'normal', 'hard', 'nightmare'].includes(botDifficulties[bot.id] || 'normal') && (
-                            <>
-                              <select
-                                value={botBehaviors[bot.id] || 'defensive'}
-                                onChange={(e) => setBotBehaviors(prev => ({ ...prev, [bot.id]: e.target.value as AIBehaviorPreset }))}
-                                className="w-full h-7 bg-black/60 border border-white/10 rounded px-1.5 text-[10px] text-cyan-400 font-bold uppercase outline-none focus:border-cyan-400 cursor-pointer transition-all font-sans"
-                                title="Bot Behavior Playstyle"
-                              >
-                                <option value="passive">🛡️ Passive</option>
-                                <option value="defensive">🛡️ Defensive</option>
-                                <option value="aggressive">⚔️ Aggressive</option>
-                              </select>
-                              <select
-                                value={botWeaponBehaviors[bot.id] || 'balanced'}
-                                onChange={(e) => setBotWeaponBehaviors(prev => ({ ...prev, [bot.id]: e.target.value }))}
-                                className="w-full h-7 bg-black/60 border border-white/10 rounded px-1.5 text-[10px] text-amber-400 font-bold uppercase outline-none focus:border-amber-400 cursor-pointer transition-all font-sans"
-                                title="Bot Weapon Behavior Preset"
-                              >
-                                <option value="sword_75_25">⚔️ Sword 75/25</option>
-                                <option value="balanced">⚖️ Balanced 50/50</option>
-                                <option value="hammer_75_25">🔨 Hammer 75/25</option>
-                              </select>
-                            </>
+                            <select
+                              value={botArchetypes[bot.id] || 'none'}
+                              onChange={(e) => setBotArchetypes(prev => ({ ...prev, [bot.id]: e.target.value as AIArchetypeId }))}
+                              className="w-full h-7 bg-black/60 border border-white/10 rounded px-1.5 text-[10px] text-cyan-400 font-bold uppercase outline-none focus:border-cyan-400 cursor-pointer transition-all font-sans"
+                              title="Bot Combat Archetype"
+                            >
+                              {AI_ARCHETYPE_OPTIONS.map((option) => (
+                                <option key={option.value} value={option.value}>
+                                  {option.value === 'none' ? '👤 ' + option.label : option.label}
+                                </option>
+                              ))}
+                            </select>
                           )}
                         </div>
                       )}

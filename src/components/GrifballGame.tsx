@@ -39,7 +39,7 @@ import {
   shouldAbortCombo,
 } from '../game/aiComboEngine';
 import { deriveMatchStateMultipliers, shouldAvoidCoinFlipTrade, applyMatchAggression } from '../game/aiTuning';
-import { applyPersonalityKnobs, getPersonalityFlags, resolveDerivedAIParams } from '../game/aiPersonalities';
+import { applyPersonalityKnobs, getPersonalityFlags, resolveDerivedAIParams, getArchetypeDef } from '../game/aiPersonalities';
 import {
   APPROACH_FEINT_BACK_TIMER,
   CHARGE_ABORT_SIDESTEP_TIMER,
@@ -147,6 +147,7 @@ interface GrifballGameProps {
   botColors?: Record<string, number>;
   botBehaviors?: Record<string, AIBehaviorPreset>;
   botWeaponBehaviors?: Record<string, string>;
+  botArchetypes?: Record<string, string>;
   aiPresets?: any[];
   /** Changes when a new match session starts (sandbox or tournament round). */
   aiMatchSessionKey?: string;
@@ -225,6 +226,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
   botColors = {},
   botBehaviors = {},
   botWeaponBehaviors = {},
+  botArchetypes = {},
   aiPresets = [],
   aiMatchSessionKey = 'sandbox',
   matchKillsToWin,
@@ -646,8 +648,11 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
   };
 
   const resolveBotArchetype = (botId: string): string | undefined => {
-    if (botId !== 'main_ai') return undefined;
-    const archetype = stateRef.current.settings.aiArchetype;
+    if (botId === 'main_ai') {
+      const archetype = stateRef.current.settings.aiArchetype;
+      if (archetype && archetype !== 'none') return archetype;
+    }
+    const archetype = botArchetypes?.[botId];
     return archetype && archetype !== 'none' ? archetype : undefined;
   };
 
@@ -694,18 +699,24 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         weaponSwapIQ = 95;
       }
 
-      const behavior = botBehaviors[botId] || 'defensive';
-      if (behavior === 'passive') aiPlaystyle = 0;
-      else if (behavior === 'defensive') aiPlaystyle = 50;
-      else if (behavior === 'aggressive') aiPlaystyle = 100;
-
-      const wBehavior = botWeaponBehaviors?.[botId] || 'balanced';
-      if (wBehavior === 'sword_75_25') {
-        weaponPrioritization = 75;
-      } else if (wBehavior === 'hammer_75_25') {
-        weaponPrioritization = 25;
-      } else {
+      const botArchetype = resolveBotArchetype(botId);
+      if (botArchetype) {
+        aiPlaystyle = 50;
         weaponPrioritization = 50;
+      } else {
+        const behavior = botBehaviors[botId] || 'defensive';
+        if (behavior === 'passive') aiPlaystyle = 0;
+        else if (behavior === 'defensive') aiPlaystyle = 50;
+        else if (behavior === 'aggressive') aiPlaystyle = 100;
+
+        const wBehavior = botWeaponBehaviors?.[botId] || 'balanced';
+        if (wBehavior === 'sword_75_25') {
+          weaponPrioritization = 75;
+        } else if (wBehavior === 'hammer_75_25') {
+          weaponPrioritization = 25;
+        } else {
+          weaponPrioritization = 50;
+        }
       }
     } else {
       const preset = aiPresets.find(p => p.id === difficulty);
@@ -6476,10 +6487,17 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     const s = stateRef.current;
     let playstyleVal = 50;
     if (['easy', 'normal', 'hard', 'nightmare'].includes(difficulty)) {
-      const behavior = botBehaviors[botId] || 'defensive';
-      if (behavior === 'passive') playstyleVal = 0;
-      else if (behavior === 'defensive') playstyleVal = 50;
-      else if (behavior === 'aggressive') playstyleVal = 100;
+      const botArchetype = resolveBotArchetype(botId);
+      if (botArchetype) {
+        const def = getArchetypeDef(botArchetype);
+        const playstyleKnob = def?.knobOverrides?.aiPlaystyle;
+        playstyleVal = playstyleKnob !== undefined ? playstyleKnob : 50;
+      } else {
+        const behavior = botBehaviors[botId] || 'defensive';
+        if (behavior === 'passive') playstyleVal = 0;
+        else if (behavior === 'defensive') playstyleVal = 50;
+        else if (behavior === 'aggressive') playstyleVal = 100;
+      }
     } else if (difficulty === 'custom') {
       playstyleVal = s.settings.aiPlaystyle ?? 50;
     } else {

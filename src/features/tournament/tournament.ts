@@ -1,4 +1,4 @@
-import { TournamentMatch, TournamentOpponent } from '../../types';
+import { TournamentMatch, TournamentOpponent, AIPreset } from '../../types';
 import {
   applyPersonalityKnobs,
   pickRandomArchetype,
@@ -79,8 +79,9 @@ export function buildNextTournamentRoundMatches(winners: string[]): TournamentMa
 }
 
 export function generateTournamentOpponents(
-  difficulty: TournamentDifficulty,
-  botCount: number
+  difficulty: TournamentDifficulty | 'custom',
+  botCount: number,
+  customPresets?: AIPreset[]
 ): Record<string, TournamentOpponent> {
   const shuffledNames = [...TOURNAMENT_BOT_NAMES].sort(() => Math.random() - 0.5);
   const opponents: Record<string, TournamentOpponent> = {};
@@ -93,6 +94,8 @@ export function generateTournamentOpponents(
     behaviorPool[index % behaviorPool.length]
   ).sort(() => Math.random() - 0.5);
 
+  const usePresets = customPresets && customPresets.length > 0;
+
   botIds.forEach((id, index) => {
     const name = shuffledNames[index % shuffledNames.length];
     const hue = Math.floor(Math.random() * 360);
@@ -103,59 +106,76 @@ export function generateTournamentOpponents(
     let movementComplexity = 50;
     let weaponSwapIQ = 50;
     let playstyle = 50;
+    let resolvedBehavior: 'passive' | 'defensive' | 'aggressive' = 'defensive';
+    let archetype = 'none';
 
-    if (difficulty === 'easy') {
-      reactionLatency = 0.5 + Math.random() * 0.15;
-      anticipationFactor = Math.random() * 0.1;
-      movementComplexity = 10 + Math.floor(Math.random() * 15);
-      weaponSwapIQ = 5 + Math.floor(Math.random() * 15);
-    } else if (difficulty === 'normal') {
-      reactionLatency = 0.2 + Math.random() * 0.1;
-      anticipationFactor = 0.3 + Math.random() * 0.2;
-      movementComplexity = 40 + Math.floor(Math.random() * 20);
-      weaponSwapIQ = 40 + Math.floor(Math.random() * 20);
-    } else if (difficulty === 'hard') {
-      reactionLatency = 0.08 + Math.random() * 0.06;
-      anticipationFactor = 0.65 + Math.random() * 0.15;
-      movementComplexity = 70 + Math.floor(Math.random() * 15);
-      weaponSwapIQ = 70 + Math.floor(Math.random() * 15);
-    } else if (difficulty === 'nightmare') {
-      reactionLatency = 0.01 + Math.random() * 0.02;
-      anticipationFactor = 0.9 + Math.random() * 0.09;
-      movementComplexity = 90 + Math.floor(Math.random() * 10);
-      weaponSwapIQ = 90 + Math.floor(Math.random() * 10);
+    if (usePresets) {
+      const preset = customPresets.length === 1
+        ? customPresets[0]
+        : customPresets[Math.floor(Math.random() * customPresets.length)];
+
+      reactionLatency = preset.tuning.aiReactionLatency ?? 0.25;
+      anticipationFactor = preset.tuning.aiAnticipationFactor ?? 0.40;
+      movementComplexity = preset.tuning.aiMovementComplexity ?? 50;
+      weaponSwapIQ = preset.tuning.aiWeaponSwapIQ ?? 50;
+      playstyle = preset.tuning.aiPlaystyle ?? 50;
+      resolvedBehavior = playstyleToBehavior(playstyle);
+      archetype = 'none';
+    } else {
+      if (difficulty === 'easy') {
+        reactionLatency = 0.5 + Math.random() * 0.15;
+        anticipationFactor = Math.random() * 0.1;
+        movementComplexity = 10 + Math.floor(Math.random() * 15);
+        weaponSwapIQ = 5 + Math.floor(Math.random() * 15);
+      } else if (difficulty === 'normal') {
+        reactionLatency = 0.2 + Math.random() * 0.1;
+        anticipationFactor = 0.3 + Math.random() * 0.2;
+        movementComplexity = 40 + Math.floor(Math.random() * 20);
+        weaponSwapIQ = 40 + Math.floor(Math.random() * 20);
+      } else if (difficulty === 'hard') {
+        reactionLatency = 0.08 + Math.random() * 0.06;
+        anticipationFactor = 0.65 + Math.random() * 0.15;
+        movementComplexity = 70 + Math.floor(Math.random() * 15);
+        weaponSwapIQ = 70 + Math.floor(Math.random() * 15);
+      } else if (difficulty === 'nightmare') {
+        reactionLatency = 0.01 + Math.random() * 0.02;
+        anticipationFactor = 0.9 + Math.random() * 0.09;
+        movementComplexity = 90 + Math.floor(Math.random() * 10);
+        weaponSwapIQ = 90 + Math.floor(Math.random() * 10);
+      }
+
+      if (behavior === 'passive') playstyle = 0 + Math.floor(Math.random() * 15);
+      else if (behavior === 'defensive') playstyle = 40 + Math.floor(Math.random() * 20);
+      else if (behavior === 'aggressive') playstyle = 85 + Math.floor(Math.random() * 15);
+
+      const generatedArchetype = pickRandomArchetype();
+      const personalityKnobs = applyPersonalityKnobs(
+        {
+          difficulty,
+          reactionLatency,
+          anticipationFactor,
+          movementComplexity,
+          weaponSwapIQ,
+          aiPlaystyle: playstyle,
+          weaponPrioritization: 50,
+        },
+        generatedArchetype
+      );
+
+      reactionLatency = personalityKnobs.reactionLatency;
+      anticipationFactor = personalityKnobs.anticipationFactor;
+      movementComplexity = personalityKnobs.movementComplexity;
+      weaponSwapIQ = personalityKnobs.weaponSwapIQ;
+      playstyle = personalityKnobs.aiPlaystyle;
+      resolvedBehavior = playstyleToBehavior(playstyle);
+      archetype = generatedArchetype;
     }
-
-    if (behavior === 'passive') playstyle = 0 + Math.floor(Math.random() * 15);
-    else if (behavior === 'defensive') playstyle = 40 + Math.floor(Math.random() * 20);
-    else if (behavior === 'aggressive') playstyle = 85 + Math.floor(Math.random() * 15);
-
-    const archetype = pickRandomArchetype();
-    const personalityKnobs = applyPersonalityKnobs(
-      {
-        difficulty,
-        reactionLatency,
-        anticipationFactor,
-        movementComplexity,
-        weaponSwapIQ,
-        aiPlaystyle: playstyle,
-        weaponPrioritization: 50,
-      },
-      archetype
-    );
-
-    reactionLatency = personalityKnobs.reactionLatency;
-    anticipationFactor = personalityKnobs.anticipationFactor;
-    movementComplexity = personalityKnobs.movementComplexity;
-    weaponSwapIQ = personalityKnobs.weaponSwapIQ;
-    playstyle = personalityKnobs.aiPlaystyle;
-    const resolvedBehavior = playstyleToBehavior(playstyle);
 
     opponents[id] = {
       id,
       name,
       hue,
-      difficulty,
+      difficulty: usePresets ? 'custom' : difficulty as TournamentDifficulty,
       reactionLatency,
       anticipationFactor,
       movementComplexity,

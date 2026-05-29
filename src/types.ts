@@ -259,11 +259,26 @@ export interface DeviceInfo {
   os: DeviceOS;
 }
 
+export interface AITuning {
+  aiReactionLatency?: number;
+  aiAnticipationFactor?: number;
+  aiMovementComplexity?: number;
+  aiWeaponSwapIQ?: number;
+  aiPlaystyle?: number;
+  aiWeaponPrioritization?: number;
+}
+
+export interface AIPreset {
+  id: string;
+  name: string;
+  tuning: AITuning;
+}
+
 export interface TournamentOpponent {
   id: string;
   name: string;
   hue: number;
-  difficulty: 'easy' | 'normal' | 'hard' | 'nightmare';
+  difficulty: 'easy' | 'normal' | 'hard' | 'nightmare' | 'custom';
   reactionLatency: number;
   anticipationFactor: number;
   movementComplexity: number;
@@ -284,7 +299,7 @@ export interface TournamentMatch {
 }
 
 export interface TournamentState {
-  difficulty: 'easy' | 'normal' | 'hard' | 'nightmare';
+  difficulty: 'easy' | 'normal' | 'hard' | 'nightmare' | 'custom';
   killsToWin: number;
   roundCount: number; // Total elimination rounds in this bracket
   currentRound: number;
@@ -293,3 +308,4 @@ export interface TournamentState {
   rounds: TournamentMatch[][];
   status: 'idle' | 'bracket' | 'playing' | 'gameover' | 'victory';
 }
+
