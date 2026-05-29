@@ -54,6 +54,7 @@ import {
 } from './features/tournament/tournament';
 import { AI_ARCHETYPE_OPTIONS, applyArchetypeToSettings, getArchetypeDef, type AIArchetypeId } from './game/aiPersonalities';
 import { GrifballGame } from './components/GrifballGame';
+import * as THREE from 'three';
 import { HUD } from './components/HUD';
 import { sfx } from './components/AudioEngine';
 import { Move, RotateCcw, Check } from 'lucide-react';
@@ -61,7 +62,7 @@ import { ChatOverlay, ChatMessage } from './components/ChatOverlay';
 import { CharacterPreview } from './components/CharacterPreview';
 import { CharacterLoadout, DEFAULT_LOADOUT, AVAILABLE_PRESETS, HelmetPreset, TorsoPreset, ArmPreset, LegPreset } from './components/VoxelModels';
 
-const APP_VERSION = '0.462';
+const APP_VERSION = '0.467';
 const MAX_PLAYER_NAME_LENGTH = 10;
 
 interface OnlineClient {
@@ -97,6 +98,12 @@ const getPresetDescription = (val: string, customPresets: AIPreset[] = []): stri
     return `Custom Preset: Latency: ${rl}, Anticipation: ${anti}, Movement: ${move}, Weapon Swap: ${swap}`;
   }
   return "";
+};
+
+const getArchetypeDescription = (val: string): string => {
+  if (!val || val === 'none') return "Neutral personality. Relies purely on difficulty matrix knobs.";
+  const def = getArchetypeDef(val);
+  return def ? def.description : "";
 };
 
 interface GlobalChatPanelProps {
@@ -572,6 +579,147 @@ const detectDeviceOS = (): DeviceInfo => {
   return { isMobile, os };
 };
 
+const MapPreview: React.FC<{ selectedMap: 'hangar' | 'circle' }> = ({ selectedMap }) => {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    if (!canvasRef.current) return;
+    const canvas = canvasRef.current;
+    
+    // Create tiny three.js preview scene
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color('#030712');
+
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+    renderer.setSize(180, 180);
+    renderer.shadowMap.enabled = true;
+
+    const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 100);
+    camera.position.set(0, 14, 18);
+    camera.lookAt(0, 0, 0);
+
+    const ambientLight = new THREE.AmbientLight('#111827', 1.2);
+    scene.add(ambientLight);
+
+    const dirLight = new THREE.DirectionalLight('#fffbeb', 1.5);
+    dirLight.position.set(5, 15, 5);
+    scene.add(dirLight);
+
+    // Primary central light
+    const pointLight = new THREE.PointLight(selectedMap === 'hangar' ? '#ea580c' : '#06b6d4', 3.0, 20);
+    pointLight.position.set(0, 5, 0);
+    scene.add(pointLight);
+
+    // Floor cylinder
+    const floorGeo = new THREE.CylinderGeometry(8, 8, 0.4, 32);
+    let floorMat;
+
+    if (selectedMap === 'hangar') {
+      // Hangar floor
+      floorMat = new THREE.MeshStandardMaterial({
+        color: '#1e293b',
+        roughness: 0.8,
+        metalness: 0.5
+      });
+    } else {
+      // Neon circle floor
+      floorMat = new THREE.MeshStandardMaterial({
+        color: '#0f172a',
+        roughness: 0.4,
+        metalness: 0.8
+      });
+    }
+
+    const floor = new THREE.Mesh(floorGeo, floorMat);
+    floor.position.y = -0.2;
+    scene.add(floor);
+
+    // Dynamic map features
+    const group = new THREE.Group();
+    scene.add(group);
+
+    if (selectedMap === 'hangar') {
+      // Industrial hangar details: 12-sided walls (small scale)
+      for (let i = 0; i < 12; i++) {
+        const angle = (i * Math.PI) / 6;
+        const wx = Math.cos(angle) * 8.2;
+        const wz = Math.sin(angle) * 8.2;
+        const wall = new THREE.Mesh(new THREE.BoxGeometry(4.2, 4.0, 0.1), new THREE.MeshStandardMaterial({ color: '#111827', roughness: 0.9 }));
+        wall.position.set(wx, 2, wz);
+        wall.lookAt(0, 2, 0);
+        group.add(wall);
+
+        // Small orange trim lines
+        const trim = new THREE.Mesh(new THREE.BoxGeometry(4.2, 0.15, 0.15), new THREE.MeshStandardMaterial({ color: '#ca8a04', roughness: 0.8 }));
+        trim.position.set(wx, 3.8, wz);
+        trim.lookAt(0, 3.8, 0);
+        group.add(trim);
+
+        // Heavy pillars
+        if (i % 2 === 0) {
+          const pillar = new THREE.Mesh(new THREE.BoxGeometry(0.4, 4.0, 0.4), new THREE.MeshStandardMaterial({ color: '#8f4f1f', roughness: 0.8 }));
+          pillar.position.set(wx, 2, wz);
+          pillar.lookAt(0, 2, 0);
+          group.add(pillar);
+        }
+      }
+    } else {
+      // Neon circle details
+      // A glowing cyan ring at the boundary
+      const ringGeo = new THREE.RingGeometry(7.8, 8.0, 32);
+      ringGeo.rotateX(-Math.PI / 2);
+      const ringMat = new THREE.MeshBasicMaterial({ color: '#06b6d4', side: THREE.DoubleSide });
+      const ring = new THREE.Mesh(ringGeo, ringMat);
+      ring.position.y = 0.02;
+      group.add(ring);
+
+      // Glowing concentric ring
+      const innerRingGeo = new THREE.RingGeometry(3.8, 4.0, 32);
+      innerRingGeo.rotateX(-Math.PI / 2);
+      const innerRing = new THREE.Mesh(innerRingGeo, ringMat);
+      innerRing.position.y = 0.02;
+      group.add(innerRing);
+
+      // Simple neat columns at four cardinal points
+      for (let i = 0; i < 4; i++) {
+        const angle = (i * Math.PI) / 2;
+        const wx = Math.cos(angle) * 7.9;
+        const wz = Math.sin(angle) * 7.9;
+        const beam = new THREE.Mesh(new THREE.BoxGeometry(0.15, 2.5, 0.15), new THREE.MeshStandardMaterial({ color: '#06b6d4', roughness: 0.5, metalness: 0.8 }));
+        beam.position.set(wx, 1.25, wz);
+        group.add(beam);
+      }
+    }
+
+    let animationFrameId: number;
+    let rotation = 0;
+
+    const animate = () => {
+      rotation += 0.008;
+      camera.position.x = Math.sin(rotation) * 16;
+      camera.position.z = Math.cos(rotation) * 16;
+      camera.lookAt(0, 1.5, 0);
+
+      renderer.render(scene, camera);
+      animationFrameId = requestAnimationFrame(animate);
+    };
+
+    animate();
+
+    return () => {
+      cancelAnimationFrame(animationFrameId);
+      renderer.dispose();
+      scene.clear();
+    };
+  }, [selectedMap]);
+
+  return (
+    <div className="w-[180px] h-[180px] rounded-xl border border-white/10 bg-black/60 overflow-hidden flex items-center justify-center shrink-0 aspect-square">
+      <canvas ref={canvasRef} width={180} height={180} className="w-full h-full block" />
+    </div>
+  );
+};
+
 export default function App() {
   const [deviceInfo, setDeviceInfo] = useState<DeviceInfo>(() => detectDeviceOS());
   const [isOnline, setIsOnline] = useState<boolean>(() => typeof navigator === 'undefined' ? true : navigator.onLine);
@@ -708,6 +856,7 @@ export default function App() {
     bot_7: 180,
   });
   const [showBotSetupMenu, setShowBotSetupMenu] = useState<boolean>(false);
+  const [selectedMap, setSelectedMap] = useState<'hangar' | 'circle'>('hangar');
   const [showKeybindsMenu, setShowKeybindsMenu] = useState<boolean>(false);
 
   // Chat message state
@@ -2572,6 +2721,7 @@ export default function App() {
       {isPlaying && !isTerminated && (
         <GrifballGame
           isPlaying={isPlaying}
+          selectedMap={selectedMap}
           isPaused={isPaused}
           debugMode={debugMode}
           adminSettings={adminSettings}
@@ -4607,30 +4757,33 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Responsive Dense Settings Grid */}
-              <div className="columns-1 md:columns-2 lg:columns-3 xl:columns-4 gap-3 pointer-events-auto mb-5 text-left [column-fill:auto]">
-                {(() => {
-                  const sectionOrder = ['core', 'health', 'velocity', 'dash', 'hammer', 'launch', 'sword', 'trades', 'name', 'ai'];
-                  const sorted = [...SETTING_SECTIONS].sort((a, b) => {
-                    return sectionOrder.indexOf(a.id) - sectionOrder.indexOf(b.id);
-                  });
-                  return sorted.map((section) => (
-                    <div key={section.id} className="break-inside-avoid mb-3">
-                      {renderSection(section)}
-                    </div>
-                  ));
-                })()}
-              </div>
-
-              {/* Close and return */}
-              <button 
+              {/* Apply and return */}
+              <button
                 id="apply-admin-btn"
                 onClick={() => setShowAdminPanel(false)}
-                className="w-full h-11 bg-white hover:bg-sky-400 hover:text-white text-slate-900 text-xs font-black uppercase tracking-widest rounded cursor-pointer transition-colors active:scale-98 flex items-center justify-center gap-2 shadow-lg"
+                className="w-full h-11 mb-4 bg-white hover:bg-sky-400 hover:text-white text-slate-900 text-xs font-black uppercase tracking-widest rounded cursor-pointer transition-colors active:scale-98 flex items-center justify-center gap-2 shadow-lg pointer-events-auto"
               >
                 <Check className="w-4 h-4" />
                 Apply Changes & Resume Sandbox
               </button>
+
+              {/* 3-Column Dense Settings Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pointer-events-auto text-left">
+                {/* COLUMN 1: LOCOMOTION, ACTIONS & HEALTH */}
+                <div className="flex flex-col gap-3">
+                  {SETTING_SECTIONS.filter(s => s.column === 1).map(renderSection)}
+                </div>
+
+                {/* COLUMN 2: GRAVITY HAMMER & JUMPING */}
+                <div className="flex flex-col gap-3">
+                  {SETTING_SECTIONS.filter(s => s.column === 2).map(renderSection)}
+                </div>
+
+                {/* COLUMN 3: ENERGY SWORD & TRADING CONFIGS */}
+                <div className="flex flex-col gap-3">
+                  {SETTING_SECTIONS.filter(s => s.column === 3).map(renderSection)}
+                </div>
+              </div>
             </div>
           ) : showKeybindsMenu ? (
             /* HOTKEY ADJUSTMENTS SETTINGS PANEL */
@@ -5035,6 +5188,37 @@ export default function App() {
               </div>
             </div>
 
+            {/* Map Selector & 3D Preview */}
+            <div className="bg-white/5 border border-white/5 rounded-xl p-4 flex gap-5 items-stretch">
+              <div className="flex-1 flex flex-col justify-between py-1 select-none text-left">
+                <div className="flex flex-col gap-2">
+                  <span className="text-xs font-bold text-blue-400 uppercase tracking-wider">Battle Arena Map Selector</span>
+                  <p className="text-[10.5px] text-white/50 leading-snug">
+                    Choose the virtual environment where your combat simulation will be executed.
+                  </p>
+                </div>
+                <div className="flex flex-col gap-1.5 mt-3">
+                  <span className="text-[10px] text-white/40 uppercase tracking-widest font-mono">Arena Blueprint:</span>
+                  <select
+                    value={selectedMap}
+                    onChange={(e) => setSelectedMap(e.target.value as 'hangar' | 'circle')}
+                    className="w-full h-11 bg-black/60 border border-white/10 rounded px-3 text-sm text-cyan-400 font-bold uppercase outline-none focus:border-cyan-400 cursor-pointer transition-all font-sans"
+                  >
+                    <option value="hangar">⚙️ Industrial Hangar (Default)</option>
+                    <option value="circle">🌐 Circle Arena (Minimalist)</option>
+                  </select>
+                </div>
+                <div className="text-[10px] text-white/45 mt-2 bg-black/30 border border-white/5 p-2 rounded">
+                  {selectedMap === 'hangar' ? (
+                    <span><strong>Industrial Hangar:</strong> A gritty, atmospheric warehouse with steel columns, hazard stripes, metal pipes, ceiling trusses, and warm amber light shafts.</span>
+                  ) : (
+                    <span><strong>Circle Arena:</strong> A clean, minimalist holographic grid arena with concentric glowing borders, four cardinal posts, and sleek neon cyan lights.</span>
+                  )}
+                </div>
+              </div>
+              <MapPreview selectedMap={selectedMap} />
+            </div>
+
             {/* Holographic Combatant Grid */}
             <div className="bg-white/5 border border-white/5 rounded-xl p-4 flex flex-col gap-3">
               <span className="text-xs font-bold text-blue-400 uppercase tracking-wider mb-1">Holographic Combatant Grid</span>
@@ -5108,10 +5292,10 @@ export default function App() {
                             }
                           }}
                           className="w-full h-7 bg-black/60 border border-white/10 rounded px-1.5 text-[10px] text-cyan-400 font-bold uppercase outline-none focus:border-cyan-400 cursor-pointer transition-all font-sans"
-                          title="Bot Combat Archetype"
+                          title={getArchetypeDescription(botArchetypes.main_ai || 'none')}
                         >
                           {AI_ARCHETYPE_OPTIONS.map((option) => (
-                            <option key={option.value} value={option.value}>
+                            <option key={option.value} value={option.value} title={getArchetypeDescription(option.value)}>
                               {option.value === 'none' ? '👤 ' + option.label : option.label}
                             </option>
                           ))}
@@ -5186,10 +5370,10 @@ export default function App() {
                               value={botArchetypes[bot.id] || 'none'}
                               onChange={(e) => setBotArchetypes(prev => ({ ...prev, [bot.id]: e.target.value as AIArchetypeId }))}
                               className="w-full h-7 bg-black/60 border border-white/10 rounded px-1.5 text-[10px] text-cyan-400 font-bold uppercase outline-none focus:border-cyan-400 cursor-pointer transition-all font-sans"
-                              title="Bot Combat Archetype"
+                              title={getArchetypeDescription(botArchetypes[bot.id] || 'none')}
                             >
                               {AI_ARCHETYPE_OPTIONS.map((option) => (
-                                <option key={option.value} value={option.value}>
+                                <option key={option.value} value={option.value} title={getArchetypeDescription(option.value)}>
                                   {option.value === 'none' ? '👤 ' + option.label : option.label}
                                 </option>
                               ))}

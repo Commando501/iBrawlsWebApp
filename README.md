@@ -85,3 +85,10 @@ To prevent players and AI characters from passing straight through one another, 
 - **Velocity Normal Damping**: To ensure collisions feel solid and prevent jittering or high-speed passthroughs, the relative velocity component along the collision normal is cancelled when entities are moving towards each other.
 - **Multi-iteration Solver**: The collision engine runs for **3 iterations** each frame inside `enforceArenaBounds` before bounding players to the circular arena, ensuring perfectly stable physics even in crowded multi-bot pincers.
 - **Zero-lag Rendering**: State positions are proactively synchronized to Three.js group meshes immediately following collision resolution to eliminate 1-frame rendering lag.
+
+## Map Selection & Environments
+
+Local play setups feature an interactive map selector overlay supported by a dynamic, real-time rotating 3D preview:
+
+- **Industrial Hangar**: The default grimy voxel-art warehouse environment. It includes 12 structural support H-beam columns, safety hazard warnings, ceiling trusses, metal conduits, exhaust vents, and warm amber spotlighting.
+- **Circle Arena (Holodeck)**: A clean, sleek virtual simulation deck. It is a minimalist space-void arena featuring high-tech glowing neon cyan grids, concentric glowing ring alignments, four cardinal neon posts, and a cool cyan spotlight core.
