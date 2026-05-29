@@ -7989,16 +7989,23 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     const verticalThreat = Math.abs(verticalDeltaToTarget) > 1.1;
     const attackDistanceToTarget = verticalThreat ? combatDistanceToTarget : distanceToTarget;
 
-    // Point-blank kill detection (shared). An enemy within this 3D range is fully
-    // inside a forward-facing damage sphere (radius attackRadius, planted ~attackRange
-    // ahead), so a level swing is a guaranteed hit at zero self-risk. When one is this
-    // close the bot must NOT hammer-jump or dance — leaping makes its sphere point
-    // straight down and whiff (the group "jump around / spin / miss" loop), when a
-    // simple ground swing would connect. selfGrounded gates the commit so a bot only
-    // takes the free swing while planted, not mid-leap.
-    const pointBlankKillRange = (s.settings.attackRadius ?? 4.5) * 0.65;
-    const enemyAtPointBlank =
-      target.hp > 0 && !targetIsProtected && attackDistanceToTarget <= pointBlankKillRange;
+    // Guaranteed-kill-range detection (shared, weapon-aware). A forward-facing swing
+    // plants its damage sphere (radius attackRadius) ~attackRange ahead of the bot
+    // (the hammer slightly nearer, 0.875x), so any enemy within (forward offset +
+    // radius) along the bot's facing is fully inside it. Since the bot's yaw is locked
+    // onto its target every frame, an enemy inside this range is a near-guaranteed hit
+    // at zero self-risk — a combatant never takes damage from its own sphere (true even
+    // for a hammer whose blast overlaps itself). When an enemy is in this range the bot
+    // must NOT hold spacing, dance, or hammer-jump: leaping points the sphere straight
+    // down and whiffs (the group "jump / spin / miss" loop) when a simple ground swing
+    // would connect. A small margin is shaved off so the target can't drift out of the
+    // sphere during the swing wind-up. selfGrounded gates the commit so a bot only takes
+    // the free swing while planted, not mid-leap.
+    const weaponForwardReach =
+      (s.settings.attackRange ?? 3.2) * (activeWeapon === 'hammer' ? 0.875 : 1.0);
+    const guaranteedKillRange = weaponForwardReach + (s.settings.attackRadius ?? 4.5) * 0.8;
+    const enemyInKillRange =
+      target.hp > 0 && !targetIsProtected && attackDistanceToTarget <= guaranteedKillRange;
     const selfGrounded = pos.y <= 0.05 && (isMainAI ? !s.aiIsJumping : Math.abs(vel.y) <= 0.01);
 
     const inCoordCommitBand =
@@ -8570,7 +8577,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
           botState!.weaponTimer = 0;
           sfx.playSwing();
         }
-      } else if (!enemyAtPointBlank && verticalDeltaToTarget > 2.0 && distanceToTarget <= resolvedDangerZone + 4.5 && Math.random() < 0.012 + tunedAnticipationFactor * 0.035) {
+      } else if (!enemyInKillRange && verticalDeltaToTarget > 2.0 && distanceToTarget <= resolvedDangerZone + 4.5 && Math.random() < 0.012 + tunedAnticipationFactor * 0.035) {
         if (startAIHammerJump(isMainAI, botState, pos, vel, toTarget, 'offensive')) {
           weaponState = 'swing_up';
           hammerJumpCooldownTimer = AI_HAMMER_JUMP_COOLDOWN;
@@ -8877,12 +8884,13 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       const lungeDistanceToTarget = targetAirborne ? combatDistanceToTarget : distanceToTarget;
       const hasVerticalLungeLine = !targetAirborne || movementComplexity >= 60;
 
-      // Point-blank guaranteed-hit execution (see enemyAtPointBlank above). Take the
-      // free level swing instead of feinting/lunging/dancing. Running before that whole
-      // cautious chain is what breaks the symmetric AI-vs-AI standoff — at point-blank
-      // neither bot can win the spacing game, so the correct play is to simply swing.
+      // Guaranteed-kill commit (see enemyInKillRange above). Take the free level swing
+      // instead of feinting/lunging/dancing. Running before that whole cautious chain is
+      // what breaks the symmetric AI-vs-AI standoff — when the enemy is inside our own
+      // weapon's sphere, holding spacing accomplishes nothing, so the correct play is
+      // simply to swing.
       if (
-        enemyAtPointBlank &&
+        enemyInKillRange &&
         selfGrounded &&
         canStartWeaponAction &&
         weaponState === 'ready' &&
@@ -9053,7 +9061,14 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         const dir = Math.sin(swayTimer * 2.2) > 0 ? 1 : -1;
         vel.copy(sidewayHeading).multiplyScalar(3.2 * (s.settings.speedSide / 100) * dir);
         
-        const desiredDist = activeWeapon === 'sword' ? (maxLungeRange * 0.7) : (resolvedDangerZone + 1.2);
+        // Hold inside our own weapon's hit range, not just outside the enemy danger
+        // zone. With a hammer, resolvedDangerZone + 1.2 (~8.6m default) sits *beyond*
+        // the hammer's own ~7m sphere reach, so two hammer bots would otherwise park
+        // where neither can land a blow and circle forever. Capping to just inside
+        // guaranteedKillRange makes them close until a swing actually connects.
+        const desiredDist = activeWeapon === 'sword'
+          ? (maxLungeRange * 0.7)
+          : Math.min(resolvedDangerZone + 1.2, guaranteedKillRange - 0.6);
         const approachBias = distanceToTarget > desiredDist ? 0.35 : -0.45;
         const approachSpeed = approachBias * 1.5 * (approachBias > 0 ? (s.settings.speedForward / 100) : (s.settings.speedBackward / 100));
         const approachAggression = approachBias > 0 ? spatialBias.aggressionMult : 1;
