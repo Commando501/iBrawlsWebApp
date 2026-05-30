@@ -1,9 +1,14 @@
 # AI Combatant Unification — Continuation Doc
 
-_Last updated: 2026-05-30. Status: in progress, all green (tsc clean, 127/127 tests, runtime-verified).
-Lunge-initiation (item 3), weapon-swap-mesh (item 2), cosmetic trail VFX (item 5), and the safe part of
-the structural item (1 — redundant `botState` alias + threaded param removed) now done. Only the
-irreducible structural core + vertical-physics (item 4) remain._
+_Last updated: 2026-05-30. Status: items 2/3/5 + structural-tidy done & runtime-verified; item 4
+(vertical-physics) implemented (tsc clean, 127/127 tests) but **awaiting a foreground playtest** — the
+preview MCP desynced after a parallel commit/restart this session, so the feel of jumps/lunges + the
+"run on air" bug still need a human check. `isMainAI` now down to 6 (5 real + 1 comment); only the
+irreducible structural self/pos/vel + a swap-lockout-tick fork remain.
+
+NOTE: mid-session the repo was committed forward (HEAD ca5769c→e5920e7, v0.490→v0.510) with parallel
+Theater-Mode/replay work; all earlier refactor commits are intact, item-4 edits are currently
+uncommitted. Line numbers below were refreshed for the v0.510 file._
 
 ## Goal
 
@@ -38,14 +43,17 @@ were always shared; the divergence was in `GrifballGame.tsx`.
 - **`getCombatantMesh(id)`** (`GrifballGame.tsx:9616`): the one intentional per-combatant seam
   (main AI → bespoke `enemyGroup`; bots → `otherPlayerMeshes`). `getCombatantWeaponMeshes(id)` (just
   below) returns the `{hammer, sword}` display-mesh pair the same way.
-- **`updateSingleAIEntity(botId, dt)`** (`GrifballGame.tsx:9742`): the single per-entity tick.
+- **`updateSingleAIEntity(botId, dt)`** (`GrifballGame.tsx:~10168`): the single per-entity tick.
   `isMainAI` is derived inside (`botId === 'main_ai'`); a `self` accessor = `getMainAICombatant()` for
-  the main AI, else `s.otherPlayers.get(botId)`. Almost all state read/written through `self`.
+  the main AI, else `s.otherPlayers.get(botId)`. Almost all state read/written through `self`. Gravity/
+  altitude for ALL combatants is now integrated here (the main AI's old external block is gone).
 - **`updateAI(dt)`** (`GrifballGame.tsx:1203`): once-per-frame loop. Now uses ONE respawn loop
-  (`respawnCombatant`, `GrifballGame.tsx:9693`) and ONE update-dispatch loop, both over
-  `getAllCombatants()`.
+  (`respawnCombatant`) and ONE update-dispatch loop, both over `getAllCombatants()`.
+- **`updatePhysics(dt)`** (called before `updateAI` each frame): handles the local player's movement +
+  gravity only. It no longer touches the main AI (the AI gravity block was removed in the item-4
+  convergence) — every AI combatant's vertical physics lives in `updateSingleAIEntity` now.
 
-## Progress: `isMainAI` branch count 79 → 11
+## Progress: `isMainAI` branch count 79 → 6
 
 Done (behavior-neutral unless noted): `Combatant` type + typed map; persistent main-AI combatant;
 unified targeting (`buildPotentialTargets` at `9196` iterates `getAllCombatants()`); unified update
@@ -92,32 +100,49 @@ distinction is **preserved** — `new THREE.Vector3().copy(self.pos)` for bots).
 mid-tick read; cross-combatant reads in the dispatch loop see post-sync values). Runtime-verified: 166
 fps, ~47s combat, Red-AI elimination-feed activity, zero console errors.
 
-## Remaining 11 `isMainAI` (the irreducible / deferred core)
+**vertical-physics convergence (item 4) — full in-tick model.** Deleted the external "Handle AI Gravity
+Physics" block in `updatePhysics` (main AI no longer integrates gravity/altitude/arena-constraint in a
+separate phase-1 pass); the main AI now integrates gravity IN-TICK in `updateSingleAIEntity`, the same
+path bots use (removed the `!isMainAI` guards on the no-target airborne block + the combat gravity
+block). Replaced `recoverMainAIFromRunawayAltitude` (deleted) and the 4 main-vs-bot recover forks with
+ONE helper `recoverCombatantAltitude(self, pos, vel)` (defined by the recover wrapper at ~`1046`) that
+runs the shared altitude clamp, then — gated by `self.id === 'main_ai'` — re-asserts the airborne flag
+and clears the main-only hammer-jump plan (`aiHammerJumpPlanned/Type/WindowTimer`); the wrapper now
+returns the recovered boolean. Air-sway blocks unified (they're dead past the floor-pin anyway). Added
+`self.isJumping = false` on landing in the no-target block so the main AI's flag clears in-tick (the
+external block used to do this). _Behavioral/feel changes to validate by playtest: main-AI gravity now
+applies one frame-phase later (phase 3 vs phase 1); during altitude-runaway recovery the weaponState
+'recovering' guard is dropped (shared helper sets 'ready' unconditionally); main-AI airborne lunges now
+share the bots' double-gravity quirk (gravity block + lunge-flight block both integrate)._ Count: 11 →
+6. tsc clean, 127 tests pass. **NOT yet runtime-verified — needs a foreground playtest** (preview MCP
+desynced this session).
+
+## Remaining 6 `isMainAI` (the irreducible core)
 
 To see them: `grep -n isMainAI src/components/GrifballGame.tsx`
 
-1. **Structural (5 occurrences, incl. 1 comment) — PARTIALLY DONE** — the `self`/`pos`/`vel`
-   resolution at the top of `updateSingleAIEntity` (~`9743`-`9785`). The redundant `botState` alias
-   and the threaded `isMainAI` param are GONE (see Progress). What remains is irreducible: the `self`
+1. **Structural (5 occurrences, incl. 1 comment) — irreducible** — the `isMainAI` derivation + `self`/
+   `pos`/`vel` resolution at the top of `updateSingleAIEntity` (~`10151`-`10193`). The redundant
+   `botState` alias and threaded param are GONE (see Progress). What remains is irreducible: the `self`
    resolution itself (`isMainAI ? getMainAICombatant() : s.otherPlayers.get(botId)`) and the `pos`/`vel`
    working-copy (bot) vs live-ref (main) distinction. Both only removable by putting `main_ai` in the
    raw `otherPlayers` map (**deliberately rejected**) and unifying the vector-mutation model.
-   **Recommend leaving.** (Plus the bot-only swap-lockout tick at ~`10284`, paired with item 4's
-   external-block timing.)
+   **Recommend leaving.**
+
+6. **Swap-lockout tick fork (1)** — `if (!isMainAI && (self.swapLockoutTimer ?? 0) > 0)` at ~`10689`
+   ticks the bot swap-lockout in-tick; the main AI's `aiSwapLockoutTimer` is decremented externally in
+   `updateHammerAnimations` (~`8270`). The lone non-physics fork left. Unifiable like item 4 was (tick
+   `self.swapLockoutTimer` here for all + drop the external main decrement) — small, low-risk, but
+   touches `updateHammerAnimations`. Easy follow-up if a true zero is wanted.
 
 2. ~~**Weapon-SWAP mesh fork (3)**~~ — DONE. See Progress section (`swapCombatantWeapon` /
    `getCombatantWeaponMeshes`).
 
 3. ~~**Lunge INITIATION (2)**~~ — DONE. See Progress section (`triggerCombatantLunge`).
 
-4. **Gravity-integration / air-sway / altitude-recovery (6)** — the genuine vertical-physics model
-   difference. Main integrates gravity in an EXTERNAL block (`GrifballGame.tsx:7842`, gated by
-   `s.aiIsJumping`, calls `recoverMainAIFromRunawayAltitude`); bots integrate inside
-   `updateSingleAIEntity` (~`10123`). Also the no-target airborne block (~`10024`), the lunge-flight
-   altitude-recovery fork (`recoverMainAIFromRunawayAltitude` vs `recoverAIFromRunawayAltitude`,
-   ~`10771`), and bot-only air-sway (~`10946`/`11019`, plus the grounded snap at ~`10924`). Converging
-   means picking one model and removing the external block (timing-sensitive). **Deferred —
-   feel-sensitive; do with active playtesting.**
+4. ~~**Gravity-integration / air-sway / altitude-recovery (6)**~~ — DONE (full in-tick convergence).
+   See Progress section (`recoverCombatantAltitude`; external `updatePhysics` block deleted).
+   **Awaiting a foreground playtest** to confirm jump/lunge feel + the "run on air" bug.
 
 5. ~~**Cosmetic (~2)**~~ — DONE. See Progress section (trail VFX converged to `'enemyCube'`; comment
    reworded).
@@ -138,30 +163,49 @@ To see them: `grep -n isMainAI src/components/GrifballGame.tsx`
   modules, writing a getter-only bridge property THROWS every frame — so "no console errors" is a strong
   signal the bridge accessors are complete.
 
-## Known open bug (separate from the refactor)
+## "Run on air" bug — ROOT-CAUSED & FIXED (2026-05-30)
 
-User reported (intermittent, trigger unknown): an AI can "reset its floor and run around in the air."
-Static tracing showed every airborne path applies gravity and all horizontal movement is gated behind
-an airborne early-return, so it couldn't be reproduced from reading. A **defensive floor-pin** was added
-right after the `isAirborneBeforeGroundMovement` early-return in `updateSingleAIEntity`
-(`pos.y = 0; vel.y = 0; self.isJumping = false`) — a no-op in normal play, insurance against any stuck
-state reaching the ground-movement state machine. Needs a foreground playtest to confirm gone + jumps
-still feel right.
+User originally reported (intermittent): an AI can "reset its floor and run around in the air." After
+the item-4 convergence the user reproduced it reliably: the AI **sword-lunges UPWARD at a target, gets
+the kill, then strafes around at the kill altitude.**
+
+Root cause: the **post-kill-pressure early-return block** (`if (postKillPressure)` in
+`updateSingleAIEntity`, ~`10346`) is a ground spawn-guard behavior — it sets a purely horizontal `vel`
+(`vel.copy(moveHeading…)`, y=0), moves `pos` horizontally, and returns **without ever applying gravity
+or touching `pos.y`**. `finishSwordLunge` leaves a lunge-kill airborne (`isJumping=true`, high `pos.y`),
+so the AI enters this block airborne and strafes in mid-air for the whole post-kill-pressure window. The
+OLD external `updatePhysics` AI-gravity block (phase 1) pulled the main AI down every frame regardless,
+masking it; bots always had it (the "intermittent" report). Removing the external block in item 4
+exposed it on the main AI and made it reproducible.
+
+Fix: added an airborne guard at the top of the post-kill block (mirrors the no-target airborne block) —
+if `self.isJumping || pos.y > 0.01 || |vel.y| > 0.01`, integrate gravity + `recoverCombatantAltitude` +
+land-pin + horizontal air-damping, then `syncStateAndMesh(); return`. The AI falls to the floor before
+resuming the spawn-guard. tsc clean, 127 tests pass.
+
+Also still in place: the **defensive floor-pin** after the `isAirborneBeforeGroundMovement` early-return
+(`pos.y = 0; vel.y = 0; self.isJumping = false`) — insurance against any other stuck-airborne state
+reaching the ground-movement state machine. Playtest should confirm the lunge-kill case is gone and
+jumps/lunges still feel right.
 
 ## Suggested next steps (in order)
 
-1. ~~Lunge-initiation unification (item 3)~~ — DONE.
-2. ~~Weapon-swap-mesh unification (item 2)~~ — DONE.
+1. ~~Lunge-initiation (item 3)~~ — DONE.
+2. ~~Weapon-swap-mesh (item 2)~~ — DONE.
 3. ~~Cosmetic trail VFX (item 5)~~ — DONE.
-4. ~~Structural tidy (item 1, safe part)~~ — DONE (`botState` alias + threaded param removed).
-5. Then either declare done, or (with active playtesting) converge the vertical-physics model
-   (item 4) — the only remaining branches that change feel.
+4. ~~Structural tidy (item 1, safe part)~~ — DONE.
+5. ~~Vertical-physics convergence (item 4)~~ — IMPLEMENTED; **playtest pending** (jump arcs, lunge
+   arcs, AI-vs-AI air combat, and the "run on air" bug). If the feel regresses, the cleanest revert is
+   to restore the external `updatePhysics` AI-gravity block + `recoverMainAIFromRunawayAltitude` and
+   re-add the `!isMainAI` guards on the two in-tick gravity blocks.
+6. Optional: swap-lockout-tick fork (remaining item 6) — small, low-risk follow-up to reach a true
+   near-zero. Then the only thing left is item 1's irreducible structural core.
 
-The safe, non-feel-affecting unification is **complete** (79 → 11). The remaining 11 are the
-deferred/irreducible core: item 1's last 5 (the `self`-resolution + `pos`/`vel` live-ref-vs-copy
-distinction — would need `main_ai` in the raw `otherPlayers` map + a unified vector-mutation model,
-deliberately rejected) and item 4's 6 (vertical-physics — playtest-gated). A true zero-`isMainAI` end
-state requires deciding both, and neither is a clear win without playtesting.
+All five planned convergences are now implemented (79 → 6). What remains: item 1's irreducible
+structural core (the `self`-resolution + `pos`/`vel` live-ref-vs-copy distinction — would need
+`main_ai` in the raw `otherPlayers` map + a unified vector-mutation model, deliberately rejected) and
+the lone swap-lockout-tick fork (item 6, easily unifiable). Item 4's feel must be confirmed by playtest
+before declaring done.
 
 ## Related memory
 

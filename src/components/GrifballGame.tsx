@@ -1043,28 +1043,28 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     }
   };
 
-  const recoverAIFromRunawayAltitude = (pos: THREE.Vector3, vel: THREE.Vector3, botState?: any) => {
+  const recoverAIFromRunawayAltitude = (pos: THREE.Vector3, vel: THREE.Vector3, botState?: any): boolean =>
     applyAIAltitudeRecovery(pos, vel, botState, {
       maxAirborneHeight: AI_MAX_AIRBORNE_HEIGHT,
       forcedDescentSpeed: AI_FORCED_DESCENT_SPEED,
       hammerJumpCooldown: AI_HAMMER_JUMP_COOLDOWN,
     });
-  };
 
-  const recoverMainAIFromRunawayAltitude = () => {
-    const s = stateRef.current;
-    if (s.aiPos.y <= AI_MAX_AIRBORNE_HEIGHT) return;
-
-    recoverAIFromRunawayAltitude(s.aiPos, s.aiVel);
-    s.aiIsJumping = true;
-    s.aiHammerJumpPlanned = false;
-    s.aiHammerJumpType = undefined;
-    s.aiHammerJumpWindowTimer = 0;
-    s.aiHammerJumpCooldownTimer = AI_HAMMER_JUMP_COOLDOWN;
-    if (s.aiWeaponState !== 'recovering') {
-      s.aiWeaponState = 'ready';
-      s.aiWeaponTimer = 0;
+  // Altitude recovery for any AI combatant in the unified in-tick gravity model. Runs the
+  // shared clamp/forced-descent (which also resets weaponState/timer + hammer-jump cooldown
+  // via `self`), then for the main AI re-asserts its airborne flag and cancels any planned
+  // hammer jump — the extra flat-state cleanup the old recoverMainAIFromRunawayAltitude did
+  // before the main AI was folded into this path.
+  const recoverCombatantAltitude = (self: any, pos: THREE.Vector3, vel: THREE.Vector3): boolean => {
+    const recovered = recoverAIFromRunawayAltitude(pos, vel, self);
+    if (recovered && self.id === 'main_ai') {
+      const s = stateRef.current;
+      self.isJumping = true;
+      s.aiHammerJumpPlanned = false;
+      s.aiHammerJumpType = undefined;
+      s.aiHammerJumpWindowTimer = 0;
     }
+    return recovered;
   };
 
   const resolveBotArchetype = (botId: string): string | undefined => {
@@ -8264,34 +8264,15 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     }
     }
 
-    // Handle AI Gravity Physics
-    if (s.aiIsJumping) {
-      recoverMainAIFromRunawayAltitude();
-      s.aiVel.y -= GRAVITY_ACCELERATION * dt;
-      s.aiPos.y += s.aiVel.y * dt;
-      
-      // Integrate airborne horizontal velocities
-      s.aiPos.x += s.aiVel.x * dt;
-      s.aiPos.z += s.aiVel.z * dt;
-
-      // Ground collision
-      if (s.aiPos.y <= 0) {
-        s.aiPos.y = 0;
-        s.aiVel.set(0, 0, 0); // clear airborne velocities
-        s.aiIsJumping = false;
-      }
-    } else if (s.aiState !== 'LUNGING') {
-      s.aiPos.y = 0;
-      s.aiVel.y = 0;
-    }
-    recoverMainAIFromRunawayAltitude();
+    // (Main-AI gravity / altitude / arena-constraint is now integrated in-tick by
+    // updateSingleAIEntity — the same path bots use — so the former external "Handle AI
+    // Gravity Physics" block was removed here as part of the vertical-physics unification.)
 
     // Integrate absolute positions
     if (!playerIsDead) {
       s.playerPos.x += s.playerVel.x * dt;
       s.playerPos.z += s.playerVel.z * dt;
     }
-    constrainCombatantToArena(s.aiPos, s.aiVel);
 
     if (!playerIsDead) {
       // Circular arena boundary restraint (Snap inside radius)
@@ -10363,6 +10344,31 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     const postKillPressure = psychEnabled ? getActivePostKillPressure(psychState) : undefined;
 
     if (postKillPressure) {
+      // A lunge-kill can leave us airborne; the post-kill spawn-guard below is a ground
+      // behavior that only moves horizontally, so without this it would strafe in mid-air
+      // ("run on air"). Fall to the floor first, mirroring the no-target airborne block.
+      // (The old external AI-gravity block used to pull the main AI down here every frame;
+      // in the unified in-tick model that descent must happen inline.)
+      if (self.isJumping || pos.y > 0.01 || Math.abs(vel.y) > 0.01) {
+        vel.y -= GRAVITY_ACCELERATION * dt;
+        pos.addScaledVector(vel, dt);
+        recoverCombatantAltitude(self, pos, vel);
+        if (pos.y <= 0) {
+          pos.y = 0;
+          vel.set(0, 0, 0);
+          self.isJumping = false;
+        }
+        const airDamping = Math.max(0, 1 - 5 * dt);
+        vel.x *= airDamping;
+        vel.z *= airDamping;
+        constrainCombatantToArena(pos, vel);
+        state = 'SPAWN_GUARDING';
+        timer = postKillPressure.timerRemaining;
+        swayTimer += dt;
+        syncStateAndMesh();
+        return;
+      }
+
       const spawnPoint = new THREE.Vector3(postKillPressure.spawnX, 0, postKillPressure.spawnZ);
       const toSpawn = spawnPoint.clone().sub(pos);
       toSpawn.y = 0;
@@ -10448,14 +10454,13 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       const isAirborneWithoutTarget = self.isJumping || pos.y > 0.01 || Math.abs(vel.y) > 0.01;
 
       if (isAirborneWithoutTarget) {
-        if (!isMainAI) {
-          vel.y -= GRAVITY_ACCELERATION * dt;
-          pos.addScaledVector(vel, dt);
-          recoverAIFromRunawayAltitude(pos, vel, self);
-          if (pos.y <= 0) {
-            pos.y = 0;
-            vel.set(0, 0, 0);
-          }
+        vel.y -= GRAVITY_ACCELERATION * dt;
+        pos.addScaledVector(vel, dt);
+        recoverCombatantAltitude(self, pos, vel);
+        if (pos.y <= 0) {
+          pos.y = 0;
+          vel.set(0, 0, 0);
+          self.isJumping = false;
         }
         const airDamping = Math.max(0, 1 - 5 * dt);
         vel.x *= airDamping;
@@ -10546,28 +10551,26 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       timer = 0;
     }
 
-    // Gravity Integration for Offline Bots
-    if (!isMainAI) {
-      if (vel.y !== 0 || pos.y > 0) {
-        vel.y -= GRAVITY_ACCELERATION * dt; 
-        pos.y += vel.y * dt;
-        
-        pos.x += vel.x * dt;
-        pos.z += vel.z * dt;
-        recoverAIFromRunawayAltitude(pos, vel, self);
+    // Gravity Integration (main AI + bots, unified in-tick model)
+    if (vel.y !== 0 || pos.y > 0) {
+      vel.y -= GRAVITY_ACCELERATION * dt;
+      pos.y += vel.y * dt;
 
-        if (pos.y <= 0) {
-          pos.y = 0;
-          vel.set(0, 0, 0);
-          self.isJumping = false;
-        }
-      } else {
+      pos.x += vel.x * dt;
+      pos.z += vel.z * dt;
+      recoverCombatantAltitude(self, pos, vel);
+
+      if (pos.y <= 0) {
         pos.y = 0;
-        vel.y = 0;
+        vel.set(0, 0, 0);
         self.isJumping = false;
       }
-      constrainCombatantToArena(pos, vel);
+    } else {
+      pos.y = 0;
+      vel.y = 0;
+      self.isJumping = false;
     }
+    constrainCombatantToArena(pos, vel);
 
     const anticipationBonus = tunedAnticipationFactor * 0.42;
     const predictionLead = tunedAnticipationFactor > 0.1 ? effectiveReactionLatency + anticipationBonus : 0;
@@ -11195,11 +11198,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       vel.z = targetDir.z * lungeSpeed;
       vel.y -= GRAVITY_ACCELERATION * dt;
       pos.addScaledVector(vel, dt);
-      if (isMainAI) {
-        recoverMainAIFromRunawayAltitude();
-      } else {
-        recoverAIFromRunawayAltitude(pos, vel, self);
-      }
+      recoverCombatantAltitude(self, pos, vel);
       if (pos.y <= 0) {
         pos.y = 0;
         vel.y = 0;
@@ -11348,11 +11347,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         const airDamping = Math.max(0, 1 - 5 * dt);
         vel.x *= airDamping;
         vel.z *= airDamping;
-        if (!isMainAI) {
-          recoverAIFromRunawayAltitude(pos, vel, self);
-        } else {
-          recoverMainAIFromRunawayAltitude();
-        }
+        recoverCombatantAltitude(self, pos, vel);
         constrainCombatantToArena(pos, vel);
         syncStateAndMesh();
         return;
@@ -11367,10 +11362,10 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       vel.y = 0;
       self.isJumping = false;
 
-      // (The former main-AI air-sway block here was dead: the main AI always returns
-      // above when airborne, so its jump flag is false past this point.)
-
-      if (!isMainAI && vel.y > 0) {
+      // Air-sway is unreachable here for every combatant: the defensive floor-pin above
+      // forces vel.y to 0, so vel.y > 0 is never true past this point. Kept (now unified,
+      // no main/bot fork) in case the pin is ever relaxed.
+      if (vel.y > 0) {
         if (movementComplexity >= 45) {
           const lookHeading = toTarget.clone().normalize();
           const sidewayHeading = new THREE.Vector3(-lookHeading.z, 0, lookHeading.x);
@@ -11441,9 +11436,9 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         }
       }
     } else {
-      // (Dead main-AI air-sway block removed here: the main AI returns earlier when
-      // airborne, so it never reached this with s.aiIsJumping true.)
-      if (!isMainAI && vel.y > 0) {
+      // Air-sway (unified, unreachable past the floor-pin above — see the matching note
+      // in the non-dashing branch). Kept in case the pin is ever relaxed.
+      if (vel.y > 0) {
         if (movementComplexity >= 45) {
           const lookHeading = toTarget.clone().normalize();
           const sidewayHeading = new THREE.Vector3(-lookHeading.z, 0, lookHeading.x);
@@ -11512,6 +11507,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       // Sword Lunge Opportunity
       const lungeDistanceToTarget = targetAirborne ? combatDistanceToTarget : distanceToTarget;
       const hasVerticalLungeLine = !targetAirborne || movementComplexity >= 60;
+
 
       // Guaranteed-kill commit (see enemyInKillRange above). Take the free level swing
       // instead of feinting/lunging/dancing. Running before that whole cautious chain is
