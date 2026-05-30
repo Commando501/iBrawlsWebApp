@@ -7,7 +7,8 @@ import React, { useRef, useEffect, useState } from 'react';
 import * as THREE from 'three';
 import { sfx } from './AudioEngine';
 import { buildGravityHammerModel, buildVoxelSpartanModel, buildKatarSwordModel, buildPistolModel } from './VoxelModels';
-import { GameStats, Stance, WeaponState, AIBehaviorState, UniversalSettings, DeathEvent, Keybindings, DEFAULT_KEYBINDINGS, DeviceInfo, AIBehaviorPreset, MedalInfo } from '../types';
+import { GameStats, Stance, WeaponState, AIBehaviorState, UniversalSettings, DeathEvent, Keybindings, DEFAULT_KEYBINDINGS, DeviceInfo, AIBehaviorPreset, MedalInfo, Combatant, ReplayFrame, ReplayFile, CustomMapData, CustomMapObject } from '../types';
+import { cacheReplay } from '../game/theaterDatabase';
 import {
   AI_FORCED_DESCENT_SPEED,
   AI_MAX_AIRBORNE_HEIGHT,
@@ -15,6 +16,9 @@ import {
 } from '../game/aiAltitude';
 import { type AILungeOutcome, type AITacticalTargetSnapshot, evaluateAICombatDecision } from '../game/aiCombatDecision';
 import { evaluateKillMedals } from '../game/rewards';
+import { resolveObstacleCollisions } from '../game/mapPhysics';
+import { bakeNavMesh, findShortestPath } from '../game/mapNavigation';
+import { PREMADE_MAPS } from '../game/premadeMaps';
 import { createAIMatchContext, resetAIMatchContext, type AIMatchContext, tickFeintCooldown, getFeintCooldownRemaining, startFeintCooldown, isWeaponSwapFeintActive, startWeaponSwapFeint, tickWeaponSwapFeintTimer, getOrCreateBotPsychState, tickBotPsychState, getBotComboState, setBotComboState, clearBotComboState } from '../game/aiMatchContext';
 import {
   clearBotEngagements,
@@ -167,7 +171,10 @@ interface GrifballGameProps {
   mobileJoystickRef: React.MutableRefObject<{ x: number; y: number }>;
   mobileRightJoystickRef: React.MutableRefObject<{ x: number; y: number }>;
   mobileRightJoystickActiveRef: React.MutableRefObject<boolean>;
-  selectedMap?: 'hangar' | 'circle';
+  selectedMap?: string;
+  customMap?: CustomMapData;
+  replayData?: ReplayFile | null;
+  onExitReplay?: () => void;
 }
 
 const getInwardSpawnYaw = (spawnPos: THREE.Vector3): number => {
@@ -246,16 +253,67 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
   mobileRightJoystickRef,
   mobileRightJoystickActiveRef,
   selectedMap = 'hangar',
+  customMap,
+  replayData = null,
+  onExitReplay,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const nameplateRef = useRef<HTMLDivElement>(null);
+
+  const getActiveCustomMap = (): CustomMapData | null => {
+    if (customMap) return customMap;
+    if (selectedMap !== 'hangar' && selectedMap !== 'circle') {
+      const premade = PREMADE_MAPS.find(m => m.id === selectedMap);
+      if (premade) return premade;
+      if (typeof localStorage !== 'undefined') {
+        const stored = localStorage.getItem(`map_${selectedMap}`);
+        if (stored) {
+          try {
+            return JSON.parse(stored);
+          } catch (e) {
+            console.error("Error parsing local map", e);
+          }
+        }
+      }
+    }
+    return null;
+  };
+  // Persistent Combatant view over the main AI's flat s.aiXxx state. Created once
+  // (see getMainAICombatant) so the main AI is a single, durable Combatant object —
+  // the same shape as the bots — rather than an adapter rebuilt every frame. This is
+  // the object that will eventually live in the otherPlayers map alongside the bots.
+  const mainAICombatantRef = useRef<Combatant | null>(null);
   const requestRef = useRef<number | null>(null);
   const fpsRef = useRef({
     frameCount: 0,
     lastSampleTime: 0,
     value: 0,
   });
+
+  // Replay Recording Refs
+  const replayRecordingRef = useRef<ReplayFile | null>(null);
+  const lastRecordTimeRef = useRef<number>(0);
+  // Keeps track of the last written tick state for each entity to optimize zero-movement checks
+  const lastRecordedStateRef = useRef<Map<string, {
+    pos: THREE.Vector3;
+    vel: THREE.Vector3;
+    yaw: number;
+    hp: number;
+    activeWeapon: string;
+    weaponState: string;
+    isCrouching: boolean;
+    score: number;
+    kills: number;
+    deaths: number;
+  }>>(new Map());
+
+  // Replay Playback Refs
+  const replayTimeRef = useRef<number>(0);
+  const replaySpeedRef = useRef<number>(1.0);
+  const isReplayPausedRef = useRef<boolean>(false);
+  const replayTargetIdRef = useRef<string>('free');
+  const prevReplayFrameRef = useRef<ReplayFrame | null>(null);
 
   // Core Game State refs to avoid state-delay in the animation/render loop
   const stateRef = useRef<{
@@ -419,7 +477,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     clientRespawnTimer: number;
     clientPlayerName: string;
     clientHue: number;
-    otherPlayers: Map<string, any>;
+    otherPlayers: Map<string, Combatant>;
     isMultiplayer: boolean;
     multiplayerRole: 'host' | 'client' | 'observer' | undefined;
     aiMatchContext: AIMatchContext;
@@ -431,7 +489,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     crouchAmount: 0,
     isCrouching: false,
     isJumping: false,
-    otherPlayers: new Map<string, any>(),
+    otherPlayers: new Map<string, Combatant>(),
 
     // Dash states
     playerDashRemaining: 0,
@@ -612,7 +670,9 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
   const constrainCombatantToArena = (pos: THREE.Vector3, vel?: THREE.Vector3) => {
     const s = stateRef.current;
-    const maxRadius = Math.max(0, s.arenaRadius - 0.6);
+    const activeCustomMap = getActiveCustomMap();
+    const radiusToUse = activeCustomMap ? activeCustomMap.arenaRadius : s.arenaRadius;
+    const maxRadius = Math.max(0, radiusToUse - 0.6);
     const distFromCenter = Math.sqrt(pos.x * pos.x + pos.z * pos.z);
 
     if (distFromCenter > maxRadius && distFromCenter > 0) {
@@ -634,6 +694,28 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       pos.y = 0;
       if (vel && vel.y < 0) {
         vel.y = 0;
+      }
+    }
+
+    // Resolve Custom Map Obstacle Collisions!
+    if (activeCustomMap && activeCustomMap.objects && activeCustomMap.objects.length > 0 && vel) {
+      const result = resolveObstacleCollisions(pos, vel, activeCustomMap.objects);
+      pos.copy(result.position);
+      vel.copy(result.velocity);
+
+      // Handle custom grounding so spartan can stand and jump from objects!
+      if (result.grounded) {
+        if (pos === s.playerPos) {
+          s.isJumping = false;
+        } else if (pos === s.aiPos) {
+          s.aiIsJumping = false;
+        } else {
+          s.otherPlayers.forEach(bot => {
+            if (bot.pos === pos) {
+              bot.isJumping = false;
+            }
+          });
+        }
       }
     }
   };
@@ -1132,126 +1214,34 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     tickBotCoordinator(s.aiMatchContext.coordinator, dt);
     clearBotEngagements(s.aiMatchContext.coordinator);
 
-    // Respawn timers for offline bots (combat updates run after main AI).
-    if (s.otherPlayers) {
-      s.otherPlayers.forEach((bot) => {
-        if (!bot.id.startsWith('bot_')) return;
-        const botMesh = threeRef.current.otherPlayerMeshes?.get(bot.id)?.group;
-        if (!botMesh) return;
-
-        if (bot.hp <= 0) {
-          botMesh.visible = false;
-          bot.respawnTimer = Math.max(0, bot.respawnTimer - dt);
-          if (bot.respawnTimer <= 0) {
-            bot.hp = bot.maxHp;
-
-            const exclude: THREE.Vector3[] = [s.playerPos, s.aiPos];
-            s.otherPlayers.forEach(o => {
-              if (o.id !== bot.id && o.hp > 0 && o.respawnTimer <= 0) {
-                exclude.push(new THREE.Vector3(o.pos.x, o.pos.y, o.pos.z));
-              }
-            });
-            const spawnPos = getOptimalSpawnPoint(exclude);
-            bot.pos.copy(spawnPos);
-            bot.vel.set(0, 0, 0);
-            bot.yaw = getInwardSpawnYaw(spawnPos);
-            bot.weaponState = 'ready';
-            bot.weaponTimer = 0;
-            bot.aiHammerJumpCooldownTimer = 0;
-            bot.invulnerabilityTimer = s.settings.respawnInvulnerabilityDuration;
-            bot.spawnTime = Date.now();
-
-            // Reset combat state so the respawned bot re-acquires and closes on
-            // targets. Without this the bot keeps its pre-death micro-spacing
-            // state (SIDE_STEPPING/COOLDOWN/etc), which never returns to
-            // APPROACHING and only reacts once a target enters melee range.
-            bot.aiState = 'APPROACHING';
-            bot.aiTimer = 0;
-            bot.isLunging = false;
-            bot.aiDashRemaining = 0;
-            bot.aiLastLungeOutcome = undefined;
-            bot.aiLastLungeTargetId = undefined;
-            bot.aiPostLungeDecisionTimer = 0;
-            bot.aiPendingPostEvasionCharge = false;
-            bot.aiCoordCommitTimer = 0;
-            bot.swapLockoutTimer = 0;
-            clearBotComboState(s.aiMatchContext, bot.id);
-            clearPressureTarget(bot.id);
-
-            botMesh.visible = true;
-            sfx.playRespawn();
-          }
-        }
-      });
-    }
-
-    // Is the enemy currently dead and counting down respawn?
-    if (s.aiHP <= 0 || s.aiState === 'RESPAWNING') {
-      // Hide model
-      enemyMesh.visible = false;
-      
-      s.enemyRespawnTimer -= dt;
-      if (s.enemyRespawnTimer <= 0) {
-        s.aiHP = s.aiMaxHP;
-        s.aiState = 'APPROACHING';
-        
-        const exclude: THREE.Vector3[] = [s.playerPos];
-        if (s.otherPlayers) {
-          s.otherPlayers.forEach((other) => {
-            if (other.hp > 0 && other.respawnTimer <= 0) {
-              exclude.push(new THREE.Vector3(other.pos.x, other.pos.y, other.pos.z));
-            }
-          });
-        }
-        
-        const spawnPos = getOptimalSpawnPoint(exclude);
-        s.aiPos.copy(spawnPos);
-        s.aiVel.set(0, 0, 0);
-        s.aiYaw = getInwardSpawnYaw(spawnPos);
-        enemyMesh.visible = true;
-        s.aiWeaponState = 'ready';
-        s.aiIsJumping = false;
-        s.aiHammerJumpPlanned = false;
-        s.aiHammerJumpType = undefined;
-        s.aiHammerJumpCooldownTimer = 0;
-        s.aiLastLungeOutcome = undefined;
-        s.aiLastLungeTargetId = undefined;
-        s.aiPostLungeDecisionTimer = 0;
-        s.aiPressureTargetId = undefined;
-        s.aiInvulnerabilityTimer = s.settings.respawnInvulnerabilityDuration;
-        s.aiSpawnTime = Date.now();
-        s.aiSwapLockoutTimer = 0;
-        s.aiSwapCooldownTimer = 0;
-        s.aiTimer = 0;
-        s.aiDashRemaining = 0;
-        s.aiPendingPostEvasionCharge = false;
-        s.aiCoordCommitTimer = 0;
-        clearBotComboState(s.aiMatchContext, 'main_ai');
-        sfx.playRespawn();
-
+    // Respawn handling for every AI combatant (main AI + bots) in one loop. Dead
+    // combatants hide their mesh and tick their respawn timer; on expiry they respawn
+    // via respawnCombatant. (Death itself sets respawnTimer — for the main AI that's
+    // enemyRespawnTimer via the bridge — so the countdown starts the frame after a kill.)
+    getAllCombatants().forEach((c) => {
+      const isMain = c.id === 'main_ai';
+      if (!isMain && !c.id.startsWith('bot_')) return;
+      const mesh = getCombatantMesh(c.id);
+      if (!mesh) return;
+      if (c.hp > 0) return;
+      mesh.visible = false;
+      c.respawnTimer = Math.max(0, (c.respawnTimer ?? 0) - dt);
+      if (c.respawnTimer <= 0) {
+        respawnCombatant(c, mesh);
       }
-    }
-    // Main AI Combat update (standard + lunge). The main AI now runs the same
-    // updateSingleAIEntity path as the additional bots, including its sword lunge
-    // (handled inside that function via the shared `self` accessor), rather than a
-    // separate inline lunge implementation here.
-    else {
-      enemyMesh.visible = true;
-      updateSingleAIEntity('main_ai', true, dt);
-    }
+    });
 
-    // ALWAYS update other players/bots!
-    if (s.otherPlayers) {
-      s.otherPlayers.forEach((bot) => {
-        if (!bot.id.startsWith('bot_')) return;
-        const botMesh = threeRef.current.otherPlayerMeshes?.get(bot.id)?.group;
-        if (!botMesh) return;
-        if (bot.hp <= 0) return;
-
-        botMesh.visible = true;
-        updateSingleAIEntity(bot.id, false, dt);
-      });
-    }
+    // Unified update dispatch: tick every alive AI combatant (main AI + bots) through
+    // the same updateSingleAIEntity path, in one loop over getAllCombatants(). The
+    // main AI is ticked first (it's pushed first). Dead combatants were handled above.
+    getAllCombatants().forEach((c) => {
+      if (c.id !== 'main_ai' && !c.id.startsWith('bot_')) return;
+      const mesh = getCombatantMesh(c.id);
+      if (!mesh) return;
+      if (c.hp <= 0) return;
+      mesh.visible = true;
+      updateSingleAIEntity(c.id, dt);
+    });
   };
 
   function updateCharacterSkeletalAnimations(dt: number) {
@@ -3101,6 +3091,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       sword: THREE.Group;
       pistol?: THREE.Group;
     }>;
+    navMesh?: any;
+    customMapObjects?: THREE.Object3D[];
   }>({
     scene: null,
     camera: null,
@@ -3115,6 +3107,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     hostHammer: null,
     hostSword: null,
     otherPlayerMeshes: new Map(),
+    customMapObjects: [],
 
     debugPlayerSphere: null,
     debugEnemySphere: null,
@@ -3139,6 +3132,38 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
   useEffect(() => {
     opponentNameRef.current = opponentPlayerName || '';
   }, [opponentPlayerName]);
+
+  const updateBlinking = (group: THREE.Group | null, active: boolean) => {
+    if (!group) return;
+    const blinkCycle = Math.floor(performance.now() / 120) % 2 === 0;
+    const isAlreadyBlinking = group.userData.isBlinking === true;
+    const shouldShowBlink = active && blinkCycle;
+    
+    if (!active && !isAlreadyBlinking) {
+      return;
+    }
+    
+    group.userData.isBlinking = active;
+    
+    group.traverse((child) => {
+      if (child instanceof THREE.Mesh) {
+        // Skip general helper meshes
+        if (child === threeRef.current.debugPlayerSphere || child === threeRef.current.debugEnemySphere) {
+          return;
+        }
+        
+        if (!child.userData.originalMaterial) {
+          child.userData.originalMaterial = child.material;
+        }
+        
+        if (shouldShowBlink) {
+          child.material = whiteBlinkMaterial;
+        } else {
+          child.material = child.userData.originalMaterial;
+        }
+      }
+    });
+  };
 
   const getSpectateTargetData = (target: 'host' | 'client') => {
     const s = stateRef.current;
@@ -3359,12 +3384,21 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
   // Minimax proximity spawning algorithm to select spawn point farthest from threat
   const getOptimalSpawnPoint = (excludePositions: THREE.Vector3[]): THREE.Vector3 => {
-    if (excludePositions.length === 0) {
-      return SPAWN_POINTS[0].clone();
+    const activeCustomMap = getActiveCustomMap();
+    const activeSpawns = activeCustomMap && activeCustomMap.spawnPoints && activeCustomMap.spawnPoints.length > 0
+      ? activeCustomMap.spawnPoints.map(p => new THREE.Vector3(p.x, p.y, p.z))
+      : SPAWN_POINTS;
+
+    if (activeSpawns.length === 0) {
+      return new THREE.Vector3(0, 0, 0);
     }
-    let bestPoint = SPAWN_POINTS[0];
+
+    if (excludePositions.length === 0) {
+      return activeSpawns[0].clone();
+    }
+    let bestPoint = activeSpawns[0];
     let bestMinDist = -1;
-    for (const point of SPAWN_POINTS) {
+    for (const point of activeSpawns) {
       let minDist = Infinity;
       for (const entityPos of excludePositions) {
         const d = point.distanceTo(entityPos);
@@ -3550,13 +3584,21 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     threeRef.current.hostHammer = null;
     threeRef.current.hostSword = null;
 
+    const activeCustomMap = getActiveCustomMap();
     const isHangar = selectedMap === 'hangar';
 
-    // Dark smoky atmospheric warehouse background & fog / clean virtual space
-    const bgHex = isHangar ? '#07090d' : '#030712';
+    // 1. SETUP ATMOSPHERICS (SKYBOX & FOG)
+    let bgHex = isHangar ? '#07090d' : '#030712';
+    let fogDensity = isHangar ? 0.028 : 0.015;
+
+    if (activeCustomMap) {
+      bgHex = activeCustomMap.fogColor || '#030712';
+      fogDensity = activeCustomMap.fogDensity ?? 0.015;
+    }
+
     const skyColor = new THREE.Color(bgHex);
     scene.background = skyColor; 
-    scene.fog = new THREE.FogExp2(bgHex, isHangar ? 0.028 : 0.015); 
+    scene.fog = new THREE.FogExp2(bgHex, fogDensity); 
 
     const width = containerRef.current.clientWidth || window.innerWidth;
     const height = containerRef.current.clientHeight || window.innerHeight;
@@ -3579,641 +3621,992 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     
     threeRef.current.renderer = renderer;
 
-    // 2. SCENE LIGHTS
-    // Deep slate blue ambient shadow fill
-    const ambientColor = isHangar ? '#111827' : '#0a0f1d';
-    const ambientLight = new THREE.AmbientLight(ambientColor, adminSettings.ambientLightIntensity !== undefined ? adminSettings.ambientLightIntensity : (isHangar ? 0.65 : 0.85)); 
-    scene.add(ambientLight);
-    threeRef.current.ambientLight = ambientLight;
+    // Helper: Create custom procedural textures dynamically using 2D HTML Canvas
+    const generateCustomTexture = (type: string, baseColorHex: string): THREE.Texture => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 512;
+      canvas.height = 512;
+      const ctx = canvas.getContext('2d')!;
 
-    // Warm high-bay directional sun light / cool holodeck directional light
-    const dirLightColor = isHangar ? '#fffbeb' : '#e0f2fe';
-    const dirLight = new THREE.DirectionalLight(dirLightColor, adminSettings.directLightIntensity !== undefined ? adminSettings.directLightIntensity : 2.2);
-    dirLight.position.set(6, 22, 6);
-    dirLight.castShadow = true;
-    dirLight.shadow.mapSize.width = 1024;
-    dirLight.shadow.mapSize.height = 1024;
-    dirLight.shadow.camera.near = 0.5;
-    dirLight.shadow.camera.far = 40;
-    dirLight.shadow.camera.left = -22;
-    dirLight.shadow.camera.right = 22;
-    dirLight.shadow.camera.top = 22;
-    dirLight.shadow.camera.bottom = -22;
-    dirLight.shadow.bias = -0.0005;
-    scene.add(dirLight);
-    threeRef.current.dirLight = dirLight;
+      // Background fill
+      ctx.fillStyle = baseColorHex;
+      ctx.fillRect(0, 0, 512, 512);
 
-    // Primary warm amber central industrial pendant light / holographic core light
-    const pointLightColor = isHangar ? '#ea580c' : '#06b6d4';
-    const pointLight = new THREE.PointLight(pointLightColor, 2.5, 35);
-    pointLight.position.set(0, 14, 0);
-    scene.add(pointLight);
+      if (type === 'none') {
+        // Plain matte texture, add subtle boundary bevel highlights
+        ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+        ctx.lineWidth = 4;
+        ctx.strokeRect(0, 0, 512, 512);
+      } else if (type === 'nature_grass') {
+        // Grass blades on rich loam soil
+        ctx.fillStyle = '#064e3b';
+        ctx.fillRect(0, 0, 512, 512);
+        ctx.strokeStyle = baseColorHex; // light green blades
+        ctx.lineWidth = 2;
+        for (let i = 0; i < 400; i++) {
+          const x = Math.random() * 512;
+          const y = Math.random() * 512;
+          const len = 6 + Math.random() * 14;
+          const tilt = -4 + Math.random() * 8;
+          ctx.beginPath();
+          ctx.moveTo(x, y);
+          ctx.lineTo(x + tilt, y - len);
+          ctx.stroke();
+        }
+      } else if (type === 'nature_mossy_stone') {
+        // Granite slate with green moss patches
+        ctx.fillStyle = '#4b5563';
+        ctx.fillRect(0, 0, 512, 512);
+        // Stone ridges
+        ctx.strokeStyle = '#374151';
+        ctx.lineWidth = 3;
+        for (let i = 0; i < 15; i++) {
+          ctx.strokeRect(Math.random() * 512, Math.random() * 512, 60 + Math.random() * 120, 60 + Math.random() * 120);
+        }
+        // Mossy vegetative growth overlays
+        ctx.fillStyle = baseColorHex;
+        for (let i = 0; i < 20; i++) {
+          ctx.beginPath();
+          ctx.arc(Math.random() * 512, Math.random() * 512, 18 + Math.random() * 35, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      } else if (type === 'nature_wood') {
+        // Wood grain bark
+        ctx.fillStyle = '#3e2723';
+        ctx.fillRect(0, 0, 512, 512);
+        ctx.strokeStyle = baseColorHex; // light beige grain
+        ctx.lineWidth = 4;
+        for (let r = 24; r < 700; r += 28) {
+          ctx.beginPath();
+          ctx.arc(256, 256, r, 0.2, Math.PI * 2 - 0.2);
+          ctx.stroke();
+        }
+      } else if (type === 'space_alloy') {
+        // Starbase titanium hull plates
+        ctx.fillStyle = '#1e293b';
+        ctx.fillRect(0, 0, 512, 512);
+        ctx.strokeStyle = baseColorHex; // cyan grid line seams
+        ctx.lineWidth = 2.5;
+        for (let idx = 0; idx <= 512; idx += 128) {
+          ctx.beginPath(); ctx.moveTo(idx, 0); ctx.lineTo(idx, 512); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(0, idx); ctx.lineTo(512, idx); ctx.stroke();
+        }
+        ctx.fillStyle = '#475569'; // steel rivets
+        for (let rx = 16; rx < 512; rx += 128) {
+          for (let ry = 16; ry < 512; ry += 128) {
+            ctx.beginPath(); ctx.arc(rx, ry, 3.5, 0, Math.PI * 2); ctx.fill();
+          }
+        }
+      } else if (type === 'space_meteorite') {
+        // Dark meteor mineral with glowing veins
+        ctx.fillStyle = '#0f172a';
+        ctx.fillRect(0, 0, 512, 512);
+        ctx.strokeStyle = baseColorHex;
+        ctx.lineWidth = 3.5;
+        ctx.shadowColor = baseColorHex;
+        ctx.shadowBlur = 12;
+        for (let i = 0; i < 6; i++) {
+          ctx.beginPath();
+          ctx.moveTo(Math.random() * 512, 0);
+          ctx.bezierCurveTo(Math.random() * 512, 170, Math.random() * 512, 340, Math.random() * 512, 512);
+          ctx.stroke();
+        }
+        ctx.shadowBlur = 0;
+      } else if (type === 'space_lunar_dust') {
+        // Lunar soil with fine craters
+        ctx.fillStyle = '#334155';
+        ctx.fillRect(0, 0, 512, 512);
+        ctx.fillStyle = baseColorHex;
+        for (let i = 0; i < 40; i++) {
+          ctx.beginPath();
+          ctx.arc(Math.random() * 512, Math.random() * 512, 6 + Math.random() * 16, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      } else if (type === 'futuristic_carbon') {
+        // Threaded carbon fiber weave
+        ctx.fillStyle = '#090d16';
+        ctx.fillRect(0, 0, 512, 512);
+        ctx.strokeStyle = baseColorHex;
+        ctx.lineWidth = 1;
+        for (let i = 0; i < 512; i += 6) {
+          ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, 512); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(512, i); ctx.stroke();
+        }
+      } else if (type === 'futuristic_hex') {
+        // Cyan hexagonal grid
+        ctx.fillStyle = '#050811';
+        ctx.fillRect(0, 0, 512, 512);
+        ctx.strokeStyle = baseColorHex;
+        ctx.lineWidth = 2;
+        const hexSizeVal = 32;
+        const hexHeightVal = hexSizeVal * Math.sqrt(3);
+        for (let y = 0; y < 512 + hexHeightVal; y += hexHeightVal) {
+          for (let x = 0; x < 512 + hexSizeVal * 3; x += hexSizeVal * 3) {
+            ctx.beginPath();
+            for (let a = 0; a < 6; a++) {
+              const angle = (a * Math.PI) / 3;
+              const px = x + hexSizeVal * Math.cos(angle);
+              const py = y + hexSizeVal * Math.sin(angle);
+              if (a === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+            }
+            ctx.closePath(); ctx.stroke();
 
-    // 3. ARENA CREATION (Foundry-Style Industrial Hangar)
-    // Procedural generation of 1024x1024 premium metallic textures
-    const texSize = 1024;
-
-    // 3.1 DIFFUSE/ALBEDO CANVAS
-    const diffCanvas = document.createElement('canvas');
-    diffCanvas.width = texSize;
-    diffCanvas.height = texSize;
-    const dCtx = diffCanvas.getContext('2d')!;
-
-    // 3.2 BUMP MAP CANVAS
-    const bumpCanvas = document.createElement('canvas');
-    bumpCanvas.width = texSize;
-    bumpCanvas.height = texSize;
-    const bCtx = bumpCanvas.getContext('2d')!;
-
-    // 3.3 ROUGHNESS MAP CANVAS
-    const roughCanvas = document.createElement('canvas');
-    roughCanvas.width = texSize;
-    roughCanvas.height = texSize;
-    const rCtx = roughCanvas.getContext('2d')!;
-
-    if (isHangar) {
-      // Fill base layers
-      dCtx.fillStyle = '#161a22';
-    dCtx.fillRect(0, 0, texSize, texSize);
-
-    bCtx.fillStyle = '#808080'; // 128 height map baseline
-    bCtx.fillRect(0, 0, texSize, texSize);
-
-    rCtx.fillStyle = '#888888'; // base semi-matte metal
-    rCtx.fillRect(0, 0, texSize, texSize);
-
-    // Draw modular steel plate tiles (16x16 grid)
-    const tileSize = 64; 
-    for (let y = 0; y < texSize; y += tileSize) {
-      for (let x = 0; x < texSize; x += tileSize) {
-        // Organic slate color variation per plate
-        const hueVal = 216 + Math.random() * 8;
-        const satVal = 12 + Math.random() * 6;
-        const lightVal = 10 + Math.random() * 5;
-        dCtx.fillStyle = `hsl(${hueVal}, ${satVal}%, ${lightVal}%)`;
-        dCtx.fillRect(x + 1, y + 1, tileSize - 2, tileSize - 2);
-
-        // Diffuse bevel shadows
-        dCtx.strokeStyle = 'rgba(255, 255, 255, 0.04)';
-        dCtx.lineWidth = 1.5;
-        dCtx.beginPath();
-        dCtx.moveTo(x + tileSize - 1, y + 1);
-        dCtx.lineTo(x + 1, y + 1);
-        dCtx.lineTo(x + 1, y + tileSize - 1);
-        dCtx.stroke();
-
-        dCtx.strokeStyle = 'rgba(0, 0, 0, 0.35)';
-        dCtx.beginPath();
-        dCtx.moveTo(x + tileSize - 1, y + 1);
-        dCtx.lineTo(x + tileSize - 1, y + tileSize - 1);
-        dCtx.lineTo(x + 1, y + tileSize - 1);
-        dCtx.stroke();
-
-        // Bump map seams (sunken)
-        bCtx.strokeStyle = '#484848';
-        bCtx.lineWidth = 2;
-        bCtx.strokeRect(x + 0.5, y + 0.5, tileSize - 1, tileSize - 1);
-
-        // Roughness map seams
-        rCtx.fillStyle = '#a0a0a0';
-        rCtx.fillRect(x, y, tileSize, 1);
-        rCtx.fillRect(x, y, 1, tileSize);
-
-        // Add plate corner rivets
-        const offsets = [5, tileSize - 5];
-        offsets.forEach(ox => {
-          offsets.forEach(oy => {
-            const rx = x + ox;
-            const ry = y + oy;
-
-            // Diffuse: shiny metal bolt head
-            dCtx.fillStyle = '#374151';
-            dCtx.beginPath();
-            dCtx.arc(rx, ry, 2.5, 0, Math.PI * 2);
-            dCtx.fill();
-            dCtx.fillStyle = '#9ca3af';
-            dCtx.beginPath();
-            dCtx.arc(rx - 0.5, ry - 0.5, 0.8, 0, Math.PI * 2);
-            dCtx.fill();
-
-            // Bump map: rivets are raised
-            bCtx.fillStyle = '#ffffff';
-            bCtx.beginPath();
-            bCtx.arc(rx, ry, 2.5, 0, Math.PI * 2);
-            bCtx.fill();
-
-            // Roughness map: rivets are polished and highly reflective
-            rCtx.fillStyle = '#222222';
-            rCtx.beginPath();
-            rCtx.arc(rx, ry, 3.0, 0, Math.PI * 2);
-            rCtx.fill();
-          });
-        });
+            ctx.beginPath();
+            for (let a = 0; a < 6; a++) {
+              const angle = (a * Math.PI) / 3;
+              const px = x + hexSizeVal * 1.5 + hexSizeVal * Math.cos(angle);
+              const py = y + hexHeightVal / 2 + hexSizeVal * Math.sin(angle);
+              if (a === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+            }
+            ctx.closePath(); ctx.stroke();
+          }
+        }
+      } else if (type === 'futuristic_shield') {
+        // Glowing circular shield emitter
+        ctx.fillStyle = '#020617';
+        ctx.fillRect(0, 0, 512, 512);
+        ctx.strokeStyle = baseColorHex;
+        ctx.lineWidth = 3.5;
+        for (let r = 80; r <= 320; r += 80) {
+          ctx.beginPath(); ctx.arc(256, 256, r, 0, Math.PI * 2); ctx.stroke();
+        }
+      } else if (type === 'city_asphalt') {
+        // Rough dark tarmac asphalt
+        ctx.fillStyle = '#1e293b';
+        ctx.fillRect(0, 0, 512, 512);
+        ctx.fillStyle = baseColorHex; // gravel speckles
+        for (let i = 0; i < 1500; i++) {
+          ctx.fillRect(Math.random() * 512, Math.random() * 512, 2.5, 2.5);
+        }
+      } else if (type === 'city_brick') {
+        // Red industrial bricks
+        ctx.fillStyle = '#7c2d12';
+        ctx.fillRect(0, 0, 512, 512);
+        ctx.strokeStyle = baseColorHex; // mortar seams
+        ctx.lineWidth = 2.5;
+        const bH = 24;
+        const bW = 56;
+        for (let y = 0; y < 512; y += bH) {
+          ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(512, y); ctx.stroke();
+          const offset = (y / bH) % 2 === 0 ? 0 : bW / 2;
+          for (let x = offset; x < 512 + bW; x += bW) {
+            ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x, y + bH); ctx.stroke();
+          }
+        }
+      } else if (type === 'city_concrete') {
+        // Grey aggregate concrete slabs with cracks
+        ctx.fillStyle = '#64748b';
+        ctx.fillRect(0, 0, 512, 512);
+        ctx.strokeStyle = baseColorHex; // cracks/joints
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(0, 0, 512, 512);
+        for (let i = 0; i < 4; i++) {
+          ctx.beginPath();
+          ctx.moveTo(Math.random() * 512, 0);
+          ctx.lineTo(Math.random() * 512, 160);
+          ctx.lineTo(Math.random() * 512, 360);
+          ctx.lineTo(Math.random() * 512, 512);
+          ctx.stroke();
+        }
+      } else if (type === 'fantasy_runed_stone') {
+        // Glowing runic ancient carvings
+        ctx.fillStyle = '#27272a';
+        ctx.fillRect(0, 0, 512, 512);
+        ctx.strokeStyle = baseColorHex; // glow paint
+        ctx.lineWidth = 5;
+        ctx.shadowColor = baseColorHex;
+        ctx.shadowBlur = 14;
+        ctx.beginPath();
+        ctx.moveTo(256, 80);
+        ctx.lineTo(130, 390);
+        ctx.lineTo(382, 390);
+        ctx.closePath();
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(256, 270, 70, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+      } else if (type === 'fantasy_cobble') {
+        // Interlocking castle stones
+        ctx.fillStyle = '#4b5563';
+        ctx.fillRect(0, 0, 512, 512);
+        ctx.strokeStyle = baseColorHex;
+        ctx.lineWidth = 3;
+        for (let i = 0; i < 60; i++) {
+          ctx.beginPath();
+          ctx.arc(Math.random() * 512, Math.random() * 512, 22 + Math.random() * 32, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+      } else if (type === 'fantasy_gold') {
+        // Scroll-worked highly reflective gold plates
+        ctx.fillStyle = '#ca8a04';
+        ctx.fillRect(0, 0, 512, 512);
+        ctx.strokeStyle = baseColorHex;
+        ctx.lineWidth = 3.5;
+        for (let i = 0; i < 8; i++) {
+          ctx.beginPath();
+          ctx.arc(Math.random() * 512, Math.random() * 512, 50 + Math.random() * 90, 0.4, 3.4);
+          ctx.stroke();
+        }
       }
-    }
 
-    // Central drainage/ventilation trench grate running along Z-axis (middle X)
-    const grateWidth = 96; 
-    const gxStart = 512 - grateWidth / 2;
-    const gxEnd = 512 + grateWidth / 2;
-
-    // Diffuse trench channel
-    dCtx.fillStyle = '#090c12';
-    dCtx.fillRect(gxStart, 0, grateWidth, texSize);
-    
-    // Bump trench channel (sunken)
-    bCtx.fillStyle = '#101010';
-    bCtx.fillRect(gxStart, 0, grateWidth, texSize);
-
-    // Roughness trench channel (very rough interior)
-    rCtx.fillStyle = '#e2e8f0';
-    rCtx.fillRect(gxStart, 0, grateWidth, texSize);
-
-    // Frame borders for the trench
-    dCtx.fillStyle = '#2d3748';
-    dCtx.fillRect(gxStart - 4, 0, 4, texSize);
-    dCtx.fillRect(gxEnd, 0, 4, texSize);
-
-    dCtx.fillStyle = '#4a5568';
-    dCtx.fillRect(gxStart - 1, 0, 1, texSize);
-    dCtx.fillRect(gxEnd + 3, 0, 1, texSize);
-
-    bCtx.fillStyle = '#b8b8b8'; // raised frame
-    bCtx.fillRect(gxStart - 4, 0, 4, texSize);
-    bCtx.fillRect(gxEnd, 0, 4, texSize);
-
-    // Horizontal steel grate bars
-    const barSpacing = 16;
-    const barThickness = 6;
-    for (let gy = 0; gy < texSize; gy += barSpacing) {
-      // Diffuse steel bar
-      dCtx.fillStyle = '#3f4b5e';
-      dCtx.fillRect(gxStart + 4, gy, grateWidth - 8, barThickness);
-      
-      dCtx.fillStyle = '#5c6c84'; // bar highlights
-      dCtx.fillRect(gxStart + 4, gy, grateWidth - 8, 1.5);
-
-      // Rusty patches on grate bars
-      if (Math.random() < 0.45) {
-        dCtx.fillStyle = 'rgba(130, 60, 15, 0.5)'; // rust paint
-        dCtx.fillRect(gxStart + 4 + Math.random() * (grateWidth - 24), gy + 1, 14, barThickness - 2);
-      }
-
-      // Bump: raised bars
-      bCtx.fillStyle = '#a8a8a8';
-      bCtx.fillRect(gxStart + 4, gy, grateWidth - 8, barThickness);
-
-      // Roughness: slightly reflective
-      rCtx.fillStyle = '#475569';
-      rCtx.fillRect(gxStart + 4, gy, grateWidth - 8, barThickness);
-    }
-
-    // Yellow & Black industrial hazard safety stripes alongside central trench
-    const stripeWidth = 16;
-    const stripeSpacing = 24;
-
-    const drawHazardStripes = (xStart: number) => {
-      // Yellow base
-      dCtx.fillStyle = '#ca8a04';
-      dCtx.fillRect(xStart, 0, stripeWidth, texSize);
-
-      // Black diagonal bands
-      dCtx.fillStyle = '#0f172a';
-      for (let sy = -stripeWidth; sy < texSize; sy += stripeSpacing) {
-        dCtx.beginPath();
-        dCtx.moveTo(xStart, sy);
-        dCtx.lineTo(xStart + stripeWidth, sy + stripeWidth);
-        dCtx.lineTo(xStart + stripeWidth, sy + stripeWidth + 10);
-        dCtx.lineTo(xStart, sy + 10);
-        dCtx.closePath();
-        dCtx.fill();
-      }
-
-      bCtx.fillStyle = '#808080';
-      bCtx.fillRect(xStart, 0, stripeWidth, texSize);
-
-      rCtx.fillStyle = '#94a3b8'; // rough warning paint
-      rCtx.fillRect(xStart, 0, stripeWidth, texSize);
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.wrapS = THREE.RepeatWrapping;
+      texture.wrapT = THREE.RepeatWrapping;
+      texture.repeat.set(4, 4); // tiled nicely
+      return texture;
     };
 
-    drawHazardStripes(gxStart - 20);
-    drawHazardStripes(gxEnd + 4);
+    // 2. SCENE LIGHTING DESIGN
+    if (activeCustomMap) {
+      // Custom Lights
+      const ambientLight = new THREE.AmbientLight(
+        activeCustomMap.lighting.ambientColor || '#0a0f1d',
+        activeCustomMap.lighting.ambientIntensity ?? 0.85
+      );
+      scene.add(ambientLight);
+      threeRef.current.ambientLight = ambientLight;
 
-    // Weathering scratches
-    for (let i = 0; i < 150; i++) {
-      const sx = Math.random() * texSize;
-      const sy = Math.random() * texSize;
-      const len = 8 + Math.random() * 25;
-      const angle = Math.random() * Math.PI * 2;
-      const ex = sx + Math.cos(angle) * len;
-      const ey = sy + Math.sin(angle) * len;
+      const dirLight = new THREE.DirectionalLight(
+        activeCustomMap.lighting.directColor || '#e0f2fe',
+        activeCustomMap.lighting.directIntensity ?? 2.2
+      );
+      const dp = activeCustomMap.lighting.directPosition || { x: 6, y: 22, z: 6 };
+      dirLight.position.set(dp.x, dp.y, dp.z);
+      dirLight.castShadow = true;
+      dirLight.shadow.mapSize.width = 1024;
+      dirLight.shadow.mapSize.height = 1024;
+      dirLight.shadow.camera.near = 0.5;
+      dirLight.shadow.camera.far = 40;
+      dirLight.shadow.camera.left = -22;
+      dirLight.shadow.camera.right = 22;
+      dirLight.shadow.camera.top = 22;
+      dirLight.shadow.camera.bottom = -22;
+      dirLight.shadow.bias = -0.0005;
+      scene.add(dirLight);
+      threeRef.current.dirLight = dirLight;
 
-      dCtx.strokeStyle = 'rgba(0,0,0,0.3)';
-      dCtx.lineWidth = 1.0;
-      dCtx.beginPath();
-      dCtx.moveTo(sx, sy);
-      dCtx.lineTo(ex, ey);
-      dCtx.stroke();
-
-      dCtx.strokeStyle = 'rgba(255,255,255,0.06)';
-      dCtx.beginPath();
-      dCtx.moveTo(sx + 0.5, sy + 0.5);
-      dCtx.lineTo(ex + 0.5, ey + 0.5);
-      dCtx.stroke();
-
-      bCtx.strokeStyle = '#585858';
-      bCtx.lineWidth = 1;
-      bCtx.beginPath();
-      bCtx.moveTo(sx, sy);
-      bCtx.lineTo(ex, ey);
-      bCtx.stroke();
-
-      rCtx.strokeStyle = '#111111'; // polished scratches are highly specular
-      rCtx.lineWidth = 1;
-      rCtx.beginPath();
-      rCtx.moveTo(sx, sy);
-      rCtx.lineTo(ex, ey);
-      rCtx.stroke();
-    }
-
-    // Dirt and soot spray overlays
-    for (let i = 0; i < 45; i++) {
-      const dx = Math.random() * texSize;
-      const dy = Math.random() * texSize;
-      const rad = 25 + Math.random() * 75;
-
-      const alGrad = dCtx.createRadialGradient(dx, dy, 0, dx, dy, rad);
-      alGrad.addColorStop(0, 'rgba(40, 25, 12, 0.22)');
-      alGrad.addColorStop(1, 'rgba(40, 25, 12, 0)');
-      dCtx.fillStyle = alGrad;
-      dCtx.beginPath();
-      dCtx.arc(dx, dy, rad, 0, Math.PI * 2);
-      dCtx.fill();
-
-      const roGrad = rCtx.createRadialGradient(dx, dy, 0, dx, dy, rad);
-      roGrad.addColorStop(0, 'rgba(200, 200, 200, 0.45)');
-      roGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
-      rCtx.fillStyle = roGrad;
-      rCtx.beginPath();
-      rCtx.arc(dx, dy, rad, 0, Math.PI * 2);
-      rCtx.fill();
-    }
-    } else {
-      // 3.4 NEON CYAN HOLODECK PROCEDURAL TEXTURES
-      // Deep slate space-blue floor
-      dCtx.fillStyle = '#0a0f1d';
-      dCtx.fillRect(0, 0, texSize, texSize);
-
-      // Clean height map baseline
-      bCtx.fillStyle = '#808080';
-      bCtx.fillRect(0, 0, texSize, texSize);
-
-      // Semi-glossy metallic surface roughness
-      rCtx.fillStyle = '#333333';
-      rCtx.fillRect(0, 0, texSize, texSize);
-
-      // Draw clean neon cyan virtual space grid
-      dCtx.strokeStyle = 'rgba(6, 182, 212, 0.4)'; // cyan
-      dCtx.lineWidth = 3;
-      const step = 64;
-      for (let i = 0; i <= texSize; i += step) {
-        dCtx.beginPath();
-        dCtx.moveTo(i, 0);
-        dCtx.lineTo(i, texSize);
-        dCtx.stroke();
-
-        dCtx.beginPath();
-        dCtx.moveTo(0, i);
-        dCtx.lineTo(texSize, i);
-        dCtx.stroke();
+      // Spawn Point Lights
+      if (activeCustomMap.lighting.pointLights) {
+        activeCustomMap.lighting.pointLights.forEach(pl => {
+          const pointLight = new THREE.PointLight(pl.color, pl.intensity, pl.distance, pl.decay);
+          pointLight.position.set(pl.position.x, pl.position.y, pl.position.z);
+          scene.add(pointLight);
+        });
       }
 
-      // Draw glowing concentric rings in center
-      dCtx.strokeStyle = '#06b6d4';
-      dCtx.lineWidth = 10;
-      dCtx.beginPath();
-      dCtx.arc(512, 512, 160, 0, Math.PI * 2);
-      dCtx.stroke();
-
-      dCtx.strokeStyle = 'rgba(6, 182, 212, 0.25)';
-      dCtx.lineWidth = 32;
-      dCtx.beginPath();
-      dCtx.arc(512, 512, 160, 0, Math.PI * 2);
-      dCtx.stroke();
-
-      // Outer neon border ring
-      dCtx.strokeStyle = '#06b6d4';
-      dCtx.lineWidth = 14;
-      dCtx.beginPath();
-      dCtx.arc(512, 512, 500, 0, Math.PI * 2);
-      dCtx.stroke();
-
-      dCtx.strokeStyle = 'rgba(6, 182, 212, 0.3)';
-      dCtx.lineWidth = 40;
-      dCtx.beginPath();
-      dCtx.arc(512, 512, 500, 0, Math.PI * 2);
-      dCtx.stroke();
+      // Render Dynamic Custom Floor
+      const r = activeCustomMap.arenaRadius;
+      const floorGeo = new THREE.CylinderGeometry(r, r, 0.2, 64);
       
-      // Bump map highlights for grid seams
-      bCtx.strokeStyle = '#606060';
-      bCtx.lineWidth = 3;
-      for (let i = 0; i <= texSize; i += step) {
-        bCtx.strokeRect(i - 1, -1, 2, texSize + 2);
-        bCtx.strokeRect(-1, i - 1, texSize + 2, 2);
-      }
-    }
-
-    // Create textures
-    const floorTexture = new THREE.CanvasTexture(diffCanvas);
-    floorTexture.wrapS = THREE.RepeatWrapping;
-    floorTexture.wrapT = THREE.RepeatWrapping;
-
-    const floorBumpMap = new THREE.CanvasTexture(bumpCanvas);
-    floorBumpMap.wrapS = THREE.RepeatWrapping;
-    floorBumpMap.wrapT = THREE.RepeatWrapping;
-
-    const floorRoughnessMap = new THREE.CanvasTexture(roughCanvas);
-    floorRoughnessMap.wrapS = THREE.RepeatWrapping;
-    floorRoughnessMap.wrapT = THREE.RepeatWrapping;
-
-    // Floor Mesh
-    const floorGeo = new THREE.CylinderGeometry(20, 20, 0.2, 64);
-    const floorMat = new THREE.MeshStandardMaterial({
-      map: floorTexture,
-      bumpMap: floorBumpMap,
-      bumpScale: 0.04,
-      roughnessMap: floorRoughnessMap,
-      roughness: 1.0,
-      metalness: 0.8,
-    });
-    const floor = new THREE.Mesh(floorGeo, floorMat);
-    floor.position.y = -0.1;
-    floor.receiveShadow = true;
-    floor.receiveShadow = true;
-    scene.add(floor);
-
-    if (isHangar) {
-      // 4. CONTINUOUS PERIMETER WALL ENCLOSURE
-    // Form a beautiful solid 12-sided industrial hangar room enclosure
-    const wallGroup = new THREE.Group();
-    wallGroup.name = 'hangarWallGroup';
-    scene.add(wallGroup);
-
-    const wallPlateMat = new THREE.MeshStandardMaterial({
-      color: '#1e2530', // dark metal plating
-      roughness: 0.6,
-      metalness: 0.75,
-    });
-
-    const trimMat = new THREE.MeshStandardMaterial({
-      color: '#92400e', // rusty hazard orange
-      roughness: 0.8,
-      metalness: 0.4,
-    });
-
-    const darkMetalMat = new THREE.MeshStandardMaterial({
-      color: '#111827', // frame components
-      roughness: 0.9,
-      metalness: 0.8,
-    });
-
-    // 12 sides wall generation
-    const wallRadius = 20.6;
-    for (let i = 0; i < 12; i++) {
-      const angle = (i * Math.PI) / 6;
-      const midAngle = angle + Math.PI / 12;
-      const wx = Math.cos(midAngle) * wallRadius;
-      const wz = Math.sin(midAngle) * wallRadius;
-
-      const panel = new THREE.Group();
-      panel.position.set(wx, 6, wz);
-
-      // Main structural plate (10.68m width spans perfectly between columns)
-      const plate = new THREE.Mesh(new THREE.BoxGeometry(10.68, 12, 0.15), wallPlateMat);
-      plate.receiveShadow = true;
-      plate.castShadow = true;
-      panel.add(plate);
-
-      // Rusty horizontal framing rails
-      const topRail = new THREE.Mesh(new THREE.BoxGeometry(10.68, 0.3, 0.28), trimMat);
-      topRail.position.y = 3.5;
-      panel.add(topRail);
-
-      const bottomRail = new THREE.Mesh(new THREE.BoxGeometry(10.68, 0.3, 0.28), trimMat);
-      bottomRail.position.y = -3.5;
-      panel.add(bottomRail);
-
-      // Central exhaust air vent
-      const ventFrame = new THREE.Mesh(new THREE.BoxGeometry(2.2, 1.6, 0.2), darkMetalMat);
-      ventFrame.position.y = 1.0;
-      panel.add(ventFrame);
-
-      const ventSlatGeo = new THREE.BoxGeometry(2.0, 0.1, 0.22);
-      for (let vy = 0.4; vy >= -0.4; vy -= 0.25) {
-        const slat = new THREE.Mesh(ventSlatGeo, wallPlateMat);
-        slat.position.set(0, 1.0 + vy, 0.02);
-        slat.rotation.x = 0.3; // tilted ventilation slats
-        panel.add(slat);
+      // Select appropriate theme floor texture
+      let floorTexType: any = 'futuristic_hex';
+      let floorColor = '#06b6d4';
+      if (activeCustomMap.theme === 'hangar') {
+        floorTexType = 'space_alloy';
+        floorColor = '#475569';
+      } else if (activeCustomMap.theme === 'rust') {
+        floorTexType = 'city_concrete';
+        floorColor = '#ea580c';
+      } else if (activeCustomMap.theme === 'nature') {
+        floorTexType = 'nature_grass';
+        floorColor = '#34d399';
+      } else if (activeCustomMap.theme === 'space') {
+        floorTexType = 'space_lunar_dust';
+        floorColor = '#94a3b8';
+      } else if (activeCustomMap.theme === 'fantasy') {
+        floorTexType = 'fantasy_cobble';
+        floorColor = '#9ca3af';
       }
 
-      // Horizontal metal pipeline running along the wall base
-      const pipeGeo = new THREE.CylinderGeometry(0.12, 0.12, 10.68, 8);
-      pipeGeo.rotateZ(Math.PI / 2); // orient horizontal
-      const conduitPipe = new THREE.Mesh(pipeGeo, darkMetalMat);
-      conduitPipe.position.set(0, -2.5, 0.2);
-      panel.add(conduitPipe);
+      const floorTexture = generateCustomTexture(floorTexType, '#0f172a');
+      const floorMat = new THREE.MeshStandardMaterial({
+        map: floorTexture,
+        bumpMap: floorTexture,
+        bumpScale: 0.02,
+        roughness: 0.8,
+        metalness: 0.5,
+      });
+      const floor = new THREE.Mesh(floorGeo, floorMat);
+      floor.position.y = -0.1;
+      floor.receiveShadow = true;
+      scene.add(floor);
 
-      panel.lookAt(0, 6, 0); // rotate to perfectly face arena center
-      wallGroup.add(panel);
-    }
+      // Render Custom Obstacles/Objects!
+      threeRef.current.customMapObjects = [];
+      activeCustomMap.objects.forEach(obj => {
+        let geo: THREE.BufferGeometry;
+        const sx = obj.scale.x;
+        const sy = obj.scale.y;
+        const sz = obj.scale.z;
 
-    // 5. MASSIVE H-BEAM STRUCTURAL SUPPORT COLUMNS (12 pillars)
-    // Direct children of scene for flawless relocation in resizeArena
-    const girderMat = new THREE.MeshStandardMaterial({
-      color: '#8f4f1f', // rusty industrial orange/brown
-      roughness: 0.85,
-      metalness: 0.5,
-    });
+        if (obj.type === 'box') {
+          geo = new THREE.BoxGeometry(sx, sy, sz);
+        } else if (obj.type === 'cylinder') {
+          geo = new THREE.CylinderGeometry(sx / 2, sx / 2, sy, 32);
+        } else {
+          geo = new THREE.SphereGeometry(sx / 2, 32, 32);
+        }
 
-    const steelGreyMat = new THREE.MeshStandardMaterial({
-      color: '#374151', // structural steel
-      roughness: 0.7,
-      metalness: 0.8,
-    });
+        const texture = generateCustomTexture(obj.texture, obj.color);
+        const mat = new THREE.MeshStandardMaterial({
+          map: texture,
+          color: new THREE.Color(obj.color),
+          metalness: obj.metalness,
+          roughness: obj.roughness,
+          opacity: obj.opacity,
+          transparent: obj.transparent,
+        });
 
-    const pillarLightMat = new THREE.MeshStandardMaterial({
-      color: '#f59e0b',
-      emissive: '#d97706',
-      emissiveIntensity: 1.2,
-    });
+        if (obj.emissive && obj.emissive !== '#000000') {
+          mat.emissive = new THREE.Color(obj.emissive);
+          mat.emissiveIntensity = obj.emissiveIntensity;
+        }
 
-    for (let angle = 0; angle < Math.PI * 2; angle += Math.PI / 6) {
-      const cx = Math.cos(angle) * 20.3;
-      const cz = Math.sin(angle) * 20.3;
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.position.set(obj.position.x, obj.position.y, obj.position.z);
+        mesh.rotation.set(obj.rotation.x, obj.rotation.y, obj.rotation.z);
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
 
-      const column = new THREE.Group();
-      column.position.set(cx, 2, cz);
-      column.userData.angle = angle; // Store angle for dynamic scaling relocation!
-
-      // Child 1: Column structural assembly
-      const structGroup = new THREE.Group();
-      column.add(structGroup);
-
-      // Heavy base plate at Y = 0 (offset by -1.85 from column group Y=2 center)
-      const basePlate = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.3, 1.5), steelGreyMat);
-      basePlate.position.y = -1.85;
-      basePlate.receiveShadow = true;
-      structGroup.add(basePlate);
-
-      // H-beam Web plate
-      const web = new THREE.Mesh(new THREE.BoxGeometry(0.1, 12, 0.8), girderMat);
-      web.position.y = 4.0;
-      web.castShadow = true;
-      web.receiveShadow = true;
-      structGroup.add(web);
-
-      // H-beam Flange plates
-      const flangeFront = new THREE.Mesh(new THREE.BoxGeometry(0.8, 12, 0.1), girderMat);
-      flangeFront.position.set(0, 4.0, 0.4);
-      flangeFront.castShadow = true;
-      flangeFront.receiveShadow = true;
-      structGroup.add(flangeFront);
-
-      const flangeBack = new THREE.Mesh(new THREE.BoxGeometry(0.8, 12, 0.1), girderMat);
-      flangeBack.position.set(0, 4.0, -0.4);
-      flangeBack.castShadow = true;
-      flangeBack.receiveShadow = true;
-      structGroup.add(flangeBack);
-
-      // Horizontal reinforcing cuffs
-      [0.0, 3.5, 7.0].forEach(cy => {
-        const cuff = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.15, 0.95), steelGreyMat);
-        cuff.position.y = cy - 1.5;
-        structGroup.add(cuff);
+        scene.add(mesh);
+        threeRef.current.customMapObjects!.push(mesh);
       });
 
-      // Child 2: Energy and Indicator details
-      const indicatorGroup = new THREE.Group();
-      column.add(indicatorGroup);
+      // Clear any pre-existing navigation mesh, force A* engine to rebuild on the fly
+      threeRef.current.navMesh = undefined;
 
-      // Glowing warm-amber warning light dome
-      const warningDome = new THREE.Mesh(new THREE.SphereGeometry(0.14, 8, 8), pillarLightMat);
-      warningDome.position.set(0, 2.5, 0.52);
-      indicatorGroup.add(warningDome);
+    } else {
+      // BAKE ORIGINAL DEFAULT HANGAR/HOLODECK SCENE & LIGHTING
+      // Deep slate blue ambient shadow fill
+      const ambientColor = isHangar ? '#111827' : '#0a0f1d';
+      const ambientLight = new THREE.AmbientLight(ambientColor, adminSettings.ambientLightIntensity !== undefined ? adminSettings.ambientLightIntensity : (isHangar ? 0.65 : 0.85)); 
+      scene.add(ambientLight);
+      threeRef.current.ambientLight = ambientLight;
 
-      // PointLight on cross pillars (4 directions) for cinematic contrast
-      if (Math.abs(angle % (Math.PI / 2)) < 0.1) {
-        const columnLight = new THREE.PointLight('#f59e0b', 3.0, 16);
-        columnLight.position.set(0, 2.5, 0.8);
-        indicatorGroup.add(columnLight);
+      // Warm high-bay directional sun light / cool holodeck directional light
+      const dirLightColor = isHangar ? '#fffbeb' : '#e0f2fe';
+      const dirLight = new THREE.DirectionalLight(dirLightColor, adminSettings.directLightIntensity !== undefined ? adminSettings.directLightIntensity : 2.2);
+      dirLight.position.set(6, 22, 6);
+      dirLight.castShadow = true;
+      dirLight.shadow.mapSize.width = 1024;
+      dirLight.shadow.mapSize.height = 1024;
+      dirLight.shadow.camera.near = 0.5;
+      dirLight.shadow.camera.far = 40;
+      dirLight.shadow.camera.left = -22;
+      dirLight.shadow.camera.right = 22;
+      dirLight.shadow.camera.top = 22;
+      dirLight.shadow.camera.bottom = -22;
+      dirLight.shadow.bias = -0.0005;
+      scene.add(dirLight);
+      threeRef.current.dirLight = dirLight;
+
+      // Primary warm amber central industrial pendant light / holographic core light
+      const pointLightColor = isHangar ? '#ea580c' : '#06b6d4';
+      const pointLight = new THREE.PointLight(pointLightColor, 2.5, 35);
+      pointLight.position.set(0, 14, 0);
+      scene.add(pointLight);
+
+      // Procedural generation of 1024x1024 premium metallic textures
+      const texSize = 1024;
+
+      // DIFFUSE/ALBEDO CANVAS
+      const diffCanvas = document.createElement('canvas');
+      diffCanvas.width = texSize;
+      diffCanvas.height = texSize;
+      const dCtx = diffCanvas.getContext('2d')!;
+
+      // BUMP MAP CANVAS
+      const bumpCanvas = document.createElement('canvas');
+      bumpCanvas.width = texSize;
+      bumpCanvas.height = texSize;
+      const bCtx = bumpCanvas.getContext('2d')!;
+
+      // ROUGHNESS MAP CANVAS
+      const roughCanvas = document.createElement('canvas');
+      roughCanvas.width = texSize;
+      roughCanvas.height = texSize;
+      const rCtx = roughCanvas.getContext('2d')!;
+
+      if (isHangar) {
+        // Fill base layers
+        dCtx.fillStyle = '#161a22';
+        dCtx.fillRect(0, 0, texSize, texSize);
+
+        bCtx.fillStyle = '#808080'; // 128 height map baseline
+        bCtx.fillRect(0, 0, texSize, texSize);
+
+        rCtx.fillStyle = '#888888'; // base semi-matte metal
+        rCtx.fillRect(0, 0, texSize, texSize);
+
+        // Draw modular steel plate tiles (16x16 grid)
+        const tileSize = 64; 
+        for (let y = 0; y < texSize; y += tileSize) {
+          for (let x = 0; x < texSize; x += tileSize) {
+            // Organic slate color variation per plate
+            const hueVal = 216 + Math.random() * 8;
+            const satVal = 12 + Math.random() * 6;
+            const lightVal = 10 + Math.random() * 5;
+            dCtx.fillStyle = `hsl(${hueVal}, ${satVal}%, ${lightVal}%)`;
+            dCtx.fillRect(x + 1, y + 1, tileSize - 2, tileSize - 2);
+
+            // Diffuse bevel shadows
+            dCtx.strokeStyle = 'rgba(255, 255, 255, 0.04)';
+            dCtx.lineWidth = 1.5;
+            dCtx.beginPath();
+            dCtx.moveTo(x + tileSize - 1, y + 1);
+            dCtx.lineTo(x + 1, y + 1);
+            dCtx.lineTo(x + 1, y + tileSize - 1);
+            dCtx.stroke();
+
+            dCtx.strokeStyle = 'rgba(0, 0, 0, 0.35)';
+            dCtx.beginPath();
+            dCtx.moveTo(x + tileSize - 1, y + 1);
+            dCtx.lineTo(x + tileSize - 1, y + tileSize - 1);
+            dCtx.lineTo(x + 1, y + tileSize - 1);
+            dCtx.stroke();
+
+            // Bump map seams (sunken)
+            bCtx.strokeStyle = '#484848';
+            bCtx.lineWidth = 2;
+            bCtx.strokeRect(x + 0.5, y + 0.5, tileSize - 1, tileSize - 1);
+
+            // Roughness map seams
+            rCtx.fillStyle = '#a0a0a0';
+            rCtx.fillRect(x, y, tileSize, 1);
+            rCtx.fillRect(x, y, 1, tileSize);
+
+            // Add plate corner rivets
+            const offsets = [5, tileSize - 5];
+            offsets.forEach(ox => {
+              offsets.forEach(oy => {
+                const rx = x + ox;
+                const ry = y + oy;
+
+                // Diffuse: shiny metal bolt head
+                dCtx.fillStyle = '#374151';
+                dCtx.beginPath();
+                dCtx.arc(rx, ry, 2.5, 0, Math.PI * 2);
+                dCtx.fill();
+                dCtx.fillStyle = '#9ca3af';
+                dCtx.beginPath();
+                dCtx.arc(rx - 0.5, ry - 0.5, 0.8, 0, Math.PI * 2);
+                dCtx.fill();
+
+                // Bump map: rivets are raised
+                bCtx.fillStyle = '#ffffff';
+                bCtx.beginPath();
+                bCtx.arc(rx, ry, 2.5, 0, Math.PI * 2);
+                bCtx.fill();
+
+                // Roughness map: rivets are polished and highly reflective
+                rCtx.fillStyle = '#222222';
+                rCtx.beginPath();
+                rCtx.arc(rx, ry, 3.0, 0, Math.PI * 2);
+                rCtx.fill();
+              });
+            });
+          }
+        }
+
+        // Central drainage/ventilation trench grate running along Z-axis (middle X)
+        const grateWidth = 96; 
+        const gxStart = 512 - grateWidth / 2;
+        const gxEnd = 512 + grateWidth / 2;
+
+        // Diffuse trench channel
+        dCtx.fillStyle = '#090c12';
+        dCtx.fillRect(gxStart, 0, grateWidth, texSize);
+        
+        // Bump trench channel (sunken)
+        bCtx.fillStyle = '#101010';
+        bCtx.fillRect(gxStart, 0, grateWidth, texSize);
+
+        // Roughness trench channel (very rough interior)
+        rCtx.fillStyle = '#e2e8f0';
+        rCtx.fillRect(gxStart, 0, grateWidth, texSize);
+
+        // Frame borders for the trench
+        dCtx.fillStyle = '#2d3748';
+        dCtx.fillRect(gxStart - 4, 0, 4, texSize);
+        dCtx.fillRect(gxEnd, 0, 4, texSize);
+
+        dCtx.fillStyle = '#4a5568';
+        dCtx.fillRect(gxStart - 1, 0, 1, texSize);
+        dCtx.fillRect(gxEnd + 3, 0, 1, texSize);
+
+        bCtx.fillStyle = '#b8b8b8'; // raised frame
+        bCtx.fillRect(gxStart - 4, 0, 4, texSize);
+        bCtx.fillRect(gxEnd, 0, 4, texSize);
+
+        // Horizontal steel grate bars
+        const barSpacing = 16;
+        const barThickness = 6;
+        for (let gy = 0; gy < texSize; gy += barSpacing) {
+          // Diffuse steel bar
+          dCtx.fillStyle = '#3f4b5e';
+          dCtx.fillRect(gxStart + 4, gy, grateWidth - 8, barThickness);
+          
+          dCtx.fillStyle = '#5c6c84'; // bar highlights
+          dCtx.fillRect(gxStart + 4, gy, grateWidth - 8, 1.5);
+
+          // Rusty patches on grate bars
+          if (Math.random() < 0.45) {
+            dCtx.fillStyle = 'rgba(130, 60, 15, 0.5)'; // rust paint
+            dCtx.fillRect(gxStart + 4 + Math.random() * (grateWidth - 24), gy + 1, 14, barThickness - 2);
+          }
+
+          // Bump: raised bars
+          bCtx.fillStyle = '#a8a8a8';
+          bCtx.fillRect(gxStart + 4, gy, grateWidth - 8, barThickness);
+
+          // Roughness: slightly reflective
+          rCtx.fillStyle = '#475569';
+          rCtx.fillRect(gxStart + 4, gy, grateWidth - 8, barThickness);
+        }
+
+        // Yellow & Black industrial hazard safety stripes alongside central trench
+        const stripeWidth = 16;
+        const stripeSpacing = 24;
+
+        const drawHazardStripes = (xStart: number) => {
+          // Yellow base
+          dCtx.fillStyle = '#ca8a04';
+          dCtx.fillRect(xStart, 0, stripeWidth, texSize);
+
+          // Black diagonal bands
+          dCtx.fillStyle = '#0f172a';
+          for (let sy = -stripeWidth; sy < texSize; sy += stripeSpacing) {
+            dCtx.beginPath();
+            dCtx.moveTo(xStart, sy);
+            dCtx.lineTo(xStart + stripeWidth, sy + stripeWidth);
+            dCtx.lineTo(xStart + stripeWidth, sy + stripeWidth + 10);
+            dCtx.lineTo(xStart, sy + 10);
+            dCtx.closePath();
+            dCtx.fill();
+          }
+
+          bCtx.fillStyle = '#808080';
+          bCtx.fillRect(xStart, 0, stripeWidth, texSize);
+
+          rCtx.fillStyle = '#94a3b8'; // rough warning paint
+          rCtx.fillRect(xStart, 0, stripeWidth, texSize);
+        };
+
+        drawHazardStripes(gxStart - 20);
+        drawHazardStripes(gxEnd + 4);
+
+        // Weathering scratches
+        for (let i = 0; i < 150; i++) {
+          const sx = Math.random() * texSize;
+          const sy = Math.random() * texSize;
+          const len = 8 + Math.random() * 25;
+          const angle = Math.random() * Math.PI * 2;
+          const ex = sx + Math.cos(angle) * len;
+          const ey = sy + Math.sin(angle) * len;
+
+          dCtx.strokeStyle = 'rgba(0,0,0,0.3)';
+          dCtx.lineWidth = 1.0;
+          dCtx.beginPath();
+          dCtx.moveTo(sx, sy);
+          dCtx.lineTo(ex, ey);
+          dCtx.stroke();
+
+          dCtx.strokeStyle = 'rgba(255,255,255,0.06)';
+          dCtx.beginPath();
+          dCtx.moveTo(sx + 0.5, sy + 0.5);
+          dCtx.lineTo(ex + 0.5, ey + 0.5);
+          dCtx.stroke();
+
+          bCtx.strokeStyle = '#585858';
+          bCtx.lineWidth = 1;
+          bCtx.beginPath();
+          bCtx.moveTo(sx, sy);
+          bCtx.lineTo(ex, ey);
+          bCtx.stroke();
+
+          rCtx.strokeStyle = '#111111'; // polished scratches are highly specular
+          rCtx.lineWidth = 1;
+          rCtx.beginPath();
+          rCtx.moveTo(sx, sy);
+          rCtx.lineTo(ex, ey);
+          rCtx.stroke();
+        }
+
+        // Dirt and soot spray overlays
+        for (let i = 0; i < 45; i++) {
+          const dx = Math.random() * texSize;
+          const dy = Math.random() * texSize;
+          const rad = 25 + Math.random() * 75;
+
+          const alGrad = dCtx.createRadialGradient(dx, dy, 0, dx, dy, rad);
+          alGrad.addColorStop(0, 'rgba(40, 25, 12, 0.22)');
+          alGrad.addColorStop(1, 'rgba(40, 25, 12, 0)');
+          dCtx.fillStyle = alGrad;
+          dCtx.beginPath();
+          dCtx.arc(dx, dy, rad, 0, Math.PI * 2);
+          dCtx.fill();
+
+          const roGrad = rCtx.createRadialGradient(dx, dy, 0, dx, dy, rad);
+          roGrad.addColorStop(0, 'rgba(200, 200, 200, 0.45)');
+          roGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+          rCtx.fillStyle = roGrad;
+          rCtx.beginPath();
+          rCtx.arc(dx, dy, rad, 0, Math.PI * 2);
+          rCtx.fill();
+        }
+      } else {
+        // NEON CYAN HOLODECK PROCEDURAL TEXTURES
+        // Deep slate space-blue floor
+        dCtx.fillStyle = '#0a0f1d';
+        dCtx.fillRect(0, 0, texSize, texSize);
+
+        // Clean height map baseline
+        bCtx.fillStyle = '#808080';
+        bCtx.fillRect(0, 0, texSize, texSize);
+
+        // Semi-glossy metallic surface roughness
+        rCtx.fillStyle = '#333333';
+        rCtx.fillRect(0, 0, texSize, texSize);
+
+        // Draw clean neon cyan virtual space grid
+        dCtx.strokeStyle = 'rgba(6, 182, 212, 0.4)'; // cyan
+        dCtx.lineWidth = 3;
+        const step = 64;
+        for (let i = 0; i <= texSize; i += step) {
+          dCtx.beginPath();
+          dCtx.moveTo(i, 0);
+          dCtx.lineTo(i, texSize);
+          dCtx.stroke();
+
+          dCtx.beginPath();
+          dCtx.moveTo(0, i);
+          dCtx.lineTo(texSize, i);
+          dCtx.stroke();
+        }
+
+        // Draw glowing concentric rings in center
+        dCtx.strokeStyle = '#06b6d4';
+        dCtx.lineWidth = 10;
+        dCtx.beginPath();
+        dCtx.arc(512, 512, 160, 0, Math.PI * 2);
+        dCtx.stroke();
+
+        dCtx.strokeStyle = 'rgba(6, 182, 212, 0.25)';
+        dCtx.lineWidth = 32;
+        dCtx.beginPath();
+        dCtx.arc(512, 512, 160, 0, Math.PI * 2);
+        dCtx.stroke();
+
+        // Outer neon border ring
+        dCtx.strokeStyle = '#06b6d4';
+        dCtx.lineWidth = 14;
+        dCtx.beginPath();
+        dCtx.arc(512, 512, 500, 0, Math.PI * 2);
+        dCtx.stroke();
+
+        dCtx.strokeStyle = 'rgba(6, 182, 212, 0.3)';
+        dCtx.lineWidth = 40;
+        dCtx.beginPath();
+        dCtx.arc(512, 512, 500, 0, Math.PI * 2);
+        dCtx.stroke();
+        
+        // Bump map highlights for grid seams
+        bCtx.strokeStyle = '#606060';
+        bCtx.lineWidth = 3;
+        for (let i = 0; i <= texSize; i += step) {
+          bCtx.strokeRect(i - 1, -1, 2, texSize + 2);
+          bCtx.strokeRect(-1, i - 1, texSize + 2, 2);
+        }
       }
 
-      column.lookAt(0, 2, 0); // Outward facing orientation
-      scene.add(column); // Added direct to scene for resizeArena!
-    }
+      // Create textures
+      const floorTexture = new THREE.CanvasTexture(diffCanvas);
+      floorTexture.wrapS = THREE.RepeatWrapping;
+      floorTexture.wrapT = THREE.RepeatWrapping;
 
-    // 6. CEILING TRUSSES & OVERHEAD HEAVY INDUSTRIAL STRUCTURAL GIRDERS
-    const girderGroup = new THREE.Group();
-    scene.add(girderGroup);
+      const floorBumpMap = new THREE.CanvasTexture(bumpCanvas);
+      floorBumpMap.wrapS = THREE.RepeatWrapping;
+      floorBumpMap.wrapT = THREE.RepeatWrapping;
 
-    const gridPositions = [-15, 0, 15];
+      const floorRoughnessMap = new THREE.CanvasTexture(roughCanvas);
+      floorRoughnessMap.wrapS = THREE.RepeatWrapping;
+      floorRoughnessMap.wrapT = THREE.RepeatWrapping;
 
-    // Z-axis spanning girders
-    gridPositions.forEach(zOffset => {
-      const truss = new THREE.Group();
-      truss.position.set(0, 11, zOffset);
+      // Floor Mesh
+      const floorGeo = new THREE.CylinderGeometry(20, 20, 0.2, 64);
+      const floorMat = new THREE.MeshStandardMaterial({
+        map: floorTexture,
+        bumpMap: floorBumpMap,
+        bumpScale: 0.04,
+        roughnessMap: floorRoughnessMap,
+        roughness: 1.0,
+        metalness: 0.8,
+      });
+      const floor = new THREE.Mesh(floorGeo, floorMat);
+      floor.position.y = -0.1;
+      floor.receiveShadow = true;
+      scene.add(floor);
 
-      const topChord = new THREE.Mesh(new THREE.BoxGeometry(50, 0.25, 0.4), girderMat);
-      topChord.position.y = 0.5;
-      topChord.castShadow = true;
-      topChord.receiveShadow = true;
-      truss.add(topChord);
+      if (isHangar) {
+        // CONTINUOUS PERIMETER WALL ENCLOSURE
+        const wallGroup = new THREE.Group();
+        wallGroup.name = 'hangarWallGroup';
+        scene.add(wallGroup);
 
-      const bottomChord = new THREE.Mesh(new THREE.BoxGeometry(50, 0.25, 0.4), girderMat);
-      bottomChord.position.y = -0.5;
-      bottomChord.castShadow = true;
-      bottomChord.receiveShadow = true;
-      truss.add(bottomChord);
+        const wallPlateMat = new THREE.MeshStandardMaterial({
+          color: '#1e2530', // dark metal plating
+          roughness: 0.6,
+          metalness: 0.75,
+        });
 
-      for (let tx = -24; tx <= 24; tx += 4) {
-        const dLeft = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.25, 0.3), steelGreyMat);
-        dLeft.position.set(tx - 0.9, 0, 0);
-        dLeft.rotation.z = Math.PI / 4;
-        dLeft.castShadow = true;
-        truss.add(dLeft);
+        const trimMat = new THREE.MeshStandardMaterial({
+          color: '#92400e', // rusty hazard orange
+          roughness: 0.8,
+          metalness: 0.4,
+        });
 
-        const dRight = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.25, 0.3), steelGreyMat);
-        dRight.position.set(tx + 0.9, 0, 0);
-        dRight.rotation.z = -Math.PI / 4;
-        dRight.castShadow = true;
-        truss.add(dRight);
+        const darkMetalMat = new THREE.MeshStandardMaterial({
+          color: '#111827', // frame components
+          roughness: 0.9,
+          metalness: 0.8,
+        });
+
+        // 12 sides wall generation
+        const wallRadius = 20.6;
+        for (let i = 0; i < 12; i++) {
+          const angle = (i * Math.PI) / 6;
+          const midAngle = angle + Math.PI / 12;
+          const wx = Math.cos(midAngle) * wallRadius;
+          const wz = Math.sin(midAngle) * wallRadius;
+
+          const panel = new THREE.Group();
+          panel.position.set(wx, 6, wz);
+
+          // Main structural plate (10.68m width spans perfectly between columns)
+          const plate = new THREE.Mesh(new THREE.BoxGeometry(10.68, 12, 0.15), wallPlateMat);
+          plate.receiveShadow = true;
+          plate.castShadow = true;
+          panel.add(plate);
+
+          // Rusty horizontal framing rails
+          const topRail = new THREE.Mesh(new THREE.BoxGeometry(10.68, 0.3, 0.28), trimMat);
+          topRail.position.y = 3.5;
+          panel.add(topRail);
+
+          const bottomRail = new THREE.Mesh(new THREE.BoxGeometry(10.68, 0.3, 0.28), trimMat);
+          bottomRail.position.y = -3.5;
+          panel.add(bottomRail);
+
+          // Central exhaust air vent
+          const ventFrame = new THREE.Mesh(new THREE.BoxGeometry(2.2, 1.6, 0.2), darkMetalMat);
+          ventFrame.position.y = 1.0;
+          panel.add(ventFrame);
+
+          const ventSlatGeo = new THREE.BoxGeometry(2.0, 0.1, 0.22);
+          for (let vy = 0.4; vy >= -0.4; vy -= 0.25) {
+            const slat = new THREE.Mesh(ventSlatGeo, wallPlateMat);
+            slat.position.set(0, 1.0 + vy, 0.02);
+            slat.rotation.x = 0.3; // tilted ventilation slats
+            panel.add(slat);
+          }
+
+          // Horizontal metal pipeline running along the wall base
+          const pipeGeo = new THREE.CylinderGeometry(0.12, 0.12, 10.68, 8);
+          pipeGeo.rotateZ(Math.PI / 2); // orient horizontal
+          const conduitPipe = new THREE.Mesh(pipeGeo, darkMetalMat);
+          conduitPipe.position.set(0, -2.5, 0.2);
+          panel.add(conduitPipe);
+
+          panel.lookAt(0, 6, 0); // rotate to perfectly face arena center
+          wallGroup.add(panel);
+        }
+
+        // MASSIVE H-BEAM STRUCTURAL SUPPORT COLUMNS (12 pillars)
+        const girderMat = new THREE.MeshStandardMaterial({
+          color: '#8f4f1f', // rusty industrial orange/brown
+          roughness: 0.85,
+          metalness: 0.5,
+        });
+
+        const steelGreyMat = new THREE.MeshStandardMaterial({
+          color: '#374151', // structural steel
+          roughness: 0.7,
+          metalness: 0.8,
+        });
+
+        const pillarLightMat = new THREE.MeshStandardMaterial({
+          color: '#f59e0b',
+          emissive: '#d97706',
+          emissiveIntensity: 1.2,
+        });
+
+        for (let angle = 0; angle < Math.PI * 2; angle += Math.PI / 6) {
+          const cx = Math.cos(angle) * 20.3;
+          const cz = Math.sin(angle) * 20.3;
+
+          const column = new THREE.Group();
+          column.position.set(cx, 2, cz);
+          column.userData.angle = angle; // Store angle for dynamic scaling relocation!
+
+          // Column structural assembly
+          const structGroup = new THREE.Group();
+          column.add(structGroup);
+
+          // Heavy base plate
+          const basePlate = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.3, 1.5), steelGreyMat);
+          basePlate.position.y = -1.85;
+          basePlate.receiveShadow = true;
+          structGroup.add(basePlate);
+
+          // H-beam Web plate
+          const web = new THREE.Mesh(new THREE.BoxGeometry(0.1, 12, 0.8), girderMat);
+          web.position.y = 4.0;
+          web.castShadow = true;
+          web.receiveShadow = true;
+          structGroup.add(web);
+
+          // H-beam Flange plates
+          const flangeFront = new THREE.Mesh(new THREE.BoxGeometry(0.8, 12, 0.1), girderMat);
+          flangeFront.position.set(0, 4.0, 0.4);
+          flangeFront.castShadow = true;
+          flangeFront.receiveShadow = true;
+          structGroup.add(flangeFront);
+
+          const flangeBack = new THREE.Mesh(new THREE.BoxGeometry(0.8, 12, 0.1), girderMat);
+          flangeBack.position.set(0, 4.0, -0.4);
+          flangeBack.castShadow = true;
+          flangeBack.receiveShadow = true;
+          structGroup.add(flangeBack);
+
+          // Horizontal reinforcing cuffs
+          [0.0, 3.5, 7.0].forEach(cy => {
+            const cuff = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.15, 0.95), steelGreyMat);
+            cuff.position.y = cy - 1.5;
+            structGroup.add(cuff);
+          });
+
+          // Energy and Indicator details
+          const indicatorGroup = new THREE.Group();
+          column.add(indicatorGroup);
+
+          // Glowing dome
+          const warningDome = new THREE.Mesh(new THREE.SphereGeometry(0.14, 8, 8), pillarLightMat);
+          warningDome.position.set(0, 2.5, 0.52);
+          indicatorGroup.add(warningDome);
+
+          // PointLight on cross pillars
+          if (Math.abs(angle % (Math.PI / 2)) < 0.1) {
+            const columnLight = new THREE.PointLight('#f59e0b', 3.0, 16);
+            columnLight.position.set(0, 2.5, 0.8);
+            indicatorGroup.add(columnLight);
+          }
+
+          column.lookAt(0, 2, 0); // Outward facing
+          scene.add(column);
+        }
+
+        // CEILING TRUSSES & OVERHEAD HEAVY INDUSTRIAL STRUCTURAL GIRDERS
+        const girderGroup = new THREE.Group();
+        scene.add(girderGroup);
+
+        const gridPositions = [-15, 0, 15];
+
+        // Z-axis spanning girders
+        gridPositions.forEach(zOffset => {
+          const truss = new THREE.Group();
+          truss.position.set(0, 11, zOffset);
+
+          const topChord = new THREE.Mesh(new THREE.BoxGeometry(50, 0.25, 0.4), girderMat);
+          topChord.position.y = 0.5;
+          topChord.castShadow = true;
+          topChord.receiveShadow = true;
+          truss.add(topChord);
+
+          const bottomChord = new THREE.Mesh(new THREE.BoxGeometry(50, 0.25, 0.4), girderMat);
+          bottomChord.position.y = -0.5;
+          bottomChord.castShadow = true;
+          bottomChord.receiveShadow = true;
+          truss.add(bottomChord);
+
+          for (let tx = -24; tx <= 24; tx += 4) {
+            const dLeft = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.25, 0.3), steelGreyMat);
+            dLeft.position.set(tx - 0.9, 0, 0);
+            dLeft.rotation.z = Math.PI / 4;
+            dLeft.castShadow = true;
+            truss.add(dLeft);
+
+            const dRight = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.25, 0.3), steelGreyMat);
+            dRight.position.set(tx + 0.9, 0, 0);
+            dRight.rotation.z = -Math.PI / 4;
+            dRight.castShadow = true;
+            truss.add(dRight);
+          }
+          girderGroup.add(truss);
+        });
+
+        // X-axis spanning girders
+        gridPositions.forEach(xOffset => {
+          const truss = new THREE.Group();
+          truss.position.set(xOffset, 11.2, 0);
+          truss.rotation.y = Math.PI / 2;
+
+          const topChord = new THREE.Mesh(new THREE.BoxGeometry(50, 0.25, 0.4), girderMat);
+          topChord.position.y = 0.5;
+          topChord.castShadow = true;
+          topChord.receiveShadow = true;
+          truss.add(topChord);
+
+          const bottomChord = new THREE.Mesh(new THREE.BoxGeometry(50, 0.25, 0.4), girderMat);
+          bottomChord.position.y = -0.5;
+          bottomChord.castShadow = true;
+          bottomChord.receiveShadow = true;
+          truss.add(bottomChord);
+
+          for (let tz = -24; tz <= 24; tz += 4) {
+            const dLeft = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.25, 0.3), steelGreyMat);
+            dLeft.position.set(tz - 0.9, 0, 0);
+            dLeft.rotation.z = Math.PI / 4;
+            dLeft.castShadow = true;
+            truss.add(dLeft);
+
+            const dRight = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.25, 0.3), steelGreyMat);
+            dRight.position.set(tz + 0.9, 0, 0);
+            dRight.rotation.z = -Math.PI / 4;
+            dRight.castShadow = true;
+            truss.add(dRight);
+          }
+          girderGroup.add(truss);
+        });
+
+        // VOLUMETRIC LIGHT SHAFTS / GOD RAYS
+        const rayGroup = new THREE.Group();
+        scene.add(rayGroup);
+
+        const rayGeo = new THREE.CylinderGeometry(0.6, 3.8, 25, 16, 1, true);
+        const rayMat = new THREE.MeshBasicMaterial({
+          color: '#ffdfa9', // warm golden sun rays
+          transparent: true,
+          opacity: 0.12,
+          blending: THREE.AdditiveBlending,
+          side: THREE.DoubleSide,
+          depthWrite: false,
+        });
+
+        const rayOffsets = [
+          { x: -9, z: -9 },
+          { x: 5, z: 7 },
+          { x: -2, z: 1 }
+        ];
+
+        rayOffsets.forEach(offset => {
+          const ray = new THREE.Mesh(rayGeo, rayMat);
+          ray.position.set(offset.x + 3.0, 9.5, offset.z + 3.0);
+          ray.rotation.x = 0.24;
+          ray.rotation.z = -0.24;
+          rayGroup.add(ray);
+        });
       }
-      girderGroup.add(truss);
-    });
-
-    // X-axis spanning girders
-    gridPositions.forEach(xOffset => {
-      const truss = new THREE.Group();
-      truss.position.set(xOffset, 11.2, 0);
-      truss.rotation.y = Math.PI / 2;
-
-      const topChord = new THREE.Mesh(new THREE.BoxGeometry(50, 0.25, 0.4), girderMat);
-      topChord.position.y = 0.5;
-      topChord.castShadow = true;
-      topChord.receiveShadow = true;
-      truss.add(topChord);
-
-      const bottomChord = new THREE.Mesh(new THREE.BoxGeometry(50, 0.25, 0.4), girderMat);
-      bottomChord.position.y = -0.5;
-      bottomChord.castShadow = true;
-      bottomChord.receiveShadow = true;
-      truss.add(bottomChord);
-
-      for (let tz = -24; tz <= 24; tz += 4) {
-        const dLeft = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.25, 0.3), steelGreyMat);
-        dLeft.position.set(tz - 0.9, 0, 0);
-        dLeft.rotation.z = Math.PI / 4;
-        dLeft.castShadow = true;
-        truss.add(dLeft);
-
-        const dRight = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.25, 0.3), steelGreyMat);
-        dRight.position.set(tz + 0.9, 0, 0);
-        dRight.rotation.z = -Math.PI / 4;
-        dRight.castShadow = true;
-        truss.add(dRight);
-      }
-      girderGroup.add(truss);
-    });
-
-    // 7. VOLUMETRIC LIGHT SHAFTS / GOD RAYS
-    const rayGroup = new THREE.Group();
-    scene.add(rayGroup);
-
-    const rayGeo = new THREE.CylinderGeometry(0.6, 3.8, 25, 16, 1, true);
-    const rayMat = new THREE.MeshBasicMaterial({
-      color: '#ffdfa9', // warm golden sun rays
-      transparent: true,
-      opacity: 0.12,
-      blending: THREE.AdditiveBlending,
-      side: THREE.DoubleSide,
-      depthWrite: false,
-    });
-
-    // Positions matching high grates in warehouse
-    const rayOffsets = [
-      { x: -9, z: -9 },
-      { x: 5, z: 7 },
-      { x: -2, z: 1 }
-    ];
-
-    rayOffsets.forEach(offset => {
-      const ray = new THREE.Mesh(rayGeo, rayMat);
-      // Orient at angle parallel to directional sun rays
-      ray.position.set(offset.x + 3.0, 9.5, offset.z + 3.0);
-      ray.rotation.x = 0.24;
-      ray.rotation.z = -0.24;
-      rayGroup.add(ray);
-    });
     }
 
     // 4. PROGRAMMATIC VOXEL CHARACTER ENEMY
@@ -4899,9 +5292,683 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     };
   }, [isPlaying]);
 
+  // Helper to reconstruct player state at any target frame index in replayData.frames (Delta Compression recovery)
+  const getReconstructedState = (playerType: 'player' | 'main_ai' | string, frameIdx: number) => {
+    if (!replayData) return null;
+    const frames = replayData.frames;
+    
+    // Scan backwards from frameIdx to find the most recent frame containing the state for this playerType
+    for (let i = frameIdx; i >= 0; i--) {
+      const f = frames[i];
+      if (playerType === 'player' && f.player) return f.player;
+      if (playerType === 'main_ai' && f.ai) return f.ai;
+      if (playerType !== 'player' && playerType !== 'main_ai' && f.otherPlayers) {
+        const found = f.otherPlayers.find(p => p.id === playerType);
+        if (found) return found;
+      }
+    }
+    // Fallback to first frame if not found anywhere (should not happen)
+    const f0 = frames[0];
+    if (playerType === 'player') return f0.player;
+    if (playerType === 'main_ai') return f0.ai;
+    return f0.otherPlayers?.find(p => p.id === playerType) || null;
+  };
+
+  const recordReplayFrame = (time: number) => {
+    const s = stateRef.current;
+    if (!replayRecordingRef.current) return;
+
+    const frame: ReplayFrame = {
+      time,
+      otherPlayers: []
+    };
+
+    // Helper to evaluate if a player has moved or changed state compared to last tick
+    const hasPlayerChanged = (id: string, current: {
+      pos: THREE.Vector3;
+      vel: THREE.Vector3;
+      yaw: number;
+      hp: number;
+      activeWeapon: string;
+      weaponState: string;
+      isCrouching: boolean;
+      score: number;
+      kills: number;
+      deaths: number;
+    }) => {
+      const prev = lastRecordedStateRef.current.get(id);
+      if (!prev) return true; // Always write first frame
+
+      const posDiff = current.pos.distanceTo(prev.pos);
+      const velDiff = current.vel.distanceTo(prev.vel);
+      const yawDiff = Math.abs(current.yaw - prev.yaw);
+      
+      const changed = 
+        posDiff >= 0.001 || 
+        velDiff >= 0.001 || 
+        yawDiff >= 0.005 || 
+        current.hp !== prev.hp || 
+        current.activeWeapon !== prev.activeWeapon || 
+        current.weaponState !== prev.weaponState || 
+        current.isCrouching !== prev.isCrouching || 
+        current.score !== prev.score || 
+        current.kills !== prev.kills || 
+        current.deaths !== prev.deaths;
+
+      return changed;
+    };
+
+    // 1. Process Local Player
+    const playerState = {
+      pos: { x: s.playerPos.x, y: s.playerPos.y, z: s.playerPos.z },
+      vel: { x: s.playerVel.x, y: s.playerVel.y, z: s.playerVel.z },
+      yaw: s.yaw,
+      pitch: s.pitch,
+      hp: s.playerHP,
+      isCrouching: s.isCrouching,
+      isJumping: s.isJumping || false,
+      isLunging: s.isLunging || false,
+      activeWeapon: s.activeWeapon,
+      weaponState: s.pWeaponState === 'ready' && s.pSwordState !== 'ready' ? s.pSwordState : s.pWeaponState,
+      score: s.scorePlayer,
+      kills: s.playerKills ?? 0,
+      deaths: s.playerDeaths ?? 0,
+      respawnTimer: s.playerRespawnTimer,
+      invulnerabilityTimer: s.playerInvulnerabilityTimer
+    };
+
+    const playerCompState = {
+      pos: s.playerPos,
+      vel: s.playerVel,
+      yaw: s.yaw,
+      hp: s.playerHP,
+      activeWeapon: playerState.activeWeapon,
+      weaponState: playerState.weaponState,
+      isCrouching: playerState.isCrouching,
+      score: playerState.score,
+      kills: playerState.kills,
+      deaths: playerState.deaths
+    };
+
+    if (hasPlayerChanged('player', playerCompState)) {
+      frame.player = playerState;
+      lastRecordedStateRef.current.set('player', {
+        pos: s.playerPos.clone(),
+        vel: s.playerVel.clone(),
+        yaw: s.yaw,
+        hp: s.playerHP,
+        activeWeapon: playerState.activeWeapon,
+        weaponState: playerState.weaponState,
+        isCrouching: playerState.isCrouching,
+        score: playerState.score,
+        kills: playerState.kills,
+        deaths: playerState.deaths
+      });
+    }
+
+    // 2. Process Main AI Bot (only if not multiplayer)
+    if (!isMultiplayer) {
+      const aiState = {
+        pos: { x: s.aiPos.x, y: s.aiPos.y, z: s.aiPos.z },
+        vel: { x: s.aiVel.x, y: s.aiVel.y, z: s.aiVel.z },
+        yaw: s.aiYaw,
+        hp: s.aiHP,
+        isCrouching: s.aiIsCrouching,
+        activeWeapon: s.aiActiveWeapon,
+        weaponState: s.aiWeaponState,
+        score: s.scoreEnemy,
+        kills: s.enemyKills ?? 0,
+        deaths: s.enemyDeaths ?? 0,
+        respawnTimer: s.enemyRespawnTimer,
+        invulnerabilityTimer: s.aiInvulnerabilityTimer
+      };
+
+      const aiCompState = {
+        pos: s.aiPos,
+        vel: s.aiVel,
+        yaw: s.aiYaw,
+        hp: s.aiHP,
+        activeWeapon: aiState.activeWeapon,
+        weaponState: aiState.weaponState,
+        isCrouching: aiState.isCrouching,
+        score: aiState.score,
+        kills: aiState.kills,
+        deaths: aiState.deaths
+      };
+
+      if (hasPlayerChanged('main_ai', aiCompState)) {
+        frame.ai = aiState;
+        lastRecordedStateRef.current.set('main_ai', {
+          pos: s.aiPos.clone(),
+          vel: s.aiVel.clone(),
+          yaw: s.aiYaw,
+          hp: s.aiHP,
+          activeWeapon: aiState.activeWeapon,
+          weaponState: aiState.weaponState,
+          isCrouching: aiState.isCrouching,
+          score: aiState.score,
+          kills: aiState.kills,
+          deaths: aiState.deaths
+        });
+      }
+    }
+
+    // 3. Process other players/bots in the room
+    s.otherPlayers.forEach((bot, id) => {
+      const botState = {
+        id,
+        playerName: bot.playerName,
+        hue: bot.hue,
+        pos: { x: bot.pos.x, y: bot.pos.y, z: bot.pos.z },
+        vel: { x: bot.vel.x, y: bot.vel.y, z: bot.vel.z },
+        yaw: bot.yaw,
+        hp: bot.hp,
+        isCrouching: bot.isCrouching,
+        activeWeapon: bot.activeWeapon,
+        weaponState: bot.weaponState || 'ready',
+        score: bot.score ?? 0,
+        kills: bot.kills ?? 0,
+        deaths: bot.deaths ?? 0,
+        respawnTimer: bot.respawnTimer ?? 0,
+        invulnerabilityTimer: bot.invulnerabilityTimer ?? 0
+      };
+
+      const botCompState = {
+        pos: bot.pos,
+        vel: bot.vel,
+        yaw: bot.yaw,
+        hp: bot.hp,
+        activeWeapon: botState.activeWeapon,
+        weaponState: botState.weaponState,
+        isCrouching: botState.isCrouching,
+        score: botState.score,
+        kills: botState.kills,
+        deaths: botState.deaths
+      };
+
+      if (hasPlayerChanged(id, botCompState)) {
+        frame.otherPlayers!.push(botState);
+        lastRecordedStateRef.current.set(id, {
+          pos: bot.pos.clone(),
+          vel: bot.vel.clone(),
+          yaw: bot.yaw,
+          hp: bot.hp,
+          activeWeapon: botState.activeWeapon,
+          weaponState: botState.weaponState,
+          isCrouching: botState.isCrouching,
+          score: botState.score,
+          kills: botState.kills,
+          deaths: botState.deaths
+        });
+      }
+    });
+
+    replayRecordingRef.current.frames.push(frame);
+  };
+
+  const saveCompiledReplay = async () => {
+    const recording = replayRecordingRef.current;
+    if (!recording || recording.frames.length === 0) return;
+
+    // Prevent double-saving
+    replayRecordingRef.current = null;
+
+    // Calculate final duration
+    const s = stateRef.current;
+    recording.duration = s.gameTime;
+
+    try {
+      await cacheReplay(recording);
+      console.log('Match replay compiled and auto-saved successfully! Total frames:', recording.frames.length);
+    } catch (err) {
+      console.error('Failed to auto-save compiled replay:', err);
+    }
+  };
+
+  const runReplayPlaybackLoop = (dt: number) => {
+    const s = stateRef.current;
+    const camera = threeRef.current.camera;
+    const scene = threeRef.current.scene;
+    if (!replayData || !camera || !scene) return;
+
+    const frames = replayData.frames;
+    if (frames.length === 0) return;
+
+    // 1. Advance Playback Time
+    if (!isReplayPausedRef.current) {
+      replayTimeRef.current += dt * replaySpeedRef.current;
+      if (replayTimeRef.current > replayData.duration) {
+        replayTimeRef.current = replayData.duration;
+        isReplayPausedRef.current = true; // Auto-pause at end
+      }
+    }
+
+    const t = replayTimeRef.current;
+
+    // 2. Find nearest enclosing frames A and B
+    let indexA = 0;
+    let indexB = 0;
+    
+    for (let i = 0; i < frames.length; i++) {
+      if (frames[i].time <= t) {
+        indexA = i;
+      } else {
+        indexB = i;
+        break;
+      }
+    }
+    
+    if (indexB === 0) indexB = indexA;
+
+    const frameA = frames[indexA];
+    const frameB = frames[indexB];
+
+    const timeA = frameA.time;
+    const timeB = frameB.time;
+    const alpha = timeB === timeA ? 0 : (t - timeA) / (timeB - timeA);
+
+    // 3. Helper to reconstruct and interpolate a player state
+    const interpolatePlayer = (id: string, name: string, hue: number) => {
+      const stateA = getReconstructedState(id, indexA);
+      const stateB = getReconstructedState(id, indexB);
+      if (!stateA || !stateB) return null;
+
+      // Linear interpolation of coordinates
+      const pos = new THREE.Vector3(
+        stateA.pos.x + (stateB.pos.x - stateA.pos.x) * alpha,
+        stateA.pos.y + (stateB.pos.y - stateA.pos.y) * alpha,
+        stateA.pos.z + (stateB.pos.z - stateA.pos.z) * alpha
+      );
+
+      const vel = new THREE.Vector3(
+        stateA.vel.x + (stateB.vel.x - stateA.vel.x) * alpha,
+        stateA.vel.y + (stateB.vel.y - stateA.vel.y) * alpha,
+        stateA.vel.z + (stateB.vel.z - stateA.vel.z) * alpha
+      );
+
+      // Shortest path angle interpolation for Yaw
+      const yawA = stateA.yaw;
+      const yawB = stateB.yaw;
+      let diffYaw = yawB - yawA;
+      diffYaw = Math.atan2(Math.sin(diffYaw), Math.cos(diffYaw));
+      const yaw = yawA + diffYaw * alpha;
+
+      // Crouch scale interpolation
+      const crouchA = stateA.isCrouching ? 0.65 : 1.0;
+      const crouchB = stateB.isCrouching ? 0.65 : 1.0;
+      const crouchScaleY = crouchA + (crouchB - crouchA) * alpha;
+
+      // Discrete properties (read from A or the nearest frame)
+      const useNearest = alpha > 0.5;
+      const nearestState = useNearest ? stateB : stateA;
+
+      return {
+        pos,
+        vel,
+        yaw,
+        pitch: (nearestState as any).pitch || 0,
+        crouchScaleY,
+        hp: nearestState.hp,
+        activeWeapon: nearestState.activeWeapon,
+        weaponState: nearestState.weaponState,
+        isCrouching: nearestState.isCrouching,
+        score: nearestState.score,
+        kills: nearestState.kills,
+        deaths: nearestState.deaths,
+        respawnTimer: nearestState.respawnTimer,
+        invulnerabilityTimer: nearestState.invulnerabilityTimer
+      };
+    };
+
+    // 4. Interpolate and update all 3D spartan models
+    const updatedPlayers = new Map<string, any>();
+
+    // Recorded Local Player (Blue)
+    const pInterp = interpolatePlayer('player', replayData.playerName, replayData.playerHue);
+    if (pInterp) {
+      updatedPlayers.set('player', { ...pInterp, name: replayData.playerName, hue: replayData.playerHue });
+    }
+
+    // Recorded Main AI (Red)
+    if (replayData.mode !== 'multiplayer') {
+      const aiInterp = interpolatePlayer('main_ai', replayData.opponentName, botColors['main_ai'] ?? 0);
+      if (aiInterp) {
+        updatedPlayers.set('main_ai', { ...aiInterp, name: replayData.opponentName, hue: botColors['main_ai'] ?? 0 });
+      }
+    }
+
+    // Recorded Other Players / Bots
+    const allBotIds = new Set<string>();
+    frames.forEach(f => {
+      if (f.otherPlayers) f.otherPlayers.forEach(p => allBotIds.add(p.id));
+    });
+
+    allBotIds.forEach(id => {
+      let name = 'Bot';
+      let hue = 0;
+      for (const f of frames) {
+        const found = f.otherPlayers?.find(p => p.id === id);
+        if (found) {
+          name = found.playerName;
+          hue = found.hue;
+          break;
+        }
+      }
+
+      const botInterp = interpolatePlayer(id, name, hue);
+      if (botInterp) {
+        updatedPlayers.set(id, { ...botInterp, name, hue });
+      }
+    });
+
+    // 5. Update threeRef meshes using updatedPlayers map
+    updatedPlayers.forEach((player, id) => {
+      let meshes = threeRef.current.otherPlayerMeshes.get(id);
+      if (!meshes) {
+        const group = buildVoxelSpartanModel(id === 'main_ai' || id.startsWith('bot_'), player.hue);
+        scene.add(group);
+
+        const hammer = buildGravityHammerModel(player.hue);
+        hammer.scale.set(0.6, 0.6, 0.6);
+        hammer.position.set(0.5, 1.0 - 0.64, -0.4);
+        hammer.rotation.set(Math.PI / 2, 0, 0);
+        if (group.userData.upperTorso) group.userData.upperTorso.add(hammer);
+        else group.add(hammer);
+
+        const sword = buildKatarSwordModel(player.hue);
+        sword.scale.set(0.6, 0.6, 0.6);
+        sword.position.set(0.5, 1.0 - 0.64, -0.32);
+        sword.rotation.set(Math.PI / 2, 0, -Math.PI / 8);
+        sword.visible = false;
+        if (group.userData.upperTorso) group.userData.upperTorso.add(sword);
+        else group.add(sword);
+
+        const pistol = buildPistolModel(player.hue);
+        pistol.scale.set(0.6, 0.6, 0.6);
+        pistol.position.set(0.5, 1.0 - 0.64, -0.32);
+        pistol.rotation.set(Math.PI / 2, 0, 0);
+        pistol.visible = false;
+        if (group.userData.upperTorso) group.userData.upperTorso.add(pistol);
+        else group.add(pistol);
+
+        meshes = { group, hammer, sword, pistol };
+        threeRef.current.otherPlayerMeshes.set(id, meshes);
+      }
+
+      const { group, hammer, sword, pistol } = meshes;
+
+      // Sync Position, Yaw and Crouch scale y
+      group.position.copy(player.pos);
+      group.rotation.y = player.yaw;
+      group.scale.set(1, player.crouchScaleY, 1);
+
+      // Sync Weapon Visibilities
+      const alive = player.hp > 0 && player.respawnTimer <= 0;
+      group.visible = alive;
+      hammer.visible = alive && player.activeWeapon === 'hammer';
+      sword.visible = alive && player.activeWeapon === 'sword';
+      if (pistol) pistol.visible = alive && player.activeWeapon === 'pistol';
+
+      // Procedural weapon swinging animations
+      if (player.weaponState !== 'ready') {
+        if (player.activeWeapon === 'hammer') {
+          if (player.weaponState === 'swing_up') {
+            hammer.rotation.set(Math.PI / 3, 0, 0);
+          } else if (player.weaponState === 'swing_down') {
+            hammer.rotation.set(Math.PI / 1.1, 0, 0);
+          } else if (player.weaponState === 'recovering') {
+            hammer.rotation.set(Math.PI / 1.8, 0, 0);
+          } else if (player.weaponState === 'melee_swing') {
+            hammer.rotation.set(Math.PI / 2, 0, Math.PI / 4);
+          }
+        } else if (player.activeWeapon === 'sword') {
+          if (player.weaponState === 'slashing') {
+            sword.rotation.set(Math.PI / 3, 0, -Math.PI / 4);
+          } else if (player.weaponState === 'recovering') {
+            sword.rotation.set(Math.PI / 1.8, 0, -Math.PI / 8);
+          }
+        }
+      } else {
+        hammer.rotation.set(Math.PI / 2, 0, 0);
+        sword.rotation.set(Math.PI / 2, 0, -Math.PI / 8);
+      }
+
+      updateBlinking(group, player.invulnerabilityTimer > 0);
+    });
+
+    // Hide unused meshes
+    threeRef.current.otherPlayerMeshes.forEach((meshes, id) => {
+      if (!updatedPlayers.has(id)) {
+        meshes.group.visible = false;
+      }
+    });
+
+    if (threeRef.current.enemyGroup) threeRef.current.enemyGroup.visible = false;
+    if (threeRef.current.hostGroup) threeRef.current.hostGroup.visible = false;
+
+    // 6. Camera Coordination
+    const targetId = replayTargetIdRef.current;
+    if (targetId === 'free') {
+      s.observerCamMode = 'free';
+      const lookTarget = new THREE.Vector3(0, 0, -1)
+        .applyAxisAngle(new THREE.Vector3(1, 0, 0), s.pitch)
+        .applyAxisAngle(new THREE.Vector3(0, 1, 0), s.yaw)
+        .normalize();
+      camera.position.copy(s.playerPos);
+      camera.lookAt(camera.position.clone().add(lookTarget));
+    } else {
+      const targetData = updatedPlayers.get(targetId);
+      if (targetData) {
+        const eyeHeight = 1.65 - (targetData.isCrouching ? 0.72 : 0);
+        const targetEyePos = targetData.pos.clone().setY(targetData.pos.y + eyeHeight);
+
+        if (s.observerCamMode === 'first') {
+          camera.position.copy(targetEyePos);
+          const lookTarget = new THREE.Vector3(0, 0, -1)
+            .applyAxisAngle(new THREE.Vector3(1, 0, 0), targetData.pitch)
+            .applyAxisAngle(new THREE.Vector3(0, 1, 0), targetData.yaw)
+            .normalize();
+          camera.lookAt(camera.position.clone().add(lookTarget));
+        } else if (s.observerCamMode === 'third') {
+          const offset = new THREE.Vector3(0, 0, s.observerOrbitDistance)
+            .applyAxisAngle(new THREE.Vector3(1, 0, 0), s.pitch)
+            .applyAxisAngle(new THREE.Vector3(0, 1, 0), s.yaw);
+          camera.position.copy(targetEyePos.clone().add(offset));
+          camera.lookAt(targetEyePos);
+        }
+      }
+    }
+
+    // 7. Render scene
+    renderGame();
+
+    // 8. Event State Transitions (Audio & Particle cues)
+    if (!isReplayPausedRef.current && dt > 0 && dt < 0.2 && prevReplayFrameRef.current) {
+      const timeDiff = t - prevReplayFrameRef.current.time;
+      if (timeDiff > 0 && timeDiff < 0.2) {
+        updatedPlayers.forEach((player, id) => {
+          let prevState = null;
+          for (let i = indexA - 1; i >= 0; i--) {
+            const f = frames[i];
+            if (id === 'player' && f.player) { prevState = f.player; break; }
+            if (id === 'main_ai' && f.ai) { prevState = f.ai; break; }
+            if (id !== 'player' && id !== 'main_ai' && f.otherPlayers) {
+              const found = f.otherPlayers.find(p => p.id === id);
+              if (found) { prevState = found; break; }
+            }
+          }
+
+          if (prevState) {
+            if (player.hp < prevState.hp) {
+              spawnVoxelShockwaveParticles(player.pos, '#ef4444');
+              if (player.hp <= 0) {
+                sfx.playDeath();
+                spawnVoxelShockwaveParticles(player.pos, '#ef4444');
+                spawnVoxelShockwaveParticles(player.pos, '#ff4d4d');
+              } else {
+                sfx.playSwing();
+              }
+            }
+
+            if (player.hp > 0 && prevState.hp <= 0) {
+              sfx.playRespawn();
+              spawnVoxelShockwaveParticles(player.pos, '#38bdf8');
+            }
+
+            if (player.weaponState !== 'ready' && prevState.weaponState === 'ready') {
+              sfx.playSwing();
+            }
+
+            if (player.isLunging && !prevState.isLunging) {
+              sfx.playDash();
+            }
+          }
+        });
+      }
+    }
+
+    prevReplayFrameRef.current = frameA;
+
+    // 9. Sync HUD stats
+    const playerList = Array.from(updatedPlayers.entries()).map(([id, p]) => ({
+      id,
+      name: p.name,
+      hue: p.hue
+    }));
+
+    const mainPlayer = updatedPlayers.get('player') || { hp: 1, maxHp: 1, score: 0, kills: 0, deaths: 0 };
+    const mainAI = updatedPlayers.get('main_ai') || { hp: 1, maxHp: 1, score: 0, kills: 0, deaths: 0 };
+
+    const spectatedName = targetId === 'free' ? 'Free Cam' : (updatedPlayers.get(targetId)?.name || 'Spartan');
+    const spectatedRole = targetId === 'player' ? 'host' : 'client';
+
+    onStatsUpdate({
+      playerHP: mainPlayer.hp,
+      playerMaxHP: mainPlayer.maxHp !== undefined ? mainPlayer.maxHp : 5,
+      enemyHP: mainAI.hp,
+      enemyMaxHP: mainAI.maxHp !== undefined ? mainAI.maxHp : 5,
+      scorePlayer: mainPlayer.score,
+      scoreEnemy: mainAI.score,
+      gameTime: t,
+      debugMode: false,
+      debugDamageRadius: 4.5,
+      weaponReady: true,
+      weaponCooldown: 1.0,
+      lastStrikePos: null,
+      lastStrikeTick: 0,
+      isCrouching: false,
+      isJumping: false,
+      playerRespawnTimer: 0,
+      enemyRespawnTimer: 0,
+      playerDashCooldownTimer: 0,
+      playerDashReady: true,
+      settings: adminSettings,
+      lastDeaths: [],
+      playerX: mainPlayer.pos.x,
+      playerZ: mainPlayer.pos.z,
+      playerYaw: mainPlayer.yaw,
+      enemyX: mainAI.pos.x,
+      enemyZ: mainAI.pos.z,
+      enemyYaw: mainAI.yaw,
+      enemyIsCrouching: false,
+      playerIsCrouchMoving: false,
+      enemyIsCrouchMoving: false,
+      activeWeapon: 'hammer',
+      crosshairColor: 'white',
+      playerKills: mainPlayer.kills,
+      playerDeaths: mainPlayer.deaths,
+      enemyKills: mainAI.kills,
+      enemyDeaths: mainAI.deaths,
+      isReplayMode: true,
+      replayElapsedTime: t,
+      replayDuration: replayData.duration,
+      replayIsPlaying: !isReplayPausedRef.current,
+      replaySpeedMultiplier: replaySpeedRef.current,
+      replayPlayerList: playerList,
+      replayCurrentTargetId: targetId,
+      isObserverMode: true,
+      observerCamMode: s.observerCamMode,
+      observerTargetName: spectatedName,
+      observerTargetRole: spectatedRole
+    });
+  };
+
   // Handle active game cycles
   useEffect(() => {
     if (!isPlaying || isPaused) return;
+
+    // 1. Initialize Replay Recorder if playing a normal match
+    if (isPlaying && !replayData) {
+      const s = stateRef.current;
+      const isTournament = aiMatchSessionKey && aiMatchSessionKey.startsWith('tournament');
+      const initialOpponentName = opponentPlayerName || 'Red (AI)';
+
+      replayRecordingRef.current = {
+        id: Math.random().toString(36).substring(2, 9),
+        name: `Match Replay - ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`,
+        description: '',
+        date: new Date().toISOString(),
+        duration: 0,
+        playerHue: adminSettings.playerHue ?? 200,
+        playerName: adminSettings.playerName || 'Blue (You)',
+        opponentName: initialOpponentName,
+        mapType: selectedMap || 'hangar',
+        mode: isTournament ? 'tournament' : 'sandbox',
+        maxScore: isTournament ? (matchKillsToWin ?? 25) : 25,
+        frames: []
+      };
+      lastRecordTimeRef.current = 0;
+      lastRecordedStateRef.current.clear();
+      console.log('Match Replay Recording initialized successfully!');
+    }
+
+    // Replay playback event listeners
+    const handleReplayTogglePlay = () => {
+      isReplayPausedRef.current = !isReplayPausedRef.current;
+      console.log('Replay Toggle Play/Pause:', !isReplayPausedRef.current);
+    };
+
+    const handleReplaySeek = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      if (customEvent.detail && typeof customEvent.detail.time === 'number') {
+        replayTimeRef.current = Math.min(replayData?.duration || 0, Math.max(0, customEvent.detail.time));
+        prevReplayFrameRef.current = null; // Reset sfx trigger
+        console.log('Replay Seek to:', replayTimeRef.current);
+      }
+    };
+
+    const handleReplayChangeSpeed = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      if (customEvent.detail && typeof customEvent.detail.speed === 'number') {
+        replaySpeedRef.current = customEvent.detail.speed;
+        console.log('Replay Speed changed to:', replaySpeedRef.current);
+      }
+    };
+
+    const handleReplayChangeTarget = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      if (customEvent.detail && typeof customEvent.detail.id === 'string') {
+        replayTargetIdRef.current = customEvent.detail.id;
+        console.log('Replay Cam Target changed to:', replayTargetIdRef.current);
+      }
+    };
+
+    const handleReplayChangeCamMode = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      if (customEvent.detail && typeof customEvent.detail.mode === 'string') {
+        const s = stateRef.current;
+        s.observerCamMode = customEvent.detail.mode as any;
+        console.log('Replay Cam Mode changed to:', s.observerCamMode);
+      }
+    };
+
+    if (replayData) {
+      window.addEventListener('replay-toggle-play', handleReplayTogglePlay);
+      window.addEventListener('replay-seek', handleReplaySeek);
+      window.addEventListener('replay-change-speed', handleReplayChangeSpeed);
+      window.addEventListener('replay-change-target', handleReplayChangeTarget);
+      window.addEventListener('replay-change-cam-mode', handleReplayChangeCamMode);
+    }
 
     let lastTime = performance.now();
 
@@ -4977,66 +6044,82 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         grifbHoldTimerRef.current = 0;
       }
 
+
+
       // Lazy build Host Spartan model when entering spectator mode
-      if (s.isObserverMode && !threeRef.current.hostGroup) {
+      if (s.isObserverMode && !threeRef.current.hostGroup && !replayData) {
         rebuildHostModel(s.hostHue);
       }
 
-      // Execute game logics
-      updatePhysics(dt);
-      updateHammerAnimations(dt);
-      updateAI(dt);
-      updateCharacterSkeletalAnimations(dt);
-      updateExplosionParticles(dt);
-      updateTracers(dt);
-      updateHammerSplashFlashes(dt);
-      updateSwordLungeSpeedLines(dt);
-      updateBurnDecals(dt);
-      updateMatchTimers(dt);
-      enforceArenaBounds();
+      if (!replayData) {
+        // Execute game logics
+        updatePhysics(dt);
+        updateHammerAnimations(dt);
+        updateAI(dt);
+        updateCharacterSkeletalAnimations(dt);
+        updateExplosionParticles(dt);
+        updateTracers(dt);
+        updateHammerSplashFlashes(dt);
+        updateSwordLungeSpeedLines(dt);
+        updateBurnDecals(dt);
+        updateMatchTimers(dt);
+        enforceArenaBounds();
 
-      // Render loop
-      renderGame();
+        // Render loop
+        renderGame();
 
-      // Update floating nameplate positioning and appearance
-      updateFloatingNameplate();
+        // Update floating nameplate positioning and appearance
+        updateFloatingNameplate();
 
-      // Trigger stats sync
-      pushStatsUpdate();
+        // Trigger stats sync
+        pushStatsUpdate();
 
-      // Synchronously update HUD Radar elements directly at 60fps 
-      updateRadarDOM();
+        // Synchronously update HUD Radar elements directly at 60fps 
+        updateRadarDOM();
 
-      // Emit multiplayer synchronization payload
-      if (isMultiplayer && multiplayerRole !== 'observer' && multiplayerSocket && multiplayerSocket.readyState === WebSocket.OPEN) {
-        const s = stateRef.current;
-        multiplayerSocket.send(JSON.stringify({
-          type: 'sync',
-          pos: { x: s.playerPos.x, y: s.playerPos.y, z: s.playerPos.z },
-          vel: { x: s.playerVel.x, y: s.playerVel.y, z: s.playerVel.z },
-          yaw: s.yaw,
-          pitch: s.pitch,
-          hp: s.playerHP,
-          maxHp: s.playerMaxHP,
-          isCrouching: s.isCrouching,
-          activeWeapon: s.activeWeapon,
-          respawnTimer: s.playerRespawnTimer,
-          invulnerabilityTimer: s.playerInvulnerabilityTimer,
-          hue: s.settings.playerHue,
-          playerName: s.settings.playerName, // Send custom name!
-          
-          ...(multiplayerRole === 'host' ? {
-            scoreHost: s.scorePlayer,
-            scoreClient: s.scoreEnemy,
-            killsHost: s.playerKills,
-            deathsHost: s.playerDeaths,
-            killsClient: s.enemyKills,
-            deathsClient: s.enemyDeaths,
-            gameTime: s.gameTime
-          } : {
-            clientHP: s.playerHP
-          })
-        }));
+        // Emit multiplayer synchronization payload
+        if (isMultiplayer && multiplayerRole !== 'observer' && multiplayerSocket && multiplayerSocket.readyState === WebSocket.OPEN) {
+          const s = stateRef.current;
+          multiplayerSocket.send(JSON.stringify({
+            type: 'sync',
+            pos: { x: s.playerPos.x, y: s.playerPos.y, z: s.playerPos.z },
+            vel: { x: s.playerVel.x, y: s.playerVel.y, z: s.playerVel.z },
+            yaw: s.yaw,
+            pitch: s.pitch,
+            hp: s.playerHP,
+            maxHp: s.playerMaxHP,
+            isCrouching: s.isCrouching,
+            activeWeapon: s.activeWeapon,
+            respawnTimer: s.playerRespawnTimer,
+            invulnerabilityTimer: s.playerInvulnerabilityTimer,
+            hue: s.settings.playerHue,
+            playerName: s.settings.playerName, // Send custom name!
+            
+            ...(multiplayerRole === 'host' ? {
+              scoreHost: s.scorePlayer,
+              scoreClient: s.scoreEnemy,
+              killsHost: s.playerKills,
+              deathsHost: s.playerDeaths,
+              killsClient: s.enemyKills,
+              deathsClient: s.enemyDeaths,
+              gameTime: s.gameTime
+            } : {
+              clientHP: s.playerHP
+            })
+          }));
+        }
+
+        // Capture Replay Frame every 50ms (20Hz)
+        if (replayRecordingRef.current) {
+          const currentMatchTime = s.gameTime;
+          if (currentMatchTime - lastRecordTimeRef.current >= 0.05) {
+            lastRecordTimeRef.current = currentMatchTime;
+            recordReplayFrame(currentMatchTime);
+          }
+        }
+      } else {
+        // Run Replay Playback simulation
+        runReplayPlaybackLoop(dt);
       }
 
       requestRef.current = requestAnimationFrame(loop);
@@ -5048,6 +6131,15 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       if (requestRef.current) {
         cancelAnimationFrame(requestRef.current);
       }
+      if (replayData) {
+        window.removeEventListener('replay-toggle-play', handleReplayTogglePlay);
+        window.removeEventListener('replay-seek', handleReplaySeek);
+        window.removeEventListener('replay-change-speed', handleReplayChangeSpeed);
+        window.removeEventListener('replay-change-target', handleReplayChangeTarget);
+        window.removeEventListener('replay-change-cam-mode', handleReplayChangeCamMode);
+      }
+      // Save compiled replay on unmount
+      saveCompiledReplay();
     };
   }, [isPlaying, isPaused, isMultiplayer, multiplayerRole, multiplayerSocket]);
 
@@ -5619,37 +6711,6 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     s.aiWeaponState = 'ready';
     s.lastAISwordAttackTime = Date.now();
     sfx.playDash();
-  };
-
-  // SWAPS ENEMY WEAPON
-  const swapEnemyWeapon = (type: 'hammer' | 'sword') => {
-    const s = stateRef.current;
-    if (s.aiHP <= 0 || isPaused || !isPlaying) return;
-    if (s.aiState === 'LUNGING') return;
-
-    if (s.aiSwapLockoutTimer > 0) return;
-
-    if (s.aiActiveWeapon !== type) {
-      s.aiActiveWeapon = type;
-      if (s.settings.weaponReadyTime > 0) {
-        s.aiSwapCooldownTimer = s.settings.weaponReadyTime;
-      }
-      if (s.settings.weaponSwapLockout > 0) {
-        s.aiSwapLockoutTimer = s.settings.weaponSwapLockout;
-      }
-    }
-
-    const hammer = threeRef.current.enemyHammer;
-    const sword = threeRef.current.enemySword;
-    if (hammer && sword) {
-      if (type === 'hammer') {
-        hammer.visible = true;
-        sword.visible = false;
-      } else {
-        hammer.visible = false;
-        sword.visible = true;
-      }
-    }
   };
 
   const getLocalPlayerFeedName = () => {
@@ -7671,6 +8732,12 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       const distToBase = impactPos.distanceTo(s.aiPos);
       if (distToBase <= (s.settings.hammerJumpTriggerRadius ?? 3.5)) {
         s.aiHammerJumpWindowTimer = s.settings.hammerJumpWindow ?? 0.6;
+        if (s.aiHammerJumpPlanned) {
+          s.aiIsJumping = true;
+          s.aiVel.y = 7.2 + (s.settings.hammerJumpPower ?? 6.5);
+          sfx.playJump();
+          spawnVoxelShockwaveParticles(s.aiPos, '#f59e0b');
+        }
       }
       s.aiHammerJumpPlanned = false;
       s.aiHammerJumpType = undefined;
@@ -8116,45 +9183,27 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       });
     }
 
-    if (botId !== 'main_ai' && s.aiHP > 0 && s.aiState !== 'RESPAWNING') {
-      potentialTargets.push({
-        id: 'main_ai',
-        pos: s.aiPos,
-        hp: s.aiHP,
-        maxHp: s.aiMaxHP,
-        invulnerabilityTimer: s.aiInvulnerabilityTimer,
-        activeWeapon: s.aiActiveWeapon,
-        weaponState: s.aiState === 'COOLDOWN' && s.aiTimer > 0 ? 'recovering' : s.aiWeaponState,
-        isLunging: s.aiState === 'LUNGING',
-        dashCooldownRemaining: s.aiDashCooldownTimer,
-        swapLockoutRemaining: s.aiSwapLockoutTimer,
-        vel: s.aiVel,
-        isCrouching: s.aiIsCrouching,
-        playerName: 'Red (AI)'
-      });
-    }
-
-    if (s.otherPlayers) {
-      s.otherPlayers.forEach((other) => {
-        if (other.id !== botId && other.hp > 0 && other.respawnTimer <= 0) {
-          potentialTargets.push({
-            id: other.id,
-            pos: new THREE.Vector3(other.pos.x, other.pos.y, other.pos.z),
-            hp: other.hp,
-            maxHp: other.maxHp,
-            invulnerabilityTimer: other.invulnerabilityTimer || 0,
-            activeWeapon: other.activeWeapon,
-            weaponState: other.aiState === 'COOLDOWN' && (other.aiTimer || 0) > 0 ? 'recovering' : (other.weaponState || 'ready'),
-            isLunging: other.isLunging || other.weaponState === 'swing_up' || other.weaponState === 'swing_down',
-            dashCooldownRemaining: other.aiDashCooldownTimer || 0,
-            swapLockoutRemaining: other.swapLockoutTimer || 0,
-            vel: new THREE.Vector3(other.vel.x, other.vel.y, other.vel.z),
-            isCrouching: other.isCrouching || false,
-            playerName: other.playerName
-          });
-        }
-      });
-    }
+    // Every AI combatant (main AI + bots) is sourced uniformly from getAllCombatants
+    // — no main-AI special case. The querying combatant excludes itself by id.
+    getAllCombatants().forEach((other) => {
+      if (other.id !== botId && other.hp > 0 && (other.respawnTimer ?? 0) <= 0) {
+        potentialTargets.push({
+          id: other.id,
+          pos: new THREE.Vector3(other.pos.x, other.pos.y, other.pos.z),
+          hp: other.hp,
+          maxHp: other.maxHp,
+          invulnerabilityTimer: other.invulnerabilityTimer || 0,
+          activeWeapon: other.activeWeapon,
+          weaponState: other.aiState === 'COOLDOWN' && (other.aiTimer || 0) > 0 ? 'recovering' : (other.weaponState || 'ready'),
+          isLunging: other.isLunging || other.weaponState === 'swing_up' || other.weaponState === 'swing_down',
+          dashCooldownRemaining: other.aiDashCooldownTimer || 0,
+          swapLockoutRemaining: other.swapLockoutTimer || 0,
+          vel: new THREE.Vector3(other.vel.x, other.vel.y, other.vel.z),
+          isCrouching: other.isCrouching || false,
+          playerName: other.playerName
+        });
+      }
+    });
 
     return potentialTargets;
   };
@@ -8384,47 +9433,46 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     });
   };
 
-  const canStartAIHammerJump = (isMainAI: boolean, botState: any, pos: THREE.Vector3, vel: THREE.Vector3): boolean => {
-    const s = stateRef.current;
-    const cooldown = isMainAI ? s.aiHammerJumpCooldownTimer : (botState?.aiHammerJumpCooldownTimer ?? 0);
-    const isAirborne = isMainAI
-      ? (s.aiIsJumping || pos.y > AI_HAMMER_JUMP_START_MAX_HEIGHT || Math.abs(s.aiVel.y) > AI_HAMMER_JUMP_VERTICAL_VELOCITY_EPSILON)
-      : (pos.y > AI_HAMMER_JUMP_START_MAX_HEIGHT || Math.abs(vel.y) > AI_HAMMER_JUMP_VERTICAL_VELOCITY_EPSILON);
+  const canStartAIHammerJump = (self: any, pos: THREE.Vector3, vel: THREE.Vector3): boolean => {
+    const cooldown = self.aiHammerJumpCooldownTimer ?? 0;
+    const isAirborne =
+      self.isJumping ||
+      pos.y > AI_HAMMER_JUMP_START_MAX_HEIGHT ||
+      Math.abs(vel.y) > AI_HAMMER_JUMP_VERTICAL_VELOCITY_EPSILON;
 
     return cooldown <= 0 && !isAirborne;
   };
 
   const startAIHammerJump = (
-    isMainAI: boolean,
-    botState: any,
+    self: any,
     pos: THREE.Vector3,
     vel: THREE.Vector3,
     horizontalHeading?: THREE.Vector3,
     jumpType: 'offensive' | 'defensive' = 'offensive'
   ): boolean => {
     const s = stateRef.current;
-    if (!canStartAIHammerJump(isMainAI, botState, pos, vel)) {
+    if (!canStartAIHammerJump(self, pos, vel)) {
       return false;
     }
 
-    if (isMainAI) {
+    if (self.id === 'main_ai') {
+      // The main AI plans the jump and lifts off when its hammer swing connects.
       s.aiHammerJumpPlanned = true;
       s.aiHammerJumpType = jumpType;
       s.aiHammerJumpCooldownTimer = AI_HAMMER_JUMP_COOLDOWN;
       triggerEnemyHammerSwing();
     } else {
-      botState!.weaponState = 'swing_up';
-      botState!.weaponTimer = 0;
-      botState!.vel.y = 7.2 + (s.settings.hammerJumpPower ?? 6.5);
-      vel.y = botState!.vel.y;
+      // Bots lift off immediately.
+      self.weaponState = 'swing_up';
+      self.weaponTimer = 0;
+      vel.y = 7.2 + (s.settings.hammerJumpPower ?? 6.5);
+      self.isJumping = true;
       if (horizontalHeading && horizontalHeading.lengthSq() > 0.0001) {
         const jumpHeading = horizontalHeading.clone().normalize();
-        botState!.vel.x = jumpHeading.x * 6.5;
-        botState!.vel.z = jumpHeading.z * 6.5;
-        vel.x = botState!.vel.x;
-        vel.z = botState!.vel.z;
+        vel.x = jumpHeading.x * 6.5;
+        vel.z = jumpHeading.z * 6.5;
       }
-      botState!.aiHammerJumpCooldownTimer = AI_HAMMER_JUMP_COOLDOWN;
+      self.aiHammerJumpCooldownTimer = AI_HAMMER_JUMP_COOLDOWN;
       sfx.playSwing();
       sfx.playJump();
     }
@@ -8432,160 +9480,349 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     return true;
   };
 
-  const updateSingleAIEntity = (botId: string, isMainAI: boolean, dt: number) => {
+  // The main AI as a single, durable Combatant that OWNS its scalar combat state
+  // (the source-of-truth flip). Each flat s.aiXxx SCALAR field is redefined as a
+  // forwarder into this object, so the ~506 existing readers of s.aiXxx keep working
+  // unchanged while the canonical value now lives on the Combatant. Vectors
+  // (pos/vel/lunge dirs/dash dir) and the team-score fields stay canonical on
+  // stateRef and are exposed here via accessors (vectors are shared instances; the
+  // dash-dir setter copies into the live Vector3). Created and installed once, cached.
+  const getMainAICombatant = (): Combatant => {
+    if (mainAICombatantRef.current) return mainAICombatantRef.current;
     const s = stateRef.current;
-    const botState = isMainAI ? null : s.otherPlayers.get(botId);
-    if (!isMainAI && !botState) return;
 
-    const botMesh = isMainAI 
-      ? threeRef.current.enemyGroup 
-      : threeRef.current.otherPlayerMeshes?.get(botId)?.group;
+    // Canonical scalar state, seeded from the current flat values before the flip.
+    const c: any = {
+      id: 'main_ai',
+      playerName: 'Red (AI)',
+      hp: s.aiHP,
+      maxHp: s.aiMaxHP,
+      yaw: s.aiYaw,
+      isCrouching: s.aiIsCrouching,
+      isJumping: s.aiIsJumping,
+      activeWeapon: s.aiActiveWeapon,
+      weaponState: s.aiWeaponState,
+      weaponTimer: s.aiWeaponTimer,
+      aiState: s.aiState,
+      aiTimer: s.aiTimer,
+      aiSwayTimer: s.aiSwayTimer,
+      aiDashCooldownTimer: s.aiDashCooldownTimer,
+      aiDashRemaining: s.aiDashRemaining,
+      aiSlideActive: s.aiSlideActive,
+      aiSlideDistanceTraveled: s.aiSlideDistanceTraveled,
+      aiSlideCooldownTimer: s.aiSlideCooldownTimer,
+      aiIsSprinting: s.aiIsSprinting,
+      aiHammerJumpCooldownTimer: s.aiHammerJumpCooldownTimer,
+      aiCoordCommitTimer: s.aiCoordCommitTimer,
+      aiPendingPostEvasionCharge: s.aiPendingPostEvasionCharge,
+      aiPostLungeDecisionTimer: s.aiPostLungeDecisionTimer,
+      aiLastLungeOutcome: s.aiLastLungeOutcome,
+      aiLastLungeTargetId: s.aiLastLungeTargetId,
+      aiPressureTargetId: s.aiPressureTargetId,
+      swapLockoutTimer: s.aiSwapLockoutTimer,
+      invulnerabilityTimer: s.aiInvulnerabilityTimer,
+      spawnTime: s.aiSpawnTime,
+      lungeTimer: s.aiLungeTimer,
+    };
+
+    // Vectors remain canonical on stateRef (shared instances), exposed here. aiDashDir
+    // is stored as a Vector3 on stateRef but presented as {x,y,z}; its setter copies in.
+    Object.defineProperty(c, 'pos', { get: () => stateRef.current.aiPos, enumerable: true });
+    Object.defineProperty(c, 'vel', { get: () => stateRef.current.aiVel, enumerable: true });
+    Object.defineProperty(c, 'lungeStartPos', {
+      get: () => stateRef.current.aiLungeStartPos,
+      set: (v: any) => { stateRef.current.aiLungeStartPos.copy(v); },
+      enumerable: true,
+    });
+    Object.defineProperty(c, 'lungeTargetDir', {
+      get: () => stateRef.current.aiLungeTargetDir,
+      set: (v: any) => { stateRef.current.aiLungeTargetDir.copy(v); },
+      enumerable: true,
+    });
+    Object.defineProperty(c, 'aiDashDir', {
+      get: () => stateRef.current.aiDashDir,
+      set: (v: any) => { stateRef.current.aiDashDir.copy(v); },
+      enumerable: true,
+    });
+
+    // isLunging derives from this object's own aiState.
+    Object.defineProperty(c, 'isLunging', {
+      get: () => c.aiState === 'LUNGING',
+      set: (v: boolean) => { if (v) { c.aiState = 'LUNGING'; } else if (c.aiState === 'LUNGING') { c.aiState = 'COOLDOWN'; } },
+      enumerable: true,
+    });
+
+    // Team-level scoring stays canonical on stateRef; the main AI forwards to it.
+    Object.defineProperty(c, 'score', { get: () => stateRef.current.scoreEnemy, set: (v: number) => { stateRef.current.scoreEnemy = v; }, enumerable: true });
+    Object.defineProperty(c, 'kills', { get: () => stateRef.current.enemyKills, set: (v: number) => { stateRef.current.enemyKills = v; }, enumerable: true });
+    Object.defineProperty(c, 'deaths', { get: () => stateRef.current.enemyDeaths, set: (v: number) => { stateRef.current.enemyDeaths = v; }, enumerable: true });
+    Object.defineProperty(c, 'respawnTimer', {
+      get: () => stateRef.current.enemyRespawnTimer,
+      set: (v: number) => { stateRef.current.enemyRespawnTimer = v; if (v > 0) c.aiState = 'RESPAWNING'; },
+      enumerable: true,
+    });
+    // Attack timestamps live in the main AI's flat lastAI* fields; forward to them.
+    Object.defineProperty(c, 'lastSwordAttackTime', { get: () => stateRef.current.lastAISwordAttackTime, set: (v: number) => { stateRef.current.lastAISwordAttackTime = v; }, enumerable: true });
+    Object.defineProperty(c, 'lastHammerAttackTime', { get: () => stateRef.current.lastAIHammerAttackTime, set: (v: number) => { stateRef.current.lastAIHammerAttackTime = v; }, enumerable: true });
+
+    // The flip: redefine each flat scalar field as a forwarder into the Combatant so
+    // every existing reader of s.aiXxx now sees the Combatant-owned value.
+    const scalarMap: [string, string][] = [
+      ['aiHP', 'hp'], ['aiMaxHP', 'maxHp'], ['aiYaw', 'yaw'], ['aiIsCrouching', 'isCrouching'],
+      ['aiIsJumping', 'isJumping'], ['aiActiveWeapon', 'activeWeapon'], ['aiWeaponState', 'weaponState'],
+      ['aiWeaponTimer', 'weaponTimer'], ['aiState', 'aiState'], ['aiTimer', 'aiTimer'],
+      ['aiSwayTimer', 'aiSwayTimer'], ['aiDashCooldownTimer', 'aiDashCooldownTimer'],
+      ['aiDashRemaining', 'aiDashRemaining'], ['aiSlideActive', 'aiSlideActive'],
+      ['aiSlideDistanceTraveled', 'aiSlideDistanceTraveled'], ['aiSlideCooldownTimer', 'aiSlideCooldownTimer'],
+      ['aiIsSprinting', 'aiIsSprinting'], ['aiHammerJumpCooldownTimer', 'aiHammerJumpCooldownTimer'],
+      ['aiCoordCommitTimer', 'aiCoordCommitTimer'], ['aiPendingPostEvasionCharge', 'aiPendingPostEvasionCharge'],
+      ['aiPostLungeDecisionTimer', 'aiPostLungeDecisionTimer'], ['aiLastLungeOutcome', 'aiLastLungeOutcome'],
+      ['aiLastLungeTargetId', 'aiLastLungeTargetId'], ['aiPressureTargetId', 'aiPressureTargetId'],
+      ['aiSwapLockoutTimer', 'swapLockoutTimer'], ['aiInvulnerabilityTimer', 'invulnerabilityTimer'],
+      ['aiSpawnTime', 'spawnTime'], ['aiLungeTimer', 'lungeTimer'],
+    ];
+    for (const [flat, key] of scalarMap) {
+      Object.defineProperty(stateRef.current, flat, {
+        get() { return c[key]; },
+        set(v) { c[key] = v; },
+        configurable: true,
+        enumerable: true,
+      });
+    }
+
+    mainAICombatantRef.current = c as Combatant;
+    return c as Combatant;
+  };
+
+  // The single source of truth for "every AI-driven combatant" — the main AI plus
+  // all additional bots — as one uniform Combatant list. AI/combat code (targeting,
+  // coordination, damage) iterates this instead of special-casing the main AI vs the
+  // otherPlayers map. The main AI is only an AI combatant offline; in multiplayer the
+  // local AI doesn't run and the map holds remote players instead. Rendering,
+  // collision and networking keep using the raw otherPlayers map (the main AI has a
+  // bespoke mesh and is intentionally not a member there).
+  const getAllCombatants = (): Combatant[] => {
+    const s = stateRef.current;
+    const list: Combatant[] = [];
+    if (!s.isMultiplayer) list.push(getMainAICombatant());
+    s.otherPlayers.forEach((c) => list.push(c));
+    return list;
+  };
+
+  // The render mesh for a combatant. The main AI uses the bespoke enemyGroup; bots
+  // use their entry in the otherPlayerMeshes map. This is the one intentional
+  // per-combatant difference (the main AI's model rig is built separately).
+  const getCombatantMesh = (id: string): THREE.Object3D | undefined =>
+    id === 'main_ai'
+      ? threeRef.current.enemyGroup
+      : threeRef.current.otherPlayerMeshes?.get(id)?.group;
+
+  // The (hammer, sword) display-mesh pair for a combatant. The main AI swaps the
+  // bespoke enemyGroup rig (enemyHammer/enemySword); bots toggle the hammer/sword
+  // sub-meshes on their otherPlayerMeshes entry.
+  const getCombatantWeaponMeshes = (id: string): { hammer?: THREE.Object3D; sword?: THREE.Object3D } | undefined =>
+    id === 'main_ai'
+      ? { hammer: threeRef.current.enemyHammer, sword: threeRef.current.enemySword }
+      : threeRef.current.otherPlayerMeshes?.get(id);
+
+  // Start an attack for any combatant through the shared `self` accessor. Overhand
+  // sword slashes and hammer swings use 'swing_up'; the hammer side-swipe melee uses
+  // 'melee_up'. Records the matching attack timestamp and plays the swing sfx. Replaces
+  // the per-combatant fork (main called triggerEnemySwordSlash/HammerSwing/HammerMelee;
+  // bots set weaponState directly). Note: the main AI's old triggers also bailed during
+  // weapon-swap cooldown / dash — those guards are dropped here since the call sites
+  // already gate on weaponState === 'ready' and dash state.
+  const triggerCombatantAttack = (self: any, weapon: 'hammer' | 'sword', melee = false) => {
+    self.weaponState = melee ? 'melee_up' : 'swing_up';
+    self.weaponTimer = 0;
+    if (weapon === 'sword') {
+      self.lastSwordAttackTime = Date.now();
+    } else {
+      self.lastHammerAttackTime = Date.now();
+    }
+    sfx.playSwing();
+  };
+
+  // Initiate a sword lunge for any AI combatant (main AI or bot) through one path.
+  // Callers have already biased + normalized lungeDir and rejected zero-length dirs.
+  // The main-AI's lungeStartPos/lungeTargetDir bridge setters .copy() into the live
+  // Vector3s; bots get plain {x,y,z}. Convergence vs the old main-only
+  // triggerEnemySwordLunge: bots now set isJumping + record lastSwordAttackTime, and
+  // the main AI no longer short-circuits on swap-cooldown/dash-remaining here (the
+  // network-replay path at the lunge_sword handler still uses triggerEnemySwordLunge).
+  const triggerCombatantLunge = (self: any, lungeDir: THREE.Vector3, pos: THREE.Vector3, vel: THREE.Vector3) => {
+    const s = stateRef.current;
+    self.isLunging = true;
+    self.lungeTimer = 0;
+    self.lungeStartPos = { x: pos.x, y: pos.y, z: pos.z };
+    self.lungeTargetDir = { x: lungeDir.x, y: lungeDir.y, z: lungeDir.z };
+    const lungeSpeed = s.settings.swordLungeSpeed ?? 24.0;
+    vel.y = Math.max(vel.y, lungeDir.y * lungeSpeed);
+    self.isJumping = pos.y > 0.01 || vel.y > 0.01;
+    self.weaponState = 'ready';
+    self.lastSwordAttackTime = Date.now();
+    sfx.playDash();
+  };
+
+  // Swap any AI combatant's active weapon + toggle its display meshes through one path.
+  // `setLockout` re-arms the swap-lockout timer (the tactical-swap site does; the feint
+  // revert and spawn telegraph don't). Convergence vs the old main-only swapEnemyWeapon:
+  // the main AI no longer sets the weaponReadyTime swap cooldown (aiSwapCooldownTimer) —
+  // that field is inert in the unified attack/lunge tick (only the network-replay
+  // triggers still read it) — and drops the HP/paused/LUNGING guards (these call sites
+  // are already inside the live AI tick, gated on lockout where it matters).
+  const swapCombatantWeapon = (self: any, type: 'hammer' | 'sword', setLockout = false) => {
+    const s = stateRef.current;
+    self.activeWeapon = type;
+    if (setLockout && s.settings.weaponSwapLockout > 0) {
+      self.swapLockoutTimer = s.settings.weaponSwapLockout;
+    }
+    const meshes = getCombatantWeaponMeshes(self.id);
+    if (meshes && meshes.hammer && meshes.sword) {
+      meshes.hammer.visible = type === 'hammer';
+      meshes.sword.visible = type === 'sword';
+    }
+  };
+
+  // Respawn any AI combatant (main AI or bot) through one routine. Common state is
+  // reset via the Combatant interface; the main AI's bespoke flat-only fields
+  // (planned hammer jump, swap cooldown, jump flag, pressure target) are reset in a
+  // small id-guarded block. Spawn point avoids the player and every other live
+  // combatant. `mesh` is the combatant's render group (enemyGroup / otherPlayerMeshes).
+  const respawnCombatant = (c: Combatant, mesh: THREE.Object3D) => {
+    const s = stateRef.current;
+    c.hp = c.maxHp;
+
+    const exclude: THREE.Vector3[] = [s.playerPos];
+    getAllCombatants().forEach((o) => {
+      if (o.id !== c.id && o.hp > 0 && (o.respawnTimer ?? 0) <= 0) {
+        exclude.push(new THREE.Vector3(o.pos.x, o.pos.y, o.pos.z));
+      }
+    });
+    const spawnPos = getOptimalSpawnPoint(exclude);
+    c.pos.copy(spawnPos);
+    c.vel.set(0, 0, 0);
+    c.yaw = getInwardSpawnYaw(spawnPos);
+
+    c.weaponState = 'ready';
+    c.weaponTimer = 0;
+    c.aiHammerJumpCooldownTimer = 0;
+    c.invulnerabilityTimer = s.settings.respawnInvulnerabilityDuration;
+    c.spawnTime = Date.now();
+
+    // Reset combat state so the respawned combatant re-acquires and closes on targets
+    // instead of keeping pre-death micro-spacing state.
+    c.isLunging = false;
+    c.aiState = 'APPROACHING';
+    c.aiTimer = 0;
+    c.aiDashRemaining = 0;
+    c.aiLastLungeOutcome = undefined;
+    c.aiLastLungeTargetId = undefined;
+    c.aiPostLungeDecisionTimer = 0;
+    c.aiPendingPostEvasionCharge = false;
+    c.aiCoordCommitTimer = 0;
+    c.swapLockoutTimer = 0;
+    clearBotComboState(s.aiMatchContext, c.id);
+    clearPressureTarget(c.id);
+
+    // Main-AI-only flat fields with no bot equivalent.
+    if (c.id === 'main_ai') {
+      s.aiIsJumping = false;
+      s.aiHammerJumpPlanned = false;
+      s.aiHammerJumpType = undefined;
+      s.aiSwapCooldownTimer = 0;
+      s.aiPressureTargetId = undefined;
+    }
+
+    mesh.visible = true;
+    sfx.playRespawn();
+  };
+
+  const updateSingleAIEntity = (botId: string, dt: number) => {
+    const s = stateRef.current;
+    const isMainAI = botId === 'main_ai';
+
+    // Unified combatant accessor. For additional bots this is the bot state object from
+    // otherPlayers; for the main AI it is the persistent Combatant that owns the flat
+    // s.aiXxx fields (see getMainAICombatant). All per-entity state flows through `self`
+    // (loosely typed so optional Combatant fields don't trip "possibly undefined"),
+    // which is what lets one code path serve both instead of `isMainAI ? ... : ...`.
+    const self: any = isMainAI ? getMainAICombatant() : s.otherPlayers.get(botId);
+    if (!self) return;
+
+    const botMesh = getCombatantMesh(botId);
     if (!botMesh) return;
 
-    const hp = isMainAI ? s.aiHP : botState!.hp;
+    const hp = self.hp;
     if (hp <= 0) return;
 
     // Tick down invulnerability timer
-    if (isMainAI) {
-      if (s.aiInvulnerabilityTimer > 0) {
-        s.aiInvulnerabilityTimer = Math.max(0, s.aiInvulnerabilityTimer - dt);
-      }
-    } else {
-      if (botState!.invulnerabilityTimer && botState!.invulnerabilityTimer > 0) {
-        botState!.invulnerabilityTimer = Math.max(0, botState!.invulnerabilityTimer - dt);
-      }
+    if ((self.invulnerabilityTimer ?? 0) > 0) {
+      self.invulnerabilityTimer = Math.max(0, self.invulnerabilityTimer - dt);
     }
 
-    if (isMainAI) {
-      if (!s.aiState) s.aiState = 'APPROACHING';
-      if (s.aiTimer === undefined) s.aiTimer = 0;
-      if (s.aiSwayTimer === undefined) s.aiSwayTimer = 0;
-      if (s.aiDashCooldownTimer === undefined) s.aiDashCooldownTimer = 0;
-      if (s.aiDashRemaining === undefined) s.aiDashRemaining = 0;
-      if (s.aiDashDir === undefined) s.aiDashDir = new THREE.Vector3();
-      if (s.aiSlideActive === undefined) s.aiSlideActive = false;
-      if (s.aiSlideDistanceTraveled === undefined) s.aiSlideDistanceTraveled = 0;
-      if (s.aiSlideCooldownTimer === undefined) s.aiSlideCooldownTimer = 0;
-      if (s.aiPostLungeDecisionTimer === undefined) s.aiPostLungeDecisionTimer = 0;
-      if (s.aiPendingPostEvasionCharge === undefined) s.aiPendingPostEvasionCharge = false;
-    } else {
-      const b = botState!;
-      if (!b.aiState) b.aiState = 'APPROACHING';
-      if (b.aiTimer === undefined) b.aiTimer = 0;
-      if (b.aiSwayTimer === undefined) b.aiSwayTimer = Math.random() * Math.PI;
-      if (b.aiDashCooldownTimer === undefined) b.aiDashCooldownTimer = 0;
-      if (b.aiDashRemaining === undefined) b.aiDashRemaining = 0;
-      if (b.aiDashDir === undefined) b.aiDashDir = { x: 0, y: 0, z: 0 };
-      if (b.aiSlideActive === undefined) b.aiSlideActive = false;
-      if (b.aiSlideDistanceTraveled === undefined) b.aiSlideDistanceTraveled = 0;
-      if (b.aiSlideCooldownTimer === undefined) b.aiSlideCooldownTimer = 0;
-      if (b.aiHammerJumpCooldownTimer === undefined) b.aiHammerJumpCooldownTimer = 0;
-      if (b.aiPostLungeDecisionTimer === undefined) b.aiPostLungeDecisionTimer = 0;
-      if (b.aiPendingPostEvasionCharge === undefined) b.aiPendingPostEvasionCharge = false;
-    }
+    // Initialize AI sub-state defaults on first tick (no-op for the main AI, whose
+    // Combatant is seeded from its flat state).
+    if (!self.aiState) self.aiState = 'APPROACHING';
+    if (self.aiTimer === undefined) self.aiTimer = 0;
+    if (self.aiSwayTimer === undefined) self.aiSwayTimer = Math.random() * Math.PI;
+    if (self.aiDashCooldownTimer === undefined) self.aiDashCooldownTimer = 0;
+    if (self.aiDashRemaining === undefined) self.aiDashRemaining = 0;
+    if (self.aiDashDir === undefined) self.aiDashDir = { x: 0, y: 0, z: 0 };
+    if (self.aiSlideActive === undefined) self.aiSlideActive = false;
+    if (self.aiSlideDistanceTraveled === undefined) self.aiSlideDistanceTraveled = 0;
+    if (self.aiSlideCooldownTimer === undefined) self.aiSlideCooldownTimer = 0;
+    if (self.aiHammerJumpCooldownTimer === undefined) self.aiHammerJumpCooldownTimer = 0;
+    if (self.aiPostLungeDecisionTimer === undefined) self.aiPostLungeDecisionTimer = 0;
+    if (self.aiPendingPostEvasionCharge === undefined) self.aiPendingPostEvasionCharge = false;
 
-    let pendingPostEvasionCharge = isMainAI
-      ? (s.aiPendingPostEvasionCharge ?? false)
-      : (botState!.aiPendingPostEvasionCharge ?? false);
+    let pendingPostEvasionCharge = self.aiPendingPostEvasionCharge ?? false;
 
-    const pos = isMainAI ? s.aiPos : new THREE.Vector3(botState!.pos.x, botState!.pos.y, botState!.pos.z);
-    const vel = isMainAI ? s.aiVel : new THREE.Vector3(botState!.vel.x, botState!.vel.y, botState!.vel.z);
-    let yaw = isMainAI ? s.aiYaw : botState!.yaw;
-    let activeWeapon = isMainAI ? s.aiActiveWeapon : botState!.activeWeapon;
-    let weaponState = isMainAI ? s.aiWeaponState : (botState!.weaponState || 'ready');
+    // pos/vel keep the working-copy vs live-ref distinction: the main AI mutates its
+    // flat vectors in place (self.pos/self.vel alias s.aiPos/s.aiVel), while a bot edits
+    // a copy of self.pos/self.vel that syncStateAndMesh writes back.
+    const pos = isMainAI ? self.pos : new THREE.Vector3().copy(self.pos);
+    const vel = isMainAI ? self.vel : new THREE.Vector3().copy(self.vel);
+    let yaw = self.yaw;
+    let activeWeapon = self.activeWeapon;
+    let weaponState = self.weaponState || 'ready';
 
-    // Unified combatant accessor. For additional bots this is just the bot state
-    // object; for the main AI it aliases the flat s.aiXxx fields behind the same
-    // bot-shaped interface, so the shared lunge/trade/finish logic can drive both
-    // through one code path instead of two divergent methodologies. The main AI's
-    // pos/vel getters return the working `pos`/`vel` locals, which are themselves
-    // aliases of s.aiPos/s.aiVel above.
-    const self: any = isMainAI ? {
-      id: 'main_ai',
-      get playerName() { return 'Red (AI)'; },
-      get hp() { return s.aiHP; },
-      set hp(v: number) { s.aiHP = v; },
-      get respawnTimer() { return s.enemyRespawnTimer; },
-      set respawnTimer(v: number) { s.enemyRespawnTimer = v; if (v > 0) s.aiState = 'RESPAWNING'; },
-      get deaths() { return s.enemyDeaths; },
-      set deaths(v: number) { s.enemyDeaths = v; },
-      get score() { return s.scoreEnemy; },
-      set score(v: number) { s.scoreEnemy = v; },
-      get kills() { return s.enemyKills; },
-      set kills(v: number) { s.enemyKills = v; },
-      get pos() { return pos; },
-      get vel() { return vel; },
-      get isCrouching() { return s.aiIsCrouching; },
-      get invulnerabilityTimer() { return s.aiInvulnerabilityTimer; },
-      get activeWeapon() { return s.aiActiveWeapon; },
-      get isLunging() { return s.aiState === 'LUNGING'; },
-      set isLunging(v: boolean) { if (v) { s.aiState = 'LUNGING'; } else if (s.aiState === 'LUNGING') { s.aiState = 'COOLDOWN'; } },
-      get weaponState() { return s.aiWeaponState; },
-      set weaponState(v: any) { s.aiWeaponState = v; },
-      get aiState() { return s.aiState; },
-      set aiState(v: any) { s.aiState = v; },
-      get aiTimer() { return s.aiTimer; },
-      get lungeTimer() { return s.aiLungeTimer; },
-      set lungeTimer(v: number) { s.aiLungeTimer = v; },
-      get lungeTargetDir() { return s.aiLungeTargetDir; },
-      get lungeStartPos() { return s.aiLungeStartPos; },
-      set aiLastLungeOutcome(v: any) { s.aiLastLungeOutcome = v; },
-      set aiLastLungeTargetId(v: any) { s.aiLastLungeTargetId = v; },
-      set aiPostLungeDecisionTimer(v: number) { s.aiPostLungeDecisionTimer = v; },
-    } : botState!;
-
-    // Declare local state variables and sync them from global/bot state
-    let state = isMainAI ? s.aiState : botState!.aiState;
-    let timer = isMainAI ? s.aiTimer : botState!.aiTimer;
-    let swayTimer = isMainAI ? s.aiSwayTimer : botState!.aiSwayTimer;
-    let dashCooldownTimer = isMainAI ? s.aiDashCooldownTimer : botState!.aiDashCooldownTimer;
-    let dashRemaining = isMainAI ? s.aiDashRemaining : botState!.aiDashRemaining;
-    let slideActive = isMainAI ? (s.aiSlideActive ?? false) : (botState!.aiSlideActive ?? false);
-    let slideDistanceTraveled = isMainAI ? (s.aiSlideDistanceTraveled ?? 0) : (botState!.aiSlideDistanceTraveled ?? 0);
-    let slideCooldownTimer = isMainAI ? (s.aiSlideCooldownTimer ?? 0) : (botState!.aiSlideCooldownTimer ?? 0);
+    // Declare local state variables and sync them from the combatant state
+    let state = self.aiState;
+    let timer = self.aiTimer;
+    let swayTimer = self.aiSwayTimer;
+    let dashCooldownTimer = self.aiDashCooldownTimer;
+    let dashRemaining = self.aiDashRemaining;
+    let slideActive = self.aiSlideActive ?? false;
+    let slideDistanceTraveled = self.aiSlideDistanceTraveled ?? 0;
+    let slideCooldownTimer = self.aiSlideCooldownTimer ?? 0;
     let isSprinting = false;
-    let coordCommitTimer = isMainAI ? (s.aiCoordCommitTimer ?? 0) : (botState!.aiCoordCommitTimer ?? 0);
-    let hammerJumpCooldownTimer = isMainAI ? s.aiHammerJumpCooldownTimer : botState!.aiHammerJumpCooldownTimer;
-    const dashDir = isMainAI
-      ? s.aiDashDir.clone()
-      : new THREE.Vector3(botState!.aiDashDir.x, botState!.aiDashDir.y, botState!.aiDashDir.z);
+    let coordCommitTimer = self.aiCoordCommitTimer ?? 0;
+    let hammerJumpCooldownTimer = self.aiHammerJumpCooldownTimer;
+    const dashDir = new THREE.Vector3(self.aiDashDir.x, self.aiDashDir.y, self.aiDashDir.z);
 
+    // Write the frame's working state back to the combatant through `self`. For the
+    // main AI `self.pos`/`self.vel` already alias s.aiPos/s.aiVel (so copy is a no-op
+    // self-copy); for a bot they copy the working vectors into the stored object. The
+    // aiDashDir setter copies into the main AI's Vector3 but assigns a fresh object on
+    // a bot — matching each backing store's representation.
     const syncStateAndMesh = () => {
-      if (isMainAI) {
-        s.aiPos.copy(pos);
-        s.aiVel.copy(vel);
-        s.aiYaw = yaw;
-        s.aiState = state;
-        s.aiTimer = timer;
-        s.aiSwayTimer = swayTimer;
-        s.aiDashCooldownTimer = dashCooldownTimer;
-        s.aiDashRemaining = dashRemaining;
-        s.aiDashDir.copy(dashDir);
-        s.aiSlideActive = slideActive;
-        s.aiSlideDistanceTraveled = slideDistanceTraveled;
-        s.aiSlideCooldownTimer = slideCooldownTimer;
-        s.aiIsSprinting = isSprinting;
-        s.aiHammerJumpCooldownTimer = hammerJumpCooldownTimer;
-        s.aiPendingPostEvasionCharge = pendingPostEvasionCharge;
-        s.aiCoordCommitTimer = coordCommitTimer;
-      } else {
-        botState!.pos.copy(pos);
-        botState!.vel.copy(vel);
-        botState!.yaw = yaw;
-        botState!.aiState = state;
-        botState!.aiTimer = timer;
-        botState!.aiSwayTimer = swayTimer;
-        botState!.aiDashCooldownTimer = dashCooldownTimer;
-        botState!.aiDashRemaining = dashRemaining;
-        botState!.aiDashDir = { x: dashDir.x, y: dashDir.y, z: dashDir.z };
-        botState!.aiSlideActive = slideActive;
-        botState!.aiSlideDistanceTraveled = slideDistanceTraveled;
-        botState!.aiSlideCooldownTimer = slideCooldownTimer;
-        botState!.aiIsSprinting = isSprinting;
-        botState!.aiHammerJumpCooldownTimer = hammerJumpCooldownTimer;
-        botState!.aiPendingPostEvasionCharge = pendingPostEvasionCharge;
-        botState!.aiCoordCommitTimer = coordCommitTimer;
-      }
+      self.pos.copy(pos);
+      self.vel.copy(vel);
+      self.yaw = yaw;
+      self.aiState = state;
+      self.aiTimer = timer;
+      self.aiSwayTimer = swayTimer;
+      self.aiDashCooldownTimer = dashCooldownTimer;
+      self.aiDashRemaining = dashRemaining;
+      self.aiDashDir = { x: dashDir.x, y: dashDir.y, z: dashDir.z };
+      self.aiSlideActive = slideActive;
+      self.aiSlideDistanceTraveled = slideDistanceTraveled;
+      self.aiSlideCooldownTimer = slideCooldownTimer;
+      self.aiIsSprinting = isSprinting;
+      self.aiHammerJumpCooldownTimer = hammerJumpCooldownTimer;
+      self.aiPendingPostEvasionCharge = pendingPostEvasionCharge;
+      self.aiCoordCommitTimer = coordCommitTimer;
       botMesh.position.copy(pos);
     };
 
@@ -8629,14 +9866,10 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         vel.x = 0;
         vel.z = 0;
         vel.y = Math.min(vel.y, 0);
-        if (isMainAI) {
-          s.aiIsJumping = true;
-        }
+        self.isJumping = true;
       } else {
         vel.set(0, 0, 0);
-        if (isMainAI) {
-          s.aiIsJumping = false;
-        }
+        self.isJumping = false;
       }
 
       self.vel.copy(vel);
@@ -8654,12 +9887,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     const swordForbidden = weaponPrioritization <= 0;
     const hammerForbidden = weaponPrioritization >= 100;
 
-    if (isMainAI) {
-      if (s.aiPostLungeDecisionTimer > 0) {
-        s.aiPostLungeDecisionTimer = Math.max(0, s.aiPostLungeDecisionTimer - dt);
-      }
-    } else if (botState!.aiPostLungeDecisionTimer > 0) {
-      botState!.aiPostLungeDecisionTimer = Math.max(0, botState!.aiPostLungeDecisionTimer - dt);
+    if ((self.aiPostLungeDecisionTimer ?? 0) > 0) {
+      self.aiPostLungeDecisionTimer = Math.max(0, self.aiPostLungeDecisionTimer - dt);
     }
 
     // Playstyle calculations (hybrid tuning layer)
@@ -8729,22 +9958,10 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       }
 
       if (!swordForbidden && shouldTelegraphSwordAtSpawn(postKillPressure.lungeKill, spawnDist)) {
-        if (isMainAI) {
-          if (s.aiActiveWeapon !== 'sword') {
-            swapEnemyWeapon('sword');
-          }
-          activeWeapon = 'sword';
-        } else {
-          if (botState!.activeWeapon !== 'sword') {
-            botState!.activeWeapon = 'sword';
-            const meshes = threeRef.current.otherPlayerMeshes?.get(botId);
-            if (meshes) {
-              meshes.hammer.visible = false;
-              meshes.sword.visible = true;
-            }
-          }
-          activeWeapon = 'sword';
+        if (self.activeWeapon !== 'sword') {
+          swapCombatantWeapon(self, 'sword');
         }
+        activeWeapon = 'sword';
       }
 
       state = 'SPAWN_GUARDING';
@@ -8773,28 +9990,20 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       }
       constrainCombatantToArena(pos, vel);
 
-      if (isMainAI) {
-        s.aiYaw = yaw;
-        s.aiState = state;
-        s.aiTimer = postKillPressure.timerRemaining;
-        s.aiActiveWeapon = activeWeapon;
-        s.aiSwayTimer = swayTimer;
-      } else {
-        botState!.yaw = yaw;
-        botState!.aiState = state;
-        botState!.aiTimer = postKillPressure.timerRemaining;
-        botState!.activeWeapon = activeWeapon;
-        botState!.aiSwayTimer = swayTimer;
-        botState!.pos.copy(pos);
-        botState!.vel.copy(vel);
-      }
+      self.yaw = yaw;
+      self.aiState = state;
+      self.aiTimer = postKillPressure.timerRemaining;
+      self.activeWeapon = activeWeapon;
+      self.aiSwayTimer = swayTimer;
+      self.pos.copy(pos);
+      self.vel.copy(vel);
       botMesh.rotation.y = yaw;
       botMesh.position.copy(pos);
       return;
     }
 
     let target = getBestTacticalTarget(botId, pos, difficulty);
-    const pressureTargetId = isMainAI ? s.aiPressureTargetId : botState!.aiPressureTargetId;
+    const pressureTargetId = self.aiPressureTargetId;
     if (state === 'PRESSURING' && pressureTargetId) {
       const lockedTarget = getTacticalTargetById(botId, pressureTargetId);
       if (lockedTarget) {
@@ -8807,21 +10016,15 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         const localCooldownMult = (1.3 - 0.8 * playstyleFactor) * matchMultipliers.cooldownMult;
         finishSwordLunge(localCooldownMult, 'target_dead', undefined);
       }
-      if (!isMainAI) {
-        botState!.aiDashRemaining = 0;
-      } else {
-        s.aiDashRemaining = 0;
-      }
+      self.aiDashRemaining = 0;
 
-      const isAirborneWithoutTarget = isMainAI
-        ? (s.aiIsJumping || pos.y > 0.01 || Math.abs(vel.y) > 0.01)
-        : (pos.y > 0.01 || Math.abs(vel.y) > 0.01);
+      const isAirborneWithoutTarget = self.isJumping || pos.y > 0.01 || Math.abs(vel.y) > 0.01;
 
       if (isAirborneWithoutTarget) {
         if (!isMainAI) {
           vel.y -= GRAVITY_ACCELERATION * dt;
           pos.addScaledVector(vel, dt);
-          recoverAIFromRunawayAltitude(pos, vel, botState);
+          recoverAIFromRunawayAltitude(pos, vel, self);
           if (pos.y <= 0) {
             pos.y = 0;
             vel.set(0, 0, 0);
@@ -8894,17 +10097,11 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       }
       constrainCombatantToArena(pos, vel);
 
-      if (isMainAI) {
-        s.aiYaw = yaw;
-        s.aiState = state;
-        s.aiTimer = 0;
-      } else {
-        botState!.yaw = yaw;
-        botState!.aiState = state;
-        botState!.aiTimer = 0;
-        botState!.pos.copy(pos);
-        botState!.vel.copy(vel);
-      }
+      self.yaw = yaw;
+      self.aiState = state;
+      self.aiTimer = 0;
+      self.pos.copy(pos);
+      self.vel.copy(vel);
       botMesh.rotation.y = yaw;
       botMesh.position.copy(pos);
       return;
@@ -8930,15 +10127,17 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         
         pos.x += vel.x * dt;
         pos.z += vel.z * dt;
-        recoverAIFromRunawayAltitude(pos, vel, botState);
+        recoverAIFromRunawayAltitude(pos, vel, self);
 
         if (pos.y <= 0) {
           pos.y = 0;
           vel.set(0, 0, 0);
+          self.isJumping = false;
         }
       } else {
         pos.y = 0;
         vel.y = 0;
+        self.isJumping = false;
       }
       constrainCombatantToArena(pos, vel);
     }
@@ -9017,11 +10216,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     } else {
       botMesh.scale.set(1, 1, 1);
     }
-    if (isMainAI) {
-      s.aiIsCrouching = isCrouching;
-    } else {
-      botState!.isCrouching = isCrouching;
-    }
+    self.isCrouching = isCrouching;
 
     const botBodyCenter = getCombatBodyCenter(pos, isCrouching);
     const targetBodyCenter = getCombatBodyCenter(predictedTargetPos, target.isCrouching);
@@ -9047,7 +10242,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     const guaranteedKillRange = weaponForwardReach + (s.settings.attackRadius ?? 4.5) * 0.8;
     const enemyInKillRange =
       target.hp > 0 && !targetIsProtected && attackDistanceToTarget <= guaranteedKillRange;
-    const selfGrounded = pos.y <= 0.05 && (isMainAI ? !s.aiIsJumping : Math.abs(vel.y) <= 0.01);
+    const selfGrounded = pos.y <= 0.05 && !self.isJumping && Math.abs(vel.y) <= 0.01;
 
     const inCoordCommitBand =
       attackDistanceToTarget <= resolvedAiReach + 0.5 &&
@@ -9086,8 +10281,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     if (slideCooldownTimer > 0) {
       slideCooldownTimer = Math.max(0, slideCooldownTimer - dt);
     }
-    if (!isMainAI && (botState!.swapLockoutTimer ?? 0) > 0) {
-      botState!.swapLockoutTimer = Math.max(0, (botState!.swapLockoutTimer ?? 0) - dt);
+    if (!isMainAI && (self.swapLockoutTimer ?? 0) > 0) {
+      self.swapLockoutTimer = Math.max(0, (self.swapLockoutTimer ?? 0) - dt);
     }
     if (hammerJumpCooldownTimer > 0) {
       hammerJumpCooldownTimer = Math.max(0, hammerJumpCooldownTimer - dt);
@@ -9153,7 +10348,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     const feintPlayerMult = getPlayerFeintMultiplier(getTargetPlayerModel(target.id));
     const feintChance = derivedParams.feintChance;
     const swapFeintActive = isWeaponSwapFeintActive(aiContext, botId);
-    const swapLockoutRemaining = isMainAI ? s.aiSwapLockoutTimer : (botState!.swapLockoutTimer ?? 0);
+    const swapLockoutRemaining = self.swapLockoutTimer ?? 0;
 
     const commitFeint = () => {
       startFeintCooldown(aiContext, botId, rollFeintCooldownDuration());
@@ -9166,55 +10361,26 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       rollScale,
     });
 
-    const recentLungeMemory = isMainAI
-      ? (s.aiLastLungeOutcome ? {
-          outcome: s.aiLastLungeOutcome,
-          targetId: s.aiLastLungeTargetId,
-          timeRemaining: s.aiPostLungeDecisionTimer,
-        } : null)
-      : (botState!.aiLastLungeOutcome ? {
-          outcome: botState!.aiLastLungeOutcome,
-          targetId: botState!.aiLastLungeTargetId,
-          timeRemaining: botState!.aiPostLungeDecisionTimer || 0,
-        } : null);
+    const recentLungeMemory = self.aiLastLungeOutcome ? {
+      outcome: self.aiLastLungeOutcome,
+      targetId: self.aiLastLungeTargetId,
+      timeRemaining: self.aiPostLungeDecisionTimer || 0,
+    } : null;
 
     const applyTacticalWeapon = (tacticalWeapon: 'hammer' | 'sword', force = false) => {
       if (tacticalWeapon === activeWeapon) return;
       if (tacticalWeapon === 'sword' && swordForbidden) return;
       if (tacticalWeapon === 'hammer' && hammerForbidden) return;
-      if (isMainAI) {
-        if (!force && s.aiSwapLockoutTimer > 0) return;
-        swapEnemyWeapon(tacticalWeapon);
-      } else {
-        if (!force && (botState!.swapLockoutTimer ?? 0) > 0) return;
-        botState!.activeWeapon = tacticalWeapon;
-        if (s.settings.weaponSwapLockout > 0) {
-          botState!.swapLockoutTimer = s.settings.weaponSwapLockout;
-        }
-        const meshes = threeRef.current.otherPlayerMeshes?.get(botId);
-        if (meshes) {
-          meshes.hammer.visible = tacticalWeapon === 'hammer';
-          meshes.sword.visible = tacticalWeapon === 'sword';
-        }
-      }
+      if (!force && (self.swapLockoutTimer ?? 0) > 0) return;
+      swapCombatantWeapon(self, tacticalWeapon, true);
       activeWeapon = tacticalWeapon;
       weaponState = 'ready';
     };
 
     const revertWeaponSwapFeint = () => {
       if (activeWeapon !== 'sword') return;
-      if (isMainAI) {
-        s.aiSwapLockoutTimer = 0;
-        swapEnemyWeapon('hammer');
-      } else {
-        botState!.swapLockoutTimer = 0;
-        botState!.activeWeapon = 'hammer';
-        const meshes = threeRef.current.otherPlayerMeshes?.get(botId);
-        if (meshes) {
-          meshes.hammer.visible = true;
-          meshes.sword.visible = false;
-        }
-      }
+      self.swapLockoutTimer = 0;
+      swapCombatantWeapon(self, 'hammer');
       activeWeapon = 'hammer';
       weaponState = 'ready';
     };
@@ -9320,18 +10486,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         }
         lungeDir.normalize();
 
-        if (isMainAI) {
-          triggerEnemySwordLunge(lungeDir);
-        } else {
-          botState!.isLunging = true;
-          botState!.lungeTimer = 0;
-          botState!.lungeStartPos = { x: pos.x, y: pos.y, z: pos.z };
-          botState!.lungeTargetDir = { x: lungeDir.x, y: lungeDir.y, z: lungeDir.z };
-          const lungeSpeed = s.settings.swordLungeSpeed ?? 24.0;
-          vel.y = Math.max(vel.y, lungeDir.y * lungeSpeed);
-          botState!.weaponState = 'ready';
-          sfx.playDash();
-        }
+        triggerCombatantLunge(self, lungeDir, pos, vel);
         commitComboAttackAdvance();
         return 'lunge';
       }
@@ -9348,19 +10503,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
           timer = (s.settings.hammerReloadTime ?? 0.6) * cooldownMult;
         }
 
-        if (isMainAI) {
-          if (activeWeapon === 'sword') {
-            triggerEnemySwordSlash();
-          } else if (isHammerMelee) {
-            triggerEnemyHammerMelee();
-          } else {
-            triggerEnemyHammerSwing();
-          }
-        } else {
-          botState!.weaponState = isHammerMelee ? 'melee_up' : 'swing_up';
-          botState!.weaponTimer = 0;
-          sfx.playSwing();
-        }
+        triggerCombatantAttack(self, activeWeapon, isHammerMelee);
         weaponState = isHammerMelee ? 'melee_up' : 'swing_up';
         commitComboAttackAdvance();
         return 'melee';
@@ -9515,25 +10658,13 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       if (tacticalDecision.bulltrueCounter === 'hammer' && canStartWeaponAction && activeWeapon === 'hammer' && weaponState === 'ready') {
         state = 'COOLDOWN';
         timer = (s.settings.hammerReloadTime ?? 1.1) * cooldownMult;
-        if (isMainAI) {
-          triggerEnemyHammerSwing();
-        } else {
-          botState!.weaponState = 'swing_up';
-          botState!.weaponTimer = 0;
-          sfx.playSwing();
-        }
+        triggerCombatantAttack(self, 'hammer');
         weaponState = 'swing_up';
         startedBulltrueCounter = true;
       } else if (tacticalDecision.bulltrueCounter === 'sword' && canStartWeaponAction && activeWeapon === 'sword' && weaponState === 'ready') {
         state = 'COOLDOWN';
         timer = (s.settings.swordSlashReload ?? 0.6) * cooldownMult;
-        if (isMainAI) {
-          triggerEnemySwordSlash();
-        } else {
-          botState!.weaponState = 'swing_up';
-          botState!.weaponTimer = 0;
-          sfx.playSwing();
-        }
+        triggerCombatantAttack(self, 'sword');
         weaponState = 'swing_up';
         startedBulltrueCounter = true;
       }
@@ -9557,7 +10688,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         weaponState === 'ready' &&
         Math.random() < getHammerJumpEvasionChance(evasionRollInput)
       ) {
-        if (startAIHammerJump(isMainAI, botState, pos, vel, undefined, 'defensive')) {
+        if (startAIHammerJump(self, pos, vel, undefined, 'defensive')) {
           weaponState = 'swing_up';
           hammerJumpCooldownTimer = AI_HAMMER_JUMP_COOLDOWN;
           spawnVoxelShockwaveParticles(pos, '#f59e0b');
@@ -9573,13 +10704,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
           playerModel: evasionPlayerModel,
         });
         vel.set(dodgePick.x * 7.5, vel.y, dodgePick.z * 7.5);
-        if (isMainAI) {
-          if (!s.aiIsJumping) {
-            s.aiIsJumping = true;
-            s.aiVel.y = 5.5;
-            sfx.playJump();
-          }
-        } else if (vel.y === 0) {
+        if (!self.isJumping) {
+          self.isJumping = true;
           vel.y = 5.5;
           sfx.playJump();
         }
@@ -9595,13 +10721,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
           timingScale: evasionTimingScale,
         });
         if (isInBulltrueHammerWindow(distanceToTarget, bulltrueBand)) {
-          if (isMainAI) {
-            triggerEnemyHammerSwing();
-          } else {
-            botState!.weaponState = 'swing_up';
-            botState!.weaponTimer = 0;
-            sfx.playSwing();
-          }
+          triggerCombatantAttack(self, 'hammer');
         }
       }
     }
@@ -9622,15 +10742,9 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       if ((fallingIntoHammer || canReachBody) && Math.random() < 0.18 + tunedAnticipationFactor * 0.42) {
         state = 'COOLDOWN';
         timer = 1.0 * cooldownMult;
-        if (isMainAI) {
-          triggerEnemyHammerSwing();
-        } else {
-          botState!.weaponState = 'swing_up';
-          botState!.weaponTimer = 0;
-          sfx.playSwing();
-        }
+        triggerCombatantAttack(self, 'hammer');
       } else if (!enemyInKillRange && verticalDeltaToTarget > 2.0 && distanceToTarget <= resolvedDangerZone + 4.5 && Math.random() < 0.012 + tunedAnticipationFactor * 0.035) {
-        if (startAIHammerJump(isMainAI, botState, pos, vel, toTarget, 'offensive')) {
+        if (startAIHammerJump(self, pos, vel, toTarget, 'offensive')) {
           weaponState = 'swing_up';
           hammerJumpCooldownTimer = AI_HAMMER_JUMP_COOLDOWN;
         }
@@ -9639,6 +10753,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
     timer -= dt;
     swayTimer += dt;
+
+    const savedVelY = vel.y;
 
     // Sword-lunge flight. Shared by the main AI and additional bots through the
     // `self` accessor — previously the main AI ran a separate copy of this in
@@ -9655,7 +10771,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       if (isMainAI) {
         recoverMainAIFromRunawayAltitude();
       } else {
-        recoverAIFromRunawayAltitude(pos, vel, botState);
+        recoverAIFromRunawayAltitude(pos, vel, self);
       }
       if (pos.y <= 0) {
         pos.y = 0;
@@ -9668,7 +10784,9 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
       const trailPos = pos.clone();
       trailPos.y += 0.825;
-      renderSwordLungeTrailVfx(trailPos, '#ef4444', targetDir, isMainAI ? 'enemyCube' : 'shockwave');
+      // Every AI-team lunge uses the red 'enemyCube' trail (was: main AI 'enemyCube',
+      // bots 'shockwave' — converged to the main AI's team-colored cube trail).
+      renderSwordLungeTrailVfx(trailPos, '#ef4444', targetDir, 'enemyCube');
 
       const dist = getCombatBodyCenter(pos, self.isCrouching).distanceTo(getCombatBodyCenter(target.pos, target.isCrouching));
       if (target.hp <= 0) {
@@ -9797,16 +10915,14 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         finishSwordLunge(cooldownMult, 'miss_timeout', target.id);
       }
     } else {
-      const isAirborneBeforeGroundMovement = isMainAI
-        ? (s.aiIsJumping || pos.y > 0.01 || Math.abs(vel.y) > 0.01)
-        : (pos.y > 0.01 || Math.abs(vel.y) > 0.01);
+      const isAirborneBeforeGroundMovement = self.isJumping || pos.y > 0.01 || Math.abs(vel.y) > 0.01;
 
       if (isAirborneBeforeGroundMovement) {
         const airDamping = Math.max(0, 1 - 5 * dt);
         vel.x *= airDamping;
         vel.z *= airDamping;
         if (!isMainAI) {
-          recoverAIFromRunawayAltitude(pos, vel, botState);
+          recoverAIFromRunawayAltitude(pos, vel, self);
         } else {
           recoverMainAIFromRunawayAltitude();
         }
@@ -9815,15 +10931,17 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         return;
       }
 
-      if (isMainAI && s.aiIsJumping && s.aiHP > 0) {
-        if (movementComplexity >= 45) {
-          const lookHeading = toTarget.clone().normalize();
-          const sidewayHeading = new THREE.Vector3(-lookHeading.z, 0, lookHeading.x);
-          const sideDir = Math.sin(swayTimer * 3.0) > 0 ? 1 : -1;
-          s.aiVel.x += (sidewayHeading.x * 2.0 * sideDir + lookHeading.x * 0.4) * dt;
-          s.aiVel.z += (sidewayHeading.z * 2.0 * sideDir + lookHeading.z * 0.4) * dt;
-        }
-      }
+      // Defensive floor pin: past the airborne early-return above, every combatant is
+      // grounded (isJumping false, pos.y <= 0.01, |vel.y| <= 0.01). Snap any residual
+      // height to the floor so a combatant can never get stuck "running in the air"
+      // through the ground-movement state machine below, regardless of how it got there.
+      // (A new hop/lunge later this frame re-sets these, so jump arcs are unaffected.)
+      pos.y = 0;
+      vel.y = 0;
+      self.isJumping = false;
+
+      // (The former main-AI air-sway block here was dead: the main AI always returns
+      // above when airborne, so its jump flag is false past this point.)
 
       if (!isMainAI && vel.y > 0) {
         if (movementComplexity >= 45) {
@@ -9896,16 +11014,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         }
       }
     } else {
-      if (isMainAI && s.aiIsJumping && s.aiHP > 0) {
-        if (movementComplexity >= 45) {
-          const lookHeading = toTarget.clone().normalize();
-          const sidewayHeading = new THREE.Vector3(-lookHeading.z, 0, lookHeading.x);
-          const sideDir = Math.sin(swayTimer * 3.0) > 0 ? 1 : -1;
-          s.aiVel.x += (sidewayHeading.x * 2.0 * sideDir + lookHeading.x * 0.4) * dt;
-          s.aiVel.z += (sidewayHeading.z * 2.0 * sideDir + lookHeading.z * 0.4) * dt;
-        }
-      }
-
+      // (Dead main-AI air-sway block removed here: the main AI returns earlier when
+      // airborne, so it never reached this with s.aiIsJumping true.)
       if (!isMainAI && vel.y > 0) {
         if (movementComplexity >= 45) {
           const lookHeading = toTarget.clone().normalize();
@@ -9917,6 +11027,21 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       }
 
       const lookHeading = toTarget.clone().normalize();
+
+      // Inject A* Pathfinding if custom map is active!
+      const activeCustomMap = getActiveCustomMap();
+      if (activeCustomMap) {
+        if (!threeRef.current.navMesh) {
+          threeRef.current.navMesh = bakeNavMesh(activeCustomMap);
+        }
+        const path = findShortestPath(pos, movementTargetPos, threeRef.current.navMesh, activeCustomMap.objects);
+        if (path && path.length > 0) {
+          lookHeading.copy(path[0]).sub(pos);
+          lookHeading.y = 0;
+          lookHeading.normalize();
+        }
+      }
+
       const spatialBias = getSpatialMovementBias({
         botX: pos.x,
         botZ: pos.z,
@@ -9926,7 +11051,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         targetVelZ: target.vel?.z,
         predictedTargetX: predictedTargetPos.x,
         predictedTargetZ: predictedTargetPos.z,
-        arenaRadius: s.arenaRadius,
+        arenaRadius: activeCustomMap ? activeCustomMap.arenaRadius : s.arenaRadius,
         spatialIQ,
       });
       const blendedHeading = blendSpatialHeading(lookHeading.x, lookHeading.z, spatialBias);
@@ -9977,17 +11102,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         vel.z = 0;
         state = 'COOLDOWN';
         timer = (activeWeapon === 'sword' ? (s.settings.swordSlashReload ?? 0.6) : 1.1) * cooldownMult;
-        if (isMainAI) {
-          if (activeWeapon === 'sword') {
-            triggerEnemySwordSlash();
-          } else {
-            triggerEnemyHammerSwing();
-          }
-        } else {
-          botState!.weaponState = 'swing_up';
-          botState!.weaponTimer = 0;
-          sfx.playSwing();
-        }
+        triggerCombatantAttack(self, activeWeapon);
         weaponState = 'swing_up';
         constrainCombatantToArena(pos, vel);
         syncStateAndMesh();
@@ -10056,18 +11171,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
           }
           lungeDir.normalize();
 
-          if (isMainAI) {
-            triggerEnemySwordLunge(lungeDir);
-          } else {
-            botState!.isLunging = true;
-            botState!.lungeTimer = 0;
-            botState!.lungeStartPos = { x: pos.x, y: pos.y, z: pos.z };
-            botState!.lungeTargetDir = { x: lungeDir.x, y: lungeDir.y, z: lungeDir.z };
-            const lungeSpeed = s.settings.swordLungeSpeed ?? 24.0;
-            vel.y = Math.max(vel.y, lungeDir.y * lungeSpeed);
-            botState!.weaponState = 'ready';
-            sfx.playDash();
-          }
+          triggerCombatantLunge(self, lungeDir, pos, vel);
           return;
           }
         }
@@ -10079,7 +11183,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       const totalApproachLateral = approachLateral + coordLateral;
 
       if (weaponState === 'ready' && distanceToTarget > (resolvedDangerZone + 1.5) && distanceToTarget <= (resolvedDangerZone + 5.5) && Math.random() < 0.015 && (movementComplexity >= 40) && !targetIsProtected) {
-        if (startAIHammerJump(isMainAI, botState, pos, vel, lookHeading, 'offensive')) {
+        if (startAIHammerJump(self, pos, vel, lookHeading, 'offensive')) {
           weaponState = 'swing_up';
           hammerJumpCooldownTimer = AI_HAMMER_JUMP_COOLDOWN;
         }
@@ -10170,7 +11274,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         if (target.weaponState === 'swing_up' && !targetIsProtected) {
           const reactChance = 0.45 + (tunedAnticipationFactor * 0.4);
           
-          const myHP = isMainAI ? s.aiHP : botState!.hp;
+          const myHP = self.hp;
           const targetHP = target.hp;
           const shouldAvoidTrade = shouldAvoidCoinFlipTrade({
             difficulty,
@@ -10307,7 +11411,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
             state = 'SIDE_STEPPING';
             timer = 0.25;
           } else {
-          const myHP = isMainAI ? s.aiHP : botState!.hp;
+          const myHP = self.hp;
           const targetHP = target.hp;
           const shouldAvoidTrade = shouldAvoidCoinFlipTrade({
             difficulty,
@@ -10332,17 +11436,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
           } else {
             state = 'COOLDOWN';
             timer = (activeWeapon === 'sword' ? (s.settings.swordSlashReload ?? 0.6) : 1.1) * cooldownMult;
-            if (isMainAI) {
-              if (activeWeapon === 'sword') {
-                triggerEnemySwordSlash();
-              } else {
-                triggerEnemyHammerSwing();
-              }
-            } else {
-              botState!.weaponState = 'swing_up';
-              botState!.weaponTimer = 0;
-              sfx.playSwing();
-            }
+            triggerCombatantAttack(self, activeWeapon);
           }
           }
         } else if (attackDistanceToTarget > (resolvedAiReach + 2.0) || targetIsProtected) {
@@ -10397,17 +11491,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
               ? (s.settings.swordSlashReload ?? 0.6)
               : 1.1;
             timer = Math.max(timer, getPressureAttackCooldown(effectivePressureAggression, baseCooldown));
-            if (isMainAI) {
-              if (activeWeapon === 'sword') {
-                triggerEnemySwordSlash();
-              } else {
-                triggerEnemyHammerSwing();
-              }
-            } else {
-              botState!.weaponState = 'swing_up';
-              botState!.weaponTimer = 0;
-              sfx.playSwing();
-            }
+            triggerCombatantAttack(self, activeWeapon);
             weaponState = 'swing_up';
           }
         }
@@ -10424,19 +11508,22 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
           timer = 0.7;
         }
       }
+
+      // Restore vertical velocity after FSM horizontal movement calculations
+      vel.y = savedVelY;
     }
 
     constrainCombatantToArena(pos, vel);
 
-    if (isMainAI && s.aiIsJumping && state !== 'LUNGING') {
-      vel.y = s.aiVel.y;
-    } else if (state !== 'LUNGING') {
+    // Unified vertical handling for every combatant: while airborne we keep the
+    // integrated vel.y; once grounded (and not lunging) we zero it and clear the jump
+    // flag. (For the main AI vel === s.aiVel, so this is the same data either way.)
+    if (state !== 'LUNGING' && !(self.isJumping || pos.y > 0.01)) {
       vel.y = 0;
+      self.isJumping = false;
     }
 
-    const isAirborne = isMainAI 
-      ? (s.aiIsJumping || s.aiPos.y > 0.01) 
-      : (pos.y > 0.01 || Math.abs(vel.y) > 0.01);
+    const isAirborne = self.isJumping || pos.y > 0.01 || Math.abs(vel.y) > 0.01;
 
     if (isAirborne && state !== 'LUNGING') {
       // Heavily restrict horizontal movement in the air so they don't "walk across the air"

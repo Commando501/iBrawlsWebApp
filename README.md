@@ -76,6 +76,22 @@ Custom difficulty exposes derived-parameter overrides (`aiSpatialIQ`, `aiFeintCh
 
 **Dynamic skill calibration (Normal/Hard/Nightmare):** `aiSkillCalibration` maintains a rolling window of the last 10 engagements per bot (kills, deaths, dodge/counter outcomes, time-between-deaths). When the player dominates, bots receive a subtle buff to reaction speed, anticipation, and lunge aggression; when the bot dominates, those knobs drift down slightly (±12.5% max). Disabled for Custom difficulty (including tournament opponents with explicit tuning) and Easy mode.
 
+## Theater Mode
+
+iBrawls includes a high-fidelity 3D "Theater Mode" archive that allows players to save, rename, search, filter, and play back their recorded gameplay sessions with granular media player control.
+
+- **Fidelity Playback**: Instead of video recording, the system transcribes active gameplay structural snapshots at a stable **20Hz (50ms)** tick rate.
+- **Zero-Movement Compression**: Drastically reduces file sizes (under ~200KB for an 8-minute 8-player match) by filtering out stationary pilot frames where coordinates change $<0.001$ and state matches the previous frame. Missing keyframe deltas are dynamically reconstructed on-the-fly during playback using reverse scanning.
+- **Interpolation Engine**: Angles are resolved using shortest-path wrapping:
+  $$\Delta\theta = \text{atan2}(\sin(\theta_B - \theta_A), \cos(\theta_B - \theta_A))$$
+  to prevent visual spin flips when yaw bounds are crossed. Position coordinates are interpolated using linear LERP, presenting a fluid 60FPS spectator experience.
+- **Rolling Match Cache**: Features a local rolling cache of the last **5 auto-saved matches** (via IndexedDB) that overwrite sequentially. Players can commit cache items permanently to the **Replays Archive** with custom titles and descriptions.
+- **Spectator Controls**: A bottom glassmorphism timeline control bar enables:
+  - Timeline scrubbing/seeking to any second of the match.
+  - Variable speed multiplier rates (`0.25x`, `0.5x`, `1.0x`, `2.0x`, `4.0x`).
+  - Active lock-target tracking dropdown to focus first-person, third-person orbit, or free fly-camera on any recorded Spartan.
+  - Fully simulated scoreboard and SFX/sparks triggers synced forward-only to prevent audio cluster when scrubbing.
+
 ## Controls & Inputs
 
 iBrawls supports both classic Keyboard + Mouse inputs and native Gamepad (Xbox/PlayStation controller) support, configurable via the custom settings panel:
@@ -121,10 +137,40 @@ To prevent players and AI characters from passing straight through one another, 
 
 ## Map Selection & Environments
 
-Local play setups feature an interactive map selector overlay supported by a dynamic, real-time rotating 3D preview:
+Local play setups feature an interactive map selector overlay supported by a dynamic, real-time rotating 3D preview of both standard arenas, premade environments, and custom-loaded maps:
 
 - **Industrial Hangar**: The default grimy voxel-art warehouse environment. It includes 12 structural support H-beam columns, safety hazard warnings, ceiling trusses, metal conduits, exhaust vents, and warm amber spotlighting.
 - **Circle Arena (Holodeck)**: A clean, sleek virtual simulation deck. It is a minimalist space-void arena featuring high-tech glowing neon cyan grids, concentric glowing ring alignments, four cardinal neon posts, and a cool cyan spotlight core.
+- **Cyber Hex Grid (Preset)**: A high-tech tactical holodeck featuring glowing neon pillars, defensive carbon-fiber partitions, rechargeable crates, and a central plasma core reactor emitting massive violet neon glows.
+- **Jungle Ruined Outpost (Preset)**: An overgrown, crumbling training outpost dominated by nature elements. Features rustic stone walls, giant mossy boulders, forest giant tree trunks, and a mystical emerald crystal totem.
+- **Vanguard Asteroid Mine (Preset)**: An industrial minerals extraction facility situated on a space asteroid. Featuring heavy blast doors, freight containers, metallic core processor drills, amber industrial warning lights, and orange-veined meteorite ore clusters.
+- **Custom Local Map**: Load a custom map file (`.json`) exported from the local Standalone Map Maker. The 3D thumbnail preview updates in real-time to render all placed obstacles, light sources, and spawn points in miniature!
+
+## Standalone 3D Map Maker
+
+iBrawls features a beautiful, feature-rich, and completely standalone 3D Map Maker application that runs 100% locally and offline in the user's browser. Since it is entirely decoupled from the main web application, players simply open the local HTML file to design custom battle arenas using standard assets!
+
+### How to Run the Map Maker
+1. **Locate the File**: Find `mapmaker.html` in the root of the project directory.
+2. **Open Locally**: Simply double-click `mapmaker.html` to launch it in any modern web browser. No local development server, Node.js environment, or compilation is required!
+3. **Design & Customize**: Spawn crates, columns, barriers, and cores. Modify positions, rotations, scales, colors, metalness, and roughness using the visual transformation sliders.
+4. **Lighting Controls**: Add custom point lights to set up warm or cold ambient mood lighting in your arena.
+5. **Bake Nav Mesh**: Click the **Bake Nav Mesh** button to programmatically generate the automated pathfinding node navigation grid. The walkable pathways will instantly light up in glowing green and cyan in the viewport!
+6. **Export JSON**: Click the **Export JSON** button to download your compiled arena as a `.json` map file.
+7. **Load in Game**: Launch the main game, select **"Load Custom Map (.json)"** from the Battle Arena selection dropdown in the lobby, choose your exported file, and instantly start fighting on your custom battlefield!
+
+### Editor Features
+- **Interactive 3D Canvas**: Outfitted with `PerspectiveCamera` and `OrbitControls` for full inspection. Allows direct mouse click/raycast selections with real-time selection helpers.
+- **Flexible Object Placement**: Place and transform Box, Cylinder, and Sphere obstacles. Modify dimensions, position, rotation, opacity, metalness, roughness, colors, emissive neon glow, and collidable status (`isCollidable`).
+- **Dynamic Lighting Controls**: Add custom point lights to set up mood lighting. Adjust position, distance, intensity, decay, and color using real-time inspectors.
+- **Texture Presets**: Dress obstacles in 15 custom texture profiles matching 5 distinct themes:
+  - *Nature*: Grass turf (`nature_grass`), Mossy Stone (`nature_mossy_stone`), Wood Grain (`nature_wood`).
+  - *Space*: Starbase alloy plate (`space_alloy`), Lunar meteorite crag (`space_meteorite`), Cosmic dust (`space_lunar_dust`).
+  - *Futuristic*: Sleek carbon fiber (`futuristic_carbon`), Neon hexagonal plates (`futuristic_hex`), Energy grid shield (`futuristic_shield`).
+  - *City*: Asphalt pavement (`city_asphalt`), Warehouse brick (`city_brick`), Raw concrete (`city_concrete`).
+  - *Fantasy*: Runed stone monolith (`fantasy_runed_stone`), Rustic cobblestones (`fantasy_cobble`), Polished gold plating (`fantasy_gold`).
+- **Automated Nav-Mesh Baking**: Spatial analysis engine automatically runs spartan clearance tests ($0.65\text{m}$) against collidable boundaries to generate a 2D Node Navigation Grid. Walkable paths are visualized as beautiful glowing green nodes with blue connection lines in the editor viewport!
+- **Local File System IO**: Fully offline-based import and export. Save maps as local `.json` files to distribute to other players or load them directly in the game lobby for training skirmishes.
 
 ## Secrets & Easter Eggs
 

@@ -1,0 +1,1631 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>iBrawls Standalone 3D Map Maker</title>
+  <!-- Tailwind CSS for rich modern UI grid layout -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Google Fonts Outfit & JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700;800&family=Outfit:wght@300;400;600;800;900&display=swap" rel="stylesheet">
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- Three.js and OrbitControls -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+
+  <style>
+    body {
+      font-family: 'Outfit', sans-serif;
+      background-color: #030712;
+      color: #f3f4f6;
+      user-select: none;
+      overflow: hidden;
+    }
+    .font-mono {
+      font-family: 'JetBrains Mono', monospace;
+    }
+    /* Scrollbar Styling */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 99px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(6, 182, 212, 0.4);
+    }
+    /* Active selection bounds */
+    .glass-panel {
+      background: rgba(10, 15, 30, 0.7);
+      backdrop-filter: blur(20px);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+    }
+  </style>
+</head>
+<body class="w-screen h-screen flex relative">
+
+  <!-- 3D VIEWPORT ON THE LEFT -->
+  <div class="flex-1 h-full relative" id="viewport-container">
+    <canvas id="editor-canvas" class="w-full h-full block"></canvas>
+
+    <!-- TOPBAR OVERLAY -->
+    <div class="absolute top-4 left-4 right-4 flex justify-between items-center pointer-events-none z-10">
+      <div class="pointer-events-auto flex items-center gap-3">
+        <h1 class="text-2xl font-black italic tracking-tighter bg-clip-text text-transparent bg-gradient-to-r from-white to-slate-400">
+          iBrawls Map Maker
+        </h1>
+        <span class="text-[9px] font-mono font-extrabold uppercase tracking-widest text-cyan-400 bg-cyan-950/50 border border-cyan-800/50 px-2 py-0.5 rounded">
+          Standalone Local Build
+        </span>
+      </div>
+
+      <div class="pointer-events-auto flex gap-2">
+        <label class="h-10 px-4 bg-slate-900/80 hover:bg-slate-800 border border-white/10 hover:border-cyan-500/50 text-white hover:text-cyan-400 text-xs font-bold rounded-lg flex items-center gap-1.5 cursor-pointer transition-all duration-200 shadow-lg">
+          <i data-lucide="upload" class="w-4 h-4"></i> Import JSON
+          <input type="file" id="import-input" accept=".json" class="hidden">
+        </label>
+
+        <button onclick="handleExportJSON()" class="h-10 px-4 bg-slate-900/80 hover:bg-slate-800 border border-white/10 hover:border-cyan-500/50 text-white hover:text-cyan-400 text-xs font-bold rounded-lg flex items-center gap-1.5 transition-all duration-200 shadow-lg">
+          <i data-lucide="save" class="w-4 h-4"></i> Export JSON
+        </button>
+
+        <button id="navmesh-btn" onclick="triggerBakeNavMesh()" class="h-10 px-4 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white text-xs font-black uppercase tracking-wider rounded-lg flex items-center gap-1.5 transition-all duration-200 shadow-[0_0_15px_rgba(6,182,212,0.3)] hover:shadow-[0_0_20px_rgba(6,182,212,0.5)]">
+          <i data-lucide="refresh-cw" class="w-4 h-4" id="bake-icon"></i> Bake Nav Mesh
+        </button>
+      </div>
+    </div>
+
+    <!-- INSTRUCTIONS / CONTROLS LEGEND CARD -->
+    <div class="absolute bottom-4 left-4 glass-panel p-4 rounded-xl shadow-2xl pointer-events-auto max-w-[280px] flex flex-col gap-2 z-10 text-[11px] text-white/50">
+      <h3 class="text-xs font-bold uppercase tracking-wider text-cyan-400 flex items-center gap-1.5">
+        <i data-lucide="help-circle" class="w-3.5 h-3.5"></i> Editor Controls
+      </h3>
+      <div class="flex justify-between items-center">
+        <span>Rotate camera</span>
+        <span class="font-mono text-[9px] bg-white/10 px-1.5 py-0.5 rounded border border-white/15 text-white/80">LMB + Drag</span>
+      </div>
+      <div class="flex justify-between items-center">
+        <span>Pan viewport</span>
+        <span class="font-mono text-[9px] bg-white/10 px-1.5 py-0.5 rounded border border-white/15 text-white/80">RMB + Drag</span>
+      </div>
+      <div class="flex justify-between items-center">
+        <span>Zoom Camera</span>
+        <span class="font-mono text-[9px] bg-white/10 px-1.5 py-0.5 rounded border border-white/15 text-white/80">Scroll Wheel</span>
+      </div>
+      <div class="flex justify-between items-center">
+        <span>Select Object</span>
+        <span class="font-mono text-[9px] bg-white/10 px-1.5 py-0.5 rounded border border-white/15 text-white/80">Left Click mesh</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- EDITOR INSPECTOR SIDEBAR -->
+  <div class="w-[380px] h-full glass-panel border-l border-white/5 flex flex-col shadow-3xl z-10 shrink-0">
+    <!-- Sidebar Title -->
+    <div class="p-4 border-b border-white/5 flex justify-between items-center shrink-0">
+      <span class="text-sm font-black uppercase tracking-widest text-transparent bg-clip-text bg-gradient-to-r from-white to-slate-400">
+        Simulation Builder
+      </span>
+      <button onclick="toggleNavMeshOverlay()" id="toggle-nav-btn" class="p-2 border border-white/10 rounded-lg hover:bg-white/5 text-slate-400 hover:text-white transition-colors" title="Toggle Nav Mesh Overlay">
+        <i data-lucide="eye" class="w-4 h-4" id="nav-eye-icon"></i>
+      </button>
+    </div>
+
+    <!-- TAB SWITCHER -->
+    <div class="grid grid-cols-4 bg-black/35 border-b border-white/5 text-center shrink-0">
+      <button onclick="switchTab('scene')" id="tab-scene" class="py-3 text-[10px] font-bold uppercase tracking-wider border-b-2 border-cyan-500 bg-cyan-500/5 text-cyan-400 flex flex-col items-center gap-1">
+        <i data-lucide="compass" class="w-4 h-4"></i> Scene
+      </button>
+      <button onclick="switchTab('lights')" id="tab-lights" class="py-3 text-[10px] font-bold uppercase tracking-wider border-b-2 border-transparent text-slate-400 hover:text-white flex flex-col items-center gap-1">
+        <i data-lucide="sun" class="w-4 h-4"></i> Lights
+      </button>
+      <button onclick="switchTab('objects')" id="tab-objects" class="py-3 text-[10px] font-bold uppercase tracking-wider border-b-2 border-transparent text-slate-400 hover:text-white flex flex-col items-center gap-1">
+        <i data-lucide="layers" class="w-4 h-4"></i> Objects
+      </button>
+      <button onclick="switchTab('spawns')" id="tab-spawns" class="py-3 text-[10px] font-bold uppercase tracking-wider border-b-2 border-transparent text-slate-400 hover:text-white flex flex-col items-center gap-1">
+        <i data-lucide="map-pin" class="w-4 h-4"></i> Spawns
+      </button>
+    </div>
+
+    <!-- SCROLLABLE INSPECTOR PANEL CONTENT -->
+    <div id="inspector-panel" class="flex-1 overflow-y-auto p-4 flex flex-col gap-4">
+      <!-- Tabs panels rendered dynamically in JavaScript -->
+    </div>
+  </div>
+
+  <!-- PROCEDURAL SHADERS & EDITOR LOGIC SCRIPTS -->
+  <script>
+    // PREMADE MAPS REFERENCE DATABASE FOR TEMPLATES
+    const PREMADE_MAPS = [
+      {
+        id: 'cyber_hex_arena',
+        name: 'Cyber Hex Grid',
+        description: 'A sci-fi tactical holodeck featuring glowing neon pillars and a central energy core.',
+        theme: 'cyberpunk',
+        arenaRadius: 20,
+        skyboxHue: 280,
+        skyboxBrightness: 5,
+        fogColor: '#0c0714',
+        fogDensity: 0.02,
+        spawnPoints: [
+          { x: -12, y: 0, z: -12 },
+          { x: 12, y: 0, z: 12 },
+          { x: -12, y: 0, z: 12 },
+          { x: 12, y: 0, z: -12 }
+        ],
+        lighting: {
+          ambientColor: '#0f0c1b',
+          ambientIntensity: 0.7,
+          directColor: '#e0f2fe',
+          directIntensity: 1.8,
+          directPosition: { x: 5, y: 15, z: 5 },
+          pointLights: [
+            { id: 'core_glow', color: '#a855f7', intensity: 4.5, distance: 20, decay: 1.5, position: { x: 0, y: 3.5, z: 0 } },
+            { id: 'left_vent', color: '#06b6d4', intensity: 2.5, distance: 10, decay: 1.2, position: { x: -8, y: 2, z: 0 } }
+          ]
+        },
+        objects: [
+          { id: 'obj_central_core', name: 'Plasma Core Reactor', type: 'sphere', position: { x: 0, y: 1.5, z: 0 }, rotation: { x: 0, y: 0, z: 0 }, scale: { x: 3.5, y: 3.5, z: 3.5 }, color: '#a855f7', metalness: 0.2, roughness: 0.1, opacity: 0.95, transparent: true, emissive: '#7e22ce', emissiveIntensity: 3.0, isCollidable: true, texture: 'futuristic_shield' },
+          { id: 'obj_pillar_nw', name: 'Hex Tech Column NW', type: 'cylinder', position: { x: -8, y: 3, z: -8 }, rotation: { x: 0, y: 0, z: 0 }, scale: { x: 1.8, y: 6, z: 1.8 }, color: '#1e293b', metalness: 0.9, roughness: 0.15, opacity: 1, transparent: false, emissive: '#06b6d4', emissiveIntensity: 1.2, isCollidable: true, texture: 'futuristic_hex' },
+          { id: 'obj_pillar_ne', name: 'Hex Tech Column NE', type: 'cylinder', position: { x: 8, y: 3, z: -8 }, rotation: { x: 0, y: 0, z: 0 }, scale: { x: 1.8, y: 6, z: 1.8 }, color: '#1e293b', metalness: 0.9, roughness: 0.15, opacity: 1, transparent: false, emissive: '#06b6d4', emissiveIntensity: 1.2, isCollidable: true, texture: 'futuristic_hex' }
+        ]
+      },
+      {
+        id: 'botanical_outpost',
+        name: 'Jungle Ruined Outpost',
+        description: 'A crumbling modular training center overtaken by overgrown overgrown ruins.',
+        theme: 'nature',
+        arenaRadius: 21,
+        skyboxHue: 120,
+        skyboxBrightness: 6,
+        fogColor: '#051208',
+        fogDensity: 0.03,
+        spawnPoints: [
+          { x: -14, y: 0, z: -8 },
+          { x: 14, y: 0, z: 8 },
+          { x: -8, y: 0, z: 14 },
+          { x: 8, y: 0, z: -14 }
+        ],
+        lighting: {
+          ambientColor: '#0a1d0f',
+          ambientIntensity: 0.8,
+          directColor: '#fef08a',
+          directIntensity: 2.0,
+          directPosition: { x: -6, y: 18, z: -4 },
+          pointLights: [
+            { id: 'crystal_1', color: '#10b981', intensity: 3.0, distance: 12, decay: 1.1, position: { x: 0, y: 2, z: 0 } }
+          ]
+        },
+        objects: [
+          { id: 'obj_nature_totem', name: 'Ancient emerald crystal', type: 'cylinder', position: { x: 0, y: 2, z: 0 }, rotation: { x: 0, y: 0, z: 0 }, scale: { x: 1.2, y: 4, z: 1.2 }, color: '#10b981', metalness: 0.1, roughness: 0.05, opacity: 0.85, transparent: true, emissive: '#047857', emissiveIntensity: 2.5, isCollidable: true, texture: 'fantasy_runed_stone' },
+          { id: 'obj_rock_nw', name: 'Mossy Boulder NW', type: 'box', position: { x: -9, y: 1.5, z: -9 }, rotation: { x: 0, y: 0.3, z: 0 }, scale: { x: 3, y: 3, z: 3 }, color: '#2d3748', metalness: 0.1, roughness: 0.9, opacity: 1, transparent: false, emissive: '#166534', emissiveIntensity: 0.3, isCollidable: true, texture: 'nature_mossy_stone' }
+        ]
+      },
+      {
+        id: 'vanguard_starbase',
+        name: 'Vanguard Asteroid Mine',
+        description: 'An industrial mineral extraction outpost located on an asteroid crag.',
+        theme: 'space',
+        arenaRadius: 19,
+        skyboxHue: 210,
+        skyboxBrightness: 3,
+        fogColor: '#04070f',
+        fogDensity: 0.015,
+        spawnPoints: [
+          { x: -10, y: 0, z: -10 },
+          { x: 10, y: 0, z: 10 },
+          { x: -10, y: 0, z: 10 },
+          { x: 10, y: 0, z: -10 }
+        ],
+        lighting: {
+          ambientColor: '#0a0d17',
+          ambientIntensity: 0.6,
+          directColor: '#fffbeb',
+          directIntensity: 2.2,
+          directPosition: { x: 12, y: 22, z: 6 },
+          pointLights: [
+            { id: 'shaft_light_1', color: '#ea580c', intensity: 3.5, distance: 15, decay: 1.3, position: { x: -6, y: 3, z: 5 } }
+          ]
+        },
+        objects: [
+          { id: 'obj_extractor', name: 'Meteorite Ore Extractor', type: 'cylinder', position: { x: 0, y: 2.5, z: 0 }, rotation: { x: 0, y: 0, z: 0 }, scale: { x: 2.6, y: 5, z: 2.6 }, color: '#334155', metalness: 0.95, roughness: 0.05, opacity: 1, transparent: false, emissive: '#ca8a04', emissiveIntensity: 1.0, isCollidable: true, texture: 'space_alloy' },
+          { id: 'obj_asteroid_1', name: 'Asteroid Ore Cluster 1', type: 'box', position: { x: -6, y: 1.5, z: 5 }, rotation: { x: 0, y: 0.6, z: 0 }, scale: { x: 2.2, y: 3.0, z: 2.2 }, color: '#1e293b', metalness: 0.3, roughness: 0.8, opacity: 1, transparent: false, emissive: '#ca8a04', emissiveIntensity: 1.8, isCollidable: true, texture: 'space_meteorite' }
+        ]
+      }
+    ];
+
+    // GLOBAL EDITOR STATE
+    let activeTab = 'scene';
+    let mapName = 'My Custom Local Map';
+    let mapAuthor = 'Spartan Architect';
+    let mapDescription = 'An outstanding custom battle arena.';
+    let theme = 'cyberpunk';
+    let arenaRadius = 20;
+    let skyboxHue = 280;
+    let skyboxBrightness = 5;
+    let fogColor = '#050811';
+    let fogDensity = 0.015;
+
+    let ambientColor = '#0a0f1d';
+    let ambientIntensity = 0.85;
+    let directColor = '#e0f2fe';
+    let directIntensity = 2.2;
+    let directPosX = 6, directPosY = 22, directPosZ = 6;
+
+    let objects = [];
+    let pointLights = [];
+    let spawnPoints = [
+      { x: -10, y: 0, z: -10 },
+      { x: 10, y: 0, z: 10 },
+      { x: -10, y: 0, z: 10 },
+      { x: 10, y: 0, z: -10 }
+    ];
+
+    let selectedObjectId = null;
+    let selectedLightId = null;
+    let selectedSpawnIdx = null;
+
+    let showNavMeshOverlay = false;
+
+    // THREE.JS CONTEXT
+    let scene, camera, renderer, controls;
+    let objectsGroup, spawnsGroup, lightsGroup, navMeshGroup, boundaryGrid;
+    let selectionHelper;
+    let raycaster, mouse;
+
+    // INITIALIZE WORKSPACE
+    window.addEventListener('load', () => {
+      initThree();
+      initEvents();
+      switchTab('scene');
+      lucide.createIcons();
+    });
+
+    function initThree() {
+      const container = document.getElementById('viewport-container');
+      
+      // Scene
+      scene = new THREE.Scene();
+      scene.background = new THREE.Color(fogColor);
+      scene.fog = new THREE.FogExp2(fogColor, fogDensity);
+
+      // Camera
+      camera = new THREE.PerspectiveCamera(55, container.clientWidth / container.clientHeight, 0.1, 1000);
+      camera.position.set(0, 25, 35);
+
+      // Renderer
+      renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('editor-canvas'), antialias: true });
+      renderer.setSize(container.clientWidth, container.clientHeight);
+      renderer.setPixelRatio(window.devicePixelRatio);
+      renderer.shadowMap.enabled = true;
+      renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+      // Controls
+      controls = new THREE.OrbitControls(camera, renderer.domElement);
+      controls.enableDamping = true;
+      controls.dampingFactor = 0.05;
+      controls.maxPolarAngle = Math.PI / 2.05; // prevent going below floor
+      controls.minDistance = 3;
+      controls.maxDistance = 100;
+
+      // Lighting Base
+      const ambientLight = new THREE.AmbientLight(ambientColor, ambientIntensity);
+      scene.add(ambientLight);
+
+      const dirLight = new THREE.DirectionalLight(directColor, directIntensity);
+      dirLight.position.set(directPosX, directPosY, directPosZ);
+      dirLight.castShadow = true;
+      dirLight.shadow.mapSize.width = 1024;
+      dirLight.shadow.mapSize.height = 1024;
+      dirLight.shadow.camera.near = 0.5;
+      dirLight.shadow.camera.far = 80;
+      const dSize = 25;
+      dirLight.shadow.camera.left = -dSize;
+      dirLight.shadow.camera.right = dSize;
+      dirLight.shadow.camera.top = dSize;
+      dirLight.shadow.camera.bottom = -dSize;
+      scene.add(dirLight);
+
+      // Workspace Groups
+      objectsGroup = new THREE.Group();
+      spawnsGroup = new THREE.Group();
+      lightsGroup = new THREE.Group();
+      navMeshGroup = new THREE.Group();
+      scene.add(objectsGroup);
+      scene.add(spawnsGroup);
+      scene.add(lightsGroup);
+      scene.add(navMeshGroup);
+
+      // Boundary outline
+      rebuildBoundaryGrid();
+
+      // Selection Helper
+      selectionHelper = new THREE.BoxHelper(new THREE.Mesh(), '#22d3ee');
+      selectionHelper.visible = false;
+      scene.add(selectionHelper);
+
+      // Click raycaster Setup
+      raycaster = new THREE.Raycaster();
+      mouse = new THREE.Vector2();
+
+      // Animation tick
+      animate();
+    }
+
+    function animate() {
+      requestAnimationFrame(animate);
+      controls.update();
+
+      // Slow hover rotation on spawn indicators for micro-animations
+      const time = Date.now() * 0.002;
+      spawnsGroup.children.forEach((group, idx) => {
+        group.position.y = 0.9 + Math.sin(time + idx * 1.5) * 0.08;
+      });
+
+      renderer.render(scene, camera);
+    }
+
+    function rebuildBoundaryGrid() {
+      if (boundaryGrid) scene.remove(boundaryGrid);
+
+      boundaryGrid = new THREE.Group();
+
+      // High-tech circular boundary ring
+      const ringGeo = new THREE.RingGeometry(arenaRadius - 0.1, arenaRadius + 0.1, 64);
+      ringGeo.rotateX(-Math.PI / 2);
+      const ringMat = new THREE.MeshBasicMaterial({ color: '#38bdf8', side: THREE.DoubleSide, transparent: true, opacity: 0.4 });
+      const ring = new THREE.Mesh(ringGeo, ringMat);
+      boundaryGrid.add(ring);
+
+      // Grid helper inside boundary
+      const grid = new THREE.GridHelper(arenaRadius * 2, 20, '#1e293b', '#0f172a');
+      grid.position.y = -0.05;
+      boundaryGrid.add(grid);
+
+      scene.add(boundaryGrid);
+    }
+
+    // procedurally generated textures
+    function generateCustomTexture(type, colorHex) {
+      const size = 256;
+      const canvas = document.createElement('canvas');
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext('2d');
+
+      ctx.fillStyle = '#0f172a';
+      ctx.fillRect(0, 0, size, size);
+
+      if (type === 'nature_grass') {
+        ctx.fillStyle = '#15803d';
+        ctx.fillRect(0, 0, size, size);
+        ctx.fillStyle = '#166534';
+        for (let i = 0; i < 2000; i++) {
+          ctx.fillRect(Math.random() * size, Math.random() * size, 2, 4);
+        }
+      } else if (type === 'nature_mossy_stone') {
+        ctx.fillStyle = '#475569';
+        ctx.fillRect(0, 0, size, size);
+        ctx.fillStyle = '#15803d';
+        for (let i = 0; i < 15; i++) {
+          ctx.beginPath();
+          ctx.arc(Math.random() * size, Math.random() * size, 10 + Math.random() * 20, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      } else if (type === 'nature_wood') {
+        ctx.fillStyle = '#78350f';
+        ctx.fillRect(0, 0, size, size);
+        ctx.strokeStyle = '#451a03';
+        ctx.lineWidth = 4;
+        for (let i = 0; i < size; i += 20) {
+          ctx.beginPath();
+          ctx.moveTo(0, i);
+          ctx.bezierCurveTo(size / 3, i + 10, 2 * size / 3, i - 10, size, i);
+          ctx.stroke();
+        }
+      } else if (type === 'space_alloy') {
+        ctx.fillStyle = '#334155';
+        ctx.fillRect(0, 0, size, size);
+        ctx.strokeStyle = '#64748b';
+        ctx.lineWidth = 3;
+        ctx.strokeRect(10, 10, size - 20, size - 20);
+        ctx.strokeRect(40, 40, size - 80, size - 80);
+      } else if (type === 'space_meteorite') {
+        ctx.fillStyle = '#1e293b';
+        ctx.fillRect(0, 0, size, size);
+        ctx.fillStyle = '#0f172a';
+        for (let i = 0; i < 30; i++) {
+          ctx.fillRect(Math.random() * size, Math.random() * size, 8, 8);
+        }
+      } else if (type === 'space_lunar_dust') {
+        ctx.fillStyle = '#64748b';
+        ctx.fillRect(0, 0, size, size);
+        ctx.fillStyle = '#475569';
+        for (let i = 0; i < 400; i++) {
+          ctx.fillRect(Math.random() * size, Math.random() * size, 3, 3);
+        }
+      } else if (type === 'futuristic_carbon') {
+        ctx.fillStyle = '#1e293b';
+        ctx.fillRect(0, 0, size, size);
+        ctx.fillStyle = '#0f172a';
+        for (let x = 0; x < size; x += 16) {
+          for (let y = 0; y < size; y += 16) {
+            ctx.fillRect(x + (y % 32 === 0 ? 8 : 0), y, 8, 8);
+          }
+        }
+      } else if (type === 'futuristic_hex') {
+        ctx.fillStyle = '#0a0f1d';
+        ctx.fillRect(0, 0, size, size);
+        ctx.strokeStyle = '#06b6d4';
+        ctx.lineWidth = 1.5;
+        const hexRadius = 24;
+        const drawHex = (x, y) => {
+          ctx.beginPath();
+          for (let i = 0; i < 6; i++) {
+            const angle = (i * Math.PI) / 3;
+            ctx.lineTo(x + Math.cos(angle) * hexRadius, y + Math.sin(angle) * hexRadius);
+          }
+          ctx.closePath();
+          ctx.stroke();
+        };
+        for (let x = 0; x < size + hexRadius; x += hexRadius * 1.5) {
+          let row = 0;
+          for (let y = 0; y < size + hexRadius; y += hexRadius * Math.sqrt(3)) {
+            drawHex(x, y + (row % 2 === 0 ? 0 : (hexRadius * Math.sqrt(3)) / 2));
+            row++;
+          }
+        }
+      } else if (type === 'futuristic_shield') {
+        ctx.fillStyle = '#083344';
+        ctx.fillRect(0, 0, size, size);
+        ctx.strokeStyle = '#22d3ee';
+        ctx.lineWidth = 2.5;
+        for (let i = 0; i < size; i += 32) {
+          ctx.beginPath();
+          ctx.moveTo(0, i);
+          ctx.lineTo(size, i);
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.moveTo(i, 0);
+          ctx.lineTo(i, size);
+          ctx.stroke();
+        }
+      } else if (type === 'city_concrete') {
+        ctx.fillStyle = '#4b5563';
+        ctx.fillRect(0, 0, size, size);
+        ctx.strokeStyle = '#374151';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(0, 0, size, size);
+        ctx.strokeRect(0, 0, size / 2, size / 2);
+      } else if (type === 'city_brick') {
+        ctx.fillStyle = '#991b1b';
+        ctx.fillRect(0, 0, size, size);
+        ctx.strokeStyle = '#ef4444';
+        ctx.lineWidth = 2.5;
+        for (let y = 0; y < size; y += 32) {
+          ctx.beginPath();
+          ctx.moveTo(0, y);
+          ctx.lineTo(size, y);
+          ctx.stroke();
+          const offset = y % 64 === 0 ? 32 : 0;
+          for (let x = offset; x < size; x += 64) {
+            ctx.beginPath();
+            ctx.moveTo(x, y);
+            ctx.lineTo(x, y + 32);
+            ctx.stroke();
+          }
+        }
+      } else if (type === 'fantasy_runed_stone') {
+        ctx.fillStyle = '#311042';
+        ctx.fillRect(0, 0, size, size);
+        ctx.strokeStyle = '#d946ef';
+        ctx.lineWidth = 3.5;
+        ctx.strokeRect(10, 10, size - 20, size - 20);
+        // Draw some cryptic runic designs
+        ctx.beginPath();
+        ctx.moveTo(40, 40); ctx.lineTo(120, 120); ctx.lineTo(120, 40);
+        ctx.moveTo(180, 40); ctx.lineTo(180, 120); ctx.lineTo(220, 80);
+        ctx.stroke();
+      } else {
+        // Plain colored fallback
+        ctx.fillStyle = colorHex || '#4b5563';
+        ctx.fillRect(0, 0, size, size);
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(5, 5, size - 10, size - 10);
+      }
+
+      const canvasTexture = new THREE.CanvasTexture(canvas);
+      canvasTexture.wrapS = THREE.RepeatWrapping;
+      canvasTexture.wrapT = THREE.RepeatWrapping;
+      canvasTexture.repeat.set(1.5, 1.5);
+      return canvasTexture;
+    }
+
+    // DYNAMIC VIEWS RENDER SCOPE
+    function switchTab(tab) {
+      activeTab = tab;
+      
+      // Update Tab CSS
+      ['scene', 'lights', 'objects', 'spawns'].forEach(t => {
+        const btn = document.getElementById(`tab-${t}`);
+        if (t === tab) {
+          btn.className = "py-3 text-[10px] font-bold uppercase tracking-wider border-b-2 border-cyan-500 bg-cyan-500/5 text-cyan-400 flex flex-col items-center gap-1";
+        } else {
+          btn.className = "py-3 text-[10px] font-bold uppercase tracking-wider border-b-2 border-transparent text-slate-400 hover:text-white flex flex-col items-center gap-1";
+        }
+      });
+
+      renderInspector();
+    }
+
+    function renderInspector() {
+      const panel = document.getElementById('inspector-panel');
+      panel.innerHTML = ''; // reset
+
+      if (activeTab === 'scene') {
+        panel.innerHTML = `
+          <!-- Global Map Settings -->
+          <div class="flex flex-col gap-3 bg-white/2 border border-white/5 p-4 rounded-xl">
+            <span class="text-xs font-black uppercase text-cyan-400 tracking-wider">Level Settings</span>
+            <div class="mapmaker-field">
+              <span class="mapmaker-label">Level Name</span>
+              <input type="text" oninput="mapName=this.value" class="mapmaker-input" value="${mapName}">
+            </div>
+            <div class="mapmaker-field">
+              <span class="mapmaker-label">Author</span>
+              <input type="text" oninput="mapAuthor=this.value" class="mapmaker-input" value="${mapAuthor}">
+            </div>
+            <div class="mapmaker-field">
+              <span class="mapmaker-label">Description</span>
+              <textarea oninput="mapDescription=this.value" class="mapmaker-input h-14 resize-none text-xs leading-snug">${mapDescription}</textarea>
+            </div>
+          </div>
+
+          <!-- Environment Theme & Bounds -->
+          <div class="flex flex-col gap-3 bg-white/2 border border-white/5 p-4 rounded-xl">
+            <span class="text-xs font-black uppercase text-cyan-400 tracking-wider">Atmospherics & Size</span>
+            <div class="mapmaker-field">
+              <span class="mapmaker-label">Theme preset</span>
+              <select onchange="handleThemeChange(this.value)" class="mapmaker-input cursor-pointer font-bold text-cyan-400 bg-slate-950 uppercase">
+                <option value="cyberpunk" ${theme==='cyberpunk'?'selected':''}>Cyber Holodeck</option>
+                <option value="hangar" ${theme==='hangar'?'selected':''}>Steel Hangar</option>
+                <option value="nature" ${theme==='nature'?'selected':''}>Overgrown Nature</option>
+                <option value="space" ${theme==='space'?'selected':''}>Cosmic Starbase</option>
+                <option value="fantasy" ${theme==='fantasy'?'selected':''}>Ancient Fantasy</option>
+              </select>
+            </div>
+            <div class="mapmaker-field">
+              <span class="mapmaker-label">Arena Radius <span class="mapmaker-value-badge">${arenaRadius}m</span></span>
+              <input type="range" min="12" max="35" step="1" oninput="updateRadius(parseInt(this.value))" class="mapmaker-slider" value="${arenaRadius}">
+            </div>
+            <div class="mapmaker-field">
+              <span class="mapmaker-label">Skybox Hue color <span class="mapmaker-value-badge">${skyboxHue}°</span></span>
+              <input type="range" min="0" max="360" step="5" oninput="skyboxHue=parseInt(this.value); rebuildScene();" class="mapmaker-slider" value="${skyboxHue}">
+            </div>
+            <div class="mapmaker-field">
+              <span class="mapmaker-label">Fog Color</span>
+              <input type="color" oninput="fogColor=this.value; rebuildScene();" class="mapmaker-input h-9 p-0.5 cursor-pointer" value="${fogColor}">
+            </div>
+            <div class="mapmaker-field">
+              <span class="mapmaker-label">Fog Density <span class="mapmaker-value-badge">${fogDensity.toFixed(3)}</span></span>
+              <input type="range" min="0.001" max="0.08" step="0.001" oninput="fogDensity=parseFloat(this.value); rebuildScene();" class="mapmaker-slider" value="${fogDensity}">
+            </div>
+          </div>
+
+          <!-- Premade Starting Point -->
+          <div class="flex flex-col gap-3 bg-white/2 border border-white/5 p-4 rounded-xl">
+            <span class="text-xs font-black uppercase text-cyan-400 tracking-wider">Template Presets starting point</span>
+            <div class="mapmaker-preset-grid">
+              ${PREMADE_MAPS.map(m => `
+                <button onclick="handleLoadPremade('${m.id}')" class="mapmaker-preset-btn text-[10px] uppercase truncate py-2 font-mono">
+                  ${m.name}
+                </button>
+              `).join('')}
+            </div>
+          </div>
+        `;
+      } else if (activeTab === 'lights') {
+        const activeLight = pointLights.find(l => l.id === selectedLightId);
+        panel.innerHTML = `
+          <!-- Global Base Lights -->
+          <div class="flex flex-col gap-3 bg-white/2 border border-white/5 p-4 rounded-xl">
+            <span class="text-xs font-black uppercase text-cyan-400 tracking-wider">Base Illumination</span>
+            <div class="mapmaker-field">
+              <span class="mapmaker-label">Ambient light Color</span>
+              <input type="color" oninput="ambientColor=this.value; rebuildScene();" class="mapmaker-input h-9 p-0.5 cursor-pointer" value="${ambientColor}">
+            </div>
+            <div class="mapmaker-field">
+              <span class="mapmaker-label">Ambient Intensity <span class="mapmaker-value-badge">${ambientIntensity.toFixed(2)}</span></span>
+              <input type="range" min="0.1" max="3.0" step="0.05" oninput="ambientIntensity=parseFloat(this.value); rebuildScene();" class="mapmaker-slider" value="${ambientIntensity}">
+            </div>
+            <div class="mapmaker-field">
+              <span class="mapmaker-label">Direct Intensity <span class="mapmaker-value-badge">${directIntensity.toFixed(2)}</span></span>
+              <input type="range" min="0" max="4.0" step="0.1" oninput="directIntensity=parseFloat(this.value); rebuildScene();" class="mapmaker-slider" value="${directIntensity}">
+            </div>
+          </div>
+
+          <!-- Add Point Lights -->
+          <div class="flex flex-col gap-3 bg-white/2 border border-white/5 p-4 rounded-xl">
+            <div class="flex justify-between items-center pb-1.5 border-b border-white/5">
+              <span class="text-xs font-black uppercase text-cyan-400 tracking-wider">Point Lights</span>
+              <button onclick="handleAddLight()" class="text-[10px] bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 px-3 py-1 rounded font-bold uppercase transition-all flex items-center gap-1">
+                <i data-lucide="plus" class="w-3.5 h-3.5"></i> Add Light
+              </button>
+            </div>
+            <div class="mapmaker-item-list">
+              ${pointLights.length === 0 ? '<p class="text-[10px] text-white/30 italic text-center py-4">No custom lights created yet.</p>' : ''}
+              ${pointLights.map((pl, idx) => `
+                <div onclick="setSelectedLight('${pl.id}')" class="mapmaker-item-row ${selectedLightId===pl.id?'mapmaker-item-row-selected':''}">
+                  <span class="font-mono text-[10px]">LightSource #${idx + 1} (${pl.color})</span>
+                  <button onclick="event.stopPropagation(); handleDeleteLight('${pl.id}')" class="mapmaker-row-btn hover:text-red-400">
+                    <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                  </button>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+
+          <!-- Light Inspector -->
+          ${activeLight ? `
+            <div class="flex flex-col gap-3 bg-cyan-950/20 border border-cyan-500/25 p-4 rounded-xl">
+              <span class="text-xs font-black uppercase text-cyan-400 tracking-wider">Light Source Inspector</span>
+              <div class="mapmaker-field">
+                <span class="mapmaker-label">Color</span>
+                <input type="color" oninput="handleUpdateLight('color', this.value)" class="mapmaker-input h-9 p-0.5 cursor-pointer" value="${activeLight.color}">
+              </div>
+              <div class="mapmaker-field">
+                <span class="mapmaker-label">Intensity <span class="mapmaker-value-badge">${activeLight.intensity}</span></span>
+                <input type="range" min="0.5" max="15.0" step="0.5" oninput="handleUpdateLight('intensity', parseFloat(this.value))" class="mapmaker-slider" value="${activeLight.intensity}">
+              </div>
+              <div class="mapmaker-field">
+                <span class="mapmaker-label">Range Distance <span class="mapmaker-value-badge">${activeLight.distance}m</span></span>
+                <input type="range" min="3" max="30" step="1" oninput="handleUpdateLight('distance', parseInt(this.value))" class="mapmaker-slider" value="${activeLight.distance}">
+              </div>
+              <div class="mapmaker-field">
+                <span class="mapmaker-label">Position X <span class="mapmaker-value-badge">${activeLight.position.x}m</span></span>
+                <input type="range" min="-30" max="30" step="0.5" oninput="handleUpdateLight('pos_x', parseFloat(this.value))" class="mapmaker-slider" value="${activeLight.position.x}">
+              </div>
+              <div class="mapmaker-field">
+                <span class="mapmaker-label">Position Y <span class="mapmaker-value-badge">${activeLight.position.y}m</span></span>
+                <input type="range" min="0.5" max="15.0" step="0.5" oninput="handleUpdateLight('pos_y', parseFloat(this.value))" class="mapmaker-slider" value="${activeLight.position.y}">
+              </div>
+              <div class="mapmaker-field">
+                <span class="mapmaker-label">Position Z <span class="mapmaker-value-badge">${activeLight.position.z}m</span></span>
+                <input type="range" min="-30" max="30" step="0.5" oninput="handleUpdateLight('pos_z', parseFloat(this.value))" class="mapmaker-slider" value="${activeLight.position.z}">
+              </div>
+            </div>
+          ` : ''}
+        `;
+      } else if (activeTab === 'objects') {
+        const activeObj = objects.find(o => o.id === selectedObjectId);
+        panel.innerHTML = `
+          <!-- Add Object Block -->
+          <div class="flex flex-col gap-3 bg-white/2 border border-white/5 p-4 rounded-xl">
+            <span class="text-xs font-black uppercase text-cyan-400 tracking-wider">Quick Asset Spawning</span>
+            <div class="grid grid-cols-2 gap-2 text-[10px]">
+              <button onclick="handleAddObject('box', 'crate')" class="mapmaker-preset-btn py-2.5">📦 Steel Cargo Crate</button>
+              <button onclick="handleAddObject('cylinder', 'pillar')" class="mapmaker-preset-btn py-2.5">🗼 Glowing Pillar</button>
+              <button onclick="handleAddObject('box', 'barrier')" class="mapmaker-preset-btn py-2.5">🚧 Modular Barrier</button>
+              <button onclick="handleAddObject('sphere', 'plasma')" class="mapmaker-preset-btn py-2.5">🔮 Plasma Core</button>
+            </div>
+          </div>
+
+          <!-- Objects Inventory List -->
+          <div class="flex flex-col gap-3 bg-white/2 border border-white/5 p-4 rounded-xl">
+            <span class="text-xs font-black uppercase text-cyan-400 tracking-wider">Placed Obstacles</span>
+            <div class="mapmaker-item-list">
+              ${objects.length === 0 ? '<p class="text-[10px] text-white/30 italic text-center py-4">No objects spawned yet.</p>' : ''}
+              ${objects.map(obj => `
+                <div onclick="setSelectedObject('${obj.id}')" class="mapmaker-item-row ${selectedObjectId===obj.id?'mapmaker-item-row-selected':''}">
+                  <span class="truncate pr-2">${obj.name} (${obj.type.toUpperCase()})</span>
+                  <div class="mapmaker-row-actions">
+                    <button onclick="event.stopPropagation(); handleDuplicateObject('${obj.id}')" class="mapmaker-row-btn hover:text-cyan-400" title="Duplicate Object">
+                      <i data-lucide="copy" class="w-3.5 h-3.5"></i>
+                    </button>
+                    <button onclick="event.stopPropagation(); handleDeleteObject('${obj.id}')" class="mapmaker-row-btn hover:text-red-400" title="Delete Object">
+                      <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                    </button>
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+
+          <!-- Object Inspector Panel -->
+          ${activeObj ? `
+            <div class="flex flex-col gap-3 bg-cyan-950/20 border border-cyan-500/25 p-4 rounded-xl">
+              <span class="text-xs font-black uppercase text-cyan-400 tracking-wider">Object Inspector</span>
+              <div class="mapmaker-field">
+                <span class="mapmaker-label">Object Name</span>
+                <input type="text" oninput="handleUpdateObject('name', this.value)" class="mapmaker-input text-xs" value="${activeObj.name}">
+              </div>
+              <div class="mapmaker-field">
+                <span class="mapmaker-label">Base Color</span>
+                <input type="color" oninput="handleUpdateObject('color', this.value)" class="mapmaker-input h-9 p-0.5 cursor-pointer" value="${activeObj.color}">
+              </div>
+              <div class="mapmaker-field">
+                <span class="mapmaker-label">Geometry Type</span>
+                <span class="text-xs font-mono font-bold text-cyan-400 mt-1 uppercase">${activeObj.type}</span>
+              </div>
+              <div class="mapmaker-field">
+                <span class="mapmaker-label">Texture Preset</span>
+                <select onchange="handleUpdateObject('texture', this.value)" class="mapmaker-input cursor-pointer text-xs bg-slate-950 text-cyan-300 font-bold uppercase">
+                  <option value="none" ${activeObj.texture==='none'?'selected':''}>None (Matte Color)</option>
+                  <optgroup label="Nature">
+                    <option value="nature_grass" ${activeObj.texture==='nature_grass'?'selected':''}>Grass Turf</option>
+                    <option value="nature_mossy_stone" ${activeObj.texture==='nature_mossy_stone'?'selected':''}>Mossy Stone</option>
+                    <option value="nature_wood" ${activeObj.texture==='nature_wood'?'selected':''}>Tree Wood Grain</option>
+                  </optgroup>
+                  <optgroup label="Space Base">
+                    <option value="space_alloy" ${activeObj.texture==='space_alloy'?'selected':''}>Starbase Alloy Plate</option>
+                    <option value="space_meteorite" ${activeObj.texture==='space_meteorite'?'selected':''}>basalt Meteorite</option>
+                    <option value="space_lunar_dust" ${activeObj.texture==='space_lunar_dust'?'selected':''}>Cosmic Sand Dust</option>
+                  </optgroup>
+                  <optgroup label="Futuristic">
+                    <option value="futuristic_carbon" ${activeObj.texture==='futuristic_carbon'?'selected':''}>Carbon Fiber</option>
+                    <option value="futuristic_hex" ${activeObj.texture==='futuristic_hex'?'selected':''}>Neon Hex Plate</option>
+                    <option value="futuristic_shield" ${activeObj.texture==='futuristic_shield'?'selected':''}>Glowing Shield Grid</option>
+                  </optgroup>
+                  <optgroup label="City">
+                    <option value="city_concrete" ${activeObj.texture==='city_concrete'?'selected':''}>Raw Concrete</option>
+                    <option value="city_brick" ${activeObj.texture==='city_brick'?'selected':''}>Warehouse Red Brick</option>
+                  </optgroup>
+                  <optgroup label="Fantasy">
+                    <option value="fantasy_runed_stone" ${activeObj.texture==='fantasy_runed_stone'?'selected':''}>ancient Runed Monolith</option>
+                  </optgroup>
+                </select>
+              </div>
+
+              <!-- Pos / Rot / Scale Sliders -->
+              <div class="mapmaker-field mt-1.5 pt-2 border-t border-white/5">
+                <span class="text-[10px] font-mono text-cyan-400/70 uppercase font-black">Transform Sliders</span>
+              </div>
+              <div class="mapmaker-field">
+                <span class="mapmaker-label">Pos X <span class="mapmaker-value-badge">${activeObj.position.x}m</span></span>
+                <input type="range" min="-30" max="30" step="0.5" oninput="handleUpdateObject('pos_x', parseFloat(this.value))" class="mapmaker-slider" value="${activeObj.position.x}">
+              </div>
+              <div class="mapmaker-field">
+                <span class="mapmaker-label">Pos Y <span class="mapmaker-value-badge">${activeObj.position.y}m</span></span>
+                <input type="range" min="-2" max="12" step="0.1" oninput="handleUpdateObject('pos_y', parseFloat(this.value))" class="mapmaker-slider" value="${activeObj.position.y}">
+              </div>
+              <div class="mapmaker-field">
+                <span class="mapmaker-label">Pos Z <span class="mapmaker-value-badge">${activeObj.position.z}m</span></span>
+                <input type="range" min="-30" max="30" step="0.5" oninput="handleUpdateObject('pos_z', parseFloat(this.value))" class="mapmaker-slider" value="${activeObj.position.z}">
+              </div>
+
+              <div class="mapmaker-field mt-1.5">
+                <span class="mapmaker-label">Scale X (Width/Radius) <span class="mapmaker-value-badge">${activeObj.scale.x}m</span></span>
+                <input type="range" min="0.4" max="15.0" step="0.1" oninput="handleUpdateObject('scale_x', parseFloat(this.value))" class="mapmaker-slider" value="${activeObj.scale.x}">
+              </div>
+              <div class="mapmaker-field">
+                <span class="mapmaker-label">Scale Y (Height) <span class="mapmaker-value-badge">${activeObj.scale.y}m</span></span>
+                <input type="range" min="0.4" max="15.0" step="0.1" oninput="handleUpdateObject('scale_y', parseFloat(this.value))" class="mapmaker-slider" value="${activeObj.scale.y}">
+              </div>
+              <div class="mapmaker-field">
+                <span class="mapmaker-label">Scale Z (Depth) <span class="mapmaker-value-badge">${activeObj.scale.z}m</span></span>
+                <input type="range" min="0.4" max="15.0" step="0.1" oninput="handleUpdateObject('scale_z', parseFloat(this.value))" class="mapmaker-slider" value="${activeObj.scale.z}">
+              </div>
+
+              <div class="mapmaker-field mt-1.5">
+                <span class="mapmaker-label">Rotation Y (Yaw) <span class="mapmaker-value-badge">${Math.round(activeObj.rotation.y * (180/Math.PI))}°</span></span>
+                <input type="range" min="0" max="360" step="5" oninput="handleUpdateObject('rot_y', parseFloat(this.value) * (Math.PI/180))" class="mapmaker-slider" value="${Math.round(activeObj.rotation.y * (180/Math.PI))}">
+              </div>
+
+              <!-- PBR material sliders -->
+              <div class="mapmaker-field mt-1.5 pt-2 border-t border-white/5">
+                <span class="text-[10px] font-mono text-cyan-400/70 uppercase font-black">Material Rendering Details</span>
+              </div>
+              <div class="mapmaker-field">
+                <span class="mapmaker-label">Metalness <span class="mapmaker-value-badge">${activeObj.metalness.toFixed(2)}</span></span>
+                <input type="range" min="0" max="1" step="0.05" oninput="handleUpdateObject('metalness', parseFloat(this.value))" class="mapmaker-slider" value="${activeObj.metalness}">
+              </div>
+              <div class="mapmaker-field">
+                <span class="mapmaker-label">Roughness <span class="mapmaker-value-badge">${activeObj.roughness.toFixed(2)}</span></span>
+                <input type="range" min="0" max="1" step="0.05" oninput="handleUpdateObject('roughness', parseFloat(this.value))" class="mapmaker-slider" value="${activeObj.roughness}">
+              </div>
+              <div class="mapmaker-field">
+                <span class="mapmaker-label">Opacity Transparency <span class="mapmaker-value-badge">${activeObj.opacity.toFixed(2)}</span></span>
+                <input type="range" min="0.1" max="1" step="0.05" oninput="handleUpdateObject('opacity', parseFloat(this.value))" class="mapmaker-slider" value="${activeObj.opacity}">
+              </div>
+
+              <!-- Glow settings -->
+              <div class="mapmaker-field mt-1.5 pt-2 border-t border-white/5">
+                <span class="text-[10px] font-mono text-cyan-400/70 uppercase font-black">Neon Emissive Glow</span>
+              </div>
+              <div class="mapmaker-field">
+                <span class="mapmaker-label">Glow Color</span>
+                <input type="color" oninput="handleUpdateObject('emissive', this.value)" class="mapmaker-input h-9 p-0.5 cursor-pointer" value="${activeObj.emissive || '#000000'}">
+              </div>
+              <div class="mapmaker-field">
+                <span class="mapmaker-label">Intensity <span class="mapmaker-value-badge">${activeObj.emissiveIntensity.toFixed(1)}</span></span>
+                <input type="range" min="0" max="5.0" step="0.2" oninput="handleUpdateObject('emissiveIntensity', parseFloat(this.value))" class="mapmaker-slider" value="${activeObj.emissiveIntensity}">
+              </div>
+            </div>
+          ` : ''}
+        `;
+      } else if (activeTab === 'spawns') {
+        panel.innerHTML = `
+          <!-- Add Spawns Header -->
+          <div class="flex flex-col gap-3 bg-white/2 border border-white/5 p-4 rounded-xl">
+            <div class="flex justify-between items-center border-b border-white/5 pb-2">
+              <span class="text-xs font-black uppercase text-cyan-400 tracking-wider">Spawn Locations</span>
+              <button onclick="handleAddSpawn()" class="text-[10px] bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 px-3 py-1 rounded font-bold uppercase transition-all flex items-center gap-1">
+                <i data-lucide="plus" class="w-3.5 h-3.5"></i> Add Spawn
+              </button>
+            </div>
+            <div class="mapmaker-item-list">
+              ${spawnPoints.length === 0 ? '<p class="text-[10px] text-white/30 italic text-center py-4">No spawns created yet.</p>' : ''}
+              ${spawnPoints.map((sp, idx) => `
+                <div onclick="setSelectedSpawn('${idx}')" class="mapmaker-item-row ${selectedSpawnIdx===idx?'mapmaker-item-row-selected':''}">
+                  <span class="font-mono text-[10px]">Pilot Spawn #${idx + 1} (${sp.x.toFixed(1)}m, ${sp.z.toFixed(1)}m)</span>
+                  <button onclick="event.stopPropagation(); handleDeleteSpawn('${idx}')" class="mapmaker-row-btn hover:text-red-400">
+                    <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                  </button>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+
+          <!-- Individual Spawn Inspector -->
+          ${selectedSpawnIdx !== null && spawnPoints[selectedSpawnIdx] ? `
+            <div class="flex flex-col gap-3 bg-cyan-950/20 border border-cyan-500/25 p-4 rounded-xl">
+              <span class="text-xs font-black uppercase text-cyan-400 tracking-wider">Spawn Inspector</span>
+              <div class="mapmaker-field">
+                <span class="mapmaker-label">Coordinate Position X <span class="mapmaker-value-badge">${spawnPoints[selectedSpawnIdx].x}m</span></span>
+                <input type="range" min="-30" max="30" step="0.5" oninput="handleUpdateSpawn('x', parseFloat(this.value))" class="mapmaker-slider" value="${spawnPoints[selectedSpawnIdx].x}">
+              </div>
+              <div class="mapmaker-field">
+                <span class="mapmaker-label">Coordinate Position Z <span class="mapmaker-value-badge">${spawnPoints[selectedSpawnIdx].z}m</span></span>
+                <input type="range" min="-30" max="30" step="0.5" oninput="handleUpdateSpawn('z', parseFloat(this.value))" class="mapmaker-slider" value="${spawnPoints[selectedSpawnIdx].z}">
+              </div>
+            </div>
+          ` : ''}
+        `;
+      }
+
+      lucide.createIcons();
+      rebuildScene();
+    }
+
+    // SCENE REBUILD & GRAPHICS PIPELINE
+    let meshMap = new Map();
+    function rebuildScene() {
+      if (!scene) return;
+
+      // Update Sky & Fog
+      scene.background.set(fogColor);
+      scene.fog.color.set(fogColor);
+      scene.fog.density = fogDensity;
+
+      // Update base light colors & intensity
+      const ambientLight = scene.children.find(c => c.isAmbientLight);
+      if (ambientLight) {
+        ambientLight.color.set(ambientColor);
+        ambientLight.intensity = ambientIntensity;
+      }
+
+      const dirLight = scene.children.find(c => c.isDirectionalLight);
+      if (dirLight) {
+        dirLight.intensity = directIntensity;
+        dirLight.position.set(directPosX, directPosY, directPosZ);
+      }
+
+      // Rebuild Obstacles
+      while (objectsGroup.children.length > 0) {
+        objectsGroup.remove(objectsGroup.children[0]);
+      }
+      meshMap.clear();
+
+      objects.forEach(obj => {
+        let geo;
+        const sx = obj.scale.x;
+        const sy = obj.scale.y;
+        const sz = obj.scale.z;
+
+        if (obj.type === 'box') {
+          geo = new THREE.BoxGeometry(sx, sy, sz);
+        } else if (obj.type === 'cylinder') {
+          geo = new THREE.CylinderGeometry(sx / 2, sx / 2, sy, 32);
+        } else {
+          geo = new THREE.SphereGeometry(sx / 2, 32, 32);
+        }
+
+        const texture = generateCustomTexture(obj.texture, obj.color);
+        const mat = new THREE.MeshStandardMaterial({
+          map: texture,
+          color: new THREE.Color(obj.color),
+          metalness: obj.metalness,
+          roughness: obj.roughness,
+          opacity: obj.opacity,
+          transparent: obj.transparent,
+        });
+
+        if (obj.emissive && obj.emissive !== '#000000') {
+          mat.emissive = new THREE.Color(obj.emissive);
+          mat.emissiveIntensity = obj.emissiveIntensity;
+        }
+
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.position.set(obj.position.x, obj.position.y, obj.position.z);
+        mesh.rotation.set(obj.rotation.x, obj.rotation.y, obj.rotation.z);
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+
+        mesh.userData = { id: obj.id }; // store ID for click checks
+
+        objectsGroup.add(mesh);
+        meshMap.set(obj.id, mesh);
+      });
+
+      // Update outline selection helper
+      if (selectedObjectId && activeTab === 'objects') {
+        const selMesh = meshMap.get(selectedObjectId);
+        if (selMesh) {
+          selectionHelper.setFromObject(selMesh);
+          selectionHelper.visible = true;
+        } else {
+          selectionHelper.visible = false;
+        }
+      } else {
+        selectionHelper.visible = false;
+      }
+
+      // Rebuild Spawn Markers
+      while (spawnsGroup.children.length > 0) {
+        spawnsGroup.remove(spawnsGroup.children[0]);
+      }
+
+      spawnPoints.forEach((sp, idx) => {
+        const marker = new THREE.Group();
+        marker.position.set(sp.x, 0.9, sp.z);
+
+        // Cylinder Body indicator
+        const body = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.25, 0.25, 1.2, 16),
+          new THREE.MeshStandardMaterial({ color: '#16803d', transparent: true, opacity: 0.8 })
+        );
+        marker.add(body);
+
+        // Sphere head
+        const head = new THREE.Mesh(
+          new THREE.SphereGeometry(0.3, 16, 16),
+          new THREE.MeshStandardMaterial({ color: '#22c55e' })
+        );
+        head.position.y = 0.7;
+        marker.add(head);
+
+        // Neon outline ring if active selected spawn location
+        if (selectedSpawnIdx === idx && activeTab === 'spawns') {
+          const ring = new THREE.Mesh(
+            new THREE.RingGeometry(0.5, 0.6, 32),
+            new THREE.MeshBasicMaterial({ color: '#22d3ee', side: THREE.DoubleSide })
+          );
+          ring.rotation.x = Math.PI / 2;
+          ring.position.y = -0.85;
+          marker.add(ring);
+        }
+
+        spawnsGroup.add(marker);
+      });
+
+      // Rebuild Point Lights Bulbs Indicators
+      while (lightsGroup.children.length > 0) {
+        lightsGroup.remove(lightsGroup.children[0]);
+      }
+
+      pointLights.forEach((pl, idx) => {
+        const point = new THREE.PointLight(pl.color, pl.intensity, pl.distance, pl.decay);
+        point.position.set(pl.position.x, pl.position.y, pl.position.z);
+        lightsGroup.add(point);
+
+        // Yellow wireframe bulb indicator sphere
+        const bulbGeo = new THREE.SphereGeometry(0.3, 8, 8);
+        const bulbMat = new THREE.MeshBasicMaterial({ color: pl.color, wireframe: true });
+        const bulb = new THREE.Mesh(bulbGeo, bulbMat);
+        bulb.position.copy(point.position);
+        bulb.userData = { lightId: pl.id };
+        lightsGroup.add(bulb);
+
+        if (selectedLightId === pl.id && activeTab === 'lights') {
+          const lightHelper = new THREE.PointLightHelper(point, 0.6, '#eab308');
+          lightsGroup.add(lightHelper);
+        }
+      });
+    }
+
+    // DYNAMIC RADIUS UPDATE
+    function updateRadius(r) {
+      arenaRadius = r;
+      rebuildBoundaryGrid();
+      rebuildScene();
+      document.getElementById('inspector-panel').querySelector('input[type="range"]').previousElementSibling.querySelector('.mapmaker-value-badge').textContent = `${r}m`;
+    }
+
+    // ACTIONS: OBSTACLES MANAGING
+    function handleAddObject(type, presetType) {
+      let presetColor = '#3b82f6';
+      let presetTexture = 'none';
+      let defaultScale = { x: 2.0, y: 2.0, z: 2.0 };
+      let defaultName = 'Custom Box';
+
+      if (presetType === 'crate') {
+        presetColor = '#475569';
+        presetTexture = 'space_alloy';
+        defaultName = 'Steel Cargo Box';
+      } else if (presetType === 'pillar') {
+        presetColor = '#0f172a';
+        presetTexture = 'futuristic_hex';
+        defaultScale = { x: 1.5, y: 5.0, z: 1.5 };
+        defaultName = 'Glowing Core Pillar';
+      } else if (presetType === 'barrier') {
+        presetColor = '#ea580c';
+        presetTexture = 'city_concrete';
+        defaultScale = { x: 3.5, y: 1.5, z: 0.6 };
+        defaultName = 'Outpost Security Gate';
+      } else if (presetType === 'plasma') {
+        presetColor = '#ec4899';
+        presetTexture = 'futuristic_shield';
+        defaultScale = { x: 2.5, y: 2.5, z: 2.5 };
+        defaultName = 'Plasma Battery Core';
+      }
+
+      const newObj = {
+        id: `obj_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+        name: defaultName,
+        type,
+        position: { x: 0, y: defaultScale.y / 2, z: 0 },
+        rotation: { x: 0, y: 0, z: 0 },
+        scale: defaultScale,
+        color: presetColor,
+        metalness: presetType ? 0.8 : 0.4,
+        roughness: presetType ? 0.2 : 0.6,
+        opacity: 1,
+        transparent: false,
+        emissive: presetType === 'pillar' ? '#06b6d4' : (presetType === 'plasma' ? '#db2777' : '#000000'),
+        emissiveIntensity: presetType ? 1.5 : 0,
+        isCollidable: true,
+        texture: presetTexture
+      };
+
+      objects.push(newObj);
+      selectedObjectId = newObj.id;
+      selectedLightId = null;
+      selectedSpawnIdx = null;
+      showNavMeshOverlay = false;
+      switchTab('objects');
+    }
+
+    function handleDuplicateObject(id) {
+      const target = objects.find(o => o.id === id);
+      if (!target) return;
+
+      const duplicate = {
+        ...target,
+        id: `obj_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+        name: `${target.name} Copy`,
+        position: { x: target.position.x + 2, y: target.position.y, z: target.position.z }
+      };
+
+      objects.push(duplicate);
+      selectedObjectId = duplicate.id;
+      showNavMeshOverlay = false;
+      renderInspector();
+    }
+
+    function handleDeleteObject(id) {
+      objects = objects.filter(o => o.id !== id);
+      if (selectedObjectId === id) selectedObjectId = null;
+      showNavMeshOverlay = false;
+      renderInspector();
+    }
+
+    function handleUpdateObject(field, val) {
+      const activeObj = objects.find(o => o.id === selectedObjectId);
+      if (!activeObj) return;
+
+      if (field === 'name') activeObj.name = val;
+      else if (field === 'color') activeObj.color = val;
+      else if (field === 'texture') activeObj.texture = val;
+      else if (field === 'pos_x') activeObj.position.x = val;
+      else if (field === 'pos_y') activeObj.position.y = val;
+      else if (field === 'pos_z') activeObj.position.z = val;
+      else if (field === 'scale_x') activeObj.scale.x = val;
+      else if (field === 'scale_y') activeObj.scale.y = val;
+      else if (field === 'scale_z') activeObj.scale.z = val;
+      else if (field === 'rot_y') activeObj.rotation.y = val;
+      else if (field === 'metalness') activeObj.metalness = val;
+      else if (field === 'roughness') activeObj.roughness = val;
+      else if (field === 'opacity') {
+        activeObj.opacity = val;
+        activeObj.transparent = val < 0.98;
+      }
+      else if (field === 'emissive') activeObj.emissive = val;
+      else if (field === 'emissiveIntensity') activeObj.emissiveIntensity = val;
+
+      showNavMeshOverlay = false;
+      rebuildScene();
+      
+      // Update custom badge readouts quickly
+      const badge = document.querySelector(`input[oninput*="${field}"]`);
+      if (badge) {
+        const badgeReadout = badge.previousElementSibling?.querySelector('.mapmaker-value-badge');
+        if (badgeReadout) {
+          if (field === 'rot_y') badgeReadout.textContent = `${Math.round(val * (180/Math.PI))}°`;
+          else if (field.startsWith('pos') || field.startsWith('scale')) badgeReadout.textContent = `${val}m`;
+          else badgeReadout.textContent = val.toFixed(2);
+        }
+      }
+    }
+
+    function setSelectedObject(id) {
+      selectedObjectId = id;
+      selectedLightId = null;
+      selectedSpawnIdx = null;
+      renderInspector();
+    }
+
+    // ACTIONS: POINT LIGHT SOURCE MANAGING
+    function handleAddLight() {
+      const newLight = {
+        id: `light_${Date.now()}`,
+        color: '#eab308',
+        intensity: 3.0,
+        distance: 15,
+        decay: 1.2,
+        position: { x: 0, y: 4, z: 0 }
+      };
+      pointLights.push(newLight);
+      selectedLightId = newLight.id;
+      selectedObjectId = null;
+      selectedSpawnIdx = null;
+      renderInspector();
+    }
+
+    function handleDeleteLight(id) {
+      pointLights = pointLights.filter(l => l.id !== id);
+      if (selectedLightId === id) selectedLightId = null;
+      renderInspector();
+    }
+
+    function handleUpdateLight(field, val) {
+      const activeLight = pointLights.find(l => l.id === selectedLightId);
+      if (!activeLight) return;
+
+      if (field === 'color') activeLight.color = val;
+      else if (field === 'intensity') activeLight.intensity = val;
+      else if (field === 'distance') activeLight.distance = val;
+      else if (field === 'pos_x') activeLight.position.x = val;
+      else if (field === 'pos_y') activeLight.position.y = val;
+      else if (field === 'pos_z') activeLight.position.z = val;
+
+      rebuildScene();
+
+      const badge = document.querySelector(`input[oninput*="${field}"]`);
+      if (badge) {
+        const badgeReadout = badge.previousElementSibling?.querySelector('.mapmaker-value-badge');
+        if (badgeReadout) {
+          if (field.startsWith('pos') || field === 'distance') badgeReadout.textContent = `${val}m`;
+          else badgeReadout.textContent = val.toFixed(1);
+        }
+      }
+    }
+
+    function setSelectedLight(id) {
+      selectedLightId = id;
+      selectedObjectId = null;
+      selectedSpawnIdx = null;
+      renderInspector();
+    }
+
+    // ACTIONS: SPAWNING SPOTS MANAGING
+    function handleAddSpawn() {
+      const newSpawn = { x: 0, y: 0, z: 0 };
+      spawnPoints.push(newSpawn);
+      selectedSpawnIdx = spawnPoints.length - 1;
+      selectedObjectId = null;
+      selectedLightId = null;
+      renderInspector();
+    }
+
+    function handleDeleteSpawn(idx) {
+      const numericIdx = parseInt(idx, 10);
+      spawnPoints = spawnPoints.filter((_, i) => i !== numericIdx);
+      if (selectedSpawnIdx === numericIdx) selectedSpawnIdx = null;
+      renderInspector();
+    }
+
+    function handleUpdateSpawn(axis, val) {
+      if (selectedSpawnIdx === null || !spawnPoints[selectedSpawnIdx]) return;
+      spawnPoints[selectedSpawnIdx][axis] = val;
+      rebuildScene();
+
+      const badge = document.querySelector(`input[oninput*="${axis}"]`);
+      if (badge) {
+        const badgeReadout = badge.previousElementSibling?.querySelector('.mapmaker-value-badge');
+        if (badgeReadout) badgeReadout.textContent = `${val}m`;
+      }
+    }
+
+    function setSelectedSpawn(idx) {
+      selectedSpawnIdx = parseInt(idx, 10);
+      selectedObjectId = null;
+      selectedLightId = null;
+      renderInspector();
+    }
+
+    // PREMADES TEMPLATES LOADER
+    function handleLoadPremade(id) {
+      const pm = PREMADE_MAPS.find(m => m.id === id);
+      if (!pm) return;
+
+      mapName = pm.name;
+      mapAuthor = pm.author || 'System';
+      mapDescription = pm.description;
+      theme = pm.theme;
+      arenaRadius = pm.arenaRadius;
+      skyboxHue = pm.skyboxHue ?? 280;
+      skyboxBrightness = pm.skyboxBrightness ?? 5;
+      fogColor = pm.fogColor || '#050811';
+      fogDensity = pm.fogDensity ?? 0.015;
+
+      if (pm.lighting) {
+        ambientColor = pm.lighting.ambientColor || '#0a0f1d';
+        ambientIntensity = pm.lighting.ambientIntensity ?? 0.85;
+        directColor = pm.lighting.directColor || '#e0f2fe';
+        directIntensity = pm.lighting.directIntensity ?? 2.2;
+        if (pm.lighting.directPosition) {
+          directPosX = pm.lighting.directPosition.x;
+          directPosY = pm.lighting.directPosition.y;
+          directPosZ = pm.lighting.directPosition.z;
+        }
+        pointLights = JSON.parse(JSON.stringify(pm.lighting.pointLights || []));
+      }
+
+      spawnPoints = JSON.parse(JSON.stringify(pm.spawnPoints || []));
+      objects = JSON.parse(JSON.stringify(pm.objects || []));
+
+      selectedObjectId = null;
+      selectedLightId = null;
+      selectedSpawnIdx = null;
+      showNavMeshOverlay = false;
+
+      rebuildBoundaryGrid();
+      switchTab('scene');
+    }
+
+    // AUTOMATED NAV MESH BAKE SPATIAL SYSTEM
+    function bakeNavMesh(mapData, nodeSpacing = 0.85, spartanClearance = 0.65) {
+      const nodes = new Map();
+      const radiusLimit = mapData.arenaRadius;
+      let nodeIdCounter = 0;
+
+      // 1. Plot walkable grid nodes
+      for (let x = -radiusLimit; x <= radiusLimit; x += nodeSpacing) {
+        for (let z = -radiusLimit; z <= radiusLimit; z += nodeSpacing) {
+          const radialDist = Math.sqrt(x * x + z * z);
+          if (radialDist >= radiusLimit - 0.75) continue; // within arena bounds check
+
+          // Test spatial clearance against all placed collidable objects
+          let isBlocked = false;
+          for (const obj of mapData.objects) {
+            if (!obj.isCollidable) continue;
+
+            const ox = obj.position.x;
+            const oz = obj.position.z;
+            const sx = obj.scale.x;
+            const sz = obj.scale.z;
+
+            if (obj.type === 'cylinder') {
+              const radius = sx / 2 + spartanClearance;
+              const xzDist = Math.sqrt((x - ox) * (x - ox) + (z - oz) * (z - oz));
+              if (xzDist < radius) {
+                isBlocked = true;
+                break;
+              }
+            } else if (obj.type === 'box') {
+              const halfW = sx / 2 + spartanClearance;
+              const halfD = sz / 2 + spartanClearance;
+              const dx = Math.abs(x - ox);
+              const dz = Math.abs(z - oz);
+
+              // Standard horizontal AABB boundary check
+              if (dx < halfW && dz < halfD) {
+                isBlocked = true;
+                break;
+              }
+            }
+          }
+
+          if (!isBlocked) {
+            const id = nodeIdCounter++;
+            nodes.set(id, { id, x, z, neighbors: [] });
+          }
+        }
+      }
+
+      // 2. Connect adjacencies
+      const maxConnectDist = nodeSpacing * 1.45; // allows diagonal connections
+      nodes.forEach(nodeA => {
+        nodes.forEach(nodeB => {
+          if (nodeA.id === nodeB.id) return;
+          const dist = Math.sqrt((nodeA.x - nodeB.x) * (nodeA.x - nodeB.x) + (nodeA.z - nodeB.z) * (nodeA.z - nodeB.z));
+          if (dist <= maxConnectDist) {
+            nodeA.neighbors.push(nodeB.id);
+          }
+        });
+      });
+
+      return { nodes };
+    }
+
+    function triggerBakeNavMesh() {
+      const btn = document.getElementById('navmesh-btn');
+      const icon = document.getElementById('bake-icon');
+      
+      icon.classList.add('animate-spin');
+      btn.disabled = true;
+
+      // Aesthetic baker delay!
+      setTimeout(() => {
+        icon.classList.remove('animate-spin');
+        btn.disabled = false;
+
+        // Clear existing mesh indicator indicators
+        while (navMeshGroup.children.length > 0) {
+          navMeshGroup.remove(navMeshGroup.children[0]);
+        }
+
+        const compiledMap = getCompiledMapData();
+        const baked = bakeNavMesh(compiledMap, 0.85, 0.65);
+
+        // Render beautiful green spherical nodes
+        const nodeGeo = new THREE.SphereGeometry(0.12, 8, 8);
+        const nodeMat = new THREE.MeshBasicMaterial({ color: '#22c55e' });
+        const lineMat = new THREE.LineBasicMaterial({ color: '#06b6d4', opacity: 0.35, transparent: true });
+
+        const nodesMap = baked.nodes;
+        nodesMap.forEach(n => {
+          const mesh = new THREE.Mesh(nodeGeo, nodeMat);
+          mesh.position.set(n.x, 0.05, n.z);
+          navMeshGroup.add(mesh);
+
+          n.neighbors.forEach(neighId => {
+            const neigh = nodesMap.get(neighId);
+            if (neigh && neigh.id > n.id) { // avoid duplicates
+              const points = [
+                new THREE.Vector3(n.x, 0.03, n.z),
+                new THREE.Vector3(neigh.x, 0.03, neigh.z)
+              ];
+              const lineGeo = new THREE.BufferGeometry().setFromPoints(points);
+              const line = new THREE.Line(lineGeo, lineMat);
+              navMeshGroup.add(line);
+            }
+          });
+        });
+
+        showNavMeshOverlay = true;
+        updateNavMeshOverlayVisibility();
+      }, 750);
+    }
+
+    function toggleNavMeshOverlay() {
+      showNavMeshOverlay = !showNavMeshOverlay;
+      updateNavMeshOverlayVisibility();
+    }
+
+    function updateNavMeshOverlayVisibility() {
+      navMeshGroup.visible = showNavMeshOverlay;
+      const eyeIcon = document.getElementById('nav-eye-icon');
+      if (showNavMeshOverlay) {
+        eyeIcon.setAttribute('data-lucide', 'eye');
+        document.getElementById('toggle-nav-btn').classList.add('bg-cyan-500/10', 'border-cyan-500/30', 'text-cyan-400');
+      } else {
+        eyeIcon.setAttribute('data-lucide', 'eye-off');
+        document.getElementById('toggle-nav-btn').classList.remove('bg-cyan-500/10', 'border-cyan-500/30', 'text-cyan-400');
+      }
+      lucide.createIcons();
+    }
+
+    // GET COMPILED DATA MATCHING TYPES
+    function getCompiledMapData() {
+      return {
+        id: `map_${Date.now()}`,
+        name: mapName,
+        description: mapDescription,
+        author: mapAuthor,
+        theme,
+        arenaRadius,
+        skyboxHue,
+        skyboxBrightness,
+        fogColor,
+        fogDensity,
+        spawnPoints: spawnPoints.map(sp => ({ x: sp.x, y: 0, z: sp.z })),
+        objects: objects.map(obj => ({
+          id: obj.id,
+          name: obj.name,
+          type: obj.type,
+          position: { x: obj.position.x, y: obj.position.y, z: obj.position.z },
+          rotation: { x: obj.rotation.x, y: obj.rotation.y, z: obj.rotation.z },
+          scale: { x: obj.scale.x, y: obj.scale.y, z: obj.scale.z },
+          color: obj.color,
+          metalness: obj.metalness,
+          roughness: obj.roughness,
+          opacity: obj.opacity,
+          transparent: obj.transparent,
+          emissive: obj.emissive,
+          emissiveIntensity: obj.emissiveIntensity,
+          isCollidable: obj.isCollidable,
+          texture: obj.texture
+        })),
+        lighting: {
+          ambientColor,
+          ambientIntensity,
+          directColor,
+          directIntensity,
+          directPosition: { x: directPosX, y: directPosY, z: directPosZ },
+          pointLights: pointLights.map(pl => ({
+            id: pl.id,
+            color: pl.color,
+            intensity: pl.intensity,
+            distance: pl.distance,
+            decay: pl.decay,
+            position: { x: pl.position.x, y: pl.position.y, z: pl.position.z }
+          }))
+        }
+      };
+    }
+
+    // LOCAL FILES IMPORT/EXPORT IO
+    function handleExportJSON() {
+      const data = getCompiledMapData();
+      const jsonString = JSON.stringify(data, null, 2);
+      const blob = new Blob([jsonString], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${mapName.toLowerCase().replace(/\s+/g, '_')}_map.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    function initEvents() {
+      // 1. Raycast Click selector
+      const container = document.getElementById('viewport-container');
+      container.addEventListener('click', (e) => {
+        // Only trigger selection click if mouse wasn't dragged (OrbitControls check)
+        if (e.target.id !== 'editor-canvas') return;
+
+        const rect = renderer.domElement.getBoundingClientRect();
+        mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+        mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+
+        raycaster.setFromCamera(mouse, camera);
+
+        // Click objects check
+        const intersectsObj = raycaster.intersectObjects(objectsGroup.children, true);
+        if (intersectsObj.length > 0) {
+          const hitMesh = intersectsObj[0].object;
+          if (hitMesh.userData && hitMesh.userData.id) {
+            setSelectedObject(hitMesh.userData.id);
+            return;
+          }
+        }
+
+        // Click light source indicators check
+        const intersectsLights = raycaster.intersectObjects(lightsGroup.children, true);
+        if (intersectsLights.length > 0) {
+          const bulb = intersectsLights[0].object;
+          if (bulb.userData && bulb.userData.lightId) {
+            setSelectedLight(bulb.userData.lightId);
+            return;
+          }
+        }
+
+        // Click empty space closes selection outline
+        selectedObjectId = null;
+        selectedLightId = null;
+        selectedSpawnIdx = null;
+        renderInspector();
+      });
+
+      // 2. Local File imports loader
+      document.getElementById('import-input').addEventListener('change', (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          try {
+            const data = JSON.parse(event.target.result);
+            if (!data.name || !data.objects) {
+              alert('Invalid iBrawls map file structure.');
+              return;
+            }
+
+            mapName = data.name;
+            mapAuthor = data.author || 'Imported';
+            mapDescription = data.description || '';
+            theme = data.theme || 'cyberpunk';
+            arenaRadius = data.arenaRadius || 20;
+            skyboxHue = data.skyboxHue ?? 280;
+            skyboxBrightness = data.skyboxBrightness ?? 5;
+            fogColor = data.fogColor || '#050811';
+            fogDensity = data.fogDensity ?? 0.015;
+
+            if (data.lighting) {
+              ambientColor = data.lighting.ambientColor || '#0a0f1d';
+              ambientIntensity = data.lighting.ambientIntensity ?? 0.85;
+              directColor = data.lighting.directColor || '#e0f2fe';
+              directIntensity = data.lighting.directIntensity ?? 2.2;
+              if (data.lighting.directPosition) {
+                directPosX = data.lighting.directPosition.x;
+                directPosY = data.lighting.directPosition.y;
+                directPosZ = data.lighting.directPosition.z;
+              }
+              pointLights = JSON.parse(JSON.stringify(data.lighting.pointLights || []));
+            }
+
+            spawnPoints = JSON.parse(JSON.stringify(data.spawnPoints || []));
+            objects = JSON.parse(JSON.stringify(data.objects || []));
+
+            selectedObjectId = null;
+            selectedLightId = null;
+            selectedSpawnIdx = null;
+            showNavMeshOverlay = false;
+
+            rebuildBoundaryGrid();
+            switchTab('scene');
+          } catch (err) {
+            alert('Failed to parse loaded JSON file.');
+          }
+        };
+        reader.readAsText(file);
+      });
+
+      // 3. Handle window resizes
+      window.addEventListener('resize', () => {
+        camera.aspect = container.clientWidth / container.clientHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(container.clientWidth, container.clientHeight);
+      });
+    }
+
+    function handleThemeChange(t) {
+      theme = t;
+      if (t === 'nature') {
+        fogColor = '#051208';
+        skyboxHue = 120;
+        ambientColor = '#0a1d0f';
+      } else if (t === 'space') {
+        fogColor = '#04070f';
+        skyboxHue = 210;
+        ambientColor = '#0a0d17';
+      } else if (t === 'fantasy') {
+        fogColor = '#090514';
+        skyboxHue = 310;
+        ambientColor = '#0a051d';
+      } else if (t === 'hangar') {
+        fogColor = '#07090d';
+        skyboxHue = 35;
+        ambientColor = '#111827';
+      } else {
+        fogColor = '#050811';
+        skyboxHue = 280;
+        ambientColor = '#0a0f1d';
+      }
+      rebuildScene();
+      renderInspector();
+    }
+  </script>
+
+</body>
+</html>

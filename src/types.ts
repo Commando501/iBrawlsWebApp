@@ -3,6 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type * as THREE from 'three';
+
 export interface UniversalSettings {
   maxHP: number;        // Health (whole number adjustment, e.g. 1 to 10)
   speedForward: number; // Forward movement speed percentage adjustment (e.g. 20% to 300%)
@@ -210,6 +212,77 @@ export interface RemotePlayerState {
   aiPressureTargetId?: string;
 }
 
+/**
+ * In-memory combatant state shared by every AI-driven entity — the main AI and
+ * all additional bots — plus remote multiplayer players. This is the single
+ * structure the unified AI runs on; `pos`/`vel` are live THREE.Vector3 instances
+ * (unlike the serialized RemotePlayerState DTO, which uses plain {x,y,z}).
+ *
+ * Identity, physics and scoring are always present. The AI behavioral sub-state
+ * and remote-only fields are optional because a freshly spawned combatant (or a
+ * remote player that never runs the local AI) may not have them until the AI
+ * tick initializes them.
+ */
+export interface Combatant {
+  // Identity
+  id: string;
+  playerName: string;
+  hue: number;
+  difficulty?: string;
+
+  // Physics / pose (live references, mutated in place each tick)
+  pos: THREE.Vector3;
+  vel: THREE.Vector3;
+  yaw: number;
+  pitch?: number;
+  isCrouching: boolean;
+  isJumping?: boolean;
+
+  // Vitals / scoring
+  hp: number;
+  maxHp: number;
+  respawnTimer: number;
+  invulnerabilityTimer?: number;
+  spawnTime?: number;
+  score: number;
+  kills: number;
+  deaths: number;
+  isObserver?: boolean;
+
+  // Weapon
+  activeWeapon: 'hammer' | 'sword';
+  weaponState?: WeaponState | 'slashing' | 'recovering';
+  weaponTimer?: number;
+  lastSwordAttackTime?: number;
+  lastHammerAttackTime?: number;
+  swapLockoutTimer?: number;
+
+  // AI behavioral sub-state
+  aiState?: AIBehaviorState;
+  aiTimer?: number;
+  aiSwayTimer?: number;
+  aiDashCooldownTimer?: number;
+  aiDashRemaining?: number;
+  aiDashDir?: { x: number; y: number; z: number };
+  aiSlideActive?: boolean;
+  aiSlideDistanceTraveled?: number;
+  aiSlideCooldownTimer?: number;
+  aiIsSprinting?: boolean;
+  aiHammerJumpCooldownTimer?: number;
+  aiCoordCommitTimer?: number;
+  aiPostLungeDecisionTimer?: number;
+  aiPendingPostEvasionCharge?: boolean;
+  aiPressureTargetId?: string;
+  aiLastLungeOutcome?: 'hit' | 'miss_timeout' | 'miss_arena' | 'target_dead';
+  aiLastLungeTargetId?: string;
+
+  // Sword-lunge flight
+  isLunging?: boolean;
+  lungeTimer?: number;
+  lungeStartPos?: { x: number; y: number; z: number };
+  lungeTargetDir?: { x: number; y: number; z: number };
+}
+
 export interface GameStats {
   playerHP: number;
   playerMaxHP: number;
@@ -263,6 +336,13 @@ export interface GameStats {
   observerTargetName?: string;
   observerTargetRole?: 'host' | 'client';
   activeMedalPopup?: { medal: MedalInfo; key: number } | null;
+  isReplayMode?: boolean;
+  replayElapsedTime?: number;
+  replayDuration?: number;
+  replayIsPlaying?: boolean;
+  replaySpeedMultiplier?: number;
+  replayPlayerList?: { id: string; name: string; hue: number }[];
+  replayCurrentTargetId?: string;
 }
 
 export interface UiElementPos {
@@ -333,5 +413,131 @@ export interface TournamentState {
   opponents: Record<string, TournamentOpponent>; // bot ID -> bot details
   rounds: TournamentMatch[][];
   status: 'idle' | 'bracket' | 'playing' | 'gameover' | 'victory';
+}
+
+export interface ReplayFrame {
+  time: number; // match elapsed time in seconds
+  player?: {
+    pos: { x: number; y: number; z: number };
+    vel: { x: number; y: number; z: number };
+    yaw: number;
+    pitch: number;
+    hp: number;
+    isCrouching: boolean;
+    isJumping: boolean;
+    isLunging: boolean;
+    activeWeapon: 'hammer' | 'sword' | 'pistol';
+    weaponState: string;
+    score: number;
+    kills: number;
+    deaths: number;
+    respawnTimer: number;
+    invulnerabilityTimer: number;
+  };
+  ai?: {
+    pos: { x: number; y: number; z: number };
+    vel: { x: number; y: number; z: number };
+    yaw: number;
+    hp: number;
+    isCrouching: boolean;
+    activeWeapon: 'hammer' | 'sword';
+    weaponState: string;
+    score: number;
+    kills: number;
+    deaths: number;
+    respawnTimer: number;
+    invulnerabilityTimer: number;
+  };
+  otherPlayers?: {
+    id: string;
+    playerName: string;
+    hue: number;
+    pos: { x: number; y: number; z: number };
+    vel: { x: number; y: number; z: number };
+    yaw: number;
+    hp: number;
+    isCrouching: boolean;
+    activeWeapon: 'hammer' | 'sword';
+    weaponState: string;
+    score: number;
+    kills: number;
+    deaths: number;
+    respawnTimer: number;
+    invulnerabilityTimer: number;
+  }[];
+}
+
+export interface ReplayFile {
+  id: string;
+  name: string;
+  description: string;
+  date: string; // ISO string
+  duration: number; // total game time in seconds
+  playerHue: number;
+  playerName: string;
+  opponentName: string;
+  mapType: 'rectangular' | 'circle';
+  mode: 'sandbox' | 'tournament';
+  maxScore: number;
+  frames: ReplayFrame[];
+  isAutoSaved?: boolean;
+}
+
+export interface CustomMapObject {
+  id: string;
+  name: string;
+  type: 'box' | 'cylinder' | 'sphere';
+  position: { x: number; y: number; z: number };
+  rotation: { x: number; y: number; z: number };
+  scale: { x: number; y: number; z: number };
+  color: string;
+  metalness: number;
+  roughness: number;
+  opacity: number;
+  transparent: boolean;
+  emissive: string;
+  emissiveIntensity: number;
+  isCollidable: boolean;
+  texture: 
+    | 'none'
+    | 'nature_grass' | 'nature_mossy_stone' | 'nature_wood'
+    | 'space_alloy' | 'space_meteorite' | 'space_lunar_dust'
+    | 'futuristic_carbon' | 'futuristic_hex' | 'futuristic_shield'
+    | 'city_asphalt' | 'city_brick' | 'city_concrete'
+    | 'fantasy_runed_stone' | 'fantasy_cobble' | 'fantasy_gold';
+}
+
+export interface CustomMapPointLight {
+  id: string;
+  color: string;
+  intensity: number;
+  distance: number;
+  decay: number;
+  position: { x: number; y: number; z: number };
+}
+
+export interface CustomMapLighting {
+  ambientColor: string;
+  ambientIntensity: number;
+  directColor: string;
+  directIntensity: number;
+  directPosition: { x: number; y: number; z: number };
+  pointLights: CustomMapPointLight[];
+}
+
+export interface CustomMapData {
+  id: string;
+  name: string;
+  description: string;
+  author: string;
+  theme: 'hangar' | 'holodeck' | 'cyberpunk' | 'rust' | 'nature' | 'space' | 'fantasy';
+  arenaRadius: number;
+  skyboxHue?: number;
+  skyboxBrightness?: number;
+  fogColor?: string;
+  fogDensity?: number;
+  spawnPoints: { x: number; y: number; z: number }[];
+  objects: CustomMapObject[];
+  lighting: CustomMapLighting;
 }
 

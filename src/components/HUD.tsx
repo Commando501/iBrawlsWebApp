@@ -1216,6 +1216,156 @@ export const HUD: React.FC<HUDProps> = ({
         </DraggableHUDItem>
       )}
 
+      {/* 🎬 THEATER REPLAY PLAYBACK BOTTOM CONTROL BAR */}
+      {stats.isReplayMode && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 w-[90%] max-w-3xl bg-slate-950/85 backdrop-blur-xl border border-cyan-500/30 rounded-2xl p-4 flex flex-col gap-3 shadow-[0_20px_50px_rgba(0,0,0,0.8),0_0_20px_rgba(6,182,212,0.15)] z-[1000] pointer-events-auto">
+          {/* Timeline slider and scrubber */}
+          <div className="flex items-center gap-4 w-full">
+            <span className="text-[10px] font-mono text-cyan-400 font-extrabold w-12 text-left">
+              {formatTime(stats.replayElapsedTime ?? 0)}
+            </span>
+            <input 
+              type="range"
+              min={0}
+              max={stats.replayDuration ?? 100}
+              step={0.1}
+              value={stats.replayElapsedTime ?? 0}
+              onChange={(e) => {
+                const targetTime = parseFloat(e.target.value);
+                window.dispatchEvent(new CustomEvent('replay-seek', { detail: { time: targetTime } }));
+              }}
+              className="flex-1 accent-cyan-400 h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer hover:bg-white/20 transition-all"
+            />
+            <span className="text-[10px] font-mono text-white/40 w-12 text-right">
+              {formatTime(stats.replayDuration ?? 0)}
+            </span>
+          </div>
+
+          {/* Interactive controls row */}
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            {/* Play, Pause, and Skip buttons */}
+            <div className="flex items-center gap-3">
+              {/* Skip backward 5s */}
+              <button
+                onClick={() => {
+                  const targetTime = Math.max(0, (stats.replayElapsedTime ?? 0) - 5);
+                  window.dispatchEvent(new CustomEvent('replay-seek', { detail: { time: targetTime } }));
+                }}
+                className="w-9 h-9 rounded-lg bg-white/5 hover:bg-white/15 border border-white/10 text-white flex items-center justify-center transition-all cursor-pointer select-none font-bold text-xs"
+                title="Rewind 5 Seconds"
+              >
+                ⏪
+              </button>
+
+              {/* Play/Pause */}
+              <button
+                onClick={() => {
+                  window.dispatchEvent(new CustomEvent('replay-toggle-play'));
+                }}
+                className="w-11 h-11 rounded-xl bg-gradient-to-b from-[#22d3ee] to-[#0891b2] hover:shadow-[0_0_15px_rgba(34,211,238,0.5)] text-slate-950 flex items-center justify-center transition-all cursor-pointer select-none font-black text-sm"
+                title={stats.replayIsPlaying ? "Pause Replay" : "Play Replay"}
+              >
+                {stats.replayIsPlaying ? "⏸️" : "▶️"}
+              </button>
+
+              {/* Skip forward 5s */}
+              <button
+                onClick={() => {
+                  const targetTime = Math.min(stats.replayDuration ?? 100, (stats.replayElapsedTime ?? 0) + 5);
+                  window.dispatchEvent(new CustomEvent('replay-seek', { detail: { time: targetTime } }));
+                }}
+                className="w-9 h-9 rounded-lg bg-white/5 hover:bg-white/15 border border-white/10 text-white flex items-center justify-center transition-all cursor-pointer select-none font-bold text-xs"
+                title="Fast Forward 5 Seconds"
+              >
+                ⏩
+              </button>
+            </div>
+
+            {/* Playback speed selector */}
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-mono text-white/40 uppercase">Speed:</span>
+              <div className="flex bg-black/40 p-1.5 rounded-lg border border-white/10 gap-1 select-none">
+                {([0.5, 1.0, 1.5, 2.0, 4.0] as const).map(speed => (
+                  <button
+                    key={speed}
+                    onClick={() => {
+                      window.dispatchEvent(new CustomEvent('replay-change-speed', { detail: { speed } }));
+                    }}
+                    className={`px-2.5 py-1 rounded text-[9.5px] font-mono font-bold tracking-tight uppercase transition-all duration-150 cursor-pointer border-none ${
+                      stats.replaySpeedMultiplier === speed
+                        ? 'bg-cyan-400 text-slate-950 font-black'
+                        : 'text-white/50 hover:text-white/80 bg-transparent'
+                    }`}
+                  >
+                    {speed}x
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Camera Perspective selector */}
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-mono text-white/40 uppercase">Cam:</span>
+              <div className="flex bg-black/40 p-1.5 rounded-lg border border-white/10 gap-1 select-none">
+                {([
+                  { id: 'free', label: 'Free' },
+                  { id: 'first', label: '1st' },
+                  { id: 'third', label: 'Orbit' }
+                ] as const).map(mode => (
+                  <button
+                    key={mode.id}
+                    onClick={() => {
+                      if (mode.id === 'free') {
+                        window.dispatchEvent(new CustomEvent('replay-change-target', { detail: { id: 'free' } }));
+                      } else {
+                        window.dispatchEvent(new CustomEvent('replay-change-cam-mode', { detail: { mode: mode.id } }));
+                        if (stats.replayCurrentTargetId === 'free') {
+                          window.dispatchEvent(new CustomEvent('replay-change-target', { detail: { id: 'player' } }));
+                        }
+                      }
+                    }}
+                    className={`px-2.5 py-1 rounded text-[9.5px] font-mono font-bold tracking-tight uppercase transition-all duration-150 cursor-pointer border-none ${
+                      stats.observerCamMode === mode.id || (mode.id === 'free' && stats.replayCurrentTargetId === 'free')
+                        ? 'bg-cyan-400 text-slate-950 font-black'
+                        : 'text-white/50 hover:text-white/80 bg-transparent'
+                    }`}
+                  >
+                    {mode.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Target locking dropdown */}
+            {stats.replayPlayerList && stats.replayPlayerList.length > 0 && (
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-mono text-white/40 uppercase">Lock:</span>
+                <select
+                  value={stats.replayCurrentTargetId ?? 'free'}
+                  onChange={(e) => {
+                    const targetId = e.target.value;
+                    window.dispatchEvent(new CustomEvent('replay-change-target', { detail: { id: targetId } }));
+                    if (targetId !== 'free' && stats.observerCamMode === 'free') {
+                      window.dispatchEvent(new CustomEvent('replay-change-cam-mode', { detail: { mode: 'third' } }));
+                    }
+                  }}
+                  className="bg-black/60 border border-white/10 text-cyan-400 font-bold uppercase rounded px-2.5 py-1.5 text-[9.5px] tracking-wider outline-none cursor-pointer focus:border-[#22d3ee] transition-all font-sans"
+                >
+                  <option value="free">🎥 Free Cam (Spectator)</option>
+                  <optgroup label="Lock Onto Player">
+                    {stats.replayPlayerList.map(p => (
+                      <option key={p.id} value={p.id}>
+                        👤 {p.name} {p.id === 'player' ? '(You)' : ''}
+                      </option>
+                    ))}
+                  </optgroup>
+                </select>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };

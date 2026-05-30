@@ -17,6 +17,8 @@ import {
   TournamentState,
   AIPreset,
   AITuning,
+  ReplayFile,
+  CustomMapData,
 } from './types';
 import {
   DEFAULT_ADMIN_SETTINGS,
@@ -53,7 +55,9 @@ import {
   simulateBotMatch,
 } from './features/tournament/tournament';
 import { AI_ARCHETYPE_OPTIONS, applyArchetypeToSettings, getArchetypeDef, type AIArchetypeId } from './game/aiPersonalities';
+import { getSavedReplays, getCachedReplays, deleteReplay, updateReplayMeta, saveCachedReplay } from './game/theaterDatabase';
 import { GrifballGame } from './components/GrifballGame';
+import { PREMADE_MAPS } from './game/premadeMaps';
 import * as THREE from 'three';
 import { HUD } from './components/HUD';
 import { sfx } from './components/AudioEngine';
@@ -62,7 +66,7 @@ import { ChatOverlay, ChatMessage } from './components/ChatOverlay';
 import { CharacterPreview } from './components/CharacterPreview';
 import { CharacterLoadout, DEFAULT_LOADOUT, AVAILABLE_PRESETS, HelmetPreset, TorsoPreset, ArmPreset, LegPreset } from './components/VoxelModels';
 
-const APP_VERSION = '0.490';
+const APP_VERSION = '0.503';
 const MAX_PLAYER_NAME_LENGTH = 10;
 
 interface OnlineClient {
@@ -603,7 +607,7 @@ const detectDeviceOS = (): DeviceInfo => {
   return { isMobile, os };
 };
 
-const MapPreview: React.FC<{ selectedMap: 'hangar' | 'circle' }> = ({ selectedMap }) => {
+const MapPreview: React.FC<{ selectedMap: string; customMap?: CustomMapData | null }> = ({ selectedMap, customMap }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -636,23 +640,11 @@ const MapPreview: React.FC<{ selectedMap: 'hangar' | 'circle' }> = ({ selectedMa
 
     // Floor cylinder
     const floorGeo = new THREE.CylinderGeometry(8, 8, 0.4, 32);
-    let floorMat;
-
-    if (selectedMap === 'hangar') {
-      // Hangar floor
-      floorMat = new THREE.MeshStandardMaterial({
-        color: '#1e293b',
-        roughness: 0.8,
-        metalness: 0.5
-      });
-    } else {
-      // Neon circle floor
-      floorMat = new THREE.MeshStandardMaterial({
-        color: '#0f172a',
-        roughness: 0.4,
-        metalness: 0.8
-      });
-    }
+    let floorMat = new THREE.MeshStandardMaterial({
+      color: '#0f172a',
+      roughness: 0.4,
+      metalness: 0.8
+    });
 
     const floor = new THREE.Mesh(floorGeo, floorMat);
     floor.position.y = -0.2;
@@ -662,7 +654,87 @@ const MapPreview: React.FC<{ selectedMap: 'hangar' | 'circle' }> = ({ selectedMa
     const group = new THREE.Group();
     scene.add(group);
 
-    if (selectedMap === 'hangar') {
+    // Resolve which map data to preview
+    let mapData: CustomMapData | null = null;
+    if (selectedMap !== 'hangar' && selectedMap !== 'circle') {
+      const premade = PREMADE_MAPS.find(m => m.id === selectedMap);
+      if (premade) {
+        mapData = premade;
+      } else if (selectedMap === 'custom_file' && customMap) {
+        mapData = customMap;
+      }
+    }
+
+    if (mapData) {
+      // Custom / premade map preview
+      const activeRadius = mapData.arenaRadius || 20;
+      const previewScale = 8.0 / activeRadius; // Scale factor so it fits nicely
+      
+      let mainLightColor = '#06b6d4';
+      if (mapData.lighting && mapData.lighting.pointLights && mapData.lighting.pointLights.length > 0) {
+        mainLightColor = mapData.lighting.pointLights[0].color;
+      }
+      pointLight.color.set(mainLightColor);
+      pointLight.position.set(0, 5, 0);
+
+      let floorColor = '#0f172a';
+      if (mapData.theme === 'nature') {
+        floorColor = '#14532d';
+      } else if (mapData.theme === 'space') {
+        floorColor = '#1e1b4b';
+      } else if (mapData.theme === 'fantasy') {
+        floorColor = '#3b0764';
+      } else if (mapData.theme === 'hangar') {
+        floorColor = '#1e293b';
+      }
+      
+      floor.geometry.dispose();
+      floor.geometry = new THREE.CylinderGeometry(activeRadius * previewScale, activeRadius * previewScale, 0.4, 32);
+      (floor.material as THREE.MeshStandardMaterial).color.set(floorColor);
+
+      if (mapData.objects) {
+        mapData.objects.forEach(obj => {
+          let geo: THREE.BufferGeometry;
+          const sx = obj.scale.x * previewScale;
+          const sy = obj.scale.y * previewScale;
+          const sz = obj.scale.z * previewScale;
+          
+          if (obj.type === 'cylinder') {
+            geo = new THREE.CylinderGeometry(sx / 2, sx / 2, sy, 16);
+          } else if (obj.type === 'sphere') {
+            geo = new THREE.SphereGeometry(sx / 2, 16, 16);
+          } else {
+            geo = new THREE.BoxGeometry(sx, sy, sz);
+          }
+
+          const mat = new THREE.MeshStandardMaterial({
+            color: obj.color || '#3b82f6',
+            roughness: obj.roughness ?? 0.5,
+            metalness: obj.metalness ?? 0.5,
+            transparent: obj.transparent || false,
+            opacity: obj.opacity ?? 1,
+            emissive: obj.emissive || '#000000',
+            emissiveIntensity: obj.emissiveIntensity ?? 0
+          });
+
+          const mesh = new THREE.Mesh(geo, mat);
+          mesh.position.set(
+            obj.position.x * previewScale,
+            obj.position.y * previewScale,
+            obj.position.z * previewScale
+          );
+          mesh.rotation.set(obj.rotation.x, obj.rotation.y, obj.rotation.z);
+          group.add(mesh);
+        });
+      }
+    } else if (selectedMap === 'hangar') {
+      // Set Hangar color
+      (floor.material as THREE.MeshStandardMaterial).color.set('#1e293b');
+      (floor.material as THREE.MeshStandardMaterial).roughness = 0.8;
+      (floor.material as THREE.MeshStandardMaterial).metalness = 0.5;
+
+      pointLight.color.set('#ea580c');
+
       // Industrial hangar details: 12-sided walls (small scale)
       for (let i = 0; i < 12; i++) {
         const angle = (i * Math.PI) / 6;
@@ -735,7 +807,7 @@ const MapPreview: React.FC<{ selectedMap: 'hangar' | 'circle' }> = ({ selectedMa
       renderer.dispose();
       scene.clear();
     };
-  }, [selectedMap]);
+  }, [selectedMap, customMap]);
 
   return (
     <div className="w-[180px] h-[180px] rounded-xl border border-white/10 bg-black/60 overflow-hidden flex items-center justify-center shrink-0 aspect-square">
@@ -880,7 +952,8 @@ export default function App() {
     bot_7: 180,
   });
   const [showBotSetupMenu, setShowBotSetupMenu] = useState<boolean>(false);
-  const [selectedMap, setSelectedMap] = useState<'hangar' | 'circle'>('hangar');
+  const [selectedMap, setSelectedMap] = useState<string>('hangar');
+  const [lobbyCustomMapData, setLobbyCustomMapData] = useState<CustomMapData | null>(null);
   const [showKeybindsMenu, setShowKeybindsMenu] = useState<boolean>(false);
 
   // Chat message state
@@ -1227,8 +1300,48 @@ export default function App() {
 
   // Multiplayer States
   const [connectionMode, setConnectionMode] = useState<'relay' | 'local'>('relay');
-  const [activeMenuTab, setActiveMenuTab] = useState<'single' | 'multi' | 'spec'>('single');
+  const [activeMenuTab, setActiveMenuTab] = useState<'single' | 'multi' | 'spec' | 'theater'>('single');
   const [isMultiplayer, setIsMultiplayer] = useState<boolean>(false);
+
+  // Theater Mode Replay States
+  const [selectedReplay, setSelectedReplay] = useState<ReplayFile | null>(null);
+  const [savedReplays, setSavedReplays] = useState<ReplayFile[]>([]);
+  const [cachedReplays, setCachedReplays] = useState<ReplayFile[]>([]);
+  
+  // Theater Filters & Search
+  const [theaterSearchQuery, setTheaterSearchQuery] = useState<string>('');
+  const [theaterMapFilter, setTheaterMapFilter] = useState<'all' | 'hangar' | 'circle'>('all');
+  const [theaterModeFilter, setTheaterModeFilter] = useState<'all' | 'sandbox' | 'tournament'>('all');
+  
+  // Theater Rename Modal States
+  const [editReplayId, setEditReplayId] = useState<string | null>(null);
+  const [editReplayName, setEditReplayName] = useState<string>('');
+  const [editReplayDesc, setEditReplayDesc] = useState<string>('');
+  const [showEditModal, setShowEditModal] = useState<boolean>(false);
+
+  // Theater Save Permanently Modal States
+  const [saveCachedId, setSaveCachedId] = useState<string | null>(null);
+  const [saveCachedName, setSaveCachedName] = useState<string>('');
+  const [saveCachedDesc, setSaveCachedDesc] = useState<string>('');
+  const [showSaveModal, setShowSaveModal] = useState<boolean>(false);
+
+  // Load replays from IndexedDB
+  const loadTheaterReplays = async () => {
+    try {
+      const saved = await getSavedReplays();
+      const cached = await getCachedReplays();
+      setSavedReplays(saved);
+      setCachedReplays(cached);
+    } catch (err) {
+      console.error('Failed to load theater replays from IndexedDB:', err);
+    }
+  };
+
+  useEffect(() => {
+    if (activeMenuTab === 'theater') {
+      loadTheaterReplays();
+    }
+  }, [activeMenuTab]);
   const [multiplayerRole, setMultiplayerRole] = useState<'host' | 'client' | 'observer' | null>(null);
   const [multiplayerSocket, setMultiplayerSocket] = useState<WebSocket | null>(null);
   const [userIp, setUserIp] = useState<string>('127.0.0.1');
@@ -2858,6 +2971,7 @@ export default function App() {
         <GrifballGame
           isPlaying={isPlaying}
           selectedMap={selectedMap}
+          customMap={selectedMap === 'custom_file' ? (lobbyCustomMapData || undefined) : undefined}
           isPaused={isPaused}
           debugMode={debugMode}
           adminSettings={adminSettings}
@@ -2867,6 +2981,12 @@ export default function App() {
           multiplayerRole={multiplayerRole}
           multiplayerSocket={multiplayerSocket}
           opponentClientId={opponentClientId}
+          replayData={selectedReplay}
+          onExitReplay={() => {
+            setIsPlaying(false);
+            setSelectedReplay(null);
+            setIsPaused(false);
+          }}
   opponentPlayerName={
     singlePlayerMode === 'tournament' && tournamentState && tournamentState.status === 'playing'
       ? tournamentState.opponents[tournamentState.rounds[tournamentState.currentRound][tournamentState.currentMatchIndex].opponent2]?.name
@@ -3023,6 +3143,7 @@ export default function App() {
                   { id: 'single', label: 'Single Player' },
                   { id: 'multi',  label: 'Multiplayer'   },
                   { id: 'spec',   label: 'Spectator'     },
+                  { id: 'theater', label: 'Theater'       },
                 ] as const).map(m => (
                   <button
                     key={m.id}
@@ -3996,7 +4117,7 @@ export default function App() {
                       </div>
                     </div>
                   </div>
-                ) : (
+                ) : activeMenuTab === 'spec' ? (
                   /* SPECTATOR MODE */
                   <div className="flex flex-col gap-4">
                     <div className="bg-slate-950/45 border border-white/10 rounded-xl p-5 flex flex-col gap-3 shadow-[inset_0_1px_3px_rgba(0,0,0,0.30)]">
@@ -4021,12 +4142,277 @@ export default function App() {
                       </p>
                     </div>
                   </div>
+                ) : (
+                  /* THEATER MODE: COLUMN 1 - SAVED REPLAYS ARCHIVE */
+                  <div className="flex flex-col h-full min-h-0 gap-4 text-left">
+                    <div className="bg-slate-950/45 border border-white/10 rounded-xl p-4.5 flex flex-col gap-3 shrink-0 shadow-[inset_0_1px_3px_rgba(0,0,0,0.30)]">
+                      <span className="text-[10px] font-mono font-bold tracking-[0.4em] uppercase text-[#e11d48]">THEATER MODE</span>
+                      <h2 className="text-xl font-display font-black italic uppercase tracking-tight" style={{ background: 'linear-gradient(90deg,#e11d48,#fff,#f43f5e)', WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent', lineHeight: 1 }}>
+                        Saved Replays
+                      </h2>
+                      <p className="text-[11.5px] text-white/60 leading-normal">
+                        Select a recorded match replay to watch with full fly-camera controls, perspective changes, and timeline seeking.
+                      </p>
+                    </div>
+
+                    {/* SEARCH & FILTERS */}
+                    <div className="bg-slate-950/35 border border-white/5 rounded-xl p-3 flex flex-col gap-2 shrink-0">
+                      <div className="relative">
+                        <input
+                          type="text"
+                          value={theaterSearchQuery}
+                          onChange={(e) => setTheaterSearchQuery(e.target.value)}
+                          placeholder="Search saved replays..."
+                          className="w-full h-9 bg-black/60 border border-white/10 rounded px-3 text-xs tracking-wide text-[#e11d48] placeholder:text-white/20 focus:border-[#e11d48] outline-none transition-all"
+                        />
+                        {theaterSearchQuery && (
+                          <button
+                            onClick={() => setTheaterSearchQuery('')}
+                            className="absolute right-3.5 top-2 text-[10px] font-bold text-white/40 hover:text-white"
+                          >
+                            ✕
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="flex gap-2">
+                        {/* Map Filter */}
+                        <div className="flex-1 flex flex-col gap-1">
+                          <span className="text-[8px] font-mono text-white/40 uppercase tracking-widest">Map Filter</span>
+                          <select
+                            value={theaterMapFilter}
+                            onChange={(e) => setTheaterMapFilter(e.target.value as any)}
+                            className="h-8 bg-black/60 border border-white/10 rounded px-2 text-[10.5px] text-white/70 outline-none focus:border-[#e11d48] cursor-pointer"
+                          >
+                            <option value="all">🌐 All Maps</option>
+                            <option value="hangar">⚙️ Hangar</option>
+                            <option value="circle">🔵 Circle</option>
+                          </select>
+                        </div>
+
+                        {/* Mode Filter */}
+                        <div className="flex-1 flex flex-col gap-1">
+                          <span className="text-[8px] font-mono text-white/40 uppercase tracking-widest">Mode Filter</span>
+                          <select
+                            value={theaterModeFilter}
+                            onChange={(e) => setTheaterModeFilter(e.target.value as any)}
+                            className="h-8 bg-black/60 border border-white/10 rounded px-2 text-[10.5px] text-white/70 outline-none focus:border-[#e11d48] cursor-pointer"
+                          >
+                            <option value="all">🏆 All Modes</option>
+                            <option value="sandbox">🛡️ Sandbox</option>
+                            <option value="tournament">🎖️ Tourney</option>
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* SAVED REPLAYS LIST */}
+                    <div className="flex-1 overflow-y-auto min-h-0 flex flex-col gap-2.5 pr-1">
+                      {savedReplays.filter(r => 
+                        (theaterMapFilter === 'all' || r.mapType === theaterMapFilter) &&
+                        (theaterModeFilter === 'all' || r.mode === theaterModeFilter) &&
+                        (r.name.toLowerCase().includes(theaterSearchQuery.toLowerCase()) || 
+                         r.description.toLowerCase().includes(theaterSearchQuery.toLowerCase()))
+                      ).length === 0 ? (
+                        <div className="bg-black/30 border border-white/5 rounded-lg p-5 text-center my-auto">
+                          <p className="text-xs text-white/40 italic font-medium">No saved replays found.</p>
+                          <p className="text-[10px] text-white/30 mt-1 leading-normal">
+                            Record a local training match, then save it from the rolling cache on the right!
+                          </p>
+                        </div>
+                      ) : (
+                        savedReplays.filter(r => 
+                          (theaterMapFilter === 'all' || r.mapType === theaterMapFilter) &&
+                          (theaterModeFilter === 'all' || r.mode === theaterModeFilter) &&
+                          (r.name.toLowerCase().includes(theaterSearchQuery.toLowerCase()) || 
+                           r.description.toLowerCase().includes(theaterSearchQuery.toLowerCase()))
+                        ).map(replay => {
+                          const minutes = Math.floor(replay.duration / 60);
+                          const seconds = Math.floor(replay.duration % 60);
+                          const durationStr = `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
+                          
+                          let formattedDate = replay.date;
+                          try {
+                            formattedDate = new Date(replay.date).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+                          } catch (_) {}
+
+                          return (
+                            <div key={replay.id} className="bg-slate-950/45 border border-white/5 rounded-xl p-3.5 flex flex-col gap-2.5 shadow-md hover:border-pink-500/30 transition-all shrink-0">
+                              <div className="flex justify-between items-start gap-2">
+                                <div className="flex flex-col min-w-0">
+                                  <h4 className="text-xs font-black uppercase text-[#f43f5e] truncate" title={replay.name}>
+                                    {replay.name}
+                                  </h4>
+                                  {replay.description && (
+                                    <p className="text-[10px] text-white/50 italic mt-0.5 line-clamp-2 leading-relaxed" title={replay.description}>
+                                      {replay.description}
+                                    </p>
+                                  )}
+                                </div>
+                                <span className="text-[9px] font-mono font-bold text-white/40 bg-white/5 border border-white/10 px-2 py-0.5 rounded shrink-0">
+                                  {durationStr}
+                                </span>
+                              </div>
+
+                              <div className="grid grid-cols-2 gap-1 text-[9px] font-mono text-white/50 border-t border-b border-white/5 py-1.5">
+                                <div>Map: <span className="text-white/80 font-bold uppercase">{replay.mapType}</span></div>
+                                <div>Mode: <span className="text-white/80 font-bold uppercase">{replay.mode}</span></div>
+                                <div>Pilot: <span className="text-white/80 font-bold uppercase">{replay.playerName}</span></div>
+                                <div>Opponent: <span className="text-white/80 font-bold uppercase">{replay.opponentName}</span></div>
+                              </div>
+
+                              <div className="flex items-center justify-between mt-0.5 gap-2">
+                                <span className="text-[9px] font-mono text-white/30">{formattedDate}</span>
+                                <div className="flex gap-1.5">
+                                  <button
+                                    onClick={() => {
+                                      setEditReplayId(replay.id);
+                                      setEditReplayName(replay.name);
+                                      setEditReplayDesc(replay.description);
+                                      setShowEditModal(true);
+                                    }}
+                                    className="p-1 bg-white/5 hover:bg-white/10 border border-white/10 rounded text-[9.5px] font-bold text-white/60 hover:text-white uppercase tracking-wider transition-all cursor-pointer flex items-center justify-center w-7 h-7"
+                                    title="Edit meta descriptions"
+                                  >
+                                    ✏️
+                                  </button>
+                                  <button
+                                    onClick={async () => {
+                                      if (confirm('Delete this match replay permanent record?')) {
+                                        await deleteReplay(replay.id, false);
+                                        await loadTheaterReplays();
+                                      }
+                                    }}
+                                    className="p-1 bg-red-950/20 hover:bg-red-900/40 border border-red-500/20 hover:border-red-500/40 rounded text-[9.5px] font-bold text-red-400 hover:text-red-300 uppercase tracking-wider transition-all cursor-pointer flex items-center justify-center w-7 h-7"
+                                    title="Delete Replay"
+                                  >
+                                    🗑️
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      setSelectedReplay(replay);
+                                      setIsPlaying(true);
+                                    }}
+                                    className="px-3 h-7 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-[9.5px] font-black text-white uppercase tracking-widest rounded border border-emerald-500/20 hover:shadow-[0_0_10px_rgba(16,185,129,0.3)] transition-all cursor-pointer flex items-center gap-1.5"
+                                  >
+                                    ▶ Watch
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
                 )}
               </div>
 
               {/* COLUMN 2: KEYBIND REFERENCE & CUSTOMIZER */}
               <div className="mobile-reference-panel flex flex-col h-full min-h-0 overflow-y-auto gap-4">
-                {/* Segmented Tab Switcher */}
+                {activeMenuTab === 'theater' ? (
+                  /* THEATER MODE: COLUMN 2 - ROLLING MATCH AUTO-SAVE CACHE */
+                  <div className="flex flex-col h-full min-h-0 gap-4 text-left">
+                    <div className="bg-slate-950/45 border border-white/10 rounded-xl p-4.5 flex flex-col gap-3 shrink-0 shadow-[inset_0_1px_3px_rgba(0,0,0,0.30)]">
+                      <span className="text-[10px] font-mono font-bold tracking-[0.4em] uppercase text-[#f59e0b]">AUTO-SAVE CACHE</span>
+                      <h2 className="text-xl font-display font-black italic uppercase tracking-tight" style={{ background: 'linear-gradient(90deg,#f59e0b,#fff,#eab308)', WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent', lineHeight: 1 }}>
+                        Rolling Match Cache
+                      </h2>
+                      <p className="text-[11.5px] text-white/60 leading-normal">
+                        Keeps a rolling buffer of your last 5 matches. These are overwritten sequentially as new matches finish. Transfer them to Saved Replays to store them permanently!
+                      </p>
+                    </div>
+
+                    {/* CACHED REPLAYS LIST */}
+                    <div className="flex-1 overflow-y-auto min-h-0 flex flex-col gap-2.5 pr-1">
+                      {cachedReplays.length === 0 ? (
+                        <div className="bg-black/30 border border-white/5 rounded-lg p-5 text-center my-auto">
+                          <p className="text-xs text-white/40 italic font-medium">Rolling cache is currently empty.</p>
+                          <p className="text-[10px] text-white/30 mt-1 leading-normal">
+                            Complete a training match or tournament fight to see your replay automatically cached here!
+                          </p>
+                        </div>
+                      ) : (
+                        cachedReplays.map(replay => {
+                          const minutes = Math.floor(replay.duration / 60);
+                          const seconds = Math.floor(replay.duration % 60);
+                          const durationStr = `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
+                          
+                          let formattedDate = replay.date;
+                          try {
+                            formattedDate = new Date(replay.date).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+                          } catch (_) {}
+
+                          return (
+                            <div key={replay.id} className="bg-slate-950/45 border border-white/5 rounded-xl p-3.5 flex flex-col gap-2.5 shadow-md border-l-4 border-l-[#f59e0b] hover:border-l-yellow-400 transition-all shrink-0">
+                              <div className="flex justify-between items-start gap-2">
+                                <div className="flex flex-col min-w-0 text-left">
+                                  <h4 className="text-xs font-black uppercase text-[#eab308] truncate">
+                                    {replay.name || `Rolling Cache Match - ${formattedDate}`}
+                                  </h4>
+                                  <span className="text-[9px] text-white/40 italic mt-0.5">
+                                    [Auto-saved from local match]
+                                  </span>
+                                </div>
+                                <span className="text-[9px] font-mono font-bold text-white/40 bg-white/5 border border-white/10 px-2 py-0.5 rounded shrink-0">
+                                  {durationStr}
+                                </span>
+                              </div>
+
+                              <div className="grid grid-cols-2 gap-1 text-[9px] font-mono text-white/50 border-t border-b border-white/5 py-1.5">
+                                <div>Map: <span className="text-white/80 font-bold uppercase">{replay.mapType}</span></div>
+                                <div>Mode: <span className="text-white/80 font-bold uppercase">{replay.mode}</span></div>
+                                <div>Pilot: <span className="text-white/80 font-bold uppercase">{replay.playerName}</span></div>
+                                <div>Opponent: <span className="text-white/80 font-bold uppercase">{replay.opponentName}</span></div>
+                              </div>
+
+                              <div className="flex items-center justify-between mt-0.5 gap-2">
+                                <span className="text-[9px] font-mono text-white/30">{formattedDate}</span>
+                                <div className="flex gap-1.5">
+                                  <button
+                                    onClick={async () => {
+                                      if (confirm('Delete this rolling cache match replay?')) {
+                                        await deleteReplay(replay.id, true);
+                                        await loadTheaterReplays();
+                                      }
+                                    }}
+                                    className="p-1 bg-red-950/20 hover:bg-red-900/40 border border-red-500/20 hover:border-red-500/40 rounded text-[9.5px] font-bold text-red-400 hover:text-red-300 uppercase tracking-wider transition-all cursor-pointer flex items-center justify-center w-7 h-7"
+                                    title="Delete from cache"
+                                  >
+                                    🗑️
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      setSaveCachedId(replay.id);
+                                      setSaveCachedName(`${replay.playerName} vs ${replay.opponentName}`);
+                                      setSaveCachedDesc(`Saved match on ${replay.mapType} map in ${replay.mode} mode.`);
+                                      setShowSaveModal(true);
+                                    }}
+                                    className="px-2.5 h-7 bg-white/5 hover:bg-white/10 border border-white/10 text-[9.5px] font-bold text-white/80 hover:text-white uppercase tracking-wider rounded transition-all cursor-pointer flex items-center gap-1"
+                                    title="Save permanently to Archives"
+                                  >
+                                    📥 Save Permanent
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      setSelectedReplay(replay);
+                                      setIsPlaying(true);
+                                    }}
+                                    className="px-3 h-7 bg-gradient-to-r from-amber-600 to-yellow-600 hover:from-amber-500 hover:to-yellow-500 text-[9.5px] font-black text-white uppercase tracking-widest rounded border border-amber-500/20 hover:shadow-[0_0_10px_rgba(245,158,11,0.3)] transition-all cursor-pointer flex items-center gap-1.5"
+                                  >
+                                    ▶ Watch
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    {/* Segmented Tab Switcher */}
                 <div className="flex bg-black/40 p-1.5 rounded-lg border border-white/5 gap-1.5 select-none shrink-0 shadow-[inset_0_1px_3px_rgba(0,0,0,0.3)]">
                   <button
                     onClick={() => setRightPanelTab('manual')}
@@ -4821,6 +5207,8 @@ export default function App() {
                     </div>
                   </div>
                 )}
+                  </>
+                )}
               </div>
 
               </div>{/* end 2-column content grid */}
@@ -5057,10 +5445,14 @@ export default function App() {
 
                   <button 
                     id="quit-btn"
-                    onClick={handleReturnToMain}
+                    onClick={selectedReplay ? () => {
+                      setIsPlaying(false);
+                      setSelectedReplay(null);
+                      setIsPaused(false);
+                    } : handleReturnToMain}
                     className="w-full h-10 bg-red-950/20 border border-red-500/20 hover:bg-red-950/40 hover:border-red-500/40 text-red-400 font-bold text-xs uppercase tracking-widest transition-all duration-150 cursor-pointer rounded-lg mt-1 pointer-events-auto active:scale-[0.98]"
                   >
-                    Quit to Title Screen
+                    {selectedReplay ? "Exit Replay" : "Quit to Title Screen"}
                   </button>
                 </div>
               </div>
@@ -5598,18 +5990,75 @@ export default function App() {
                   <span className="text-[10px] text-white/40 uppercase tracking-widest font-mono">Arena Blueprint:</span>
                   <select
                     value={selectedMap}
-                    onChange={(e) => setSelectedMap(e.target.value as 'hangar' | 'circle')}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setSelectedMap(val);
+                    }}
                     className="w-full h-11 bg-black/60 border border-white/10 rounded px-3 text-sm text-cyan-400 font-bold uppercase outline-none focus:border-cyan-400 cursor-pointer transition-all font-sans"
                   >
                     <option value="hangar">⚙️ Industrial Hangar (Default)</option>
                     <option value="circle">🌐 Circle Arena (Minimalist)</option>
+                    {PREMADE_MAPS.map(m => (
+                      <option key={m.id} value={m.id}>
+                        {m.theme === 'cyberpunk' ? '🌐' : m.theme === 'nature' ? '🌳' : m.theme === 'space' ? '🚀' : '⚔️'} {m.name} (Preset)
+                      </option>
+                    ))}
+                    <option value="custom_file">💾 Load Custom Map (.json)</option>
                   </select>
                 </div>
+                
+                {selectedMap === 'custom_file' && (
+                  <div className="flex flex-col gap-2 mt-2 bg-black/40 border border-cyan-500/20 p-3 rounded-lg">
+                    <span className="text-[10px] font-mono text-cyan-400 uppercase tracking-wider font-bold">Import Local Map File</span>
+                    {lobbyCustomMapData ? (
+                      <div className="flex flex-col gap-1 text-[10px] text-white/60">
+                        <div>Loaded: <strong className="text-cyan-300 font-black">{lobbyCustomMapData.name}</strong></div>
+                        <div>Author: {lobbyCustomMapData.author}</div>
+                        <div>Objects: {lobbyCustomMapData.objects?.length || 0} | Spawns: {lobbyCustomMapData.spawnPoints?.length || 0}</div>
+                      </div>
+                    ) : (
+                      <p className="text-[10px] text-white/40 italic">No custom map file loaded yet.</p>
+                    )}
+                    <label className="h-8 bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 text-cyan-400 font-mono text-[10px] font-bold uppercase tracking-wider rounded flex items-center justify-center cursor-pointer transition-all gap-1.5 mt-1">
+                      📂 Select Map JSON
+                      <input
+                        type="file"
+                        accept=".json"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          const reader = new FileReader();
+                          reader.onload = (event) => {
+                            try {
+                              const parsed = JSON.parse(event.target?.result as string) as CustomMapData;
+                              if (parsed && parsed.name && parsed.objects) {
+                                setLobbyCustomMapData(parsed);
+                              } else {
+                                alert("Invalid map structure. Make sure objects and name are defined.");
+                              }
+                            } catch (err) {
+                              alert("Failed to parse map JSON.");
+                            }
+                          };
+                          reader.readAsText(file);
+                        }}
+                      />
+                    </label>
+                  </div>
+                )}
+
                 <div className="text-[10px] text-white/45 mt-2 bg-black/30 border border-white/5 p-2 rounded">
                   {selectedMap === 'hangar' ? (
                     <span><strong>Industrial Hangar:</strong> A gritty, atmospheric warehouse with steel columns, hazard stripes, metal pipes, ceiling trusses, and warm amber light shafts.</span>
-                  ) : (
+                  ) : selectedMap === 'circle' ? (
                     <span><strong>Circle Arena:</strong> A clean, minimalist holographic grid arena with concentric glowing borders, four cardinal posts, and sleek neon cyan lights.</span>
+                  ) : selectedMap === 'custom_file' ? (
+                    <span><strong>Custom Arena:</strong> An externally loaded .json map designed in the local Standalone Map Maker tool. Supports custom obstacles, spawn zones, and custom lighting.</span>
+                  ) : (
+                    <span>
+                      <strong>{PREMADE_MAPS.find(m => m.id === selectedMap)?.name}:</strong> {PREMADE_MAPS.find(m => m.id === selectedMap)?.description}
+                    </span>
                   )}
                 </div>
               </div>
@@ -5850,6 +6299,154 @@ export default function App() {
               <button
                 onClick={() => setShowBotSetupMenu(false)}
                 className="px-5 h-12 bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 font-bold text-xs uppercase tracking-widest rounded cursor-pointer transition-all"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* THEATER: EDIT REPLAY NAME & DESCRIPTION MODAL OVERLAY */}
+      {showEditModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/90 backdrop-blur-xl p-4 select-none animate-in fade-in duration-200">
+          <div className="mobile-modal w-full max-w-md bg-slate-900 border border-pink-500/25 rounded-2xl p-6 shadow-2xl flex flex-col gap-5 text-left max-h-[calc(100dvh-2rem)] overflow-y-auto">
+            <div className="flex justify-between items-center border-b border-white/5 pb-4 shrink-0">
+              <div className="flex flex-col">
+                <span className="text-[10px] text-pink-500 font-bold uppercase tracking-[0.2em] mb-1 font-display">ARCHIVE METADATA</span>
+                <h3 className="text-lg font-black tracking-tight text-white uppercase font-display">Rename Replay Record</h3>
+              </div>
+              <button
+                onClick={() => setShowEditModal(false)}
+                className="text-white/40 hover:text-white font-bold cursor-pointer p-1"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="flex flex-col gap-4">
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[10px] text-white/40 uppercase tracking-widest font-mono font-bold">Record Custom Title:</label>
+                <input
+                  type="text"
+                  maxLength={40}
+                  value={editReplayName}
+                  onChange={(e) => setEditReplayName(e.target.value)}
+                  placeholder="E.g., Sandbox Dominance..."
+                  className="w-full h-11 bg-black/60 border border-white/10 rounded px-3 text-sm tracking-wide text-white focus:border-pink-500 outline-none transition-all font-semibold"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[10px] text-white/40 uppercase tracking-widest font-mono font-bold">Record Description / Commentary:</label>
+                <textarea
+                  maxLength={200}
+                  rows={4}
+                  value={editReplayDesc}
+                  onChange={(e) => setEditReplayDesc(e.target.value)}
+                  placeholder="E.g., Highlight of the triple-kill sword lunge at the buzzer..."
+                  className="w-full bg-black/60 border border-white/10 rounded p-3 text-sm tracking-wide text-white focus:border-pink-500 outline-none transition-all font-medium resize-none leading-relaxed"
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-2 shrink-0">
+              <button
+                onClick={async () => {
+                  if (editReplayName.trim()) {
+                    await updateReplayMeta(editReplayId!, editReplayName.trim(), editReplayDesc.trim());
+                    setShowEditModal(false);
+                    await loadTheaterReplays();
+                  }
+                }}
+                disabled={!editReplayName.trim()}
+                className={`flex-1 py-3 font-sans font-black text-xs uppercase tracking-widest rounded-lg transition-all border outline-none cursor-pointer flex items-center justify-center gap-1.5 shadow-lg ${
+                  editReplayName.trim()
+                    ? 'bg-gradient-to-r from-pink-600 to-rose-600 hover:from-pink-500 hover:to-rose-500 text-white border-pink-500/20 active:scale-95 shadow-[0_0_12px_rgba(236,72,153,0.3)]'
+                    : 'bg-white/5 border-white/5 text-white/20 cursor-not-allowed'
+                }`}
+              >
+                💾 Update Record
+              </button>
+              <button
+                onClick={() => setShowEditModal(false)}
+                className="px-5 py-3 bg-white/5 hover:bg-white/10 text-xs text-white/70 hover:text-white uppercase font-black tracking-widest transition-all rounded-lg border border-white/10 cursor-pointer active:scale-95"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* THEATER: SAVE CACHED REPLAY TO ARCHIVES PERMANENTLY MODAL OVERLAY */}
+      {showSaveModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/90 backdrop-blur-xl p-4 select-none animate-in fade-in duration-200">
+          <div className="mobile-modal w-full max-w-md bg-slate-900 border border-yellow-500/25 rounded-2xl p-6 shadow-2xl flex flex-col gap-5 text-left max-h-[calc(100dvh-2rem)] overflow-y-auto">
+            <div className="flex justify-between items-center border-b border-white/5 pb-4 shrink-0">
+              <div className="flex flex-col">
+                <span className="text-[10px] text-yellow-500 font-bold uppercase tracking-[0.2em] mb-1 font-display">ARCHIVE ACQUISITION</span>
+                <h3 className="text-lg font-black tracking-tight text-white uppercase font-display">Commit Replay to Archives</h3>
+              </div>
+              <button
+                onClick={() => setShowSaveModal(false)}
+                className="text-white/40 hover:text-white font-bold cursor-pointer p-1"
+              >
+                ✕
+              </button>
+            </div>
+
+            <p className="text-[11.5px] text-white/60 leading-relaxed bg-yellow-500/5 border border-yellow-500/10 p-3 rounded">
+              ⚠️ This will save the rolling auto-save match cache item permanently into your Archives, ensuring it won't be overwritten. Add a name and description to find it easily!
+            </p>
+
+            <div className="flex flex-col gap-4">
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[10px] text-white/40 uppercase tracking-widest font-mono font-bold">Archive Record Title:</label>
+                <input
+                  type="text"
+                  maxLength={40}
+                  value={saveCachedName}
+                  onChange={(e) => setSaveCachedName(e.target.value)}
+                  placeholder="Give this replay record a name..."
+                  className="w-full h-11 bg-black/60 border border-white/10 rounded px-3 text-sm tracking-wide text-white focus:border-yellow-500 outline-none transition-all font-semibold"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[10px] text-white/40 uppercase tracking-widest font-mono font-bold">Replay Summary / Notes:</label>
+                <textarea
+                  maxLength={200}
+                  rows={4}
+                  value={saveCachedDesc}
+                  onChange={(e) => setSaveCachedDesc(e.target.value)}
+                  placeholder="Record highlight notes, bots behavior details, scores, etc..."
+                  className="w-full bg-black/60 border border-white/10 rounded p-3 text-sm tracking-wide text-white focus:border-yellow-500 outline-none transition-all font-medium resize-none leading-relaxed"
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-2 shrink-0">
+              <button
+                onClick={async () => {
+                  if (saveCachedName.trim()) {
+                    await saveCachedReplay(saveCachedId!, saveCachedName.trim(), saveCachedDesc.trim());
+                    setShowSaveModal(false);
+                    await loadTheaterReplays();
+                  }
+                }}
+                disabled={!saveCachedName.trim()}
+                className={`flex-1 py-3 font-sans font-black text-xs uppercase tracking-widest rounded-lg transition-all border outline-none cursor-pointer flex items-center justify-center gap-1.5 shadow-lg ${
+                  saveCachedName.trim()
+                    ? 'bg-gradient-to-r from-yellow-600 to-amber-600 hover:from-yellow-500 hover:to-amber-500 text-white border-yellow-500/20 active:scale-95 shadow-[0_0_12px_rgba(245,158,11,0.3)]'
+                    : 'bg-white/5 border-white/5 text-white/20 cursor-not-allowed'
+                }`}
+              >
+                📥 Commit to Archives
+              </button>
+              <button
+                onClick={() => setShowSaveModal(false)}
+                className="px-5 py-3 bg-white/5 hover:bg-white/10 text-xs text-white/70 hover:text-white uppercase font-black tracking-widest transition-all rounded-lg border border-white/10 cursor-pointer active:scale-95"
               >
                 Cancel
               </button>
