@@ -12,7 +12,7 @@
     "lint": "tsc --noEmit",
     "typecheck:worker": "cd worker && npm run typecheck",
     "typecheck:all": "npm run lint && npm run typecheck:worker",
-    "test": "node --import tsx --test src/features/tournament/tournament.test.ts src/game/aiCombatDecision.test.ts src/game/aiBotCoordinator.test.ts src/game/aiComboEngine.test.ts src/game/aiFeints.test.ts src/game/aiMatchContext.test.ts src/game/aiMovementMechanics.test.ts src/game/aiPersonalities.test.ts src/game/aiPlayerModel.test.ts src/game/aiPressure.test.ts src/game/aiPsychologicalPressure.test.ts src/game/aiSkillCalibration.test.ts src/game/aiSpatialStrategy.test.ts src/game/aiTuning.test.ts src/game/rewards.test.ts src/settings/saveCodec.test.ts src/ui/hudLayouts.test.ts"
+    "test": "node --import tsx --test src/features/tournament/tournament.test.ts src/game/aiCombatDecision.test.ts src/game/aiBotCoordinator.test.ts src/game/aiOrchestrator.test.ts src/game/aiComboEngine.test.ts src/game/aiFeints.test.ts src/game/aiMatchContext.test.ts src/game/aiMovementMechanics.test.ts src/game/aiPersonalities.test.ts src/game/aiPlayerModel.test.ts src/game/aiPressure.test.ts src/game/aiPsychologicalPressure.test.ts src/game/aiSkillCalibration.test.ts src/game/aiSpatialStrategy.test.ts src/game/aiTuning.test.ts src/game/rewards.test.ts src/game/rosterSlotConfig.test.ts src/game/roster.test.ts src/game/teamScoring.test.ts src/settings/saveCodec.test.ts src/ui/hudLayouts.test.ts"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",

@@ -21,7 +21,6 @@ import { bakeNavMesh, findShortestPath } from '../game/mapNavigation';
 import { PREMADE_MAPS } from '../game/premadeMaps';
 import { createAIMatchContext, resetAIMatchContext, type AIMatchContext, tickFeintCooldown, getFeintCooldownRemaining, startFeintCooldown, isWeaponSwapFeintActive, startWeaponSwapFeint, tickWeaponSwapFeintTimer, getOrCreateBotPsychState, tickBotPsychState, getBotComboState, setBotComboState, clearBotComboState } from '../game/aiMatchContext';
 import {
-  clearBotEngagements,
   getAttackPhaseIndex,
   getCoordinatedTargetBonus,
   getEngagingBotIds,
@@ -30,8 +29,13 @@ import {
   registerBotEngagement,
   shouldDeferCoordinatedAttack,
   shouldPunisherHold,
-  tickBotCoordinator,
 } from '../game/aiBotCoordinator';
+import {
+  seedOfflineRoster,
+  tickAIOrchestrator,
+  type AIOrchestratorEvents,
+  type AIOrchestratorSpawnCallbacks,
+} from '../game/aiOrchestrator';
 import {
   canUseWeaponCombos,
   comboBlocksTacticalSwap,
@@ -43,7 +47,31 @@ import {
   shouldAbortCombo,
 } from '../game/aiComboEngine';
 import { deriveMatchStateMultipliers, shouldAvoidCoinFlipTrade, applyMatchAggression } from '../game/aiTuning';
-import { applyPersonalityKnobs, getPersonalityFlags, resolveDerivedAIParams, getArchetypeDef } from '../game/aiPersonalities';
+import { getPersonalityFlags, resolveDerivedAIParams } from '../game/aiPersonalities';
+import {
+  resolveKnobsFromRosterSlot,
+  resolveRosterSlotForCombatant,
+  type LegacyRosterProps,
+} from '../game/rosterSlotConfig';
+import {
+  DEFAULT_AI_TEAM,
+  createEmptyTeamScores,
+  installLegacyTeamScoreBridges,
+  localPlayerTeamFromRole,
+  type TeamScoresState,
+  type TeamId,
+} from '../game/teamScoring';
+import {
+  MAIN_AI_ID,
+  createRemoteCombatant,
+  getAICombatants,
+  getDisplayOpponent,
+  getMainAI,
+  getPrimaryRemoteOpponent,
+  getRosterCombatant,
+  isAICombatReady,
+  removeMainAIFromRoster,
+} from '../game/roster';
 import {
   APPROACH_FEINT_BACK_TIMER,
   CHARGE_ABORT_SIDESTEP_TIMER,
@@ -442,11 +470,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     }
     return null;
   };
-  // Persistent Combatant view over the main AI's flat s.aiXxx state. Created once
-  // (see getMainAICombatant) so the main AI is a single, durable Combatant object —
-  // the same shape as the bots — rather than an adapter rebuilt every frame. This is
-  // the object that will eventually live in the otherPlayers map alongside the bots.
-  const mainAICombatantRef = useRef<Combatant | null>(null);
+  // Phase 4: main_ai lives in otherPlayers with controller:'ai' — see roster.ts helpers.
   const requestRef = useRef<number | null>(null);
   const fpsRef = useRef({
     frameCount: 0,
@@ -501,16 +525,6 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     playerSlideCooldownTimer: number;
     playerSlideLastPos: THREE.Vector3;
 
-    aiDashRemaining: number;
-    aiDashDir: THREE.Vector3;
-    aiDashCooldownTimer: number;
-
-    // AI slide/sprint states
-    aiSlideActive: boolean;
-    aiSlideDistanceTraveled: number;
-    aiSlideCooldownTimer: number;
-    aiIsSprinting: boolean;
-
     // Hammer states
     pWeaponState: WeaponState;
     pWeaponTimer: number; // current phase time
@@ -536,44 +550,16 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     pPistolReady: boolean;
     pPistolCooldown: number;
     lastPlayerSwordAttackTime: number;
-    lastAISwordAttackTime: number;
     lastPlayerHammerAttackTime: number;
-    lastAIHammerAttackTime: number;
     swapCooldownTimer: number;
     swapCooldownDuration: number;
-    aiSwapCooldownTimer: number;
     swapLockoutTimer: number;
-    aiSwapLockoutTimer: number;
 
-    // AI states
-    aiPos: THREE.Vector3;
-    aiVel: THREE.Vector3;
-    aiYaw: number;
-    aiHP: number;
-    aiMaxHP: number;
-    aiState: AIBehaviorState;
-    aiTimer: number; // for fencing actions
-    aiSwayTimer: number;
-    aiWeaponState: WeaponState;
-    aiWeaponTimer: number;
-    aiIsCrouching: boolean;
-    aiActiveWeapon: 'hammer' | 'sword';
-    aiSwordState: 'ready' | 'slashing' | 'recovering';
-    aiSwordTimer: number;
-    aiSwordReady: boolean;
-    aiIsLunging: boolean;
-    aiLungeTimer: number;
-    aiLungeStartPos: THREE.Vector3;
-    aiLungeTargetDir: THREE.Vector3;
-    aiLastLungeOutcome?: AILungeOutcome;
-    aiLastLungeTargetId?: string;
-    aiPostLungeDecisionTimer?: number;
-    aiPendingPostEvasionCharge?: boolean;
-    aiPressureTargetId?: string;
-
-    // Player stats
+    // Player stats (legacy names bridged to teamScores — see installLegacyTeamScoreBridges)
     playerHP: number;
     playerMaxHP: number;
+    teamScores: TeamScoresState;
+    localPlayerTeam: TeamId;
     scorePlayer: number;
     scoreEnemy: number;
     playerKills: number;
@@ -584,9 +570,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     playerRespawnTimer: number;
     enemyRespawnTimer: number;
     playerInvulnerabilityTimer: number;
-    aiInvulnerabilityTimer: number;
     playerSpawnTime: number;
-    aiSpawnTime: number;
     playerLastKillTime: number;
     playerMultikillCount: number;
     playerSpreeCount: number;
@@ -604,11 +588,6 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
     // Hammer Jumping States
     pHammerJumpWindowTimer: number;
-    aiHammerJumpWindowTimer: number;
-    aiIsJumping: boolean;
-    aiHammerJumpPlanned: boolean;
-    aiHammerJumpType?: 'offensive' | 'defensive';
-    aiHammerJumpCooldownTimer: number;
 
     // Arena configs
     arenaRadius: number;
@@ -668,15 +647,6 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     playerSlideCooldownTimer: 0,
     playerSlideLastPos: new THREE.Vector3(0, 0, 0),
 
-    aiDashRemaining: 0,
-    aiDashDir: new THREE.Vector3(0, 0, 0),
-    aiDashCooldownTimer: 0,
-
-    aiSlideActive: false,
-    aiSlideDistanceTraveled: 0,
-    aiSlideCooldownTimer: 0,
-    aiIsSprinting: false,
-
     pWeaponState: 'ready',
     pWeaponTimer: 0,
     pWeaponReady: true,
@@ -700,42 +670,15 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     pPistolReady: true,
     pPistolCooldown: 1.0,
     lastPlayerSwordAttackTime: 0,
-    lastAISwordAttackTime: 0,
     lastPlayerHammerAttackTime: 0,
-    lastAIHammerAttackTime: 0,
     swapCooldownTimer: 0,
     swapCooldownDuration: 0,
-    aiSwapCooldownTimer: 0,
     swapLockoutTimer: 0,
-    aiSwapLockoutTimer: 0,
-
-    aiPos: new THREE.Vector3(0, 0, -12), // Start opposite side
-    aiVel: new THREE.Vector3(0, 0, 0),
-    aiYaw: getInwardSpawnYaw(new THREE.Vector3(0, 0, -12)),
-    aiHP: 1,
-    aiMaxHP: 1,
-    aiState: 'APPROACHING',
-    aiTimer: 0,
-    aiSwayTimer: 0,
-    aiWeaponState: 'ready',
-    aiWeaponTimer: 0,
-    aiIsCrouching: false,
-    aiActiveWeapon: 'hammer',
-    aiSwordState: 'ready',
-    aiSwordTimer: 0,
-    aiSwordReady: true,
-    aiIsLunging: false,
-    aiLungeTimer: 0,
-    aiLungeStartPos: new THREE.Vector3(),
-    aiLungeTargetDir: new THREE.Vector3(),
-    aiLastLungeOutcome: undefined,
-    aiLastLungeTargetId: undefined,
-    aiPostLungeDecisionTimer: 0,
-    aiPendingPostEvasionCharge: false,
-    aiPressureTargetId: undefined,
 
     playerHP: 1,
     playerMaxHP: 1,
+    teamScores: createEmptyTeamScores(),
+    localPlayerTeam: localPlayerTeamFromRole(multiplayerRole),
     scorePlayer: 0,
     scoreEnemy: 0,
     playerKills: 0,
@@ -746,9 +689,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     playerRespawnTimer: 0,
     enemyRespawnTimer: 0,
     playerInvulnerabilityTimer: 0,
-    aiInvulnerabilityTimer: 0,
     playerSpawnTime: Date.now(),
-    aiSpawnTime: Date.now(),
     playerLastKillTime: 0,
     playerMultikillCount: 0,
     playerSpreeCount: 0,
@@ -763,10 +704,6 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     lastAIStrikeTick: 0,
 
     pHammerJumpWindowTimer: 0,
-    aiHammerJumpWindowTimer: 0,
-    aiIsJumping: false,
-    aiHammerJumpPlanned: false,
-    aiHammerJumpCooldownTimer: 0,
 
     arenaRadius: 20, // 20m circle
     settings: adminSettings,
@@ -802,6 +739,40 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     multiplayerRole: multiplayerRole,
     aiMatchContext: createAIMatchContext(),
   });
+
+  installLegacyTeamScoreBridges(stateRef.current);
+
+  /** Offline main AI combatant (roster slot 0). */
+  const mai = (): Combatant | undefined => getMainAI(stateRef.current.otherPlayers);
+
+  /** All locally ticked AI combatants in the offline roster. */
+  const getRosterAI = (): Combatant[] => getAICombatants(stateRef.current.otherPlayers);
+
+  const rosterCombatant = (id: string): Combatant | undefined =>
+    getRosterCombatant(stateRef.current.otherPlayers, id);
+
+  /** Primary opponent for HUD / 1v1 display (main_ai offline, remote online). */
+  const opponentDisplay = (): Combatant | undefined =>
+    getDisplayOpponent(stateRef.current.otherPlayers, stateRef.current.isMultiplayer, opponentClientId);
+
+  useEffect(() => {
+    stateRef.current.localPlayerTeam = localPlayerTeamFromRole(multiplayerRole);
+  }, [multiplayerRole]);
+
+  const offlineBotCountRef = useRef(offlineBotCount);
+  const botDifficultiesRef = useRef(botDifficulties);
+  const botColorsRef = useRef(botColors);
+  const botBehaviorsRef = useRef(botBehaviors);
+  const botWeaponBehaviorsRef = useRef(botWeaponBehaviors);
+  const botArchetypesRef = useRef(botArchetypes);
+  useEffect(() => {
+    offlineBotCountRef.current = offlineBotCount;
+    botDifficultiesRef.current = botDifficulties;
+    botColorsRef.current = botColors;
+    botBehaviorsRef.current = botBehaviors;
+    botWeaponBehaviorsRef.current = botWeaponBehaviors;
+    botArchetypesRef.current = botArchetypes;
+  }, [offlineBotCount, botDifficulties, botColors, botBehaviors, botWeaponBehaviors, botArchetypes]);
 
   const recordLocalPlayerObservation = (observe: (model: PlayerModel) => void) => {
     const s = stateRef.current;
@@ -872,8 +843,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       if (result.grounded) {
         if (pos === s.playerPos) {
           s.isJumping = false;
-        } else if (pos === s.aiPos) {
-          s.aiIsJumping = false;
+        } else if (pos === mai()!.pos) {
+          mai()!.isJumping = false;
         } else {
           s.otherPlayers.forEach(bot => {
             if (bot.pos === pos) {
@@ -909,20 +880,22 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       });
     }
 
-    // 2. Main AI
-    const mainAIDead = s.aiHP <= 0 || s.aiState === 'RESPAWNING';
-    if (!mainAIDead && !s.isMultiplayer) {
+    // 2. Main AI (offline roster slot 0)
+    const mainAiCollider = mai();
+    const mainAIDead = !mainAiCollider || mainAiCollider.hp <= 0 || mainAiCollider.aiState === 'RESPAWNING';
+    if (mainAiCollider && !mainAIDead && !s.isMultiplayer) {
       colliders.push({
-        id: 'main_ai',
-        pos: s.aiPos,
-        vel: s.aiVel,
-        isCrouching: !!s.aiIsCrouching,
+        id: MAIN_AI_ID,
+        pos: mainAiCollider.pos,
+        vel: mainAiCollider.vel,
+        isCrouching: !!mainAiCollider.isCrouching,
       });
     }
 
-    // 3. Other players/bots
+    // 3. Other players/bots and remote humans
     if (s.otherPlayers) {
       s.otherPlayers.forEach((bot, id) => {
+        if (id === MAIN_AI_ID) return;
         if (bot.hp > 0 && bot.respawnTimer <= 0 && !bot.isObserver && bot.pos && bot.vel) {
           colliders.push({
             id,
@@ -1010,7 +983,10 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       constrainCombatantToArena(s.playerPos, s.playerVel);
     }
 
-    constrainCombatantToArena(s.aiPos, s.aiVel);
+    const mainAiBounds = mai();
+    if (mainAiBounds) {
+      constrainCombatantToArena(mainAiBounds.pos, mainAiBounds.vel);
+    }
     constrainCombatantToArena(s.hostPos, s.hostVel);
     constrainCombatantToArena(s.clientPos, s.clientVel);
 
@@ -1021,9 +997,6 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     });
 
     // Proactively synchronize group positions to visual meshes immediately to eliminate visual rendering lag
-    if (threeRef.current.enemyGroup && !s.isMultiplayer) {
-      threeRef.current.enemyGroup.position.copy(s.aiPos);
-    }
     if (s.otherPlayers && threeRef.current.otherPlayerMeshes) {
       s.otherPlayers.forEach((bot, id) => {
         const meshes = threeRef.current.otherPlayerMeshes.get(id);
@@ -1037,7 +1010,10 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         if (threeRef.current.enemyGroup) threeRef.current.enemyGroup.position.copy(s.clientPos);
         if (threeRef.current.hostGroup) threeRef.current.hostGroup.position.copy(s.hostPos);
       } else {
-        if (threeRef.current.enemyGroup) threeRef.current.enemyGroup.position.copy(s.aiPos);
+        const remote = getPrimaryRemoteOpponent(s.otherPlayers, opponentClientId);
+        if (threeRef.current.enemyGroup && remote) {
+          threeRef.current.enemyGroup.position.copy(remote.pos);
+        }
         if (threeRef.current.hostGroup) threeRef.current.hostGroup.position.copy(s.playerPos);
       }
     }
@@ -1057,123 +1033,34 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
   // before the main AI was folded into this path.
   const recoverCombatantAltitude = (self: any, pos: THREE.Vector3, vel: THREE.Vector3): boolean => {
     const recovered = recoverAIFromRunawayAltitude(pos, vel, self);
-    if (recovered && self.id === 'main_ai') {
-      const s = stateRef.current;
+    if (recovered && self.id === MAIN_AI_ID) {
       self.isJumping = true;
-      s.aiHammerJumpPlanned = false;
-      s.aiHammerJumpType = undefined;
-      s.aiHammerJumpWindowTimer = 0;
+      self.hammerJumpPlanned = false;
+      self.hammerJumpType = undefined;
+      self.hammerJumpWindowTimer = 0;
     }
     return recovered;
   };
 
+  const getLegacyRosterProps = (): LegacyRosterProps => ({
+    botDifficulties: botDifficultiesRef.current,
+    botBehaviors: botBehaviorsRef.current,
+    botWeaponBehaviors: botWeaponBehaviorsRef.current,
+    botArchetypes: botArchetypesRef.current,
+    botColors: botColorsRef.current,
+  });
+
+  const resolveRosterSlot = (botId: string) =>
+    resolveRosterSlotForCombatant(botId, stateRef.current.settings, getLegacyRosterProps());
+
   const resolveBotArchetype = (botId: string): string | undefined => {
-    if (botId === 'main_ai') {
-      const archetype = stateRef.current.settings.aiArchetype;
-      if (archetype && archetype !== 'none') return archetype;
-    }
-    const archetype = botArchetypes?.[botId];
-    return archetype && archetype !== 'none' ? archetype : undefined;
+    const slot = resolveRosterSlot(botId);
+    return slot.archetype && slot.archetype !== 'none' ? slot.archetype : undefined;
   };
 
   const resolveBotKnobs = (botId: string) => {
     const s = stateRef.current;
-    const difficulty = botId === 'main_ai'
-      ? (s.settings.aiDifficulty || 'normal')
-      : (botDifficulties[botId] || 'normal');
-
-    let reactionLatency = 0.25;
-    let anticipationFactor = 0.40;
-    let movementComplexity = 50;
-    let weaponSwapIQ = 50;
-    let aiPlaystyle = 50;
-    let weaponPrioritization = 50;
-
-    if (difficulty === 'custom') {
-      // Read the live settings off stateRef (kept in sync via the [adminSettings]
-      // effect) rather than the captured `adminSettings` prop. The animation loop
-      // only re-captures this closure when isPlaying/isPaused/multiplayer change,
-      // so reading the prop here leaves stale knob values (e.g. Weapon
-      // Prioritization) that ignore slider edits made after the loop started.
-      reactionLatency = s.settings.aiReactionLatency ?? 0.25;
-      anticipationFactor = s.settings.aiAnticipationFactor ?? 0.40;
-      movementComplexity = s.settings.aiMovementComplexity ?? 50;
-      weaponSwapIQ = s.settings.aiWeaponSwapIQ ?? 50;
-      aiPlaystyle = s.settings.aiPlaystyle ?? 50;
-      weaponPrioritization = s.settings.aiWeaponPrioritization ?? 50;
-    } else if (['easy', 'normal', 'hard', 'nightmare'].includes(difficulty)) {
-      if (difficulty === 'easy') {
-        reactionLatency = 0.55;
-        anticipationFactor = 0.05;
-        movementComplexity = 15;
-        weaponSwapIQ = 10;
-      } else if (difficulty === 'normal') {
-        reactionLatency = 0.25;
-        anticipationFactor = 0.40;
-        movementComplexity = 50;
-        weaponSwapIQ = 50;
-      } else if (difficulty === 'hard') {
-        reactionLatency = 0.12;
-        anticipationFactor = 0.70;
-        movementComplexity = 80;
-        weaponSwapIQ = 80;
-      } else if (difficulty === 'nightmare') {
-        reactionLatency = 0.02;
-        anticipationFactor = 0.95;
-        movementComplexity = 95;
-        weaponSwapIQ = 95;
-      }
-
-      const botArchetype = resolveBotArchetype(botId);
-      if (botArchetype) {
-        aiPlaystyle = 50;
-        weaponPrioritization = 50;
-      } else {
-        const behavior = botBehaviors[botId] || 'defensive';
-        if (behavior === 'passive') aiPlaystyle = 0;
-        else if (behavior === 'defensive') aiPlaystyle = 50;
-        else if (behavior === 'aggressive') aiPlaystyle = 100;
-
-        const wBehavior = botWeaponBehaviors?.[botId] || 'balanced';
-        if (wBehavior === 'sword_75_25') {
-          weaponPrioritization = 75;
-        } else if (wBehavior === 'hammer_75_25') {
-          weaponPrioritization = 25;
-        } else {
-          weaponPrioritization = 50;
-        }
-      }
-    } else {
-      const preset = aiPresets.find(p => p.id === difficulty);
-      if (preset) {
-        reactionLatency = preset.tuning.aiReactionLatency ?? 0.25;
-        anticipationFactor = preset.tuning.aiAnticipationFactor ?? 0.40;
-        movementComplexity = preset.tuning.aiMovementComplexity ?? 50;
-        weaponSwapIQ = preset.tuning.aiWeaponSwapIQ ?? 50;
-        aiPlaystyle = preset.tuning.aiPlaystyle ?? 50;
-        weaponPrioritization = preset.tuning.aiWeaponPrioritization ?? 50;
-      }
-    }
-
-    const baseKnobs = {
-      difficulty,
-      reactionLatency,
-      anticipationFactor,
-      movementComplexity,
-      weaponSwapIQ,
-      aiPlaystyle,
-      weaponPrioritization,
-    };
-
-    // In custom mode the explicit slider values are authoritative. Selecting an
-    // archetype already bakes its knobs into the sliders (applyArchetypeToSettings),
-    // so re-applying them here would silently override manual edits made afterward
-    // (e.g. dragging Weapon Prioritization to 0 after picking a sword-heavy archetype).
-    if (difficulty === 'custom') {
-      return baseKnobs;
-    }
-
-    return applyPersonalityKnobs(baseKnobs, resolveBotArchetype(botId));
+    return resolveKnobsFromRosterSlot(resolveRosterSlot(botId), aiPresets, s.settings);
   };
 
   const getMatchScoreContext = () => {
@@ -1219,28 +1106,17 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     const s = stateRef.current;
     const duration = getPressureDuration(pressureAggression) *
       deriveMatchStateMultipliers(getMatchScoreContext(), pressureAggression / 100).pressureDurationMult;
-    if (botId === 'main_ai') {
-      s.aiState = 'PRESSURING';
-      s.aiTimer = duration;
-      s.aiPressureTargetId = targetId;
-    } else {
-      const bot = s.otherPlayers?.get(botId);
-      if (!bot) return false;
-      bot.aiState = 'PRESSURING';
-      bot.aiTimer = duration;
-      bot.aiPressureTargetId = targetId;
-    }
+    const bot = rosterCombatant(botId);
+    if (!bot || bot.controller !== 'ai') return false;
+    bot.aiState = 'PRESSURING';
+    bot.aiTimer = duration;
+    bot.aiPressureTargetId = targetId;
     return true;
   };
 
   const clearPressureTarget = (botId: string) => {
-    const s = stateRef.current;
-    if (botId === 'main_ai') {
-      s.aiPressureTargetId = undefined;
-    } else {
-      const bot = s.otherPlayers?.get(botId);
-      if (bot) bot.aiPressureTargetId = undefined;
-    }
+    const bot = rosterCombatant(botId);
+    if (bot) bot.aiPressureTargetId = undefined;
   };
 
   const tryStartComboOnHit = (
@@ -1264,15 +1140,9 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       return;
     }
 
-    const botPos = botId === 'main_ai'
-      ? s.aiPos
-      : (() => {
-          const bot = s.otherPlayers?.get(botId);
-          return bot ? new THREE.Vector3(bot.pos.x, bot.pos.y, bot.pos.z) : null;
-        })();
-    if (!botPos) {
-      return;
-    }
+    const bot = rosterCombatant(botId);
+    if (!bot) return;
+    const botPos = new THREE.Vector3(bot.pos.x, bot.pos.y, bot.pos.z);
 
     const dist = botPos.distanceTo(candidate.pos);
     const dangerZone = s.settings.attackRange + s.settings.attackRadius * 0.85;
@@ -1301,11 +1171,13 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     if (s.playerHP > 0 && s.playerRespawnTimer <= 0 && victimId !== 'player' && !s.isObserverMode) {
       exclude.push(s.playerPos);
     }
-    if (s.aiHP > 0 && victimId !== 'main_ai') {
-      exclude.push(s.aiPos);
-    }
+    getRosterAI().forEach((c) => {
+      if (c.id !== victimId && c.hp > 0 && (c.respawnTimer ?? 0) <= 0) {
+        exclude.push(new THREE.Vector3(c.pos.x, c.pos.y, c.pos.z));
+      }
+    });
     s.otherPlayers?.forEach((other) => {
-      if (other.id !== victimId && other.hp > 0 && other.respawnTimer <= 0) {
+      if (other.controller === 'remote' && other.id !== victimId && other.hp > 0 && other.respawnTimer <= 0) {
         exclude.push(new THREE.Vector3(other.pos.x, other.pos.y, other.pos.z));
       }
     });
@@ -1329,11 +1201,11 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       spawnZ: spawnPos.z,
       lungeKill: wasLungeKill,
     });
-    if (botId === 'main_ai') {
-      clearPressureTarget(botId);
-    } else {
-      const bot = s.otherPlayers?.get(botId);
-      if (bot) {
+    const bot = rosterCombatant(botId);
+    if (bot?.controller === 'ai') {
+      if (bot.id === MAIN_AI_ID) {
+        clearPressureTarget(botId);
+      } else {
         bot.aiPressureTargetId = undefined;
         bot.aiState = 'APPROACHING';
       }
@@ -1367,25 +1239,14 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
   function updateAI(dt: number) {
     const s = stateRef.current;
-    const enemyMesh = threeRef.current.enemyGroup;
 
-    if (!enemyMesh) return;
+    if (isMultiplayer) return;
+    if (getRosterAI().length === 0) return;
 
-    if (isMultiplayer) {
-      enemyMesh.visible = false;
-      return;
-    }
-
-    tickBotCoordinator(s.aiMatchContext.coordinator, dt);
-    clearBotEngagements(s.aiMatchContext.coordinator);
-
-    // Respawn handling for every AI combatant (main AI + bots) in one loop. Dead
-    // combatants hide their mesh and tick their respawn timer; on expiry they respawn
-    // via respawnCombatant. (Death itself sets respawnTimer — for the main AI that's
-    // enemyRespawnTimer via the bridge — so the countdown starts the frame after a kill.)
-    getAllCombatants().forEach((c) => {
-      const isMain = c.id === 'main_ai';
-      if (!isMain && !c.id.startsWith('bot_')) return;
+    // Respawn handling for every AI combatant in one loop. Dead combatants hide their
+    // mesh and tick respawnTimer; on expiry they respawn via respawnCombatant.
+    getRosterAI().forEach((c) => {
+      if (c.controller !== 'ai') return;
       const mesh = getCombatantMesh(c.id);
       if (!mesh) return;
       if (c.hp > 0) return;
@@ -1396,11 +1257,9 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       }
     });
 
-    // Unified update dispatch: tick every alive AI combatant (main AI + bots) through
-    // the same updateSingleAIEntity path, in one loop over getAllCombatants(). The
-    // main AI is ticked first (it's pushed first). Dead combatants were handled above.
-    getAllCombatants().forEach((c) => {
-      if (c.id !== 'main_ai' && !c.id.startsWith('bot_')) return;
+    // Unified update dispatch: tick every alive AI combatant through updateSingleAIEntity.
+    getRosterAI().forEach((c) => {
+      if (c.controller !== 'ai') return;
       const mesh = getCombatantMesh(c.id);
       if (!mesh) return;
       if (c.hp <= 0) return;
@@ -1441,42 +1300,26 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       // Animate Client Group (Red Spartan)
       if (threeRef.current.enemyGroup) {
         const clientData = getSpectateTargetData('client');
-        const enemyVel = multiplayerRole === 'observer' ? s.clientVel : s.aiVel;
+        const enemyVel = multiplayerRole === 'observer' ? s.clientVel : mai()!.vel;
         const enemySpeed = enemyVel.length();
-        const isClientSprinting = s.settings.enableSprint && (multiplayerRole === 'observer' ? enemySpeed > 6.0 : s.aiState === 'APPROACHING' && enemySpeed > 4.5 && !s.aiIsCrouching);
-        const isClientSliding = s.settings.enableSlide && (multiplayerRole === 'observer' ? enemySpeed > 3.0 && clientData.isCrouching : s.aiIsCrouching && s.aiState === 'APPROACHING' && enemySpeed > 2.0);
+        const isClientSprinting = s.settings.enableSprint && (multiplayerRole === 'observer' ? enemySpeed > 6.0 : mai()!.aiState === 'APPROACHING' && enemySpeed > 4.5 && !mai()!.isCrouching);
+        const isClientSliding = s.settings.enableSlide && (multiplayerRole === 'observer' ? enemySpeed > 3.0 && clientData.isCrouching : mai()!.isCrouching && mai()!.aiState === 'APPROACHING' && enemySpeed > 2.0);
 
         animateSpartanModel(
           threeRef.current.enemyGroup,
           enemyVel,
           clientData.yaw,
           clientData.hp,
-          (multiplayerRole === 'observer' && s.clientActiveWeapon === 'sword') ? 'ready' : s.aiWeaponState,
-          (multiplayerRole === 'observer') ? 0 : s.aiWeaponTimer,
+          (multiplayerRole === 'observer' && s.clientActiveWeapon === 'sword') ? 'ready' : mai()!.weaponState,
+          (multiplayerRole === 'observer') ? 0 : mai()!.weaponTimer,
           dt,
           isClientSliding,
           isClientSprinting
         );
       }
-    } else {
-      // Standard Player vs Bot animation — driven by the AI's real sprint/slide state.
-      const isAiSprinting = s.settings.enableSprint && (s.aiIsSprinting ?? false);
-      const isAiSliding = s.settings.enableSlide && (s.aiSlideActive ?? false);
-
-      animateSpartanModel(
-        threeRef.current.enemyGroup,
-        s.aiVel,
-        s.aiYaw,
-        s.aiHP,
-        s.aiWeaponState,
-        s.aiWeaponTimer,
-        dt,
-        isAiSliding,
-        isAiSprinting
-      );
     }
 
-    // Animate custom other players / bots
+    // Animate roster combatants (AI + remote) and drive bot weapon impact resolution.
     if (threeRef.current.otherPlayerMeshes && s.otherPlayers) {
       s.otherPlayers.forEach((player, clientId) => {
         const meshes = threeRef.current.otherPlayerMeshes.get(clientId);
@@ -1828,7 +1671,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
     // Decrement hammer jump windows
     if (s.pHammerJumpWindowTimer > 0) s.pHammerJumpWindowTimer = Math.max(0, s.pHammerJumpWindowTimer - dt);
-    if (s.aiHammerJumpWindowTimer > 0) s.aiHammerJumpWindowTimer = Math.max(0, s.aiHammerJumpWindowTimer - dt);
+    if (mai()!.hammerJumpWindowTimer > 0) mai()!.hammerJumpWindowTimer = Math.max(0, mai()!.hammerJumpWindowTimer - dt);
 
     // Decrement other players' respawn and invulnerability timers
     if (s.otherPlayers) {
@@ -1910,7 +1753,10 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       });
     };
 
-    updateBlinking(threeRef.current.enemyGroup, s.aiInvulnerabilityTimer > 0);
+    if (s.isObserverMode) {
+      const remote = getPrimaryRemoteOpponent(s.otherPlayers, opponentClientId);
+      updateBlinking(threeRef.current.enemyGroup, (remote?.invulnerabilityTimer ?? 0) > 0);
+    }
     updateBlinking(threeRef.current.playerHammer, s.playerInvulnerabilityTimer > 0);
 
     if (threeRef.current.otherPlayerMeshes && s.otherPlayers) {
@@ -1949,10 +1795,6 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
           hammer.visible = clientData.activeWeapon === 'hammer';
           sword.visible = clientData.activeWeapon === 'sword';
         }
-      }
-    } else {
-      if (threeRef.current.enemyGroup) {
-        threeRef.current.enemyGroup.visible = !isMultiplayer && s.aiHP > 0 && s.aiState !== 'RESPAWNING';
       }
     }
 
@@ -2114,14 +1956,17 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     if (s.isJumping) computedStance = 'JUMPING';
     else if (s.isCrouching) computedStance = 'CROUCHING';
 
+    const opp = opponentDisplay();
     onStatsUpdateRef.current({
       playerHP: s.playerHP,
       playerMaxHP: s.playerMaxHP,
-      enemyHP: s.aiHP,
-      enemyMaxHP: s.aiMaxHP,
+      enemyHP: opp?.hp ?? 0,
+      enemyMaxHP: opp?.maxHp ?? s.settings.maxHP,
       scorePlayer: s.scorePlayer,
       scoreEnemy: s.scoreEnemy,
-      otherPlayers: s.otherPlayers ? Array.from(s.otherPlayers.values()).map((p: any) => ({
+      otherPlayers: s.otherPlayers ? Array.from(s.otherPlayers.values())
+        .filter((p: Combatant) => p.id !== MAIN_AI_ID)
+        .map((p: Combatant) => ({
         id: p.id,
         playerName: p.playerName,
         pos: { x: p.pos.x, y: p.pos.y, z: p.pos.z },
@@ -2159,7 +2004,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       isCrouching: s.isCrouching,
       isJumping: s.isJumping,
       playerRespawnTimer: s.playerHP <= 0 ? s.playerRespawnTimer : 0,
-      enemyRespawnTimer: s.aiHP <= 0 ? s.enemyRespawnTimer : 0,
+      enemyRespawnTimer: (opp?.hp ?? 0) <= 0 ? s.enemyRespawnTimer : 0,
       playerDashCooldownTimer: s.playerDashCooldownTimer,
       playerDashReady: s.playerDashCooldownTimer <= 0 && s.playerDashRemaining <= 0,
       settings: s.settings, // Propagate the current admin settings to HUD
@@ -2167,12 +2012,12 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       playerX: s.playerPos.x,
       playerZ: s.playerPos.z,
       playerYaw: s.yaw,
-      enemyX: s.aiPos.x,
-      enemyZ: s.aiPos.z,
-      enemyYaw: s.aiYaw,
-      enemyIsCrouching: s.aiIsCrouching,
+      enemyX: opp?.pos.x ?? 0,
+      enemyZ: opp?.pos.z ?? 0,
+      enemyYaw: opp?.yaw ?? 0,
+      enemyIsCrouching: opp?.isCrouching ?? false,
       playerIsCrouchMoving: s.isCrouching && s.playerVel.length() > 0.15,
-      enemyIsCrouchMoving: s.aiIsCrouching && s.aiVel.length() > 0.15,
+      enemyIsCrouchMoving: (opp?.isCrouching ?? false) && ((opp?.vel.length() ?? 0) > 0.15),
       isMultiplayer: isMultiplayer,
       multiplayerRole: multiplayerRole,
       opponentConnected: isMultiplayer && multiplayerSocket?.readyState === WebSocket.OPEN,
@@ -2202,21 +2047,22 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     let showNameplate = false;
     const nameplateScreenPos = { x: 0, y: 0 };
 
-    let enemyPos = s.aiPos;
-    let enemyHP = s.aiHP;
-    let enemyCrouching = s.aiIsCrouching;
-    let enemyState = s.aiState;
+    let enemyPos = mai()?.pos ?? new THREE.Vector3();
+    let enemyHP = mai()?.hp ?? 0;
+    let enemyCrouching = mai()?.isCrouching ?? false;
+    let enemyState: AIBehaviorState | 'ALIVE' = mai()?.aiState ?? 'APPROACHING';
     let enemyName = opponentPlayerName || opponentNameRef.current || 'AI Bot';
 
-    if (isMultiplayer) {
-      // In multiplayer, track the actual remote opponent spartan
-      const remotePlayer = s.otherPlayers.get(opponentClientId) || Array.from(s.otherPlayers.values())[0];
-      if (remotePlayer) {
-        enemyPos = remotePlayer.pos;
-        enemyHP = remotePlayer.hp;
-        enemyCrouching = remotePlayer.isCrouching;
-        enemyState = remotePlayer.respawnTimer > 0 ? 'RESPAWNING' : 'ALIVE';
-        enemyName = remotePlayer.playerName || opponentNameRef.current || 'Opponent';
+    const displayOpp = opponentDisplay();
+    if (displayOpp) {
+      enemyPos = displayOpp.pos;
+      enemyHP = displayOpp.hp;
+      enemyCrouching = displayOpp.isCrouching;
+      enemyState = displayOpp.respawnTimer > 0
+        ? 'RESPAWNING'
+        : (displayOpp.aiState ?? 'APPROACHING');
+      if (isMultiplayer) {
+        enemyName = displayOpp.playerName || opponentNameRef.current || 'Opponent';
       }
     }
 
@@ -2315,7 +2161,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       type RadarEnemy = { id: string; pos: THREE.Vector3; hp: number; vel: THREE.Vector3 | null; isCrouching: boolean };
       const enemies: RadarEnemy[] = [];
       if (!s.isMultiplayer) {
-        enemies.push({ id: 'main_ai', pos: s.aiPos, hp: s.aiHP, vel: s.aiVel, isCrouching: s.aiIsCrouching });
+        enemies.push({ id: 'main_ai', pos: mai()!.pos, hp: mai()!.hp, vel: mai()!.vel, isCrouching: mai()!.isCrouching });
         s.otherPlayers.forEach((bot, id) => {
           enemies.push({ id, pos: bot.pos, hp: bot.hp, vel: bot.vel, isCrouching: bot.isCrouching });
         });
@@ -2672,16 +2518,13 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     }
 
     if (isMultiplayer) {
+      removeMainAIFromRoster(s.otherPlayers);
       if (multiplayerRole === 'client') {
         s.playerPos.set(0, 0, -12);
         s.yaw = getInwardSpawnYaw(s.playerPos);
-        s.aiPos.set(0, 0, 12);
-        s.aiYaw = getInwardSpawnYaw(s.aiPos);
       } else if (multiplayerRole === 'host') {
         s.playerPos.set(0, 0, 12);
         s.yaw = getInwardSpawnYaw(s.playerPos);
-        s.aiPos.set(0, 0, -12);
-        s.aiYaw = getInwardSpawnYaw(s.aiPos);
       }
     }
 
@@ -2975,6 +2818,9 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     if (s) {
       s.isMultiplayer = isMultiplayer;
       s.multiplayerRole = multiplayerRole;
+      if (isMultiplayer) {
+        removeMainAIFromRoster(s.otherPlayers);
+      }
     }
   }, [isMultiplayer, multiplayerRole]);
 
@@ -2991,11 +2837,14 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       s.playerHP = Math.min(s.playerHP, adminSettings.maxHP);
     }
 
-    s.aiMaxHP = adminSettings.maxHP;
-    if (s.aiHP === prevMax) {
-      s.aiHP = adminSettings.maxHP;
-    } else {
-      s.aiHP = Math.min(s.aiHP, adminSettings.maxHP);
+    const mainAi = mai();
+    if (mainAi) {
+      mainAi.maxHp = adminSettings.maxHP;
+      if (mainAi.hp === prevMax) {
+        mainAi.hp = adminSettings.maxHP;
+      } else {
+        mainAi.hp = Math.min(mainAi.hp, adminSettings.maxHP);
+      }
     }
 
     s.settings = adminSettings;
@@ -3021,160 +2870,6 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
   useEffect(() => {
     resetAIMatchContext(stateRef.current.aiMatchContext);
   }, [aiMatchSessionKey]);
-
-  // Dynamically synchronize the offline bot count and difficulties mid-game
-  useEffect(() => {
-    if (isMultiplayer) return;
-    const s = stateRef.current;
-    const scene = threeRef.current.scene;
-    if (!scene || !isPlaying) return;
-
-    const targetCustomBotCount = Math.max(0, offlineBotCount - 1);
-    
-    // 1. Calculate how many custom bots are currently spawned
-    let currentCustomBotCount = 0;
-    s.otherPlayers.forEach((bot, id) => {
-      if (id.startsWith('bot_')) {
-        currentCustomBotCount++;
-      }
-    });
-
-    const botHues = [120, 280, 45, 60, 320, 180];
-    const botNames = ["DoomBot Green", "DoomBot Purple", "DoomBot Orange", "DoomBot Yellow", "DoomBot Magenta", "DoomBot Cyan"];
-
-    // 2. If we need to ADD bots
-    if (targetCustomBotCount > currentCustomBotCount) {
-      const exclude: THREE.Vector3[] = [s.playerPos, s.aiPos];
-      s.otherPlayers.forEach((bot) => {
-        if (bot.hp > 0 && bot.respawnTimer <= 0) {
-          exclude.push(new THREE.Vector3(bot.pos.x, bot.pos.y, bot.pos.z));
-        }
-      });
-
-      for (let i = currentCustomBotCount; i < targetCustomBotCount; i++) {
-        const botId = `bot_${i+2}`;
-        const hue = botColors[botId] ?? botHues[i % botHues.length];
-        const name = botNames[i % botNames.length];
-        const diff = botDifficulties[botId] || 'normal';
-        
-        const spawnPos = getOptimalSpawnPoint(exclude);
-        exclude.push(spawnPos);
-
-        const newBotState = {
-          id: botId,
-          playerName: name,
-          pos: spawnPos.clone(),
-          vel: new THREE.Vector3(0, 0, 0),
-          yaw: getInwardSpawnYaw(spawnPos),
-          pitch: 0,
-          hp: 1,
-          maxHp: 1,
-          isCrouching: false,
-          activeWeapon: 'hammer' as const,
-          respawnTimer: 0,
-          hue: hue,
-          difficulty: diff,
-          score: 0,
-          kills: 0,
-          deaths: 0,
-          aiHammerJumpCooldownTimer: 0,
-          spawnTime: Date.now()
-        };
-
-        s.otherPlayers.set(botId, newBotState);
-
-        // Build Three.js meshes immediately for the new bot
-        createOrUpdateRemotePlayer(botId, newBotState);
-        sfx.playRespawn();
-      }
-    } 
-    // 3. If we need to REMOVE bots
-    else if (targetCustomBotCount < currentCustomBotCount) {
-      for (let i = currentCustomBotCount - 1; i >= targetCustomBotCount; i--) {
-        const botId = `bot_${i+2}`;
-        if (s.otherPlayers.has(botId)) {
-          s.otherPlayers.delete(botId);
-        }
-        const meshes = threeRef.current.otherPlayerMeshes.get(botId);
-        if (meshes) {
-          if (meshes.group) scene.remove(meshes.group);
-          threeRef.current.otherPlayerMeshes.delete(botId);
-        }
-      }
-    }
-
-    // 4. Update the difficulty level of all active bots reactively
-    s.otherPlayers.forEach((bot, id) => {
-      if (id.startsWith('bot_') || id === 'main_ai') {
-        bot.difficulty = botDifficulties[id] || 'normal';
-      }
-    });
-
-    // 5. Resize the arena for the new combatant count
-    resizeArena(1 + offlineBotCount);
-    pushStatsUpdate();
-
-  }, [offlineBotCount, botDifficulties, isMultiplayer, isPlaying]);
-
-  // Reactive effect: rebuild bot meshes when colors change while game is running
-  useEffect(() => {
-    if (isMultiplayer || !isPlaying) return;
-    const s = stateRef.current;
-    const scene = threeRef.current.scene;
-    if (!scene) return;
-
-    // Rebuild custom bot (otherPlayers) meshes whose hue changed
-    s.otherPlayers.forEach((bot, id) => {
-      const newHue = botColors[id];
-      if (newHue !== undefined && newHue !== bot.hue) {
-        bot.hue = newHue;
-        const oldMeshes = threeRef.current.otherPlayerMeshes.get(id);
-        if (oldMeshes?.group) scene.remove(oldMeshes.group);
-        threeRef.current.otherPlayerMeshes.delete(id);
-        createOrUpdateRemotePlayer(id, bot);
-      }
-    });
-
-    // Rebuild main AI mesh if its hue changed
-    const mainAiHue = botColors['main_ai'];
-    const oldEnemy = threeRef.current.enemyGroup;
-    if (mainAiHue !== undefined && oldEnemy && oldEnemy.userData.appliedHue !== mainAiHue) {
-      const pos = oldEnemy.position.clone();
-      const visible = oldEnemy.visible;
-      scene.remove(oldEnemy);
-
-      const newEnemy = buildVoxelSpartanModel(true, mainAiHue);
-      newEnemy.position.copy(pos);
-      newEnemy.visible = visible;
-      newEnemy.userData.appliedHue = mainAiHue;
-      scene.add(newEnemy);
-      threeRef.current.enemyGroup = newEnemy;
-
-      const newHammer = buildGravityHammerModel(mainAiHue);
-      newHammer.scale.set(0.6, 0.6, 0.6);
-      newHammer.position.set(0.5, 1.0 - 0.64, -0.4);
-      newHammer.rotation.set(Math.PI / 2, 0, 0);
-      if (newEnemy.userData.upperTorso) {
-        newEnemy.userData.upperTorso.add(newHammer);
-      } else {
-        newEnemy.add(newHammer);
-      }
-      threeRef.current.enemyHammer = newHammer;
-
-      const prevSwordVisible = threeRef.current.enemySword?.visible ?? false;
-      const newSword = buildKatarSwordModel(mainAiHue);
-      newSword.scale.set(0.6, 0.6, 0.6);
-      newSword.position.set(0.5, 1.0 - 0.64, -0.32);
-      newSword.rotation.set(Math.PI / 2, 0, -Math.PI / 8);
-      newSword.visible = prevSwordVisible;
-      if (newEnemy.userData.upperTorso) {
-        newEnemy.userData.upperTorso.add(newSword);
-      } else {
-        newEnemy.add(newSword);
-      }
-      threeRef.current.enemySword = newSword;
-    }
-  }, [botColors, isPlaying, isMultiplayer]);
 
   const onStatsUpdateRef = useRef(onStatsUpdate);
   useEffect(() => {
@@ -3382,28 +3077,28 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
           };
         } else {
           return {
-            pos: s.aiPos,
-            yaw: s.aiYaw,
-            pitch: s.aiPitch || 0,
+            pos: mai()!.pos,
+            yaw: mai()!.yaw,
+            pitch: mai()!.pitch || 0,
             name: opponentNameRef.current || opponentClientId || 'Red (Guest)',
-            hp: s.aiHP,
+            hp: mai()!.hp,
             hue: lastOpponentHue.current ?? 200,
-            isCrouching: s.aiIsCrouching,
-            activeWeapon: s.aiActiveWeapon
+            isCrouching: mai()!.isCrouching,
+            activeWeapon: mai()!.activeWeapon
           };
         }
       } else if (multiplayerRole === 'client') {
         // Client playing or spectating
         if (target === 'host') {
           return {
-            pos: s.aiPos,
-            yaw: s.aiYaw,
-            pitch: s.aiPitch || 0,
+            pos: mai()!.pos,
+            yaw: mai()!.yaw,
+            pitch: mai()!.pitch || 0,
             name: opponentNameRef.current || opponentClientId || 'Blue (Host)',
-            hp: s.aiHP,
+            hp: mai()!.hp,
             hue: lastOpponentHue.current ?? 200,
-            isCrouching: s.aiIsCrouching,
-            activeWeapon: s.aiActiveWeapon
+            isCrouching: mai()!.isCrouching,
+            activeWeapon: mai()!.activeWeapon
           };
         } else {
           return {
@@ -3433,14 +3128,14 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         };
       } else {
         return {
-          pos: s.aiPos,
-          yaw: s.aiYaw,
+          pos: mai()!.pos,
+          yaw: mai()!.yaw,
           pitch: 0,
           name: 'AI Bot',
-          hp: s.aiHP,
+          hp: mai()!.hp,
           hue: 0,
-          isCrouching: s.aiIsCrouching,
-          activeWeapon: s.aiActiveWeapon
+          isCrouching: mai()!.isCrouching,
+          activeWeapon: mai()!.activeWeapon
         };
       }
     }
@@ -3500,7 +3195,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     // Build new spartan with custom hue.
     const isEnemyBot = !isMultiplayer;
     const enemyGroup = buildVoxelSpartanModel(isEnemyBot, hue);
-    enemyGroup.position.copy(multiplayerRole === 'observer' ? s.clientPos : s.aiPos);
+    enemyGroup.position.copy(multiplayerRole === 'observer' ? s.clientPos : mai()!.pos);
     scene.add(enemyGroup);
     threeRef.current.enemyGroup = enemyGroup;
 
@@ -3522,7 +3217,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     enemySword.position.set(0.5, 1.0 - 0.64, -0.32);
     enemySword.rotation.set(Math.PI / 2, 0, -Math.PI / 8);
     
-    const activeWeapon = (multiplayerRole === 'observer') ? s.clientActiveWeapon : s.aiActiveWeapon;
+    const activeWeapon = (multiplayerRole === 'observer') ? s.clientActiveWeapon : mai()!.activeWeapon;
     enemySword.visible = activeWeapon === 'sword';
     enemyHammer.visible = activeWeapon === 'hammer';
     
@@ -3664,7 +3359,54 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     console.log(`Arena dynamically scaled for ${playerCount} players. Factor: ${scale}, Radius: ${s.arenaRadius}`);
   };
 
-  // Dynamically maintain multiple opponent Spartan models keyed by clientId/senderId
+  type CombatantMeshRig = {
+    group: THREE.Group;
+    hammer: THREE.Group;
+    sword: THREE.Group;
+    pistol: THREE.Group;
+  };
+
+  const buildCombatantMeshRig = (scene: THREE.Scene, hue: number, isEnemyBot = false): CombatantMeshRig => {
+    const group = buildVoxelSpartanModel(isEnemyBot, hue);
+    group.userData.appliedHue = hue;
+    scene.add(group);
+
+    const hammer = buildGravityHammerModel(hue);
+    hammer.scale.set(0.6, 0.6, 0.6);
+    hammer.position.set(0.5, 1.0 - 0.64, -0.4);
+    hammer.rotation.set(Math.PI / 2, 0, 0);
+    if (group.userData.upperTorso) {
+      group.userData.upperTorso.add(hammer);
+    } else {
+      group.add(hammer);
+    }
+
+    const sword = buildKatarSwordModel(hue);
+    sword.scale.set(0.6, 0.6, 0.6);
+    sword.position.set(0.5, 1.0 - 0.64, -0.32);
+    sword.rotation.set(Math.PI / 2, 0, -Math.PI / 8);
+    sword.visible = false;
+    if (group.userData.upperTorso) {
+      group.userData.upperTorso.add(sword);
+    } else {
+      group.add(sword);
+    }
+
+    const pistol = buildPistolModel(hue);
+    pistol.scale.set(0.6, 0.6, 0.6);
+    pistol.position.set(0.5, 1.0 - 0.64, -0.32);
+    pistol.rotation.set(Math.PI / 2, 0, 0);
+    pistol.visible = false;
+    if (group.userData.upperTorso) {
+      group.userData.upperTorso.add(pistol);
+    } else {
+      group.add(pistol);
+    }
+
+    return { group, hammer, sword, pistol };
+  };
+
+  // Provisions any roster combatant into otherPlayerMeshes (shared rig for AI + remote).
   const createOrUpdateRemotePlayer = (clientId: string, data: any) => {
     const s = stateRef.current;
     const scene = threeRef.current.scene;
@@ -3674,27 +3416,22 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     if (!playerState) {
       const isHostPlayer = (s.multiplayerRole === 'client' && clientId === opponentClientId) || (s.multiplayerRole === 'observer' && data.role === 'host');
       const spawnZ = isHostPlayer ? 12 : -12;
-      playerState = {
+      playerState = createRemoteCombatant({
         id: clientId,
-        playerName: data.playerName || `Player ${clientId.substring(0, 4)}`,
-        pos: new THREE.Vector3(0, 0, spawnZ),
-        vel: new THREE.Vector3(0, 0, 0),
-        yaw: getInwardSpawnYaw(new THREE.Vector3(0, 0, spawnZ)),
-        pitch: 0,
-        hp: data.hp !== undefined ? data.hp : 1,
-        maxHp: data.maxHp !== undefined ? data.maxHp : 1,
-        isCrouching: data.isCrouching || false,
-        activeWeapon: data.activeWeapon || 'hammer',
-        respawnTimer: data.respawnTimer || 0,
-        hue: data.hue !== undefined ? data.hue : Math.floor(Math.random() * 360),
-        score: 0,
-        kills: 0,
-        deaths: 0,
-        invulnerabilityTimer: data.invulnerabilityTimer !== undefined ? data.invulnerabilityTimer : s.settings.respawnInvulnerabilityDuration,
-        lastSwordAttackTime: 0,
-        lastHammerAttackTime: 0,
-        spawnTime: Date.now()
-      };
+        playerName: data.playerName,
+        spawnZ,
+        settings: s.settings,
+        data: {
+          hp: data.hp,
+          maxHp: data.maxHp,
+          hue: data.hue,
+          isCrouching: data.isCrouching,
+          activeWeapon: data.activeWeapon,
+          respawnTimer: data.respawnTimer,
+          invulnerabilityTimer: data.invulnerabilityTimer,
+        },
+      });
+      playerState.yaw = getInwardSpawnYaw(playerState.pos);
       s.otherPlayers.set(clientId, playerState);
     }
 
@@ -3713,44 +3450,12 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     if (data.invulnerabilityTimer !== undefined) playerState.invulnerabilityTimer = data.invulnerabilityTimer;
 
     let meshes = threeRef.current.otherPlayerMeshes.get(clientId);
-    if (!meshes) {
-      const group = buildVoxelSpartanModel(false, playerState.hue);
-      scene.add(group);
-
-      const hammer = buildGravityHammerModel(playerState.hue);
-      hammer.scale.set(0.6, 0.6, 0.6);
-      hammer.position.set(0.5, 1.0 - 0.64, -0.4);
-      hammer.rotation.set(Math.PI / 2, 0, 0);
-      if (group.userData.upperTorso) {
-        group.userData.upperTorso.add(hammer);
-      } else {
-        group.add(hammer);
-      }
-
-      const sword = buildKatarSwordModel(playerState.hue);
-      sword.scale.set(0.6, 0.6, 0.6);
-      sword.position.set(0.5, 1.0 - 0.64, -0.32);
-      sword.rotation.set(Math.PI / 2, 0, -Math.PI / 8);
-      sword.visible = false;
-      if (group.userData.upperTorso) {
-        group.userData.upperTorso.add(sword);
-      } else {
-        group.add(sword);
-      }
-
-      const pistol = buildPistolModel(playerState.hue);
-      pistol.scale.set(0.6, 0.6, 0.6);
-      pistol.position.set(0.5, 1.0 - 0.64, -0.32);
-      pistol.rotation.set(Math.PI / 2, 0, 0);
-      pistol.visible = false;
-      if (group.userData.upperTorso) {
-        group.userData.upperTorso.add(pistol);
-      } else {
-        group.add(pistol);
-      }
-
-      meshes = { group, hammer, sword, pistol };
+    const hue = data.hue ?? playerState.hue;
+    if (!meshes || meshes.group.userData.appliedHue !== hue) {
+      if (meshes?.group) scene.remove(meshes.group);
+      meshes = buildCombatantMeshRig(scene, hue, false);
       threeRef.current.otherPlayerMeshes.set(clientId, meshes);
+      playerState.hue = hue;
     }
 
     const { group, hammer, sword, pistol } = meshes;
@@ -3769,6 +3474,65 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       pistol.visible = playerState.hp > 0 && playerState.respawnTimer <= 0 && playerState.activeWeapon === 'pistol';
     }
     group.visible = playerState.hp > 0 && playerState.respawnTimer <= 0;
+  };
+
+  const buildOrchestratorSpawnCallbacks = (): AIOrchestratorSpawnCallbacks => ({
+    getOptimalSpawnPoint,
+    getInwardSpawnYaw,
+  });
+
+  const buildOrchestratorEvents = (opts?: { silentSpawn?: boolean }): AIOrchestratorEvents => {
+    const scene = threeRef.current.scene;
+    return {
+      onBotSpawned: (botId, bot) => {
+        createOrUpdateRemotePlayer(botId, bot);
+        if (!opts?.silentSpawn) {
+          sfx.playRespawn();
+        }
+      },
+      onBotDespawned: (botId) => {
+        if (!scene) return;
+        const meshes = threeRef.current.otherPlayerMeshes.get(botId);
+        if (meshes) {
+          if (meshes.group) scene.remove(meshes.group);
+          threeRef.current.otherPlayerMeshes.delete(botId);
+        }
+      },
+      onMainAICreated: (mainAi) => {
+        createOrUpdateRemotePlayer(MAIN_AI_ID, mainAi);
+      },
+      onHueChanged: (combatantId, combatant) => {
+        if (!scene) return;
+        const oldMeshes = threeRef.current.otherPlayerMeshes.get(combatantId);
+        if (oldMeshes?.group) scene.remove(oldMeshes.group);
+        threeRef.current.otherPlayerMeshes.delete(combatantId);
+        createOrUpdateRemotePlayer(combatantId, combatant);
+      },
+      onRosterLayoutChanged: (totalCombatants) => {
+        resizeArena(totalCombatants);
+        pushStatsUpdate();
+      },
+    };
+  };
+
+  const runAIOrchestrator = (dt: number) => {
+    const s = stateRef.current;
+    if (s.isMultiplayer) return;
+
+    tickAIOrchestrator(
+      {
+        roster: s.otherPlayers,
+        settings: s.settings,
+        legacy: getLegacyRosterProps(),
+        offlineBotCount: offlineBotCountRef.current,
+        playerPos: s.playerPos,
+        isPlaying,
+        coordinator: s.aiMatchContext.coordinator,
+      },
+      dt,
+      buildOrchestratorSpawnCallbacks(),
+      buildOrchestratorEvents()
+    );
   };
 
   useEffect(() => {
@@ -4816,102 +4580,61 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
     // 4. PROGRAMMATIC VOXEL CHARACTER ENEMY
     if (!replayData) {
-      const enemyGroup = buildVoxelSpartanModel(true, botColors['main_ai']);
-      enemyGroup.position.copy(stateRef.current.aiPos);
-      enemyGroup.userData.appliedHue = botColors['main_ai'];
-      scene.add(enemyGroup);
-      threeRef.current.enemyGroup = enemyGroup;
-
       if (isMultiplayer) {
-        enemyGroup.visible = false; // Hide main singleplayer bot mesh in multiplayer
-      } else {
-        // In singleplayer, initialize additional custom AI bots and set positions based on offlineBotCount
-        const s = stateRef.current;
-        const botHues = [120, 280, 45, 60, 320, 180]; 
-        const botNames = ["DoomBot Green", "DoomBot Purple", "DoomBot Orange", "DoomBot Yellow", "DoomBot Magenta", "DoomBot Cyan"];
-        s.otherPlayers.clear();
-        
-        const customBotCount = Math.max(0, offlineBotCount - 1);
-        for (let i = 0; i < customBotCount; i++) {
-          const botId = `bot_${i+2}`;
-          const name = botNames[i % botNames.length];
-          const hue = botColors[botId] ?? botHues[i % botHues.length];
-          const diff = botDifficulties[botId] || 'normal';
+        // Multiplayer: enemyGroup renders the remote client (Red) in observer mode;
+        // hidden for host/client roles. Not used for main_ai offline bot rendering.
+        const enemyGroup = buildVoxelSpartanModel(true, botColors['main_ai']);
+        enemyGroup.position.copy(new THREE.Vector3(0, 0, -12));
+        enemyGroup.userData.appliedHue = botColors['main_ai'];
+        scene.add(enemyGroup);
+        threeRef.current.enemyGroup = enemyGroup;
+        enemyGroup.visible = false;
 
-          s.otherPlayers.set(botId, {
-            id: botId,
-            playerName: name,
-            pos: new THREE.Vector3(0, 0, 0),
-            vel: new THREE.Vector3(0, 0, 0),
-            yaw: 0,
-            pitch: 0,
-            hp: 1,
-            maxHp: 1,
-            isCrouching: false,
-            activeWeapon: 'hammer',
-            respawnTimer: 0,
-            hue: hue,
-            difficulty: diff,
-            score: 0,
-            kills: 0,
-            deaths: 0,
-            invulnerabilityTimer: s.settings.respawnInvulnerabilityDuration,
-            aiHammerJumpCooldownTimer: 0,
-            spawnTime: Date.now()
-          });
+        const enemyHammer = buildGravityHammerModel();
+        enemyHammer.scale.set(0.6, 0.6, 0.6);
+        enemyHammer.position.set(0.5, 1.0 - 0.64, -0.4);
+        enemyHammer.rotation.set(Math.PI / 2, 0, 0);
+        if (enemyGroup.userData.upperTorso) {
+          enemyGroup.userData.upperTorso.add(enemyHammer);
+        } else {
+          enemyGroup.add(enemyHammer);
         }
+        threeRef.current.enemyHammer = enemyHammer;
 
-        // Safe minimax dynamic spawning at mount time
-        s.playerPos.copy(getOptimalSpawnPoint([]));
-        s.yaw = getInwardSpawnYaw(s.playerPos);
-        
-        const exclude: THREE.Vector3[] = [s.playerPos];
-        s.aiPos.copy(getOptimalSpawnPoint(exclude));
-        s.aiYaw = getInwardSpawnYaw(s.aiPos);
-        exclude.push(s.aiPos);
-        
-        s.otherPlayers.forEach((bot) => {
-          const spawnPos = getOptimalSpawnPoint(exclude);
-          bot.pos.copy(spawnPos);
-          bot.yaw = getInwardSpawnYaw(spawnPos);
-          exclude.push(spawnPos);
-        });
-
-        // Build Three.js meshes for all bots now that positions are set
-        s.otherPlayers.forEach((bot) => {
-          createOrUpdateRemotePlayer(bot.id, bot);
-        });
-
-        // Resize arena dynamically for total player count
-        resizeArena(1 + offlineBotCount);
-      }
-
-      // Enemy Weapon: Smaller gravity hammer held by Spartan
-      const enemyHammer = buildGravityHammerModel();
-      enemyHammer.scale.set(0.6, 0.6, 0.6); // Slightly smaller scale for ease
-      enemyHammer.position.set(0.5, 1.0 - 0.64, -0.4); // Hold positioned (adjusted for upper body pivot)
-      enemyHammer.rotation.set(Math.PI / 2, 0, 0); // forward weapon pose
-      
-      // Attach gravity hammer to the upper torso group so it rotates with chest aiming & swings
-      if (enemyGroup.userData.upperTorso) {
-        enemyGroup.userData.upperTorso.add(enemyHammer);
+        const enemySword = buildKatarSwordModel();
+        enemySword.scale.set(0.6, 0.6, 0.6);
+        enemySword.position.set(0.5, 1.0 - 0.64, -0.32);
+        enemySword.rotation.set(Math.PI / 2, 0, -Math.PI / 8);
+        enemySword.visible = false;
+        if (enemyGroup.userData.upperTorso) {
+          enemyGroup.userData.upperTorso.add(enemySword);
+        } else {
+          enemyGroup.add(enemySword);
+        }
+        threeRef.current.enemySword = enemySword;
       } else {
-        enemyGroup.add(enemyHammer);
+        // Offline: unified roster — main_ai + bot_* via orchestrator seed
+        const s = stateRef.current;
+        seedOfflineRoster(
+          {
+            roster: s.otherPlayers,
+            settings: s.settings,
+            legacy: getLegacyRosterProps(),
+            offlineBotCount: offlineBotCountRef.current,
+            playerPos: s.playerPos,
+            isPlaying: true,
+            coordinator: s.aiMatchContext.coordinator,
+            mainAiParams: {},
+          },
+          buildOrchestratorSpawnCallbacks(),
+          {
+            ...buildOrchestratorEvents({ silentSpawn: true }),
+            onPlayerPositioned: (yaw) => {
+              s.yaw = yaw;
+            },
+          }
+        );
       }
-      threeRef.current.enemyHammer = enemyHammer;
-
-      // Enemy Weapon: Smaller katar energy sword held by Spartan
-      const enemySword = buildKatarSwordModel();
-      enemySword.scale.set(0.6, 0.6, 0.6);
-      enemySword.position.set(0.5, 1.0 - 0.64, -0.32);
-      enemySword.rotation.set(Math.PI / 2, 0, -Math.PI / 8);
-      enemySword.visible = false; // Starts with hammer
-      if (enemyGroup.userData.upperTorso) {
-        enemyGroup.userData.upperTorso.add(enemySword);
-      } else {
-        enemyGroup.add(enemySword);
-      }
-      threeRef.current.enemySword = enemySword;
     }
 
     // 5. FIRST-PERSON WEAPON CONTAINER
@@ -5145,8 +4868,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
           s.playerDashCooldownTimer = s.settings.dashCooldown || 2.0;
           recordLocalPlayerObservation((model) => {
             observePlayerDash(model, dDir.x, dDir.z);
-            if (!isMultiplayer && s.aiHP > 0 && s.aiWeaponState === 'swing_up') {
-              observePlayerReaction(model, s.aiWeaponTimer ?? 0);
+            if (!isMultiplayer && mai()!.hp > 0 && mai()!.weaponState === 'swing_up') {
+              observePlayerReaction(model, mai()!.weaponTimer ?? 0);
             }
           });
           sfx.playDash();
@@ -5536,17 +5259,22 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     for (let i = frameIdx; i >= 0; i--) {
       const f = frames[i];
       if (playerType === 'player' && f.player) return f.player;
-      if (playerType === 'main_ai' && f.ai) return f.ai;
-      if (playerType !== 'player' && playerType !== 'main_ai' && f.otherPlayers) {
+      if (playerType !== 'player' && f.otherPlayers) {
         const found = f.otherPlayers.find(p => p.id === playerType);
         if (found) return found;
       }
+      // Legacy replays recorded main_ai only in f.ai
+      if (playerType === MAIN_AI_ID && f.ai) return f.ai;
     }
     // Fallback to first frame if not found anywhere (should not happen)
     const f0 = frames[0];
     if (playerType === 'player') return f0.player;
-    if (playerType === 'main_ai') return f0.ai;
-    return f0.otherPlayers?.find(p => p.id === playerType) || null;
+    if (f0.otherPlayers) {
+      const found = f0.otherPlayers.find(p => p.id === playerType);
+      if (found) return found;
+    }
+    if (playerType === MAIN_AI_ID) return f0.ai;
+    return null;
   };
 
   const recordReplayFrame = (time: number) => {
@@ -5646,60 +5374,67 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       });
     }
 
-    // 2. Process Main AI Bot (only if not multiplayer)
+    // 2. Process roster combatants (main_ai + bots) via otherPlayers — legacy f.ai read only for old replays
     if (!isMultiplayer) {
-      const aiState = {
-        pos: { x: s.aiPos.x, y: s.aiPos.y, z: s.aiPos.z },
-        vel: { x: s.aiVel.x, y: s.aiVel.y, z: s.aiVel.z },
-        yaw: s.aiYaw,
-        pitch: s.aiPitch || 0,
-        hp: s.aiHP,
-        isCrouching: s.aiIsCrouching,
-        isLunging: s.aiState === 'LUNGING' || s.aiIsLunging || false,
-        isDashing: s.aiDashRemaining > 0,
-        isSprinting: s.aiIsSprinting || false,
-        isSliding: s.aiSlideActive || false,
-        weaponTimer: s.aiWeaponTimer || 0,
-        activeWeapon: s.aiActiveWeapon,
-        weaponState: s.aiWeaponState,
-        score: s.scoreEnemy,
-        kills: s.enemyKills ?? 0,
-        deaths: s.enemyDeaths ?? 0,
-        respawnTimer: s.enemyRespawnTimer,
-        invulnerabilityTimer: s.aiInvulnerabilityTimer
-      };
+      s.otherPlayers.forEach((bot, id) => {
+        if (bot.controller !== 'ai') return;
+        const botState = {
+          id,
+          playerName: bot.playerName,
+          hue: bot.hue,
+          pos: { x: bot.pos.x, y: bot.pos.y, z: bot.pos.z },
+          vel: { x: bot.vel.x, y: bot.vel.y, z: bot.vel.z },
+          yaw: bot.yaw,
+          pitch: bot.pitch || 0,
+          hp: bot.hp,
+          isCrouching: bot.isCrouching,
+          isLunging: bot.isLunging || bot.aiState === 'LUNGING' || false,
+          isDashing: (bot.aiDashRemaining || 0) > 0,
+          isSprinting: bot.aiIsSprinting || false,
+          isSliding: bot.aiSlideActive || false,
+          weaponTimer: bot.weaponTimer ?? 0,
+          activeWeapon: bot.activeWeapon,
+          weaponState: bot.weaponState || 'ready',
+          score: id === MAIN_AI_ID ? s.scoreEnemy : (bot.score ?? 0),
+          kills: id === MAIN_AI_ID ? (s.enemyKills ?? 0) : (bot.kills ?? 0),
+          deaths: id === MAIN_AI_ID ? (s.enemyDeaths ?? 0) : (bot.deaths ?? 0),
+          respawnTimer: id === MAIN_AI_ID ? s.enemyRespawnTimer : (bot.respawnTimer ?? 0),
+          invulnerabilityTimer: bot.invulnerabilityTimer ?? 0
+        };
 
-      const aiCompState = {
-        pos: s.aiPos,
-        vel: s.aiVel,
-        yaw: s.aiYaw,
-        hp: s.aiHP,
-        activeWeapon: aiState.activeWeapon,
-        weaponState: aiState.weaponState,
-        isCrouching: aiState.isCrouching,
-        score: aiState.score,
-        kills: aiState.kills,
-        deaths: aiState.deaths
-      };
+        const botCompState = {
+          pos: bot.pos,
+          vel: bot.vel,
+          yaw: bot.yaw,
+          hp: bot.hp,
+          activeWeapon: botState.activeWeapon,
+          weaponState: botState.weaponState,
+          isCrouching: botState.isCrouching,
+          score: botState.score,
+          kills: botState.kills,
+          deaths: botState.deaths
+        };
 
-      if (hasPlayerChanged('main_ai', aiCompState)) {
-        frame.ai = aiState;
-        lastRecordedStateRef.current.set('main_ai', {
-          pos: s.aiPos.clone(),
-          vel: s.aiVel.clone(),
-          yaw: s.aiYaw,
-          hp: s.aiHP,
-          activeWeapon: aiState.activeWeapon,
-          weaponState: aiState.weaponState,
-          isCrouching: aiState.isCrouching,
-          score: aiState.score,
-          kills: aiState.kills,
-          deaths: aiState.deaths
-        });
-      }
+        if (hasPlayerChanged(id, botCompState)) {
+          frame.otherPlayers!.push(botState);
+          lastRecordedStateRef.current.set(id, {
+            pos: bot.pos.clone(),
+            vel: bot.vel.clone(),
+            yaw: bot.yaw,
+            hp: bot.hp,
+            activeWeapon: botState.activeWeapon,
+            weaponState: botState.weaponState,
+            isCrouching: botState.isCrouching,
+            score: botState.score,
+            kills: botState.kills,
+            deaths: botState.deaths
+          });
+        }
+      });
     }
 
-    // 3. Process other players/bots in the room
+    // 3. Process remote players in multiplayer replays
+    if (isMultiplayer) {
     s.otherPlayers.forEach((bot, id) => {
       const botState = {
         id,
@@ -5754,6 +5489,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         });
       }
     });
+    }
 
     replayRecordingRef.current.frames.push(frame);
   };
@@ -5894,23 +5630,19 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       updatedPlayers.set('player', { ...pInterp, name: replayData.playerName, hue: replayData.playerHue });
     }
 
-    // Recorded Main AI (Red)
-    if (replayData.mode !== 'multiplayer') {
-      const aiInterp = interpolatePlayer('main_ai', replayData.opponentName, botColors['main_ai'] ?? 0);
-      if (aiInterp) {
-        updatedPlayers.set('main_ai', { ...aiInterp, name: replayData.opponentName, hue: botColors['main_ai'] ?? 0 });
-      }
-    }
-
-    // Recorded Other Players / Bots
+    // Recorded roster combatants (main_ai + bots offline; remotes in multiplayer)
     const allBotIds = new Set<string>();
+    if (replayData.mode !== 'multiplayer') {
+      allBotIds.add(MAIN_AI_ID);
+    }
     frames.forEach(f => {
       if (f.otherPlayers) f.otherPlayers.forEach(p => allBotIds.add(p.id));
+      if (f.ai && replayData.mode !== 'multiplayer') allBotIds.add(MAIN_AI_ID);
     });
 
     allBotIds.forEach(id => {
-      let name = 'Bot';
-      let hue = 0;
+      let name = id === MAIN_AI_ID ? replayData.opponentName : 'Bot';
+      let hue = id === MAIN_AI_ID ? (botColors[MAIN_AI_ID] ?? 0) : 0;
       for (const f of frames) {
         const found = f.otherPlayers?.find(p => p.id === id);
         if (found) {
@@ -6188,11 +5920,11 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
           for (let i = indexA - 1; i >= 0; i--) {
             const f = frames[i];
             if (id === 'player' && f.player) { prevState = f.player; break; }
-            if (id === 'main_ai' && f.ai) { prevState = f.ai; break; }
-            if (id !== 'player' && id !== 'main_ai' && f.otherPlayers) {
+            if (f.otherPlayers) {
               const found = f.otherPlayers.find(p => p.id === id);
               if (found) { prevState = found; break; }
             }
+            if (id === MAIN_AI_ID && f.ai) { prevState = f.ai; break; }
           }
 
           if (prevState) {
@@ -6481,6 +6213,9 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         // Execute game logics
         updatePhysics(dt);
         updateHammerAnimations(dt);
+        if (!isMultiplayer) {
+          runAIOrchestrator(dt);
+        }
         updateAI(dt);
         updateCharacterSkeletalAnimations(dt);
         updateExplosionParticles(dt);
@@ -6602,8 +6337,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       }
     };
 
-    if ((!isMultiplayer || s.otherPlayers.size === 0) && s.aiHP > 0 && s.aiState !== 'RESPAWNING') {
-      considerTarget(s.aiPos);
+    if ((!isMultiplayer || s.otherPlayers.size === 0) && mai()!.hp > 0 && mai()!.aiState !== 'RESPAWNING') {
+      considerTarget(mai()!.pos);
     }
 
     s.otherPlayers.forEach((other) => {
@@ -6624,9 +6359,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     // while it was fighting another bot — they'd visibly "swing in the wrong
     // direction" and could never damage a bot with a hammer or slash (only lunges,
     // which use getBestTacticalTarget, ever connected against bots).
-    const difficulty =
-      (botDifficulties as Record<string, string>)?.main_ai || s.settings.aiDifficulty || 'normal';
-    const best = getBestTacticalTarget('main_ai', s.aiPos, difficulty);
+    const difficulty = resolveRosterSlot('main_ai').difficulty || 'normal';
+    const best = getBestTacticalTarget('main_ai', mai()!.pos, difficulty);
     if (!best) {
       return null;
     }
@@ -6708,35 +6442,14 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       }
     }
 
-    // Main AI ("Red")
-    if (
-      s.aiHP > 0 &&
-      s.aiState !== 'RESPAWNING' &&
-      s.aiInvulnerabilityTimer <= 0 &&
-      impactPos.distanceTo(getCombatBodyCenter(s.aiPos, s.aiIsCrouching)) <= radius
-    ) {
-      s.aiHP -= 1;
-      spawnVoxelShockwaveParticles(s.aiPos, '#ef4444');
-      if (s.aiHP <= 0) {
-        s.aiHP = 0;
-        s.aiState = 'RESPAWNING';
-        s.enemyRespawnTimer = 3.0;
-        s.enemyDeaths += 1;
-        s.aiWeaponState = 'ready'; s.aiWeaponTimer = 0;
-        recordBotCalibrationDeath('main_ai');
-        creditKill('main_ai', 'Red (AI)');
-      } else {
-        sfx.playSwing();
-        recordBotDamageTag(botId, 'main_ai');
-      }
-    }
+    // Main AI ("Red") — handled by unified roster loop below
 
-    // Other bots (free-for-all), excluding self
+    // All roster combatants (main_ai + bots), excluding self
     if (s.otherPlayers) {
       s.otherPlayers.forEach((other, otherId) => {
         if (otherId === botId) return;
-        if (other.hp <= 0 || (other.respawnTimer ?? 0) > 0) return;
-        if ((other.invulnerabilityTimer ?? 0) > 0) return;
+        if (other.controller !== 'ai') return;
+        if (!isAICombatReady(other)) return;
         const otherPos = new THREE.Vector3(other.pos.x, other.pos.y, other.pos.z);
         if (impactPos.distanceTo(getCombatBodyCenter(otherPos, other.isCrouching || false)) > radius) return;
         other.hp -= 1;
@@ -6744,7 +6457,19 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         if (other.hp <= 0) {
           other.hp = 0;
           other.respawnTimer = 3.0;
-          other.deaths = (other.deaths || 0) + 1;
+          if (other.controller === 'ai') {
+            other.aiState = 'RESPAWNING';
+            other.weaponState = 'ready';
+            other.weaponTimer = 0;
+            if (other.id === MAIN_AI_ID) {
+              s.enemyDeaths += 1;
+              recordBotCalibrationDeath(other.id);
+            } else {
+              other.deaths = (other.deaths || 0) + 1;
+            }
+          } else {
+            other.deaths = (other.deaths || 0) + 1;
+          }
           creditKill(otherId, other.playerName);
         } else {
           sfx.playSwing();
@@ -6829,26 +6554,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     let closestDist = Infinity;
     let closestHitPoint = new THREE.Vector3();
 
-    // Check main AI bot in single-player
-    if (!isMultiplayer && s.aiHP > 0 && s.aiState !== 'RESPAWNING' && s.aiInvulnerabilityTimer <= 0) {
-      const C = new THREE.Vector3(s.aiPos.x, s.aiPos.y + 0.825, s.aiPos.z);
-      const toEnemy = C.clone().sub(eyePos);
-      const proj = toEnemy.dot(cameraLookDir);
-      if (proj > 0) {
-        const closestPointOnRay = eyePos.clone().addScaledVector(cameraLookDir, proj);
-        const distToRay = closestPointOnRay.distanceTo(C);
-        if (distToRay <= 0.65) {
-          const hitDist = eyePos.distanceTo(C);
-          if (hitDist < closestDist) {
-            closestDist = hitDist;
-            closestTarget = { type: 'main_ai', pos: s.aiPos, hp: s.aiHP };
-            closestHitPoint.copy(closestPointOnRay);
-          }
-        }
-      }
-    }
-
-    // Check other players/bots in multiplayer or multi-bot rooms
+    // Check roster combatants (main_ai + bots + remotes)
     if (s.otherPlayers) {
       s.otherPlayers.forEach((other, otherId) => {
         if (other.hp > 0 && other.respawnTimer <= 0 && (!other.invulnerabilityTimer || other.invulnerabilityTimer <= 0)) {
@@ -6882,37 +6588,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       spawnVoxelShockwaveParticles(finalHitPos, '#ef4444');
       sfx.playSwing(); // impact audio cue
 
-      if (closestTarget.type === 'main_ai') {
-        s.aiHP = Math.max(0, s.aiHP - 1);
-        s.lastStrikePos = s.aiPos.clone();
-        s.lastStrikeTick = 1.0;
-
-        if (s.aiHP <= 0) {
-          s.aiHP = 0;
-          s.aiState = 'RESPAWNING';
-          s.enemyRespawnTimer = 3.0;
-          s.scorePlayer += 1;
-          s.playerKills += 1;
-          s.enemyDeaths += 1;
-          recordBotCalibrationDeath('main_ai');
-          sfx.playDeath();
-          s.aiWeaponState = 'ready';
-          s.aiWeaponTimer = 0;
-
-          const medals = evaluatePlayerKillMedals('main_ai');
-          const newDeath: DeathEvent = {
-            id: Math.random().toString(36).substring(2, 9),
-            attacker: s.settings.playerName || 'Blue (You)',
-            victim: 'Red (AI)',
-            medals,
-            weapon: 'sword', // standard field mapped to UI
-          };
-          s.lastDeaths = [newDeath, ...s.lastDeaths].slice(0, 3);
-          spawnVoxelShockwaveParticles(s.aiPos, '#ef4444');
-        }
-      }
-      else if (closestTarget.type === 'other') {
-        // Send impact sync package to server in multiplayer
+      if (closestTarget.type === 'other') {
         if (isMultiplayer && multiplayerSocket && multiplayerSocket.readyState === WebSocket.OPEN) {
           multiplayerSocket.send(JSON.stringify({ 
             type: 'sync', 
@@ -6922,21 +6598,39 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
             weapon: 'sword'
           }));
         } else {
-          // Local room bot
           const bot = closestTarget.data;
           bot.hp = Math.max(0, bot.hp - 1);
+          s.lastStrikePos = bot.pos.clone ? bot.pos.clone() : new THREE.Vector3(bot.pos.x, bot.pos.y, bot.pos.z);
+          s.lastStrikeTick = 1.0;
           if (bot.hp <= 0) {
             bot.hp = 0;
             bot.respawnTimer = 3.0;
-            bot.deaths += 1;
-            s.scorePlayer += 1;
-            s.playerKills += 1;
+            if (bot.controller === 'ai') {
+              bot.aiState = 'RESPAWNING';
+              bot.weaponState = 'ready';
+              bot.weaponTimer = 0;
+              if (bot.id === MAIN_AI_ID) {
+                s.scorePlayer += 1;
+                s.playerKills += 1;
+                s.enemyDeaths += 1;
+                recordBotCalibrationDeath(bot.id);
+              } else {
+                bot.deaths += 1;
+                s.scorePlayer += 1;
+                s.playerKills += 1;
+              }
+            } else {
+              bot.deaths += 1;
+              s.scorePlayer += 1;
+              s.playerKills += 1;
+            }
             sfx.playDeath();
-            
+            const medals = evaluatePlayerKillMedals(bot.id);
             const newDeath: DeathEvent = {
               id: Math.random().toString(36).substring(2, 9),
               attacker: s.settings.playerName || 'Blue (You)',
-              victim: bot.playerName || 'AI Bot',
+              victim: bot.playerName || (bot.id === MAIN_AI_ID ? 'Red (AI)' : 'AI Bot'),
+              medals,
               weapon: 'sword'
             };
             s.lastDeaths = [newDeath, ...s.lastDeaths].slice(0, 3);
@@ -7076,67 +6770,82 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     }
   };
 
-  // TRIGGERS ENEMY AI SWING
+  // TRIGGERS ENEMY AI SWING (offline main_ai or multiplayer remote opponent proxy)
+  const enemyCombatProxy = (): Combatant | undefined => opponentDisplay() ?? mai();
+
   const triggerEnemyHammerSwing = () => {
-    const s = stateRef.current;
-    if (s.aiSwapCooldownTimer > 0) return;
-    if (s.aiDashRemaining > 0) return; // Attacks cannot take place during the dash movement
-    s.aiWeaponState = 'swing_up';
-    s.aiWeaponTimer = 0;
-    s.lastAIHammerAttackTime = Date.now();
+    const enemy = enemyCombatProxy();
+    if (!enemy) return;
+    if ((enemy.swapCooldownTimer ?? 0) > 0) return;
+    if ((enemy.aiDashRemaining ?? 0) > 0) return;
+    enemy.weaponState = 'swing_up';
+    enemy.weaponTimer = 0;
+    enemy.lastHammerAttackTime = Date.now();
   };
 
   // TRIGGERS ENEMY AI HAMMER MELEE
   const triggerEnemyHammerMelee = () => {
-    const s = stateRef.current;
-    if (s.aiSwapCooldownTimer > 0) return;
-    if (s.aiDashRemaining > 0) return;
-    s.aiWeaponState = 'melee_up';
-    s.aiWeaponTimer = 0;
-    s.lastAIHammerAttackTime = Date.now();
+    const enemy = enemyCombatProxy();
+    if (!enemy) return;
+    if ((enemy.swapCooldownTimer ?? 0) > 0) return;
+    if ((enemy.aiDashRemaining ?? 0) > 0) return;
+    enemy.weaponState = 'melee_up';
+    enemy.weaponTimer = 0;
+    enemy.lastHammerAttackTime = Date.now();
     sfx.playSwing();
   };
 
   // TRIGGERS ENEMY AI SWORD SLASH
   const triggerEnemySwordSlash = () => {
-    const s = stateRef.current;
-    if (s.aiSwapCooldownTimer > 0) return;
-    if (s.aiDashRemaining > 0) return;
-    s.aiWeaponState = 'swing_up';
-    s.aiWeaponTimer = 0;
-    s.lastAISwordAttackTime = Date.now();
+    const enemy = enemyCombatProxy();
+    if (!enemy) return;
+    if ((enemy.swapCooldownTimer ?? 0) > 0) return;
+    if ((enemy.aiDashRemaining ?? 0) > 0) return;
+    enemy.weaponState = 'swing_up';
+    enemy.weaponTimer = 0;
+    enemy.lastSwordAttackTime = Date.now();
     sfx.playSwing();
   };
 
   // TRIGGERS ENEMY AI SWORD LUNGE
   const triggerEnemySwordLunge = (customDir?: THREE.Vector3) => {
     const s = stateRef.current;
-    if (s.aiSwapCooldownTimer > 0) return;
-    if (s.aiDashRemaining > 0) return;
-    s.aiState = 'LUNGING';
-    s.aiLungeTimer = 0;
-    s.aiLungeStartPos.copy(s.aiPos);
+    const enemy = enemyCombatProxy();
+    if (!enemy) return;
+    if ((enemy.swapCooldownTimer ?? 0) > 0) return;
+    if ((enemy.aiDashRemaining ?? 0) > 0) return;
+    enemy.aiState = 'LUNGING';
+    enemy.lungeTimer = 0;
+    const lungeStart = enemy.lungeStartPos instanceof THREE.Vector3
+      ? enemy.lungeStartPos
+      : new THREE.Vector3();
+    const lungeDir = enemy.lungeTargetDir instanceof THREE.Vector3
+      ? enemy.lungeTargetDir
+      : new THREE.Vector3();
+    if (!(enemy.lungeStartPos instanceof THREE.Vector3)) enemy.lungeStartPos = lungeStart;
+    if (!(enemy.lungeTargetDir instanceof THREE.Vector3)) enemy.lungeTargetDir = lungeDir;
+    lungeStart.copy(enemy.pos);
     if (customDir) {
-      s.aiLungeTargetDir.copy(customDir);
+      lungeDir.copy(customDir);
     } else {
       const target = getEnemyAITarget();
       const targetPos = target ? target.pos.clone() : s.playerPos.clone();
       const targetAirborne = target ? (target.pos.y > 0.35 || (target.vel && Math.abs(target.vel.y) > 1.0)) : (s.playerPos.y > 0.35 || Math.abs(s.playerVel.y) > 1.0);
-      s.aiLungeTargetDir.copy(targetPos).sub(s.aiPos);
+      lungeDir.copy(targetPos).sub(enemy.pos);
       if (!targetAirborne) {
-        s.aiLungeTargetDir.y = 0;
+        lungeDir.y = 0;
       }
     }
-    if (s.aiLungeTargetDir.lengthSq() <= 0.0001) {
-      s.aiState = 'APPROACHING';
+    if (lungeDir.lengthSq() <= 0.0001) {
+      enemy.aiState = 'APPROACHING';
       return;
     }
-    s.aiLungeTargetDir.normalize();
+    lungeDir.normalize();
     const lungeSpeed = s.settings.swordLungeSpeed ?? 24.0;
-    s.aiVel.y = Math.max(s.aiVel.y, s.aiLungeTargetDir.y * lungeSpeed);
-    s.aiIsJumping = s.aiPos.y > 0.01 || s.aiVel.y > 0.01;
-    s.aiWeaponState = 'ready';
-    s.lastAISwordAttackTime = Date.now();
+    enemy.vel.y = Math.max(enemy.vel.y, lungeDir.y * lungeSpeed);
+    enemy.isJumping = enemy.pos.y > 0.01 || enemy.vel.y > 0.01;
+    enemy.weaponState = 'ready';
+    enemy.lastSwordAttackTime = Date.now();
     sfx.playDash();
   };
 
@@ -7189,15 +6898,11 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     const tradeWeapon: DeathEvent['weapon'] = reason === 'sword_vs_sword' ? 'sword_vs_sword' : 'sword_vs_hammer';
 
     attackerBot.hp = Math.max(0, attackerBot.hp - 1);
+    const targetCombatant = target.id === 'player' ? undefined : rosterCombatant(target.id);
     if (target.id === 'player') {
       s.playerHP = Math.max(0, s.playerHP - 1);
-    } else if (target.id === 'main_ai') {
-      s.aiHP = Math.max(0, s.aiHP - 1);
-    } else {
-      const targetBot = s.otherPlayers.get(target.id);
-      if (targetBot) {
-        targetBot.hp = Math.max(0, targetBot.hp - 1);
-      }
+    } else if (targetCombatant) {
+      targetCombatant.hp = Math.max(0, targetCombatant.hp - 1);
     }
 
     sfx.playExplosion();
@@ -7213,17 +6918,20 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         s.playerKills += 1;
         const medals = evaluatePlayerKillMedals(attackerBot.id);
         recordDeathEvent(`${getLocalPlayerFeedName()} [${tradeText}]`, attackerBot.playerName, medals, tradeWeapon);
-      } else if (target.id === 'main_ai') {
-        s.scoreEnemy += 1;
-        s.enemyKills += 1;
-        recordDeathEvent(`Red (AI) [${tradeText}]`, attackerBot.playerName, undefined, tradeWeapon);
-      } else {
-        const targetBot = s.otherPlayers.get(target.id);
-        if (targetBot) {
-          targetBot.score = (targetBot.score || 0) + 1;
-          targetBot.kills = (targetBot.kills || 0) + 1;
-          recordDeathEvent(`${targetBot.playerName} [${tradeText}]`, attackerBot.playerName, undefined, tradeWeapon);
+      } else if (targetCombatant) {
+        if (targetCombatant.id === MAIN_AI_ID) {
+          s.scoreEnemy += 1;
+          s.enemyKills += 1;
+        } else {
+          targetCombatant.score = (targetCombatant.score || 0) + 1;
+          targetCombatant.kills = (targetCombatant.kills || 0) + 1;
         }
+        recordDeathEvent(
+          `${targetCombatant.playerName || (targetCombatant.id === MAIN_AI_ID ? 'Red (AI)' : targetCombatant.id)} [${tradeText}]`,
+          attackerBot.playerName,
+          undefined,
+          tradeWeapon
+        );
       }
       spawnVoxelShockwaveParticles(new THREE.Vector3(attackerBot.pos.x, attackerBot.pos.y, attackerBot.pos.z), '#ef4444');
     }
@@ -7236,27 +6944,27 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       attackerBot.kills = (attackerBot.kills || 0) + 1;
       recordDeathEvent(`${attackerBot.playerName} [${tradeText}]`, getLocalPlayerFeedName(), undefined, tradeWeapon);
       spawnVoxelShockwaveParticles(s.playerPos, '#3b82f6');
-    } else if (target.id === 'main_ai' && s.aiHP <= 0) {
-      s.aiHP = 0;
-      s.aiState = 'RESPAWNING';
-      s.enemyRespawnTimer = 3.0;
-      s.enemyDeaths += 1;
-      recordBotCalibrationDeath('main_ai');
+    } else if (targetCombatant && targetCombatant.hp <= 0) {
+      targetCombatant.hp = 0;
+      targetCombatant.respawnTimer = 3.0;
+      if (targetCombatant.controller === 'ai') {
+        targetCombatant.aiState = 'RESPAWNING';
+      }
+      if (targetCombatant.id === MAIN_AI_ID) {
+        s.enemyDeaths += 1;
+        recordBotCalibrationDeath(targetCombatant.id);
+      } else {
+        targetCombatant.deaths = (targetCombatant.deaths || 0) + 1;
+      }
       attackerBot.score = (attackerBot.score || 0) + 1;
       attackerBot.kills = (attackerBot.kills || 0) + 1;
-      recordDeathEvent(`${attackerBot.playerName} [${tradeText}]`, 'Red (AI)', undefined, tradeWeapon);
-      spawnVoxelShockwaveParticles(s.aiPos, '#ef4444');
-    } else if (target.id !== 'player' && target.id !== 'main_ai') {
-      const targetBot = s.otherPlayers.get(target.id);
-      if (targetBot && targetBot.hp <= 0) {
-        targetBot.hp = 0;
-        targetBot.respawnTimer = 3.0;
-        targetBot.deaths = (targetBot.deaths || 0) + 1;
-        attackerBot.score = (attackerBot.score || 0) + 1;
-        attackerBot.kills = (attackerBot.kills || 0) + 1;
-        recordDeathEvent(`${attackerBot.playerName} [${tradeText}]`, targetBot.playerName, undefined, tradeWeapon);
-        spawnVoxelShockwaveParticles(new THREE.Vector3(targetBot.pos.x, targetBot.pos.y, targetBot.pos.z), '#ef4444');
-      }
+      recordDeathEvent(
+        `${attackerBot.playerName} [${tradeText}]`,
+        targetCombatant.playerName || (targetCombatant.id === MAIN_AI_ID ? 'Red (AI)' : targetCombatant.id),
+        undefined,
+        tradeWeapon
+      );
+      spawnVoxelShockwaveParticles(new THREE.Vector3(targetCombatant.pos.x, targetCombatant.pos.y, targetCombatant.pos.z), '#ef4444');
     }
 
     attackerBot.isLunging = false;
@@ -7264,22 +6972,17 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     pushStatsUpdate();
   };
 
-  function evaluatePlayerKillMedals(victimId: 'main_ai' | string): MedalInfo[] {
+  function evaluatePlayerKillMedals(victimId: string): MedalInfo[] {
     const s = stateRef.current;
     const now = Date.now();
 
     let isLunging = false;
     let spawnTime = 0;
 
-    if (victimId === 'main_ai') {
-      isLunging = s.aiState === 'LUNGING';
-      spawnTime = s.aiSpawnTime || 0;
-    } else {
-      const other = s.otherPlayers.get(victimId);
-      if (other) {
-        isLunging = other.isLunging || other.aiState === 'LUNGING' || other.weaponState === 'swing_up' || other.weaponState === 'swing_down';
-        spawnTime = other.spawnTime || 0;
-      }
+    const victim = victimId === 'player' ? undefined : rosterCombatant(victimId);
+    if (victim) {
+      isLunging = victim.aiState === 'LUNGING' || victim.isLunging || victim.weaponState === 'swing_up' || victim.weaponState === 'swing_down';
+      spawnTime = victim.spawnTime || 0;
     }
 
     const result = evaluateKillMedals({
@@ -7326,7 +7029,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
     // Reset both of their positions/movement states and inflict 1 damage
     s.playerHP = Math.max(0, s.playerHP - 1);
-    s.aiHP = Math.max(0, s.aiHP - 1);
+    mai()!.hp = Math.max(0, mai()!.hp - 1);
 
     // Audio cues
     sfx.playExplosion();
@@ -7334,10 +7037,10 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
     // Spawns beautiful particle visual feedback for both characters
     spawnVoxelShockwaveParticles(s.playerPos, '#3b82f6'); // Blue player shockwave
-    spawnVoxelShockwaveParticles(s.aiPos, '#ef4444');    // Red AI shockwave
+    spawnVoxelShockwaveParticles(mai()!.pos, '#ef4444');    // Red AI shockwave
 
     // Render debug positions
-    s.lastStrikePos = s.aiPos.clone();
+    s.lastStrikePos = mai()!.pos.clone();
     s.lastStrikeTick = 1.2;
     s.lastAIStrikePos = s.playerPos.clone();
     s.lastAIStrikeTick = 1.2;
@@ -7361,9 +7064,9 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
     // Handle AI death state
     let playerMedals: MedalInfo[] | undefined = undefined;
-    if (s.aiHP <= 0) {
-      s.aiHP = 0;
-      s.aiState = 'RESPAWNING';
+    if (mai()!.hp <= 0) {
+      mai()!.hp = 0;
+      mai()!.aiState = 'RESPAWNING';
       s.enemyRespawnTimer = 3.0;
       s.scorePlayer += 1;
       s.playerKills += 1;
@@ -7371,8 +7074,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       recordBotCalibrationDeath('main_ai');
       playerMedals = evaluatePlayerKillMedals('main_ai');
     }
-    s.aiWeaponState = 'ready';
-    s.aiWeaponTimer = 0;
+    mai()!.weaponState = 'ready';
+    mai()!.weaponTimer = 0;
 
     // Record death events for the kill feed (last 3 entries)
     const attackerText = reason === 'sword_vs_sword' ? 'Sword Trade' : 'Lunge/Hammer Trade';
@@ -7703,8 +7406,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
           s.playerDashCooldownTimer = s.settings.dashCooldown || 2.0;
           recordLocalPlayerObservation((model) => {
             observePlayerDash(model, dDir.x, dDir.z);
-            if (!isMultiplayer && s.aiHP > 0 && s.aiWeaponState === 'swing_up') {
-              observePlayerReaction(model, s.aiWeaponTimer ?? 0);
+            if (!isMultiplayer && mai()!.hp > 0 && mai()!.weaponState === 'swing_up') {
+              observePlayerReaction(model, mai()!.weaponTimer ?? 0);
             }
           });
           sfx.playDash();
@@ -7841,8 +7544,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
             }
           });
         }
-        if (!isMultiplayer && s.aiHP > 0 && s.aiState !== 'RESPAWNING') {
-          exclude.push(s.aiPos);
+        if (!isMultiplayer && mai()!.hp > 0 && mai()!.aiState !== 'RESPAWNING') {
+          exclude.push(mai()!.pos);
         }
         
         const spawnPos = getOptimalSpawnPoint(exclude);
@@ -7882,9 +7585,9 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       let closestTarget: any = null;
       let dist = Infinity;
 
-      if (!isMultiplayer && s.aiHP > 0 && s.aiState !== 'RESPAWNING') {
-        closestTarget = { id: 'main_ai', pos: s.aiPos, hp: s.aiHP, name: 'Red (AI)' };
-        dist = s.playerPos.distanceTo(s.aiPos);
+      if (!isMultiplayer && mai()!.hp > 0 && mai()!.aiState !== 'RESPAWNING') {
+        closestTarget = { id: 'main_ai', pos: mai()!.pos, hp: mai()!.hp, name: 'Red (AI)' };
+        dist = s.playerPos.distanceTo(mai()!.pos);
       }
       
       if (s.otherPlayers) {
@@ -7975,16 +7678,16 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
           if (closestTarget.id === 'main_ai') {
             const swordThreshold = s.settings.swordTradeWindow ?? 350;
             const hammerThreshold = s.settings.hammerSwordTradeWindow ?? 350;
-            const isAISwordActiveAttack = s.settings.enableSwordTrade && s.aiActiveWeapon === 'sword' && (
-              s.aiState === 'LUNGING' || 
-              s.aiWeaponState === 'swing_up' || 
-              s.aiWeaponState === 'swing_down' || 
-              (Date.now() - s.lastAISwordAttackTime <= swordThreshold)
+            const isAISwordActiveAttack = s.settings.enableSwordTrade && mai()!.activeWeapon === 'sword' && (
+              mai()!.aiState === 'LUNGING' || 
+              mai()!.weaponState === 'swing_up' || 
+              mai()!.weaponState === 'swing_down' || 
+              (Date.now() - mai()!.lastSwordAttackTime <= swordThreshold)
             );
-            const isAIHammerActiveAttack = s.settings.enableHammerSwordTrade && s.aiActiveWeapon === 'hammer' && (
-              s.aiWeaponState === 'swing_up' || 
-              s.aiWeaponState === 'swing_down' ||
-              (Date.now() - s.lastAIHammerAttackTime <= hammerThreshold)
+            const isAIHammerActiveAttack = s.settings.enableHammerSwordTrade && mai()!.activeWeapon === 'hammer' && (
+              mai()!.weaponState === 'swing_up' || 
+              mai()!.weaponState === 'swing_down' ||
+              (Date.now() - mai()!.lastHammerAttackTime <= hammerThreshold)
             );
 
             if (isAISwordActiveAttack) {
@@ -7999,18 +7702,18 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
             recordPlayerDamageDealt(isAISwordActiveAttack || isAIHammerActiveAttack);
             recordCalibrationDodgeFailed(stateRef.current.aiMatchContext, 'main_ai');
-            s.aiHP -= 1;
-            if (s.aiHP <= 0) {
-              s.aiHP = 0;
-              s.aiState = 'RESPAWNING';
+            mai()!.hp -= 1;
+            if (mai()!.hp <= 0) {
+              mai()!.hp = 0;
+              mai()!.aiState = 'RESPAWNING';
               s.enemyRespawnTimer = 3.0;
               s.scorePlayer += 1;
               s.playerKills += 1;
               s.enemyDeaths += 1;
               recordBotCalibrationDeath('main_ai');
               sfx.playDeath();
-              s.aiWeaponState = 'ready';
-              s.aiWeaponTimer = 0;
+              mai()!.weaponState = 'ready';
+              mai()!.weaponTimer = 0;
 
               const medals = evaluatePlayerKillMedals('main_ai');
               const newDeath: DeathEvent = {
@@ -8021,7 +7724,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
                 weapon: 'sword',
               };
               s.lastDeaths = [newDeath, ...s.lastDeaths].slice(0, 3);
-              spawnVoxelShockwaveParticles(s.aiPos, '#ef4444');
+              spawnVoxelShockwaveParticles(mai()!.pos, '#ef4444');
             } else {
               sfx.playSwing();
             }
@@ -8288,14 +7991,14 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     if (s.swapCooldownTimer > 0) {
       s.swapCooldownTimer = Math.max(0, s.swapCooldownTimer - dt);
     }
-    if (s.aiSwapCooldownTimer > 0) {
-      s.aiSwapCooldownTimer = Math.max(0, s.aiSwapCooldownTimer - dt);
+    if (mai()!.swapCooldownTimer > 0) {
+      mai()!.swapCooldownTimer = Math.max(0, mai()!.swapCooldownTimer - dt);
     }
     if (s.swapLockoutTimer > 0) {
       s.swapLockoutTimer = Math.max(0, s.swapLockoutTimer - dt);
     }
-    if (s.aiSwapLockoutTimer > 0) {
-      s.aiSwapLockoutTimer = Math.max(0, s.aiSwapLockoutTimer - dt);
+    if (mai()!.swapLockoutTimer > 0) {
+      mai()!.swapLockoutTimer = Math.max(0, mai()!.swapLockoutTimer - dt);
     }
 
     const playerHammer = threeRef.current.playerHammer;
@@ -8406,8 +8109,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
                 .normalize();
 
               // Check main AI bot in single player
-              if (!isMultiplayer && s.aiHP > 0 && s.aiState !== 'RESPAWNING' && s.aiInvulnerabilityTimer <= 0) {
-                const enemyCenter = new THREE.Vector3(s.aiPos.x, s.aiPos.y + 0.825, s.aiPos.z);
+              if (!isMultiplayer && mai()!.hp > 0 && mai()!.aiState !== 'RESPAWNING' && mai()!.invulnerabilityTimer <= 0) {
+                const enemyCenter = new THREE.Vector3(mai()!.pos.x, mai()!.pos.y + 0.825, mai()!.pos.z);
                 const toEnemy = enemyCenter.clone().sub(eyePos);
                 const dist = toEnemy.length();
                 if (dist <= 2.8) {
@@ -8417,33 +8120,33 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
                   
                   if (angle <= 1.0) {
                     const swordThreshold = s.settings.swordTradeWindow ?? 350;
-                    const isAISwordActiveAttack = s.settings.enableSwordTrade && s.aiActiveWeapon === 'sword' && (
-                      s.aiState === 'LUNGING' || 
-                      s.aiWeaponState === 'swing_up' || 
-                      s.aiWeaponState === 'swing_down' || 
-                      (Date.now() - s.lastAISwordAttackTime <= swordThreshold)
+                    const isAISwordActiveAttack = s.settings.enableSwordTrade && mai()!.activeWeapon === 'sword' && (
+                      mai()!.aiState === 'LUNGING' || 
+                      mai()!.weaponState === 'swing_up' || 
+                      mai()!.weaponState === 'swing_down' || 
+                      (Date.now() - mai()!.lastSwordAttackTime <= swordThreshold)
                     );
                     if (isAISwordActiveAttack) {
                       executeTrade('sword_vs_sword');
                       return;
                     }
 
-                    s.aiHP -= 1;
+                    mai()!.hp -= 1;
                     sfx.playSwing();
-                    spawnVoxelShockwaveParticles(s.aiPos, '#22d3ee');
-                    s.lastStrikePos = s.aiPos.clone();
+                    spawnVoxelShockwaveParticles(mai()!.pos, '#22d3ee');
+                    s.lastStrikePos = mai()!.pos.clone();
                     s.lastStrikeTick = 1.0;
-                                       if (s.aiHP <= 0) {
-                      s.aiHP = 0;
-                      s.aiState = 'RESPAWNING';
+                                       if (mai()!.hp <= 0) {
+                      mai()!.hp = 0;
+                      mai()!.aiState = 'RESPAWNING';
                       s.enemyRespawnTimer = 3.0;
                       s.scorePlayer += 1;
                       s.playerKills += 1;
                       s.enemyDeaths += 1;
                       recordBotCalibrationDeath('main_ai');
                       sfx.playDeath();
-                      s.aiWeaponState = 'ready';
-                      s.aiWeaponTimer = 0;
+                      mai()!.weaponState = 'ready';
+                      mai()!.weaponTimer = 0;
                       
                       const medals = evaluatePlayerKillMedals('main_ai');
                       const newDeath: DeathEvent = {
@@ -8454,7 +8157,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
                         weapon: s.activeWeapon,
                       };
                       s.lastDeaths = [newDeath, ...s.lastDeaths].slice(0, 3);
-                      spawnVoxelShockwaveParticles(s.aiPos, '#ef4444');
+                      spawnVoxelShockwaveParticles(mai()!.pos, '#ef4444');
                     }
                   }
                 }
@@ -8750,38 +8453,31 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       }
     }
 
-    // ENEMY AI WEAPON ANIMATION AND VISIBILITY
-    const enemyHammerModel = threeRef.current.enemyHammer;
-    const enemySwordModel = threeRef.current.enemySword;
+    // ENEMY AI WEAPON ANIMATION AND VISIBILITY (main_ai via unified mesh rig)
+    const mainAiWeapons = getCombatantWeaponMeshes('main_ai');
+    const enemyHammerModel = mainAiWeapons?.hammer;
+    const enemySwordModel = mainAiWeapons?.sword;
 
-    if (enemyHammerModel) {
-      enemyHammerModel.visible = s.aiHP > 0 && s.aiState !== 'RESPAWNING' && s.aiActiveWeapon === 'hammer';
-    }
-    if (enemySwordModel) {
-      enemySwordModel.visible = s.aiHP > 0 && s.aiState !== 'RESPAWNING' && s.aiActiveWeapon === 'sword';
-    }
+    if (!s.isMultiplayer && enemyHammerModel && enemySwordModel) {
+      enemyHammerModel.visible = mai()!.hp > 0 && mai()!.aiState !== 'RESPAWNING' && mai()!.activeWeapon === 'hammer';
+      enemySwordModel.visible = mai()!.hp > 0 && mai()!.aiState !== 'RESPAWNING' && mai()!.activeWeapon === 'sword';
 
-    if (s.aiHP <= 0 || s.aiState === 'RESPAWNING') {
-      s.aiWeaponState = 'ready';
-      s.aiWeaponTimer = 0;
-      if (enemyHammerModel) {
+      if (mai()!.hp <= 0 || mai()!.aiState === 'RESPAWNING') {
+        mai()!.weaponState = 'ready';
+        mai()!.weaponTimer = 0;
         enemyHammerModel.position.set(0.48, 1.08 - 0.64, -0.48);
         enemyHammerModel.rotation.set(0.2, 0.1, -0.15);
-      }
-      if (enemySwordModel) {
         enemySwordModel.position.set(0.48, 1.08 - 0.64, -0.32);
         enemySwordModel.rotation.set(Math.PI / 2, 0, -Math.PI / 8);
-      }
-    } else {
-      if (s.aiActiveWeapon === 'hammer' && enemyHammerModel) {
-        if (s.aiWeaponState === 'ready') {
+      } else if (mai()!.activeWeapon === 'hammer') {
+        if (mai()!.weaponState === 'ready') {
           enemyHammerModel.position.set(0.48, 1.08 - 0.64, -0.48);
           enemyHammerModel.rotation.set(0.2, 0.1, -0.15);
         } 
-        else if (s.aiWeaponState === 'swing_up') {
-          s.aiWeaponTimer += dt;
+        else if (mai()!.weaponState === 'swing_up') {
+          mai()!.weaponTimer += dt;
           const windup = 0.32;
-          const pct = Math.min(1.0, s.aiWeaponTimer / windup);
+          const pct = Math.min(1.0, mai()!.weaponTimer / windup);
           
           enemyHammerModel.position.set(
             THREE.MathUtils.lerp(0.48, 0.4, pct),
@@ -8791,14 +8487,14 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
           enemyHammerModel.rotation.x = THREE.MathUtils.lerp(0.2, -1.3, pct); // swing back
 
           if (pct >= 1.0) {
-            s.aiWeaponState = 'swing_down';
-            s.aiWeaponTimer = 0;
+            mai()!.weaponState = 'swing_down';
+            mai()!.weaponTimer = 0;
           }
         } 
-        else if (s.aiWeaponState === 'swing_down') {
-          s.aiWeaponTimer += dt;
+        else if (mai()!.weaponState === 'swing_down') {
+          mai()!.weaponTimer += dt;
           const strike = 0.13;
-          const pct = Math.min(1.0, s.aiWeaponTimer / strike);
+          const pct = Math.min(1.0, mai()!.weaponTimer / strike);
 
           enemyHammerModel.position.set(
             THREE.MathUtils.lerp(0.4, 0.2, pct),
@@ -8808,17 +8504,17 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
           enemyHammerModel.rotation.x = THREE.MathUtils.lerp(-1.3, 1.1, pct);
 
           if (pct >= 1.0) {
-            s.aiWeaponState = 'recovering';
-            s.aiWeaponTimer = 0;
+            mai()!.weaponState = 'recovering';
+            mai()!.weaponTimer = 0;
 
             // Perform Enemy damage check
             applyHammerStrikeImpact(false);
           }
         } 
-        else if (s.aiWeaponState === 'recovering') {
-          s.aiWeaponTimer += dt;
+        else if (mai()!.weaponState === 'recovering') {
+          mai()!.weaponTimer += dt;
           const recover = s.settings.hammerReloadTime ?? 0.6;
-          const pct = Math.min(1.0, s.aiWeaponTimer / recover);
+          const pct = Math.min(1.0, mai()!.weaponTimer / recover);
 
           enemyHammerModel.position.set(
             THREE.MathUtils.lerp(0.2, 0.48, pct),
@@ -8828,14 +8524,14 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
           enemyHammerModel.rotation.x = THREE.MathUtils.lerp(1.1, 0.2, pct);
 
           if (pct >= 1.0) {
-            s.aiWeaponState = 'ready';
-            s.aiWeaponTimer = 0;
+            mai()!.weaponState = 'ready';
+            mai()!.weaponTimer = 0;
           }
         }
-        else if (s.aiWeaponState === 'melee_up') {
-          s.aiWeaponTimer += dt;
+        else if (mai()!.weaponState === 'melee_up') {
+          mai()!.weaponTimer += dt;
           const windup = s.settings.hammerMeleeSpeed ? s.settings.hammerMeleeSpeed * 0.4 : 0.1;
-          const pct = Math.min(1.0, s.aiWeaponTimer / windup);
+          const pct = Math.min(1.0, mai()!.weaponTimer / windup);
 
           // Diagonal sweep windup: pull right and back slightly low
           enemyHammerModel.position.set(
@@ -8850,14 +8546,14 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
           );
 
           if (pct >= 1.0) {
-            s.aiWeaponState = 'melee_down';
-            s.aiWeaponTimer = 0;
+            mai()!.weaponState = 'melee_down';
+            mai()!.weaponTimer = 0;
           }
         }
-        else if (s.aiWeaponState === 'melee_down') {
-          s.aiWeaponTimer += dt;
+        else if (mai()!.weaponState === 'melee_down') {
+          mai()!.weaponTimer += dt;
           const strike = s.settings.hammerMeleeSpeed ? s.settings.hammerMeleeSpeed * 0.6 : 0.14;
-          const pct = Math.min(1.0, s.aiWeaponTimer / strike);
+          const pct = Math.min(1.0, mai()!.weaponTimer / strike);
 
           // Diagonal sweep strike: slash across diagonally up and left
           enemyHammerModel.position.set(
@@ -8872,17 +8568,17 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
           );
 
           if (pct >= 1.0) {
-            s.aiWeaponState = 'melee_recover';
-            s.aiWeaponTimer = 0;
+            mai()!.weaponState = 'melee_recover';
+            mai()!.weaponTimer = 0;
 
             // Perform Enemy Hammer Melee hit check
             applyEnemyHammerMeleeImpact();
           }
         }
-        else if (s.aiWeaponState === 'melee_recover') {
-          s.aiWeaponTimer += dt;
+        else if (mai()!.weaponState === 'melee_recover') {
+          mai()!.weaponTimer += dt;
           const recover = s.settings.hammerMeleeReload ?? 0.5;
-          const pct = Math.min(1.0, s.aiWeaponTimer / recover);
+          const pct = Math.min(1.0, mai()!.weaponTimer / recover);
 
           enemyHammerModel.position.set(
             THREE.MathUtils.lerp(0.18, 0.48, pct),
@@ -8896,24 +8592,24 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
           );
 
           if (pct >= 1.0) {
-            s.aiWeaponState = 'ready';
-            s.aiWeaponTimer = 0;
+            mai()!.weaponState = 'ready';
+            mai()!.weaponTimer = 0;
           }
         }
-      } else if (s.aiActiveWeapon === 'sword' && enemySwordModel) {
+      } else if (mai()!.activeWeapon === 'sword') {
         // ENEMY KATAR SWORD WALK / STRIKE ANIMATION
-        if (s.aiState === 'LUNGING') {
+        if (mai()!.aiState === 'LUNGING') {
           // Lunge forward poise: points straight forward, aligned centered
           enemySwordModel.position.set(0.0, 1.2 - 0.64, -0.75);
           enemySwordModel.rotation.set(Math.PI / 2 + 0.15, 0, 0);
-        } else if (s.aiWeaponState === 'ready') {
+        } else if (mai()!.weaponState === 'ready') {
           enemySwordModel.position.set(0.48, 1.08 - 0.64, -0.32);
           enemySwordModel.rotation.set(Math.PI / 2, 0, -Math.PI / 8);
         } 
-        else if (s.aiWeaponState === 'swing_up') {
-          s.aiWeaponTimer += dt;
+        else if (mai()!.weaponState === 'swing_up') {
+          mai()!.weaponTimer += dt;
           const windup = s.settings.swordSlashSpeed ? s.settings.swordSlashSpeed * 0.4 : 0.1;
-          const pct = Math.min(1.0, s.aiWeaponTimer / windup);
+          const pct = Math.min(1.0, mai()!.weaponTimer / windup);
           
           enemySwordModel.position.set(
             THREE.MathUtils.lerp(0.48, 0.62, pct),
@@ -8927,14 +8623,14 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
           );
 
           if (pct >= 1.0) {
-            s.aiWeaponState = 'swing_down';
-            s.aiWeaponTimer = 0;
+            mai()!.weaponState = 'swing_down';
+            mai()!.weaponTimer = 0;
           }
         } 
-        else if (s.aiWeaponState === 'swing_down') {
-          s.aiWeaponTimer += dt;
+        else if (mai()!.weaponState === 'swing_down') {
+          mai()!.weaponTimer += dt;
           const strike = s.settings.swordSlashSpeed ? s.settings.swordSlashSpeed * 0.6 : 0.12;
-          const pct = Math.min(1.0, s.aiWeaponTimer / strike);
+          const pct = Math.min(1.0, mai()!.weaponTimer / strike);
 
           enemySwordModel.position.set(
             THREE.MathUtils.lerp(0.62, 0.2, pct),
@@ -8948,17 +8644,17 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
           );
 
           if (pct >= 1.0) {
-            s.aiWeaponState = 'recovering';
-            s.aiWeaponTimer = 0;
+            mai()!.weaponState = 'recovering';
+            mai()!.weaponTimer = 0;
 
             // Perform Enemy Sword Slash hit check
             applyEnemySwordSlashImpact();
           }
         } 
-        else if (s.aiWeaponState === 'recovering') {
-          s.aiWeaponTimer += dt;
+        else if (mai()!.weaponState === 'recovering') {
+          mai()!.weaponTimer += dt;
           const recover = s.settings.swordSlashReload ?? 0.6;
-          const pct = Math.min(1.0, s.aiWeaponTimer / recover);
+          const pct = Math.min(1.0, mai()!.weaponTimer / recover);
 
           enemySwordModel.position.set(
             THREE.MathUtils.lerp(0.2, 0.48, pct),
@@ -8972,8 +8668,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
           );
 
           if (pct >= 1.0) {
-            s.aiWeaponState = 'ready';
-            s.aiWeaponTimer = 0;
+            mai()!.weaponState = 'ready';
+            mai()!.weaponTimer = 0;
           }
         }
       }
@@ -9027,28 +8723,28 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       }
 
       // 2. Damage Application Check: Check main AI bot in singleplayer
-      if (!isMultiplayer && s.aiHP > 0 && s.aiState !== 'RESPAWNING' && s.aiInvulnerabilityTimer <= 0) {
-        const enemyBodyCenter = new THREE.Vector3(s.aiPos.x, s.aiPos.y + 0.825, s.aiPos.z);
+      if (!isMultiplayer && mai()!.hp > 0 && mai()!.aiState !== 'RESPAWNING' && mai()!.invulnerabilityTimer <= 0) {
+        const enemyBodyCenter = new THREE.Vector3(mai()!.pos.x, mai()!.pos.y + 0.825, mai()!.pos.z);
         const dist = impactPos.distanceTo(enemyBodyCenter);
         
         if (dist <= s.settings.attackRadius) {
-          s.aiHP -= 1;
+          mai()!.hp -= 1;
           sfx.playSwing();
-          spawnVoxelShockwaveParticles(s.aiPos, '#22d3ee');
-          s.lastStrikePos = s.aiPos.clone();
+          spawnVoxelShockwaveParticles(mai()!.pos, '#22d3ee');
+          s.lastStrikePos = mai()!.pos.clone();
           s.lastStrikeTick = 1.0;
           
-          if (s.aiHP <= 0) {
-            s.aiHP = 0;
-            s.aiState = 'RESPAWNING';
+          if (mai()!.hp <= 0) {
+            mai()!.hp = 0;
+            mai()!.aiState = 'RESPAWNING';
             s.enemyRespawnTimer = 3.0;
             s.scorePlayer += 1;
             s.playerKills += 1;
             s.enemyDeaths += 1;
             recordBotCalibrationDeath('main_ai');
             sfx.playDeath();
-            s.aiWeaponState = 'ready';
-            s.aiWeaponTimer = 0;
+            mai()!.weaponState = 'ready';
+            mai()!.weaponTimer = 0;
             
             const medals = evaluatePlayerKillMedals('main_ai');
             const newDeath: DeathEvent = {
@@ -9059,7 +8755,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
               weapon: s.activeWeapon,
             };
             s.lastDeaths = [newDeath, ...s.lastDeaths].slice(0, 3);
-            spawnVoxelShockwaveParticles(s.aiPos, '#ef4444');
+            spawnVoxelShockwaveParticles(mai()!.pos, '#ef4444');
           }
         }
       }
@@ -9115,17 +8811,17 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       }
     } else {
       if (isMultiplayer) return; // In multiplayer, we do not run AI strike simulations!
-      if (s.aiHP <= 0 || s.aiState === 'RESPAWNING') return; // Prevent dead enemies' attacks from executing
+      if (mai()!.hp <= 0 || mai()!.aiState === 'RESPAWNING') return; // Prevent dead enemies' attacks from executing
       // ENEMY AI IS STRIKING
       // The AI tracks the resolved target in 3D, OR aims beneath itself for a hammer jump!
       const target = getEnemyAITarget();
       if (!target) return;
 
-      const aiEyePos = new THREE.Vector3(s.aiPos.x, s.aiPos.y + 1.2, s.aiPos.z);
+      const aiEyePos = new THREE.Vector3(mai()!.pos.x, mai()!.pos.y + 1.2, mai()!.pos.z);
       const targetBodyCenter = getCombatBodyCenter(target.pos, target.isCrouching);
       
       let aiHeading3D: THREE.Vector3;
-      if (s.aiHammerJumpPlanned) {
+      if (mai()!.hammerJumpPlanned) {
         aiHeading3D = new THREE.Vector3(0, -1, 0);
       } else {
         aiHeading3D = targetBodyCenter.clone().sub(aiEyePos).normalize();
@@ -9137,18 +8833,18 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       s.lastAIStrikeTick = 1.5;
 
       // Check for Hammer Jump eligibility for AI (distance check)
-      const distToBase = impactPos.distanceTo(s.aiPos);
+      const distToBase = impactPos.distanceTo(mai()!.pos);
       if (distToBase <= (s.settings.hammerJumpTriggerRadius ?? 3.5)) {
-        s.aiHammerJumpWindowTimer = s.settings.hammerJumpWindow ?? 0.6;
-        if (s.aiHammerJumpPlanned) {
-          s.aiIsJumping = true;
-          s.aiVel.y = 7.2 + (s.settings.hammerJumpPower ?? 6.5);
+        mai()!.hammerJumpWindowTimer = s.settings.hammerJumpWindow ?? 0.6;
+        if (mai()!.hammerJumpPlanned) {
+          mai()!.isJumping = true;
+          mai()!.vel.y = 7.2 + (s.settings.hammerJumpPower ?? 6.5);
           sfx.playJump();
-          spawnVoxelShockwaveParticles(s.aiPos, '#f59e0b');
+          spawnVoxelShockwaveParticles(mai()!.pos, '#f59e0b');
         }
       }
-      s.aiHammerJumpPlanned = false;
-      s.aiHammerJumpType = undefined;
+      mai()!.hammerJumpPlanned = false;
+      mai()!.hammerJumpType = undefined;
 
       renderHammerSplashVfx(impactPos, '#f97316', s.settings.attackRadius ?? 4.5);
 
@@ -9183,7 +8879,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
                 id: Math.random().toString(36).substring(2, 9),
                 attacker: 'Red (AI)',
                 victim: 'Blue (You)',
-                weapon: s.aiActiveWeapon,
+                weapon: mai()!.activeWeapon,
               };
               s.lastDeaths = [newDeath, ...s.lastDeaths].slice(0, 3);
 
@@ -9196,7 +8892,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
               spawnVoxelShockwaveParticles(s.playerPos, '#e2e8f0');
               recordBotDamageTag('main_ai', 'player');
               tryEnterPressureState('main_ai', 'player', s.playerHP, s.playerInvulnerabilityTimer);
-              tryStartComboOnHit('main_ai', 'player', s.aiActiveWeapon);
+              tryStartComboOnHit('main_ai', 'player', mai()!.activeWeapon);
             }
           } else {
             // Target is another bot!
@@ -9215,7 +8911,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
                   id: Math.random().toString(36).substring(2, 9),
                   attacker: 'Red (AI)',
                   victim: other.playerName,
-                  weapon: s.aiActiveWeapon,
+                  weapon: mai()!.activeWeapon,
                 };
                 s.lastDeaths = [newDeath, ...s.lastDeaths].slice(0, 3);
                 spawnVoxelShockwaveParticles(new THREE.Vector3(other.pos.x, other.pos.y, other.pos.z), '#ef4444');
@@ -9225,7 +8921,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
                 spawnVoxelShockwaveParticles(new THREE.Vector3(other.pos.x, other.pos.y, other.pos.z), '#e2e8f0');
                 recordBotDamageTag('main_ai', target.id);
                 tryEnterPressureState('main_ai', target.id, other.hp, other.invulnerabilityTimer || 0);
-                tryStartComboOnHit('main_ai', target.id, s.aiActiveWeapon);
+                tryStartComboOnHit('main_ai', target.id, mai()!.activeWeapon);
               }
               pushStatsUpdate();
             }
@@ -9237,13 +8933,13 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
   const applyEnemySwordSlashImpact = () => {
     const s = stateRef.current;
-    if (s.aiHP <= 0 || s.aiState === 'RESPAWNING') return;
+    if (mai()!.hp <= 0 || mai()!.aiState === 'RESPAWNING') return;
     
     const target = getEnemyAITarget();
     if (!target) return;
 
     // Slash trace centering forward in front of the AI, including airborne targets.
-    const aiEyePos = new THREE.Vector3(s.aiPos.x, s.aiPos.y + 1.2, s.aiPos.z);
+    const aiEyePos = new THREE.Vector3(mai()!.pos.x, mai()!.pos.y + 1.2, mai()!.pos.z);
     const targetBodyCenter = getCombatBodyCenter(target.pos, target.isCrouching);
     const lookHeading = targetBodyCenter.clone().sub(aiEyePos).normalize();
     const impactPos = aiEyePos.clone().addScaledVector(lookHeading, 2.2); // sweet spot distance
@@ -9357,8 +9053,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       .normalize();
 
     // Check main AI bot in single player
-    if (!isMultiplayer && s.aiHP > 0 && s.aiState !== 'RESPAWNING' && s.aiInvulnerabilityTimer <= 0) {
-      const enemyCenter = new THREE.Vector3(s.aiPos.x, s.aiPos.y + 0.825, s.aiPos.z);
+    if (!isMultiplayer && mai()!.hp > 0 && mai()!.aiState !== 'RESPAWNING' && mai()!.invulnerabilityTimer <= 0) {
+      const enemyCenter = new THREE.Vector3(mai()!.pos.x, mai()!.pos.y + 0.825, mai()!.pos.z);
       const toEnemy = enemyCenter.clone().sub(eyePos);
       const dist = toEnemy.length();
       if (dist <= 3.0) {
@@ -9367,23 +9063,23 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         const angle = Math.acos(Math.max(-1.0, Math.min(1.0, dot)));
 
         if (angle <= 1.0) {
-          s.aiHP -= 1;
+          mai()!.hp -= 1;
           sfx.playSwing();
-          spawnVoxelShockwaveParticles(s.aiPos, '#38bdf8');
-          s.lastStrikePos = s.aiPos.clone();
+          spawnVoxelShockwaveParticles(mai()!.pos, '#38bdf8');
+          s.lastStrikePos = mai()!.pos.clone();
           s.lastStrikeTick = 1.0;
 
-          if (s.aiHP <= 0) {
-            s.aiHP = 0;
-            s.aiState = 'RESPAWNING';
+          if (mai()!.hp <= 0) {
+            mai()!.hp = 0;
+            mai()!.aiState = 'RESPAWNING';
             s.enemyRespawnTimer = 3.0;
             s.scorePlayer += 1;
             s.playerKills += 1;
             s.enemyDeaths += 1;
             recordBotCalibrationDeath('main_ai');
             sfx.playDeath();
-            s.aiWeaponState = 'ready';
-            s.aiWeaponTimer = 0;
+            mai()!.weaponState = 'ready';
+            mai()!.weaponTimer = 0;
 
             const medals = evaluatePlayerKillMedals('main_ai');
             const newDeath: DeathEvent = {
@@ -9394,7 +9090,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
               weapon: 'hammer',
             };
             s.lastDeaths = [newDeath, ...s.lastDeaths].slice(0, 3);
-            spawnVoxelShockwaveParticles(s.aiPos, '#ef4444');
+            spawnVoxelShockwaveParticles(mai()!.pos, '#ef4444');
           }
         }
       }
@@ -9454,12 +9150,12 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
   const applyEnemyHammerMeleeImpact = () => {
     const s = stateRef.current;
-    if (s.aiHP <= 0 || s.aiState === 'RESPAWNING') return;
+    if (mai()!.hp <= 0 || mai()!.aiState === 'RESPAWNING') return;
 
     const target = getEnemyAITarget();
     if (!target) return;
 
-    const aiEyePos = new THREE.Vector3(s.aiPos.x, s.aiPos.y + 1.2, s.aiPos.z);
+    const aiEyePos = new THREE.Vector3(mai()!.pos.x, mai()!.pos.y + 1.2, mai()!.pos.z);
     const targetBodyCenter = getCombatBodyCenter(target.pos, target.isCrouching);
     const lookHeading = targetBodyCenter.clone().sub(aiEyePos).normalize();
     const impactPos = aiEyePos.clone().addScaledVector(lookHeading, 2.2);
@@ -9558,7 +9254,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         return s.pSwordState === 'recovering' || s.pSwordState === 'slashing' || s.isLunging;
       }
     } else if (target.id === 'main_ai') {
-      return s.aiWeaponState === 'recovering' || s.aiWeaponState === 'swing_up' || s.aiWeaponState === 'swing_down' || s.aiState === 'LUNGING' || (s.aiState === 'COOLDOWN' && s.aiTimer > 0);
+      return mai()!.weaponState === 'recovering' || mai()!.weaponState === 'swing_up' || mai()!.weaponState === 'swing_down' || mai()!.aiState === 'LUNGING' || (mai()!.aiState === 'COOLDOWN' && mai()!.aiTimer > 0);
     } else {
       const other = s.otherPlayers.get(target.id);
       if (other) {
@@ -9591,9 +9287,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       });
     }
 
-    // Every AI combatant (main AI + bots) is sourced uniformly from getAllCombatants
-    // — no main-AI special case. The querying combatant excludes itself by id.
-    getAllCombatants().forEach((other) => {
+    // Every AI combatant is sourced uniformly from getRosterAI.
+    getRosterAI().forEach((other) => {
       if (other.id !== botId && other.hp > 0 && (other.respawnTimer ?? 0) <= 0) {
         potentialTargets.push({
           id: other.id,
@@ -9622,25 +9317,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
   const getBestTacticalTarget = (botId: string, botPos: THREE.Vector3, difficulty: string) => {
     const s = stateRef.current;
-    let playstyleVal = 50;
-    if (['easy', 'normal', 'hard', 'nightmare'].includes(difficulty)) {
-      const botArchetype = resolveBotArchetype(botId);
-      if (botArchetype) {
-        const def = getArchetypeDef(botArchetype);
-        const playstyleKnob = def?.knobOverrides?.aiPlaystyle;
-        playstyleVal = playstyleKnob !== undefined ? playstyleKnob : 50;
-      } else {
-        const behavior = botBehaviors[botId] || 'defensive';
-        if (behavior === 'passive') playstyleVal = 0;
-        else if (behavior === 'defensive') playstyleVal = 50;
-        else if (behavior === 'aggressive') playstyleVal = 100;
-      }
-    } else if (difficulty === 'custom') {
-      playstyleVal = s.settings.aiPlaystyle ?? 50;
-    } else {
-      const preset = aiPresets.find(p => p.id === difficulty);
-      if (preset) playstyleVal = preset.tuning.aiPlaystyle ?? 50;
-    }
+    const playstyleVal = resolveBotKnobs(botId).aiPlaystyle;
     const playstyleFactor = playstyleVal / 100;
     const recoveringTargetBonus = (1.0 - Math.abs(playstyleFactor - 0.5) * 2.0) * 200.0;
     const targetSelectionSpatialIQ = resolveDerivedAIParams(
@@ -9688,7 +9365,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
           score += 100;
         }
 
-        const myActiveWeapon = botId === 'main_ai' ? s.aiActiveWeapon : s.otherPlayers.get(botId)?.activeWeapon;
+        const myActiveWeapon = botId === 'main_ai' ? mai()!.activeWeapon : s.otherPlayers.get(botId)?.activeWeapon;
         if (myActiveWeapon === 'sword') {
           if (target.activeWeapon === 'hammer') {
             score += 100; 
@@ -9785,10 +9462,10 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     }
 
     const botState = botId === 'main_ai' ? null : s.otherPlayers.get(botId);
-    const currentWeapon = botId === 'main_ai' ? s.aiActiveWeapon : botState?.activeWeapon;
-    const botHP = botId === 'main_ai' ? s.aiHP : botState?.hp || 1;
-    const botMaxHP = botId === 'main_ai' ? s.aiMaxHP : botState?.maxHp || 1;
-    const botPos = botId === 'main_ai' ? s.aiPos : (botState ? new THREE.Vector3(botState.pos.x, botState.pos.y, botState.pos.z) : new THREE.Vector3());
+    const currentWeapon = botId === 'main_ai' ? mai()!.activeWeapon : botState?.activeWeapon;
+    const botHP = botId === 'main_ai' ? mai()!.hp : botState?.hp || 1;
+    const botMaxHP = botId === 'main_ai' ? mai()!.maxHp : botState?.maxHp || 1;
+    const botPos = botId === 'main_ai' ? mai()!.pos : (botState ? new THREE.Vector3(botState.pos.x, botState.pos.y, botState.pos.z) : new THREE.Vector3());
 
     const dist = context.distanceToTarget ?? botPos.distanceTo(target.pos);
 
@@ -9796,8 +9473,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     if (s.playerHP > 0 && s.playerRespawnTimer <= 0 && !s.isObserverMode && botId !== 'player') {
       if (botPos.distanceTo(s.playerPos) < 6.0) nearbyEnemiesCount++;
     }
-    if (botId !== 'main_ai' && s.aiHP > 0 && s.aiState !== 'RESPAWNING') {
-      if (botPos.distanceTo(s.aiPos) < 6.0) nearbyEnemiesCount++;
+    if (botId !== 'main_ai' && mai()!.hp > 0 && mai()!.aiState !== 'RESPAWNING') {
+      if (botPos.distanceTo(mai()!.pos) < 6.0) nearbyEnemiesCount++;
     }
     if (s.otherPlayers) {
       s.otherPlayers.forEach((other) => {
@@ -9865,9 +9542,9 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
     if (self.id === 'main_ai') {
       // The main AI plans the jump and lifts off when its hammer swing connects.
-      s.aiHammerJumpPlanned = true;
-      s.aiHammerJumpType = jumpType;
-      s.aiHammerJumpCooldownTimer = AI_HAMMER_JUMP_COOLDOWN;
+      mai()!.hammerJumpPlanned = true;
+      mai()!.hammerJumpType = jumpType;
+      mai()!.aiHammerJumpCooldownTimer = AI_HAMMER_JUMP_COOLDOWN;
       triggerEnemyHammerSwing();
     } else {
       // Bots lift off immediately.
@@ -9888,150 +9565,14 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     return true;
   };
 
-  // The main AI as a single, durable Combatant that OWNS its scalar combat state
-  // (the source-of-truth flip). Each flat s.aiXxx SCALAR field is redefined as a
-  // forwarder into this object, so the ~506 existing readers of s.aiXxx keep working
-  // unchanged while the canonical value now lives on the Combatant. Vectors
-  // (pos/vel/lunge dirs/dash dir) and the team-score fields stay canonical on
-  // stateRef and are exposed here via accessors (vectors are shared instances; the
-  // dash-dir setter copies into the live Vector3). Created and installed once, cached.
-  const getMainAICombatant = (): Combatant => {
-    if (mainAICombatantRef.current) return mainAICombatantRef.current;
-    const s = stateRef.current;
-
-    // Canonical scalar state, seeded from the current flat values before the flip.
-    const c: any = {
-      id: 'main_ai',
-      playerName: 'Red (AI)',
-      hp: s.aiHP,
-      maxHp: s.aiMaxHP,
-      yaw: s.aiYaw,
-      isCrouching: s.aiIsCrouching,
-      isJumping: s.aiIsJumping,
-      activeWeapon: s.aiActiveWeapon,
-      weaponState: s.aiWeaponState,
-      weaponTimer: s.aiWeaponTimer,
-      aiState: s.aiState,
-      aiTimer: s.aiTimer,
-      aiSwayTimer: s.aiSwayTimer,
-      aiDashCooldownTimer: s.aiDashCooldownTimer,
-      aiDashRemaining: s.aiDashRemaining,
-      aiSlideActive: s.aiSlideActive,
-      aiSlideDistanceTraveled: s.aiSlideDistanceTraveled,
-      aiSlideCooldownTimer: s.aiSlideCooldownTimer,
-      aiIsSprinting: s.aiIsSprinting,
-      aiHammerJumpCooldownTimer: s.aiHammerJumpCooldownTimer,
-      aiCoordCommitTimer: s.aiCoordCommitTimer,
-      aiPendingPostEvasionCharge: s.aiPendingPostEvasionCharge,
-      aiPostLungeDecisionTimer: s.aiPostLungeDecisionTimer,
-      aiLastLungeOutcome: s.aiLastLungeOutcome,
-      aiLastLungeTargetId: s.aiLastLungeTargetId,
-      aiPressureTargetId: s.aiPressureTargetId,
-      swapLockoutTimer: s.aiSwapLockoutTimer,
-      invulnerabilityTimer: s.aiInvulnerabilityTimer,
-      spawnTime: s.aiSpawnTime,
-      lungeTimer: s.aiLungeTimer,
-    };
-
-    // Vectors remain canonical on stateRef (shared instances), exposed here. aiDashDir
-    // is stored as a Vector3 on stateRef but presented as {x,y,z}; its setter copies in.
-    Object.defineProperty(c, 'pos', { get: () => stateRef.current.aiPos, enumerable: true });
-    Object.defineProperty(c, 'vel', { get: () => stateRef.current.aiVel, enumerable: true });
-    Object.defineProperty(c, 'lungeStartPos', {
-      get: () => stateRef.current.aiLungeStartPos,
-      set: (v: any) => { stateRef.current.aiLungeStartPos.copy(v); },
-      enumerable: true,
-    });
-    Object.defineProperty(c, 'lungeTargetDir', {
-      get: () => stateRef.current.aiLungeTargetDir,
-      set: (v: any) => { stateRef.current.aiLungeTargetDir.copy(v); },
-      enumerable: true,
-    });
-    Object.defineProperty(c, 'aiDashDir', {
-      get: () => stateRef.current.aiDashDir,
-      set: (v: any) => { stateRef.current.aiDashDir.copy(v); },
-      enumerable: true,
-    });
-
-    // isLunging derives from this object's own aiState.
-    Object.defineProperty(c, 'isLunging', {
-      get: () => c.aiState === 'LUNGING',
-      set: (v: boolean) => { if (v) { c.aiState = 'LUNGING'; } else if (c.aiState === 'LUNGING') { c.aiState = 'COOLDOWN'; } },
-      enumerable: true,
-    });
-
-    // Team-level scoring stays canonical on stateRef; the main AI forwards to it.
-    Object.defineProperty(c, 'score', { get: () => stateRef.current.scoreEnemy, set: (v: number) => { stateRef.current.scoreEnemy = v; }, enumerable: true });
-    Object.defineProperty(c, 'kills', { get: () => stateRef.current.enemyKills, set: (v: number) => { stateRef.current.enemyKills = v; }, enumerable: true });
-    Object.defineProperty(c, 'deaths', { get: () => stateRef.current.enemyDeaths, set: (v: number) => { stateRef.current.enemyDeaths = v; }, enumerable: true });
-    Object.defineProperty(c, 'respawnTimer', {
-      get: () => stateRef.current.enemyRespawnTimer,
-      set: (v: number) => { stateRef.current.enemyRespawnTimer = v; if (v > 0) c.aiState = 'RESPAWNING'; },
-      enumerable: true,
-    });
-    // Attack timestamps live in the main AI's flat lastAI* fields; forward to them.
-    Object.defineProperty(c, 'lastSwordAttackTime', { get: () => stateRef.current.lastAISwordAttackTime, set: (v: number) => { stateRef.current.lastAISwordAttackTime = v; }, enumerable: true });
-    Object.defineProperty(c, 'lastHammerAttackTime', { get: () => stateRef.current.lastAIHammerAttackTime, set: (v: number) => { stateRef.current.lastAIHammerAttackTime = v; }, enumerable: true });
-
-    // The flip: redefine each flat scalar field as a forwarder into the Combatant so
-    // every existing reader of s.aiXxx now sees the Combatant-owned value.
-    const scalarMap: [string, string][] = [
-      ['aiHP', 'hp'], ['aiMaxHP', 'maxHp'], ['aiYaw', 'yaw'], ['aiIsCrouching', 'isCrouching'],
-      ['aiIsJumping', 'isJumping'], ['aiActiveWeapon', 'activeWeapon'], ['aiWeaponState', 'weaponState'],
-      ['aiWeaponTimer', 'weaponTimer'], ['aiState', 'aiState'], ['aiTimer', 'aiTimer'],
-      ['aiSwayTimer', 'aiSwayTimer'], ['aiDashCooldownTimer', 'aiDashCooldownTimer'],
-      ['aiDashRemaining', 'aiDashRemaining'], ['aiSlideActive', 'aiSlideActive'],
-      ['aiSlideDistanceTraveled', 'aiSlideDistanceTraveled'], ['aiSlideCooldownTimer', 'aiSlideCooldownTimer'],
-      ['aiIsSprinting', 'aiIsSprinting'], ['aiHammerJumpCooldownTimer', 'aiHammerJumpCooldownTimer'],
-      ['aiCoordCommitTimer', 'aiCoordCommitTimer'], ['aiPendingPostEvasionCharge', 'aiPendingPostEvasionCharge'],
-      ['aiPostLungeDecisionTimer', 'aiPostLungeDecisionTimer'], ['aiLastLungeOutcome', 'aiLastLungeOutcome'],
-      ['aiLastLungeTargetId', 'aiLastLungeTargetId'], ['aiPressureTargetId', 'aiPressureTargetId'],
-      ['aiSwapLockoutTimer', 'swapLockoutTimer'], ['aiInvulnerabilityTimer', 'invulnerabilityTimer'],
-      ['aiSpawnTime', 'spawnTime'], ['aiLungeTimer', 'lungeTimer'],
-    ];
-    for (const [flat, key] of scalarMap) {
-      Object.defineProperty(stateRef.current, flat, {
-        get() { return c[key]; },
-        set(v) { c[key] = v; },
-        configurable: true,
-        enumerable: true,
-      });
-    }
-
-    mainAICombatantRef.current = c as Combatant;
-    return c as Combatant;
-  };
-
-  // The single source of truth for "every AI-driven combatant" — the main AI plus
-  // all additional bots — as one uniform Combatant list. AI/combat code (targeting,
-  // coordination, damage) iterates this instead of special-casing the main AI vs the
-  // otherPlayers map. The main AI is only an AI combatant offline; in multiplayer the
-  // local AI doesn't run and the map holds remote players instead. Rendering,
-  // collision and networking keep using the raw otherPlayers map (the main AI has a
-  // bespoke mesh and is intentionally not a member there).
-  const getAllCombatants = (): Combatant[] => {
-    const s = stateRef.current;
-    const list: Combatant[] = [];
-    if (!s.isMultiplayer) list.push(getMainAICombatant());
-    s.otherPlayers.forEach((c) => list.push(c));
-    return list;
-  };
-
-  // The render mesh for a combatant. The main AI uses the bespoke enemyGroup; bots
-  // use their entry in the otherPlayerMeshes map. This is the one intentional
-  // per-combatant difference (the main AI's model rig is built separately).
+  // The render mesh for a combatant. All AI combatants (main_ai + bots) use
+  // otherPlayerMeshes; enemyGroup is reserved for multiplayer client/observer rendering.
   const getCombatantMesh = (id: string): THREE.Object3D | undefined =>
-    id === 'main_ai'
-      ? threeRef.current.enemyGroup
-      : threeRef.current.otherPlayerMeshes?.get(id)?.group;
+    threeRef.current.otherPlayerMeshes?.get(id)?.group;
 
-  // The (hammer, sword) display-mesh pair for a combatant. The main AI swaps the
-  // bespoke enemyGroup rig (enemyHammer/enemySword); bots toggle the hammer/sword
-  // sub-meshes on their otherPlayerMeshes entry.
+  // The (hammer, sword) display-mesh pair for a combatant.
   const getCombatantWeaponMeshes = (id: string): { hammer?: THREE.Object3D; sword?: THREE.Object3D } | undefined =>
-    id === 'main_ai'
-      ? { hammer: threeRef.current.enemyHammer, sword: threeRef.current.enemySword }
-      : threeRef.current.otherPlayerMeshes?.get(id);
+    threeRef.current.otherPlayerMeshes?.get(id);
 
   // Start an attack for any combatant through the shared `self` accessor. Overhand
   // sword slashes and hammer swings use 'swing_up'; the hammer side-swipe melee uses
@@ -10096,13 +9637,13 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
   // reset via the Combatant interface; the main AI's bespoke flat-only fields
   // (planned hammer jump, swap cooldown, jump flag, pressure target) are reset in a
   // small id-guarded block. Spawn point avoids the player and every other live
-  // combatant. `mesh` is the combatant's render group (enemyGroup / otherPlayerMeshes).
+  // combatant. `mesh` is the combatant's render group in otherPlayerMeshes.
   const respawnCombatant = (c: Combatant, mesh: THREE.Object3D) => {
     const s = stateRef.current;
     c.hp = c.maxHp;
 
     const exclude: THREE.Vector3[] = [s.playerPos];
-    getAllCombatants().forEach((o) => {
+    getRosterAI().forEach((o) => {
       if (o.id !== c.id && o.hp > 0 && (o.respawnTimer ?? 0) <= 0) {
         exclude.push(new THREE.Vector3(o.pos.x, o.pos.y, o.pos.z));
       }
@@ -10133,13 +9674,13 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     clearBotComboState(s.aiMatchContext, c.id);
     clearPressureTarget(c.id);
 
-    // Main-AI-only flat fields with no bot equivalent.
-    if (c.id === 'main_ai') {
-      s.aiIsJumping = false;
-      s.aiHammerJumpPlanned = false;
-      s.aiHammerJumpType = undefined;
-      s.aiSwapCooldownTimer = 0;
-      s.aiPressureTargetId = undefined;
+    // Main-AI-only extras on the combatant object.
+    if (c.id === MAIN_AI_ID) {
+      c.isJumping = false;
+      c.hammerJumpPlanned = false;
+      c.hammerJumpType = undefined;
+      c.swapCooldownTimer = 0;
+      c.aiPressureTargetId = undefined;
     }
 
     mesh.visible = true;
@@ -10148,15 +9689,9 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
   const updateSingleAIEntity = (botId: string, dt: number) => {
     const s = stateRef.current;
-    const isMainAI = botId === 'main_ai';
 
-    // Unified combatant accessor. For additional bots this is the bot state object from
-    // otherPlayers; for the main AI it is the persistent Combatant that owns the flat
-    // s.aiXxx fields (see getMainAICombatant). All per-entity state flows through `self`
-    // (loosely typed so optional Combatant fields don't trip "possibly undefined"),
-    // which is what lets one code path serve both instead of `isMainAI ? ... : ...`.
-    const self: any = isMainAI ? getMainAICombatant() : s.otherPlayers.get(botId);
-    if (!self) return;
+    const self: any = s.otherPlayers.get(botId);
+    if (!self || self.controller !== 'ai') return;
 
     const botMesh = getCombatantMesh(botId);
     if (!botMesh) return;
@@ -10187,10 +9722,10 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     let pendingPostEvasionCharge = self.aiPendingPostEvasionCharge ?? false;
 
     // pos/vel keep the working-copy vs live-ref distinction: the main AI mutates its
-    // flat vectors in place (self.pos/self.vel alias s.aiPos/s.aiVel), while a bot edits
+    // flat vectors in place (self.pos/self.vel alias mai()!.pos/mai()!.vel), while a bot edits
     // a copy of self.pos/self.vel that syncStateAndMesh writes back.
-    const pos = isMainAI ? self.pos : new THREE.Vector3().copy(self.pos);
-    const vel = isMainAI ? self.vel : new THREE.Vector3().copy(self.vel);
+    const pos = self.pos;
+    const vel = self.vel;
     let yaw = self.yaw;
     let activeWeapon = self.activeWeapon;
     let weaponState = self.weaponState || 'ready';
@@ -10210,7 +9745,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     const dashDir = new THREE.Vector3(self.aiDashDir.x, self.aiDashDir.y, self.aiDashDir.z);
 
     // Write the frame's working state back to the combatant through `self`. For the
-    // main AI `self.pos`/`self.vel` already alias s.aiPos/s.aiVel (so copy is a no-op
+    // main AI `self.pos`/`self.vel` already alias mai()!.pos/mai()!.vel (so copy is a no-op
     // self-copy); for a bot they copy the working vectors into the stored object. The
     // aiDashDir setter copies into the main AI's Vector3 but assigns a fresh object on
     // a bot — matching each backing store's representation.
@@ -10232,6 +9767,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       self.aiPendingPostEvasionCharge = pendingPostEvasionCharge;
       self.aiCoordCommitTimer = coordCommitTimer;
       botMesh.position.copy(pos);
+      botMesh.rotation.y = yaw;
+      botMesh.scale.set(1, self.isCrouching ? 0.65 : 1, 1);
     };
 
     const finishSwordLunge = (cooldownMultiplier = 1, outcome: AILungeOutcome = 'miss_timeout', targetId?: string) => {
@@ -10474,8 +10011,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       if (s.playerHP > 0 && s.playerRespawnTimer <= 0 && !s.isObserverMode) {
         livingPositions.push(s.playerPos);
       }
-      if (s.aiHP > 0 && botId !== 'main_ai' && s.aiState !== 'RESPAWNING') {
-        livingPositions.push(s.aiPos);
+      if (mai()!.hp > 0 && botId !== 'main_ai' && mai()!.aiState !== 'RESPAWNING') {
+        livingPositions.push(mai()!.pos);
       }
       if (s.otherPlayers) {
         s.otherPlayers.forEach((other) => {
@@ -10711,7 +10248,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     if (slideCooldownTimer > 0) {
       slideCooldownTimer = Math.max(0, slideCooldownTimer - dt);
     }
-    if (!isMainAI && (self.swapLockoutTimer ?? 0) > 0) {
+    if (botId !== MAIN_AI_ID && (self.swapLockoutTimer ?? 0) > 0) {
       self.swapLockoutTimer = Math.max(0, (self.swapLockoutTimer ?? 0) - dt);
     }
     if (hammerJumpCooldownTimer > 0) {
@@ -10742,9 +10279,9 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         if (allyPhase >= myPhase) continue;
         if (allyId === 'main_ai') {
           if (
-            s.aiState === 'LUNGING' ||
-            s.aiWeaponState === 'swing_up' ||
-            s.aiWeaponState === 'swing_down'
+            mai()!.aiState === 'LUNGING' ||
+            mai()!.weaponState === 'swing_up' ||
+            mai()!.weaponState === 'swing_down'
           ) {
             return true;
           }
@@ -11042,9 +10579,9 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         playerIsLunging: target.id === 'player' && s.isLunging,
         playerLungeDirX: s.lungeTargetDir.x,
         playerLungeDirZ: s.lungeTargetDir.z,
-        mainAiIsLunging: target.id === 'main_ai' && s.aiState === 'LUNGING',
-        mainAiLungeDirX: s.aiLungeTargetDir.x,
-        mainAiLungeDirZ: s.aiLungeTargetDir.z,
+        mainAiIsLunging: target.id === 'main_ai' && mai()!.aiState === 'LUNGING',
+        mainAiLungeDirX: mai()!.lungeTargetDir.x,
+        mainAiLungeDirZ: mai()!.lungeTargetDir.z,
         botIsLunging: !!targetOtherBot?.isLunging,
         botLungeDirX: targetOtherBot?.lungeTargetDir?.x,
         botLungeDirZ: targetOtherBot?.lungeTargetDir?.z,
@@ -11077,9 +10614,9 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         playerIsLunging: target.id === 'player' && s.isLunging,
         playerLungeDirX: s.lungeTargetDir.x,
         playerLungeDirZ: s.lungeTargetDir.z,
-        mainAiIsLunging: target.id === 'main_ai' && s.aiState === 'LUNGING',
-        mainAiLungeDirX: s.aiLungeTargetDir.x,
-        mainAiLungeDirZ: s.aiLungeTargetDir.z,
+        mainAiIsLunging: target.id === 'main_ai' && mai()!.aiState === 'LUNGING',
+        mainAiLungeDirX: mai()!.lungeTargetDir.x,
+        mainAiLungeDirZ: mai()!.lungeTargetDir.z,
         botIsLunging: !!targetOtherBot?.isLunging,
         botLungeDirX: targetOtherBot?.lungeTargetDir?.x,
         botLungeDirZ: targetOtherBot?.lungeTargetDir?.z,
@@ -11237,12 +10774,12 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
             tradeReason = 'sword_lunge_vs_hammer';
           }
         } else if (target.id === 'main_ai') {
-          if (s.settings.enableSwordTrade && s.aiActiveWeapon === 'sword' && (
-            s.aiState === 'LUNGING' || s.aiWeaponState === 'swing_up' || s.aiWeaponState === 'swing_down' || (Date.now() - s.lastAISwordAttackTime <= swordThreshold)
+          if (s.settings.enableSwordTrade && mai()!.activeWeapon === 'sword' && (
+            mai()!.aiState === 'LUNGING' || mai()!.weaponState === 'swing_up' || mai()!.weaponState === 'swing_down' || (Date.now() - mai()!.lastSwordAttackTime <= swordThreshold)
           )) {
             tradeReason = 'sword_vs_sword';
-          } else if (s.settings.enableHammerSwordTrade && s.aiActiveWeapon === 'hammer' && (
-            s.aiWeaponState === 'swing_up' || s.aiWeaponState === 'swing_down' || (Date.now() - s.lastAIHammerAttackTime <= hammerThreshold)
+          } else if (s.settings.enableHammerSwordTrade && mai()!.activeWeapon === 'hammer' && (
+            mai()!.weaponState === 'swing_up' || mai()!.weaponState === 'swing_down' || (Date.now() - mai()!.lastHammerAttackTime <= hammerThreshold)
           )) {
             tradeReason = 'sword_lunge_vs_hammer';
           }
@@ -11291,14 +10828,14 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
             recordBotPsychKill(botId, 'player', true);
           }
         } else if (target.id === 'main_ai') {
-          s.aiHP -= 1;
+          mai()!.hp -= 1;
           finishSwordLunge(cooldownMult, 'hit', target.id);
           sfx.playExplosion();
-          spawnVoxelShockwaveParticles(s.aiPos, '#ef4444');
+          spawnVoxelShockwaveParticles(mai()!.pos, '#ef4444');
 
-          if (s.aiHP <= 0) {
-            s.aiHP = 0;
-            s.aiState = 'RESPAWNING';
+          if (mai()!.hp <= 0) {
+            mai()!.hp = 0;
+            mai()!.aiState = 'RESPAWNING';
             s.enemyRespawnTimer = 3.0;
             self.score = (self.score || 0) + 1;
             self.kills = (self.kills || 0) + 1;
@@ -11940,7 +11477,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
     // Unified vertical handling for every combatant: while airborne we keep the
     // integrated vel.y; once grounded (and not lunging) we zero it and clear the jump
-    // flag. (For the main AI vel === s.aiVel, so this is the same data either way.)
+    // flag. (For the main AI vel === mai()!.vel, so this is the same data either way.)
     if (state !== 'LUNGING' && !(self.isJumping || pos.y > 0.01)) {
       vel.y = 0;
       self.isJumping = false;

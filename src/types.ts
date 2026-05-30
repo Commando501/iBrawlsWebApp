@@ -223,12 +223,22 @@ export interface RemotePlayerState {
  * remote player that never runs the local AI) may not have them until the AI
  * tick initializes them.
  */
+/** Team assignment for roster combatants; extensible for N teams later. */
+export type TeamId = 'blue' | 'red' | (string & {});
+
+/** Who drives a roster entry — local AI tick vs network remote human. */
+export type CombatantController = 'ai' | 'remote';
+
 export interface Combatant {
   // Identity
   id: string;
   playerName: string;
   hue: number;
+  /** Local AI vs remote human — orchestrator ticks `ai` entries only. */
+  controller: CombatantController;
   difficulty?: string;
+  /** Roster team; defaults to red for AI combatants in sandbox. */
+  team?: TeamId;
 
   // Physics / pose (live references, mutated in place each tick)
   pos: THREE.Vector3;
@@ -279,8 +289,15 @@ export interface Combatant {
   // Sword-lunge flight
   isLunging?: boolean;
   lungeTimer?: number;
-  lungeStartPos?: { x: number; y: number; z: number };
-  lungeTargetDir?: { x: number; y: number; z: number };
+  lungeStartPos?: { x: number; y: number; z: number } | THREE.Vector3;
+  lungeTargetDir?: { x: number; y: number; z: number } | THREE.Vector3;
+
+  /** Hammer-jump planning (main AI offensive jump path). */
+  hammerJumpPlanned?: boolean;
+  hammerJumpType?: 'offensive' | 'defensive';
+  hammerJumpWindowTimer?: number;
+  /** Legacy swap cooldown separate from swapLockoutTimer (network replay). */
+  swapCooldownTimer?: number;
 }
 
 export interface GameStats {

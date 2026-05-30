@@ -1,6 +1,8 @@
 # AI Roster + Orchestrator — Architecture Plan
 
-_Created 2026-05-30. Status: PROPOSAL for review — no code changed yet. Successor to
+_Status: **Phases 0–6 complete** (2026-05-30). Unified roster + orchestrator shipped; Phase 6 removed legacy `getAllCombatants`, `createOrUpdateMainAIMesh`, duplicate main_ai combat/replay paths, and replay `f.ai` write (read retained for old replays)._
+
+_Created 2026-05-30. Successor to
 `ai-unification-continuation.md` (which unified the AI **code path**; this unifies the AI
 **identity, config, and lifecycle**)._
 
