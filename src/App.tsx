@@ -55,7 +55,15 @@ import {
   simulateBotMatch,
 } from './features/tournament/tournament';
 import { AI_ARCHETYPE_OPTIONS, applyArchetypeToSettings, getArchetypeDef, type AIArchetypeId } from './game/aiPersonalities';
-import { getSavedReplays, getCachedReplays, deleteReplay, updateReplayMeta, saveCachedReplay } from './game/theaterDatabase';
+import {
+  getSavedReplays,
+  getCachedReplays,
+  deleteReplay,
+  updateReplayMeta,
+  saveCachedReplay,
+  getReplayStorageSizeBytes,
+  formatReplaySizeMB,
+} from './game/theaterDatabase';
 import { GrifballGame } from './components/GrifballGame';
 import { PREMADE_MAPS } from './game/premadeMaps';
 import * as THREE from 'three';
@@ -66,7 +74,7 @@ import { ChatOverlay, ChatMessage } from './components/ChatOverlay';
 import { CharacterPreview } from './components/CharacterPreview';
 import { CharacterLoadout, DEFAULT_LOADOUT, AVAILABLE_PRESETS, HelmetPreset, TorsoPreset, ArmPreset, LegPreset } from './components/VoxelModels';
 
-const APP_VERSION = '0.503';
+const APP_VERSION = '0.508';
 const MAX_PLAYER_NAME_LENGTH = 10;
 
 interface OnlineClient {
@@ -1307,6 +1315,7 @@ export default function App() {
   const [selectedReplay, setSelectedReplay] = useState<ReplayFile | null>(null);
   const [savedReplays, setSavedReplays] = useState<ReplayFile[]>([]);
   const [cachedReplays, setCachedReplays] = useState<ReplayFile[]>([]);
+  const [replaySizes, setReplaySizes] = useState<Record<string, number>>({});
   
   // Theater Filters & Search
   const [theaterSearchQuery, setTheaterSearchQuery] = useState<string>('');
@@ -1332,6 +1341,11 @@ export default function App() {
       const cached = await getCachedReplays();
       setSavedReplays(saved);
       setCachedReplays(cached);
+      const sizes: Record<string, number> = {};
+      for (const replay of [...saved, ...cached]) {
+        sizes[replay.id] = getReplayStorageSizeBytes(replay);
+      }
+      setReplaySizes(sizes);
     } catch (err) {
       console.error('Failed to load theater replays from IndexedDB:', err);
     }
@@ -4230,6 +4244,7 @@ export default function App() {
                           const minutes = Math.floor(replay.duration / 60);
                           const seconds = Math.floor(replay.duration % 60);
                           const durationStr = `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
+                          const sizeStr = formatReplaySizeMB(replaySizes[replay.id] ?? 0);
                           
                           let formattedDate = replay.date;
                           try {
@@ -4250,7 +4265,7 @@ export default function App() {
                                   )}
                                 </div>
                                 <span className="text-[9px] font-mono font-bold text-white/40 bg-white/5 border border-white/10 px-2 py-0.5 rounded shrink-0">
-                                  {durationStr}
+                                  {durationStr} · {sizeStr}
                                 </span>
                               </div>
 
@@ -4337,6 +4352,7 @@ export default function App() {
                           const minutes = Math.floor(replay.duration / 60);
                           const seconds = Math.floor(replay.duration % 60);
                           const durationStr = `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
+                          const sizeStr = formatReplaySizeMB(replaySizes[replay.id] ?? 0);
                           
                           let formattedDate = replay.date;
                           try {
@@ -4355,7 +4371,7 @@ export default function App() {
                                   </span>
                                 </div>
                                 <span className="text-[9px] font-mono font-bold text-white/40 bg-white/5 border border-white/10 px-2 py-0.5 rounded shrink-0">
-                                  {durationStr}
+                                  {durationStr} · {sizeStr}
                                 </span>
                               </div>
 

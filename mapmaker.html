@@ -12,9 +12,10 @@
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700;800&family=Outfit:wght@300;400;600;800;900&display=swap" rel="stylesheet">
   <!-- Lucide Icons -->
   <script src="https://unpkg.com/lucide@latest"></script>
-  <!-- Three.js and OrbitControls -->
+  <!-- Three.js, OrbitControls, and TransformControls -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/TransformControls.js"></script>
 
   <style>
     body {
@@ -279,6 +280,7 @@
     let scene, camera, renderer, controls;
     let objectsGroup, spawnsGroup, lightsGroup, navMeshGroup, boundaryGrid;
     let selectionHelper;
+    let transformControls;
     let raycaster, mouse;
 
     // INITIALIZE WORKSPACE
@@ -351,6 +353,102 @@
       selectionHelper = new THREE.BoxHelper(new THREE.Mesh(), '#22d3ee');
       selectionHelper.visible = false;
       scene.add(selectionHelper);
+
+      // Transform Controls Translation Gizmo
+      transformControls = new THREE.TransformControls(camera, renderer.domElement);
+      transformControls.size = 0.85;
+      scene.add(transformControls);
+
+      // Disable/enable OrbitControls during drag; trigger final scene rebuild on release
+      transformControls.addEventListener('dragging-changed', (e) => {
+        controls.enabled = !e.value;
+        if (!e.value) {
+          rebuildScene();
+        }
+      });
+
+      // Real-time synchronization during drag movement
+      transformControls.addEventListener('change', () => {
+        if (!transformControls.object) return;
+        const target = transformControls.object;
+
+        if (target.userData && target.userData.id) {
+          // Sync custom map object position
+          const objId = target.userData.id;
+          const obj = objects.find(o => o.id === objId);
+          if (obj) {
+            obj.position.x = parseFloat(target.position.x.toFixed(1));
+            obj.position.y = parseFloat(target.position.y.toFixed(1));
+            obj.position.z = parseFloat(target.position.z.toFixed(1));
+
+            // Sync sidebar DOM inputs in real-time
+            const inputs = document.getElementById('inspector-panel');
+            if (inputs) {
+              const posXInput = inputs.querySelector('input[oninput*="pos_x"]');
+              if (posXInput) {
+                posXInput.value = obj.position.x;
+                const readout = posXInput.previousElementSibling?.querySelector('.mapmaker-value-badge');
+                if (readout) readout.textContent = `${obj.position.x}m`;
+              }
+              const posYInput = inputs.querySelector('input[oninput*="pos_y"]');
+              if (posYInput) {
+                posYInput.value = obj.position.y;
+                const readout = posYInput.previousElementSibling?.querySelector('.mapmaker-value-badge');
+                if (readout) readout.textContent = `${obj.position.y}m`;
+              }
+              const posZInput = inputs.querySelector('input[oninput*="pos_z"]');
+              if (posZInput) {
+                posZInput.value = obj.position.z;
+                const readout = posZInput.previousElementSibling?.querySelector('.mapmaker-value-badge');
+                if (readout) readout.textContent = `${obj.position.z}m`;
+              }
+            }
+
+            // Sync bounding box helper outline
+            if (selectionHelper && selectionHelper.visible) {
+              selectionHelper.setFromObject(target);
+            }
+          }
+        } else if (target.userData && target.userData.lightId) {
+          // Sync point light source position
+          const lightId = target.userData.lightId;
+          const pl = pointLights.find(l => l.id === lightId);
+          if (pl) {
+            pl.position.x = parseFloat(target.position.x.toFixed(1));
+            pl.position.y = parseFloat(target.position.y.toFixed(1));
+            pl.position.z = parseFloat(target.position.z.toFixed(1));
+
+            // Sync actual PointLight emitting source in scene in real-time
+            const actualLight = lightsGroup.children.find(c => c.isPointLight && c.userData && c.userData.lightSourceId === lightId);
+            if (actualLight) {
+              actualLight.position.copy(target.position);
+            }
+
+            // Sync sidebar DOM inputs in real-time
+            const inputs = document.getElementById('inspector-panel');
+            if (inputs) {
+              const posXInput = inputs.querySelector('input[oninput*="pos_x"]');
+              if (posXInput) {
+                posXInput.value = pl.position.x;
+                const readout = posXInput.previousElementSibling?.querySelector('.mapmaker-value-badge');
+                if (readout) readout.textContent = `${pl.position.x}m`;
+              }
+              const posYInput = inputs.querySelector('input[oninput*="pos_y"]');
+              if (posYInput) {
+                posYInput.value = pl.position.y;
+                const readout = posYInput.previousElementSibling?.querySelector('.mapmaker-value-badge');
+                if (readout) readout.textContent = `${pl.position.y}m`;
+              }
+              const posZInput = inputs.querySelector('input[oninput*="pos_z"]');
+              if (posZInput) {
+                posZInput.value = pl.position.z;
+                const readout = posZInput.previousElementSibling?.querySelector('.mapmaker-value-badge');
+                if (readout) readout.textContent = `${pl.position.z}m`;
+              }
+            }
+          }
+        }
+      });
 
       // Click raycaster Setup
       raycaster = new THREE.Raycaster();
@@ -1025,6 +1123,7 @@
       pointLights.forEach((pl, idx) => {
         const point = new THREE.PointLight(pl.color, pl.intensity, pl.distance, pl.decay);
         point.position.set(pl.position.x, pl.position.y, pl.position.z);
+        point.userData = { lightSourceId: pl.id };
         lightsGroup.add(point);
 
         // Yellow wireframe bulb indicator sphere
@@ -1040,6 +1139,27 @@
           lightsGroup.add(lightHelper);
         }
       });
+
+      // Auto-attach transform controls translation gizmo to selection
+      if (transformControls) {
+        if (selectedObjectId && activeTab === 'objects') {
+          const selMesh = meshMap.get(selectedObjectId);
+          if (selMesh) {
+            transformControls.attach(selMesh);
+          } else {
+            transformControls.detach();
+          }
+        } else if (selectedLightId && activeTab === 'lights') {
+          const bulbMesh = lightsGroup.children.find(c => c.userData && c.userData.lightId === selectedLightId);
+          if (bulbMesh) {
+            transformControls.attach(bulbMesh);
+          } else {
+            transformControls.detach();
+          }
+        } else {
+          transformControls.detach();
+        }
+      }
     }
 
     // DYNAMIC RADIUS UPDATE
@@ -1170,6 +1290,7 @@
       selectedObjectId = id;
       selectedLightId = null;
       selectedSpawnIdx = null;
+      rebuildScene();
       renderInspector();
     }
 
@@ -1187,12 +1308,14 @@
       selectedLightId = newLight.id;
       selectedObjectId = null;
       selectedSpawnIdx = null;
+      rebuildScene();
       renderInspector();
     }
 
     function handleDeleteLight(id) {
       pointLights = pointLights.filter(l => l.id !== id);
       if (selectedLightId === id) selectedLightId = null;
+      rebuildScene();
       renderInspector();
     }
 
@@ -1223,6 +1346,7 @@
       selectedLightId = id;
       selectedObjectId = null;
       selectedSpawnIdx = null;
+      rebuildScene();
       renderInspector();
     }
 
@@ -1233,6 +1357,7 @@
       selectedSpawnIdx = spawnPoints.length - 1;
       selectedObjectId = null;
       selectedLightId = null;
+      rebuildScene();
       renderInspector();
     }
 
@@ -1240,6 +1365,7 @@
       const numericIdx = parseInt(idx, 10);
       spawnPoints = spawnPoints.filter((_, i) => i !== numericIdx);
       if (selectedSpawnIdx === numericIdx) selectedSpawnIdx = null;
+      rebuildScene();
       renderInspector();
     }
 
@@ -1510,6 +1636,14 @@
 
         raycaster.setFromCamera(mouse, camera);
 
+        // Click on transformControls handles check to prevent accidental deselection
+        if (transformControls && transformControls.visible) {
+          const intersectsGizmo = raycaster.intersectObjects(transformControls.children, true);
+          if (intersectsGizmo.length > 0) {
+            return;
+          }
+        }
+
         // Click objects check
         const intersectsObj = raycaster.intersectObjects(objectsGroup.children, true);
         if (intersectsObj.length > 0) {
@@ -1534,6 +1668,7 @@
         selectedObjectId = null;
         selectedLightId = null;
         selectedSpawnIdx = null;
+        rebuildScene();
         renderInspector();
       });
 

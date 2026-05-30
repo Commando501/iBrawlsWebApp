@@ -1,5 +1,14 @@
 import { ReplayFile } from '../types';
 
+/** Serialized IndexedDB payload size in bytes (UTF-8). */
+export function getReplayStorageSizeBytes(replay: ReplayFile): number {
+  return new TextEncoder().encode(JSON.stringify(replay)).length;
+}
+
+export function formatReplaySizeMB(bytes: number): string {
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+}
+
 const DB_NAME = 'iBrawlsTheater';
 const DB_VERSION = 1;
 const SAVED_STORE = 'replays';

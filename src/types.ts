@@ -438,6 +438,7 @@ export interface ReplayFrame {
     pos: { x: number; y: number; z: number };
     vel: { x: number; y: number; z: number };
     yaw: number;
+    pitch?: number;
     hp: number;
     isCrouching: boolean;
     activeWeapon: 'hammer' | 'sword';
@@ -455,6 +456,7 @@ export interface ReplayFrame {
     pos: { x: number; y: number; z: number };
     vel: { x: number; y: number; z: number };
     yaw: number;
+    pitch?: number;
     hp: number;
     isCrouching: boolean;
     activeWeapon: 'hammer' | 'sword';
@@ -481,6 +483,7 @@ export interface ReplayFile {
   maxScore: number;
   frames: ReplayFrame[];
   isAutoSaved?: boolean;
+  recordedAsObserver?: boolean;
 }
 
 export interface CustomMapObject {

@@ -225,6 +225,169 @@ const predictLandingPosition = (pos: THREE.Vector3, vel?: THREE.Vector3, maxLead
   return landing;
 };
 
+const getCollisionResolvedCameraPos = (
+  start: THREE.Vector3,
+  end: THREE.Vector3,
+  arenaRadius: number,
+  objects: CustomMapObject[]
+): THREE.Vector3 => {
+  let t = 1.0;
+  const dir = new THREE.Vector3().subVectors(end, start);
+  const length = dir.length();
+  if (length < 0.001) return end.clone();
+
+  // 1. Floor collision check (min Y = 0.2m above floor)
+  const minY = 0.2;
+  if (start.y > minY && end.y < minY) {
+    const t_floor = (minY - start.y) / (end.y - start.y);
+    if (t_floor >= 0 && t_floor < t) {
+      t = t_floor;
+    }
+  }
+
+  // 2. Arena circular wall check
+  const maxCamRadius = Math.max(0.5, arenaRadius - 0.3);
+  const startDistSq = start.x * start.x + start.z * start.z;
+  const endDistSq = end.x * end.x + end.z * end.z;
+
+  if (startDistSq < maxCamRadius * maxCamRadius && endDistSq > maxCamRadius * maxCamRadius) {
+    const a = dir.x * dir.x + dir.z * dir.z;
+    const b = 2 * (start.x * dir.x + start.z * dir.z);
+    const c = start.x * start.x + start.z * start.z - maxCamRadius * maxCamRadius;
+    if (a > 0.000001) {
+      const disc = b * b - 4 * a * c;
+      if (disc >= 0) {
+        const u = (-b + Math.sqrt(disc)) / (2 * a);
+        if (u >= 0 && u < t) {
+          t = u;
+        }
+      }
+    }
+  }
+
+  // 3. Custom Map Obstacle Collisions
+  const clearance = 0.3;
+  for (const obj of objects) {
+    if (!obj.isCollidable) continue;
+
+    const scaleX = obj.scale.x;
+    const scaleY = obj.scale.y;
+    const scaleZ = obj.scale.z;
+    const posX = obj.position.x;
+    const posY = obj.position.y;
+    const posZ = obj.position.z;
+
+    if (obj.type === 'box') {
+      const bMinX = posX - scaleX / 2 - clearance;
+      const bMaxX = posX + scaleX / 2 + clearance;
+      const bMinY = posY - scaleY / 2 - clearance;
+      const bMaxY = posY + scaleY / 2 + clearance;
+      const bMinZ = posZ - scaleZ / 2 - clearance;
+      const bMaxZ = posZ + scaleZ / 2 + clearance;
+
+      let tNear = -Infinity;
+      let tFar = Infinity;
+
+      if (Math.abs(dir.x) < 0.000001) {
+        if (start.x < bMinX || start.x > bMaxX) continue;
+      } else {
+        const t1 = (bMinX - start.x) / dir.x;
+        const t2 = (bMaxX - start.x) / dir.x;
+        tNear = Math.max(tNear, Math.min(t1, t2));
+        tFar = Math.min(tFar, Math.max(t1, t2));
+      }
+
+      if (Math.abs(dir.y) < 0.000001) {
+        if (start.y < bMinY || start.y > bMaxY) continue;
+      } else {
+        const t1 = (bMinY - start.y) / dir.y;
+        const t2 = (bMaxY - start.y) / dir.y;
+        tNear = Math.max(tNear, Math.min(t1, t2));
+        tFar = Math.min(tFar, Math.max(t1, t2));
+      }
+
+      if (Math.abs(dir.z) < 0.000001) {
+        if (start.z < bMinZ || start.z > bMaxZ) continue;
+      } else {
+        const t1 = (bMinZ - start.z) / dir.z;
+        const t2 = (bMaxZ - start.z) / dir.z;
+        tNear = Math.max(tNear, Math.min(t1, t2));
+        tFar = Math.min(tFar, Math.max(t1, t2));
+      }
+
+      if (tFar >= tNear && tNear > 0 && tNear < t) {
+        t = tNear;
+      }
+    } else if (obj.type === 'cylinder') {
+      const radius = scaleX / 2 + clearance;
+      const cMinY = posY - scaleY / 2 - clearance;
+      const cMaxY = posY + scaleY / 2 + clearance;
+
+      const dx = start.x - posX;
+      const dz = start.z - posZ;
+      const a = dir.x * dir.x + dir.z * dir.z;
+      const b = 2 * (dx * dir.x + dz * dir.z);
+      const c = dx * dx + dz * dz - radius * radius;
+
+      if (a > 0.000001) {
+        const disc = b * b - 4 * a * c;
+        if (disc >= 0) {
+          const u1 = (-b - Math.sqrt(disc)) / (2 * a);
+          if (u1 >= 0 && u1 < t) {
+            const intersectY = start.y + u1 * dir.y;
+            if (intersectY >= cMinY && intersectY <= cMaxY) {
+              t = u1;
+            }
+          }
+        }
+      }
+
+      if (Math.abs(dir.y) > 0.000001) {
+        const uTop = (cMaxY - start.y) / dir.y;
+        if (uTop >= 0 && uTop < t) {
+          const ix = start.x + uTop * dir.x;
+          const iz = start.z + uTop * dir.z;
+          const distSq = (ix - posX) * (ix - posX) + (iz - posZ) * (iz - posZ);
+          if (distSq <= radius * radius) t = uTop;
+        }
+
+        const uBot = (cMinY - start.y) / dir.y;
+        if (uBot >= 0 && uBot < t) {
+          const ix = start.x + uBot * dir.x;
+          const iz = start.z + uBot * dir.z;
+          const distSq = (ix - posX) * (ix - posX) + (iz - posZ) * (iz - posZ);
+          if (distSq <= radius * radius) t = uBot;
+        }
+      }
+    } else if (obj.type === 'sphere') {
+      const radius = scaleX / 2 + clearance;
+      const dx = start.x - posX;
+      const dy = start.y - posY;
+      const dz = start.z - posZ;
+
+      const a = dir.dot(dir);
+      const b = 2 * (dx * dir.x + dy * dir.y + dz * dir.z);
+      const c = dx * dx + dy * dy + dz * dz - radius * radius;
+
+      if (a > 0.000001) {
+        const disc = b * b - 4 * a * c;
+        if (disc >= 0) {
+          const u1 = (-b - Math.sqrt(disc)) / (2 * a);
+          if (u1 >= 0 && u1 < t) {
+            t = u1;
+          }
+        }
+      }
+    }
+  }
+
+  // Prevent camera from clipping inside target's head/body (min distance 0.65m)
+  const minAllowedT = length > 0.001 ? Math.min(1.0, 0.65 / length) : 1.0;
+  const finalT = Math.max(minAllowedT, t);
+
+  return start.clone().addScaledVector(dir, finalT);
+};
+
 export const GrifballGame: React.FC<GrifballGameProps> = ({
   isPlaying,
   isPaused,
@@ -294,6 +457,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
   // Replay Recording Refs
   const replayRecordingRef = useRef<ReplayFile | null>(null);
   const lastRecordTimeRef = useRef<number>(0);
+  const replayRecordingElapsedTimeRef = useRef<number>(0);
   // Keeps track of the last written tick state for each entity to optimize zero-movement checks
   const lastRecordedStateRef = useRef<Map<string, {
     pos: THREE.Vector3;
@@ -1792,54 +1956,63 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     }
 
     // Apply Camera transforms based on Observer Mode and Camera Mode settings
-    if (s.isObserverMode) {
-      if (s.observerCamMode === 'free') {
-        // Free Camera spectator mode
+    if (!replayData) {
+      if (s.isObserverMode) {
+        if (s.observerCamMode === 'free') {
+          // Free Camera spectator mode
+          const lookTarget = new THREE.Vector3(0, 0, -1);
+          lookTarget.applyAxisAngle(new THREE.Vector3(1, 0, 0), s.pitch);
+          lookTarget.applyAxisAngle(new THREE.Vector3(0, 1, 0), s.yaw);
+          
+          camera.position.copy(s.playerPos);
+          const centerLookAt = camera.position.clone().add(lookTarget);
+          camera.lookAt(centerLookAt);
+        } else if (s.observerCamMode === 'third') {
+          // Third Person orbital spectator mode
+          const targetData = getSpectateTargetData(s.observerTarget);
+          const targetEyePos = targetData.pos.clone();
+          targetEyePos.y += 1.65 - (targetData.isCrouching ? 0.72 : 0); // Eye height level
+
+          // Compute orbit offset using s.yaw and s.pitch as orbit angles
+          const offset = new THREE.Vector3(0, 0, s.observerOrbitDistance);
+          offset.applyAxisAngle(new THREE.Vector3(1, 0, 0), s.pitch);
+          offset.applyAxisAngle(new THREE.Vector3(0, 1, 0), s.yaw);
+
+          const cameraPos = targetEyePos.clone().add(offset);
+          
+          // Resolve wall/obstacle collisions to prevent clipping
+          const activeCustomMap = getActiveCustomMap();
+          const customMapObjects = (activeCustomMap && activeCustomMap.objects) || [];
+          const arenaRadius = activeCustomMap ? activeCustomMap.arenaRadius : s.arenaRadius;
+          const resolvedPos = getCollisionResolvedCameraPos(targetEyePos, cameraPos, arenaRadius, customMapObjects);
+
+          camera.position.copy(resolvedPos);
+          camera.lookAt(targetEyePos);
+        } else if (s.observerCamMode === 'first') {
+          // First Person spectator mode in sync with player being spectated
+          const targetData = getSpectateTargetData(s.observerTarget);
+          const currentCameraY = 1.65 - (targetData.isCrouching ? 0.72 : 0) + targetData.pos.y;
+          camera.position.set(targetData.pos.x, currentCameraY, targetData.pos.z);
+
+          const lookTarget = new THREE.Vector3(0, 0, -1);
+          lookTarget.applyAxisAngle(new THREE.Vector3(1, 0, 0), targetData.pitch);
+          lookTarget.applyAxisAngle(new THREE.Vector3(0, 1, 0), targetData.yaw);
+
+          const centerLookAt = camera.position.clone().add(lookTarget);
+          camera.lookAt(centerLookAt);
+        }
+      } else {
+        // Standard local Player First Person view
         const lookTarget = new THREE.Vector3(0, 0, -1);
         lookTarget.applyAxisAngle(new THREE.Vector3(1, 0, 0), s.pitch);
         lookTarget.applyAxisAngle(new THREE.Vector3(0, 1, 0), s.yaw);
         
-        camera.position.copy(s.playerPos);
-        const centerLookAt = camera.position.clone().add(lookTarget);
-        camera.lookAt(centerLookAt);
-      } else if (s.observerCamMode === 'third') {
-        // Third Person orbital spectator mode
-        const targetData = getSpectateTargetData(s.observerTarget);
-        const targetEyePos = targetData.pos.clone();
-        targetEyePos.y += 1.65 - (targetData.isCrouching ? 0.72 : 0); // Eye height level
-
-        // Compute orbit offset using s.yaw and s.pitch as orbit angles
-        const offset = new THREE.Vector3(0, 0, s.observerOrbitDistance);
-        offset.applyAxisAngle(new THREE.Vector3(1, 0, 0), s.pitch);
-        offset.applyAxisAngle(new THREE.Vector3(0, 1, 0), s.yaw);
-
-        const cameraPos = targetEyePos.clone().add(offset);
-        camera.position.copy(cameraPos);
-        camera.lookAt(targetEyePos);
-      } else if (s.observerCamMode === 'first') {
-        // First Person spectator mode in sync with player being spectated
-        const targetData = getSpectateTargetData(s.observerTarget);
-        const currentCameraY = 1.65 - (targetData.isCrouching ? 0.72 : 0) + targetData.pos.y;
-        camera.position.set(targetData.pos.x, currentCameraY, targetData.pos.z);
-
-        const lookTarget = new THREE.Vector3(0, 0, -1);
-        lookTarget.applyAxisAngle(new THREE.Vector3(1, 0, 0), targetData.pitch);
-        lookTarget.applyAxisAngle(new THREE.Vector3(0, 1, 0), targetData.yaw);
-
+        const currentCameraY = 1.65 - s.crouchAmount + s.playerPos.y;
+        camera.position.set(s.playerPos.x, currentCameraY, s.playerPos.z);
+        
         const centerLookAt = camera.position.clone().add(lookTarget);
         camera.lookAt(centerLookAt);
       }
-    } else {
-      // Standard local Player First Person view
-      const lookTarget = new THREE.Vector3(0, 0, -1);
-      lookTarget.applyAxisAngle(new THREE.Vector3(1, 0, 0), s.pitch);
-      lookTarget.applyAxisAngle(new THREE.Vector3(0, 1, 0), s.yaw);
-      
-      const currentCameraY = 1.65 - s.crouchAmount + s.playerPos.y;
-      camera.position.set(s.playerPos.x, currentCameraY, s.playerPos.z);
-      
-      const centerLookAt = camera.position.clone().add(lookTarget);
-      camera.lookAt(centerLookAt);
     }
 
     // Sync Debug Mode Traces (wireframe red impact zone circles)
@@ -2474,7 +2647,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
   // Handle multiplayer game synchronization logic
   useEffect(() => {
     const s = stateRef.current;
-    s.isObserverMode = (multiplayerRole === 'observer');
+    s.isObserverMode = (multiplayerRole === 'observer') || !!replayData;
 
     // Clean up or configure first person weapons
     if (s.isObserverMode) {
@@ -4610,103 +4783,104 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     }
 
     // 4. PROGRAMMATIC VOXEL CHARACTER ENEMY
-    const enemyGroup = buildVoxelSpartanModel(true, botColors['main_ai']);
-    enemyGroup.position.copy(stateRef.current.aiPos);
-    enemyGroup.userData.appliedHue = botColors['main_ai'];
-    scene.add(enemyGroup);
-    threeRef.current.enemyGroup = enemyGroup;
+    if (!replayData) {
+      const enemyGroup = buildVoxelSpartanModel(true, botColors['main_ai']);
+      enemyGroup.position.copy(stateRef.current.aiPos);
+      enemyGroup.userData.appliedHue = botColors['main_ai'];
+      scene.add(enemyGroup);
+      threeRef.current.enemyGroup = enemyGroup;
 
-    if (isMultiplayer) {
-      enemyGroup.visible = false; // Hide main singleplayer bot mesh in multiplayer
-    } else {
-      // In singleplayer, initialize additional custom AI bots and set positions based on offlineBotCount
-      const s = stateRef.current;
-      const botHues = [120, 280, 45, 60, 320, 180]; 
-      const botNames = ["DoomBot Green", "DoomBot Purple", "DoomBot Orange", "DoomBot Yellow", "DoomBot Magenta", "DoomBot Cyan"];
-      s.otherPlayers.clear();
-      
-      const customBotCount = Math.max(0, offlineBotCount - 1);
-      for (let i = 0; i < customBotCount; i++) {
-        const botId = `bot_${i+2}`;
-        const name = botNames[i % botNames.length];
-        const hue = botColors[botId] ?? botHues[i % botHues.length];
-        const diff = botDifficulties[botId] || 'normal';
+      if (isMultiplayer) {
+        enemyGroup.visible = false; // Hide main singleplayer bot mesh in multiplayer
+      } else {
+        // In singleplayer, initialize additional custom AI bots and set positions based on offlineBotCount
+        const s = stateRef.current;
+        const botHues = [120, 280, 45, 60, 320, 180]; 
+        const botNames = ["DoomBot Green", "DoomBot Purple", "DoomBot Orange", "DoomBot Yellow", "DoomBot Magenta", "DoomBot Cyan"];
+        s.otherPlayers.clear();
+        
+        const customBotCount = Math.max(0, offlineBotCount - 1);
+        for (let i = 0; i < customBotCount; i++) {
+          const botId = `bot_${i+2}`;
+          const name = botNames[i % botNames.length];
+          const hue = botColors[botId] ?? botHues[i % botHues.length];
+          const diff = botDifficulties[botId] || 'normal';
 
-        s.otherPlayers.set(botId, {
-          id: botId,
-          playerName: name,
-          pos: new THREE.Vector3(0, 0, 0),
-          vel: new THREE.Vector3(0, 0, 0),
-          yaw: 0,
-          pitch: 0,
-          hp: 1,
-          maxHp: 1,
-          isCrouching: false,
-          activeWeapon: 'hammer',
-          respawnTimer: 0,
-          hue: hue,
-          difficulty: diff,
-          score: 0,
-          kills: 0,
-          deaths: 0,
-          invulnerabilityTimer: s.settings.respawnInvulnerabilityDuration,
-          aiHammerJumpCooldownTimer: 0,
-          spawnTime: Date.now()
+          s.otherPlayers.set(botId, {
+            id: botId,
+            playerName: name,
+            pos: new THREE.Vector3(0, 0, 0),
+            vel: new THREE.Vector3(0, 0, 0),
+            yaw: 0,
+            pitch: 0,
+            hp: 1,
+            maxHp: 1,
+            isCrouching: false,
+            activeWeapon: 'hammer',
+            respawnTimer: 0,
+            hue: hue,
+            difficulty: diff,
+            score: 0,
+            kills: 0,
+            deaths: 0,
+            invulnerabilityTimer: s.settings.respawnInvulnerabilityDuration,
+            aiHammerJumpCooldownTimer: 0,
+            spawnTime: Date.now()
+          });
+        }
+
+        // Safe minimax dynamic spawning at mount time
+        s.playerPos.copy(getOptimalSpawnPoint([]));
+        s.yaw = getInwardSpawnYaw(s.playerPos);
+        
+        const exclude: THREE.Vector3[] = [s.playerPos];
+        s.aiPos.copy(getOptimalSpawnPoint(exclude));
+        s.aiYaw = getInwardSpawnYaw(s.aiPos);
+        exclude.push(s.aiPos);
+        
+        s.otherPlayers.forEach((bot) => {
+          const spawnPos = getOptimalSpawnPoint(exclude);
+          bot.pos.copy(spawnPos);
+          bot.yaw = getInwardSpawnYaw(spawnPos);
+          exclude.push(spawnPos);
         });
+
+        // Build Three.js meshes for all bots now that positions are set
+        s.otherPlayers.forEach((bot) => {
+          createOrUpdateRemotePlayer(bot.id, bot);
+        });
+
+        // Resize arena dynamically for total player count
+        resizeArena(1 + offlineBotCount);
       }
 
-      // Safe minimax dynamic spawning at mount time
-      s.playerPos.copy(getOptimalSpawnPoint([]));
-      s.yaw = getInwardSpawnYaw(s.playerPos);
+      // Enemy Weapon: Smaller gravity hammer held by Spartan
+      const enemyHammer = buildGravityHammerModel();
+      enemyHammer.scale.set(0.6, 0.6, 0.6); // Slightly smaller scale for ease
+      enemyHammer.position.set(0.5, 1.0 - 0.64, -0.4); // Hold positioned (adjusted for upper body pivot)
+      enemyHammer.rotation.set(Math.PI / 2, 0, 0); // forward weapon pose
       
-      const exclude: THREE.Vector3[] = [s.playerPos];
-      s.aiPos.copy(getOptimalSpawnPoint(exclude));
-      s.aiYaw = getInwardSpawnYaw(s.aiPos);
-      exclude.push(s.aiPos);
-      
-      s.otherPlayers.forEach((bot) => {
-        const spawnPos = getOptimalSpawnPoint(exclude);
-        bot.pos.copy(spawnPos);
-        bot.yaw = getInwardSpawnYaw(spawnPos);
-        exclude.push(spawnPos);
-      });
+      // Attach gravity hammer to the upper torso group so it rotates with chest aiming & swings
+      if (enemyGroup.userData.upperTorso) {
+        enemyGroup.userData.upperTorso.add(enemyHammer);
+      } else {
+        enemyGroup.add(enemyHammer);
+      }
+      threeRef.current.enemyHammer = enemyHammer;
 
-      // Build Three.js meshes for all bots now that positions are set
-      s.otherPlayers.forEach((bot) => {
-        createOrUpdateRemotePlayer(bot.id, bot);
-      });
-
-      // Resize arena dynamically for total player count
-      resizeArena(1 + offlineBotCount);
+      // Enemy Weapon: Smaller katar energy sword held by Spartan
+      const enemySword = buildKatarSwordModel();
+      enemySword.scale.set(0.6, 0.6, 0.6);
+      enemySword.position.set(0.5, 1.0 - 0.64, -0.32);
+      enemySword.rotation.set(Math.PI / 2, 0, -Math.PI / 8);
+      enemySword.visible = false; // Starts with hammer
+      if (enemyGroup.userData.upperTorso) {
+        enemyGroup.userData.upperTorso.add(enemySword);
+      } else {
+        enemyGroup.add(enemySword);
+      }
+      threeRef.current.enemySword = enemySword;
     }
-
-
-    // Enemy Weapon: Smaller gravity hammer held by Spartan
-    const enemyHammer = buildGravityHammerModel();
-    enemyHammer.scale.set(0.6, 0.6, 0.6); // Slightly smaller scale for ease
-    enemyHammer.position.set(0.5, 1.0 - 0.64, -0.4); // Hold positioned (adjusted for upper body pivot)
-    enemyHammer.rotation.set(Math.PI / 2, 0, 0); // forward weapon pose
-    
-    // Attach gravity hammer to the upper torso group so it rotates with chest aiming & swings
-    if (enemyGroup.userData.upperTorso) {
-      enemyGroup.userData.upperTorso.add(enemyHammer);
-    } else {
-      enemyGroup.add(enemyHammer);
-    }
-    threeRef.current.enemyHammer = enemyHammer;
-
-    // Enemy Weapon: Smaller katar energy sword held by Spartan
-    const enemySword = buildKatarSwordModel();
-    enemySword.scale.set(0.6, 0.6, 0.6);
-    enemySword.position.set(0.5, 1.0 - 0.64, -0.32);
-    enemySword.rotation.set(Math.PI / 2, 0, -Math.PI / 8);
-    enemySword.visible = false; // Starts with hammer
-    if (enemyGroup.userData.upperTorso) {
-      enemyGroup.userData.upperTorso.add(enemySword);
-    } else {
-      enemyGroup.add(enemySword);
-    }
-    threeRef.current.enemySword = enemySword;
 
     // 5. FIRST-PERSON WEAPON CONTAINER
     const fpWeaponContainer = new THREE.Group();
@@ -5412,6 +5586,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         pos: { x: s.aiPos.x, y: s.aiPos.y, z: s.aiPos.z },
         vel: { x: s.aiVel.x, y: s.aiVel.y, z: s.aiVel.z },
         yaw: s.aiYaw,
+        pitch: s.aiPitch || 0,
         hp: s.aiHP,
         isCrouching: s.aiIsCrouching,
         activeWeapon: s.aiActiveWeapon,
@@ -5462,6 +5637,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         pos: { x: bot.pos.x, y: bot.pos.y, z: bot.pos.z },
         vel: { x: bot.vel.x, y: bot.vel.y, z: bot.vel.z },
         yaw: bot.yaw,
+        pitch: bot.pitch || 0,
         hp: bot.hp,
         isCrouching: bot.isCrouching,
         activeWeapon: bot.activeWeapon,
@@ -5514,8 +5690,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     replayRecordingRef.current = null;
 
     // Calculate final duration
-    const s = stateRef.current;
-    recording.duration = s.gameTime;
+    recording.duration = replayRecordingElapsedTimeRef.current;
 
     try {
       await cacheReplay(recording);
@@ -5593,6 +5768,11 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       diffYaw = Math.atan2(Math.sin(diffYaw), Math.cos(diffYaw));
       const yaw = yawA + diffYaw * alpha;
 
+      // Interpolate Pitch
+      const pitchA = stateA.pitch || 0;
+      const pitchB = stateB.pitch || 0;
+      const pitch = pitchA + (pitchB - pitchA) * alpha;
+
       // Crouch scale interpolation
       const crouchA = stateA.isCrouching ? 0.65 : 1.0;
       const crouchB = stateB.isCrouching ? 0.65 : 1.0;
@@ -5606,7 +5786,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         pos,
         vel,
         yaw,
-        pitch: (nearestState as any).pitch || 0,
+        pitch,
         crouchScaleY,
         hp: nearestState.hp,
         activeWeapon: nearestState.activeWeapon,
@@ -5625,7 +5805,11 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
     // Recorded Local Player (Blue)
     const pInterp = interpolatePlayer('player', replayData.playerName, replayData.playerHue);
-    if (pInterp) {
+    const isRecordedObserver = replayData.recordedAsObserver === true || 
+      (replayData.mode === 'multiplayer' && 
+       replayData.frames.some(f => f.otherPlayers && f.otherPlayers.length >= 2 && f.otherPlayers.some(p => p.playerName.includes('(Host)')) && f.otherPlayers.some(p => p.playerName.includes('(Guest)'))));
+
+    if (pInterp && !isRecordedObserver) {
       updatedPlayers.set('player', { ...pInterp, name: replayData.playerName, hue: replayData.playerHue });
     }
 
@@ -5704,7 +5888,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
       // Sync Weapon Visibilities
       const alive = player.hp > 0 && player.respawnTimer <= 0;
-      group.visible = alive;
+      const isSpectatedInFirstPerson = s.observerCamMode === 'first' && targetId === id;
+      group.visible = alive && !isSpectatedInFirstPerson;
       hammer.visible = alive && player.activeWeapon === 'hammer';
       sword.visible = alive && player.activeWeapon === 'sword';
       if (pistol) pistol.visible = alive && player.activeWeapon === 'pistol';
@@ -5750,6 +5935,59 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     const targetId = replayTargetIdRef.current;
     if (targetId === 'free') {
       s.observerCamMode = 'free';
+
+      // Read movement inputs to fly the camera
+      const forwardDir = new THREE.Vector3(0, 0, -1)
+        .applyAxisAngle(new THREE.Vector3(1, 0, 0), s.pitch)
+        .applyAxisAngle(new THREE.Vector3(0, 1, 0), s.yaw)
+        .normalize();
+      const rightDir = new THREE.Vector3(1, 0, 0)
+        .applyAxisAngle(new THREE.Vector3(0, 1, 0), s.yaw)
+        .normalize();
+      const upDir = new THREE.Vector3(0, 1, 0);
+
+      let moveForward = 0;
+      let moveRight = 0;
+      let moveUp = 0;
+
+      if (keysPressed.current[keybindingsRef.current.moveForward] || keysPressed.current['arrowup']) moveForward += 1;
+      if (keysPressed.current[keybindingsRef.current.moveBackward] || keysPressed.current['arrowdown']) moveForward -= 1;
+      if (keysPressed.current[keybindingsRef.current.moveRight] || keysPressed.current['arrowright']) moveRight += 1;
+      if (keysPressed.current[keybindingsRef.current.moveLeft] || keysPressed.current['arrowleft']) moveRight -= 1;
+
+      // Gamepad inputs
+      const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
+      let gamepad = null;
+      for (let i = 0; i < gamepads.length; i++) {
+        if (gamepads[i]) {
+          gamepad = gamepads[i];
+          break;
+        }
+      }
+
+      if (gamepad) {
+        const lx = gamepad.axes[0];
+        const ly = gamepad.axes[1];
+        const moveDeadzone = 0.18;
+        if (Math.abs(ly) > moveDeadzone) moveForward -= ly;
+        if (Math.abs(lx) > moveDeadzone) moveRight += lx;
+      }
+
+      // Rise/Lower
+      const gpJump = gamepad ? gamepad.buttons[keybindingsRef.current.gamepadJump ?? 0]?.pressed : false;
+      const gpCrouch = gamepad ? gamepad.buttons[keybindingsRef.current.gamepadCrouch ?? 1]?.pressed : false;
+
+      if (keysPressed.current[keybindingsRef.current.jump] || keysPressed.current['spacebar'] || gpJump) moveUp += 1;
+      if (keysPressed.current[keybindingsRef.current.crouch] || gpCrouch) moveUp -= 1;
+
+      const gpSprint = gamepad ? gamepad.buttons[keybindingsRef.current.gamepadSprint ?? 10]?.pressed : false;
+      const speedMultiplier = (keysPressed.current['shift'] || gpSprint) ? 2.8 : 1.0;
+      const flySpeed = 11.0 * speedMultiplier * dt;
+
+      s.playerPos.addScaledVector(forwardDir, moveForward * flySpeed);
+      s.playerPos.addScaledVector(rightDir, moveRight * flySpeed);
+      s.playerPos.addScaledVector(upDir, moveUp * flySpeed);
+
       const lookTarget = new THREE.Vector3(0, 0, -1)
         .applyAxisAngle(new THREE.Vector3(1, 0, 0), s.pitch)
         .applyAxisAngle(new THREE.Vector3(0, 1, 0), s.yaw)
@@ -5773,11 +6011,32 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
           const offset = new THREE.Vector3(0, 0, s.observerOrbitDistance)
             .applyAxisAngle(new THREE.Vector3(1, 0, 0), s.pitch)
             .applyAxisAngle(new THREE.Vector3(0, 1, 0), s.yaw);
-          camera.position.copy(targetEyePos.clone().add(offset));
+          const cameraPos = targetEyePos.clone().add(offset);
+
+          // Resolve wall/obstacle collisions to prevent clipping in replay mode
+          const activeCustomMap = getActiveCustomMap();
+          const customMapObjects = (activeCustomMap && activeCustomMap.objects) || [];
+          const arenaRadius = activeCustomMap ? activeCustomMap.arenaRadius : s.arenaRadius;
+          const resolvedPos = getCollisionResolvedCameraPos(targetEyePos, cameraPos, arenaRadius, customMapObjects);
+
+          camera.position.copy(resolvedPos);
           camera.lookAt(targetEyePos);
         }
       }
     }
+
+    // 6b. Update first person weapon visibilities for spectated players
+    let fpWeaponToShow: 'hammer' | 'sword' | 'pistol' | 'none' = 'none';
+    if (s.observerCamMode === 'first' && targetId !== 'free') {
+      const spectatedData = updatedPlayers.get(targetId);
+      if (spectatedData && spectatedData.hp > 0 && spectatedData.respawnTimer <= 0) {
+        fpWeaponToShow = spectatedData.activeWeapon;
+      }
+    }
+
+    if (threeRef.current.playerHammer) threeRef.current.playerHammer.visible = fpWeaponToShow === 'hammer';
+    if (threeRef.current.playerSword) threeRef.current.playerSword.visible = fpWeaponToShow === 'sword';
+    if (threeRef.current.playerPistol) threeRef.current.playerPistol.visible = fpWeaponToShow === 'pistol';
 
     // 7. Render scene
     renderGame();
@@ -5891,6 +6150,14 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       observerTargetName: spectatedName,
       observerTargetRole: spectatedRole
     });
+
+    // 10. Update visual effects particles during replay
+    const playbackDt = isReplayPausedRef.current ? 0 : dt * replaySpeedRef.current;
+    updateExplosionParticles(playbackDt);
+    updateTracers(playbackDt);
+    updateHammerSplashFlashes(playbackDt);
+    updateSwordLungeSpeedLines(playbackDt);
+    updateBurnDecals(playbackDt);
   };
 
   // Handle active game cycles
@@ -5915,9 +6182,11 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         mapType: selectedMap || 'hangar',
         mode: isTournament ? 'tournament' : 'sandbox',
         maxScore: isTournament ? (matchKillsToWin ?? 25) : 25,
+        recordedAsObserver: s.isObserverMode,
         frames: []
       };
       lastRecordTimeRef.current = 0;
+      replayRecordingElapsedTimeRef.current = 0;
       lastRecordedStateRef.current.clear();
       console.log('Match Replay Recording initialized successfully!');
     }
@@ -6111,7 +6380,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
         // Capture Replay Frame every 50ms (20Hz)
         if (replayRecordingRef.current) {
-          const currentMatchTime = s.gameTime;
+          replayRecordingElapsedTimeRef.current += dt;
+          const currentMatchTime = replayRecordingElapsedTimeRef.current;
           if (currentMatchTime - lastRecordTimeRef.current >= 0.05) {
             lastRecordTimeRef.current = currentMatchTime;
             recordReplayFrame(currentMatchTime);
