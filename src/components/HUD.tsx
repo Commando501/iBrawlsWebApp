@@ -1065,7 +1065,7 @@ export const HUD: React.FC<HUDProps> = ({
             <div className="flex items-center justify-between w-full gap-4 py-1.5 px-3 bg-cyan-950/40 border border-cyan-500/20 rounded-lg">
               {/* Previous target button */}
               <button
-                onClick={() => window.dispatchEvent(new CustomEvent('cycle-observer-target'))}
+                onClick={() => window.dispatchEvent(new CustomEvent('cycle-observer-target', { detail: { direction: 'prev' } }))}
                 className="pointer-events-auto text-cyan-400 hover:text-cyan-300 font-black text-lg transition-all p-1 hover:scale-125 cursor-pointer bg-transparent border-none animate-pulse"
                 title="Select Previous Target"
               >
@@ -1086,7 +1086,7 @@ export const HUD: React.FC<HUDProps> = ({
               
               {/* Next target button */}
               <button
-                onClick={() => window.dispatchEvent(new CustomEvent('cycle-observer-target'))}
+                onClick={() => window.dispatchEvent(new CustomEvent('cycle-observer-target', { detail: { direction: 'next' } }))}
                 className="pointer-events-auto text-cyan-400 hover:text-cyan-300 font-black text-lg transition-all p-1 hover:scale-125 cursor-pointer bg-transparent border-none animate-pulse"
                 title="Select Next Target"
               >

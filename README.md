@@ -85,6 +85,8 @@ iBrawls includes a high-fidelity 3D "Theater Mode" archive that allows players t
 - **Interpolation Engine**: Angles are resolved using shortest-path wrapping:
   $$\Delta\theta = \text{atan2}(\sin(\theta_B - \theta_A), \cos(\theta_B - \theta_A))$$
   to prevent visual spin flips when yaw bounds are crossed. Position coordinates are interpolated using linear LERP, presenting a fluid 60FPS spectator experience.
+- **Full Joint & Skeletal Animations**: Spartan models dynamically run walk/run/sprint leg cycles, crouch/slide leaning, and weapon swinging/melee sweeping torso twists during playback by executing the full `animateSpartanModel` skeletal animation engine in the replay loop.
+- **Replicated VFX and Audio Cues**: Dashing, lunging, and weapon swings automatically trigger their matching sound effects, speed lines trails, evasion box particles, and colossal hammer ground-impact splash explosions, shockwaves, and ground burn decals.
 - **Rolling Match Cache**: Features a local rolling cache of the last **5 auto-saved matches** (via IndexedDB) that overwrite sequentially. Players can commit cache items permanently to the **Replays Archive** with custom titles and descriptions.
 - **Spectator Controls**: A bottom glassmorphism timeline control bar enables:
   - Timeline scrubbing/seeking to any second of the match.

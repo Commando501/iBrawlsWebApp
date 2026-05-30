@@ -426,6 +426,10 @@ export interface ReplayFrame {
     isCrouching: boolean;
     isJumping: boolean;
     isLunging: boolean;
+    isDashing?: boolean;
+    isSprinting?: boolean;
+    isSliding?: boolean;
+    weaponTimer?: number;
     activeWeapon: 'hammer' | 'sword' | 'pistol';
     weaponState: string;
     score: number;
@@ -441,6 +445,11 @@ export interface ReplayFrame {
     pitch?: number;
     hp: number;
     isCrouching: boolean;
+    isLunging?: boolean;
+    isDashing?: boolean;
+    isSprinting?: boolean;
+    isSliding?: boolean;
+    weaponTimer?: number;
     activeWeapon: 'hammer' | 'sword';
     weaponState: string;
     score: number;
@@ -459,6 +468,11 @@ export interface ReplayFrame {
     pitch?: number;
     hp: number;
     isCrouching: boolean;
+    isLunging?: boolean;
+    isDashing?: boolean;
+    isSprinting?: boolean;
+    isSliding?: boolean;
+    weaponTimer?: number;
     activeWeapon: 'hammer' | 'sword';
     weaponState: string;
     score: number;

@@ -478,6 +478,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
   const isReplayPausedRef = useRef<boolean>(false);
   const replayTargetIdRef = useRef<string>('free');
   const prevReplayFrameRef = useRef<ReplayFrame | null>(null);
+  const replayPlayerIdsRef = useRef<string[]>([]);
 
   // Core Game State refs to avoid state-delay in the animation/render loop
   const stateRef = useRef<{
@@ -3457,6 +3458,37 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     };
   };
 
+  const cycleReplayTarget = (direction: 'next' | 'prev' = 'next') => {
+    const playerIds = replayPlayerIdsRef.current;
+    if (!playerIds || playerIds.length === 0) return;
+
+    // Cycle includes 'free', then all player IDs
+    const targets = ['free', ...playerIds];
+    const currentTarget = replayTargetIdRef.current || 'free';
+    
+    let currentIndex = targets.indexOf(currentTarget);
+    if (currentIndex === -1) currentIndex = 0;
+
+    let nextIndex;
+    if (direction === 'next') {
+      nextIndex = (currentIndex + 1) % targets.length;
+    } else {
+      nextIndex = (currentIndex - 1 + targets.length) % targets.length;
+    }
+
+    const nextTarget = targets[nextIndex];
+    replayTargetIdRef.current = nextTarget;
+    console.log('Replay target cycled to:', nextTarget);
+    
+    // Also auto-switch from free to third-person orbital camera if locking onto a player
+    const s = stateRef.current;
+    if (s && nextTarget !== 'free' && s.observerCamMode === 'free') {
+      s.observerCamMode = 'third';
+    }
+
+    pushStatsUpdate();
+  };
+
   const rebuildEnemyModel = (hue: number) => {
     const s = stateRef.current;
     const scene = threeRef.current.scene;
@@ -4997,6 +5029,25 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         }
 
         if (key === 'arrowleft' || key === 'arrowright' || key === '1' || key === '2') {
+          if (replayData) {
+            if (key === 'arrowleft' || key === 'arrowright') {
+              cycleReplayTarget(key === 'arrowleft' ? 'prev' : 'next');
+              return;
+            } else {
+              const playerIds = replayPlayerIdsRef.current;
+              const idx = key === '1' ? 0 : 1;
+              if (playerIds && playerIds[idx]) {
+                replayTargetIdRef.current = playerIds[idx];
+                if (s.observerCamMode === 'free') {
+                  s.observerCamMode = 'third';
+                }
+                console.log('Replay Cam Target set to:', replayTargetIdRef.current);
+                pushStatsUpdate();
+              }
+              return;
+            }
+          }
+
           if (key === '1') {
             s.observerTarget = 'host';
           } else if (key === '2') {
@@ -5132,9 +5183,13 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       const s = stateRef.current;
       if (s.isObserverMode) {
         if (e.button === 0) {
-          s.observerTarget = s.observerTarget === 'host' ? 'client' : 'host';
-          console.log('Spectator Target cycled to:', s.observerTarget);
-          pushStatsUpdate();
+          if (replayData) {
+            cycleReplayTarget('next');
+          } else {
+            s.observerTarget = s.observerTarget === 'host' ? 'client' : 'host';
+            console.log('Spectator Target cycled to:', s.observerTarget);
+            pushStatsUpdate();
+          }
         }
         return;
       }
@@ -5377,12 +5432,18 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       pushStatsUpdate();
     };
 
-    const handleCycleObserverTarget = () => {
+    const handleCycleObserverTarget = (e?: Event) => {
       const s = stateRef.current;
       if (!s || !s.isObserverMode) return;
-      s.observerTarget = s.observerTarget === 'host' ? 'client' : 'host';
-      console.log('Spectator Target toggled to:', s.observerTarget);
-      pushStatsUpdate();
+      if (replayData) {
+        const customEvent = e as CustomEvent;
+        const direction = (customEvent?.detail?.direction === 'prev') ? 'prev' : 'next';
+        cycleReplayTarget(direction);
+      } else {
+        s.observerTarget = s.observerTarget === 'host' ? 'client' : 'host';
+        console.log('Spectator Target toggled to:', s.observerTarget);
+        pushStatsUpdate();
+      }
     };
 
     window.addEventListener('cycle-observer-mode', handleCycleObserverMode);
@@ -5533,6 +5594,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     };
 
     // 1. Process Local Player
+    const pSpeed = s.playerVel.length();
     const playerState = {
       pos: { x: s.playerPos.x, y: s.playerPos.y, z: s.playerPos.z },
       vel: { x: s.playerVel.x, y: s.playerVel.y, z: s.playerVel.z },
@@ -5542,6 +5604,10 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       isCrouching: s.isCrouching,
       isJumping: s.isJumping || false,
       isLunging: s.isLunging || false,
+      isDashing: s.playerDashRemaining > 0,
+      isSprinting: s.settings.enableSprint && (pSpeed > 5.5 && !s.isCrouching && !s.isJumping && s.playerDashRemaining <= 0),
+      isSliding: s.playerSlideActive || false,
+      weaponTimer: s.activeWeapon === 'hammer' ? s.pWeaponTimer : s.pSwordTimer,
       activeWeapon: s.activeWeapon,
       weaponState: s.pWeaponState === 'ready' && s.pSwordState !== 'ready' ? s.pSwordState : s.pWeaponState,
       score: s.scorePlayer,
@@ -5589,6 +5655,11 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         pitch: s.aiPitch || 0,
         hp: s.aiHP,
         isCrouching: s.aiIsCrouching,
+        isLunging: s.aiState === 'LUNGING' || s.aiIsLunging || false,
+        isDashing: s.aiDashRemaining > 0,
+        isSprinting: s.aiIsSprinting || false,
+        isSliding: s.aiSlideActive || false,
+        weaponTimer: s.aiWeaponTimer || 0,
         activeWeapon: s.aiActiveWeapon,
         weaponState: s.aiWeaponState,
         score: s.scoreEnemy,
@@ -5640,6 +5711,11 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         pitch: bot.pitch || 0,
         hp: bot.hp,
         isCrouching: bot.isCrouching,
+        isLunging: bot.isLunging || bot.aiState === 'LUNGING' || false,
+        isDashing: (bot.aiDashRemaining || 0) > 0,
+        isSprinting: bot.aiIsSprinting || false,
+        isSliding: bot.aiSlideActive || false,
+        weaponTimer: bot.weaponTimer ?? 0,
         activeWeapon: bot.activeWeapon,
         weaponState: bot.weaponState || 'ready',
         score: bot.score ?? 0,
@@ -5792,6 +5868,11 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         activeWeapon: nearestState.activeWeapon,
         weaponState: nearestState.weaponState,
         isCrouching: nearestState.isCrouching,
+        isLunging: nearestState.isLunging || false,
+        isDashing: nearestState.isDashing || false,
+        isSprinting: nearestState.isSprinting || false,
+        isSliding: nearestState.isSliding || false,
+        weaponTimer: nearestState.weaponTimer || 0,
         score: nearestState.score,
         kills: nearestState.kills,
         deaths: nearestState.deaths,
@@ -5845,6 +5926,12 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       }
     });
 
+    // Sync the player IDs present in the replay
+    replayPlayerIdsRef.current = Array.from(updatedPlayers.keys());
+
+    // Read the current replay camera target ID (needed for first-person model hiding)
+    const targetId = replayTargetIdRef.current;
+
     // 5. Update threeRef meshes using updatedPlayers map
     updatedPlayers.forEach((player, id) => {
       let meshes = threeRef.current.otherPlayerMeshes.get(id);
@@ -5886,6 +5973,19 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       group.rotation.y = player.yaw;
       group.scale.set(1, player.crouchScaleY, 1);
 
+      // Call standard skeletal/joint animations for replays (running, walking, torso twists, swings)
+      animateSpartanModel(
+        group,
+        player.vel,
+        player.yaw,
+        player.hp,
+        player.weaponState,
+        player.weaponTimer || 0,
+        dt,
+        player.isSliding || false,
+        player.isSprinting || false
+      );
+
       // Sync Weapon Visibilities
       const alive = player.hp > 0 && player.respawnTimer <= 0;
       const isSpectatedInFirstPerson = s.observerCamMode === 'first' && targetId === id;
@@ -5918,6 +6018,45 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         sword.rotation.set(Math.PI / 2, 0, -Math.PI / 8);
       }
 
+      // Sword lunge speed lines or cube trail VFX replication
+      if (player.isLunging && alive && dt > 0) {
+        const trailPos = player.pos.clone();
+        trailPos.y += 0.825; // Body center y height
+        const trailDir = player.vel.clone();
+        const style: 'localCube' | 'enemyCube' = (id === 'player' || player.playerName === replayData.playerName) ? 'localCube' : 'enemyCube';
+        const color = (id === 'player' || player.playerName === replayData.playerName) ? '#22d3ee' : '#ef4444';
+        renderSwordLungeTrailVfx(trailPos, color, trailDir, style);
+      }
+
+      // Evasion dash trail particles replication
+      if (player.isDashing && alive && dt > 0 && Math.random() > 0.15) {
+        const trailPos = player.pos.clone();
+        trailPos.y += 0.5; // midway
+        if (scene) {
+          const geo = new THREE.BoxGeometry(0.12, 0.12, 0.12);
+          const colorHex = (id === 'player' || player.playerName === replayData.playerName)
+            ? '#38bdf8'
+            : (player.activeWeapon === 'hammer' ? '#f97316' : '#ef4444');
+          const mat = new THREE.MeshBasicMaterial({
+            color: new THREE.Color(colorHex),
+            transparent: true,
+            opacity: 0.75,
+          });
+          const mesh = new THREE.Mesh(geo, mat);
+          mesh.position.copy(trailPos);
+          mesh.position.x += (Math.random() - 0.5) * 0.3;
+          mesh.position.y += (Math.random() - 0.5) * 0.5;
+          mesh.position.z += (Math.random() - 0.5) * 0.3;
+          scene.add(mesh);
+          threeRef.current.damageExplosionParticles.push({
+            mesh,
+            velocity: new THREE.Vector3((Math.random() - 0.5) * 0.4, Math.random() * 0.2, (Math.random() - 0.5) * 0.4),
+            life: 0.0,
+            maxLife: 0.25 + Math.random() * 0.15,
+          });
+        }
+      }
+
       updateBlinking(group, player.invulnerabilityTimer > 0);
     });
 
@@ -5932,7 +6071,6 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     if (threeRef.current.hostGroup) threeRef.current.hostGroup.visible = false;
 
     // 6. Camera Coordination
-    const targetId = replayTargetIdRef.current;
     if (targetId === 'free') {
       s.observerCamMode = 'free';
 
@@ -6080,6 +6218,25 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
             if (player.isLunging && !prevState.isLunging) {
               sfx.playDash();
+            }
+
+            if (player.isDashing && !prevState.isDashing) {
+              sfx.playDash();
+            }
+
+            const wasSwingingDown = prevState.weaponState === 'swing_down' || prevState.weaponState === 'melee_swing';
+            const isSwingingDownNow = player.weaponState === 'swing_down' || player.weaponState === 'melee_swing';
+            if (wasSwingingDown && !isSwingingDownNow && player.activeWeapon === 'hammer' && prevState.activeWeapon === 'hammer') {
+              sfx.playExplosion();
+              const eyeHeight = 1.65 - (player.isCrouching ? 0.72 : 0);
+              const eyePos = new THREE.Vector3(player.pos.x, eyeHeight + player.pos.y, player.pos.z);
+              const lookHeading = new THREE.Vector3(0, 0, -1)
+                .applyAxisAngle(new THREE.Vector3(1, 0, 0), player.pitch || 0)
+                .applyAxisAngle(new THREE.Vector3(0, 1, 0), player.yaw)
+                .normalize();
+              const impactPos = eyePos.clone().addScaledVector(lookHeading, s.settings.attackRange || 4.0);
+              const impactRadius = s.settings.attackRadius ?? 4.5;
+              renderHammerSplashVfx(impactPos, (id === 'player' || player.playerName === replayData.playerName) ? '#38bdf8' : '#ef4444', impactRadius);
             }
           }
         });
