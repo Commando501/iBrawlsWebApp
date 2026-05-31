@@ -161,6 +161,7 @@ Local play setups feature an interactive map selector overlay supported by a dyn
 - **Forerunner Canyon Plateau (Preset)**: A suspended rectangular forerunner arena hovering over a golden desert canyon at sunset. Features team-colored spires (Blue on the left, Red on the right) and a majestic background beacon tower.
 - **Neon Outrun Grid (Preset)**: A suspended rectangular retro holodeck hovering over a glowing cyber city at twilight. Features glowing neon palm trees, background light beams, and a colossal striped sunset sun.
 - **Rainy Cyber Streets (Preset)**: A dark, rain-slicked industrial street court under warm sodium spotlights, framed by towering skyscrapers and a giant neon dog billboard.
+- **Glacier Hockey Rink (Preset)**: A pristine rectangular ice hockey arena set in a beautiful, sunlit arctic glacier valley. Features surrounding clear-blue acrylic glass boards, red hockey goal posts, background icebergs, snowy pine trees, and gently falling snow.
 - **Custom Local Map**: Load a custom map file (`.json`) exported from the local Standalone Map Maker. The 3D thumbnail preview updates in real-time to render all placed obstacles, light sources, and spawn points in miniature!
 
 ## Standalone 3D Map Maker
@@ -182,11 +183,11 @@ iBrawls features a beautiful, feature-rich, and completely standalone 3D Map Mak
 - **Multi-Plane 3D Rotation**: Rotate selected objects across all three dimensions (Pitch, Yaw, and Roll) using either the 3D circular gizmos directly in the canvas or the range sliders in the sidebar panel.
 - **Sleek Cyberpunk Design System**: High-fidelity glassmorphic styles and dark themes for all sidebar components (inputs, dropdowns, range sliders with glowing cyan thumbs, scrollbars, and buttons) to create a premium, state-of-the-art battle arena builder.
 - **Categorized 3D Asset Catalog**: A searchable catalog of 17+ pre-made futuristic obstacles classified into:
-  - 🏗️ *Structures & Cover*: Translucent energy shield gates, reinforced concrete barriers, and giant titanium walls.
+  - 🏗️ *Structures & Cover*: Translucent energy shield gates, reinforced concrete barriers, giant titanium walls, and red-framed ice hockey goals.
   - ⚡ *Hazards & Energy*: Glowing plasma cores, fusion energy pillars, leaking toxic drums, and quantum warp relics.
   - 📦 *Industrial & Space*: Heavy steel cargo boxes, weapon lockboxes, pressurized gas cylinders, and nanite stasis pods.
-  - 🌿 *Nature & Ruins*: Mossy stone monoliths, ancient obelisks carved with purple glowing magic runes, and organic boulders.
-  - 👽 *Alien & Forerunner*: Ornate forerunner sentry spires, reflective gold pedestals, and levitating gravity anchors.
+  - 🌿 *Nature & Ruins*: Mossy stone monoliths, ancient obelisks carved with purple glowing magic runes, organic boulders, and snow-covered boulders.
+  - 👽 *Alien & Forerunner*: Ornate forerunner sentry spires, reflective gold pedestals, levitating gravity anchors, and glowing glacier ice crystals.
   - 📐 *Primitives*: Clean untextured cubes, cylinders, and spheres for direct greybox blockouts.
 - **Flexible Object Placement**: Place and transform Box, Cylinder, and Sphere obstacles. Modify dimensions, position, rotation, opacity, metalness, roughness, colors, emissive neon glow, and collidable status (`isCollidable`).
 - **Flexible Arena Shapes**: Toggle between **Circular** and **Rectangular** boundaries. The rectangular court uses a standard 2:1 aspect ratio with a dedicated rectangular grid helper.
@@ -200,6 +201,7 @@ iBrawls features a beautiful, feature-rich, and completely standalone 3D Map Mak
   - *Forerunner*: Dark metal panels with gold circuits (`forerunner_panel`), Ornate etched gold plating (`forerunner_gold`).
   - *Synthwave*: Synthwave Cyan Grid (`synthwave_grid`), Neon Laser Energy (`synthwave_neon_laser`), Sunset Chrome (`synthwave_chrome`).
   - *Rainy Streets*: Wet Asphalt Tarmac (`rainy_streets_asphalt`), Amber Neon Glow (`rainy_streets_neon_glow`), Tech Dog Billboard (`rainy_streets_dog_billboard`).
+  - *Winter Glacier*: Glacier Rink Ice (`winter_ice`), Powdery Snow (`winter_snow`), Translucent Frost Glass (`winter_glacier_glass`).
 - **Automated Nav-Mesh Baking**: Spatial analysis engine automatically runs spartan clearance tests ($0.65\text{m}$) against circular or rectangular collidable boundaries to generate a 2D Node Navigation Grid. Walkable paths are visualized as beautiful glowing green nodes with blue connection lines in the editor viewport!
 - **Local File System IO**: Fully offline-based import and export. Save maps as local `.json` files to distribute to other players or load them directly in the game lobby for training skirmishes.
 

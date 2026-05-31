@@ -197,6 +197,7 @@ export interface LegacyRosterProps {
   botWeaponBehaviors?: Record<string, string>;
   botArchetypes?: Record<string, string>;
   botColors?: Record<string, number>;
+  botNames?: Record<string, string>;
 }
 
 /** Resolve one combatant's merged roster slot from template + legacy grid props. */
@@ -208,13 +209,14 @@ export function resolveRosterSlotForCombatant(
   const template = rosterTemplateFromSettings(settings);
   const override = rosterOverrideFromLegacyProps(
     botId === 'main_ai'
-      ? { hue: legacy.botColors?.[botId] }
+      ? { hue: legacy.botColors?.[botId], name: legacy.botNames?.[botId] }
       : {
           difficulty: legacy.botDifficulties?.[botId],
           behavior: legacy.botBehaviors?.[botId],
           weaponBehavior: legacy.botWeaponBehaviors?.[botId],
           archetype: legacy.botArchetypes?.[botId],
           hue: legacy.botColors?.[botId],
+          name: legacy.botNames?.[botId],
         }
   );
   return mergeRosterSlotConfig(template, override);

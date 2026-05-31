@@ -74,7 +74,7 @@ import { ChatOverlay, ChatMessage } from './components/ChatOverlay';
 import { CharacterPreview } from './components/CharacterPreview';
 import { CharacterLoadout, DEFAULT_LOADOUT, AVAILABLE_PRESETS, HelmetPreset, TorsoPreset, ArmPreset, LegPreset } from './components/VoxelModels';
 
-const APP_VERSION = '0.526';
+const APP_VERSION = '0.530';
 const MAX_PLAYER_NAME_LENGTH = 10;
 
 interface OnlineClient {
@@ -698,6 +698,8 @@ const MapPreview: React.FC<{ selectedMap: string; customMap?: CustomMapData | nu
         floorColor = '#0a0518';
       } else if (mapData.theme === 'rainy_streets') {
         floorColor = '#0f121a';
+      } else if (mapData.theme === 'winter_rink') {
+        floorColor = '#e0f2fe';
       }
       
       floor.geometry.dispose();
@@ -4311,6 +4313,7 @@ export default function App() {
                                     onClick={() => {
                                       setSelectedReplay(replay);
                                       setIsPlaying(true);
+                                      setIsPaused(false);
                                     }}
                                     className="px-3 h-7 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-[9.5px] font-black text-white uppercase tracking-widest rounded border border-emerald-500/20 hover:shadow-[0_0_10px_rgba(16,185,129,0.3)] transition-all cursor-pointer flex items-center gap-1.5"
                                   >
@@ -4417,6 +4420,7 @@ export default function App() {
                                     onClick={() => {
                                       setSelectedReplay(replay);
                                       setIsPlaying(true);
+                                      setIsPaused(false);
                                     }}
                                     className="px-3 h-7 bg-gradient-to-r from-amber-600 to-yellow-600 hover:from-amber-500 hover:to-yellow-500 text-[9.5px] font-black text-white uppercase tracking-widest rounded border border-amber-500/20 hover:shadow-[0_0_10px_rgba(245,158,11,0.3)] transition-all cursor-pointer flex items-center gap-1.5"
                                   >
@@ -6020,7 +6024,7 @@ export default function App() {
                     <option value="circle">🌐 Circle Arena (Minimalist)</option>
                     {PREMADE_MAPS.map(m => (
                       <option key={m.id} value={m.id}>
-                        {m.theme === 'cyberpunk' ? '🌐' : m.theme === 'nature' ? '🌳' : m.theme === 'space' ? '🚀' : m.theme === 'synthwave' ? '🌴' : m.theme === 'rainy_streets' ? '🌧️' : '⚔️'} {m.name} (Preset)
+                        {m.theme === 'cyberpunk' ? '🌐' : m.theme === 'nature' ? '🌳' : m.theme === 'space' ? '🚀' : m.theme === 'synthwave' ? '🌴' : m.theme === 'rainy_streets' ? '🌧️' : m.theme === 'winter_rink' ? '❄️' : '⚔️'} {m.name} (Preset)
                       </option>
                     ))}
                     <option value="custom_file">💾 Load Custom Map (.json)</option>

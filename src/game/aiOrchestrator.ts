@@ -103,7 +103,7 @@ export function applyRosterSlotConfigToCombatants(
       changed = true;
     }
 
-    if (combatant.id !== MAIN_AI_ID && slot.name && combatant.playerName !== slot.name) {
+    if (slot.name && combatant.playerName !== slot.name) {
       combatant.playerName = slot.name;
       changed = true;
     }

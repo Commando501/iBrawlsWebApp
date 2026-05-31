@@ -467,15 +467,16 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const nameplateRef = useRef<HTMLDivElement>(null);
+  const nameplateContainerRef = useRef<HTMLDivElement>(null);
 
   const getActiveCustomMap = (): CustomMapData | null => {
     if (customMap) return customMap;
-    if (selectedMap !== 'hangar' && selectedMap !== 'circle') {
-      const premade = PREMADE_MAPS.find(m => m.id === selectedMap);
+    const mapId = replayData ? replayData.mapType : selectedMap;
+    if (mapId !== 'hangar' && mapId !== 'circle') {
+      const premade = PREMADE_MAPS.find(m => m.id === mapId);
       if (premade) return premade;
       if (typeof localStorage !== 'undefined') {
-        const stored = localStorage.getItem(`map_${selectedMap}`);
+        const stored = localStorage.getItem(`map_${mapId}`);
         if (stored) {
           try {
             return JSON.parse(stored);
@@ -1081,13 +1082,31 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     return recovered;
   };
 
-  const getLegacyRosterProps = (): LegacyRosterProps => ({
-    botDifficulties: botDifficultiesRef.current,
-    botBehaviors: botBehaviorsRef.current,
-    botWeaponBehaviors: botWeaponBehaviorsRef.current,
-    botArchetypes: botArchetypesRef.current,
-    botColors: botColorsRef.current,
-  });
+  const getLegacyRosterProps = (): LegacyRosterProps => {
+    const names: Record<string, string> = {
+      main_ai: opponentPlayerName || 'DoomBot',
+    };
+    const offlineBotNames = [
+      'DoomBot Green',
+      'DoomBot Purple',
+      'DoomBot Orange',
+      'DoomBot Yellow',
+      'DoomBot Magenta',
+      'DoomBot Cyan',
+    ];
+    offlineBotNames.forEach((name, i) => {
+      names[`bot_${i + 2}`] = name;
+    });
+
+    return {
+      botDifficulties: botDifficultiesRef.current,
+      botBehaviors: botBehaviorsRef.current,
+      botWeaponBehaviors: botWeaponBehaviorsRef.current,
+      botArchetypes: botArchetypesRef.current,
+      botColors: botColorsRef.current,
+      botNames: names,
+    };
+  };
 
   const resolveRosterSlot = (botId: string) =>
     resolveRosterSlotForCombatant(botId, stateRef.current.settings, getLegacyRosterProps());
@@ -2023,6 +2042,37 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       rainObj.geometry.attributes.position.needsUpdate = true;
     }
 
+    // Animate snow particles in Winter theme if present
+    const snowObj = scene.getObjectByName('snow_particles');
+    if (snowObj && snowObj instanceof THREE.Points) {
+      const snowNow = performance.now();
+      if ((renderGame as any).lastSnowTime === undefined) {
+        (renderGame as any).lastSnowTime = snowNow;
+      }
+      const snowDt = Math.min(0.1, (snowNow - (renderGame as any).lastSnowTime) / 1000);
+      (renderGame as any).lastSnowTime = snowNow;
+
+      const positions = snowObj.geometry.attributes.position.array as Float32Array;
+      const velocities = snowObj.userData.velocities;
+      const arenaRadius = snowObj.userData.arenaRadius || 20;
+      const count = positions.length / 3;
+
+      for (let i = 0; i < count; i++) {
+        // Update positions with velocities
+        positions[i * 3] += velocities[i].x * snowDt;
+        positions[i * 3 + 1] += velocities[i].y * snowDt;
+        positions[i * 3 + 2] += velocities[i].z * snowDt;
+
+        // Reset particle if it falls below the floor (y <= 0.05) or drifts too far
+        if (positions[i * 3 + 1] <= 0.05) {
+          positions[i * 3] = (Math.random() - 0.5) * arenaRadius * 3.2;
+          positions[i * 3 + 1] = 25; // Reset to top height
+          positions[i * 3 + 2] = (Math.random() - 0.5) * arenaRadius * 2.2;
+        }
+      }
+      snowObj.geometry.attributes.position.needsUpdate = true;
+    }
+
     renderer.render(scene, camera);
   };
 
@@ -2109,7 +2159,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       playerDeaths: s.playerDeaths,
       enemyKills: s.enemyKills,
       enemyDeaths: s.enemyDeaths,
-      opponentPlayerName: opponentNameRef.current || undefined,
+      opponentPlayerName: opponentNameRef.current || mai()?.playerName || undefined,
       activeMedalPopup: s.activeMedalPopup,
     });
   };
@@ -2118,86 +2168,102 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     const s = stateRef.current;
     const camera = threeRef.current.camera;
     const container = containerRef.current;
-    const nameplate = nameplateRef.current;
+    const nameplateContainer = nameplateContainerRef.current;
 
-    if (!s || !camera || !container || !nameplate) return;
+    if (!s || !camera || !container || !nameplateContainer) return;
 
-    let showNameplate = false;
-    const nameplateScreenPos = { x: 0, y: 0 };
+    const pool = nameplatePoolRef.current;
+    const activeIds = new Set<string>();
 
-    let enemyPos = mai()?.pos ?? new THREE.Vector3();
-    let enemyHP = mai()?.hp ?? 0;
-    let enemyCrouching = mai()?.isCrouching ?? false;
-    let enemyState: AIBehaviorState | 'ALIVE' = mai()?.aiState ?? 'APPROACHING';
-    let enemyName = opponentPlayerName || opponentNameRef.current || 'AI Bot';
-
-    const displayOpp = opponentDisplay();
-    if (displayOpp) {
-      enemyPos = displayOpp.pos;
-      enemyHP = displayOpp.hp;
-      enemyCrouching = displayOpp.isCrouching;
-      enemyState = displayOpp.respawnTimer > 0
-        ? 'RESPAWNING'
-        : (displayOpp.aiState ?? 'APPROACHING');
-      if (isMultiplayer) {
-        enemyName = displayOpp.playerName || opponentNameRef.current || 'Opponent';
-      }
-    }
-
-    if (s.playerHP > 0 && enemyHP > 0 && enemyState !== 'RESPAWNING') {
+    if (s.playerHP > 0) {
       const eyePos = new THREE.Vector3(
         s.playerPos.x,
         1.65 - s.crouchAmount + s.playerPos.y,
         s.playerPos.z
       );
-      const enemyCenter = new THREE.Vector3(enemyPos.x, enemyPos.y + 0.825, enemyPos.z);
-      const toEnemy = enemyCenter.clone().sub(eyePos);
-      const dist = toEnemy.length();
-      
+
       const appDist = s.settings.nameVisibilityDistance !== undefined ? s.settings.nameVisibilityDistance : 15.0;
-      if (dist <= appDist) {
-        const toEnemyDir = toEnemy.clone().normalize();
-        
-        const cameraLookDir = new THREE.Vector3(0, 0, -1)
-          .applyAxisAngle(new THREE.Vector3(1, 0, 0), s.pitch)
-          .applyAxisAngle(new THREE.Vector3(0, 1, 0), s.yaw)
-          .normalize();
+
+      s.otherPlayers.forEach((combatant, id) => {
+        if (combatant.hp <= 0 || (combatant.respawnTimer ?? 0) > 0 || combatant.aiState === 'RESPAWNING') return;
+
+        const enemyPos = combatant.pos;
+        const enemyCenter = new THREE.Vector3(enemyPos.x, enemyPos.y + 0.825, enemyPos.z);
+        const toEnemy = enemyCenter.clone().sub(eyePos);
+        const dist = toEnemy.length();
+
+        if (dist <= appDist) {
+          const toEnemyDir = toEnemy.clone().normalize();
           
-        const dot = cameraLookDir.dot(toEnemyDir);
-        const angle = Math.acos(Math.max(-1.0, Math.min(1.0, dot)));
-        
-        // Holding crosshair over them
-        if (angle < 0.12) {
-          showNameplate = true;
+          const cameraLookDir = new THREE.Vector3(0, 0, -1)
+            .applyAxisAngle(new THREE.Vector3(1, 0, 0), s.pitch)
+            .applyAxisAngle(new THREE.Vector3(0, 1, 0), s.yaw)
+            .normalize();
+            
+          const dot = cameraLookDir.dot(toEnemyDir);
+          const angle = Math.acos(Math.max(-1.0, Math.min(1.0, dot)));
           
-          // Calculate projected 2D coordinates
-          const headPos = new THREE.Vector3(enemyPos.x, enemyPos.y + 1.75, enemyPos.z);
-          headPos.project(camera);
-          
-          // Check if in front of camera
-          if (headPos.z <= 1) {
-            const widthHalf = container.clientWidth / 2;
-            const heightHalf = container.clientHeight / 2;
-            nameplateScreenPos.x = (headPos.x * widthHalf) + widthHalf;
-            nameplateScreenPos.y = -(headPos.y * heightHalf) + heightHalf;
-          } else {
-            showNameplate = false;
+          // Holding crosshair over them
+          if (angle < 0.12) {
+            // Calculate projected 2D coordinates
+            const headPos = new THREE.Vector3(enemyPos.x, enemyPos.y + 1.75, enemyPos.z);
+            headPos.project(camera);
+            
+            // Check if in front of camera
+            if (headPos.z <= 1) {
+              const widthHalf = container.clientWidth / 2;
+              const heightHalf = container.clientHeight / 2;
+              const screenX = (headPos.x * widthHalf) + widthHalf;
+              const screenY = -(headPos.y * heightHalf) + heightHalf;
+
+              let plate = pool.get(id);
+              if (!plate) {
+                plate = document.createElement('div');
+                plate.style.position = 'absolute';
+                plate.style.transform = 'translate(-50%, -100%)';
+                plate.style.fontWeight = 'black';
+                plate.style.fontFamily = 'monospace';
+                plate.style.pointerEvents = 'none';
+                plate.style.textShadow = '0 0 4px rgba(0,0,0,0.85), 0 0 10px rgba(0,0,0,0.5)';
+                plate.style.zIndex = '10';
+                plate.style.whiteSpace = 'nowrap';
+                plate.style.transition = 'color 0.15s, font-size 0.15s, opacity 0.15s';
+                nameplateContainer.appendChild(plate);
+                pool.set(id, plate);
+              }
+
+              // Re-attach if detached (e.g. after React full re-render)
+              if (plate.parentElement !== nameplateContainer) {
+                nameplateContainer.appendChild(plate);
+              }
+
+              // Set styles
+              plate.style.display = 'block';
+              plate.style.left = `${screenX}px`;
+              plate.style.top = `${screenY}px`;
+              plate.style.color = s.settings.nameVisibilityColor || '#00ffff';
+              plate.style.opacity = (s.settings.nameVisibilityOpacity !== undefined ? s.settings.nameVisibilityOpacity : 0.8).toString();
+              plate.style.fontSize = `${s.settings.nameVisibilityFontSize || 16}px`;
+
+              // Get actual display name
+              let name = combatant.playerName;
+              if (id === MAIN_AI_ID && !isMultiplayer) {
+                name = opponentPlayerName || opponentNameRef.current || combatant.playerName || 'DoomBot';
+              }
+              plate.textContent = name;
+              activeIds.add(id);
+            }
           }
         }
-      }
+      });
     }
 
-    if (showNameplate) {
-      nameplate.style.display = 'block';
-      nameplate.style.left = `${nameplateScreenPos.x}px`;
-      nameplate.style.top = `${nameplateScreenPos.y}px`;
-      nameplate.style.color = s.settings.nameVisibilityColor || '#00ffff';
-      nameplate.style.opacity = (s.settings.nameVisibilityOpacity !== undefined ? s.settings.nameVisibilityOpacity : 0.8).toString();
-      nameplate.style.fontSize = `${s.settings.nameVisibilityFontSize || 16}px`;
-      nameplate.textContent = enemyName;
-    } else {
-      nameplate.style.display = 'none';
-    }
+    // Hide all plates not active
+    pool.forEach((plate, id) => {
+      if (!activeIds.has(id)) {
+        plate.style.display = 'none';
+      }
+    });
   };
 
   function updateRadarDOM() {
@@ -3075,6 +3141,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
   const lastOpponentHue = useRef<number | null>(null);
   const opponentNameRef = useRef<string>('');
   const radarDotPoolRef = useRef<Map<string, HTMLElement>>(new Map());
+  const nameplatePoolRef = useRef<Map<string, HTMLElement>>(new Map());
 
   useEffect(() => {
     opponentNameRef.current = opponentPlayerName || '';
@@ -3632,7 +3699,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     threeRef.current.hostSword = null;
 
     const activeCustomMap = getActiveCustomMap();
-    const isHangar = selectedMap === 'hangar';
+    const effectiveMapId = replayData ? replayData.mapType : selectedMap;
+    const isHangar = effectiveMapId === 'hangar';
 
     // 1. SETUP ATMOSPHERICS (SKYBOX & FOG)
     let bgHex = isHangar ? '#07090d' : '#030712';
@@ -4139,12 +4207,133 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         ctx.fillText("BRAWL'S BEST FRIEND", 256, 95);
         
         ctx.shadowBlur = 0;
+      } else if (type === 'winter_ice') {
+        // Pristine ice hockey rink layout
+        ctx.fillStyle = '#e0f2fe'; // ice light blue
+        ctx.fillRect(0, 0, 512, 512);
+
+        // Skate scratch marks
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.42)';
+        ctx.lineWidth = 1;
+        for (let i = 0; i < 50; i++) {
+          ctx.beginPath();
+          ctx.arc(
+            Math.random() * 512, 
+            Math.random() * 512, 
+            15 + Math.random() * 45, 
+            Math.random() * Math.PI, 
+            Math.random() * Math.PI * 2
+          );
+          ctx.stroke();
+        }
+
+        // Red Goal Lines (at x = 45 and x = 512 - 45)
+        ctx.strokeStyle = '#ef4444';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(45, 0); ctx.lineTo(45, 512);
+        ctx.moveTo(512 - 45, 0); ctx.lineTo(512 - 45, 512);
+        ctx.stroke();
+
+        // Red Goal Creases (semi-circles facing inwards, radius 20)
+        ctx.beginPath();
+        ctx.arc(45, 256, 20, -Math.PI / 2, Math.PI / 2);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(512 - 45, 256, 20, Math.PI / 2, -Math.PI / 2);
+        ctx.stroke();
+
+        // Blue Lines (at x = 170 and x = 342)
+        ctx.strokeStyle = '#3b82f6';
+        ctx.lineWidth = 6;
+        ctx.beginPath();
+        ctx.moveTo(170, 0); ctx.lineTo(170, 512);
+        ctx.moveTo(342, 0); ctx.lineTo(342, 512);
+        ctx.stroke();
+
+        // Red Center Line (at x = 256)
+        ctx.strokeStyle = '#ef4444';
+        ctx.lineWidth = 6;
+        ctx.beginPath();
+        ctx.moveTo(256, 0); ctx.lineTo(256, 512);
+        ctx.stroke();
+
+        // Blue Center Face-off Circle (radius 40, red dot)
+        ctx.strokeStyle = '#3b82f6';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(256, 256, 40, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.fillStyle = '#ef4444';
+        ctx.beginPath();
+        ctx.arc(256, 256, 5, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Four Red Corner Face-off Circles with inner spots
+        ctx.strokeStyle = '#ef4444';
+        ctx.lineWidth = 2.5;
+        const spots = [[115, 120], [115, 392], [397, 120], [397, 392]];
+        spots.forEach(([cx, cy]) => {
+          ctx.beginPath();
+          ctx.arc(cx, cy, 25, 0, Math.PI * 2);
+          ctx.stroke();
+          // Inner spot
+          ctx.fillStyle = '#ef4444';
+          ctx.beginPath();
+          ctx.arc(cx, cy, 4, 0, Math.PI * 2);
+          ctx.fill();
+        });
+      } else if (type === 'winter_snow') {
+        // Powdery snow-covered surface
+        ctx.fillStyle = '#f8fafc';
+        ctx.fillRect(0, 0, 512, 512);
+        // Crystal ice sparkles
+        ctx.fillStyle = '#ffffff';
+        for (let i = 0; i < 500; i++) {
+          ctx.fillRect(Math.random() * 512, Math.random() * 512, 2.5, 2.5);
+        }
+        // Soft blue wind drifts
+        ctx.fillStyle = 'rgba(186, 230, 253, 0.25)'; // very soft sky-blue
+        for (let i = 0; i < 15; i++) {
+          ctx.beginPath();
+          ctx.ellipse(
+            Math.random() * 512, 
+            Math.random() * 512, 
+            50 + Math.random() * 80, 
+            12 + Math.random() * 20, 
+            Math.random() * 0.2 - 0.1, 
+            0, 
+            Math.PI * 2
+          );
+          ctx.fill();
+        }
+      } else if (type === 'winter_glacier_glass') {
+        // Translucent glacier frost glass
+        ctx.fillStyle = 'rgba(147, 197, 253, 0.45)';
+        ctx.fillRect(0, 0, 512, 512);
+        // Fine crystal ice cracks
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.65)';
+        ctx.lineWidth = 1.5;
+        for (let i = 0; i < 10; i++) {
+          ctx.beginPath();
+          ctx.moveTo(Math.random() * 512, 0);
+          ctx.lineTo(Math.random() * 512, 140);
+          ctx.lineTo(Math.random() * 512, 370);
+          ctx.lineTo(Math.random() * 512, 512);
+          ctx.stroke();
+        }
       }
 
       const texture = new THREE.CanvasTexture(canvas);
       texture.wrapS = THREE.RepeatWrapping;
       texture.wrapT = THREE.RepeatWrapping;
-      texture.repeat.set(4, 4); // tiled nicely
+      if (type === 'winter_ice') {
+        texture.repeat.set(1, 1); // Stretched exactly once
+      } else if (type === 'winter_snow' || type === 'winter_glacier_glass') {
+        texture.repeat.set(2, 2); // Nice repeating details
+      } else {
+        texture.repeat.set(4, 4); // Tiled nicely
+      }
       return texture;
     };
 
@@ -4222,15 +4411,18 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       } else if (activeCustomMap.theme === 'rainy_streets') {
         floorTexType = 'rainy_streets_asphalt';
         floorColor = '#0f121a';
+      } else if (activeCustomMap.theme === 'winter_rink') {
+        floorTexType = 'winter_ice';
+        floorColor = '#e0f2fe';
       }
 
       const floorTexture = generateCustomTexture(floorTexType, '#0f172a');
       const floorMat = new THREE.MeshStandardMaterial({
         map: floorTexture,
         bumpMap: floorTexture,
-        bumpScale: 0.02,
-        roughness: 0.8,
-        metalness: 0.5,
+        bumpScale: activeCustomMap.theme === 'winter_rink' ? 0.005 : 0.02,
+        roughness: activeCustomMap.theme === 'winter_rink' ? 0.08 : 0.8,
+        metalness: activeCustomMap.theme === 'winter_rink' ? 0.95 : 0.5,
       });
       const floor = new THREE.Mesh(floorGeo, floorMat);
       floor.position.y = -0.1;
@@ -4641,6 +4833,191 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
         scene.add(rainyGroup);
         threeRef.current.customMapObjects!.push(rainyGroup);
+      }
+
+      // Spawn Winter/Glacier scenery if theme is winter_rink
+      if (activeCustomMap.theme === 'winter_rink') {
+        const winterGroup = new THREE.Group();
+        winterGroup.name = 'winter_scenery';
+
+        const snowTexture = generateCustomTexture('winter_snow', '#ffffff');
+        const glassTexture = generateCustomTexture('winter_glacier_glass', '#93c5fd');
+
+        // 1. Giant Low-Poly Icebergs / Glaciers in the background
+        const icebergPositions = [
+          { x: -38, z: -40 },
+          { x: -15, z: -48 },
+          { x: 12, z: -45 },
+          { x: 35, z: -38 },
+          { x: -45, z: 5 },
+          { x: 45, z: -5 }
+        ];
+
+        icebergPositions.forEach((pos, idx) => {
+          const radius = 6 + Math.random() * 6;
+          const height = 15 + Math.random() * 20;
+          const iceGeo = new THREE.ConeGeometry(radius, height, 4); // 4-sided pyramid
+          iceGeo.translate(0, height / 2, 0); // rest base on ground
+          
+          const iceMat = new THREE.MeshStandardMaterial({
+            map: glassTexture,
+            color: new THREE.Color('#93c5fd'),
+            metalness: 0.95,
+            roughness: 0.08,
+            opacity: 0.8,
+            transparent: true,
+            emissive: new THREE.Color(idx % 2 === 0 ? '#3b82f6' : '#60a5fa'),
+            emissiveIntensity: 1.8
+          });
+
+          const iceberg = new THREE.Mesh(iceGeo, iceMat);
+          iceberg.position.set(pos.x, -1.0, pos.z);
+          iceberg.rotation.y = Math.random() * Math.PI;
+          iceberg.rotation.x = (Math.random() - 0.5) * 0.1;
+          iceberg.castShadow = true;
+          iceberg.receiveShadow = true;
+          winterGroup.add(iceberg);
+        });
+
+        // 2. Snow Dunes / Banks surrounding the rink
+        const duneGeo = new THREE.SphereGeometry(1, 16, 12);
+        const duneMat = new THREE.MeshStandardMaterial({
+          map: snowTexture,
+          color: new THREE.Color('#ffffff'),
+          roughness: 0.95,
+          metalness: 0.05
+        });
+
+        const dunePositions = [
+          { x: -26, y: -0.6, z: -14, sx: 18, sy: 1.5, sz: 12 },
+          { x: 26, y: -0.6, z: -14, sx: 18, sy: 1.5, sz: 12 },
+          { x: -26, y: -0.6, z: 14, sx: 18, sy: 1.5, sz: 12 },
+          { x: 26, y: -0.6, z: 14, sx: 18, sy: 1.5, sz: 12 },
+          { x: 0, y: -1.0, z: -15, sx: 35, sy: 2.0, sz: 14 },
+          { x: 0, y: -1.0, z: 15, sx: 35, sy: 2.0, sz: 14 }
+        ];
+
+        dunePositions.forEach(d => {
+          const mesh = new THREE.Mesh(duneGeo, duneMat);
+          mesh.position.set(d.x, d.y, d.z);
+          mesh.scale.set(d.sx, d.sy, d.sz);
+          mesh.receiveShadow = true;
+          winterGroup.add(mesh);
+        });
+
+        // 3. Snowy Pine Trees
+        const buildSnowyPineTree = () => {
+          const tree = new THREE.Group();
+
+          // Trunk (nature_wood texture)
+          const woodTexture = generateCustomTexture('nature_wood', '#451a03');
+          const trunkGeo = new THREE.CylinderGeometry(0.2, 0.35, 3.5, 8);
+          const trunkMat = new THREE.MeshStandardMaterial({
+            map: woodTexture,
+            color: new THREE.Color('#3f2512'),
+            roughness: 0.9,
+            metalness: 0.1
+          });
+          const trunk = new THREE.Mesh(trunkGeo, trunkMat);
+          trunk.position.y = 1.75;
+          trunk.castShadow = true;
+          trunk.receiveShadow = true;
+          tree.add(trunk);
+
+          // Canopy Layers (Forest green branches + snow caps stacked)
+          const pineMat = new THREE.MeshStandardMaterial({
+            color: new THREE.Color('#0f5132'), // dark green needles
+            roughness: 0.95,
+            metalness: 0.05
+          });
+
+          const canopyLayers = [
+            { r: 2.4, h: 2.2, y: 3.2, snowH: 0.4 },
+            { r: 1.8, h: 1.8, y: 4.6, snowH: 0.35 },
+            { r: 1.2, h: 1.4, y: 5.8, snowH: 0.3 }
+          ];
+
+          canopyLayers.forEach(layer => {
+            // Pine cone branches
+            const pineGeo = new THREE.ConeGeometry(layer.r, layer.h, 6);
+            pineGeo.translate(0, layer.h / 2, 0);
+            const pine = new THREE.Mesh(pineGeo, pineMat);
+            pine.position.y = layer.y;
+            pine.castShadow = true;
+            pine.receiveShadow = true;
+            tree.add(pine);
+
+            // Snowy cap resting on top of branches
+            const capGeo = new THREE.ConeGeometry(layer.r + 0.05, layer.snowH, 6);
+            capGeo.translate(0, layer.snowH / 2, 0);
+            const cap = new THREE.Mesh(capGeo, duneMat);
+            cap.position.y = layer.y + layer.h - layer.snowH * 0.9;
+            cap.castShadow = true;
+            cap.receiveShadow = true;
+            tree.add(cap);
+          });
+
+          return tree;
+        };
+
+        const treePositions = [
+          { x: -23, z: -15 },
+          { x: -27, z: -5 },
+          { x: -25, z: 8 },
+          { x: 23, z: -16 },
+          { x: 27, z: -4 },
+          { x: 25, z: 9 },
+          { x: -14, z: -17 },
+          { x: 14, z: -17 }
+        ];
+
+        treePositions.forEach(pos => {
+          const t = buildSnowyPineTree();
+          t.position.set(pos.x, -0.2, pos.z);
+          t.scale.set(0.9 + Math.random() * 0.3, 0.8 + Math.random() * 0.4, 0.9 + Math.random() * 0.3);
+          t.rotation.y = Math.random() * Math.PI;
+          winterGroup.add(t);
+        });
+
+        // 4. Soft Drifting Snow Weather Particles
+        const snowCount = 1500;
+        const snowGeo = new THREE.BufferGeometry();
+        const snowPositions = new Float32Array(snowCount * 3);
+        const snowVelocities = [];
+
+        for (let i = 0; i < snowCount; i++) {
+          const rx = (Math.random() - 0.5) * activeCustomMap.arenaRadius * 3.2;
+          const ry = Math.random() * 25 + 0.1;
+          const rz = (Math.random() - 0.5) * activeCustomMap.arenaRadius * 2.2;
+
+          snowPositions[i * 3] = rx;
+          snowPositions[i * 3 + 1] = ry;
+          snowPositions[i * 3 + 2] = rz;
+
+          snowVelocities.push({
+            x: (Math.random() - 0.5) * 0.6,
+            y: -1.8 - Math.random() * 1.6, // gentle fall speed
+            z: (Math.random() - 0.5) * 0.6
+          });
+        }
+
+        snowGeo.setAttribute('position', new THREE.BufferAttribute(snowPositions, 3));
+        const snowMat = new THREE.PointsMaterial({
+          color: '#ffffff',
+          size: 0.34, // fluffy snow
+          transparent: true,
+          opacity: 0.75,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false
+        });
+
+        const snowParticles = new THREE.Points(snowGeo, snowMat);
+        snowParticles.name = 'snow_particles';
+        snowParticles.userData = { velocities: snowVelocities, arenaRadius: activeCustomMap.arenaRadius };
+        winterGroup.add(snowParticles);
+
+        scene.add(winterGroup);
+        threeRef.current.customMapObjects!.push(winterGroup);
       }
 
       // Clear any pre-existing navigation mesh, force A* engine to rebuild on the fly
@@ -5949,7 +6326,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         cancelAnimationFrame(requestRef.current);
       }
     };
-  }, [isPlaying]);
+  }, [isPlaying, replayData]);
 
   // Helper to reconstruct player state at any target frame index in replayData.frames (Delta Compression recovery)
   const getReconstructedState = (playerType: 'player' | 'main_ai' | string, frameIdx: number) => {
@@ -7004,7 +7381,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       // Save compiled replay on unmount
       saveCompiledReplay();
     };
-  }, [isPlaying, isPaused, isMultiplayer, multiplayerRole, multiplayerSocket]);
+  }, [isPlaying, isPaused, isMultiplayer, multiplayerRole, multiplayerSocket, replayData]);
 
   const getPlayerSwordLockTarget = () => {
     const s = stateRef.current;
@@ -12318,20 +12695,14 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
   return (
     <div className="absolute inset-0 z-0 w-full h-full" style={{ outline: 'none' }}>
-      {/* Floating Nameplate Overlay (New!) */}
+      {/* Floating Nameplate Overlays Container */}
       <div 
-        ref={nameplateRef}
+        ref={nameplateContainerRef}
         style={{
           position: 'absolute',
-          display: 'none',
-          transform: 'translate(-50%, -100%)',
-          fontWeight: 'black',
-          fontFamily: 'monospace',
+          inset: 0,
           pointerEvents: 'none',
-          textShadow: '0 0 4px rgba(0,0,0,0.85), 0 0 10px rgba(0,0,0,0.5)',
           zIndex: 10,
-          whiteSpace: 'nowrap',
-          transition: 'color 0.15s, font-size 0.15s, opacity 0.15s'
         }}
       />
 
