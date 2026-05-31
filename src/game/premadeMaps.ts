@@ -515,5 +515,425 @@ export const PREMADE_MAPS: CustomMapData[] = [
         texture: 'city_concrete'
       }
     ]
+  },
+  {
+    id: 'forerunner_canyon',
+    name: 'Forerunner Canyon Plateau',
+    description: 'A suspended rectangular forerunner arena hovering over a golden desert canyon at sunset. Features team-colored spires and a massive beacon tower.',
+    author: 'Spartan Architect',
+    theme: 'forerunner',
+    mapShape: 'rectangular',
+    arenaRadius: 20,
+    skyboxHue: 35,
+    skyboxBrightness: 7,
+    fogColor: '#1d1510',
+    fogDensity: 0.016,
+    spawnPoints: [
+      { x: -16, y: 0, z: -6 },
+      { x: -16, y: 0, z: 6 },
+      { x: -12, y: 0, z: -8 },
+      { x: -12, y: 0, z: 8 },
+      { x: 16, y: 0, z: -6 },
+      { x: 16, y: 0, z: 6 },
+      { x: 12, y: 0, z: -8 },
+      { x: 12, y: 0, z: 8 }
+    ],
+    lighting: {
+      ambientColor: '#18120e',
+      ambientIntensity: 0.8,
+      directColor: '#fef08a',
+      directIntensity: 2.5,
+      directPosition: { x: -10, y: 25, z: -10 },
+      pointLights: [
+        { id: 'blue_spire_nw', color: '#00ccff', intensity: 3.5, distance: 15, decay: 1.2, position: { x: -22, y: 4, z: -11 } },
+        { id: 'blue_spire_sw', color: '#00ccff', intensity: 3.5, distance: 15, decay: 1.2, position: { x: -22, y: 4, z: 11 } },
+        { id: 'red_spire_ne', color: '#ff3344', intensity: 3.5, distance: 15, decay: 1.2, position: { x: 22, y: 4, z: -11 } },
+        { id: 'red_spire_se', color: '#ff3344', intensity: 3.5, distance: 15, decay: 1.2, position: { x: 22, y: 4, z: 11 } }
+      ]
+    },
+    objects: [
+      // Corner Spires (Collidable)
+      // NW (Blue side, glows blue)
+      {
+        id: 'spire_nw',
+        name: 'Forerunner Anchor Spire NW',
+        type: 'cylinder',
+        position: { x: -22, y: 4, z: -11 },
+        rotation: { x: 0, y: 0, z: 0 },
+        scale: { x: 2.0, y: 8.0, z: 2.0 },
+        color: '#ca8a04',
+        metalness: 0.9,
+        roughness: 0.1,
+        opacity: 1.0,
+        transparent: false,
+        emissive: '#0088ff',
+        emissiveIntensity: 2.0,
+        isCollidable: true,
+        texture: 'forerunner_gold'
+      },
+      // SW (Blue side, glows blue)
+      {
+        id: 'spire_sw',
+        name: 'Forerunner Anchor Spire SW',
+        type: 'cylinder',
+        position: { x: -22, y: 4, z: 11 },
+        rotation: { x: 0, y: 0, z: 0 },
+        scale: { x: 2.0, y: 8.0, z: 2.0 },
+        color: '#ca8a04',
+        metalness: 0.9,
+        roughness: 0.1,
+        opacity: 1.0,
+        transparent: false,
+        emissive: '#0088ff',
+        emissiveIntensity: 2.0,
+        isCollidable: true,
+        texture: 'forerunner_gold'
+      },
+      // NE (Red side, glows red)
+      {
+        id: 'spire_ne',
+        name: 'Forerunner Anchor Spire NE',
+        type: 'cylinder',
+        position: { x: 22, y: 4, z: -11 },
+        rotation: { x: 0, y: 0, z: 0 },
+        scale: { x: 2.0, y: 8.0, z: 2.0 },
+        color: '#ca8a04',
+        metalness: 0.9,
+        roughness: 0.1,
+        opacity: 1.0,
+        transparent: false,
+        emissive: '#ff0033',
+        emissiveIntensity: 2.0,
+        isCollidable: true,
+        texture: 'forerunner_gold'
+      },
+      // SE (Red side, glows red)
+      {
+        id: 'spire_se',
+        name: 'Forerunner Anchor Spire SE',
+        type: 'cylinder',
+        position: { x: 22, y: 4, z: 11 },
+        rotation: { x: 0, y: 0, z: 0 },
+        scale: { x: 2.0, y: 8.0, z: 2.0 },
+        color: '#ca8a04',
+        metalness: 0.9,
+        roughness: 0.1,
+        opacity: 1.0,
+        transparent: false,
+        emissive: '#ff0033',
+        emissiveIntensity: 2.0,
+        isCollidable: true,
+        texture: 'forerunner_gold'
+      },
+      // Central Side Spires (Collidable)
+      // Center North
+      {
+        id: 'spire_cn',
+        name: 'Forerunner Pylon Center N',
+        type: 'cylinder',
+        position: { x: 0, y: 4, z: -11 },
+        rotation: { x: 0, y: 0, z: 0 },
+        scale: { x: 1.6, y: 8.0, z: 1.6 },
+        color: '#1e293b',
+        metalness: 0.8,
+        roughness: 0.2,
+        opacity: 1.0,
+        transparent: false,
+        emissive: '#f59e0b',
+        emissiveIntensity: 1.5,
+        isCollidable: true,
+        texture: 'forerunner_panel'
+      },
+      // Center South
+      {
+        id: 'spire_cs',
+        name: 'Forerunner Pylon Center S',
+        type: 'cylinder',
+        position: { x: 0, y: 4, z: 11 },
+        rotation: { x: 0, y: 0, z: 0 },
+        scale: { x: 1.6, y: 8.0, z: 1.6 },
+        color: '#1e293b',
+        metalness: 0.8,
+        roughness: 0.2,
+        opacity: 1.0,
+        transparent: false,
+        emissive: '#f59e0b',
+        emissiveIntensity: 1.5,
+        isCollidable: true,
+        texture: 'forerunner_panel'
+      },
+      // Defensive Goal Obstacles (Collidable)
+      // West Goal Block
+      {
+        id: 'barrier_w',
+        name: 'Forerunner Buffer W',
+        type: 'box',
+        position: { x: -17, y: 1.0, z: 0 },
+        rotation: { x: 0, y: 0, z: 0 },
+        scale: { x: 1.2, y: 2.0, z: 4.0 },
+        color: '#1e293b',
+        metalness: 0.8,
+        roughness: 0.2,
+        opacity: 1.0,
+        transparent: false,
+        emissive: '#000000',
+        emissiveIntensity: 0.0,
+        isCollidable: true,
+        texture: 'forerunner_panel'
+      },
+      // East Goal Block
+      {
+        id: 'barrier_e',
+        name: 'Forerunner Buffer E',
+        type: 'box',
+        position: { x: 17, y: 1.0, z: 0 },
+        rotation: { x: 0, y: 0, z: 0 },
+        scale: { x: 1.2, y: 2.0, z: 4.0 },
+        color: '#1e293b',
+        metalness: 0.8,
+        roughness: 0.2,
+        opacity: 1.0,
+        transparent: false,
+        emissive: '#000000',
+        emissiveIntensity: 0.0,
+        isCollidable: true,
+        texture: 'forerunner_panel'
+      },
+      // BACKGROUND SCENERY (Non-collidable)
+      // Majestic central beacon tower (with glowing yellow top tip)
+      {
+        id: 'bg_beacon_tower',
+        name: 'Majestic Beacon Tower',
+        type: 'cylinder',
+        position: { x: 0, y: 20, z: -35 },
+        rotation: { x: 0, y: 0, z: 0 },
+        scale: { x: 3.0, y: 40.0, z: 3.0 },
+        color: '#1f2937',
+        metalness: 0.9,
+        roughness: 0.1,
+        opacity: 1.0,
+        transparent: false,
+        emissive: '#fbbf24',
+        emissiveIntensity: 3.0,
+        isCollidable: false,
+        texture: 'forerunner_gold'
+      },
+      // Left Canyon Pillar
+      {
+        id: 'bg_pillar_l',
+        name: 'Canyon Anchor Left',
+        type: 'cylinder',
+        position: { x: -45, y: 15, z: -25 },
+        rotation: { x: 0.15, y: 0, z: 0.25 },
+        scale: { x: 4.0, y: 30.0, z: 4.0 },
+        color: '#374151',
+        metalness: 0.8,
+        roughness: 0.2,
+        opacity: 1.0,
+        transparent: false,
+        emissive: '#000000',
+        emissiveIntensity: 0.0,
+        isCollidable: false,
+        texture: 'forerunner_panel'
+      },
+      // Right Canyon Pillar
+      {
+        id: 'bg_pillar_r',
+        name: 'Canyon Anchor Right',
+        type: 'cylinder',
+        position: { x: 45, y: 15, z: -25 },
+        rotation: { x: 0.15, y: 0, z: -0.25 },
+        scale: { x: 4.0, y: 30.0, z: 4.0 },
+        color: '#374151',
+        metalness: 0.8,
+        roughness: 0.2,
+        opacity: 1.0,
+        transparent: false,
+        emissive: '#000000',
+        emissiveIntensity: 0.0,
+        isCollidable: false,
+        texture: 'forerunner_panel'
+      }
+    ]
+  },
+  {
+    id: 'synthwave_grid_arena',
+    name: 'Neon Outrun Grid',
+    description: 'A suspended rectangular retro holodeck hovering over a glowing cyber city at twilight. Features glowing neon palm trees, background light beams, and a colossal striped sunset sun.',
+    author: 'Outrun Architect',
+    theme: 'synthwave',
+    mapShape: 'rectangular',
+    arenaRadius: 20,
+    skyboxHue: 310,
+    skyboxBrightness: 7,
+    fogColor: '#0a0518',
+    fogDensity: 0.012,
+    spawnPoints: [
+      { x: -16, y: 0, z: -6 },
+      { x: -16, y: 0, z: 6 },
+      { x: -12, y: 0, z: -8 },
+      { x: -12, y: 0, z: 8 },
+      { x: 16, y: 0, z: -6 },
+      { x: 16, y: 0, z: 6 },
+      { x: 12, y: 0, z: -8 },
+      { x: 12, y: 0, z: 8 }
+    ],
+    lighting: {
+      ambientColor: '#0f051d',
+      ambientIntensity: 0.95,
+      directColor: '#f43f5e',
+      directIntensity: 2.4,
+      directPosition: { x: -10, y: 25, z: -10 },
+      pointLights: [
+        { id: 'blue_goal_glow', color: '#00ffff', intensity: 4.0, distance: 18, decay: 1.2, position: { x: -18, y: 2, z: 0 } },
+        { id: 'red_goal_glow', color: '#ff0055', intensity: 4.0, distance: 18, decay: 1.2, position: { x: 18, y: 2, z: 0 } }
+      ]
+    },
+    objects: [
+      // NW (Blue side, glows cyan)
+      {
+        id: 'neon_pillar_nw',
+        name: 'Neon Beacon NW',
+        type: 'cylinder',
+        position: { x: -22, y: 4, z: -11 },
+        rotation: { x: 0, y: 0, z: 0 },
+        scale: { x: 1.5, y: 8.0, z: 1.5 },
+        color: '#00ffff',
+        metalness: 0.9,
+        roughness: 0.1,
+        opacity: 0.9,
+        transparent: true,
+        emissive: '#06b6d4',
+        emissiveIntensity: 2.5,
+        isCollidable: true,
+        texture: 'synthwave_neon_laser'
+      },
+      // SW (Blue side, glows cyan)
+      {
+        id: 'neon_pillar_sw',
+        name: 'Neon Beacon SW',
+        type: 'cylinder',
+        position: { x: -22, y: 4, z: 11 },
+        rotation: { x: 0, y: 0, z: 0 },
+        scale: { x: 1.5, y: 8.0, z: 1.5 },
+        color: '#00ffff',
+        metalness: 0.9,
+        roughness: 0.1,
+        opacity: 0.9,
+        transparent: true,
+        emissive: '#06b6d4',
+        emissiveIntensity: 2.5,
+        isCollidable: true,
+        texture: 'synthwave_neon_laser'
+      },
+      // NE (Red side, glows pink)
+      {
+        id: 'neon_pillar_ne',
+        name: 'Neon Beacon NE',
+        type: 'cylinder',
+        position: { x: 22, y: 4, z: -11 },
+        rotation: { x: 0, y: 0, z: 0 },
+        scale: { x: 1.5, y: 8.0, z: 1.5 },
+        color: '#ff0055',
+        metalness: 0.9,
+        roughness: 0.1,
+        opacity: 0.9,
+        transparent: true,
+        emissive: '#ff0055',
+        emissiveIntensity: 2.5,
+        isCollidable: true,
+        texture: 'synthwave_neon_laser'
+      },
+      // SE (Red side, glows pink)
+      {
+        id: 'neon_pillar_se',
+        name: 'Neon Beacon SE',
+        type: 'cylinder',
+        position: { x: 22, y: 4, z: 11 },
+        rotation: { x: 0, y: 0, z: 0 },
+        scale: { x: 1.5, y: 8.0, z: 1.5 },
+        color: '#ff0055',
+        metalness: 0.9,
+        roughness: 0.1,
+        opacity: 0.9,
+        transparent: true,
+        emissive: '#ff0055',
+        emissiveIntensity: 2.5,
+        isCollidable: true,
+        texture: 'synthwave_neon_laser'
+      },
+      // Center North (Glowing yellow)
+      {
+        id: 'neon_pillar_cn',
+        name: 'Neon Grid Pylon N',
+        type: 'cylinder',
+        position: { x: 0, y: 4, z: -11 },
+        rotation: { x: 0, y: 0, z: 0 },
+        scale: { x: 1.2, y: 8.0, z: 1.2 },
+        color: '#eab308',
+        metalness: 0.9,
+        roughness: 0.1,
+        opacity: 0.9,
+        transparent: true,
+        emissive: '#eab308',
+        emissiveIntensity: 2.0,
+        isCollidable: true,
+        texture: 'synthwave_neon_laser'
+      },
+      // Center South (Glowing yellow)
+      {
+        id: 'neon_pillar_cs',
+        name: 'Neon Grid Pylon S',
+        type: 'cylinder',
+        position: { x: 0, y: 4, z: 11 },
+        rotation: { x: 0, y: 0, z: 0 },
+        scale: { x: 1.2, y: 8.0, z: 1.2 },
+        color: '#eab308',
+        metalness: 0.9,
+        roughness: 0.1,
+        opacity: 0.9,
+        transparent: true,
+        emissive: '#eab308',
+        emissiveIntensity: 2.0,
+        isCollidable: true,
+        texture: 'synthwave_neon_laser'
+      },
+      // Goal buffers
+      {
+        id: 'grid_barrier_w',
+        name: 'Blue Goal Buffer',
+        type: 'box',
+        position: { x: -17, y: 1.0, z: 0 },
+        rotation: { x: 0, y: 0, z: 0 },
+        scale: { x: 1.2, y: 2.0, z: 4.0 },
+        color: '#00ffff',
+        metalness: 0.8,
+        roughness: 0.2,
+        opacity: 0.8,
+        transparent: true,
+        emissive: '#06b6d4',
+        emissiveIntensity: 1.5,
+        isCollidable: true,
+        texture: 'synthwave_grid'
+      },
+      {
+        id: 'grid_barrier_e',
+        name: 'Red Goal Buffer',
+        type: 'box',
+        position: { x: 17, y: 1.0, z: 0 },
+        rotation: { x: 0, y: 0, z: 0 },
+        scale: { x: 1.2, y: 2.0, z: 4.0 },
+        color: '#ff0055',
+        metalness: 0.8,
+        roughness: 0.2,
+        opacity: 0.8,
+        transparent: true,
+        emissive: '#ff0055',
+        emissiveIntensity: 1.5,
+        isCollidable: true,
+        texture: 'synthwave_grid'
+      }
+    ]
   }
 ];
+

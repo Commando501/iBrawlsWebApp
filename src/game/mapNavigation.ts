@@ -76,19 +76,30 @@ export function bakeNavMesh(
 ): NavMesh {
   const nodes = new Map<string, NavNode>();
   const radius = mapData.arenaRadius;
-  const gridCells = Math.ceil((radius * 2) / nodeSpacing);
+  const gridCellsX = mapData.mapShape === 'rectangular'
+    ? Math.ceil((radius * 1.2) / nodeSpacing)
+    : Math.ceil(radius / nodeSpacing);
+  const gridCellsZ = mapData.mapShape === 'rectangular'
+    ? Math.ceil((radius * 0.6) / nodeSpacing)
+    : Math.ceil(radius / nodeSpacing);
 
   const gridMap = new Map<string, string>(); // "i,j" -> nodeId
 
   // 1. Generate walkable nodes
-  for (let i = -gridCells; i <= gridCells; i++) {
-    for (let j = -gridCells; j <= gridCells; j++) {
+  for (let i = -gridCellsX; i <= gridCellsX; i++) {
+    for (let j = -gridCellsZ; j <= gridCellsZ; j++) {
       const nx = i * nodeSpacing;
       const nz = j * nodeSpacing;
 
-      // Assert node is inside circular arena bounds (with margin)
-      const distFromCenter = Math.sqrt(nx * nx + nz * nz);
-      if (distFromCenter >= radius - 0.65) continue;
+      // Assert node is inside arena bounds (with margin)
+      if (mapData.mapShape === 'rectangular') {
+        const boundX = radius * 1.2 - 0.65;
+        const boundZ = radius * 0.6 - 0.65;
+        if (Math.abs(nx) >= boundX || Math.abs(nz) >= boundZ) continue;
+      } else {
+        const distFromCenter = Math.sqrt(nx * nx + nz * nz);
+        if (distFromCenter >= radius - 0.65) continue;
+      }
 
       // Assert node does not overlap any collidable custom obstacles
       let isBlocked = false;

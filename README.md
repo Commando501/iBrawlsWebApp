@@ -158,6 +158,8 @@ Local play setups feature an interactive map selector overlay supported by a dyn
 - **Cyber Hex Grid (Preset)**: A high-tech tactical holodeck featuring glowing neon pillars, defensive carbon-fiber partitions, rechargeable crates, and a central plasma core reactor emitting massive violet neon glows.
 - **Jungle Ruined Outpost (Preset)**: An overgrown, crumbling training outpost dominated by nature elements. Features rustic stone walls, giant mossy boulders, forest giant tree trunks, and a mystical emerald crystal totem.
 - **Vanguard Asteroid Mine (Preset)**: An industrial minerals extraction facility situated on a space asteroid. Featuring heavy blast doors, freight containers, metallic core processor drills, amber industrial warning lights, and orange-veined meteorite ore clusters.
+- **Forerunner Canyon Plateau (Preset)**: A suspended rectangular forerunner arena hovering over a golden desert canyon at sunset. Features team-colored spires (Blue on the left, Red on the right) and a majestic background beacon tower.
+- **Neon Outrun Grid (Preset)**: A suspended rectangular retro holodeck hovering over a glowing cyber city at twilight. Features glowing neon palm trees, background light beams, and a colossal striped sunset sun.
 - **Custom Local Map**: Load a custom map file (`.json`) exported from the local Standalone Map Maker. The 3D thumbnail preview updates in real-time to render all placed obstacles, light sources, and spawn points in miniature!
 
 ## Standalone 3D Map Maker
@@ -167,7 +169,7 @@ iBrawls features a beautiful, feature-rich, and completely standalone 3D Map Mak
 ### How to Run the Map Maker
 1. **Locate the File**: Find `mapmaker.html` in the root of the project directory.
 2. **Open Locally**: Simply double-click `mapmaker.html` to launch it in any modern web browser. No local development server, Node.js environment, or compilation is required!
-3. **Design & Customize**: Spawn crates, columns, barriers, and cores. Modify positions, rotations, scales, colors, metalness, and roughness using the visual transformation sliders.
+3. **Design & Customize**: Spawn crates, columns, barriers, and cores. Modify positions, rotations, scales, colors, metalness, and roughness using the visual transformation sliders. Choose between **Circular** and **Rectangular** arena shapes!
 4. **Lighting Controls**: Add custom point lights to set up warm or cold ambient mood lighting in your arena.
 5. **Bake Nav Mesh**: Click the **Bake Nav Mesh** button to programmatically generate the automated pathfinding node navigation grid. The walkable pathways will instantly light up in glowing green and cyan in the viewport!
 6. **Export JSON**: Click the **Export JSON** button to download your compiled arena as a `.json` map file.
@@ -176,14 +178,17 @@ iBrawls features a beautiful, feature-rich, and completely standalone 3D Map Mak
 ### Editor Features
 - **Interactive 3D Canvas**: Outfitted with `PerspectiveCamera` and `OrbitControls` for full inspection. Allows direct mouse click/raycast selections with real-time selection helpers.
 - **Flexible Object Placement**: Place and transform Box, Cylinder, and Sphere obstacles. Modify dimensions, position, rotation, opacity, metalness, roughness, colors, emissive neon glow, and collidable status (`isCollidable`).
+- **Flexible Arena Shapes**: Toggle between **Circular** and **Rectangular** boundaries. The rectangular court uses a standard 2:1 aspect ratio with a dedicated rectangular grid helper.
 - **Dynamic Lighting Controls**: Add custom point lights to set up mood lighting. Adjust position, distance, intensity, decay, and color using real-time inspectors.
-- **Texture Presets**: Dress obstacles in 15 custom texture profiles matching 5 distinct themes:
+- **Texture Presets**: Dress obstacles in 20 custom texture profiles matching 7 distinct themes:
   - *Nature*: Grass turf (`nature_grass`), Mossy Stone (`nature_mossy_stone`), Wood Grain (`nature_wood`).
   - *Space*: Starbase alloy plate (`space_alloy`), Lunar meteorite crag (`space_meteorite`), Cosmic dust (`space_lunar_dust`).
   - *Futuristic*: Sleek carbon fiber (`futuristic_carbon`), Neon hexagonal plates (`futuristic_hex`), Energy grid shield (`futuristic_shield`).
   - *City*: Asphalt pavement (`city_asphalt`), Warehouse brick (`city_brick`), Raw concrete (`city_concrete`).
   - *Fantasy*: Runed stone monolith (`fantasy_runed_stone`), Rustic cobblestones (`fantasy_cobble`), Polished gold plating (`fantasy_gold`).
-- **Automated Nav-Mesh Baking**: Spatial analysis engine automatically runs spartan clearance tests ($0.65\text{m}$) against collidable boundaries to generate a 2D Node Navigation Grid. Walkable paths are visualized as beautiful glowing green nodes with blue connection lines in the editor viewport!
+  - *Forerunner*: Dark metal panels with gold circuits (`forerunner_panel`), Ornate etched gold plating (`forerunner_gold`).
+  - *Synthwave*: Synthwave Cyan Grid (`synthwave_grid`), Neon Laser Energy (`synthwave_neon_laser`), Sunset Chrome (`synthwave_chrome`).
+- **Automated Nav-Mesh Baking**: Spatial analysis engine automatically runs spartan clearance tests ($0.65\text{m}$) against circular or rectangular collidable boundaries to generate a 2D Node Navigation Grid. Walkable paths are visualized as beautiful glowing green nodes with blue connection lines in the editor viewport!
 - **Local File System IO**: Fully offline-based import and export. Save maps as local `.json` files to distribute to other players or load them directly in the game lobby for training skirmishes.
 
 ## Secrets & Easter Eggs

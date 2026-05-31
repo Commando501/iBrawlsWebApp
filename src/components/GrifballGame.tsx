@@ -220,6 +220,15 @@ const CROUCH_BODY_CENTER_HEIGHT = 0.52;
 const AI_HAMMER_JUMP_COOLDOWN = 2.25;
 const AI_HAMMER_JUMP_START_MAX_HEIGHT = 0.08;
 const AI_HAMMER_JUMP_VERTICAL_VELOCITY_EPSILON = 0.1;
+// Stationary-swing geometry, shared by the hit resolver (applyBotMeleeImpact) and the
+// AI commit gates so the two cannot drift. The hammer is a wide ground-pound planted
+// ~attackRange ahead (radius attackRadius); the sword is a precise melee — a tight slash
+// arc close to the wielder. Gating a sword swing on hammer reach is what made every AI
+// "bluff slash": committing a stationary slash from ~6u away that whiffs and only burns
+// the cooldown. The sword closes distance with its lunge, not a ranged stationary swing.
+const HAMMER_STRIKE_FORWARD_FACTOR = 0.875;
+const SWORD_SLASH_FORWARD_FACTOR = 0.3;
+const SWORD_SLASH_RADIUS = 2.0;
 type SwordLungeCurrentTrailStyle = 'localCube' | 'enemyCube' | 'shockwave';
 
 const getCombatBodyCenter = (pos: THREE.Vector3, isCrouching = false): THREE.Vector3 => {
@@ -808,20 +817,42 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     const s = stateRef.current;
     const activeCustomMap = getActiveCustomMap();
     const radiusToUse = activeCustomMap ? activeCustomMap.arenaRadius : s.arenaRadius;
-    const maxRadius = Math.max(0, radiusToUse - 0.6);
-    const distFromCenter = Math.sqrt(pos.x * pos.x + pos.z * pos.z);
 
-    if (distFromCenter > maxRadius && distFromCenter > 0) {
-      const normalX = pos.x / distFromCenter;
-      const normalZ = pos.z / distFromCenter;
-      pos.x = normalX * maxRadius;
-      pos.z = normalZ * maxRadius;
+    if (activeCustomMap?.mapShape === 'rectangular') {
+      const boundX = radiusToUse * 1.2 - 0.6;
+      const boundZ = radiusToUse * 0.6 - 0.6;
 
-      if (vel) {
-        const outwardSpeed = vel.x * normalX + vel.z * normalZ;
-        if (outwardSpeed > 0) {
-          vel.x -= normalX * outwardSpeed;
-          vel.z -= normalZ * outwardSpeed;
+      if (Math.abs(pos.x) > boundX) {
+        const sign = Math.sign(pos.x);
+        pos.x = sign * boundX;
+        if (vel && vel.x * sign > 0) {
+          vel.x = 0;
+        }
+      }
+
+      if (Math.abs(pos.z) > boundZ) {
+        const sign = Math.sign(pos.z);
+        pos.z = sign * boundZ;
+        if (vel && vel.z * sign > 0) {
+          vel.z = 0;
+        }
+      }
+    } else {
+      const maxRadius = Math.max(0, radiusToUse - 0.6);
+      const distFromCenter = Math.sqrt(pos.x * pos.x + pos.z * pos.z);
+
+      if (distFromCenter > maxRadius && distFromCenter > 0) {
+        const normalX = pos.x / distFromCenter;
+        const normalZ = pos.z / distFromCenter;
+        pos.x = normalX * maxRadius;
+        pos.z = normalZ * maxRadius;
+
+        if (vel) {
+          const outwardSpeed = vel.x * normalX + vel.z * normalZ;
+          if (outwardSpeed > 0) {
+            vel.x -= normalX * outwardSpeed;
+            vel.z -= normalZ * outwardSpeed;
+          }
         }
       }
     }
@@ -3817,6 +3848,110 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
           ctx.arc(Math.random() * 512, Math.random() * 512, 50 + Math.random() * 90, 0.4, 3.4);
           ctx.stroke();
         }
+      } else if (type === 'forerunner_panel') {
+        // Dark forerunner metallic alloy plates with golden circuit runs
+        ctx.fillStyle = '#17191e';
+        ctx.fillRect(0, 0, 512, 512);
+        // Dark plate joints
+        ctx.strokeStyle = '#282b35';
+        ctx.lineWidth = 3.5;
+        for (let idx = 0; idx <= 512; idx += 128) {
+          ctx.beginPath(); ctx.moveTo(idx, 0); ctx.lineTo(idx, 512); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(0, idx); ctx.lineTo(512, idx); ctx.stroke();
+        }
+        // Glowing gold circuit paths
+        ctx.strokeStyle = baseColorHex;
+        ctx.lineWidth = 2.2;
+        ctx.shadowColor = baseColorHex;
+        ctx.shadowBlur = 8;
+        for (let rx = 64; rx < 512; rx += 128) {
+          for (let ry = 64; ry < 512; ry += 128) {
+            ctx.strokeRect(rx - 22, ry - 22, 44, 44);
+            ctx.beginPath();
+            ctx.arc(rx, ry, 6, 0, Math.PI * 2);
+            ctx.stroke();
+          }
+        }
+        ctx.shadowBlur = 0;
+      } else if (type === 'forerunner_gold') {
+        // Brushed forerunner gold plates with fine runic lines
+        ctx.fillStyle = '#a16207'; // deep gold-bronze
+        ctx.fillRect(0, 0, 512, 512);
+        ctx.strokeStyle = baseColorHex; // bright glowing gold
+        ctx.lineWidth = 2.8;
+        ctx.shadowColor = baseColorHex;
+        ctx.shadowBlur = 9;
+        for (let i = 32; i < 512; i += 64) {
+          ctx.beginPath();
+          ctx.moveTo(i, 0); ctx.lineTo(i, 512);
+          ctx.moveTo(0, i); ctx.lineTo(512, i);
+          ctx.stroke();
+        }
+        for (let x = 64; x < 512; x += 128) {
+          for (let y = 64; y < 512; y += 128) {
+            ctx.beginPath();
+            ctx.arc(x, y, 10, 0, Math.PI * 2);
+            ctx.stroke();
+          }
+        }
+        ctx.shadowBlur = 0;
+      } else if (type === 'synthwave_grid') {
+        // Glowing cyan/pink grid
+        ctx.fillStyle = '#06020f'; // deep black purple
+        ctx.fillRect(0, 0, 512, 512);
+        // Draw grid lines
+        ctx.strokeStyle = '#06b6d4'; // neon cyan
+        ctx.lineWidth = 3.5;
+        ctx.shadowColor = '#06b6d4';
+        ctx.shadowBlur = 10;
+        for (let i = 0; i <= 512; i += 64) {
+          ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, 512); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(512, i); ctx.stroke();
+        }
+        // Sub-grid highlights
+        ctx.strokeStyle = '#ec4899'; // neon pink
+        ctx.lineWidth = 1.0;
+        ctx.shadowColor = '#ec4899';
+        ctx.shadowBlur = 4;
+        for (let i = 32; i < 512; i += 64) {
+          ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, 512); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(512, i); ctx.stroke();
+        }
+        ctx.shadowBlur = 0;
+      } else if (type === 'synthwave_neon_laser') {
+        // Neon energy lines
+        ctx.fillStyle = '#080214';
+        ctx.fillRect(0, 0, 512, 512);
+        ctx.strokeStyle = baseColorHex || '#ec4899';
+        ctx.lineWidth = 4.0;
+        ctx.shadowColor = baseColorHex || '#ec4899';
+        ctx.shadowBlur = 12;
+        // Drawing diagonal neon laser strips
+        for (let i = -256; i < 512; i += 128) {
+          ctx.beginPath();
+          ctx.moveTo(i, 0);
+          ctx.lineTo(i + 256, 512);
+          ctx.stroke();
+        }
+        ctx.shadowBlur = 0;
+      } else if (type === 'synthwave_chrome') {
+        // Horizon line chrome gradient
+        const grad = ctx.createLinearGradient(0, 0, 0, 512);
+        grad.addColorStop(0, '#06b6d4'); // cyber cyan sky
+        grad.addColorStop(0.48, '#08041d'); // deep sky horizon border
+        grad.addColorStop(0.5, '#ffffff'); // blinding horizon shine
+        grad.addColorStop(0.52, '#d946ef'); // neon pink ground reflection
+        grad.addColorStop(1, '#1e1b4b'); // deep reflection base
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, 512, 512);
+        // Add subtle horizontal metal grooves
+        ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+        ctx.lineWidth = 1.5;
+        for (let y = 32; y < 512; y += 48) {
+          if (Math.abs(y - 256) > 20) {
+            ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(512, y); ctx.stroke();
+          }
+        }
       }
 
       const texture = new THREE.CanvasTexture(canvas);
@@ -3866,7 +4001,12 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
       // Render Dynamic Custom Floor
       const r = activeCustomMap.arenaRadius;
-      const floorGeo = new THREE.CylinderGeometry(r, r, 0.2, 64);
+      let floorGeo: THREE.BufferGeometry;
+      if (activeCustomMap.mapShape === 'rectangular') {
+        floorGeo = new THREE.BoxGeometry(r * 2.4, 0.2, r * 1.2);
+      } else {
+        floorGeo = new THREE.CylinderGeometry(r, r, 0.2, 64);
+      }
       
       // Select appropriate theme floor texture
       let floorTexType: any = 'futuristic_hex';
@@ -3886,6 +4026,12 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       } else if (activeCustomMap.theme === 'fantasy') {
         floorTexType = 'fantasy_cobble';
         floorColor = '#9ca3af';
+      } else if (activeCustomMap.theme === 'forerunner') {
+        floorTexType = 'forerunner_panel';
+        floorColor = '#d97706';
+      } else if (activeCustomMap.theme === 'synthwave') {
+        floorTexType = 'synthwave_grid';
+        floorColor = '#ec4899';
       }
 
       const floorTexture = generateCustomTexture(floorTexType, '#0f172a');
@@ -3941,6 +4087,172 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         scene.add(mesh);
         threeRef.current.customMapObjects!.push(mesh);
       });
+
+      // Spawn Synthwave scenery if theme is synthwave
+      if (activeCustomMap.theme === 'synthwave') {
+        const synthwaveGroup = new THREE.Group();
+        synthwaveGroup.name = 'synthwave_scenery';
+
+        // 1. Striped Gradient Sunset Sun Disc
+        const sunCanvas = document.createElement('canvas');
+        sunCanvas.width = 512;
+        sunCanvas.height = 512;
+        const sunCtx = sunCanvas.getContext('2d')!;
+        
+        const sunGrad = sunCtx.createLinearGradient(0, 50, 0, 462);
+        sunGrad.addColorStop(0, '#ffe066'); // Golden yellow top
+        sunGrad.addColorStop(0.5, '#ff007f'); // Neon pink middle
+        sunGrad.addColorStop(1, '#9400d3'); // Purple violet bottom
+        
+        sunCtx.fillStyle = sunGrad;
+        sunCtx.beginPath();
+        sunCtx.arc(256, 256, 230, 0, Math.PI * 2);
+        sunCtx.fill();
+
+        // Horizontal slices (Outrun style)
+        sunCtx.fillStyle = '#0a0518'; // Blends with atmospheric fog/sky
+        for (let y = 250; y < 512; y += 18) {
+          const thickness = Math.max(1.5, (y - 250) / 7.5);
+          sunCtx.fillRect(0, y, 512, thickness);
+        }
+
+        const sunTexture = new THREE.CanvasTexture(sunCanvas);
+        const sunMat = new THREE.MeshBasicMaterial({
+          map: sunTexture,
+          transparent: true,
+          side: THREE.DoubleSide
+        });
+        const sunGeo = new THREE.PlaneGeometry(55, 55);
+        const sunMesh = new THREE.Mesh(sunGeo, sunMat);
+        sunMesh.position.set(0, 16, -72);
+        synthwaveGroup.add(sunMesh);
+
+        // 2. Skyscrapers Skyline Silhouettes
+        const cityWidths = [12, 8, 14, 10, 6, 16, 9, 11, 13, 7, 15, 10];
+        const cityHeights = [18, 28, 22, 34, 15, 20, 26, 32, 19, 29, 24, 17];
+        const numBuildings = cityWidths.length;
+        
+        for (let i = 0; i < numBuildings; i++) {
+          const w = cityWidths[i];
+          const h = cityHeights[i];
+          const d = 6;
+          const x = -48 + (i * 9) + (Math.random() - 0.5) * 1.5;
+          const y = h / 2 - 2;
+          const z = -60 + (Math.random() - 0.5) * 2;
+
+          const bGeo = new THREE.BoxGeometry(w, h, d);
+          
+          const bCanvas = document.createElement('canvas');
+          bCanvas.width = 128;
+          bCanvas.height = 256;
+          const bCtx = bCanvas.getContext('2d')!;
+          bCtx.fillStyle = '#05020c';
+          bCtx.fillRect(0, 0, 128, 256);
+          
+          bCtx.fillStyle = i % 2 === 0 ? '#06b6d4' : '#ec4899';
+          for (let wy = 24; wy < 240; wy += 20) {
+            for (let wx = 12; wx < 116; wx += 16) {
+              if (Math.random() < 0.6) {
+                bCtx.fillRect(wx, wy, 6, 10);
+              }
+            }
+          }
+
+          const bTexture = new THREE.CanvasTexture(bCanvas);
+          const bMat = new THREE.MeshStandardMaterial({
+            map: bTexture,
+            roughness: 0.9,
+            metalness: 0.1,
+            emissive: i % 2 === 0 ? '#06b6d4' : '#ec4899',
+            emissiveIntensity: 0.2
+          });
+
+          const building = new THREE.Mesh(bGeo, bMat);
+          building.position.set(x, y, z);
+          synthwaveGroup.add(building);
+        }
+
+        // 3. Glowing Laser Beams
+        const laserColors = ['#ec4899', '#06b6d4', '#eab308'];
+        for (let i = 0; i < 9; i++) {
+          const lGeo = new THREE.CylinderGeometry(0.12, 0.12, 100, 6);
+          const col = laserColors[i % laserColors.length];
+          const lMat = new THREE.MeshBasicMaterial({
+            color: col,
+            transparent: true,
+            opacity: 0.4,
+            blending: THREE.AdditiveBlending
+          });
+          const laser = new THREE.Mesh(lGeo, lMat);
+          const lx = -45 + (i * 11.25);
+          laser.position.set(lx, 40, -68);
+          synthwaveGroup.add(laser);
+        }
+
+        // 4. Low-Poly Neon Palm Trees
+        const buildSynthwavePalmTree = (leafColor: string, trunkColor: string) => {
+          const treeGroup = new THREE.Group();
+          const numSegments = 5;
+          const trunkMat = new THREE.MeshStandardMaterial({
+            color: '#08041d',
+            roughness: 0.7,
+            metalness: 0.8,
+            emissive: trunkColor,
+            emissiveIntensity: 1.5
+          });
+
+          let currentParent: THREE.Group | THREE.Mesh = treeGroup;
+          for (let j = 0; j < numSegments; j++) {
+            const segGeo = new THREE.CylinderGeometry(0.18 - j * 0.02, 0.23 - j * 0.02, 1.3, 8);
+            const segment = new THREE.Mesh(segGeo, trunkMat);
+            segment.position.y = j === 0 ? 0.65 : 1.2;
+            segment.rotation.z = 0.08;
+            currentParent.add(segment);
+            currentParent = segment;
+          }
+
+          const leafMat = new THREE.MeshStandardMaterial({
+            color: leafColor,
+            emissive: leafColor,
+            emissiveIntensity: 2.2,
+            roughness: 0.3,
+            metalness: 0.5,
+            side: THREE.DoubleSide
+          });
+
+          const numLeaves = 7;
+          for (let j = 0; j < numLeaves; j++) {
+            const angle = (j * Math.PI * 2) / numLeaves;
+            const leafGeo = new THREE.BoxGeometry(2.4, 0.06, 0.5);
+            const leaf = new THREE.Mesh(leafGeo, leafMat);
+            leaf.geometry.translate(1.2, 0, 0);
+            leaf.position.set(0, 0.65, 0);
+            leaf.rotation.y = angle;
+            leaf.rotation.z = 0.22;
+            currentParent.add(leaf);
+          }
+
+          return treeGroup;
+        };
+
+        const palmPositionsZ = [-16, -6, 4, 14];
+        palmPositionsZ.forEach((pz, idx) => {
+          const leftPalm = buildSynthwavePalmTree('#ec4899', '#06b6d4');
+          leftPalm.position.set(-23.5, 0, pz);
+          leftPalm.scale.set(1.1, 1.1, 1.1);
+          leftPalm.rotation.y = Math.PI / 4 + idx;
+          synthwaveGroup.add(leftPalm);
+
+          const rightPalm = buildSynthwavePalmTree('#06b6d4', '#ec4899');
+          rightPalm.position.set(23.5, 0, pz + 1.0);
+          rightPalm.scale.set(1.1, 1.1, 1.1);
+          rightPalm.rotation.y = -Math.PI / 4 + idx;
+          synthwaveGroup.add(rightPalm);
+        });
+
+        scene.add(synthwaveGroup);
+        threeRef.current.customMapObjects!.push(synthwaveGroup);
+      }
 
       // Clear any pre-existing navigation mesh, force A* engine to rebuild on the fly
       threeRef.current.navMesh = undefined;
@@ -6397,8 +6709,15 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     if (!bot || bot.hp <= 0 || (bot.respawnTimer ?? 0) > 0) return;
 
     const weapon = bot.activeWeapon === 'sword' ? 'sword' : 'hammer';
-    const forward = (s.settings.attackRange ?? 3.2) * (weapon === 'hammer' ? 0.875 : 1.0);
-    const radius = s.settings.attackRadius ?? 4.5;
+    // The hammer is the AoE weapon: a wide ground-pound (radius attackRadius, planted
+    // ~attackRange ahead). The sword is a precise melee — a tight slash arc close to the
+    // wielder, NOT a hammer-sized ranged AoE. Sharing the hammer's forward/radius let a
+    // sword-only AI land hammer-radius hits from ~7u away (and render the hammer splash),
+    // so it looked and played like a hammer despite the sword-only preset. Sword closes
+    // distance with its lunge; this stationary swing is only a short-range slash.
+    const isHammer = weapon === 'hammer';
+    const forward = (s.settings.attackRange ?? 3.2) * (isHammer ? HAMMER_STRIKE_FORWARD_FACTOR : SWORD_SLASH_FORWARD_FACTOR);
+    const radius = isHammer ? (s.settings.attackRadius ?? 4.5) : SWORD_SLASH_RADIUS;
 
     const eye = new THREE.Vector3(bot.pos.x, bot.pos.y + 1.2, bot.pos.z);
     const heading = new THREE.Vector3(Math.sin(bot.yaw), 0, Math.cos(bot.yaw));
@@ -6406,7 +6725,12 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     heading.normalize();
     const impactPos = eye.clone().addScaledVector(heading, forward);
 
-    renderHammerSplashVfx(impactPos, weapon === 'hammer' ? '#f97316' : '#ef4444', radius);
+    if (isHammer) {
+      renderHammerSplashVfx(impactPos, '#f97316', radius);
+    } else {
+      // Sword slash burst — red energy, no hammer ground-splash.
+      spawnVoxelShockwaveParticles(impactPos, '#ef4444');
+    }
     sfx.playExplosion();
 
     const creditKill = (victimId: string, victimName: string) => {
@@ -7776,8 +8100,19 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       }
 
       // Arena constraints
-      const distFromCenter = Math.sqrt(s.playerPos.x * s.playerPos.x + s.playerPos.z * s.playerPos.z);
-      if (distFromCenter >= s.arenaRadius - 0.6) {
+      let hitsBoundary = false;
+      const activeCustomMap = getActiveCustomMap();
+      if (activeCustomMap?.mapShape === 'rectangular') {
+        const boundX = (activeCustomMap.arenaRadius * 1.2) - 0.6;
+        const boundZ = (activeCustomMap.arenaRadius * 0.6) - 0.6;
+        hitsBoundary = Math.abs(s.playerPos.x) >= boundX || Math.abs(s.playerPos.z) >= boundZ;
+      } else {
+        const distFromCenter = Math.sqrt(s.playerPos.x * s.playerPos.x + s.playerPos.z * s.playerPos.z);
+        const radiusToUse = activeCustomMap ? activeCustomMap.arenaRadius : s.arenaRadius;
+        hitsBoundary = distFromCenter >= radiusToUse - 0.6;
+      }
+
+      if (hitsBoundary) {
         constrainCombatantToArena(s.playerPos, s.playerVel);
         s.isLunging = false;
         recordPlayerLungeEndObservation(false);
@@ -10040,12 +10375,14 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
       state = 'SPAWN_GUARDING';
 
+      const activeMap = getActiveCustomMap();
       const spawnPosScore = scorePosition({
         botX: pos.x,
         botZ: pos.z,
         targetX: anticipatedSpawn.x,
         targetZ: anticipatedSpawn.z,
-        arenaRadius: s.arenaRadius,
+        arenaRadius: activeMap ? activeMap.arenaRadius : s.arenaRadius,
+        mapShape: activeMap?.mapShape,
       });
 
       if (spawnDist > 6.0) {
@@ -10115,22 +10452,38 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     const targetAirborne = predictedTargetPos.y > 0.35 || target.pos.y > 0.35 || (!!target.vel && Math.abs(target.vel.y) > 1.0);
     const targetLandingPos = predictLandingPosition(target.pos, target.vel, Math.min(1.5, predictionLead + tunedAnticipationFactor * 0.65));
     
-    const predDistFromCenter = Math.sqrt(predictedTargetPos.x * predictedTargetPos.x + predictedTargetPos.z * predictedTargetPos.z);
-    if (predDistFromCenter > s.arenaRadius - 0.6) {
-      const angle = Math.atan2(predictedTargetPos.z, predictedTargetPos.x);
-      predictedTargetPos.x = Math.cos(angle) * (s.arenaRadius - 0.6);
-      predictedTargetPos.z = Math.sin(angle) * (s.arenaRadius - 0.6);
+    const activeCustomMap = getActiveCustomMap();
+    const radiusToUse = activeCustomMap ? activeCustomMap.arenaRadius : s.arenaRadius;
+    if (activeCustomMap?.mapShape === 'rectangular') {
+      const boundX = radiusToUse * 1.2 - 0.6;
+      const boundZ = radiusToUse * 0.6 - 0.6;
+      predictedTargetPos.x = Math.max(-boundX, Math.min(boundX, predictedTargetPos.x));
+      predictedTargetPos.z = Math.max(-boundZ, Math.min(boundZ, predictedTargetPos.z));
+    } else {
+      const predDistFromCenter = Math.sqrt(predictedTargetPos.x * predictedTargetPos.x + predictedTargetPos.z * predictedTargetPos.z);
+      if (predDistFromCenter > radiusToUse - 0.6) {
+        const angle = Math.atan2(predictedTargetPos.z, predictedTargetPos.x);
+        predictedTargetPos.x = Math.cos(angle) * (radiusToUse - 0.6);
+        predictedTargetPos.z = Math.sin(angle) * (radiusToUse - 0.6);
+      }
     }
 
     const movementTargetPos = targetAirborne && movementComplexity >= 50
       ? ((target.vel?.y ?? 0) < -0.75 ? targetLandingPos : predictedTargetPos)
       : predictedTargetPos;
 
-    const landingDistFromCenter = Math.sqrt(movementTargetPos.x * movementTargetPos.x + movementTargetPos.z * movementTargetPos.z);
-    if (landingDistFromCenter > s.arenaRadius - 0.6) {
-      const angle = Math.atan2(movementTargetPos.z, movementTargetPos.x);
-      movementTargetPos.x = Math.cos(angle) * (s.arenaRadius - 0.6);
-      movementTargetPos.z = Math.sin(angle) * (s.arenaRadius - 0.6);
+    if (activeCustomMap?.mapShape === 'rectangular') {
+      const boundX = radiusToUse * 1.2 - 0.6;
+      const boundZ = radiusToUse * 0.6 - 0.6;
+      movementTargetPos.x = Math.max(-boundX, Math.min(boundX, movementTargetPos.x));
+      movementTargetPos.z = Math.max(-boundZ, Math.min(boundZ, movementTargetPos.z));
+    } else {
+      const landingDistFromCenter = Math.sqrt(movementTargetPos.x * movementTargetPos.x + movementTargetPos.z * movementTargetPos.z);
+      if (landingDistFromCenter > radiusToUse - 0.6) {
+        const angle = Math.atan2(movementTargetPos.z, movementTargetPos.x);
+        movementTargetPos.x = Math.cos(angle) * (radiusToUse - 0.6);
+        movementTargetPos.z = Math.sin(angle) * (radiusToUse - 0.6);
+      }
     }
 
     const toTarget = movementTargetPos.clone().sub(pos);
@@ -10204,12 +10557,25 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     // would connect. A small margin is shaved off so the target can't drift out of the
     // sphere during the swing wind-up. selfGrounded gates the commit so a bot only takes
     // the free swing while planted, not mid-leap.
+    // Weapon-aware reach for a *stationary* swing — the distance at which the swing's
+    // damage sphere actually covers the target (see applyBotMeleeImpact). The sword's
+    // slash is a tight arc; gating it on hammer reach made the AI whiff-slash from far
+    // out. A sword bot beyond this band should lunge or keep closing, never bluff-slash.
     const weaponForwardReach =
-      (s.settings.attackRange ?? 3.2) * (activeWeapon === 'hammer' ? 0.875 : 1.0);
-    const guaranteedKillRange = weaponForwardReach + (s.settings.attackRadius ?? 4.5) * 0.8;
+      (s.settings.attackRange ?? 3.2) *
+      (activeWeapon === 'hammer' ? HAMMER_STRIKE_FORWARD_FACTOR : SWORD_SLASH_FORWARD_FACTOR);
+    const weaponStrikeRadius = activeWeapon === 'hammer' ? (s.settings.attackRadius ?? 4.5) : SWORD_SLASH_RADIUS;
+    const guaranteedKillRange = weaponForwardReach + weaponStrikeRadius * 0.8;
     const enemyInKillRange =
       target.hp > 0 && !targetIsProtected && attackDistanceToTarget <= guaranteedKillRange;
     const selfGrounded = pos.y <= 0.05 && !self.isJumping && Math.abs(vel.y) <= 0.01;
+
+    // Distance at which a stationary swing may be *committed*. The hammer keeps its
+    // spacing-tuned reach (its sphere is wide). The sword is clamped to where its slash
+    // actually lands so it never commits an out-of-range bluff slash — when it is too far
+    // to connect but inside the lunge band, the lunge path closes the gap instead.
+    const stationarySwingReach =
+      activeWeapon === 'hammer' ? resolvedAiReach : Math.min(resolvedAiReach, guaranteedKillRange);
 
     const inCoordCommitBand =
       attackDistanceToTarget <= resolvedAiReach + 0.5 &&
@@ -10233,7 +10599,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     if (target.id === LOCAL_PLAYER_ID) {
       const nowSeconds = performance.now() / 1000;
       recordLocalPlayerObservation((model) => {
-        observePlayerPosition(model, s.playerPos.x, s.playerPos.z, s.arenaRadius, nowSeconds);
+        observePlayerPosition(model, s.playerPos.x, s.playerPos.z, s.arenaRadius, nowSeconds, getActiveCustomMap()?.mapShape);
         if (distanceToTarget < 15) {
           const speed = Math.hypot(s.playerVel.x, s.playerVel.z);
           const maxSpeed = (s.settings.speedForward / 100) * 5.0;
@@ -10346,6 +10712,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
     const revertWeaponSwapFeint = () => {
       if (activeWeapon !== 'sword') return;
+      if (hammerForbidden) return;
       self.swapLockoutTimer = 0;
       swapCombatantWeapon(self, 'hammer');
       activeWeapon = 'hammer';
@@ -10458,7 +10825,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         return 'lunge';
       }
 
-      if (attackDistanceToTarget <= resolvedAiReach) {
+      if (attackDistanceToTarget <= stationarySwingReach) {
         state = 'COOLDOWN';
         const isHammerMelee = activeWeapon === 'hammer' && Math.random() < 0.4;
         
@@ -10871,8 +11238,19 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       }
 
       const startDist = pos.distanceTo(new THREE.Vector3(self.lungeStartPos!.x, self.lungeStartPos!.y, self.lungeStartPos!.z));
-      const distFromCenter = Math.sqrt(pos.x * pos.x + pos.z * pos.z);
-      if (distFromCenter >= s.arenaRadius - 0.65) {
+      let hitsBoundary = false;
+      const activeCustomMap = getActiveCustomMap();
+      if (activeCustomMap?.mapShape === 'rectangular') {
+        const boundX = (activeCustomMap.arenaRadius * 1.2) - 0.65;
+        const boundZ = (activeCustomMap.arenaRadius * 0.6) - 0.65;
+        hitsBoundary = Math.abs(pos.x) >= boundX || Math.abs(pos.z) >= boundZ;
+      } else {
+        const distFromCenter = Math.sqrt(pos.x * pos.x + pos.z * pos.z);
+        const radiusToUse = activeCustomMap ? activeCustomMap.arenaRadius : s.arenaRadius;
+        hitsBoundary = distFromCenter >= radiusToUse - 0.65;
+      }
+
+      if (hitsBoundary) {
         finishSwordLunge(cooldownMult, 'miss_arena', target.id);
       } else if (startDist > 16.0 || self.lungeTimer > 0.8) {
         finishSwordLunge(cooldownMult, 'miss_timeout', target.id);
@@ -11012,6 +11390,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         predictedTargetZ: predictedTargetPos.z,
         arenaRadius: activeCustomMap ? activeCustomMap.arenaRadius : s.arenaRadius,
         spatialIQ,
+        mapShape: activeCustomMap?.mapShape,
       });
       const blendedHeading = blendSpatialHeading(lookHeading.x, lookHeading.z, spatialBias);
       const spatialLookHeading = new THREE.Vector3(blendedHeading.x, 0, blendedHeading.z);
@@ -11366,7 +11745,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         vel.copy(lookHeading).multiplyScalar(6.5 * (s.settings.speedForward / 100));
         pos.addScaledVector(vel, dt);
 
-        if (attackDistanceToTarget <= resolvedAiReach && weaponState === 'ready' && target.hp > 0 && !targetIsProtected) {
+        if (attackDistanceToTarget <= stationarySwingReach && weaponState === 'ready' && target.hp > 0 && !targetIsProtected) {
           if (isCoordAttackBlocked()) {
             state = 'SIDE_STEPPING';
             timer = 0.25;
@@ -11439,7 +11818,9 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
           const pressureAttack = {
             activeWeapon,
             distanceToTarget: attackDistanceToTarget,
-            aiReach: resolvedAiReach,
+            // Sword re-swings only at its true slash reach; out of range it relies on the
+            // lunge path (shouldPressurePreferLunge) to close, not a stationary bluff slash.
+            aiReach: stationarySwingReach,
             minLungeRange,
             maxLungeRange,
             weaponReady: weaponState === 'ready',

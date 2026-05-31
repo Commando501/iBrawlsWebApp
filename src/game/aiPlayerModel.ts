@@ -156,13 +156,23 @@ export function observePlayerPosition(
   posZ: number,
   arenaRadius: number,
   nowSeconds: number,
+  mapShape?: string,
 ): void {
   if (nowSeconds - model.lastPositionSampleTime < 0.25) {
     return;
   }
   model.lastPositionSampleTime = nowSeconds;
-  const distFromCenter = Math.hypot(posX, posZ);
-  const proximity = Math.min(1, distFromCenter / Math.max(1, arenaRadius - 0.6));
+  let proximity = 0;
+  if (mapShape === 'rectangular') {
+    const boundX = arenaRadius * 1.2 - 0.6;
+    const boundZ = arenaRadius * 0.6 - 0.6;
+    const normX = Math.abs(posX) / Math.max(1, boundX);
+    const normZ = Math.abs(posZ) / Math.max(1, boundZ);
+    proximity = Math.min(1, Math.max(normX, normZ));
+  } else {
+    const distFromCenter = Math.hypot(posX, posZ);
+    proximity = Math.min(1, distFromCenter / Math.max(1, arenaRadius - 0.6));
+  }
   model.edgeProximity = ema(model.edgeProximity, proximity);
   model.sampleCount += 1;
 }

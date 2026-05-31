@@ -93,6 +93,25 @@ export function evaluateAICombatDecision(input: AICombatDecisionInput): AICombat
   const pSword = input.weaponPrioritization / 100;
   const swordForbidden = pSword <= 0;
   const hammerForbidden = pSword >= 1;
+
+  if (swordForbidden && input.currentWeapon === 'sword') {
+    return {
+      weapon: 'hammer',
+      bulltrueCounter: null,
+      postMissSpacing: false,
+      bypassedRandomGate: true,
+    };
+  }
+
+  if (hammerForbidden && input.currentWeapon === 'hammer') {
+    return {
+      weapon: 'sword',
+      bulltrueCounter: null,
+      postMissSpacing: false,
+      bypassedRandomGate: true,
+    };
+  }
+
   const targetIsProtected = (input.target.invulnerabilityTimer ?? 0) > 0;
   const minDistance = Math.min(input.distanceToTarget, input.combatDistanceToTarget ?? input.distanceToTarget);
   const playerDangerZone = input.attackRange + input.attackRadius * 0.85;

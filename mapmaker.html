@@ -240,6 +240,54 @@
           { id: 'obj_extractor', name: 'Meteorite Ore Extractor', type: 'cylinder', position: { x: 0, y: 2.5, z: 0 }, rotation: { x: 0, y: 0, z: 0 }, scale: { x: 2.6, y: 5, z: 2.6 }, color: '#334155', metalness: 0.95, roughness: 0.05, opacity: 1, transparent: false, emissive: '#ca8a04', emissiveIntensity: 1.0, isCollidable: true, texture: 'space_alloy' },
           { id: 'obj_asteroid_1', name: 'Asteroid Ore Cluster 1', type: 'box', position: { x: -6, y: 1.5, z: 5 }, rotation: { x: 0, y: 0.6, z: 0 }, scale: { x: 2.2, y: 3.0, z: 2.2 }, color: '#1e293b', metalness: 0.3, roughness: 0.8, opacity: 1, transparent: false, emissive: '#ca8a04', emissiveIntensity: 1.8, isCollidable: true, texture: 'space_meteorite' }
         ]
+      },
+      {
+        id: 'forerunner_canyon',
+        name: 'Forerunner Canyon Plateau',
+        description: 'A suspended rectangular forerunner arena hovering over a golden desert canyon. Features glowing faction corner towers, central spires, and a colossal background beacon tower.',
+        theme: 'forerunner',
+        mapShape: 'rectangular',
+        arenaRadius: 20,
+        skyboxHue: 35,
+        skyboxBrightness: 7,
+        fogColor: '#1d1510',
+        fogDensity: 0.016,
+        spawnPoints: [
+          { x: -16, y: 0, z: -6 },
+          { x: -16, y: 0, z: 6 },
+          { x: -12, y: 0, z: -8 },
+          { x: -12, y: 0, z: 8 },
+          { x: 16, y: 0, z: -6 },
+          { x: 16, y: 0, z: 6 },
+          { x: 12, y: 0, z: -8 },
+          { x: 12, y: 0, z: 8 }
+        ],
+        lighting: {
+          ambientColor: '#18120e',
+          ambientIntensity: 0.8,
+          directColor: '#fef08a',
+          directIntensity: 2.5,
+          directPosition: { x: -10, y: 25, z: -10 },
+          pointLights: [
+            { id: 'blue_spire_nw', color: '#00ccff', intensity: 3.5, distance: 15, decay: 1.2, position: { x: -22, y: 4, z: -11 } },
+            { id: 'blue_spire_sw', color: '#00ccff', intensity: 3.5, distance: 15, decay: 1.2, position: { x: -22, y: 4, z: 11 } },
+            { id: 'red_spire_ne', color: '#ff3344', intensity: 3.5, distance: 15, decay: 1.2, position: { x: 22, y: 4, z: -11 } },
+            { id: 'red_spire_se', color: '#ff3344', intensity: 3.5, distance: 15, decay: 1.2, position: { x: 22, y: 4, z: 11 } }
+          ]
+        },
+        objects: [
+          { id: 'spire_nw', name: 'Forerunner Anchor Spire NW', type: 'cylinder', position: { x: -22, y: 4, z: -11 }, rotation: { x: 0, y: 0, z: 0 }, scale: { x: 2.0, y: 8.0, z: 2.0 }, color: '#ca8a04', metalness: 0.9, roughness: 0.1, opacity: 1.0, transparent: false, emissive: '#0088ff', emissiveIntensity: 2.0, isCollidable: true, texture: 'forerunner_gold' },
+          { id: 'spire_sw', name: 'Forerunner Anchor Spire SW', type: 'cylinder', position: { x: -22, y: 4, z: 11 }, rotation: { x: 0, y: 0, z: 0 }, scale: { x: 2.0, y: 8.0, z: 2.0 }, color: '#ca8a04', metalness: 0.9, roughness: 0.1, opacity: 1.0, transparent: false, emissive: '#0088ff', emissiveIntensity: 2.0, isCollidable: true, texture: 'forerunner_gold' },
+          { id: 'spire_ne', name: 'Forerunner Anchor Spire NE', type: 'cylinder', position: { x: 22, y: 4, z: -11 }, rotation: { x: 0, y: 0, z: 0 }, scale: { x: 2.0, y: 8.0, z: 2.0 }, color: '#ca8a04', metalness: 0.9, roughness: 0.1, opacity: 1.0, transparent: false, emissive: '#ff0033', emissiveIntensity: 2.0, isCollidable: true, texture: 'forerunner_gold' },
+          { id: 'spire_se', name: 'Forerunner Anchor Spire SE', type: 'cylinder', position: { x: 22, y: 4, z: 11 }, rotation: { x: 0, y: 0, z: 0 }, scale: { x: 2.0, y: 8.0, z: 2.0 }, color: '#ca8a04', metalness: 0.9, roughness: 0.1, opacity: 1.0, transparent: false, emissive: '#ff0033', emissiveIntensity: 2.0, isCollidable: true, texture: 'forerunner_gold' },
+          { id: 'spire_cn', name: 'Forerunner Pylon Center N', type: 'cylinder', position: { x: 0, y: 4, z: -11 }, rotation: { x: 0, y: 0, z: 0 }, scale: { x: 1.6, y: 8.0, z: 1.6 }, color: '#1e293b', metalness: 0.8, roughness: 0.2, opacity: 1.0, transparent: false, emissive: '#f59e0b', emissiveIntensity: 1.5, isCollidable: true, texture: 'forerunner_panel' },
+          { id: 'spire_cs', name: 'Forerunner Pylon Center S', type: 'cylinder', position: { x: 0, y: 4, z: 11 }, rotation: { x: 0, y: 0, z: 0 }, scale: { x: 1.6, y: 8.0, z: 1.6 }, color: '#1e293b', metalness: 0.8, roughness: 0.2, opacity: 1.0, transparent: false, emissive: '#f59e0b', emissiveIntensity: 1.5, isCollidable: true, texture: 'forerunner_panel' },
+          { id: 'barrier_w', name: 'Forerunner Buffer W', type: 'box', position: { x: -17, y: 1.0, z: 0 }, rotation: { x: 0, y: 0, z: 0 }, scale: { x: 1.2, y: 2.0, z: 4.0 }, color: '#1e293b', metalness: 0.8, roughness: 0.2, opacity: 1.0, transparent: false, emissive: '#000000', emissiveIntensity: 0.0, isCollidable: true, texture: 'forerunner_panel' },
+          { id: 'barrier_e', name: 'Forerunner Buffer E', type: 'box', position: { x: 17, y: 1.0, z: 0 }, rotation: { x: 0, y: 0, z: 0 }, scale: { x: 1.2, y: 2.0, z: 4.0 }, color: '#1e293b', metalness: 0.8, roughness: 0.2, opacity: 1.0, transparent: false, emissive: '#000000', emissiveIntensity: 0.0, isCollidable: true, texture: 'forerunner_panel' },
+          { id: 'bg_beacon_tower', name: 'Majestic Beacon Tower', type: 'cylinder', position: { x: 0, y: 20, z: -35 }, rotation: { x: 0, y: 0, z: 0 }, scale: { x: 3.0, y: 40.0, z: 3.0 }, color: '#1f2937', metalness: 0.9, roughness: 0.1, opacity: 1.0, transparent: false, emissive: '#fbbf24', emissiveIntensity: 3.0, isCollidable: false, texture: 'forerunner_gold' },
+          { id: 'bg_pillar_l', name: 'Canyon Anchor Left', type: 'cylinder', position: { x: -45, y: 15, z: -25 }, rotation: { x: 0.15, y: 0, z: 0.25 }, scale: { x: 4.0, y: 30.0, z: 4.0 }, color: '#374151', metalness: 0.8, roughness: 0.2, opacity: 1.0, transparent: false, emissive: '#000000', emissiveIntensity: 0.0, isCollidable: false, texture: 'forerunner_panel' },
+          { id: 'bg_pillar_r', name: 'Canyon Anchor Right', type: 'cylinder', position: { x: 45, y: 15, z: -25 }, rotation: { x: 0.15, y: 0, z: -0.25 }, scale: { x: 4.0, y: 30.0, z: 4.0 }, color: '#374151', metalness: 0.8, roughness: 0.2, opacity: 1.0, transparent: false, emissive: '#000000', emissiveIntensity: 0.0, isCollidable: false, texture: 'forerunner_panel' }
+        ]
       }
     ];
 
@@ -249,6 +297,7 @@
     let mapAuthor = 'Spartan Architect';
     let mapDescription = 'An outstanding custom battle arena.';
     let theme = 'cyberpunk';
+    let mapShape = 'circle';
     let arenaRadius = 20;
     let skyboxHue = 280;
     let skyboxBrightness = 5;
@@ -476,17 +525,46 @@
 
       boundaryGrid = new THREE.Group();
 
-      // High-tech circular boundary ring
-      const ringGeo = new THREE.RingGeometry(arenaRadius - 0.1, arenaRadius + 0.1, 64);
-      ringGeo.rotateX(-Math.PI / 2);
-      const ringMat = new THREE.MeshBasicMaterial({ color: '#38bdf8', side: THREE.DoubleSide, transparent: true, opacity: 0.4 });
-      const ring = new THREE.Mesh(ringGeo, ringMat);
-      boundaryGrid.add(ring);
+      if (mapShape === 'rectangular') {
+        // Draw rectangular boundary outline
+        const bx = arenaRadius * 1.2;
+        const bz = arenaRadius * 0.6;
+        const points = [
+          new THREE.Vector3(-bx, 0.05, -bz),
+          new THREE.Vector3(bx, 0.05, -bz),
+          new THREE.Vector3(bx, 0.05, bz),
+          new THREE.Vector3(-bx, 0.05, bz),
+          new THREE.Vector3(-bx, 0.05, -bz)
+        ];
+        const lineGeo = new THREE.BufferGeometry().setFromPoints(points);
+        const borderColor = theme === 'synthwave' ? '#ec4899' : '#38bdf8';
+        const lineMat = new THREE.LineBasicMaterial({ color: borderColor, linewidth: 2 });
+        const border = new THREE.Line(lineGeo, lineMat);
+        boundaryGrid.add(border);
 
-      // Grid helper inside boundary
-      const grid = new THREE.GridHelper(arenaRadius * 2, 20, '#1e293b', '#0f172a');
-      grid.position.y = -0.05;
-      boundaryGrid.add(grid);
+        // Scaled grid helper inside boundary (aspect ratio 2:1)
+        const gridColor1 = theme === 'synthwave' ? '#ec4899' : '#1e293b';
+        const gridColor2 = theme === 'synthwave' ? '#06b6d4' : '#0f172a';
+        const grid = new THREE.GridHelper(arenaRadius * 2.4, 24, gridColor1, gridColor2);
+        grid.scale.z = 0.5;
+        grid.position.y = -0.05;
+        boundaryGrid.add(grid);
+      } else {
+        // High-tech circular boundary ring
+        const ringGeo = new THREE.RingGeometry(arenaRadius - 0.1, arenaRadius + 0.1, 64);
+        ringGeo.rotateX(-Math.PI / 2);
+        const ringColor = theme === 'synthwave' ? '#ec4899' : '#38bdf8';
+        const ringMat = new THREE.MeshBasicMaterial({ color: ringColor, side: THREE.DoubleSide, transparent: true, opacity: 0.4 });
+        const ring = new THREE.Mesh(ringGeo, ringMat);
+        boundaryGrid.add(ring);
+
+        // Grid helper inside boundary
+        const gridColor1 = theme === 'synthwave' ? '#ec4899' : '#1e293b';
+        const gridColor2 = theme === 'synthwave' ? '#06b6d4' : '#0f172a';
+        const grid = new THREE.GridHelper(arenaRadius * 2, 20, gridColor1, gridColor2);
+        grid.position.y = -0.05;
+        boundaryGrid.add(grid);
+      }
 
       scene.add(boundaryGrid);
     }
@@ -632,6 +710,101 @@
         ctx.moveTo(40, 40); ctx.lineTo(120, 120); ctx.lineTo(120, 40);
         ctx.moveTo(180, 40); ctx.lineTo(180, 120); ctx.lineTo(220, 80);
         ctx.stroke();
+      } else if (type === 'forerunner_panel') {
+        // Dark forerunner metallic alloy plates with golden circuit runs
+        ctx.fillStyle = '#17191e';
+        ctx.fillRect(0, 0, size, size);
+        ctx.strokeStyle = '#282b35';
+        ctx.lineWidth = 2.5;
+        for (let idx = 0; idx <= size; idx += 64) {
+          ctx.beginPath(); ctx.moveTo(idx, 0); ctx.lineTo(idx, size); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(0, idx); ctx.lineTo(size, idx); ctx.stroke();
+        }
+        ctx.strokeStyle = colorHex || '#eab308';
+        ctx.lineWidth = 1.8;
+        ctx.shadowColor = colorHex || '#eab308';
+        ctx.shadowBlur = 6;
+        for (let rx = 32; rx < size; rx += 64) {
+          for (let ry = 32; ry < size; ry += 64) {
+            ctx.strokeRect(rx - 12, ry - 12, 24, 24);
+            ctx.beginPath();
+            ctx.arc(rx, ry, 4, 0, Math.PI * 2);
+            ctx.stroke();
+          }
+        }
+        ctx.shadowBlur = 0;
+      } else if (type === 'forerunner_gold') {
+        // Brushed forerunner gold plates with fine runic lines
+        ctx.fillStyle = '#a16207'; // deep gold-bronze
+        ctx.fillRect(0, 0, size, size);
+        ctx.strokeStyle = colorHex || '#fbbf24'; // bright glowing gold
+        ctx.lineWidth = 2.0;
+        ctx.shadowColor = colorHex || '#fbbf24';
+        ctx.shadowBlur = 7;
+        for (let i = 16; i < size; i += 32) {
+          ctx.beginPath();
+          ctx.moveTo(i, 0); ctx.lineTo(i, size);
+          ctx.moveTo(0, i); ctx.lineTo(size, i);
+          ctx.stroke();
+        }
+        for (let x = 32; x < size; x += 64) {
+          for (let y = 32; y < size; y += 64) {
+            ctx.beginPath();
+            ctx.arc(x, y, 6, 0, Math.PI * 2);
+            ctx.stroke();
+          }
+        }
+        ctx.shadowBlur = 0;
+      } else if (type === 'synthwave_grid') {
+        ctx.fillStyle = '#06020f';
+        ctx.fillRect(0, 0, size, size);
+        ctx.strokeStyle = '#06b6d4';
+        ctx.lineWidth = 2.0;
+        ctx.shadowColor = '#06b6d4';
+        ctx.shadowBlur = 6;
+        for (let i = 0; i <= size; i += 32) {
+          ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, size); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(size, i); ctx.stroke();
+        }
+        ctx.strokeStyle = '#ec4899';
+        ctx.lineWidth = 1.0;
+        ctx.shadowColor = '#ec4899';
+        ctx.shadowBlur = 3;
+        for (let i = 16; i < size; i += 32) {
+          ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, size); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(size, i); ctx.stroke();
+        }
+        ctx.shadowBlur = 0;
+      } else if (type === 'synthwave_neon_laser') {
+        ctx.fillStyle = '#080214';
+        ctx.fillRect(0, 0, size, size);
+        ctx.strokeStyle = colorHex || '#ec4899';
+        ctx.lineWidth = 2.5;
+        ctx.shadowColor = colorHex || '#ec4899';
+        ctx.shadowBlur = 7;
+        for (let i = -128; i < size; i += 64) {
+          ctx.beginPath();
+          ctx.moveTo(i, 0);
+          ctx.lineTo(i + 128, size);
+          ctx.stroke();
+        }
+        ctx.shadowBlur = 0;
+      } else if (type === 'synthwave_chrome') {
+        const grad = ctx.createLinearGradient(0, 0, 0, size);
+        grad.addColorStop(0, '#06b6d4');
+        grad.addColorStop(0.48, '#08041d');
+        grad.addColorStop(0.5, '#ffffff');
+        grad.addColorStop(0.52, '#d946ef');
+        grad.addColorStop(1, '#1e1b4b');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, size, size);
+        ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+        ctx.lineWidth = 1.0;
+        for (let y = 16; y < size; y += 24) {
+          if (Math.abs(y - 128) > 10) {
+            ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(size, y); ctx.stroke();
+          }
+        }
       } else {
         // Plain colored fallback
         ctx.fillStyle = colorHex || '#4b5563';
@@ -699,6 +872,15 @@
                 <option value="nature" ${theme==='nature'?'selected':''}>Overgrown Nature</option>
                 <option value="space" ${theme==='space'?'selected':''}>Cosmic Starbase</option>
                 <option value="fantasy" ${theme==='fantasy'?'selected':''}>Ancient Fantasy</option>
+                <option value="forerunner" ${theme==='forerunner'?'selected':''}>Forerunner Canyon</option>
+                <option value="synthwave" ${theme==='synthwave'?'selected':''}>Synthwave Grid</option>
+              </select>
+            </div>
+            <div class="mapmaker-field">
+              <span class="mapmaker-label">Arena Shape</span>
+              <select onchange="handleShapeChange(this.value)" class="mapmaker-input cursor-pointer font-bold text-cyan-400 bg-slate-950 uppercase">
+                <option value="circle" ${mapShape==='circle'?'selected':''}>Circular</option>
+                <option value="rectangular" ${mapShape==='rectangular'?'selected':''}>Rectangular</option>
               </select>
             </div>
             <div class="mapmaker-field">
@@ -879,6 +1061,15 @@
                   </optgroup>
                   <optgroup label="Fantasy">
                     <option value="fantasy_runed_stone" ${activeObj.texture==='fantasy_runed_stone'?'selected':''}>ancient Runed Monolith</option>
+                  </optgroup>
+                  <optgroup label="Forerunner">
+                    <option value="forerunner_panel" ${activeObj.texture==='forerunner_panel'?'selected':''}>Forerunner Dark Panel</option>
+                    <option value="forerunner_gold" ${activeObj.texture==='forerunner_gold'?'selected':''}>Forerunner Ornate Gold</option>
+                  </optgroup>
+                  <optgroup label="Synthwave">
+                    <option value="synthwave_grid" ${activeObj.texture==='synthwave_grid'?'selected':''}>Synthwave Cyan Grid</option>
+                    <option value="synthwave_neon_laser" ${activeObj.texture==='synthwave_neon_laser'?'selected':''}>Neon Laser Energy</option>
+                    <option value="synthwave_chrome" ${activeObj.texture==='synthwave_chrome'?'selected':''}>Sunset Chrome</option>
                   </optgroup>
                 </select>
               </div>
@@ -1160,6 +1351,173 @@
           transformControls.detach();
         }
       }
+
+      // Clear any pre-existing Synthwave scenery in editor
+      const oldScenery = scene.getObjectByName('synthwave_scenery');
+      if (oldScenery) scene.remove(oldScenery);
+
+      if (theme === 'synthwave') {
+        const synthwaveGroup = new THREE.Group();
+        synthwaveGroup.name = 'synthwave_scenery';
+
+        // 1. Striped Gradient Sunset Sun Disc
+        const sunCanvas = document.createElement('canvas');
+        sunCanvas.width = 256;
+        sunCanvas.height = 256;
+        const sunCtx = sunCanvas.getContext('2d')!;
+        
+        const sunGrad = sunCtx.createLinearGradient(0, 25, 0, 231);
+        sunGrad.addColorStop(0, '#ffe066');
+        sunGrad.addColorStop(0.5, '#ff007f');
+        sunGrad.addColorStop(1, '#9400d3');
+        
+        sunCtx.fillStyle = sunGrad;
+        sunCtx.beginPath();
+        sunCtx.arc(128, 128, 115, 0, Math.PI * 2);
+        sunCtx.fill();
+
+        sunCtx.fillStyle = fogColor || '#0a0518';
+        for (let y = 120; y < 256; y += 9) {
+          const thickness = Math.max(1, (y - 120) / 7.5);
+          sunCtx.fillRect(0, y, 256, thickness);
+        }
+
+        const sunTexture = new THREE.CanvasTexture(sunCanvas);
+        const sunMat = new THREE.MeshBasicMaterial({
+          map: sunTexture,
+          transparent: true,
+          side: THREE.DoubleSide
+        });
+        const sunGeo = new THREE.PlaneGeometry(55, 55);
+        const sunMesh = new THREE.Mesh(sunGeo, sunMat);
+        sunMesh.position.set(0, 16, -72);
+        synthwaveGroup.add(sunMesh);
+
+        // 2. Skyscrapers Skyline Silhouettes
+        const cityWidths = [12, 8, 14, 10, 6, 16, 9, 11, 13, 7, 15, 10];
+        const cityHeights = [18, 28, 22, 34, 15, 20, 26, 32, 19, 29, 24, 17];
+        const numBuildings = cityWidths.length;
+        
+        for (let i = 0; i < numBuildings; i++) {
+          const w = cityWidths[i];
+          const h = cityHeights[i];
+          const d = 6;
+          const x = -48 + (i * 9) + (Math.random() - 0.5) * 1.5;
+          const y = h / 2 - 2;
+          const z = -60 + (Math.random() - 0.5) * 2;
+
+          const bGeo = new THREE.BoxGeometry(w, h, d);
+          
+          const bCanvas = document.createElement('canvas');
+          bCanvas.width = 64;
+          bCanvas.height = 128;
+          const bCtx = bCanvas.getContext('2d')!;
+          bCtx.fillStyle = '#05020c';
+          bCtx.fillRect(0, 0, 64, 128);
+          
+          bCtx.fillStyle = i % 2 === 0 ? '#06b6d4' : '#ec4899';
+          for (let wy = 12; wy < 120; wy += 10) {
+            for (let wx = 6; wx < 58; wx += 8) {
+              if (Math.random() < 0.6) {
+                bCtx.fillRect(wx, wy, 3, 5);
+              }
+            }
+          }
+
+          const bTexture = new THREE.CanvasTexture(bCanvas);
+          const bMat = new THREE.MeshStandardMaterial({
+            map: bTexture,
+            roughness: 0.9,
+            metalness: 0.1,
+            emissive: i % 2 === 0 ? '#06b6d4' : '#ec4899',
+            emissiveIntensity: 0.2
+          });
+
+          const building = new THREE.Mesh(bGeo, bMat);
+          building.position.set(x, y, z);
+          synthwaveGroup.add(building);
+        }
+
+        // 3. Glowing Laser Beams
+        const laserColors = ['#ec4899', '#06b6d4', '#eab308'];
+        for (let i = 0; i < 9; i++) {
+          const lGeo = new THREE.CylinderGeometry(0.12, 0.12, 100, 6);
+          const col = laserColors[i % laserColors.length];
+          const lMat = new THREE.MeshBasicMaterial({
+            color: col,
+            transparent: true,
+            opacity: 0.4,
+            blending: THREE.AdditiveBlending
+          });
+          const laser = new THREE.Mesh(lGeo, lMat);
+          const lx = -45 + (i * 11.25);
+          laser.position.set(lx, 40, -68);
+          synthwaveGroup.add(laser);
+        }
+
+        // 4. Low-Poly Neon Palm Trees
+        const buildSynthwavePalmTree = (leafColor, trunkColor) => {
+          const treeGroup = new THREE.Group();
+          const numSegments = 5;
+          const trunkMat = new THREE.MeshStandardMaterial({
+            color: '#08041d',
+            roughness: 0.7,
+            metalness: 0.8,
+            emissive: trunkColor,
+            emissiveIntensity: 1.5
+          });
+
+          let currentParent = treeGroup;
+          for (let j = 0; j < numSegments; j++) {
+            const segGeo = new THREE.CylinderGeometry(0.18 - j * 0.02, 0.23 - j * 0.02, 1.3, 8);
+            const segment = new THREE.Mesh(segGeo, trunkMat);
+            segment.position.y = j === 0 ? 0.65 : 1.2;
+            segment.rotation.z = 0.08;
+            currentParent.add(segment);
+            currentParent = segment;
+          }
+
+          const leafMat = new THREE.MeshStandardMaterial({
+            color: leafColor,
+            emissive: leafColor,
+            emissiveIntensity: 2.2,
+            roughness: 0.3,
+            metalness: 0.5,
+            side: THREE.DoubleSide
+          });
+
+          const numLeaves = 7;
+          for (let j = 0; j < numLeaves; j++) {
+            const angle = (j * Math.PI * 2) / numLeaves;
+            const leafGeo = new THREE.BoxGeometry(2.4, 0.06, 0.5);
+            const leaf = new THREE.Mesh(leafGeo, leafMat);
+            leaf.geometry.translate(1.2, 0, 0);
+            leaf.position.set(0, 0.65, 0);
+            leaf.rotation.y = angle;
+            leaf.rotation.z = 0.22;
+            currentParent.add(leaf);
+          }
+
+          return treeGroup;
+        };
+
+        const palmPositionsZ = [-16, -6, 4, 14];
+        palmPositionsZ.forEach((pz, idx) => {
+          const leftPalm = buildSynthwavePalmTree('#ec4899', '#06b6d4');
+          leftPalm.position.set(-23.5, 0, pz);
+          leftPalm.scale.set(1.1, 1.1, 1.1);
+          leftPalm.rotation.y = Math.PI / 4 + idx;
+          synthwaveGroup.add(leftPalm);
+
+          const rightPalm = buildSynthwavePalmTree('#06b6d4', '#ec4899');
+          rightPalm.position.set(23.5, 0, pz + 1.0);
+          rightPalm.scale.set(1.1, 1.1, 1.1);
+          rightPalm.rotation.y = -Math.PI / 4 + idx;
+          synthwaveGroup.add(rightPalm);
+        });
+
+        scene.add(synthwaveGroup);
+      }
     }
 
     // DYNAMIC RADIUS UPDATE
@@ -1397,6 +1755,7 @@
       mapAuthor = pm.author || 'System';
       mapDescription = pm.description;
       theme = pm.theme;
+      mapShape = pm.mapShape || 'circle';
       arenaRadius = pm.arenaRadius;
       skyboxHue = pm.skyboxHue ?? 280;
       skyboxBrightness = pm.skyboxBrightness ?? 5;
@@ -1569,6 +1928,7 @@
         description: mapDescription,
         author: mapAuthor,
         theme,
+        mapShape,
         arenaRadius,
         skyboxHue,
         skyboxBrightness,
@@ -1690,6 +2050,7 @@
             mapAuthor = data.author || 'Imported';
             mapDescription = data.description || '';
             theme = data.theme || 'cyberpunk';
+            mapShape = data.mapShape || 'circle';
             arenaRadius = data.arenaRadius || 20;
             skyboxHue = data.skyboxHue ?? 280;
             skyboxBrightness = data.skyboxBrightness ?? 5;
@@ -1752,11 +2113,28 @@
         fogColor = '#07090d';
         skyboxHue = 35;
         ambientColor = '#111827';
+      } else if (t === 'forerunner') {
+        fogColor = '#1d1510';
+        skyboxHue = 35;
+        ambientColor = '#18120e';
+        directColor = '#fef08a';
+      } else if (t === 'synthwave') {
+        fogColor = '#0a0518';
+        skyboxHue = 310;
+        ambientColor = '#0f051d';
+        directColor = '#f43f5e';
       } else {
         fogColor = '#050811';
         skyboxHue = 280;
         ambientColor = '#0a0f1d';
       }
+      rebuildScene();
+      renderInspector();
+    }
+
+    function handleShapeChange(s) {
+      mapShape = s;
+      rebuildBoundaryGrid();
       rebuildScene();
       renderInspector();
     }

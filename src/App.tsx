@@ -74,7 +74,7 @@ import { ChatOverlay, ChatMessage } from './components/ChatOverlay';
 import { CharacterPreview } from './components/CharacterPreview';
 import { CharacterLoadout, DEFAULT_LOADOUT, AVAILABLE_PRESETS, HelmetPreset, TorsoPreset, ArmPreset, LegPreset } from './components/VoxelModels';
 
-const APP_VERSION = '0.516';
+const APP_VERSION = '0.522';
 const MAX_PLAYER_NAME_LENGTH = 10;
 
 interface OnlineClient {
@@ -694,6 +694,8 @@ const MapPreview: React.FC<{ selectedMap: string; customMap?: CustomMapData | nu
         floorColor = '#3b0764';
       } else if (mapData.theme === 'hangar') {
         floorColor = '#1e293b';
+      } else if (mapData.theme === 'synthwave') {
+        floorColor = '#0a0518';
       }
       
       floor.geometry.dispose();
@@ -3740,8 +3742,8 @@ export default function App() {
                               )}
                             </div>
 
-                            {/* bottom actions when bracket is active */}
-                            {tournamentState.status === 'bracket' && (
+                            {/* bottom actions when bracket is active or playing status but back in lobby */}
+                            {(tournamentState.status === 'bracket' || (tournamentState.status === 'playing' && !isPlaying)) && (
                               <div className="flex flex-col gap-3 mt-auto shrink-0 pt-4">
                                 <button
                                   id="start-tournament-match-btn"
@@ -3749,7 +3751,7 @@ export default function App() {
                                   className="group relative w-full h-16 bg-emerald-500 hover:bg-emerald-400 transition-all duration-300 flex items-center justify-center overflow-hidden cursor-pointer rounded shadow-2xl border border-emerald-400/20 select-none pointer-events-auto"
                                 >
                                   <span className="relative z-10 text-slate-950 font-sans font-black text-sm uppercase tracking-widest pointer-events-none flex items-center gap-2">
-                                    Start Next Match
+                                    {tournamentState.status === 'playing' ? 'Resume Match' : 'Start Next Match'}
                                     <svg className="w-5 h-5 text-slate-950" fill="currentColor" viewBox="0 0 20 20">
                                       <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
                                     </svg>
@@ -6016,7 +6018,7 @@ export default function App() {
                     <option value="circle">🌐 Circle Arena (Minimalist)</option>
                     {PREMADE_MAPS.map(m => (
                       <option key={m.id} value={m.id}>
-                        {m.theme === 'cyberpunk' ? '🌐' : m.theme === 'nature' ? '🌳' : m.theme === 'space' ? '🚀' : '⚔️'} {m.name} (Preset)
+                        {m.theme === 'cyberpunk' ? '🌐' : m.theme === 'nature' ? '🌳' : m.theme === 'space' ? '🚀' : m.theme === 'synthwave' ? '🌴' : '⚔️'} {m.name} (Preset)
                       </option>
                     ))}
                     <option value="custom_file">💾 Load Custom Map (.json)</option>

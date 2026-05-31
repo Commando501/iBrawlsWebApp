@@ -269,6 +269,7 @@ export interface ScorePositionInput {
   targetX: number;
   targetZ: number;
   arenaRadius: number;
+  mapShape?: string;
 }
 
 export interface PositionScore {
@@ -287,7 +288,18 @@ function safeArenaRadius(arenaRadius: number): number {
 }
 
 /** Returns 0 at center, 1 at/near the arena boundary. */
-export function getEdgePressure(distFromCenter: number, arenaRadius: number): number {
+export function getEdgePressure(distFromCenter: number, arenaRadius: number, mapShape?: string, x?: number, z?: number): number {
+  if (mapShape === 'rectangular' && x !== undefined && z !== undefined) {
+    const boundX = arenaRadius * 1.2 - ARENA_EDGE_INSET;
+    const boundZ = arenaRadius * 0.6 - ARENA_EDGE_INSET;
+    const normX = Math.abs(x) / Math.max(1, boundX);
+    const normZ = Math.abs(z) / Math.max(1, boundZ);
+    const edgeProximity = Math.max(normX, normZ);
+    if (edgeProximity <= 0.4) {
+      return 0;
+    }
+    return Math.min(1, (edgeProximity - 0.4) / 0.55);
+  }
   const safeRadius = safeArenaRadius(arenaRadius);
   const innerBand = safeRadius * 0.4;
   const outerBand = safeRadius * 0.95;
@@ -301,8 +313,8 @@ export function scorePosition(input: ScorePositionInput): PositionScore {
   const botDist = Math.hypot(input.botX, input.botZ);
   const targetDist = Math.hypot(input.targetX, input.targetZ);
 
-  const botEdgeExposure = getEdgePressure(botDist, input.arenaRadius);
-  const targetEdgePressure = getEdgePressure(targetDist, input.arenaRadius);
+  const botEdgeExposure = getEdgePressure(botDist, input.arenaRadius, input.mapShape, input.botX, input.botZ);
+  const targetEdgePressure = getEdgePressure(targetDist, input.arenaRadius, input.mapShape, input.targetX, input.targetZ);
 
   const rawAdvantage = targetEdgePressure * 0.65 - botEdgeExposure * 0.85;
   const advantage = Math.max(-1, Math.min(1, rawAdvantage));
@@ -327,6 +339,7 @@ export interface CutoffInterceptInput {
   predictedTargetZ?: number;
   arenaRadius: number;
   spatialIQ: number;
+  mapShape?: string;
 }
 
 export interface CutoffInterceptResult {
@@ -335,8 +348,16 @@ export interface CutoffInterceptResult {
   active: boolean;
 }
 
-function clampToArena(x: number, z: number, arenaRadius: number): { x: number; z: number } {
+function clampToArena(x: number, z: number, arenaRadius: number, mapShape?: string): { x: number; z: number } {
   const safeRadius = safeArenaRadius(arenaRadius);
+  if (mapShape === 'rectangular') {
+    const boundX = arenaRadius * 1.2 - ARENA_EDGE_INSET;
+    const boundZ = arenaRadius * 0.6 - ARENA_EDGE_INSET;
+    return {
+      x: Math.max(-boundX, Math.min(boundX, x)),
+      z: Math.max(-boundZ, Math.min(boundZ, z)),
+    };
+  }
   const dist = Math.hypot(x, z);
   if (dist <= safeRadius) {
     return { x, z };
@@ -348,7 +369,7 @@ function clampToArena(x: number, z: number, arenaRadius: number): { x: number; z
 /** Predicts an intercept point when a target is pinned near the edge and retreating toward center. */
 export function getCutoffInterceptPoint(input: CutoffInterceptInput): CutoffInterceptResult {
   const targetDist = Math.hypot(input.targetX, input.targetZ);
-  const targetEdgePressure = getEdgePressure(targetDist, input.arenaRadius);
+  const targetEdgePressure = getEdgePressure(targetDist, input.arenaRadius, input.mapShape, input.targetX, input.targetZ);
 
   if (targetEdgePressure < 0.35 || input.spatialIQ < 25) {
     return { x: input.targetX, z: input.targetZ, active: false };
@@ -388,7 +409,7 @@ export function getCutoffInterceptPoint(input: CutoffInterceptInput): CutoffInte
   const flankStrength = iqNorm * targetEdgePressure * 0.55;
   const interceptX = predX + retreatX * flankStrength * 3.2;
   const interceptZ = predZ + retreatZ * flankStrength * 3.2;
-  const clamped = clampToArena(interceptX, interceptZ, input.arenaRadius);
+  const clamped = clampToArena(interceptX, interceptZ, input.arenaRadius, input.mapShape);
 
   return { ...clamped, active: true };
 }

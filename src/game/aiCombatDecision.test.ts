@@ -160,6 +160,34 @@ test('high-IQ custom preset gets mechanic-aware tactical overrides', () => {
   assert.equal(decision.bypassedRandomGate, true);
 });
 
+test('weapon prioritization of 0 (100% Hammer) immediately swaps to hammer at any distance, bypassing IQ random gates', () => {
+  const decision = evaluateAICombatDecision({
+    ...baseInput,
+    weaponPrioritization: 0,
+    currentWeapon: 'sword',
+    distanceToTarget: 25.0,
+    combatDistanceToTarget: 25.0,
+    random: () => 0.99, // Fails random IQ gate
+  });
+
+  assert.equal(decision.weapon, 'hammer');
+  assert.equal(decision.bypassedRandomGate, true);
+});
+
+test('weapon prioritization of 100 (100% Sword) immediately swaps to sword at any distance, bypassing IQ random gates', () => {
+  const decision = evaluateAICombatDecision({
+    ...baseInput,
+    weaponPrioritization: 100,
+    currentWeapon: 'hammer',
+    distanceToTarget: 25.0,
+    combatDistanceToTarget: 25.0,
+    random: () => 0.99, // Fails random IQ gate
+  });
+
+  assert.equal(decision.weapon, 'sword');
+  assert.equal(decision.bypassedRandomGate, true);
+});
+
 test('weapon prioritization of 0 (100% Hammer) always chooses hammer in close combat', () => {
   const decision = evaluateAICombatDecision({
     ...baseInput,
