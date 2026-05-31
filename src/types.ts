@@ -540,7 +540,8 @@ export interface CustomMapObject {
     | 'city_asphalt' | 'city_brick' | 'city_concrete'
     | 'fantasy_runed_stone' | 'fantasy_cobble' | 'fantasy_gold'
     | 'forerunner_panel' | 'forerunner_gold'
-    | 'synthwave_grid' | 'synthwave_neon_laser' | 'synthwave_chrome';
+    | 'synthwave_grid' | 'synthwave_neon_laser' | 'synthwave_chrome'
+    | 'rainy_streets_asphalt' | 'rainy_streets_neon_glow' | 'rainy_streets_dog_billboard';
 }
 
 export interface CustomMapPointLight {
@@ -566,7 +567,7 @@ export interface CustomMapData {
   name: string;
   description: string;
   author: string;
-  theme: 'hangar' | 'holodeck' | 'cyberpunk' | 'rust' | 'nature' | 'space' | 'fantasy' | 'forerunner' | 'synthwave';
+  theme: 'hangar' | 'holodeck' | 'cyberpunk' | 'rust' | 'nature' | 'space' | 'fantasy' | 'forerunner' | 'synthwave' | 'rainy_streets';
   mapShape?: 'circle' | 'rectangular';
   arenaRadius: number;
   skyboxHue?: number;

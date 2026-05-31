@@ -74,7 +74,7 @@ import { ChatOverlay, ChatMessage } from './components/ChatOverlay';
 import { CharacterPreview } from './components/CharacterPreview';
 import { CharacterLoadout, DEFAULT_LOADOUT, AVAILABLE_PRESETS, HelmetPreset, TorsoPreset, ArmPreset, LegPreset } from './components/VoxelModels';
 
-const APP_VERSION = '0.522';
+const APP_VERSION = '0.526';
 const MAX_PLAYER_NAME_LENGTH = 10;
 
 interface OnlineClient {
@@ -696,6 +696,8 @@ const MapPreview: React.FC<{ selectedMap: string; customMap?: CustomMapData | nu
         floorColor = '#1e293b';
       } else if (mapData.theme === 'synthwave') {
         floorColor = '#0a0518';
+      } else if (mapData.theme === 'rainy_streets') {
+        floorColor = '#0f121a';
       }
       
       floor.geometry.dispose();
@@ -6018,7 +6020,7 @@ export default function App() {
                     <option value="circle">🌐 Circle Arena (Minimalist)</option>
                     {PREMADE_MAPS.map(m => (
                       <option key={m.id} value={m.id}>
-                        {m.theme === 'cyberpunk' ? '🌐' : m.theme === 'nature' ? '🌳' : m.theme === 'space' ? '🚀' : m.theme === 'synthwave' ? '🌴' : '⚔️'} {m.name} (Preset)
+                        {m.theme === 'cyberpunk' ? '🌐' : m.theme === 'nature' ? '🌳' : m.theme === 'space' ? '🚀' : m.theme === 'synthwave' ? '🌴' : m.theme === 'rainy_streets' ? '🌧️' : '⚔️'} {m.name} (Preset)
                       </option>
                     ))}
                     <option value="custom_file">💾 Load Custom Map (.json)</option>

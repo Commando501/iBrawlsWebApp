@@ -49,6 +49,139 @@
       backdrop-filter: blur(20px);
       border: 1px solid rgba(255, 255, 255, 0.06);
     }
+
+    /* Map Maker Design System */
+    .mapmaker-field {
+      display: flex;
+      flex-direction: column;
+      gap: 0.375rem;
+    }
+    .mapmaker-label {
+      font-size: 0.65rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: rgba(148, 163, 184, 0.8);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .mapmaker-value-badge {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.65rem;
+      color: #22d3ee;
+      background: rgba(6, 182, 212, 0.1);
+      border: 1px solid rgba(6, 182, 212, 0.2);
+      padding: 0.05rem 0.35rem;
+      border-radius: 4px;
+      font-weight: 800;
+    }
+    .mapmaker-input {
+      background: rgba(3, 7, 18, 0.6) !important;
+      border: 1px solid rgba(255, 255, 255, 0.08) !important;
+      color: #f3f4f6 !important;
+      border-radius: 0.5rem !important;
+      padding: 0.5rem 0.75rem !important;
+      font-size: 0.75rem !important;
+      outline: none !important;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    }
+    .mapmaker-input:focus {
+      border-color: rgba(6, 182, 212, 0.5) !important;
+      box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.15) !important;
+      background: rgba(3, 7, 18, 0.85) !important;
+    }
+    .mapmaker-slider {
+      -webkit-appearance: none;
+      width: 100%;
+      height: 4px;
+      border-radius: 99px;
+      background: rgba(255, 255, 255, 0.1);
+      outline: none;
+      transition: background 0.2s;
+    }
+    .mapmaker-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: #22d3ee;
+      cursor: pointer;
+      box-shadow: 0 0 8px rgba(6, 182, 212, 0.6);
+      transition: transform 0.1s;
+    }
+    .mapmaker-slider::-webkit-slider-thumb:hover {
+      transform: scale(1.2);
+    }
+    .mapmaker-preset-grid {
+      display: grid;
+      grid-template-cols: repeat(2, minmax(0, 1fr));
+      gap: 0.5rem;
+    }
+    .mapmaker-preset-btn {
+      background: rgba(255, 255, 255, 0.02) !important;
+      border: 1px solid rgba(255, 255, 255, 0.05) !important;
+      border-radius: 0.5rem !important;
+      color: #e2e8f0 !important;
+      font-weight: 600 !important;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      gap: 0.375rem !important;
+      cursor: pointer !important;
+    }
+    .mapmaker-preset-btn:hover {
+      background: rgba(6, 182, 212, 0.08) !important;
+      border-color: rgba(6, 182, 212, 0.3) !important;
+      color: #22d3ee !important;
+      box-shadow: 0 0 10px rgba(6, 182, 212, 0.05) !important;
+    }
+    .mapmaker-item-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.375rem;
+      max-height: 200px;
+      overflow-y: auto;
+      padding-right: 2px;
+    }
+    .mapmaker-item-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      border-radius: 0.5rem;
+      padding: 0.5rem 0.75rem;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      font-size: 0.75rem;
+    }
+    .mapmaker-item-row:hover {
+      background: rgba(255, 255, 255, 0.05);
+      border-color: rgba(255, 255, 255, 0.1);
+    }
+    .mapmaker-item-row-selected {
+      background: rgba(6, 182, 212, 0.08) !important;
+      border-color: rgba(6, 182, 212, 0.3) !important;
+      color: #22d3ee !important;
+    }
+    .mapmaker-row-actions {
+      display: flex;
+      align-items: center;
+      gap: 0.375rem;
+    }
+    .mapmaker-row-btn {
+      color: rgba(255, 255, 255, 0.35);
+      background: transparent !important;
+      border: none !important;
+      transition: color 0.15s ease, transform 0.15s ease;
+      cursor: pointer;
+    }
+    .mapmaker-row-btn:hover {
+      transform: scale(1.1);
+    }
   </style>
 </head>
 <body class="w-screen h-screen flex relative">
@@ -105,6 +238,16 @@
         <span>Select Object</span>
         <span class="font-mono text-[9px] bg-white/10 px-1.5 py-0.5 rounded border border-white/15 text-white/80">Left Click mesh</span>
       </div>
+    </div>
+
+    <!-- TRANSFORM MODE SELECTOR -->
+    <div class="absolute bottom-4 right-4 glass-panel p-1.5 rounded-xl shadow-2xl pointer-events-auto flex items-center gap-1 z-10">
+      <button id="mode-translate-btn" onclick="setTransformMode('translate')" class="px-3.5 py-2 rounded-lg font-black uppercase text-[10px] tracking-wider transition-all duration-200 flex items-center gap-1.5 cursor-pointer bg-cyan-500/25 text-cyan-400 border border-cyan-500/40">
+        <i data-lucide="move" class="w-3.5 h-3.5"></i> Movement
+      </button>
+      <button id="mode-rotate-btn" onclick="setTransformMode('rotate')" class="px-3.5 py-2 rounded-lg font-black uppercase text-[10px] tracking-wider transition-all duration-200 flex items-center gap-1.5 cursor-pointer text-slate-400 border border-transparent hover:text-white">
+        <i data-lucide="rotate-3d" class="w-3.5 h-3.5"></i> Rotation
+      </button>
     </div>
   </div>
 
@@ -288,11 +431,119 @@
           { id: 'bg_pillar_l', name: 'Canyon Anchor Left', type: 'cylinder', position: { x: -45, y: 15, z: -25 }, rotation: { x: 0.15, y: 0, z: 0.25 }, scale: { x: 4.0, y: 30.0, z: 4.0 }, color: '#374151', metalness: 0.8, roughness: 0.2, opacity: 1.0, transparent: false, emissive: '#000000', emissiveIntensity: 0.0, isCollidable: false, texture: 'forerunner_panel' },
           { id: 'bg_pillar_r', name: 'Canyon Anchor Right', type: 'cylinder', position: { x: 45, y: 15, z: -25 }, rotation: { x: 0.15, y: 0, z: -0.25 }, scale: { x: 4.0, y: 30.0, z: 4.0 }, color: '#374151', metalness: 0.8, roughness: 0.2, opacity: 1.0, transparent: false, emissive: '#000000', emissiveIntensity: 0.0, isCollidable: false, texture: 'forerunner_panel' }
         ]
+      },
+      {
+        id: 'rainy_industrial_streets',
+        name: 'Rainy Cyber Streets',
+        description: 'A dark, rain-slicked industrial street court under warm sodium spotlights, framed by towering skyscrapers and a giant neon dog billboard.',
+        theme: 'rainy_streets',
+        mapShape: 'rectangular',
+        arenaRadius: 20,
+        skyboxHue: 210,
+        skyboxBrightness: 2,
+        fogColor: '#06080c',
+        fogDensity: 0.024,
+        spawnPoints: [
+          { x: -16, y: 0, z: -6 },
+          { x: -16, y: 0, z: 6 },
+          { x: -12, y: 0, z: -8 },
+          { x: -12, y: 0, z: 8 },
+          { x: 16, y: 0, z: -6 },
+          { x: 16, y: 0, z: 6 },
+          { x: 12, y: 0, z: -8 },
+          { x: 12, y: 0, z: 8 }
+        ],
+        lighting: {
+          ambientColor: '#0f1118',
+          ambientIntensity: 0.7,
+          directColor: '#fed7aa',
+          directIntensity: 1.8,
+          directPosition: { x: -8, y: 22, z: -8 },
+          pointLights: [
+            { id: 'street_l1', color: '#ff7700', intensity: 3.5, distance: 15, decay: 1.2, position: { x: -20, y: 3.5, z: -8 } },
+            { id: 'street_l2', color: '#ff7700', intensity: 3.5, distance: 15, decay: 1.2, position: { x: -20, y: 3.5, z: 0 } },
+            { id: 'street_l3', color: '#ff7700', intensity: 3.5, distance: 15, decay: 1.2, position: { x: -20, y: 3.5, z: 8 } },
+            { id: 'street_r1', color: '#ff7700', intensity: 3.5, distance: 15, decay: 1.2, position: { x: 20, y: 3.5, z: -8 } },
+            { id: 'street_r2', color: '#ff7700', intensity: 3.5, distance: 15, decay: 1.2, position: { x: 20, y: 3.5, z: 0 } },
+            { id: 'street_r3', color: '#ff7700', intensity: 3.5, distance: 15, decay: 1.2, position: { x: 20, y: 3.5, z: 8 } }
+          ]
+        },
+        objects: [
+          {
+            id: 'rainy_barrier_w',
+            name: 'Blue Street Buffer',
+            type: 'box',
+            position: { x: -17, y: 1.0, z: 0 },
+            rotation: { x: 0, y: 0, z: 0 },
+            scale: { x: 1.2, y: 2.0, z: 4.0 },
+            color: '#ff7700',
+            metalness: 0.8,
+            roughness: 0.2,
+            opacity: 1.0,
+            transparent: false,
+            emissive: '#ea580c',
+            emissiveIntensity: 1.5,
+            isCollidable: true,
+            texture: 'rainy_streets_neon_glow'
+          },
+          {
+            id: 'rainy_barrier_e',
+            name: 'Red Street Buffer',
+            type: 'box',
+            position: { x: 17, y: 1.0, z: 0 },
+            rotation: { x: 0, y: 0, z: 0 },
+            scale: { x: 1.2, y: 2.0, z: 4.0 },
+            color: '#ff7700',
+            metalness: 0.8,
+            roughness: 0.2,
+            opacity: 1.0,
+            transparent: false,
+            emissive: '#ea580c',
+            emissiveIntensity: 1.5,
+            isCollidable: true,
+            texture: 'rainy_streets_neon_glow'
+          },
+          {
+            id: 'rainy_crate_nw',
+            name: 'Heavy Street Cargo NW',
+            type: 'box',
+            position: { x: -6, y: 1.0, z: -5 },
+            rotation: { x: 0, y: 0.4, z: 0 },
+            scale: { x: 2.0, y: 2.0, z: 2.0 },
+            color: '#ff7700',
+            metalness: 0.7,
+            roughness: 0.2,
+            opacity: 1.0,
+            transparent: false,
+            emissive: '#ea580c',
+            emissiveIntensity: 1.2,
+            isCollidable: true,
+            texture: 'rainy_streets_neon_glow'
+          },
+          {
+            id: 'rainy_crate_se',
+            name: 'Heavy Street Cargo SE',
+            type: 'box',
+            position: { x: 6, y: 1.0, z: 5 },
+            rotation: { x: 0, y: -0.3, z: 0 },
+            scale: { x: 2.0, y: 2.0, z: 2.0 },
+            color: '#ff7700',
+            metalness: 0.7,
+            roughness: 0.2,
+            opacity: 1.0,
+            transparent: false,
+            emissive: '#ea580c',
+            emissiveIntensity: 1.2,
+            isCollidable: true,
+            texture: 'rainy_streets_neon_glow'
+          }
+        ]
       }
     ];
 
     // GLOBAL EDITOR STATE
     let activeTab = 'scene';
+    let currentTransformMode = 'translate';
     let mapName = 'My Custom Local Map';
     let mapAuthor = 'Spartan Architect';
     let mapDescription = 'An outstanding custom battle arena.';
@@ -324,6 +575,452 @@
     let selectedSpawnIdx = null;
 
     let showNavMeshOverlay = false;
+
+    // ASSET LIBRARY DATABASE
+    const ASSET_LIBRARY = [
+      // CATEGORY: structures
+      {
+        id: 'energy_shield_gate',
+        name: 'Energy Shield Gate',
+        category: 'structures',
+        icon: '🛡️',
+        type: 'box',
+        scale: { x: 3.5, y: 1.8, z: 0.2 },
+        color: '#06b6d4',
+        texture: 'futuristic_shield',
+        metalness: 0.1,
+        roughness: 0.1,
+        opacity: 0.65,
+        transparent: true,
+        emissive: '#06b6d4',
+        emissiveIntensity: 3.0,
+        isCollidable: true,
+        desc: 'Translucent glowing forcefield gate.'
+      },
+      {
+        id: 'concrete_barrier',
+        name: 'Concrete Barrier',
+        category: 'structures',
+        icon: '🚧',
+        type: 'box',
+        scale: { x: 3.5, y: 1.5, z: 0.6 },
+        color: '#4b5563',
+        texture: 'city_concrete',
+        metalness: 0.1,
+        roughness: 0.9,
+        opacity: 1.0,
+        emissive: '#000000',
+        emissiveIntensity: 0.0,
+        isCollidable: true,
+        desc: 'Heavy reinforced concrete block.'
+      },
+      {
+        id: 'reinforced_bastion_wall',
+        name: 'Titanium Cover Wall',
+        category: 'structures',
+        icon: '🧱',
+        type: 'box',
+        scale: { x: 5.0, y: 3.0, z: 1.0 },
+        color: '#1e293b',
+        texture: 'space_alloy',
+        metalness: 0.85,
+        roughness: 0.2,
+        opacity: 1.0,
+        emissive: '#000000',
+        emissiveIntensity: 0.0,
+        isCollidable: true,
+        desc: 'Large titanium-alloy cover wall.'
+      },
+      {
+        id: 'carbon_scaffolding',
+        name: 'Tech Scaffolding',
+        category: 'structures',
+        icon: '🪜',
+        type: 'box',
+        scale: { x: 4.0, y: 4.0, z: 0.4 },
+        color: '#0f172a',
+        texture: 'futuristic_carbon',
+        metalness: 0.9,
+        roughness: 0.3,
+        opacity: 1.0,
+        emissive: '#000000',
+        emissiveIntensity: 0.0,
+        isCollidable: true,
+        desc: 'Industrial carbon grid frame.'
+      },
+      {
+        id: 'rainy_streets_wet_barrier',
+        name: 'Wet Street Barrier',
+        category: 'structures',
+        icon: '🚧',
+        type: 'box',
+        scale: { x: 3.5, y: 1.4, z: 0.8 },
+        color: '#ff7700',
+        texture: 'rainy_streets_neon_glow',
+        metalness: 0.7,
+        roughness: 0.2,
+        opacity: 1.0,
+        emissive: '#ea580c',
+        emissiveIntensity: 1.5,
+        isCollidable: true,
+        desc: 'A wet street barrier with neon orange hazard stripes.'
+      },
+
+      // CATEGORY: hazards
+      {
+        id: 'plasma_battery_core',
+        name: 'Plasma Core Reactor',
+        category: 'hazards',
+        icon: '🔮',
+        type: 'sphere',
+        scale: { x: 2.0, y: 2.0, z: 2.0 },
+        color: '#db2777',
+        texture: 'futuristic_shield',
+        metalness: 0.3,
+        roughness: 0.1,
+        opacity: 0.9,
+        transparent: true,
+        emissive: '#db2777',
+        emissiveIntensity: 2.5,
+        isCollidable: true,
+        desc: 'Glowing high-energy plasma core.'
+      },
+      {
+        id: 'glowing_fusion_pillar',
+        name: 'Fusion Energy Pillar',
+        category: 'hazards',
+        icon: '🗼',
+        type: 'cylinder',
+        scale: { x: 1.2, y: 5.0, z: 1.2 },
+        color: '#0369a1',
+        texture: 'futuristic_hex',
+        metalness: 0.8,
+        roughness: 0.15,
+        opacity: 1.0,
+        emissive: '#06b6d4',
+        emissiveIntensity: 2.0,
+        isCollidable: true,
+        desc: 'Pillar emitting deep cybernetic cyan glow.'
+      },
+      {
+        id: 'toxic_waste_drum',
+        name: 'Toxic Sludge Drum',
+        category: 'hazards',
+        icon: '🛢️',
+        type: 'cylinder',
+        scale: { x: 1.0, y: 1.6, z: 1.0 },
+        color: '#15803d',
+        texture: 'city_concrete',
+        metalness: 0.4,
+        roughness: 0.6,
+        opacity: 1.0,
+        emissive: '#22c55e',
+        emissiveIntensity: 1.5,
+        isCollidable: true,
+        desc: 'Container leaking toxic bio-hazardous glow.'
+      },
+      {
+        id: 'quantum_warp_relic',
+        name: 'Quantum Warp Relic',
+        category: 'hazards',
+        icon: '🌀',
+        type: 'sphere',
+        scale: { x: 1.5, y: 1.5, z: 1.5 },
+        color: '#7e22ce',
+        texture: 'synthwave_neon_laser',
+        metalness: 0.2,
+        roughness: 0.1,
+        opacity: 0.95,
+        transparent: true,
+        emissive: '#a855f7',
+        emissiveIntensity: 3.0,
+        isCollidable: true,
+        desc: 'Anomalous glowing dimensional rift.'
+      },
+
+      // CATEGORY: industrial
+      {
+        id: 'steel_cargo_crate',
+        name: 'Steel Cargo Box',
+        category: 'industrial',
+        icon: '📦',
+        type: 'box',
+        scale: { x: 2.0, y: 2.0, z: 2.0 },
+        color: '#475569',
+        texture: 'space_alloy',
+        metalness: 0.8,
+        roughness: 0.2,
+        opacity: 1.0,
+        emissive: '#000000',
+        emissiveIntensity: 0.0,
+        isCollidable: true,
+        desc: 'Standard metal space logistics cargo container.'
+      },
+      {
+        id: 'highsec_weapon_locker',
+        name: 'Weapon Lockbox',
+        category: 'industrial',
+        icon: '💼',
+        type: 'box',
+        scale: { x: 1.2, y: 2.2, z: 0.8 },
+        color: '#b45309',
+        texture: 'synthwave_chrome',
+        metalness: 0.9,
+        roughness: 0.1,
+        opacity: 1.0,
+        emissive: '#eab308',
+        emissiveIntensity: 1.0,
+        isCollidable: true,
+        desc: 'Polished secure locker with yellow details.'
+      },
+      {
+        id: 'pressure_storage_tank',
+        name: 'Gas Storage Cylinder',
+        category: 'industrial',
+        icon: '⛽',
+        type: 'cylinder',
+        scale: { x: 1.8, y: 3.0, z: 1.8 },
+        color: '#334155',
+        texture: 'space_meteorite',
+        metalness: 0.85,
+        roughness: 0.35,
+        opacity: 1.0,
+        emissive: '#000000',
+        emissiveIntensity: 0.0,
+        isCollidable: true,
+        desc: 'Heavy industrial storage cylinder.'
+      },
+      {
+        id: 'nanite_stasis_pod',
+        name: 'Nanite Containment Pod',
+        category: 'industrial',
+        icon: '🔋',
+        type: 'cylinder',
+        scale: { x: 1.5, y: 2.5, z: 1.5 },
+        color: '#1e3a8a',
+        texture: 'synthwave_grid',
+        metalness: 0.75,
+        roughness: 0.25,
+        opacity: 1.0,
+        emissive: '#3b82f6',
+        emissiveIntensity: 1.8,
+        isCollidable: true,
+        desc: 'Stasis pod containing active nanite colonies.'
+      },
+      {
+        id: 'cyber_street_lamppost',
+        name: 'Cyber Lamppost',
+        category: 'industrial',
+        icon: '💡',
+        type: 'cylinder',
+        scale: { x: 0.6, y: 5.5, z: 0.6 },
+        color: '#1c1917',
+        texture: 'none',
+        metalness: 0.9,
+        roughness: 0.1,
+        opacity: 1.0,
+        emissive: '#f97316',
+        emissiveIntensity: 2.5,
+        isCollidable: true,
+        desc: 'A tall street post casting high-intensity orange light.'
+      },
+      {
+        id: 'neon_dog_billboard',
+        name: 'Tech Dog Billboard',
+        category: 'industrial',
+        icon: '🐶',
+        type: 'box',
+        scale: { x: 5.0, y: 3.5, z: 0.4 },
+        color: '#06b6d4',
+        texture: 'rainy_streets_dog_billboard',
+        metalness: 0.9,
+        roughness: 0.1,
+        opacity: 1.0,
+        emissive: '#06b6d4',
+        emissiveIntensity: 2.0,
+        isCollidable: true,
+        desc: 'Glowing hologram screen featuring Brawl\'s Best Friend.'
+      },
+
+      // CATEGORY: nature
+      {
+        id: 'mossy_ruin_monolith',
+        name: 'Mossy Monolith',
+        category: 'nature',
+        icon: '🗿',
+        type: 'box',
+        scale: { x: 2.5, y: 5.0, z: 1.5 },
+        color: '#3f6212',
+        texture: 'nature_mossy_stone',
+        metalness: 0.05,
+        roughness: 0.95,
+        opacity: 1.0,
+        emissive: '#166534',
+        emissiveIntensity: 0.3,
+        isCollidable: true,
+        desc: 'Crumbling mossy block of stone ruins.'
+      },
+      {
+        id: 'mystical_runed_obelisk',
+        name: 'Ancient Runed Monolith',
+        category: 'nature',
+        icon: '🪨',
+        type: 'cylinder',
+        scale: { x: 1.2, y: 4.5, z: 1.2 },
+        color: '#27272a',
+        texture: 'fantasy_runed_stone',
+        metalness: 0.1,
+        roughness: 0.85,
+        opacity: 1.0,
+        emissive: '#a21caf',
+        emissiveIntensity: 2.2,
+        isCollidable: true,
+        desc: 'Mysterious pillar carved with purple magic runes.'
+      },
+      {
+        id: 'overgrown_boulder',
+        name: 'Overgrown Boulder',
+        category: 'nature',
+        icon: '⛰️',
+        type: 'sphere',
+        scale: { x: 3.0, y: 2.5, z: 3.0 },
+        color: '#1f2937',
+        texture: 'nature_mossy_stone',
+        metalness: 0.05,
+        roughness: 0.95,
+        opacity: 1.0,
+        emissive: '#000000',
+        emissiveIntensity: 0.0,
+        isCollidable: true,
+        desc: 'Large natural moss-covered rock.'
+      },
+      {
+        id: 'petrified_tree_trunk',
+        name: 'Petrified Trunk',
+        category: 'nature',
+        icon: '🪵',
+        type: 'cylinder',
+        scale: { x: 1.0, y: 4.0, z: 1.0 },
+        color: '#292524',
+        texture: 'nature_wood',
+        metalness: 0.05,
+        roughness: 0.9,
+        opacity: 1.0,
+        emissive: '#000000',
+        emissiveIntensity: 0.0,
+        isCollidable: true,
+        desc: 'Dark fossilized wood trunk.'
+      },
+
+      // CATEGORY: alien
+      {
+        id: 'forerunner_sentry_spire',
+        name: 'Forerunner Spire Obelisk',
+        category: 'alien',
+        icon: '🗼',
+        type: 'cylinder',
+        scale: { x: 1.5, y: 6.0, z: 1.5 },
+        color: '#a16207',
+        texture: 'forerunner_panel',
+        metalness: 0.9,
+        roughness: 0.15,
+        opacity: 1.0,
+        emissive: '#fbbf24',
+        emissiveIntensity: 2.0,
+        isCollidable: true,
+        desc: 'Forerunner structure with bright gold circuits.'
+      },
+      {
+        id: 'ornate_golden_pedestal',
+        name: 'Forerunner Shrine Pedestal',
+        category: 'alien',
+        icon: '🏆',
+        type: 'box',
+        scale: { x: 2.0, y: 1.2, z: 2.0 },
+        color: '#ca8a04',
+        texture: 'forerunner_gold',
+        metalness: 0.95,
+        roughness: 0.1,
+        opacity: 1.0,
+        emissive: '#d97706',
+        emissiveIntensity: 1.2,
+        isCollidable: true,
+        desc: 'Highly reflective brushed Forerunner gold pedestal.'
+      },
+      {
+        id: 'gravity_anchor_node',
+        name: 'Gravity Anchor Core',
+        category: 'alien',
+        icon: '🛸',
+        type: 'sphere',
+        scale: { x: 2.0, y: 2.0, z: 2.0 },
+        color: '#0f172a',
+        texture: 'forerunner_panel',
+        metalness: 0.85,
+        roughness: 0.15,
+        opacity: 1.0,
+        emissive: '#06b6d4',
+        emissiveIntensity: 2.5,
+        isCollidable: true,
+        desc: 'Levitation anchor node with glowing cyan engine core.'
+      },
+
+      // CATEGORY: primitives
+      {
+        id: 'basic_cube',
+        name: 'Basic Cuboid',
+        category: 'primitives',
+        icon: '🧊',
+        type: 'box',
+        scale: { x: 2.0, y: 2.0, z: 2.0 },
+        color: '#6b7280',
+        texture: 'none',
+        metalness: 0.4,
+        roughness: 0.6,
+        opacity: 1.0,
+        emissive: '#000000',
+        emissiveIntensity: 0.0,
+        isCollidable: true,
+        desc: 'Standard empty gray box.'
+      },
+      {
+        id: 'basic_cylinder',
+        name: 'Basic Cylinder',
+        category: 'primitives',
+        icon: '🛢️',
+        type: 'cylinder',
+        scale: { x: 2.0, y: 2.0, z: 2.0 },
+        color: '#6b7280',
+        texture: 'none',
+        metalness: 0.4,
+        roughness: 0.6,
+        opacity: 1.0,
+        emissive: '#000000',
+        emissiveIntensity: 0.0,
+        isCollidable: true,
+        desc: 'Standard empty gray cylinder.'
+      },
+      {
+        id: 'basic_sphere',
+        name: 'Basic Sphere',
+        category: 'primitives',
+        icon: '🔮',
+        type: 'sphere',
+        scale: { x: 2.0, y: 2.0, z: 2.0 },
+        color: '#6b7280',
+        texture: 'none',
+        metalness: 0.4,
+        roughness: 0.6,
+        opacity: 1.0,
+        emissive: '#000000',
+        emissiveIntensity: 0.0,
+        isCollidable: true,
+        desc: 'Standard empty gray sphere.'
+      }
+    ];
+
+    let selectedAssetCategory = 'structures';
+    let assetSearchQuery = '';
 
     // THREE.JS CONTEXT
     let scene, camera, renderer, controls;
@@ -403,9 +1100,10 @@
       selectionHelper.visible = false;
       scene.add(selectionHelper);
 
-      // Transform Controls Translation Gizmo
+      // Transform Controls Translation/Rotation Gizmo
       transformControls = new THREE.TransformControls(camera, renderer.domElement);
       transformControls.size = 0.85;
+      transformControls.setMode(currentTransformMode);
       scene.add(transformControls);
 
       // Disable/enable OrbitControls during drag; trigger final scene rebuild on release
@@ -430,6 +1128,12 @@
             obj.position.y = parseFloat(target.position.y.toFixed(1));
             obj.position.z = parseFloat(target.position.z.toFixed(1));
 
+            // Sync custom map object rotation
+            if (!obj.rotation) obj.rotation = { x: 0, y: 0, z: 0 };
+            obj.rotation.x = parseFloat(target.rotation.x.toFixed(3));
+            obj.rotation.y = parseFloat(target.rotation.y.toFixed(3));
+            obj.rotation.z = parseFloat(target.rotation.z.toFixed(3));
+
             // Sync sidebar DOM inputs in real-time
             const inputs = document.getElementById('inspector-panel');
             if (inputs) {
@@ -450,6 +1154,32 @@
                 posZInput.value = obj.position.z;
                 const readout = posZInput.previousElementSibling?.querySelector('.mapmaker-value-badge');
                 if (readout) readout.textContent = `${obj.position.z}m`;
+              }
+
+              // Sync rotation inputs
+              const rotXInput = inputs.querySelector('input[oninput*="rot_x"]');
+              if (rotXInput) {
+                let deg = Math.round(obj.rotation.x * (180/Math.PI));
+                deg = (deg % 360 + 360) % 360;
+                rotXInput.value = deg;
+                const readout = rotXInput.previousElementSibling?.querySelector('.mapmaker-value-badge');
+                if (readout) readout.textContent = `${deg}°`;
+              }
+              const rotYInput = inputs.querySelector('input[oninput*="rot_y"]');
+              if (rotYInput) {
+                let deg = Math.round(obj.rotation.y * (180/Math.PI));
+                deg = (deg % 360 + 360) % 360;
+                rotYInput.value = deg;
+                const readout = rotYInput.previousElementSibling?.querySelector('.mapmaker-value-badge');
+                if (readout) readout.textContent = `${deg}°`;
+              }
+              const rotZInput = inputs.querySelector('input[oninput*="rot_z"]');
+              if (rotZInput) {
+                let deg = Math.round(obj.rotation.z * (180/Math.PI));
+                deg = (deg % 360 + 360) % 360;
+                rotZInput.value = deg;
+                const readout = rotZInput.previousElementSibling?.querySelector('.mapmaker-value-badge');
+                if (readout) readout.textContent = `${deg}°`;
               }
             }
 
@@ -507,15 +1237,42 @@
       animate();
     }
 
+    let lastTime = performance.now();
     function animate() {
       requestAnimationFrame(animate);
       controls.update();
+
+      const now = performance.now();
+      const dt = Math.min(0.1, (now - lastTime) / 1000);
+      lastTime = now;
 
       // Slow hover rotation on spawn indicators for micro-animations
       const time = Date.now() * 0.002;
       spawnsGroup.children.forEach((group, idx) => {
         group.position.y = 0.9 + Math.sin(time + idx * 1.5) * 0.08;
       });
+
+      // Animate rain particles in editor if present
+      const rainObj = scene.getObjectByName('rain_particles');
+      if (rainObj && rainObj instanceof THREE.Points) {
+        const positions = rainObj.geometry.attributes.position.array;
+        const velocities = rainObj.userData.velocities;
+        const radius = rainObj.userData.arenaRadius || 20;
+        const count = positions.length / 3;
+
+        for (let i = 0; i < count; i++) {
+          positions[i * 3] += velocities[i].x * dt;
+          positions[i * 3 + 1] += velocities[i].y * dt;
+          positions[i * 3 + 2] += velocities[i].z * dt;
+
+          if (positions[i * 3 + 1] <= 0.05) {
+            positions[i * 3] = (Math.random() - 0.5) * radius * 3;
+            positions[i * 3 + 1] = 25;
+            positions[i * 3 + 2] = (Math.random() - 0.5) * radius * 2;
+          }
+        }
+        rainObj.geometry.attributes.position.needsUpdate = true;
+      }
 
       renderer.render(scene, camera);
     }
@@ -805,6 +1562,86 @@
             ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(size, y); ctx.stroke();
           }
         }
+      } else if (type === 'rainy_streets_asphalt') {
+        ctx.fillStyle = '#0f121a';
+        ctx.fillRect(0, 0, size, size);
+        ctx.fillStyle = 'rgba(255,255,255,0.04)';
+        for (let i = 0; i < 600; i++) {
+          ctx.fillRect(Math.random() * size, Math.random() * size, 1.5, 1.5);
+        }
+        ctx.fillStyle = 'rgba(6, 182, 212, 0.05)';
+        for (let i = 0; i < 4; i++) {
+          ctx.beginPath();
+          ctx.ellipse(Math.random() * size, Math.random() * size, 25 + Math.random() * 25, 10 + Math.random() * 15, Math.random() * Math.PI, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.18)';
+        ctx.lineWidth = 0.8;
+        for (let i = 0; i < 6; i++) {
+          ctx.beginPath();
+          ctx.arc(Math.random() * size, Math.random() * size, 3 + Math.random() * 10, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+        ctx.strokeStyle = '#05070a';
+        ctx.lineWidth = 2.5;
+        for (let idx = 0; idx <= size; idx += 128) {
+          ctx.beginPath(); ctx.moveTo(idx, 0); ctx.lineTo(idx, size); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(0, idx); ctx.lineTo(size, idx); ctx.stroke();
+        }
+      } else if (type === 'rainy_streets_neon_glow') {
+        ctx.fillStyle = '#1c1917';
+        ctx.fillRect(0, 0, size, size);
+        ctx.strokeStyle = colorHex || '#ea580c';
+        ctx.lineWidth = 2.5;
+        ctx.shadowColor = colorHex || '#ea580c';
+        ctx.shadowBlur = 6;
+        ctx.strokeRect(10, 10, size - 20, size - 20);
+        ctx.strokeRect(40, 40, size - 80, size - 80);
+        for (let i = 0; i < size; i += 32) {
+          ctx.beginPath();
+          ctx.moveTo(i, 10); ctx.lineTo(i + 20, 40);
+          ctx.moveTo(i, 216); ctx.lineTo(i + 20, 246);
+          ctx.stroke();
+        }
+        ctx.shadowBlur = 0;
+      } else if (type === 'rainy_streets_dog_billboard') {
+        ctx.fillStyle = '#020617';
+        ctx.fillRect(0, 0, size, size);
+        ctx.strokeStyle = 'rgba(6, 182, 212, 0.08)';
+        ctx.lineWidth = 0.5;
+        for (let y = 0; y < size; y += 4) {
+          ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(size, y); ctx.stroke();
+        }
+        ctx.strokeStyle = '#06b6d4';
+        ctx.lineWidth = 3;
+        ctx.shadowColor = '#06b6d4';
+        ctx.shadowBlur = 8;
+        ctx.beginPath();
+        // Tech dog head
+        ctx.moveTo(95, 95); ctx.lineTo(161, 95); ctx.lineTo(170, 117); ctx.lineTo(161, 135); ctx.lineTo(95, 135); ctx.lineTo(86, 117); ctx.closePath();
+        // Snout
+        ctx.moveTo(161, 110); ctx.lineTo(182, 110); ctx.lineTo(182, 125); ctx.lineTo(161, 125);
+        // Collar
+        ctx.moveTo(100, 135); ctx.lineTo(100, 147); ctx.lineTo(130, 147); ctx.lineTo(130, 135);
+        // Ears
+        ctx.moveTo(100, 95); ctx.lineTo(87, 62); ctx.lineTo(112, 95);
+        ctx.moveTo(156, 95); ctx.lineTo(168, 62); ctx.lineTo(143, 95);
+        ctx.stroke();
+        ctx.fillStyle = '#ffffff';
+        ctx.shadowColor = '#ffffff';
+        ctx.shadowBlur = 10;
+        ctx.beginPath(); ctx.arc(147, 107, 4, 0, Math.PI * 2); ctx.fill();
+        ctx.shadowBlur = 6;
+        ctx.shadowColor = '#ec4899';
+        ctx.fillStyle = '#f472b6';
+        ctx.font = '900 18px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('UPGRADE', size / 2, 205);
+        ctx.shadowColor = '#06b6d4';
+        ctx.fillStyle = '#22d3ee';
+        ctx.font = 'bold 10px sans-serif';
+        ctx.fillText("BRAWL'S BEST FRIEND", size / 2, 48);
+        ctx.shadowBlur = 0;
       } else {
         // Plain colored fallback
         ctx.fillStyle = colorHex || '#4b5563';
@@ -874,6 +1711,7 @@
                 <option value="fantasy" ${theme==='fantasy'?'selected':''}>Ancient Fantasy</option>
                 <option value="forerunner" ${theme==='forerunner'?'selected':''}>Forerunner Canyon</option>
                 <option value="synthwave" ${theme==='synthwave'?'selected':''}>Synthwave Grid</option>
+                <option value="rainy_streets" ${theme==='rainy_streets'?'selected':''}>Rainy Cyber Streets</option>
               </select>
             </div>
             <div class="mapmaker-field">
@@ -988,14 +1826,70 @@
       } else if (activeTab === 'objects') {
         const activeObj = objects.find(o => o.id === selectedObjectId);
         panel.innerHTML = `
-          <!-- Add Object Block -->
+          <!-- Add Object Block (Expanded Asset Catalog) -->
           <div class="flex flex-col gap-3 bg-white/2 border border-white/5 p-4 rounded-xl">
-            <span class="text-xs font-black uppercase text-cyan-400 tracking-wider">Quick Asset Spawning</span>
-            <div class="grid grid-cols-2 gap-2 text-[10px]">
-              <button onclick="handleAddObject('box', 'crate')" class="mapmaker-preset-btn py-2.5">📦 Steel Cargo Crate</button>
-              <button onclick="handleAddObject('cylinder', 'pillar')" class="mapmaker-preset-btn py-2.5">🗼 Glowing Pillar</button>
-              <button onclick="handleAddObject('box', 'barrier')" class="mapmaker-preset-btn py-2.5">🚧 Modular Barrier</button>
-              <button onclick="handleAddObject('sphere', 'plasma')" class="mapmaker-preset-btn py-2.5">🔮 Plasma Core</button>
+            <span class="text-xs font-black uppercase text-cyan-400 tracking-wider">3D Asset Catalog</span>
+            
+            <!-- Real-time Search Input -->
+            <div class="relative w-full">
+              <input type="text" id="asset-search" placeholder="Search assets..." 
+                oninput="handleAssetSearch(this.value)" 
+                class="w-full mapmaker-input text-[11px] py-2 px-3 pl-8 bg-slate-950/60" 
+                value="${assetSearchQuery}">
+              <i data-lucide="search" class="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-slate-500"></i>
+              ${assetSearchQuery ? `
+                <button onclick="handleAssetSearch('')" class="absolute right-2.5 top-2.5 text-slate-500 hover:text-white bg-transparent border-none cursor-pointer">
+                  <i data-lucide="x" class="w-3.5 h-3.5"></i>
+                </button>
+              ` : ''}
+            </div>
+
+            <!-- Horizontal Category Scroll -->
+            <div class="flex gap-1 overflow-x-auto pb-1 text-[9px] font-black uppercase tracking-wider shrink-0 select-none">
+              ${[
+                { id: 'structures', label: 'Cover', icon: '🏗️' },
+                { id: 'hazards', label: 'Hazards', icon: '⚡' },
+                { id: 'industrial', label: 'Space', icon: '📦' },
+                { id: 'nature', label: 'Nature', icon: '🌿' },
+                { id: 'alien', label: 'Alien', icon: '👽' },
+                { id: 'primitives', label: 'Shapes', icon: '📐' }
+              ].map(cat => `
+                <button onclick="selectAssetCategory('${cat.id}')" 
+                  class="px-2.5 py-1.5 rounded-md border font-sans font-bold flex items-center gap-1 transition-all whitespace-nowrap shrink-0 cursor-pointer ${selectedAssetCategory === cat.id ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-400 shadow-[0_0_8px_rgba(6,182,212,0.1)]' : 'bg-white/2 border-white/5 text-slate-400 hover:text-white'}">
+                  <span>${cat.icon}</span> ${cat.label}
+                </button>
+              `).join('')}
+            </div>
+
+            <!-- Filtered Asset Catalog Grid -->
+            <div class="grid grid-cols-2 gap-1.5 max-h-[220px] overflow-y-auto pr-1">
+              ${(() => {
+                const query = assetSearchQuery.toLowerCase().trim();
+                const filtered = ASSET_LIBRARY.filter(asset => {
+                  const matchesCategory = asset.category === selectedAssetCategory;
+                  const matchesSearch = asset.name.toLowerCase().includes(query) || asset.desc.toLowerCase().includes(query) || asset.type.toLowerCase().includes(query);
+                  if (query) {
+                    return matchesSearch;
+                  }
+                  return matchesCategory;
+                });
+
+                if (filtered.length === 0) {
+                  return `<p class="col-span-2 text-[10px] text-white/30 italic text-center py-4">No matching assets found.</p>`;
+                }
+
+                return filtered.map(asset => `
+                  <button onclick="handleAddObject('${asset.type}', '${asset.id}')" 
+                    class="group flex flex-col items-start gap-1 p-2 rounded-lg border bg-slate-950/40 border-white/5 hover:border-cyan-500/30 hover:bg-cyan-500/5 text-left transition-all duration-200 cursor-pointer w-full">
+                    <div class="flex items-center justify-between w-full pointer-events-none">
+                      <span class="text-sm font-sans">${asset.icon}</span>
+                      <span class="font-mono text-[7px] text-slate-500 group-hover:text-cyan-400/80 font-bold uppercase">${asset.type}</span>
+                    </div>
+                    <span class="text-[10px] font-bold text-slate-200 group-hover:text-cyan-400 transition-colors leading-tight pointer-events-none">${asset.name}</span>
+                    <span class="text-[8px] text-slate-500 leading-snug line-clamp-2 mt-0.5 pointer-events-none">${asset.desc}</span>
+                  </button>
+                `).join('');
+              })()}
             </div>
           </div>
 
@@ -1071,6 +1965,11 @@
                     <option value="synthwave_neon_laser" ${activeObj.texture==='synthwave_neon_laser'?'selected':''}>Neon Laser Energy</option>
                     <option value="synthwave_chrome" ${activeObj.texture==='synthwave_chrome'?'selected':''}>Sunset Chrome</option>
                   </optgroup>
+                  <optgroup label="Rainy Streets">
+                    <option value="rainy_streets_asphalt" ${activeObj.texture==='rainy_streets_asphalt'?'selected':''}>Wet Asphalt Tarmac</option>
+                    <option value="rainy_streets_neon_glow" ${activeObj.texture==='rainy_streets_neon_glow'?'selected':''}>Amber Neon Glow</option>
+                    <option value="rainy_streets_dog_billboard" ${activeObj.texture==='rainy_streets_dog_billboard'?'selected':''}>Tech Dog Billboard</option>
+                  </optgroup>
                 </select>
               </div>
 
@@ -1105,8 +2004,16 @@
               </div>
 
               <div class="mapmaker-field mt-1.5">
-                <span class="mapmaker-label">Rotation Y (Yaw) <span class="mapmaker-value-badge">${Math.round(activeObj.rotation.y * (180/Math.PI))}°</span></span>
-                <input type="range" min="0" max="360" step="5" oninput="handleUpdateObject('rot_y', parseFloat(this.value) * (Math.PI/180))" class="mapmaker-slider" value="${Math.round(activeObj.rotation.y * (180/Math.PI))}">
+                <span class="mapmaker-label">Rotation X (Pitch) <span class="mapmaker-value-badge">${Math.round((activeObj.rotation?.x || 0) * (180/Math.PI))}°</span></span>
+                <input type="range" min="0" max="360" step="5" oninput="handleUpdateObject('rot_x', parseFloat(this.value) * (Math.PI/180))" class="mapmaker-slider" value="${Math.round(((activeObj.rotation?.x || 0) * (180/Math.PI)) % 360 + 360) % 360}">
+              </div>
+              <div class="mapmaker-field">
+                <span class="mapmaker-label">Rotation Y (Yaw) <span class="mapmaker-value-badge">${Math.round((activeObj.rotation?.y || 0) * (180/Math.PI))}°</span></span>
+                <input type="range" min="0" max="360" step="5" oninput="handleUpdateObject('rot_y', parseFloat(this.value) * (Math.PI/180))" class="mapmaker-slider" value="${Math.round(((activeObj.rotation?.y || 0) * (180/Math.PI)) % 360 + 360) % 360}">
+              </div>
+              <div class="mapmaker-field">
+                <span class="mapmaker-label">Rotation Z (Roll) <span class="mapmaker-value-badge">${Math.round((activeObj.rotation?.z || 0) * (180/Math.PI))}°</span></span>
+                <input type="range" min="0" max="360" step="5" oninput="handleUpdateObject('rot_z', parseFloat(this.value) * (Math.PI/180))" class="mapmaker-slider" value="${Math.round(((activeObj.rotation?.z || 0) * (180/Math.PI)) % 360 + 360) % 360}">
               </div>
 
               <!-- PBR material sliders -->
@@ -1331,11 +2238,12 @@
         }
       });
 
-      // Auto-attach transform controls translation gizmo to selection
+      // Auto-attach transform controls translation/rotation gizmo to selection
       if (transformControls) {
         if (selectedObjectId && activeTab === 'objects') {
           const selMesh = meshMap.get(selectedObjectId);
           if (selMesh) {
+            transformControls.setMode(currentTransformMode);
             transformControls.attach(selMesh);
           } else {
             transformControls.detach();
@@ -1343,6 +2251,7 @@
         } else if (selectedLightId && activeTab === 'lights') {
           const bulbMesh = lightsGroup.children.find(c => c.userData && c.userData.lightId === selectedLightId);
           if (bulbMesh) {
+            transformControls.setMode('translate'); // lights only support translation (movement)
             transformControls.attach(bulbMesh);
           } else {
             transformControls.detach();
@@ -1352,9 +2261,11 @@
         }
       }
 
-      // Clear any pre-existing Synthwave scenery in editor
+      // Clear any pre-existing theme scenery in editor
       const oldScenery = scene.getObjectByName('synthwave_scenery');
       if (oldScenery) scene.remove(oldScenery);
+      const oldRainyScenery = scene.getObjectByName('rainy_streets_scenery');
+      if (oldRainyScenery) scene.remove(oldRainyScenery);
 
       if (theme === 'synthwave') {
         const synthwaveGroup = new THREE.Group();
@@ -1364,7 +2275,7 @@
         const sunCanvas = document.createElement('canvas');
         sunCanvas.width = 256;
         sunCanvas.height = 256;
-        const sunCtx = sunCanvas.getContext('2d')!;
+        const sunCtx = sunCanvas.getContext('2d');
         
         const sunGrad = sunCtx.createLinearGradient(0, 25, 0, 231);
         sunGrad.addColorStop(0, '#ffe066');
@@ -1411,7 +2322,7 @@
           const bCanvas = document.createElement('canvas');
           bCanvas.width = 64;
           bCanvas.height = 128;
-          const bCtx = bCanvas.getContext('2d')!;
+          const bCtx = bCanvas.getContext('2d');
           bCtx.fillStyle = '#05020c';
           bCtx.fillRect(0, 0, 64, 128);
           
@@ -1518,6 +2429,203 @@
 
         scene.add(synthwaveGroup);
       }
+
+      if (theme === 'rainy_streets') {
+        const rainyGroup = new THREE.Group();
+        rainyGroup.name = 'rainy_streets_scenery';
+
+        // 1. Framing Skyscrapers Backdrop
+        const buildingWidths = [14, 18, 16, 12, 20, 15, 12, 16];
+        const buildingHeights = [32, 28, 42, 36, 25, 30, 48, 35];
+        const buildingPositions = [
+          { x: -32, z: -25 },
+          { x: -32, z: 0 },
+          { x: -32, z: 25 },
+          { x: 32, z: -25 },
+          { x: 32, z: 0 },
+          { x: 32, z: 25 },
+          { x: 0, z: -35 },
+          { x: 15, z: -35 }
+        ];
+
+        buildingPositions.forEach((pos, idx) => {
+          const w = buildingWidths[idx % buildingWidths.length];
+          const h = buildingHeights[idx % buildingHeights.length];
+          const d = 10;
+          const bGeo = new THREE.BoxGeometry(w, h, d);
+          
+          const bCanvas = document.createElement('canvas');
+          bCanvas.width = 64;
+          bCanvas.height = 128;
+          const bCtx = bCanvas.getContext('2d');
+          bCtx.fillStyle = '#06080d';
+          bCtx.fillRect(0, 0, 64, 128);
+          
+          bCtx.fillStyle = '#f97316';
+          for (let wy = 10; wy < 120; wy += 12) {
+            for (let wx = 6; wx < 58; wx += 8) {
+              if (Math.random() < 0.25) {
+                bCtx.fillRect(wx, wy, 4, 6);
+              }
+            }
+          }
+          
+          const bTexture = new THREE.CanvasTexture(bCanvas);
+          const bMat = new THREE.MeshStandardMaterial({
+            map: bTexture,
+            color: new THREE.Color('#0c0d12'),
+            roughness: 0.1,
+            metalness: 0.9,
+            emissive: '#f97316',
+            emissiveIntensity: 0.15
+          });
+
+          const building = new THREE.Mesh(bGeo, bMat);
+          building.position.set(pos.x, h / 2 - 2, pos.z);
+          if (pos.x < 0) building.rotation.y = 0.15;
+          if (pos.x > 0) building.rotation.y = -0.15;
+          
+          rainyGroup.add(building);
+        });
+
+        // 2. Colossal Tech Dog Billboard on the top right
+        const boardGeo = new THREE.BoxGeometry(10, 7, 0.4);
+        const boardTexture = generateCustomTexture('rainy_streets_dog_billboard', '#06b6d4');
+        const boardMat = new THREE.MeshBasicMaterial({
+          map: boardTexture,
+          transparent: true,
+          side: THREE.DoubleSide
+        });
+        const boardMesh = new THREE.Mesh(boardGeo, boardMat);
+        boardMesh.position.set(20, 15, -20);
+        boardMesh.rotation.y = -Math.PI / 6;
+        rainyGroup.add(boardMesh);
+
+        // 3. Glowing Neon Green Sign on the Left Building
+        const signCanvas = document.createElement('canvas');
+        signCanvas.width = 128;
+        signCanvas.height = 128;
+        const sCtx = signCanvas.getContext('2d');
+        sCtx.fillStyle = 'rgba(0,0,0,0)';
+        sCtx.clearRect(0,0,128,128);
+        sCtx.strokeStyle = '#22c55e';
+        sCtx.lineWidth = 8;
+        sCtx.shadowColor = '#22c55e';
+        sCtx.shadowBlur = 15;
+        sCtx.beginPath(); sCtx.arc(44, 64, 25, 0, Math.PI * 2); sCtx.stroke();
+        sCtx.beginPath(); sCtx.arc(84, 64, 25, 0, Math.PI * 2); sCtx.stroke();
+        sCtx.shadowBlur = 0;
+        
+        const signTexture = new THREE.CanvasTexture(signCanvas);
+        const signMat = new THREE.MeshBasicMaterial({
+          map: signTexture,
+          transparent: true,
+          side: THREE.DoubleSide
+        });
+        const signMesh = new THREE.Mesh(new THREE.PlaneGeometry(6, 6), signMat);
+        signMesh.position.set(-20, 14, -10);
+        signMesh.rotation.y = Math.PI / 4;
+        rainyGroup.add(signMesh);
+
+        // 4. Low-Poly Neon Green Palm Trees next to the court
+        const buildGreenPalmTree = () => {
+          const treeGroup = new THREE.Group();
+          const numSegments = 5;
+          const trunkMat = new THREE.MeshStandardMaterial({
+            color: '#090514',
+            roughness: 0.8,
+            metalness: 0.9,
+            emissive: '#166534',
+            emissiveIntensity: 0.8
+          });
+
+          let currentParent = treeGroup;
+          for (let j = 0; j < numSegments; j++) {
+            const segGeo = new THREE.CylinderGeometry(0.18 - j * 0.02, 0.23 - j * 0.02, 1.3, 8);
+            const segment = new THREE.Mesh(segGeo, trunkMat);
+            segment.position.y = j === 0 ? 0.65 : 1.2;
+            segment.rotation.z = 0.08;
+            currentParent.add(segment);
+            currentParent = segment;
+          }
+
+          const leafMat = new THREE.MeshStandardMaterial({
+            color: '#22c55e',
+            emissive: '#22c55e',
+            emissiveIntensity: 2.2,
+            roughness: 0.3,
+            metalness: 0.5,
+            side: THREE.DoubleSide
+          });
+
+          const numLeaves = 7;
+          for (let j = 0; j < numLeaves; j++) {
+            const angle = (j * Math.PI * 2) / numLeaves;
+            const leafGeo = new THREE.BoxGeometry(2.4, 0.06, 0.5);
+            const leaf = new THREE.Mesh(leafGeo, leafMat);
+            leaf.geometry.translate(1.2, 0, 0);
+            leaf.position.set(0, 0.65, 0);
+            leaf.rotation.y = angle;
+            leaf.rotation.z = 0.22;
+            currentParent.add(leaf);
+          }
+
+          return treeGroup;
+        };
+
+        const treeZPositions = [-12, 0, 12];
+        treeZPositions.forEach((tz) => {
+          const leftTree = buildGreenPalmTree();
+          leftTree.position.set(-21.5, 0, tz);
+          leftTree.rotation.y = Math.random() * Math.PI;
+          rainyGroup.add(leftTree);
+
+          const rightTree = buildGreenPalmTree();
+          rightTree.position.set(21.5, 0, tz + 2);
+          rightTree.rotation.y = Math.random() * Math.PI;
+          rainyGroup.add(rightTree);
+        });
+
+        // 5. Rain Particle System
+        const rainCount = 1500;
+        const rainGeo = new THREE.BufferGeometry();
+        const rainPositions = new Float32Array(rainCount * 3);
+        const rainVelocities = [];
+
+        for (let i = 0; i < rainCount; i++) {
+          const rx = (Math.random() - 0.5) * arenaRadius * 3;
+          const ry = Math.random() * 25 + 0.1;
+          const rz = (Math.random() - 0.5) * arenaRadius * 2;
+          
+          rainPositions[i * 3] = rx;
+          rainPositions[i * 3 + 1] = ry;
+          rainPositions[i * 3 + 2] = rz;
+          
+          rainVelocities.push({
+            x: -1 + Math.random() * 0.5,
+            y: -15 - Math.random() * 8,
+            z: (Math.random() - 0.5) * 0.4
+          });
+        }
+
+        rainGeo.setAttribute('position', new THREE.BufferAttribute(rainPositions, 3));
+        const rainMat = new THREE.PointsMaterial({
+          color: '#a5f3fc',
+          size: 0.18,
+          transparent: true,
+          opacity: 0.6,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false
+        });
+
+        const rainParticles = new THREE.Points(rainGeo, rainMat);
+        rainParticles.name = 'rain_particles';
+        rainParticles.userData = { velocities: rainVelocities, arenaRadius: arenaRadius };
+        
+        rainyGroup.add(rainParticles);
+
+        scene.add(rainyGroup);
+      }
     }
 
     // DYNAMIC RADIUS UPDATE
@@ -1534,43 +2642,81 @@
       let presetTexture = 'none';
       let defaultScale = { x: 2.0, y: 2.0, z: 2.0 };
       let defaultName = 'Custom Box';
+      let metalness = 0.4;
+      let roughness = 0.6;
+      let opacity = 1;
+      let transparent = false;
+      let emissive = '#000000';
+      let emissiveIntensity = 0;
+      let isCollidable = true;
 
-      if (presetType === 'crate') {
-        presetColor = '#475569';
-        presetTexture = 'space_alloy';
-        defaultName = 'Steel Cargo Box';
-      } else if (presetType === 'pillar') {
-        presetColor = '#0f172a';
-        presetTexture = 'futuristic_hex';
-        defaultScale = { x: 1.5, y: 5.0, z: 1.5 };
-        defaultName = 'Glowing Core Pillar';
-      } else if (presetType === 'barrier') {
-        presetColor = '#ea580c';
-        presetTexture = 'city_concrete';
-        defaultScale = { x: 3.5, y: 1.5, z: 0.6 };
-        defaultName = 'Outpost Security Gate';
-      } else if (presetType === 'plasma') {
-        presetColor = '#ec4899';
-        presetTexture = 'futuristic_shield';
-        defaultScale = { x: 2.5, y: 2.5, z: 2.5 };
-        defaultName = 'Plasma Battery Core';
+      const customPreset = ASSET_LIBRARY.find(a => a.id === presetType);
+
+      if (customPreset) {
+        presetColor = customPreset.color;
+        presetTexture = customPreset.texture;
+        defaultScale = { ...customPreset.scale };
+        defaultName = customPreset.name;
+        metalness = customPreset.metalness ?? 0.4;
+        roughness = customPreset.roughness ?? 0.6;
+        opacity = customPreset.opacity ?? 1;
+        transparent = customPreset.transparent ?? false;
+        emissive = customPreset.emissive ?? '#000000';
+        emissiveIntensity = customPreset.emissiveIntensity ?? 0;
+        isCollidable = customPreset.isCollidable ?? true;
+        if (!type) {
+          type = customPreset.type;
+        }
+      } else {
+        if (presetType === 'crate') {
+          presetColor = '#475569';
+          presetTexture = 'space_alloy';
+          defaultName = 'Steel Cargo Box';
+          metalness = 0.8;
+          roughness = 0.2;
+        } else if (presetType === 'pillar') {
+          presetColor = '#0f172a';
+          presetTexture = 'futuristic_hex';
+          defaultScale = { x: 1.5, y: 5.0, z: 1.5 };
+          defaultName = 'Glowing Core Pillar';
+          metalness = 0.8;
+          roughness = 0.2;
+          emissive = '#06b6d4';
+          emissiveIntensity = 1.5;
+        } else if (presetType === 'barrier') {
+          presetColor = '#ea580c';
+          presetTexture = 'city_concrete';
+          defaultScale = { x: 3.5, y: 1.5, z: 0.6 };
+          defaultName = 'Outpost Security Gate';
+          metalness = 0.8;
+          roughness = 0.2;
+        } else if (presetType === 'plasma') {
+          presetColor = '#ec4899';
+          presetTexture = 'futuristic_shield';
+          defaultScale = { x: 2.5, y: 2.5, z: 2.5 };
+          defaultName = 'Plasma Battery Core';
+          metalness = 0.8;
+          roughness = 0.2;
+          emissive = '#db2777';
+          emissiveIntensity = 1.5;
+        }
       }
 
       const newObj = {
         id: `obj_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
         name: defaultName,
-        type,
+        type: type || 'box',
         position: { x: 0, y: defaultScale.y / 2, z: 0 },
         rotation: { x: 0, y: 0, z: 0 },
         scale: defaultScale,
         color: presetColor,
-        metalness: presetType ? 0.8 : 0.4,
-        roughness: presetType ? 0.2 : 0.6,
-        opacity: 1,
-        transparent: false,
-        emissive: presetType === 'pillar' ? '#06b6d4' : (presetType === 'plasma' ? '#db2777' : '#000000'),
-        emissiveIntensity: presetType ? 1.5 : 0,
-        isCollidable: true,
+        metalness,
+        roughness,
+        opacity,
+        transparent,
+        emissive,
+        emissiveIntensity,
+        isCollidable,
         texture: presetTexture
       };
 
@@ -1610,6 +2756,8 @@
       const activeObj = objects.find(o => o.id === selectedObjectId);
       if (!activeObj) return;
 
+      if (!activeObj.rotation) activeObj.rotation = { x: 0, y: 0, z: 0 };
+
       if (field === 'name') activeObj.name = val;
       else if (field === 'color') activeObj.color = val;
       else if (field === 'texture') activeObj.texture = val;
@@ -1619,7 +2767,9 @@
       else if (field === 'scale_x') activeObj.scale.x = val;
       else if (field === 'scale_y') activeObj.scale.y = val;
       else if (field === 'scale_z') activeObj.scale.z = val;
+      else if (field === 'rot_x') activeObj.rotation.x = val;
       else if (field === 'rot_y') activeObj.rotation.y = val;
+      else if (field === 'rot_z') activeObj.rotation.z = val;
       else if (field === 'metalness') activeObj.metalness = val;
       else if (field === 'roughness') activeObj.roughness = val;
       else if (field === 'opacity') {
@@ -1637,7 +2787,11 @@
       if (badge) {
         const badgeReadout = badge.previousElementSibling?.querySelector('.mapmaker-value-badge');
         if (badgeReadout) {
-          if (field === 'rot_y') badgeReadout.textContent = `${Math.round(val * (180/Math.PI))}°`;
+          if (field.startsWith('rot')) {
+            let deg = Math.round(val * (180/Math.PI));
+            deg = (deg % 360 + 360) % 360;
+            badgeReadout.textContent = `${deg}°`;
+          }
           else if (field.startsWith('pos') || field.startsWith('scale')) badgeReadout.textContent = `${val}m`;
           else badgeReadout.textContent = val.toFixed(2);
         }
@@ -2032,6 +3186,20 @@
         renderInspector();
       });
 
+      // Hotkeys for switching transform mode (Movement 'W', Rotation 'E')
+      window.addEventListener('keydown', (e) => {
+        const activeEl = document.activeElement;
+        if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.isContentEditable)) {
+          return;
+        }
+        
+        if (e.key.toLowerCase() === 'w') {
+          setTransformMode('translate');
+        } else if (e.key.toLowerCase() === 'e') {
+          setTransformMode('rotate');
+        }
+      });
+
       // 2. Local File imports loader
       document.getElementById('import-input').addEventListener('change', (e) => {
         const file = e.target.files?.[0];
@@ -2073,6 +3241,14 @@
             spawnPoints = JSON.parse(JSON.stringify(data.spawnPoints || []));
             objects = JSON.parse(JSON.stringify(data.objects || []));
 
+            // Safety fallback for older map imports missing complete rotation components
+            objects.forEach(obj => {
+              if (!obj.rotation) obj.rotation = { x: 0, y: 0, z: 0 };
+              if (obj.rotation.x === undefined) obj.rotation.x = 0;
+              if (obj.rotation.y === undefined) obj.rotation.y = 0;
+              if (obj.rotation.z === undefined) obj.rotation.z = 0;
+            });
+
             selectedObjectId = null;
             selectedLightId = null;
             selectedSpawnIdx = null;
@@ -2093,6 +3269,25 @@
         camera.updateProjectionMatrix();
         renderer.setSize(container.clientWidth, container.clientHeight);
       });
+    }
+
+    function setTransformMode(mode) {
+      currentTransformMode = mode;
+      if (transformControls) {
+        transformControls.setMode(mode);
+      }
+      
+      const translateBtn = document.getElementById('mode-translate-btn');
+      const rotateBtn = document.getElementById('mode-rotate-btn');
+      if (translateBtn && rotateBtn) {
+        if (mode === 'translate') {
+          translateBtn.className = "px-3.5 py-2 rounded-lg font-black uppercase text-[10px] tracking-wider transition-all duration-200 flex items-center gap-1.5 cursor-pointer bg-cyan-500/25 text-cyan-400 border border-cyan-500/40";
+          rotateBtn.className = "px-3.5 py-2 rounded-lg font-black uppercase text-[10px] tracking-wider transition-all duration-200 flex items-center gap-1.5 cursor-pointer text-slate-400 border border-transparent hover:text-white";
+        } else {
+          rotateBtn.className = "px-3.5 py-2 rounded-lg font-black uppercase text-[10px] tracking-wider transition-all duration-200 flex items-center gap-1.5 cursor-pointer bg-cyan-500/25 text-cyan-400 border border-cyan-500/40";
+          translateBtn.className = "px-3.5 py-2 rounded-lg font-black uppercase text-[10px] tracking-wider transition-all duration-200 flex items-center gap-1.5 cursor-pointer text-slate-400 border border-transparent hover:text-white";
+        }
+      }
     }
 
     function handleThemeChange(t) {
@@ -2123,6 +3318,14 @@
         skyboxHue = 310;
         ambientColor = '#0f051d';
         directColor = '#f43f5e';
+      } else if (t === 'rainy_streets') {
+        fogColor = '#06080c';
+        skyboxHue = 210;
+        skyboxBrightness = 2;
+        ambientColor = '#0f1118';
+        directColor = '#fed7aa';
+        directIntensity = 1.5;
+        fogDensity = 0.024;
       } else {
         fogColor = '#050811';
         skyboxHue = 280;
@@ -2137,6 +3340,24 @@
       rebuildBoundaryGrid();
       rebuildScene();
       renderInspector();
+    }
+
+    function selectAssetCategory(category) {
+      selectedAssetCategory = category;
+      renderInspector();
+    }
+
+    function handleAssetSearch(query) {
+      assetSearchQuery = query;
+      renderInspector();
+      
+      const searchInput = document.getElementById('asset-search');
+      if (searchInput) {
+        searchInput.focus();
+        const val = searchInput.value;
+        searchInput.value = '';
+        searchInput.value = val;
+      }
     }
   </script>
 

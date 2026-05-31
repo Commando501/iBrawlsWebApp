@@ -87,7 +87,6 @@ import {
 } from '../game/aiFeints';
 import {
   getPressureApproachSpeed,
-  getPressureAttackCooldown,
   getPressureDuration,
   getPressureMaxRange,
   shouldEnterPressure,
@@ -229,6 +228,15 @@ const AI_HAMMER_JUMP_VERTICAL_VELOCITY_EPSILON = 0.1;
 const HAMMER_STRIKE_FORWARD_FACTOR = 0.875;
 const SWORD_SLASH_FORWARD_FACTOR = 0.3;
 const SWORD_SLASH_RADIUS = 2.0;
+// Standing eye height used as the origin of every stationary melee reach test, so the
+// player and the AI measure their swings from the same point.
+const MELEE_EYE_HEIGHT = 1.65;
+// Stationary melee reach (eye -> target body-center), shared by the player and every AI
+// combatant so neither out-ranges the other. The sword slash is a tight arc; the hammer
+// side-swipe is slightly longer. Neither is the wide overhead gravity-hammer AoE, which is
+// governed separately by attackRange/attackRadius.
+const MELEE_SWORD_SLASH_REACH = 2.8;
+const MELEE_HAMMER_SWIPE_REACH = 3.0;
 type SwordLungeCurrentTrailStyle = 'localCube' | 'enemyCube' | 'shockwave';
 
 const getCombatBodyCenter = (pos: THREE.Vector3, isCrouching = false): THREE.Vector3 => {
@@ -1369,20 +1377,28 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
             }
           }
 
+          // Swing timing mirrors the player exactly. Sword: split 0.5/0.5 with the hit at
+          // mid-swing (end of swing_up), scaling with swordSlashSpeed. Hammer overhead:
+          // player-parity 0.28/0.12 with the hit at the slam (end of swing_down). Previously
+          // hardcoded 0.15/0.15 with the hit always at swing_down end, ignoring the settings.
+          const swingIsSword = player.activeWeapon === 'sword';
           if (wState === 'swing_up') {
             wTimer += dt;
-            if (wTimer >= 0.15) {
+            const windup = swingIsSword ? (s.settings.swordSlashSpeed ?? 0.22) * 0.5 : 0.28;
+            if (wTimer >= windup) {
               wState = 'swing_down';
               wTimer = 0;
+              // Sword hit lands at mid-swing, like the player's slash.
+              if (swingIsSword) applyBotMeleeImpact(clientId);
             }
           } else if (wState === 'swing_down') {
             wTimer += dt;
-            if (wTimer >= 0.15) {
+            const strike = swingIsSword ? (s.settings.swordSlashSpeed ?? 0.22) * 0.5 : 0.12;
+            if (wTimer >= strike) {
               wState = 'recovering';
               wTimer = 0;
-              // Strike apex: resolve this bot's hammer/slash damage sphere. Without
-              // this a DoomBot's swing is animation-only and deals no damage.
-              applyBotMeleeImpact(clientId);
+              // Hammer overhead slams at the end of swing_down, like the player.
+              if (!swingIsSword) applyBotMeleeImpact(clientId);
             }
           } else if (wState === 'melee_swing') {
             wTimer += dt;
@@ -1975,6 +1991,37 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         });
       }
     });
+
+    // Animate rain particles in Rainy Streets theme if present
+    const rainObj = scene.getObjectByName('rain_particles');
+    if (rainObj && rainObj instanceof THREE.Points) {
+      const rainNow = performance.now();
+      if ((renderGame as any).lastRainTime === undefined) {
+        (renderGame as any).lastRainTime = rainNow;
+      }
+      const rainDt = Math.min(0.1, (rainNow - (renderGame as any).lastRainTime) / 1000);
+      (renderGame as any).lastRainTime = rainNow;
+
+      const positions = rainObj.geometry.attributes.position.array as Float32Array;
+      const velocities = rainObj.userData.velocities;
+      const arenaRadius = rainObj.userData.arenaRadius || 20;
+      const count = positions.length / 3;
+
+      for (let i = 0; i < count; i++) {
+        // Update positions with velocities
+        positions[i * 3] += velocities[i].x * rainDt;
+        positions[i * 3 + 1] += velocities[i].y * rainDt;
+        positions[i * 3 + 2] += velocities[i].z * rainDt;
+
+        // Reset particle if it falls below the floor (y <= 0)
+        if (positions[i * 3 + 1] <= 0.05) {
+          positions[i * 3] = (Math.random() - 0.5) * arenaRadius * 3;
+          positions[i * 3 + 1] = 25; // Reset to top height
+          positions[i * 3 + 2] = (Math.random() - 0.5) * arenaRadius * 2;
+        }
+      }
+      rainObj.geometry.attributes.position.needsUpdate = true;
+    }
 
     renderer.render(scene, camera);
   };
@@ -3952,6 +3999,146 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
             ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(512, y); ctx.stroke();
           }
         }
+      } else if (type === 'rainy_streets_asphalt') {
+        // Wet dark slate/charcoal grey tarmac asphalt
+        ctx.fillStyle = '#0f121a';
+        ctx.fillRect(0, 0, 512, 512);
+        
+        // Add gravel texture speckling
+        ctx.fillStyle = 'rgba(255,255,255,0.04)';
+        for (let i = 0; i < 2000; i++) {
+          ctx.fillRect(Math.random() * 512, Math.random() * 512, 1.5, 1.5);
+        }
+        
+        // Shiny water puddles (slick specular maps)
+        ctx.fillStyle = 'rgba(6, 182, 212, 0.05)'; // faint cyan water reflections
+        for (let i = 0; i < 8; i++) {
+          ctx.beginPath();
+          ctx.ellipse(Math.random() * 512, Math.random() * 512, 45 + Math.random() * 55, 20 + Math.random() * 25, Math.random() * Math.PI, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.fillStyle = 'rgba(244, 63, 94, 0.04)'; // faint red/orange reflections
+        for (let i = 0; i < 8; i++) {
+          ctx.beginPath();
+          ctx.ellipse(Math.random() * 512, Math.random() * 512, 35 + Math.random() * 45, 15 + Math.random() * 20, Math.random() * Math.PI, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        
+        // Rain droplets ripple rings
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.18)';
+        ctx.lineWidth = 1;
+        for (let i = 0; i < 12; i++) {
+          ctx.beginPath();
+          ctx.arc(Math.random() * 512, Math.random() * 512, 4 + Math.random() * 20, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+        
+        // Dark road slab panel seams
+        ctx.strokeStyle = '#05070a';
+        ctx.lineWidth = 4;
+        for (let idx = 0; idx <= 512; idx += 256) {
+          ctx.beginPath(); ctx.moveTo(idx, 0); ctx.lineTo(idx, 512); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(0, idx); ctx.lineTo(512, idx); ctx.stroke();
+        }
+      } else if (type === 'rainy_streets_neon_glow') {
+        // Heavy steel block with orange/amber glowing neon hazard borders
+        ctx.fillStyle = '#1c1917';
+        ctx.fillRect(0, 0, 512, 512);
+        
+        ctx.strokeStyle = '#ea580c'; // glowing sodium orange
+        ctx.lineWidth = 4;
+        ctx.shadowColor = '#ea580c';
+        ctx.shadowBlur = 10;
+        
+        // Draw neon industrial warning bands
+        ctx.strokeRect(20, 20, 472, 472);
+        ctx.strokeRect(80, 80, 352, 352);
+        
+        // Diagonal warning stripes inside
+        for (let i = 0; i < 512; i += 64) {
+          ctx.beginPath();
+          ctx.moveTo(i, 20);
+          ctx.lineTo(i + 40, 80);
+          ctx.stroke();
+          
+          ctx.beginPath();
+          ctx.moveTo(i, 432);
+          ctx.lineTo(i + 40, 492);
+          ctx.stroke();
+        }
+        ctx.shadowBlur = 0;
+      } else if (type === 'rainy_streets_dog_billboard') {
+        // High-tech glowing blue dog hologram billboard screen
+        ctx.fillStyle = '#020617';
+        ctx.fillRect(0, 0, 512, 512);
+        
+        // Cyber scanlines
+        ctx.strokeStyle = 'rgba(6, 182, 212, 0.08)';
+        ctx.lineWidth = 1;
+        for (let y = 0; y < 512; y += 8) {
+          ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(512, y); ctx.stroke();
+        }
+        
+        // Draw the cute cybernetic geometric dog
+        ctx.strokeStyle = '#06b6d4'; // neon cyan
+        ctx.lineWidth = 5;
+        ctx.shadowColor = '#06b6d4';
+        ctx.shadowBlur = 15;
+        
+        ctx.beginPath();
+        // Head outline
+        ctx.moveTo(190, 190);
+        ctx.lineTo(322, 190);
+        ctx.lineTo(340, 235);
+        ctx.lineTo(322, 270);
+        ctx.lineTo(190, 270);
+        ctx.lineTo(172, 235);
+        ctx.closePath();
+        
+        // Snout
+        ctx.moveTo(322, 220);
+        ctx.lineTo(365, 220);
+        ctx.lineTo(365, 250);
+        ctx.lineTo(322, 250);
+        
+        // Tech Collar
+        ctx.moveTo(200, 270);
+        ctx.lineTo(200, 295);
+        ctx.lineTo(260, 295);
+        ctx.lineTo(260, 270);
+        
+        // Pointy ears
+        ctx.moveTo(200, 190);
+        ctx.lineTo(175, 125);
+        ctx.lineTo(225, 190);
+        
+        ctx.moveTo(312, 190);
+        ctx.lineTo(337, 125);
+        ctx.lineTo(287, 190);
+        ctx.stroke();
+        
+        // Glowing Eye (white starburst/circle)
+        ctx.fillStyle = '#ffffff';
+        ctx.shadowColor = '#ffffff';
+        ctx.shadowBlur = 20;
+        ctx.beginPath();
+        ctx.arc(295, 215, 8, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Neon banner texts
+        ctx.shadowBlur = 12;
+        ctx.shadowColor = '#ec4899'; // magenta pink
+        ctx.fillStyle = '#f472b6';
+        ctx.font = '900 38px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('UPGRADE', 256, 410);
+        
+        ctx.shadowColor = '#06b6d4';
+        ctx.fillStyle = '#22d3ee';
+        ctx.font = 'bold 22px sans-serif';
+        ctx.fillText("BRAWL'S BEST FRIEND", 256, 95);
+        
+        ctx.shadowBlur = 0;
       }
 
       const texture = new THREE.CanvasTexture(canvas);
@@ -4032,6 +4219,9 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       } else if (activeCustomMap.theme === 'synthwave') {
         floorTexType = 'synthwave_grid';
         floorColor = '#ec4899';
+      } else if (activeCustomMap.theme === 'rainy_streets') {
+        floorTexType = 'rainy_streets_asphalt';
+        floorColor = '#0f121a';
       }
 
       const floorTexture = generateCustomTexture(floorTexType, '#0f172a');
@@ -4252,6 +4442,205 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
         scene.add(synthwaveGroup);
         threeRef.current.customMapObjects!.push(synthwaveGroup);
+      }
+
+      // Spawn Rainy Streets scenery if theme is rainy_streets
+      if (activeCustomMap.theme === 'rainy_streets') {
+        const rainyGroup = new THREE.Group();
+        rainyGroup.name = 'rainy_streets_scenery';
+
+        // 1. Framing Skyscrapers Backdrop
+        const buildingWidths = [14, 18, 16, 12, 20, 15, 12, 16];
+        const buildingHeights = [32, 28, 42, 36, 25, 30, 48, 35];
+        const buildingPositions = [
+          { x: -32, z: -25 },
+          { x: -32, z: 0 },
+          { x: -32, z: 25 },
+          { x: 32, z: -25 },
+          { x: 32, z: 0 },
+          { x: 32, z: 25 },
+          { x: 0, z: -35 },
+          { x: 15, z: -35 }
+        ];
+
+        buildingPositions.forEach((pos, idx) => {
+          const w = buildingWidths[idx % buildingWidths.length];
+          const h = buildingHeights[idx % buildingHeights.length];
+          const d = 10;
+          const bGeo = new THREE.BoxGeometry(w, h, d);
+          
+          const bCanvas = document.createElement('canvas');
+          bCanvas.width = 128;
+          bCanvas.height = 256;
+          const bCtx = bCanvas.getContext('2d')!;
+          bCtx.fillStyle = '#06080d';
+          bCtx.fillRect(0, 0, 128, 256);
+          
+          bCtx.fillStyle = '#f97316';
+          for (let wy = 20; wy < 240; wy += 24) {
+            for (let wx = 12; wx < 116; wx += 16) {
+              if (Math.random() < 0.25) {
+                bCtx.fillRect(wx, wy, 8, 12);
+              }
+            }
+          }
+          
+          const bTexture = new THREE.CanvasTexture(bCanvas);
+          const bMat = new THREE.MeshStandardMaterial({
+            map: bTexture,
+            color: new THREE.Color('#0c0d12'),
+            roughness: 0.1,
+            metalness: 0.9,
+            emissive: '#f97316',
+            emissiveIntensity: 0.15
+          });
+
+          const building = new THREE.Mesh(bGeo, bMat);
+          building.position.set(pos.x, h / 2 - 2, pos.z);
+          if (pos.x < 0) building.rotation.y = 0.15;
+          if (pos.x > 0) building.rotation.y = -0.15;
+          
+          rainyGroup.add(building);
+        });
+
+        // 2. Colossal Tech Dog Billboard on the top right
+        const boardGeo = new THREE.BoxGeometry(10, 7, 0.4);
+        const boardTexture = generateCustomTexture('rainy_streets_dog_billboard', '#06b6d4');
+        const boardMat = new THREE.MeshBasicMaterial({
+          map: boardTexture,
+          transparent: true,
+          side: THREE.DoubleSide
+        });
+        const boardMesh = new THREE.Mesh(boardGeo, boardMat);
+        boardMesh.position.set(20, 15, -20);
+        boardMesh.rotation.y = -Math.PI / 6;
+        rainyGroup.add(boardMesh);
+
+        // 3. Glowing Neon Green Sign on the Left Building
+        const signCanvas = document.createElement('canvas');
+        signCanvas.width = 128;
+        signCanvas.height = 128;
+        const sCtx = signCanvas.getContext('2d')!;
+        sCtx.fillStyle = 'rgba(0,0,0,0)';
+        sCtx.clearRect(0,0,128,128);
+        sCtx.strokeStyle = '#22c55e';
+        sCtx.lineWidth = 8;
+        sCtx.shadowColor = '#22c55e';
+        sCtx.shadowBlur = 15;
+        sCtx.beginPath(); sCtx.arc(44, 64, 25, 0, Math.PI * 2); sCtx.stroke();
+        sCtx.beginPath(); sCtx.arc(84, 64, 25, 0, Math.PI * 2); sCtx.stroke();
+        sCtx.shadowBlur = 0;
+        
+        const signTexture = new THREE.CanvasTexture(signCanvas);
+        const signMat = new THREE.MeshBasicMaterial({
+          map: signTexture,
+          transparent: true,
+          side: THREE.DoubleSide
+        });
+        const signMesh = new THREE.Mesh(new THREE.PlaneGeometry(6, 6), signMat);
+        signMesh.position.set(-20, 14, -10);
+        signMesh.rotation.y = Math.PI / 4;
+        rainyGroup.add(signMesh);
+
+        // 4. Low-Poly Neon Green Palm Trees next to the court
+        const buildGreenPalmTree = () => {
+          const treeGroup = new THREE.Group();
+          const numSegments = 5;
+          const trunkMat = new THREE.MeshStandardMaterial({
+            color: '#090514',
+            roughness: 0.8,
+            metalness: 0.9,
+            emissive: '#166534',
+            emissiveIntensity: 0.8
+          });
+
+          let currentParent = treeGroup as any;
+          for (let j = 0; j < numSegments; j++) {
+            const segGeo = new THREE.CylinderGeometry(0.18 - j * 0.02, 0.23 - j * 0.02, 1.3, 8);
+            const segment = new THREE.Mesh(segGeo, trunkMat);
+            segment.position.y = j === 0 ? 0.65 : 1.2;
+            segment.rotation.z = 0.08;
+            currentParent.add(segment);
+            currentParent = segment;
+          }
+
+          const leafMat = new THREE.MeshStandardMaterial({
+            color: '#22c55e',
+            emissive: '#22c55e',
+            emissiveIntensity: 2.2,
+            roughness: 0.3,
+            metalness: 0.5,
+            side: THREE.DoubleSide
+          });
+
+          const numLeaves = 7;
+          for (let j = 0; j < numLeaves; j++) {
+            const angle = (j * Math.PI * 2) / numLeaves;
+            const leafGeo = new THREE.BoxGeometry(2.4, 0.06, 0.5);
+            const leaf = new THREE.Mesh(leafGeo, leafMat);
+            leaf.geometry.translate(1.2, 0, 0);
+            leaf.position.set(0, 0.65, 0);
+            leaf.rotation.y = angle;
+            leaf.rotation.z = 0.22;
+            currentParent.add(leaf);
+          }
+
+          return treeGroup;
+        };
+
+        const treeZPositions = [-12, 0, 12];
+        treeZPositions.forEach((tz) => {
+          const leftTree = buildGreenPalmTree();
+          leftTree.position.set(-21.5, 0, tz);
+          leftTree.rotation.y = Math.random() * Math.PI;
+          rainyGroup.add(leftTree);
+
+          const rightTree = buildGreenPalmTree();
+          rightTree.position.set(21.5, 0, tz + 2);
+          rightTree.rotation.y = Math.random() * Math.PI;
+          rainyGroup.add(rightTree);
+        });
+
+        // 5. Rain Particle System
+        const rainCount = 1500;
+        const rainGeo = new THREE.BufferGeometry();
+        const rainPositions = new Float32Array(rainCount * 3);
+        const rainVelocities = [];
+
+        for (let i = 0; i < rainCount; i++) {
+          const rx = (Math.random() - 0.5) * activeCustomMap.arenaRadius * 3;
+          const ry = Math.random() * 25 + 0.1;
+          const rz = (Math.random() - 0.5) * activeCustomMap.arenaRadius * 2;
+          
+          rainPositions[i * 3] = rx;
+          rainPositions[i * 3 + 1] = ry;
+          rainPositions[i * 3 + 2] = rz;
+          
+          rainVelocities.push({
+            x: -1 + Math.random() * 0.5,
+            y: -15 - Math.random() * 8,
+            z: (Math.random() - 0.5) * 0.4
+          });
+        }
+
+        rainGeo.setAttribute('position', new THREE.BufferAttribute(rainPositions, 3));
+        const rainMat = new THREE.PointsMaterial({
+          color: '#a5f3fc',
+          size: 0.18,
+          transparent: true,
+          opacity: 0.6,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false
+        });
+
+        const rainParticles = new THREE.Points(rainGeo, rainMat);
+        rainParticles.name = 'rain_particles';
+        rainParticles.userData = { velocities: rainVelocities, arenaRadius: activeCustomMap.arenaRadius };
+        
+        rainyGroup.add(rainParticles);
+
+        scene.add(rainyGroup);
+        threeRef.current.customMapObjects!.push(rainyGroup);
       }
 
       // Clear any pre-existing navigation mesh, force A* engine to rebuild on the fly
@@ -6716,7 +7105,11 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     // so it looked and played like a hammer despite the sword-only preset. Sword closes
     // distance with its lunge; this stationary swing is only a short-range slash.
     const isHammer = weapon === 'hammer';
-    const forward = (s.settings.attackRange ?? 3.2) * (isHammer ? HAMMER_STRIKE_FORWARD_FACTOR : SWORD_SLASH_FORWARD_FACTOR);
+    // Hammer overhead plants its sphere at the full attackRange, matching the player and
+    // main AI (applyHammerStrikeImpact). The sword slash stays a tight close-range arc.
+    const forward = isHammer
+      ? (s.settings.attackRange ?? 3.2)
+      : (s.settings.attackRange ?? 3.2) * SWORD_SLASH_FORWARD_FACTOR;
     const radius = isHammer ? (s.settings.attackRadius ?? 4.5) : SWORD_SLASH_RADIUS;
 
     const eye = new THREE.Vector3(bot.pos.x, bot.pos.y + 1.2, bot.pos.z);
@@ -8448,7 +8841,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
                 const enemyCenter = new THREE.Vector3(mai()!.pos.x, mai()!.pos.y + 0.825, mai()!.pos.z);
                 const toEnemy = enemyCenter.clone().sub(eyePos);
                 const dist = toEnemy.length();
-                if (dist <= 2.8) {
+                if (dist <= MELEE_SWORD_SLASH_REACH) {
                   const toEnemyDir = toEnemy.clone().normalize();
                   const dot = cameraLookDir.dot(toEnemyDir);
                   const angle = Math.acos(Math.max(-1.0, Math.min(1.0, dot)));
@@ -8505,8 +8898,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
                     const otherCenter = new THREE.Vector3(other.pos.x, other.pos.y + 0.825, other.pos.z);
                     const toOther = otherCenter.clone().sub(eyePos);
                     const dist = toOther.length();
-                    
-                    if (dist <= 2.8) {
+
+                    if (dist <= MELEE_SWORD_SLASH_REACH) {
                       const toOtherDir = toOther.clone().normalize();
                       const dot = cameraLookDir.dot(toOtherDir);
                       const angle = Math.acos(Math.max(-1.0, Math.min(1.0, dot)));
@@ -8811,9 +9204,9 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         } 
         else if (mai()!.weaponState === 'swing_up') {
           mai()!.weaponTimer += dt;
-          const windup = 0.32;
+          const windup = 0.28; // player-parity hammer overhead windup (see pWeaponState swing_up)
           const pct = Math.min(1.0, mai()!.weaponTimer / windup);
-          
+
           enemyHammerModel.position.set(
             THREE.MathUtils.lerp(0.48, 0.4, pct),
             THREE.MathUtils.lerp(1.08, 1.8, pct) - 0.64, // high over head
@@ -8828,7 +9221,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         } 
         else if (mai()!.weaponState === 'swing_down') {
           mai()!.weaponTimer += dt;
-          const strike = 0.13;
+          const strike = 0.12; // player-parity hammer overhead strike (see pWeaponState swing_down)
           const pct = Math.min(1.0, mai()!.weaponTimer / strike);
 
           enemyHammerModel.position.set(
@@ -8943,9 +9336,10 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         } 
         else if (mai()!.weaponState === 'swing_up') {
           mai()!.weaponTimer += dt;
-          const windup = s.settings.swordSlashSpeed ? s.settings.swordSlashSpeed * 0.4 : 0.1;
+          // Split 0.5/0.5 so the hit lands at mid-swing, exactly like the player's slash.
+          const windup = (s.settings.swordSlashSpeed ?? 0.22) * 0.5;
           const pct = Math.min(1.0, mai()!.weaponTimer / windup);
-          
+
           enemySwordModel.position.set(
             THREE.MathUtils.lerp(0.48, 0.62, pct),
             THREE.MathUtils.lerp(1.08, 1.2, pct) - 0.64,
@@ -8960,11 +9354,13 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
           if (pct >= 1.0) {
             mai()!.weaponState = 'swing_down';
             mai()!.weaponTimer = 0;
+            // Damage lands at mid-swing (0.5 * swordSlashSpeed), matching the player's slash.
+            applyEnemySwordSlashImpact();
           }
-        } 
+        }
         else if (mai()!.weaponState === 'swing_down') {
           mai()!.weaponTimer += dt;
-          const strike = s.settings.swordSlashSpeed ? s.settings.swordSlashSpeed * 0.6 : 0.12;
+          const strike = (s.settings.swordSlashSpeed ?? 0.22) * 0.5;
           const pct = Math.min(1.0, mai()!.weaponTimer / strike);
 
           enemySwordModel.position.set(
@@ -8981,11 +9377,9 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
           if (pct >= 1.0) {
             mai()!.weaponState = 'recovering';
             mai()!.weaponTimer = 0;
-
-            // Perform Enemy Sword Slash hit check
-            applyEnemySwordSlashImpact();
+            // Damage already applied at mid-swing (end of swing_up); swing_down is follow-through.
           }
-        } 
+        }
         else if (mai()!.weaponState === 'recovering') {
           mai()!.weaponTimer += dt;
           const recover = s.settings.swordSlashReload ?? 0.6;
@@ -9273,24 +9667,26 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     const target = getEnemyAITarget();
     if (!target) return;
 
-    // Slash trace centering forward in front of the AI, including airborne targets.
-    const aiEyePos = new THREE.Vector3(mai()!.pos.x, mai()!.pos.y + 1.2, mai()!.pos.z);
+    // Reach is measured eye -> target body-center, identical to the player's stationary
+    // slash (see triggerPlayerSwordSlash impact). The forward point below is VFX-only and
+    // must NOT extend the hit range, or the AI would out-reach the player.
+    const aiEyePos = new THREE.Vector3(mai()!.pos.x, mai()!.pos.y + MELEE_EYE_HEIGHT, mai()!.pos.z);
     const targetBodyCenter = getCombatBodyCenter(target.pos, target.isCrouching);
     const lookHeading = targetBodyCenter.clone().sub(aiEyePos).normalize();
-    const impactPos = aiEyePos.clone().addScaledVector(lookHeading, 2.2); // sweet spot distance
-    
-    s.lastAIStrikePos = impactPos;
+    const vfxPos = aiEyePos.clone().addScaledVector(lookHeading, 1.0);
+
+    s.lastAIStrikePos = vfxPos;
     s.lastAIStrikeTick = 1.0;
-    
+
     sfx.playSwing();
-    spawnVoxelShockwaveParticles(impactPos, '#ef4444');
-    
+    spawnVoxelShockwaveParticles(vfxPos, '#ef4444');
+
     if (isMultiplayer) return; // In multiplayer, we do not run AI damage checks against local player!
-    
+
     if (target.hp > 0 && target.invuln <= 0) {
-      const dist = impactPos.distanceTo(targetBodyCenter);
-      
-      if (dist <= 2.8) {
+      const dist = aiEyePos.distanceTo(targetBodyCenter);
+
+      if (dist <= MELEE_SWORD_SLASH_REACH) {
         // Evaluate trades FIRST
         const swordThreshold = s.settings.swordTradeWindow ?? 350;
         const isPlayerSwordActiveAttack = s.settings.enableSwordTrade && s.activeWeapon === 'sword' && (
@@ -9392,7 +9788,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       const enemyCenter = new THREE.Vector3(mai()!.pos.x, mai()!.pos.y + 0.825, mai()!.pos.z);
       const toEnemy = enemyCenter.clone().sub(eyePos);
       const dist = toEnemy.length();
-      if (dist <= 3.0) {
+      if (dist <= MELEE_HAMMER_SWIPE_REACH) {
         const toEnemyDir = toEnemy.clone().normalize();
         const dot = cameraLookDir.dot(toEnemyDir);
         const angle = Math.acos(Math.max(-1.0, Math.min(1.0, dot)));
@@ -9438,7 +9834,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
           const otherBodyCenter = new THREE.Vector3(other.pos.x, other.pos.y + 0.825, other.pos.z);
           const toOther = otherBodyCenter.clone().sub(eyePos);
           const dist = toOther.length();
-          if (dist <= 3.0) {
+          if (dist <= MELEE_HAMMER_SWIPE_REACH) {
             const toOtherDir = toOther.clone().normalize();
             const dot = cameraLookDir.dot(toOtherDir);
             const angle = Math.acos(Math.max(-1.0, Math.min(1.0, dot)));
@@ -9490,23 +9886,25 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     const target = getEnemyAITarget();
     if (!target) return;
 
-    const aiEyePos = new THREE.Vector3(mai()!.pos.x, mai()!.pos.y + 1.2, mai()!.pos.z);
+    // Reach is measured eye -> target body-center, identical to the player's hammer
+    // side-swipe (see applyPlayerHammerMeleeImpact). The forward point is VFX-only.
+    const aiEyePos = new THREE.Vector3(mai()!.pos.x, mai()!.pos.y + MELEE_EYE_HEIGHT, mai()!.pos.z);
     const targetBodyCenter = getCombatBodyCenter(target.pos, target.isCrouching);
     const lookHeading = targetBodyCenter.clone().sub(aiEyePos).normalize();
-    const impactPos = aiEyePos.clone().addScaledVector(lookHeading, 2.2);
+    const vfxPos = aiEyePos.clone().addScaledVector(lookHeading, 1.0);
 
-    s.lastAIStrikePos = impactPos;
+    s.lastAIStrikePos = vfxPos;
     s.lastAIStrikeTick = 1.0;
 
     sfx.playSwing();
-    spawnVoxelShockwaveParticles(impactPos, '#38bdf8');
+    spawnVoxelShockwaveParticles(vfxPos, '#38bdf8');
 
     if (isMultiplayer) return;
 
     if (target.hp > 0 && target.invuln <= 0) {
-      const dist = impactPos.distanceTo(targetBodyCenter);
+      const dist = aiEyePos.distanceTo(targetBodyCenter);
 
-      if (dist <= 3.0) {
+      if (dist <= MELEE_HAMMER_SWIPE_REACH) {
         if (target.id === 'player') {
           recordPlayerDamageTaken();
           tryRecordCalibrationCounterSuccess('main_ai');
@@ -9854,13 +10252,16 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
   };
 
   const canStartAIHammerJump = (self: any, pos: THREE.Vector3, vel: THREE.Vector3): boolean => {
-    const cooldown = self.aiHammerJumpCooldownTimer ?? 0;
+    // Parity with the player: a hammer jump needs a READY hammer (so its frequency is
+    // capped by the natural hammer swing cadence, exactly like the player, rather than an
+    // artificial AI-only cooldown) and a grounded combatant. Requiring 'ready' also stops
+    // the main AI from re-planning a jump every frame while a planned swing is in flight.
     const isAirborne =
       self.isJumping ||
       pos.y > AI_HAMMER_JUMP_START_MAX_HEIGHT ||
       Math.abs(vel.y) > AI_HAMMER_JUMP_VERTICAL_VELOCITY_EPSILON;
 
-    return cooldown <= 0 && !isAirborne;
+    return self.weaponState === 'ready' && !isAirborne;
   };
 
   const startAIHammerJump = (
@@ -9876,10 +10277,10 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     }
 
     if (self.id === 'main_ai') {
-      // The main AI plans the jump and lifts off when its hammer swing connects.
+      // The main AI plans the jump and lifts off when its hammer swing connects. Frequency
+      // is capped by the natural swing cadence (weaponState gate above), not a cooldown.
       mai()!.hammerJumpPlanned = true;
       mai()!.hammerJumpType = jumpType;
-      mai()!.aiHammerJumpCooldownTimer = AI_HAMMER_JUMP_COOLDOWN;
       triggerEnemyHammerSwing();
     } else {
       // Bots lift off immediately.
@@ -9892,7 +10293,6 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         vel.x = jumpHeading.x * 6.5;
         vel.z = jumpHeading.z * 6.5;
       }
-      self.aiHammerJumpCooldownTimer = AI_HAMMER_JUMP_COOLDOWN;
       sfx.playSwing();
       sfx.playJump();
     }
@@ -9949,17 +10349,22 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
   };
 
   // Swap any AI combatant's active weapon + toggle its display meshes through one path.
-  // `setLockout` re-arms the swap-lockout timer (the tactical-swap site does; the feint
-  // revert and spawn telegraph don't). Convergence vs the old main-only swapEnemyWeapon:
-  // the main AI no longer sets the weaponReadyTime swap cooldown (aiSwapCooldownTimer) —
-  // that field is inert in the unified attack/lunge tick (only the network-replay
-  // triggers still read it) — and drops the HP/paused/LUNGING guards (these call sites
-  // are already inside the live AI tick, gated on lockout where it matters).
+  // `setLockout` arms BOTH post-swap timers, exactly mirroring the player's swap
+  // (see swapPlayerWeapon): weaponSwapLockout gates the *next* swap, and weaponReadyTime
+  // gates *attacking* after the swap (enforced via swapCooldownTimer in the AI tick's
+  // canStartWeaponAction gate). The feint revert and spawn telegraph pass setLockout=false
+  // so they don't pay the ready cost. This keeps the AI from swapping and attacking faster
+  // than the player's configured mechanics allow.
   const swapCombatantWeapon = (self: any, type: 'hammer' | 'sword', setLockout = false) => {
     const s = stateRef.current;
     self.activeWeapon = type;
-    if (setLockout && s.settings.weaponSwapLockout > 0) {
-      self.swapLockoutTimer = s.settings.weaponSwapLockout;
+    if (setLockout) {
+      if (s.settings.weaponSwapLockout > 0) {
+        self.swapLockoutTimer = s.settings.weaponSwapLockout;
+      }
+      if (s.settings.weaponReadyTime > 0) {
+        self.swapCooldownTimer = s.settings.weaponReadyTime;
+      }
     }
     const meshes = getCombatantWeaponMeshes(self.id);
     if (meshes && meshes.hammer && meshes.sword) {
@@ -10318,8 +10723,9 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
     if (!target) {
       if (self.isLunging) {
-        const localCooldownMult = (1.3 - 0.8 * playstyleFactor) * matchMultipliers.cooldownMult;
-        finishSwordLunge(localCooldownMult, 'target_dead', undefined);
+        // Reload/recovery mirrors the player's configured mechanic settings exactly
+        // (multiplier 1) — see cooldownMult below.
+        finishSwordLunge(1, 'target_dead', undefined);
       }
       self.aiDashRemaining = 0;
 
@@ -10515,7 +10921,11 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       aggressiveLungeMult: baseAggressiveLungeMult,
       multipliers: calibrationMultipliers,
     }).aggressiveLungeMult;
-    const cooldownMult = (1.3 - 0.8 * playstyleFactor) * matchMultipliers.cooldownMult;
+    // AI swing/lunge reload mirrors the player's configured mechanic settings
+    // exactly. Playstyle and score state no longer scale reload speed, so the AI
+    // can never reload faster than the values the user has set. (Playstyle still
+    // shapes spacing, aggression and lunge range — just not raw reload timing.)
+    const cooldownMult = 1;
 
     const targetIsProtected = target.invulnerabilityTimer > 0;
     const targetIsLunging = target.isLunging;
@@ -10524,7 +10934,10 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       tickCalibrationPendingDodge(s.aiMatchContext, botId, dt, targetIsLunging);
       tickCalibrationPendingCounter(s.aiMatchContext, botId, dt, targetIsLunging);
     }
-    const canStartWeaponAction = state !== 'COOLDOWN' || timer <= 0;
+    // The swap-ready cooldown (weaponReadyTime) gates attacking after a weapon swap,
+    // exactly as it does for the player. `let` so a same-tick tactical swap can revoke it.
+    let canStartWeaponAction =
+      (state !== 'COOLDOWN' || timer <= 0) && (self.swapCooldownTimer ?? 0) <= 0;
 
     const isTacticalState = state === 'SIDE_STEPPING' || state === 'COOLDOWN';
     const crouchCycle = (swayTimer % 4.0) < 1.5;
@@ -10617,6 +11030,9 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     if (botId !== MAIN_AI_ID && (self.swapLockoutTimer ?? 0) > 0) {
       self.swapLockoutTimer = Math.max(0, (self.swapLockoutTimer ?? 0) - dt);
     }
+    if (botId !== MAIN_AI_ID && (self.swapCooldownTimer ?? 0) > 0) {
+      self.swapCooldownTimer = Math.max(0, (self.swapCooldownTimer ?? 0) - dt);
+    }
     if (hammerJumpCooldownTimer > 0) {
       hammerJumpCooldownTimer = Math.max(0, hammerJumpCooldownTimer - dt);
     }
@@ -10708,6 +11124,9 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       swapCombatantWeapon(self, tacticalWeapon, true);
       activeWeapon = tacticalWeapon;
       weaponState = 'ready';
+      // Just swapped: the weaponReadyTime gate applies immediately, so no attack can
+      // fire this tick (mirrors the player's post-swap swapCooldownTimer).
+      if (s.settings.weaponReadyTime > 0) canStartWeaponAction = false;
     };
 
     const revertWeaponSwapFeint = () => {
@@ -10827,7 +11246,11 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
       if (attackDistanceToTarget <= stationarySwingReach) {
         state = 'COOLDOWN';
-        const isHammerMelee = activeWeapon === 'hammer' && Math.random() < 0.4;
+        // The hammer side-swipe only reaches MELEE_HAMMER_SWIPE_REACH (player parity), so
+        // only pick it in that band — beyond it the wide overhead gravity hammer is used.
+        const isHammerMelee = activeWeapon === 'hammer' &&
+          attackDistanceToTarget <= MELEE_HAMMER_SWIPE_REACH &&
+          Math.random() < 0.4;
         
         if (activeWeapon === 'sword') {
           timer = (s.settings.swordSlashReload ?? 0.6) * cooldownMult;
@@ -11024,7 +11447,6 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       ) {
         if (startAIHammerJump(self, pos, vel, undefined, 'defensive')) {
           weaponState = 'swing_up';
-          hammerJumpCooldownTimer = AI_HAMMER_JUMP_COOLDOWN;
           spawnVoxelShockwaveParticles(pos, '#f59e0b');
           isEvadingLunge = true;
         }
@@ -11080,7 +11502,6 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       } else if (!enemyInKillRange && verticalDeltaToTarget > 2.0 && distanceToTarget <= resolvedDangerZone + 4.5 && Math.random() < 0.012 + tunedAnticipationFactor * 0.035) {
         if (startAIHammerJump(self, pos, vel, toTarget, 'offensive')) {
           weaponState = 'swing_up';
-          hammerJumpCooldownTimer = AI_HAMMER_JUMP_COOLDOWN;
         }
       }
     }
@@ -11524,7 +11945,6 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       if (weaponState === 'ready' && distanceToTarget > (resolvedDangerZone + 1.5) && distanceToTarget <= (resolvedDangerZone + 5.5) && Math.random() < 0.015 && (movementComplexity >= 40) && !targetIsProtected) {
         if (startAIHammerJump(self, pos, vel, lookHeading, 'offensive')) {
           weaponState = 'swing_up';
-          hammerJumpCooldownTimer = AI_HAMMER_JUMP_COOLDOWN;
         }
       }
 
@@ -11831,7 +12251,9 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
             const baseCooldown = activeWeapon === 'sword'
               ? (s.settings.swordSlashReload ?? 0.6)
               : 1.1;
-            timer = Math.max(timer, getPressureAttackCooldown(effectivePressureAggression, baseCooldown));
+            // Pressure re-swings reload at the configured rate — pressure aggression
+            // no longer shortens reload below the player's mechanic settings.
+            timer = Math.max(timer, baseCooldown);
             triggerCombatantAttack(self, activeWeapon);
             weaponState = 'swing_up';
           }

@@ -934,6 +934,114 @@ export const PREMADE_MAPS: CustomMapData[] = [
         texture: 'synthwave_grid'
       }
     ]
+  },
+  {
+    id: 'rainy_industrial_streets',
+    name: 'Rainy Cyber Streets',
+    description: 'A dark, rain-slicked industrial street court under warm sodium spotlights, framed by towering skyscrapers and a giant neon dog billboard.',
+    author: 'Urban Architect',
+    theme: 'rainy_streets',
+    mapShape: 'rectangular',
+    arenaRadius: 20,
+    skyboxHue: 210,
+    skyboxBrightness: 2,
+    fogColor: '#06080c',
+    fogDensity: 0.024,
+    spawnPoints: [
+      { x: -16, y: 0, z: -6 },
+      { x: -16, y: 0, z: 6 },
+      { x: -12, y: 0, z: -8 },
+      { x: -12, y: 0, z: 8 },
+      { x: 16, y: 0, z: -6 },
+      { x: 16, y: 0, z: 6 },
+      { x: 12, y: 0, z: -8 },
+      { x: 12, y: 0, z: 8 }
+    ],
+    lighting: {
+      ambientColor: '#0f1118',
+      ambientIntensity: 0.7,
+      directColor: '#fed7aa',
+      directIntensity: 1.8,
+      directPosition: { x: -8, y: 22, z: -8 },
+      pointLights: [
+        { id: 'street_l1', color: '#ff7700', intensity: 3.5, distance: 15, decay: 1.2, position: { x: -20, y: 3.5, z: -8 } },
+        { id: 'street_l2', color: '#ff7700', intensity: 3.5, distance: 15, decay: 1.2, position: { x: -20, y: 3.5, z: 0 } },
+        { id: 'street_l3', color: '#ff7700', intensity: 3.5, distance: 15, decay: 1.2, position: { x: -20, y: 3.5, z: 8 } },
+        { id: 'street_r1', color: '#ff7700', intensity: 3.5, distance: 15, decay: 1.2, position: { x: 20, y: 3.5, z: -8 } },
+        { id: 'street_r2', color: '#ff7700', intensity: 3.5, distance: 15, decay: 1.2, position: { x: 20, y: 3.5, z: 0 } },
+        { id: 'street_r3', color: '#ff7700', intensity: 3.5, distance: 15, decay: 1.2, position: { x: 20, y: 3.5, z: 8 } }
+      ]
+    },
+    objects: [
+      {
+        id: 'rainy_barrier_w',
+        name: 'Blue Street Buffer',
+        type: 'box',
+        position: { x: -17, y: 1.0, z: 0 },
+        rotation: { x: 0, y: 0, z: 0 },
+        scale: { x: 1.2, y: 2.0, z: 4.0 },
+        color: '#ff7700',
+        metalness: 0.8,
+        roughness: 0.2,
+        opacity: 1.0,
+        transparent: false,
+        emissive: '#ea580c',
+        emissiveIntensity: 1.5,
+        isCollidable: true,
+        texture: 'rainy_streets_neon_glow'
+      },
+      {
+        id: 'rainy_barrier_e',
+        name: 'Red Street Buffer',
+        type: 'box',
+        position: { x: 17, y: 1.0, z: 0 },
+        rotation: { x: 0, y: 0, z: 0 },
+        scale: { x: 1.2, y: 2.0, z: 4.0 },
+        color: '#ff7700',
+        metalness: 0.8,
+        roughness: 0.2,
+        opacity: 1.0,
+        transparent: false,
+        emissive: '#ea580c',
+        emissiveIntensity: 1.5,
+        isCollidable: true,
+        texture: 'rainy_streets_neon_glow'
+      },
+      {
+        id: 'rainy_crate_nw',
+        name: 'Heavy Street Cargo NW',
+        type: 'box',
+        position: { x: -6, y: 1.0, z: -5 },
+        rotation: { x: 0, y: 0.4, z: 0 },
+        scale: { x: 2.0, y: 2.0, z: 2.0 },
+        color: '#ff7700',
+        metalness: 0.7,
+        roughness: 0.2,
+        opacity: 1.0,
+        transparent: false,
+        emissive: '#ea580c',
+        emissiveIntensity: 1.2,
+        isCollidable: true,
+        texture: 'rainy_streets_neon_glow'
+      },
+      {
+        id: 'rainy_crate_se',
+        name: 'Heavy Street Cargo SE',
+        type: 'box',
+        position: { x: 6, y: 1.0, z: 5 },
+        rotation: { x: 0, y: -0.3, z: 0 },
+        scale: { x: 2.0, y: 2.0, z: 2.0 },
+        color: '#ff7700',
+        metalness: 0.7,
+        roughness: 0.2,
+        opacity: 1.0,
+        transparent: false,
+        emissive: '#ea580c',
+        emissiveIntensity: 1.2,
+        isCollidable: true,
+        texture: 'rainy_streets_neon_glow'
+      }
+    ]
   }
 ];
 
