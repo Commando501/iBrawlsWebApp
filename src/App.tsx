@@ -72,9 +72,10 @@ import { sfx } from './components/AudioEngine';
 import { Move, RotateCcw, Check } from 'lucide-react';
 import { ChatOverlay, ChatMessage } from './components/ChatOverlay';
 import { CharacterPreview } from './components/CharacterPreview';
+import { CharacterPainter } from './components/CharacterPainter';
 import { CharacterLoadout, DEFAULT_LOADOUT, AVAILABLE_PRESETS, HelmetPreset, TorsoPreset, ArmPreset, LegPreset } from './components/VoxelModels';
 
-const APP_VERSION = '0.531';
+const APP_VERSION = '0.536';
 const MAX_PLAYER_NAME_LENGTH = 10;
 
 interface OnlineClient {
@@ -107,7 +108,14 @@ const getPresetDescription = (val: string, customPresets: AIPreset[] = []): stri
     const anti = custom.tuning.aiAnticipationFactor !== undefined ? `${Math.round(custom.tuning.aiAnticipationFactor * 100)}%` : 'default';
     const move = custom.tuning.aiMovementComplexity !== undefined ? `${custom.tuning.aiMovementComplexity}%` : 'default';
     const swap = custom.tuning.aiWeaponSwapIQ !== undefined ? `${custom.tuning.aiWeaponSwapIQ}%` : 'default';
-    return `Custom Preset: Latency: ${rl}, Anticipation: ${anti}, Movement: ${move}, Weapon Swap: ${swap}`;
+    const advanced: string[] = [];
+    if (custom.tuning.aiSpatialIQ !== undefined) advanced.push(`Spatial: ${custom.tuning.aiSpatialIQ}%`);
+    if (custom.tuning.aiFeintChance !== undefined) advanced.push(`Feint: ${custom.tuning.aiFeintChance}%`);
+    if (custom.tuning.aiPressureAggression !== undefined) advanced.push(`Pressure: ${custom.tuning.aiPressureAggression}%`);
+    if (custom.tuning.aiSpacingBand !== undefined) advanced.push(`Spacing: ${custom.tuning.aiSpacingBand.toFixed(2)}×`);
+    if (custom.tuning.aiSkipPressure) advanced.push('No-Pressure');
+    const advancedStr = advanced.length ? `, ${advanced.join(', ')}` : '';
+    return `Custom Preset: Latency: ${rl}, Anticipation: ${anti}, Movement: ${move}, Weapon Swap: ${swap}${advancedStr}`;
   }
   return "";
 };
@@ -117,6 +125,82 @@ const getArchetypeDescription = (val: string): string => {
   const def = getArchetypeDef(val);
   return def ? def.description : "";
 };
+
+// Custom AI Behavior panel — every engine-wired dial, grouped for scannability.
+// NOTE: any future AI-behavior knob must be added here (and to AITuning / RosterSlotConfig).
+type AICustomKnobKey =
+  | 'aiReactionLatency'
+  | 'aiAnticipationFactor'
+  | 'aiWeaponSwapIQ'
+  | 'aiMovementComplexity'
+  | 'aiSpatialIQ'
+  | 'aiSpacingBand'
+  | 'aiPlaystyle'
+  | 'aiWeaponPrioritization'
+  | 'aiPressureAggression'
+  | 'aiFeintChance';
+
+interface AICustomKnobEntry {
+  key: AICustomKnobKey;
+  label: string;
+  min: number;
+  max: number;
+  step: number;
+  /** Slider fallback position when the stored value is undefined. */
+  def: number;
+  fmt: (v: number | undefined) => string;
+  /** Plain-language explanation of what the dial does, shown under the slider. */
+  desc: string;
+}
+
+const AI_CUSTOM_KNOB_SECTIONS: { title: string; entries: AICustomKnobEntry[] }[] = [
+  {
+    title: 'Reflexes & Awareness',
+    entries: [
+      { key: 'aiReactionLatency', label: 'Reflex Latency', min: 0, max: 1.5, step: 0.05, def: 0.25, fmt: (v) => `${(v ?? 0.25).toFixed(2)}s`, desc: 'Delay before the AI reacts to your actions. Lower = snappier, near-instant responses; higher = sluggish and easier to bait.' },
+      { key: 'aiAnticipationFactor', label: 'Anticipation Engine', min: 0, max: 1, step: 0.05, def: 0.4, fmt: (v) => `${Math.round((v ?? 0.4) * 100)}%`, desc: 'How much it predicts and leads your movement instead of reacting after the fact. Higher = harder to juke.' },
+      { key: 'aiWeaponSwapIQ', label: 'Weapon Swapping IQ', min: 0, max: 100, step: 5, def: 50, fmt: (v) => `${v ?? 50}%`, desc: 'Smarts behind hammer↔sword swaps — countering lunges and punishing your cooldowns. High values also unlock feints and combo strings.' },
+    ],
+  },
+  {
+    title: 'Movement & Positioning',
+    entries: [
+      { key: 'aiMovementComplexity', label: 'Strafe & Evade', min: 0, max: 100, step: 5, def: 50, fmt: (v) => `${v ?? 50}%`, desc: 'Richness of its footwork — strafing, dodging and repositioning. Higher = slippery and less predictable to hit.' },
+      { key: 'aiSpatialIQ', label: 'Spatial IQ', min: 0, max: 100, step: 5, def: 50, fmt: (v) => (v === undefined ? 'Auto (Derived)' : `${v}%`), desc: 'Arena awareness: dodge timing, cutting off your escape routes and avoiding getting pinned to walls. Auto blends Strafe & Anticipation.' },
+      { key: 'aiSpacingBand', label: 'Combat Spacing', min: 0.7, max: 1.4, step: 0.05, def: 1.0, fmt: (v) => (v === undefined ? 'Auto' : `${v.toFixed(2)}×`), desc: 'Preferred standoff distance. Above 1× hangs back and zones with the sword; below 1× crowds you and brawls up close.' },
+    ],
+  },
+  {
+    title: 'Combat Style',
+    entries: [
+      {
+        key: 'aiPlaystyle', label: 'Combat Playstyle', min: 0, max: 100, step: 5, def: 50,
+        fmt: (v) => {
+          const p = v ?? 50;
+          if (p === 0) return 'Passive (0)';
+          if (p < 50) return `Passive-Defensive (${p})`;
+          if (p === 50) return 'Defensive (50)';
+          if (p < 100) return `Defensive-Aggressive (${p})`;
+          return 'Aggressive (100)';
+        },
+        desc: 'Overall temperament from passive (waits and reacts) through defensive to aggressive (constantly pushes and initiates).',
+      },
+      {
+        key: 'aiWeaponPrioritization', label: 'Weapon Prioritization', min: 0, max: 100, step: 5, def: 50,
+        fmt: (v) => {
+          const p = v ?? 50;
+          if (p === 50) return 'Balanced (50/50)';
+          if (p > 50) return `Sword User (${p}/${100 - p})`;
+          return `Hammer User (${100 - p}/${p})`;
+        },
+        desc: 'Hammer vs sword preference. 100 = sword only (lunges/range), 0 = hammer only (close burst), 50 = mixes both.',
+      },
+      { key: 'aiPressureAggression', label: 'Pressure Aggression', min: 0, max: 100, step: 5, def: 50, fmt: (v) => (v === undefined ? 'Auto (Derived)' : `${v}%`), desc: 'How relentlessly it chains follow-up attacks after landing a hit instead of backing off. Auto follows Playstyle.' },
+      { key: 'aiFeintChance', label: 'Feint Chance', min: 0, max: 100, step: 5, def: 0, fmt: (v) => (v === undefined ? 'Auto (Derived)' : `${v}%`), desc: 'How often it fakes swings or approaches to bait your defense. Auto is derived and needs a decent Weapon Swap IQ to trigger.' },
+    ],
+  },
+];
+
 
 interface GlobalChatPanelProps {
   messages: ChatMessage[];
@@ -615,6 +699,55 @@ const detectDeviceOS = (): DeviceInfo => {
   return { isMobile, os };
 };
 
+interface GraphicsCheckResult {
+  checked: boolean;
+  supported: boolean;
+  accelerated: boolean;
+  details?: string;
+}
+
+const checkGraphicsAcceleration = (): GraphicsCheckResult => {
+  if (typeof window === 'undefined' || typeof document === 'undefined') {
+    return { checked: true, supported: true, accelerated: true };
+  }
+  try {
+    const canvas = document.createElement('canvas');
+    if (!canvas) {
+      return { checked: true, supported: false, accelerated: false, details: 'Cannot create canvas' };
+    }
+    
+    // Check if basic WebGL is supported (software fallback permitted)
+    const glBasic = canvas.getContext('webgl2') || canvas.getContext('webgl');
+    if (!glBasic) {
+      return { checked: true, supported: false, accelerated: false, details: 'WebGL not supported or disabled' };
+    }
+    
+    // Check if WebGL is supported WITHOUT major performance caveats (means GPU hardware acceleration is active)
+    const glAccelerated = canvas.getContext('webgl2', { failIfMajorPerformanceCaveat: true }) || 
+                          canvas.getContext('webgl', { failIfMajorPerformanceCaveat: true });
+    
+    if (!glAccelerated) {
+      // Software rendering fallback detected
+      let renderer = 'Software Rasterizer';
+      const ext = glBasic.getExtension('WEBGL_debug_renderer_info');
+      if (ext) {
+        renderer = glBasic.getParameter(ext.UNMASKED_RENDERER_WEBGL) || renderer;
+      }
+      return { checked: true, supported: true, accelerated: false, details: renderer };
+    }
+    
+    // Hardware acceleration is active!
+    let renderer = 'Hardware Accelerated GPU';
+    const ext = glAccelerated.getExtension('WEBGL_debug_renderer_info');
+    if (ext) {
+      renderer = glAccelerated.getParameter(ext.UNMASKED_RENDERER_WEBGL) || renderer;
+    }
+    return { checked: true, supported: true, accelerated: true, details: renderer };
+  } catch (e) {
+    return { checked: true, supported: false, accelerated: false, details: `Check error: ${e}` };
+  }
+};
+
 const MapPreview: React.FC<{ selectedMap: string; customMap?: CustomMapData | null }> = ({ selectedMap, customMap }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -834,6 +967,13 @@ export default function App() {
   const [deviceInfo, setDeviceInfo] = useState<DeviceInfo>(() => detectDeviceOS());
   const [isOnline, setIsOnline] = useState<boolean>(() => typeof navigator === 'undefined' ? true : navigator.onLine);
   const [forceMobileControls, setForceMobileControls] = useState<boolean>(false);
+  const [graphicsCheck, setGraphicsCheck] = useState<GraphicsCheckResult>({
+    checked: false,
+    supported: true,
+    accelerated: true,
+  });
+  const [showGraphicsWarning, setShowGraphicsWarning] = useState<boolean>(false);
+  const [hardwareTab, setHardwareTab] = useState<'chrome' | 'firefox' | 'safari'>('chrome');
 
   // Mobile touch joysticks references for 60fps low-latency input
   const mobileJoystickRef = useRef<{ x: number, y: number }>({ x: 0, y: 0 });
@@ -871,6 +1011,13 @@ export default function App() {
     window.addEventListener('orientationchange', refreshDeviceInfo);
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
+
+    // Perform browser graphics acceleration check
+    const checkResult = checkGraphicsAcceleration();
+    setGraphicsCheck(checkResult);
+    if (!checkResult.accelerated) {
+      setShowGraphicsWarning(true);
+    }
 
     return () => {
       window.removeEventListener('resize', refreshDeviceInfo);
@@ -977,6 +1124,7 @@ export default function App() {
   const [gamepadConnected, setGamepadConnected] = useState<boolean>(false);
   const [gamepadName, setGamepadName] = useState<string>('');
   const [customizerWeapon, setCustomizerWeapon] = useState<'none' | 'hammer' | 'sword'>('none');
+  const [isPainting, setIsPainting] = useState<boolean>(false);
   const [playerLoadout, setPlayerLoadout] = useState<CharacterLoadout>(() => {
     try {
       const saved = localStorage.getItem('grifball_player_loadout');
@@ -1718,6 +1866,12 @@ export default function App() {
         aiWeaponSwapIQ: adminSettings.aiWeaponSwapIQ ?? 50,
         aiPlaystyle: adminSettings.aiPlaystyle ?? 50,
         aiWeaponPrioritization: adminSettings.aiWeaponPrioritization ?? 50,
+        // Advanced behavior overrides (undefined = derived / neutral).
+        aiSpatialIQ: adminSettings.aiSpatialIQ,
+        aiFeintChance: adminSettings.aiFeintChance,
+        aiPressureAggression: adminSettings.aiPressureAggression,
+        aiSpacingBand: adminSettings.aiSpacingBand,
+        aiSkipPressure: adminSettings.aiSkipPressure,
       }
     };
 
@@ -1789,6 +1943,12 @@ export default function App() {
         aiWeaponSwapIQ: preset.tuning.aiWeaponSwapIQ ?? 50,
         aiPlaystyle: preset.tuning.aiPlaystyle ?? 50,
         aiWeaponPrioritization: preset.tuning.aiWeaponPrioritization ?? 50,
+        // Advanced behavior overrides (undefined = derived / neutral).
+        aiSpatialIQ: preset.tuning.aiSpatialIQ,
+        aiFeintChance: preset.tuning.aiFeintChance,
+        aiPressureAggression: preset.tuning.aiPressureAggression,
+        aiSpacingBand: preset.tuning.aiSpacingBand,
+        aiSkipPressure: preset.tuning.aiSkipPressure,
       }));
     }
   };
@@ -2992,6 +3152,7 @@ export default function App() {
           isPlaying={isPlaying}
           selectedMap={selectedMap}
           customMap={selectedMap === 'custom_file' ? (lobbyCustomMapData || undefined) : undefined}
+          playerLoadout={playerLoadout}
           isPaused={isPaused}
           debugMode={debugMode}
           adminSettings={adminSettings}
@@ -3164,19 +3325,27 @@ export default function App() {
                   { id: 'multi',  label: 'Multiplayer'   },
                   { id: 'spec',   label: 'Spectator'     },
                   { id: 'theater', label: 'Theater'       },
-                ] as const).map(m => (
-                  <button
-                    key={m.id}
-                    onClick={() => setActiveMenuTab(m.id)}
-                    className={`px-5 py-2 rounded-full text-xs font-bold font-display uppercase tracking-wider transition-all duration-200 cursor-pointer ${
-                      activeMenuTab === m.id
-                        ? 'bg-gradient-to-b from-[#22d3ee] to-[#0891b2] text-white shadow-[0_0_12px_rgba(34,211,238,0.60)] font-black'
-                        : 'text-white/50 hover:text-white/80'
-                    }`}
-                  >
-                    {m.label}
-                  </button>
-                ))}
+                ] as const).map(m => {
+                  const isTabActive = !isPainting && activeMenuTab === m.id;
+                  return (
+                    <button
+                      key={m.id}
+                      onClick={() => {
+                        setActiveMenuTab(m.id);
+                        if (isPainting) {
+                          setIsPainting(false);
+                        }
+                      }}
+                      className={`px-5 py-2 rounded-full text-xs font-bold font-display uppercase tracking-wider transition-all duration-200 cursor-pointer ${
+                        isTabActive
+                          ? 'bg-gradient-to-b from-[#22d3ee] to-[#0891b2] text-white shadow-[0_0_12px_rgba(34,211,238,0.60)] font-black'
+                          : 'text-white/50 hover:text-white/80'
+                      }`}
+                    >
+                      {m.label}
+                    </button>
+                  );
+                })}
               </div>
 
               {/* Online Player Count */}
@@ -3189,10 +3358,19 @@ export default function App() {
             {/* MAIN LAYOUT: 2-col content area + right chat rail */}
             <div className="mobile-menu-layout flex gap-7 flex-1 min-h-0 overflow-hidden">
               {/* 2-column content grid */}
-              <div className="mobile-content-grid flex-1 grid min-h-0 gap-7" style={{ gridTemplateColumns: 'minmax(280px, 1fr) minmax(480px, 1.8fr)', minWidth: 0 }}>
+              <div 
+                className="mobile-content-grid flex-1 grid min-h-0 gap-7" 
+                style={{ 
+                  gridTemplateColumns: isPainting 
+                    ? '1fr' 
+                    : 'minmax(280px, 1fr) minmax(480px, 1.8fr)', 
+                  minWidth: 0 
+                }}
+              >
 
               {/* COLUMN 1: GAME SETUP & ACTIONS */}
-              <div className="flex flex-col h-full min-h-0 overflow-y-auto pr-0.5">
+              {!isPainting && (
+                <div className="flex flex-col h-full min-h-0 overflow-y-auto pr-0.5">
                 
                 {/* 🆔 SPARTAN IDENTITY PROFILE CARD */}
                 <div className="bg-slate-950/45 border border-white/10 rounded-xl p-4.5 flex flex-col gap-2 shrink-0 mb-4 shadow-[inset_0_1px_3px_rgba(0,0,0,0.3)] select-none text-left">
@@ -3278,7 +3456,7 @@ export default function App() {
                                   <option value="normal" title={getPresetDescription('normal', aiPresets)}>🟡 Normal · Standard Combat</option>
                                   <option value="hard" title={getPresetDescription('hard', aiPresets)}>🔴 Hard (Calibrated)</option>
                                   <option value="nightmare" title={getPresetDescription('nightmare', aiPresets)}>🟣 Nightmare · Override</option>
-                                  <option value="custom" title={getPresetDescription('custom', aiPresets)}>⚙️ Custom Matrix Override</option>
+                                  <option value="custom" title={getPresetDescription('custom', aiPresets)}>⚙️ Custom AI Behavior</option>
                                   {aiPresets.length > 0 && (
                                     <optgroup label="Saved Presets">
                                       {aiPresets.map(preset => (
@@ -3304,7 +3482,7 @@ export default function App() {
                               )}
                             </div>
                             <div className="flex flex-col gap-1.5">
-                              <span className="text-[10.5px] text-white/50 uppercase tracking-widest font-mono">Combat Archetype:</span>
+                              <span className="text-[10.5px] text-white/50 uppercase tracking-widest font-mono">Behavior Archetype Presets:</span>
                               <select
                                 value={adminSettings.aiArchetype || 'none'}
                                 onChange={(e) => handleSelectAIArchetype(e.target.value)}
@@ -3323,67 +3501,57 @@ export default function App() {
                               )}
                             </div>
                             {adminSettings.aiDifficulty === 'custom' && (
-                              <div className="flex flex-col gap-3 pt-1">
-                                {([
-                                  { key: 'aiReactionLatency' as const, label: 'Reflex Latency', unit: 's', min: 0, max: 1.5, step: 0.05, fmt: (v: number) => v.toFixed(2) },
-                                  { key: 'aiAnticipationFactor' as const, label: 'Anticipation Engine', unit: '%', min: 0, max: 1, step: 0.05, fmt: (v: number) => Math.round(v * 100).toString() },
-                                  { key: 'aiMovementComplexity' as const, label: 'Strafe & Evade', unit: '%', min: 0, max: 100, step: 5, fmt: (v: number) => v.toString() },
-                                  { key: 'aiWeaponSwapIQ' as const, label: 'Weapon Swapping IQ', unit: '%', min: 0, max: 100, step: 5, fmt: (v: number) => v.toString() },
-                                ]).map(({ key, label, unit, min, max, step, fmt }) => (
-                                  <div key={key} className="flex flex-col gap-1.5">
-                                    <div className="flex justify-between text-xs font-mono uppercase tracking-wider text-white/60">
-                                      <span>{label}</span>
-                                      <span className="text-cyan-400 font-bold">{fmt(adminSettings[key] as number ?? 0)}{unit}</span>
-                                    </div>
-                                    <input type="range" min={min} max={max} step={step}
-                                      value={adminSettings[key] as number ?? 0}
-                                      onChange={(e) => setAdminSettings(prev => ({ ...prev, [key]: parseFloat(e.target.value) }))}
-                                      className="w-full accent-cyan-400 h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
-                                    />
+                              <div className="flex flex-col gap-4 pt-1">
+                                <p className="text-[10px] text-white/40 leading-snug italic">
+                                  Tune every facet of the AI, or pick a Behavior Archetype Preset above to fill all dials as a starting point. Advanced dials marked “Auto” fall back to derived values until you set them.
+                                </p>
+                                {AI_CUSTOM_KNOB_SECTIONS.map((sectionGroup) => (
+                                  <div key={sectionGroup.title} className="flex flex-col gap-3">
+                                    <span className="text-[10px] text-[#38bdf8]/70 uppercase tracking-widest font-mono border-b border-white/5 pb-1">
+                                      {sectionGroup.title}
+                                    </span>
+                                    {sectionGroup.entries.map((entry) => {
+                                      const raw = adminSettings[entry.key] as number | undefined;
+                                      return (
+                                        <div key={entry.key} className="flex flex-col gap-1.5">
+                                          <div className="flex justify-between text-xs font-mono uppercase tracking-wider text-white/60">
+                                            <span>{entry.label}</span>
+                                            <span className="text-cyan-400 font-bold">{entry.fmt(raw)}</span>
+                                          </div>
+                                          <input
+                                            type="range"
+                                            min={entry.min}
+                                            max={entry.max}
+                                            step={entry.step}
+                                            value={raw ?? entry.def}
+                                            onChange={(e) => setAdminSettings(prev => ({ ...prev, [entry.key]: parseFloat(e.target.value) }))}
+                                            className="w-full accent-cyan-400 h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
+                                          />
+                                          <p className="text-[10px] text-white/35 leading-snug">{entry.desc}</p>
+                                        </div>
+                                      );
+                                    })}
+                                    {sectionGroup.title === 'Combat Style' && (
+                                      <div className="flex flex-col gap-1.5">
+                                        <div className="flex items-center justify-between">
+                                          <span className="text-xs font-mono uppercase tracking-wider text-white/60">Skip Pressure Chains</span>
+                                          <button
+                                            onClick={() => setAdminSettings(prev => ({ ...prev, aiSkipPressure: !prev.aiSkipPressure }))}
+                                            className={`px-3 h-7 text-[10px] font-bold uppercase rounded cursor-pointer transition-all font-sans border ${
+                                              adminSettings.aiSkipPressure
+                                                ? 'bg-[#38bdf8]/20 border-[#38bdf8]/50 text-[#38bdf8]'
+                                                : 'bg-black/40 border-white/10 text-white/50 hover:text-white/80'
+                                            }`}
+                                            title="When ON, the AI never chains relentless post-hit pressure."
+                                          >
+                                            {adminSettings.aiSkipPressure ? 'On' : 'Off'}
+                                          </button>
+                                        </div>
+                                        <p className="text-[10px] text-white/35 leading-snug">When on, the AI disengages after landing a hit instead of chaining relentless follow-up pressure — useful for patient, hit-and-retreat fighters.</p>
+                                      </div>
+                                    )}
                                   </div>
                                 ))}
-
-                                {/* Playstyle Slider */}
-                                <div className="flex flex-col gap-1.5">
-                                  <div className="flex justify-between text-xs font-mono uppercase tracking-wider text-white/60">
-                                    <span>Combat Playstyle</span>
-                                    <span className="text-cyan-400 font-bold">
-                                      {(() => {
-                                        const p = adminSettings.aiPlaystyle ?? 50;
-                                        if (p === 0) return 'Passive (0)';
-                                        if (p < 50) return `Blended (Passive-Defensive) (${p})`;
-                                        if (p === 50) return 'Defensive (50)';
-                                        if (p < 100) return `Blended (Defensive-Aggressive) (${p})`;
-                                        return 'Aggressive (100)';
-                                      })()}
-                                    </span>
-                                  </div>
-                                  <input type="range" min="0" max="100" step="5"
-                                    value={adminSettings.aiPlaystyle ?? 50}
-                                    onChange={(e) => setAdminSettings(prev => ({ ...prev, aiPlaystyle: parseInt(e.target.value) }))}
-                                    className="w-full accent-cyan-400 h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
-                                  />
-                                </div>
-
-                                {/* Weapon Prioritization Slider */}
-                                <div className="flex flex-col gap-1.5">
-                                  <div className="flex justify-between text-xs font-mono uppercase tracking-wider text-white/60">
-                                    <span>Weapon Prioritization</span>
-                                    <span className="text-cyan-400 font-bold">
-                                      {(() => {
-                                        const p = adminSettings.aiWeaponPrioritization ?? 50;
-                                        if (p === 50) return 'Balanced (50/50)';
-                                        if (p > 50) return `Sword User (${p}/${100 - p})`;
-                                        return `Hammer User (${100 - p}/${p})`;
-                                      })()}
-                                    </span>
-                                  </div>
-                                  <input type="range" min="0" max="100" step="5"
-                                    value={adminSettings.aiWeaponPrioritization ?? 50}
-                                    onChange={(e) => setAdminSettings(prev => ({ ...prev, aiWeaponPrioritization: parseInt(e.target.value) }))}
-                                    className="w-full accent-cyan-400 h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
-                                  />
-                                </div>
 
                                 {/* Save Custom AI Presets */}
                                 <div className="flex flex-col gap-1.5 pt-2 border-t border-white/5 mt-2">
@@ -4329,6 +4497,7 @@ export default function App() {
                   </div>
                 )}
               </div>
+              )}
 
               {/* COLUMN 2: KEYBIND REFERENCE & CUSTOMIZER */}
               <div className="mobile-reference-panel flex flex-col h-full min-h-0 overflow-y-auto gap-4">
@@ -4978,257 +5147,286 @@ export default function App() {
 
                 {rightPanelTab === 'customize' && (
                   <div className="flex-grow flex flex-col min-h-0 overflow-y-auto pr-1 justify-between gap-4">
-                    <div className="flex flex-col gap-4">
-                      {/* Rotating 3D character */}
-                      <div className="relative bg-slate-950/30 border border-white/5 rounded-xl select-none overflow-hidden h-[380px] shrink-0">
-                        <CharacterPreview hue={adminSettings.playerHue ?? 200} heldWeapon={customizerWeapon} loadout={playerLoadout} />
-                      </div>
-
-                      {/* Controls grid */}
-                      <div className="flex flex-col gap-3 font-sans text-xs">
-                        
-                        {/* Interactive HSL slider */}
-                        <div className="bg-white/5 border border-white/5 rounded-lg p-3">
-                          <div className="flex justify-between items-center mb-2">
-                            <span className="text-xs font-bold text-[#38bdf8] uppercase tracking-wider">Armor Color Hue angle</span>
-                            <span 
-                              className="font-mono text-xs font-black uppercase px-2 py-0.5 rounded border shadow"
-                              style={{ 
-                                color: `hsl(${adminSettings.playerHue}, 100%, 65%)`,
-                                backgroundColor: `hsl(${adminSettings.playerHue}, 90%, 12%)`,
-                                borderColor: `hsl(${adminSettings.playerHue}, 50%, 30%)`
-                              }}
-                            >
-                              {adminSettings.playerHue}°
-                            </span>
+                    {isPainting ? (
+                      <CharacterPainter
+                        loadout={playerLoadout}
+                        hue={adminSettings.playerHue ?? 200}
+                        onSave={(paint) => {
+                          setPlayerLoadout(prev => {
+                            const next = { ...prev, paintJob: paint };
+                            try { localStorage.setItem('grifball_player_loadout', JSON.stringify(next)); } catch {}
+                            return next;
+                          });
+                          setIsPainting(false);
+                        }}
+                        onCancel={() => setIsPainting(false)}
+                      />
+                    ) : (
+                      <>
+                        <div className="flex flex-col gap-4">
+                          {/* Rotating 3D character */}
+                          <div className="relative bg-slate-950/30 border border-white/5 rounded-xl select-none overflow-hidden h-[380px] shrink-0">
+                            <CharacterPreview hue={adminSettings.playerHue ?? 200} heldWeapon={customizerWeapon} loadout={playerLoadout} />
                           </div>
-                          <input
-                            type="range"
-                            min="0"
-                            max="360"
-                            value={adminSettings.playerHue ?? 200}
-                            onChange={(e) => {
-                              const newHue = parseInt(e.target.value, 10);
-                              setAdminSettings(prev => ({ ...prev, playerHue: newHue }));
-                              try {
-                                localStorage.setItem('grifball_player_hue', newHue.toString());
-                              } catch (err) {
-                                console.error(err);
-                              }
-                            }}
-                            className="w-full h-2.5 bg-gradient-to-r from-red-500 via-yellow-500 via-green-500 via-cyan-500 via-blue-500 via-purple-500 to-red-500 rounded-lg appearance-none cursor-pointer outline-none shadow-inner"
-                            style={{ WebkitAppearance: 'none' }}
-                          />
-                        </div>
 
-                        {/* Presets */}
-                        <div className="bg-white/5 border border-white/5 rounded-lg p-3">
-                          <span className="text-xs font-bold text-[#38bdf8] uppercase tracking-wider block mb-2">Color presets Swatches</span>
-                          <div className="flex flex-wrap gap-2 justify-between">
-                            {[
-                              { name: 'Red', hue: 0, bg: 'bg-[#ef4444]' },
-                              { name: 'Orange', hue: 20, bg: 'bg-[#f97316]' },
-                              { name: 'Gold', hue: 45, bg: 'bg-[#fbbf24]' },
-                              { name: 'Green', hue: 120, bg: 'bg-[#22c55e]' },
-                              { name: 'Cyan', hue: 180, bg: 'bg-[#06b6d4]' },
-                              { name: 'Blue', hue: 200, bg: 'bg-[#3b82f6]' },
-                              { name: 'Purple', hue: 270, bg: 'bg-[#a855f7]' },
-                              { name: 'Magenta', hue: 300, bg: 'bg-[#d946ef]' },
-                              { name: 'Pink', hue: 330, bg: 'bg-[#ec4899]' },
-                            ].map((p) => (
-                              <button
-                                key={p.name}
-                                onClick={() => {
-                                  setAdminSettings(prev => ({ ...prev, playerHue: p.hue }));
+                          {/* Start Paint Job Button */}
+                          <button
+                            onClick={() => setIsPainting(true)}
+                            className="w-full py-2.5 bg-gradient-to-r from-cyan-500/15 to-blue-500/15 border border-cyan-500/35 hover:border-cyan-400 text-cyan-400 font-black uppercase tracking-widest rounded-lg shadow-lg hover:shadow-cyan-400/10 hover:bg-cyan-500/20 transition-all active:scale-[0.98] cursor-pointer text-center text-xs mt-1"
+                          >
+                            🖌️ Start Paint Job
+                          </button>
+
+                          {/* Controls grid */}
+                          <div className="flex flex-col gap-3 font-sans text-xs">
+                            
+                            {/* Interactive HSL slider */}
+                            <div className="bg-white/5 border border-white/5 rounded-lg p-3">
+                              <div className="flex justify-between items-center mb-2">
+                                <span className="text-xs font-bold text-[#38bdf8] uppercase tracking-wider">Armor Color Hue angle</span>
+                                <span 
+                                  className="font-mono text-xs font-black uppercase px-2 py-0.5 rounded border shadow"
+                                  style={{ 
+                                    color: `hsl(${adminSettings.playerHue}, 100%, 65%)`,
+                                    backgroundColor: `hsl(${adminSettings.playerHue}, 90%, 12%)`,
+                                    borderColor: `hsl(${adminSettings.playerHue}, 50%, 30%)`
+                                  }}
+                                >
+                                  {adminSettings.playerHue}°
+                                </span>
+                              </div>
+                              <input
+                                type="range"
+                                min="0"
+                                max="360"
+                                value={adminSettings.playerHue ?? 200}
+                                onChange={(e) => {
+                                  const newHue = parseInt(e.target.value, 10);
+                                  setAdminSettings(prev => ({ ...prev, playerHue: newHue }));
                                   try {
-                                    localStorage.setItem('grifball_player_hue', p.hue.toString());
+                                    localStorage.setItem('grifball_player_hue', newHue.toString());
                                   } catch (err) {
                                     console.error(err);
                                   }
                                 }}
-                                title={p.name}
-                                className={`w-6 h-6 rounded-full cursor-pointer transition-all active:scale-90 relative ${p.bg} ${
-                                  adminSettings.playerHue === p.hue 
-                                    ? 'ring-1 ring-white ring-offset-2 ring-offset-slate-950 scale-110 shadow-lg' 
-                                    : 'hover:scale-105 hover:opacity-90'
-                                }`}
+                                className="w-full h-2.5 bg-gradient-to-r from-red-500 via-yellow-500 via-green-500 via-cyan-500 via-blue-500 via-purple-500 to-red-500 rounded-lg appearance-none cursor-pointer outline-none shadow-inner"
+                                style={{ WebkitAppearance: 'none' }}
                               />
-                            ))}
-                          </div>
-                        </div>
+                            </div>
 
-                        {/* Held Weapon Selection */}
-                        <div className="bg-white/5 border border-white/5 rounded-lg p-3">
-                          <span className="text-xs font-bold text-[#38bdf8] uppercase tracking-wider block mb-2">Pose Weapon preview</span>
-                          <div className="grid grid-cols-3 gap-2">
-                            {[
-                              { id: 'none', label: '🛡️ Fists' },
-                              { id: 'hammer', label: '🔨 Hammer' },
-                              { id: 'sword', label: '⚔️ Sword' },
-                            ].map((w) => (
-                              <button
-                                key={w.id}
-                                onClick={() => setCustomizerWeapon(w.id as any)}
-                                className={`py-2 text-xs font-bold uppercase tracking-wider border rounded cursor-pointer transition-all active:scale-98 ${
-                                  customizerWeapon === w.id
-                                    ? 'bg-[#38bdf8]/15 border-[#38bdf8] text-[#38bdf8] shadow-[0_0_10px_rgba(56,189,248,0.2)] font-black'
-                                    : 'bg-black/30 border-white/10 text-white/50 hover:text-white hover:border-white/20'
-                                }`}
-                              >
-                                {w.label}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-
-                        {/* Armor Loadout Selector */}
-                        {(() => {
-                          const updateLoadout = (patch: Partial<CharacterLoadout>) => {
-                            setPlayerLoadout(prev => {
-                              const next = { ...prev, ...patch };
-                              try { localStorage.setItem('grifball_player_loadout', JSON.stringify(next)); } catch {}
-                              return next;
-                            });
-                          };
-                          const slotLabel: Record<string, string> = {
-                            helmet: 'Helmet',
-                            torso: 'Chest',
-                            arm: 'Arms',
-                            leg: 'Legs',
-                          };
-                          const presetLabel: Record<string, string> = {
-                            'mark-vi': 'Mk.VI',
-                            'odst': 'ODST',
-                            'recon': 'Recon',
-                            'eva': 'EVA',
-                            'gungnir': 'Gungnir',
-                            'scout': 'Scout',
-                            'jump-jet': 'JmpJet',
-                          };
-                          const slots = [
-                            { key: 'helmet', options: AVAILABLE_PRESETS.helmet },
-                            { key: 'torso',  options: AVAILABLE_PRESETS.torso },
-                            { key: 'arm',    options: AVAILABLE_PRESETS.arm },
-                            { key: 'leg',    options: AVAILABLE_PRESETS.leg },
-                          ] as const;
-                          return (
+                            {/* Presets */}
                             <div className="bg-white/5 border border-white/5 rounded-lg p-3">
-                              <span className="text-xs font-bold text-[#38bdf8] uppercase tracking-wider block mb-2.5">Armor Loadout</span>
-                              <div className="flex flex-col gap-2">
-                                {slots.map(({ key, options }) => (
-                                  <div key={key} className="flex items-center gap-2">
-                                    <span className="text-[10px] font-black uppercase tracking-widest text-white/40 w-14 shrink-0">{slotLabel[key]}</span>
-                                    <div className="flex flex-wrap gap-1.5 flex-1">
-                                      {options.map((opt) => {
-                                        const isActive = playerLoadout[key as keyof CharacterLoadout] === opt;
-                                        return (
-                                          <button
-                                            key={opt}
-                                            onClick={() => updateLoadout({ [key]: opt } as Partial<CharacterLoadout>)}
-                                            className={`px-2 py-1 text-[10px] font-black uppercase tracking-widest border rounded transition-all active:scale-95 ${
-                                              isActive
-                                                ? 'bg-[#38bdf8]/15 border-[#38bdf8] text-[#38bdf8] shadow-[0_0_8px_rgba(56,189,248,0.25)]'
-                                                : 'bg-black/30 border-white/10 text-white/40 hover:text-white/70 hover:border-white/20'
-                                            }`}
-                                          >
-                                            {presetLabel[opt] ?? opt}
-                                          </button>
-                                        );
-                                      })}
-                                    </div>
-                                  </div>
+                              <span className="text-xs font-bold text-[#38bdf8] uppercase tracking-wider block mb-2">Color presets Swatches</span>
+                              <div className="flex flex-wrap gap-2 justify-between">
+                                {[
+                                  { name: 'Red', hue: 0, bg: 'bg-[#ef4444]' },
+                                  { name: 'Orange', hue: 20, bg: 'bg-[#f97316]' },
+                                  { name: 'Gold', hue: 45, bg: 'bg-[#fbbf24]' },
+                                  { name: 'Green', hue: 120, bg: 'bg-[#22c55e]' },
+                                  { name: 'Cyan', hue: 180, bg: 'bg-[#06b6d4]' },
+                                  { name: 'Blue', hue: 200, bg: 'bg-[#3b82f6]' },
+                                  { name: 'Purple', hue: 270, bg: 'bg-[#a855f7]' },
+                                  { name: 'Magenta', hue: 300, bg: 'bg-[#d946ef]' },
+                                  { name: 'Pink', hue: 330, bg: 'bg-[#ec4899]' },
+                                ].map((p) => (
+                                  <button
+                                    key={p.name}
+                                    onClick={() => {
+                                      setAdminSettings(prev => ({ ...prev, playerHue: p.hue }));
+                                      try {
+                                        localStorage.setItem('grifball_player_hue', p.hue.toString());
+                                      } catch (err) {
+                                        console.error(err);
+                                      }
+                                    }}
+                                    title={p.name}
+                                    className={`w-6 h-6 rounded-full cursor-pointer transition-all active:scale-90 relative ${p.bg} ${
+                                      adminSettings.playerHue === p.hue 
+                                        ? 'ring-1 ring-white ring-offset-2 ring-offset-slate-950 scale-110 shadow-lg' 
+                                        : 'hover:scale-105 hover:opacity-90'
+                                    }`}
+                                  />
                                 ))}
                               </div>
                             </div>
-                          );
-                        })()}
 
-                        {/* Spartan Nickname Handle */}
-                        <div className="bg-white/5 border border-white/5 rounded-lg p-3">
-                          <span className="text-xs font-bold text-[#38bdf8] uppercase tracking-wider block mb-2">Spartan Nickname Handle</span>
-                          <div className="relative">
-                            <input
-                              type="text"
-                              maxLength={10}
-                              value={playerName}
-                              onChange={(e) => handlePlayerNameChange(e.target.value)}
-                              placeholder="Max 10 characters..."
-                              className="w-full h-11 bg-black/60 border border-white/10 rounded px-3.5 text-sm tracking-wide text-white focus:border-[#38bdf8] outline-none transition-all font-sans"
-                            />
-                            <div className="absolute right-3.5 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                            {/* Held Weapon Selection */}
+                            <div className="bg-white/5 border border-white/5 rounded-lg p-3">
+                              <span className="text-xs font-bold text-[#38bdf8] uppercase tracking-wider block mb-2">Pose Weapon preview</span>
+                              <div className="grid grid-cols-3 gap-2">
+                                {[
+                                  { id: 'none', label: '🛡️ Fists' },
+                                  { id: 'hammer', label: '🔨 Hammer' },
+                                  { id: 'sword', label: '⚔️ Sword' },
+                                ].map((w) => (
+                                  <button
+                                    key={w.id}
+                                    onClick={() => setCustomizerWeapon(w.id as any)}
+                                    className={`py-2 text-xs font-bold uppercase tracking-wider border rounded cursor-pointer transition-all active:scale-98 ${
+                                      customizerWeapon === w.id
+                                        ? 'bg-[#38bdf8]/15 border-[#38bdf8] text-[#38bdf8] shadow-[0_0_10px_rgba(56,189,248,0.2)] font-black'
+                                        : 'bg-black/30 border-white/10 text-white/50 hover:text-white hover:border-white/20'
+                                    }`}
+                                  >
+                                    {w.label}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+
+                            {/* Armor Loadout Selector */}
+                            {(() => {
+                              const updateLoadout = (patch: Partial<CharacterLoadout>) => {
+                                setPlayerLoadout(prev => {
+                                  const next = { ...prev, ...patch };
+                                  try { localStorage.setItem('grifball_player_loadout', JSON.stringify(next)); } catch {}
+                                  return next;
+                                });
+                              };
+                              const slotLabel: Record<string, string> = {
+                                helmet: 'Helmet',
+                                torso: 'Chest',
+                                arm: 'Arms',
+                                leg: 'Legs',
+                              };
+                              const presetLabel: Record<string, string> = {
+                                'mark-vi': 'Mk.VI',
+                                'odst': 'ODST',
+                                'recon': 'Recon',
+                                'eva': 'EVA',
+                                'gungnir': 'Gungnir',
+                                'scout': 'Scout',
+                                'jump-jet': 'JmpJet',
+                                'eod': 'EOD',
+                                'hayabusa': 'Hayabusa',
+                                'cqb': 'CQB',
+                              };
+                              const slots = [
+                                { key: 'helmet', options: AVAILABLE_PRESETS.helmet },
+                                { key: 'torso',  options: AVAILABLE_PRESETS.torso },
+                                { key: 'arm',    options: AVAILABLE_PRESETS.arm },
+                                { key: 'leg',    options: AVAILABLE_PRESETS.leg },
+                              ] as const;
+                              return (
+                                <div className="bg-white/5 border border-white/5 rounded-lg p-3">
+                                  <span className="text-xs font-bold text-[#38bdf8] uppercase tracking-wider block mb-2.5">Armor Loadout</span>
+                                  <div className="flex flex-col gap-2">
+                                    {slots.map(({ key, options }) => (
+                                      <div key={key} className="flex items-center gap-2">
+                                        <span className="text-[10px] font-black uppercase tracking-widest text-white/40 w-14 shrink-0">{slotLabel[key]}</span>
+                                        <div className="flex flex-wrap gap-1.5 flex-1">
+                                          {options.map((opt) => {
+                                            const isActive = playerLoadout[key as keyof CharacterLoadout] === opt;
+                                            return (
+                                              <button
+                                                key={opt}
+                                                onClick={() => updateLoadout({ [key]: opt } as Partial<CharacterLoadout>)}
+                                                className={`px-2 py-1 text-[10px] font-black uppercase tracking-widest border rounded transition-all active:scale-95 ${
+                                                  isActive
+                                                    ? 'bg-[#38bdf8]/15 border-[#38bdf8] text-[#38bdf8] shadow-[0_0_8px_rgba(56,189,248,0.25)]'
+                                                    : 'bg-black/30 border-white/10 text-white/40 hover:text-white/70 hover:border-white/20'
+                                                }`}
+                                              >
+                                                {presetLabel[opt] ?? opt}
+                                              </button>
+                                            );
+                                          })}
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              );
+                            })()}
+
+                            {/* Spartan Nickname Handle */}
+                            <div className="bg-white/5 border border-white/5 rounded-lg p-3">
+                              <span className="text-xs font-bold text-[#38bdf8] uppercase tracking-wider block mb-2">Spartan Nickname Handle</span>
+                              <div className="relative">
+                                <input
+                                  type="text"
+                                  maxLength={10}
+                                  value={playerName}
+                                  onChange={(e) => handlePlayerNameChange(e.target.value)}
+                                  placeholder="Max 10 characters..."
+                                  className="w-full h-11 bg-black/60 border border-white/10 rounded px-3.5 text-sm tracking-wide text-white focus:border-[#38bdf8] outline-none transition-all font-sans"
+                                />
+                                <div className="absolute right-3.5 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                              </div>
+                            </div>
+
+                            {/* Neural Save System Panel */}
+                            <div className="bg-white/5 border border-white/5 rounded-lg p-3 flex flex-col gap-2.5">
+                              <div className="flex justify-between items-center border-b border-white/5 pb-2">
+                                <span className="text-xs font-bold text-[#38bdf8] uppercase tracking-wider flex items-center gap-1.5">
+                                  💾 Neural Backup System
+                                </span>
+                                <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950/40 border border-emerald-500/20 px-2 py-0.5 rounded flex items-center gap-1.5 shrink-0 select-none animate-pulse">
+                                  <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full inline-block" />
+                                  LOCAL_COOKIE_ACTIVE
+                                </span>
+                              </div>
+                              
+                              <p className="text-xs text-white/50 leading-normal">
+                                All configs, layouts, colors, and Spartan handles are synced locally. Export a decryption code to share or migrate your profile!
+                              </p>
+
+                              {saveSystemStatus.type && (
+                                <div className={`p-2.5 rounded text-xs font-mono border ${
+                                  saveSystemStatus.type === 'success' 
+                                    ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' 
+                                    : 'bg-red-500/10 border-red-500/30 text-red-400'
+                                }`}>
+                                  {saveSystemStatus.type === 'success' ? '⚡ ' : '⚠️ '}
+                                  {saveSystemStatus.message}
+                                </div>
+                              )}
+
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={handleExportSaveCode}
+                                  className="flex-1 py-2 bg-[#38bdf8]/15 hover:bg-[#38bdf8]/30 border border-[#38bdf8]/30 text-[#38bdf8] font-bold text-xs uppercase tracking-wider rounded cursor-pointer transition-all active:scale-[0.98]"
+                                >
+                                  📋 Export Save Code
+                                </button>
+                                <button
+                                  onClick={handleResetAllSettings}
+                                  className="py-2 px-3.5 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 hover:border-red-500/40 text-red-400 font-bold text-xs uppercase tracking-wider rounded cursor-pointer transition-all active:scale-[0.98]"
+                                  title="Wipe client database"
+                                >
+                                  💥 Wipe Saves
+                                </button>
+                              </div>
+
+                              <div className="flex flex-col gap-1.5 mt-1 border-t border-white/5 pt-2.5">
+                                <span className="text-[10px] text-white/30 uppercase tracking-widest font-mono">Import Cybernetic Code:</span>
+                                <div className="flex gap-1.5">
+                                  <input
+                                    type="text"
+                                    value={saveCodeImportInput}
+                                    onChange={(e) => setSaveCodeImportInput(e.target.value)}
+                                    placeholder="Paste GRIF-DEC- code here..."
+                                    className="flex-1 h-10 bg-black/60 border border-white/10 rounded px-3 font-mono text-xs text-white placeholder:text-white/20 focus:border-[#38bdf8] outline-none transition-all"
+                                  />
+                                  <button
+                                    onClick={() => handleImportSaveCode(saveCodeImportInput)}
+                                    disabled={!saveCodeImportInput}
+                                    className={`px-4 h-10 font-sans font-bold text-xs uppercase tracking-wider rounded transition-all border outline-none ${
+                                      saveCodeImportInput
+                                        ? 'bg-emerald-500/15 hover:bg-emerald-500/35 border-emerald-500/40 text-emerald-400 cursor-pointer'
+                                        : 'bg-white/5 border-white/5 text-white/20 cursor-not-allowed'
+                                    }`}
+                                  >
+                                    Decrypt
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+
                           </div>
                         </div>
-
-                        {/* Neural Save System Panel */}
-                        <div className="bg-white/5 border border-white/5 rounded-lg p-3 flex flex-col gap-2.5">
-                          <div className="flex justify-between items-center border-b border-white/5 pb-2">
-                            <span className="text-xs font-bold text-[#38bdf8] uppercase tracking-wider flex items-center gap-1.5">
-                              💾 Neural Backup System
-                            </span>
-                            <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950/40 border border-emerald-500/20 px-2 py-0.5 rounded flex items-center gap-1.5 shrink-0 select-none animate-pulse">
-                              <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full inline-block" />
-                              LOCAL_COOKIE_ACTIVE
-                            </span>
-                          </div>
-                          
-                          <p className="text-xs text-white/50 leading-normal">
-                            All configs, layouts, colors, and Spartan handles are synced locally. Export a decryption code to share or migrate your profile!
-                          </p>
-
-                          {saveSystemStatus.type && (
-                            <div className={`p-2.5 rounded text-xs font-mono border ${
-                              saveSystemStatus.type === 'success' 
-                                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' 
-                                : 'bg-red-500/10 border-red-500/30 text-red-400'
-                            }`}>
-                              {saveSystemStatus.type === 'success' ? '⚡ ' : '⚠️ '}
-                              {saveSystemStatus.message}
-                            </div>
-                          )}
-
-                          <div className="flex gap-2">
-                            <button
-                              onClick={handleExportSaveCode}
-                              className="flex-1 py-2 bg-[#38bdf8]/15 hover:bg-[#38bdf8]/30 border border-[#38bdf8]/30 text-[#38bdf8] font-bold text-xs uppercase tracking-wider rounded cursor-pointer transition-all active:scale-[0.98]"
-                            >
-                              📋 Export Save Code
-                            </button>
-                            <button
-                              onClick={handleResetAllSettings}
-                              className="py-2 px-3.5 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 hover:border-red-500/40 text-red-400 font-bold text-xs uppercase tracking-wider rounded cursor-pointer transition-all active:scale-[0.98]"
-                              title="Wipe client database"
-                            >
-                              💥 Wipe Saves
-                            </button>
-                          </div>
-
-                          <div className="flex flex-col gap-1.5 mt-1 border-t border-white/5 pt-2.5">
-                            <span className="text-[10px] text-white/30 uppercase tracking-widest font-mono">Import Cybernetic Code:</span>
-                            <div className="flex gap-1.5">
-                              <input
-                                type="text"
-                                value={saveCodeImportInput}
-                                onChange={(e) => setSaveCodeImportInput(e.target.value)}
-                                placeholder="Paste GRIF-DEC- code here..."
-                                className="flex-1 h-10 bg-black/60 border border-white/10 rounded px-3 font-mono text-xs text-white placeholder:text-white/20 focus:border-[#38bdf8] outline-none transition-all"
-                              />
-                              <button
-                                onClick={() => handleImportSaveCode(saveCodeImportInput)}
-                                disabled={!saveCodeImportInput}
-                                className={`px-4 h-10 font-sans font-bold text-xs uppercase tracking-wider rounded transition-all border outline-none ${
-                                  saveCodeImportInput
-                                    ? 'bg-emerald-500/15 hover:bg-emerald-500/35 border-emerald-500/40 text-emerald-400 cursor-pointer'
-                                    : 'bg-white/5 border-white/5 text-white/20 cursor-not-allowed'
-                                }`}
-                              >
-                                Decrypt
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-
-                      </div>
-                    </div>
+                      </>
+                    )}
                   </div>
                 )}
                   </>
@@ -6473,6 +6671,128 @@ export default function App() {
                 className="px-5 py-3 bg-white/5 hover:bg-white/10 text-xs text-white/70 hover:text-white uppercase font-black tracking-widest transition-all rounded-lg border border-white/10 cursor-pointer active:scale-95"
               >
                 Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ⚠️ GRAPHICS ACCELERATION WARNING POPUP */}
+      {showGraphicsWarning && (
+        <div className="fixed inset-0 z-[105] flex items-center justify-center bg-slate-950/90 backdrop-blur-xl p-4 select-none animate-in fade-in duration-200">
+          <div className="mobile-modal w-full max-w-lg bg-slate-900 border border-amber-500/20 hover:border-amber-500/30 rounded-2xl p-6 shadow-[0_0_30px_rgba(245,158,11,0.15)] flex flex-col gap-5 text-left max-h-[calc(100dvh-2rem)] overflow-y-auto transition-all duration-300">
+            
+            {/* Header Section */}
+            <div className="flex justify-between items-start border-b border-white/5 pb-4 shrink-0">
+              <div className="flex flex-col">
+                <span className="text-[10px] text-amber-500 font-bold uppercase tracking-[0.2em] mb-1 font-display flex items-center gap-1.5 animate-pulse">
+                  ⚠️ SYSTEM HARDWARE WARNING
+                </span>
+                <h3 className="text-xl font-black tracking-tight text-white uppercase font-display leading-tight">
+                  Graphics Acceleration Disabled
+                </h3>
+              </div>
+              <button
+                onClick={() => setShowGraphicsWarning(false)}
+                className="text-white/40 hover:text-white font-bold cursor-pointer p-1 transition-colors text-base"
+                title="Dismiss warning"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Explanation & Diagnostics */}
+            <div className="flex flex-col gap-4">
+              <p className="text-xs text-white/60 leading-relaxed">
+                We detected that your browser is running with <strong className="text-amber-400">graphics acceleration turned off</strong> or is using a slow CPU software rasterizer. iBrawls requires hardware-accelerated WebGL to render high-performance 3D character models and environments smoothly. Without it, you will experience heavy lag, stuttering, and extremely low frame rates.
+              </p>
+
+              {/* Diagnostics Box */}
+              <div className="bg-black/45 border border-white/5 rounded-xl p-4 flex flex-col gap-2.5 font-mono text-[11px] shadow-inner select-text">
+                <div className="flex justify-between items-center border-b border-white/5 pb-2">
+                  <span className="text-white/45">WebGL 3D Context:</span>
+                  <span className={graphicsCheck.supported ? "text-emerald-400 font-bold" : "text-rose-500 font-bold"}>
+                    {graphicsCheck.supported ? "🟢 AVAILABLE" : "🔴 UNSUPPORTED / BLOCKED"}
+                  </span>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <span className="text-white/45">Detected Renderer:</span>
+                  <span className="text-amber-400 font-bold break-all">
+                    {graphicsCheck.details || "Unknown CPU/Software Driver"}
+                  </span>
+                </div>
+              </div>
+
+              {/* Action Tabs for browser steps */}
+              <div className="flex flex-col gap-3 mt-1.5">
+                <span className="text-[10px] text-white/40 uppercase tracking-widest font-mono font-bold">
+                  How to Enable Hardware Acceleration:
+                </span>
+                
+                {/* Tabs Segmented Switcher */}
+                <div className="flex bg-black/40 p-1 rounded-lg border border-white/5 gap-1 select-none">
+                  {([
+                    { id: 'chrome', label: 'Chrome / Edge' },
+                    { id: 'firefox', label: 'Firefox' },
+                    { id: 'safari', label: 'Safari' },
+                  ] as const).map(tab => (
+                    <button
+                      key={tab.id}
+                      onClick={() => setHardwareTab(tab.id)}
+                      className={`flex-1 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all duration-200 cursor-pointer text-center ${
+                        hardwareTab === tab.id
+                          ? 'bg-amber-500/10 border border-amber-500/30 text-amber-400 font-extrabold shadow-[inset_0_1px_3px_rgba(245,158,11,0.1)]'
+                          : 'text-white/40 hover:text-white/70 border border-transparent'
+                      }`}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Tab Instructions Content Panel */}
+                <div className="bg-white/5 border border-white/5 rounded-xl p-4 text-xs select-text leading-relaxed">
+                  {hardwareTab === 'chrome' && (
+                    <ol className="list-decimal pl-4 flex flex-col gap-2 text-white/75 font-medium">
+                      <li>Open your browser settings (enter <code className="bg-black/40 px-1 py-0.5 rounded text-amber-300 font-mono">chrome://settings/system</code> in the address bar).</li>
+                      <li>Toggle on <strong className="text-white">"Use graphics acceleration when available"</strong> (or "Use hardware acceleration when available").</li>
+                      <li>Click the <strong className="text-amber-400">Relaunch</strong> button to restart the browser.</li>
+                      <li>If still slow, enter <code className="bg-black/40 px-1 py-0.5 rounded text-amber-300 font-mono">chrome://flags</code>, search for <strong className="text-white">"Override software rendering list"</strong>, set it to <strong className="text-emerald-400">Enabled</strong>, and relaunch.</li>
+                    </ol>
+                  )}
+
+                  {hardwareTab === 'firefox' && (
+                    <ol className="list-decimal pl-4 flex flex-col gap-2 text-white/75 font-medium">
+                      <li>Click the Firefox menu button and select <strong className="text-white">Settings</strong> (or go to <code className="bg-black/40 px-1 py-0.5 rounded text-amber-300 font-mono">about:preferences</code>).</li>
+                      <li>In the **General** panel, scroll down to the <strong className="text-white">Performance</strong> section.</li>
+                      <li>Uncheck <strong className="text-white">"Use recommended performance settings"</strong>.</li>
+                      <li>Check <strong className="text-white">"Use hardware acceleration when available"</strong>.</li>
+                      <li>Restart Firefox to apply the changes.</li>
+                    </ol>
+                  )}
+
+                  {hardwareTab === 'safari' && (
+                    <ol className="list-decimal pl-4 flex flex-col gap-2 text-white/75 font-medium">
+                      <li>Open <strong className="text-white">Safari Settings / Preferences</strong> (or press <kbd className="bg-black/40 px-1 py-0.5 rounded text-[10px] font-mono">⌘,</kbd>).</li>
+                      <li>Go to the <strong className="text-white">Advanced</strong> tab.</li>
+                      <li>Ensure that <strong className="text-white">"Use hardware acceleration"</strong> is checked (if available).</li>
+                      <li>On iOS/macOS, ensure your system is not running in <strong className="text-amber-400">Low Power Mode</strong>, which often disables GPU acceleration for web pages.</li>
+                    </ol>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Actions Footer */}
+            <div className="flex gap-3 mt-3 shrink-0">
+              <button
+                onClick={() => setShowGraphicsWarning(false)}
+                className="flex-1 py-3.5 bg-gradient-to-r from-amber-600 to-yellow-600 hover:from-amber-500 hover:to-yellow-500 text-white font-sans font-black text-xs uppercase tracking-widest rounded-lg border border-amber-500/20 active:scale-95 shadow-[0_0_15px_rgba(245,158,11,0.25)] transition-all cursor-pointer flex items-center justify-center gap-2"
+              >
+                <span>Dismiss & Play Anyway</span>
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
+                </svg>
               </button>
             </div>
           </div>

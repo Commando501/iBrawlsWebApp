@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { DEFAULT_ADMIN_SETTINGS } from '../settings/gameplaySettings';
 import {
   mergeRosterSlotConfig,
+  resolveDerivedFromRosterSlot,
   resolveKnobsFromRosterSlot,
   resolveRosterSlotForCombatant,
   rosterOverrideFromLegacyProps,
@@ -88,6 +89,44 @@ test('main_ai and bot_2 share resolveKnobsFromRosterSlot path for custom templat
   assert.equal(botKnobs.weaponPrioritization, 100);
   assert.equal(mainKnobs.aiPlaystyle, 25);
   assert.equal(botKnobs.aiPlaystyle, 25);
+});
+
+test('rosterTemplateFromSettings carries advanced behavior overrides', () => {
+  const template = rosterTemplateFromSettings({
+    ...DEFAULT_ADMIN_SETTINGS,
+    aiDifficulty: 'custom',
+    aiSpatialIQ: 88,
+    aiFeintChance: 33,
+    aiPressureAggression: 71,
+    aiSpacingBand: 1.25,
+    aiSkipPressure: true,
+  });
+
+  assert.equal(template.spatialIQ, 88);
+  assert.equal(template.feintChance, 33);
+  assert.equal(template.pressureAggression, 71);
+  assert.equal(template.spacingBand, 1.25);
+  assert.equal(template.skipPressure, true);
+});
+
+test('resolveDerivedFromRosterSlot prefers per-slot advanced overrides', () => {
+  const settings = {
+    ...DEFAULT_ADMIN_SETTINGS,
+    aiDifficulty: 'custom',
+    // Global derived overrides intentionally unset so slot values must win.
+  };
+
+  const slot = mergeRosterSlotConfig(rosterTemplateFromSettings(settings), {
+    difficulty: 'custom',
+    spatialIQ: 12,
+    feintChance: 64,
+    pressureAggression: 90,
+  });
+
+  const derived = resolveDerivedFromRosterSlot(slot, [], settings);
+  assert.equal(derived.spatialIQ, 12);
+  assert.equal(derived.feintChance, 64);
+  assert.equal(derived.pressureAggression, 90);
 });
 
 test('preset difficulty with archetype resets playstyle before personality merge', () => {

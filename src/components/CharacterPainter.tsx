@@ -1,0 +1,1094 @@
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import React, { useEffect, useRef, useState } from 'react';
+import * as THREE from 'three';
+import { 
+  CharacterLoadout, 
+  DEFAULT_LOADOUT, 
+  ArmorPaintJob, 
+  VoxelData, 
+  getVoxelSegmentData, 
+  createBeveledBoxGeometry 
+} from './VoxelModels';
+
+interface CharacterPainterProps {
+  loadout: CharacterLoadout;
+  hue?: number;
+  onSave: (paintJob: ArmorPaintJob) => void;
+  onCancel: () => void;
+}
+
+export const CharacterPainter: React.FC<CharacterPainterProps> = ({ 
+  loadout, 
+  hue = 200, 
+  onSave, 
+  onCancel 
+}) => {
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // --- UI Tools State ---
+  const [activeColor, setActiveColor] = useState<string>('#38bdf8');
+  const [activeTool, setActiveTool] = useState<'brush' | 'eraser' | 'fill' | 'move'>('brush');
+  const [brushSize, setBrushSize] = useState<number>(1);
+  const [isNeon, setIsNeon] = useState<boolean>(false);
+  const [mirrorEnabled, setMirrorEnabled] = useState<boolean>(true);
+  const [selectedPart, setSelectedPart] = useState<string>('all');
+
+  // Marquee selection overlay state
+  const [marquee, setMarquee] = useState<{ startX: number, startY: number, currX: number, currY: number } | null>(null);
+  const marqueeStartRef = useRef<{ x: number, y: number } | null>(null);
+
+  // Top level camera zoom state refs (so they can be reset when pan/zoom is reset)
+  const zoomDistanceRef = useRef<number>(4.2);
+  const targetZoomDistanceRef = useRef<number>(4.2);
+
+  // --- Active Paint Job State ---
+  const [paintJob, setPaintJob] = useState<ArmorPaintJob>(() => {
+    return loadout.paintJob ? JSON.parse(JSON.stringify(loadout.paintJob)) : {
+      helmet: {}, torso: {}, leftArm: {}, rightArm: {}, leftLeg: {}, rightLeg: {},
+      emissive: { helmet: {}, torso: {}, leftArm: {}, rightArm: {}, leftLeg: {}, rightLeg: {} },
+      baseColors: {}
+    };
+  });
+
+  // Keep state refs in sync for WebGL loop
+  const stateRef = useRef({ 
+    activeColor, 
+    activeTool, 
+    brushSize, 
+    isNeon, 
+    mirrorEnabled, 
+    selectedPart, 
+    paintJob 
+  });
+  useEffect(() => {
+    stateRef.current = { 
+      activeColor, 
+      activeTool, 
+      brushSize, 
+      isNeon, 
+      mirrorEnabled, 
+      selectedPart, 
+      paintJob 
+    };
+  }, [activeColor, activeTool, brushSize, isNeon, mirrorEnabled, selectedPart, paintJob]);
+
+  // --- Sci-Fi Themes ---
+  const curatedThemes = [
+    { name: 'Master Chief', primary: '#344e41', description: 'Spartan green' },
+    { name: 'Covenant', primary: '#5b3256', description: 'Elite plasma' },
+    { name: 'Synthwave', primary: '#ff007f', description: 'Retro neon pink' },
+    { name: 'Cyberpunk', primary: '#ffe600', description: 'Industrial yellow' },
+    { name: 'N7', primary: '#1c1c1c', description: 'Carbon black' },
+    { name: 'Blue Angel', primary: '#38bdf8', description: 'Cyan accent' }
+  ];
+
+  // --- Three.js Refs & Setup ---
+  const sceneRef = useRef<THREE.Scene | null>(null);
+  const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
+  const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
+  const characterContainerRef = useRef<THREE.Group | null>(null);
+  
+  // Track camera target lookAt
+  const cameraLookAtRef = useRef<THREE.Vector3>(new THREE.Vector3(0, 0.85, 0));
+  const targetCameraLookAtRef = useRef<THREE.Vector3>(new THREE.Vector3(0, 0.85, 0));
+  const targetCameraPosRef = useRef<THREE.Vector3>(new THREE.Vector3(0, 0.95, 4.2));
+
+  // Voxel meshes group for raycasting
+  const voxelMeshesRef = useRef<THREE.Mesh[]>([]);
+
+  // Click start voxel mesh ref
+  const expandStartMeshRef = useRef<THREE.Mesh | null>(null);
+
+  // Pivot configurations matching VoxelModels.ts
+  const PIVOTS: Record<string, { x: number, y: number, z: number, px: number, py: number, pz: number, parent: 'upper' | 'lower' | 'root' }> = {
+    helmet:   { x: 0,    y: 16, z: 0, px: 0,    py: 16, pz: 0, parent: 'upper' },
+    torso:    { x: 0,    y: 8,  z: 0, px: 0,    py: 8,  pz: 0, parent: 'upper' },
+    leftArm:  { x: -5.5, y: 15, z: 0, px: -5.5, py: 15, pz: 0, parent: 'upper' },
+    rightArm: { x: 5.5,  y: 15, z: 0, px: 5.5,  py: 15, pz: 0, parent: 'upper' },
+    leftLeg:  { x: -2.5, y: 7,  z: 0, px: -2.5, py: 7,  pz: 0, parent: 'lower' },
+    rightLeg: { x: 2.5,  y: 7,  z: 0, px: 2.5,  py: 7,  pz: 0, parent: 'lower' },
+  };
+
+  // Preset slots in loadout
+  const presetSlots: Record<string, string> = {
+    helmet: loadout.helmet ?? 'mark-vi',
+    torso: loadout.torso ?? 'mark-vi',
+    leftArm: loadout.arm ?? 'mark-vi',
+    rightArm: loadout.arm ?? 'mark-vi',
+    leftLeg: loadout.leg ?? 'mark-vi',
+    rightLeg: loadout.leg ?? 'mark-vi',
+  };
+
+  // --- Reset Actions ---
+  const handleReset = () => {
+    const active = stateRef.current.selectedPart;
+    setPaintJob(prev => {
+      const next = { ...prev };
+      if (active === 'all') {
+        // Full Reset
+        next.helmet = {};
+        next.torso = {};
+        next.leftArm = {};
+        next.rightArm = {};
+        next.leftLeg = {};
+        next.rightLeg = {};
+        next.baseColors = {};
+        next.emissive = { helmet: {}, torso: {}, leftArm: {}, rightArm: {}, leftLeg: {}, rightLeg: {} };
+      } else {
+        // Part Reset
+        const slot = active as keyof ArmorPaintJob;
+        if (next[slot]) {
+          next[slot] = {};
+        }
+        if (next.baseColors && next.baseColors[slot]) {
+          delete next.baseColors[slot];
+        }
+        if (next.emissive && next.emissive[slot]) {
+          next.emissive[slot] = {};
+        }
+      }
+      return next;
+    });
+
+    // Reset material colors of meshes back to original presets
+    voxelMeshesRef.current.forEach(mesh => {
+      const { slot } = mesh.userData;
+      if (active === 'all' || active === slot) {
+        mesh.userData.colorOverride = null;
+        mesh.userData.emissiveOverride = null;
+        const colorVal = mesh.userData.originalColor;
+        const isEmissive = mesh.userData.originalEmissive;
+        
+        if (isEmissive) {
+          (mesh.material as THREE.MeshStandardMaterial).color.set(colorVal);
+          (mesh.material as THREE.MeshStandardMaterial).emissive.set(colorVal);
+          (mesh.material as THREE.MeshStandardMaterial).emissiveIntensity = 2.5;
+        } else {
+          (mesh.material as THREE.MeshStandardMaterial).color.set(colorVal);
+          (mesh.material as THREE.MeshStandardMaterial).emissive.setHex(0x000000);
+          (mesh.material as THREE.MeshStandardMaterial).emissiveIntensity = 0;
+        }
+      }
+    });
+  };
+
+  // --- Save / Cancel Action ---
+  const handleSave = () => {
+    onSave(paintJob);
+  };
+
+  // --- Camera focus navigation skeleton handler ---
+  const navigateToPart = (part: string) => {
+    setSelectedPart(part);
+    targetZoomDistanceRef.current = 4.2; // Reset zoom scale
+    if (characterContainerRef.current) {
+      characterContainerRef.current.position.set(0, 0, 0); // Reset translation panned position
+    }
+    
+    // Smooth camera offsets and targets in meters
+    const scale = 0.08;
+    if (part === 'all') {
+      targetCameraLookAtRef.current.set(0, 0.85, 0);
+      targetCameraPosRef.current.set(0, 0.95, 4.2);
+    } else if (part === 'helmet') {
+      targetCameraLookAtRef.current.set(0, 1.42, 0);
+      targetCameraPosRef.current.set(0, 1.42, 1.15);
+    } else if (part === 'torso') {
+      targetCameraLookAtRef.current.set(0, 0.96, 0);
+      targetCameraPosRef.current.set(0, 0.96, 1.4);
+    } else if (part === 'leftArm') {
+      targetCameraLookAtRef.current.set(-5.5 * scale, 1.12, 0);
+      targetCameraPosRef.current.set(-5.5 * scale, 1.12, 1.15);
+    } else if (part === 'rightArm') {
+      targetCameraLookAtRef.current.set(5.5 * scale, 1.12, 0);
+      targetCameraPosRef.current.set(5.5 * scale, 1.12, 1.15);
+    } else if (part === 'leftLeg') {
+      targetCameraLookAtRef.current.set(-2.5 * scale, 0.32, 0);
+      targetCameraPosRef.current.set(-2.5 * scale, 0.32, 1.15);
+    } else if (part === 'rightLeg') {
+      targetCameraLookAtRef.current.set(2.5 * scale, 0.32, 0);
+      targetCameraPosRef.current.set(2.5 * scale, 0.32, 1.15);
+    }
+  };
+
+  // --- Paint Can Segment Flood ---
+  const floodFillSegment = (slot: string, color: string, emissive: boolean) => {
+    setPaintJob(prev => {
+      const next = { ...prev };
+      next.baseColors = next.baseColors || {};
+      next.baseColors[slot as keyof typeof next.baseColors] = color;
+      
+      // Clear individual overrides for this segment to keep storage light
+      const slotKey = slot as keyof ArmorPaintJob;
+      if (next[slotKey]) {
+        next[slotKey] = {};
+      }
+      if (next.emissive && next.emissive[slotKey]) {
+        next.emissive[slotKey] = {};
+      }
+      return next;
+    });
+
+    // Color all meshes in this slot
+    voxelMeshesRef.current.forEach(mesh => {
+      if (mesh.userData.slot === slot) {
+        mesh.userData.colorOverride = color;
+        mesh.userData.emissiveOverride = emissive;
+        
+        const mat = mesh.material as THREE.MeshStandardMaterial;
+        mat.color.set(color);
+        if (emissive) {
+          mat.emissive.set(color);
+          mat.emissiveIntensity = 2.5;
+        } else {
+          mat.emissive.setHex(0x000000);
+          mat.emissiveIntensity = 0;
+        }
+      }
+    });
+  };
+
+  // --- Three.js Mounting & Raycasting Logic ---
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const container = containerRef.current;
+
+    const width = container.clientWidth || 300;
+    const height = container.clientHeight || 380;
+
+    const scene = new THREE.Scene();
+    sceneRef.current = scene;
+
+    const camera = new THREE.PerspectiveCamera(40, width / height, 0.1, 100);
+    camera.position.copy(targetCameraPosRef.current);
+    cameraRef.current = camera;
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setSize(width, height);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    container.appendChild(renderer.domElement);
+    rendererRef.current = renderer;
+
+    // Lighting
+    const ambientLight = new THREE.AmbientLight('#ffffff', 0.7);
+    scene.add(ambientLight);
+
+    const dirLight = new THREE.DirectionalLight('#ffffff', 1.4);
+    dirLight.position.set(5, 10, 5);
+    dirLight.castShadow = true;
+    scene.add(dirLight);
+
+    const spotLight = new THREE.SpotLight('#38bdf8', 1.8, 10, Math.PI / 6, 0.5, 1);
+    spotLight.position.set(-3, 6, 3);
+    scene.add(spotLight);
+
+    const fillLight = new THREE.PointLight('#ffffff', 0.6, 8);
+    fillLight.position.set(3, 3, 2);
+    scene.add(fillLight);
+
+
+
+
+    // Spartan Character Container
+    const characterContainer = new THREE.Group();
+    scene.add(characterContainer);
+    characterContainerRef.current = characterContainer;
+
+    const lowerTorsoGroup = new THREE.Group();
+    const upperTorsoGroup = new THREE.Group();
+    characterContainer.add(lowerTorsoGroup);
+    characterContainer.add(upperTorsoGroup);
+
+    const scale = 0.08;
+    const bevelRadius = scale * 0.15;
+    const baseBeveledGeo = createBeveledBoxGeometry(scale, scale, scale, bevelRadius);
+
+    voxelMeshesRef.current = [];
+
+    // --- Instantiate Voxel Meshes Individually ---
+    Object.keys(PIVOTS).forEach(slot => {
+      const preset = presetSlots[slot];
+      const voxels = getVoxelSegmentData(slot, preset, hue);
+      const pivot = PIVOTS[slot];
+
+      // Load paint job custom colors / emissives
+      const customColors = paintJob[slot as keyof ArmorPaintJob] as { [key: string]: string } | undefined;
+      const customEmissives = paintJob.emissive?.[slot as keyof typeof paintJob.emissive] as { [key: string]: boolean } | undefined;
+      const baseColor = paintJob.baseColors?.[slot as keyof typeof paintJob.baseColors];
+
+      // Segment offset position
+      const segmentGroup = new THREE.Group();
+      if (pivot.parent === 'upper') {
+        segmentGroup.position.set(pivot.x * scale, (pivot.y - 8) * scale, 0);
+        upperTorsoGroup.add(segmentGroup);
+      } else {
+        segmentGroup.position.set(pivot.x * scale, pivot.y * scale, 0);
+        lowerTorsoGroup.add(segmentGroup);
+      }
+
+      voxels.forEach(v => {
+        // Compute active paint state
+        let colorStr = v.color;
+        let isEmissive = v.emissive || false;
+
+        if (baseColor && !v.emissive) {
+          colorStr = baseColor;
+        }
+        if (customColors && customColors[`${v.x},${v.y},${v.z}`] !== undefined) {
+          colorStr = customColors[`${v.x},${v.y},${v.z}`];
+        }
+        if (customEmissives && customEmissives[`${v.x},${v.y},${v.z}`] !== undefined) {
+          isEmissive = customEmissives[`${v.x},${v.y},${v.z}`];
+        }
+
+        const material = new THREE.MeshStandardMaterial({
+          roughness: isEmissive ? 0.15 : 0.35,
+          metalness: isEmissive ? 0.1 : 0.65,
+          color: new THREE.Color(colorStr),
+          emissive: isEmissive ? new THREE.Color(colorStr) : new THREE.Color(0x000000),
+          emissiveIntensity: isEmissive ? 2.5 : 0
+        });
+
+        const mesh = new THREE.Mesh(baseBeveledGeo, material);
+        mesh.position.set(
+          (v.x - pivot.px) * scale,
+          (v.y - pivot.py) * scale,
+          (v.z - pivot.pz) * scale
+        );
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+
+        // Custom metadata mapping
+        mesh.userData = {
+          slot,
+          x: v.x,
+          y: v.y,
+          z: v.z,
+          originalColor: v.color,
+          originalEmissive: v.emissive || false,
+          colorOverride: customColors?.[`${v.x},${v.y},${v.z}`] || (baseColor && !v.emissive ? baseColor : null),
+          emissiveOverride: customEmissives?.[`${v.x},${v.y},${v.z}`] || null
+        };
+
+        segmentGroup.add(mesh);
+        voxelMeshesRef.current.push(mesh);
+      });
+    });
+
+    upperTorsoGroup.position.set(0, 8 * scale, 0);
+
+    // --- Hover Highlighter Grid Voxel Outline ---
+    const hoverGeo = new THREE.BoxGeometry(scale * 1.05, scale * 1.05, scale * 1.05);
+    const hoverMat = new THREE.MeshBasicMaterial({ color: 0x00f3ff, wireframe: true, transparent: true, opacity: 0.6 });
+    const hoverHighlight = new THREE.Mesh(hoverGeo, hoverMat);
+    hoverHighlight.visible = false;
+    scene.add(hoverHighlight);
+
+    // --- Mouse & Touch Controls Logic ---
+    let isDragging = false;
+    let isClickingVoxel = false;
+    let dragMode: 'paint' | 'rotate' | 'move' = 'rotate';
+    let previousPointerX = 0;
+    let previousPointerY = 0;
+
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
+
+    const getRaycastIntersect = (e: MouseEvent | PointerEvent) => {
+      const rect = renderer.domElement.getBoundingClientRect();
+      mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+      mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+
+      raycaster.setFromCamera(mouse, camera);
+      const intersects = raycaster.intersectObjects(voxelMeshesRef.current);
+      return intersects.length > 0 ? intersects[0] : null;
+    };
+
+    // Apply color paint to mesh
+    const paintSingleVoxelMesh = (
+      mesh: THREE.Mesh, 
+      color: string, 
+      emissive: boolean, 
+      tool: 'brush' | 'eraser'
+    ) => {
+      const { slot, x, y, z, originalColor, originalEmissive } = mesh.userData;
+      
+      let finalColor = color;
+      let finalEmissive = emissive;
+
+      if (tool === 'eraser') {
+        finalColor = originalColor;
+        finalEmissive = originalEmissive;
+      }
+
+      mesh.userData.colorOverride = tool === 'eraser' ? null : finalColor;
+      mesh.userData.emissiveOverride = tool === 'eraser' ? null : finalEmissive;
+
+      const mat = mesh.material as THREE.MeshStandardMaterial;
+      mat.color.set(finalColor);
+      if (finalEmissive) {
+        mat.emissive.set(finalColor);
+        mat.emissiveIntensity = 2.5;
+        mat.roughness = 0.15;
+        mat.metalness = 0.1;
+      } else {
+        mat.emissive.setHex(0x000000);
+        mat.emissiveIntensity = 0;
+        mat.roughness = 0.35;
+        mat.metalness = 0.65;
+      }
+
+      // Update State Dicts
+      setPaintJob(prev => {
+        const next = { ...prev };
+        next[slot as keyof ArmorPaintJob] = next[slot as keyof ArmorPaintJob] || {};
+        next.emissive = next.emissive || {};
+        next.emissive[slot as keyof typeof next.emissive] = next.emissive[slot as keyof typeof next.emissive] || {};
+
+        const key = `${x},${y},${z}`;
+
+        if (tool === 'eraser') {
+          const dict = next[slot as keyof ArmorPaintJob] as Record<string, string>;
+          delete dict[key];
+          
+          const emDict = next.emissive[slot as keyof typeof next.emissive] as Record<string, boolean>;
+          delete emDict[key];
+        } else {
+          const dict = next[slot as keyof ArmorPaintJob] as Record<string, string>;
+          dict[key] = finalColor;
+
+          const emDict = next.emissive[slot as keyof typeof next.emissive] as Record<string, boolean>;
+          emDict[key] = finalEmissive;
+        }
+
+        return next;
+      });
+
+      // Mirror paint option (only for arms and legs)
+      const mirror = stateRef.current.mirrorEnabled;
+      if (mirror && (slot === 'leftArm' || slot === 'rightArm' || slot === 'leftLeg' || slot === 'rightLeg')) {
+        const mirroredSlot = slot.startsWith('left') 
+          ? slot.replace('left', 'right') 
+          : slot.replace('right', 'left');
+          
+        const targetMirrorX = -x;
+        
+        // Find mirrored mesh in Scene
+        const mirroredMesh = voxelMeshesRef.current.find(m => 
+          m.userData.slot === mirroredSlot && 
+          m.userData.x === targetMirrorX && 
+          m.userData.y === y && 
+          m.userData.z === z
+        );
+
+        if (mirroredMesh) {
+          mirroredMesh.userData.colorOverride = tool === 'eraser' ? null : finalColor;
+          mirroredMesh.userData.emissiveOverride = tool === 'eraser' ? null : finalEmissive;
+
+          const mirroredMat = mirroredMesh.material as THREE.MeshStandardMaterial;
+          mirroredMat.color.set(finalColor);
+          if (finalEmissive) {
+            mirroredMat.emissive.set(finalColor);
+            mirroredMat.emissiveIntensity = 2.5;
+            mirroredMat.roughness = 0.15;
+            mirroredMat.metalness = 0.1;
+          } else {
+            mirroredMat.emissive.setHex(0x000000);
+            mirroredMat.emissiveIntensity = 0;
+            mirroredMat.roughness = 0.35;
+            mirroredMat.metalness = 0.65;
+          }
+
+          setPaintJob(prev => {
+            const next = { ...prev };
+            next[mirroredSlot as keyof ArmorPaintJob] = next[mirroredSlot as keyof ArmorPaintJob] || {};
+            next.emissive = next.emissive || {};
+            next.emissive[mirroredSlot as keyof typeof next.emissive] = next.emissive[mirroredSlot as keyof typeof next.emissive] || {};
+
+            const mirrorKey = `${targetMirrorX},${y},${z}`;
+
+            if (tool === 'eraser') {
+              const dict = next[mirroredSlot as keyof ArmorPaintJob] as Record<string, string>;
+              delete dict[mirrorKey];
+              
+              const emDict = next.emissive[mirroredSlot as keyof typeof next.emissive] as Record<string, boolean>;
+              delete emDict[mirrorKey];
+            } else {
+              const dict = next[mirroredSlot as keyof ArmorPaintJob] as Record<string, string>;
+              dict[mirrorKey] = finalColor;
+
+              const emDict = next.emissive[mirroredSlot as keyof typeof next.emissive] as Record<string, boolean>;
+              emDict[mirrorKey] = finalEmissive;
+            }
+
+            return next;
+          });
+        }
+      }
+    };
+
+    const onPointerDown = (e: PointerEvent) => {
+      isDragging = true;
+      previousPointerX = e.clientX;
+      previousPointerY = e.clientY;
+
+      const intersect = getRaycastIntersect(e);
+      const tool = stateRef.current.activeTool;
+
+      if (e.button === 0 && (tool === 'brush' || tool === 'eraser')) {
+        // Left click for painting -> Marquee selection!
+        dragMode = 'paint';
+        if (intersect) {
+          expandStartMeshRef.current = intersect.object as THREE.Mesh;
+        } else {
+          expandStartMeshRef.current = null;
+        }
+
+        const rect = renderer.domElement.getBoundingClientRect();
+        const startX = e.clientX - rect.left;
+        const startY = e.clientY - rect.top;
+        marqueeStartRef.current = { x: e.clientX, y: e.clientY };
+        setMarquee({ startX, startY, currX: startX, currY: startY });
+      } else if (e.button === 0 && tool === 'fill') {
+        // Paint can flood
+        if (intersect) {
+          floodFillSegment(intersect.object.userData.slot, stateRef.current.activeColor, stateRef.current.isNeon);
+        }
+      } else if (e.button === 0 && tool === 'move') {
+        // Mover tool active -> Move Mode!
+        dragMode = 'move';
+      } else {
+        // Right click or background click -> Orbit Mode!
+        dragMode = 'rotate';
+      }
+      
+      container.setPointerCapture(e.pointerId);
+    };
+
+    const onPointerMove = (e: PointerEvent) => {
+      const intersect = getRaycastIntersect(e);
+      
+      // Update Hover Highlight wireframe box (skip when in Mover tool)
+      if (intersect && stateRef.current.activeTool !== 'fill' && stateRef.current.activeTool !== 'move') {
+        const mesh = intersect.object as THREE.Mesh;
+        hoverHighlight.position.copy(mesh.getWorldPosition(new THREE.Vector3()));
+        hoverHighlight.quaternion.copy(mesh.getWorldQuaternion(new THREE.Quaternion()));
+        hoverHighlight.visible = true;
+      } else {
+        hoverHighlight.visible = false;
+      }
+
+      const revertMeshHighlight = (mesh: THREE.Mesh) => {
+        const colorVal = mesh.userData.colorOverride || mesh.userData.originalColor;
+        const isEmissive = mesh.userData.emissiveOverride !== null 
+          ? mesh.userData.emissiveOverride 
+          : mesh.userData.originalEmissive;
+        (mesh.material as THREE.MeshStandardMaterial).emissive.set(isEmissive ? new THREE.Color(colorVal) : new THREE.Color(0x000000));
+        (mesh.material as THREE.MeshStandardMaterial).emissiveIntensity = isEmissive ? 2.5 : 0;
+      };
+
+      if (isDragging) {
+        const deltaX = e.clientX - previousPointerX;
+        const deltaY = e.clientY - previousPointerY;
+        previousPointerX = e.clientX;
+        previousPointerY = e.clientY;
+
+        if (dragMode === 'rotate') {
+          // Model 360° horizontal/vertical orbit rotation
+          characterContainer.rotation.y += deltaX * 0.007;
+          characterContainer.rotation.x += deltaY * 0.007;
+        } else if (dragMode === 'move') {
+          // Free "Mover" tool logic: translate container in screen plane
+          const moveSpeed = 0.005 * (zoomDistanceRef.current / 4.2);
+          characterContainer.position.x += deltaX * moveSpeed;
+          characterContainer.position.y -= deltaY * moveSpeed;
+        } else if (dragMode === 'paint' && marqueeStartRef.current) {
+          // Drag marquee box
+          const rect = renderer.domElement.getBoundingClientRect();
+          const currX = e.clientX - rect.left;
+          const currY = e.clientY - rect.top;
+          setMarquee(prev => prev ? { ...prev, currX, currY } : null);
+
+          // Find voxels within selection bounds in NDC and highlight them
+          const x1 = Math.min(marqueeStartRef.current.x, e.clientX);
+          const x2 = Math.max(marqueeStartRef.current.x, e.clientX);
+          const y1 = Math.min(marqueeStartRef.current.y, e.clientY);
+          const y2 = Math.max(marqueeStartRef.current.y, e.clientY);
+
+          const isSingleClick = Math.abs(e.clientX - marqueeStartRef.current.x) < 5 && 
+                               Math.abs(e.clientY - marqueeStartRef.current.y) < 5;
+
+          voxelMeshesRef.current.forEach(mesh => {
+            const tempV = new THREE.Vector3();
+            mesh.getWorldPosition(tempV);
+            
+            // Don't select voxels behind camera (z > 1 in NDC)
+            tempV.project(camera);
+            if (tempV.z > 1) {
+              revertMeshHighlight(mesh);
+              return;
+            }
+
+            const clientX = rect.left + (tempV.x * 0.5 + 0.5) * rect.width;
+            const clientY = rect.top + (-tempV.y * 0.5 + 0.5) * rect.height;
+
+            let isInside = false;
+            if (isSingleClick) {
+              isInside = (mesh === expandStartMeshRef.current);
+            } else {
+              isInside = (clientX >= x1 && clientX <= x2 && clientY >= y1 && clientY <= y2);
+            }
+
+            if (isInside) {
+              (mesh.material as THREE.MeshStandardMaterial).emissive.set(0x00f3ff);
+              (mesh.material as THREE.MeshStandardMaterial).emissiveIntensity = 3.0;
+            } else {
+              revertMeshHighlight(mesh);
+            }
+          });
+        }
+      }
+    };
+
+    const onPointerUp = (e: PointerEvent) => {
+      if (isDragging) {
+        isDragging = false;
+        container.releasePointerCapture(e.pointerId);
+
+        const revertMeshHighlight = (mesh: THREE.Mesh) => {
+          const colorVal = mesh.userData.colorOverride || mesh.userData.originalColor;
+          const isEmissive = mesh.userData.emissiveOverride !== null 
+            ? mesh.userData.emissiveOverride 
+            : mesh.userData.originalEmissive;
+          (mesh.material as THREE.MeshStandardMaterial).emissive.set(isEmissive ? new THREE.Color(colorVal) : new THREE.Color(0x000000));
+          (mesh.material as THREE.MeshStandardMaterial).emissiveIntensity = isEmissive ? 2.5 : 0;
+        };
+
+        if (dragMode === 'paint' && marqueeStartRef.current) {
+          const rect = renderer.domElement.getBoundingClientRect();
+          const x1 = Math.min(marqueeStartRef.current.x, e.clientX);
+          const x2 = Math.max(marqueeStartRef.current.x, e.clientX);
+          const y1 = Math.min(marqueeStartRef.current.y, e.clientY);
+          const y2 = Math.max(marqueeStartRef.current.y, e.clientY);
+
+          const isSingleClick = Math.abs(e.clientX - marqueeStartRef.current.x) < 5 && 
+                               Math.abs(e.clientY - marqueeStartRef.current.y) < 5;
+
+          const tool = stateRef.current.activeTool;
+          const color = stateRef.current.activeColor;
+          const emissive = stateRef.current.isNeon;
+
+          // Paint/erase all highlighted voxels!
+          voxelMeshesRef.current.forEach(mesh => {
+            const tempV = new THREE.Vector3();
+            mesh.getWorldPosition(tempV);
+            tempV.project(camera);
+
+            let isInside = false;
+            if (tempV.z <= 1) {
+              const clientX = rect.left + (tempV.x * 0.5 + 0.5) * rect.width;
+              const clientY = rect.top + (-tempV.y * 0.5 + 0.5) * rect.height;
+
+              if (isSingleClick) {
+                isInside = (mesh === expandStartMeshRef.current);
+              } else {
+                isInside = (clientX >= x1 && clientX <= x2 && clientY >= y1 && clientY <= y2);
+              }
+            }
+
+            if (isInside) {
+              paintSingleVoxelMesh(mesh, color, emissive, tool as 'brush' | 'eraser');
+            } else {
+              revertMeshHighlight(mesh);
+            }
+          });
+
+          // Reset paint drag states
+          marqueeStartRef.current = null;
+          expandStartMeshRef.current = null;
+          setMarquee(null);
+        }
+      }
+    };
+
+    // Zoom mouse wheel zoom handler
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const zoomSpeed = 0.15;
+      if (e.deltaY < 0) {
+        // Zoom in
+        targetZoomDistanceRef.current = Math.max(0.6, targetZoomDistanceRef.current - zoomSpeed);
+      } else {
+        // Zoom out
+        targetZoomDistanceRef.current = Math.min(4.5, targetZoomDistanceRef.current + zoomSpeed);
+      }
+    };
+
+    container.addEventListener('pointerdown', onPointerDown);
+    container.addEventListener('pointermove', onPointerMove);
+    container.addEventListener('pointerup', onPointerUp);
+    container.addEventListener('pointercancel', onPointerUp);
+    container.addEventListener('wheel', onWheel, { passive: false });
+
+    // --- WebGL Animation & Camera Lerp Loop ---
+    const clock = new THREE.Clock();
+    let animationFrameId: number;
+
+    const animate = () => {
+      // 1. Smoothly Zoom Camera
+      zoomDistanceRef.current = THREE.MathUtils.lerp(zoomDistanceRef.current, targetZoomDistanceRef.current, 0.08);
+
+      // Compute targeted camera look at position
+      cameraLookAtRef.current.lerp(targetCameraLookAtRef.current, 0.08);
+
+      // Position camera at target lookAt plus directional zoom offsets
+      const camPos = targetCameraPosRef.current.clone();
+      
+      // Interpolate camera positioning vector smoothly
+      camera.position.lerp(camPos, 0.08);
+      
+      // Check if zoomed in to adjust camera distance multiplier
+      const scaleOffset = zoomDistanceRef.current / 4.2;
+      camera.position.z = camPos.z * scaleOffset;
+      
+      camera.lookAt(cameraLookAtRef.current);
+
+      // 2. Pulse emissive neon glowing voxels
+      const elapsed = clock.getElapsedTime();
+      voxelMeshesRef.current.forEach(mesh => {
+        const mat = mesh.material as THREE.MeshStandardMaterial;
+        const isEmissive = mesh.userData.emissiveOverride !== null 
+          ? mesh.userData.emissiveOverride 
+          : mesh.userData.originalEmissive;
+          
+        if (isEmissive && !marqueeStartRef.current) {
+          mat.emissiveIntensity = 2.0 + Math.sin(elapsed * 4.0) * 0.8;
+        }
+      });
+
+      renderer.render(scene, camera);
+      animationFrameId = requestAnimationFrame(animate);
+    };
+
+    animate();
+
+    // Resize Handler
+    const handleResize = () => {
+      if (!container) return;
+      const w = container.clientWidth;
+      const h = container.clientHeight;
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+      renderer.setSize(w, h);
+    };
+    window.addEventListener('resize', handleResize);
+
+    // --- Cleanup Engine ---
+    return () => {
+      cancelAnimationFrame(animationFrameId);
+      window.removeEventListener('resize', handleResize);
+      container.removeEventListener('pointerdown', onPointerDown);
+      container.removeEventListener('pointermove', onPointerMove);
+      container.removeEventListener('pointerup', onPointerUp);
+      container.removeEventListener('pointercancel', onPointerUp);
+      container.removeEventListener('wheel', onWheel);
+      
+      if (container && renderer.domElement && container.contains(renderer.domElement)) {
+        container.removeChild(renderer.domElement);
+      }
+      
+      renderer.dispose();
+      baseBeveledGeo.dispose();
+      hoverGeo.dispose();
+      hoverMat.dispose();
+    };
+  }, [hue]);
+
+  return (
+    <div className="w-full h-full flex flex-col md:flex-row gap-4 text-white p-3 font-sans relative">
+      
+      {/* 3D Viewport Area */}
+      <div 
+        ref={containerRef}
+        className="flex-1 h-[500px] md:h-[600px] rounded-xl border border-white/10 bg-slate-950/70 relative overflow-hidden shadow-2xl cursor-crosshair select-none"
+      >
+        {/* Glowing cyber grid decoration */}
+        <div className="absolute inset-0 pointer-events-none z-0 bg-[radial-gradient(circle_at_center,transparent_40%,rgba(3,7,18,0.7))] opacity-80" />
+        <div
+          className="absolute inset-0 pointer-events-none z-0 opacity-10"
+          style={{
+            backgroundImage: `
+              repeating-linear-gradient(0deg, #38bdf8 0px, #38bdf8 1px, transparent 1px, transparent 15px),
+              repeating-linear-gradient(90deg, #38bdf8 0px, #38bdf8 1px, transparent 1px, transparent 15px)
+            `,
+          }}
+        />
+
+        {/* Viewport Floating Diagnostics Indicators */}
+        <div className="absolute top-3 right-3 pointer-events-none font-mono text-[9px] text-[#38bdf8]/60 bg-black/40 border border-white/5 rounded px-2.5 py-1 flex items-center gap-2">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+          <span>PAINT_SESSION_ACTIVE (3D)</span>
+        </div>
+
+        {/* HIGH-TECH VECTOR SVG NAVIGATION SKELETON (TOP LEFT) */}
+        <div 
+          className="absolute top-3 left-3 bg-black/60 border border-white/10 rounded-xl p-3 shadow-lg flex flex-col items-center gap-2 z-10"
+          onPointerDown={(e) => e.stopPropagation()}
+          onPointerUp={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <span className="text-[8px] font-mono font-bold tracking-wider text-[#38bdf8] uppercase">CAM TARGET</span>
+          
+          <svg width="65" height="110" viewBox="0 0 100 160" className="drop-shadow-[0_0_8px_rgba(56,189,248,0.4)]">
+            {/* Outline Glow Skeleton */}
+            
+            {/* Helmet (Head Zone) */}
+            <circle 
+              cx="50" cy="20" r="13" 
+              fill={selectedPart === 'helmet' ? 'rgba(56, 189, 248, 0.3)' : 'rgba(0, 0, 0, 0.4)'} 
+              stroke={selectedPart === 'helmet' ? '#38bdf8' : 'rgba(255,255,255,0.2)'} 
+              strokeWidth="1.5"
+              className="cursor-pointer transition-all hover:stroke-[#38bdf8]"
+              onClick={() => navigateToPart('helmet')}
+            />
+            {/* Visor slit line */}
+            <line x1="43" y1="20" x2="57" y2="20" stroke={selectedPart === 'helmet' ? '#00f3ff' : 'rgba(255,255,255,0.4)'} strokeWidth="1" />
+
+            {/* Torso (Chest Zone) */}
+            <rect 
+              x="32" y="38" width="36" height="42" rx="3"
+              fill={selectedPart === 'torso' ? 'rgba(56, 189, 248, 0.3)' : 'rgba(0, 0, 0, 0.4)'} 
+              stroke={selectedPart === 'torso' ? '#38bdf8' : 'rgba(255,255,255,0.2)'} 
+              strokeWidth="1.5"
+              className="cursor-pointer transition-all hover:stroke-[#38bdf8]"
+              onClick={() => navigateToPart('torso')}
+            />
+
+            {/* Left Arm Zone */}
+            <rect 
+              x="14" y="38" width="14" height="45" rx="2"
+              fill={selectedPart === 'leftArm' ? 'rgba(56, 189, 248, 0.3)' : 'rgba(0, 0, 0, 0.4)'} 
+              stroke={selectedPart === 'leftArm' ? '#38bdf8' : 'rgba(255,255,255,0.2)'} 
+              strokeWidth="1.5"
+              className="cursor-pointer transition-all hover:stroke-[#38bdf8]"
+              onClick={() => navigateToPart('leftArm')}
+            />
+
+            {/* Right Arm Zone */}
+            <rect 
+              x="72" y="38" width="14" height="45" rx="2"
+              fill={selectedPart === 'rightArm' ? 'rgba(56, 189, 248, 0.3)' : 'rgba(0, 0, 0, 0.4)'} 
+              stroke={selectedPart === 'rightArm' ? '#38bdf8' : 'rgba(255,255,255,0.2)'} 
+              strokeWidth="1.5"
+              className="cursor-pointer transition-all hover:stroke-[#38bdf8]"
+              onClick={() => navigateToPart('rightArm')}
+            />
+
+            {/* Left Leg Zone */}
+            <rect 
+              x="33" y="85" width="14" height="60" rx="2"
+              fill={selectedPart === 'leftLeg' ? 'rgba(56, 189, 248, 0.3)' : 'rgba(0, 0, 0, 0.4)'} 
+              stroke={selectedPart === 'leftLeg' ? '#38bdf8' : 'rgba(255,255,255,0.2)'} 
+              strokeWidth="1.5"
+              className="cursor-pointer transition-all hover:stroke-[#38bdf8]"
+              onClick={() => navigateToPart('leftLeg')}
+            />
+
+            {/* Right Leg Zone */}
+            <rect 
+              x="53" y="85" width="14" height="60" rx="2"
+              fill={selectedPart === 'rightLeg' ? 'rgba(56, 189, 248, 0.3)' : 'rgba(0, 0, 0, 0.4)'} 
+              stroke={selectedPart === 'rightLeg' ? '#38bdf8' : 'rgba(255,255,255,0.2)'} 
+              strokeWidth="1.5"
+              className="cursor-pointer transition-all hover:stroke-[#38bdf8]"
+              onClick={() => navigateToPart('rightLeg')}
+            />
+          </svg>
+
+          {/* Reset Focus Fit */}
+          <button 
+            onClick={() => navigateToPart('all')}
+            className={`w-full py-1 rounded text-[9px] font-mono uppercase tracking-widest border transition-all active:scale-95 cursor-pointer ${
+              selectedPart === 'all' 
+                ? 'bg-[#38bdf8]/20 border-[#38bdf8] text-[#38bdf8]' 
+                : 'bg-black/30 border-white/10 text-white/50 hover:text-white'
+            }`}
+          >
+            🔎 Fit Spartan
+          </button>
+        </div>
+
+        {/* Marquee Drag Box Overlay */}
+        {marquee && (
+          <div
+            className="absolute border border-dashed border-cyan-400 bg-cyan-400/10 pointer-events-none z-20 rounded shadow-[0_0_8px_rgba(34,211,238,0.4)]"
+            style={{
+              left: Math.min(marquee.startX, marquee.currX),
+              top: Math.min(marquee.startY, marquee.currY),
+              width: Math.abs(marquee.currX - marquee.startX),
+              height: Math.abs(marquee.currY - marquee.startY),
+            }}
+          />
+        )}
+
+        {/* Floating Quick Navigation Hints */}
+        <div className="absolute bottom-3 left-3 pointer-events-none z-10 text-[9px] font-mono text-white/40 bg-black/55 border border-white/5 p-2.5 rounded-lg leading-relaxed max-w-[220px]">
+          <div>🖱️ <strong className="text-white/70">Left Click:</strong> Paint voxel</div>
+          <div>🔲 <strong className="text-white/70">Left Drag:</strong> Marquee Box Select</div>
+          <div>✋ <strong className="text-white/70">Mover Tool:</strong> Drag to Move Model</div>
+          <div>🖱️ <strong className="text-white/70">Right Drag:</strong> Rotate Model</div>
+          <div>🌀 <strong className="text-white/70">Scroll:</strong> Zoom View</div>
+        </div>
+      </div>
+
+      {/* Stylized Glassmorphic Controls Panel */}
+      <div className="w-full md:w-[310px] shrink-0 bg-slate-950/60 border border-white/10 rounded-xl p-4 flex flex-col gap-3.5 shadow-xl h-[500px] md:h-[600px] text-xs select-none">
+        
+        {/* Editor Title */}
+        <div className="flex justify-between items-center border-b border-white/5 pb-2">
+          <span className="font-bold text-sm tracking-wider text-[#38bdf8] uppercase flex items-center gap-1.5">
+            🎨 Spartan Voxel Painter
+          </span>
+          <span className="text-[10px] font-mono text-amber-400 bg-amber-950/40 border border-amber-500/25 px-2 py-0.5 rounded">
+            EDIT_MODE
+          </span>
+        </div>
+
+        {/* Tools Selection Grid */}
+        <div className="flex flex-col gap-1.5">
+          <span className="text-[10px] font-bold text-[#38bdf8] uppercase tracking-wider block">1. Brush Tool Select</span>
+          <div className="grid grid-cols-2 gap-2">
+            {[
+              { id: 'brush', label: '🖌️ Brush', desc: 'Single voxel/Marquee draw' },
+              { id: 'eraser', label: '🧽 Eraser', desc: 'Revert voxel HSL' },
+              { id: 'fill', label: '🪣 Fill Can', desc: 'Flood fill piece' },
+              { id: 'move', label: '✋ Mover', desc: 'Drag to translate model' }
+            ].map(tool => (
+              <button
+                key={tool.id}
+                onClick={() => setActiveTool(tool.id as any)}
+                title={tool.desc}
+                className={`py-2 text-[10px] font-black uppercase tracking-wider border rounded cursor-pointer transition-all active:scale-95 ${
+                  activeTool === tool.id
+                    ? 'bg-[#38bdf8]/15 border-[#38bdf8] text-[#38bdf8] shadow-[0_0_10px_rgba(56,189,248,0.25)]'
+                    : 'bg-black/40 border-white/10 text-white/50 hover:text-white hover:border-white/20'
+                }`}
+              >
+                {tool.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Emissive / Emissive glow selector */}
+        <div className="bg-white/5 border border-white/5 rounded-lg p-2.5 flex justify-between items-center">
+          <div>
+            <p className="font-bold text-[10px] text-[#38bdf8] uppercase tracking-wider">⚡ Neon Glow Paint</p>
+            <p className="text-[9px] text-white/40">Apply glowing cybernetic overlays</p>
+          </div>
+          <button
+            onClick={() => setIsNeon(prev => !prev)}
+            className={`w-11 h-6 rounded-full p-1 cursor-pointer transition-all flex ${
+              isNeon ? 'bg-cyan-400 justify-end' : 'bg-black/60 justify-start border border-white/10'
+            }`}
+          >
+            <span className="w-4 h-4 rounded-full bg-slate-950 shadow-inner" />
+          </button>
+        </div>
+
+        {/* Mirrored arm/leg check */}
+        <div className="bg-white/5 border border-white/5 rounded-lg p-2.5 flex justify-between items-center">
+          <div>
+            <p className="font-bold text-[10px] text-[#38bdf8] uppercase tracking-wider">🪞 Mirror Arms & Legs</p>
+            <p className="text-[9px] text-white/40">Auto-mirror paint across limbs</p>
+          </div>
+          <button
+            onClick={() => setMirrorEnabled(prev => !prev)}
+            className={`w-11 h-6 rounded-full p-1 cursor-pointer transition-all flex ${
+              mirrorEnabled ? 'bg-cyan-400 justify-end' : 'bg-black/60 justify-start border border-white/10'
+            }`}
+          >
+            <span className="w-4 h-4 rounded-full bg-slate-950 shadow-inner" />
+          </button>
+        </div>
+
+        {/* Color Palette and Advanced Selectors */}
+        <div className="flex flex-col gap-2 bg-white/5 border border-white/5 rounded-lg p-2.5">
+          <div className="flex justify-between items-center">
+            <span className="text-[10px] font-bold text-[#38bdf8] uppercase tracking-wider">2. Color Picker & Hex</span>
+            <input 
+              type="color" 
+              value={activeColor}
+              onChange={(e) => setActiveColor(e.target.value)}
+              className="w-5 h-5 rounded cursor-pointer border border-white/10 bg-transparent"
+            />
+          </div>
+
+          {/* Preset Swatches */}
+          <div className="flex flex-wrap gap-1.5 justify-between">
+            {curatedThemes.map(theme => (
+              <button
+                key={theme.name}
+                onClick={() => {
+                  setActiveColor(theme.primary);
+                  setIsNeon(theme.name === 'Synthwave' || theme.name === 'Cyberpunk');
+                }}
+                title={`${theme.name} Preset color`}
+                className={`w-6 h-6 rounded-full cursor-pointer border border-transparent transition-all hover:scale-105 active:scale-90 ${
+                  activeColor === theme.primary ? 'ring-1 ring-cyan-400 ring-offset-1 ring-offset-slate-950 scale-110 shadow-lg' : ''
+                }`}
+                style={{ backgroundColor: theme.primary }}
+              />
+            ))}
+          </div>
+
+          {/* Advanced Hex Input */}
+          <div className="flex items-center gap-1.5 border border-white/10 bg-black/40 rounded px-2 py-1 mt-1">
+            <span className="text-[10px] font-mono text-white/30">HEX:</span>
+            <input 
+              type="text" 
+              maxLength={7}
+              value={activeColor}
+              onChange={(e) => setActiveColor(e.target.value)}
+              className="flex-1 bg-transparent border-none text-white focus:outline-none text-[11px] font-mono tracking-wider"
+              placeholder="#000000"
+            />
+          </div>
+        </div>
+
+        {/* Smart Reset button */}
+        <div className="grid grid-cols-2 gap-2 mt-1">
+          <button
+            onClick={handleReset}
+            className="py-2 bg-red-950/20 border border-red-500/20 hover:border-red-500/40 text-red-400 hover:bg-red-500/10 font-bold uppercase tracking-wider rounded transition-all active:scale-95 cursor-pointer text-[10px] text-center"
+          >
+            ↻ Reset {selectedPart === 'all' ? 'Spartan' : 'Piece'}
+          </button>
+          
+          <button
+            onClick={onCancel}
+            className="py-2 bg-slate-950/40 border border-white/10 hover:border-white/20 text-white/70 hover:text-white font-bold uppercase tracking-wider rounded transition-all active:scale-95 cursor-pointer text-[10px] text-center"
+          >
+            Cancel
+          </button>
+        </div>
+
+        {/* Save Button */}
+        <button
+          onClick={handleSave}
+          className="w-full py-2.5 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 hover:to-blue-400 text-slate-950 font-black uppercase tracking-widest rounded-lg shadow-lg shadow-cyan-500/10 transition-all active:scale-[0.98] cursor-pointer text-center text-xs mt-1"
+        >
+          💾 Apply & Save Paint Job
+        </button>
+      </div>
+
+    </div>
+  );
+};

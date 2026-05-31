@@ -57,6 +57,10 @@ export interface UniversalSettings {
   aiFeintChance?: number;
   /** Custom override for derived pressure aggression (0–100); unset uses deriveAIParams(). */
   aiPressureAggression?: number;
+  /** Custom override for combat spacing multiplier (e.g. 0.7–1.4×); unset uses archetype/neutral flag. */
+  aiSpacingBand?: number;
+  /** Custom override: when true the AI never chains post-hit PRESSURING; unset uses archetype/neutral flag. */
+  aiSkipPressure?: boolean;
   /** Combat personality archetype overlay; 'none' uses difficulty knobs only. */
   aiArchetype?: 'none' | 'berserker' | 'counter_fighter' | 'zoner' | 'mixup_artist' | 'assassin' | 'brawler' | string;
   enableBurnDecals?: boolean;
@@ -389,6 +393,12 @@ export interface AITuning {
   aiWeaponSwapIQ?: number;
   aiPlaystyle?: number;
   aiWeaponPrioritization?: number;
+  // Advanced behavior overrides (unset = derived / neutral).
+  aiSpatialIQ?: number;
+  aiFeintChance?: number;
+  aiPressureAggression?: number;
+  aiSpacingBand?: number;
+  aiSkipPressure?: boolean;
 }
 
 export interface AIPreset {

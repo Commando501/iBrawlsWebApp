@@ -8,7 +8,7 @@ import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUti
 
 // ─── Internal Types ───────────────────────────────────────────────────────────
 
-interface VoxelData {
+export interface VoxelData {
   x: number;
   y: number;
   z: number;
@@ -27,16 +27,42 @@ interface SpartanColors {
 
 // ─── Public Preset Types ──────────────────────────────────────────────────────
 
-export type HelmetPreset = 'mark-vi' | 'odst' | 'recon' | 'eva' | 'gungnir';
-export type TorsoPreset = 'mark-vi' | 'scout' | 'recon';
-export type ArmPreset = 'mark-vi' | 'odst' | 'recon';
-export type LegPreset = 'mark-vi' | 'jump-jet' | 'odst';
+export type HelmetPreset = 'mark-vi' | 'odst' | 'recon' | 'eva' | 'gungnir' | 'eod' | 'hayabusa' | 'cqb';
+export type TorsoPreset = 'mark-vi' | 'scout' | 'recon' | 'eod' | 'hayabusa';
+export type ArmPreset = 'mark-vi' | 'odst' | 'recon' | 'eod' | 'hayabusa';
+export type LegPreset = 'mark-vi' | 'jump-jet' | 'odst' | 'eod' | 'hayabusa';
+
+export interface ArmorPaintJob {
+  helmet?: { [key: string]: string };
+  torso?: { [key: string]: string };
+  leftArm?: { [key: string]: string };
+  rightArm?: { [key: string]: string };
+  leftLeg?: { [key: string]: string };
+  rightLeg?: { [key: string]: string };
+  emissive?: {
+    helmet?: { [key: string]: boolean };
+    torso?: { [key: string]: boolean };
+    leftArm?: { [key: string]: boolean };
+    rightArm?: { [key: string]: boolean };
+    leftLeg?: { [key: string]: boolean };
+    rightLeg?: { [key: string]: boolean };
+  };
+  baseColors?: {
+    helmet?: string;
+    torso?: string;
+    leftArm?: string;
+    rightArm?: string;
+    leftLeg?: string;
+    rightLeg?: string;
+  };
+}
 
 export interface CharacterLoadout {
   helmet?: HelmetPreset;
   torso?: TorsoPreset;
   arm?: ArmPreset;
   leg?: LegPreset;
+  paintJob?: ArmorPaintJob;
 }
 
 export const DEFAULT_LOADOUT: CharacterLoadout = {
@@ -47,10 +73,10 @@ export const DEFAULT_LOADOUT: CharacterLoadout = {
 };
 
 export const AVAILABLE_PRESETS = {
-  helmet: ['mark-vi', 'odst', 'recon', 'eva', 'gungnir'] as const,
-  torso: ['mark-vi', 'scout', 'recon'] as const,
-  arm: ['mark-vi', 'odst', 'recon'] as const,
-  leg: ['mark-vi', 'jump-jet', 'odst'] as const,
+  helmet: ['mark-vi', 'odst', 'recon', 'eva', 'gungnir', 'eod', 'hayabusa', 'cqb'] as const,
+  torso: ['mark-vi', 'scout', 'recon', 'eod', 'hayabusa'] as const,
+  arm: ['mark-vi', 'odst', 'recon', 'eod', 'hayabusa'] as const,
+  leg: ['mark-vi', 'jump-jet', 'odst', 'eod', 'hayabusa'] as const,
 };
 
 // ─── Geometry Helpers ─────────────────────────────────────────────────────────
@@ -410,6 +436,216 @@ function buildHelmet_Gungnir(c: SpartanColors): VoxelData[] {
   return v;
 }
 
+function buildHelmet_EOD(c: SpartanColors): VoxelData[] {
+  const v: VoxelData[] = [];
+
+  // Neck
+  for (let x = -1; x <= 1; x++)
+    for (let z = -1; z <= 1; z++)
+      v.push({ x, y: 16, z, color: c.secondary });
+
+  // Bulky jaw and respirator canister filters (y=17)
+  for (let x = -2; x <= 2; x++) {
+    for (let z = -2; z <= 2; z++) {
+      const isFilter = Math.abs(x) === 2 && z === -2;
+      v.push({ x, y: 17, z, color: isFilter ? c.accent : c.secondary });
+    }
+  }
+  // Canisters sticking out forward
+  v.push({ x: -2, y: 17, z: -3, color: c.dark });
+  v.push({ x: 2, y: 17, z: -3, color: c.dark });
+
+  // Narrow inset horizontal visor slit (y=18-19)
+  for (let y = 18; y <= 19; y++) {
+    for (let x = -2; x <= 2; x++) {
+      for (let z = -2; z <= 2; z++) {
+        const isVisor = z === -2 && Math.abs(x) <= 1;
+        const isCheek = z === -2 && !isVisor;
+        v.push({
+          x, y, z,
+          color: isVisor ? c.visor : isCheek ? c.primary : z === 2 ? c.secondary : c.primary,
+          emissive: isVisor
+        });
+      }
+    }
+  }
+
+  // Back of head communication/filter block (y=18-20, z=2)
+  for (let y = 18; y <= 20; y++) {
+    for (let x = -1; x <= 1; x++) {
+      v.push({ x, y, z: 2, color: c.dark });
+    }
+  }
+
+  // Heavy flat brow ridge (y=20 front)
+  for (let x = -2; x <= 2; x++) {
+    v.push({ x, y: 20, z: -2, color: c.accent });
+  }
+
+  // Solid protective dome shell (y=20-22)
+  for (let y = 20; y <= 22; y++) {
+    for (let x = -2; x <= 2; x++) {
+      for (let z = -2; z <= 2; z++) {
+        if (y === 20 && z === -2) continue; // Brow placed
+        const isBack = z === 2;
+        v.push({ x, y, z, color: isBack ? c.secondary : c.primary });
+      }
+    }
+  }
+
+  // Flat protective cap (y=23)
+  for (let x = -2; x <= 2; x++) {
+    for (let z = -1; z <= 1; z++) {
+      v.push({ x, y: 23, z, color: c.primary });
+    }
+  }
+
+  return v;
+}
+
+function buildHelmet_Hayabusa(c: SpartanColors): VoxelData[] {
+  const v: VoxelData[] = [];
+
+  // Neck
+  for (let x = -1; x <= 1; x++)
+    for (let z = -1; z <= 1; z++)
+      v.push({ x, y: 16, z, color: c.secondary });
+
+  // Sharp pointed chin (y=17)
+  for (let x = -2; x <= 2; x++) {
+    for (let z = -2; z <= 2; z++) {
+      const isPoint = x === 0 && z === -2;
+      v.push({ x, y: 17, z, color: isPoint ? c.primary : c.secondary });
+    }
+  }
+  v.push({ x: 0, y: 17, z: -3, color: c.primary }); // Protruding chin spike
+
+  // Menacing ninja face mask + split visor slit (y=18-19)
+  for (let y = 18; y <= 19; y++) {
+    for (let x = -2; x <= 2; x++) {
+      for (let z = -2; z <= 2; z++) {
+        const isVisor = z === -2 && Math.abs(x) === 1;
+        const isCenterBar = z === -2 && x === 0;
+        const isCheek = z === -2 && Math.abs(x) === 2;
+        v.push({
+          x, y, z,
+          color: isVisor ? c.visor : isCenterBar ? c.dark : isCheek ? c.primary : z === 2 ? c.secondary : c.primary,
+          emissive: isVisor
+        });
+      }
+    }
+  }
+
+  // Samurai cheek guards sweeping back (y=18-21, x=±3, z=-1..1)
+  for (let y = 18; y <= 21; y++) {
+    for (let z = -1; z <= 1; z++) {
+      v.push({ x: -3, y, z, color: c.primary });
+      v.push({ x: 3, y, z, color: c.primary });
+    }
+  }
+
+  // Majestic Kabuto forehead crest/horn (y=20-22, x=0, z=-3)
+  for (let y = 20; y <= 22; y++) {
+    v.push({ x: 0, y, z: -3, color: c.accent, emissive: true });
+  }
+
+  // High back crest/samurai plume (y=22-25, z=2, x=0)
+  for (let y = 22; y <= 25; y++) {
+    v.push({ x: 0, y, z: 2, color: c.accent });
+  }
+
+  // Side accent spikes (y=22, x=±2, z=0)
+  v.push({ x: -2, y: 22, z: 0, color: c.dark });
+  v.push({ x: 2, y: 22, z: 0, color: c.dark });
+
+  // Main skull dome (y=20-22)
+  for (let y = 20; y <= 22; y++) {
+    for (let x = -2; x <= 2; x++) {
+      for (let z = -2; z <= 2; z++) {
+        const isBack = z === 2;
+        v.push({ x, y, z, color: isBack ? c.secondary : c.primary });
+      }
+    }
+  }
+
+  // Dome cap (y=23)
+  for (let x = -1; x <= 1; x++) {
+    for (let z = -1; z <= 1; z++) {
+      v.push({ x, y: 23, z, color: c.primary });
+    }
+  }
+
+  return v;
+}
+
+function buildHelmet_CQB(c: SpartanColors): VoxelData[] {
+  const v: VoxelData[] = [];
+
+  // Neck
+  for (let x = -1; x <= 1; x++)
+    for (let z = -1; z <= 1; z++)
+      v.push({ x, y: 16, z, color: c.secondary });
+
+  // Bulky jaw sweeping forward (y=17)
+  for (let x = -2; x <= 2; x++) {
+    for (let z = -2; z <= 2; z++) {
+      v.push({ x, y: 17, z, color: c.secondary });
+    }
+  }
+  // Front chin extensions
+  for (let x = -1; x <= 1; x++) {
+    v.push({ x, y: 17, z: -3, color: c.secondary });
+  }
+
+  // Iconic glowing T-Visor (y=18-20)
+  for (let y = 18; y <= 20; y++) {
+    for (let x = -2; x <= 2; x++) {
+      for (let z = -2; z <= 2; z++) {
+        const isVerticalVisor = z === -2 && x === 0;
+        const isHorizontalVisor = z === -2 && y >= 19;
+        const isVisor = isVerticalVisor || isHorizontalVisor;
+        const isCheek = z === -2 && !isVisor;
+        v.push({
+          x, y, z,
+          color: isVisor ? c.visor : isCheek ? c.primary : z === 2 ? c.secondary : c.primary,
+          emissive: isVisor
+        });
+      }
+    }
+  }
+
+  // Bulky protective dome (y=21-22)
+  for (let y = 21; y <= 22; y++) {
+    for (let x = -2; x <= 2; x++) {
+      for (let z = -2; z <= 2; z++) {
+        const isRidge = x === 0 && z === -2;
+        v.push({ x, y, z, color: isRidge ? c.dark : z === 2 ? c.secondary : c.primary });
+      }
+    }
+  }
+
+  // Center forehead/ridge cap (y=23, x=0, z=-2..1)
+  for (let z = -2; z <= 1; z++) {
+    v.push({ x: 0, y: 23, z, color: c.dark });
+  }
+
+  // Side ventilation canisters/ears (y=19-20, x=±3, z=0)
+  for (let y = 19; y <= 20; y++) {
+    v.push({ x: -3, y, z: 0, color: c.dark });
+    v.push({ x: 3, y, z: 0, color: c.dark });
+  }
+
+  // Top Dome Cap (y=23)
+  for (let x = -2; x <= 2; x++) {
+    if (x === 0) continue; // Already placed ridge
+    for (let z = -1; z <= 1; z++) {
+      v.push({ x, y: 23, z, color: c.primary });
+    }
+  }
+
+  return v;
+}
+
 // ─── TORSO PRESETS ────────────────────────────────────────────────────────────
 // Pivot at (0, 8, 0). Chest spans y=9..15 (7 wide x=-3..3, 5 deep z=-2..2).
 
@@ -517,6 +753,91 @@ function buildTorso_Recon(c: SpartanColors): VoxelData[] {
   // Right shoulder data stripe (visor emissive)
   for (let y = 13; y <= 15; y++)
     v.push({ x: 2, y, z: -2, color: c.visor, emissive: true });
+
+  return v;
+}
+
+function buildTorso_EOD(c: SpartanColors): VoxelData[] {
+  const v: VoxelData[] = [];
+
+  // Cinched waist with side plates (y=9-10)
+  for (let y = 9; y <= 10; y++) {
+    for (let x = -3; x <= 3; x++) {
+      for (let z = -1; z <= 1; z++) {
+        const isSidePlate = Math.abs(x) === 3 && z === 0;
+        v.push({ x, y, z, color: isSidePlate ? c.primary : c.secondary });
+      }
+    }
+  }
+
+  // Bulky chest plates (y=11-15)
+  for (let y = 11; y <= 15; y++) {
+    for (let x = -3; x <= 3; x++) {
+      for (let z = -2; z <= 2; z++) {
+        const isEdge = Math.abs(x) === 3;
+        const isBack = z === 2;
+        const isCollar = y === 15 && z === -2 && !isEdge;
+        v.push({
+          x, y, z,
+          color: isCollar ? c.accent : isEdge || isBack ? c.secondary : c.primary
+        });
+      }
+    }
+  }
+
+  // Front bulky harness canisters (y=12-14, x=±2, z=-3)
+  for (let y = 12; y <= 14; y++) {
+    v.push({ x: -2, y, z: -3, color: c.dark });
+    v.push({ x: 2, y, z: -3, color: c.dark });
+  }
+
+  // Center reactor (y=13, x=0, z=-2)
+  v.push({ x: 0, y: 13, z: -2, color: c.visor, emissive: true });
+
+  // Back exhaust ports (y=12-14)
+  for (let y = 12; y <= 14; y++) {
+    v.push({ x: -1, y, z: 2, color: c.dark });
+    v.push({ x: 1, y, z: 2, color: c.dark });
+  }
+
+  return v;
+}
+
+function buildTorso_Hayabusa(c: SpartanColors): VoxelData[] {
+  const v: VoxelData[] = [];
+
+  // Waist (y=9-10)
+  for (let y = 9; y <= 10; y++)
+    for (let x = -2; x <= 2; x++)
+      for (let z = -1; z <= 1; z++)
+        v.push({ x, y, z, color: c.secondary });
+
+  // Chest with layered armor and sash (y=11-15)
+  for (let y = 11; y <= 15; y++) {
+    for (let x = -3; x <= 3; x++) {
+      for (let z = -2; z <= 2; z++) {
+        const isEdge = Math.abs(x) === 3;
+        const isBack = z === 2;
+        // Sash sweeps from left hip (x=-2, y=11) to right shoulder (x=2, y=15)
+        const sashX = y - 13; // y=11 -> x=-2; y=13 -> x=0; y=15 -> x=2
+        const isSash = z === -2 && x === sashX;
+        
+        v.push({
+          x, y, z,
+          color: isSash ? c.accent : isEdge || isBack ? c.secondary : c.primary
+        });
+      }
+    }
+  }
+
+  // Small glowing ninja chest mark (y=13, x=-1, z=-2)
+  v.push({ x: -1, y: 13, z: -2, color: c.visor, emissive: true });
+
+  // Shoulder plates (y=15, x=±3, z=-1..1)
+  for (let z = -1; z <= 1; z++) {
+    v.push({ x: -3, y: 15, z, color: c.highlight });
+    v.push({ x: 3, y: 15, z, color: c.highlight });
+  }
 
   return v;
 }
@@ -647,6 +968,95 @@ function buildLeftArm_Recon(c: SpartanColors): VoxelData[] {
   return v;
 }
 
+function buildLeftArm_EOD(c: SpartanColors): VoxelData[] {
+  const v: VoxelData[] = [];
+
+  // Heavy shoulder pauldron (y=13-15)
+  for (let y = 13; y <= 15; y++) {
+    for (let x = -7; x <= -4; x++) {
+      for (let z = -2; z <= 2; z++) {
+        const isOuter = x === -7;
+        const isBack = z === 2;
+        v.push({
+          x, y, z,
+          color: isOuter ? c.secondary : isBack ? c.secondary : c.primary
+        });
+      }
+    }
+  }
+
+  // Hazard/warning light panel (emissive, y=14 outer)
+  v.push({ x: -7, y: 14, z: 0, color: c.accent, emissive: true });
+
+  // Heavy bicep (y=10-12)
+  for (let y = 10; y <= 12; y++)
+    for (let x = -6; x <= -4; x++)
+      for (let z = -1; z <= 1; z++)
+        v.push({ x, y, z, color: c.secondary });
+
+  // Heavy elbow joint (y=9)
+  for (let x = -6; x <= -4; x++)
+    for (let z = -1; z <= 1; z++)
+      v.push({ x, y: 9, z, color: c.dark });
+
+  // Blocky forearm with outer forearm shield plate (y=7-8)
+  for (let y = 7; y <= 8; y++) {
+    for (let x = -6; x <= -4; x++) {
+      for (let z = -1; z <= 1; z++) {
+        v.push({ x, y, z, color: z === -1 ? c.primary : c.secondary });
+      }
+    }
+    // Extra shield
+    for (let z = -1; z <= 1; z++) {
+      v.push({ x: -7, y, z, color: c.primary });
+    }
+  }
+
+  return v;
+}
+
+function buildLeftArm_Hayabusa(c: SpartanColors): VoxelData[] {
+  const v: VoxelData[] = [];
+
+  // Shoulder pauldron base (y=13-15)
+  for (let y = 13; y <= 15; y++) {
+    for (let x = -6; x <= -4; x++) {
+      for (let z = -1; z <= 1; z++) {
+        v.push({ x, y, z, color: y === 15 ? c.highlight : c.primary });
+      }
+    }
+  }
+
+  // Curved samurai spike (extending outward/upward)
+  v.push({ x: -7, y: 14, z: 0, color: c.highlight });
+  v.push({ x: -8, y: 15, z: 0, color: c.accent });
+
+  // Sleek bicep (y=10-12)
+  for (let y = 10; y <= 12; y++)
+    for (let x = -6; x <= -4; x++)
+      for (let z = -1; z <= 1; z++)
+        v.push({ x, y, z, color: c.primary });
+
+  // Elbow (y=9)
+  for (let x = -6; x <= -4; x++)
+    for (let z = -1; z <= 1; z++)
+      v.push({ x, y: 9, z, color: c.secondary });
+
+  // Forearm with front wrist blade gauntlet (y=7-8)
+  for (let y = 7; y <= 8; y++) {
+    for (let x = -6; x <= -4; x++) {
+      for (let z = -1; z <= 1; z++) {
+        v.push({ x, y, z, color: c.secondary });
+      }
+    }
+  }
+  // Wrist blades
+  v.push({ x: -5, y: 7, z: -2, color: c.accent });
+  v.push({ x: -5, y: 8, z: -2, color: c.accent });
+
+  return v;
+}
+
 // ─── LEG PRESETS (LEFT SIDE) ──────────────────────────────────────────────────
 // Pivot at (-2.5, 7, 0). Voxels at x=-4..-1, y=0..6, z=-1..1.
 
@@ -754,6 +1164,79 @@ function buildLeftLeg_ODST(c: SpartanColors): VoxelData[] {
   return v;
 }
 
+function buildLeftLeg_EOD(c: SpartanColors): VoxelData[] {
+  const v: VoxelData[] = [];
+
+  // Heavy boot (y=0-1)
+  for (let y = 0; y <= 1; y++) {
+    for (let x = -4; x <= -1; x++) {
+      for (let z = -2; z <= 2; z++) {
+        v.push({ x, y, z, color: y === 0 ? c.dark : c.secondary });
+      }
+    }
+  }
+
+  // Thick shin plate (y=2-5)
+  for (let y = 2; y <= 5; y++) {
+    for (let x = -4; x <= -1; x++) {
+      for (let z = -1; z <= 1; z++) {
+        v.push({ x, y, z, color: c.secondary });
+      }
+    }
+    // Bulk front armor plate
+    for (let x = -3; x <= -2; x++) {
+      v.push({ x, y, z: -2, color: c.primary });
+    }
+  }
+
+  // Hazard status panel (emissive)
+  v.push({ x: -3, y: 4, z: -2, color: c.accent, emissive: true });
+
+  // Heavy knee guard (y=6)
+  for (let x = -4; x <= -1; x++) {
+    for (let z = -1; z <= 1; z++) {
+      v.push({ x, y: 6, z, color: c.secondary });
+    }
+  }
+  v.push({ x: -3, y: 6, z: -2, color: c.dark });
+  v.push({ x: -2, y: 6, z: -2, color: c.dark });
+
+  return v;
+}
+
+function buildLeftLeg_Hayabusa(c: SpartanColors): VoxelData[] {
+  const v: VoxelData[] = [];
+
+  // Boot (y=0-1)
+  for (let y = 0; y <= 1; y++)
+    for (let x = -4; x <= -1; x++)
+      for (let z = -1; z <= 1; z++)
+        v.push({ x, y, z, color: y === 0 ? c.dark : c.primary });
+
+  // Sleek shin guards (y=2-5)
+  for (let y = 2; y <= 5; y++) {
+    for (let x = -4; x <= -1; x++) {
+      for (let z = -1; z <= 1; z++) {
+        v.push({ x, y, z, color: c.primary });
+      }
+    }
+    // Front angled ridge greaves
+    v.push({ x: -3, y, z: -2, color: c.highlight });
+    v.push({ x: -2, y, z: -2, color: c.highlight });
+  }
+
+  // Sharp samurai knee armor cap pointing forward (y=6)
+  for (let x = -4; x <= -1; x++) {
+    for (let z = -1; z <= 1; z++) {
+      v.push({ x, y: 6, z, color: c.secondary });
+    }
+  }
+  v.push({ x: -3, y: 6, z: -2, color: c.accent });
+  v.push({ x: -2, y: 6, z: -2, color: c.accent });
+
+  return v;
+}
+
 // ─── HIP BUILDER ──────────────────────────────────────────────────────────────
 // Pivot at (0, 0, 0). Voxels at y=7..8, x=-3..3, z=-1..1.
 
@@ -769,6 +1252,127 @@ function buildHip(c: SpartanColors): VoxelData[] {
     }
   }
   return v;
+}
+
+export function applyPaintJob(voxels: VoxelData[], slot: string, paintJob?: ArmorPaintJob) {
+  if (!paintJob) return;
+
+  // 1. Apply base colors if any
+  const baseColor = paintJob.baseColors?.[slot as keyof typeof paintJob.baseColors];
+  if (baseColor) {
+    voxels.forEach((v) => {
+      if (!v.emissive) {
+        v.color = baseColor;
+      }
+    });
+  }
+
+  // 2. Apply per-voxel colors if any
+  const voxelColors = paintJob[slot as keyof ArmorPaintJob] as { [key: string]: string } | undefined;
+  if (voxelColors) {
+    voxels.forEach((v) => {
+      const key = `${v.x},${v.y},${v.z}`;
+      if (voxelColors[key] !== undefined) {
+        v.color = voxelColors[key];
+      }
+    });
+  }
+
+  // 3. Apply custom emissive colors if any
+  const emissiveMap = paintJob.emissive?.[slot as keyof typeof paintJob.emissive] as { [key: string]: boolean } | undefined;
+  if (emissiveMap) {
+    voxels.forEach((v) => {
+      const key = `${v.x},${v.y},${v.z}`;
+      if (emissiveMap[key] !== undefined) {
+        v.emissive = emissiveMap[key];
+      }
+    });
+  }
+}
+
+export function getVoxelSegmentData(slot: string, preset: string, customHue?: number): VoxelData[] {
+  const primaryHex = customHue !== undefined
+    ? `hsl(${customHue}, 85%, 50%)`
+    : '#3b82f6';
+  const visorHex = customHue !== undefined
+    ? `hsl(${customHue}, 95%, 70%)`
+    : '#10b981';
+  const highlightHex = customHue !== undefined
+    ? `hsl(${customHue}, 75%, 65%)`
+    : '#60a5fa';
+  const accentHex = customHue !== undefined
+    ? `hsl(${customHue}, 90%, 75%)`
+    : '#93c5fd';
+
+  const colors: SpartanColors = {
+    primary: primaryHex,
+    secondary: '#1e293b',
+    visor: visorHex,
+    accent: accentHex,
+    dark: '#0f172a',
+    highlight: highlightHex,
+  };
+
+  if (slot === 'helmet') {
+    const fn = {
+      'mark-vi': buildHelmet_MarkVI,
+      'odst': buildHelmet_ODST,
+      'recon': buildHelmet_Recon,
+      'eva': buildHelmet_EVA,
+      'gungnir': buildHelmet_Gungnir,
+      'eod': buildHelmet_EOD,
+      'hayabusa': buildHelmet_Hayabusa,
+      'cqb': buildHelmet_CQB,
+    }[preset] || buildHelmet_MarkVI;
+    return fn(colors);
+  } else if (slot === 'torso') {
+    const fn = {
+      'mark-vi': buildTorso_MarkVI,
+      'scout': buildTorso_Scout,
+      'recon': buildTorso_Recon,
+      'eod': buildTorso_EOD,
+      'hayabusa': buildTorso_Hayabusa,
+    }[preset] || buildTorso_MarkVI;
+    return fn(colors);
+  } else if (slot === 'leftArm') {
+    const fn = {
+      'mark-vi': buildLeftArm_MarkVI,
+      'odst': buildLeftArm_ODST,
+      'recon': buildLeftArm_Recon,
+      'eod': buildLeftArm_EOD,
+      'hayabusa': buildLeftArm_Hayabusa,
+    }[preset] || buildLeftArm_MarkVI;
+    return fn(colors);
+  } else if (slot === 'rightArm') {
+    const fn = {
+      'mark-vi': buildLeftArm_MarkVI,
+      'odst': buildLeftArm_ODST,
+      'recon': buildLeftArm_Recon,
+      'eod': buildLeftArm_EOD,
+      'hayabusa': buildLeftArm_Hayabusa,
+    }[preset] || buildLeftArm_MarkVI;
+    return mirrorX(fn(colors));
+  } else if (slot === 'leftLeg') {
+    const fn = {
+      'mark-vi': buildLeftLeg_MarkVI,
+      'jump-jet': buildLeftLeg_JumpJet,
+      'odst': buildLeftLeg_ODST,
+      'eod': buildLeftLeg_EOD,
+      'hayabusa': buildLeftLeg_Hayabusa,
+    }[preset] || buildLeftLeg_MarkVI;
+    return fn(colors);
+  } else if (slot === 'rightLeg') {
+    const fn = {
+      'mark-vi': buildLeftLeg_MarkVI,
+      'jump-jet': buildLeftLeg_JumpJet,
+      'odst': buildLeftLeg_ODST,
+      'eod': buildLeftLeg_EOD,
+      'hayabusa': buildLeftLeg_Hayabusa,
+    }[preset] || buildLeftLeg_MarkVI;
+    return mirrorX(fn(colors));
+  }
+
+  return [];
 }
 
 // ─── SPARTAN MODEL BUILDER ────────────────────────────────────────────────────
@@ -856,32 +1460,45 @@ export function buildVoxelSpartanModel(
     'recon': buildHelmet_Recon,
     'eva': buildHelmet_EVA,
     'gungnir': buildHelmet_Gungnir,
+    'eod': buildHelmet_EOD,
+    'hayabusa': buildHelmet_Hayabusa,
+    'cqb': buildHelmet_CQB,
   }[loadout.helmet ?? 'mark-vi'];
 
   const torsoFn = {
     'mark-vi': buildTorso_MarkVI,
     'scout': buildTorso_Scout,
     'recon': buildTorso_Recon,
+    'eod': buildTorso_EOD,
+    'hayabusa': buildTorso_Hayabusa,
   }[loadout.torso ?? 'mark-vi'];
 
   const leftArmFn = {
     'mark-vi': buildLeftArm_MarkVI,
     'odst': buildLeftArm_ODST,
     'recon': buildLeftArm_Recon,
+    'eod': buildLeftArm_EOD,
+    'hayabusa': buildLeftArm_Hayabusa,
   }[loadout.arm ?? 'mark-vi'];
 
   const leftLegFn = {
     'mark-vi': buildLeftLeg_MarkVI,
     'jump-jet': buildLeftLeg_JumpJet,
     'odst': buildLeftLeg_ODST,
+    'eod': buildLeftLeg_EOD,
+    'hayabusa': buildLeftLeg_Hayabusa,
   }[loadout.leg ?? 'mark-vi'];
+
+  const paintJob = loadout.paintJob;
 
   // --- LEGS ---
   const leftLegVoxels = leftLegFn(colors);
+  applyPaintJob(leftLegVoxels, 'leftLeg', paintJob);
   const leftLegGroup = createSegmentGroup(leftLegVoxels, -2.5, 7, 0);
   leftLegGroup.position.set(-2.5 * scale, 7 * scale, 0);
 
-  const rightLegVoxels = mirrorX(leftLegVoxels);
+  const rightLegVoxels = mirrorX(leftLegFn(colors));
+  applyPaintJob(rightLegVoxels, 'rightLeg', paintJob);
   const rightLegGroup = createSegmentGroup(rightLegVoxels, 2.5, 7, 0);
   rightLegGroup.position.set(2.5 * scale, 7 * scale, 0);
 
@@ -893,22 +1510,26 @@ export function buildVoxelSpartanModel(
 
   // --- UPPER TORSO ---
   const torsoVoxels = torsoFn(colors);
+  applyPaintJob(torsoVoxels, 'torso', paintJob);
   const upperTorsoGroup = createSegmentGroup(torsoVoxels, 0, 8, 0);
   upperTorsoGroup.position.set(0, 8 * scale, 0);
 
   // --- ARMS ---
   const leftArmVoxels = leftArmFn(colors);
+  applyPaintJob(leftArmVoxels, 'leftArm', paintJob);
   const leftArmGroup = createSegmentGroup(leftArmVoxels, -5.5, 15, 0);
   leftArmGroup.position.set(-5.5 * scale, (15 - 8) * scale, 0);
   upperTorsoGroup.add(leftArmGroup);
 
-  const rightArmVoxels = mirrorX(leftArmVoxels);
+  const rightArmVoxels = mirrorX(leftArmFn(colors));
+  applyPaintJob(rightArmVoxels, 'rightArm', paintJob);
   const rightArmGroup = createSegmentGroup(rightArmVoxels, 5.5, 15, 0);
   rightArmGroup.position.set(5.5 * scale, (15 - 8) * scale, 0);
   upperTorsoGroup.add(rightArmGroup);
 
   // --- HEAD ---
   const headVoxels = helmetFn(colors);
+  applyPaintJob(headVoxels, 'helmet', paintJob);
   const headGroup = createSegmentGroup(headVoxels, 0, 16, 0);
   headGroup.position.set(0, (16 - 8) * scale, 0);
   upperTorsoGroup.add(headGroup);

@@ -1,9 +1,10 @@
 import { AIBehaviorPreset, AIPreset, UniversalSettings } from '../types';
-import { AIResolvedKnobs } from './aiTuning';
+import { AIResolvedKnobs, DerivedAIParams } from './aiTuning';
 import {
   AIArchetypeId,
   applyPersonalityKnobs,
   playstyleToBehavior,
+  resolveDerivedAIParams,
 } from './aiPersonalities';
 
 /** Per-slot AI identity and tuning — same shape and full ranges for every combatant. */
@@ -21,6 +22,12 @@ export interface RosterSlotConfig {
   anticipationFactor?: number;
   movementComplexity?: number;
   weaponSwapIQ?: number;
+  /** Advanced behavior overrides (unset = derived / neutral). */
+  spatialIQ?: number;
+  feintChance?: number;
+  pressureAggression?: number;
+  spacingBand?: number;
+  skipPressure?: boolean;
 }
 
 export type RosterSlotOverride = Partial<RosterSlotConfig>;
@@ -61,6 +68,11 @@ export function rosterTemplateFromSettings(settings: UniversalSettings): RosterS
     anticipationFactor: settings.aiAnticipationFactor,
     movementComplexity: settings.aiMovementComplexity,
     weaponSwapIQ: settings.aiWeaponSwapIQ,
+    spatialIQ: settings.aiSpatialIQ,
+    feintChance: settings.aiFeintChance,
+    pressureAggression: settings.aiPressureAggression,
+    spacingBand: settings.aiSpacingBand,
+    skipPressure: settings.aiSkipPressure,
   };
 }
 
@@ -189,6 +201,33 @@ export function resolveKnobsFromRosterSlot(
 
   const archetypeId = slot.archetype && slot.archetype !== 'none' ? slot.archetype : undefined;
   return applyPersonalityKnobs(baseKnobs, archetypeId);
+}
+
+/**
+ * Build an "effective settings" view where this slot's advanced overrides win over the
+ * global Sandbox settings, so derived AI params (spatial IQ, feint, pressure) are per-bot.
+ */
+function effectiveSettingsForSlot(
+  slot: RosterSlotConfig,
+  settings: UniversalSettings
+): UniversalSettings {
+  return {
+    ...settings,
+    aiSpatialIQ: slot.spatialIQ ?? settings.aiSpatialIQ,
+    aiFeintChance: slot.feintChance ?? settings.aiFeintChance,
+    aiPressureAggression: slot.pressureAggression ?? settings.aiPressureAggression,
+  };
+}
+
+/** Resolve derived AI params (spatial IQ, feint, pressure) for one merged roster slot. */
+export function resolveDerivedFromRosterSlot(
+  slot: RosterSlotConfig,
+  aiPresets: AIPreset[],
+  settings: UniversalSettings
+): DerivedAIParams {
+  const knobs = resolveKnobsFromRosterSlot(slot, aiPresets, settings);
+  const archetypeId = slot.archetype && slot.archetype !== 'none' ? slot.archetype : undefined;
+  return resolveDerivedAIParams(effectiveSettingsForSlot(slot, settings), knobs, archetypeId);
 }
 
 export interface LegacyRosterProps {

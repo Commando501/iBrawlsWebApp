@@ -6,7 +6,7 @@
 import React, { useRef, useEffect, useState } from 'react';
 import * as THREE from 'three';
 import { sfx } from './AudioEngine';
-import { buildGravityHammerModel, buildVoxelSpartanModel, buildKatarSwordModel, buildPistolModel } from './VoxelModels';
+import { buildGravityHammerModel, buildVoxelSpartanModel, buildKatarSwordModel, buildPistolModel, CharacterLoadout, AVAILABLE_PRESETS } from './VoxelModels';
 import { GameStats, Stance, WeaponState, AIBehaviorState, UniversalSettings, DeathEvent, Keybindings, DEFAULT_KEYBINDINGS, DeviceInfo, AIBehaviorPreset, MedalInfo, Combatant, ReplayFrame, ReplayFile, CustomMapData, CustomMapObject } from '../types';
 import { cacheReplay } from '../game/theaterDatabase';
 import {
@@ -47,9 +47,10 @@ import {
   shouldAbortCombo,
 } from '../game/aiComboEngine';
 import { deriveMatchStateMultipliers, shouldAvoidCoinFlipTrade, applyMatchAggression } from '../game/aiTuning';
-import { getPersonalityFlags, resolveDerivedAIParams } from '../game/aiPersonalities';
+import { resolvePersonalityFlags } from '../game/aiPersonalities';
 import {
   resolveKnobsFromRosterSlot,
+  resolveDerivedFromRosterSlot,
   resolveRosterSlotForCombatant,
   type LegacyRosterProps,
 } from '../game/rosterSlotConfig';
@@ -202,6 +203,7 @@ interface GrifballGameProps {
   customMap?: CustomMapData;
   replayData?: ReplayFile | null;
   onExitReplay?: () => void;
+  playerLoadout?: CharacterLoadout;
 }
 
 const getInwardSpawnYaw = (spawnPos: THREE.Vector3): number => {
@@ -464,6 +466,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
   customMap,
   replayData = null,
   onExitReplay,
+  playerLoadout,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -1121,6 +1124,23 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     return resolveKnobsFromRosterSlot(resolveRosterSlot(botId), aiPresets, s.settings);
   };
 
+  const resolveBotDerived = (botId: string) => {
+    const s = stateRef.current;
+    return resolveDerivedFromRosterSlot(resolveRosterSlot(botId), aiPresets, s.settings);
+  };
+
+  const resolveBotFlags = (botId: string) => {
+    const s = stateRef.current;
+    const slot = resolveRosterSlot(botId);
+    return resolvePersonalityFlags(
+      slot.archetype && slot.archetype !== 'none' ? slot.archetype : undefined,
+      {
+        spacingBand: slot.spacingBand ?? s.settings.aiSpacingBand,
+        skipPressure: slot.skipPressure ?? s.settings.aiSkipPressure,
+      }
+    );
+  };
+
   const getMatchScoreContext = () => {
     const s = stateRef.current;
     return {
@@ -1131,13 +1151,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
   };
 
   const getBotPressureAggression = (botId: string): number => {
-    const s = stateRef.current;
-    const knobs = resolveBotKnobs(botId);
-    const baseAggression = resolveDerivedAIParams(
-      s.settings,
-      knobs,
-      resolveBotArchetype(botId)
-    ).pressureAggression;
+    const baseAggression = resolveBotDerived(botId).pressureAggression;
     const matchMultipliers = deriveMatchStateMultipliers(
       getMatchScoreContext(),
       baseAggression / 100
@@ -1151,7 +1165,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     targetHp: number,
     targetInvuln: number
   ): boolean => {
-    const personalityFlags = getPersonalityFlags(resolveBotArchetype(botId));
+    const personalityFlags = resolveBotFlags(botId);
     if (personalityFlags.skipPressure) {
       return false;
     }
@@ -3339,7 +3353,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
     // Build new spartan with custom hue.
     const isEnemyBot = !isMultiplayer;
-    const enemyGroup = buildVoxelSpartanModel(isEnemyBot, hue);
+    const isLocalClient = isMultiplayer && multiplayerRole === 'client';
+    const enemyGroup = buildVoxelSpartanModel(isEnemyBot, hue, isLocalClient ? playerLoadout : undefined);
     enemyGroup.position.copy(multiplayerRole === 'observer' ? s.clientPos : mai()!.pos);
     scene.add(enemyGroup);
     threeRef.current.enemyGroup = enemyGroup;
@@ -3384,7 +3399,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     }
 
     // Build Blue team spartan model for Host
-    const hostGroup = buildVoxelSpartanModel(false, hue);
+    const isLocalHost = !isMultiplayer || multiplayerRole === 'host';
+    const hostGroup = buildVoxelSpartanModel(false, hue, isLocalHost ? playerLoadout : undefined);
     hostGroup.position.copy(multiplayerRole === 'observer' ? s.hostPos : s.playerPos);
     scene.add(hostGroup);
     threeRef.current.hostGroup = hostGroup;
@@ -3508,11 +3524,25 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     group: THREE.Group;
     hammer: THREE.Group;
     sword: THREE.Group;
-    pistol: THREE.Group;
+    pistol?: THREE.Group;
+  };
+
+  const getRandomLoadout = (): CharacterLoadout => {
+    const helmets = AVAILABLE_PRESETS.helmet;
+    const torsos = AVAILABLE_PRESETS.torso;
+    const arms = AVAILABLE_PRESETS.arm;
+    const legs = AVAILABLE_PRESETS.leg;
+    return {
+      helmet: helmets[Math.floor(Math.random() * helmets.length)],
+      torso: torsos[Math.floor(Math.random() * torsos.length)],
+      arm: arms[Math.floor(Math.random() * arms.length)],
+      leg: legs[Math.floor(Math.random() * legs.length)],
+    };
   };
 
   const buildCombatantMeshRig = (scene: THREE.Scene, hue: number, isEnemyBot = false): CombatantMeshRig => {
-    const group = buildVoxelSpartanModel(isEnemyBot, hue);
+    const botLoadout = isEnemyBot ? getRandomLoadout() : undefined;
+    const group = buildVoxelSpartanModel(isEnemyBot, hue, botLoadout);
     group.userData.appliedHue = hue;
     scene.add(group);
 
@@ -10430,11 +10460,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     const playstyleVal = resolveBotKnobs(botId).aiPlaystyle;
     const playstyleFactor = playstyleVal / 100;
     const recoveringTargetBonus = (1.0 - Math.abs(playstyleFactor - 0.5) * 2.0) * 200.0;
-    const targetSelectionSpatialIQ = resolveDerivedAIParams(
-      s.settings,
-      resolveBotKnobs(botId),
-      resolveBotArchetype(botId)
-    ).spatialIQ;
+    const targetSelectionSpatialIQ = resolveBotDerived(botId).spatialIQ;
 
     let bestTarget: TacticalTargetCandidate | null = null;
     let bestScore = -Infinity;
@@ -10540,12 +10566,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     } = {}
   ) => {
     const s = stateRef.current;
-    const knobs = resolveBotKnobs(botId);
-    const baseAggression = resolveDerivedAIParams(
-      s.settings,
-      knobs,
-      resolveBotArchetype(botId)
-    ).pressureAggression;
+    const baseAggression = resolveBotDerived(botId).pressureAggression;
     const matchMultipliers = deriveMatchStateMultipliers(getMatchScoreContext(), baseAggression / 100);
     
     if (difficulty === 'easy') {
@@ -10954,17 +10975,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     }
 
     // Playstyle calculations (hybrid tuning layer)
-    const botArchetype = resolveBotArchetype(botId);
-    const derivedParams = resolveDerivedAIParams(s.settings, {
-      difficulty,
-      reactionLatency,
-      anticipationFactor,
-      movementComplexity,
-      weaponSwapIQ,
-      aiPlaystyle,
-      weaponPrioritization,
-    }, botArchetype);
-    const personalityFlags = getPersonalityFlags(botArchetype);
+    const derivedParams = resolveBotDerived(botId);
+    const personalityFlags = resolveBotFlags(botId);
     const matchMultipliers = deriveMatchStateMultipliers(
       {
         scorePlayer: s.scorePlayer,

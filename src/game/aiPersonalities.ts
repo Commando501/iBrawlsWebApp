@@ -157,6 +157,28 @@ export function getPersonalityFlags(id?: string | null): AIPersonalityFlags {
   return getArchetypeDef(id)?.flags ?? NEUTRAL_PERSONALITY_FLAGS;
 }
 
+export interface PersonalityFlagOverrides {
+  spacingBand?: number;
+  skipPressure?: boolean;
+}
+
+/**
+ * Archetype flags as a base, with any defined per-slot/custom overrides winning.
+ * Used so a Custom AI Behavior build can set spacing/skip-pressure independent of archetype.
+ */
+export function resolvePersonalityFlags(
+  id?: string | null,
+  overrides?: PersonalityFlagOverrides
+): AIPersonalityFlags {
+  const base = getPersonalityFlags(id);
+  if (!overrides) return base;
+  return {
+    ...base,
+    spacingBand: overrides.spacingBand ?? base.spacingBand,
+    skipPressure: overrides.skipPressure ?? base.skipPressure,
+  };
+}
+
 export function applyPersonalityKnobs(
   knobs: AIResolvedKnobs,
   id?: string | null
@@ -209,7 +231,7 @@ export function applyArchetypeToSettings(
   }
 
   const o = def.knobOverrides;
-  return {
+  const filled: UniversalSettings = {
     ...settings,
     aiArchetype: archetypeId,
     aiReactionLatency: o.aiReactionLatency ?? settings.aiReactionLatency,
@@ -218,6 +240,26 @@ export function applyArchetypeToSettings(
     aiWeaponSwapIQ: o.aiWeaponSwapIQ ?? settings.aiWeaponSwapIQ,
     aiPlaystyle: o.aiPlaystyle ?? settings.aiPlaystyle,
     aiWeaponPrioritization: o.aiWeaponPrioritization ?? settings.aiWeaponPrioritization,
+    aiSpacingBand: def.flags.spacingBand,
+    aiSkipPressure: def.flags.skipPressure,
+  };
+
+  // Seed the advanced derived dials from this archetype's knobs so the preset fills every control.
+  const knobs: AIResolvedKnobs = {
+    difficulty: 'custom',
+    reactionLatency: filled.aiReactionLatency ?? 0.25,
+    anticipationFactor: filled.aiAnticipationFactor ?? 0.4,
+    movementComplexity: filled.aiMovementComplexity ?? 50,
+    weaponSwapIQ: filled.aiWeaponSwapIQ ?? 50,
+    aiPlaystyle: filled.aiPlaystyle ?? 50,
+    weaponPrioritization: filled.aiWeaponPrioritization ?? 50,
+  };
+  const derived = deriveAIParams(filled, knobs);
+  return {
+    ...filled,
+    aiSpatialIQ: derived.spatialIQ,
+    aiFeintChance: clampPercent(derived.feintChance * def.flags.feintBias),
+    aiPressureAggression: derived.pressureAggression,
   };
 }
 
