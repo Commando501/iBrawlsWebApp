@@ -1450,7 +1450,14 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
             }
           } else if (wState === 'recovering') {
             wTimer += dt;
-            if (wTimer >= 0.3) {
+            // Recovery mirrors the player/main-AI exactly (sword slash → swordSlashReload,
+            // hammer overhead → hammerReloadTime). Previously hardcoded 0.3s, which let bots
+            // recover in roughly half the configured time and re-swing ~2x faster than the
+            // player. Never hardcode this — it must track the gameplay mechanic settings.
+            const reload = swingIsSword
+              ? (s.settings.swordSlashReload ?? 0.6)
+              : (s.settings.hammerReloadTime ?? 0.6);
+            if (wTimer >= reload) {
               wState = 'ready';
               wTimer = 0;
             }
@@ -11316,6 +11323,17 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     // shapes spacing, aggression and lunge range — just not raw reload timing.)
     const cooldownMult = 1;
 
+    // Single source of truth for AI attack reloads. Always the player's configured
+    // mechanic settings (mirrors the player exactly) so no attack path can ever swing
+    // faster than the user's gameplay dials. Never hardcode a reload literal — route it
+    // through here. Hammer side-swipe (melee) reloads on hammerMeleeReload; the wide
+    // overhead/level hammer and sword use hammerReloadTime / swordSlashReload.
+    const weaponReloadTime = (weapon: 'hammer' | 'sword', isMelee = false): number => {
+      if (weapon === 'sword') return s.settings.swordSlashReload ?? 0.6;
+      if (isMelee) return s.settings.hammerMeleeReload ?? 0.5;
+      return s.settings.hammerReloadTime ?? 0.6;
+    };
+
     const targetIsProtected = target.invulnerabilityTimer > 0;
     const targetIsLunging = target.isLunging;
 
@@ -11641,13 +11659,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
           attackDistanceToTarget <= MELEE_HAMMER_SWIPE_REACH &&
           Math.random() < 0.4;
         
-        if (activeWeapon === 'sword') {
-          timer = (s.settings.swordSlashReload ?? 0.6) * cooldownMult;
-        } else if (isHammerMelee) {
-          timer = (s.settings.hammerMeleeReload ?? 0.5) * cooldownMult;
-        } else {
-          timer = (s.settings.hammerReloadTime ?? 0.6) * cooldownMult;
-        }
+        timer = weaponReloadTime(activeWeapon, isHammerMelee) * cooldownMult;
 
         triggerCombatantAttack(self, activeWeapon, isHammerMelee);
         weaponState = isHammerMelee ? 'melee_up' : 'swing_up';
@@ -11803,13 +11815,13 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
       if (tacticalDecision.bulltrueCounter === 'hammer' && canStartWeaponAction && activeWeapon === 'hammer' && weaponState === 'ready') {
         state = 'COOLDOWN';
-        timer = (s.settings.hammerReloadTime ?? 1.1) * cooldownMult;
+        timer = weaponReloadTime('hammer') * cooldownMult;
         triggerCombatantAttack(self, 'hammer');
         weaponState = 'swing_up';
         startedBulltrueCounter = true;
       } else if (tacticalDecision.bulltrueCounter === 'sword' && canStartWeaponAction && activeWeapon === 'sword' && weaponState === 'ready') {
         state = 'COOLDOWN';
-        timer = (s.settings.swordSlashReload ?? 0.6) * cooldownMult;
+        timer = weaponReloadTime('sword') * cooldownMult;
         triggerCombatantAttack(self, 'sword');
         weaponState = 'swing_up';
         startedBulltrueCounter = true;
@@ -11886,7 +11898,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
       if ((fallingIntoHammer || canReachBody) && Math.random() < 0.18 + tunedAnticipationFactor * 0.42) {
         state = 'COOLDOWN';
-        timer = 1.0 * cooldownMult;
+        timer = weaponReloadTime('hammer') * cooldownMult;
         triggerCombatantAttack(self, 'hammer');
       } else if (!enemyInKillRange && verticalDeltaToTarget > 2.0 && distanceToTarget <= resolvedDangerZone + 4.5 && Math.random() < 0.012 + tunedAnticipationFactor * 0.035) {
         if (startAIHammerJump(self, pos, vel, toTarget, 'offensive')) {
@@ -12250,7 +12262,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         vel.x = 0;
         vel.z = 0;
         state = 'COOLDOWN';
-        timer = (activeWeapon === 'sword' ? (s.settings.swordSlashReload ?? 0.6) : 1.1) * cooldownMult;
+        timer = weaponReloadTime(activeWeapon) * cooldownMult;
         triggerCombatantAttack(self, activeWeapon);
         weaponState = 'swing_up';
         constrainCombatantToArena(pos, vel);
@@ -12583,7 +12595,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
             }
           } else {
             state = 'COOLDOWN';
-            timer = (activeWeapon === 'sword' ? (s.settings.swordSlashReload ?? 0.6) : 1.1) * cooldownMult;
+            timer = weaponReloadTime(activeWeapon) * cooldownMult;
             triggerCombatantAttack(self, activeWeapon);
           }
           }
@@ -12637,11 +12649,9 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
           };
 
           if (canStartWeaponAction && shouldPressureReSwing(pressureAttack) && !isCoordAttackBlocked()) {
-            const baseCooldown = activeWeapon === 'sword'
-              ? (s.settings.swordSlashReload ?? 0.6)
-              : 1.1;
             // Pressure re-swings reload at the configured rate — pressure aggression
             // no longer shortens reload below the player's mechanic settings.
+            const baseCooldown = weaponReloadTime(activeWeapon);
             timer = Math.max(timer, baseCooldown);
             triggerCombatantAttack(self, activeWeapon);
             weaponState = 'swing_up';
