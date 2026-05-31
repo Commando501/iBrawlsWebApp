@@ -1329,7 +1329,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
   function updateCharacterSkeletalAnimations(dt: number) {
     const s = stateRef.current;
 
-    if (s.isObserverMode) {
+    if (s.isObserverMode && !replayData) {
       // Animate Host Group (Blue Spartan)
       if (threeRef.current.hostGroup) {
         const hostData = getSpectateTargetData('host');
@@ -1819,7 +1819,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       });
     };
 
-    if (s.isObserverMode) {
+    if (s.isObserverMode && !replayData) {
       const remote = getPrimaryRemoteOpponent(s.otherPlayers, opponentClientId);
       updateBlinking(threeRef.current.enemyGroup, (remote?.invulnerabilityTimer ?? 0) > 0);
     }
@@ -1835,7 +1835,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     }
 
     // Manage spectator model visibility to prevent camera head clipping
-    if (s.isObserverMode) {
+    if (s.isObserverMode && !replayData) {
       const hostData = getSpectateTargetData('host');
       const clientData = getSpectateTargetData('client');
       
