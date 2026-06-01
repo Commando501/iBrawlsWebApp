@@ -554,6 +554,9 @@ export interface CustomMapObject {
     | 'rainy_streets_asphalt' | 'rainy_streets_neon_glow' | 'rainy_streets_dog_billboard'
     | 'winter_ice' | 'winter_snow' | 'winter_glacier_glass'
     | 'stadium_steel_grid' | 'stadium_scoreboard_screen' | 'stadium_advertisement_sapphire' | 'stadium_advertisement_gauss';
+  locked?: boolean;
+  hidden?: boolean;
+  folderId?: string | null;
 }
 
 export interface CustomMapPointLight {
@@ -574,6 +577,14 @@ export interface CustomMapLighting {
   pointLights: CustomMapPointLight[];
 }
 
+export interface CustomMapFolder {
+  id: string;
+  name: string;
+  locked: boolean;
+  hidden: boolean;
+  collapsed: boolean;
+}
+
 export interface CustomMapData {
   id: string;
   name: string;
@@ -589,6 +600,7 @@ export interface CustomMapData {
   spawnPoints: { x: number; y: number; z: number }[];
   objects: CustomMapObject[];
   lighting: CustomMapLighting;
+  folders?: CustomMapFolder[];
 }
 
 

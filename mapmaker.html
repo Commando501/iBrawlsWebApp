@@ -142,9 +142,14 @@
       display: flex;
       flex-direction: column;
       gap: 0.375rem;
-      max-height: 200px;
+      max-height: 350px;
       overflow-y: auto;
       padding-right: 2px;
+    }
+    .mapmaker-drag-over {
+      border: 1.5px dashed #22d3ee !important;
+      background: rgba(6, 182, 212, 0.12) !important;
+      box-shadow: 0 0 10px rgba(6, 182, 212, 0.15);
     }
     .mapmaker-item-row {
       display: flex;
@@ -186,73 +191,93 @@
 </head>
 <body class="w-screen h-screen flex relative">
 
-  <!-- 3D VIEWPORT ON THE LEFT -->
-  <div class="flex-1 h-full relative" id="viewport-container">
-    <canvas id="editor-canvas" class="w-full h-full block"></canvas>
+  <!-- LEFT VIEWPORT + BOTTOM CONTENT BROWSER PANEL -->
+  <div class="flex-grow flex flex-col min-w-0 overflow-hidden relative" id="left-main-panel">
+    
+    <!-- 3D VIEWPORT -->
+    <div class="flex-grow w-full relative min-h-0" id="viewport-container">
+      <canvas id="editor-canvas" class="w-full h-full block"></canvas>
 
-    <!-- TOPBAR OVERLAY -->
-    <div class="absolute top-4 left-4 right-4 flex justify-between items-center pointer-events-none z-10">
-      <div class="pointer-events-auto flex items-center gap-3">
-        <h1 class="text-2xl font-black italic tracking-tighter bg-clip-text text-transparent bg-gradient-to-r from-white to-slate-400">
-          iBrawls Map Maker
-        </h1>
-        <span class="text-[9px] font-mono font-extrabold uppercase tracking-widest text-cyan-400 bg-cyan-950/50 border border-cyan-800/50 px-2 py-0.5 rounded">
-          Standalone Local Build
-        </span>
+      <!-- TOPBAR OVERLAY -->
+      <div class="absolute top-4 left-4 right-4 flex justify-between items-center pointer-events-none z-10">
+        <div class="pointer-events-auto flex items-center gap-3">
+          <h1 class="text-2xl font-black italic tracking-tighter bg-clip-text text-transparent bg-gradient-to-r from-white to-slate-400">
+            iBrawls Map Maker
+          </h1>
+          <span class="text-[9px] font-mono font-extrabold uppercase tracking-widest text-cyan-400 bg-cyan-950/50 border border-cyan-800/50 px-2 py-0.5 rounded">
+            Standalone Local Build
+          </span>
+        </div>
+
+        <div class="pointer-events-auto flex gap-2">
+          <label class="h-10 px-4 bg-slate-900/80 hover:bg-slate-800 border border-white/10 hover:border-cyan-500/50 text-white hover:text-cyan-400 text-xs font-bold rounded-lg flex items-center gap-1.5 cursor-pointer transition-all duration-200 shadow-lg">
+            <i data-lucide="upload" class="w-4 h-4"></i> Import JSON
+            <input type="file" id="import-input" accept=".json" class="hidden">
+          </label>
+
+          <button onclick="handleExportJSON()" class="h-10 px-4 bg-slate-900/80 hover:bg-slate-800 border border-white/10 hover:border-cyan-500/50 text-white hover:text-cyan-400 text-xs font-bold rounded-lg flex items-center gap-1.5 transition-all duration-200 shadow-lg">
+            <i data-lucide="save" class="w-4 h-4"></i> Export JSON
+          </button>
+
+          <button id="navmesh-btn" onclick="triggerBakeNavMesh()" class="h-10 px-4 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white text-xs font-black uppercase tracking-wider rounded-lg flex items-center gap-1.5 transition-all duration-200 shadow-[0_0_15px_rgba(6,182,212,0.3)] hover:shadow-[0_0_20px_rgba(6,182,212,0.5)]">
+            <i data-lucide="refresh-cw" class="w-4 h-4" id="bake-icon"></i> Bake Nav Mesh
+          </button>
+        </div>
       </div>
 
-      <div class="pointer-events-auto flex gap-2">
-        <label class="h-10 px-4 bg-slate-900/80 hover:bg-slate-800 border border-white/10 hover:border-cyan-500/50 text-white hover:text-cyan-400 text-xs font-bold rounded-lg flex items-center gap-1.5 cursor-pointer transition-all duration-200 shadow-lg">
-          <i data-lucide="upload" class="w-4 h-4"></i> Import JSON
-          <input type="file" id="import-input" accept=".json" class="hidden">
-        </label>
+      <!-- INSTRUCTIONS / CONTROLS LEGEND CARD -->
+      <div class="absolute bottom-4 left-4 glass-panel p-4 rounded-xl shadow-2xl pointer-events-auto max-w-[280px] flex flex-col gap-2 z-10 text-[11px] text-white/50">
+        <h3 class="text-xs font-bold uppercase tracking-wider text-cyan-400 flex items-center gap-1.5">
+          <i data-lucide="help-circle" class="w-3.5 h-3.5"></i> Editor Controls
+        </h3>
+        <div class="flex justify-between items-center">
+          <span>Rotate camera</span>
+          <span class="font-mono text-[9px] bg-white/10 px-1.5 py-0.5 rounded border border-white/15 text-white/80">LMB + Drag</span>
+        </div>
+        <div class="flex justify-between items-center">
+          <span>Pan viewport</span>
+          <span class="font-mono text-[9px] bg-white/10 px-1.5 py-0.5 rounded border border-white/15 text-white/80">RMB + Drag</span>
+        </div>
+        <div class="flex justify-between items-center">
+          <span>Zoom Camera</span>
+          <span class="font-mono text-[9px] bg-white/10 px-1.5 py-0.5 rounded border border-white/15 text-white/80">Scroll Wheel</span>
+        </div>
+        <div class="flex justify-between items-center">
+          <span>Select Object</span>
+          <span class="font-mono text-[9px] bg-white/10 px-1.5 py-0.5 rounded border border-white/15 text-white/80">Left Click mesh</span>
+        </div>
+      </div>
 
-        <button onclick="handleExportJSON()" class="h-10 px-4 bg-slate-900/80 hover:bg-slate-800 border border-white/10 hover:border-cyan-500/50 text-white hover:text-cyan-400 text-xs font-bold rounded-lg flex items-center gap-1.5 transition-all duration-200 shadow-lg">
-          <i data-lucide="save" class="w-4 h-4"></i> Export JSON
+      <!-- TRANSFORM MODE SELECTOR -->
+      <div class="absolute bottom-4 right-4 glass-panel p-1.5 rounded-xl shadow-2xl pointer-events-auto flex items-center gap-1 z-10">
+        <button id="mode-translate-btn" onclick="setTransformMode('translate')" class="px-3.5 py-2 rounded-lg font-black uppercase text-[10px] tracking-wider transition-all duration-200 flex items-center gap-1.5 cursor-pointer bg-cyan-500/25 text-cyan-400 border border-cyan-500/40">
+          <i data-lucide="move" class="w-3.5 h-3.5"></i> Movement
         </button>
-
-        <button id="navmesh-btn" onclick="triggerBakeNavMesh()" class="h-10 px-4 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white text-xs font-black uppercase tracking-wider rounded-lg flex items-center gap-1.5 transition-all duration-200 shadow-[0_0_15px_rgba(6,182,212,0.3)] hover:shadow-[0_0_20px_rgba(6,182,212,0.5)]">
-          <i data-lucide="refresh-cw" class="w-4 h-4" id="bake-icon"></i> Bake Nav Mesh
+        <button id="mode-rotate-btn" onclick="setTransformMode('rotate')" class="px-3.5 py-2 rounded-lg font-black uppercase text-[10px] tracking-wider transition-all duration-200 flex items-center gap-1.5 cursor-pointer text-slate-400 border border-transparent hover:text-white">
+          <i data-lucide="rotate-3d" class="w-3.5 h-3.5"></i> Rotation
         </button>
       </div>
     </div>
 
-    <!-- INSTRUCTIONS / CONTROLS LEGEND CARD -->
-    <div class="absolute bottom-4 left-4 glass-panel p-4 rounded-xl shadow-2xl pointer-events-auto max-w-[280px] flex flex-col gap-2 z-10 text-[11px] text-white/50">
-      <h3 class="text-xs font-bold uppercase tracking-wider text-cyan-400 flex items-center gap-1.5">
-        <i data-lucide="help-circle" class="w-3.5 h-3.5"></i> Editor Controls
-      </h3>
-      <div class="flex justify-between items-center">
-        <span>Rotate camera</span>
-        <span class="font-mono text-[9px] bg-white/10 px-1.5 py-0.5 rounded border border-white/15 text-white/80">LMB + Drag</span>
-      </div>
-      <div class="flex justify-between items-center">
-        <span>Pan viewport</span>
-        <span class="font-mono text-[9px] bg-white/10 px-1.5 py-0.5 rounded border border-white/15 text-white/80">RMB + Drag</span>
-      </div>
-      <div class="flex justify-between items-center">
-        <span>Zoom Camera</span>
-        <span class="font-mono text-[9px] bg-white/10 px-1.5 py-0.5 rounded border border-white/15 text-white/80">Scroll Wheel</span>
-      </div>
-      <div class="flex justify-between items-center">
-        <span>Select Object</span>
-        <span class="font-mono text-[9px] bg-white/10 px-1.5 py-0.5 rounded border border-white/15 text-white/80">Left Click mesh</span>
-      </div>
+    <!-- RESIZER HANDLE FOR BOTTOM CONTENT BROWSER -->
+    <div class="h-1.5 w-full bg-[#05070c] border-y border-white/5 hover:bg-cyan-500/40 active:bg-cyan-500/60 cursor-ns-resize transition-all duration-150 shrink-0 z-20 flex items-center justify-center gap-0.5 group" id="bottom-resizer" title="Drag to resize Content Browser">
+      <div class="w-8 h-0.5 bg-slate-700 group-hover:bg-cyan-400 rounded-full transition-colors"></div>
     </div>
 
-    <!-- TRANSFORM MODE SELECTOR -->
-    <div class="absolute bottom-4 right-4 glass-panel p-1.5 rounded-xl shadow-2xl pointer-events-auto flex items-center gap-1 z-10">
-      <button id="mode-translate-btn" onclick="setTransformMode('translate')" class="px-3.5 py-2 rounded-lg font-black uppercase text-[10px] tracking-wider transition-all duration-200 flex items-center gap-1.5 cursor-pointer bg-cyan-500/25 text-cyan-400 border border-cyan-500/40">
-        <i data-lucide="move" class="w-3.5 h-3.5"></i> Movement
-      </button>
-      <button id="mode-rotate-btn" onclick="setTransformMode('rotate')" class="px-3.5 py-2 rounded-lg font-black uppercase text-[10px] tracking-wider transition-all duration-200 flex items-center gap-1.5 cursor-pointer text-slate-400 border border-transparent hover:text-white">
-        <i data-lucide="rotate-3d" class="w-3.5 h-3.5"></i> Rotation
-      </button>
+    <!-- BOTTOM CONTENT BROWSER (UNREAL STYLE) -->
+    <div class="w-full glass-panel border-t border-white/5 flex flex-col shrink-0 z-10 bg-[#090d16]/95 backdrop-blur-md" id="bottom-content-browser" style="height: 280px;">
+      <!-- Populated dynamically via renderContentBrowser() in Javascript -->
     </div>
+
+  </div>
+
+  <!-- RESIZER HANDLE FOR RIGHT SIDEBAR -->
+  <div class="w-1.5 h-full bg-[#05070c] border-x border-white/5 hover:bg-cyan-500/40 active:bg-cyan-500/60 cursor-ew-resize transition-all duration-150 shrink-0 z-20 flex flex-col items-center justify-center gap-0.5 group" id="sidebar-resizer" title="Drag to resize Sidebar">
+    <div class="h-8 w-0.5 bg-slate-700 group-hover:bg-cyan-400 rounded-full transition-colors"></div>
   </div>
 
   <!-- EDITOR INSPECTOR SIDEBAR -->
-  <div class="w-[380px] h-full glass-panel border-l border-white/5 flex flex-col shadow-3xl z-10 shrink-0">
+  <div class="h-full glass-panel border-l border-white/5 flex flex-col shadow-3xl z-10 shrink-0" id="right-sidebar" style="width: 380px;">
     <!-- Sidebar Title -->
     <div class="p-4 border-b border-white/5 flex justify-between items-center shrink-0">
       <span class="text-sm font-black uppercase tracking-widest text-transparent bg-clip-text bg-gradient-to-r from-white to-slate-400">
@@ -272,7 +297,7 @@
         <i data-lucide="sun" class="w-4 h-4"></i> Lights
       </button>
       <button onclick="switchTab('objects')" id="tab-objects" class="py-3 text-[10px] font-bold uppercase tracking-wider border-b-2 border-transparent text-slate-400 hover:text-white flex flex-col items-center gap-1">
-        <i data-lucide="layers" class="w-4 h-4"></i> Objects
+        <i data-lucide="layers" class="w-4 h-4"></i> Outliner
       </button>
       <button onclick="switchTab('spawns')" id="tab-spawns" class="py-3 text-[10px] font-bold uppercase tracking-wider border-b-2 border-transparent text-slate-400 hover:text-white flex flex-col items-center gap-1">
         <i data-lucide="map-pin" class="w-4 h-4"></i> Spawns
@@ -562,6 +587,7 @@
     let directPosX = 6, directPosY = 22, directPosZ = 6;
 
     let objects = [];
+    let folders = [];
     let pointLights = [];
     let spawnPoints = [
       { x: -10, y: 0, z: -10 },
@@ -1085,6 +1111,7 @@
     window.addEventListener('load', () => {
       initThree();
       initEvents();
+      initResizers();
       switchTab('scene');
       lucide.createIcons();
     });
@@ -2042,106 +2069,198 @@
         `;
       } else if (activeTab === 'objects') {
         const activeObj = objects.find(o => o.id === selectedObjectId);
+        const rootObjects = objects.filter(o => !o.folderId || !folders.some(f => f.id === o.folderId));
+        const isLocked = activeObj ? isObjectLocked(activeObj.id) : false;
         panel.innerHTML = `
-          <!-- Add Object Block (Expanded Asset Catalog) -->
+          <!-- Placed Obstacles Outliner -->
           <div class="flex flex-col gap-3 bg-white/2 border border-white/5 p-4 rounded-xl">
-            <span class="text-xs font-black uppercase text-cyan-400 tracking-wider">3D Asset Catalog</span>
-            
-            <!-- Real-time Search Input -->
-            <div class="relative w-full">
-              <input type="text" id="asset-search" placeholder="Search assets..." 
-                oninput="handleAssetSearch(this.value)" 
-                class="w-full mapmaker-input text-[11px] py-2 px-3 pl-8 bg-slate-950/60" 
-                value="${assetSearchQuery}">
-              <i data-lucide="search" class="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-slate-500"></i>
-              ${assetSearchQuery ? `
-                <button onclick="handleAssetSearch('')" class="absolute right-2.5 top-2.5 text-slate-500 hover:text-white bg-transparent border-none cursor-pointer">
-                  <i data-lucide="x" class="w-3.5 h-3.5"></i>
-                </button>
-              ` : ''}
+            <div class="flex justify-between items-center pb-1.5 border-b border-white/5">
+              <span class="text-xs font-black uppercase text-cyan-400 tracking-wider">Placed Elements</span>
+              <button onclick="handleAddFolder()" class="text-[10px] bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 px-3 py-1 rounded font-bold uppercase transition-all flex items-center gap-1 cursor-pointer">
+                <i data-lucide="folder-plus" class="w-3.5 h-3.5"></i> Add Folder
+              </button>
             </div>
-
-            <!-- Horizontal Category Scroll -->
-            <div class="flex gap-1 overflow-x-auto pb-1 text-[9px] font-black uppercase tracking-wider shrink-0 select-none">
-              ${[
-                { id: 'structures', label: 'Cover', icon: '🏗️' },
-                { id: 'hazards', label: 'Hazards', icon: '⚡' },
-                { id: 'industrial', label: 'Space', icon: '📦' },
-                { id: 'nature', label: 'Nature', icon: '🌿' },
-                { id: 'alien', label: 'Alien', icon: '👽' },
-                { id: 'primitives', label: 'Shapes', icon: '📐' }
-              ].map(cat => `
-                <button onclick="selectAssetCategory('${cat.id}')" 
-                  class="px-2.5 py-1.5 rounded-md border font-sans font-bold flex items-center gap-1 transition-all whitespace-nowrap shrink-0 cursor-pointer ${selectedAssetCategory === cat.id ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-400 shadow-[0_0_8px_rgba(6,182,212,0.1)]' : 'bg-white/2 border-white/5 text-slate-400 hover:text-white'}">
-                  <span>${cat.icon}</span> ${cat.label}
-                </button>
-              `).join('')}
-            </div>
-
-            <!-- Filtered Asset Catalog Grid -->
-            <div class="grid grid-cols-2 gap-1.5 max-h-[220px] overflow-y-auto pr-1">
-              ${(() => {
-                const query = assetSearchQuery.toLowerCase().trim();
-                const filtered = ASSET_LIBRARY.filter(asset => {
-                  const matchesCategory = asset.category === selectedAssetCategory;
-                  const matchesSearch = asset.name.toLowerCase().includes(query) || asset.desc.toLowerCase().includes(query) || asset.type.toLowerCase().includes(query);
-                  if (query) {
-                    return matchesSearch;
-                  }
-                  return matchesCategory;
-                });
-
-                if (filtered.length === 0) {
-                  return `<p class="col-span-2 text-[10px] text-white/30 italic text-center py-4">No matching assets found.</p>`;
-                }
-
-                return filtered.map(asset => `
-                  <button onclick="handleAddObject('${asset.type}', '${asset.id}')" 
-                    class="group flex flex-col items-start gap-1 p-2 rounded-lg border bg-slate-950/40 border-white/5 hover:border-cyan-500/30 hover:bg-cyan-500/5 text-left transition-all duration-200 cursor-pointer w-full">
-                    <div class="flex items-center justify-between w-full pointer-events-none">
-                      <span class="text-sm font-sans">${asset.icon}</span>
-                      <span class="font-mono text-[7px] text-slate-500 group-hover:text-cyan-400/80 font-bold uppercase">${asset.type}</span>
-                    </div>
-                    <span class="text-[10px] font-bold text-slate-200 group-hover:text-cyan-400 transition-colors leading-tight pointer-events-none">${asset.name}</span>
-                    <span class="text-[8px] text-slate-500 leading-snug line-clamp-2 mt-0.5 pointer-events-none">${asset.desc}</span>
-                  </button>
-                `).join('');
-              })()}
-            </div>
-          </div>
-
-          <!-- Objects Inventory List -->
-          <div class="flex flex-col gap-3 bg-white/2 border border-white/5 p-4 rounded-xl">
-            <span class="text-xs font-black uppercase text-cyan-400 tracking-wider">Placed Obstacles</span>
             <div class="mapmaker-item-list">
-              ${objects.length === 0 ? '<p class="text-[10px] text-white/30 italic text-center py-4">No objects spawned yet.</p>' : ''}
-              ${objects.map(obj => `
-                <div onclick="setSelectedObject('${obj.id}')" class="mapmaker-item-row ${selectedObjectId===obj.id?'mapmaker-item-row-selected':''}">
-                  <span class="truncate pr-2">${obj.name} (${obj.type.toUpperCase()})</span>
-                  <div class="mapmaker-row-actions">
-                    <button onclick="event.stopPropagation(); handleDuplicateObject('${obj.id}')" class="mapmaker-row-btn hover:text-cyan-400" title="Duplicate Object">
-                      <i data-lucide="copy" class="w-3.5 h-3.5"></i>
-                    </button>
-                    <button onclick="event.stopPropagation(); handleDeleteObject('${obj.id}')" class="mapmaker-row-btn hover:text-red-400" title="Delete Object">
-                      <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
-                    </button>
+              ${(folders.length === 0 && objects.length === 0) ? '<p class="text-[10px] text-white/30 italic text-center py-4">No folders or objects spawned yet.</p>' : ''}
+              
+              <!-- Folders List -->
+              ${folders.map(folder => {
+                const folderObjects = objects.filter(o => o.folderId === folder.id);
+                return `
+                  <div 
+                    draggable="true" 
+                    ondragstart="handleDragStart(event, 'folder', '${folder.id}')" 
+                    ondragend="handleDragEnd(event)"
+                    ondragover="handleDragOver(event)" 
+                    ondragenter="handleDragEnter(event, 'folder', '${folder.id}')" 
+                    ondragleave="handleDragLeave(event)" 
+                    ondrop="handleDrop(event, 'folder', '${folder.id}')"
+                    class="flex items-center justify-between p-2 rounded-lg bg-slate-900/60 border border-white/5 hover:border-cyan-500/30 transition-all my-1 cursor-grab"
+                  >
+                    <div class="flex items-center gap-1.5 min-w-0 cursor-pointer" onclick="toggleFolderCollapse('${folder.id}')">
+                      <span class="text-slate-400 hover:text-white bg-transparent border-none p-0 cursor-pointer flex items-center">
+                        <i data-lucide="${folder.collapsed ? 'chevron-right' : 'chevron-down'}" class="w-3.5 h-3.5"></i>
+                      </span>
+                      <i data-lucide="${folder.collapsed ? 'folder' : 'folder-open'}" class="w-3.5 h-3.5 text-amber-400 shrink-0"></i>
+                      <span class="text-xs font-bold text-slate-200 truncate select-none hover:text-cyan-400 transition-colors">${folder.name}</span>
+                    </div>
+                    <div class="flex items-center gap-1 shrink-0">
+                      <!-- Rename Folder -->
+                      <button onclick="event.stopPropagation(); handleRenameFolder('${folder.id}')" class="mapmaker-row-btn hover:text-cyan-400" title="Rename Folder">
+                        <i data-lucide="edit-2" class="w-3.5 h-3.5"></i>
+                      </button>
+                      <!-- Lock Folder Toggle -->
+                      <button onclick="event.stopPropagation(); toggleFolderLock('${folder.id}')" class="mapmaker-row-btn ${folder.locked ? 'text-red-400 hover:text-red-300' : 'text-slate-400 hover:text-white'}" title="${folder.locked ? 'Unlock Folder' : 'Lock Folder'}">
+                        <i data-lucide="${folder.locked ? 'lock' : 'unlock'}" class="w-3.5 h-3.5"></i>
+                      </button>
+                      <!-- Hide Folder Toggle -->
+                      <button onclick="event.stopPropagation(); toggleFolderVisibility('${folder.id}')" class="mapmaker-row-btn ${folder.hidden ? 'text-pink-500 hover:text-pink-400' : 'text-slate-400 hover:text-white'}" title="${folder.hidden ? 'Unhide Folder' : 'Hide Folder'}">
+                        <i data-lucide="${folder.hidden ? 'eye-off' : 'eye'}" class="w-3.5 h-3.5"></i>
+                      </button>
+                      <!-- Delete Folder -->
+                      <button onclick="event.stopPropagation(); handleDeleteFolder('${folder.id}')" class="mapmaker-row-btn hover:text-red-400" title="Delete Folder">
+                        <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                      </button>
+                    </div>
                   </div>
+                  
+                  <!-- Folder Objects -->
+                  ${(!folder.collapsed && folderObjects.length > 0) ? `
+                    <div class="flex flex-col gap-1">
+                      ${folderObjects.map(obj => `
+                        <div 
+                          draggable="true" 
+                          ondragstart="handleDragStart(event, 'object', '${obj.id}')" 
+                          ondragend="handleDragEnd(event)"
+                          ondragover="handleDragOver(event)" 
+                          ondragenter="handleDragEnter(event, 'object', '${obj.id}')" 
+                          ondragleave="handleDragLeave(event)" 
+                          ondrop="handleDrop(event, 'object', '${obj.id}')"
+                          onclick="setSelectedObject('${obj.id}')" 
+                          class="flex items-center justify-between p-2 rounded bg-slate-950/40 border border-white/5 hover:border-cyan-500/20 hover:bg-cyan-950/10 cursor-grab my-0.5 ml-4 border-l-2 border-l-cyan-500/20 pl-3 ${selectedObjectId===obj.id?'mapmaker-item-row-selected border-l-cyan-400 bg-cyan-950/20':''}"
+                        >
+                          <div class="flex items-center gap-1.5 min-w-0 pointer-events-none">
+                            <i data-lucide="grip-vertical" class="w-3 h-3 text-slate-500 shrink-0"></i>
+                            <span class="text-[11px] text-slate-300 truncate">${obj.name} (${obj.type.toUpperCase()})</span>
+                          </div>
+                          <div class="flex items-center gap-1.5 shrink-0">
+                            <!-- Lock Object Toggle -->
+                            <button onclick="event.stopPropagation(); toggleObjectLock('${obj.id}')" class="mapmaker-row-btn ${obj.locked ? 'text-red-400 hover:text-red-300' : 'text-slate-400 hover:text-white'}" title="${obj.locked ? 'Unlock Object' : 'Lock Object'}">
+                              <i data-lucide="${obj.locked ? 'lock' : 'unlock'}" class="w-3.5 h-3.5"></i>
+                            </button>
+                            <!-- Hide Object Toggle -->
+                            <button onclick="event.stopPropagation(); toggleObjectVisibility('${obj.id}')" class="mapmaker-row-btn ${obj.hidden ? 'text-pink-500 hover:text-pink-400' : 'text-slate-400 hover:text-white'}" title="${obj.hidden ? 'Unhide Object' : 'Hide Object'}">
+                              <i data-lucide="${obj.hidden ? 'eye-off' : 'eye'}" class="w-3.5 h-3.5"></i>
+                            </button>
+                            <!-- Duplicate Object -->
+                            <button onclick="event.stopPropagation(); handleDuplicateObject('${obj.id}')" class="mapmaker-row-btn hover:text-cyan-400" title="Duplicate Object">
+                              <i data-lucide="copy" class="w-3.5 h-3.5"></i>
+                            </button>
+                            <!-- Delete Object -->
+                            <button onclick="event.stopPropagation(); handleDeleteObject('${obj.id}')" class="mapmaker-row-btn hover:text-red-400" title="Delete Object">
+                              <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                            </button>
+                          </div>
+                        </div>
+                      `).join('')}
+                    </div>
+                  ` : ''}
+                  
+                  ${(!folder.collapsed && folderObjects.length === 0) ? `
+                    <div class="text-[9px] text-white/20 italic pl-8 py-1">Folder is empty. Drag elements here to nest.</div>
+                  ` : ''}
+                `;
+              }).join('')}
+              
+              <!-- Root Objects (Not in folders) -->
+              ${rootObjects.length > 0 ? `
+                <div class="flex flex-col gap-1 mt-2">
+                  ${rootObjects.map(obj => `
+                    <div 
+                      draggable="true" 
+                      ondragstart="handleDragStart(event, 'object', '${obj.id}')" 
+                      ondragend="handleDragEnd(event)"
+                      ondragover="handleDragOver(event)" 
+                      ondragenter="event.preventDefault(); handleDragEnter(event, 'object', '${obj.id}')" 
+                      ondragleave="handleDragLeave(event)" 
+                      ondrop="handleDrop(event, 'object', '${obj.id}')"
+                      onclick="setSelectedObject('${obj.id}')" 
+                      class="flex items-center justify-between p-2 rounded bg-slate-950/20 border border-white/5 hover:border-cyan-500/20 hover:bg-cyan-950/10 cursor-grab my-0.5 ${selectedObjectId===obj.id?'mapmaker-item-row-selected bg-cyan-950/20 border-cyan-500/30':''}"
+                    >
+                      <div class="flex items-center gap-1.5 min-w-0 pointer-events-none">
+                        <i data-lucide="grip-vertical" class="w-3 h-3 text-slate-500 shrink-0"></i>
+                        <span class="text-[11px] text-slate-300 truncate">${obj.name} (${obj.type.toUpperCase()})</span>
+                      </div>
+                      <div class="flex items-center gap-1.5 shrink-0">
+                        <!-- Lock Object Toggle -->
+                        <button onclick="event.stopPropagation(); toggleObjectLock('${obj.id}')" class="mapmaker-row-btn ${obj.locked ? 'text-red-400 hover:text-red-300' : 'text-slate-400 hover:text-white'}" title="${obj.locked ? 'Unlock Object' : 'Lock Object'}">
+                          <i data-lucide="${obj.locked ? 'lock' : 'unlock'}" class="w-3.5 h-3.5"></i>
+                        </button>
+                        <!-- Hide Object Toggle -->
+                        <button onclick="event.stopPropagation(); toggleObjectVisibility('${obj.id}')" class="mapmaker-row-btn ${obj.hidden ? 'text-pink-500 hover:text-pink-400' : 'text-slate-400 hover:text-white'}" title="${obj.hidden ? 'Unhide Object' : 'Hide Object'}">
+                          <i data-lucide="${obj.hidden ? 'eye-off' : 'eye'}" class="w-3.5 h-3.5"></i>
+                        </button>
+                        <!-- Duplicate Object -->
+                        <button onclick="event.stopPropagation(); handleDuplicateObject('${obj.id}')" class="mapmaker-row-btn hover:text-cyan-400" title="Duplicate Object">
+                          <i data-lucide="copy" class="w-3.5 h-3.5"></i>
+                        </button>
+                        <!-- Delete Object -->
+                        <button onclick="event.stopPropagation(); handleDeleteObject('${obj.id}')" class="mapmaker-row-btn hover:text-red-400" title="Delete Object">
+                          <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                        </button>
+                      </div>
+                    </div>
+                  `).join('')}
                 </div>
-              `).join('')}
+              ` : ''}
+              
+              <!-- Drop Zone Spacer to ungroup objects -->
+              <div 
+                ondragover="handleDragOver(event)" 
+                ondragenter="handleDragEnter(event, 'root', 'root')" 
+                ondragleave="handleDragLeave(event)" 
+                ondrop="handleDrop(event, 'root', 'root')" 
+                class="py-2.5 my-2 border border-dashed border-white/10 rounded-lg text-center text-[10px] text-white/40 hover:border-cyan-500/30 hover:text-cyan-400 transition-all cursor-pointer select-none"
+              >
+                <i data-lucide="corner-down-left" class="w-3 h-3 inline-block mr-1"></i> Drop here to move to Root (Ungrouped)
+              </div>
             </div>
           </div>
 
           <!-- Object Inspector Panel -->
           ${activeObj ? `
             <div class="flex flex-col gap-3 bg-cyan-950/20 border border-cyan-500/25 p-4 rounded-xl">
-              <span class="text-xs font-black uppercase text-cyan-400 tracking-wider">Object Inspector</span>
+              <span class="text-xs font-black uppercase text-cyan-400 tracking-wider flex items-center justify-between">
+                <span>Object Inspector</span>
+                ${isLocked ? '<span class="text-[9px] font-bold font-mono text-red-400 flex items-center gap-1 bg-red-950/40 px-2 py-0.5 border border-red-500/20 rounded">🔒 LOCKED</span>' : ''}
+              </span>
+              
+              ${isLocked ? `
+                <div class="flex items-start gap-2 bg-red-950/20 border border-red-500/30 p-2.5 rounded-lg text-[10px] text-red-400 font-bold leading-normal font-mono select-none">
+                  <i data-lucide="lock" class="w-3.5 h-3.5 shrink-0 mt-0.5"></i>
+                  <span>THIS ELEMENT IS LOCKED IN THE OUTLINER. UNLOCK IT TO ALLOW MOVEMENT AND TRANSFORMS.</span>
+                </div>
+              ` : ''}
+              
               <div class="mapmaker-field">
                 <span class="mapmaker-label">Object Name</span>
-                <input type="text" oninput="handleUpdateObject('name', this.value)" class="mapmaker-input text-xs" value="${activeObj.name}">
+                <input type="text" ${isLocked ? 'disabled' : ''} oninput="handleUpdateObject('name', this.value)" class="mapmaker-input text-xs ${isLocked ? 'opacity-50 cursor-not-allowed' : ''}" value="${activeObj.name}">
               </div>
+
+              <!-- Parent Folder select dropdown -->
+              <div class="mapmaker-field">
+                <span class="mapmaker-label">Parent Folder</span>
+                <select ${isLocked ? 'disabled' : ''} onchange="handleUpdateObject('folderId', this.value)" class="mapmaker-input cursor-pointer text-xs bg-slate-950 text-cyan-300 font-bold uppercase ${isLocked ? 'opacity-50 cursor-not-allowed' : ''}">
+                  <option value="none" ${!activeObj.folderId?'selected':''}>None (Root Level)</option>
+                  ${folders.map(f => `
+                    <option value="${f.id}" ${activeObj.folderId===f.id?'selected':''}>${f.name}</option>
+                  `).join('')}
+                </select>
+              </div>
+
               <div class="mapmaker-field">
                 <span class="mapmaker-label">Base Color</span>
-                <input type="color" oninput="handleUpdateObject('color', this.value)" class="mapmaker-input h-9 p-0.5 cursor-pointer" value="${activeObj.color}">
+                <input type="color" ${isLocked ? 'disabled' : ''} oninput="handleUpdateObject('color', this.value)" class="mapmaker-input h-9 p-0.5 cursor-pointer ${isLocked ? 'opacity-50 cursor-not-allowed' : ''}" value="${activeObj.color}">
               </div>
               <div class="mapmaker-field">
                 <span class="mapmaker-label">Geometry Type</span>
@@ -2149,7 +2268,7 @@
               </div>
               <div class="mapmaker-field">
                 <span class="mapmaker-label">Texture Preset</span>
-                <select onchange="handleUpdateObject('texture', this.value)" class="mapmaker-input cursor-pointer text-xs bg-slate-950 text-cyan-300 font-bold uppercase">
+                <select ${isLocked ? 'disabled' : ''} onchange="handleUpdateObject('texture', this.value)" class="mapmaker-input cursor-pointer text-xs bg-slate-950 text-cyan-300 font-bold uppercase ${isLocked ? 'opacity-50 cursor-not-allowed' : ''}">
                   <option value="none" ${activeObj.texture==='none'?'selected':''}>None (Matte Color)</option>
                   <optgroup label="Nature">
                     <option value="nature_grass" ${activeObj.texture==='nature_grass'?'selected':''}>Grass Turf</option>
@@ -2207,41 +2326,41 @@
               </div>
               <div class="mapmaker-field">
                 <span class="mapmaker-label">Pos X <span class="mapmaker-value-badge">${activeObj.position.x}m</span></span>
-                <input type="range" min="-30" max="30" step="0.5" oninput="handleUpdateObject('pos_x', parseFloat(this.value))" class="mapmaker-slider" value="${activeObj.position.x}">
+                <input type="range" min="-30" max="30" step="0.5" ${isLocked ? 'disabled' : ''} oninput="handleUpdateObject('pos_x', parseFloat(this.value))" class="mapmaker-slider" value="${activeObj.position.x}">
               </div>
               <div class="mapmaker-field">
                 <span class="mapmaker-label">Pos Y <span class="mapmaker-value-badge">${activeObj.position.y}m</span></span>
-                <input type="range" min="-2" max="12" step="0.1" oninput="handleUpdateObject('pos_y', parseFloat(this.value))" class="mapmaker-slider" value="${activeObj.position.y}">
+                <input type="range" min="-2" max="12" step="0.1" ${isLocked ? 'disabled' : ''} oninput="handleUpdateObject('pos_y', parseFloat(this.value))" class="mapmaker-slider" value="${activeObj.position.y}">
               </div>
               <div class="mapmaker-field">
                 <span class="mapmaker-label">Pos Z <span class="mapmaker-value-badge">${activeObj.position.z}m</span></span>
-                <input type="range" min="-30" max="30" step="0.5" oninput="handleUpdateObject('pos_z', parseFloat(this.value))" class="mapmaker-slider" value="${activeObj.position.z}">
+                <input type="range" min="-30" max="30" step="0.5" ${isLocked ? 'disabled' : ''} oninput="handleUpdateObject('pos_z', parseFloat(this.value))" class="mapmaker-slider" value="${activeObj.position.z}">
               </div>
 
               <div class="mapmaker-field mt-1.5">
                 <span class="mapmaker-label">Scale X (Width/Radius) <span class="mapmaker-value-badge">${activeObj.scale.x}m</span></span>
-                <input type="range" min="0.4" max="15.0" step="0.1" oninput="handleUpdateObject('scale_x', parseFloat(this.value))" class="mapmaker-slider" value="${activeObj.scale.x}">
+                <input type="range" min="0.4" max="15.0" step="0.1" ${isLocked ? 'disabled' : ''} oninput="handleUpdateObject('scale_x', parseFloat(this.value))" class="mapmaker-slider" value="${activeObj.scale.x}">
               </div>
               <div class="mapmaker-field">
                 <span class="mapmaker-label">Scale Y (Height) <span class="mapmaker-value-badge">${activeObj.scale.y}m</span></span>
-                <input type="range" min="0.4" max="15.0" step="0.1" oninput="handleUpdateObject('scale_y', parseFloat(this.value))" class="mapmaker-slider" value="${activeObj.scale.y}">
+                <input type="range" min="0.4" max="15.0" step="0.1" ${isLocked ? 'disabled' : ''} oninput="handleUpdateObject('scale_y', parseFloat(this.value))" class="mapmaker-slider" value="${activeObj.scale.y}">
               </div>
               <div class="mapmaker-field">
                 <span class="mapmaker-label">Scale Z (Depth) <span class="mapmaker-value-badge">${activeObj.scale.z}m</span></span>
-                <input type="range" min="0.4" max="15.0" step="0.1" oninput="handleUpdateObject('scale_z', parseFloat(this.value))" class="mapmaker-slider" value="${activeObj.scale.z}">
+                <input type="range" min="0.4" max="15.0" step="0.1" ${isLocked ? 'disabled' : ''} oninput="handleUpdateObject('scale_z', parseFloat(this.value))" class="mapmaker-slider" value="${activeObj.scale.z}">
               </div>
 
               <div class="mapmaker-field mt-1.5">
                 <span class="mapmaker-label">Rotation X (Pitch) <span class="mapmaker-value-badge">${Math.round((activeObj.rotation?.x || 0) * (180/Math.PI))}°</span></span>
-                <input type="range" min="0" max="360" step="5" oninput="handleUpdateObject('rot_x', parseFloat(this.value) * (Math.PI/180))" class="mapmaker-slider" value="${Math.round(((activeObj.rotation?.x || 0) * (180/Math.PI)) % 360 + 360) % 360}">
+                <input type="range" min="0" max="360" step="5" ${isLocked ? 'disabled' : ''} oninput="handleUpdateObject('rot_x', parseFloat(this.value) * (Math.PI/180))" class="mapmaker-slider" value="${Math.round(((activeObj.rotation?.x || 0) * (180/Math.PI)) % 360 + 360) % 360}">
               </div>
               <div class="mapmaker-field">
                 <span class="mapmaker-label">Rotation Y (Yaw) <span class="mapmaker-value-badge">${Math.round((activeObj.rotation?.y || 0) * (180/Math.PI))}°</span></span>
-                <input type="range" min="0" max="360" step="5" oninput="handleUpdateObject('rot_y', parseFloat(this.value) * (Math.PI/180))" class="mapmaker-slider" value="${Math.round(((activeObj.rotation?.y || 0) * (180/Math.PI)) % 360 + 360) % 360}">
+                <input type="range" min="0" max="360" step="5" ${isLocked ? 'disabled' : ''} oninput="handleUpdateObject('rot_y', parseFloat(this.value) * (Math.PI/180))" class="mapmaker-slider" value="${Math.round(((activeObj.rotation?.y || 0) * (180/Math.PI)) % 360 + 360) % 360}">
               </div>
               <div class="mapmaker-field">
                 <span class="mapmaker-label">Rotation Z (Roll) <span class="mapmaker-value-badge">${Math.round((activeObj.rotation?.z || 0) * (180/Math.PI))}°</span></span>
-                <input type="range" min="0" max="360" step="5" oninput="handleUpdateObject('rot_z', parseFloat(this.value) * (Math.PI/180))" class="mapmaker-slider" value="${Math.round(((activeObj.rotation?.z || 0) * (180/Math.PI)) % 360 + 360) % 360}">
+                <input type="range" min="0" max="360" step="5" ${isLocked ? 'disabled' : ''} oninput="handleUpdateObject('rot_z', parseFloat(this.value) * (Math.PI/180))" class="mapmaker-slider" value="${Math.round(((activeObj.rotation?.z || 0) * (180/Math.PI)) % 360 + 360) % 360}">
               </div>
 
               <!-- PBR material sliders -->
@@ -2250,15 +2369,15 @@
               </div>
               <div class="mapmaker-field">
                 <span class="mapmaker-label">Metalness <span class="mapmaker-value-badge">${activeObj.metalness.toFixed(2)}</span></span>
-                <input type="range" min="0" max="1" step="0.05" oninput="handleUpdateObject('metalness', parseFloat(this.value))" class="mapmaker-slider" value="${activeObj.metalness}">
+                <input type="range" min="0" max="1" step="0.05" ${isLocked ? 'disabled' : ''} oninput="handleUpdateObject('metalness', parseFloat(this.value))" class="mapmaker-slider" value="${activeObj.metalness}">
               </div>
               <div class="mapmaker-field">
                 <span class="mapmaker-label">Roughness <span class="mapmaker-value-badge">${activeObj.roughness.toFixed(2)}</span></span>
-                <input type="range" min="0" max="1" step="0.05" oninput="handleUpdateObject('roughness', parseFloat(this.value))" class="mapmaker-slider" value="${activeObj.roughness}">
+                <input type="range" min="0" max="1" step="0.05" ${isLocked ? 'disabled' : ''} oninput="handleUpdateObject('roughness', parseFloat(this.value))" class="mapmaker-slider" value="${activeObj.roughness}">
               </div>
               <div class="mapmaker-field">
                 <span class="mapmaker-label">Opacity Transparency <span class="mapmaker-value-badge">${activeObj.opacity.toFixed(2)}</span></span>
-                <input type="range" min="0.1" max="1" step="0.05" oninput="handleUpdateObject('opacity', parseFloat(this.value))" class="mapmaker-slider" value="${activeObj.opacity}">
+                <input type="range" min="0.1" max="1" step="0.05" ${isLocked ? 'disabled' : ''} oninput="handleUpdateObject('opacity', parseFloat(this.value))" class="mapmaker-slider" value="${activeObj.opacity}">
               </div>
 
               <!-- Glow settings -->
@@ -2267,11 +2386,11 @@
               </div>
               <div class="mapmaker-field">
                 <span class="mapmaker-label">Glow Color</span>
-                <input type="color" oninput="handleUpdateObject('emissive', this.value)" class="mapmaker-input h-9 p-0.5 cursor-pointer" value="${activeObj.emissive || '#000000'}">
+                <input type="color" ${isLocked ? 'disabled' : ''} oninput="handleUpdateObject('emissive', this.value)" class="mapmaker-input h-9 p-0.5 cursor-pointer ${isLocked ? 'opacity-50 cursor-not-allowed' : ''}" value="${activeObj.emissive || '#000000'}">
               </div>
               <div class="mapmaker-field">
                 <span class="mapmaker-label">Intensity <span class="mapmaker-value-badge">${activeObj.emissiveIntensity.toFixed(1)}</span></span>
-                <input type="range" min="0" max="5.0" step="0.2" oninput="handleUpdateObject('emissiveIntensity', parseFloat(this.value))" class="mapmaker-slider" value="${activeObj.emissiveIntensity}">
+                <input type="range" min="0" max="5.0" step="0.2" ${isLocked ? 'disabled' : ''} oninput="handleUpdateObject('emissiveIntensity', parseFloat(this.value))" class="mapmaker-slider" value="${activeObj.emissiveIntensity}">
               </div>
             </div>
           ` : ''}
@@ -2316,8 +2435,130 @@
         `;
       }
 
-      lucide.createIcons();
       rebuildScene();
+      renderContentBrowser();
+      lucide.createIcons();
+    }
+
+    // DYNAMIC CONTENT BROWSER RENDER (UNREAL STYLE)
+    function renderContentBrowser() {
+      const cb = document.getElementById('bottom-content-browser');
+      if (!cb) return;
+
+      const query = assetSearchQuery.toLowerCase().trim();
+      const filtered = ASSET_LIBRARY.filter(asset => {
+        const matchesCategory = asset.category === selectedAssetCategory;
+        const matchesSearch = asset.name.toLowerCase().includes(query) || asset.desc.toLowerCase().includes(query) || asset.type.toLowerCase().includes(query);
+        if (query) {
+          return matchesSearch;
+        }
+        return matchesCategory;
+      });
+
+      const categories = [
+        { id: 'structures', label: 'Cover', icon: '🏗️' },
+        { id: 'hazards', label: 'Hazards', icon: '⚡' },
+        { id: 'industrial', label: 'Space', icon: '📦' },
+        { id: 'nature', label: 'Nature', icon: '🌿' },
+        { id: 'alien', label: 'Alien', icon: '👽' },
+        { id: 'primitives', label: 'Shapes', icon: '📐' }
+      ];
+
+      cb.innerHTML = `
+        <!-- Content Browser Header -->
+        <div class="h-11 px-4 border-b border-white/5 flex justify-between items-center bg-[#070a12]/80 shrink-0">
+          <div class="flex items-center gap-4">
+            <div class="flex items-center gap-1.5 text-slate-300">
+              <i data-lucide="folder" class="w-4 h-4 text-cyan-400"></i>
+              <span class="text-xs font-black uppercase tracking-wider select-none">Content Browser</span>
+            </div>
+            <div class="h-4 w-px bg-white/10"></div>
+            <!-- Unreal Style Action Buttons -->
+            <div class="flex gap-1.5">
+              <button onclick="document.getElementById('import-input').click()" class="h-7 px-2.5 bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 text-cyan-400 hover:text-cyan-300 text-[10px] font-bold rounded flex items-center gap-1 transition-all cursor-pointer">
+                <i data-lucide="plus" class="w-3 h-3"></i> Add
+              </button>
+              <button onclick="document.getElementById('import-input').click()" class="h-7 px-2.5 bg-slate-900/60 hover:bg-slate-800 border border-white/10 text-slate-300 hover:text-white text-[10px] font-bold rounded flex items-center gap-1 transition-all cursor-pointer">
+                <i data-lucide="upload" class="w-3 h-3"></i> Import
+              </button>
+              <button onclick="handleExportJSON()" class="h-7 px-2.5 bg-slate-900/60 hover:bg-slate-800 border border-white/10 text-slate-300 hover:text-white text-[10px] font-bold rounded flex items-center gap-1 transition-all cursor-pointer">
+                <i data-lucide="save" class="w-3 h-3"></i> Save All
+              </button>
+            </div>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <!-- Search Asset Input -->
+            <div class="relative w-64">
+              <input type="text" id="asset-search" placeholder="Search assets..." 
+                oninput="handleAssetSearch(this.value)" 
+                class="w-full mapmaker-input text-[11px] py-1.5 px-3 pl-8 bg-slate-950/60 border border-white/10 rounded focus:border-cyan-500/50" 
+                value="${assetSearchQuery}">
+              <i data-lucide="search" class="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-slate-500"></i>
+              ${assetSearchQuery ? `
+                <button onclick="handleAssetSearch('')" class="absolute right-2.5 top-2 text-slate-500 hover:text-white bg-transparent border-none cursor-pointer">
+                  <i data-lucide="x" class="w-3 h-3"></i>
+                </button>
+              ` : ''}
+            </div>
+            
+            <button class="p-1.5 border border-white/10 rounded hover:bg-white/5 text-slate-400 hover:text-white transition-colors cursor-pointer" title="Settings">
+              <i data-lucide="settings" class="w-3.5 h-3.5"></i>
+            </button>
+          </div>
+        </div>
+
+        <!-- Content Browser Body -->
+        <div class="flex-grow flex min-h-0 bg-[#07090f]/50">
+          
+          <!-- Left side: Category Folders -->
+          <div class="w-52 border-r border-white/5 overflow-y-auto flex flex-col p-2 gap-1 bg-[#05070c]/50 shrink-0">
+            <span class="text-[9px] font-bold text-slate-500 uppercase tracking-widest px-2 py-1 select-none">All Folders</span>
+            <div class="flex flex-col gap-0.5">
+              ${categories.map(cat => `
+                <button onclick="selectAssetCategory('${cat.id}')" 
+                  class="w-full px-2.5 py-1.5 rounded text-left text-xs font-bold transition-all flex items-center justify-between cursor-pointer border ${selectedAssetCategory === cat.id ? 'bg-cyan-500/10 border-cyan-500/20 text-cyan-400 font-extrabold shadow-[0_0_8px_rgba(6,182,212,0.05)]' : 'bg-transparent border-transparent text-slate-400 hover:text-slate-200 hover:bg-white/2'}">
+                  <div class="flex items-center gap-2">
+                    <span class="text-sm">${cat.icon}</span>
+                    <span>${cat.label}</span>
+                  </div>
+                  <span class="text-[9px] font-mono opacity-50 font-bold">${ASSET_LIBRARY.filter(a => a.category === cat.id).length}</span>
+                </button>
+              `).join('')}
+            </div>
+          </div>
+
+          <!-- Right side: Asset Cards Grid -->
+          <div class="flex-grow overflow-y-auto p-4 flex flex-col gap-3 min-w-0">
+            <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 gap-3">
+              ${filtered.length === 0 ? `
+                <div class="col-span-full flex flex-col items-center justify-center py-12 text-center">
+                  <i data-lucide="info" class="w-8 h-8 text-slate-600 mb-2"></i>
+                  <p class="text-xs text-white/30 italic">No matching assets found.</p>
+                </div>
+              ` : filtered.map(asset => `
+                <button onclick="handleAddObject('${asset.type}', '${asset.id}')" 
+                  class="group flex flex-col items-start p-2.5 rounded-lg border bg-[#0d1220]/60 border-white/5 hover:border-cyan-500/40 hover:bg-cyan-950/20 text-left transition-all duration-200 cursor-pointer w-full shadow-lg hover:shadow-cyan-500/5 relative overflow-hidden">
+                  
+                  <!-- Glossy background accent -->
+                  <div class="absolute inset-0 bg-gradient-to-tr from-cyan-500/0 to-cyan-500/5 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"></div>
+
+                  <!-- Large Icon Display Box -->
+                  <div class="w-full h-20 bg-slate-950/50 border border-white/5 rounded-md flex items-center justify-center text-3xl mb-2 group-hover:bg-slate-950/70 transition-all select-none relative">
+                    <span>${asset.icon}</span>
+                    <span class="absolute bottom-1 right-1.5 font-mono text-[7px] text-slate-500 font-bold uppercase tracking-wider">${asset.type}</span>
+                  </div>
+
+                  <!-- Text Details -->
+                  <span class="text-[10px] font-extrabold text-slate-200 group-hover:text-cyan-400 transition-colors leading-snug w-full truncate pointer-events-none">${asset.name}</span>
+                  <span class="text-[8px] text-slate-500 leading-snug line-clamp-2 mt-0.5 w-full pointer-events-none">${asset.desc}</span>
+                </button>
+              `).join('')}
+            </div>
+          </div>
+
+        </div>
+      `;
     }
 
     // SCENE REBUILD & GRAPHICS PIPELINE
@@ -2389,6 +2630,7 @@
         mesh.receiveShadow = true;
 
         mesh.userData = { id: obj.id }; // store ID for click checks
+        mesh.visible = isObjectVisible(obj.id);
 
         objectsGroup.add(mesh);
         meshMap.set(obj.id, mesh);
@@ -2474,7 +2716,7 @@
       if (transformControls) {
         if (selectedObjectId && activeTab === 'objects') {
           const selMesh = meshMap.get(selectedObjectId);
-          if (selMesh) {
+          if (selMesh && !isObjectLocked(selectedObjectId) && isObjectVisible(selectedObjectId)) {
             transformControls.setMode(currentTransformMode);
             transformControls.attach(selMesh);
           } else {
@@ -3350,6 +3592,17 @@
       if (!activeObj.rotation) activeObj.rotation = { x: 0, y: 0, z: 0 };
 
       if (field === 'name') activeObj.name = val;
+      else if (field === 'folderId') {
+        activeObj.folderId = val === 'none' ? null : val;
+        if (activeObj.folderId) {
+          const folder = folders.find(f => f.id === activeObj.folderId);
+          if (folder) {
+            activeObj.locked = folder.locked;
+            activeObj.hidden = folder.hidden;
+          }
+        }
+        renderInspector(); // refresh tree structure in outliner!
+      }
       else if (field === 'color') activeObj.color = val;
       else if (field === 'texture') activeObj.texture = val;
       else if (field === 'pos_x') activeObj.position.x = val;
@@ -3491,6 +3744,267 @@
       renderInspector();
     }
 
+    // FOLDER AND LOCK/VISIBILITY SYSTEM STATE MUTATORS
+    function isObjectLocked(objId) {
+      const obj = objects.find(o => o.id === objId);
+      if (!obj) return false;
+      if (obj.locked) return true;
+      if (obj.folderId) {
+        const folder = folders.find(f => f.id === obj.folderId);
+        if (folder && folder.locked) return true;
+      }
+      return false;
+    }
+
+    function isObjectVisible(objId) {
+      const obj = objects.find(o => o.id === objId);
+      if (!obj) return false;
+      if (obj.hidden) return false;
+      if (obj.folderId) {
+        const folder = folders.find(f => f.id === obj.folderId);
+        if (folder && folder.hidden) return false;
+      }
+      return true;
+    }
+
+    function handleAddFolder() {
+      const name = prompt("Enter folder name:", "New Folder");
+      if (!name || name.trim() === '') return;
+      const folder = {
+        id: `folder_${Date.now()}`,
+        name: name.trim(),
+        locked: false,
+        hidden: false,
+        collapsed: false
+      };
+      folders.push(folder);
+      renderInspector();
+    }
+
+    function handleDeleteFolder(folderId) {
+      // Move all nested objects to root
+      objects.forEach(obj => {
+        if (obj.folderId === folderId) {
+          obj.folderId = null;
+        }
+      });
+      // Filter out the folder
+      folders = folders.filter(f => f.id !== folderId);
+      renderInspector();
+      rebuildScene();
+    }
+
+    function handleRenameFolder(folderId) {
+      const folder = folders.find(f => f.id === folderId);
+      if (!folder) return;
+      const newName = prompt("Rename folder:", folder.name);
+      if (newName && newName.trim() !== '') {
+        folder.name = newName.trim();
+        renderInspector();
+      }
+    }
+
+    function toggleFolderCollapse(folderId) {
+      const folder = folders.find(f => f.id === folderId);
+      if (folder) {
+        folder.collapsed = !folder.collapsed;
+        renderInspector();
+      }
+    }
+
+    function toggleFolderLock(folderId) {
+      const folder = folders.find(f => f.id === folderId);
+      if (folder) {
+        folder.locked = !folder.locked;
+        
+        // Propagate folder locked state to nested objects
+        objects.forEach(obj => {
+          if (obj.folderId === folderId) {
+            obj.locked = folder.locked;
+          }
+        });
+
+        // If the folder is locked, and an object inside it is selected, detach transform controls
+        if (folder.locked && selectedObjectId) {
+          const selObj = objects.find(o => o.id === selectedObjectId);
+          if (selObj && selObj.folderId === folderId) {
+            if (transformControls) transformControls.detach();
+          }
+        }
+        rebuildScene();
+        renderInspector();
+      }
+    }
+
+    function toggleFolderVisibility(folderId) {
+      const folder = folders.find(f => f.id === folderId);
+      if (folder) {
+        folder.hidden = !folder.hidden;
+
+        // Propagate folder hidden state to nested objects
+        objects.forEach(obj => {
+          if (obj.folderId === folderId) {
+            obj.hidden = folder.hidden;
+          }
+        });
+
+        // If the folder is hidden, and an object inside it is selected, deselect it
+        if (folder.hidden && selectedObjectId) {
+          const selObj = objects.find(o => o.id === selectedObjectId);
+          if (selObj && selObj.folderId === folderId) {
+            setSelectedObject(null);
+          }
+        }
+        rebuildScene();
+        renderInspector();
+      }
+    }
+
+    function toggleObjectLock(objId) {
+      const obj = objects.find(o => o.id === objId);
+      if (obj) {
+        obj.locked = !obj.locked;
+        // If locked, and it is currently selected, detach transform controls
+        if (obj.locked && selectedObjectId === objId) {
+          if (transformControls) transformControls.detach();
+        }
+        rebuildScene();
+        renderInspector();
+      }
+    }
+
+    function toggleObjectVisibility(objId) {
+      const obj = objects.find(o => o.id === objId);
+      if (obj) {
+        obj.hidden = !obj.hidden;
+        // If hidden, and it is currently selected, deselect it
+        if (obj.hidden && selectedObjectId === objId) {
+          setSelectedObject(null);
+        }
+        rebuildScene();
+        renderInspector();
+      }
+    }
+
+    // HTML5 DRAG AND DROP LAYER MANAGER
+    let draggedType = null;
+    let draggedId = null;
+
+    function handleDragStart(e, type, id) {
+      draggedType = type;
+      draggedId = id;
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', id);
+      e.currentTarget.classList.add('opacity-50');
+    }
+
+    function handleDragEnd(e) {
+      draggedType = null;
+      draggedId = null;
+      e.currentTarget.classList.remove('opacity-50');
+      document.querySelectorAll('.mapmaker-drag-over').forEach(el => {
+        el.classList.remove('mapmaker-drag-over');
+      });
+    }
+
+    function handleDragOver(e) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+    }
+
+    function handleDragEnter(e, type, id) {
+      e.preventDefault();
+      if (draggedId !== id) {
+        e.currentTarget.classList.add('mapmaker-drag-over');
+      }
+    }
+
+    function handleDragLeave(e) {
+      e.currentTarget.classList.remove('mapmaker-drag-over');
+    }
+
+    function handleDrop(e, targetType, targetId) {
+      e.preventDefault();
+      e.stopPropagation();
+
+      document.querySelectorAll('.mapmaker-drag-over').forEach(el => {
+        el.classList.remove('mapmaker-drag-over');
+      });
+
+      if (!draggedId) return;
+
+      if (draggedType === 'object') {
+        const objIndex = objects.findIndex(o => o.id === draggedId);
+        if (objIndex === -1) return;
+        const draggedObj = objects[objIndex];
+
+        if (targetType === 'folder') {
+          // Drop onto a folder: nest object inside folder
+          draggedObj.folderId = targetId;
+          const folder = folders.find(f => f.id === targetId);
+          if (folder) {
+            draggedObj.locked = folder.locked;
+            draggedObj.hidden = folder.hidden;
+          }
+          renderInspector();
+          rebuildScene();
+        } 
+        else if (targetType === 'object') {
+          // Drop onto another object: copy its folderId and insert before/after
+          const targetObj = objects.find(o => o.id === targetId);
+          if (!targetObj) return;
+
+          draggedObj.folderId = targetObj.folderId;
+          if (draggedObj.folderId) {
+            const folder = folders.find(f => f.id === draggedObj.folderId);
+            if (folder) {
+              draggedObj.locked = folder.locked;
+              draggedObj.hidden = folder.hidden;
+            }
+          }
+
+          // Reorder in array
+          objects.splice(objIndex, 1);
+          const newIndex = objects.findIndex(o => o.id === targetId);
+          objects.splice(newIndex, 0, draggedObj);
+
+          renderInspector();
+          rebuildScene();
+        }
+        else if (targetType === 'root') {
+          // Drop onto root spacer: unparent the object
+          draggedObj.folderId = null;
+          draggedObj.locked = false;
+          draggedObj.hidden = false;
+          renderInspector();
+          rebuildScene();
+        }
+      }
+      else if (draggedType === 'folder') {
+        if (targetType === 'folder') {
+          const folderIndex = folders.findIndex(f => f.id === draggedId);
+          if (folderIndex === -1) return;
+          const draggedFolder = folders[folderIndex];
+
+          folders.splice(folderIndex, 1);
+          const newIndex = folders.findIndex(f => f.id === targetId);
+          folders.splice(newIndex, 0, draggedFolder);
+
+          renderInspector();
+        }
+        else if (targetType === 'root') {
+          const folderIndex = folders.findIndex(f => f.id === draggedId);
+          if (folderIndex === -1) return;
+          const draggedFolder = folders[folderIndex];
+
+          folders.splice(folderIndex, 1);
+          folders.push(draggedFolder);
+
+          renderInspector();
+        }
+      }
+    }
+
     // PREMADES TEMPLATES LOADER
     function handleLoadPremade(id) {
       const pm = PREMADE_MAPS.find(m => m.id === id);
@@ -3522,6 +4036,18 @@
 
       spawnPoints = JSON.parse(JSON.stringify(pm.spawnPoints || []));
       objects = JSON.parse(JSON.stringify(pm.objects || []));
+      folders = [];
+
+      // Ensure loaded objects have grouping/lock defaults
+      objects.forEach(obj => {
+        if (!obj.rotation) obj.rotation = { x: 0, y: 0, z: 0 };
+        if (obj.rotation.x === undefined) obj.rotation.x = 0;
+        if (obj.rotation.y === undefined) obj.rotation.y = 0;
+        if (obj.rotation.z === undefined) obj.rotation.z = 0;
+        if (obj.locked === undefined) obj.locked = false;
+        if (obj.hidden === undefined) obj.hidden = false;
+        if (obj.folderId === undefined) obj.folderId = null;
+      });
 
       selectedObjectId = null;
       selectedLightId = null;
@@ -3680,6 +4206,13 @@
         fogColor,
         fogDensity,
         spawnPoints: spawnPoints.map(sp => ({ x: sp.x, y: 0, z: sp.z })),
+        folders: folders.map(f => ({
+          id: f.id,
+          name: f.name,
+          locked: f.locked,
+          hidden: f.hidden,
+          collapsed: f.collapsed
+        })),
         objects: objects.map(obj => ({
           id: obj.id,
           name: obj.name,
@@ -3695,7 +4228,10 @@
           emissive: obj.emissive,
           emissiveIntensity: obj.emissiveIntensity,
           isCollidable: obj.isCollidable,
-          texture: obj.texture
+          texture: obj.texture,
+          locked: obj.locked || false,
+          hidden: obj.hidden || false,
+          folderId: obj.folderId || null
         })),
         lighting: {
           ambientColor,
@@ -3754,8 +4290,11 @@
         if (intersectsObj.length > 0) {
           const hitMesh = intersectsObj[0].object;
           if (hitMesh.userData && hitMesh.userData.id) {
-            setSelectedObject(hitMesh.userData.id);
-            return;
+            const objId = hitMesh.userData.id;
+            if (!isObjectLocked(objId)) {
+              setSelectedObject(objId);
+              return;
+            }
           }
         }
 
@@ -3830,14 +4369,24 @@
             }
 
             spawnPoints = JSON.parse(JSON.stringify(data.spawnPoints || []));
+            folders = JSON.parse(JSON.stringify(data.folders || []));
             objects = JSON.parse(JSON.stringify(data.objects || []));
 
-            // Safety fallback for older map imports missing complete rotation components
+            // Safety fallback for older map imports missing complete rotation and new grouping fields
             objects.forEach(obj => {
               if (!obj.rotation) obj.rotation = { x: 0, y: 0, z: 0 };
               if (obj.rotation.x === undefined) obj.rotation.x = 0;
               if (obj.rotation.y === undefined) obj.rotation.y = 0;
               if (obj.rotation.z === undefined) obj.rotation.z = 0;
+              if (obj.locked === undefined) obj.locked = false;
+              if (obj.hidden === undefined) obj.hidden = false;
+              if (obj.folderId === undefined) obj.folderId = null;
+            });
+            
+            folders.forEach(f => {
+              if (f.locked === undefined) f.locked = false;
+              if (f.hidden === undefined) f.hidden = false;
+              if (f.collapsed === undefined) f.collapsed = false;
             });
 
             selectedObjectId = null;
@@ -3965,6 +4514,96 @@
         searchInput.value = '';
         searchInput.value = val;
       }
+    }
+
+    // PANEL RESIZERS DRAG ENGINE
+    function initResizers() {
+      const bottomResizer = document.getElementById('bottom-resizer');
+      const bottomPanel = document.getElementById('bottom-content-browser');
+      const sidebarResizer = document.getElementById('sidebar-resizer');
+      const sidebarPanel = document.getElementById('right-sidebar');
+      const container = document.getElementById('viewport-container');
+
+      if (!bottomResizer || !bottomPanel || !sidebarResizer || !sidebarPanel) return;
+
+      const minBottomHeight = 100;
+      const maxBottomHeight = window.innerHeight - 150;
+      const minSidebarWidth = 250;
+      const maxSidebarWidth = 600;
+
+      // 1. Bottom Content Browser Resizer (Vertical Dragging)
+      bottomResizer.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        const startY = e.clientY;
+        const startHeight = bottomPanel.getBoundingClientRect().height;
+
+        document.body.style.cursor = 'ns-resize';
+        document.body.style.userSelect = 'none';
+
+        const onMouseMove = (moveEvent) => {
+          const deltaY = moveEvent.clientY - startY;
+          let newHeight = startHeight - deltaY;
+
+          if (newHeight < minBottomHeight) newHeight = minBottomHeight;
+          if (newHeight > maxBottomHeight) newHeight = maxBottomHeight;
+
+          bottomPanel.style.height = `${newHeight}px`;
+
+          // Proactively trigger Three.js canvas size update
+          if (camera && renderer && container) {
+            camera.aspect = container.clientWidth / container.clientHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(container.clientWidth, container.clientHeight);
+          }
+        };
+
+        const onMouseUp = () => {
+          document.body.style.cursor = '';
+          document.body.style.userSelect = '';
+          document.removeEventListener('mousemove', onMouseMove);
+          document.removeEventListener('mouseup', onMouseUp);
+        };
+
+        document.addEventListener('mousemove', onMouseMove);
+        document.addEventListener('mouseup', onMouseUp);
+      });
+
+      // 2. Right Sidebar Resizer (Horizontal Dragging)
+      sidebarResizer.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        const startX = e.clientX;
+        const startWidth = sidebarPanel.getBoundingClientRect().width;
+
+        document.body.style.cursor = 'ew-resize';
+        document.body.style.userSelect = 'none';
+
+        const onMouseMove = (moveEvent) => {
+          const deltaX = moveEvent.clientX - startX;
+          let newWidth = startWidth - deltaX;
+
+          if (newWidth < minSidebarWidth) newWidth = minSidebarWidth;
+          if (newWidth > maxSidebarWidth) newWidth = maxSidebarWidth;
+
+          sidebarPanel.style.width = `${newWidth}px`;
+
+          // Proactively trigger Three.js canvas size update
+          if (camera && renderer && container) {
+            camera.aspect = container.clientWidth / container.clientHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(container.clientWidth, container.clientHeight);
+          }
+        };
+
+        const onMouseUp = () => {
+          document.body.style.cursor = '';
+          document.body.style.userSelect = '';
+          document.removeEventListener('mousemove', onMouseMove);
+          document.removeEventListener('mouseup', onMouseUp);
+        };
+
+        document.addEventListener('mousemove', onMouseMove);
+        document.addEventListener('mouseup', onMouseUp);
+      });
     }
   </script>
 
