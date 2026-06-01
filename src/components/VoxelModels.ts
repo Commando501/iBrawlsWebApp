@@ -32,6 +32,7 @@ export type TorsoPreset = 'mark-vi' | 'scout' | 'recon' | 'eod' | 'hayabusa';
 export type ArmPreset = 'mark-vi' | 'odst' | 'recon' | 'eod' | 'hayabusa';
 export type LegPreset = 'mark-vi' | 'jump-jet' | 'odst' | 'eod' | 'hayabusa';
 export type HammerPreset = 'default' | 'akelas' | 'akelus' | 'paegaas' | 'sepulotez' | 'halbashi' | 'eektah-fel' | 'gravity-axe' | 'gravity-mace' | 'fist-of-rukt';
+export type SwordPreset = 'default' | 'halo-ce' | 'halo-2' | 'halo-3' | 'reach' | 'anniversary' | 'halo-4' | 'h2a-blue' | 'h2a-pink' | 'halo-5' | 'infinite';
 
 export interface ArmorPaintJob {
   helmet?: { [key: string]: string };
@@ -65,6 +66,7 @@ export interface CharacterLoadout {
   leg?: LegPreset;
   paintJob?: ArmorPaintJob;
   hammerPreset?: HammerPreset;
+  swordPreset?: SwordPreset;
 }
 
 export const DEFAULT_LOADOUT: CharacterLoadout = {
@@ -73,6 +75,7 @@ export const DEFAULT_LOADOUT: CharacterLoadout = {
   arm: 'mark-vi',
   leg: 'mark-vi',
   hammerPreset: 'default',
+  swordPreset: 'default',
 };
 
 export const AVAILABLE_PRESETS = {
@@ -81,6 +84,7 @@ export const AVAILABLE_PRESETS = {
   arm: ['mark-vi', 'odst', 'recon', 'eod', 'hayabusa'] as const,
   leg: ['mark-vi', 'jump-jet', 'odst', 'eod', 'hayabusa'] as const,
   hammer: ['default', 'akelas', 'akelus', 'paegaas', 'sepulotez', 'halbashi', 'eektah-fel', 'gravity-axe', 'gravity-mace', 'fist-of-rukt'] as const,
+  sword: ['default', 'halo-ce', 'halo-2', 'halo-3', 'reach', 'anniversary', 'halo-4', 'h2a-blue', 'h2a-pink', 'halo-5', 'infinite'] as const,
 };
 
 
@@ -1912,47 +1916,204 @@ export function buildGravityHammerModel(customHue?: number, preset: HammerPreset
 
 // ─── KATAR SWORD MODEL ────────────────────────────────────────────────────────
 
-export function buildKatarSwordModel(customHue?: number): THREE.Group {
+export function buildKatarSwordModel(customHue?: number, preset: SwordPreset = 'default'): THREE.Group {
   const data: VoxelData[] = [];
 
-  for (let y = 0; y <= 9; y++) {
-    data.push({ x: -2, y: y, z: 0, color: '#475569' });
-    data.push({ x: -2, y: y, z: 1, color: '#334155' });
-    data.push({ x: 2, y: y, z: 0, color: '#475569' });
-    data.push({ x: 2, y: y, z: 1, color: '#334155' });
-  }
+  if (preset === 'default') {
+    // BACKWARDS COMPATIBILITY: Original Katar Sword
+    for (let y = 0; y <= 9; y++) {
+      data.push({ x: -2, y: y, z: 0, color: '#475569' });
+      data.push({ x: -2, y: y, z: 1, color: '#334155' });
+      data.push({ x: 2, y: y, z: 0, color: '#475569' });
+      data.push({ x: 2, y: y, z: 1, color: '#334155' });
+    }
 
-  for (let x = -1; x <= 1; x++) {
-    data.push({ x: x, y: 3, z: 0, color: '#0f172a' });
-    data.push({ x: x, y: 6, z: 0, color: '#0f172a' });
-  }
+    for (let x = -1; x <= 1; x++) {
+      data.push({ x: x, y: 3, z: 0, color: '#0f172a' });
+      data.push({ x: x, y: 6, z: 0, color: '#0f172a' });
+    }
 
-  for (let x = -3; x <= 3; x++) {
-    for (let z = -1; z <= 1; z++) {
-      data.push({ x: x, y: 10, z: z, color: '#1e293b' });
+    for (let x = -3; x <= 3; x++) {
+      for (let z = -1; z <= 1; z++) {
+        data.push({ x: x, y: 10, z: z, color: '#1e293b' });
+      }
+    }
+
+    const swordEdgeColor = customHue !== undefined ? `hsl(${customHue}, 85%, 60%)` : '#22d3ee';
+    for (let y = 11; y <= 26; y++) {
+      let w = 0;
+      if (y <= 13) w = 3;
+      else if (y <= 17) w = 2;
+      else if (y <= 21) w = 1;
+      else w = 0;
+
+      for (let x = -w; x <= w; x++) {
+        const isEdge = x === -w || x === w || y === 26;
+        data.push({ x: x, y: y, z: 0, color: isEdge ? swordEdgeColor : '#64748b', emissive: isEdge });
+      }
+    }
+  } else {
+    // ─── PREMIUM DOUBLE-PRONGED ENERGY SWORDS ───
+    let hiltColor1 = '#334155'; // Main hilt body
+    let hiltColor2 = '#0f172a'; // Hilt trim
+    let baseColor = '#22d3ee';  // Base blade neon color
+    let coreColor = '#ffffff';  // Core blade white color
+    let crackleColors: string[] = []; // Energy crackles
+
+    // Resolve weapon-specific aesthetics
+    if (preset === 'halo-ce') {
+      hiltColor1 = '#3f3f46';
+      hiltColor2 = '#18181b';
+      baseColor = customHue !== undefined ? `hsl(${customHue}, 85%, 60%)` : '#22d3ee';
+      coreColor = '#ffffff';
+    } else if (preset === 'halo-2') {
+      hiltColor1 = '#1e1b4b';
+      hiltColor2 = '#2e1065';
+      baseColor = customHue !== undefined ? `hsl(${customHue}, 90%, 65%)` : '#38bdf8';
+      coreColor = '#f0f9ff';
+      crackleColors = ['#ec4899', '#d946ef', '#c084fc'];
+    } else if (preset === 'halo-3') {
+      hiltColor1 = '#334155';
+      hiltColor2 = '#0f172a';
+      baseColor = customHue !== undefined ? `hsl(${customHue}, 85%, 60%)` : '#0284c7';
+      coreColor = '#ffffff';
+      crackleColors = ['#818cf8', '#a78bfa', '#c084fc'];
+    } else if (preset === 'reach') {
+      hiltColor1 = '#0f172a';
+      hiltColor2 = '#1e293b';
+      baseColor = customHue !== undefined ? `hsl(${customHue}, 95%, 55%)` : '#06b6d4';
+      coreColor = '#ffffff';
+    } else if (preset === 'anniversary') {
+      hiltColor1 = '#94a3b8';
+      hiltColor2 = '#475569';
+      baseColor = customHue !== undefined ? `hsl(${customHue}, 85%, 60%)` : '#06b6d4';
+      coreColor = '#ffffff';
+      crackleColors = ['#38bdf8', '#7dd3fc', '#ffffff'];
+    } else if (preset === 'halo-4') {
+      hiltColor1 = '#4b5563';
+      hiltColor2 = '#111827';
+      baseColor = customHue !== undefined ? `hsl(${customHue}, 90%, 65%)` : '#00bfff';
+      coreColor = '#ffffff';
+      crackleColors = ['#1e90ff', '#87cefa'];
+    } else if (preset === 'h2a-blue') {
+      hiltColor1 = '#374151';
+      hiltColor2 = '#1f2937';
+      baseColor = customHue !== undefined ? `hsl(${customHue}, 85%, 55%)` : '#2563eb';
+      coreColor = '#93c5fd';
+    } else if (preset === 'h2a-pink') {
+      hiltColor1 = '#0f172a';
+      hiltColor2 = '#020617';
+      baseColor = customHue !== undefined ? `hsl(${customHue}, 90%, 65%)` : '#d946ef';
+      coreColor = '#f43f5e';
+      crackleColors = ['#881337', '#e11d48', '#ffffff'];
+    } else if (preset === 'halo-5') {
+      hiltColor1 = '#27272a';
+      hiltColor2 = '#18181b';
+      baseColor = customHue !== undefined ? `hsl(${customHue}, 80%, 55%)` : '#0284c7';
+      coreColor = '#ffffff';
+    } else if (preset === 'infinite') {
+      hiltColor1 = '#cbd5e1';
+      hiltColor2 = '#f1f5f9';
+      baseColor = customHue !== undefined ? `hsl(${customHue}, 85%, 60%)` : '#38bdf8';
+      coreColor = '#ffffff';
+      crackleColors = ['#1d4ed8', '#60a5fa', '#93c5fd'];
+    }
+
+    // ─── BUILD COMMON ERGONOMIC HILT ───
+    // Grip handle (y = 0..5, x = 0, z = 0)
+    for (let y = 0; y <= 5; y++) {
+      data.push({ x: 0, y: y, z: 0, color: hiltColor1 });
+      data.push({ x: 0, y: y, z: 1, color: hiltColor2 });
+      data.push({ x: 0, y: y, z: -1, color: hiltColor2 });
+    }
+
+    // Emitter Base / Guard (y = 6..7)
+    // Curves outward to receive the twin blades
+    for (let x = -3; x <= 3; x++) {
+      const isCenter = x === 0;
+      const c1 = isCenter ? hiltColor2 : hiltColor1;
+      const c2 = isCenter ? '#475569' : hiltColor2;
+      
+      // Horizontal bar
+      data.push({ x: x, y: 6, z: 0, color: c1 });
+      data.push({ x: x, y: 6, z: 1, color: c2 });
+      data.push({ x: x, y: 6, z: -1, color: c2 });
+      
+      // Sweep upward slightly at the ends
+      if (Math.abs(x) >= 2) {
+        data.push({ x: x, y: 7, z: 0, color: hiltColor1 });
+        data.push({ x: x, y: 7, z: 1, color: hiltColor2 });
+      }
+    }
+
+    // Reach indicator light / Halo 5 gold trim / Halo CE indicator
+    if (preset === 'reach') {
+      data.push({ x: 0, y: 6, z: 1, color: '#f59e0b', emissive: true });
+    } else if (preset === 'halo-5') {
+      data.push({ x: -1, y: 6, z: 1, color: '#fbbf24' });
+      data.push({ x: 1, y: 6, z: 1, color: '#fbbf24' });
+    }
+
+    // Halo 4 aggressive forward teeth
+    if (preset === 'halo-4') {
+      data.push({ x: -4, y: 6, z: 0, color: hiltColor2 });
+      data.push({ x: -4, y: 7, z: 0, color: hiltColor1 });
+      data.push({ x: -4, y: 8, z: 0, color: hiltColor1 });
+      data.push({ x: 4, y: 6, z: 0, color: hiltColor2 });
+      data.push({ x: 4, y: 7, z: 0, color: hiltColor1 });
+      data.push({ x: 4, y: 8, z: 0, color: hiltColor1 });
+    }
+
+    // ─── BUILD TWIN CURVED PLASMATIC BLADES ───
+    for (let y = 8; y <= 26; y++) {
+      // Curve offset progression: flares out then sweeps back in
+      let offset = 3;
+      if (y >= 11 && y <= 15) {
+        offset = 4; // Outward flare
+      } else if (y >= 16 && y <= 19) {
+        offset = 3;
+      } else if (y >= 20 && y <= 23) {
+        offset = 2; // Inward sweep
+      } else if (y >= 24) {
+        offset = 1; // Sharp tips
+      }
+
+      const widths = offset > 1 ? [offset, offset - 1] : [offset];
+
+      widths.forEach((x, index) => {
+        const isEdge = x === offset || y === 26;
+        
+        let voxelColor = isEdge ? baseColor : coreColor;
+        
+        if (crackleColors.length > 0 && Math.random() < 0.28) {
+          voxelColor = crackleColors[Math.floor(Math.random() * crackleColors.length)];
+        }
+
+        // Left blade prong
+        data.push({ x: -x, y: y, z: 0, color: voxelColor, emissive: true });
+        // Right blade prong
+        data.push({ x: x, y: y, z: 0, color: voxelColor, emissive: true });
+
+        // Add 3D diamond cross-section thickness at the prong centers
+        if (index === 0 && offset > 1) {
+          data.push({ x: -x, y: y, z: 1, color: isEdge ? baseColor : coreColor, emissive: true });
+          data.push({ x: -x, y: y, z: -1, color: isEdge ? baseColor : coreColor, emissive: true });
+          
+          data.push({ x: x, y: y, z: 1, color: isEdge ? baseColor : coreColor, emissive: true });
+          data.push({ x: x, y: y, z: -1, color: isEdge ? baseColor : coreColor, emissive: true });
+        }
+      });
     }
   }
 
-  const swordEdgeColor = customHue !== undefined ? `hsl(${customHue}, 85%, 60%)` : '#22d3ee';
-  for (let y = 11; y <= 26; y++) {
-    let w = 0;
-    if (y <= 13) w = 3;
-    else if (y <= 17) w = 2;
-    else if (y <= 21) w = 1;
-    else w = 0;
-
-    for (let x = -w; x <= w; x++) {
-      const isEdge = x === -w || x === w || y === 26;
-      data.push({ x: x, y: y, z: 0, color: isEdge ? swordEdgeColor : '#64748b', emissive: isEdge });
+  const sword = createVoxelGroup(data, 0.08);
+  sword.traverse((child) => {
+    if (child instanceof THREE.Mesh) {
+      child.position.y -= 4.5 * 0.08;
     }
-  }
-
-  const katar = createVoxelGroup(data, 0.08);
-  katar.traverse((child) => {
-    if (child instanceof THREE.Mesh) child.position.y -= 4.5 * 0.08;
   });
 
-  return katar;
+  return sword;
 }
 
 export function buildPistolModel(customHue?: number): THREE.Group {

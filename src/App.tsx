@@ -76,7 +76,7 @@ import { CharacterPreview } from './components/CharacterPreview';
 import { CharacterPainter } from './components/CharacterPainter';
 import { CharacterLoadout, DEFAULT_LOADOUT, AVAILABLE_PRESETS, HelmetPreset, TorsoPreset, ArmPreset, LegPreset } from './components/VoxelModels';
 
-const APP_VERSION = '0.572';
+const APP_VERSION = '0.573';
 const MAX_PLAYER_NAME_LENGTH = 10;
 
 interface OnlineClient {
@@ -5841,6 +5841,7 @@ export default function App() {
                                 arm: 'Arms',
                                 leg: 'Legs',
                                 hammerPreset: 'Hammer',
+                                swordPreset: 'Sword',
                               };
                               const presetLabel: Record<string, string> = {
                                 'mark-vi': 'Mk.VI',
@@ -5863,6 +5864,16 @@ export default function App() {
                                 'gravity-axe': 'Axe',
                                 'gravity-mace': 'Mace',
                                 'fist-of-rukt': 'Rukt',
+                                'halo-ce': 'CE Classic',
+                                'halo-2': 'Halo 2',
+                                'halo-3': 'Halo 3',
+                                'reach': 'Reach',
+                                'anniversary': 'CEA',
+                                'halo-4': 'Halo 4',
+                                'h2a-blue': 'H2A Blue',
+                                'h2a-pink': 'H2A Pink',
+                                'halo-5': 'Halo 5',
+                                'infinite': 'Infinite',
                               };
                               const slots = [
                                 { key: 'helmet', options: AVAILABLE_PRESETS.helmet },
@@ -5870,6 +5881,7 @@ export default function App() {
                                 { key: 'arm',    options: AVAILABLE_PRESETS.arm },
                                 { key: 'leg',    options: AVAILABLE_PRESETS.leg },
                                 { key: 'hammerPreset', options: AVAILABLE_PRESETS.hammer },
+                                { key: 'swordPreset', options: AVAILABLE_PRESETS.sword },
                               ] as const;
                               return (
                                 <div className="bg-white/5 border border-white/5 rounded-lg p-3">

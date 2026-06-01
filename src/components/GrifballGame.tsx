@@ -4452,7 +4452,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     threeRef.current.playerHammer = playerHammer;
 
     // Build the katar sword model
-    const playerSword = buildKatarSwordModel(adminSettings.playerHue);
+    const playerSword = buildKatarSwordModel(adminSettings.playerHue, playerLoadout?.swordPreset);
     // Neutral positioning (placed on right side, angled forward)
     playerSword.position.set(0.35, -0.38, -0.5);
     playerSword.rotation.set(Math.PI / 2, 0, -Math.PI / 8); // Points forward, tilted slightly inwards

@@ -105,7 +105,7 @@ export const CharacterPreview: React.FC<CharacterPreviewProps> = ({ hue, heldWea
           characterGroup.add(hammer);
         }
       } else if (w === 'sword') {
-        const sword = buildKatarSwordModel(h);
+        const sword = buildKatarSwordModel(h, lo?.swordPreset);
         sword.scale.set(0.6, 0.6, 0.6);
         sword.position.set(0.5, 1.0 - 0.64, -0.32);
         sword.rotation.set(Math.PI / 2, 0, -Math.PI / 8);
