@@ -19,6 +19,7 @@ import {
   AITuning,
   ReplayFile,
   CustomMapData,
+  CustomMapObject,
 } from './types';
 import {
   DEFAULT_ADMIN_SETTINGS,
@@ -75,7 +76,7 @@ import { CharacterPreview } from './components/CharacterPreview';
 import { CharacterPainter } from './components/CharacterPainter';
 import { CharacterLoadout, DEFAULT_LOADOUT, AVAILABLE_PRESETS, HelmetPreset, TorsoPreset, ArmPreset, LegPreset } from './components/VoxelModels';
 
-const APP_VERSION = '0.548';
+const APP_VERSION = '0.565';
 const MAX_PLAYER_NAME_LENGTH = 10;
 
 interface OnlineClient {
@@ -789,6 +790,461 @@ const checkGraphicsAcceleration = (): GraphicsCheckResult => {
   }
 };
 
+// --- HIGH-FIDELITY MAP ASSETS PROCEDURAL MODEL PIPELINE ---
+export function createHighFidelityObjectMesh(
+  obj: CustomMapObject,
+  three: typeof THREE,
+  generateCustomTexture?: (type: string, baseColorHex: string) => THREE.Texture,
+  scaleMultiplier: number = 1.0
+): THREE.Group {
+  const group = new three.Group();
+  group.name = obj.id;
+  
+  // Base scale dimensions
+  const sx = obj.scale.x * scaleMultiplier;
+  const sy = obj.scale.y * scaleMultiplier;
+  const sz = obj.scale.z * scaleMultiplier;
+  
+  // Set up materials
+  const hasTexture = obj.texture && obj.texture !== 'none';
+  const texture = (hasTexture && generateCustomTexture) ? generateCustomTexture(obj.texture, obj.color) : null;
+  if (texture) {
+    texture.needsUpdate = true;
+  }
+  
+  let bumpScale = 0.02;
+  if (hasTexture) {
+    if (['nature_mossy_stone', 'fantasy_cobble', 'city_brick'].includes(obj.texture)) {
+      bumpScale = 0.035;
+    } else if (['nature_grass', 'city_concrete', 'nature_wood'].includes(obj.texture)) {
+      bumpScale = 0.025;
+    } else if (['space_alloy', 'futuristic_carbon', 'forerunner_panel'].includes(obj.texture)) {
+      bumpScale = 0.015;
+    } else if (['futuristic_hex', 'synthwave_grid', 'winter_glacier_glass'].includes(obj.texture)) {
+      bumpScale = 0.008;
+    }
+  }
+
+  const mat = new three.MeshStandardMaterial({
+    map: texture,
+    bumpMap: texture || undefined,
+    bumpScale: hasTexture ? bumpScale : 0,
+    color: hasTexture ? new three.Color('#ffffff') : new three.Color(obj.color),
+    metalness: obj.metalness ?? 0.5,
+    roughness: obj.roughness ?? 0.5,
+    opacity: obj.opacity ?? 1,
+    transparent: obj.transparent || false,
+  });
+
+  if (obj.emissive && obj.emissive !== '#000000') {
+    mat.emissive = new three.Color(obj.emissive);
+    mat.emissiveIntensity = obj.emissiveIntensity ?? 1;
+  }
+
+  // Dark accent material for metallic trims
+  const accentMat = new three.MeshStandardMaterial({
+    color: new three.Color('#1e293b'),
+    metalness: 0.9,
+    roughness: 0.2,
+  });
+
+  // Glow material
+  let glowMat: THREE.Material;
+  if (obj.emissive && obj.emissive !== '#000000') {
+    glowMat = new three.MeshBasicMaterial({
+      color: new three.Color(obj.emissive),
+      transparent: true,
+      opacity: 0.8
+    });
+  } else {
+    glowMat = new three.MeshBasicMaterial({
+      color: new three.Color(obj.color || '#00ffff'),
+      transparent: true,
+      opacity: 0.6
+    });
+  }
+  
+  // Render based on geometry type and name clues
+  const nameLower = (obj.name || '').toLowerCase();
+  
+  if (obj.type === 'box') {
+    const isRock = ['nature_mossy_stone', 'space_meteorite'].includes(obj.texture) || 
+                   nameLower.includes('rock') || nameLower.includes('boulder') || nameLower.includes('asteroid') || nameLower.includes('cluster');
+    const isContainer = nameLower.includes('container') || nameLower.includes('barrier') || 
+                        nameLower.includes('partition') || nameLower.includes('shield') || 
+                        nameLower.includes('buffer') || nameLower.includes('freight') || nameLower.includes('wall');
+    const isCrate = nameLower.includes('crate') || nameLower.includes('substation') || nameLower.includes('recharge');
+    
+    if (isRock) {
+      // 1. HIGH-FIDELITY ASTEROID/BOULDER (LOW-POLY ORGANIC FACETED GEODESIC CLUSTER)
+      const mainGeo = new three.DodecahedronGeometry(sx / 2, 1);
+      
+      // Distort vertices slightly to make it organic and non-spherical
+      const posAttr = mainGeo.attributes.position as THREE.BufferAttribute;
+      if (posAttr) {
+        for (let i = 0; i < posAttr.count; i++) {
+          const x = posAttr.getX(i);
+          const y = posAttr.getY(i);
+          const z = posAttr.getZ(i);
+          posAttr.setXYZ(
+            i,
+            x * 1.0 + (Math.sin(y * 5) * 0.08),
+            y * (sy / sx) + (Math.cos(z * 5) * 0.08),
+            z * (sz / sx) + (Math.sin(x * 5) * 0.08)
+          );
+        }
+        mainGeo.computeVertexNormals();
+      }
+      
+      const mainMesh = new three.Mesh(mainGeo, mat);
+      group.add(mainMesh);
+      
+      // Add 2 smaller debris boulders clustered at the base
+      const d1Geo = new three.DodecahedronGeometry(sx * 0.15, 0);
+      const debris1 = new three.Mesh(d1Geo, mat);
+      debris1.position.set(-sx * 0.35, -sy * 0.35, sz * 0.2);
+      debris1.rotation.set(Math.random(), Math.random(), Math.random());
+      group.add(debris1);
+      
+      const d2Geo = new three.DodecahedronGeometry(sx * 0.12, 0);
+      const debris2 = new three.Mesh(d2Geo, mat);
+      debris2.position.set(sx * 0.3, -sy * 0.4, -sz * 0.3);
+      debris2.rotation.set(Math.random(), Math.random(), Math.random());
+      group.add(debris2);
+      
+      if (obj.texture === 'space_meteorite' && obj.emissive && obj.emissive !== '#000000') {
+        const coreGeo = new three.SphereGeometry(sx * 0.2, 8, 8);
+        const core = new three.Mesh(coreGeo, glowMat);
+        core.position.set(0, 0, 0);
+        group.add(core);
+      }
+      
+    } else if (isContainer) {
+      // 2. DETAILED HEAVY INDUSTRIAL SHIPPING CONTAINER / STRUCTURAL BARRIER
+      const bodyGeo = new three.BoxGeometry(sx * 0.94, sy * 0.96, sz * 0.94);
+      const body = new three.Mesh(bodyGeo, mat);
+      group.add(body);
+      
+      const frameThickness = 0.04 * Math.min(sx, sz);
+      
+      // 4 Heavy vertical structural support corner pillars
+      const colW = frameThickness;
+      const colGeo = new three.BoxGeometry(colW, sy * 1.01, colW);
+      
+      const corners = [
+        [-sx/2 + colW/2, -sz/2 + colW/2],
+        [-sx/2 + colW/2, sz/2 - colW/2],
+        [sx/2 - colW/2, -sz/2 + colW/2],
+        [sx/2 - colW/2, sz/2 - colW/2]
+      ];
+      
+      corners.forEach(([cx, cz]) => {
+        const col = new three.Mesh(colGeo, accentMat);
+        col.position.set(cx, 0, cz);
+        group.add(col);
+      });
+      
+      // Top and bottom protective edge rings (horizontal bars)
+      const topBarGeo = new three.BoxGeometry(sx * 1.01, frameThickness, frameThickness);
+      const botBarGeo = topBarGeo.clone();
+      
+      const barsZ = [-sz/2 + frameThickness/2, sz/2 - frameThickness/2];
+      barsZ.forEach(bz => {
+        const topBar = new three.Mesh(topBarGeo, accentMat);
+        topBar.position.set(0, sy/2 - frameThickness/2, bz);
+        group.add(topBar);
+        
+        const botBar = new three.Mesh(botBarGeo, accentMat);
+        botBar.position.set(0, -sy/2 + frameThickness/2, bz);
+        group.add(botBar);
+      });
+      
+      // Corrugated panel ridges along the longer side
+      const isXLonger = sx >= sz;
+      if (isXLonger) {
+        const numRibs = Math.max(3, Math.floor(sx * 1.5));
+        const ribSpacing = (sx * 0.8) / (numRibs - 1 || 1);
+        const ribW = 0.06;
+        const ribD = 0.04;
+        const ribGeo = new three.BoxGeometry(ribW, sy * 0.9, ribD);
+        
+        for (let i = 0; i < numRibs; i++) {
+          const rx = -sx * 0.4 + i * ribSpacing;
+          
+          const fRib = new three.Mesh(ribGeo, accentMat);
+          fRib.position.set(rx, 0, sz/2 - ribD/2);
+          group.add(fRib);
+          
+          const bRib = new three.Mesh(ribGeo, accentMat);
+          bRib.position.set(rx, 0, -sz/2 + ribD/2);
+          group.add(bRib);
+        }
+      } else {
+        const numRibs = Math.max(3, Math.floor(sz * 1.5));
+        const ribSpacing = (sz * 0.8) / (numRibs - 1 || 1);
+        const ribW = 0.04;
+        const ribD = 0.06;
+        const ribGeo = new three.BoxGeometry(ribW, sy * 0.9, ribD);
+        
+        for (let i = 0; i < numRibs; i++) {
+          const rz = -sz * 0.4 + i * ribSpacing;
+          
+          const lRib = new three.Mesh(ribGeo, accentMat);
+          lRib.position.set(-sx/2 + ribW/2, 0, rz);
+          group.add(lRib);
+          
+          const rRib = new three.Mesh(ribGeo, accentMat);
+          rRib.position.set(sx/2 - ribW/2, 0, rz);
+          group.add(rRib);
+        }
+      }
+      
+    } else if (isCrate) {
+      // 3. SCI-FI MECHANICAL TECH CRATE / RECHARGE STATION
+      const coreGeo = new three.BoxGeometry(sx * 0.84, sy * 0.84, sz * 0.84);
+      const core = new three.Mesh(coreGeo, mat);
+      group.add(core);
+      
+      const frameW = 0.08 * sx;
+      
+      // Horizontal top/bottom structural rims
+      const plateGeo = new three.BoxGeometry(sx * 0.94, frameW, sz * 0.94);
+      const topPlate = new three.Mesh(plateGeo, accentMat);
+      topPlate.position.set(0, sy/2 - frameW/2, 0);
+      group.add(topPlate);
+      
+      const botPlate = new three.Mesh(plateGeo, accentMat);
+      botPlate.position.set(0, -sy/2 + frameW/2, 0);
+      group.add(botPlate);
+      
+      // Protective corner reinforcement cages
+      const colGeo = new three.BoxGeometry(frameW, sy * 0.8, frameW);
+      const offsets = [
+        [-sx/2 + frameW/2, -sz/2 + frameW/2],
+        [-sx/2 + frameW/2, sz/2 - frameW/2],
+        [sx/2 - frameW/2, -sz/2 + frameW/2],
+        [sx/2 - frameW/2, sz/2 - frameW/2]
+      ];
+      offsets.forEach(([cx, cz]) => {
+        const col = new three.Mesh(colGeo, accentMat);
+        col.position.set(cx, 0, cz);
+        group.add(col);
+      });
+      
+      if (obj.emissive && obj.emissive !== '#000000') {
+        const glowGeo = new three.BoxGeometry(sx * 0.4, sy * 0.4, sz * 0.86);
+        const glowP = new three.Mesh(glowGeo, glowMat);
+        glowP.position.set(0, 0, 0);
+        group.add(glowP);
+      }
+      
+    } else {
+      // 4. GENERAL BEVELED SCI-FI BOX WITH DETAILED OUTLINE PANELING
+      const bodyGeo = new three.BoxGeometry(sx * 0.96, sy * 0.96, sz * 0.96);
+      const body = new three.Mesh(bodyGeo, mat);
+      group.add(body);
+      
+      const frameThickness = 0.04 * Math.min(sx, sy, sz);
+      const frameGeoX = new three.BoxGeometry(sx * 1.01, frameThickness, frameThickness);
+      const frameGeoY = new three.BoxGeometry(frameThickness, sy * 1.01, frameThickness);
+      const frameGeoZ = new three.BoxGeometry(frameThickness, frameThickness, sz * 1.01);
+      
+      const edgeY = sy/2 - frameThickness/2;
+      const edgeZ = sz/2 - frameThickness/2;
+      const edgeX = sx/2 - frameThickness/2;
+      
+      [[-edgeY, -edgeZ], [-edgeY, edgeZ], [edgeY, -edgeZ], [edgeY, edgeZ]].forEach(([ey, ez]) => {
+        const bar = new three.Mesh(frameGeoX, accentMat);
+        bar.position.set(0, ey, ez);
+        group.add(bar);
+      });
+      
+      [[-edgeX, -edgeZ], [-edgeX, edgeZ], [edgeX, -edgeZ], [edgeX, edgeZ]].forEach(([ex, ez]) => {
+        const bar = new three.Mesh(frameGeoY, accentMat);
+        bar.position.set(ex, 0, ez);
+        group.add(bar);
+      });
+    }
+    
+  } else if (obj.type === 'cylinder') {
+    const isForerunner = ['forerunner_panel', 'forerunner_gold'].includes(obj.texture) ||
+                        nameLower.includes('spire') || nameLower.includes('pylon') || nameLower.includes('beacon') || nameLower.includes('forerunner');
+    const isTechColumn = nameLower.includes('pillar') || nameLower.includes('column') || 
+                         nameLower.includes('anchor') || nameLower.includes('generator') ||
+                         ['space_alloy', 'futuristic_hex', 'synthwave_neon_laser', 'rainy_streets_neon_glow'].includes(obj.texture);
+    
+    if (isForerunner) {
+      // 1. ANCIENT FORERUNNER ANCHOR PYLON / TAPERING OCTAGONAL SPIRE
+      const baseH = sy * 0.14;
+      const baseGeo = new three.CylinderGeometry(sx * 0.72, sx * 0.72, baseH, 8);
+      const base = new three.Mesh(baseGeo, mat);
+      base.position.y = -sy/2 + baseH/2;
+      group.add(base);
+      
+      const shaftH = sy * 0.76;
+      const shaftGeo = new three.CylinderGeometry(sx * 0.32, sx * 0.58, shaftH, 8);
+      const shaft = new three.Mesh(shaftGeo, mat);
+      shaft.position.y = base.position.y + baseH/2 + shaftH/2;
+      group.add(shaft);
+      
+      const ribW = 0.08 * sx;
+      const ribD = 0.1 * sx;
+      const ribGeo = new three.BoxGeometry(ribW, shaftH * 1.02, ribD);
+      const offsets = [
+        [0, -sx * 0.45],
+        [0, sx * 0.45],
+        [-sx * 0.45, 0],
+        [sx * 0.45, 0]
+      ];
+      offsets.forEach(([rx, rz]) => {
+        const rib = new three.Mesh(ribGeo, accentMat);
+        rib.position.set(rx, shaft.position.y, rz);
+        if (rx !== 0) rib.rotation.z = rx > 0 ? 0.07 : -0.07;
+        if (rz !== 0) rib.rotation.x = rz > 0 ? -0.07 : 0.07;
+        group.add(rib);
+      });
+      
+      const capH = sy * 0.08;
+      const capGeo = new three.CylinderGeometry(0, sx * 0.22, capH, 8);
+      const cap = new three.Mesh(capGeo, glowMat);
+      cap.position.y = shaft.position.y + shaftH/2 + capH * 0.7;
+      group.add(cap);
+      
+    } else if (isTechColumn) {
+      // 2. DETAILED SCI-FI CYLINDRICAL GENERATOR COLUMN / SEGMENTED GLOW PILLAR
+      const collarH = sy * 0.08;
+      const collarGeo = new three.CylinderGeometry(sx * 0.58, sx * 0.58, collarH, 32);
+      const baseCollar = new three.Mesh(collarGeo, accentMat);
+      baseCollar.position.y = -sy/2 + collarH/2;
+      group.add(baseCollar);
+      
+      const topCollar = new three.Mesh(collarGeo, accentMat);
+      topCollar.position.y = sy/2 - collarH/2;
+      group.add(topCollar);
+      
+      const shaftH = sy * 0.8;
+      const shaftGeo = new three.CylinderGeometry(sx * 0.48, sx * 0.48, shaftH, 32);
+      const shaft = new three.Mesh(shaftGeo, mat);
+      shaft.position.y = 0;
+      group.add(shaft);
+      
+      const glowRingRadius = sx * 0.505;
+      const ringGeo = new three.CylinderGeometry(glowRingRadius, glowRingRadius, sy * 0.04, 32);
+      
+      const ringPositions = [-sy * 0.22, 0, sy * 0.22];
+      ringPositions.forEach(ry => {
+        const ring = new three.Mesh(ringGeo, glowMat);
+        ring.position.y = ry;
+        group.add(ring);
+      });
+      
+      const gasketGeo = new three.CylinderGeometry(sx * 0.495, sx * 0.495, sy * 0.02, 32);
+      [-sy * 0.11, sy * 0.11].forEach(gy => {
+        const gasket = new three.Mesh(gasketGeo, accentMat);
+        gasket.position.y = gy;
+        group.add(gasket);
+      });
+      
+    } else {
+      // 3. STYLIZED CORE CYLINDER
+      const baseH = sy * 0.05;
+      const baseGeo = new three.CylinderGeometry(sx * 0.52, sx * 0.52, baseH, 32);
+      
+      const base = new three.Mesh(baseGeo, accentMat);
+      base.position.y = -sy/2 + baseH/2;
+      group.add(base);
+      
+      const top = new three.Mesh(baseGeo, accentMat);
+      top.position.y = sy/2 - baseH/2;
+      group.add(top);
+      
+      const bodyGeo = new three.CylinderGeometry(sx * 0.48, sx * 0.48, sy * 0.9, 32);
+      const body = new three.Mesh(bodyGeo, mat);
+      group.add(body);
+    }
+    
+  } else {
+    const isReactor = nameLower.includes('core') || nameLower.includes('reactor') || 
+                      nameLower.includes('plasma') || nameLower.includes('emitter') ||
+                      ['futuristic_shield', 'synthwave_chrome'].includes(obj.texture);
+    
+    if (isReactor) {
+      // 1. HIGH-TECH PLASMA CORE REACTOR / FLOAT EMITTER CORE (PLANETARY ORBITS)
+      const coreRadius = sx * 0.35;
+      const coreGeo = new three.SphereGeometry(coreRadius, 32, 32);
+      const core = new three.Mesh(coreGeo, mat);
+      group.add(core);
+      
+      const ringOuterR = sx * 0.52;
+      const ringTubeR = 0.03 * sx;
+      
+      const ring1Geo = new three.TorusGeometry(ringOuterR, ringTubeR, 12, 48);
+      const ring1 = new three.Mesh(ring1Geo, accentMat);
+      ring1.rotation.y = Math.PI / 6;
+      group.add(ring1);
+      
+      const ring2Geo = new three.TorusGeometry(ringOuterR * 1.05, ringTubeR, 12, 48);
+      const ring2 = new three.Mesh(ring2Geo, accentMat);
+      ring2.rotation.x = Math.PI / 2;
+      ring2.rotation.y = -Math.PI / 6;
+      group.add(ring2);
+      
+      const rodL = sx * 0.18;
+      const rodGeo = new three.CylinderGeometry(0.02 * sx, 0.03 * sx, rodL, 8);
+      const offsets = [
+        [sx * 0.48, 0, 0, -Math.PI/2],
+        [-sx * 0.48, 0, 0, Math.PI/2],
+        [0, 0, sx * 0.48, 0],
+        [0, 0, -sx * 0.48, Math.PI]
+      ];
+      
+      offsets.forEach(([rx, ry, rz, rotZ]) => {
+        const rodGroup = new three.Group();
+        rodGroup.position.set(rx, ry, rz);
+        
+        const rod = new three.Mesh(rodGeo, accentMat);
+        rod.rotation.z = rotZ;
+        if (rz !== 0) rod.rotation.x = rz > 0 ? Math.PI/2 : -Math.PI/2;
+        
+        const tipGeo = new three.SphereGeometry(0.04 * sx, 8, 8);
+        const tip = new three.Mesh(tipGeo, glowMat);
+        tip.position.y = -rodL/2;
+        rod.add(tip);
+        
+        rodGroup.add(rod);
+        group.add(rodGroup);
+      });
+      
+    } else {
+      // 2. GEODESIC DOME WITH MULTI-FACETED GRID HIGHLIGHTS
+      const bodyGeo = new three.IcosahedronGeometry(sx / 2, 2);
+      const body = new three.Mesh(bodyGeo, mat);
+      group.add(body);
+      
+      const wireGeo = new three.IcosahedronGeometry(sx * 0.505, 2);
+      const wireMat = new three.MeshBasicMaterial({
+        color: new three.Color(obj.color || '#00ffff'),
+        wireframe: true,
+        transparent: true,
+        opacity: 0.18
+      });
+      const wire = new three.Mesh(wireGeo, wireMat);
+      group.add(wire);
+    }
+  }
+
+  // Traverse children to enable shadows, PBR rendering details, and link raycasting IDs
+  group.traverse(child => {
+    if (child instanceof three.Mesh) {
+      child.castShadow = true;
+      child.receiveShadow = true;
+      child.userData = { id: obj.id }; // Store ID directly on meshes for raycast checks!
+    }
+  });
+
+  return group;
+}
+
 const MapPreview: React.FC<{ selectedMap: string; customMap?: CustomMapData | null }> = ({ selectedMap, customMap }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -884,30 +1340,7 @@ const MapPreview: React.FC<{ selectedMap: string; customMap?: CustomMapData | nu
 
       if (mapData.objects) {
         mapData.objects.forEach(obj => {
-          let geo: THREE.BufferGeometry;
-          const sx = obj.scale.x * previewScale;
-          const sy = obj.scale.y * previewScale;
-          const sz = obj.scale.z * previewScale;
-          
-          if (obj.type === 'cylinder') {
-            geo = new THREE.CylinderGeometry(sx / 2, sx / 2, sy, 16);
-          } else if (obj.type === 'sphere') {
-            geo = new THREE.SphereGeometry(sx / 2, 16, 16);
-          } else {
-            geo = new THREE.BoxGeometry(sx, sy, sz);
-          }
-
-          const mat = new THREE.MeshStandardMaterial({
-            color: obj.color || '#3b82f6',
-            roughness: obj.roughness ?? 0.5,
-            metalness: obj.metalness ?? 0.5,
-            transparent: obj.transparent || false,
-            opacity: obj.opacity ?? 1,
-            emissive: obj.emissive || '#000000',
-            emissiveIntensity: obj.emissiveIntensity ?? 0
-          });
-
-          const mesh = new THREE.Mesh(geo, mat);
+          const mesh = createHighFidelityObjectMesh(obj, THREE, undefined, previewScale);
           mesh.position.set(
             obj.position.x * previewScale,
             obj.position.y * previewScale,
@@ -1342,6 +1775,7 @@ export default function App() {
         localStorage.removeItem('grifball_admin_settings');
         localStorage.removeItem('grifball_keybindings');
         localStorage.removeItem('grifball_settings_version');
+        localStorage.removeItem('grifball_collapsed_sections');
         
         // Reset states
         const defaultName = `Sptn-${Math.floor(1000 + Math.random() * 9000)}`;
@@ -1349,6 +1783,7 @@ export default function App() {
         applyUiLayouts(getDefaultUiLayouts());
         setKeybindings({ ...DEFAULT_KEYBINDINGS });
         setAdminSettings(createDefaultAdminSettings(defaultName));
+        setCollapsedSections({});
         
         setSaveSystemStatus({
           type: 'success',
@@ -1802,6 +2237,21 @@ export default function App() {
       console.error('Failed to save settings locally:', e);
     }
   }, [adminSettings]);
+
+  // Collapsed section state for Gameplay/Mechanics Options panel
+  const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>(() => {
+    try {
+      const saved = localStorage.getItem('grifball_collapsed_sections');
+      return saved ? JSON.parse(saved) : {};
+    } catch { return {}; }
+  });
+  const toggleSectionCollapse = (sectionId: string) => {
+    setCollapsedSections(prev => {
+      const next = { ...prev, [sectionId]: !prev[sectionId] };
+      try { localStorage.setItem('grifball_collapsed_sections', JSON.stringify(next)); } catch {}
+      return next;
+    });
+  };
 
   // Gameplay presets state and helper functions
   interface GameplayPreset {
@@ -3144,41 +3594,71 @@ export default function App() {
 
     if (visibleSettings.length === 0) return null;
 
+    const isCollapsed = !!collapsedSections[section.id];
     const baseClass = section.bgClass || "border border-white/5 rounded-xl p-2.5 bg-white/1 flex flex-col gap-2.5";
 
     return (
       <div key={section.id} className={baseClass}>
-        <p className={`text-[10px] ${section.colorClass} font-bold uppercase tracking-widest border-b border-white/5 pb-1 font-mono flex items-center justify-between`}>
-          <span>{section.title}</span>
-          {section.badge && (
-            <span className={`text-[8px] ${section.badgeClass} px-1.5 py-0.2 rounded font-sans tracking-normal uppercase border`}>
-              {section.badge}
+        <button
+          type="button"
+          onClick={() => toggleSectionCollapse(section.id)}
+          className={`w-full text-[10px] ${section.colorClass} font-bold uppercase tracking-widest border-b border-white/5 pb-1 font-mono flex items-center justify-between cursor-pointer bg-transparent border-x-0 border-t-0 p-0 outline-none select-none transition-colors hover:brightness-125`}
+        >
+          <span className="flex items-center gap-1.5">
+            <svg
+              className="w-3 h-3 transition-transform duration-200 shrink-0"
+              style={{ transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)' }}
+              fill="none" stroke="currentColor" viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 9l-7 7-7-7" />
+            </svg>
+            {section.title}
+          </span>
+          <span className="flex items-center gap-1.5">
+            {section.badge && (
+              <span className={`text-[8px] ${section.badgeClass} px-1.5 py-0.2 rounded font-sans tracking-normal uppercase border`}>
+                {section.badge}
+              </span>
+            )}
+            <span className={`text-[8px] font-mono transition-opacity duration-200 ${isCollapsed ? 'opacity-50 text-white/40' : 'opacity-0'}`}>
+              {visibleSettings.length}
             </span>
-          )}
-        </p>
+          </span>
+        </button>
 
-        {visibleSettings.map(renderSetting)}
+        <div
+          className="overflow-hidden transition-all duration-250 ease-in-out"
+          style={{
+            maxHeight: isCollapsed ? 0 : '2000px',
+            opacity: isCollapsed ? 0 : 1,
+            marginTop: isCollapsed ? 0 : undefined,
+          }}
+        >
+          <div className="flex flex-col gap-2.5">
+            {visibleSettings.map(renderSetting)}
 
-        {section.id === 'ai' && adminSettings.aiDifficulty === 'custom' && (
-          <div className="flex flex-col gap-1 pt-1.5 border-t border-white/5 mt-1">
-            <span className="text-[8.5px] text-white/50 uppercase tracking-widest font-mono">Save Custom AI Preset:</span>
-            <div className="flex gap-1.5">
-              <input
-                type="text"
-                placeholder="Preset Name"
-                value={newAiPresetNameInput}
-                onChange={(e) => setNewAiPresetNameInput(e.target.value)}
-                className="flex-1 h-7 bg-black/60 border border-white/10 rounded px-2 text-[10px] text-white outline-none focus:border-[#38bdf8] transition-all font-sans"
-              />
-              <button
-                onClick={() => handleSaveAIPreset(newAiPresetNameInput)}
-                className="px-2.5 h-7 bg-[#38bdf8]/10 hover:bg-[#38bdf8]/20 border border-[#38bdf8]/20 hover:border-[#38bdf8]/40 text-[#38bdf8] text-[9px] font-bold uppercase rounded cursor-pointer transition-all font-sans"
-              >
-                Save
-              </button>
-            </div>
+            {section.id === 'ai' && adminSettings.aiDifficulty === 'custom' && (
+              <div className="flex flex-col gap-1 pt-1.5 border-t border-white/5 mt-1">
+                <span className="text-[8.5px] text-white/50 uppercase tracking-widest font-mono">Save Custom AI Preset:</span>
+                <div className="flex gap-1.5">
+                  <input
+                    type="text"
+                    placeholder="Preset Name"
+                    value={newAiPresetNameInput}
+                    onChange={(e) => setNewAiPresetNameInput(e.target.value)}
+                    className="flex-1 h-7 bg-black/60 border border-white/10 rounded px-2 text-[10px] text-white outline-none focus:border-[#38bdf8] transition-all font-sans"
+                  />
+                  <button
+                    onClick={() => handleSaveAIPreset(newAiPresetNameInput)}
+                    className="px-2.5 h-7 bg-[#38bdf8]/10 hover:bg-[#38bdf8]/20 border border-[#38bdf8]/20 hover:border-[#38bdf8]/40 text-[#38bdf8] text-[9px] font-bold uppercase rounded cursor-pointer transition-all font-sans"
+                  >
+                    Save
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
-        )}
+        </div>
       </div>
     );
   };

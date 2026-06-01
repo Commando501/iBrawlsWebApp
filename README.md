@@ -36,7 +36,7 @@ This workspace has previously had Windows `EPERM` locks on stale files under `di
 
 ## AI Systems
 
-Combat AI is orchestrated from `GrifballGame.tsx` (10-state FSM including `PRESSURING`) with pure decision logic in `src/game/`.
+Combat AI is orchestrated from `GrifballGame.tsx` (10-state FSM including `PRESSURING`) with pure decision logic in `src/game/`. Shared combat geometry helpers, runtime state/ref initialization, input/pointer ref management, prop contracts, map selection, arena spawn/resizing helpers, Three combatant model construction, invulnerability visual-state helpers, and custom-map procedural asset generation live under `src/components/grifball/` so the main game component stays under Babel's 500KB styling deoptimization threshold while preserving the existing `createHighFidelityObjectMesh` export.
 
 | Module | Role |
 |--------|------|
@@ -166,6 +166,7 @@ Local play setups feature an interactive map selector overlay supported by a dyn
 - **Glacier Hockey Rink (Preset)**: A pristine rectangular ice hockey arena set in a beautiful, sunlit arctic glacier valley. Features surrounding clear-blue acrylic glass boards, red hockey goal posts, background icebergs, snowy pine trees, and gently falling snow.
 - **Grifball Championship Stadium (Preset)**: An elite, high-tech steel arena framed by cheering stands, brilliant stadium spotlights, a massive center scoreboard, and glowing team boundary lines. Features a suspended scoreboard showing Spartan silhouette screens and corner floodlight towers casting dramatic light beams.
 - **Custom Local Map**: Load a custom map file (`.json`) exported from the local Standalone Map Maker. The 3D thumbnail preview updates in real-time to render all placed obstacles, light sources, and spawn points in miniature!
+- **High-Fidelity 3D Assets Engine**: A dynamic geometry processor that intercepts simple primitives (flat boxes, cylinders, spheres) and upgrades them at render-time into complex, compound 3D models. Standard primitives are transformed into detailed thematic assets like tapering Forerunner obelisks with floating energy crystals, heavy freight containers with vertical corrugated panel ridges, chamfered recharge station crates, and floating planetary plasma reactors with orbital stabilizer rings.
 
 ## Standalone 3D Map Maker
 

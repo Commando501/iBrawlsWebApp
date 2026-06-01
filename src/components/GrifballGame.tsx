@@ -6,18 +6,17 @@
 import React, { useRef, useEffect, useState } from 'react';
 import * as THREE from 'three';
 import { sfx } from './AudioEngine';
-import { buildGravityHammerModel, buildVoxelSpartanModel, buildKatarSwordModel, buildPistolModel, CharacterLoadout, AVAILABLE_PRESETS } from './VoxelModels';
-import { GameStats, Stance, WeaponState, AIBehaviorState, UniversalSettings, DeathEvent, Keybindings, DEFAULT_KEYBINDINGS, DeviceInfo, AIBehaviorPreset, MedalInfo, Combatant, ReplayFrame, ReplayFile, CustomMapData, CustomMapObject } from '../types';
+import { buildGravityHammerModel, buildVoxelSpartanModel, buildKatarSwordModel, buildPistolModel } from './VoxelModels';
+import { Stance, AIBehaviorState, DeathEvent, DEFAULT_KEYBINDINGS, MedalInfo, Combatant, ReplayFrame, CustomMapData } from '../types';
 import { cacheReplay } from '../game/theaterDatabase';
 import {
   recoverAIFromRunawayAltitude as applyAIAltitudeRecovery,
 } from '../game/aiAltitude';
-import { type AILungeOutcome, type AITacticalTargetSnapshot, evaluateAICombatDecision } from '../game/aiCombatDecision';
+import { type AILungeOutcome, evaluateAICombatDecision } from '../game/aiCombatDecision';
 import { evaluateKillMedals } from '../game/rewards';
 import { resolveObstacleCollisions } from '../game/mapPhysics';
 import { bakeNavMesh, findShortestPath } from '../game/mapNavigation';
-import { PREMADE_MAPS } from '../game/premadeMaps';
-import { createAIMatchContext, resetAIMatchContext, type AIMatchContext, tickFeintCooldown, getFeintCooldownRemaining, startFeintCooldown, isWeaponSwapFeintActive, startWeaponSwapFeint, tickWeaponSwapFeintTimer, getOrCreateBotPsychState, tickBotPsychState, getBotComboState, setBotComboState, clearBotComboState } from '../game/aiMatchContext';
+import { resetAIMatchContext, tickFeintCooldown, getFeintCooldownRemaining, startFeintCooldown, isWeaponSwapFeintActive, startWeaponSwapFeint, tickWeaponSwapFeintTimer, getOrCreateBotPsychState, tickBotPsychState, getBotComboState, setBotComboState, clearBotComboState } from '../game/aiMatchContext';
 import {
   getAttackPhaseIndex,
   getCoordinatedTargetBonus,
@@ -55,11 +54,8 @@ import {
 } from '../game/rosterSlotConfig';
 import {
   DEFAULT_AI_TEAM,
-  createEmptyTeamScores,
   installLegacyTeamScoreBridges,
   localPlayerTeamFromRole,
-  type TeamScoresState,
-  type TeamId,
 } from '../game/teamScoring';
 import {
   MAIN_AI_ID,
@@ -162,273 +158,46 @@ import {
   shouldAISprint,
   shouldStartAISlide,
 } from '../game/aiMovementMechanics';
+import {
+  createDefaultSpawnPoints,
+  getOptimalGrifballSpawnPoint,
+  resizeArenaSceneForPlayerCount,
+} from './grifball/arenaSpawns';
+import { createCombatantMeshRig, rebuildDualWeaponCombatantModel } from './grifball/combatantModels';
+import { useGrifballDomPoolRefs, useGrifballInputRefs, usePausedPointerLockRef } from './grifball/inputRefs';
+import {
+  AI_HAMMER_JUMP_COOLDOWN,
+  AI_HAMMER_JUMP_START_MAX_HEIGHT,
+  AI_HAMMER_JUMP_VERTICAL_VELOCITY_EPSILON,
+  GRAVITY_ACCELERATION,
+  HAMMER_STRIKE_FORWARD_FACTOR,
+  MELEE_EYE_HEIGHT,
+  MELEE_HAMMER_SWIPE_REACH,
+  MELEE_SWORD_SLASH_REACH,
+  SWORD_SLASH_FORWARD_FACTOR,
+  SWORD_SLASH_RADIUS,
+  getCollisionResolvedCameraPos,
+  getCombatBodyCenter,
+  getInwardSpawnYaw,
+  predictCombatantPosition,
+  predictLandingPosition,
+  type SwordLungeCurrentTrailStyle,
+  type TacticalTargetCandidate,
+} from './grifball/combatGeometry';
+import { createHighFidelityObjectMesh, generateCustomTexture } from './grifball/customMapAssets';
+import { type GrifballGameProps } from './grifball/GrifballGameProps';
+import { resolveActiveCustomMap } from './grifball/mapSelection';
+import {
+  createInitialFpsCounter,
+  useGrifballReplayRuntimeRefs,
+  useLatestRef,
+  useOfflineRosterPropRefs,
+} from './grifball/runtimeRefs';
+import { createInitialGrifballRuntimeState, type GrifballRuntimeState } from './grifball/runtimeState';
+import { createInitialGrifballThreeRefs, type GrifballThreeRefs } from './grifball/threeRefs';
+import { updateInvulnerabilityBlinking, whiteBlinkMaterial } from './grifball/visualState';
 
-const whiteBlinkMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
-
-interface GrifballGameProps {
-  isPlaying: boolean;
-  isPaused: boolean;
-  debugMode: boolean;
-  adminSettings: UniversalSettings;
-  onStatsUpdate: (stats: GameStats) => void;
-  onPauseToggle: () => void;
-  isMultiplayer?: boolean;
-  multiplayerRole?: 'host' | 'client' | null;
-  multiplayerSocket?: WebSocket | null;
-  opponentClientId?: string;
-  opponentPlayerName?: string;
-  offlineBotCount?: number;
-  botDifficulties?: Record<string, string>;
-  botColors?: Record<string, number>;
-  botBehaviors?: Record<string, AIBehaviorPreset>;
-  botWeaponBehaviors?: Record<string, string>;
-  botArchetypes?: Record<string, string>;
-  aiPresets?: any[];
-  /** Changes when a new match session starts (sandbox or tournament round). */
-  aiMatchSessionKey?: string;
-  /** First-to-N kills for tournament match-point awareness; omit in sandbox. */
-  matchKillsToWin?: number;
-  keybindings?: Keybindings;
-  deviceInfo: DeviceInfo;
-  forceMobileControls: boolean;
-  mobileJoystickRef: React.MutableRefObject<{ x: number; y: number }>;
-  mobileRightJoystickRef: React.MutableRefObject<{ x: number; y: number }>;
-  mobileRightJoystickActiveRef: React.MutableRefObject<boolean>;
-  selectedMap?: string;
-  customMap?: CustomMapData;
-  replayData?: ReplayFile | null;
-  onExitReplay?: () => void;
-  playerLoadout?: CharacterLoadout;
-}
-
-const getInwardSpawnYaw = (spawnPos: THREE.Vector3): number => {
-  return Math.atan2(spawnPos.x, spawnPos.z);
-};
-
-type TacticalTargetCandidate = AITacticalTargetSnapshot & {
-  pos: THREE.Vector3;
-  vel: THREE.Vector3;
-};
-
-const GRAVITY_ACCELERATION = 18.0;
-const BODY_CENTER_HEIGHT = 0.825;
-const CROUCH_BODY_CENTER_HEIGHT = 0.52;
-const AI_HAMMER_JUMP_COOLDOWN = 2.25;
-const AI_HAMMER_JUMP_START_MAX_HEIGHT = 0.08;
-const AI_HAMMER_JUMP_VERTICAL_VELOCITY_EPSILON = 0.1;
-// Stationary-swing geometry, shared by the hit resolver (applyBotMeleeImpact) and the
-// AI commit gates so the two cannot drift. The hammer is a wide ground-pound planted
-// ~attackRange ahead (radius attackRadius); the sword is a precise melee — a tight slash
-// arc close to the wielder. Gating a sword swing on hammer reach is what made every AI
-// "bluff slash": committing a stationary slash from ~6u away that whiffs and only burns
-// the cooldown. The sword closes distance with its lunge, not a ranged stationary swing.
-const HAMMER_STRIKE_FORWARD_FACTOR = 0.875;
-const SWORD_SLASH_FORWARD_FACTOR = 0.3;
-const SWORD_SLASH_RADIUS = 2.0;
-// Standing eye height used as the origin of every stationary melee reach test, so the
-// player and the AI measure their swings from the same point.
-const MELEE_EYE_HEIGHT = 1.65;
-// Stationary melee reach (eye -> target body-center), shared by the player and every AI
-// combatant so neither out-ranges the other. The sword slash is a tight arc; the hammer
-// side-swipe is slightly longer. Neither is the wide overhead gravity-hammer AoE, which is
-// governed separately by attackRange/attackRadius.
-const MELEE_SWORD_SLASH_REACH = 2.8;
-const MELEE_HAMMER_SWIPE_REACH = 3.0;
-type SwordLungeCurrentTrailStyle = 'localCube' | 'enemyCube' | 'shockwave';
-
-const getCombatBodyCenter = (pos: THREE.Vector3, isCrouching = false): THREE.Vector3 => {
-  return new THREE.Vector3(
-    pos.x,
-    pos.y + (isCrouching ? CROUCH_BODY_CENTER_HEIGHT : BODY_CENTER_HEIGHT),
-    pos.z
-  );
-};
-
-const predictCombatantPosition = (pos: THREE.Vector3, vel?: THREE.Vector3, leadTime = 0): THREE.Vector3 => {
-  const predicted = pos.clone();
-  if (vel && leadTime > 0) {
-    predicted.x += vel.x * leadTime;
-    predicted.z += vel.z * leadTime;
-    predicted.y += vel.y * leadTime - 0.5 * GRAVITY_ACCELERATION * leadTime * leadTime;
-  }
-  predicted.y = Math.max(0, predicted.y);
-  return predicted;
-};
-
-const predictLandingPosition = (pos: THREE.Vector3, vel?: THREE.Vector3, maxLeadTime = 1.25): THREE.Vector3 => {
-  if (!vel || (pos.y <= 0.01 && Math.abs(vel.y) < 0.01)) {
-    return pos.clone();
-  }
-
-  const fallTime = (vel.y + Math.sqrt(Math.max(0, vel.y * vel.y + 2 * GRAVITY_ACCELERATION * Math.max(0, pos.y)))) / GRAVITY_ACCELERATION;
-  const leadTime = Math.max(0, Math.min(maxLeadTime, fallTime));
-  const landing = pos.clone().addScaledVector(vel, leadTime);
-  landing.y = 0;
-  return landing;
-};
-
-const getCollisionResolvedCameraPos = (
-  start: THREE.Vector3,
-  end: THREE.Vector3,
-  arenaRadius: number,
-  objects: CustomMapObject[]
-): THREE.Vector3 => {
-  let t = 1.0;
-  const dir = new THREE.Vector3().subVectors(end, start);
-  const length = dir.length();
-  if (length < 0.001) return end.clone();
-
-  // 1. Floor collision check (min Y = 0.2m above floor)
-  const minY = 0.2;
-  if (start.y > minY && end.y < minY) {
-    const t_floor = (minY - start.y) / (end.y - start.y);
-    if (t_floor >= 0 && t_floor < t) {
-      t = t_floor;
-    }
-  }
-
-  // 2. Arena circular wall check
-  const maxCamRadius = Math.max(0.5, arenaRadius - 0.3);
-  const startDistSq = start.x * start.x + start.z * start.z;
-  const endDistSq = end.x * end.x + end.z * end.z;
-
-  if (startDistSq < maxCamRadius * maxCamRadius && endDistSq > maxCamRadius * maxCamRadius) {
-    const a = dir.x * dir.x + dir.z * dir.z;
-    const b = 2 * (start.x * dir.x + start.z * dir.z);
-    const c = start.x * start.x + start.z * start.z - maxCamRadius * maxCamRadius;
-    if (a > 0.000001) {
-      const disc = b * b - 4 * a * c;
-      if (disc >= 0) {
-        const u = (-b + Math.sqrt(disc)) / (2 * a);
-        if (u >= 0 && u < t) {
-          t = u;
-        }
-      }
-    }
-  }
-
-  // 3. Custom Map Obstacle Collisions
-  const clearance = 0.3;
-  for (const obj of objects) {
-    if (!obj.isCollidable) continue;
-
-    const scaleX = obj.scale.x;
-    const scaleY = obj.scale.y;
-    const scaleZ = obj.scale.z;
-    const posX = obj.position.x;
-    const posY = obj.position.y;
-    const posZ = obj.position.z;
-
-    if (obj.type === 'box') {
-      const bMinX = posX - scaleX / 2 - clearance;
-      const bMaxX = posX + scaleX / 2 + clearance;
-      const bMinY = posY - scaleY / 2 - clearance;
-      const bMaxY = posY + scaleY / 2 + clearance;
-      const bMinZ = posZ - scaleZ / 2 - clearance;
-      const bMaxZ = posZ + scaleZ / 2 + clearance;
-
-      let tNear = -Infinity;
-      let tFar = Infinity;
-
-      if (Math.abs(dir.x) < 0.000001) {
-        if (start.x < bMinX || start.x > bMaxX) continue;
-      } else {
-        const t1 = (bMinX - start.x) / dir.x;
-        const t2 = (bMaxX - start.x) / dir.x;
-        tNear = Math.max(tNear, Math.min(t1, t2));
-        tFar = Math.min(tFar, Math.max(t1, t2));
-      }
-
-      if (Math.abs(dir.y) < 0.000001) {
-        if (start.y < bMinY || start.y > bMaxY) continue;
-      } else {
-        const t1 = (bMinY - start.y) / dir.y;
-        const t2 = (bMaxY - start.y) / dir.y;
-        tNear = Math.max(tNear, Math.min(t1, t2));
-        tFar = Math.min(tFar, Math.max(t1, t2));
-      }
-
-      if (Math.abs(dir.z) < 0.000001) {
-        if (start.z < bMinZ || start.z > bMaxZ) continue;
-      } else {
-        const t1 = (bMinZ - start.z) / dir.z;
-        const t2 = (bMaxZ - start.z) / dir.z;
-        tNear = Math.max(tNear, Math.min(t1, t2));
-        tFar = Math.min(tFar, Math.max(t1, t2));
-      }
-
-      if (tFar >= tNear && tNear > 0 && tNear < t) {
-        t = tNear;
-      }
-    } else if (obj.type === 'cylinder') {
-      const radius = scaleX / 2 + clearance;
-      const cMinY = posY - scaleY / 2 - clearance;
-      const cMaxY = posY + scaleY / 2 + clearance;
-
-      const dx = start.x - posX;
-      const dz = start.z - posZ;
-      const a = dir.x * dir.x + dir.z * dir.z;
-      const b = 2 * (dx * dir.x + dz * dir.z);
-      const c = dx * dx + dz * dz - radius * radius;
-
-      if (a > 0.000001) {
-        const disc = b * b - 4 * a * c;
-        if (disc >= 0) {
-          const u1 = (-b - Math.sqrt(disc)) / (2 * a);
-          if (u1 >= 0 && u1 < t) {
-            const intersectY = start.y + u1 * dir.y;
-            if (intersectY >= cMinY && intersectY <= cMaxY) {
-              t = u1;
-            }
-          }
-        }
-      }
-
-      if (Math.abs(dir.y) > 0.000001) {
-        const uTop = (cMaxY - start.y) / dir.y;
-        if (uTop >= 0 && uTop < t) {
-          const ix = start.x + uTop * dir.x;
-          const iz = start.z + uTop * dir.z;
-          const distSq = (ix - posX) * (ix - posX) + (iz - posZ) * (iz - posZ);
-          if (distSq <= radius * radius) t = uTop;
-        }
-
-        const uBot = (cMinY - start.y) / dir.y;
-        if (uBot >= 0 && uBot < t) {
-          const ix = start.x + uBot * dir.x;
-          const iz = start.z + uBot * dir.z;
-          const distSq = (ix - posX) * (ix - posX) + (iz - posZ) * (iz - posZ);
-          if (distSq <= radius * radius) t = uBot;
-        }
-      }
-    } else if (obj.type === 'sphere') {
-      const radius = scaleX / 2 + clearance;
-      const dx = start.x - posX;
-      const dy = start.y - posY;
-      const dz = start.z - posZ;
-
-      const a = dir.dot(dir);
-      const b = 2 * (dx * dir.x + dy * dir.y + dz * dir.z);
-      const c = dx * dx + dy * dy + dz * dz - radius * radius;
-
-      if (a > 0.000001) {
-        const disc = b * b - 4 * a * c;
-        if (disc >= 0) {
-          const u1 = (-b - Math.sqrt(disc)) / (2 * a);
-          if (u1 >= 0 && u1 < t) {
-            t = u1;
-          }
-        }
-      }
-    }
-  }
-
-  // Prevent camera from clipping inside target's head/body (min distance 0.65m)
-  const minAllowedT = length > 0.001 ? Math.min(1.0, 0.65 / length) : 1.0;
-  const finalT = Math.max(minAllowedT, t);
-
-  return start.clone().addScaledVector(dir, finalT);
-};
+export { createHighFidelityObjectMesh } from './grifball/customMapAssets';
 
 export const GrifballGame: React.FC<GrifballGameProps> = ({
   isPlaying,
@@ -467,294 +236,33 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const nameplateContainerRef = useRef<HTMLDivElement>(null);
 
-  const getActiveCustomMap = (): CustomMapData | null => {
-    if (customMap) return customMap;
-    const mapId = replayData ? replayData.mapType : selectedMap;
-    if (mapId !== 'hangar' && mapId !== 'circle') {
-      const premade = PREMADE_MAPS.find(m => m.id === mapId);
-      if (premade) return premade;
-      if (typeof localStorage !== 'undefined') {
-        const stored = localStorage.getItem(`map_${mapId}`);
-        if (stored) {
-          try {
-            return JSON.parse(stored);
-          } catch (e) {
-            console.error("Error parsing local map", e);
-          }
-        }
-      }
-    }
-    return null;
-  };
+  const getActiveCustomMap = (): CustomMapData | null =>
+    resolveActiveCustomMap({ customMap, replayData, selectedMap });
   // Phase 4: main_ai lives in otherPlayers with controller:'ai' — see roster.ts helpers.
   const requestRef = useRef<number | null>(null);
-  const fpsRef = useRef({
-    frameCount: 0,
-    lastSampleTime: 0,
-    value: 0,
-  });
+  const fpsRef = useRef(createInitialFpsCounter());
 
   // Replay Recording Refs
-  const replayRecordingRef = useRef<ReplayFile | null>(null);
-  const lastRecordTimeRef = useRef<number>(0);
-  const replayRecordingElapsedTimeRef = useRef<number>(0);
-  // Keeps track of the last written tick state for each entity to optimize zero-movement checks
-  const lastRecordedStateRef = useRef<Map<string, {
-    pos: THREE.Vector3;
-    vel: THREE.Vector3;
-    yaw: number;
-    hp: number;
-    activeWeapon: string;
-    weaponState: string;
-    isCrouching: boolean;
-    score: number;
-    kills: number;
-    deaths: number;
-  }>>(new Map());
-
-  // Replay Playback Refs
-  const replayTimeRef = useRef<number>(0);
-  const replaySpeedRef = useRef<number>(1.0);
-  const isReplayPausedRef = useRef<boolean>(false);
-  const replayTargetIdRef = useRef<string>('free');
-  const prevReplayFrameRef = useRef<ReplayFrame | null>(null);
-  const replayPlayerIdsRef = useRef<string[]>([]);
+  const {
+    replayRecordingRef,
+    lastRecordTimeRef,
+    replayRecordingElapsedTimeRef,
+    lastRecordedStateRef,
+    replayTimeRef,
+    replaySpeedRef,
+    isReplayPausedRef,
+    replayTargetIdRef,
+    prevReplayFrameRef,
+    replayPlayerIdsRef,
+  } = useGrifballReplayRuntimeRefs();
 
   // Core Game State refs to avoid state-delay in the animation/render loop
-  const stateRef = useRef<{
-    playerPos: THREE.Vector3;
-    playerVel: THREE.Vector3;
-    yaw: number;
-    pitch: number;
-    crouchAmount: number;
-    isCrouching: boolean;
-    isJumping: boolean;
-
-    // Dash states
-    playerDashRemaining: number;
-    playerDashDir: THREE.Vector3;
-    playerDashCooldownTimer: number;
-
-    // Slide states
-    playerSlideActive: boolean;
-    playerSlideDistanceTraveled: number;
-    playerSlideCooldownTimer: number;
-    playerSlideLastPos: THREE.Vector3;
-
-    // Hammer states
-    pWeaponState: WeaponState;
-    pWeaponTimer: number; // current phase time
-    pWeaponCooldown?: number; // define optional cooldown tracking
-    pWeaponReady: boolean;
-
-    // Sword & Combat states
-    activeWeapon: 'hammer' | 'sword' | 'pistol';
-    crosshairColor: 'white' | 'red';
-    isLunging: boolean;
-    lungeTimer: number;
-    lungeStartPos: THREE.Vector3;
-    lungeTargetDir: THREE.Vector3;
-    pSwordState: 'ready' | 'slashing' | 'recovering';
-    pSwordTimer: number;
-    pSwordReady: boolean;
-    pSwordCooldown: number;
-    pSwordRecoverDuration: number;
-
-    // Pistol states
-    pPistolState: 'ready' | 'firing' | 'recovering';
-    pPistolTimer: number;
-    pPistolReady: boolean;
-    pPistolCooldown: number;
-    lastPlayerSwordAttackTime: number;
-    lastPlayerHammerAttackTime: number;
-    swapCooldownTimer: number;
-    swapCooldownDuration: number;
-    swapLockoutTimer: number;
-
-    // Player stats (legacy names bridged to teamScores — see installLegacyTeamScoreBridges)
-    playerHP: number;
-    playerMaxHP: number;
-    teamScores: TeamScoresState;
-    localPlayerTeam: TeamId;
-    scorePlayer: number;
-    scoreEnemy: number;
-    playerKills: number;
-    playerDeaths: number;
-    enemyKills: number;
-    enemyDeaths: number;
-    showScoreboard: boolean;
-    playerRespawnTimer: number;
-    enemyRespawnTimer: number;
-    playerInvulnerabilityTimer: number;
-    playerSpawnTime: number;
-    playerLastKillTime: number;
-    playerMultikillCount: number;
-    playerSpreeCount: number;
-    activeMedalPopup: { medal: MedalInfo; key: number } | null;
-
-    // Match timers
-    gameTime: number;
-
-    // Checking/Debug UI
-    debugMode: boolean;
-    lastStrikePos: THREE.Vector3 | null;
-    lastStrikeTick: number; // visual timer
-    lastAIStrikePos: THREE.Vector3 | null;
-    lastAIStrikeTick: number;
-
-    // Hammer Jumping States
-    pHammerJumpWindowTimer: number;
-
-    // Arena configs
-    arenaRadius: number;
-    settings: UniversalSettings;
-    lastDeaths: DeathEvent[];
-
-    // Spectator properties
-    isObserverMode: boolean;
-    observerCamMode: 'free' | 'third' | 'first';
-    observerTarget: 'host' | 'client';
-    observerOrbitDistance: number;
-    hostPos: THREE.Vector3;
-    hostVel: THREE.Vector3;
-    hostYaw: number;
-    hostPitch: number;
-    hostHP: number;
-    hostMaxHP: number;
-    hostIsCrouching: boolean;
-    hostActiveWeapon: 'hammer' | 'sword';
-    hostRespawnTimer: number;
-    hostPlayerName: string;
-    hostHue: number;
-    clientPos: THREE.Vector3;
-    clientVel: THREE.Vector3;
-    clientYaw: number;
-    clientPitch: number;
-    clientHP: number;
-    clientMaxHP: number;
-    clientIsCrouching: boolean;
-    clientActiveWeapon: 'hammer' | 'sword';
-    clientRespawnTimer: number;
-    clientPlayerName: string;
-    clientHue: number;
-    otherPlayers: Map<string, Combatant>;
-    isMultiplayer: boolean;
-    multiplayerRole: 'host' | 'client' | 'observer' | undefined;
-    aiMatchContext: AIMatchContext;
-  }>({
-    playerPos: new THREE.Vector3(0, 0, 12), // Start at z=12
-    playerVel: new THREE.Vector3(0, 0, 0),
-    yaw: getInwardSpawnYaw(new THREE.Vector3(0, 0, 12)),
-    pitch: 0,
-    crouchAmount: 0,
-    isCrouching: false,
-    isJumping: false,
-    otherPlayers: new Map<string, Combatant>(),
-
-    // Dash states
-    playerDashRemaining: 0,
-
-    playerDashDir: new THREE.Vector3(0, 0, 0),
-    playerDashCooldownTimer: 0,
-
-    // Slide states
-    playerSlideActive: false,
-    playerSlideDistanceTraveled: 0,
-    playerSlideCooldownTimer: 0,
-    playerSlideLastPos: new THREE.Vector3(0, 0, 0),
-
-    pWeaponState: 'ready',
-    pWeaponTimer: 0,
-    pWeaponReady: true,
-
-    // Sword & Combat setups
-    activeWeapon: 'hammer',
-    crosshairColor: 'white',
-    isLunging: false,
-    lungeTimer: 0,
-    lungeStartPos: new THREE.Vector3(),
-    lungeTargetDir: new THREE.Vector3(),
-    pSwordState: 'ready',
-    pSwordTimer: 0,
-    pSwordReady: true,
-    pSwordCooldown: 1.0,
-    pSwordRecoverDuration: 0.6,
-
-    // Pistol states
-    pPistolState: 'ready',
-    pPistolTimer: 0,
-    pPistolReady: true,
-    pPistolCooldown: 1.0,
-    lastPlayerSwordAttackTime: 0,
-    lastPlayerHammerAttackTime: 0,
-    swapCooldownTimer: 0,
-    swapCooldownDuration: 0,
-    swapLockoutTimer: 0,
-
-    playerHP: 1,
-    playerMaxHP: 1,
-    teamScores: createEmptyTeamScores(),
-    localPlayerTeam: localPlayerTeamFromRole(multiplayerRole),
-    scorePlayer: 0,
-    scoreEnemy: 0,
-    playerKills: 0,
-    playerDeaths: 0,
-    enemyKills: 0,
-    enemyDeaths: 0,
-    showScoreboard: false,
-    playerRespawnTimer: 0,
-    enemyRespawnTimer: 0,
-    playerInvulnerabilityTimer: 0,
-    playerSpawnTime: Date.now(),
-    playerLastKillTime: 0,
-    playerMultikillCount: 0,
-    playerSpreeCount: 0,
-    activeMedalPopup: null,
-
-    gameTime: 522, // 8:42 standard starting count (in seconds)
-
-    debugMode: debugMode,
-    lastStrikePos: null,
-    lastStrikeTick: 0,
-    lastAIStrikePos: null,
-    lastAIStrikeTick: 0,
-
-    pHammerJumpWindowTimer: 0,
-
-    arenaRadius: 20, // 20m circle
-    settings: adminSettings,
-    lastDeaths: [],
-
-    isObserverMode: false,
-    observerCamMode: 'free',
-    observerTarget: 'host',
-    observerOrbitDistance: 5.0,
-    hostPos: new THREE.Vector3(0, 0, 12),
-    hostVel: new THREE.Vector3(0, 0, 0),
-    hostYaw: getInwardSpawnYaw(new THREE.Vector3(0, 0, 12)),
-    hostPitch: 0,
-    hostHP: 1,
-    hostMaxHP: 1,
-    hostIsCrouching: false,
-    hostActiveWeapon: 'hammer',
-    hostRespawnTimer: 0,
-    hostPlayerName: 'Blue (Host)',
-    hostHue: 200,
-    clientPos: new THREE.Vector3(0, 0, -12),
-    clientVel: new THREE.Vector3(0, 0, 0),
-    clientYaw: getInwardSpawnYaw(new THREE.Vector3(0, 0, -12)),
-    clientPitch: 0,
-    clientHP: 1,
-    clientMaxHP: 1,
-    clientIsCrouching: false,
-    clientActiveWeapon: 'hammer',
-    clientRespawnTimer: 0,
-    clientPlayerName: 'Red (Guest)',
-    clientHue: 200,
-    isMultiplayer: isMultiplayer,
-    multiplayerRole: multiplayerRole,
-    aiMatchContext: createAIMatchContext(),
-  });
+  const stateRef = useRef<GrifballRuntimeState>(createInitialGrifballRuntimeState({
+    debugMode,
+    adminSettings,
+    multiplayerRole,
+    isMultiplayer,
+  }));
 
   installLegacyTeamScoreBridges(stateRef.current);
 
@@ -775,26 +283,42 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     stateRef.current.localPlayerTeam = localPlayerTeamFromRole(multiplayerRole);
   }, [multiplayerRole]);
 
-  const offlineBotCountRef = useRef(offlineBotCount);
-  const botDifficultiesRef = useRef(botDifficulties);
-  const botColorsRef = useRef(botColors);
-  const botBehaviorsRef = useRef(botBehaviors);
-  const botWeaponBehaviorsRef = useRef(botWeaponBehaviors);
-  const botArchetypesRef = useRef(botArchetypes);
-  useEffect(() => {
-    offlineBotCountRef.current = offlineBotCount;
-    botDifficultiesRef.current = botDifficulties;
-    botColorsRef.current = botColors;
-    botBehaviorsRef.current = botBehaviors;
-    botWeaponBehaviorsRef.current = botWeaponBehaviors;
-    botArchetypesRef.current = botArchetypes;
-  }, [offlineBotCount, botDifficulties, botColors, botBehaviors, botWeaponBehaviors, botArchetypes]);
+  const {
+    offlineBotCountRef,
+    botDifficultiesRef,
+    botColorsRef,
+    botBehaviorsRef,
+    botWeaponBehaviorsRef,
+    botArchetypesRef,
+  } = useOfflineRosterPropRefs({
+    offlineBotCount,
+    botDifficulties,
+    botColors,
+    botBehaviors,
+    botWeaponBehaviors,
+    botArchetypes,
+  });
 
   const recordLocalPlayerObservation = (observe: (model: PlayerModel) => void) => {
     const s = stateRef.current;
     if (s.isObserverMode) return;
     const tuning = resolveBehaviorTuning(s.settings);
     observe(getOrCreatePlayerModel(s.aiMatchContext, LOCAL_PLAYER_ID, {
+      emaAlpha: tuning.playerModelEmaAlpha,
+      defaultLungeDistance: tuning.defaultLungeDistance,
+      defaultReactionTime: tuning.defaultReactionTime,
+    }));
+  };
+
+  // Adaptive learning producer: record an observation into the *acting AI combatant's*
+  // own model (keyed by its id), built from that combatant's own actions and consumed by
+  // whoever targets it via getTargetPlayerModel(botId). Unlike the local-player producer,
+  // bots always record (no observer-mode guard). Callers fire this only from live-combat
+  // action sites, so the actor is inherently alive and not respawning.
+  const recordCombatantObservation = (botId: string, observe: (model: PlayerModel) => void) => {
+    const s = stateRef.current;
+    const tuning = resolveBehaviorTuning(s.settings);
+    observe(getOrCreatePlayerModel(s.aiMatchContext, botId, {
       emaAlpha: tuning.playerModelEmaAlpha,
       defaultLungeDistance: tuning.defaultLungeDistance,
       defaultReactionTime: tuning.defaultReactionTime,
@@ -820,9 +344,12 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     });
   };
 
+  // Adaptive learning: return the learned profile for ANY combatant id that has
+  // accumulated enough samples (default minSamples gate of 3), not just the human
+  // player. For the player this is unchanged; for a bot target it returns a populated
+  // profile once that bot has acted enough, letting opponents read its tendencies.
   const getTargetPlayerModel = (targetId: string) => {
-    if (targetId !== LOCAL_PLAYER_ID) return null;
-    return getPlayerModelSnapshot(stateRef.current.aiMatchContext, LOCAL_PLAYER_ID);
+    return getPlayerModelSnapshot(stateRef.current.aiMatchContext, targetId);
   };
 
   const constrainCombatantToArena = (pos: THREE.Vector3, vel?: THREE.Vector3) => {
@@ -1819,49 +1346,32 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     // Update blinking transitions during invulnerability windows
     const blinkCycle = Math.floor(performance.now() / 120) % 2 === 0;
 
-    const updateBlinking = (group: THREE.Group | null, active: boolean) => {
-      if (!group) return;
-      
-      const isAlreadyBlinking = group.userData.isBlinking === true;
-      const shouldShowBlink = active && blinkCycle;
-      
-      if (!active && !isAlreadyBlinking) {
-        return;
-      }
-      
-      group.userData.isBlinking = active;
-      
-      group.traverse((child) => {
-        if (child instanceof THREE.Mesh) {
-          // Skip general helper meshes
-          if (child === threeRef.current.debugPlayerSphere || child === threeRef.current.debugEnemySphere) {
-            return;
-          }
-          
-          if (!child.userData.originalMaterial) {
-            child.userData.originalMaterial = child.material;
-          }
-          
-          if (shouldShowBlink) {
-            child.material = whiteBlinkMaterial;
-          } else {
-            child.material = child.userData.originalMaterial;
-          }
-        }
-      });
-    };
-
     if (s.isObserverMode && !replayData) {
       const remote = getPrimaryRemoteOpponent(s.otherPlayers, opponentClientId);
-      updateBlinking(threeRef.current.enemyGroup, (remote?.invulnerabilityTimer ?? 0) > 0);
+      updateInvulnerabilityBlinking({
+        group: threeRef.current.enemyGroup,
+        active: (remote?.invulnerabilityTimer ?? 0) > 0,
+        skipMeshes: [threeRef.current.debugPlayerSphere, threeRef.current.debugEnemySphere],
+        blinkCycle,
+      });
     }
-    updateBlinking(threeRef.current.playerHammer, s.playerInvulnerabilityTimer > 0);
+    updateInvulnerabilityBlinking({
+      group: threeRef.current.playerHammer,
+      active: s.playerInvulnerabilityTimer > 0,
+      skipMeshes: [threeRef.current.debugPlayerSphere, threeRef.current.debugEnemySphere],
+      blinkCycle,
+    });
 
     if (threeRef.current.otherPlayerMeshes && s.otherPlayers) {
       s.otherPlayers.forEach((player, id) => {
         const meshes = threeRef.current.otherPlayerMeshes.get(id);
         if (meshes && meshes.group) {
-          updateBlinking(meshes.group, (player.invulnerabilityTimer || 0) > 0);
+          updateInvulnerabilityBlinking({
+            group: meshes.group,
+            active: (player.invulnerabilityTimer || 0) > 0,
+            skipMeshes: [threeRef.current.debugPlayerSphere, threeRef.current.debugEnemySphere],
+            blinkCycle,
+          });
         }
       });
     }
@@ -3047,167 +2557,43 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     resetAIMatchContext(stateRef.current.aiMatchContext);
   }, [aiMatchSessionKey]);
 
-  const onStatsUpdateRef = useRef(onStatsUpdate);
-  useEffect(() => {
-    onStatsUpdateRef.current = onStatsUpdate;
-  }, [onStatsUpdate]);
+  const onStatsUpdateRef = useLatestRef(onStatsUpdate);
 
   // Mutable refs for isPaused and keybindings so the heavy Three.js mounting
   // useEffect does NOT re-run (destroy + recreate the WebGL canvas) every time
   // the user pauses/unpauses or changes keybindings.
-  const isPausedRef = useRef(isPaused);
-  useEffect(() => {
-    isPausedRef.current = isPaused;
-    if (isPaused) {
-      if (document.exitPointerLock) {
-        document.exitPointerLock();
-      }
-    }
-  }, [isPaused]);
+  const isPausedRef = usePausedPointerLockRef(isPaused);
 
-  const keybindingsRef = useRef(keybindings);
-  useEffect(() => {
-    keybindingsRef.current = keybindings;
-  }, [keybindings]);
+  const keybindingsRef = useLatestRef(keybindings);
 
-  // Keys active dictionary
-  const keysPressed = useRef<{ [key: string]: boolean }>({});
-  const prevGamepadButtonsRef = useRef<boolean[]>([]);
-  const grifbHoldTimerRef = useRef<number>(0);
-  const secretAudioRef = useRef<HTMLAudioElement | null>(null);
-  
-  // Custom Fallback Mouse support (Drag to view if Pointer Lock fails or is denied)
-  const isPointerLocked = useRef<boolean>(false);
-  const isMouseDown = useRef<boolean>(false);
-  const lastMousePos = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const {
+    keysPressed,
+    prevGamepadButtonsRef,
+    grifbHoldTimerRef,
+    secretAudioRef,
+    isPointerLocked,
+    isMouseDown,
+    lastMousePos,
+  } = useGrifballInputRefs();
 
   // References to THREE objects needed inside loop
-  const threeRef = useRef<{
-    scene: THREE.Scene | null;
-    camera: THREE.PerspectiveCamera | null;
-    renderer: THREE.WebGLRenderer | null;
-    playerHammer: THREE.Group | null;
-    playerSword: THREE.Group | null;
-    playerPistol: THREE.Group | null;
-    enemyGroup: THREE.Group | null;
-    enemyHammer: THREE.Group | null;
-    enemySword: THREE.Group | null;
-    hostGroup: THREE.Group | null;
-    hostHammer: THREE.Group | null;
-    hostSword: THREE.Group | null;
-    debugPlayerSphere: THREE.Mesh | null;
-    debugEnemySphere: THREE.Mesh | null;
-    playerJumpZoneMesh: THREE.Mesh | null;
-    ambientLight: THREE.AmbientLight | null;
-    dirLight: THREE.DirectionalLight | null;
-    damageExplosionParticles: {
-      mesh: THREE.Mesh;
-      velocity: THREE.Vector3;
-      life: number;
-      maxLife: number;
-    }[];
-    hammerSplashFlashes: {
-      mesh: THREE.Mesh;
-      life: number;
-      maxLife: number;
-      targetRadius: number;
-    }[];
-    swordLungeSpeedLines: {
-      mesh: THREE.Mesh;
-      drift: THREE.Vector3;
-      life: number;
-      maxLife: number;
-      startOpacity: number;
-    }[];
-    burnDecals: {
-      mesh: THREE.Mesh;
-      life: number;
-      maxLife: number;
-    }[];
-    tracers: {
-      mesh: THREE.Line | THREE.Mesh;
-      life: number;
-      maxLife: number;
-      material: THREE.Material;
-    }[];
-    otherPlayerMeshes: Map<string, {
-      group: THREE.Group;
-      hammer: THREE.Group;
-      sword: THREE.Group;
-      pistol?: THREE.Group;
-    }>;
-    navMesh?: any;
-    customMapObjects?: THREE.Object3D[];
-  }>({
-    scene: null,
-    camera: null,
-    renderer: null,
-    playerHammer: null,
-    playerSword: null,
-    playerPistol: null,
-    enemyGroup: null,
-    enemyHammer: null,
-    enemySword: null,
-    hostGroup: null,
-    hostHammer: null,
-    hostSword: null,
-    otherPlayerMeshes: new Map(),
-    customMapObjects: [],
-
-    debugPlayerSphere: null,
-    debugEnemySphere: null,
-    playerJumpZoneMesh: null,
-    ambientLight: null,
-    dirLight: null,
-    damageExplosionParticles: [],
-    hammerSplashFlashes: [],
-    swordLungeSpeedLines: [],
-    burnDecals: [],
-    tracers: [],
-  });
+  const threeRef = useRef<GrifballThreeRefs>(createInitialGrifballThreeRefs());
 
   // Track if mouse/pointer lock instructions should be displayed
   const [showPointerLockAlert, setShowPointerLockAlert] = useState(true);
 
-  // Track opponent's custom hue for rebuilding their Spartan model dynamically
-  const lastOpponentHue = useRef<number | null>(null);
-  const opponentNameRef = useRef<string>('');
-  const radarDotPoolRef = useRef<Map<string, HTMLElement>>(new Map());
-  const nameplatePoolRef = useRef<Map<string, HTMLElement>>(new Map());
-
-  useEffect(() => {
-    opponentNameRef.current = opponentPlayerName || '';
-  }, [opponentPlayerName]);
+  const {
+    lastOpponentHue,
+    radarDotPoolRef,
+    nameplatePoolRef,
+  } = useGrifballDomPoolRefs();
+  const opponentNameRef = useLatestRef(opponentPlayerName || '');
 
   const updateBlinking = (group: THREE.Group | null, active: boolean) => {
-    if (!group) return;
-    const blinkCycle = Math.floor(performance.now() / 120) % 2 === 0;
-    const isAlreadyBlinking = group.userData.isBlinking === true;
-    const shouldShowBlink = active && blinkCycle;
-    
-    if (!active && !isAlreadyBlinking) {
-      return;
-    }
-    
-    group.userData.isBlinking = active;
-    
-    group.traverse((child) => {
-      if (child instanceof THREE.Mesh) {
-        // Skip general helper meshes
-        if (child === threeRef.current.debugPlayerSphere || child === threeRef.current.debugEnemySphere) {
-          return;
-        }
-        
-        if (!child.userData.originalMaterial) {
-          child.userData.originalMaterial = child.material;
-        }
-        
-        if (shouldShowBlink) {
-          child.material = whiteBlinkMaterial;
-        } else {
-          child.material = child.userData.originalMaterial;
-        }
-      }
+    updateInvulnerabilityBlinking({
+      group,
+      active,
+      skipMeshes: [threeRef.current.debugPlayerSphere, threeRef.current.debugEnemySphere],
     });
   };
 
@@ -3366,44 +2752,21 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     const scene = threeRef.current.scene;
     if (!scene || !threeRef.current.enemyGroup) return;
 
-    // Remove old group
-    scene.remove(threeRef.current.enemyGroup);
-
-    // Build new spartan with custom hue.
     const isEnemyBot = !isMultiplayer;
     const isLocalClient = isMultiplayer && multiplayerRole === 'client';
-    const enemyGroup = buildVoxelSpartanModel(isEnemyBot, hue, isLocalClient ? playerLoadout : undefined);
-    enemyGroup.position.copy(multiplayerRole === 'observer' ? s.clientPos : mai()!.pos);
-    scene.add(enemyGroup);
-    threeRef.current.enemyGroup = enemyGroup;
-
-    // Rebuild & attach hammer
-    const enemyHammer = buildGravityHammerModel(isEnemyBot ? undefined : hue);
-    enemyHammer.scale.set(0.6, 0.6, 0.6);
-    enemyHammer.position.set(0.5, 1.0 - 0.64, -0.4);
-    enemyHammer.rotation.set(Math.PI / 2, 0, 0);
-    if (enemyGroup.userData.upperTorso) {
-      enemyGroup.userData.upperTorso.add(enemyHammer);
-    } else {
-      enemyGroup.add(enemyHammer);
-    }
-    threeRef.current.enemyHammer = enemyHammer;
-
-    // Rebuild & attach sword
-    const enemySword = buildKatarSwordModel(isEnemyBot ? undefined : hue);
-    enemySword.scale.set(0.6, 0.6, 0.6);
-    enemySword.position.set(0.5, 1.0 - 0.64, -0.32);
-    enemySword.rotation.set(Math.PI / 2, 0, -Math.PI / 8);
-    
     const activeWeapon = (multiplayerRole === 'observer') ? s.clientActiveWeapon : mai()!.activeWeapon;
-    enemySword.visible = activeWeapon === 'sword';
-    enemyHammer.visible = activeWeapon === 'hammer';
-    
-    if (enemyGroup.userData.upperTorso) {
-      enemyGroup.userData.upperTorso.add(enemySword);
-    } else {
-      enemyGroup.add(enemySword);
-    }
+    const { group: enemyGroup, hammer: enemyHammer, sword: enemySword } = rebuildDualWeaponCombatantModel({
+      scene,
+      previousGroup: threeRef.current.enemyGroup,
+      isEnemyBot,
+      hue,
+      weaponHue: isEnemyBot ? null : hue,
+      loadout: isLocalClient ? playerLoadout : undefined,
+      position: multiplayerRole === 'observer' ? s.clientPos : mai()!.pos,
+      activeWeapon,
+    });
+    threeRef.current.enemyGroup = enemyGroup;
+    threeRef.current.enemyHammer = enemyHammer;
     threeRef.current.enemySword = enemySword;
   };
 
@@ -3412,83 +2775,28 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     const scene = threeRef.current.scene;
     if (!scene) return;
 
-    if (threeRef.current.hostGroup) {
-      scene.remove(threeRef.current.hostGroup);
-    }
-
-    // Build Blue team spartan model for Host
     const isLocalHost = !isMultiplayer || multiplayerRole === 'host';
-    const hostGroup = buildVoxelSpartanModel(false, hue, isLocalHost ? playerLoadout : undefined);
-    hostGroup.position.copy(multiplayerRole === 'observer' ? s.hostPos : s.playerPos);
-    scene.add(hostGroup);
-    threeRef.current.hostGroup = hostGroup;
-
-    // Rebuild & attach hammer
-    const hostHammer = buildGravityHammerModel(hue);
-    hostHammer.scale.set(0.6, 0.6, 0.6);
-    hostHammer.position.set(0.5, 1.0 - 0.64, -0.4);
-    hostHammer.rotation.set(Math.PI / 2, 0, 0);
-    if (hostGroup.userData.upperTorso) {
-      hostGroup.userData.upperTorso.add(hostHammer);
-    } else {
-      hostGroup.add(hostHammer);
-    }
-    threeRef.current.hostHammer = hostHammer;
-
-    // Rebuild & attach sword
-    const hostSword = buildKatarSwordModel(hue);
-    hostSword.scale.set(0.6, 0.6, 0.6);
-    hostSword.position.set(0.5, 1.0 - 0.64, -0.32);
-    hostSword.rotation.set(Math.PI / 2, 0, -Math.PI / 8);
-    
     const activeWeapon = (multiplayerRole === 'observer') ? s.hostActiveWeapon : s.activeWeapon;
-    hostSword.visible = activeWeapon === 'sword';
-    hostHammer.visible = activeWeapon === 'hammer';
-    
-    if (hostGroup.userData.upperTorso) {
-      hostGroup.userData.upperTorso.add(hostSword);
-    } else {
-      hostGroup.add(hostSword);
-    }
+    const { group: hostGroup, hammer: hostHammer, sword: hostSword } = rebuildDualWeaponCombatantModel({
+      scene,
+      previousGroup: threeRef.current.hostGroup,
+      isEnemyBot: false,
+      hue,
+      loadout: isLocalHost ? playerLoadout : undefined,
+      position: multiplayerRole === 'observer' ? s.hostPos : s.playerPos,
+      activeWeapon,
+    });
+    threeRef.current.hostGroup = hostGroup;
+    threeRef.current.hostHammer = hostHammer;
     threeRef.current.hostSword = hostSword;
   };
 
   // Define 8 circular spawn points inside the 20m arena (base radius 13m)
-  const SPAWN_POINTS = useRef<THREE.Vector3[]>(
-    Array.from({ length: 8 }).map((_, i) => {
-      const angle = (i * 2 * Math.PI) / 8;
-      return new THREE.Vector3(13 * Math.cos(angle), 0, 13 * Math.sin(angle));
-    })
-  ).current;
+  const SPAWN_POINTS = useRef<THREE.Vector3[]>(createDefaultSpawnPoints()).current;
 
   // Minimax proximity spawning algorithm to select spawn point farthest from threat
   const getOptimalSpawnPoint = (excludePositions: THREE.Vector3[]): THREE.Vector3 => {
-    const activeCustomMap = getActiveCustomMap();
-    const activeSpawns = activeCustomMap && activeCustomMap.spawnPoints && activeCustomMap.spawnPoints.length > 0
-      ? activeCustomMap.spawnPoints.map(p => new THREE.Vector3(p.x, p.y, p.z))
-      : SPAWN_POINTS;
-
-    if (activeSpawns.length === 0) {
-      return new THREE.Vector3(0, 0, 0);
-    }
-
-    if (excludePositions.length === 0) {
-      return activeSpawns[0].clone();
-    }
-    let bestPoint = activeSpawns[0];
-    let bestMinDist = -1;
-    for (const point of activeSpawns) {
-      let minDist = Infinity;
-      for (const entityPos of excludePositions) {
-        const d = point.distanceTo(entityPos);
-        if (d < minDist) minDist = d;
-      }
-      if (minDist > bestMinDist) {
-        bestMinDist = minDist;
-        bestPoint = point;
-      }
-    }
-    return bestPoint.clone();
+    return getOptimalGrifballSpawnPoint(getActiveCustomMap(), SPAWN_POINTS, excludePositions);
   };
 
   // Dynamic arena resizing based on player count (12.5% for every 2 players, up to 50% max)
@@ -3497,106 +2805,10 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     const scene = threeRef.current.scene;
     if (!scene) return;
 
-    const scale = 1.0 + Math.min(0.50, Math.floor((playerCount - 1) / 2) * 0.125);
-    s.arenaRadius = 20 * scale;
-
-    // Scale floor cylinder mesh
-    scene.traverse((child) => {
-      if (child instanceof THREE.Mesh && child.geometry instanceof THREE.CylinderGeometry) {
-        const params = (child.geometry as any).parameters;
-        if (params && params.radialSegments === 64 && params.height === 0.2) {
-          child.scale.set(scale, 1, scale);
-        }
-      }
-    });
-
-    // Relocate outer pillars
-    scene.traverse((child) => {
-      if (child instanceof THREE.Group && child.children.length === 2 && child.parent === scene && child.userData.angle !== undefined) {
-        const pos = child.position;
-        const angle = Math.atan2(pos.z, pos.x);
-        const targetRadius = 20.3 * scale;
-        child.position.set(Math.cos(angle) * targetRadius, 2, Math.sin(angle) * targetRadius);
-      }
-    });
-
-    // Scale hangar walls
-    scene.traverse((child) => {
-      if (child instanceof THREE.Group && child.name === 'hangarWallGroup') {
-        child.scale.set(scale, 1, scale);
-      }
-    });
-
-    // Recalculate spawn points
-    const baseSpawnRadius = 13.0;
-    const spawnRadius = baseSpawnRadius * scale;
-    SPAWN_POINTS.forEach((p, i) => {
-      const angle = (i * 2 * Math.PI) / 8;
-      p.set(spawnRadius * Math.cos(angle), 0, spawnRadius * Math.sin(angle));
-    });
+    const { scale, arenaRadius } = resizeArenaSceneForPlayerCount(scene, SPAWN_POINTS, playerCount);
+    s.arenaRadius = arenaRadius;
 
     console.log(`Arena dynamically scaled for ${playerCount} players. Factor: ${scale}, Radius: ${s.arenaRadius}`);
-  };
-
-  type CombatantMeshRig = {
-    group: THREE.Group;
-    hammer: THREE.Group;
-    sword: THREE.Group;
-    pistol?: THREE.Group;
-  };
-
-  const getRandomLoadout = (): CharacterLoadout => {
-    const helmets = AVAILABLE_PRESETS.helmet;
-    const torsos = AVAILABLE_PRESETS.torso;
-    const arms = AVAILABLE_PRESETS.arm;
-    const legs = AVAILABLE_PRESETS.leg;
-    return {
-      helmet: helmets[Math.floor(Math.random() * helmets.length)],
-      torso: torsos[Math.floor(Math.random() * torsos.length)],
-      arm: arms[Math.floor(Math.random() * arms.length)],
-      leg: legs[Math.floor(Math.random() * legs.length)],
-    };
-  };
-
-  const buildCombatantMeshRig = (scene: THREE.Scene, hue: number, isEnemyBot = false): CombatantMeshRig => {
-    const botLoadout = isEnemyBot ? getRandomLoadout() : undefined;
-    const group = buildVoxelSpartanModel(isEnemyBot, hue, botLoadout);
-    group.userData.appliedHue = hue;
-    scene.add(group);
-
-    const hammer = buildGravityHammerModel(hue);
-    hammer.scale.set(0.6, 0.6, 0.6);
-    hammer.position.set(0.5, 1.0 - 0.64, -0.4);
-    hammer.rotation.set(Math.PI / 2, 0, 0);
-    if (group.userData.upperTorso) {
-      group.userData.upperTorso.add(hammer);
-    } else {
-      group.add(hammer);
-    }
-
-    const sword = buildKatarSwordModel(hue);
-    sword.scale.set(0.6, 0.6, 0.6);
-    sword.position.set(0.5, 1.0 - 0.64, -0.32);
-    sword.rotation.set(Math.PI / 2, 0, -Math.PI / 8);
-    sword.visible = false;
-    if (group.userData.upperTorso) {
-      group.userData.upperTorso.add(sword);
-    } else {
-      group.add(sword);
-    }
-
-    const pistol = buildPistolModel(hue);
-    pistol.scale.set(0.6, 0.6, 0.6);
-    pistol.position.set(0.5, 1.0 - 0.64, -0.32);
-    pistol.rotation.set(Math.PI / 2, 0, 0);
-    pistol.visible = false;
-    if (group.userData.upperTorso) {
-      group.userData.upperTorso.add(pistol);
-    } else {
-      group.add(pistol);
-    }
-
-    return { group, hammer, sword, pistol };
   };
 
   // Provisions any roster combatant into otherPlayerMeshes (shared rig for AI + remote).
@@ -3646,7 +2858,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     const hue = data.hue ?? playerState.hue;
     if (!meshes || meshes.group.userData.appliedHue !== hue) {
       if (meshes?.group) scene.remove(meshes.group);
-      meshes = buildCombatantMeshRig(scene, hue, false);
+      meshes = createCombatantMeshRig(scene, hue, false);
       threeRef.current.otherPlayerMeshes.set(clientId, meshes);
       playerState.hue = hue;
     }
@@ -3784,915 +2996,6 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     
     threeRef.current.renderer = renderer;
 
-    // Helper: Create custom procedural textures dynamically using 2D HTML Canvas
-    const generateCustomTexture = (type: string, baseColorHex: string): THREE.Texture => {
-      const baseSize = 512;
-      const resolution = 2048;
-      const scaleFactor = resolution / baseSize;
-      const canvas = document.createElement('canvas');
-      canvas.width = resolution;
-      canvas.height = resolution;
-      const ctx = canvas.getContext('2d')!;
-      ctx.scale(scaleFactor, scaleFactor);
-
-      // Background fill
-      ctx.fillStyle = baseColorHex;
-      ctx.fillRect(0, 0, 512, 512);
-
-      if (type === 'none') {
-        // Plain matte texture, add subtle boundary bevel highlights
-        ctx.strokeStyle = 'rgba(255,255,255,0.06)';
-        ctx.lineWidth = 4;
-        ctx.strokeRect(0, 0, 512, 512);
-      } else if (type === 'nature_grass') {
-        // Grass blades on rich loam soil
-        ctx.fillStyle = '#064e3b';
-        ctx.fillRect(0, 0, 512, 512);
-        ctx.strokeStyle = baseColorHex; // light green blades
-        ctx.lineWidth = 2;
-        for (let i = 0; i < 400; i++) {
-          const x = Math.random() * 512;
-          const y = Math.random() * 512;
-          const len = 6 + Math.random() * 14;
-          const tilt = -4 + Math.random() * 8;
-          ctx.beginPath();
-          ctx.moveTo(x, y);
-          ctx.lineTo(x + tilt, y - len);
-          ctx.stroke();
-        }
-      } else if (type === 'nature_mossy_stone') {
-        // Granite slate with green moss patches
-        ctx.fillStyle = '#4b5563';
-        ctx.fillRect(0, 0, 512, 512);
-        // Stone ridges
-        ctx.strokeStyle = '#374151';
-        ctx.lineWidth = 3;
-        for (let i = 0; i < 15; i++) {
-          ctx.strokeRect(Math.random() * 512, Math.random() * 512, 60 + Math.random() * 120, 60 + Math.random() * 120);
-        }
-        // Mossy vegetative growth overlays
-        ctx.fillStyle = baseColorHex;
-        for (let i = 0; i < 20; i++) {
-          ctx.beginPath();
-          ctx.arc(Math.random() * 512, Math.random() * 512, 18 + Math.random() * 35, 0, Math.PI * 2);
-          ctx.fill();
-        }
-      } else if (type === 'nature_wood') {
-        // Wood grain bark
-        ctx.fillStyle = '#3e2723';
-        ctx.fillRect(0, 0, 512, 512);
-        ctx.strokeStyle = baseColorHex; // light beige grain
-        ctx.lineWidth = 4;
-        for (let r = 24; r < 700; r += 28) {
-          ctx.beginPath();
-          ctx.arc(256, 256, r, 0.2, Math.PI * 2 - 0.2);
-          ctx.stroke();
-        }
-      } else if (type === 'space_alloy') {
-        // Starbase titanium hull plates
-        ctx.fillStyle = '#1e293b';
-        ctx.fillRect(0, 0, 512, 512);
-        ctx.strokeStyle = baseColorHex; // cyan grid line seams
-        ctx.lineWidth = 2.5;
-        for (let idx = 0; idx <= 512; idx += 128) {
-          ctx.beginPath(); ctx.moveTo(idx, 0); ctx.lineTo(idx, 512); ctx.stroke();
-          ctx.beginPath(); ctx.moveTo(0, idx); ctx.lineTo(512, idx); ctx.stroke();
-        }
-        ctx.fillStyle = '#475569'; // steel rivets
-        for (let rx = 16; rx < 512; rx += 128) {
-          for (let ry = 16; ry < 512; ry += 128) {
-            ctx.beginPath(); ctx.arc(rx, ry, 3.5, 0, Math.PI * 2); ctx.fill();
-          }
-        }
-      } else if (type === 'space_meteorite') {
-        // Dark meteor mineral with glowing veins
-        ctx.fillStyle = '#0f172a';
-        ctx.fillRect(0, 0, 512, 512);
-        ctx.strokeStyle = baseColorHex;
-        ctx.lineWidth = 3.5;
-        ctx.shadowColor = baseColorHex;
-        ctx.shadowBlur = 12;
-        for (let i = 0; i < 6; i++) {
-          ctx.beginPath();
-          ctx.moveTo(Math.random() * 512, 0);
-          ctx.bezierCurveTo(Math.random() * 512, 170, Math.random() * 512, 340, Math.random() * 512, 512);
-          ctx.stroke();
-        }
-        ctx.shadowBlur = 0;
-      } else if (type === 'space_lunar_dust') {
-        // Lunar soil with fine craters
-        ctx.fillStyle = '#334155';
-        ctx.fillRect(0, 0, 512, 512);
-        ctx.fillStyle = baseColorHex;
-        for (let i = 0; i < 40; i++) {
-          ctx.beginPath();
-          ctx.arc(Math.random() * 512, Math.random() * 512, 6 + Math.random() * 16, 0, Math.PI * 2);
-          ctx.fill();
-        }
-      } else if (type === 'futuristic_carbon') {
-        // Threaded carbon fiber weave
-        ctx.fillStyle = '#090d16';
-        ctx.fillRect(0, 0, 512, 512);
-        ctx.strokeStyle = baseColorHex;
-        ctx.lineWidth = 1;
-        for (let i = 0; i < 512; i += 6) {
-          ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, 512); ctx.stroke();
-          ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(512, i); ctx.stroke();
-        }
-      } else if (type === 'futuristic_hex') {
-        // Cyan hexagonal grid
-        ctx.fillStyle = '#050811';
-        ctx.fillRect(0, 0, 512, 512);
-        ctx.strokeStyle = baseColorHex;
-        ctx.lineWidth = 2;
-        const hexSizeVal = 32;
-        const hexHeightVal = hexSizeVal * Math.sqrt(3);
-        for (let y = 0; y < 512 + hexHeightVal; y += hexHeightVal) {
-          for (let x = 0; x < 512 + hexSizeVal * 3; x += hexSizeVal * 3) {
-            ctx.beginPath();
-            for (let a = 0; a < 6; a++) {
-              const angle = (a * Math.PI) / 3;
-              const px = x + hexSizeVal * Math.cos(angle);
-              const py = y + hexSizeVal * Math.sin(angle);
-              if (a === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
-            }
-            ctx.closePath(); ctx.stroke();
-
-            ctx.beginPath();
-            for (let a = 0; a < 6; a++) {
-              const angle = (a * Math.PI) / 3;
-              const px = x + hexSizeVal * 1.5 + hexSizeVal * Math.cos(angle);
-              const py = y + hexHeightVal / 2 + hexSizeVal * Math.sin(angle);
-              if (a === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
-            }
-            ctx.closePath(); ctx.stroke();
-          }
-        }
-      } else if (type === 'futuristic_shield') {
-        // Glowing circular shield emitter
-        ctx.fillStyle = '#020617';
-        ctx.fillRect(0, 0, 512, 512);
-        ctx.strokeStyle = baseColorHex;
-        ctx.lineWidth = 3.5;
-        for (let r = 80; r <= 320; r += 80) {
-          ctx.beginPath(); ctx.arc(256, 256, r, 0, Math.PI * 2); ctx.stroke();
-        }
-      } else if (type === 'city_asphalt') {
-        // Rough dark tarmac asphalt
-        ctx.fillStyle = '#1e293b';
-        ctx.fillRect(0, 0, 512, 512);
-        ctx.fillStyle = baseColorHex; // gravel speckles
-        for (let i = 0; i < 1500; i++) {
-          ctx.fillRect(Math.random() * 512, Math.random() * 512, 2.5, 2.5);
-        }
-      } else if (type === 'city_brick') {
-        // Red industrial bricks
-        ctx.fillStyle = '#7c2d12';
-        ctx.fillRect(0, 0, 512, 512);
-        ctx.strokeStyle = baseColorHex; // mortar seams
-        ctx.lineWidth = 2.5;
-        const bH = 24;
-        const bW = 56;
-        for (let y = 0; y < 512; y += bH) {
-          ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(512, y); ctx.stroke();
-          const offset = (y / bH) % 2 === 0 ? 0 : bW / 2;
-          for (let x = offset; x < 512 + bW; x += bW) {
-            ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x, y + bH); ctx.stroke();
-          }
-        }
-      } else if (type === 'city_concrete') {
-        // Grey aggregate concrete slabs with cracks
-        ctx.fillStyle = '#64748b';
-        ctx.fillRect(0, 0, 512, 512);
-        ctx.strokeStyle = baseColorHex; // cracks/joints
-        ctx.lineWidth = 1.5;
-        ctx.strokeRect(0, 0, 512, 512);
-        for (let i = 0; i < 4; i++) {
-          ctx.beginPath();
-          ctx.moveTo(Math.random() * 512, 0);
-          ctx.lineTo(Math.random() * 512, 160);
-          ctx.lineTo(Math.random() * 512, 360);
-          ctx.lineTo(Math.random() * 512, 512);
-          ctx.stroke();
-        }
-      } else if (type === 'fantasy_runed_stone') {
-        // Glowing runic ancient carvings
-        ctx.fillStyle = '#27272a';
-        ctx.fillRect(0, 0, 512, 512);
-        ctx.strokeStyle = baseColorHex; // glow paint
-        ctx.lineWidth = 5;
-        ctx.shadowColor = baseColorHex;
-        ctx.shadowBlur = 14;
-        ctx.beginPath();
-        ctx.moveTo(256, 80);
-        ctx.lineTo(130, 390);
-        ctx.lineTo(382, 390);
-        ctx.closePath();
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.arc(256, 270, 70, 0, Math.PI * 2);
-        ctx.stroke();
-        ctx.shadowBlur = 0;
-      } else if (type === 'fantasy_cobble') {
-        // Interlocking castle stones
-        ctx.fillStyle = '#4b5563';
-        ctx.fillRect(0, 0, 512, 512);
-        ctx.strokeStyle = baseColorHex;
-        ctx.lineWidth = 3;
-        for (let i = 0; i < 60; i++) {
-          ctx.beginPath();
-          ctx.arc(Math.random() * 512, Math.random() * 512, 22 + Math.random() * 32, 0, Math.PI * 2);
-          ctx.stroke();
-        }
-      } else if (type === 'fantasy_gold') {
-        // Scroll-worked highly reflective gold plates
-        ctx.fillStyle = '#ca8a04';
-        ctx.fillRect(0, 0, 512, 512);
-        ctx.strokeStyle = baseColorHex;
-        ctx.lineWidth = 3.5;
-        for (let i = 0; i < 8; i++) {
-          ctx.beginPath();
-          ctx.arc(Math.random() * 512, Math.random() * 512, 50 + Math.random() * 90, 0.4, 3.4);
-          ctx.stroke();
-        }
-      } else if (type === 'forerunner_panel') {
-        // Dark forerunner metallic alloy plates with golden circuit runs
-        ctx.fillStyle = '#17191e';
-        ctx.fillRect(0, 0, 512, 512);
-        // Dark plate joints
-        ctx.strokeStyle = '#282b35';
-        ctx.lineWidth = 3.5;
-        for (let idx = 0; idx <= 512; idx += 128) {
-          ctx.beginPath(); ctx.moveTo(idx, 0); ctx.lineTo(idx, 512); ctx.stroke();
-          ctx.beginPath(); ctx.moveTo(0, idx); ctx.lineTo(512, idx); ctx.stroke();
-        }
-        // Glowing gold circuit paths
-        ctx.strokeStyle = baseColorHex;
-        ctx.lineWidth = 2.2;
-        ctx.shadowColor = baseColorHex;
-        ctx.shadowBlur = 8;
-        for (let rx = 64; rx < 512; rx += 128) {
-          for (let ry = 64; ry < 512; ry += 128) {
-            ctx.strokeRect(rx - 22, ry - 22, 44, 44);
-            ctx.beginPath();
-            ctx.arc(rx, ry, 6, 0, Math.PI * 2);
-            ctx.stroke();
-          }
-        }
-        ctx.shadowBlur = 0;
-      } else if (type === 'forerunner_gold') {
-        // Brushed forerunner gold plates with fine runic lines
-        ctx.fillStyle = '#a16207'; // deep gold-bronze
-        ctx.fillRect(0, 0, 512, 512);
-        ctx.strokeStyle = baseColorHex; // bright glowing gold
-        ctx.lineWidth = 2.8;
-        ctx.shadowColor = baseColorHex;
-        ctx.shadowBlur = 9;
-        for (let i = 32; i < 512; i += 64) {
-          ctx.beginPath();
-          ctx.moveTo(i, 0); ctx.lineTo(i, 512);
-          ctx.moveTo(0, i); ctx.lineTo(512, i);
-          ctx.stroke();
-        }
-        for (let x = 64; x < 512; x += 128) {
-          for (let y = 64; y < 512; y += 128) {
-            ctx.beginPath();
-            ctx.arc(x, y, 10, 0, Math.PI * 2);
-            ctx.stroke();
-          }
-        }
-        ctx.shadowBlur = 0;
-      } else if (type === 'synthwave_grid') {
-        // Glowing cyan/pink grid
-        ctx.fillStyle = '#06020f'; // deep black purple
-        ctx.fillRect(0, 0, 512, 512);
-        // Draw grid lines
-        ctx.strokeStyle = '#06b6d4'; // neon cyan
-        ctx.lineWidth = 3.5;
-        ctx.shadowColor = '#06b6d4';
-        ctx.shadowBlur = 10;
-        for (let i = 0; i <= 512; i += 64) {
-          ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, 512); ctx.stroke();
-          ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(512, i); ctx.stroke();
-        }
-        // Sub-grid highlights
-        ctx.strokeStyle = '#ec4899'; // neon pink
-        ctx.lineWidth = 1.0;
-        ctx.shadowColor = '#ec4899';
-        ctx.shadowBlur = 4;
-        for (let i = 32; i < 512; i += 64) {
-          ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, 512); ctx.stroke();
-          ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(512, i); ctx.stroke();
-        }
-        ctx.shadowBlur = 0;
-      } else if (type === 'synthwave_neon_laser') {
-        // Neon energy lines
-        ctx.fillStyle = '#080214';
-        ctx.fillRect(0, 0, 512, 512);
-        ctx.strokeStyle = baseColorHex || '#ec4899';
-        ctx.lineWidth = 4.0;
-        ctx.shadowColor = baseColorHex || '#ec4899';
-        ctx.shadowBlur = 12;
-        // Drawing diagonal neon laser strips
-        for (let i = -256; i < 512; i += 128) {
-          ctx.beginPath();
-          ctx.moveTo(i, 0);
-          ctx.lineTo(i + 256, 512);
-          ctx.stroke();
-        }
-        ctx.shadowBlur = 0;
-      } else if (type === 'synthwave_chrome') {
-        // Horizon line chrome gradient
-        const grad = ctx.createLinearGradient(0, 0, 0, 512);
-        grad.addColorStop(0, '#06b6d4'); // cyber cyan sky
-        grad.addColorStop(0.48, '#08041d'); // deep sky horizon border
-        grad.addColorStop(0.5, '#ffffff'); // blinding horizon shine
-        grad.addColorStop(0.52, '#d946ef'); // neon pink ground reflection
-        grad.addColorStop(1, '#1e1b4b'); // deep reflection base
-        ctx.fillStyle = grad;
-        ctx.fillRect(0, 0, 512, 512);
-        // Add subtle horizontal metal grooves
-        ctx.strokeStyle = 'rgba(255,255,255,0.2)';
-        ctx.lineWidth = 1.5;
-        for (let y = 32; y < 512; y += 48) {
-          if (Math.abs(y - 256) > 20) {
-            ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(512, y); ctx.stroke();
-          }
-        }
-      } else if (type === 'rainy_streets_asphalt') {
-        // Wet dark slate/charcoal grey tarmac asphalt
-        ctx.fillStyle = '#0f121a';
-        ctx.fillRect(0, 0, 512, 512);
-        
-        // Add gravel texture speckling
-        ctx.fillStyle = 'rgba(255,255,255,0.04)';
-        for (let i = 0; i < 2000; i++) {
-          ctx.fillRect(Math.random() * 512, Math.random() * 512, 1.5, 1.5);
-        }
-        
-        // Shiny water puddles (slick specular maps)
-        ctx.fillStyle = 'rgba(6, 182, 212, 0.05)'; // faint cyan water reflections
-        for (let i = 0; i < 8; i++) {
-          ctx.beginPath();
-          ctx.ellipse(Math.random() * 512, Math.random() * 512, 45 + Math.random() * 55, 20 + Math.random() * 25, Math.random() * Math.PI, 0, Math.PI * 2);
-          ctx.fill();
-        }
-        ctx.fillStyle = 'rgba(244, 63, 94, 0.04)'; // faint red/orange reflections
-        for (let i = 0; i < 8; i++) {
-          ctx.beginPath();
-          ctx.ellipse(Math.random() * 512, Math.random() * 512, 35 + Math.random() * 45, 15 + Math.random() * 20, Math.random() * Math.PI, 0, Math.PI * 2);
-          ctx.fill();
-        }
-        
-        // Rain droplets ripple rings
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.18)';
-        ctx.lineWidth = 1;
-        for (let i = 0; i < 12; i++) {
-          ctx.beginPath();
-          ctx.arc(Math.random() * 512, Math.random() * 512, 4 + Math.random() * 20, 0, Math.PI * 2);
-          ctx.stroke();
-        }
-        
-        // Dark road slab panel seams
-        ctx.strokeStyle = '#05070a';
-        ctx.lineWidth = 4;
-        for (let idx = 0; idx <= 512; idx += 256) {
-          ctx.beginPath(); ctx.moveTo(idx, 0); ctx.lineTo(idx, 512); ctx.stroke();
-          ctx.beginPath(); ctx.moveTo(0, idx); ctx.lineTo(512, idx); ctx.stroke();
-        }
-      } else if (type === 'rainy_streets_neon_glow') {
-        // Heavy steel block with orange/amber glowing neon hazard borders
-        ctx.fillStyle = '#1c1917';
-        ctx.fillRect(0, 0, 512, 512);
-        
-        ctx.strokeStyle = '#ea580c'; // glowing sodium orange
-        ctx.lineWidth = 4;
-        ctx.shadowColor = '#ea580c';
-        ctx.shadowBlur = 10;
-        
-        // Draw neon industrial warning bands
-        ctx.strokeRect(20, 20, 472, 472);
-        ctx.strokeRect(80, 80, 352, 352);
-        
-        // Diagonal warning stripes inside
-        for (let i = 0; i < 512; i += 64) {
-          ctx.beginPath();
-          ctx.moveTo(i, 20);
-          ctx.lineTo(i + 40, 80);
-          ctx.stroke();
-          
-          ctx.beginPath();
-          ctx.moveTo(i, 432);
-          ctx.lineTo(i + 40, 492);
-          ctx.stroke();
-        }
-        ctx.shadowBlur = 0;
-      } else if (type === 'rainy_streets_dog_billboard') {
-        // High-tech glowing blue dog hologram billboard screen
-        ctx.fillStyle = '#020617';
-        ctx.fillRect(0, 0, 512, 512);
-        
-        // Cyber scanlines
-        ctx.strokeStyle = 'rgba(6, 182, 212, 0.08)';
-        ctx.lineWidth = 1;
-        for (let y = 0; y < 512; y += 8) {
-          ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(512, y); ctx.stroke();
-        }
-        
-        // Draw the cute cybernetic geometric dog
-        ctx.strokeStyle = '#06b6d4'; // neon cyan
-        ctx.lineWidth = 5;
-        ctx.shadowColor = '#06b6d4';
-        ctx.shadowBlur = 15;
-        
-        ctx.beginPath();
-        // Head outline
-        ctx.moveTo(190, 190);
-        ctx.lineTo(322, 190);
-        ctx.lineTo(340, 235);
-        ctx.lineTo(322, 270);
-        ctx.lineTo(190, 270);
-        ctx.lineTo(172, 235);
-        ctx.closePath();
-        
-        // Snout
-        ctx.moveTo(322, 220);
-        ctx.lineTo(365, 220);
-        ctx.lineTo(365, 250);
-        ctx.lineTo(322, 250);
-        
-        // Tech Collar
-        ctx.moveTo(200, 270);
-        ctx.lineTo(200, 295);
-        ctx.lineTo(260, 295);
-        ctx.lineTo(260, 270);
-        
-        // Pointy ears
-        ctx.moveTo(200, 190);
-        ctx.lineTo(175, 125);
-        ctx.lineTo(225, 190);
-        
-        ctx.moveTo(312, 190);
-        ctx.lineTo(337, 125);
-        ctx.lineTo(287, 190);
-        ctx.stroke();
-        
-        // Glowing Eye (white starburst/circle)
-        ctx.fillStyle = '#ffffff';
-        ctx.shadowColor = '#ffffff';
-        ctx.shadowBlur = 20;
-        ctx.beginPath();
-        ctx.arc(295, 215, 8, 0, Math.PI * 2);
-        ctx.fill();
-        
-        // Neon banner texts
-        ctx.shadowBlur = 12;
-        ctx.shadowColor = '#ec4899'; // magenta pink
-        ctx.fillStyle = '#f472b6';
-        ctx.font = '900 38px monospace';
-        ctx.textAlign = 'center';
-        ctx.fillText('UPGRADE', 256, 410);
-        
-        ctx.shadowColor = '#06b6d4';
-        ctx.fillStyle = '#22d3ee';
-        ctx.font = 'bold 22px sans-serif';
-        ctx.fillText("BRAWL'S BEST FRIEND", 256, 95);
-        
-        ctx.shadowBlur = 0;
-      } else if (type === 'winter_ice') {
-        // Pristine ice hockey rink layout
-        ctx.fillStyle = '#e0f2fe'; // ice light blue
-        ctx.fillRect(0, 0, 512, 512);
-
-        // Skate scratch marks
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.42)';
-        ctx.lineWidth = 1;
-        for (let i = 0; i < 50; i++) {
-          ctx.beginPath();
-          ctx.arc(
-            Math.random() * 512, 
-            Math.random() * 512, 
-            15 + Math.random() * 45, 
-            Math.random() * Math.PI, 
-            Math.random() * Math.PI * 2
-          );
-          ctx.stroke();
-        }
-
-        // Red Goal Lines (at x = 45 and x = 512 - 45)
-        ctx.strokeStyle = '#ef4444';
-        ctx.lineWidth = 3;
-        ctx.beginPath();
-        ctx.moveTo(45, 0); ctx.lineTo(45, 512);
-        ctx.moveTo(512 - 45, 0); ctx.lineTo(512 - 45, 512);
-        ctx.stroke();
-
-        // Red Goal Creases (semi-circles facing inwards, radius 20)
-        ctx.beginPath();
-        ctx.arc(45, 256, 20, -Math.PI / 2, Math.PI / 2);
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.arc(512 - 45, 256, 20, Math.PI / 2, -Math.PI / 2);
-        ctx.stroke();
-
-        // Blue Lines (at x = 170 and x = 342)
-        ctx.strokeStyle = '#3b82f6';
-        ctx.lineWidth = 6;
-        ctx.beginPath();
-        ctx.moveTo(170, 0); ctx.lineTo(170, 512);
-        ctx.moveTo(342, 0); ctx.lineTo(342, 512);
-        ctx.stroke();
-
-        // Red Center Line (at x = 256)
-        ctx.strokeStyle = '#ef4444';
-        ctx.lineWidth = 6;
-        ctx.beginPath();
-        ctx.moveTo(256, 0); ctx.lineTo(256, 512);
-        ctx.stroke();
-
-        // Blue Center Face-off Circle (radius 40, red dot)
-        ctx.strokeStyle = '#3b82f6';
-        ctx.lineWidth = 3;
-        ctx.beginPath();
-        ctx.arc(256, 256, 40, 0, Math.PI * 2);
-        ctx.stroke();
-        ctx.fillStyle = '#ef4444';
-        ctx.beginPath();
-        ctx.arc(256, 256, 5, 0, Math.PI * 2);
-        ctx.fill();
-
-        // Four Red Corner Face-off Circles with inner spots
-        ctx.strokeStyle = '#ef4444';
-        ctx.lineWidth = 2.5;
-        const spots = [[115, 120], [115, 392], [397, 120], [397, 392]];
-        spots.forEach(([cx, cy]) => {
-          ctx.beginPath();
-          ctx.arc(cx, cy, 25, 0, Math.PI * 2);
-          ctx.stroke();
-          // Inner spot
-          ctx.fillStyle = '#ef4444';
-          ctx.beginPath();
-          ctx.arc(cx, cy, 4, 0, Math.PI * 2);
-          ctx.fill();
-        });
-      } else if (type === 'winter_snow') {
-        // Powdery snow-covered surface
-        ctx.fillStyle = '#f8fafc';
-        ctx.fillRect(0, 0, 512, 512);
-        // Crystal ice sparkles
-        ctx.fillStyle = '#ffffff';
-        for (let i = 0; i < 500; i++) {
-          ctx.fillRect(Math.random() * 512, Math.random() * 512, 2.5, 2.5);
-        }
-        // Soft blue wind drifts
-        ctx.fillStyle = 'rgba(186, 230, 253, 0.25)'; // very soft sky-blue
-        for (let i = 0; i < 15; i++) {
-          ctx.beginPath();
-          ctx.ellipse(
-            Math.random() * 512, 
-            Math.random() * 512, 
-            50 + Math.random() * 80, 
-            12 + Math.random() * 20, 
-            Math.random() * 0.2 - 0.1, 
-            0, 
-            Math.PI * 2
-          );
-          ctx.fill();
-        }
-      } else if (type === 'winter_glacier_glass') {
-        // Translucent glacier frost glass
-        ctx.fillStyle = 'rgba(147, 197, 253, 0.45)';
-        ctx.fillRect(0, 0, 512, 512);
-        // Fine crystal ice cracks
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.65)';
-        ctx.lineWidth = 1.5;
-        for (let i = 0; i < 10; i++) {
-          ctx.beginPath();
-          ctx.moveTo(Math.random() * 512, 0);
-          ctx.lineTo(Math.random() * 512, 140);
-          ctx.lineTo(Math.random() * 512, 370);
-          ctx.lineTo(Math.random() * 512, 512);
-          ctx.stroke();
-        }
-      } else if (type === 'stadium_steel_grid') {
-        // High-tech dark-grey industrial steel grid floor with team markings
-        ctx.fillStyle = '#111318'; // Sleek dark metallic charcoal
-        ctx.fillRect(0, 0, 512, 512);
-
-        // Draw brushed steel plate seams (4x4 grids)
-        ctx.strokeStyle = '#08090c';
-        ctx.lineWidth = 3;
-        for (let i = 0; i <= 512; i += 128) {
-          ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, 512); ctx.stroke();
-          ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(512, i); ctx.stroke();
-        }
-
-        // Draw diamond steel plating / tread plate indicators
-        ctx.strokeStyle = '#2d3748'; // Steel grey rivets/treads
-        ctx.lineWidth = 1.5;
-        for (let x = 16; x < 512; x += 32) {
-          for (let y = 16; y < 512; y += 32) {
-            // Draw small diagonal slash marks
-            ctx.beginPath();
-            ctx.moveTo(x - 4, y - 4);
-            ctx.lineTo(x + 4, y + 4);
-            ctx.stroke();
-            ctx.beginPath();
-            ctx.moveTo(x + 4, y - 4);
-            ctx.lineTo(x - 4, y + 4);
-            ctx.stroke();
-          }
-        }
-
-        // Add sleek team floor lines: Blue West, Red East (split at center x = 256)
-        // Draw blue hazard accents on left half
-        ctx.strokeStyle = 'rgba(0, 136, 255, 0.4)';
-        ctx.lineWidth = 4;
-        ctx.beginPath();
-        ctx.moveTo(32, 64); ctx.lineTo(192, 256); ctx.lineTo(32, 448);
-        ctx.stroke();
-        
-        ctx.fillStyle = 'rgba(0, 136, 255, 0.08)';
-        ctx.beginPath();
-        ctx.moveTo(32, 64); ctx.lineTo(192, 256); ctx.lineTo(32, 448);
-        ctx.closePath();
-        ctx.fill();
-
-        // Draw red hazard accents on right half
-        ctx.strokeStyle = 'rgba(255, 51, 68, 0.4)';
-        ctx.beginPath();
-        ctx.moveTo(480, 64); ctx.lineTo(320, 256); ctx.lineTo(480, 448);
-        ctx.stroke();
-        
-        ctx.fillStyle = 'rgba(255, 51, 68, 0.08)';
-        ctx.beginPath();
-        ctx.moveTo(480, 64); ctx.lineTo(320, 256); ctx.lineTo(480, 448);
-        ctx.closePath();
-        ctx.fill();
-
-        // Outer white safety border
-        ctx.strokeStyle = 'rgba(255,255,255,0.7)';
-        ctx.lineWidth = 6;
-        ctx.strokeRect(6, 6, 500, 500);
-
-        // Middle division line
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
-        ctx.lineWidth = 4;
-        ctx.beginPath();
-        ctx.moveTo(256, 6); ctx.lineTo(256, 506);
-        ctx.stroke();
-
-        // Octagonal center plate
-        ctx.fillStyle = '#1e222b';
-        ctx.strokeStyle = '#ffffff';
-        ctx.lineWidth = 3;
-        ctx.beginPath();
-        const cx = 256, cy = 256, r = 70;
-        for (let i = 0; i < 8; i++) {
-          const angle = (i * Math.PI) / 4;
-          const px = cx + Math.cos(angle) * r;
-          const py = cy + Math.sin(angle) * r;
-          if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
-        }
-        ctx.closePath();
-        ctx.fill();
-        ctx.stroke();
-
-        // Inner glowing core ring in the center
-        ctx.strokeStyle = '#00ccff';
-        ctx.lineWidth = 2.5;
-        ctx.beginPath();
-        ctx.arc(256, 256, 20, 0, Math.PI * 2);
-        ctx.stroke();
-        ctx.fillStyle = '#ff0055';
-        ctx.beginPath();
-        ctx.arc(256, 256, 6, 0, Math.PI * 2);
-        ctx.fill();
-      } else if (type === 'stadium_scoreboard_screen') {
-        // Championship Central Scoreboard Screen
-        ctx.fillStyle = '#06080e';
-        ctx.fillRect(0, 0, 512, 512);
-
-        // Draw left side blue, right side red
-        const grad = ctx.createLinearGradient(0, 0, 512, 0);
-        grad.addColorStop(0, '#002244');
-        grad.addColorStop(0.45, '#001122');
-        grad.addColorStop(0.5, '#05070a');
-        grad.addColorStop(0.55, '#220011');
-        grad.addColorStop(1, '#440022');
-        ctx.fillStyle = grad;
-        ctx.fillRect(10, 10, 492, 492);
-
-        // Tech Grid overlay
-        ctx.strokeStyle = 'rgba(34, 211, 238, 0.05)';
-        ctx.lineWidth = 1.5;
-        for (let i = 20; i < 500; i += 24) {
-          ctx.beginPath(); ctx.moveTo(i, 10); ctx.lineTo(i, 502); ctx.stroke();
-          ctx.beginPath(); ctx.moveTo(10, i); ctx.lineTo(502, i); ctx.stroke();
-        }
-
-        // Tech Scanlines
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.25)';
-        for (let y = 10; y < 502; y += 4) {
-          ctx.fillRect(10, y, 492, 2);
-        }
-
-        // Draw glowing yellow Spartan silhouette in the center!
-        ctx.strokeStyle = '#eab308'; // Glowing gold yellow
-        ctx.lineWidth = 4;
-        ctx.shadowColor = '#eab308';
-        ctx.shadowBlur = 15;
-        
-        ctx.beginPath();
-        // Head / Helmet
-        ctx.moveTo(246, 130); ctx.lineTo(266, 130); ctx.lineTo(274, 144); ctx.lineTo(266, 160); ctx.lineTo(246, 160); ctx.lineTo(238, 144); ctx.closePath();
-        // Visor line
-        ctx.moveTo(242, 142); ctx.lineTo(270, 142);
-        // Chest / Shoulders
-        ctx.moveTo(216, 180); ctx.lineTo(296, 180); ctx.lineTo(310, 204); ctx.lineTo(280, 250); ctx.lineTo(232, 250); ctx.lineTo(202, 204); ctx.closePath();
-        // Left arm (Sword raise)
-        ctx.moveTo(216, 180); ctx.lineTo(176, 160); ctx.lineTo(160, 186); ctx.lineTo(202, 204);
-        // Right arm (Hammer carry)
-        ctx.moveTo(296, 180); ctx.lineTo(336, 196); ctx.lineTo(346, 226); ctx.lineTo(280, 250);
-        // Legs base
-        ctx.moveTo(232, 250); ctx.lineTo(220, 310); ctx.lineTo(190, 380); ctx.lineTo(226, 380); ctx.lineTo(246, 310); ctx.lineTo(256, 270);
-        ctx.moveTo(280, 250); ctx.lineTo(292, 310); ctx.lineTo(322, 380); ctx.lineTo(286, 380); ctx.lineTo(266, 310);
-        ctx.stroke();
-
-        // Energy Sword blade in left hand
-        ctx.strokeStyle = '#00ffff';
-        ctx.shadowColor = '#00ffff';
-        ctx.shadowBlur = 20;
-        ctx.beginPath();
-        ctx.moveTo(160, 186); ctx.lineTo(110, 150); ctx.lineTo(136, 172); ctx.lineTo(160, 186);
-        ctx.moveTo(160, 186); ctx.lineTo(102, 166); ctx.lineTo(136, 178); ctx.lineTo(160, 186);
-        ctx.stroke();
-
-        // Glowing Scoreboard stats
-        ctx.shadowBlur = 10;
-        ctx.shadowColor = '#00ffff';
-        ctx.fillStyle = '#22d3ee';
-        ctx.font = 'bold 32px sans-serif';
-        ctx.textAlign = 'left';
-        ctx.fillText('BLUE', 36, 80);
-        ctx.font = 'bold 64px monospace';
-        ctx.fillText('99', 42, 150);
-
-        ctx.shadowColor = '#ff0055';
-        ctx.fillStyle = '#ff2a6d';
-        ctx.textAlign = 'right';
-        ctx.font = 'bold 32px sans-serif';
-        ctx.fillText('RED', 476, 80);
-        ctx.font = 'bold 64px monospace';
-        ctx.fillText('88', 470, 150);
-
-        // Center Championship text
-        ctx.shadowColor = '#eab308';
-        ctx.fillStyle = '#facc15';
-        ctx.font = '900 24px monospace';
-        ctx.textAlign = 'center';
-        ctx.fillText('GRIFBALL ARENA', 256, 440);
-        ctx.font = 'bold 14px sans-serif';
-        ctx.fillText('CHAMPIONSHIP SERIES V', 256, 470);
-        
-        ctx.shadowBlur = 0;
-      } else if (type === 'stadium_advertisement_sapphire') {
-        // Sapphire Burger holographic advertisement banner
-        ctx.fillStyle = '#05040a';
-        ctx.fillRect(0, 0, 512, 512);
-
-        // Grid scanlines
-        ctx.strokeStyle = 'rgba(6, 182, 212, 0.05)';
-        ctx.lineWidth = 1;
-        for (let y = 0; y < 512; y += 8) {
-          ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(512, y); ctx.stroke();
-        }
-
-        // Draw glowing Hamburger outline
-        ctx.strokeStyle = '#f59e0b'; // golden yellow bun
-        ctx.lineWidth = 5;
-        ctx.shadowColor = '#f59e0b';
-        ctx.shadowBlur = 14;
-        
-        // Top bun
-        ctx.beginPath();
-        ctx.arc(256, 210, 100, Math.PI, 0, false);
-        ctx.lineTo(356, 210);
-        ctx.quadraticCurveTo(256, 240, 156, 210);
-        ctx.closePath();
-        ctx.stroke();
-
-        // Patty
-        ctx.strokeStyle = '#ca8a04';
-        ctx.beginPath();
-        ctx.moveTo(150, 230);
-        ctx.lineTo(362, 230);
-        ctx.quadraticCurveTo(362, 256, 350, 256);
-        ctx.lineTo(162, 256);
-        ctx.quadraticCurveTo(150, 256, 150, 230);
-        ctx.closePath();
-        ctx.stroke();
-
-        // Lettuce / cheese layers
-        ctx.strokeStyle = '#22c55e'; // green lettuce
-        ctx.beginPath();
-        ctx.moveTo(156, 220);
-        ctx.bezierCurveTo(180, 210, 210, 230, 256, 220);
-        ctx.bezierCurveTo(300, 210, 330, 230, 356, 220);
-        ctx.stroke();
-
-        // Bottom Bun
-        ctx.strokeStyle = '#f59e0b';
-        ctx.beginPath();
-        ctx.moveTo(160, 266);
-        ctx.quadraticCurveTo(256, 250, 352, 266);
-        ctx.quadraticCurveTo(352, 300, 330, 300);
-        ctx.lineTo(182, 300);
-        ctx.quadraticCurveTo(160, 300, 160, 266);
-        ctx.closePath();
-        ctx.stroke();
-
-        // Ad texts
-        ctx.shadowColor = '#06b6d4'; // bright cyan
-        ctx.fillStyle = '#22d3ee';
-        ctx.font = '900 48px monospace';
-        ctx.textAlign = 'center';
-        ctx.fillText('SAPPHIRE BURGER', 256, 90);
-        
-        ctx.shadowColor = '#ec4899';
-        ctx.fillStyle = '#f472b6';
-        ctx.font = 'bold 22px sans-serif';
-        ctx.fillText('THE CHOICE OF CHAMPIONS', 256, 370);
-        ctx.fillText('TASTY • ENERGIZING • PREMIUM', 256, 410);
-
-        ctx.shadowBlur = 0;
-      } else if (type === 'stadium_advertisement_gauss') {
-        // Gauss Soda / Energy Drink advertisement
-        ctx.fillStyle = '#060402';
-        ctx.fillRect(0, 0, 512, 512);
-
-        // Tech lines
-        ctx.strokeStyle = 'rgba(234, 88, 12, 0.05)';
-        ctx.lineWidth = 1;
-        for (let x = 0; x < 512; x += 16) {
-          ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, 512); ctx.stroke();
-        }
-
-        // Draw soda can outline
-        ctx.strokeStyle = '#ea580c'; // glowing neon orange
-        ctx.lineWidth = 5;
-        ctx.shadowColor = '#ea580c';
-        ctx.shadowBlur = 14;
-
-        ctx.strokeRect(200, 160, 112, 200); // can body
-        ctx.strokeRect(216, 146, 80, 14);  // tab/lip top
-
-        // Lightning bolt icon on can
-        ctx.strokeStyle = '#eab308';
-        ctx.shadowColor = '#eab308';
-        ctx.beginPath();
-        ctx.moveTo(266, 180);
-        ctx.lineTo(230, 250);
-        ctx.lineTo(260, 250);
-        ctx.lineTo(246, 330);
-        ctx.lineTo(282, 260);
-        ctx.lineTo(252, 260);
-        ctx.closePath();
-        ctx.stroke();
-
-        // Ad texts
-        ctx.shadowColor = '#ea580c';
-        ctx.fillStyle = '#ff7700';
-        ctx.font = '900 56px monospace';
-        ctx.textAlign = 'center';
-        ctx.fillText('GAUSS SODA', 256, 95);
-
-        ctx.shadowColor = '#eab308';
-        ctx.fillStyle = '#facc15';
-        ctx.font = 'bold 24px sans-serif';
-        ctx.fillText('HYPER-ACCELERATED ENERGY', 256, 420);
-        ctx.font = 'italic 16px sans-serif';
-        ctx.fillText('Warning: May cause anti-gravity physics side effects.', 256, 460);
-
-        ctx.shadowBlur = 0;
-      }
-
-      const texture = new THREE.CanvasTexture(canvas);
-      texture.wrapS = THREE.RepeatWrapping;
-      texture.wrapT = THREE.RepeatWrapping;
-      if (type === 'winter_ice' || type === 'stadium_scoreboard_screen' || type === 'stadium_advertisement_sapphire' || type === 'stadium_advertisement_gauss') {
-        texture.repeat.set(1, 1); // Stretched exactly once
-      } else if (type === 'stadium_steel_grid') {
-        texture.repeat.set(3, 3); // Beautiful steel grid tile repetition
-      } else if (type === 'winter_snow' || type === 'winter_glacier_glass') {
-        texture.repeat.set(2, 2); // Nice repeating details
-      } else {
-        texture.repeat.set(4, 4); // Tiled nicely
-      }
-      return texture;
-    };
-
-    // 2. SCENE LIGHTING DESIGN
     if (activeCustomMap) {
       // Custom Lights
       const ambientLight = new THREE.AmbientLight(
@@ -4790,60 +3093,9 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       // Render Custom Obstacles/Objects!
       threeRef.current.customMapObjects = [];
       activeCustomMap.objects.forEach(obj => {
-        let geo: THREE.BufferGeometry;
-        const sx = obj.scale.x;
-        const sy = obj.scale.y;
-        const sz = obj.scale.z;
-
-        if (obj.type === 'box') {
-          geo = new THREE.BoxGeometry(sx, sy, sz);
-        } else if (obj.type === 'cylinder') {
-          geo = new THREE.CylinderGeometry(sx / 2, sx / 2, sy, 64);
-        } else {
-          geo = new THREE.SphereGeometry(sx / 2, 64, 64);
-        }
-
-        const hasTexture = obj.texture && obj.texture !== 'none';
-        const texture = hasTexture ? generateCustomTexture(obj.texture, obj.color) : null;
-        if (texture) {
-          texture.needsUpdate = true;
-        }
-
-        // Custom bump scale mapping for visual depth
-        let bumpScale = 0.02;
-        if (hasTexture) {
-          if (['nature_mossy_stone', 'fantasy_cobble', 'city_brick'].includes(obj.texture)) {
-            bumpScale = 0.035;
-          } else if (['nature_grass', 'city_concrete', 'nature_wood'].includes(obj.texture)) {
-            bumpScale = 0.025;
-          } else if (['space_alloy', 'futuristic_carbon', 'forerunner_panel'].includes(obj.texture)) {
-            bumpScale = 0.015;
-          } else if (['futuristic_hex', 'synthwave_grid', 'winter_glacier_glass'].includes(obj.texture)) {
-            bumpScale = 0.008;
-          }
-        }
-
-        const mat = new THREE.MeshStandardMaterial({
-          map: texture,
-          bumpMap: texture || undefined,
-          bumpScale: hasTexture ? bumpScale : 0,
-          color: hasTexture ? new THREE.Color('#ffffff') : new THREE.Color(obj.color),
-          metalness: obj.metalness,
-          roughness: obj.roughness,
-          opacity: obj.opacity,
-          transparent: obj.transparent,
-        });
-
-        if (obj.emissive && obj.emissive !== '#000000') {
-          mat.emissive = new THREE.Color(obj.emissive);
-          mat.emissiveIntensity = obj.emissiveIntensity;
-        }
-
-        const mesh = new THREE.Mesh(geo, mat);
+        const mesh = createHighFidelityObjectMesh(obj, THREE, generateCustomTexture);
         mesh.position.set(obj.position.x, obj.position.y, obj.position.z);
         mesh.rotation.set(obj.rotation.x, obj.rotation.y, obj.rotation.z);
-        mesh.castShadow = true;
-        mesh.receiveShadow = true;
 
         scene.add(mesh);
         threeRef.current.customMapObjects!.push(mesh);
@@ -8336,6 +6588,10 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     const creditKill = (victimId: string, victimName: string) => {
       bot.score = (bot.score || 0) + 1;
       bot.kills = (bot.kills || 0) + 1;
+      if (bot.id === MAIN_AI_ID) {
+        s.scoreEnemy += 1;
+        s.enemyKills += 1;
+      }
       sfx.playDeath();
       recordDeathEvent(bot.playerName, victimName, undefined, weapon);
       recordBotPsychKill(botId, victimId, false);
@@ -8350,6 +6606,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       impactPos.distanceTo(getCombatBodyCenter(s.playerPos, s.isCrouching)) <= radius
     ) {
       recordPlayerDamageTaken();
+      recordCombatantObservation(botId, (model) => observePlayerDamageDealt(model));
       s.playerHP -= 1;
       spawnVoxelShockwaveParticles(s.playerPos, '#ef4444');
       if (s.playerHP <= 0) {
@@ -8377,6 +6634,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         const otherPos = new THREE.Vector3(other.pos.x, other.pos.y, other.pos.z);
         if (impactPos.distanceTo(getCombatBodyCenter(otherPos, other.isCrouching || false)) > radius) return;
         other.hp -= 1;
+        recordCombatantObservation(botId, (model) => observePlayerDamageDealt(model));
+        recordCombatantObservation(otherId, (model) => observePlayerDamageReceived(model));
         spawnVoxelShockwaveParticles(otherPos, '#ef4444');
         if (other.hp <= 0) {
           other.hp = 0;
@@ -8836,6 +7095,10 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       attackerBot.hp = 0;
       attackerBot.respawnTimer = 3.0;
       attackerBot.deaths = (attackerBot.deaths || 0) + 1;
+      if (attackerBot.id === MAIN_AI_ID) {
+        s.enemyDeaths += 1;
+        recordBotCalibrationDeath(attackerBot.id);
+      }
 
       if (target.id === 'player') {
         s.scorePlayer += 1;
@@ -8866,6 +7129,10 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       s.playerDeaths += 1;
       attackerBot.score = (attackerBot.score || 0) + 1;
       attackerBot.kills = (attackerBot.kills || 0) + 1;
+      if (attackerBot.id === MAIN_AI_ID) {
+        s.scoreEnemy += 1;
+        s.enemyKills += 1;
+      }
       recordDeathEvent(`${attackerBot.playerName} [${tradeText}]`, getLocalPlayerFeedName(), undefined, tradeWeapon);
       spawnVoxelShockwaveParticles(s.playerPos, '#3b82f6');
     } else if (targetCombatant && targetCombatant.hp <= 0) {
@@ -8882,6 +7149,10 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       }
       attackerBot.score = (attackerBot.score || 0) + 1;
       attackerBot.kills = (attackerBot.kills || 0) + 1;
+      if (attackerBot.id === MAIN_AI_ID) {
+        s.scoreEnemy += 1;
+        s.enemyKills += 1;
+      }
       recordDeathEvent(
         `${attackerBot.playerName} [${tradeText}]`,
         targetCombatant.playerName || (targetCombatant.id === MAIN_AI_ID ? 'Red (AI)' : targetCombatant.id),
@@ -9573,6 +7844,10 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
               if (other) {
                 other.score = (other.score || 0) + 1;
                 other.kills = (other.kills || 0) + 1;
+                if (other.id === MAIN_AI_ID) {
+                  s.scoreEnemy += 1;
+                  s.enemyKills += 1;
+                }
               }
               
               const newDeath: DeathEvent = {
@@ -11062,9 +9337,19 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
                 if (other.hp <= 0) {
                   other.hp = 0;
                   other.respawnTimer = 3.0;
+                  if (other.controller === 'ai') {
+                    other.aiState = 'RESPAWNING';
+                    other.weaponState = 'ready';
+                    other.weaponTimer = 0;
+                  }
                   s.scorePlayer += 1;
                   s.playerKills += 1;
-                  other.deaths = (other.deaths || 0) + 1;
+                  if (other.id === MAIN_AI_ID) {
+                    s.enemyDeaths += 1;
+                    recordBotCalibrationDeath('main_ai');
+                  } else {
+                    other.deaths = (other.deaths || 0) + 1;
+                  }
                   sfx.playDeath();
 
                   const medals = evaluatePlayerKillMedals(other.id);
@@ -11534,6 +9819,9 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       self.lastSwordAttackTime = Date.now();
     } else {
       self.lastHammerAttackTime = Date.now();
+      // Adaptive learning: a hammer swing lowers this combatant's learned lunge-frequency
+      // signal (mirrors observePlayerHammerAttack for the human).
+      recordCombatantObservation(self.id, (model) => observePlayerHammerAttack(model));
     }
     sfx.playSwing();
   };
@@ -11569,6 +9857,9 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
   const swapCombatantWeapon = (self: any, type: 'hammer' | 'sword', setLockout = false) => {
     const s = stateRef.current;
     self.activeWeapon = type;
+    // Adaptive learning: record this combatant's weapon preference (mirrors
+    // observePlayerWeaponSwap for the human).
+    recordCombatantObservation(self.id, (model) => observePlayerWeaponSwap(model, type));
     if (setLockout) {
       if (s.settings.weaponSwapLockout > 0) {
         self.swapLockoutTimer = s.settings.weaponSwapLockout;
@@ -11730,9 +10021,17 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       self.aiLastLungeTargetId = targetId;
       self.aiPostLungeDecisionTimer = outcome === 'miss_timeout' || outcome === 'miss_arena' ? 1.35 : 0.35;
 
+      // Adaptive learning: record this combatant's lunge outcome — distance actually
+      // travelled + hit/miss (mirrors observePlayerLungeEnd for the human).
+      const lungeStart = self.lungeStartPos ?? pos;
+      const lungeTraveled = Math.hypot(pos.x - lungeStart.x, pos.z - lungeStart.z);
+      const lungeHit = outcome === 'hit';
+      recordCombatantObservation(botId, (model) => observePlayerLungeEnd(model, lungeTraveled, lungeHit));
+
       let enteredPressure = false;
       if (outcome === 'hit' && targetId) {
         recordBotDamageTag(botId, targetId);
+        recordCombatantObservation(botId, (model) => observePlayerDamageDealt(model));
         const sRef = stateRef.current;
         const targetHp = targetId === 'player'
           ? sRef.playerHP
@@ -12237,6 +10536,21 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       });
     }
 
+    // Adaptive learning: sample this acting combatant's OWN position (edge proximity) and
+    // approach speed into its own model, so opponents that target it can read those
+    // tendencies. Both samplers self-throttle (position rate-limits to ~0.25s).
+    {
+      const nowSeconds = performance.now() / 1000;
+      recordCombatantObservation(botId, (model) => {
+        observePlayerPosition(model, pos.x, pos.z, s.arenaRadius, nowSeconds, getActiveCustomMap()?.mapShape);
+        if (distanceToTarget < 15) {
+          const speed = Math.hypot(vel.x, vel.z);
+          const maxSpeed = (s.settings.speedForward / 100) * 5.0;
+          observePlayerApproachSpeed(model, speed, maxSpeed);
+        }
+      });
+    }
+
     if (dashCooldownTimer > 0) {
       dashCooldownTimer = Math.max(0, dashCooldownTimer - dt);
     }
@@ -12456,6 +10770,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         lungeDir.normalize();
 
         triggerCombatantLunge(self, lungeDir, pos, vel);
+        // Adaptive learning: record this combatant's lunge initiation distance + frequency.
+        recordCombatantObservation(botId, (model) => observePlayerLungeStart(model, lungeDistanceToTarget));
         commitComboAttackAdvance();
         return 'lunge';
       }
@@ -12539,6 +10855,9 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       dashDir.set(dodgePick.x, 0, dodgePick.z).normalize();
       dashRemaining = s.settings.dashDuration || 0.25;
       dashCooldownTimer = s.settings.dashCooldown || 2.0;
+      // Adaptive learning: record this combatant's dodge-direction bias (mirrors
+      // observePlayerDash for the human).
+      recordCombatantObservation(botId, (model) => observePlayerDash(model, dashDir.x, dashDir.z));
       sfx.playDash();
       if (calibrationEnabled) {
         recordCalibrationDodgeAttempt(s.aiMatchContext, botId);
@@ -12819,6 +11138,10 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
             s.playerDeaths += 1;
             self.score = (self.score || 0) + 1;
             self.kills = (self.kills || 0) + 1;
+            if (self.id === MAIN_AI_ID) {
+              s.scoreEnemy += 1;
+              s.enemyKills += 1;
+            }
             sfx.playDeath();
 
             const newDeath: DeathEvent = {
@@ -12842,6 +11165,10 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
             s.enemyRespawnTimer = 3.0;
             self.score = (self.score || 0) + 1;
             self.kills = (self.kills || 0) + 1;
+            if (self.id === MAIN_AI_ID) {
+              s.scoreEnemy += 1;
+              s.enemyKills += 1;
+            }
             s.enemyDeaths += 1;
             recordBotCalibrationDeath('main_ai');
             sfx.playDeath();
@@ -12862,6 +11189,10 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
               oBot.respawnTimer = 3.0;
               self.score = (self.score || 0) + 1;
               self.kills = (self.kills || 0) + 1;
+              if (self.id === MAIN_AI_ID) {
+                s.scoreEnemy += 1;
+                s.enemyKills += 1;
+              }
               oBot.deaths = (oBot.deaths || 0) + 1;
               sfx.playDeath();
 
@@ -13150,6 +11481,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
           lungeDir.normalize();
 
           triggerCombatantLunge(self, lungeDir, pos, vel);
+          // Adaptive learning: record this combatant's lunge initiation distance + frequency.
+          recordCombatantObservation(botId, (model) => observePlayerLungeStart(model, lungeDistanceToTarget));
           return;
           }
         }

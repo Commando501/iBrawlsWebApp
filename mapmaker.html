@@ -1449,12 +1449,45 @@
           ctx.fillRect(Math.random() * size, Math.random() * size, 2, 4);
         }
       } else if (type === 'nature_mossy_stone') {
-        ctx.fillStyle = '#475569';
+        // High fidelity granite slate with weathered green moss patches
+        ctx.fillStyle = '#4b5563';
         ctx.fillRect(0, 0, size, size);
-        ctx.fillStyle = '#15803d';
-        for (let i = 0; i < 15; i++) {
+        
+        // Granite mineral speckling detail
+        ctx.fillStyle = '#374151';
+        for (let i = 0; i < 800; i++) {
+          ctx.fillRect(Math.random() * size, Math.random() * size, 2.0, 2.0);
+        }
+        
+        // Stone fractures and fissures
+        ctx.strokeStyle = '#1f2937';
+        ctx.lineWidth = 2.0;
+        for (let i = 0; i < 12; i++) {
           ctx.beginPath();
-          ctx.arc(Math.random() * size, Math.random() * size, 10 + Math.random() * 20, 0, Math.PI * 2);
+          const startX = Math.random() * size;
+          const startY = Math.random() * size;
+          ctx.moveTo(startX, startY);
+          ctx.lineTo(startX + (Math.random() - 0.5) * 60, startY + (Math.random() - 0.5) * 60);
+          ctx.lineTo(startX + (Math.random() - 0.5) * 120, startY + (Math.random() - 0.5) * 120);
+          ctx.stroke();
+        }
+        
+        // Mossy vegetative growth overlays with textured double-tone borders
+        for (let i = 0; i < 20; i++) {
+          const mx = Math.random() * size;
+          const my = Math.random() * size;
+          const mr = 18 + Math.random() * 35;
+          
+          // Outer dark moss cushion
+          ctx.fillStyle = '#064e3b';
+          ctx.beginPath();
+          ctx.arc(mx, my, mr, 0, Math.PI * 2);
+          ctx.fill();
+          
+          // Inner bright moss core
+          ctx.fillStyle = colorHex; // light green
+          ctx.beginPath();
+          ctx.arc(mx, my, mr * 0.72, 0, Math.PI * 2);
           ctx.fill();
         }
       } else if (type === 'nature_wood') {
@@ -1469,12 +1502,52 @@
           ctx.stroke();
         }
       } else if (type === 'space_alloy') {
-        ctx.fillStyle = '#334155';
+        // High fidelity starbase brushed alloy hull plates
+        ctx.fillStyle = '#1e293b';
         ctx.fillRect(0, 0, size, size);
-        ctx.strokeStyle = '#64748b';
-        ctx.lineWidth = 3;
-        ctx.strokeRect(10, 10, size - 20, size - 20);
-        ctx.strokeRect(40, 40, size - 80, size - 80);
+        
+        // Add brushed metallic micro-scratches
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.03)';
+        ctx.lineWidth = 1.0;
+        for (let i = 0; i < 200; i++) {
+          const sy = Math.random() * size;
+          const sx = Math.random() * (size * 0.6);
+          ctx.beginPath();
+          ctx.moveTo(sx, sy);
+          ctx.lineTo(sx + size * 0.2 + Math.random() * (size * 0.2), sy);
+          ctx.stroke();
+        }
+        
+        // Solid cyan grid line seams
+        ctx.strokeStyle = colorHex; 
+        ctx.lineWidth = 2.5;
+        for (let idx = 0; idx <= size; idx += 128) {
+          ctx.beginPath(); ctx.moveTo(idx, 0); ctx.lineTo(idx, size); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(0, idx); ctx.lineTo(size, idx); ctx.stroke();
+          
+          // Outer highlight bevel shadow
+          ctx.strokeStyle = 'rgba(0, 0, 0, 0.2)';
+          ctx.beginPath(); ctx.moveTo(idx + 3, 0); ctx.lineTo(idx + 3, size); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(0, idx + 3); ctx.lineTo(size, idx + 3); ctx.stroke();
+          ctx.strokeStyle = colorHex; // reset
+        }
+        
+        // Double-layered steel rivets with bright metallic cores
+        for (let rx = 16; rx < size; rx += 128) {
+          for (let ry = 16; ry < size; ry += 128) {
+            // Rivet outer shadow ring
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
+            ctx.beginPath(); ctx.arc(rx + 1, ry + 1.5, 4.5, 0, Math.PI * 2); ctx.fill();
+            
+            // Rivet body
+            ctx.fillStyle = '#64748b'; 
+            ctx.beginPath(); ctx.arc(rx, ry, 3.5, 0, Math.PI * 2); ctx.fill();
+            
+            // Rivet specular highlight dot
+            ctx.fillStyle = '#ffffff'; 
+            ctx.beginPath(); ctx.arc(rx - 1, ry - 1, 1.2, 0, Math.PI * 2); ctx.fill();
+          }
+        }
       } else if (type === 'space_meteorite') {
         ctx.fillStyle = '#1e293b';
         ctx.fillRect(0, 0, size, size);
@@ -2564,6 +2637,456 @@
       `;
     }
 
+    // --- HIGH-FIDELITY MAP ASSETS PROCEDURAL MODEL PIPELINE ---
+    function createHighFidelityObjectMesh(obj, three, generateCustomTexture, scaleMultiplier = 1.0) {
+      const group = new three.Group();
+      group.name = obj.id;
+      
+      // Base scale dimensions
+      const sx = obj.scale.x * scaleMultiplier;
+      const sy = obj.scale.y * scaleMultiplier;
+      const sz = obj.scale.z * scaleMultiplier;
+      
+      // Set up materials
+      const hasTexture = obj.texture && obj.texture !== 'none';
+      const texture = (hasTexture && generateCustomTexture) ? generateCustomTexture(obj.texture, obj.color) : null;
+      if (texture) {
+        texture.needsUpdate = true;
+      }
+      
+      let bumpScale = 0.02;
+      if (hasTexture) {
+        if (['nature_mossy_stone', 'fantasy_cobble', 'city_brick'].includes(obj.texture)) {
+          bumpScale = 0.035;
+        } else if (['nature_grass', 'city_concrete', 'nature_wood'].includes(obj.texture)) {
+          bumpScale = 0.025;
+        } else if (['space_alloy', 'futuristic_carbon', 'forerunner_panel'].includes(obj.texture)) {
+          bumpScale = 0.015;
+        } else if (['futuristic_hex', 'synthwave_grid', 'winter_glacier_glass'].includes(obj.texture)) {
+          bumpScale = 0.008;
+        }
+      }
+
+      const mat = new three.MeshStandardMaterial({
+        map: texture,
+        bumpMap: texture || undefined,
+        bumpScale: hasTexture ? bumpScale : 0,
+        color: hasTexture ? new three.Color('#ffffff') : new three.Color(obj.color),
+        metalness: obj.metalness ?? 0.5,
+        roughness: obj.roughness ?? 0.5,
+        opacity: obj.opacity ?? 1,
+        transparent: obj.transparent || false,
+      });
+
+      if (obj.emissive && obj.emissive !== '#000000') {
+        mat.emissive = new three.Color(obj.emissive);
+        mat.emissiveIntensity = obj.emissiveIntensity ?? 1;
+      }
+
+      // Dark accent material for metallic trims
+      const accentMat = new three.MeshStandardMaterial({
+        color: new three.Color('#1e293b'),
+        metalness: 0.9,
+        roughness: 0.2,
+      });
+
+      // Glow material
+      let glowMat;
+      if (obj.emissive && obj.emissive !== '#000000') {
+        glowMat = new three.MeshBasicMaterial({
+          color: new three.Color(obj.emissive),
+          transparent: true,
+          opacity: 0.8
+        });
+      } else {
+        glowMat = new three.MeshBasicMaterial({
+          color: new three.Color(obj.color || '#00ffff'),
+          transparent: true,
+          opacity: 0.6
+        });
+      }
+      
+      // Render based on geometry type and name clues
+      const nameLower = (obj.name || '').toLowerCase();
+      
+      if (obj.type === 'box') {
+        const isRock = ['nature_mossy_stone', 'space_meteorite'].includes(obj.texture) || 
+                       nameLower.includes('rock') || nameLower.includes('boulder') || nameLower.includes('asteroid') || nameLower.includes('cluster');
+        const isContainer = nameLower.includes('container') || nameLower.includes('barrier') || 
+                            nameLower.includes('partition') || nameLower.includes('shield') || 
+                            nameLower.includes('buffer') || nameLower.includes('freight') || nameLower.includes('wall');
+        const isCrate = nameLower.includes('crate') || nameLower.includes('substation') || nameLower.includes('recharge');
+        
+        if (isRock) {
+          // 1. HIGH-FIDELITY ASTEROID/BOULDER (LOW-POLY ORGANIC FACETED GEODESIC CLUSTER)
+          const mainGeo = new three.DodecahedronGeometry(sx / 2, 1);
+          
+          // Distort vertices slightly to make it organic and non-spherical
+          const posAttr = mainGeo.attributes.position;
+          if (posAttr) {
+            for (let i = 0; i < posAttr.count; i++) {
+              const x = posAttr.getX(i);
+              const y = posAttr.getY(i);
+              const z = posAttr.getZ(i);
+              posAttr.setXYZ(
+                i,
+                x * 1.0 + (Math.sin(y * 5) * 0.08),
+                y * (sy / sx) + (Math.cos(z * 5) * 0.08),
+                z * (sz / sx) + (Math.sin(x * 5) * 0.08)
+              );
+            }
+            mainGeo.computeVertexNormals();
+          }
+          
+          const mainMesh = new three.Mesh(mainGeo, mat);
+          group.add(mainMesh);
+          
+          // Add 2 smaller debris boulders clustered at the base
+          const d1Geo = new three.DodecahedronGeometry(sx * 0.15, 0);
+          const debris1 = new three.Mesh(d1Geo, mat);
+          debris1.position.set(-sx * 0.35, -sy * 0.35, sz * 0.2);
+          debris1.rotation.set(Math.random(), Math.random(), Math.random());
+          group.add(debris1);
+          
+          const d2Geo = new three.DodecahedronGeometry(sx * 0.12, 0);
+          const debris2 = new three.Mesh(d2Geo, mat);
+          debris2.position.set(sx * 0.3, -sy * 0.4, -sz * 0.3);
+          debris2.rotation.set(Math.random(), Math.random(), Math.random());
+          group.add(debris2);
+          
+          if (obj.texture === 'space_meteorite' && obj.emissive && obj.emissive !== '#000000') {
+            const coreGeo = new three.SphereGeometry(sx * 0.2, 8, 8);
+            const core = new three.Mesh(coreGeo, glowMat);
+            core.position.set(0, 0, 0);
+            group.add(core);
+          }
+          
+        } else if (isContainer) {
+          // 2. DETAILED HEAVY INDUSTRIAL SHIPPING CONTAINER / STRUCTURAL BARRIER
+          const bodyGeo = new three.BoxGeometry(sx * 0.94, sy * 0.96, sz * 0.94);
+          const body = new three.Mesh(bodyGeo, mat);
+          group.add(body);
+          
+          const frameThickness = 0.04 * Math.min(sx, sz);
+          
+          // 4 Heavy vertical structural support corner pillars
+          const colW = frameThickness;
+          const colGeo = new three.BoxGeometry(colW, sy * 1.01, colW);
+          
+          const corners = [
+            [-sx/2 + colW/2, -sz/2 + colW/2],
+            [-sx/2 + colW/2, sz/2 - colW/2],
+            [sx/2 - colW/2, -sz/2 + colW/2],
+            [sx/2 - colW/2, sz/2 - colW/2]
+          ];
+          
+          corners.forEach(([cx, cz]) => {
+            const col = new three.Mesh(colGeo, accentMat);
+            col.position.set(cx, 0, cz);
+            group.add(col);
+          });
+          
+          // Top and bottom protective edge rings (horizontal bars)
+          const topBarGeo = new three.BoxGeometry(sx * 1.01, frameThickness, frameThickness);
+          const botBarGeo = topBarGeo.clone();
+          
+          const barsZ = [-sz/2 + frameThickness/2, sz/2 - frameThickness/2];
+          barsZ.forEach(bz => {
+            const topBar = new three.Mesh(topBarGeo, accentMat);
+            topBar.position.set(0, sy/2 - frameThickness/2, bz);
+            group.add(topBar);
+            
+            const botBar = new three.Mesh(botBarGeo, accentMat);
+            botBar.position.set(0, -sy/2 + frameThickness/2, bz);
+            group.add(botBar);
+          });
+          
+          // Corrugated panel ridges along the longer side
+          const isXLonger = sx >= sz;
+          if (isXLonger) {
+            const numRibs = Math.max(3, Math.floor(sx * 1.5));
+            const ribSpacing = (sx * 0.8) / (numRibs - 1 || 1);
+            const ribW = 0.06;
+            const ribD = 0.04;
+            const ribGeo = new three.BoxGeometry(ribW, sy * 0.9, ribD);
+            
+            for (let i = 0; i < numRibs; i++) {
+              const rx = -sx * 0.4 + i * ribSpacing;
+              
+              const fRib = new three.Mesh(ribGeo, accentMat);
+              fRib.position.set(rx, 0, sz/2 - ribD/2);
+              group.add(fRib);
+              
+              const bRib = new three.Mesh(ribGeo, accentMat);
+              bRib.position.set(rx, 0, -sz/2 + ribD/2);
+              group.add(bRib);
+            }
+          } else {
+            const numRibs = Math.max(3, Math.floor(sz * 1.5));
+            const ribSpacing = (sz * 0.8) / (numRibs - 1 || 1);
+            const ribW = 0.04;
+            const ribD = 0.06;
+            const ribGeo = new three.BoxGeometry(ribW, sy * 0.9, ribD);
+            
+            for (let i = 0; i < numRibs; i++) {
+              const rz = -sz * 0.4 + i * ribSpacing;
+              
+              const lRib = new three.Mesh(ribGeo, accentMat);
+              lRib.position.set(-sx/2 + ribW/2, 0, rz);
+              group.add(lRib);
+              
+              const rRib = new three.Mesh(ribGeo, accentMat);
+              rRib.position.set(sx/2 - ribW/2, 0, rz);
+              group.add(rRib);
+            }
+          }
+          
+        } else if (isCrate) {
+          // 3. SCI-FI MECHANICAL TECH CRATE / RECHARGE STATION
+          const coreGeo = new three.BoxGeometry(sx * 0.84, sy * 0.84, sz * 0.84);
+          const core = new three.Mesh(coreGeo, mat);
+          group.add(core);
+          
+          const frameW = 0.08 * sx;
+          
+          // Horizontal top/bottom structural rims
+          const plateGeo = new three.BoxGeometry(sx * 0.94, frameW, sz * 0.94);
+          const topPlate = new three.Mesh(plateGeo, accentMat);
+          topPlate.position.set(0, sy/2 - frameW/2, 0);
+          group.add(topPlate);
+          
+          const botPlate = new three.Mesh(plateGeo, accentMat);
+          botPlate.position.set(0, -sy/2 + frameW/2, 0);
+          group.add(botPlate);
+          
+          // Protective corner reinforcement cages
+          const colGeo = new three.BoxGeometry(frameW, sy * 0.8, frameW);
+          const offsets = [
+            [-sx/2 + frameW/2, -sz/2 + frameW/2],
+            [-sx/2 + frameW/2, sz/2 - frameW/2],
+            [sx/2 - frameW/2, -sz/2 + frameW/2],
+            [sx/2 - frameW/2, sz/2 - frameW/2]
+          ];
+          offsets.forEach(([cx, cz]) => {
+            const col = new three.Mesh(colGeo, accentMat);
+            col.position.set(cx, 0, cz);
+            group.add(col);
+          });
+          
+          if (obj.emissive && obj.emissive !== '#000000') {
+            const glowGeo = new three.BoxGeometry(sx * 0.4, sy * 0.4, sz * 0.86);
+            const glowP = new three.Mesh(glowGeo, glowMat);
+            glowP.position.set(0, 0, 0);
+            group.add(glowP);
+          }
+          
+        } else {
+          // 4. GENERAL BEVELED SCI-FI BOX WITH DETAILED OUTLINE PANELING
+          const bodyGeo = new three.BoxGeometry(sx * 0.96, sy * 0.96, sz * 0.96);
+          const body = new three.Mesh(bodyGeo, mat);
+          group.add(body);
+          
+          const frameThickness = 0.04 * Math.min(sx, sy, sz);
+          const frameGeoX = new three.BoxGeometry(sx * 1.01, frameThickness, frameThickness);
+          const frameGeoY = new three.BoxGeometry(frameThickness, sy * 1.01, frameThickness);
+          const frameGeoZ = new three.BoxGeometry(frameThickness, frameThickness, sz * 1.01);
+          
+          const edgeY = sy/2 - frameThickness/2;
+          const edgeZ = sz/2 - frameThickness/2;
+          const edgeX = sx/2 - frameThickness/2;
+          
+          [[-edgeY, -edgeZ], [-edgeY, edgeZ], [edgeY, -edgeZ], [edgeY, edgeZ]].forEach(([ey, ez]) => {
+            const bar = new three.Mesh(frameGeoX, accentMat);
+            bar.position.set(0, ey, ez);
+            group.add(bar);
+          });
+          
+          [[-edgeX, -edgeZ], [-edgeX, edgeZ], [edgeX, -edgeZ], [edgeX, edgeZ]].forEach(([ex, ez]) => {
+            const bar = new three.Mesh(frameGeoY, accentMat);
+            bar.position.set(ex, 0, ez);
+            group.add(bar);
+          });
+        }
+        
+      } else if (obj.type === 'cylinder') {
+        const isForerunner = ['forerunner_panel', 'forerunner_gold'].includes(obj.texture) ||
+                            nameLower.includes('spire') || nameLower.includes('pylon') || nameLower.includes('beacon') || nameLower.includes('forerunner');
+        const isTechColumn = nameLower.includes('pillar') || nameLower.includes('column') || 
+                             nameLower.includes('anchor') || nameLower.includes('generator') ||
+                             ['space_alloy', 'futuristic_hex', 'synthwave_neon_laser', 'rainy_streets_neon_glow'].includes(obj.texture);
+        
+        if (isForerunner) {
+          // 1. ANCIENT FORERUNNER ANCHOR PYLON / TAPERING OCTAGONAL SPIRE
+          const baseH = sy * 0.14;
+          const baseGeo = new three.CylinderGeometry(sx * 0.72, sx * 0.72, baseH, 8);
+          const base = new three.Mesh(baseGeo, mat);
+          base.position.y = -sy/2 + baseH/2;
+          group.add(base);
+          
+          const shaftH = sy * 0.76;
+          const shaftGeo = new three.CylinderGeometry(sx * 0.32, sx * 0.58, shaftH, 8);
+          const shaft = new three.Mesh(shaftGeo, mat);
+          shaft.position.y = base.position.y + baseH/2 + shaftH/2;
+          group.add(shaft);
+          
+          const ribW = 0.08 * sx;
+          const ribD = 0.1 * sx;
+          const ribGeo = new three.BoxGeometry(ribW, shaftH * 1.02, ribD);
+          const offsets = [
+            [0, -sx * 0.45],
+            [0, sx * 0.45],
+            [-sx * 0.45, 0],
+            [sx * 0.45, 0]
+          ];
+          offsets.forEach(([rx, rz]) => {
+            const rib = new three.Mesh(ribGeo, accentMat);
+            rib.position.set(rx, shaft.position.y, rz);
+            if (rx !== 0) rib.rotation.z = rx > 0 ? 0.07 : -0.07;
+            if (rz !== 0) rib.rotation.x = rz > 0 ? -0.07 : 0.07;
+            group.add(rib);
+          });
+          
+          const capH = sy * 0.08;
+          const capGeo = new three.CylinderGeometry(0, sx * 0.22, capH, 8);
+          const cap = new three.Mesh(capGeo, glowMat);
+          cap.position.y = shaft.position.y + shaftH/2 + capH * 0.7;
+          group.add(cap);
+          
+        } else if (isTechColumn) {
+          // 2. DETAILED SCI-FI CYLINDRICAL GENERATOR COLUMN / SEGMENTED GLOW PILLAR
+          const collarH = sy * 0.08;
+          const collarGeo = new three.CylinderGeometry(sx * 0.58, sx * 0.58, collarH, 32);
+          const baseCollar = new three.Mesh(collarGeo, accentMat);
+          baseCollar.position.y = -sy/2 + collarH/2;
+          group.add(baseCollar);
+          
+          const topCollar = new three.Mesh(collarGeo, accentMat);
+          topCollar.position.y = sy/2 - collarH/2;
+          group.add(topCollar);
+          
+          const shaftH = sy * 0.8;
+          const shaftGeo = new three.CylinderGeometry(sx * 0.48, sx * 0.48, shaftH, 32);
+          const shaft = new three.Mesh(shaftGeo, mat);
+          shaft.position.y = 0;
+          group.add(shaft);
+          
+          const glowRingRadius = sx * 0.505;
+          const ringGeo = new three.CylinderGeometry(glowRingRadius, glowRingRadius, sy * 0.04, 32);
+          
+          const ringPositions = [-sy * 0.22, 0, sy * 0.22];
+          ringPositions.forEach(ry => {
+            const ring = new three.Mesh(ringGeo, glowMat);
+            ring.position.y = ry;
+            group.add(ring);
+          });
+          
+          const gasketGeo = new three.CylinderGeometry(sx * 0.495, sx * 0.495, sy * 0.02, 32);
+          [-sy * 0.11, sy * 0.11].forEach(gy => {
+            const gasket = new three.Mesh(gasketGeo, accentMat);
+            gasket.position.y = gy;
+            group.add(gasket);
+          });
+          
+        } else {
+          // 3. STYLIZED CORE CYLINDER
+          const baseH = sy * 0.05;
+          const baseGeo = new three.CylinderGeometry(sx * 0.52, sx * 0.52, baseH, 32);
+          
+          const base = new three.Mesh(baseGeo, accentMat);
+          base.position.y = -sy/2 + baseH/2;
+          group.add(base);
+          
+          const top = new three.Mesh(baseGeo, accentMat);
+          top.position.y = sy/2 - baseH/2;
+          group.add(top);
+          
+          const bodyGeo = new three.CylinderGeometry(sx * 0.48, sx * 0.48, sy * 0.9, 32);
+          const body = new three.Mesh(bodyGeo, mat);
+          group.add(body);
+        }
+        
+      } else {
+        const isReactor = nameLower.includes('core') || nameLower.includes('reactor') || 
+                          nameLower.includes('plasma') || nameLower.includes('emitter') ||
+                          ['futuristic_shield', 'synthwave_chrome'].includes(obj.texture);
+        
+        if (isReactor) {
+          // 1. HIGH-TECH PLASMA CORE REACTOR / FLOAT EMITTER CORE (PLANETARY ORBITS)
+          const coreRadius = sx * 0.35;
+          const coreGeo = new three.SphereGeometry(coreRadius, 32, 32);
+          const core = new three.Mesh(coreGeo, mat);
+          group.add(core);
+          
+          const ringOuterR = sx * 0.52;
+          const ringTubeR = 0.03 * sx;
+          
+          const ring1Geo = new three.TorusGeometry(ringOuterR, ringTubeR, 12, 48);
+          const ring1 = new three.Mesh(ring1Geo, accentMat);
+          ring1.rotation.y = Math.PI / 6;
+          group.add(ring1);
+          
+          const ring2Geo = new three.TorusGeometry(ringOuterR * 1.05, ringTubeR, 12, 48);
+          const ring2 = new three.Mesh(ring2Geo, accentMat);
+          ring2.rotation.x = Math.PI / 2;
+          ring2.rotation.y = -Math.PI / 6;
+          group.add(ring2);
+          
+          const rodL = sx * 0.18;
+          const rodGeo = new three.CylinderGeometry(0.02 * sx, 0.03 * sx, rodL, 8);
+          const offsets = [
+            [sx * 0.48, 0, 0, -Math.PI/2],
+            [-sx * 0.48, 0, 0, Math.PI/2],
+            [0, 0, sx * 0.48, 0],
+            [0, 0, -sx * 0.48, Math.PI]
+          ];
+          
+          offsets.forEach(([rx, ry, rz, rotZ]) => {
+            const rodGroup = new three.Group();
+            rodGroup.position.set(rx, ry, rz);
+            
+            const rod = new three.Mesh(rodGeo, accentMat);
+            rod.rotation.z = rotZ;
+            if (rz !== 0) rod.rotation.x = rz > 0 ? Math.PI/2 : -Math.PI/2;
+            
+            const tipGeo = new three.SphereGeometry(0.04 * sx, 8, 8);
+            const tip = new three.Mesh(tipGeo, glowMat);
+            tip.position.y = -rodL/2;
+            rod.add(tip);
+            
+            rodGroup.add(rod);
+            group.add(rodGroup);
+          });
+          
+        } else {
+          // 2. GEODESIC DOME WITH MULTI-FACETED GRID HIGHLIGHTS
+          const bodyGeo = new three.IcosahedronGeometry(sx / 2, 2);
+          const body = new three.Mesh(bodyGeo, mat);
+          group.add(body);
+          
+          const wireGeo = new three.IcosahedronGeometry(sx * 0.505, 2);
+          const wireMat = new three.MeshBasicMaterial({
+            color: new three.Color(obj.color || '#00ffff'),
+            wireframe: true,
+            transparent: true,
+            opacity: 0.18
+          });
+          const wire = new three.Mesh(wireGeo, wireMat);
+          group.add(wire);
+        }
+      }
+
+      // Traverse children to enable shadows, PBR rendering details, and link raycasting IDs
+      group.traverse(child => {
+        if (child instanceof three.Mesh) {
+          child.castShadow = true;
+          child.receiveShadow = true;
+          child.userData = { id: obj.id }; // Store ID directly on meshes for raycast checks!
+        }
+      });
+
+      return group;
+    }
+
     // SCENE REBUILD & GRAPHICS PIPELINE
     let meshMap = new Map();
     function rebuildScene() {
@@ -2594,60 +3117,9 @@
       meshMap.clear();
 
       objects.forEach(obj => {
-        let geo;
-        const sx = obj.scale.x;
-        const sy = obj.scale.y;
-        const sz = obj.scale.z;
-
-         if (obj.type === 'box') {
-           geo = new THREE.BoxGeometry(sx, sy, sz);
-         } else if (obj.type === 'cylinder') {
-           geo = new THREE.CylinderGeometry(sx / 2, sx / 2, sy, 64);
-         } else {
-           geo = new THREE.SphereGeometry(sx / 2, 64, 64);
-         }
- 
-         const hasTexture = obj.texture && obj.texture !== 'none';
-         const texture = hasTexture ? generateCustomTexture(obj.texture, obj.color) : null;
-         if (texture) {
-           texture.needsUpdate = true;
-         }
- 
-         // Custom bump scale mapping for visual depth
-         let bumpScale = 0.02;
-         if (hasTexture) {
-           if (['nature_mossy_stone', 'fantasy_cobble', 'city_brick'].includes(obj.texture)) {
-             bumpScale = 0.035;
-           } else if (['nature_grass', 'city_concrete', 'nature_wood'].includes(obj.texture)) {
-             bumpScale = 0.025;
-           } else if (['space_alloy', 'futuristic_carbon', 'forerunner_panel'].includes(obj.texture)) {
-             bumpScale = 0.015;
-           } else if (['futuristic_hex', 'synthwave_grid', 'winter_glacier_glass'].includes(obj.texture)) {
-             bumpScale = 0.008;
-           }
-         }
- 
-         const mat = new THREE.MeshStandardMaterial({
-           map: texture,
-           bumpMap: texture || undefined,
-           bumpScale: hasTexture ? bumpScale : 0,
-           color: hasTexture ? new THREE.Color('#ffffff') : new THREE.Color(obj.color),
-           metalness: obj.metalness,
-           roughness: obj.roughness,
-           opacity: obj.opacity,
-           transparent: obj.transparent,
-         });
-
-        if (obj.emissive && obj.emissive !== '#000000') {
-          mat.emissive = new THREE.Color(obj.emissive);
-          mat.emissiveIntensity = obj.emissiveIntensity;
-        }
-
-        const mesh = new THREE.Mesh(geo, mat);
+        const mesh = createHighFidelityObjectMesh(obj, THREE, generateCustomTexture);
         mesh.position.set(obj.position.x, obj.position.y, obj.position.z);
         mesh.rotation.set(obj.rotation.x, obj.rotation.y, obj.rotation.z);
-        mesh.castShadow = true;
-        mesh.receiveShadow = true;
 
         mesh.userData = { id: obj.id }; // store ID for click checks
         mesh.visible = isObjectVisible(obj.id);
