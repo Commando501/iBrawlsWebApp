@@ -15,6 +15,7 @@ export const PREMADE_MAPS: CustomMapData[] = [
     arenaRadius: 20,
     skyboxHue: 280, // Magenta/purple twilight
     skyboxBrightness: 5,
+    skyboxTexture: 'cyberpunk',
     fogColor: '#0c0714',
     fogDensity: 0.02,
     spawnPoints: [
@@ -208,6 +209,7 @@ export const PREMADE_MAPS: CustomMapData[] = [
     arenaRadius: 21,
     skyboxHue: 120, // Greenish atmospheric light
     skyboxBrightness: 6,
+    skyboxTexture: 'nature',
     fogColor: '#051208',
     fogDensity: 0.03,
     spawnPoints: [
@@ -367,6 +369,7 @@ export const PREMADE_MAPS: CustomMapData[] = [
     arenaRadius: 19,
     skyboxHue: 210, // Cold starlight
     skyboxBrightness: 3,
+    skyboxTexture: 'space',
     fogColor: '#04070f',
     fogDensity: 0.015,
     spawnPoints: [
@@ -526,6 +529,7 @@ export const PREMADE_MAPS: CustomMapData[] = [
     arenaRadius: 20,
     skyboxHue: 35,
     skyboxBrightness: 7,
+    skyboxTexture: 'forerunner',
     fogColor: '#1d1510',
     fogDensity: 0.016,
     spawnPoints: [
@@ -766,6 +770,7 @@ export const PREMADE_MAPS: CustomMapData[] = [
     arenaRadius: 20,
     skyboxHue: 310,
     skyboxBrightness: 7,
+    skyboxTexture: 'synthwave',
     fogColor: '#0a0518',
     fogDensity: 0.012,
     spawnPoints: [
@@ -945,6 +950,7 @@ export const PREMADE_MAPS: CustomMapData[] = [
     arenaRadius: 20,
     skyboxHue: 210,
     skyboxBrightness: 2,
+    skyboxTexture: 'rainy_streets',
     fogColor: '#06080c',
     fogDensity: 0.024,
     spawnPoints: [
@@ -1053,6 +1059,7 @@ export const PREMADE_MAPS: CustomMapData[] = [
     arenaRadius: 20,
     skyboxHue: 200,
     skyboxBrightness: 15,
+    skyboxTexture: 'winter_rink',
     fogColor: '#e0f2fe',
     fogDensity: 0.02,
     spawnPoints: [
@@ -1262,8 +1269,8 @@ export const PREMADE_MAPS: CustomMapData[] = [
         rotation: { x: 0, y: 0, z: 0 },
         scale: { x: 48.0, y: 1.4, z: 0.1 },
         color: '#93c5fd',
-        metalness: 0.9,
-        roughness: 0.1,
+        metalness: 0.1,
+        roughness: 0.3,
         opacity: 0.6,
         transparent: true,
         emissive: '#60a5fa',
@@ -1279,8 +1286,8 @@ export const PREMADE_MAPS: CustomMapData[] = [
         rotation: { x: 0, y: 0, z: 0 },
         scale: { x: 48.0, y: 1.4, z: 0.1 },
         color: '#93c5fd',
-        metalness: 0.9,
-        roughness: 0.1,
+        metalness: 0.1,
+        roughness: 0.3,
         opacity: 0.6,
         transparent: true,
         emissive: '#60a5fa',
@@ -1296,8 +1303,8 @@ export const PREMADE_MAPS: CustomMapData[] = [
         rotation: { x: 0, y: 0, z: 0 },
         scale: { x: 0.1, y: 1.4, z: 24.0 },
         color: '#93c5fd',
-        metalness: 0.9,
-        roughness: 0.1,
+        metalness: 0.1,
+        roughness: 0.3,
         opacity: 0.6,
         transparent: true,
         emissive: '#60a5fa',
@@ -1313,8 +1320,8 @@ export const PREMADE_MAPS: CustomMapData[] = [
         rotation: { x: 0, y: 0, z: 0 },
         scale: { x: 0.1, y: 1.4, z: 24.0 },
         color: '#93c5fd',
-        metalness: 0.9,
-        roughness: 0.1,
+        metalness: 0.1,
+        roughness: 0.3,
         opacity: 0.6,
         transparent: true,
         emissive: '#60a5fa',
@@ -1334,6 +1341,7 @@ export const PREMADE_MAPS: CustomMapData[] = [
     arenaRadius: 20,
     skyboxHue: 220,
     skyboxBrightness: 4,
+    skyboxTexture: 'grifball_stadium',
     fogColor: '#0b0c10',
     fogDensity: 0.015,
     spawnPoints: [

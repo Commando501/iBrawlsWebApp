@@ -128,25 +128,170 @@ export function createBeveledBoxGeometry(
   return geo;
 }
 
+interface MergedBox {
+  startX: number;
+  startY: number;
+  startZ: number;
+  sizeX: number;
+  sizeY: number;
+  sizeZ: number;
+  color: string;
+  emissive: boolean;
+}
+
+export function perform3DGreedyMeshing(voxels: VoxelData[]): MergedBox[] {
+  if (voxels.length === 0) return [];
+
+  // Group voxels by color + emissive property
+  const groups = new Map<string, VoxelData[]>();
+  voxels.forEach((v) => {
+    const key = `${v.color}_${v.emissive ? '1' : '0'}`;
+    let list = groups.get(key);
+    if (!list) {
+      list = [];
+      groups.set(key, list);
+    }
+    list.push(v);
+  });
+
+  const mergedBoxes: MergedBox[] = [];
+
+  groups.forEach((groupVoxels, key) => {
+    const parts = key.split('_');
+    const color = parts[0];
+    const emissive = parts[1] === '1';
+
+    // Fast coordinate lookup
+    const coordSet = new Set<string>();
+    groupVoxels.forEach((v) => {
+      coordSet.add(`${v.x},${v.y},${v.z}`);
+    });
+
+    const visited = new Set<string>();
+
+    // Process in grid order: Y, then Z, then X
+    const sortedVoxels = [...groupVoxels].sort((a, b) => {
+      if (a.y !== b.y) return a.y - b.y;
+      if (a.z !== b.z) return a.z - b.z;
+      return a.x - b.x;
+    });
+
+    sortedVoxels.forEach((v) => {
+      const vKey = `${v.x},${v.y},${v.z}`;
+      if (visited.has(vKey)) return;
+
+      let startX = v.x;
+      let startY = v.y;
+      let startZ = v.z;
+
+      let sizeX = 1;
+      let sizeY = 1;
+      let sizeZ = 1;
+
+      // 1. Grow along X
+      while (true) {
+        const nextX = startX + sizeX;
+        const checkKey = `${nextX},${startY},${startZ}`;
+        if (coordSet.has(checkKey) && !visited.has(checkKey)) {
+          sizeX++;
+        } else {
+          break;
+        }
+      }
+
+      // 2. Grow along Z
+      while (true) {
+        const nextZ = startZ + sizeZ;
+        let canGrowZ = true;
+        for (let dx = 0; dx < sizeX; dx++) {
+          const checkKey = `${startX + dx},${startY},${nextZ}`;
+          if (!coordSet.has(checkKey) || visited.has(checkKey)) {
+            canGrowZ = false;
+            break;
+          }
+        }
+        if (canGrowZ) {
+          sizeZ++;
+        } else {
+          break;
+        }
+      }
+
+      // 3. Grow along Y
+      while (true) {
+        const nextY = startY + sizeY;
+        let canGrowY = true;
+        for (let dx = 0; dx < sizeX; dx++) {
+          for (let dz = 0; dz < sizeZ; dz++) {
+            const checkKey = `${startX + dx},${nextY},${startZ + dz}`;
+            if (!coordSet.has(checkKey) || visited.has(checkKey)) {
+              canGrowY = false;
+              break;
+            }
+          }
+          if (!canGrowY) break;
+        }
+        if (canGrowY) {
+          sizeY++;
+        } else {
+          break;
+        }
+      }
+
+      // Mark coordinates as visited
+      for (let dy = 0; dy < sizeY; dy++) {
+        for (let dz = 0; dz < sizeZ; dz++) {
+          for (let dx = 0; dx < sizeX; dx++) {
+            const markKey = `${startX + dx},${startY + dy},${startZ + dz}`;
+            visited.add(markKey);
+          }
+        }
+      }
+
+      mergedBoxes.push({
+        startX,
+        startY,
+        startZ,
+        sizeX,
+        sizeY,
+        sizeZ,
+        color,
+        emissive,
+      });
+    });
+  });
+
+  return mergedBoxes;
+}
+
 function mergeVoxelGeometries(
   voxels: VoxelData[],
   scale: number,
-  baseGeo: THREE.BufferGeometry,
   pivotX: number,
   pivotY: number,
   pivotZ: number
 ): THREE.BufferGeometry {
   if (voxels.length === 0) return new THREE.BufferGeometry();
 
+  const mergedBoxes = perform3DGreedyMeshing(voxels);
   const geometries: THREE.BufferGeometry[] = [];
-  voxels.forEach((v) => {
-    const geo = baseGeo.clone();
-    geo.translate(
-      (v.x - pivotX) * scale,
-      (v.y - pivotY) * scale,
-      (v.z - pivotZ) * scale
-    );
-    const color = new THREE.Color(v.color);
+
+  mergedBoxes.forEach((box) => {
+    const boxW = box.sizeX * scale;
+    const boxH = box.sizeY * scale;
+    const boxD = box.sizeZ * scale;
+
+    const baseBevelRadius = scale * 0.15;
+    const bevelRadius = Math.min(baseBevelRadius, boxW * 0.4, boxH * 0.4, boxD * 0.4);
+
+    const geo = createBeveledBoxGeometry(boxW, boxH, boxD, bevelRadius);
+
+    const centerX = (box.startX + (box.sizeX - 1) / 2 - pivotX) * scale;
+    const centerY = (box.startY + (box.sizeY - 1) / 2 - pivotY) * scale;
+    const centerZ = (box.startZ + (box.sizeZ - 1) / 2 - pivotZ) * scale;
+    geo.translate(centerX, centerY, centerZ);
+
+    const color = new THREE.Color(box.color);
     const count = geo.attributes.position.count;
     const colors = new Float32Array(count * 3);
     for (let i = 0; i < count; i++) {
@@ -165,14 +310,12 @@ function mergeVoxelGeometries(
 
 export function createVoxelGroup(data: VoxelData[], scale: number = 0.1): THREE.Group {
   const group = new THREE.Group();
-  const bevelRadius = scale * 0.15;
-  const baseBeveledGeo = createBeveledBoxGeometry(scale, scale, scale, bevelRadius);
 
   const standardVoxels = data.filter((v) => !v.emissive);
   const emissiveVoxels = data.filter((v) => v.emissive);
 
   if (standardVoxels.length > 0) {
-    const stdGeo = mergeVoxelGeometries(standardVoxels, scale, baseBeveledGeo, 0, 0, 0);
+    const stdGeo = mergeVoxelGeometries(standardVoxels, scale, 0, 0, 0);
     const material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.35, metalness: 0.65 });
     const mesh = new THREE.Mesh(stdGeo, material);
     mesh.castShadow = true;
@@ -188,7 +331,7 @@ export function createVoxelGroup(data: VoxelData[], scale: number = 0.1): THREE.
       list.push(v);
     });
     colorMap.forEach((voxels, colorStr) => {
-      const emGeo = mergeVoxelGeometries(voxels, scale, baseBeveledGeo, 0, 0, 0);
+      const emGeo = mergeVoxelGeometries(voxels, scale, 0, 0, 0);
       const material = new THREE.MeshStandardMaterial({
         color: new THREE.Color(colorStr),
         emissive: new THREE.Color(colorStr),
@@ -203,7 +346,6 @@ export function createVoxelGroup(data: VoxelData[], scale: number = 0.1): THREE.
     });
   }
 
-  baseBeveledGeo.dispose();
   return group;
 }
 
@@ -266,6 +408,21 @@ function buildHelmet_MarkVI(c: SpartanColors): VoxelData[] {
     for (let z = -1; z <= 1; z++)
       v.push({ x: 0, y: py, z, color: '#f97316' });
 
+  // --- AAA MICRO-DETAILS ---
+  // 1. Forehead glowing rangefinder camera lens (y=21)
+  v.push({ x: 0, y: 21, z: -3, color: '#ef4444', emissive: true });
+  // 2. Side cooling vents (y=17, z=-1)
+  v.push({ x: -3, y: 17, z: -1, color: c.dark });
+  v.push({ x: 3, y: 17, z: -1, color: c.dark });
+  // 3. Earpiece tactical communications modules (y=19, z=0)
+  v.push({ x: -3, y: 19, z: 0, color: c.accent });
+  v.push({ x: -3, y: 19, z: 1, color: c.dark });
+  v.push({ x: 3, y: 19, z: 0, color: c.accent });
+  v.push({ x: 3, y: 19, z: 1, color: c.dark });
+  // 4. Glowing earpiece status light
+  v.push({ x: -3, y: 20, z: 0, color: c.visor, emissive: true });
+  v.push({ x: 3, y: 20, z: 0, color: c.visor, emissive: true });
+
   return v;
 }
 
@@ -302,6 +459,22 @@ function buildHelmet_ODST(c: SpartanColors): VoxelData[] {
   for (let x = -2; x <= 2; x++)
     for (let z = -2; z <= 2; z++)
       v.push({ x, y: 23, z, color: c.dark });
+
+  // --- AAA MICRO-DETAILS ---
+  // 1. Right side tactical antenna
+  v.push({ x: 3, y: 20, z: 1, color: c.dark });
+  v.push({ x: 3, y: 21, z: 1, color: c.dark });
+  v.push({ x: 3, y: 22, z: 1, color: c.visor, emissive: true });
+  // 2. Forehead heavy reinforcement brow plate
+  v.push({ x: -1, y: 22, z: -3, color: c.accent });
+  v.push({ x: 0, y: 22, z: -3, color: c.accent });
+  v.push({ x: 1, y: 22, z: -3, color: c.accent });
+  // 3. Side chin filters
+  v.push({ x: -2, y: 17, z: -3, color: c.dark });
+  v.push({ x: 2, y: 17, z: -3, color: c.dark });
+  // 4. Glowing visor helper lights
+  v.push({ x: -2, y: 19, z: -3, color: '#f59e0b', emissive: true });
+  v.push({ x: 2, y: 19, z: -3, color: '#f59e0b', emissive: true });
 
   return v;
 }
@@ -353,6 +526,17 @@ function buildHelmet_Recon(c: SpartanColors): VoxelData[] {
   v.push({ x: 0, y: 23, z: 1, color: c.secondary });
   v.push({ x: 0, y: 24, z: 1, color: c.accent, emissive: true });
 
+  // --- AAA MICRO-DETAILS ---
+  // 1. Left side tactical laser rangefinder attachment
+  v.push({ x: -3, y: 20, z: -1, color: c.dark });
+  v.push({ x: -3, y: 20, z: -2, color: '#ef4444', emissive: true });
+  // 2. Front aerodynamic jaw lines
+  v.push({ x: -1, y: 18, z: -3, color: c.highlight });
+  v.push({ x: 1, y: 18, z: -3, color: c.highlight });
+  // 3. Dual side cheek micro-exhausts
+  v.push({ x: -3, y: 17, z: 0, color: c.dark });
+  v.push({ x: 3, y: 17, z: 0, color: c.dark });
+
   return v;
 }
 
@@ -391,6 +575,20 @@ function buildHelmet_EVA(c: SpartanColors): VoxelData[] {
 
   // Apex voxel
   v.push({ x: 0, y: 24, z: 0, color: c.primary });
+
+  // --- AAA MICRO-DETAILS ---
+  // 1. Visor HUD micro-crosshair pattern
+  v.push({ x: 0, y: 20, z: -3, color: '#ffffff', emissive: true });
+  v.push({ x: -1, y: 20, z: -3, color: '#60a5fa', emissive: true });
+  v.push({ x: 1, y: 20, z: -3, color: '#60a5fa', emissive: true });
+  v.push({ x: 0, y: 19, z: -3, color: '#60a5fa', emissive: true });
+  // 2. Heavy protective collar ring brace
+  for (let x = -3; x <= 3; x++) {
+    v.push({ x, y: 16, z: 2, color: c.dark });
+  }
+  // 3. Side helmet cooling inlets
+  v.push({ x: -3, y: 18, z: 0, color: c.secondary });
+  v.push({ x: 3, y: 18, z: 0, color: c.secondary });
 
   return v;
 }
@@ -441,6 +639,15 @@ function buildHelmet_Gungnir(c: SpartanColors): VoxelData[] {
     v.push({ x: -2, y, z: 0, color: isGlow ? c.visor : c.dark, emissive: isGlow });
     v.push({ x: 2, y, z: 0, color: isGlow ? c.visor : c.dark, emissive: isGlow });
   }
+
+  // --- AAA MICRO-DETAILS ---
+  // 1. Extreme heavy-duty camera sensor lens on left eye plate
+  v.push({ x: -2, y: 19, z: -3, color: '#ef4444', emissive: true });
+  // 2. Armored cheek reinforcement outriggers
+  v.push({ x: -3, y: 18, z: -1, color: c.secondary });
+  v.push({ x: 3, y: 18, z: -1, color: c.secondary });
+  // 3. Back-of-head diagnostic status indicators
+  v.push({ x: 0, y: 22, z: 2, color: c.visor, emissive: true });
 
   return v;
 }
@@ -508,6 +715,16 @@ function buildHelmet_EOD(c: SpartanColors): VoxelData[] {
       v.push({ x, y: 23, z, color: c.primary });
     }
   }
+
+  // --- AAA MICRO-DETAILS ---
+  // 1. Central hazard warning pressure valve on jaw
+  v.push({ x: 0, y: 17, z: -2, color: '#10b981', emissive: true });
+  // 2. Respirator hoses running from filters to back (y=16)
+  v.push({ x: -2, y: 16, z: -1, color: c.dark });
+  v.push({ x: 2, y: 16, z: -1, color: c.dark });
+  // 3. Blast shielding brow plates
+  v.push({ x: -2, y: 21, z: -3, color: c.dark });
+  v.push({ x: 2, y: 21, z: -3, color: c.dark });
 
   return v;
 }
@@ -584,6 +801,16 @@ function buildHelmet_Hayabusa(c: SpartanColors): VoxelData[] {
     }
   }
 
+  // --- AAA MICRO-DETAILS ---
+  // 1. Glowing menacing visor eyes under the mask
+  v.push({ x: -1, y: 19, z: -3, color: '#ef4444', emissive: true });
+  v.push({ x: 1, y: 19, z: -3, color: '#ef4444', emissive: true });
+  // 2. Gold crest highlight nodes
+  v.push({ x: 0, y: 22, z: -4, color: '#fbbf24', emissive: true });
+  // 3. Extended Kabuto neck protectors
+  v.push({ x: -3, y: 16, z: 1, color: c.dark });
+  v.push({ x: 3, y: 16, z: 1, color: c.dark });
+
   return v;
 }
 
@@ -652,9 +879,18 @@ function buildHelmet_CQB(c: SpartanColors): VoxelData[] {
     }
   }
 
+  // --- AAA MICRO-DETAILS ---
+  // 1. Glowing ventilation light inside side canisters
+  v.push({ x: -3, y: 20, z: -1, color: c.visor, emissive: true });
+  v.push({ x: 3, y: 20, z: -1, color: c.visor, emissive: true });
+  // 2. Heavy forehead protective visor visor-lock
+  v.push({ x: 0, y: 21, z: -3, color: c.accent, emissive: true });
+  // 3. Back communications array node
+  v.push({ x: -1, y: 23, z: 2, color: c.dark });
+  v.push({ x: 1, y: 23, z: 2, color: c.dark });
+
   return v;
 }
-
 // ─── TORSO PRESETS ────────────────────────────────────────────────────────────
 // Pivot at (0, 8, 0). Chest spans y=9..15 (7 wide x=-3..3, 5 deep z=-2..2).
 
@@ -705,6 +941,19 @@ function buildTorso_MarkVI(c: SpartanColors): VoxelData[] {
     v.push({ x: 1, y, z: 2, color: c.dark });
   }
 
+  // --- AAA MICRO-DETAILS ---
+  // 1. Dual glowing back thrusters inside the exhaust ports
+  v.push({ x: -1, y: 13, z: 2, color: c.visor, emissive: true });
+  v.push({ x: 1, y: 13, z: 2, color: c.visor, emissive: true });
+  v.push({ x: -1, y: 14, z: 2, color: '#f59e0b', emissive: true });
+  v.push({ x: 1, y: 14, z: 2, color: '#f59e0b', emissive: true });
+  // 2. Front pectoral air vents
+  v.push({ x: -2, y: 14, z: -3, color: c.dark });
+  v.push({ x: 2, y: 14, z: -3, color: c.dark });
+  // 3. Abdominal tech seams
+  v.push({ x: 0, y: 11, z: -3, color: c.secondary });
+  v.push({ x: 0, y: 12, z: -3, color: c.secondary });
+
   return v;
 }
 
@@ -729,6 +978,18 @@ function buildTorso_Scout(c: SpartanColors): VoxelData[] {
     v.push({ x: -4, y, z: -1, color: c.secondary });
     v.push({ x: 4, y, z: 0, color: c.dark });
     v.push({ x: 4, y, z: -1, color: c.secondary });
+  }
+
+  // --- AAA MICRO-DETAILS ---
+  // 1. Back communications antenna array
+  v.push({ x: 1, y: 14, z: 1, color: c.dark });
+  v.push({ x: 1, y: 15, z: 1, color: c.accent, emissive: true });
+  // 2. Active micro-reactor core in center chest
+  v.push({ x: 0, y: 13, z: -2, color: c.visor, emissive: true });
+  // 3. Tactical harness lines on shoulders
+  for (let x = -2; x <= 2; x++) {
+    if (x === 0) continue;
+    v.push({ x, y: 15, z: -2, color: c.dark });
   }
 
   return v;
@@ -762,6 +1023,16 @@ function buildTorso_Recon(c: SpartanColors): VoxelData[] {
   // Right shoulder data stripe (visor emissive)
   for (let y = 13; y <= 15; y++)
     v.push({ x: 2, y, z: -2, color: c.visor, emissive: true });
+
+  // --- AAA MICRO-DETAILS ---
+  // 1. Center tactical computing core reactor
+  v.push({ x: 0, y: 13, z: -2, color: c.highlight });
+  v.push({ x: 0, y: 14, z: -2, color: c.visor, emissive: true });
+  // 2. Dual side ventilation tubes running up shoulders
+  for (let y = 13; y <= 15; y++) {
+    v.push({ x: -3, y, z: -2, color: c.dark });
+    v.push({ x: 3, y, z: -2, color: c.dark });
+  }
 
   return v;
 }
@@ -809,6 +1080,16 @@ function buildTorso_EOD(c: SpartanColors): VoxelData[] {
     v.push({ x: 1, y, z: 2, color: c.dark });
   }
 
+  // --- AAA MICRO-DETAILS ---
+  // 1. Dual bulky warning light nodes on chest collar locks
+  v.push({ x: -3, y: 15, z: -2, color: c.accent, emissive: true });
+  v.push({ x: 3, y: 15, z: -2, color: c.accent, emissive: true });
+  // 2. Extra side armor waist pads
+  for (let y = 9; y <= 10; y++) {
+    v.push({ x: -4, y, z: 0, color: c.dark });
+    v.push({ x: 4, y, z: 0, color: c.dark });
+  }
+
   return v;
 }
 
@@ -847,7 +1128,6 @@ function buildTorso_Hayabusa(c: SpartanColors): VoxelData[] {
     v.push({ x: -3, y: 15, z, color: c.highlight });
     v.push({ x: 3, y: 15, z, color: c.highlight });
   }
-
   return v;
 }
 
@@ -897,6 +1177,14 @@ function buildLeftArm_MarkVI(c: SpartanColors): VoxelData[] {
     }
   }
 
+  // --- AAA MICRO-DETAILS ---
+  // 1. Glowing wrist-mounted diagnostic touchscreen (left arm only)
+  v.push({ x: -4, y: 8, z: -2, color: c.visor, emissive: true });
+  v.push({ x: -4, y: 8, z: -1, color: c.dark });
+  v.push({ x: -5, y: 8, z: -2, color: '#ffffff', emissive: true });
+  // 2. Extra outer elbow guard plating
+  v.push({ x: -7, y: 9, z: 0, color: c.secondary });
+
   return v;
 }
 
@@ -933,6 +1221,13 @@ function buildLeftArm_ODST(c: SpartanColors): VoxelData[] {
       }
     }
   }
+
+  // --- AAA MICRO-DETAILS ---
+  // 1. Pauldron glowing faction emblem light
+  v.push({ x: -7, y: 14, z: 0, color: c.accent, emissive: true });
+  // 2. Heavy mechanical forearm support rods
+  v.push({ x: -6, y: 8, z: 2, color: c.dark });
+  v.push({ x: -4, y: 8, z: 2, color: c.dark });
 
   return v;
 }
@@ -973,6 +1268,12 @@ function buildLeftArm_Recon(c: SpartanColors): VoxelData[] {
       }
     }
   }
+
+  // --- AAA MICRO-DETAILS ---
+  // 1. Extra micro-antenna on shoulder pauldron fin
+  v.push({ x: -5, y: 17, z: 0, color: c.accent, emissive: true });
+  // 2. Armored bicep composite plate trim
+  v.push({ x: -7, y: 11, z: 0, color: c.dark });
 
   return v;
 }
@@ -1021,6 +1322,13 @@ function buildLeftArm_EOD(c: SpartanColors): VoxelData[] {
     }
   }
 
+  // --- AAA MICRO-DETAILS ---
+  // 1. Forearm hazard stripes
+  v.push({ x: -7, y: 8, z: -1, color: '#eab308' });
+  v.push({ x: -7, y: 7, z: 0, color: c.dark });
+  // 2. Extra bulky shoulder cap lock
+  v.push({ x: -4, y: 15, z: -2, color: c.dark });
+
   return v;
 }
 
@@ -1063,6 +1371,14 @@ function buildLeftArm_Hayabusa(c: SpartanColors): VoxelData[] {
   v.push({ x: -5, y: 7, z: -2, color: c.accent });
   v.push({ x: -5, y: 8, z: -2, color: c.accent });
 
+  // --- AAA MICRO-DETAILS ---
+  // 1. Triple sweeping gold spikes on the shoulder pauldron (extremely premium!)
+  v.push({ x: -7, y: 15, z: 1, color: '#fbbf24', emissive: true });
+  v.push({ x: -8, y: 16, z: 0, color: '#fbbf24', emissive: true });
+  v.push({ x: -7, y: 15, z: -1, color: '#fbbf24', emissive: true });
+  // 2. Red hand-guard wrap nodes
+  v.push({ x: -5, y: 6, z: 0, color: '#ef4444' });
+
   return v;
 }
 
@@ -1100,6 +1416,13 @@ function buildLeftLeg_MarkVI(c: SpartanColors): VoxelData[] {
     for (let z = -1; z <= 1; z++)
       v.push({ x, y: 6, z, color: z === -1 && (x === -3 || x === -2) ? c.highlight : c.secondary });
 
+  // --- AAA MICRO-DETAILS ---
+  // 1. Glowing boot ankle telemetry module
+  v.push({ x: -4, y: 1, z: 0, color: c.visor, emissive: true });
+  // 2. High-contrast knee joint line
+  v.push({ x: -2, y: 5, z: -2, color: c.dark });
+  v.push({ x: -3, y: 5, z: -2, color: c.dark });
+
   return v;
 }
 
@@ -1136,6 +1459,13 @@ function buildLeftLeg_JumpJet(c: SpartanColors): VoxelData[] {
     for (let z = -1; z <= 1; z++)
       v.push({ x, y: 6, z, color: z === -1 ? c.highlight : c.secondary });
 
+  // --- AAA MICRO-DETAILS ---
+  // 1. High-fidelity dual fire-nozzles emitting active glows (yellow/red)
+  v.push({ x: -3, y: 2, z: 2, color: '#ef4444', emissive: true });
+  v.push({ x: -2, y: 2, z: 2, color: '#f59e0b', emissive: true });
+  // 2. Reinforced thruster heat vents on outer calf
+  v.push({ x: -4, y: 4, z: 1, color: c.dark });
+
   return v;
 }
 
@@ -1169,6 +1499,13 @@ function buildLeftLeg_ODST(c: SpartanColors): VoxelData[] {
   for (let x = -4; x <= -1; x++)
     for (let z = -1; z <= 1; z++)
       v.push({ x, y: 6, z, color: c.dark });
+
+  // --- AAA MICRO-DETAILS ---
+  // 1. Thigh utility straps
+  v.push({ x: -4, y: 5, z: 0, color: c.dark });
+  v.push({ x: -4, y: 5, z: -1, color: c.accent });
+  // 2. Magnetic sole locking indicator LEDs
+  v.push({ x: -1, y: 1, z: 0, color: c.visor, emissive: true });
 
   return v;
 }
@@ -1210,6 +1547,13 @@ function buildLeftLeg_EOD(c: SpartanColors): VoxelData[] {
   v.push({ x: -3, y: 6, z: -2, color: c.dark });
   v.push({ x: -2, y: 6, z: -2, color: c.dark });
 
+  // --- AAA MICRO-DETAILS ---
+  // 1. Lower shin heavy-duty bumper plates
+  v.push({ x: -4, y: 3, z: -2, color: c.dark });
+  v.push({ x: -1, y: 3, z: -2, color: c.dark });
+  // 2. Status panel flashing nodes
+  v.push({ x: -2, y: 4, z: -2, color: '#ffffff', emissive: true });
+
   return v;
 }
 
@@ -1243,9 +1587,18 @@ function buildLeftLeg_Hayabusa(c: SpartanColors): VoxelData[] {
   v.push({ x: -3, y: 6, z: -2, color: c.accent });
   v.push({ x: -2, y: 6, z: -2, color: c.accent });
 
+  // --- AAA MICRO-DETAILS ---
+  // 1. Golden samurai leg plate borders
+  v.push({ x: -3, y: 3, z: -2, color: '#fbbf24' });
+  v.push({ x: -2, y: 3, z: -2, color: '#fbbf24' });
+  v.push({ x: -3, y: 4, z: -2, color: '#fbbf24' });
+  v.push({ x: -2, y: 4, z: -2, color: '#fbbf24' });
+  // 2. Ankle protection wrap ties
+  v.push({ x: -4, y: 2, z: 0, color: '#ef4444' });
+  v.push({ x: -1, y: 2, z: 0, color: '#ef4444' });
+
   return v;
 }
-
 // ─── HIP BUILDER ──────────────────────────────────────────────────────────────
 // Pivot at (0, 0, 0). Voxels at y=7..8, x=-3..3, z=-1..1.
 
@@ -1414,8 +1767,6 @@ export function buildVoxelSpartanModel(
   };
 
   const scale = 0.08;
-  const bevelRadius = scale * 0.15;
-  const baseBeveledGeo = createBeveledBoxGeometry(scale, scale, scale, bevelRadius);
 
   const createSegmentGroup = (
     voxels: VoxelData[],
@@ -1428,7 +1779,7 @@ export function buildVoxelSpartanModel(
     const emissiveVoxels = voxels.filter((v) => v.emissive);
 
     if (standardVoxels.length > 0) {
-      const stdGeo = mergeVoxelGeometries(standardVoxels, scale, baseBeveledGeo, pivotX, pivotY, pivotZ);
+      const stdGeo = mergeVoxelGeometries(standardVoxels, scale, pivotX, pivotY, pivotZ);
       const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.35, metalness: 0.65 });
       const mesh = new THREE.Mesh(stdGeo, mat);
       mesh.castShadow = true;
@@ -1444,7 +1795,7 @@ export function buildVoxelSpartanModel(
         list.push(v);
       });
       colorMap.forEach((list, colorStr) => {
-        const emGeo = mergeVoxelGeometries(list, scale, baseBeveledGeo, pivotX, pivotY, pivotZ);
+        const emGeo = mergeVoxelGeometries(list, scale, pivotX, pivotY, pivotZ);
         const mat = new THREE.MeshStandardMaterial({
           color: new THREE.Color(colorStr),
           emissive: new THREE.Color(colorStr),
@@ -1558,7 +1909,6 @@ export function buildVoxelSpartanModel(
     head: headGroup,
   };
 
-  baseBeveledGeo.dispose();
   return Spartan;
 }
 
@@ -2149,6 +2499,17 @@ export function buildPistolModel(customHue?: number): THREE.Group {
   const laserColor = customHue !== undefined ? `hsl(${customHue}, 85%, 60%)` : '#22d3ee';
   data.push({ x: 0, y: 4, z: -3, color: laserColor, emissive: true });
   data.push({ x: 0, y: 6, z: -4, color: laserColor, emissive: true }); // glowing front sight
+
+  // --- AAA MICRO-DETAILS ---
+  // 1. Digital ammunition counter screen on rear slide plate (visible in first person!)
+  data.push({ x: 0, y: 7, z: 2, color: '#22c55e', emissive: true }); // Glowing green numbers
+  data.push({ x: -1, y: 7, z: 2, color: '#090d16' }); // Bezel left
+  data.push({ x: 1, y: 7, z: 2, color: '#090d16' }); // Bezel right
+  // 2. Tactical laser emitter under-barrel
+  data.push({ x: 0, y: 5, z: -4, color: laserColor, emissive: true });
+  // 3. Side slide plate metallic details
+  data.push({ x: -2, y: 6, z: -1, color: '#64748b' });
+  data.push({ x: 2, y: 6, z: -1, color: '#64748b' });
 
   const pistol = createVoxelGroup(data, 0.08);
   pistol.traverse((child) => {

@@ -153,10 +153,10 @@ To prevent players and AI characters from passing straight through one another, 
 
 ## Map Selection & Environments
 
-Local play setups feature an interactive map selector overlay supported by a dynamic, real-time rotating 3D preview of both standard arenas, premade environments, and custom-loaded maps:
+Local play setups feature an interactive map selector overlay supported by a dynamic, real-time rotating 3D preview of both standard arenas, premade environments, and custom-loaded maps. Each map now features a beautiful, procedurally generated 360-degree **Sky Dome** (inverted sphere mesh) running independent of fog, complete with slow, smooth background rotation that brings the stars, nebulas, and stadium spotlights to life!
 
-- **Industrial Hangar**: The default grimy voxel-art warehouse environment. It includes 12 structural support H-beam columns, safety hazard warnings, ceiling trusses, metal conduits, exhaust vents, and warm amber spotlighting.
-- **Circle Arena (Holodeck)**: A clean, sleek virtual simulation deck. It is a minimalist space-void arena featuring high-tech glowing neon cyan grids, concentric glowing ring alignments, four cardinal neon posts, and a cool cyan spotlight core.
+- **Industrial Hangar**: The default grimy voxel-art warehouse environment. It includes a custom steel hangar skybox with scaffolding trusses, caution light beams, and a colossal viewport showing a blue planet in orbit.
+- **Circle Arena (Holodeck)**: A clean, sleek virtual simulation deck. It features the holodeck coordinate grid void skybox—a perfect bright gold grid wrapping the entire sphere in horizontal and vertical lines.
 - **Cyber Hex Grid (Preset)**: A high-tech tactical holodeck featuring glowing neon pillars, defensive carbon-fiber partitions, rechargeable crates, and a central plasma core reactor emitting massive violet neon glows.
 - **Jungle Ruined Outpost (Preset)**: An overgrown, crumbling training outpost dominated by nature elements. Features rustic stone walls, giant mossy boulders, forest giant tree trunks, and a mystical emerald crystal totem.
 - **Vanguard Asteroid Mine (Preset)**: An industrial minerals extraction facility situated on a space asteroid. Featuring heavy blast doors, freight containers, metallic core processor drills, amber industrial warning lights, and orange-veined meteorite ore clusters.
@@ -201,6 +201,7 @@ iBrawls features a beautiful, feature-rich, and completely standalone 3D Map Mak
 - **Flexible Object Placement**: Place and transform Box, Cylinder, and Sphere obstacles. Modify dimensions, position, rotation, opacity, metalness, roughness, colors, emissive neon glow, and collidable status (`isCollidable`).
 - **Flexible Arena Shapes**: Toggle between **Circular** and **Rectangular** boundaries. The rectangular court uses a standard 2:1 aspect ratio with a dedicated rectangular grid helper.
 - **Dynamic Lighting Controls**: Add custom point lights to set up mood lighting. Adjust position, distance, intensity, decay, and color using real-time inspectors.
+- **Interactive Skybox Selector**: A visual dropdown inside the *Atmospherics & Size* panel lists 16 distinct high-fidelity procedural 3D Sky Dome textures (including 4 premium extra skies: *Toxic Green Wasteland*, *Jagged Lava Inferno*, *Digital Matrix Code*, and *Surreal Planet Nebula*) plus an *Auto Match Theme* option. Backed by full map JSON import/export serialization to perfectly preserve custom skies.
 - **Texture Presets**: Dress obstacles in 24 custom texture profiles matching 10 distinct themes (upgraded to ultra-high-fidelity 2048x2048 resolutions and integrated with tactile, physically modeled 3D bump maps and custom surface specular relief scales):
   - *Nature*: Grass turf (`nature_grass`), Mossy Stone (`nature_mossy_stone`), Wood Grain (`nature_wood`).
   - *Space*: Starbase alloy plate (`space_alloy`), Lunar meteorite crag (`space_meteorite`), Cosmic dust (`space_lunar_dust`).

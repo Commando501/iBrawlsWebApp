@@ -76,7 +76,7 @@ import { CharacterPreview } from './components/CharacterPreview';
 import { CharacterPainter } from './components/CharacterPainter';
 import { CharacterLoadout, DEFAULT_LOADOUT, AVAILABLE_PRESETS, HelmetPreset, TorsoPreset, ArmPreset, LegPreset } from './components/VoxelModels';
 
-const APP_VERSION = '0.573';
+const APP_VERSION = '0.575';
 const MAX_PLAYER_NAME_LENGTH = 10;
 
 interface OnlineClient {
@@ -2517,6 +2517,7 @@ export default function App() {
       ambientLightIntensity: 0.82,
       skyboxBrightness: 4.0,
       skyboxHue: 224,
+      showSkybox: true,
       enableSwordTrade: true,
       enableHammerSwordTrade: true,
       swordTradeWindow: 350,
@@ -6621,6 +6622,25 @@ export default function App() {
                     }}
                   />
                   <p className="text-[10px] text-white/40">Rotate color hue to select sky atmospheric styling (eg. Blue, Neon Cyan, Purple, Crimson, Amber).</p>
+                </div>
+
+                {/* Show Skybox toggle */}
+                <div className="flex justify-between items-center text-xs pt-1.5 border-t border-white/5">
+                  <div className="flex flex-col text-left">
+                    <span className="font-bold text-white/90 uppercase tracking-wider text-[11px]">Show Skybox</span>
+                    <span className="text-[10px] text-white/40">Toggle background skybox rendering on or off.</span>
+                  </div>
+                  <button 
+                    id="skybox-visibility-toggle"
+                    onClick={() => setAdminSettings(prev => ({ ...prev, showSkybox: prev.showSkybox !== false ? false : true }))}
+                    className={`relative inline-flex h-4 w-8 shrink-0 cursor-pointer rounded-full border border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                      adminSettings.showSkybox !== false ? 'bg-amber-400' : 'bg-white/10'
+                    }`}
+                  >
+                    <span className={`pointer-events-none inline-block h-3.5 w-3.5 transform rounded-full bg-slate-900 shadow transition duration-200 ease-in-out ${
+                      adminSettings.showSkybox !== false ? 'translate-x-4' : 'translate-x-0'
+                    }`} />
+                  </button>
                 </div>
 
               </div>

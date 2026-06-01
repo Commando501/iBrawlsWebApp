@@ -59,6 +59,7 @@ export interface GrifballThreeRefs {
   >;
   navMesh?: any;
   customMapObjects?: THREE.Object3D[];
+  skyboxMesh?: THREE.Mesh | null;
 }
 
 export function createInitialGrifballThreeRefs(): GrifballThreeRefs {
@@ -77,6 +78,7 @@ export function createInitialGrifballThreeRefs(): GrifballThreeRefs {
     hostSword: null,
     otherPlayerMeshes: new Map(),
     customMapObjects: [],
+    skyboxMesh: null,
 
     debugPlayerSphere: null,
     debugEnemySphere: null,

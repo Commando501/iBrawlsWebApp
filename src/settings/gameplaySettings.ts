@@ -35,6 +35,7 @@ export const DEFAULT_ADMIN_SETTINGS: UniversalSettings = {
   ambientLightIntensity: 0.82,
   skyboxBrightness: 4.0,
   skyboxHue: 224,
+  showSkybox: true,
   enableSwordTrade: true,
   enableHammerSwordTrade: true,
   swordTradeWindow: 350,

@@ -1,5 +1,187 @@
 import * as THREE from 'three';
+import { createVoxelGroup, type VoxelData } from '../VoxelModels';
 import { type CustomMapObject } from '../../types';
+
+// ─── HIGH-FIDELITY VOXEL MAP ASSETS GENERATORS ────────────────────────────────
+
+function buildVoxelReactor(width: number, height: number, depth: number, colorStr: string, emissiveStr: string): THREE.Group {
+  const data: VoxelData[] = [];
+  const r = 4; // Voxel grid sphere radius
+
+  // 1. Core glowing energy sphere
+  for (let x = -r; x <= r; x++) {
+    for (let y = -r; y <= r; y++) {
+      for (let z = -r; z <= r; z++) {
+        const dist = Math.sqrt(x*x + y*y + z*z);
+        if (dist <= r * 0.4) {
+          data.push({ x, y, z, color: emissiveStr, emissive: true });
+        } else if (dist <= r * 0.85) {
+          data.push({ x, y, z, color: colorStr });
+        }
+      }
+    }
+  }
+
+  // 2. Outer orbiting cyber ring (tilted)
+  const ringR = 6;
+  for (let theta = 0; theta < Math.PI * 2; theta += 0.15) {
+    const rx = Math.round(ringR * Math.cos(theta));
+    const rz = Math.round(ringR * Math.sin(theta));
+    const ry = Math.round(rx * 0.25); // Tilted plane angle
+
+    data.push({ x: rx, y: ry, z: rz, color: '#1e293b' });
+    data.push({ x: rx, y: ry, z: rz + (rz > 0 ? -1 : 1), color: emissiveStr, emissive: true });
+  }
+
+  const voxelScale = Math.min(width, height, depth) / (2 * ringR || 1);
+  return createVoxelGroup(data, voxelScale);
+}
+
+function buildVoxelForerunnerSpire(width: number, height: number, depth: number, colorStr: string, emissiveStr: string): THREE.Group {
+  const data: VoxelData[] = [];
+  const r = 3; // Base radius
+  const h = 12; // Height in voxels
+
+  // Build a tapering octagonal monolith
+  for (let y = 0; y < h; y++) {
+    const taper = 1.0 - (y / h) * 0.45;
+    const layerR = r * taper;
+
+    for (let x = -Math.ceil(layerR); x <= Math.ceil(layerR); x++) {
+      for (let z = -Math.ceil(layerR); z <= Math.ceil(layerR); z++) {
+        const dist = Math.sqrt(x*x + z*z);
+        if (dist <= layerR) {
+          if (dist <= 0.85 && y < h - 1) {
+            // Glowing energy beam core
+            data.push({ x, y, z, color: emissiveStr, emissive: true });
+          } else {
+            // Alternating metallic colors
+            const isAccentRow = y % 3 === 0;
+            data.push({ x, y, z, color: isAccentRow ? '#d97706' : colorStr });
+          }
+        }
+      }
+    }
+
+    // Armored side stabilizers
+    if (y % 2 === 0) {
+      data.push({ x: -Math.ceil(layerR) - 1, y, z: 0, color: '#0f172a' });
+      data.push({ x: Math.ceil(layerR) + 1, y, z: 0, color: '#0f172a' });
+      data.push({ x: 0, y, z: -Math.ceil(layerR) - 1, color: '#0f172a' });
+      data.push({ x: 0, y, z: Math.ceil(layerR) + 1, color: '#0f172a' });
+    }
+  }
+
+  // Hovering cap node at top
+  data.push({ x: 0, y: h + 1, z: 0, color: emissiveStr, emissive: true });
+
+  const voxelScale = Math.min(width, depth) / (2 * r || 1);
+  const spire = createVoxelGroup(data, voxelScale);
+
+  // Position pivot to sit at the base
+  spire.traverse((child) => {
+    if (child instanceof THREE.Mesh) {
+      child.position.y -= (h / 2) * voxelScale;
+    }
+  });
+
+  return spire;
+}
+
+function buildVoxelTechCrate(width: number, height: number, depth: number, colorStr: string, emissiveStr: string): THREE.Group {
+  const data: VoxelData[] = [];
+  const rx = 3;
+  const ry = 3;
+  const rz = 3;
+
+  for (let x = -rx; x <= rx; x++) {
+    for (let y = -ry; y <= ry; y++) {
+      for (let z = -rz; z <= rz; z++) {
+        const isCorner = (Math.abs(x) === rx && Math.abs(y) === ry) ||
+                       (Math.abs(x) === rx && Math.abs(z) === rz) ||
+                       (Math.abs(y) === ry && Math.abs(z) === rz);
+        const isFace = Math.abs(x) === rx || Math.abs(y) === ry || Math.abs(z) === rz;
+
+        if (isCorner) {
+          data.push({ x, y, z, color: '#1e293b' }); // Dark framing trim
+        } else if (isFace) {
+          const isCenterLogo = Math.abs(x) <= 1 && Math.abs(y) <= 1 && z === -rz;
+          if (isCenterLogo && emissiveStr && emissiveStr !== '#000000') {
+            data.push({ x, y, z, color: emissiveStr, emissive: true }); // glowing warning panel
+          } else {
+            data.push({ x, y, z, color: colorStr });
+          }
+        }
+      }
+    }
+  }
+
+  // Handles
+  data.push({ x: -rx - 1, y: 0, z: 0, color: '#0f172a' });
+  data.push({ x: rx + 1, y: 0, z: 0, color: '#0f172a' });
+
+  const voxelScale = width / (2 * rx || 1);
+  return createVoxelGroup(data, voxelScale);
+}
+
+function buildVoxelMossyBoulder(width: number, height: number, depth: number, colorStr: string, emissiveStr: string, isMeteor: boolean): THREE.Group {
+  const data: VoxelData[] = [];
+  const r = 4;
+
+  for (let x = -r; x <= r; x++) {
+    for (let y = -r; y <= r; y++) {
+      for (let z = -r; z <= r; z++) {
+        // Jagged non-spherical distortion
+        const distortion = Math.sin(x * 1.5) * 0.7 + Math.cos(y * 1.5) * 0.7 + Math.sin(z * 1.5) * 0.7;
+        const dist = Math.sqrt(x*x + y*y + z*z) + distortion;
+
+        if (dist <= r * 0.95) {
+          const isSurface = dist > r * 0.7;
+          if (isMeteor && isSurface && Math.random() < 0.22 && emissiveStr && emissiveStr !== '#000000') {
+            data.push({ x, y, z, color: emissiveStr, emissive: true }); // glowing alien mineral vein
+          } else if (!isMeteor && isSurface && y > r * 0.15 && Math.random() < 0.42) {
+            data.push({ x, y, z, color: '#16a34a' }); // Mossy green cover
+          } else {
+            data.push({ x, y, z, color: isSurface ? '#4b5563' : '#374151' });
+          }
+        }
+      }
+    }
+  }
+
+  const voxelScale = Math.min(width, height, depth) / (2 * r || 1);
+  return createVoxelGroup(data, voxelScale);
+}
+
+function buildVoxelCargoContainer(width: number, height: number, depth: number, colorStr: string): THREE.Group {
+  const data: VoxelData[] = [];
+  const rx = 4;
+  const ry = 4;
+  const rz = 6;
+
+  for (let x = -rx; x <= rx; x++) {
+    for (let y = -ry; y <= ry; y++) {
+      for (let z = -rz; z <= rz; z++) {
+        const isCorner = (Math.abs(x) === rx && Math.abs(y) === ry) ||
+                       (Math.abs(x) === rx && Math.abs(z) === rz) ||
+                       (Math.abs(y) === ry && Math.abs(z) === rz);
+        const isFace = Math.abs(x) === rx || Math.abs(y) === ry || Math.abs(z) === rz;
+
+        if (isCorner) {
+          data.push({ x, y, z, color: '#0f172a' }); // Corner trims
+        } else if (isFace) {
+          // Vertical corrugated panel lines along sides
+          const isLongSide = Math.abs(z) === rz;
+          const isCorrugated = isLongSide && (x % 2 === 0);
+          data.push({ x, y, z, color: isCorrugated ? '#1e293b' : colorStr });
+        }
+      }
+    }
+  }
+
+  const voxelScale = width / (2 * rx || 1);
+  return createVoxelGroup(data, voxelScale);
+}
 
 // --- HIGH-FIDELITY MAP ASSETS PROCEDURAL MODEL PIPELINE ---
 export function createHighFidelityObjectMesh(
@@ -16,70 +198,58 @@ export function createHighFidelityObjectMesh(
   const sy = obj.scale.y * scaleMultiplier;
   const sz = obj.scale.z * scaleMultiplier;
   
-  // Set up materials
-  const hasTexture = obj.texture && obj.texture !== 'none';
-  const texture = (hasTexture && generateCustomTexture) ? generateCustomTexture(obj.texture, obj.color) : null;
-  if (texture) {
-    texture.needsUpdate = true;
-  }
-  
-  let bumpScale = 0.02;
-  if (hasTexture) {
-    if (['nature_mossy_stone', 'fantasy_cobble', 'city_brick'].includes(obj.texture)) {
-      bumpScale = 0.035;
-    } else if (['nature_grass', 'city_concrete', 'nature_wood'].includes(obj.texture)) {
-      bumpScale = 0.025;
-    } else if (['space_alloy', 'futuristic_carbon', 'forerunner_panel'].includes(obj.texture)) {
-      bumpScale = 0.015;
-    } else if (['futuristic_hex', 'synthwave_grid', 'winter_glacier_glass'].includes(obj.texture)) {
-      bumpScale = 0.008;
-    }
-  }
-
-  const mat = new three.MeshStandardMaterial({
-    map: texture,
-    bumpMap: texture || undefined,
-    bumpScale: hasTexture ? bumpScale : 0,
-    color: hasTexture ? new three.Color('#ffffff') : new three.Color(obj.color),
-    metalness: obj.metalness ?? 0.5,
-    roughness: obj.roughness ?? 0.5,
-    opacity: obj.opacity ?? 1,
-    transparent: obj.transparent || false,
-  });
-
-  if (obj.emissive && obj.emissive !== '#000000') {
-    mat.emissive = new three.Color(obj.emissive);
-    mat.emissiveIntensity = obj.emissiveIntensity ?? 1;
-  }
-
-  // Dark accent material for metallic trims
-  const accentMat = new three.MeshStandardMaterial({
-    color: new three.Color('#1e293b'),
-    metalness: 0.9,
-    roughness: 0.2,
-  });
-
-  // Glow material
-  let glowMat: THREE.Material;
-  if (obj.emissive && obj.emissive !== '#000000') {
-    glowMat = new three.MeshBasicMaterial({
-      color: new three.Color(obj.emissive),
-      transparent: true,
-      opacity: 0.8
-    });
-  } else {
-    glowMat = new three.MeshBasicMaterial({
-      color: new three.Color(obj.color || '#00ffff'),
-      transparent: true,
-      opacity: 0.6
-    });
-  }
-  
-  // Render based on geometry type and name clues
   const nameLower = (obj.name || '').toLowerCase();
-  
+  const emissiveHex = (obj.emissive && obj.emissive !== '#000000') ? obj.emissive : '#00ffff';
+
+  // --- Transparent / Glass objects: render as standard meshes, NOT voxels ---
+  // Voxelization produces solid opaque crates which completely breaks the visual
+  // intent of translucent glass boards, acrylic panels, etc.
+  const isTransparent = obj.transparent || obj.texture === 'winter_glacier_glass';
+  if (isTransparent) {
+    let geo: THREE.BufferGeometry;
+    if (obj.type === 'cylinder') {
+      geo = new three.CylinderGeometry(sx / 2, sx / 2, sy, 32);
+    } else if (obj.type === 'sphere') {
+      geo = new three.SphereGeometry(sx / 2, 32, 32);
+    } else {
+      geo = new three.BoxGeometry(sx, sy, sz);
+    }
+
+    const texture = (obj.texture && obj.texture !== 'none' && generateCustomTexture)
+      ? generateCustomTexture(obj.texture, obj.color)
+      : undefined;
+
+    const mat = new three.MeshStandardMaterial({
+      map: texture,
+      bumpMap: texture,
+      bumpScale: texture ? 0.008 : 0,
+      color: new three.Color(obj.color),
+      metalness: obj.metalness ?? 0.1,
+      roughness: obj.roughness ?? 0.3,
+      opacity: obj.opacity ?? 0.6,
+      transparent: true,
+      side: three.DoubleSide,
+    });
+
+    if (obj.emissive && obj.emissive !== '#000000') {
+      mat.emissive = new three.Color(obj.emissive);
+      mat.emissiveIntensity = obj.emissiveIntensity ?? 0.2;
+    }
+
+    const mesh = new three.Mesh(geo, mat);
+    mesh.castShadow = false;     // Transparent objects should not cast solid shadows
+    mesh.receiveShadow = true;
+    mesh.userData = { id: obj.id };
+    group.add(mesh);
+
+    return group;
+  }
+
+  // Instantiate gorgeous voxelized versions based on shape clues
+  let voxelGroup: THREE.Group;
+
   if (obj.type === 'box') {
-    const isRock = ['nature_mossy_stone', 'space_meteorite'].includes(obj.texture) || 
+    const isRock = ['nature_mossy_stone', 'space_meteorite'].includes(obj.texture || '') || 
                    nameLower.includes('rock') || nameLower.includes('boulder') || nameLower.includes('asteroid') || nameLower.includes('cluster');
     const isContainer = nameLower.includes('container') || nameLower.includes('barrier') || 
                         nameLower.includes('partition') || nameLower.includes('shield') || 
@@ -87,362 +257,45 @@ export function createHighFidelityObjectMesh(
     const isCrate = nameLower.includes('crate') || nameLower.includes('substation') || nameLower.includes('recharge');
     
     if (isRock) {
-      // 1. HIGH-FIDELITY ASTEROID/BOULDER (LOW-POLY ORGANIC FACETED GEODESIC CLUSTER)
-      const mainGeo = new three.DodecahedronGeometry(sx / 2, 1);
-      
-      // Distort vertices slightly to make it organic and non-spherical
-      const posAttr = mainGeo.attributes.position as THREE.BufferAttribute;
-      if (posAttr) {
-        for (let i = 0; i < posAttr.count; i++) {
-          const x = posAttr.getX(i);
-          const y = posAttr.getY(i);
-          const z = posAttr.getZ(i);
-          posAttr.setXYZ(
-            i,
-            x * 1.0 + (Math.sin(y * 5) * 0.08),
-            y * (sy / sx) + (Math.cos(z * 5) * 0.08),
-            z * (sz / sx) + (Math.sin(x * 5) * 0.08)
-          );
-        }
-        mainGeo.computeVertexNormals();
-      }
-      
-      const mainMesh = new three.Mesh(mainGeo, mat);
-      group.add(mainMesh);
-      
-      // Add 2 smaller debris boulders clustered at the base
-      const d1Geo = new three.DodecahedronGeometry(sx * 0.15, 0);
-      const debris1 = new three.Mesh(d1Geo, mat);
-      debris1.position.set(-sx * 0.35, -sy * 0.35, sz * 0.2);
-      debris1.rotation.set(Math.random(), Math.random(), Math.random());
-      group.add(debris1);
-      
-      const d2Geo = new three.DodecahedronGeometry(sx * 0.12, 0);
-      const debris2 = new three.Mesh(d2Geo, mat);
-      debris2.position.set(sx * 0.3, -sy * 0.4, -sz * 0.3);
-      debris2.rotation.set(Math.random(), Math.random(), Math.random());
-      group.add(debris2);
-      
-      if (obj.texture === 'space_meteorite' && obj.emissive && obj.emissive !== '#000000') {
-        const coreGeo = new three.SphereGeometry(sx * 0.2, 8, 8);
-        const core = new three.Mesh(coreGeo, glowMat);
-        core.position.set(0, 0, 0);
-        group.add(core);
-      }
-      
+      voxelGroup = buildVoxelMossyBoulder(sx, sy, sz, obj.color, emissiveHex, obj.texture === 'space_meteorite');
     } else if (isContainer) {
-      // 2. DETAILED HEAVY INDUSTRIAL SHIPPING CONTAINER / STRUCTURAL BARRIER
-      const bodyGeo = new three.BoxGeometry(sx * 0.94, sy * 0.96, sz * 0.94);
-      const body = new three.Mesh(bodyGeo, mat);
-      group.add(body);
-      
-      const frameThickness = 0.04 * Math.min(sx, sz);
-      
-      // 4 Heavy vertical structural support corner pillars
-      const colW = frameThickness;
-      const colGeo = new three.BoxGeometry(colW, sy * 1.01, colW);
-      
-      const corners = [
-        [-sx/2 + colW/2, -sz/2 + colW/2],
-        [-sx/2 + colW/2, sz/2 - colW/2],
-        [sx/2 - colW/2, -sz/2 + colW/2],
-        [sx/2 - colW/2, sz/2 - colW/2]
-      ];
-      
-      corners.forEach(([cx, cz]) => {
-        const col = new three.Mesh(colGeo, accentMat);
-        col.position.set(cx, 0, cz);
-        group.add(col);
-      });
-      
-      // Top and bottom protective edge rings (horizontal bars)
-      const topBarGeo = new three.BoxGeometry(sx * 1.01, frameThickness, frameThickness);
-      const botBarGeo = topBarGeo.clone();
-      
-      const barsZ = [-sz/2 + frameThickness/2, sz/2 - frameThickness/2];
-      barsZ.forEach(bz => {
-        const topBar = new three.Mesh(topBarGeo, accentMat);
-        topBar.position.set(0, sy/2 - frameThickness/2, bz);
-        group.add(topBar);
-        
-        const botBar = new three.Mesh(botBarGeo, accentMat);
-        botBar.position.set(0, -sy/2 + frameThickness/2, bz);
-        group.add(botBar);
-      });
-      
-      // Corrugated panel ridges along the longer side
-      const isXLonger = sx >= sz;
-      if (isXLonger) {
-        const numRibs = Math.max(3, Math.floor(sx * 1.5));
-        const ribSpacing = (sx * 0.8) / (numRibs - 1 || 1);
-        const ribW = 0.06;
-        const ribD = 0.04;
-        const ribGeo = new three.BoxGeometry(ribW, sy * 0.9, ribD);
-        
-        for (let i = 0; i < numRibs; i++) {
-          const rx = -sx * 0.4 + i * ribSpacing;
-          
-          const fRib = new three.Mesh(ribGeo, accentMat);
-          fRib.position.set(rx, 0, sz/2 - ribD/2);
-          group.add(fRib);
-          
-          const bRib = new three.Mesh(ribGeo, accentMat);
-          bRib.position.set(rx, 0, -sz/2 + ribD/2);
-          group.add(bRib);
-        }
-      } else {
-        const numRibs = Math.max(3, Math.floor(sz * 1.5));
-        const ribSpacing = (sz * 0.8) / (numRibs - 1 || 1);
-        const ribW = 0.04;
-        const ribD = 0.06;
-        const ribGeo = new three.BoxGeometry(ribW, sy * 0.9, ribD);
-        
-        for (let i = 0; i < numRibs; i++) {
-          const rz = -sz * 0.4 + i * ribSpacing;
-          
-          const lRib = new three.Mesh(ribGeo, accentMat);
-          lRib.position.set(-sx/2 + ribW/2, 0, rz);
-          group.add(lRib);
-          
-          const rRib = new three.Mesh(ribGeo, accentMat);
-          rRib.position.set(sx/2 - ribW/2, 0, rz);
-          group.add(rRib);
-        }
-      }
-      
+      voxelGroup = buildVoxelCargoContainer(sx, sy, sz, obj.color);
     } else if (isCrate) {
-      // 3. SCI-FI MECHANICAL TECH CRATE / RECHARGE STATION
-      const coreGeo = new three.BoxGeometry(sx * 0.84, sy * 0.84, sz * 0.84);
-      const core = new three.Mesh(coreGeo, mat);
-      group.add(core);
-      
-      const frameW = 0.08 * sx;
-      
-      // Horizontal top/bottom structural rims
-      const plateGeo = new three.BoxGeometry(sx * 0.94, frameW, sz * 0.94);
-      const topPlate = new three.Mesh(plateGeo, accentMat);
-      topPlate.position.set(0, sy/2 - frameW/2, 0);
-      group.add(topPlate);
-      
-      const botPlate = new three.Mesh(plateGeo, accentMat);
-      botPlate.position.set(0, -sy/2 + frameW/2, 0);
-      group.add(botPlate);
-      
-      // Protective corner reinforcement cages
-      const colGeo = new three.BoxGeometry(frameW, sy * 0.8, frameW);
-      const offsets = [
-        [-sx/2 + frameW/2, -sz/2 + frameW/2],
-        [-sx/2 + frameW/2, sz/2 - frameW/2],
-        [sx/2 - frameW/2, -sz/2 + frameW/2],
-        [sx/2 - frameW/2, sz/2 - frameW/2]
-      ];
-      offsets.forEach(([cx, cz]) => {
-        const col = new three.Mesh(colGeo, accentMat);
-        col.position.set(cx, 0, cz);
-        group.add(col);
-      });
-      
-      if (obj.emissive && obj.emissive !== '#000000') {
-        const glowGeo = new three.BoxGeometry(sx * 0.4, sy * 0.4, sz * 0.86);
-        const glowP = new three.Mesh(glowGeo, glowMat);
-        glowP.position.set(0, 0, 0);
-        group.add(glowP);
-      }
-      
+      voxelGroup = buildVoxelTechCrate(sx, sy, sz, obj.color, emissiveHex);
     } else {
-      // 4. GENERAL BEVELED SCI-FI BOX WITH DETAILED OUTLINE PANELING
-      const bodyGeo = new three.BoxGeometry(sx * 0.96, sy * 0.96, sz * 0.96);
-      const body = new three.Mesh(bodyGeo, mat);
-      group.add(body);
-      
-      const frameThickness = 0.04 * Math.min(sx, sy, sz);
-      const frameGeoX = new three.BoxGeometry(sx * 1.01, frameThickness, frameThickness);
-      const frameGeoY = new three.BoxGeometry(frameThickness, sy * 1.01, frameThickness);
-      const frameGeoZ = new three.BoxGeometry(frameThickness, frameThickness, sz * 1.01);
-      
-      const edgeY = sy/2 - frameThickness/2;
-      const edgeZ = sz/2 - frameThickness/2;
-      const edgeX = sx/2 - frameThickness/2;
-      
-      [[-edgeY, -edgeZ], [-edgeY, edgeZ], [edgeY, -edgeZ], [edgeY, edgeZ]].forEach(([ey, ez]) => {
-        const bar = new three.Mesh(frameGeoX, accentMat);
-        bar.position.set(0, ey, ez);
-        group.add(bar);
-      });
-      
-      [[-edgeX, -edgeZ], [-edgeX, edgeZ], [edgeX, -edgeZ], [edgeX, edgeZ]].forEach(([ex, ez]) => {
-        const bar = new three.Mesh(frameGeoY, accentMat);
-        bar.position.set(ex, 0, ez);
-        group.add(bar);
-      });
+      // General fall-back box
+      voxelGroup = buildVoxelTechCrate(sx, sy, sz, obj.color, emissiveHex);
     }
     
   } else if (obj.type === 'cylinder') {
-    const isForerunner = ['forerunner_panel', 'forerunner_gold'].includes(obj.texture) ||
+    const isForerunner = ['forerunner_panel', 'forerunner_gold'].includes(obj.texture || '') ||
                         nameLower.includes('spire') || nameLower.includes('pylon') || nameLower.includes('beacon') || nameLower.includes('forerunner');
     const isTechColumn = nameLower.includes('pillar') || nameLower.includes('column') || 
                          nameLower.includes('anchor') || nameLower.includes('generator') ||
-                         ['space_alloy', 'futuristic_hex', 'synthwave_neon_laser', 'rainy_streets_neon_glow'].includes(obj.texture);
+                         ['space_alloy', 'futuristic_hex', 'synthwave_neon_laser', 'rainy_streets_neon_glow'].includes(obj.texture || '');
     
     if (isForerunner) {
-      // 1. ANCIENT FORERUNNER ANCHOR PYLON / TAPERING OCTAGONAL SPIRE
-      const baseH = sy * 0.14;
-      const baseGeo = new three.CylinderGeometry(sx * 0.72, sx * 0.72, baseH, 8);
-      const base = new three.Mesh(baseGeo, mat);
-      base.position.y = -sy/2 + baseH/2;
-      group.add(base);
-      
-      const shaftH = sy * 0.76;
-      const shaftGeo = new three.CylinderGeometry(sx * 0.32, sx * 0.58, shaftH, 8);
-      const shaft = new three.Mesh(shaftGeo, mat);
-      shaft.position.y = base.position.y + baseH/2 + shaftH/2;
-      group.add(shaft);
-      
-      const ribW = 0.08 * sx;
-      const ribD = 0.1 * sx;
-      const ribGeo = new three.BoxGeometry(ribW, shaftH * 1.02, ribD);
-      const offsets = [
-        [0, -sx * 0.45],
-        [0, sx * 0.45],
-        [-sx * 0.45, 0],
-        [sx * 0.45, 0]
-      ];
-      offsets.forEach(([rx, rz]) => {
-        const rib = new three.Mesh(ribGeo, accentMat);
-        rib.position.set(rx, shaft.position.y, rz);
-        if (rx !== 0) rib.rotation.z = rx > 0 ? 0.07 : -0.07;
-        if (rz !== 0) rib.rotation.x = rz > 0 ? -0.07 : 0.07;
-        group.add(rib);
-      });
-      
-      const capH = sy * 0.08;
-      const capGeo = new three.CylinderGeometry(0, sx * 0.22, capH, 8);
-      const cap = new three.Mesh(capGeo, glowMat);
-      cap.position.y = shaft.position.y + shaftH/2 + capH * 0.7;
-      group.add(cap);
-      
+      voxelGroup = buildVoxelForerunnerSpire(sx, sy, sz, obj.color, emissiveHex);
     } else if (isTechColumn) {
-      // 2. DETAILED SCI-FI CYLINDRICAL GENERATOR COLUMN / SEGMENTED GLOW PILLAR
-      const collarH = sy * 0.08;
-      const collarGeo = new three.CylinderGeometry(sx * 0.58, sx * 0.58, collarH, 32);
-      const baseCollar = new three.Mesh(collarGeo, accentMat);
-      baseCollar.position.y = -sy/2 + collarH/2;
-      group.add(baseCollar);
-      
-      const topCollar = new three.Mesh(collarGeo, accentMat);
-      topCollar.position.y = sy/2 - collarH/2;
-      group.add(topCollar);
-      
-      const shaftH = sy * 0.8;
-      const shaftGeo = new three.CylinderGeometry(sx * 0.48, sx * 0.48, shaftH, 32);
-      const shaft = new three.Mesh(shaftGeo, mat);
-      shaft.position.y = 0;
-      group.add(shaft);
-      
-      const glowRingRadius = sx * 0.505;
-      const ringGeo = new three.CylinderGeometry(glowRingRadius, glowRingRadius, sy * 0.04, 32);
-      
-      const ringPositions = [-sy * 0.22, 0, sy * 0.22];
-      ringPositions.forEach(ry => {
-        const ring = new three.Mesh(ringGeo, glowMat);
-        ring.position.y = ry;
-        group.add(ring);
-      });
-      
-      const gasketGeo = new three.CylinderGeometry(sx * 0.495, sx * 0.495, sy * 0.02, 32);
-      [-sy * 0.11, sy * 0.11].forEach(gy => {
-        const gasket = new three.Mesh(gasketGeo, accentMat);
-        gasket.position.y = gy;
-        group.add(gasket);
-      });
-      
+      voxelGroup = buildVoxelForerunnerSpire(sx, sy, sz, obj.color, emissiveHex);
     } else {
-      // 3. STYLIZED CORE CYLINDER
-      const baseH = sy * 0.05;
-      const baseGeo = new three.CylinderGeometry(sx * 0.52, sx * 0.52, baseH, 32);
-      
-      const base = new three.Mesh(baseGeo, accentMat);
-      base.position.y = -sy/2 + baseH/2;
-      group.add(base);
-      
-      const top = new three.Mesh(baseGeo, accentMat);
-      top.position.y = sy/2 - baseH/2;
-      group.add(top);
-      
-      const bodyGeo = new three.CylinderGeometry(sx * 0.48, sx * 0.48, sy * 0.9, 32);
-      const body = new three.Mesh(bodyGeo, mat);
-      group.add(body);
+      voxelGroup = buildVoxelForerunnerSpire(sx, sy, sz, obj.color, emissiveHex);
     }
     
   } else {
     const isReactor = nameLower.includes('core') || nameLower.includes('reactor') || 
                       nameLower.includes('plasma') || nameLower.includes('emitter') ||
-                      ['futuristic_shield', 'synthwave_chrome'].includes(obj.texture);
+                      ['futuristic_shield', 'synthwave_chrome'].includes(obj.texture || '');
     
     if (isReactor) {
-      // 1. HIGH-TECH PLASMA CORE REACTOR / FLOAT EMITTER CORE (PLANETARY ORBITS)
-      const coreRadius = sx * 0.35;
-      const coreGeo = new three.SphereGeometry(coreRadius, 32, 32);
-      const core = new three.Mesh(coreGeo, mat);
-      group.add(core);
-      
-      const ringOuterR = sx * 0.52;
-      const ringTubeR = 0.03 * sx;
-      
-      const ring1Geo = new three.TorusGeometry(ringOuterR, ringTubeR, 12, 48);
-      const ring1 = new three.Mesh(ring1Geo, accentMat);
-      ring1.rotation.y = Math.PI / 6;
-      group.add(ring1);
-      
-      const ring2Geo = new three.TorusGeometry(ringOuterR * 1.05, ringTubeR, 12, 48);
-      const ring2 = new three.Mesh(ring2Geo, accentMat);
-      ring2.rotation.x = Math.PI / 2;
-      ring2.rotation.y = -Math.PI / 6;
-      group.add(ring2);
-      
-      const rodL = sx * 0.18;
-      const rodGeo = new three.CylinderGeometry(0.02 * sx, 0.03 * sx, rodL, 8);
-      const offsets = [
-        [sx * 0.48, 0, 0, -Math.PI/2],
-        [-sx * 0.48, 0, 0, Math.PI/2],
-        [0, 0, sx * 0.48, 0],
-        [0, 0, -sx * 0.48, Math.PI]
-      ];
-      
-      offsets.forEach(([rx, ry, rz, rotZ]) => {
-        const rodGroup = new three.Group();
-        rodGroup.position.set(rx, ry, rz);
-        
-        const rod = new three.Mesh(rodGeo, accentMat);
-        rod.rotation.z = rotZ;
-        if (rz !== 0) rod.rotation.x = rz > 0 ? Math.PI/2 : -Math.PI/2;
-        
-        const tipGeo = new three.SphereGeometry(0.04 * sx, 8, 8);
-        const tip = new three.Mesh(tipGeo, glowMat);
-        tip.position.y = -rodL/2;
-        rod.add(tip);
-        
-        rodGroup.add(rod);
-        group.add(rodGroup);
-      });
-      
+      voxelGroup = buildVoxelReactor(sx, sy, sz, obj.color, emissiveHex);
     } else {
-      // 2. GEODESIC DOME WITH MULTI-FACETED GRID HIGHLIGHTS
-      const bodyGeo = new three.IcosahedronGeometry(sx / 2, 2);
-      const body = new three.Mesh(bodyGeo, mat);
-      group.add(body);
-      
-      const wireGeo = new three.IcosahedronGeometry(sx * 0.505, 2);
-      const wireMat = new three.MeshBasicMaterial({
-        color: new three.Color(obj.color || '#00ffff'),
-        wireframe: true,
-        transparent: true,
-        opacity: 0.18
-      });
-      const wire = new three.Mesh(wireGeo, wireMat);
-      group.add(wire);
+      // General fall-back sphere
+      voxelGroup = buildVoxelReactor(sx, sy, sz, obj.color, emissiveHex);
     }
   }
+
+  group.add(voxelGroup);
 
   // Traverse children to enable shadows, PBR rendering details, and link raycasting IDs
   group.traverse(child => {
@@ -455,6 +308,7 @@ export function createHighFidelityObjectMesh(
 
   return group;
 }
+
 
 // Helper: Create custom procedural textures dynamically using 2D HTML Canvas
 export const generateCustomTexture = (type: string, baseColorHex: string): THREE.Texture => {

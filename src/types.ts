@@ -36,6 +36,7 @@ export interface UniversalSettings {
   ambientLightIntensity: number;          // Intensity of the ambient light (e.g. 0.1 to 3.5)
   skyboxBrightness: number;               // Brightness of the skybox / background (e.g. 0 to 100)
   skyboxHue: number;                      // Color hue of the skybox / background (e.g. 0 to 360)
+  showSkybox: boolean;                    // Whether the skybox is visible or disabled
   enableSwordTrade: boolean;              // Toggle for Sword vs Sword trades
   enableHammerSwordTrade: boolean;         // Toggle for Hammer vs Sword trades
   swordTradeWindow: number;               // Timing window for Sword vs Sword in ms (e.g. 50ms to 800ms)
@@ -659,6 +660,7 @@ export interface CustomMapData {
   arenaRadius: number;
   skyboxHue?: number;
   skyboxBrightness?: number;
+  skyboxTexture?: string;
   fogColor?: string;
   fogDensity?: number;
   spawnPoints: { x: number; y: number; z: number }[];

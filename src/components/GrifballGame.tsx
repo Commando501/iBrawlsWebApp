@@ -9,6 +9,7 @@ import { sfx } from './AudioEngine';
 import { buildGravityHammerModel, buildVoxelSpartanModel, buildKatarSwordModel, buildPistolModel } from './VoxelModels';
 import { AIBehaviorState, DeathEvent, DEFAULT_KEYBINDINGS, MedalInfo, Combatant, ReplayFrame, CustomMapData } from '../types';
 import { cacheReplay } from '../game/theaterDatabase';
+import { getSkyboxTexture } from '../game/skyboxTextures';
 import { type AILungeOutcome, evaluateAICombatDecision } from '../game/aiCombatDecision';
 import { bakeNavMesh, findShortestPath } from '../game/mapNavigation';
 import { resetAIMatchContext, tickFeintCooldown, getFeintCooldownRemaining, startFeintCooldown, isWeaponSwapFeintActive, startWeaponSwapFeint, tickWeaponSwapFeintTimer, getOrCreateBotPsychState, tickBotPsychState, getBotComboState, setBotComboState, clearBotComboState } from '../game/aiMatchContext';
@@ -2313,8 +2314,35 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       if (threeRef.current.scene.fog) {
         threeRef.current.scene.fog.color.copy(finalColor);
       }
+
+      // Update Sky Dome procedural texture in real-time
+      if (threeRef.current.skyboxMesh && threeRef.current.skyboxMesh.material) {
+        threeRef.current.skyboxMesh.visible = adminSettings.showSkybox !== false;
+        let skyType = 'cyberpunk';
+        const activeCustomMap = resolveActiveCustomMap({ customMap, replayData, selectedMap });
+        const effectiveMapId = replayData ? replayData.mapType : selectedMap;
+        const isHangar = effectiveMapId === 'hangar';
+
+        if (activeCustomMap) {
+          skyType = activeCustomMap.skyboxTexture || activeCustomMap.theme || 'cyberpunk';
+          if (skyType === 'matched') {
+            skyType = activeCustomMap.theme || 'cyberpunk';
+          }
+        } else if (isHangar) {
+          skyType = 'hangar';
+        }
+
+        try {
+          const newTex = getSkyboxTexture(skyType, hue, brightness, colorString);
+          const mat = threeRef.current.skyboxMesh.material as THREE.MeshBasicMaterial;
+          mat.map = newTex;
+          mat.needsUpdate = true;
+        } catch (err) {
+          console.error('Failed to update skybox texture:', err);
+        }
+      }
     }
-  }, [adminSettings]);
+  }, [adminSettings, customMap, replayData, selectedMap]);
 
   useEffect(() => {
     resetAIMatchContext(stateRef.current.aiMatchContext);
@@ -2617,10 +2645,46 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     scene.background = skyColor; 
     scene.fog = new THREE.FogExp2(bgHex, fogDensity); 
 
+    // Setup procedural sky dome
+    let skyType = 'cyberpunk';
+    let sHue = adminSettings.skyboxHue !== undefined ? adminSettings.skyboxHue : 280;
+    let sBrightness = adminSettings.skyboxBrightness !== undefined ? adminSettings.skyboxBrightness : 5;
+
+    if (activeCustomMap) {
+      skyType = activeCustomMap.skyboxTexture || activeCustomMap.theme || 'cyberpunk';
+      if (skyType === 'matched') {
+        skyType = activeCustomMap.theme || 'cyberpunk';
+      }
+      sHue = activeCustomMap.skyboxHue ?? sHue;
+      sBrightness = activeCustomMap.skyboxBrightness ?? sBrightness;
+    } else if (isHangar) {
+      skyType = 'hangar';
+      sHue = 220;
+      sBrightness = 3;
+    }
+
+    try {
+      const skyTexture = getSkyboxTexture(skyType, sHue, sBrightness, bgHex);
+      const skyGeo = new THREE.SphereGeometry(250, 32, 15);
+      const skyMat = new THREE.MeshBasicMaterial({
+        map: skyTexture,
+        side: THREE.BackSide,
+        fog: false,
+        depthWrite: false
+      });
+      const skyMesh = new THREE.Mesh(skyGeo, skyMat);
+      skyMesh.name = 'skybox_mesh';
+      skyMesh.visible = adminSettings.showSkybox !== false;
+      scene.add(skyMesh);
+      threeRef.current.skyboxMesh = skyMesh;
+    } catch (err) {
+      console.error('Failed to create skybox mesh:', err);
+    }
+
     const width = containerRef.current.clientWidth || window.innerWidth;
     const height = containerRef.current.clientHeight || window.innerHeight;
     const aspect = width / height;
-    const camera = new THREE.PerspectiveCamera(75, aspect, 0.1, 100);
+    const camera = new THREE.PerspectiveCamera(75, aspect, 0.1, 400);
     threeRef.current.camera = camera;
     scene.add(camera);
 
@@ -2724,8 +2788,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         map: floorTexture,
         bumpMap: floorTexture,
         bumpScale: activeCustomMap.theme === 'winter_rink' ? 0.005 : (activeCustomMap.theme === 'grifball_stadium' ? 0.015 : 0.02),
-        roughness: activeCustomMap.theme === 'winter_rink' ? 0.08 : (activeCustomMap.theme === 'grifball_stadium' ? 0.18 : 0.8),
-        metalness: activeCustomMap.theme === 'winter_rink' ? 0.95 : (activeCustomMap.theme === 'grifball_stadium' ? 0.9 : 0.5),
+        roughness: activeCustomMap.theme === 'winter_rink' ? 0.2 : (activeCustomMap.theme === 'grifball_stadium' ? 0.18 : 0.8),
+        metalness: activeCustomMap.theme === 'winter_rink' ? 0.1 : (activeCustomMap.theme === 'grifball_stadium' ? 0.9 : 0.5),
       });
       const floor = new THREE.Mesh(floorGeo, floorMat);
       floor.position.y = -0.1;
@@ -3112,188 +3176,6 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         threeRef.current.customMapObjects!.push(rainyGroup);
       }
 
-      // Spawn Winter/Glacier scenery if theme is winter_rink
-      if (activeCustomMap.theme === 'winter_rink') {
-        const winterGroup = new THREE.Group();
-        winterGroup.name = 'winter_scenery';
-
-        const snowTexture = generateCustomTexture('winter_snow', '#ffffff');
-        const glassTexture = generateCustomTexture('winter_glacier_glass', '#93c5fd');
-
-        // 1. Giant Low-Poly Icebergs / Glaciers in the background
-        const icebergPositions = [
-          { x: -38, z: -40 },
-          { x: -15, z: -48 },
-          { x: 12, z: -45 },
-          { x: 35, z: -38 },
-          { x: -45, z: 5 },
-          { x: 45, z: -5 }
-        ];
-
-        icebergPositions.forEach((pos, idx) => {
-          const radius = 6 + Math.random() * 6;
-          const height = 15 + Math.random() * 20;
-          const iceGeo = new THREE.ConeGeometry(radius, height, 4); // 4-sided pyramid
-          iceGeo.translate(0, height / 2, 0); // rest base on ground
-          
-          const iceMat = new THREE.MeshStandardMaterial({
-            map: glassTexture,
-            color: new THREE.Color('#93c5fd'),
-            metalness: 0.95,
-            roughness: 0.08,
-            opacity: 0.8,
-            transparent: true,
-            emissive: new THREE.Color(idx % 2 === 0 ? '#3b82f6' : '#60a5fa'),
-            emissiveIntensity: 1.8
-          });
-
-          const iceberg = new THREE.Mesh(iceGeo, iceMat);
-          iceberg.position.set(pos.x, -1.0, pos.z);
-          iceberg.rotation.y = Math.random() * Math.PI;
-          iceberg.rotation.x = (Math.random() - 0.5) * 0.1;
-          iceberg.castShadow = true;
-          iceberg.receiveShadow = true;
-          winterGroup.add(iceberg);
-        });
-
-        // 2. Snow Dunes / Banks surrounding the rink
-        const duneGeo = new THREE.SphereGeometry(1, 16, 12);
-        const duneMat = new THREE.MeshStandardMaterial({
-          map: snowTexture,
-          color: new THREE.Color('#ffffff'),
-          roughness: 0.95,
-          metalness: 0.05
-        });
-
-        const dunePositions = [
-          { x: -26, y: -0.6, z: -14, sx: 18, sy: 1.5, sz: 12 },
-          { x: 26, y: -0.6, z: -14, sx: 18, sy: 1.5, sz: 12 },
-          { x: -26, y: -0.6, z: 14, sx: 18, sy: 1.5, sz: 12 },
-          { x: 26, y: -0.6, z: 14, sx: 18, sy: 1.5, sz: 12 },
-          { x: 0, y: -1.0, z: -15, sx: 35, sy: 2.0, sz: 14 },
-          { x: 0, y: -1.0, z: 15, sx: 35, sy: 2.0, sz: 14 }
-        ];
-
-        dunePositions.forEach(d => {
-          const mesh = new THREE.Mesh(duneGeo, duneMat);
-          mesh.position.set(d.x, d.y, d.z);
-          mesh.scale.set(d.sx, d.sy, d.sz);
-          mesh.receiveShadow = true;
-          winterGroup.add(mesh);
-        });
-
-        // 3. Snowy Pine Trees
-        const buildSnowyPineTree = () => {
-          const tree = new THREE.Group();
-
-          // Trunk (nature_wood texture)
-          const woodTexture = generateCustomTexture('nature_wood', '#451a03');
-          const trunkGeo = new THREE.CylinderGeometry(0.2, 0.35, 3.5, 8);
-          const trunkMat = new THREE.MeshStandardMaterial({
-            map: woodTexture,
-            color: new THREE.Color('#3f2512'),
-            roughness: 0.9,
-            metalness: 0.1
-          });
-          const trunk = new THREE.Mesh(trunkGeo, trunkMat);
-          trunk.position.y = 1.75;
-          trunk.castShadow = true;
-          trunk.receiveShadow = true;
-          tree.add(trunk);
-
-          // Canopy Layers (Forest green branches + snow caps stacked)
-          const pineMat = new THREE.MeshStandardMaterial({
-            color: new THREE.Color('#0f5132'), // dark green needles
-            roughness: 0.95,
-            metalness: 0.05
-          });
-
-          const canopyLayers = [
-            { r: 2.4, h: 2.2, y: 3.2, snowH: 0.4 },
-            { r: 1.8, h: 1.8, y: 4.6, snowH: 0.35 },
-            { r: 1.2, h: 1.4, y: 5.8, snowH: 0.3 }
-          ];
-
-          canopyLayers.forEach(layer => {
-            // Pine cone branches
-            const pineGeo = new THREE.ConeGeometry(layer.r, layer.h, 6);
-            pineGeo.translate(0, layer.h / 2, 0);
-            const pine = new THREE.Mesh(pineGeo, pineMat);
-            pine.position.y = layer.y;
-            pine.castShadow = true;
-            pine.receiveShadow = true;
-            tree.add(pine);
-
-            // Snowy cap resting on top of branches
-            const capGeo = new THREE.ConeGeometry(layer.r + 0.05, layer.snowH, 6);
-            capGeo.translate(0, layer.snowH / 2, 0);
-            const cap = new THREE.Mesh(capGeo, duneMat);
-            cap.position.y = layer.y + layer.h - layer.snowH * 0.9;
-            cap.castShadow = true;
-            cap.receiveShadow = true;
-            tree.add(cap);
-          });
-
-          return tree;
-        };
-
-        const treePositions = [
-          { x: -23, z: -15 },
-          { x: -27, z: -5 },
-          { x: -25, z: 8 },
-          { x: 23, z: -16 },
-          { x: 27, z: -4 },
-          { x: 25, z: 9 },
-          { x: -14, z: -17 },
-          { x: 14, z: -17 }
-        ];
-
-        treePositions.forEach(pos => {
-          const t = buildSnowyPineTree();
-          t.position.set(pos.x, -0.2, pos.z);
-          t.scale.set(0.9 + Math.random() * 0.3, 0.8 + Math.random() * 0.4, 0.9 + Math.random() * 0.3);
-          t.rotation.y = Math.random() * Math.PI;
-          winterGroup.add(t);
-        });
-
-        // 4. Soft Drifting Snow Weather Particles
-        const snowCount = 1500;
-        const snowGeo = new THREE.BufferGeometry();
-        const snowPositions = new Float32Array(snowCount * 3);
-        const snowVelocities = [];
-
-        for (let i = 0; i < snowCount; i++) {
-          const rx = (Math.random() - 0.5) * activeCustomMap.arenaRadius * 3.2;
-          const ry = Math.random() * 25 + 0.1;
-          const rz = (Math.random() - 0.5) * activeCustomMap.arenaRadius * 2.2;
-
-          snowPositions[i * 3] = rx;
-          snowPositions[i * 3 + 1] = ry;
-          snowPositions[i * 3 + 2] = rz;
-
-          snowVelocities.push({
-            x: (Math.random() - 0.5) * 0.6,
-            y: -1.8 - Math.random() * 1.6, // gentle fall speed
-            z: (Math.random() - 0.5) * 0.6
-          });
-        }
-
-        snowGeo.setAttribute('position', new THREE.BufferAttribute(snowPositions, 3));
-        const snowMat = new THREE.PointsMaterial({
-          color: '#ffffff',
-          size: 0.34, // fluffy snow
-          transparent: true,
-          opacity: 0.75,
-          blending: THREE.AdditiveBlending,
-          depthWrite: false
-        });
-
-        const snowParticles = new THREE.Points(snowGeo, snowMat);
-        snowParticles.name = 'snow_particles';
-        snowParticles.userData = { velocities: snowVelocities, arenaRadius: activeCustomMap.arenaRadius };
-        winterGroup.add(snowParticles);
-
-      }
       
       // Spawn Winter/Glacier scenery if theme is winter_rink
       if (activeCustomMap.theme === 'winter_rink') {
@@ -3322,20 +3204,20 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
           const iceMat = new THREE.MeshStandardMaterial({
             map: glassTexture,
             color: new THREE.Color('#93c5fd'),
-            metalness: 0.95,
-            roughness: 0.08,
+            metalness: 0.1,
+            roughness: 0.22,
             opacity: 0.8,
             transparent: true,
             emissive: new THREE.Color(idx % 2 === 0 ? '#3b82f6' : '#60a5fa'),
-            emissiveIntensity: 1.8
+            emissiveIntensity: 0.8
           });
 
           const iceberg = new THREE.Mesh(iceGeo, iceMat);
           iceberg.position.set(pos.x, -1.0, pos.z);
           iceberg.rotation.y = Math.random() * Math.PI;
           iceberg.rotation.x = (Math.random() - 0.5) * 0.1;
-          iceberg.castShadow = true;
-          iceberg.receiveShadow = true;
+          iceberg.castShadow = false;
+          iceberg.receiveShadow = false;
           winterGroup.add(iceberg);
         });
 
@@ -3361,7 +3243,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
           const mesh = new THREE.Mesh(duneGeo, duneMat);
           mesh.position.set(d.x, d.y, d.z);
           mesh.scale.set(d.sx, d.sy, d.sz);
-          mesh.receiveShadow = true;
+          mesh.receiveShadow = false;
           winterGroup.add(mesh);
         });
 
@@ -3380,8 +3262,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
           });
           const trunk = new THREE.Mesh(trunkGeo, trunkMat);
           trunk.position.y = 1.75;
-          trunk.castShadow = true;
-          trunk.receiveShadow = true;
+          trunk.castShadow = false;
+          trunk.receiveShadow = false;
           tree.add(trunk);
 
           // Canopy Layers (Forest green branches + snow caps stacked)
@@ -3403,8 +3285,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
             pineGeo.translate(0, layer.h / 2, 0);
             const pine = new THREE.Mesh(pineGeo, pineMat);
             pine.position.y = layer.y;
-            pine.castShadow = true;
-            pine.receiveShadow = true;
+            pine.castShadow = false;
+            pine.receiveShadow = false;
             tree.add(pine);
 
             // Snowy cap resting on top of branches
@@ -3412,8 +3294,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
             capGeo.translate(0, layer.snowH / 2, 0);
             const cap = new THREE.Mesh(capGeo, duneMat);
             cap.position.y = layer.y + layer.h - layer.snowH * 0.9;
-            cap.castShadow = true;
-            cap.receiveShadow = true;
+            cap.castShadow = false;
+            cap.receiveShadow = false;
             tree.add(cap);
           });
 
@@ -5963,6 +5845,11 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       }
 
 
+
+      // Slowly rotate the sky dome
+      if (threeRef.current.skyboxMesh) {
+        threeRef.current.skyboxMesh.rotation.y += dt * 0.004;
+      }
 
       // Lazy build Host Spartan model when entering spectator mode
       if (s.isObserverMode && !threeRef.current.hostGroup && !replayData) {
