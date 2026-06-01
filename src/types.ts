@@ -552,7 +552,8 @@ export interface CustomMapObject {
     | 'forerunner_panel' | 'forerunner_gold'
     | 'synthwave_grid' | 'synthwave_neon_laser' | 'synthwave_chrome'
     | 'rainy_streets_asphalt' | 'rainy_streets_neon_glow' | 'rainy_streets_dog_billboard'
-    | 'winter_ice' | 'winter_snow' | 'winter_glacier_glass';
+    | 'winter_ice' | 'winter_snow' | 'winter_glacier_glass'
+    | 'stadium_steel_grid' | 'stadium_scoreboard_screen' | 'stadium_advertisement_sapphire' | 'stadium_advertisement_gauss';
 }
 
 export interface CustomMapPointLight {
@@ -578,7 +579,7 @@ export interface CustomMapData {
   name: string;
   description: string;
   author: string;
-  theme: 'hangar' | 'holodeck' | 'cyberpunk' | 'rust' | 'nature' | 'space' | 'fantasy' | 'forerunner' | 'synthwave' | 'rainy_streets' | 'winter_rink';
+  theme: 'hangar' | 'holodeck' | 'cyberpunk' | 'rust' | 'nature' | 'space' | 'fantasy' | 'forerunner' | 'synthwave' | 'rainy_streets' | 'winter_rink' | 'grifball_stadium';
   mapShape?: 'circle' | 'rectangular';
   arenaRadius: number;
   skyboxHue?: number;

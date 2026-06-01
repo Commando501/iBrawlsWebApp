@@ -164,6 +164,7 @@ Local play setups feature an interactive map selector overlay supported by a dyn
 - **Neon Outrun Grid (Preset)**: A suspended rectangular retro holodeck hovering over a glowing cyber city at twilight. Features glowing neon palm trees, background light beams, and a colossal striped sunset sun.
 - **Rainy Cyber Streets (Preset)**: A dark, rain-slicked industrial street court under warm sodium spotlights, framed by towering skyscrapers and a giant neon dog billboard.
 - **Glacier Hockey Rink (Preset)**: A pristine rectangular ice hockey arena set in a beautiful, sunlit arctic glacier valley. Features surrounding clear-blue acrylic glass boards, red hockey goal posts, background icebergs, snowy pine trees, and gently falling snow.
+- **Grifball Championship Stadium (Preset)**: An elite, high-tech steel arena framed by cheering stands, brilliant stadium spotlights, a massive center scoreboard, and glowing team boundary lines. Features a suspended scoreboard showing Spartan silhouette screens and corner floodlight towers casting dramatic light beams.
 - **Custom Local Map**: Load a custom map file (`.json`) exported from the local Standalone Map Maker. The 3D thumbnail preview updates in real-time to render all placed obstacles, light sources, and spawn points in miniature!
 
 ## Standalone 3D Map Maker
@@ -194,7 +195,7 @@ iBrawls features a beautiful, feature-rich, and completely standalone 3D Map Mak
 - **Flexible Object Placement**: Place and transform Box, Cylinder, and Sphere obstacles. Modify dimensions, position, rotation, opacity, metalness, roughness, colors, emissive neon glow, and collidable status (`isCollidable`).
 - **Flexible Arena Shapes**: Toggle between **Circular** and **Rectangular** boundaries. The rectangular court uses a standard 2:1 aspect ratio with a dedicated rectangular grid helper.
 - **Dynamic Lighting Controls**: Add custom point lights to set up mood lighting. Adjust position, distance, intensity, decay, and color using real-time inspectors.
-- **Texture Presets**: Dress obstacles in 20 custom texture profiles matching 7 distinct themes:
+- **Texture Presets**: Dress obstacles in 24 custom texture profiles matching 10 distinct themes:
   - *Nature*: Grass turf (`nature_grass`), Mossy Stone (`nature_mossy_stone`), Wood Grain (`nature_wood`).
   - *Space*: Starbase alloy plate (`space_alloy`), Lunar meteorite crag (`space_meteorite`), Cosmic dust (`space_lunar_dust`).
   - *Futuristic*: Sleek carbon fiber (`futuristic_carbon`), Neon hexagonal plates (`futuristic_hex`), Energy grid shield (`futuristic_shield`).
@@ -204,6 +205,7 @@ iBrawls features a beautiful, feature-rich, and completely standalone 3D Map Mak
   - *Synthwave*: Synthwave Cyan Grid (`synthwave_grid`), Neon Laser Energy (`synthwave_neon_laser`), Sunset Chrome (`synthwave_chrome`).
   - *Rainy Streets*: Wet Asphalt Tarmac (`rainy_streets_asphalt`), Amber Neon Glow (`rainy_streets_neon_glow`), Tech Dog Billboard (`rainy_streets_dog_billboard`).
   - *Winter Glacier*: Glacier Rink Ice (`winter_ice`), Powdery Snow (`winter_snow`), Translucent Frost Glass (`winter_glacier_glass`).
+  - *Grifball Stadium*: Diamond Steel Grid (`stadium_steel_grid`), Scoreboard Screen (`stadium_scoreboard_screen`), Sapphire Burger Ad (`stadium_advertisement_sapphire`), Gauss Soda Ad (`stadium_advertisement_gauss`).
 - **Automated Nav-Mesh Baking**: Spatial analysis engine automatically runs spartan clearance tests ($0.65\text{m}$) against circular or rectangular collidable boundaries to generate a 2D Node Navigation Grid. Walkable paths are visualized as beautiful glowing green nodes with blue connection lines in the editor viewport!
 - **Local File System IO**: Fully offline-based import and export. Save maps as local `.json` files to distribute to other players or load them directly in the game lobby for training skirmishes.
 

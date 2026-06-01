@@ -75,7 +75,7 @@ import { CharacterPreview } from './components/CharacterPreview';
 import { CharacterPainter } from './components/CharacterPainter';
 import { CharacterLoadout, DEFAULT_LOADOUT, AVAILABLE_PRESETS, HelmetPreset, TorsoPreset, ArmPreset, LegPreset } from './components/VoxelModels';
 
-const APP_VERSION = '0.537';
+const APP_VERSION = '0.539';
 const MAX_PLAYER_NAME_LENGTH = 10;
 
 interface OnlineClient {
@@ -833,6 +833,8 @@ const MapPreview: React.FC<{ selectedMap: string; customMap?: CustomMapData | nu
         floorColor = '#0f121a';
       } else if (mapData.theme === 'winter_rink') {
         floorColor = '#e0f2fe';
+      } else if (mapData.theme === 'grifball_stadium') {
+        floorColor = '#111318';
       }
       
       floor.geometry.dispose();
@@ -6222,7 +6224,7 @@ export default function App() {
                     <option value="circle">🌐 Circle Arena (Minimalist)</option>
                     {PREMADE_MAPS.map(m => (
                       <option key={m.id} value={m.id}>
-                        {m.theme === 'cyberpunk' ? '🌐' : m.theme === 'nature' ? '🌳' : m.theme === 'space' ? '🚀' : m.theme === 'synthwave' ? '🌴' : m.theme === 'rainy_streets' ? '🌧️' : m.theme === 'winter_rink' ? '❄️' : '⚔️'} {m.name} (Preset)
+                        {m.theme === 'cyberpunk' ? '🌐' : m.theme === 'nature' ? '🌳' : m.theme === 'space' ? '🚀' : m.theme === 'synthwave' ? '🌴' : m.theme === 'rainy_streets' ? '🌧️' : m.theme === 'winter_rink' ? '❄️' : m.theme === 'grifball_stadium' ? '🏟️' : '⚔️'} {m.name} (Preset)
                       </option>
                     ))}
                     <option value="custom_file">💾 Load Custom Map (.json)</option>
