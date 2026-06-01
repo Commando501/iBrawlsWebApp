@@ -56,6 +56,9 @@ export interface SprintDecisionInput {
   isSliding: boolean;
   /** Target's recede speed from getTargetRecedingSpeed; >0 means fleeing. */
   targetRecedingSpeed: number;
+  /** Tuning overrides (default to module constants). */
+  engageGap?: number;
+  chaseTargetSpeed?: number;
 }
 
 /**
@@ -70,9 +73,11 @@ export function shouldAISprint(input: SprintDecisionInput): boolean {
   if (!SPRINT_STATES.has(input.state)) {
     return false;
   }
-  const farEnough = input.distanceToTarget > input.engageRange + SPRINT_ENGAGE_GAP;
+  const engageGap = input.engageGap ?? SPRINT_ENGAGE_GAP;
+  const chaseTargetSpeed = input.chaseTargetSpeed ?? SPRINT_CHASE_TARGET_SPEED;
+  const farEnough = input.distanceToTarget > input.engageRange + engageGap;
   const targetFleeing =
-    input.targetRecedingSpeed >= SPRINT_CHASE_TARGET_SPEED &&
+    input.targetRecedingSpeed >= chaseTargetSpeed &&
     input.distanceToTarget > input.engageRange + 1.0;
   return farEnough || targetFleeing;
 }
@@ -93,6 +98,11 @@ export interface SlideStartInput {
   isSliding: boolean;
   targetProtected: boolean;
   rng?: number;
+  /** Tuning overrides (default to module constants). */
+  minComplexity?: number;
+  minGap?: number;
+  maxGap?: number;
+  triggerChance?: number;
 }
 
 /**
@@ -107,23 +117,23 @@ export function shouldStartAISlide(input: SlideStartInput): boolean {
   if (input.slideCooldownRemaining > 0 || input.targetProtected) {
     return false;
   }
-  if (input.movementComplexity < SLIDE_MIN_COMPLEXITY) {
+  if (input.movementComplexity < (input.minComplexity ?? SLIDE_MIN_COMPLEXITY)) {
     return false;
   }
   if (input.state !== 'APPROACHING') {
     return false;
   }
   const gap = input.distanceToTarget - input.engageRange;
-  if (gap < SLIDE_MIN_GAP || gap > SLIDE_MAX_GAP) {
+  if (gap < (input.minGap ?? SLIDE_MIN_GAP) || gap > (input.maxGap ?? SLIDE_MAX_GAP)) {
     return false;
   }
   const rng = input.rng ?? Math.random();
-  return rng < SLIDE_TRIGGER_CHANCE;
+  return rng < (input.triggerChance ?? SLIDE_TRIGGER_CHANCE);
 }
 
 /** Slide ground speed (m/s), scaled from the live `speedSlide` percentage. */
-export function getSlideSpeed(speedSlide: number | undefined): number {
-  return AI_BASE_GROUND_SPEED * Math.max(0.2, (speedSlide ?? 100) / 100);
+export function getSlideSpeed(speedSlide: number | undefined, baseGroundSpeed: number = AI_BASE_GROUND_SPEED): number {
+  return baseGroundSpeed * Math.max(0.2, (speedSlide ?? 100) / 100);
 }
 
 export interface SlideAdvanceInput {

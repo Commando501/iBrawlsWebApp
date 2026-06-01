@@ -36,8 +36,12 @@ export function rollFeintAttempt(input: FeintRollInput): boolean {
   return rng < getEffectiveFeintChance(input);
 }
 
-export function rollFeintCooldownDuration(rng = Math.random()): number {
-  return FEINT_COOLDOWN_MIN + rng * (FEINT_COOLDOWN_MAX - FEINT_COOLDOWN_MIN);
+export function rollFeintCooldownDuration(
+  rng = Math.random(),
+  min: number = FEINT_COOLDOWN_MIN,
+  max: number = FEINT_COOLDOWN_MAX,
+): number {
+  return min + rng * (max - min);
 }
 
 export function getPlayerFeintMultiplier(model: PlayerModelSnapshot | null | undefined): number {

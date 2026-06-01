@@ -15,16 +15,19 @@ export interface EvasionRangeInput {
   spatialIQ: number;
   /** Sway phase or other stable oscillator for per-bot jitter. */
   swayPhase?: number;
+  /** Tuning overrides (default to module constants). */
+  baseRange?: number;
+  jitterAmount?: number;
 }
 
-export function getEvasionRangeJitter(swayPhase = 0): number {
-  return 1 + Math.sin(swayPhase * 4.1) * EVASION_TRIGGER_JITTER;
+export function getEvasionRangeJitter(swayPhase = 0, jitterAmount: number = EVASION_TRIGGER_JITTER): number {
+  return 1 + Math.sin(swayPhase * 4.1) * jitterAmount;
 }
 
 export function getEvasionDetectRange(input: EvasionRangeInput): number {
   const iqScale = 0.88 + (input.spatialIQ / 100) * 0.24;
-  const jitter = getEvasionRangeJitter(input.swayPhase ?? 0);
-  return BASE_EVASION_DETECT_RANGE * iqScale * jitter;
+  const jitter = getEvasionRangeJitter(input.swayPhase ?? 0, input.jitterAmount ?? EVASION_TRIGGER_JITTER);
+  return (input.baseRange ?? BASE_EVASION_DETECT_RANGE) * iqScale * jitter;
 }
 
 export function isWithinEvasionRange(input: EvasionRangeInput): boolean {
@@ -149,11 +152,14 @@ export function pickPerpendicularDodgeDirection(input: PickDodgeDirectionInput):
 }
 
 /** Scales evasion trigger distance from learned opponent reaction time. */
-export function getEvasionTimingScale(model: PlayerModelSnapshot | null | undefined): number {
+export function getEvasionTimingScale(
+  model: PlayerModelSnapshot | null | undefined,
+  defaultReactionTime: number = DEFAULT_REACTION_TIME,
+): number {
   if (!model || model.sampleCount < 5) {
     return 1;
   }
-  const ratio = model.reactionTime / DEFAULT_REACTION_TIME;
+  const ratio = model.reactionTime / defaultReactionTime;
   return Math.max(0.82, Math.min(1.18, 0.92 + (ratio - 1) * 0.35));
 }
 
@@ -190,6 +196,9 @@ export interface BaitDodgeInput {
   dashCooldownRemaining: number;
   difficulty: string;
   rng?: number;
+  /** Tuning overrides (default to module constants). */
+  baitDistance?: number;
+  baitBand?: number;
 }
 
 export function shouldAttemptBaitDodge(input: BaitDodgeInput): boolean {
@@ -203,8 +212,10 @@ export function shouldAttemptBaitDodge(input: BaitDodgeInput): boolean {
     return false;
   }
   const dist = Math.min(input.distanceToTarget, input.combatDistanceToTarget);
-  const minDist = BAIT_DODGE_DISTANCE - BAIT_DODGE_BAND;
-  const maxDist = BAIT_DODGE_DISTANCE + BAIT_DODGE_BAND;
+  const baitDistance = input.baitDistance ?? BAIT_DODGE_DISTANCE;
+  const baitBand = input.baitBand ?? BAIT_DODGE_BAND;
+  const minDist = baitDistance - baitBand;
+  const maxDist = baitDistance + baitBand;
   if (dist < minDist || dist > maxDist) {
     return false;
   }
@@ -270,6 +281,8 @@ export interface ScorePositionInput {
   targetZ: number;
   arenaRadius: number;
   mapShape?: string;
+  /** Tuning override for the arena boundary inset (default ARENA_EDGE_INSET). */
+  edgeInset?: number;
 }
 
 export interface PositionScore {
@@ -283,15 +296,15 @@ export interface PositionScore {
   centerRepositionStrength: number;
 }
 
-function safeArenaRadius(arenaRadius: number): number {
-  return Math.max(1, arenaRadius - ARENA_EDGE_INSET);
+function safeArenaRadius(arenaRadius: number, edgeInset: number = ARENA_EDGE_INSET): number {
+  return Math.max(1, arenaRadius - edgeInset);
 }
 
 /** Returns 0 at center, 1 at/near the arena boundary. */
-export function getEdgePressure(distFromCenter: number, arenaRadius: number, mapShape?: string, x?: number, z?: number): number {
+export function getEdgePressure(distFromCenter: number, arenaRadius: number, mapShape?: string, x?: number, z?: number, edgeInset: number = ARENA_EDGE_INSET): number {
   if (mapShape === 'rectangular' && x !== undefined && z !== undefined) {
-    const boundX = arenaRadius * 1.2 - ARENA_EDGE_INSET;
-    const boundZ = arenaRadius * 0.6 - ARENA_EDGE_INSET;
+    const boundX = arenaRadius * 1.2 - edgeInset;
+    const boundZ = arenaRadius * 0.6 - edgeInset;
     const normX = Math.abs(x) / Math.max(1, boundX);
     const normZ = Math.abs(z) / Math.max(1, boundZ);
     const edgeProximity = Math.max(normX, normZ);
@@ -300,7 +313,7 @@ export function getEdgePressure(distFromCenter: number, arenaRadius: number, map
     }
     return Math.min(1, (edgeProximity - 0.4) / 0.55);
   }
-  const safeRadius = safeArenaRadius(arenaRadius);
+  const safeRadius = safeArenaRadius(arenaRadius, edgeInset);
   const innerBand = safeRadius * 0.4;
   const outerBand = safeRadius * 0.95;
   if (distFromCenter <= innerBand) {
@@ -313,8 +326,8 @@ export function scorePosition(input: ScorePositionInput): PositionScore {
   const botDist = Math.hypot(input.botX, input.botZ);
   const targetDist = Math.hypot(input.targetX, input.targetZ);
 
-  const botEdgeExposure = getEdgePressure(botDist, input.arenaRadius, input.mapShape, input.botX, input.botZ);
-  const targetEdgePressure = getEdgePressure(targetDist, input.arenaRadius, input.mapShape, input.targetX, input.targetZ);
+  const botEdgeExposure = getEdgePressure(botDist, input.arenaRadius, input.mapShape, input.botX, input.botZ, input.edgeInset);
+  const targetEdgePressure = getEdgePressure(targetDist, input.arenaRadius, input.mapShape, input.targetX, input.targetZ, input.edgeInset);
 
   const rawAdvantage = targetEdgePressure * 0.65 - botEdgeExposure * 0.85;
   const advantage = Math.max(-1, Math.min(1, rawAdvantage));
@@ -340,6 +353,8 @@ export interface CutoffInterceptInput {
   arenaRadius: number;
   spatialIQ: number;
   mapShape?: string;
+  /** Tuning override for the arena boundary inset (default ARENA_EDGE_INSET). */
+  edgeInset?: number;
 }
 
 export interface CutoffInterceptResult {
@@ -348,11 +363,11 @@ export interface CutoffInterceptResult {
   active: boolean;
 }
 
-function clampToArena(x: number, z: number, arenaRadius: number, mapShape?: string): { x: number; z: number } {
-  const safeRadius = safeArenaRadius(arenaRadius);
+function clampToArena(x: number, z: number, arenaRadius: number, mapShape?: string, edgeInset: number = ARENA_EDGE_INSET): { x: number; z: number } {
+  const safeRadius = safeArenaRadius(arenaRadius, edgeInset);
   if (mapShape === 'rectangular') {
-    const boundX = arenaRadius * 1.2 - ARENA_EDGE_INSET;
-    const boundZ = arenaRadius * 0.6 - ARENA_EDGE_INSET;
+    const boundX = arenaRadius * 1.2 - edgeInset;
+    const boundZ = arenaRadius * 0.6 - edgeInset;
     return {
       x: Math.max(-boundX, Math.min(boundX, x)),
       z: Math.max(-boundZ, Math.min(boundZ, z)),
@@ -369,7 +384,7 @@ function clampToArena(x: number, z: number, arenaRadius: number, mapShape?: stri
 /** Predicts an intercept point when a target is pinned near the edge and retreating toward center. */
 export function getCutoffInterceptPoint(input: CutoffInterceptInput): CutoffInterceptResult {
   const targetDist = Math.hypot(input.targetX, input.targetZ);
-  const targetEdgePressure = getEdgePressure(targetDist, input.arenaRadius, input.mapShape, input.targetX, input.targetZ);
+  const targetEdgePressure = getEdgePressure(targetDist, input.arenaRadius, input.mapShape, input.targetX, input.targetZ, input.edgeInset);
 
   if (targetEdgePressure < 0.35 || input.spatialIQ < 25) {
     return { x: input.targetX, z: input.targetZ, active: false };
@@ -409,7 +424,7 @@ export function getCutoffInterceptPoint(input: CutoffInterceptInput): CutoffInte
   const flankStrength = iqNorm * targetEdgePressure * 0.55;
   const interceptX = predX + retreatX * flankStrength * 3.2;
   const interceptZ = predZ + retreatZ * flankStrength * 3.2;
-  const clamped = clampToArena(interceptX, interceptZ, input.arenaRadius, input.mapShape);
+  const clamped = clampToArena(interceptX, interceptZ, input.arenaRadius, input.mapShape, input.edgeInset);
 
   return { ...clamped, active: true };
 }

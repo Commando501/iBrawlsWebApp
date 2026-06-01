@@ -45,18 +45,27 @@ export function resetAIMatchContext(context: AIMatchContext): void {
   resetBotCoordinator(context.coordinator);
 }
 
-export function getOrCreateBotPsychState(context: AIMatchContext, botId: string): BotPsychState {
+export function getOrCreateBotPsychState(
+  context: AIMatchContext,
+  botId: string,
+  tempoCycleDuration?: number,
+): BotPsychState {
   let state = context.psychState.get(botId);
   if (!state) {
-    state = createBotPsychState();
+    state = createBotPsychState(tempoCycleDuration);
     context.psychState.set(botId, state);
   }
   return state;
 }
 
-export function tickBotPsychState(context: AIMatchContext, botId: string, dt: number): BotPsychState {
-  const state = getOrCreateBotPsychState(context, botId);
-  tickPsychState(state, dt);
+export function tickBotPsychState(
+  context: AIMatchContext,
+  botId: string,
+  dt: number,
+  tempoCycleDuration?: number,
+): BotPsychState {
+  const state = getOrCreateBotPsychState(context, botId, tempoCycleDuration);
+  tickPsychState(state, dt, tempoCycleDuration);
   return state;
 }
 

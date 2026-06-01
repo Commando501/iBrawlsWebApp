@@ -1,4 +1,5 @@
 import { AIResolvedKnobs, DerivedAIParams, deriveAIParams } from './aiTuning';
+import { resolveBehaviorTuning } from './aiBehaviorTuning';
 import { UniversalSettings } from '../types';
 
 export type AIArchetypeId =
@@ -217,7 +218,12 @@ export function resolveDerivedAIParams(
   archetypeId?: string | null
 ): DerivedAIParams {
   const mergedKnobs = applyPersonalityKnobs(knobs, archetypeId);
-  const derived = deriveAIParams(settings, mergedKnobs);
+  const tuning = resolveBehaviorTuning(settings);
+  const derived = deriveAIParams(settings, mergedKnobs, {
+    mechanicAwareIq: tuning.mechanicAwareIq,
+    highIqOverride: tuning.highIqOverride,
+    feintIqGate: tuning.feintIqGate,
+  });
   return applyPersonalityToDerived(derived, settings, archetypeId);
 }
 

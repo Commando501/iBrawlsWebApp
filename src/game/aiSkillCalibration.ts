@@ -66,9 +66,13 @@ export function getOrCreateBotCalibrationState(
   return state;
 }
 
-function pushSnapshot(state: BotCalibrationState, snapshot: EngagementSnapshot): void {
+function pushSnapshot(
+  state: BotCalibrationState,
+  snapshot: EngagementSnapshot,
+  windowSize: number = CALIBRATION_WINDOW_SIZE,
+): void {
   state.snapshots.push(snapshot);
-  if (state.snapshots.length > CALIBRATION_WINDOW_SIZE) {
+  while (state.snapshots.length > windowSize) {
     state.snapshots.shift();
   }
 }
@@ -84,7 +88,11 @@ function finalizeOpenCounters(state: BotCalibrationState): EngagementSnapshot {
   };
 }
 
-function appendSnapshot(state: BotCalibrationState, patch: Partial<EngagementSnapshot>): void {
+function appendSnapshot(
+  state: BotCalibrationState,
+  patch: Partial<EngagementSnapshot>,
+  windowSize: number = CALIBRATION_WINDOW_SIZE,
+): void {
   const base = finalizeOpenCounters(state);
   pushSnapshot(state, {
     botKill: patch.botKill ?? base.botKill,
@@ -94,24 +102,26 @@ function appendSnapshot(state: BotCalibrationState, patch: Partial<EngagementSna
     counterAttempts: patch.counterAttempts ?? base.counterAttempts,
     counterSuccesses: patch.counterSuccesses ?? base.counterSuccesses,
     secondsSincePrevDeath: patch.secondsSincePrevDeath,
-  });
+  }, windowSize);
   state.pendingCounter = undefined;
 }
 
 export function recordCalibrationKill(
   context: AIMatchContext,
   botId: string,
-  nowSeconds: number
+  nowSeconds: number,
+  windowSize: number = CALIBRATION_WINDOW_SIZE,
 ): void {
   const state = getOrCreateBotCalibrationState(context, botId);
-  appendSnapshot(state, { botKill: 1 });
+  appendSnapshot(state, { botKill: 1 }, windowSize);
   void nowSeconds;
 }
 
 export function recordCalibrationDeath(
   context: AIMatchContext,
   botId: string,
-  nowSeconds: number
+  nowSeconds: number,
+  windowSize: number = CALIBRATION_WINDOW_SIZE,
 ): void {
   const state = getOrCreateBotCalibrationState(context, botId);
   const secondsSincePrevDeath =
@@ -119,7 +129,7 @@ export function recordCalibrationDeath(
       ? Math.max(0, nowSeconds - state.lastDeathTimestamp)
       : undefined;
   state.lastDeathTimestamp = nowSeconds;
-  appendSnapshot(state, { botDeath: 1, secondsSincePrevDeath });
+  appendSnapshot(state, { botDeath: 1, secondsSincePrevDeath }, windowSize);
 }
 
 export function recordCalibrationDodgeAttempt(context: AIMatchContext, botId: string): void {
@@ -127,21 +137,29 @@ export function recordCalibrationDodgeAttempt(context: AIMatchContext, botId: st
   state.pendingDodge = { elapsed: 0 };
 }
 
-export function recordCalibrationDodgeFailed(context: AIMatchContext, botId: string): void {
+export function recordCalibrationDodgeFailed(
+  context: AIMatchContext,
+  botId: string,
+  windowSize: number = CALIBRATION_WINDOW_SIZE,
+): void {
   const state = getOrCreateBotCalibrationState(context, botId);
   if (!state.pendingDodge) {
     return;
   }
-  appendSnapshot(state, { dodgeAttempts: 1, dodgeSuccesses: 0 });
+  appendSnapshot(state, { dodgeAttempts: 1, dodgeSuccesses: 0 }, windowSize);
   state.pendingDodge = undefined;
 }
 
-export function recordCalibrationDodgeSucceeded(context: AIMatchContext, botId: string): void {
+export function recordCalibrationDodgeSucceeded(
+  context: AIMatchContext,
+  botId: string,
+  windowSize: number = CALIBRATION_WINDOW_SIZE,
+): void {
   const state = getOrCreateBotCalibrationState(context, botId);
   if (!state.pendingDodge) {
     return;
   }
-  appendSnapshot(state, { dodgeAttempts: 1, dodgeSuccesses: 1 });
+  appendSnapshot(state, { dodgeAttempts: 1, dodgeSuccesses: 1 }, windowSize);
   state.pendingDodge = undefined;
 }
 
@@ -149,7 +167,9 @@ export function tickCalibrationPendingDodge(
   context: AIMatchContext,
   botId: string,
   dt: number,
-  targetIsLunging: boolean
+  targetIsLunging: boolean,
+  dodgeResolveDelay: number = DODGE_RESOLVE_DELAY,
+  windowSize: number = CALIBRATION_WINDOW_SIZE,
 ): void {
   const state = context.skillCalibration.get(botId);
   if (!state?.pendingDodge) {
@@ -161,8 +181,8 @@ export function tickCalibrationPendingDodge(
     return;
   }
 
-  if (state.pendingDodge.elapsed >= DODGE_RESOLVE_DELAY) {
-    recordCalibrationDodgeSucceeded(context, botId);
+  if (state.pendingDodge.elapsed >= dodgeResolveDelay) {
+    recordCalibrationDodgeSucceeded(context, botId, windowSize);
   }
 }
 
@@ -171,21 +191,29 @@ export function recordCalibrationCounterAttempt(context: AIMatchContext, botId: 
   state.pendingCounter = { elapsed: 0 };
 }
 
-export function recordCalibrationCounterSuccess(context: AIMatchContext, botId: string): void {
+export function recordCalibrationCounterSuccess(
+  context: AIMatchContext,
+  botId: string,
+  windowSize: number = CALIBRATION_WINDOW_SIZE,
+): void {
   const state = getOrCreateBotCalibrationState(context, botId);
   if (!state.pendingCounter) {
     return;
   }
-  appendSnapshot(state, { counterAttempts: 1, counterSuccesses: 1 });
+  appendSnapshot(state, { counterAttempts: 1, counterSuccesses: 1 }, windowSize);
   state.pendingCounter = undefined;
 }
 
-export function recordCalibrationCounterFailed(context: AIMatchContext, botId: string): void {
+export function recordCalibrationCounterFailed(
+  context: AIMatchContext,
+  botId: string,
+  windowSize: number = CALIBRATION_WINDOW_SIZE,
+): void {
   const state = getOrCreateBotCalibrationState(context, botId);
   if (!state.pendingCounter) {
     return;
   }
-  appendSnapshot(state, { counterAttempts: 1, counterSuccesses: 0 });
+  appendSnapshot(state, { counterAttempts: 1, counterSuccesses: 0 }, windowSize);
   state.pendingCounter = undefined;
 }
 
@@ -193,7 +221,9 @@ export function tickCalibrationPendingCounter(
   context: AIMatchContext,
   botId: string,
   dt: number,
-  targetIsLunging: boolean
+  targetIsLunging: boolean,
+  counterResolveDelay: number = COUNTER_RESOLVE_DELAY,
+  windowSize: number = CALIBRATION_WINDOW_SIZE,
 ): void {
   const state = context.skillCalibration.get(botId);
   if (!state?.pendingCounter) {
@@ -206,8 +236,8 @@ export function tickCalibrationPendingCounter(
     return;
   }
 
-  if (state.pendingCounter.elapsed >= COUNTER_RESOLVE_DELAY) {
-    recordCalibrationCounterFailed(context, botId);
+  if (state.pendingCounter.elapsed >= counterResolveDelay) {
+    recordCalibrationCounterFailed(context, botId, windowSize);
   }
 }
 
@@ -266,14 +296,15 @@ export function computeCalibrationBias(state: BotCalibrationState): number {
 }
 
 export function computeCalibrationMultipliers(
-  state: BotCalibrationState
+  state: BotCalibrationState,
+  maxDrift: number = MAX_CALIBRATION_DRIFT,
 ): SkillCalibrationMultipliers {
   const bias = computeCalibrationBias(state);
   if (Math.abs(bias) < 0.05) {
     return NEUTRAL_CALIBRATION_MULTIPLIERS;
   }
 
-  const magnitude = Math.min(Math.abs(bias), 1) * MAX_CALIBRATION_DRIFT;
+  const magnitude = Math.min(Math.abs(bias), 1) * maxDrift;
 
   if (bias > 0) {
     return {

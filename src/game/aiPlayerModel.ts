@@ -21,6 +21,8 @@ export interface PlayerModel {
   countersAttempted: number;
   countersLanded: number;
   lastPositionSampleTime: number;
+  /** EMA smoothing factor (learning rate) for this model. */
+  emaAlpha: number;
 }
 
 export interface PlayerModelSnapshot {
@@ -35,22 +37,29 @@ export interface PlayerModelSnapshot {
   sampleCount: number;
 }
 
-export function createPlayerModel(): PlayerModel {
+export interface PlayerModelDefaults {
+  emaAlpha?: number;
+  defaultLungeDistance?: number;
+  defaultReactionTime?: number;
+}
+
+export function createPlayerModel(defaults?: PlayerModelDefaults): PlayerModel {
   return {
-    avgLungeDistance: DEFAULT_LUNGE_DISTANCE,
+    avgLungeDistance: defaults?.defaultLungeDistance ?? DEFAULT_LUNGE_DISTANCE,
     lungeFrequency: 0.35,
     dodgeBiasX: 0,
     dodgeBiasZ: 0,
     counterRate: 0.2,
     approachSpeed: 0.5,
     edgeProximity: 0.35,
-    reactionTime: DEFAULT_REACTION_TIME,
+    reactionTime: defaults?.defaultReactionTime ?? DEFAULT_REACTION_TIME,
     sampleCount: 0,
     lungeAttempts: 0,
     lungeHits: 0,
     countersAttempted: 0,
     countersLanded: 0,
     lastPositionSampleTime: 0,
+    emaAlpha: defaults?.emaAlpha ?? PLAYER_MODEL_EMA_ALPHA,
   };
 }
 
@@ -68,16 +77,20 @@ export function toPlayerModelSnapshot(model: PlayerModel): PlayerModelSnapshot {
   };
 }
 
-function ema(current: number, sample: number): number {
-  return current + PLAYER_MODEL_EMA_ALPHA * (sample - current);
+function ema(model: PlayerModel, current: number, sample: number): number {
+  return current + model.emaAlpha * (sample - current);
 }
 
-export function getOrCreatePlayerModel(context: AIMatchContext, playerId: string): PlayerModel {
+export function getOrCreatePlayerModel(
+  context: AIMatchContext,
+  playerId: string,
+  defaults?: PlayerModelDefaults,
+): PlayerModel {
   const existing = context.playerModels.get(playerId);
   if (existing) {
     return existing as PlayerModel;
   }
-  const model = createPlayerModel();
+  const model = createPlayerModel(defaults);
   context.playerModels.set(playerId, model);
   return model;
 }
@@ -96,18 +109,18 @@ export function getPlayerModelSnapshot(
 
 export function observePlayerLungeStart(model: PlayerModel, distance: number): void {
   model.lungeAttempts += 1;
-  model.avgLungeDistance = ema(model.avgLungeDistance, distance);
-  model.lungeFrequency = ema(model.lungeFrequency, 1);
+  model.avgLungeDistance = ema(model, model.avgLungeDistance, distance);
+  model.lungeFrequency = ema(model, model.lungeFrequency, 1);
   model.sampleCount += 1;
 }
 
 export function observePlayerHammerAttack(model: PlayerModel): void {
-  model.lungeFrequency = ema(model.lungeFrequency, 0);
+  model.lungeFrequency = ema(model, model.lungeFrequency, 0);
   model.sampleCount += 1;
 }
 
 export function observePlayerLungeEnd(model: PlayerModel, distanceTraveled: number, hit: boolean): void {
-  model.avgLungeDistance = ema(model.avgLungeDistance, distanceTraveled);
+  model.avgLungeDistance = ema(model, model.avgLungeDistance, distanceTraveled);
   if (hit) {
     model.lungeHits += 1;
   }
@@ -117,17 +130,17 @@ export function observePlayerLungeEnd(model: PlayerModel, distanceTraveled: numb
 export function observePlayerDash(model: PlayerModel, dirX: number, dirZ: number): void {
   const length = Math.hypot(dirX, dirZ);
   if (length > 0.0001) {
-    model.dodgeBiasX = ema(model.dodgeBiasX, dirX / length);
-    model.dodgeBiasZ = ema(model.dodgeBiasZ, dirZ / length);
+    model.dodgeBiasX = ema(model, model.dodgeBiasX, dirX / length);
+    model.dodgeBiasZ = ema(model, model.dodgeBiasZ, dirZ / length);
   }
   model.sampleCount += 1;
 }
 
 export function observePlayerWeaponSwap(model: PlayerModel, weapon: 'hammer' | 'sword'): void {
   if (weapon === 'sword') {
-    model.lungeFrequency = ema(model.lungeFrequency, 0.65);
+    model.lungeFrequency = ema(model, model.lungeFrequency, 0.65);
   } else {
-    model.lungeFrequency = ema(model.lungeFrequency, 0.15);
+    model.lungeFrequency = ema(model, model.lungeFrequency, 0.15);
   }
   model.sampleCount += 1;
 }
@@ -138,7 +151,7 @@ export function observePlayerCounter(model: PlayerModel, success: boolean): void
     model.countersLanded += 1;
   }
   const rate = model.countersLanded / Math.max(1, model.countersAttempted);
-  model.counterRate = ema(model.counterRate, rate);
+  model.counterRate = ema(model, model.counterRate, rate);
   model.sampleCount += 1;
 }
 
@@ -173,18 +186,18 @@ export function observePlayerPosition(
     const distFromCenter = Math.hypot(posX, posZ);
     proximity = Math.min(1, distFromCenter / Math.max(1, arenaRadius - 0.6));
   }
-  model.edgeProximity = ema(model.edgeProximity, proximity);
+  model.edgeProximity = ema(model, model.edgeProximity, proximity);
   model.sampleCount += 1;
 }
 
 export function observePlayerApproachSpeed(model: PlayerModel, speed: number, maxSpeed: number): void {
   const normalized = Math.min(1, speed / Math.max(1, maxSpeed));
-  model.approachSpeed = ema(model.approachSpeed, normalized);
+  model.approachSpeed = ema(model, model.approachSpeed, normalized);
   model.sampleCount += 1;
 }
 
 export function observePlayerReaction(model: PlayerModel, reactionSeconds: number): void {
-  model.reactionTime = ema(model.reactionTime, Math.max(0, reactionSeconds));
+  model.reactionTime = ema(model, model.reactionTime, Math.max(0, reactionSeconds));
   model.sampleCount += 1;
 }
 

@@ -1,8 +1,10 @@
 import { UniversalSettings } from '../types';
+import { buildExposedTuneDefaults } from '../game/aiBehaviorTuning';
 
 export type PersistedGameplaySettings = Omit<UniversalSettings, 'playerHue' | 'playerName'>;
 
 export const DEFAULT_ADMIN_SETTINGS: UniversalSettings = {
+  ...buildExposedTuneDefaults(),
   maxHP: 1,
   speedForward: 100,
   speedSide: 100,

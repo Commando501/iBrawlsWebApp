@@ -200,7 +200,7 @@ iBrawls features a beautiful, feature-rich, and completely standalone 3D Map Mak
 - **Flexible Object Placement**: Place and transform Box, Cylinder, and Sphere obstacles. Modify dimensions, position, rotation, opacity, metalness, roughness, colors, emissive neon glow, and collidable status (`isCollidable`).
 - **Flexible Arena Shapes**: Toggle between **Circular** and **Rectangular** boundaries. The rectangular court uses a standard 2:1 aspect ratio with a dedicated rectangular grid helper.
 - **Dynamic Lighting Controls**: Add custom point lights to set up mood lighting. Adjust position, distance, intensity, decay, and color using real-time inspectors.
-- **Texture Presets**: Dress obstacles in 24 custom texture profiles matching 10 distinct themes:
+- **Texture Presets**: Dress obstacles in 24 custom texture profiles matching 10 distinct themes (upgraded to ultra-high-fidelity 2048x2048 resolutions and integrated with tactile, physically modeled 3D bump maps and custom surface specular relief scales):
   - *Nature*: Grass turf (`nature_grass`), Mossy Stone (`nature_mossy_stone`), Wood Grain (`nature_wood`).
   - *Space*: Starbase alloy plate (`space_alloy`), Lunar meteorite crag (`space_meteorite`), Cosmic dust (`space_lunar_dust`).
   - *Futuristic*: Sleek carbon fiber (`futuristic_carbon`), Neon hexagonal plates (`futuristic_hex`), Energy grid shield (`futuristic_shield`).

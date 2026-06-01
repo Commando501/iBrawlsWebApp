@@ -1430,10 +1430,13 @@
     // procedurally generated textures
     function generateCustomTexture(type, colorHex) {
       const size = 256;
+      const resolution = 2048;
+      const scaleFactor = resolution / size;
       const canvas = document.createElement('canvas');
-      canvas.width = size;
-      canvas.height = size;
+      canvas.width = resolution;
+      canvas.height = resolution;
       const ctx = canvas.getContext('2d');
+      ctx.scale(scaleFactor, scaleFactor);
 
       ctx.fillStyle = '#0f172a';
       ctx.fillRect(0, 0, size, size);
@@ -2596,27 +2599,44 @@
         const sy = obj.scale.y;
         const sz = obj.scale.z;
 
-        if (obj.type === 'box') {
-          geo = new THREE.BoxGeometry(sx, sy, sz);
-        } else if (obj.type === 'cylinder') {
-          geo = new THREE.CylinderGeometry(sx / 2, sx / 2, sy, 32);
-        } else {
-          geo = new THREE.SphereGeometry(sx / 2, 32, 32);
-        }
-
-        const hasTexture = obj.texture && obj.texture !== 'none';
-        const texture = hasTexture ? generateCustomTexture(obj.texture, obj.color) : null;
-        if (texture) {
-          texture.needsUpdate = true;
-        }
-        const mat = new THREE.MeshStandardMaterial({
-          map: texture,
-          color: hasTexture ? new THREE.Color('#ffffff') : new THREE.Color(obj.color),
-          metalness: obj.metalness,
-          roughness: obj.roughness,
-          opacity: obj.opacity,
-          transparent: obj.transparent,
-        });
+         if (obj.type === 'box') {
+           geo = new THREE.BoxGeometry(sx, sy, sz);
+         } else if (obj.type === 'cylinder') {
+           geo = new THREE.CylinderGeometry(sx / 2, sx / 2, sy, 64);
+         } else {
+           geo = new THREE.SphereGeometry(sx / 2, 64, 64);
+         }
+ 
+         const hasTexture = obj.texture && obj.texture !== 'none';
+         const texture = hasTexture ? generateCustomTexture(obj.texture, obj.color) : null;
+         if (texture) {
+           texture.needsUpdate = true;
+         }
+ 
+         // Custom bump scale mapping for visual depth
+         let bumpScale = 0.02;
+         if (hasTexture) {
+           if (['nature_mossy_stone', 'fantasy_cobble', 'city_brick'].includes(obj.texture)) {
+             bumpScale = 0.035;
+           } else if (['nature_grass', 'city_concrete', 'nature_wood'].includes(obj.texture)) {
+             bumpScale = 0.025;
+           } else if (['space_alloy', 'futuristic_carbon', 'forerunner_panel'].includes(obj.texture)) {
+             bumpScale = 0.015;
+           } else if (['futuristic_hex', 'synthwave_grid', 'winter_glacier_glass'].includes(obj.texture)) {
+             bumpScale = 0.008;
+           }
+         }
+ 
+         const mat = new THREE.MeshStandardMaterial({
+           map: texture,
+           bumpMap: texture || undefined,
+           bumpScale: hasTexture ? bumpScale : 0,
+           color: hasTexture ? new THREE.Color('#ffffff') : new THREE.Color(obj.color),
+           metalness: obj.metalness,
+           roughness: obj.roughness,
+           opacity: obj.opacity,
+           transparent: obj.transparent,
+         });
 
         if (obj.emissive && obj.emissive !== '#000000') {
           mat.emissive = new THREE.Color(obj.emissive);
@@ -2749,9 +2769,10 @@
 
         // 1. Striped Gradient Sunset Sun Disc
         const sunCanvas = document.createElement('canvas');
-        sunCanvas.width = 256;
-        sunCanvas.height = 256;
+        sunCanvas.width = 2048;
+        sunCanvas.height = 2048;
         const sunCtx = sunCanvas.getContext('2d');
+        sunCtx.scale(8, 8);
         
         const sunGrad = sunCtx.createLinearGradient(0, 25, 0, 231);
         sunGrad.addColorStop(0, '#ffe066');
@@ -2796,9 +2817,10 @@
           const bGeo = new THREE.BoxGeometry(w, h, d);
           
           const bCanvas = document.createElement('canvas');
-          bCanvas.width = 64;
-          bCanvas.height = 128;
+          bCanvas.width = 512;
+          bCanvas.height = 1024;
           const bCtx = bCanvas.getContext('2d');
+          bCtx.scale(8, 8);
           bCtx.fillStyle = '#05020c';
           bCtx.fillRect(0, 0, 64, 128);
           
@@ -2931,9 +2953,10 @@
           const bGeo = new THREE.BoxGeometry(w, h, d);
           
           const bCanvas = document.createElement('canvas');
-          bCanvas.width = 64;
-          bCanvas.height = 128;
+          bCanvas.width = 512;
+          bCanvas.height = 1024;
           const bCtx = bCanvas.getContext('2d');
+          bCtx.scale(8, 8);
           bCtx.fillStyle = '#06080d';
           bCtx.fillRect(0, 0, 64, 128);
           
@@ -2979,9 +3002,10 @@
 
         // 3. Glowing Neon Green Sign on the Left Building
         const signCanvas = document.createElement('canvas');
-        signCanvas.width = 128;
-        signCanvas.height = 128;
+        signCanvas.width = 1024;
+        signCanvas.height = 1024;
         const sCtx = signCanvas.getContext('2d');
+        sCtx.scale(8, 8);
         sCtx.fillStyle = 'rgba(0,0,0,0)';
         sCtx.clearRect(0,0,128,128);
         sCtx.strokeStyle = '#22c55e';

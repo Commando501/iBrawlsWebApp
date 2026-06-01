@@ -295,6 +295,44 @@ export const AI_TUNE_SETTING_KEYS: Record<keyof AIBehaviorTuning, keyof Universa
 };
 
 /**
+ * Group B fields are centralized but intentionally NOT surfaced in the UI yet.
+ * They are excluded from the settings-default seed and from schema rows, so they
+ * stay `undefined` in settings and resolve from their engine defaults.
+ */
+export const GROUP_B_TUNE_FIELDS: ReadonlySet<keyof AIBehaviorTuning> = new Set([
+  'predictionAnticipationBonus',
+  'predictionLandingWeight',
+  'lungeChanceGroundBase',
+  'lungeChanceGroundAnticipation',
+  'lungeChanceAirborneBase',
+  'lungeChanceAirborneAnticipation',
+  'reactChanceBase',
+  'reactChanceAnticipation',
+  'hammerJumpReachBase',
+  'hammerJumpReachAnticipation',
+  'hammerJumpVerticalBase',
+  'hammerJumpVerticalAnticipation',
+]);
+
+/** Fields exposed to the user (Group A) — everything that is not Group B. */
+export const EXPOSED_AI_TUNE_FIELDS = (
+  Object.keys(DEFAULT_AI_BEHAVIOR_TUNING) as (keyof AIBehaviorTuning)[]
+).filter((field) => !GROUP_B_TUNE_FIELDS.has(field));
+
+/**
+ * Build the `{ aiTune*: defaultValue }` seed for `DEFAULT_ADMIN_SETTINGS`, for
+ * the exposed (Group A) fields only. Keeps the persisted defaults in lockstep
+ * with the engine defaults so a slider always starts at the true value.
+ */
+export function buildExposedTuneDefaults(): Partial<UniversalSettings> {
+  const seed: Partial<UniversalSettings> = {};
+  for (const field of EXPOSED_AI_TUNE_FIELDS) {
+    (seed as Record<string, number>)[AI_TUNE_SETTING_KEYS[field]] = DEFAULT_AI_BEHAVIOR_TUNING[field];
+  }
+  return seed;
+}
+
+/**
  * Resolve the effective behavior tuning by overlaying any `settings.aiTune*`
  * overrides on top of the defaults. A field falls back to its default whenever
  * the matching setting is `undefined` (or not a finite number).

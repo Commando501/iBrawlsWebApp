@@ -60,6 +60,10 @@ export interface AICombatDecisionInput {
   /** Score-aware trade and IQ modulation (PR-D). */
   matchMultipliers?: MatchStateMultipliers;
   random?: () => number;
+  /** Tuning overrides (default to module constants). */
+  mechanicAwareIq?: number;
+  highIqOverride?: number;
+  hammerWindupSeconds?: number;
 }
 
 export type { PlayerModelSnapshot };
@@ -71,15 +75,24 @@ export interface AICombatDecision {
   bypassedRandomGate: boolean;
 }
 
-const MECHANIC_AWARE_IQ = 70;
-const HIGH_IQ_OVERRIDE = 80;
-const HAMMER_WINDUP_SECONDS = 0.32;
+export const MECHANIC_AWARE_IQ_DEFAULT = 70;
+export const HIGH_IQ_OVERRIDE_DEFAULT = 80;
+export const HAMMER_WINDUP_SECONDS_DEFAULT = 0.32;
 
-export function isMechanicAwareDifficulty(difficulty: string, weaponSwapIQ: number): boolean {
+const MECHANIC_AWARE_IQ = MECHANIC_AWARE_IQ_DEFAULT;
+const HIGH_IQ_OVERRIDE = HIGH_IQ_OVERRIDE_DEFAULT;
+const HAMMER_WINDUP_SECONDS = HAMMER_WINDUP_SECONDS_DEFAULT;
+
+export function isMechanicAwareDifficulty(
+  difficulty: string,
+  weaponSwapIQ: number,
+  mechanicAwareIq: number = MECHANIC_AWARE_IQ,
+  highIqOverride: number = HIGH_IQ_OVERRIDE,
+): boolean {
   return difficulty === 'hard' ||
     difficulty === 'nightmare' ||
-    (difficulty === 'custom' && weaponSwapIQ >= MECHANIC_AWARE_IQ) ||
-    weaponSwapIQ >= HIGH_IQ_OVERRIDE;
+    (difficulty === 'custom' && weaponSwapIQ >= mechanicAwareIq) ||
+    weaponSwapIQ >= highIqOverride;
 }
 
 export function isMissedLungeMemory(memory?: AILungeMemory | null): boolean {
@@ -117,7 +130,7 @@ export function evaluateAICombatDecision(input: AICombatDecisionInput): AICombat
   const playerDangerZone = input.attackRange + input.attackRadius * 0.85;
   const minLunge = playerDangerZone * 0.85;
   const maxLunge = Math.min(18.0, input.swordLungeDistance);
-  const mechanicAware = isMechanicAwareDifficulty(input.difficulty, input.weaponSwapIQ);
+  const mechanicAware = isMechanicAwareDifficulty(input.difficulty, input.weaponSwapIQ, input.mechanicAwareIq, input.highIqOverride);
   const matchMultipliers = input.matchMultipliers ?? NEUTRAL_MATCH_MULTIPLIERS;
   const effectiveWeaponSwapIQ = getEffectiveWeaponSwapIQ(input.weaponSwapIQ, matchMultipliers);
   const commitBias = matchMultipliers.matchPointCommitBias;
@@ -134,7 +147,7 @@ export function evaluateAICombatDecision(input: AICombatDecisionInput): AICombat
 
   if (mechanicAware && input.target.isLunging && minDistance < 15.0 && !targetIsProtected) {
     const timeToImpact = minDistance / Math.max(1, input.swordLungeSpeed);
-    const hammerCounterDistance = input.swordLungeSpeed * HAMMER_WINDUP_SECONDS + input.attackRadius * 0.85;
+    const hammerCounterDistance = input.swordLungeSpeed * (input.hammerWindupSeconds ?? HAMMER_WINDUP_SECONDS) + input.attackRadius * 0.85;
     const hammerCanCounter = input.canUseHammerCounter !== false &&
       input.canStartWeaponAction &&
       input.weaponState === 'ready' &&

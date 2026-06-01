@@ -10,8 +10,6 @@ import { buildGravityHammerModel, buildVoxelSpartanModel, buildKatarSwordModel, 
 import { GameStats, Stance, WeaponState, AIBehaviorState, UniversalSettings, DeathEvent, Keybindings, DEFAULT_KEYBINDINGS, DeviceInfo, AIBehaviorPreset, MedalInfo, Combatant, ReplayFrame, ReplayFile, CustomMapData, CustomMapObject } from '../types';
 import { cacheReplay } from '../game/theaterDatabase';
 import {
-  AI_FORCED_DESCENT_SPEED,
-  AI_MAX_AIRBORNE_HEIGHT,
   recoverAIFromRunawayAltitude as applyAIAltitudeRecovery,
 } from '../game/aiAltitude';
 import { type AILungeOutcome, type AITacticalTargetSnapshot, evaluateAICombatDecision } from '../game/aiCombatDecision';
@@ -47,6 +45,7 @@ import {
   shouldAbortCombo,
 } from '../game/aiComboEngine';
 import { deriveMatchStateMultipliers, shouldAvoidCoinFlipTrade, applyMatchAggression } from '../game/aiTuning';
+import { resolveBehaviorTuning } from '../game/aiBehaviorTuning';
 import { resolvePersonalityFlags } from '../game/aiPersonalities';
 import {
   resolveKnobsFromRosterSlot,
@@ -74,10 +73,6 @@ import {
   removeMainAIFromRoster,
 } from '../game/roster';
 import {
-  APPROACH_FEINT_BACK_TIMER,
-  CHARGE_ABORT_SIDESTEP_TIMER,
-  LUNGE_FAKEOUT_FORWARD_TIMER,
-  WEAPON_SWAP_FEINT_DELAY,
   canAttemptChargeAbortFeint,
   canAttemptLungeFakeout,
   canAttemptWeaponSwapFeint,
@@ -798,7 +793,12 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
   const recordLocalPlayerObservation = (observe: (model: PlayerModel) => void) => {
     const s = stateRef.current;
     if (s.isObserverMode) return;
-    observe(getOrCreatePlayerModel(s.aiMatchContext, LOCAL_PLAYER_ID));
+    const tuning = resolveBehaviorTuning(s.settings);
+    observe(getOrCreatePlayerModel(s.aiMatchContext, LOCAL_PLAYER_ID, {
+      emaAlpha: tuning.playerModelEmaAlpha,
+      defaultLungeDistance: tuning.defaultLungeDistance,
+      defaultReactionTime: tuning.defaultReactionTime,
+    }));
   };
 
   const recordPlayerLungeEndObservation = (hit: boolean) => {
@@ -1062,12 +1062,14 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     }
   };
 
-  const recoverAIFromRunawayAltitude = (pos: THREE.Vector3, vel: THREE.Vector3, botState?: any): boolean =>
-    applyAIAltitudeRecovery(pos, vel, botState, {
-      maxAirborneHeight: AI_MAX_AIRBORNE_HEIGHT,
-      forcedDescentSpeed: AI_FORCED_DESCENT_SPEED,
+  const recoverAIFromRunawayAltitude = (pos: THREE.Vector3, vel: THREE.Vector3, botState?: any): boolean => {
+    const tuning = resolveBehaviorTuning(stateRef.current.settings);
+    return applyAIAltitudeRecovery(pos, vel, botState, {
+      maxAirborneHeight: tuning.maxAirborneHeight,
+      forcedDescentSpeed: tuning.forcedDescentSpeed,
       hammerJumpCooldown: AI_HAMMER_JUMP_COOLDOWN,
     });
+  };
 
   // Altitude recovery for any AI combatant in the unified in-tick gravity model. Runs the
   // shared clamp/forced-descent (which also resets weaponState/timer + hammer-jump cooldown
@@ -1151,10 +1153,12 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
   };
 
   const getBotPressureAggression = (botId: string): number => {
+    const tuning = resolveBehaviorTuning(stateRef.current.settings);
     const baseAggression = resolveBotDerived(botId).pressureAggression;
     const matchMultipliers = deriveMatchStateMultipliers(
       getMatchScoreContext(),
-      baseAggression / 100
+      baseAggression / 100,
+      { aheadThreshold: tuning.scoreAheadThreshold, closeThreshold: tuning.scoreCloseThreshold }
     );
     return applyMatchAggression(baseAggression, matchMultipliers);
   };
@@ -1176,8 +1180,12 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     }
 
     const s = stateRef.current;
+    const pressureTuning = resolveBehaviorTuning(s.settings);
     const duration = getPressureDuration(pressureAggression) *
-      deriveMatchStateMultipliers(getMatchScoreContext(), pressureAggression / 100).pressureDurationMult;
+      deriveMatchStateMultipliers(getMatchScoreContext(), pressureAggression / 100, {
+        aheadThreshold: pressureTuning.scoreAheadThreshold,
+        closeThreshold: pressureTuning.scoreCloseThreshold,
+      }).pressureDurationMult;
     const bot = rosterCombatant(botId);
     if (!bot || bot.controller !== 'ai') return false;
     bot.aiState = 'PRESSURING';
@@ -1260,18 +1268,20 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     const s = stateRef.current;
     const knobs = resolveBotKnobs(botId);
     if (isSkillCalibrationEnabled(knobs.difficulty)) {
-      recordCalibrationKill(s.aiMatchContext, botId, performance.now() / 1000);
+      recordCalibrationKill(s.aiMatchContext, botId, performance.now() / 1000, resolveBehaviorTuning(s.settings).calibrationWindowSize);
     }
     const pressureAggression = getBotPressureAggression(botId);
     if (!isPsychPressureEnabled(knobs.difficulty, pressureAggression)) {
       return;
     }
     const spawnPos = computeVictimSpawnPoint(victimId);
-    notifyBotKill(getOrCreateBotPsychState(s.aiMatchContext, botId), {
+    const psychTuning = resolveBehaviorTuning(s.settings);
+    notifyBotKill(getOrCreateBotPsychState(s.aiMatchContext, botId, psychTuning.tempoCycleDuration), {
       victimId,
       spawnX: spawnPos.x,
       spawnZ: spawnPos.z,
       lungeKill: wasLungeKill,
+      duration: psychTuning.postKillPressureDuration,
     });
     const bot = rosterCombatant(botId);
     if (bot?.controller === 'ai') {
@@ -1292,7 +1302,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     recordCalibrationDeath(
       stateRef.current.aiMatchContext,
       botId,
-      performance.now() / 1000
+      performance.now() / 1000,
+      resolveBehaviorTuning(stateRef.current.settings).calibrationWindowSize
     );
   };
 
@@ -1301,12 +1312,12 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     if (!isSkillCalibrationEnabled(knobs.difficulty)) {
       return;
     }
-    recordCalibrationCounterSuccess(stateRef.current.aiMatchContext, botId);
+    recordCalibrationCounterSuccess(stateRef.current.aiMatchContext, botId, resolveBehaviorTuning(stateRef.current.settings).calibrationWindowSize);
   };
 
   const recordBotDamageTag = (botId: string, targetId: string) => {
     if (isMultiplayer) return;
-    notifyBotDamageTag(stateRef.current.aiMatchContext.coordinator, botId, targetId);
+    notifyBotDamageTag(stateRef.current.aiMatchContext.coordinator, botId, targetId, resolveBehaviorTuning(stateRef.current.settings).damageTagTtl);
   };
 
   function updateAI(dt: number) {
@@ -3775,10 +3786,14 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
     // Helper: Create custom procedural textures dynamically using 2D HTML Canvas
     const generateCustomTexture = (type: string, baseColorHex: string): THREE.Texture => {
+      const baseSize = 512;
+      const resolution = 2048;
+      const scaleFactor = resolution / baseSize;
       const canvas = document.createElement('canvas');
-      canvas.width = 512;
-      canvas.height = 512;
+      canvas.width = resolution;
+      canvas.height = resolution;
       const ctx = canvas.getContext('2d')!;
+      ctx.scale(scaleFactor, scaleFactor);
 
       // Background fill
       ctx.fillStyle = baseColorHex;
@@ -4783,9 +4798,9 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         if (obj.type === 'box') {
           geo = new THREE.BoxGeometry(sx, sy, sz);
         } else if (obj.type === 'cylinder') {
-          geo = new THREE.CylinderGeometry(sx / 2, sx / 2, sy, 32);
+          geo = new THREE.CylinderGeometry(sx / 2, sx / 2, sy, 64);
         } else {
-          geo = new THREE.SphereGeometry(sx / 2, 32, 32);
+          geo = new THREE.SphereGeometry(sx / 2, 64, 64);
         }
 
         const hasTexture = obj.texture && obj.texture !== 'none';
@@ -4793,8 +4808,25 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         if (texture) {
           texture.needsUpdate = true;
         }
+
+        // Custom bump scale mapping for visual depth
+        let bumpScale = 0.02;
+        if (hasTexture) {
+          if (['nature_mossy_stone', 'fantasy_cobble', 'city_brick'].includes(obj.texture)) {
+            bumpScale = 0.035;
+          } else if (['nature_grass', 'city_concrete', 'nature_wood'].includes(obj.texture)) {
+            bumpScale = 0.025;
+          } else if (['space_alloy', 'futuristic_carbon', 'forerunner_panel'].includes(obj.texture)) {
+            bumpScale = 0.015;
+          } else if (['futuristic_hex', 'synthwave_grid', 'winter_glacier_glass'].includes(obj.texture)) {
+            bumpScale = 0.008;
+          }
+        }
+
         const mat = new THREE.MeshStandardMaterial({
           map: texture,
+          bumpMap: texture || undefined,
+          bumpScale: hasTexture ? bumpScale : 0,
           color: hasTexture ? new THREE.Color('#ffffff') : new THREE.Color(obj.color),
           metalness: obj.metalness,
           roughness: obj.roughness,
@@ -4824,9 +4856,10 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
         // 1. Striped Gradient Sunset Sun Disc
         const sunCanvas = document.createElement('canvas');
-        sunCanvas.width = 512;
-        sunCanvas.height = 512;
+        sunCanvas.width = 2048;
+        sunCanvas.height = 2048;
         const sunCtx = sunCanvas.getContext('2d')!;
+        sunCtx.scale(4, 4);
         
         const sunGrad = sunCtx.createLinearGradient(0, 50, 0, 462);
         sunGrad.addColorStop(0, '#ffe066'); // Golden yellow top
@@ -4872,9 +4905,10 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
           const bGeo = new THREE.BoxGeometry(w, h, d);
           
           const bCanvas = document.createElement('canvas');
-          bCanvas.width = 128;
-          bCanvas.height = 256;
+          bCanvas.width = 512;
+          bCanvas.height = 1024;
           const bCtx = bCanvas.getContext('2d')!;
+          bCtx.scale(4, 4);
           bCtx.fillStyle = '#05020c';
           bCtx.fillRect(0, 0, 128, 256);
           
@@ -5009,9 +5043,10 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
           const bGeo = new THREE.BoxGeometry(w, h, d);
           
           const bCanvas = document.createElement('canvas');
-          bCanvas.width = 128;
-          bCanvas.height = 256;
+          bCanvas.width = 512;
+          bCanvas.height = 1024;
           const bCtx = bCanvas.getContext('2d')!;
+          bCtx.scale(4, 4);
           bCtx.fillStyle = '#06080d';
           bCtx.fillRect(0, 0, 128, 256);
           
@@ -5057,9 +5092,10 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
         // 3. Glowing Neon Green Sign on the Left Building
         const signCanvas = document.createElement('canvas');
-        signCanvas.width = 128;
-        signCanvas.height = 128;
+        signCanvas.width = 1024;
+        signCanvas.height = 1024;
         const sCtx = signCanvas.getContext('2d')!;
+        sCtx.scale(8, 8);
         sCtx.fillStyle = 'rgba(0,0,0,0)';
         sCtx.clearRect(0,0,128,128);
         sCtx.strokeStyle = '#22c55e';
@@ -5843,42 +5879,47 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       pointLight.position.set(0, 14, 0);
       scene.add(pointLight);
 
-      // Procedural generation of 1024x1024 premium metallic textures
-      const texSize = 1024;
+      // Procedural generation of 2048x2048 premium metallic textures
+      const texSize = 2048;
+      const logicalSize = 1024;
+      const scaleFactor = texSize / logicalSize;
 
       // DIFFUSE/ALBEDO CANVAS
       const diffCanvas = document.createElement('canvas');
       diffCanvas.width = texSize;
       diffCanvas.height = texSize;
       const dCtx = diffCanvas.getContext('2d')!;
+      dCtx.scale(scaleFactor, scaleFactor);
 
       // BUMP MAP CANVAS
       const bumpCanvas = document.createElement('canvas');
       bumpCanvas.width = texSize;
       bumpCanvas.height = texSize;
       const bCtx = bumpCanvas.getContext('2d')!;
+      bCtx.scale(scaleFactor, scaleFactor);
 
       // ROUGHNESS MAP CANVAS
       const roughCanvas = document.createElement('canvas');
       roughCanvas.width = texSize;
       roughCanvas.height = texSize;
       const rCtx = roughCanvas.getContext('2d')!;
+      rCtx.scale(scaleFactor, scaleFactor);
 
       if (isHangar) {
         // Fill base layers
         dCtx.fillStyle = '#161a22';
-        dCtx.fillRect(0, 0, texSize, texSize);
+        dCtx.fillRect(0, 0, logicalSize, logicalSize);
 
         bCtx.fillStyle = '#808080'; // 128 height map baseline
-        bCtx.fillRect(0, 0, texSize, texSize);
+        bCtx.fillRect(0, 0, logicalSize, logicalSize);
 
         rCtx.fillStyle = '#888888'; // base semi-matte metal
-        rCtx.fillRect(0, 0, texSize, texSize);
+        rCtx.fillRect(0, 0, logicalSize, logicalSize);
 
         // Draw modular steel plate tiles (16x16 grid)
         const tileSize = 64; 
-        for (let y = 0; y < texSize; y += tileSize) {
-          for (let x = 0; x < texSize; x += tileSize) {
+        for (let y = 0; y < logicalSize; y += tileSize) {
+          for (let x = 0; x < logicalSize; x += tileSize) {
             // Organic slate color variation per plate
             const hueVal = 216 + Math.random() * 8;
             const satVal = 12 + Math.random() * 6;
@@ -5952,33 +5993,33 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
         // Diffuse trench channel
         dCtx.fillStyle = '#090c12';
-        dCtx.fillRect(gxStart, 0, grateWidth, texSize);
+        dCtx.fillRect(gxStart, 0, grateWidth, logicalSize);
         
         // Bump trench channel (sunken)
         bCtx.fillStyle = '#101010';
-        bCtx.fillRect(gxStart, 0, grateWidth, texSize);
+        bCtx.fillRect(gxStart, 0, grateWidth, logicalSize);
 
         // Roughness trench channel (very rough interior)
         rCtx.fillStyle = '#e2e8f0';
-        rCtx.fillRect(gxStart, 0, grateWidth, texSize);
+        rCtx.fillRect(gxStart, 0, grateWidth, logicalSize);
 
         // Frame borders for the trench
         dCtx.fillStyle = '#2d3748';
-        dCtx.fillRect(gxStart - 4, 0, 4, texSize);
-        dCtx.fillRect(gxEnd, 0, 4, texSize);
+        dCtx.fillRect(gxStart - 4, 0, 4, logicalSize);
+        dCtx.fillRect(gxEnd, 0, 4, logicalSize);
 
         dCtx.fillStyle = '#4a5568';
-        dCtx.fillRect(gxStart - 1, 0, 1, texSize);
-        dCtx.fillRect(gxEnd + 3, 0, 1, texSize);
+        dCtx.fillRect(gxStart - 1, 0, 1, logicalSize);
+        dCtx.fillRect(gxEnd + 3, 0, 1, logicalSize);
 
         bCtx.fillStyle = '#b8b8b8'; // raised frame
-        bCtx.fillRect(gxStart - 4, 0, 4, texSize);
-        bCtx.fillRect(gxEnd, 0, 4, texSize);
+        bCtx.fillRect(gxStart - 4, 0, 4, logicalSize);
+        bCtx.fillRect(gxEnd, 0, 4, logicalSize);
 
         // Horizontal steel grate bars
         const barSpacing = 16;
         const barThickness = 6;
-        for (let gy = 0; gy < texSize; gy += barSpacing) {
+        for (let gy = 0; gy < logicalSize; gy += barSpacing) {
           // Diffuse steel bar
           dCtx.fillStyle = '#3f4b5e';
           dCtx.fillRect(gxStart + 4, gy, grateWidth - 8, barThickness);
@@ -6008,11 +6049,11 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         const drawHazardStripes = (xStart: number) => {
           // Yellow base
           dCtx.fillStyle = '#ca8a04';
-          dCtx.fillRect(xStart, 0, stripeWidth, texSize);
+          dCtx.fillRect(xStart, 0, stripeWidth, logicalSize);
 
           // Black diagonal bands
           dCtx.fillStyle = '#0f172a';
-          for (let sy = -stripeWidth; sy < texSize; sy += stripeSpacing) {
+          for (let sy = -stripeWidth; sy < logicalSize; sy += stripeSpacing) {
             dCtx.beginPath();
             dCtx.moveTo(xStart, sy);
             dCtx.lineTo(xStart + stripeWidth, sy + stripeWidth);
@@ -6023,10 +6064,10 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
           }
 
           bCtx.fillStyle = '#808080';
-          bCtx.fillRect(xStart, 0, stripeWidth, texSize);
+          bCtx.fillRect(xStart, 0, stripeWidth, logicalSize);
 
           rCtx.fillStyle = '#94a3b8'; // rough warning paint
-          rCtx.fillRect(xStart, 0, stripeWidth, texSize);
+          rCtx.fillRect(xStart, 0, stripeWidth, logicalSize);
         };
 
         drawHazardStripes(gxStart - 20);
@@ -6034,8 +6075,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
         // Weathering scratches
         for (let i = 0; i < 150; i++) {
-          const sx = Math.random() * texSize;
-          const sy = Math.random() * texSize;
+          const sx = Math.random() * logicalSize;
+          const sy = Math.random() * logicalSize;
           const len = 8 + Math.random() * 25;
           const angle = Math.random() * Math.PI * 2;
           const ex = sx + Math.cos(angle) * len;
@@ -6071,8 +6112,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
         // Dirt and soot spray overlays
         for (let i = 0; i < 45; i++) {
-          const dx = Math.random() * texSize;
-          const dy = Math.random() * texSize;
+          const dx = Math.random() * logicalSize;
+          const dy = Math.random() * logicalSize;
           const rad = 25 + Math.random() * 75;
 
           const alGrad = dCtx.createRadialGradient(dx, dy, 0, dx, dy, rad);
@@ -6095,29 +6136,29 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         // NEON CYAN HOLODECK PROCEDURAL TEXTURES
         // Deep slate space-blue floor
         dCtx.fillStyle = '#0a0f1d';
-        dCtx.fillRect(0, 0, texSize, texSize);
+        dCtx.fillRect(0, 0, logicalSize, logicalSize);
 
         // Clean height map baseline
         bCtx.fillStyle = '#808080';
-        bCtx.fillRect(0, 0, texSize, texSize);
+        bCtx.fillRect(0, 0, logicalSize, logicalSize);
 
         // Semi-glossy metallic surface roughness
         rCtx.fillStyle = '#333333';
-        rCtx.fillRect(0, 0, texSize, texSize);
+        rCtx.fillRect(0, 0, logicalSize, logicalSize);
 
         // Draw clean neon cyan virtual space grid
         dCtx.strokeStyle = 'rgba(6, 182, 212, 0.4)'; // cyan
         dCtx.lineWidth = 3;
         const step = 64;
-        for (let i = 0; i <= texSize; i += step) {
+        for (let i = 0; i <= logicalSize; i += step) {
           dCtx.beginPath();
           dCtx.moveTo(i, 0);
-          dCtx.lineTo(i, texSize);
+          dCtx.lineTo(i, logicalSize);
           dCtx.stroke();
 
           dCtx.beginPath();
           dCtx.moveTo(0, i);
-          dCtx.lineTo(texSize, i);
+          dCtx.lineTo(logicalSize, i);
           dCtx.stroke();
         }
 
@@ -6150,9 +6191,9 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         // Bump map highlights for grid seams
         bCtx.strokeStyle = '#606060';
         bCtx.lineWidth = 3;
-        for (let i = 0; i <= texSize; i += step) {
-          bCtx.strokeRect(i - 1, -1, 2, texSize + 2);
-          bCtx.strokeRect(-1, i - 1, texSize + 2, 2);
+        for (let i = 0; i <= logicalSize; i += step) {
+          bCtx.strokeRect(i - 1, -1, 2, logicalSize + 2);
+          bCtx.strokeRect(-1, i - 1, logicalSize + 2, 2);
         }
       }
 
@@ -9584,7 +9625,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
             }
 
             recordPlayerDamageDealt(isAISwordActiveAttack || isAIHammerActiveAttack);
-            recordCalibrationDodgeFailed(stateRef.current.aiMatchContext, 'main_ai');
+            recordCalibrationDodgeFailed(stateRef.current.aiMatchContext, 'main_ai', resolveBehaviorTuning(stateRef.current.settings).calibrationWindowSize);
             mai()!.hp -= 1;
             if (mai()!.hp <= 0) {
               mai()!.hp = 0;
@@ -11216,6 +11257,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
   const getBestTacticalTarget = (botId: string, botPos: THREE.Vector3, difficulty: string) => {
     const s = stateRef.current;
+    const tuning = resolveBehaviorTuning(s.settings);
     const playstyleVal = resolveBotKnobs(botId).aiPlaystyle;
     const playstyleFactor = playstyleVal / 100;
     const recoveringTargetBonus = (1.0 - Math.abs(playstyleFactor - 0.5) * 2.0) * 200.0;
@@ -11289,6 +11331,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
           targetZ: target.pos.z,
           arenaRadius: s.arenaRadius,
           spatialIQ: targetSelectionSpatialIQ,
+          edgeInset: tuning.arenaEdgeInset,
         });
 
         score += getCoordinatedTargetBonus({
@@ -11325,9 +11368,14 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     } = {}
   ) => {
     const s = stateRef.current;
+    const tuning = resolveBehaviorTuning(s.settings);
     const baseAggression = resolveBotDerived(botId).pressureAggression;
-    const matchMultipliers = deriveMatchStateMultipliers(getMatchScoreContext(), baseAggression / 100);
-    
+    const matchMultipliers = deriveMatchStateMultipliers(
+      getMatchScoreContext(),
+      baseAggression / 100,
+      { aheadThreshold: tuning.scoreAheadThreshold, closeThreshold: tuning.scoreCloseThreshold }
+    );
+
     if (difficulty === 'easy') {
       return evaluateAICombatDecision({
         difficulty,
@@ -11348,6 +11396,9 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         weaponPrioritization: context.weaponPrioritization ?? 50,
         playerModel: context.playerModel,
         matchMultipliers,
+        mechanicAwareIq: tuning.mechanicAwareIq,
+        highIqOverride: tuning.highIqOverride,
+        hammerWindupSeconds: tuning.hammerWindupSeconds,
       });
     }
 
@@ -11405,6 +11456,9 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       weaponPrioritization: context.weaponPrioritization ?? 50,
       playerModel: context.playerModel,
       matchMultipliers,
+      mechanicAwareIq: tuning.mechanicAwareIq,
+      highIqOverride: tuning.highIqOverride,
+      hammerWindupSeconds: tuning.hammerWindupSeconds,
     });
   };
 
@@ -11586,6 +11640,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
   const updateSingleAIEntity = (botId: string, dt: number) => {
     const s = stateRef.current;
+    const tuning = resolveBehaviorTuning(s.settings);
 
     const self: any = s.otherPlayers.get(botId);
     if (!self || self.controller !== 'ai') return;
@@ -11742,7 +11797,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         scoreEnemy: s.scoreEnemy,
         killsToWin: matchKillsToWin,
       },
-      derivedParams.pressureAggression / 100
+      derivedParams.pressureAggression / 100,
+      { aheadThreshold: tuning.scoreAheadThreshold, closeThreshold: tuning.scoreCloseThreshold }
     );
     const effectivePressureAggression = applyMatchAggression(
       derivedParams.pressureAggression,
@@ -11752,7 +11808,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
     const calibrationEnabled = isSkillCalibrationEnabled(difficulty);
     const calibrationMultipliers = calibrationEnabled
-      ? computeCalibrationMultipliers(getOrCreateBotCalibrationState(s.aiMatchContext, botId))
+      ? computeCalibrationMultipliers(getOrCreateBotCalibrationState(s.aiMatchContext, botId), tuning.maxCalibrationDrift)
       : NEUTRAL_CALIBRATION_MULTIPLIERS;
     const calibratedKnobs = applyCalibrationMultipliers({
       reactionLatency,
@@ -11764,8 +11820,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     const tunedAnticipationFactor = calibratedKnobs.anticipationFactor;
 
     const psychEnabled = isPsychPressureEnabled(difficulty, effectivePressureAggression);
-    const psychState = tickBotPsychState(s.aiMatchContext, botId, dt);
-    const effectiveReactionLatency = getEffectiveReactionLatency(tunedReactionLatency, psychState, psychEnabled);
+    const psychState = tickBotPsychState(s.aiMatchContext, botId, dt, tuning.tempoCycleDuration);
+    const effectiveReactionLatency = getEffectiveReactionLatency(tunedReactionLatency, psychState, psychEnabled, tuning.tempoSlowMult, tuning.tempoFastMult);
     const postKillPressure = psychEnabled ? getActivePostKillPressure(psychState) : undefined;
 
     if (postKillPressure) {
@@ -11937,6 +11993,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         targetZ: anticipatedSpawn.z,
         arenaRadius: activeMap ? activeMap.arenaRadius : s.arenaRadius,
         mapShape: activeMap?.mapShape,
+        edgeInset: tuning.arenaEdgeInset,
       });
 
       if (spawnDist > 6.0) {
@@ -12000,11 +12057,11 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     }
     constrainCombatantToArena(pos, vel);
 
-    const anticipationBonus = tunedAnticipationFactor * 0.42;
+    const anticipationBonus = tunedAnticipationFactor * tuning.predictionAnticipationBonus;
     const predictionLead = tunedAnticipationFactor > 0.1 ? effectiveReactionLatency + anticipationBonus : 0;
     const predictedTargetPos = predictCombatantPosition(target.pos, target.vel, predictionLead);
     const targetAirborne = predictedTargetPos.y > 0.35 || target.pos.y > 0.35 || (!!target.vel && Math.abs(target.vel.y) > 1.0);
-    const targetLandingPos = predictLandingPosition(target.pos, target.vel, Math.min(1.5, predictionLead + tunedAnticipationFactor * 0.65));
+    const targetLandingPos = predictLandingPosition(target.pos, target.vel, Math.min(1.5, predictionLead + tunedAnticipationFactor * tuning.predictionLandingWeight));
     
     const activeCustomMap = getActiveCustomMap();
     const radiusToUse = activeCustomMap ? activeCustomMap.arenaRadius : s.arenaRadius;
@@ -12090,8 +12147,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     const targetIsLunging = target.isLunging;
 
     if (calibrationEnabled) {
-      tickCalibrationPendingDodge(s.aiMatchContext, botId, dt, targetIsLunging);
-      tickCalibrationPendingCounter(s.aiMatchContext, botId, dt, targetIsLunging);
+      tickCalibrationPendingDodge(s.aiMatchContext, botId, dt, targetIsLunging, tuning.dodgeResolveDelay, tuning.calibrationWindowSize);
+      tickCalibrationPendingCounter(s.aiMatchContext, botId, dt, targetIsLunging, tuning.counterResolveDelay, tuning.calibrationWindowSize);
     }
     // The swap-ready cooldown (weaponReadyTime) gates attacking after a weapon swap,
     // exactly as it does for the player. `let` so a same-tick tactical swap can revoke it.
@@ -12163,7 +12220,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     if (psychEnabled) {
       psychState.standoffTimer = accumulateStandoffTimer(
         psychState.standoffTimer,
-        isInStandoffBand(distanceToTarget, resolvedDangerZone),
+        isInStandoffBand(distanceToTarget, resolvedDangerZone, tuning.standoffRangeMinOffset, tuning.standoffRangeMaxOffset),
         dt
       );
     }
@@ -12246,7 +12303,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         ...coordRoleInput,
         commitTimer: coordCommitTimer,
         allyAttacking: isAllyAttacking(),
-      }) ||
+      }, tuning.attackStaggerStep) ||
       shouldPunisherHold({
         ...coordRoleInput,
         targetWeaponState: target.weaponState,
@@ -12259,7 +12316,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     const swapLockoutRemaining = self.swapLockoutTimer ?? 0;
 
     const commitFeint = () => {
-      startFeintCooldown(aiContext, botId, rollFeintCooldownDuration());
+      startFeintCooldown(aiContext, botId, rollFeintCooldownDuration(undefined, tuning.feintCooldownMin, tuning.feintCooldownMax));
     };
 
     const tryFeintRoll = (rollScale = 1) => rollFeintAttempt({
@@ -12465,7 +12522,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
     const spatialIQ = derivedParams.spatialIQ;
     const evasionPlayerModel = getTargetPlayerModel(target.id);
-    const evasionTimingScale = getEvasionTimingScale(evasionPlayerModel);
+    const evasionTimingScale = getEvasionTimingScale(evasionPlayerModel, tuning.defaultReactionTime);
     const targetOtherBot =
       target.id !== 'player' && target.id !== 'main_ai' ? s.otherPlayers.get(target.id) : undefined;
     const evasionRollInput = { difficulty, defensiveEvasionMult, spatialIQ };
@@ -12510,6 +12567,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         targetActiveWeapon: target.activeWeapon,
         dashCooldownRemaining: dashCooldownTimer,
         difficulty,
+        baitDistance: tuning.baitDodgeDistance,
+        baitBand: tuning.baitDodgeBand,
       }) &&
       dashCooldownTimer <= 0
     ) {
@@ -12542,6 +12601,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         combatDistanceToTarget: combatDistanceToTarget / evasionTimingScale,
         spatialIQ,
         swayPhase: swayTimer,
+        baseRange: tuning.baseEvasionDetectRange,
+        jitterAmount: tuning.evasionTriggerJitter,
       }) &&
       difficulty !== 'easy'
     ) {
@@ -12628,6 +12689,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
           lungeSpeed: s.settings.swordLungeSpeed ?? 24.0,
           attackRadius: s.settings.attackRadius,
           timingScale: evasionTimingScale,
+          hammerWindup: tuning.hammerWindupSeconds,
         });
         if (isInBulltrueHammerWindow(distanceToTarget, bulltrueBand)) {
           triggerCombatantAttack(self, 'hammer');
@@ -12648,11 +12710,11 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       const fallingIntoHammer = (target.vel?.y ?? 0) <= 0.75 && distanceToTarget <= resolvedDangerZone + 2.5;
       const canReachBody = combatDistanceToTarget <= resolvedAiReach + tunedAnticipationFactor * 1.5;
 
-      if ((fallingIntoHammer || canReachBody) && Math.random() < 0.18 + tunedAnticipationFactor * 0.42) {
+      if ((fallingIntoHammer || canReachBody) && Math.random() < tuning.hammerJumpReachBase + tunedAnticipationFactor * tuning.hammerJumpReachAnticipation) {
         state = 'COOLDOWN';
         timer = weaponReloadTime('hammer') * cooldownMult;
         triggerCombatantAttack(self, 'hammer');
-      } else if (!enemyInKillRange && verticalDeltaToTarget > 2.0 && distanceToTarget <= resolvedDangerZone + 4.5 && Math.random() < 0.012 + tunedAnticipationFactor * 0.035) {
+      } else if (!enemyInKillRange && verticalDeltaToTarget > 2.0 && distanceToTarget <= resolvedDangerZone + 4.5 && Math.random() < tuning.hammerJumpVerticalBase + tunedAnticipationFactor * tuning.hammerJumpVerticalAnticipation) {
         if (startAIHammerJump(self, pos, vel, toTarget, 'offensive')) {
           weaponState = 'swing_up';
         }
@@ -12965,6 +13027,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         arenaRadius: activeCustomMap ? activeCustomMap.arenaRadius : s.arenaRadius,
         spatialIQ,
         mapShape: activeCustomMap?.mapShape,
+        edgeInset: tuning.arenaEdgeInset,
       });
       const blendedHeading = blendSpatialHeading(lookHeading.x, lookHeading.z, spatialBias);
       const spatialLookHeading = new THREE.Vector3(blendedHeading.x, 0, blendedHeading.z);
@@ -12991,6 +13054,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         isDashing: false,
         isSliding: slideActive,
         targetRecedingSpeed,
+        engageGap: tuning.sprintEngageGap,
+        chaseTargetSpeed: tuning.sprintChaseTargetSpeed,
       });
       const sprintMult = isSprinting ? getSprintSpeedMultiplier(s.settings.speedSprint) : 1;
 
@@ -13039,13 +13104,13 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         tryFeintRoll(0.5)
       ) {
         applyTacticalWeapon('sword');
-        startWeaponSwapFeint(aiContext, botId, WEAPON_SWAP_FEINT_DELAY);
+        startWeaponSwapFeint(aiContext, botId, tuning.weaponSwapFeintDelay);
         commitFeint();
       }
 
       let feintLungeFakeout = false;
       if (canStartWeaponAction && activeWeapon === 'sword' && weaponState === 'ready' && hasVerticalLungeLine && lungeDistanceToTarget >= minLungeRange && lungeDistanceToTarget <= maxLungeRange && target.hp > 0 && !targetIsProtected) {
-        let lungeChance = (targetAirborne ? 0.08 + (tunedAnticipationFactor * 0.18) : 0.04 + (tunedAnticipationFactor * 0.08)) * aggressiveLungeMult;
+        let lungeChance = (targetAirborne ? tuning.lungeChanceAirborneBase + (tunedAnticipationFactor * tuning.lungeChanceAirborneAnticipation) : tuning.lungeChanceGroundBase + (tunedAnticipationFactor * tuning.lungeChanceGroundAnticipation)) * aggressiveLungeMult;
         if (state === 'PRESSURING' && shouldPressurePreferLunge({
           activeWeapon,
           distanceToTarget: lungeDistanceToTarget,
@@ -13069,7 +13134,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
             commitFeint();
             feintLungeFakeout = true;
             state = 'DANCING_FORWARD';
-            timer = LUNGE_FAKEOUT_FORWARD_TIMER;
+            timer = tuning.lungeFakeoutForwardTimer;
           } else {
           let lungeDir = target.pos.clone().sub(pos);
           if (!targetAirborne) lungeDir.y = 0;
@@ -13113,6 +13178,10 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
           isDashing: false,
           isSliding: slideActive,
           targetProtected: targetIsProtected,
+          minComplexity: tuning.slideMinComplexity,
+          minGap: tuning.slideMinGap,
+          maxGap: tuning.slideMaxGap,
+          triggerChance: tuning.slideTriggerChance,
         })) {
           slideActive = true;
           slideDistanceTraveled = 0;
@@ -13121,7 +13190,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         }
 
         if (slideActive) {
-          const slideSpeed = getSlideSpeed(s.settings.speedSlide);
+          const slideSpeed = getSlideSpeed(s.settings.speedSlide, tuning.aiBaseGroundSpeed);
           vel.copy(spatialLookHeading).multiplyScalar(slideSpeed);
           pos.addScaledVector(vel, dt);
           const advanced = advanceAISlide({
@@ -13184,7 +13253,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         }
 
         if (target.weaponState === 'swing_up' && !targetIsProtected) {
-          const reactChance = 0.45 + (tunedAnticipationFactor * 0.4);
+          const reactChance = tuning.reactChanceBase + (tunedAnticipationFactor * tuning.reactChanceAnticipation);
           
           const myHP = self.hp;
           const targetHP = target.hp;
@@ -13240,7 +13309,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         });
         if (approachFeintWindow !== null && tryFeintRoll(approachFeintWindow)) {
           state = 'DANCING_BACKWARD';
-          timer = APPROACH_FEINT_BACK_TIMER;
+          timer = tuning.approachFeintBackTimer;
           commitFeint();
           vel.copy(lookHeading).multiplyScalar(-6.2 * (s.settings.speedBackward / 100));
           pos.addScaledVector(vel, dt);
@@ -13305,7 +13374,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
           dashCooldownTimer = s.settings.dashCooldown || 2.0;
           sfx.playDash();
           state = 'SIDE_STEPPING';
-          timer = CHARGE_ABORT_SIDESTEP_TIMER;
+          timer = tuning.chargeAbortSidestepTimer;
           commitFeint();
         } else {
         if (dashCooldownTimer <= 0 && (movementComplexity >= 40) && !targetIsProtected) {

@@ -30,10 +30,10 @@ export interface BotPsychState {
   standoffTimer: number;
 }
 
-export function createBotPsychState(): BotPsychState {
+export function createBotPsychState(tempoCycleDuration: number = TEMPO_CYCLE_DURATION): BotPsychState {
   return {
     tempoPhase: 'fast',
-    tempoTimer: TEMPO_CYCLE_DURATION * 0.5,
+    tempoTimer: tempoCycleDuration * 0.5,
     standoffTimer: 0,
   };
 }
@@ -65,7 +65,11 @@ export function notifyBotKill(
   state.standoffTimer = 0;
 }
 
-export function tickBotPsychState(state: BotPsychState, dt: number): void {
+export function tickBotPsychState(
+  state: BotPsychState,
+  dt: number,
+  tempoCycleDuration: number = TEMPO_CYCLE_DURATION,
+): void {
   if (state.postKill) {
     state.postKill.timerRemaining = Math.max(0, state.postKill.timerRemaining - dt);
     if (state.postKill.timerRemaining <= 0) {
@@ -76,7 +80,7 @@ export function tickBotPsychState(state: BotPsychState, dt: number): void {
   state.tempoTimer -= dt;
   if (state.tempoTimer <= 0) {
     state.tempoPhase = state.tempoPhase === 'slow' ? 'fast' : 'slow';
-    state.tempoTimer = TEMPO_CYCLE_DURATION;
+    state.tempoTimer = tempoCycleDuration;
   }
 }
 
@@ -90,22 +94,26 @@ export function getActivePostKillPressure(state: BotPsychState): PostKillPressur
 export function getEffectiveReactionLatency(
   baseLatency: number,
   state: BotPsychState,
-  enabled: boolean
+  enabled: boolean,
+  slowMult: number = TEMPO_SLOW_MULT,
+  fastMult: number = TEMPO_FAST_MULT,
 ): number {
   if (!enabled) {
     return baseLatency;
   }
-  const mult = state.tempoPhase === 'slow' ? TEMPO_SLOW_MULT : TEMPO_FAST_MULT;
+  const mult = state.tempoPhase === 'slow' ? slowMult : fastMult;
   return Math.max(0.01, baseLatency * mult);
 }
 
 export function isInStandoffBand(
   distanceToTarget: number,
-  dangerZone: number
+  dangerZone: number,
+  minOffset: number = STANDOFF_RANGE_MIN_OFFSET,
+  maxOffset: number = STANDOFF_RANGE_MAX_OFFSET,
 ): boolean {
   return (
-    distanceToTarget > dangerZone + STANDOFF_RANGE_MIN_OFFSET &&
-    distanceToTarget <= dangerZone + STANDOFF_RANGE_MAX_OFFSET
+    distanceToTarget > dangerZone + minOffset &&
+    distanceToTarget <= dangerZone + maxOffset
   );
 }
 

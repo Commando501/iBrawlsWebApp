@@ -75,7 +75,7 @@ import { CharacterPreview } from './components/CharacterPreview';
 import { CharacterPainter } from './components/CharacterPainter';
 import { CharacterLoadout, DEFAULT_LOADOUT, AVAILABLE_PRESETS, HelmetPreset, TorsoPreset, ArmPreset, LegPreset } from './components/VoxelModels';
 
-const APP_VERSION = '0.541';
+const APP_VERSION = '0.548';
 const MAX_PLAYER_NAME_LENGTH = 10;
 
 interface OnlineClient {
@@ -128,17 +128,7 @@ const getArchetypeDescription = (val: string): string => {
 
 // Custom AI Behavior panel — every engine-wired dial, grouped for scannability.
 // NOTE: any future AI-behavior knob must be added here (and to AITuning / RosterSlotConfig).
-type AICustomKnobKey =
-  | 'aiReactionLatency'
-  | 'aiAnticipationFactor'
-  | 'aiWeaponSwapIQ'
-  | 'aiMovementComplexity'
-  | 'aiSpatialIQ'
-  | 'aiSpacingBand'
-  | 'aiPlaystyle'
-  | 'aiWeaponPrioritization'
-  | 'aiPressureAggression'
-  | 'aiFeintChance';
+type AICustomKnobKey = keyof UniversalSettings;
 
 interface AICustomKnobEntry {
   key: AICustomKnobKey;
@@ -153,7 +143,52 @@ interface AICustomKnobEntry {
   desc: string;
 }
 
-const AI_CUSTOM_KNOB_SECTIONS: { title: string; entries: AICustomKnobEntry[] }[] = [
+interface AICustomKnobSection {
+  title: string;
+  entries: AICustomKnobEntry[];
+  /** Expert (formerly-hardcoded) tuning groups start collapsed to avoid overwhelming. */
+  expert?: boolean;
+}
+
+/**
+ * Build the Expert AI Tuning groups for the main-menu Custom AI Behavior panel by
+ * reusing the row metadata already declared in settingsSchema's `aitune` section —
+ * single source of truth for label/range/format/description.
+ */
+const EXPERT_AI_TUNE_GROUPS: { title: string; keys: (keyof UniversalSettings)[] }[] = [
+  { title: 'Combat Decision (Expert)', keys: ['aiTuneMechanicAwareIq', 'aiTuneHighIqOverride', 'aiTuneHammerWindupSeconds'] },
+  { title: 'Match State (Expert)', keys: ['aiTuneScoreAheadThreshold', 'aiTuneScoreCloseThreshold', 'aiTuneFeintIqGate'] },
+  { title: 'Feints (Expert)', keys: ['aiTuneFeintCooldownMin', 'aiTuneFeintCooldownMax', 'aiTuneWeaponSwapFeintDelay', 'aiTuneApproachFeintBackTimer', 'aiTuneLungeFakeoutForwardTimer', 'aiTuneChargeAbortSidestepTimer'] },
+  { title: 'Movement (Expert)', keys: ['aiTuneBaseGroundSpeed', 'aiTuneSprintEngageGap', 'aiTuneSprintChaseTargetSpeed', 'aiTuneSlideMinGap', 'aiTuneSlideMaxGap', 'aiTuneSlideMinComplexity', 'aiTuneSlideTriggerChance'] },
+  { title: 'Spatial Awareness (Expert)', keys: ['aiTuneBaseEvasionDetectRange', 'aiTuneBaitDodgeDistance', 'aiTuneBaitDodgeBand', 'aiTuneEvasionTriggerJitter', 'aiTuneArenaEdgeInset'] },
+  { title: 'Combos (Expert)', keys: ['aiTuneComboMinWeaponSwapIq', 'aiTuneComboAdvancedWeaponSwapIq'] },
+  { title: 'Tempo & Pressure (Expert)', keys: ['aiTuneTempoCycleDuration', 'aiTunePostKillPressureDuration', 'aiTuneTempoSlowMult', 'aiTuneTempoFastMult', 'aiTuneStandoffRangeMinOffset', 'aiTuneStandoffRangeMaxOffset'] },
+  { title: 'Adaptation & Learning (Expert)', keys: ['aiTuneCalibrationWindowSize', 'aiTuneMaxCalibrationDrift', 'aiTuneDodgeResolveDelay', 'aiTuneCounterResolveDelay', 'aiTunePlayerModelEmaAlpha', 'aiTuneDefaultLungeDistance', 'aiTuneDefaultReactionTime'] },
+  { title: 'Coordination (Expert)', keys: ['aiTunePriorityTargetTtl', 'aiTuneDamageTagTtl', 'aiTuneAttackStaggerStep'] },
+  { title: 'Engine Limits (Expert)', keys: ['aiTuneMaxAirborneHeight', 'aiTuneForcedDescentSpeed'] },
+];
+
+const AI_TUNE_DEF_BY_KEY = new Map(
+  SETTING_DEFINITIONS.filter((d) => d.sectionId === 'aitune').map((d) => [d.key, d])
+);
+
+const buildExpertEntries = (keys: (keyof UniversalSettings)[]): AICustomKnobEntry[] =>
+  keys.map((key) => {
+    const d = AI_TUNE_DEF_BY_KEY.get(key);
+    const fallback = DEFAULT_ADMIN_SETTINGS[key];
+    return {
+      key,
+      label: d?.label ?? String(key),
+      min: d?.min ?? 0,
+      max: d?.max ?? 100,
+      step: d?.step ?? 1,
+      def: typeof fallback === 'number' ? fallback : 0,
+      fmt: d?.formatValue ?? ((v) => `${v ?? 0}`),
+      desc: d?.description ?? '',
+    };
+  });
+
+const AI_CUSTOM_KNOB_SECTIONS: AICustomKnobSection[] = [
   {
     title: 'Reflexes & Awareness',
     entries: [
@@ -199,6 +234,12 @@ const AI_CUSTOM_KNOB_SECTIONS: { title: string; entries: AICustomKnobEntry[] }[]
       { key: 'aiFeintChance', label: 'Feint Chance', min: 0, max: 100, step: 5, def: 0, fmt: (v) => (v === undefined ? 'Auto (Derived)' : `${v}%`), desc: 'How often it fakes swings or approaches to bait your defense. Auto is derived and needs a decent Weapon Swap IQ to trigger.' },
     ],
   },
+  // Expert tuning groups (formerly-hardcoded "feel" constants), collapsed by default.
+  ...EXPERT_AI_TUNE_GROUPS.map((g): AICustomKnobSection => ({
+    title: g.title,
+    entries: buildExpertEntries(g.keys),
+    expert: true,
+  })),
 ];
 
 
@@ -1066,6 +1107,14 @@ export default function App() {
   const [debugMode, setDebugMode] = useState<boolean>(false);
   const [isTerminated, setIsTerminated] = useState<boolean>(false);
   const [showAdminPanel, setShowAdminPanel] = useState<boolean>(false);
+  // Collapsed state per Custom AI Behavior group; Expert groups start collapsed.
+  const [collapsedAiSections, setCollapsedAiSections] = useState<Record<string, boolean>>(() => {
+    const init: Record<string, boolean> = {};
+    AI_CUSTOM_KNOB_SECTIONS.forEach((s) => { if (s.expert) init[s.title] = true; });
+    return init;
+  });
+  const toggleAiSection = (title: string) =>
+    setCollapsedAiSections((prev) => ({ ...prev, [title]: !prev[title] }));
   const [showUiAdjustment, setShowUiAdjustment] = useState<boolean>(false);
   const [showLightingMenu, setShowLightingMenu] = useState<boolean>(false);
   const [offlineBotCount, setOfflineBotCount] = useState<number>(3); // Default to 3 bots (total 4 combatants)
@@ -3507,11 +3556,27 @@ export default function App() {
                                 <p className="text-[10px] text-white/40 leading-snug italic">
                                   Tune every facet of the AI, or pick a Behavior Archetype Preset above to fill all dials as a starting point. Advanced dials marked “Auto” fall back to derived values until you set them.
                                 </p>
-                                {AI_CUSTOM_KNOB_SECTIONS.map((sectionGroup) => (
+                                {AI_CUSTOM_KNOB_SECTIONS.map((sectionGroup) => {
+                                  const collapsed = !!collapsedAiSections[sectionGroup.title];
+                                  return (
                                   <div key={sectionGroup.title} className="flex flex-col gap-3">
-                                    <span className="text-[10px] text-[#38bdf8]/70 uppercase tracking-widest font-mono border-b border-white/5 pb-1">
-                                      {sectionGroup.title}
-                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => toggleAiSection(sectionGroup.title)}
+                                      className={`flex items-center justify-between w-full text-[10px] uppercase tracking-widest font-mono border-b pb-1 cursor-pointer transition-colors group ${
+                                        sectionGroup.expert
+                                          ? 'text-fuchsia-400/70 border-fuchsia-500/10 hover:text-fuchsia-300'
+                                          : 'text-[#38bdf8]/70 border-white/5 hover:text-[#38bdf8]'
+                                      }`}
+                                    >
+                                      <span className="flex items-center gap-1.5">
+                                        <span className={`inline-block transition-transform duration-150 ${collapsed ? '' : 'rotate-90'}`}>▸</span>
+                                        {sectionGroup.title}
+                                      </span>
+                                      <span className="text-white/25 group-hover:text-white/40">{sectionGroup.entries.length}</span>
+                                    </button>
+                                    {!collapsed && (
+                                      <>
                                     {sectionGroup.entries.map((entry) => {
                                       const raw = adminSettings[entry.key] as number | undefined;
                                       return (
@@ -3552,8 +3617,11 @@ export default function App() {
                                         <p className="text-[10px] text-white/35 leading-snug">When on, the AI disengages after landing a hit instead of chaining relentless follow-up pressure — useful for patient, hit-and-retreat fighters.</p>
                                       </div>
                                     )}
+                                      </>
+                                    )}
                                   </div>
-                                ))}
+                                  );
+                                })}
 
                                 {/* Save Custom AI Presets */}
                                 <div className="flex flex-col gap-1.5 pt-2 border-t border-white/5 mt-2">

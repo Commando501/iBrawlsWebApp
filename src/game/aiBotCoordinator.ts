@@ -37,10 +37,14 @@ export function isCoordinationEnabled(difficulty: string): boolean {
   return difficulty !== 'easy';
 }
 
-export function tickBotCoordinator(state: BotCoordinatorState, dt: number): void {
+export function tickBotCoordinator(
+  state: BotCoordinatorState,
+  dt: number,
+  priorityTargetTtl: number = PRIORITY_TARGET_TTL,
+): void {
   if (state.priorityTargetId) {
     state.priorityAge += dt;
-    if (state.priorityAge >= PRIORITY_TARGET_TTL) {
+    if (state.priorityAge >= priorityTargetTtl) {
       state.priorityTargetId = undefined;
       state.taggerBotId = undefined;
       state.priorityAge = 0;
@@ -77,7 +81,8 @@ export function registerBotEngagement(
 export function notifyBotDamageTag(
   state: BotCoordinatorState,
   botId: string,
-  targetId: string
+  targetId: string,
+  damageTagTtl: number = DAMAGE_TAG_TTL,
 ): void {
   if (!state.priorityTargetId) {
     state.priorityTargetId = targetId;
@@ -90,7 +95,7 @@ export function notifyBotDamageTag(
     taggers = new Map();
     state.recentTags.set(targetId, taggers);
   }
-  taggers.set(botId, DAMAGE_TAG_TTL);
+  taggers.set(botId, damageTagTtl);
 }
 
 export function getEngagingBotIds(state: BotCoordinatorState, targetId: string): string[] {
@@ -231,7 +236,7 @@ export function getAttackPhaseIndex(input: BotCoordRoleInput): number {
   }
 }
 
-export function getAttackPhaseDelay(input: BotCoordRoleInput): number {
+export function getAttackPhaseDelay(input: BotCoordRoleInput, staggerStep: number = ATTACK_STAGGER_STEP): number {
   if (!isCoordinationEnabled(input.difficulty)) {
     return 0;
   }
@@ -241,11 +246,11 @@ export function getAttackPhaseDelay(input: BotCoordRoleInput): number {
     return 0;
   }
 
-  return getAttackPhaseIndex(input) * ATTACK_STAGGER_STEP;
+  return getAttackPhaseIndex(input) * staggerStep;
 }
 
 /** Returns true when this bot should wait for allies' attack phase. */
-export function shouldDeferCoordinatedAttack(input: AttackStaggerInput): boolean {
+export function shouldDeferCoordinatedAttack(input: AttackStaggerInput, staggerStep: number = ATTACK_STAGGER_STEP): boolean {
   if (!isCoordinationEnabled(input.difficulty)) {
     return false;
   }
@@ -255,7 +260,7 @@ export function shouldDeferCoordinatedAttack(input: AttackStaggerInput): boolean
     return false;
   }
 
-  const requiredDelay = getAttackPhaseDelay(input);
+  const requiredDelay = getAttackPhaseDelay(input, staggerStep);
   if (input.commitTimer < requiredDelay) {
     return true;
   }

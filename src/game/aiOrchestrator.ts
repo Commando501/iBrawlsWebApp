@@ -21,6 +21,7 @@ import {
   resolveRosterSlotForCombatant,
 } from './rosterSlotConfig';
 import { resolveCombatantTeam } from './teamScoring';
+import { resolveBehaviorTuning } from './aiBehaviorTuning';
 
 /** Default hues for offline bot_* slots (bot_2 … bot_7). */
 export const OFFLINE_BOT_HUES = [120, 280, 45, 60, 320, 180];
@@ -283,7 +284,7 @@ export function tickAIOrchestrator(
     rosterChanged = true;
   }
 
-  tickBotCoordinator(coordinator, dt);
+  tickBotCoordinator(coordinator, dt, resolveBehaviorTuning(settings).priorityTargetTtl);
   clearBotEngagements(coordinator);
 
   return { rosterChanged, totalCombatants: 1 + offlineBotCount };

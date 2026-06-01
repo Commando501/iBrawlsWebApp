@@ -72,6 +72,67 @@ export interface UniversalSettings {
   speedSlide: number;
   slideDistance: number;
   slideCooldown: number;
+
+  // --- Expert AI Tuning overrides (Group A exposed; Group B reserved). ---
+  // Each key overrides a field in AIBehaviorTuning; unset = engine default.
+  // See src/game/aiBehaviorTuning.ts (AI_TUNE_SETTING_KEYS).
+  aiTuneMechanicAwareIq?: number;
+  aiTuneHighIqOverride?: number;
+  aiTuneHammerWindupSeconds?: number;
+  aiTuneScoreAheadThreshold?: number;
+  aiTuneScoreCloseThreshold?: number;
+  aiTuneFeintIqGate?: number;
+  aiTuneFeintCooldownMin?: number;
+  aiTuneFeintCooldownMax?: number;
+  aiTuneWeaponSwapFeintDelay?: number;
+  aiTuneApproachFeintBackTimer?: number;
+  aiTuneLungeFakeoutForwardTimer?: number;
+  aiTuneChargeAbortSidestepTimer?: number;
+  aiTuneBaseGroundSpeed?: number;
+  aiTuneSprintEngageGap?: number;
+  aiTuneSprintChaseTargetSpeed?: number;
+  aiTuneSlideMinGap?: number;
+  aiTuneSlideMaxGap?: number;
+  aiTuneSlideMinComplexity?: number;
+  aiTuneSlideTriggerChance?: number;
+  aiTuneBaseEvasionDetectRange?: number;
+  aiTuneBaitDodgeDistance?: number;
+  aiTuneBaitDodgeBand?: number;
+  aiTuneEvasionTriggerJitter?: number;
+  aiTuneArenaEdgeInset?: number;
+  aiTuneComboMinWeaponSwapIq?: number;
+  aiTuneComboAdvancedWeaponSwapIq?: number;
+  aiTuneTempoCycleDuration?: number;
+  aiTunePostKillPressureDuration?: number;
+  aiTuneTempoSlowMult?: number;
+  aiTuneTempoFastMult?: number;
+  aiTuneStandoffRangeMinOffset?: number;
+  aiTuneStandoffRangeMaxOffset?: number;
+  aiTuneCalibrationWindowSize?: number;
+  aiTuneMaxCalibrationDrift?: number;
+  aiTuneDodgeResolveDelay?: number;
+  aiTuneCounterResolveDelay?: number;
+  aiTunePlayerModelEmaAlpha?: number;
+  aiTuneDefaultLungeDistance?: number;
+  aiTuneDefaultReactionTime?: number;
+  aiTunePriorityTargetTtl?: number;
+  aiTuneDamageTagTtl?: number;
+  aiTuneAttackStaggerStep?: number;
+  aiTuneMaxAirborneHeight?: number;
+  aiTuneForcedDescentSpeed?: number;
+  // Group B (centralized, no UI yet):
+  aiTunePredictionAnticipationBonus?: number;
+  aiTunePredictionLandingWeight?: number;
+  aiTuneLungeChanceGroundBase?: number;
+  aiTuneLungeChanceGroundAnticipation?: number;
+  aiTuneLungeChanceAirborneBase?: number;
+  aiTuneLungeChanceAirborneAnticipation?: number;
+  aiTuneReactChanceBase?: number;
+  aiTuneReactChanceAnticipation?: number;
+  aiTuneHammerJumpReachBase?: number;
+  aiTuneHammerJumpReachAnticipation?: number;
+  aiTuneHammerJumpVerticalBase?: number;
+  aiTuneHammerJumpVerticalAnticipation?: number;
 }
 
 export interface Keybindings {

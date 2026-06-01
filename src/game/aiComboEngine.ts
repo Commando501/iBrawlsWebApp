@@ -50,6 +50,9 @@ export interface ComboPickInput {
   maxLungeRange: number;
   targetRecovering: boolean;
   random?: () => number;
+  /** Tuning overrides (default to module constants). */
+  comboMinIq?: number;
+  comboAdvancedIq?: number;
 }
 
 export interface ComboAbortInput {
@@ -123,8 +126,19 @@ export const AI_COMBO_DEFINITIONS: Record<AIComboId, AIComboDefinition> = {
   },
 };
 
-export function canUseWeaponCombos(difficulty: string, weaponSwapIQ: number): boolean {
-  return difficulty !== 'easy' && weaponSwapIQ >= COMBO_MIN_WEAPON_SWAP_IQ;
+export function canUseWeaponCombos(
+  difficulty: string,
+  weaponSwapIQ: number,
+  comboMinIq: number = COMBO_MIN_WEAPON_SWAP_IQ,
+): boolean {
+  return difficulty !== 'easy' && weaponSwapIQ >= comboMinIq;
+}
+
+/** Effective IQ gate for a combo, remapping the def's baked threshold onto live tuning. */
+function effComboThreshold(comboId: AIComboId, comboMinIq: number, comboAdvancedIq: number): number {
+  return AI_COMBO_DEFINITIONS[comboId].minWeaponSwapIQ >= COMBO_ADVANCED_WEAPON_SWAP_IQ
+    ? comboAdvancedIq
+    : comboMinIq;
 }
 
 export function isComboWeaponAllowed(
@@ -171,7 +185,9 @@ function comboUsesWeapon(comboId: AIComboId, weapon: AICombatWeapon): boolean {
 }
 
 export function pickComboOnHit(input: ComboPickInput): AIComboId | null {
-  if (!canUseWeaponCombos(input.difficulty, input.weaponSwapIQ)) {
+  const comboMinIq = input.comboMinIq ?? COMBO_MIN_WEAPON_SWAP_IQ;
+  const comboAdvancedIq = input.comboAdvancedIq ?? COMBO_ADVANCED_WEAPON_SWAP_IQ;
+  if (!canUseWeaponCombos(input.difficulty, input.weaponSwapIQ, comboMinIq)) {
     return null;
   }
 
@@ -179,25 +195,25 @@ export function pickComboOnHit(input: ComboPickInput): AIComboId | null {
   const candidates: AIComboId[] = [];
 
   if (input.openingWeapon === 'hammer') {
-    if (input.weaponSwapIQ >= COMBO_MIN_WEAPON_SWAP_IQ) {
+    if (input.weaponSwapIQ >= comboMinIq) {
       candidates.push('mixup', 'safe_finish');
     }
     if (
-      input.weaponSwapIQ >= COMBO_ADVANCED_WEAPON_SWAP_IQ &&
+      input.weaponSwapIQ >= comboAdvancedIq &&
       input.distanceToTarget >= input.minLungeRange * 0.75 &&
       input.distanceToTarget <= input.maxLungeRange + 2
     ) {
       candidates.push('bait_smash');
     }
   } else if (input.openingWeapon === 'sword') {
-    if (input.weaponSwapIQ >= COMBO_MIN_WEAPON_SWAP_IQ && input.targetRecovering) {
+    if (input.weaponSwapIQ >= comboMinIq && input.targetRecovering) {
       candidates.push('double_tap');
     }
   }
 
   const eligible = candidates.filter(
     (id) =>
-      input.weaponSwapIQ >= AI_COMBO_DEFINITIONS[id].minWeaponSwapIQ &&
+      input.weaponSwapIQ >= effComboThreshold(id, comboMinIq, comboAdvancedIq) &&
       isComboCompatible(id, input.weaponPrioritization) &&
       (!AI_COMBO_DEFINITIONS[id].openingWeapon ||
         AI_COMBO_DEFINITIONS[id].openingWeapon === input.openingWeapon)
@@ -213,10 +229,10 @@ export function pickComboOnHit(input: ComboPickInput): AIComboId | null {
       return input.weaponPrioritization <= 35 ? 1.4 : 0.85;
     }
     if (id === 'mixup') {
-      return 1.0 + (input.weaponSwapIQ - COMBO_MIN_WEAPON_SWAP_IQ) / 100;
+      return 1.0 + (input.weaponSwapIQ - comboMinIq) / 100;
     }
     if (id === 'bait_smash') {
-      return input.weaponSwapIQ >= COMBO_ADVANCED_WEAPON_SWAP_IQ ? 1.15 : 0;
+      return input.weaponSwapIQ >= comboAdvancedIq ? 1.15 : 0;
     }
     if (id === 'double_tap') {
       return input.weaponPrioritization >= 45 ? 1.1 : 0.9;
@@ -241,10 +257,12 @@ export function pickComboOnHit(input: ComboPickInput): AIComboId | null {
 }
 
 export function pickOpeningCombo(input: Omit<ComboPickInput, 'openingWeapon'>): AIComboId | null {
-  if (!canUseWeaponCombos(input.difficulty, input.weaponSwapIQ)) {
+  const comboMinIq = input.comboMinIq ?? COMBO_MIN_WEAPON_SWAP_IQ;
+  const comboAdvancedIq = input.comboAdvancedIq ?? COMBO_ADVANCED_WEAPON_SWAP_IQ;
+  if (!canUseWeaponCombos(input.difficulty, input.weaponSwapIQ, comboMinIq)) {
     return null;
   }
-  if (input.weaponSwapIQ < COMBO_ADVANCED_WEAPON_SWAP_IQ) {
+  if (input.weaponSwapIQ < comboAdvancedIq) {
     return null;
   }
   if (!isComboCompatible('bait_smash', input.weaponPrioritization)) {
@@ -258,7 +276,7 @@ export function pickOpeningCombo(input: Omit<ComboPickInput, 'openingWeapon'>): 
   }
 
   const random = input.random ?? Math.random;
-  if (random() > 0.22 + (input.weaponSwapIQ - COMBO_ADVANCED_WEAPON_SWAP_IQ) / 200) {
+  if (random() > 0.22 + (input.weaponSwapIQ - comboAdvancedIq) / 200) {
     return null;
   }
 

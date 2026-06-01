@@ -54,10 +54,14 @@ export const NEUTRAL_MATCH_MULTIPLIERS: MatchStateMultipliers = {
   pressureDurationMult: 1,
 };
 
-const SCORE_AHEAD_THRESHOLD = 5;
-const SCORE_CLOSE_THRESHOLD = 2;
+export const SCORE_AHEAD_THRESHOLD_DEFAULT = 5;
+export const SCORE_CLOSE_THRESHOLD_DEFAULT = 2;
+export const FEINT_IQ_GATE_DEFAULT = 60;
 
-const FEINT_IQ_GATE = 60;
+const SCORE_AHEAD_THRESHOLD = SCORE_AHEAD_THRESHOLD_DEFAULT;
+const SCORE_CLOSE_THRESHOLD = SCORE_CLOSE_THRESHOLD_DEFAULT;
+
+const FEINT_IQ_GATE = FEINT_IQ_GATE_DEFAULT;
 
 function clampPercent(value: number): number {
   return Math.max(0, Math.min(100, Math.round(value)));
@@ -75,7 +79,8 @@ export function deriveFeintChance(
   movementComplexity: number,
   anticipationFactor: number,
   difficulty: string,
-  weaponSwapIQ: number
+  weaponSwapIQ: number,
+  feintIqGate: number = FEINT_IQ_GATE,
 ): number {
   if (difficulty === 'easy') {
     return 0;
@@ -84,7 +89,7 @@ export function deriveFeintChance(
   const gate =
     difficulty === 'hard' ||
     difficulty === 'nightmare' ||
-    (difficulty === 'custom' && weaponSwapIQ >= FEINT_IQ_GATE);
+    (difficulty === 'custom' && weaponSwapIQ >= feintIqGate);
 
   if (!gate) {
     return 0;
@@ -98,26 +103,34 @@ export function derivePressureAggression(aiPlaystyle: number): number {
   return clampPercent(aiPlaystyle);
 }
 
+export interface MatchStateThresholds {
+  aheadThreshold?: number;
+  closeThreshold?: number;
+}
+
 export function deriveMatchStateMultipliers(
   context: AIMatchScoreContext,
-  playstyleFactor: number
+  playstyleFactor: number,
+  thresholds?: MatchStateThresholds,
 ): MatchStateMultipliers {
+  const aheadThreshold = thresholds?.aheadThreshold ?? SCORE_AHEAD_THRESHOLD;
+  const closeThreshold = thresholds?.closeThreshold ?? SCORE_CLOSE_THRESHOLD;
   const scoreDelta = context.scoreEnemy - context.scorePlayer;
   const absDelta = Math.abs(scoreDelta);
   const mult: MatchStateMultipliers = { ...NEUTRAL_MATCH_MULTIPLIERS };
 
-  if (scoreDelta >= SCORE_AHEAD_THRESHOLD) {
+  if (scoreDelta >= aheadThreshold) {
     mult.aggressionMult = 0.72;
     mult.cooldownMult = 1.25;
     mult.spacingMult = 1.2;
     mult.avoidCoinFlipTrades = true;
     mult.pressureDurationMult = 0.85;
-  } else if (scoreDelta <= -SCORE_AHEAD_THRESHOLD) {
+  } else if (scoreDelta <= -aheadThreshold) {
     mult.aggressionMult = 1.28;
     mult.cooldownMult = 0.82;
     mult.spacingMult = 0.82;
     mult.pressureDurationMult = 1.2;
-  } else if (absDelta <= SCORE_CLOSE_THRESHOLD) {
+  } else if (absDelta <= closeThreshold) {
     mult.iqGateBonus = 15;
   }
 
@@ -206,16 +219,24 @@ export function shouldAvoidCoinFlipTrade(input: {
   return false;
 }
 
+export interface DeriveAIParamsTuning {
+  mechanicAwareIq?: number;
+  highIqOverride?: number;
+  feintIqGate?: number;
+}
+
 export function deriveAIParams(
   settings: UniversalSettings,
-  knobs: AIResolvedKnobs
+  knobs: AIResolvedKnobs,
+  tuning?: DeriveAIParamsTuning,
 ): DerivedAIParams {
   const spatialIQ = deriveSpatialIQ(knobs.movementComplexity, knobs.anticipationFactor);
   const feintChance = deriveFeintChance(
     knobs.movementComplexity,
     knobs.anticipationFactor,
     knobs.difficulty,
-    knobs.weaponSwapIQ
+    knobs.weaponSwapIQ,
+    tuning?.feintIqGate,
   );
   const pressureAggression = derivePressureAggression(knobs.aiPlaystyle);
 
@@ -223,6 +244,11 @@ export function deriveAIParams(
     spatialIQ: settings.aiSpatialIQ ?? spatialIQ,
     feintChance: settings.aiFeintChance ?? feintChance,
     pressureAggression: settings.aiPressureAggression ?? pressureAggression,
-    mechanicAware: isMechanicAwareDifficulty(knobs.difficulty, knobs.weaponSwapIQ),
+    mechanicAware: isMechanicAwareDifficulty(
+      knobs.difficulty,
+      knobs.weaponSwapIQ,
+      tuning?.mechanicAwareIq,
+      tuning?.highIqOverride,
+    ),
   };
 }
