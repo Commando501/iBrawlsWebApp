@@ -31,6 +31,7 @@ export type HelmetPreset = 'mark-vi' | 'odst' | 'recon' | 'eva' | 'gungnir' | 'e
 export type TorsoPreset = 'mark-vi' | 'scout' | 'recon' | 'eod' | 'hayabusa';
 export type ArmPreset = 'mark-vi' | 'odst' | 'recon' | 'eod' | 'hayabusa';
 export type LegPreset = 'mark-vi' | 'jump-jet' | 'odst' | 'eod' | 'hayabusa';
+export type HammerPreset = 'default' | 'akelas' | 'akelus' | 'paegaas' | 'sepulotez' | 'halbashi' | 'eektah-fel' | 'gravity-axe' | 'gravity-mace' | 'fist-of-rukt';
 
 export interface ArmorPaintJob {
   helmet?: { [key: string]: string };
@@ -63,6 +64,7 @@ export interface CharacterLoadout {
   arm?: ArmPreset;
   leg?: LegPreset;
   paintJob?: ArmorPaintJob;
+  hammerPreset?: HammerPreset;
 }
 
 export const DEFAULT_LOADOUT: CharacterLoadout = {
@@ -70,6 +72,7 @@ export const DEFAULT_LOADOUT: CharacterLoadout = {
   torso: 'mark-vi',
   arm: 'mark-vi',
   leg: 'mark-vi',
+  hammerPreset: 'default',
 };
 
 export const AVAILABLE_PRESETS = {
@@ -77,7 +80,9 @@ export const AVAILABLE_PRESETS = {
   torso: ['mark-vi', 'scout', 'recon', 'eod', 'hayabusa'] as const,
   arm: ['mark-vi', 'odst', 'recon', 'eod', 'hayabusa'] as const,
   leg: ['mark-vi', 'jump-jet', 'odst', 'eod', 'hayabusa'] as const,
+  hammer: ['default', 'akelas', 'akelus', 'paegaas', 'sepulotez', 'halbashi', 'eektah-fel', 'gravity-axe', 'gravity-mace', 'fist-of-rukt'] as const,
 };
+
 
 // ─── Geometry Helpers ─────────────────────────────────────────────────────────
 
@@ -1555,53 +1560,346 @@ export function buildVoxelSpartanModel(
 
 // ─── GRAVITY HAMMER MODEL ─────────────────────────────────────────────────────
 
-export function buildGravityHammerModel(customHue?: number): THREE.Group {
+export function buildGravityHammerModel(customHue?: number, preset: HammerPreset = 'default'): THREE.Group {
   const data: VoxelData[] = [];
 
+  // ─── HANDLE / SHAFT SKELETON ───
+  let handleColor = '#27272a';
+  let accentColor = '#3f3f46';
+
+  if (preset === 'sepulotez') {
+    handleColor = '#5c2c16'; // rope/leather brown
+    accentColor = '#b55a30';
+  } else if (preset === 'fist-of-rukt') {
+    handleColor = '#78350f'; // wood brown
+    accentColor = '#a16207';
+  } else if (preset === 'akelas') {
+    handleColor = '#18181b'; // pure black
+    accentColor = '#7f1d1d'; // dark red
+  } else if (preset === 'akelus') {
+    handleColor = '#e4e4e7'; // light gray/white
+    accentColor = '#0369a1'; // blue
+  } else if (preset === 'eektah-fel') {
+    handleColor = '#1e293b';
+    accentColor = '#15803d'; // green
+  } else if (preset === 'gravity-axe' || preset === 'gravity-mace') {
+    handleColor = '#171717'; // very dark
+    accentColor = '#b45309'; // amber/orange
+  }
+
+  // Pole/Shaft
   for (let y = 0; y < 14; y++) {
-    data.push({ x: 0, y: y, z: 0, color: '#27272a' });
+    data.push({ x: 0, y: y, z: 0, color: handleColor });
     if (y % 4 === 0) {
-      data.push({ x: 1, y: y, z: 0, color: '#3f3f46' });
-      data.push({ x: -1, y: y, z: 0, color: '#3f3f46' });
-      data.push({ x: 0, y: y, z: 1, color: '#3f3f46' });
-      data.push({ x: 0, y: y, z: -1, color: '#3f3f46' });
+      data.push({ x: 1, y: y, z: 0, color: accentColor });
+      data.push({ x: -1, y: y, z: 0, color: accentColor });
+      data.push({ x: 0, y: y, z: 1, color: accentColor });
+      data.push({ x: 0, y: y, z: -1, color: accentColor });
     }
   }
 
+  // Pommel at bottom of shaft (y = 0)
+  if (preset === 'akelas') {
+    data.push({ x: 0, y: -1, z: 0, color: '#ef4444', emissive: true });
+  } else if (preset === 'akelus') {
+    data.push({ x: 0, y: -1, z: 0, color: '#06b6d4', emissive: true });
+  } else if (preset === 'sepulotez') {
+    data.push({ x: 0, y: -1, z: 0, color: '#fbbf24' });
+    data.push({ x: 1, y: -1, z: 0, color: '#d97706' });
+    data.push({ x: -1, y: -1, z: 0, color: '#d97706' });
+  } else if (preset === 'fist-of-rukt') {
+    data.push({ x: 0, y: -1, z: 0, color: '#475569' });
+    data.push({ x: 0, y: -2, z: 0, color: '#94a3b8' });
+  } else {
+    data.push({ x: 0, y: -1, z: 0, color: accentColor });
+  }
+
+  // Head connector
   const topY = 14;
   for (let dx = -1; dx <= 1; dx++) {
     for (let dz = -1; dz <= 1; dz++) {
-      data.push({ x: dx, y: topY, z: dz, color: '#1e293b' });
-      data.push({ x: dx, y: topY + 1, z: dz, color: '#1e293b' });
+      let connColor = '#1e293b';
+      if (preset === 'akelas') connColor = '#09090b';
+      else if (preset === 'akelus') connColor = '#f4f4f5';
+      else if (preset === 'sepulotez') connColor = '#b45309';
+      else if (preset === 'halbashi') connColor = '#3f3f46';
+      else if (preset === 'fist-of-rukt') connColor = '#78716c';
+      
+      data.push({ x: dx, y: topY, z: dz, color: connColor });
+      data.push({ x: dx, y: topY + 1, z: dz, color: connColor });
     }
   }
 
-  for (let hx = -2; hx <= 2; hx++) {
+  // ─── UNIQUE HAMMER HEAD GEOMETRIES ───
+  if (preset === 'akelas') {
+    // Akelas: Sleek, dark carbon-like head with a thin, glowing red stripe
+    for (let hx = -1; hx <= 1; hx++) {
+      for (let hy = 16; hy <= 21; hy++) {
+        for (let hz = -4; hz <= -1; hz++) {
+          const isEdge = hz === -4;
+          const isGlow = isEdge && (hy === 18 || hy === 19);
+          data.push({
+            x: hx,
+            y: hy,
+            z: hz,
+            color: isGlow ? '#ef4444' : '#18181b',
+            emissive: isGlow
+          });
+        }
+      }
+    }
+    // Backward counterweight fin
     for (let hy = 16; hy <= 20; hy++) {
-      for (let hz = -4; hz <= -1; hz++) {
-        const isSpike = hy === 18 && Math.abs(hx) === 2;
-        data.push({ x: hx, y: hy, z: hz, color: isSpike ? '#ff5500' : '#475569' });
+      const depth = hy === 18 ? 3 : 2;
+      for (let hz = 1; hz <= depth; hz++) {
+        data.push({ x: 0, y: hy, z: hz, color: '#27272a' });
+        if (hz === depth) {
+          data.push({ x: 0, y: hy, z: hz, color: '#b91c1c', emissive: true });
+        }
       }
     }
-  }
-
-  for (let hx = -1; hx <= 1; hx++) {
-    for (let hy = 16; hy <= 19; hy++) {
-      for (let hz = 1; hz <= 4; hz++) {
-        data.push({ x: hx, y: hy, z: hz, color: '#334155' });
+  } else if (preset === 'akelus') {
+    // Akelus: Sleek white high-tech plating, glowing neon blue energy channels
+    for (let hx = -1; hx <= 1; hx++) {
+      for (let hy = 16; hy <= 21; hy++) {
+        for (let hz = -4; hz <= -1; hz++) {
+          const isEdge = hz === -4;
+          const isGlow = isEdge && (hy === 18 || hy === 19);
+          data.push({
+            x: hx,
+            y: hy,
+            z: hz,
+            color: isGlow ? '#06b6d4' : '#f4f4f5',
+            emissive: isGlow
+          });
+        }
       }
     }
-  }
-
-  const energyColor = customHue !== undefined ? `hsl(${customHue}, 85%, 60%)` : '#38bdf8';
-  for (let hx = -1; hx <= 1; hx++) {
-    for (let hy = 17; hy <= 19; hy++) {
-      data.push({ x: hx, y: hy, z: -5, color: energyColor, emissive: true });
+    for (let hy = 17; hy <= 20; hy++) {
+      data.push({ x: -2, y: hy, z: -2, color: '#38bdf8', emissive: true });
+      data.push({ x: 2, y: hy, z: -2, color: '#38bdf8', emissive: true });
     }
-  }
-  for (let hy = 15; hy <= 21; hy++) {
-    data.push({ x: -3, y: hy, z: -1, color: energyColor, emissive: true });
-    data.push({ x: 3, y: hy, z: -1, color: energyColor, emissive: true });
+    for (let hy = 16; hy <= 20; hy++) {
+      const depth = hy === 18 ? 3 : 2;
+      for (let hz = 1; hz <= depth; hz++) {
+        data.push({ x: 0, y: hy, z: hz, color: '#e4e4e7' });
+        if (hz === depth) {
+          data.push({ x: 0, y: hy, z: hz, color: '#0ea5e9', emissive: true });
+        }
+      }
+    }
+  } else if (preset === 'paegaas') {
+    // Paegaas: Layered mechanical gold and gunmetal plates, glowing orange vents
+    for (let hx = -2; hx <= 2; hx++) {
+      for (let hy = 15; hy <= 21; hy++) {
+        for (let hz = -3; hz <= -1; hz++) {
+          const isGold = Math.abs(hx) === 2 || hy === 21 || hy === 15;
+          data.push({
+            x: hx,
+            y: hy,
+            z: hz,
+            color: isGold ? '#d97706' : '#334155'
+          });
+        }
+      }
+    }
+    for (let hx = -1; hx <= 1; hx++) {
+      for (let hy = 17; hy <= 19; hy++) {
+        data.push({ x: hx, y: hy, z: -4, color: '#f59e0b', emissive: true });
+        data.push({ x: hx, y: hy, z: -5, color: '#f97316', emissive: true });
+      }
+    }
+    for (let hx = -1; hx <= 1; hx++) {
+      for (let hy = 16; hy <= 20; hy++) {
+        for (let hz = 1; hz <= 3; hz++) {
+          const isGlow = hz === 3 && hy === 18;
+          data.push({
+            x: hx,
+            y: hy,
+            z: hz,
+            color: isGlow ? '#fbbf24' : '#1e293b',
+            emissive: isGlow
+          });
+        }
+      }
+    }
+  } else if (preset === 'sepulotez') {
+    // Sepulo'tez: Ancient stone-brick/gold ornament, rope wrappings
+    for (let hx = -2; hx <= 2; hx++) {
+      for (let hy = 16; hy <= 20; hy++) {
+        for (let hz = -3; hz <= 1; hz++) {
+          const isCarving = (hy === 18 && hx === 0) || (Math.abs(hx) === 2 && hy === 19);
+          data.push({
+            x: hx,
+            y: hy,
+            z: hz,
+            color: isCarving ? '#fbbf24' : '#854d0e'
+          });
+        }
+      }
+    }
+    const ropeColor = '#7c2d12';
+    for (let hx = -3; hx <= 3; hx++) {
+      data.push({ x: hx, y: 17, z: -1, color: ropeColor });
+      data.push({ x: hx, y: 19, z: -1, color: ropeColor });
+    }
+    data.push({ x: 0, y: 21, z: -1, color: '#fbbf24' });
+    data.push({ x: 0, y: 22, z: -1, color: '#fbbf24' });
+  } else if (preset === 'halbashi') {
+    // Halbashi: Brutalist rectangular copper-bronze head, layered steps/teeth
+    for (let hy = 15; hy <= 21; hy++) {
+      let frontDepth = -1;
+      if (hy === 18) frontDepth = -5;
+      else if (hy === 17 || hy === 19) frontDepth = -4;
+      else if (hy === 16 || hy === 20) frontDepth = -3;
+      else frontDepth = -2;
+
+      for (let hx = -2; hx <= 2; hx++) {
+        for (let hz = frontDepth; hz <= 2; hz++) {
+          const isEdge = hz === frontDepth;
+          const colorVal = isEdge ? '#b45309' : '#451a03';
+          data.push({ x: hx, y: hy, z: hz, color: colorVal });
+        }
+      }
+    }
+  } else if (preset === 'eektah-fel') {
+    // Eektah-Fel: Dark iron frame cage holding green vertical neon tubes
+    for (let hy = 15; hy <= 22; hy++) {
+      for (let hx = -2; hx <= 2; hx++) {
+        for (let hz = -3; hz <= 1; hz++) {
+          const isInside = Math.abs(hx) <= 1 && hz >= -2 && hz <= -1 && hy >= 17 && hy <= 20;
+          if (isInside) {
+            data.push({
+              x: hx,
+              y: hy,
+              z: hz,
+              color: '#22c55e',
+              emissive: true
+            });
+          } else {
+            const isFrameBorder = Math.abs(hx) === 2 || hy === 15 || hy === 22 || hz === 1 || hz === -3;
+            data.push({
+              x: hx,
+              y: hy,
+              z: hz,
+              color: isFrameBorder ? '#334155' : '#0f172a'
+            });
+          }
+        }
+      }
+    }
+    for (let hy = 16; hy <= 21; hy++) {
+      data.push({ x: -3, y: hy, z: -1, color: '#4ade80', emissive: true });
+      data.push({ x: 3, y: hy, z: -1, color: '#4ade80', emissive: true });
+    }
+  } else if (preset === 'gravity-axe') {
+    // Gravity Axe: Volcanic obsidian core, sweeping glowing orange axe blades
+    for (let hx = -1; hx <= 1; hx++) {
+      for (let hy = 15; hy <= 21; hy++) {
+        for (let hz = -2; hz <= 2; hz++) {
+          data.push({ x: hx, y: hy, z: hz, color: '#1c1917' });
+        }
+      }
+    }
+    for (let hy = 14; hy <= 22; hy++) {
+      let bladeWidth = 1;
+      if (hy === 18) bladeWidth = 6;
+      else if (hy === 17 || hy === 19) bladeWidth = 5;
+      else if (hy === 16 || hy === 20) bladeWidth = 4;
+      else if (hy === 15 || hy === 21) bladeWidth = 3;
+      else bladeWidth = 2;
+
+      for (let hx = 2; hx <= bladeWidth; hx++) {
+        const isEdge = hx === bladeWidth;
+        const colorVal = isEdge ? '#f97316' : '#78716c';
+        data.push({ x: hx, y: hy, z: 0, color: colorVal, emissive: isEdge });
+        data.push({ x: hx, y: hy, z: -1, color: colorVal, emissive: isEdge });
+        data.push({ x: -hx, y: hy, z: 0, color: colorVal, emissive: isEdge });
+        data.push({ x: -hx, y: hy, z: -1, color: colorVal, emissive: isEdge });
+      }
+    }
+  } else if (preset === 'gravity-mace') {
+    // Gravity Mace: Spiked mace head, glowing red-hot spikes, dark wrapped grip
+    for (let hx = -2; hx <= 2; hx++) {
+      for (let hy = 16; hy <= 20; hy++) {
+        for (let hz = -2; hz <= 2; hz++) {
+          data.push({ x: hx, y: hy, z: hz, color: '#262626' });
+        }
+      }
+    }
+    for (let hx = 3; hx <= 4; hx++) {
+      const isTip = hx === 4;
+      const c = isTip ? '#ef4444' : '#f97316';
+      for (let hy = 17; hy <= 19; hy++) {
+        data.push({ x: hx, y: hy, z: 0, color: c, emissive: true });
+        data.push({ x: -hx, y: hy, z: 0, color: c, emissive: true });
+      }
+    }
+    for (let hz = 3; hz <= 4; hz++) {
+      const isTip = hz === 4;
+      const c = isTip ? '#ef4444' : '#f97316';
+      for (let hy = 17; hy <= 19; hy++) {
+        data.push({ x: 0, y: hy, z: hz, color: c, emissive: true });
+        data.push({ x: 0, y: hy, z: -hz, color: c, emissive: true });
+      }
+    }
+    for (let hy = 21; hy <= 23; hy++) {
+      const isTip = hy === 23;
+      const c = isTip ? '#ef4444' : '#f97316';
+      for (let hx = -1; hx <= 1; hx++) {
+        data.push({ x: hx, y: hy, z: 0, color: c, emissive: true });
+      }
+    }
+  } else if (preset === 'fist-of-rukt') {
+    // Fist of Rukt: Massive stone mallet, gold gears, wooden shaft
+    for (let hx = -3; hx <= 3; hx++) {
+      for (let hy = 15; hy <= 21; hy++) {
+        for (let hz = -4; hz <= 4; hz++) {
+          const isGoldGear = Math.abs(hx) === 3 && (hy === 18 || hy === 17 || hy === 19) && Math.abs(hz) <= 1;
+          const isStoneBorder = Math.abs(hx) === 2 || hy === 15 || hy === 21 || Math.abs(hz) === 4;
+          
+          if (isGoldGear) {
+            data.push({ x: hx, y: hy, z: hz, color: '#fbbf24' });
+          } else {
+            data.push({
+              x: hx,
+              y: hy,
+              z: hz,
+              color: isStoneBorder ? '#78716c' : '#44403c'
+            });
+          }
+        }
+      }
+    }
+  } else {
+    // Default Gravity Hammer
+    for (let hx = -2; hx <= 2; hx++) {
+      for (let hy = 16; hy <= 20; hy++) {
+        for (let hz = -4; hz <= -1; hz++) {
+          const isSpike = hy === 18 && Math.abs(hx) === 2;
+          data.push({ x: hx, y: hy, z: hz, color: isSpike ? '#ff5500' : '#475569' });
+        }
+      }
+    }
+
+    for (let hx = -1; hx <= 1; hx++) {
+      for (let hy = 16; hy <= 19; hy++) {
+        for (let hz = 1; hz <= 4; hz++) {
+          data.push({ x: hx, y: hy, z: hz, color: '#334155' });
+        }
+      }
+    }
+
+    const energyColor = customHue !== undefined ? `hsl(${customHue}, 85%, 60%)` : '#38bdf8';
+    for (let hx = -1; hx <= 1; hx++) {
+      for (let hy = 17; hy <= 19; hy++) {
+        data.push({ x: hx, y: hy, z: -5, color: energyColor, emissive: true });
+      }
+    }
+    for (let hy = 15; hy <= 21; hy++) {
+      data.push({ x: -3, y: hy, z: -1, color: energyColor, emissive: true });
+      data.push({ x: 3, y: hy, z: -1, color: energyColor, emissive: true });
+    }
   }
 
   const hammer = createVoxelGroup(data, 0.08);

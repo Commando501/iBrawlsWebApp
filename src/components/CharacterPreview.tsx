@@ -95,7 +95,7 @@ export const CharacterPreview: React.FC<CharacterPreviewProps> = ({ hue, heldWea
       scene.add(characterGroup);
 
       if (w === 'hammer') {
-        const hammer = buildGravityHammerModel(h);
+        const hammer = buildGravityHammerModel(h, lo?.hammerPreset);
         hammer.scale.set(0.6, 0.6, 0.6);
         hammer.position.set(0.5, 1.0 - 0.64, -0.4);
         hammer.rotation.set(Math.PI / 2.5, 0, 0);

@@ -36,7 +36,7 @@ This workspace has previously had Windows `EPERM` locks on stale files under `di
 
 ## AI Systems
 
-Combat AI is orchestrated from `GrifballGame.tsx` (10-state FSM including `PRESSURING`) with pure decision logic in `src/game/`. Shared combat geometry helpers, runtime state/ref initialization, input/pointer ref management, prop contracts, map selection, arena spawn/resizing helpers, Three combatant model construction, invulnerability visual-state helpers, and custom-map procedural asset generation live under `src/components/grifball/` so the main game component stays under Babel's 500KB styling deoptimization threshold while preserving the existing `createHighFidelityObjectMesh` export.
+Combat AI is orchestrated from `GrifballGame.tsx` (10-state FSM including `PRESSURING`) with pure decision logic in `src/game/`. Shared combat geometry helpers, arena boundary and body-collision helpers, runtime state/ref initialization, HUD stats builders, death-feed and player-medal helpers, match-pressure tuning adapters, replay data helpers, adaptive player-model observation adapters, AI altitude-recovery adapters, spectator target-data adapters, legacy roster prop adapters, input/pointer ref management, prop contracts, map selection, arena spawn/resizing helpers, Three combatant model construction and mesh lookup helpers, invulnerability visual-state helpers, and custom-map procedural asset generation live under `src/components/grifball/` so the main game component stays under Babel's 500KB styling deoptimization threshold while preserving the existing `createHighFidelityObjectMesh` export.
 
 | Module | Role |
 |--------|------|
@@ -215,9 +215,21 @@ iBrawls features a beautiful, feature-rich, and completely standalone 3D Map Mak
 - **Automated Nav-Mesh Baking**: Spatial analysis engine automatically runs spartan clearance tests ($0.65\text{m}$) against circular or rectangular collidable boundaries to generate a 2D Node Navigation Grid. Walkable paths are visualized as beautiful glowing green nodes with blue connection lines in the editor viewport!
 - **Local File System IO**: Fully offline-based import and export. Save maps as local `.json` files to distribute to other players or load them directly in the game lobby for training skirmishes.
 
-## Spartan Paint Job Customizer
+## Spartan Armor & Weapon Customization
 
-iBrawls includes an extremely rich, fully integrated 3D **Paint Job** studio inside the character customization tab, built using Three.js and React to offer precise per-voxel coloring:
+iBrawls features a beautiful and comprehensive character customization suite:
+
+- **Premium Hammer Model Swapping**: Swap between 9 distinct premium hammer variants shown in the game customizer, fully rendered in high-fidelity voxels:
+  - **Akelas**: Sleek, aerodynamic dark carbon-like head with a thin, glowing red stripe along its edge.
+  - **Akelus**: Sleek, white high-tech plating with pulsing neon blue energy channels on the back of the head.
+  - **Paegaas**: Metallic silver and gold plates with glowing orange vents along the head.
+  - **Sepulo'tez**: Ancient stone-brick texture, gold ornamentation, and leather rope wrappings around the handle.
+  - **Halbashi**: Brutalist, heavy, rectangular copper-bronze head with layered steps/teeth along the front.
+  - **Eektah-Fel**: A dark metallic frame encapsulating three glowing, vertical radioactive green neon vials/capsules.
+  - **Gravity Axe ("Diminisher of Hope")**: Double-sided axe configuration with molten glowing orange-red energy blades extending from a dark metal center.
+  - **Gravity Mace ("Chainbreaker")**: Spiked mace head with glowing red-hot spikes radiating outwards and leather-wrapped handle.
+  - **Fist of Rukt**: Massive gray stone mallet-head, gold/brass gears on the sides, and a brown wooden handle.
+- **Immersive 3D Paint Job Studio**: An extremely rich, fully integrated 3D **Paint Job** studio inside the character customization tab, built using Three.js and React to offer precise per-voxel coloring:
 
 - **Immersive 3D Viewport**: Click **"Start Paint Job"** to enter the painting studio. The camera shifts face-forward towards the Spartan, auto-rotation is paused, and continuous 360° mouse orbiting and scroll-wheel zooming are fully unlocked.
 - **Futuristic SVG Navigation Skeleton**: A glowing neon wireframe HUD of a Spartan is displayed in the top-left corner. Hovering and clicking on skeletal zones (Head, Chest, Arms, Legs) triggers a **smooth camera interpolation (lerp)** that glides the viewport close-up to focus on that specific armor piece, resetting any model translation and camera zoom to their default framing.

@@ -404,6 +404,29 @@ export const SETTING_DEFINITIONS: SettingDefinition[] = [
     sectionId: 'launch',
     description: 'Render circle on ground',
   },
+  {
+    key: 'hammerJumpInputGate',
+    label: 'Hammer Jump Input Gate',
+    type: 'slider',
+    sectionId: 'launch',
+    min: 0.00,
+    max: 1.00,
+    step: 0.05,
+    unit: 's',
+    formatValue: (v) => v === 0 ? 'Disabled (Auto)' : `${v.toFixed(2)}s`,
+    description: 'Require a fresh jump press after hammer slam within this time window.',
+  },
+  {
+    key: 'hammerJumpAirLimit',
+    label: 'Consecutive Air Jumps Limit',
+    type: 'slider',
+    sectionId: 'launch',
+    min: 0,
+    max: 10,
+    step: 1,
+    formatValue: (v) => v === 0 ? 'Disabled (No Jumps)' : (v === 10 ? 'Unlimited' : `${v} jumps`),
+    description: 'Maximum consecutive hammer jumps allowed in the air without landing.',
+  },
 
   // SECTION: AI Combat Neural Matrix (Intel is handled specially, but standard custom parameters are below)
   {

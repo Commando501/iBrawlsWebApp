@@ -139,6 +139,7 @@ export function createMainAICombatant(params: CreateMainAIParams): Combatant {
     lastHammerAttackTime: 0,
     hammerJumpPlanned: false,
     hammerJumpWindowTimer: 0,
+    aiHammerJumpsInAir: 0,
     hue,
     difficulty: difficulty ?? legacy.botDifficulties?.[MAIN_AI_ID] ?? settings.aiDifficulty ?? 'normal',
     score: 0,
@@ -183,6 +184,7 @@ export function createOfflineBotCombatant(params: CreateOfflineBotParams): Comba
     deaths: 0,
     invulnerabilityTimer: settings.respawnInvulnerabilityDuration,
     aiHammerJumpCooldownTimer: 0,
+    aiHammerJumpsInAir: 0,
     spawnTime: Date.now(),
   };
 }

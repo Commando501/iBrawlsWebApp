@@ -76,7 +76,7 @@ import { CharacterPreview } from './components/CharacterPreview';
 import { CharacterPainter } from './components/CharacterPainter';
 import { CharacterLoadout, DEFAULT_LOADOUT, AVAILABLE_PRESETS, HelmetPreset, TorsoPreset, ArmPreset, LegPreset } from './components/VoxelModels';
 
-const APP_VERSION = '0.565';
+const APP_VERSION = '0.572';
 const MAX_PLAYER_NAME_LENGTH = 10;
 
 interface OnlineClient {
@@ -2510,6 +2510,8 @@ export default function App() {
       hammerJumpPower: 6.5,
       hammerJumpTriggerRadius: 3.5,
       hammerJumpWindow: 0.6,
+      hammerJumpInputGate: 0.0,
+      hammerJumpAirLimit: 1,
       visualizeJumpZone: true,
       directLightIntensity: 1.6,
       ambientLightIntensity: 0.82,
@@ -5838,6 +5840,7 @@ export default function App() {
                                 torso: 'Chest',
                                 arm: 'Arms',
                                 leg: 'Legs',
+                                hammerPreset: 'Hammer',
                               };
                               const presetLabel: Record<string, string> = {
                                 'mark-vi': 'Mk.VI',
@@ -5850,12 +5853,23 @@ export default function App() {
                                 'eod': 'EOD',
                                 'hayabusa': 'Hayabusa',
                                 'cqb': 'CQB',
+                                'default': 'Default',
+                                'akelas': 'Akelas',
+                                'akelus': 'Akelus',
+                                'paegaas': 'Paegaas',
+                                'sepulotez': "Sepulo'tez",
+                                'halbashi': 'Halbashi',
+                                'eektah-fel': 'Eektah-Fel',
+                                'gravity-axe': 'Axe',
+                                'gravity-mace': 'Mace',
+                                'fist-of-rukt': 'Rukt',
                               };
                               const slots = [
                                 { key: 'helmet', options: AVAILABLE_PRESETS.helmet },
                                 { key: 'torso',  options: AVAILABLE_PRESETS.torso },
                                 { key: 'arm',    options: AVAILABLE_PRESETS.arm },
                                 { key: 'leg',    options: AVAILABLE_PRESETS.leg },
+                                { key: 'hammerPreset', options: AVAILABLE_PRESETS.hammer },
                               ] as const;
                               return (
                                 <div className="bg-white/5 border border-white/5 rounded-lg p-3">

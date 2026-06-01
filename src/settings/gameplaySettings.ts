@@ -28,6 +28,8 @@ export const DEFAULT_ADMIN_SETTINGS: UniversalSettings = {
   hammerJumpPower: 6.5,
   hammerJumpTriggerRadius: 3.5,
   hammerJumpWindow: 0.6,
+  hammerJumpInputGate: 0.0,
+  hammerJumpAirLimit: 1,
   visualizeJumpZone: true,
   directLightIntensity: 1.6,
   ambientLightIntensity: 0.82,

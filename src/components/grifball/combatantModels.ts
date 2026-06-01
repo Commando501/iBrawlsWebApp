@@ -60,13 +60,13 @@ export const getRandomLoadout = (): CharacterLoadout => {
   };
 };
 
-export const createCombatantMeshRig = (scene: THREE.Scene, hue: number, isEnemyBot = false): CombatantMeshRig => {
-  const botLoadout = isEnemyBot ? getRandomLoadout() : undefined;
-  const group = buildVoxelSpartanModel(isEnemyBot, hue, botLoadout);
+export const createCombatantMeshRig = (scene: THREE.Scene, hue: number, isEnemyBot = false, loadout?: CharacterLoadout): CombatantMeshRig => {
+  const resolvedLoadout = loadout ?? (isEnemyBot ? getRandomLoadout() : undefined);
+  const group = buildVoxelSpartanModel(isEnemyBot, hue, resolvedLoadout);
   group.userData.appliedHue = hue;
   scene.add(group);
 
-  const hammer = buildGravityHammerModel(hue);
+  const hammer = buildGravityHammerModel(hue, resolvedLoadout?.hammerPreset);
   positionHammer(hammer);
   attachToUpperTorso(group, hammer);
 
@@ -112,7 +112,7 @@ export const rebuildDualWeaponCombatantModel = ({
 
   const resolvedWeaponHue = weaponHue === null ? undefined : (weaponHue ?? hue);
 
-  const hammer = buildGravityHammerModel(resolvedWeaponHue);
+  const hammer = buildGravityHammerModel(resolvedWeaponHue, loadout?.hammerPreset);
   positionHammer(hammer);
   hammer.visible = activeWeapon === 'hammer';
   attachToUpperTorso(group, hammer);

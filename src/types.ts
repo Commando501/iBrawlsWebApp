@@ -29,6 +29,8 @@ export interface UniversalSettings {
   hammerJumpPower: number;                // The additional height / upward velocity added when hammer jumping (e.g. 2.0 to 15.0)
   hammerJumpTriggerRadius: number;        // The radius underneath the model for triggering a hammer jump (e.g. 1.0m to 10.0m)
   hammerJumpWindow: number;               // Time window to jump after swinging in seconds (e.g. 0.1s to 2.0s)
+  hammerJumpInputGate: number;            // Input gate timing window in seconds (e.g. 0.0s to 1.0s, 0.0 = disabled/automatic)
+  hammerJumpAirLimit: number;             // Maximum consecutive hammer jumps in the air before landing (0 to 10)
   visualizeJumpZone: boolean;             // Whether to draw the zone beneath the player to visualize it
   directLightIntensity: number;           // Intensity of the direct light (e.g. 0.1 to 4.0)
   ambientLightIntensity: number;          // Intensity of the ambient light (e.g. 0.1 to 3.5)
@@ -344,6 +346,7 @@ export interface Combatant {
   aiSlideCooldownTimer?: number;
   aiIsSprinting?: boolean;
   aiHammerJumpCooldownTimer?: number;
+  aiHammerJumpsInAir?: number;
   aiCoordCommitTimer?: number;
   aiPostLungeDecisionTimer?: number;
   aiPendingPostEvasionCharge?: boolean;

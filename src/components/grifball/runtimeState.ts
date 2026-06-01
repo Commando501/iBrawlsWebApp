@@ -78,6 +78,7 @@ export interface GrifballRuntimeState {
   lastAIStrikeTick: number;
 
   pHammerJumpWindowTimer: number;
+  pHammerJumpsInAir: number;
 
   arenaRadius: number;
   settings: UniversalSettings;
@@ -206,6 +207,7 @@ export function createInitialGrifballRuntimeState({
     lastAIStrikeTick: 0,
 
     pHammerJumpWindowTimer: 0,
+    pHammerJumpsInAir: 0,
 
     arenaRadius: 20,
     settings: adminSettings,
