@@ -1173,6 +1173,12 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
   const keybindingsRef = useLatestRef(keybindings);
 
+  // Sprint toggle-mode state: when holdToSprint is false, tapping the sprint
+  // button flips sprintToggleActiveRef. prevSprintInputRef tracks the previous
+  // frame's raw sprint input so we only flip on the rising (press) edge.
+  const sprintToggleActiveRef = useRef(false);
+  const prevSprintInputRef = useRef(false);
+
   const {
     keysPressed,
     prevGamepadButtonsRef,
@@ -6027,7 +6033,21 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
       // Check sprint & slide states
       const gpSprint = activeGp ? activeGp.buttons[keybindingsRef.current.gamepadSprint ?? 10]?.pressed : false;
-      const isSprinting = s.settings.enableSprint && (keysPressed.current[keybindingsRef.current.sprint] || gpSprint) && moveForward > 0 && !s.isCrouching && !s.isJumping && s.playerDashRemaining <= 0;
+      const sprintInputDown = !!(keysPressed.current[keybindingsRef.current.sprint] || gpSprint);
+      // Resolve whether sprint is "engaged" based on the input mode. In hold mode
+      // (default) sprint follows the raw input; in toggle mode a press flips a
+      // persistent flag so the player can sprint without holding the button.
+      let sprintEngaged: boolean;
+      if (keybindingsRef.current.holdToSprint === false) {
+        if (sprintInputDown && !prevSprintInputRef.current) {
+          sprintToggleActiveRef.current = !sprintToggleActiveRef.current;
+        }
+        sprintEngaged = sprintToggleActiveRef.current;
+      } else {
+        sprintEngaged = sprintInputDown;
+      }
+      prevSprintInputRef.current = sprintInputDown;
+      const isSprinting = s.settings.enableSprint && sprintEngaged && moveForward > 0 && !s.isCrouching && !s.isJumping && s.playerDashRemaining <= 0;
       const isSliding = s.playerSlideActive;
 
       // Movement speed coefficients

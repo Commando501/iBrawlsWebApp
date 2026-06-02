@@ -127,8 +127,8 @@ iBrawls supports both classic Keyboard + Mouse inputs and native Gamepad (Xbox/P
 - **Pause / Menu**: `Escape`
 
 ### Gamepad (Xbox Controller Layout)
-- **Movement**: `Left Analog Stick`
-- **Aim / Camera**: `Right Analog Stick` (Continuous framerate-independent rotation)
+- **Movement**: `Left Analog Stick` (First-person movement / Spectator fly-movement)
+- **Aim / Camera**: `Right Analog Stick` (First-person aim rotation)
 - **Jump**: `A` (Button 0)
 - **Crouch / Slide**: `B` (Button 1)
 - **Thrust**: `X` (Button 2)
@@ -138,6 +138,13 @@ iBrawls supports both classic Keyboard + Mouse inputs and native Gamepad (Xbox/P
 - **Sprint**: `Left Stick Click (LS)` (Button 10)
 - **Scoreboard**: `Back / View` (Button 8)
 - **Pause / Menu**: `Start` (Button 9)
+
+### Gamepad Menu Navigation (Controller Cursor)
+When in menus, setup screens, or paused:
+- **Menu Cursor Movement**: `Right Analog Stick` (Presents a custom cyan neon cursor ring, with speeds modifiable via the dedicated **Controller Cursor Speed** settings slider)
+- **Simulate Mouse Click**: `A` (Button 0)
+- **Drag UI Sliders**: Hold `A` and move the `Right Analog Stick`
+- **Interactive Highlight**: Hovering over interactive UI elements (buttons, inputs, sliders) applies a glowing neon blue highlight outline (`.gpad-hover`)
 
 An interactive, high-tech visual controller mapper panel in the hotkey adjustments overlay displays a large-scale Xbox controller linked directly to action labels via wireframe paths. It supports click/tap-to-rebind for PC and mobile, real-time diagnostic button-press highlights, and a 3-second button hold directly on the controller to prompt mapping configuration with custom circular hold-progress indicators.
 

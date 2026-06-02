@@ -460,3 +460,11 @@ body {
   }
 }
 
+/* Gamepad Controller Cursor Hover Style */
+.gpad-hover {
+  outline: 2px solid #38bdf8 !important;
+  outline-offset: 2px !important;
+  box-shadow: 0 0 15px rgba(56, 189, 248, 0.4) !important;
+  transition: all 0.15s ease-in-out !important;
+}
+

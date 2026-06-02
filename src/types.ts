@@ -152,10 +152,12 @@ export interface Keybindings {
   attack: string;
   altAttack: string;
   sprint: string;
+  holdToSprint?: boolean;     // true = hold sprint button to sprint (default); false = tap once to toggle sprint
   mouseSensitivity?: number;  // multiplier applied to base sensitivity (0.1 – 5.0, default 1.0)
   mouseAcceleration?: number; // power-curve exponent offset (0.0 – 2.0, default 0.0 = linear)
   gamepadSensitivity?: number; // aim sensitivity scale for controller (0.5 – 10.0, default 3.0)
   gamepadAcceleration?: number; // aim acceleration exponent offset (0.0 – 2.0, default 0.0 = linear)
+  gamepadCursorSpeed?: number;  // speed modifier for menu navigation cursor (0.2 – 4.0, default 1.0)
   gamepadJump?: number;       // A button (index 0)
   gamepadCrouch?: number;     // B button (index 1)
   gamepadDash?: number;       // X button (index 2)
@@ -181,10 +183,12 @@ export const DEFAULT_KEYBINDINGS: Keybindings = {
   attack: 'lmb',
   altAttack: 'rmb',
   sprint: 'shift',
+  holdToSprint: true,
   mouseSensitivity: 1.0,
   mouseAcceleration: 0.0,
   gamepadSensitivity: 3.0,
   gamepadAcceleration: 0.0,
+  gamepadCursorSpeed: 1.0,
   gamepadJump: 0,
   gamepadCrouch: 1,
   gamepadDash: 2,
