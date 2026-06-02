@@ -173,13 +173,13 @@ Local play setups feature an interactive map selector overlay supported by a dyn
 iBrawls features a beautiful, feature-rich, and completely standalone 3D Map Maker application that runs 100% locally and offline in the user's browser. Since it is entirely decoupled from the main web application, players simply open the local HTML file to design custom battle arenas using standard assets!
 
 ### How to Run the Map Maker
-1. **Locate the File**: Find `mapmaker.html` in the root of the project directory.
-2. **Open Locally**: Simply double-click `mapmaker.html` to launch it in any modern web browser. No local development server, Node.js environment, or compilation is required!
-3. **Design & Customize**: Spawn crates, columns, barriers, and cores. Browse and search the newly added **3D Asset Catalog** for premium pre-styled elements. Modify positions, rotations, scales, colors, metalness, and roughness using the visual transformation sliders. Choose between **Circular** and **Rectangular** arena shapes!
-4. **Lighting Controls**: Add custom point lights to set up warm or cold ambient mood lighting in your arena.
-5. **Bake Nav Mesh**: Click the **Bake Nav Mesh** button to programmatically generate the automated pathfinding node navigation grid. The walkable pathways will instantly light up in glowing green and cyan in the viewport!
-6. **Export JSON**: Click the **Export JSON** button to download your compiled arena as a `.json` map file.
-7. **Load in Game**: Launch the main game, select **"Load Custom Map (.json)"** from the Battle Arena selection dropdown in the lobby, choose your exported file, and instantly start fighting on your custom battlefield!
+1. **Launch Directly from the Game**: You can now launch the Map Maker directly from the main menu by clicking the **🛠️ Map Maker** button in the top navigation bar!
+2. **Double-Click Offline**: Alternatively, locate `mapmaker.html` in the root of the project directory and double-click it to launch it completely offline in any modern web browser. No local development server, Node.js environment, or compilation is required!
+3. **New Tab Safety & Multi-tasking**: When launching from the game, the Map Maker opens in a new tab to ensure that any accidental window closes or back navigations don't cause you to lose your custom map work (since it runs entirely client-side).
+4. **Smart Exit Protection**: Click the new **Exit Editor** button in the top-right overlay of the Map Maker when you're finished. 
+   - If you have **unsaved changes**, it will warn you and prompt: *"Would you like to export/save your map before exiting?"* (Clicking OK triggers the JSON map file download and exits; Cancel lets you choose to exit without saving or stay in the editor).
+   - If opened from the game's navigation bar, it will safely close the tab upon exiting; if opened directly, it gracefully redirects you back to the game's main menu (`/`).
+5. **Design & Customize**: Spawn crates, columns, barriers, and cores. Browse and search the newly added **3D Asset Catalog** for premium pre-styled elements. Modify positions, rotations, scales, colors, metalness, and roughness using the visual transformation sliders. Choose between **Circular** and **Rectangular** arena shapes!
 
 ### Editor Features
 - **Photoshop-style Outliner & Folders**: A professional outliner panel with a hierarchical folder grouping system, vertical nesting lines, and individual collapsible groups, letting designers keep complex battlefields perfectly organized.

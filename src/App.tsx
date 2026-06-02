@@ -82,7 +82,7 @@ import { CharacterPreview } from './components/CharacterPreview';
 import { CharacterPainter } from './components/CharacterPainter';
 import { CharacterLoadout, DEFAULT_LOADOUT, AVAILABLE_PRESETS, HelmetPreset, TorsoPreset, ArmPreset, LegPreset } from './components/VoxelModels';
 
-const APP_VERSION = '0.581a';
+const APP_VERSION = '0.584';
 const MAX_PLAYER_NAME_LENGTH = 10;
 
 interface OnlineClient {
@@ -4012,6 +4012,16 @@ export default function App() {
                     </button>
                   );
                 })}
+
+                {/* Map Maker Navigation Action */}
+                <a
+                  href="/mapmaker.html"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-5 py-2 rounded-full text-xs font-bold font-display uppercase tracking-wider transition-all duration-200 cursor-pointer text-[#38bdf8] hover:text-cyan-200 hover:bg-cyan-950/20 flex items-center gap-1.5 border border-cyan-500/20 hover:border-cyan-500/40"
+                >
+                  🛠️ Map Maker
+                </a>
               </div>
 
               {/* Online Player Count */}

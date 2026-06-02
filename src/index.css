@@ -16,6 +16,9 @@ body {
   user-select: none;
   min-height: 100dvh;
   -webkit-tap-highlight-color: transparent;
+  /* Allow scrolling inside menus but disable pinch + double-tap zoom, which
+     would otherwise break the game's pointer coordinate math and controls. */
+  touch-action: pan-x pan-y;
 }
 
 /* Canvas styling */

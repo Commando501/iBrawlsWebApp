@@ -4261,7 +4261,9 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         const enemySword = buildKatarSwordModel();
         enemySword.scale.set(0.6, 0.6, 0.6);
         enemySword.position.set(0.5, 1.0 - 0.64, -0.32);
-        enemySword.rotation.set(Math.PI / 2, 0, -Math.PI / 8);
+        // Blade is built along +y; -PI/2 points it toward -z (forward / visor
+        // direction). +PI/2 would aim it backward. See positionSword().
+        enemySword.rotation.set(-Math.PI / 2, 0, -Math.PI / 8);
         enemySword.visible = false;
         if (enemyGroup.userData.upperTorso) {
           enemyGroup.userData.upperTorso.add(enemySword);
@@ -4310,7 +4312,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     const playerSword = buildKatarSwordModel(adminSettings.playerHue, playerLoadout?.swordPreset);
     // Neutral positioning (placed on right side, angled forward)
     playerSword.position.set(0.35, -0.38, -0.5);
-    playerSword.rotation.set(Math.PI / 2, 0, -Math.PI / 8); // Points forward, tilted slightly inwards
+    playerSword.rotation.set(-Math.PI / 2, 0, -Math.PI / 8); // Points forward, tilted slightly inwards
     playerSword.visible = false; // Initially inactive (starts with hammer)
     fpWeaponContainer.add(playerSword);
     threeRef.current.playerSword = playerSword;
@@ -5631,12 +5633,12 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       playerDashReady: true,
       settings: adminSettings,
       lastDeaths: [],
-      playerX: mainPlayer.pos.x,
-      playerZ: mainPlayer.pos.z,
-      playerYaw: mainPlayer.yaw,
-      enemyX: mainAI.pos.x,
-      enemyZ: mainAI.pos.z,
-      enemyYaw: mainAI.yaw,
+      playerX: mainPlayer.pos?.x ?? 0,
+      playerZ: mainPlayer.pos?.z ?? 0,
+      playerYaw: mainPlayer.yaw ?? 0,
+      enemyX: mainAI.pos?.x ?? 0,
+      enemyZ: mainAI.pos?.z ?? 0,
+      enemyYaw: mainAI.yaw ?? 0,
       enemyIsCrouching: false,
       playerIsCrouchMoving: false,
       enemyIsCrouchMoving: false,
@@ -7650,7 +7652,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       }
       if (playerSword) {
         playerSword.position.set(0.35, -0.38 + idleYBob, -0.5 + idleXBob);
-        playerSword.rotation.set(Math.PI / 2, 0, -Math.PI / 8 + idleZRotBob);
+        playerSword.rotation.set(-Math.PI / 2, 0, -Math.PI / 8 + idleZRotBob);
         playerSword.visible = false;
       }
     } else {
@@ -7663,7 +7665,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
           if (s.isLunging) {
             // Pointed straight forward, centered
             playerSword.position.set(0.0, -0.22 + idleYBob, -0.7 + idleXBob);
-            playerSword.rotation.set(Math.PI / 2 + 0.15, 0, 0);
+            playerSword.rotation.set(-Math.PI / 2 - 0.15, 0, 0);
             
             s.pSwordReady = false;
             s.pSwordCooldown = 0.5;
@@ -7671,7 +7673,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
           else if (s.pSwordState === 'ready') {
             // Neutral stance
             playerSword.position.set(0.35, -0.38 + idleYBob, -0.5 + idleXBob);
-            playerSword.rotation.set(Math.PI / 2, 0, -Math.PI / 8 + idleZRotBob);
+            playerSword.rotation.set(-Math.PI / 2, 0, -Math.PI / 8 + idleZRotBob);
             
             if (s.swapCooldownTimer > 0) {
               s.pSwordReady = false;
@@ -7691,7 +7693,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
             playerSword.position.y = THREE.MathUtils.lerp(-0.35, -0.28, pct) + idleYBob;
             playerSword.position.z = THREE.MathUtils.lerp(-0.4, -0.75, pct) + (pct < 0.5 ? -0.15 : 0.15);
             
-            playerSword.rotation.x = Math.PI / 2;
+            playerSword.rotation.x = -Math.PI / 2;
             playerSword.rotation.y = THREE.MathUtils.lerp(-1.2, 1.2, pct);
             playerSword.rotation.z = THREE.MathUtils.lerp(0.6, -1.5, pct);
             
@@ -7834,7 +7836,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
             playerSword.position.y = THREE.MathUtils.lerp(-0.28, -0.38, pct) + idleYBob;
             playerSword.position.z = THREE.MathUtils.lerp(-0.75, -0.5, pct);
             
-            playerSword.rotation.x = Math.PI / 2;
+            playerSword.rotation.x = -Math.PI / 2;
             playerSword.rotation.y = THREE.MathUtils.lerp(1.2, 0, pct);
             playerSword.rotation.z = THREE.MathUtils.lerp(-1.5, -Math.PI / 8, pct);
             

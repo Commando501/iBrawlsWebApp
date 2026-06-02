@@ -22,6 +22,12 @@ export default defineConfig(() => {
       // This workspace has had Windows EPERM locks on stale dist assets. Do not
       // block production builds on cleanup; npm run clean remains available.
       emptyOutDir: false,
+      rollupOptions: {
+        input: {
+          main: path.resolve(__dirname, 'index.html'),
+          mapmaker: path.resolve(__dirname, 'mapmaker.html'),
+        },
+      },
     },
   };
 });
