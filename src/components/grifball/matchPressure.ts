@@ -5,7 +5,8 @@ import {
   type MatchStateMultipliers,
 } from '../../game/aiTuning';
 import { resolveBehaviorTuning } from '../../game/aiBehaviorTuning';
-import { type UniversalSettings } from '../../types';
+import { getPressureDuration, shouldEnterPressure } from '../../game/aiPressure';
+import { type Combatant, type UniversalSettings } from '../../types';
 import { type GrifballRuntimeState } from './runtimeState';
 
 export const createMatchScoreContext = (
@@ -37,3 +38,49 @@ export const getEffectivePressureAggression = (
   baseAggression,
   getPressureMatchMultipliers(settings, scoreContext, baseAggression)
 );
+
+export const tryEnterCombatantPressureState = ({
+  bot,
+  targetId,
+  targetHp,
+  targetInvuln,
+  pressureAggression,
+  skipPressure,
+  settings,
+  scoreContext,
+}: {
+  bot: Combatant | undefined;
+  targetId: string;
+  targetHp: number;
+  targetInvuln: number;
+  pressureAggression: number;
+  skipPressure?: boolean;
+  settings: UniversalSettings;
+  scoreContext: AIMatchScoreContext;
+}): boolean => {
+  if (skipPressure) {
+    return false;
+  }
+
+  if (!shouldEnterPressure({ pressureAggression, targetHp, targetInvuln })) {
+    return false;
+  }
+
+  if (!bot || bot.controller !== 'ai') {
+    return false;
+  }
+
+  const duration = getPressureDuration(pressureAggression) *
+    getPressureMatchMultipliers(settings, scoreContext, pressureAggression).pressureDurationMult;
+
+  bot.aiState = 'PRESSURING';
+  bot.aiTimer = duration;
+  bot.aiPressureTargetId = targetId;
+  return true;
+};
+
+export const clearCombatantPressureTarget = (bot: Combatant | undefined): void => {
+  if (bot) {
+    bot.aiPressureTargetId = undefined;
+  }
+};

@@ -76,7 +76,7 @@ import { CharacterPreview } from './components/CharacterPreview';
 import { CharacterPainter } from './components/CharacterPainter';
 import { CharacterLoadout, DEFAULT_LOADOUT, AVAILABLE_PRESETS, HelmetPreset, TorsoPreset, ArmPreset, LegPreset } from './components/VoxelModels';
 
-const APP_VERSION = '0.575';
+const APP_VERSION = '0.580';
 const MAX_PLAYER_NAME_LENGTH = 10;
 
 interface OnlineClient {
@@ -2808,6 +2808,24 @@ export default function App() {
               isLocal: false
             }];
           });
+        } else if (data.type === 'sync' && data.action === 'request_map') {
+          if (multiplayerRole === 'host') {
+            console.log('Received request for map sync. Sending selectedMap:', selectedMap);
+            multiplayerSocket.send(JSON.stringify({
+              type: 'sync',
+              action: 'sync_map',
+              selectedMap: selectedMap,
+              customMap: lobbyCustomMapData
+            }));
+          }
+        } else if (data.type === 'sync' && data.action === 'sync_map') {
+          console.log('Received map sync packet from host:', data.selectedMap);
+          if (data.selectedMap) {
+            setSelectedMap(data.selectedMap);
+          }
+          if (data.customMap) {
+            setLobbyCustomMapData(data.customMap);
+          }
         } else if (data.type === 'role_changed') {
           console.log('Role authoritatively updated to:', data.role);
           setMultiplayerRole(data.role);
@@ -2833,7 +2851,7 @@ export default function App() {
     return () => {
       multiplayerSocket.removeEventListener('message', handleMultiplayerMessage);
     };
-  }, [multiplayerSocket]);
+  }, [multiplayerSocket, multiplayerRole, selectedMap, lobbyCustomMapData]);
 
   const sendChatMessage = (text: string) => {
     if (!multiplayerSocket || multiplayerSocket.readyState !== WebSocket.OPEN) return;
@@ -3017,6 +3035,17 @@ export default function App() {
           setIsPlaying(true);
           setIsPaused(false);
           setIsTerminated(false);
+
+          // Request map configuration from the host
+          setTimeout(() => {
+            if (ws.readyState === WebSocket.OPEN) {
+              console.log('Sending request_map to host...');
+              ws.send(JSON.stringify({
+                type: 'sync',
+                action: 'request_map'
+              }));
+            }
+          }, 100);
         } else if (data.type === 'error') {
           setConnectionError(data.message);
           setConnectionStatus('error');
