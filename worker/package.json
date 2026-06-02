@@ -6,7 +6,10 @@
   "scripts": {
     "dev": "wrangler dev",
     "typecheck": "tsc --noEmit",
-    "deploy": "wrangler deploy"
+    "deploy": "wrangler deploy",
+    "db:create": "wrangler d1 create ibrawls",
+    "db:migrate:local": "wrangler d1 migrations apply ibrawls --local",
+    "db:migrate": "wrangler d1 migrations apply ibrawls --remote"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20240320.0",
