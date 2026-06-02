@@ -5336,16 +5336,12 @@
 
     function handleExitEditor() {
       if (hasUnsavedChanges) {
-        if (confirm("You have unsaved changes. Would you like to export/save your map before exiting?\n\nClick 'OK' to save now, or 'Cancel' to choose whether to exit without saving.")) {
+        if (confirm("You have unsaved changes. Would you like to export/save your map before exiting?")) {
           handleExportJSON();
           setTimeout(() => {
             exitEditorDirectly();
           }, 1000);
           return;
-        } else {
-          if (!confirm("Are you sure you want to exit without saving? All unsaved work will be permanently lost.")) {
-            return;
-          }
         }
       } else {
         if (!confirm("Are you sure you want to exit the Map Maker?")) {
