@@ -1,0 +1,223 @@
+import * as THREE from 'three';
+import { type GrifballThreeRefs } from './threeRefs';
+
+const spawnFrictionSparkParticle = (refs: GrifballThreeRefs, pos: THREE.Vector3): void => {
+  const scene = refs.scene;
+  if (!scene) return;
+
+  const voxelGeo = new THREE.BoxGeometry(0.08, 0.08, 0.08);
+  const mat = new THREE.MeshBasicMaterial({
+    color: new THREE.Color('#38bdf8'),
+  });
+  const cube = new THREE.Mesh(voxelGeo, mat);
+  cube.position.copy(pos);
+  cube.position.y += 0.05;
+  cube.position.x += (Math.random() - 0.5) * 0.4;
+  cube.position.z += (Math.random() - 0.5) * 0.4;
+
+  scene.add(cube);
+  refs.damageExplosionParticles.push({
+    mesh: cube,
+    velocity: new THREE.Vector3(
+      (Math.random() - 0.5) * 2,
+      Math.random() * 2 + 1,
+      (Math.random() - 0.5) * 2
+    ),
+    life: 0,
+    maxLife: 0.4,
+  });
+};
+
+const spawnSprintDustParticle = (refs: GrifballThreeRefs, pos: THREE.Vector3): void => {
+  const scene = refs.scene;
+  if (!scene) return;
+
+  const voxelGeo = new THREE.BoxGeometry(0.06, 0.06, 0.06);
+  const mat = new THREE.MeshBasicMaterial({
+    color: new THREE.Color('#e2e8f0'),
+    transparent: true,
+    opacity: 0.6,
+  });
+  const cube = new THREE.Mesh(voxelGeo, mat);
+  cube.position.copy(pos);
+  cube.position.y += 0.05;
+
+  scene.add(cube);
+  refs.damageExplosionParticles.push({
+    mesh: cube,
+    velocity: new THREE.Vector3(
+      (Math.random() - 0.5) * 1,
+      Math.random() * 0.5 + 0.2,
+      (Math.random() - 0.5) * 1
+    ),
+    life: 0,
+    maxLife: 0.5,
+  });
+};
+
+export function animateSpartanCombatantModel({
+  refs,
+  mesh,
+  vel,
+  yaw,
+  hp,
+  weaponState,
+  weaponTimer,
+  dt,
+  isSliding = false,
+  isSprinting = false,
+  hammerReloadTime = 0.6,
+  hammerMeleeReload = 0.5,
+}: {
+  refs: GrifballThreeRefs;
+  mesh: THREE.Group | null;
+  vel: THREE.Vector3;
+  yaw: number;
+  hp: number;
+  weaponState: string;
+  weaponTimer: number;
+  dt: number;
+  isSliding?: boolean;
+  isSprinting?: boolean;
+  hammerReloadTime?: number;
+  hammerMeleeReload?: number;
+}): void {
+  if (!mesh) return;
+
+  const lowerTorso = mesh.userData.lowerTorso as THREE.Group | undefined;
+  const upperTorso = mesh.userData.upperTorso as THREE.Group | undefined;
+  const leftLeg = mesh.userData.leftLeg as THREE.Group | undefined;
+  const rightLeg = mesh.userData.rightLeg as THREE.Group | undefined;
+
+  if (!lowerTorso || !upperTorso || !leftLeg || !rightLeg) return;
+
+  const speed = Math.sqrt(vel.x * vel.x + vel.z * vel.z);
+
+  if (hp > 0) {
+    if (isSliding) {
+      lowerTorso.position.y = THREE.MathUtils.lerp(lowerTorso.position.y, -0.48, dt * 10.0);
+      lowerTorso.rotation.x = THREE.MathUtils.lerp(lowerTorso.rotation.x, -0.24, dt * 10.0);
+
+      leftLeg.rotation.x = THREE.MathUtils.lerp(leftLeg.rotation.x, -1.2, dt * 10.0);
+      rightLeg.rotation.x = THREE.MathUtils.lerp(rightLeg.rotation.x, -0.9, dt * 10.0);
+      leftLeg.rotation.z = THREE.MathUtils.lerp(leftLeg.rotation.z, -0.12, dt * 10.0);
+      rightLeg.rotation.z = THREE.MathUtils.lerp(rightLeg.rotation.z, 0.12, dt * 10.0);
+
+      if (Math.random() < 0.28) {
+        spawnFrictionSparkParticle(refs, mesh.position);
+      }
+    } else if (isSprinting && speed > 0.15) {
+      lowerTorso.rotation.x = THREE.MathUtils.lerp(lowerTorso.rotation.x, 0.28, dt * 10.0);
+
+      if (mesh.userData.walkPhase === undefined) {
+        mesh.userData.walkPhase = 0;
+      }
+
+      const frequency = 8.5 * (speed / 5.8);
+      mesh.userData.walkPhase += dt * frequency * Math.PI * 2;
+
+      const phase = mesh.userData.walkPhase;
+      const maxSwing = 0.68;
+
+      leftLeg.rotation.x = Math.sin(phase) * maxSwing;
+      rightLeg.rotation.x = -Math.sin(phase) * maxSwing;
+      leftLeg.rotation.z = Math.cos(phase) * 0.06;
+      rightLeg.rotation.z = -Math.cos(phase) * 0.06;
+
+      const bobAmount = Math.abs(Math.sin(phase)) * 0.05;
+      lowerTorso.position.y = -bobAmount;
+
+      if (Math.random() < 0.18) {
+        const footPos = mesh.position.clone();
+        footPos.x += (Math.random() - 0.5) * 0.3;
+        footPos.z += (Math.random() - 0.5) * 0.3;
+        spawnSprintDustParticle(refs, footPos);
+      }
+    } else if (speed > 0.15) {
+      lowerTorso.rotation.x = THREE.MathUtils.lerp(lowerTorso.rotation.x, 0, dt * 10.0);
+
+      if (mesh.userData.walkPhase === undefined) {
+        mesh.userData.walkPhase = 0;
+      }
+
+      const frequency = 5.2 * (speed / 4.0);
+      mesh.userData.walkPhase += dt * frequency * Math.PI * 2;
+
+      const phase = mesh.userData.walkPhase;
+      const maxSwing = 0.52;
+
+      leftLeg.rotation.x = Math.sin(phase) * maxSwing;
+      rightLeg.rotation.x = -Math.sin(phase) * maxSwing;
+      leftLeg.rotation.z = Math.cos(phase) * 0.05;
+      rightLeg.rotation.z = -Math.cos(phase) * 0.05;
+
+      const bobAmount = Math.abs(Math.sin(phase)) * 0.04;
+      lowerTorso.position.y = -bobAmount;
+    } else {
+      lowerTorso.rotation.x = THREE.MathUtils.lerp(lowerTorso.rotation.x, 0, dt * 10.0);
+      leftLeg.rotation.x = THREE.MathUtils.lerp(leftLeg.rotation.x, 0, dt * 10.0);
+      leftLeg.rotation.z = THREE.MathUtils.lerp(leftLeg.rotation.z, 0, dt * 10.0);
+      rightLeg.rotation.x = THREE.MathUtils.lerp(rightLeg.rotation.x, 0, dt * 10.0);
+      rightLeg.rotation.z = THREE.MathUtils.lerp(rightLeg.rotation.z, 0, dt * 10.0);
+      lowerTorso.position.y = THREE.MathUtils.lerp(lowerTorso.position.y, 0, dt * 10.0);
+      mesh.userData.walkPhase = 0;
+    }
+  } else {
+    lowerTorso.rotation.x = 0;
+    leftLeg.rotation.x = 0;
+    leftLeg.rotation.z = 0;
+    rightLeg.rotation.x = 0;
+    rightLeg.rotation.z = 0;
+    lowerTorso.position.y = 0;
+  }
+
+  let targetLowerTorsoYaw = 0;
+  if (speed > 0.15 && hp > 0) {
+    const moveYaw = Math.atan2(vel.x, vel.z);
+    let diff = moveYaw - yaw;
+    diff = Math.atan2(Math.sin(diff), Math.cos(diff));
+
+    const maxTwist = Math.PI / 3;
+    targetLowerTorsoYaw = Math.abs(diff) > maxTwist
+      ? Math.sign(diff) * maxTwist
+      : diff;
+  }
+
+  lowerTorso.rotation.y = THREE.MathUtils.lerp(
+    lowerTorso.rotation.y,
+    targetLowerTorsoYaw,
+    dt * 9.0
+  );
+
+  let targetUpperTorsoYaw = 0;
+  let targetUpperTorsoPitch = 0;
+  let targetUpperTorsoRoll = 0;
+
+  if (hp > 0) {
+    if (weaponState === 'swing_up') {
+      targetUpperTorsoYaw = -0.32;
+      targetUpperTorsoPitch = -0.12;
+    } else if (weaponState === 'swing_down') {
+      targetUpperTorsoYaw = 0.42;
+      targetUpperTorsoPitch = 0.22;
+      targetUpperTorsoRoll = -0.08;
+    } else if (weaponState === 'recovering') {
+      const recoveredPct = Math.min(1.0, weaponTimer / hammerReloadTime);
+      targetUpperTorsoYaw = THREE.MathUtils.lerp(0.42, 0, recoveredPct);
+      targetUpperTorsoPitch = THREE.MathUtils.lerp(0.22, 0, recoveredPct);
+    } else if (weaponState === 'melee_swing' || weaponState === 'melee_up') {
+      targetUpperTorsoYaw = 0.5;
+      targetUpperTorsoPitch = 0.05;
+      targetUpperTorsoRoll = 0.1;
+    } else if (weaponState === 'melee_recover' || weaponState === 'melee_down') {
+      const recoveredPct = Math.min(1.0, weaponTimer / hammerMeleeReload);
+      targetUpperTorsoYaw = THREE.MathUtils.lerp(0.5, 0, recoveredPct);
+      targetUpperTorsoPitch = THREE.MathUtils.lerp(0.05, 0, recoveredPct);
+      targetUpperTorsoRoll = THREE.MathUtils.lerp(0.1, 0, recoveredPct);
+    }
+  }
+
+  upperTorso.rotation.y = THREE.MathUtils.lerp(upperTorso.rotation.y, targetUpperTorsoYaw, dt * 10.0);
+  upperTorso.rotation.x = THREE.MathUtils.lerp(upperTorso.rotation.x, targetUpperTorsoPitch, dt * 10.0);
+  upperTorso.rotation.z = THREE.MathUtils.lerp(upperTorso.rotation.z, targetUpperTorsoRoll, dt * 10.0);
+}

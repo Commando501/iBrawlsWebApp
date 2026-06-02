@@ -7,6 +7,18 @@
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
 }
 
+/* Explicit font utility overrides for robust typography rendering */
+.font-sans {
+  font-family: "Inter", system-ui, -apple-system, sans-serif !important;
+}
+.font-display {
+  font-family: "Space Grotesk", system-ui, -apple-system, sans-serif !important;
+}
+.font-mono {
+  font-family: "JetBrains Mono", monospace !important;
+}
+
+
 /* Custom overlay styles */
 body {
   margin: 0;

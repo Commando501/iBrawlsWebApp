@@ -158,6 +158,7 @@ import {
   tickCombatantInvulnerability,
 } from './grifball/aiTickState';
 import { resolveCombatantBodyCollisions, type CombatantColliderEntity } from './grifball/bodyCollisions';
+import { animateSpartanCombatantModel } from './grifball/combatantAnimation';
 import {
   recordBotCalibrationCounterSuccessForState,
   recordBotCalibrationDeathForState,
@@ -205,6 +206,11 @@ import { type GrifballGameProps } from './grifball/GrifballGameProps';
 import { buildLegacyRosterProps } from './grifball/legacyRosterProps';
 import { resolveActiveCustomMap } from './grifball/mapSelection';
 import { buildGrifballHudStats } from './grifball/hudStats';
+import { updateGrifballMatchTimers } from './grifball/matchTimers';
+import {
+  updateFloatingNameplatesForState,
+  updateRadarDomForState,
+} from './grifball/overlayDom';
 import {
   clearCombatantPressureTarget,
   createMatchScoreContext,
@@ -239,7 +245,31 @@ import {
 } from './grifball/tacticalTargets';
 import { createInitialGrifballRuntimeState, type GrifballRuntimeState } from './grifball/runtimeState';
 import { createInitialGrifballThreeRefs, type GrifballThreeRefs } from './grifball/threeRefs';
-import { updateInvulnerabilityBlinking, whiteBlinkMaterial } from './grifball/visualState';
+import {
+  updateDebugStrikeVisualsForState,
+  updateEmissiveGlowPulseForScene,
+  updateHammerJumpZoneVisualizerForState,
+  updateInvulnerabilityBlinking,
+  updateLiveInvulnerabilityBlinkingForState,
+  updateLiveSpectatorModelVisibilityForState,
+  updateWeatherParticlesForScene,
+  type WeatherParticleFrameState,
+  whiteBlinkMaterial,
+} from './grifball/visualState';
+import { playPistolFireSound } from './grifball/weaponAudio';
+import {
+  disposeTransientVfxRefs,
+  renderHammerSplashVfxForThreeRefs,
+  renderSwordLungeTrailVfxForThreeRefs,
+  resetTransientVfxRefs,
+  spawnBurnDecalForThreeRefs,
+  spawnVoxelShockwaveParticlesForThreeRefs,
+  updateBurnDecalsForThreeRefs,
+  updateExplosionParticlesForThreeRefs,
+  updateHammerSplashFlashesForThreeRefs,
+  updateSwordLungeSpeedLinesForThreeRefs,
+  updateTracersForThreeRefs,
+} from './grifball/vfxSystems';
 
 export { createHighFidelityObjectMesh } from './grifball/customMapAssets';
 
@@ -279,10 +309,11 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const nameplateContainerRef = useRef<HTMLDivElement>(null);
+  const weatherParticleFrameRef = useRef<WeatherParticleFrameState>({});
 
   const getActiveCustomMap = (): CustomMapData | null =>
     resolveActiveCustomMap({ customMap, replayData, selectedMap });
-  // Phase 4: main_ai lives in otherPlayers with controller:'ai' — see roster.ts helpers.
+  // Phase 4: main_ai lives in otherPlayers with controller:'ai' â€” see roster.ts helpers.
   const requestRef = useRef<number | null>(null);
   const fpsRef = useRef(createInitialFpsCounter());
 
@@ -791,10 +822,10 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
             }
           } else if (wState === 'recovering') {
             wTimer += dt;
-            // Recovery mirrors the player/main-AI exactly (sword slash → swordSlashReload,
-            // hammer overhead → hammerReloadTime). Previously hardcoded 0.3s, which let bots
+            // Recovery mirrors the player/main-AI exactly (sword slash â†’ swordSlashReload,
+            // hammer overhead â†’ hammerReloadTime). Previously hardcoded 0.3s, which let bots
             // recover in roughly half the configured time and re-swing ~2x faster than the
-            // player. Never hardcode this — it must track the gameplay mechanic settings.
+            // player. Never hardcode this â€” it must track the gameplay mechanic settings.
             const reload = swingIsSword
               ? (s.settings.swordSlashReload ?? 0.6)
               : (s.settings.hammerReloadTime ?? 0.6);
@@ -839,282 +870,26 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     }
   };
 
-  function spawnBurnDecal(pos: THREE.Vector3, radius: number) {
-    const scene = threeRef.current.scene;
-    if (!scene) return;
+  const spawnBurnDecal = (pos: THREE.Vector3, radius: number) =>
+    spawnBurnDecalForThreeRefs(threeRef.current, pos, radius);
 
-    const decalGeo = new THREE.PlaneGeometry(2, 2);
-    decalGeo.rotateX(-Math.PI / 2);
+  const updateBurnDecals = (dt: number) =>
+    updateBurnDecalsForThreeRefs(threeRef.current, dt);
 
-    const canvas = document.createElement('canvas');
-    canvas.width = 256;
-    canvas.height = 256;
-    const ctx = canvas.getContext('2d');
-    if (ctx) {
-      ctx.clearRect(0, 0, 256, 256);
+  const updateTracers = (dt: number) =>
+    updateTracersForThreeRefs(threeRef.current, dt);
 
-      const coreGrad = ctx.createRadialGradient(128, 128, 0, 128, 128, 128);
-      coreGrad.addColorStop(0, 'rgba(6, 182, 212, 0.45)');
-      coreGrad.addColorStop(0.3, 'rgba(56, 189, 248, 0.22)');
-      coreGrad.addColorStop(0.7, 'rgba(56, 189, 248, 0.08)');
-      coreGrad.addColorStop(0.85, 'rgba(6, 182, 212, 0.6)');
-      coreGrad.addColorStop(0.93, 'rgba(255, 255, 255, 0.9)');
-      coreGrad.addColorStop(1.0, 'rgba(0, 0, 0, 0)');
-      
-      ctx.fillStyle = coreGrad;
-      ctx.beginPath();
-      ctx.arc(128, 128, 124, 0, Math.PI * 2);
-      ctx.fill();
+  const updateExplosionParticles = (dt: number) =>
+    updateExplosionParticlesForThreeRefs(threeRef.current, dt);
 
-      ctx.strokeStyle = 'rgba(6, 182, 212, 0.85)';
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.arc(128, 128, 90, 0, Math.PI * 2);
-      ctx.stroke();
+  const updateHammerSplashFlashes = (dt: number) =>
+    updateHammerSplashFlashesForThreeRefs(threeRef.current, dt);
 
-      ctx.strokeStyle = 'rgba(56, 189, 248, 0.5)';
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.arc(128, 128, 50, 0, Math.PI * 2);
-      ctx.stroke();
-
-      ctx.strokeStyle = 'rgba(6, 182, 212, 0.45)';
-      ctx.lineWidth = 2;
-      for (let i = 0; i < 8; i++) {
-        const angle = (i * Math.PI) / 4;
-        const startRad = 20;
-        const endRad = 115;
-        const xStart = 128 + Math.cos(angle) * startRad;
-        const yStart = 128 + Math.sin(angle) * startRad;
-        const xEnd = 128 + Math.cos(angle) * endRad;
-        const yEnd = 128 + Math.sin(angle) * endRad;
-        ctx.beginPath();
-        ctx.moveTo(xStart, yStart);
-        ctx.lineTo(xEnd, yEnd);
-        ctx.stroke();
-      }
-    }
-
-    const texture = new THREE.CanvasTexture(canvas);
-    const decalMat = new THREE.MeshBasicMaterial({
-      map: texture,
-      transparent: true,
-      opacity: 1.0,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-      side: THREE.DoubleSide
-    });
-
-    const mesh = new THREE.Mesh(decalGeo, decalMat);
-    mesh.position.set(pos.x, 0.012 + Math.random() * 0.005, pos.z);
-    mesh.scale.set(radius, 1, radius);
-
-    scene.add(mesh);
-
-    threeRef.current.burnDecals.push({
-      mesh,
-      life: 0,
-      maxLife: 3.5,
-    });
-  };
-
-  function updateBurnDecals(dt: number) {
-    const list = threeRef.current.burnDecals;
-    const scene = threeRef.current.scene;
-    if (!scene || !list) return;
-
-    for (let i = list.length - 1; i >= 0; i--) {
-      const d = list[i];
-      d.life += dt;
-
-      if (d.life >= d.maxLife) {
-        scene.remove(d.mesh);
-        d.mesh.geometry.dispose();
-        if (Array.isArray(d.mesh.material)) {
-          d.mesh.material.forEach((m: any) => {
-            if (m.map) m.map.dispose();
-            m.dispose();
-          });
-        } else {
-          const m = d.mesh.material as THREE.MeshBasicMaterial;
-          if (m.map) m.map.dispose();
-          m.dispose();
-        }
-        list.splice(i, 1);
-      } else {
-        const ratio = 1.0 - (d.life / d.maxLife);
-        const mat = d.mesh.material as THREE.MeshBasicMaterial;
-        mat.opacity = ratio;
-      }
-    }
-  };
-
-  const playPistolSound = () => {
-    try {
-      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-      if (!AudioCtx) return;
-      const ctx = new AudioCtx();
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      
-      osc.type = 'sawtooth';
-      osc.frequency.setValueAtTime(800, ctx.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(80, ctx.currentTime + 0.15);
-      
-      gain.gain.setValueAtTime(0.3, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.18);
-      
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      
-      osc.start();
-      osc.stop(ctx.currentTime + 0.2);
-    } catch (err) {
-      console.error("Failed to play pistol sound:", err);
-    }
-  };
-
-  function updateTracers(dt: number) {
-    const list = threeRef.current.tracers;
-    const scene = threeRef.current.scene;
-    if (!list || !scene) return;
-    
-    for (let i = list.length - 1; i >= 0; i--) {
-      const t = list[i];
-      t.life += dt;
-      if (t.life >= t.maxLife) {
-        scene.remove(t.mesh);
-        t.mesh.geometry.dispose();
-        t.material.dispose();
-        list.splice(i, 1);
-      } else {
-        const ratio = 1.0 - (t.life / t.maxLife);
-        if ('opacity' in t.material) {
-          t.material.opacity = ratio;
-        }
-      }
-    }
-  }
-
-  function updateExplosionParticles(dt: number) {
-    const list = threeRef.current.damageExplosionParticles;
-    const scene = threeRef.current.scene;
-
-    if (!scene) return;
-
-    for (let i = list.length - 1; i >= 0; i--) {
-      const p = list[i];
-      p.life += dt;
-
-      if (p.life >= p.maxLife) {
-        // Clean from screen
-        scene.remove(p.mesh);
-        p.mesh.geometry.dispose();
-        list.splice(i, 1);
-      } else {
-        // Accelerate downwards (Gravity pulling voxel chunks back to arena)
-        p.velocity.y -= 15 * dt;
-
-        // Apply translations
-        p.mesh.position.addScaledVector(p.velocity, dt);
-
-        // Voxel shrink size decay
-        const ratio = 1.0 - p.life / p.maxLife;
-        p.mesh.scale.set(ratio, ratio, ratio);
-      }
-    }
-  };
-
-  function updateHammerSplashFlashes(dt: number) {
-    const list = threeRef.current.hammerSplashFlashes;
-    const scene = threeRef.current.scene;
-
-    if (!scene) return;
-
-    for (let i = list.length - 1; i >= 0; i--) {
-      const flash = list[i];
-      flash.life += dt;
-
-      if (flash.life >= flash.maxLife) {
-        scene.remove(flash.mesh);
-        flash.mesh.geometry.dispose();
-        if (Array.isArray(flash.mesh.material)) {
-          flash.mesh.material.forEach((m: any) => m.dispose());
-        } else {
-          flash.mesh.material.dispose();
-        }
-        list.splice(i, 1);
-      } else {
-        const pct = flash.life / flash.maxLife;
-        const eased = 1 - Math.pow(1 - pct, 3);
-        const scale = THREE.MathUtils.lerp(flash.targetRadius * 0.12, flash.targetRadius, eased);
-        flash.mesh.scale.setScalar(scale);
-
-        const mat = flash.mesh.material as THREE.MeshBasicMaterial;
-        mat.opacity = 0.9 * Math.pow(1 - pct, 2);
-      }
-    }
-  };
-
-  function updateSwordLungeSpeedLines(dt: number) {
-    const list = threeRef.current.swordLungeSpeedLines;
-    const scene = threeRef.current.scene;
-
-    if (!scene) return;
-
-    for (let i = list.length - 1; i >= 0; i--) {
-      const line = list[i];
-      line.life += dt;
-
-      if (line.life >= line.maxLife) {
-        scene.remove(line.mesh);
-        line.mesh.geometry.dispose();
-        if (Array.isArray(line.mesh.material)) {
-          line.mesh.material.forEach((m: any) => m.dispose());
-        } else {
-          line.mesh.material.dispose();
-        }
-        list.splice(i, 1);
-      } else {
-        const pct = line.life / line.maxLife;
-        line.mesh.position.addScaledVector(line.drift, dt);
-        line.mesh.scale.z = Math.max(0.18, 1 - pct * 0.72);
-
-        const mat = line.mesh.material as THREE.MeshBasicMaterial;
-        mat.opacity = line.startOpacity * Math.pow(1 - pct, 1.55);
-      }
-    }
-  };
+  const updateSwordLungeSpeedLines = (dt: number) =>
+    updateSwordLungeSpeedLinesForThreeRefs(threeRef.current, dt);
 
   function updateMatchTimers(dt: number) {
-    const s = stateRef.current;
-    
-    // Decrement remaining game timer count (08:42 to start)
-    s.gameTime -= dt;
-    if (s.gameTime < 0) s.gameTime = 0;
-
-    // Decrement trace visuals linger
-    if (s.lastStrikeTick > 0) s.lastStrikeTick -= dt * 1.5;
-    if (s.lastAIStrikeTick > 0) s.lastAIStrikeTick -= dt * 1.5;
-
-    // Decrement hammer jump windows
-    if (s.pHammerJumpWindowTimer > 0) s.pHammerJumpWindowTimer = Math.max(0, s.pHammerJumpWindowTimer - dt);
-    const mainAi = mai();
-    if (mainAi && mainAi.hammerJumpWindowTimer > 0) {
-      mainAi.hammerJumpWindowTimer = Math.max(0, mainAi.hammerJumpWindowTimer - dt);
-    }
-
-    // Decrement other players' respawn and invulnerability timers
-    if (s.otherPlayers) {
-      s.otherPlayers.forEach((other) => {
-        if (other.respawnTimer > 0) {
-          other.respawnTimer = Math.max(0, other.respawnTimer - dt);
-        }
-        if (other.invulnerabilityTimer > 0) {
-          other.invulnerabilityTimer = Math.max(0, other.invulnerabilityTimer - dt);
-        }
-      });
-    }
+    updateGrifballMatchTimers(stateRef.current, mai(), dt);
   };
 
   function renderGame() {
@@ -1149,67 +924,21 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       camera.updateProjectionMatrix();
     }
 
-    // Update blinking transitions during invulnerability windows
-    const blinkCycle = Math.floor(performance.now() / 120) % 2 === 0;
-
-    if (s.isObserverMode && !replayData) {
-      const remote = getPrimaryRemoteOpponent(s.otherPlayers, opponentClientId);
-      updateInvulnerabilityBlinking({
-        group: threeRef.current.enemyGroup,
-        active: (remote?.invulnerabilityTimer ?? 0) > 0,
-        skipMeshes: [threeRef.current.debugPlayerSphere, threeRef.current.debugEnemySphere],
-        blinkCycle,
-      });
-    }
-    updateInvulnerabilityBlinking({
-      group: threeRef.current.playerHammer,
-      active: s.playerInvulnerabilityTimer > 0,
-      skipMeshes: [threeRef.current.debugPlayerSphere, threeRef.current.debugEnemySphere],
-      blinkCycle,
+    updateLiveInvulnerabilityBlinkingForState({
+      state: s,
+      refs: threeRef.current,
+      opponentClientId,
+      replayActive: Boolean(replayData),
     });
 
-    if (threeRef.current.otherPlayerMeshes && s.otherPlayers) {
-      s.otherPlayers.forEach((player, id) => {
-        const meshes = threeRef.current.otherPlayerMeshes.get(id);
-        if (meshes && meshes.group) {
-          updateInvulnerabilityBlinking({
-            group: meshes.group,
-            active: (player.invulnerabilityTimer || 0) > 0,
-            skipMeshes: [threeRef.current.debugPlayerSphere, threeRef.current.debugEnemySphere],
-            blinkCycle,
-          });
-        }
-      });
-    }
-
-    // Manage spectator model visibility to prevent camera head clipping
     if (s.isObserverMode && !replayData) {
-      const hostData = getSpectateTargetData('host');
-      const clientData = getSpectateTargetData('client');
-      
-      if (threeRef.current.hostGroup) {
-        threeRef.current.hostGroup.visible = (s.observerCamMode !== 'first' || s.observerTarget !== 'host') && (hostData.hp > 0);
-        
-        // Update host weapons visibility
-        const hammer = threeRef.current.hostHammer;
-        const sword = threeRef.current.hostSword;
-        if (hammer && sword) {
-          hammer.visible = hostData.activeWeapon === 'hammer';
-          sword.visible = hostData.activeWeapon === 'sword';
-        }
-      }
-      
-      if (threeRef.current.enemyGroup) {
-        threeRef.current.enemyGroup.visible = (s.observerCamMode !== 'first' || s.observerTarget !== 'client') && (clientData.hp > 0);
-        
-        // Update client weapons visibility
-        const hammer = threeRef.current.enemyHammer;
-        const sword = threeRef.current.enemySword;
-        if (hammer && sword) {
-          hammer.visible = clientData.activeWeapon === 'hammer';
-          sword.visible = clientData.activeWeapon === 'sword';
-        }
-      }
+      updateLiveSpectatorModelVisibilityForState({
+        state: s,
+        refs: threeRef.current,
+        replayActive: false,
+        hostData: getSpectateTargetData('host'),
+        clientData: getSpectateTargetData('client'),
+      });
     }
 
     // Apply Camera transforms based on Observer Mode and Camera Mode settings
@@ -1272,154 +1001,18 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       }
     }
 
-    // Sync Debug Mode Traces (wireframe red impact zone circles)
-    const playerSphere = threeRef.current.debugPlayerSphere;
-    if (playerSphere) {
-      if (s.debugMode && s.lastStrikePos && s.lastStrikeTick > 0) {
-        playerSphere.visible = true;
-        playerSphere.position.copy(s.lastStrikePos);
-        
-        // Pulse ring scale & opacity fading
-        const fade = Math.max(0, s.lastStrikeTick);
-        const mat = playerSphere.material as THREE.MeshBasicMaterial;
-        mat.opacity = fade * 0.45;
-        
-        // Scale the sphere mesh based on our custom attackRadius versus default radius
-        const scaleFactor = s.settings.attackRadius / 4.5;
-        playerSphere.scale.setScalar(scaleFactor);
-      } else {
-        playerSphere.visible = false;
-      }
-    }
-
-    const enemySphere = threeRef.current.debugEnemySphere;
-    if (enemySphere) {
-      if (s.debugMode && s.lastAIStrikePos && s.lastAIStrikeTick > 0) {
-        enemySphere.visible = true;
-        enemySphere.position.copy(s.lastAIStrikePos);
-        const fade = Math.max(0, s.lastAIStrikeTick);
-        const mat = enemySphere.material as THREE.MeshBasicMaterial;
-        mat.opacity = fade * 0.45;
-        
-        const scaleFactor = s.settings.attackRadius / 4.5;
-        enemySphere.scale.setScalar(scaleFactor);
-      } else {
-        enemySphere.visible = false;
-      }
-    }
-
-    // Sync Hammer Jump Zone Visualizer
-    const jumpZoneMesh = threeRef.current.playerJumpZoneMesh;
-    if (jumpZoneMesh) {
-      if (s.settings.visualizeJumpZone && s.playerHP > 0) {
-        jumpZoneMesh.visible = true;
-        // Position flatly on the ground floor beneath player
-        jumpZoneMesh.position.set(s.playerPos.x, 0.02, s.playerPos.z);
-        // Scale matched perfectly to the trigger radius slider
-        const triggerRad = s.settings.hammerJumpTriggerRadius ?? 3.5;
-        jumpZoneMesh.scale.set(triggerRad, 1, triggerRad);
-
-        const mat = jumpZoneMesh.material as THREE.MeshBasicMaterial;
-        if (s.pHammerJumpWindowTimer > 0) {
-          // Inside jump window! Fast bright flashing glow alert
-          const flash = 0.6 + Math.sin(performance.now() * 0.016) * 0.25;
-          mat.opacity = flash;
-          mat.color.setHex(0xfca5a5); // glow warm pinkish/gold for alert highlight
-        } else {
-          // Neutral state: soft warm aesthetic glow
-          const pulse = 0.22 + Math.sin(performance.now() * 0.003) * 0.07;
-          mat.opacity = pulse;
-          mat.color.setHex(0xf59e0b); // warm amber
-        }
-      } else {
-        jumpZoneMesh.visible = false;
-      }
-    }
-
-    // Dynamic emissive glow pulsing: pulses visor and weapons in sync
-    const elapsed = performance.now() / 1000;
-    scene.traverse((child) => {
-      if (child instanceof THREE.Mesh && child.material) {
-        const materials = Array.isArray(child.material) ? child.material : [child.material];
-        materials.forEach((mat) => {
-          if (
-            'emissive' in mat &&
-            mat.emissive &&
-            ((mat.emissive as THREE.Color).r > 0 ||
-              (mat.emissive as THREE.Color).g > 0 ||
-              (mat.emissive as THREE.Color).b > 0)
-          ) {
-            const standardMat = mat as THREE.MeshStandardMaterial;
-            // Skip the white blinking material if it's active during invulnerability flashing
-            if (mat !== whiteBlinkMaterial) {
-              standardMat.emissiveIntensity = 2.0 + Math.sin(elapsed * 4.0) * 0.8;
-            }
-          }
-        });
-      }
+    updateDebugStrikeVisualsForState({
+      state: s,
+      playerSphere: threeRef.current.debugPlayerSphere,
+      enemySphere: threeRef.current.debugEnemySphere,
+    });
+    updateHammerJumpZoneVisualizerForState({
+      state: s,
+      jumpZoneMesh: threeRef.current.playerJumpZoneMesh,
     });
 
-    // Animate rain particles in Rainy Streets theme if present
-    const rainObj = scene.getObjectByName('rain_particles');
-    if (rainObj && rainObj instanceof THREE.Points) {
-      const rainNow = performance.now();
-      if ((renderGame as any).lastRainTime === undefined) {
-        (renderGame as any).lastRainTime = rainNow;
-      }
-      const rainDt = Math.min(0.1, (rainNow - (renderGame as any).lastRainTime) / 1000);
-      (renderGame as any).lastRainTime = rainNow;
-
-      const positions = rainObj.geometry.attributes.position.array as Float32Array;
-      const velocities = rainObj.userData.velocities;
-      const arenaRadius = rainObj.userData.arenaRadius || 20;
-      const count = positions.length / 3;
-
-      for (let i = 0; i < count; i++) {
-        // Update positions with velocities
-        positions[i * 3] += velocities[i].x * rainDt;
-        positions[i * 3 + 1] += velocities[i].y * rainDt;
-        positions[i * 3 + 2] += velocities[i].z * rainDt;
-
-        // Reset particle if it falls below the floor (y <= 0)
-        if (positions[i * 3 + 1] <= 0.05) {
-          positions[i * 3] = (Math.random() - 0.5) * arenaRadius * 3;
-          positions[i * 3 + 1] = 25; // Reset to top height
-          positions[i * 3 + 2] = (Math.random() - 0.5) * arenaRadius * 2;
-        }
-      }
-      rainObj.geometry.attributes.position.needsUpdate = true;
-    }
-
-    // Animate snow particles in Winter theme if present
-    const snowObj = scene.getObjectByName('snow_particles');
-    if (snowObj && snowObj instanceof THREE.Points) {
-      const snowNow = performance.now();
-      if ((renderGame as any).lastSnowTime === undefined) {
-        (renderGame as any).lastSnowTime = snowNow;
-      }
-      const snowDt = Math.min(0.1, (snowNow - (renderGame as any).lastSnowTime) / 1000);
-      (renderGame as any).lastSnowTime = snowNow;
-
-      const positions = snowObj.geometry.attributes.position.array as Float32Array;
-      const velocities = snowObj.userData.velocities;
-      const arenaRadius = snowObj.userData.arenaRadius || 20;
-      const count = positions.length / 3;
-
-      for (let i = 0; i < count; i++) {
-        // Update positions with velocities
-        positions[i * 3] += velocities[i].x * snowDt;
-        positions[i * 3 + 1] += velocities[i].y * snowDt;
-        positions[i * 3 + 2] += velocities[i].z * snowDt;
-
-        // Reset particle if it falls below the floor (y <= 0.05) or drifts too far
-        if (positions[i * 3 + 1] <= 0.05) {
-          positions[i * 3] = (Math.random() - 0.5) * arenaRadius * 3.2;
-          positions[i * 3 + 1] = 25; // Reset to top height
-          positions[i * 3 + 2] = (Math.random() - 0.5) * arenaRadius * 2.2;
-        }
-      }
-      snowObj.geometry.attributes.position.needsUpdate = true;
-    }
+    updateEmissiveGlowPulseForScene({ scene, blinkMaterial: whiteBlinkMaterial });
+    updateWeatherParticlesForScene({ scene, frameState: weatherParticleFrameRef.current });
 
     renderer.render(scene, camera);
   };
@@ -1441,295 +1034,26 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
   function updateFloatingNameplate() {
     const s = stateRef.current;
-    const camera = threeRef.current.camera;
-    const container = containerRef.current;
-    const nameplateContainer = nameplateContainerRef.current;
-
-    if (!s || !camera || !container || !nameplateContainer) return;
-
-    const pool = nameplatePoolRef.current;
-    const activeIds = new Set<string>();
-
-    if (s.playerHP > 0) {
-      const eyePos = new THREE.Vector3(
-        s.playerPos.x,
-        1.65 - s.crouchAmount + s.playerPos.y,
-        s.playerPos.z
-      );
-
-      const appDist = s.settings.nameVisibilityDistance !== undefined ? s.settings.nameVisibilityDistance : 15.0;
-
-      s.otherPlayers.forEach((combatant, id) => {
-        if (combatant.hp <= 0 || (combatant.respawnTimer ?? 0) > 0 || combatant.aiState === 'RESPAWNING') return;
-
-        const enemyPos = combatant.pos;
-        const enemyCenter = new THREE.Vector3(enemyPos.x, enemyPos.y + 0.825, enemyPos.z);
-        const toEnemy = enemyCenter.clone().sub(eyePos);
-        const dist = toEnemy.length();
-
-        if (dist <= appDist) {
-          const toEnemyDir = toEnemy.clone().normalize();
-          
-          const cameraLookDir = new THREE.Vector3(0, 0, -1)
-            .applyAxisAngle(new THREE.Vector3(1, 0, 0), s.pitch)
-            .applyAxisAngle(new THREE.Vector3(0, 1, 0), s.yaw)
-            .normalize();
-            
-          const dot = cameraLookDir.dot(toEnemyDir);
-          const angle = Math.acos(Math.max(-1.0, Math.min(1.0, dot)));
-          
-          // Holding crosshair over them
-          if (angle < 0.12) {
-            // Calculate projected 2D coordinates
-            const headPos = new THREE.Vector3(enemyPos.x, enemyPos.y + 1.75, enemyPos.z);
-            headPos.project(camera);
-            
-            // Check if in front of camera
-            if (headPos.z <= 1) {
-              const widthHalf = container.clientWidth / 2;
-              const heightHalf = container.clientHeight / 2;
-              const screenX = (headPos.x * widthHalf) + widthHalf;
-              const screenY = -(headPos.y * heightHalf) + heightHalf;
-
-              let plate = pool.get(id);
-              if (!plate) {
-                plate = document.createElement('div');
-                plate.style.position = 'absolute';
-                plate.style.transform = 'translate(-50%, -100%)';
-                plate.style.fontWeight = 'black';
-                plate.style.fontFamily = 'monospace';
-                plate.style.pointerEvents = 'none';
-                plate.style.textShadow = '0 0 4px rgba(0,0,0,0.85), 0 0 10px rgba(0,0,0,0.5)';
-                plate.style.zIndex = '10';
-                plate.style.whiteSpace = 'nowrap';
-                plate.style.transition = 'color 0.15s, font-size 0.15s, opacity 0.15s';
-                nameplateContainer.appendChild(plate);
-                pool.set(id, plate);
-              }
-
-              // Re-attach if detached (e.g. after React full re-render)
-              if (plate.parentElement !== nameplateContainer) {
-                nameplateContainer.appendChild(plate);
-              }
-
-              // Set styles
-              plate.style.display = 'block';
-              plate.style.left = `${screenX}px`;
-              plate.style.top = `${screenY}px`;
-              plate.style.color = s.settings.nameVisibilityColor || '#00ffff';
-              plate.style.opacity = (s.settings.nameVisibilityOpacity !== undefined ? s.settings.nameVisibilityOpacity : 0.8).toString();
-              plate.style.fontSize = `${s.settings.nameVisibilityFontSize || 16}px`;
-
-              // Get actual display name
-              let name = combatant.playerName;
-              if (id === MAIN_AI_ID && !isMultiplayer) {
-                name = opponentPlayerName || opponentNameRef.current || combatant.playerName || 'DoomBot';
-              }
-              plate.textContent = name;
-              activeIds.add(id);
-            }
-          }
-        }
-      });
-    }
-
-    // Hide all plates not active
-    pool.forEach((plate, id) => {
-      if (!activeIds.has(id)) {
-        plate.style.display = 'none';
-      }
+    updateFloatingNameplatesForState({
+      state: s,
+      camera: threeRef.current.camera,
+      container: containerRef.current,
+      nameplateContainer: nameplateContainerRef.current,
+      pool: nameplatePoolRef.current,
+      isMultiplayer,
+      opponentPlayerName,
+      fallbackOpponentName: opponentNameRef.current,
     });
   };
 
   function updateRadarDOM() {
-    const s = stateRef.current;
-    if (!s) return;
-
-    const isPlayerAlive = s.playerHP > 0;
-
-    // 1. Compass Rotation — use transform:translate (GPU-composited, no layout thrash, no transition lag)
-    const nElem = document.getElementById('radar-compass-n');
-    const eElem = document.getElementById('radar-compass-e');
-    const sElem = document.getElementById('radar-compass-s');
-    const wElem = document.getElementById('radar-compass-w');
-
-    if (nElem || eElem || sElem || wElem) {
-      const cosYaw = Math.cos(s.yaw);
-      const sinYaw = Math.sin(s.yaw);
-      const r = 58;
-      const center = 72;
-
-      if (nElem) nElem.style.transform = `translate(${center + r * sinYaw - 3.5}px, ${center - r * cosYaw - 5}px)`;
-      if (eElem) eElem.style.transform = `translate(${center + r * cosYaw - 3.5}px, ${center + r * sinYaw - 5}px)`;
-      if (sElem) sElem.style.transform = `translate(${center - r * sinYaw - 3.5}px, ${center + r * cosYaw - 5}px)`;
-      if (wElem) wElem.style.transform = `translate(${center - r * cosYaw - 3.5}px, ${center - r * sinYaw - 5}px)`;
-    }
-
-    // 2. Multi-enemy dot rendering with element pooling
-    const enemiesContainer = document.getElementById('radar-enemies-container');
-    if (enemiesContainer) {
-      const maxRange = 25;
-      const radarRadius = 72;
-      const scale = radarRadius / maxRange;
-      const forward_x = -Math.sin(s.yaw);
-      const forward_z = -Math.cos(s.yaw);
-      const right_x = Math.cos(s.yaw);
-      const right_z = -Math.sin(s.yaw);
-
-      // Build the full enemy list: main AI + all otherPlayers bots
-      type RadarEnemy = { id: string; pos: THREE.Vector3; hp: number; vel: THREE.Vector3 | null; isCrouching: boolean };
-      const enemies: RadarEnemy[] = [];
-      if (!s.isMultiplayer) {
-        const mainAi = mai();
-        if (mainAi) {
-          enemies.push({ id: 'main_ai', pos: mainAi.pos, hp: mainAi.hp, vel: mainAi.vel, isCrouching: mainAi.isCrouching });
-        }
-        s.otherPlayers.forEach((bot, id) => {
-          enemies.push({ id, pos: bot.pos, hp: bot.hp, vel: bot.vel, isCrouching: bot.isCrouching });
-        });
-      } else {
-        s.otherPlayers.forEach((player, id) => {
-          enemies.push({ id, pos: player.pos, hp: player.hp, vel: player.vel, isCrouching: player.isCrouching || false });
-        });
-      }
-
-      const pool = radarDotPoolRef.current;
-      const activeIds = new Set<string>();
-
-      for (const enemy of enemies) {
-        if (!isPlayerAlive || enemy.hp <= 0) continue;
-
-        const dx = enemy.pos.x - s.playerPos.x;
-        const dz = enemy.pos.z - s.playerPos.z;
-        const dist = Math.sqrt(dx * dx + dz * dz);
-
-        const velLength = enemy.vel ? enemy.vel.length() : 0;
-        const isCrouchMoving = enemy.isCrouching && velLength > 0.15;
-        if (isCrouchMoving || dist > maxRange) continue;
-
-        const local_x = dx * right_x + dz * right_z;
-        const local_y = dx * forward_x + dz * forward_z;
-        const ex = local_x * scale;
-        const ey = -local_y * scale;
-        const left = radarRadius + ex - 6;
-        const top = radarRadius + ey - 6;
-
-        let dot = pool.get(enemy.id);
-        if (!dot) {
-          dot = document.createElement('div');
-          dot.className = 'absolute w-3 h-3 bg-red-500 rounded-full border border-white/40 shadow-[0_0_12px_#ef4444] animate-pulse z-30 flex items-center justify-center';
-          dot.style.willChange = 'transform';
-          const inner = document.createElement('div');
-          inner.className = 'w-1.5 h-1.5 bg-white rounded-full';
-          dot.appendChild(inner);
-          pool.set(enemy.id, dot);
-        }
-        // Re-append if detached (happens when React re-renders the container after e.g. escape menu)
-        if (dot.parentElement !== enemiesContainer) {
-          enemiesContainer.appendChild(dot);
-        }
-
-        // Use transform:translate for GPU-composited, zero-layout positioning
-        dot.style.transform = `translate(${left}px, ${top}px)`;
-        dot.style.display = 'flex';
-        activeIds.add(enemy.id);
-      }
-
-      // Hide dots for enemies that are dead, out of range, or no longer in the game
-      pool.forEach((dot, id) => {
-        if (!activeIds.has(id)) dot.style.display = 'none';
-      });
-    }
-
-    // 3. Update center player arrow visibility and crouch-cloaking styles
-    const playerArrow = document.getElementById('radar-player-arrow');
-    if (playerArrow) {
-      if (!isPlayerAlive) {
-        playerArrow.style.display = 'none';
-      } else {
-        playerArrow.style.display = 'block';
-        const playerVelLength = s.playerVel ? s.playerVel.length() : 0;
-        const playerIsCrouchMoving = s.isCrouching && playerVelLength > 0.15;
-
-        if (playerIsCrouchMoving) {
-          playerArrow.setAttribute('class', 'absolute w-3.5 h-3.5 text-white/20 z-20');
-          playerArrow.setAttribute('fill', 'none');
-          playerArrow.setAttribute('stroke', 'currentColor');
-          playerArrow.setAttribute('stroke-width', '2');
-        } else {
-          playerArrow.setAttribute('class', 'absolute w-3.5 h-3.5 text-[#22d3ee] drop-shadow-[0_0_4px_rgba(34,211,238,0.7)] z-20');
-          playerArrow.setAttribute('fill', 'currentColor');
-          playerArrow.removeAttribute('stroke');
-          playerArrow.removeAttribute('stroke-width');
-        }
-      }
-    }
-
-    // 4. Update status indicator badges and text node names
-    const badgeText = document.getElementById('radar-status-text');
-    const badgeContainer = document.getElementById('radar-status-badge');
-    if (badgeText && badgeContainer) {
-      const playerVelLength = s.playerVel ? s.playerVel.length() : 0;
-      const playerIsCrouchMoving = s.isCrouching && playerVelLength > 0.15;
-
-      if (!isPlayerAlive) {
-        badgeText.textContent = 'OFFLINE';
-        badgeContainer.className = 'text-[8px] font-mono font-bold px-1.5 py-0.5 rounded border bg-slate-900/40 text-slate-500 border-slate-500/20';
-      } else if (playerIsCrouchMoving) {
-        badgeText.textContent = 'SIGNAL STEALTH';
-        badgeContainer.className = 'text-[8px] font-mono font-bold px-1.5 py-0.5 rounded border bg-amber-950/40 text-amber-400 border-amber-500/20';
-      } else {
-        badgeText.textContent = 'ACTIVE';
-        badgeContainer.className = 'text-[8px] font-mono font-bold px-1.5 py-0.5 rounded border bg-cyan-950/40 text-cyan-400 border-cyan-500/20';
-      }
-    }
-  };
-
-  const spawnFrictionSparkParticle = (pos: THREE.Vector3) => {
-    const scene = threeRef.current.scene;
-    if (!scene) return;
-    const voxelGeo = new THREE.BoxGeometry(0.08, 0.08, 0.08);
-    const mat = new THREE.MeshBasicMaterial({
-      color: new THREE.Color('#38bdf8'), // cyanish friction glow
+    updateRadarDomForState({
+      state: stateRef.current,
+      mainAI: mai(),
+      radarDotPool: radarDotPoolRef.current,
     });
-    const cube = new THREE.Mesh(voxelGeo, mat);
-    cube.position.copy(pos);
-    cube.position.y += 0.05; // close to floor
-    cube.position.x += (Math.random() - 0.5) * 0.4;
-    cube.position.z += (Math.random() - 0.5) * 0.4;
-
-    const particle = {
-      mesh: cube,
-      velocity: new THREE.Vector3((Math.random() - 0.5) * 2, Math.random() * 2 + 1, (Math.random() - 0.5) * 2),
-      life: 0,
-      maxLife: 0.4,
-    };
-    scene.add(cube);
-    threeRef.current.damageExplosionParticles.push(particle as any);
   };
 
-  const spawnSprintDustParticle = (pos: THREE.Vector3) => {
-    const scene = threeRef.current.scene;
-    if (!scene) return;
-    const voxelGeo = new THREE.BoxGeometry(0.06, 0.06, 0.06);
-    const mat = new THREE.MeshBasicMaterial({
-      color: new THREE.Color('#e2e8f0'), // white dust cloud
-      transparent: true,
-      opacity: 0.6,
-    });
-    const cube = new THREE.Mesh(voxelGeo, mat);
-    cube.position.copy(pos);
-    cube.position.y += 0.05; // close to floor
-
-    const particle = {
-      mesh: cube,
-      velocity: new THREE.Vector3((Math.random() - 0.5) * 1, Math.random() * 0.5 + 0.2, (Math.random() - 0.5) * 1),
-      life: 0,
-      maxLife: 0.5,
-    };
-    scene.add(cube);
-    threeRef.current.damageExplosionParticles.push(particle as any);
-  };
 
   function animateSpartanModel(
     mesh: THREE.Group | null,
@@ -1742,156 +1066,20 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     isSliding = false,
     isSprinting = false
   ) {
-    if (!mesh) return;
-
-    const lowerTorso = mesh.userData.lowerTorso as THREE.Group | undefined;
-    const upperTorso = mesh.userData.upperTorso as THREE.Group | undefined;
-    const leftLeg = mesh.userData.leftLeg as THREE.Group | undefined;
-    const rightLeg = mesh.userData.rightLeg as THREE.Group | undefined;
-
-    if (!lowerTorso || !upperTorso || !leftLeg || !rightLeg) return;
-
-    // 1. Dynamic Feet & Leg Walk-Sprint Cycles
-    const speed = Math.sqrt(vel.x * vel.x + vel.z * vel.z);
-
-    if (hp > 0) {
-      if (isSliding) {
-        // Sliding pose: droop torso low, lean torso back, slide legs forward
-        lowerTorso.position.y = THREE.MathUtils.lerp(lowerTorso.position.y, -0.48, dt * 10.0);
-        lowerTorso.rotation.x = THREE.MathUtils.lerp(lowerTorso.rotation.x, -0.24, dt * 10.0);
-
-        leftLeg.rotation.x = THREE.MathUtils.lerp(leftLeg.rotation.x, -1.2, dt * 10.0);
-        rightLeg.rotation.x = THREE.MathUtils.lerp(rightLeg.rotation.x, -0.9, dt * 10.0);
-        leftLeg.rotation.z = THREE.MathUtils.lerp(leftLeg.rotation.z, -0.12, dt * 10.0);
-        rightLeg.rotation.z = THREE.MathUtils.lerp(rightLeg.rotation.z, 0.12, dt * 10.0);
-
-        if (Math.random() < 0.28) {
-          spawnFrictionSparkParticle(mesh.position);
-        }
-      } else if (isSprinting && speed > 0.15) {
-        // Sprinting pose: lean torso forward, fast high-frequency leg cycle
-        lowerTorso.rotation.x = THREE.MathUtils.lerp(lowerTorso.rotation.x, 0.28, dt * 10.0);
-
-        if (mesh.userData.walkPhase === undefined) {
-          mesh.userData.walkPhase = 0;
-        }
-
-        const frequency = 8.5 * (speed / 5.8);
-        mesh.userData.walkPhase += dt * frequency * Math.PI * 2;
-
-        const phase = mesh.userData.walkPhase;
-        const maxSwing = 0.68; // wider swing when sprinting
-
-        leftLeg.rotation.x = Math.sin(phase) * maxSwing;
-        rightLeg.rotation.x = -Math.sin(phase) * maxSwing;
-        leftLeg.rotation.z = Math.cos(phase) * 0.06;
-        rightLeg.rotation.z = -Math.cos(phase) * 0.06;
-
-        const bobAmount = Math.abs(Math.sin(phase)) * 0.05;
-        lowerTorso.position.y = -bobAmount;
-
-        if (Math.random() < 0.18) {
-          const footPos = mesh.position.clone();
-          footPos.x += (Math.random() - 0.5) * 0.3;
-          footPos.z += (Math.random() - 0.5) * 0.3;
-          spawnSprintDustParticle(footPos);
-        }
-      } else if (speed > 0.15) {
-        // Standard walk cycle
-        lowerTorso.rotation.x = THREE.MathUtils.lerp(lowerTorso.rotation.x, 0, dt * 10.0);
-
-        if (mesh.userData.walkPhase === undefined) {
-          mesh.userData.walkPhase = 0;
-        }
-
-        const frequency = 5.2 * (speed / 4.0);
-        mesh.userData.walkPhase += dt * frequency * Math.PI * 2;
-
-        const phase = mesh.userData.walkPhase;
-        const maxSwing = 0.52; // max leg angle (~30 degrees)
-
-        leftLeg.rotation.x = Math.sin(phase) * maxSwing;
-        rightLeg.rotation.x = -Math.sin(phase) * maxSwing;
-        leftLeg.rotation.z = Math.cos(phase) * 0.05;
-        rightLeg.rotation.z = -Math.cos(phase) * 0.05;
-
-        const bobAmount = Math.abs(Math.sin(phase)) * 0.04;
-        lowerTorso.position.y = -bobAmount;
-      } else {
-        // Standing neutral
-        lowerTorso.rotation.x = THREE.MathUtils.lerp(lowerTorso.rotation.x, 0, dt * 10.0);
-        leftLeg.rotation.x = THREE.MathUtils.lerp(leftLeg.rotation.x, 0, dt * 10.0);
-        leftLeg.rotation.z = THREE.MathUtils.lerp(leftLeg.rotation.z, 0, dt * 10.0);
-        rightLeg.rotation.x = THREE.MathUtils.lerp(rightLeg.rotation.x, 0, dt * 10.0);
-        rightLeg.rotation.z = THREE.MathUtils.lerp(rightLeg.rotation.z, 0, dt * 10.0);
-        lowerTorso.position.y = THREE.MathUtils.lerp(lowerTorso.position.y, 0, dt * 10.0);
-        mesh.userData.walkPhase = 0;
-      }
-    } else {
-      // Dead pose
-      lowerTorso.rotation.x = 0;
-      leftLeg.rotation.x = 0;
-      leftLeg.rotation.z = 0;
-      rightLeg.rotation.x = 0;
-      rightLeg.rotation.z = 0;
-      lowerTorso.position.y = 0;
-    }
-
-    // 2. Cohesion Lower Torso Directional Rotation
-    let targetLowerTorsoYaw = 0;
-    if (speed > 0.15 && hp > 0) {
-      const moveYaw = Math.atan2(vel.x, vel.z);
-      let diff = moveYaw - yaw;
-      diff = Math.atan2(Math.sin(diff), Math.cos(diff));
-
-      const maxTwist = Math.PI / 3;
-      if (Math.abs(diff) > maxTwist) {
-        targetLowerTorsoYaw = Math.sign(diff) * maxTwist;
-      } else {
-        targetLowerTorsoYaw = diff;
-      }
-    }
-
-    lowerTorso.rotation.y = THREE.MathUtils.lerp(
-      lowerTorso.rotation.y,
-      targetLowerTorsoYaw,
-      dt * 9.0
-    );
-
-    // 3. Cohesion Upper Torso (Aiming & Shoulder weapon swing twists)
-    let targetUpperTorsoYaw = 0;
-    let targetUpperTorsoPitch = 0;
-    let targetUpperTorsoRoll = 0;
-
-    if (hp > 0) {
-      if (weaponState === 'swing_up') {
-        targetUpperTorsoYaw = -0.32;
-        targetUpperTorsoPitch = -0.12;
-      } else if (weaponState === 'swing_down') {
-        targetUpperTorsoYaw = 0.42;
-        targetUpperTorsoPitch = 0.22;
-        targetUpperTorsoRoll = -0.08;
-      } else if (weaponState === 'recovering') {
-        const recoveryDuration = stateRef.current.settings.hammerReloadTime ?? 0.6;
-        const recoveredPct = Math.min(1.0, weaponTimer / recoveryDuration);
-        targetUpperTorsoYaw = THREE.MathUtils.lerp(0.42, 0, recoveredPct);
-        targetUpperTorsoPitch = THREE.MathUtils.lerp(0.22, 0, recoveredPct);
-      } else if (weaponState === 'melee_swing' || weaponState === 'melee_up') {
-        targetUpperTorsoYaw = 0.5;
-        targetUpperTorsoPitch = 0.05;
-        targetUpperTorsoRoll = 0.1;
-      } else if (weaponState === 'melee_recover' || weaponState === 'melee_down') {
-        const recoveryDuration = stateRef.current.settings.hammerMeleeReload ?? 0.5;
-        const recoveredPct = Math.min(1.0, weaponTimer / recoveryDuration);
-        targetUpperTorsoYaw = THREE.MathUtils.lerp(0.5, 0, recoveredPct);
-        targetUpperTorsoPitch = THREE.MathUtils.lerp(0.05, 0, recoveredPct);
-        targetUpperTorsoRoll = THREE.MathUtils.lerp(0.1, 0, recoveredPct);
-      }
-    }
-
-    upperTorso.rotation.y = THREE.MathUtils.lerp(upperTorso.rotation.y, targetUpperTorsoYaw, dt * 10.0);
-    upperTorso.rotation.x = THREE.MathUtils.lerp(upperTorso.rotation.x, targetUpperTorsoPitch, dt * 10.0);
-    upperTorso.rotation.z = THREE.MathUtils.lerp(upperTorso.rotation.z, targetUpperTorsoRoll, dt * 10.0);
+    animateSpartanCombatantModel({
+      refs: threeRef.current,
+      mesh,
+      vel,
+      yaw,
+      hp,
+      weaponState,
+      weaponTimer,
+      dt,
+      isSliding,
+      isSprinting,
+      hammerReloadTime: stateRef.current.settings.hammerReloadTime ?? 0.6,
+      hammerMeleeReload: stateRef.current.settings.hammerMeleeReload ?? 0.5,
+    });
   };
 
 
@@ -2593,10 +1781,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     // Clear stale mesh references from any previous scene so createOrUpdateRemotePlayer
     // always builds fresh meshes in this scene rather than reusing orphaned ones.
     threeRef.current.otherPlayerMeshes.clear();
-    threeRef.current.damageExplosionParticles = [];
-    threeRef.current.hammerSplashFlashes = [];
-    threeRef.current.swordLungeSpeedLines = [];
-    threeRef.current.burnDecals = [];
+    resetTransientVfxRefs(threeRef.current);
     threeRef.current.hostGroup = null;
     threeRef.current.hostHammer = null;
     threeRef.current.hostSword = null;
@@ -4272,7 +3457,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         }
         threeRef.current.enemySword = enemySword;
       } else {
-        // Offline: unified roster — main_ai + bot_* via orchestrator seed
+        // Offline: unified roster â€” main_ai + bot_* via orchestrator seed
         const s = stateRef.current;
         seedOfflineRoster(
           {
@@ -4879,44 +4064,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       window.removeEventListener('cycle-observer-mode', handleCycleObserverMode);
       window.removeEventListener('cycle-observer-target', handleCycleObserverTarget);
 
-      if (threeRef.current.burnDecals) {
-        threeRef.current.burnDecals.forEach(decal => {
-          if (scene) scene.remove(decal.mesh);
-          decal.mesh.geometry.dispose();
-          if (Array.isArray(decal.mesh.material)) {
-            decal.mesh.material.forEach((m: any) => m.dispose());
-          } else {
-            decal.mesh.material.dispose();
-          }
-        });
-        threeRef.current.burnDecals = [];
-      }
-
-      if (threeRef.current.hammerSplashFlashes) {
-        threeRef.current.hammerSplashFlashes.forEach(flash => {
-          if (scene) scene.remove(flash.mesh);
-          flash.mesh.geometry.dispose();
-          if (Array.isArray(flash.mesh.material)) {
-            flash.mesh.material.forEach((m: any) => m.dispose());
-          } else {
-            flash.mesh.material.dispose();
-          }
-        });
-        threeRef.current.hammerSplashFlashes = [];
-      }
-
-      if (threeRef.current.swordLungeSpeedLines) {
-        threeRef.current.swordLungeSpeedLines.forEach(line => {
-          if (scene) scene.remove(line.mesh);
-          line.mesh.geometry.dispose();
-          if (Array.isArray(line.mesh.material)) {
-            line.mesh.material.forEach((m: any) => m.dispose());
-          } else {
-            line.mesh.material.dispose();
-          }
-        });
-        threeRef.current.swordLungeSpeedLines = [];
-      }
+      disposeTransientVfxRefs(threeRef.current);
 
       if (requestRef.current) {
         cancelAnimationFrame(requestRef.current);
@@ -4995,7 +4143,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       });
     }
 
-    // 2. Process roster combatants (main_ai + bots) via otherPlayers — legacy f.ai read only for old replays
+    // 2. Process roster combatants (main_ai + bots) via otherPlayers â€” legacy f.ai read only for old replays
     if (!isMultiplayer) {
       s.otherPlayers.forEach((bot, id) => {
         if (bot.controller !== 'ai') return;
@@ -5772,7 +4920,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       // Anti-jump lag spike limit
       if (dt > 0.1) dt = 0.1;
 
-      // ─── Hidden Key Combo Hold Detection (GRIFB) ───
+      // â”€â”€â”€ Hidden Key Combo Hold Detection (GRIFB) â”€â”€â”€
       const requiredKeys = ['g', 'r', 'i', 'f', 'b'];
       const activeKeys = Object.keys(keysPressed.current).filter(k => keysPressed.current[k]);
       const isHoldingOnlyGRIFB = activeKeys.length === 5 && requiredKeys.every(k => activeKeys.includes(k));
@@ -5943,7 +5091,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     // selector the movement FSM uses, so its hammer/slash impact lands where the
     // bot is facing. Previously this always returned the player whenever not in
     // observer mode, which meant the main AI's swings aimed at the player even
-    // while it was fighting another bot — they'd visibly "swing in the wrong
+    // while it was fighting another bot â€” they'd visibly "swing in the wrong
     // direction" and could never damage a bot with a hammer or slash (only lunges,
     // which use getBestTacticalTarget, ever connected against bots).
     const difficulty = resolveRosterSlot('main_ai').difficulty || 'normal';
@@ -5954,7 +5102,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
   // Resolve a DoomBot's hammer/slash damage at its swing apex. DoomBots only
   // animated their swings (see the bot weapon state machine in the other-players
   // animation block) and only ever dealt damage through sword *lunges*, so a
-  // hammer bot — or any bot forced to swing at close range instead of lunging —
+  // hammer bot â€” or any bot forced to swing at close range instead of lunging â€”
   // could never actually hurt anyone. This mirrors the main AI's
   // applyHammerStrikeImpact: plant a damage sphere (radius attackRadius) ~attackRange
   // ahead along the bot's facing yaw and damage every other combatant inside it
@@ -5968,7 +5116,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
     const weapon = bot.activeWeapon === 'sword' ? 'sword' : 'hammer';
     // The hammer is the AoE weapon: a wide ground-pound (radius attackRadius, planted
-    // ~attackRange ahead). The sword is a precise melee — a tight slash arc close to the
+    // ~attackRange ahead). The sword is a precise melee â€” a tight slash arc close to the
     // wielder, NOT a hammer-sized ranged AoE. Sharing the hammer's forward/radius let a
     // sword-only AI land hammer-radius hits from ~7u away (and render the hammer splash),
     // so it looked and played like a hammer despite the sword-only preset. Sword closes
@@ -5990,7 +5138,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     if (isHammer) {
       renderHammerSplashVfx(impactPos, '#f97316', radius);
     } else {
-      // Sword slash burst — red energy, no hammer ground-splash.
+      // Sword slash burst â€” red energy, no hammer ground-splash.
       spawnVoxelShockwaveParticles(impactPos, '#ef4444');
     }
     sfx.playExplosion();
@@ -6033,7 +5181,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       }
     }
 
-    // Main AI ("Red") — handled by unified roster loop below
+    // Main AI ("Red") â€” handled by unified roster loop below
 
     // All roster combatants (main_ai + bots), excluding self
     if (s.otherPlayers) {
@@ -6119,7 +5267,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     s.pPistolReady = false;
 
     // 1. Play Synthesized Sleek Audio
-    playPistolSound();
+    playPistolFireSound();
 
     // 2. Compute Ray origin & direction from crosshair
     const camera = threeRef.current.camera;
@@ -6659,180 +5807,19 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
   // TRIGGER PROGRAMMATIC EXPLOSION (Voxel shockwave particles)
   const spawnVoxelShockwaveParticles = (impactCenter: THREE.Vector3, color: string) => {
-    const scene = threeRef.current.scene;
-    if (!scene) return;
-
-    const count = 35; // particle count
-    const voxelGeo = new THREE.BoxGeometry(0.12, 0.12, 0.12);
-    const voxelMatCache = new Map<string, THREE.Material>();
-
-    for (let i = 0; i < count; i++) {
-      // Random shades matching the blast theme (e.g. glowing solar cyan for player, glowing orange for AI)
-      const isGlow = Math.random() > 0.35;
-      const shadeHex = color;
-      
-      let mat = voxelMatCache.get(shadeHex);
-      if (!mat) {
-        mat = new THREE.MeshStandardMaterial({
-          color: new THREE.Color(shadeHex),
-          emissive: isGlow ? new THREE.Color(shadeHex) : undefined,
-          emissiveIntensity: isGlow ? 1.5 : 0.0,
-          roughness: 0.5,
-          metalness: 0.1
-        });
-        voxelMatCache.set(shadeHex, mat);
-      }
-
-      const cube = new THREE.Mesh(voxelGeo, mat);
-      
-      // Position slightly offset around the floor impact point
-      cube.position.copy(impactCenter);
-      cube.position.x += (Math.random() - 0.5) * 0.4;
-      cube.position.y += Math.random() * 0.3; // start close to surface
-      cube.position.z += (Math.random() - 0.5) * 0.4;
-
-      // Rapid vector velocities flying upwards and outwards
-      const angle = Math.random() * Math.PI * 2;
-      const speedHorizon = Math.random() * 5.5 + 2.5; 
-      const vx = Math.cos(angle) * speedHorizon;
-      const vz = Math.sin(angle) * speedHorizon;
-      const vy = Math.random() * 5.0 + 3.2; // explosive jump speed
-
-      const particleData = {
-        mesh: cube,
-        velocity: new THREE.Vector3(vx, vy, vz),
-        life: 0.0,
-        maxLife: Math.random() * 0.5 + 0.45, // lifespan around 0.5-1s
-      };
-
-      scene.add(cube);
-      threeRef.current.damageExplosionParticles.push(particleData);
-    }
-  };
-
-  const spawnNeonBlueHammerFlash = (impactCenter: THREE.Vector3, radius: number) => {
-    const scene = threeRef.current.scene;
-    if (!scene) return;
-
-    const flashGeo = new THREE.SphereGeometry(1, 32, 16);
-    const flashMat = new THREE.MeshBasicMaterial({
-      color: new THREE.Color('#38bdf8'),
-      transparent: true,
-      opacity: 0.9,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-      side: THREE.DoubleSide,
-    });
-    const flash = new THREE.Mesh(flashGeo, flashMat);
-    flash.position.copy(impactCenter);
-    flash.scale.setScalar(Math.max(0.05, radius * 0.12));
-    scene.add(flash);
-
-    threeRef.current.hammerSplashFlashes.push({
-      mesh: flash,
-      life: 0,
-      maxLife: 0.42,
-      targetRadius: Math.max(0.1, radius),
-    });
+    spawnVoxelShockwaveParticlesForThreeRefs(threeRef.current, impactCenter, color);
   };
 
   const renderHammerSplashVfx = (impactCenter: THREE.Vector3, color: string, radius: number) => {
     const s = stateRef.current;
-    const splashVfx = s.settings.hammerSplashVfx ?? 'current';
-
-    if (splashVfx === 'neonBlueFlash') {
-      spawnNeonBlueHammerFlash(impactCenter, radius);
-      return;
-    }
-
-    spawnVoxelShockwaveParticles(impactCenter, color);
-
-    if (s.settings.enableBurnDecals) {
-      const H = impactCenter.y;
-      if (Math.abs(H) <= radius) {
-        spawnBurnDecal(impactCenter, radius);
-      }
-    }
-  };
-
-  const spawnCurrentSwordLungeCubeTrail = (
-    trailPos: THREE.Vector3,
-    color: string,
-    style: Extract<SwordLungeCurrentTrailStyle, 'localCube' | 'enemyCube'>
-  ) => {
-    const scene = threeRef.current.scene;
-    if (!scene) return;
-
-    const size = style === 'localCube' ? 0.08 : 0.12;
-    const opacity = style === 'localCube' ? 0.8 : 0.75;
-    const geo = new THREE.BoxGeometry(size, size, size);
-    const mat = new THREE.MeshBasicMaterial({
-      color: new THREE.Color(color),
-      transparent: true,
-      opacity,
+    renderHammerSplashVfxForThreeRefs({
+      refs: threeRef.current,
+      impactCenter,
+      color,
+      radius,
+      splashVfx: s.settings.hammerSplashVfx ?? 'current',
+      enableBurnDecals: !!s.settings.enableBurnDecals,
     });
-    const mesh = new THREE.Mesh(geo, mat);
-    mesh.position.copy(trailPos);
-    scene.add(mesh);
-    threeRef.current.damageExplosionParticles.push({
-      mesh,
-      velocity: new THREE.Vector3((Math.random() - 0.5) * 0.1, Math.random() * 0.15, (Math.random() - 0.5) * 0.1),
-      life: 0.0,
-      maxLife: 0.18,
-    });
-  };
-
-  const getSwordLungeTrailDirection = (direction?: THREE.Vector3) => {
-    const dir = direction?.clone() ?? new THREE.Vector3(0, 0, -1);
-    if (dir.lengthSq() <= 0.0001) {
-      dir.set(0, 0, -1);
-    }
-    return dir.normalize();
-  };
-
-  const spawnSwordLungeSpeedLines = (trailPos: THREE.Vector3, color: string, direction?: THREE.Vector3) => {
-    const scene = threeRef.current.scene;
-    if (!scene) return;
-
-    const dir = getSwordLungeTrailDirection(direction);
-    const side = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), dir);
-    if (side.lengthSq() <= 0.0001) {
-      side.set(1, 0, 0);
-    } else {
-      side.normalize();
-    }
-
-    const lineCount = 2 + Math.floor(Math.random() * 2);
-    const highlightColor = color === '#22d3ee' ? '#a5f3fc' : '#fb923c';
-
-    for (let i = 0; i < lineCount; i++) {
-      const length = 0.75 + Math.random() * 0.95;
-      const width = 0.018 + Math.random() * 0.025;
-      const startOpacity = 0.72 + Math.random() * 0.18;
-      const geo = new THREE.BoxGeometry(width, width, length);
-      const mat = new THREE.MeshBasicMaterial({
-        color: new THREE.Color(i === 0 ? highlightColor : color),
-        transparent: true,
-        opacity: startOpacity,
-        depthWrite: false,
-        blending: THREE.AdditiveBlending,
-      });
-      const mesh = new THREE.Mesh(geo, mat);
-      mesh.position.copy(trailPos);
-      mesh.position.addScaledVector(dir, -length * (0.45 + Math.random() * 0.35));
-      mesh.position.addScaledVector(side, (Math.random() - 0.5) * 0.72);
-      mesh.position.y += (Math.random() - 0.5) * 0.36;
-      mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), dir);
-      scene.add(mesh);
-
-      threeRef.current.swordLungeSpeedLines.push({
-        mesh,
-        drift: dir.clone().multiplyScalar(-1.8 - Math.random() * 1.4),
-        life: 0,
-        maxLife: 0.14 + Math.random() * 0.08,
-        startOpacity,
-      });
-    }
   };
 
   const renderSwordLungeTrailVfx = (
@@ -6841,20 +5828,14 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     direction?: THREE.Vector3,
     currentStyle: SwordLungeCurrentTrailStyle = 'localCube'
   ) => {
-    if (Math.random() <= 0.1) return;
-
-    const lungeVfx = stateRef.current.settings.swordLungeVfx ?? 'current';
-    if (lungeVfx === 'speedLineTrail') {
-      spawnSwordLungeSpeedLines(trailPos, color, direction);
-      return;
-    }
-
-    if (currentStyle === 'shockwave') {
-      spawnVoxelShockwaveParticles(trailPos, color);
-      return;
-    }
-
-    spawnCurrentSwordLungeCubeTrail(trailPos, color, currentStyle);
+    renderSwordLungeTrailVfxForThreeRefs({
+      refs: threeRef.current,
+      trailPos,
+      color,
+      direction,
+      currentStyle,
+      swordLungeVfx: stateRef.current.settings.swordLungeVfx ?? 'current',
+    });
   };
 
   // PHYSICS UPDATE (Player relative to WASD & Crouch heights)
@@ -7564,7 +6545,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     }
 
     // (Main-AI gravity / altitude / arena-constraint is now integrated in-tick by
-    // updateSingleAIEntity — the same path bots use — so the former external "Handle AI
+    // updateSingleAIEntity â€” the same path bots use â€” so the former external "Handle AI
     // Gravity Physics" block was removed here as part of the vertical-physics unification.)
 
     // Integrate absolute positions
@@ -9035,7 +8016,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
   // 'melee_up'. Records the matching attack timestamp and plays the swing sfx. Replaces
   // the per-combatant fork (main called triggerEnemySwordSlash/HammerSwing/HammerMelee;
   // bots set weaponState directly). Note: the main AI's old triggers also bailed during
-  // weapon-swap cooldown / dash — those guards are dropped here since the call sites
+  // weapon-swap cooldown / dash â€” those guards are dropped here since the call sites
   // already gate on weaponState === 'ready' and dash state.
   const triggerCombatantAttack = (self: any, weapon: 'hammer' | 'sword', melee = false) => {
     triggerCombatantAttackAction({
@@ -9155,7 +8136,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     // main AI `self.pos`/`self.vel` already alias mai()!.pos/mai()!.vel (so copy is a no-op
     // self-copy); for a bot they copy the working vectors into the stored object. The
     // aiDashDir setter copies into the main AI's Vector3 but assigns a fresh object on
-    // a bot — matching each backing store's representation.
+    // a bot â€” matching each backing store's representation.
     const syncStateAndMesh = () => {
       self.pos.copy(pos);
       self.vel.copy(vel);
@@ -9185,7 +8166,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       self.aiLastLungeTargetId = targetId;
       self.aiPostLungeDecisionTimer = outcome === 'miss_timeout' || outcome === 'miss_arena' ? 1.35 : 0.35;
 
-      // Adaptive learning: record this combatant's lunge outcome — distance actually
+      // Adaptive learning: record this combatant's lunge outcome â€” distance actually
       // travelled + hit/miss (mirrors observePlayerLungeEnd for the human).
       const lungeStart = self.lungeStartPos ?? pos;
       const lungeTraveled = Math.hypot(pos.x - lungeStart.x, pos.z - lungeStart.z);
@@ -9388,7 +8369,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     if (!target) {
       if (self.isLunging) {
         // Reload/recovery mirrors the player's configured mechanic settings exactly
-        // (multiplier 1) — see cooldownMult below.
+        // (multiplier 1) â€” see cooldownMult below.
         finishSwordLunge(1, 'target_dead', undefined);
       }
       self.aiDashRemaining = 0;
@@ -9489,7 +8470,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
     // SPAWN_GUARDING is only driven by the post-kill-pressure / no-target early-return
     // paths above. If we reach here we have a live target and those holds have expired,
-    // but the bottom combat state machine has no SPAWN_GUARDING branch — so a stale value
+    // but the bottom combat state machine has no SPAWN_GUARDING branch â€” so a stale value
     // would leave the AI frozen with no movement or transition (notably after a lunge
     // kill in low-HP modes). Reset it back into normal engagement.
     if (state === 'SPAWN_GUARDING') {
@@ -9590,12 +8571,12 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     // AI swing/lunge reload mirrors the player's configured mechanic settings
     // exactly. Playstyle and score state no longer scale reload speed, so the AI
     // can never reload faster than the values the user has set. (Playstyle still
-    // shapes spacing, aggression and lunge range — just not raw reload timing.)
+    // shapes spacing, aggression and lunge range â€” just not raw reload timing.)
     const cooldownMult = 1;
 
     // Single source of truth for AI attack reloads. Always the player's configured
     // mechanic settings (mirrors the player exactly) so no attack path can ever swing
-    // faster than the user's gameplay dials. Never hardcode a reload literal — route it
+    // faster than the user's gameplay dials. Never hardcode a reload literal â€” route it
     // through here. Hammer side-swipe (melee) reloads on hammerMeleeReload; the wide
     // overhead/level hammer and sword use hammerReloadTime / swordSlashReload.
     const weaponReloadTime = (weapon: 'hammer' | 'sword', isMelee = false): number => {
@@ -9640,14 +8621,14 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     // (the hammer slightly nearer, 0.875x), so any enemy within (forward offset +
     // radius) along the bot's facing is fully inside it. Since the bot's yaw is locked
     // onto its target every frame, an enemy inside this range is a near-guaranteed hit
-    // at zero self-risk — a combatant never takes damage from its own sphere (true even
+    // at zero self-risk â€” a combatant never takes damage from its own sphere (true even
     // for a hammer whose blast overlaps itself). When an enemy is in this range the bot
     // must NOT hold spacing, dance, or hammer-jump: leaping points the sphere straight
     // down and whiffs (the group "jump / spin / miss" loop) when a simple ground swing
     // would connect. A small margin is shaved off so the target can't drift out of the
     // sphere during the swing wind-up. selfGrounded gates the commit so a bot only takes
     // the free swing while planted, not mid-leap.
-    // Weapon-aware reach for a *stationary* swing — the distance at which the swing's
+    // Weapon-aware reach for a *stationary* swing â€” the distance at which the swing's
     // damage sphere actually covers the target (see applyBotMeleeImpact). The sword's
     // slash is a tight arc; gating it on hammer reach made the AI whiff-slash from far
     // out. A sword bot beyond this band should lunge or keep closing, never bluff-slash.
@@ -9662,7 +8643,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
     // Distance at which a stationary swing may be *committed*. The hammer keeps its
     // spacing-tuned reach (its sphere is wide). The sword is clamped to where its slash
-    // actually lands so it never commits an out-of-range bluff slash — when it is too far
+    // actually lands so it never commits an out-of-range bluff slash â€” when it is too far
     // to connect but inside the lunge band, the lunge path closes the gap instead.
     const stationarySwingReach =
       activeWeapon === 'hammer' ? resolvedAiReach : Math.min(resolvedAiReach, guaranteedKillRange);
@@ -9943,7 +8924,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       if (attackDistanceToTarget <= stationarySwingReach) {
         state = 'COOLDOWN';
         // The hammer side-swipe only reaches MELEE_HAMMER_SWIPE_REACH (player parity), so
-        // only pick it in that band — beyond it the wide overhead gravity hammer is used.
+        // only pick it in that band â€” beyond it the wide overhead gravity hammer is used.
         const isHammerMelee = activeWeapon === 'hammer' &&
           attackDistanceToTarget <= MELEE_HAMMER_SWIPE_REACH &&
           Math.random() < 0.4;
@@ -10212,7 +9193,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     const savedVelY = vel.y;
 
     // Sword-lunge flight. Shared by the main AI and additional bots through the
-    // `self` accessor — previously the main AI ran a separate copy of this in
+    // `self` accessor â€” previously the main AI ran a separate copy of this in
     // updateAI() while bots ran this block, which let the two drift apart.
     if (self.isLunging) {
       self.lungeTimer = (self.lungeTimer || 0) + dt;
@@ -10236,7 +9217,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       const trailPos = pos.clone();
       trailPos.y += 0.825;
       // Every AI-team lunge uses the red 'enemyCube' trail (was: main AI 'enemyCube',
-      // bots 'shockwave' — converged to the main AI's team-colored cube trail).
+      // bots 'shockwave' â€” converged to the main AI's team-colored cube trail).
       renderSwordLungeTrailVfx(trailPos, '#ef4444', targetDir, 'enemyCube');
 
       const dist = getCombatBodyCenter(pos, self.isCrouching).distanceTo(getCombatBodyCenter(target.pos, target.isCrouching));
@@ -10246,7 +9227,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         const swordThreshold = s.settings.swordTradeWindow ?? 350;
         const hammerThreshold = s.settings.hammerSwordTradeWindow ?? 350;
 
-        // Detect an active attack from the target we'd trade into — sword OR hammer.
+        // Detect an active attack from the target we'd trade into â€” sword OR hammer.
         // Detecting the hammer case for every combatant preserves the main AI's old
         // lunge-vs-hammer trade and extends it to bots, instead of the previous
         // sword-only bot check.
@@ -10491,7 +9472,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         }
       }
     } else {
-      // Air-sway (unified, unreachable past the floor-pin above — see the matching note
+      // Air-sway (unified, unreachable past the floor-pin above â€” see the matching note
       // in the non-dashing branch). Kept in case the pin is ever relaxed.
       if (vel.y > 0) {
         if (movementComplexity >= 45) {
@@ -10570,7 +9551,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
       // Guaranteed-kill commit (see enemyInKillRange above). Take the free level swing
       // instead of feinting/lunging/dancing. Running before that whole cautious chain is
-      // what breaks the symmetric AI-vs-AI standoff — when the enemy is inside our own
+      // what breaks the symmetric AI-vs-AI standoff â€” when the enemy is inside our own
       // weapon's sphere, holding spacing accomplishes nothing, so the correct play is
       // simply to swing.
       if (
@@ -10976,7 +9957,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
           };
 
           if (canStartWeaponAction && shouldPressureReSwing(pressureAttack) && !isCoordAttackBlocked()) {
-            // Pressure re-swings reload at the configured rate — pressure aggression
+            // Pressure re-swings reload at the configured rate â€” pressure aggression
             // no longer shortens reload below the player's mechanic settings.
             const baseCooldown = weaponReloadTime(activeWeapon);
             timer = Math.max(timer, baseCooldown);
@@ -11066,7 +10047,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       </div>
 
       {/* Dynamic Instruction Overlay when Pointer Lock is not active.
-          Suppressed on mobile/touch — those players look via touch swipe, so
+          Suppressed on mobile/touch â€” those players look via touch swipe, so
           pointer lock is never acquired and the overlay would never clear. */}
       {showPointerLockAlert && isPlaying && !isPaused && !(deviceInfo.isMobile || forceMobileControls) && (
         <div className="absolute inset-0 flex items-center justify-center bg-black/60 backdrop-blur-xs select-none pointer-events-none transition-all duration-300">
@@ -11074,13 +10055,15 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
             <h4 className="text-xl font-display font-black tracking-widest text-blue-400 uppercase mb-2">
               CLICK TO LOCK CURSOR
             </h4>
-            <p className="text-sm font-sans text-white/70 leading-relaxed mb-4 leading-relaxed">
+            <p className="text-sm font-sans text-white/70 leading-relaxed mb-4">
               Ensure you lock your pointer to look around in first-person like standard Grifball!
             </p>
-            <div className="inline-flex gap-2 text-[10px] font-mono text-white/50 uppercase border border-white/10 px-3 py-1 rounded bg-white/5">
-              <span>LMB to Attack</span>
-              <span>•</span>
-              <span>Mouse Look</span>
+            <div className="inline-flex items-center justify-center gap-2.5 text-[10px] font-mono text-white/60 uppercase border border-white/10 px-4 py-1.5 rounded-xl bg-white/5 shadow-inner">
+              <span className="bg-slate-900 border border-white/20 px-1.5 py-0.5 rounded text-white font-black">LMB</span>
+              <span>to Attack</span>
+              <span className="text-white/25">•</span>
+              <span className="bg-slate-900 border border-white/20 px-1.5 py-0.5 rounded text-white font-black">Mouse</span>
+              <span>Look</span>
             </div>
           </div>
         </div>
