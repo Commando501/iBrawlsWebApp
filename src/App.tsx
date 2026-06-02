@@ -82,7 +82,7 @@ import { CharacterPreview } from './components/CharacterPreview';
 import { CharacterPainter } from './components/CharacterPainter';
 import { CharacterLoadout, DEFAULT_LOADOUT, AVAILABLE_PRESETS, HelmetPreset, TorsoPreset, ArmPreset, LegPreset } from './components/VoxelModels';
 
-const APP_VERSION = '0.585';
+const APP_VERSION = '0.588';
 const MAX_PLAYER_NAME_LENGTH = 10;
 
 interface OnlineClient {
@@ -1633,6 +1633,755 @@ export default function App() {
   });
   const [rebindingAction, setRebindingAction] = useState<keyof Keybindings | null>(null);
 
+  // Gamepad visual mapper states
+  const [keybindsModalTab, setKeybindsModalTab] = useState<'keyboard' | 'gamepad'>('keyboard');
+  const [holdingGpButton, setHoldingGpButton] = useState<{ buttonIndex: number; name: string; progress: number } | null>(null);
+  const [unassignedButtonMap, setUnassignedButtonMap] = useState<number | null>(null);
+  const [pressedGpButtons, setPressedGpButtons] = useState<boolean[]>([]);
+  const [hoveredAction, setHoveredAction] = useState<string | null>(null);
+  const [leftStickActive, setLeftStickActive] = useState<boolean>(false);
+  const [rightStickActive, setRightStickActive] = useState<boolean>(false);
+
+  const buttonHoldStart = useRef<number>(0);
+  const buttonHoldIndex = useRef<number>(-1);
+
+  const getActionKeyForButton = (idx: number): keyof Keybindings | null => {
+    const keys: (keyof Keybindings)[] = [
+      'gamepadJump', 'gamepadCrouch', 'gamepadDash', 'gamepadSwapWeapon',
+      'gamepadAttack', 'gamepadAltAttack', 'gamepadSprint', 'gamepadScoreboard', 'gamepadPause'
+    ];
+    return keys.find(k => keybindings[k] === idx) || null;
+  };
+
+  const getButtonColor = (btnIndex: number, actionKey: string | null) => {
+    const isHeld = holdingGpButton?.buttonIndex === btnIndex;
+    const isPressed = pressedGpButtons[btnIndex];
+    const isRebinding = actionKey && rebindingAction === actionKey;
+    const isHovered = actionKey && hoveredAction === actionKey;
+
+    if (isRebinding) return '#e0f2fe';
+    if (isHeld) return '#f59e0b';
+    if (isPressed || isHovered) return '#22d3ee';
+    return 'rgba(255,255,255,0.1)';
+  };
+
+  const getLineColor = (btnIndex: number, actionKey: string | null) => {
+    const isHeld = holdingGpButton?.buttonIndex === btnIndex;
+    const isPressed = pressedGpButtons[btnIndex];
+    const isRebinding = actionKey && rebindingAction === actionKey;
+    const isHovered = actionKey && hoveredAction === actionKey;
+
+    if (isRebinding) return '#e0f2fe';
+    if (isHeld) return '#f59e0b';
+    if (isPressed || isHovered) return '#22d3ee';
+    return 'rgba(255, 255, 255, 0.15)';
+  };
+
+  const getLineOpacity = (btnIndex: number, actionKey: string | null) => {
+    const isHeld = holdingGpButton?.buttonIndex === btnIndex;
+    const isPressed = pressedGpButtons[btnIndex];
+    const isRebinding = actionKey && rebindingAction === actionKey;
+    const isHovered = actionKey && hoveredAction === actionKey;
+
+     if (isRebinding || isHeld || isPressed || isHovered) return 1.0;
+    return 0.35;
+  };
+
+  const findActionForButton = (btnIdx: number): keyof Keybindings | null => {
+    const gamepadKeys: (keyof Keybindings)[] = [
+      'gamepadJump',
+      'gamepadCrouch',
+      'gamepadDash',
+      'gamepadSwapWeapon',
+      'gamepadAttack',
+      'gamepadAltAttack',
+      'gamepadSprint',
+      'gamepadScoreboard',
+      'gamepadPause'
+    ];
+    for (const key of gamepadKeys) {
+      if (keybindings[key] === btnIdx) {
+        return key;
+      }
+    }
+    return null;
+  };
+
+  const renderVisualGamepadMapper = () => {
+    return (
+      <div className="w-full relative overflow-hidden bg-slate-950/40 border border-white/10 rounded-xl p-4 flex flex-col items-center">
+        {/* Connection & Look Sensitivity panel */}
+        <div className={`p-2 mb-4 rounded-xl border flex flex-col sm:flex-row items-center justify-between text-left gap-3 transition-all w-full pointer-events-auto ${
+          gamepadConnected
+            ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.06)]'
+            : 'bg-amber-500/10 border-amber-500/30 text-amber-400'
+        }`}>
+          {gamepadConnected ? (
+            <div className="flex items-center gap-2 truncate">
+              <span className="text-sm">🎮</span>
+              <div>
+                <span className="text-[10px] font-black uppercase tracking-widest block leading-tight">Gamepad Connected</span>
+                <span className="text-[8.5px] font-mono text-white/50 block truncate max-w-[280px]">
+                  {gamepadName}
+                </span>
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <span className="text-sm animate-pulse">⚠️</span>
+              <div>
+                <span className="text-[10px] font-black uppercase tracking-widest block leading-tight">No Gamepad Detected</span>
+                <span className="text-[9px] text-white/50 leading-tight block">
+                  Connect controller & press any button to link.
+                </span>
+              </div>
+            </div>
+          )}
+          <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto justify-end">
+            {/* Aim Sensitivity slider */}
+            <div className="flex items-center gap-2 bg-slate-900/60 border border-white/5 px-2.5 py-1 rounded-lg">
+              <span className="font-mono text-[8.5px] uppercase tracking-wider text-white/50">Look Sensitivity:</span>
+              <span className="text-[#38bdf8] font-bold font-mono text-[9.5px] min-w-[22px]">{(keybindings.gamepadSensitivity ?? 3.0).toFixed(1)}x</span>
+              <input
+                type="range"
+                min="0.5"
+                max="10.0"
+                step="0.5"
+                value={keybindings.gamepadSensitivity ?? 3.0}
+                onChange={(e) => {
+                  const val = parseFloat(e.target.value);
+                  setKeybindings(prev => {
+                    const updated = { ...prev, gamepadSensitivity: val };
+                    try { localStorage.setItem('grifball_keybindings', JSON.stringify(updated)); } catch (_) {}
+                    return updated;
+                  });
+                }}
+                className="w-20 accent-[#38bdf8] h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
+              />
+            </div>
+
+            <button
+              onClick={() => {
+                setKeybindings(prev => {
+                  const updated = {
+                    ...prev,
+                    gamepadSensitivity: 3.0,
+                    gamepadJump: 0,
+                    gamepadCrouch: 1,
+                    gamepadDash: 2,
+                    gamepadSwapWeapon: 3,
+                    gamepadAttack: 7,
+                    gamepadAltAttack: 5,
+                    gamepadSprint: 10,
+                    gamepadScoreboard: 8,
+                    gamepadPause: 9,
+                  };
+                  try { localStorage.setItem('grifball_keybindings', JSON.stringify(updated)); } catch (_) {}
+                  return updated;
+                });
+                setRebindingAction(null);
+              }}
+              className="px-2.5 h-7 border border-amber-500/20 hover:border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 text-[9px] font-bold uppercase tracking-wider rounded-lg cursor-pointer transition-all duration-150 active:scale-95 flex items-center justify-center gap-1"
+            >
+              ↻ Reset
+            </button>
+          </div>
+        </div>
+
+        {/* Mapper Canvas */}
+        <div className="relative w-full overflow-x-auto flex justify-center items-center py-2 select-none">
+          <div className="relative min-w-[1000px] w-[1000px] h-[480px] overflow-visible">
+            {/* SVG Elements (connecting lines, controller image, and buttons) */}
+            <svg width="1000" height="480" viewBox="0 0 1000 480" className="absolute inset-0 pointer-events-none z-10 overflow-visible">
+              <defs>
+                <filter id="glow-cyan" x="-20%" y="-20%" width="140%" height="140%">
+                  <feGaussianBlur stdDeviation="3" result="blur" />
+                  <feComposite in="SourceGraphic" in2="blur" operator="over" />
+                </filter>
+              </defs>
+
+              {/* Connecting Lines */}
+              {/* Left Side Lines */}
+              <path
+                d="M 220,50 L 330,50 L 330,140 L 390,140"
+                fill="none"
+                stroke={getLineColor(6, getActionKeyForButton(6))}
+                strokeWidth={hoveredAction === getActionKeyForButton(6) || rebindingAction === getActionKeyForButton(6) || pressedGpButtons[6] ? "2.5" : "1.5"}
+                strokeOpacity={getLineOpacity(6, getActionKeyForButton(6))}
+                filter={hoveredAction === getActionKeyForButton(6) || rebindingAction === getActionKeyForButton(6) || pressedGpButtons[6] ? "url(#glow-cyan)" : ""}
+                className="transition-all duration-200"
+              />
+
+              <path
+                d="M 220,110 L 340,110 L 340,172 L 386,172"
+                fill="none"
+                stroke={getLineColor(4, getActionKeyForButton(4))}
+                strokeWidth={hoveredAction === getActionKeyForButton(4) || rebindingAction === getActionKeyForButton(4) || pressedGpButtons[4] ? "2.5" : "1.5"}
+                strokeOpacity={getLineOpacity(4, getActionKeyForButton(4))}
+                filter={hoveredAction === getActionKeyForButton(4) || rebindingAction === getActionKeyForButton(4) || pressedGpButtons[4] ? "url(#glow-cyan)" : ""}
+                className="transition-all duration-200"
+              />
+
+              <path
+                d="M 220,170 L 450,170 L 450,231 L 454,231"
+                fill="none"
+                stroke={getLineColor(8, 'gamepadScoreboard')}
+                strokeWidth={hoveredAction === 'gamepadScoreboard' || rebindingAction === 'gamepadScoreboard' || pressedGpButtons[8] ? "2.5" : "1.5"}
+                strokeOpacity={getLineOpacity(8, 'gamepadScoreboard')}
+                filter={hoveredAction === 'gamepadScoreboard' || rebindingAction === 'gamepadScoreboard' || pressedGpButtons[8] ? "url(#glow-cyan)" : ""}
+                className="transition-all duration-200"
+              />
+
+              <path
+                d="M 220,230 L 320,230 L 320,237 L 382,237"
+                fill="none"
+                stroke={getLineColor(10, 'gamepadSprint')}
+                strokeWidth={hoveredAction === 'gamepadSprint' || rebindingAction === 'gamepadSprint' || pressedGpButtons[10] ? "2.5" : "1.5"}
+                strokeOpacity={getLineOpacity(10, 'gamepadSprint')}
+                filter={hoveredAction === 'gamepadSprint' || rebindingAction === 'gamepadSprint' || pressedGpButtons[10] ? "url(#glow-cyan)" : ""}
+                className="transition-all duration-200"
+              />
+
+              <path
+                d="M 220,290 L 310,290 L 310,237 L 382,237"
+                fill="none"
+                stroke={leftStickActive || hoveredAction === 'moveCharacter' ? "#22d3ee" : "rgba(255,255,255,0.15)"}
+                strokeWidth={leftStickActive || hoveredAction === 'moveCharacter' ? "2.5" : "1.5"}
+                strokeOpacity={leftStickActive || hoveredAction === 'moveCharacter' ? 1.0 : 0.35}
+                filter={leftStickActive || hoveredAction === 'moveCharacter' ? "url(#glow-cyan)" : ""}
+                className="transition-all duration-200"
+              />
+
+              <path
+                d="M 220,350 L 350,350 L 350,295 L 437,295"
+                fill="none"
+                stroke={pressedGpButtons[12] || pressedGpButtons[13] || pressedGpButtons[14] || pressedGpButtons[15] || hoveredAction === 'dpad' ? "#22d3ee" : "rgba(255,255,255,0.15)"}
+                strokeWidth={pressedGpButtons[12] || pressedGpButtons[13] || pressedGpButtons[14] || pressedGpButtons[15] || hoveredAction === 'dpad' ? "2.5" : "1.5"}
+                strokeOpacity={pressedGpButtons[12] || pressedGpButtons[13] || pressedGpButtons[14] || pressedGpButtons[15] || hoveredAction === 'dpad' ? 1.0 : 0.35}
+                filter={pressedGpButtons[12] || pressedGpButtons[13] || pressedGpButtons[14] || pressedGpButtons[15] || hoveredAction === 'dpad' ? "url(#glow-cyan)" : ""}
+                className="transition-all duration-200"
+              />
+
+              {/* Right Side Lines */}
+              <path
+                d="M 780,50 L 670,50 L 670,140 L 609,140"
+                fill="none"
+                stroke={getLineColor(7, 'gamepadAttack')}
+                strokeWidth={hoveredAction === 'gamepadAttack' || rebindingAction === 'gamepadAttack' || pressedGpButtons[7] ? "2.5" : "1.5"}
+                strokeOpacity={getLineOpacity(7, 'gamepadAttack')}
+                filter={hoveredAction === 'gamepadAttack' || rebindingAction === 'gamepadAttack' || pressedGpButtons[7] ? "url(#glow-cyan)" : ""}
+                className="transition-all duration-200"
+              />
+
+              <path
+                d="M 780,105 L 660,105 L 660,172 L 614,172"
+                fill="none"
+                stroke={getLineColor(5, 'gamepadAltAttack')}
+                strokeWidth={hoveredAction === 'gamepadAltAttack' || rebindingAction === 'gamepadAltAttack' || pressedGpButtons[5] ? "2.5" : "1.5"}
+                strokeOpacity={getLineOpacity(5, 'gamepadAltAttack')}
+                filter={hoveredAction === 'gamepadAltAttack' || rebindingAction === 'gamepadAltAttack' || pressedGpButtons[5] ? "url(#glow-cyan)" : ""}
+                className="transition-all duration-200"
+              />
+
+              <path
+                d="M 780,160 L 550,160 L 550,231 L 546,231"
+                fill="none"
+                stroke={getLineColor(9, 'gamepadPause')}
+                strokeWidth={hoveredAction === 'gamepadPause' || rebindingAction === 'gamepadPause' || pressedGpButtons[9] ? "2.5" : "1.5"}
+                strokeOpacity={getLineOpacity(9, 'gamepadPause')}
+                filter={hoveredAction === 'gamepadPause' || rebindingAction === 'gamepadPause' || pressedGpButtons[9] ? "url(#glow-cyan)" : ""}
+                className="transition-all duration-200"
+              />
+
+              <path
+                d="M 780,215 L 650,215 L 650,213 L 617,213"
+                fill="none"
+                stroke={getLineColor(3, 'gamepadSwapWeapon')}
+                strokeWidth={hoveredAction === 'gamepadSwapWeapon' || rebindingAction === 'gamepadSwapWeapon' || pressedGpButtons[3] ? "2.5" : "1.5"}
+                strokeOpacity={getLineOpacity(3, 'gamepadSwapWeapon')}
+                filter={hoveredAction === 'gamepadSwapWeapon' || rebindingAction === 'gamepadSwapWeapon' || pressedGpButtons[3] ? "url(#glow-cyan)" : ""}
+                className="transition-all duration-200"
+              />
+
+              <path
+                d="M 780,270 L 640,270 L 640,231 L 599,231"
+                fill="none"
+                stroke={getLineColor(2, 'gamepadDash')}
+                strokeWidth={hoveredAction === 'gamepadDash' || rebindingAction === 'gamepadDash' || pressedGpButtons[2] ? "2.5" : "1.5"}
+                strokeOpacity={getLineOpacity(2, 'gamepadDash')}
+                filter={hoveredAction === 'gamepadDash' || rebindingAction === 'gamepadDash' || pressedGpButtons[2] ? "url(#glow-cyan)" : ""}
+                className="transition-all duration-200"
+              />
+
+              <path
+                d="M 780,325 L 650,325 L 650,231 L 635,231"
+                fill="none"
+                stroke={getLineColor(1, 'gamepadCrouch')}
+                strokeWidth={hoveredAction === 'gamepadCrouch' || rebindingAction === 'gamepadCrouch' || pressedGpButtons[1] ? "2.5" : "1.5"}
+                strokeOpacity={getLineOpacity(1, 'gamepadCrouch')}
+                filter={hoveredAction === 'gamepadCrouch' || rebindingAction === 'gamepadCrouch' || pressedGpButtons[1] ? "url(#glow-cyan)" : ""}
+                className="transition-all duration-200"
+              />
+
+              <path
+                d="M 780,380 L 660,380 L 660,249 L 617,249"
+                fill="none"
+                stroke={getLineColor(0, 'gamepadJump')}
+                strokeWidth={hoveredAction === 'gamepadJump' || rebindingAction === 'gamepadJump' || pressedGpButtons[0] ? "2.5" : "1.5"}
+                strokeOpacity={getLineOpacity(0, 'gamepadJump')}
+                filter={hoveredAction === 'gamepadJump' || rebindingAction === 'gamepadJump' || pressedGpButtons[0] ? "url(#glow-cyan)" : ""}
+                className="transition-all duration-200"
+              />
+
+              <path
+                d="M 780,435 L 670,435 L 670,292 L 554,292"
+                fill="none"
+                stroke={rightStickActive || hoveredAction === 'lookAim' ? "#22d3ee" : "rgba(255,255,255,0.15)"}
+                strokeWidth={rightStickActive || hoveredAction === 'lookAim' ? "2.5" : "1.5"}
+                strokeOpacity={rightStickActive || hoveredAction === 'lookAim' ? 1.0 : 0.35}
+                filter={rightStickActive || hoveredAction === 'lookAim' ? "url(#glow-cyan)" : ""}
+                className="transition-all duration-200"
+              />
+
+              {/* High-Fidelity Controller Image */}
+              <image href="/controller.png" x="290" y="90" width="420" height="294" />
+
+              {/* Glowing Interactive Circles on top of controller buttons */}
+              {/* Left Side Buttons */}
+              <circle cx="390" cy="140" r="12" fill={pressedGpButtons[6] ? 'rgba(34, 211, 238, 0.4)' : 'transparent'} stroke={pressedGpButtons[6] ? '#22d3ee' : 'transparent'} strokeWidth="1.5" />
+              <circle cx="386" cy="172" r="12" fill={pressedGpButtons[4] ? 'rgba(34, 211, 238, 0.4)' : 'transparent'} stroke={pressedGpButtons[4] ? '#22d3ee' : 'transparent'} strokeWidth="1.5" />
+              <circle cx="454" cy="231" r="8" fill={pressedGpButtons[8] ? 'rgba(34, 211, 238, 0.4)' : 'transparent'} stroke={pressedGpButtons[8] ? '#22d3ee' : 'transparent'} strokeWidth="1.5" />
+              <circle cx="382" cy="237" r="24" fill={leftStickActive ? 'rgba(34, 211, 238, 0.25)' : pressedGpButtons[10] ? 'rgba(34, 211, 238, 0.4)' : 'transparent'} stroke={leftStickActive || pressedGpButtons[10] ? '#22d3ee' : 'transparent'} strokeWidth="1.5" />
+              <circle cx="437" cy="295" r="20" fill={pressedGpButtons[12] || pressedGpButtons[13] || pressedGpButtons[14] || pressedGpButtons[15] ? 'rgba(34, 211, 238, 0.35)' : 'transparent'} stroke={pressedGpButtons[12] || pressedGpButtons[13] || pressedGpButtons[14] || pressedGpButtons[15] ? '#22d3ee' : 'transparent'} strokeWidth="1.5" />
+
+              {/* Right Side Buttons */}
+              <circle cx="609" cy="140" r="12" fill={pressedGpButtons[7] ? 'rgba(34, 211, 238, 0.4)' : 'transparent'} stroke={pressedGpButtons[7] ? '#22d3ee' : 'transparent'} strokeWidth="1.5" />
+              <circle cx="614" cy="172" r="12" fill={pressedGpButtons[5] ? 'rgba(34, 211, 238, 0.4)' : 'transparent'} stroke={pressedGpButtons[5] ? '#22d3ee' : 'transparent'} strokeWidth="1.5" />
+              <circle cx="546" cy="231" r="8" fill={pressedGpButtons[9] ? 'rgba(34, 211, 238, 0.4)' : 'transparent'} stroke={pressedGpButtons[9] ? '#22d3ee' : 'transparent'} strokeWidth="1.5" />
+              <circle cx="617" cy="213" r="11" fill={pressedGpButtons[3] ? 'rgba(250, 204, 21, 0.4)' : hoveredAction === 'gamepadSwapWeapon' ? 'rgba(250, 204, 21, 0.2)' : 'transparent'} stroke={pressedGpButtons[3] || hoveredAction === 'gamepadSwapWeapon' ? '#facc15' : 'transparent'} strokeWidth="1.5" />
+              <circle cx="599" cy="231" r="11" fill={pressedGpButtons[2] ? 'rgba(96, 165, 250, 0.4)' : hoveredAction === 'gamepadDash' ? 'rgba(96, 165, 250, 0.2)' : 'transparent'} stroke={pressedGpButtons[2] || hoveredAction === 'gamepadDash' ? '#60a5fa' : 'transparent'} strokeWidth="1.5" />
+              <circle cx="635" cy="231" r="11" fill={pressedGpButtons[1] ? 'rgba(248, 113, 113, 0.4)' : hoveredAction === 'gamepadCrouch' ? 'rgba(248, 113, 113, 0.2)' : 'transparent'} stroke={pressedGpButtons[1] || hoveredAction === 'gamepadCrouch' ? '#f87171' : 'transparent'} strokeWidth="1.5" />
+              <circle cx="617" cy="249" r="11" fill={pressedGpButtons[0] ? 'rgba(74, 222, 128, 0.4)' : hoveredAction === 'gamepadJump' ? 'rgba(74, 222, 128, 0.2)' : 'transparent'} stroke={pressedGpButtons[0] || hoveredAction === 'gamepadJump' ? '#4ade80' : 'transparent'} strokeWidth="1.5" />
+              <circle cx="554" cy="292" r="24" fill={rightStickActive ? 'rgba(34, 211, 238, 0.25)' : pressedGpButtons[11] ? 'rgba(34, 211, 238, 0.4)' : 'transparent'} stroke={rightStickActive || pressedGpButtons[11] ? '#22d3ee' : 'transparent'} strokeWidth="1.5" />
+
+              {/* Render HTML label boxes directly inside the SVG viewBox using foreignObject */}
+              {/* Left Column Labels */}
+              {/* LT */}
+              <foreignObject x="20" y="25" width="200" height="50" className="overflow-visible pointer-events-auto">
+                <div
+                  onMouseEnter={() => setHoveredAction(getActionKeyForButton(6))}
+                  onMouseLeave={() => setHoveredAction(null)}
+                  onClick={() => {
+                    const act = getActionKeyForButton(6);
+                    if (act) setRebindingAction(act);
+                    else setUnassignedButtonMap(6);
+                  }}
+                  className={`group w-[200px] h-[50px] bg-slate-900/50 hover:bg-cyan-950/20 border transition-all duration-200 rounded-xl p-2 cursor-pointer flex flex-col justify-center items-end text-right select-none ${
+                    hoveredAction === getActionKeyForButton(6) || rebindingAction === getActionKeyForButton(6) || pressedGpButtons[6]
+                      ? 'border-cyan-500/50 shadow-[0_0_12px_rgba(34,211,238,0.15)] bg-slate-900/80'
+                      : 'border-white/5 hover:border-cyan-500/30'
+                  }`}
+                >
+                  <span className="text-[10px] font-black uppercase tracking-wider text-white group-hover:text-cyan-400">
+                    {getActionKeyForButton(6) ? getActionKeyForButton(6)!.replace('gamepad', '').replace(/([A-Z])/g, ' $1').trim() : 'Unassigned (LT)'}
+                  </span>
+                  <span className="text-[8px] font-mono text-cyan-400/70 group-hover:text-cyan-300 font-bold bg-cyan-950/40 border border-cyan-500/20 px-1.5 py-0.5 rounded mt-0.5 uppercase tracking-wide">
+                    {getActionKeyForButton(6) ? '[LEFT TRIGGER]' : '[LT UNASSIGNED]'}
+                  </span>
+                </div>
+              </foreignObject>
+
+              {/* LB */}
+              <foreignObject x="20" y="85" width="200" height="50" className="overflow-visible pointer-events-auto">
+                <div
+                  onMouseEnter={() => setHoveredAction(getActionKeyForButton(4))}
+                  onMouseLeave={() => setHoveredAction(null)}
+                  onClick={() => {
+                    const act = getActionKeyForButton(4);
+                    if (act) setRebindingAction(act);
+                    else setUnassignedButtonMap(4);
+                  }}
+                  className={`group w-[200px] h-[50px] bg-slate-900/50 hover:bg-cyan-950/20 border transition-all duration-200 rounded-xl p-2 cursor-pointer flex flex-col justify-center items-end text-right select-none ${
+                    hoveredAction === getActionKeyForButton(4) || rebindingAction === getActionKeyForButton(4) || pressedGpButtons[4]
+                      ? 'border-cyan-500/50 shadow-[0_0_12px_rgba(34,211,238,0.15)] bg-slate-900/80'
+                      : 'border-white/5 hover:border-cyan-500/30'
+                  }`}
+                >
+                  <span className="text-[10px] font-black uppercase tracking-wider text-white group-hover:text-cyan-400">
+                    {getActionKeyForButton(4) ? getActionKeyForButton(4)!.replace('gamepad', '').replace(/([A-Z])/g, ' $1').trim() : 'Unassigned (LB)'}
+                  </span>
+                  <span className="text-[8px] font-mono text-cyan-400/70 group-hover:text-cyan-300 font-bold bg-cyan-950/40 border border-cyan-500/20 px-1.5 py-0.5 rounded mt-0.5 uppercase tracking-wide">
+                    {getActionKeyForButton(4) ? '[LEFT BUMPER]' : '[LB UNASSIGNED]'}
+                  </span>
+                </div>
+              </foreignObject>
+
+              {/* View/Back */}
+              <foreignObject x="20" y="145" width="200" height="50" className="overflow-visible pointer-events-auto">
+                <div
+                  onMouseEnter={() => setHoveredAction('gamepadScoreboard')}
+                  onMouseLeave={() => setHoveredAction(null)}
+                  onClick={() => setRebindingAction('gamepadScoreboard')}
+                  className={`group w-[200px] h-[50px] bg-slate-900/50 hover:bg-cyan-950/20 border transition-all duration-200 rounded-xl p-2 cursor-pointer flex flex-col justify-center items-end text-right select-none ${
+                    hoveredAction === 'gamepadScoreboard' || rebindingAction === 'gamepadScoreboard' || pressedGpButtons[8]
+                      ? 'border-cyan-500/50 shadow-[0_0_12px_rgba(34,211,238,0.15)] bg-slate-900/80'
+                      : 'border-white/5 hover:border-cyan-500/30'
+                  }`}
+                >
+                  <span className="text-[10px] font-black uppercase tracking-wider text-white group-hover:text-cyan-400">
+                    Scoreboard
+                  </span>
+                  <span className="text-[8px] font-mono text-cyan-400/70 group-hover:text-cyan-300 font-bold bg-cyan-950/40 border border-cyan-500/20 px-1.5 py-0.5 rounded mt-0.5 uppercase tracking-wide">
+                    [{getGamepadButtonName(keybindings.gamepadScoreboard)}]
+                  </span>
+                </div>
+              </foreignObject>
+
+              {/* LS Click / Sprint */}
+              <foreignObject x="20" y="205" width="200" height="50" className="overflow-visible pointer-events-auto">
+                <div
+                  onMouseEnter={() => setHoveredAction('gamepadSprint')}
+                  onMouseLeave={() => setHoveredAction(null)}
+                  onClick={() => setRebindingAction('gamepadSprint')}
+                  className={`group w-[200px] h-[50px] bg-slate-900/50 hover:bg-cyan-950/20 border transition-all duration-200 rounded-xl p-2 cursor-pointer flex flex-col justify-center items-end text-right select-none ${
+                    hoveredAction === 'gamepadSprint' || rebindingAction === 'gamepadSprint' || pressedGpButtons[10]
+                      ? 'border-cyan-500/50 shadow-[0_0_12px_rgba(34,211,238,0.15)] bg-slate-900/80'
+                      : 'border-white/5 hover:border-cyan-500/30'
+                  }`}
+                >
+                  <span className="text-[10px] font-black uppercase tracking-wider text-white group-hover:text-cyan-400">
+                    Sprint
+                  </span>
+                  <span className="text-[8px] font-mono text-cyan-400/70 group-hover:text-cyan-300 font-bold bg-cyan-950/40 border border-cyan-500/20 px-1.5 py-0.5 rounded mt-0.5 uppercase tracking-wide">
+                    [{getGamepadButtonName(keybindings.gamepadSprint)}]
+                  </span>
+                </div>
+              </foreignObject>
+
+              {/* LS Move (Non-rebindable) */}
+              <foreignObject x="20" y="265" width="200" height="50" className="overflow-visible pointer-events-auto">
+                <div
+                  onMouseEnter={() => setHoveredAction('moveCharacter')}
+                  onMouseLeave={() => setHoveredAction(null)}
+                  className={`group w-[200px] h-[50px] bg-slate-950/20 border transition-all duration-200 rounded-xl p-2 flex flex-col justify-center items-end text-right select-none ${
+                    leftStickActive || hoveredAction === 'moveCharacter'
+                      ? 'border-cyan-500/35 bg-slate-900/60'
+                      : 'border-white/5'
+                  }`}
+                >
+                  <span className="text-[10px] font-black uppercase tracking-wider text-white/70">
+                    Move Character
+                  </span>
+                  <span className="text-[8px] font-mono text-[#38bdf8]/60 font-bold bg-black/45 border border-white/5 px-1.5 py-0.5 rounded mt-0.5 uppercase tracking-wide">
+                    [LEFT STICK]
+                  </span>
+                </div>
+              </foreignObject>
+
+              {/* Dpad diagnostics */}
+              <foreignObject x="20" y="325" width="200" height="50" className="overflow-visible pointer-events-auto">
+                <div
+                  onMouseEnter={() => setHoveredAction('dpad')}
+                  onMouseLeave={() => setHoveredAction(null)}
+                  className={`group w-[200px] h-[50px] bg-slate-950/20 border transition-all duration-200 rounded-xl p-2 flex flex-col justify-center items-end text-right select-none ${
+                    pressedGpButtons[12] || pressedGpButtons[13] || pressedGpButtons[14] || pressedGpButtons[15] || hoveredAction === 'dpad'
+                      ? 'border-cyan-500/35 bg-slate-900/60 shadow-[0_0_8px_rgba(34,211,238,0.15)]'
+                      : 'border-white/5'
+                  }`}
+                >
+                  <span className="text-[10px] font-black uppercase tracking-wider text-white/50">
+                    Unassigned D-pad
+                  </span>
+                  <span className="text-[8px] font-mono text-white/30 bg-black/45 border border-white/5 px-1.5 py-0.5 rounded mt-0.5 uppercase tracking-wide">
+                    [D-PAD DIRECTION]
+                  </span>
+                </div>
+              </foreignObject>
+
+              {/* Right Column Labels */}
+              {/* RT */}
+              <foreignObject x="780" y="25" width="200" height="50" className="overflow-visible pointer-events-auto">
+                <div
+                  onMouseEnter={() => setHoveredAction('gamepadAttack')}
+                  onMouseLeave={() => setHoveredAction(null)}
+                  onClick={() => setRebindingAction('gamepadAttack')}
+                  className={`group w-[200px] h-[50px] bg-slate-900/50 hover:bg-cyan-950/20 border transition-all duration-200 rounded-xl p-2 cursor-pointer flex flex-col justify-center items-start text-left select-none ${
+                    hoveredAction === 'gamepadAttack' || rebindingAction === 'gamepadAttack' || pressedGpButtons[7]
+                      ? 'border-cyan-500/50 shadow-[0_0_12px_rgba(34,211,238,0.15)] bg-slate-900/80'
+                      : 'border-white/5 hover:border-cyan-500/30'
+                  }`}
+                >
+                  <span className="text-[10px] font-black uppercase tracking-wider text-white group-hover:text-cyan-400">
+                    Primary Attack
+                  </span>
+                  <span className="text-[8px] font-mono text-cyan-400/70 group-hover:text-cyan-300 font-bold bg-cyan-950/40 border border-cyan-500/20 px-1.5 py-0.5 rounded mt-0.5 uppercase tracking-wide">
+                    [{getGamepadButtonName(keybindings.gamepadAttack)}]
+                  </span>
+                </div>
+              </foreignObject>
+
+              {/* RB */}
+              <foreignObject x="780" y="80" width="200" height="50" className="overflow-visible pointer-events-auto">
+                <div
+                  onMouseEnter={() => setHoveredAction('gamepadAltAttack')}
+                  onMouseLeave={() => setHoveredAction(null)}
+                  onClick={() => setRebindingAction('gamepadAltAttack')}
+                  className={`group w-[200px] h-[50px] bg-slate-900/50 hover:bg-cyan-950/20 border transition-all duration-200 rounded-xl p-2 cursor-pointer flex flex-col justify-center items-start text-left select-none ${
+                    hoveredAction === 'gamepadAltAttack' || rebindingAction === 'gamepadAltAttack' || pressedGpButtons[5]
+                      ? 'border-cyan-500/50 shadow-[0_0_12px_rgba(34,211,238,0.15)] bg-slate-900/80'
+                      : 'border-white/5 hover:border-cyan-500/30'
+                  }`}
+                >
+                  <span className="text-[10px] font-black uppercase tracking-wider text-white group-hover:text-cyan-400">
+                    Secondary Attack
+                  </span>
+                  <span className="text-[8px] font-mono text-cyan-400/70 group-hover:text-cyan-300 font-bold bg-cyan-950/40 border border-cyan-500/20 px-1.5 py-0.5 rounded mt-0.5 uppercase tracking-wide">
+                    [{getGamepadButtonName(keybindings.gamepadAltAttack)}]
+                  </span>
+                </div>
+              </foreignObject>
+
+              {/* Start/Menu */}
+              <foreignObject x="780" y="135" width="200" height="50" className="overflow-visible pointer-events-auto">
+                <div
+                  onMouseEnter={() => setHoveredAction('gamepadPause')}
+                  onMouseLeave={() => setHoveredAction(null)}
+                  onClick={() => setRebindingAction('gamepadPause')}
+                  className={`group w-[200px] h-[50px] bg-slate-900/50 hover:bg-cyan-950/20 border transition-all duration-200 rounded-xl p-2 cursor-pointer flex flex-col justify-center items-start text-left select-none ${
+                    hoveredAction === 'gamepadPause' || rebindingAction === 'gamepadPause' || pressedGpButtons[9]
+                      ? 'border-cyan-500/50 shadow-[0_0_12px_rgba(34,211,238,0.15)] bg-slate-900/80'
+                      : 'border-white/5 hover:border-cyan-500/30'
+                  }`}
+                >
+                  <span className="text-[10px] font-black uppercase tracking-wider text-white group-hover:text-cyan-400">
+                    Pause / Menu
+                  </span>
+                  <span className="text-[8px] font-mono text-cyan-400/70 group-hover:text-cyan-300 font-bold bg-cyan-950/40 border border-cyan-500/20 px-1.5 py-0.5 rounded mt-0.5 uppercase tracking-wide">
+                    [{getGamepadButtonName(keybindings.gamepadPause)}]
+                  </span>
+                </div>
+              </foreignObject>
+
+              {/* Y */}
+              <foreignObject x="780" y="190" width="200" height="50" className="overflow-visible pointer-events-auto">
+                <div
+                  onMouseEnter={() => setHoveredAction('gamepadSwapWeapon')}
+                  onMouseLeave={() => setHoveredAction(null)}
+                  onClick={() => setRebindingAction('gamepadSwapWeapon')}
+                  className={`group w-[200px] h-[50px] bg-slate-900/50 hover:bg-cyan-950/20 border transition-all duration-200 rounded-xl p-2 cursor-pointer flex flex-col justify-center items-start text-left select-none ${
+                    hoveredAction === 'gamepadSwapWeapon' || rebindingAction === 'gamepadSwapWeapon' || pressedGpButtons[3]
+                      ? 'border-cyan-500/50 shadow-[0_0_12px_rgba(34,211,238,0.15)] bg-slate-900/80'
+                      : 'border-white/5 hover:border-cyan-500/30'
+                  }`}
+                >
+                  <span className="text-[10px] font-black uppercase tracking-wider text-white group-hover:text-cyan-400">
+                    Swap Weapon
+                  </span>
+                  <span className="text-[8px] font-mono text-cyan-400/70 group-hover:text-cyan-300 font-bold bg-cyan-950/40 border border-cyan-500/20 px-1.5 py-0.5 rounded mt-0.5 uppercase tracking-wide">
+                    [{getGamepadButtonName(keybindings.gamepadSwapWeapon)}]
+                  </span>
+                </div>
+              </foreignObject>
+
+              {/* X */}
+              <foreignObject x="780" y="245" width="200" height="50" className="overflow-visible pointer-events-auto">
+                <div
+                  onMouseEnter={() => setHoveredAction('gamepadDash')}
+                  onMouseLeave={() => setHoveredAction(null)}
+                  onClick={() => setRebindingAction('gamepadDash')}
+                  className={`group w-[200px] h-[50px] bg-slate-900/50 hover:bg-cyan-950/20 border transition-all duration-200 rounded-xl p-2 cursor-pointer flex flex-col justify-center items-start text-left select-none ${
+                    hoveredAction === 'gamepadDash' || rebindingAction === 'gamepadDash' || pressedGpButtons[2]
+                      ? 'border-cyan-500/50 shadow-[0_0_12px_rgba(34,211,238,0.15)] bg-slate-900/80'
+                      : 'border-white/5 hover:border-cyan-500/30'
+                  }`}
+                >
+                  <span className="text-[10px] font-black uppercase tracking-wider text-white group-hover:text-cyan-400">
+                    Thrust / Dash
+                  </span>
+                  <span className="text-[8px] font-mono text-cyan-400/70 group-hover:text-cyan-300 font-bold bg-cyan-950/40 border border-cyan-500/20 px-1.5 py-0.5 rounded mt-0.5 uppercase tracking-wide">
+                    [{getGamepadButtonName(keybindings.gamepadDash)}]
+                  </span>
+                </div>
+              </foreignObject>
+
+              {/* B */}
+              <foreignObject x="780" y="300" width="200" height="50" className="overflow-visible pointer-events-auto">
+                <div
+                  onMouseEnter={() => setHoveredAction('gamepadCrouch')}
+                  onMouseLeave={() => setHoveredAction(null)}
+                  onClick={() => setRebindingAction('gamepadCrouch')}
+                  className={`group w-[200px] h-[50px] bg-slate-900/50 hover:bg-cyan-950/20 border transition-all duration-200 rounded-xl p-2 cursor-pointer flex flex-col justify-center items-start text-left select-none ${
+                    hoveredAction === 'gamepadCrouch' || rebindingAction === 'gamepadCrouch' || pressedGpButtons[1]
+                      ? 'border-cyan-500/50 shadow-[0_0_12px_rgba(34,211,238,0.15)] bg-slate-900/80'
+                      : 'border-white/5 hover:border-cyan-500/30'
+                  }`}
+                >
+                  <span className="text-[10px] font-black uppercase tracking-wider text-white group-hover:text-cyan-400">
+                    Crouch / Slide
+                  </span>
+                  <span className="text-[8px] font-mono text-cyan-400/70 group-hover:text-cyan-300 font-bold bg-cyan-950/40 border border-cyan-500/20 px-1.5 py-0.5 rounded mt-0.5 uppercase tracking-wide">
+                    [{getGamepadButtonName(keybindings.gamepadCrouch)}]
+                  </span>
+                </div>
+              </foreignObject>
+
+              {/* A */}
+              <foreignObject x="780" y="355" width="200" height="50" className="overflow-visible pointer-events-auto">
+                <div
+                  onMouseEnter={() => setHoveredAction('gamepadJump')}
+                  onMouseLeave={() => setHoveredAction(null)}
+                  onClick={() => setRebindingAction('gamepadJump')}
+                  className={`group w-[200px] h-[50px] bg-slate-900/50 hover:bg-cyan-950/20 border transition-all duration-200 rounded-xl p-2 cursor-pointer flex flex-col justify-center items-start text-left select-none ${
+                    hoveredAction === 'gamepadJump' || rebindingAction === 'gamepadJump' || pressedGpButtons[0]
+                      ? 'border-cyan-500/50 shadow-[0_0_12px_rgba(34,211,238,0.15)] bg-slate-900/80'
+                      : 'border-white/5 hover:border-cyan-500/30'
+                  }`}
+                >
+                  <span className="text-[10px] font-black uppercase tracking-wider text-white group-hover:text-cyan-400">
+                    Jump / Slide-up
+                  </span>
+                  <span className="text-[8px] font-mono text-cyan-400/70 group-hover:text-cyan-300 font-bold bg-cyan-950/40 border border-cyan-500/20 px-1.5 py-0.5 rounded mt-0.5 uppercase tracking-wide">
+                    [{getGamepadButtonName(keybindings.gamepadJump)}]
+                  </span>
+                </div>
+              </foreignObject>
+
+              {/* RS Move (Non-rebindable) */}
+              <foreignObject x="780" y="410" width="200" height="50" className="overflow-visible pointer-events-auto">
+                <div
+                  onMouseEnter={() => setHoveredAction('lookAim')}
+                  onMouseLeave={() => setHoveredAction(null)}
+                  className={`group w-[200px] h-[50px] bg-slate-950/20 border transition-all duration-200 rounded-xl p-2 flex flex-col justify-center items-start text-left select-none ${
+                    rightStickActive || hoveredAction === 'lookAim'
+                      ? 'border-cyan-500/35 bg-slate-900/60'
+                      : 'border-white/5'
+                  }`}
+                >
+                  <span className="text-[10px] font-black uppercase tracking-wider text-white/70">
+                    Look & Aim Camera
+                  </span>
+                  <span className="text-[8px] font-mono text-[#38bdf8]/60 font-bold bg-black/45 border border-white/5 px-1.5 py-0.5 rounded mt-0.5 uppercase tracking-wide">
+                    [RIGHT STICK]
+                  </span>
+                </div>
+              </foreignObject>
+            </svg>
+
+            {/* Hold progress and unassigned selection overlays inside the visual mapper */}
+            {/* Rebind prompt overlay */}
+            {rebindingAction && rebindingAction.startsWith('gamepad') && (
+              <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-md flex items-center justify-center z-50 animate-in fade-in duration-200 rounded-2xl pointer-events-auto">
+                <div className="bg-slate-900 border border-cyan-500/40 rounded-2xl p-5 max-w-sm w-full shadow-2xl text-center flex flex-col items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-cyan-950/50 border border-cyan-500/30 flex items-center justify-center text-lg text-cyan-400 animate-pulse">
+                    🎮
+                  </div>
+                  <div>
+                    <h4 className="text-white font-black text-sm uppercase tracking-tight">Rebinding Action</h4>
+                    <p className="text-cyan-400 font-bold uppercase tracking-wider text-xs mt-0.5">
+                      {rebindingAction.replace('gamepad', '').replace(/([A-Z])/g, ' $1').trim()}
+                    </p>
+                  </div>
+                  <p className="text-white/60 text-[10.5px] leading-relaxed">
+                    Press any button on controller to assign it to this action.<br/>
+                    Press <kbd className="bg-black/60 border border-white/10 px-1 py-0.5 rounded text-[9px] text-white">ESC</kbd> or click Cancel to exit.
+                  </p>
+                  <button
+                    onClick={() => setRebindingAction(null)}
+                    className="mt-1 px-4 py-2 bg-white/5 hover:bg-red-500/20 hover:text-red-400 text-white/70 border border-white/10 hover:border-red-500/35 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all duration-150 cursor-pointer active:scale-95"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Holding timer circle overlay */}
+            {holdingGpButton && (
+              <div className="absolute inset-0 bg-slate-950/40 backdrop-blur-[2px] flex items-center justify-center z-45 pointer-events-none rounded-2xl">
+                <div className="bg-slate-900/95 border border-amber-500/30 rounded-2xl p-4 flex flex-col items-center gap-1.5 shadow-2xl">
+                  <div className="relative w-12 h-12 flex items-center justify-center">
+                    <svg className="w-12 h-12 transform -rotate-90">
+                      <circle cx="24" cy="24" r="20" stroke="rgba(255,255,255,0.05)" strokeWidth="3" fill="transparent" />
+                      <circle cx="24" cy="24" r="20" stroke="#f59e0b" strokeWidth="3" fill="transparent"
+                        strokeDasharray={125.6}
+                        strokeDashoffset={125.6 - (125.6 * holdingGpButton.progress) / 100}
+                        strokeLinecap="round"
+                        className="transition-all duration-75"
+                      />
+                    </svg>
+                    <span className="absolute font-mono font-black text-amber-400 text-[9px]">
+                      {Math.round(holdingGpButton.progress)}%
+                    </span>
+                  </div>
+                  <span className="text-[9px] font-black text-amber-400 uppercase tracking-widest">
+                    HOLDING {holdingGpButton.name}...
+                  </span>
+                  <span className="text-[8px] text-white/50">
+                    Keep holding to rebind
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* Unassigned button actions picker */}
+            {unassignedButtonMap !== null && (
+              <div className="absolute inset-0 bg-slate-950/85 backdrop-blur-md flex items-center justify-center z-50 animate-in fade-in duration-200 rounded-2xl pointer-events-auto">
+                <div className="bg-slate-900 border border-cyan-500/40 rounded-2xl p-5 max-w-xs w-full shadow-2xl text-center flex flex-col gap-3">
+                  <div className="w-10 h-10 rounded-full bg-cyan-950/50 border border-cyan-500/30 flex items-center justify-center text-lg text-cyan-400 mx-auto animate-pulse">
+                    ⚙️
+                  </div>
+                  <div>
+                    <h4 className="text-white font-black text-sm uppercase tracking-tight">Assign Action to Button</h4>
+                    <p className="text-cyan-400 font-bold uppercase tracking-wider text-xs mt-0.5">
+                      {getGamepadButtonName(unassignedButtonMap)}
+                    </p>
+                  </div>
+                  <div className="flex flex-col gap-1 max-h-[180px] overflow-y-auto pr-1">
+                    {([
+                      { key: 'gamepadJump', label: 'Jump' },
+                      { key: 'gamepadCrouch', label: 'Crouch / Slide' },
+                      { key: 'gamepadDash', label: 'Thrust (Dash)' },
+                      { key: 'gamepadSwapWeapon', label: 'Swap Weapon' },
+                      { key: 'gamepadAttack', label: 'Primary Attack' },
+                      { key: 'gamepadAltAttack', label: 'Secondary Attack' },
+                      { key: 'gamepadSprint', label: 'Sprint' },
+                      { key: 'gamepadScoreboard', label: 'Scoreboard' },
+                      { key: 'gamepadPause', label: 'Pause / Menu' },
+                    ]).map(({ key, label }) => (
+                      <button
+                        key={key}
+                        onClick={() => {
+                          setKeybindings(prev => {
+                            const updated = { ...prev, [key]: unassignedButtonMap };
+                            try { localStorage.setItem('grifball_keybindings', JSON.stringify(updated)); } catch (_) {}
+                            return updated;
+                          });
+                          setUnassignedButtonMap(null);
+                        }}
+                        className="w-full py-1.5 px-2 bg-white/5 hover:bg-cyan-500/20 text-white hover:text-cyan-200 border border-white/5 hover:border-cyan-500/30 rounded-lg text-[10.5px] font-bold text-left transition-all cursor-pointer flex justify-between items-center"
+                      >
+                        <span>{label}</span>
+                        <span className="text-[8px] font-mono text-white/30">
+                          {keybindings[key as keyof Keybindings] !== undefined ? `[${getGamepadButtonName(keybindings[key as keyof Keybindings] as number)}]` : 'Unbound'}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                  <button
+                    onClick={() => setUnassignedButtonMap(null)}
+                    className="w-full py-1.5 bg-white/5 hover:bg-red-500/20 hover:text-red-400 text-white/70 border border-white/10 hover:border-red-500/30 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer active:scale-95"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   // Retrieve saved player name or generate one
   const [playerName, setPlayerName] = useState<string>(() => {
     try {
@@ -1954,6 +2703,113 @@ export default function App() {
       window.removeEventListener('gamepaddisconnected', handleGamepadDisconnect);
     };
   }, []);
+
+  // Gamepad continuous state listener for visual mapper diagnostics and 3s hold trigger
+  useEffect(() => {
+    if (!gamepadConnected) return;
+
+    let active = true;
+    let rafId: number;
+
+    const pollGamepad = () => {
+      if (!active) return;
+
+      const currentGps = navigator.getGamepads ? navigator.getGamepads() : [];
+      let activeGp = null;
+      for (let i = 0; i < currentGps.length; i++) {
+        if (currentGps[i]) {
+          activeGp = currentGps[i];
+          break;
+        }
+      }
+
+      if (activeGp) {
+        // Update pressed buttons diagnostic array
+        const newPressed = activeGp.buttons.map(b => b.pressed);
+        setPressedGpButtons(newPressed);
+
+        // Stick diagnostic states
+        const deadzone = 0.15;
+        const leftActive = activeGp.axes.length >= 2 && (Math.abs(activeGp.axes[0]) > deadzone || Math.abs(activeGp.axes[1]) > deadzone);
+        const rightActive = activeGp.axes.length >= 4 && (Math.abs(activeGp.axes[2]) > deadzone || Math.abs(activeGp.axes[3]) > deadzone);
+        setLeftStickActive(leftActive);
+        setRightStickActive(rightActive);
+
+        // Only process holds/assignments if we are NOT in the middle of active modal/popup rebinding
+        if (!rebindingAction && unassignedButtonMap === null) {
+          let pressedIdx = -1;
+          for (let idx = 0; idx < activeGp.buttons.length; idx++) {
+            if (activeGp.buttons[idx].pressed) {
+              pressedIdx = idx;
+              break;
+            }
+          }
+
+          if (pressedIdx !== -1) {
+            if (buttonHoldIndex.current === -1) {
+              buttonHoldIndex.current = pressedIdx;
+              buttonHoldStart.current = performance.now();
+              setHoldingGpButton({
+                buttonIndex: pressedIdx,
+                name: getGamepadButtonName(pressedIdx),
+                progress: 0
+              });
+            } else if (buttonHoldIndex.current === pressedIdx) {
+              const elapsed = performance.now() - buttonHoldStart.current;
+              const progress = Math.min(100, (elapsed / 3000) * 100);
+              
+              if (elapsed >= 3000) {
+                const actionKey = findActionForButton(pressedIdx);
+                if (actionKey) {
+                  setRebindingAction(actionKey);
+                } else {
+                  setUnassignedButtonMap(pressedIdx);
+                }
+                buttonHoldIndex.current = -1;
+                setHoldingGpButton(null);
+              } else {
+                setHoldingGpButton({
+                  buttonIndex: pressedIdx,
+                  name: getGamepadButtonName(pressedIdx),
+                  progress
+                });
+              }
+            } else {
+              buttonHoldIndex.current = -1;
+              setHoldingGpButton(null);
+            }
+          } else {
+            if (buttonHoldIndex.current !== -1) {
+              buttonHoldIndex.current = -1;
+              setHoldingGpButton(null);
+            }
+          }
+        } else {
+          if (buttonHoldIndex.current !== -1) {
+            buttonHoldIndex.current = -1;
+            setHoldingGpButton(null);
+          }
+        }
+      } else {
+        setPressedGpButtons([]);
+        setLeftStickActive(false);
+        setRightStickActive(false);
+        if (buttonHoldIndex.current !== -1) {
+          buttonHoldIndex.current = -1;
+          setHoldingGpButton(null);
+        }
+      }
+
+      rafId = requestAnimationFrame(pollGamepad);
+    };
+
+    rafId = requestAnimationFrame(pollGamepad);
+
+    return () => {
+      active = false;
+      cancelAnimationFrame(rafId);
+    };
+  }, [gamepadConnected, rebindingAction, unassignedButtonMap, keybindings]);
 
   // Multiplayer States
   const [connectionMode, setConnectionMode] = useState<'relay' | 'local'>('relay');
@@ -5589,256 +6445,7 @@ export default function App() {
                   </div>
                 )}
 
-                {rightPanelTab === 'gamepad' && (
-                  <div className="flex flex-col gap-4">
-                    {/* Gamepad Connection Banner */}
-                    <div className={`p-4.5 rounded-xl border flex flex-col items-center justify-center text-center gap-2 transition-all ${
-                      gamepadConnected
-                        ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.06)]'
-                        : 'bg-amber-500/10 border-amber-500/30 text-amber-400 animate-pulse'
-                    }`}>
-                      {gamepadConnected ? (
-                        <>
-                          <div className="flex items-center gap-2">
-                            <span className="text-xl">🎮</span>
-                            <span className="text-xs font-black uppercase tracking-widest">Gamepad Connected</span>
-                          </div>
-                          <span className="text-[10px] font-mono text-white/70 bg-black/40 px-3 py-1 rounded border border-white/5 truncate max-w-full">
-                            {gamepadName}
-                          </span>
-                        </>
-                      ) : (
-                        <>
-                          <div className="flex items-center gap-2">
-                            <span className="text-xl">⚠️</span>
-                            <span className="text-xs font-black uppercase tracking-widest">No Gamepad Detected</span>
-                          </div>
-                          <span className="text-[10px] text-white/50 leading-relaxed max-w-[280px]">
-                            Connect an Xbox or PlayStation controller via USB or Bluetooth and press any button to link.
-                          </span>
-                        </>
-                      )}
-                    </div>
-
-                    {/* Highly stylized dark SVG Xbox Controller vector wireframe */}
-                    <div className="relative bg-slate-950/40 border border-white/10 rounded-xl p-4 flex flex-col items-center select-none shadow-[inset_0_1px_3px_rgba(0,0,0,0.30)] overflow-hidden">
-                      <span className="text-[9px] font-mono text-[#38bdf8] uppercase tracking-[0.2em] mb-4 self-start">
-                        🕹️ Console Input Diagnostics
-                      </span>
-
-                      {/* SVG representation */}
-                      <svg width="280" height="150" viewBox="0 0 280 150" className="drop-shadow-[0_0_12px_rgba(56,189,248,0.15)]">
-                        {/* Shadow and glow behind controller */}
-                        <defs>
-                          <radialGradient id="ctrlGlow" cx="50%" cy="50%" r="50%">
-                            <stop offset="0%" stopColor="#0284c7" stopOpacity="0.18" />
-                            <stop offset="100%" stopColor="#0f172a" stopOpacity="0" />
-                          </radialGradient>
-                        </defs>
-                        <ellipse cx="140" cy="80" rx="90" ry="50" fill="url(#ctrlGlow)" />
-
-                        {/* Controller Shell Outer Border */}
-                        <path
-                          d="M 80 40 
-                             C 90 35, 190 35, 200 40
-                             C 220 40, 240 50, 245 75
-                             C 250 100, 215 145, 195 145
-                             C 185 145, 175 130, 160 115
-                             C 150 105, 130 105, 120 115
-                             C 105 130, 95 145, 85 145
-                             C 65 145, 30 100, 35 75
-                             C 40 50, 60 40, 80 40 Z"
-                          fill="rgba(15, 23, 42, 0.85)"
-                          stroke="rgba(255, 255, 255, 0.15)"
-                          strokeWidth="2"
-                        />
-
-                        {/* Controller inner decorative panels */}
-                        <path
-                          d="M 90 47 C 120 42, 160 42, 190 47"
-                          fill="none"
-                          stroke="rgba(255,255,255,0.06)"
-                          strokeWidth="1.5"
-                        />
-
-                        {/* Hand Grips separations */}
-                        <path d="M 65 52 C 70 80, 85 110, 85 145" fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="1" />
-                        <path d="M 215 52 C 210 80, 195 110, 195 145" fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="1" />
-
-                        {/* Bumpers & Triggers (Visual Only) */}
-                        <rect x="70" y="27" width="35" height="7" rx="3" fill={rebindingAction === 'gamepadAltAttack' ? '#22d3ee' : 'rgba(255,255,255,0.1)'} className={rebindingAction === 'gamepadAltAttack' ? 'animate-pulse' : ''} stroke="rgba(255,255,255,0.15)" strokeWidth="0.8" />
-                        <rect x="175" y="27" width="35" height="7" rx="3" fill={rebindingAction === 'gamepadAltAttack' ? '#22d3ee' : 'rgba(255,255,255,0.1)'} className={rebindingAction === 'gamepadAltAttack' ? 'animate-pulse' : ''} stroke="rgba(255,255,255,0.15)" strokeWidth="0.8" />
-
-                        <rect x="75" y="16" width="22" height="9" rx="2" fill={rebindingAction === 'gamepadAttack' ? '#22d3ee' : 'rgba(255,255,255,0.06)'} className={rebindingAction === 'gamepadAttack' ? 'animate-pulse' : ''} stroke="rgba(255,255,255,0.1)" strokeWidth="0.8" />
-                        <rect x="183" y="16" width="22" height="9" rx="2" fill={rebindingAction === 'gamepadAttack' ? '#22d3ee' : 'rgba(255,255,255,0.06)'} className={rebindingAction === 'gamepadAttack' ? 'animate-pulse' : ''} stroke="rgba(255,255,255,0.1)" strokeWidth="0.8" />
-
-                        {/* D-Pad (Directional Cross) */}
-                        <g transform="translate(100, 95)" stroke="rgba(255,255,255,0.2)" strokeWidth="0.8">
-                          <rect x="-6" y="-18" width="12" height="36" rx="2" fill="rgba(15,23,42,0.9)" />
-                          <rect x="-18" y="-6" width="36" height="12" rx="2" fill="rgba(15,23,42,0.9)" />
-                          <circle cx="0" cy="0" r="4" fill="rgba(255,255,255,0.15)" />
-                        </g>
-
-                        {/* Left Joystick */}
-                        <g transform="translate(85, 68)">
-                          <circle cx="0" cy="0" r="14" fill="rgba(0,0,0,0.6)" stroke="rgba(255,255,255,0.1)" strokeWidth="1" />
-                          <circle cx="0" cy="0" r="10" fill={rebindingAction === 'gamepadSprint' ? '#22d3ee' : '#1e293b'} className={rebindingAction === 'gamepadSprint' ? 'animate-pulse' : ''} stroke="rgba(255,255,255,0.25)" strokeWidth="1.2" />
-                          <circle cx="0" cy="0" r="3" fill="rgba(255,255,255,0.4)" />
-                          {/* Movement Grid arrows */}
-                          <line x1="-7" y1="0" x2="7" y2="0" stroke="rgba(255,255,255,0.1)" strokeWidth="0.8" />
-                          <line x1="0" y1="-7" x2="0" y2="7" stroke="rgba(255,255,255,0.1)" strokeWidth="0.8" />
-                        </g>
-
-                        {/* Right Joystick */}
-                        <g transform="translate(155, 95)">
-                          <circle cx="0" cy="0" r="14" fill="rgba(0,0,0,0.6)" stroke="rgba(255,255,255,0.1)" strokeWidth="1" />
-                          <circle cx="0" cy="0" r="10" fill="rgba(30,41,59,0.95)" stroke="rgba(56,189,248,0.4)" strokeWidth="1.2" />
-                          <circle cx="0" cy="0" r="3" fill="rgba(56,189,248,0.8)" />
-                          {/* Look Target indicator */}
-                          <circle cx="0" cy="0" r="8" fill="none" stroke="rgba(56,189,248,0.2)" strokeWidth="0.8" />
-                        </g>
-
-                        {/* Select/Back button */}
-                        <rect x="120" y="60" width="10" height="5" rx="1.5" fill={rebindingAction === 'gamepadScoreboard' ? '#22d3ee' : 'rgba(255,255,255,0.2)'} className={rebindingAction === 'gamepadScoreboard' ? 'animate-pulse' : ''} stroke="rgba(255,255,255,0.15)" strokeWidth="0.5" />
-                        
-                        {/* Start button */}
-                        <polygon points="152,60 157,62.5 152,65" fill={rebindingAction === 'gamepadPause' ? '#22d3ee' : 'rgba(255,255,255,0.2)'} className={rebindingAction === 'gamepadPause' ? 'animate-pulse' : ''} stroke="rgba(255,255,255,0.15)" strokeWidth="0.5" />
-
-                        {/* ABXY Button Group */}
-                        <g transform="translate(195, 68)">
-                          {/* Outer shield container */}
-                          <circle cx="0" cy="0" r="18" fill="rgba(0,0,0,0.4)" stroke="rgba(255,255,255,0.06)" strokeWidth="1" />
-
-                          {/* Y Button (Top) */}
-                          <circle cx="0" cy="-10" r="4.5" fill={rebindingAction === 'gamepadSwapWeapon' ? '#22d3ee' : 'rgba(15,23,42,0.9)'} className={rebindingAction === 'gamepadSwapWeapon' ? 'animate-pulse' : ''} stroke="rgba(255,255,255,0.2)" strokeWidth="0.8" />
-                          <text x="0" y="-6.5" textAnchor="middle" fill={rebindingAction === 'gamepadSwapWeapon' ? '#0f172a' : '#facc15'} fontSize="7" fontWeight="bold" fontFamily="monospace">Y</text>
-
-                          {/* X Button (Left) */}
-                          <circle cx="-10" cy="0" r="4.5" fill={rebindingAction === 'gamepadDash' ? '#22d3ee' : 'rgba(15,23,42,0.9)'} className={rebindingAction === 'gamepadDash' ? 'animate-pulse' : ''} stroke="rgba(255,255,255,0.2)" strokeWidth="0.8" />
-                          <text x="-10" y="3.5" textAnchor="middle" fill={rebindingAction === 'gamepadDash' ? '#0f172a' : '#60a5fa'} fontSize="7" fontWeight="bold" fontFamily="monospace">X</text>
-
-                          {/* B Button (Right) */}
-                          <circle cx="10" cy="0" r="4.5" fill={rebindingAction === 'gamepadCrouch' ? '#22d3ee' : 'rgba(15,23,42,0.9)'} className={rebindingAction === 'gamepadCrouch' ? 'animate-pulse' : ''} stroke="rgba(255,255,255,0.2)" strokeWidth="0.8" />
-                          <text x="10" y="3.5" textAnchor="middle" fill={rebindingAction === 'gamepadCrouch' ? '#0f172a' : '#f87171'} fontSize="7" fontWeight="bold" fontFamily="monospace">B</text>
-
-                          {/* A Button (Bottom) */}
-                          <circle cx="0" cy="10" r="4.5" fill={rebindingAction === 'gamepadJump' ? '#22d3ee' : 'rgba(15,23,42,0.9)'} className={rebindingAction === 'gamepadJump' ? 'animate-pulse' : ''} stroke="rgba(255,255,255,0.2)" strokeWidth="0.8" />
-                          <text x="0" y="13.5" textAnchor="middle" fill={rebindingAction === 'gamepadJump' ? '#0f172a' : '#4ade80'} fontSize="7" fontWeight="bold" fontFamily="monospace">A</text>
-                        </g>
-                      </svg>
-
-                      {/* Diagnostic Overlay Info */}
-                      <div className="mt-2 text-center select-none leading-relaxed">
-                        <span className="text-[10px] text-white/40 block">
-                          Left Stick: <span className="text-white/80 font-bold">Move</span> | Right Stick: <span className="text-[#38bdf8] font-bold">Aim Camera</span>
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Gamepad settings and sensitivity */}
-                    <div className="bg-slate-950/45 border border-white/10 rounded-xl p-4.5 flex flex-col gap-4 shadow-[inset_0_1px_3px_rgba(0,0,0,0.30)]">
-                      <span className="text-[11px] font-mono font-bold tracking-[0.1em] uppercase text-[#38bdf8] pb-2 border-b border-white/5">
-                        🕹️ Gamepad Configuration
-                      </span>
-
-                      {/* Aim Sensitivity */}
-                      <div className="flex flex-col gap-1.5 mt-1">
-                        <div className="flex justify-between font-mono text-[10px] uppercase tracking-wider text-white/70">
-                          <span>Look / Aim Sensitivity</span>
-                          <span className="text-cyan-400 font-bold">{(keybindings.gamepadSensitivity ?? 3.0).toFixed(1)}x</span>
-                        </div>
-                        <input
-                          type="range"
-                          min="0.5"
-                          max="10.0"
-                          step="0.5"
-                          value={keybindings.gamepadSensitivity ?? 3.0}
-                          onChange={(e) => {
-                            const val = parseFloat(e.target.value);
-                            setKeybindings(prev => {
-                              const updated = { ...prev, gamepadSensitivity: val };
-                              try { localStorage.setItem('grifball_keybindings', JSON.stringify(updated)); } catch (_) {}
-                              return updated;
-                            });
-                          }}
-                          className="w-full accent-cyan-400 h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
-                        />
-                        <span className="text-[9px] font-mono text-white/35">
-                          Multiplier applied to digital stick look rate. Default is 3.0x.
-                        </span>
-                      </div>
-
-                      {/* Dedicated rebind notification alert */}
-                      {rebindingAction && rebindingAction.startsWith('gamepad') && (
-                        <div className="p-3 bg-amber-500/10 border border-amber-500/35 rounded-lg flex items-center gap-2.5 animate-pulse text-xs text-amber-400 font-medium">
-                          <span className="text-sm">⚡</span>
-                          <div>
-                            <p className="font-bold uppercase tracking-wider text-[10px]">Awaiting Controller Press...</p>
-                            <p className="text-[10px] text-white/60">Press any button on your controller for <strong>{rebindingAction.replace('gamepad', '').toUpperCase()}</strong>. Press <kbd className="bg-black/40 border border-white/10 px-1 py-0.5 rounded text-[8px]">ESC</kbd> to cancel.</p>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Gamepad action bind grid list */}
-                      <div className="flex flex-col gap-2 mt-2">
-                        {([
-                          { key: 'gamepadJump' as keyof Keybindings, label: 'Jump (Boost)', color: 'border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/5' },
-                          { key: 'gamepadCrouch' as keyof Keybindings, label: 'Crouch / Slide', color: 'border-red-500/30 text-red-400 hover:bg-red-500/5' },
-                          { key: 'gamepadDash' as keyof Keybindings, label: 'Sonic Dash', color: 'border-blue-500/30 text-blue-400 hover:bg-blue-500/5' },
-                          { key: 'gamepadSwapWeapon' as keyof Keybindings, label: 'Swap Weapon', color: 'border-yellow-500/30 text-yellow-400 hover:bg-yellow-500/5' },
-                          { key: 'gamepadAttack' as keyof Keybindings, label: 'Slam / Lunge (RT)', color: 'border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/5' },
-                          { key: 'gamepadAltAttack' as keyof Keybindings, label: 'Quick Slash (RB)', color: 'border-purple-500/30 text-purple-400 hover:bg-purple-500/5' },
-                          { key: 'gamepadSprint' as keyof Keybindings, label: 'Sprint (LS Click)', color: 'border-slate-500/30 text-slate-400 hover:bg-slate-500/5' },
-                          { key: 'gamepadScoreboard' as keyof Keybindings, label: 'Scoreboard', color: 'border-teal-500/30 text-teal-400 hover:bg-teal-500/5' },
-                          { key: 'gamepadPause' as keyof Keybindings, label: 'Pause / Menu', color: 'border-orange-500/30 text-orange-400 hover:bg-orange-500/5' },
-                        ]).map(({ key, label, color }) => (
-                          <div key={key} className="flex justify-between items-center bg-black/35 border border-white/5 rounded-lg px-3 py-2 text-xs">
-                            <span className="font-semibold text-white/70">{label}</span>
-                            <button
-                              onClick={() => setRebindingAction(prev => prev === key ? null : key)}
-                              className={`px-3 py-1 font-mono font-black rounded border text-xs cursor-pointer transition-all active:scale-[0.96] ${
-                                rebindingAction === key
-                                  ? 'bg-amber-500/25 border-amber-500 text-amber-400 animate-pulse shadow-[0_0_12px_rgba(245,158,11,0.25)]'
-                                  : `bg-slate-950/70 ${color}`
-                              }`}
-                            >
-                              {rebindingAction === key ? '...' : getGamepadButtonName(keybindings[key] as number | undefined)}
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-
-                      {/* Reset Footer */}
-                      <div className="flex justify-between items-center border-t border-white/5 pt-3 mt-1.5">
-                        <button
-                          onClick={() => {
-                            setKeybindings(prev => {
-                              const updated = {
-                                ...prev,
-                                gamepadSensitivity: 3.0,
-                                gamepadJump: 0,
-                                gamepadCrouch: 1,
-                                gamepadDash: 2,
-                                gamepadSwapWeapon: 3,
-                                gamepadAttack: 7,
-                                gamepadAltAttack: 5,
-                                gamepadSprint: 10,
-                                gamepadScoreboard: 8,
-                                gamepadPause: 9,
-                              };
-                              try { localStorage.setItem('grifball_keybindings', JSON.stringify(updated)); } catch (_) {}
-                              return updated;
-                            });
-                            setRebindingAction(null);
-                          }}
-                          className="text-[10px] text-amber-400/80 hover:text-amber-400 font-bold uppercase tracking-wider cursor-pointer bg-transparent border-none p-0 flex items-center gap-1.5 transition-colors"
-                        >
-                          ↻ Reset Gamepad Layout
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                )}
+                {rightPanelTab === 'gamepad' && renderVisualGamepadMapper()}
 
                 {rightPanelTab === 'customize' && (
                   <div className="flex-grow flex flex-col min-h-0 overflow-y-auto pr-1 justify-between gap-4">
@@ -6575,7 +7182,9 @@ export default function App() {
             </div>
           ) : showKeybindsMenu ? (
             /* HOTKEY ADJUSTMENTS SETTINGS PANEL */
-            <div className="mobile-modal mobile-keybind-modal bg-slate-950/95 border border-white/10 backdrop-blur-2xl rounded-2xl p-6 w-[640px] max-w-[95vw] shadow-2xl flex flex-col select-none max-h-[95vh] overflow-y-auto">
+            <div className={`mobile-modal mobile-keybind-modal bg-slate-950/95 border border-white/10 backdrop-blur-2xl rounded-2xl p-6 max-w-[95vw] shadow-2xl flex flex-col select-none max-h-[95vh] overflow-y-auto transition-all duration-300 ${
+              keybindsModalTab === 'gamepad' ? 'w-[1040px]' : 'w-[640px]'
+            }`}>
               {/* Header */}
               <div className="flex items-center justify-between mb-5 border-b border-white/5 pb-4">
                 <div className="flex flex-col items-start text-left">
@@ -6587,142 +7196,172 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Keyboard visualizer */}
-              <CompactKeybindList
-                bindings={keybindings}
-                rebinding={rebindingAction}
-                onPick={(action) => setRebindingAction(prev => prev === action ? null : action)}
-              />
-              <div className="pointer-events-auto mb-5">
-                <div className="desktop-keyboard-visualizer">
-                  <KeyboardVisualizer
+              {/* Tab Switcher */}
+              <div className="flex border-b border-white/10 mb-5 gap-2 pointer-events-auto">
+                <button
+                  onClick={() => { setKeybindsModalTab('keyboard'); setRebindingAction(null); }}
+                  className={`flex-1 py-2 text-xs font-black uppercase tracking-wider transition-all duration-150 border-b-2 flex items-center justify-center gap-2 cursor-pointer ${
+                    keybindsModalTab === 'keyboard'
+                      ? 'border-cyan-400 text-cyan-400 bg-cyan-950/20'
+                      : 'border-transparent text-white/50 hover:text-white/80 hover:bg-white/[0.02]'
+                  }`}
+                >
+                  ⌨ Keyboard & Mouse
+                </button>
+                <button
+                  onClick={() => { setKeybindsModalTab('gamepad'); setRebindingAction(null); }}
+                  className={`flex-1 py-2 text-xs font-black uppercase tracking-wider transition-all duration-150 border-b-2 flex items-center justify-center gap-2 cursor-pointer ${
+                    keybindsModalTab === 'gamepad'
+                      ? 'border-cyan-400 text-cyan-400 bg-cyan-950/20'
+                      : 'border-transparent text-white/50 hover:text-white/80 hover:bg-white/[0.02]'
+                  }`}
+                >
+                  🎮 Gamepad Controller
+                </button>
+              </div>
+
+              {keybindsModalTab === 'keyboard' ? (
+                <>
+                  {/* Keyboard visualizer */}
+                  <CompactKeybindList
                     bindings={keybindings}
                     rebinding={rebindingAction}
                     onPick={(action) => setRebindingAction(prev => prev === action ? null : action)}
                   />
-                </div>
-              </div>
-
-              {/* Mouse settings */}
-              <div className="pointer-events-auto border border-white/10 rounded-xl p-4 bg-white/[0.02] flex flex-col gap-4 mb-5">
-                <p className="text-[10px] text-cyan-400 font-bold uppercase tracking-widest border-b border-white/5 pb-2 font-mono">🖱 Mouse Settings</p>
-
-                {/* Sensitivity */}
-                <div className="flex flex-col gap-1.5">
-                  <div className="flex justify-between text-[11px] font-bold uppercase tracking-wider text-white/80">
-                    <span>Sensitivity</span>
-                    <span className="text-cyan-400 font-mono">{(keybindings.mouseSensitivity ?? 1.0).toFixed(1)}x</span>
+                  <div className="pointer-events-auto mb-5">
+                    <div className="desktop-keyboard-visualizer">
+                      <KeyboardVisualizer
+                        bindings={keybindings}
+                        rebinding={rebindingAction}
+                        onPick={(action) => setRebindingAction(prev => prev === action ? null : action)}
+                      />
+                    </div>
                   </div>
-                  <input type="range" min="0.1" max="5.0" step="0.1"
-                    value={keybindings.mouseSensitivity ?? 1.0}
-                    onChange={(e) => {
-                      const v = parseFloat(e.target.value);
-                      setKeybindings(prev => {
-                        const updated = { ...prev, mouseSensitivity: v };
-                        try { localStorage.setItem('grifball_keybindings', JSON.stringify(updated)); } catch (_) {}
-                        return updated;
-                      });
-                    }}
-                    className="w-full accent-cyan-400 h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
-                  />
-                  <span className="text-[9px] text-white/35 font-mono">0.1 (slow) — 5.0 (fast). Default: 1.0</span>
-                </div>
 
-                {/* Acceleration */}
-                <div className="flex flex-col gap-1.5">
-                  <div className="flex justify-between text-[11px] font-bold uppercase tracking-wider text-white/80">
-                    <span>Acceleration</span>
-                    <span className={`font-mono ${(keybindings.mouseAcceleration ?? 0) > 0 ? 'text-amber-400' : 'text-white/40'}`}>
-                      {(keybindings.mouseAcceleration ?? 0.0).toFixed(1)}{(keybindings.mouseAcceleration ?? 0) === 0 ? ' (OFF)' : ''}
-                    </span>
-                  </div>
-                  <input type="range" min="0.0" max="2.0" step="0.1"
-                    value={keybindings.mouseAcceleration ?? 0.0}
-                    onChange={(e) => {
-                      const v = parseFloat(e.target.value);
-                      setKeybindings(prev => {
-                        const updated = { ...prev, mouseAcceleration: v };
-                        try { localStorage.setItem('grifball_keybindings', JSON.stringify(updated)); } catch (_) {}
-                        return updated;
-                      });
-                    }}
-                    className="w-full accent-amber-400 h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
-                  />
-                  <span className="text-[9px] text-white/35 font-mono">0.0 = linear (off). Higher = faster as you move faster.</span>
-                </div>
-              </div>
+                  {/* Mouse settings */}
+                  <div className="pointer-events-auto border border-white/10 rounded-xl p-4 bg-white/[0.02] flex flex-col gap-4 mb-5">
+                    <p className="text-[10px] text-cyan-400 font-bold uppercase tracking-widest border-b border-white/5 pb-2 font-mono">🖱 Mouse Settings</p>
 
-              {/* Mobile Gamepad settings */}
-              <div className="pointer-events-auto border border-white/10 rounded-xl p-4 bg-white/[0.02] flex flex-col gap-4 mb-5">
-                <p className="text-[10px] text-cyan-400 font-bold uppercase tracking-widest border-b border-white/5 pb-2 font-mono">📱 Mobile Touch controls</p>
-                <div className="flex items-center justify-between">
-                  <div className="flex flex-col text-left">
-                    <span className="text-[11px] font-bold uppercase tracking-wider text-white/80">Force Gamepad Overlay</span>
-                    <span className="text-[9px] text-white/35 font-mono">Force show touch joysticks & buttons on desktop</span>
+                    {/* Sensitivity */}
+                    <div className="flex flex-col gap-1.5">
+                      <div className="flex justify-between text-[11px] font-bold uppercase tracking-wider text-white/80">
+                        <span>Sensitivity</span>
+                        <span className="text-cyan-400 font-mono">{(keybindings.mouseSensitivity ?? 1.0).toFixed(1)}x</span>
+                      </div>
+                      <input type="range" min="0.1" max="5.0" step="0.1"
+                        value={keybindings.mouseSensitivity ?? 1.0}
+                        onChange={(e) => {
+                          const v = parseFloat(e.target.value);
+                          setKeybindings(prev => {
+                            const updated = { ...prev, mouseSensitivity: v };
+                            try { localStorage.setItem('grifball_keybindings', JSON.stringify(updated)); } catch (_) {}
+                            return updated;
+                          });
+                        }}
+                        className="w-full accent-cyan-400 h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
+                      />
+                      <span className="text-[9px] text-white/35 font-mono">0.1 (slow) — 5.0 (fast). Default: 1.0</span>
+                    </div>
+
+                    {/* Acceleration */}
+                    <div className="flex flex-col gap-1.5">
+                      <div className="flex justify-between text-[11px] font-bold uppercase tracking-wider text-white/80">
+                        <span>Acceleration</span>
+                        <span className={`font-mono ${(keybindings.mouseAcceleration ?? 0) > 0 ? 'text-amber-400' : 'text-white/40'}`}>
+                          {(keybindings.mouseAcceleration ?? 0.0).toFixed(1)}{(keybindings.mouseAcceleration ?? 0) === 0 ? ' (OFF)' : ''}
+                        </span>
+                      </div>
+                      <input type="range" min="0.0" max="2.0" step="0.1"
+                        value={keybindings.mouseAcceleration ?? 0.0}
+                        onChange={(e) => {
+                          const v = parseFloat(e.target.value);
+                          setKeybindings(prev => {
+                            const updated = { ...prev, mouseAcceleration: v };
+                            try { localStorage.setItem('grifball_keybindings', JSON.stringify(updated)); } catch (_) {}
+                            return updated;
+                          });
+                        }}
+                        className="w-full accent-amber-400 h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
+                      />
+                      <span className="text-[9px] text-white/35 font-mono">0.0 = linear (off). Higher = faster as you move faster.</span>
+                    </div>
                   </div>
-                  <button
-                    id="force-mobile-controls-toggle"
-                    type="button"
-                    onClick={() => setForceMobileControls(prev => !prev)}
-                    className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out outline-none ${
-                      forceMobileControls ? 'bg-cyan-500' : 'bg-slate-800'
-                    }`}
-                    style={{
-                      position: 'relative',
-                      display: 'inline-flex',
-                      height: '24px',
-                      width: '44px',
-                      cursor: 'pointer',
-                      borderRadius: '9999px',
-                      borderWidth: '2px',
-                      borderColor: 'transparent',
-                      transitionProperty: 'color, background-color, border-color, text-decoration-color, fill, stroke',
-                      transitionDuration: '200ms',
-                      outline: 'none',
-                      backgroundColor: forceMobileControls ? '#06b6d4' : '#1e293b'
-                    }}
-                  >
-                    <span
-                      className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                        forceMobileControls ? 'translate-x-5' : 'translate-x-0'
-                      }`}
-                      style={{
-                        pointerEvents: 'none',
-                        display: 'inline-block',
-                        height: '20px',
-                        width: '20px',
-                        transform: forceMobileControls ? 'translateX(20px)' : 'translateX(0)',
-                        borderRadius: '9999px',
-                        backgroundColor: '#ffffff',
-                        transitionProperty: 'transform',
-                        transitionDuration: '200ms'
+
+                  {/* Mobile Gamepad settings */}
+                  <div className="pointer-events-auto border border-white/10 rounded-xl p-4 bg-white/[0.02] flex flex-col gap-4 mb-5">
+                    <p className="text-[10px] text-cyan-400 font-bold uppercase tracking-widest border-b border-white/5 pb-2 font-mono">📱 Mobile Touch controls</p>
+                    <div className="flex items-center justify-between">
+                      <div className="flex flex-col text-left">
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-white/80">Force Gamepad Overlay</span>
+                        <span className="text-[9px] text-white/35 font-mono">Force show touch joysticks & buttons on desktop</span>
+                      </div>
+                      <button
+                        id="force-mobile-controls-toggle"
+                        type="button"
+                        onClick={() => setForceMobileControls(prev => !prev)}
+                        className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out outline-none ${
+                          forceMobileControls ? 'bg-cyan-500' : 'bg-slate-800'
+                        }`}
+                        style={{
+                          position: 'relative',
+                          display: 'inline-flex',
+                          height: '24px',
+                          width: '44px',
+                          cursor: 'pointer',
+                          borderRadius: '9999px',
+                          borderWidth: '2px',
+                          borderColor: 'transparent',
+                          transitionProperty: 'color, background-color, border-color, text-decoration-color, fill, stroke',
+                          transitionDuration: '200ms',
+                          outline: 'none',
+                          backgroundColor: forceMobileControls ? '#06b6d4' : '#1e293b'
+                        }}
+                      >
+                        <span
+                          className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                            forceMobileControls ? 'translate-x-5' : 'translate-x-0'
+                          }`}
+                          style={{
+                            pointerEvents: 'none',
+                            display: 'inline-block',
+                            height: '20px',
+                            width: '20px',
+                            transform: forceMobileControls ? 'translateX(20px)' : 'translateX(0)',
+                            borderRadius: '9999px',
+                            backgroundColor: '#ffffff',
+                            transitionProperty: 'transform',
+                            transitionDuration: '200ms'
+                          }}
+                        />
+                      </button>
+                    </div>
+                    <p className="text-[9.5px] text-white/40 leading-normal text-left font-mono">
+                      💡 <span className="text-[#38bdf8] font-bold">Custom HUD Editor</span>: Go in-game, tap <span className="text-amber-400 font-bold">PAUSE [ESC]</span> &gt; <span className="text-cyan-400 font-bold">HUD CANVAS ADJUSTER</span>. Drag the Left Analog stick and Right Button pads to layout your custom mobile gamepad position!
+                    </p>
+                  </div>
+
+                  {/* Reset keybinds */}
+                  <div className="pointer-events-auto flex items-center justify-between px-1 mb-5 text-[10px] font-mono text-white/40">
+                    <button
+                      onClick={() => {
+                        setKeybindings({ ...DEFAULT_KEYBINDINGS });
+                        setRebindingAction(null);
+                        try { localStorage.setItem('grifball_keybindings', JSON.stringify(DEFAULT_KEYBINDINGS)); } catch (_) {}
                       }}
-                    />
-                  </button>
-                </div>
-                <p className="text-[9.5px] text-white/40 leading-normal text-left font-mono">
-                  💡 <span className="text-[#38bdf8] font-bold">Custom HUD Editor</span>: Go in-game, tap <span className="text-amber-400 font-bold">PAUSE [ESC]</span> &gt; <span className="text-cyan-400 font-bold">HUD CANVAS ADJUSTER</span>. Drag the Left Analog stick and Right Button pads to layout your custom mobile gamepad position!
-                </p>
-              </div>
-
-              {/* Reset keybinds */}
-              <div className="pointer-events-auto flex items-center justify-between px-1 mb-5 text-[10px] font-mono text-white/40">
-                <button
-                  onClick={() => {
-                    setKeybindings({ ...DEFAULT_KEYBINDINGS });
-                    setRebindingAction(null);
-                    try { localStorage.setItem('grifball_keybindings', JSON.stringify(DEFAULT_KEYBINDINGS)); } catch (_) {}
-                  }}
-                  className="text-amber-400/70 hover:text-amber-400 font-bold uppercase tracking-wider cursor-pointer transition-colors bg-transparent border-none p-0"
-                >
-                  ↻ Reset All Keybinds & Mouse
-                </button>
-              </div>
+                      className="text-amber-400/70 hover:text-amber-400 font-bold uppercase tracking-wider cursor-pointer transition-colors bg-transparent border-none p-0"
+                    >
+                      ↻ Reset All Keybinds & Mouse
+                    </button>
+                  </div>
+                </>
+              ) : (
+                renderVisualGamepadMapper()
+              )}
 
               {/* Close button */}
               <button
                 onClick={() => { setShowKeybindsMenu(false); setRebindingAction(null); }}
-                className="w-full h-11 bg-white hover:bg-cyan-400 hover:text-white text-slate-900 text-xs font-black uppercase tracking-widest rounded cursor-pointer transition-colors active:scale-98 flex items-center justify-center gap-2 shadow-lg"
+                className="w-full h-11 bg-white hover:bg-cyan-400 hover:text-white text-slate-900 text-xs font-black uppercase tracking-widest rounded cursor-pointer transition-colors active:scale-98 flex items-center justify-center gap-2 shadow-lg mt-5"
               >
                 <Check className="w-4 h-4" />
                 Save & Return

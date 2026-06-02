@@ -221,3 +221,194 @@ export function animateSpartanCombatantModel({
   upperTorso.rotation.x = THREE.MathUtils.lerp(upperTorso.rotation.x, targetUpperTorsoPitch, dt * 10.0);
   upperTorso.rotation.z = THREE.MathUtils.lerp(upperTorso.rotation.z, targetUpperTorsoRoll, dt * 10.0);
 }
+
+export function animateCombatantWeaponMeshes({
+  hammerModel,
+  swordModel,
+  activeWeapon,
+  weaponState,
+  weaponTimer,
+  isLunging,
+  dt,
+  settings,
+}: {
+  hammerModel: THREE.Group | undefined | null;
+  swordModel: THREE.Group | undefined | null;
+  activeWeapon: string;
+  weaponState: string;
+  weaponTimer: number;
+  isLunging: boolean;
+  dt: number;
+  settings: any;
+}): void {
+  if (hammerModel) {
+    hammerModel.visible = activeWeapon === 'hammer';
+  }
+  if (swordModel) {
+    swordModel.visible = activeWeapon === 'sword';
+  }
+
+  // Animating Gravity Hammer
+  if (hammerModel && activeWeapon === 'hammer') {
+    if (weaponState === 'ready') {
+      hammerModel.position.set(0.48, 1.08 - 0.64, -0.48);
+      hammerModel.rotation.set(0.2, 0.1, -0.15);
+    } 
+    else if (weaponState === 'swing_up') {
+      const windup = 0.28;
+      const pct = Math.min(1.0, weaponTimer / windup);
+      hammerModel.position.set(
+        THREE.MathUtils.lerp(0.48, 0.4, pct),
+        THREE.MathUtils.lerp(1.08, 1.8, pct) - 0.64,
+        THREE.MathUtils.lerp(-0.48, -0.15, pct)
+      );
+      hammerModel.rotation.set(
+        THREE.MathUtils.lerp(0.2, -1.3, pct),
+        0.1,
+        -0.15
+      );
+    } 
+    else if (weaponState === 'swing_down') {
+      const strike = 0.12;
+      const pct = Math.min(1.0, weaponTimer / strike);
+      hammerModel.position.set(
+        THREE.MathUtils.lerp(0.4, 0.2, pct),
+        THREE.MathUtils.lerp(1.8, 0.6, pct) - 0.64,
+        THREE.MathUtils.lerp(-0.15, -0.9, pct)
+      );
+      hammerModel.rotation.set(
+        THREE.MathUtils.lerp(-1.3, 1.1, pct),
+        0.1,
+        -0.15
+      );
+    } 
+    else if (weaponState === 'recovering') {
+      const recover = settings.hammerReloadTime ?? 0.6;
+      const pct = Math.min(1.0, weaponTimer / recover);
+      hammerModel.position.set(
+        THREE.MathUtils.lerp(0.2, 0.48, pct),
+        THREE.MathUtils.lerp(0.6, 1.08, pct) - 0.64,
+        THREE.MathUtils.lerp(-0.9, -0.48, pct)
+      );
+      hammerModel.rotation.set(
+        THREE.MathUtils.lerp(1.1, 0.2, pct),
+        0.1,
+        -0.15
+      );
+    }
+    else if (weaponState === 'melee_up' || weaponState === 'melee_swing') {
+      const meleeSpeed = settings.hammerMeleeSpeed ?? 0.24;
+      const windup = meleeSpeed * 0.4;
+      
+      if (weaponState === 'melee_swing' && weaponTimer >= windup) {
+        const strike = meleeSpeed * 0.6;
+        const pct = Math.min(1.0, (weaponTimer - windup) / strike);
+        hammerModel.position.set(
+          THREE.MathUtils.lerp(0.58, 0.18, pct),
+          THREE.MathUtils.lerp(0.90, 1.20, pct) - 0.64,
+          THREE.MathUtils.lerp(-0.3, -0.8, pct)
+        );
+        hammerModel.rotation.set(
+          THREE.MathUtils.lerp(0.35, 0.55, pct),
+          THREE.MathUtils.lerp(0.4, -0.8, pct),
+          THREE.MathUtils.lerp(-0.25, -0.5, pct)
+        );
+      } else {
+        const pct = Math.min(1.0, weaponTimer / windup);
+        hammerModel.position.set(
+          THREE.MathUtils.lerp(0.48, 0.58, pct),
+          THREE.MathUtils.lerp(1.08, 0.90, pct) - 0.64,
+          THREE.MathUtils.lerp(-0.48, -0.3, pct)
+        );
+        hammerModel.rotation.set(
+          THREE.MathUtils.lerp(0.2, 0.35, pct),
+          THREE.MathUtils.lerp(0.1, 0.4, pct),
+          THREE.MathUtils.lerp(-0.15, -0.25, pct)
+        );
+      }
+    }
+    else if (weaponState === 'melee_down') {
+      const meleeSpeed = settings.hammerMeleeSpeed ?? 0.24;
+      const strike = meleeSpeed * 0.6;
+      const pct = Math.min(1.0, weaponTimer / strike);
+      hammerModel.position.set(
+        THREE.MathUtils.lerp(0.58, 0.18, pct),
+        THREE.MathUtils.lerp(0.90, 1.20, pct) - 0.64,
+        THREE.MathUtils.lerp(-0.3, -0.8, pct)
+      );
+      hammerModel.rotation.set(
+        THREE.MathUtils.lerp(0.35, 0.55, pct),
+        THREE.MathUtils.lerp(0.4, -0.8, pct),
+        THREE.MathUtils.lerp(-0.25, -0.5, pct)
+      );
+    }
+    else if (weaponState === 'melee_recover') {
+      const recover = settings.hammerMeleeReload ?? 0.5;
+      const pct = Math.min(1.0, weaponTimer / recover);
+      hammerModel.position.set(
+        THREE.MathUtils.lerp(0.18, 0.48, pct),
+        THREE.MathUtils.lerp(1.20, 1.08, pct) - 0.64,
+        THREE.MathUtils.lerp(-0.8, -0.48, pct)
+      );
+      hammerModel.rotation.set(
+        THREE.MathUtils.lerp(0.55, 0.2, pct),
+        THREE.MathUtils.lerp(-0.8, 0.1, pct),
+        THREE.MathUtils.lerp(-0.5, -0.15, pct)
+      );
+    }
+  }
+
+  // Animating Katar Sword
+  if (swordModel && activeWeapon === 'sword') {
+    if (isLunging) {
+      swordModel.position.set(0.0, 1.2 - 0.64, -0.75);
+      swordModel.rotation.set(Math.PI / 2 + 0.15, 0, 0);
+    } else if (weaponState === 'ready') {
+      swordModel.position.set(0.48, 1.08 - 0.64, -0.32);
+      swordModel.rotation.set(Math.PI / 2, 0, -Math.PI / 8);
+    } 
+    else if (weaponState === 'swing_up') {
+      const windup = (settings.swordSlashSpeed ?? 0.22) * 0.5;
+      const pct = Math.min(1.0, weaponTimer / windup);
+      swordModel.position.set(
+        THREE.MathUtils.lerp(0.48, 0.62, pct),
+        THREE.MathUtils.lerp(1.08, 1.2, pct) - 0.64,
+        THREE.MathUtils.lerp(-0.32, -0.15, pct)
+      );
+      swordModel.rotation.set(
+        Math.PI / 2,
+        THREE.MathUtils.lerp(0, 0.6, pct),
+        THREE.MathUtils.lerp(-Math.PI / 8, Math.PI / 4, pct)
+      );
+    }
+    else if (weaponState === 'swing_down') {
+      const strike = (settings.swordSlashSpeed ?? 0.22) * 0.5;
+      const pct = Math.min(1.0, weaponTimer / strike);
+      swordModel.position.set(
+        THREE.MathUtils.lerp(0.62, 0.2, pct),
+        THREE.MathUtils.lerp(1.2, 0.9, pct) - 0.64,
+        THREE.MathUtils.lerp(-0.15, -0.75, pct)
+      );
+      swordModel.rotation.set(
+        Math.PI / 2,
+        THREE.MathUtils.lerp(0.6, -0.8, pct),
+        THREE.MathUtils.lerp(Math.PI / 4, -Math.PI / 3, pct)
+      );
+    }
+    else if (weaponState === 'recovering') {
+      const recover = settings.swordSlashReload ?? 0.6;
+      const pct = Math.min(1.0, weaponTimer / recover);
+      swordModel.position.set(
+        THREE.MathUtils.lerp(0.2, 0.48, pct),
+        THREE.MathUtils.lerp(0.9, 1.08, pct) - 0.64,
+        THREE.MathUtils.lerp(-0.75, -0.32, pct)
+      );
+      swordModel.rotation.set(
+        Math.PI / 2,
+        THREE.MathUtils.lerp(-0.8, 0, pct),
+        THREE.MathUtils.lerp(-Math.PI / 3, -Math.PI / 8, pct)
+      );
+    }
+  }
+}
+

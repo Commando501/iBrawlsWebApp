@@ -114,6 +114,8 @@ export interface GrifballRuntimeState {
   isMultiplayer: boolean;
   multiplayerRole: 'host' | 'client' | 'observer' | null | undefined;
   aiMatchContext: AIMatchContext;
+  hostClientId?: string;
+  clientClientId?: string;
 
   // Legacy main-AI fields retained for compatibility with older inline call sites.
   aiHP?: number;
@@ -242,5 +244,7 @@ export function createInitialGrifballRuntimeState({
     isMultiplayer,
     multiplayerRole,
     aiMatchContext: createAIMatchContext(),
+    hostClientId: undefined,
+    clientClientId: undefined,
   };
 }

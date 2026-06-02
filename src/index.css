@@ -442,3 +442,21 @@ body {
     height: clamp(5rem, 22vh, 6.5rem);
   }
 }
+
+/* Expanded hotkey modal scroll-free layout utility classes */
+.no-scrollbar {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;  /* Chrome, Safari and Opera */
+}
+
+@media (min-width: 1024px) {
+  .mobile-keybind-modal {
+    max-height: 96vh !important;
+    max-height: 96dvh !important;
+    overflow-y: hidden !important;
+  }
+}
+

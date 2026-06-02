@@ -23,9 +23,6 @@ import {
 } from '../game/aiBotCoordinator';
 import {
   seedOfflineRoster,
-  tickAIOrchestrator,
-  type AIOrchestratorEvents,
-  type AIOrchestratorSpawnCallbacks,
 } from '../game/aiOrchestrator';
 import {
   comboBlocksTacticalSwap,
@@ -50,11 +47,9 @@ import {
 } from '../game/teamScoring';
 import {
   MAIN_AI_ID,
-  createRemoteCombatant,
   getAICombatants,
   getDisplayOpponent,
   getMainAI,
-  getPrimaryRemoteOpponent,
   getRosterCombatant,
   isAICombatReady,
   removeMainAIFromRoster,
@@ -148,16 +143,25 @@ import {
 } from '../game/aiMovementMechanics';
 import {
   createDefaultSpawnPoints,
-  getOptimalGrifballSpawnPoint,
-  resizeArenaSceneForPlayerCount,
 } from './grifball/arenaSpawns';
+import {
+  getOptimalSpawnPointForArena,
+  resizeArenaForPlayerCount,
+} from './grifball/arenaRuntime';
+import { enforceArenaFrameSyncForState } from './grifball/arenaFrameSync';
+import {
+  createGrifballAIOrchestratorEvents,
+  createGrifballAIOrchestratorSpawnCallbacks,
+  runGrifballAIOrchestratorForState,
+} from './grifball/aiOrchestratorBridge';
 import { constrainCombatantToArenaBounds } from './grifball/arenaBounds';
 import { recoverCombatantAltitude as recoverCombatantAltitudeFromRunaway } from './grifball/altitudeRecovery';
+import { updateAIRosterTick } from './grifball/aiRosterTick';
 import {
   initializeCombatantAITickDefaults,
   tickCombatantInvulnerability,
 } from './grifball/aiTickState';
-import { resolveCombatantBodyCollisions, type CombatantColliderEntity } from './grifball/bodyCollisions';
+import { resolvePlayerCombatantCollisionsForState } from './grifball/playerCollisionSync';
 import { animateSpartanCombatantModel } from './grifball/combatantAnimation';
 import {
   recordBotCalibrationCounterSuccessForState,
@@ -176,7 +180,10 @@ import {
   getCombatantWeaponMeshes,
 } from './grifball/combatantMeshLookup';
 import { tryStartComboOnHitForState } from './grifball/combatantCombos';
-import { createCombatantMeshRig, rebuildDualWeaponCombatantModel } from './grifball/combatantModels';
+import {
+  rebuildEnemyCombatantModelForState,
+  rebuildHostCombatantModelForState,
+} from './grifball/combatantModelRebuild';
 import { respawnAICombatant } from './grifball/combatantRespawn';
 import { useGrifballDomPoolRefs, useGrifballInputRefs, usePausedPointerLockRef } from './grifball/inputRefs';
 import {
@@ -204,13 +211,17 @@ import {
 } from './grifball/deathFeed';
 import { type GrifballGameProps } from './grifball/GrifballGameProps';
 import { buildLegacyRosterProps } from './grifball/legacyRosterProps';
+import {
+  type LiveCameraFrameState,
+} from './grifball/liveCamera';
 import { resolveActiveCustomMap } from './grifball/mapSelection';
-import { buildGrifballHudStats } from './grifball/hudStats';
+import { pushGrifballHudStatsUpdate } from './grifball/hudStatsRuntime';
 import { updateGrifballMatchTimers } from './grifball/matchTimers';
 import {
   updateFloatingNameplatesForState,
   updateRadarDomForState,
 } from './grifball/overlayDom';
+import { updateObserverCombatantVisualsForState } from './grifball/observerVisualSync';
 import {
   clearCombatantPressureTarget,
   createMatchScoreContext,
@@ -225,11 +236,14 @@ import {
   useOfflineRosterPropRefs,
 } from './grifball/runtimeRefs';
 import {
-  getNextReplayTargetId,
   getReconstructedReplayState,
   hasReplayEntityStateChanged,
   type ReplayTargetCycleDirection,
 } from './grifball/replayHelpers';
+import { cycleReplayTargetForState } from './grifball/replayTargetRuntime';
+import { createOrUpdateRemoteCombatantForState } from './grifball/remoteCombatantProvisioning';
+import { renderLiveGrifballFrame } from './grifball/renderFrame';
+import { updateRosterCombatantVisualsForState } from './grifball/rosterVisualSync';
 import { evaluatePlayerKillMedalsForState } from './grifball/playerMedals';
 import { recordBotPostKillPressure } from './grifball/postKillPressure';
 import { resolveSpectateTargetData, type SpectateTargetRole } from './grifball/spectateTargets';
@@ -246,15 +260,8 @@ import {
 import { createInitialGrifballRuntimeState, type GrifballRuntimeState } from './grifball/runtimeState';
 import { createInitialGrifballThreeRefs, type GrifballThreeRefs } from './grifball/threeRefs';
 import {
-  updateDebugStrikeVisualsForState,
-  updateEmissiveGlowPulseForScene,
-  updateHammerJumpZoneVisualizerForState,
   updateInvulnerabilityBlinking,
-  updateLiveInvulnerabilityBlinkingForState,
-  updateLiveSpectatorModelVisibilityForState,
-  updateWeatherParticlesForScene,
   type WeatherParticleFrameState,
-  whiteBlinkMaterial,
 } from './grifball/visualState';
 import { playPistolFireSound } from './grifball/weaponAudio';
 import {
@@ -264,12 +271,8 @@ import {
   resetTransientVfxRefs,
   spawnBurnDecalForThreeRefs,
   spawnVoxelShockwaveParticlesForThreeRefs,
-  updateBurnDecalsForThreeRefs,
-  updateExplosionParticlesForThreeRefs,
-  updateHammerSplashFlashesForThreeRefs,
-  updateSwordLungeSpeedLinesForThreeRefs,
-  updateTracersForThreeRefs,
 } from './grifball/vfxSystems';
+import { updateTransientVfxForFrame } from './grifball/vfxRuntime';
 
 export { createHighFidelityObjectMesh } from './grifball/customMapAssets';
 
@@ -310,6 +313,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const nameplateContainerRef = useRef<HTMLDivElement>(null);
   const weatherParticleFrameRef = useRef<WeatherParticleFrameState>({});
+  const liveCameraFrameRef = useRef<LiveCameraFrameState>({});
 
   const getActiveCustomMap = (): CustomMapData | null =>
     resolveActiveCustomMap({ customMap, replayData, selectedMap });
@@ -440,97 +444,24 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
   };
 
   const resolvePlayerCollisions = () => {
-    const s = stateRef.current;
-    if (s.isObserverMode) return;
-
-    const colliders: CombatantColliderEntity[] = [];
-
-    // 1. Local Player
-    const playerIsDead = s.playerHP <= 0;
-    if (!playerIsDead) {
-      colliders.push({
-        id: 'player',
-        pos: s.playerPos,
-        vel: s.playerVel,
-        isCrouching: !!s.isCrouching,
-      });
-    }
-
-    // 2. Main AI (offline roster slot 0)
-    const mainAiCollider = mai();
-    const mainAIDead = !mainAiCollider || mainAiCollider.hp <= 0 || mainAiCollider.aiState === 'RESPAWNING';
-    if (mainAiCollider && !mainAIDead && !s.isMultiplayer) {
-      colliders.push({
-        id: MAIN_AI_ID,
-        pos: mainAiCollider.pos,
-        vel: mainAiCollider.vel,
-        isCrouching: !!mainAiCollider.isCrouching,
-      });
-    }
-
-    // 3. Other players/bots and remote humans
-    if (s.otherPlayers) {
-      s.otherPlayers.forEach((bot, id) => {
-        if (id === MAIN_AI_ID) return;
-        if (bot.hp > 0 && bot.respawnTimer <= 0 && !bot.isObserver && bot.pos && bot.vel) {
-          colliders.push({
-            id,
-            pos: bot.pos,
-            vel: bot.vel,
-            isCrouching: !!bot.isCrouching,
-          });
-        }
-      });
-    }
-
-    resolveCombatantBodyCollisions(colliders);
+    resolvePlayerCombatantCollisionsForState({
+      state: stateRef.current,
+      mainAI: mai(),
+    });
   };
 
-  const enforceArenaBounds = () => {
-    const s = stateRef.current;
-
-    // First resolve player-to-player and player-to-AI collisions
-    resolvePlayerCollisions();
-
-    // Then constrain everyone to the arena bounds
-    if (!s.isObserverMode) {
-      constrainCombatantToArena(s.playerPos, s.playerVel);
-    }
-
-    const mainAiBounds = mai();
-    if (mainAiBounds) {
-      constrainCombatantToArena(mainAiBounds.pos, mainAiBounds.vel);
-    }
-    constrainCombatantToArena(s.hostPos, s.hostVel);
-    constrainCombatantToArena(s.clientPos, s.clientVel);
-
-    s.otherPlayers?.forEach((other) => {
-      if (other.pos && other.vel) {
-        constrainCombatantToArena(other.pos, other.vel);
-      }
+  const enforceArenaBounds = (dt: number) => {
+    enforceArenaFrameSyncForState({
+      state: stateRef.current,
+      refs: threeRef.current,
+      dt,
+      isMultiplayer,
+      multiplayerRole,
+      mainAI: mai(),
+      opponentClientId,
+      resolvePlayerCollisions,
+      constrainCombatantToArena,
     });
-
-    // Proactively synchronize group positions to visual meshes immediately to eliminate visual rendering lag
-    if (s.otherPlayers && threeRef.current.otherPlayerMeshes) {
-      s.otherPlayers.forEach((bot, id) => {
-        const meshes = threeRef.current.otherPlayerMeshes.get(id);
-        if (meshes && meshes.group && bot.pos) {
-          meshes.group.position.copy(bot.pos);
-        }
-      });
-    }
-    if (s.isMultiplayer) {
-      if (s.multiplayerRole === 'observer') {
-        if (threeRef.current.enemyGroup) threeRef.current.enemyGroup.position.copy(s.clientPos);
-        if (threeRef.current.hostGroup) threeRef.current.hostGroup.position.copy(s.hostPos);
-      } else {
-        const remote = getPrimaryRemoteOpponent(s.otherPlayers, opponentClientId);
-        if (threeRef.current.enemyGroup && remote) {
-          threeRef.current.enemyGroup.position.copy(remote.pos);
-        }
-        if (threeRef.current.hostGroup) threeRef.current.hostGroup.position.copy(s.playerPos);
-      }
-    }
   };
 
   const recoverCombatantAltitude = (self: any, pos: THREE.Vector3, vel: THREE.Vector3): boolean =>
@@ -679,357 +610,76 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
   };
 
   function updateAI(dt: number) {
-    const s = stateRef.current;
-
     if (isMultiplayer) return;
-    if (getRosterAI().length === 0) return;
-
-    // Respawn handling for every AI combatant in one loop. Dead combatants hide their
-    // mesh and tick respawnTimer; on expiry they respawn via respawnCombatant.
-    getRosterAI().forEach((c) => {
-      if (c.controller !== 'ai') return;
-      const mesh = getCombatantMesh(threeRef.current, c.id);
-      if (!mesh) return;
-      if (c.hp > 0) return;
-      mesh.visible = false;
-      c.respawnTimer = Math.max(0, (c.respawnTimer ?? 0) - dt);
-      if (c.respawnTimer <= 0) {
-        respawnCombatant(c, mesh);
-      }
-    });
-
-    // Unified update dispatch: tick every alive AI combatant through updateSingleAIEntity.
-    getRosterAI().forEach((c) => {
-      if (c.controller !== 'ai') return;
-      const mesh = getCombatantMesh(threeRef.current, c.id);
-      if (!mesh) return;
-      if (c.hp <= 0) return;
-      mesh.visible = true;
-      updateSingleAIEntity(c.id, dt);
+    updateAIRosterTick({
+      refs: threeRef.current,
+      rosterAI: getRosterAI(),
+      dt,
+      respawnCombatant,
+      updateSingleAIEntity,
     });
   };
 
   function updateCharacterSkeletalAnimations(dt: number) {
     const s = stateRef.current;
 
-    if (s.isObserverMode && !replayData) {
-      // Animate Host Group (Blue Spartan)
-      if (threeRef.current.hostGroup) {
-        const hostData = getSpectateTargetData('host');
-        const hostVel = multiplayerRole === 'observer' ? s.hostVel : s.playerVel;
-        const hostSpeed = hostVel.length();
-        let moveForward = 0;
-        if (keysPressed.current[keybindingsRef.current.moveForward] || keysPressed.current['arrowup']) moveForward += 1;
-        if (keysPressed.current[keybindingsRef.current.moveBackward] || keysPressed.current['arrowdown']) moveForward -= 1;
-        
-        const isHostSprinting = s.settings.enableSprint && (multiplayerRole === 'observer' ? hostSpeed > 6.0 : keysPressed.current[keybindingsRef.current.sprint] && moveForward > 0 && !s.isCrouching && !s.isJumping && s.playerDashRemaining <= 0);
-        const isHostSliding = s.settings.enableSlide && (multiplayerRole === 'observer' ? hostSpeed > 3.0 && hostData.isCrouching : s.playerSlideActive);
-
-        animateSpartanModel(
-          threeRef.current.hostGroup,
-          hostVel,
-          hostData.yaw,
-          hostData.hp,
-          (multiplayerRole === 'observer' && s.hostActiveWeapon === 'sword') ? 'ready' : s.pWeaponState,
-          (multiplayerRole === 'observer') ? 0 : s.pWeaponTimer,
-          dt,
-          isHostSliding,
-          isHostSprinting
-        );
-      }
-
-      // Animate Client Group (Red Spartan)
-      if (threeRef.current.enemyGroup) {
-        const clientData = getSpectateTargetData('client');
-        const mainAi = mai();
-        if (multiplayerRole === 'observer' || mainAi) {
-          const enemyVel = multiplayerRole === 'observer' ? s.clientVel : (mainAi ? mainAi.vel : new THREE.Vector3());
-          const enemySpeed = enemyVel.length();
-          const isClientSprinting = s.settings.enableSprint && (multiplayerRole === 'observer' ? enemySpeed > 6.0 : (mainAi ? mainAi.aiState === 'APPROACHING' && enemySpeed > 4.5 && !mainAi.isCrouching : false));
-          const isClientSliding = s.settings.enableSlide && (multiplayerRole === 'observer' ? enemySpeed > 3.0 && clientData.isCrouching : (mainAi ? mainAi.isCrouching && mainAi.aiState === 'APPROACHING' && enemySpeed > 2.0 : false));
-
-          animateSpartanModel(
-            threeRef.current.enemyGroup,
-            enemyVel,
-            clientData.yaw,
-            clientData.hp,
-            (multiplayerRole === 'observer' && s.clientActiveWeapon === 'sword') ? 'ready' : (mainAi?.weaponState || 'ready'),
-            (multiplayerRole === 'observer') ? 0 : (mainAi?.weaponTimer || 0),
-            dt,
-            isClientSliding,
-            isClientSprinting
-          );
-        }
-      }
-    }
-
-    // Animate roster combatants (AI + remote) and drive bot weapon impact resolution.
-    if (threeRef.current.otherPlayerMeshes && s.otherPlayers) {
-      s.otherPlayers.forEach((player, clientId) => {
-        const meshes = threeRef.current.otherPlayerMeshes.get(clientId);
-        if (meshes && meshes.group) {
-          let wState = player.weaponState || 'ready';
-          let wTimer = player.weaponTimer || 0;
-
-          // Opponent sword lunge VFX trail
-          if (player.isLunging) {
-            player.lungeTimer = (player.lungeTimer || 0) + dt;
-            const trailPos = new THREE.Vector3(player.pos.x, player.pos.y + 0.825, player.pos.z);
-            const trailDir = new THREE.Vector3(player.vel.x, player.vel.y, player.vel.z);
-            renderSwordLungeTrailVfx(trailPos, '#ef4444', trailDir, 'shockwave');
-            if (player.lungeTimer > 0.8) {
-              player.isLunging = false;
-            }
-          }
-
-          // Swing timing mirrors the player exactly. Sword: split 0.5/0.5 with the hit at
-          // mid-swing (end of swing_up), scaling with swordSlashSpeed. Hammer overhead:
-          // player-parity 0.28/0.12 with the hit at the slam (end of swing_down). Previously
-          // hardcoded 0.15/0.15 with the hit always at swing_down end, ignoring the settings.
-          const swingIsSword = player.activeWeapon === 'sword';
-          if (wState === 'swing_up') {
-            wTimer += dt;
-            const windup = swingIsSword ? (s.settings.swordSlashSpeed ?? 0.22) * 0.5 : 0.28;
-            if (wTimer >= windup) {
-              wState = 'swing_down';
-              wTimer = 0;
-              // Sword hit lands at mid-swing, like the player's slash.
-              if (swingIsSword) applyBotMeleeImpact(clientId);
-            }
-          } else if (wState === 'swing_down') {
-            wTimer += dt;
-            const strike = swingIsSword ? (s.settings.swordSlashSpeed ?? 0.22) * 0.5 : 0.12;
-            if (wTimer >= strike) {
-              wState = 'recovering';
-              wTimer = 0;
-              // Hammer overhead slams at the end of swing_down, like the player.
-              if (!swingIsSword) applyBotMeleeImpact(clientId);
-            }
-          } else if (wState === 'melee_swing') {
-            wTimer += dt;
-            const speed = s.settings.hammerMeleeSpeed ?? 0.24;
-            if (wTimer >= speed) {
-              wState = 'melee_recover';
-              wTimer = 0;
-              applyBotMeleeImpact(clientId);
-            }
-          } else if (wState === 'melee_recover') {
-            wTimer += dt;
-            const reload = s.settings.hammerMeleeReload ?? 0.5;
-            if (wTimer >= reload) {
-              wState = 'ready';
-              wTimer = 0;
-            }
-          } else if (wState === 'recovering') {
-            wTimer += dt;
-            // Recovery mirrors the player/main-AI exactly (sword slash â†’ swordSlashReload,
-            // hammer overhead â†’ hammerReloadTime). Previously hardcoded 0.3s, which let bots
-            // recover in roughly half the configured time and re-swing ~2x faster than the
-            // player. Never hardcode this â€” it must track the gameplay mechanic settings.
-            const reload = swingIsSword
-              ? (s.settings.swordSlashReload ?? 0.6)
-              : (s.settings.hammerReloadTime ?? 0.6);
-            if (wTimer >= reload) {
-              wState = 'ready';
-              wTimer = 0;
-            }
-          }
-          player.weaponState = wState;
-          player.weaponTimer = wTimer;
-
-          const pVel = new THREE.Vector3(player.vel.x, player.vel.y, player.vel.z);
-          const pSpeed = pVel.length();
-          // Bots expose their real sprint/slide state; remote humans fall back to a speed heuristic.
-          const isPlayerSprinting = s.settings.enableSprint && (player.aiIsSprinting ?? (pSpeed > 5.5 && !(player.isCrouching || false)));
-          const isPlayerSliding = s.settings.enableSlide && (player.aiSlideActive ?? (pSpeed > 2.5 && (player.isCrouching || false)));
-
-          animateSpartanModel(
-            meshes.group,
-            pVel,
-            player.yaw,
-            player.hp,
-            wState,
-            wTimer,
-            dt,
-            isPlayerSliding,
-            isPlayerSprinting
-          );
-
-          // Update remote player weapon visibility continuously at 60fps to prevent multiplayer desync
-          if (meshes.hammer) {
-            meshes.hammer.visible = player.hp > 0 && player.respawnTimer <= 0 && player.activeWeapon === 'hammer';
-          }
-          if (meshes.sword) {
-            meshes.sword.visible = player.hp > 0 && player.respawnTimer <= 0 && player.activeWeapon === 'sword';
-          }
-          if (meshes.pistol) {
-            meshes.pistol.visible = player.hp > 0 && player.respawnTimer <= 0 && player.activeWeapon === 'pistol';
-          }
-        }
+    if (!replayData) {
+      updateObserverCombatantVisualsForState({
+        refs: threeRef.current,
+        state: s,
+        dt,
+        multiplayerRole,
+        keysPressed: keysPressed.current,
+        keybindings: keybindingsRef.current,
+        mainAI: mai(),
+        getSpectateTargetData,
       });
     }
+
+    updateRosterCombatantVisualsForState({
+      refs: threeRef.current,
+      state: s,
+      dt,
+      renderSwordLungeTrailVfx,
+      applyBotMeleeImpact,
+    });
   };
 
   const spawnBurnDecal = (pos: THREE.Vector3, radius: number) =>
     spawnBurnDecalForThreeRefs(threeRef.current, pos, radius);
-
-  const updateBurnDecals = (dt: number) =>
-    updateBurnDecalsForThreeRefs(threeRef.current, dt);
-
-  const updateTracers = (dt: number) =>
-    updateTracersForThreeRefs(threeRef.current, dt);
-
-  const updateExplosionParticles = (dt: number) =>
-    updateExplosionParticlesForThreeRefs(threeRef.current, dt);
-
-  const updateHammerSplashFlashes = (dt: number) =>
-    updateHammerSplashFlashesForThreeRefs(threeRef.current, dt);
-
-  const updateSwordLungeSpeedLines = (dt: number) =>
-    updateSwordLungeSpeedLinesForThreeRefs(threeRef.current, dt);
 
   function updateMatchTimers(dt: number) {
     updateGrifballMatchTimers(stateRef.current, mai(), dt);
   };
 
   function renderGame() {
-    const s = stateRef.current;
-    const camera = threeRef.current.camera;
-    const renderer = threeRef.current.renderer;
-    const scene = threeRef.current.scene;
-
-    if (!camera || !renderer || !scene) return;
-
-    // Smooth FOV interpolation based on sprint and slide states
-    const fovNow = performance.now();
-    if ((renderGame as any).lastTime === undefined) {
-      (renderGame as any).lastTime = fovNow;
-    }
-    const fovDt = Math.min(0.1, (fovNow - (renderGame as any).lastTime) / 1000);
-    (renderGame as any).lastTime = fovNow;
-
-    let targetFov = 75;
-    if (!s.isObserverMode && s.playerHP > 0) {
-      let moveForward = 0;
-      if (keysPressed.current[keybindingsRef.current.moveForward] || keysPressed.current['arrowup']) moveForward += 1;
-      if (keysPressed.current[keybindingsRef.current.moveBackward] || keysPressed.current['arrowdown']) moveForward -= 1;
-      
-      const isSprinting = s.settings.enableSprint && keysPressed.current[keybindingsRef.current.sprint] && moveForward > 0 && !s.isCrouching && !s.isJumping && s.playerDashRemaining <= 0;
-      const isSliding = s.settings.enableSlide && s.playerSlideActive;
-      
-      targetFov = isSprinting ? 86 : (isSliding ? 78 : 75);
-    }
-    if (Math.abs(camera.fov - targetFov) > 0.05) {
-      camera.fov += (targetFov - camera.fov) * 8.0 * fovDt;
-      camera.updateProjectionMatrix();
-    }
-
-    updateLiveInvulnerabilityBlinkingForState({
-      state: s,
+    renderLiveGrifballFrame({
+      state: stateRef.current,
       refs: threeRef.current,
+      keysPressed: keysPressed.current,
+      keybindings: keybindingsRef.current,
+      liveCameraFrameState: liveCameraFrameRef.current,
+      weatherParticleFrameState: weatherParticleFrameRef.current,
       opponentClientId,
       replayActive: Boolean(replayData),
+      getSpectateTargetData,
+      getActiveCustomMap,
     });
-
-    if (s.isObserverMode && !replayData) {
-      updateLiveSpectatorModelVisibilityForState({
-        state: s,
-        refs: threeRef.current,
-        replayActive: false,
-        hostData: getSpectateTargetData('host'),
-        clientData: getSpectateTargetData('client'),
-      });
-    }
-
-    // Apply Camera transforms based on Observer Mode and Camera Mode settings
-    if (!replayData) {
-      if (s.isObserverMode) {
-        if (s.observerCamMode === 'free') {
-          // Free Camera spectator mode
-          const lookTarget = new THREE.Vector3(0, 0, -1);
-          lookTarget.applyAxisAngle(new THREE.Vector3(1, 0, 0), s.pitch);
-          lookTarget.applyAxisAngle(new THREE.Vector3(0, 1, 0), s.yaw);
-          
-          camera.position.copy(s.playerPos);
-          const centerLookAt = camera.position.clone().add(lookTarget);
-          camera.lookAt(centerLookAt);
-        } else if (s.observerCamMode === 'third') {
-          // Third Person orbital spectator mode
-          const targetData = getSpectateTargetData(s.observerTarget);
-          const targetEyePos = targetData.pos.clone();
-          targetEyePos.y += 1.65 - (targetData.isCrouching ? 0.72 : 0); // Eye height level
-
-          // Compute orbit offset using s.yaw and s.pitch as orbit angles
-          const offset = new THREE.Vector3(0, 0, s.observerOrbitDistance);
-          offset.applyAxisAngle(new THREE.Vector3(1, 0, 0), s.pitch);
-          offset.applyAxisAngle(new THREE.Vector3(0, 1, 0), s.yaw);
-
-          const cameraPos = targetEyePos.clone().add(offset);
-          
-          // Resolve wall/obstacle collisions to prevent clipping
-          const activeCustomMap = getActiveCustomMap();
-          const customMapObjects = (activeCustomMap && activeCustomMap.objects) || [];
-          const arenaRadius = activeCustomMap ? activeCustomMap.arenaRadius : s.arenaRadius;
-          const resolvedPos = getCollisionResolvedCameraPos(targetEyePos, cameraPos, arenaRadius, customMapObjects);
-
-          camera.position.copy(resolvedPos);
-          camera.lookAt(targetEyePos);
-        } else if (s.observerCamMode === 'first') {
-          // First Person spectator mode in sync with player being spectated
-          const targetData = getSpectateTargetData(s.observerTarget);
-          const currentCameraY = 1.65 - (targetData.isCrouching ? 0.72 : 0) + targetData.pos.y;
-          camera.position.set(targetData.pos.x, currentCameraY, targetData.pos.z);
-
-          const lookTarget = new THREE.Vector3(0, 0, -1);
-          lookTarget.applyAxisAngle(new THREE.Vector3(1, 0, 0), targetData.pitch);
-          lookTarget.applyAxisAngle(new THREE.Vector3(0, 1, 0), targetData.yaw);
-
-          const centerLookAt = camera.position.clone().add(lookTarget);
-          camera.lookAt(centerLookAt);
-        }
-      } else {
-        // Standard local Player First Person view
-        const lookTarget = new THREE.Vector3(0, 0, -1);
-        lookTarget.applyAxisAngle(new THREE.Vector3(1, 0, 0), s.pitch);
-        lookTarget.applyAxisAngle(new THREE.Vector3(0, 1, 0), s.yaw);
-        
-        const currentCameraY = 1.65 - s.crouchAmount + s.playerPos.y;
-        camera.position.set(s.playerPos.x, currentCameraY, s.playerPos.z);
-        
-        const centerLookAt = camera.position.clone().add(lookTarget);
-        camera.lookAt(centerLookAt);
-      }
-    }
-
-    updateDebugStrikeVisualsForState({
-      state: s,
-      playerSphere: threeRef.current.debugPlayerSphere,
-      enemySphere: threeRef.current.debugEnemySphere,
-    });
-    updateHammerJumpZoneVisualizerForState({
-      state: s,
-      jumpZoneMesh: threeRef.current.playerJumpZoneMesh,
-    });
-
-    updateEmissiveGlowPulseForScene({ scene, blinkMaterial: whiteBlinkMaterial });
-    updateWeatherParticlesForScene({ scene, frameState: weatherParticleFrameRef.current });
-
-    renderer.render(scene, camera);
   };
 
   function pushStatsUpdate() {
     const s = stateRef.current;
-    const opp = opponentDisplay();
-    onStatsUpdateRef.current(buildGrifballHudStats({
+    pushGrifballHudStatsUpdate({
       state: s,
-      opponent: opp,
+      opponent: opponentDisplay(),
+      onStatsUpdate: onStatsUpdateRef.current,
       isMultiplayer,
       multiplayerRole,
-      opponentConnected: isMultiplayer && multiplayerSocket?.readyState === WebSocket.OPEN,
+      multiplayerSocket,
       fps: fpsRef.current.value,
-      observerTargetName: getSpectateTargetData(s.observerTarget).name,
+      getSpectateTargetData,
       opponentPlayerName: opponentNameRef.current || mai()?.playerName || undefined,
-    }));
+    });
   };
 
   function updateFloatingNameplate() {
@@ -1145,6 +795,12 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
           const s = stateRef.current;
 
           if (data.type === 'connected') {
+            if (data.hostClientId) {
+              s.hostClientId = data.hostClientId;
+            }
+            if (data.clientClientId) {
+              s.clientClientId = data.clientClientId;
+            }
             if (data.otherPlayerIds && Array.isArray(data.otherPlayerIds)) {
               data.otherPlayerIds.forEach((id: string) => {
                 if (id !== data.clientClientId) {
@@ -1561,65 +1217,40 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
   const cycleReplayTarget = (direction: ReplayTargetCycleDirection = 'next') => {
     const playerIds = replayPlayerIdsRef.current;
-    if (!playerIds || playerIds.length === 0) return;
-
-    const nextTarget = getNextReplayTargetId(playerIds, replayTargetIdRef.current || 'free', direction);
-    if (!nextTarget) return;
-    replayTargetIdRef.current = nextTarget;
-    console.log('Replay target cycled to:', nextTarget);
-    
-    // Also auto-switch from free to third-person orbital camera if locking onto a player
-    const s = stateRef.current;
-    if (s && nextTarget !== 'free' && s.observerCamMode === 'free') {
-      s.observerCamMode = 'third';
-    }
-
-    pushStatsUpdate();
+    if (!playerIds) return;
+    cycleReplayTargetForState({
+      state: stateRef.current,
+      playerIds,
+      currentTarget: replayTargetIdRef.current || 'free',
+      setTarget: (targetId) => {
+        replayTargetIdRef.current = targetId;
+      },
+      direction,
+      pushStatsUpdate,
+    });
   };
 
   const rebuildEnemyModel = (hue: number) => {
-    const s = stateRef.current;
-    const scene = threeRef.current.scene;
-    if (!scene || !threeRef.current.enemyGroup) return;
-
-    const isEnemyBot = !isMultiplayer;
-    const isLocalClient = isMultiplayer && multiplayerRole === 'client';
-    const mainAi = mai();
-    const activeWeapon = (multiplayerRole === 'observer') ? s.clientActiveWeapon : (mainAi?.activeWeapon || 'hammer');
-    const { group: enemyGroup, hammer: enemyHammer, sword: enemySword } = rebuildDualWeaponCombatantModel({
-      scene,
-      previousGroup: threeRef.current.enemyGroup,
-      isEnemyBot,
+    rebuildEnemyCombatantModelForState({
+      state: stateRef.current,
+      refs: threeRef.current,
       hue,
-      weaponHue: isEnemyBot ? null : hue,
-      loadout: isLocalClient ? playerLoadout : undefined,
-      position: multiplayerRole === 'observer' ? s.clientPos : (mainAi ? mainAi.pos : new THREE.Vector3(0, 0, 0)),
-      activeWeapon,
+      isMultiplayer,
+      multiplayerRole,
+      playerLoadout,
+      mainAI: mai(),
     });
-    threeRef.current.enemyGroup = enemyGroup;
-    threeRef.current.enemyHammer = enemyHammer;
-    threeRef.current.enemySword = enemySword;
   };
 
   const rebuildHostModel = (hue: number) => {
-    const s = stateRef.current;
-    const scene = threeRef.current.scene;
-    if (!scene) return;
-
-    const isLocalHost = !isMultiplayer || multiplayerRole === 'host';
-    const activeWeapon = (multiplayerRole === 'observer') ? s.hostActiveWeapon : s.activeWeapon;
-    const { group: hostGroup, hammer: hostHammer, sword: hostSword } = rebuildDualWeaponCombatantModel({
-      scene,
-      previousGroup: threeRef.current.hostGroup,
-      isEnemyBot: false,
+    rebuildHostCombatantModelForState({
+      state: stateRef.current,
+      refs: threeRef.current,
       hue,
-      loadout: isLocalHost ? playerLoadout : undefined,
-      position: multiplayerRole === 'observer' ? s.hostPos : s.playerPos,
-      activeWeapon,
+      isMultiplayer,
+      multiplayerRole,
+      playerLoadout,
     });
-    threeRef.current.hostGroup = hostGroup;
-    threeRef.current.hostHammer = hostHammer;
-    threeRef.current.hostSword = hostSword;
   };
 
   // Define 8 circular spawn points inside the 20m arena (base radius 13m)
@@ -1627,148 +1258,59 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
   // Minimax proximity spawning algorithm to select spawn point farthest from threat
   const getOptimalSpawnPoint = (excludePositions: THREE.Vector3[]): THREE.Vector3 => {
-    return getOptimalGrifballSpawnPoint(getActiveCustomMap(), SPAWN_POINTS, excludePositions);
+    return getOptimalSpawnPointForArena({
+      activeCustomMap: getActiveCustomMap(),
+      spawnPoints: SPAWN_POINTS,
+      excludePositions,
+    });
   };
 
   // Dynamic arena resizing based on player count (12.5% for every 2 players, up to 50% max)
   const resizeArena = (playerCount: number) => {
-    const s = stateRef.current;
-    const scene = threeRef.current.scene;
-    if (!scene) return;
-
-    const { scale, arenaRadius } = resizeArenaSceneForPlayerCount(scene, SPAWN_POINTS, playerCount);
-    s.arenaRadius = arenaRadius;
-
-    console.log(`Arena dynamically scaled for ${playerCount} players. Factor: ${scale}, Radius: ${s.arenaRadius}`);
+    resizeArenaForPlayerCount({
+      state: stateRef.current,
+      refs: threeRef.current,
+      spawnPoints: SPAWN_POINTS,
+      playerCount,
+    });
   };
 
   // Provisions any roster combatant into otherPlayerMeshes (shared rig for AI + remote).
   const createOrUpdateRemotePlayer = (clientId: string, data: any) => {
-    const s = stateRef.current;
-    const scene = threeRef.current.scene;
-    if (!scene) return;
-
-    let playerState = s.otherPlayers.get(clientId);
-    if (!playerState) {
-      const isHostPlayer = (s.multiplayerRole === 'client' && clientId === opponentClientId) || (s.multiplayerRole === 'observer' && data.role === 'host');
-      const spawnZ = isHostPlayer ? 12 : -12;
-      playerState = createRemoteCombatant({
-        id: clientId,
-        playerName: data.playerName,
-        spawnZ,
-        settings: s.settings,
-        data: {
-          hp: data.hp,
-          maxHp: data.maxHp,
-          hue: data.hue,
-          isCrouching: data.isCrouching,
-          activeWeapon: data.activeWeapon,
-          respawnTimer: data.respawnTimer,
-          invulnerabilityTimer: data.invulnerabilityTimer,
-        },
-      });
-      playerState.yaw = getInwardSpawnYaw(playerState.pos);
-      s.otherPlayers.set(clientId, playerState);
-    }
-
-    if (data.pos) playerState.pos.set(data.pos.x, data.pos.y, data.pos.z);
-    if (data.vel) playerState.vel.set(data.vel.x, data.vel.y, data.vel.z);
-    constrainCombatantToArena(playerState.pos, playerState.vel);
-    if (data.yaw !== undefined) playerState.yaw = data.yaw;
-    if (data.pitch !== undefined) playerState.pitch = data.pitch;
-    if (data.hp !== undefined) playerState.hp = data.hp;
-    if (data.maxHp !== undefined) playerState.maxHp = data.maxHp;
-    if (data.isCrouching !== undefined) playerState.isCrouching = data.isCrouching;
-    if (data.activeWeapon !== undefined) playerState.activeWeapon = data.activeWeapon;
-    if (data.respawnTimer !== undefined) playerState.respawnTimer = data.respawnTimer;
-    if (data.hue !== undefined) playerState.hue = data.hue;
-    if (data.playerName) playerState.playerName = data.playerName;
-    if (data.invulnerabilityTimer !== undefined) playerState.invulnerabilityTimer = data.invulnerabilityTimer;
-
-    let meshes = threeRef.current.otherPlayerMeshes.get(clientId);
-    const hue = data.hue ?? playerState.hue;
-    if (!meshes || meshes.group.userData.appliedHue !== hue) {
-      if (meshes?.group) scene.remove(meshes.group);
-      meshes = createCombatantMeshRig(scene, hue, false);
-      threeRef.current.otherPlayerMeshes.set(clientId, meshes);
-      playerState.hue = hue;
-    }
-
-    const { group, hammer, sword, pistol } = meshes;
-    group.position.copy(playerState.pos);
-    group.rotation.y = playerState.yaw;
-    
-    if (playerState.isCrouching) {
-      group.scale.set(1, 0.65, 1);
-    } else {
-      group.scale.set(1, 1, 1);
-    }
-
-    hammer.visible = playerState.hp > 0 && playerState.respawnTimer <= 0 && playerState.activeWeapon === 'hammer';
-    sword.visible = playerState.hp > 0 && playerState.respawnTimer <= 0 && playerState.activeWeapon === 'sword';
-    if (pistol) {
-      pistol.visible = playerState.hp > 0 && playerState.respawnTimer <= 0 && playerState.activeWeapon === 'pistol';
-    }
-    group.visible = playerState.hp > 0 && playerState.respawnTimer <= 0;
+    createOrUpdateRemoteCombatantForState({
+      state: stateRef.current,
+      refs: threeRef.current,
+      clientId,
+      data,
+      opponentClientId,
+      constrainCombatantToArena,
+    });
   };
 
-  const buildOrchestratorSpawnCallbacks = (): AIOrchestratorSpawnCallbacks => ({
-    getOptimalSpawnPoint,
-    getInwardSpawnYaw,
-  });
+  const buildOrchestratorSpawnCallbacks = () =>
+    createGrifballAIOrchestratorSpawnCallbacks(getOptimalSpawnPoint);
 
-  const buildOrchestratorEvents = (opts?: { silentSpawn?: boolean }): AIOrchestratorEvents => {
-    const scene = threeRef.current.scene;
-    return {
-      onBotSpawned: (botId, bot) => {
-        createOrUpdateRemotePlayer(botId, bot);
-        if (!opts?.silentSpawn) {
-          sfx.playRespawn();
-        }
-      },
-      onBotDespawned: (botId) => {
-        if (!scene) return;
-        const meshes = threeRef.current.otherPlayerMeshes.get(botId);
-        if (meshes) {
-          if (meshes.group) scene.remove(meshes.group);
-          threeRef.current.otherPlayerMeshes.delete(botId);
-        }
-      },
-      onMainAICreated: (mainAi) => {
-        createOrUpdateRemotePlayer(MAIN_AI_ID, mainAi);
-      },
-      onHueChanged: (combatantId, combatant) => {
-        if (!scene) return;
-        const oldMeshes = threeRef.current.otherPlayerMeshes.get(combatantId);
-        if (oldMeshes?.group) scene.remove(oldMeshes.group);
-        threeRef.current.otherPlayerMeshes.delete(combatantId);
-        createOrUpdateRemotePlayer(combatantId, combatant);
-      },
-      onRosterLayoutChanged: (totalCombatants) => {
-        resizeArena(totalCombatants);
-        pushStatsUpdate();
-      },
-    };
-  };
+  const buildOrchestratorEvents = (opts?: { silentSpawn?: boolean }) =>
+    createGrifballAIOrchestratorEvents({
+      refs: threeRef.current,
+      createOrUpdateRemotePlayer,
+      resizeArena,
+      pushStatsUpdate,
+      playRespawn: () => sfx.playRespawn(),
+      silentSpawn: opts?.silentSpawn,
+    });
 
   const runAIOrchestrator = (dt: number) => {
     const s = stateRef.current;
-    if (s.isMultiplayer) return;
-
-    tickAIOrchestrator(
-      {
-        roster: s.otherPlayers,
-        settings: s.settings,
-        legacy: getLegacyRosterProps(),
-        offlineBotCount: offlineBotCountRef.current,
-        playerPos: s.playerPos,
-        isPlaying,
-        coordinator: s.aiMatchContext.coordinator,
-      },
+    runGrifballAIOrchestratorForState({
+      state: s,
       dt,
-      buildOrchestratorSpawnCallbacks(),
-      buildOrchestratorEvents()
-    );
+      isPlaying,
+      legacy: getLegacyRosterProps(),
+      offlineBotCount: offlineBotCountRef.current,
+      spawnCallbacks: buildOrchestratorSpawnCallbacks(),
+      events: buildOrchestratorEvents(),
+    });
   };
 
   useEffect(() => {
@@ -4811,11 +4353,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
     // 10. Update visual effects particles during replay
     const playbackDt = isReplayPausedRef.current ? 0 : dt * replaySpeedRef.current;
-    updateExplosionParticles(playbackDt);
-    updateTracers(playbackDt);
-    updateHammerSplashFlashes(playbackDt);
-    updateSwordLungeSpeedLines(playbackDt);
-    updateBurnDecals(playbackDt);
+    updateTransientVfxForFrame(threeRef.current, playbackDt);
   };
 
   // Handle active game cycles
@@ -4992,13 +4530,9 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         }
         updateAI(dt);
         updateCharacterSkeletalAnimations(dt);
-        updateExplosionParticles(dt);
-        updateTracers(dt);
-        updateHammerSplashFlashes(dt);
-        updateSwordLungeSpeedLines(dt);
-        updateBurnDecals(dt);
+        updateTransientVfxForFrame(threeRef.current, dt);
         updateMatchTimers(dt);
-        enforceArenaBounds();
+        enforceArenaBounds(dt);
 
         // Render loop
         renderGame();
@@ -5866,16 +5400,24 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       const aimDeadzone = 0.18;
       if (Math.abs(rx) > aimDeadzone || Math.abs(ry) > aimDeadzone) {
         const gpSens = keybindingsRef.current.gamepadSensitivity ?? 3.0;
+        const gpAccel = keybindingsRef.current.gamepadAcceleration ?? 0.0;
         const baseSpeed = 2.4; 
         
         let targetYawOffset = 0;
         let targetPitchOffset = 0;
 
+        const applyAccel = (val: number) => {
+          if (gpAccel === 0) return val;
+          const absVal = Math.abs(val);
+          const sign = val < 0 ? -1 : 1;
+          return sign * Math.pow(absVal, 1 + gpAccel * 0.5);
+        };
+
         if (Math.abs(rx) > aimDeadzone) {
-          targetYawOffset = rx * baseSpeed * gpSens * dt;
+          targetYawOffset = applyAccel(rx) * baseSpeed * gpSens * dt;
         }
         if (Math.abs(ry) > aimDeadzone) {
-          targetPitchOffset = ry * baseSpeed * gpSens * dt;
+          targetPitchOffset = applyAccel(ry) * baseSpeed * gpSens * dt;
         }
 
         s.yaw -= targetYawOffset;
@@ -6011,6 +5553,10 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
           if (s.activeWeapon === 'sword') {
             if (s.pSwordReady && s.pSwordState === 'ready' && !s.isLunging) {
               triggerPlayerSwordSlash();
+            }
+          } else if (s.activeWeapon === 'hammer') {
+            if (s.pWeaponReady && s.pWeaponState === 'ready' && s.playerDashRemaining <= 0) {
+              triggerPlayerHammerMelee();
             }
           }
         }

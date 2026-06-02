@@ -36,7 +36,7 @@ This workspace has previously had Windows `EPERM` locks on stale files under `di
 
 ## AI Systems
 
-Combat AI is orchestrated from `GrifballGame.tsx` (10-state FSM including `PRESSURING`) with pure decision logic in `src/game/`. Shared combat geometry helpers, combatant action-state, combo runtime, respawn, AI tick-state, AI bookkeeping, pressure-state, and post-kill pressure helpers, arena boundary and body-collision helpers, runtime state/ref initialization, match timer helpers, player/AI target-selection and tactical target scoring helpers, HUD stats builders, death-feed and player-medal helpers, match-pressure tuning adapters, replay data helpers, adaptive player-model observation adapters, AI altitude-recovery adapters, spectator target-data adapters, legacy roster prop adapters, input/pointer ref management, prop contracts, map selection, overlay DOM projection, arena spawn/resizing helpers, Three combatant model construction, combatant animation, and mesh lookup helpers, invulnerability/debug/jump-zone/emissive/weather visual-state and transient VFX creation/lifecycle helpers, weapon audio helpers, and custom-map procedural asset generation live under `src/components/grifball/` so the main game component stays under Babel's 500KB styling deoptimization threshold while preserving the existing `createHighFidelityObjectMesh` export.
+Combat AI is orchestrated from `GrifballGame.tsx` (10-state FSM including `PRESSURING`) with pure decision logic in `src/game/`. Shared combat geometry helpers, AI orchestrator bridge helpers, combatant action-state, combo runtime, respawn, AI roster tick dispatch, AI tick-state, AI bookkeeping, pressure-state, and post-kill pressure helpers, arena boundary and body-collision helpers, arena frame sync, arena runtime spawn/resize adapters, player collision sync, runtime state/ref initialization, match timer helpers, player/AI target-selection and tactical target scoring helpers, HUD stats builders and HUD push adapters, death-feed and player-medal helpers, match-pressure tuning adapters, replay data and replay-target helpers, adaptive player-model observation adapters, AI altitude-recovery adapters, spectator target-data adapters, legacy roster prop adapters, input/pointer ref management, prop contracts, map selection, overlay DOM projection, live camera/FOV and render-frame helpers, arena spawn/resizing helpers, Three combatant model construction, host/enemy model rebuild helpers, and remote combatant provisioning, combatant animation, observer and roster visual sync, and mesh lookup helpers, invulnerability/debug/jump-zone/emissive/weather visual-state and transient VFX creation/lifecycle/frame-update helpers, weapon audio helpers, and custom-map procedural asset generation live under `src/components/grifball/` so the main game component stays under Babel's 500KB styling deoptimization threshold while preserving the existing `createHighFidelityObjectMesh` export.
 
 | Module | Role |
 |--------|------|
@@ -114,32 +114,32 @@ iBrawls supports both classic Keyboard + Mouse inputs and native Gamepad (Xbox/P
 
 ### Keyboard + Mouse Controls
 - **Move**: `W`, `A`, `S`, `D` (or Arrows)
-- **Jump / Boost**: `Spacebar` (Launch hammer jump if pressed immediately after Slam)
-- **Dash**: `Q` (Quick dash in movement direction)
+- **Jump**: `Spacebar` (Launch hammer jump if pressed immediately after Slam)
+- **Thrust**: `Q` (Quick dash in movement direction)
 - **Crouch / Slide**: `C` (Slide when running forward)
 - **Sprint**: `Shift` (Hold while moving forward)
 - **Scoreboard**: `U` (Hold to view current stats)
-- **Weapon 1 (Hammer)**: `1`
-- **Weapon 2 (Sword)**: `2`
+- **Weapon Slot 1 (Hammer)**: `1`
+- **Weapon Slot 2 (Sword)**: `2`
 - **Switch Weapons**: `Scroll Wheel`
 - **Primary Attack**: `Left Mouse Button` (Hammer Slam / Sword Lunge)
-- **Alt Attack**: `Right Mouse Button` (Sword Quick Slash)
+- **Secondary Attack**: `Right Mouse Button` (Sword Quick Slash)
 - **Pause / Menu**: `Escape`
 
 ### Gamepad (Xbox Controller Layout)
 - **Movement**: `Left Analog Stick`
 - **Aim / Camera**: `Right Analog Stick` (Continuous framerate-independent rotation)
-- **Jump / Boost**: `A` (Button 0)
+- **Jump**: `A` (Button 0)
 - **Crouch / Slide**: `B` (Button 1)
-- **Sonic Dash**: `X` (Button 2)
+- **Thrust**: `X` (Button 2)
 - **Swap Weapon**: `Y` (Button 3)
-- **Slam / Lunge (Attack)**: `Right Trigger (RT)` (Button 7)
-- **Quick Slash (Alt Attack)**: `Right Shoulder (RB)` (Button 5)
+- **Primary Attack**: `Right Trigger (RT)` (Button 7)
+- **Secondary Attack**: `Right Shoulder (RB)` (Button 5)
 - **Sprint**: `Left Stick Click (LS)` (Button 10)
 - **Scoreboard**: `Back / View` (Button 8)
 - **Pause / Menu**: `Start` (Button 9)
 
-An interactive, high-tech vector diagnostics panel in the settings overlay visualizes all active controller bindings in real-time, flashing and pulsing button elements during rebinding.
+An interactive, high-tech visual controller mapper panel in the hotkey adjustments overlay displays a large-scale Xbox controller linked directly to action labels via wireframe paths. It supports click/tap-to-rebind for PC and mobile, real-time diagnostic button-press highlights, and a 3-second button hold directly on the controller to prompt mapping configuration with custom circular hold-progress indicators.
 
 ## Physics & Collisions
 
