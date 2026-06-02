@@ -78,29 +78,31 @@ export const resolveSpectateTargetData = ({
         };
       }
 
+      const remote = s.otherPlayers.get(opponentClientId) || Array.from(s.otherPlayers.values()).find(p => p.controller === 'remote');
       return {
-        pos: mainAI!.pos,
-        yaw: mainAI!.yaw,
-        pitch: mainAI!.pitch || 0,
+        pos: remote ? remote.pos : new THREE.Vector3(),
+        yaw: remote ? remote.yaw : 0,
+        pitch: remote ? (remote.pitch || 0) : 0,
         name: opponentName || opponentClientId || 'Red (Guest)',
-        hp: mainAI!.hp,
+        hp: remote ? remote.hp : 1,
         hue: lastOpponentHue ?? 200,
-        isCrouching: mainAI!.isCrouching,
-        activeWeapon: mainAI!.activeWeapon,
+        isCrouching: remote ? remote.isCrouching : false,
+        activeWeapon: remote ? remote.activeWeapon : 'hammer',
       };
     }
 
     if (multiplayerRole === 'client') {
       if (target === 'host') {
+        const remote = s.otherPlayers.get(opponentClientId) || Array.from(s.otherPlayers.values()).find(p => p.controller === 'remote');
         return {
-          pos: mainAI!.pos,
-          yaw: mainAI!.yaw,
-          pitch: mainAI!.pitch || 0,
+          pos: remote ? remote.pos : new THREE.Vector3(),
+          yaw: remote ? remote.yaw : 0,
+          pitch: remote ? (remote.pitch || 0) : 0,
           name: opponentName || opponentClientId || 'Blue (Host)',
-          hp: mainAI!.hp,
+          hp: remote ? remote.hp : 1,
           hue: lastOpponentHue ?? 200,
-          isCrouching: mainAI!.isCrouching,
-          activeWeapon: mainAI!.activeWeapon,
+          isCrouching: remote ? remote.isCrouching : false,
+          activeWeapon: remote ? remote.activeWeapon : 'hammer',
         };
       }
 

@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   GameStats,
   UniversalSettings,
@@ -30,6 +30,12 @@ import {
 } from './settings/gameplaySettings';
 import { SETTING_SECTIONS, SETTING_DEFINITIONS } from './settings/settingsSchema';
 import { SaveData, buildSaveData, decryptSaveCode, encryptSaveData } from './settings/saveCodec';
+import {
+  LiveConfig,
+  fetchLiveConfig,
+  getCachedLiveConfig,
+  publishLiveConfig,
+} from './services/liveConfig';
 import {
   DEFAULT_DESKTOP_UI_POSITIONS,
   DEFAULT_MOBILE_UI_POSITIONS,
@@ -76,7 +82,7 @@ import { CharacterPreview } from './components/CharacterPreview';
 import { CharacterPainter } from './components/CharacterPainter';
 import { CharacterLoadout, DEFAULT_LOADOUT, AVAILABLE_PRESETS, HelmetPreset, TorsoPreset, ArmPreset, LegPreset } from './components/VoxelModels';
 
-const APP_VERSION = '0.580';
+const APP_VERSION = '0.580c';
 const MAX_PLAYER_NAME_LENGTH = 10;
 
 interface OnlineClient {
@@ -350,6 +356,9 @@ const getSavedMatchmakerUrl = () => {
   }
   return `${protocol}//${host}/ws`;
 };
+
+// Reserved display name for the read-only, server-published Official Multiplayer Preset.
+const OFFICIAL_MP_PRESET_NAME = '★ Official Multiplayer';
 
 const BOT_COLOR_PRESETS = [
   { label: 'Red',     hue: 0   },
@@ -2271,10 +2280,29 @@ export default function App() {
   const [selectedPresetName, setSelectedPresetName] = useState<string>('');
   const [newPresetNameInput, setNewPresetNameInput] = useState<string>('');
 
+  // ── Official Multiplayer Preset (Live Tuning) ──────────────────────────────
+  // Source of truth = D1 via GET /api/config (ETag-cached). Forced on everyone in
+  // P2P matches; available read-only offline. A cached copy backs offline play.
+  const [multiplayerPreset, setMultiplayerPreset] = useState<LiveConfig | null>(() =>
+    getCachedLiveConfig()
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchLiveConfig().then((config) => {
+      if (!cancelled && config) setMultiplayerPreset(config);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const handleSavePreset = (name: string) => {
     const trimmed = name.trim();
     if (!trimmed) return;
-    
+    // The official multiplayer preset is read-only and managed by the server.
+    if (trimmed.toLowerCase() === OFFICIAL_MP_PRESET_NAME.toLowerCase()) return;
+
     const { playerHue, playerName: sName, ...restSettings } = adminSettings;
     const newPreset: GameplayPreset = {
       name: trimmed,
@@ -2302,6 +2330,8 @@ export default function App() {
   };
 
   const handleDeletePreset = (nameToDelete: string) => {
+    // The official multiplayer preset is server-managed and cannot be deleted locally.
+    if (nameToDelete === OFFICIAL_MP_PRESET_NAME) return;
     setGameplayPresets(prev => {
       const updated = prev.filter(p => p.name !== nameToDelete);
       try {
@@ -2319,6 +2349,18 @@ export default function App() {
   const handleSelectPreset = (name: string) => {
     setSelectedPresetName(name);
     if (!name) return;
+    // Official multiplayer preset: load its ruleset for offline viewing/play (read-only).
+    if (name === OFFICIAL_MP_PRESET_NAME) {
+      if (multiplayerPreset) {
+        setAdminSettings(prev => ({
+          ...prev,
+          ...withDefaultGameplaySettings(multiplayerPreset.settings),
+          playerHue: prev.playerHue,
+          playerName: prev.playerName,
+        }));
+      }
+      return;
+    }
     const preset = gameplayPresets.find(p => p.name === name);
     if (preset) {
       setAdminSettings(prev => ({
@@ -2330,6 +2372,16 @@ export default function App() {
 
   useEffect(() => {
     if (!selectedPresetName) return;
+    if (selectedPresetName === OFFICIAL_MP_PRESET_NAME) {
+      // Read-only official preset: clear the selection once the user edits away from it.
+      if (multiplayerPreset) {
+        const restSettings = stripPlayerIdentitySettings(adminSettings);
+        if (!gameplaySettingsAreEqual(restSettings, withDefaultGameplaySettings(multiplayerPreset.settings))) {
+          setSelectedPresetName('');
+        }
+      }
+      return;
+    }
     const activePreset = gameplayPresets.find(p => p.name === selectedPresetName);
     if (activePreset) {
       const restSettings = stripPlayerIdentitySettings(adminSettings);
@@ -2337,7 +2389,47 @@ export default function App() {
         setSelectedPresetName('');
       }
     }
-  }, [adminSettings, gameplayPresets, selectedPresetName]);
+  }, [adminSettings, gameplayPresets, selectedPresetName, multiplayerPreset]);
+
+  // In multiplayer the official preset's mechanic keys override local edits; player
+  // identity (hue/name) is preserved because it isn't part of the governed subset.
+  const effectiveAdminSettings = useMemo<UniversalSettings>(() => {
+    if (isMultiplayer && multiplayerPreset) {
+      return {
+        ...adminSettings,
+        ...withDefaultGameplaySettings(multiplayerPreset.settings),
+        playerHue: adminSettings.playerHue,
+        playerName: adminSettings.playerName,
+      };
+    }
+    return adminSettings;
+  }, [isMultiplayer, multiplayerPreset, adminSettings]);
+
+  // Admin publish (Official Multiplayer Preset). Token is held in memory only.
+  const [showPublishPanel, setShowPublishPanel] = useState(false);
+  const [adminPublishToken, setAdminPublishToken] = useState('');
+  const [publishStatus, setPublishStatus] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [isPublishing, setIsPublishing] = useState(false);
+
+  const handlePublishOfficial = async () => {
+    if (!adminPublishToken.trim() || isPublishing) return;
+    setIsPublishing(true);
+    setPublishStatus(null);
+    const label = (multiplayerPreset?.version ? `v${multiplayerPreset.version + 1}` : 'v1');
+    const result = await publishLiveConfig(
+      adminPublishToken.trim(),
+      stripPlayerIdentitySettings(adminSettings),
+      label
+    );
+    if (result.ok) {
+      setPublishStatus({ ok: true, msg: `Published official preset v${result.version}.` });
+      const fresh = await fetchLiveConfig();
+      if (fresh) setMultiplayerPreset(fresh);
+    } else {
+      setPublishStatus({ ok: false, msg: result.error || 'Publish failed.' });
+    }
+    setIsPublishing(false);
+  };
 
   // AI-only presets state and helper functions
   const [aiPresets, setAiPresets] = useState<AIPreset[]>(() => {
@@ -2693,6 +2785,17 @@ export default function App() {
           } else if (data.type === 'quickplay_match_found') {
             setQuickPlayStatus('idle');
             handleJoinGameRef.current(data.roomCode);
+          } else if (data.type === 'config_changed') {
+            // Live tuning nudge: re-fetch the official preset if the server bumped past our version.
+            setMultiplayerPreset(prev => {
+              if (prev && typeof data.version === 'number' && data.version <= prev.version) {
+                return prev;
+              }
+              fetchLiveConfig().then(config => {
+                if (config) setMultiplayerPreset(config);
+              });
+              return prev;
+            });
           }
         } catch (e) {
           console.error('Lobby network parsing error:', e);
@@ -3718,7 +3821,7 @@ export default function App() {
           playerLoadout={playerLoadout}
           isPaused={isPaused}
           debugMode={debugMode}
-          adminSettings={adminSettings}
+          adminSettings={effectiveAdminSettings}
           onStatsUpdate={handleStatsUpdate}
           onPauseToggle={handlePauseToggle}
           isMultiplayer={isMultiplayer}
@@ -6324,12 +6427,17 @@ export default function App() {
                       className="w-full h-9 bg-black/60 border border-white/10 rounded px-2.5 text-xs text-[#38bdf8] font-bold uppercase outline-none focus:border-[#38bdf8] cursor-pointer transition-all font-sans"
                     >
                       <option value="" disabled={!selectedPresetName}>
-                        {gameplayPresets.length === 0 
-                          ? '📁 No Presets Saved' 
-                          : selectedPresetName 
-                            ? '⚙️ Custom/Modified Config' 
+                        {gameplayPresets.length === 0
+                          ? '📁 No Presets Saved'
+                          : selectedPresetName
+                            ? '⚙️ Custom/Modified Config'
                             : '📁 Select a Saved Preset...'}
                       </option>
+                      {multiplayerPreset && (
+                        <option value={OFFICIAL_MP_PRESET_NAME}>
+                          {OFFICIAL_MP_PRESET_NAME.toUpperCase()} (READ-ONLY{multiplayerPreset.version ? ` · V${multiplayerPreset.version}` : ''})
+                        </option>
+                      )}
                       {gameplayPresets.map((preset) => (
                         <option key={preset.name} value={preset.name}>
                           📦 {preset.name.toUpperCase()}
@@ -6361,8 +6469,15 @@ export default function App() {
                     </button>
                   </div>
 
-                  {/* Delete Button */}
-                  {selectedPresetName && (
+                  {/* Read-only indicator for the official preset */}
+                  {selectedPresetName === OFFICIAL_MP_PRESET_NAME && (
+                    <span className="h-9 px-3 bg-amber-500/10 border border-amber-500/30 text-amber-300 font-bold text-[10px] uppercase tracking-wider rounded flex items-center justify-center gap-1 shrink-0">
+                      🔒 Read-only · forced in multiplayer
+                    </span>
+                  )}
+
+                  {/* Delete Button (not available for the server-managed official preset) */}
+                  {selectedPresetName && selectedPresetName !== OFFICIAL_MP_PRESET_NAME && (
                     <button
                       onClick={() => handleDeletePreset(selectedPresetName)}
                       className="h-9 px-3 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 hover:border-red-500/40 text-red-400 font-bold text-xs uppercase tracking-wider rounded cursor-pointer transition-all active:scale-[0.98] flex items-center justify-center gap-1 animate-fade-in"
@@ -6372,6 +6487,52 @@ export default function App() {
                     </button>
                   )}
                 </div>
+              </div>
+
+              {/* Admin: publish the current ruleset as the Official Multiplayer Preset (token-gated) */}
+              <div className="mb-4 pointer-events-auto border border-amber-500/15 rounded-xl bg-amber-950/10 backdrop-blur-md text-left">
+                <button
+                  onClick={() => setShowPublishPanel(v => !v)}
+                  className="w-full flex items-center justify-between px-3 py-2 text-amber-300/80 hover:text-amber-200 transition-colors"
+                >
+                  <span className="text-[10px] font-bold uppercase tracking-widest font-mono">
+                    🛰️ Admin · Publish Official Multiplayer Preset
+                  </span>
+                  <span className="text-[10px] opacity-60">{showPublishPanel ? '▲' : '▼'}</span>
+                </button>
+                {showPublishPanel && (
+                  <div className="px-3 pb-3 flex flex-col gap-2 animate-fade-in">
+                    <span className="text-[9px] text-white/40">
+                      Pushes the current gameplay settings to every peer-to-peer match (live tuning).
+                      Requires the admin token. Player identity (name/hue) is never included.
+                    </span>
+                    <div className="flex flex-col sm:flex-row items-stretch gap-2">
+                      <input
+                        type="password"
+                        placeholder="Admin token..."
+                        value={adminPublishToken}
+                        onChange={(e) => setAdminPublishToken(e.target.value)}
+                        className="flex-1 h-9 bg-black/60 border border-white/10 rounded px-3 text-xs text-white placeholder:text-white/30 focus:border-amber-400/50 outline-none transition-all font-mono"
+                      />
+                      <button
+                        onClick={handlePublishOfficial}
+                        disabled={!adminPublishToken.trim() || isPublishing}
+                        className={`h-9 px-4 rounded text-xs font-sans font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1 shrink-0 ${
+                          adminPublishToken.trim() && !isPublishing
+                            ? 'bg-amber-500/20 hover:bg-amber-500/40 border border-amber-500/40 text-amber-300 cursor-pointer active:scale-95'
+                            : 'bg-white/5 border border-white/5 text-white/20 cursor-not-allowed'
+                        }`}
+                      >
+                        {isPublishing ? 'Publishing…' : 'Publish'}
+                      </button>
+                    </div>
+                    {publishStatus && (
+                      <span className={`text-[10px] font-mono ${publishStatus.ok ? 'text-emerald-400' : 'text-red-400'}`}>
+                        {publishStatus.msg}
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Apply and return */}

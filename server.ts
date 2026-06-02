@@ -2,8 +2,59 @@ import express from "express";
 import path from "path";
 import http from "http";
 import os from "os";
+import fs from "fs";
 import { createServer as createViteServer } from "vite";
 import { WebSocketServer, WebSocket } from "ws";
+import { LIVE_CONFIG_KEY_SET } from "./worker/src/liveConfigKeys";
+
+// ── Live Tuning dev parity ────────────────────────────────────────────────────
+// The Cloudflare Worker stores the Official Multiplayer Preset in D1. D1 doesn't
+// exist in the plain-Node dev path, so we mirror GET/POST /api/config with a JSON
+// file. Keep the seed identical to worker/migrations/0001_init.sql.
+const CONFIG_FILE = path.join(process.cwd(), "data", "multiplayer-config.json");
+
+const SEED_CONFIG = {
+  version: 1,
+  label: "Default Ruleset",
+  settings: {
+    maxHP: 1, speedForward: 100, speedSide: 100, speedBackward: 100,
+    attackRange: 3.2, attackRadius: 4.5, dashDistance: 6, dashDuration: 0.25,
+    dashCooldown: 2, respawnInvulnerabilityDuration: 1, hammerReloadTime: 0.6,
+    hammerMeleeSpeed: 0.24, hammerMeleeReload: 0.5, hammerSplashVfx: "current",
+    swordLungeVfx: "current", swordLungeDistance: 14.5, swordLungeSpeed: 24,
+    swordSlashSpeed: 0.22, swordSlashReload: 0.6, swordLungeReload: 1.2,
+    hammerJumpPower: 6.5, hammerJumpTriggerRadius: 3.5, hammerJumpWindow: 0.6,
+    hammerJumpInputGate: 0, hammerJumpAirLimit: 1, visualizeJumpZone: true,
+    directLightIntensity: 1.6, ambientLightIntensity: 0.82, skyboxBrightness: 4,
+    skyboxHue: 224, showSkybox: true, enableSwordTrade: true,
+    enableHammerSwordTrade: true, swordTradeWindow: 350, hammerSwordTradeWindow: 350,
+    nameVisibilityDistance: 15, nameVisibilityColor: "#00ffff",
+    nameVisibilityOpacity: 0.8, nameVisibilityFontSize: 16, aiDifficulty: "normal",
+    aiReactionLatency: 0.25, aiAnticipationFactor: 0.4, aiMovementComplexity: 50,
+    aiWeaponSwapIQ: 50, aiPlaystyle: 50, aiWeaponPrioritization: 50,
+    aiArchetype: "none", enableBurnDecals: true, weaponReadyTime: 0.5,
+    weaponSwapLockout: 1, enableSlide: false, enableSprint: false,
+    speedSprint: 140, speedSlide: 160, slideDistance: 8, slideCooldown: 1.5,
+  } as Record<string, unknown>,
+};
+
+function readLiveConfig() {
+  try {
+    const raw = fs.readFileSync(CONFIG_FILE, "utf-8");
+    return JSON.parse(raw);
+  } catch {
+    return SEED_CONFIG;
+  }
+}
+
+function writeLiveConfig(config: unknown) {
+  try {
+    fs.mkdirSync(path.dirname(CONFIG_FILE), { recursive: true });
+    fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2), "utf-8");
+  } catch (err) {
+    console.error("Failed to persist multiplayer config:", err);
+  }
+}
 
 const MAX_PLAYER_NAME_LENGTH = 10;
 
@@ -60,6 +111,63 @@ async function startServer() {
       }
     }
   }
+
+  app.use(express.json());
+
+  // GET /api/config — dev mirror of the Worker's official-preset read.
+  app.get("/api/config", (req, res) => {
+    const config = readLiveConfig();
+    const etag = `"v${config.version}"`;
+    if (req.headers["if-none-match"] === etag) {
+      res.status(304).set("ETag", etag).end();
+      return;
+    }
+    res.set("ETag", etag).set("Cache-Control", "no-cache").json(config);
+  });
+
+  // POST /api/admin/config — dev mirror of the token-gated publish endpoint.
+  app.post("/api/admin/config", (req, res) => {
+    const auth = req.headers["authorization"] || "";
+    const token = typeof auth === "string" && auth.startsWith("Bearer ") ? auth.slice(7) : "";
+    const adminToken = process.env.ADMIN_TOKEN;
+    if (!adminToken || !token || token !== adminToken) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+    const body = req.body || {};
+    const incoming = (body.settings && typeof body.settings === "object") ? body.settings : null;
+    if (!incoming) {
+      res.status(400).json({ error: "No valid gameplay settings provided" });
+      return;
+    }
+    // Keep only governed mechanic keys (drops identity + unknown keys), matching the Worker.
+    const settings: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(incoming as Record<string, unknown>)) {
+      if (LIVE_CONFIG_KEY_SET.has(k)) settings[k] = v;
+    }
+    if (Object.keys(settings).length === 0) {
+      res.status(400).json({ error: "No valid gameplay settings provided" });
+      return;
+    }
+    const current = readLiveConfig();
+    const nextVersion = (current.version || 0) + 1;
+    const next = {
+      version: nextVersion,
+      label: typeof body.label === "string" ? body.label.slice(0, 60) : "",
+      settings,
+    };
+    writeLiveConfig(next);
+
+    // Broadcast the version nudge to every connected session.
+    const payload = JSON.stringify({ type: "config_changed", version: nextVersion });
+    wss.clients.forEach(client => {
+      if (client.readyState === WebSocket.OPEN) {
+        try { client.send(payload); } catch {}
+      }
+    });
+
+    res.json({ ok: true, version: nextVersion });
+  });
 
   // API to fetch user's public IP & internal LAN IP
   app.get("/api/my-ip", (req, res) => {

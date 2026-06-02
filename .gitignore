@@ -7,5 +7,13 @@ coverage/
 .env*
 !.env.example
 diff*.txt
+<<<<<<< HEAD
 diff_app.txt
 gif_diff_app.txt
+=======
+
+# Live Tuning dev parity (local-only mirror of the D1 official preset)
+data/multiplayer-config.json
+# Cloudflare Worker local secrets
+worker/.dev.vars
+>>>>>>> 6e0208679fe17626934524b0397fc67624b4427a

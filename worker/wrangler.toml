@@ -13,6 +13,19 @@ bindings = [
 tag = "v1"
 new_sqlite_classes = ["GameLobby"]
 
+# D1 serverless database (free plan) — persistence layer for Live Tuning / Official
+# Multiplayer Preset, and reserved tables for future leaderboards/accounts/stats.
+# Run `wrangler d1 create ibrawls` and paste the returned id below.
+[[d1_databases]]
+binding = "DB"
+database_name = "ibrawls"
+database_id = "183e6cf9-e794-4144-99d1-34b50178456b"
+migrations_dir = "migrations"
+
+# ADMIN_TOKEN gates POST /api/admin/config. Do NOT commit it here — set it with:
+#   wrangler secret put ADMIN_TOKEN
+# For local `wrangler dev`, put it in worker/.dev.vars (gitignored).
+
 # Enable native observability logs on the Workers dashboard
 [observability.logs]
 enabled = true
