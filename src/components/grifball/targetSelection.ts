@@ -34,7 +34,7 @@ const cloneTargetPosition = (pos: THREE.Vector3 | { x: number; y: number; z: num
 
 export const getPlayerSwordLockTarget = (
   state: GrifballRuntimeState,
-  mainAI: Combatant,
+  mainAI: Combatant | undefined,
   isMultiplayer: boolean
 ): PlayerSwordLockTarget | null => {
   const s = state;
@@ -67,7 +67,7 @@ export const getPlayerSwordLockTarget = (
     }
   };
 
-  if ((!isMultiplayer || s.otherPlayers.size === 0) && mainAI.hp > 0 && mainAI.aiState !== 'RESPAWNING') {
+  if ((!isMultiplayer || s.otherPlayers.size === 0) && mainAI && mainAI.hp > 0 && mainAI.aiState !== 'RESPAWNING') {
     considerTarget(mainAI.pos);
   }
 

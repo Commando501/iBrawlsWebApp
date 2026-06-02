@@ -1,5 +1,37 @@
+import { LIVE_CONFIG_KEY_SET } from "./liveConfigKeys";
+
 export interface Env {
   GAME_LOBBY: DurableObjectNamespace;
+  DB: D1Database;
+  ADMIN_TOKEN?: string;
+}
+
+const CONFIG_ID = "multiplayer_preset";
+
+interface GameConfigRow {
+  version: number;
+  label: string | null;
+  payload: string;
+}
+
+// Constant-time-ish string compare to avoid leaking token length/contents via timing.
+function tokensMatch(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let mismatch = 0;
+  for (let i = 0; i < a.length; i++) {
+    mismatch |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return mismatch === 0;
+}
+
+// Drop unknown / identity keys; keep only governed mechanic keys.
+function sanitizeConfigSettings(input: unknown): Record<string, unknown> {
+  if (!input || typeof input !== "object") return {};
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(input as Record<string, unknown>)) {
+    if (LIVE_CONFIG_KEY_SET.has(key)) out[key] = value;
+  }
+  return out;
 }
 
 interface Room {
@@ -44,6 +76,135 @@ export default {
         status: 204,
         headers: corsHeaders
       });
+    }
+
+    // ── Live Tuning / Official Multiplayer Preset (D1-backed) ──────────────────
+
+    // GET /api/config — public read of the authoritative gameplay preset.
+    if (url.pathname === "/api/config" && request.method === "GET") {
+      try {
+        const row = await env.DB.prepare(
+          "SELECT version, label, payload FROM game_config WHERE id = ?"
+        )
+          .bind(CONFIG_ID)
+          .first<GameConfigRow>();
+
+        if (!row) {
+          return new Response(JSON.stringify({ error: "Config not initialized" }), {
+            status: 404,
+            headers: { "Content-Type": "application/json", ...corsHeaders },
+          });
+        }
+
+        const etag = `"v${row.version}"`;
+        // ETag short-circuit: client already has this version.
+        if (request.headers.get("If-None-Match") === etag) {
+          return new Response(null, {
+            status: 304,
+            headers: { ETag: etag, "Cache-Control": "no-cache", ...corsHeaders },
+          });
+        }
+
+        const body = JSON.stringify({
+          version: row.version,
+          label: row.label ?? "",
+          settings: JSON.parse(row.payload),
+        });
+        return new Response(body, {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+            ETag: etag,
+            "Cache-Control": "no-cache",
+            ...corsHeaders,
+          },
+        });
+      } catch (err) {
+        return new Response(
+          JSON.stringify({ error: "Failed to read config", detail: String(err) }),
+          { status: 500, headers: { "Content-Type": "application/json", ...corsHeaders } }
+        );
+      }
+    }
+
+    // POST /api/admin/config — publish a new official preset. Requires admin token.
+    if (url.pathname === "/api/admin/config" && request.method === "POST") {
+      const auth = request.headers.get("Authorization") || "";
+      const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+      if (!env.ADMIN_TOKEN || !token || !tokensMatch(token, env.ADMIN_TOKEN)) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), {
+          status: 401,
+          headers: { "Content-Type": "application/json", ...corsHeaders },
+        });
+      }
+
+      let parsed: { settings?: unknown; label?: unknown };
+      try {
+        parsed = await request.json();
+      } catch {
+        return new Response(JSON.stringify({ error: "Invalid JSON body" }), {
+          status: 400,
+          headers: { "Content-Type": "application/json", ...corsHeaders },
+        });
+      }
+
+      const settings = sanitizeConfigSettings(parsed.settings);
+      if (Object.keys(settings).length === 0) {
+        return new Response(
+          JSON.stringify({ error: "No valid gameplay settings provided" }),
+          { status: 400, headers: { "Content-Type": "application/json", ...corsHeaders } }
+        );
+      }
+      const label = typeof parsed.label === "string" ? parsed.label.slice(0, 60) : "";
+
+      try {
+        const current = await env.DB.prepare(
+          "SELECT version FROM game_config WHERE id = ?"
+        )
+          .bind(CONFIG_ID)
+          .first<{ version: number }>();
+        const nextVersion = (current?.version ?? 0) + 1;
+        const now = Date.now();
+        const payload = JSON.stringify(settings);
+
+        await env.DB.batch([
+          env.DB.prepare(
+            `INSERT INTO game_config (id, version, label, payload, updated_at, updated_by)
+             VALUES (?, ?, ?, ?, ?, 'admin')
+             ON CONFLICT(id) DO UPDATE SET
+               version = excluded.version,
+               label = excluded.label,
+               payload = excluded.payload,
+               updated_at = excluded.updated_at,
+               updated_by = excluded.updated_by`
+          ).bind(CONFIG_ID, nextVersion, label, payload, now),
+          env.DB.prepare(
+            `INSERT INTO config_history (config_id, version, label, payload, created_at, created_by)
+             VALUES (?, ?, ?, ?, ?, 'admin')`
+          ).bind(CONFIG_ID, nextVersion, label, payload, now),
+        ]);
+
+        // Poke the lobby DO so connected clients get a "config_changed" nudge.
+        try {
+          const doId = env.GAME_LOBBY.idFromName("global-lobby");
+          const stub = env.GAME_LOBBY.get(doId);
+          ctx.waitUntil(
+            stub.fetch(`https://do/internal/config-bump?version=${nextVersion}`)
+          );
+        } catch (e) {
+          // Broadcast is best-effort; clients also re-fetch on lobby entry.
+        }
+
+        return new Response(JSON.stringify({ ok: true, version: nextVersion }), {
+          status: 200,
+          headers: { "Content-Type": "application/json", ...corsHeaders },
+        });
+      } catch (err) {
+        return new Response(
+          JSON.stringify({ error: "Failed to publish config", detail: String(err) }),
+          { status: 500, headers: { "Content-Type": "application/json", ...corsHeaders } }
+        );
+      }
     }
 
     // Route matchmaking, WebSocket, and IP requests to the same global Durable Object instance
@@ -115,6 +276,16 @@ export class GameLobby implements DurableObject {
 
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
+
+    // Internal poke from the entrypoint after an admin publishes a new config.
+    // Broadcast a lightweight version ping; clients re-fetch GET /api/config.
+    if (url.pathname === "/internal/config-bump") {
+      const version = Number(url.searchParams.get("version")) || 0;
+      this.broadcastConfigChanged(version);
+      return new Response(JSON.stringify({ ok: true }), {
+        headers: { "Content-Type": "application/json" },
+      });
+    }
 
     // Express "/api/my-ip" replacement
     if (url.pathname === "/api/my-ip") {
@@ -656,6 +827,20 @@ export class GameLobby implements DurableObject {
 
     gameWs.addEventListener("error", (err) => {
       console.error("WebSocket socket error:", err);
+    });
+  }
+
+  // Broadcast a "config_changed" version nudge to every connected session.
+  broadcastConfigChanged(version: number) {
+    const payload = JSON.stringify({ type: "config_changed", version });
+    this.sessions.forEach((client) => {
+      if (client.readyState === WebSocket.OPEN) {
+        try {
+          client.send(payload);
+        } catch (err) {
+          console.error("Error broadcasting config_changed", err);
+        }
+      }
     });
   }
 

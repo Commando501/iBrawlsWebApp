@@ -13,7 +13,7 @@ type TacticalTargetBotDerived = Pick<DerivedAIParams, 'spatialIQ'>;
 
 export const isTacticalTargetOnCooldown = (
   state: GrifballRuntimeState,
-  mainAI: Combatant,
+  mainAI: Combatant | undefined,
   target: Pick<TacticalTargetCandidate, 'id'>
 ): boolean => {
   const s = state;
@@ -25,11 +25,13 @@ export const isTacticalTargetOnCooldown = (
   }
 
   if (target.id === MAIN_AI_ID) {
-    return mainAI.weaponState === 'recovering' ||
+    return mainAI ? (
+      mainAI.weaponState === 'recovering' ||
       mainAI.weaponState === 'swing_up' ||
       mainAI.weaponState === 'swing_down' ||
       mainAI.aiState === 'LUNGING' ||
-      (mainAI.aiState === 'COOLDOWN' && (mainAI.aiTimer ?? 0) > 0);
+      (mainAI.aiState === 'COOLDOWN' && (mainAI.aiTimer ?? 0) > 0)
+    ) : false;
   }
 
   const other = s.otherPlayers.get(target.id);
@@ -115,7 +117,7 @@ export const getBestTacticalTargetFromState = ({
   botId: string;
   botPos: THREE.Vector3;
   difficulty: string;
-  mainAI: Combatant;
+  mainAI: Combatant | undefined;
   rosterAI: Combatant[];
   resolveBotKnobs: (botId: string) => TacticalTargetBotKnobs;
   resolveBotDerived: (botId: string) => TacticalTargetBotDerived;
@@ -164,7 +166,7 @@ export const getBestTacticalTargetFromState = ({
         score += 100;
       }
 
-      const myActiveWeapon = botId === MAIN_AI_ID ? mainAI.activeWeapon : s.otherPlayers.get(botId)?.activeWeapon;
+      const myActiveWeapon = botId === MAIN_AI_ID ? mainAI?.activeWeapon : s.otherPlayers.get(botId)?.activeWeapon;
       if (myActiveWeapon === 'sword') {
         if (target.activeWeapon === 'hammer') {
           score += 100;
