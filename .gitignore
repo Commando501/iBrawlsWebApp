@@ -6,3 +6,6 @@ coverage/
 *.log
 .env*
 !.env.example
+diff*.txt
+diff_app.txt
+gif_diff_app.txt
