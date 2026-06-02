@@ -11063,8 +11063,10 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         <canvas ref={canvasRef} id="game-canvas" />
       </div>
 
-      {/* Dynamic Instruction Overlay when Pointer Lock is not active */}
-      {showPointerLockAlert && isPlaying && !isPaused && (
+      {/* Dynamic Instruction Overlay when Pointer Lock is not active.
+          Suppressed on mobile/touch — those players look via touch swipe, so
+          pointer lock is never acquired and the overlay would never clear. */}
+      {showPointerLockAlert && isPlaying && !isPaused && !(deviceInfo.isMobile || forceMobileControls) && (
         <div className="absolute inset-0 flex items-center justify-center bg-black/60 backdrop-blur-xs select-none pointer-events-none transition-all duration-300">
           <div className="bg-slate-950/80 backdrop-blur-md border border-white/10 px-8 py-5 rounded-2xl text-center max-w-sm shadow-2xl">
             <h4 className="text-xl font-display font-black tracking-widest text-blue-400 uppercase mb-2">

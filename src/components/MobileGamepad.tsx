@@ -50,48 +50,45 @@ export const LeftAnalogStick: React.FC<LeftStickProps> = ({
     };
   };
 
+  // Pointer handlers are bound directly on the element and use pointer
+  // capture so move/up events follow the finger even outside the stick.
+  // (A deferred useEffect would miss the pointerup of a fast tap, leaving
+  // the stick stuck holding its last value — e.g. forever moving forward.)
+  const endInteraction = () => {
+    activePointerIdRef.current = null;
+    setActive(false);
+    if (knobRef.current) {
+      knobRef.current.style.transform = 'translate(0px, 0px)';
+    }
+    mobileJoystickRef.current = { x: 0, y: 0 };
+  };
+
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (isAdjustmentMode || activePointerIdRef.current !== null) return;
     e.preventDefault();
     activePointerIdRef.current = e.pointerId;
     setActive(true);
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* unsupported */ }
     updateStickPosition(e.clientX, e.clientY);
   };
 
-  useEffect(() => {
-    if (activePointerIdRef.current === null) return;
+  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.pointerId !== activePointerIdRef.current) return;
+    updateStickPosition(e.clientX, e.clientY);
+  };
 
-    const handlePointerMove = (e: PointerEvent) => {
-      if (e.pointerId !== activePointerIdRef.current) return;
-      e.preventDefault();
-      updateStickPosition(e.clientX, e.clientY);
-    };
-
-    const handlePointerEnd = (e: PointerEvent) => {
-      if (e.pointerId !== activePointerIdRef.current) return;
-      activePointerIdRef.current = null;
-      setActive(false);
-      if (knobRef.current) {
-        knobRef.current.style.transform = 'translate(0px, 0px)';
-      }
-      mobileJoystickRef.current = { x: 0, y: 0 };
-    };
-
-    window.addEventListener('pointermove', handlePointerMove, { passive: false });
-    window.addEventListener('pointerup', handlePointerEnd);
-    window.addEventListener('pointercancel', handlePointerEnd);
-
-    return () => {
-      window.removeEventListener('pointermove', handlePointerMove);
-      window.removeEventListener('pointerup', handlePointerEnd);
-      window.removeEventListener('pointercancel', handlePointerEnd);
-    };
-  }, [active]);
+  const handlePointerEnd = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.pointerId !== activePointerIdRef.current) return;
+    endInteraction();
+  };
 
   return (
-    <div 
+    <div
       ref={stickRef}
       onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerEnd}
+      onPointerCancel={handlePointerEnd}
       className={`mobile-left-stick w-32 h-32 rounded-full border-2 transition-all duration-300 flex items-center justify-center relative select-none ${
         active 
           ? 'border-cyan-400/80 bg-slate-950/45 shadow-[0_0_25px_rgba(6,182,212,0.35)] scale-[1.03]' 
@@ -179,45 +176,37 @@ export const RightActionButtonPad: React.FC<RightPadProps> = ({
     };
   };
 
+  // Bound on the element with pointer capture (see LeftAnalogStick) so a fast
+  // tap can't leave the look stick stuck on its last value.
+  const endInteraction = () => {
+    activePointerIdRef.current = null;
+    setActive(false);
+    mobileRightJoystickActiveRef.current = false;
+    if (knobRef.current) {
+      knobRef.current.style.transform = 'translate(0px, 0px)';
+    }
+    mobileRightJoystickRef.current = { x: 0, y: 0 };
+  };
+
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (isAdjustmentMode || activePointerIdRef.current !== null) return;
     e.preventDefault();
     activePointerIdRef.current = e.pointerId;
     setActive(true);
     mobileRightJoystickActiveRef.current = true;
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* unsupported */ }
     updateStickPosition(e.clientX, e.clientY);
   };
 
-  useEffect(() => {
-    if (activePointerIdRef.current === null) return;
+  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.pointerId !== activePointerIdRef.current) return;
+    updateStickPosition(e.clientX, e.clientY);
+  };
 
-    const handlePointerMove = (e: PointerEvent) => {
-      if (e.pointerId !== activePointerIdRef.current) return;
-      e.preventDefault();
-      updateStickPosition(e.clientX, e.clientY);
-    };
-
-    const handlePointerEnd = (e: PointerEvent) => {
-      if (e.pointerId !== activePointerIdRef.current) return;
-      activePointerIdRef.current = null;
-      setActive(false);
-      mobileRightJoystickActiveRef.current = false;
-      if (knobRef.current) {
-        knobRef.current.style.transform = 'translate(0px, 0px)';
-      }
-      mobileRightJoystickRef.current = { x: 0, y: 0 };
-    };
-
-    window.addEventListener('pointermove', handlePointerMove, { passive: false });
-    window.addEventListener('pointerup', handlePointerEnd);
-    window.addEventListener('pointercancel', handlePointerEnd);
-
-    return () => {
-      window.removeEventListener('pointermove', handlePointerMove);
-      window.removeEventListener('pointerup', handlePointerEnd);
-      window.removeEventListener('pointercancel', handlePointerEnd);
-    };
-  }, [active]);
+  const handlePointerEnd = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.pointerId !== activePointerIdRef.current) return;
+    endInteraction();
+  };
 
   // Simulate general keyboard inputs
   const triggerKeyAction = (keyName: string) => {
@@ -265,9 +254,12 @@ export const RightActionButtonPad: React.FC<RightPadProps> = ({
     <div className="mobile-right-pad relative flex items-center justify-center select-none pointer-events-none">
       
       {/* 1. RIGHT ANALOG JOYSTICK (Continuous Aim/Pan) */}
-      <div 
+      <div
         ref={stickRef}
         onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerEnd}
+        onPointerCancel={handlePointerEnd}
         className={`mobile-right-stick absolute rounded-full border-2 transition-all duration-300 flex items-center justify-center pointer-events-auto ${
           active 
             ? 'border-indigo-400/80 bg-slate-950/45 shadow-[0_0_25px_rgba(99,102,241,0.3)] scale-[1.03]' 

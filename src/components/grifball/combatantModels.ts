@@ -38,7 +38,9 @@ const positionHammer = (hammer: THREE.Group) => {
 const positionSword = (sword: THREE.Group) => {
   sword.scale.set(0.6, 0.6, 0.6);
   sword.position.set(0.5, 1.0 - 0.64, -0.32);
-  sword.rotation.set(Math.PI / 2, 0, -Math.PI / 8);
+  // Blade is built along +y; negative X rotation points it toward -z (the
+  // character's forward / visor direction). +PI/2 would aim it backward.
+  sword.rotation.set(-Math.PI / 2, 0, -Math.PI / 8);
 };
 
 const positionPistol = (pistol: THREE.Group) => {

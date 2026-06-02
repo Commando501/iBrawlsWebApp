@@ -63,11 +63,14 @@ export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
 
-    // Common CORS Headers
+    // Common CORS Headers. Authorization + If-None-Match are needed for the
+    // cross-origin config API (publish auth + ETag revalidation); ETag must be
+    // exposed so the browser lets the client read it for caching.
     const corsHeaders = {
       "Access-Control-Allow-Origin": "*",
       "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS, POST",
-      "Access-Control-Allow-Headers": "Content-Type, Upgrade",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization, If-None-Match, Upgrade",
+      "Access-Control-Expose-Headers": "ETag",
     };
 
     // Handle CORS preflight options

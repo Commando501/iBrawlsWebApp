@@ -108,7 +108,9 @@ export const CharacterPreview: React.FC<CharacterPreviewProps> = ({ hue, heldWea
         const sword = buildKatarSwordModel(h, lo?.swordPreset);
         sword.scale.set(0.6, 0.6, 0.6);
         sword.position.set(0.5, 1.0 - 0.64, -0.32);
-        sword.rotation.set(Math.PI / 2, 0, -Math.PI / 8);
+        // Blade is built along +y; negative X rotation points it toward -z
+        // (the character's forward / visor direction). +PI/2 aims it backward.
+        sword.rotation.set(-Math.PI / 2, 0, -Math.PI / 8);
         if (characterGroup.userData.upperTorso) {
           characterGroup.userData.upperTorso.add(sword);
         } else {
