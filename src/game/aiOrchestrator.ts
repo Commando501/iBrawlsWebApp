@@ -47,7 +47,7 @@ export interface AIOrchestratorInput {
 }
 
 export interface AIOrchestratorSpawnCallbacks {
-  getOptimalSpawnPoint: (exclude: THREE.Vector3[]) => THREE.Vector3;
+  getOptimalSpawnPoint: (exclude: THREE.Vector3[], team?: string) => THREE.Vector3;
   getInwardSpawnYaw: (pos: THREE.Vector3) => number;
 }
 
@@ -141,7 +141,7 @@ export function syncOfflineBotSlots(
       const diff = input.legacy.botDifficulties?.[botId] || 'normal';
       const team = resolveCombatantTeam(botId, input.settings, input.legacy);
 
-      const spawnPos = spawnCallbacks.getOptimalSpawnPoint(exclude);
+      const spawnPos = spawnCallbacks.getOptimalSpawnPoint(exclude, team);
       exclude.push(spawnPos.clone());
 
       const newBot = createOfflineBotCombatant({
@@ -217,17 +217,17 @@ export function seedOfflineRoster(
     );
   }
 
-  playerPos.copy(spawnCallbacks.getOptimalSpawnPoint([]));
+  playerPos.copy(spawnCallbacks.getOptimalSpawnPoint([], resolveCombatantTeam('player', settings, legacy)));
   events?.onPlayerPositioned?.(spawnCallbacks.getInwardSpawnYaw(playerPos));
 
   const exclude: THREE.Vector3[] = [playerPos.clone()];
-  mainAi.pos.copy(spawnCallbacks.getOptimalSpawnPoint(exclude));
+  mainAi.pos.copy(spawnCallbacks.getOptimalSpawnPoint(exclude, resolveCombatantTeam(MAIN_AI_ID, settings, legacy)));
   mainAi.yaw = spawnCallbacks.getInwardSpawnYaw(mainAi.pos);
   exclude.push(mainAi.pos.clone());
 
   roster.forEach((bot, id) => {
     if (id === MAIN_AI_ID) return;
-    const spawnPos = spawnCallbacks.getOptimalSpawnPoint(exclude);
+    const spawnPos = spawnCallbacks.getOptimalSpawnPoint(exclude, resolveCombatantTeam(id, settings, legacy));
     bot.pos.copy(spawnPos);
     bot.yaw = spawnCallbacks.getInwardSpawnYaw(spawnPos);
     exclude.push(spawnPos.clone());

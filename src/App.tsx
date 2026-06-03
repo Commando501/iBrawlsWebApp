@@ -82,7 +82,7 @@ import { CharacterPreview } from './components/CharacterPreview';
 import { CharacterPainter } from './components/CharacterPainter';
 import { CharacterLoadout, DEFAULT_LOADOUT, AVAILABLE_PRESETS, HelmetPreset, TorsoPreset, ArmPreset, LegPreset } from './components/VoxelModels';
 
-const APP_VERSION = '0.595';
+const APP_VERSION = '0.597';
 const MAX_PLAYER_NAME_LENGTH = 10;
 
 interface OnlineClient {

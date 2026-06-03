@@ -205,7 +205,9 @@ export function createHighFidelityObjectMesh(
   const goalTeam = obj.goalPlateTeam || (obj.texture === 'goal_plate_blue' ? 'blue' : obj.texture === 'goal_plate_red' ? 'red' : undefined);
   if (goalTeam) {
     const plateColor = goalTeam === 'red' ? '#ff3b3b' : '#3b82ff';
-    const geo = new three.BoxGeometry(sx, Math.max(0.1, sy), sz);
+    const geo = obj.type === 'cylinder'
+      ? new three.CylinderGeometry(sx / 2, sx / 2, Math.max(0.1, sy), 32)
+      : new three.BoxGeometry(sx, Math.max(0.1, sy), sz);
     const mat = new three.MeshStandardMaterial({
       color: new three.Color(plateColor),
       emissive: new three.Color(plateColor),

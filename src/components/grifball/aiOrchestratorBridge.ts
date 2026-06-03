@@ -12,7 +12,7 @@ import { type GrifballRuntimeState } from './runtimeState';
 import { type GrifballThreeRefs } from './threeRefs';
 
 export function createGrifballAIOrchestratorSpawnCallbacks(
-  getOptimalSpawnPoint: (excludePositions: THREE.Vector3[]) => THREE.Vector3
+  getOptimalSpawnPoint: (excludePositions: THREE.Vector3[], team?: string) => THREE.Vector3
 ): AIOrchestratorSpawnCallbacks {
   return {
     getOptimalSpawnPoint,
