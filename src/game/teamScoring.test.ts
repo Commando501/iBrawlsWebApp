@@ -18,8 +18,8 @@ import {
 
 test('creates empty tallies for blue and red', () => {
   const scores = createEmptyTeamScores();
-  assert.deepEqual(scores.blue, { score: 0, kills: 0, deaths: 0, respawnTimer: 0 });
-  assert.deepEqual(scores.red, { score: 0, kills: 0, deaths: 0, respawnTimer: 0 });
+  assert.deepEqual(scores.blue, { score: 0, kills: 0, deaths: 0, respawnTimer: 0, goals: 0 });
+  assert.deepEqual(scores.red, { score: 0, kills: 0, deaths: 0, respawnTimer: 0, goals: 0 });
 });
 
 test('awards kills and deaths on absolute teams', () => {

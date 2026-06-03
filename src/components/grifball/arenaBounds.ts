@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { resolveObstacleCollisions } from '../../game/mapPhysics';
+import { getRectHalfExtents } from '../../game/arenaDimensions';
 import { type CustomMapData } from '../../types';
 
 export interface ConstrainCombatantToArenaOptions {
@@ -22,8 +23,9 @@ export const constrainCombatantToArenaBounds = ({
   const radiusToUse = activeCustomMap ? activeCustomMap.arenaRadius : arenaRadius;
 
   if (activeCustomMap?.mapShape === 'rectangular') {
-    const boundX = radiusToUse * 1.2 - 0.6;
-    const boundZ = radiusToUse * 0.6 - 0.6;
+    const half = getRectHalfExtents(radiusToUse, activeCustomMap?.arenaHalfExtents);
+    const boundX = half.x - 0.6;
+    const boundZ = half.z - 0.6;
 
     if (Math.abs(pos.x) > boundX) {
       const sign = Math.sign(pos.x);

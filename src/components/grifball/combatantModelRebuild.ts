@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { type Combatant } from '../../types';
 import { type CharacterLoadout } from '../VoxelModels';
 import { rebuildDualWeaponCombatantModel } from './combatantModels';
+import { ballAsHammer } from '../../game/weaponCompat';
 import { type GrifballRuntimeState } from './runtimeState';
 import { type GrifballThreeRefs } from './threeRefs';
 
@@ -29,9 +30,9 @@ export function rebuildEnemyCombatantModelForState({
 
   const isEnemyBot = !isMultiplayer;
   const isLocalClient = isMultiplayer && multiplayerRole === 'client';
-  const activeWeapon = multiplayerRole === 'observer'
+  const activeWeapon = ballAsHammer(multiplayerRole === 'observer'
     ? state.clientActiveWeapon
-    : (mainAI?.activeWeapon || 'hammer');
+    : (mainAI?.activeWeapon || 'hammer'));
   const { group: enemyGroup, hammer: enemyHammer, sword: enemySword } = rebuildDualWeaponCombatantModel({
     scene,
     previousGroup: refs.enemyGroup,
@@ -66,7 +67,7 @@ export function rebuildHostCombatantModelForState({
   if (!scene) return;
 
   const isLocalHost = !isMultiplayer || multiplayerRole === 'host';
-  const activeWeapon = multiplayerRole === 'observer' ? state.hostActiveWeapon : state.activeWeapon;
+  const activeWeapon = ballAsHammer(multiplayerRole === 'observer' ? state.hostActiveWeapon : state.activeWeapon);
   const { group: hostGroup, hammer: hostHammer, sword: hostSword } = rebuildDualWeaponCombatantModel({
     scene,
     previousGroup: refs.hostGroup,

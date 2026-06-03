@@ -136,6 +136,30 @@ export interface UniversalSettings {
   aiTuneHammerJumpReachAnticipation?: number;
   aiTuneHammerJumpVerticalBase?: number;
   aiTuneHammerJumpVerticalAnticipation?: number;
+
+  // --- Grifball game mode ---
+  /** Active game mode. 'sandbox' (default) preserves all legacy behavior. */
+  gameMode?: 'sandbox' | 'grifball';
+  /** Goals required to win a Grifball match (default 5). */
+  grifballGoalTarget?: number;
+  /** Seconds the "GOAL!" celebration / reset holds before the next round (default 4). */
+  grifballRoundResetDelay?: number;
+  /** Seconds of the pre-round countdown before the ball goes live (default 3). */
+  grifballCountdownDuration?: number;
+  /** Radius (m) within which a combatant picks up a loose/idle ball (default 1.6). */
+  grifballPickupRadius?: number;
+  /** Seconds an untouched loose ball waits before auto-returning to center (default 8). */
+  grifballBallReturnTimeout?: number;
+  /** Max charge time (s) for a full-power pass (default 1.2). */
+  grifballChargeMax?: number;
+  /** Throw speed (m/s) at zero charge (default 9). */
+  grifballPassSpeedMin?: number;
+  /** Throw speed (m/s) at full charge (default 26). */
+  grifballPassSpeedMax?: number;
+  /** Lock-on range (m) under which a Punch performs a short lunge (default 4.5). */
+  grifballPunchLungeRange?: number;
+  /** Desired spacing (m) escorts keep from the runner and each other (default 4). */
+  grifballEscortSpacing?: number;
 }
 
 export interface Keybindings {
@@ -334,7 +358,7 @@ export interface Combatant {
   isObserver?: boolean;
 
   // Weapon
-  activeWeapon: 'hammer' | 'sword';
+  activeWeapon: 'hammer' | 'sword' | 'ball';
   weaponState?: WeaponState | 'slashing' | 'recovering';
   weaponTimer?: number;
   lastSwordAttackTime?: number;
@@ -428,6 +452,23 @@ export interface GameStats {
   observerTargetName?: string;
   observerTargetRole?: 'host' | 'client';
   activeMedalPopup?: { medal: MedalInfo; key: number } | null;
+  /** Grifball HUD payload (present only when gameMode === 'grifball'). */
+  grifball?: {
+    phase: 'countdown' | 'playing' | 'scored' | 'matchEnd';
+    blueGoals: number;
+    redGoals: number;
+    goalTarget: number;
+    roundNumber: number;
+    countdown: number;
+    ballCarrierName: string | null;
+    ballCarrierTeam: string | null;
+    winningTeam: string | null;
+    localTeam: string;
+    /** True when the local player is carrying the ball. */
+    localCarrying: boolean;
+    /** Local player's Pass charge (0–1) while winding up a throw. */
+    passCharge: number;
+  };
   isReplayMode?: boolean;
   replayElapsedTime?: number;
   replayDuration?: number;
@@ -624,10 +665,16 @@ export interface CustomMapObject {
     | 'synthwave_grid' | 'synthwave_neon_laser' | 'synthwave_chrome'
     | 'rainy_streets_asphalt' | 'rainy_streets_neon_glow' | 'rainy_streets_dog_billboard'
     | 'winter_ice' | 'winter_snow' | 'winter_glacier_glass'
-    | 'stadium_steel_grid' | 'stadium_scoreboard_screen' | 'stadium_advertisement_sapphire' | 'stadium_advertisement_gauss';
+    | 'stadium_steel_grid' | 'stadium_scoreboard_screen' | 'stadium_advertisement_sapphire' | 'stadium_advertisement_gauss'
+    | 'goal_plate_blue' | 'goal_plate_red';
   locked?: boolean;
   hidden?: boolean;
   folderId?: string | null;
+  /**
+   * Marks this object as a Grifball goal plate owned by the given team. A living
+   * enemy carrier standing on it scores. Non-colliding trigger volume.
+   */
+  goalPlateTeam?: TeamId;
 }
 
 export interface CustomMapPointLight {
@@ -664,12 +711,20 @@ export interface CustomMapData {
   theme: 'hangar' | 'holodeck' | 'cyberpunk' | 'rust' | 'nature' | 'space' | 'fantasy' | 'forerunner' | 'synthwave' | 'rainy_streets' | 'winter_rink' | 'grifball_stadium';
   mapShape?: 'circle' | 'rectangular';
   arenaRadius: number;
+  /**
+   * Explicit rectangular half-extents (pre-inset). When set, overrides the
+   * legacy `arenaRadius * 1.2 / * 0.6` aspect ratio — required for Grifball's
+   * long goal-to-goal lane. See {@link getRectHalfExtents}.
+   */
+  arenaHalfExtents?: { x: number; z: number };
   skyboxHue?: number;
   skyboxBrightness?: number;
   skyboxTexture?: string;
   fogColor?: string;
   fogDensity?: number;
   spawnPoints: { x: number; y: number; z: number }[];
+  /** Optional per-team spawn clusters (e.g. Grifball bases). Keyed by TeamId. */
+  teamSpawns?: { [team: string]: { x: number; y: number; z: number }[] };
   objects: CustomMapObject[];
   lighting: CustomMapLighting;
   folders?: CustomMapFolder[];

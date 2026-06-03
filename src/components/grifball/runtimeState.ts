@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { createAIMatchContext, type AIMatchContext } from '../../game/aiMatchContext';
 import { createEmptyTeamScores, localPlayerTeamFromRole, type TeamId, type TeamScoresState } from '../../game/teamScoring';
+import { createInitialGrifballMatchState, type GrifballMatchState } from '../../game/grifballMatch';
 import { type Combatant, type DeathEvent, type MedalInfo, type UniversalSettings, type WeaponState } from '../../types';
 import { getInwardSpawnYaw } from './combatGeometry';
 
@@ -27,7 +28,7 @@ export interface GrifballRuntimeState {
   pWeaponCooldown?: number;
   pWeaponReady: boolean;
 
-  activeWeapon: 'hammer' | 'sword' | 'pistol';
+  activeWeapon: 'hammer' | 'sword' | 'pistol' | 'ball';
   crosshairColor: 'white' | 'red';
   isLunging: boolean;
   lungeTimer: number;
@@ -53,6 +54,10 @@ export interface GrifballRuntimeState {
   playerMaxHP: number;
   teamScores: TeamScoresState;
   localPlayerTeam: TeamId;
+  /** Grifball round/ball/match state (only ticked when settings.gameMode === 'grifball'). */
+  grifball: GrifballMatchState;
+  /** Local player's Pass charge level (0–1) while holding alt-attack with the ball. */
+  grifballPassCharge: number;
   scorePlayer: number;
   scoreEnemy: number;
   playerKills: number;
@@ -184,6 +189,8 @@ export function createInitialGrifballRuntimeState({
     playerMaxHP: 1,
     teamScores: createEmptyTeamScores(),
     localPlayerTeam: localPlayerTeamFromRole(multiplayerRole),
+    grifball: createInitialGrifballMatchState(adminSettings),
+    grifballPassCharge: 0,
     scorePlayer: 0,
     scoreEnemy: 0,
     playerKills: 0,

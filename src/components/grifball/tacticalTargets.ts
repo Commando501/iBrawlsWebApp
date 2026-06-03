@@ -3,6 +3,7 @@ import { getCoordinatedTargetBonus } from '../../game/aiBotCoordinator';
 import { getTargetEdgeSelectionBonus } from '../../game/aiSpatialStrategy';
 import { resolveBehaviorTuning } from '../../game/aiBehaviorTuning';
 import { MAIN_AI_ID } from '../../game/roster';
+import { ballAsHammer } from '../../game/weaponCompat';
 import { type AIResolvedKnobs, type DerivedAIParams } from '../../game/aiTuning';
 import { type Combatant } from '../../types';
 import { type TacticalTargetCandidate } from './combatGeometry';
@@ -53,7 +54,13 @@ export const buildPotentialTacticalTargets = (
   const s = state;
   const potentialTargets: TacticalTargetCandidate[] = [];
 
-  if (s.playerHP > 0 && s.playerRespawnTimer <= 0 && !s.isObserverMode) {
+  // Team combat (Grifball): a bot only treats the *enemy* team as targets.
+  const teamCombat = s.settings.gameMode === 'grifball';
+  const botTeam = botId === 'player' ? s.localPlayerTeam : s.otherPlayers.get(botId)?.team;
+  const isEnemy = (otherTeam: string | undefined): boolean =>
+    !teamCombat || !botTeam || !otherTeam || otherTeam !== botTeam;
+
+  if (s.playerHP > 0 && s.playerRespawnTimer <= 0 && !s.isObserverMode && isEnemy(s.localPlayerTeam)) {
     potentialTargets.push({
       id: 'player',
       pos: s.playerPos,
@@ -72,14 +79,14 @@ export const buildPotentialTacticalTargets = (
   }
 
   rosterAI.forEach((other) => {
-    if (other.id !== botId && other.hp > 0 && (other.respawnTimer ?? 0) <= 0) {
+    if (other.id !== botId && other.hp > 0 && (other.respawnTimer ?? 0) <= 0 && isEnemy(other.team)) {
       potentialTargets.push({
         id: other.id,
         pos: new THREE.Vector3(other.pos.x, other.pos.y, other.pos.z),
         hp: other.hp,
         maxHp: other.maxHp,
         invulnerabilityTimer: other.invulnerabilityTimer || 0,
-        activeWeapon: other.activeWeapon,
+        activeWeapon: ballAsHammer(other.activeWeapon),
         weaponState: other.aiState === 'COOLDOWN' && (other.aiTimer || 0) > 0 ? 'recovering' : (other.weaponState || 'ready'),
         isLunging: other.isLunging || other.weaponState === 'swing_up' || other.weaponState === 'swing_down',
         dashCooldownRemaining: other.aiDashCooldownTimer || 0,

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { type Combatant } from '../../types';
+import { ballAsHammer } from '../../game/weaponCompat';
 import { type GrifballRuntimeState } from './runtimeState';
 
 export type SpectateTargetRole = 'host' | 'client';
@@ -74,7 +75,7 @@ export const resolveSpectateTargetData = ({
           hp: s.playerHP,
           hue: s.settings.playerHue ?? 200,
           isCrouching: s.isCrouching,
-          activeWeapon: s.activeWeapon,
+          activeWeapon: ballAsHammer(s.activeWeapon),
         };
       }
 
@@ -87,7 +88,7 @@ export const resolveSpectateTargetData = ({
         hp: remote ? remote.hp : 1,
         hue: lastOpponentHue ?? 200,
         isCrouching: remote ? remote.isCrouching : false,
-        activeWeapon: remote ? remote.activeWeapon : 'hammer',
+        activeWeapon: ballAsHammer(remote ? remote.activeWeapon : 'hammer'),
       };
     }
 
@@ -102,7 +103,7 @@ export const resolveSpectateTargetData = ({
           hp: remote ? remote.hp : 1,
           hue: lastOpponentHue ?? 200,
           isCrouching: remote ? remote.isCrouching : false,
-          activeWeapon: remote ? remote.activeWeapon : 'hammer',
+          activeWeapon: ballAsHammer(remote ? remote.activeWeapon : 'hammer'),
         };
       }
 
@@ -114,7 +115,7 @@ export const resolveSpectateTargetData = ({
         hp: s.playerHP,
         hue: s.settings.playerHue ?? 200,
         isCrouching: s.isCrouching,
-        activeWeapon: s.activeWeapon,
+        activeWeapon: ballAsHammer(s.activeWeapon),
       };
     }
   }
@@ -128,7 +129,7 @@ export const resolveSpectateTargetData = ({
       hp: s.playerHP,
       hue: s.settings.playerHue ?? 200,
       isCrouching: s.isCrouching,
-      activeWeapon: s.activeWeapon,
+      activeWeapon: ballAsHammer(s.activeWeapon),
     };
   }
 
@@ -141,7 +142,7 @@ export const resolveSpectateTargetData = ({
       hp: mainAI.hp,
       hue: 0,
       isCrouching: mainAI.isCrouching,
-      activeWeapon: mainAI.activeWeapon,
+      activeWeapon: ballAsHammer(mainAI.activeWeapon),
     };
   }
 

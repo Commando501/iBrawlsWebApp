@@ -1,4 +1,6 @@
 import { MAIN_AI_ID } from '../../game/roster';
+import { ballAsHammer } from '../../game/weaponCompat';
+import { getTeamTally } from '../../game/teamScoring';
 import { type Combatant, type GameStats } from '../../types';
 import { type GrifballRuntimeState } from './runtimeState';
 
@@ -41,7 +43,7 @@ export const buildGrifballHudStats = ({
       hp: p.hp,
       maxHp: p.maxHp,
       isCrouching: p.isCrouching,
-      activeWeapon: p.activeWeapon,
+      activeWeapon: ballAsHammer(p.activeWeapon),
       respawnTimer: p.respawnTimer,
       hue: p.hue,
       score: p.score ?? 0,
@@ -62,7 +64,7 @@ export const buildGrifballHudStats = ({
     : s.activeWeapon === 'pistol'
       ? s.pPistolCooldown
       : s.pSwordCooldown,
-  activeWeapon: s.activeWeapon,
+  activeWeapon: ballAsHammer(s.activeWeapon),
   crosshairColor: s.crosshairColor,
   lastStrikePos: s.lastStrikePos ? [s.lastStrikePos.x, s.lastStrikePos.y, s.lastStrikePos.z] : null,
   lastStrikeTick: s.lastStrikeTick,
@@ -98,4 +100,39 @@ export const buildGrifballHudStats = ({
   enemyDeaths: s.enemyDeaths,
   opponentPlayerName,
   activeMedalPopup: s.activeMedalPopup,
+  grifball: buildGrifballHudPayload(s),
 });
+
+function resolveBallCarrierName(s: GrifballRuntimeState): string | null {
+  const id = s.grifball.ball.holderId;
+  if (!id) return null;
+  if (id === 'player') return 'You';
+  return s.otherPlayers.get(id)?.playerName ?? null;
+}
+
+function buildGrifballHudPayload(s: GrifballRuntimeState): GameStats['grifball'] {
+  if (s.settings.gameMode !== 'grifball') return undefined;
+  const g = s.grifball;
+  const carrierId = g.ball.holderId;
+  return {
+    phase: g.phase,
+    blueGoals: getTeamTally(s.teamScores, 'blue').goals,
+    redGoals: getTeamTally(s.teamScores, 'red').goals,
+    goalTarget: g.goalTarget,
+    roundNumber: g.roundNumber,
+    countdown:
+      g.phase === 'countdown'
+        ? Math.max(0, (s.settings.grifballCountdownDuration ?? 3) - g.phaseTimer)
+        : 0,
+    ballCarrierName: resolveBallCarrierName(s),
+    ballCarrierTeam: carrierId
+      ? carrierId === 'player'
+        ? s.localPlayerTeam
+        : s.otherPlayers.get(carrierId)?.team ?? null
+      : null,
+    winningTeam: g.winningTeam,
+    localTeam: s.localPlayerTeam,
+    localCarrying: carrierId === 'player',
+    passCharge: s.grifballPassCharge,
+  };
+}

@@ -380,7 +380,85 @@ export const HUD: React.FC<HUDProps> = ({
 
   return (
     <div className={`absolute inset-0 z-10 select-none font-sans text-white ${usesMobileHud ? 'mobile-hud' : 'desktop-hud'} ${isAdjustmentMode ? 'hud-adjusting pointer-events-auto bg-slate-900/10' : 'pointer-events-none'}`}>
-      
+
+      {/* Grifball team score banner */}
+      {stats.grifball && (
+        <div className="absolute top-3 left-1/2 -translate-x-1/2 flex flex-col items-center gap-1 pointer-events-none z-20">
+          <div className="flex items-stretch rounded-xl overflow-hidden border border-white/20 shadow-lg backdrop-blur-md">
+            <div className="bg-blue-600/40 px-5 py-2 text-center">
+              <p className="text-[9px] uppercase tracking-widest text-blue-200 font-bold">Blue</p>
+              <p className="text-3xl font-black leading-none tabular-nums">{stats.grifball.blueGoals}</p>
+            </div>
+            <div className="bg-black/50 px-3 py-2 flex flex-col items-center justify-center">
+              <p className="text-[9px] uppercase tracking-widest text-white/50 font-bold">Round {stats.grifball.roundNumber}</p>
+              <p className="text-[10px] font-mono text-white/70">First to {stats.grifball.goalTarget}</p>
+            </div>
+            <div className="bg-red-600/40 px-5 py-2 text-center">
+              <p className="text-[9px] uppercase tracking-widest text-red-200 font-bold">Red</p>
+              <p className="text-3xl font-black leading-none tabular-nums">{stats.grifball.redGoals}</p>
+            </div>
+          </div>
+          {stats.grifball.phase === 'playing' && stats.grifball.ballCarrierName && (
+            <div className={`px-3 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider ${stats.grifball.ballCarrierTeam === 'red' ? 'bg-red-500/30 text-red-200' : 'bg-blue-500/30 text-blue-200'}`}>
+              🏉 {stats.grifball.ballCarrierName}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Grifball countdown — big centered number before the ball goes live */}
+      {stats.grifball && stats.grifball.phase === 'countdown' && (
+        <div className="absolute top-[28%] left-1/2 -translate-x-1/2 pointer-events-none z-20 flex flex-col items-center">
+          <p className="text-[11px] uppercase tracking-[0.4em] text-white/60 font-bold mb-1">Ball live in</p>
+          <p className="text-7xl font-black text-amber-300 drop-shadow-[0_0_18px_rgba(252,211,77,0.6)] tabular-nums">
+            {Math.max(1, Math.ceil(stats.grifball.countdown))}
+          </p>
+        </div>
+      )}
+
+      {/* Grifball GOAL! / match-winner celebration */}
+      {stats.grifball && (stats.grifball.phase === 'scored' || stats.grifball.phase === 'matchEnd') && (
+        <div className="absolute top-[26%] left-1/2 -translate-x-1/2 pointer-events-none z-30 flex flex-col items-center animate-pulse">
+          {stats.grifball.phase === 'matchEnd' ? (
+            <>
+              <p className={`text-8xl font-black uppercase tracking-tight drop-shadow-[0_0_22px_rgba(250,204,21,0.6)] ${stats.grifball.winningTeam === 'red' ? 'text-red-400' : 'text-blue-400'}`}>
+                {stats.grifball.winningTeam === 'red' ? 'Red' : 'Blue'} Wins
+              </p>
+              <p className="text-sm uppercase tracking-[0.4em] text-white/70 font-bold mt-2">
+                {stats.grifball.blueGoals} – {stats.grifball.redGoals} · Final
+              </p>
+            </>
+          ) : (
+            <>
+              <p className={`text-8xl font-black uppercase tracking-tight drop-shadow-[0_0_22px_rgba(16,185,129,0.6)] ${stats.grifball.ballCarrierTeam === 'red' ? 'text-red-400' : 'text-blue-400'}`}>
+                Goal!
+              </p>
+              <p className="text-sm uppercase tracking-[0.35em] text-white/70 font-bold mt-2">
+                {stats.grifball.ballCarrierTeam === 'red' ? 'Red' : 'Blue'} scores
+              </p>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Grifball ball-carrier controls + Pass-charge meter (local player) */}
+      {stats.grifball && stats.grifball.localCarrying && (
+        <div className="absolute bottom-24 left-1/2 -translate-x-1/2 pointer-events-none z-20 flex flex-col items-center gap-2">
+          <div className="bg-black/60 backdrop-blur-md border border-orange-400/40 rounded-lg px-4 py-1.5 flex items-center gap-3">
+            <span className="text-orange-300 font-black text-sm uppercase tracking-wider">🏉 Ball</span>
+            <span className="text-[11px] text-white/70 font-mono">LMB Punch · Hold RMB Pass</span>
+          </div>
+          {stats.grifball.passCharge > 0 && (
+            <div className="w-48 h-2.5 bg-black/60 border border-white/20 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-gradient-to-r from-amber-400 to-orange-500 transition-[width] duration-75"
+                style={{ width: `${Math.round(stats.grifball.passCharge * 100)}%` }}
+              />
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Grid editor overlay line effect */}
       {isAdjustmentMode && (
         <div className="absolute inset-0 bg-[linear-gradient(rgba(34,211,238,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(34,211,238,0.03)_1px,transparent_1px)] bg-[size:40px_40px] opacity-100 pointer-events-none" />
@@ -433,7 +511,7 @@ export const HUD: React.FC<HUDProps> = ({
         <div className="flex flex-col items-end gap-1">
           <div className="bg-white/10 backdrop-blur-md border border-white/20 px-4 py-2 rounded-lg text-right">
             <p className="text-[10px] uppercase tracking-widest text-emerald-400 font-bold">Map Status</p>
-            <p className="text-lg font-bold tracking-tight uppercase font-display">Circular Arena</p>
+            <p className="text-lg font-bold tracking-tight uppercase font-display">{stats.grifball ? 'Grifball Court' : 'Circular Arena'}</p>
           </div>
           
           {/* Pause Button (Interactive pointer-events toggled!) */}

@@ -82,7 +82,7 @@ import { CharacterPreview } from './components/CharacterPreview';
 import { CharacterPainter } from './components/CharacterPainter';
 import { CharacterLoadout, DEFAULT_LOADOUT, AVAILABLE_PRESETS, HelmetPreset, TorsoPreset, ArmPreset, LegPreset } from './components/VoxelModels';
 
-const APP_VERSION = '0.589';
+const APP_VERSION = '0.595';
 const MAX_PLAYER_NAME_LENGTH = 10;
 
 interface OnlineClient {
@@ -7888,6 +7888,33 @@ export default function App() {
                 <span>1 Bot</span>
                 <span>7 Bots</span>
               </div>
+            </div>
+
+            {/* Grifball Mode Toggle */}
+            <div className="bg-white/5 border border-white/5 rounded-xl p-4 flex items-center justify-between gap-4">
+              <div className="flex flex-col text-left">
+                <span className="text-xs font-bold text-orange-400 uppercase tracking-wider">🏉 Grifball Mode (4v4)</span>
+                <span className="text-[10.5px] text-white/50 leading-snug">
+                  Round-based neutral-ball objective. Forces an 8-player match on a reshaped stadium court.
+                </span>
+              </div>
+              <button
+                onClick={() => {
+                  const enabling = adminSettings.gameMode !== 'grifball';
+                  setAdminSettings(prev => ({ ...prev, gameMode: enabling ? 'grifball' : 'sandbox' }));
+                  if (enabling) {
+                    const isRect = PREMADE_MAPS.find(m => m.id === selectedMap)?.mapShape === 'rectangular';
+                    if (!isRect) setSelectedMap('championship_stadium');
+                  }
+                }}
+                className={`shrink-0 px-4 h-10 rounded-lg font-black text-sm uppercase tracking-wider transition-all cursor-pointer border ${
+                  adminSettings.gameMode === 'grifball'
+                    ? 'bg-orange-500/20 border-orange-400 text-orange-300'
+                    : 'bg-black/40 border-white/10 text-white/40 hover:text-white/70'
+                }`}
+              >
+                {adminSettings.gameMode === 'grifball' ? 'ON' : 'OFF'}
+              </button>
             </div>
 
             {/* Map Selector & 3D Preview */}

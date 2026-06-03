@@ -201,6 +201,28 @@ export function createHighFidelityObjectMesh(
   const nameLower = (obj.name || '').toLowerCase();
   const emissiveHex = (obj.emissive && obj.emissive !== '#000000') ? obj.emissive : '#00ffff';
 
+  // --- Grifball goal plate: a flat, glowing, team-colored slab trigger ---
+  const goalTeam = obj.goalPlateTeam || (obj.texture === 'goal_plate_blue' ? 'blue' : obj.texture === 'goal_plate_red' ? 'red' : undefined);
+  if (goalTeam) {
+    const plateColor = goalTeam === 'red' ? '#ff3b3b' : '#3b82ff';
+    const geo = new three.BoxGeometry(sx, Math.max(0.1, sy), sz);
+    const mat = new three.MeshStandardMaterial({
+      color: new three.Color(plateColor),
+      emissive: new three.Color(plateColor),
+      emissiveIntensity: obj.emissiveIntensity ?? 0.9,
+      metalness: 0.2,
+      roughness: 0.4,
+      opacity: obj.opacity ?? 0.85,
+      transparent: (obj.opacity ?? 0.85) < 1,
+    });
+    const mesh = new three.Mesh(geo, mat);
+    mesh.receiveShadow = true;
+    mesh.castShadow = false;
+    mesh.userData = { id: obj.id, goalPlateTeam: goalTeam };
+    group.add(mesh);
+    return group;
+  }
+
   // --- Transparent / Glass objects: render as standard meshes, NOT voxels ---
   // Voxelization produces solid opaque crates which completely breaks the visual
   // intent of translucent glass boards, acrylic panels, etc.

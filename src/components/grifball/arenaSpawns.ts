@@ -49,6 +49,41 @@ export const getOptimalGrifballSpawnPoint = (
   return bestPoint.clone();
 };
 
+/**
+ * Pick a Grifball spawn for a given team: greedy max-distance selection scoped to
+ * that team's spawn cluster. Falls back to the map's full spawn list (then origin)
+ * when the map has no per-team spawns configured.
+ */
+export const getGrifballTeamSpawn = (
+  activeCustomMap: CustomMapData | null,
+  team: string,
+  fallbackSpawnPoints: THREE.Vector3[],
+  excludePositions: THREE.Vector3[]
+): THREE.Vector3 => {
+  const teamPoints = activeCustomMap?.teamSpawns?.[team];
+  if (!teamPoints?.length) {
+    return getOptimalGrifballSpawnPoint(activeCustomMap, fallbackSpawnPoints, excludePositions);
+  }
+
+  const spawns = teamPoints.map((p) => new THREE.Vector3(p.x, p.y, p.z));
+  if (excludePositions.length === 0) return spawns[0].clone();
+
+  let bestPoint = spawns[0];
+  let bestMinDist = -1;
+  for (const point of spawns) {
+    let minDist = Infinity;
+    for (const entityPos of excludePositions) {
+      const d = point.distanceTo(entityPos);
+      if (d < minDist) minDist = d;
+    }
+    if (minDist > bestMinDist) {
+      bestMinDist = minDist;
+      bestPoint = point;
+    }
+  }
+  return bestPoint.clone();
+};
+
 export const resizeArenaSceneForPlayerCount = (
   scene: THREE.Scene,
   spawnPoints: THREE.Vector3[],

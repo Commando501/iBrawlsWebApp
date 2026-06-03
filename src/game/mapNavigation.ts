@@ -5,6 +5,7 @@
 
 import * as THREE from 'three';
 import { CustomMapObject, CustomMapData } from '../types';
+import { getRectHalfExtents } from './arenaDimensions';
 
 export interface NavNode {
   id: string;
@@ -76,11 +77,12 @@ export function bakeNavMesh(
 ): NavMesh {
   const nodes = new Map<string, NavNode>();
   const radius = mapData.arenaRadius;
+  const rectHalf = getRectHalfExtents(radius, mapData.arenaHalfExtents);
   const gridCellsX = mapData.mapShape === 'rectangular'
-    ? Math.ceil((radius * 1.2) / nodeSpacing)
+    ? Math.ceil(rectHalf.x / nodeSpacing)
     : Math.ceil(radius / nodeSpacing);
   const gridCellsZ = mapData.mapShape === 'rectangular'
-    ? Math.ceil((radius * 0.6) / nodeSpacing)
+    ? Math.ceil(rectHalf.z / nodeSpacing)
     : Math.ceil(radius / nodeSpacing);
 
   const gridMap = new Map<string, string>(); // "i,j" -> nodeId
@@ -93,8 +95,8 @@ export function bakeNavMesh(
 
       // Assert node is inside arena bounds (with margin)
       if (mapData.mapShape === 'rectangular') {
-        const boundX = radius * 1.2 - 0.65;
-        const boundZ = radius * 0.6 - 0.65;
+        const boundX = rectHalf.x - 0.65;
+        const boundZ = rectHalf.z - 0.65;
         if (Math.abs(nx) >= boundX || Math.abs(nz) >= boundZ) continue;
       } else {
         const distFromCenter = Math.sqrt(nx * nx + nz * nz);

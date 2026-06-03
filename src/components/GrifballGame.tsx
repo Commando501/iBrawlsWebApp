@@ -12,6 +12,26 @@ import { cacheReplay } from '../game/theaterDatabase';
 import { getSkyboxTexture } from '../game/skyboxTextures';
 import { type AILungeOutcome, evaluateAICombatDecision } from '../game/aiCombatDecision';
 import { bakeNavMesh, findShortestPath } from '../game/mapNavigation';
+import { getRectHalfExtents } from '../game/arenaDimensions';
+import { GRIFBALL_TOTAL_AI } from '../game/grifballTeams';
+import { ballAsHammer } from '../game/weaponCompat';
+import {
+  resolveMatchConfig,
+  tickGrifballMatch,
+  registerGoal,
+  isGrifballLive,
+} from '../game/grifballMatch';
+import {
+  tickBallPhysics,
+  findBallPickup,
+  attachBallTo,
+  dropBall,
+  throwBall,
+  returnBallHome,
+  isBallGrabbable,
+} from '../game/grifballBall';
+import { getGoalPlates, findScoringPlate } from '../game/grifballGoals';
+import { enemyGoalForTeam } from '../game/aiGrifballRoles';
 import { resetAIMatchContext, tickFeintCooldown, getFeintCooldownRemaining, startFeintCooldown, isWeaponSwapFeintActive, startWeaponSwapFeint, tickWeaponSwapFeintTimer, tickBotPsychState, getBotComboState, setBotComboState, clearBotComboState } from '../game/aiMatchContext';
 import {
   getAttackPhaseIndex,
@@ -44,6 +64,7 @@ import {
   DEFAULT_AI_TEAM,
   installLegacyTeamScoreBridges,
   localPlayerTeamFromRole,
+  awardTeamGoal,
 } from '../game/teamScoring';
 import {
   MAIN_AI_ID,
@@ -143,6 +164,8 @@ import {
 } from '../game/aiMovementMechanics';
 import {
   createDefaultSpawnPoints,
+  getGrifballTeamSpawn,
+  resolveActiveSpawnPoints,
 } from './grifball/arenaSpawns';
 import {
   getOptimalSpawnPointForArena,
@@ -316,10 +339,15 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
   const liveCameraFrameRef = useRef<LiveCameraFrameState>({});
 
   const getActiveCustomMap = (): CustomMapData | null =>
-    resolveActiveCustomMap({ customMap, replayData, selectedMap });
+    resolveActiveCustomMap({ customMap, replayData, selectedMap, gameMode: adminSettings.gameMode });
   // Phase 4: main_ai lives in otherPlayers with controller:'ai' â€” see roster.ts helpers.
   const requestRef = useRef<number | null>(null);
   const fpsRef = useRef(createInitialFpsCounter());
+
+  // Grifball: ball render mesh + player Pass-charge tracking.
+  const grifballBallMeshRef = useRef<THREE.Mesh | null>(null);
+  const ballChargingRef = useRef(false);
+  const ballChargeTimerRef = useRef(0);
 
   // Replay Recording Refs
   const {
@@ -370,7 +398,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     botWeaponBehaviorsRef,
     botArchetypesRef,
   } = useOfflineRosterPropRefs({
-    offlineBotCount,
+    offlineBotCount: adminSettings.gameMode === 'grifball' ? GRIFBALL_TOTAL_AI : offlineBotCount,
     botDifficulties,
     botColors,
     botBehaviors,
@@ -647,6 +675,197 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
   const spawnBurnDecal = (pos: THREE.Vector3, radius: number) =>
     spawnBurnDecalForThreeRefs(threeRef.current, pos, radius);
+
+  // ---- Grifball runtime (offline 4v4 neutral-ball objective loop) ----
+  const grifballCombatantRef = (id: string): { pos: THREE.Vector3; alive: boolean } | null => {
+    const s = stateRef.current;
+    if (id === 'player') return { pos: s.playerPos, alive: s.playerHP > 0 };
+    const bot = s.otherPlayers.get(id);
+    if (!bot) return null;
+    return { pos: bot.pos, alive: bot.hp > 0 && (bot.respawnTimer ?? 0) <= 0 };
+  };
+
+  const grifballTeamOf = (id: string): string | undefined => {
+    const s = stateRef.current;
+    if (id === 'player') return s.localPlayerTeam;
+    return s.otherPlayers.get(id)?.team;
+  };
+
+  // Phase 4: the world-space goal a carrier on `team` runs toward (enemy plate).
+  const grifballEnemyGoalPos = (team: string | undefined): { x: number; z: number } | null => {
+    const plate = enemyGoalForTeam(team, getGoalPlates(getActiveCustomMap()));
+    return plate ? { x: plate.position.x, z: plate.position.z } : null;
+  };
+
+  // Team-based combat: in Grifball, friendly fire is OFF and AI only targets the
+  // enemy team. Everywhere else combat stays free-for-all (everyone hostile).
+  const areCombatantsHostile = (attackerId: string, victimId: string): boolean => {
+    if (stateRef.current.settings.gameMode !== 'grifball') return true;
+    if (attackerId === victimId) return false;
+    const a = grifballTeamOf(attackerId);
+    const b = grifballTeamOf(victimId);
+    if (!a || !b) return true;
+    return a !== b;
+  };
+
+  // Equip/holster the ball weapon on a combatant. The player additionally hides
+  // their first-person weapon while carrying (the ball replaces the loadout).
+  const setGrifballCarrier = (id: string, carrying: boolean) => {
+    const s = stateRef.current;
+    const weapon = carrying ? 'ball' : 'hammer';
+    if (id === 'player') {
+      s.activeWeapon = weapon;
+      if (!carrying) {
+        s.pWeaponState = 'ready';
+        s.pWeaponReady = true;
+      }
+      const r = threeRef.current;
+      if (r.playerHammer) r.playerHammer.visible = !carrying;
+      if (r.playerSword) r.playerSword.visible = false;
+    } else {
+      const bot = s.otherPlayers.get(id);
+      if (bot) bot.activeWeapon = weapon;
+    }
+  };
+
+  const ensureGrifballBallMesh = () => {
+    const r = threeRef.current;
+    if (grifballBallMeshRef.current || !r.scene) return;
+    const geo = new THREE.SphereGeometry(0.32, 18, 18);
+    const mat = new THREE.MeshStandardMaterial({
+      color: '#161616',
+      emissive: '#7dd3fc',
+      emissiveIntensity: 0.7,
+      metalness: 0.5,
+      roughness: 0.35,
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.castShadow = true;
+    r.scene.add(mesh);
+    grifballBallMeshRef.current = mesh;
+  };
+
+  // Release a charged Pass: throw distance scales with how long alt-attack was held.
+  const throwPlayerPass = () => {
+    const s = stateRef.current;
+    const g = s.grifball;
+    if (g.ball.holderId !== 'player') {
+      ballChargingRef.current = false;
+      return;
+    }
+    const chargeMax = s.settings.grifballChargeMax ?? 1.2;
+    const t = Math.min(1, ballChargeTimerRef.current / chargeMax);
+    const minSpeed = s.settings.grifballPassSpeedMin ?? 9;
+    const maxSpeed = s.settings.grifballPassSpeedMax ?? 26;
+    const speed = minSpeed + t * (maxSpeed - minSpeed);
+    const heading = { x: Math.sin(s.yaw), y: 0, z: Math.cos(s.yaw) };
+    throwBall(g.ball, { x: s.playerPos.x, y: s.playerPos.y + 1.1, z: s.playerPos.z }, heading, speed);
+    setGrifballCarrier('player', false);
+    ballChargingRef.current = false;
+    ballChargeTimerRef.current = 0;
+    sfx.playSwing();
+  };
+
+  const updateGrifball = (dt: number) => {
+    const s = stateRef.current;
+    if (s.settings.gameMode !== 'grifball' || isMultiplayer) return;
+    ensureGrifballBallMesh();
+    const g = s.grifball;
+    const config = resolveMatchConfig(s.settings);
+
+    // 1. Phase machine. On round reset, re-base everyone and recenter the ball.
+    const result = tickGrifballMatch(g, dt, config);
+    if (result.roundReset) {
+      placeCombatantsAtGrifballSpawns();
+      returnBallHome(g.ball);
+      setGrifballCarrier('player', false);
+      for (const bot of s.otherPlayers.values()) {
+        if (bot.controller === 'ai' && bot.activeWeapon === 'ball') bot.activeWeapon = 'hammer';
+      }
+    }
+
+    // 1b. Phase 4: make the enemy team focus-fire whoever carries the ball.
+    const coord = s.aiMatchContext.coordinator;
+    if (g.ball.state === 'held' && g.ball.holderId) {
+      coord.priorityTargetId = g.ball.holderId;
+      coord.priorityAge = 0;
+    } else {
+      coord.priorityTargetId = undefined;
+      coord.priorityAge = 0;
+    }
+
+    // 2. Pass charge accumulation (player holding alt-attack while carrying).
+    if (ballChargingRef.current) ballChargeTimerRef.current += dt;
+    s.grifballPassCharge = ballChargingRef.current
+      ? Math.min(1, ballChargeTimerRef.current / (s.settings.grifballChargeMax ?? 1.2))
+      : 0;
+
+    // 3. Ball follows its carrier (held) or runs free physics.
+    if (g.ball.state === 'held' && g.ball.holderId) {
+      const holderId = g.ball.holderId;
+      const ref = grifballCombatantRef(holderId);
+      if (!ref || !ref.alive) {
+        dropBall(g.ball, ref ? { x: ref.pos.x, y: 0, z: ref.pos.z } : g.ball.home);
+        setGrifballCarrier(holderId, false);
+        if (holderId === 'player') {
+          ballChargingRef.current = false;
+          ballChargeTimerRef.current = 0;
+        }
+      } else {
+        g.ball.pos.x = ref.pos.x;
+        g.ball.pos.y = ref.pos.y + 1.1;
+        g.ball.pos.z = ref.pos.z;
+      }
+    } else {
+      tickBallPhysics(g.ball, dt, s.settings.grifballBallReturnTimeout ?? 8);
+    }
+
+    // 4. Live-only: pickups + goal scoring.
+    if (isGrifballLive(g)) {
+      if (isBallGrabbable(g.ball)) {
+        const candidates: { id: string; pos: { x: number; y: number; z: number }; alive: boolean }[] = [];
+        if (s.playerHP > 0) {
+          candidates.push({ id: 'player', pos: { x: s.playerPos.x, y: s.playerPos.y, z: s.playerPos.z }, alive: true });
+        }
+        for (const bot of s.otherPlayers.values()) {
+          if (bot.controller === 'ai' && bot.hp > 0 && (bot.respawnTimer ?? 0) <= 0) {
+            candidates.push({ id: bot.id, pos: { x: bot.pos.x, y: bot.pos.y, z: bot.pos.z }, alive: true });
+          }
+        }
+        const grabId = findBallPickup(g.ball, candidates, s.settings.grifballPickupRadius ?? 1.6);
+        if (grabId) {
+          attachBallTo(g.ball, grabId);
+          setGrifballCarrier(grabId, true);
+        }
+      }
+
+      if (g.ball.state === 'held' && g.ball.holderId) {
+        const carrierTeam = grifballTeamOf(g.ball.holderId);
+        const ref = grifballCombatantRef(g.ball.holderId);
+        if (carrierTeam && ref && ref.alive) {
+          const plate = findScoringPlate(ref.pos.x, ref.pos.z, carrierTeam, getGoalPlates(getActiveCustomMap()));
+          if (plate) {
+            const total = awardTeamGoal(s.teamScores, carrierTeam);
+            registerGoal(g, carrierTeam, total, config);
+            setGrifballCarrier(g.ball.holderId, false);
+            g.ball.state = 'idle';
+            g.ball.holderId = null;
+            g.ball.pos = { x: g.ball.home.x, y: 0.35, z: g.ball.home.z };
+            ballChargingRef.current = false;
+            pushStatsUpdate();
+          }
+        }
+      }
+    }
+
+    // 5. Render the ball.
+    const mesh = grifballBallMeshRef.current;
+    if (mesh) {
+      mesh.visible = true;
+      mesh.position.set(g.ball.pos.x, g.ball.pos.y, g.ball.pos.z);
+      mesh.rotation.y += dt * 2.5;
+    }
+  };
 
   function updateMatchTimers(dt: number) {
     updateGrifballMatchTimers(stateRef.current, mai(), dt);
@@ -1135,7 +1354,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       if (threeRef.current.skyboxMesh && threeRef.current.skyboxMesh.material) {
         threeRef.current.skyboxMesh.visible = adminSettings.showSkybox !== false;
         let skyType = 'cyberpunk';
-        const activeCustomMap = resolveActiveCustomMap({ customMap, replayData, selectedMap });
+        const activeCustomMap = resolveActiveCustomMap({ customMap, replayData, selectedMap, gameMode: adminSettings.gameMode });
         const effectiveMapId = replayData ? replayData.mapType : selectedMap;
         const isHangar = effectiveMapId === 'hangar';
 
@@ -1269,6 +1488,31 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       spawnPoints: SPAWN_POINTS,
       excludePositions,
     });
+  };
+
+  // Grifball: reposition the player + every AI to their own team's base spawn cluster.
+  // Used at roster seed and on round reset so each side starts behind its own goal.
+  const placeCombatantsAtGrifballSpawns = () => {
+    const s = stateRef.current;
+    const gmap = getActiveCustomMap();
+    const fallback = resolveActiveSpawnPoints(gmap, SPAWN_POINTS);
+    const used: THREE.Vector3[] = [];
+
+    const playerSpawn = getGrifballTeamSpawn(gmap, s.localPlayerTeam, fallback, used);
+    s.playerPos.copy(playerSpawn);
+    s.playerVel.set(0, 0, 0);
+    s.yaw = getInwardSpawnYaw(playerSpawn);
+    used.push(playerSpawn.clone());
+
+    for (const bot of s.otherPlayers.values()) {
+      if (bot.controller !== 'ai') continue;
+      const team = bot.team || 'red';
+      const spawn = getGrifballTeamSpawn(gmap, team, fallback, used);
+      bot.pos.copy(spawn);
+      bot.vel.set(0, 0, 0);
+      bot.yaw = getInwardSpawnYaw(spawn);
+      used.push(spawn.clone());
+    }
   };
 
   // Dynamic arena resizing based on player count (12.5% for every 2 players, up to 50% max)
@@ -3026,6 +3270,11 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
             },
           }
         );
+
+        // Grifball: place the player and each AI at their own team's base spawns.
+        if (s.settings.gameMode === 'grifball') {
+          placeCombatantsAtGrifballSpawns();
+        }
       }
     }
 
@@ -3330,8 +3579,13 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       const clickedBtn = mouseMap[e.button] || '';
 
       if (clickedBtn === keybindingsRef.current.attack) {
-        // PRIMARY ATTACK: Hammer Slam, Sword Lunge, or Pistol Fire
-        if (s.activeWeapon === 'hammer') {
+        // PRIMARY ATTACK: Hammer Slam, Sword Lunge, Pistol Fire, or Ball Punch
+        if (s.activeWeapon === 'ball') {
+          // PUNCH: forward melee (reuses the hammer strike path).
+          if (s.pWeaponReady && s.pWeaponState === 'ready' && s.playerDashRemaining <= 0) {
+            triggerPlayerHammerSwing();
+          }
+        } else if (s.activeWeapon === 'hammer') {
           if (s.pWeaponReady && s.pWeaponState === 'ready' && s.playerDashRemaining <= 0) {
             triggerPlayerHammerSwing();
           }
@@ -3346,8 +3600,13 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
           }
         }
       } else if (clickedBtn === keybindingsRef.current.altAttack) {
-        // ALT ATTACK: Sword Slash or Hammer Melee
-        if (s.activeWeapon === 'sword') {
+        // ALT ATTACK: Sword Slash, Hammer Melee, or begin Ball Pass charge
+        if (s.activeWeapon === 'ball') {
+          if (s.grifball.ball.holderId === 'player') {
+            ballChargingRef.current = true;
+            ballChargeTimerRef.current = 0;
+          }
+        } else if (s.activeWeapon === 'sword') {
           if (s.pSwordReady && s.pSwordState === 'ready' && !s.isLunging) {
             triggerPlayerSwordSlash();
           }
@@ -3356,6 +3615,16 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
             triggerPlayerHammerMelee();
           }
         }
+      }
+    };
+
+    // Release a charged Pass when the alt-attack button comes up.
+    const handleCanvasMouseUp = (e: MouseEvent) => {
+      if (!isPlaying || isPausedRef.current) return;
+      const mouseMap: Record<number, string> = { 0: 'lmb', 2: 'rmb', 1: 'mmb' };
+      const releasedBtn = mouseMap[e.button] || '';
+      if (releasedBtn === keybindingsRef.current.altAttack && ballChargingRef.current) {
+        throwPlayerPass();
       }
     };
 
@@ -3526,6 +3795,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
     renderer.domElement.addEventListener('mousedown', handleCanvasMouseDown);
+    window.addEventListener('mouseup', handleCanvasMouseUp);
     renderer.domElement.addEventListener('wheel', handleWheel);
     renderer.domElement.addEventListener('contextmenu', handleContextMenu);
     document.addEventListener('pointerlockchange', handlePointerLockChange);
@@ -3602,6 +3872,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mousedown', handleMouseDownFallback);
       window.removeEventListener('mouseup', handleMouseUpFallback);
+      window.removeEventListener('mouseup', handleCanvasMouseUp);
       window.removeEventListener('touchstart', handleTouchStart);
       window.removeEventListener('touchmove', handleTouchMove);
       window.removeEventListener('touchend', handleTouchEnd);
@@ -4535,6 +4806,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
           runAIOrchestrator(dt);
         }
         updateAI(dt);
+        updateGrifball(dt);
         updateCharacterSkeletalAnimations(dt);
         updateTransientVfxForFrame(threeRef.current, dt);
         updateMatchTimers(dt);
@@ -4701,6 +4973,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       s.playerHP > 0 &&
       s.playerRespawnTimer <= 0 &&
       s.playerInvulnerabilityTimer <= 0 &&
+      areCombatantsHostile(botId, 'player') &&
       impactPos.distanceTo(getCombatBodyCenter(s.playerPos, s.isCrouching)) <= radius
     ) {
       recordPlayerDamageTaken();
@@ -4729,6 +5002,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         if (otherId === botId) return;
         if (other.controller !== 'ai') return;
         if (!isAICombatReady(other)) return;
+        if (!areCombatantsHostile(botId, otherId)) return;
         const otherPos = new THREE.Vector3(other.pos.x, other.pos.y, other.pos.z);
         if (impactPos.distanceTo(getCombatBodyCenter(otherPos, other.isCrouching || false)) > radius) return;
         other.hp -= 1;
@@ -5695,14 +5969,14 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       let dist = Infinity;
 
       const mainAi = mai();
-      if (!isMultiplayer && mainAi && mainAi.hp > 0 && mainAi.aiState !== 'RESPAWNING') {
+      if (!isMultiplayer && mainAi && mainAi.hp > 0 && mainAi.aiState !== 'RESPAWNING' && areCombatantsHostile('player', MAIN_AI_ID)) {
         closestTarget = { id: 'main_ai', pos: mainAi.pos, hp: mainAi.hp, name: 'Red (AI)' };
         dist = s.playerPos.distanceTo(mainAi.pos);
       }
-      
+
       if (s.otherPlayers) {
         s.otherPlayers.forEach((other) => {
-          if (other.hp > 0 && !other.isObserver && other.respawnTimer <= 0) {
+          if (other.hp > 0 && !other.isObserver && other.respawnTimer <= 0 && areCombatantsHostile('player', other.id)) {
             const d = s.playerPos.distanceTo(new THREE.Vector3(other.pos.x, other.pos.y, other.pos.z));
             if (d < dist) {
               dist = d;
@@ -5896,8 +6170,9 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       let hitsBoundary = false;
       const activeCustomMap = getActiveCustomMap();
       if (activeCustomMap?.mapShape === 'rectangular') {
-        const boundX = (activeCustomMap.arenaRadius * 1.2) - 0.6;
-        const boundZ = (activeCustomMap.arenaRadius * 0.6) - 0.6;
+        const half = getRectHalfExtents(activeCustomMap.arenaRadius, activeCustomMap.arenaHalfExtents);
+        const boundX = half.x - 0.6;
+        const boundZ = half.z - 0.6;
         hitsBoundary = Math.abs(s.playerPos.x) >= boundX || Math.abs(s.playerPos.z) >= boundZ;
       } else {
         const distFromCenter = Math.sqrt(s.playerPos.x * s.playerPos.x + s.playerPos.z * s.playerPos.z);
@@ -6256,7 +6531,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
               // Check main AI bot in single player
               const mainAi = mai();
-              if (!isMultiplayer && mainAi && mainAi.hp > 0 && mainAi.aiState !== 'RESPAWNING' && (mainAi.invulnerabilityTimer ?? 0) <= 0) {
+              if (!isMultiplayer && mainAi && mainAi.hp > 0 && mainAi.aiState !== 'RESPAWNING' && (mainAi.invulnerabilityTimer ?? 0) <= 0 && areCombatantsHostile('player', MAIN_AI_ID)) {
                 const enemyCenter = new THREE.Vector3(mainAi.pos.x, mainAi.pos.y + 0.825, mainAi.pos.z);
                 const toEnemy = enemyCenter.clone().sub(eyePos);
                 const dist = toEnemy.length();
@@ -6313,7 +6588,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
               // Check other players/bots
               if (s.otherPlayers) {
                 s.otherPlayers.forEach((other) => {
-                  if (other.hp > 0 && !other.isObserver && other.respawnTimer <= 0 && (!other.invulnerabilityTimer || other.invulnerabilityTimer <= 0)) {
+                  if (other.hp > 0 && !other.isObserver && other.respawnTimer <= 0 && (!other.invulnerabilityTimer || other.invulnerabilityTimer <= 0) && areCombatantsHostile('player', other.id)) {
                     const otherCenter = new THREE.Vector3(other.pos.x, other.pos.y + 0.825, other.pos.z);
                     const toOther = otherCenter.clone().sub(eyePos);
                     const dist = toOther.length();
@@ -6873,10 +7148,10 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
       // 2. Damage Application Check: Check main AI bot in singleplayer
       const mainAi = mai();
-      if (!isMultiplayer && mainAi && mainAi.hp > 0 && mainAi.aiState !== 'RESPAWNING' && (mainAi.invulnerabilityTimer ?? 0) <= 0) {
+      if (!isMultiplayer && mainAi && mainAi.hp > 0 && mainAi.aiState !== 'RESPAWNING' && (mainAi.invulnerabilityTimer ?? 0) <= 0 && areCombatantsHostile('player', MAIN_AI_ID)) {
         const enemyBodyCenter = new THREE.Vector3(mainAi.pos.x, mainAi.pos.y + 0.825, mainAi.pos.z);
         const dist = impactPos.distanceTo(enemyBodyCenter);
-        
+
         if (dist <= s.settings.attackRadius) {
           mainAi.hp -= 1;
           sfx.playSwing();
@@ -6913,7 +7188,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       // Check other players/bots in room
       if (s.otherPlayers) {
         s.otherPlayers.forEach((other) => {
-          if (other.hp > 0 && !other.isObserver && other.respawnTimer <= 0 && (!other.invulnerabilityTimer || other.invulnerabilityTimer <= 0)) {
+          if (other.hp > 0 && !other.isObserver && other.respawnTimer <= 0 && (!other.invulnerabilityTimer || other.invulnerabilityTimer <= 0) && areCombatantsHostile('player', other.id)) {
             const otherBodyCenter = new THREE.Vector3(other.pos.x, other.pos.y + 0.825, other.pos.z);
             const dist = impactPos.distanceTo(otherBodyCenter);
             
@@ -7005,7 +7280,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       renderHammerSplashVfx(impactPos, '#f97316', s.settings.attackRadius ?? 4.5);
 
       // Damage target check: Compare strike sphere coordinate with target's 3D body center
-      if (target.hp > 0 && target.invuln <= 0) {
+      if (target.hp > 0 && target.invuln <= 0 && areCombatantsHostile(MAIN_AI_ID, target.id)) {
         const dist = impactPos.distanceTo(targetBodyCenter);
 
         if (dist <= s.settings.attackRadius) {
@@ -7035,7 +7310,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
                 id: Math.random().toString(36).substring(2, 9),
                 attacker: 'Red (AI)',
                 victim: 'Blue (You)',
-                weapon: mainAi.activeWeapon,
+                weapon: ballAsHammer(mainAi.activeWeapon),
               };
               s.lastDeaths = [newDeath, ...s.lastDeaths].slice(0, 3);
 
@@ -7048,7 +7323,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
               spawnVoxelShockwaveParticles(s.playerPos, '#e2e8f0');
               recordBotDamageTag('main_ai', 'player');
               tryEnterPressureState('main_ai', 'player', s.playerHP, s.playerInvulnerabilityTimer);
-              tryStartComboOnHit('main_ai', 'player', mainAi.activeWeapon);
+              tryStartComboOnHit('main_ai', 'player', ballAsHammer(mainAi.activeWeapon));
             }
           } else {
             // Target is another bot!
@@ -7067,7 +7342,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
                   id: Math.random().toString(36).substring(2, 9),
                   attacker: 'Red (AI)',
                   victim: other.playerName,
-                  weapon: mainAi.activeWeapon,
+                  weapon: ballAsHammer(mainAi.activeWeapon),
                 };
                 s.lastDeaths = [newDeath, ...s.lastDeaths].slice(0, 3);
                 spawnVoxelShockwaveParticles(new THREE.Vector3(other.pos.x, other.pos.y, other.pos.z), '#ef4444');
@@ -7077,7 +7352,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
                 spawnVoxelShockwaveParticles(new THREE.Vector3(other.pos.x, other.pos.y, other.pos.z), '#e2e8f0');
                 recordBotDamageTag('main_ai', target.id);
                 tryEnterPressureState('main_ai', target.id, other.hp, other.invulnerabilityTimer || 0);
-                tryStartComboOnHit('main_ai', target.id, mainAi.activeWeapon);
+                tryStartComboOnHit('main_ai', target.id, ballAsHammer(mainAi.activeWeapon));
               }
               pushStatsUpdate();
             }
@@ -7112,7 +7387,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
     if (isMultiplayer) return; // In multiplayer, we do not run AI damage checks against local player!
 
-    if (target.hp > 0 && target.invuln <= 0) {
+    if (target.hp > 0 && target.invuln <= 0 && areCombatantsHostile(MAIN_AI_ID, target.id)) {
       const dist = aiEyePos.distanceTo(targetBodyCenter);
 
       if (dist <= MELEE_SWORD_SLASH_REACH) {
@@ -7214,7 +7489,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
     // Check main AI bot in single player
     const mainAi = mai();
-    if (!isMultiplayer && mainAi && mainAi.hp > 0 && mainAi.aiState !== 'RESPAWNING' && (mainAi.invulnerabilityTimer ?? 0) <= 0) {
+    if (!isMultiplayer && mainAi && mainAi.hp > 0 && mainAi.aiState !== 'RESPAWNING' && (mainAi.invulnerabilityTimer ?? 0) <= 0 && areCombatantsHostile('player', MAIN_AI_ID)) {
       const enemyCenter = new THREE.Vector3(mainAi.pos.x, mainAi.pos.y + 0.825, mainAi.pos.z);
       const toEnemy = enemyCenter.clone().sub(eyePos);
       const dist = toEnemy.length();
@@ -7260,7 +7535,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     // Check other players/bots in multiplayer/FFA
     if (s.otherPlayers) {
       s.otherPlayers.forEach((other) => {
-        if (other.hp > 0 && !other.isObserver && other.respawnTimer <= 0 && (!other.invulnerabilityTimer || other.invulnerabilityTimer <= 0)) {
+        if (other.hp > 0 && !other.isObserver && other.respawnTimer <= 0 && (!other.invulnerabilityTimer || other.invulnerabilityTimer <= 0) && areCombatantsHostile('player', other.id)) {
           const otherBodyCenter = new THREE.Vector3(other.pos.x, other.pos.y + 0.825, other.pos.z);
           const toOther = otherBodyCenter.clone().sub(eyePos);
           const dist = toOther.length();
@@ -7343,7 +7618,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
     if (isMultiplayer) return;
 
-    if (target.hp > 0 && target.invuln <= 0) {
+    if (target.hp > 0 && target.invuln <= 0 && areCombatantsHostile(MAIN_AI_ID, target.id)) {
       const dist = aiEyePos.distanceTo(targetBodyCenter);
 
       if (dist <= MELEE_HAMMER_SWIPE_REACH) {
@@ -7923,6 +8198,49 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       return;
     }
 
+    // ---- GRIFBALL OBJECTIVE MOVEMENT ----
+    // Runner sprints to the enemy goal; everyone rushes a loose ball to contest it.
+    // When the ball is held by someone else, fall through to normal team combat.
+    if (s.settings.gameMode === 'grifball') {
+      const ball = s.grifball.ball;
+      const heldByMe = ball.state === 'held' && ball.holderId === botId;
+      const heldByAnyone = ball.state === 'held' && !!ball.holderId;
+
+      const grifballSeek = (tx: number, tz: number, speed: number, stopDist: number) => {
+        const to = new THREE.Vector3(tx - pos.x, 0, tz - pos.z);
+        const d = to.length();
+        yaw = Math.atan2(to.x, to.z);
+        if (d > stopDist) {
+          to.normalize();
+          vel.set(to.x * speed, 0, to.z * speed);
+          pos.x += vel.x * dt;
+          pos.z += vel.z * dt;
+        } else {
+          vel.set(0, 0, 0);
+        }
+        pos.y = 0;
+        state = 'APPROACHING';
+        timer = 0;
+        dashRemaining = 0;
+        slideActive = false;
+        self.isLunging = false;
+        constrainCombatantToArena(pos, vel);
+        syncStateAndMesh();
+      };
+
+      if (heldByMe) {
+        const goalPos = grifballEnemyGoalPos(self.team);
+        if (goalPos) {
+          grifballSeek(goalPos.x, goalPos.z, 5.8 * (s.settings.speedForward / 100) * 1.12, 0.6);
+          return;
+        }
+      } else if (!heldByAnyone) {
+        // Loose / idle ball: rush it to win possession.
+        grifballSeek(ball.pos.x, ball.pos.z, 5.2 * (s.settings.speedForward / 100), 1.0);
+        return;
+      }
+    }
+
     let target = getBestTacticalTarget(botId, pos, difficulty);
     const pressureTargetId = self.aiPressureTargetId;
     if (state === 'PRESSURING' && pressureTargetId) {
@@ -7957,6 +8275,43 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         constrainCombatantToArena(pos, vel);
         syncStateAndMesh();
         return;
+      }
+
+      // GRIFBALL: no enemy in combat range, but the ball is in play — advance toward
+      // the objective instead of orbiting spawn (Chaser hunts the carrier; Escort
+      // pushes toward the enemy goal to support the runner).
+      if (s.settings.gameMode === 'grifball') {
+        const ball = s.grifball.ball;
+        if (ball.state === 'held' && ball.holderId && ball.holderId !== botId) {
+          const carrierTeam = grifballTeamOf(ball.holderId);
+          const carrierRef = grifballCombatantRef(ball.holderId);
+          let objX: number, objZ: number;
+          if (carrierTeam && carrierTeam !== self.team && carrierRef) {
+            objX = carrierRef.pos.x; objZ = carrierRef.pos.z; // chase enemy carrier
+          } else {
+            const goalPos = grifballEnemyGoalPos(self.team);
+            objX = goalPos ? goalPos.x : ball.pos.x;
+            objZ = goalPos ? goalPos.z : ball.pos.z; // push to support own runner
+          }
+          const to = new THREE.Vector3(objX - pos.x, 0, objZ - pos.z);
+          const d = to.length();
+          yaw = Math.atan2(to.x, to.z);
+          if (d > 1.5) {
+            to.normalize();
+            const sp = 4.8 * (s.settings.speedForward / 100);
+            vel.set(to.x * sp, 0, to.z * sp);
+            pos.x += vel.x * dt;
+            pos.z += vel.z * dt;
+          } else {
+            vel.set(0, 0, 0);
+          }
+          pos.y = 0;
+          state = 'APPROACHING';
+          timer = 0;
+          constrainCombatantToArena(pos, vel);
+          syncStateAndMesh();
+          return;
+        }
       }
 
       const livingPositions: THREE.Vector3[] = [];
@@ -8073,9 +8428,10 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     
     const activeCustomMap = getActiveCustomMap();
     const radiusToUse = activeCustomMap ? activeCustomMap.arenaRadius : s.arenaRadius;
+    const rectHalf = getRectHalfExtents(radiusToUse, activeCustomMap?.arenaHalfExtents);
     if (activeCustomMap?.mapShape === 'rectangular') {
-      const boundX = radiusToUse * 1.2 - 0.6;
-      const boundZ = radiusToUse * 0.6 - 0.6;
+      const boundX = rectHalf.x - 0.6;
+      const boundZ = rectHalf.z - 0.6;
       predictedTargetPos.x = Math.max(-boundX, Math.min(boundX, predictedTargetPos.x));
       predictedTargetPos.z = Math.max(-boundZ, Math.min(boundZ, predictedTargetPos.z));
     } else {
@@ -8092,8 +8448,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       : predictedTargetPos;
 
     if (activeCustomMap?.mapShape === 'rectangular') {
-      const boundX = radiusToUse * 1.2 - 0.6;
-      const boundZ = radiusToUse * 0.6 - 0.6;
+      const boundX = rectHalf.x - 0.6;
+      const boundZ = rectHalf.z - 0.6;
       movementTargetPos.x = Math.max(-boundX, Math.min(boundX, movementTargetPos.x));
       movementTargetPos.z = Math.max(-boundZ, Math.min(boundZ, movementTargetPos.z));
     } else {
@@ -8787,7 +9143,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       renderSwordLungeTrailVfx(trailPos, '#ef4444', targetDir, 'enemyCube');
 
       const dist = getCombatBodyCenter(pos, self.isCrouching).distanceTo(getCombatBodyCenter(target.pos, target.isCrouching));
-      if (target.hp <= 0) {
+      if (target.hp <= 0 || !areCombatantsHostile(botId, target.id)) {
         finishSwordLunge(cooldownMult, 'target_dead', target.id);
       } else if (dist <= 1.5) {
         const swordThreshold = s.settings.swordTradeWindow ?? 350;
@@ -8927,8 +9283,9 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       let hitsBoundary = false;
       const activeCustomMap = getActiveCustomMap();
       if (activeCustomMap?.mapShape === 'rectangular') {
-        const boundX = (activeCustomMap.arenaRadius * 1.2) - 0.65;
-        const boundZ = (activeCustomMap.arenaRadius * 0.6) - 0.65;
+        const half = getRectHalfExtents(activeCustomMap.arenaRadius, activeCustomMap.arenaHalfExtents);
+        const boundX = half.x - 0.65;
+        const boundZ = half.z - 0.65;
         hitsBoundary = Math.abs(pos.x) >= boundX || Math.abs(pos.z) >= boundZ;
       } else {
         const distFromCenter = Math.sqrt(pos.x * pos.x + pos.z * pos.z);

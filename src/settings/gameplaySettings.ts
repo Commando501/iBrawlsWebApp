@@ -62,6 +62,19 @@ export const DEFAULT_ADMIN_SETTINGS: UniversalSettings = {
   speedSlide: 160,
   slideDistance: 8.0,
   slideCooldown: 1.5,
+
+  // Grifball game mode (sandbox default preserves legacy behavior).
+  gameMode: 'sandbox',
+  grifballGoalTarget: 5,
+  grifballRoundResetDelay: 4.0,
+  grifballCountdownDuration: 3.0,
+  grifballPickupRadius: 1.6,
+  grifballBallReturnTimeout: 8.0,
+  grifballChargeMax: 1.2,
+  grifballPassSpeedMin: 9.0,
+  grifballPassSpeedMax: 26.0,
+  grifballPunchLungeRange: 4.5,
+  grifballEscortSpacing: 4.0,
 };
 
 export const withDefaultGameplaySettings = (

@@ -1,5 +1,6 @@
 import { UniversalSettings } from '../types';
 import { resolveRosterSlotForCombatant, LegacyRosterProps } from './rosterSlotConfig';
+import { resolveGrifballTeam } from './grifballTeams';
 
 /** Known team ids for the current 2-team mode; string allows N teams later. */
 export type TeamId = 'blue' | 'red' | (string & {});
@@ -14,10 +15,12 @@ export interface TeamTally {
   kills: number;
   deaths: number;
   respawnTimer: number;
+  /** Grifball objective goals (kept separate from kill `score`). */
+  goals: number;
 }
 
 export function createEmptyTeamTally(): TeamTally {
-  return { score: 0, kills: 0, deaths: 0, respawnTimer: 0 };
+  return { score: 0, kills: 0, deaths: 0, respawnTimer: 0, goals: 0 };
 }
 
 export interface TeamScoresState {
@@ -59,6 +62,8 @@ export function resolveCombatantTeam(
   legacy: LegacyRosterProps
 ): TeamId {
   if (combatantId === 'player') return PLAYER_TEAM;
+  // Grifball forces a balanced 4v4 split regardless of sandbox roster overrides.
+  if (settings.gameMode === 'grifball') return resolveGrifballTeam(combatantId);
   const slot = resolveRosterSlotForCombatant(combatantId, settings, legacy);
   return slot.team || DEFAULT_AI_TEAM;
 }
@@ -71,6 +76,13 @@ export function awardTeamKill(scores: TeamScoresState, teamId: TeamId): void {
 
 export function recordTeamDeath(scores: TeamScoresState, teamId: TeamId): void {
   getTeamTally(scores, teamId).deaths += 1;
+}
+
+/** Award a Grifball objective goal to a team; returns the team's new goal total. */
+export function awardTeamGoal(scores: TeamScoresState, teamId: TeamId): number {
+  const tally = getTeamTally(scores, teamId);
+  tally.goals += 1;
+  return tally.goals;
 }
 
 export function setTeamRespawnTimer(

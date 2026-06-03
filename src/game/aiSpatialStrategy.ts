@@ -1,5 +1,6 @@
 import type { PlayerModelSnapshot } from './aiPlayerModel';
 import { DEFAULT_REACTION_TIME } from './aiPlayerModel';
+import { getRectHalfExtents, type ArenaHalfExtents } from './arenaDimensions';
 
 /** Base sword-lunge evasion detection radius (meters). */
 export const BASE_EVASION_DETECT_RANGE = 15;
@@ -283,6 +284,8 @@ export interface ScorePositionInput {
   mapShape?: string;
   /** Tuning override for the arena boundary inset (default ARENA_EDGE_INSET). */
   edgeInset?: number;
+  /** Explicit rectangular half-extents (Grifball); falls back to legacy ratio. */
+  rectHalf?: ArenaHalfExtents;
 }
 
 export interface PositionScore {
@@ -301,10 +304,11 @@ function safeArenaRadius(arenaRadius: number, edgeInset: number = ARENA_EDGE_INS
 }
 
 /** Returns 0 at center, 1 at/near the arena boundary. */
-export function getEdgePressure(distFromCenter: number, arenaRadius: number, mapShape?: string, x?: number, z?: number, edgeInset: number = ARENA_EDGE_INSET): number {
+export function getEdgePressure(distFromCenter: number, arenaRadius: number, mapShape?: string, x?: number, z?: number, edgeInset: number = ARENA_EDGE_INSET, rectHalf?: ArenaHalfExtents): number {
   if (mapShape === 'rectangular' && x !== undefined && z !== undefined) {
-    const boundX = arenaRadius * 1.2 - edgeInset;
-    const boundZ = arenaRadius * 0.6 - edgeInset;
+    const half = getRectHalfExtents(arenaRadius, rectHalf);
+    const boundX = half.x - edgeInset;
+    const boundZ = half.z - edgeInset;
     const normX = Math.abs(x) / Math.max(1, boundX);
     const normZ = Math.abs(z) / Math.max(1, boundZ);
     const edgeProximity = Math.max(normX, normZ);
@@ -326,8 +330,8 @@ export function scorePosition(input: ScorePositionInput): PositionScore {
   const botDist = Math.hypot(input.botX, input.botZ);
   const targetDist = Math.hypot(input.targetX, input.targetZ);
 
-  const botEdgeExposure = getEdgePressure(botDist, input.arenaRadius, input.mapShape, input.botX, input.botZ, input.edgeInset);
-  const targetEdgePressure = getEdgePressure(targetDist, input.arenaRadius, input.mapShape, input.targetX, input.targetZ, input.edgeInset);
+  const botEdgeExposure = getEdgePressure(botDist, input.arenaRadius, input.mapShape, input.botX, input.botZ, input.edgeInset, input.rectHalf);
+  const targetEdgePressure = getEdgePressure(targetDist, input.arenaRadius, input.mapShape, input.targetX, input.targetZ, input.edgeInset, input.rectHalf);
 
   const rawAdvantage = targetEdgePressure * 0.65 - botEdgeExposure * 0.85;
   const advantage = Math.max(-1, Math.min(1, rawAdvantage));
@@ -355,6 +359,8 @@ export interface CutoffInterceptInput {
   mapShape?: string;
   /** Tuning override for the arena boundary inset (default ARENA_EDGE_INSET). */
   edgeInset?: number;
+  /** Explicit rectangular half-extents (Grifball); falls back to legacy ratio. */
+  rectHalf?: ArenaHalfExtents;
 }
 
 export interface CutoffInterceptResult {
@@ -363,11 +369,12 @@ export interface CutoffInterceptResult {
   active: boolean;
 }
 
-function clampToArena(x: number, z: number, arenaRadius: number, mapShape?: string, edgeInset: number = ARENA_EDGE_INSET): { x: number; z: number } {
+function clampToArena(x: number, z: number, arenaRadius: number, mapShape?: string, edgeInset: number = ARENA_EDGE_INSET, rectHalf?: ArenaHalfExtents): { x: number; z: number } {
   const safeRadius = safeArenaRadius(arenaRadius, edgeInset);
   if (mapShape === 'rectangular') {
-    const boundX = arenaRadius * 1.2 - edgeInset;
-    const boundZ = arenaRadius * 0.6 - edgeInset;
+    const half = getRectHalfExtents(arenaRadius, rectHalf);
+    const boundX = half.x - edgeInset;
+    const boundZ = half.z - edgeInset;
     return {
       x: Math.max(-boundX, Math.min(boundX, x)),
       z: Math.max(-boundZ, Math.min(boundZ, z)),
@@ -384,7 +391,7 @@ function clampToArena(x: number, z: number, arenaRadius: number, mapShape?: stri
 /** Predicts an intercept point when a target is pinned near the edge and retreating toward center. */
 export function getCutoffInterceptPoint(input: CutoffInterceptInput): CutoffInterceptResult {
   const targetDist = Math.hypot(input.targetX, input.targetZ);
-  const targetEdgePressure = getEdgePressure(targetDist, input.arenaRadius, input.mapShape, input.targetX, input.targetZ, input.edgeInset);
+  const targetEdgePressure = getEdgePressure(targetDist, input.arenaRadius, input.mapShape, input.targetX, input.targetZ, input.edgeInset, input.rectHalf);
 
   if (targetEdgePressure < 0.35 || input.spatialIQ < 25) {
     return { x: input.targetX, z: input.targetZ, active: false };
@@ -424,7 +431,7 @@ export function getCutoffInterceptPoint(input: CutoffInterceptInput): CutoffInte
   const flankStrength = iqNorm * targetEdgePressure * 0.55;
   const interceptX = predX + retreatX * flankStrength * 3.2;
   const interceptZ = predZ + retreatZ * flankStrength * 3.2;
-  const clamped = clampToArena(interceptX, interceptZ, input.arenaRadius, input.mapShape, input.edgeInset);
+  const clamped = clampToArena(interceptX, interceptZ, input.arenaRadius, input.mapShape, input.edgeInset, input.rectHalf);
 
   return { ...clamped, active: true };
 }

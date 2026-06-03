@@ -1,5 +1,6 @@
 import type { AIMatchContext } from './aiMatchContext';
 import type { AICombatDecision, AICombatDecisionInput } from './aiCombatDecision';
+import { getRectHalfExtents, type ArenaHalfExtents } from './arenaDimensions';
 
 export const PLAYER_MODEL_EMA_ALPHA = 0.08;
 export const LOCAL_PLAYER_ID = 'player';
@@ -170,6 +171,7 @@ export function observePlayerPosition(
   arenaRadius: number,
   nowSeconds: number,
   mapShape?: string,
+  rectHalf?: ArenaHalfExtents,
 ): void {
   if (nowSeconds - model.lastPositionSampleTime < 0.25) {
     return;
@@ -177,8 +179,9 @@ export function observePlayerPosition(
   model.lastPositionSampleTime = nowSeconds;
   let proximity = 0;
   if (mapShape === 'rectangular') {
-    const boundX = arenaRadius * 1.2 - 0.6;
-    const boundZ = arenaRadius * 0.6 - 0.6;
+    const half = getRectHalfExtents(arenaRadius, rectHalf);
+    const boundX = half.x - 0.6;
+    const boundZ = half.z - 0.6;
     const normX = Math.abs(posX) / Math.max(1, boundX);
     const normZ = Math.abs(posZ) / Math.max(1, boundZ);
     proximity = Math.min(1, Math.max(normX, normZ));
