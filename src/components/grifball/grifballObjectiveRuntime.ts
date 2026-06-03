@@ -76,9 +76,16 @@ export function setGrifballCarrierForState({
   carrying: boolean;
 }): void {
   const weapon = carrying ? 'ball' : 'hammer';
+  const baseMaxHp = state.settings.maxHP ?? 1;
+
   if (id === 'player') {
     state.activeWeapon = weapon;
-    if (!carrying) {
+    if (carrying) {
+      state.playerMaxHP = baseMaxHp + 1; // Runner has extra health!
+      state.playerHP = state.playerMaxHP; // Heal to full on pickup
+    } else {
+      state.playerMaxHP = baseMaxHp;
+      state.playerHP = Math.min(state.playerHP, state.playerMaxHP);
       state.pWeaponState = 'ready';
       state.pWeaponReady = true;
     }
@@ -86,7 +93,16 @@ export function setGrifballCarrierForState({
     if (refs.playerSword) refs.playerSword.visible = false;
   } else {
     const bot = state.otherPlayers.get(id);
-    if (bot) bot.activeWeapon = weapon;
+    if (bot) {
+      bot.activeWeapon = weapon;
+      if (carrying) {
+        bot.maxHp = baseMaxHp + 1; // Runner has extra health!
+        bot.hp = bot.maxHp; // Heal to full on pickup
+      } else {
+        bot.maxHp = baseMaxHp;
+        bot.hp = Math.min(bot.hp, bot.maxHp);
+      }
+    }
   }
 }
 

@@ -37,12 +37,17 @@ export function applyBotMeleeImpactForState({
   const bot = state.otherPlayers?.get(botId);
   if (!bot || bot.hp <= 0 || (bot.respawnTimer ?? 0) > 0) return;
 
-  const weapon = bot.activeWeapon === 'sword' ? 'sword' : 'hammer';
+  const weapon = bot.activeWeapon === 'sword' ? 'sword' : (bot.activeWeapon === 'ball' ? 'ball' : 'hammer');
   const isHammer = weapon === 'hammer';
-  const forward = isHammer
-    ? (state.settings.attackRange ?? 3.2)
-    : (state.settings.attackRange ?? 3.2) * SWORD_SLASH_FORWARD_FACTOR;
-  const radius = isHammer ? (state.settings.attackRadius ?? 4.5) : SWORD_SLASH_RADIUS;
+  const isBall = weapon === 'ball';
+  const forward = isBall
+    ? 1.8
+    : (isHammer
+      ? (state.settings.attackRange ?? 3.2)
+      : (state.settings.attackRange ?? 3.2) * SWORD_SLASH_FORWARD_FACTOR);
+  const radius = isBall
+    ? 1.5
+    : (isHammer ? (state.settings.attackRadius ?? 4.5) : SWORD_SLASH_RADIUS);
 
   const eye = new THREE.Vector3(bot.pos.x, bot.pos.y + 1.2, bot.pos.z);
   const heading = new THREE.Vector3(Math.sin(bot.yaw), 0, Math.cos(bot.yaw));
@@ -52,6 +57,8 @@ export function applyBotMeleeImpactForState({
 
   if (isHammer) {
     renderHammerSplashVfx(impactPos, '#f97316', radius);
+  } else if (isBall) {
+    spawnVoxelShockwaveParticles(impactPos, '#7dd3fc'); // cyan shockwave for punch!
   } else {
     spawnVoxelShockwaveParticles(impactPos, '#ef4444');
   }
@@ -65,7 +72,7 @@ export function applyBotMeleeImpactForState({
       state.enemyKills += 1;
     }
     playDeath();
-    recordDeathEventOnState(state, bot.playerName, victimName, undefined, weapon);
+    recordDeathEventOnState(state, bot.playerName, victimName, undefined, weapon === 'ball' ? 'hammer' : weapon);
     recordBotPsychKill(botId, victimId, false);
   };
 

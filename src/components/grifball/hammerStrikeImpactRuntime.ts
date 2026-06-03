@@ -90,7 +90,9 @@ export function applyHammerStrikeImpactForState({
       .applyAxisAngle(new THREE.Vector3(0, 1, 0), state.yaw)
       .normalize();
 
-    const impactPos = eyePos.clone().addScaledVector(lookHeading, state.settings.attackRange);
+    const isBall = state.activeWeapon === 'ball';
+    const range = isBall ? 1.8 : state.settings.attackRange;
+    const impactPos = eyePos.clone().addScaledVector(lookHeading, range);
 
     state.lastStrikePos = impactPos;
     state.lastStrikeTick = 1.5;
@@ -102,8 +104,12 @@ export function applyHammerStrikeImpactForState({
       }
     }
 
-    const impactRadius = state.settings.attackRadius ?? 4.5;
-    renderHammerSplashVfx(impactPos, '#38bdf8', impactRadius);
+    const impactRadius = isBall ? 1.5 : (state.settings.attackRadius ?? 4.5);
+    if (isBall) {
+      spawnVoxelShockwaveParticles(impactPos, '#7dd3fc');
+    } else {
+      renderHammerSplashVfx(impactPos, '#38bdf8', impactRadius);
+    }
 
     if (state.isMultiplayer) {
       sendSync({
@@ -230,10 +236,9 @@ export function applyHammerStrikeImpactForState({
     aiHeading3D = targetBodyCenter.clone().sub(aiEyePos).normalize();
   }
 
-  const impactPos = aiEyePos.clone().addScaledVector(aiHeading3D, state.settings.attackRange * 0.875);
-
-  state.lastAIStrikePos = impactPos;
-  state.lastAIStrikeTick = 1.5;
+  const isBall = mainAI.activeWeapon === 'ball';
+  const range = isBall ? 1.8 : state.settings.attackRange * 0.875;
+  const impactPos = aiEyePos.clone().addScaledVector(aiHeading3D, range);
 
   const distToBase = impactPos.distanceTo(mainAI.pos);
   if (distToBase <= (state.settings.hammerJumpTriggerRadius ?? 3.5)) {
@@ -252,12 +257,17 @@ export function applyHammerStrikeImpactForState({
   mainAI.hammerJumpPlanned = false;
   mainAI.hammerJumpType = undefined;
 
-  renderHammerSplashVfx(impactPos, '#f97316', state.settings.attackRadius ?? 4.5);
+  const impactRadius = isBall ? 1.5 : (state.settings.attackRadius ?? 4.5);
+  if (isBall) {
+    spawnVoxelShockwaveParticles(impactPos, '#7dd3fc');
+  } else {
+    renderHammerSplashVfx(impactPos, '#f97316', impactRadius);
+  }
 
   if (target.hp > 0 && target.invuln <= 0 && areCombatantsHostile(MAIN_AI_ID, target.id)) {
     const dist = impactPos.distanceTo(targetBodyCenter);
 
-    if (dist <= state.settings.attackRadius) {
+    if (dist <= impactRadius) {
       if (target.id === 'player') {
         recordPlayerDamageTaken();
         tryRecordCalibrationCounterSuccess(MAIN_AI_ID);

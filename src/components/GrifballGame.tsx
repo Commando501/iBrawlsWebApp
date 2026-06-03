@@ -11,6 +11,13 @@ import { AIBehaviorState, DeathEvent, DEFAULT_KEYBINDINGS, MedalInfo, Combatant,
 import { cacheReplay } from '../game/theaterDatabase';
 import { getSkyboxTexture } from '../game/skyboxTextures';
 import { type AILungeOutcome, evaluateAICombatDecision } from '../game/aiCombatDecision';
+import {
+  getGrifballRole,
+  getGrifballEscortTarget,
+  getGrifballSpacingOffset,
+  getGrifballRunnerSteering,
+  type GrifballRole
+} from '../game/aiGrifballRoles';
 import { bakeNavMesh, findShortestPath } from '../game/mapNavigation';
 import { getRectHalfExtents } from '../game/arenaDimensions';
 import { GRIFBALL_TOTAL_AI } from '../game/grifballTeams';
@@ -4517,7 +4524,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     if (!isPlaying || isPaused) return;
 
     // 1. Initialize Replay Recorder if playing a normal match
-    if (isPlaying && !replayData) {
+    if (isPlaying && !replayData && !replayRecordingRef.current) {
       const s = stateRef.current;
       const isTournament = aiMatchSessionKey && aiMatchSessionKey.startsWith('tournament');
       const initialOpponentName = opponentPlayerName || 'Red (AI)';
@@ -4765,10 +4772,16 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         window.removeEventListener('replay-change-target', handleReplayChangeTarget);
         window.removeEventListener('replay-change-cam-mode', handleReplayChangeCamMode);
       }
-      // Save compiled replay on unmount
-      saveCompiledReplay();
+      // Replay is compiled and auto-saved only when the game is fully closed / unmounted.
     };
   }, [isPlaying, isPaused, isMultiplayer, multiplayerRole, multiplayerSocket, replayData]);
+
+  // Save compiled replay on unmount of GrifballGame
+  useEffect(() => {
+    return () => {
+      saveCompiledReplay();
+    };
+  }, []);
 
   const getPlayerSwordLockTarget = () => {
     return getPlayerSwordLockTargetFromState(stateRef.current, mai(), isMultiplayer);
@@ -5754,7 +5767,9 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
       // Movement speed coefficients
       let baseSpeed = 5.8;
-      if (s.isCrouching) {
+      if (s.settings.gameMode === 'grifball' && s.activeWeapon === 'ball') {
+        baseSpeed = 5.8 * 1.3; // Runner is faster!
+      } else if (s.isCrouching) {
         if (isSliding) {
           baseSpeed = 5.8 * (s.settings.speedSlide / 100);
         } else {
@@ -6867,9 +6882,31 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
     const hp = self.hp;
     if (hp <= 0) return;
-
     tickCombatantInvulnerability(self, dt);
     initializeCombatantAITickDefaults(self);
+
+    const alliesList: { x: number; z: number }[] = [];
+    const enemiesList: { x: number; z: number }[] = [];
+
+    if (s.settings.gameMode === 'grifball') {
+      if (s.playerHP > 0 && s.playerRespawnTimer <= 0 && !s.isObserverMode) {
+        if (s.localPlayerTeam === self.team) {
+          alliesList.push({ x: s.playerPos.x, z: s.playerPos.z });
+        } else {
+          enemiesList.push({ x: s.playerPos.x, z: s.playerPos.z });
+        }
+      }
+      s.otherPlayers.forEach((other, otherId) => {
+        if (otherId === botId) return;
+        if (other.hp > 0 && (other.respawnTimer ?? 0) <= 0) {
+          if (other.team === self.team) {
+            alliesList.push({ x: other.pos.x, z: other.pos.z });
+          } else {
+            enemiesList.push({ x: other.pos.x, z: other.pos.z });
+          }
+        }
+      });
+    }
 
     let pendingPostEvasionCharge = self.aiPendingPostEvasionCharge ?? false;
 
@@ -6895,6 +6932,24 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     let coordCommitTimer = self.aiCoordCommitTimer ?? 0;
     let hammerJumpCooldownTimer = self.aiHammerJumpCooldownTimer;
     const dashDir = new THREE.Vector3(self.aiDashDir.x, self.aiDashDir.y, self.aiDashDir.z);
+
+    const cooldownMult = 1;
+
+    // Single source of truth for AI attack reloads. Always the player's configured
+    // mechanic settings (mirrors the player exactly) so no attack path can ever swing
+    // faster than the user's gameplay dials. Never hardcode a reload literal — route it
+    // through here. Hammer side-swipe (melee) reloads on hammerMeleeReload; the wide
+    // overhead/level hammer and sword use hammerReloadTime / swordSlashReload.
+    const weaponReloadTime = (weapon: 'hammer' | 'sword', isMelee = false): number => {
+      if (weapon === 'sword') return s.settings.swordSlashReload ?? 0.6;
+      if (isMelee) return s.settings.hammerMeleeReload ?? 0.5;
+      return s.settings.hammerReloadTime ?? 0.6;
+    };
+
+    // The swap-ready cooldown (weaponReadyTime) gates attacking after a weapon swap,
+    // exactly as it does for the player. `let` so a same-tick tactical swap can revoke it.
+    let canStartWeaponAction =
+      (state !== 'COOLDOWN' || timer <= 0) && (self.swapCooldownTimer ?? 0) <= 0;
 
     // Write the frame's working state back to the combatant through `self`. For the
     // main AI `self.pos`/`self.vel` already alias mai()!.pos/mai()!.vel (so copy is a no-op
@@ -7129,18 +7184,112 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       const heldByMe = ball.state === 'held' && ball.holderId === botId;
       const heldByAnyone = ball.state === 'held' && !!ball.holderId;
 
-      const grifballSeek = (tx: number, tz: number, speed: number, stopDist: number) => {
-        const to = new THREE.Vector3(tx - pos.x, 0, tz - pos.z);
-        const d = to.length();
-        yaw = Math.atan2(to.x, to.z);
-        if (d > stopDist) {
-          to.normalize();
-          vel.set(to.x * speed, 0, to.z * speed);
+      const alliesList: { x: number; z: number }[] = [];
+      const enemiesList: { x: number; z: number }[] = [];
+
+      if (s.playerHP > 0 && s.playerRespawnTimer <= 0 && !s.isObserverMode) {
+        if (s.localPlayerTeam === self.team) {
+          alliesList.push({ x: s.playerPos.x, z: s.playerPos.z });
+        } else {
+          enemiesList.push({ x: s.playerPos.x, z: s.playerPos.z });
+        }
+      }
+
+      s.otherPlayers.forEach((other, otherId) => {
+        if (otherId === botId) return;
+        if (other.hp > 0 && (other.respawnTimer ?? 0) <= 0) {
+          if (other.team === self.team) {
+            alliesList.push({ x: other.pos.x, z: other.pos.z });
+          } else {
+            enemiesList.push({ x: other.pos.x, z: other.pos.z });
+          }
+        }
+      });
+
+      if (heldByMe) {
+        const goalPos = grifballEnemyGoalPos(self.team);
+        if (goalPos) {
+          // Self defense punch: if any enemy is within punch range, punch them!
+          let closestEnemy: any = null;
+          let closestDist = Infinity;
+
+          if (s.playerHP > 0 && s.playerRespawnTimer <= 0 && !s.isObserverMode && s.localPlayerTeam !== self.team) {
+            const dist = pos.distanceTo(s.playerPos);
+            if (dist < closestDist) {
+              closestEnemy = { id: 'player', pos: s.playerPos, hp: s.playerHP };
+              closestDist = dist;
+            }
+          }
+          s.otherPlayers.forEach((other, otherId) => {
+            if (other.hp > 0 && (other.respawnTimer ?? 0) <= 0 && other.team !== self.team) {
+              const dist = pos.distanceTo(other.pos);
+              if (dist < closestDist) {
+                closestEnemy = { id: otherId, pos: other.pos, hp: other.hp };
+                closestDist = dist;
+              }
+            }
+          });
+
+          if (closestEnemy && closestDist <= 2.2 && canStartWeaponAction && weaponState === 'ready') {
+            const toEnemy = closestEnemy.pos.clone().sub(pos);
+            yaw = Math.atan2(toEnemy.x, toEnemy.z);
+            state = 'COOLDOWN';
+            timer = weaponReloadTime('hammer') * cooldownMult;
+            triggerCombatantAttack(self, 'hammer');
+            weaponState = 'swing_up';
+            syncStateAndMesh();
+            return;
+          }
+
+          // Runner steering around blockers
+          const steer = getGrifballRunnerSteering(
+            { x: pos.x, z: pos.z },
+            { x: goalPos.x, z: goalPos.z },
+            enemiesList,
+            8.0
+          );
+
+          yaw = Math.atan2(steer.x, steer.z);
+          const speed = 5.8 * 1.3 * (s.settings.speedForward / 100);
+          vel.set(steer.x * speed, 0, steer.z * speed);
           pos.x += vel.x * dt;
           pos.z += vel.z * dt;
-        } else {
-          vel.set(0, 0, 0);
+          pos.y = 0;
+
+          state = 'APPROACHING';
+          timer = 0;
+          dashRemaining = 0;
+          slideActive = false;
+          self.isLunging = false;
+
+          constrainCombatantToArena(pos, vel);
+          syncStateAndMesh();
+          return;
         }
+      } else if (!heldByAnyone) {
+        // Loose / idle ball: rush it, but apply spacing repulsion so team doesn't bundle
+        const spacing = getGrifballSpacingOffset({ x: pos.x, z: pos.z }, alliesList, s.settings.grifballEscortSpacing ?? 4.0);
+        const ballPos = ball.pos;
+        const toBall = new THREE.Vector3(ballPos.x - pos.x, 0, ballPos.z - pos.z);
+        const d = toBall.length();
+
+        let steerX = toBall.x;
+        let steerZ = toBall.z;
+        if (d > 0.01) {
+          steerX = steerX / d + spacing.x;
+          steerZ = steerZ / d + spacing.z;
+        }
+
+        const steerLen = Math.hypot(steerX, steerZ) || 1;
+        const steerDirX = steerX / steerLen;
+        const steerDirZ = steerZ / steerLen;
+
+        yaw = Math.atan2(steerDirX, steerDirZ);
+        const sp = 5.2 * (s.settings.speedForward / 100);
+        vel.set(steerDirX * sp, 0, steerDirZ * sp);
+        pos.x += vel.x * dt;
+        pos.z += vel.z * dt;
+
         pos.y = 0;
         state = 'APPROACHING';
         timer = 0;
@@ -7149,20 +7298,10 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         self.isLunging = false;
         constrainCombatantToArena(pos, vel);
         syncStateAndMesh();
-      };
-
-      if (heldByMe) {
-        const goalPos = grifballEnemyGoalPos(self.team);
-        if (goalPos) {
-          grifballSeek(goalPos.x, goalPos.z, 5.8 * (s.settings.speedForward / 100) * 1.12, 0.6);
-          return;
-        }
-      } else if (!heldByAnyone) {
-        // Loose / idle ball: rush it to win possession.
-        grifballSeek(ball.pos.x, ball.pos.z, 5.2 * (s.settings.speedForward / 100), 1.0);
         return;
       }
     }
+
 
     let target = getBestTacticalTarget(botId, pos, difficulty);
     const pressureTargetId = self.aiPressureTargetId;
@@ -7206,34 +7345,93 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       if (s.settings.gameMode === 'grifball') {
         const ball = s.grifball.ball;
         if (ball.state === 'held' && ball.holderId && ball.holderId !== botId) {
-          const carrierTeam = grifballTeamOf(ball.holderId);
-          const carrierRef = grifballCombatantRef(ball.holderId);
-          let objX: number, objZ: number;
-          if (carrierTeam && carrierTeam !== self.team && carrierRef) {
-            objX = carrierRef.pos.x; objZ = carrierRef.pos.z; // chase enemy carrier
-          } else {
-            const goalPos = grifballEnemyGoalPos(self.team);
-            objX = goalPos ? goalPos.x : ball.pos.x;
-            objZ = goalPos ? goalPos.z : ball.pos.z; // push to support own runner
+          // Check if there is an enemy close to us. If so, don't escort seek, let's fight!
+          let closestEnemyDist = Infinity;
+          if (s.playerHP > 0 && s.playerRespawnTimer <= 0 && !s.isObserverMode && s.localPlayerTeam !== self.team) {
+            closestEnemyDist = pos.distanceTo(s.playerPos);
           }
-          const to = new THREE.Vector3(objX - pos.x, 0, objZ - pos.z);
-          const d = to.length();
-          yaw = Math.atan2(to.x, to.z);
-          if (d > 1.5) {
-            to.normalize();
-            const sp = 4.8 * (s.settings.speedForward / 100);
-            vel.set(to.x * sp, 0, to.z * sp);
-            pos.x += vel.x * dt;
-            pos.z += vel.z * dt;
-          } else {
-            vel.set(0, 0, 0);
+          s.otherPlayers.forEach((other) => {
+            if (other.hp > 0 && (other.respawnTimer ?? 0) <= 0 && other.team !== self.team) {
+              const dist = pos.distanceTo(other.pos);
+              if (dist < closestEnemyDist) {
+                closestEnemyDist = dist;
+              }
+            }
+          });
+
+          if (closestEnemyDist > 6.0) {
+            const carrierTeam = grifballTeamOf(ball.holderId);
+            const carrierRef = grifballCombatantRef(ball.holderId);
+
+            if (carrierTeam && carrierTeam !== self.team && carrierRef) {
+              // I am a Chaser! Chase the enemy carrier, applying spacing offset.
+              const spacing = getGrifballSpacingOffset({ x: pos.x, z: pos.z }, alliesList, s.settings.grifballEscortSpacing ?? 4.0);
+              const toCarrier = new THREE.Vector3(carrierRef.pos.x - pos.x, 0, carrierRef.pos.z - pos.z);
+              const d = toCarrier.length();
+              let steerX = toCarrier.x;
+              let steerZ = toCarrier.z;
+              if (d > 0.01) {
+                steerX = steerX / d + spacing.x;
+                steerZ = steerZ / d + spacing.z;
+              }
+              const steerLen = Math.hypot(steerX, steerZ) || 1;
+              const steerDirX = steerX / steerLen;
+              const steerDirZ = steerZ / steerLen;
+
+              yaw = Math.atan2(steerDirX, steerDirZ);
+              const sp = 4.8 * (s.settings.speedForward / 100);
+              vel.set(steerDirX * sp, 0, steerDirZ * sp);
+              pos.x += vel.x * dt;
+              pos.z += vel.z * dt;
+            } else if (carrierRef) {
+              // I am an Escort! Teammate has the ball.
+              // Find my escort index among living teammates (excluding the runner)
+              let escortIndex = 0;
+              const escortIds = Array.from(s.otherPlayers.values())
+                .filter((other: any) => other.id !== botId && other.team === self.team && other.hp > 0 && (other.respawnTimer ?? 0) <= 0 && ball.holderId !== other.id)
+                .map((other: any) => other.id);
+              if (s.playerHP > 0 && s.playerRespawnTimer <= 0 && s.localPlayerTeam === self.team && ball.holderId !== 'player') {
+                escortIds.push('player');
+              }
+              escortIds.sort();
+              const myIdx = escortIds.indexOf(botId);
+              if (myIdx >= 0) escortIndex = myIdx; // 0, 1, 2...
+
+              const goalPos = grifballEnemyGoalPos(self.team);
+              if (goalPos) {
+                const escortTarget = getGrifballEscortTarget(
+                  { x: carrierRef.pos.x, y: carrierRef.pos.y, z: carrierRef.pos.z },
+                  { x: goalPos.x, y: 0, z: goalPos.z },
+                  escortIndex
+                );
+
+                const spacing = getGrifballSpacingOffset({ x: pos.x, z: pos.z }, alliesList, s.settings.grifballEscortSpacing ?? 4.0);
+                const toTarget = new THREE.Vector3(escortTarget.x - pos.x, 0, escortTarget.z - pos.z);
+                const d = toTarget.length();
+                let steerX = toTarget.x;
+                let steerZ = toTarget.z;
+                if (d > 0.01) {
+                  steerX = steerX / d + spacing.x;
+                  steerZ = steerZ / d + spacing.z;
+                }
+                const steerLen = Math.hypot(steerX, steerZ) || 1;
+                const steerDirX = steerX / steerLen;
+                const steerDirZ = steerZ / steerLen;
+
+                yaw = Math.atan2(steerDirX, steerDirZ);
+                const sp = 4.8 * (s.settings.speedForward / 100);
+                vel.set(steerDirX * sp, 0, steerDirZ * sp);
+                pos.x += vel.x * dt;
+                pos.z += vel.z * dt;
+              }
+            }
+            pos.y = 0;
+            state = 'APPROACHING';
+            timer = 0;
+            constrainCombatantToArena(pos, vel);
+            syncStateAndMesh();
+            return;
           }
-          pos.y = 0;
-          state = 'APPROACHING';
-          timer = 0;
-          constrainCombatantToArena(pos, vel);
-          syncStateAndMesh();
-          return;
         }
       }
 
@@ -7413,23 +7611,6 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       aggressiveLungeMult: baseAggressiveLungeMult,
       multipliers: calibrationMultipliers,
     }).aggressiveLungeMult;
-    // AI swing/lunge reload mirrors the player's configured mechanic settings
-    // exactly. Playstyle and score state no longer scale reload speed, so the AI
-    // can never reload faster than the values the user has set. (Playstyle still
-    // shapes spacing, aggression and lunge range â€” just not raw reload timing.)
-    const cooldownMult = 1;
-
-    // Single source of truth for AI attack reloads. Always the player's configured
-    // mechanic settings (mirrors the player exactly) so no attack path can ever swing
-    // faster than the user's gameplay dials. Never hardcode a reload literal â€” route it
-    // through here. Hammer side-swipe (melee) reloads on hammerMeleeReload; the wide
-    // overhead/level hammer and sword use hammerReloadTime / swordSlashReload.
-    const weaponReloadTime = (weapon: 'hammer' | 'sword', isMelee = false): number => {
-      if (weapon === 'sword') return s.settings.swordSlashReload ?? 0.6;
-      if (isMelee) return s.settings.hammerMeleeReload ?? 0.5;
-      return s.settings.hammerReloadTime ?? 0.6;
-    };
-
     const targetIsProtected = target.invulnerabilityTimer > 0;
     const targetIsLunging = target.isLunging;
 
@@ -7437,10 +7618,6 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       tickCalibrationPendingDodge(s.aiMatchContext, botId, dt, targetIsLunging, tuning.dodgeResolveDelay, tuning.calibrationWindowSize);
       tickCalibrationPendingCounter(s.aiMatchContext, botId, dt, targetIsLunging, tuning.counterResolveDelay, tuning.calibrationWindowSize);
     }
-    // The swap-ready cooldown (weaponReadyTime) gates attacking after a weapon swap,
-    // exactly as it does for the player. `let` so a same-tick tactical swap can revoke it.
-    let canStartWeaponAction =
-      (state !== 'COOLDOWN' || timer <= 0) && (self.swapCooldownTimer ?? 0) <= 0;
 
     const isTacticalState = state === 'SIDE_STEPPING' || state === 'COOLDOWN';
     const crouchCycle = (swayTimer % 4.0) < 1.5;

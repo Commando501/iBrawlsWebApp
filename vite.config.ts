@@ -16,7 +16,13 @@ export default defineConfig(() => {
       // Do not modify: file watching is disabled to prevent flickering during agent edits.
       hmr: process.env.DISABLE_HMR !== 'true',
       // Disable file watching when DISABLE_HMR is true to save CPU during agent edits.
-      watch: process.env.DISABLE_HMR === 'true' ? null : {},
+      // Otherwise ignore the local Worker D1 state: `wrangler dev --local` writes to
+      // worker/.wrangler on every account/config request, which would otherwise trip
+      // Vite into an endless full-reload loop while both dev servers run together.
+      watch:
+        process.env.DISABLE_HMR === 'true'
+          ? null
+          : { ignored: ['**/.wrangler/**'] },
     },
     build: {
       // This workspace has had Windows EPERM locks on stale dist assets. Do not

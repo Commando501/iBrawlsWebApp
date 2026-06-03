@@ -57,6 +57,8 @@ Combat AI is orchestrated from `GrifballGame.tsx` (10-state FSM including `PRESS
 | `rosterSlotConfig.ts` | Unified per-slot AI config (`RosterSlotConfig`): Sandbox neural-net settings are the default template; each combatant (main AI + bots) resolves knobs through the same path with optional per-slot overrides |
 | `roster.ts` | Unified combatant roster: `otherPlayers` map holds every non-local combatant with a `controller` discriminator (`ai` = locally ticked bots, `remote` = network humans); `main_ai` is slot 0 offline; helpers (`getAICombatants`, `getRosterCombatant`, `isAICombatReady`, etc.) filter AI vs remote for tick/render/HUD |
 | `teamScoring.ts` | Per-team tally (`blue` / `red`) as scoring source of truth; legacy `scorePlayer` / `scoreEnemy` / `enemy*` fields bridge through perspective-aware accessors; `RosterSlotConfig.team` drives combatant team assignment |
+| `aiGrifballRoles.ts` | Grifball AI role resolution (`runner`, `escort`, `chaser`), fanned V-shaped screening target positions, allied spacing repulsion, and runner obstacle-avoidance steering vectors |
+
 
 All offline AI combatants (including `main_ai` at roster slot 0) share the same voxel Spartan mesh rig via `otherPlayerMeshes` / `createOrUpdateRemotePlayer` (including mesh provisioning on orchestrator spawn/hue change). The legacy `enemyGroup` path is retained **only** for multiplayer observer/host-client spectate rendering — not for offline bot display. Offline sandbox stores every AI in `otherPlayers` with `controller: 'ai'`; multiplayer stores remote humans with `controller: 'remote'` and never runs local AI ticks on them.
 
@@ -89,6 +91,13 @@ All offline AI combatants (including `main_ai` at roster slot 0) share the same 
 **Multi-bot coordination (Hard+ offline):** When one bot tags damage, `aiBotCoordinator` sets a shared priority target for ~8s so allies focus fire. Two or more bots on the same target pincer with lateral offsets; attack commits stagger by role (pressure → flanker → punisher). Three or more assign punisher bots that wait for recovery windows before swinging. Easy difficulty skips coordination.
 
 **Dynamic skill calibration (Normal/Hard/Nightmare):** `aiSkillCalibration` maintains a rolling window of the last 10 engagements per bot (kills, deaths, dodge/counter outcomes, time-between-deaths). When the player dominates, bots receive a subtle buff to reaction speed, anticipation, and lunge aggression; when the bot dominates, those knobs drift down slightly (±12.5% max). Disabled for Custom difficulty (including tournament opponents with explicit tuning) and Easy mode.
+
+### Grifball AI Behavior
+
+For the specialized Grifball game mode, the combat engine drives customized tactical behaviors:
+- **Runner (Ball Carrier)**: Moves 1.3x faster, receives extra health (+1 HP, totaling 2 HP by default) and heals to full on pickup. Replaces the default hammer swing with a short-range punch (1.8m range, 1.5m contact radius) and executes dynamic obstacle-avoidance steering to navigate around blockers.
+- **Escorts**: Form a dynamic V-shaped screening formation ahead of the runner (fanned out left, right, or center based on roster indexing) and maintain spacing (default 4.0m) to prevent collateral double-kills from enemy hammer blasts. They defend themselves if enemies approach close (< 6.0m).
+- **Chasers / Loose Ball**: Rush the ball or enemy carrier while applying teammate spacing repulsion to prevent clustering in a single voxel point.
 
 ## Theater Mode
 

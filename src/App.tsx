@@ -37,6 +37,14 @@ import {
   publishLiveConfig,
 } from './services/liveConfig';
 import {
+  AccountInfo,
+  getStoredToken,
+  fetchMe,
+  fetchCloudSave,
+  pushCloudSave,
+} from './services/account';
+import SpartanIdentityAccount from './components/SpartanIdentityAccount';
+import {
   DEFAULT_DESKTOP_UI_POSITIONS,
   DEFAULT_MOBILE_UI_POSITIONS,
   MOBILE_HUD_LAYOUT_VERSION,
@@ -82,7 +90,7 @@ import { CharacterPreview } from './components/CharacterPreview';
 import { CharacterPainter } from './components/CharacterPainter';
 import { CharacterLoadout, DEFAULT_LOADOUT, AVAILABLE_PRESETS, HelmetPreset, TorsoPreset, ArmPreset, LegPreset } from './components/VoxelModels';
 
-const APP_VERSION = '0.597';
+const APP_VERSION = '0.610';
 const MAX_PLAYER_NAME_LENGTH = 10;
 
 interface OnlineClient {
@@ -2504,6 +2512,10 @@ export default function App() {
     return `Sptn-${Math.floor(1000 + Math.random() * 9000)}`;
   });
 
+  // Optional account (null = playing as guest). Settings sync to the account's
+  // cloud save when signed in. See SpartanIdentityAccount + services/account.ts.
+  const [account, setAccount] = useState<AccountInfo | null>(null);
+
   const handlePlayerNameChange = (newName: string) => {
     const trimmed = newName.substring(0, MAX_PLAYER_NAME_LENGTH);
     setPlayerName(trimmed);
@@ -2577,6 +2589,45 @@ export default function App() {
     }
   };
 
+  // Apply a decoded SaveData blob to local state + localStorage. Shared by the
+  // manual save-code import and the account cloud-save pull (cloud overwrites local).
+  const applySaveData = (decrypted: SaveData) => {
+    // Apply Name
+    handlePlayerNameChange(decrypted.playerName);
+
+    // Apply Hue
+    localStorage.setItem('grifball_player_hue', decrypted.playerHue.toString());
+
+    // Apply UI Positions
+    if (decrypted.uiLayouts) {
+      const migratedLayouts = normalizeUiLayouts(decrypted.uiLayouts);
+      applyUiLayouts(migratedLayouts);
+    } else if (decrypted.uiPositions && Array.isArray(decrypted.uiPositions)) {
+      const migratedLayouts = normalizeUiLayouts(decrypted.uiPositions);
+      applyUiLayouts(migratedLayouts);
+    }
+
+    // Apply Admin Settings
+    if (decrypted.adminSettings) {
+      const importedAdminSettings = withDefaultGameplaySettings(decrypted.adminSettings);
+      const fullSettings: UniversalSettings = {
+        ...adminSettings,
+        ...importedAdminSettings,
+        playerHue: decrypted.playerHue,
+        playerName: decrypted.playerName
+      };
+      setAdminSettings(fullSettings);
+      localStorage.setItem('grifball_admin_settings', JSON.stringify(importedAdminSettings));
+    }
+
+    // Apply Keybindings
+    if (decrypted.keybindings) {
+      const merged = { ...DEFAULT_KEYBINDINGS, ...decrypted.keybindings };
+      setKeybindings(merged);
+      localStorage.setItem('grifball_keybindings', JSON.stringify(merged));
+    }
+  };
+
   const handleImportSaveCode = (code: string) => {
     if (!code) {
       setSaveSystemStatus({ type: 'error', message: 'Please paste a save code first.' });
@@ -2588,40 +2639,7 @@ export default function App() {
         throw new Error("Malformed save data structure.");
       }
 
-      // Apply Name
-      handlePlayerNameChange(decrypted.playerName);
-
-      // Apply Hue
-      localStorage.setItem('grifball_player_hue', decrypted.playerHue.toString());
-
-      // Apply UI Positions
-      if (decrypted.uiLayouts) {
-        const migratedLayouts = normalizeUiLayouts(decrypted.uiLayouts);
-        applyUiLayouts(migratedLayouts);
-      } else if (decrypted.uiPositions && Array.isArray(decrypted.uiPositions)) {
-        const migratedLayouts = normalizeUiLayouts(decrypted.uiPositions);
-        applyUiLayouts(migratedLayouts);
-      }
-
-      // Apply Admin Settings
-      if (decrypted.adminSettings) {
-        const importedAdminSettings = withDefaultGameplaySettings(decrypted.adminSettings);
-        const fullSettings: UniversalSettings = {
-          ...adminSettings,
-          ...importedAdminSettings,
-          playerHue: decrypted.playerHue,
-          playerName: decrypted.playerName
-        };
-        setAdminSettings(fullSettings);
-        localStorage.setItem('grifball_admin_settings', JSON.stringify(importedAdminSettings));
-      }
-
-      // Apply Keybindings
-      if (decrypted.keybindings) {
-        const merged = { ...DEFAULT_KEYBINDINGS, ...decrypted.keybindings };
-        setKeybindings(merged);
-        localStorage.setItem('grifball_keybindings', JSON.stringify(merged));
-      }
+      applySaveData(decrypted);
 
       setSaveSystemStatus({
         type: 'success',
@@ -3350,6 +3368,61 @@ export default function App() {
       console.error('Failed to save settings locally:', e);
     }
   }, [adminSettings]);
+
+  // ── Account session + cloud settings sync ──────────────────────────────────
+  // Pull the account's cloud save and apply it locally (cloud overwrites local).
+  const pullAndApplyCloudSave = async () => {
+    const res = await fetchCloudSave<SaveData>();
+    if (res.ok && res.data && res.data.save) {
+      applySaveData(res.data.save);
+    }
+  };
+
+  const handleLoggedIn = async (acct: AccountInfo) => {
+    // Apply cloud settings BEFORE marking the session active so the push effect
+    // (gated on `account`) can't race and overwrite the cloud with stale local data.
+    await pullAndApplyCloudSave();
+    setAccount(acct);
+  };
+
+  const handleRegistered = (acct: AccountInfo) => {
+    setAccount(acct);
+    // Seed the new account's cloud save with the current local settings.
+    void pushCloudSave(buildSaveData(adminSettings, playerName, uiLayouts, keybindings));
+  };
+
+  const handleLoggedOut = () => setAccount(null);
+  const handleAccountChanged = (acct: AccountInfo) => setAccount(acct);
+
+  // Restore an existing session on load (persistent login), then pull cloud save.
+  // No cleanup-cancel guard: this is a one-shot bootstrap and the resolved result
+  // must apply to the live mount (a set on a discarded StrictMode fiber is harmless).
+  useEffect(() => {
+    if (!getStoredToken()) return;
+    (async () => {
+      const res = await fetchMe();
+      if (res.ok && res.data) {
+        setAccount(res.data.account);
+        // Pull the account's cloud save (best-effort; never blocks login state).
+        try { await pullAndApplyCloudSave(); } catch { /* ignore */ }
+      }
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Debounced push of synced settings to the cloud while signed in.
+  const cloudPushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (!account) return;
+    if (cloudPushTimer.current) clearTimeout(cloudPushTimer.current);
+    cloudPushTimer.current = setTimeout(() => {
+      void pushCloudSave(buildSaveData(adminSettings, playerName, uiLayouts, keybindings));
+    }, 1500);
+    return () => {
+      if (cloudPushTimer.current) clearTimeout(cloudPushTimer.current);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [account, adminSettings, playerName, uiLayouts, keybindings]);
 
   // Collapsed section state for Gameplay/Mechanics Options panel
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>(() => {
@@ -5176,6 +5249,13 @@ export default function App() {
                       <div className="absolute right-3.5 top-3.5 w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
                     </div>
                   </div>
+                  <SpartanIdentityAccount
+                    account={account}
+                    onRegistered={handleRegistered}
+                    onLoggedIn={handleLoggedIn}
+                    onLoggedOut={handleLoggedOut}
+                    onAccountChanged={handleAccountChanged}
+                  />
                 </div>
 
                 {activeMenuTab === 'single' ? (
@@ -7422,17 +7502,17 @@ export default function App() {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pointer-events-auto text-left">
                 {/* COLUMN 1: LOCOMOTION, ACTIONS & HEALTH */}
                 <div className="flex flex-col gap-3">
-                  {SETTING_SECTIONS.filter(s => s.column === 1).map(renderSection)}
+                  {SETTING_SECTIONS.filter(s => s.column === 1 && s.id !== 'ai' && s.id !== 'aitune').map(renderSection)}
                 </div>
 
                 {/* COLUMN 2: GRAVITY HAMMER & JUMPING */}
                 <div className="flex flex-col gap-3">
-                  {SETTING_SECTIONS.filter(s => s.column === 2).map(renderSection)}
+                  {SETTING_SECTIONS.filter(s => s.column === 2 && s.id !== 'ai' && s.id !== 'aitune').map(renderSection)}
                 </div>
 
                 {/* COLUMN 3: ENERGY SWORD & TRADING CONFIGS */}
                 <div className="flex flex-col gap-3">
-                  {SETTING_SECTIONS.filter(s => s.column === 3).map(renderSection)}
+                  {SETTING_SECTIONS.filter(s => s.column === 3 && s.id !== 'ai' && s.id !== 'aitune').map(renderSection)}
                 </div>
               </div>
             </div>

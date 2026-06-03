@@ -1,4 +1,5 @@
 import { LIVE_CONFIG_KEY_SET } from "./liveConfigKeys";
+import { handleAccountRequest } from "./accounts";
 
 export interface Env {
   GAME_LOBBY: DurableObjectNamespace;
@@ -68,7 +69,7 @@ export default {
     // exposed so the browser lets the client read it for caching.
     const corsHeaders = {
       "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS, POST",
+      "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS, POST, PUT",
       "Access-Control-Allow-Headers": "Content-Type, Authorization, If-None-Match, Upgrade",
       "Access-Control-Expose-Headers": "ETag",
     };
@@ -80,6 +81,10 @@ export default {
         headers: corsHeaders
       });
     }
+
+    // ── Accounts (D1-backed): registration, login, recovery, profile, cloud save ──
+    const accountResponse = await handleAccountRequest(request, env, corsHeaders);
+    if (accountResponse) return accountResponse;
 
     // ── Live Tuning / Official Multiplayer Preset (D1-backed) ──────────────────
 
