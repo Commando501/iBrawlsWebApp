@@ -1,7 +1,7 @@
 var __defProp = Object.defineProperty;
 var __name = (target, value) => __defProp(target, "name", { value, configurable: true });
 
-// .wrangler/tmp/bundle-DfcZQf/checked-fetch.js
+// .wrangler/tmp/bundle-iQvet6/checked-fetch.js
 var urls = /* @__PURE__ */ new Set();
 function checkURL(request, init) {
   const url = request instanceof URL ? request : new URL(
@@ -27,7 +27,7 @@ globalThis.fetch = new Proxy(globalThis.fetch, {
   }
 });
 
-// .wrangler/tmp/bundle-DfcZQf/strip-cf-connecting-ip-header.js
+// .wrangler/tmp/bundle-iQvet6/strip-cf-connecting-ip-header.js
 function stripCfConnectingIPHeader(input, init) {
   const request = new Request(input, init);
   request.headers.delete("CF-Connecting-IP");
@@ -579,6 +579,73 @@ __name(handleAccountRequest, "handleAccountRequest");
 
 // src/index.ts
 var CONFIG_ID = "multiplayer_preset";
+function telemetryNum(v, fallback = 0) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : fallback;
+}
+__name(telemetryNum, "telemetryNum");
+function telemetryStr(v, max) {
+  return typeof v === "string" ? v.slice(0, max) : "";
+}
+__name(telemetryStr, "telemetryStr");
+function sanitizeTelemetry(input) {
+  if (!input || typeof input !== "object")
+    return null;
+  const o = input;
+  if (typeof o.anonId !== "string" || o.anonId.length === 0)
+    return null;
+  if (!o.player || typeof o.player !== "object")
+    return null;
+  const p = o.player;
+  return {
+    anonId: telemetryStr(o.anonId, 64),
+    ts: telemetryNum(o.ts),
+    appVersion: telemetryStr(o.appVersion, 32),
+    liveConfigVersion: telemetryNum(o.liveConfigVersion),
+    fingerprintSchema: telemetryNum(o.fingerprintSchema),
+    map: telemetryStr(o.map, 32),
+    mode: telemetryStr(o.mode, 32),
+    aiDifficulty: telemetryStr(o.aiDifficulty, 32),
+    aiArchetype: telemetryStr(o.aiArchetype, 32),
+    scorePlayer: telemetryNum(o.scorePlayer),
+    scoreEnemy: telemetryNum(o.scoreEnemy),
+    playerKills: telemetryNum(o.playerKills),
+    playerDeaths: telemetryNum(o.playerDeaths),
+    durationSeconds: telemetryNum(o.durationSeconds),
+    player: {
+      avgLungeDistance: telemetryNum(p.avgLungeDistance),
+      lungeFrequency: telemetryNum(p.lungeFrequency),
+      dodgeBiasX: telemetryNum(p.dodgeBiasX),
+      dodgeBiasZ: telemetryNum(p.dodgeBiasZ),
+      counterRate: telemetryNum(p.counterRate),
+      approachSpeed: telemetryNum(p.approachSpeed),
+      edgeProximity: telemetryNum(p.edgeProximity),
+      reactionTime: telemetryNum(p.reactionTime),
+      sampleCount: telemetryNum(p.sampleCount)
+    }
+  };
+}
+__name(sanitizeTelemetry, "sanitizeTelemetry");
+function getLobbyStub(env) {
+  const id = env.GAME_LOBBY.idFromName("global-lobby");
+  return env.GAME_LOBBY.get(id);
+}
+__name(getLobbyStub, "getLobbyStub");
+function jsonResponse(body, status, cors) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json", ...cors }
+  });
+}
+__name(jsonResponse, "jsonResponse");
+async function withCorsJson(r, cors) {
+  const text = await r.text();
+  return new Response(text, {
+    status: r.status,
+    headers: { "Content-Type": "application/json", ...cors }
+  });
+}
+__name(withCorsJson, "withCorsJson");
 function tokensMatch(a, b) {
   if (a.length !== b.length)
     return false;
@@ -733,6 +800,30 @@ var src_default = {
         );
       }
     }
+    if (url.pathname === "/api/telemetry/policy" && request.method === "GET") {
+      const stub = getLobbyStub(env);
+      const r = await stub.fetch("https://do/internal/telemetry-policy");
+      return withCorsJson(r, corsHeaders);
+    }
+    if (url.pathname === "/api/telemetry/match" && request.method === "POST") {
+      let body;
+      try {
+        body = await request.json();
+      } catch {
+        return jsonResponse({ error: "Invalid JSON body" }, 400, corsHeaders);
+      }
+      const clean = sanitizeTelemetry(body);
+      if (!clean) {
+        return jsonResponse({ error: "Invalid telemetry payload" }, 400, corsHeaders);
+      }
+      const stub = getLobbyStub(env);
+      const r = await stub.fetch("https://do/internal/telemetry", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(clean)
+      });
+      return withCorsJson(r, corsHeaders);
+    }
     if (url.pathname === "/ws" || url.pathname === "/" || url.pathname === "/api/my-ip") {
       const doId = env.GAME_LOBBY.idFromName("global-lobby");
       const stub = env.GAME_LOBBY.get(doId);
@@ -766,6 +857,63 @@ var GameLobby = class {
   // Quick Play matchmaking structures
   quickPlayQueue = /* @__PURE__ */ new Set();
   waitingQuickPlayClients = /* @__PURE__ */ new Map();
+  // ── Telemetry admission governor ───────────────────────────────────────────
+  // Sliding window of recent submissions (ephemeral; resets on DO eviction, which
+  // just means a brief window of full admission — acceptable). Below the active-
+  // sender threshold every match is admitted; above it, admission scales as
+  // threshold / activeSenders so the effective volume stays ~threshold.
+  telemetryWindow = [];
+  TELEMETRY_WINDOW_MS = 5 * 6e4;
+  TELEMETRY_ACTIVE_THRESHOLD = 50;
+  TELEMETRY_MIN_PROBABILITY = 0.02;
+  computeAdmissionProbability(now) {
+    const cutoff = now - this.TELEMETRY_WINDOW_MS;
+    this.telemetryWindow = this.telemetryWindow.filter((e) => e.t >= cutoff);
+    const distinct = new Set(this.telemetryWindow.map((e) => e.anonId)).size;
+    if (distinct <= this.TELEMETRY_ACTIVE_THRESHOLD)
+      return 1;
+    return Math.max(this.TELEMETRY_MIN_PROBABILITY, this.TELEMETRY_ACTIVE_THRESHOLD / distinct);
+  }
+  writeTelemetryDataPoint(body) {
+    if (!this.env.TELEMETRY)
+      return;
+    const p = body.player || {};
+    const n = /* @__PURE__ */ __name((v) => {
+      const x = Number(v);
+      return Number.isFinite(x) ? x : 0;
+    }, "n");
+    try {
+      this.env.TELEMETRY.writeDataPoint({
+        indexes: [String(body.aiDifficulty ?? "unknown")],
+        blobs: [
+          String(body.anonId ?? ""),
+          String(body.appVersion ?? ""),
+          String(body.liveConfigVersion ?? 0),
+          String(body.map ?? ""),
+          String(body.mode ?? ""),
+          String(body.aiArchetype ?? "")
+        ],
+        doubles: [
+          n(body.scorePlayer),
+          n(body.scoreEnemy),
+          n(body.playerKills),
+          n(body.playerDeaths),
+          n(body.durationSeconds),
+          n(p.avgLungeDistance),
+          n(p.lungeFrequency),
+          n(p.dodgeBiasX),
+          n(p.dodgeBiasZ),
+          n(p.counterRate),
+          n(p.approachSpeed),
+          n(p.edgeProximity),
+          n(p.reactionTime),
+          n(p.sampleCount),
+          n(body.fingerprintSchema)
+        ]
+      });
+    } catch {
+    }
+  }
   // Helper to clean up dead sockets from the quickplay queue
   cleanQuickPlayQueue() {
     for (const socket of this.quickPlayQueue) {
@@ -786,6 +934,31 @@ var GameLobby = class {
       return new Response(JSON.stringify({ ok: true }), {
         headers: { "Content-Type": "application/json" }
       });
+    }
+    if (url.pathname === "/internal/telemetry-policy") {
+      return new Response(
+        JSON.stringify({ admissionProbability: this.computeAdmissionProbability(Date.now()) }),
+        { headers: { "Content-Type": "application/json" } }
+      );
+    }
+    if (url.pathname === "/internal/telemetry" && request.method === "POST") {
+      let body = {};
+      try {
+        body = await request.json();
+      } catch {
+      }
+      const now = Date.now();
+      if (typeof body.anonId === "string" && body.anonId.length > 0) {
+        this.telemetryWindow.push({ t: now, anonId: body.anonId });
+      }
+      const admissionProbability = this.computeAdmissionProbability(now);
+      const admitted = Math.random() < admissionProbability;
+      if (admitted)
+        this.writeTelemetryDataPoint(body);
+      return new Response(
+        JSON.stringify({ ok: true, admitted, admissionProbability }),
+        { headers: { "Content-Type": "application/json" } }
+      );
     }
     if (url.pathname === "/api/my-ip") {
       const clientIp = request.headers.get("CF-Connecting-IP") || "127.0.0.1";
@@ -1333,6 +1506,27 @@ var GameLobby = class {
 };
 __name(GameLobby, "GameLobby");
 
+// wrangler-config:config:middleware/mock-analytics-engine
+var bindings = ["TELEMETRY"];
+
+// node_modules/wrangler/templates/middleware/middleware-mock-analytics-engine.ts
+var bindingsEnv = Object.fromEntries(
+  bindings.map((binding) => [
+    binding,
+    {
+      writeDataPoint() {
+      }
+    }
+  ])
+);
+var analyticsEngine = /* @__PURE__ */ __name(async (request, env, _ctx, middlewareCtx) => {
+  for (const binding of bindings) {
+    env[binding] ??= bindingsEnv[binding];
+  }
+  return await middlewareCtx.next(request, env);
+}, "analyticsEngine");
+var middleware_mock_analytics_engine_default = analyticsEngine;
+
 // node_modules/wrangler/templates/middleware/middleware-ensure-req-body-drained.ts
 var drainBody = /* @__PURE__ */ __name(async (request, env, _ctx, middlewareCtx) => {
   try {
@@ -1374,8 +1568,9 @@ var jsonError = /* @__PURE__ */ __name(async (request, env, _ctx, middlewareCtx)
 }, "jsonError");
 var middleware_miniflare3_json_error_default = jsonError;
 
-// .wrangler/tmp/bundle-DfcZQf/middleware-insertion-facade.js
+// .wrangler/tmp/bundle-iQvet6/middleware-insertion-facade.js
 var __INTERNAL_WRANGLER_MIDDLEWARE__ = [
+  middleware_mock_analytics_engine_default,
   middleware_ensure_req_body_drained_default,
   middleware_miniflare3_json_error_default
 ];
@@ -1406,7 +1601,7 @@ function __facade_invoke__(request, env, ctx, dispatch, finalMiddleware) {
 }
 __name(__facade_invoke__, "__facade_invoke__");
 
-// .wrangler/tmp/bundle-DfcZQf/middleware-loader.entry.ts
+// .wrangler/tmp/bundle-iQvet6/middleware-loader.entry.ts
 var __Facade_ScheduledController__ = class {
   constructor(scheduledTime, cron, noRetry) {
     this.scheduledTime = scheduledTime;

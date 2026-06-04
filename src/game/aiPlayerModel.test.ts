@@ -2,17 +2,25 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   createPlayerModel,
+  hydratePlayerModel,
   observePlayerCounter,
   observePlayerDash,
+  observePlayerDamageDealt,
+  observePlayerDamageReceived,
+  observePlayerHammerAttack,
   observePlayerLungeStart,
   observePlayerPosition,
+  observePlayerWeaponSwap,
   getApproachLateralOffset,
   getFeintPressureMultiplier,
+  getMatchBehaviorStats,
   getOrCreatePlayerModel,
   getPlayerModelSnapshot,
   applyLungeAimBias,
   PLAYER_MODEL_EMA_ALPHA,
+  toMatchBehaviorStats,
   toPlayerModelSnapshot,
+  type PlayerModelSnapshot,
 } from './aiPlayerModel';
 import { createAIMatchContext } from './aiMatchContext';
 
@@ -140,4 +148,107 @@ test('a populated bot model drives consumers differently than a null model', () 
   // getFeintPressureMultiplier: null → 1 (no reduction); a counter-heavy model reduces it.
   assert.equal(getFeintPressureMultiplier(null), 1);
   assert.ok(getFeintPressureMultiplier(snapshot) < 1);
+});
+
+const STRONG_SNAPSHOT: PlayerModelSnapshot = {
+  avgLungeDistance: 12.5,
+  lungeFrequency: 0.7,
+  dodgeBiasX: 0.6,
+  dodgeBiasZ: -0.2,
+  counterRate: 0.55,
+  approachSpeed: 0.8,
+  edgeProximity: 0.4,
+  reactionTime: 0.22,
+  sampleCount: 120,
+};
+
+test('hydratePlayerModel seeds feature values but caps confidence low', () => {
+  const model = createPlayerModel();
+  hydratePlayerModel(model, STRONG_SNAPSHOT);
+
+  // Feature values are applied verbatim from the prior.
+  assert.equal(model.avgLungeDistance, STRONG_SNAPSHOT.avgLungeDistance);
+  assert.equal(model.lungeFrequency, STRONG_SNAPSHOT.lungeFrequency);
+  assert.equal(model.counterRate, STRONG_SNAPSHOT.counterRate);
+  assert.equal(model.reactionTime, STRONG_SNAPSHOT.reactionTime);
+
+  // Confidence is capped low (default 4), not the prior's 120 samples, so fresh
+  // in-match evidence still dominates via EMA.
+  assert.equal(model.sampleCount, 4);
+});
+
+test('hydratePlayerModel makes a model immediately usable by consumers', () => {
+  const context = createAIMatchContext();
+  // A cold model returns no snapshot.
+  getOrCreatePlayerModel(context, 'player');
+  assert.equal(getPlayerModelSnapshot(context, 'player', 3), null);
+
+  // After warm-start the model clears the minSamples=3 gate right away.
+  hydratePlayerModel(getOrCreatePlayerModel(context, 'player'), STRONG_SNAPSHOT);
+  const snap = getPlayerModelSnapshot(context, 'player', 3);
+  assert.ok(snap);
+  assert.equal(snap!.avgLungeDistance, STRONG_SNAPSHOT.avgLungeDistance);
+});
+
+test('hydratePlayerModel never inflates confidence beyond the prior gathered', () => {
+  const model = createPlayerModel();
+  hydratePlayerModel(model, { ...STRONG_SNAPSHOT, sampleCount: 2 });
+  // Prior only had 2 samples — cap must not raise it to the 4 default.
+  assert.equal(model.sampleCount, 2);
+});
+
+test('warm-started values are overridden by repeated fresh observations', () => {
+  const model = createPlayerModel();
+  hydratePlayerModel(model, STRONG_SNAPSHOT);
+  assert.equal(model.avgLungeDistance, 12.5);
+
+  // The player now consistently lunges from much closer; EMA must migrate there.
+  for (let i = 0; i < 60; i += 1) {
+    observePlayerLungeStart(model, 5.0);
+  }
+  assert.ok(Math.abs(model.avgLungeDistance - 5.0) < 0.5);
+});
+
+test('observations accumulate raw per-match action volumes', () => {
+  const model = createPlayerModel();
+  observePlayerLungeStart(model, 8);
+  observePlayerLungeStart(model, 9);
+  observePlayerHammerAttack(model);
+  observePlayerWeaponSwap(model, 'sword');
+  observePlayerWeaponSwap(model, 'hammer');
+  observePlayerDash(model, 1, 0);
+  observePlayerCounter(model, true);
+  observePlayerCounter(model, false);
+  observePlayerDamageDealt(model);
+  observePlayerDamageDealt(model);
+  observePlayerDamageReceived(model);
+
+  const stats = toMatchBehaviorStats(model);
+  assert.equal(stats.lungeAttempts, 2);
+  assert.equal(stats.hammerAttacks, 1);
+  assert.equal(stats.weaponSwaps, 2);
+  assert.equal(stats.dashes, 1);
+  assert.equal(stats.countersAttempted, 2);
+  assert.equal(stats.countersLanded, 1);
+  assert.equal(stats.damageDealtCount, 2);
+  assert.equal(stats.damageReceivedCount, 1);
+});
+
+test('getMatchBehaviorStats returns null for an unknown combatant, stats once observed', () => {
+  const context = createAIMatchContext();
+  assert.equal(getMatchBehaviorStats(context, 'bot_9'), null);
+
+  const model = getOrCreatePlayerModel(context, 'bot_9');
+  observePlayerDash(model, 1, 0);
+  observePlayerDash(model, 0, 1);
+  assert.equal(getMatchBehaviorStats(context, 'bot_9')!.dashes, 2);
+});
+
+test('warm-start hydrate does not inflate per-match action volumes', () => {
+  const model = createPlayerModel();
+  hydratePlayerModel(model, STRONG_SNAPSHOT);
+  // Snapshot carries no raw counts — volumes start clean each match.
+  assert.equal(model.dashes, 0);
+  assert.equal(model.hammerAttacks, 0);
+  assert.equal(toMatchBehaviorStats(model).weaponSwaps, 0);
 });

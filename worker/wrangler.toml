@@ -22,6 +22,13 @@ database_name = "ibrawls"
 database_id = "183e6cf9-e794-4144-99d1-34b50178456b"
 migrations_dir = "migrations"
 
+# Workers Analytics Engine — append-only sink for anonymous match telemetry
+# (behavior fingerprints + outcomes). Available on the Workers Free plan; query
+# the dataset via the AE SQL API. Raw telemetry goes here, NOT to D1.
+[[analytics_engine_datasets]]
+binding = "TELEMETRY"
+dataset = "ibrawls_match_telemetry"
+
 # ADMIN_TOKEN gates POST /api/admin/config. Do NOT commit it here — set it with:
 #   wrangler secret put ADMIN_TOKEN
 # For local `wrangler dev`, put it in worker/.dev.vars (gitignored).

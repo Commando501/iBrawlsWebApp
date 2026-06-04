@@ -43,6 +43,7 @@ import {
   fetchCloudSave,
   pushCloudSave,
 } from './services/account';
+import { getTelemetryConsent, setTelemetryConsent } from './services/telemetryConsent';
 import SpartanIdentityAccount from './components/SpartanIdentityAccount';
 import {
   DEFAULT_DESKTOP_UI_POSITIONS,
@@ -90,7 +91,7 @@ import { CharacterPreview } from './components/CharacterPreview';
 import { CharacterPainter } from './components/CharacterPainter';
 import { CharacterLoadout, DEFAULT_LOADOUT, AVAILABLE_PRESETS, HelmetPreset, TorsoPreset, ArmPreset, LegPreset } from './components/VoxelModels';
 
-const APP_VERSION = '0.610';
+const APP_VERSION = '0.612';
 const MAX_PLAYER_NAME_LENGTH = 10;
 
 interface OnlineClient {
@@ -1592,6 +1593,7 @@ export default function App() {
 
   const [matchmakerUrl, setMatchmakerUrl] = useState<string>(getSavedMatchmakerUrl());
   const [customUrlInput, setCustomUrlInput] = useState<string>(matchmakerUrl);
+  const [telemetryConsent, setTelemetryConsentState] = useState<boolean>(getTelemetryConsent());
   const [isPaused, setIsPaused] = useState<boolean>(false);
   const [debugMode, setDebugMode] = useState<boolean>(false);
   const [isTerminated, setIsTerminated] = useState<boolean>(false);
@@ -6084,6 +6086,27 @@ export default function App() {
                                 Reset
                               </button>
                             </div>
+
+                            {/* Anonymous gameplay data sharing (opt-in, default off) */}
+                            <label className="flex items-start gap-2.5 mt-1.5 pt-2.5 border-t border-white/5 cursor-pointer select-none">
+                              <input
+                                type="checkbox"
+                                checked={telemetryConsent}
+                                onChange={(e) => {
+                                  setTelemetryConsent(e.target.checked);
+                                  setTelemetryConsentState(e.target.checked);
+                                }}
+                                className="mt-0.5 accent-[#38bdf8] cursor-pointer"
+                              />
+                              <span className="flex flex-col gap-0.5">
+                                <span className="text-[10px] text-white/70 uppercase tracking-widest font-mono">
+                                  Share anonymous gameplay data
+                                </span>
+                                <span className="text-[10px] text-white/40 font-medium leading-snug normal-case tracking-normal">
+                                  Sends anonymized playstyle stats at match end to help tune the AI. No account or personal info — opt out anytime.
+                                </span>
+                              </span>
+                            </label>
                           </div>
                         </details>
                       </div>
@@ -7522,18 +7545,27 @@ export default function App() {
               keybindsModalTab === 'gamepad' ? 'w-[1040px]' : 'w-[640px]'
             }`}>
               {/* Header */}
-              <div className="flex items-center justify-between mb-5 border-b border-white/5 pb-4">
+              <div className="flex items-center justify-between mb-5 border-b border-white/5 pb-4 shrink-0">
                 <div className="flex flex-col items-start text-left">
                   <p className="text-[9px] text-cyan-400 font-bold tracking-[0.3em] uppercase mb-0.5 font-display">INPUT CONFIG</p>
                   <h3 className="text-xl font-sans font-black tracking-tight uppercase text-white">⌨ Hotkey Adjustments</h3>
                 </div>
-                <div className="text-[10px] text-white/50 bg-white/5 px-2.5 py-1 rounded-full border border-white/10 font-mono">
-                  Press ESC to close
+                <div className="flex items-center gap-3 pointer-events-auto">
+                  <div className="hidden sm:block text-[10px] text-white/50 bg-white/5 px-2.5 py-1 rounded-full border border-white/10 font-mono">
+                    Press ESC to close
+                  </div>
+                  <button
+                    onClick={() => { setShowKeybindsMenu(false); setRebindingAction(null); }}
+                    className="h-9 px-4 bg-white hover:bg-cyan-400 hover:text-white text-slate-900 text-xs font-black uppercase tracking-widest rounded-lg cursor-pointer transition-all active:scale-[0.98] flex items-center justify-center gap-1.5 shadow-lg"
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                    Save & Return
+                  </button>
                 </div>
               </div>
 
               {/* Tab Switcher */}
-              <div className="flex border-b border-white/10 mb-5 gap-2 pointer-events-auto">
+              <div className="flex border-b border-white/10 mb-5 gap-2 pointer-events-auto shrink-0">
                 <button
                   onClick={() => { setKeybindsModalTab('keyboard'); setRebindingAction(null); }}
                   className={`flex-1 py-2 text-xs font-black uppercase tracking-wider transition-all duration-150 border-b-2 flex items-center justify-center gap-2 cursor-pointer ${
@@ -7694,14 +7726,7 @@ export default function App() {
                 renderVisualGamepadMapper()
               )}
 
-              {/* Close button */}
-              <button
-                onClick={() => { setShowKeybindsMenu(false); setRebindingAction(null); }}
-                className="w-full h-11 bg-white hover:bg-cyan-400 hover:text-white text-slate-900 text-xs font-black uppercase tracking-widest rounded cursor-pointer transition-colors active:scale-98 flex items-center justify-center gap-2 shadow-lg mt-5"
-              >
-                <Check className="w-4 h-4" />
-                Save & Return
-              </button>
+
             </div>
           ) : (
             /* LIGHTING CONTROLS SLIDERS CONTAINER */

@@ -456,7 +456,7 @@ body {
   .mobile-keybind-modal {
     max-height: 96vh !important;
     max-height: 96dvh !important;
-    overflow-y: hidden !important;
+    overflow-y: auto !important;
   }
 }
 

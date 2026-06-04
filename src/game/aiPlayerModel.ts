@@ -21,9 +21,31 @@ export interface PlayerModel {
   lungeHits: number;
   countersAttempted: number;
   countersLanded: number;
+  // Raw per-match action volumes (reset each match with the model). These complement
+  // the EMA "rate" features above — rates describe HOW a player fights, volumes
+  // describe HOW MUCH. Accumulated for every combatant, so per-combatant telemetry
+  // gets them for free. Excluded from PlayerModelSnapshot / warm-start (per-match only).
+  hammerAttacks: number;
+  weaponSwaps: number;
+  dashes: number;
+  damageDealtCount: number;
+  damageReceivedCount: number;
   lastPositionSampleTime: number;
   /** EMA smoothing factor (learning rate) for this model. */
   emaAlpha: number;
+}
+
+/** Raw per-match action volumes for a combatant (telemetry / analysis). */
+export interface MatchBehaviorStats {
+  lungeAttempts: number;
+  lungeHits: number;
+  hammerAttacks: number;
+  weaponSwaps: number;
+  dashes: number;
+  countersAttempted: number;
+  countersLanded: number;
+  damageDealtCount: number;
+  damageReceivedCount: number;
 }
 
 export interface PlayerModelSnapshot {
@@ -59,9 +81,37 @@ export function createPlayerModel(defaults?: PlayerModelDefaults): PlayerModel {
     lungeHits: 0,
     countersAttempted: 0,
     countersLanded: 0,
+    hammerAttacks: 0,
+    weaponSwaps: 0,
+    dashes: 0,
+    damageDealtCount: 0,
+    damageReceivedCount: 0,
     lastPositionSampleTime: 0,
     emaAlpha: defaults?.emaAlpha ?? PLAYER_MODEL_EMA_ALPHA,
   };
+}
+
+export function toMatchBehaviorStats(model: PlayerModel): MatchBehaviorStats {
+  return {
+    lungeAttempts: model.lungeAttempts,
+    lungeHits: model.lungeHits,
+    hammerAttacks: model.hammerAttacks,
+    weaponSwaps: model.weaponSwaps,
+    dashes: model.dashes,
+    countersAttempted: model.countersAttempted,
+    countersLanded: model.countersLanded,
+    damageDealtCount: model.damageDealtCount,
+    damageReceivedCount: model.damageReceivedCount,
+  };
+}
+
+/** Raw action volumes for a combatant, or null if the model doesn't exist. */
+export function getMatchBehaviorStats(
+  context: AIMatchContext,
+  playerId: string,
+): MatchBehaviorStats | null {
+  const model = context.playerModels.get(playerId) as PlayerModel | undefined;
+  return model ? toMatchBehaviorStats(model) : null;
 }
 
 export function toPlayerModelSnapshot(model: PlayerModel): PlayerModelSnapshot {
@@ -108,6 +158,29 @@ export function getPlayerModelSnapshot(
   return toPlayerModelSnapshot(model);
 }
 
+/**
+ * Seeds an existing model from a persisted snapshot as a *prior* (cross-session
+ * warm-start). Feature values are applied directly, but `sampleCount` is capped
+ * low (default 4) so the prior is immediately usable yet quickly overridden by
+ * fresh in-match evidence via the normal EMA. Never inflates confidence beyond
+ * what the snapshot actually gathered.
+ */
+export function hydratePlayerModel(
+  model: PlayerModel,
+  snapshot: PlayerModelSnapshot,
+  priorSampleCount = 4,
+): void {
+  model.avgLungeDistance = snapshot.avgLungeDistance;
+  model.lungeFrequency = snapshot.lungeFrequency;
+  model.dodgeBiasX = snapshot.dodgeBiasX;
+  model.dodgeBiasZ = snapshot.dodgeBiasZ;
+  model.counterRate = snapshot.counterRate;
+  model.approachSpeed = snapshot.approachSpeed;
+  model.edgeProximity = snapshot.edgeProximity;
+  model.reactionTime = snapshot.reactionTime;
+  model.sampleCount = Math.max(0, Math.min(snapshot.sampleCount, priorSampleCount));
+}
+
 export function observePlayerLungeStart(model: PlayerModel, distance: number): void {
   model.lungeAttempts += 1;
   model.avgLungeDistance = ema(model, model.avgLungeDistance, distance);
@@ -117,6 +190,7 @@ export function observePlayerLungeStart(model: PlayerModel, distance: number): v
 
 export function observePlayerHammerAttack(model: PlayerModel): void {
   model.lungeFrequency = ema(model, model.lungeFrequency, 0);
+  model.hammerAttacks += 1;
   model.sampleCount += 1;
 }
 
@@ -134,6 +208,7 @@ export function observePlayerDash(model: PlayerModel, dirX: number, dirZ: number
     model.dodgeBiasX = ema(model, model.dodgeBiasX, dirX / length);
     model.dodgeBiasZ = ema(model, model.dodgeBiasZ, dirZ / length);
   }
+  model.dashes += 1;
   model.sampleCount += 1;
 }
 
@@ -143,6 +218,7 @@ export function observePlayerWeaponSwap(model: PlayerModel, weapon: 'hammer' | '
   } else {
     model.lungeFrequency = ema(model, model.lungeFrequency, 0.15);
   }
+  model.weaponSwaps += 1;
   model.sampleCount += 1;
 }
 
@@ -157,10 +233,12 @@ export function observePlayerCounter(model: PlayerModel, success: boolean): void
 }
 
 export function observePlayerDamageDealt(model: PlayerModel): void {
+  model.damageDealtCount += 1;
   model.sampleCount += 1;
 }
 
 export function observePlayerDamageReceived(model: PlayerModel): void {
+  model.damageReceivedCount += 1;
   model.sampleCount += 1;
 }
 

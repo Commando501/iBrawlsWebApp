@@ -8,7 +8,7 @@ import * as THREE from 'three';
 import { sfx } from './AudioEngine';
 import { buildGravityHammerModel, buildVoxelSpartanModel, buildKatarSwordModel, buildPistolModel } from './VoxelModels';
 import { AIBehaviorState, DeathEvent, DEFAULT_KEYBINDINGS, MedalInfo, Combatant, ReplayFrame, CustomMapData } from '../types';
-import { cacheReplay } from '../game/theaterDatabase';
+import { cacheReplay, loadPlayerFingerprint, savePlayerFingerprint } from '../game/theaterDatabase';
 import { getSkyboxTexture } from '../game/skyboxTextures';
 import { type AILungeOutcome, evaluateAICombatDecision } from '../game/aiCombatDecision';
 import {
@@ -124,6 +124,13 @@ import {
   type PlayerModelObserver,
   type PlayerModelSnapshot,
 } from './grifball/playerModelObservations';
+import {
+  getMatchBehaviorStats,
+  getOrCreatePlayerModel,
+  getPlayerModelSnapshot,
+  hydratePlayerModel,
+} from '../game/aiPlayerModel';
+import { maybeSendMatchTelemetry } from '../services/matchTelemetry';
 import {
   blendSpatialHeading,
   getBulltrueHammerTriggerBand,
@@ -1252,7 +1259,29 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
   }, [adminSettings, customMap, replayData, selectedMap]);
 
   useEffect(() => {
-    resetAIMatchContext(stateRef.current.aiMatchContext);
+    const ctx = stateRef.current.aiMatchContext;
+    resetAIMatchContext(ctx);
+    // Cross-session warm-start: seed the local player's behavior model from a
+    // persisted fingerprint so the AI counters known habits from the first
+    // engagement instead of relearning every match. Best-effort and skipped
+    // during replay playback (the AI is frame-driven there, not adaptive).
+    if (replayData) return;
+    let cancelled = false;
+    loadPlayerFingerprint(LOCAL_PLAYER_ID)
+      .then((snapshot) => {
+        if (cancelled || !snapshot) return;
+        const tuning = resolveBehaviorTuning(stateRef.current.settings);
+        const model = getOrCreatePlayerModel(ctx, LOCAL_PLAYER_ID, {
+          emaAlpha: tuning.playerModelEmaAlpha,
+          defaultLungeDistance: tuning.defaultLungeDistance,
+          defaultReactionTime: tuning.defaultReactionTime,
+        });
+        hydratePlayerModel(model, snapshot);
+      })
+      .catch(() => { /* warm-start is best-effort; ignore storage failures */ });
+    return () => {
+      cancelled = true;
+    };
   }, [aiMatchSessionKey]);
 
   const onStatsUpdateRef = useLatestRef(onStatsUpdate);
@@ -3986,6 +4015,58 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     }
   };
 
+  // Persist the local player's end-of-match behavior fingerprint so the next
+  // match can warm-start the AI's model of this player (cross-session learning).
+  // Best-effort; only saved when the model gathered enough samples to be useful.
+  const persistLocalPlayerFingerprint = () => {
+    const s = stateRef.current;
+    if (s.isObserverMode || replayData) return;
+    const snapshot = getPlayerModelSnapshot(s.aiMatchContext, LOCAL_PLAYER_ID, 5);
+    if (!snapshot) return;
+    savePlayerFingerprint(LOCAL_PLAYER_ID, snapshot).catch(() => {
+      /* warm-start persistence is best-effort; ignore storage failures */
+    });
+  };
+
+  // Emit anonymous match telemetry (consent-gated + adaptively sampled inside the
+  // service). Uses the same end-of-match local fingerprint as the warm-start save,
+  // gated at >=5 samples so we never upload near-empty matches.
+  const emitMatchTelemetry = () => {
+    const s = stateRef.current;
+    if (s.isObserverMode || replayData) return;
+    const player = getPlayerModelSnapshot(s.aiMatchContext, LOCAL_PLAYER_ID, 5);
+    if (!player) return;
+    const behavior = getMatchBehaviorStats(s.aiMatchContext, LOCAL_PLAYER_ID);
+    void maybeSendMatchTelemetry({
+      map: String(selectedMap ?? ''),
+      mode: aiMatchSessionKey && aiMatchSessionKey.startsWith('tournament') ? 'tournament' : 'sandbox',
+      aiDifficulty: String(s.settings.aiDifficulty ?? ''),
+      aiArchetype: String(s.settings.aiArchetype ?? 'none'),
+      gameMode: String(s.settings.gameMode ?? 'sandbox'),
+      scorePlayer: s.scorePlayer ?? 0,
+      scoreEnemy: s.scoreEnemy ?? 0,
+      playerKills: s.playerKills ?? 0,
+      playerDeaths: s.playerDeaths ?? 0,
+      durationSeconds: replayRecordingElapsedTimeRef.current ?? 0,
+      // Match context
+      isMultiplayer: s.isMultiplayer ? 1 : 0,
+      opponentCount: s.otherPlayers?.size ?? 0,
+      multikills: s.playerMultikillCount ?? 0,
+      sprees: s.playerSpreeCount ?? 0,
+      // Raw per-match action volumes (0 if model somehow absent)
+      lungeAttempts: behavior?.lungeAttempts ?? 0,
+      lungeHits: behavior?.lungeHits ?? 0,
+      hammerAttacks: behavior?.hammerAttacks ?? 0,
+      weaponSwaps: behavior?.weaponSwaps ?? 0,
+      dashes: behavior?.dashes ?? 0,
+      countersAttempted: behavior?.countersAttempted ?? 0,
+      countersLanded: behavior?.countersLanded ?? 0,
+      damageDealtCount: behavior?.damageDealtCount ?? 0,
+      damageReceivedCount: behavior?.damageReceivedCount ?? 0,
+      player,
+    });
+  };
+
   const runReplayPlaybackLoop = (dt: number) => {
     const s = stateRef.current;
     const camera = threeRef.current.camera;
@@ -4780,6 +4861,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
   useEffect(() => {
     return () => {
       saveCompiledReplay();
+      persistLocalPlayerFingerprint();
+      emitMatchTelemetry();
     };
   }, []);
 

@@ -1,13 +1,106 @@
 import { LIVE_CONFIG_KEY_SET } from "./liveConfigKeys";
 import { handleAccountRequest } from "./accounts";
+import { toAnalyticsDataPoint } from "./telemetrySchema";
 
 export interface Env {
   GAME_LOBBY: DurableObjectNamespace;
   DB: D1Database;
   ADMIN_TOKEN?: string;
+  // Optional so deployments without the binding (or older configs) don't break.
+  TELEMETRY?: AnalyticsEngineDataset;
 }
 
 const CONFIG_ID = "multiplayer_preset";
+
+// ── Telemetry helpers ────────────────────────────────────────────────────────
+
+function telemetryNum(v: unknown, fallback = 0): number {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function telemetryStr(v: unknown, max: number): string {
+  return typeof v === "string" ? v.slice(0, max) : "";
+}
+
+// Validate + normalize an incoming telemetry payload. Returns null when the body
+// is malformed (missing anon id or fingerprint), which the caller rejects 400.
+// Also caps string lengths and coerces numbers to bound abuse of the open POST.
+function sanitizeTelemetry(input: unknown): Record<string, unknown> | null {
+  if (!input || typeof input !== "object") return null;
+  const o = input as Record<string, unknown>;
+  if (typeof o.anonId !== "string" || o.anonId.length === 0) return null;
+  if (!o.player || typeof o.player !== "object") return null;
+  const p = o.player as Record<string, unknown>;
+  return {
+    anonId: telemetryStr(o.anonId, 64),
+    ts: telemetryNum(o.ts),
+    appVersion: telemetryStr(o.appVersion, 32),
+    liveConfigVersion: telemetryNum(o.liveConfigVersion),
+    fingerprintSchema: telemetryNum(o.fingerprintSchema),
+    map: telemetryStr(o.map, 32),
+    mode: telemetryStr(o.mode, 32),
+    aiDifficulty: telemetryStr(o.aiDifficulty, 32),
+    aiArchetype: telemetryStr(o.aiArchetype, 32),
+    gameMode: telemetryStr(o.gameMode, 32),
+    scorePlayer: telemetryNum(o.scorePlayer),
+    scoreEnemy: telemetryNum(o.scoreEnemy),
+    playerKills: telemetryNum(o.playerKills),
+    playerDeaths: telemetryNum(o.playerDeaths),
+    durationSeconds: telemetryNum(o.durationSeconds),
+    // Match context
+    isMultiplayer: telemetryNum(o.isMultiplayer),
+    opponentCount: telemetryNum(o.opponentCount),
+    multikills: telemetryNum(o.multikills),
+    sprees: telemetryNum(o.sprees),
+    // Raw per-match action volumes
+    lungeAttempts: telemetryNum(o.lungeAttempts),
+    lungeHits: telemetryNum(o.lungeHits),
+    hammerAttacks: telemetryNum(o.hammerAttacks),
+    weaponSwaps: telemetryNum(o.weaponSwaps),
+    dashes: telemetryNum(o.dashes),
+    countersAttempted: telemetryNum(o.countersAttempted),
+    countersLanded: telemetryNum(o.countersLanded),
+    damageDealtCount: telemetryNum(o.damageDealtCount),
+    damageReceivedCount: telemetryNum(o.damageReceivedCount),
+    player: {
+      avgLungeDistance: telemetryNum(p.avgLungeDistance),
+      lungeFrequency: telemetryNum(p.lungeFrequency),
+      dodgeBiasX: telemetryNum(p.dodgeBiasX),
+      dodgeBiasZ: telemetryNum(p.dodgeBiasZ),
+      counterRate: telemetryNum(p.counterRate),
+      approachSpeed: telemetryNum(p.approachSpeed),
+      edgeProximity: telemetryNum(p.edgeProximity),
+      reactionTime: telemetryNum(p.reactionTime),
+      sampleCount: telemetryNum(p.sampleCount),
+    },
+  };
+}
+
+function getLobbyStub(env: Env): DurableObjectStub {
+  const id = env.GAME_LOBBY.idFromName("global-lobby");
+  return env.GAME_LOBBY.get(id);
+}
+
+function jsonResponse(
+  body: unknown,
+  status: number,
+  cors: Record<string, string>,
+): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json", ...cors },
+  });
+}
+
+// Re-emit a DO response body with CORS + JSON headers attached.
+async function withCorsJson(r: Response, cors: Record<string, string>): Promise<Response> {
+  const text = await r.text();
+  return new Response(text, {
+    status: r.status,
+    headers: { "Content-Type": "application/json", ...cors },
+  });
+}
 
 interface GameConfigRow {
   version: number;
@@ -215,10 +308,43 @@ export default {
       }
     }
 
+    // ── Match telemetry (anonymous gameplay data → Analytics Engine) ──────────
+    // Adaptive admission lives in the lobby DO; the entrypoint validates and
+    // forwards. Both endpoints are public (no admin token) but the open POST is
+    // size-/shape-validated and rate-governed by the DO.
+
+    // GET /api/telemetry/policy — current admission probability for client self-sampling.
+    if (url.pathname === "/api/telemetry/policy" && request.method === "GET") {
+      const stub = getLobbyStub(env);
+      const r = await stub.fetch("https://do/internal/telemetry-policy");
+      return withCorsJson(r, corsHeaders);
+    }
+
+    // POST /api/telemetry/match — submit one match's anonymous fingerprint + outcome.
+    if (url.pathname === "/api/telemetry/match" && request.method === "POST") {
+      let body: unknown;
+      try {
+        body = await request.json();
+      } catch {
+        return jsonResponse({ error: "Invalid JSON body" }, 400, corsHeaders);
+      }
+      const clean = sanitizeTelemetry(body);
+      if (!clean) {
+        return jsonResponse({ error: "Invalid telemetry payload" }, 400, corsHeaders);
+      }
+      const stub = getLobbyStub(env);
+      const r = await stub.fetch("https://do/internal/telemetry", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(clean),
+      });
+      return withCorsJson(r, corsHeaders);
+    }
+
     // Route matchmaking, WebSocket, and IP requests to the same global Durable Object instance
     // to maintain a centralized state (lobby, chat, matchmaking, etc.)
     if (
-      url.pathname === "/ws" || 
+      url.pathname === "/ws" ||
       url.pathname === "/" || 
       url.pathname === "/api/my-ip"
     ) {
@@ -268,6 +394,35 @@ export class GameLobby implements DurableObject {
   quickPlayQueue = new Set<GameWebSocket>();
   waitingQuickPlayClients = new Map<string, GameWebSocket>();
 
+  // ── Telemetry admission governor ───────────────────────────────────────────
+  // Sliding window of recent submissions (ephemeral; resets on DO eviction, which
+  // just means a brief window of full admission — acceptable). Below the active-
+  // sender threshold every match is admitted; above it, admission scales as
+  // threshold / activeSenders so the effective volume stays ~threshold.
+  telemetryWindow: { t: number; anonId: string }[] = [];
+  readonly TELEMETRY_WINDOW_MS = 5 * 60_000;
+  readonly TELEMETRY_ACTIVE_THRESHOLD = 50;
+  readonly TELEMETRY_MIN_PROBABILITY = 0.02;
+
+  computeAdmissionProbability(now: number): number {
+    const cutoff = now - this.TELEMETRY_WINDOW_MS;
+    this.telemetryWindow = this.telemetryWindow.filter((e) => e.t >= cutoff);
+    const distinct = new Set(this.telemetryWindow.map((e) => e.anonId)).size;
+    if (distinct <= this.TELEMETRY_ACTIVE_THRESHOLD) return 1;
+    return Math.max(this.TELEMETRY_MIN_PROBABILITY, this.TELEMETRY_ACTIVE_THRESHOLD / distinct);
+  }
+
+  writeTelemetryDataPoint(body: Record<string, unknown>): void {
+    if (!this.env.TELEMETRY) return;
+    try {
+      // Positional layout comes from the canonical schema (single source of truth
+      // shared with the offline analysis); see worker/src/telemetrySchema.ts.
+      this.env.TELEMETRY.writeDataPoint(toAnalyticsDataPoint(body));
+    } catch {
+      /* AE write is best-effort; never fail the request on telemetry */
+    }
+  }
+
   // Helper to clean up dead sockets from the quickplay queue
   cleanQuickPlayQueue() {
     for (const socket of this.quickPlayQueue) {
@@ -293,6 +448,37 @@ export class GameLobby implements DurableObject {
       return new Response(JSON.stringify({ ok: true }), {
         headers: { "Content-Type": "application/json" },
       });
+    }
+
+    // Current admission probability (no side effects) for client self-sampling.
+    if (url.pathname === "/internal/telemetry-policy") {
+      return new Response(
+        JSON.stringify({ admissionProbability: this.computeAdmissionProbability(Date.now()) }),
+        { headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    // Record a telemetry submission, decide admission, and (if admitted) write it
+    // to Analytics Engine. Returns the decision + the probability the client should
+    // adopt for its own self-sampling next time.
+    if (url.pathname === "/internal/telemetry" && request.method === "POST") {
+      let body: Record<string, unknown> = {};
+      try {
+        body = (await request.json()) as Record<string, unknown>;
+      } catch {
+        /* treat as empty; still report current probability */
+      }
+      const now = Date.now();
+      if (typeof body.anonId === "string" && body.anonId.length > 0) {
+        this.telemetryWindow.push({ t: now, anonId: body.anonId });
+      }
+      const admissionProbability = this.computeAdmissionProbability(now);
+      const admitted = Math.random() < admissionProbability;
+      if (admitted) this.writeTelemetryDataPoint(body);
+      return new Response(
+        JSON.stringify({ ok: true, admitted, admissionProbability }),
+        { headers: { "Content-Type": "application/json" } },
+      );
     }
 
     // Express "/api/my-ip" replacement

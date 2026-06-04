@@ -11,8 +11,10 @@
     "clean": "node scripts/clean.mjs",
     "lint": "tsc --noEmit",
     "typecheck:worker": "cd worker && npm run typecheck",
-    "typecheck:all": "npm run lint && npm run typecheck:worker",
-    "test": "node --import tsx --test src/features/tournament/tournament.test.ts src/game/arenaDimensions.test.ts src/game/grifballGoals.test.ts src/game/grifballTeams.test.ts src/game/grifballBall.test.ts src/game/grifballMatch.test.ts src/game/aiGrifballRoles.test.ts src/game/aiBehaviorTuning.test.ts src/game/aiCombatDecision.test.ts src/game/aiBotCoordinator.test.ts src/game/aiOrchestrator.test.ts src/game/aiComboEngine.test.ts src/game/aiFeints.test.ts src/game/aiMatchContext.test.ts src/game/aiMovementMechanics.test.ts src/game/aiPersonalities.test.ts src/game/aiPlayerModel.test.ts src/game/aiPressure.test.ts src/game/aiPsychologicalPressure.test.ts src/game/aiSkillCalibration.test.ts src/game/aiSpatialStrategy.test.ts src/game/aiTuning.test.ts src/game/rewards.test.ts src/game/rosterSlotConfig.test.ts src/game/roster.test.ts src/game/teamScoring.test.ts src/settings/saveCodec.test.ts src/settings/liveConfig.test.ts src/ui/hudLayouts.test.ts"
+    "typecheck:analysis": "tsc -p analysis/tsconfig.json --noEmit",
+    "typecheck:all": "npm run lint && npm run typecheck:worker && npm run typecheck:analysis",
+    "analyze": "tsx analysis/analyze.ts",
+    "test": "node --import tsx --test src/features/tournament/tournament.test.ts src/game/arenaDimensions.test.ts src/game/grifballGoals.test.ts src/game/grifballTeams.test.ts src/game/grifballBall.test.ts src/game/grifballMatch.test.ts src/game/aiGrifballRoles.test.ts src/game/aiBehaviorTuning.test.ts src/game/aiCombatDecision.test.ts src/game/aiBotCoordinator.test.ts src/game/aiOrchestrator.test.ts src/game/aiComboEngine.test.ts src/game/aiFeints.test.ts src/game/aiMatchContext.test.ts src/game/aiMovementMechanics.test.ts src/game/aiPersonalities.test.ts src/game/aiPlayerModel.test.ts src/game/aiPressure.test.ts src/game/aiPsychologicalPressure.test.ts src/game/aiSkillCalibration.test.ts src/game/aiSpatialStrategy.test.ts src/game/aiTuning.test.ts src/game/rewards.test.ts src/game/theaterDatabase.test.ts src/game/rosterSlotConfig.test.ts src/game/roster.test.ts src/game/teamScoring.test.ts src/settings/saveCodec.test.ts src/settings/liveConfig.test.ts src/services/matchTelemetry.test.ts src/ui/hudLayouts.test.ts analysis/stats.test.ts analysis/archetypeMapping.test.ts analysis/telemetrySchema.test.ts"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",
