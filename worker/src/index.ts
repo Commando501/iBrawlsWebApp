@@ -8,7 +8,19 @@ export interface Env {
   ADMIN_TOKEN?: string;
   // Optional so deployments without the binding (or older configs) don't break.
   TELEMETRY?: AnalyticsEngineDataset;
+  REPLAYS?: R2Bucket;
 }
+
+// Bearer-token admin check, shared by config publish + replay export endpoints.
+function isAdmin(request: Request, env: Env): boolean {
+  const auth = request.headers.get("Authorization") || "";
+  const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+  return Boolean(env.ADMIN_TOKEN && token && tokensMatch(token, env.ADMIN_TOKEN));
+}
+
+// Hard cap on a single replay upload (bounds abuse of the open POST). A 20-min
+// 8-player Grifball replay is ~18-25 MB gzipped, so 64 MB leaves comfortable margin.
+const MAX_REPLAY_UPLOAD_BYTES = 64 * 1024 * 1024;
 
 const CONFIG_ID = "multiplayer_preset";
 
@@ -230,9 +242,7 @@ export default {
 
     // POST /api/admin/config — publish a new official preset. Requires admin token.
     if (url.pathname === "/api/admin/config" && request.method === "POST") {
-      const auth = request.headers.get("Authorization") || "";
-      const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
-      if (!env.ADMIN_TOKEN || !token || !tokensMatch(token, env.ADMIN_TOKEN)) {
+      if (!isAdmin(request, env)) {
         return new Response(JSON.stringify({ error: "Unauthorized" }), {
           status: 401,
           headers: { "Content-Type": "application/json", ...corsHeaders },
@@ -339,6 +349,115 @@ export default {
         body: JSON.stringify(clean),
       });
       return withCorsJson(r, corsHeaders);
+    }
+
+    // ── Replay corpus (gzipped blobs → R2, manifest → D1) ─────────────────────
+    // Upload is public (players opt in client-side and contribute explicitly per
+    // match); list/object are admin-gated for the offline download script.
+    // NOTE pre-launch: add per-anon rate limiting to the open upload before public release.
+
+    // POST /api/replay/upload?id=&sha256=&... — raw gzipped replay JSON is the body.
+    if (url.pathname === "/api/replay/upload" && request.method === "POST") {
+      if (!env.REPLAYS) {
+        return jsonResponse({ error: "Replay storage not configured" }, 503, corsHeaders);
+      }
+      const p = url.searchParams;
+      const id = (p.get("id") || "").slice(0, 64);
+      const sha256 = (p.get("sha256") || "").toLowerCase();
+      if (!/^[A-Za-z0-9_-]{8,64}$/.test(id) || !/^[a-f0-9]{64}$/.test(sha256)) {
+        return jsonResponse({ error: "Invalid id or sha256" }, 400, corsHeaders);
+      }
+      const body = await request.arrayBuffer();
+      if (body.byteLength === 0) {
+        return jsonResponse({ error: "Empty body" }, 400, corsHeaders);
+      }
+      if (body.byteLength > MAX_REPLAY_UPLOAD_BYTES) {
+        return jsonResponse({ error: "Replay too large" }, 413, corsHeaders);
+      }
+      const key = `replays/${id}.json.gz`;
+      try {
+        await env.REPLAYS.put(key, body, {
+          httpMetadata: { contentType: "application/gzip" },
+          customMetadata: { sha256 },
+        });
+        await env.DB.prepare(
+          `INSERT INTO replay_index
+             (id, anon_id, created_at, duration_s, players, map, mode, game_mode, r2_key, size_bytes, sha256, schema_version)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(id) DO UPDATE SET
+             created_at = excluded.created_at,
+             size_bytes = excluded.size_bytes,
+             sha256 = excluded.sha256`,
+        )
+          .bind(
+            id,
+            (p.get("anonId") || "").slice(0, 64) || null,
+            Date.now(),
+            Number(p.get("duration")) || 0,
+            Number(p.get("players")) || 0,
+            (p.get("map") || "").slice(0, 32),
+            (p.get("mode") || "").slice(0, 32),
+            (p.get("gameMode") || "").slice(0, 32),
+            key,
+            body.byteLength,
+            sha256,
+            Number(p.get("schemaVersion")) || 0,
+          )
+          .run();
+        return jsonResponse({ ok: true, id, key, size: body.byteLength }, 200, corsHeaders);
+      } catch (err) {
+        return jsonResponse(
+          { error: "Failed to store replay", detail: String(err) },
+          500,
+          corsHeaders,
+        );
+      }
+    }
+
+    // GET /api/replay/list — admin: enumerate the manifest for the download script.
+    if (url.pathname === "/api/replay/list" && request.method === "GET") {
+      if (!isAdmin(request, env)) {
+        return jsonResponse({ error: "Unauthorized" }, 401, corsHeaders);
+      }
+      const limit = Math.min(Number(url.searchParams.get("limit")) || 1000, 10000);
+      try {
+        const rows = await env.DB.prepare(
+          `SELECT id, anon_id, created_at, duration_s, players, map, mode, game_mode,
+                  r2_key, size_bytes, sha256, schema_version
+             FROM replay_index ORDER BY created_at DESC LIMIT ?`,
+        )
+          .bind(limit)
+          .all();
+        return jsonResponse({ ok: true, replays: rows.results ?? [] }, 200, corsHeaders);
+      } catch (err) {
+        return jsonResponse(
+          { error: "Failed to list replays", detail: String(err) },
+          500,
+          corsHeaders,
+        );
+      }
+    }
+
+    // GET /api/replay/object?id=... — admin: stream a gzipped replay blob from R2.
+    if (url.pathname === "/api/replay/object" && request.method === "GET") {
+      if (!isAdmin(request, env)) {
+        return jsonResponse({ error: "Unauthorized" }, 401, corsHeaders);
+      }
+      if (!env.REPLAYS) {
+        return jsonResponse({ error: "Replay storage not configured" }, 503, corsHeaders);
+      }
+      const id = (url.searchParams.get("id") || "").slice(0, 64);
+      if (!/^[A-Za-z0-9_-]{8,64}$/.test(id)) {
+        return jsonResponse({ error: "Invalid id" }, 400, corsHeaders);
+      }
+      const obj = await env.REPLAYS.get(`replays/${id}.json.gz`);
+      if (!obj) {
+        return jsonResponse({ error: "Not found" }, 404, corsHeaders);
+      }
+      return new Response(obj.body, {
+        status: 200,
+        headers: { "Content-Type": "application/gzip", ...corsHeaders },
+      });
     }
 
     // Route matchmaking, WebSocket, and IP requests to the same global Durable Object instance

@@ -43,7 +43,7 @@ import {
   fetchCloudSave,
   pushCloudSave,
 } from './services/account';
-import { getTelemetryConsent, setTelemetryConsent } from './services/telemetryConsent';
+import { contributeReplay } from './services/replayUpload';
 import SpartanIdentityAccount from './components/SpartanIdentityAccount';
 import {
   DEFAULT_DESKTOP_UI_POSITIONS,
@@ -91,7 +91,7 @@ import { CharacterPreview } from './components/CharacterPreview';
 import { CharacterPainter } from './components/CharacterPainter';
 import { CharacterLoadout, DEFAULT_LOADOUT, AVAILABLE_PRESETS, HelmetPreset, TorsoPreset, ArmPreset, LegPreset } from './components/VoxelModels';
 
-const APP_VERSION = '0.612';
+const APP_VERSION = '0.613';
 const MAX_PLAYER_NAME_LENGTH = 10;
 
 interface OnlineClient {
@@ -1593,7 +1593,23 @@ export default function App() {
 
   const [matchmakerUrl, setMatchmakerUrl] = useState<string>(getSavedMatchmakerUrl());
   const [customUrlInput, setCustomUrlInput] = useState<string>(matchmakerUrl);
-  const [telemetryConsent, setTelemetryConsentState] = useState<boolean>(getTelemetryConsent());
+  const [replayUploadStatus, setReplayUploadStatus] = useState<Record<string, 'uploading' | 'done' | 'error'>>({});
+  // Always-on collection is disclosed via a one-time first-run notice (no opt-in gate).
+  const [showDataNotice, setShowDataNotice] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('ibrawls_data_notice_seen') !== '1';
+    } catch {
+      return false;
+    }
+  });
+  const dismissDataNotice = () => {
+    try {
+      localStorage.setItem('ibrawls_data_notice_seen', '1');
+    } catch {
+      /* ignore */
+    }
+    setShowDataNotice(false);
+  };
   const [isPaused, setIsPaused] = useState<boolean>(false);
   const [debugMode, setDebugMode] = useState<boolean>(false);
   const [isTerminated, setIsTerminated] = useState<boolean>(false);
@@ -4979,6 +4995,27 @@ export default function App() {
 
   return (
     <div className="relative w-full h-[100dvh] bg-[#050b1a] text-white overflow-hidden select-none font-sans flex flex-col">
+      {/* FIRST-RUN DATA COLLECTION NOTICE (always-on collection disclosure, no gate) */}
+      {showDataNotice && (
+        <div className="fixed bottom-0 inset-x-0 z-[200] flex justify-center px-3 pb-3 pointer-events-none">
+          <div className="pointer-events-auto max-w-2xl w-full bg-slate-900/95 backdrop-blur border border-sky-500/30 rounded-xl shadow-2xl px-4 py-3 flex items-start gap-3">
+            <span className="text-lg leading-none mt-0.5">📊</span>
+            <p className="text-[11px] text-white/70 leading-snug flex-1">
+              <span className="font-bold text-sky-300">Heads up — this is a tech demo.</span>{' '}
+              It collects anonymized gameplay stats and a sampled subset of match replays
+              (with player names removed) to train and improve the AI. No accounts or
+              personal information are stored.
+            </p>
+            <button
+              onClick={dismissDataNotice}
+              className="shrink-0 px-3 h-8 bg-sky-500 hover:bg-sky-400 text-slate-950 font-black text-[11px] uppercase tracking-wider rounded cursor-pointer transition-all active:scale-95"
+            >
+              Got it
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* BACKGROUND ARENA SIMULATION GRID */}
       <div 
         className="absolute inset-0 z-0 opacity-20 pointer-events-none" 
@@ -6087,26 +6124,18 @@ export default function App() {
                               </button>
                             </div>
 
-                            {/* Anonymous gameplay data sharing (opt-in, default off) */}
-                            <label className="flex items-start gap-2.5 mt-1.5 pt-2.5 border-t border-white/5 cursor-pointer select-none">
-                              <input
-                                type="checkbox"
-                                checked={telemetryConsent}
-                                onChange={(e) => {
-                                  setTelemetryConsent(e.target.checked);
-                                  setTelemetryConsentState(e.target.checked);
-                                }}
-                                className="mt-0.5 accent-[#38bdf8] cursor-pointer"
-                              />
+                            {/* Always-on data collection disclosure (tech demo) */}
+                            <div className="flex items-start gap-2.5 mt-1.5 pt-2.5 border-t border-white/5">
+                              <span className="text-sm mt-0.5">📊</span>
                               <span className="flex flex-col gap-0.5">
                                 <span className="text-[10px] text-white/70 uppercase tracking-widest font-mono">
-                                  Share anonymous gameplay data
+                                  Data collection (tech demo)
                                 </span>
                                 <span className="text-[10px] text-white/40 font-medium leading-snug normal-case tracking-normal">
-                                  Sends anonymized playstyle stats at match end to help tune the AI. No account or personal info — opt out anytime.
+                                  This demo collects anonymized gameplay stats and a sampled subset of match replays (player names removed) to train and improve the AI. No accounts or personal info are stored.
                                 </span>
                               </span>
-                            </label>
+                            </div>
                           </div>
                         </details>
                       </div>
@@ -6378,6 +6407,24 @@ export default function App() {
                                     title="Delete Replay"
                                   >
                                     🗑️
+                                  </button>
+                                  <button
+                                    onClick={async () => {
+                                      setReplayUploadStatus((s) => ({ ...s, [replay.id]: 'uploading' }));
+                                      const result = await contributeReplay(replay);
+                                      setReplayUploadStatus((s) => ({ ...s, [replay.id]: result.ok ? 'done' : 'error' }));
+                                    }}
+                                    disabled={replayUploadStatus[replay.id] === 'uploading' || replayUploadStatus[replay.id] === 'done'}
+                                    className="px-2 h-7 bg-sky-950/30 hover:bg-sky-900/50 border border-sky-500/20 hover:border-sky-500/40 rounded text-[9.5px] font-bold text-sky-300 hover:text-sky-200 uppercase tracking-wider transition-all cursor-pointer flex items-center justify-center disabled:opacity-50"
+                                    title="Upload this replay to AI training now (anonymous, names removed, compressed)"
+                                  >
+                                    {replayUploadStatus[replay.id] === 'uploading'
+                                      ? '⏳ …'
+                                      : replayUploadStatus[replay.id] === 'done'
+                                      ? '✓ Sent'
+                                      : replayUploadStatus[replay.id] === 'error'
+                                      ? '⚠ Retry'
+                                      : '☁ Contribute'}
                                   </button>
                                   <button
                                     onClick={() => {

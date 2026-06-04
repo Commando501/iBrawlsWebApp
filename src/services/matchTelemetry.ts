@@ -1,5 +1,5 @@
 import { resolveHttpBase, getCachedLiveConfig } from './liveConfig';
-import { getOrCreateAnonId, getTelemetryConsent } from './telemetryConsent';
+import { getOrCreateAnonId } from './telemetryConsent';
 import type { PlayerModelSnapshot } from '../game/aiPlayerModel';
 
 /**
@@ -62,7 +62,12 @@ export interface MatchTelemetry extends MatchTelemetryInput, MatchTelemetryMeta 
   fingerprintSchema: number;
 }
 
-export type TelemetryResult = 'sent' | 'skipped-consent' | 'dropped-sampled' | 'failed';
+export type TelemetryResult = 'sent' | 'dropped-sampled' | 'failed';
+
+/** Current admission probability (server-governed). Reused by replay sampling. */
+export function getTelemetryAdmissionProbability(): number {
+  return admissionProbability;
+}
 
 export function clamp01(n: number): number {
   // NaN → 0 (treat garbage conservatively); ±Infinity clamp normally via min/max.
@@ -120,8 +125,8 @@ async function refreshPolicyIfStale(base: string, now: number): Promise<void> {
 export async function maybeSendMatchTelemetry(
   input: MatchTelemetryInput,
 ): Promise<TelemetryResult> {
-  if (!getTelemetryConsent()) return 'skipped-consent';
-
+  // Always-on collection (tech demo). Volume is bounded by the server admission
+  // governor (self-sampling below), which only throttles under heavy concurrent load.
   const base = resolveHttpBase();
   const now = Date.now();
   await refreshPolicyIfStale(base, now);

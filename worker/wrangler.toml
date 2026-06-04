@@ -29,6 +29,13 @@ migrations_dir = "migrations"
 binding = "TELEMETRY"
 dataset = "ibrawls_match_telemetry"
 
+# R2 object storage — gzipped replay blobs for the behavior-cloning training corpus.
+# 10 GB free. The D1 `replay_index` table is the queryable catalog; blobs live here.
+# Create with: wrangler r2 bucket create ibrawls-replays
+[[r2_buckets]]
+binding = "REPLAYS"
+bucket_name = "ibrawls-replays"
+
 # ADMIN_TOKEN gates POST /api/admin/config. Do NOT commit it here — set it with:
 #   wrangler secret put ADMIN_TOKEN
 # For local `wrangler dev`, put it in worker/.dev.vars (gitignored).

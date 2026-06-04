@@ -57,6 +57,21 @@ consumer can't drift.
 rows). Add new fields to the end and bump `TELEMETRY_FINGERPRINT_SCHEMA` on the
 client so analysis can segment by schema version.
 
+## Replay corpus (behavior cloning)
+
+Opt-in full match replays are gzipped client-side, uploaded to **R2** (blobs) with a
+row in the D1 `replay_index` catalog (metadata + SHA-256 of the original JSON).
+Download them for offline training with:
+
+```bash
+WORKER_URL=https://<your-worker> ADMIN_TOKEN=<token> \
+  npm run download:replays -- --out=./replays --limit=2000
+```
+
+Each blob is gunzipped and its SHA-256 re-verified against the manifest before being
+written — a corrupted replay is reported and skipped, never silently trained on.
+gzip is lossless, so the decompressed JSON is byte-identical to what was recorded.
+
 ## Files
 
 | File | Role |
@@ -66,6 +81,7 @@ client so analysis can segment by schema version.
 | `suggestTuning.ts` | Phase 3: imbalance flags → advisory tuning suggestions |
 | `archetypeMapping.ts` | Phase 4: cluster centroid → candidate archetype knobs/flags |
 | `analyze.ts` | CLI that ties it together and prints the report |
+| `downloadReplays.mjs` | Download + integrity-verify the replay corpus from R2 |
 | `*.test.ts` | Unit tests (run via the root `npm test`) |
 
 ## Tests / typecheck

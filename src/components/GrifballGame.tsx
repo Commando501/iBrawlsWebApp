@@ -131,6 +131,7 @@ import {
   hydratePlayerModel,
 } from '../game/aiPlayerModel';
 import { maybeSendMatchTelemetry } from '../services/matchTelemetry';
+import { maybeContributeReplay } from '../services/replayUpload';
 import {
   blendSpatialHeading,
   getBulltrueHammerTriggerBand,
@@ -4013,6 +4014,11 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     } catch (err) {
       console.error('Failed to auto-save compiled replay:', err);
     }
+
+    // Always-on but sampled contribution to the AI training corpus (PII stripped,
+    // gzipped, fire-and-forget). Most matches are dropped client-side to bound the
+    // ~18 MB/replay bandwidth; see REPLAY_BASE_SAMPLE_RATE.
+    void maybeContributeReplay(recording);
   };
 
   // Persist the local player's end-of-match behavior fingerprint so the next
@@ -4621,6 +4627,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         opponentName: initialOpponentName,
         mapType: selectedMap || 'hangar',
         mode: isTournament ? 'tournament' : 'sandbox',
+        gameMode: adminSettings.gameMode ?? 'sandbox',
         maxScore: isTournament ? (matchKillsToWin ?? 25) : 25,
         recordedAsObserver: s.isObserverMode,
         frames: []

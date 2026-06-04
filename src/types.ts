@@ -633,6 +633,13 @@ export interface ReplayFile {
   opponentName: string;
   mapType: 'rectangular' | 'circle';
   mode: 'sandbox' | 'tournament';
+  /**
+   * Which game mode produced this replay. Distinct from `mode` (tournament vs free
+   * play): this is the rules axis the AI training corpus must segment on, since
+   * Grifball demands different playstyles than the base brawl. Optional for back-compat
+   * with replays recorded before the field existed (treat absent as 'sandbox').
+   */
+  gameMode?: 'sandbox' | 'grifball';
   maxScore: number;
   frames: ReplayFrame[];
   isAutoSaved?: boolean;
