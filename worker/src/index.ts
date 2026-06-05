@@ -352,9 +352,9 @@ export default {
     }
 
     // ── Replay corpus (gzipped blobs → R2, manifest → D1) ─────────────────────
-    // Upload is public (players opt in client-side and contribute explicitly per
-    // match); list/object are admin-gated for the offline download script.
-    // NOTE pre-launch: add per-anon rate limiting to the open upload before public release.
+    // Upload is public (clients contribute sampled matches automatically); it is size-
+    // capped and rate-limited per-anon + per-IP via the lobby DO. list/object are
+    // admin-gated for the offline download script.
 
     // POST /api/replay/upload?id=&sha256=&... — raw gzipped replay JSON is the body.
     if (url.pathname === "/api/replay/upload" && request.method === "POST") {
@@ -366,6 +366,37 @@ export default {
       const sha256 = (p.get("sha256") || "").toLowerCase();
       if (!/^[A-Za-z0-9_-]{8,64}$/.test(id) || !/^[a-f0-9]{64}$/.test(sha256)) {
         return jsonResponse({ error: "Invalid id or sha256" }, 400, corsHeaders);
+      }
+      // Rate-limit the open upload BEFORE buffering the (large) body or touching R2/D1.
+      // The lobby DO holds a shared per-anon + per-IP sliding window. Fail-open if the
+      // DO is briefly unreachable so legitimate uploads aren't lost to a transient hiccup.
+      const uploadAnonId = (p.get("anonId") || "").slice(0, 64);
+      const uploadIp = request.headers.get("CF-Connecting-IP") || "";
+      try {
+        const admitRes = await getLobbyStub(env).fetch("https://do/internal/replay-admit", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ anonId: uploadAnonId, ip: uploadIp }),
+        });
+        const decision = (await admitRes.json().catch(() => ({ admitted: true }))) as {
+          admitted?: boolean;
+          retryAfterSeconds?: number;
+        };
+        if (decision.admitted === false) {
+          return new Response(
+            JSON.stringify({ error: "Rate limit exceeded" }),
+            {
+              status: 429,
+              headers: {
+                "Content-Type": "application/json",
+                "Retry-After": String(decision.retryAfterSeconds ?? 60),
+                ...corsHeaders,
+              },
+            },
+          );
+        }
+      } catch {
+        /* fail-open: never drop a legit upload on a DO hiccup */
       }
       const body = await request.arrayBuffer();
       if (body.byteLength === 0) {
@@ -391,7 +422,7 @@ export default {
         )
           .bind(
             id,
-            (p.get("anonId") || "").slice(0, 64) || null,
+            uploadAnonId || null,
             Date.now(),
             Number(p.get("duration")) || 0,
             Number(p.get("players")) || 0,
@@ -531,6 +562,42 @@ export class GameLobby implements DurableObject {
     return Math.max(this.TELEMETRY_MIN_PROBABILITY, this.TELEMETRY_ACTIVE_THRESHOLD / distinct);
   }
 
+  // ── Replay upload rate limiter ─────────────────────────────────────────────
+  // The upload endpoint is public and unauthenticated (clients contribute every match),
+  // and each blob is large, so it needs an abuse ceiling. Sliding window per anon AND
+  // per IP (ephemeral; resets on DO eviction, which just re-opens the window briefly —
+  // acceptable). Only ADMITTED uploads are recorded, so a flood past the cap keeps
+  // getting rejected without growing the window. With client sampling at 0.25, a real
+  // player uploads well under these caps; they only bite automated abuse.
+  replayWindow: { t: number; anonId: string; ip: string }[] = [];
+  readonly REPLAY_WINDOW_MS = 10 * 60_000;
+  readonly REPLAY_MAX_PER_ANON = 8;
+  readonly REPLAY_MAX_PER_IP = 20;
+
+  admitReplayUpload(
+    now: number,
+    anonId: string,
+    ip: string,
+  ): { admitted: boolean; retryAfterSeconds: number } {
+    const cutoff = now - this.REPLAY_WINDOW_MS;
+    this.replayWindow = this.replayWindow.filter((e) => e.t >= cutoff);
+    const anonCount = anonId
+      ? this.replayWindow.filter((e) => e.anonId === anonId).length
+      : 0;
+    const ipCount = ip ? this.replayWindow.filter((e) => e.ip === ip).length : 0;
+    if (anonCount >= this.REPLAY_MAX_PER_ANON || ipCount >= this.REPLAY_MAX_PER_IP) {
+      // Time until the oldest relevant entry ages out of the window.
+      const relevant = this.replayWindow.filter(
+        (e) => (anonId && e.anonId === anonId) || (ip && e.ip === ip),
+      );
+      const oldest = relevant.reduce((min, e) => Math.min(min, e.t), now);
+      const retryAfterSeconds = Math.max(1, Math.ceil((oldest + this.REPLAY_WINDOW_MS - now) / 1000));
+      return { admitted: false, retryAfterSeconds };
+    }
+    this.replayWindow.push({ t: now, anonId, ip });
+    return { admitted: true, retryAfterSeconds: 0 };
+  }
+
   writeTelemetryDataPoint(body: Record<string, unknown>): void {
     if (!this.env.TELEMETRY) return;
     try {
@@ -565,6 +632,22 @@ export class GameLobby implements DurableObject {
       const version = Number(url.searchParams.get("version")) || 0;
       this.broadcastConfigChanged(version);
       return new Response(JSON.stringify({ ok: true }), {
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    // Rate-limit decision for a public replay upload (per-anon + per-IP sliding window).
+    if (url.pathname === "/internal/replay-admit" && request.method === "POST") {
+      let info: { anonId?: unknown; ip?: unknown } = {};
+      try {
+        info = (await request.json()) as { anonId?: unknown; ip?: unknown };
+      } catch {
+        /* treat as empty identifiers → still subject to the IP/anon caps */
+      }
+      const anonId = typeof info.anonId === "string" ? info.anonId.slice(0, 64) : "";
+      const ip = typeof info.ip === "string" ? info.ip.slice(0, 64) : "";
+      const decision = this.admitReplayUpload(Date.now(), anonId, ip);
+      return new Response(JSON.stringify(decision), {
         headers: { "Content-Type": "application/json" },
       });
     }

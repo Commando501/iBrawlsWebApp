@@ -16,7 +16,9 @@ import type { PlayerModelSnapshot } from '../game/aiPlayerModel';
  *      for free, from each successful POST response.
  */
 
-export const TELEMETRY_FINGERPRINT_SCHEMA = 1;
+// v2: AE index became a composite (gameMode|aiDifficulty) sampling key and aiDifficulty
+// was appended to the blob columns. Bump lets analysis segment v1 vs v2 row layouts.
+export const TELEMETRY_FINGERPRINT_SCHEMA = 2;
 
 const APP_VERSION =
   ((import.meta as any)?.env?.VITE_APP_VERSION as string | undefined) ?? 'dev';

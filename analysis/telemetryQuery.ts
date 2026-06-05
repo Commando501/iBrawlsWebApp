@@ -2,7 +2,7 @@ import {
   analyticsSqlSelectColumns,
   TELEMETRY_BLOB_FIELDS,
   TELEMETRY_DOUBLE_FIELDS,
-  TELEMETRY_INDEX_FIELDS,
+  TELEMETRY_INDEX_ALIAS,
 } from '../worker/src/telemetrySchema';
 
 /**
@@ -20,9 +20,13 @@ export interface AeCredentials {
   apiToken: string;
 }
 
-/** One match row, columns aliased back to schema field names. */
+/**
+ * One match row, columns aliased back to schema field names. `samplingKey` is the raw
+ * composite AE index; gameMode and aiDifficulty are also available individually as
+ * blobs (filter on those, not the composite).
+ */
 export type MatchRow = Record<
-  | (typeof TELEMETRY_INDEX_FIELDS)[number]
+  | typeof TELEMETRY_INDEX_ALIAS
   | (typeof TELEMETRY_BLOB_FIELDS)[number]
   | (typeof TELEMETRY_DOUBLE_FIELDS)[number],
   string | number

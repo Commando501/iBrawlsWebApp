@@ -5,7 +5,7 @@ import {
   toAnalyticsDataPoint,
   TELEMETRY_BLOB_FIELDS,
   TELEMETRY_DOUBLE_FIELDS,
-  TELEMETRY_INDEX_FIELDS,
+  TELEMETRY_SAMPLING_KEY_SEPARATOR,
 } from '../worker/src/telemetrySchema';
 
 const body = {
@@ -52,9 +52,11 @@ const body = {
 test('toAnalyticsDataPoint emits columns in schema order with nested resolution', () => {
   const dp = toAnalyticsDataPoint(body);
 
-  assert.deepEqual(dp.indexes, ['hard']);
+  // Single composite index: gameMode + separator + aiDifficulty (sampling key).
+  assert.deepEqual(dp.indexes, [`grifball${TELEMETRY_SAMPLING_KEY_SEPARATOR}hard`]);
+  // aiDifficulty is appended as a blob so SQL can filter it without parsing the index.
   assert.deepEqual(dp.blobs, [
-    'anon-1', '1.0.0', '7', 'rectangular', 'sandbox', 'berserker', 'grifball',
+    'anon-1', '1.0.0', '7', 'rectangular', 'sandbox', 'berserker', 'grifball', 'hard',
   ]);
   // Outcome → fingerprint → fingerprintSchema → context → action volumes (see schema).
   assert.deepEqual(dp.doubles, [
@@ -68,7 +70,8 @@ test('toAnalyticsDataPoint emits columns in schema order with nested resolution'
 
 test('toAnalyticsDataPoint array lengths match the schema field counts', () => {
   const dp = toAnalyticsDataPoint(body);
-  assert.equal(dp.indexes.length, TELEMETRY_INDEX_FIELDS.length);
+  // Always exactly one AE index (the composite sampling key).
+  assert.equal(dp.indexes.length, 1);
   assert.equal(dp.blobs.length, TELEMETRY_BLOB_FIELDS.length);
   assert.equal(dp.doubles.length, TELEMETRY_DOUBLE_FIELDS.length);
 });
@@ -83,12 +86,12 @@ test('toAnalyticsDataPoint coerces missing / bad values safely', () => {
 
 test('analyticsSqlSelectColumns aliases positional AE columns to field names', () => {
   const sql = analyticsSqlSelectColumns();
-  assert.match(sql, /index1 AS aiDifficulty/);
+  assert.match(sql, /index1 AS samplingKey/);
   assert.match(sql, /blob1 AS anonId/);
+  assert.match(sql, /blob8 AS aiDifficulty/);
   assert.match(sql, /double1 AS scorePlayer/);
   assert.match(sql, /double6 AS avgLungeDistance/);
-  // One projection per schema column.
-  const expected =
-    TELEMETRY_INDEX_FIELDS.length + TELEMETRY_BLOB_FIELDS.length + TELEMETRY_DOUBLE_FIELDS.length;
+  // One projection per schema column: the single composite index + blobs + doubles.
+  const expected = 1 + TELEMETRY_BLOB_FIELDS.length + TELEMETRY_DOUBLE_FIELDS.length;
   assert.equal(sql.split(',').length, expected);
 });
