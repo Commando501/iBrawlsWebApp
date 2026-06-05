@@ -50,6 +50,12 @@ interface Props {
   onSettingChange: (key: string, value: number) => void;
   /** AI knob section metadata (App's AI_CUSTOM_KNOB_SECTIONS). */
   aiSections: KnobSection[];
+  /**
+   * The full game-mechanic setting sections (Core/Health/Velocity/Hammer/Sword/…),
+   * pre-rendered by App via its existing `renderSection` so the dashboard reuses the
+   * exact same controls bound to `adminSettings` — no duplication.
+   */
+  mechanicsContent: React.ReactNode;
   /** Currently-published Official Multiplayer Preset, if any. */
   multiplayerPreset: LiveConfig | null;
   onPublish: () => void;
@@ -70,6 +76,7 @@ const AdminDashboard: React.FC<Props> = ({
   settings,
   onSettingChange,
   aiSections,
+  mechanicsContent,
   multiplayerPreset,
   onPublish,
   isPublishing,
@@ -112,99 +119,42 @@ const AdminDashboard: React.FC<Props> = ({
           identity (name/hue) is never included.
         </p>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* 1. Multiplayer Game Mechanics — publish */}
-          <div className={cardCls}>
+        {/* 1. Multiplayer Game Mechanics — publish + full mechanic dials */}
+        <div className={cardCls}>
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <span className={`${sectionTitleCls} text-[#38bdf8]`}>🛰️ Multiplayer Game Mechanics</span>
-            <p className="text-[11px] text-white/45 leading-snug">
-              Publish the current gameplay ruleset (configured in the Sandbox settings panel) as the
-              live Official Multiplayer Preset. Every connected match adopts it.
-            </p>
-            <div className="flex items-center justify-between bg-black/40 border border-white/10 rounded-lg px-3 py-2">
-              <span className="text-[10px] uppercase tracking-widest font-mono text-white/40">
-                Currently Published
-              </span>
+            <div className="flex items-center gap-3">
+              <span className="text-[10px] uppercase tracking-widest font-mono text-white/40">Published</span>
               <span className="text-xs font-mono text-cyan-400 font-bold">
                 {multiplayerPreset
                   ? `v${multiplayerPreset.version}${multiplayerPreset.label ? ` · ${multiplayerPreset.label}` : ''}`
                   : 'None yet'}
               </span>
-            </div>
-            <button
-              onClick={onPublish}
-              disabled={isPublishing}
-              className={`h-11 rounded-lg text-xs font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${
-                isPublishing
-                  ? 'bg-white/5 border border-white/5 text-white/20 cursor-not-allowed'
-                  : 'bg-amber-500/20 hover:bg-amber-500/40 border border-amber-500/40 text-amber-300 cursor-pointer active:scale-[0.98]'
-              }`}
-            >
-              {isPublishing ? 'Publishing…' : 'Publish Current Ruleset as Official Preset'}
-            </button>
-            {publishStatus && (
-              <span className={`text-[10px] font-mono ${publishStatus.ok ? 'text-emerald-400' : 'text-red-400'}`}>
-                {publishStatus.msg}
-              </span>
-            )}
-          </div>
-
-          {/* 3. Multiplayer Bots — placeholder */}
-          <div className={cardCls}>
-            <span className={`${sectionTitleCls} text-fuchsia-300`}>
-              🤖 Multiplayer Bots
-              <span className="text-[9px] font-bold text-white/30 bg-white/5 border border-white/10 px-1.5 py-0.5 rounded normal-case tracking-normal">
-                Coming soon
-              </span>
-            </span>
-            <p className="text-[11px] text-white/45 leading-snug">
-              Let players add AI bots to their multiplayer games. These controls are saved but not
-              yet wired into matches — bot spawning ships in a follow-up.
-            </p>
-            <label className="flex items-center justify-between bg-black/40 border border-white/10 rounded-lg px-3 py-2.5">
-              <span className="text-xs font-mono uppercase tracking-wider text-white/60">Enable Bots</span>
               <button
-                onClick={() => onBotConfigChange({ ...botConfig, enabled: !botConfig.enabled })}
-                className={`px-4 h-7 text-[10px] font-bold uppercase rounded cursor-pointer transition-all border ${
-                  botConfig.enabled
-                    ? 'bg-fuchsia-500/20 border-fuchsia-500/50 text-fuchsia-300'
-                    : 'bg-black/40 border-white/10 text-white/50 hover:text-white/80'
+                onClick={onPublish}
+                disabled={isPublishing}
+                className={`h-9 px-4 rounded-lg text-[11px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${
+                  isPublishing
+                    ? 'bg-white/5 border border-white/5 text-white/20 cursor-not-allowed'
+                    : 'bg-amber-500/20 hover:bg-amber-500/40 border border-amber-500/40 text-amber-300 cursor-pointer active:scale-[0.98]'
                 }`}
               >
-                {botConfig.enabled ? 'On' : 'Off'}
+                {isPublishing ? 'Publishing…' : 'Publish as Official Preset'}
               </button>
-            </label>
-            <div className={`flex flex-col gap-4 transition-opacity ${botConfig.enabled ? '' : 'opacity-40 pointer-events-none'}`}>
-              <div className="flex flex-col gap-1.5">
-                <div className="flex justify-between text-xs font-mono uppercase tracking-wider text-white/60">
-                  <span>Bots Per Match</span>
-                  <span className="text-fuchsia-300 font-bold">{botConfig.count}</span>
-                </div>
-                <input
-                  type="range"
-                  min={1}
-                  max={8}
-                  step={1}
-                  value={botConfig.count}
-                  onChange={(e) => onBotConfigChange({ ...botConfig, count: parseInt(e.target.value, 10) })}
-                  className="w-full accent-fuchsia-400 h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
-                />
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <div className="flex justify-between text-xs font-mono uppercase tracking-wider text-white/60">
-                  <span>Bot Difficulty</span>
-                  <span className="text-fuchsia-300 font-bold">{botConfig.difficulty}%</span>
-                </div>
-                <input
-                  type="range"
-                  min={0}
-                  max={100}
-                  step={5}
-                  value={botConfig.difficulty}
-                  onChange={(e) => onBotConfigChange({ ...botConfig, difficulty: parseInt(e.target.value, 10) })}
-                  className="w-full accent-fuchsia-400 h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
-                />
-              </div>
             </div>
+          </div>
+          <p className="text-[11px] text-white/45 leading-snug">
+            Tune the gameplay ruleset for multiplayer below, then publish it as the live Official
+            Multiplayer Preset — every connected peer-to-peer match adopts it. (The same dials appear
+            in the Sandbox settings panel; this is the multiplayer-governance view.)
+          </p>
+          {publishStatus && (
+            <span className={`text-[10px] font-mono ${publishStatus.ok ? 'text-emerald-400' : 'text-red-400'}`}>
+              {publishStatus.msg}
+            </span>
+          )}
+          <div className="border-t border-white/5 pt-4 mt-1">
+            {mechanicsContent}
           </div>
         </div>
 
@@ -244,6 +194,65 @@ const AdminDashboard: React.FC<Props> = ({
                 })}
               </div>
             ))}
+          </div>
+        </div>
+
+        {/* 3. Multiplayer Bots — placeholder */}
+        <div className={cardCls}>
+          <span className={`${sectionTitleCls} text-fuchsia-300`}>
+            🤖 Multiplayer Bots
+            <span className="text-[9px] font-bold text-white/30 bg-white/5 border border-white/10 px-1.5 py-0.5 rounded normal-case tracking-normal">
+              Coming soon
+            </span>
+          </span>
+          <p className="text-[11px] text-white/45 leading-snug">
+            Let players add AI bots to their multiplayer games. These controls are saved but not
+            yet wired into matches — bot spawning ships in a follow-up.
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
+            <label className="flex items-center justify-between bg-black/40 border border-white/10 rounded-lg px-3 py-2.5">
+              <span className="text-xs font-mono uppercase tracking-wider text-white/60">Enable Bots</span>
+              <button
+                onClick={() => onBotConfigChange({ ...botConfig, enabled: !botConfig.enabled })}
+                className={`px-4 h-7 text-[10px] font-bold uppercase rounded cursor-pointer transition-all border ${
+                  botConfig.enabled
+                    ? 'bg-fuchsia-500/20 border-fuchsia-500/50 text-fuchsia-300'
+                    : 'bg-black/40 border-white/10 text-white/50 hover:text-white/80'
+                }`}
+              >
+                {botConfig.enabled ? 'On' : 'Off'}
+              </button>
+            </label>
+            <div className={`flex flex-col gap-1.5 transition-opacity ${botConfig.enabled ? '' : 'opacity-40 pointer-events-none'}`}>
+              <div className="flex justify-between text-xs font-mono uppercase tracking-wider text-white/60">
+                <span>Bots Per Match</span>
+                <span className="text-fuchsia-300 font-bold">{botConfig.count}</span>
+              </div>
+              <input
+                type="range"
+                min={1}
+                max={8}
+                step={1}
+                value={botConfig.count}
+                onChange={(e) => onBotConfigChange({ ...botConfig, count: parseInt(e.target.value, 10) })}
+                className="w-full accent-fuchsia-400 h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
+              />
+            </div>
+            <div className={`flex flex-col gap-1.5 transition-opacity ${botConfig.enabled ? '' : 'opacity-40 pointer-events-none'}`}>
+              <div className="flex justify-between text-xs font-mono uppercase tracking-wider text-white/60">
+                <span>Bot Difficulty</span>
+                <span className="text-fuchsia-300 font-bold">{botConfig.difficulty}%</span>
+              </div>
+              <input
+                type="range"
+                min={0}
+                max={100}
+                step={5}
+                value={botConfig.difficulty}
+                onChange={(e) => onBotConfigChange({ ...botConfig, difficulty: parseInt(e.target.value, 10) })}
+                className="w-full accent-fuchsia-400 h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
+              />
+            </div>
           </div>
         </div>
       </div>

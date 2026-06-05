@@ -92,7 +92,7 @@ import { CharacterPreview } from './components/CharacterPreview';
 import { CharacterPainter } from './components/CharacterPainter';
 import { CharacterLoadout, DEFAULT_LOADOUT, AVAILABLE_PRESETS, HelmetPreset, TorsoPreset, ArmPreset, LegPreset } from './components/VoxelModels';
 
-const APP_VERSION = '0.618a';
+const APP_VERSION = '0.619';
 const MAX_PLAYER_NAME_LENGTH = 10;
 
 interface OnlineClient {
@@ -3496,6 +3496,31 @@ export default function App() {
     };
   }, []);
 
+  // ── Multiplayer ruleset draft (Admin Dashboard) ────────────────────────────
+  // A SEPARATE settings object the admin edits to govern peer-to-peer matches —
+  // intentionally decoupled from the admin's personal sandbox `adminSettings` so
+  // editing it never changes their own local play. Seeded from the currently
+  // published preset (or defaults), persisted locally as a draft, and AI is forced
+  // to 'custom' so the dashboard's AI tuning dials are authoritative. Publishing
+  // this is what makes it the Official Multiplayer Preset (also selectable locally).
+  const [mpAdminSettings, setMpAdminSettings] = useState<UniversalSettings>(() => {
+    const base = createDefaultAdminSettings('');
+    const customAi = 'custom' as UniversalSettings['aiDifficulty'];
+    try {
+      const saved = localStorage.getItem('ibrawls_mp_ruleset');
+      if (saved) return { ...base, ...JSON.parse(saved), aiDifficulty: customAi };
+    } catch { /* ignore */ }
+    const cached = getCachedLiveConfig();
+    const seeded = cached?.settings ? { ...base, ...withDefaultGameplaySettings(cached.settings) } : base;
+    return { ...seeded, aiDifficulty: customAi };
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('ibrawls_mp_ruleset', JSON.stringify(stripPlayerIdentitySettings(mpAdminSettings)));
+    } catch { /* ignore disabled / full storage */ }
+  }, [mpAdminSettings]);
+
   const handleSavePreset = (name: string) => {
     const trimmed = name.trim();
     if (!trimmed) return;
@@ -3632,7 +3657,7 @@ export default function App() {
     const label = (multiplayerPreset?.version ? `v${multiplayerPreset.version + 1}` : 'v1');
     const result = await publishLiveConfig(
       sessionToken,
-      stripPlayerIdentitySettings(adminSettings),
+      stripPlayerIdentitySettings(mpAdminSettings),
       label
     );
     if (result.ok) {
@@ -4714,7 +4739,17 @@ export default function App() {
   };
 
   // Render a single setting control dynamically based on its definition
-  const renderSetting = (def: any) => {
+  // Factory so the same controls can edit EITHER the admin's personal sandbox
+  // settings OR the separate multiplayer ruleset (Admin Dashboard). The body is
+  // unchanged — `settings`/`setSettings` are shadowed as `adminSettings`/
+  // `setAdminSettings` so every existing reference resolves to the chosen target.
+  const makeRenderSetting = (
+    settings: UniversalSettings,
+    setSettings: React.Dispatch<React.SetStateAction<UniversalSettings>>
+  ) => {
+    const adminSettings = settings;
+    const setAdminSettings = setSettings;
+    const renderSetting = (def: any) => {
     const value = adminSettings[def.key as keyof UniversalSettings];
 
     switch (def.type) {
@@ -4935,9 +4970,18 @@ export default function App() {
       default:
         return null;
     }
+    };
+    return renderSetting;
   };
 
-  const renderSection = (section: any) => {
+  const makeRenderSection = (
+    settings: UniversalSettings,
+    setSettings: React.Dispatch<React.SetStateAction<UniversalSettings>>,
+    renderSetting: (def: any) => React.ReactNode
+  ) => {
+    const adminSettings = settings;
+    const setAdminSettings = setSettings;
+    const renderSection = (section: any) => {
     const sectionSettings = SETTING_DEFINITIONS.filter(def => def.sectionId === section.id);
     const visibleSettings = sectionSettings.filter(def => !def.showIf || def.showIf(adminSettings));
 
@@ -5010,7 +5054,17 @@ export default function App() {
         </div>
       </div>
     );
+    };
+    return renderSection;
   };
+
+  // Sandbox / single-player settings editor (edits the admin's personal settings).
+  const renderSetting = makeRenderSetting(adminSettings, setAdminSettings);
+  const renderSection = makeRenderSection(adminSettings, setAdminSettings, renderSetting);
+  // Multiplayer ruleset editor (Admin Dashboard) — edits the separate MP ruleset,
+  // never the admin's local sandbox. Published as the Official Multiplayer Preset.
+  const renderMpSetting = makeRenderSetting(mpAdminSettings, setMpAdminSettings);
+  const renderMpSection = makeRenderSection(mpAdminSettings, setMpAdminSettings, renderMpSetting);
 
   return (
     <div className="relative w-full h-[100dvh] bg-[#050b1a] text-white overflow-hidden select-none font-sans flex flex-col">
@@ -5183,9 +5237,22 @@ export default function App() {
       {!isPlaying && !isTerminated && showAdminDashboard && account?.isAdmin && (
         <AdminDashboard
           account={account}
-          settings={adminSettings as unknown as Record<string, unknown>}
-          onSettingChange={(key, value) => setAdminSettings(prev => ({ ...prev, [key]: value }))}
+          settings={mpAdminSettings as unknown as Record<string, unknown>}
+          onSettingChange={(key, value) => setMpAdminSettings(prev => ({ ...prev, [key]: value }))}
           aiSections={AI_CUSTOM_KNOB_SECTIONS}
+          mechanicsContent={
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-left">
+              <div className="flex flex-col gap-3">
+                {SETTING_SECTIONS.filter(s => s.column === 1 && s.id !== 'ai' && s.id !== 'aitune').map(renderMpSection)}
+              </div>
+              <div className="flex flex-col gap-3">
+                {SETTING_SECTIONS.filter(s => s.column === 2 && s.id !== 'ai' && s.id !== 'aitune').map(renderMpSection)}
+              </div>
+              <div className="flex flex-col gap-3">
+                {SETTING_SECTIONS.filter(s => s.column === 3 && s.id !== 'ai' && s.id !== 'aitune').map(renderMpSection)}
+              </div>
+            </div>
+          }
           multiplayerPreset={multiplayerPreset}
           onPublish={handlePublishOfficial}
           isPublishing={isPublishing}
