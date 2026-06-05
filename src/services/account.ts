@@ -83,7 +83,9 @@ async function request<T>(
 
 // ── Auth ─────────────────────────────────────────────────────────────────────
 export interface AuthSuccess {
-  token: string;
+  // Null only in the rare case where the account was created but the session
+  // could not be issued — the user is registered but must log in to get a token.
+  token: string | null;
   account: AccountInfo;
   recoveryCode?: string;
 }

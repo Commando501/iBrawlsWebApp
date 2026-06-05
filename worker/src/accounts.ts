@@ -229,16 +229,43 @@ async function handleRegister(request: Request, env: AccountsEnv, cors: Cors): P
     )
       .bind(id, email, username, passwordHash, salt, recoveryCode, now, now)
       .run();
-  } catch {
-    // Unique-index race fallback.
-    return json({ error: "That email or username is already in use." }, 409, cors);
+  } catch (err) {
+    // The INSERT failed. Distinguish a genuine unique-index race (someone
+    // registered the same email/username between our pre-check and here) from
+    // any other DB error — historically this catch reported EVERYTHING as
+    // "already in use", which hid real failures (e.g. schema/migration drift)
+    // behind a misleading message.
+    const clash = await env.DB.prepare(
+      "SELECT email FROM accounts WHERE email = ? COLLATE NOCASE OR username = ? COLLATE NOCASE"
+    )
+      .bind(email, username)
+      .first<{ email: string | null }>();
+    if (clash) {
+      const emailTaken = (clash.email || "").toLowerCase() === email;
+      return json(
+        { error: emailTaken ? "That email is already registered." : "That username is taken." },
+        409,
+        cors
+      );
+    }
+    // Not a duplicate — surface the real error so the failure is diagnosable
+    // instead of being mislabeled as a taken email/username.
+    return json({ error: "Could not create account.", detail: String(err) }, 500, cors);
   }
 
-  const token = await createSession(id, env);
+  // The account row is now committed. If session creation or the read-back
+  // fails, do NOT report failure to the client — the account exists, and a
+  // 5xx here would make the user retry into a (now genuine) "already in use".
+  let token: string | null = null;
+  try {
+    token = await createSession(id, env);
+  } catch (err) {
+    console.error("register: createSession failed after account insert", err);
+  }
   const account = await env.DB.prepare("SELECT * FROM accounts WHERE id = ?")
     .bind(id)
     .first<AccountRow>();
-  return json({ token, account: publicAccount(account!), recoveryCode }, 200, cors);
+  return json({ token, account: account ? publicAccount(account) : null, recoveryCode }, 200, cors);
 }
 
 async function handleLogin(request: Request, env: AccountsEnv, cors: Cors): Promise<Response> {
