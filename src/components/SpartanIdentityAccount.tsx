@@ -8,6 +8,7 @@ import {
   changeUsername as apiChangeUsername,
   changeEmail as apiChangeEmail,
   changePassword as apiChangePassword,
+  promoteToAdmin as apiPromoteToAdmin,
 } from '../services/account';
 
 /**
@@ -82,6 +83,10 @@ const SpartanIdentityAccount: React.FC<Props> = ({
   const [editValue, setEditValue] = useState('');
   const [editCode, setEditCode] = useState('');
 
+  // Admin self-promotion flow
+  const [adminMode, setAdminMode] = useState(false);
+  const [adminCode, setAdminCode] = useState('');
+
   const resetMessages = () => {
     setError('');
     setNotice('');
@@ -154,7 +159,24 @@ const SpartanIdentityAccount: React.FC<Props> = ({
     setBusy(false);
     setEditField(null);
     setRevealCode(false);
+    setAdminMode(false);
+    setAdminCode('');
     onLoggedOut();
+  };
+
+  const handlePromote = async () => {
+    resetMessages();
+    setBusy(true);
+    const res = await apiPromoteToAdmin(adminCode.trim());
+    setBusy(false);
+    if (!res.ok || !res.data) {
+      setError(res.error || 'Admin activation failed.');
+      return;
+    }
+    setAdminMode(false);
+    setAdminCode('');
+    setNotice('Admin access activated.');
+    onAccountChanged(res.data.account);
   };
 
   const handleSubmitEdit = async () => {
@@ -292,7 +314,14 @@ const SpartanIdentityAccount: React.FC<Props> = ({
     <div className="flex flex-col gap-2 mt-2 pt-2 border-t border-white/5">
       {recoveryBanner}
       <div className="flex items-center justify-between">
-        <span className="text-[10px] text-emerald-400 uppercase tracking-widest font-mono">● Signed In</span>
+        <span className="flex items-center gap-2">
+          <span className="text-[10px] text-emerald-400 uppercase tracking-widest font-mono">● Signed In</span>
+          {account.isAdmin && (
+            <span className="text-[9px] font-black text-amber-300 bg-amber-500/15 border border-amber-500/40 px-1.5 py-0.5 rounded uppercase tracking-widest font-mono">
+              ★ Admin
+            </span>
+          )}
+        </span>
         <button
           onClick={handleLogout}
           disabled={busy}
@@ -384,6 +413,39 @@ const SpartanIdentityAccount: React.FC<Props> = ({
             </button>
           </div>
         </div>
+      )}
+
+      {/* Admin self-promotion: enter the deployment's admin code to unlock the Admin Dashboard. */}
+      {!account.isAdmin && !editField && (
+        adminMode ? (
+          <div className="flex flex-col gap-2 mt-1 bg-amber-950/20 border border-amber-500/20 rounded-lg p-2.5">
+            <span className="text-[10px] text-amber-200/70 leading-snug">
+              Enter the admin access code to unlock the Admin Dashboard for this account.
+            </span>
+            <input
+              className={inputCls}
+              type="password"
+              placeholder="Admin access code"
+              value={adminCode}
+              onChange={(e) => setAdminCode(e.target.value)}
+            />
+            <div className="flex gap-2">
+              <button onClick={handlePromote} disabled={busy || !adminCode.trim()} className={primaryBtn}>
+                {busy ? '…' : 'Activate'}
+              </button>
+              <button onClick={() => { setAdminMode(false); setAdminCode(''); resetMessages(); }} className={ghostBtn}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button
+            onClick={() => { resetMessages(); setAdminMode(true); }}
+            className="mt-1 text-[10px] text-white/30 hover:text-amber-300 uppercase tracking-wider cursor-pointer transition-colors self-start"
+          >
+            🔑 Activate Admin
+          </button>
+        )
       )}
     </div>
   );

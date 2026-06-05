@@ -6,6 +6,9 @@
 
 export interface AccountsEnv {
   DB: D1Database;
+  // Shared deployment secret used to self-promote an account to admin
+  // (POST /api/account/promote). Optional so deployments without it still build.
+  ADMIN_TOKEN?: string;
 }
 
 // ── Tunables ─────────────────────────────────────────────────────────────────
@@ -86,6 +89,7 @@ interface AccountRow {
   password_changed_at: number | null;
   recovery_fail_count: number;
   recovery_locked_until: number | null;
+  is_admin: number;
 }
 
 // Owner-facing account view. Includes recovery_code intentionally — it is shown
@@ -100,6 +104,7 @@ function publicAccount(row: AccountRow) {
     usernameChangedAt: row.username_changed_at,
     emailChangedAt: row.email_changed_at,
     passwordChangedAt: row.password_changed_at,
+    isAdmin: row.is_admin === 1,
   };
 }
 
@@ -426,6 +431,38 @@ async function handleChangePassword(request: Request, env: AccountsEnv, cors: Co
   return json({ ok: true }, 200, cors);
 }
 
+// Self-promote the authenticated account to admin by presenting the deployment's
+// shared ADMIN_TOKEN secret. Idempotent — re-promoting an admin is a no-op.
+async function handlePromote(request: Request, env: AccountsEnv, cors: Cors): Promise<Response> {
+  const account = await requireSession(request, env);
+  if (!account) return json({ error: "Not authenticated." }, 401, cors);
+  const body = await readJson(request);
+  if (!body) return json({ error: "Invalid JSON body" }, 400, cors);
+
+  const token = typeof body.token === "string" ? body.token.trim() : "";
+  if (!env.ADMIN_TOKEN || !token || !safeEqual(token, env.ADMIN_TOKEN))
+    return json({ error: "Invalid admin code." }, 403, cors);
+
+  if (account.is_admin !== 1) {
+    await env.DB.prepare("UPDATE accounts SET is_admin = 1 WHERE id = ?").bind(account.id).run();
+  }
+  const updated = await env.DB.prepare("SELECT * FROM accounts WHERE id = ?")
+    .bind(account.id)
+    .first<AccountRow>();
+  return json({ account: publicAccount(updated!) }, 200, cors);
+}
+
+// Resolve the account for a valid session ONLY when it has the admin flag set.
+// Exported so the entrypoint can gate admin-only endpoints (e.g. config publish)
+// on an admin account's session instead of the shared ADMIN_TOKEN secret.
+export async function resolveAdminAccount(
+  request: Request,
+  env: AccountsEnv
+): Promise<AccountRow | null> {
+  const account = await requireSession(request, env);
+  return account && account.is_admin === 1 ? account : null;
+}
+
 async function handleGetSave(request: Request, env: AccountsEnv, cors: Cors): Promise<Response> {
   const account = await requireSession(request, env);
   if (!account) return json({ error: "Not authenticated." }, 401, cors);
@@ -484,6 +521,7 @@ export async function handleAccountRequest(
       return await handleChangeEmail(request, env, cors);
     if (path === "/api/account/change-password" && m === "POST")
       return await handleChangePassword(request, env, cors);
+    if (path === "/api/account/promote" && m === "POST") return await handlePromote(request, env, cors);
     if (path === "/api/account/save" && m === "GET") return await handleGetSave(request, env, cors);
     if (path === "/api/account/save" && m === "PUT") return await handlePutSave(request, env, cors);
     return json({ error: "Account route not found" }, 404, cors);

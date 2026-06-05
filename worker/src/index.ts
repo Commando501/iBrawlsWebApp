@@ -1,5 +1,5 @@
 import { LIVE_CONFIG_KEY_SET } from "./liveConfigKeys";
-import { handleAccountRequest } from "./accounts";
+import { handleAccountRequest, resolveAdminAccount } from "./accounts";
 import { toAnalyticsDataPoint } from "./telemetrySchema";
 
 export interface Env {
@@ -240,9 +240,11 @@ export default {
       }
     }
 
-    // POST /api/admin/config — publish a new official preset. Requires admin token.
+    // POST /api/admin/config — publish a new official preset. Requires an admin
+    // ACCOUNT session (self-promoted via /api/account/promote), not the shared token.
     if (url.pathname === "/api/admin/config" && request.method === "POST") {
-      if (!isAdmin(request, env)) {
+      const adminAccount = await resolveAdminAccount(request, env);
+      if (!adminAccount) {
         return new Response(JSON.stringify({ error: "Unauthorized" }), {
           status: 401,
           headers: { "Content-Type": "application/json", ...corsHeaders },

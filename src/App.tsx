@@ -45,6 +45,7 @@ import {
 } from './services/account';
 import { contributeReplay } from './services/replayUpload';
 import SpartanIdentityAccount from './components/SpartanIdentityAccount';
+import AdminDashboard, { MultiplayerBotConfig, DEFAULT_BOT_CONFIG } from './components/AdminDashboard';
 import {
   DEFAULT_DESKTOP_UI_POSITIONS,
   DEFAULT_MOBILE_UI_POSITIONS,
@@ -91,7 +92,7 @@ import { CharacterPreview } from './components/CharacterPreview';
 import { CharacterPainter } from './components/CharacterPainter';
 import { CharacterLoadout, DEFAULT_LOADOUT, AVAILABLE_PRESETS, HelmetPreset, TorsoPreset, ArmPreset, LegPreset } from './components/VoxelModels';
 
-const APP_VERSION = '0.616';
+const APP_VERSION = '0.618';
 const MAX_PLAYER_NAME_LENGTH = 10;
 
 interface OnlineClient {
@@ -3409,7 +3410,10 @@ export default function App() {
     void pushCloudSave(buildSaveData(adminSettings, playerName, uiLayouts, keybindings));
   };
 
-  const handleLoggedOut = () => setAccount(null);
+  const handleLoggedOut = () => {
+    setAccount(null);
+    setShowAdminDashboard(false);
+  };
   const handleAccountChanged = (acct: AccountInfo) => setAccount(acct);
 
   // Restore an existing session on load (persistent login), then pull cloud save.
@@ -3600,19 +3604,34 @@ export default function App() {
     return adminSettings;
   }, [isMultiplayer, multiplayerPreset, adminSettings]);
 
-  // Admin publish (Official Multiplayer Preset). Token is held in memory only.
-  const [showPublishPanel, setShowPublishPanel] = useState(false);
-  const [adminPublishToken, setAdminPublishToken] = useState('');
+  // Admin publish (Official Multiplayer Preset). Gated by the logged-in admin
+  // account's session token (self-promoted via the account card), not a typed secret.
   const [publishStatus, setPublishStatus] = useState<{ ok: boolean; msg: string } | null>(null);
   const [isPublishing, setIsPublishing] = useState(false);
 
+  // Admin Dashboard (admin-only multiplayer control surface).
+  const [showAdminDashboard, setShowAdminDashboard] = useState(false);
+  const [multiplayerBotConfig, setMultiplayerBotConfig] = useState<MultiplayerBotConfig>(() => {
+    try {
+      const saved = localStorage.getItem('ibrawls_mp_bot_config');
+      return saved ? { ...DEFAULT_BOT_CONFIG, ...JSON.parse(saved) } : DEFAULT_BOT_CONFIG;
+    } catch {
+      return DEFAULT_BOT_CONFIG;
+    }
+  });
+  const handleBotConfigChange = (next: MultiplayerBotConfig) => {
+    setMultiplayerBotConfig(next);
+    try { localStorage.setItem('ibrawls_mp_bot_config', JSON.stringify(next)); } catch { /* ignore */ }
+  };
+
   const handlePublishOfficial = async () => {
-    if (!adminPublishToken.trim() || isPublishing) return;
+    const sessionToken = getStoredToken();
+    if (!sessionToken || isPublishing) return;
     setIsPublishing(true);
     setPublishStatus(null);
     const label = (multiplayerPreset?.version ? `v${multiplayerPreset.version + 1}` : 'v1');
     const result = await publishLiveConfig(
-      adminPublishToken.trim(),
+      sessionToken,
       stripPlayerIdentitySettings(adminSettings),
       label
     );
@@ -5160,6 +5179,23 @@ export default function App() {
         />
       )}
 
+      {/* ADMIN DASHBOARD (admin-only overlay, reachable from the menu header) */}
+      {!isPlaying && !isTerminated && showAdminDashboard && account?.isAdmin && (
+        <AdminDashboard
+          account={account}
+          settings={adminSettings as unknown as Record<string, unknown>}
+          onSettingChange={(key, value) => setAdminSettings(prev => ({ ...prev, [key]: value }))}
+          aiSections={AI_CUSTOM_KNOB_SECTIONS}
+          multiplayerPreset={multiplayerPreset}
+          onPublish={handlePublishOfficial}
+          isPublishing={isPublishing}
+          publishStatus={publishStatus}
+          botConfig={multiplayerBotConfig}
+          onBotConfigChange={handleBotConfigChange}
+          onClose={() => setShowAdminDashboard(false)}
+        />
+      )}
+
       {/* START MENU CONTROLLER SCREEN */}
       {!isPlaying && !isTerminated && (
         <div className="mobile-start-overlay absolute inset-0 z-50 flex items-stretch justify-center bg-slate-950/85 backdrop-blur-xl p-6 transition-all duration-300">
@@ -5238,6 +5274,16 @@ export default function App() {
                 >
                   🛠️ Map Maker
                 </a>
+
+                {/* Admin Dashboard — only for admin accounts */}
+                {account?.isAdmin && (
+                  <button
+                    onClick={() => setShowAdminDashboard(true)}
+                    className="px-5 py-2 rounded-full text-xs font-bold font-display uppercase tracking-wider transition-all duration-200 cursor-pointer text-amber-300 hover:text-amber-100 hover:bg-amber-950/20 flex items-center gap-1.5 border border-amber-500/30 hover:border-amber-500/50"
+                  >
+                    ⚙️ Admin Dashboard
+                  </button>
+                )}
               </div>
 
               {/* Online Player Count */}
@@ -7510,52 +7556,6 @@ export default function App() {
                     </button>
                   )}
                 </div>
-              </div>
-
-              {/* Admin: publish the current ruleset as the Official Multiplayer Preset (token-gated) */}
-              <div className="mb-4 pointer-events-auto border border-amber-500/15 rounded-xl bg-amber-950/10 backdrop-blur-md text-left">
-                <button
-                  onClick={() => setShowPublishPanel(v => !v)}
-                  className="w-full flex items-center justify-between px-3 py-2 text-amber-300/80 hover:text-amber-200 transition-colors"
-                >
-                  <span className="text-[10px] font-bold uppercase tracking-widest font-mono">
-                    🛰️ Admin · Publish Official Multiplayer Preset
-                  </span>
-                  <span className="text-[10px] opacity-60">{showPublishPanel ? '▲' : '▼'}</span>
-                </button>
-                {showPublishPanel && (
-                  <div className="px-3 pb-3 flex flex-col gap-2 animate-fade-in">
-                    <span className="text-[9px] text-white/40">
-                      Pushes the current gameplay settings to every peer-to-peer match (live tuning).
-                      Requires the admin token. Player identity (name/hue) is never included.
-                    </span>
-                    <div className="flex flex-col sm:flex-row items-stretch gap-2">
-                      <input
-                        type="password"
-                        placeholder="Admin token..."
-                        value={adminPublishToken}
-                        onChange={(e) => setAdminPublishToken(e.target.value)}
-                        className="flex-1 h-9 bg-black/60 border border-white/10 rounded px-3 text-xs text-white placeholder:text-white/30 focus:border-amber-400/50 outline-none transition-all font-mono"
-                      />
-                      <button
-                        onClick={handlePublishOfficial}
-                        disabled={!adminPublishToken.trim() || isPublishing}
-                        className={`h-9 px-4 rounded text-xs font-sans font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1 shrink-0 ${
-                          adminPublishToken.trim() && !isPublishing
-                            ? 'bg-amber-500/20 hover:bg-amber-500/40 border border-amber-500/40 text-amber-300 cursor-pointer active:scale-95'
-                            : 'bg-white/5 border border-white/5 text-white/20 cursor-not-allowed'
-                        }`}
-                      >
-                        {isPublishing ? 'Publishing…' : 'Publish'}
-                      </button>
-                    </div>
-                    {publishStatus && (
-                      <span className={`text-[10px] font-mono ${publishStatus.ok ? 'text-emerald-400' : 'text-red-400'}`}>
-                        {publishStatus.msg}
-                      </span>
-                    )}
-                  </div>
-                )}
               </div>
 
               {/* Apply and return */}

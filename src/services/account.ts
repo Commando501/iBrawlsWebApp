@@ -22,6 +22,7 @@ export interface AccountInfo {
   usernameChangedAt: number | null;
   emailChangedAt: number | null;
   passwordChangedAt: number | null;
+  isAdmin: boolean;
 }
 
 export interface ApiResult<T> {
@@ -151,6 +152,15 @@ export async function changePassword(
   newPassword: string
 ): Promise<ApiResult<{ ok: boolean }>> {
   return request('/api/account/change-password', 'POST', { code, newPassword }, true);
+}
+
+// ── Admin ──────────────────────────────────────────────────────────────────────
+// Self-promote the logged-in account to admin by presenting the deployment's
+// shared admin code (ADMIN_TOKEN). Sticky once granted.
+export async function promoteToAdmin(
+  token: string
+): Promise<ApiResult<{ account: AccountInfo }>> {
+  return request('/api/account/promote', 'POST', { token }, true);
 }
 
 // ── Cloud settings save ────────────────────────────────────────────────────────
