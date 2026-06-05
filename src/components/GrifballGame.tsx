@@ -1403,7 +1403,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     const playerSpawn = getGrifballTeamSpawn(gmap, s.localPlayerTeam, fallback, used);
     s.playerPos.copy(playerSpawn);
     s.playerVel.set(0, 0, 0);
-    s.yaw = getInwardSpawnYaw(playerSpawn);
+    s.yaw = playerSpawn.spawnYaw ?? getInwardSpawnYaw(playerSpawn);
     used.push(playerSpawn.clone());
 
     for (const bot of s.otherPlayers.values()) {
@@ -1412,7 +1412,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       const spawn = getGrifballTeamSpawn(gmap, team, fallback, used);
       bot.pos.copy(spawn);
       bot.vel.set(0, 0, 0);
-      bot.yaw = getInwardSpawnYaw(spawn);
+      bot.yaw = spawn.spawnYaw ?? getInwardSpawnYaw(spawn);
       used.push(spawn.clone());
     }
   };
@@ -1661,6 +1661,9 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       // Render Custom Obstacles/Objects!
       threeRef.current.customMapObjects = [];
       activeCustomMap.objects.forEach(obj => {
+        // Spawn-point markers are authoring-only — they're consumed as spawns,
+        // not rendered as props in the live arena.
+        if (obj.gameModeKind === 'spawn_point') return;
         const mesh = createHighFidelityObjectMesh(obj, THREE, generateCustomTexture);
         mesh.position.set(obj.position.x, obj.position.y, obj.position.z);
         mesh.rotation.set(obj.rotation.x, obj.rotation.y, obj.rotation.z);

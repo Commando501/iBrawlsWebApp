@@ -69,6 +69,15 @@ export const constrainCombatantToArenaBounds = ({
     }
   }
 
+  // Optional authored ceiling: clamp vertical travel when the map defines one.
+  const ceiling = activeCustomMap?.arenaCeiling;
+  if (ceiling && ceiling > 0 && pos.y > ceiling) {
+    pos.y = ceiling;
+    if (vel && vel.y > 0) {
+      vel.y = 0;
+    }
+  }
+
   if (activeCustomMap?.objects?.length && vel) {
     const result = resolveObstacleCollisions(pos, vel, activeCustomMap.objects);
     pos.copy(result.position);

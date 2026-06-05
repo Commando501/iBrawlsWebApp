@@ -1,6 +1,20 @@
 import * as THREE from 'three';
 import { type CustomMapData } from '../../types';
 
+/**
+ * A spawn position that optionally carries an authored facing direction (yaw,
+ * radians). Callers that care about facing read `.spawnYaw`; everything else
+ * treats it as a plain {@link THREE.Vector3}.
+ */
+export type SpawnVector = THREE.Vector3 & { spawnYaw?: number };
+
+const toSpawnVec = (p: { x: number; y: number; z: number; yaw?: number }): SpawnVector =>
+  Object.assign(new THREE.Vector3(p.x, p.y, p.z), { spawnYaw: p.yaw }) as SpawnVector;
+
+/** Clone a spawn vector, preserving its authored yaw (Vector3.clone drops it). */
+const cloneSpawn = (v: SpawnVector): SpawnVector =>
+  Object.assign(v.clone(), { spawnYaw: v.spawnYaw }) as SpawnVector;
+
 export const createDefaultSpawnPoints = (radius = 13): THREE.Vector3[] =>
   Array.from({ length: 8 }).map((_, i) => {
     const angle = (i * 2 * Math.PI) / 8;
@@ -10,26 +24,26 @@ export const createDefaultSpawnPoints = (radius = 13): THREE.Vector3[] =>
 export const resolveActiveSpawnPoints = (
   activeCustomMap: CustomMapData | null,
   fallbackSpawnPoints: THREE.Vector3[]
-): THREE.Vector3[] => {
+): SpawnVector[] => {
   if (activeCustomMap?.spawnPoints?.length) {
-    return activeCustomMap.spawnPoints.map(p => new THREE.Vector3(p.x, p.y, p.z));
+    return activeCustomMap.spawnPoints.map(toSpawnVec);
   }
-  return fallbackSpawnPoints;
+  return fallbackSpawnPoints as SpawnVector[];
 };
 
 export const getOptimalGrifballSpawnPoint = (
   activeCustomMap: CustomMapData | null,
   fallbackSpawnPoints: THREE.Vector3[],
   excludePositions: THREE.Vector3[]
-): THREE.Vector3 => {
+): SpawnVector => {
   const activeSpawns = resolveActiveSpawnPoints(activeCustomMap, fallbackSpawnPoints);
 
   if (activeSpawns.length === 0) {
-    return new THREE.Vector3(0, 0, 0);
+    return new THREE.Vector3(0, 0, 0) as SpawnVector;
   }
 
   if (excludePositions.length === 0) {
-    return activeSpawns[0].clone();
+    return cloneSpawn(activeSpawns[0]);
   }
 
   let bestPoint = activeSpawns[0];
@@ -46,7 +60,7 @@ export const getOptimalGrifballSpawnPoint = (
     }
   }
 
-  return bestPoint.clone();
+  return cloneSpawn(bestPoint);
 };
 
 /**
@@ -59,14 +73,14 @@ export const getGrifballTeamSpawn = (
   team: string,
   fallbackSpawnPoints: THREE.Vector3[],
   excludePositions: THREE.Vector3[]
-): THREE.Vector3 => {
+): SpawnVector => {
   const teamPoints = activeCustomMap?.teamSpawns?.[team];
   if (!teamPoints?.length) {
     return getOptimalGrifballSpawnPoint(activeCustomMap, fallbackSpawnPoints, excludePositions);
   }
 
-  const spawns = teamPoints.map((p) => new THREE.Vector3(p.x, p.y, p.z));
-  if (excludePositions.length === 0) return spawns[0].clone();
+  const spawns = teamPoints.map(toSpawnVec);
+  if (excludePositions.length === 0) return cloneSpawn(spawns[0]);
 
   let bestPoint = spawns[0];
   let bestMinDist = -1;
@@ -81,7 +95,7 @@ export const getGrifballTeamSpawn = (
       bestPoint = point;
     }
   }
-  return bestPoint.clone();
+  return cloneSpawn(bestPoint);
 };
 
 export const resizeArenaSceneForPlayerCount = (

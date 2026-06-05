@@ -225,6 +225,44 @@ export function createHighFidelityObjectMesh(
     return group;
   }
 
+  // --- Floor tiles: a flat, horizontal slab whose texture repeat scales with its
+  // footprint so tiling density stays constant as the tile is resized. ---
+  if (obj.floorTile) {
+    const TILE_UNIT = 6; // world metres per texture tile (matches the ~4x baseline)
+    const geo = new three.BoxGeometry(sx, Math.max(0.04, sy), sz);
+    const baseTex = (obj.texture && obj.texture !== 'none' && generateCustomTexture)
+      ? generateCustomTexture(obj.texture, obj.color)
+      : undefined;
+    // Clone so we don't corrupt the shared/cached texture's repeat for other uses.
+    const texture = baseTex ? baseTex.clone() : undefined;
+    if (texture) {
+      texture.needsUpdate = true;
+      texture.wrapS = three.RepeatWrapping;
+      texture.wrapT = three.RepeatWrapping;
+      texture.repeat.set(Math.max(1, sx / TILE_UNIT), Math.max(1, sz / TILE_UNIT));
+    }
+    const mat = new three.MeshStandardMaterial({
+      map: texture,
+      bumpMap: texture,
+      bumpScale: texture ? 0.01 : 0,
+      color: new three.Color(obj.color),
+      metalness: obj.metalness ?? 0.3,
+      roughness: obj.roughness ?? 0.8,
+      opacity: obj.opacity ?? 1,
+      transparent: (obj.opacity ?? 1) < 1,
+    });
+    if (obj.emissive && obj.emissive !== '#000000') {
+      mat.emissive = new three.Color(obj.emissive);
+      mat.emissiveIntensity = obj.emissiveIntensity ?? 0.2;
+    }
+    const mesh = new three.Mesh(geo, mat);
+    mesh.receiveShadow = true;
+    mesh.castShadow = false;
+    mesh.userData = { id: obj.id };
+    group.add(mesh);
+    return group;
+  }
+
   // --- Transparent / Glass objects: render as standard meshes, NOT voxels ---
   // Voxelization produces solid opaque crates which completely breaks the visual
   // intent of translucent glass boards, acrylic panels, etc.

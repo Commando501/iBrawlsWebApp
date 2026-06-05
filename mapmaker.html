@@ -76,6 +76,31 @@
       border-radius: 4px;
       font-weight: 800;
     }
+    .mapmaker-value-badge[data-editable] {
+      cursor: text;
+    }
+    .mapmaker-value-badge[data-editable]:hover {
+      background: rgba(6, 182, 212, 0.2);
+      border-color: rgba(6, 182, 212, 0.5);
+    }
+    /* Inline number editor that temporarily replaces a value badge */
+    .mapmaker-value-edit {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.65rem;
+      font-weight: 800;
+      color: #22d3ee;
+      background: rgba(3, 7, 18, 0.9);
+      border: 1px solid rgba(6, 182, 212, 0.6);
+      border-radius: 4px;
+      padding: 0.05rem 0.25rem;
+      width: 4.5rem;
+      text-align: right;
+      outline: none;
+    }
+    /* Keep the spinners but make them compact */
+    .mapmaker-value-edit::-webkit-inner-spin-button {
+      opacity: 0.5;
+    }
     .mapmaker-input {
       background: rgba(3, 7, 18, 0.6) !important;
       border: 1px solid rgba(255, 255, 255, 0.08) !important;
@@ -293,7 +318,7 @@
     </div>
 
     <!-- TAB SWITCHER -->
-    <div class="grid grid-cols-4 bg-black/35 border-b border-white/5 text-center shrink-0">
+    <div class="grid grid-cols-3 bg-black/35 border-b border-white/5 text-center shrink-0">
       <button onclick="switchTab('scene')" id="tab-scene" class="py-3 text-[10px] font-bold uppercase tracking-wider border-b-2 border-cyan-500 bg-cyan-500/5 text-cyan-400 flex flex-col items-center gap-1">
         <i data-lucide="compass" class="w-4 h-4"></i> Scene
       </button>
@@ -302,9 +327,6 @@
       </button>
       <button onclick="switchTab('objects')" id="tab-objects" class="py-3 text-[10px] font-bold uppercase tracking-wider border-b-2 border-transparent text-slate-400 hover:text-white flex flex-col items-center gap-1">
         <i data-lucide="layers" class="w-4 h-4"></i> Outliner
-      </button>
-      <button onclick="switchTab('spawns')" id="tab-spawns" class="py-3 text-[10px] font-bold uppercase tracking-wider border-b-2 border-transparent text-slate-400 hover:text-white flex flex-col items-center gap-1">
-        <i data-lucide="map-pin" class="w-4 h-4"></i> Spawns
       </button>
     </div>
 
@@ -579,6 +601,11 @@
     let theme = 'cyberpunk';
     let mapShape = 'circle';
     let arenaRadius = 20;
+    // Explicit rectangular half-extents + vertical ceiling for the XYZ boundary dragger.
+    // Defaults mirror the legacy aspect ratio (radius * 1.2 / * 0.6).
+    let arenaHalfX = 24;
+    let arenaHalfZ = 12;
+    let arenaCeiling = 12;
     let skyboxHue = 280;
     let skyboxBrightness = 5;
     let skyboxTexture = 'matched';
@@ -594,16 +621,18 @@
     let objects = [];
     let folders = [];
     let pointLights = [];
-    let spawnPoints = [
-      { x: -10, y: 0, z: -10 },
-      { x: 10, y: 0, z: 10 },
-      { x: -10, y: 0, z: 10 },
-      { x: 10, y: 0, z: -10 }
+    // Spawns are now unified into `objects` as gameModeKind:'spawn_point' entries.
+    // The default cluster is seeded on load via seedDefaultSpawns().
+    const DEFAULT_SPAWNS = [
+      { x: -10, z: -10 },
+      { x: 10, z: 10 },
+      { x: -10, z: 10 },
+      { x: 10, z: -10 }
     ];
 
     let selectedObjectId = null;
     let selectedLightId = null;
-    let selectedSpawnIdx = null;
+    let selectedSpawnIdx = null; // legacy; retained only so stale resets stay harmless
 
     let showNavMeshOverlay = false;
 
@@ -1102,6 +1131,545 @@
         emissiveIntensity: 0.0,
         isCollidable: true,
         desc: 'Standard empty gray sphere.'
+      },
+
+      // CATEGORY: gamemode (spawns + objectives)
+      {
+        id: 'player_spawn_point',
+        name: 'Neutral Spawn',
+        category: 'gamemode',
+        icon: '🎯',
+        type: 'box',
+        scale: { x: 1.2, y: 0.1, z: 1.2 },
+        color: '#22c55e',
+        texture: 'none',
+        metalness: 0.2,
+        roughness: 0.6,
+        opacity: 1.0,
+        emissive: '#22c55e',
+        emissiveIntensity: 0.6,
+        isCollidable: false,
+        gameModeKind: 'spawn_point',
+        desc: 'Player/AI spawn point with a facing-direction arrow. Set its team in the inspector.'
+      },
+      {
+        id: 'grifball_goal_blue',
+        name: 'Grifball Goal Plate (Blue)',
+        category: 'gamemode',
+        icon: '🟦',
+        type: 'box',
+        scale: { x: 7.0, y: 0.12, z: 26.0 },
+        color: '#3b82ff',
+        texture: 'goal_plate_blue',
+        metalness: 0.2,
+        roughness: 0.4,
+        opacity: 0.85,
+        transparent: true,
+        emissive: '#3b82ff',
+        emissiveIntensity: 0.9,
+        isCollidable: false,
+        gameModeKind: 'grifball_goal',
+        team: 'blue',
+        goalPlateTeam: 'blue',
+        desc: 'Blue-team Grifball scoring plate. An enemy carrier standing on it scores.'
+      },
+      {
+        id: 'grifball_goal_red',
+        name: 'Grifball Goal Plate (Red)',
+        category: 'gamemode',
+        icon: '🟥',
+        type: 'box',
+        scale: { x: 7.0, y: 0.12, z: 26.0 },
+        color: '#ff3b3b',
+        texture: 'goal_plate_red',
+        metalness: 0.2,
+        roughness: 0.4,
+        opacity: 0.85,
+        transparent: true,
+        emissive: '#ff3b3b',
+        emissiveIntensity: 0.9,
+        isCollidable: false,
+        gameModeKind: 'grifball_goal',
+        team: 'red',
+        goalPlateTeam: 'red',
+        desc: 'Red-team Grifball scoring plate. An enemy carrier standing on it scores.'
+      },
+
+      // CATEGORY: floortiles (flat, resizable, per-theme floor tile sets)
+      ...[
+        { id: 'floor_nature_grass', name: 'Grass Turf Tile', texture: 'nature_grass', color: '#3f6212', emissive: '#000000', emissiveIntensity: 0, metalness: 0.0, roughness: 0.95 },
+        { id: 'floor_nature_wood', name: 'Wood Plank Tile', texture: 'nature_wood', color: '#7c4a21', emissive: '#000000', emissiveIntensity: 0, metalness: 0.05, roughness: 0.85 },
+        { id: 'floor_city_concrete', name: 'Concrete Tile', texture: 'city_concrete', color: '#6b7280', emissive: '#000000', emissiveIntensity: 0, metalness: 0.1, roughness: 0.9 },
+        { id: 'floor_city_brick', name: 'Brick Tile', texture: 'city_brick', color: '#7f1d1d', emissive: '#000000', emissiveIntensity: 0, metalness: 0.05, roughness: 0.9 },
+        { id: 'floor_space_alloy', name: 'Starbase Alloy Tile', texture: 'space_alloy', color: '#334155', emissive: '#000000', emissiveIntensity: 0, metalness: 0.85, roughness: 0.25 },
+        { id: 'floor_futuristic_carbon', name: 'Carbon Fiber Tile', texture: 'futuristic_carbon', color: '#0f172a', emissive: '#000000', emissiveIntensity: 0, metalness: 0.8, roughness: 0.35 },
+        { id: 'floor_futuristic_hex', name: 'Neon Hex Tile', texture: 'futuristic_hex', color: '#0f172a', emissive: '#06b6d4', emissiveIntensity: 0.4, metalness: 0.7, roughness: 0.3 },
+        { id: 'floor_forerunner_panel', name: 'Forerunner Panel Tile', texture: 'forerunner_panel', color: '#1f2937', emissive: '#000000', emissiveIntensity: 0, metalness: 0.6, roughness: 0.4 },
+        { id: 'floor_forerunner_gold', name: 'Forerunner Gold Tile', texture: 'forerunner_gold', color: '#a16207', emissive: '#f59e0b', emissiveIntensity: 0.3, metalness: 0.8, roughness: 0.3 },
+        { id: 'floor_synthwave_grid', name: 'Synthwave Grid Tile', texture: 'synthwave_grid', color: '#0f172a', emissive: '#22d3ee', emissiveIntensity: 0.5, metalness: 0.5, roughness: 0.3 },
+        { id: 'floor_rainy_asphalt', name: 'Wet Asphalt Tile', texture: 'rainy_streets_asphalt', color: '#1e293b', emissive: '#000000', emissiveIntensity: 0, metalness: 0.3, roughness: 0.5 },
+        { id: 'floor_winter_ice', name: 'Glacier Ice Tile', texture: 'winter_ice', color: '#e0f2fe', emissive: '#000000', emissiveIntensity: 0, metalness: 0.1, roughness: 0.2 },
+        { id: 'floor_winter_snow', name: 'Powder Snow Tile', texture: 'winter_snow', color: '#f8fafc', emissive: '#000000', emissiveIntensity: 0, metalness: 0.0, roughness: 0.95 },
+        { id: 'floor_stadium_steel', name: 'Stadium Steel Grid Tile', texture: 'stadium_steel_grid', color: '#1e222b', emissive: '#000000', emissiveIntensity: 0, metalness: 0.9, roughness: 0.18 }
+      ].map(t => ({
+        id: t.id,
+        name: t.name,
+        category: 'floortiles',
+        icon: '🟫',
+        type: 'box',
+        scale: { x: 6.0, y: 0.1, z: 6.0 },
+        color: t.color,
+        texture: t.texture,
+        metalness: t.metalness,
+        roughness: t.roughness,
+        opacity: 1.0,
+        emissive: t.emissive,
+        emissiveIntensity: t.emissiveIntensity,
+        isCollidable: false,
+        floorTile: true,
+        desc: `Flat ${t.name.toLowerCase()} — resize in X/Z; texture density stays crisp.`
+      })),
+
+      // ============================================================
+      // EXPANSION PACK — extra props across every category
+      // ============================================================
+
+      // --- structures (Cover) ---
+      {
+        id: 'assault_cover_ramp', name: 'Assault Cover Ramp', category: 'structures', icon: '📐',
+        type: 'box', scale: { x: 4.0, y: 1.6, z: 3.0 }, color: '#475569', texture: 'city_concrete',
+        metalness: 0.3, roughness: 0.8, opacity: 1.0, emissive: '#000000', emissiveIntensity: 0.0,
+        isCollidable: true, desc: 'Angled concrete ramp for vaulting cover and elevation.'
+      },
+      {
+        id: 'sandbag_berm', name: 'Sandbag Berm', category: 'structures', icon: '🛡️',
+        type: 'box', scale: { x: 3.5, y: 1.2, z: 1.2 }, color: '#a8732f', texture: 'none',
+        metalness: 0.05, roughness: 0.95, opacity: 1.0, emissive: '#000000', emissiveIntensity: 0.0,
+        isCollidable: true, desc: 'Low stacked sandbag defensive berm.'
+      },
+      {
+        id: 'blast_door', name: 'Blast Door', category: 'structures', icon: '🚪',
+        type: 'box', scale: { x: 3.0, y: 4.0, z: 0.6 }, color: '#1e293b', texture: 'space_alloy',
+        metalness: 0.9, roughness: 0.2, opacity: 1.0, emissive: '#000000', emissiveIntensity: 0.0,
+        isCollidable: true, desc: 'Heavy reinforced blast door slab.'
+      },
+      {
+        id: 'jersey_barrier', name: 'Jersey Barrier', category: 'structures', icon: '🚧',
+        type: 'box', scale: { x: 3.5, y: 1.3, z: 0.7 }, color: '#9ca3af', texture: 'city_concrete',
+        metalness: 0.1, roughness: 0.9, opacity: 1.0, emissive: '#000000', emissiveIntensity: 0.0,
+        isCollidable: true, desc: 'Interlocking cast-concrete traffic barrier.'
+      },
+      {
+        id: 'chainlink_fence', name: 'Chain-Link Fence', category: 'structures', icon: '🔗',
+        type: 'box', scale: { x: 4.0, y: 2.6, z: 0.1 }, color: '#94a3b8', texture: 'none',
+        metalness: 0.8, roughness: 0.4, opacity: 0.5, transparent: true, emissive: '#000000', emissiveIntensity: 0.0,
+        isCollidable: true, desc: 'See-through chain-link fence panel with steel posts.'
+      },
+      {
+        id: 'checkpoint_archway', name: 'Checkpoint Archway', category: 'structures', icon: '🌉',
+        type: 'box', scale: { x: 4.5, y: 3.8, z: 1.0 }, color: '#0f172a', texture: 'futuristic_carbon',
+        metalness: 0.85, roughness: 0.3, opacity: 1.0, emissive: '#06b6d4', emissiveIntensity: 1.2,
+        isCollidable: true, desc: 'Walk-through archway with glowing scanner lintel.'
+      },
+      {
+        id: 'modular_catwalk', name: 'Modular Catwalk', category: 'structures', icon: '🌁',
+        type: 'box', scale: { x: 6.0, y: 0.4, z: 2.0 }, color: '#334155', texture: 'stadium_steel_grid',
+        metalness: 0.85, roughness: 0.3, opacity: 1.0, emissive: '#000000', emissiveIntensity: 0.0,
+        isCollidable: true, desc: 'Raised steel grid walkway platform with edge rails.'
+      },
+
+      // --- hazards ---
+      {
+        id: 'lava_vent', name: 'Lava Vent', category: 'hazards', icon: '🌋',
+        type: 'box', scale: { x: 2.2, y: 0.6, z: 2.2 }, color: '#1c1917', texture: 'space_meteorite',
+        metalness: 0.2, roughness: 0.8, opacity: 1.0, emissive: '#f97316', emissiveIntensity: 2.8,
+        isCollidable: true, desc: 'Cracked ground vent glowing with molten heat.'
+      },
+      {
+        id: 'spike_trap_pad', name: 'Spike Trap Pad', category: 'hazards', icon: '⚠️',
+        type: 'box', scale: { x: 2.5, y: 0.3, z: 2.5 }, color: '#334155', texture: 'space_alloy',
+        metalness: 0.8, roughness: 0.3, opacity: 1.0, emissive: '#ef4444', emissiveIntensity: 0.6,
+        isCollidable: true, desc: 'Pressure plate bristling with retractable spikes.'
+      },
+      {
+        id: 'arc_emitter', name: 'Electric Arc Emitter', category: 'hazards', icon: '⚡',
+        type: 'sphere', scale: { x: 1.5, y: 1.5, z: 1.5 }, color: '#0ea5e9', texture: 'futuristic_hex',
+        metalness: 0.3, roughness: 0.1, opacity: 0.9, transparent: true, emissive: '#38bdf8', emissiveIntensity: 3.0,
+        isCollidable: true, desc: 'Crackling orb discharging high-voltage arcs.'
+      },
+      {
+        id: 'radioactive_drum', name: 'Radioactive Waste Drum', category: 'hazards', icon: '☢️',
+        type: 'cylinder', scale: { x: 1.0, y: 1.6, z: 1.0 }, color: '#15803d', texture: 'city_concrete',
+        metalness: 0.4, roughness: 0.6, opacity: 1.0, emissive: '#22c55e', emissiveIntensity: 1.8,
+        isCollidable: true, desc: 'Leaking drum with toxic green glow.'
+      },
+      {
+        id: 'proximity_mine', name: 'Proximity Mine Core', category: 'hazards', icon: '💣',
+        type: 'sphere', scale: { x: 1.0, y: 0.7, z: 1.0 }, color: '#7f1d1d', texture: 'none',
+        metalness: 0.6, roughness: 0.4, opacity: 1.0, emissive: '#ef4444', emissiveIntensity: 2.0,
+        isCollidable: true, desc: 'Armed proximity mine pulsing red.'
+      },
+      {
+        id: 'rift_core', name: 'Unstable Rift Core', category: 'hazards', icon: '🌀',
+        type: 'sphere', scale: { x: 1.8, y: 1.8, z: 1.8 }, color: '#7e22ce', texture: 'synthwave_neon_laser',
+        metalness: 0.2, roughness: 0.1, opacity: 0.9, transparent: true, emissive: '#a855f7', emissiveIntensity: 3.0,
+        isCollidable: true, desc: 'Tearing dimensional rift bleeding violet energy.'
+      },
+      {
+        id: 'gravity_well', name: 'Gravity Well Emitter', category: 'hazards', icon: '🕳️',
+        type: 'sphere', scale: { x: 2.0, y: 2.0, z: 2.0 }, color: '#1e1b4b', texture: 'forerunner_panel',
+        metalness: 0.7, roughness: 0.2, opacity: 1.0, emissive: '#6366f1', emissiveIntensity: 2.5,
+        isCollidable: true, desc: 'Collapsing gravity node warping nearby space.'
+      },
+      {
+        id: 'laser_fence_post', name: 'Laser Fence Post', category: 'hazards', icon: '🚨',
+        type: 'cylinder', scale: { x: 0.4, y: 3.0, z: 0.4 }, color: '#1e293b', texture: 'synthwave_neon_laser',
+        metalness: 0.8, roughness: 0.2, opacity: 1.0, emissive: '#ec4899', emissiveIntensity: 2.0,
+        isCollidable: true, desc: 'Emitter post for a searing laser fence line.'
+      },
+
+      // --- industrial (Space) ---
+      {
+        id: 'fuel_silo', name: 'Fuel Silo Tank', category: 'industrial', icon: '⛽',
+        type: 'cylinder', scale: { x: 2.5, y: 5.0, z: 2.5 }, color: '#475569', texture: 'space_alloy',
+        metalness: 0.85, roughness: 0.25, opacity: 1.0, emissive: '#000000', emissiveIntensity: 0.0,
+        isCollidable: true, desc: 'Tall pressurized fuel storage silo.'
+      },
+      {
+        id: 'reactor_turbine', name: 'Reactor Turbine', category: 'industrial', icon: '⚙️',
+        type: 'cylinder', scale: { x: 2.0, y: 3.0, z: 2.0 }, color: '#1e293b', texture: 'futuristic_hex',
+        metalness: 0.85, roughness: 0.2, opacity: 1.0, emissive: '#06b6d4', emissiveIntensity: 1.5,
+        isCollidable: true, desc: 'Spinning turbine housing with cyan core glow.'
+      },
+      {
+        id: 'conveyor_segment', name: 'Conveyor Segment', category: 'industrial', icon: '🛗',
+        type: 'box', scale: { x: 5.0, y: 0.5, z: 2.0 }, color: '#334155', texture: 'stadium_steel_grid',
+        metalness: 0.85, roughness: 0.3, opacity: 1.0, emissive: '#000000', emissiveIntensity: 0.0,
+        isCollidable: true, desc: 'Industrial conveyor deck segment.'
+      },
+      {
+        id: 'server_rack', name: 'Server Rack Bank', category: 'industrial', icon: '🖥️',
+        type: 'box', scale: { x: 1.5, y: 2.5, z: 1.0 }, color: '#0f172a', texture: 'futuristic_carbon',
+        metalness: 0.8, roughness: 0.35, opacity: 1.0, emissive: '#22d3ee', emissiveIntensity: 1.0,
+        isCollidable: true, desc: 'Stacked server bank blinking with data lights.'
+      },
+      {
+        id: 'cargo_crate_stack', name: 'Cargo Crate Stack', category: 'industrial', icon: '📦',
+        type: 'box', scale: { x: 2.5, y: 2.5, z: 2.5 }, color: '#b45309', texture: 'space_alloy',
+        metalness: 0.7, roughness: 0.3, opacity: 1.0, emissive: '#000000', emissiveIntensity: 0.0,
+        isCollidable: true, desc: 'Stacked logistics crates strapped together.'
+      },
+      {
+        id: 'antenna_mast', name: 'Comms Antenna Mast', category: 'industrial', icon: '🗼',
+        type: 'cylinder', scale: { x: 0.5, y: 6.0, z: 0.5 }, color: '#1e293b', texture: 'space_alloy',
+        metalness: 0.85, roughness: 0.25, opacity: 1.0, emissive: '#ef4444', emissiveIntensity: 1.2,
+        isCollidable: true, desc: 'Tall lattice antenna mast with red beacon.'
+      },
+      {
+        id: 'satellite_uplink', name: 'Satellite Uplink Dish', category: 'industrial', icon: '📡',
+        type: 'cylinder', scale: { x: 3.0, y: 3.0, z: 3.0 }, color: '#475569', texture: 'space_alloy',
+        metalness: 0.8, roughness: 0.3, opacity: 1.0, emissive: '#06b6d4', emissiveIntensity: 0.6,
+        isCollidable: true, desc: 'Steerable parabolic uplink dish on a mast.'
+      },
+      {
+        id: 'solar_panel_array', name: 'Solar Panel Array', category: 'industrial', icon: '🔆',
+        type: 'box', scale: { x: 5.0, y: 0.2, z: 3.0 }, color: '#1e3a8a', texture: 'futuristic_hex',
+        metalness: 0.6, roughness: 0.3, opacity: 1.0, emissive: '#3b82f6', emissiveIntensity: 0.8,
+        isCollidable: true, desc: 'Flat photovoltaic array — tilt with rotation.'
+      },
+
+      // --- nature ---
+      {
+        id: 'conifer_tree', name: 'Pine Conifer Tree', category: 'nature', icon: '🌲',
+        type: 'cylinder', scale: { x: 2.5, y: 5.0, z: 2.5 }, color: '#14532d', texture: 'nature_wood',
+        metalness: 0.05, roughness: 0.9, opacity: 1.0, emissive: '#000000', emissiveIntensity: 0.0,
+        isCollidable: true, desc: 'Tall evergreen pine with layered needle canopy.'
+      },
+      {
+        id: 'dead_tree', name: 'Dead Twisted Tree', category: 'nature', icon: '🪾',
+        type: 'cylinder', scale: { x: 2.0, y: 4.5, z: 2.0 }, color: '#44403c', texture: 'nature_wood',
+        metalness: 0.05, roughness: 0.95, opacity: 1.0, emissive: '#000000', emissiveIntensity: 0.0,
+        isCollidable: true, desc: 'Barren gnarled tree with bare branching limbs.'
+      },
+      {
+        id: 'boulder_pile', name: 'Boulder Pile', category: 'nature', icon: '🪨',
+        type: 'box', scale: { x: 3.0, y: 2.0, z: 3.0 }, color: '#57534e', texture: 'nature_mossy_stone',
+        metalness: 0.05, roughness: 0.95, opacity: 1.0, emissive: '#000000', emissiveIntensity: 0.0,
+        isCollidable: true, desc: 'Clustered pile of weathered rocks and debris.'
+      },
+      {
+        id: 'fallen_log', name: 'Mossy Fallen Log', category: 'nature', icon: '🪵',
+        type: 'cylinder', scale: { x: 1.2, y: 4.5, z: 1.2 }, color: '#44403c', texture: 'nature_wood',
+        metalness: 0.05, roughness: 0.9, opacity: 1.0, emissive: '#000000', emissiveIntensity: 0.0,
+        isCollidable: true, desc: 'Toppled mossy log — rotate flat to lie on the ground.'
+      },
+      {
+        id: 'ice_stalagmite', name: 'Ice Stalagmite Spire', category: 'nature', icon: '🧊',
+        type: 'cylinder', scale: { x: 1.5, y: 4.0, z: 1.5 }, color: '#93c5fd', texture: 'winter_glacier_glass',
+        metalness: 0.9, roughness: 0.08, opacity: 0.8, transparent: true, emissive: '#60a5fa', emissiveIntensity: 1.5,
+        isCollidable: true, desc: 'Jagged translucent ice spire rising from the ground.'
+      },
+      {
+        id: 'snowdrift_mound', name: 'Snowdrift Mound', category: 'nature', icon: '⛄',
+        type: 'sphere', scale: { x: 3.0, y: 1.5, z: 3.0 }, color: '#f8fafc', texture: 'winter_snow',
+        metalness: 0.0, roughness: 0.95, opacity: 1.0, emissive: '#000000', emissiveIntensity: 0.0,
+        isCollidable: true, desc: 'Soft mound of wind-packed powder snow.'
+      },
+      {
+        id: 'cave_crystal_cluster', name: 'Cave Crystal Cluster', category: 'nature', icon: '💎',
+        type: 'box', scale: { x: 2.0, y: 3.0, z: 2.0 }, color: '#6d28d9', texture: 'fantasy_runed_stone',
+        metalness: 0.3, roughness: 0.15, opacity: 0.85, transparent: true, emissive: '#a855f7', emissiveIntensity: 2.0,
+        isCollidable: true, desc: 'Cluster of glowing amethyst crystal shards.'
+      },
+      {
+        id: 'vine_pillar', name: 'Vine-Wrapped Pillar', category: 'nature', icon: '🌿',
+        type: 'cylinder', scale: { x: 1.2, y: 4.5, z: 1.2 }, color: '#3f6212', texture: 'nature_mossy_stone',
+        metalness: 0.1, roughness: 0.85, opacity: 1.0, emissive: '#166534', emissiveIntensity: 0.3,
+        isCollidable: true, desc: 'Ruined stone column overgrown with creeping vines.'
+      },
+
+      // --- alien ---
+      {
+        id: 'xeno_egg_pod', name: 'Xeno Egg Pod', category: 'alien', icon: '🥚',
+        type: 'sphere', scale: { x: 1.5, y: 2.0, z: 1.5 }, color: '#4d7c0f', texture: 'none',
+        metalness: 0.3, roughness: 0.5, opacity: 0.9, transparent: true, emissive: '#84cc16', emissiveIntensity: 1.5,
+        isCollidable: true, desc: 'Pulsing biomechanical egg sac.'
+      },
+      {
+        id: 'bio_spire', name: 'Bioluminescent Spire', category: 'alien', icon: '🪸',
+        type: 'cylinder', scale: { x: 1.0, y: 4.0, z: 1.0 }, color: '#6d28d9', texture: 'synthwave_neon_laser',
+        metalness: 0.2, roughness: 0.3, opacity: 1.0, emissive: '#c084fc', emissiveIntensity: 2.5,
+        isCollidable: true, desc: 'Organic spire glowing with alien bioluminescence.'
+      },
+      {
+        id: 'monolith_slab', name: 'Alien Monolith Slab', category: 'alien', icon: '🗿',
+        type: 'box', scale: { x: 1.5, y: 5.0, z: 3.0 }, color: '#18181b', texture: 'forerunner_panel',
+        metalness: 0.7, roughness: 0.25, opacity: 1.0, emissive: '#06b6d4', emissiveIntensity: 1.0,
+        isCollidable: true, desc: 'Towering black monolith etched with circuitry.'
+      },
+      {
+        id: 'hover_glyph_ring', name: 'Hover-Glyph Ring', category: 'alien', icon: '🛸',
+        type: 'cylinder', scale: { x: 3.0, y: 0.3, z: 3.0 }, color: '#a16207', texture: 'forerunner_gold',
+        metalness: 0.9, roughness: 0.15, opacity: 1.0, emissive: '#fbbf24', emissiveIntensity: 2.0,
+        isCollidable: true, desc: 'Floating golden ring inscribed with rotating glyphs.'
+      },
+      {
+        id: 'hive_node', name: 'Organic Hive Node', category: 'alien', icon: '🐝',
+        type: 'sphere', scale: { x: 2.5, y: 2.0, z: 2.5 }, color: '#7c2d12', texture: 'none',
+        metalness: 0.2, roughness: 0.6, opacity: 1.0, emissive: '#f97316', emissiveIntensity: 1.5,
+        isCollidable: true, desc: 'Bulbous hive growth veined with warm glow.'
+      },
+      {
+        id: 'crystalline_obelisk', name: 'Crystal Obelisk Spire', category: 'alien', icon: '🔷',
+        type: 'cylinder', scale: { x: 1.5, y: 5.0, z: 1.5 }, color: '#a78bfa', texture: 'winter_glacier_glass',
+        metalness: 0.6, roughness: 0.1, opacity: 0.8, transparent: true, emissive: '#8b5cf6', emissiveIntensity: 2.0,
+        isCollidable: true, desc: 'Faceted crystalline obelisk humming with energy.'
+      },
+      {
+        id: 'warp_gate_archway', name: 'Warp Gate Archway', category: 'alien', icon: '🌌',
+        type: 'box', scale: { x: 4.0, y: 4.0, z: 1.0 }, color: '#0f172a', texture: 'forerunner_panel',
+        metalness: 0.8, roughness: 0.2, opacity: 1.0, emissive: '#a855f7', emissiveIntensity: 2.0,
+        isCollidable: true, desc: 'Standing portal frame rippling with warp energy.'
+      },
+      {
+        id: 'antigrav_relic', name: 'Anti-Grav Relic Core', category: 'alien', icon: '🌐',
+        type: 'sphere', scale: { x: 1.8, y: 1.8, z: 1.8 }, color: '#1e1b4b', texture: 'forerunner_panel',
+        metalness: 0.85, roughness: 0.15, opacity: 1.0, emissive: '#6366f1', emissiveIntensity: 2.5,
+        isCollidable: true, desc: 'Levitating relic core orbited by light rings.'
+      },
+
+      // --- foliage (NEW) ---
+      {
+        id: 'broadleaf_tree', name: 'Broadleaf Tree', category: 'foliage', icon: '🌳',
+        type: 'cylinder', scale: { x: 3.0, y: 5.0, z: 3.0 }, color: '#166534', texture: 'nature_wood',
+        metalness: 0.05, roughness: 0.9, opacity: 1.0, emissive: '#000000', emissiveIntensity: 0.0,
+        isCollidable: true, desc: 'Full broadleaf tree with a rounded leafy crown.'
+      },
+      {
+        id: 'palm_tree', name: 'Palm Tree', category: 'foliage', icon: '🌴',
+        type: 'cylinder', scale: { x: 2.0, y: 5.5, z: 2.0 }, color: '#15803d', texture: 'nature_wood',
+        metalness: 0.05, roughness: 0.9, opacity: 1.0, emissive: '#000000', emissiveIntensity: 0.0,
+        isCollidable: true, desc: 'Tall palm with a slender trunk and frond fan.'
+      },
+      {
+        id: 'bush_cluster', name: 'Bush Cluster', category: 'foliage', icon: '🌳',
+        type: 'sphere', scale: { x: 2.5, y: 1.8, z: 2.5 }, color: '#15803d', texture: 'nature_grass',
+        metalness: 0.05, roughness: 0.95, opacity: 1.0, emissive: '#000000', emissiveIntensity: 0.0,
+        isCollidable: true, desc: 'Dense rounded shrub clump.'
+      },
+      {
+        id: 'giant_mushroom', name: 'Giant Mushroom', category: 'foliage', icon: '🍄',
+        type: 'cylinder', scale: { x: 2.5, y: 3.0, z: 2.5 }, color: '#dc2626', texture: 'none',
+        metalness: 0.1, roughness: 0.7, opacity: 1.0, emissive: '#ef4444', emissiveIntensity: 0.4,
+        isCollidable: true, desc: 'Oversized toadstool with a pale stem and spotted cap.'
+      },
+      {
+        id: 'hanging_vines', name: 'Hanging Vines', category: 'foliage', icon: '🌿',
+        type: 'box', scale: { x: 2.0, y: 4.0, z: 0.3 }, color: '#166534', texture: 'nature_grass',
+        metalness: 0.05, roughness: 0.9, opacity: 0.92, transparent: true, emissive: '#000000', emissiveIntensity: 0.0,
+        isCollidable: false, desc: 'Curtain of trailing jungle vines.'
+      },
+      {
+        id: 'glowing_flora_pod', name: 'Glowing Flora Pod', category: 'foliage', icon: '🪷',
+        type: 'sphere', scale: { x: 1.5, y: 1.8, z: 1.5 }, color: '#4d7c0f', texture: 'none',
+        metalness: 0.1, roughness: 0.4, opacity: 0.9, transparent: true, emissive: '#a3e635', emissiveIntensity: 2.0,
+        isCollidable: true, desc: 'Bioluminescent seed pod pulsing soft green light.'
+      },
+      {
+        id: 'hedge_wall', name: 'Hedge Wall', category: 'foliage', icon: '🌳',
+        type: 'box', scale: { x: 4.0, y: 2.0, z: 0.8 }, color: '#166534', texture: 'nature_grass',
+        metalness: 0.05, roughness: 0.95, opacity: 1.0, emissive: '#000000', emissiveIntensity: 0.0,
+        isCollidable: true, desc: 'Trimmed boxwood hedge for maze-style cover.'
+      },
+      {
+        id: 'bonsai_tree', name: 'Bonsai Tree', category: 'foliage', icon: '🪴',
+        type: 'cylinder', scale: { x: 1.5, y: 2.0, z: 1.5 }, color: '#15803d', texture: 'nature_wood',
+        metalness: 0.05, roughness: 0.9, opacity: 1.0, emissive: '#000000', emissiveIntensity: 0.0,
+        isCollidable: true, desc: 'Small sculpted bonsai with a tiered canopy.'
+      },
+
+      // --- props (NEW) ---
+      {
+        id: 'wooden_barrel', name: 'Wooden Barrel', category: 'props', icon: '🛢️',
+        type: 'cylinder', scale: { x: 1.0, y: 1.4, z: 1.0 }, color: '#7c4a21', texture: 'nature_wood',
+        metalness: 0.1, roughness: 0.7, opacity: 1.0, emissive: '#000000', emissiveIntensity: 0.0,
+        isCollidable: true, desc: 'Bulging wooden barrel bound with iron hoops.'
+      },
+      {
+        id: 'oil_drum', name: 'Oil Drum', category: 'props', icon: '🛢️',
+        type: 'cylinder', scale: { x: 1.0, y: 1.5, z: 1.0 }, color: '#1c1917', texture: 'space_alloy',
+        metalness: 0.7, roughness: 0.4, opacity: 1.0, emissive: '#ef4444', emissiveIntensity: 0.3,
+        isCollidable: true, desc: 'Dented steel oil drum with hazard stripe.'
+      },
+      {
+        id: 'ammo_crate', name: 'Ammo Crate', category: 'props', icon: '🧰',
+        type: 'box', scale: { x: 1.8, y: 1.2, z: 1.2 }, color: '#3f6212', texture: 'none',
+        metalness: 0.3, roughness: 0.6, opacity: 1.0, emissive: '#000000', emissiveIntensity: 0.0,
+        isCollidable: true, desc: 'Reinforced military supply crate.'
+      },
+      {
+        id: 'park_bench', name: 'Park Bench', category: 'props', icon: '🪑',
+        type: 'box', scale: { x: 2.5, y: 0.9, z: 0.8 }, color: '#44403c', texture: 'nature_wood',
+        metalness: 0.2, roughness: 0.7, opacity: 1.0, emissive: '#000000', emissiveIntensity: 0.0,
+        isCollidable: true, desc: 'Slatted wood-and-iron public bench.'
+      },
+      {
+        id: 'control_terminal', name: 'Control Terminal', category: 'props', icon: '🕹️',
+        type: 'box', scale: { x: 1.2, y: 1.6, z: 0.8 }, color: '#0f172a', texture: 'futuristic_carbon',
+        metalness: 0.8, roughness: 0.3, opacity: 1.0, emissive: '#22d3ee', emissiveIntensity: 1.5,
+        isCollidable: true, desc: 'Interactive console with glowing readout screen.'
+      },
+      {
+        id: 'supply_locker', name: 'Supply Locker', category: 'props', icon: '🚪',
+        type: 'box', scale: { x: 1.2, y: 2.2, z: 0.8 }, color: '#475569', texture: 'space_alloy',
+        metalness: 0.8, roughness: 0.3, opacity: 1.0, emissive: '#fbbf24', emissiveIntensity: 0.5,
+        isCollidable: true, desc: 'Tall metal storage locker with status light.'
+      },
+      {
+        id: 'neon_sign_post', name: 'Neon Sign Post', category: 'props', icon: '💗',
+        type: 'cylinder', scale: { x: 0.4, y: 4.0, z: 0.4 }, color: '#1c1917', texture: 'none',
+        metalness: 0.8, roughness: 0.2, opacity: 1.0, emissive: '#ec4899', emissiveIntensity: 2.5,
+        isCollidable: true, desc: 'Street post topped with a glowing neon sign.'
+      },
+      {
+        id: 'statue_idol', name: 'Statue Idol', category: 'props', icon: '🗿',
+        type: 'box', scale: { x: 1.5, y: 3.0, z: 1.5 }, color: '#a16207', texture: 'forerunner_gold',
+        metalness: 0.9, roughness: 0.15, opacity: 1.0, emissive: '#000000', emissiveIntensity: 0.0,
+        isCollidable: true, desc: 'Ornate golden idol on a square plinth.'
+      },
+
+      // --- tech (NEW) ---
+      {
+        id: 'radar_dish', name: 'Radar Dish', category: 'tech', icon: '📡',
+        type: 'cylinder', scale: { x: 3.0, y: 3.0, z: 3.0 }, color: '#475569', texture: 'space_alloy',
+        metalness: 0.8, roughness: 0.3, opacity: 1.0, emissive: '#38bdf8', emissiveIntensity: 0.6,
+        isCollidable: true, desc: 'Rotating radar dish sweeping the horizon.'
+      },
+      {
+        id: 'comms_antenna', name: 'Comms Antenna', category: 'tech', icon: '🗼',
+        type: 'cylinder', scale: { x: 0.5, y: 6.0, z: 0.5 }, color: '#1e293b', texture: 'space_alloy',
+        metalness: 0.85, roughness: 0.25, opacity: 1.0, emissive: '#ef4444', emissiveIntensity: 1.5,
+        isCollidable: true, desc: 'Slim whip antenna with a blinking beacon.'
+      },
+      {
+        id: 'holo_projector', name: 'Holo-Projector Base', category: 'tech', icon: '🔆',
+        type: 'cylinder', scale: { x: 2.0, y: 0.6, z: 2.0 }, color: '#0f172a', texture: 'futuristic_hex',
+        metalness: 0.8, roughness: 0.25, opacity: 1.0, emissive: '#06b6d4', emissiveIntensity: 2.5,
+        isCollidable: true, desc: 'Disc emitter casting a vertical holo-beam.'
+      },
+      {
+        id: 'portable_generator', name: 'Portable Generator', category: 'tech', icon: '🔌',
+        type: 'box', scale: { x: 2.0, y: 1.5, z: 1.5 }, color: '#334155', texture: 'futuristic_carbon',
+        metalness: 0.8, roughness: 0.3, opacity: 1.0, emissive: '#fbbf24', emissiveIntensity: 1.0,
+        isCollidable: true, desc: 'Field generator humming with amber power.'
+      },
+      {
+        id: 'turret_base', name: 'Turret Base', category: 'tech', icon: '🔫',
+        type: 'cylinder', scale: { x: 1.8, y: 1.2, z: 1.8 }, color: '#1e293b', texture: 'space_alloy',
+        metalness: 0.85, roughness: 0.25, opacity: 1.0, emissive: '#ef4444', emissiveIntensity: 0.6,
+        isCollidable: true, desc: 'Armored swivel mount for a defensive turret.'
+      },
+      {
+        id: 'shield_generator', name: 'Shield Generator', category: 'tech', icon: '🛡️',
+        type: 'sphere', scale: { x: 2.0, y: 2.0, z: 2.0 }, color: '#06b6d4', texture: 'futuristic_shield',
+        metalness: 0.3, roughness: 0.1, opacity: 0.9, transparent: true, emissive: '#06b6d4', emissiveIntensity: 2.5,
+        isCollidable: true, desc: 'Projector core sustaining a shimmering shield bubble.'
+      },
+      {
+        id: 'sensor_pylon', name: 'Sensor Pylon', category: 'tech', icon: '📶',
+        type: 'cylinder', scale: { x: 1.0, y: 5.0, z: 1.0 }, color: '#0f172a', texture: 'futuristic_hex',
+        metalness: 0.8, roughness: 0.25, opacity: 1.0, emissive: '#22d3ee', emissiveIntensity: 1.5,
+        isCollidable: true, desc: 'Tall sensor pylon scanning with cyan pulses.'
+      },
+      {
+        id: 'drone_landing_pad', name: 'Drone Landing Pad', category: 'tech', icon: '🛬',
+        type: 'box', scale: { x: 3.0, y: 0.3, z: 3.0 }, color: '#1e293b', texture: 'stadium_steel_grid',
+        metalness: 0.85, roughness: 0.3, opacity: 1.0, emissive: '#06b6d4', emissiveIntensity: 0.8,
+        isCollidable: true, desc: 'Lit landing pad with a glowing guidance ring.'
+      },
+
+      // --- primitives (Shapes) ---
+      {
+        id: 'wedge_ramp', name: 'Wedge Ramp', category: 'primitives', icon: '📐',
+        type: 'box', scale: { x: 3.0, y: 1.6, z: 3.0 }, color: '#6b7280', texture: 'none',
+        metalness: 0.4, roughness: 0.6, opacity: 1.0, emissive: '#000000', emissiveIntensity: 0.0,
+        isCollidable: true, desc: 'Plain sloped wedge — high at one edge, low at the other.'
+      },
+      {
+        id: 'low_platform', name: 'Low Platform', category: 'primitives', icon: '🟫',
+        type: 'box', scale: { x: 4.0, y: 0.4, z: 4.0 }, color: '#6b7280', texture: 'none',
+        metalness: 0.4, roughness: 0.6, opacity: 1.0, emissive: '#000000', emissiveIntensity: 0.0,
+        isCollidable: true, desc: 'Flat raised platform slab with a rim border.'
+      },
+      {
+        id: 'archway_frame', name: 'Archway Frame', category: 'primitives', icon: '🌉',
+        type: 'box', scale: { x: 4.0, y: 4.0, z: 1.0 }, color: '#6b7280', texture: 'none',
+        metalness: 0.4, roughness: 0.6, opacity: 1.0, emissive: '#000000', emissiveIntensity: 0.0,
+        isCollidable: true, desc: 'Open archway frame — two pillars and a top lintel.'
+      },
+      {
+        id: 'wire_fence', name: 'Wire Fence', category: 'primitives', icon: '🔗',
+        type: 'box', scale: { x: 4.0, y: 2.5, z: 0.1 }, color: '#94a3b8', texture: 'none',
+        metalness: 0.7, roughness: 0.4, opacity: 0.5, transparent: true, emissive: '#000000', emissiveIntensity: 0.0,
+        isCollidable: true, desc: 'See-through fence panel with steel posts and rails.'
+      },
+      {
+        id: 'tall_pillar', name: 'Tall Pillar', category: 'primitives', icon: '🛢️',
+        type: 'cylinder', scale: { x: 1.0, y: 6.0, z: 1.0 }, color: '#6b7280', texture: 'none',
+        metalness: 0.4, roughness: 0.6, opacity: 1.0, emissive: '#000000', emissiveIntensity: 0.0,
+        isCollidable: true, desc: 'Plain ringed support column.'
+      },
+      {
+        id: 'cone_spire', name: 'Cone Spire', category: 'primitives', icon: '🔺',
+        type: 'cylinder', scale: { x: 2.0, y: 3.0, z: 2.0 }, color: '#6b7280', texture: 'none',
+        metalness: 0.4, roughness: 0.6, opacity: 1.0, emissive: '#000000', emissiveIntensity: 0.0,
+        isCollidable: true, desc: 'Tapering conical spire building block.'
+      },
+      {
+        id: 'dome_cap', name: 'Dome Cap', category: 'primitives', icon: '🔵',
+        type: 'sphere', scale: { x: 3.0, y: 1.5, z: 3.0 }, color: '#6b7280', texture: 'none',
+        metalness: 0.4, roughness: 0.6, opacity: 1.0, emissive: '#000000', emissiveIntensity: 0.0,
+        isCollidable: true, desc: 'Faceted geodesic dome cap.'
       }
     ];
 
@@ -1120,6 +1688,7 @@
       initThree();
       initEvents();
       initResizers();
+      seedDefaultSpawns();
       switchTab('scene');
       lucide.createIcons();
       isInitialized = true;
@@ -1399,10 +1968,14 @@
 
       boundaryGrid = new THREE.Group();
 
+      const borderColor = theme === 'synthwave' ? '#ec4899' : theme === 'winter_rink' ? '#93c5fd' : (theme === 'grifball_stadium' ? '#ffffff' : '#38bdf8');
+      const gridColor1 = theme === 'synthwave' ? '#ec4899' : theme === 'winter_rink' ? '#93c5fd' : (theme === 'grifball_stadium' ? '#334155' : '#1e293b');
+      const gridColor2 = theme === 'synthwave' ? '#06b6d4' : theme === 'winter_rink' ? '#f1f5f9' : (theme === 'grifball_stadium' ? '#0f172a' : '#0f172a');
+
       if (mapShape === 'rectangular') {
-        // Draw rectangular boundary outline
-        const bx = arenaRadius * 1.2;
-        const bz = arenaRadius * 0.6;
+        // Draw rectangular boundary outline using explicit half-extents
+        const bx = arenaHalfX;
+        const bz = arenaHalfZ;
         const points = [
           new THREE.Vector3(-bx, 0.05, -bz),
           new THREE.Vector3(bx, 0.05, -bz),
@@ -1411,30 +1984,40 @@
           new THREE.Vector3(-bx, 0.05, -bz)
         ];
         const lineGeo = new THREE.BufferGeometry().setFromPoints(points);
-        const borderColor = theme === 'synthwave' ? '#ec4899' : theme === 'winter_rink' ? '#93c5fd' : (theme === 'grifball_stadium' ? '#ffffff' : '#38bdf8');
         const lineMat = new THREE.LineBasicMaterial({ color: borderColor, linewidth: 2 });
-        const border = new THREE.Line(lineGeo, lineMat);
-        boundaryGrid.add(border);
+        boundaryGrid.add(new THREE.Line(lineGeo, lineMat));
 
-        // Scaled grid helper inside boundary (aspect ratio 2:1)
-        const gridColor1 = theme === 'synthwave' ? '#ec4899' : theme === 'winter_rink' ? '#93c5fd' : (theme === 'grifball_stadium' ? '#334155' : '#1e293b');
-        const gridColor2 = theme === 'synthwave' ? '#06b6d4' : theme === 'winter_rink' ? '#f1f5f9' : (theme === 'grifball_stadium' ? '#0f172a' : '#0f172a');
-        const grid = new THREE.GridHelper(arenaRadius * 2.4, 24, gridColor1, gridColor2);
-        grid.scale.z = 0.5;
+        // Vertical ceiling volume (wireframe box up to arenaCeiling)
+        const boxGeo = new THREE.BoxGeometry(bx * 2, arenaCeiling, bz * 2);
+        const edges = new THREE.LineSegments(
+          new THREE.EdgesGeometry(boxGeo),
+          new THREE.LineBasicMaterial({ color: borderColor, transparent: true, opacity: 0.25 })
+        );
+        edges.position.y = arenaCeiling / 2;
+        boundaryGrid.add(edges);
+
+        // Grid helper inside boundary, scaled to the X/Z aspect
+        const grid = new THREE.GridHelper(bx * 2, 24, gridColor1, gridColor2);
+        grid.scale.z = bz / bx;
         grid.position.y = -0.05;
         boundaryGrid.add(grid);
       } else {
         // High-tech circular boundary ring
         const ringGeo = new THREE.RingGeometry(arenaRadius - 0.1, arenaRadius + 0.1, 64);
         ringGeo.rotateX(-Math.PI / 2);
-        const ringColor = theme === 'synthwave' ? '#ec4899' : theme === 'winter_rink' ? '#93c5fd' : (theme === 'grifball_stadium' ? '#ffffff' : '#38bdf8');
-        const ringMat = new THREE.MeshBasicMaterial({ color: ringColor, side: THREE.DoubleSide, transparent: true, opacity: 0.4 });
-        const ring = new THREE.Mesh(ringGeo, ringMat);
-        boundaryGrid.add(ring);
+        const ringMat = new THREE.MeshBasicMaterial({ color: borderColor, side: THREE.DoubleSide, transparent: true, opacity: 0.4 });
+        boundaryGrid.add(new THREE.Mesh(ringGeo, ringMat));
+
+        // Vertical ceiling volume (wireframe cylinder up to arenaCeiling)
+        const cylGeo = new THREE.CylinderGeometry(arenaRadius, arenaRadius, arenaCeiling, 48, 1, true);
+        const cylEdges = new THREE.LineSegments(
+          new THREE.EdgesGeometry(cylGeo),
+          new THREE.LineBasicMaterial({ color: borderColor, transparent: true, opacity: 0.2 })
+        );
+        cylEdges.position.y = arenaCeiling / 2;
+        boundaryGrid.add(cylEdges);
 
         // Grid helper inside boundary
-        const gridColor1 = theme === 'synthwave' ? '#ec4899' : theme === 'winter_rink' ? '#93c5fd' : (theme === 'grifball_stadium' ? '#334155' : '#1e293b');
-        const gridColor2 = theme === 'synthwave' ? '#06b6d4' : theme === 'winter_rink' ? '#f1f5f9' : (theme === 'grifball_stadium' ? '#0f172a' : '#0f172a');
         const grid = new THREE.GridHelper(arenaRadius * 2, 20, gridColor1, gridColor2);
         grid.position.y = -0.05;
         boundaryGrid.add(grid);
@@ -2491,7 +3074,7 @@
       activeTab = tab;
       
       // Update Tab CSS
-      ['scene', 'lights', 'objects', 'spawns'].forEach(t => {
+      ['scene', 'lights', 'objects'].forEach(t => {
         const btn = document.getElementById(`tab-${t}`);
         if (t === tab) {
           btn.className = "py-3 text-[10px] font-bold uppercase tracking-wider border-b-2 border-cyan-500 bg-cyan-500/5 text-cyan-400 flex flex-col items-center gap-1";
@@ -2551,39 +3134,24 @@
                 <option value="rectangular" ${mapShape==='rectangular'?'selected':''}>Rectangular</option>
               </select>
             </div>
+            ${mapShape === 'rectangular' ? `
+              <div class="mapmaker-field">
+                <span class="mapmaker-label">Boundary Extent X <span class="mapmaker-value-badge">${arenaHalfX}m</span></span>
+                <input type="range" min="6" max="60" step="0.5" oninput="updateBoundary('halfX', parseFloat(this.value))" class="mapmaker-slider" value="${arenaHalfX}">
+              </div>
+              <div class="mapmaker-field">
+                <span class="mapmaker-label">Boundary Extent Z <span class="mapmaker-value-badge">${arenaHalfZ}m</span></span>
+                <input type="range" min="6" max="60" step="0.5" oninput="updateBoundary('halfZ', parseFloat(this.value))" class="mapmaker-slider" value="${arenaHalfZ}">
+              </div>
+            ` : `
+              <div class="mapmaker-field">
+                <span class="mapmaker-label">Arena Radius <span class="mapmaker-value-badge">${arenaRadius}m</span></span>
+                <input type="range" min="12" max="35" step="1" oninput="updateRadius(parseInt(this.value))" class="mapmaker-slider" value="${arenaRadius}">
+              </div>
+            `}
             <div class="mapmaker-field">
-              <span class="mapmaker-label">Arena Radius <span class="mapmaker-value-badge">${arenaRadius}m</span></span>
-              <input type="range" min="12" max="35" step="1" oninput="updateRadius(parseInt(this.value))" class="mapmaker-slider" value="${arenaRadius}">
-            </div>
-            <div class="mapmaker-field">
-              <span class="mapmaker-label">Skybox Hue color <span class="mapmaker-value-badge">${skyboxHue}°</span></span>
-              <input type="range" min="0" max="360" step="5" oninput="skyboxHue=parseInt(this.value); rebuildScene();" class="mapmaker-slider" value="${skyboxHue}">
-            </div>
-            <div class="mapmaker-field">
-              <span class="mapmaker-label">Skybox Texture</span>
-              <select onchange="skyboxTexture=this.value; rebuildScene(); renderInspector();" class="mapmaker-input cursor-pointer font-bold text-cyan-400 bg-slate-950 uppercase">
-                <option value="matched" ${skyboxTexture==='matched'?'selected':''}>Auto Match Theme</option>
-                <optgroup label="Theme Matches">
-                  <option value="cyberpunk" ${skyboxTexture==='cyberpunk'?'selected':''}>Cyber Holodeck</option>
-                  <option value="hangar" ${skyboxTexture==='hangar'?'selected':''}>Steel Hangar</option>
-                  <option value="nature" ${skyboxTexture==='nature'?'selected':''}>Overgrown Nature</option>
-                  <option value="space" ${skyboxTexture==='space'?'selected':''}>Cosmic Starbase</option>
-                  <option value="fantasy" ${skyboxTexture==='fantasy'?'selected':''}>Ancient Fantasy</option>
-                  <option value="forerunner" ${skyboxTexture==='forerunner'?'selected':''}>Forerunner Canyon</option>
-                  <option value="synthwave" ${skyboxTexture==='synthwave'?'selected':''}>Synthwave Grid</option>
-                  <option value="rainy_streets" ${skyboxTexture==='rainy_streets'?'selected':''}>Rainy Cyber Streets</option>
-                  <option value="winter_rink" ${skyboxTexture==='winter_rink'?'selected':''}>Glacier Ice Rink</option>
-                  <option value="grifball_stadium" ${skyboxTexture==='grifball_stadium'?'selected':''}>Championship Stadium</option>
-                  <option value="holodeck" ${skyboxTexture==='holodeck'?'selected':''}>Coordinate Grid Void</option>
-                  <option value="rust" ${skyboxTexture==='rust'?'selected':''}>Post-Apocalyptic Dust</option>
-                </optgroup>
-                <optgroup label="Premium Custom Skies">
-                  <option value="toxic" ${skyboxTexture==='toxic'?'selected':''}>Toxic Green Wasteland</option>
-                  <option value="inferno" ${skyboxTexture==='inferno'?'selected':''}>Jagged Lava Inferno</option>
-                  <option value="matrix" ${skyboxTexture==='matrix'?'selected':''}>Digital Matrix Code</option>
-                  <option value="nebula" ${skyboxTexture==='nebula'?'selected':''}>Surreal Planet Nebula</option>
-                </optgroup>
-              </select>
+              <span class="mapmaker-label">Boundary Ceiling Y <span class="mapmaker-value-badge">${arenaCeiling}m</span></span>
+              <input type="range" min="3" max="40" step="0.5" oninput="updateBoundary('ceiling', parseFloat(this.value))" class="mapmaker-slider" value="${arenaCeiling}">
             </div>
             <div class="mapmaker-field">
               <span class="mapmaker-label">Fog Color</span>
@@ -2678,6 +3246,41 @@
               </div>
             </div>
           ` : ''}
+
+          <!-- Skybox & Atmosphere -->
+          <div class="flex flex-col gap-3 bg-white/2 border border-white/5 p-4 rounded-xl">
+            <span class="text-xs font-black uppercase text-cyan-400 tracking-wider">Skybox Texture</span>
+            <div class="mapmaker-field">
+              <span class="mapmaker-label">Skybox Sky</span>
+              <select onchange="skyboxTexture=this.value; rebuildScene(); renderInspector();" class="mapmaker-input cursor-pointer font-bold text-cyan-400 bg-slate-950 uppercase">
+                <option value="matched" ${skyboxTexture==='matched'?'selected':''}>Auto Match Theme</option>
+                <optgroup label="Theme Matches">
+                  <option value="cyberpunk" ${skyboxTexture==='cyberpunk'?'selected':''}>Cyber Holodeck</option>
+                  <option value="hangar" ${skyboxTexture==='hangar'?'selected':''}>Steel Hangar</option>
+                  <option value="nature" ${skyboxTexture==='nature'?'selected':''}>Overgrown Nature</option>
+                  <option value="space" ${skyboxTexture==='space'?'selected':''}>Cosmic Starbase</option>
+                  <option value="fantasy" ${skyboxTexture==='fantasy'?'selected':''}>Ancient Fantasy</option>
+                  <option value="forerunner" ${skyboxTexture==='forerunner'?'selected':''}>Forerunner Canyon</option>
+                  <option value="synthwave" ${skyboxTexture==='synthwave'?'selected':''}>Synthwave Grid</option>
+                  <option value="rainy_streets" ${skyboxTexture==='rainy_streets'?'selected':''}>Rainy Cyber Streets</option>
+                  <option value="winter_rink" ${skyboxTexture==='winter_rink'?'selected':''}>Glacier Ice Rink</option>
+                  <option value="grifball_stadium" ${skyboxTexture==='grifball_stadium'?'selected':''}>Championship Stadium</option>
+                  <option value="holodeck" ${skyboxTexture==='holodeck'?'selected':''}>Coordinate Grid Void</option>
+                  <option value="rust" ${skyboxTexture==='rust'?'selected':''}>Post-Apocalyptic Dust</option>
+                </optgroup>
+                <optgroup label="Premium Custom Skies">
+                  <option value="toxic" ${skyboxTexture==='toxic'?'selected':''}>Toxic Green Wasteland</option>
+                  <option value="inferno" ${skyboxTexture==='inferno'?'selected':''}>Jagged Lava Inferno</option>
+                  <option value="matrix" ${skyboxTexture==='matrix'?'selected':''}>Digital Matrix Code</option>
+                  <option value="nebula" ${skyboxTexture==='nebula'?'selected':''}>Surreal Planet Nebula</option>
+                </optgroup>
+              </select>
+            </div>
+            <div class="mapmaker-field">
+              <span class="mapmaker-label">Skybox Hue color <span class="mapmaker-value-badge">${skyboxHue}°</span></span>
+              <input type="range" min="0" max="360" step="5" oninput="skyboxHue=parseInt(this.value); rebuildScene();" class="mapmaker-slider" value="${skyboxHue}">
+            </div>
+          </div>
         `;
       } else if (activeTab === 'objects') {
         const activeObj = objects.find(o => o.id === selectedObjectId);
@@ -2870,6 +3473,27 @@
                 </select>
               </div>
 
+              ${activeObj.gameModeKind ? `
+                <!-- Game Mode Settings (spawns & objectives) -->
+                <div class="mapmaker-field mt-1.5 pt-2 border-t border-cyan-500/20">
+                  <span class="text-[10px] font-mono text-cyan-400/70 uppercase font-black">Game Mode Settings — ${activeObj.gameModeKind === 'spawn_point' ? 'Spawn Point' : 'Grifball Goal Plate'}</span>
+                </div>
+                <div class="mapmaker-field">
+                  <span class="mapmaker-label">Team</span>
+                  <select ${isLocked ? 'disabled' : ''} onchange="handleUpdateObject('team', this.value)" class="mapmaker-input cursor-pointer text-xs bg-slate-950 text-cyan-300 font-bold uppercase ${isLocked ? 'opacity-50 cursor-not-allowed' : ''}">
+                    <option value="neutral" ${!activeObj.team?'selected':''}>Neutral (Anyone)</option>
+                    <option value="blue" ${activeObj.team==='blue'?'selected':''}>Blue</option>
+                    <option value="red" ${activeObj.team==='red'?'selected':''}>Red</option>
+                  </select>
+                </div>
+                ${activeObj.gameModeKind === 'spawn_point' ? `
+                  <div class="mapmaker-field">
+                    <span class="mapmaker-label">Facing Direction <span class="mapmaker-value-badge">${Math.round(((activeObj.rotation?.y || 0) * (180/Math.PI)) % 360 + 360) % 360}°</span></span>
+                    <input type="range" min="0" max="360" step="5" ${isLocked ? 'disabled' : ''} oninput="handleUpdateObject('rot_y', parseFloat(this.value) * (Math.PI/180))" class="mapmaker-slider" value="${Math.round(((activeObj.rotation?.y || 0) * (180/Math.PI)) % 360 + 360) % 360}">
+                  </div>
+                ` : ''}
+              ` : ''}
+
               <div class="mapmaker-field">
                 <span class="mapmaker-label">Base Color</span>
                 <input type="color" ${isLocked ? 'disabled' : ''} oninput="handleUpdateObject('color', this.value)" class="mapmaker-input h-9 p-0.5 cursor-pointer ${isLocked ? 'opacity-50 cursor-not-allowed' : ''}" value="${activeObj.color}">
@@ -3007,49 +3631,74 @@
             </div>
           ` : ''}
         `;
-      } else if (activeTab === 'spawns') {
-        panel.innerHTML = `
-          <!-- Add Spawns Header -->
-          <div class="flex flex-col gap-3 bg-white/2 border border-white/5 p-4 rounded-xl">
-            <div class="flex justify-between items-center border-b border-white/5 pb-2">
-              <span class="text-xs font-black uppercase text-cyan-400 tracking-wider">Spawn Locations</span>
-              <button onclick="handleAddSpawn()" class="text-[10px] bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 px-3 py-1 rounded font-bold uppercase transition-all flex items-center gap-1">
-                <i data-lucide="plus" class="w-3.5 h-3.5"></i> Add Spawn
-              </button>
-            </div>
-            <div class="mapmaker-item-list">
-              ${spawnPoints.length === 0 ? '<p class="text-[10px] text-white/30 italic text-center py-4">No spawns created yet.</p>' : ''}
-              ${spawnPoints.map((sp, idx) => `
-                <div onclick="setSelectedSpawn('${idx}')" class="mapmaker-item-row ${selectedSpawnIdx===idx?'mapmaker-item-row-selected':''}">
-                  <span class="font-mono text-[10px]">Pilot Spawn #${idx + 1} (${sp.x.toFixed(1)}m, ${sp.z.toFixed(1)}m)</span>
-                  <button onclick="event.stopPropagation(); handleDeleteSpawn('${idx}')" class="mapmaker-row-btn hover:text-red-400">
-                    <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
-                  </button>
-                </div>
-              `).join('')}
-            </div>
-          </div>
-
-          <!-- Individual Spawn Inspector -->
-          ${selectedSpawnIdx !== null && spawnPoints[selectedSpawnIdx] ? `
-            <div class="flex flex-col gap-3 bg-cyan-950/20 border border-cyan-500/25 p-4 rounded-xl">
-              <span class="text-xs font-black uppercase text-cyan-400 tracking-wider">Spawn Inspector</span>
-              <div class="mapmaker-field">
-                <span class="mapmaker-label">Coordinate Position X <span class="mapmaker-value-badge">${spawnPoints[selectedSpawnIdx].x}m</span></span>
-                <input type="range" min="-30" max="30" step="0.5" oninput="handleUpdateSpawn('x', parseFloat(this.value))" class="mapmaker-slider" value="${spawnPoints[selectedSpawnIdx].x}">
-              </div>
-              <div class="mapmaker-field">
-                <span class="mapmaker-label">Coordinate Position Z <span class="mapmaker-value-badge">${spawnPoints[selectedSpawnIdx].z}m</span></span>
-                <input type="range" min="-30" max="30" step="0.5" oninput="handleUpdateSpawn('z', parseFloat(this.value))" class="mapmaker-slider" value="${spawnPoints[selectedSpawnIdx].z}">
-              </div>
-            </div>
-          ` : ''}
-        `;
       }
 
       rebuildScene();
       renderContentBrowser();
       lucide.createIcons();
+      wireEditableBadges(panel);
+    }
+
+    // Make every slider's value badge click-to-edit so exact numbers can be typed
+    // instead of only dragging. Reuses each slider's existing oninput handler.
+    function wireEditableBadges(root) {
+      if (!root) return;
+      root.querySelectorAll('.mapmaker-field').forEach(field => {
+        const slider = field.querySelector('input[type="range"].mapmaker-slider');
+        const badge = field.querySelector('.mapmaker-value-badge');
+        if (!slider || !badge || badge.dataset.editable) return;
+        badge.dataset.editable = '1';
+        badge.title = 'Click to type an exact value';
+
+        badge.addEventListener('click', () => {
+          if (slider.disabled) return;
+          const input = document.createElement('input');
+          input.type = 'number';
+          input.className = 'mapmaker-value-edit';
+          input.value = parseFloat(slider.value);
+          if (slider.min !== '') input.min = slider.min;
+          if (slider.max !== '') input.max = slider.max;
+          if (slider.step !== '') input.step = slider.step;
+
+          let done = false;
+          const finish = (apply) => {
+            if (done) return;
+            done = true;
+            const typed = parseFloat(input.value);
+            if (apply && !isNaN(typed)) {
+              let v = typed;
+              const mn = parseFloat(slider.min), mx = parseFloat(slider.max);
+              if (!isNaN(mn)) v = Math.max(mn, v);
+              if (!isNaN(mx)) v = Math.min(mx, v);
+              const exact = String(v);
+              // Range inputs round sub-step values (e.g. 17.34 → 17.3), so feed the
+              // EXACT value straight to the slider's oninput handler via a temporary
+              // `value` getter, bypassing the element's own quantization.
+              Object.defineProperty(slider, 'value', { configurable: true, get: () => exact, set: () => {} });
+              slider.dispatchEvent(new Event('input', { bubbles: true }));
+              delete slider.value;
+              // Re-render so every badge/slider reflects the true stored value
+              // (positions are clamped to 1 decimal by the transform-gizmo sync).
+              const panel = document.getElementById('inspector-panel');
+              const st = panel ? panel.scrollTop : 0;
+              renderInspector();
+              if (panel) panel.scrollTop = st;
+            } else {
+              input.replaceWith(badge);
+            }
+          };
+
+          input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') { e.preventDefault(); finish(true); }
+            else if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+          });
+          input.addEventListener('blur', () => finish(true));
+
+          badge.replaceWith(input);
+          input.focus();
+          input.select();
+        });
+      });
     }
 
     // DYNAMIC CONTENT BROWSER RENDER (UNREAL STYLE)
@@ -3068,11 +3717,16 @@
       });
 
       const categories = [
+        { id: 'gamemode', label: 'Game Mode', icon: '🎯' },
+        { id: 'floortiles', label: 'Floor Tiles', icon: '🟫' },
         { id: 'structures', label: 'Cover', icon: '🏗️' },
         { id: 'hazards', label: 'Hazards', icon: '⚡' },
         { id: 'industrial', label: 'Space', icon: '📦' },
         { id: 'nature', label: 'Nature', icon: '🌿' },
         { id: 'alien', label: 'Alien', icon: '👽' },
+        { id: 'foliage', label: 'Foliage', icon: '🌳' },
+        { id: 'props', label: 'Props', icon: '🪑' },
+        { id: 'tech', label: 'Tech', icon: '📡' },
         { id: 'primitives', label: 'Shapes', icon: '📐' }
       ];
 
@@ -3177,12 +3831,73 @@
     function createHighFidelityObjectMesh(obj, three, generateCustomTexture, scaleMultiplier = 1.0) {
       const group = new three.Group();
       group.name = obj.id;
-      
+
       // Base scale dimensions
       const sx = obj.scale.x * scaleMultiplier;
       const sy = obj.scale.y * scaleMultiplier;
       const sz = obj.scale.z * scaleMultiplier;
-      
+
+      // --- Spawn point marker: pad + post + facing arrow (oriented by rotation.y) ---
+      if (obj.gameModeKind === 'spawn_point') {
+        const accent = obj.team === 'red' ? '#ff3b3b' : obj.team === 'blue' ? '#3b82ff' : '#22c55e';
+        // Flat circular pad on the ground
+        const pad = new three.Mesh(
+          new three.CylinderGeometry(0.9, 0.9, 0.08, 24),
+          new three.MeshStandardMaterial({ color: accent, emissive: accent, emissiveIntensity: 0.5, transparent: true, opacity: 0.6 })
+        );
+        pad.position.y = 0.04;
+        group.add(pad);
+        // Standing post
+        const post = new three.Mesh(
+          new three.CylinderGeometry(0.12, 0.12, 1.2, 12),
+          new three.MeshStandardMaterial({ color: accent, emissive: accent, emissiveIntensity: 0.3 })
+        );
+        post.position.y = 0.7;
+        group.add(post);
+        // Facing arrow: a cone pointing along local +Z, offset forward
+        const arrow = new three.Mesh(
+          new three.ConeGeometry(0.35, 0.9, 16),
+          new three.MeshStandardMaterial({ color: '#fde047', emissive: '#f59e0b', emissiveIntensity: 0.8 })
+        );
+        arrow.rotation.x = Math.PI / 2;     // cone tip toward +Z
+        arrow.position.set(0, 0.5, 1.1);
+        group.add(arrow);
+        return group;
+      }
+
+      // --- Floor tile: flat slab; texture repeat scales with footprint for crisp tiling ---
+      if (obj.floorTile) {
+        const TILE_UNIT = 6;
+        const geo = new three.BoxGeometry(sx, Math.max(0.04, sy), sz);
+        const hasTex = obj.texture && obj.texture !== 'none' && generateCustomTexture;
+        const baseTex = hasTex ? generateCustomTexture(obj.texture, obj.color) : null;
+        const tileTex = baseTex ? baseTex.clone() : null;
+        if (tileTex) {
+          tileTex.needsUpdate = true;
+          tileTex.wrapS = three.RepeatWrapping;
+          tileTex.wrapT = three.RepeatWrapping;
+          tileTex.repeat.set(Math.max(1, sx / TILE_UNIT), Math.max(1, sz / TILE_UNIT));
+        }
+        const tileMat = new three.MeshStandardMaterial({
+          map: tileTex,
+          bumpMap: tileTex || undefined,
+          bumpScale: tileTex ? 0.01 : 0,
+          color: tileTex ? new three.Color('#ffffff') : new three.Color(obj.color),
+          metalness: obj.metalness ?? 0.3,
+          roughness: obj.roughness ?? 0.8,
+          opacity: obj.opacity ?? 1,
+          transparent: (obj.opacity ?? 1) < 1,
+        });
+        if (obj.emissive && obj.emissive !== '#000000') {
+          tileMat.emissive = new three.Color(obj.emissive);
+          tileMat.emissiveIntensity = obj.emissiveIntensity ?? 0.2;
+        }
+        const tileMesh = new three.Mesh(geo, tileMat);
+        tileMesh.receiveShadow = true;
+        group.add(tileMesh);
+        return group;
+      }
+
       // Set up materials
       const hasTexture = obj.texture && obj.texture !== 'none';
       const texture = (hasTexture && generateCustomTexture) ? generateCustomTexture(obj.texture, obj.color) : null;
@@ -3252,7 +3967,13 @@
                             nameLower.includes('partition') || nameLower.includes('shield') || 
                             nameLower.includes('buffer') || nameLower.includes('freight') || nameLower.includes('wall');
         const isCrate = nameLower.includes('crate') || nameLower.includes('substation') || nameLower.includes('recharge');
-        
+        const isRamp = nameLower.includes('ramp') || nameLower.includes('wedge');
+        const isArch = nameLower.includes('archway') || nameLower.includes('checkpoint') || nameLower.includes('gateway');
+        const isFence = nameLower.includes('fence') || nameLower.includes('railing');
+        const isPlatform = nameLower.includes('platform') || nameLower.includes('catwalk') || nameLower.includes('walkway') ||
+                           nameLower.includes('conveyor') || nameLower.includes('solar') || nameLower.includes('panel') ||
+                           nameLower.includes('pad') || nameLower.includes('deck');
+
         if (isRock) {
           // 1. HIGH-FIDELITY ASTEROID/BOULDER (LOW-POLY ORGANIC FACETED GEODESIC CLUSTER)
           const mainGeo = new three.DodecahedronGeometry(sx / 2, 1);
@@ -3416,8 +4137,98 @@
             group.add(glowP);
           }
           
+        } else if (isRamp) {
+          // 4. SLOPED RAMP / WEDGE (triangular prism, high at -X sloping down to +X)
+          const shape = new three.Shape();
+          shape.moveTo(-sx / 2, -sy / 2);
+          shape.lineTo(sx / 2, -sy / 2);
+          shape.lineTo(-sx / 2, sy / 2);
+          shape.lineTo(-sx / 2, -sy / 2);
+          const wedgeGeo = new three.ExtrudeGeometry(shape, { depth: sz, bevelEnabled: false });
+          wedgeGeo.translate(0, 0, -sz / 2);
+          const wedge = new three.Mesh(wedgeGeo, mat);
+          group.add(wedge);
+
+          // Side edge trim along the sloped face
+          const trimT = Math.min(sx, sy) * 0.06;
+          const trimGeo = new three.BoxGeometry(Math.hypot(sx, sy), trimT, trimT);
+          const angle = Math.atan2(sy, sx);
+          [-sz / 2 + trimT / 2, sz / 2 - trimT / 2].forEach(tz => {
+            const trim = new three.Mesh(trimGeo, accentMat);
+            trim.rotation.z = angle;
+            trim.position.set(0, 0, tz);
+            group.add(trim);
+          });
+
+        } else if (isPlatform) {
+          // 5. RAISED DECK / CATWALK / LANDING PAD (slab with raised rim border)
+          const deck = new three.Mesh(new three.BoxGeometry(sx, sy, sz), mat);
+          group.add(deck);
+
+          const rimT = Math.min(sx, sz) * 0.05;
+          const rimH = sy * 0.6;
+          const railX = new three.BoxGeometry(sx, rimH, rimT);
+          [-sz / 2 + rimT / 2, sz / 2 - rimT / 2].forEach(rz => {
+            const r = new three.Mesh(railX, accentMat);
+            r.position.set(0, sy / 2, rz);
+            group.add(r);
+          });
+          const railZ = new three.BoxGeometry(rimT, rimH, sz);
+          [-sx / 2 + rimT / 2, sx / 2 - rimT / 2].forEach(rx => {
+            const r = new three.Mesh(railZ, accentMat);
+            r.position.set(rx, sy / 2, 0);
+            group.add(r);
+          });
+
+          // Optional glowing guidance strip for emissive pads/panels
+          if (obj.emissive && obj.emissive !== '#000000') {
+            const strip = new three.Mesh(new three.BoxGeometry(sx * 0.7, sy * 0.2, sz * 0.7), glowMat);
+            strip.position.set(0, sy / 2 + 0.01, 0);
+            group.add(strip);
+          }
+
+        } else if (isFence) {
+          // 6. SEE-THROUGH FENCE PANEL (transparent mesh + steel frame posts & rails)
+          const panel = new three.Mesh(new three.BoxGeometry(sx, sy, sz), mat);
+          group.add(panel);
+
+          const postW = Math.min(0.14, sx * 0.05);
+          const frameD = Math.max(postW, sz * 1.2);
+          const postGeo = new three.BoxGeometry(postW, sy * 1.05, frameD);
+          [-sx / 2, 0, sx / 2].forEach(px => {
+            const p = new three.Mesh(postGeo, accentMat);
+            p.position.set(px, 0, 0);
+            group.add(p);
+          });
+          const railGeo = new three.BoxGeometry(sx * 1.02, postW, frameD);
+          [sy / 2 - postW / 2, -sy / 2 + postW / 2].forEach(ry => {
+            const r = new three.Mesh(railGeo, accentMat);
+            r.position.set(0, ry, 0);
+            group.add(r);
+          });
+
+        } else if (isArch) {
+          // 7. WALK-THROUGH ARCHWAY / GATE FRAME (two side pillars + top lintel)
+          const legW = sx * 0.18;
+          const legGeo = new three.BoxGeometry(legW, sy, sz);
+          [-sx / 2 + legW / 2, sx / 2 - legW / 2].forEach(lx => {
+            const leg = new three.Mesh(legGeo, mat);
+            leg.position.set(lx, 0, 0);
+            group.add(leg);
+          });
+          const lintelH = sy * 0.22;
+          const lintel = new three.Mesh(new three.BoxGeometry(sx, lintelH, sz), mat);
+          lintel.position.set(0, sy / 2 - lintelH / 2, 0);
+          group.add(lintel);
+
+          if (obj.emissive && obj.emissive !== '#000000') {
+            const scanner = new three.Mesh(new three.BoxGeometry(sx * 0.62, lintelH * 0.35, sz * 0.55), glowMat);
+            scanner.position.set(0, sy / 2 - lintelH * 1.15, 0);
+            group.add(scanner);
+          }
+
         } else {
-          // 4. GENERAL BEVELED SCI-FI BOX WITH DETAILED OUTLINE PANELING
+          // 8. GENERAL BEVELED SCI-FI BOX WITH DETAILED OUTLINE PANELING
           const bodyGeo = new three.BoxGeometry(sx * 0.96, sy * 0.96, sz * 0.96);
           const body = new three.Mesh(bodyGeo, mat);
           group.add(body);
@@ -3445,13 +4256,168 @@
         }
         
       } else if (obj.type === 'cylinder') {
+        const isTree = nameLower.includes('tree') || nameLower.includes('trunk') || nameLower.includes('pine') ||
+                       nameLower.includes('palm') || nameLower.includes('conifer') || nameLower.includes('bonsai');
+        const isMushroom = nameLower.includes('mushroom') || nameLower.includes('toadstool');
+        const isAntenna = nameLower.includes('antenna') || nameLower.includes('dish') || nameLower.includes('radar') ||
+                          nameLower.includes('satellite') || nameLower.includes('uplink');
+        const isBarrel = nameLower.includes('barrel') || nameLower.includes('drum') || nameLower.includes('keg');
+        const isLamp = nameLower.includes('lamp') || nameLower.includes('lantern') || nameLower.includes('sign post');
         const isForerunner = ['forerunner_panel', 'forerunner_gold'].includes(obj.texture) ||
                             nameLower.includes('spire') || nameLower.includes('pylon') || nameLower.includes('beacon') || nameLower.includes('forerunner');
-        const isTechColumn = nameLower.includes('pillar') || nameLower.includes('column') || 
+        const isTechColumn = nameLower.includes('pillar') || nameLower.includes('column') ||
                              nameLower.includes('anchor') || nameLower.includes('generator') ||
                              ['space_alloy', 'futuristic_hex', 'synthwave_neon_laser', 'rainy_streets_neon_glow'].includes(obj.texture);
-        
-        if (isForerunner) {
+
+        if (isTree) {
+          // TREE: textured wood trunk + colored canopy (palm / conifer / broadleaf / dead variants)
+          const isPalm = nameLower.includes('palm');
+          const isDead = nameLower.includes('dead');
+          const trunkR = sx * (isPalm ? 0.09 : 0.13);
+          const trunkH = sy * (isPalm ? 0.78 : isDead ? 0.95 : 0.55);
+          const trunk = new three.Mesh(new three.CylinderGeometry(trunkR * 0.8, trunkR * 1.25, trunkH, 10), mat);
+          trunk.position.y = -sy / 2 + trunkH / 2;
+          group.add(trunk);
+
+          const canopyMat = new three.MeshStandardMaterial({ color: new three.Color(obj.color), roughness: 0.9, metalness: 0.05 });
+          const crownY = -sy / 2 + trunkH;
+
+          if (isDead) {
+            const branchGeo = new three.CylinderGeometry(trunkR * 0.25, trunkR * 0.5, sy * 0.42, 6);
+            [[0.6, 0.3], [-0.7, 0.5], [0.35, 0.7]].forEach(([rotZ, f], i) => {
+              const b = new three.Mesh(branchGeo, mat);
+              b.position.y = -sy / 2 + trunkH * f;
+              b.rotation.z = rotZ;
+              b.rotation.y = i * 2.1;
+              group.add(b);
+            });
+          } else if (isPalm) {
+            const frondGeo = new three.ConeGeometry(sx * 0.12, sy * 0.5, 6);
+            for (let i = 0; i < 7; i++) {
+              const ang = (i / 7) * Math.PI * 2;
+              const frond = new three.Mesh(frondGeo, canopyMat);
+              frond.position.set(Math.cos(ang) * sx * 0.22, crownY + sy * 0.12, Math.sin(ang) * sx * 0.22);
+              frond.rotation.z = (Math.PI / 2.4) * Math.cos(ang);
+              frond.rotation.x = (Math.PI / 2.4) * Math.sin(ang);
+              group.add(frond);
+            }
+            const coco = new three.Mesh(new three.SphereGeometry(sx * 0.1, 8, 8), mat);
+            coco.position.y = crownY;
+            group.add(coco);
+          } else if (nameLower.includes('pine') || nameLower.includes('conifer')) {
+            for (let i = 0; i < 3; i++) {
+              const f = i / 3;
+              const cone = new three.Mesh(new three.ConeGeometry(sx * 0.5 * (1 - f * 0.55), sy * 0.45, 10), canopyMat);
+              cone.position.y = crownY + f * sy * 0.5 + sy * 0.1;
+              group.add(cone);
+            }
+          } else {
+            const blobGeo = new three.IcosahedronGeometry(sx * 0.42, 1);
+            [[0, crownY + sy * 0.28, 0], [-sx * 0.22, crownY + sy * 0.12, sx * 0.1],
+             [sx * 0.22, crownY + sy * 0.14, -sx * 0.08], [0, crownY + sy * 0.05, sx * 0.2]].forEach(([px, py, pz]) => {
+              const b = new three.Mesh(blobGeo, canopyMat);
+              b.position.set(px, py, pz);
+              group.add(b);
+            });
+          }
+
+        } else if (isMushroom) {
+          // MUSHROOM: pale stem + domed colored cap with spots
+          const stemR = sx * 0.18;
+          const stemH = sy * 0.55;
+          const stemMat = new three.MeshStandardMaterial({ color: new three.Color('#f1f5f9'), roughness: 0.7, metalness: 0.05 });
+          const stem = new three.Mesh(new three.CylinderGeometry(stemR * 0.85, stemR * 1.1, stemH, 12), stemMat);
+          stem.position.y = -sy / 2 + stemH / 2;
+          group.add(stem);
+
+          const capR = sx * 0.5;
+          const cap = new three.Mesh(new three.SphereGeometry(capR, 16, 12, 0, Math.PI * 2, 0, Math.PI / 2), mat);
+          cap.position.y = -sy / 2 + stemH;
+          cap.scale.y = 0.85;
+          group.add(cap);
+
+          const spotMat = new three.MeshStandardMaterial({ color: new three.Color('#f8fafc'), roughness: 0.6 });
+          for (let i = 0; i < 6; i++) {
+            const a = (i / 6) * Math.PI * 2;
+            const s = new three.Mesh(new three.SphereGeometry(capR * 0.12, 8, 8), spotMat);
+            s.position.set(Math.cos(a) * capR * 0.55, -sy / 2 + stemH + capR * 0.22, Math.sin(a) * capR * 0.55);
+            group.add(s);
+          }
+
+        } else if (isLamp) {
+          // LAMP / SIGN POST: tapered post + emissive head + finial cap
+          const postR = sx * 0.18;
+          const postH = sy * 0.85;
+          const post = new three.Mesh(new three.CylinderGeometry(postR, postR * 1.35, postH, 10), accentMat);
+          post.position.y = -sy / 2 + postH / 2;
+          group.add(post);
+
+          const head = new three.Mesh(new three.BoxGeometry(sx * 0.55, sy * 0.22, sz * 0.55), glowMat);
+          head.position.y = -sy / 2 + postH + sy * 0.08;
+          group.add(head);
+
+          const finial = new three.Mesh(new three.ConeGeometry(sx * 0.3, sy * 0.12, 8), accentMat);
+          finial.position.y = head.position.y + sy * 0.17;
+          group.add(finial);
+
+        } else if (isBarrel) {
+          // BARREL / DRUM: bulged body with banded hoops and lids
+          const body = new three.Mesh(new three.CylinderGeometry(sx * 0.45, sx * 0.45, sy * 0.96, 20), mat);
+          group.add(body);
+
+          const ringGeo = new three.TorusGeometry(sx * 0.47, sx * 0.045, 8, 24);
+          [-sy * 0.28, 0, sy * 0.28].forEach(ry => {
+            const r = new three.Mesh(ringGeo, accentMat);
+            r.rotation.x = Math.PI / 2;
+            r.position.y = ry;
+            group.add(r);
+          });
+
+          const lidGeo = new three.CylinderGeometry(sx * 0.42, sx * 0.42, sy * 0.05, 20);
+          [sy / 2 - sy * 0.025, -sy / 2 + sy * 0.025].forEach(ly => {
+            const l = new three.Mesh(lidGeo, accentMat);
+            l.position.y = ly;
+            group.add(l);
+          });
+
+        } else if (isAntenna) {
+          // ANTENNA / DISH: support mast topped with a parabolic dish or a beaconed whip
+          const isDish = nameLower.includes('dish') || nameLower.includes('radar') ||
+                         nameLower.includes('satellite') || nameLower.includes('uplink');
+          const mastR = sx * (isDish ? 0.08 : 0.06);
+          const mastH = sy * (isDish ? 0.6 : 0.95);
+          const mast = new three.Mesh(new three.CylinderGeometry(mastR, mastR * 1.5, mastH, 8), mat);
+          mast.position.y = -sy / 2 + mastH / 2;
+          group.add(mast);
+
+          if (isDish) {
+            const dish = new three.Mesh(new three.SphereGeometry(sx * 0.5, 20, 12, 0, Math.PI * 2, 0, Math.PI / 2.6), mat);
+            dish.position.y = -sy / 2 + mastH;
+            dish.rotation.x = Math.PI * 0.82;
+            dish.scale.set(1, 0.5, 1);
+            group.add(dish);
+            const horn = new three.Mesh(new three.CylinderGeometry(sx * 0.03, sx * 0.05, sy * 0.2, 8), accentMat);
+            horn.position.y = -sy / 2 + mastH + sy * 0.16;
+            group.add(horn);
+            if (obj.emissive && obj.emissive !== '#000000') {
+              const t = new three.Mesh(new three.SphereGeometry(sx * 0.05, 8, 8), glowMat);
+              t.position.y = -sy / 2 + mastH + sy * 0.24;
+              group.add(t);
+            }
+          } else {
+            const crossGeo = new three.BoxGeometry(sx * 0.5, sx * 0.04, sx * 0.04);
+            [0.4, 0.62, 0.82].forEach((f, i) => {
+              const c = new three.Mesh(crossGeo, accentMat);
+              c.position.y = -sy / 2 + mastH * f;
+              c.rotation.y = i * 1.3;
+              group.add(c);
+            });
+            const tip = new three.Mesh(new three.SphereGeometry(sx * 0.08, 10, 10), glowMat);
+            tip.position.y = -sy / 2 + mastH + sx * 0.05;
+            group.add(tip);
+          }
+
+        } else if (isForerunner) {
           // 1. ANCIENT FORERUNNER ANCHOR PYLON / TAPERING OCTAGONAL SPIRE
           const baseH = sy * 0.14;
           const baseGeo = new three.CylinderGeometry(sx * 0.72, sx * 0.72, baseH, 8);
@@ -3707,43 +4673,11 @@
         selectionHelper.visible = false;
       }
 
-      // Rebuild Spawn Markers
+      // Spawn markers are now regular objects (gameModeKind:'spawn_point') and are
+      // rendered through the object loop above; the legacy spawnsGroup stays empty.
       while (spawnsGroup.children.length > 0) {
         spawnsGroup.remove(spawnsGroup.children[0]);
       }
-
-      spawnPoints.forEach((sp, idx) => {
-        const marker = new THREE.Group();
-        marker.position.set(sp.x, 0.9, sp.z);
-
-        // Cylinder Body indicator
-        const body = new THREE.Mesh(
-          new THREE.CylinderGeometry(0.25, 0.25, 1.2, 16),
-          new THREE.MeshStandardMaterial({ color: '#16803d', transparent: true, opacity: 0.8 })
-        );
-        marker.add(body);
-
-        // Sphere head
-        const head = new THREE.Mesh(
-          new THREE.SphereGeometry(0.3, 16, 16),
-          new THREE.MeshStandardMaterial({ color: '#22c55e' })
-        );
-        head.position.y = 0.7;
-        marker.add(head);
-
-        // Neon outline ring if active selected spawn location
-        if (selectedSpawnIdx === idx && activeTab === 'spawns') {
-          const ring = new THREE.Mesh(
-            new THREE.RingGeometry(0.5, 0.6, 32),
-            new THREE.MeshBasicMaterial({ color: '#22d3ee', side: THREE.DoubleSide })
-          );
-          ring.rotation.x = Math.PI / 2;
-          ring.position.y = -0.85;
-          marker.add(ring);
-        }
-
-        spawnsGroup.add(marker);
-      });
 
       // Rebuild Point Lights Bulbs Indicators
       while (lightsGroup.children.length > 0) {
@@ -4531,6 +5465,18 @@
       document.getElementById('inspector-panel').querySelector('input[type="range"]').previousElementSibling.querySelector('.mapmaker-value-badge').textContent = `${r}m`;
     }
 
+    // BOUNDARY EXTENTS (X/Z half-extents + vertical ceiling) for the XYZ dragger
+    function updateBoundary(field, val) {
+      if (field === 'halfX') arenaHalfX = val;
+      else if (field === 'halfZ') arenaHalfZ = val;
+      else if (field === 'ceiling') arenaCeiling = val;
+      rebuildBoundaryGrid();
+      rebuildScene();
+      const input = document.querySelector(`input[oninput*="updateBoundary('${field}'"]`);
+      const badge = input?.previousElementSibling?.querySelector('.mapmaker-value-badge');
+      if (badge) badge.textContent = `${val}m`;
+    }
+
     // ACTIONS: OBSTACLES MANAGING
     function handleAddObject(type, presetType) {
       let presetColor = '#3b82f6';
@@ -4544,6 +5490,10 @@
       let emissive = '#000000';
       let emissiveIntensity = 0;
       let isCollidable = true;
+      let gameModeKind = undefined;
+      let team = undefined;
+      let goalPlateTeam = undefined;
+      let floorTile = undefined;
 
       const customPreset = ASSET_LIBRARY.find(a => a.id === presetType);
 
@@ -4559,6 +5509,10 @@
         emissive = customPreset.emissive ?? '#000000';
         emissiveIntensity = customPreset.emissiveIntensity ?? 0;
         isCollidable = customPreset.isCollidable ?? true;
+        gameModeKind = customPreset.gameModeKind;
+        team = customPreset.team;
+        goalPlateTeam = customPreset.goalPlateTeam;
+        floorTile = customPreset.floorTile;
         if (!type) {
           type = customPreset.type;
         }
@@ -4597,11 +5551,14 @@
         }
       }
 
+      // Floor tiles and spawn markers sit flat on the ground; props sit on their base.
+      const spawnY = (gameModeKind === 'spawn_point' || floorTile) ? 0 : defaultScale.y / 2;
+
       const newObj = {
         id: `obj_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
         name: defaultName,
         type: type || 'box',
-        position: { x: 0, y: defaultScale.y / 2, z: 0 },
+        position: { x: 0, y: spawnY, z: 0 },
         rotation: { x: 0, y: 0, z: 0 },
         scale: defaultScale,
         color: presetColor,
@@ -4614,6 +5571,13 @@
         isCollidable,
         texture: presetTexture
       };
+      if (gameModeKind) {
+        newObj.gameModeKind = gameModeKind;
+        if (gameModeKind === 'spawn_point') newObj.spawnYaw = 0;
+      }
+      if (team !== undefined) newObj.team = team;
+      if (goalPlateTeam !== undefined) newObj.goalPlateTeam = goalPlateTeam;
+      if (floorTile) newObj.floorTile = true;
 
       objects.push(newObj);
       selectedObjectId = newObj.id;
@@ -4674,8 +5638,30 @@
       else if (field === 'scale_y') activeObj.scale.y = val;
       else if (field === 'scale_z') activeObj.scale.z = val;
       else if (field === 'rot_x') activeObj.rotation.x = val;
-      else if (field === 'rot_y') activeObj.rotation.y = val;
+      else if (field === 'rot_y') {
+        activeObj.rotation.y = val;
+        // Keep the exported spawn facing in sync with the editor rotation.
+        if (activeObj.gameModeKind === 'spawn_point') activeObj.spawnYaw = val;
+      }
       else if (field === 'rot_z') activeObj.rotation.z = val;
+      else if (field === 'team') {
+        const t = (val === 'red' || val === 'blue') ? val : undefined;
+        activeObj.team = t;
+        // Goal plates carry the runtime scoring contract + team coloring.
+        if (activeObj.gameModeKind === 'grifball_goal') {
+          activeObj.goalPlateTeam = t;
+          const accent = t === 'red' ? '#ff3b3b' : '#3b82ff';
+          activeObj.color = accent;
+          activeObj.emissive = accent;
+          activeObj.texture = t === 'red' ? 'goal_plate_red' : 'goal_plate_blue';
+        } else if (activeObj.gameModeKind === 'spawn_point') {
+          const accent = t === 'red' ? '#ff3b3b' : t === 'blue' ? '#3b82ff' : '#22c55e';
+          activeObj.color = accent;
+          activeObj.emissive = accent;
+          activeObj.name = `${teamLabel(t)} Spawn`;
+        }
+        renderInspector();
+      }
       else if (field === 'metalness') activeObj.metalness = val;
       else if (field === 'roughness') activeObj.roughness = val;
       else if (field === 'opacity') {
@@ -4768,42 +5754,70 @@
       renderInspector();
     }
 
-    // ACTIONS: SPAWNING SPOTS MANAGING
-    function handleAddSpawn() {
-      const newSpawn = { x: 0, y: 0, z: 0 };
-      spawnPoints.push(newSpawn);
-      selectedSpawnIdx = spawnPoints.length - 1;
-      selectedObjectId = null;
-      selectedLightId = null;
-      rebuildScene();
-      renderInspector();
+    // ACTIONS: SPAWN POINTS (unified into the `objects` array as game-mode objects)
+    function teamLabel(team) {
+      if (team === 'red') return 'Red';
+      if (team === 'blue') return 'Blue';
+      return 'Neutral';
     }
 
-    function handleDeleteSpawn(idx) {
-      const numericIdx = parseInt(idx, 10);
-      spawnPoints = spawnPoints.filter((_, i) => i !== numericIdx);
-      if (selectedSpawnIdx === numericIdx) selectedSpawnIdx = null;
-      rebuildScene();
-      renderInspector();
+    // Build a spawn_point game-mode object. Flat marker; non-colliding.
+    function makeSpawnObject(x, z, team, yaw) {
+      const accent = team === 'red' ? '#ff3b3b' : team === 'blue' ? '#3b82ff' : '#22c55e';
+      return {
+        id: `obj_${Date.now()}_${Math.floor(Math.random() * 100000)}`,
+        name: `${teamLabel(team)} Spawn`,
+        type: 'box',
+        position: { x, y: 0, z },
+        rotation: { x: 0, y: yaw || 0, z: 0 },
+        scale: { x: 1.2, y: 0.1, z: 1.2 },
+        color: accent,
+        metalness: 0.2,
+        roughness: 0.6,
+        opacity: 1,
+        transparent: false,
+        emissive: accent,
+        emissiveIntensity: 0.6,
+        isCollidable: false,
+        texture: 'none',
+        gameModeKind: 'spawn_point',
+        team: team || undefined,
+        spawnYaw: yaw || 0,
+        locked: false,
+        hidden: false,
+        folderId: null
+      };
     }
 
-    function handleUpdateSpawn(axis, val) {
-      if (selectedSpawnIdx === null || !spawnPoints[selectedSpawnIdx]) return;
-      spawnPoints[selectedSpawnIdx][axis] = val;
-      rebuildScene();
-
-      const badge = document.querySelector(`input[oninput*="${axis}"]`);
-      if (badge) {
-        const badgeReadout = badge.previousElementSibling?.querySelector('.mapmaker-value-badge');
-        if (badgeReadout) badgeReadout.textContent = `${val}m`;
+    // Convert legacy/exported spawnPoints[] + teamSpawns{} into spawn_point objects.
+    // spawnPoints is the full set (the runtime fallback list); teamSpawns is the
+    // team-grouped subset. We rebuild from spawnPoints and tag each spawn's team by
+    // membership in teamSpawns, so neutral + team spawns all round-trip without loss.
+    function migrateSpawnsToObjects(spawnPointsArr, teamSpawnsObj) {
+      const result = [];
+      const hasTeamSpawns = teamSpawnsObj && typeof teamSpawnsObj === 'object' && Object.keys(teamSpawnsObj).length;
+      const teamOf = (p) => {
+        if (!hasTeamSpawns) return undefined;
+        for (const [team, pts] of Object.entries(teamSpawnsObj)) {
+          if ((pts || []).some(q => q.x === p.x && q.z === p.z)) return team;
+        }
+        return undefined;
+      };
+      if (Array.isArray(spawnPointsArr) && spawnPointsArr.length) {
+        spawnPointsArr.forEach(p => result.push(makeSpawnObject(p.x, p.z, teamOf(p), p.yaw)));
+      } else if (hasTeamSpawns) {
+        // No flat spawnPoints (older grifball-only maps) — use the team clusters directly.
+        for (const [team, pts] of Object.entries(teamSpawnsObj)) {
+          (pts || []).forEach(p => result.push(makeSpawnObject(p.x, p.z, team, p.yaw)));
+        }
       }
+      return result;
     }
 
-    function setSelectedSpawn(idx) {
-      selectedSpawnIdx = parseInt(idx, 10);
-      selectedObjectId = null;
-      selectedLightId = null;
-      renderInspector();
+    // Seed the default neutral spawn cluster if the scene has none yet.
+    function seedDefaultSpawns() {
+      if (objects.some(o => o.gameModeKind === 'spawn_point')) return;
+      DEFAULT_SPAWNS.forEach(p => objects.push(makeSpawnObject(p.x, p.z, undefined, 0)));
     }
 
     // FOLDER AND LOCK/VISIBILITY SYSTEM STATE MUTATORS
@@ -5081,6 +6095,9 @@
       theme = pm.theme;
       mapShape = pm.mapShape || 'circle';
       arenaRadius = pm.arenaRadius;
+      arenaHalfX = pm.arenaHalfExtents?.x ?? (arenaRadius * 1.2);
+      arenaHalfZ = pm.arenaHalfExtents?.z ?? (arenaRadius * 0.6);
+      arenaCeiling = pm.arenaCeiling ?? 12;
       skyboxHue = pm.skyboxHue ?? 280;
       skyboxBrightness = pm.skyboxBrightness ?? 5;
       skyboxTexture = pm.skyboxTexture || 'matched';
@@ -5100,8 +6117,9 @@
         pointLights = JSON.parse(JSON.stringify(pm.lighting.pointLights || []));
       }
 
-      spawnPoints = JSON.parse(JSON.stringify(pm.spawnPoints || []));
       objects = JSON.parse(JSON.stringify(pm.objects || []));
+      // Migrate legacy spawn data into spawn_point game-mode objects.
+      objects.push(...migrateSpawnsToObjects(pm.spawnPoints, pm.teamSpawns));
       folders = [];
 
       // Ensure loaded objects have grouping/lock defaults
@@ -5261,6 +6279,22 @@
 
     // GET COMPILED DATA MATCHING TYPES
     function getCompiledMapData() {
+      // Spawn points are authored as game-mode objects; derive the runtime
+      // spawnPoints[] (all spawns) + teamSpawns{} (team-grouped) from them, and
+      // keep them OUT of the exported objects[] to avoid double-representation.
+      const spawnObjs = objects.filter(o => o.gameModeKind === 'spawn_point');
+      const exportSpawnPoints = spawnObjs.map(o => ({
+        x: o.position.x, y: 0, z: o.position.z, yaw: o.rotation?.y || 0
+      }));
+      const teamSpawns = {};
+      spawnObjs.forEach(o => {
+        if (o.team === 'red' || o.team === 'blue') {
+          (teamSpawns[o.team] = teamSpawns[o.team] || []).push({
+            x: o.position.x, y: 0, z: o.position.z, yaw: o.rotation?.y || 0
+          });
+        }
+      });
+
       return {
         id: `map_${Date.now()}`,
         name: mapName,
@@ -5269,12 +6303,15 @@
         theme,
         mapShape,
         arenaRadius,
+        arenaHalfExtents: { x: arenaHalfX, z: arenaHalfZ },
+        arenaCeiling,
         skyboxHue,
         skyboxBrightness,
         skyboxTexture,
         fogColor,
         fogDensity,
-        spawnPoints: spawnPoints.map(sp => ({ x: sp.x, y: 0, z: sp.z })),
+        spawnPoints: exportSpawnPoints,
+        ...(Object.keys(teamSpawns).length ? { teamSpawns } : {}),
         folders: folders.map(f => ({
           id: f.id,
           name: f.name,
@@ -5282,7 +6319,7 @@
           hidden: f.hidden,
           collapsed: f.collapsed
         })),
-        objects: objects.map(obj => ({
+        objects: objects.filter(obj => obj.gameModeKind !== 'spawn_point').map(obj => ({
           id: obj.id,
           name: obj.name,
           type: obj.type,
@@ -5300,7 +6337,11 @@
           texture: obj.texture,
           locked: obj.locked || false,
           hidden: obj.hidden || false,
-          folderId: obj.folderId || null
+          folderId: obj.folderId || null,
+          ...(obj.gameModeKind ? { gameModeKind: obj.gameModeKind } : {}),
+          ...(obj.team ? { team: obj.team } : {}),
+          ...(obj.goalPlateTeam ? { goalPlateTeam: obj.goalPlateTeam } : {}),
+          ...(obj.floorTile ? { floorTile: true } : {})
         })),
         lighting: {
           ambientColor,
@@ -5447,6 +6488,9 @@
             theme = data.theme || 'cyberpunk';
             mapShape = data.mapShape || 'circle';
             arenaRadius = data.arenaRadius || 20;
+            arenaHalfX = data.arenaHalfExtents?.x ?? (arenaRadius * 1.2);
+            arenaHalfZ = data.arenaHalfExtents?.z ?? (arenaRadius * 0.6);
+            arenaCeiling = data.arenaCeiling ?? 12;
             skyboxHue = data.skyboxHue ?? 280;
             skyboxBrightness = data.skyboxBrightness ?? 5;
             skyboxTexture = data.skyboxTexture || 'matched';
@@ -5466,9 +6510,13 @@
               pointLights = JSON.parse(JSON.stringify(data.lighting.pointLights || []));
             }
 
-            spawnPoints = JSON.parse(JSON.stringify(data.spawnPoints || []));
             folders = JSON.parse(JSON.stringify(data.folders || []));
             objects = JSON.parse(JSON.stringify(data.objects || []));
+            // Migrate legacy spawn data into spawn_point game-mode objects (unless the
+            // import already carries spawn_point objects from a newer export).
+            if (!objects.some(o => o.gameModeKind === 'spawn_point')) {
+              objects.push(...migrateSpawnsToObjects(data.spawnPoints, data.teamSpawns));
+            }
 
             // Safety fallback for older map imports missing complete rotation and new grouping fields
             objects.forEach(obj => {

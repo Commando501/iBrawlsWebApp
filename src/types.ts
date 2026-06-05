@@ -682,6 +682,29 @@ export interface CustomMapObject {
    * enemy carrier standing on it scores. Non-colliding trigger volume.
    */
   goalPlateTeam?: TeamId;
+  /**
+   * Marks this object as a game-mode object authored in the Map Maker's "Game
+   * Mode" category. `spawn_point` objects are consumed as spawns (not rendered
+   * as props in-game); `grifball_goal` objects render via {@link goalPlateTeam}.
+   */
+  gameModeKind?: 'spawn_point' | 'grifball_goal';
+  /**
+   * Generic team owner for game-mode objects (spawns, plates). Absent ⇒ neutral.
+   * For goal plates this mirrors {@link goalPlateTeam} (which stays the runtime
+   * scoring contract).
+   */
+  team?: TeamId;
+  /**
+   * Authored facing direction (yaw, radians) for `spawn_point` objects. When set,
+   * combatants spawned here face this direction instead of the default
+   * inward-facing heading. Mirrors the editor's `rotation.y`.
+   */
+  spawnYaw?: number;
+  /**
+   * Renders this object as a flat, horizontal floor tile whose texture repeat is
+   * scaled to its footprint so tiling density stays constant when resized.
+   */
+  floorTile?: boolean;
 }
 
 export interface CustomMapPointLight {
@@ -724,14 +747,19 @@ export interface CustomMapData {
    * long goal-to-goal lane. See {@link getRectHalfExtents}.
    */
   arenaHalfExtents?: { x: number; z: number };
+  /**
+   * Authored vertical boundary (ceiling) height. Visualized in the Map Maker and
+   * applied as an optional `pos.y` clamp at runtime. Absent ⇒ no vertical cap.
+   */
+  arenaCeiling?: number;
   skyboxHue?: number;
   skyboxBrightness?: number;
   skyboxTexture?: string;
   fogColor?: string;
   fogDensity?: number;
-  spawnPoints: { x: number; y: number; z: number }[];
+  spawnPoints: { x: number; y: number; z: number; yaw?: number }[];
   /** Optional per-team spawn clusters (e.g. Grifball bases). Keyed by TeamId. */
-  teamSpawns?: { [team: string]: { x: number; y: number; z: number }[] };
+  teamSpawns?: { [team: string]: { x: number; y: number; z: number; yaw?: number }[] };
   objects: CustomMapObject[];
   lighting: CustomMapLighting;
   folders?: CustomMapFolder[];
