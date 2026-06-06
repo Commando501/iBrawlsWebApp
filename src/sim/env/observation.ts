@@ -16,6 +16,19 @@ import { type SimState, type SimCombatant } from '../simState';
 import { forwardDir, rightDir } from '../physics';
 import { enemyGoalForTeam, ownGoalForTeam } from '../../game/aiGrifballRoles';
 import { GRIFBALL_HALF_X, GRIFBALL_HALF_Z } from '../../game/grifballMaps';
+import { DOMAIN_RANDOMIZABLE_KEYS } from './randomize';
+import { DEFAULT_ADMIN_SETTINGS } from '../../settings/gameplaySettings';
+
+/**
+ * Mechanics-aware block: the live-tunable dynamics keys the policy should condition on, so
+ * one brain adapts to the current balance (and to per-episode domain randomization). Encoded
+ * as a deviation from nominal: `value / default - 1` (0 = nominal, +0.15 = +15%).
+ */
+export const MECHANICS_OBS_KEYS = DOMAIN_RANDOMIZABLE_KEYS;
+const MECHANICS_REF: number[] = MECHANICS_OBS_KEYS.map((k) => {
+  const v = DEFAULT_ADMIN_SETTINGS[k];
+  return typeof v === 'number' && v !== 0 ? v : 1;
+});
 
 /** Max combatants per team the observation reserves slots for. */
 export const MAX_TEAM_SIZE = 4;
@@ -61,6 +74,7 @@ export const OBS_FIELDS: FieldSpec[] = [
   { name: 'ctx_phase_onehot', size: 4 },
   { name: 'ctx_phase_timer', size: 1 },
   { name: 'ctx_clock', size: 1 },
+  { name: 'mechanics', size: MECHANICS_OBS_KEYS.length },
 ];
 
 /** Map of field name -> { offset, size } within a single agent observation. */
@@ -180,6 +194,14 @@ export function encodeObservation(
   out[p++] = state.match.phase === 'matchEnd' ? 1 : 0;
   out[p++] = Math.min(1, state.match.phaseTimer / 5);
   out[p++] = Math.min(1, state.tick / 36000); // ~10 min cap
+
+  // --- Mechanics-aware block: current balance as deviation-from-nominal ---
+  const s = state.settings as unknown as Record<string, number>;
+  for (let i = 0; i < MECHANICS_OBS_KEYS.length; i++) {
+    const v = s[MECHANICS_OBS_KEYS[i] as string];
+    const dev = typeof v === 'number' ? v / MECHANICS_REF[i] - 1 : 0;
+    out[p++] = dev < -1 ? -1 : dev > 1 ? 1 : dev; // clamp ±100%
+  }
 }
 
 function encodeOthers(

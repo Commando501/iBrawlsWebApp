@@ -1,12 +1,17 @@
-"""Gymnasium/SB3-compatible vectorized client for the Node Grifball sim.
+"""Gymnasium/SB3-compatible vectorized client for the Node Grifball/Combat sim.
 
-Spawns the TS vec-env server (``src/sim/server/main.ts``) as a subprocess, performs the
-binary HELLO handshake, and exposes the **learner-controlled** agents as a flat batch of
-``numEnvs × learnerAgentsPerEnv`` sub-envs (shared-policy self-play / vs-heuristic).
+Spawns **one or more** Node sim subprocesses (one per CPU core via ``num_workers``), each
+hosting a slice of the matches, and concatenates their agents into one flat batch of
+learner-controlled sub-envs. Multiple workers let the CPU-bound sim run in parallel across
+cores and feed the policy a large batch — which is what makes a GPU worth using.
 
-Opponent-team agents are driven inside the Node server by the built-in heuristic (when
-``opponent='heuristic'``); Python sends zero actions for those slots and ignores their
-obs/reward. With ``opponent='self'`` the shared policy controls every agent.
+Per step we send the action frame to *all* workers first, then read every response, so the
+worker processes step concurrently instead of serially.
+
+Modes:
+- grifball: learner team = blue; opponent team driven by the built-in heuristic/random, or
+  shared-policy self-play (``opponent='self'``).
+- combat: pure self-play generalist (every agent is the learner).
 """
 from __future__ import annotations
 
@@ -31,8 +36,65 @@ def _default_cmd() -> list[str]:
     return ["npx", "tsx", "src/sim/server/main.ts"]
 
 
+class SimWorker:
+    """One Node sim subprocess: handshake + raw (whole-worker) reset/step over the wire."""
+
+    def __init__(self, cmd: list[str], shell: bool, config: dict) -> None:
+        self.proc = subprocess.Popen(
+            cmd, cwd=REPO_ROOT, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+            stderr=sys.stderr, bufsize=0, shell=shell,
+        )
+        assert self.proc.stdin and self.proc.stdout
+        proto.write_frame(self.proc.stdin, proto.hello_request(config))
+        self.header = proto.parse_hello_response(proto.read_frame(self.proc.stdout))
+        self.agent_teams: list[str] = self.header["agentTeams"]
+        self.n_world_envs: int = int(self.header["numEnvs"])
+        self.n_agents: int = int(self.header["numAgents"])
+        self.obs_dim: int = int(self.header["obsDim"])
+        self.act_dim: int = int(self.header["actionDim"])
+        self.slots: int = self.n_world_envs * self.n_agents  # total agent rows this worker owns
+
+    def reset(self) -> np.ndarray:
+        proto.write_frame(self.proc.stdin, proto.reset_request())
+        return proto.parse_obs_only(proto.read_frame(self.proc.stdout), self.slots, self.obs_dim)
+
+    def send_step(self, full_actions: np.ndarray) -> None:
+        """Async: write the STEP frame (full (slots, act_dim) action block) and flush."""
+        proto.write_frame(self.proc.stdin, proto.step_request(full_actions))
+
+    def recv_step(self) -> proto.StepResponse:
+        return proto.parse_step_response(proto.read_frame(self.proc.stdout), self.slots, self.obs_dim)
+
+    def close(self) -> None:
+        try:
+            if self.proc.poll() is None and self.proc.stdin:
+                proto.write_frame(self.proc.stdin, proto.close_request())
+                self.proc.wait(timeout=2)
+        except Exception:
+            pass
+        finally:
+            if self.proc.poll() is None:
+                self.proc.kill()
+
+
+class _WorkerView:
+    """Per-worker aggregation metadata: how its learner agents map into the flat batch."""
+    def __init__(self, worker: SimWorker, learner_idx: list[int], slot_off: int) -> None:
+        self.worker = worker
+        self.learner_idx = learner_idx
+        self.learners_per_env = len(learner_idx)
+        self.slot_off = slot_off                                   # start row in the flat batch
+        self.count = worker.n_world_envs * self.learners_per_env   # learner rows from this worker
+
+    def select(self, arr: np.ndarray) -> np.ndarray:
+        """Pick learner rows from a whole-worker (slots, ...) array -> (count, ...)."""
+        w = arr.reshape(self.worker.n_world_envs, self.worker.n_agents, *arr.shape[1:])
+        sel = w[:, self.learner_idx, ...]
+        return sel.reshape(self.count, *arr.shape[1:])
+
+
 class GrifballVecEnv(VecEnv):
-    """One subprocess hosting ``numEnvs`` matches; exposes the learner agents as sub-envs."""
+    """Fans matches across `num_workers` Node processes; exposes learner agents as sub-envs."""
 
     def __init__(
         self,
@@ -48,161 +110,133 @@ class GrifballVecEnv(VecEnv):
         combat_world_sizes: list[int] | None = None,
         combat_kill_range: tuple[int, int] | None = None,
         combat_randomize_layout: bool = True,
-        randomize: dict | None = None,  # domain-randomization spec {enabled, pct}
+        randomize: dict | None = None,
+        num_workers: int = 1,
         node_cmd: Sequence[str] | None = None,
     ) -> None:
         self.mode = mode
-        # Combat is pure self-play (one shared policy plays every role in every world).
         if mode == "combat":
-            opponent = "self"
+            opponent = "self"  # combat is pure self-play
         self.opponent = opponent
-        self.learner_team = learner_team
-        # Whether a maxTicks truncation bootstraps its value (SB3 TimeLimit.truncated).
-        # Default OFF: for this win-oriented goal task, bootstrapping truncations rewards
-        # "stall to timeout" and empirically learns slower; treating the cut-off as a
-        # (failed) terminal pressures the policy to actually score. The signal is still
-        # exposed in info["truncated"] either way.
         self.bootstrap_truncation = bootstrap_truncation
 
         cmd = list(node_cmd) if node_cmd else _default_cmd()
-        self.proc = subprocess.Popen(
-            cmd,
-            cwd=REPO_ROOT,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=sys.stderr,
-            bufsize=0,
-            shell=(os.name == "nt" and node_cmd is None),
-        )
-        assert self.proc.stdin and self.proc.stdout
+        shell = os.name == "nt" and node_cmd is None
+        W = max(1, int(num_workers))
 
-        # Resolve which agent slots the opponent controls server-side.
-        # We must know agentTeams to pick them, but that's in the handshake — so do a
-        # two-pass handshake: send a probe config, read header, then we already know teams.
-        probe_cfg: dict = {"numEnvs": num_envs, "baseSeed": base_seed, "mode": mode}
-        if settings:
-            probe_cfg["settings"] = settings
-        if reward:
-            probe_cfg["reward"] = reward
-        if max_ticks is not None:
-            probe_cfg["maxTicks"] = max_ticks
-        if randomize and randomize.get("enabled"):
-            probe_cfg["randomize"] = randomize
+        def base_cfg(seed: int) -> dict:
+            cfg: dict = {"baseSeed": seed, "mode": mode}
+            if settings:
+                cfg["settings"] = settings
+            if reward:
+                cfg["reward"] = reward
+            if max_ticks is not None:
+                cfg["maxTicks"] = max_ticks
+            if randomize and randomize.get("enabled"):
+                cfg["randomize"] = randomize
+            return cfg
+
+        self.views: list[_WorkerView] = []
+        slot_off = 0
+
         if mode == "combat":
-            if combat_world_sizes:
-                probe_cfg["worldSizes"] = combat_world_sizes
-            if combat_kill_range:
-                probe_cfg["killTargetRange"] = list(combat_kill_range)
-            probe_cfg["randomizeLayout"] = combat_randomize_layout
-        # First handshake to learn agentTeams (no builtin yet).
-        header = self._handshake(probe_cfg)
-        self.agent_ids: list[str] = header["agentIds"]
-        self.agent_teams: list[str] = header["agentTeams"]
-        self.n_agents: int = int(header["numAgents"])
-        self.n_world_envs: int = int(header["numEnvs"])
-        self.obs_dim: int = int(header["obsDim"])
-        self.act_dim: int = int(header["actionDim"])
-        self.header = header
-
-        # Learner / opponent agent indices within one env's roster.
-        if opponent == "self":
-            self.learner_idx = list(range(self.n_agents))
-            self.builtin_idx: list[int] = []
+            sizes = combat_world_sizes or [2, 2, 2, 2, 4, 4, 8]
+            chunks = [sizes[w::W] for w in range(W)]
+            chunks = [c for c in chunks if c]  # drop empties if W > #worlds
+            for w, chunk in enumerate(chunks):
+                cfg = base_cfg(base_seed + w * 1_000_003)
+                cfg["worldSizes"] = chunk
+                if combat_kill_range:
+                    cfg["killTargetRange"] = list(combat_kill_range)
+                cfg["randomizeLayout"] = combat_randomize_layout
+                worker = SimWorker(cmd, shell, cfg)
+                learner_idx = list(range(worker.n_agents))  # self-play: all are learners
+                view = _WorkerView(worker, learner_idx, slot_off)
+                self.views.append(view)
+                slot_off += view.count
         else:
-            self.learner_idx = [i for i, t in enumerate(self.agent_teams) if t == learner_team]
-            self.builtin_idx = [i for i, t in enumerate(self.agent_teams) if t != learner_team]
+            per_worker_envs = max(1, num_envs // W)
+            # Probe once to learn team layout -> learner / built-in opponent slots.
+            probe = SimWorker(cmd, shell, {**base_cfg(base_seed), "numEnvs": per_worker_envs})
+            teams = probe.agent_teams
+            if opponent == "self":
+                learner_idx = list(range(probe.n_agents))
+                builtin_idx: list[int] = []
+            else:
+                learner_idx = [i for i, t in enumerate(teams) if t == learner_team]
+                builtin_idx = [i for i, t in enumerate(teams) if t != learner_team]
+            probe.close()
+            for w in range(W):
+                cfg = {**base_cfg(base_seed + w * 1_000_003), "numEnvs": per_worker_envs}
+                if builtin_idx:
+                    cfg["builtinAgents"] = builtin_idx
+                    cfg["builtinPolicy"] = "random" if opponent == "random" else "heuristic"
+                worker = SimWorker(cmd, shell, cfg)
+                view = _WorkerView(worker, learner_idx, slot_off)
+                self.views.append(view)
+                slot_off += view.count
 
-        # If we need a built-in opponent, re-handshake with builtinAgents set so the
-        # server overrides those slots with the heuristic. (Restart the process cleanly.)
-        if self.builtin_idx:
-            self.close()
-            self.proc = subprocess.Popen(
-                cmd, cwd=REPO_ROOT, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                stderr=sys.stderr, bufsize=0, shell=(os.name == "nt" and node_cmd is None),
-            )
-            cfg = dict(probe_cfg)
-            cfg["builtinAgents"] = self.builtin_idx
-            cfg["builtinPolicy"] = "random" if opponent == "random" else "heuristic"
-            header = self._handshake(cfg)
+        first = self.views[0].worker
+        self.obs_dim = first.obs_dim
+        self.act_dim = first.act_dim
+        self.header = first.header
+        n_sub = slot_off  # total learner rows across all workers
 
-        self.learners_per_env = len(self.learner_idx)
-        n_sub = self.n_world_envs * self.learners_per_env
-
-        super().__init__(n_sub, observation_space(header), action_space(header))
-
+        super().__init__(n_sub, observation_space(first.header), action_space(first.header))
         self._actions: np.ndarray | None = None
         self._last_obs = np.zeros((n_sub, self.obs_dim), dtype=np.float32)
 
-    # ------------------------------------------------------------------ handshake / io
-    def _handshake(self, config: dict) -> dict:
-        proto.write_frame(self.proc.stdin, proto.hello_request(config))
-        return proto.parse_hello_response(proto.read_frame(self.proc.stdout))
-
-    def _world_to_learner(self, world: np.ndarray) -> np.ndarray:
-        """Select learner rows from a (numWorldEnvs*numAgents, ...) array -> (n_sub, ...)."""
-        world = world.reshape(self.n_world_envs, self.n_agents, *world.shape[1:])
-        sel = world[:, self.learner_idx, ...]
-        return sel.reshape(self.n_world_envs * self.learners_per_env, *world.shape[2:])
-
     # ------------------------------------------------------------------ VecEnv API
     def reset(self) -> np.ndarray:
-        proto.write_frame(self.proc.stdin, proto.reset_request())
-        payload = proto.read_frame(self.proc.stdout)
-        obs = proto.parse_obs_only(payload, self.n_world_envs * self.n_agents, self.obs_dim)
-        self._last_obs = self._world_to_learner(obs)
+        for v in self.views:
+            self._last_obs[v.slot_off:v.slot_off + v.count] = v.select(v.worker.reset())
         return self._last_obs
 
     def step_async(self, actions: np.ndarray) -> None:
         self._actions = np.asarray(actions, dtype=np.int32)
 
     def step_wait(self) -> VecEnvStepReturn:
-        # Scatter learner actions into a full (numWorldEnvs*numAgents, actDim) block.
-        full = np.zeros((self.n_world_envs, self.n_agents, self.act_dim), dtype=np.int32)
-        acts = self._actions.reshape(self.n_world_envs, self.learners_per_env, self.act_dim)
-        for j, idx in enumerate(self.learner_idx):
-            full[:, idx, :] = acts[:, j, :]
+        # 1) Send STEP to every worker first so they compute in parallel.
+        for v in self.views:
+            chunk = self._actions[v.slot_off:v.slot_off + v.count]  # (count, act_dim)
+            full = np.zeros((v.worker.n_world_envs, v.worker.n_agents, self.act_dim), dtype=np.int32)
+            acts = chunk.reshape(v.worker.n_world_envs, v.learners_per_env, self.act_dim)
+            for j, idx in enumerate(v.learner_idx):
+                full[:, idx, :] = acts[:, j, :]
+            v.worker.send_step(full.reshape(-1, self.act_dim))
 
-        proto.write_frame(self.proc.stdin, proto.step_request(full.reshape(-1, self.act_dim)))
-        payload = proto.read_frame(self.proc.stdout)
-        resp = proto.parse_step_response(payload, self.n_world_envs * self.n_agents, self.obs_dim)
-
-        obs = self._world_to_learner(resp.obs)
-        reward = self._world_to_learner(resp.reward.reshape(-1, 1)).reshape(-1).astype(np.float32)
-        done = self._world_to_learner(resp.done.reshape(-1, 1)).reshape(-1).astype(bool)
-        trunc = self._world_to_learner(resp.truncated.reshape(-1, 1)).reshape(-1).astype(bool)
-        self._last_obs = obs
-
-        # SB3 bootstraps a done iff info has terminal_observation AND TimeLimit.truncated.
-        # Real match ends are true terminals (no bootstrap); maxTicks cut-offs are
-        # truncations (bootstrap). Map each learner sub-env back to its world agent slot.
+        # 2) Collect responses.
+        reward = np.zeros(self.num_envs, dtype=np.float32)
+        done = np.zeros(self.num_envs, dtype=bool)
         infos: list[dict[str, Any]] = [{} for _ in range(self.num_envs)]
-        for sub in range(self.num_envs):
-            if not done[sub]:
-                continue
-            infos[sub]["truncated"] = bool(trunc[sub])  # always exposed (diagnostics)
-            w = sub // self.learners_per_env
-            j = sub % self.learners_per_env
-            world_idx = w * self.n_agents + self.learner_idx[j]
-            term = resp.terminal_obs.get(world_idx)
-            if term is not None:
-                infos[sub]["terminal_observation"] = term
-            # Only flag TimeLimit.truncated (-> SB3 value bootstrap) when explicitly enabled.
-            if trunc[sub] and self.bootstrap_truncation:
-                infos[sub]["TimeLimit.truncated"] = True
-        return obs, reward, done, infos
+        for v in self.views:
+            resp = v.worker.recv_step()
+            o = v.slot_off
+            self._last_obs[o:o + v.count] = v.select(resp.obs)
+            reward[o:o + v.count] = v.select(resp.reward.reshape(-1, 1)).reshape(-1)
+            d = v.select(resp.done.reshape(-1, 1)).reshape(-1).astype(bool)
+            tr = v.select(resp.truncated.reshape(-1, 1)).reshape(-1).astype(bool)
+            done[o:o + v.count] = d
+            for k in range(v.count):
+                if not d[k]:
+                    continue
+                info = infos[o + k]
+                info["truncated"] = bool(tr[k])
+                we = k // v.learners_per_env
+                j = k % v.learners_per_env
+                world_idx = we * v.worker.n_agents + v.learner_idx[j]
+                term = resp.terminal_obs.get(world_idx)
+                if term is not None:
+                    info["terminal_observation"] = term
+                if tr[k] and self.bootstrap_truncation:
+                    info["TimeLimit.truncated"] = True
+        return self._last_obs, reward, done, infos
 
     def close(self) -> None:
-        try:
-            if self.proc.poll() is None and self.proc.stdin:
-                proto.write_frame(self.proc.stdin, proto.close_request())
-                self.proc.wait(timeout=2)
-        except Exception:
-            pass
-        finally:
-            if self.proc.poll() is None:
-                self.proc.kill()
+        for v in self.views:
+            v.worker.close()
 
-    # --- Required abstract stubs (no per-sub-env Python objects to introspect) ---
+    # --- Required abstract stubs ---
     def env_is_wrapped(self, wrapper_class, indices=None) -> list[bool]:
         return [False] * self.num_envs
 
@@ -222,5 +256,5 @@ class GrifballVecEnv(VecEnv):
             return 1
         return len(list(indices))
 
-    def get_images(self) -> Sequence[np.ndarray]:  # headless
+    def get_images(self) -> Sequence[np.ndarray]:
         return []

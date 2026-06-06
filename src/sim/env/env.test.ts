@@ -9,6 +9,7 @@ import {
   OBS_LAYOUT,
   MAX_TEAMMATES,
   MAX_OPPONENTS,
+  MECHANICS_OBS_KEYS,
 } from './observation';
 import {
   decodeAction,
@@ -79,6 +80,31 @@ test('presence masks zero-out absent teammate/opponent slots', () => {
     assert.equal(out[opp.offset + s * slotW + slotW - 1], 0, `opponent slot ${s} absent`);
   }
   void MAX_TEAMMATES;
+});
+
+test('mechanics block is ~0 at nominal settings', () => {
+  const state = createMatch({ seed: 1 });
+  const out = new Float32Array(OBS_DIM);
+  encodeObservation(state, state.combatants[0].id, out, 0);
+  const m = OBS_LAYOUT['mechanics'];
+  assert.equal(m.size, MECHANICS_OBS_KEYS.length);
+  for (let i = 0; i < m.size; i++) {
+    assert.ok(Math.abs(out[m.offset + i]) < 1e-6, `${MECHANICS_OBS_KEYS[i]} not nominal`);
+  }
+});
+
+test('mechanics block reflects a tuned setting (deviation from nominal)', () => {
+  // attackRange default 3.2 -> set +50%
+  const state = createMatch({ seed: 1, settings: { attackRange: 3.2 * 1.5 } });
+  const out = new Float32Array(OBS_DIM);
+  encodeObservation(state, state.combatants[0].id, out, 0);
+  const m = OBS_LAYOUT['mechanics'];
+  const idx = MECHANICS_OBS_KEYS.indexOf('attackRange');
+  assert.ok(idx >= 0);
+  assert.ok(Math.abs(out[m.offset + idx] - 0.5) < 1e-5, `attackRange dev = ${out[m.offset + idx]}`);
+  // an untouched key stays at 0
+  const dashIdx = MECHANICS_OBS_KEYS.indexOf('dashDistance');
+  assert.ok(Math.abs(out[m.offset + dashIdx]) < 1e-6);
 });
 
 test('decodeAction maps factors into an ActionInput', () => {

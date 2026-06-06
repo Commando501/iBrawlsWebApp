@@ -112,6 +112,19 @@ Bigger `pct` = more robust but slower to learn. It only randomizes the mechanics
 models and reads (see `src/sim/SIM_AUDIT.md`); `maxHP`, goal targets, and toggles are left
 fixed.
 
+## 5d. Mechanics-aware brain (adapts to the current balance)
+
+The brain *sees the current game mechanics* as part of its observation (a normalized block of
+the live-tunable knobs — speeds, reach, timings — as deviation from nominal). This is always
+on. Two payoffs:
+- Paired with domain randomization, the brain learns to **read the balance and adjust its
+  play** ("attack range is shorter today → close the gap more"), instead of just being robust.
+- After a balance patch, point the sim at the new preset and the brain already conditions on
+  it — less retraining.
+
+Nothing to configure. (Internally the observation grew to include this block; the Python side
+reads all dims from the handshake, so it adapts automatically.)
+
 ## 6. Recommended path (the curriculum)
 
 Start easy, get harder. Each stage is its own run/folder so you can compare:

@@ -8,7 +8,7 @@
  * stripped of React/THREE coupling and rendering-only fields (camera, VFX, nameplates).
  */
 
-import { type CustomMapData } from '../types';
+import { type CustomMapData, type UniversalSettings } from '../types';
 import { type Vec3 } from '../game/grifballBall';
 import { type TeamId, type TeamScoresState } from '../game/teamScoring';
 import { type GrifballMatchState } from '../game/grifballMatch';
@@ -108,6 +108,9 @@ export interface SimState {
   match: GrifballMatchState;
   /** Per-team score / kills / goals (reused live module). */
   scores: TeamScoresState;
+  /** Effective (possibly domain-randomized) settings for this match — drives the
+   * mechanics-aware observation so the policy can condition on the current balance. */
+  settings: UniversalSettings;
   /** Map geometry + goal plates (resolved once at match creation). */
   map: CustomMapData;
   goalPlates: GoalPlate[];

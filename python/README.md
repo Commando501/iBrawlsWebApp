@@ -106,7 +106,10 @@ helps a CPU-limited box.
 
 ## Notes / optional
 
-- Scaling lever (additive): multiple Node worker processes feeding one learner; the protocol
-  is per-process.
+- **Multi-worker (`num_workers`)**: `GrifballVecEnv` spawns N Node sim processes (a `SimWorker`
+  each) across CPU cores and concatenates their agents into one flat batch. Per step it sends
+  STEP to all workers, then reads all responses, so they compute in parallel. This is how you
+  scale the CPU-bound sim and feed a GPU a large batch. Throughput scales with cores
+  (sub-linear at small per-tick loads, where per-step IPC/Python overhead dominates).
 - `VecNormalize` (obs/reward running stats) is not applied (obs are already hand-normalized);
   add it if longer runs prove unstable.

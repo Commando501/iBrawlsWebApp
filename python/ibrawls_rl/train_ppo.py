@@ -96,6 +96,7 @@ def run_training(cfg: TrainConfig) -> str:
             combat_kill_range=(cfg.combat_kill_min, cfg.combat_kill_max),
             combat_randomize_layout=cfg.combat_randomize_layout,
             randomize=dr,
+            num_workers=cfg.num_workers,
         )
     else:
         env = GrifballVecEnv(
@@ -107,6 +108,7 @@ def run_training(cfg: TrainConfig) -> str:
             max_ticks=int(60 * 60 * cfg.match_minutes),
             bootstrap_truncation=cfg.bootstrap_truncation,
             randomize=dr,
+            num_workers=cfg.num_workers,
         )
 
     model = PPO(

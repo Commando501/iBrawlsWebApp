@@ -19,7 +19,7 @@ export interface EnvSpec {
   version: number;
 }
 
-export const ENV_SPEC_VERSION = 2; // v2: added pass-charge / hammer-jump / weapon-ready obs
+export const ENV_SPEC_VERSION = 3; // v3: added mechanics-aware block (current balance)
 
 export function buildEnvSpec(): EnvSpec {
   return {

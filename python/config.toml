@@ -6,13 +6,14 @@
 # ============================================================================
 
 [run]
-mode            = "grifball"  # "grifball" | "combat" (deathmatch generalist, see [combat])
-opponent        = "random"   # grifball: "random" (start here) | "self" | "heuristic". combat self-plays.
-total_steps     = 3000000    # how long to train. ~1-3M beats random; 10M+ for self/heuristic
+mode            = "combat"  # "grifball" | "combat" (deathmatch generalist, see [combat])
+opponent        = "self"   # grifball: "random" (start here) | "self" | "heuristic". combat self-plays.
+total_steps     = 10000000    # how long to train. ~1-3M beats random; 10M+ for self/heuristic
 parallel_matches = 32        # grifball: matches at once (combat uses [combat].world_sizes instead)
+num_workers     = 1          # parallel sim processes across CPU cores (raise toward core count for GPU)
 goal_target     = 3          # grifball: goals to win a match
 match_minutes   = 6.0        # cap on match length so stalemates end
-device          = "auto"     # "auto" uses GPU if present | "cpu" | "cuda"
+device          = "cpu"     # "auto" uses GPU if present | "cpu" | "cuda"
 seed            = 1          # same seed = reproducible run
 
 [combat]   # only used when mode = "combat". One model that generalizes over all of these.

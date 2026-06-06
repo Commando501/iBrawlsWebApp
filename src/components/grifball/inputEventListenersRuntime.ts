@@ -1,4 +1,4 @@
-type GrifballInputEventHandlers = {
+export type GrifballInputEventHandlers = {
   handleKeyDown: (event: KeyboardEvent) => void;
   handleKeyUp: (event: KeyboardEvent) => void;
   handleCanvasMouseDown: (event: MouseEvent) => void;

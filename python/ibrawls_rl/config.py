@@ -19,6 +19,7 @@ class TrainConfig:
     opponent: str = "random"          # grifball only: "random" | "self" | "heuristic"
     total_steps: int = 3_000_000      # how long to train (env steps)
     parallel_matches: int = 32        # grifball: matches at once (combat uses [combat].world_sizes)
+    num_workers: int = 1              # parallel Node sim processes (set to ~CPU cores to feed a GPU)
     goal_target: int = 3              # grifball: goals needed to win a match
     match_minutes: float = 6.0        # safety cap on match length (sim-minutes)
     device: str = "auto"              # auto | cpu | cuda
@@ -76,6 +77,7 @@ KNOB_DESCRIPTIONS: dict[str, str] = {
     "opponent": "Grifball only: 'random' (easy, start here), 'self' (plays copies of itself), 'heuristic' (the strong scripted bot). Combat always self-plays.",
     "total_steps": "Total training experience. ~1-3M to beat random; 10M+ for self-play/heuristic.",
     "parallel_matches": "How many matches run simultaneously. Bigger = smoother learning, more CPU/RAM.",
+    "num_workers": "Parallel sim processes across CPU cores. Raise toward your core count to feed a GPU a big batch.",
     "goal_target": "Goals to win a match.",
     "match_minutes": "Hard cap on match length so stalemates end.",
     "device": "Where the brain runs. 'auto' uses the GPU if available; small brains are fine on 'cpu'.",
@@ -118,6 +120,7 @@ _TOML_MAP = {
     ("combat", "kill_max"): "combat_kill_max",
     ("combat", "randomize_layout"): "combat_randomize_layout",
     ("run", "parallel_matches"): "parallel_matches",
+    ("run", "num_workers"): "num_workers",
     ("run", "goal_target"): "goal_target",
     ("run", "match_minutes"): "match_minutes",
     ("run", "device"): "device",
