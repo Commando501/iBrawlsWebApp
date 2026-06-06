@@ -1,5 +1,8 @@
 import * as THREE from 'three';
+import { getSkyboxTexture } from '../../game/skyboxTextures';
 import { getPrimaryRemoteOpponent } from '../../game/roster';
+import { type Combatant, type CustomMapData, type ReplayFile, type UniversalSettings } from '../../types';
+import { resolveActiveCustomMap } from './mapSelection';
 import { type GrifballRuntimeState } from './runtimeState';
 import { type SpectateTargetData } from './spectateTargets';
 import { type GrifballThreeRefs } from './threeRefs';
@@ -238,6 +241,93 @@ export const updateEmissiveGlowPulseForScene = ({
       });
     }
   });
+};
+
+export const syncAdminSettingsVisualStateForState = ({
+  state,
+  refs,
+  adminSettings,
+  mainAI,
+  customMap,
+  replayData,
+  selectedMap,
+}: {
+  state: GrifballRuntimeState;
+  refs: GrifballThreeRefs;
+  adminSettings: UniversalSettings;
+  mainAI: Combatant | undefined;
+  customMap?: CustomMapData;
+  replayData?: ReplayFile | null;
+  selectedMap: string;
+}): void => {
+  const prevMax = state.playerMaxHP;
+  state.playerMaxHP = adminSettings.maxHP;
+  if (state.playerHP === prevMax) {
+    state.playerHP = adminSettings.maxHP;
+  } else {
+    state.playerHP = Math.min(state.playerHP, adminSettings.maxHP);
+  }
+
+  if (mainAI) {
+    mainAI.maxHp = adminSettings.maxHP;
+    if (mainAI.hp === prevMax) {
+      mainAI.hp = adminSettings.maxHP;
+    } else {
+      mainAI.hp = Math.min(mainAI.hp, adminSettings.maxHP);
+    }
+  }
+
+  state.settings = adminSettings;
+
+  if (refs.ambientLight) {
+    refs.ambientLight.intensity =
+      adminSettings.ambientLightIntensity !== undefined ? adminSettings.ambientLightIntensity : 0.82;
+  }
+  if (refs.dirLight) {
+    refs.dirLight.intensity =
+      adminSettings.directLightIntensity !== undefined ? adminSettings.directLightIntensity : 1.6;
+  }
+  if (!refs.scene) return;
+
+  const hue = adminSettings.skyboxHue !== undefined ? adminSettings.skyboxHue : 224;
+  const brightness = adminSettings.skyboxBrightness !== undefined ? adminSettings.skyboxBrightness : 4;
+  const colorString = `hsl(${hue}, 70%, ${brightness}%)`;
+  const finalColor = new THREE.Color(colorString);
+  refs.scene.background = finalColor;
+  if (refs.scene.fog) {
+    refs.scene.fog.color.copy(finalColor);
+  }
+
+  if (refs.skyboxMesh && refs.skyboxMesh.material) {
+    refs.skyboxMesh.visible = adminSettings.showSkybox !== false;
+    let skyType = 'cyberpunk';
+    const activeCustomMap = resolveActiveCustomMap({
+      customMap,
+      replayData,
+      selectedMap,
+      gameMode: adminSettings.gameMode,
+    });
+    const effectiveMapId = replayData ? replayData.mapType : selectedMap;
+    const isHangar = effectiveMapId === 'hangar';
+
+    if (activeCustomMap) {
+      skyType = activeCustomMap.skyboxTexture || activeCustomMap.theme || 'cyberpunk';
+      if (skyType === 'matched') {
+        skyType = activeCustomMap.theme || 'cyberpunk';
+      }
+    } else if (isHangar) {
+      skyType = 'hangar';
+    }
+
+    try {
+      const newTex = getSkyboxTexture(skyType, hue, brightness, colorString);
+      const mat = refs.skyboxMesh.material as THREE.MeshBasicMaterial;
+      mat.map = newTex;
+      mat.needsUpdate = true;
+    } catch (err) {
+      console.error('Failed to update skybox texture:', err);
+    }
+  }
 };
 
 const updateFallingWeatherParticleSystem = ({

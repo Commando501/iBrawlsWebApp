@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import { MAIN_AI_ID } from '../../game/roster';
+import { type Combatant } from '../../types';
 import { type GrifballRuntimeState } from './runtimeState';
 import { type GrifballThreeRefs } from './threeRefs';
 
@@ -10,6 +12,13 @@ type PlayerWeaponSyncPayload =
 
 type PlayerSwordLockTarget = {
   pos: THREE.Vector3;
+};
+
+export type PlayerSwordLungeHitTarget = {
+  id: string;
+  pos: THREE.Vector3;
+  hp: number;
+  name: string;
 };
 
 const canStartPlayerWeaponAction = (state: GrifballRuntimeState): boolean =>
@@ -105,6 +114,70 @@ export function triggerPlayerSwordLungeForState({
     action: 'lunge_sword',
     dir: { x: state.lungeTargetDir.x, y: state.lungeTargetDir.y, z: state.lungeTargetDir.z },
   });
+}
+
+export function finishPlayerSwordLungeRecoveryForState({
+  state,
+  hit,
+  recordLungeEnd,
+}: {
+  state: GrifballRuntimeState;
+  hit: boolean;
+  recordLungeEnd: (hit: boolean) => void;
+}): void {
+  state.isLunging = false;
+  recordLungeEnd(hit);
+  state.pSwordState = 'recovering';
+  state.pSwordTimer = 0;
+  state.pSwordReady = false;
+  state.pSwordRecoverDuration = state.settings.swordLungeReload ?? 1.2;
+}
+
+export function findPlayerSwordLungeHitTargetForState({
+  state,
+  mainAi,
+  isMultiplayer,
+  areCombatantsHostile,
+}: {
+  state: GrifballRuntimeState;
+  mainAi: Combatant | undefined;
+  isMultiplayer: boolean;
+  areCombatantsHostile: (attackerId: string, victimId: string) => boolean;
+}): {
+  closestTarget: PlayerSwordLungeHitTarget | null;
+  distance: number;
+} {
+  let closestTarget: PlayerSwordLungeHitTarget | null = null;
+  let distance = Infinity;
+
+  if (
+    !isMultiplayer &&
+    mainAi &&
+    mainAi.hp > 0 &&
+    mainAi.aiState !== 'RESPAWNING' &&
+    areCombatantsHostile('player', MAIN_AI_ID)
+  ) {
+    closestTarget = { id: MAIN_AI_ID, pos: mainAi.pos, hp: mainAi.hp, name: 'Red (AI)' };
+    distance = state.playerPos.distanceTo(mainAi.pos);
+  }
+
+  state.otherPlayers.forEach((other) => {
+    if (
+      other.hp > 0 &&
+      !other.isObserver &&
+      other.respawnTimer <= 0 &&
+      areCombatantsHostile('player', other.id)
+    ) {
+      const otherPos = new THREE.Vector3(other.pos.x, other.pos.y, other.pos.z);
+      const candidateDistance = state.playerPos.distanceTo(otherPos);
+      if (candidateDistance < distance) {
+        distance = candidateDistance;
+        closestTarget = { id: other.id, pos: otherPos, hp: other.hp, name: other.playerName };
+      }
+    }
+  });
+
+  return { closestTarget, distance };
 }
 
 export function swapPlayerWeaponForState({

@@ -13,6 +13,74 @@ const getTradePresentation = (reason: CombatTradeReason): { text: string; weapon
     ? { text: 'Sword Trade', weapon: 'sword_vs_sword' }
     : { text: 'Lunge/Hammer Trade', weapon: 'sword_vs_hammer' };
 
+export function resolveSwordLungeTradeReasonForState({
+  state,
+  target,
+  mainAi,
+}: {
+  state: GrifballRuntimeState;
+  target: TradeTarget;
+  mainAi?: Combatant;
+}): CombatTradeReason | null {
+  const swordThreshold = state.settings.swordTradeWindow ?? 350;
+  const hammerThreshold = state.settings.hammerSwordTradeWindow ?? 350;
+
+  if (target.id === 'player') {
+    if (state.settings.enableSwordTrade && state.activeWeapon === 'sword' && (
+      state.isLunging ||
+      state.pSwordState === 'slashing' ||
+      (Date.now() - state.lastPlayerSwordAttackTime <= swordThreshold)
+    )) {
+      return 'sword_vs_sword';
+    }
+    if (state.settings.enableHammerSwordTrade && state.activeWeapon === 'hammer' && (
+      state.pWeaponState === 'swing_up' ||
+      state.pWeaponState === 'swing_down' ||
+      (Date.now() - state.lastPlayerHammerAttackTime <= hammerThreshold)
+    )) {
+      return 'sword_lunge_vs_hammer';
+    }
+    return null;
+  }
+
+  if (target.id === MAIN_AI_ID) {
+    if (!mainAi) return null;
+    if (state.settings.enableSwordTrade && mainAi.activeWeapon === 'sword' && (
+      mainAi.aiState === 'LUNGING' ||
+      mainAi.weaponState === 'swing_up' ||
+      mainAi.weaponState === 'swing_down' ||
+      (Date.now() - mainAi.lastSwordAttackTime <= swordThreshold)
+    )) {
+      return 'sword_vs_sword';
+    }
+    if (state.settings.enableHammerSwordTrade && mainAi.activeWeapon === 'hammer' && (
+      mainAi.weaponState === 'swing_up' ||
+      mainAi.weaponState === 'swing_down' ||
+      (Date.now() - mainAi.lastHammerAttackTime <= hammerThreshold)
+    )) {
+      return 'sword_lunge_vs_hammer';
+    }
+    return null;
+  }
+
+  const targetBot = state.otherPlayers.get(target.id);
+  if (!targetBot) return null;
+  if (state.settings.enableSwordTrade && targetBot.activeWeapon === 'sword' && (
+    targetBot.isLunging ||
+    targetBot.weaponState === 'swing_up' ||
+    targetBot.weaponState === 'swing_down'
+  )) {
+    return 'sword_vs_sword';
+  }
+  if (state.settings.enableHammerSwordTrade && targetBot.activeWeapon === 'hammer' && (
+    targetBot.weaponState === 'swing_up' ||
+    targetBot.weaponState === 'swing_down'
+  )) {
+    return 'sword_lunge_vs_hammer';
+  }
+  return null;
+}
+
 export function executeCustomBotTradeForState({
   state,
   attackerBot,

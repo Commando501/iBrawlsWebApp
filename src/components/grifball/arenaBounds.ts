@@ -14,6 +14,61 @@ export interface ConstrainCombatantToArenaResult {
   grounded: boolean;
 }
 
+export const clampVectorXZToArenaBounds = ({
+  pos,
+  activeCustomMap,
+  arenaRadius,
+  inset = 0.6,
+}: {
+  pos: THREE.Vector3;
+  activeCustomMap: CustomMapData | null;
+  arenaRadius: number;
+  inset?: number;
+}): void => {
+  const radiusToUse = activeCustomMap ? activeCustomMap.arenaRadius : arenaRadius;
+
+  if (activeCustomMap?.mapShape === 'rectangular') {
+    const half = getRectHalfExtents(radiusToUse, activeCustomMap?.arenaHalfExtents);
+    const boundX = half.x - inset;
+    const boundZ = half.z - inset;
+    pos.x = Math.max(-boundX, Math.min(boundX, pos.x));
+    pos.z = Math.max(-boundZ, Math.min(boundZ, pos.z));
+    return;
+  }
+
+  const distFromCenter = Math.sqrt(pos.x * pos.x + pos.z * pos.z);
+  const maxRadius = radiusToUse - inset;
+  if (distFromCenter > maxRadius) {
+    const angle = Math.atan2(pos.z, pos.x);
+    pos.x = Math.cos(angle) * maxRadius;
+    pos.z = Math.sin(angle) * maxRadius;
+  }
+};
+
+export const isVectorXZAtArenaBoundary = ({
+  pos,
+  activeCustomMap,
+  arenaRadius,
+  inset = 0.6,
+}: {
+  pos: THREE.Vector3;
+  activeCustomMap: CustomMapData | null;
+  arenaRadius: number;
+  inset?: number;
+}): boolean => {
+  const radiusToUse = activeCustomMap ? activeCustomMap.arenaRadius : arenaRadius;
+
+  if (activeCustomMap?.mapShape === 'rectangular') {
+    const half = getRectHalfExtents(radiusToUse, activeCustomMap?.arenaHalfExtents);
+    const boundX = half.x - inset;
+    const boundZ = half.z - inset;
+    return Math.abs(pos.x) >= boundX || Math.abs(pos.z) >= boundZ;
+  }
+
+  const distFromCenter = Math.sqrt(pos.x * pos.x + pos.z * pos.z);
+  return distFromCenter >= radiusToUse - inset;
+};
+
 export const constrainCombatantToArenaBounds = ({
   pos,
   vel,
