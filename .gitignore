@@ -16,3 +16,7 @@ gif_diff_app.txt
 data/multiplayer-config.json
 # Cloudflare Worker local secrets
 worker/.dev.vars
+
+# RL trainer artifacts (TensorBoard runs, venv, checkpoints) — see python/
+/runs/
+python/.venv/
