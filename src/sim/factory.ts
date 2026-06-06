@@ -20,7 +20,11 @@ import {
   type SimState,
   type SimCombatant,
   type SimWeapon,
+  type SimMode,
 } from './simState';
+
+/** Default kill target for a combat match (mirrors the tournament default). */
+export const DEFAULT_KILL_TARGET = 25;
 
 export interface CreateMatchOptions {
   seed: number;
@@ -32,6 +36,20 @@ export interface CreateMatchOptions {
   map?: CustomMapData;
   /** Initial weapon for every combatant. Default 'hammer'. */
   startWeapon?: SimWeapon;
+  /** Game mode. Default 'grifball'. */
+  mode?: SimMode;
+  /** Combat-mode layout (ignored for grifball). */
+  combat?: CombatLayout;
+}
+
+/**
+ * Deathmatch layout. `teamSizes` is one entry per team: `[1,1]` = 1v1, `[1,1,1,1]` =
+ * 4-player free-for-all, `[4,4]` = 4v4 team deathmatch. First team to `killTarget` wins.
+ */
+export interface CombatLayout {
+  teamSizes: number[];
+  killTarget?: number;
+  map?: CustomMapData;
 }
 
 /** The default Grifball arena (Championship Stadium — goal plates + team spawns). */
@@ -45,12 +63,25 @@ export function defaultGrifballMap(): CustomMapData {
   return toGrifballArena(base);
 }
 
-/** Resolve effective settings for a sim match (grifball mode forced). */
-export function resolveSimSettings(override?: Partial<UniversalSettings>): UniversalSettings {
+/** A rectangular non-grifball arena for combat matches (deathmatch). */
+export function defaultCombatMap(): CustomMapData {
+  const base =
+    PREMADE_MAPS.find((m) => m.id === 'synthwave_grid_arena') ??
+    PREMADE_MAPS.find((m) => m.mapShape === 'rectangular' && m.theme !== 'grifball_stadium') ??
+    PREMADE_MAPS[0];
+  if (!base) throw new Error('factory: no premade map found for combat');
+  return base;
+}
+
+/** Resolve effective settings for a sim match. `gameMode` follows the sim mode. */
+export function resolveSimSettings(
+  override?: Partial<UniversalSettings>,
+  mode: SimMode = 'grifball'
+): UniversalSettings {
   return {
     ...DEFAULT_ADMIN_SETTINGS,
     ...override,
-    gameMode: 'grifball',
+    gameMode: mode === 'combat' ? 'sandbox' : 'grifball',
   };
 }
 
@@ -125,6 +156,7 @@ function createCombatant(
     slideActive: false,
     slideCooldownTimer: 0,
     isSprinting: false,
+    attackKind: 'none',
     isLunging: false,
     lungeTimer: 0,
     lungeDir: { x: 0, y: 0, z: 0 },
@@ -133,6 +165,8 @@ function createCombatant(
 }
 
 export function createMatch(options: CreateMatchOptions): SimState {
+  if (options.mode === 'combat') return buildCombatMatch(options);
+
   const seed = normalizeSeed(options.seed);
   const teamSizes = options.teamSizes ?? { blue: 4, red: 4 };
   const settings = resolveSimSettings(options.settings);
@@ -162,11 +196,65 @@ export function createMatch(options: CreateMatchOptions): SimState {
   const rng = createRng(seed);
 
   return {
+    mode: 'grifball',
     combatants,
     match,
     scores,
     map,
     goalPlates,
+    spawns,
+    tick: 0,
+    seed,
+    rngState: rng.getState(),
+  };
+}
+
+/** Stable combat team ids: 't0', 't1', … (one per entry in `teamSizes`). */
+export function combatTeamId(i: number): TeamId {
+  return `t${i}`;
+}
+
+function buildCombatMatch(options: CreateMatchOptions): SimState {
+  const seed = normalizeSeed(options.seed);
+  const layout = options.combat ?? { teamSizes: [1, 1] };
+  const settings = resolveSimSettings(options.settings, 'combat');
+  const map = layout.map ?? options.map ?? defaultCombatMap();
+  const startWeapon = options.startWeapon ?? 'hammer';
+  const killTarget = layout.killTarget ?? DEFAULT_KILL_TARGET;
+
+  const allSpawns: Vec3[] = map.spawnPoints.map((p) => ({ x: p.x, y: p.y, z: p.z }));
+  const spawns: Record<TeamId, Vec3[]> = {} as Record<TeamId, Vec3[]>;
+  const combatants: SimCombatant[] = [];
+
+  let spawnIdx = 0;
+  let memberIdx = 0;
+  layout.teamSizes.forEach((size, t) => {
+    const team = combatTeamId(t);
+    spawns[team] = [];
+    for (let k = 0; k < size; k++) {
+      const spawn = allSpawns.length ? allSpawns[spawnIdx % allSpawns.length] : { x: 0, y: 0, z: 0 };
+      spawnIdx++;
+      spawns[team].push(spawn);
+      combatants.push(createCombatant(`c${memberIdx}`, team, spawn, settings, startWeapon));
+      memberIdx++;
+    }
+  });
+
+  const home: Vec3 = { x: 0, y: BALL_REST_Y, z: 0 };
+  const match = createInitialGrifballMatchState(settings, home);
+  match.goalTarget = killTarget; // interpreted as the kill target in combat
+
+  const teamIds = layout.teamSizes.map((_, t) => combatTeamId(t));
+  const scores = createEmptyTeamScores(teamIds);
+
+  const rng = createRng(seed);
+  return {
+    mode: 'combat',
+    combatants,
+    match,
+    scores,
+    map,
+    goalPlates: [],
     spawns,
     tick: 0,
     seed,

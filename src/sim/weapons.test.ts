@@ -1,8 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createMatch } from './factory';
+import { createMatch, resolveSimSettings } from './factory';
 import { type SimCombatant } from './simState';
-import { inMeleeHitVolume } from './weapons';
+import { inMeleeHitVolume, inHammerStrikeVolume } from './weapons';
+import { type UniversalSettings } from '../types';
+
+const baseSettings = resolveSimSettings();
+const withReach = (range: number, radius: number): UniversalSettings =>
+  resolveSimSettings({ attackRange: range, attackRadius: radius });
 
 /** Two fresh combatants (different teams) with controllable pose. */
 function pair(): { atk: SimCombatant; vic: SimCombatant } {
@@ -83,4 +88,48 @@ test('aiming via the facing convention lands a front hit (regression on yaw sign
   vic.pos = { x: 2.0, y: 0, z: 0 };
   atk.yaw = Math.PI / 2;
   assert.equal(inMeleeHitVolume(atk, vic), true);
+});
+
+// --- Hammer primary AoE strike (attackRange forward + attackRadius splash) ---
+
+test('hammer strike hits a target at the projected impact point', () => {
+  const { atk, vic } = pair(); // atk at origin, yaw 0 (forward +z)
+  // default attackRange 3.2 -> impact at (0,0,3.2)
+  vic.pos = { x: 0, y: 0, z: 3.2 };
+  assert.equal(inHammerStrikeVolume(atk, vic, baseSettings), true);
+});
+
+test('hammer strike is a splash sphere, not a cone (hits to the side of impact)', () => {
+  const { atk, vic } = pair();
+  // Beside the impact point (0,0,3.2): 4m to the side is within the 4.5 splash.
+  vic.pos = { x: 4, y: 0, z: 3.2 };
+  assert.equal(inHammerStrikeVolume(atk, vic, baseSettings), true);
+  // The same target is OUTSIDE the short swipe cone — proving strike ≠ swipe.
+  assert.equal(inMeleeHitVolume(atk, vic), false);
+});
+
+test('hammer strike splash even catches a target near the attacker (AoE back-blast)', () => {
+  const { atk, vic } = pair();
+  vic.pos = { x: 0, y: 0, z: 0 }; // at the attacker; within 4.5 of impact (0,0,3.2)
+  assert.equal(inHammerStrikeVolume(atk, vic, baseSettings), true);
+});
+
+test('a target beyond the splash radius is missed', () => {
+  const { atk, vic } = pair();
+  vic.pos = { x: 0, y: 0, z: 9 }; // far past impact + radius
+  assert.equal(inHammerStrikeVolume(atk, vic, baseSettings), false);
+});
+
+test('attackRadius is live-tunable: shrinking it removes a hit', () => {
+  const { atk, vic } = pair();
+  vic.pos = { x: 0, y: 0, z: 0 };
+  assert.equal(inHammerStrikeVolume(atk, vic, withReach(3.2, 4.5)), true);
+  assert.equal(inHammerStrikeVolume(atk, vic, withReach(3.2, 1.0)), false);
+});
+
+test('attackRange is live-tunable: it moves the impact point forward', () => {
+  const { atk, vic } = pair();
+  vic.pos = { x: 0, y: 0, z: 8 };
+  assert.equal(inHammerStrikeVolume(atk, vic, withReach(3.2, 4.5)), false); // impact at 3.2, far
+  assert.equal(inHammerStrikeVolume(atk, vic, withReach(8.0, 4.5)), true);  // impact now at 8
 });

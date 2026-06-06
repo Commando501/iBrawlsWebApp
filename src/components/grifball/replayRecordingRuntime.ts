@@ -7,7 +7,7 @@ import {
 import { MAIN_AI_ID } from '../../game/roster';
 import { maybeSendMatchTelemetry } from '../../services/matchTelemetry';
 import { maybeContributeReplay } from '../../services/replayUpload';
-import { type ReplayFile, type ReplayFrame } from '../../types';
+import { type ReplayFile, type ReplayFrame, type UniversalSettings } from '../../types';
 import {
   hasReplayEntityStateChanged,
   type ReplayEntityComparisonState,
@@ -18,6 +18,58 @@ import { type LastRecordedReplayEntityState } from './runtimeRefs';
 type MutableRef<T> = { current: T };
 
 type ReplayParticipantFrame = NonNullable<ReplayFrame['otherPlayers']>[number];
+
+export function initializeReplayRecordingForState({
+  state,
+  replayData,
+  replayRecordingRef,
+  lastRecordTimeRef,
+  replayRecordingElapsedTimeRef,
+  lastRecordedStateRef,
+  aiMatchSessionKey,
+  opponentPlayerName,
+  adminSettings,
+  selectedMap,
+  matchKillsToWin,
+}: {
+  state: GrifballRuntimeState;
+  replayData: ReplayFile | null;
+  replayRecordingRef: MutableRef<ReplayFile | null>;
+  lastRecordTimeRef: MutableRef<number>;
+  replayRecordingElapsedTimeRef: MutableRef<number>;
+  lastRecordedStateRef: MutableRef<Map<string, LastRecordedReplayEntityState>>;
+  aiMatchSessionKey?: string;
+  opponentPlayerName?: string;
+  adminSettings: UniversalSettings;
+  selectedMap?: string;
+  matchKillsToWin?: number;
+}): void {
+  if (replayData || replayRecordingRef.current) return;
+
+  const isTournament = !!aiMatchSessionKey && aiMatchSessionKey.startsWith('tournament');
+  const initialOpponentName = opponentPlayerName || 'Red (AI)';
+
+  replayRecordingRef.current = {
+    id: Math.random().toString(36).substring(2, 9),
+    name: `Match Replay - ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`,
+    description: '',
+    date: new Date().toISOString(),
+    duration: 0,
+    playerHue: adminSettings.playerHue ?? 200,
+    playerName: adminSettings.playerName || 'Blue (You)',
+    opponentName: initialOpponentName,
+    mapType: (selectedMap || 'hangar') as ReplayFile['mapType'],
+    mode: isTournament ? 'tournament' : 'sandbox',
+    gameMode: adminSettings.gameMode ?? 'sandbox',
+    maxScore: isTournament ? (matchKillsToWin ?? 25) : 25,
+    recordedAsObserver: state.isObserverMode,
+    frames: [],
+  };
+  lastRecordTimeRef.current = 0;
+  replayRecordingElapsedTimeRef.current = 0;
+  lastRecordedStateRef.current.clear();
+  console.log('Match Replay Recording initialized successfully!');
+}
 
 export function recordReplayFrameForState({
   state,

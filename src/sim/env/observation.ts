@@ -160,10 +160,14 @@ export function encodeObservation(
   p = encodeOthers(opponents, MAX_OPPONENTS, self, fx, fz, rx, rz, out, p);
 
   // --- Match context ---
-  const enemyTeamGoals = enemyTeamGoalCount(state, self.team);
-  const ownGoals = state.scores[self.team]?.goals ?? 0;
+  // Score is goals in grifball, kills in combat (goalTarget doubles as the kill target).
+  const useKills = state.mode === 'combat';
+  const ownScore = useKills
+    ? (state.scores[self.team]?.kills ?? 0)
+    : (state.scores[self.team]?.goals ?? 0);
+  const enemyScore = bestEnemyScore(state, self.team, useKills);
   const target = state.match.goalTarget || 1;
-  out[p++] = (ownGoals - enemyTeamGoals) / target;
+  out[p++] = (ownScore - enemyScore) / target;
   out[p++] = state.match.phase === 'countdown' ? 1 : 0;
   out[p++] = state.match.phase === 'playing' ? 1 : 0;
   out[p++] = state.match.phase === 'scored' ? 1 : 0;
@@ -198,10 +202,11 @@ function encodeOthers(
   return p;
 }
 
-function enemyTeamGoalCount(state: SimState, team: string): number {
+/** Best (max) score among enemy teams — goals for grifball, kills for combat. */
+function bestEnemyScore(state: SimState, team: string, useKills: boolean): number {
   let max = 0;
   for (const [t, tally] of Object.entries(state.scores)) {
-    if (t !== team) max = Math.max(max, tally.goals);
+    if (t !== team) max = Math.max(max, useKills ? tally.kills : tally.goals);
   }
   return max;
 }

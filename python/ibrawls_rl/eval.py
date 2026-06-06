@@ -82,3 +82,63 @@ def eval_vs(
 def eval_vs_heuristic(model, **kw) -> dict:
     """Back-compat shim: eval against the built-in heuristic."""
     return eval_vs(model, opponent="heuristic", **kw)
+
+
+def eval_combat_vs_random(
+    model,
+    matches: int = 100,
+    num_worlds: int = 16,
+    kill_target: int = 10,
+    deterministic: bool = True,
+) -> dict:
+    """Grade a combat policy by 1v1 duels vs a random opponent.
+
+    Uses fixed 1v1 worlds (no layout randomization). Even agent slots are driven by the
+    policy (team t0), odd slots act randomly (team t1); a world's win is read from the
+    policy slot's terminal-tick reward sign.
+    """
+    env = GrifballVecEnv(
+        mode="combat",
+        combat_world_sizes=[2] * num_worlds,
+        combat_kill_range=(kill_target, kill_target),
+        combat_randomize_layout=False,
+        max_ticks=60 * 60 * 6,
+    )
+    try:
+        obs = env.reset()
+        policy_idx = np.arange(0, env.num_envs, 2)   # even = policy (team t0)
+        random_idx = np.arange(1, env.num_envs, 2)   # odd  = random opponent (team t1)
+
+        wins = losses = draws = completed = 0
+        max_iters = matches * 60 * 60 * 8
+        it = 0
+        while completed < matches and it < max_iters:
+            it += 1
+            if model is None:
+                action = np.stack([env.action_space.sample() for _ in range(env.num_envs)])
+            else:
+                action, _ = model.predict(obs, deterministic=deterministic)
+            action = np.asarray(action, dtype=np.int32)
+            for j in random_idx:                      # opponent acts randomly
+                action[j] = env.action_space.sample()
+            obs, reward, done, _ = env.step(action)
+
+            for w in policy_idx:
+                if done[w]:
+                    r = float(reward[w])
+                    if r > 1e-6:
+                        wins += 1
+                    elif r < -1e-6:
+                        losses += 1
+                    else:
+                        draws += 1
+                    completed += 1
+        total = max(1, wins + losses + draws)
+        return {
+            "win_rate": wins / total,
+            "loss_rate": losses / total,
+            "draw_rate": draws / total,
+            "episodes": completed,
+        }
+    finally:
+        env.close()

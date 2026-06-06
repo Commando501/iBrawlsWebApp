@@ -1,0 +1,53 @@
+# ============================================================================
+#  iBrawls RL — your control panel.  Edit values, then run:
+#      python -m ibrawls_rl.train          (reads this file)
+#  Every setting is also shown (with this description) in TensorBoard's TEXT tab.
+#  See GUIDE.md for what to watch and how to tune.
+# ============================================================================
+
+[run]
+mode            = "grifball"  # "grifball" | "combat" (deathmatch generalist, see [combat])
+opponent        = "random"   # grifball: "random" (start here) | "self" | "heuristic". combat self-plays.
+total_steps     = 3000000    # how long to train. ~1-3M beats random; 10M+ for self/heuristic
+parallel_matches = 32        # grifball: matches at once (combat uses [combat].world_sizes instead)
+goal_target     = 3          # grifball: goals to win a match
+match_minutes   = 6.0        # cap on match length so stalemates end
+device          = "auto"     # "auto" uses GPU if present | "cpu" | "cuda"
+seed            = 1          # same seed = reproducible run
+
+[combat]   # only used when mode = "combat". One model that generalizes over all of these.
+world_sizes      = [2, 2, 2, 2, 4, 4, 8]  # mix of match sizes: 2 = 1v1, 4/8 = FFA/teams
+kill_min         = 10        # per-episode kill target is randomized in [kill_min, kill_max]
+kill_max         = 25
+randomize_layout = true      # re-randomize team partition + kill target each episode
+
+[ppo]   # the learning algorithm (sensible defaults — change learning_rate first)
+learning_rate = 0.0003       # step size. unstable? -> 0.0001 ; too slow? -> 0.0005
+rollout_length = 128         # experience gathered per match before each update
+batch_size    = 4096         # update minibatch (must divide matches x learners x rollout_length)
+gamma         = 0.997        # far-sightedness (high: winning is far away)
+gae_lambda    = 0.95         # advantage smoothing
+entropy_coef  = 0.01         # exploration. converges too early? -> 0.03
+value_coef    = 0.5          # weight of value-prediction learning
+clip_range    = 0.2          # how far the policy may move per update
+
+[network]   # the brain. bigger needs a GPU (device = "cuda")
+width = 256                  # neurons per layer (try 512/1024 on GPU)
+depth = 2                    # hidden layers (2-3)
+
+[reward]   # what the agent is paid for. dense terms accumulate over thousands of ticks!
+win           = 1.0          # winning the match
+goal_scored   = 1.0          # each goal scored
+goal_conceded = 1.0          # each goal conceded (subtracted)
+possession    = 0.002        # per TICK holding the ball — keep small or it dominates winning
+ball_progress = 0.01         # per metre the ball advances toward the enemy goal
+kill          = 0.1          # each kill
+death         = 0.1          # each death (subtracted)
+time_penalty  = 0.0005       # tiny per-tick nudge against stalling
+bootstrap_truncation = false # leave false for this win-focused task
+
+[logging]
+dir          = "runs/run1"   # this run's folder (logs + checkpoints + final model)
+save_every   = 200000        # checkpoint every N steps
+eval_every   = 100000        # grade the policy every N steps
+eval_episodes = 24           # matches per grade

@@ -54,11 +54,6 @@ export function areHostile(a: SimCombatant, b: SimCombatant): boolean {
   return a.id !== b.id && a.team !== b.team;
 }
 
-function windupDuration(c: SimCombatant, settings: UniversalSettings): number {
-  if (c.weapon === 'sword') return settings.swordSlashSpeed ?? 0.22;
-  return settings.hammerMeleeSpeed ?? 0.24;
-}
-
 function recoverDuration(c: SimCombatant, settings: UniversalSettings): number {
   if (c.weapon === 'sword') return settings.swordSlashReload ?? 0.6;
   return settings.hammerMeleeReload ?? 0.5;
@@ -67,6 +62,16 @@ function recoverDuration(c: SimCombatant, settings: UniversalSettings): number {
 function meleeReach(c: SimCombatant): number {
   if (c.weapon === 'sword') return MELEE_SWORD_SLASH_REACH;
   return MELEE_HAMMER_SWIPE_REACH; // hammer & ball-punch share the swipe reach
+}
+
+/** Hammer-strike forward distance (live-tunable `attackRange`). */
+function strikeRange(settings: UniversalSettings): number {
+  return settings.attackRange ?? 3.2;
+}
+
+/** Hammer-strike splash radius (live-tunable `attackRadius`). */
+function strikeRadius(settings: UniversalSettings): number {
+  return settings.attackRadius ?? 4.5;
 }
 
 /** Apply 1 lethal-by-default damage to a victim; records death + drops ball + respawn. */
@@ -112,12 +117,63 @@ export function inMeleeHitVolume(attacker: SimCombatant, victim: SimCombatant): 
   return dot >= MELEE_CONE_COS;
 }
 
-/** Resolve a melee/punch strike from `attacker` at its active frame. */
+/**
+ * Hammer primary-strike AoE test, faithful to `applyHammerStrikeImpactForState`: an impact
+ * point is projected `attackRange` ahead of the attacker's eye along its facing, and every
+ * hostile whose body center is within `attackRadius` of that point is hit (a splash sphere,
+ * not a cone). Wires the live-tunable `attackRange` / `attackRadius`.
+ */
+export function inHammerStrikeVolume(
+  attacker: SimCombatant,
+  victim: SimCombatant,
+  settings: UniversalSettings
+): boolean {
+  const fwd = forwardDir(attacker.yaw); // y = 0 (no pitch)
+  const ix = attacker.pos.x + fwd.x * strikeRange(settings);
+  const iy = attacker.pos.y + MELEE_EYE_HEIGHT; // impact y = eye height (look heading is planar)
+  const iz = attacker.pos.z + fwd.z * strikeRange(settings);
+  const cy = victim.pos.y + (victim.isCrouching ? CROUCH_BODY_CENTER_HEIGHT : BODY_CENTER_HEIGHT);
+  const dx = victim.pos.x - ix;
+  const dy = cy - iy;
+  const dz = victim.pos.z - iz;
+  return Math.sqrt(dx * dx + dy * dy + dz * dz) <= strikeRadius(settings);
+}
+
+/** Resolve a swipe/slash/punch cone hit from `attacker` at its active frame. */
 function resolveMeleeHit(state: SimState, attacker: SimCombatant, events: KillEvent[]): void {
   for (const v of state.combatants) {
     if (!v.alive || !areHostile(attacker, v)) continue;
     if (v.invulnerabilityTimer > 0) continue;
     if (inMeleeHitVolume(attacker, v)) strike(state, attacker, v, events);
+  }
+}
+
+/** Resolve the hammer primary AoE strike (splash around a projected impact point). */
+function resolveHammerStrike(
+  state: SimState,
+  attacker: SimCombatant,
+  settings: UniversalSettings,
+  events: KillEvent[]
+): void {
+  for (const v of state.combatants) {
+    if (!v.alive || !areHostile(attacker, v)) continue;
+    if (v.invulnerabilityTimer > 0) continue;
+    if (inHammerStrikeVolume(attacker, v, settings)) strike(state, attacker, v, events);
+  }
+}
+
+/** Wind-up time before an attack's active frame, by kind. */
+function windupForKind(kind: SimCombatant['attackKind'], settings: UniversalSettings): number {
+  if (kind === 'slash') return settings.swordSlashSpeed ?? 0.22;
+  return settings.hammerMeleeSpeed ?? 0.24; // strike / swipe / punch share the hammer swing speed
+}
+
+/** Recovery (and re-attack cooldown) after an attack lands, by kind. */
+function recoverForKind(kind: SimCombatant['attackKind'], settings: UniversalSettings): number {
+  switch (kind) {
+    case 'strike': return settings.hammerReloadTime ?? 0.6; // hammer PRIMARY reload (live-tunable)
+    case 'slash': return settings.swordSlashReload ?? 0.6;
+    default: return settings.hammerMeleeReload ?? 0.5;       // swipe / punch
   }
 }
 
@@ -170,26 +226,28 @@ export function stepCombatantWeapons(
 
   switch (c.weaponState) {
     case 'idle': {
-      // Sword secondary = lunge; ball secondary = pass (handled in grifball.ts).
-      if (action.attackSecondary && c.weapon === 'sword' && c.attackCooldown <= 0) {
-        startLunge(c, settings);
-        return;
+      // Secondary: sword = lunge, hammer = quick swipe, ball = pass (handled in grifball.ts).
+      if (action.attackSecondary && c.attackCooldown <= 0) {
+        if (c.weapon === 'sword') { startLunge(c, settings); return; }
+        if (c.weapon === 'hammer') { beginAttack(c, 'swipe', settings); return; }
       }
-      // Primary swing/slash/punch.
+      // Primary: hammer = AoE strike, sword = slash, ball = punch.
       if (action.attackPrimary && c.attackCooldown <= 0) {
-        c.weaponState = 'windup';
-        c.weaponTimer = windupDuration(c, settings);
+        const kind = c.weapon === 'hammer' ? 'strike' : c.weapon === 'sword' ? 'slash' : 'punch';
+        beginAttack(c, kind, settings);
       }
       break;
     }
     case 'windup': {
       c.weaponTimer -= dt;
       if (c.weaponTimer <= 0) {
-        // The single active hit frame.
-        resolveMeleeHit(state, c, events);
+        // The single active hit frame — geometry depends on the attack kind.
+        if (c.attackKind === 'strike') resolveHammerStrike(state, c, settings, events);
+        else resolveMeleeHit(state, c, events);
         c.weaponState = 'recovering';
-        c.weaponTimer = recoverDuration(c, settings);
+        c.weaponTimer = recoverForKind(c.attackKind, settings);
         c.attackCooldown = c.weaponTimer;
+        c.attackKind = 'none';
       }
       break;
     }
@@ -207,8 +265,20 @@ export function stepCombatantWeapons(
   }
 }
 
+/** Enter the wind-up phase for a (non-lunge) attack kind. */
+function beginAttack(
+  c: SimCombatant,
+  kind: SimCombatant['attackKind'],
+  settings: UniversalSettings
+): void {
+  c.attackKind = kind;
+  c.weaponState = 'windup';
+  c.weaponTimer = windupForKind(kind, settings);
+}
+
 function startLunge(c: SimCombatant, settings: UniversalSettings): void {
   c.isLunging = true;
+  c.attackKind = 'none';
   c.weaponState = 'active';
   const dist = settings.swordLungeDistance ?? 14.5;
   const speed = settings.swordLungeSpeed ?? 24.0;
@@ -246,6 +316,7 @@ export function respawnCombatant(state: SimState, c: SimCombatant, settings: Uni
   c.weapon = 'hammer';
   c.weaponState = 'idle';
   c.weaponTimer = 0;
+  c.attackKind = 'none';
   c.isJumping = false;
   c.isLunging = false;
   c.lungeTimer = 0;

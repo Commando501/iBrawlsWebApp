@@ -44,8 +44,16 @@ class GrifballVecEnv(VecEnv):
         base_seed: int = 1,
         max_ticks: int | None = None,
         bootstrap_truncation: bool = False,
+        mode: str = "grifball",        # 'grifball' | 'combat'
+        combat_world_sizes: list[int] | None = None,
+        combat_kill_range: tuple[int, int] | None = None,
+        combat_randomize_layout: bool = True,
         node_cmd: Sequence[str] | None = None,
     ) -> None:
+        self.mode = mode
+        # Combat is pure self-play (one shared policy plays every role in every world).
+        if mode == "combat":
+            opponent = "self"
         self.opponent = opponent
         self.learner_team = learner_team
         # Whether a maxTicks truncation bootstraps its value (SB3 TimeLimit.truncated).
@@ -70,13 +78,19 @@ class GrifballVecEnv(VecEnv):
         # Resolve which agent slots the opponent controls server-side.
         # We must know agentTeams to pick them, but that's in the handshake — so do a
         # two-pass handshake: send a probe config, read header, then we already know teams.
-        probe_cfg = {"numEnvs": num_envs, "baseSeed": base_seed}
+        probe_cfg: dict = {"numEnvs": num_envs, "baseSeed": base_seed, "mode": mode}
         if settings:
             probe_cfg["settings"] = settings
         if reward:
             probe_cfg["reward"] = reward
         if max_ticks is not None:
             probe_cfg["maxTicks"] = max_ticks
+        if mode == "combat":
+            if combat_world_sizes:
+                probe_cfg["worldSizes"] = combat_world_sizes
+            if combat_kill_range:
+                probe_cfg["killTargetRange"] = list(combat_kill_range)
+            probe_cfg["randomizeLayout"] = combat_randomize_layout
         # First handshake to learn agentTeams (no builtin yet).
         header = self._handshake(probe_cfg)
         self.agent_ids: list[str] = header["agentIds"]

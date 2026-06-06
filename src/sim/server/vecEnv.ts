@@ -36,7 +36,7 @@ export interface VecEnvConfig {
   baseSeed?: number;
   teamSizes?: { blue: number; red: number };
   settings?: Partial<UniversalSettings>;
-  reward?: RewardConfig;
+  reward?: Partial<RewardConfig>;
   /** Agent indices (0-based, roster order) driven by a built-in opponent policy. */
   builtinAgents?: number[];
   /** Which built-in policy drives `builtinAgents`. Default 'heuristic'. */
@@ -60,6 +60,7 @@ export interface VecStepResult {
 }
 
 export class VecEnv {
+  readonly mode = 'grifball' as const;
   readonly numEnvs: number;
   readonly numAgents: number;
   readonly obsDim = OBS_DIM;
@@ -95,7 +96,8 @@ export class VecEnv {
     this.agentTeams = this.agentIds.map((id) => resolveGrifballTeam(id));
     this.numAgents = this.agentIds.length;
     this.settings = resolveSimSettings(config.settings);
-    this.reward = config.reward ?? DEFAULT_REWARD_CONFIG;
+    // Merge over defaults so a partial reward config can't leave a weight undefined (NaN).
+    this.reward = { ...DEFAULT_REWARD_CONFIG, ...(config.reward ?? {}) };
     this.builtin = new Set(config.builtinAgents ?? []);
     this.builtinPolicy = config.builtinPolicy === 'random' ? randomPolicy : heuristicPolicy;
     this.maxTicks = config.maxTicks ?? 60 * 60 * 30;

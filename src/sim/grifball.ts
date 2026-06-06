@@ -98,6 +98,7 @@ export function placeCombatantsAtSpawns(state: SimState, settings: UniversalSett
     c.weapon = 'hammer';
     c.weaponState = 'idle';
     c.weaponTimer = 0;
+    c.attackKind = 'none';
     c.hasBall = false;
     c.isLunging = false;
     c.lungeTimer = 0;

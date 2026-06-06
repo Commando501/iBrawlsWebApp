@@ -7,11 +7,512 @@ type JoystickVector = {
   y: number;
 };
 
+type MutableRef<T> = { current: T };
+type MousePosition = { x: number; y: number };
+
+type PlayerWeaponInputCallbacks = {
+  triggerPlayerHammerSwing: () => void;
+  triggerPlayerHammerMelee: () => void;
+  triggerPlayerPistolFire: () => void;
+  triggerPlayerSwordSlash: () => void;
+  triggerPlayerSwordLunge: () => void;
+};
+
+type PlayerKeyboardActionCallbacks = {
+  onPauseToggle: () => void;
+  swapPlayerWeapon: (type: 'hammer' | 'sword') => void;
+  recordDashObservation: (dashDir: THREE.Vector3) => void;
+  spawnVoxelShockwaveParticles: (impactCenter: THREE.Vector3, color: string) => void;
+  pushStatsUpdate: () => void;
+  playCrouch: () => void;
+  playJump: () => void;
+  playDash: () => void;
+};
+
 const LOOK_PITCH_LIMIT = Math.PI / 2.3;
 const GAMEPAD_DEADZONE = 0.18;
+const MOUSE_BUTTON_BINDINGS: Record<number, string> = { 0: 'lmb', 2: 'rmb', 1: 'mmb' };
 
 function clampPitch(pitch: number): number {
   return Math.max(-LOOK_PITCH_LIMIT, Math.min(LOOK_PITCH_LIMIT, pitch));
+}
+
+function applyLookDeltaForState({
+  state,
+  deltaX,
+  deltaY,
+  sensitivity,
+}: {
+  state: GrifballRuntimeState;
+  deltaX: number;
+  deltaY: number;
+  sensitivity: number;
+}): void {
+  state.yaw -= deltaX * sensitivity;
+  state.pitch -= deltaY * sensitivity;
+  state.pitch = clampPitch(state.pitch);
+}
+
+export function applyPointerLockMouseLookForState({
+  state,
+  movementX,
+  movementY,
+  mouseSensitivity,
+  mouseAcceleration,
+}: {
+  state: GrifballRuntimeState;
+  movementX: number;
+  movementY: number;
+  mouseSensitivity: number;
+  mouseAcceleration: number;
+}): void {
+  const baseSens = 0.0022 * mouseSensitivity;
+  const applyAccel = (delta: number) => {
+    if (mouseAcceleration === 0) return delta * baseSens;
+    const sign = delta < 0 ? -1 : 1;
+    return sign * Math.pow(Math.abs(delta), 1 + mouseAcceleration * 0.5) * baseSens;
+  };
+
+  state.yaw -= applyAccel(movementX);
+  state.pitch -= applyAccel(movementY);
+  state.pitch = clampPitch(state.pitch);
+}
+
+export function applyDragMouseLookForState({
+  state,
+  deltaX,
+  deltaY,
+  mouseSensitivity,
+}: {
+  state: GrifballRuntimeState;
+  deltaX: number;
+  deltaY: number;
+  mouseSensitivity: number;
+}): void {
+  applyLookDeltaForState({
+    state,
+    deltaX,
+    deltaY,
+    sensitivity: 0.005 * mouseSensitivity,
+  });
+}
+
+export function applyTouchSwipeLookForState({
+  state,
+  deltaX,
+  deltaY,
+  mouseSensitivity,
+}: {
+  state: GrifballRuntimeState;
+  deltaX: number;
+  deltaY: number;
+  mouseSensitivity: number;
+}): void {
+  applyLookDeltaForState({
+    state,
+    deltaX,
+    deltaY,
+    sensitivity: 0.003 * mouseSensitivity,
+  });
+}
+
+export function createPlayerLookInputHandlersForState({
+  canvas,
+  getState,
+  getKeybindings,
+  isPlaying,
+  isPaused,
+  isPointerLocked,
+  isMouseDown,
+  lastMousePos,
+  setShowPointerLockAlert,
+}: {
+  canvas: HTMLCanvasElement;
+  getState: () => GrifballRuntimeState;
+  getKeybindings: () => Keybindings;
+  isPlaying: () => boolean;
+  isPaused: () => boolean;
+  isPointerLocked: MutableRef<boolean>;
+  isMouseDown: MutableRef<boolean>;
+  lastMousePos: MutableRef<MousePosition>;
+  setShowPointerLockAlert: (show: boolean) => void;
+}) {
+  let lookTouchId: number | null = null;
+  let lastTouchX = 0;
+  let lastTouchY = 0;
+
+  const handlePointerLockChange = () => {
+    if (document.pointerLockElement === canvas) {
+      isPointerLocked.current = true;
+      setShowPointerLockAlert(false);
+    } else {
+      isPointerLocked.current = false;
+      setShowPointerLockAlert(true);
+    }
+  };
+
+  const handleMouseMove = (e: MouseEvent) => {
+    if (!isPlaying() || isPaused()) return;
+
+    if (isPointerLocked.current) {
+      const keybindings = getKeybindings();
+      applyPointerLockMouseLookForState({
+        state: getState(),
+        movementX: e.movementX,
+        movementY: e.movementY,
+        mouseSensitivity: keybindings.mouseSensitivity ?? 1.0,
+        mouseAcceleration: keybindings.mouseAcceleration ?? 0.0,
+      });
+    } else if (isMouseDown.current) {
+      const dx = e.clientX - lastMousePos.current.x;
+      const dy = e.clientY - lastMousePos.current.y;
+
+      applyDragMouseLookForState({
+        state: getState(),
+        deltaX: dx,
+        deltaY: dy,
+        mouseSensitivity: getKeybindings().mouseSensitivity ?? 1.0,
+      });
+
+      lastMousePos.current = { x: e.clientX, y: e.clientY };
+    }
+  };
+
+  const handleMouseDownFallback = (e: MouseEvent) => {
+    if (!isPointerLocked.current) {
+      isMouseDown.current = true;
+      lastMousePos.current = { x: e.clientX, y: e.clientY };
+    }
+  };
+
+  const handleMouseUpFallback = () => {
+    isMouseDown.current = false;
+  };
+
+  const handleTouchStart = (e: TouchEvent) => {
+    if (isPaused() || !isPlaying()) return;
+    for (let i = 0; i < e.changedTouches.length; i++) {
+      const touch = e.changedTouches[i];
+      if (touch.clientX > window.innerWidth / 2 && lookTouchId === null) {
+        lookTouchId = touch.identifier;
+        lastTouchX = touch.clientX;
+        lastTouchY = touch.clientY;
+      }
+    }
+  };
+
+  const handleTouchMove = (e: TouchEvent) => {
+    if (isPaused() || !isPlaying() || lookTouchId === null) return;
+    for (let i = 0; i < e.touches.length; i++) {
+      const touch = e.touches[i];
+      if (touch.identifier === lookTouchId) {
+        const dx = touch.clientX - lastTouchX;
+        const dy = touch.clientY - lastTouchY;
+
+        applyTouchSwipeLookForState({
+          state: getState(),
+          deltaX: dx,
+          deltaY: dy,
+          mouseSensitivity: getKeybindings().mouseSensitivity ?? 1.0,
+        });
+
+        lastTouchX = touch.clientX;
+        lastTouchY = touch.clientY;
+      }
+    }
+  };
+
+  const handleTouchEnd = (e: TouchEvent) => {
+    if (lookTouchId === null) return;
+    for (let i = 0; i < e.changedTouches.length; i++) {
+      const touch = e.changedTouches[i];
+      if (touch.identifier === lookTouchId) {
+        lookTouchId = null;
+      }
+    }
+  };
+
+  return {
+    handlePointerLockChange,
+    handleMouseMove,
+    handleMouseDownFallback,
+    handleMouseUpFallback,
+    handleTouchStart,
+    handleTouchMove,
+    handleTouchEnd,
+  };
+}
+
+export function triggerPointerPrimaryPlayerActionForState({
+  state,
+  callbacks,
+}: {
+  state: GrifballRuntimeState;
+  callbacks: Pick<
+    PlayerWeaponInputCallbacks,
+    'triggerPlayerHammerSwing' | 'triggerPlayerPistolFire' | 'triggerPlayerSwordLunge'
+  >;
+}): void {
+  if (state.playerHP <= 0) return;
+
+  if (state.activeWeapon === 'ball' || state.activeWeapon === 'hammer') {
+    if (state.pWeaponReady && state.pWeaponState === 'ready' && state.playerDashRemaining <= 0) {
+      callbacks.triggerPlayerHammerSwing();
+    }
+  } else if (state.activeWeapon === 'pistol') {
+    if (state.pPistolReady && state.pPistolState === 'ready') {
+      callbacks.triggerPlayerPistolFire();
+    }
+  } else if (state.crosshairColor === 'red' && state.pSwordReady && state.pSwordState === 'ready' && !state.isLunging) {
+    callbacks.triggerPlayerSwordLunge();
+  }
+}
+
+export function triggerPointerAltPlayerActionForState({
+  state,
+  ballChargingRef,
+  ballChargeTimerRef,
+  callbacks,
+}: {
+  state: GrifballRuntimeState;
+  ballChargingRef: MutableRef<boolean>;
+  ballChargeTimerRef: MutableRef<number>;
+  callbacks: Pick<PlayerWeaponInputCallbacks, 'triggerPlayerHammerMelee' | 'triggerPlayerSwordSlash'>;
+}): void {
+  if (state.playerHP <= 0) return;
+
+  if (state.activeWeapon === 'ball') {
+    if (state.grifball.ball.holderId === 'player') {
+      ballChargingRef.current = true;
+      ballChargeTimerRef.current = 0;
+    }
+  } else if (state.activeWeapon === 'sword') {
+    if (state.pSwordReady && state.pSwordState === 'ready' && !state.isLunging) {
+      callbacks.triggerPlayerSwordSlash();
+    }
+  } else if (state.activeWeapon === 'hammer' && state.pWeaponReady && state.pWeaponState === 'ready' && state.playerDashRemaining <= 0) {
+    callbacks.triggerPlayerHammerMelee();
+  }
+}
+
+export function triggerMobilePrimaryPlayerActionForState({
+  state,
+  callbacks,
+}: {
+  state: GrifballRuntimeState;
+  callbacks: Pick<
+    PlayerWeaponInputCallbacks,
+    'triggerPlayerHammerSwing' | 'triggerPlayerPistolFire' | 'triggerPlayerSwordLunge'
+  >;
+}): void {
+  if (state.playerHP <= 0) return;
+
+  if (state.activeWeapon === 'hammer') {
+    if (state.pWeaponReady && state.pWeaponState === 'ready' && state.playerDashRemaining <= 0) {
+      callbacks.triggerPlayerHammerSwing();
+    }
+  } else if (state.activeWeapon === 'pistol') {
+    if (state.pPistolReady && state.pPistolState === 'ready') {
+      callbacks.triggerPlayerPistolFire();
+    }
+  } else if (state.crosshairColor === 'red' && state.pSwordReady && state.pSwordState === 'ready' && !state.isLunging) {
+    callbacks.triggerPlayerSwordLunge();
+  }
+}
+
+export function triggerMobileAltPlayerActionForState({
+  state,
+  callbacks,
+}: {
+  state: GrifballRuntimeState;
+  callbacks: Pick<PlayerWeaponInputCallbacks, 'triggerPlayerHammerMelee' | 'triggerPlayerSwordSlash'>;
+}): void {
+  if (state.playerHP <= 0) return;
+
+  if (state.activeWeapon === 'sword') {
+    if (state.pSwordReady && state.pSwordState === 'ready' && !state.isLunging) {
+      callbacks.triggerPlayerSwordSlash();
+    }
+  } else if (state.activeWeapon === 'hammer' && state.pWeaponReady && state.pWeaponState === 'ready' && state.playerDashRemaining <= 0) {
+    callbacks.triggerPlayerHammerMelee();
+  }
+}
+
+export function handlePointerPlayerActionInputForState({
+  state,
+  button,
+  keybindings,
+  ballChargingRef,
+  ballChargeTimerRef,
+  callbacks,
+}: {
+  state: GrifballRuntimeState;
+  button: number;
+  keybindings: Keybindings;
+  ballChargingRef: MutableRef<boolean>;
+  ballChargeTimerRef: MutableRef<number>;
+  callbacks: PlayerWeaponInputCallbacks;
+}): void {
+  const clickedBtn = MOUSE_BUTTON_BINDINGS[button] || '';
+  if (clickedBtn === keybindings.attack) {
+    triggerPointerPrimaryPlayerActionForState({ state, callbacks });
+  } else if (clickedBtn === keybindings.altAttack) {
+    triggerPointerAltPlayerActionForState({
+      state,
+      ballChargingRef,
+      ballChargeTimerRef,
+      callbacks,
+    });
+  }
+}
+
+export function handlePointerPlayerActionReleaseForState({
+  button,
+  keybindings,
+  ballChargingRef,
+  throwPlayerPass,
+}: {
+  button: number;
+  keybindings: Keybindings;
+  ballChargingRef: MutableRef<boolean>;
+  throwPlayerPass: () => void;
+}): void {
+  const releasedBtn = MOUSE_BUTTON_BINDINGS[button] || '';
+  if (releasedBtn === keybindings.altAttack && ballChargingRef.current) {
+    throwPlayerPass();
+  }
+}
+
+export function cyclePlayerWheelWeaponForState({
+  state,
+  swapPlayerWeapon,
+}: {
+  state: GrifballRuntimeState;
+  swapPlayerWeapon: (type: 'hammer' | 'sword') => void;
+}): void {
+  if (state.playerHP <= 0 || state.isLunging) return;
+  const next = state.activeWeapon === 'hammer' ? 'sword' : 'hammer';
+  swapPlayerWeapon(next);
+}
+
+export function handlePlayerKeyboardActionForState({
+  state,
+  key,
+  rawKey,
+  repeat,
+  keybindings,
+  keysPressed,
+  isPaused,
+  isPlaying,
+  callbacks,
+}: {
+  state: GrifballRuntimeState;
+  key: string;
+  rawKey: string;
+  repeat: boolean;
+  keybindings: Keybindings;
+  keysPressed: Record<string, boolean>;
+  isPaused: boolean;
+  isPlaying: boolean;
+  callbacks: PlayerKeyboardActionCallbacks;
+}): void {
+  if (rawKey === 'Escape') {
+    callbacks.onPauseToggle();
+  }
+
+  if (key === keybindings.crouch) {
+    state.isCrouching = true;
+    callbacks.playCrouch();
+  }
+
+  if (key === keybindings.scoreboard) {
+    state.showScoreboard = true;
+    callbacks.pushStatsUpdate();
+  }
+
+  if (key === keybindings.weapon1) {
+    callbacks.swapPlayerWeapon('hammer');
+  }
+  if (key === keybindings.weapon2) {
+    callbacks.swapPlayerWeapon('sword');
+  }
+
+  if (key === keybindings.jump || key === 'spacebar') {
+    if (state.playerHP > 0 && !isPaused && isPlaying) {
+      const limit = state.settings.hammerJumpAirLimit ?? 1;
+      const withinLimit = limit === 10 || (state.pHammerJumpsInAir ?? 0) < limit;
+
+      if (state.pHammerJumpWindowTimer > 0 && limit > 0 && withinLimit) {
+        const gate = state.settings.hammerJumpInputGate ?? 0;
+        const elapsed = (state.settings.hammerJumpWindow ?? 0.6) - state.pHammerJumpWindowTimer;
+        const passesGate = gate === 0 || (!repeat && elapsed <= gate);
+
+        if (passesGate) {
+          state.isJumping = true;
+          state.playerVel.y = 7.2 + (state.settings.hammerJumpPower ?? 6.5);
+          state.pHammerJumpWindowTimer = 0;
+          state.pHammerJumpsInAir = (state.pHammerJumpsInAir ?? 0) + 1;
+          callbacks.playJump();
+          callbacks.spawnVoxelShockwaveParticles(state.playerPos, '#f59e0b');
+          return;
+        }
+      }
+
+      if (!state.isJumping) {
+        state.isJumping = true;
+        state.playerVel.y = 7.2;
+        callbacks.playJump();
+      }
+    }
+  }
+
+  if (key === keybindings.dash) {
+    if (state.playerHP > 0 && !isPaused && isPlaying && state.playerDashCooldownTimer <= 0 && state.playerDashRemaining <= 0) {
+      let fMove = 0;
+      let rMove = 0;
+      if (keysPressed[keybindings.moveForward] || keysPressed['arrowup']) fMove += 1;
+      if (keysPressed[keybindings.moveBackward] || keysPressed['arrowdown']) fMove -= 1;
+      if (keysPressed[keybindings.moveRight] || keysPressed['arrowright']) rMove += 1;
+      if (keysPressed[keybindings.moveLeft] || keysPressed['arrowleft']) rMove -= 1;
+
+      const forwardDir = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), state.yaw);
+      const rightDir = new THREE.Vector3(1, 0, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), state.yaw);
+
+      const dDir = new THREE.Vector3(0, 0, 0);
+      if (fMove !== 0 || rMove !== 0) {
+        dDir.addScaledVector(forwardDir, fMove).addScaledVector(rightDir, rMove).normalize();
+      } else {
+        dDir.copy(forwardDir).normalize();
+      }
+
+      state.playerDashDir.copy(dDir);
+      state.playerDashRemaining = state.settings.dashDuration || 0.25;
+      state.playerDashCooldownTimer = state.settings.dashCooldown || 2.0;
+      callbacks.recordDashObservation(dDir);
+      callbacks.playDash();
+    }
+  }
+}
+
+export function handlePlayerKeyboardReleaseForState({
+  state,
+  key,
+  keybindings,
+  pushStatsUpdate,
+}: {
+  state: GrifballRuntimeState;
+  key: string;
+  keybindings: Keybindings;
+  pushStatsUpdate: () => void;
+}): void {
+  if (key === keybindings.crouch) {
+    state.isCrouching = false;
+  }
+
+  if (key === keybindings.scoreboard) {
+    state.showScoreboard = false;
+    pushStatsUpdate();
+  }
 }
 
 export function getPrimaryGamepad(): Gamepad | null {

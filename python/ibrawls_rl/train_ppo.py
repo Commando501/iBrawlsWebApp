@@ -1,22 +1,21 @@
-"""PPO training entry point (Stable-Baselines3 baseline).
+"""PPO training (Stable-Baselines3). Config-driven via :class:`TrainConfig`.
 
-Trains a shared policy for the learner team against the sim's built-in heuristic opponent
-— the fast path to the plan's learning-signal check (Verification #7): win-rate / goal-diff
-vs heuristic should rise on TensorBoard. Checkpoints + a periodic eval callback included.
+Beginner path: edit ``config.toml`` and run ``python -m ibrawls_rl.train``.
+Advanced path: ``python -m ibrawls_rl.train_ppo --opponent random --steps 2000000 ...`` (flags).
 
-    python -m ibrawls_rl.train_ppo --num-envs 32 --steps 2000000
-
-The CleanRL self-play variant (frozen-snapshot league via ``selfplay.py``) is the
-customizable path for league logic; this SB3 script is the baseline.
+Both build a :class:`TrainConfig` and call :func:`run_training`. Every resolved setting is
+printed and written to the TensorBoard "TEXT" tab so each run documents itself.
 """
 from __future__ import annotations
 
 import argparse
 import os
+import shutil
 
 from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import CheckpointCallback
 
+from .config import TrainConfig, reward_dict, settings_markdown
 from .envs.grifball_vec_env import GrifballVecEnv
 from .eval import eval_vs
 from .policies import sb3_policy_kwargs
@@ -46,78 +45,126 @@ except Exception:  # pragma: no cover
     EvalCallback = None  # type: ignore
 
 
-def main() -> None:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--num-envs", type=int, default=32)
-    ap.add_argument("--steps", type=int, default=2_000_000)
-    ap.add_argument("--n-steps", type=int, default=256, help="rollout length per sub-env")
-    ap.add_argument("--batch-size", type=int, default=8192)
-    ap.add_argument("--lr", type=float, default=3e-4)
-    ap.add_argument("--goal-target", type=int, default=3)
-    ap.add_argument("--opponent", type=str, default="heuristic",
-                    choices=["heuristic", "random", "self"])
-    ap.add_argument("--bootstrap-truncation", action="store_true",
-                    help="bootstrap value on maxTicks truncations (default off; "
-                         "empirically slower for this win-oriented task)")
-    ap.add_argument("--logdir", type=str, default="runs/ppo_grifball")
-    ap.add_argument("--save-every", type=int, default=200_000)
-    ap.add_argument("--eval-every", type=int, default=100_000)
-    ap.add_argument("--eval-episodes", type=int, default=20)
-    # GPU / network scale. A small MLP is faster on CPU (SB3's own advice); the GPU only
-    # pays off with a larger net + big batches, so scale --policy-width/-depth with --device cuda.
-    ap.add_argument("--device", type=str, default="auto", choices=["auto", "cpu", "cuda"])
-    ap.add_argument("--policy-width", type=int, default=256)
-    ap.add_argument("--policy-depth", type=int, default=2)
-    args = ap.parse_args()
+def _log_settings(cfg: TrainConfig) -> None:
+    """Print the labeled settings table and write it to the TB TEXT tab + a file."""
+    table = settings_markdown(cfg)
+    print("\n===== run settings =====")
+    print(table)
+    print("========================\n")
+    try:
+        from torch.utils.tensorboard import SummaryWriter
+        w = SummaryWriter(log_dir=cfg.logdir)
+        w.add_text("settings", table.replace("\n", "  \n"))  # markdown linebreaks
+        w.close()
+    except Exception:
+        pass
+    with open(os.path.join(cfg.logdir, "settings.md"), "w", encoding="utf-8") as f:
+        f.write(table + "\n")
 
-    os.makedirs(args.logdir, exist_ok=True)
+
+def run_training(cfg: TrainConfig) -> str:
+    """Run one training job from a fully-resolved config. Returns the saved model path."""
+    os.makedirs(cfg.logdir, exist_ok=True)
 
     import torch
-    if args.device == "cuda" and not torch.cuda.is_available():
+    if cfg.device == "cuda" and not torch.cuda.is_available():
         raise SystemExit(
-            "CUDA requested but torch.cuda.is_available() is False. The venv has a CPU-only "
-            "torch build — reinstall a CUDA build (see python/README.md), e.g.:\n"
+            "device='cuda' but torch.cuda.is_available() is False. The venv has a CPU-only "
+            "torch build — install a CUDA build (see python/README.md):\n"
             "  pip install --force-reinstall torch --index-url https://download.pytorch.org/whl/cu124"
         )
-    if args.device in ("auto", "cuda") and torch.cuda.is_available():
+    if cfg.device in ("auto", "cuda") and torch.cuda.is_available():
         print(f"[train] CUDA device: {torch.cuda.get_device_name(0)}")
 
-    env = GrifballVecEnv(
-        num_envs=args.num_envs,
-        opponent=args.opponent,
-        settings={"grifballGoalTarget": args.goal_target},
-        max_ticks=60 * 60 * 6,
-        bootstrap_truncation=args.bootstrap_truncation,
-    )
+    _log_settings(cfg)
+    # Keep a copy of the exact config that produced this run, if it exists.
+    if os.path.exists("config.toml"):
+        try:
+            shutil.copy("config.toml", os.path.join(cfg.logdir, "config_used.toml"))
+        except Exception:
+            pass
+
+    if cfg.mode == "combat":
+        env = GrifballVecEnv(
+            mode="combat",
+            reward=reward_dict(cfg),
+            base_seed=cfg.seed,
+            max_ticks=int(60 * 60 * cfg.match_minutes),
+            bootstrap_truncation=cfg.bootstrap_truncation,
+            combat_world_sizes=cfg.combat_world_sizes,
+            combat_kill_range=(cfg.combat_kill_min, cfg.combat_kill_max),
+            combat_randomize_layout=cfg.combat_randomize_layout,
+        )
+    else:
+        env = GrifballVecEnv(
+            num_envs=cfg.parallel_matches,
+            opponent=cfg.opponent,
+            settings={"grifballGoalTarget": cfg.goal_target},
+            reward=reward_dict(cfg),
+            base_seed=cfg.seed,
+            max_ticks=int(60 * 60 * cfg.match_minutes),
+            bootstrap_truncation=cfg.bootstrap_truncation,
+        )
 
     model = PPO(
         "MlpPolicy",
         env,
-        n_steps=args.n_steps,
-        batch_size=args.batch_size,
-        learning_rate=args.lr,
-        gamma=0.997,
-        gae_lambda=0.95,
-        ent_coef=0.01,
-        vf_coef=0.5,
-        clip_range=0.2,
-        policy_kwargs=sb3_policy_kwargs(width=args.policy_width, depth=args.policy_depth),
-        tensorboard_log=args.logdir,
-        device=args.device,
+        n_steps=cfg.rollout_length,
+        batch_size=cfg.batch_size,
+        learning_rate=cfg.learning_rate,
+        gamma=cfg.gamma,
+        gae_lambda=cfg.gae_lambda,
+        ent_coef=cfg.entropy_coef,
+        vf_coef=cfg.value_coef,
+        clip_range=cfg.clip_range,
+        seed=cfg.seed,
+        policy_kwargs=sb3_policy_kwargs(width=cfg.width, depth=cfg.depth),
+        tensorboard_log=cfg.logdir,
+        device=cfg.device,
         verbose=1,
     )
 
-    callbacks = [CheckpointCallback(save_freq=max(1, args.save_every // args.num_envs),
-                                    save_path=os.path.join(args.logdir, "checkpoints"),
-                                    name_prefix="ppo_grifball")]
-    if EvalCallback is not None:
-        callbacks.append(EvalCallback(args.eval_every, args.eval_episodes, args.opponent))
+    callbacks = [CheckpointCallback(
+        save_freq=max(1, cfg.save_every // cfg.parallel_matches),
+        save_path=os.path.join(cfg.logdir, "checkpoints"),
+        name_prefix="ppo_grifball",
+    )]
+    # Grifball gets a win-rate-vs-opponent eval. Combat is self-play (no fixed opponent to
+    # grade against mid-run); use `evaluate.py --mode combat` for an on-demand vs-random grade.
+    if EvalCallback is not None and cfg.mode != "combat":
+        callbacks.append(EvalCallback(cfg.eval_every, cfg.eval_episodes, cfg.opponent))
 
+    saved = os.path.join(cfg.logdir, "final_model")
     try:
-        model.learn(total_timesteps=args.steps, callback=callbacks, progress_bar=True)
-        model.save(os.path.join(args.logdir, "final_model"))
+        model.learn(total_timesteps=cfg.total_steps, callback=callbacks, progress_bar=True)
+        model.save(saved)
     finally:
         env.close()
+    return saved + ".zip"
+
+
+def main() -> None:
+    """Advanced flag-based entry point (config.toml is the friendly path)."""
+    d = TrainConfig()
+    ap = argparse.ArgumentParser(description="PPO trainer (flags override TrainConfig defaults).")
+    ap.add_argument("--opponent", default=d.opponent, choices=["random", "self", "heuristic"])
+    ap.add_argument("--steps", type=int, default=d.total_steps, dest="total_steps")
+    ap.add_argument("--num-envs", type=int, default=d.parallel_matches, dest="parallel_matches")
+    ap.add_argument("--goal-target", type=int, default=d.goal_target)
+    ap.add_argument("--n-steps", type=int, default=d.rollout_length, dest="rollout_length")
+    ap.add_argument("--batch-size", type=int, default=d.batch_size)
+    ap.add_argument("--lr", type=float, default=d.learning_rate, dest="learning_rate")
+    ap.add_argument("--device", default=d.device, choices=["auto", "cpu", "cuda"])
+    ap.add_argument("--policy-width", type=int, default=d.width, dest="width")
+    ap.add_argument("--policy-depth", type=int, default=d.depth, dest="depth")
+    ap.add_argument("--bootstrap-truncation", action="store_true", default=d.bootstrap_truncation)
+    ap.add_argument("--logdir", default=d.logdir)
+    ap.add_argument("--eval-every", type=int, default=d.eval_every)
+    ap.add_argument("--eval-episodes", type=int, default=d.eval_episodes)
+    args = ap.parse_args()
+
+    cfg = TrainConfig(**{**d.__dict__, **vars(args)})
+    run_training(cfg)
 
 
 if __name__ == "__main__":

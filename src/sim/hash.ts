@@ -40,8 +40,13 @@ export function serializeState(state: SimState): string {
     `phase=${state.match.phase}:${q(state.match.phaseTimer)}:${state.match.roundNumber}`,
     `win=${state.match.winningTeam ?? '-'}:${state.match.lastScoringTeam ?? '-'}`,
     `ball=${ball.state}:${ball.holderId ?? '-'}:${q(ball.pos.x)}:${q(ball.pos.y)}:${q(ball.pos.z)}:${q(ball.vel.x)}:${q(ball.vel.y)}:${q(ball.vel.z)}:${q(ball.looseTimer)}`,
-    `scoreB=${state.scores.blue.goals}/${state.scores.blue.kills}/${state.scores.blue.deaths}`,
-    `scoreR=${state.scores.red.goals}/${state.scores.red.kills}/${state.scores.red.deaths}`,
+    // Team-agnostic: works for grifball (blue/red) and combat (t0..tN). Sorted for stability.
+    ...Object.keys(state.scores)
+      .sort()
+      .map((t) => {
+        const tally = state.scores[t];
+        return `score.${t}=${tally.goals}/${tally.kills}/${tally.deaths}`;
+      }),
     ...state.combatants.map(combatantKey),
   ].join('|');
 }

@@ -17,6 +17,14 @@ import { type GoalPlate } from '../game/grifballGoals';
 export type SimWeapon = 'hammer' | 'sword' | 'ball';
 
 /**
+ * Game mode the match is running. `grifball` = carry the ball to the enemy plate;
+ * `combat` = deathmatch (1v1 / team / FFA), first team to the kill target wins. Both
+ * share the engine (movement, weapons, collision, respawns); only the objective +
+ * win condition + a couple of observation/reward terms differ.
+ */
+export type SimMode = 'grifball' | 'combat';
+
+/**
  * Weapon FSM phase. Mirrors the subset of the live `WeaponState` the headless
  * weapon step needs; rendering-only sub-phases are collapsed.
  */
@@ -63,6 +71,10 @@ export interface SimCombatant {
   slideCooldownTimer: number;
   isSprinting: boolean;
 
+  // Which attack is mid-swing, resolved on the active frame.
+  //  strike = hammer primary AoE · swipe = hammer alt · slash = sword primary · punch = ball
+  attackKind: 'none' | 'strike' | 'swipe' | 'slash' | 'punch';
+
   // Sword lunge flight
   isLunging: boolean;
   lungeTimer: number;
@@ -74,9 +86,14 @@ export interface SimCombatant {
 }
 
 export interface SimState {
+  /** Which game mode this match is. */
+  mode: SimMode;
   /** Fixed-order combatant list. Order is stable for the life of the match. */
   combatants: SimCombatant[];
-  /** Phase machine + ball (reused live module). */
+  /**
+   * Phase machine + ball. Reused for both modes: in combat the ball is inert and
+   * `goalTarget` is interpreted as the kill target.
+   */
   match: GrifballMatchState;
   /** Per-team score / kills / goals (reused live module). */
   scores: TeamScoresState;

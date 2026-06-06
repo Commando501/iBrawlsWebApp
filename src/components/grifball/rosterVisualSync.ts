@@ -1,10 +1,9 @@
 import * as THREE from 'three';
 import { MAIN_AI_ID } from '../../game/roster';
 import { animateCombatantWeaponMeshes, animateSpartanCombatantModel } from './combatantAnimation';
+import { type SwordLungeCurrentTrailStyle } from './combatGeometry';
 import { type GrifballRuntimeState } from './runtimeState';
 import { type GrifballThreeRefs } from './threeRefs';
-
-type RosterTrailStyle = 'current' | 'shockwave' | 'localCube' | 'enemyCube';
 
 export function updateRosterCombatantVisualsForState({
   refs,
@@ -20,7 +19,7 @@ export function updateRosterCombatantVisualsForState({
     pos: THREE.Vector3,
     color: string,
     dir: THREE.Vector3,
-    style?: RosterTrailStyle
+    style?: SwordLungeCurrentTrailStyle
   ) => void;
   applyBotMeleeImpact: (botId: string) => void;
 }): void {

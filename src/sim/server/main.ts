@@ -12,6 +12,7 @@
  */
 
 import { VecEnv, type VecEnvConfig } from './vecEnv';
+import { CombatVecEnv, type CombatVecEnvConfig } from './combatVecEnv';
 import { buildEnvSpec } from '../env/spec';
 import {
   FrameDecoder,
@@ -26,9 +27,12 @@ import {
 const log = (...a: unknown[]) => process.stderr.write(a.join(' ') + '\n');
 
 /** Encode a HELLO header response payload (opcode + JSON describing the live env). */
-function helloResponse(env: VecEnv, seedInfo: { baseSeed: number }): Uint8Array {
+type SimVecEnv = VecEnv | CombatVecEnv;
+
+function helloResponse(env: SimVecEnv, seedInfo: { baseSeed: number }): Uint8Array {
   const header = {
     ...buildEnvSpec(),
+    mode: env.mode,
     numEnvs: env.numEnvs,
     numAgents: env.numAgents,
     agentIds: env.agentIds,
@@ -42,11 +46,11 @@ function helloResponse(env: VecEnv, seedInfo: { baseSeed: number }): Uint8Array 
   return out;
 }
 
-function parseHelloConfig(payload: Uint8Array): VecEnvConfig {
+function parseHelloConfig(payload: Uint8Array): VecEnvConfig & CombatVecEnvConfig & { mode?: string } {
   const json = new TextDecoder().decode(payload.subarray(1));
   const cfg = json.trim() ? JSON.parse(json) : {};
-  if (!cfg.numEnvs || cfg.numEnvs < 1) cfg.numEnvs = 1;
-  return cfg as VecEnvConfig;
+  if (!cfg.numEnvs || cfg.numEnvs < 1) cfg.numEnvs = 1; // grifball default; ignored by combat
+  return cfg;
 }
 
 export interface Transport {
@@ -58,7 +62,7 @@ export interface Transport {
 /** Drive a VecEnv over a byte transport using the binary protocol. */
 export function runServer(transport: Transport): void {
   const decoder = new FrameDecoder();
-  let env: VecEnv | null = null;
+  let env: SimVecEnv | null = null;
   let baseSeed = 1;
   let actionCount = 0;
 
@@ -71,7 +75,7 @@ export function runServer(transport: Transport): void {
         case OPCODE.HELLO: {
           const cfg = parseHelloConfig(payload);
           baseSeed = cfg.baseSeed ?? 1;
-          env = new VecEnv(cfg);
+          env = cfg.mode === 'combat' ? new CombatVecEnv(cfg) : new VecEnv(cfg);
           actionCount = env.numEnvs * env.numAgents * env.actDim;
           transport.write(writeFrame(helloResponse(env, { baseSeed })));
           log(`[sim] vec-env ready: ${env.numEnvs} envs × ${env.numAgents} agents, obsDim=${env.obsDim}`);

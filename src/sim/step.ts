@@ -17,6 +17,7 @@ import { createRng, type Rng } from './rng';
 import { stepCombatantMovement } from './physics';
 import { stepCombatantWeapons, tickRespawns, type KillEvent } from './weapons';
 import { tickGrifballObjective, throwSimPass, type ObjectiveEvents } from './grifball';
+import { tickCombat } from './combat';
 
 /** Canonical fixed timestep. */
 export const SIM_DT = 1 / 60;
@@ -68,8 +69,11 @@ export function stepSimulation(
     }
   }
 
-  // Phase 4 — grifball objective (phase machine, ball follow/physics, pickups, scoring).
-  const objective = tickGrifballObjective(state, settings, dt);
+  // Phase 4 — objective: grifball (ball/pickups/scoring) or combat (kill-target win).
+  const objective =
+    state.mode === 'combat'
+      ? tickCombat(state, settings, dt)
+      : tickGrifballObjective(state, settings, dt);
 
   // Phase 5 — respawns.
   tickRespawns(state, settings, dt);
