@@ -44,6 +44,10 @@ class TrainConfig:
     width: int = 256                  # neurons per hidden layer (bigger = more capacity, needs GPU)
     depth: int = 2                    # number of hidden layers
 
+    # --- domain randomization (robustness to live balance tweaks) ---
+    randomize_enabled: bool = False   # jitter the dynamics settings each episode
+    randomize_pct: float = 0.15       # +/- fraction each tunable is jittered by
+
     # --- reward (what the agent is paid for; see GUIDE.md) ---
     reward_win: float = 1.0           # winning the match (terminal)
     reward_goal_scored: float = 1.0   # each goal your team scores
@@ -86,6 +90,8 @@ KNOB_DESCRIPTIONS: dict[str, str] = {
     "clip_range": "Safety limit on how much the policy changes per update.",
     "width": "Neurons per layer. Bigger brain = more skill ceiling, but slower (use the GPU).",
     "depth": "Hidden layers. 2-3 is plenty here.",
+    "randomize_enabled": "Jitter game mechanics each episode so the brain stays robust to live balance patches.",
+    "randomize_pct": "How far mechanics are jittered (0.15 = +/-15%). Bigger = more robust but harder to learn.",
     "reward_win": "Payout for winning the match.",
     "reward_goal_scored": "Payout per goal scored.",
     "reward_goal_conceded": "Penalty per goal conceded.",
@@ -126,6 +132,8 @@ _TOML_MAP = {
     ("ppo", "clip_range"): "clip_range",
     ("network", "width"): "width",
     ("network", "depth"): "depth",
+    ("randomize", "enabled"): "randomize_enabled",
+    ("randomize", "pct"): "randomize_pct",
     ("reward", "win"): "reward_win",
     ("reward", "goal_scored"): "reward_goal_scored",
     ("reward", "goal_conceded"): "reward_goal_conceded",
@@ -167,6 +175,11 @@ def reward_dict(cfg: TrainConfig) -> dict:
         "death": cfg.reward_death,
         "timePenalty": cfg.reward_time_penalty,
     }
+
+
+def randomize_spec(cfg: TrainConfig) -> dict:
+    """The domain-randomization spec in the shape the TS vec-env expects."""
+    return {"enabled": bool(cfg.randomize_enabled), "pct": float(cfg.randomize_pct)}
 
 
 def settings_markdown(cfg: TrainConfig) -> str:

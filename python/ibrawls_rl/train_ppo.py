@@ -15,7 +15,7 @@ import shutil
 from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import CheckpointCallback
 
-from .config import TrainConfig, reward_dict, settings_markdown
+from .config import TrainConfig, reward_dict, settings_markdown, randomize_spec
 from .envs.grifball_vec_env import GrifballVecEnv
 from .eval import eval_vs
 from .policies import sb3_policy_kwargs
@@ -84,6 +84,7 @@ def run_training(cfg: TrainConfig) -> str:
         except Exception:
             pass
 
+    dr = randomize_spec(cfg)
     if cfg.mode == "combat":
         env = GrifballVecEnv(
             mode="combat",
@@ -94,6 +95,7 @@ def run_training(cfg: TrainConfig) -> str:
             combat_world_sizes=cfg.combat_world_sizes,
             combat_kill_range=(cfg.combat_kill_min, cfg.combat_kill_max),
             combat_randomize_layout=cfg.combat_randomize_layout,
+            randomize=dr,
         )
     else:
         env = GrifballVecEnv(
@@ -104,6 +106,7 @@ def run_training(cfg: TrainConfig) -> str:
             base_seed=cfg.seed,
             max_ticks=int(60 * 60 * cfg.match_minutes),
             bootstrap_truncation=cfg.bootstrap_truncation,
+            randomize=dr,
         )
 
     model = PPO(

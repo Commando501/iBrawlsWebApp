@@ -153,7 +153,7 @@ export function stepCombatantMovement(
   // --- Jump trigger + gravity ---
   if (action.jump && !c.isJumping && c.pos.y <= 0.0001) {
     c.isJumping = true;
-    c.vel.y = JUMP_VELOCITY;
+    c.vel.y = JUMP_VELOCITY + hammerJumpBoost(c, settings);
   }
   if (c.isJumping) {
     c.vel.y -= GRAVITY_ACCELERATION * dt;
@@ -162,6 +162,7 @@ export function stepCombatantMovement(
       c.pos.y = 0;
       c.vel.y = 0;
       c.isJumping = false;
+      c.hammerJumpsInAir = 0; // landed — reset the air hammer-jump count
     }
   } else {
     c.pos.y = 0;
@@ -197,6 +198,25 @@ function constrainAndStore(state: SimState, c: SimCombatant): boolean {
   c.vel.y = _vel.y;
   c.vel.z = _vel.z;
   return grounded;
+}
+
+/**
+ * Extra upward velocity if this jump consumes an open hammer-jump window. Mirrors the live
+ * launch (`vy = 7.2 + hammerJumpPower`) plus the air-limit and input-gate checks. Consumes
+ * the window. Returns 0 for a normal jump.
+ */
+function hammerJumpBoost(c: SimCombatant, settings: UniversalSettings): number {
+  if (c.hammerJumpWindowTimer <= 0) return 0;
+  const limit = settings.hammerJumpAirLimit ?? 1;
+  const withinLimit = limit === 10 || c.hammerJumpsInAir < limit;
+  if (limit <= 0 || !withinLimit) return 0;
+  // Input gate: 0 = no gate; otherwise the jump must come within `gate`s of the window opening.
+  const gate = settings.hammerJumpInputGate ?? 0;
+  const elapsed = (settings.hammerJumpWindow ?? 0.6) - c.hammerJumpWindowTimer;
+  if (gate !== 0 && elapsed > gate) return 0;
+  c.hammerJumpWindowTimer = 0;
+  c.hammerJumpsInAir += 1;
+  return settings.hammerJumpPower ?? 6.5;
 }
 
 /** Wrap an angle into (-PI, PI]. */

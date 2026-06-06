@@ -48,6 +48,7 @@ class GrifballVecEnv(VecEnv):
         combat_world_sizes: list[int] | None = None,
         combat_kill_range: tuple[int, int] | None = None,
         combat_randomize_layout: bool = True,
+        randomize: dict | None = None,  # domain-randomization spec {enabled, pct}
         node_cmd: Sequence[str] | None = None,
     ) -> None:
         self.mode = mode
@@ -85,6 +86,8 @@ class GrifballVecEnv(VecEnv):
             probe_cfg["reward"] = reward
         if max_ticks is not None:
             probe_cfg["maxTicks"] = max_ticks
+        if randomize and randomize.get("enabled"):
+            probe_cfg["randomize"] = randomize
         if mode == "combat":
             if combat_world_sizes:
                 probe_cfg["worldSizes"] = combat_world_sizes

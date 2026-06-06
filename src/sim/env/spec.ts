@@ -19,7 +19,7 @@ export interface EnvSpec {
   version: number;
 }
 
-export const ENV_SPEC_VERSION = 1;
+export const ENV_SPEC_VERSION = 2; // v2: added pass-charge / hammer-jump / weapon-ready obs
 
 export function buildEnvSpec(): EnvSpec {
   return {

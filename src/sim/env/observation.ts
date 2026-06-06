@@ -48,6 +48,9 @@ export const OBS_FIELDS: FieldSpec[] = [
   { name: 'self_is_jumping', size: 1 },
   { name: 'self_is_crouching', size: 1 },
   { name: 'self_invuln', size: 1 },
+  { name: 'self_pass_charge', size: 1 },       // grifball: throw charge wound up
+  { name: 'self_hammerjump_window', size: 1 }, // 1 while a hammer-jump can be triggered
+  { name: 'self_weapon_ready_lockout', size: 1 }, // post-swap/spawn attack lockout
   { name: 'ball_rel_pos', size: 2 },
   { name: 'ball_rel_vel', size: 2 },
   { name: 'ball_state_onehot', size: 4 },
@@ -134,6 +137,9 @@ export function encodeObservation(
   put(self.isJumping ? 1 : 0);
   put(self.isCrouching ? 1 : 0);
   put(Math.min(1, self.invulnerabilityTimer));
+  put(Math.min(1, self.passChargeTimer / 1.2));       // ~chargeMax-normalized
+  put(self.hammerJumpWindowTimer > 0 ? 1 : 0);
+  put(Math.min(1, self.weaponReadyTimer));
 
   // --- Ball ---
   const ball = state.match.ball;

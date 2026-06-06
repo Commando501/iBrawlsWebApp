@@ -9,19 +9,11 @@ import { sfx } from './AudioEngine';
 import { DEFAULT_KEYBINDINGS, Combatant, CustomMapData } from '../types';
 import { type AILungeOutcome } from '../game/aiCombatDecision';
 import { GRIFBALL_TOTAL_AI } from '../game/grifballTeams';
-import { tickFeintCooldown, getFeintCooldownRemaining, startFeintCooldown, isWeaponSwapFeintActive, startWeaponSwapFeint, tickWeaponSwapFeintTimer, getBotComboState, setBotComboState, clearBotComboState } from '../game/aiMatchContext';
+import { tickFeintCooldown, getFeintCooldownRemaining, startFeintCooldown, isWeaponSwapFeintActive, startWeaponSwapFeint, tickWeaponSwapFeintTimer } from '../game/aiMatchContext';
 import {
   getPincerApproachOffset,
   registerBotEngagement,
 } from '../game/aiBotCoordinator';
-import {
-  comboBlocksTacticalSwap,
-  createBotComboState,
-  notifyComboAttackStarted,
-  pickOpeningCombo,
-  progressComboState,
-  shouldAbortCombo,
-} from '../game/aiComboEngine';
 import { shouldAvoidCoinFlipTrade } from '../game/aiTuning';
 import { resolveBehaviorTuning } from '../game/aiBehaviorTuning';
 import {
@@ -72,7 +64,7 @@ import { createArenaOrchestratorCallbacksForState } from './grifball/arenaOrches
 import { initializeGrifballSceneForRefs } from './grifball/arenaSceneInitializationRuntime';
 import { resolveAIAirborneHammerOpportunityForCombatant } from './grifball/aiAirborneHammerOpportunityRuntime';
 import { resolvePreGroundMovementRecoveryForCombatant } from './grifball/aiAirborneRecoveryRuntime';
-import { resolveAIComboMeleeStrikeForCombatant } from './grifball/aiComboStrikeRuntime';
+import { resolveAIComboOrchestrationForCombatant } from './grifball/aiComboOrchestrationRuntime';
 import {
   syncAICombatantFrameToState,
   syncAICombatantPoseAndState,
@@ -124,7 +116,6 @@ import {
   tickAIEngagementCooldowns,
   type AIEngagementFrame,
 } from './grifball/aiEngagementFrameRuntime';
-import { tryStartAISwordLungeForCombatant } from './grifball/aiSwordLungeStartRuntime';
 import { finishAISwordLungeFrameForCombatant } from './grifball/aiSwordLungeFinishRuntime';
 import { resolveAISwordLungeFlightForCombatant } from './grifball/aiSwordLungeFlightRuntime';
 import { resolveAITargetPredictionFrame } from './grifball/aiTargetPredictionRuntime';
@@ -471,18 +462,6 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     getFps: () => fpsRef.current.value,
     getOpponentPlayerName: () => opponentNameRef.current || mai()?.playerName || undefined,
   });
-
-
-
-
-
-
-
-
-
-
-
-
 
   // Keep debug mode ref in sync
   useEffect(() => {
@@ -1885,150 +1864,62 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       playerModel: getTargetPlayerModel(target.id),
     });
 
-    if (tacticalDecision.weapon && !swapFeintActive && !comboBlocksTacticalSwap(getBotComboState(aiContext, botId))) {
-      applyTacticalWeapon(tacticalDecision.weapon);
-    }
-
-    let comboState = getBotComboState(aiContext, botId);
-    const targetCommitted =
-      target.weaponState === 'swing_up' ||
-      target.weaponState === 'swing_down' ||
-      targetIsLunging;
-
-    if (comboState) {
-      if (shouldAbortCombo({
-        targetId: target.id,
-        targetHp: target.hp,
-        targetInvuln: target.invulnerabilityTimer,
-        targetIsLunging,
-        targetWeaponState: target.weaponState,
-        lockedTargetId: comboState.targetId,
-        abortOnTargetCommit: comboState.comboId === 'bait_smash',
-        targetCommitted,
-      })) {
-        clearBotComboState(aiContext, botId);
-        comboState = undefined;
-      }
-    }
-
-    if (
-      !comboState &&
-      canStartWeaponAction &&
-      weaponState === 'ready' &&
-      !swapFeintActive &&
-      !targetIsProtected &&
-      difficulty !== 'easy'
-    ) {
-      const openingCombo = pickOpeningCombo({
-        difficulty,
-        weaponSwapIQ,
-        weaponPrioritization,
-        distanceToTarget: attackDistanceToTarget,
-        minLungeRange,
-        maxLungeRange,
-        targetRecovering: target.weaponState === 'recovering',
-      });
-      if (openingCombo) {
-        setBotComboState(aiContext, botId, createBotComboState(openingCombo, target.id));
-        comboState = getBotComboState(aiContext, botId);
-        state = 'CHARGE_ATTACK';
-        timer = Math.max(timer, 0.25);
-      }
-    }
-
-    const commitComboAttackAdvance = () => {
-      if (!comboState) return;
-      const next = notifyComboAttackStarted(comboState);
-      setBotComboState(aiContext, botId, next);
-      comboState = next ?? undefined;
-    };
-
-    const executeComboStrike = (preferLunge: boolean): 'lunge' | 'melee' | false => {
-      if (!comboState || !canStartWeaponAction || weaponState !== 'ready' || targetIsProtected || target.hp <= 0) {
-        return false;
-      }
-
-      const hasVerticalLungeLine = !targetAirborne || movementComplexity >= 60;
-      const lungeDistanceToTarget = targetAirborne ? combatDistanceToTarget : distanceToTarget;
-
-      if (
-        preferLunge &&
-        activeWeapon === 'sword' &&
-        hasVerticalLungeLine &&
-        lungeDistanceToTarget >= minLungeRange &&
-        lungeDistanceToTarget <= maxLungeRange
-      ) {
-        if (!tryStartAISwordLungeForCombatant({
-          self,
-          target,
-          pos,
-          vel,
-          targetAirborne,
-          playerModel: getTargetPlayerModel(target.id),
-          botId,
-          lungeDistanceToTarget,
-          triggerCombatantLunge,
-          recordCombatantObservation,
-        })) return false;
-        commitComboAttackAdvance();
-        return 'lunge';
-      }
-
-      if (attackDistanceToTarget <= stationarySwingReach) {
-        state = 'COOLDOWN';
-        // The hammer side-swipe only reaches MELEE_HAMMER_SWIPE_REACH (player parity), so
-        // only pick it in that band â€” beyond it the wide overhead gravity hammer is used.
-        const meleeStrikeFrame = resolveAIComboMeleeStrikeForCombatant({
-          state: s,
-          self,
+    const comboFrame = resolveAIComboOrchestrationForCombatant({
+      state: s,
+      self,
+      aiContext,
+      botId,
+      target,
+      frame: {
+        pos,
+        vel,
+        aiState: state,
+        timer,
+        weaponState,
+      },
+      activeWeapon,
+      canStartWeaponAction,
+      tacticalWeapon: tacticalDecision.weapon,
+      swapFeintActive,
+      targetProtected: targetIsProtected,
+      targetAirborne,
+      hasVerticalLungeLine: !targetAirborne || movementComplexity >= 60,
+      targetIsLunging,
+      dt,
+      difficulty,
+      weaponSwapIQ,
+      weaponPrioritization,
+      attackDistanceToTarget,
+      combatDistanceToTarget,
+      distanceToTarget,
+      minLungeRange,
+      maxLungeRange,
+      resolvedAiReach,
+      stationarySwingReach,
+      swapLockoutRemaining,
+      cooldownMultiplier: cooldownMult,
+      getTargetPlayerModel,
+      applyTacticalWeapon: (tacticalWeapon) => {
+        applyTacticalWeapon(tacticalWeapon);
+        return {
           activeWeapon,
-          attackDistanceToTarget,
-          cooldownMultiplier: cooldownMult,
-          triggerCombatantAttack,
-        });
-        timer = meleeStrikeFrame.timer;
-        weaponState = meleeStrikeFrame.weaponState;
-        commitComboAttackAdvance();
-        return 'melee';
-      }
-
-      return false;
-    };
-
-    if (comboState) {
-      const comboResult = progressComboState({
-        state: comboState,
-        activeWeapon,
-        weaponReady: weaponState === 'ready',
-        swapLockoutRemaining,
-        swapFeintActive,
-        distanceToTarget: attackDistanceToTarget,
-        minLungeRange,
-        maxLungeRange,
-        inMeleeRange: attackDistanceToTarget <= resolvedAiReach + 0.5,
-        dt,
-      });
-      setBotComboState(aiContext, botId, comboResult.state);
-      comboState = comboResult.state ?? undefined;
-
-      if (comboResult.command.kind === 'swap' && comboResult.command.weapon) {
-        applyTacticalWeapon(comboResult.command.weapon);
-      } else if (comboResult.command.kind === 'attack') {
-        const strikeResult = executeComboStrike(!!comboResult.command.preferLunge);
-        if (strikeResult === 'lunge') {
-          syncStateAndMesh();
-          return;
-        }
-        if (!strikeResult) {
-          if (state !== 'PRESSURING' && state !== 'CHARGE_ATTACK' && state !== 'LUNGING') {
-            state = 'CHARGE_ATTACK';
-            timer = Math.max(timer, 0.2);
-          }
-        }
-      } else if (comboResult.command.kind === 'complete') {
-        clearBotComboState(aiContext, botId);
-        comboState = undefined;
-      }
+          canStartWeaponAction,
+          weaponState,
+        };
+      },
+      triggerCombatantLunge,
+      triggerCombatantAttack,
+      recordCombatantObservation,
+    });
+    activeWeapon = comboFrame.activeWeapon;
+    canStartWeaponAction = comboFrame.canStartWeaponAction;
+    state = comboFrame.aiState;
+    timer = comboFrame.timer;
+    weaponState = comboFrame.weaponState;
+    const comboActive = comboFrame.comboActive;
+    if (comboFrame.mode === 'sync_return') {
+      syncStateAndMesh();
+      return;
     }
 
     if (tacticalDecision.postMissSpacing && !targetIsLunging && state !== 'COOLDOWN' && state !== 'PRESSURING') {
@@ -2284,7 +2175,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         swordForbidden,
         swapLockoutRemaining,
         swapFeintActive: isWeaponSwapFeintActive(aiContext, botId),
-        comboActive: !!getBotComboState(aiContext, botId),
+        comboActive,
         feintChance,
         lungeDistanceToTarget,
         hasVerticalLungeLine,

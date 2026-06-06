@@ -74,6 +74,17 @@ export interface SimCombatant {
   // Which attack is mid-swing, resolved on the active frame.
   //  strike = hammer primary AoE · swipe = hammer alt · slash = sword primary · punch = ball
   attackKind: 'none' | 'strike' | 'swipe' | 'slash' | 'punch';
+  /** Tick of this combatant's last landed attack (for the weapon-trade window). */
+  lastAttackTick: number;
+  /** Seconds left before a freshly-swapped/spawned weapon can attack (`weaponReadyTime`). */
+  weaponReadyTimer: number;
+
+  // Hammer-jump: a hammer strike near self opens a window; jumping in it launches high.
+  hammerJumpWindowTimer: number;
+  hammerJumpsInAir: number;
+
+  // Grifball pass charge: held to wind up a throw (`grifballChargeMax`).
+  passChargeTimer: number;
 
   // Sword lunge flight
   isLunging: boolean;

@@ -60,12 +60,16 @@ export function stepSimulation(
     stepCombatantWeapons(state, c, act(c.id), settings, dt, kills);
   }
 
-  // Phase 3 — passes (ball carrier secondary throws the ball).
+  // Phase 3 — passes: hold secondary to charge the throw (grifballChargeMax), release to throw.
+  const chargeMax = settings.grifballChargeMax ?? 1.2;
   for (const c of state.combatants) {
     if (!c.alive || !c.hasBall) continue;
     const a = act(c.id);
     if (a.attackSecondary) {
-      throwSimPass(state, c, a.passCharge, settings);
+      c.passChargeTimer = Math.min(chargeMax, c.passChargeTimer + dt);
+    } else if (c.passChargeTimer > 0) {
+      throwSimPass(state, c, c.passChargeTimer / chargeMax, settings);
+      c.passChargeTimer = 0;
     }
   }
 

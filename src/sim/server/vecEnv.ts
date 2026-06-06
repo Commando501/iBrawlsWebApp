@@ -28,6 +28,7 @@ import {
 import { heuristicPolicy } from '../harness/heuristicPolicy';
 import { randomPolicy } from '../harness/randomPolicy';
 import { type Policy } from '../harness/policy';
+import { randomizeSettings, type RandomizeSpec } from '../env/randomize';
 import { idleAction, type ActionInput } from '../actions';
 
 export interface VecEnvConfig {
@@ -41,6 +42,8 @@ export interface VecEnvConfig {
   builtinAgents?: number[];
   /** Which built-in policy drives `builtinAgents`. Default 'heuristic'. */
   builtinPolicy?: 'heuristic' | 'random';
+  /** Per-episode domain randomization of the dynamics settings. */
+  randomize?: RandomizeSpec;
   /** Safety cap; a match exceeding this many ticks is force-reset (counts as draw). */
   maxTicks?: number;
 }
@@ -76,9 +79,12 @@ export class VecEnv {
   private readonly builtinPolicy: Policy;
   private readonly maxTicks: number;
 
+  private readonly randomize: RandomizeSpec;
   private states: SimState[] = [];
   private memories: RewardMemory[] = [];
   private rngs: Rng[] = [];
+  /** Effective (possibly randomized) settings for each env's current episode. */
+  private envSettings: UniversalSettings[] = [];
   private episode: number[] = [];
   private readonly baseSeed: number;
 
@@ -101,6 +107,7 @@ export class VecEnv {
     this.builtin = new Set(config.builtinAgents ?? []);
     this.builtinPolicy = config.builtinPolicy === 'random' ? randomPolicy : heuristicPolicy;
     this.maxTicks = config.maxTicks ?? 60 * 60 * 30;
+    this.randomize = config.randomize ?? { enabled: false, pct: 0 };
     this.baseSeed = config.baseSeed ?? 1;
 
     const n = this.numEnvs * this.numAgents;
@@ -116,10 +123,12 @@ export class VecEnv {
     return this.baseSeed + e + this.episode[e] * this.numEnvs * 7919;
   }
 
-  /** (Re)create env `e` from its current episode seed. */
+  /** (Re)create env `e` from its current episode seed (with fresh randomized settings). */
   private makeEnv(e: number): void {
     const seed = this.seedFor(e);
-    const state = createMatch({ seed, teamSizes: this.teamSizes, settings: this.settings });
+    const settings = randomizeSettings(this.settings, this.randomize, createRng(seed ^ 0x85ebca6b));
+    this.envSettings[e] = settings;
+    const state = createMatch({ seed, teamSizes: this.teamSizes, settings });
     this.states[e] = state;
     this.memories[e] = initRewardMemory(state);
     this.rngs[e] = createRng(seed ^ 0x2545f491);
@@ -162,7 +171,7 @@ export class VecEnv {
         }
       }
 
-      const events = stepSimulation(state, byId, { settings: this.settings });
+      const events = stepSimulation(state, byId, { settings: this.envSettings[e] });
       const rewards = computeStepRewards(state, events, this.reward, this.memories[e]);
 
       // A real match end is a true terminal (no bootstrap); a maxTicks cut-off is a

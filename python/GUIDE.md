@@ -94,6 +94,24 @@ python -m ibrawls_rl.evaluate runs/combat/final_model.zip --mode combat --matche
 You'll end up with **two models**: one grifball, one combat — load whichever matches the live
 game mode.
 
+## 5c. Domain randomization (surviving balance patches)
+
+Your game's mechanics are live-tunable, so a brain trained at one balance can drift when you
+patch speeds/reach/timings. Turn on **domain randomization** to train across a *band* of
+settings so small/moderate patches land inside what it already knows:
+
+```toml
+[randomize]
+enabled = true
+pct     = 0.15   # each episode jitters speeds, reach, dash, weapon timings, etc. by +/-15%
+```
+
+It applies to both modes. Recommended flow: train first with `enabled = false` (learns the
+core skill faster at the fixed preset), then a second phase with `enabled = true` to harden it.
+Bigger `pct` = more robust but slower to learn. It only randomizes the mechanics the sim
+models and reads (see `src/sim/SIM_AUDIT.md`); `maxHP`, goal targets, and toggles are left
+fixed.
+
 ## 6. Recommended path (the curriculum)
 
 Start easy, get harder. Each stage is its own run/folder so you can compare:

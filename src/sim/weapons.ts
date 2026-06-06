@@ -96,6 +96,43 @@ function strike(
   events.push({ attackerId: attacker.id, victimId: victim.id, weapon: attacker.weapon });
 }
 
+const SIM_FPS = 60;
+
+/**
+ * Is `victim` eligible to trade back? True when weapon trades are enabled and the victim is
+ * mid-attack (or attacked within the trade window). Mirrors `resolveSwordLungeTradeReason`.
+ */
+export function isTradeEligible(victim: SimCombatant, settings: UniversalSettings, tick: number): boolean {
+  const swordTrade = !!settings.enableSwordTrade && victim.weapon === 'sword';
+  const hammerTrade = !!settings.enableHammerSwordTrade && victim.weapon === 'hammer';
+  if (!swordTrade && !hammerTrade) return false;
+  const windowMs = victim.weapon === 'sword'
+    ? (settings.swordTradeWindow ?? 350)
+    : (settings.hammerSwordTradeWindow ?? 350);
+  const windowTicks = (windowMs / 1000) * SIM_FPS;
+  const activeNow = victim.isLunging || victim.weaponState === 'windup' || victim.weaponState === 'active';
+  const recent = tick - victim.lastAttackTick <= windowTicks;
+  return activeNow || recent;
+}
+
+/**
+ * Land a hit and, if `initiatesTrade` (a sword lunge/slash) catches a trade-eligible victim,
+ * the victim trades back — both die. Returns false if the attacker died in the trade.
+ */
+function applyHit(
+  state: SimState,
+  attacker: SimCombatant,
+  victim: SimCombatant,
+  settings: UniversalSettings,
+  events: KillEvent[],
+  initiatesTrade: boolean
+): boolean {
+  const tradeBack = initiatesTrade && isTradeEligible(victim, settings, state.tick);
+  strike(state, attacker, victim, events);
+  if (tradeBack) strike(state, victim, attacker, events); // victim's team credits the trade kill
+  return attacker.alive;
+}
+
 /**
  * Stationary-swing hit test, faithful to the live player melee resolver: 3D distance from
  * the attacker's eye (pos.y + 1.65) to the victim's body center must be within `reach`, and
@@ -140,11 +177,19 @@ export function inHammerStrikeVolume(
 }
 
 /** Resolve a swipe/slash/punch cone hit from `attacker` at its active frame. */
-function resolveMeleeHit(state: SimState, attacker: SimCombatant, events: KillEvent[]): void {
+function resolveMeleeHit(
+  state: SimState,
+  attacker: SimCombatant,
+  settings: UniversalSettings,
+  events: KillEvent[]
+): void {
+  const initiatesTrade = attacker.attackKind === 'slash'; // only sword slash trades
   for (const v of state.combatants) {
     if (!v.alive || !areHostile(attacker, v)) continue;
     if (v.invulnerabilityTimer > 0) continue;
-    if (inMeleeHitVolume(attacker, v)) strike(state, attacker, v, events);
+    if (inMeleeHitVolume(attacker, v)) {
+      if (!applyHit(state, attacker, v, settings, events, initiatesTrade)) break; // attacker traded out
+    }
   }
 }
 
@@ -177,13 +222,20 @@ function recoverForKind(kind: SimCombatant['attackKind'], settings: UniversalSet
   }
 }
 
-/** Resolve sword-lunge contact while a combatant is mid-flight. */
-function resolveLungeHit(state: SimState, attacker: SimCombatant, events: KillEvent[]): void {
+/** Resolve sword-lunge contact while a combatant is mid-flight (always trade-initiating). */
+function resolveLungeHit(
+  state: SimState,
+  attacker: SimCombatant,
+  settings: UniversalSettings,
+  events: KillEvent[]
+): void {
   for (const v of state.combatants) {
     if (!v.alive || !areHostile(attacker, v)) continue;
     if (v.invulnerabilityTimer > 0) continue;
     const d = Math.hypot(v.pos.x - attacker.pos.x, v.pos.z - attacker.pos.z);
-    if (d <= LUNGE_KILL_RADIUS) strike(state, attacker, v, events);
+    if (d <= LUNGE_KILL_RADIUS) {
+      if (!applyHit(state, attacker, v, settings, events, true)) break;
+    }
   }
 }
 
@@ -204,16 +256,20 @@ export function stepCombatantWeapons(
 
   if (c.swapLockoutTimer > 0) c.swapLockoutTimer = Math.max(0, c.swapLockoutTimer - dt);
   if (c.attackCooldown > 0) c.attackCooldown = Math.max(0, c.attackCooldown - dt);
+  if (c.weaponReadyTimer > 0) c.weaponReadyTimer = Math.max(0, c.weaponReadyTimer - dt);
+  if (c.hammerJumpWindowTimer > 0) c.hammerJumpWindowTimer = Math.max(0, c.hammerJumpWindowTimer - dt);
 
-  // Weapon swap (hammer <-> sword), never while carrying the ball or mid-action.
+  // Weapon swap (hammer <-> sword): blocked while carrying the ball, mid-action, or on lockout.
+  // A swap makes the new weapon un-ready for `weaponReadyTime` before it can fire.
   if (action.swapWeapon && c.weapon !== 'ball' && c.weaponState === 'idle' && c.swapLockoutTimer <= 0) {
     c.weapon = c.weapon === 'hammer' ? 'sword' : 'hammer';
     c.swapLockoutTimer = settings.weaponSwapLockout ?? 1.0;
+    c.weaponReadyTimer = settings.weaponReadyTime ?? 0.5;
   }
 
   // Active lunge flight: kill-on-contact, run down the lunge timer.
   if (c.isLunging) {
-    resolveLungeHit(state, c, events);
+    resolveLungeHit(state, c, settings, events);
     c.lungeTimer = Math.max(0, c.lungeTimer - dt);
     if (c.lungeTimer <= 0) {
       c.isLunging = false;
@@ -224,15 +280,18 @@ export function stepCombatantWeapons(
     return;
   }
 
+  // Attacks are blocked until the weapon is ready (post-swap / post-spawn).
+  const canAttack = c.attackCooldown <= 0 && c.weaponReadyTimer <= 0;
+
   switch (c.weaponState) {
     case 'idle': {
       // Secondary: sword = lunge, hammer = quick swipe, ball = pass (handled in grifball.ts).
-      if (action.attackSecondary && c.attackCooldown <= 0) {
-        if (c.weapon === 'sword') { startLunge(c, settings); return; }
+      if (action.attackSecondary && canAttack) {
+        if (c.weapon === 'sword') { c.lastAttackTick = state.tick; startLunge(c, settings); return; }
         if (c.weapon === 'hammer') { beginAttack(c, 'swipe', settings); return; }
       }
       // Primary: hammer = AoE strike, sword = slash, ball = punch.
-      if (action.attackPrimary && c.attackCooldown <= 0) {
+      if (action.attackPrimary && canAttack) {
         const kind = c.weapon === 'hammer' ? 'strike' : c.weapon === 'sword' ? 'slash' : 'punch';
         beginAttack(c, kind, settings);
       }
@@ -241,9 +300,16 @@ export function stepCombatantWeapons(
     case 'windup': {
       c.weaponTimer -= dt;
       if (c.weaponTimer <= 0) {
+        c.lastAttackTick = state.tick; // for the trade window
         // The single active hit frame — geometry depends on the attack kind.
-        if (c.attackKind === 'strike') resolveHammerStrike(state, c, settings, events);
-        else resolveMeleeHit(state, c, events);
+        if (c.attackKind === 'strike') {
+          resolveHammerStrike(state, c, settings, events);
+          // A grounded hammer strike opens the hammer-jump window (sim has no pitch, so we
+          // gate on "grounded" instead of the live "aim the impact at your feet").
+          if (c.grounded) c.hammerJumpWindowTimer = settings.hammerJumpWindow ?? 0.6;
+        } else {
+          resolveMeleeHit(state, c, settings, events);
+        }
         c.weaponState = 'recovering';
         c.weaponTimer = recoverForKind(c.attackKind, settings);
         c.attackCooldown = c.weaponTimer;
@@ -317,6 +383,10 @@ export function respawnCombatant(state: SimState, c: SimCombatant, settings: Uni
   c.weaponState = 'idle';
   c.weaponTimer = 0;
   c.attackKind = 'none';
+  c.weaponReadyTimer = settings.weaponReadyTime ?? 0.5; // weapon needs to ready up after spawn
+  c.hammerJumpWindowTimer = 0;
+  c.hammerJumpsInAir = 0;
+  c.passChargeTimer = 0;
   c.isJumping = false;
   c.isLunging = false;
   c.lungeTimer = 0;

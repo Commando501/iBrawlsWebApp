@@ -71,6 +71,28 @@ test('a world that reaches its kill target finishes and regenerates', () => {
   assert.ok(sawDone, 'a kill-target=2 world should finish within the cap');
 });
 
+test('domain randomization is deterministic and actually changes dynamics', () => {
+  const mk = (dr: any) => new CombatVecEnv({ worldSizes: [2, 2], baseSeed: 5, randomize: dr, randomizeLayout: false });
+  const off = mk({ enabled: false, pct: 0 });
+  const on1 = mk({ enabled: true, pct: 0.3 });
+  const on2 = mk({ enabled: true, pct: 0.3 });
+  off.reset(); on1.reset(); on2.reset();
+
+  const acts = new Int32Array(off.numAgents * ACTION_DIM);
+  for (let i = 0; i < acts.length; i++) acts[i] = (i % 2) + 1; // move + attack-ish
+
+  let onObs1!: Float32Array, onObs2!: Float32Array, offObs!: Float32Array;
+  for (let t = 0; t < 40; t++) {
+    offObs = off.step(acts).obs;
+    onObs1 = on1.step(acts).obs;
+    onObs2 = on2.step(acts).obs;
+  }
+  // Same DR config + actions -> identical (reproducible).
+  assert.deepEqual([...onObs1], [...onObs2]);
+  // Randomized dynamics diverge from the un-randomized baseline.
+  assert.notDeepEqual([...onObs1], [...offObs]);
+});
+
 test('randomizeLayout=false gives a stable FFA layout', () => {
   const env = new CombatVecEnv({ worldSizes: [4], baseSeed: 9, randomizeLayout: false });
   env.reset();

@@ -29,6 +29,7 @@ import {
   type RewardConfig,
   type RewardMemory,
 } from '../env/reward';
+import { randomizeSettings, type RandomizeSpec } from '../env/randomize';
 import { type VecStepResult } from './vecEnv';
 
 export interface CombatVecEnvConfig {
@@ -41,6 +42,8 @@ export interface CombatVecEnvConfig {
   killTargetRange?: [number, number];
   /** Randomize team partition + kill target each episode (default true). */
   randomizeLayout?: boolean;
+  /** Per-episode domain randomization of the dynamics settings. */
+  randomize?: RandomizeSpec;
   /** Safety cap per match; exceeding it truncates (and bootstraps if enabled downstream). */
   maxTicks?: number;
 }
@@ -53,6 +56,7 @@ interface World {
   episode: number;
   state: SimState;
   memory: RewardMemory;
+  settings: UniversalSettings; // effective (possibly randomized) settings this episode
   layoutRng: Rng; // drives partition + kill-target randomization
 }
 
@@ -79,7 +83,8 @@ export class CombatVecEnv {
   private readonly settings: UniversalSettings;
   private readonly reward: RewardConfig;
   private readonly killTargetRange: [number, number];
-  private readonly randomize: boolean;
+  private readonly randomizeLayout: boolean;
+  private readonly dr: RandomizeSpec;
   private readonly maxTicks: number;
   private readonly worlds: World[] = [];
 
@@ -94,7 +99,8 @@ export class CombatVecEnv {
     this.settings = resolveSimSettings(config.settings, 'combat');
     this.reward = { ...DEFAULT_REWARD_CONFIG, ...(config.reward ?? {}) };
     this.killTargetRange = config.killTargetRange ?? [10, 25];
-    this.randomize = config.randomizeLayout ?? true;
+    this.randomizeLayout = config.randomizeLayout ?? true;
+    this.dr = config.randomize ?? { enabled: false, pct: 0 };
     this.maxTicks = config.maxTicks ?? 60 * 60 * 8;
     const baseSeed = config.baseSeed ?? 1;
 
@@ -108,6 +114,7 @@ export class CombatVecEnv {
         episode: 0,
         state: null as unknown as SimState,
         memory: null as unknown as RewardMemory,
+        settings: this.settings,
         layoutRng: createRng(baseSeed + i * 100003),
       });
       offset += size;
@@ -131,7 +138,7 @@ export class CombatVecEnv {
 
   /** Sample a layout for a world from its layout RNG (or a fixed default). */
   private sampleLayout(w: World): { teamSizes: number[]; killTarget: number } {
-    if (!this.randomize) {
+    if (!this.randomizeLayout) {
       return { teamSizes: Array(w.size).fill(1), killTarget: this.killTargetRange[1] };
     }
     const parts = allowedPartitions(w.size);
@@ -144,11 +151,12 @@ export class CombatVecEnv {
   private makeWorld(w: World): void {
     const { teamSizes, killTarget } = this.sampleLayout(w);
     const seed = w.baseSeed + w.episode * 999983;
+    w.settings = randomizeSettings(this.settings, this.dr, createRng(seed ^ 0x85ebca6b));
     w.state = createMatch({
       seed,
       mode: 'combat',
       combat: { teamSizes, killTarget },
-      settings: this.settings,
+      settings: w.settings,
     });
     w.memory = initRewardMemory(w.state);
     // Record current teams for the header (informational only; self-play ignores them).
@@ -179,7 +187,7 @@ export class CombatVecEnv {
         byId[id] = decodeAction(actions, state, id, (w.offset + j) * this.actDim);
       }
 
-      const events = stepSimulation(state, byId, { settings: this.settings });
+      const events = stepSimulation(state, byId, { settings: w.settings });
       const rewards = computeStepRewards(state, events, this.reward, w.memory);
 
       const truncated = !events.matchEnded && state.tick >= this.maxTicks;

@@ -35,6 +35,10 @@ clip_range    = 0.2          # how far the policy may move per update
 width = 256                  # neurons per layer (try 512/1024 on GPU)
 depth = 2                    # hidden layers (2-3)
 
+[randomize]   # robustness to live balance patches: jitter mechanics each episode
+enabled = false              # turn on once the brain plays well at the fixed preset
+pct     = 0.15               # +/-15% jitter on speeds, reach, timings, etc.
+
 [reward]   # what the agent is paid for. dense terms accumulate over thousands of ticks!
 win           = 1.0          # winning the match
 goal_scored   = 1.0          # each goal scored

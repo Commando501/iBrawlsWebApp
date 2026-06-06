@@ -76,6 +76,7 @@ export function setSimCarrier(
     c.maxHp = baseMaxHp;
     c.hp = Math.min(c.hp, c.maxHp);
     c.hasBall = false;
+    c.passChargeTimer = 0;
   }
 }
 
@@ -99,6 +100,10 @@ export function placeCombatantsAtSpawns(state: SimState, settings: UniversalSett
     c.weaponState = 'idle';
     c.weaponTimer = 0;
     c.attackKind = 'none';
+    c.weaponReadyTimer = settings.weaponReadyTime ?? 0.5;
+    c.hammerJumpWindowTimer = 0;
+    c.hammerJumpsInAir = 0;
+    c.passChargeTimer = 0;
     c.hasBall = false;
     c.isLunging = false;
     c.lungeTimer = 0;
