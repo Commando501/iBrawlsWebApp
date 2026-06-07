@@ -1,9 +1,12 @@
-"""Head-to-head evaluation of a trained policy vs the built-in heuristic.
+"""Head-to-head evaluation of a trained policy.
 
-Win/loss is read from the terminal-tick reward sign (the ±``win`` reward dominates a single
-tick), aggregated per world-env episode. Reports win-rate and mean episodic return — the
-learning signal for Verification #7. (Exact goal-diff / K-D / length over many matches is
-also available on the TS side via ``npm run sim:eval``.)
+Win/loss/draw is read from the **terminal-tick reward**: a real win/loss carries the ±`win`
+reward (≈±1), while a timed-out/stalled match only has the tiny time penalty (≈0). So we
+bucket with a decisive threshold — `> +0.5` win, `< -0.5` loss, else **draw** (timeout). This
+matters: an undertrained policy that stalls produces draws, not losses.
+
+Works purely through the SB3 VecEnv interface (num_envs / step / reward / done) — no env
+internals — so it's robust to the multi-worker layout.
 """
 from __future__ import annotations
 
@@ -11,15 +14,25 @@ import numpy as np
 
 from .envs.grifball_vec_env import GrifballVecEnv
 
+WIN_THRESHOLD = 0.5  # terminal reward magnitude separating a decisive result from a timeout
+
+
+def _predict(model, env, obs, deterministic: bool) -> np.ndarray:
+    if model is None:
+        return np.stack([env.action_space.sample() for _ in range(env.num_envs)]).astype(np.int32)
+    action, _ = model.predict(obs, deterministic=deterministic)
+    return np.asarray(action, dtype=np.int32)
+
 
 def eval_vs(
     model,
-    opponent: str = "heuristic",
+    opponent: str = "random",
     matches: int = 50,
     num_envs: int = 16,
     goal_target: int = 3,
     deterministic: bool = True,
 ) -> dict:
+    """Grade a grifball policy vs a built-in opponent. Each learner sub-env's episode counts."""
     env = GrifballVecEnv(
         num_envs=num_envs,
         opponent=opponent,
@@ -28,45 +41,26 @@ def eval_vs(
     )
     try:
         obs = env.reset()
-        lpe = env.learners_per_env
-        world_envs = env.n_world_envs
         ep_return = np.zeros(env.num_envs, dtype=np.float64)
-
-        wins = 0
-        losses = 0
-        draws = 0
+        wins = losses = draws = completed = 0
         returns: list[float] = []
-        completed = 0
-
-        max_iters = matches * 60 * 60 * 8  # generous safety bound
+        max_iters = matches * 60 * 60 * 8
         it = 0
         while completed < matches and it < max_iters:
             it += 1
-            if model is None:
-                action = np.stack(
-                    [env.action_space.sample() for _ in range(env.num_envs)]
-                ).astype(np.int32)
-            else:
-                action, _ = model.predict(obs, deterministic=deterministic)
-            obs, reward, done, _ = env.step(action)
+            obs, reward, done, _ = env.step(_predict(model, env, obs, deterministic))
             ep_return += reward
-
-            if done.any():
-                # Sub-envs of a world-env finish together; collapse per world-env.
-                for w in range(world_envs):
-                    sl = slice(w * lpe, (w + 1) * lpe)
-                    if done[sl].any():
-                        team_reward = float(reward[sl].mean())
-                        returns.append(float(ep_return[sl].mean()))
-                        ep_return[sl] = 0.0
-                        if team_reward > 1e-6:
-                            wins += 1
-                        elif team_reward < -1e-6:
-                            losses += 1
-                        else:
-                            draws += 1
-                        completed += 1
-
+            for i in np.nonzero(done)[0]:
+                r = float(reward[i])
+                if r > WIN_THRESHOLD:
+                    wins += 1
+                elif r < -WIN_THRESHOLD:
+                    losses += 1
+                else:
+                    draws += 1
+                returns.append(float(ep_return[i]))
+                ep_return[i] = 0.0
+                completed += 1
         total = max(1, wins + losses + draws)
         return {
             "win_rate": wins / total,
@@ -80,7 +74,7 @@ def eval_vs(
 
 
 def eval_vs_heuristic(model, **kw) -> dict:
-    """Back-compat shim: eval against the built-in heuristic."""
+    """Back-compat shim: grade against the built-in heuristic."""
     return eval_vs(model, opponent="heuristic", **kw)
 
 
@@ -91,11 +85,10 @@ def eval_combat_vs_random(
     kill_target: int = 10,
     deterministic: bool = True,
 ) -> dict:
-    """Grade a combat policy by 1v1 duels vs a random opponent.
+    """Grade a combat policy by 1v1 duels vs a random opponent (fixed 1v1 worlds).
 
-    Uses fixed 1v1 worlds (no layout randomization). Even agent slots are driven by the
-    policy (team t0), odd slots act randomly (team t1); a world's win is read from the
-    policy slot's terminal-tick reward sign.
+    Even agent slots = policy (team t0), odd = random (team t1). Win read from the policy
+    slot's terminal reward; timeouts (no decisive reward) count as draws.
     """
     env = GrifballVecEnv(
         mode="combat",
@@ -106,33 +99,28 @@ def eval_combat_vs_random(
     )
     try:
         obs = env.reset()
-        policy_idx = np.arange(0, env.num_envs, 2)   # even = policy (team t0)
-        random_idx = np.arange(1, env.num_envs, 2)   # odd  = random opponent (team t1)
-
+        policy_idx = np.arange(0, env.num_envs, 2)
+        random_idx = np.arange(1, env.num_envs, 2)
         wins = losses = draws = completed = 0
         max_iters = matches * 60 * 60 * 8
         it = 0
         while completed < matches and it < max_iters:
             it += 1
-            if model is None:
-                action = np.stack([env.action_space.sample() for _ in range(env.num_envs)])
-            else:
-                action, _ = model.predict(obs, deterministic=deterministic)
-            action = np.asarray(action, dtype=np.int32)
-            for j in random_idx:                      # opponent acts randomly
+            action = _predict(model, env, obs, deterministic)
+            for j in random_idx:
                 action[j] = env.action_space.sample()
             obs, reward, done, _ = env.step(action)
-
             for w in policy_idx:
-                if done[w]:
-                    r = float(reward[w])
-                    if r > 1e-6:
-                        wins += 1
-                    elif r < -1e-6:
-                        losses += 1
-                    else:
-                        draws += 1
-                    completed += 1
+                if not done[w]:
+                    continue
+                r = float(reward[w])
+                if r > WIN_THRESHOLD:
+                    wins += 1
+                elif r < -WIN_THRESHOLD:
+                    losses += 1
+                else:
+                    draws += 1
+                completed += 1
         total = max(1, wins + losses + draws)
         return {
             "win_rate": wins / total,

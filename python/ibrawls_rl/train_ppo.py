@@ -9,11 +9,13 @@ printed and written to the TensorBoard "TEXT" tab so each run documents itself.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import shutil
 
 from stable_baselines3 import PPO
-from stable_baselines3.common.callbacks import CheckpointCallback
+from stable_baselines3.common.callbacks import BaseCallback, CheckpointCallback
+from stable_baselines3.common.logger import KVWriter
 
 from .config import TrainConfig, reward_dict, settings_markdown, randomize_spec
 from .envs.grifball_vec_env import GrifballVecEnv
@@ -46,6 +48,68 @@ try:
             return True
 except Exception:  # pragma: no cover
     EvalCallback = None  # type: ignore
+
+
+class JSONLMetricsWriter(KVWriter):
+    """Append every SB3 logger dump as one JSON line to ``metrics.jsonl``.
+
+    This is what the control board reads for live charts — no TensorBoard parsing
+    on the hot path. Each line is a snapshot of all current scalars plus the step.
+    """
+
+    def __init__(self, path: str):
+        self.path = path
+        self.file = open(path, "a", encoding="utf-8")
+
+    def write(self, key_values, key_excluded, step: int = 0) -> None:  # noqa: ANN001
+        rec: dict = {"step": int(step)}
+        for k, v in key_values.items():
+            if isinstance(v, bool):
+                rec[k] = v
+            elif isinstance(v, (int, float)):
+                rec[k] = v
+            else:
+                try:
+                    rec[k] = float(v)
+                except (TypeError, ValueError):
+                    continue
+        self.file.write(json.dumps(rec) + "\n")
+        self.file.flush()
+
+    def close(self) -> None:
+        try:
+            self.file.close()
+        except Exception:
+            pass
+
+
+class JSONLLoggerCallback(BaseCallback):
+    """Attach the JSONL writer once SB3 has configured the logger (in learn()).
+
+    Attaching right after ``PPO(...)`` doesn't work: ``learn()`` rebuilds
+    ``model.logger`` from ``tensorboard_log``, dropping any earlier additions. We
+    add the writer in ``_on_training_start`` (after that rebuild) so it captures
+    every dump, then close it at the end.
+    """
+
+    def __init__(self, logdir: str):
+        super().__init__()
+        self.logdir = logdir
+        self._writer: JSONLMetricsWriter | None = None
+
+    def _on_training_start(self) -> None:
+        try:
+            self._writer = JSONLMetricsWriter(os.path.join(self.logdir, "metrics.jsonl"))
+            self.logger.output_formats.append(self._writer)
+        except Exception:
+            self._writer = None
+
+    def _on_step(self) -> bool:
+        return True
+
+    def _on_training_end(self) -> None:
+        if self._writer is not None:
+            self._writer.close()
 
 
 def _log_settings(cfg: TrainConfig) -> None:
@@ -145,11 +209,14 @@ def run_training(cfg: TrainConfig) -> str:
                 f"failed to load init_model ({e}). The width/depth must match the saved model."
             )
 
-    callbacks = [CheckpointCallback(
-        save_freq=max(1, cfg.save_every // cfg.parallel_matches),
-        save_path=os.path.join(cfg.logdir, "checkpoints"),
-        name_prefix="ppo_grifball",
-    )]
+    callbacks: list = [
+        JSONLLoggerCallback(cfg.logdir),
+        CheckpointCallback(
+            save_freq=max(1, cfg.save_every // cfg.parallel_matches),
+            save_path=os.path.join(cfg.logdir, "checkpoints"),
+            name_prefix="ppo_grifball",
+        ),
+    ]
     # Grifball gets a win-rate-vs-opponent eval. Combat is self-play (no fixed opponent to
     # grade against mid-run); use `evaluate.py --mode combat` for an on-demand vs-random grade.
     if EvalCallback is not None and cfg.mode != "combat":

@@ -62,10 +62,23 @@ export function createMultiplayerSyncMessageHandler({
         if (data.clientClientId) {
           state.clientClientId = data.clientClientId;
         }
-        if (data.otherPlayerIds && Array.isArray(data.otherPlayerIds)) {
-          data.otherPlayerIds.forEach((id: string) => {
+        if (Array.isArray(data.otherPlayers)) {
+          data.otherPlayers.forEach((player: any) => {
+            if (typeof player?.clientId === 'string') {
+              createOrUpdateRemotePlayer(player.clientId, {
+                hp: 1,
+                role: player.role,
+                spawnSlot: player.spawnSlot,
+                playerName: player.playerName,
+              });
+            }
+          });
+          resizeArena(1 + state.otherPlayers.size);
+          pushStatsUpdate();
+        } else if (data.otherPlayerIds && Array.isArray(data.otherPlayerIds)) {
+          data.otherPlayerIds.forEach((id: string, index: number) => {
             if (id !== data.clientClientId) {
-              createOrUpdateRemotePlayer(id, { hp: 1 });
+              createOrUpdateRemotePlayer(id, { hp: 1, spawnSlot: index + 1 });
             }
           });
           resizeArena(1 + state.otherPlayers.size);

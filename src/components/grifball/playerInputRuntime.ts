@@ -32,9 +32,46 @@ type PlayerKeyboardActionCallbacks = {
 const LOOK_PITCH_LIMIT = Math.PI / 2.3;
 const GAMEPAD_DEADZONE = 0.18;
 const MOUSE_BUTTON_BINDINGS: Record<number, string> = { 0: 'lmb', 2: 'rmb', 1: 'mmb' };
+const MIN_MOUSE_SENSITIVITY = 0.1;
+const MAX_MOUSE_SENSITIVITY = 5.0;
+const MIN_GAMEPAD_SENSITIVITY = 0.5;
+const MAX_GAMEPAD_SENSITIVITY = 10.0;
+const MIN_LOOK_ACCELERATION = 0.0;
+const MAX_LOOK_ACCELERATION = 2.0;
+const MAX_POINTER_LOCK_DELTA = 160;
+const MAX_DRAG_LOOK_DELTA = 160;
+const MAX_TOUCH_LOOK_DELTA = 140;
+const MAX_LOOK_RADIANS_PER_EVENT = 0.75;
+const MAX_LOOK_DT = 0.05;
 
 function clampPitch(pitch: number): number {
   return Math.max(-LOOK_PITCH_LIMIT, Math.min(LOOK_PITCH_LIMIT, pitch));
+}
+
+function clampNumber(value: number, min: number, max: number): number {
+  if (!Number.isFinite(value)) return min;
+  return Math.max(min, Math.min(max, value));
+}
+
+function clampSymmetric(value: number, maxAbs: number): number {
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(-maxAbs, Math.min(maxAbs, value));
+}
+
+function getSafeMouseSensitivity(mouseSensitivity: number): number {
+  return clampNumber(mouseSensitivity, MIN_MOUSE_SENSITIVITY, MAX_MOUSE_SENSITIVITY);
+}
+
+function getSafeLookAcceleration(acceleration: number): number {
+  return clampNumber(acceleration, MIN_LOOK_ACCELERATION, MAX_LOOK_ACCELERATION);
+}
+
+function getSafeGamepadSensitivity(gamepadSensitivity: number): number {
+  return clampNumber(gamepadSensitivity, MIN_GAMEPAD_SENSITIVITY, MAX_GAMEPAD_SENSITIVITY);
+}
+
+function getMaxLookRadiansForSensitivity(mouseSensitivity: number): number {
+  return Math.min(1.4, MAX_LOOK_RADIANS_PER_EVENT * Math.sqrt(getSafeMouseSensitivity(mouseSensitivity)));
 }
 
 function applyLookDeltaForState({
@@ -42,14 +79,20 @@ function applyLookDeltaForState({
   deltaX,
   deltaY,
   sensitivity,
+  maxDelta,
+  maxRadians,
 }: {
   state: GrifballRuntimeState;
   deltaX: number;
   deltaY: number;
   sensitivity: number;
+  maxDelta: number;
+  maxRadians: number;
 }): void {
-  state.yaw -= deltaX * sensitivity;
-  state.pitch -= deltaY * sensitivity;
+  const yawOffset = clampSymmetric(clampSymmetric(deltaX, maxDelta) * sensitivity, maxRadians);
+  const pitchOffset = clampSymmetric(clampSymmetric(deltaY, maxDelta) * sensitivity, maxRadians);
+  state.yaw -= yawOffset;
+  state.pitch -= pitchOffset;
   state.pitch = clampPitch(state.pitch);
 }
 
@@ -66,11 +109,16 @@ export function applyPointerLockMouseLookForState({
   mouseSensitivity: number;
   mouseAcceleration: number;
 }): void {
-  const baseSens = 0.0022 * mouseSensitivity;
+  const safeMouseSensitivity = getSafeMouseSensitivity(mouseSensitivity);
+  const safeMouseAcceleration = getSafeLookAcceleration(mouseAcceleration);
+  const baseSens = 0.0022 * safeMouseSensitivity;
+  const maxRadians = getMaxLookRadiansForSensitivity(safeMouseSensitivity);
   const applyAccel = (delta: number) => {
-    if (mouseAcceleration === 0) return delta * baseSens;
-    const sign = delta < 0 ? -1 : 1;
-    return sign * Math.pow(Math.abs(delta), 1 + mouseAcceleration * 0.5) * baseSens;
+    const safeDelta = clampSymmetric(delta, MAX_POINTER_LOCK_DELTA);
+    if (safeMouseAcceleration === 0) return clampSymmetric(safeDelta * baseSens, maxRadians);
+    const sign = safeDelta < 0 ? -1 : 1;
+    const accelerated = sign * Math.pow(Math.abs(safeDelta), 1 + safeMouseAcceleration * 0.5) * baseSens;
+    return clampSymmetric(accelerated, maxRadians);
   };
 
   state.yaw -= applyAccel(movementX);
@@ -89,11 +137,14 @@ export function applyDragMouseLookForState({
   deltaY: number;
   mouseSensitivity: number;
 }): void {
+  const safeMouseSensitivity = getSafeMouseSensitivity(mouseSensitivity);
   applyLookDeltaForState({
     state,
     deltaX,
     deltaY,
-    sensitivity: 0.005 * mouseSensitivity,
+    sensitivity: 0.005 * safeMouseSensitivity,
+    maxDelta: MAX_DRAG_LOOK_DELTA,
+    maxRadians: getMaxLookRadiansForSensitivity(safeMouseSensitivity),
   });
 }
 
@@ -108,11 +159,14 @@ export function applyTouchSwipeLookForState({
   deltaY: number;
   mouseSensitivity: number;
 }): void {
+  const safeMouseSensitivity = getSafeMouseSensitivity(mouseSensitivity);
   applyLookDeltaForState({
     state,
     deltaX,
     deltaY,
-    sensitivity: 0.003 * mouseSensitivity,
+    sensitivity: 0.003 * safeMouseSensitivity,
+    maxDelta: MAX_TOUCH_LOOK_DELTA,
+    maxRadians: getMaxLookRadiansForSensitivity(safeMouseSensitivity),
   });
 }
 
@@ -144,9 +198,11 @@ export function createPlayerLookInputHandlersForState({
   const handlePointerLockChange = () => {
     if (document.pointerLockElement === canvas) {
       isPointerLocked.current = true;
+      isMouseDown.current = false;
       setShowPointerLockAlert(false);
     } else {
       isPointerLocked.current = false;
+      isMouseDown.current = false;
       setShowPointerLockAlert(true);
     }
   };
@@ -537,9 +593,10 @@ export function applyMobileRightJoystickLookForState({
   dt: number;
 }): void {
   if (!active || !joystick) return;
-  const baseAimSens = 2.4 * mouseSensitivity;
-  state.yaw -= joystick.x * baseAimSens * dt;
-  state.pitch -= joystick.y * baseAimSens * dt;
+  const baseAimSens = 2.4 * getSafeMouseSensitivity(mouseSensitivity);
+  const safeDt = clampNumber(dt, 0, MAX_LOOK_DT);
+  state.yaw -= clampSymmetric(joystick.x, 1) * baseAimSens * safeDt;
+  state.pitch -= clampSymmetric(joystick.y, 1) * baseAimSens * safeDt;
   state.pitch = clampPitch(state.pitch);
 }
 
@@ -560,9 +617,10 @@ export function applyGamepadLookForState({
   const ry = gamepad.axes[3];
   if (Math.abs(rx) <= GAMEPAD_DEADZONE && Math.abs(ry) <= GAMEPAD_DEADZONE) return;
 
-  const gpSens = keybindings.gamepadSensitivity ?? 3.0;
-  const gpAccel = keybindings.gamepadAcceleration ?? 0.0;
+  const gpSens = getSafeGamepadSensitivity(keybindings.gamepadSensitivity ?? 3.0);
+  const gpAccel = getSafeLookAcceleration(keybindings.gamepadAcceleration ?? 0.0);
   const baseSpeed = 2.4;
+  const safeDt = clampNumber(dt, 0, MAX_LOOK_DT);
 
   const applyAccel = (val: number) => {
     if (gpAccel === 0) return val;
@@ -574,10 +632,10 @@ export function applyGamepadLookForState({
   let targetYawOffset = 0;
   let targetPitchOffset = 0;
   if (Math.abs(rx) > GAMEPAD_DEADZONE) {
-    targetYawOffset = applyAccel(rx) * baseSpeed * gpSens * dt;
+    targetYawOffset = applyAccel(clampSymmetric(rx, 1)) * baseSpeed * gpSens * safeDt;
   }
   if (Math.abs(ry) > GAMEPAD_DEADZONE) {
-    targetPitchOffset = applyAccel(ry) * baseSpeed * gpSens * dt;
+    targetPitchOffset = applyAccel(clampSymmetric(ry, 1)) * baseSpeed * gpSens * safeDt;
   }
 
   state.yaw -= targetYawOffset;

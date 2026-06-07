@@ -60,6 +60,7 @@ class TrainConfig:
     reward_ball_progress: float = 0.01  # per metre the ball moves toward the enemy goal
     reward_kill: float = 0.1          # each enemy your team kills
     reward_death: float = 0.1         # each of your team's deaths (subtracted)
+    reward_approach: float = 0.01     # per metre closing on the objective (ball / nearest enemy)
     reward_time_penalty: float = 0.0005  # tiny per-tick nudge to stop stalling
     bootstrap_truncation: bool = False   # value-bootstrap timeouts (usually leave off)
 
@@ -105,6 +106,7 @@ KNOB_DESCRIPTIONS: dict[str, str] = {
     "reward_ball_progress": "Payout per metre the ball advances toward the enemy goal.",
     "reward_kill": "Payout per kill.",
     "reward_death": "Penalty per death.",
+    "reward_approach": "Payout per metre closing on the objective (free ball / nearest enemy). The exploration foothold that gets a fresh brain moving toward the action.",
     "reward_time_penalty": "Small per-tick cost to discourage stalling.",
     "bootstrap_truncation": "Treat timeouts as 'to be continued' (value bootstrap). Usually OFF for this win-focused task.",
     "logdir": "Folder for this run's logs, checkpoints, and final model.",
@@ -149,6 +151,7 @@ _TOML_MAP = {
     ("reward", "ball_progress"): "reward_ball_progress",
     ("reward", "kill"): "reward_kill",
     ("reward", "death"): "reward_death",
+    ("reward", "approach"): "reward_approach",
     ("reward", "time_penalty"): "reward_time_penalty",
     ("reward", "bootstrap_truncation"): "bootstrap_truncation",
     ("logging", "dir"): "logdir",
@@ -181,6 +184,7 @@ def reward_dict(cfg: TrainConfig) -> dict:
         "ballProgress": cfg.reward_ball_progress,
         "kill": cfg.reward_kill,
         "death": cfg.reward_death,
+        "approach": cfg.reward_approach,
         "timePenalty": cfg.reward_time_penalty,
     }
 
@@ -197,3 +201,177 @@ def settings_markdown(cfg: TrainConfig) -> str:
         desc = KNOB_DESCRIPTIONS.get(field, "")
         rows.append(f"| {field} | {value} | {desc} |")
     return "\n".join(rows)
+
+
+# ----------------------------------------------------------------------------
+# UI schema + TOML writer — single source of truth shared by the dashboard and
+# the CLI. The dashboard renders a form from `config_schema()`; saving a config
+# round-trips through `dump_toml()` so a file edited in the browser is identical
+# to one a human could have written by hand.
+# ----------------------------------------------------------------------------
+
+# Order + friendly titles for the grouped form. Mirrors the TOML sections.
+SECTION_ORDER = ["run", "combat", "ppo", "network", "randomize", "reward", "logging"]
+SECTION_TITLES = {
+    "run": "Run",
+    "combat": "Combat (deathmatch generalist)",
+    "ppo": "Learning algorithm (PPO)",
+    "network": "Network (the brain)",
+    "randomize": "Domain randomization",
+    "reward": "Rewards (what the agent is paid for)",
+    "logging": "Logging & output",
+}
+
+# Fields that are a pick-one choice rather than a free value.
+_FIELD_CHOICES: dict[str, list[str]] = {
+    "mode": ["grifball", "combat"],
+    "opponent": ["random", "self", "heuristic"],
+    "device": ["auto", "cpu", "cuda"],
+}
+
+# Optional (min, max, step) hints for number inputs — purely to make the form
+# nicer; values are never clamped to these.
+_FIELD_RANGES: dict[str, tuple[float, float, float]] = {
+    "learning_rate": (1e-5, 1e-2, 1e-5),
+    "entropy_coef": (0.0, 0.1, 0.005),
+    "gamma": (0.9, 0.9999, 0.001),
+    "gae_lambda": (0.8, 1.0, 0.01),
+    "clip_range": (0.05, 0.5, 0.05),
+    "value_coef": (0.1, 1.0, 0.05),
+    "randomize_pct": (0.0, 0.5, 0.05),
+}
+
+
+def _infer_type(field: str, value) -> str:
+    if field in _FIELD_CHOICES:
+        return "choice"
+    if isinstance(value, bool):
+        return "bool"
+    if isinstance(value, int):
+        return "int"
+    if isinstance(value, float):
+        return "float"
+    if isinstance(value, list):
+        return "intlist"
+    return "str"
+
+
+def _section_for(field: str) -> str:
+    for (section, _key), f in _TOML_MAP.items():
+        if f == field:
+            return section
+    return "run"
+
+
+def _toml_key_for(field: str) -> str:
+    for (_section, key), f in _TOML_MAP.items():
+        if f == field:
+            return key
+    return field
+
+
+def config_schema() -> list[dict]:
+    """Structured description of every knob, grouped by section, for the UI form.
+
+    Returns a list of {section, title, knobs:[{field, key, label, type, default,
+    description, choices?, min?, max?, step?}]} in display order.
+    """
+    defaults = asdict(TrainConfig())
+    # field -> (toml key) grouped by section, preserving _TOML_MAP order.
+    by_section: dict[str, list[tuple[str, str]]] = {}
+    for (section, key), field in _TOML_MAP.items():
+        by_section.setdefault(section, []).append((key, field))
+
+    out: list[dict] = []
+    for section in SECTION_ORDER:
+        knobs = []
+        for key, field in by_section.get(section, []):
+            value = defaults[field]
+            ktype = _infer_type(field, value)
+            knob = {
+                "field": field,
+                "key": key,
+                "label": key.replace("_", " "),
+                "type": ktype,
+                "default": value,
+                "description": KNOB_DESCRIPTIONS.get(field, ""),
+            }
+            if ktype == "choice":
+                knob["choices"] = _FIELD_CHOICES[field]
+            if field in _FIELD_RANGES:
+                lo, hi, step = _FIELD_RANGES[field]
+                knob.update(min=lo, max=hi, step=step)
+            knobs.append(knob)
+        if knobs:
+            out.append({"section": section, "title": SECTION_TITLES.get(section, section), "knobs": knobs})
+    return out
+
+
+def coerce_value(field: str, raw):
+    """Coerce a value coming from JSON/the form into the dataclass field's type."""
+    default = getattr(TrainConfig(), field)
+    if isinstance(default, bool):
+        if isinstance(raw, str):
+            return raw.strip().lower() in ("1", "true", "yes", "on")
+        return bool(raw)
+    if isinstance(default, int):
+        return int(float(raw))
+    if isinstance(default, float):
+        return float(raw)
+    if isinstance(default, list):
+        if isinstance(raw, str):
+            return [int(float(x)) for x in raw.replace(",", " ").split() if x.strip()]
+        return [int(float(x)) for x in raw]
+    return str(raw)
+
+
+def config_from_values(values: dict) -> TrainConfig:
+    """Build a TrainConfig from a {field: value} dict (unknown fields ignored)."""
+    cfg = TrainConfig()
+    valid = set(asdict(cfg).keys())
+    for field, raw in values.items():
+        if field in valid:
+            setattr(cfg, field, coerce_value(field, raw))
+    return cfg
+
+
+def _toml_val(v) -> str:
+    if isinstance(v, bool):
+        return "true" if v else "false"
+    if isinstance(v, str):
+        return '"' + v.replace("\\", "\\\\").replace('"', '\\"') + '"'
+    if isinstance(v, list):
+        return "[" + ", ".join(str(int(x)) for x in v) + "]"
+    if isinstance(v, float):
+        return repr(v)
+    return str(v)
+
+
+def dump_toml(cfg: TrainConfig) -> str:
+    """Serialize a TrainConfig back to grouped TOML (what config.toml looks like)."""
+    by_section: dict[str, list[tuple[str, str]]] = {}
+    for (section, key), field in _TOML_MAP.items():
+        by_section.setdefault(section, []).append((key, field))
+
+    lines = [
+        "# ============================================================================",
+        "#  iBrawls RL config. Written by the control board (python -m ibrawls_rl.dashboard).",
+        "#  Safe to hand-edit; every field's meaning is shown in the dashboard form.",
+        "# ============================================================================",
+        "",
+    ]
+    for section in SECTION_ORDER:
+        rows = by_section.get(section)
+        if not rows:
+            continue
+        lines.append(f"[{section}]")
+        for key, field in rows:
+            lines.append(f"{key} = {_toml_val(getattr(cfg, field))}")
+        lines.append("")
+    return "\n".join(lines)
+
+
+def save_config(cfg: TrainConfig, path: str) -> None:
+    """Write a TrainConfig to a TOML file."""
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(dump_toml(cfg))

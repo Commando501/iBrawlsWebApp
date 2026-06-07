@@ -18,8 +18,9 @@ export interface GrifballGameProps {
   onStatsUpdate: (stats: GameStats) => void;
   onPauseToggle: () => void;
   isMultiplayer?: boolean;
-  multiplayerRole?: 'host' | 'client' | null;
+  multiplayerRole?: 'host' | 'client' | 'observer' | null;
   multiplayerSocket?: WebSocket | null;
+  multiplayerSpawnSlot?: number;
   opponentClientId?: string;
   opponentPlayerName?: string;
   offlineBotCount?: number;

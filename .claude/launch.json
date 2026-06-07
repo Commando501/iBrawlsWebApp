@@ -6,6 +6,12 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
       "port": 3000
+    },
+    {
+      "name": "rl-board",
+      "runtimeExecutable": "python/.venv/Scripts/python.exe",
+      "runtimeArgs": ["-m", "ibrawls_rl.dashboard", "--no-browser", "--port", "8770"],
+      "port": 8770
     }
   ]
 }

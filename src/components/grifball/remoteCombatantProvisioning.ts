@@ -3,6 +3,8 @@ import { createRemoteCombatant } from '../../game/roster';
 import { type UniversalSettings } from '../../types';
 import { createCombatantMeshRig } from './combatantModels';
 import { getInwardSpawnYaw } from './combatGeometry';
+import { type CustomMapData } from '../../types';
+import { getMultiplayerSpawnPoint } from './arenaSpawns';
 import { type GrifballRuntimeState } from './runtimeState';
 import { type GrifballThreeRefs } from './threeRefs';
 
@@ -16,6 +18,7 @@ type RemoteCombatantUpdate = {
   activeWeapon?: string;
   respawnTimer?: number;
   invulnerabilityTimer?: number;
+  spawnSlot?: number;
   pos?: { x: number; y: number; z: number };
   vel?: { x: number; y: number; z: number };
   yaw?: number;
@@ -28,6 +31,8 @@ export function createOrUpdateRemoteCombatantForState({
   clientId,
   data,
   opponentClientId,
+  activeCustomMap,
+  spawnPoints,
   constrainCombatantToArena,
 }: {
   state: GrifballRuntimeState;
@@ -35,6 +40,8 @@ export function createOrUpdateRemoteCombatantForState({
   clientId: string;
   data: RemoteCombatantUpdate;
   opponentClientId: string;
+  activeCustomMap: CustomMapData | null;
+  spawnPoints: THREE.Vector3[];
   constrainCombatantToArena: (pos: THREE.Vector3, vel?: THREE.Vector3) => void;
 }): void {
   const scene = refs.scene;
@@ -46,10 +53,12 @@ export function createOrUpdateRemoteCombatantForState({
       (state.multiplayerRole === 'client' && clientId === opponentClientId) ||
       (state.multiplayerRole === 'observer' && data.role === 'host');
     const spawnZ = isHostPlayer ? 12 : -12;
+    const spawnPos = getMultiplayerSpawnPoint(activeCustomMap, spawnPoints, isHostPlayer ? 0 : data.spawnSlot);
     playerState = createRemoteCombatant({
       id: clientId,
       playerName: data.playerName,
       spawnZ,
+      spawnPos,
       settings: state.settings as UniversalSettings,
       data: {
         hp: data.hp,
@@ -61,7 +70,7 @@ export function createOrUpdateRemoteCombatantForState({
         invulnerabilityTimer: data.invulnerabilityTimer,
       },
     });
-    playerState.yaw = getInwardSpawnYaw(playerState.pos);
+    playerState.yaw = spawnPos.spawnYaw ?? getInwardSpawnYaw(playerState.pos);
     state.otherPlayers.set(clientId, playerState);
   }
 

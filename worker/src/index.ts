@@ -142,7 +142,7 @@ function sanitizeConfigSettings(input: unknown): Record<string, unknown> {
 
 interface Room {
   host: GameWebSocket;
-  clients: GameWebSocket[]; // Array of up to 7 guest clients (8 players total)
+  clients: GameWebSocket[]; // Array of up to MAX_ROOM_CLIENTS guest clients
   observers: Set<GameWebSocket>;
   keys: string[];
   quickplayReserved?: boolean;
@@ -154,9 +154,13 @@ interface GameWebSocket extends WebSocket {
   roomCode?: string;
   spaceAvailable?: boolean;
   playerName?: string;
+  playerCount?: number;
+  maxPlayers?: number;
 }
 
 const MAX_PLAYER_NAME_LENGTH = 10;
+const MAX_ROOM_CLIENTS = 7;
+const MAX_ROOM_PLAYERS = 1 + MAX_ROOM_CLIENTS;
 
 function normalizePlayerName(name: unknown): string | undefined {
   if (typeof name !== "string") return undefined;
@@ -611,6 +615,38 @@ export class GameLobby implements DurableObject {
     }
   }
 
+  getSocketId(socket: GameWebSocket): string {
+    return String(socket.id || "");
+  }
+
+  getRoomPlayerEntries(room: Room) {
+    return [
+      {
+        clientId: this.getSocketId(room.host),
+        role: "host",
+        spawnSlot: 0,
+        playerName: normalizePlayerName(room.host.playerName) || `Client ${this.getSocketId(room.host)}`,
+      },
+      ...room.clients.map((client, index) => ({
+        clientId: this.getSocketId(client),
+        role: "client",
+        spawnSlot: index + 1,
+        playerName: normalizePlayerName(client.playerName) || `Client ${this.getSocketId(client)}`,
+      })),
+    ];
+  }
+
+  getOtherRoomPlayerEntries(room: Room, selfId: string) {
+    return this.getRoomPlayerEntries(room).filter(player => player.clientId !== selfId);
+  }
+
+  getRoomSpawnSlot(room: Room, socket: GameWebSocket): number {
+    const socketId = this.getSocketId(socket);
+    if (room.host === socket || this.getSocketId(room.host) === socketId) return 0;
+    const index = room.clients.findIndex(client => client === socket || this.getSocketId(client) === socketId);
+    return index >= 0 ? index + 1 : 0;
+  }
+
   // Helper to clean up dead sockets from the quickplay queue
   cleanQuickPlayQueue() {
     for (const socket of this.quickPlayQueue) {
@@ -737,6 +773,8 @@ export class GameLobby implements DurableObject {
     gameWs.roomCode = undefined;
     gameWs.spaceAvailable = false;
     gameWs.playerName = normalizePlayerName(nameParam);
+    gameWs.playerCount = undefined;
+    gameWs.maxPlayers = undefined;
     
     console.log(`New WebSocket connection received. Assigned Socket ID: ${wsId}, Type: ${connectionType}, Name: ${nameParam}`);
 
@@ -753,12 +791,18 @@ export class GameLobby implements DurableObject {
 
         switch (message.type) {
           case "update_status": {
-            const { status, roomCode, spaceAvailable, name } = message;
-            console.log(`Client ${wsId} updating playerState to: ${status}, roomCode: ${roomCode}, spaceAvailable: ${spaceAvailable}`);
+            const { status, roomCode, spaceAvailable, name, playerCount, maxPlayers } = message;
+            console.log(`Client ${wsId} updating playerState to: ${status}, roomCode: ${roomCode}, spaceAvailable: ${spaceAvailable}, players: ${playerCount}/${maxPlayers}`);
             gameWs.playerState = status;
             gameWs.roomCode = roomCode;
             gameWs.spaceAvailable = spaceAvailable;
             gameWs.playerName = normalizePlayerName(name);
+            gameWs.playerCount = typeof playerCount === 'number' && Number.isFinite(playerCount)
+              ? Math.max(0, Math.min(MAX_ROOM_PLAYERS, Math.floor(playerCount)))
+              : undefined;
+            gameWs.maxPlayers = typeof maxPlayers === 'number' && Number.isFinite(maxPlayers)
+              ? Math.max(1, Math.min(MAX_ROOM_PLAYERS, Math.floor(maxPlayers)))
+              : undefined;
             this.updatePresence();
             break;
           }
@@ -838,10 +882,10 @@ export class GameLobby implements DurableObject {
           case "quickplay_join": {
             console.log(`Client ${wsId} requested Quick Play matchmaking.`);
             
-            // 1. Search for any hosted match waiting for a player (not full, not reserved)
+            // 1. Search for any hosted match with an open player slot (not reserved)
             let foundRoomKey: string | null = null;
             for (const [key, room] of this.rooms.entries()) {
-              if (room.clients.length === 0 && !room.quickplayReserved) {
+              if (room.clients.length < MAX_ROOM_CLIENTS && !room.quickplayReserved) {
                 foundRoomKey = key;
                 room.quickplayReserved = true; // Mark it as reserved
                 break;
@@ -983,7 +1027,8 @@ export class GameLobby implements DurableObject {
                   otherPlayerIds: [
                     room.host.id,
                     ...room.clients.map(c => c.id)
-                  ]
+                  ],
+                  otherPlayers: this.getRoomPlayerEntries(room),
                 }));
               } catch (e) {}
               
@@ -1000,9 +1045,9 @@ export class GameLobby implements DurableObject {
               break;
             }
 
-            if (room.clients.length >= 7) { // 8 players total (1 host + 7 clients)
+            if (room.clients.length >= MAX_ROOM_CLIENTS) {
               try {
-                gameWs.send(JSON.stringify({ type: "error", message: `Match is already full (8/8 players present).` }));
+                gameWs.send(JSON.stringify({ type: "error", message: `Match is already full (${MAX_ROOM_PLAYERS}/${MAX_ROOM_PLAYERS} players present).` }));
               } catch(e) {}
               return;
             }
@@ -1010,6 +1055,7 @@ export class GameLobby implements DurableObject {
             if (!room.clients.includes(gameWs) && !room.clients.some((c: any) => c.id === wsId)) {
               room.clients.push(gameWs);
             }
+            room.quickplayReserved = false;
             this.socketToRoom.set(gameWs, room);
 
             // Notify both parties that they have paired successfully
@@ -1019,10 +1065,12 @@ export class GameLobby implements DurableObject {
                 role: "client", 
                 hostClientId: room.host.id, 
                 clientClientId: wsId,
+                spawnSlot: this.getRoomSpawnSlot(room, gameWs),
                 otherPlayerIds: [
                   room.host.id,
                   ...room.clients.filter(c => c.id !== wsId).map(c => c.id)
-                ]
+                ],
+                otherPlayers: this.getOtherRoomPlayerEntries(room, wsId),
               }));
             } catch (e) {}
 
@@ -1031,6 +1079,7 @@ export class GameLobby implements DurableObject {
               type: "player_joined",
               role: "client",
               clientId: wsId,
+              spawnSlot: this.getRoomSpawnSlot(room, gameWs),
               playerName: normalizePlayerName(gameWs.playerName) || `Client ${wsId}`
             });
 
@@ -1040,10 +1089,12 @@ export class GameLobby implements DurableObject {
                   room.host.send(JSON.stringify({
                     type: "connected",
                     role: "host",
+                    spawnSlot: 0,
                     clientClientId: wsId,
                     otherPlayerIds: [
                       wsId
-                    ]
+                    ],
+                    otherPlayers: this.getOtherRoomPlayerEntries(room, this.getSocketId(room.host)),
                   }));
                 } catch (e) {}
               }
@@ -1253,7 +1304,9 @@ export class GameLobby implements DurableObject {
         name: normalizePlayerName(client.playerName),
         state: client.playerState || 'menu',
         roomCode: client.roomCode,
-        spaceAvailable: client.spaceAvailable !== undefined ? client.spaceAvailable : false
+        spaceAvailable: client.spaceAvailable !== undefined ? client.spaceAvailable : false,
+        playerCount: client.playerCount,
+        maxPlayers: client.maxPlayers
       }))
       .filter(c => Boolean(c.id));
 

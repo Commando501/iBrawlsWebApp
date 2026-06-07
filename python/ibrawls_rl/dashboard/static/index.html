@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>iBrawls RL — Control Board</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">iBrawls&nbsp;RL <span>Control Board</span></div>
+    <nav class="tabs">
+      <button class="tab active" data-tab="train">Train</button>
+      <button class="tab" data-tab="runs">Runs</button>
+      <button class="tab" data-tab="evaluate">Evaluate</button>
+      <button class="tab" data-tab="watch">Watch</button>
+    </nav>
+  </header>
+
+  <main>
+    <!-- ================= TRAIN ================= -->
+    <section id="tab-train" class="tabpane active">
+      <div class="statusbar" id="trainStatus">
+        <span class="badge idle" id="stateBadge">idle</span>
+        <div class="progress"><div class="progress-fill" id="progressFill"></div>
+          <span class="progress-label" id="progressLabel">—</span>
+        </div>
+        <div class="stat"><b id="statStep">0</b><span>steps</span></div>
+        <div class="stat"><b id="statFps">—</b><span>steps/sec</span></div>
+        <div class="stat"><b id="statElapsed">—</b><span>elapsed</span></div>
+        <div class="stat"><b id="statEta">—</b><span>eta</span></div>
+        <div class="spacer"></div>
+        <button class="btn ghost" id="btnSave">Save config</button>
+        <button class="btn primary" id="btnStart">▶ Start training</button>
+        <button class="btn danger" id="btnStop" disabled>■ Stop</button>
+      </div>
+
+      <div class="split">
+        <div class="panel form-panel">
+          <h2>Settings <small>every knob, in plain English</small></h2>
+          <div id="configForm" class="config-form">Loading…</div>
+        </div>
+        <div class="panel chart-panel">
+          <h2>Live progress <small id="liveSource"></small></h2>
+          <div id="liveCharts" class="charts-grid">
+            <p class="muted">Charts appear here once training starts producing updates
+            (the first few can take a minute or two).</p>
+          </div>
+          <h2 style="margin-top:18px">Console</h2>
+          <pre id="console" class="console"></pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= RUNS ================= -->
+    <section id="tab-runs" class="tabpane">
+      <div class="split">
+        <div class="panel runs-list">
+          <h2>Runs <small>tick to compare</small>
+            <button class="btn ghost tiny" id="btnRefreshRuns" style="float:right">↻ Refresh</button>
+          </h2>
+          <div id="runsList">Loading…</div>
+        </div>
+        <div class="panel chart-panel">
+          <h2>Comparison</h2>
+          <div id="runCharts" class="charts-grid">
+            <p class="muted">Select one or more runs on the left to chart them.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= EVALUATE ================= -->
+    <section id="tab-evaluate" class="tabpane">
+      <div class="panel narrow">
+        <h2>Grade a saved brain</h2>
+        <p class="muted">Play a trained model against an opponent and measure how often it wins.</p>
+        <div class="eval-form">
+          <label>Model
+            <select id="evalModel"></select>
+          </label>
+          <label>Mode
+            <select id="evalMode"><option value="grifball">grifball</option><option value="combat">combat</option></select>
+          </label>
+          <label id="evalOppWrap">Opponent
+            <select id="evalOpponent">
+              <option value="random">random</option>
+              <option value="self">self</option>
+              <option value="heuristic">heuristic</option>
+            </select>
+          </label>
+          <label>Matches
+            <input type="number" id="evalMatches" value="100" min="1" step="1" />
+          </label>
+          <label>Parallel envs
+            <input type="number" id="evalEnvs" value="16" min="1" step="1" />
+          </label>
+          <div class="eval-actions">
+            <button class="btn primary" id="btnEval">▶ Run evaluation</button>
+            <button class="btn danger" id="btnEvalStop" disabled>■ Stop</button>
+            <span id="evalState" class="muted"></span>
+          </div>
+        </div>
+        <div id="evalResult" class="eval-result"></div>
+        <pre id="evalLog" class="console small"></pre>
+      </div>
+    </section>
+
+    <!-- ================= WATCH ================= -->
+    <section id="tab-watch" class="tabpane">
+      <div class="panel narrow">
+        <h2>Watch the bot play <span class="badge soon">coming soon</span></h2>
+        <p class="muted">Planned next phase: load a checkpoint and watch a match render
+        (top-down view driven by the headless sim) so you can <i>see</i> what the policy
+        learned, not just the numbers.</p>
+      </div>
+    </section>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

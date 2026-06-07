@@ -15,6 +15,8 @@ const toSpawnVec = (p: { x: number; y: number; z: number; yaw?: number }): Spawn
 const cloneSpawn = (v: SpawnVector): SpawnVector =>
   Object.assign(v.clone(), { spawnYaw: v.spawnYaw }) as SpawnVector;
 
+const MULTIPLAYER_SPAWN_ORDER = [2, 6, 0, 4, 1, 5, 3, 7];
+
 export const createDefaultSpawnPoints = (radius = 13): THREE.Vector3[] =>
   Array.from({ length: 8 }).map((_, i) => {
     const angle = (i * 2 * Math.PI) / 8;
@@ -31,24 +33,38 @@ export const resolveActiveSpawnPoints = (
   return fallbackSpawnPoints as SpawnVector[];
 };
 
-export const getOptimalGrifballSpawnPoint = (
-  activeCustomMap: CustomMapData | null,
-  fallbackSpawnPoints: THREE.Vector3[],
-  excludePositions: THREE.Vector3[]
+const normalizeSpawnSlot = (spawnSlot: number | null | undefined): number => {
+  if (typeof spawnSlot !== 'number' || !Number.isFinite(spawnSlot)) return 0;
+  return Math.max(0, Math.floor(spawnSlot));
+};
+
+const spawnIndexForSlot = (spawnSlot: number, spawnCount: number): number => {
+  if (spawnCount <= 0) return 0;
+  const normalizedSlot = normalizeSpawnSlot(spawnSlot);
+  if (spawnCount >= MULTIPLAYER_SPAWN_ORDER.length) {
+    return MULTIPLAYER_SPAWN_ORDER[normalizedSlot % MULTIPLAYER_SPAWN_ORDER.length] % spawnCount;
+  }
+  return normalizedSlot % spawnCount;
+};
+
+const orderSpawnsFromPreferred = (spawns: SpawnVector[], preferredIndex: number): SpawnVector[] => {
+  if (spawns.length <= 1) return spawns;
+  return spawns.map((_, offset) => spawns[(preferredIndex + offset) % spawns.length]);
+};
+
+const chooseSpawnPoint = (
+  spawns: SpawnVector[],
+  excludePositions: THREE.Vector3[],
+  preferredIndex = 0
 ): SpawnVector => {
-  const activeSpawns = resolveActiveSpawnPoints(activeCustomMap, fallbackSpawnPoints);
+  if (spawns.length === 0) return new THREE.Vector3(0, 0, 0) as SpawnVector;
 
-  if (activeSpawns.length === 0) {
-    return new THREE.Vector3(0, 0, 0) as SpawnVector;
-  }
+  const orderedSpawns = orderSpawnsFromPreferred(spawns, preferredIndex % spawns.length);
+  if (excludePositions.length === 0) return cloneSpawn(orderedSpawns[0]);
 
-  if (excludePositions.length === 0) {
-    return cloneSpawn(activeSpawns[0]);
-  }
-
-  let bestPoint = activeSpawns[0];
+  let bestPoint = orderedSpawns[0];
   let bestMinDist = -1;
-  for (const point of activeSpawns) {
+  for (const point of orderedSpawns) {
     let minDist = Infinity;
     for (const entityPos of excludePositions) {
       const d = point.distanceTo(entityPos);
@@ -63,6 +79,26 @@ export const getOptimalGrifballSpawnPoint = (
   return cloneSpawn(bestPoint);
 };
 
+export const getMultiplayerSpawnPoint = (
+  activeCustomMap: CustomMapData | null,
+  fallbackSpawnPoints: THREE.Vector3[],
+  spawnSlot: number | null | undefined,
+  excludePositions: THREE.Vector3[] = []
+): SpawnVector => {
+  const activeSpawns = resolveActiveSpawnPoints(activeCustomMap, fallbackSpawnPoints);
+  const preferredIndex = spawnIndexForSlot(normalizeSpawnSlot(spawnSlot), activeSpawns.length);
+  return chooseSpawnPoint(activeSpawns, excludePositions, preferredIndex);
+};
+
+export const getOptimalGrifballSpawnPoint = (
+  activeCustomMap: CustomMapData | null,
+  fallbackSpawnPoints: THREE.Vector3[],
+  excludePositions: THREE.Vector3[]
+): SpawnVector => {
+  const activeSpawns = resolveActiveSpawnPoints(activeCustomMap, fallbackSpawnPoints);
+  return chooseSpawnPoint(activeSpawns, excludePositions);
+};
+
 /**
  * Pick a Grifball spawn for a given team: greedy max-distance selection scoped to
  * that team's spawn cluster. Falls back to the map's full spawn list (then origin)
@@ -72,30 +108,20 @@ export const getGrifballTeamSpawn = (
   activeCustomMap: CustomMapData | null,
   team: string,
   fallbackSpawnPoints: THREE.Vector3[],
-  excludePositions: THREE.Vector3[]
+  excludePositions: THREE.Vector3[],
+  preferredSlot?: number | null
 ): SpawnVector => {
   const teamPoints = activeCustomMap?.teamSpawns?.[team];
   if (!teamPoints?.length) {
+    if (preferredSlot !== undefined) {
+      return getMultiplayerSpawnPoint(activeCustomMap, fallbackSpawnPoints, preferredSlot, excludePositions);
+    }
     return getOptimalGrifballSpawnPoint(activeCustomMap, fallbackSpawnPoints, excludePositions);
   }
 
   const spawns = teamPoints.map(toSpawnVec);
-  if (excludePositions.length === 0) return cloneSpawn(spawns[0]);
-
-  let bestPoint = spawns[0];
-  let bestMinDist = -1;
-  for (const point of spawns) {
-    let minDist = Infinity;
-    for (const entityPos of excludePositions) {
-      const d = point.distanceTo(entityPos);
-      if (d < minDist) minDist = d;
-    }
-    if (minDist > bestMinDist) {
-      bestMinDist = minDist;
-      bestPoint = point;
-    }
-  }
-  return cloneSpawn(bestPoint);
+  const preferredIndex = spawnIndexForSlot(normalizeSpawnSlot(preferredSlot), spawns.length);
+  return chooseSpawnPoint(spawns, excludePositions, preferredIndex);
 };
 
 export const resizeArenaSceneForPlayerCount = (

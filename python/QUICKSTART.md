@@ -1,5 +1,29 @@
 # Quick start
 
+## Easiest: the Control Board (no TOML, no TensorBoard)
+
+One command opens a friendly web dashboard where you set every option with form fields
+(each with plain-English help), press **Start**, watch **live charts**, browse past runs,
+and **grade** saved brains — all in the browser.
+
+```powershell
+cd G:\git\iBrawlsWebApp\python
+.\.venv\Scripts\python.exe -m ibrawls_rl.dashboard
+```
+It prints a URL (default http://127.0.0.1:8770) and opens it automatically.
+
+- **Train tab** — edit settings, Save / Start / Stop, live progress + console.
+- **Runs tab** — tick runs to chart and compare them (old TensorBoard-only runs work too).
+- **Evaluate tab** — pick a model, choose opponent + match count, see the win rate.
+- **Watch tab** — (coming soon) watch the trained bot play a match.
+
+The dashboard reads/writes the same `config.toml`, so the manual path below still works
+identically — use whichever you prefer.
+
+---
+
+## Manual path
+
 Everything is driven by **one file** (`python/config.toml`) and **three commands** (train,
 watch, grade). Setup is already done on this machine.
 

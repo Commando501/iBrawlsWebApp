@@ -95,6 +95,8 @@ import { CharacterLoadout, DEFAULT_LOADOUT, AVAILABLE_PRESETS, HelmetPreset, Tor
 
 const APP_VERSION = '0.636';
 const MAX_PLAYER_NAME_LENGTH = 10;
+const MAX_MULTIPLAYER_CLIENTS = 7;
+const MAX_MULTIPLAYER_PLAYERS = 1 + MAX_MULTIPLAYER_CLIENTS;
 const EDGE_LOW_FPS_THRESHOLD = 20;
 const EDGE_LOW_FPS_SUSTAINED_MS = 5000;
 const EDGE_LOW_FPS_STATE_UPDATE_STEP_MS = 500;
@@ -134,6 +136,8 @@ interface OnlineClient {
   state: 'menu' | 'solo' | 'multi';
   roomCode?: string;
   spaceAvailable?: boolean;
+  playerCount?: number;
+  maxPlayers?: number;
 }
 
 const normalizePlayerName = (name: unknown): string | undefined => {
@@ -144,6 +148,30 @@ const normalizePlayerName = (name: unknown): string | undefined => {
 
 const getOnlineClientDisplayName = (client: OnlineClient): string => {
   return normalizePlayerName(client.name) || `Client ${client.id}`;
+};
+
+const getConnectedMatchPlayerCount = (message: any, localRole: 'host' | 'client' | 'observer' | null): number => {
+  const remotePlayerIds = new Set<string>();
+  if (Array.isArray(message?.otherPlayerIds)) {
+    message.otherPlayerIds.forEach((id: unknown) => {
+      if (typeof id === 'string' && id.length > 0) {
+        remotePlayerIds.add(id);
+      }
+    });
+  }
+  const resolvedLocalRole = message?.role ?? localRole;
+  return remotePlayerIds.size + (resolvedLocalRole === 'observer' ? 0 : 1);
+};
+
+const getMultiplayerSpawnSlotFromMessage = (
+  message: any,
+  localRole: 'host' | 'client' | 'observer' | null
+): number => {
+  if (typeof message?.spawnSlot === 'number' && Number.isFinite(message.spawnSlot)) {
+    return Math.max(0, Math.floor(message.spawnSlot));
+  }
+  const resolvedLocalRole = message?.role ?? localRole;
+  return resolvedLocalRole === 'client' ? 1 : 0;
 };
 
 const getPresetDescription = (val: string, customPresets: AIPreset[] = []): string => {
@@ -569,6 +597,9 @@ const PlayerListSubframe = ({
           onlineClients.map(client => {
             const displayName = getOnlineClientDisplayName(client);
             const customName = normalizePlayerName(client.name);
+            const maxPlayers = client.maxPlayers ?? MAX_MULTIPLAYER_PLAYERS;
+            const playerCount = typeof client.playerCount === 'number' ? client.playerCount : undefined;
+            const slotLabel = playerCount !== undefined ? `${Math.min(playerCount, maxPlayers)}/${maxPlayers}` : undefined;
             return (
               <div key={client.id} className="flex justify-between items-center bg-black/45 px-3 py-2.5 rounded border border-white/5 text-xs font-mono shrink-0">
                 <div className="flex flex-col gap-1 min-w-0">
@@ -599,12 +630,12 @@ const PlayerListSubframe = ({
                           className="text-[10px] bg-emerald-500/20 hover:bg-emerald-500/35 border border-emerald-500/40 text-emerald-400 font-bold uppercase tracking-wider px-2 py-0.5 rounded cursor-pointer transition-all flex items-center gap-1"
                         >
                           <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block animate-ping" />
-                          Join
+                          {slotLabel ? `Join ${slotLabel}` : 'Join'}
                         </button>
                       ) : (
                         <span className="text-[10px] text-blue-400 font-bold uppercase tracking-wider flex items-center gap-1">
                           <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
-                          In Match
+                          {slotLabel ? `In Match ${slotLabel}` : 'In Match'}
                         </span>
                       )
                     )}
@@ -3554,10 +3585,12 @@ export default function App() {
     '--main-menu-chat-width': `${mainMenuFrameLayout.chatWidth}px`,
   } as React.CSSProperties;
 
+  const shouldRenderCustomizationFrame = showCustomizationFrame && activeMenuTab !== 'theater';
+
   const mainMenuContentGridStyle = {
     '--main-menu-setup-fr': `${mainMenuFrameLayout.setupFr}fr`,
     '--main-menu-customization-fr': `${mainMenuFrameLayout.customizationFr}fr`,
-    gridTemplateColumns: showCustomizationFrame
+    gridTemplateColumns: shouldRenderCustomizationFrame
       ? isPainting
         ? 'minmax(0, 1fr)'
         : `minmax(${MAIN_MENU_SETUP_MIN_PX}px, var(--main-menu-setup-fr)) ${MAIN_MENU_SPLITTER_WIDTH_PX}px minmax(${MAIN_MENU_CUSTOMIZATION_MIN_PX}px, var(--main-menu-customization-fr))`
@@ -3691,6 +3724,119 @@ export default function App() {
       className="h-24 min-h-24"
     />
   );
+
+  const renderRollingReplayCachePanel = () => (
+    <div className="flex flex-col h-full min-h-0 gap-4 text-left">
+      <div className="bg-slate-950/45 border border-white/10 rounded-xl p-4.5 flex flex-col gap-3 shrink-0 shadow-[inset_0_1px_3px_rgba(0,0,0,0.30)]">
+        <span className="text-[10px] font-mono font-bold tracking-[0.4em] uppercase text-[#f59e0b]">AUTO-SAVE CACHE</span>
+        <h2 className="text-xl font-display font-black italic uppercase tracking-tight" style={{ background: 'linear-gradient(90deg,#f59e0b,#fff,#eab308)', WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent', lineHeight: 1 }}>
+          Rolling Match Cache
+        </h2>
+        <p className="text-[11.5px] text-white/60 leading-normal">
+          Keeps a rolling buffer of your last 5 matches. These are overwritten sequentially as new matches finish. Transfer them to Saved Replays to store them permanently!
+        </p>
+      </div>
+
+      <div className="flex-1 overflow-y-auto min-h-0 flex flex-col gap-2.5 pr-1">
+        {cachedReplays.length === 0 ? (
+          <div className="bg-black/30 border border-white/5 rounded-lg p-5 text-center my-auto">
+            <p className="text-xs text-white/40 italic font-medium">Rolling cache is currently empty.</p>
+            <p className="text-[10px] text-white/30 mt-1 leading-normal">
+              Complete a training match or tournament fight to see your replay automatically cached here!
+            </p>
+          </div>
+        ) : (
+          cachedReplays.map(replay => {
+            const minutes = Math.floor(replay.duration / 60);
+            const seconds = Math.floor(replay.duration % 60);
+            const durationStr = `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
+            const sizeStr = formatReplaySizeMB(replaySizes[replay.id] ?? 0);
+            const canOpenHeatmap = replayHasHeatmapEvents(replay);
+
+            let formattedDate = replay.date;
+            try {
+              formattedDate = new Date(replay.date).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+            } catch (_) {}
+
+            return (
+              <div key={replay.id} className="bg-slate-950/45 border border-white/5 rounded-xl p-3.5 flex flex-col gap-2.5 shadow-md border-l-4 border-l-[#f59e0b] hover:border-l-yellow-400 transition-all shrink-0">
+                <div className="flex justify-between items-start gap-2">
+                  <div className="flex flex-col min-w-0 text-left">
+                    <h4 className="text-xs font-black uppercase text-[#eab308] truncate">
+                      {replay.name || `Rolling Cache Match - ${formattedDate}`}
+                    </h4>
+                    <span className="text-[9px] text-white/40 italic mt-0.5">
+                      [Auto-saved from local match]
+                    </span>
+                  </div>
+                  <span className="text-[9px] font-mono font-bold text-white/40 bg-white/5 border border-white/10 px-2 py-0.5 rounded shrink-0">
+                    {durationStr} Â· {sizeStr}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-1 text-[9px] font-mono text-white/50 border-t border-b border-white/5 py-1.5">
+                  <div>Map: <span className="text-white/80 font-bold uppercase">{replay.mapType}</span></div>
+                  <div>Mode: <span className="text-white/80 font-bold uppercase">{replay.mode}</span></div>
+                  <div>Pilot: <span className="text-white/80 font-bold uppercase">{replay.playerName}</span></div>
+                  <div>Opponent: <span className="text-white/80 font-bold uppercase">{replay.opponentName}</span></div>
+                </div>
+
+                {renderReplayHeatmapPreview(replay)}
+
+                <div className="flex items-center justify-between mt-0.5 gap-2">
+                  <span className="text-[9px] font-mono text-white/30">{formattedDate}</span>
+                  <div className="flex gap-1.5">
+                    <button
+                      onClick={async () => {
+                        if (confirm('Delete this rolling cache match replay?')) {
+                          await deleteReplay(replay.id, true);
+                          await loadTheaterReplays();
+                        }
+                      }}
+                      className="p-1 bg-red-950/20 hover:bg-red-900/40 border border-red-500/20 hover:border-red-500/40 rounded text-[9.5px] font-bold text-red-400 hover:text-red-300 uppercase tracking-wider transition-all cursor-pointer flex items-center justify-center w-7 h-7"
+                      title="Delete from cache"
+                    >
+                      ðŸ—‘ï¸
+                    </button>
+                    <button
+                      onClick={() => {
+                        setSaveCachedId(replay.id);
+                        setSaveCachedName(`${replay.playerName} vs ${replay.opponentName}`);
+                        setSaveCachedDesc(`Saved match on ${replay.mapType} map in ${replay.mode} mode.`);
+                        setShowSaveModal(true);
+                      }}
+                      className="px-2.5 h-7 bg-white/5 hover:bg-white/10 border border-white/10 text-[9.5px] font-bold text-white/80 hover:text-white uppercase tracking-wider rounded transition-all cursor-pointer flex items-center gap-1"
+                      title="Save permanently to Archives"
+                    >
+                      ðŸ“¥ Save Permanent
+                    </button>
+                    <button
+                      onClick={() => handleOpenHeatmapReplay(replay)}
+                      disabled={!canOpenHeatmap}
+                      className="px-2.5 h-7 bg-cyan-950/30 hover:bg-cyan-900/50 border border-cyan-500/20 hover:border-cyan-500/40 rounded text-[9.5px] font-bold text-cyan-300 hover:text-cyan-200 uppercase tracking-wider transition-all cursor-pointer flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed"
+                      title={canOpenHeatmap ? 'Watch this replay as a 2D heatmap' : 'No heatmap data in this replay'}
+                    >
+                      Heatmap
+                    </button>
+                    <button
+                      onClick={() => {
+                        setSelectedReplay(replay);
+                        setIsPlaying(true);
+                        setIsPaused(false);
+                      }}
+                      className="px-3 h-7 bg-gradient-to-r from-amber-600 to-yellow-600 hover:from-amber-500 hover:to-yellow-500 text-[9.5px] font-black text-white uppercase tracking-widest rounded border border-amber-500/20 hover:shadow-[0_0_10px_rgba(245,158,11,0.3)] transition-all cursor-pointer flex items-center gap-1.5"
+                    >
+                      â–¶ Watch
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
   const [multiplayerRole, setMultiplayerRole] = useState<'host' | 'client' | 'observer' | null>(null);
   const [multiplayerSocket, setMultiplayerSocket] = useState<WebSocket | null>(null);
   const [userIp, setUserIp] = useState<string>('127.0.0.1');
@@ -3702,6 +3848,8 @@ export default function App() {
   const [quickPlayStatus, setQuickPlayStatus] = useState<'idle' | 'searching' | 'matching'>('idle');
 
   const [opponentClientId, setOpponentClientId] = useState<string>('');
+  const [multiplayerPlayerCount, setMultiplayerPlayerCount] = useState<number>(1);
+  const [multiplayerSpawnSlot, setMultiplayerSpawnSlot] = useState<number>(0);
 
   // Persisting network metadata and lobby invitation parameters
   const [menuSocket, setMenuSocket] = useState<WebSocket | null>(null);
@@ -4658,7 +4806,9 @@ export default function App() {
       if (isMultiplayer) {
         status = 'multi';
         roomCode = multiplayerRole === 'host' ? hostIdCode : joinIpOrId;
-        spaceAvailable = false; // Playing is already 2/2
+        spaceAvailable = multiplayerRole !== 'observer'
+          && Boolean(roomCode)
+          && multiplayerPlayerCount < MAX_MULTIPLAYER_PLAYERS;
       } else {
         status = 'solo';
       }
@@ -4681,9 +4831,11 @@ export default function App() {
       status,
       roomCode,
       spaceAvailable,
+      playerCount: status === 'multi' ? multiplayerPlayerCount : undefined,
+      maxPlayers: status === 'multi' ? MAX_MULTIPLAYER_PLAYERS : undefined,
       name: normalizePlayerName(playerName)
     }));
-  }, [menuSocket, isPlaying, isMultiplayer, connectionStatus, hostIdCode, joinIpOrId, multiplayerRole, playerName]);
+  }, [menuSocket, isPlaying, isMultiplayer, connectionStatus, hostIdCode, joinIpOrId, multiplayerRole, multiplayerPlayerCount, playerName]);
 
   // Sync the real-time calculated ping to HUD stats immediately
   useEffect(() => {
@@ -4712,6 +4864,13 @@ export default function App() {
               isLocal: false
             }];
           });
+        } else if (data.type === 'connected') {
+          setMultiplayerPlayerCount(getConnectedMatchPlayerCount(data, data.role || multiplayerRole));
+          setMultiplayerSpawnSlot(getMultiplayerSpawnSlotFromMessage(data, data.role || multiplayerRole));
+        } else if (data.type === 'player_joined') {
+          setMultiplayerPlayerCount(count => Math.min(MAX_MULTIPLAYER_PLAYERS, Math.max(2, count + 1)));
+        } else if (data.type === 'player_left') {
+          setMultiplayerPlayerCount(count => Math.max(1, count - 1));
         } else if (data.type === 'sync' && data.action === 'request_map') {
           if (multiplayerRole === 'host') {
             console.log('Received request for map sync. Sending selectedMap:', selectedMap);
@@ -4732,15 +4891,27 @@ export default function App() {
           }
         } else if (data.type === 'role_changed') {
           console.log('Role authoritatively updated to:', data.role);
+          setMultiplayerPlayerCount(count => {
+            if (data.role === 'observer' && multiplayerRole !== 'observer') {
+              return Math.max(0, count - 1);
+            }
+            if (data.role === 'client' && multiplayerRole === 'observer') {
+              return Math.min(MAX_MULTIPLAYER_PLAYERS, count + 1);
+            }
+            return count;
+          });
           setMultiplayerRole(data.role);
+          setMultiplayerSpawnSlot(getMultiplayerSpawnSlotFromMessage(data, data.role));
           if (data.role === 'observer') {
             setIsPaused(false); // Unpause upon transitioning to observer
           }
         } else if (data.type === 'opponent_role_changed') {
           console.log('Opponent role updated to:', data.role);
           if (data.role === 'observer') {
+            setMultiplayerPlayerCount(count => Math.max(1, count - 1));
             setOpponentClientId('Opponent (Spectating)');
           } else {
+            setMultiplayerPlayerCount(count => Math.min(MAX_MULTIPLAYER_PLAYERS, count + 1));
             setOpponentClientId('Opponent');
           }
         } else if (data.type === 'error') {
@@ -4807,6 +4978,8 @@ export default function App() {
     setConnectionError('');
     setConnectionStatus('hosting');
     setChatMessages([]);
+    setMultiplayerPlayerCount(1);
+    setMultiplayerSpawnSlot(0);
 
     const activeCode = overrideCode || hostIdCode;
     if (overrideCode) {
@@ -4839,8 +5012,10 @@ export default function App() {
           setMultiplayerSocket(ws);
           setIsMultiplayer(true);
           setMultiplayerRole('host');
+          setMultiplayerSpawnSlot(getMultiplayerSpawnSlotFromMessage(data, 'host'));
           setConnectionStatus('connected');
           setOpponentClientId(data.clientClientId || 'Opponent');
+          setMultiplayerPlayerCount(getConnectedMatchPlayerCount({ ...data, role: 'host' }, 'host'));
 
           sfx.init();
           sfx.resume();
@@ -4865,6 +5040,7 @@ export default function App() {
       console.log('Host socket disconnected.');
       setConnectionStatus('idle');
       setMultiplayerSocket(null);
+      setMultiplayerSpawnSlot(0);
     };
 
     ws.onerror = (err) => {
@@ -4883,6 +5059,7 @@ export default function App() {
     setConnectionError('');
     setConnectionStatus('connecting');
     setChatMessages([]);
+    setMultiplayerPlayerCount(isObserver ? 0 : 1);
 
     const cleanTarget = target.trim().replace(/^(hw|http|https|ws|wss):\/\//i, '');
     const isDirectAddress = cleanTarget.includes('.') || cleanTarget.includes(':') || isNaN(Number(cleanTarget));
@@ -4929,8 +5106,10 @@ export default function App() {
           setMultiplayerSocket(ws);
           setIsMultiplayer(true);
           setMultiplayerRole(data.role || 'client');
+          setMultiplayerSpawnSlot(getMultiplayerSpawnSlotFromMessage(data, data.role || 'client'));
           setConnectionStatus('connected');
           setOpponentClientId(data.hostClientId || 'Opponent');
+          setMultiplayerPlayerCount(getConnectedMatchPlayerCount(data, data.role || 'client'));
 
           sfx.init();
           sfx.resume();
@@ -4966,6 +5145,7 @@ export default function App() {
       console.log('Guest join socket disconnected.');
       setConnectionStatus('idle');
       setMultiplayerSocket(null);
+      setMultiplayerSpawnSlot(0);
     };
 
     ws.onerror = (err) => {
@@ -4983,6 +5163,8 @@ export default function App() {
     setConnectionError('');
     setMultiplayerSocket(null);
     setQuickPlayStatus('idle');
+    setMultiplayerPlayerCount(1);
+    setMultiplayerSpawnSlot(0);
   };
 
   const handleQuickPlay = () => {
@@ -5040,6 +5222,8 @@ export default function App() {
 
     setIsMultiplayer(false);
     setMultiplayerRole(null);
+    setMultiplayerPlayerCount(1);
+    setMultiplayerSpawnSlot(0);
     if (multiplayerSocket) {
       multiplayerSocket.close();
     }
@@ -5169,6 +5353,8 @@ export default function App() {
 
     setIsMultiplayer(false);
     setMultiplayerRole(null);
+    setMultiplayerPlayerCount(1);
+    setMultiplayerSpawnSlot(0);
     if (multiplayerSocket) {
       multiplayerSocket.close();
     }
@@ -5189,6 +5375,8 @@ export default function App() {
     setIsTerminated(singlePlayerMode !== 'tournament');
     setIsPlaying(false);
     setIsPaused(false);
+    setMultiplayerPlayerCount(1);
+    setMultiplayerSpawnSlot(0);
     setShowAdminPanel(false);
     setShowUiAdjustment(false);
     setShowLightingMenu(false);
@@ -5212,6 +5400,8 @@ export default function App() {
     } else {
       // Singleplayer observer mode toggle
       setMultiplayerRole('observer');
+      setMultiplayerPlayerCount(0);
+      setMultiplayerSpawnSlot(0);
       setIsPaused(false);
     }
   };
@@ -5225,6 +5415,8 @@ export default function App() {
     } else {
       // Singleplayer player mode toggle
       setMultiplayerRole(null);
+      setMultiplayerPlayerCount(1);
+      setMultiplayerSpawnSlot(0);
       setIsPaused(false);
     }
   };
@@ -5246,6 +5438,8 @@ export default function App() {
     setMultiplayerSocket(null);
     setConnectionStatus('idle');
     setQuickPlayStatus('idle');
+    setMultiplayerPlayerCount(1);
+    setMultiplayerSpawnSlot(0);
     setShowAdminPanel(false);
     setShowUiAdjustment(false);
     setShowLightingMenu(false);
@@ -5726,6 +5920,7 @@ export default function App() {
           isMultiplayer={isMultiplayer}
           multiplayerRole={multiplayerRole}
           multiplayerSocket={multiplayerSocket}
+          multiplayerSpawnSlot={multiplayerSpawnSlot}
           opponentClientId={opponentClientId}
           replayData={selectedReplay}
           onExitReplay={() => {
@@ -7005,8 +7200,9 @@ export default function App() {
                     </div>
                   </div>
                 ) : (
-                  /* THEATER MODE: COLUMN 1 - SAVED REPLAYS ARCHIVE */
-                  <div className="flex flex-col h-full min-h-0 gap-4 text-left">
+                  /* THEATER MODE: SAVED REPLAYS ARCHIVE + ROLLING MATCH CACHE */
+                  <div className="grid h-full min-h-0 grid-cols-1 xl:grid-cols-2 gap-4 text-left">
+                  <div className="flex flex-col h-full min-h-0 gap-4">
                     <div className="bg-slate-950/45 border border-white/10 rounded-xl p-4.5 flex flex-col gap-3 shrink-0 shadow-[inset_0_1px_3px_rgba(0,0,0,0.30)]">
                       <span className="text-[10px] font-mono font-bold tracking-[0.4em] uppercase text-[#e11d48]">THEATER MODE</span>
                       <h2 className="text-xl font-display font-black italic uppercase tracking-tight" style={{ background: 'linear-gradient(90deg,#e11d48,#fff,#f43f5e)', WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent', lineHeight: 1 }}>
@@ -7079,7 +7275,7 @@ export default function App() {
                         <div className="bg-black/30 border border-white/5 rounded-lg p-5 text-center my-auto">
                           <p className="text-xs text-white/40 italic font-medium">No saved replays found.</p>
                           <p className="text-[10px] text-white/30 mt-1 leading-normal">
-                            Record a local training match, then save it from the rolling cache on the right!
+                            Record a local training match, then save it from the rolling cache panel.
                           </p>
                         </div>
                       ) : (
@@ -7198,11 +7394,13 @@ export default function App() {
                       )}
                     </div>
                   </div>
+                  {renderRollingReplayCachePanel()}
+                  </div>
                 )}
               </div>
               )}
 
-              {showCustomizationFrame && !isPainting && (
+              {shouldRenderCustomizationFrame && !isPainting && (
                 <button
                   type="button"
                   className="main-menu-frame-splitter main-menu-frame-splitter-grid"
@@ -7215,122 +7413,8 @@ export default function App() {
               )}
 
               {/* COLUMN 2: KEYBIND REFERENCE & CUSTOMIZER */}
-              {showCustomizationFrame && (
+              {shouldRenderCustomizationFrame && (
               <div className="mobile-reference-panel flex flex-col h-full min-h-0 overflow-y-auto gap-4">
-                {activeMenuTab === 'theater' ? (
-                  /* THEATER MODE: COLUMN 2 - ROLLING MATCH AUTO-SAVE CACHE */
-                  <div className="flex flex-col h-full min-h-0 gap-4 text-left">
-                    <div className="bg-slate-950/45 border border-white/10 rounded-xl p-4.5 flex flex-col gap-3 shrink-0 shadow-[inset_0_1px_3px_rgba(0,0,0,0.30)]">
-                      <span className="text-[10px] font-mono font-bold tracking-[0.4em] uppercase text-[#f59e0b]">AUTO-SAVE CACHE</span>
-                      <h2 className="text-xl font-display font-black italic uppercase tracking-tight" style={{ background: 'linear-gradient(90deg,#f59e0b,#fff,#eab308)', WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent', lineHeight: 1 }}>
-                        Rolling Match Cache
-                      </h2>
-                      <p className="text-[11.5px] text-white/60 leading-normal">
-                        Keeps a rolling buffer of your last 5 matches. These are overwritten sequentially as new matches finish. Transfer them to Saved Replays to store them permanently!
-                      </p>
-                    </div>
-
-                    {/* CACHED REPLAYS LIST */}
-                    <div className="flex-1 overflow-y-auto min-h-0 flex flex-col gap-2.5 pr-1">
-                      {cachedReplays.length === 0 ? (
-                        <div className="bg-black/30 border border-white/5 rounded-lg p-5 text-center my-auto">
-                          <p className="text-xs text-white/40 italic font-medium">Rolling cache is currently empty.</p>
-                          <p className="text-[10px] text-white/30 mt-1 leading-normal">
-                            Complete a training match or tournament fight to see your replay automatically cached here!
-                          </p>
-                        </div>
-                      ) : (
-                        cachedReplays.map(replay => {
-                          const minutes = Math.floor(replay.duration / 60);
-                          const seconds = Math.floor(replay.duration % 60);
-                          const durationStr = `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
-                          const sizeStr = formatReplaySizeMB(replaySizes[replay.id] ?? 0);
-                          const canOpenHeatmap = replayHasHeatmapEvents(replay);
-                          
-                          let formattedDate = replay.date;
-                          try {
-                            formattedDate = new Date(replay.date).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-                          } catch (_) {}
-
-                          return (
-                            <div key={replay.id} className="bg-slate-950/45 border border-white/5 rounded-xl p-3.5 flex flex-col gap-2.5 shadow-md border-l-4 border-l-[#f59e0b] hover:border-l-yellow-400 transition-all shrink-0">
-                              <div className="flex justify-between items-start gap-2">
-                                <div className="flex flex-col min-w-0 text-left">
-                                  <h4 className="text-xs font-black uppercase text-[#eab308] truncate">
-                                    {replay.name || `Rolling Cache Match - ${formattedDate}`}
-                                  </h4>
-                                  <span className="text-[9px] text-white/40 italic mt-0.5">
-                                    [Auto-saved from local match]
-                                  </span>
-                                </div>
-                                <span className="text-[9px] font-mono font-bold text-white/40 bg-white/5 border border-white/10 px-2 py-0.5 rounded shrink-0">
-                                  {durationStr} · {sizeStr}
-                                </span>
-                              </div>
-
-                              <div className="grid grid-cols-2 gap-1 text-[9px] font-mono text-white/50 border-t border-b border-white/5 py-1.5">
-                                <div>Map: <span className="text-white/80 font-bold uppercase">{replay.mapType}</span></div>
-                                <div>Mode: <span className="text-white/80 font-bold uppercase">{replay.mode}</span></div>
-                                <div>Pilot: <span className="text-white/80 font-bold uppercase">{replay.playerName}</span></div>
-                                <div>Opponent: <span className="text-white/80 font-bold uppercase">{replay.opponentName}</span></div>
-                              </div>
-
-                              {renderReplayHeatmapPreview(replay)}
-
-                              <div className="flex items-center justify-between mt-0.5 gap-2">
-                                <span className="text-[9px] font-mono text-white/30">{formattedDate}</span>
-                                <div className="flex gap-1.5">
-                                  <button
-                                    onClick={async () => {
-                                      if (confirm('Delete this rolling cache match replay?')) {
-                                        await deleteReplay(replay.id, true);
-                                        await loadTheaterReplays();
-                                      }
-                                    }}
-                                    className="p-1 bg-red-950/20 hover:bg-red-900/40 border border-red-500/20 hover:border-red-500/40 rounded text-[9.5px] font-bold text-red-400 hover:text-red-300 uppercase tracking-wider transition-all cursor-pointer flex items-center justify-center w-7 h-7"
-                                    title="Delete from cache"
-                                  >
-                                    🗑️
-                                  </button>
-                                  <button
-                                    onClick={() => {
-                                      setSaveCachedId(replay.id);
-                                      setSaveCachedName(`${replay.playerName} vs ${replay.opponentName}`);
-                                      setSaveCachedDesc(`Saved match on ${replay.mapType} map in ${replay.mode} mode.`);
-                                      setShowSaveModal(true);
-                                    }}
-                                    className="px-2.5 h-7 bg-white/5 hover:bg-white/10 border border-white/10 text-[9.5px] font-bold text-white/80 hover:text-white uppercase tracking-wider rounded transition-all cursor-pointer flex items-center gap-1"
-                                    title="Save permanently to Archives"
-                                  >
-                                    📥 Save Permanent
-                                  </button>
-                                  <button
-                                    onClick={() => handleOpenHeatmapReplay(replay)}
-                                    disabled={!canOpenHeatmap}
-                                    className="px-2.5 h-7 bg-cyan-950/30 hover:bg-cyan-900/50 border border-cyan-500/20 hover:border-cyan-500/40 rounded text-[9.5px] font-bold text-cyan-300 hover:text-cyan-200 uppercase tracking-wider transition-all cursor-pointer flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed"
-                                    title={canOpenHeatmap ? 'Watch this replay as a 2D heatmap' : 'No heatmap data in this replay'}
-                                  >
-                                    Heatmap
-                                  </button>
-                                  <button
-                                    onClick={() => {
-                                      setSelectedReplay(replay);
-                                      setIsPlaying(true);
-                                      setIsPaused(false);
-                                    }}
-                                    className="px-3 h-7 bg-gradient-to-r from-amber-600 to-yellow-600 hover:from-amber-500 hover:to-yellow-500 text-[9.5px] font-black text-white uppercase tracking-widest rounded border border-amber-500/20 hover:shadow-[0_0_10px_rgba(245,158,11,0.3)] transition-all cursor-pointer flex items-center gap-1.5"
-                                  >
-                                    ▶ Watch
-                                  </button>
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })
-                      )}
-                    </div>
-                  </div>
-                ) : (
                   <>
                     {/* Segmented Tab Switcher */}
                 <div className="flex bg-black/40 p-1.5 rounded-lg border border-white/5 gap-1.5 select-none shrink-0 shadow-[inset_0_1px_3px_rgba(0,0,0,0.3)]">
@@ -7939,8 +8023,7 @@ export default function App() {
                     )}
                   </div>
                 )}
-                  </>
-                )}
+                </>
               </div>
               )}
 

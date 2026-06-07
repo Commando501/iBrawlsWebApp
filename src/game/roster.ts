@@ -193,6 +193,7 @@ export interface CreateRemoteCombatantParams {
   id: string;
   playerName: string;
   spawnZ: number;
+  spawnPos?: THREE.Vector3;
   settings: UniversalSettings;
   data?: {
     hp?: number;
@@ -206,14 +207,14 @@ export interface CreateRemoteCombatantParams {
 }
 
 export function createRemoteCombatant(params: CreateRemoteCombatantParams): Combatant {
-  const { id, playerName, spawnZ, settings, data = {} } = params;
+  const { id, playerName, spawnZ, spawnPos, settings, data = {} } = params;
   const maxHp = data.maxHp ?? settings.maxHP ?? 1;
   return {
     id,
     controller: 'remote',
     playerName,
     team: DEFAULT_AI_TEAM,
-    pos: new THREE.Vector3(0, 0, spawnZ),
+    pos: spawnPos?.clone() ?? new THREE.Vector3(0, 0, spawnZ),
     vel: new THREE.Vector3(0, 0, 0),
     yaw: 0,
     pitch: 0,

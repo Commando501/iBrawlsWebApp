@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { type Combatant, type CustomMapData } from '../../types';
-import { getGrifballTeamSpawn, resolveActiveSpawnPoints } from './arenaSpawns';
+import { getGrifballTeamSpawn, getMultiplayerSpawnPoint, resolveActiveSpawnPoints } from './arenaSpawns';
 import { getOptimalSpawnPointForArena } from './arenaRuntime';
 import { getInwardSpawnYaw } from './combatGeometry';
 import { type GrifballRuntimeState } from './runtimeState';
@@ -43,7 +43,17 @@ export function updatePlayerRespawnForState({
   }
 
   const spawnPos =
-    state.settings.gameMode === 'grifball'
+    isMultiplayer
+      ? state.settings.gameMode === 'grifball'
+        ? getGrifballTeamSpawn(
+            activeCustomMap,
+            state.localPlayerTeam,
+            resolveActiveSpawnPoints(activeCustomMap, spawnPoints),
+            exclude,
+            state.multiplayerSpawnSlot
+          )
+        : getMultiplayerSpawnPoint(activeCustomMap, spawnPoints, state.multiplayerSpawnSlot, exclude)
+    : state.settings.gameMode === 'grifball'
       ? getGrifballTeamSpawn(
           activeCustomMap,
           state.localPlayerTeam,

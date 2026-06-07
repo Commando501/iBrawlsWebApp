@@ -91,6 +91,8 @@ export function createArenaOrchestratorCallbacksForState({
       clientId,
       data,
       opponentClientId,
+      activeCustomMap: getActiveCustomMap(),
+      spawnPoints,
       constrainCombatantToArena,
     });
   };

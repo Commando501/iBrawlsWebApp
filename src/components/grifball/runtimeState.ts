@@ -121,6 +121,7 @@ export interface GrifballRuntimeState {
   otherPlayers: Map<string, Combatant>;
   isMultiplayer: boolean;
   multiplayerRole: 'host' | 'client' | 'observer' | null | undefined;
+  multiplayerSpawnSlot: number;
   aiMatchContext: AIMatchContext;
   hostClientId?: string;
   clientClientId?: string;
@@ -135,6 +136,7 @@ interface CreateGrifballRuntimeStateOptions {
   adminSettings: UniversalSettings;
   multiplayerRole: 'host' | 'client' | null | undefined;
   isMultiplayer: boolean;
+  multiplayerSpawnSlot?: number;
 }
 
 export function createInitialGrifballRuntimeState({
@@ -142,6 +144,7 @@ export function createInitialGrifballRuntimeState({
   adminSettings,
   multiplayerRole,
   isMultiplayer,
+  multiplayerSpawnSlot = 0,
 }: CreateGrifballRuntimeStateOptions): GrifballRuntimeState {
   return {
     playerPos: new THREE.Vector3(0, 0, 12),
@@ -256,6 +259,7 @@ export function createInitialGrifballRuntimeState({
     clientHue: 200,
     isMultiplayer,
     multiplayerRole,
+    multiplayerSpawnSlot,
     aiMatchContext: createAIMatchContext(),
     hostClientId: undefined,
     clientClientId: undefined,

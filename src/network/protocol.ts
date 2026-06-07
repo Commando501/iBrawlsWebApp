@@ -3,12 +3,21 @@ import { RemotePlayerState } from '../types';
 export type ClientPresenceState = 'menu' | 'solo' | 'multi';
 export type GameRole = 'host' | 'client' | 'observer';
 
+export interface GameplayPlayerSlotPayload {
+  clientId: string;
+  role: GameRole;
+  spawnSlot: number;
+  playerName?: string;
+}
+
 export interface OnlineClientPayload {
   id: string;
   name?: string;
   state: ClientPresenceState;
   roomCode?: string;
   spaceAvailable?: boolean;
+  playerCount?: number;
+  maxPlayers?: number;
 }
 
 export type LobbyServerMessage =
@@ -24,7 +33,7 @@ export type LobbyServerMessage =
   | { type: 'error'; message: string };
 
 export type LobbyClientMessage =
-  | { type: 'update_status'; status: ClientPresenceState; roomCode?: string; spaceAvailable: boolean; name?: string }
+  | { type: 'update_status'; status: ClientPresenceState; roomCode?: string; spaceAvailable: boolean; name?: string; playerCount?: number; maxPlayers?: number }
   | { type: 'lobby_chat'; sender: string; text: string }
   | { type: 'ping'; timestamp: number }
   | { type: 'send_invite'; targetId: string; roomCode: string }
@@ -41,12 +50,14 @@ export type GameplayServerMessage =
       hostClientId?: string;
       clientClientId?: string;
       otherPlayerIds?: string[];
+      otherPlayers?: GameplayPlayerSlotPayload[];
       opponentPlayerName?: string;
+      spawnSlot?: number;
     }
-  | { type: 'player_joined'; clientId: string; playerName?: string }
+  | { type: 'player_joined'; clientId: string; playerName?: string; role?: GameRole; spawnSlot?: number }
   | { type: 'player_left'; leftPlayerId: string }
   | { type: 'observer_joined'; observerId: string }
-  | { type: 'role_changed'; role: GameRole }
+  | { type: 'role_changed'; role: GameRole; spawnSlot?: number }
   | { type: 'opponent_role_changed'; clientId: string; role: GameRole }
   | { type: 'disconnected'; reason: string }
   | { type: 'error'; message: string }

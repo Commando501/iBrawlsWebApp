@@ -12,6 +12,8 @@ iBrawls is a React, Vite, Three.js browser game with a local Node/WebSocket rela
 
 The root dev server runs `server.ts`, which hosts Vite in middleware mode and provides the local WebSocket matchmaking/gameplay relay.
 
+Multiplayer rooms stay advertised while a match is already running as long as a player slot is open. The Global Broadcast player list shows the current slot count and lets late players join the active room; the local relay and Worker relay both cap active players at 8 total (host + 7 guests) and assign stable spawn slots so simultaneous joins or respawns do not stack players on one spawn point.
+
 ## Worker Relay
 
 The Cloudflare Worker implementation lives in `worker/`.

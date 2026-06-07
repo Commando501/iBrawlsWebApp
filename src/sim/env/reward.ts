@@ -28,6 +28,12 @@ export interface RewardConfig {
   /** Event: your team gets a kill / you die. */
   kill: number;
   death: number;
+  /**
+   * Dense: per metre your team's nearest member closes on the objective — the free ball
+   * (grifball) or the nearest enemy (combat). This is the exploration foothold: it leads a
+   * from-scratch policy to the objective so it can start earning the sparser rewards.
+   */
+  approach: number;
   /** Dense: small per-tick penalty to discourage stalling. */
   timePenalty: number;
 }
@@ -40,12 +46,43 @@ export const DEFAULT_REWARD_CONFIG: RewardConfig = {
   ballProgress: 0.01,
   kill: 0.1,
   death: 0.1,
+  approach: 0.01,
   timePenalty: 0.0005,
 };
+
+/** Cap per-tick approach delta so respawn/teleport position jumps can't spike the reward. */
+const MAX_APPROACH_DELTA = 1.0;
 
 export interface RewardMemory {
   /** Per-team distance from the ball to that team's enemy goal, captured pre-step. */
   ballDistToEnemyGoal: Record<TeamId, number>;
+  /** Per-team distance from its nearest member to the objective (free ball / nearest enemy). */
+  approachDist: Record<TeamId, number | null>;
+}
+
+/**
+ * Distance from a team's nearest alive member to the objective it should approach:
+ * the free ball in grifball (null while held), or the nearest alive enemy in combat.
+ */
+function approachDistForTeam(state: SimState, team: TeamId): number | null {
+  const mine = state.combatants.filter((c) => c.team === team && c.alive);
+  if (!mine.length) return null;
+  let targets: { x: number; z: number }[];
+  if (state.mode === 'combat') {
+    targets = state.combatants.filter((c) => c.team !== team && c.alive).map((c) => c.pos);
+  } else {
+    if (state.match.ball.state === 'held') return null; // possession/progress take over
+    targets = [state.match.ball.pos];
+  }
+  if (!targets.length) return null;
+  let best = Infinity;
+  for (const m of mine) {
+    for (const t of targets) {
+      const d = Math.hypot(m.pos.x - t.x, m.pos.z - t.z);
+      if (d < best) best = d;
+    }
+  }
+  return best;
 }
 
 function ballDistanceToEnemyGoal(state: SimState, team: TeamId): number {
@@ -58,10 +95,12 @@ function ballDistanceToEnemyGoal(state: SimState, team: TeamId): number {
 /** Capture the pre-step ball-progress baseline for every team in the match. */
 export function initRewardMemory(state: SimState): RewardMemory {
   const dist: Record<TeamId, number> = {} as Record<TeamId, number>;
+  const app: Record<TeamId, number | null> = {} as Record<TeamId, number | null>;
   for (const team of teamsInMatch(state)) {
     dist[team] = ballDistanceToEnemyGoal(state, team);
+    app[team] = approachDistForTeam(state, team);
   }
-  return { ballDistToEnemyGoal: dist };
+  return { ballDistToEnemyGoal: dist, approachDist: app };
 }
 
 function teamsInMatch(state: SimState): TeamId[] {
@@ -92,6 +131,15 @@ export function computeStepRewards(
     const now = ballDistanceToEnemyGoal(state, team);
     if (prev > 0 && now > 0) r += config.ballProgress * (prev - now);
     memory.ballDistToEnemyGoal[team] = now;
+
+    // Approach the objective (free ball / nearest enemy) — the exploration foothold.
+    const prevApp = memory.approachDist[team];
+    const nowApp = approachDistForTeam(state, team);
+    if (prevApp != null && nowApp != null) {
+      const delta = Math.max(-MAX_APPROACH_DELTA, Math.min(MAX_APPROACH_DELTA, prevApp - nowApp));
+      r += config.approach * delta;
+    }
+    memory.approachDist[team] = nowApp;
 
     // Possession.
     const holder = state.match.ball.holderId

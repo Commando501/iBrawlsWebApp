@@ -57,6 +57,8 @@ function writeLiveConfig(config: unknown) {
 }
 
 const MAX_PLAYER_NAME_LENGTH = 10;
+const MAX_ROOM_CLIENTS = 7;
+const MAX_ROOM_PLAYERS = 1 + MAX_ROOM_CLIENTS;
 
 function normalizePlayerName(name: unknown): string | undefined {
   if (typeof name !== "string") return undefined;
@@ -87,7 +89,7 @@ async function startServer() {
 
   interface Room {
     host: WebSocket;
-    clients: WebSocket[]; // Array of up to 7 guest clients (8 players total)
+    clients: WebSocket[]; // Array of up to MAX_ROOM_CLIENTS guest clients
     observers: Set<WebSocket>;
     keys: string[];
     quickplayReserved?: boolean;
@@ -102,6 +104,38 @@ async function startServer() {
   // Quick Play matchmaking structures
   const quickPlayQueue = new Set<WebSocket>();
   const waitingQuickPlayClients = new Map<string, WebSocket>();
+
+  function getSocketId(socket: WebSocket): string {
+    return String((socket as any).id || "");
+  }
+
+  function getRoomPlayerEntries(room: Room) {
+    return [
+      {
+        clientId: getSocketId(room.host),
+        role: "host",
+        spawnSlot: 0,
+        playerName: normalizePlayerName((room.host as any).playerName) || `Client ${getSocketId(room.host)}`,
+      },
+      ...room.clients.map((client, index) => ({
+        clientId: getSocketId(client),
+        role: "client",
+        spawnSlot: index + 1,
+        playerName: normalizePlayerName((client as any).playerName) || `Client ${getSocketId(client)}`,
+      })),
+    ];
+  }
+
+  function getOtherRoomPlayerEntries(room: Room, selfId: string) {
+    return getRoomPlayerEntries(room).filter(player => player.clientId !== selfId);
+  }
+
+  function getRoomSpawnSlot(room: Room, socket: WebSocket): number {
+    const socketId = getSocketId(socket);
+    if (room.host === socket || getSocketId(room.host) === socketId) return 0;
+    const index = room.clients.findIndex(client => client === socket || getSocketId(client) === socketId);
+    return index >= 0 ? index + 1 : 0;
+  }
 
   // Helper to clean up dead sockets from the quickplay queue
   function cleanQuickPlayQueue() {
@@ -199,7 +233,9 @@ async function startServer() {
         name: normalizePlayerName(client.playerName),
         state: client.playerState || 'menu',
         roomCode: client.roomCode,
-        spaceAvailable: client.spaceAvailable !== undefined ? client.spaceAvailable : false
+        spaceAvailable: client.spaceAvailable !== undefined ? client.spaceAvailable : false,
+        playerCount: client.playerCount,
+        maxPlayers: client.maxPlayers
       }))
       .filter(c => Boolean(c.id));
 
@@ -229,6 +265,8 @@ async function startServer() {
     (ws as any).roomCode = undefined;
     (ws as any).spaceAvailable = false;
     (ws as any).playerName = normalizePlayerName(nameParam);
+    (ws as any).playerCount = undefined;
+    (ws as any).maxPlayers = undefined;
     
     console.log(`New WebSocket connection received. Assigned Socket ID: ${wsId}, Type: ${connectionType}, Name: ${nameParam}`);
 
@@ -244,12 +282,18 @@ async function startServer() {
 
         switch (message.type) {
           case "update_status": {
-            const { status, roomCode, spaceAvailable, name } = message;
-            console.log(`Client ${wsId} updating playerState to: ${status}, roomCode: ${roomCode}, spaceAvailable: ${spaceAvailable}, name: ${name}`);
+            const { status, roomCode, spaceAvailable, name, playerCount, maxPlayers } = message;
+            console.log(`Client ${wsId} updating playerState to: ${status}, roomCode: ${roomCode}, spaceAvailable: ${spaceAvailable}, name: ${name}, players: ${playerCount}/${maxPlayers}`);
             (ws as any).playerState = status;
             (ws as any).roomCode = roomCode;
             (ws as any).spaceAvailable = spaceAvailable;
             (ws as any).playerName = normalizePlayerName(name);
+            (ws as any).playerCount = typeof playerCount === 'number' && Number.isFinite(playerCount)
+              ? Math.max(0, Math.min(MAX_ROOM_PLAYERS, Math.floor(playerCount)))
+              : undefined;
+            (ws as any).maxPlayers = typeof maxPlayers === 'number' && Number.isFinite(maxPlayers)
+              ? Math.max(1, Math.min(MAX_ROOM_PLAYERS, Math.floor(maxPlayers)))
+              : undefined;
             updatePresence();
             break;
           }
@@ -321,10 +365,10 @@ async function startServer() {
           case "quickplay_join": {
             console.log(`Client ${wsId} requested Quick Play matchmaking.`);
             
-            // 1. Search for any hosted match waiting for a player (not full, not reserved)
+            // 1. Search for any hosted match with an open player slot (not reserved)
             let foundRoomKey: string | null = null;
             for (const [key, room] of rooms.entries()) {
-              if (room.clients.length === 0 && !room.quickplayReserved) {
+              if (room.clients.length < MAX_ROOM_CLIENTS && !room.quickplayReserved) {
                 foundRoomKey = key;
                 room.quickplayReserved = true; // Mark it as reserved
                 break;
@@ -453,7 +497,8 @@ async function startServer() {
                 otherPlayerIds: [
                   (room.host as any).id,
                   ...room.clients.map(c => (c as any).id)
-                ]
+                ],
+                otherPlayers: getRoomPlayerEntries(room),
               }));
               
               // Notify host and clients
@@ -469,14 +514,15 @@ async function startServer() {
               break;
             }
 
-            if (room.clients.length >= 7) { // 8 players total (1 host + 7 clients)
-              ws.send(JSON.stringify({ type: "error", message: `Match is already full (8/8 players present).` }));
+            if (room.clients.length >= MAX_ROOM_CLIENTS) {
+              ws.send(JSON.stringify({ type: "error", message: `Match is already full (${MAX_ROOM_PLAYERS}/${MAX_ROOM_PLAYERS} players present).` }));
               return;
             }
 
             if (!room.clients.includes(ws) && !room.clients.some((c: any) => c.id === wsId)) {
               room.clients.push(ws);
             }
+            room.quickplayReserved = false;
             socketToRoom.set(ws, room);
 
             // Notify both parties that they have paired successfully
@@ -485,10 +531,12 @@ async function startServer() {
               role: "client", 
               hostClientId: (room.host as any).id, 
               clientClientId: wsId,
+              spawnSlot: getRoomSpawnSlot(room, ws),
               otherPlayerIds: [
                 (room.host as any).id,
                 ...room.clients.filter(c => (c as any).id !== wsId).map(c => (c as any).id)
-              ]
+              ],
+              otherPlayers: getOtherRoomPlayerEntries(room, wsId),
             }));
 
             // Notify host and all other clients of this new player joining
@@ -496,6 +544,7 @@ async function startServer() {
               type: "player_joined",
               role: "client",
               clientId: wsId,
+              spawnSlot: getRoomSpawnSlot(room, ws),
               playerName: normalizePlayerName((ws as any).playerName) || `Client ${wsId}`
             });
 
@@ -504,10 +553,12 @@ async function startServer() {
                 room.host.send(JSON.stringify({
                   type: "connected",
                   role: "host",
+                  spawnSlot: 0,
                   clientClientId: wsId,
                   otherPlayerIds: [
                     wsId
-                  ]
+                  ],
+                  otherPlayers: getOtherRoomPlayerEntries(room, getSocketId(room.host)),
                 }));
               }
             } else {
@@ -575,7 +626,7 @@ async function startServer() {
               // Transitioning from Observer to Player
               if (room.observers.has(ws)) {
                 // Check if vacant slot available in clients
-                if (room.clients.length < 7) {
+                if (room.clients.length < MAX_ROOM_CLIENTS) {
                   room.observers.delete(ws);
                   if (!room.clients.includes(ws)) {
                     room.clients.push(ws);
@@ -584,7 +635,8 @@ async function startServer() {
                     type: "role_changed", 
                     role: "client", 
                     hostClientId: (room.host as any).id, 
-                    clientClientId: wsId 
+                    clientClientId: wsId,
+                    spawnSlot: getRoomSpawnSlot(room, ws),
                   }));
                   
                   // Notify Host and all clients of this observer becoming player
@@ -592,6 +644,7 @@ async function startServer() {
                     type: "player_joined",
                     role: "client",
                     clientId: wsId,
+                    spawnSlot: getRoomSpawnSlot(room, ws),
                     playerName: normalizePlayerName((ws as any).playerName) || `Client ${wsId}`
                   });
                   if (room.host && room.host.readyState === WebSocket.OPEN) {
@@ -606,7 +659,7 @@ async function startServer() {
                   // Player slots are fully occupied (secure server check)
                   ws.send(JSON.stringify({ 
                     type: "error", 
-                    message: "Cannot join as player. Both player slots are occupied." 
+                    message: `Cannot join as player. The match is already full (${MAX_ROOM_PLAYERS}/${MAX_ROOM_PLAYERS}).`
                   }));
                 }
               }
