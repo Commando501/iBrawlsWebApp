@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   AccountInfo,
   register as apiRegister,
@@ -12,7 +12,7 @@ import {
 } from '../services/account';
 
 /**
- * Account block rendered inside the Spartan Pilot Identity card. Accounts are
+ * Account block rendered inside the Spartan Pilot Identity frame. Accounts are
  * optional; logged-out users keep playing normally. This component owns its form
  * state and calls the account service directly, then notifies the parent (App) so
  * it can run the cloud-settings sync side effects.
@@ -20,6 +20,8 @@ import {
 
 interface Props {
   account: AccountInfo | null;
+  requestedLoggedOutMode?: Exclude<LoggedOutMode, 'menu'>;
+  loggedOutModeRequestToken?: number;
   /** Register succeeded — App pushes the current local settings up as the first cloud save. */
   onRegistered: (account: AccountInfo) => void;
   /** Login succeeded — App pulls the account's cloud settings down (cloud overwrites local). */
@@ -59,6 +61,8 @@ const ghostBtn =
 
 const SpartanIdentityAccount: React.FC<Props> = ({
   account,
+  requestedLoggedOutMode,
+  loggedOutModeRequestToken,
   onRegistered,
   onLoggedIn,
   onLoggedOut,
@@ -99,6 +103,13 @@ const SpartanIdentityAccount: React.FC<Props> = ({
     setPassword('');
     setRecoverCode('');
   };
+
+  useEffect(() => {
+    if (account || !requestedLoggedOutMode || !loggedOutModeRequestToken) return;
+    resetMessages();
+    resetLoggedOutForms();
+    setMode(requestedLoggedOutMode);
+  }, [account, requestedLoggedOutMode, loggedOutModeRequestToken]);
 
   // ── Logged-out actions ──────────────────────────────────────────────────────
   const handleRegister = async () => {

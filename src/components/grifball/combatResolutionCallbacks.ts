@@ -12,6 +12,7 @@ import {
 import { applyOutgoingMultiplayerHitForState } from './multiplayerHitRuntime';
 import { evaluatePlayerKillMedalsForState } from './playerMedals';
 import { type GrifballRuntimeState } from './runtimeState';
+import { type ReplayHeatmapCombatantSource } from './replayHeatmapRuntime';
 import {
   executeCustomBotTradeForState,
   executeMainAITradeForState,
@@ -52,9 +53,13 @@ export function createCombatResolutionCallbacksForState({
     attacker: string,
     victim: string,
     medals?: MedalInfo[],
-    weapon?: DeathEvent['weapon']
+    weapon?: DeathEvent['weapon'],
+    heatmap?: {
+      attacker: ReplayHeatmapCombatantSource;
+      victim: ReplayHeatmapCombatantSource;
+    }
   ) => {
-    return recordDeathEvent(getState(), attacker, victim, medals, weapon);
+    return recordDeathEvent(getState(), attacker, victim, medals, weapon, heatmap);
   };
 
   function evaluatePlayerKillMedals(victimId: string): MedalInfo[] {

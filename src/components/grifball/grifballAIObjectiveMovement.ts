@@ -4,6 +4,7 @@ import {
   getGrifballRunnerSteering,
   getGrifballSpacingOffset,
 } from '../../game/aiGrifballRoles';
+import { getYawForHeading } from '../../game/yaw';
 import { type AIBehaviorState, type WeaponState } from '../../types';
 import { type GrifballAwarenessPoint } from './grifballAITeamAwareness';
 import { type GrifballCombatantRef } from './grifballObjectiveRuntime';
@@ -30,7 +31,7 @@ const applyGroundDirection = (
   speed: number,
   dt: number
 ): void => {
-  frame.yaw = Math.atan2(dirX, dirZ);
+  frame.yaw = getYawForHeading(dirX, dirZ);
   frame.vel.set(dirX * speed, 0, dirZ * speed);
   frame.pos.x += frame.vel.x * dt;
   frame.pos.z += frame.vel.z * dt;
@@ -137,7 +138,7 @@ export function resolvePrimaryGrifballAIObjectiveMovementForCombatant({
 
     if (closestEnemy && closestDist <= 2.2 && canStartWeaponAction && frame.weaponState === 'ready') {
       const toEnemy = closestEnemy.pos.clone().sub(frame.pos);
-      frame.yaw = Math.atan2(toEnemy.x, toEnemy.z);
+      frame.yaw = getYawForHeading(toEnemy.x, toEnemy.z);
       frame.aiState = 'COOLDOWN';
       frame.timer = weaponReloadTime('hammer');
       triggerCombatantAttack(self, 'hammer');

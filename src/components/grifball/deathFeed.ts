@@ -1,4 +1,8 @@
 import { type DeathEvent, type GameStats, type MedalInfo } from '../../types';
+import {
+  queueReplayHeatmapDeathEventsForState,
+  type ReplayHeatmapCombatantSource,
+} from './replayHeatmapRuntime';
 import { type GrifballRuntimeState } from './runtimeState';
 
 export const getLocalPlayerFeedName = (
@@ -14,7 +18,11 @@ export const recordDeathEvent = (
   attacker: string,
   victim: string,
   medals?: MedalInfo[],
-  weapon?: DeathEvent['weapon']
+  weapon?: DeathEvent['weapon'],
+  heatmap?: {
+    attacker: ReplayHeatmapCombatantSource;
+    victim: ReplayHeatmapCombatantSource;
+  }
 ): DeathEvent => {
   const newDeath: DeathEvent = {
     id: Math.random().toString(36).substring(2, 9),
@@ -24,5 +32,13 @@ export const recordDeathEvent = (
     weapon,
   };
   state.lastDeaths = [newDeath, ...state.lastDeaths].slice(0, 3);
+  if (heatmap) {
+    queueReplayHeatmapDeathEventsForState({
+      state,
+      attacker: heatmap.attacker,
+      victim: heatmap.victim,
+      weapon,
+    });
+  }
   return newDeath;
 };

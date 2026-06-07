@@ -88,6 +88,21 @@ test('stripReplayPII removes names everywhere but preserves behavior and the sou
   ]);
   original.playerName = 'Me';
   original.opponentName = 'Them';
+  original.heatmap = {
+    version: 1,
+    events: [
+      {
+        id: 'hm_1',
+        kind: 'kill',
+        time: 4.5,
+        actorId: 'player',
+        victimId: 'bot_1',
+        team: 'blue',
+        position: { x: 1, z: 2 },
+        weapon: 'sword',
+      },
+    ],
+  };
 
   const stripped = stripReplayPII(original);
 
@@ -100,6 +115,8 @@ test('stripReplayPII removes names everywhere but preserves behavior and the sou
   // Behavioral data preserved.
   assert.equal(stripped.frames[0].player!.hp, 0.9);
   assert.equal(stripped.frames[0].otherPlayers![0].pos!.x, 3);
+  assert.deepEqual(stripped.heatmap?.events, original.heatmap.events);
+  assert.equal('playerName' in stripped.heatmap!.events[0], false);
 
   // Source replay is untouched (read-only contract).
   assert.equal(original.playerName, 'Me');

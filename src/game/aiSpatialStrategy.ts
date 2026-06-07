@@ -1,6 +1,7 @@
 import type { PlayerModelSnapshot } from './aiPlayerModel';
 import { DEFAULT_REACTION_TIME } from './aiPlayerModel';
 import { getRectHalfExtents, type ArenaHalfExtents } from './arenaDimensions';
+import { getYawForHeading } from './yaw';
 
 /** Base sword-lunge evasion detection radius (meters). */
 export const BASE_EVASION_DETECT_RANGE = 15;
@@ -562,7 +563,7 @@ export function getSpawnGuardAimAngle(input: SpawnGuardAimInput): number {
     aimZ += (centerBearingZ / centerLen) * offsetWeight * spawnDist;
   }
 
-  return Math.atan2(aimX, aimZ);
+  return getYawForHeading(aimX, aimZ);
 }
 
 export interface TargetEdgeSelectionInput extends ScorePositionInput {

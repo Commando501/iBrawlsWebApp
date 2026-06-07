@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { MAIN_AI_ID } from '../../game/roster';
 import { type Combatant, type DeathEvent, type MedalInfo } from '../../types';
 import { MELEE_HAMMER_SWIPE_REACH } from './combatGeometry';
+import { createReplayHeatmapCombatantSource, queueReplayHeatmapDeathEventsForState } from './replayHeatmapRuntime';
 import { type GrifballRuntimeState } from './runtimeState';
 
 type PlayerHammerMeleeHitSyncPayload = {
@@ -90,6 +91,15 @@ export function applyPlayerHammerMeleeImpactForState({
             weapon: 'hammer',
           };
           state.lastDeaths = [newDeath, ...state.lastDeaths].slice(0, 3);
+          queueReplayHeatmapDeathEventsForState({
+            state,
+            attacker: createReplayHeatmapCombatantSource('player', undefined, {
+              team: state.localPlayerTeam,
+              pos: state.playerPos,
+            }),
+            victim: createReplayHeatmapCombatantSource(MAIN_AI_ID, mainAI),
+            weapon: 'hammer',
+          });
           spawnVoxelShockwaveParticles(mainAI.pos, '#ef4444');
         }
       }
@@ -149,6 +159,15 @@ export function applyPlayerHammerMeleeImpactForState({
                 weapon: 'hammer',
               };
               state.lastDeaths = [newDeath, ...state.lastDeaths].slice(0, 3);
+              queueReplayHeatmapDeathEventsForState({
+                state,
+                attacker: createReplayHeatmapCombatantSource('player', undefined, {
+                  team: state.localPlayerTeam,
+                  pos: state.playerPos,
+                }),
+                victim: createReplayHeatmapCombatantSource(other.id, other),
+                weapon: 'hammer',
+              });
               spawnVoxelShockwaveParticles(new THREE.Vector3(other.pos.x, other.pos.y, other.pos.z), '#ef4444');
             }
           }

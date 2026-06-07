@@ -1,5 +1,6 @@
 import { evaluateKillMedals } from '../../game/rewards';
 import { type Combatant, type MedalInfo } from '../../types';
+import { queueReplayHeatmapMedalEventsForState } from './replayHeatmapRuntime';
 import { type GrifballRuntimeState } from './runtimeState';
 
 interface EvaluatePlayerKillMedalsOptions {
@@ -64,6 +65,16 @@ export const evaluatePlayerKillMedalsForState = ({
       }
     }, 2500);
   }
+
+  queueReplayHeatmapMedalEventsForState({
+    state: s,
+    actor: {
+      id: 'player',
+      team: s.localPlayerTeam,
+      pos: s.playerPos,
+    },
+    medals: result.medals,
+  });
 
   return result.medals;
 };

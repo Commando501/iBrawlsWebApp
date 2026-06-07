@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { type DeathEvent, type MedalInfo } from '../../types';
+import { createReplayHeatmapCombatantSource, type ReplayHeatmapCombatantSource } from './replayHeatmapRuntime';
 import { type GrifballRuntimeState } from './runtimeState';
 
 export function applyOutgoingMultiplayerHitForState({
@@ -20,7 +21,11 @@ export function applyOutgoingMultiplayerHitForState({
     attacker: string,
     victim: string,
     medals?: MedalInfo[],
-    weapon?: DeathEvent['weapon']
+    weapon?: DeathEvent['weapon'],
+    heatmap?: {
+      attacker: ReplayHeatmapCombatantSource;
+      victim: ReplayHeatmapCombatantSource;
+    }
   ) => DeathEvent;
   getLocalPlayerFeedName: () => string;
   playDeath: () => void;
@@ -43,7 +48,14 @@ export function applyOutgoingMultiplayerHitForState({
     getLocalPlayerFeedName(),
     target.playerName,
     medals,
-    state.activeWeapon as DeathEvent['weapon']
+    state.activeWeapon as DeathEvent['weapon'],
+    {
+      attacker: createReplayHeatmapCombatantSource('player', undefined, {
+        team: state.localPlayerTeam,
+        pos: state.playerPos,
+      }),
+      victim: createReplayHeatmapCombatantSource(targetId, target),
+    }
   );
   spawnVoxelShockwaveParticles(new THREE.Vector3(target.pos.x, target.pos.y, target.pos.z), '#ef4444');
 }

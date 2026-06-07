@@ -12,6 +12,10 @@ import {
   hasReplayEntityStateChanged,
   type ReplayEntityComparisonState,
 } from './replayHelpers';
+import {
+  ensureReplayHeatmapData,
+  flushReplayHeatmapEventsForState,
+} from './replayHeatmapRuntime';
 import { type GrifballRuntimeState } from './runtimeState';
 import { type LastRecordedReplayEntityState } from './runtimeRefs';
 
@@ -64,7 +68,12 @@ export function initializeReplayRecordingForState({
     maxScore: isTournament ? (matchKillsToWin ?? 25) : 25,
     recordedAsObserver: state.isObserverMode,
     frames: [],
+    heatmap: { version: 1, events: [] },
   };
+  ensureReplayHeatmapData(replayRecordingRef.current);
+  state.replayHeatmapRecordingActive = true;
+  state.replayHeatmapElapsedTime = 0;
+  state.pendingReplayHeatmapEvents = [];
   lastRecordTimeRef.current = 0;
   replayRecordingElapsedTimeRef.current = 0;
   lastRecordedStateRef.current.clear();
@@ -85,6 +94,8 @@ export function recordReplayFrameForState({
   isMultiplayer: boolean;
 }): void {
   if (!replayRecordingRef.current) return;
+
+  flushReplayHeatmapEventsForState({ state, replayRecordingRef });
 
   const frame: ReplayFrame = {
     time,
@@ -265,17 +276,21 @@ export function recordReplayFrameForState({
 }
 
 export async function saveCompiledReplayForRefs({
+  state,
   replayRecordingRef,
   replayRecordingElapsedTimeRef,
 }: {
+  state: GrifballRuntimeState;
   replayRecordingRef: MutableRef<ReplayFile | null>;
   replayRecordingElapsedTimeRef: MutableRef<number>;
 }): Promise<void> {
   const recording = replayRecordingRef.current;
   if (!recording || recording.frames.length === 0) return;
 
+  flushReplayHeatmapEventsForState({ state, replayRecordingRef });
   replayRecordingRef.current = null;
   recording.duration = replayRecordingElapsedTimeRef.current;
+  state.replayHeatmapRecordingActive = false;
 
   try {
     await cacheReplay(recording);
@@ -298,7 +313,7 @@ export function persistLocalPlayerFingerprintForState({
   const snapshot = getPlayerModelSnapshot(state.aiMatchContext, LOCAL_PLAYER_ID, 5);
   if (!snapshot) return;
   savePlayerFingerprint(LOCAL_PLAYER_ID, snapshot).catch(() => {
-    /* warm-start persistence is best-effort; ignore storage failures */
+    /* player-memory persistence is best-effort; ignore storage failures */
   });
 }
 

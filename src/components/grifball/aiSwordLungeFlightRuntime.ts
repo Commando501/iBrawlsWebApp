@@ -9,6 +9,7 @@ import {
   type TacticalTargetCandidate,
 } from './combatGeometry';
 import { applyAISwordLungeHitForState } from './aiSwordLungeHitRuntime';
+import { type ReplayHeatmapCombatantSource } from './replayHeatmapRuntime';
 import { type GrifballRuntimeState } from './runtimeState';
 import { type CombatTradeReason, resolveSwordLungeTradeReasonForState } from './tradeRuntime';
 
@@ -77,7 +78,11 @@ export function resolveAISwordLungeFlightForCombatant({
     attacker: string,
     victim: string,
     medals?: undefined,
-    weapon?: DeathEvent['weapon']
+    weapon?: DeathEvent['weapon'],
+    heatmap?: {
+      attacker: ReplayHeatmapCombatantSource;
+      victim: ReplayHeatmapCombatantSource;
+    }
   ) => DeathEvent;
   recordBotPsychKill: (botId: string, victimId: string, wasLungeKill: boolean) => void;
   recordBotCalibrationDeath: (botId: string) => void;

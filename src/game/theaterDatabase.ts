@@ -189,39 +189,32 @@ export async function saveCachedReplay(id: string, customName: string, customDes
   await saveReplay(permanentReplay);
 }
 
-// ── Player behavior fingerprints (cross-session AI warm-start) ────────────────
-// One small record per opponent identity, blended across matches via EMA so the
-// stored fingerprint is a stable prior rather than a single noisy match.
+// ── Player behavior fingerprints (persistent AI memory) ───────────────────────
+// One small record per player identity. The learned style snapshot carries
+// forward across matches, while raw per-match action volumes stay out of the
+// persisted payload.
 
-/** Weight of the newest match when blending into the stored fingerprint. */
-const FINGERPRINT_BLEND_ALPHA = 0.34;
 /** Cap on the `matchesSeen` counter so it stays a bounded confidence proxy. */
 const FINGERPRINT_MATCHES_CAP = 50;
+/** Cap persisted sample confidence to keep old/corrupt records bounded. */
+export const FINGERPRINT_SAMPLE_COUNT_CAP = 10000;
 
 interface StoredFingerprint {
   key: string;
   snapshot: PlayerModelSnapshot;
-  /** Number of matches blended into this fingerprint (bounded by the cap). */
+  /** Number of matches written into this fingerprint (bounded by the cap). */
   matchesSeen: number;
   updatedAt: number;
 }
 
-export function blendFingerprint(
-  prev: PlayerModelSnapshot,
-  next: PlayerModelSnapshot,
-  alpha: number,
-): PlayerModelSnapshot {
-  const mix = (p: number, n: number) => p + alpha * (n - p);
+export function normalizeFingerprintSnapshot(snapshot: PlayerModelSnapshot): PlayerModelSnapshot {
+  const sampleCount = Number.isFinite(snapshot.sampleCount)
+    ? Math.max(0, Math.min(Math.floor(snapshot.sampleCount), FINGERPRINT_SAMPLE_COUNT_CAP))
+    : 0;
+
   return {
-    avgLungeDistance: mix(prev.avgLungeDistance, next.avgLungeDistance),
-    lungeFrequency: mix(prev.lungeFrequency, next.lungeFrequency),
-    dodgeBiasX: mix(prev.dodgeBiasX, next.dodgeBiasX),
-    dodgeBiasZ: mix(prev.dodgeBiasZ, next.dodgeBiasZ),
-    counterRate: mix(prev.counterRate, next.counterRate),
-    approachSpeed: mix(prev.approachSpeed, next.approachSpeed),
-    edgeProximity: mix(prev.edgeProximity, next.edgeProximity),
-    reactionTime: mix(prev.reactionTime, next.reactionTime),
-    sampleCount: next.sampleCount,
+    ...snapshot,
+    sampleCount,
   };
 }
 
@@ -241,7 +234,7 @@ export async function loadPlayerFingerprint(key: string): Promise<PlayerModelSna
   });
 }
 
-// Blend an end-of-match snapshot into the stored fingerprint for an opponent.
+// Save the end-of-match snapshot as the next persistent player-memory baseline.
 export async function savePlayerFingerprint(
   key: string,
   snapshot: PlayerModelSnapshot,
@@ -258,9 +251,7 @@ export async function savePlayerFingerprint(
 
   const record: StoredFingerprint = {
     key,
-    snapshot: existing
-      ? blendFingerprint(existing.snapshot, snapshot, FINGERPRINT_BLEND_ALPHA)
-      : snapshot,
+    snapshot: normalizeFingerprintSnapshot(snapshot),
     matchesSeen: Math.min((existing?.matchesSeen ?? 0) + 1, FINGERPRINT_MATCHES_CAP),
     updatedAt: Date.now(),
   };

@@ -128,7 +128,7 @@ export const createPlayerModelObservationCallbacksForState = ({
   };
 };
 
-export const resetAndWarmStartLocalPlayerModelForState = ({
+export const resetAndLoadPersistentLocalPlayerModelForState = ({
   state,
   replayActive,
 }: {
@@ -148,7 +148,7 @@ export const resetAndWarmStartLocalPlayerModelForState = ({
         snapshot
       );
     })
-    .catch(() => { /* warm-start is best-effort; ignore storage failures */ });
+    .catch(() => { /* persistent memory load is best-effort; ignore storage failures */ });
 
   return () => {
     cancelled = true;

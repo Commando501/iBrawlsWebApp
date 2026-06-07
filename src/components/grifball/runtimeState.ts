@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { createAIMatchContext, type AIMatchContext } from '../../game/aiMatchContext';
 import { createEmptyTeamScores, localPlayerTeamFromRole, type TeamId, type TeamScoresState } from '../../game/teamScoring';
 import { createInitialGrifballMatchState, type GrifballMatchState } from '../../game/grifballMatch';
-import { type Combatant, type DeathEvent, type MedalInfo, type UniversalSettings, type WeaponState } from '../../types';
+import { type Combatant, type DeathEvent, type MedalInfo, type ReplayHeatmapEvent, type UniversalSettings, type WeaponState } from '../../types';
 import { getInwardSpawnYaw } from './combatGeometry';
 
 export interface GrifballRuntimeState {
@@ -73,6 +73,9 @@ export interface GrifballRuntimeState {
   playerMultikillCount: number;
   playerSpreeCount: number;
   activeMedalPopup: { medal: MedalInfo; key: number } | null;
+  replayHeatmapRecordingActive: boolean;
+  replayHeatmapElapsedTime: number;
+  pendingReplayHeatmapEvents: ReplayHeatmapEvent[];
 
   gameTime: number;
 
@@ -206,6 +209,9 @@ export function createInitialGrifballRuntimeState({
     playerMultikillCount: 0,
     playerSpreeCount: 0,
     activeMedalPopup: null,
+    replayHeatmapRecordingActive: false,
+    replayHeatmapElapsedTime: 0,
+    pendingReplayHeatmapEvents: [],
 
     gameTime: 522,
 

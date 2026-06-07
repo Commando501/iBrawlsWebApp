@@ -1,11 +1,5 @@
 import * as THREE from 'three';
-import {
-  buildGravityHammerModel,
-  buildKatarSwordModel,
-  buildPistolModel,
-  buildVoxelSpartanModel,
-} from '../VoxelModels';
-import { MAIN_AI_ID } from '../../game/roster';
+import { createCombatantMeshRig } from './combatantModels';
 import { type SwordLungeCurrentTrailStyle } from './combatGeometry';
 import { type ReplayInterpolatedPlayer } from './replayHelpers';
 import { type GrifballThreeRefs } from './threeRefs';
@@ -52,33 +46,7 @@ export function updateReplayCombatantVisualsForFrame({
   updatedPlayers.forEach((player, id) => {
     let meshes = refs.otherPlayerMeshes.get(id);
     if (!meshes) {
-      const group = buildVoxelSpartanModel(id === MAIN_AI_ID || id.startsWith('bot_'), player.hue);
-      scene.add(group);
-
-      const hammer = buildGravityHammerModel(player.hue);
-      hammer.scale.set(0.6, 0.6, 0.6);
-      hammer.position.set(0.5, 1.0 - 0.64, -0.4);
-      hammer.rotation.set(Math.PI / 2, 0, 0);
-      if (group.userData.upperTorso) group.userData.upperTorso.add(hammer);
-      else group.add(hammer);
-
-      const sword = buildKatarSwordModel(player.hue);
-      sword.scale.set(0.6, 0.6, 0.6);
-      sword.position.set(0.5, 1.0 - 0.64, -0.32);
-      sword.rotation.set(Math.PI / 2, 0, -Math.PI / 8);
-      sword.visible = false;
-      if (group.userData.upperTorso) group.userData.upperTorso.add(sword);
-      else group.add(sword);
-
-      const pistol = buildPistolModel(player.hue);
-      pistol.scale.set(0.6, 0.6, 0.6);
-      pistol.position.set(0.5, 1.0 - 0.64, -0.32);
-      pistol.rotation.set(Math.PI / 2, 0, 0);
-      pistol.visible = false;
-      if (group.userData.upperTorso) group.userData.upperTorso.add(pistol);
-      else group.add(pistol);
-
-      meshes = { group, hammer, sword, pistol };
+      meshes = createCombatantMeshRig(scene, player.hue, false);
       refs.otherPlayerMeshes.set(id, meshes);
     }
 
@@ -126,7 +94,7 @@ export function updateReplayCombatantVisualsForFrame({
       }
     } else {
       hammer.rotation.set(Math.PI / 2, 0, 0);
-      sword.rotation.set(Math.PI / 2, 0, -Math.PI / 8);
+      sword.rotation.set(-Math.PI / 2, 0, -Math.PI / 8);
     }
 
     if (player.isLunging && alive && dt > 0) {

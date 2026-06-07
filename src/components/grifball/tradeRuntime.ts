@@ -1,6 +1,11 @@
 import * as THREE from 'three';
 import { MAIN_AI_ID } from '../../game/roster';
 import { type Combatant, type DeathEvent, type MedalInfo } from '../../types';
+import {
+  createReplayHeatmapCombatantSource,
+  queueReplayHeatmapDeathEventsForState,
+  type ReplayHeatmapCombatantSource,
+} from './replayHeatmapRuntime';
 import { type GrifballRuntimeState } from './runtimeState';
 
 export type CombatTradeReason = 'sword_vs_sword' | 'sword_lunge_vs_hammer';
@@ -106,7 +111,11 @@ export function executeCustomBotTradeForState({
     attacker: string,
     victim: string,
     medals?: MedalInfo[],
-    weapon?: DeathEvent['weapon']
+    weapon?: DeathEvent['weapon'],
+    heatmap?: {
+      attacker: ReplayHeatmapCombatantSource;
+      victim: ReplayHeatmapCombatantSource;
+    }
   ) => DeathEvent;
   getLocalPlayerFeedName: () => string;
   playExplosion: () => void;
@@ -141,7 +150,13 @@ export function executeCustomBotTradeForState({
       state.scorePlayer += 1;
       state.playerKills += 1;
       const medals = evaluatePlayerKillMedals(attackerBot.id);
-      recordDeathEvent(`${getLocalPlayerFeedName()} [${tradeText}]`, attackerBot.playerName, medals, tradeWeapon);
+      recordDeathEvent(`${getLocalPlayerFeedName()} [${tradeText}]`, attackerBot.playerName, medals, tradeWeapon, {
+        attacker: createReplayHeatmapCombatantSource('player', undefined, {
+          team: state.localPlayerTeam,
+          pos: state.playerPos,
+        }),
+        victim: createReplayHeatmapCombatantSource(attackerBot.id, attackerBot),
+      });
     } else if (targetCombatant) {
       if (targetCombatant.id === MAIN_AI_ID) {
         state.scoreEnemy += 1;
@@ -154,7 +169,11 @@ export function executeCustomBotTradeForState({
         `${targetCombatant.playerName || (targetCombatant.id === MAIN_AI_ID ? 'Red (AI)' : targetCombatant.id)} [${tradeText}]`,
         attackerBot.playerName,
         undefined,
-        tradeWeapon
+        tradeWeapon,
+        {
+          attacker: createReplayHeatmapCombatantSource(targetCombatant.id, targetCombatant),
+          victim: createReplayHeatmapCombatantSource(attackerBot.id, attackerBot),
+        }
       );
     }
     spawnVoxelShockwaveParticles(
@@ -173,7 +192,13 @@ export function executeCustomBotTradeForState({
       state.scoreEnemy += 1;
       state.enemyKills += 1;
     }
-    recordDeathEvent(`${attackerBot.playerName} [${tradeText}]`, getLocalPlayerFeedName(), undefined, tradeWeapon);
+    recordDeathEvent(`${attackerBot.playerName} [${tradeText}]`, getLocalPlayerFeedName(), undefined, tradeWeapon, {
+      attacker: createReplayHeatmapCombatantSource(attackerBot.id, attackerBot),
+      victim: createReplayHeatmapCombatantSource('player', undefined, {
+        team: state.localPlayerTeam,
+        pos: state.playerPos,
+      }),
+    });
     spawnVoxelShockwaveParticles(state.playerPos, '#3b82f6');
   } else if (targetCombatant && targetCombatant.hp <= 0) {
     targetCombatant.hp = 0;
@@ -197,7 +222,11 @@ export function executeCustomBotTradeForState({
       `${attackerBot.playerName} [${tradeText}]`,
       targetCombatant.playerName || (targetCombatant.id === MAIN_AI_ID ? 'Red (AI)' : targetCombatant.id),
       undefined,
-      tradeWeapon
+      tradeWeapon,
+      {
+        attacker: createReplayHeatmapCombatantSource(attackerBot.id, attackerBot),
+        victim: createReplayHeatmapCombatantSource(targetCombatant.id, targetCombatant),
+      }
     );
     spawnVoxelShockwaveParticles(
       new THREE.Vector3(targetCombatant.pos.x, targetCombatant.pos.y, targetCombatant.pos.z),
@@ -293,6 +322,28 @@ export function executeMainAITradeForState({
   };
 
   state.lastDeaths = [newDeath1, newDeath2, ...state.lastDeaths].slice(0, 3);
+  if (mainAi.hp <= 0) {
+    queueReplayHeatmapDeathEventsForState({
+      state,
+      attacker: createReplayHeatmapCombatantSource('player', undefined, {
+        team: state.localPlayerTeam,
+        pos: state.playerPos,
+      }),
+      victim: createReplayHeatmapCombatantSource(MAIN_AI_ID, mainAi),
+      weapon: tradeWeapon,
+    });
+  }
+  if (state.playerHP <= 0) {
+    queueReplayHeatmapDeathEventsForState({
+      state,
+      attacker: createReplayHeatmapCombatantSource(MAIN_AI_ID, mainAi),
+      victim: createReplayHeatmapCombatantSource('player', undefined, {
+        team: state.localPlayerTeam,
+        pos: state.playerPos,
+      }),
+      weapon: tradeWeapon,
+    });
+  }
 
   pushStatsUpdate();
 }

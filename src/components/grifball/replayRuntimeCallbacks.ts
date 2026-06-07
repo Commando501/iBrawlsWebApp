@@ -57,6 +57,7 @@ export function createReplayRuntimeCallbacksForState({
   isReplayPausedRef,
   replayTargetIdRef,
   prevReplayFrameRef,
+  lastReplayEventFrameIndexRef,
   replayPlayerIdsRef,
   keysPressed,
   getKeybindings,
@@ -93,6 +94,7 @@ export function createReplayRuntimeCallbacksForState({
   isReplayPausedRef: MutableRef<boolean>;
   replayTargetIdRef: MutableRef<string>;
   prevReplayFrameRef: MutableRef<ReplayFrame | null>;
+  lastReplayEventFrameIndexRef: MutableRef<number | null>;
   replayPlayerIdsRef: MutableRef<string[]>;
   keysPressed: MutableRef<Record<string, boolean>>;
   getKeybindings: () => Keybindings;
@@ -141,6 +143,7 @@ export function createReplayRuntimeCallbacksForState({
       isReplayPausedRef,
       replayTargetIdRef,
       prevReplayFrameRef,
+      lastReplayEventFrameIndexRef,
     });
 
   const recordReplayFrame = (time: number) =>
@@ -154,6 +157,7 @@ export function createReplayRuntimeCallbacksForState({
 
   const saveCompiledReplay = async () => {
     await saveCompiledReplayForRefs({
+      state: getState(),
       replayRecordingRef,
       replayRecordingElapsedTimeRef,
     });
@@ -184,6 +188,7 @@ export function createReplayRuntimeCallbacksForState({
       isReplayPausedRef,
       replayTargetIdRef,
       prevReplayFrameRef,
+      lastReplayEventFrameIndexRef,
       replayPlayerIdsRef,
       keysPressed,
       keybindings: getKeybindings(),

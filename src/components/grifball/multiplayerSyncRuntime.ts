@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { type DeathEvent } from '../../types';
+import { createReplayHeatmapCombatantSource, queueReplayHeatmapDeathEventsForState } from './replayHeatmapRuntime';
 import { type GrifballRuntimeState } from './runtimeState';
 import { type GrifballThreeRefs } from './threeRefs';
 
@@ -225,6 +226,18 @@ export function createMultiplayerSyncMessageHandler({
                   weapon: data.weapon || 'sword',
                 };
                 state.lastDeaths = [newDeath, ...state.lastDeaths].slice(0, 3);
+                const attacker = data.senderId ? state.otherPlayers.get(data.senderId) : undefined;
+                queueReplayHeatmapDeathEventsForState({
+                  state,
+                  attacker: attacker
+                    ? createReplayHeatmapCombatantSource(data.senderId, attacker)
+                    : createReplayHeatmapCombatantSource('player', undefined, {
+                        team: state.localPlayerTeam,
+                        pos: state.playerPos,
+                      }),
+                  victim: createReplayHeatmapCombatantSource(data.targetId, targetPlayer),
+                  weapon: data.weapon || 'sword',
+                });
                 spawnVoxelShockwaveParticles(
                   new THREE.Vector3(targetPlayer.pos.x, targetPlayer.pos.y, targetPlayer.pos.z),
                   '#ef4444'
@@ -261,6 +274,16 @@ export function createMultiplayerSyncMessageHandler({
                 weapon: data.weapon || 'sword',
               };
               state.lastDeaths = [newDeath, ...state.lastDeaths].slice(0, 3);
+              const attacker = data.senderId ? state.otherPlayers.get(data.senderId) : undefined;
+              queueReplayHeatmapDeathEventsForState({
+                state,
+                attacker: createReplayHeatmapCombatantSource(data.senderId || 'remote', attacker),
+                victim: createReplayHeatmapCombatantSource('player', undefined, {
+                  team: state.localPlayerTeam,
+                  pos: state.playerPos,
+                }),
+                weapon: data.weapon || 'sword',
+              });
               spawnVoxelShockwaveParticles(state.playerPos, '#ef4444');
             } else {
               playSwing();

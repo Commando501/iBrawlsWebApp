@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { enemyGoalForTeam } from '../../game/aiGrifballRoles';
+import { getForwardHeadingForYaw } from '../../game/yaw';
 import {
   attachBallTo,
   dropBall,
@@ -151,7 +152,8 @@ export function throwPlayerGrifballPassForState({
   const minSpeed = state.settings.grifballPassSpeedMin ?? 9;
   const maxSpeed = state.settings.grifballPassSpeedMax ?? 26;
   const speed = minSpeed + t * (maxSpeed - minSpeed);
-  const heading = { x: Math.sin(state.yaw), y: 0, z: Math.cos(state.yaw) };
+  const forwardHeading = getForwardHeadingForYaw(state.yaw);
+  const heading = { x: forwardHeading.x, y: 0, z: forwardHeading.z };
   throwBall(g.ball, { x: state.playerPos.x, y: state.playerPos.y + 1.1, z: state.playerPos.z }, heading, speed);
   setGrifballCarrierForState({ state, refs, id: 'player', carrying: false });
   ballChargingRef.current = false;

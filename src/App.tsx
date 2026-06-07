@@ -82,6 +82,7 @@ import {
   formatReplaySizeMB,
 } from './game/theaterDatabase';
 import { GrifballGame } from './components/GrifballGame';
+import { ReplayHeatmapCanvas, replayHasHeatmapEvents } from './components/replay/ReplayHeatmapCanvas';
 import { PREMADE_MAPS } from './game/premadeMaps';
 import * as THREE from 'three';
 import { HUD } from './components/HUD';
@@ -92,8 +93,40 @@ import { CharacterPreview } from './components/CharacterPreview';
 import { CharacterPainter } from './components/CharacterPainter';
 import { CharacterLoadout, DEFAULT_LOADOUT, AVAILABLE_PRESETS, HelmetPreset, TorsoPreset, ArmPreset, LegPreset } from './components/VoxelModels';
 
-const APP_VERSION = '0.635';
+const APP_VERSION = '0.636';
 const MAX_PLAYER_NAME_LENGTH = 10;
+const EDGE_LOW_FPS_THRESHOLD = 20;
+const EDGE_LOW_FPS_SUSTAINED_MS = 5000;
+const EDGE_LOW_FPS_STATE_UPDATE_STEP_MS = 500;
+const MAIN_MENU_FRAME_LAYOUT_STORAGE_KEY = 'ibrawls_main_menu_frame_layout_v1';
+const MAIN_MENU_SETUP_MIN_PX = 280;
+const MAIN_MENU_CUSTOMIZATION_MIN_PX = 420;
+const MAIN_MENU_CHAT_MIN_PX = 280;
+const MAIN_MENU_CHAT_MAX_PX = 520;
+const MAIN_MENU_SPLITTER_WIDTH_PX = 28;
+
+interface MainMenuFrameLayout {
+  setupFr: number;
+  customizationFr: number;
+  chatWidth: number;
+}
+
+const DEFAULT_MAIN_MENU_FRAME_LAYOUT: MainMenuFrameLayout = {
+  setupFr: 1,
+  customizationFr: 1.8,
+  chatWidth: 360,
+};
+
+const clampNumber = (value: number, min: number, max: number) => {
+  if (!Number.isFinite(value)) return min;
+  return Math.min(max, Math.max(min, value));
+};
+
+const clampMainMenuFrameLayout = (layout: Partial<MainMenuFrameLayout> | null | undefined): MainMenuFrameLayout => ({
+  setupFr: clampNumber(layout?.setupFr ?? DEFAULT_MAIN_MENU_FRAME_LAYOUT.setupFr, 0.55, 3.5),
+  customizationFr: clampNumber(layout?.customizationFr ?? DEFAULT_MAIN_MENU_FRAME_LAYOUT.customizationFr, 0.8, 4),
+  chatWidth: clampNumber(layout?.chatWidth ?? DEFAULT_MAIN_MENU_FRAME_LAYOUT.chatWidth, MAIN_MENU_CHAT_MIN_PX, MAIN_MENU_CHAT_MAX_PX),
+});
 
 interface OnlineClient {
   id: string;
@@ -348,6 +381,269 @@ const GlobalChatPanel = ({ messages, onSendMessage }: GlobalChatPanelProps) => {
     </div>
   );
 };
+
+type LoggedOutAccountRequestMode = 'login' | 'register';
+
+interface PilotIdentitySubframeProps {
+  account: AccountInfo | null;
+  playerName: string;
+  playerHue: number | undefined;
+  onPlayerNameChange: (name: string) => void;
+  onRegistered: (account: AccountInfo) => void;
+  onLoggedIn: (account: AccountInfo) => void;
+  onLoggedOut: () => void;
+  onAccountChanged: (account: AccountInfo) => void;
+}
+
+const PilotIdentitySubframe = ({
+  account,
+  playerName,
+  playerHue,
+  onPlayerNameChange,
+  onRegistered,
+  onLoggedIn,
+  onLoggedOut,
+  onAccountChanged,
+}: PilotIdentitySubframeProps) => {
+  const [isOpen, setIsOpen] = useState(true);
+  const [modeRequest, setModeRequest] = useState<{
+    mode: LoggedOutAccountRequestMode;
+    token: number;
+  }>({ mode: 'login', token: 0 });
+
+  const resolvedHue = typeof playerHue === 'number' && Number.isFinite(playerHue) ? playerHue : 200;
+  const displayName = (playerName.trim() || 'SPARTAN').toUpperCase();
+
+  const requestLoggedOutMode = (
+    mode: LoggedOutAccountRequestMode,
+    event: React.MouseEvent<HTMLButtonElement>
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setIsOpen(true);
+    setModeRequest((prev) => ({ mode, token: prev.token + 1 }));
+  };
+
+  return (
+    <details
+      className="group/pilot-identity bg-slate-950/45 border border-white/10 rounded-lg p-3 shrink-0"
+      open={isOpen}
+      onToggle={(event) => setIsOpen(event.currentTarget.open)}
+    >
+      <summary className="flex flex-col gap-2 cursor-pointer select-none list-none">
+        <span className="flex justify-between items-center gap-2">
+          <span className="text-xs text-[#38bdf8] font-black uppercase tracking-wider flex items-center gap-1.5 min-w-0">
+            <span className="w-1 px-0.5 h-2.5 bg-[#38bdf8] inline-block rounded-sm shrink-0" />
+            <span className="truncate">Spartan Pilot Identity</span>
+          </span>
+          <span className="flex items-center gap-2 shrink-0">
+            <span className="text-[10px] font-mono text-cyan-400 bg-cyan-950/40 border border-cyan-500/20 px-2 py-0.5 rounded">
+              MAX_10_CHARS
+            </span>
+            <span className="text-[10px] text-white/35 transition-transform group-open/pilot-identity:rotate-180 font-sans">
+              v
+            </span>
+          </span>
+        </span>
+
+        <span className="flex flex-wrap items-center gap-2 min-w-0">
+          <span
+            className="w-7 h-7 rounded border border-white/20 shadow-inner shrink-0"
+            style={{ backgroundColor: `hsl(${resolvedHue}, 80%, 35%)` }}
+          />
+          <span className="min-w-0 flex-1 text-sm font-black text-[#38bdf8] uppercase tracking-wide truncate">
+            {displayName}
+          </span>
+          {!isOpen && account && (
+            <span className="flex items-center gap-1.5 shrink-0">
+              <span className="text-[9px] font-black text-emerald-300 bg-emerald-500/15 border border-emerald-500/35 px-2 py-1 rounded uppercase tracking-widest font-mono">
+                Signed In
+              </span>
+              {account.isAdmin && (
+                <span className="text-[9px] font-black text-amber-300 bg-amber-500/15 border border-amber-500/40 px-2 py-1 rounded uppercase tracking-widest font-mono">
+                  Admin
+                </span>
+              )}
+            </span>
+          )}
+          {!isOpen && !account && (
+            <span className="flex gap-1.5 shrink-0">
+              <button
+                type="button"
+                onClick={(event) => requestLoggedOutMode('login', event)}
+                className="px-2.5 py-1 rounded border border-[#38bdf8]/35 bg-[#38bdf8]/10 text-[#38bdf8] text-[9px] font-black uppercase tracking-widest hover:bg-[#38bdf8]/20 transition-colors"
+              >
+                Log In
+              </button>
+              <button
+                type="button"
+                onClick={(event) => requestLoggedOutMode('register', event)}
+                className="px-2.5 py-1 rounded border border-white/10 bg-white/5 text-white/70 text-[9px] font-black uppercase tracking-widest hover:bg-white/10 transition-colors"
+              >
+                Register
+              </button>
+            </span>
+          )}
+        </span>
+      </summary>
+
+      <div className="pt-2.5 mt-2.5 border-t border-white/5">
+        <div className="flex flex-col gap-1.5 text-left">
+          <span className="text-[10.5px] text-white/40 uppercase tracking-widest font-mono">
+            Customize Nameplate Callout:
+          </span>
+          <div className="relative">
+            <input
+              type="text"
+              maxLength={MAX_PLAYER_NAME_LENGTH}
+              value={playerName}
+              onChange={(event) => onPlayerNameChange(event.target.value)}
+              placeholder="Spartan Tag..."
+              className="w-full h-11 bg-black/60 border border-white/10 rounded px-3.5 text-sm tracking-wide text-[#38bdf8] placeholder:text-white/20 focus:border-[#38bdf8] outline-none transition-all font-semibold uppercase pr-8 font-sans"
+            />
+            <div className="absolute right-3.5 top-3.5 w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
+          </div>
+        </div>
+
+        <SpartanIdentityAccount
+          account={account}
+          requestedLoggedOutMode={modeRequest.token > 0 ? modeRequest.mode : undefined}
+          loggedOutModeRequestToken={modeRequest.token}
+          onRegistered={onRegistered}
+          onLoggedIn={onLoggedIn}
+          onLoggedOut={onLoggedOut}
+          onAccountChanged={onAccountChanged}
+        />
+      </div>
+    </details>
+  );
+};
+
+type ConnectionStatus = 'idle' | 'fetching_ip' | 'hosting' | 'connecting' | 'connected' | 'error';
+type ConnectionMode = 'relay' | 'local';
+
+interface PlayerListSubframeProps {
+  onlineClients: OnlineClient[];
+  clientId: string;
+  connectionStatus: ConnectionStatus;
+  connectionMode: ConnectionMode;
+  menuSocket: WebSocket | null;
+  hostIdCode: string;
+  onJoinGame: (target: string, isObserver?: boolean) => void;
+  setInviteNotifications: React.Dispatch<React.SetStateAction<string[]>>;
+}
+
+const PlayerListSubframe = ({
+  onlineClients,
+  clientId,
+  connectionStatus,
+  connectionMode,
+  menuSocket,
+  hostIdCode,
+  onJoinGame,
+  setInviteNotifications,
+}: PlayerListSubframeProps) => (
+  <details className="group/player-list bg-slate-950/45 border border-white/10 rounded-lg p-3 shrink-0" open>
+    <summary className="flex justify-between items-center gap-2 cursor-pointer select-none list-none">
+      <span className="text-xs text-[#38bdf8] font-black uppercase tracking-wider flex items-center gap-1.5 min-w-0">
+        <span className="w-1 px-0.5 h-2.5 bg-[#38bdf8] inline-block rounded-sm shrink-0" />
+        <span className="truncate">Player List ({onlineClients.length})</span>
+      </span>
+      <span className="flex items-center gap-2 shrink-0">
+        {clientId && (
+          <span className="text-[10px] font-mono text-white/45 bg-white/5 px-2 py-0.5 rounded border border-white/5">
+            ID: {clientId}
+          </span>
+        )}
+        <span className="text-[10px] text-white/35 transition-transform group-open/player-list:rotate-180 font-sans">
+          v
+        </span>
+      </span>
+    </summary>
+
+    <div className="pt-2.5 mt-2.5 border-t border-white/5">
+      <div className="player-list-scroll flex flex-col gap-2 pr-1 min-h-[5rem]">
+        {onlineClients.length === 0 ? (
+          <p className="text-xs text-white/45 italic font-medium m-auto text-center py-4">No other players online yet.</p>
+        ) : (
+          onlineClients.map(client => {
+            const displayName = getOnlineClientDisplayName(client);
+            const customName = normalizePlayerName(client.name);
+            return (
+              <div key={client.id} className="flex justify-between items-center bg-black/45 px-3 py-2.5 rounded border border-white/5 text-xs font-mono shrink-0">
+                <div className="flex flex-col gap-1 min-w-0">
+                  <span className="text-white/80 font-semibold truncate max-w-[130px]" title={customName ? `${displayName} (${client.id})` : displayName}>
+                    {displayName}
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    {client.state === 'menu' && (
+                      <span className="text-[10px] text-slate-400/80 font-bold uppercase tracking-wider flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-slate-500" />
+                        In Menu
+                      </span>
+                    )}
+                    {client.state === 'solo' && (
+                      <span className="text-[10px] text-amber-400 font-bold uppercase tracking-wider flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                        Solo Training
+                      </span>
+                    )}
+                    {client.state === 'multi' && (
+                      client.spaceAvailable ? (
+                        <button
+                          onClick={() => {
+                            if (client.roomCode) {
+                              onJoinGame(client.roomCode);
+                            }
+                          }}
+                          className="text-[10px] bg-emerald-500/20 hover:bg-emerald-500/35 border border-emerald-500/40 text-emerald-400 font-bold uppercase tracking-wider px-2 py-0.5 rounded cursor-pointer transition-all flex items-center gap-1"
+                        >
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block animate-ping" />
+                          Join
+                        </button>
+                      ) : (
+                        <span className="text-[10px] text-blue-400 font-bold uppercase tracking-wider flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+                          In Match
+                        </span>
+                      )
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1 shrink-0">
+                  {connectionStatus === 'hosting' && connectionMode === 'relay' && (
+                    <button
+                      onClick={() => {
+                        if (menuSocket && menuSocket.readyState === WebSocket.OPEN) {
+                          menuSocket.send(JSON.stringify({
+                            type: 'send_invite',
+                            targetId: client.id,
+                            roomCode: hostIdCode
+                          }));
+                          setInviteNotifications(prev => [
+                            ...prev,
+                            `Lobby invite dispatched to Client ${client.id}.`
+                          ]);
+                          setTimeout(() => {
+                            setInviteNotifications(prev => prev.filter(n => !n.includes(client.id)));
+                          }, 5000);
+                        }
+                      }}
+                      className="px-2.5 py-1 bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-[9px] font-sans font-black uppercase tracking-wider text-white rounded cursor-pointer transition-all border border-sky-400/20 active:scale-95"
+                    >
+                      Invite
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+    </div>
+  </details>
+);
 
 
 const getSavedMatchmakerUrl = () => {
@@ -797,6 +1093,11 @@ const detectDeviceOS = (): DeviceInfo => {
   }
 
   return { isMobile, os };
+};
+
+const detectMicrosoftEdge = (): boolean => {
+  if (typeof navigator === 'undefined') return false;
+  return /\bEdg\//.test(navigator.userAgent || '');
 };
 
 interface GraphicsCheckResult {
@@ -1501,13 +1802,22 @@ export default function App() {
   const [deviceInfo, setDeviceInfo] = useState<DeviceInfo>(() => detectDeviceOS());
   const [isOnline, setIsOnline] = useState<boolean>(() => typeof navigator === 'undefined' ? true : navigator.onLine);
   const [forceMobileControls, setForceMobileControls] = useState<boolean>(false);
+  const [isEdgeBrowser] = useState<boolean>(() => detectMicrosoftEdge());
   const [graphicsCheck, setGraphicsCheck] = useState<GraphicsCheckResult>({
     checked: false,
     supported: true,
     accelerated: true,
   });
   const [showGraphicsWarning, setShowGraphicsWarning] = useState<boolean>(false);
+  const [edgeLowFpsSampleDurationMs, setEdgeLowFpsSampleDurationMs] = useState<number>(0);
+  const [showEdgePerformanceWarning, setShowEdgePerformanceWarning] = useState<boolean>(false);
+  const [edgePerformanceWarningDismissed, setEdgePerformanceWarningDismissed] = useState<boolean>(false);
   const [hardwareTab, setHardwareTab] = useState<'chrome' | 'firefox' | 'safari'>('chrome');
+  const edgeLowFpsSampleRef = useRef<{ lastSampleTime: number; durationMs: number }>({
+    lastSampleTime: 0,
+    durationMs: 0,
+  });
+  const edgeLowFpsStateUpdateRef = useRef<number>(0);
 
   // Mobile touch joysticks references for 60fps low-latency input
   const mobileJoystickRef = useRef<{ x: number, y: number }>({ x: 0, y: 0 });
@@ -3099,13 +3409,183 @@ export default function App() {
   // Multiplayer States
   const [connectionMode, setConnectionMode] = useState<'relay' | 'local'>('relay');
   const [activeMenuTab, setActiveMenuTab] = useState<'single' | 'multi' | 'spec' | 'theater'>('single');
+  const [showCustomizationFrame, setShowCustomizationFrame] = useState<boolean>(true);
+  const [mainMenuFrameLayout, setMainMenuFrameLayout] = useState<MainMenuFrameLayout>(() => {
+    try {
+      const saved = localStorage.getItem(MAIN_MENU_FRAME_LAYOUT_STORAGE_KEY);
+      return saved ? clampMainMenuFrameLayout(JSON.parse(saved)) : DEFAULT_MAIN_MENU_FRAME_LAYOUT;
+    } catch (e) {
+      console.error('Failed to load main menu frame layout:', e);
+      return DEFAULT_MAIN_MENU_FRAME_LAYOUT;
+    }
+  });
+  const mainMenuLayoutRef = useRef<HTMLDivElement | null>(null);
+  const mainMenuContentGridRef = useRef<HTMLDivElement | null>(null);
+  const mainMenuFrameLayoutRef = useRef<MainMenuFrameLayout>(mainMenuFrameLayout);
   const [isMultiplayer, setIsMultiplayer] = useState<boolean>(false);
+
+  useEffect(() => {
+    mainMenuFrameLayoutRef.current = mainMenuFrameLayout;
+  }, [mainMenuFrameLayout]);
+
+  const persistMainMenuFrameLayout = (layout: MainMenuFrameLayout) => {
+    try {
+      localStorage.setItem(MAIN_MENU_FRAME_LAYOUT_STORAGE_KEY, JSON.stringify(layout));
+    } catch (e) {
+      console.error('Failed to save main menu frame layout:', e);
+    }
+  };
+
+  const applyMainMenuFrameLayout = (layout: Partial<MainMenuFrameLayout>, shouldPersist = true) => {
+    const nextLayout = clampMainMenuFrameLayout(layout);
+    mainMenuFrameLayoutRef.current = nextLayout;
+    setMainMenuFrameLayout(nextLayout);
+    if (shouldPersist) {
+      persistMainMenuFrameLayout(nextLayout);
+    }
+    return nextLayout;
+  };
+
+  const handleToggleCustomizationFrame = () => {
+    setShowCustomizationFrame((visible) => {
+      const nextVisible = !visible;
+      if (!nextVisible) {
+        setIsPainting(false);
+        setRebindingAction(null);
+      }
+      return nextVisible;
+    });
+  };
+
+  const handleResetMainMenuFrameLayout = () => {
+    mainMenuFrameLayoutRef.current = DEFAULT_MAIN_MENU_FRAME_LAYOUT;
+    setMainMenuFrameLayout(DEFAULT_MAIN_MENU_FRAME_LAYOUT);
+    try {
+      localStorage.removeItem(MAIN_MENU_FRAME_LAYOUT_STORAGE_KEY);
+    } catch (e) {
+      console.error('Failed to reset main menu frame layout:', e);
+    }
+  };
+
+  const handleMainMenuSplitterPointerDown = (
+    splitter: 'customization' | 'chat',
+    e: React.PointerEvent<HTMLButtonElement>
+  ) => {
+    if (deviceInfo.isMobile) return;
+    const pointerId = e.pointerId;
+    let animationFrameId: number | null = null;
+    let pendingLayout: MainMenuFrameLayout | null = null;
+    const previousCursor = document.body.style.cursor;
+    const previousUserSelect = document.body.style.userSelect;
+
+    e.preventDefault();
+    e.stopPropagation();
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+
+    const flushPendingLayout = () => {
+      animationFrameId = null;
+      if (!pendingLayout) return;
+      const layout = pendingLayout;
+      pendingLayout = null;
+      applyMainMenuFrameLayout(layout, false);
+    };
+
+    const scheduleLayout = (layout: MainMenuFrameLayout) => {
+      pendingLayout = layout;
+      if (animationFrameId === null) {
+        animationFrameId = window.requestAnimationFrame(flushPendingLayout);
+      }
+    };
+
+    const handleWindowPointerMove = (event: PointerEvent) => {
+      if (event.pointerId !== pointerId) return;
+
+      if (splitter === 'customization') {
+        const rect = mainMenuContentGridRef.current?.getBoundingClientRect();
+        if (!rect) return;
+        const availableWidth = rect.width - MAIN_MENU_SPLITTER_WIDTH_PX;
+        const minTotalWidth = MAIN_MENU_SETUP_MIN_PX + MAIN_MENU_CUSTOMIZATION_MIN_PX;
+        if (availableWidth <= minTotalWidth) return;
+
+        const setupPx = clampNumber(
+          event.clientX - rect.left,
+          MAIN_MENU_SETUP_MIN_PX,
+          availableWidth - MAIN_MENU_CUSTOMIZATION_MIN_PX
+        );
+        const totalFr = mainMenuFrameLayoutRef.current.setupFr + mainMenuFrameLayoutRef.current.customizationFr;
+
+        scheduleLayout({
+          ...mainMenuFrameLayoutRef.current,
+          setupFr: (setupPx / availableWidth) * totalFr,
+          customizationFr: ((availableWidth - setupPx) / availableWidth) * totalFr,
+        });
+        return;
+      }
+
+      const rect = mainMenuLayoutRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      scheduleLayout({
+        ...mainMenuFrameLayoutRef.current,
+        chatWidth: clampNumber(rect.right - event.clientX, MAIN_MENU_CHAT_MIN_PX, MAIN_MENU_CHAT_MAX_PX),
+      });
+    };
+
+    const handleWindowPointerUp = (event: PointerEvent) => {
+      if (event.pointerId !== pointerId) return;
+      if (animationFrameId !== null) {
+        window.cancelAnimationFrame(animationFrameId);
+        flushPendingLayout();
+      }
+      persistMainMenuFrameLayout(mainMenuFrameLayoutRef.current);
+      document.body.style.cursor = previousCursor;
+      document.body.style.userSelect = previousUserSelect;
+      window.removeEventListener('pointermove', handleWindowPointerMove);
+      window.removeEventListener('pointerup', handleWindowPointerUp);
+      window.removeEventListener('pointercancel', handleWindowPointerUp);
+    };
+
+    window.addEventListener('pointermove', handleWindowPointerMove);
+    window.addEventListener('pointerup', handleWindowPointerUp);
+    window.addEventListener('pointercancel', handleWindowPointerUp);
+  };
+
+  const mainMenuLayoutStyle = {
+    '--main-menu-chat-width': `${mainMenuFrameLayout.chatWidth}px`,
+  } as React.CSSProperties;
+
+  const mainMenuContentGridStyle = {
+    '--main-menu-setup-fr': `${mainMenuFrameLayout.setupFr}fr`,
+    '--main-menu-customization-fr': `${mainMenuFrameLayout.customizationFr}fr`,
+    gridTemplateColumns: showCustomizationFrame
+      ? isPainting
+        ? 'minmax(0, 1fr)'
+        : `minmax(${MAIN_MENU_SETUP_MIN_PX}px, var(--main-menu-setup-fr)) ${MAIN_MENU_SPLITTER_WIDTH_PX}px minmax(${MAIN_MENU_CUSTOMIZATION_MIN_PX}px, var(--main-menu-customization-fr))`
+      : 'minmax(0, 1fr)',
+    minWidth: 0,
+  } as React.CSSProperties;
+
+  const mainMenuChatStyle = {
+    width: 'var(--main-menu-chat-width)',
+    flexShrink: 0,
+    minHeight: 0,
+    display: 'flex',
+    flexDirection: 'column',
+  } as React.CSSProperties;
 
   // Theater Mode Replay States
   const [selectedReplay, setSelectedReplay] = useState<ReplayFile | null>(null);
   const [savedReplays, setSavedReplays] = useState<ReplayFile[]>([]);
   const [cachedReplays, setCachedReplays] = useState<ReplayFile[]>([]);
   const [replaySizes, setReplaySizes] = useState<Record<string, number>>({});
+  const [heatmapOnlyReplay, setHeatmapOnlyReplay] = useState<ReplayFile | null>(null);
+  const [heatmapOnlyTime, setHeatmapOnlyTime] = useState<number>(0);
+  const [heatmapOnlyPlaying, setHeatmapOnlyPlaying] = useState<boolean>(false);
+  const [replayHeatmapPanelCollapsed, setReplayHeatmapPanelCollapsed] = useState<boolean>(false);
+  const [replayHeatmapPanelSize, setReplayHeatmapPanelSize] = useState<{ width: number; height: number }>({
+    width: 360,
+    height: 280,
+  });
   
   // Theater Filters & Search
   const [theaterSearchQuery, setTheaterSearchQuery] = useState<string>('');
@@ -3146,6 +3626,71 @@ export default function App() {
       loadTheaterReplays();
     }
   }, [activeMenuTab]);
+
+  useEffect(() => {
+    if (selectedReplay) {
+      setReplayHeatmapPanelCollapsed(false);
+    }
+  }, [selectedReplay?.id]);
+
+  useEffect(() => {
+    if (!heatmapOnlyReplay || !heatmapOnlyPlaying) return;
+    let frameId = 0;
+    let lastTime = performance.now();
+
+    const tick = (now: number) => {
+      const dt = Math.max(0, (now - lastTime) / 1000);
+      lastTime = now;
+      setHeatmapOnlyTime((current) => {
+        const next = Math.min(heatmapOnlyReplay.duration ?? 0, current + dt);
+        if (next >= (heatmapOnlyReplay.duration ?? 0)) {
+          setHeatmapOnlyPlaying(false);
+        }
+        return next;
+      });
+      frameId = requestAnimationFrame(tick);
+    };
+
+    frameId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frameId);
+  }, [heatmapOnlyReplay, heatmapOnlyPlaying]);
+
+  const handleOpenHeatmapReplay = (replay: ReplayFile) => {
+    setHeatmapOnlyReplay(replay);
+    setHeatmapOnlyTime(0);
+    setHeatmapOnlyPlaying(true);
+  };
+
+  const handleReplayHeatmapResizePointerDown = (event: React.PointerEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startY = event.clientY;
+    const startSize = replayHeatmapPanelSize;
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      setReplayHeatmapPanelSize({
+        width: clampNumber(startSize.width + moveEvent.clientX - startX, 280, 680),
+        height: clampNumber(startSize.height + moveEvent.clientY - startY, 210, 560),
+      });
+    };
+
+    const handlePointerUp = () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+    };
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+  };
+
+  const renderReplayHeatmapPreview = (replay: ReplayFile) => (
+    <ReplayHeatmapCanvas
+      replay={replay}
+      mode="preview"
+      showControls={false}
+      className="h-24 min-h-24"
+    />
+  );
   const [multiplayerRole, setMultiplayerRole] = useState<'host' | 'client' | 'observer' | null>(null);
   const [multiplayerSocket, setMultiplayerSocket] = useState<WebSocket | null>(null);
   const [userIp, setUserIp] = useState<string>('127.0.0.1');
@@ -3876,6 +4421,23 @@ export default function App() {
     fps: 0,
     ping,
   });
+
+  const resetEdgeLowFpsDetection = () => {
+    edgeLowFpsSampleRef.current = { lastSampleTime: 0, durationMs: 0 };
+    edgeLowFpsStateUpdateRef.current = 0;
+    setEdgeLowFpsSampleDurationMs((previous) => previous === 0 ? previous : 0);
+  };
+
+  useEffect(() => {
+    if (isPlaying && !isPaused && isEdgeBrowser && graphicsCheck.checked && graphicsCheck.supported && graphicsCheck.accelerated) {
+      return;
+    }
+
+    resetEdgeLowFpsDetection();
+    if (!isPlaying) {
+      setShowEdgePerformanceWarning(false);
+    }
+  }, [isPlaying, isPaused, isEdgeBrowser, graphicsCheck.checked, graphicsCheck.supported, graphicsCheck.accelerated]);
 
   // Fetch client IP on initialization and generate a quick room custom ID
   useEffect(() => {
@@ -4694,6 +5256,52 @@ export default function App() {
     setDebugMode(prev => !prev);
   };
 
+  const trackEdgeLowFps = (fps: number | undefined) => {
+    if (
+      !isEdgeBrowser ||
+      edgePerformanceWarningDismissed ||
+      showEdgePerformanceWarning ||
+      !isPlaying ||
+      isPaused ||
+      !graphicsCheck.checked ||
+      !graphicsCheck.supported ||
+      !graphicsCheck.accelerated
+    ) {
+      return;
+    }
+
+    const fpsValue = typeof fps === 'number' && Number.isFinite(fps) ? fps : 0;
+    if (fpsValue <= 0) {
+      return;
+    }
+
+    const now = performance.now();
+    const sample = edgeLowFpsSampleRef.current;
+    const elapsedMs = sample.lastSampleTime === 0
+      ? 0
+      : Math.min(Math.max(now - sample.lastSampleTime, 0), 1000);
+    sample.lastSampleTime = now;
+
+    if (fpsValue >= EDGE_LOW_FPS_THRESHOLD) {
+      resetEdgeLowFpsDetection();
+      return;
+    }
+
+    sample.durationMs += elapsedMs;
+    if (
+      sample.durationMs - edgeLowFpsStateUpdateRef.current >= EDGE_LOW_FPS_STATE_UPDATE_STEP_MS ||
+      sample.durationMs >= EDGE_LOW_FPS_SUSTAINED_MS
+    ) {
+      edgeLowFpsStateUpdateRef.current = sample.durationMs;
+      setEdgeLowFpsSampleDurationMs(Math.min(sample.durationMs, EDGE_LOW_FPS_SUSTAINED_MS));
+    }
+
+    if (sample.durationMs >= EDGE_LOW_FPS_SUSTAINED_MS) {
+      setEdgeLowFpsSampleDurationMs(EDGE_LOW_FPS_SUSTAINED_MS);
+      setShowEdgePerformanceWarning(true);
+    }
+  };
+
   // Callback to sync game stats live
   const handleStatsUpdate = (stats: GameStats) => {
     if (singlePlayerMode === 'tournament' && tournamentState && tournamentState.status === 'playing') {
@@ -4712,6 +5320,8 @@ export default function App() {
         return;
       }
     }
+
+    trackEdgeLowFps(stats.fps);
 
     setCurrentStats({
       ...stats,
@@ -5171,6 +5781,139 @@ export default function App() {
         />
       )}
 
+      {isPlaying && selectedReplay && (
+        <div
+          className="fixed top-3 right-3 z-[1001] pointer-events-auto rounded-xl border border-cyan-500/25 bg-slate-950/90 shadow-[0_16px_40px_rgba(0,0,0,0.55)] backdrop-blur-xl overflow-hidden"
+          style={{
+            width: replayHeatmapPanelCollapsed
+              ? 'min(250px, calc(100vw - 1rem))'
+              : `min(${replayHeatmapPanelSize.width}px, calc(100vw - 1rem))`,
+            height: replayHeatmapPanelCollapsed
+              ? 46
+              : `min(${replayHeatmapPanelSize.height}px, calc(100dvh - 9rem))`,
+          }}
+        >
+          <div className="h-11 px-3 flex items-center justify-between gap-2 border-b border-white/10 bg-black/35">
+            <div className="min-w-0">
+              <p className="text-[9px] font-mono font-black uppercase tracking-[0.22em] text-cyan-300">
+                Replay Heatmap
+              </p>
+              <p className="text-[9px] font-mono text-white/45 truncate">
+                {Math.round(currentStats.replayElapsedTime ?? 0)}s / {Math.round(selectedReplay.duration ?? 0)}s
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setReplayHeatmapPanelCollapsed((value) => !value)}
+              className="h-8 w-8 rounded-lg border border-white/10 bg-white/5 text-white/70 hover:text-white hover:bg-white/10 transition-colors"
+              title={replayHeatmapPanelCollapsed ? 'Expand heatmap' : 'Collapse heatmap'}
+              aria-label={replayHeatmapPanelCollapsed ? 'Expand heatmap' : 'Collapse heatmap'}
+            >
+              {replayHeatmapPanelCollapsed ? '+' : '-'}
+            </button>
+          </div>
+          {!replayHeatmapPanelCollapsed && (
+            <>
+              <ReplayHeatmapCanvas
+                replay={selectedReplay}
+                time={currentStats.replayElapsedTime ?? 0}
+                mode="panel"
+                className="border-0 rounded-none"
+                style={{ height: 'calc(100% - 44px)' } as React.CSSProperties}
+              />
+              <button
+                type="button"
+                onPointerDown={handleReplayHeatmapResizePointerDown}
+                className="hidden md:flex absolute bottom-1.5 right-1.5 h-5 w-5 items-end justify-end rounded border border-white/15 bg-black/60 text-white/50 hover:text-white hover:border-cyan-300/50 cursor-nwse-resize"
+                title="Resize heatmap"
+                aria-label="Resize heatmap"
+              >
+                <span className="block h-2.5 w-2.5 border-b-2 border-r-2 border-current" />
+              </button>
+            </>
+          )}
+        </div>
+      )}
+
+      {heatmapOnlyReplay && (
+        <div className="fixed inset-0 z-[1300] flex flex-col bg-slate-950 text-white p-3 sm:p-5 pointer-events-auto">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-3 mb-3">
+            <div className="min-w-0">
+              <p className="text-[10px] font-mono font-black uppercase tracking-[0.28em] text-cyan-300">
+                Theater Heatmap
+              </p>
+              <h2 className="text-lg sm:text-2xl font-black uppercase tracking-tight text-white truncate">
+                {heatmapOnlyReplay.name}
+              </h2>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setHeatmapOnlyPlaying(false);
+                setHeatmapOnlyReplay(null);
+              }}
+              className="h-10 px-4 rounded-lg border border-red-500/30 bg-red-950/25 text-red-300 hover:bg-red-950/45 font-black text-xs uppercase tracking-widest"
+            >
+              Exit
+            </button>
+          </div>
+
+          <div className="flex-1 min-h-0">
+            <ReplayHeatmapCanvas
+              replay={heatmapOnlyReplay}
+              time={heatmapOnlyTime}
+              mode="theater"
+              className="h-full min-h-0"
+            />
+          </div>
+
+          <div className="mt-3 rounded-xl border border-cyan-500/20 bg-black/45 p-3 flex flex-col gap-3">
+            <div className="flex items-center gap-3">
+              <span className="w-12 text-left text-[10px] font-mono font-black text-cyan-300">
+                {Math.floor(heatmapOnlyTime / 60)}:{String(Math.floor(heatmapOnlyTime % 60)).padStart(2, '0')}
+              </span>
+              <input
+                type="range"
+                min={0}
+                max={heatmapOnlyReplay.duration ?? 0}
+                step={0.1}
+                value={heatmapOnlyTime}
+                onChange={(event) => setHeatmapOnlyTime(parseFloat(event.target.value))}
+                className="flex-1 accent-cyan-400"
+              />
+              <span className="w-12 text-right text-[10px] font-mono font-black text-white/45">
+                {Math.floor((heatmapOnlyReplay.duration ?? 0) / 60)}:{String(Math.floor((heatmapOnlyReplay.duration ?? 0) % 60)).padStart(2, '0')}
+              </span>
+            </div>
+            <div className="flex items-center justify-center gap-2">
+              <button
+                type="button"
+                onClick={() => setHeatmapOnlyTime((time) => Math.max(0, time - 5))}
+                className="h-9 w-9 rounded-lg border border-white/10 bg-white/5 text-white/70 hover:text-white hover:bg-white/10"
+                title="Rewind 5 seconds"
+              >
+                &lt;
+              </button>
+              <button
+                type="button"
+                onClick={() => setHeatmapOnlyPlaying((value) => !value)}
+                className="h-10 px-5 rounded-lg bg-cyan-400 text-slate-950 font-black text-xs uppercase tracking-widest"
+              >
+                {heatmapOnlyPlaying ? 'Pause' : 'Play'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setHeatmapOnlyTime((time) => Math.min(heatmapOnlyReplay.duration ?? 0, time + 5))}
+                className="h-9 w-9 rounded-lg border border-white/10 bg-white/5 text-white/70 hover:text-white hover:bg-white/10"
+                title="Forward 5 seconds"
+              >
+                &gt;
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 🏆 TOURNAMENT MATCH VICTORY POPUP OVERLAY */}
       {isPlaying && matchResult && (
         <div className="absolute inset-0 z-[60] flex items-center justify-center bg-slate-950/85 backdrop-blur-md transition-all duration-300 p-4">
@@ -5332,6 +6075,20 @@ export default function App() {
                   );
                 })}
 
+                <button
+                  type="button"
+                  id="customization-frame-toggle"
+                  onClick={handleToggleCustomizationFrame}
+                  className={`px-5 py-2 rounded-full text-xs font-bold font-display uppercase tracking-wider transition-all duration-200 cursor-pointer border flex items-center gap-1.5 ${
+                    showCustomizationFrame
+                      ? 'bg-gradient-to-b from-[#22d3ee] to-[#0891b2] text-white shadow-[0_0_12px_rgba(34,211,238,0.60)] border-cyan-300/30 font-black'
+                      : 'text-white/50 hover:text-white/80 border-white/10 hover:border-cyan-500/30'
+                  }`}
+                  aria-pressed={showCustomizationFrame}
+                >
+                  Customization
+                </button>
+
                 {/* Map Maker Navigation Action */}
                 <a
                   href="/mapmaker.html"
@@ -5353,6 +6110,17 @@ export default function App() {
                 )}
               </div>
 
+              <button
+                type="button"
+                id="reset-main-menu-frame-layout"
+                onClick={handleResetMainMenuFrameLayout}
+                className="mobile-frame-reset inline-flex items-center justify-center gap-2 px-3.5 py-2 rounded-full border border-white/10 bg-white/[0.04] text-white/55 hover:text-cyan-200 hover:border-cyan-500/35 hover:bg-cyan-950/20 text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer shrink-0"
+                title="Reset main menu frame sizes"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                Reset Frame Layout
+              </button>
+
               {/* Online Player Count */}
               <div className="mobile-online-pill" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: 'rgba(16,185,129,0.10)', border: '1px solid rgba(16,185,129,0.30)', color: '#10b981', padding: '8px 16px', borderRadius: 9999, fontFamily: "'JetBrains Mono', monospace", fontWeight: 800, fontSize: 11, letterSpacing: '0.15em', textTransform: 'uppercase' }}>
                 <span style={{ width: 8, height: 8, borderRadius: 9999, background: '#34d399', animation: 'pulse 1.4s infinite' }} />
@@ -5360,56 +6128,22 @@ export default function App() {
               </div>
             </div>
 
-            {/* MAIN LAYOUT: 2-col content area + right chat rail */}
-            <div className="mobile-menu-layout flex gap-7 flex-1 min-h-0 overflow-hidden">
+            {/* MAIN LAYOUT: resizable content frames + right chat rail */}
+            <div
+              ref={mainMenuLayoutRef}
+              className="mobile-menu-layout main-menu-dock-layout flex flex-1 min-h-0 overflow-hidden"
+              style={mainMenuLayoutStyle}
+            >
               {/* 2-column content grid */}
               <div 
-                className="mobile-content-grid flex-1 grid min-h-0 gap-7" 
-                style={{ 
-                  gridTemplateColumns: isPainting 
-                    ? '1fr' 
-                    : 'minmax(280px, 1fr) minmax(480px, 1.8fr)', 
-                  minWidth: 0 
-                }}
+                ref={mainMenuContentGridRef}
+                className="mobile-content-grid main-menu-content-grid flex-1 grid min-h-0"
+                style={mainMenuContentGridStyle}
               >
 
               {/* COLUMN 1: GAME SETUP & ACTIONS */}
               {!isPainting && (
                 <div className="flex flex-col h-full min-h-0 overflow-y-auto pr-0.5">
-                
-                {/* 🆔 SPARTAN IDENTITY PROFILE CARD */}
-                <div className="bg-slate-950/45 border border-white/10 rounded-xl p-4.5 flex flex-col gap-2 shrink-0 mb-4 shadow-[inset_0_1px_3px_rgba(0,0,0,0.3)] select-none text-left">
-                  <div className="flex justify-between items-center pb-1.5 border-b border-white/5">
-                    <span className="text-xs font-bold text-[#38bdf8] uppercase tracking-wider flex items-center gap-1.5 font-display">
-                      🆔 Spartan Pilot Identity
-                    </span>
-                    <span className="text-[10px] font-mono text-cyan-400 bg-cyan-950/40 border border-cyan-500/20 px-2 py-0.5 rounded">
-                      MAX_10_CHARS
-                    </span>
-                  </div>
-                  <div className="flex flex-col gap-1.5 text-left mt-1">
-                    <span className="text-[10.5px] text-white/40 uppercase tracking-widest font-mono">Customize Nameplate Callout:</span>
-                    <div className="relative">
-                      <input
-                        type="text"
-                        maxLength={10}
-                        value={playerName}
-                        onChange={(e) => handlePlayerNameChange(e.target.value)}
-                        placeholder="Spartan Tag..."
-                        className="w-full h-11 bg-black/60 border border-white/10 rounded px-3.5 text-sm tracking-wide text-[#38bdf8] placeholder:text-white/20 focus:border-[#38bdf8] outline-none transition-all font-semibold uppercase pr-8 font-sans"
-                      />
-                      <div className="absolute right-3.5 top-3.5 w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
-                    </div>
-                  </div>
-                  <SpartanIdentityAccount
-                    account={account}
-                    onRegistered={handleRegistered}
-                    onLoggedIn={handleLoggedIn}
-                    onLoggedOut={handleLoggedOut}
-                    onAccountChanged={handleAccountChanged}
-                  />
-                </div>
-
                 {activeMenuTab === 'single' ? (
                   <div className="flex flex-col h-full min-h-0 justify-between">
                     {/* Segmented Mode Selector for Sandbox vs Tournament */}
@@ -5621,16 +6355,6 @@ export default function App() {
                               <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
                                 <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
                               </svg>
-                            </span>
-                          </button>
-                          
-                          <button 
-                            id="close-game-btn"
-                            onClick={handleCloseGame}
-                            className="w-full h-14 bg-white/5 border border-white/10 backdrop-blur-md flex items-center justify-center hover:bg-white/10 hover:border-white/25 active:scale-[0.99] transition-all cursor-pointer rounded pointer-events-auto select-none"
-                          >
-                            <span className="text-white/80 font-sans font-bold text-sm uppercase tracking-widest pointer-events-none">
-                              Close Sandbox
                             </span>
                           </button>
                         </div>
@@ -6254,100 +6978,6 @@ export default function App() {
                       </div>
                     </div>
 
-                    {/* Online clients */}
-                    <div className="bg-slate-950/40 border border-white/10 rounded-lg p-3.5 flex flex-col gap-2 flex-grow min-h-[160px] overflow-hidden lg:h-[260px]">
-                      <div className="flex justify-between items-center pb-2 border-b border-white/5 shrink-0">
-                        <p className="text-xs text-[#38bdf8] font-black uppercase tracking-wider flex items-center gap-1.5">
-                          <span className="w-1 px-0.5 h-2.5 bg-[#38bdf8] inline-block rounded-sm" />
-                          Online Clients ({onlineClients.length})
-                        </p>
-                        {clientId && (
-                          <span className="text-[10px] font-mono text-white/45 bg-white/5 px-2.5 py-0.5 rounded border border-white/5">
-                            ID: {clientId}
-                          </span>
-                        )}
-                      </div>
-                      
-                      <div className="flex-1 overflow-y-auto min-h-0 flex flex-col gap-2 pr-1">
-                        {onlineClients.length === 0 ? (
-                          <p className="text-xs text-white/45 italic font-medium m-auto text-center py-4">No other players online yet.</p>
-                        ) : (
-                          onlineClients.map(client => {
-                            const displayName = getOnlineClientDisplayName(client);
-                            const customName = normalizePlayerName(client.name);
-                            return (
-                            <div key={client.id} className="flex justify-between items-center bg-black/45 px-3 py-2.5 rounded border border-white/5 text-xs font-mono shrink-0">
-                              <div className="flex flex-col gap-1 min-w-0">
-                                <span className="text-white/80 font-semibold truncate max-w-[130px]" title={customName ? `${displayName} (${client.id})` : displayName}>
-                                  {displayName}
-                                </span>
-                                <div className="flex items-center gap-1.5">
-                                  {client.state === 'menu' && (
-                                    <span className="text-[10px] text-slate-400/80 font-bold uppercase tracking-wider flex items-center gap-1">
-                                      <span className="w-1.5 h-1.5 rounded-full bg-slate-500" />
-                                      In Menu
-                                    </span>
-                                  )}
-                                  {client.state === 'solo' && (
-                                    <span className="text-[10px] text-amber-400 font-bold uppercase tracking-wider flex items-center gap-1">
-                                      <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
-                                      Solo Training
-                                    </span>
-                                  )}
-                                  {client.state === 'multi' && (
-                                    client.spaceAvailable ? (
-                                      <button
-                                        onClick={() => {
-                                          if (client.roomCode) {
-                                            handleJoinGame(client.roomCode);
-                                          }
-                                        }}
-                                        className="text-[10px] bg-emerald-500/20 hover:bg-emerald-500/35 border border-emerald-500/40 text-emerald-400 font-bold uppercase tracking-wider px-2 py-0.5 rounded cursor-pointer transition-all flex items-center gap-1"
-                                      >
-                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block animate-ping" />
-                                        Join
-                                      </button>
-                                    ) : (
-                                      <span className="text-[10px] text-blue-400 font-bold uppercase tracking-wider flex items-center gap-1">
-                                        <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
-                                        In Match
-                                      </span>
-                                    )
-                                  )}
-                                </div>
-                              </div>
-                              
-                              <div className="flex items-center gap-1 shrink-0">
-                                {connectionStatus === 'hosting' && connectionMode === 'relay' && (
-                                  <button
-                                    onClick={() => {
-                                      if (menuSocket && menuSocket.readyState === WebSocket.OPEN) {
-                                        menuSocket.send(JSON.stringify({
-                                          type: 'send_invite',
-                                          targetId: client.id,
-                                          roomCode: hostIdCode
-                                        }));
-                                        setInviteNotifications(prev => [
-                                          ...prev,
-                                          `Lobby invite dispatched to Client ${client.id}.`
-                                        ]);
-                                        setTimeout(() => {
-                                          setInviteNotifications(prev => prev.filter(n => !n.includes(client.id)));
-                                        }, 5000);
-                                      }
-                                    }}
-                                    className="px-2.5 py-1 bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-[9px] font-sans font-black uppercase tracking-wider text-white rounded cursor-pointer transition-all border border-sky-400/20 active:scale-95"
-                                  >
-                                    Invite
-                                  </button>
-                                )}
-                              </div>
-                            </div>
-                            );
-                          })
-                        )}
-                      </div>
-                    </div>
                   </div>
                 ) : activeMenuTab === 'spec' ? (
                   /* SPECTATOR MODE */
@@ -6463,6 +7093,7 @@ export default function App() {
                           const seconds = Math.floor(replay.duration % 60);
                           const durationStr = `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
                           const sizeStr = formatReplaySizeMB(replaySizes[replay.id] ?? 0);
+                          const canOpenHeatmap = replayHasHeatmapEvents(replay);
                           
                           let formattedDate = replay.date;
                           try {
@@ -6493,6 +7124,8 @@ export default function App() {
                                 <div>Pilot: <span className="text-white/80 font-bold uppercase">{replay.playerName}</span></div>
                                 <div>Opponent: <span className="text-white/80 font-bold uppercase">{replay.opponentName}</span></div>
                               </div>
+
+                              {renderReplayHeatmapPreview(replay)}
 
                               <div className="flex items-center justify-between mt-0.5 gap-2">
                                 <span className="text-[9px] font-mono text-white/30">{formattedDate}</span>
@@ -6540,6 +7173,14 @@ export default function App() {
                                       : '☁ Contribute'}
                                   </button>
                                   <button
+                                    onClick={() => handleOpenHeatmapReplay(replay)}
+                                    disabled={!canOpenHeatmap}
+                                    className="px-2.5 h-7 bg-cyan-950/30 hover:bg-cyan-900/50 border border-cyan-500/20 hover:border-cyan-500/40 rounded text-[9.5px] font-bold text-cyan-300 hover:text-cyan-200 uppercase tracking-wider transition-all cursor-pointer flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed"
+                                    title={canOpenHeatmap ? 'Watch this replay as a 2D heatmap' : 'No heatmap data in this replay'}
+                                  >
+                                    Heatmap
+                                  </button>
+                                  <button
                                     onClick={() => {
                                       setSelectedReplay(replay);
                                       setIsPlaying(true);
@@ -6561,7 +7202,20 @@ export default function App() {
               </div>
               )}
 
+              {showCustomizationFrame && !isPainting && (
+                <button
+                  type="button"
+                  className="main-menu-frame-splitter main-menu-frame-splitter-grid"
+                  aria-label="Resize setup and customization frames"
+                  title="Resize setup and customization frames"
+                  onPointerDown={(e) => handleMainMenuSplitterPointerDown('customization', e)}
+                >
+                  <span />
+                </button>
+              )}
+
               {/* COLUMN 2: KEYBIND REFERENCE & CUSTOMIZER */}
+              {showCustomizationFrame && (
               <div className="mobile-reference-panel flex flex-col h-full min-h-0 overflow-y-auto gap-4">
                 {activeMenuTab === 'theater' ? (
                   /* THEATER MODE: COLUMN 2 - ROLLING MATCH AUTO-SAVE CACHE */
@@ -6591,6 +7245,7 @@ export default function App() {
                           const seconds = Math.floor(replay.duration % 60);
                           const durationStr = `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
                           const sizeStr = formatReplaySizeMB(replaySizes[replay.id] ?? 0);
+                          const canOpenHeatmap = replayHasHeatmapEvents(replay);
                           
                           let formattedDate = replay.date;
                           try {
@@ -6620,6 +7275,8 @@ export default function App() {
                                 <div>Opponent: <span className="text-white/80 font-bold uppercase">{replay.opponentName}</span></div>
                               </div>
 
+                              {renderReplayHeatmapPreview(replay)}
+
                               <div className="flex items-center justify-between mt-0.5 gap-2">
                                 <span className="text-[9px] font-mono text-white/30">{formattedDate}</span>
                                 <div className="flex gap-1.5">
@@ -6646,6 +7303,14 @@ export default function App() {
                                     title="Save permanently to Archives"
                                   >
                                     📥 Save Permanent
+                                  </button>
+                                  <button
+                                    onClick={() => handleOpenHeatmapReplay(replay)}
+                                    disabled={!canOpenHeatmap}
+                                    className="px-2.5 h-7 bg-cyan-950/30 hover:bg-cyan-900/50 border border-cyan-500/20 hover:border-cyan-500/40 rounded text-[9.5px] font-bold text-cyan-300 hover:text-cyan-200 uppercase tracking-wider transition-all cursor-pointer flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed"
+                                    title={canOpenHeatmap ? 'Watch this replay as a 2D heatmap' : 'No heatmap data in this replay'}
+                                  >
+                                    Heatmap
                                   </button>
                                   <button
                                     onClick={() => {
@@ -7277,11 +7942,22 @@ export default function App() {
                   </>
                 )}
               </div>
+              )}
 
               </div>{/* end 2-column content grid */}
 
+              <button
+                type="button"
+                className="main-menu-frame-splitter main-menu-frame-splitter-chat"
+                aria-label="Resize content and chat frames"
+                title="Resize content and chat frames"
+                onPointerDown={(e) => handleMainMenuSplitterPointerDown('chat', e)}
+              >
+                <span />
+              </button>
+
               {/* RIGHT RAIL: GLOBAL CHAT (ALWAYS VISIBLE) */}
-              <aside className="mobile-lobby-chat" style={{ width: 360, flexShrink: 0, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+              <aside className="mobile-lobby-chat" style={mainMenuChatStyle}>
                 <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'rgba(2,6,23,0.45)', border: '1px solid rgba(255,255,255,0.10)', borderRadius: 12, padding: 16, gap: 12, boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.30)', overflow: 'hidden' }}>
                   {/* Chat header */}
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: 10, borderBottom: '1px solid rgba(255,255,255,0.05)', gap: 8, flexShrink: 0 }}>
@@ -7293,6 +7969,26 @@ export default function App() {
                       LIVE
                     </span>
                   </div>
+                  <PilotIdentitySubframe
+                    account={account}
+                    playerName={playerName}
+                    playerHue={adminSettings.playerHue}
+                    onPlayerNameChange={handlePlayerNameChange}
+                    onRegistered={handleRegistered}
+                    onLoggedIn={handleLoggedIn}
+                    onLoggedOut={handleLoggedOut}
+                    onAccountChanged={handleAccountChanged}
+                  />
+                  <PlayerListSubframe
+                    onlineClients={onlineClients}
+                    clientId={clientId}
+                    connectionStatus={connectionStatus}
+                    connectionMode={connectionMode}
+                    menuSocket={menuSocket}
+                    hostIdCode={hostIdCode}
+                    onJoinGame={handleJoinGame}
+                    setInviteNotifications={setInviteNotifications}
+                  />
                   <GlobalChatPanel
                     messages={lobbyChatMessages}
                     onSendMessage={sendLobbyChatMessage}
@@ -8614,7 +9310,95 @@ export default function App() {
         </div>
       )}
 
-      {/* ⚠️ GRAPHICS ACCELERATION WARNING POPUP */}
+      {/* EDGE DEGRADED PERFORMANCE WARNING POPUP */}
+      {showEdgePerformanceWarning && (
+        <div className="fixed inset-0 z-[105] flex items-center justify-center bg-slate-950/90 backdrop-blur-xl p-4 select-none animate-in fade-in duration-200">
+          <div className="mobile-modal w-full max-w-lg bg-slate-900 border border-sky-500/20 hover:border-sky-500/30 rounded-2xl p-6 shadow-[0_0_30px_rgba(14,165,233,0.15)] flex flex-col gap-5 text-left max-h-[calc(100dvh-2rem)] overflow-y-auto transition-all duration-300">
+            <div className="flex justify-between items-start border-b border-white/5 pb-4 shrink-0">
+              <div className="flex flex-col">
+                <span className="text-[10px] text-sky-400 font-bold uppercase tracking-[0.2em] mb-1 font-display">
+                  EDGE PERFORMANCE WARNING
+                </span>
+                <h3 className="text-xl font-black tracking-tight text-white uppercase font-display leading-tight">
+                  Edge Graphics Path Degraded
+                </h3>
+              </div>
+              <button
+                onClick={() => {
+                  setEdgePerformanceWarningDismissed(true);
+                  setShowEdgePerformanceWarning(false);
+                }}
+                className="text-white/40 hover:text-white font-bold cursor-pointer p-1 transition-colors text-base"
+                title="Dismiss warning"
+              >
+                x
+              </button>
+            </div>
+
+            <div className="flex flex-col gap-4">
+              <p className="text-xs text-white/60 leading-relaxed">
+                Microsoft Edge is using a <strong className="text-sky-300">low-performance graphics path</strong> on this device. WebGL acceleration is enabled, but iBrawls detected sustained gameplay under <strong className="text-white">{EDGE_LOW_FPS_THRESHOLD} FPS</strong> for <strong className="text-white">{EDGE_LOW_FPS_SUSTAINED_MS / 1000} seconds</strong>. Edge is not recommended for this device; Chrome or Firefox should provide the best performance.
+              </p>
+
+              <div className="bg-black/45 border border-white/5 rounded-xl p-4 flex flex-col gap-2.5 font-mono text-[11px] shadow-inner select-text">
+                <div className="flex justify-between items-center border-b border-white/5 pb-2">
+                  <span className="text-white/45">Browser:</span>
+                  <span className="text-sky-300 font-bold">Microsoft Edge</span>
+                </div>
+                <div className="flex justify-between items-center border-b border-white/5 pb-2">
+                  <span className="text-white/45">WebGL Acceleration:</span>
+                  <span className="text-emerald-400 font-bold">ENABLED</span>
+                </div>
+                <div className="flex justify-between items-center border-b border-white/5 pb-2">
+                  <span className="text-white/45">Recent FPS:</span>
+                  <span className="text-amber-300 font-bold">
+                    {currentStats.fps !== undefined && currentStats.fps > 0 ? currentStats.fps : 'Low'}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center border-b border-white/5 pb-2">
+                  <span className="text-white/45">Low-FPS Window:</span>
+                  <span className="text-amber-300 font-bold">
+                    {(edgeLowFpsSampleDurationMs / 1000).toFixed(1)}s
+                  </span>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <span className="text-white/45">Detected Renderer:</span>
+                  <span className="text-sky-300 font-bold break-all">
+                    {graphicsCheck.details || "Hardware Accelerated GPU"}
+                  </span>
+                </div>
+              </div>
+
+              <div className="bg-white/5 border border-white/5 rounded-xl p-4 text-xs select-text leading-relaxed">
+                <ol className="list-decimal pl-4 flex flex-col gap-2 text-white/75 font-medium">
+                  <li>Open <code className="bg-black/40 px-1 py-0.5 rounded text-sky-300 font-mono">edge://gpu</code> and confirm WebGL is listed as hardware accelerated.</li>
+                  <li>Open <code className="bg-black/40 px-1 py-0.5 rounded text-sky-300 font-mono">edge://settings/system</code> and keep <strong className="text-white">Use graphics acceleration when available</strong> enabled.</li>
+                  <li>Update Edge from <code className="bg-black/40 px-1 py-0.5 rounded text-sky-300 font-mono">edge://settings/help</code>, then fully restart the browser.</li>
+                  <li>Update your GPU driver from Intel, NVIDIA, AMD, or your PC manufacturer.</li>
+                  <li>If Chrome or Firefox stays much faster on the same device, use one of those browsers for iBrawls.</li>
+                </ol>
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-3 shrink-0">
+              <button
+                onClick={() => {
+                  setEdgePerformanceWarningDismissed(true);
+                  setShowEdgePerformanceWarning(false);
+                }}
+                className="flex-1 py-3.5 bg-gradient-to-r from-sky-600 to-cyan-600 hover:from-sky-500 hover:to-cyan-500 text-white font-sans font-black text-xs uppercase tracking-widest rounded-lg border border-sky-500/20 active:scale-95 shadow-[0_0_15px_rgba(14,165,233,0.25)] transition-all cursor-pointer flex items-center justify-center gap-2"
+              >
+                <span>Dismiss & Play Anyway</span>
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* GRAPHICS ACCELERATION WARNING POPUP */}
       {showGraphicsWarning && (
         <div className="fixed inset-0 z-[105] flex items-center justify-center bg-slate-950/90 backdrop-blur-xl p-4 select-none animate-in fade-in duration-200">
           <div className="mobile-modal w-full max-w-lg bg-slate-900 border border-amber-500/20 hover:border-amber-500/30 rounded-2xl p-6 shadow-[0_0_30px_rgba(245,158,11,0.15)] flex flex-col gap-5 text-left max-h-[calc(100dvh-2rem)] overflow-y-auto transition-all duration-300">

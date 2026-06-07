@@ -28,7 +28,10 @@ try:
             super().__init__(verbose)
             self.every = every
             self.episodes = episodes
-            self.opponent = "heuristic" if opponent == "self" else opponent
+            # Grade self-play vs random (an interpretable yardstick that rises as skill grows);
+            # the heuristic is a near-shutout, so it's only used as the yardstick when you're
+            # actually training against it.
+            self.opponent = "random" if opponent == "self" else opponent
             self._last = 0
 
         def _on_step(self) -> bool:
@@ -128,6 +131,19 @@ def run_training(cfg: TrainConfig) -> str:
         device=cfg.device,
         verbose=1,
     )
+
+    # Warm-start: load a previous stage's weights into this (same-architecture) model so the
+    # curriculum actually transfers skill instead of starting each stage from scratch.
+    if cfg.init_model:
+        if not os.path.exists(cfg.init_model):
+            raise SystemExit(f"init_model not found: {cfg.init_model}")
+        print(f"[train] warm-starting from {cfg.init_model}")
+        try:
+            model.set_parameters(cfg.init_model, device=cfg.device)
+        except Exception as e:  # usually an architecture mismatch
+            raise SystemExit(
+                f"failed to load init_model ({e}). The width/depth must match the saved model."
+            )
 
     callbacks = [CheckpointCallback(
         save_freq=max(1, cfg.save_every // cfg.parallel_matches),

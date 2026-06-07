@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { MAIN_AI_ID, isAICombatReady } from '../../game/roster';
+import { getForwardHeadingForYaw } from '../../game/yaw';
 import { getCombatBodyCenter, SWORD_SLASH_FORWARD_FACTOR, SWORD_SLASH_RADIUS } from './combatGeometry';
 import { recordBotDamageTagForState } from './aiBookkeeping';
 import { recordDeathEvent as recordDeathEventOnState } from './deathFeed';
@@ -10,6 +11,7 @@ import {
   recordCombatantModelObservation,
   recordLocalPlayerDamageTakenObservation,
 } from './playerModelObservations';
+import { createReplayHeatmapCombatantSource } from './replayHeatmapRuntime';
 import { type GrifballRuntimeState } from './runtimeState';
 
 export function applyBotMeleeImpactForState({
@@ -50,8 +52,9 @@ export function applyBotMeleeImpactForState({
     : (isHammer ? (state.settings.attackRadius ?? 4.5) : SWORD_SLASH_RADIUS);
 
   const eye = new THREE.Vector3(bot.pos.x, bot.pos.y + 1.2, bot.pos.z);
-  const heading = new THREE.Vector3(Math.sin(bot.yaw), 0, Math.cos(bot.yaw));
-  if (heading.lengthSq() < 1e-6) heading.set(0, 0, 1);
+  const forwardHeading = getForwardHeadingForYaw(bot.yaw);
+  const heading = new THREE.Vector3(forwardHeading.x, 0, forwardHeading.z);
+  if (heading.lengthSq() < 1e-6) heading.set(0, 0, -1);
   heading.normalize();
   const impactPos = eye.clone().addScaledVector(heading, forward);
 
@@ -64,7 +67,11 @@ export function applyBotMeleeImpactForState({
   }
   playExplosion();
 
-  const creditKill = (victimId: string, victimName: string) => {
+  const creditKill = (
+    victimId: string,
+    victimName: string,
+    victimSource: ReturnType<typeof createReplayHeatmapCombatantSource>
+  ) => {
     bot.score = (bot.score || 0) + 1;
     bot.kills = (bot.kills || 0) + 1;
     if (bot.id === MAIN_AI_ID) {
@@ -72,7 +79,10 @@ export function applyBotMeleeImpactForState({
       state.enemyKills += 1;
     }
     playDeath();
-    recordDeathEventOnState(state, bot.playerName, victimName, undefined, weapon === 'ball' ? 'hammer' : weapon);
+    recordDeathEventOnState(state, bot.playerName, victimName, undefined, weapon === 'ball' ? 'hammer' : weapon, {
+      attacker: createReplayHeatmapCombatantSource(botId, bot),
+      victim: victimSource,
+    });
     recordBotPsychKill(botId, victimId, false);
   };
 
@@ -95,7 +105,10 @@ export function applyBotMeleeImpactForState({
       state.pWeaponState = 'ready'; state.pWeaponTimer = 0; state.pWeaponReady = true;
       state.pSwordState = 'ready'; state.pSwordTimer = 0; state.pSwordReady = true;
       state.isLunging = false; state.lungeTimer = 0;
-      creditKill('player', state.settings.playerName || 'Blue (You)');
+      creditKill('player', state.settings.playerName || 'Blue (You)', createReplayHeatmapCombatantSource('player', undefined, {
+        team: state.localPlayerTeam,
+        pos: state.playerPos,
+      }));
     } else {
       playSwing();
       recordBotDamageTagForState({ state, botId, targetId: 'player', isMultiplayer: state.isMultiplayer });
@@ -129,7 +142,7 @@ export function applyBotMeleeImpactForState({
       } else {
         other.deaths = (other.deaths || 0) + 1;
       }
-      creditKill(otherId, other.playerName);
+      creditKill(otherId, other.playerName, createReplayHeatmapCombatantSource(otherId, other));
     } else {
       playSwing();
       recordBotDamageTagForState({ state, botId, targetId: otherId, isMultiplayer: state.isMultiplayer });

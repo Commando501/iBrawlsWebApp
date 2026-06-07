@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { MAIN_AI_ID } from '../../game/roster';
 import { type DeathEvent, type MedalInfo } from '../../types';
+import { createReplayHeatmapCombatantSource, queueReplayHeatmapDeathEventsForState } from './replayHeatmapRuntime';
 import { type GrifballRuntimeState } from './runtimeState';
 import { type GrifballThreeRefs } from './threeRefs';
 import { playPistolFireSound } from './weaponAudio';
@@ -156,6 +157,15 @@ export function triggerPlayerPistolFireForState({
           weapon: 'sword',
         };
         state.lastDeaths = [newDeath, ...state.lastDeaths].slice(0, 3);
+        queueReplayHeatmapDeathEventsForState({
+          state,
+          attacker: createReplayHeatmapCombatantSource('player', undefined, {
+            team: state.localPlayerTeam,
+            pos: state.playerPos,
+          }),
+          victim: createReplayHeatmapCombatantSource(bot.id, bot),
+          weapon: 'sword',
+        });
         spawnVoxelShockwaveParticles(closestTarget.pos, '#ef4444');
       }
     }

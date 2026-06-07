@@ -7,8 +7,8 @@
 
 [run]
 mode            = "combat"  # "grifball" | "combat" (deathmatch generalist, see [combat])
-opponent        = "self"   # grifball: "random" (start here) | "self" | "heuristic". combat self-plays.
-total_steps     = 10000000    # how long to train. ~1-3M beats random; 10M+ for self/heuristic
+opponent        = "random"   # grifball: "random" (start here) | "self" | "heuristic". combat self-plays.
+total_steps     = 3000000    # how long to train. ~1-3M beats random; 10M+ for self/heuristic
 parallel_matches = 32        # grifball: matches at once (combat uses [combat].world_sizes instead)
 num_workers     = 1          # parallel sim processes across CPU cores (raise toward core count for GPU)
 goal_target     = 3          # grifball: goals to win a match
@@ -35,6 +35,7 @@ clip_range    = 0.2          # how far the policy may move per update
 [network]   # the brain. bigger needs a GPU (device = "cuda")
 width = 256                  # neurons per layer (try 512/1024 on GPU)
 depth = 2                    # hidden layers (2-3)
+init_model = ""              # CURRICULUM: continue from a prior stage, e.g. "runs/s1_random/final_model.zip"
 
 [randomize]   # robustness to live balance patches: jitter mechanics each episode
 enabled = false              # turn on once the brain plays well at the fixed preset

@@ -24,7 +24,7 @@ export interface PlayerModel {
   // Raw per-match action volumes (reset each match with the model). These complement
   // the EMA "rate" features above — rates describe HOW a player fights, volumes
   // describe HOW MUCH. Accumulated for every combatant, so per-combatant telemetry
-  // gets them for free. Excluded from PlayerModelSnapshot / warm-start (per-match only).
+  // gets them for free. Excluded from PlayerModelSnapshot / persistent memory (per-match only).
   hammerAttacks: number;
   weaponSwaps: number;
   dashes: number;
@@ -159,16 +159,14 @@ export function getPlayerModelSnapshot(
 }
 
 /**
- * Seeds an existing model from a persisted snapshot as a *prior* (cross-session
- * warm-start). Feature values are applied directly, but `sampleCount` is capped
- * low (default 4) so the prior is immediately usable yet quickly overridden by
- * fresh in-match evidence via the normal EMA. Never inflates confidence beyond
- * what the snapshot actually gathered.
+ * Seeds an existing model from a persisted snapshot as cross-match memory.
+ * Feature values and sample confidence carry forward, while raw per-match
+ * action volumes remain clean because they are not part of the snapshot.
  */
 export function hydratePlayerModel(
   model: PlayerModel,
   snapshot: PlayerModelSnapshot,
-  priorSampleCount = 4,
+  maxSampleCount = Number.MAX_SAFE_INTEGER,
 ): void {
   model.avgLungeDistance = snapshot.avgLungeDistance;
   model.lungeFrequency = snapshot.lungeFrequency;
@@ -178,7 +176,7 @@ export function hydratePlayerModel(
   model.approachSpeed = snapshot.approachSpeed;
   model.edgeProximity = snapshot.edgeProximity;
   model.reactionTime = snapshot.reactionTime;
-  model.sampleCount = Math.max(0, Math.min(snapshot.sampleCount, priorSampleCount));
+  model.sampleCount = Math.max(0, Math.min(snapshot.sampleCount, maxSampleCount));
 }
 
 export function observePlayerLungeStart(model: PlayerModel, distance: number): void {

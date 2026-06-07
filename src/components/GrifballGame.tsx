@@ -14,7 +14,7 @@ import {
 } from '../game/teamScoring';
 import {
   createPlayerModelObservationCallbacksForState,
-  resetAndWarmStartLocalPlayerModelForState,
+  resetAndLoadPersistentLocalPlayerModelForState,
 } from './grifball/playerModelObservations';
 import {
   createDefaultSpawnPoints,
@@ -137,6 +137,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     isReplayPausedRef,
     replayTargetIdRef,
     prevReplayFrameRef,
+    lastReplayEventFrameIndexRef,
     replayPlayerIdsRef,
   } = useGrifballReplayRuntimeRefs();
 
@@ -413,7 +414,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
   }, [adminSettings, customMap, replayData, selectedMap]);
 
   useEffect(() => {
-    return resetAndWarmStartLocalPlayerModelForState({
+    return resetAndLoadPersistentLocalPlayerModelForState({
       state: stateRef.current,
       replayActive: !!replayData,
     });
@@ -658,6 +659,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     isReplayPausedRef,
     replayTargetIdRef,
     prevReplayFrameRef,
+    lastReplayEventFrameIndexRef,
     replayPlayerIdsRef,
     keysPressed,
     getKeybindings: () => keybindingsRef.current,

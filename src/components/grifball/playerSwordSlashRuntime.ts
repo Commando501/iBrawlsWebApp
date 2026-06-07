@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { MAIN_AI_ID } from '../../game/roster';
 import { type Combatant, type DeathEvent, type MedalInfo } from '../../types';
 import { MELEE_SWORD_SLASH_REACH } from './combatGeometry';
+import { createReplayHeatmapCombatantSource, queueReplayHeatmapDeathEventsForState } from './replayHeatmapRuntime';
 import { type GrifballRuntimeState } from './runtimeState';
 
 type PlayerSwordSlashHitSyncPayload = {
@@ -103,6 +104,15 @@ export function applyPlayerSwordSlashImpactForState({
             weapon: 'sword',
           };
           state.lastDeaths = [newDeath, ...state.lastDeaths].slice(0, 3);
+          queueReplayHeatmapDeathEventsForState({
+            state,
+            attacker: createReplayHeatmapCombatantSource('player', undefined, {
+              team: state.localPlayerTeam,
+              pos: state.playerPos,
+            }),
+            victim: createReplayHeatmapCombatantSource(MAIN_AI_ID, mainAI),
+            weapon: 'sword',
+          });
           spawnVoxelShockwaveParticles(mainAI.pos, '#ef4444');
         }
       }
@@ -161,6 +171,15 @@ export function applyPlayerSwordSlashImpactForState({
                   weapon: 'sword',
                 };
                 state.lastDeaths = [newDeath, ...state.lastDeaths].slice(0, 3);
+                queueReplayHeatmapDeathEventsForState({
+                  state,
+                  attacker: createReplayHeatmapCombatantSource('player', undefined, {
+                    team: state.localPlayerTeam,
+                    pos: state.playerPos,
+                  }),
+                  victim: createReplayHeatmapCombatantSource(other.id, other),
+                  weapon: 'sword',
+                });
                 spawnVoxelShockwaveParticles(new THREE.Vector3(other.pos.x, other.pos.y, other.pos.z), '#ef4444');
               }
             }

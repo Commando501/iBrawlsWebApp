@@ -5,6 +5,7 @@ import { MAIN_AI_ID } from '../../game/roster';
 import { type Combatant, type CustomMapData, type DeathEvent, type MedalInfo } from '../../types';
 import { isVectorXZAtArenaBoundary } from './arenaBounds';
 import { type SwordLungeCurrentTrailStyle } from './combatGeometry';
+import { createReplayHeatmapCombatantSource, queueReplayHeatmapDeathEventsForState } from './replayHeatmapRuntime';
 import {
   findPlayerSwordLungeHitTargetForState,
   finishPlayerSwordLungeRecoveryForState,
@@ -144,6 +145,17 @@ export function updatePlayerSwordLungeForState({
             weapon: isOtherSwordActiveAttack ? 'sword_vs_sword' : 'sword_vs_hammer',
           };
           state.lastDeaths = [newDeath, ...state.lastDeaths].slice(0, 3);
+          if (other) {
+            queueReplayHeatmapDeathEventsForState({
+              state,
+              attacker: createReplayHeatmapCombatantSource(other.id, other),
+              victim: createReplayHeatmapCombatantSource('player', undefined, {
+                team: state.localPlayerTeam,
+                pos: state.playerPos,
+              }),
+              weapon: isOtherSwordActiveAttack ? 'sword_vs_sword' : 'sword_vs_hammer',
+            });
+          }
         }
 
         if (multiplayerSocket && multiplayerSocket.readyState === WebSocket.OPEN) {
@@ -220,6 +232,15 @@ export function updatePlayerSwordLungeForState({
             weapon: 'sword',
           };
           state.lastDeaths = [newDeath, ...state.lastDeaths].slice(0, 3);
+          queueReplayHeatmapDeathEventsForState({
+            state,
+            attacker: createReplayHeatmapCombatantSource('player', undefined, {
+              team: state.localPlayerTeam,
+              pos: state.playerPos,
+            }),
+            victim: createReplayHeatmapCombatantSource(MAIN_AI_ID, mainAi),
+            weapon: 'sword',
+          });
           spawnVoxelShockwaveParticles(mainAi.pos, '#ef4444');
         } else {
           playSwing();
@@ -246,6 +267,15 @@ export function updatePlayerSwordLungeForState({
             weapon: 'sword',
           };
           state.lastDeaths = [newDeath, ...state.lastDeaths].slice(0, 3);
+          queueReplayHeatmapDeathEventsForState({
+            state,
+            attacker: createReplayHeatmapCombatantSource('player', undefined, {
+              team: state.localPlayerTeam,
+              pos: state.playerPos,
+            }),
+            victim: createReplayHeatmapCombatantSource(other.id, other),
+            weapon: 'sword',
+          });
           spawnVoxelShockwaveParticles(closestTarget.pos, '#ef4444');
         } else {
           playSwing();

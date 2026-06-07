@@ -47,6 +47,7 @@ export const useGrifballReplayRuntimeRefs = () => {
   const isReplayPausedRef = useRef<boolean>(false);
   const replayTargetIdRef = useRef<string>('free');
   const prevReplayFrameRef = useRef<ReplayFrame | null>(null);
+  const lastReplayEventFrameIndexRef = useRef<number | null>(null);
   const replayPlayerIdsRef = useRef<string[]>([]);
 
   return {
@@ -59,6 +60,7 @@ export const useGrifballReplayRuntimeRefs = () => {
     isReplayPausedRef,
     replayTargetIdRef,
     prevReplayFrameRef,
+    lastReplayEventFrameIndexRef,
     replayPlayerIdsRef,
   };
 };

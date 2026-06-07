@@ -18,7 +18,7 @@ import type { ReplayFile } from '../types';
  * upload — behavior signal is kept, identifiable data is not.
  */
 
-export const REPLAY_SCHEMA_VERSION = 2;
+export const REPLAY_SCHEMA_VERSION = 3;
 
 /** Base fraction of matches auto-uploaded (multiplied by the admission governor). */
 export const REPLAY_BASE_SAMPLE_RATE = 0.25;

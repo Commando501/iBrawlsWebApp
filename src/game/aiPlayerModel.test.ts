@@ -162,19 +162,19 @@ const STRONG_SNAPSHOT: PlayerModelSnapshot = {
   sampleCount: 120,
 };
 
-test('hydratePlayerModel seeds feature values but caps confidence low', () => {
+test('hydratePlayerModel seeds persistent feature values and confidence', () => {
   const model = createPlayerModel();
   hydratePlayerModel(model, STRONG_SNAPSHOT);
 
-  // Feature values are applied verbatim from the prior.
+  // Feature values are applied verbatim from the persistent memory.
   assert.equal(model.avgLungeDistance, STRONG_SNAPSHOT.avgLungeDistance);
   assert.equal(model.lungeFrequency, STRONG_SNAPSHOT.lungeFrequency);
   assert.equal(model.counterRate, STRONG_SNAPSHOT.counterRate);
   assert.equal(model.reactionTime, STRONG_SNAPSHOT.reactionTime);
 
-  // Confidence is capped low (default 4), not the prior's 120 samples, so fresh
-  // in-match evidence still dominates via EMA.
-  assert.equal(model.sampleCount, 4);
+  // Confidence carries forward so the next match is a continuation, not a weak
+  // per-match prior.
+  assert.equal(model.sampleCount, STRONG_SNAPSHOT.sampleCount);
 });
 
 test('hydratePlayerModel makes a model immediately usable by consumers', () => {
@@ -183,7 +183,7 @@ test('hydratePlayerModel makes a model immediately usable by consumers', () => {
   getOrCreatePlayerModel(context, 'player');
   assert.equal(getPlayerModelSnapshot(context, 'player', 3), null);
 
-  // After warm-start the model clears the minSamples=3 gate right away.
+  // After hydration the model clears the minSamples=3 gate right away.
   hydratePlayerModel(getOrCreatePlayerModel(context, 'player'), STRONG_SNAPSHOT);
   const snap = getPlayerModelSnapshot(context, 'player', 3);
   assert.ok(snap);
@@ -193,11 +193,17 @@ test('hydratePlayerModel makes a model immediately usable by consumers', () => {
 test('hydratePlayerModel never inflates confidence beyond the prior gathered', () => {
   const model = createPlayerModel();
   hydratePlayerModel(model, { ...STRONG_SNAPSHOT, sampleCount: 2 });
-  // Prior only had 2 samples — cap must not raise it to the 4 default.
+  // Prior only had 2 samples; hydrate must not raise it.
   assert.equal(model.sampleCount, 2);
 });
 
-test('warm-started values are overridden by repeated fresh observations', () => {
+test('hydratePlayerModel supports an explicit sample-count cap', () => {
+  const model = createPlayerModel();
+  hydratePlayerModel(model, STRONG_SNAPSHOT, 10);
+  assert.equal(model.sampleCount, 10);
+});
+
+test('persistent values are updated by repeated fresh observations', () => {
   const model = createPlayerModel();
   hydratePlayerModel(model, STRONG_SNAPSHOT);
   assert.equal(model.avgLungeDistance, 12.5);
@@ -244,10 +250,10 @@ test('getMatchBehaviorStats returns null for an unknown combatant, stats once ob
   assert.equal(getMatchBehaviorStats(context, 'bot_9')!.dashes, 2);
 });
 
-test('warm-start hydrate does not inflate per-match action volumes', () => {
+test('persistent hydrate does not inflate per-match action volumes', () => {
   const model = createPlayerModel();
   hydratePlayerModel(model, STRONG_SNAPSHOT);
-  // Snapshot carries no raw counts — volumes start clean each match.
+  // Snapshot carries no raw counts; volumes start clean each match.
   assert.equal(model.dashes, 0);
   assert.equal(model.hammerAttacks, 0);
   assert.equal(toMatchBehaviorStats(model).weaponSwaps, 0);

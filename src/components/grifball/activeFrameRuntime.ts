@@ -137,6 +137,16 @@ export function advanceGrifballFrameForState({
     return;
   }
 
+  let currentReplayRecordTime: number | null = null;
+  if (replayRecordingRef.current) {
+    replayRecordingElapsedTimeRef.current += dt;
+    currentReplayRecordTime = replayRecordingElapsedTimeRef.current;
+    state.replayHeatmapRecordingActive = true;
+    state.replayHeatmapElapsedTime = currentReplayRecordTime;
+  } else {
+    state.replayHeatmapRecordingActive = false;
+  }
+
   updatePhysics(dt);
   updateHammerAnimations(dt);
   if (!isMultiplayer) {
@@ -183,12 +193,10 @@ export function advanceGrifballFrameForState({
     }));
   }
 
-  if (replayRecordingRef.current) {
-    replayRecordingElapsedTimeRef.current += dt;
-    const currentMatchTime = replayRecordingElapsedTimeRef.current;
-    if (currentMatchTime - lastRecordTimeRef.current >= 0.05) {
-      lastRecordTimeRef.current = currentMatchTime;
-      recordReplayFrame(currentMatchTime);
+  if (replayRecordingRef.current && currentReplayRecordTime !== null) {
+    if (currentReplayRecordTime - lastRecordTimeRef.current >= 0.05) {
+      lastRecordTimeRef.current = currentReplayRecordTime;
+      recordReplayFrame(currentReplayRecordTime);
     }
   }
 }

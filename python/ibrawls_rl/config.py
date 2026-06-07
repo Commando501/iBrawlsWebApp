@@ -44,6 +44,9 @@ class TrainConfig:
     # --- network (the brain) ---
     width: int = 256                  # neurons per hidden layer (bigger = more capacity, needs GPU)
     depth: int = 2                    # number of hidden layers
+    # Warm-start: continue from a previous stage's model (the curriculum's weight transfer).
+    # Must use the SAME width/depth. Empty = train from scratch.
+    init_model: str = ""              # e.g. "runs/s1_random/final_model.zip"
 
     # --- domain randomization (robustness to live balance tweaks) ---
     randomize_enabled: bool = False   # jitter the dynamics settings each episode
@@ -92,6 +95,7 @@ KNOB_DESCRIPTIONS: dict[str, str] = {
     "clip_range": "Safety limit on how much the policy changes per update.",
     "width": "Neurons per layer. Bigger brain = more skill ceiling, but slower (use the GPU).",
     "depth": "Hidden layers. 2-3 is plenty here.",
+    "init_model": "Warm-start from a saved model (curriculum transfer). Same width/depth required. Empty = from scratch.",
     "randomize_enabled": "Jitter game mechanics each episode so the brain stays robust to live balance patches.",
     "randomize_pct": "How far mechanics are jittered (0.15 = +/-15%). Bigger = more robust but harder to learn.",
     "reward_win": "Payout for winning the match.",
@@ -135,6 +139,7 @@ _TOML_MAP = {
     ("ppo", "clip_range"): "clip_range",
     ("network", "width"): "width",
     ("network", "depth"): "depth",
+    ("network", "init_model"): "init_model",
     ("randomize", "enabled"): "randomize_enabled",
     ("randomize", "pct"): "randomize_pct",
     ("reward", "win"): "reward_win",

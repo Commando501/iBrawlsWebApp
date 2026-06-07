@@ -1,9 +1,10 @@
 import * as THREE from 'three';
+import { getYawForHeading } from '../../game/yaw';
 import { type AITacticalTargetSnapshot } from '../../game/aiCombatDecision';
 import { type CustomMapObject } from '../../types';
 
 export const getInwardSpawnYaw = (spawnPos: THREE.Vector3): number => {
-  return Math.atan2(spawnPos.x, spawnPos.z);
+  return getYawForHeading(-spawnPos.x, -spawnPos.z);
 };
 
 export type TacticalTargetCandidate = AITacticalTargetSnapshot & {

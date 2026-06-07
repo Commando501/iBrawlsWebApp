@@ -94,6 +94,59 @@ body {
   scrollbar-gutter: stable;
 }
 
+.player-list-scroll {
+  max-height: clamp(8rem, 28dvh, 17rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  -webkit-overflow-scrolling: touch;
+}
+
+.main-menu-dock-layout,
+.main-menu-content-grid {
+  gap: 0;
+}
+
+.main-menu-frame-splitter {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.75rem;
+  border: 0;
+  background: transparent;
+  cursor: col-resize;
+  touch-action: none;
+  flex-shrink: 0;
+  pointer-events: auto;
+}
+
+.main-menu-frame-splitter-grid {
+  width: 100%;
+  height: 100%;
+}
+
+.main-menu-frame-splitter-chat {
+  width: 1.75rem;
+  align-self: stretch;
+}
+
+.main-menu-frame-splitter span {
+  width: 2px;
+  height: 3.5rem;
+  border-radius: 9999px;
+  background: rgba(148, 163, 184, 0.35);
+  box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.85), 0 0 14px rgba(34, 211, 238, 0.12);
+  transition: background-color 160ms ease, box-shadow 160ms ease, height 160ms ease;
+}
+
+.main-menu-frame-splitter:hover span,
+.main-menu-frame-splitter:focus-visible span {
+  height: 5.5rem;
+  background: rgba(34, 211, 238, 0.85);
+  box-shadow: 0 0 0 1px rgba(34, 211, 238, 0.4), 0 0 18px rgba(34, 211, 238, 0.35);
+}
+
 .mobile-right-pad {
   width: clamp(14.5rem, 38vw, 21.25rem);
   height: clamp(10.5rem, 29vw, 16.25rem);
@@ -208,8 +261,8 @@ body {
     order: 3;
     width: 100%;
     display: grid !important;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    overflow: hidden;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    overflow: visible;
     border-radius: 0.875rem;
     scrollbar-width: none;
   }
@@ -218,7 +271,8 @@ body {
     display: none;
   }
 
-  .mobile-tabs button {
+  .mobile-tabs button,
+  .mobile-tabs a {
     min-width: 0;
     min-height: 2.75rem;
     padding-left: 0.5rem;
@@ -232,6 +286,12 @@ body {
     order: 2;
     width: fit-content;
     max-width: 100%;
+  }
+
+  .mobile-frame-reset {
+    order: 4;
+    width: 100%;
+    min-height: 2.75rem;
   }
 
   .mobile-menu-layout {
@@ -270,6 +330,10 @@ body {
 
   .mobile-reference-panel .desktop-keyboard-visualizer {
     display: none;
+  }
+
+  .main-menu-frame-splitter {
+    display: none !important;
   }
 
   .compact-keybind-list {
@@ -368,7 +432,13 @@ body {
   }
 
   .mobile-lobby-chat {
-    display: none !important;
+    display: flex !important;
+    width: 100% !important;
+    min-height: min(38rem, calc(100dvh - 2rem)) !important;
+  }
+
+  .mobile-lobby-chat .player-list-scroll {
+    max-height: clamp(5rem, 20dvh, 9rem);
   }
 }
 
@@ -467,4 +537,3 @@ body {
   box-shadow: 0 0 15px rgba(56, 189, 248, 0.4) !important;
   transition: all 0.15s ease-in-out !important;
 }
-

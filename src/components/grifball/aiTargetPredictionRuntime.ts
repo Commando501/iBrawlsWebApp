@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { getYawForHeading } from '../../game/yaw';
 import { type CustomMapData } from '../../types';
 import {
   predictCombatantPosition,
@@ -65,6 +66,6 @@ export function resolveAITargetPredictionFrame({
     movementTargetPos,
     toTarget,
     distanceToTarget: toTarget.length(),
-    yaw: Math.atan2(toTarget.x, toTarget.z),
+    yaw: getYawForHeading(toTarget.x, toTarget.z),
   };
 }

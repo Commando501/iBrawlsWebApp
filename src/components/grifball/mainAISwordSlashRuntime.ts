@@ -6,6 +6,7 @@ import {
   MELEE_EYE_HEIGHT,
   MELEE_SWORD_SLASH_REACH,
 } from './combatGeometry';
+import { createReplayHeatmapCombatantSource, queueReplayHeatmapDeathEventsForState } from './replayHeatmapRuntime';
 import { type GrifballRuntimeState } from './runtimeState';
 import { type EnemyAITarget } from './targetSelection';
 
@@ -109,6 +110,15 @@ export function applyMainAISwordSlashImpactForState({
             weapon: 'sword',
           };
           state.lastDeaths = [newDeath, ...state.lastDeaths].slice(0, 3);
+          queueReplayHeatmapDeathEventsForState({
+            state,
+            attacker: createReplayHeatmapCombatantSource(MAIN_AI_ID, mainAI),
+            victim: createReplayHeatmapCombatantSource('player', undefined, {
+              team: state.localPlayerTeam,
+              pos: state.playerPos,
+            }),
+            weapon: 'sword',
+          });
           spawnVoxelShockwaveParticles(state.playerPos, '#3b82f6');
           recordBotPsychKill(MAIN_AI_ID, 'player', false);
         } else {
@@ -137,6 +147,12 @@ export function applyMainAISwordSlashImpactForState({
               weapon: 'sword',
             };
             state.lastDeaths = [newDeath, ...state.lastDeaths].slice(0, 3);
+            queueReplayHeatmapDeathEventsForState({
+              state,
+              attacker: createReplayHeatmapCombatantSource(MAIN_AI_ID, mainAI),
+              victim: createReplayHeatmapCombatantSource(target.id, other),
+              weapon: 'sword',
+            });
             spawnVoxelShockwaveParticles(new THREE.Vector3(other.pos.x, other.pos.y, other.pos.z), '#ef4444');
             recordBotPsychKill(MAIN_AI_ID, target.id, false);
           } else {

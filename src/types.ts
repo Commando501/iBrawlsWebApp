@@ -324,6 +324,28 @@ export interface RemotePlayerState {
 /** Team assignment for roster combatants; extensible for N teams later. */
 export type TeamId = 'blue' | 'red' | (string & {});
 
+export type ReplayHeatmapEventKind = 'kill' | 'death' | 'medal';
+export type ReplayHeatmapTeam = TeamId | 'unknown';
+
+export interface ReplayHeatmapEvent {
+  id: string;
+  kind: ReplayHeatmapEventKind;
+  time: number;
+  actorId: string;
+  victimId?: string;
+  team: ReplayHeatmapTeam;
+  position: { x: number; z: number };
+  medalId?: string;
+  medalName?: string;
+  medalColor?: string;
+  weapon?: DeathEvent['weapon'];
+}
+
+export interface ReplayHeatmapData {
+  version: 1;
+  events: ReplayHeatmapEvent[];
+}
+
 /** Who drives a roster entry — local AI tick vs network remote human. */
 export type CombatantController = 'ai' | 'remote';
 
@@ -642,6 +664,7 @@ export interface ReplayFile {
   gameMode?: 'sandbox' | 'grifball';
   maxScore: number;
   frames: ReplayFrame[];
+  heatmap?: ReplayHeatmapData;
   isAutoSaved?: boolean;
   recordedAsObserver?: boolean;
 }
@@ -764,5 +787,4 @@ export interface CustomMapData {
   lighting: CustomMapLighting;
   folders?: CustomMapFolder[];
 }
-
 

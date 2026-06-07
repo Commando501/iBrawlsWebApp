@@ -1,6 +1,11 @@
 import * as THREE from 'three';
 import { type DeathEvent, type Combatant } from '../../types';
 import { MAIN_AI_ID } from '../../game/roster';
+import {
+  createReplayHeatmapCombatantSource,
+  queueReplayHeatmapDeathEventsForState,
+  type ReplayHeatmapCombatantSource,
+} from './replayHeatmapRuntime';
 import { type GrifballRuntimeState } from './runtimeState';
 import { type TacticalTargetCandidate } from './combatGeometry';
 
@@ -33,7 +38,11 @@ export function applyAISwordLungeHitForState({
     attacker: string,
     victim: string,
     medals?: undefined,
-    weapon?: DeathEvent['weapon']
+    weapon?: DeathEvent['weapon'],
+    heatmap?: {
+      attacker: ReplayHeatmapCombatantSource;
+      victim: ReplayHeatmapCombatantSource;
+    }
   ) => DeathEvent;
   recordBotPsychKill: (botId: string, victimId: string, wasLungeKill: boolean) => void;
   recordBotCalibrationDeath: (botId: string) => void;
@@ -64,6 +73,15 @@ export function applyAISwordLungeHitForState({
         weapon: 'sword',
       };
       state.lastDeaths = [newDeath, ...state.lastDeaths].slice(0, 3);
+      queueReplayHeatmapDeathEventsForState({
+        state,
+        attacker: createReplayHeatmapCombatantSource(attackerBot.id, attackerBot),
+        victim: createReplayHeatmapCombatantSource('player', undefined, {
+          team: state.localPlayerTeam,
+          pos: state.playerPos,
+        }),
+        weapon: 'sword',
+      });
       recordBotPsychKill(attackerBot.id, 'player', true);
     }
     return;
@@ -90,7 +108,10 @@ export function applyAISwordLungeHitForState({
       recordBotCalibrationDeath(MAIN_AI_ID);
       playDeath();
 
-      recordDeathEvent(attackerBot.playerName, 'Red (AI)', undefined, 'sword');
+      recordDeathEvent(attackerBot.playerName, 'Red (AI)', undefined, 'sword', {
+        attacker: createReplayHeatmapCombatantSource(attackerBot.id, attackerBot),
+        victim: createReplayHeatmapCombatantSource(MAIN_AI_ID, mainAi),
+      });
       recordBotPsychKill(attackerBot.id, MAIN_AI_ID, true);
     }
     return;
@@ -115,7 +136,10 @@ export function applyAISwordLungeHitForState({
     targetBot.deaths = (targetBot.deaths || 0) + 1;
     playDeath();
 
-    recordDeathEvent(attackerBot.playerName, targetBot.playerName, undefined, 'sword');
+    recordDeathEvent(attackerBot.playerName, targetBot.playerName, undefined, 'sword', {
+      attacker: createReplayHeatmapCombatantSource(attackerBot.id, attackerBot),
+      victim: createReplayHeatmapCombatantSource(target.id, targetBot),
+    });
     recordBotPsychKill(attackerBot.id, target.id, true);
   }
 }

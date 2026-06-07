@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { getYawForHeading } from '../../game/yaw';
 import { type GrifballThreeRefs } from './threeRefs';
 
 const spawnFrictionSparkParticle = (refs: GrifballThreeRefs, pos: THREE.Vector3): void => {
@@ -173,7 +174,7 @@ export function animateSpartanCombatantModel({
 
   let targetLowerTorsoYaw = 0;
   if (speed > 0.15 && hp > 0) {
-    const moveYaw = Math.atan2(vel.x, vel.z);
+    const moveYaw = getYawForHeading(vel.x, vel.z);
     let diff = moveYaw - yaw;
     diff = Math.atan2(Math.sin(diff), Math.cos(diff));
 
@@ -411,4 +412,3 @@ export function animateCombatantWeaponMeshes({
     }
   }
 }
-

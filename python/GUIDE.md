@@ -137,8 +137,43 @@ total_steps = 3000000
 [logging]
 dir = "runs/s1_random"
 ```
-Run it, confirm win_rate → ~1.0. Then change `opponent = "self"`, `dir = "runs/s2_self"`,
-`total_steps = 10000000`, run again. Then `opponent = "heuristic"`, `dir = "runs/s3_heur"`.
+**Each stage must continue from the previous one** — set `[network] init_model` to the prior
+stage's saved model, or you're just training three separate from-scratch brains (a common
+gotcha). Keep `width`/`depth` the same across stages.
+
+```toml
+# Stage 1 — from scratch vs random. Train until eval/win_rate plateaus HIGH (>0.9), not 0.6.
+[run]
+opponent = "random"
+[network]
+init_model = ""
+[logging]
+dir = "runs/s1_random"
+
+# Stage 2 — self-play, CONTINUING from stage 1:
+[run]
+opponent = "self"
+[network]
+init_model = "runs/s1_random/final_model.zip"
+[logging]
+dir = "runs/s2_self"
+
+# Stage 3 — vs the heuristic, CONTINUING from stage 2:
+[run]
+opponent = "heuristic"
+[network]
+init_model = "runs/s2_self/final_model.zip"
+[logging]
+dir = "runs/s3_heur"
+```
+
+Notes:
+- **Don't advance until the stage is actually good.** A 60% win rate vs random means
+  undertrained — give it more `total_steps` until it plateaus (>0.9) before moving on.
+- The **heuristic is a near-shutout** — treat it as a *final exam*, not a starting point.
+  Expect it to be hard even with a strong self-play base; 0% from a weak/cold brain is normal.
+- During a `self` stage, `eval/win_rate` is measured **vs random** (a yardstick that rises);
+  during a `heuristic` stage it's measured vs the heuristic.
 
 `self` = the bot plays copies of itself (it invents its own counters). `heuristic` = the
 strong scripted bot — a hard final exam, not a starting point.
