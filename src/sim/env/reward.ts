@@ -56,33 +56,30 @@ const MAX_APPROACH_DELTA = 1.0;
 export interface RewardMemory {
   /** Per-team distance from the ball to that team's enemy goal, captured pre-step. */
   ballDistToEnemyGoal: Record<TeamId, number>;
-  /** Per-team distance from its nearest member to the objective (free ball / nearest enemy). */
-  approachDist: Record<TeamId, number | null>;
+  /** Per-AGENT distance to its approach objective (free ball / nearest enemy), captured pre-step. */
+  approachDist: Record<string, number | null>;
 }
 
 /**
- * Distance from a team's nearest alive member to the objective it should approach:
- * the free ball in grifball (null while held), or the nearest alive enemy in combat.
+ * Distance from a single agent to the objective it should approach: the free ball in grifball
+ * (null while held or if dead), or its nearest alive enemy in combat. Per-agent (not per-team)
+ * so each agent gets credit for its OWN navigation — the key to the policy actually committing.
  */
-function approachDistForTeam(state: SimState, team: TeamId): number | null {
-  const mine = state.combatants.filter((c) => c.team === team && c.alive);
-  if (!mine.length) return null;
-  let targets: { x: number; z: number }[];
+function approachDistForAgent(state: SimState, agentId: string): number | null {
+  const me = state.combatants.find((c) => c.id === agentId);
+  if (!me || !me.alive) return null;
   if (state.mode === 'combat') {
-    targets = state.combatants.filter((c) => c.team !== team && c.alive).map((c) => c.pos);
-  } else {
-    if (state.match.ball.state === 'held') return null; // possession/progress take over
-    targets = [state.match.ball.pos];
-  }
-  if (!targets.length) return null;
-  let best = Infinity;
-  for (const m of mine) {
-    for (const t of targets) {
-      const d = Math.hypot(m.pos.x - t.x, m.pos.z - t.z);
-      if (d < best) best = d;
+    let best: number | null = null;
+    for (const e of state.combatants) {
+      if (e.team === me.team || !e.alive) continue;
+      const d = Math.hypot(me.pos.x - e.pos.x, me.pos.z - e.pos.z);
+      if (best === null || d < best) best = d;
     }
+    return best;
   }
-  return best;
+  if (state.match.ball.state === 'held') return null; // possession/progress take over
+  const b = state.match.ball;
+  return Math.hypot(me.pos.x - b.pos.x, me.pos.z - b.pos.z);
 }
 
 function ballDistanceToEnemyGoal(state: SimState, team: TeamId): number {
@@ -95,11 +92,11 @@ function ballDistanceToEnemyGoal(state: SimState, team: TeamId): number {
 /** Capture the pre-step ball-progress baseline for every team in the match. */
 export function initRewardMemory(state: SimState): RewardMemory {
   const dist: Record<TeamId, number> = {} as Record<TeamId, number>;
-  const app: Record<TeamId, number | null> = {} as Record<TeamId, number | null>;
   for (const team of teamsInMatch(state)) {
     dist[team] = ballDistanceToEnemyGoal(state, team);
-    app[team] = approachDistForTeam(state, team);
   }
+  const app: Record<string, number | null> = {};
+  for (const c of state.combatants) app[c.id] = approachDistForAgent(state, c.id);
   return { ballDistToEnemyGoal: dist, approachDist: app };
 }
 
@@ -119,58 +116,53 @@ export function computeStepRewards(
   config: RewardConfig,
   memory: RewardMemory
 ): Record<string, number> {
-  // Per-team scalar reward, then broadcast to that team's agents.
+  // --- Team-shared component (genuine team outcomes: possession, progress, goals, win) ---
   const teams = teamsInMatch(state);
   const perTeam: Record<TeamId, number> = {} as Record<TeamId, number>;
+  const holder = state.match.ball.holderId
+    ? state.combatants.find((c) => c.id === state.match.ball.holderId)
+    : null;
 
   for (const team of teams) {
     let r = 0;
 
-    // Ball progress toward this team's enemy goal (positive = closer).
     const prev = memory.ballDistToEnemyGoal[team] ?? 0;
     const now = ballDistanceToEnemyGoal(state, team);
     if (prev > 0 && now > 0) r += config.ballProgress * (prev - now);
     memory.ballDistToEnemyGoal[team] = now;
 
-    // Approach the objective (free ball / nearest enemy) — the exploration foothold.
-    const prevApp = memory.approachDist[team];
-    const nowApp = approachDistForTeam(state, team);
-    if (prevApp != null && nowApp != null) {
-      const delta = Math.max(-MAX_APPROACH_DELTA, Math.min(MAX_APPROACH_DELTA, prevApp - nowApp));
-      r += config.approach * delta;
-    }
-    memory.approachDist[team] = nowApp;
-
-    // Possession.
-    const holder = state.match.ball.holderId
-      ? state.combatants.find((c) => c.id === state.match.ball.holderId)
-      : null;
     if (holder && holder.team === team) r += config.possession;
 
-    // Goals.
     if (events.goal === team) r += config.goalScored;
     else if (events.goal && events.goal !== team) r -= config.goalConceded;
 
-    // Kills / deaths (team-attributed).
-    for (const k of events.kills) {
-      const attacker = state.combatants.find((c) => c.id === k.attackerId);
-      const victim = state.combatants.find((c) => c.id === k.victimId);
-      if (attacker?.team === team) r += config.kill;
-      if (victim?.team === team) r -= config.death;
-    }
-
-    // Terminal.
     if (events.matchEnded && state.match.winningTeam) {
       r += state.match.winningTeam === team ? config.win : -config.win;
     }
 
-    // Time penalty.
     r -= config.timePenalty;
-
     perTeam[team] = r;
   }
 
+  // --- Per-agent component: each agent gets credit for ITS OWN approach + kills/deaths ---
   const out: Record<string, number> = {};
-  for (const c of state.combatants) out[c.id] = perTeam[c.team] ?? 0;
+  for (const c of state.combatants) {
+    let r = perTeam[c.team] ?? 0;
+    const prevApp = memory.approachDist[c.id];
+    const nowApp = approachDistForAgent(state, c.id);
+    if (prevApp != null && nowApp != null) {
+      const delta = Math.max(-MAX_APPROACH_DELTA, Math.min(MAX_APPROACH_DELTA, prevApp - nowApp));
+      r += config.approach * delta;
+    }
+    memory.approachDist[c.id] = nowApp;
+    out[c.id] = r;
+  }
+
+  // Kills/deaths credited to the specific attacker / victim (not the whole team).
+  for (const k of events.kills) {
+    if (k.attackerId in out) out[k.attackerId] += config.kill;
+    if (k.victimId in out) out[k.victimId] -= config.death;
+  }
+
   return out;
 }

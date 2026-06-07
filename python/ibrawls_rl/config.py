@@ -60,7 +60,7 @@ class TrainConfig:
     reward_ball_progress: float = 0.01  # per metre the ball moves toward the enemy goal
     reward_kill: float = 0.1          # each enemy your team kills
     reward_death: float = 0.1         # each of your team's deaths (subtracted)
-    reward_approach: float = 0.01     # per metre closing on the objective (ball / nearest enemy)
+    reward_approach: float = 0.03     # per metre closing on the objective (ball / nearest enemy)
     reward_time_penalty: float = 0.0005  # tiny per-tick nudge to stop stalling
     bootstrap_truncation: bool = False   # value-bootstrap timeouts (usually leave off)
 

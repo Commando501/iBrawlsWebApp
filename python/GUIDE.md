@@ -125,6 +125,27 @@ on. Two payoffs:
 Nothing to configure. (Internally the observation grew to include this block; the Python side
 reads all dims from the handshake, so it adapts automatically.)
 
+## 5e. If it's NOT learning (win-rate flat at 0)
+
+Symptom: `eval/win_rate` stays ~0 and `ep_return` sits at a big negative number (≈ the time
+penalty over a full timeout). It means the brain never reaches the action (ball/enemy) under
+random exploration, so it gets no reward signal. The default 6-minute / goal-target-3 match is
+brutal for a *from-scratch* brain. Use a **learning-friendly stage 1**, then lengthen:
+
+```toml
+[run]
+match_minutes = 1.0     # short, decisive matches => many more episodes
+goal_target   = 1       # grifball: first goal wins (fast resolution)
+total_steps   = 3000000 # give it room; this is a hard-exploration task
+[reward]
+approach      = 0.03    # the foothold that leads the brain to the ball/enemy (raise to 0.05 if still stuck)
+```
+
+A healthy run shows `train/explained_variance` rising AND `train/entropy_loss` *falling* from
+~−6.5 toward 0. If explained_variance rises but entropy stays pinned at max, the policy isn't
+committing — raise `approach`, lower `match_minutes`, or give it more steps. Once it's winning,
+raise `match_minutes`/`goal_target` back toward real-match values and continue (warm-started).
+
 ## 6. Recommended path (the curriculum)
 
 Start easy, get harder. Each stage is its own run/folder so you can compare:
