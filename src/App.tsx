@@ -87,13 +87,13 @@ import { PREMADE_MAPS } from './game/premadeMaps';
 import * as THREE from 'three';
 import { HUD } from './components/HUD';
 import { sfx } from './components/AudioEngine';
-import { Move, RotateCcw, Check } from 'lucide-react';
+import { Move, RotateCcw, Check, Film } from 'lucide-react';
 import { ChatOverlay, ChatMessage } from './components/ChatOverlay';
 import { CharacterPreview } from './components/CharacterPreview';
 import { CharacterPainter } from './components/CharacterPainter';
 import { CharacterLoadout, DEFAULT_LOADOUT, AVAILABLE_PRESETS, HelmetPreset, TorsoPreset, ArmPreset, LegPreset } from './components/VoxelModels';
 
-const APP_VERSION = '0.637';
+const APP_VERSION = '0.638';
 const MAX_PLAYER_NAME_LENGTH = 10;
 const MAX_MULTIPLAYER_CLIENTS = 7;
 const MAX_MULTIPLAYER_PLAYERS = 1 + MAX_MULTIPLAYER_CLIENTS;
@@ -138,6 +138,7 @@ interface OnlineClient {
   spaceAvailable?: boolean;
   playerCount?: number;
   maxPlayers?: number;
+  lobbyStartedAt?: number;
 }
 
 const normalizePlayerName = (name: unknown): string | undefined => {
@@ -148,6 +149,86 @@ const normalizePlayerName = (name: unknown): string | undefined => {
 
 const getOnlineClientDisplayName = (client: OnlineClient): string => {
   return normalizePlayerName(client.name) || `Client ${client.id}`;
+};
+
+type PlayerListTab = 'players' | 'lobbies';
+
+interface ActiveLobby {
+  roomCode: string;
+  members: OnlineClient[];
+  playerCount: number;
+  maxPlayers: number;
+  isOpen: boolean;
+  startedAt?: number;
+}
+
+const getNumericClientValue = (value: unknown): number | undefined => {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+};
+
+const buildActiveLobbies = (onlineClients: OnlineClient[]): ActiveLobby[] => {
+  const lobbiesByCode = new Map<string, OnlineClient[]>();
+
+  onlineClients.forEach(client => {
+    const roomCode = typeof client.roomCode === 'string' ? client.roomCode.trim() : '';
+    if (client.state !== 'multi' || roomCode.length === 0) return;
+
+    const members = lobbiesByCode.get(roomCode) ?? [];
+    members.push(client);
+    lobbiesByCode.set(roomCode, members);
+  });
+
+  return Array.from(lobbiesByCode.entries())
+    .map(([roomCode, members]) => {
+      const maxPlayerValues = members
+        .map(client => getNumericClientValue(client.maxPlayers))
+        .filter((value): value is number => value !== undefined && value > 0);
+      const maxPlayers = maxPlayerValues.length > 0 ? Math.max(...maxPlayerValues) : MAX_MULTIPLAYER_PLAYERS;
+      const reportedPlayerCount = members.reduce((max, client) => {
+        return Math.max(max, getNumericClientValue(client.playerCount) ?? 0);
+      }, 0);
+      const playerCount = Math.max(members.length, reportedPlayerCount);
+      const startedAtValues = members
+        .map(client => getNumericClientValue(client.lobbyStartedAt))
+        .filter((value): value is number => value !== undefined && value > 0);
+      const startedAt = startedAtValues.length > 0 ? Math.min(...startedAtValues) : undefined;
+
+      return {
+        roomCode,
+        members: [...members].sort((a, b) => getOnlineClientDisplayName(a).localeCompare(getOnlineClientDisplayName(b))),
+        playerCount,
+        maxPlayers,
+        isOpen: members.some(client => client.spaceAvailable) && playerCount < maxPlayers,
+        startedAt,
+      };
+    })
+    .sort((a, b) => {
+      if (a.isOpen !== b.isOpen) return a.isOpen ? -1 : 1;
+      return (a.startedAt ?? Number.MAX_SAFE_INTEGER) - (b.startedAt ?? Number.MAX_SAFE_INTEGER);
+    });
+};
+
+const formatLobbyDuration = (startedAt: number | undefined, now: number): string => {
+  if (!startedAt) return 'Duration unavailable';
+
+  const elapsedMs = Math.max(0, now - startedAt);
+  const totalMinutes = Math.floor(elapsedMs / 60000);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+
+  if (hours > 0) {
+    return `${hours}h ${minutes}m`;
+  }
+  if (minutes > 0) {
+    return `${minutes}m`;
+  }
+  return 'Under 1m';
+};
+
+const getLobbyMemberStatusLabel = (client: OnlineClient): string => {
+  if (client.state === 'solo') return 'Solo training';
+  if (client.state === 'menu') return 'In menu';
+  return client.spaceAvailable ? 'Open lobby' : 'In match';
 };
 
 const getConnectedMatchPlayerCount = (message: any, localRole: 'host' | 'client' | 'observer' | null): number => {
@@ -570,111 +651,253 @@ const PlayerListSubframe = ({
   hostIdCode,
   onJoinGame,
   setInviteNotifications,
-}: PlayerListSubframeProps) => (
-  <details className="group/player-list bg-slate-950/45 border border-white/10 rounded-lg p-3 shrink-0" open>
-    <summary className="flex justify-between items-center gap-2 cursor-pointer select-none list-none">
-      <span className="text-xs text-[#38bdf8] font-black uppercase tracking-wider flex items-center gap-1.5 min-w-0">
-        <span className="w-1 px-0.5 h-2.5 bg-[#38bdf8] inline-block rounded-sm shrink-0" />
-        <span className="truncate">Player List ({onlineClients.length})</span>
-      </span>
-      <span className="flex items-center gap-2 shrink-0">
-        {clientId && (
-          <span className="text-[10px] font-mono text-white/45 bg-white/5 px-2 py-0.5 rounded border border-white/5">
-            ID: {clientId}
-          </span>
-        )}
-        <span className="text-[10px] text-white/35 transition-transform group-open/player-list:rotate-180 font-sans">
-          v
-        </span>
-      </span>
-    </summary>
+}: PlayerListSubframeProps) => {
+  const [activeTab, setActiveTab] = useState<PlayerListTab>('players');
+  const [selectedLobbyCode, setSelectedLobbyCode] = useState<string | null>(null);
+  const [now, setNow] = useState(() => Date.now());
+  const activeLobbies = useMemo(() => buildActiveLobbies(onlineClients), [onlineClients]);
 
-    <div className="pt-2.5 mt-2.5 border-t border-white/5">
-      <div className="player-list-scroll flex flex-col gap-2 pr-1 min-h-[5rem]">
-        {onlineClients.length === 0 ? (
-          <p className="text-xs text-white/45 italic font-medium m-auto text-center py-4">No other players online yet.</p>
-        ) : (
-          onlineClients.map(client => {
-            const displayName = getOnlineClientDisplayName(client);
-            const customName = normalizePlayerName(client.name);
-            const maxPlayers = client.maxPlayers ?? MAX_MULTIPLAYER_PLAYERS;
-            const playerCount = typeof client.playerCount === 'number' ? client.playerCount : undefined;
-            const slotLabel = playerCount !== undefined ? `${Math.min(playerCount, maxPlayers)}/${maxPlayers}` : undefined;
-            return (
-              <div key={client.id} className="flex justify-between items-center bg-black/45 px-3 py-2.5 rounded border border-white/5 text-xs font-mono shrink-0">
-                <div className="flex flex-col gap-1 min-w-0">
-                  <span className="text-white/80 font-semibold truncate max-w-[130px]" title={customName ? `${displayName} (${client.id})` : displayName}>
-                    {displayName}
-                  </span>
-                  <div className="flex items-center gap-1.5">
-                    {client.state === 'menu' && (
-                      <span className="text-[10px] text-slate-400/80 font-bold uppercase tracking-wider flex items-center gap-1">
-                        <span className="w-1.5 h-1.5 rounded-full bg-slate-500" />
-                        In Menu
+  useEffect(() => {
+    if (activeTab !== 'lobbies') return;
+
+    setNow(Date.now());
+    const intervalId = window.setInterval(() => setNow(Date.now()), 30000);
+    return () => window.clearInterval(intervalId);
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (!selectedLobbyCode) return;
+    if (!activeLobbies.some(lobby => lobby.roomCode === selectedLobbyCode)) {
+      setSelectedLobbyCode(null);
+    }
+  }, [activeLobbies, selectedLobbyCode]);
+
+  return (
+    <details className="group/player-list bg-slate-950/45 border border-white/10 rounded-lg p-3 shrink-0" open>
+      <summary className="flex justify-between items-center gap-2 cursor-pointer select-none list-none">
+        <span className="text-xs text-[#38bdf8] font-black uppercase tracking-wider flex items-center gap-1.5 min-w-0">
+          <span className="w-1 px-0.5 h-2.5 bg-[#38bdf8] inline-block rounded-sm shrink-0" />
+          <span className="truncate">Player List ({onlineClients.length})</span>
+        </span>
+        <span className="flex items-center gap-2 shrink-0">
+          {clientId && (
+            <span className="text-[10px] font-mono text-white/45 bg-white/5 px-2 py-0.5 rounded border border-white/5">
+              ID: {clientId}
+            </span>
+          )}
+          <span className="text-[10px] text-white/35 transition-transform group-open/player-list:rotate-180 font-sans">
+            v
+          </span>
+        </span>
+      </summary>
+
+      <div className="pt-2.5 mt-2.5 border-t border-white/5">
+        <div className="grid grid-cols-2 gap-1 bg-black/35 border border-white/5 rounded-md p-1 mb-2">
+          <button
+            type="button"
+            onClick={() => setActiveTab('players')}
+            aria-pressed={activeTab === 'players'}
+            className={`min-w-0 h-7 rounded text-[10px] font-black uppercase tracking-wider transition-all ${
+              activeTab === 'players'
+                ? 'bg-[#38bdf8]/20 text-[#7dd3fc] border border-[#38bdf8]/35'
+                : 'text-white/45 hover:text-white/75 border border-transparent'
+            }`}
+          >
+            <span className="truncate block">Players {onlineClients.length}</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('lobbies')}
+            aria-pressed={activeTab === 'lobbies'}
+            className={`min-w-0 h-7 rounded text-[10px] font-black uppercase tracking-wider transition-all ${
+              activeTab === 'lobbies'
+                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/35'
+                : 'text-white/45 hover:text-white/75 border border-transparent'
+            }`}
+          >
+            <span className="truncate block">Lobbies {activeLobbies.length}</span>
+          </button>
+        </div>
+
+        <div className="player-list-scroll flex flex-col gap-2 pr-1 min-h-[5rem]">
+          {activeTab === 'players' && (
+            onlineClients.length === 0 ? (
+              <p className="text-xs text-white/45 italic font-medium m-auto text-center py-4">No other players online yet.</p>
+            ) : (
+              onlineClients.map(client => {
+                const displayName = getOnlineClientDisplayName(client);
+                const customName = normalizePlayerName(client.name);
+                const maxPlayers = client.maxPlayers ?? MAX_MULTIPLAYER_PLAYERS;
+                const playerCount = typeof client.playerCount === 'number' ? client.playerCount : undefined;
+                const slotLabel = playerCount !== undefined ? `${Math.min(playerCount, maxPlayers)}/${maxPlayers}` : undefined;
+                return (
+                  <div key={client.id} className="flex justify-between items-center bg-black/45 px-3 py-2.5 rounded border border-white/5 text-xs font-mono shrink-0">
+                    <div className="flex flex-col gap-1 min-w-0">
+                      <span className="text-white/80 font-semibold truncate max-w-[130px]" title={customName ? `${displayName} (${client.id})` : displayName}>
+                        {displayName}
                       </span>
-                    )}
-                    {client.state === 'solo' && (
-                      <span className="text-[10px] text-amber-400 font-bold uppercase tracking-wider flex items-center gap-1">
-                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
-                        Solo Training
-                      </span>
-                    )}
-                    {client.state === 'multi' && (
-                      client.spaceAvailable ? (
+                      <div className="flex items-center gap-1.5">
+                        {client.state === 'menu' && (
+                          <span className="text-[10px] text-slate-400/80 font-bold uppercase tracking-wider flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-slate-500" />
+                            In Menu
+                          </span>
+                        )}
+                        {client.state === 'solo' && (
+                          <span className="text-[10px] text-amber-400 font-bold uppercase tracking-wider flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                            Solo Training
+                          </span>
+                        )}
+                        {client.state === 'multi' && (
+                          client.spaceAvailable ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (client.roomCode) {
+                                  onJoinGame(client.roomCode);
+                                }
+                              }}
+                              className="text-[10px] bg-emerald-500/20 hover:bg-emerald-500/35 border border-emerald-500/40 text-emerald-400 font-bold uppercase tracking-wider px-2 py-0.5 rounded cursor-pointer transition-all flex items-center gap-1"
+                            >
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block animate-ping" />
+                              {slotLabel ? `Join ${slotLabel}` : 'Join'}
+                            </button>
+                          ) : (
+                            <span className="text-[10px] text-blue-400 font-bold uppercase tracking-wider flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+                              {slotLabel ? `In Match ${slotLabel}` : 'In Match'}
+                            </span>
+                          )
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1 shrink-0">
+                      {connectionStatus === 'hosting' && connectionMode === 'relay' && (
                         <button
+                          type="button"
                           onClick={() => {
-                            if (client.roomCode) {
-                              onJoinGame(client.roomCode);
+                            if (menuSocket && menuSocket.readyState === WebSocket.OPEN) {
+                              menuSocket.send(JSON.stringify({
+                                type: 'send_invite',
+                                targetId: client.id,
+                                roomCode: hostIdCode
+                              }));
+                              setInviteNotifications(prev => [
+                                ...prev,
+                                `Lobby invite dispatched to Client ${client.id}.`
+                              ]);
+                              setTimeout(() => {
+                                setInviteNotifications(prev => prev.filter(n => !n.includes(client.id)));
+                              }, 5000);
                             }
                           }}
-                          className="text-[10px] bg-emerald-500/20 hover:bg-emerald-500/35 border border-emerald-500/40 text-emerald-400 font-bold uppercase tracking-wider px-2 py-0.5 rounded cursor-pointer transition-all flex items-center gap-1"
+                          className="px-2.5 py-1 bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-[9px] font-sans font-black uppercase tracking-wider text-white rounded cursor-pointer transition-all border border-sky-400/20 active:scale-95"
                         >
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block animate-ping" />
-                          {slotLabel ? `Join ${slotLabel}` : 'Join'}
+                          Invite
                         </button>
-                      ) : (
-                        <span className="text-[10px] text-blue-400 font-bold uppercase tracking-wider flex items-center gap-1">
-                          <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
-                          {slotLabel ? `In Match ${slotLabel}` : 'In Match'}
+                      )}
+                    </div>
+                  </div>
+                );
+              })
+            )
+          )}
+
+          {activeTab === 'lobbies' && (
+            activeLobbies.length === 0 ? (
+              <p className="text-xs text-white/45 italic font-medium m-auto text-center py-4">No active lobbies broadcasting right now.</p>
+            ) : (
+              activeLobbies.map(lobby => {
+                const isSelected = lobby.roomCode === selectedLobbyCode;
+                const lobbyLabel = `Lobby ${lobby.roomCode}`;
+                const firstMember = lobby.members[0];
+                const firstMemberName = firstMember ? getOnlineClientDisplayName(firstMember) : 'Unknown pilot';
+                const remainingPlayerCount = Math.max(0, lobby.playerCount - 1);
+                const memberSummary = remainingPlayerCount > 0
+                  ? `${firstMemberName} and ${remainingPlayerCount} more`
+                  : firstMemberName;
+
+                return (
+                  <div
+                    key={lobby.roomCode}
+                    className={`bg-black/45 rounded border text-xs font-mono shrink-0 transition-colors ${
+                      isSelected ? 'border-emerald-400/45' : 'border-white/5'
+                    }`}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setSelectedLobbyCode(isSelected ? null : lobby.roomCode)}
+                      className="w-full text-left px-3 py-2.5 flex justify-between items-start gap-2 cursor-pointer"
+                      aria-expanded={isSelected}
+                    >
+                      <span className="flex flex-col gap-1 min-w-0">
+                        <span className="text-white/85 font-semibold truncate" title={lobbyLabel}>
+                          {lobbyLabel}
                         </span>
-                      )
+                        <span className="text-[10px] text-white/45 truncate">
+                          {memberSummary}
+                        </span>
+                      </span>
+                      <span className="flex flex-col items-end gap-1 shrink-0">
+                        <span className={`text-[10px] font-black uppercase tracking-wider ${lobby.isOpen ? 'text-emerald-300' : 'text-blue-300'}`}>
+                          {Math.min(lobby.playerCount, lobby.maxPlayers)}/{lobby.maxPlayers}
+                        </span>
+                        <span className={`text-[9px] font-black uppercase tracking-wider ${lobby.isOpen ? 'text-emerald-400' : 'text-white/35'}`}>
+                          {lobby.isOpen ? 'Open' : 'Closed'}
+                        </span>
+                      </span>
+                    </button>
+
+                    {isSelected && (
+                      <div className="px-3 pb-3 pt-2 border-t border-white/5 flex flex-col gap-2">
+                        <div className="flex items-center justify-between gap-2 text-[10px]">
+                          <span className="text-white/45 uppercase tracking-wider">Live for</span>
+                          <span className="text-cyan-300 font-black">{formatLobbyDuration(lobby.startedAt, now)}</span>
+                        </div>
+
+                        <div className="flex flex-col gap-1.5">
+                          {lobby.members.map(member => {
+                            const memberName = getOnlineClientDisplayName(member);
+                            return (
+                              <div key={member.id} className="flex items-center justify-between gap-2 bg-white/[0.03] border border-white/5 rounded px-2 py-1.5">
+                                <span className="text-white/75 truncate" title={`${memberName} (${member.id})`}>
+                                  {memberName}
+                                </span>
+                                <span className="text-[9px] text-white/35 uppercase tracking-wider shrink-0">
+                                  {getLobbyMemberStatusLabel(member)}
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        {lobby.isOpen ? (
+                          <button
+                            type="button"
+                            onClick={() => onJoinGame(lobby.roomCode)}
+                            className="w-full min-h-8 bg-emerald-500/20 hover:bg-emerald-500/35 border border-emerald-500/40 text-emerald-300 font-black uppercase tracking-wider rounded transition-all"
+                          >
+                            Join Lobby
+                          </button>
+                        ) : (
+                          <div className="w-full min-h-8 flex items-center justify-center rounded border border-white/5 bg-white/[0.03] text-[10px] text-white/35 font-black uppercase tracking-wider">
+                            Lobby is not open
+                          </div>
+                        )}
+                      </div>
                     )}
                   </div>
-                </div>
-
-                <div className="flex items-center gap-1 shrink-0">
-                  {connectionStatus === 'hosting' && connectionMode === 'relay' && (
-                    <button
-                      onClick={() => {
-                        if (menuSocket && menuSocket.readyState === WebSocket.OPEN) {
-                          menuSocket.send(JSON.stringify({
-                            type: 'send_invite',
-                            targetId: client.id,
-                            roomCode: hostIdCode
-                          }));
-                          setInviteNotifications(prev => [
-                            ...prev,
-                            `Lobby invite dispatched to Client ${client.id}.`
-                          ]);
-                          setTimeout(() => {
-                            setInviteNotifications(prev => prev.filter(n => !n.includes(client.id)));
-                          }, 5000);
-                        }
-                      }}
-                      className="px-2.5 py-1 bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-[9px] font-sans font-black uppercase tracking-wider text-white rounded cursor-pointer transition-all border border-sky-400/20 active:scale-95"
-                    >
-                      Invite
-                    </button>
-                  )}
-                </div>
-              </div>
-            );
-          })
-        )}
+                );
+              })
+            )
+          )}
+        </div>
       </div>
-    </div>
-  </details>
-);
+    </details>
+  );
+};
 
 
 const getSavedMatchmakerUrl = () => {
@@ -3770,7 +3993,7 @@ export default function App() {
                     </span>
                   </div>
                   <span className="text-[9px] font-mono font-bold text-white/40 bg-white/5 border border-white/10 px-2 py-0.5 rounded shrink-0">
-                    {durationStr} Â· {sizeStr}
+                    {durationStr} / {sizeStr}
                   </span>
                 </div>
 
@@ -3793,10 +4016,11 @@ export default function App() {
                           await loadTheaterReplays();
                         }
                       }}
-                      className="p-1 bg-red-950/20 hover:bg-red-900/40 border border-red-500/20 hover:border-red-500/40 rounded text-[9.5px] font-bold text-red-400 hover:text-red-300 uppercase tracking-wider transition-all cursor-pointer flex items-center justify-center w-7 h-7"
+                      className="p-1 bg-red-950/20 hover:bg-red-900/40 border border-red-500/20 hover:border-red-500/40 rounded text-[9.5px] font-bold text-red-400 hover:text-red-300 uppercase tracking-wider transition-all cursor-pointer flex items-center justify-center w-7 h-7 whitespace-nowrap"
                       title="Delete from cache"
+                      aria-label="Delete from cache"
                     >
-                      ðŸ—‘ï¸
+                      Del
                     </button>
                     <button
                       onClick={() => {
@@ -3805,15 +4029,15 @@ export default function App() {
                         setSaveCachedDesc(`Saved match on ${replay.mapType} map in ${replay.mode} mode.`);
                         setShowSaveModal(true);
                       }}
-                      className="px-2.5 h-7 bg-white/5 hover:bg-white/10 border border-white/10 text-[9.5px] font-bold text-white/80 hover:text-white uppercase tracking-wider rounded transition-all cursor-pointer flex items-center gap-1"
+                      className="px-2.5 h-7 bg-white/5 hover:bg-white/10 border border-white/10 text-[9.5px] font-bold text-white/80 hover:text-white uppercase tracking-wider rounded transition-all cursor-pointer flex items-center gap-1 whitespace-nowrap"
                       title="Save permanently to Archives"
                     >
-                      ðŸ“¥ Save Permanent
+                      Save Permanent
                     </button>
                     <button
                       onClick={() => handleOpenHeatmapReplay(replay)}
                       disabled={!canOpenHeatmap}
-                      className="px-2.5 h-7 bg-cyan-950/30 hover:bg-cyan-900/50 border border-cyan-500/20 hover:border-cyan-500/40 rounded text-[9.5px] font-bold text-cyan-300 hover:text-cyan-200 uppercase tracking-wider transition-all cursor-pointer flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed"
+                      className="px-2.5 h-7 bg-cyan-950/30 hover:bg-cyan-900/50 border border-cyan-500/20 hover:border-cyan-500/40 rounded text-[9.5px] font-bold text-cyan-300 hover:text-cyan-200 uppercase tracking-wider transition-all cursor-pointer flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
                       title={canOpenHeatmap ? 'Watch this replay as a 2D heatmap' : 'No heatmap data in this replay'}
                     >
                       Heatmap
@@ -3824,9 +4048,9 @@ export default function App() {
                         setIsPlaying(true);
                         setIsPaused(false);
                       }}
-                      className="px-3 h-7 bg-gradient-to-r from-amber-600 to-yellow-600 hover:from-amber-500 hover:to-yellow-500 text-[9.5px] font-black text-white uppercase tracking-widest rounded border border-amber-500/20 hover:shadow-[0_0_10px_rgba(245,158,11,0.3)] transition-all cursor-pointer flex items-center gap-1.5"
+                      className="px-3 h-7 bg-gradient-to-r from-amber-600 to-yellow-600 hover:from-amber-500 hover:to-yellow-500 text-[9.5px] font-black text-white uppercase tracking-widest rounded border border-amber-500/20 hover:shadow-[0_0_10px_rgba(245,158,11,0.3)] transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap"
                     >
-                      â–¶ Watch
+                      Watch
                     </button>
                   </div>
                 </div>
@@ -4524,10 +4748,12 @@ export default function App() {
       hammerReloadTime: 0.6,
       hammerMeleeSpeed: 0.24,
       hammerMeleeReload: 0.5,
+      hammerAttackAnimation: 'current',
       hammerSplashVfx: 'current',
       swordLungeVfx: 'current',
       swordLungeDistance: 14.5,
       swordLungeSpeed: 24.0,
+      swordAttackAnimation: 'current',
       swordSlashSpeed: 0.22,
       swordSlashReload: 0.6,
       swordLungeReload: 1.2,
@@ -6295,6 +6521,16 @@ export default function App() {
                 </a>
 
                 {/* Admin Dashboard — only for admin accounts */}
+                <a
+                  href="/animation-editor.html"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-5 py-2 rounded-full text-xs font-bold font-display uppercase tracking-wider transition-all duration-200 cursor-pointer text-[#38bdf8] hover:text-cyan-200 hover:bg-cyan-950/20 flex items-center gap-1.5 border border-cyan-500/20 hover:border-cyan-500/40"
+                >
+                  <Film className="w-3.5 h-3.5" />
+                  Animation Editor
+                </a>
+
                 {account?.isAdmin && (
                   <button
                     onClick={() => setShowAdminDashboard(true)}

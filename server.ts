@@ -104,9 +104,32 @@ async function startServer() {
   // Quick Play matchmaking structures
   const quickPlayQueue = new Set<WebSocket>();
   const waitingQuickPlayClients = new Map<string, WebSocket>();
+  const lobbyStartedAtByRoomCode = new Map<string, number>();
 
   function getSocketId(socket: WebSocket): string {
     return String((socket as any).id || "");
+  }
+
+  function normalizeRoomCodeForPresence(roomCode: unknown): string | undefined {
+    if (typeof roomCode !== "string") return undefined;
+    const normalized = roomCode.trim();
+    return normalized.length > 0 ? normalized : undefined;
+  }
+
+  function getLobbyStartedAt(roomCode: string): number {
+    const existing = lobbyStartedAtByRoomCode.get(roomCode);
+    if (existing) return existing;
+    const startedAt = Date.now();
+    lobbyStartedAtByRoomCode.set(roomCode, startedAt);
+    return startedAt;
+  }
+
+  function pruneInactiveLobbyStartTimes(activeRoomCodes: Set<string>) {
+    for (const roomCode of lobbyStartedAtByRoomCode.keys()) {
+      if (!activeRoomCodes.has(roomCode)) {
+        lobbyStartedAtByRoomCode.delete(roomCode);
+      }
+    }
   }
 
   function getRoomPlayerEntries(room: Room) {
@@ -227,16 +250,31 @@ async function startServer() {
     const lobbyClients = Array.from(wss.clients)
       .filter((client: any) => client.connectionType === 'lobby');
     const onlineCount = lobbyClients.length;
+    const activeRoomCodes = new Set<string>();
+
+    lobbyClients.forEach((client: any) => {
+      const roomCode = normalizeRoomCodeForPresence(client.roomCode);
+      if (client.playerState === 'multi' && roomCode) {
+        activeRoomCodes.add(roomCode);
+      }
+    });
+    pruneInactiveLobbyStartTimes(activeRoomCodes);
+
     const clientPayloads = lobbyClients
-      .map((client: any) => ({
-        id: client.id,
-        name: normalizePlayerName(client.playerName),
-        state: client.playerState || 'menu',
-        roomCode: client.roomCode,
-        spaceAvailable: client.spaceAvailable !== undefined ? client.spaceAvailable : false,
-        playerCount: client.playerCount,
-        maxPlayers: client.maxPlayers
-      }))
+      .map((client: any) => {
+        const state = client.playerState || 'menu';
+        const roomCode = normalizeRoomCodeForPresence(client.roomCode);
+        return {
+          id: client.id,
+          name: normalizePlayerName(client.playerName),
+          state,
+          roomCode,
+          spaceAvailable: client.spaceAvailable !== undefined ? client.spaceAvailable : false,
+          playerCount: client.playerCount,
+          maxPlayers: client.maxPlayers,
+          lobbyStartedAt: state === 'multi' && roomCode ? getLobbyStartedAt(roomCode) : undefined
+        };
+      })
       .filter(c => Boolean(c.id));
 
     const presencePayload = JSON.stringify({
@@ -267,6 +305,7 @@ async function startServer() {
     (ws as any).playerName = normalizePlayerName(nameParam);
     (ws as any).playerCount = undefined;
     (ws as any).maxPlayers = undefined;
+    (ws as any).lobbyStartedAt = undefined;
     
     console.log(`New WebSocket connection received. Assigned Socket ID: ${wsId}, Type: ${connectionType}, Name: ${nameParam}`);
 
@@ -283,9 +322,10 @@ async function startServer() {
         switch (message.type) {
           case "update_status": {
             const { status, roomCode, spaceAvailable, name, playerCount, maxPlayers } = message;
-            console.log(`Client ${wsId} updating playerState to: ${status}, roomCode: ${roomCode}, spaceAvailable: ${spaceAvailable}, name: ${name}, players: ${playerCount}/${maxPlayers}`);
+            const normalizedRoomCode = status === 'multi' ? normalizeRoomCodeForPresence(roomCode) : undefined;
+            console.log(`Client ${wsId} updating playerState to: ${status}, roomCode: ${normalizedRoomCode}, spaceAvailable: ${spaceAvailable}, name: ${name}, players: ${playerCount}/${maxPlayers}`);
             (ws as any).playerState = status;
-            (ws as any).roomCode = roomCode;
+            (ws as any).roomCode = normalizedRoomCode;
             (ws as any).spaceAvailable = spaceAvailable;
             (ws as any).playerName = normalizePlayerName(name);
             (ws as any).playerCount = typeof playerCount === 'number' && Number.isFinite(playerCount)
@@ -294,6 +334,7 @@ async function startServer() {
             (ws as any).maxPlayers = typeof maxPlayers === 'number' && Number.isFinite(maxPlayers)
               ? Math.max(1, Math.min(MAX_ROOM_PLAYERS, Math.floor(maxPlayers)))
               : undefined;
+            (ws as any).lobbyStartedAt = normalizedRoomCode ? getLobbyStartedAt(normalizedRoomCode) : undefined;
             updatePresence();
             break;
           }
@@ -829,9 +870,27 @@ async function startServer() {
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: { middlewareMode: true },
-      appType: "spa",
+      appType: "custom",
     });
     app.use(vite.middlewares);
+    const sendDevHtml = async (req: express.Request, res: express.Response, next: express.NextFunction, fileName: string) => {
+      try {
+        const template = fs.readFileSync(path.join(process.cwd(), fileName), "utf-8");
+        const html = await vite.transformIndexHtml(req.originalUrl, template);
+        res.status(200).set({ "Content-Type": "text/html" }).end(html);
+      } catch (error) {
+        if (error instanceof Error) {
+          vite.ssrFixStacktrace(error);
+        }
+        next(error);
+      }
+    };
+    app.get(["/mapmaker.html", "/animation-editor.html"], (req, res, next) => {
+      sendDevHtml(req, res, next, req.path.slice(1));
+    });
+    app.get("*", (req, res, next) => {
+      sendDevHtml(req, res, next, "index.html");
+    });
   } else {
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));

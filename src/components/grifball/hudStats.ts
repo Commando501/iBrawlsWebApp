@@ -1,7 +1,7 @@
 import { MAIN_AI_ID } from '../../game/roster';
 import { ballAsHammer } from '../../game/weaponCompat';
-import { getTeamTally } from '../../game/teamScoring';
-import { type Combatant, type GameStats } from '../../types';
+import { getTeamTally, type TeamId } from '../../game/teamScoring';
+import { type Combatant, type GameStats, type GrifballScoreboardCombatant, type GrifballScoreboardTeam } from '../../types';
 import { type GrifballRuntimeState } from './runtimeState';
 
 interface BuildGrifballHudStatsOptions {
@@ -110,6 +110,63 @@ function resolveBallCarrierName(s: GrifballRuntimeState): string | null {
   return s.otherPlayers.get(id)?.playerName ?? null;
 }
 
+function getTeamLabel(teamId: TeamId): string {
+  if (teamId === 'blue') return 'Blue Team';
+  if (teamId === 'red') return 'Red Team';
+  return `${teamId} Team`;
+}
+
+function buildGrifballScoreboardPayload(
+  s: GrifballRuntimeState
+): NonNullable<NonNullable<GameStats['grifball']>['scoreboard']> {
+  const combatants: GrifballScoreboardCombatant[] = [
+    {
+      id: 'player',
+      name: `${s.settings.playerName || 'Player'} (You)`,
+      team: s.localPlayerTeam,
+      score: s.playerKills ?? 0,
+      kills: s.playerKills ?? 0,
+      deaths: s.playerDeaths ?? 0,
+      hue: s.settings.playerHue ?? 200,
+      hp: s.playerHP,
+      isLocal: true,
+    },
+  ];
+
+  s.otherPlayers.forEach((player) => {
+    combatants.push({
+      id: player.id,
+      name: player.playerName || player.id,
+      team: player.team ?? 'red',
+      score: player.score ?? 0,
+      kills: player.kills ?? 0,
+      deaths: player.deaths ?? 0,
+      hue: player.hue,
+      hp: player.hp,
+      isLocal: false,
+    });
+  });
+
+  const teams = (['blue', 'red'] as const).map((teamId): GrifballScoreboardTeam => {
+    const tally = getTeamTally(s.teamScores, teamId);
+    return {
+      id: teamId,
+      label: getTeamLabel(teamId),
+      score: tally.goals,
+      kills: tally.kills,
+      deaths: tally.deaths,
+      hue: teamId === 'blue' ? 205 : 0,
+      isLocal: s.localPlayerTeam === teamId,
+      memberCount: combatants.filter((combatant) => combatant.team === teamId).length,
+    };
+  });
+
+  return {
+    teams,
+    combatants,
+  };
+}
+
 function buildGrifballHudPayload(s: GrifballRuntimeState): GameStats['grifball'] {
   if (s.settings.gameMode !== 'grifball') return undefined;
   const g = s.grifball;
@@ -134,5 +191,6 @@ function buildGrifballHudPayload(s: GrifballRuntimeState): GameStats['grifball']
     localTeam: s.localPlayerTeam,
     localCarrying: carrierId === 'player',
     passCharge: s.grifballPassCharge,
+    scoreboard: buildGrifballScoreboardPayload(s),
   };
 }

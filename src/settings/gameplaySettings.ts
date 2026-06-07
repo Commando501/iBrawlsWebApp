@@ -18,10 +18,12 @@ export const DEFAULT_ADMIN_SETTINGS: UniversalSettings = {
   hammerReloadTime: 0.6,
   hammerMeleeSpeed: 0.24,
   hammerMeleeReload: 0.5,
+  hammerAttackAnimation: 'current',
   hammerSplashVfx: 'current',
   swordLungeVfx: 'current',
   swordLungeDistance: 14.5,
   swordLungeSpeed: 24.0,
+  swordAttackAnimation: 'current',
   swordSlashSpeed: 0.22,
   swordSlashReload: 0.6,
   swordLungeReload: 1.2,
@@ -84,7 +86,9 @@ export const withDefaultGameplaySettings = (
   return {
     ...persistedDefaults,
     ...settings,
+    hammerAttackAnimation: settings.hammerAttackAnimation ?? persistedDefaults.hammerAttackAnimation,
     hammerSplashVfx: settings.hammerSplashVfx ?? persistedDefaults.hammerSplashVfx,
+    swordAttackAnimation: settings.swordAttackAnimation ?? persistedDefaults.swordAttackAnimation,
     swordLungeVfx: settings.swordLungeVfx ?? persistedDefaults.swordLungeVfx,
   };
 };

@@ -428,6 +428,7 @@ export function runReplayPlaybackLoopForState({
     animateSpartanModel,
     renderSwordLungeTrailVfx,
     updateBlinking,
+    settings: state.settings,
   });
 
   if (targetId === 'free') {

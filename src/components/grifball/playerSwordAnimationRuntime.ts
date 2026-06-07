@@ -1,4 +1,10 @@
 import * as THREE from 'three';
+import {
+  applyWeaponPose,
+  getFirstPersonSwordLungePose,
+  getFirstPersonSwordSlashPose,
+  getSwordAttackAnimationStyle,
+} from './attackAnimationPresets';
 import { type GrifballRuntimeState } from './runtimeState';
 
 export function updatePlayerSwordAnimationForState({
@@ -27,8 +33,14 @@ export function updatePlayerSwordAnimationForState({
     if (playerHammer) playerHammer.visible = false;
 
     if (state.isLunging) {
-      playerSword.position.set(0.0, -0.22 + idleYBob, -0.7 + idleXBob);
-      playerSword.rotation.set(-Math.PI / 2 - 0.15, 0, 0);
+      if (getSwordAttackAnimationStyle(state.settings) === 'highFidelity') {
+        const pose = getFirstPersonSwordLungePose(state.lungeTimer, idleYBob);
+        pose.position[2] += idleXBob;
+        applyWeaponPose(playerSword, pose);
+      } else {
+        playerSword.position.set(0.0, -0.22 + idleYBob, -0.7 + idleXBob);
+        playerSword.rotation.set(-Math.PI / 2 - 0.15, 0, 0);
+      }
 
       state.pSwordReady = false;
       state.pSwordCooldown = 0.5;
@@ -50,13 +62,17 @@ export function updatePlayerSwordAnimationForState({
       const duration = state.settings.swordSlashSpeed ?? 0.22;
       const pct = Math.min(1.0, state.pSwordTimer / duration);
 
-      playerSword.position.x = THREE.MathUtils.lerp(-0.45, 0.45, pct);
-      playerSword.position.y = THREE.MathUtils.lerp(-0.35, -0.28, pct) + idleYBob;
-      playerSword.position.z = THREE.MathUtils.lerp(-0.4, -0.75, pct) + (pct < 0.5 ? -0.15 : 0.15);
+      if (getSwordAttackAnimationStyle(state.settings) === 'highFidelity') {
+        applyWeaponPose(playerSword, getFirstPersonSwordSlashPose('slash', pct, idleYBob));
+      } else {
+        playerSword.position.x = THREE.MathUtils.lerp(-0.45, 0.45, pct);
+        playerSword.position.y = THREE.MathUtils.lerp(-0.35, -0.28, pct) + idleYBob;
+        playerSword.position.z = THREE.MathUtils.lerp(-0.4, -0.75, pct) + (pct < 0.5 ? -0.15 : 0.15);
 
-      playerSword.rotation.x = -Math.PI / 2;
-      playerSword.rotation.y = THREE.MathUtils.lerp(-1.2, 1.2, pct);
-      playerSword.rotation.z = THREE.MathUtils.lerp(0.6, -1.5, pct);
+        playerSword.rotation.x = -Math.PI / 2;
+        playerSword.rotation.y = THREE.MathUtils.lerp(-1.2, 1.2, pct);
+        playerSword.rotation.z = THREE.MathUtils.lerp(0.6, -1.5, pct);
+      }
 
       state.pSwordCooldown = 1.0 - pct * 0.4;
 
@@ -74,13 +90,17 @@ export function updatePlayerSwordAnimationForState({
       const recover = state.pSwordRecoverDuration ?? 0.6;
       const pct = Math.min(1.0, state.pSwordTimer / recover);
 
-      playerSword.position.x = THREE.MathUtils.lerp(0.45, 0.35, pct);
-      playerSword.position.y = THREE.MathUtils.lerp(-0.28, -0.38, pct) + idleYBob;
-      playerSword.position.z = THREE.MathUtils.lerp(-0.75, -0.5, pct);
+      if (getSwordAttackAnimationStyle(state.settings) === 'highFidelity') {
+        applyWeaponPose(playerSword, getFirstPersonSwordSlashPose('recover', pct, idleYBob));
+      } else {
+        playerSword.position.x = THREE.MathUtils.lerp(0.45, 0.35, pct);
+        playerSword.position.y = THREE.MathUtils.lerp(-0.28, -0.38, pct) + idleYBob;
+        playerSword.position.z = THREE.MathUtils.lerp(-0.75, -0.5, pct);
 
-      playerSword.rotation.x = -Math.PI / 2;
-      playerSword.rotation.y = THREE.MathUtils.lerp(1.2, 0, pct);
-      playerSword.rotation.z = THREE.MathUtils.lerp(-1.5, -Math.PI / 8, pct);
+        playerSword.rotation.x = -Math.PI / 2;
+        playerSword.rotation.y = THREE.MathUtils.lerp(1.2, 0, pct);
+        playerSword.rotation.z = THREE.MathUtils.lerp(-1.5, -Math.PI / 8, pct);
+      }
 
       state.pSwordCooldown = 0.2 + pct * 0.8;
 

@@ -18,6 +18,7 @@ export interface OnlineClientPayload {
   spaceAvailable?: boolean;
   playerCount?: number;
   maxPlayers?: number;
+  lobbyStartedAt?: number;
 }
 
 export type LobbyServerMessage =

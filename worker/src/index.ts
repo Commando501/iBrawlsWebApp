@@ -156,6 +156,7 @@ interface GameWebSocket extends WebSocket {
   playerName?: string;
   playerCount?: number;
   maxPlayers?: number;
+  lobbyStartedAt?: number;
 }
 
 const MAX_PLAYER_NAME_LENGTH = 10;
@@ -165,6 +166,12 @@ const MAX_ROOM_PLAYERS = 1 + MAX_ROOM_CLIENTS;
 function normalizePlayerName(name: unknown): string | undefined {
   if (typeof name !== "string") return undefined;
   const normalized = name.trim().substring(0, MAX_PLAYER_NAME_LENGTH);
+  return normalized.length > 0 ? normalized : undefined;
+}
+
+function normalizeRoomCodeForPresence(roomCode: unknown): string | undefined {
+  if (typeof roomCode !== "string") return undefined;
+  const normalized = roomCode.trim();
   return normalized.length > 0 ? normalized : undefined;
 }
 
@@ -549,6 +556,7 @@ export class GameLobby implements DurableObject {
   // Quick Play matchmaking structures
   quickPlayQueue = new Set<GameWebSocket>();
   waitingQuickPlayClients = new Map<string, GameWebSocket>();
+  lobbyStartedAtByRoomCode = new Map<string, number>();
 
   // ── Telemetry admission governor ───────────────────────────────────────────
   // Sliding window of recent submissions (ephemeral; resets on DO eviction, which
@@ -617,6 +625,22 @@ export class GameLobby implements DurableObject {
 
   getSocketId(socket: GameWebSocket): string {
     return String(socket.id || "");
+  }
+
+  getLobbyStartedAt(roomCode: string): number {
+    const existing = this.lobbyStartedAtByRoomCode.get(roomCode);
+    if (existing) return existing;
+    const startedAt = Date.now();
+    this.lobbyStartedAtByRoomCode.set(roomCode, startedAt);
+    return startedAt;
+  }
+
+  pruneInactiveLobbyStartTimes(activeRoomCodes: Set<string>) {
+    for (const roomCode of this.lobbyStartedAtByRoomCode.keys()) {
+      if (!activeRoomCodes.has(roomCode)) {
+        this.lobbyStartedAtByRoomCode.delete(roomCode);
+      }
+    }
   }
 
   getRoomPlayerEntries(room: Room) {
@@ -775,6 +799,7 @@ export class GameLobby implements DurableObject {
     gameWs.playerName = normalizePlayerName(nameParam);
     gameWs.playerCount = undefined;
     gameWs.maxPlayers = undefined;
+    gameWs.lobbyStartedAt = undefined;
     
     console.log(`New WebSocket connection received. Assigned Socket ID: ${wsId}, Type: ${connectionType}, Name: ${nameParam}`);
 
@@ -792,9 +817,10 @@ export class GameLobby implements DurableObject {
         switch (message.type) {
           case "update_status": {
             const { status, roomCode, spaceAvailable, name, playerCount, maxPlayers } = message;
-            console.log(`Client ${wsId} updating playerState to: ${status}, roomCode: ${roomCode}, spaceAvailable: ${spaceAvailable}, players: ${playerCount}/${maxPlayers}`);
+            const normalizedRoomCode = status === 'multi' ? normalizeRoomCodeForPresence(roomCode) : undefined;
+            console.log(`Client ${wsId} updating playerState to: ${status}, roomCode: ${normalizedRoomCode}, spaceAvailable: ${spaceAvailable}, players: ${playerCount}/${maxPlayers}`);
             gameWs.playerState = status;
-            gameWs.roomCode = roomCode;
+            gameWs.roomCode = normalizedRoomCode;
             gameWs.spaceAvailable = spaceAvailable;
             gameWs.playerName = normalizePlayerName(name);
             gameWs.playerCount = typeof playerCount === 'number' && Number.isFinite(playerCount)
@@ -803,6 +829,7 @@ export class GameLobby implements DurableObject {
             gameWs.maxPlayers = typeof maxPlayers === 'number' && Number.isFinite(maxPlayers)
               ? Math.max(1, Math.min(MAX_ROOM_PLAYERS, Math.floor(maxPlayers)))
               : undefined;
+            gameWs.lobbyStartedAt = normalizedRoomCode ? this.getLobbyStartedAt(normalizedRoomCode) : undefined;
             this.updatePresence();
             break;
           }
@@ -1298,16 +1325,31 @@ export class GameLobby implements DurableObject {
     const lobbyClients = Array.from(this.sessions)
       .filter((client: any) => client.connectionType === 'lobby');
     const onlineCount = lobbyClients.length;
+    const activeRoomCodes = new Set<string>();
+
+    lobbyClients.forEach((client) => {
+      const roomCode = normalizeRoomCodeForPresence(client.roomCode);
+      if (client.playerState === 'multi' && roomCode) {
+        activeRoomCodes.add(roomCode);
+      }
+    });
+    this.pruneInactiveLobbyStartTimes(activeRoomCodes);
+
     const clientPayloads = lobbyClients
-      .map((client) => ({
-        id: client.id,
-        name: normalizePlayerName(client.playerName),
-        state: client.playerState || 'menu',
-        roomCode: client.roomCode,
-        spaceAvailable: client.spaceAvailable !== undefined ? client.spaceAvailable : false,
-        playerCount: client.playerCount,
-        maxPlayers: client.maxPlayers
-      }))
+      .map((client) => {
+        const state = client.playerState || 'menu';
+        const roomCode = normalizeRoomCodeForPresence(client.roomCode);
+        return {
+          id: client.id,
+          name: normalizePlayerName(client.playerName),
+          state,
+          roomCode,
+          spaceAvailable: client.spaceAvailable !== undefined ? client.spaceAvailable : false,
+          playerCount: client.playerCount,
+          maxPlayers: client.maxPlayers,
+          lobbyStartedAt: state === 'multi' && roomCode ? this.getLobbyStartedAt(roomCode) : undefined
+        };
+      })
       .filter(c => Boolean(c.id));
 
     const presencePayload = JSON.stringify({

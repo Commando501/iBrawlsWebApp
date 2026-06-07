@@ -19,10 +19,12 @@ export interface UniversalSettings {
   hammerReloadTime: number;               // Recovery/reload duration for Gravity Hammer in seconds (e.g. 0.1s to 3.0s)
   hammerMeleeSpeed: number;               // Speed of the hammer melee side-swipe animation in seconds (e.g. 0.05s to 1.0s)
   hammerMeleeReload: number;              // Recovery reload duration for Hammer Melee in seconds (e.g. 0.1s to 3.0s)
+  hammerAttackAnimation: 'current' | 'highFidelity'; // Gravity Hammer swing/melee animation preset
   hammerSplashVfx: 'current' | 'neonBlueFlash'; // Gravity Hammer impact visual style
   swordLungeVfx: 'current' | 'speedLineTrail'; // Energy Sword lunge visual style
   swordLungeDistance: number;             // Lunge range distance mapping reticule lock on (e.g. 1.0m to 25.0m)
   swordLungeSpeed: number;                // Lunge glide movement speed (e.g. 5.0m/s to 50.0m/s)
+  swordAttackAnimation: 'current' | 'highFidelity'; // Energy Sword lunge/slash animation preset
   swordSlashSpeed: number;                // Slash duration sweep phase time (e.g. 0.05s to 1.0s)
   swordSlashReload: number;               // Recovery reload duration for Sword Slash (e.g. 0.1s to 3.0s)
   swordLungeReload: number;               // Recovery reload duration for Sword Lunge (e.g. 0.1s to 5.0s)
@@ -421,6 +423,29 @@ export interface Combatant {
   swapCooldownTimer?: number;
 }
 
+export interface GrifballScoreboardTeam {
+  id: string;
+  label: string;
+  score: number;
+  kills: number;
+  deaths: number;
+  hue: number;
+  isLocal: boolean;
+  memberCount: number;
+}
+
+export interface GrifballScoreboardCombatant {
+  id: string;
+  name: string;
+  team: string;
+  score: number;
+  kills: number;
+  deaths: number;
+  hue: number;
+  hp: number;
+  isLocal: boolean;
+}
+
 export interface GameStats {
   playerHP: number;
   playerMaxHP: number;
@@ -490,6 +515,10 @@ export interface GameStats {
     localCarrying: boolean;
     /** Local player's Pass charge (0–1) while winding up a throw. */
     passCharge: number;
+    scoreboard?: {
+      teams: GrifballScoreboardTeam[];
+      combatants: GrifballScoreboardCombatant[];
+    };
   };
   isReplayMode?: boolean;
   replayElapsedTime?: number;
@@ -787,4 +816,3 @@ export interface CustomMapData {
   lighting: CustomMapLighting;
   folders?: CustomMapFolder[];
 }
-

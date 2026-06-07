@@ -253,6 +253,10 @@ export const HUD: React.FC<HUDProps> = ({
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
+  const grifballScoreboard = stats.grifball?.scoreboard;
+  const blueScoreboardTeam = grifballScoreboard?.teams.find((team) => team.id === 'blue');
+  const redScoreboardTeam = grifballScoreboard?.teams.find((team) => team.id === 'red');
+
   const getStanceLabel = () => {
     if (stats.playerHP <= 0) return 'DEAD';
     if (stats.isJumping) return 'STANCE: JUMPING';
@@ -381,23 +385,9 @@ export const HUD: React.FC<HUDProps> = ({
   return (
     <div className={`absolute inset-0 z-10 select-none font-sans text-white ${usesMobileHud ? 'mobile-hud' : 'desktop-hud'} ${isAdjustmentMode ? 'hud-adjusting pointer-events-auto bg-slate-900/10' : 'pointer-events-none'}`}>
 
-      {/* Grifball team score banner */}
-      {stats.grifball && (
-        <div className="absolute top-3 left-1/2 -translate-x-1/2 flex flex-col items-center gap-1 pointer-events-none z-20">
-          <div className="flex items-stretch rounded-xl overflow-hidden border border-white/20 shadow-lg backdrop-blur-md">
-            <div className="bg-blue-600/40 px-5 py-2 text-center">
-              <p className="text-[9px] uppercase tracking-widest text-blue-200 font-bold">Blue</p>
-              <p className="text-3xl font-black leading-none tabular-nums">{stats.grifball.blueGoals}</p>
-            </div>
-            <div className="bg-black/50 px-3 py-2 flex flex-col items-center justify-center">
-              <p className="text-[9px] uppercase tracking-widest text-white/50 font-bold">Round {stats.grifball.roundNumber}</p>
-              <p className="text-[10px] font-mono text-white/70">First to {stats.grifball.goalTarget}</p>
-            </div>
-            <div className="bg-red-600/40 px-5 py-2 text-center">
-              <p className="text-[9px] uppercase tracking-widest text-red-200 font-bold">Red</p>
-              <p className="text-3xl font-black leading-none tabular-nums">{stats.grifball.redGoals}</p>
-            </div>
-          </div>
+      {/* Grifball ball carrier status */}
+      {stats.grifball?.phase === 'playing' && stats.grifball.ballCarrierName && (
+        <div className="absolute top-24 left-1/2 -translate-x-1/2 flex flex-col items-center gap-1 pointer-events-none z-20">
           {stats.grifball.phase === 'playing' && stats.grifball.ballCarrierName && (
             <div className={`px-3 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider ${stats.grifball.ballCarrierTeam === 'red' ? 'bg-red-500/30 text-red-200' : 'bg-blue-500/30 text-blue-200'}`}>
               🏉 {stats.grifball.ballCarrierName}
@@ -483,11 +473,15 @@ export const HUD: React.FC<HUDProps> = ({
         <div className="bg-black/50 backdrop-blur-lg border border-white/10 px-8 py-3 rounded-2xl flex items-center gap-6 md:gap-8 shadow-2xl">
           <div className="text-center">
             <p className="text-[10px] text-blue-400 font-bold tracking-tighter uppercase">
-              {stats.isMultiplayer
-                ? (stats.multiplayerRole === 'host' ? `${stats.settings.playerName || stats.playerClientId || 'Host'} (You)` : stats.opponentPlayerName || stats.opponentClientId || 'Host')
-                : `${stats.settings.playerName || stats.playerClientId || 'Player'} (You)`}
+              {grifballScoreboard
+                ? (blueScoreboardTeam?.label ?? 'Blue Team')
+                : stats.isMultiplayer
+                  ? (stats.multiplayerRole === 'host' ? `${stats.settings.playerName || stats.playerClientId || 'Host'} (You)` : stats.opponentPlayerName || stats.opponentClientId || 'Host')
+                  : `${stats.settings.playerName || stats.playerClientId || 'Player'} (You)`}
             </p>
-            <p className="text-3xl font-black font-display">{stats.scorePlayer.toString().padStart(2, '0')}</p>
+            <p className="text-3xl font-black font-display">
+              {(grifballScoreboard ? (blueScoreboardTeam?.score ?? stats.grifball?.blueGoals ?? 0) : stats.scorePlayer).toString().padStart(2, '0')}
+            </p>
           </div>
           <div className="h-8 w-[1px] bg-white/20"></div>
           <div className="text-center">
@@ -497,11 +491,15 @@ export const HUD: React.FC<HUDProps> = ({
           <div className="h-8 w-[1px] bg-white/20"></div>
           <div className="text-center">
             <p className="text-[10px] text-red-500 font-bold tracking-tighter uppercase">
-              {stats.isMultiplayer
-                ? (stats.multiplayerRole === 'client' ? `${stats.settings.playerName || stats.playerClientId || 'Client'} (You)` : stats.opponentPlayerName || stats.opponentClientId || 'Client')
-                : (stats.opponentPlayerName || 'AI Bot')}
+              {grifballScoreboard
+                ? (redScoreboardTeam?.label ?? 'Red Team')
+                : stats.isMultiplayer
+                  ? (stats.multiplayerRole === 'client' ? `${stats.settings.playerName || stats.playerClientId || 'Client'} (You)` : stats.opponentPlayerName || stats.opponentClientId || 'Client')
+                  : (stats.opponentPlayerName || 'AI Bot')}
             </p>
-            <p className="text-3xl font-black font-display">{stats.scoreEnemy.toString().padStart(2, '0')}</p>
+            <p className="text-3xl font-black font-display">
+              {(grifballScoreboard ? (redScoreboardTeam?.score ?? stats.grifball?.redGoals ?? 0) : stats.scoreEnemy).toString().padStart(2, '0')}
+            </p>
           </div>
         </div>
       </DraggableHUDItem>
@@ -1022,22 +1020,38 @@ export const HUD: React.FC<HUDProps> = ({
               </div>
 
               {(() => {
-                const playersList = [
-                  {
-                    id: 'local_player',
-                    name: stats.isMultiplayer
-                      ? (stats.multiplayerRole === 'host' ? `${stats.settings.playerName || stats.playerClientId || 'Host'} (You)` : `${stats.settings.playerName || stats.playerClientId || 'Client'} (You)`)
-                      : `${stats.settings.playerName || 'Player'} (You)`,
-                    score: stats.scorePlayer,
-                    kills: stats.playerKills ?? 0,
-                    deaths: stats.playerDeaths ?? 0,
-                    isLocal: true,
-                    hue: stats.settings.playerHue ?? 200,
-                    hp: stats.playerHP
-                  }
-                ];
+                const playersList = grifballScoreboard
+                  ? grifballScoreboard.combatants.map((player) => {
+                    const team = grifballScoreboard.teams.find((scoreboardTeam) => scoreboardTeam.id === player.team);
+                    return {
+                      id: player.id,
+                      name: player.name,
+                      score: player.score,
+                      kills: player.kills,
+                      deaths: player.deaths,
+                      isLocal: player.isLocal,
+                      hue: player.hue,
+                      hp: player.hp,
+                      teamLabel: team?.label ?? `${player.team} Team`,
+                    };
+                  })
+                  : [
+                    {
+                      id: 'local_player',
+                      name: stats.isMultiplayer
+                        ? (stats.multiplayerRole === 'host' ? `${stats.settings.playerName || stats.playerClientId || 'Host'} (You)` : `${stats.settings.playerName || stats.playerClientId || 'Client'} (You)`)
+                        : `${stats.settings.playerName || 'Player'} (You)`,
+                      score: stats.scorePlayer,
+                      kills: stats.playerKills ?? 0,
+                      deaths: stats.playerDeaths ?? 0,
+                      isLocal: true,
+                      hue: stats.settings.playerHue ?? 200,
+                      hp: stats.playerHP,
+                      teamLabel: 'SANDBOX TEAM ALPHA',
+                    }
+                  ];
 
-                if (!stats.isMultiplayer) {
+                if (!grifballScoreboard && !stats.isMultiplayer) {
                   // Single player main AI bot
                   playersList.push({
                     id: 'main_ai',
@@ -1047,11 +1061,12 @@ export const HUD: React.FC<HUDProps> = ({
                     deaths: stats.enemyDeaths ?? 0,
                     isLocal: false,
                     hue: 0,
-                    hp: stats.enemyHP
+                    hp: stats.enemyHP,
+                    teamLabel: 'SANDBOX TEAM BETA',
                   });
                 }
 
-                if (stats.otherPlayers) {
+                if (!grifballScoreboard && stats.otherPlayers) {
                   stats.otherPlayers.forEach((player) => {
                     playersList.push({
                       id: player.id,
@@ -1061,7 +1076,8 @@ export const HUD: React.FC<HUDProps> = ({
                       deaths: player.deaths ?? 0,
                       isLocal: false,
                       hue: player.hue,
-                      hp: player.hp
+                      hp: player.hp,
+                      teamLabel: 'SANDBOX TEAM BETA',
                     });
                   });
                 }
@@ -1099,7 +1115,7 @@ export const HUD: React.FC<HUDProps> = ({
                             )}
                           </span>
                           <span className="text-[9px] font-mono text-white/30 uppercase mt-0.5">
-                            {player.isLocal ? 'SANDBOX TEAM ALPHA' : 'SANDBOX TEAM BETA'}
+                            {player.teamLabel}
                           </span>
                         </div>
                       </div>

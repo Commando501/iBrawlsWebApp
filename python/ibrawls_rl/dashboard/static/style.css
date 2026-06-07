@@ -123,8 +123,20 @@ main { padding: 18px; }
 /* Charts */
 .charts-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px,1fr)); gap: 14px; }
 .chart-card { background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px; padding: 10px; }
-.chart-card .chart-title { font-size: 12px; font-weight: 700; margin-bottom: 6px; }
+.chart-card .chart-title { font-size: 12px; font-weight: 700; margin-bottom: 2px; }
 .chart-card .chart-last { float: right; color: var(--accent); font-weight: 700; }
+.chart-card .chart-goal { font-size: 11px; color: var(--warn); margin-bottom: 6px; }
+.chart-card .chart-advice {
+  margin-top: 8px; font-size: 11px; line-height: 1.4; padding: 6px 8px;
+  border-radius: 6px; border-left: 3px solid var(--line); background: var(--panel);
+}
+.chart-card .chart-advice.good { border-left-color: var(--good); color: #b9e6c2; }
+.chart-card .chart-advice.warn { border-left-color: var(--warn); color: #ecd6a3; }
+.chart-card .chart-advice.bad { border-left-color: var(--bad); color: #f3b0ac; }
+.done-banner {
+  grid-column: 1 / -1; padding: 8px 12px; border-radius: 8px; font-size: 12px; font-weight: 600;
+  background: rgba(79,157,255,.12); border: 1px solid var(--accent); color: var(--accent);
+}
 .chart-card canvas { width: 100%; height: 150px; display: block; }
 .chart-legend { display: flex; flex-wrap: wrap; gap: 8px 14px; margin-top: 6px; font-size: 11px; }
 .chart-legend span { display: inline-flex; align-items: center; gap: 5px; color: var(--muted); }
@@ -146,6 +158,23 @@ main { padding: 18px; }
 .run-item .run-sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
 .run-item .chip { display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 999px; background: var(--bg); border: 1px solid var(--line); margin-right: 5px; }
 
+/* Guide */
+.guide { display: grid; grid-template-columns: repeat(auto-fit, minmax(440px, 1fr)); gap: 18px; align-items: start; }
+.guide-card { max-width: 100%; }
+.guide-card h2 { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.guide-card p { margin: 8px 0; }
+.guide-card ul { margin: 8px 0; padding-left: 20px; }
+.guide-card li { margin: 4px 0; }
+.guide-card code {
+  background: var(--bg); border: 1px solid var(--line); border-radius: 4px;
+  padding: 1px 5px; font: 12px ui-monospace, Consolas, monospace; color: var(--accent);
+}
+.guide-table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 13px; }
+.guide-table th, .guide-table td { text-align: left; vertical-align: top; padding: 7px 10px; border-bottom: 1px solid var(--line); }
+.guide-table thead th { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .4px; }
+.guide-table tbody tr:last-child td { border-bottom: none; }
+.guide-table .good-cell { color: var(--good); }
+
 /* Eval */
 .eval-form { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 8px; }
 .eval-form label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; font-weight: 600; }
@@ -159,3 +188,21 @@ main { padding: 18px; }
 .eval-result .bar.loss { background: var(--bad); color: #fff; }
 .eval-result .summary { margin-top: 10px; font-size: 14px; }
 .eval-result .big { font-size: 28px; font-weight: 800; color: var(--good); }
+.eval-reco { margin-top: 18px; border-top: 1px solid var(--line); padding-top: 14px; }
+.eval-reco h3 { margin: 0 0 8px; font-size: 15px; }
+.eval-reco .reco-headline {
+  padding: 8px 12px; border-radius: 8px; font-weight: 600; font-size: 13px; margin-bottom: 10px;
+  border-left: 3px solid var(--line); background: var(--panel-2);
+}
+.eval-reco .reco-headline.good { border-left-color: var(--good); }
+.eval-reco .reco-headline.warn { border-left-color: var(--warn); }
+.eval-reco .reco-headline.bad { border-left-color: var(--bad); }
+.eval-reco code {
+  background: var(--bg); border: 1px solid var(--line); border-radius: 4px;
+  padding: 1px 5px; font: 12px ui-monospace, Consolas, monospace; color: var(--accent);
+}
+.eval-reco .guide-table th:first-child, .eval-reco .guide-table td:first-child { width: 28px; text-align: center; }
+.eval-reco .guide-table input[type=checkbox] { width: 15px; height: 15px; accent-color: var(--accent); cursor: pointer; }
+.eval-reco .tag { font-size: 10px; text-transform: uppercase; letter-spacing: .4px; }
+.eval-reco .reco-actions { margin-top: 14px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.eval-reco .reco-actions .muted { font-size: 12px; }

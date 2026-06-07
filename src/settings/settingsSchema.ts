@@ -345,6 +345,18 @@ export const SETTING_DEFINITIONS: SettingDefinition[] = [
     formatValue: (v) => `${v.toFixed(1)}s`,
   },
   {
+    key: 'hammerAttackAnimation',
+    label: 'Hammer Attack Animation',
+    type: 'select',
+    sectionId: 'hammer',
+    options: [
+      { value: 'current', label: 'Current' },
+      { value: 'highFidelity', label: 'High Fidelity' },
+    ],
+    formatValue: (v) => v === 'highFidelity' ? 'High Fidelity' : 'Current',
+    description: 'Swap between the existing hammer swing/melee poses and the more readable high-fidelity set.',
+  },
+  {
     key: 'hammerSplashVfx',
     label: 'Hammer Splash VFX',
     type: 'select',
@@ -642,6 +654,18 @@ export const SETTING_DEFINITIONS: SettingDefinition[] = [
       { value: 'speedLineTrail', label: 'Speed Line Trail' },
     ],
     formatValue: (v) => v === 'speedLineTrail' ? 'Speed Lines' : 'Current',
+  },
+  {
+    key: 'swordAttackAnimation',
+    label: 'Sword Attack Animation',
+    type: 'select',
+    sectionId: 'sword',
+    options: [
+      { value: 'current', label: 'Current' },
+      { value: 'highFidelity', label: 'High Fidelity' },
+    ],
+    formatValue: (v) => v === 'highFidelity' ? 'High Fidelity' : 'Current',
+    description: 'Swap between the existing lunge/slash poses and the more readable high-fidelity set.',
   },
   {
     key: 'swordSlashSpeed',

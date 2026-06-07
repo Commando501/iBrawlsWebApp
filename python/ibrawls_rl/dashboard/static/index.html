@@ -14,6 +14,7 @@
       <button class="tab" data-tab="runs">Runs</button>
       <button class="tab" data-tab="evaluate">Evaluate</button>
       <button class="tab" data-tab="watch">Watch</button>
+      <button class="tab" data-tab="guide">Guide</button>
     </nav>
   </header>
 
@@ -113,6 +114,203 @@
         <p class="muted">Planned next phase: load a checkpoint and watch a match render
         (top-down view driven by the headless sim) so you can <i>see</i> what the policy
         learned, not just the numbers.</p>
+      </div>
+    </section>
+
+    <!-- ================= GUIDE ================= -->
+    <section id="tab-guide" class="tabpane">
+      <div class="guide">
+
+        <div class="panel guide-card">
+          <h2>The 30-second mental model</h2>
+          <p>You don't program tactics. You set the <b>reward</b> (what counts as "good") and the
+          <b>opponent</b>, then the bot discovers tactics by playing millions of ticks and nudging
+          its brain so future reward goes up. A match from start to win/timeout is an
+          <b>episode</b>. Training = play, measure, nudge, repeat.</p>
+          <p class="muted">Workflow: edit <b>Settings</b> on the Train tab → <b>Start training</b> →
+          watch the <b>Live progress</b> charts → <b>Evaluate</b> a saved brain for a real grade →
+          adjust and run the next stage.</p>
+        </div>
+
+        <div class="panel guide-card">
+          <h2>Reading the charts <small>what each output means &amp; the range you want</small></h2>
+          <p class="muted">These are the live-progress / run-comparison charts. Watch the
+          <b>trend</b>, not a single number. Reward magnitudes depend on your reward weights, so a
+          rising line matters more than its absolute height.</p>
+          <table class="guide-table">
+            <thead><tr><th>Chart</th><th>What it means</th><th>What you want</th></tr></thead>
+            <tbody>
+              <tr>
+                <td><b>Win rate vs opponent</b><br><span class="muted">eval/win_rate</span></td>
+                <td>Fraction of grading matches the bot won (0–1). During a <i>self</i> stage it's
+                still measured <i>vs random</i> as a steady yardstick.</td>
+                <td class="good-cell"><b>&gt; 0.9</b> before advancing a stage. 0.6 = undertrained,
+                give it more steps.</td>
+              </tr>
+              <tr>
+                <td><b>Episode reward</b><br><span class="muted">rollout/ep_rew_mean</span></td>
+                <td>Average total reward per match. The headline "is it learning?" line.</td>
+                <td class="good-cell">Trending <b>up</b>. Plateau = converged (or stuck).</td>
+              </tr>
+              <tr>
+                <td><b>Eval episode return</b><br><span class="muted">eval/ep_return</span></td>
+                <td>Average reward in the dedicated grading matches — a cleaner signal than the
+                rollout reward.</td>
+                <td class="good-cell">Rising, then plateauing high.</td>
+              </tr>
+              <tr>
+                <td><b>Episode length</b><br><span class="muted">rollout/ep_len_mean</span></td>
+                <td>Average match length in ticks.</td>
+                <td class="good-cell">Falling = <b>decisive wins</b>. Stuck high = stalling /
+                can't close out.</td>
+              </tr>
+              <tr>
+                <td><b>Explained variance</b><br><span class="muted">train/explained_variance</span></td>
+                <td>Can the bot predict how a match will turn out?</td>
+                <td class="good-cell">Rising toward <b>1.0</b>. <b>Negative</b> = value predictor
+                failing → lower learning rate.</td>
+              </tr>
+              <tr>
+                <td><b>Entropy (exploration)</b><br><span class="muted">train/entropy_loss</span></td>
+                <td>How random the bot still is. Starts around <b>−6.5</b>.</td>
+                <td class="good-cell">Drifting <b>slowly toward 0</b>. Pinned at the start = not
+                committing; crashes to 0 early = stopped exploring too soon.</td>
+              </tr>
+              <tr>
+                <td><b>Policy change (KL)</b><br><span class="muted">train/approx_kl</span></td>
+                <td>How much the brain moved in one update.</td>
+                <td class="good-cell"><b>~0.005–0.03</b>. Much bigger = unstable → lower learning
+                rate or clip range.</td>
+              </tr>
+              <tr>
+                <td><b>Value loss</b><br><span class="muted">train/value_loss</span></td>
+                <td>Error in predicting future reward.</td>
+                <td class="good-cell">Gradually decreasing; brief spikes when reward scale shifts
+                are normal.</td>
+              </tr>
+              <tr>
+                <td><b>Policy / total loss</b><br><span class="muted">train/policy_gradient_loss, train/loss</span></td>
+                <td>PPO's internal objectives — <i>not</i> like a supervised loss.</td>
+                <td class="good-cell">No clean target; jittery is fine. Don't chase these.</td>
+              </tr>
+              <tr>
+                <td><b>Speed</b><br><span class="muted">time/fps</span></td>
+                <td>Environment steps per second (throughput). CPU-bound on the sim.</td>
+                <td class="good-cell">As high as your cores allow; raise <i>num_workers</i> /
+                <i>parallel_matches</i> to lift it.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="panel guide-card">
+          <h2>The reward trap <small>read this before tuning rewards</small></h2>
+          <p>The bot does <b>exactly what pays best</b> — the reward <i>is</i> the strategy.
+          <b>Dense</b> rewards add up over thousands of ticks: <code>possession = 0.002</code> per
+          tick held for 1800 ticks pays <b>3.6</b> — more than scoring a goal (<code>1.0</code>) or
+          winning (<code>1.0</code>). So if dense terms are too big, the bot hoards the ball forever
+          instead of scoring.</p>
+          <ul>
+            <li><b>Sparse</b> (win, goal_scored, goal_conceded) = the <i>true</i> goal.</li>
+            <li><b>Dense</b> (possession, ball_progress, kill, death, approach, time_penalty) =
+            hints that speed up early learning but mislead if too strong.</li>
+          </ul>
+          <p class="muted">Common fix: start with dense rewards a bit larger to learn the basics
+          fast, then <b>shrink them in a later run</b> so the bot optimizes the real objective
+          (winning).</p>
+        </div>
+
+        <div class="panel guide-card">
+          <h2>Running the stages <small>the curriculum: easy → hard</small></h2>
+          <p>Train in stages, each <b>warm-started from the previous one</b> (set
+          <i>network → init_model</i> to the prior stage's <code>final_model.zip</code>). Keep
+          <i>width</i>/<i>depth</i> identical across stages or the weights won't transfer.
+          <b>Don't advance until a stage is actually good</b> (&gt; 0.9 win rate, not 0.6).</p>
+          <table class="guide-table">
+            <thead><tr><th>Stage</th><th>Settings</th><th>Goal before moving on</th></tr></thead>
+            <tbody>
+              <tr>
+                <td><b>1 · vs random</b></td>
+                <td>opponent = <code>random</code>, init_model = <code>""</code> (from scratch),
+                ~3M+ steps.</td>
+                <td>win_rate plateaus <b>high (&gt;0.9)</b>, entropy falling, explained_variance
+                rising.</td>
+              </tr>
+              <tr>
+                <td><b>2 · self-play</b></td>
+                <td>opponent = <code>self</code>, init_model = stage 1's final model. Bot invents
+                its own counters.</td>
+                <td>win_rate (still vs random) stays high; reward keeps climbing.</td>
+              </tr>
+              <tr>
+                <td><b>3 · vs heuristic</b></td>
+                <td>opponent = <code>heuristic</code>, init_model = stage 2's final model.</td>
+                <td>This is the <b>final exam</b> — the scripted bot is near-shutout. Even a strong
+                base finds it hard; treat any solid win rate as a win.</td>
+              </tr>
+              <tr>
+                <td><b>4 · harden (optional)</b></td>
+                <td>randomize → enabled = <code>true</code>, pct ≈ <code>0.15</code>, init_model =
+                stage 3. Trains across a band of balance settings.</td>
+                <td>Survives live balance patches; expect a temporary dip while it re-stabilizes.</td>
+              </tr>
+            </tbody>
+          </table>
+          <p class="muted"><b>Combat mode</b> is separate: it always self-plays a mix of match
+          sizes — no opponent setting. You end up with two brains (one grifball, one combat); load
+          whichever matches the live game mode.</p>
+          <p class="muted"><b>Stuck at win_rate ≈ 0?</b> The from-scratch brain never reaches the
+          action. Shorten matches (<i>match_minutes = 1.0</i>, <i>goal_target = 1</i>) and raise
+          <i>reward → approach</i> to 0.05 so it gets pulled toward the ball/enemy, then lengthen
+          matches once it's winning.</p>
+        </div>
+
+        <div class="panel guide-card">
+          <h2>Naming your run directories</h2>
+          <p>Each run writes to its own <i>logging → dir</i>. <b>Always give every stage / experiment
+          its own folder</b> — runs sharing a folder overwrite each other's checkpoints and tangle
+          the charts. The Runs tab lists each folder and lets you tick several to compare.</p>
+          <p>Recommended pattern: <code>runs/&lt;stage&gt;_&lt;what&gt;</code> — short, sortable,
+          self-describing:</p>
+          <table class="guide-table">
+            <thead><tr><th>Folder</th><th>Meaning</th></tr></thead>
+            <tbody>
+              <tr><td><code>runs/s1_random</code></td><td>Stage 1, grifball vs random.</td></tr>
+              <tr><td><code>runs/s2_self</code></td><td>Stage 2, self-play (continues s1).</td></tr>
+              <tr><td><code>runs/s3_heur</code></td><td>Stage 3, vs heuristic (continues s2).</td></tr>
+              <tr><td><code>runs/s4_dr</code></td><td>Stage 4, domain-randomized hardening.</td></tr>
+              <tr><td><code>runs/combat_v1</code></td><td>Combat generalist, first attempt.</td></tr>
+              <tr><td><code>runs/s1_random_lr5e4</code></td><td>Variant: append the knob you changed
+              when sweeping (e.g. learning rate) so comparisons are obvious.</td></tr>
+            </tbody>
+          </table>
+          <p class="muted">Tips: prefix with <code>s1_/s2_</code> so stages sort in order; keep names
+          lowercase with underscores (no spaces); when re-running an experiment, bump a suffix
+          (<code>_v2</code>) rather than reusing a folder.</p>
+        </div>
+
+        <div class="panel guide-card">
+          <h2>Something looks wrong — which knob?</h2>
+          <table class="guide-table">
+            <thead><tr><th>Symptom</th><th>Likely cause</th><th>Fix</th></tr></thead>
+            <tbody>
+              <tr><td>win_rate flat near 0</td><td>opponent too hard to start</td>
+                <td>set opponent = <code>random</code> first</td></tr>
+              <tr><td>nothing moves / no progress</td><td>learning too slow or stuck</td>
+                <td>raise <i>learning_rate</i> (e.g. 5e-4)</td></tr>
+              <tr><td>charts spiky, win_rate jumps wildly</td><td>steps too big / unstable</td>
+                <td>lower <i>learning_rate</i> (1e-4)</td></tr>
+              <tr><td>reward rises but win_rate flat</td><td>gaming the shaping (hoarding ball, never
+                scoring)</td><td>lower <i>possession</i>/<i>ball_progress</i>, raise
+                <i>win</i>/<i>goal_scored</i></td></tr>
+              <tr><td>improves then stalls early</td><td>stopped exploring too soon</td>
+                <td>raise <i>entropy_coef</i> (0.02–0.05)</td></tr>
+              <tr><td>explained_variance negative</td><td>value predictor failing</td>
+                <td>lower <i>learning_rate</i></td></tr>
+            </tbody>
+          </table>
+        </div>
+
       </div>
     </section>
   </main>

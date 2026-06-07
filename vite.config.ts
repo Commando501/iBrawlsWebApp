@@ -32,6 +32,7 @@ export default defineConfig(() => {
         input: {
           main: path.resolve(__dirname, 'index.html'),
           mapmaker: path.resolve(__dirname, 'mapmaker.html'),
+          animationEditor: path.resolve(__dirname, 'animation-editor.html'),
         },
       },
     },

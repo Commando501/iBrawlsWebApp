@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import { type UniversalSettings } from '../../types';
+import { animateCombatantWeaponMeshes } from './combatantAnimation';
 import { createCombatantMeshRig } from './combatantModels';
 import { type SwordLungeCurrentTrailStyle } from './combatGeometry';
 import { type ReplayInterpolatedPlayer } from './replayHelpers';
@@ -14,6 +16,7 @@ export function updateReplayCombatantVisualsForFrame({
   animateSpartanModel,
   renderSwordLungeTrailVfx,
   updateBlinking,
+  settings,
 }: {
   refs: GrifballThreeRefs;
   updatedPlayers: Map<string, ReplayInterpolatedPlayer>;
@@ -39,6 +42,7 @@ export function updateReplayCombatantVisualsForFrame({
     style?: SwordLungeCurrentTrailStyle
   ) => void;
   updateBlinking: (group: THREE.Group | null, active: boolean) => void;
+  settings?: Partial<UniversalSettings>;
 }): void {
   const scene = refs.scene;
   if (!scene) return;
@@ -74,7 +78,20 @@ export function updateReplayCombatantVisualsForFrame({
     sword.visible = alive && player.activeWeapon === 'sword';
     if (pistol) pistol.visible = alive && player.activeWeapon === 'pistol';
 
-    if (player.weaponState !== 'ready') {
+    if (settings) {
+      animateCombatantWeaponMeshes({
+        hammerModel: hammer,
+        swordModel: sword,
+        activeWeapon: player.activeWeapon,
+        weaponState: player.weaponState,
+        weaponTimer: player.weaponTimer || 0,
+        isLunging: Boolean(player.isLunging),
+        dt,
+        settings,
+      });
+      hammer.visible = alive && player.activeWeapon === 'hammer';
+      sword.visible = alive && player.activeWeapon === 'sword';
+    } else if (player.weaponState !== 'ready') {
       if (player.activeWeapon === 'hammer') {
         if (player.weaponState === 'swing_up') {
           hammer.rotation.set(Math.PI / 3, 0, 0);
