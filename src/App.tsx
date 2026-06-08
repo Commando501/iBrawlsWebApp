@@ -4,9 +4,6 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import {
-  GameStats,
-} from './types';
 import { usePlayerSettings } from './settings/usePlayerSettings';
 import { useSaveAccountSync } from './settings/useSaveAccountSync';
 import {
@@ -18,9 +15,9 @@ import { ActiveGameSurface } from './components/ActiveGameSurface';
 import { AppOverlayStack } from './components/AppOverlayStack';
 import { useTheaterReplays } from './components/replay/useTheaterReplays';
 import { useTournamentFlow } from './components/tournament/useTournamentFlow';
-import { resolveTournamentStatsResult } from './components/tournament/tournamentStatsResult';
 import { useAppSessionState } from './components/useAppSessionState';
 import { useAppLifecycleActions, useCloseTournamentGameAction } from './components/useAppLifecycleActions';
+import { useAppStatsUpdateHandler } from './components/useAppStatsUpdateHandler';
 import { MainMenuOverlay } from './components/main-menu/MainMenuOverlay';
 import { useMainMenuFrameLayout, type MainMenuTab } from './components/main-menu/useMainMenuFrameLayout';
 import { useMainMenuAdminState } from './components/main-menu/useMainMenuAdminState';
@@ -600,36 +597,22 @@ export default function App() {
     closeMenuSocket,
   });
 
-  // Callback to sync game stats live
-  const handleStatsUpdate = (stats: GameStats) => {
-    const tournamentStatsResult = resolveTournamentStatsResult({
-      singlePlayerMode,
-      tournamentState,
-      hasPendingMatchResult: matchResult !== null,
-      stats,
-    });
-    if (tournamentStatsResult.outcome === 'player_win') {
-      setMatchResult(tournamentStatsResult.matchResult);
-      setIsPaused(true);
-      return;
-    }
-    if (tournamentStatsResult.outcome === 'opponent_win') {
-      handleCompleteTournamentMatch(false, tournamentStatsResult.playerScore, tournamentStatsResult.opponentScore);
-      return;
-    }
-
-    trackEdgeLowFps(stats.fps);
-
-    setCurrentStats({
-      ...stats,
-      isMultiplayer,
-      multiplayerRole,
-      opponentConnected: isMultiplayer && !!multiplayerSocket,
-      ping,
-      playerClientId: clientId || 'Player',
-      opponentClientId: opponentClientId || 'Opponent'
-    });
-  };
+  const handleStatsUpdate = useAppStatsUpdateHandler({
+    singlePlayerMode,
+    tournamentState,
+    matchResult,
+    setMatchResult,
+    setIsPaused,
+    handleCompleteTournamentMatch,
+    trackEdgeLowFps,
+    setCurrentStats,
+    isMultiplayer,
+    multiplayerRole,
+    multiplayerSocket,
+    ping,
+    clientId,
+    opponentClientId,
+  });
 
   return (
     <div className="relative w-full h-[100dvh] bg-[#050b1a] text-white overflow-hidden select-none font-sans flex flex-col">
