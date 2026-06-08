@@ -6,16 +6,16 @@
 [run]
 mode = "combat"
 opponent = "self"
-total_steps = 10000000
+total_steps = 15000000
 parallel_matches = 32
-num_workers = 5000
+num_workers = 6
 goal_target = 3
 match_minutes = 1.0
 device = "cuda"
 seed = 1
 
 [combat]
-world_sizes = [2, 2, 2, 2, 2, 2, 2, 2]
+world_sizes = [2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2]
 kill_min = 5
 kill_max = 25
 randomize_layout = true

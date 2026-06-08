@@ -8,6 +8,7 @@ import {
   type ReplayFile,
   type UniversalSettings,
 } from '../../types';
+import { type GameLoadingState } from '../loading/loadingTypes';
 import { type CharacterLoadout } from '../VoxelModels';
 
 export interface GrifballGameProps {
@@ -16,6 +17,7 @@ export interface GrifballGameProps {
   debugMode: boolean;
   adminSettings: UniversalSettings;
   onStatsUpdate: (stats: GameStats) => void;
+  onLoadingStateChange?: (state: GameLoadingState) => void;
   onPauseToggle: () => void;
   isMultiplayer?: boolean;
   multiplayerRole?: 'host' | 'client' | 'observer' | null;

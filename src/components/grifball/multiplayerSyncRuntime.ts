@@ -104,6 +104,10 @@ export function createMultiplayerSyncMessageHandler({
         resizeArena(1 + state.otherPlayers.size);
         pushStatsUpdate();
       } else if (data.type === 'sync') {
+        if (data.action === 'match_loading_status') {
+          return;
+        }
+
         if (data.action === 'unlock_secret') {
           if (secretAudioRef.current) {
             secretAudioRef.current.pause();

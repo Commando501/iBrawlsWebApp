@@ -82,6 +82,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
   debugMode,
   adminSettings,
   onStatsUpdate,
+  onLoadingStateChange,
   onPauseToggle,
   isMultiplayer = false,
   multiplayerRole = null,
@@ -551,78 +552,131 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
   useEffect(() => {
     if (!containerRef.current || !canvasRef.current) return;
 
-    const activeCustomMap = getActiveCustomMap();
-    const {
-      camera,
-      renderer,
-    } = initializeGrifballMountSceneForState({
-      state: stateRef.current,
-      refs: threeRef.current,
-      container: containerRef.current,
-      canvas: canvasRef.current,
-      activeCustomMap,
-      selectedMap,
-      replayData,
-      adminSettings,
-      isMultiplayer,
-      mainAIHue: botColors['main_ai'],
-      playerLoadout,
-      resetTransientVfx,
-      getLegacyRosterProps,
-      getOfflineBotCount: () => offlineBotCountRef.current,
-      buildOrchestratorSpawnCallbacks,
-      buildSilentOrchestratorEvents: () => buildOrchestratorEvents({ silentSpawn: true }),
-      placeCombatantsAtGrifballSpawns,
+    let disposed = false;
+    let mountedRenderer: THREE.WebGLRenderer | null = null;
+    let unregisterInputEventListeners: (() => void) | null = null;
+
+    onLoadingStateChange?.({
+      visible: true,
+      progress: 1,
+      stage: replayData ? 'Preparing replay' : 'Preparing match',
+      ready: false,
     });
 
-    const inputHandlers = createGrifballInputHandlersForState({
-      canvas: renderer.domElement,
-      camera,
-      renderer,
-      getContainer: () => containerRef.current,
-      stateRef,
-      keysPressed,
-      keybindingsRef,
-      isPausedRef,
-      isPlaying,
-      isMultiplayer,
-      replayData,
-      replayPlayerIdsRef,
-      replayTargetIdRef,
-      isPointerLocked,
-      isMouseDown,
-      lastMousePos,
-      setShowPointerLockAlert,
-      getMainAI: mai,
-      cycleReplayTarget,
-      pushStatsUpdate,
-      onPauseToggle,
-      swapPlayerWeapon,
-      recordLocalPlayerObservation,
-      spawnVoxelShockwaveParticles,
-      ballChargingRef,
-      ballChargeTimerRef,
-      triggerPlayerHammerSwing,
-      triggerPlayerHammerMelee,
-      triggerPlayerPistolFire,
-      triggerPlayerSwordSlash,
-      triggerPlayerSwordLunge,
-      throwPlayerPass,
-      playCrouch: () => sfx.playCrouch(),
-      playJump: () => sfx.playJump(),
-      playDash: () => sfx.playDash(),
+    const mountScene = async () => {
+      const activeCustomMap = getActiveCustomMap();
+      const {
+        camera,
+        renderer,
+      } = await initializeGrifballMountSceneForState({
+        state: stateRef.current,
+        refs: threeRef.current,
+        container: containerRef.current!,
+        canvas: canvasRef.current!,
+        activeCustomMap,
+        selectedMap,
+        replayData,
+        adminSettings,
+        isMultiplayer,
+        mainAIHue: botColors['main_ai'],
+        playerLoadout,
+        resetTransientVfx,
+        getLegacyRosterProps,
+        getOfflineBotCount: () => offlineBotCountRef.current,
+        buildOrchestratorSpawnCallbacks,
+        buildSilentOrchestratorEvents: () => buildOrchestratorEvents({ silentSpawn: true }),
+        placeCombatantsAtGrifballSpawns,
+        onLoadingStage: ({ progress, stage, detail }) => {
+          onLoadingStateChange?.({
+            visible: true,
+            progress,
+            stage,
+            detail,
+            ready: false,
+          });
+        },
+      });
+
+      if (disposed) {
+        renderer.dispose();
+        return;
+      }
+      mountedRenderer = renderer;
+
+      onLoadingStateChange?.({
+        visible: true,
+        progress: 96,
+        stage: 'Binding controls',
+        ready: false,
+      });
+
+      const inputHandlers = createGrifballInputHandlersForState({
+        canvas: renderer.domElement,
+        camera,
+        renderer,
+        getContainer: () => containerRef.current,
+        stateRef,
+        keysPressed,
+        keybindingsRef,
+        isPausedRef,
+        isPlaying,
+        isMultiplayer,
+        replayData,
+        replayPlayerIdsRef,
+        replayTargetIdRef,
+        isPointerLocked,
+        isMouseDown,
+        lastMousePos,
+        setShowPointerLockAlert,
+        getMainAI: mai,
+        cycleReplayTarget,
+        pushStatsUpdate,
+        onPauseToggle,
+        swapPlayerWeapon,
+        recordLocalPlayerObservation,
+        spawnVoxelShockwaveParticles,
+        ballChargingRef,
+        ballChargeTimerRef,
+        triggerPlayerHammerSwing,
+        triggerPlayerHammerMelee,
+        triggerPlayerPistolFire,
+        triggerPlayerSwordSlash,
+        triggerPlayerSwordLunge,
+        throwPlayerPass,
+        playCrouch: () => sfx.playCrouch(),
+        playJump: () => sfx.playJump(),
+        playDash: () => sfx.playDash(),
+      });
+
+      unregisterInputEventListeners = registerGrifballInputEventListeners({
+        canvas: renderer.domElement,
+        handlers: inputHandlers,
+      });
+
+      renderGame();
+      pushStatsUpdate();
+      onLoadingStateChange?.({
+        visible: false,
+        progress: 100,
+        stage: 'Ready',
+        ready: true,
+      });
+    };
+
+    void mountScene().catch((err) => {
+      console.error('Failed to mount Grifball scene:', err);
+      onLoadingStateChange?.({
+        visible: true,
+        progress: 100,
+        stage: 'Load failed',
+        detail: err instanceof Error ? err.message : String(err),
+        ready: true,
+        error: err instanceof Error ? err.message : String(err),
+      });
     });
 
-    const unregisterInputEventListeners = registerGrifballInputEventListeners({
-      canvas: renderer.domElement,
-      handlers: inputHandlers,
-    });
-
-    // Trigger initial score stats update quickly
-    pushStatsUpdate();
-
-    // 7. INITIAL WORKSPACE DESTROY/CLEANUP SCOPING
     return () => {
+      disposed = true;
       if (secretAudioRef.current) {
         secretAudioRef.current.pause();
         secretAudioRef.current = null;
@@ -630,15 +684,15 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       if (document.exitPointerLock) {
         document.exitPointerLock();
       }
-      unregisterInputEventListeners();
+      unregisterInputEventListeners?.();
 
       disposeTransientVfx();
 
       if (requestRef.current) {
         cancelAnimationFrame(requestRef.current);
       }
-      if (renderer) {
-        renderer.dispose();
+      if (mountedRenderer) {
+        mountedRenderer.dispose();
       }
     };
   }, [isPlaying, replayData, selectedMap, customMap]);

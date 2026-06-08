@@ -1,6 +1,8 @@
 import { Keybindings, UiElementPos, UniversalSettings } from '../types';
 import { UiLayoutState } from '../ui/hudLayouts';
 import { PersistedGameplaySettings } from './gameplaySettings';
+import type { CharacterLoadout } from '../components/VoxelModels';
+import type { CustomArmorCatalog } from '../components/customArmor';
 
 export interface SaveData {
   version: number;
@@ -10,6 +12,8 @@ export interface SaveData {
   uiLayouts?: UiLayoutState;
   adminSettings: PersistedGameplaySettings;
   keybindings?: Keybindings;
+  playerLoadout?: CharacterLoadout;
+  customArmorCatalog?: CustomArmorCatalog;
 }
 
 const ENCRYPTION_KEY = 'GRIFBALL_NEURAL_LINK_2026';
@@ -68,15 +72,19 @@ export const buildSaveData = (
   settings: UniversalSettings,
   playerName: string,
   uiLayouts: UiLayoutState,
-  keybindings: Keybindings
+  keybindings: Keybindings,
+  playerLoadout?: CharacterLoadout,
+  customArmorCatalog?: CustomArmorCatalog
 ): SaveData => {
   const { playerHue, playerName: _settingsName, ...restSettings } = settings;
   return {
-    version: 2,
+    version: 3,
     playerName,
     playerHue: playerHue ?? 200,
     uiLayouts,
     adminSettings: restSettings,
     keybindings,
+    playerLoadout,
+    customArmorCatalog,
   };
 };

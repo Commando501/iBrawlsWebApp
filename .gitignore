@@ -13,6 +13,8 @@ ChickenGod POV Novice vs. Mungo (Game 2).mp4
 diff_app.txt
 gif_diff_app.txt
 EXAMPLE FILES/
+.playwright-cli/
+output/
 
 # Live Tuning dev parity (local-only mirror of the D1 official preset)
 data/multiplayer-config.json

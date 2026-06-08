@@ -6,6 +6,7 @@
 import * as THREE from 'three';
 import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { buildVoxelSpartanModelV2 } from './VoxelModelsV2';
+import type { CustomArmorPieceSnapshot, CustomArmorSlot } from './customArmor';
 
 // ─── Internal Types ───────────────────────────────────────────────────────────
 
@@ -17,7 +18,7 @@ export interface VoxelData {
   emissive?: boolean;
 }
 
-interface SpartanColors {
+export interface SpartanColors {
   primary: string;
   secondary: string;
   visor: string;
@@ -68,6 +69,8 @@ export interface CharacterLoadout {
   paintJob?: ArmorPaintJob;
   hammerPreset?: HammerPreset;
   swordPreset?: SwordPreset;
+  modelSystem?: 'v1' | 'v2';
+  customArmor?: Partial<Record<CustomArmorSlot, CustomArmorPieceSnapshot>>;
 }
 
 export const DEFAULT_LOADOUT: CharacterLoadout = {

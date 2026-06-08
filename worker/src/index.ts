@@ -156,6 +156,8 @@ interface GameWebSocket extends WebSocket {
   roomCode?: string;
   spaceAvailable?: boolean;
   playerName?: string;
+  playerHue?: number;
+  playerLoadout?: unknown;
   playerCount?: number;
   maxPlayers?: number;
   lobbyStartedAt?: number;
@@ -171,6 +173,107 @@ function normalizePlayerName(name: unknown): string | undefined {
   if (typeof name !== "string") return undefined;
   const normalized = name.trim().substring(0, MAX_PLAYER_NAME_LENGTH);
   return normalized.length > 0 ? normalized : undefined;
+}
+
+function normalizePlayerHue(hue: unknown): number | undefined {
+  if (typeof hue !== "number" || !Number.isFinite(hue)) return undefined;
+  return Math.max(0, Math.min(360, Math.round(hue)));
+}
+
+const LOADOUT_PRESETS: Record<string, Set<string>> = {
+  helmet: new Set(["mark-vi", "odst", "recon", "eva", "gungnir", "eod", "hayabusa", "cqb"]),
+  torso: new Set(["mark-vi", "scout", "recon", "eod", "hayabusa"]),
+  arm: new Set(["mark-vi", "odst", "recon", "eod", "hayabusa"]),
+  leg: new Set(["mark-vi", "jump-jet", "odst", "eod", "hayabusa"]),
+  hammerPreset: new Set(["default", "akelas", "akelus", "paegaas", "sepulotez", "halbashi", "eektah-fel", "gravity-axe", "gravity-mace", "fist-of-rukt"]),
+  swordPreset: new Set(["default", "halo-ce", "halo-2", "halo-3", "reach", "anniversary", "halo-4", "h2a-blue", "h2a-pink", "halo-5", "infinite"]),
+};
+
+const CUSTOM_ARMOR_SLOTS = new Set(["helmet", "torso", "arm", "leg"]);
+const CUSTOM_ARMOR_MAX_SELECTED_BYTES = 128_000;
+const CUSTOM_ARMOR_SLOT_MAX_VOXELS: Record<string, number> = {
+  helmet: 900,
+  torso: 1600,
+  arm: 900,
+  leg: 1000,
+};
+const CUSTOM_ARMOR_ROLE_SET = new Set(["primary", "secondary", "accent", "visor", "dark", "highlight", "fixed"]);
+const CUSTOM_ARMOR_HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
+
+function sanitizeCustomArmorSnapshot(snapshot: unknown, expectedSlot: string): unknown | undefined {
+  if (!snapshot || typeof snapshot !== "object" || Array.isArray(snapshot)) return undefined;
+  const raw = snapshot as Record<string, unknown>;
+  if (raw.version !== 1 || raw.slot !== expectedSlot) return undefined;
+  if (!Array.isArray(raw.voxels)) return undefined;
+  const maxVoxels = CUSTOM_ARMOR_SLOT_MAX_VOXELS[expectedSlot] ?? 0;
+  const seen = new Set<string>();
+  const voxels: Record<string, unknown>[] = [];
+  for (const value of raw.voxels) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) continue;
+    const voxel = value as Record<string, unknown>;
+    if (!Number.isInteger(voxel.x) || !Number.isInteger(voxel.y) || !Number.isInteger(voxel.z)) continue;
+    const key = `${voxel.x},${voxel.y},${voxel.z}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const role = typeof voxel.role === "string" && CUSTOM_ARMOR_ROLE_SET.has(voxel.role) ? voxel.role : "primary";
+    const out: Record<string, unknown> = {
+      x: voxel.x,
+      y: voxel.y,
+      z: voxel.z,
+      role,
+    };
+    if (role === "fixed" && typeof voxel.color === "string" && CUSTOM_ARMOR_HEX_COLOR.test(voxel.color)) {
+      out.color = voxel.color;
+    }
+    if (voxel.emissive === true) out.emissive = true;
+    voxels.push(out);
+    if (voxels.length >= maxVoxels) break;
+  }
+  if (voxels.length === 0) return undefined;
+  const sanitized = {
+    version: 1,
+    id: typeof raw.id === "string" ? raw.id.slice(0, 80) : `remote_${expectedSlot}`,
+    name: typeof raw.name === "string" ? raw.name.trim().slice(0, 32) || "Custom Armor" : "Custom Armor",
+    slot: expectedSlot,
+    sourcePreset: typeof raw.sourcePreset === "string" ? raw.sourcePreset.slice(0, 32) : undefined,
+    voxels,
+    thumbnail: typeof raw.thumbnail === "string" ? raw.thumbnail.slice(0, 160) : undefined,
+    updatedAt: typeof raw.updatedAt === "number" && Number.isFinite(raw.updatedAt) ? raw.updatedAt : Date.now(),
+  };
+  return JSON.stringify(sanitized).length <= CUSTOM_ARMOR_MAX_SELECTED_BYTES ? sanitized : undefined;
+}
+
+function normalizePlayerLoadout(loadout: unknown): unknown | undefined {
+  if (!loadout || typeof loadout !== "object" || Array.isArray(loadout)) return undefined;
+  const raw = loadout as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  for (const [key, allowed] of Object.entries(LOADOUT_PRESETS)) {
+    const value = raw[key];
+    if (typeof value === "string" && allowed.has(value)) out[key] = value;
+  }
+  if (raw.modelSystem === "v1" || raw.modelSystem === "v2") out.modelSystem = raw.modelSystem;
+  if (raw.paintJob && typeof raw.paintJob === "object" && !Array.isArray(raw.paintJob)) {
+    const paintPayload = JSON.stringify(raw.paintJob);
+    if (paintPayload.length <= 48_000) out.paintJob = raw.paintJob;
+  }
+  if (raw.customArmor && typeof raw.customArmor === "object" && !Array.isArray(raw.customArmor)) {
+    const customArmor: Record<string, unknown> = {};
+    for (const slot of CUSTOM_ARMOR_SLOTS) {
+      const snapshot = sanitizeCustomArmorSnapshot((raw.customArmor as Record<string, unknown>)[slot], slot);
+      if (snapshot) customArmor[slot] = snapshot;
+    }
+    if (Object.keys(customArmor).length > 0) out.customArmor = customArmor;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+function applyGameplayIdentity(socket: GameWebSocket, message: any) {
+  const name = normalizePlayerName(message?.playerName);
+  const hue = normalizePlayerHue(message?.hue);
+  const loadout = normalizePlayerLoadout(message?.loadout);
+  if (name) socket.playerName = name;
+  if (hue !== undefined) socket.playerHue = hue;
+  if (loadout) socket.playerLoadout = loadout;
 }
 
 function normalizeRoomCodeForPresence(roomCode: unknown): string | undefined {
@@ -653,25 +756,38 @@ export class GameLobby implements DurableObject {
     }
   }
 
+  getSocketParticipantEntry(socket: GameWebSocket, role: "host" | "client" | "observer", spawnSlot?: number) {
+    const socketId = this.getSocketId(socket);
+    return {
+      clientId: socketId,
+      role,
+      spawnSlot,
+      playerName: normalizePlayerName(socket.playerName) || `Client ${socketId}`,
+      hue: normalizePlayerHue(socket.playerHue),
+      loadout: normalizePlayerLoadout(socket.playerLoadout),
+    };
+  }
+
   getRoomPlayerEntries(room: Room) {
     return [
-      {
-        clientId: this.getSocketId(room.host),
-        role: "host",
-        spawnSlot: 0,
-        playerName: normalizePlayerName(room.host.playerName) || `Client ${this.getSocketId(room.host)}`,
-      },
-      ...room.clients.map((client, index) => ({
-        clientId: this.getSocketId(client),
-        role: "client",
-        spawnSlot: index + 1,
-        playerName: normalizePlayerName(client.playerName) || `Client ${this.getSocketId(client)}`,
-      })),
+      this.getSocketParticipantEntry(room.host, "host", 0),
+      ...room.clients.map((client, index) => this.getSocketParticipantEntry(client, "client", index + 1)),
+    ];
+  }
+
+  getRoomParticipantEntries(room: Room) {
+    return [
+      ...this.getRoomPlayerEntries(room),
+      ...Array.from(room.observers).map(observer => this.getSocketParticipantEntry(observer, "observer")),
     ];
   }
 
   getOtherRoomPlayerEntries(room: Room, selfId: string) {
     return this.getRoomPlayerEntries(room).filter(player => player.clientId !== selfId);
+  }
+
+  getOtherRoomParticipantEntries(room: Room, selfId: string) {
+    return this.getRoomParticipantEntries(room).filter(player => player.clientId !== selfId);
   }
 
   getRoomSpawnSlot(room: Room, socket: GameWebSocket): number {
@@ -1032,6 +1148,7 @@ export class GameLobby implements DurableObject {
 
           case "host": {
             const { ip, lanIp, customId } = message;
+            applyGameplayIdentity(gameWs, message);
             const keysToRegister = [];
             if (ip) keysToRegister.push(ip);
             if (lanIp && lanIp !== '127.0.0.1') keysToRegister.push(lanIp);
@@ -1079,6 +1196,7 @@ export class GameLobby implements DurableObject {
 
           case "join": {
             const { targetIpOrId, isObserver } = message;
+            applyGameplayIdentity(gameWs, message);
             console.log(`Client attempting to join room matching: ${targetIpOrId} (isObserver: ${isObserver})`);
 
             let room = this.rooms.get(targetIpOrId);
@@ -1104,6 +1222,7 @@ export class GameLobby implements DurableObject {
               try {
                 gameWs.send(JSON.stringify({ 
                   type: "connected", 
+                  clientId: wsId,
                   role: "observer", 
                   hostClientId: room.host.id, 
                   clientClientId: room.clients.length > 0 ? room.clients[0].id : undefined,
@@ -1112,11 +1231,19 @@ export class GameLobby implements DurableObject {
                     ...room.clients.map(c => c.id)
                   ],
                   otherPlayers: this.getRoomPlayerEntries(room),
+                  participants: this.getOtherRoomParticipantEntries(room, wsId),
                 }));
               } catch (e) {}
               
               // Notify host and clients
-              const obsJoinedPayload = JSON.stringify({ type: "observer_joined", observerId: wsId });
+              const obsJoinedPayload = JSON.stringify({
+                type: "observer_joined",
+                observerId: wsId,
+                role: "observer",
+                playerName: normalizePlayerName(gameWs.playerName) || `Client ${wsId}`,
+                hue: normalizePlayerHue(gameWs.playerHue),
+                loadout: normalizePlayerLoadout(gameWs.playerLoadout),
+              });
               if (room.host && room.host.readyState === WebSocket.OPEN) {
                 try { room.host.send(obsJoinedPayload); } catch (e) {}
               }
@@ -1145,6 +1272,7 @@ export class GameLobby implements DurableObject {
             try {
               gameWs.send(JSON.stringify({ 
                 type: "connected", 
+                clientId: wsId,
                 role: "client", 
                 hostClientId: room.host.id, 
                 clientClientId: wsId,
@@ -1154,6 +1282,7 @@ export class GameLobby implements DurableObject {
                   ...room.clients.filter(c => c.id !== wsId).map(c => c.id)
                 ],
                 otherPlayers: this.getOtherRoomPlayerEntries(room, wsId),
+                participants: this.getOtherRoomParticipantEntries(room, wsId),
               }));
             } catch (e) {}
 
@@ -1163,7 +1292,9 @@ export class GameLobby implements DurableObject {
               role: "client",
               clientId: wsId,
               spawnSlot: this.getRoomSpawnSlot(room, gameWs),
-              playerName: normalizePlayerName(gameWs.playerName) || `Client ${wsId}`
+              playerName: normalizePlayerName(gameWs.playerName) || `Client ${wsId}`,
+              hue: normalizePlayerHue(gameWs.playerHue),
+              loadout: normalizePlayerLoadout(gameWs.playerLoadout),
             });
 
             if (room.clients.length === 1) {
@@ -1171,13 +1302,16 @@ export class GameLobby implements DurableObject {
                 try {
                   room.host.send(JSON.stringify({
                     type: "connected",
+                    clientId: this.getSocketId(room.host),
                     role: "host",
+                    hostClientId: this.getSocketId(room.host),
                     spawnSlot: 0,
                     clientClientId: wsId,
                     otherPlayerIds: [
                       wsId
                     ],
                     otherPlayers: this.getOtherRoomPlayerEntries(room, this.getSocketId(room.host)),
+                    participants: this.getOtherRoomParticipantEntries(room, this.getSocketId(room.host)),
                   }));
                 } catch (e) {}
               }
@@ -1290,6 +1424,20 @@ export class GameLobby implements DurableObject {
         if (room.observers.has(gameWs)) {
           room.observers.delete(gameWs);
           this.socketToRoom.delete(gameWs);
+          const observerLeftPayload = JSON.stringify({
+            type: "player_left",
+            leftPlayerId: wsId,
+            role: "observer",
+            reason: "An observer left the match."
+          });
+          if (room.host && room.host.readyState === WebSocket.OPEN) {
+            try { room.host.send(observerLeftPayload); } catch (e) {}
+          }
+          room.clients.forEach(client => {
+            if (client.readyState === WebSocket.OPEN) {
+              try { client.send(observerLeftPayload); } catch (e) {}
+            }
+          });
           this.updatePresence();
           return;
         }

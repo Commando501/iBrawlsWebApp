@@ -6,6 +6,7 @@ import fs from "fs";
 import { createServer as createViteServer } from "vite";
 import { WebSocketServer, WebSocket } from "ws";
 import { LIVE_CONFIG_KEY_SET } from "./worker/src/liveConfigKeys";
+import { sanitizeCharacterLoadoutForNetwork } from "./src/components/customArmor";
 
 // ── Live Tuning dev parity ────────────────────────────────────────────────────
 // The Cloudflare Worker stores the Official Multiplayer Preset in D1. D1 doesn't
@@ -66,6 +67,24 @@ function normalizePlayerName(name: unknown): string | undefined {
   if (typeof name !== "string") return undefined;
   const normalized = name.trim().substring(0, MAX_PLAYER_NAME_LENGTH);
   return normalized.length > 0 ? normalized : undefined;
+}
+
+function normalizePlayerHue(hue: unknown): number | undefined {
+  if (typeof hue !== "number" || !Number.isFinite(hue)) return undefined;
+  return Math.max(0, Math.min(360, Math.round(hue)));
+}
+
+function normalizePlayerLoadout(loadout: unknown): unknown | undefined {
+  return sanitizeCharacterLoadoutForNetwork(loadout);
+}
+
+function applyGameplayIdentity(socket: WebSocket, message: any) {
+  const name = normalizePlayerName(message?.playerName);
+  const hue = normalizePlayerHue(message?.hue);
+  const loadout = normalizePlayerLoadout(message?.loadout);
+  if (name) (socket as any).playerName = name;
+  if (hue !== undefined) (socket as any).playerHue = hue;
+  if (loadout) (socket as any).playerLoadout = loadout;
 }
 
 // Helper to resolve the host machine's physical LAN IP address
@@ -140,25 +159,38 @@ async function startServer() {
     }
   }
 
+  function getSocketParticipantEntry(socket: WebSocket, role: "host" | "client" | "observer", spawnSlot?: number) {
+    const socketId = getSocketId(socket);
+    return {
+      clientId: socketId,
+      role,
+      spawnSlot,
+      playerName: normalizePlayerName((socket as any).playerName) || `Client ${socketId}`,
+      hue: normalizePlayerHue((socket as any).playerHue),
+      loadout: normalizePlayerLoadout((socket as any).playerLoadout),
+    };
+  }
+
   function getRoomPlayerEntries(room: Room) {
     return [
-      {
-        clientId: getSocketId(room.host),
-        role: "host",
-        spawnSlot: 0,
-        playerName: normalizePlayerName((room.host as any).playerName) || `Client ${getSocketId(room.host)}`,
-      },
-      ...room.clients.map((client, index) => ({
-        clientId: getSocketId(client),
-        role: "client",
-        spawnSlot: index + 1,
-        playerName: normalizePlayerName((client as any).playerName) || `Client ${getSocketId(client)}`,
-      })),
+      getSocketParticipantEntry(room.host, "host", 0),
+      ...room.clients.map((client, index) => getSocketParticipantEntry(client, "client", index + 1)),
+    ];
+  }
+
+  function getRoomParticipantEntries(room: Room) {
+    return [
+      ...getRoomPlayerEntries(room),
+      ...Array.from(room.observers).map(observer => getSocketParticipantEntry(observer, "observer")),
     ];
   }
 
   function getOtherRoomPlayerEntries(room: Room, selfId: string) {
     return getRoomPlayerEntries(room).filter(player => player.clientId !== selfId);
+  }
+
+  function getOtherRoomParticipantEntries(room: Room, selfId: string) {
+    return getRoomParticipantEntries(room).filter(player => player.clientId !== selfId);
   }
 
   function getRoomSpawnSlot(room: Room, socket: WebSocket): number {
@@ -498,6 +530,7 @@ async function startServer() {
 
           case "host": {
             const { ip, lanIp, customId } = message;
+            applyGameplayIdentity(ws, message);
             const keysToRegister = [];
             if (ip) keysToRegister.push(ip);
             if (lanIp && lanIp !== '127.0.0.1') keysToRegister.push(lanIp);
@@ -542,6 +575,7 @@ async function startServer() {
 
           case "join": {
             const { targetIpOrId, isObserver } = message;
+            applyGameplayIdentity(ws, message);
             console.log(`Client attempting to join room matching: ${targetIpOrId} (isObserver: ${isObserver})`);
 
             let room = rooms.get(targetIpOrId);
@@ -566,6 +600,7 @@ async function startServer() {
               console.log(`Client ${wsId} connected as observer to room.`);
               ws.send(JSON.stringify({ 
                 type: "connected", 
+                clientId: wsId,
                 role: "observer", 
                 hostClientId: (room.host as any).id, 
                 clientClientId: room.clients.length > 0 ? (room.clients[0] as any).id : undefined,
@@ -574,10 +609,18 @@ async function startServer() {
                   ...room.clients.map(c => (c as any).id)
                 ],
                 otherPlayers: getRoomPlayerEntries(room),
+                participants: getOtherRoomParticipantEntries(room, wsId),
               }));
               
               // Notify host and clients
-              const obsJoinedPayload = JSON.stringify({ type: "observer_joined", observerId: wsId });
+              const obsJoinedPayload = JSON.stringify({
+                type: "observer_joined",
+                observerId: wsId,
+                role: "observer",
+                playerName: normalizePlayerName((ws as any).playerName) || `Client ${wsId}`,
+                hue: normalizePlayerHue((ws as any).playerHue),
+                loadout: normalizePlayerLoadout((ws as any).playerLoadout),
+              });
               if (room.host && room.host.readyState === WebSocket.OPEN) {
                 room.host.send(obsJoinedPayload);
               }
@@ -603,6 +646,7 @@ async function startServer() {
             // Notify both parties that they have paired successfully
             ws.send(JSON.stringify({ 
               type: "connected", 
+              clientId: wsId,
               role: "client", 
               hostClientId: (room.host as any).id, 
               clientClientId: wsId,
@@ -612,6 +656,7 @@ async function startServer() {
                 ...room.clients.filter(c => (c as any).id !== wsId).map(c => (c as any).id)
               ],
               otherPlayers: getOtherRoomPlayerEntries(room, wsId),
+              participants: getOtherRoomParticipantEntries(room, wsId),
             }));
 
             // Notify host and all other clients of this new player joining
@@ -620,20 +665,25 @@ async function startServer() {
               role: "client",
               clientId: wsId,
               spawnSlot: getRoomSpawnSlot(room, ws),
-              playerName: normalizePlayerName((ws as any).playerName) || `Client ${wsId}`
+              playerName: normalizePlayerName((ws as any).playerName) || `Client ${wsId}`,
+              hue: normalizePlayerHue((ws as any).playerHue),
+              loadout: normalizePlayerLoadout((ws as any).playerLoadout),
             });
 
             if (room.clients.length === 1) {
               if (room.host && room.host.readyState === WebSocket.OPEN) {
                 room.host.send(JSON.stringify({
                   type: "connected",
+                  clientId: getSocketId(room.host),
                   role: "host",
+                  hostClientId: getSocketId(room.host),
                   spawnSlot: 0,
                   clientClientId: wsId,
                   otherPlayerIds: [
                     wsId
                   ],
                   otherPlayers: getOtherRoomPlayerEntries(room, getSocketId(room.host)),
+                  participants: getOtherRoomParticipantEntries(room, getSocketId(room.host)),
                 }));
               }
             } else {
@@ -720,7 +770,9 @@ async function startServer() {
                     role: "client",
                     clientId: wsId,
                     spawnSlot: getRoomSpawnSlot(room, ws),
-                    playerName: normalizePlayerName((ws as any).playerName) || `Client ${wsId}`
+                    playerName: normalizePlayerName((ws as any).playerName) || `Client ${wsId}`,
+                    hue: normalizePlayerHue((ws as any).playerHue),
+                    loadout: normalizePlayerLoadout((ws as any).playerLoadout),
                   });
                   if (room.host && room.host.readyState === WebSocket.OPEN) {
                     room.host.send(playerJoinedPayload);
@@ -831,6 +883,20 @@ async function startServer() {
         if (room.observers.has(ws)) {
           room.observers.delete(ws);
           socketToRoom.delete(ws);
+          const observerLeftPayload = JSON.stringify({
+            type: "player_left",
+            leftPlayerId: wsId,
+            role: "observer",
+            reason: "An observer left the match."
+          });
+          if (room.host && room.host.readyState === WebSocket.OPEN) {
+            room.host.send(observerLeftPayload);
+          }
+          room.clients.forEach(client => {
+            if (client.readyState === WebSocket.OPEN) {
+              client.send(observerLeftPayload);
+            }
+          });
           updatePresence();
           return;
         }

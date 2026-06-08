@@ -18,7 +18,22 @@ import { seedInitialOfflineRosterForState } from './offlineRosterInitializationR
 import { type GrifballRuntimeState } from './runtimeState';
 import { type GrifballThreeRefs } from './threeRefs';
 
-export function initializeGrifballMountSceneForState({
+export interface GrifballMountLoadingStage {
+  progress: number;
+  stage: string;
+  detail?: string;
+}
+
+const yieldToBrowser = (): Promise<void> =>
+  new Promise((resolve) => {
+    if (typeof requestAnimationFrame === 'function') {
+      requestAnimationFrame(() => resolve());
+      return;
+    }
+    setTimeout(resolve, 0);
+  });
+
+export async function initializeGrifballMountSceneForState({
   state,
   refs,
   container,
@@ -36,6 +51,7 @@ export function initializeGrifballMountSceneForState({
   buildOrchestratorSpawnCallbacks,
   buildSilentOrchestratorEvents,
   placeCombatantsAtGrifballSpawns,
+  onLoadingStage,
 }: {
   state: GrifballRuntimeState;
   refs: GrifballThreeRefs;
@@ -54,7 +70,14 @@ export function initializeGrifballMountSceneForState({
   buildOrchestratorSpawnCallbacks: () => AIOrchestratorSpawnCallbacks;
   buildSilentOrchestratorEvents: () => AIOrchestratorEvents;
   placeCombatantsAtGrifballSpawns: () => void;
-}): InitializedGrifballScene {
+  onLoadingStage?: (stage: GrifballMountLoadingStage) => void;
+}): Promise<InitializedGrifballScene> {
+  const report = async (progress: number, stage: string, detail?: string) => {
+    onLoadingStage?.({ progress, stage, detail });
+    await yieldToBrowser();
+  };
+
+  await report(6, 'Preparing renderer', 'Allocating WebGL scene and camera');
   const initialized = initializeGrifballSceneForRefs({
     refs,
     container,
@@ -68,26 +91,31 @@ export function initializeGrifballMountSceneForState({
   const { scene, camera, isHangar } = initialized;
 
   if (activeCustomMap) {
+    await report(18, 'Building arena floor', activeCustomMap.name || 'Custom map geometry');
     buildCustomMapBaseArenaForRefs({
       refs,
       activeCustomMap,
     });
 
+    await report(34, 'Loading synthwave set pieces');
     buildCustomMapSynthwaveSceneryForRefs({
       refs,
       activeCustomMap,
     });
 
+    await report(45, 'Loading street set pieces');
     buildCustomMapRainyStreetsSceneryForRefs({
       refs,
       activeCustomMap,
     });
 
+    await report(56, 'Loading winter set pieces');
     buildCustomMapWinterSceneryForRefs({
       refs,
       activeCustomMap,
     });
 
+    await report(67, 'Loading stadium set pieces');
     buildCustomMapStadiumSceneryForRefs({
       refs,
       activeCustomMap,
@@ -95,6 +123,7 @@ export function initializeGrifballMountSceneForState({
 
     refs.navMesh = undefined;
   } else {
+    await report(30, 'Building arena', isHangar ? 'Industrial Hangar' : 'Circular Arena');
     buildDefaultArenaSceneForRefs({
       refs,
       isHangar,
@@ -104,12 +133,14 @@ export function initializeGrifballMountSceneForState({
 
   if (!replayData) {
     if (isMultiplayer) {
+      await report(76, 'Provisioning multiplayer view');
       buildMultiplayerEnemyViewForRefs({
         refs,
         scene,
         mainAIHue,
       });
     } else {
+      await report(76, 'Spawning combatants');
       seedInitialOfflineRosterForState({
         state,
         legacy: getLegacyRosterProps(),
@@ -121,6 +152,7 @@ export function initializeGrifballMountSceneForState({
     }
   }
 
+  await report(88, 'Building player model', 'Preparing first-person Spartan view');
   buildLocalPlayerViewForRefs({
     refs,
     scene,
@@ -129,5 +161,6 @@ export function initializeGrifballMountSceneForState({
     playerLoadout,
   });
 
+  await report(94, 'Finalizing render targets');
   return initialized;
 }

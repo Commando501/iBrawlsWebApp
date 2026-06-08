@@ -52,8 +52,8 @@ interface Props {
   aiSections: KnobSection[];
   /**
    * The full game-mechanic setting sections (Core/Health/Velocity/Hammer/Sword/…),
-   * pre-rendered by App via its existing `renderSection` so the dashboard reuses the
-   * exact same controls bound to `adminSettings` — no duplication.
+   * pre-rendered mechanics controls so the dashboard reuses the same settings grid
+   * as the pause options panel.
    */
   mechanicsContent: React.ReactNode;
   /** Currently-published Official Multiplayer Preset, if any. */

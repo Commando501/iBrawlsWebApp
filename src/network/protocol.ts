@@ -1,4 +1,5 @@
-import { RemotePlayerState } from '../types';
+import { type RemotePlayerState, type CustomMapData } from '../types';
+import { type CharacterLoadout } from '../components/VoxelModels';
 
 export type ClientPresenceState = 'menu' | 'solo' | 'multi';
 export type GameRole = 'host' | 'client' | 'observer';
@@ -6,8 +7,10 @@ export type GameRole = 'host' | 'client' | 'observer';
 export interface GameplayPlayerSlotPayload {
   clientId: string;
   role: GameRole;
-  spawnSlot: number;
+  spawnSlot?: number;
   playerName?: string;
+  hue?: number;
+  loadout?: CharacterLoadout;
 }
 
 export interface OnlineClientPayload {
@@ -51,14 +54,15 @@ export type GameplayServerMessage =
       clientId?: string;
       hostClientId?: string;
       clientClientId?: string;
+      participants?: GameplayPlayerSlotPayload[];
       otherPlayerIds?: string[];
       otherPlayers?: GameplayPlayerSlotPayload[];
       opponentPlayerName?: string;
       spawnSlot?: number;
     }
-  | { type: 'player_joined'; clientId: string; playerName?: string; role?: GameRole; spawnSlot?: number }
-  | { type: 'player_left'; leftPlayerId: string }
-  | { type: 'observer_joined'; observerId: string }
+  | { type: 'player_joined'; clientId: string; playerName?: string; role?: GameRole; spawnSlot?: number; hue?: number; loadout?: CharacterLoadout }
+  | { type: 'player_left'; leftPlayerId: string; role?: GameRole }
+  | { type: 'observer_joined'; observerId: string; playerName?: string; role?: GameRole; hue?: number; loadout?: CharacterLoadout }
   | { type: 'role_changed'; role: GameRole; spawnSlot?: number }
   | { type: 'opponent_role_changed'; clientId: string; role: GameRole }
   | { type: 'disconnected'; reason: string }
@@ -66,14 +70,19 @@ export type GameplayServerMessage =
   | GameplaySyncMessage;
 
 export type GameplayClientMessage =
-  | { type: 'host'; ip?: string; lanIp?: string; customId?: string }
-  | { type: 'join'; targetIpOrId: string; isObserver?: boolean }
+  | { type: 'host'; ip?: string; lanIp?: string; customId?: string; playerName?: string; hue?: number; loadout?: CharacterLoadout }
+  | { type: 'join'; targetIpOrId: string; isObserver?: boolean; playerName?: string; hue?: number; loadout?: CharacterLoadout }
   | { type: 'change_role'; role: GameRole }
   | GameplaySyncMessage;
 
 export type GameplaySyncAction =
   | 'chat'
+  | 'unlock_secret'
+  | 'request_map'
+  | 'sync_map'
+  | 'match_loading_status'
   | 'swing_hammer'
+  | 'melee_hammer'
   | 'hammer_impact'
   | 'slash_sword'
   | 'lunge_sword'
@@ -113,4 +122,10 @@ export interface GameplaySyncMessage {
   gameTime?: number;
   clientHP?: number;
   radius?: number;
+  progress?: number;
+  stage?: string;
+  ready?: boolean;
+  loadout?: CharacterLoadout;
+  selectedMap?: string;
+  customMap?: CustomMapData | null;
 }

@@ -58,6 +58,18 @@ interface TrackDefinition {
   sample: (view: EditorView, progress: number) => WeaponPose;
 }
 
+interface VersionedAnimationData {
+  weaponKeyframes: AnimationKeyframe[];
+  weaponGeneratedFrames: GeneratedAnimationFrame[];
+  boneKeyframes: RigTrackMap;
+  boneGeneratedFrames: GeneratedRigTrackMap;
+  socketKeyframes: RigTrackMap;
+  socketGeneratedFrames: GeneratedRigTrackMap;
+  frameCount: number;
+  anchorFrames: [number, number, number];
+  interpolation: AnimationInterpolationMode;
+}
+
 interface EditorState {
   weapon: WeaponChoice;
   view: EditorView;
@@ -78,6 +90,8 @@ interface EditorState {
   showSkeleton: boolean;
   showSockets: boolean;
   showLabels: boolean;
+  modelSystem: 'v1' | 'v2';
+  versionedData: Record<'v1' | 'v2', VersionedAnimationData>;
 }
 
 const TRACKS: TrackDefinition[] = [
@@ -413,9 +427,58 @@ const axes = new THREE.AxesHelper(0.9);
 axes.position.set(-1.8, 0.02, -1.8);
 scene.add(axes);
 
-const thirdPersonRig: CombatantMeshRig = createCombatantMeshRig(scene, 192, false);
+let thirdPersonRig: CombatantMeshRig = createCombatantMeshRig(scene, 192, false, { modelSystem: 'v1' });
 thirdPersonRig.group.position.set(0, 0, 0);
 thirdPersonRig.group.rotation.y = Math.PI;
+
+const modelSystemSelect = requireElement<HTMLSelectElement>('modelSystemSelect');
+
+const V2_BONE_NAMES = [
+  'pelvis',
+  'stomach',
+  'chest',
+  'neck',
+  'head',
+  'shoulder_l',
+  'arm_upper_l',
+  'arm_lower_l',
+  'hand_l',
+  'shoulder_r',
+  'arm_upper_r',
+  'arm_lower_r',
+  'hand_r',
+  'leg_upper_l',
+  'leg_lower_l',
+  'foot_l',
+  'toes_l',
+  'leg_upper_r',
+  'leg_lower_r',
+  'foot_r',
+  'toes_r',
+] as const;
+
+const V2_SKELETON_CONNECTIONS: Array<[string, string]> = [
+  ['pelvis', 'stomach'],
+  ['stomach', 'chest'],
+  ['chest', 'neck'],
+  ['neck', 'head'],
+  ['chest', 'shoulder_l'],
+  ['shoulder_l', 'arm_upper_l'],
+  ['arm_upper_l', 'arm_lower_l'],
+  ['arm_lower_l', 'hand_l'],
+  ['chest', 'shoulder_r'],
+  ['shoulder_r', 'arm_upper_r'],
+  ['arm_upper_r', 'arm_lower_r'],
+  ['arm_lower_r', 'hand_r'],
+  ['pelvis', 'leg_upper_l'],
+  ['leg_upper_l', 'leg_lower_l'],
+  ['leg_lower_l', 'foot_l'],
+  ['foot_l', 'toes_l'],
+  ['pelvis', 'leg_upper_r'],
+  ['leg_upper_r', 'leg_lower_r'],
+  ['leg_lower_r', 'foot_r'],
+  ['foot_r', 'toes_r'],
+];
 
 const firstPersonRoot = new THREE.Group();
 firstPersonRoot.position.set(0, 1.0, 0);
@@ -453,16 +516,15 @@ const socketMarkerGeometry = new THREE.BoxGeometry(0.07, 0.07, 0.07);
 const boneMarkerMaterial = new THREE.MeshBasicMaterial({ color: 0x22d3ee, depthTest: false });
 const socketMarkerMaterial = new THREE.MeshBasicMaterial({ color: 0xf59e0b, depthTest: false });
 const selectedMarkerMaterial = new THREE.MeshBasicMaterial({ color: 0x34d399, depthTest: false });
-const skeletonLineGeometry = new THREE.BufferGeometry();
-const skeletonLinePositions = new Float32Array(SKELETON_CONNECTIONS.length * 2 * 3);
-skeletonLineGeometry.setAttribute('position', new THREE.BufferAttribute(skeletonLinePositions, 3));
+let skeletonLineGeometry = new THREE.BufferGeometry();
+let skeletonLinePositions = new Float32Array(SKELETON_CONNECTIONS.length * 2 * 3);
 const skeletonLineMaterial = new THREE.LineBasicMaterial({
   color: 0x38bdf8,
   transparent: true,
   opacity: 0.58,
   depthTest: false,
 });
-const skeletonLines = new THREE.LineSegments(skeletonLineGeometry, skeletonLineMaterial);
+let skeletonLines = new THREE.LineSegments(skeletonLineGeometry, skeletonLineMaterial);
 rigOverlayRoot.add(skeletonLines);
 const rigOverlayMarkers: RigOverlayMarker[] = [];
 
@@ -496,6 +558,18 @@ const createLabelSprite = (text: string, color: string): THREE.Sprite => {
   return sprite;
 };
 
+const createEmptyVersionedData = (frameCount = 31): VersionedAnimationData => ({
+  weaponKeyframes: [],
+  weaponGeneratedFrames: [],
+  boneKeyframes: {},
+  boneGeneratedFrames: {},
+  socketKeyframes: {},
+  socketGeneratedFrames: {},
+  frameCount,
+  anchorFrames: makeAnchorFrames(frameCount),
+  interpolation: 'smoothstep',
+});
+
 const state: EditorState = {
   weapon: 'hammer',
   view: 'thirdPerson',
@@ -516,6 +590,11 @@ const state: EditorState = {
   showSkeleton: true,
   showSockets: true,
   showLabels: true,
+  modelSystem: 'v1',
+  versionedData: {
+    v1: createEmptyVersionedData(31),
+    v2: createEmptyVersionedData(31),
+  },
 };
 
 let draftFrame: number | null = null;
@@ -537,7 +616,7 @@ const armPoseToRigTargetPose = (
   };
 };
 
-function seedLinkedThirdPersonArmTracks(weaponKeyframes: AnimationKeyframe[]): void {
+function seedLinkedThirdPersonArmTracksV1(weaponKeyframes: AnimationKeyframe[]): void {
   if (state.view !== 'thirdPerson' || state.selectedTarget.kind !== 'weapon') return;
 
   const normalized = normalizeKeyframes(weaponKeyframes, state.frameCount);
@@ -575,6 +654,77 @@ function seedLinkedThirdPersonArmTracks(weaponKeyframes: AnimationKeyframe[]): v
   state.boneGeneratedFrames = nextGenerated;
 }
 
+function seedLinkedThirdPersonArmTracksV2(weaponKeyframes: AnimationKeyframe[]): void {
+  if (state.view !== 'thirdPerson' || state.selectedTarget.kind !== 'weapon') return;
+
+  const normalized = normalizeKeyframes(weaponKeyframes, state.frameCount);
+  const maxFrame = Math.max(1, state.frameCount - 1);
+  const v2BonesToSeed = ['arm_lower_r', 'arm_lower_l', 'hand_r'] as const;
+  const boneKeyframesMap: Record<typeof v2BonesToSeed[number], AnimationKeyframe[]> = {
+    arm_lower_r: [],
+    arm_lower_l: [],
+    hand_r: [],
+  };
+
+  normalized.forEach((keyframe) => {
+    const progress = keyframe.frame / maxFrame;
+    let arm_lower_r_rot = 0;
+    let arm_lower_l_rot = 0;
+    let hand_r_rot = 0;
+
+    if (state.trackId.includes('windup')) {
+      arm_lower_r_rot = -1.6 * progress;
+      arm_lower_l_rot = -1.1 * progress;
+      hand_r_rot = 0.4 * progress;
+    } else if (state.trackId.includes('strike')) {
+      arm_lower_r_rot = -1.6 + (-0.1 - -1.6) * progress;
+      arm_lower_l_rot = -1.1 + (-0.1 - -1.1) * progress;
+      hand_r_rot = 0.4 + (-0.6 - 0.4) * progress;
+    } else if (state.trackId.includes('recover')) {
+      arm_lower_r_rot = -0.1 + (-0.2 - -0.1) * progress;
+      arm_lower_l_rot = -0.1 + (-0.2 - -0.1) * progress;
+      hand_r_rot = -0.6 + (0.0 - -0.6) * progress;
+    }
+
+    boneKeyframesMap.arm_lower_r.push({
+      frame: keyframe.frame,
+      label: keyframe.label,
+      pose: { position: [0, 0, 0], rotation: [arm_lower_r_rot, 0, 0] },
+    });
+    boneKeyframesMap.arm_lower_l.push({
+      frame: keyframe.frame,
+      label: keyframe.label,
+      pose: { position: [0, 0, 0], rotation: [arm_lower_l_rot, 0, 0] },
+    });
+    boneKeyframesMap.hand_r.push({
+      frame: keyframe.frame,
+      label: keyframe.label,
+      pose: { position: [0, 0, 0], rotation: [hand_r_rot, 0, 0] },
+    });
+  });
+
+  const nextKeyframes = { ...state.boneKeyframes };
+  const nextGenerated = { ...state.boneGeneratedFrames };
+
+  v2BonesToSeed.forEach((boneName) => {
+    const target: SelectedRigTarget = { kind: 'bone', name: boneName, view: 'thirdPerson' };
+    const key = targetKey(target);
+    nextKeyframes[key] = normalizeKeyframes(boneKeyframesMap[boneName], state.frameCount);
+    nextGenerated[key] = generatePoseFrames(nextKeyframes[key], state.frameCount, state.interpolation);
+  });
+
+  state.boneKeyframes = nextKeyframes;
+  state.boneGeneratedFrames = nextGenerated;
+}
+
+function seedLinkedThirdPersonArmTracks(weaponKeyframes: AnimationKeyframe[]): void {
+  if (state.modelSystem === 'v2') {
+    seedLinkedThirdPersonArmTracksV2(weaponKeyframes);
+  } else {
+    seedLinkedThirdPersonArmTracksV1(weaponKeyframes);
+  }
+}
+
 function getWeaponObject(view: EditorView, weapon: WeaponChoice): THREE.Group {
   if (view === 'firstPerson') {
     return weapon === 'hammer' ? firstPersonHammer : firstPersonSword;
@@ -592,9 +742,13 @@ function getTargetObject(target: SelectedRigTarget): THREE.Group | null {
   }
 
   if (target.kind === 'bone') {
-    return target.view === 'thirdPerson'
-      ? thirdPersonRig.rig.bones[target.name as CombatantBoneName] ?? null
-      : null;
+    if (target.view === 'thirdPerson') {
+      if (state.modelSystem === 'v2') {
+        return (thirdPersonRig.group.userData[target.name] as THREE.Group) ?? null;
+      }
+      return thirdPersonRig.rig.bones[target.name as CombatantBoneName] ?? null;
+    }
+    return null;
   }
 
   if (target.view === 'firstPerson') {
@@ -616,7 +770,8 @@ function getTargetOptionsForView(view: EditorView): TargetOption[] {
   ];
 
   if (view === 'thirdPerson') {
-    COMBATANT_BONE_NAMES.forEach((name) => {
+    const bonesToUse = state.modelSystem === 'v2' ? V2_BONE_NAMES : COMBATANT_BONE_NAMES;
+    bonesToUse.forEach((name) => {
       options.push({
         target: { kind: 'bone', name, view },
         label: targetLabel({ kind: 'bone', name, view }),
@@ -864,6 +1019,10 @@ function applyFrameToScene(): void {
 }
 
 function buildOverlayMarkers(): void {
+  // Clear old markers from rigOverlayRoot
+  rigOverlayMarkers.forEach((marker) => {
+    rigOverlayRoot.remove(marker.group);
+  });
   rigOverlayMarkers.splice(0, rigOverlayMarkers.length);
 
   getAllRigTargets().forEach((target) => {
@@ -917,13 +1076,21 @@ function updateRigOverlays(): void {
   if (!showBones) return;
 
   let offset = 0;
-  SKELETON_CONNECTIONS.forEach(([startName, endName]) => {
-    const startObject = thirdPersonRig.rig.bones[startName];
-    const endObject = thirdPersonRig.rig.bones[endName];
+  const connections = state.modelSystem === 'v2' ? V2_SKELETON_CONNECTIONS : SKELETON_CONNECTIONS;
+  connections.forEach(([startName, endName]) => {
+    const startObject = state.modelSystem === 'v2'
+      ? (thirdPersonRig.group.userData[startName] as THREE.Object3D)
+      : thirdPersonRig.rig.bones[startName as CombatantBoneName];
+    const endObject = state.modelSystem === 'v2'
+      ? (thirdPersonRig.group.userData[endName] as THREE.Object3D)
+      : thirdPersonRig.rig.bones[endName as CombatantBoneName];
+
     const start = new THREE.Vector3();
     const end = new THREE.Vector3();
-    startObject.getWorldPosition(start);
-    endObject.getWorldPosition(end);
+    if (startObject && endObject) {
+      startObject.getWorldPosition(start);
+      endObject.getWorldPosition(end);
+    }
     skeletonLinePositions[offset++] = start.x;
     skeletonLinePositions[offset++] = start.y;
     skeletonLinePositions[offset++] = start.z;
@@ -1090,6 +1257,103 @@ function syncSceneVisibility(): void {
   transformControls.setMode(state.transformMode);
   applyFrameToScene();
   updateRigOverlays();
+}
+
+function saveVersionedData(system: 'v1' | 'v2'): void {
+  state.versionedData[system] = {
+    weaponKeyframes: [...state.weaponKeyframes],
+    weaponGeneratedFrames: [...state.weaponGeneratedFrames],
+    boneKeyframes: { ...state.boneKeyframes },
+    boneGeneratedFrames: { ...state.boneGeneratedFrames },
+    socketKeyframes: { ...state.socketKeyframes },
+    socketGeneratedFrames: { ...state.socketGeneratedFrames },
+    frameCount: state.frameCount,
+    anchorFrames: [...state.anchorFrames],
+    interpolation: state.interpolation,
+  };
+}
+
+function loadVersionedData(system: 'v1' | 'v2'): void {
+  const data = state.versionedData[system];
+  state.weaponKeyframes = [...data.weaponKeyframes];
+  state.weaponGeneratedFrames = [...data.weaponGeneratedFrames];
+  state.boneKeyframes = { ...data.boneKeyframes };
+  state.boneGeneratedFrames = { ...data.boneGeneratedFrames };
+  state.socketKeyframes = { ...data.socketKeyframes };
+  state.socketGeneratedFrames = { ...data.socketGeneratedFrames };
+  state.frameCount = data.frameCount;
+  state.anchorFrames = [...data.anchorFrames];
+  state.interpolation = data.interpolation;
+}
+
+function buildSkeletonLines(): void {
+  if (skeletonLines) {
+    rigOverlayRoot.remove(skeletonLines);
+    skeletonLineGeometry.dispose();
+  }
+
+  const connections = state.modelSystem === 'v2' ? V2_SKELETON_CONNECTIONS : SKELETON_CONNECTIONS;
+  skeletonLineGeometry = new THREE.BufferGeometry();
+  skeletonLinePositions = new Float32Array(connections.length * 2 * 3);
+  skeletonLineGeometry.setAttribute('position', new THREE.BufferAttribute(skeletonLinePositions, 3));
+  
+  skeletonLines = new THREE.LineSegments(skeletonLineGeometry, skeletonLineMaterial);
+  rigOverlayRoot.add(skeletonLines);
+}
+
+function swapModelSystem(newSystem: 'v1' | 'v2'): void {
+  if (state.modelSystem === newSystem) return;
+
+  // 1. Save current system data
+  saveVersionedData(state.modelSystem);
+
+  // 2. Remove old character rig from scene
+  if (thirdPersonRig) {
+    scene.remove(thirdPersonRig.group);
+    // Dispose geometry/materials to prevent memory leaks
+    thirdPersonRig.group.traverse((child) => {
+      if (child instanceof THREE.Mesh) {
+        child.geometry.dispose();
+        if (Array.isArray(child.material)) {
+          child.material.forEach((m) => m.dispose());
+        } else {
+          child.material.dispose();
+        }
+      }
+    });
+  }
+
+  // 3. Set the new system in state
+  state.modelSystem = newSystem;
+
+  // 4. Create the new rig
+  thirdPersonRig = createCombatantMeshRig(scene, 192, false, { modelSystem: newSystem });
+  thirdPersonRig.group.position.set(0, 0, 0);
+  thirdPersonRig.group.rotation.y = Math.PI;
+
+  // 5. Build dynamic skeleton visualizer and baselines
+  buildSkeletonLines();
+  captureEditableTargetBaselines();
+  buildOverlayMarkers();
+
+  // 6. Load new system data
+  loadVersionedData(newSystem);
+
+  // 7. If the loaded system has no weapon keyframes, seed it for the first time
+  if (state.weaponKeyframes.length === 0) {
+    seedThreeFrames();
+  }
+
+  // 8. Rebuild controls & UI
+  state.selectedTarget = getDefaultTarget();
+  clearDraft();
+  
+  // Set values to DOM elements
+  modelSystemSelect.value = newSystem;
+  
+  regenerateAllFrames();
+  renderAll();
+  setStatus(`Swapped to Model System ${newSystem.toUpperCase()}.`);
 }
 
 function updateCameraForView(): void {
@@ -1294,6 +1558,7 @@ function renderTransformButtons(): void {
 function renderAll(): void {
   weaponSelect.value = state.weapon;
   viewSelect.value = state.view;
+  modelSystemSelect.value = state.modelSystem;
   interpolationSelect.value = state.interpolation;
   frameCountInput.value = String(state.frameCount);
   showSkeletonToggle.checked = state.showSkeleton;
@@ -1345,6 +1610,10 @@ weaponSelect.addEventListener('change', () => {
   refreshTargetOptions();
   seedThreeFrames();
   updateCameraForView();
+});
+
+modelSystemSelect.addEventListener('change', () => {
+  swapModelSystem(modelSystemSelect.value as 'v1' | 'v2');
 });
 
 viewSelect.addEventListener('change', () => {
@@ -1507,6 +1776,7 @@ function animate(): void {
 }
 
 refreshTrackOptions();
+buildSkeletonLines();
 captureEditableTargetBaselines();
 buildOverlayMarkers();
 seedThreeFrames();

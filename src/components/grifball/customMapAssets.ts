@@ -4,81 +4,197 @@ import { type CustomMapObject } from '../../types';
 
 // ─── HIGH-FIDELITY VOXEL MAP ASSETS GENERATORS ────────────────────────────────
 
-function buildVoxelReactor(width: number, height: number, depth: number, colorStr: string, emissiveStr: string): THREE.Group {
-  const data: VoxelData[] = [];
-  const r = 4; // Voxel grid sphere radius
+type VoxelMap = Map<string, VoxelData>;
 
-  // 1. Core glowing energy sphere
-  for (let x = -r; x <= r; x++) {
-    for (let y = -r; y <= r; y++) {
-      for (let z = -r; z <= r; z++) {
-        const dist = Math.sqrt(x*x + y*y + z*z);
-        if (dist <= r * 0.4) {
-          data.push({ x, y, z, color: emissiveStr, emissive: true });
-        } else if (dist <= r * 0.85) {
-          data.push({ x, y, z, color: colorStr });
+function isActiveEmissive(color: string): boolean {
+  return Boolean(color && color !== '#000000');
+}
+
+function voxelKey(x: number, y: number, z: number): string {
+  return `${x},${y},${z}`;
+}
+
+function setVoxel(voxels: VoxelMap, x: number, y: number, z: number, color: string, emissive = false): void {
+  voxels.set(voxelKey(x, y, z), { x, y, z, color, emissive });
+}
+
+function fillBox(voxels: VoxelMap, minX: number, maxX: number, minY: number, maxY: number, minZ: number, maxZ: number, color: string, emissive = false): void {
+  for (let x = minX; x <= maxX; x++) {
+    for (let y = minY; y <= maxY; y++) {
+      for (let z = minZ; z <= maxZ; z++) {
+        setVoxel(voxels, x, y, z, color, emissive);
+      }
+    }
+  }
+}
+
+function voxelList(voxels: VoxelMap): VoxelData[] {
+  return [...voxels.values()];
+}
+
+function hashNoise(x: number, y: number, z: number, seed = 0): number {
+  const n = Math.sin(x * 12.9898 + y * 78.233 + z * 37.719 + seed * 17.17) * 43758.5453;
+  return n - Math.floor(n);
+}
+
+function addRing(voxels: VoxelMap, radius: number, color: string, emissiveStr: string, plane: 'xz' | 'xy' | 'yz', tilt = 0): void {
+  for (let i = 0; i < 144; i++) {
+    const theta = (i / 144) * Math.PI * 2;
+    const ca = Math.cos(theta);
+    const sa = Math.sin(theta);
+    let x = 0;
+    let y = 0;
+    let z = 0;
+
+    if (plane === 'xz') {
+      x = Math.round(radius * ca);
+      z = Math.round(radius * sa);
+      y = Math.round(Math.sin(theta + tilt) * 1.25);
+    } else if (plane === 'xy') {
+      x = Math.round(radius * ca);
+      y = Math.round(radius * sa);
+      z = Math.round(Math.cos(theta + tilt) * 1.1);
+    } else {
+      y = Math.round(radius * ca);
+      z = Math.round(radius * sa);
+      x = Math.round(Math.sin(theta + tilt) * 1.1);
+    }
+
+    setVoxel(voxels, x, y, z, color);
+    if (i % 12 === 0 && isActiveEmissive(emissiveStr)) {
+      setVoxel(voxels, x + Math.sign(x || 1), y, z + Math.sign(z || 1), emissiveStr, true);
+      setVoxel(voxels, x, y + Math.sign(y || 1), z, emissiveStr, true);
+    }
+  }
+}
+
+function buildVoxelReactor(width: number, height: number, depth: number, colorStr: string, emissiveStr: string): THREE.Group {
+  const voxels: VoxelMap = new Map();
+  const coreR = 8;
+  const ringR = 12;
+  const activeGlow = isActiveEmissive(emissiveStr);
+
+  for (let x = -coreR; x <= coreR; x++) {
+    for (let y = -coreR; y <= coreR; y++) {
+      for (let z = -coreR; z <= coreR; z++) {
+        const dist = Math.sqrt(x * x + y * y + z * z);
+        const shellNoise = hashNoise(x, y, z, 2);
+        if (activeGlow && (dist <= coreR * 0.36 || (dist <= coreR * 0.58 && shellNoise > 0.38))) {
+          setVoxel(voxels, x, y, z, emissiveStr, true);
+        } else if (dist >= coreR * 0.62 && dist <= coreR * 0.82 && shellNoise > 0.48) {
+          setVoxel(voxels, x, y, z, colorStr);
         }
       }
     }
   }
 
-  // 2. Outer orbiting cyber ring (tilted)
-  const ringR = 6;
-  for (let theta = 0; theta < Math.PI * 2; theta += 0.15) {
-    const rx = Math.round(ringR * Math.cos(theta));
-    const rz = Math.round(ringR * Math.sin(theta));
-    const ry = Math.round(rx * 0.25); // Tilted plane angle
+  const cage = '#0f172a';
+  const brace = '#334155';
+  const conduit = '#64748b';
+  for (const sx of [-1, 1]) {
+    for (const sz of [-1, 1]) {
+      fillBox(voxels, sx * 8, sx * 8, -8, 8, sz * 8, sz * 8, cage);
+      fillBox(voxels, sx * 9, sx * 9, -6, 6, sz * 6, sz * 6, brace);
+    }
+  }
+  for (let a = -8; a <= 8; a++) {
+    setVoxel(voxels, a, -8, -8, cage);
+    setVoxel(voxels, a, -8, 8, cage);
+    setVoxel(voxels, a, 8, -8, cage);
+    setVoxel(voxels, a, 8, 8, cage);
+    setVoxel(voxels, -8, -8, a, cage);
+    setVoxel(voxels, 8, -8, a, cage);
+    setVoxel(voxels, -8, 8, a, cage);
+    setVoxel(voxels, 8, 8, a, cage);
+    if (a % 4 === 0) {
+      setVoxel(voxels, a, 0, -9, activeGlow ? emissiveStr : conduit, activeGlow);
+      setVoxel(voxels, a, 0, 9, activeGlow ? emissiveStr : conduit, activeGlow);
+      setVoxel(voxels, -9, 0, a, activeGlow ? emissiveStr : conduit, activeGlow);
+      setVoxel(voxels, 9, 0, a, activeGlow ? emissiveStr : conduit, activeGlow);
+    }
+  }
 
-    data.push({ x: rx, y: ry, z: rz, color: '#1e293b' });
-    data.push({ x: rx, y: ry, z: rz + (rz > 0 ? -1 : 1), color: emissiveStr, emissive: true });
+  addRing(voxels, ringR, cage, emissiveStr, 'xz', 0);
+  addRing(voxels, ringR - 1, '#1e293b', emissiveStr, 'xy', 0.7);
+  addRing(voxels, ringR - 1, '#111827', emissiveStr, 'yz', 1.2);
+
+  for (const [x, y, z] of [[0, -10, 0], [0, 10, 0], [-10, 0, 0], [10, 0, 0], [0, 0, -10], [0, 0, 10]]) {
+    fillBox(voxels, x - 1, x + 1, y - 1, y + 1, z - 1, z + 1, activeGlow ? emissiveStr : '#38bdf8', activeGlow);
   }
 
   const voxelScale = Math.min(width, height, depth) / (2 * ringR || 1);
-  return createVoxelGroup(data, voxelScale);
+  return createVoxelGroup(voxelList(voxels), voxelScale);
 }
 
 function buildVoxelForerunnerSpire(width: number, height: number, depth: number, colorStr: string, emissiveStr: string): THREE.Group {
-  const data: VoxelData[] = [];
-  const r = 3; // Base radius
-  const h = 12; // Height in voxels
+  const voxels: VoxelMap = new Map();
+  const baseR = 6;
+  const h = 24;
+  const glow = isActiveEmissive(emissiveStr);
+  const darkSlate = '#0f172a';
+  const bronze = '#b45309';
+  const gold = '#f59e0b';
 
-  // Build a tapering octagonal monolith
-  for (let y = 0; y < h; y++) {
-    const taper = 1.0 - (y / h) * 0.45;
-    const layerR = r * taper;
+  for (let y = 0; y <= h; y++) {
+    const taper = 1 - (y / h) * 0.52;
+    const layerR = Math.max(2, Math.round(baseR * taper));
+    const tierLip = y % 5 === 0;
+    const tierInset = tierLip ? 1 : 0;
 
-    for (let x = -Math.ceil(layerR); x <= Math.ceil(layerR); x++) {
-      for (let z = -Math.ceil(layerR); z <= Math.ceil(layerR); z++) {
-        const dist = Math.sqrt(x*x + z*z);
-        if (dist <= layerR) {
-          if (dist <= 0.85 && y < h - 1) {
-            // Glowing energy beam core
-            data.push({ x, y, z, color: emissiveStr, emissive: true });
+    for (let x = -layerR - tierInset; x <= layerR + tierInset; x++) {
+      for (let z = -layerR - tierInset; z <= layerR + tierInset; z++) {
+        const chebyshev = Math.max(Math.abs(x), Math.abs(z));
+        const diagonalCut = Math.abs(x) + Math.abs(z) <= layerR * 1.55 + tierInset;
+        if (chebyshev <= layerR + tierInset && diagonalCut) {
+          const channel = (Math.abs(x) === 1 || Math.abs(z) === 1 || Math.abs(x) === layerR - 1 || Math.abs(z) === layerR - 1) && y > 2 && y < h - 1 && y % 2 === 0;
+          const edgeArmor = chebyshev >= layerR - (tierLip ? 0 : 1);
+          if (channel && glow) {
+            setVoxel(voxels, x, y, z, emissiveStr, true);
           } else {
-            // Alternating metallic colors
-            const isAccentRow = y % 3 === 0;
-            data.push({ x, y, z, color: isAccentRow ? '#d97706' : colorStr });
+            setVoxel(voxels, x, y, z, tierLip ? bronze : edgeArmor ? darkSlate : colorStr);
           }
         }
       }
     }
 
-    // Armored side stabilizers
-    if (y % 2 === 0) {
-      data.push({ x: -Math.ceil(layerR) - 1, y, z: 0, color: '#0f172a' });
-      data.push({ x: Math.ceil(layerR) + 1, y, z: 0, color: '#0f172a' });
-      data.push({ x: 0, y, z: -Math.ceil(layerR) - 1, color: '#0f172a' });
-      data.push({ x: 0, y, z: Math.ceil(layerR) + 1, color: '#0f172a' });
+    if (tierLip) {
+      for (let a = -layerR - 2; a <= layerR + 2; a++) {
+        setVoxel(voxels, a, y, -layerR - 2, gold);
+        setVoxel(voxels, a, y, layerR + 2, gold);
+        setVoxel(voxels, -layerR - 2, y, a, gold);
+        setVoxel(voxels, layerR + 2, y, a, gold);
+      }
     }
   }
 
-  // Hovering cap node at top
-  data.push({ x: 0, y: h + 1, z: 0, color: emissiveStr, emissive: true });
+  for (const [sx, sz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+    for (let y = 0; y <= 7; y++) {
+      const spread = 8 - y;
+      const x = sx * spread;
+      const z = sz * spread;
+      fillBox(voxels, x - Math.abs(sz), x + Math.abs(sz), y, y + 1, z - Math.abs(sx), z + Math.abs(sx), darkSlate);
+      setVoxel(voxels, sx * (spread - 1), y + 1, sz * (spread - 1), bronze);
+    }
+  }
 
-  const voxelScale = Math.min(width, depth) / (2 * r || 1);
-  const spire = createVoxelGroup(data, voxelScale);
+  for (let y = h + 3; y <= h + 5; y++) {
+    const capR = y === h + 4 ? 3 : 2;
+    for (let x = -capR; x <= capR; x++) {
+      for (let z = -capR; z <= capR; z++) {
+        if (Math.abs(x) + Math.abs(z) <= capR + 1) {
+          const isCore = x === 0 && z === 0 && glow;
+          setVoxel(voxels, x, y, z, isCore ? emissiveStr : y === h + 4 ? gold : darkSlate, isCore);
+        }
+      }
+    }
+  }
+  for (const [x, y, z] of [[-5, h + 4, 0], [5, h + 4, 0], [0, h + 5, -5], [0, h + 3, 5]]) {
+    setVoxel(voxels, x, y, z, glow ? emissiveStr : gold, glow);
+  }
 
-  // Position pivot to sit at the base
+  const voxelScale = Math.min(width / 16, depth / 16, height / 30);
+  const spire = createVoxelGroup(voxelList(voxels), voxelScale);
+
   spire.traverse((child) => {
     if (child instanceof THREE.Mesh) {
       child.position.y -= (h / 2) * voxelScale;
@@ -89,98 +205,191 @@ function buildVoxelForerunnerSpire(width: number, height: number, depth: number,
 }
 
 function buildVoxelTechCrate(width: number, height: number, depth: number, colorStr: string, emissiveStr: string): THREE.Group {
-  const data: VoxelData[] = [];
-  const rx = 3;
-  const ry = 3;
-  const rz = 3;
+  const voxels: VoxelMap = new Map();
+  const rx = 6;
+  const ry = 6;
+  const rz = 6;
+  const frame = '#0f172a';
+  const guard = '#1e293b';
+  const stripeA = '#f59e0b';
+  const stripeB = '#020617';
+  const glow = isActiveEmissive(emissiveStr);
 
   for (let x = -rx; x <= rx; x++) {
     for (let y = -ry; y <= ry; y++) {
       for (let z = -rz; z <= rz; z++) {
-        const isCorner = (Math.abs(x) === rx && Math.abs(y) === ry) ||
-                       (Math.abs(x) === rx && Math.abs(z) === rz) ||
-                       (Math.abs(y) === ry && Math.abs(z) === rz);
         const isFace = Math.abs(x) === rx || Math.abs(y) === ry || Math.abs(z) === rz;
+        if (!isFace) continue;
 
-        if (isCorner) {
-          data.push({ x, y, z, color: '#1e293b' }); // Dark framing trim
-        } else if (isFace) {
-          const isCenterLogo = Math.abs(x) <= 1 && Math.abs(y) <= 1 && z === -rz;
-          if (isCenterLogo && emissiveStr && emissiveStr !== '#000000') {
-            data.push({ x, y, z, color: emissiveStr, emissive: true }); // glowing warning panel
-          } else {
-            data.push({ x, y, z, color: colorStr });
-          }
-        }
+        const cornerGuard = (Math.abs(x) >= rx - 1 && Math.abs(y) >= ry - 1) ||
+          (Math.abs(x) >= rx - 1 && Math.abs(z) >= rz - 1) ||
+          (Math.abs(y) >= ry - 1 && Math.abs(z) >= rz - 1);
+        const hazardEdge = (Math.abs(y) === ry && (Math.abs(x) >= rx - 1 || Math.abs(z) >= rz - 1)) ||
+          (Math.abs(z) === rz && Math.abs(y) >= ry - 1);
+        const hazardStripe = hazardEdge && ((x + y + z + 24) % 4 < 2);
+        setVoxel(voxels, x, y, z, cornerGuard ? guard : hazardEdge ? (hazardStripe ? stripeA : stripeB) : colorStr);
       }
     }
   }
 
-  // Handles
-  data.push({ x: -rx - 1, y: 0, z: 0, color: '#0f172a' });
-  data.push({ x: rx + 1, y: 0, z: 0, color: '#0f172a' });
+  fillBox(voxels, -3, 3, -1, 3, -rz - 1, -rz - 1, frame);
+  fillBox(voxels, -2, 2, 0, 2, -rz - 2, -rz - 2, glow ? emissiveStr : '#22c55e', glow);
+  for (let x = -5; x <= 5; x += 2) {
+    setVoxel(voxels, x, -3, -rz - 1, glow ? emissiveStr : '#38bdf8', glow);
+  }
 
-  const voxelScale = width / (2 * rx || 1);
-  return createVoxelGroup(data, voxelScale);
+  for (const side of [-1, 1]) {
+    fillBox(voxels, side * (rx + 1), side * (rx + 1), -2, 2, -2, 2, frame);
+    for (let y = -4; y <= 4; y += 2) {
+      setVoxel(voxels, side * (rx + 1), y, -4, guard);
+      setVoxel(voxels, side * (rx + 1), y, 4, guard);
+    }
+  }
+
+  for (let z = -4; z <= 4; z += 2) {
+    setVoxel(voxels, -2, ry + 1, z, frame);
+    setVoxel(voxels, 2, ry + 1, z, frame);
+    setVoxel(voxels, -2, -ry - 1, z, frame);
+    setVoxel(voxels, 2, -ry - 1, z, frame);
+  }
+  for (let x = -4; x <= 4; x += 2) {
+    setVoxel(voxels, x, -2, rz + 1, guard);
+    setVoxel(voxels, x, 0, rz + 1, '#334155');
+    setVoxel(voxels, x, 2, rz + 1, guard);
+  }
+  fillBox(voxels, -1, 1, -4, -3, -rz - 1, -rz - 1, '#111827');
+
+  const voxelScale = Math.min(width, height, depth) / (2 * rx || 1);
+  return createVoxelGroup(voxelList(voxels), voxelScale);
 }
 
 function buildVoxelMossyBoulder(width: number, height: number, depth: number, colorStr: string, emissiveStr: string, isMeteor: boolean): THREE.Group {
-  const data: VoxelData[] = [];
-  const r = 4;
+  const voxels: VoxelMap = new Map();
+  const r = 8;
+  const glow = isActiveEmissive(emissiveStr);
+  const baseStone = colorStr || '#4b5563';
 
   for (let x = -r; x <= r; x++) {
     for (let y = -r; y <= r; y++) {
       for (let z = -r; z <= r; z++) {
-        // Jagged non-spherical distortion
-        const distortion = Math.sin(x * 1.5) * 0.7 + Math.cos(y * 1.5) * 0.7 + Math.sin(z * 1.5) * 0.7;
-        const dist = Math.sqrt(x*x + y*y + z*z) + distortion;
+        const nx = x / r;
+        const ny = y / r;
+        const nz = z / r;
+        const ridge = Math.sin(x * 1.1 + z * 0.7) * 0.75 +
+          Math.cos(y * 1.45 - x * 0.3) * 0.55 +
+          Math.sin((x + y - z) * 2.2) * 0.28 +
+          (hashNoise(x, y, z, 7) - 0.5) * 1.2;
+        const dist = Math.sqrt(nx * nx * 1.12 + ny * ny * 1.35 + nz * nz * 0.96) * r + ridge;
+        if (dist > r * 0.98) continue;
 
-        if (dist <= r * 0.95) {
-          const isSurface = dist > r * 0.7;
-          if (isMeteor && isSurface && Math.random() < 0.22 && emissiveStr && emissiveStr !== '#000000') {
-            data.push({ x, y, z, color: emissiveStr, emissive: true }); // glowing alien mineral vein
-          } else if (!isMeteor && isSurface && y > r * 0.15 && Math.random() < 0.42) {
-            data.push({ x, y, z, color: '#16a34a' }); // Mossy green cover
-          } else {
-            data.push({ x, y, z, color: isSurface ? '#4b5563' : '#374151' });
-          }
+        const surface = dist > r * 0.68;
+        const fracture = surface && (
+          Math.abs((x + z * 2 + y) % 7) === 0 ||
+          Math.abs((x * 2 - z + y * 3) % 11) === 0
+        );
+        const moss = !isMeteor && surface && y > 0 && (hashNoise(x, y, z, 11) > 0.46 || (y > 4 && hashNoise(x, y, z, 12) > 0.28));
+        const flower = !isMeteor && moss && y > 3 && hashNoise(x, y, z, 13) > 0.94;
+        if ((isMeteor || fracture) && fracture && glow && hashNoise(x, y, z, 14) > 0.34) {
+          setVoxel(voxels, x, y, z, emissiveStr, true);
+        } else if (flower) {
+          setVoxel(voxels, x, y, z, '#f0abfc');
+        } else if (moss) {
+          setVoxel(voxels, x, y, z, hashNoise(x, y, z, 15) > 0.58 ? '#22c55e' : '#064e3b');
+        } else if (surface) {
+          setVoxel(voxels, x, y, z, hashNoise(x, y, z, 16) > 0.55 ? '#6b7280' : baseStone);
+        } else {
+          setVoxel(voxels, x, y, z, '#374151');
         }
       }
     }
   }
 
   const voxelScale = Math.min(width, height, depth) / (2 * r || 1);
-  return createVoxelGroup(data, voxelScale);
+  return createVoxelGroup(voxelList(voxels), voxelScale);
 }
 
 function buildVoxelCargoContainer(width: number, height: number, depth: number, colorStr: string): THREE.Group {
-  const data: VoxelData[] = [];
-  const rx = 4;
-  const ry = 4;
-  const rz = 6;
+  const voxels: VoxelMap = new Map();
+  const rx = 8;
+  const ry = 5;
+  const rz = 12;
+  const frame = '#0f172a';
+  const ridge = '#1e293b';
+  const metal = '#334155';
+  const led = '#22d3ee';
 
   for (let x = -rx; x <= rx; x++) {
     for (let y = -ry; y <= ry; y++) {
       for (let z = -rz; z <= rz; z++) {
-        const isCorner = (Math.abs(x) === rx && Math.abs(y) === ry) ||
-                       (Math.abs(x) === rx && Math.abs(z) === rz) ||
-                       (Math.abs(y) === ry && Math.abs(z) === rz);
         const isFace = Math.abs(x) === rx || Math.abs(y) === ry || Math.abs(z) === rz;
-
-        if (isCorner) {
-          data.push({ x, y, z, color: '#0f172a' }); // Corner trims
-        } else if (isFace) {
-          // Vertical corrugated panel lines along sides
-          const isLongSide = Math.abs(z) === rz;
-          const isCorrugated = isLongSide && (x % 2 === 0);
-          data.push({ x, y, z, color: isCorrugated ? '#1e293b' : colorStr });
-        }
+        if (!isFace) continue;
+        const cornerCasting = (Math.abs(x) >= rx - 1 && Math.abs(y) >= ry - 1) ||
+          (Math.abs(x) >= rx - 1 && Math.abs(z) >= rz - 1) ||
+          (Math.abs(y) >= ry - 1 && Math.abs(z) >= rz - 1);
+        const sideCorrugation = Math.abs(x) === rx && Math.abs(z) < rz - 1 && Math.abs(y) < ry && z % 3 === 0;
+        const roofRidge = Math.abs(y) === ry && x % 4 === 0;
+        setVoxel(voxels, x, y, z, cornerCasting ? frame : sideCorrugation || roofRidge ? ridge : colorStr);
       }
     }
   }
 
-  const voxelScale = width / (2 * rx || 1);
-  return createVoxelGroup(data, voxelScale);
+  for (let y = -ry + 1; y <= ry - 1; y++) {
+    setVoxel(voxels, 0, y, -rz - 1, frame);
+    if (y % 2 === 0) {
+      setVoxel(voxels, -5, y, -rz - 1, metal);
+      setVoxel(voxels, 5, y, -rz - 1, metal);
+    }
+  }
+  for (let x = -6; x <= 6; x += 4) {
+    fillBox(voxels, x, x + 1, -3, 3, -rz - 1, -rz - 1, frame);
+  }
+  fillBox(voxels, -3, -2, -1, 1, -rz - 2, -rz - 2, metal);
+  fillBox(voxels, 2, 3, -1, 1, -rz - 2, -rz - 2, metal);
+
+  fillBox(voxels, -5, 5, -3, 3, rz + 1, rz + 1, frame);
+  for (let x = -4; x <= 4; x++) {
+    for (let y = -2; y <= 2; y++) {
+      const fanBlade = Math.abs(x) === Math.abs(y) || x === 0 || y === 0;
+      setVoxel(voxels, x, y, rz + 2, fanBlade ? metal : '#020617');
+    }
+  }
+  for (let x = -7; x <= 7; x += 2) {
+    setVoxel(voxels, x, -4, rz + 1, ridge);
+    setVoxel(voxels, x, 4, rz + 1, ridge);
+  }
+  setVoxel(voxels, -6, 2, rz + 2, led, true);
+  setVoxel(voxels, -6, 0, rz + 2, '#22c55e', true);
+  setVoxel(voxels, -6, -2, rz + 2, '#f97316', true);
+
+  for (const sx of [-1, 1]) {
+    for (const sz of [-1, 1]) {
+      fillBox(voxels, sx * (rx + 1), sx * (rx + 1), -ry, ry, sz * (rz - 2), sz * (rz - 1), frame);
+      setVoxel(voxels, sx * (rx + 1), 0, sz * (rz - 4), metal);
+    }
+  }
+
+  const voxelScale = Math.min(width / (2 * rx), height / (2 * ry), depth / (2 * rz));
+  return createVoxelGroup(voxelList(voxels), voxelScale);
+}
+
+function alignGroupBottom(group: THREE.Group, targetBottom: number, rotation: CustomMapObject['rotation']): void {
+  const originalRotation = group.rotation.clone();
+  group.rotation.set(rotation.x, rotation.y, rotation.z);
+  group.updateMatrixWorld(true);
+
+  const bounds = new THREE.Box3().setFromObject(group);
+  if (bounds.isEmpty()) {
+    group.rotation.copy(originalRotation);
+    return;
+  }
+
+  const localYWorldY = group.matrixWorld.elements[5];
+  const yOffset = (targetBottom - bounds.min.y) / (Math.abs(localYWorldY) > 0.001 ? localYWorldY : 1);
+  group.children.forEach((child) => {
+    child.position.y += yOffset;
+  });
+  group.rotation.copy(originalRotation);
+  group.updateMatrixWorld(true);
 }
 
 // --- HIGH-FIDELITY MAP ASSETS PROCEDURAL MODEL PIPELINE ---
@@ -241,16 +450,19 @@ export function createHighFidelityObjectMesh(
       texture.wrapT = three.RepeatWrapping;
       texture.repeat.set(Math.max(1, sx / TILE_UNIT), Math.max(1, sz / TILE_UNIT));
     }
-    const mat = new three.MeshStandardMaterial({
-      map: texture,
-      bumpMap: texture,
-      bumpScale: texture ? 0.01 : 0,
+    const matParams: THREE.MeshStandardMaterialParameters = {
       color: new three.Color(obj.color),
       metalness: obj.metalness ?? 0.3,
       roughness: obj.roughness ?? 0.8,
       opacity: obj.opacity ?? 1,
       transparent: (obj.opacity ?? 1) < 1,
-    });
+    };
+    if (texture) {
+      matParams.map = texture;
+      matParams.bumpMap = texture;
+      matParams.bumpScale = 0.01;
+    }
+    const mat = new three.MeshStandardMaterial(matParams);
     if (obj.emissive && obj.emissive !== '#000000') {
       mat.emissive = new three.Color(obj.emissive);
       mat.emissiveIntensity = obj.emissiveIntensity ?? 0.2;
@@ -281,17 +493,20 @@ export function createHighFidelityObjectMesh(
       ? generateCustomTexture(obj.texture, obj.color)
       : undefined;
 
-    const mat = new three.MeshStandardMaterial({
-      map: texture,
-      bumpMap: texture,
-      bumpScale: texture ? 0.008 : 0,
+    const matParams: THREE.MeshStandardMaterialParameters = {
       color: new three.Color(obj.color),
       metalness: obj.metalness ?? 0.1,
       roughness: obj.roughness ?? 0.3,
       opacity: obj.opacity ?? 0.6,
       transparent: true,
       side: three.DoubleSide,
-    });
+    };
+    if (texture) {
+      matParams.map = texture;
+      matParams.bumpMap = texture;
+      matParams.bumpScale = 0.008;
+    }
+    const mat = new three.MeshStandardMaterial(matParams);
 
     if (obj.emissive && obj.emissive !== '#000000') {
       mat.emissive = new three.Color(obj.emissive);
@@ -358,6 +573,7 @@ export function createHighFidelityObjectMesh(
   }
 
   group.add(voxelGroup);
+  alignGroupBottom(group, -sy / 2, obj.rotation);
 
   // Traverse children to enable shadows, PBR rendering details, and link raycasting IDs
   group.traverse(child => {
