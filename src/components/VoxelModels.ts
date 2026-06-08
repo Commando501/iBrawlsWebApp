@@ -5,6 +5,7 @@
 
 import * as THREE from 'three';
 import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { buildVoxelSpartanModelV2 } from './VoxelModelsV2';
 
 // ─── Internal Types ───────────────────────────────────────────────────────────
 
@@ -1744,6 +1745,10 @@ export function buildVoxelSpartanModel(
   customHue?: number,
   loadout: CharacterLoadout = DEFAULT_LOADOUT
 ): THREE.Group {
+  if (loadout.modelSystem === 'v2') {
+    return buildVoxelSpartanModelV2(isEnemy, customHue, loadout);
+  }
+
   const primaryHex = customHue !== undefined
     ? `hsl(${customHue}, 85%, 50%)`
     : isEnemy ? '#ef4444' : '#3b82f6';

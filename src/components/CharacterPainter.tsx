@@ -93,9 +93,9 @@ export const CharacterPainter: React.FC<CharacterPainterProps> = ({
   const characterContainerRef = useRef<THREE.Group | null>(null);
   
   // Track camera target lookAt
-  const cameraLookAtRef = useRef<THREE.Vector3>(new THREE.Vector3(0, 0.85, 0));
-  const targetCameraLookAtRef = useRef<THREE.Vector3>(new THREE.Vector3(0, 0.85, 0));
-  const targetCameraPosRef = useRef<THREE.Vector3>(new THREE.Vector3(0, 0.95, 4.2));
+  const cameraLookAtRef = useRef<THREE.Vector3>(new THREE.Vector3(0, 0.9, 0));
+  const targetCameraLookAtRef = useRef<THREE.Vector3>(new THREE.Vector3(0, 0.9, 0));
+  const targetCameraPosRef = useRef<THREE.Vector3>(new THREE.Vector3(0, 1.0, 3.2));
 
   // Voxel meshes group for raycasting
   const voxelMeshesRef = useRef<THREE.Mesh[]>([]);
@@ -105,12 +105,12 @@ export const CharacterPainter: React.FC<CharacterPainterProps> = ({
 
   // Pivot configurations matching VoxelModels.ts
   const PIVOTS: Record<string, { x: number, y: number, z: number, px: number, py: number, pz: number, parent: 'upper' | 'lower' | 'root' }> = {
-    helmet:   { x: 0,    y: 16, z: 0, px: 0,    py: 16, pz: 0, parent: 'upper' },
-    torso:    { x: 0,    y: 8,  z: 0, px: 0,    py: 8,  pz: 0, parent: 'upper' },
-    leftArm:  { x: -5.5, y: 15, z: 0, px: -5.5, py: 15, pz: 0, parent: 'upper' },
-    rightArm: { x: 5.5,  y: 15, z: 0, px: 5.5,  py: 15, pz: 0, parent: 'upper' },
-    leftLeg:  { x: -2.5, y: 7,  z: 0, px: -2.5, py: 7,  pz: 0, parent: 'lower' },
-    rightLeg: { x: 2.5,  y: 7,  z: 0, px: 2.5,  py: 7,  pz: 0, parent: 'lower' },
+    helmet:   { x: 0,    y: 35, z: 0, px: 0,    py: 35, pz: 0, parent: 'upper' },
+    torso:    { x: 0,    y: 11, z: 0, px: 0,    py: 11, pz: 0, parent: 'upper' },
+    leftArm:  { x: -5.5, y: 25, z: 0, px: -5.5, py: 25, pz: 0, parent: 'upper' },
+    rightArm: { x: 5.5,  y: 25, z: 0, px: 5.5,  py: 25, pz: 0, parent: 'upper' },
+    leftLeg:  { x: -2.5, y: 17, z: 0, px: -2.5, py: 17, pz: 0, parent: 'lower' },
+    rightLeg: { x: 2.5,  y: 17, z: 0, px: 2.5,  py: 17, pz: 0, parent: 'lower' },
   };
 
   // Preset slots in loadout
@@ -190,28 +190,28 @@ export const CharacterPainter: React.FC<CharacterPainterProps> = ({
     }
     
     // Smooth camera offsets and targets in meters
-    const scale = 0.08;
+    const scale = 0.045;
     if (part === 'all') {
-      targetCameraLookAtRef.current.set(0, 0.85, 0);
-      targetCameraPosRef.current.set(0, 0.95, 4.2);
+      targetCameraLookAtRef.current.set(0, 0.9, 0);
+      targetCameraPosRef.current.set(0, 1.0, 3.2);
     } else if (part === 'helmet') {
-      targetCameraLookAtRef.current.set(0, 1.42, 0);
-      targetCameraPosRef.current.set(0, 1.42, 1.15);
+      targetCameraLookAtRef.current.set(0, 1.8, 0);
+      targetCameraPosRef.current.set(0, 1.8, 1.15);
     } else if (part === 'torso') {
-      targetCameraLookAtRef.current.set(0, 0.96, 0);
-      targetCameraPosRef.current.set(0, 0.96, 1.4);
+      targetCameraLookAtRef.current.set(0, 1.0, 0);
+      targetCameraPosRef.current.set(0, 1.0, 1.4);
     } else if (part === 'leftArm') {
-      targetCameraLookAtRef.current.set(-5.5 * scale, 1.12, 0);
-      targetCameraPosRef.current.set(-5.5 * scale, 1.12, 1.15);
+      targetCameraLookAtRef.current.set(-5.5 * scale, 1.0, 0);
+      targetCameraPosRef.current.set(-5.5 * scale, 1.0, 1.15);
     } else if (part === 'rightArm') {
-      targetCameraLookAtRef.current.set(5.5 * scale, 1.12, 0);
-      targetCameraPosRef.current.set(5.5 * scale, 1.12, 1.15);
+      targetCameraLookAtRef.current.set(5.5 * scale, 1.0, 0);
+      targetCameraPosRef.current.set(5.5 * scale, 1.0, 1.15);
     } else if (part === 'leftLeg') {
-      targetCameraLookAtRef.current.set(-2.5 * scale, 0.32, 0);
-      targetCameraPosRef.current.set(-2.5 * scale, 0.32, 1.15);
+      targetCameraLookAtRef.current.set(-2.5 * scale, 0.36, 0);
+      targetCameraPosRef.current.set(-2.5 * scale, 0.36, 1.15);
     } else if (part === 'rightLeg') {
-      targetCameraLookAtRef.current.set(2.5 * scale, 0.32, 0);
-      targetCameraPosRef.current.set(2.5 * scale, 0.32, 1.15);
+      targetCameraLookAtRef.current.set(2.5 * scale, 0.36, 0);
+      targetCameraPosRef.current.set(2.5 * scale, 0.36, 1.15);
     }
   };
 
@@ -305,7 +305,7 @@ export const CharacterPainter: React.FC<CharacterPainterProps> = ({
     characterContainer.add(lowerTorsoGroup);
     characterContainer.add(upperTorsoGroup);
 
-    const scale = 0.08;
+    const scale = 0.045;
     const bevelRadius = scale * 0.15;
     const baseBeveledGeo = createBeveledBoxGeometry(scale, scale, scale, bevelRadius);
 
@@ -325,7 +325,7 @@ export const CharacterPainter: React.FC<CharacterPainterProps> = ({
       // Segment offset position
       const segmentGroup = new THREE.Group();
       if (pivot.parent === 'upper') {
-        segmentGroup.position.set(pivot.x * scale, (pivot.y - 8) * scale, 0);
+        segmentGroup.position.set(pivot.x * scale, (pivot.y - 11) * scale, 0);
         upperTorsoGroup.add(segmentGroup);
       } else {
         segmentGroup.position.set(pivot.x * scale, pivot.y * scale, 0);
@@ -381,7 +381,7 @@ export const CharacterPainter: React.FC<CharacterPainterProps> = ({
       });
     });
 
-    upperTorsoGroup.position.set(0, 8 * scale, 0);
+    upperTorsoGroup.position.set(0, 11 * scale, 0);
 
     // --- Hover Highlighter Grid Voxel Outline ---
     const hoverGeo = new THREE.BoxGeometry(scale * 1.05, scale * 1.05, scale * 1.05);

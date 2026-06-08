@@ -73,7 +73,8 @@
 
     <!-- ================= EVALUATE ================= -->
     <section id="tab-evaluate" class="tabpane">
-      <div class="panel narrow">
+      <div class="eval-layout">
+      <div class="panel">
         <h2>Grade a saved brain</h2>
         <p class="muted">Play a trained model against an opponent and measure how often it wins.</p>
         <div class="eval-form">
@@ -96,6 +97,13 @@
           <label>Parallel envs
             <input type="number" id="evalEnvs" value="16" min="1" step="1" />
           </label>
+          <label>Device
+            <select id="evalDevice">
+              <option value="cpu">cpu</option>
+              <option value="auto">auto</option>
+              <option value="cuda">cuda (GPU)</option>
+            </select>
+          </label>
           <div class="eval-actions">
             <button class="btn primary" id="btnEval">▶ Run evaluation</button>
             <button class="btn danger" id="btnEvalStop" disabled>■ Stop</button>
@@ -108,6 +116,18 @@
         </div>
         <div id="evalResult" class="eval-result"></div>
         <pre id="evalLog" class="console small"></pre>
+      </div>
+
+      <div class="panel eval-history-panel">
+        <h2>Evaluation history <small>past grades — compare models at a glance</small>
+          <span class="hist-actions">
+            <button class="btn ghost tiny" id="btnHistSort">Sort: Newest</button>
+            <button class="btn ghost tiny" id="btnHistRefresh">↻ Refresh</button>
+            <button class="btn ghost tiny" id="btnHistClear">Clear</button>
+          </span>
+        </h2>
+        <div id="evalHistory">Loading…</div>
+      </div>
       </div>
     </section>
 

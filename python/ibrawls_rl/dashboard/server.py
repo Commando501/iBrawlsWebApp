@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import threading
 import webbrowser
 from dataclasses import asdict
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -21,11 +22,16 @@ from ..config import (
     save_config,
 )
 from . import metrics as metricsmod
+from . import evalhistory
 from .paths import CONFIG_PATH, STATIC_DIR, PROJECT_DIR, safe_run_path
 from .procman import ManagedProcess
 
 TRAINER = ManagedProcess("train")
 EVALER = ManagedProcess("eval")
+
+# Guards one-time recording of a finished eval into history (keyed by its start time).
+_eval_record_lock = threading.Lock()
+_recorded_eval_key: float | None = None
 
 _CONTENT_TYPES = {
     ".html": "text/html; charset=utf-8",
@@ -53,6 +59,35 @@ def _parse_eval_progress(lines: list[str]) -> tuple[int | None, int | None]:
         if m:
             return int(m.group(1)), int(m.group(2))
     return None, None
+
+
+def _record_eval_if_new(st: dict) -> None:
+    """Append a finished grade to history exactly once (idempotent across polls)."""
+    global _recorded_eval_key
+    key = st.get("started_at")
+    result = st.get("result")
+    if key is None or not result:
+        return
+    with _eval_record_lock:
+        if _recorded_eval_key == key:
+            return
+        _recorded_eval_key = key
+        meta = st.get("meta", {})
+        ts = key + (st.get("elapsed") or 0)
+        evalhistory.append({
+            "ts": ts,
+            "model": result.get("model") or meta.get("model"),
+            "mode": result.get("mode") or meta.get("mode"),
+            "opponent": result.get("opponent") or meta.get("opponent"),
+            "matches": meta.get("matches"),
+            "num_envs": meta.get("num_envs"),
+            "device": meta.get("device"),
+            "win_rate": result.get("win_rate"),
+            "loss_rate": result.get("loss_rate"),
+            "draw_rate": result.get("draw_rate"),
+            "episodes": result.get("episodes"),
+            "ep_return": result.get("ep_return"),
+        })
 
 
 def _parse_eval_result(proc: ManagedProcess) -> dict | None:
@@ -106,6 +141,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", _CONTENT_TYPES.get(ext, "application/octet-stream"))
         self.send_header("Content-Length", str(len(body)))
+        # Local dev tool: never let the browser serve a stale app.js/style.css/index.html.
+        self.send_header("Cache-Control", "no-store, must-revalidate")
         self.end_headers()
         self.wfile.write(body)
 
@@ -141,6 +178,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"models": metricsmod.list_models()})
             elif path == "/api/eval/status":
                 self._send_json(self._eval_status())
+            elif path == "/api/eval/history":
+                self._send_json({"history": evalhistory.load()})
             else:
                 self._serve_static(path)
         except Exception as e:  # pragma: no cover
@@ -162,6 +201,9 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(self._eval_start(body))
             elif path == "/api/eval/stop":
                 self._send_json(EVALER.stop())
+            elif path == "/api/eval/history/clear":
+                evalhistory.clear()
+                self._send_json({"ok": True})
             else:
                 self.send_error(404)
         except Exception as e:  # pragma: no cover
@@ -214,7 +256,14 @@ class Handler(BaseHTTPRequestHandler):
         else:
             args += ["--opponent", body.get("opponent", "random"),
                      "--goal-target", str(int(body.get("goal_target", 3)))]
-        return EVALER.start(args, meta={"model": model, "mode": mode})
+        meta = {
+            "model": model, "mode": mode,
+            "opponent": body.get("opponent", "random"),
+            "matches": int(body.get("matches", 100)),
+            "num_envs": int(body.get("num_envs", 16)),
+            "device": body.get("device", "cpu"),
+        }
+        return EVALER.start(args, meta=meta)
 
     def _eval_status(self) -> dict:
         st = EVALER.status()
@@ -232,6 +281,7 @@ class Handler(BaseHTTPRequestHandler):
                 eta = elapsed * (total - completed) / completed
         st["progress"] = progress
         st["eta"] = eta
+        _record_eval_if_new(st)
         return st
 
 

@@ -12,6 +12,7 @@ import {
   buildCombatantRigForModel,
   type CombatantRig,
 } from './combatantRig';
+import { THIRD_PERSON_RIGHT_HAND_REST_OFFSET } from './attackAnimationPresets';
 
 export type CombatantMeshRig = {
   group: THREE.Group;
@@ -30,13 +31,21 @@ export type RebuiltDualWeaponCombatantModel = {
 
 const positionHammer = (hammer: THREE.Group) => {
   hammer.scale.set(0.6, 0.6, 0.6);
-  hammer.position.set(0.5, 1.0 - 0.64, -0.4);
+  hammer.position.set(
+    0.5 - THIRD_PERSON_RIGHT_HAND_REST_OFFSET[0],
+    1.0 - 0.64 - THIRD_PERSON_RIGHT_HAND_REST_OFFSET[1],
+    -0.4 - THIRD_PERSON_RIGHT_HAND_REST_OFFSET[2]
+  );
   hammer.rotation.set(Math.PI / 2, 0, 0);
 };
 
 const positionSword = (sword: THREE.Group) => {
   sword.scale.set(0.6, 0.6, 0.6);
-  sword.position.set(0.5, 1.0 - 0.64, -0.32);
+  sword.position.set(
+    0.5 - THIRD_PERSON_RIGHT_HAND_REST_OFFSET[0],
+    1.0 - 0.64 - THIRD_PERSON_RIGHT_HAND_REST_OFFSET[1],
+    -0.32 - THIRD_PERSON_RIGHT_HAND_REST_OFFSET[2]
+  );
   // Blade is built along +y; negative X rotation points it toward -z (the
   // character's forward / visor direction). +PI/2 would aim it backward.
   sword.rotation.set(-Math.PI / 2, 0, -Math.PI / 8);
@@ -44,7 +53,11 @@ const positionSword = (sword: THREE.Group) => {
 
 const positionPistol = (pistol: THREE.Group) => {
   pistol.scale.set(0.6, 0.6, 0.6);
-  pistol.position.set(0.5, 1.0 - 0.64, -0.32);
+  pistol.position.set(
+    0.5 - THIRD_PERSON_RIGHT_HAND_REST_OFFSET[0],
+    1.0 - 0.64 - THIRD_PERSON_RIGHT_HAND_REST_OFFSET[1],
+    -0.32 - THIRD_PERSON_RIGHT_HAND_REST_OFFSET[2]
+  );
   pistol.rotation.set(Math.PI / 2, 0, 0);
 };
 
@@ -62,6 +75,7 @@ export const getRandomLoadout = (): CharacterLoadout => {
     leg: legs[Math.floor(Math.random() * legs.length)],
     hammerPreset: hammers[Math.floor(Math.random() * hammers.length)],
     swordPreset: swords[Math.floor(Math.random() * swords.length)],
+    modelSystem: Math.random() < 0.5 ? 'v1' : 'v2',
   };
 };
 

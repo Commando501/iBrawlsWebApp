@@ -88,6 +88,7 @@ export function updateObserverCombatantVisualsForState({
         isLunging: hostIsLunging,
         dt,
         settings: state.settings,
+        combatantModel: refs.hostGroup,
       });
     }
   }
@@ -153,6 +154,7 @@ export function updateObserverCombatantVisualsForState({
           isLunging: enemyIsLunging,
           dt,
           settings: state.settings,
+          combatantModel: refs.enemyGroup,
         });
       }
     }

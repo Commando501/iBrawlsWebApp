@@ -93,7 +93,7 @@ import { CharacterPreview } from './components/CharacterPreview';
 import { CharacterPainter } from './components/CharacterPainter';
 import { CharacterLoadout, DEFAULT_LOADOUT, AVAILABLE_PRESETS, HelmetPreset, TorsoPreset, ArmPreset, LegPreset } from './components/VoxelModels';
 
-const APP_VERSION = '0.639b';
+const APP_VERSION = '0.640';
 const MAX_PLAYER_NAME_LENGTH = 10;
 const MAX_MULTIPLAYER_CLIENTS = 7;
 const MAX_MULTIPLAYER_PLAYERS = 1 + MAX_MULTIPLAYER_CLIENTS;
@@ -8190,6 +8190,30 @@ export default function App() {
                               return (
                                 <div className="bg-white/5 border border-white/5 rounded-lg p-3">
                                   <span className="text-xs font-bold text-[#38bdf8] uppercase tracking-wider block mb-2.5">Armor Loadout</span>
+                                  <div className="flex items-center gap-2 mb-3 pb-3 border-b border-white/5">
+                                    <span className="text-[10px] font-black uppercase tracking-widest text-white/40 w-14 shrink-0">Model Sys</span>
+                                    <div className="flex gap-1.5 flex-1">
+                                      {[
+                                        { id: 'v1', label: 'V1 (Classic)' },
+                                        { id: 'v2', label: 'V2 (Rigged)' },
+                                      ].map((v) => {
+                                        const isActive = (playerLoadout.modelSystem ?? 'v1') === v.id;
+                                        return (
+                                          <button
+                                            key={v.id}
+                                            onClick={() => updateLoadout({ modelSystem: v.id as 'v1' | 'v2' })}
+                                            className={`px-2 py-1 text-[10px] font-black uppercase tracking-widest border rounded transition-all active:scale-95 ${
+                                              isActive
+                                                ? 'bg-[#38bdf8]/15 border-[#38bdf8] text-[#38bdf8] shadow-[0_0_8px_rgba(56,189,248,0.25)]'
+                                                : 'bg-black/30 border-white/10 text-white/40 hover:text-white/70 hover:border-white/20'
+                                            }`}
+                                          >
+                                            {v.label}
+                                          </button>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
                                   <div className="flex flex-col gap-2">
                                     {slots.map(({ key, options }) => (
                                       <div key={key} className="flex items-center gap-2">

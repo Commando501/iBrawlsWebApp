@@ -88,6 +88,7 @@ export function updateReplayCombatantVisualsForFrame({
         isLunging: Boolean(player.isLunging),
         dt,
         settings,
+        combatantModel: group,
       });
       hammer.visible = alive && player.activeWeapon === 'hammer';
       sword.visible = alive && player.activeWeapon === 'sword';

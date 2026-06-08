@@ -120,6 +120,7 @@ export function updateRosterCombatantVisualsForState({
         isLunging: Boolean(player.isLunging),
         dt,
         settings: state.settings,
+        combatantModel: meshes.group,
       });
     }
 

@@ -10,6 +10,7 @@ import {
   attachToCombatantAttachment,
   buildCombatantRigForModel,
 } from './grifball/combatantRig';
+import { THIRD_PERSON_RIGHT_HAND_REST_OFFSET } from './grifball/attackAnimationPresets';
 
 interface CharacterPreviewProps {
   hue: number;
@@ -102,13 +103,21 @@ export const CharacterPreview: React.FC<CharacterPreviewProps> = ({ hue, heldWea
       if (w === 'hammer') {
         const hammer = buildGravityHammerModel(h, lo?.hammerPreset);
         hammer.scale.set(0.6, 0.6, 0.6);
-        hammer.position.set(0.5, 1.0 - 0.64, -0.4);
+        hammer.position.set(
+          0.5 - THIRD_PERSON_RIGHT_HAND_REST_OFFSET[0],
+          1.0 - 0.64 - THIRD_PERSON_RIGHT_HAND_REST_OFFSET[1],
+          -0.4 - THIRD_PERSON_RIGHT_HAND_REST_OFFSET[2]
+        );
         hammer.rotation.set(Math.PI / 2.5, 0, 0);
         attachToCombatantAttachment(characterGroup, 'thirdPersonWeaponGrip', hammer);
       } else if (w === 'sword') {
         const sword = buildKatarSwordModel(h, lo?.swordPreset);
         sword.scale.set(0.6, 0.6, 0.6);
-        sword.position.set(0.5, 1.0 - 0.64, -0.32);
+        sword.position.set(
+          0.5 - THIRD_PERSON_RIGHT_HAND_REST_OFFSET[0],
+          1.0 - 0.64 - THIRD_PERSON_RIGHT_HAND_REST_OFFSET[1],
+          -0.32 - THIRD_PERSON_RIGHT_HAND_REST_OFFSET[2]
+        );
         // Blade is built along +y; negative X rotation points it toward -z
         // (the character's forward / visor direction). +PI/2 aims it backward.
         sword.rotation.set(-Math.PI / 2, 0, -Math.PI / 8);

@@ -141,11 +141,16 @@ export const buildCombatantRigForModel = (model: THREE.Group): CombatantRig => {
     rightLeg: createArticulationController(segmentGroups.rightLeg, 'rightLeg'),
   };
 
+  const isV2 = model.userData.modelSystem === 'v2';
+  const rightWeaponBone = isV2 ? (model.userData.hand_r || bones.rightArm) : bones.rightArm;
+  const leftWeaponBone = isV2 ? (model.userData.hand_l || bones.leftArm) : bones.leftArm;
+  const gripOffset: THREE.Vector3Tuple = isV2 ? [0, -0.05, 0] : [0, -0.35, -0.045];
+
   const attachments: CombatantAttachmentMap = {
-    thirdPersonWeaponGrip: createAttachmentPoint(bones.upperTorso, 'thirdPersonWeaponGrip', 'upperTorso'),
-    thirdPersonOffhandGrip: createAttachmentPoint(bones.upperTorso, 'thirdPersonOffhandGrip', 'upperTorso'),
-    rightHandGrip: createAttachmentPoint(bones.rightArm, 'rightHandGrip', 'rightArm', [0, -0.62, -0.08]),
-    leftHandGrip: createAttachmentPoint(bones.leftArm, 'leftHandGrip', 'leftArm', [0, -0.62, -0.08]),
+    thirdPersonWeaponGrip: createAttachmentPoint(rightWeaponBone, 'thirdPersonWeaponGrip', 'rightArm', gripOffset),
+    thirdPersonOffhandGrip: createAttachmentPoint(leftWeaponBone, 'thirdPersonOffhandGrip', 'leftArm', gripOffset),
+    rightHandGrip: createAttachmentPoint(rightWeaponBone, 'rightHandGrip', 'rightArm', gripOffset),
+    leftHandGrip: createAttachmentPoint(leftWeaponBone, 'leftHandGrip', 'leftArm', gripOffset),
     headCenter: createAttachmentPoint(bones.head, 'headCenter', 'head'),
     chestCenter: createAttachmentPoint(bones.upperTorso, 'chestCenter', 'upperTorso'),
   };
@@ -190,6 +195,25 @@ export const attachToCombatantAttachment = (
   if (!attachment) {
     model.add(child);
     return model;
+  }
+
+  // Adjust child position/rotation for V2 if it is a weapon grip attachment
+  if (model.userData.modelSystem === 'v2') {
+    if (attachmentName === 'thirdPersonWeaponGrip') {
+      const weaponType = child.userData.weaponType;
+      if (weaponType === 'hammer') {
+        child.position.set(0, 0, 0);
+        child.rotation.set(Math.PI / 2, 0, 0);
+      } else if (weaponType === 'sword') {
+        child.position.set(0, 0, 0);
+        child.rotation.set(-Math.PI / 2, 0, -Math.PI / 8);
+      } else if (weaponType === 'pistol') {
+        child.position.set(0, 0, 0);
+        child.rotation.set(Math.PI / 2, 0, 0);
+      }
+    } else if (attachmentName === 'thirdPersonOffhandGrip') {
+      child.position.set(0, 0, 0);
+    }
   }
 
   return attachToAttachmentPoint(attachment, child);

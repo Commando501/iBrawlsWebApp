@@ -10,6 +10,13 @@ export interface WeaponPose {
   rotation: [number, number, number];
 }
 
+export interface CombatantArmPose {
+  rightArmRotation: [number, number, number];
+  leftArmRotation: [number, number, number];
+}
+
+export const THIRD_PERSON_RIGHT_HAND_REST_OFFSET: [number, number, number] = [0.44, -0.06, -0.08];
+
 const clamp01 = (value: number): number => Math.max(0, Math.min(1, value));
 const easeInCubic = (value: number): number => {
   const t = clamp01(value);
@@ -24,6 +31,25 @@ const easeInOutCubic = (value: number): number => {
   return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 };
 const lerp = THREE.MathUtils.lerp;
+
+export const toThirdPersonHandPose = (pose: WeaponPose): WeaponPose => ({
+  position: [
+    pose.position[0] - THIRD_PERSON_RIGHT_HAND_REST_OFFSET[0],
+    pose.position[1] - THIRD_PERSON_RIGHT_HAND_REST_OFFSET[1],
+    pose.position[2] - THIRD_PERSON_RIGHT_HAND_REST_OFFSET[2],
+  ],
+  rotation: pose.rotation,
+});
+
+const lerpRotation = (
+  from: [number, number, number],
+  to: [number, number, number],
+  progress: number
+): [number, number, number] => [
+  lerp(from[0], to[0], progress),
+  lerp(from[1], to[1], progress),
+  lerp(from[2], to[2], progress),
+];
 
 export const getHammerAttackAnimationStyle = (settings: Partial<UniversalSettings>): AttackAnimationStyle =>
   settings.hammerAttackAnimation === 'highFidelity' ? 'highFidelity' : 'current';
@@ -198,7 +224,7 @@ export function getThirdPersonHammerPose(phase: HammerAttackPhase, progress: num
   const pct = clamp01(progress);
   if (phase === 'windup') {
     const t = easeOutCubic(pct);
-    return {
+    return toThirdPersonHandPose({
       position: [
         lerp(0.48, 0.64, t),
         lerp(1.08, 2.05, t) - 0.64,
@@ -209,13 +235,13 @@ export function getThirdPersonHammerPose(phase: HammerAttackPhase, progress: num
         lerp(0.1, -0.34, t),
         lerp(-0.15, 0.38, t),
       ],
-    };
+    });
   }
 
   if (phase === 'strike') {
     const t = easeInCubic(pct);
     const arc = Math.sin(pct * Math.PI) * 0.12;
-    return {
+    return toThirdPersonHandPose({
       position: [
         lerp(0.64, 0.12, t),
         lerp(2.05, 0.48, t) - 0.64,
@@ -226,12 +252,12 @@ export function getThirdPersonHammerPose(phase: HammerAttackPhase, progress: num
         lerp(-0.34, 0.24, t),
         lerp(0.38, -0.44, t),
       ],
-    };
+    });
   }
 
   if (phase === 'recover') {
     const t = easeOutCubic(pct);
-    return {
+    return toThirdPersonHandPose({
       position: [
         lerp(0.12, 0.48, t),
         lerp(0.48, 1.08, t) - 0.64,
@@ -242,14 +268,14 @@ export function getThirdPersonHammerPose(phase: HammerAttackPhase, progress: num
         lerp(0.24, 0.1, t),
         lerp(-0.44, -0.15, t),
       ],
-    };
+    });
   }
 
   if (phase === 'melee_swing') {
     const isWindup = pct < 0.35;
     const localPct = isWindup ? easeOutCubic(pct / 0.35) : easeInOutCubic((pct - 0.35) / 0.65);
     if (isWindup) {
-      return {
+      return toThirdPersonHandPose({
         position: [
           lerp(0.48, 0.66, localPct),
           lerp(1.08, 0.84, localPct) - 0.64,
@@ -260,9 +286,9 @@ export function getThirdPersonHammerPose(phase: HammerAttackPhase, progress: num
           lerp(0.1, 0.48, localPct),
           lerp(-0.15, 0.28, localPct),
         ],
-      };
+      });
     }
-    return {
+    return toThirdPersonHandPose({
       position: [
         lerp(0.66, 0.08, localPct),
         lerp(0.84, 1.24, localPct) - 0.64,
@@ -273,11 +299,11 @@ export function getThirdPersonHammerPose(phase: HammerAttackPhase, progress: num
         lerp(0.48, -1.08, localPct),
         lerp(0.28, -0.68, localPct),
       ],
-    };
+    });
   }
 
   const t = easeOutCubic(pct);
-  return {
+  return toThirdPersonHandPose({
     position: [
       lerp(0.08, 0.48, t),
       lerp(1.24, 1.08, t) - 0.64,
@@ -288,13 +314,13 @@ export function getThirdPersonHammerPose(phase: HammerAttackPhase, progress: num
       lerp(-1.08, 0.1, t),
       lerp(-0.68, -0.15, t),
     ],
-  };
+  });
 }
 
 export function getThirdPersonSwordLungePose(lungeTimer: number): WeaponPose {
   const settle = easeOutCubic(Math.min(lungeTimer / 0.18, 1));
   const shimmer = Math.sin(lungeTimer * 24) * 0.04;
-  return {
+  return toThirdPersonHandPose({
     position: [
       shimmer * 0.4,
       lerp(1.2, 1.28, settle) - 0.64,
@@ -305,7 +331,7 @@ export function getThirdPersonSwordLungePose(lungeTimer: number): WeaponPose {
       shimmer,
       -shimmer,
     ],
-  };
+  });
 }
 
 export function getThirdPersonSwordSlashPose(
@@ -316,7 +342,7 @@ export function getThirdPersonSwordSlashPose(
   if (phase === 'slash') {
     const t = easeInOutCubic(pct);
     const arc = Math.sin(pct * Math.PI);
-    return {
+    return toThirdPersonHandPose({
       position: [
         lerp(0.68, 0.14, t),
         lerp(1.24, 0.86, t) - 0.64 + arc * 0.14,
@@ -327,11 +353,11 @@ export function getThirdPersonSwordSlashPose(
         lerp(0.7, -1.0, t),
         lerp(Math.PI / 3, -Math.PI / 2.7, t),
       ],
-    };
+    });
   }
 
   const t = easeOutCubic(pct);
-  return {
+  return toThirdPersonHandPose({
     position: [
       lerp(0.14, 0.48, t),
       lerp(0.86, 1.08, t) - 0.64,
@@ -342,7 +368,131 @@ export function getThirdPersonSwordSlashPose(
       lerp(-1.0, 0, t),
       lerp(-Math.PI / 2.7, -Math.PI / 8, t),
     ],
+  });
+}
+
+export function getThirdPersonCombatantArmPose({
+  activeWeapon,
+  weaponState,
+  weaponTimer,
+  isLunging,
+  settings,
+}: {
+  activeWeapon: string;
+  weaponState: string;
+  weaponTimer: number;
+  isLunging: boolean;
+  settings: Partial<UniversalSettings>;
+}): CombatantArmPose {
+  const hammerReady: CombatantArmPose = {
+    rightArmRotation: [0.18, -0.22, -0.34],
+    leftArmRotation: [0.12, 0.2, 0.34],
   };
+  const swordReady: CombatantArmPose = {
+    rightArmRotation: [0.32, -0.14, -0.22],
+    leftArmRotation: [-0.04, 0.04, 0.18],
+  };
+  const idle: CombatantArmPose = {
+    rightArmRotation: [0, 0, 0],
+    leftArmRotation: [0, 0, 0],
+  };
+
+  if (activeWeapon === 'hammer') {
+    if (weaponState === 'swing_up') {
+      const pct = easeOutCubic(weaponTimer / 0.28);
+      return {
+        rightArmRotation: lerpRotation(hammerReady.rightArmRotation, [-1.15, -0.48, -0.56], pct),
+        leftArmRotation: lerpRotation(hammerReady.leftArmRotation, [-0.78, 0.34, 0.5], pct),
+      };
+    }
+
+    if (weaponState === 'swing_down') {
+      const pct = easeInCubic(weaponTimer / 0.12);
+      return {
+        rightArmRotation: lerpRotation([-1.15, -0.48, -0.56], [1.05, 0.18, -0.24], pct),
+        leftArmRotation: lerpRotation([-0.78, 0.34, 0.5], [0.62, -0.08, 0.28], pct),
+      };
+    }
+
+    if (weaponState === 'recovering') {
+      const pct = easeOutCubic(weaponTimer / (settings.hammerReloadTime ?? 0.6));
+      return {
+        rightArmRotation: lerpRotation([1.05, 0.18, -0.24], hammerReady.rightArmRotation, pct),
+        leftArmRotation: lerpRotation([0.62, -0.08, 0.28], hammerReady.leftArmRotation, pct),
+      };
+    }
+
+    if (weaponState === 'melee_up' || weaponState === 'melee_swing' || weaponState === 'melee_down') {
+      const meleeSpeed = settings.hammerMeleeSpeed ?? 0.24;
+      const progress = weaponState === 'melee_down'
+        ? Math.min(1, 0.4 + (weaponTimer / Math.max(meleeSpeed * 0.6, 0.001)) * 0.6)
+        : Math.min(1, weaponTimer / Math.max(meleeSpeed, 0.001));
+      const windup = progress < 0.35;
+      const windupPct = easeOutCubic(progress / 0.35);
+      const strikePct = easeInOutCubic((progress - 0.35) / 0.65);
+      return {
+        rightArmRotation: windup
+          ? lerpRotation(hammerReady.rightArmRotation, [0.38, 0.42, -0.42], windupPct)
+          : lerpRotation([0.38, 0.42, -0.42], [0.72, -1.08, -0.18], strikePct),
+        leftArmRotation: windup
+          ? lerpRotation(hammerReady.leftArmRotation, [0.24, -0.18, 0.44], windupPct)
+          : lerpRotation([0.24, -0.18, 0.44], [0.46, 0.7, 0.14], strikePct),
+      };
+    }
+
+    if (weaponState === 'melee_recover') {
+      const pct = easeOutCubic(weaponTimer / (settings.hammerMeleeReload ?? 0.5));
+      return {
+        rightArmRotation: lerpRotation([0.72, -1.08, -0.18], hammerReady.rightArmRotation, pct),
+        leftArmRotation: lerpRotation([0.46, 0.7, 0.14], hammerReady.leftArmRotation, pct),
+      };
+    }
+
+    return hammerReady;
+  }
+
+  if (activeWeapon === 'sword') {
+    if (isLunging) {
+      const pulse = Math.sin(Math.min(weaponTimer, 0.18) * Math.PI * 5) * 0.06;
+      return {
+        rightArmRotation: [1.34, pulse, -0.18],
+        leftArmRotation: [-0.24, 0.22, 0.38],
+      };
+    }
+
+    if (weaponState === 'swing_up') {
+      const windup = Math.max((settings.swordSlashSpeed ?? 0.22) * 0.5, 0.001);
+      const pct = easeOutCubic(weaponTimer / windup);
+      return {
+        rightArmRotation: lerpRotation(swordReady.rightArmRotation, [0.58, 0.72, -0.28], pct),
+        leftArmRotation: lerpRotation(swordReady.leftArmRotation, [0.08, -0.26, 0.28], pct),
+      };
+    }
+
+    if (weaponState === 'swing_down' || weaponState === 'slashing') {
+      const slash = settings.swordSlashSpeed ?? 0.22;
+      const progress = weaponState === 'swing_down'
+        ? 0.5 + Math.min(1, weaponTimer / Math.max(slash * 0.5, 0.001)) * 0.5
+        : Math.min(1, weaponTimer / Math.max(slash, 0.001));
+      const pct = easeInOutCubic(progress);
+      return {
+        rightArmRotation: lerpRotation([0.58, 0.72, -0.28], [0.9, -0.9, -0.22], pct),
+        leftArmRotation: lerpRotation([0.08, -0.26, 0.28], [-0.08, 0.34, 0.24], pct),
+      };
+    }
+
+    if (weaponState === 'recovering') {
+      const pct = easeOutCubic(weaponTimer / (settings.swordSlashReload ?? 0.6));
+      return {
+        rightArmRotation: lerpRotation([0.9, -0.9, -0.22], swordReady.rightArmRotation, pct),
+        leftArmRotation: lerpRotation([-0.08, 0.34, 0.24], swordReady.leftArmRotation, pct),
+      };
+    }
+
+    return swordReady;
+  }
+
+  return idle;
 }
 
 export function applyWeaponPose(group: THREE.Group, pose: WeaponPose): void {

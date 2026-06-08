@@ -201,7 +201,7 @@ Local play setups feature an interactive map selector overlay supported by a dyn
 
 Open it from the main menu via **Animation Editor** or visit `http://localhost:3000/animation-editor.html` while `npm run dev` is running. The tool can show bone/socket overlays, select weapons, bones, or sockets as transform targets, keyframe those rig targets independently, export versioned rig JSON, and still copy the original TypeScript `WeaponPose[]` snippet for moving refined weapon poses back into `src/components/grifball/attackAnimationPresets.ts`.
 
-Voxel Spartans now expose a lightweight combatant rig contract in `src/components/grifball/combatantRig.ts`. The rig wraps the current voxel body segments in explicit group-pivot articulation controllers (`root`, `lowerTorso`, `upperTorso`, `head`, arms, and legs), keeps the raw visible meshes under `segmentGroups`, and inserts named attachment lock points such as `thirdPersonWeaponGrip`, `rightHandGrip`, `leftHandGrip`, `firstPersonWeaponGrip`, `headCenter`, and `chestCenter`. Current weapon transforms still attach through the compatibility third-person grip so existing attack poses, replay visuals, remote combatants, and the animation editor remain visually compatible while future whole-body and object-attachment animation work has stable posable targets. This is still a grouped voxel rig, not a full skinned-mesh skeleton with elbows, knees, and blend weights.
+Voxel Spartans now expose a lightweight combatant rig contract in `src/components/grifball/combatantRig.ts`. The rig wraps the current voxel body segments in explicit group-pivot articulation controllers (`root`, `lowerTorso`, `upperTorso`, `head`, arms, and legs), keeps the raw visible meshes under `segmentGroups`, and inserts named attachment lock points such as `thirdPersonWeaponGrip`, `thirdPersonOffhandGrip`, `rightHandGrip`, `leftHandGrip`, `firstPersonWeaponGrip`, `headCenter`, and `chestCenter`. Third-person weapons are mounted through the right-hand combat grip and the shared attack presets convert legacy torso-space weapon poses into hand-local transforms, so hammer windups/strikes/melee and sword lunges/slashes now drive matching right- and offhand arm poses across AI, roster, observer, and replay visuals. This is still a grouped voxel rig, not a full skinned-mesh skeleton with elbows, knees, and blend weights.
 
 ## Standalone 3D Map Maker
 
@@ -255,6 +255,23 @@ iBrawls features a beautiful, feature-rich, and completely standalone 3D Map Mak
 
 iBrawls features a beautiful and comprehensive character customization suite, available from the main menu **Customization** frame under the **Armor** tab:
 
+- **Model System Versions**: Select between different model systems:
+  - **Version 1 (Classic)**: Standard hierarchical rigid segment group.
+  - **Version 2 (Rigged)**: High-fidelity skeletal bone & joint system with enhanced state-based animations (breathing idles, walking leg swing cycles with knees bending and ankle/toe flexes, sprinting leans and arm pumps, crouched sliding folds, and elbow-bending weapon swings).
+    - **Hitbox Constraints & Customizer Safety**: To support future custom voxel parts (via a model maker/editor), V2 enforces a strict, standardized hitbox size constraint (in voxels) for each of the 15 body parts. Any custom part must fit within these bounding boxes:
+      * `pelvis`: Max `10 x 11 x 7`
+      * `stomach`: Max `9 x 8 x 6`
+      * `chest`: Max `13 x 16 x 14`
+      * `neck`: Max `7 x 4 x 4`
+      * `head`: Max `9 x 10 x 9`
+      * `shoulder`: Max `7 x 8 x 6`
+      * `arm_upper`: Max `4 x 5 x 9`
+      * `arm_lower`: Max `5 x 6 x 9`
+      * `hand`: Max `4 x 4 x 4`
+      * `leg_upper`: Max `6 x 7 x 12`
+      * `leg_lower`: Max `6 x 9 x 14`
+      * `foot`: Max `6 x 8 x 5`
+      * `toes`: Max `6 x 5 x 4`
 - **Premium Hammer Model Swapping**: Swap between 9 distinct premium hammer variants shown in the game customizer, fully rendered in high-fidelity voxels:
   - **Akelas**: Sleek, aerodynamic dark carbon-like head with a thin, glowing red stripe along its edge.
   - **Akelus**: Sleek, white high-tech plating with pulsing neon blue energy channels on the back of the head.

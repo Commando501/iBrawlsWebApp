@@ -41,7 +41,7 @@ $$(".tab").forEach((t) => t.addEventListener("click", () => {
   t.classList.add("active");
   $("#tab-" + t.dataset.tab).classList.add("active");
   if (t.dataset.tab === "runs") loadRuns();
-  if (t.dataset.tab === "evaluate") loadModels();
+  if (t.dataset.tab === "evaluate") { loadModels(); loadEvalHistory(); }
 }));
 
 // ================= CONFIG FORM =================
@@ -412,7 +412,7 @@ $("#btnEval").addEventListener("click", async () => {
   const body = {
     model: $("#evalModel").value, mode: $("#evalMode").value,
     opponent: $("#evalOpponent").value, matches: Number($("#evalMatches").value),
-    num_envs: Number($("#evalEnvs").value),
+    num_envs: Number($("#evalEnvs").value), device: $("#evalDevice").value,
   };
   const res = await api.post("/api/eval/start", body);
   if (!res.ok) { $("#evalState").textContent = res.error || "error"; return; }
@@ -442,9 +442,62 @@ async function pollEval() {
   $("#evalLog").textContent = (st.log || []).join("\n");
   $("#evalLog").scrollTop = $("#evalLog").scrollHeight;
   if (st.result) renderEvalResult(st.result);
+  if (!st.running && st.result) loadEvalHistory();  // a grade just landed → refresh the log
   clearTimeout(evalTimer);
   if (st.running) evalTimer = setTimeout(pollEval, 1200);
 }
+
+// ================= EVAL HISTORY =================
+let histSortBest = false;
+async function loadEvalHistory() {
+  let data;
+  try { data = await api.get("/api/eval/history"); } catch { return; }
+  renderEvalHistory(data.history || []);
+}
+function renderEvalHistory(history) {
+  const root = $("#evalHistory");
+  if (!history.length) { root.innerHTML = '<p class="muted">No evaluations yet — run one above and it\'ll show up here.</p>'; return; }
+  const rows = history.slice();
+  if (histSortBest) rows.sort((a, b) => (b.win_rate || 0) - (a.win_rate || 0));
+  const best = Math.max(...rows.map((r) => r.win_rate || 0));
+  const table = el("table", { class: "guide-table hist-table" },
+    el("thead", {}, el("tr", {},
+      el("th", {}, "When"), el("th", {}, "Model"), el("th", {}, "Mode"),
+      el("th", {}, "vs"), el("th", {}, "Matches"), el("th", {}, "Dev"),
+      el("th", {}, "Result — win / draw / loss"))),
+    el("tbody", {}, ...rows.map((r) => histRow(r, best))));
+  root.innerHTML = ""; root.append(table);
+}
+function histRow(r, best) {
+  const w = (r.win_rate || 0) * 100, d = (r.draw_rate || 0) * 100, l = (r.loss_rate || 0) * 100;
+  const bars = el("div", { class: "mini-bars" });
+  if (w > 0) bars.append(el("div", { class: "bar win", style: `width:${w}%` }));
+  if (d > 0) bars.append(el("div", { class: "bar draw", style: `width:${d}%` }));
+  if (l > 0) bars.append(el("div", { class: "bar loss", style: `width:${l}%` }));
+  const when = r.ts ? new Date(r.ts * 1000).toLocaleString() : "—";
+  const model = (r.model || "—").replace(/^runs\//, "").replace(/\/final_model\.zip$/, " / final").replace(/\.zip$/, "");
+  const isBest = (r.win_rate || 0) === best && best > 0;
+  return el("tr", { class: isBest ? "best-row" : "" },
+    el("td", { class: "muted nowrap" }, when),
+    el("td", {}, model, isBest ? el("span", { class: "chip best" }, "★ best") : null),
+    el("td", {}, r.mode || "—"),
+    el("td", {}, r.mode === "combat" ? "random (1v1)" : (r.opponent || "—")),
+    el("td", {}, fmtInt(r.matches)),
+    el("td", {}, r.device || "cpu"),
+    el("td", {}, el("div", { class: "hist-result" },
+      el("span", { class: "winpct" }, Math.round(w) + "%"), bars)));
+}
+$("#btnHistRefresh").addEventListener("click", loadEvalHistory);
+$("#btnHistSort").addEventListener("click", () => {
+  histSortBest = !histSortBest;
+  $("#btnHistSort").textContent = "Sort: " + (histSortBest ? "Best win rate" : "Newest");
+  loadEvalHistory();
+});
+$("#btnHistClear").addEventListener("click", async () => {
+  if (!confirm("Clear all evaluation history? This deletes eval_history.jsonl.")) return;
+  await api.post("/api/eval/history/clear", {});
+  loadEvalHistory();
+});
 
 function renderEvalResult(r) {
   const w = (r.win_rate || 0) * 100, l = (r.loss_rate || 0) * 100, d = (r.draw_rate || 0) * 100;

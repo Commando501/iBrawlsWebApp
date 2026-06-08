@@ -6,9 +6,11 @@ import {
   getFirstPersonHammerPose,
   getFirstPersonSwordLungePose,
   getFirstPersonSwordSlashPose,
+  getThirdPersonCombatantArmPose,
   getThirdPersonHammerPose,
   getThirdPersonSwordLungePose,
   getThirdPersonSwordSlashPose,
+  type CombatantArmPose,
   type HammerAttackPhase,
   type WeaponPose,
 } from '../components/grifball/attackAnimationPresets';
@@ -139,6 +141,100 @@ function sampleHammerPose(view: EditorView, phase: HammerAttackPhase, progress: 
   return view === 'firstPerson'
     ? getFirstPersonHammerPose(phase, progress)
     : getThirdPersonHammerPose(phase, progress);
+}
+
+const PREVIEW_ATTACK_SETTINGS = {
+  hammerReloadTime: 0.6,
+  hammerMeleeSpeed: 0.24,
+  hammerMeleeReload: 0.5,
+  swordSlashSpeed: 0.22,
+  swordSlashReload: 0.6,
+};
+
+function sampleThirdPersonArmPose(trackId: string, progress: number): CombatantArmPose | null {
+  const pct = Math.max(0, Math.min(1, progress));
+
+  if (trackId === 'hammer_windup') {
+    return getThirdPersonCombatantArmPose({
+      activeWeapon: 'hammer',
+      weaponState: 'swing_up',
+      weaponTimer: 0.28 * pct,
+      isLunging: false,
+      settings: PREVIEW_ATTACK_SETTINGS,
+    });
+  }
+
+  if (trackId === 'hammer_strike') {
+    return getThirdPersonCombatantArmPose({
+      activeWeapon: 'hammer',
+      weaponState: 'swing_down',
+      weaponTimer: 0.12 * pct,
+      isLunging: false,
+      settings: PREVIEW_ATTACK_SETTINGS,
+    });
+  }
+
+  if (trackId === 'hammer_recover') {
+    return getThirdPersonCombatantArmPose({
+      activeWeapon: 'hammer',
+      weaponState: 'recovering',
+      weaponTimer: PREVIEW_ATTACK_SETTINGS.hammerReloadTime * pct,
+      isLunging: false,
+      settings: PREVIEW_ATTACK_SETTINGS,
+    });
+  }
+
+  if (trackId === 'hammer_melee') {
+    return getThirdPersonCombatantArmPose({
+      activeWeapon: 'hammer',
+      weaponState: 'melee_swing',
+      weaponTimer: PREVIEW_ATTACK_SETTINGS.hammerMeleeSpeed * pct,
+      isLunging: false,
+      settings: PREVIEW_ATTACK_SETTINGS,
+    });
+  }
+
+  if (trackId === 'hammer_melee_recover') {
+    return getThirdPersonCombatantArmPose({
+      activeWeapon: 'hammer',
+      weaponState: 'melee_recover',
+      weaponTimer: PREVIEW_ATTACK_SETTINGS.hammerMeleeReload * pct,
+      isLunging: false,
+      settings: PREVIEW_ATTACK_SETTINGS,
+    });
+  }
+
+  if (trackId === 'sword_lunge') {
+    return getThirdPersonCombatantArmPose({
+      activeWeapon: 'sword',
+      weaponState: 'ready',
+      weaponTimer: 0.18 * pct,
+      isLunging: true,
+      settings: PREVIEW_ATTACK_SETTINGS,
+    });
+  }
+
+  if (trackId === 'sword_slash') {
+    return getThirdPersonCombatantArmPose({
+      activeWeapon: 'sword',
+      weaponState: 'slashing',
+      weaponTimer: PREVIEW_ATTACK_SETTINGS.swordSlashSpeed * pct,
+      isLunging: false,
+      settings: PREVIEW_ATTACK_SETTINGS,
+    });
+  }
+
+  if (trackId === 'sword_recover') {
+    return getThirdPersonCombatantArmPose({
+      activeWeapon: 'sword',
+      weaponState: 'recovering',
+      weaponTimer: PREVIEW_ATTACK_SETTINGS.swordSlashReload * pct,
+      isLunging: false,
+      settings: PREVIEW_ATTACK_SETTINGS,
+    });
+  }
+
+  return null;
 }
 
 const requireElement = <T extends HTMLElement>(id: string): T => {
@@ -428,6 +524,56 @@ let playbackAccumulator = 0;
 const playbackFrameDuration = 1 / 18;
 let lastAnimationTime = performance.now();
 const baselineTargetPoses = new Map<string, RigTargetPose>();
+
+const armPoseToRigTargetPose = (
+  boneName: Extract<CombatantBoneName, 'rightArm' | 'leftArm'>,
+  armPose: CombatantArmPose
+): RigTargetPose => {
+  const target: SelectedRigTarget = { kind: 'bone', name: boneName, view: 'thirdPerson' };
+  const baseline = baselineTargetPoses.get(targetKey(target));
+  return {
+    position: baseline?.position ?? [0, 0, 0],
+    rotation: boneName === 'rightArm' ? armPose.rightArmRotation : armPose.leftArmRotation,
+  };
+};
+
+function seedLinkedThirdPersonArmTracks(weaponKeyframes: AnimationKeyframe[]): void {
+  if (state.view !== 'thirdPerson' || state.selectedTarget.kind !== 'weapon') return;
+
+  const normalized = normalizeKeyframes(weaponKeyframes, state.frameCount);
+  const maxFrame = Math.max(1, state.frameCount - 1);
+  const armKeyframes: Record<Extract<CombatantBoneName, 'rightArm' | 'leftArm'>, AnimationKeyframe[]> = {
+    rightArm: [],
+    leftArm: [],
+  };
+
+  normalized.forEach((keyframe) => {
+    const armPose = sampleThirdPersonArmPose(state.trackId, keyframe.frame / maxFrame);
+    if (!armPose) return;
+
+    (['rightArm', 'leftArm'] as const).forEach((boneName) => {
+      armKeyframes[boneName].push({
+        frame: keyframe.frame,
+        label: keyframe.label,
+        pose: armPoseToRigTargetPose(boneName, armPose),
+      });
+    });
+  });
+
+  const nextKeyframes = { ...state.boneKeyframes };
+  const nextGenerated = { ...state.boneGeneratedFrames };
+
+  (['rightArm', 'leftArm'] as const).forEach((boneName) => {
+    if (armKeyframes[boneName].length === 0) return;
+    const target: SelectedRigTarget = { kind: 'bone', name: boneName, view: 'thirdPerson' };
+    const key = targetKey(target);
+    nextKeyframes[key] = normalizeKeyframes(armKeyframes[boneName], state.frameCount);
+    nextGenerated[key] = generatePoseFrames(nextKeyframes[key], state.frameCount, state.interpolation);
+  });
+
+  state.boneKeyframes = nextKeyframes;
+  state.boneGeneratedFrames = nextGenerated;
+}
 
 function getWeaponObject(view: EditorView, weapon: WeaponChoice): THREE.Group {
   if (view === 'firstPerson') {
@@ -808,13 +954,16 @@ function seedThreeFrames(): void {
   setSelectedKeyframes(keyframes);
   state.currentFrame = state.anchorFrames[0];
   clearDraft();
-  regenerateSelectedFrames('Seeded three key poses.');
+  regenerateSelectedFrames(state.view === 'thirdPerson' && state.selectedTarget.kind === 'weapon'
+    ? 'Seeded weapon and linked arm key poses.'
+    : 'Seeded three key poses.');
 }
 
 function regenerateSelectedFrames(message = 'Generated missing frames.'): void {
   const normalizedKeyframes = normalizeKeyframes(getSelectedKeyframes(), state.frameCount);
   setSelectedKeyframes(normalizedKeyframes);
   setSelectedGeneratedFrames(generatePoseFrames(normalizedKeyframes, state.frameCount, state.interpolation));
+  seedLinkedThirdPersonArmTracks(normalizedKeyframes);
   state.currentFrame = clampFrameIndex(state.currentFrame, state.frameCount);
   frameSlider.max = String(state.frameCount - 1);
   frameSlider.value = String(state.currentFrame);
@@ -828,6 +977,7 @@ function regenerateAllFrames(): void {
   state.weaponKeyframes = normalizeKeyframes(state.weaponKeyframes, state.frameCount);
   if (state.weaponKeyframes.length > 0) {
     state.weaponGeneratedFrames = generatePoseFrames(state.weaponKeyframes, state.frameCount, state.interpolation);
+    seedLinkedThirdPersonArmTracks(state.weaponKeyframes);
   }
 
   (['bone', 'socket'] as const).forEach((kind) => {
