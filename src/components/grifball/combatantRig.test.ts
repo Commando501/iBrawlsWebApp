@@ -14,14 +14,35 @@ import {
 test('buildCombatantRigForModel maps voxel body parts into named bones', () => {
   const model = buildVoxelSpartanModel(false, 192);
   const rig = buildCombatantRigForModel(model);
+  const segments = model.userData.segmentGroups as Record<string, THREE.Group>;
 
   assert.equal(rig.root, model);
   assert.equal(rig.bones.upperTorso, model.userData.upperTorso);
   assert.equal(rig.bones.lowerTorso, model.userData.lowerTorso);
   assert.equal(rig.bones.head, model.userData.head);
+  assert.equal(rig.segmentGroups, segments);
+  assert.equal(model.userData.articulationMode, 'group-pivot');
+  assert.notEqual(rig.bones.leftArm, segments.leftArm);
+  assert.equal(segments.leftArm.parent, rig.bones.leftArm);
+  assert.equal(rig.bones.leftArm.userData.segmentGroup, segments.leftArm);
   assert.equal(model.userData.combatantRig, rig);
   assert.equal(model.userData.bones, rig.bones);
   assert.equal(model.userData.attachments, rig.attachments);
+});
+
+test('combatant bone controllers pose the visible voxel segments', () => {
+  const model = buildVoxelSpartanModel(false, 192);
+  const rig = buildCombatantRigForModel(model);
+  const leftArmSegment = rig.segmentGroups.leftArm;
+
+  model.updateWorldMatrix(true, true);
+  const before = leftArmSegment.localToWorld(new THREE.Vector3(0, -0.4, 0));
+  rig.bones.leftArm.rotation.z = 0.5;
+  model.updateWorldMatrix(true, true);
+  const after = leftArmSegment.localToWorld(new THREE.Vector3(0, -0.4, 0));
+
+  assert.notEqual(before.x, after.x);
+  assert.notEqual(before.y, after.y);
 });
 
 test('combatant rig exposes the expected editable bones and sockets', () => {
@@ -34,6 +55,8 @@ test('combatant rig exposes the expected editable bones and sockets', () => {
   assert.deepEqual(Object.keys(rig.attachments).sort(), [
     'chestCenter',
     'headCenter',
+    'leftHandGrip',
+    'rightHandGrip',
     'thirdPersonOffhandGrip',
     'thirdPersonWeaponGrip',
   ]);
@@ -42,7 +65,10 @@ test('combatant rig exposes the expected editable bones and sockets', () => {
     'firstPersonWeaponGrip',
   ]);
   assert.ok(COMBATANT_ATTACHMENT_POINT_NAMES.includes('thirdPersonWeaponGrip'));
+  assert.ok(COMBATANT_ATTACHMENT_POINT_NAMES.includes('rightHandGrip'));
   assert.ok(COMBATANT_ATTACHMENT_POINT_NAMES.includes('firstPersonWeaponGrip'));
+  assert.equal(rig.attachments.rightHandGrip?.group.parent, rig.bones.rightArm);
+  assert.equal(rig.attachments.leftHandGrip?.group.parent, rig.bones.leftArm);
 });
 
 test('third-person weapon grip is an identity lock point under the upper torso', () => {

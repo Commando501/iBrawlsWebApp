@@ -172,6 +172,8 @@ const makeAnchorFrames = (frameCount: number): [number, number, number] => [
 const THIRD_PERSON_SOCKET_NAMES: CombatantAttachmentPointName[] = [
   'thirdPersonWeaponGrip',
   'thirdPersonOffhandGrip',
+  'rightHandGrip',
+  'leftHandGrip',
   'headCenter',
   'chestCenter',
 ];

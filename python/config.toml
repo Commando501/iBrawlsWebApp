@@ -5,12 +5,12 @@
 
 [run]
 mode = "combat"
-opponent = "random"
+opponent = "self"
 total_steps = 10000000
 parallel_matches = 32
-num_workers = 1
+num_workers = 5000
 goal_target = 3
-match_minutes = 1.0
+match_minutes = 2.0
 device = "cuda"
 seed = 1
 
@@ -33,7 +33,7 @@ clip_range = 0.2
 [network]
 width = 512
 depth = 3
-init_model = ""
+init_model = "runs/combat2_v3/final_model.zip"
 
 [randomize]
 enabled = true
@@ -47,12 +47,12 @@ possession = 0.0001
 ball_progress = 0.01
 kill = 0.2
 death = 0.3
-approach = 0.05
-time_penalty = 0.001
+approach = 0.1
+time_penalty = 0.003
 bootstrap_truncation = false
 
 [logging]
-dir = "runs/combat2_v3"
+dir = "runs/combat2_v3_1"
 save_every = 200000
 eval_every = 100000
 eval_episodes = 24
