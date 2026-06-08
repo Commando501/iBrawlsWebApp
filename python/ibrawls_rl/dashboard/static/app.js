@@ -424,6 +424,21 @@ async function pollEval() {
   const st = await api.get("/api/eval/status");
   $("#btnEval").disabled = st.running; $("#btnEvalStop").disabled = !st.running;
   $("#evalState").textContent = st.running ? "running…" : st.state;
+
+  // progress + ETA bar
+  const bar = $("#evalProgress");
+  if (st.running) {
+    bar.style.display = "block";
+    const pct = st.progress != null ? Math.round(st.progress * 100) : 0;
+    $("#evalProgressFill").style.width = pct + "%";
+    const count = st.total ? `${fmtInt(st.completed)} / ${fmtInt(st.total)} matches` : "starting…";
+    const eta = st.eta != null ? `~${fmtDur(st.eta)} left`
+      : (st.completed ? "estimating…" : "spinning up sim…");
+    $("#evalProgressLabel").textContent = `${count}  ·  ${fmtDur(st.elapsed)} elapsed  ·  ${eta}`;
+  } else {
+    bar.style.display = "none";
+  }
+
   $("#evalLog").textContent = (st.log || []).join("\n");
   $("#evalLog").scrollTop = $("#evalLog").scrollHeight;
   if (st.result) renderEvalResult(st.result);
@@ -458,33 +473,54 @@ function bumpDir(dir) {
 // Each item: {label (toml-style), field (dataclass field, null = advisory only), value, why}.
 function evalAdvice(r, cfg) {
   const wr = r.win_rate || 0, draw = r.draw_rate || 0;
-  const mode = r.mode || "grifball";
+  const mode = r.mode || "combat";
   const opp = r.opponent || "random";
   const model = r.model || "";
   const items = [];
   const set = (label, field, value, why) => items.push({ label, field, value, why });
   const note = (label, value, why) => items.push({ label, field: null, value, why });
-  const moreSteps = () => Math.round((Number(cfg.total_steps) || 3000000) * 1.5);
+  const num = (k, d) => { const v = Number(cfg[k]); return Number.isFinite(v) ? v : d; };
+  const moreSteps = () => Math.round(num("total_steps", 5000000) * 1.5);
   let headline;
 
   if (mode === "combat") {
-    if (wr >= 0.9) {
-      headline = { level: "good", text: "Strong combat generalist — harden it or raise the challenge." };
-      set("[randomize] enabled", "randomize_enabled", true, "train across a band of balance settings");
-      set("[randomize] pct", "randomize_pct", 0.15, "±15% jitter on mechanics");
-      if (model) set("[network] init_model", "init_model", model, "continue from this brain (keep width/depth)");
-      set("[logging] dir", "logdir", "runs/combat_v2_dr", "new folder so you can compare");
-    } else if (wr >= 0.5) {
-      headline = { level: "warn", text: "Decent but not dominant — keep training this brain." };
-      if (model) set("[network] init_model", "init_model", model, "warm-start, don't restart from scratch");
+    // The board's combat eval is a 1v1 vs random — a floor test, not proof of FFA/team skill.
+    const kill = num("reward_kill", 0.2);
+    const approach = num("reward_approach", 0.05);
+    const mm = num("match_minutes", 1.3);
+    const killMin = num("combat_kill_min", 10);
+    const killFloor = round(Math.max(0.2, approach * 4), 3);  // kills should clearly out-pay positioning
+
+    if (wr >= 0.85) {
+      headline = { level: "good", text: "Strong in the 1v1-vs-random test — but that only proves 1v1. Harden it, then validate bigger worlds." };
+      set("[randomize] enabled", "randomize_enabled", true, "train across a band of balance settings so it survives live patches");
+      if (num("randomize_pct", 0) <= 0) set("[randomize] pct", "randomize_pct", 0.15, "±15% mechanics jitter");
+      if (model) set("[network] init_model", "init_model", model, "warm-start from this brain (keep width/depth)");
+      set("[logging] dir", "logdir",
+        /dr/.test(String(cfg.logdir || "")) ? bumpDir(cfg.logdir) : "runs/combat_dr",
+        "new folder for the hardening run");
+      note("Validate (Evaluate tab)", "raise the kill target", "the grade was 1v1 vs random — re-run Evaluate with a higher kill target before trusting FFA/team play");
+    } else if (wr >= 0.55) {
+      headline = { level: "warn", text: "Beats random 1v1 but isn't dominant — keep training this same brain." };
+      if (model) set("[network] init_model", "init_model", model, "warm-start (continue), don't restart from scratch");
       set("[run] total_steps", "total_steps", moreSteps(), "more experience (~×1.5)");
-      set("[logging] dir", "logdir", bumpDir(cfg.logdir), "new folder");
+      if (approach >= 0.05) set("[reward] approach", "reward_approach", 0.03, "shrink the positioning foothold so it commits to kills instead of circling");
+      set("[logging] dir", "logdir", bumpDir(cfg.logdir), "keep runs separate");
     } else {
-      headline = { level: "bad", text: "Weak in combat — strengthen the learning signal." };
-      set("[reward] kill", "reward_kill", 0.2, "pay it more for fights");
-      set("[reward] approach", "reward_approach", 0.05, "pull it toward enemies");
-      note("[combat] world_sizes", "include a few 2s", "small (1v1) matches give a faster signal — edit by hand");
-      set("[run] total_steps", "total_steps", moreSteps(), "more experience (~×1.5)");
+      headline = { level: "bad", text: "Barely beating a random 1v1 — it hasn't learned to fight. Make the kill signal reachable, then add time." };
+      if (approach < 0.05) set("[reward] approach", "reward_approach", 0.05, "the foothold that leads a fresh brain to the enemy");
+      if (kill < approach * 4) set("[reward] kill", "reward_kill", killFloor, `make kills clearly out-pay positioning (≈4× approach; now ${kill})`);
+      if (mm > 1.5) set("[run] match_minutes", "match_minutes", 1.0, "short rounds resolve → many more episodes");
+      if (killMin > 6) set("[combat] kill_min", "combat_kill_min", 5, "fewer kills to end a round → faster, denser learning signal");
+      set("[run] total_steps", "total_steps", moreSteps(), "hard-exploration needs volume (~×1.5)");
+      note("[combat] world_sizes", "weight toward 2s", "more 1v1s in the mix give a cleaner early signal — edit the list by hand");
+    }
+
+    // Timeouts: rounds not resolving (independent of win level).
+    if (draw >= 0.2) {
+      if (mm > 1.0) set("[run] match_minutes", "match_minutes", round(Math.max(1, mm * 0.7), 1), "lots of timeouts — give rounds less time to stall");
+      if (killMin > 5) set("[combat] kill_min", "combat_kill_min", 5, "lower the kill target so rounds actually end");
+      if (kill < approach * 4) set("[reward] kill", "reward_kill", killFloor, "pay it to finish kills, not just chase");
     }
   } else {
     if (wr >= 0.9) {
@@ -530,7 +566,7 @@ function evalAdvice(r, cfg) {
       set("[reward] approach", "reward_approach", 0.05, "lead it to the ball/enemy");
     }
   }
-  if (draw >= 0.3) {
+  if (mode !== "combat" && draw >= 0.3) {
     set("[run] match_minutes", "match_minutes", round(Math.max(1, (Number(cfg.match_minutes) || 6) * 0.6), 1),
       "many draws/timeouts — force matches to resolve");
     set("[reward] goal_scored", "reward_goal_scored", round((Number(cfg.reward_goal_scored) || 1) * 1.5, 3),

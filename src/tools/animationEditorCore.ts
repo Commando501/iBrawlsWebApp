@@ -1,6 +1,14 @@
 import { type WeaponPose } from '../components/grifball/attackAnimationPresets';
 
 export type AnimationInterpolationMode = 'linear' | 'smoothstep' | 'easeInOutCubic';
+export type RigTargetPose = WeaponPose;
+export type RigTargetKind = 'weapon' | 'bone' | 'socket';
+
+export interface SelectedRigTarget {
+  kind: RigTargetKind;
+  name: string;
+  view: 'firstPerson' | 'thirdPerson';
+}
 
 export interface AnimationKeyframe {
   frame: number;
@@ -12,6 +20,27 @@ export interface GeneratedAnimationFrame {
   frame: number;
   pose: WeaponPose;
   source: 'keyframe' | 'generated';
+}
+
+export interface AnimationEditorRigTrack {
+  keyframes: AnimationKeyframe[];
+  frames: GeneratedAnimationFrame[];
+}
+
+export interface AnimationEditorRigExport {
+  bones: Record<string, AnimationEditorRigTrack>;
+  sockets: Record<string, AnimationEditorRigTrack>;
+}
+
+export interface AnimationEditorExportInput {
+  weapon: string;
+  view: 'firstPerson' | 'thirdPerson';
+  track: string;
+  frameCount: number;
+  interpolation: AnimationInterpolationMode;
+  keyframes: AnimationKeyframe[];
+  frames: GeneratedAnimationFrame[];
+  rig?: AnimationEditorRigExport;
 }
 
 const TAU = Math.PI * 2;
@@ -170,3 +199,51 @@ export const buildPoseArraySnippet = (
 
   return `const ${safeConstName}: WeaponPose[] = [\n${body}\n];`;
 };
+
+const roundKeyframes = (keyframes: AnimationKeyframe[], precision: number): AnimationKeyframe[] =>
+  keyframes.map((keyframe) => ({
+    ...keyframe,
+    pose: roundPose(keyframe.pose, precision),
+  }));
+
+const roundFrames = (frames: GeneratedAnimationFrame[], precision: number): GeneratedAnimationFrame[] =>
+  frames.map((frame) => ({
+    ...frame,
+    pose: roundPose(frame.pose, precision),
+  }));
+
+const roundRigTrackMap = (
+  tracks: Record<string, AnimationEditorRigTrack> | undefined,
+  precision: number
+): Record<string, AnimationEditorRigTrack> => {
+  if (!tracks) return {};
+
+  return Object.fromEntries(
+    Object.entries(tracks).map(([name, track]) => [
+      name,
+      {
+        keyframes: roundKeyframes(track.keyframes, precision),
+        frames: roundFrames(track.frames, precision),
+      },
+    ])
+  );
+};
+
+export const buildAnimationEditorExportPayload = (
+  input: AnimationEditorExportInput,
+  precision = 4
+) => ({
+  tool: 'ibrawls-animation-editor',
+  rigVersion: 1,
+  weapon: input.weapon,
+  view: input.view,
+  track: input.track,
+  frameCount: input.frameCount,
+  interpolation: input.interpolation,
+  keyframes: roundKeyframes(normalizeKeyframes(input.keyframes, input.frameCount), precision),
+  frames: roundFrames(input.frames, precision),
+  rig: {
+    bones: roundRigTrackMap(input.rig?.bones, precision),
+    sockets: roundRigTrackMap(input.rig?.sockets, precision),
+  },
+});

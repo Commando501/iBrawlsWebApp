@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import webbrowser
 from dataclasses import asdict
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -40,6 +41,18 @@ def _current_values() -> dict:
         except Exception:
             pass
     return asdict(TrainConfig())
+
+
+_EVAL_PROGRESS = re.compile(r"\[eval\]\s+(\d+)\s*/\s*(\d+)")
+
+
+def _parse_eval_progress(lines: list[str]) -> tuple[int | None, int | None]:
+    """Latest (completed, total) from the evaluator's `[eval] N/M` progress lines."""
+    for line in reversed(lines):
+        m = _EVAL_PROGRESS.search(line)
+        if m:
+            return int(m.group(1)), int(m.group(2))
+    return None, None
 
 
 def _parse_eval_result(proc: ManagedProcess) -> dict | None:
@@ -206,7 +219,19 @@ class Handler(BaseHTTPRequestHandler):
     def _eval_status(self) -> dict:
         st = EVALER.status()
         st["result"] = None if st["state"] in ("running",) else _parse_eval_result(EVALER)
-        st["log"] = EVALER.log_since(0)["lines"][-40:]
+        lines = EVALER.log_since(0)["lines"]
+        st["log"] = lines[-40:]
+        completed, total = _parse_eval_progress(lines)
+        st["completed"] = completed
+        st["total"] = total
+        progress = eta = None
+        if total and completed is not None:
+            progress = max(0.0, min(1.0, completed / float(total)))
+            elapsed = st.get("elapsed")
+            if elapsed and 0 < completed < total:
+                eta = elapsed * (total - completed) / completed
+        st["progress"] = progress
+        st["eta"] = eta
         return st
 
 

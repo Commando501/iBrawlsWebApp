@@ -301,6 +301,32 @@
       background: rgba(127, 29, 29, 0.24);
     }
 
+    .toggle-row {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .toggle-row label {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      min-height: 34px;
+      padding: 0 8px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      background: rgba(15, 23, 42, 0.54);
+      color: var(--muted);
+      letter-spacing: 0.06em;
+    }
+
+    .toggle-row input {
+      width: auto;
+      min-height: 0;
+      accent-color: var(--cyan);
+    }
+
     .viewport-shell {
       display: grid;
       grid-template-rows: minmax(0, 1fr) auto;
@@ -631,6 +657,10 @@
             Pose track
             <select id="trackSelect"></select>
           </label>
+          <label>
+            Transform target
+            <select id="targetSelect"></select>
+          </label>
           <div class="grid-2">
             <label>
               Frames
@@ -660,6 +690,11 @@
             <button id="translateButton" type="button" data-active="true">Move</button>
             <button id="rotateButton" type="button">Rotate</button>
             <button id="setKeyframeButton" class="primary" type="button">Set Keyframe</button>
+          </div>
+          <div class="toggle-row">
+            <label><input id="showSkeletonToggle" type="checkbox" checked /> Bones</label>
+            <label><input id="showSocketsToggle" type="checkbox" checked /> Sockets</label>
+            <label><input id="showLabelsToggle" type="checkbox" checked /> Labels</label>
           </div>
           <div class="pose-grid" id="poseInputs">
             <span></span>

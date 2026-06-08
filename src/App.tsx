@@ -93,7 +93,7 @@ import { CharacterPreview } from './components/CharacterPreview';
 import { CharacterPainter } from './components/CharacterPainter';
 import { CharacterLoadout, DEFAULT_LOADOUT, AVAILABLE_PRESETS, HelmetPreset, TorsoPreset, ArmPreset, LegPreset } from './components/VoxelModels';
 
-const APP_VERSION = '0.639';
+const APP_VERSION = '0.639a';
 const MAX_PLAYER_NAME_LENGTH = 10;
 const MAX_MULTIPLAYER_CLIENTS = 7;
 const MAX_MULTIPLAYER_PLAYERS = 1 + MAX_MULTIPLAYER_CLIENTS;
@@ -6667,7 +6667,7 @@ export default function App() {
                           {/* AI combat panel in single player mode */}
                           <div className="bg-slate-950/45 border border-white/10 rounded-xl p-4.5 flex flex-col gap-3.5 text-left shrink-0">
                             <div className="flex justify-between items-center pb-2 border-b border-white/5">
-                              <span className="text-xs font-bold text-[#38bdf8] uppercase tracking-wider flex items-center gap-1.5 font-display">🤖 AI Combat Neural Net</span>
+                              <span className="text-xs font-bold text-[#38bdf8] uppercase tracking-wider flex items-center gap-1.5 font-display">🤖 AI Behavior Editor</span>
                               <span className="text-[10px] font-mono text-[#38bdf8] bg-[#38bdf8]/10 border border-[#38bdf8]/20 px-2 py-0.5 rounded uppercase font-black">Offline Play</span>
                             </div>
                             <div className="flex flex-col gap-1.5">

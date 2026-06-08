@@ -6,23 +6,23 @@
 [run]
 mode = "combat"
 opponent = "random"
-total_steps = 4500000
+total_steps = 10000000
 parallel_matches = 32
 num_workers = 1
 goal_target = 3
-match_minutes = 2.0
-device = "cpu"
+match_minutes = 1.0
+device = "cuda"
 seed = 1
 
 [combat]
-world_sizes = [2, 2, 2, 2, 4, 4, 8]
-kill_min = 10
+world_sizes = [2, 2, 2, 2, 2, 2, 4, 4, 4, 8]
+kill_min = 5
 kill_max = 25
 randomize_layout = true
 
 [ppo]
 learning_rate = 0.0003
-rollout_length = 128
+rollout_length = 256
 batch_size = 4096
 gamma = 0.997
 gae_lambda = 0.95
@@ -31,9 +31,9 @@ value_coef = 0.5
 clip_range = 0.2
 
 [network]
-width = 256
-depth = 2
-init_model = "runs/combat2/final_model.zip"
+width = 512
+depth = 3
+init_model = ""
 
 [randomize]
 enabled = true
@@ -41,18 +41,18 @@ pct = 0.15
 
 [reward]
 win = 1.0
-goal_scored = 3.375
+goal_scored = 5.063
 goal_conceded = 1.0
-possession = 0.0003
+possession = 0.0001
 ball_progress = 0.01
 kill = 0.2
 death = 0.3
-approach = 0.15
+approach = 0.05
 time_penalty = 0.001
 bootstrap_truncation = false
 
 [logging]
-dir = "runs/combat2_v2"
+dir = "runs/combat2_v3"
 save_every = 200000
 eval_every = 100000
 eval_episodes = 24

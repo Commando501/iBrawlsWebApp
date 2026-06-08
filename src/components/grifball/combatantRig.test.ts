@@ -3,6 +3,8 @@ import { test } from 'node:test';
 import * as THREE from 'three';
 import { buildVoxelSpartanModel } from '../VoxelModels';
 import {
+  COMBATANT_ATTACHMENT_POINT_NAMES,
+  COMBATANT_BONE_NAMES,
   attachToAttachmentPoint,
   attachToCombatantAttachment,
   buildCombatantRigForModel,
@@ -20,6 +22,27 @@ test('buildCombatantRigForModel maps voxel body parts into named bones', () => {
   assert.equal(model.userData.combatantRig, rig);
   assert.equal(model.userData.bones, rig.bones);
   assert.equal(model.userData.attachments, rig.attachments);
+});
+
+test('combatant rig exposes the expected editable bones and sockets', () => {
+  const model = buildVoxelSpartanModel(false, 192);
+  const rig = buildCombatantRigForModel(model);
+  const camera = new THREE.Group();
+  const firstPersonRig = createFirstPersonWeaponRig(camera);
+
+  assert.deepEqual(Object.keys(rig.bones).sort(), [...COMBATANT_BONE_NAMES].sort());
+  assert.deepEqual(Object.keys(rig.attachments).sort(), [
+    'chestCenter',
+    'headCenter',
+    'thirdPersonOffhandGrip',
+    'thirdPersonWeaponGrip',
+  ]);
+  assert.deepEqual(Object.keys(firstPersonRig.attachments).sort(), [
+    'firstPersonOffhandGrip',
+    'firstPersonWeaponGrip',
+  ]);
+  assert.ok(COMBATANT_ATTACHMENT_POINT_NAMES.includes('thirdPersonWeaponGrip'));
+  assert.ok(COMBATANT_ATTACHMENT_POINT_NAMES.includes('firstPersonWeaponGrip'));
 });
 
 test('third-person weapon grip is an identity lock point under the upper torso', () => {

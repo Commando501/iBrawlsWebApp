@@ -24,6 +24,19 @@ def _predict(model, env, obs, deterministic: bool) -> np.ndarray:
     return np.asarray(action, dtype=np.int32)
 
 
+def _emit_progress(progress_every: int, completed: int, matches: int, next_mark: int) -> int:
+    """Print a parseable `[eval] done/total` line when `completed` crosses a threshold.
+
+    Returns the updated next threshold. No-op when progress_every <= 0 (e.g. the in-training
+    eval, which must stay quiet). The control board parses these lines for a live ETA.
+    """
+    if progress_every and completed >= next_mark:
+        print(f"[eval] {min(completed, matches)}/{matches}", flush=True)
+        while next_mark <= completed:
+            next_mark += progress_every
+    return next_mark
+
+
 def eval_vs(
     model,
     opponent: str = "random",
@@ -31,6 +44,7 @@ def eval_vs(
     num_envs: int = 16,
     goal_target: int = 3,
     deterministic: bool = True,
+    progress_every: int = 0,
 ) -> dict:
     """Grade a grifball policy vs a built-in opponent. Each learner sub-env's episode counts."""
     env = GrifballVecEnv(
@@ -43,6 +57,7 @@ def eval_vs(
         obs = env.reset()
         ep_return = np.zeros(env.num_envs, dtype=np.float64)
         wins = losses = draws = completed = 0
+        next_mark = progress_every
         returns: list[float] = []
         max_iters = matches * 60 * 60 * 8
         it = 0
@@ -61,6 +76,7 @@ def eval_vs(
                 returns.append(float(ep_return[i]))
                 ep_return[i] = 0.0
                 completed += 1
+            next_mark = _emit_progress(progress_every, completed, matches, next_mark)
         total = max(1, wins + losses + draws)
         return {
             "win_rate": wins / total,
@@ -84,6 +100,7 @@ def eval_combat_vs_random(
     num_worlds: int = 16,
     kill_target: int = 10,
     deterministic: bool = True,
+    progress_every: int = 0,
 ) -> dict:
     """Grade a combat policy by 1v1 duels vs a random opponent (fixed 1v1 worlds).
 
@@ -102,6 +119,7 @@ def eval_combat_vs_random(
         policy_idx = np.arange(0, env.num_envs, 2)
         random_idx = np.arange(1, env.num_envs, 2)
         wins = losses = draws = completed = 0
+        next_mark = progress_every
         max_iters = matches * 60 * 60 * 8
         it = 0
         while completed < matches and it < max_iters:
@@ -121,6 +139,7 @@ def eval_combat_vs_random(
                 else:
                     draws += 1
                 completed += 1
+            next_mark = _emit_progress(progress_every, completed, matches, next_mark)
         total = max(1, wins + losses + draws)
         return {
             "win_rate": wins / total,

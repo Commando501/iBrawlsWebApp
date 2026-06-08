@@ -36,9 +36,11 @@ def main() -> None:
         print(f"[eval] loading {args.model} ...")
     model = PPO.load(args.model, device=args.device)
 
+    progress_every = max(1, args.matches // 20)  # ~20 progress lines for the control board's ETA
     if args.mode == "combat":
         res = eval_combat_vs_random(
             model, matches=args.matches, num_worlds=args.num_envs, kill_target=args.kill_target,
+            progress_every=progress_every,
         )
         if args.json:
             print(json.dumps({"model": args.model, "mode": "combat", "opponent": "random", **res}))
@@ -56,6 +58,7 @@ def main() -> None:
         num_envs=args.num_envs,
         goal_target=args.goal_target,
         deterministic=True,
+        progress_every=progress_every,
     )
     if args.json:
         print(json.dumps({"model": args.model, "mode": "grifball",

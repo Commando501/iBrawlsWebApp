@@ -13,12 +13,16 @@ import {
   type WeaponPose,
 } from '../components/grifball/attackAnimationPresets';
 import {
+  COMBATANT_BONE_NAMES,
   attachToAttachmentPoint,
   createFirstPersonWeaponRig,
+  type CombatantAttachmentPointName,
+  type CombatantBoneName,
 } from '../components/grifball/combatantRig';
 import { createCombatantMeshRig, type CombatantMeshRig } from '../components/grifball/combatantModels';
 import { buildGravityHammerModel, buildKatarSwordModel } from '../components/VoxelModels';
 import {
+  buildAnimationEditorExportPayload,
   buildPoseArraySnippet,
   clampFrameIndex,
   clonePose,
@@ -26,13 +30,24 @@ import {
   normalizeKeyframes,
   roundPose,
   type AnimationInterpolationMode,
+  type AnimationEditorRigTrack,
   type AnimationKeyframe,
   type GeneratedAnimationFrame,
+  type RigTargetKind,
+  type RigTargetPose,
+  type SelectedRigTarget,
 } from './animationEditorCore';
 
 type WeaponChoice = 'hammer' | 'sword';
 type EditorView = 'firstPerson' | 'thirdPerson';
 type TransformMode = 'translate' | 'rotate';
+type RigTrackMap = Record<string, AnimationKeyframe[]>;
+type GeneratedRigTrackMap = Record<string, GeneratedAnimationFrame[]>;
+
+interface TargetOption {
+  target: SelectedRigTarget;
+  label: string;
+}
 
 interface TrackDefinition {
   id: string;
@@ -49,10 +64,18 @@ interface EditorState {
   currentFrame: number;
   interpolation: AnimationInterpolationMode;
   transformMode: TransformMode;
-  keyframes: AnimationKeyframe[];
-  generatedFrames: GeneratedAnimationFrame[];
+  selectedTarget: SelectedRigTarget;
+  weaponKeyframes: AnimationKeyframe[];
+  weaponGeneratedFrames: GeneratedAnimationFrame[];
+  boneKeyframes: RigTrackMap;
+  boneGeneratedFrames: GeneratedRigTrackMap;
+  socketKeyframes: RigTrackMap;
+  socketGeneratedFrames: GeneratedRigTrackMap;
   anchorFrames: [number, number, number];
   playing: boolean;
+  showSkeleton: boolean;
+  showSockets: boolean;
+  showLabels: boolean;
 }
 
 const TRACKS: TrackDefinition[] = [
@@ -146,10 +169,70 @@ const makeAnchorFrames = (frameCount: number): [number, number, number] => [
   frameCount - 1,
 ];
 
+const THIRD_PERSON_SOCKET_NAMES: CombatantAttachmentPointName[] = [
+  'thirdPersonWeaponGrip',
+  'thirdPersonOffhandGrip',
+  'headCenter',
+  'chestCenter',
+];
+
+const FIRST_PERSON_SOCKET_NAMES: CombatantAttachmentPointName[] = [
+  'firstPersonWeaponGrip',
+  'firstPersonOffhandGrip',
+];
+
+const SKELETON_CONNECTIONS: Array<[CombatantBoneName, CombatantBoneName]> = [
+  ['root', 'lowerTorso'],
+  ['root', 'upperTorso'],
+  ['upperTorso', 'head'],
+  ['upperTorso', 'leftArm'],
+  ['upperTorso', 'rightArm'],
+  ['lowerTorso', 'leftLeg'],
+  ['lowerTorso', 'rightLeg'],
+];
+
+const targetKey = (target: SelectedRigTarget): string =>
+  `${target.view}:${target.kind}:${target.name}`;
+
+const encodeTargetValue = targetKey;
+
+const decodeTargetValue = (value: string): SelectedRigTarget | null => {
+  const [view, kind, name] = value.split(':');
+  if (
+    (view !== 'firstPerson' && view !== 'thirdPerson') ||
+    (kind !== 'weapon' && kind !== 'bone' && kind !== 'socket') ||
+    !name
+  ) {
+    return null;
+  }
+
+  return { view, kind, name };
+};
+
+const targetLabel = (target: SelectedRigTarget): string => {
+  const prefix = target.kind === 'weapon'
+    ? 'Weapon'
+    : target.kind === 'bone'
+      ? 'Bone'
+      : 'Socket';
+  return `${prefix}: ${target.name}`;
+};
+
+const poseFromObject = (object: THREE.Object3D): RigTargetPose => ({
+  position: [object.position.x, object.position.y, object.position.z],
+  rotation: [object.rotation.x, object.rotation.y, object.rotation.z],
+});
+
+const applyPoseToObject = (object: THREE.Object3D, pose: RigTargetPose): void => {
+  object.position.set(...pose.position);
+  object.rotation.set(...pose.rotation);
+};
+
 const viewport = requireElement<HTMLDivElement>('viewport');
 const weaponSelect = requireElement<HTMLSelectElement>('weaponSelect');
 const viewSelect = requireElement<HTMLSelectElement>('viewSelect');
 const trackSelect = requireElement<HTMLSelectElement>('trackSelect');
+const targetSelect = requireElement<HTMLSelectElement>('targetSelect');
 const frameCountInput = requireElement<HTMLInputElement>('frameCountInput');
 const interpolationSelect = requireElement<HTMLSelectElement>('interpolationSelect');
 const seedButton = requireElement<HTMLButtonElement>('seedButton');
@@ -157,6 +240,9 @@ const generateButton = requireElement<HTMLButtonElement>('generateButton');
 const translateButton = requireElement<HTMLButtonElement>('translateButton');
 const rotateButton = requireElement<HTMLButtonElement>('rotateButton');
 const setKeyframeButton = requireElement<HTMLButtonElement>('setKeyframeButton');
+const showSkeletonToggle = requireElement<HTMLInputElement>('showSkeletonToggle');
+const showSocketsToggle = requireElement<HTMLInputElement>('showSocketsToggle');
+const showLabelsToggle = requireElement<HTMLInputElement>('showLabelsToggle');
 const anchorRows = requireElement<HTMLDivElement>('anchorRows');
 const keyframeList = requireElement<HTMLDivElement>('keyframeList');
 const keyframeCount = requireElement<HTMLElement>('keyframeCount');
@@ -254,6 +340,64 @@ const reticleGeometry = new THREE.BufferGeometry().setFromPoints([
 const reticle = new THREE.LineSegments(reticleGeometry, reticleMaterial);
 firstPersonRoot.add(reticle);
 
+interface RigOverlayMarker {
+  target: SelectedRigTarget;
+  group: THREE.Group;
+  label: THREE.Sprite;
+}
+
+const rigOverlayRoot = new THREE.Group();
+rigOverlayRoot.name = 'rigOverlayRoot';
+scene.add(rigOverlayRoot);
+
+const boneMarkerGeometry = new THREE.SphereGeometry(0.038, 12, 8);
+const socketMarkerGeometry = new THREE.BoxGeometry(0.07, 0.07, 0.07);
+const boneMarkerMaterial = new THREE.MeshBasicMaterial({ color: 0x22d3ee, depthTest: false });
+const socketMarkerMaterial = new THREE.MeshBasicMaterial({ color: 0xf59e0b, depthTest: false });
+const selectedMarkerMaterial = new THREE.MeshBasicMaterial({ color: 0x34d399, depthTest: false });
+const skeletonLineGeometry = new THREE.BufferGeometry();
+const skeletonLinePositions = new Float32Array(SKELETON_CONNECTIONS.length * 2 * 3);
+skeletonLineGeometry.setAttribute('position', new THREE.BufferAttribute(skeletonLinePositions, 3));
+const skeletonLineMaterial = new THREE.LineBasicMaterial({
+  color: 0x38bdf8,
+  transparent: true,
+  opacity: 0.58,
+  depthTest: false,
+});
+const skeletonLines = new THREE.LineSegments(skeletonLineGeometry, skeletonLineMaterial);
+rigOverlayRoot.add(skeletonLines);
+const rigOverlayMarkers: RigOverlayMarker[] = [];
+
+const createLabelSprite = (text: string, color: string): THREE.Sprite => {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 64;
+  const context = canvas.getContext('2d');
+  if (context) {
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    context.font = '700 24px sans-serif';
+    context.textAlign = 'center';
+    context.textBaseline = 'middle';
+    context.fillStyle = 'rgba(2, 6, 23, 0.72)';
+    context.fillRect(0, 12, canvas.width, 40);
+    context.strokeStyle = color;
+    context.strokeRect(1, 13, canvas.width - 2, 38);
+    context.fillStyle = color;
+    context.fillText(text, canvas.width / 2, canvas.height / 2 + 1);
+  }
+
+  const texture = new THREE.CanvasTexture(canvas);
+  const material = new THREE.SpriteMaterial({
+    map: texture,
+    transparent: true,
+    depthTest: false,
+  });
+  const sprite = new THREE.Sprite(material);
+  sprite.scale.set(0.36, 0.09, 1);
+  sprite.position.set(0, 0.11, 0);
+  return sprite;
+};
+
 const state: EditorState = {
   weapon: 'hammer',
   view: 'thirdPerson',
@@ -262,10 +406,18 @@ const state: EditorState = {
   currentFrame: 0,
   interpolation: 'smoothstep',
   transformMode: 'translate',
-  keyframes: [],
-  generatedFrames: [],
+  selectedTarget: { kind: 'weapon', name: 'hammer', view: 'thirdPerson' },
+  weaponKeyframes: [],
+  weaponGeneratedFrames: [],
+  boneKeyframes: {},
+  boneGeneratedFrames: {},
+  socketKeyframes: {},
+  socketGeneratedFrames: {},
   anchorFrames: makeAnchorFrames(31),
   playing: false,
+  showSkeleton: true,
+  showSockets: true,
+  showLabels: true,
 };
 
 let draftFrame: number | null = null;
@@ -273,31 +425,192 @@ let draftPose: WeaponPose | null = null;
 let playbackAccumulator = 0;
 const playbackFrameDuration = 1 / 18;
 let lastAnimationTime = performance.now();
+const baselineTargetPoses = new Map<string, RigTargetPose>();
+
+function getWeaponObject(view: EditorView, weapon: WeaponChoice): THREE.Group {
+  if (view === 'firstPerson') {
+    return weapon === 'hammer' ? firstPersonHammer : firstPersonSword;
+  }
+  return weapon === 'hammer' ? thirdPersonRig.hammer : thirdPersonRig.sword;
+}
 
 function getActiveWeaponObject(): THREE.Group {
-  if (state.view === 'firstPerson') {
-    return state.weapon === 'hammer' ? firstPersonHammer : firstPersonSword;
+  return getWeaponObject(state.view, state.weapon);
+}
+
+function getTargetObject(target: SelectedRigTarget): THREE.Group | null {
+  if (target.kind === 'weapon') {
+    return getWeaponObject(target.view, target.name as WeaponChoice);
   }
-  return state.weapon === 'hammer' ? thirdPersonRig.hammer : thirdPersonRig.sword;
+
+  if (target.kind === 'bone') {
+    return target.view === 'thirdPerson'
+      ? thirdPersonRig.rig.bones[target.name as CombatantBoneName] ?? null
+      : null;
+  }
+
+  if (target.view === 'firstPerson') {
+    const attachment = firstPersonRig.attachments[
+      target.name as keyof typeof firstPersonRig.attachments
+    ];
+    return attachment?.group ?? null;
+  }
+
+  return thirdPersonRig.rig.attachments[target.name as CombatantAttachmentPointName]?.group ?? null;
 }
 
-function captureActivePose(): WeaponPose {
-  const object = getActiveWeaponObject();
-  return {
-    position: [object.position.x, object.position.y, object.position.z],
-    rotation: [object.rotation.x, object.rotation.y, object.rotation.z],
+function getTargetOptionsForView(view: EditorView): TargetOption[] {
+  const options: TargetOption[] = [
+    {
+      target: { kind: 'weapon', name: state.weapon, view },
+      label: targetLabel({ kind: 'weapon', name: state.weapon, view }),
+    },
+  ];
+
+  if (view === 'thirdPerson') {
+    COMBATANT_BONE_NAMES.forEach((name) => {
+      options.push({
+        target: { kind: 'bone', name, view },
+        label: targetLabel({ kind: 'bone', name, view }),
+      });
+    });
+
+    THIRD_PERSON_SOCKET_NAMES.forEach((name) => {
+      if (thirdPersonRig.rig.attachments[name]) {
+        options.push({
+          target: { kind: 'socket', name, view },
+          label: targetLabel({ kind: 'socket', name, view }),
+        });
+      }
+    });
+  } else {
+    FIRST_PERSON_SOCKET_NAMES.forEach((name) => {
+      options.push({
+        target: { kind: 'socket', name, view },
+        label: targetLabel({ kind: 'socket', name, view }),
+      });
+    });
+  }
+
+  return options;
+}
+
+function getRigTargetsForView(view: EditorView): SelectedRigTarget[] {
+  return getTargetOptionsForView(view)
+    .map((option) => option.target)
+    .filter((target) => target.kind !== 'weapon');
+}
+
+function getAllRigTargets(): SelectedRigTarget[] {
+  return [
+    ...getRigTargetsForView('thirdPerson'),
+    ...getRigTargetsForView('firstPerson'),
+  ];
+}
+
+function getDefaultTarget(): SelectedRigTarget {
+  return { kind: 'weapon', name: state.weapon, view: state.view };
+}
+
+function isTargetAvailable(target: SelectedRigTarget): boolean {
+  return getTargetOptionsForView(state.view)
+    .some((option) => encodeTargetValue(option.target) === encodeTargetValue(target));
+}
+
+function ensureSelectedTarget(): void {
+  state.selectedTarget.view = state.view;
+  if (state.selectedTarget.kind === 'weapon') {
+    state.selectedTarget.name = state.weapon;
+  }
+  if (!isTargetAvailable(state.selectedTarget)) {
+    state.selectedTarget = getDefaultTarget();
+  }
+}
+
+function captureSelectedPose(): RigTargetPose {
+  return poseFromObject(getTargetObject(state.selectedTarget) ?? getActiveWeaponObject());
+}
+
+function applyPoseToSelected(pose: RigTargetPose): void {
+  const object = getTargetObject(state.selectedTarget);
+  if (object) applyPoseToObject(object, pose);
+}
+
+function getRigKeyframeMap(kind: RigTargetKind): RigTrackMap {
+  return kind === 'bone' ? state.boneKeyframes : state.socketKeyframes;
+}
+
+function getRigGeneratedMap(kind: RigTargetKind): GeneratedRigTrackMap {
+  return kind === 'bone' ? state.boneGeneratedFrames : state.socketGeneratedFrames;
+}
+
+function setRigKeyframeMap(kind: RigTargetKind, map: RigTrackMap): void {
+  if (kind === 'bone') {
+    state.boneKeyframes = map;
+  } else if (kind === 'socket') {
+    state.socketKeyframes = map;
+  }
+}
+
+function setRigGeneratedMap(kind: RigTargetKind, map: GeneratedRigTrackMap): void {
+  if (kind === 'bone') {
+    state.boneGeneratedFrames = map;
+  } else if (kind === 'socket') {
+    state.socketGeneratedFrames = map;
+  }
+}
+
+function getSelectedKeyframes(): AnimationKeyframe[] {
+  if (state.selectedTarget.kind === 'weapon') return state.weaponKeyframes;
+  return getRigKeyframeMap(state.selectedTarget.kind)[targetKey(state.selectedTarget)] ?? [];
+}
+
+function setSelectedKeyframes(keyframes: AnimationKeyframe[]): void {
+  if (state.selectedTarget.kind === 'weapon') {
+    state.weaponKeyframes = keyframes;
+    return;
+  }
+
+  const map = {
+    ...getRigKeyframeMap(state.selectedTarget.kind),
+    [targetKey(state.selectedTarget)]: keyframes,
   };
+  setRigKeyframeMap(state.selectedTarget.kind, map);
 }
 
-function applyPoseToActive(pose: WeaponPose): void {
-  applyWeaponPose(getActiveWeaponObject(), pose);
+function getSelectedGeneratedFrames(): GeneratedAnimationFrame[] {
+  if (state.selectedTarget.kind === 'weapon') return state.weaponGeneratedFrames;
+  return getRigGeneratedMap(state.selectedTarget.kind)[targetKey(state.selectedTarget)] ?? [];
 }
 
-function getCurrentPose(): WeaponPose {
+function setSelectedGeneratedFrames(frames: GeneratedAnimationFrame[]): void {
+  if (state.selectedTarget.kind === 'weapon') {
+    state.weaponGeneratedFrames = frames;
+    return;
+  }
+
+  const map = {
+    ...getRigGeneratedMap(state.selectedTarget.kind),
+    [targetKey(state.selectedTarget)]: frames,
+  };
+  setRigGeneratedMap(state.selectedTarget.kind, map);
+}
+
+function getCurrentSelectedPose(): RigTargetPose {
   if (draftFrame === state.currentFrame && draftPose) {
     return clonePose(draftPose);
   }
-  return clonePose(state.generatedFrames[state.currentFrame]?.pose ?? state.keyframes[0]?.pose ?? getTrack(state.trackId).sample(state.view, 0));
+
+  const generatedPose = getSelectedGeneratedFrames()[state.currentFrame]?.pose;
+  if (generatedPose) return clonePose(generatedPose);
+
+  const firstKeyframePose = getSelectedKeyframes()[0]?.pose;
+  if (firstKeyframePose) return clonePose(firstKeyframePose);
+
+  const baselinePose = baselineTargetPoses.get(targetKey(state.selectedTarget));
+  if (baselinePose) return clonePose(baselinePose);
+
+  return captureSelectedPose();
 }
 
 function setStatus(message: string): void {
@@ -343,64 +656,222 @@ function clearDraft(): void {
   draftPose = null;
 }
 
+function captureEditableTargetBaselines(): void {
+  [
+    { kind: 'weapon', name: 'hammer', view: 'thirdPerson' },
+    { kind: 'weapon', name: 'sword', view: 'thirdPerson' },
+    { kind: 'weapon', name: 'hammer', view: 'firstPerson' },
+    { kind: 'weapon', name: 'sword', view: 'firstPerson' },
+    ...getAllRigTargets(),
+  ].forEach((target) => {
+    const typedTarget = target as SelectedRigTarget;
+    const object = getTargetObject(typedTarget);
+    if (object) {
+      baselineTargetPoses.set(targetKey(typedTarget), poseFromObject(object));
+    }
+  });
+}
+
+function resetRigTargetsToBaseline(view: EditorView): void {
+  getRigTargetsForView(view)
+    .filter((target) => target.kind === 'bone')
+    .forEach((target) => {
+      const object = getTargetObject(target);
+      const baseline = baselineTargetPoses.get(targetKey(target));
+      if (object && baseline) applyPoseToObject(object, baseline);
+    });
+
+  getRigTargetsForView(view)
+    .filter((target) => target.kind === 'socket')
+    .forEach((target) => {
+      const object = getTargetObject(target);
+      const baseline = baselineTargetPoses.get(targetKey(target));
+      if (object && baseline) applyPoseToObject(object, baseline);
+    });
+}
+
+function applyRigGeneratedTracks(kind: 'bone' | 'socket', frame: number): void {
+  const map = getRigGeneratedMap(kind);
+  Object.entries(map).forEach(([key, frames]) => {
+    const target = decodeTargetValue(key);
+    if (!target || target.view !== state.view || target.kind !== kind) return;
+
+    const pose = frames[frame]?.pose;
+    const object = getTargetObject(target);
+    if (pose && object) applyPoseToObject(object, pose);
+  });
+}
+
+function applyFrameToScene(): void {
+  resetRigTargetsToBaseline(state.view);
+  applyRigGeneratedTracks('bone', state.currentFrame);
+  applyRigGeneratedTracks('socket', state.currentFrame);
+
+  const weaponFrame = state.weaponGeneratedFrames[state.currentFrame];
+  if (weaponFrame) applyWeaponPose(getActiveWeaponObject(), weaponFrame.pose);
+
+  if (draftFrame === state.currentFrame && draftPose) {
+    applyPoseToSelected(draftPose);
+  }
+}
+
+function buildOverlayMarkers(): void {
+  rigOverlayMarkers.splice(0, rigOverlayMarkers.length);
+
+  getAllRigTargets().forEach((target) => {
+    const group = new THREE.Group();
+    group.name = `overlay:${target.kind}:${target.name}`;
+    const isBone = target.kind === 'bone';
+    const mesh = new THREE.Mesh(
+      isBone ? boneMarkerGeometry : socketMarkerGeometry,
+      isBone ? boneMarkerMaterial : socketMarkerMaterial
+    );
+    group.add(mesh);
+
+    const label = createLabelSprite(target.name, isBone ? '#22d3ee' : '#f59e0b');
+    group.add(label);
+    rigOverlayRoot.add(group);
+    rigOverlayMarkers.push({ target, group, label });
+  });
+}
+
+function updateRigOverlays(): void {
+  const selectedKey = targetKey(state.selectedTarget);
+  const worldPosition = new THREE.Vector3();
+  const showBones = state.view === 'thirdPerson' && state.showSkeleton;
+  const showSockets = state.showSockets;
+
+  rigOverlayMarkers.forEach((marker) => {
+    const object = getTargetObject(marker.target);
+    const isCurrentView = marker.target.view === state.view;
+    const isBone = marker.target.kind === 'bone';
+    const visible = Boolean(object) && isCurrentView && (isBone ? showBones : showSockets);
+    marker.group.visible = visible;
+    marker.label.visible = visible && state.showLabels;
+    marker.group.scale.setScalar(targetKey(marker.target) === selectedKey ? 1.55 : 1);
+
+    const mesh = marker.group.children.find((child) => child instanceof THREE.Mesh) as THREE.Mesh | undefined;
+    if (mesh) {
+      mesh.material = targetKey(marker.target) === selectedKey
+        ? selectedMarkerMaterial
+        : isBone
+          ? boneMarkerMaterial
+          : socketMarkerMaterial;
+    }
+
+    if (object) {
+      object.getWorldPosition(worldPosition);
+      marker.group.position.copy(worldPosition);
+    }
+  });
+
+  skeletonLines.visible = showBones;
+  if (!showBones) return;
+
+  let offset = 0;
+  SKELETON_CONNECTIONS.forEach(([startName, endName]) => {
+    const startObject = thirdPersonRig.rig.bones[startName];
+    const endObject = thirdPersonRig.rig.bones[endName];
+    const start = new THREE.Vector3();
+    const end = new THREE.Vector3();
+    startObject.getWorldPosition(start);
+    endObject.getWorldPosition(end);
+    skeletonLinePositions[offset++] = start.x;
+    skeletonLinePositions[offset++] = start.y;
+    skeletonLinePositions[offset++] = start.z;
+    skeletonLinePositions[offset++] = end.x;
+    skeletonLinePositions[offset++] = end.y;
+    skeletonLinePositions[offset++] = end.z;
+  });
+  skeletonLineGeometry.attributes.position.needsUpdate = true;
+}
+
 function sampleTrackProgressForFrame(frame: number): number {
   return state.frameCount <= 1 ? 0 : frame / (state.frameCount - 1);
 }
 
 function seedThreeFrames(): void {
-  const track = getTrack(state.trackId);
   state.anchorFrames = makeAnchorFrames(state.frameCount);
-  state.keyframes = state.anchorFrames.map((frame, index) => ({
+  const track = getTrack(state.trackId);
+  const basePose = state.selectedTarget.kind === 'weapon'
+    ? null
+    : getCurrentSelectedPose();
+  const keyframes = state.anchorFrames.map((frame, index) => ({
     frame,
     label: String.fromCharCode(65 + index),
-    pose: track.sample(state.view, index / 2),
+    pose: state.selectedTarget.kind === 'weapon'
+      ? track.sample(state.view, index / 2)
+      : clonePose(basePose ?? captureSelectedPose()),
   }));
+  setSelectedKeyframes(keyframes);
   state.currentFrame = state.anchorFrames[0];
   clearDraft();
-  regenerateFrames('Seeded three key poses.');
+  regenerateSelectedFrames('Seeded three key poses.');
 }
 
-function regenerateFrames(message = 'Generated missing frames.'): void {
-  state.keyframes = normalizeKeyframes(state.keyframes, state.frameCount);
-  state.generatedFrames = generatePoseFrames(state.keyframes, state.frameCount, state.interpolation);
+function regenerateSelectedFrames(message = 'Generated missing frames.'): void {
+  const normalizedKeyframes = normalizeKeyframes(getSelectedKeyframes(), state.frameCount);
+  setSelectedKeyframes(normalizedKeyframes);
+  setSelectedGeneratedFrames(generatePoseFrames(normalizedKeyframes, state.frameCount, state.interpolation));
   state.currentFrame = clampFrameIndex(state.currentFrame, state.frameCount);
   frameSlider.max = String(state.frameCount - 1);
   frameSlider.value = String(state.currentFrame);
-  applyPoseToActive(getCurrentPose());
-  syncPoseInputs(getCurrentPose());
+  applyFrameToScene();
+  syncPoseInputs(getCurrentSelectedPose());
   renderAll();
   setStatus(message);
+}
+
+function regenerateAllFrames(): void {
+  state.weaponKeyframes = normalizeKeyframes(state.weaponKeyframes, state.frameCount);
+  if (state.weaponKeyframes.length > 0) {
+    state.weaponGeneratedFrames = generatePoseFrames(state.weaponKeyframes, state.frameCount, state.interpolation);
+  }
+
+  (['bone', 'socket'] as const).forEach((kind) => {
+    const keyframeMap = getRigKeyframeMap(kind);
+    const generatedMap: GeneratedRigTrackMap = {};
+    Object.entries(keyframeMap).forEach(([key, keyframes]) => {
+      const normalized = normalizeKeyframes(keyframes, state.frameCount);
+      keyframeMap[key] = normalized;
+      if (normalized.length > 0) {
+        generatedMap[key] = generatePoseFrames(normalized, state.frameCount, state.interpolation);
+      }
+    });
+    setRigGeneratedMap(kind, generatedMap);
+  });
 }
 
 function setCurrentFrame(frame: number): void {
   state.currentFrame = clampFrameIndex(frame, state.frameCount);
   clearDraft();
   frameSlider.value = String(state.currentFrame);
-  applyPoseToActive(getCurrentPose());
-  syncPoseInputs(getCurrentPose());
+  applyFrameToScene();
+  syncPoseInputs(getCurrentSelectedPose());
   renderTimeline();
   renderHud();
   renderSegmentInfo();
 }
 
-function setKeyframe(frame: number, pose: WeaponPose, label?: string): void {
+function setKeyframe(frame: number, pose: RigTargetPose, label?: string): void {
   const resolvedFrame = clampFrameIndex(frame, state.frameCount);
-  state.keyframes = normalizeKeyframes([
-    ...state.keyframes.filter((keyframe) => keyframe.frame !== resolvedFrame),
+  setSelectedKeyframes(normalizeKeyframes([
+    ...getSelectedKeyframes().filter((keyframe) => keyframe.frame !== resolvedFrame),
     { frame: resolvedFrame, label, pose },
-  ], state.frameCount);
+  ], state.frameCount));
   clearDraft();
-  regenerateFrames(`Keyframe set at frame ${resolvedFrame}.`);
+  regenerateSelectedFrames(`Keyframe set at frame ${resolvedFrame}.`);
 }
 
 function deleteKeyframe(frame: number): void {
-  if (state.keyframes.length <= 1) {
+  const selectedKeyframes = getSelectedKeyframes();
+  if (selectedKeyframes.length <= 1) {
     setStatus('At least one keyframe is required.');
     return;
   }
-  state.keyframes = state.keyframes.filter((keyframe) => keyframe.frame !== frame);
+  setSelectedKeyframes(selectedKeyframes.filter((keyframe) => keyframe.frame !== frame));
   clearDraft();
-  regenerateFrames(`Keyframe ${frame} removed.`);
+  regenerateSelectedFrames(`Keyframe ${frame} removed.`);
 }
 
 function refreshTrackOptions(): void {
@@ -419,7 +890,39 @@ function refreshTrackOptions(): void {
   trackSelect.value = state.trackId;
 }
 
+function refreshTargetOptions(): void {
+  ensureSelectedTarget();
+  const options = getTargetOptionsForView(state.view);
+  targetSelect.innerHTML = '';
+
+  const groups: Record<RigTargetKind, HTMLOptGroupElement> = {
+    weapon: document.createElement('optgroup'),
+    bone: document.createElement('optgroup'),
+    socket: document.createElement('optgroup'),
+  };
+  groups.weapon.label = 'Weapons';
+  groups.bone.label = 'Bones';
+  groups.socket.label = 'Sockets';
+
+  options.forEach(({ target, label }) => {
+    const option = document.createElement('option');
+    option.value = encodeTargetValue(target);
+    option.textContent = label;
+    groups[target.kind].appendChild(option);
+  });
+
+  (['weapon', 'bone', 'socket'] as const).forEach((kind) => {
+    if (groups[kind].children.length > 0) {
+      targetSelect.appendChild(groups[kind]);
+    }
+  });
+
+  targetSelect.value = encodeTargetValue(state.selectedTarget);
+  trackSelect.disabled = state.selectedTarget.kind !== 'weapon';
+}
+
 function syncSceneVisibility(): void {
+  ensureSelectedTarget();
   thirdPersonRig.group.visible = state.view === 'thirdPerson';
   firstPersonRoot.visible = state.view === 'firstPerson';
 
@@ -430,9 +933,11 @@ function syncSceneVisibility(): void {
   reticle.visible = state.view === 'firstPerson';
 
   transformControls.detach();
-  transformControls.attach(getActiveWeaponObject());
+  const selectedObject = getTargetObject(state.selectedTarget);
+  if (selectedObject) transformControls.attach(selectedObject);
   transformControls.setMode(state.transformMode);
-  applyPoseToActive(getCurrentPose());
+  applyFrameToScene();
+  updateRigOverlays();
 }
 
 function updateCameraForView(): void {
@@ -475,7 +980,7 @@ function renderAnchorRows(): void {
     setButton.type = 'button';
     setButton.textContent = 'Set';
     setButton.addEventListener('click', () => {
-      setKeyframe(state.anchorFrames[index], captureActivePose(), String.fromCharCode(65 + index));
+      setKeyframe(state.anchorFrames[index], captureSelectedPose(), String.fromCharCode(65 + index));
     });
 
     row.append(label, input, goButton, setButton);
@@ -484,7 +989,7 @@ function renderAnchorRows(): void {
 }
 
 function renderKeyframes(): void {
-  const normalized = normalizeKeyframes(state.keyframes, state.frameCount);
+  const normalized = normalizeKeyframes(getSelectedKeyframes(), state.frameCount);
   keyframeCount.textContent = `${normalized.length}`;
   metricKeys.textContent = `${normalized.length}`;
   keyframeList.innerHTML = '';
@@ -504,7 +1009,7 @@ function renderKeyframes(): void {
     frameInput.value = String(keyframe.frame);
     frameInput.addEventListener('change', () => {
       const nextFrame = clampFrameIndex(Number(frameInput.value), state.frameCount);
-      state.keyframes = state.keyframes.filter((candidate) => candidate.frame !== keyframe.frame);
+      setSelectedKeyframes(getSelectedKeyframes().filter((candidate) => candidate.frame !== keyframe.frame));
       setKeyframe(nextFrame, keyframe.pose, keyframe.label);
     });
 
@@ -530,7 +1035,7 @@ function renderTimeline(): void {
   frameReadout.textContent = `Frame ${state.currentFrame} / ${state.frameCount - 1}`;
   timeline.innerHTML = '';
 
-  state.generatedFrames.forEach((frame) => {
+  getSelectedGeneratedFrames().forEach((frame) => {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'frame-cell';
@@ -542,49 +1047,68 @@ function renderTimeline(): void {
   });
 }
 
+function buildRigTrackExport(kind: 'bone' | 'socket'): Record<string, AnimationEditorRigTrack> {
+  const keyframeMap = getRigKeyframeMap(kind);
+  const generatedMap = getRigGeneratedMap(kind);
+  const exportTracks: Record<string, AnimationEditorRigTrack> = {};
+
+  Object.entries(keyframeMap).forEach(([key, keyframes]) => {
+    const target = decodeTargetValue(key);
+    if (!target || target.view !== state.view || target.kind !== kind) return;
+
+    const frames = generatedMap[key] ?? [];
+    if (keyframes.length === 0 && frames.length === 0) return;
+
+    exportTracks[target.name] = {
+      keyframes: normalizeKeyframes(keyframes, state.frameCount),
+      frames,
+    };
+  });
+
+  return exportTracks;
+}
+
 function buildExportPayload() {
-  return {
-    tool: 'ibrawls-animation-editor',
+  return buildAnimationEditorExportPayload({
     weapon: state.weapon,
     view: state.view,
     track: state.trackId,
     frameCount: state.frameCount,
     interpolation: state.interpolation,
-    keyframes: normalizeKeyframes(state.keyframes, state.frameCount).map((keyframe) => ({
-      ...keyframe,
-      pose: roundPose(keyframe.pose, 4),
-    })),
-    frames: state.generatedFrames.map((frame) => ({
-      frame: frame.frame,
-      source: frame.source,
-      pose: roundPose(frame.pose, 4),
-    })),
-  };
+    keyframes: state.weaponKeyframes,
+    frames: state.weaponGeneratedFrames,
+    rig: {
+      bones: buildRigTrackExport('bone'),
+      sockets: buildRigTrackExport('socket'),
+    },
+  });
 }
 
 function buildSnippet(): string {
   const constName = `${state.trackId}_${state.view}_frames`;
-  return buildPoseArraySnippet(constName, state.generatedFrames, 4);
+  return buildPoseArraySnippet(constName, state.weaponGeneratedFrames, 4);
 }
 
 function renderExport(): void {
   metricFrames.textContent = String(state.frameCount);
   metricMode.textContent = state.interpolation === 'smoothstep' ? 'smooth' : state.interpolation;
-  exportStatus.textContent = state.view === 'firstPerson' ? 'first-person' : 'third-person';
+  exportStatus.textContent = `${state.view === 'firstPerson' ? 'first-person' : 'third-person'} rig`;
   exportText.value = `${JSON.stringify(buildExportPayload(), null, 2)}\n\n${buildSnippet()}`;
 }
 
 function renderHud(): void {
-  const pose = getCurrentPose();
-  const source = state.generatedFrames[state.currentFrame]?.source ?? 'generated';
-  hudTitle.textContent = `${state.weapon === 'hammer' ? 'Hammer' : 'Sword'} / ${state.view === 'firstPerson' ? 'First person' : 'Third person'}`;
+  const pose = getCurrentSelectedPose();
+  const source = getSelectedGeneratedFrames()[state.currentFrame]?.source ?? 'generated';
+  hudTitle.textContent = `${targetLabel(state.selectedTarget)} / ${state.view === 'firstPerson' ? 'First person' : 'Third person'}`;
   hudFrame.textContent = `Frame ${state.currentFrame} (${source})`;
   hudPose.textContent = formatPoseShort(pose);
-  trackStatus.textContent = getTrack(state.trackId).label;
+  trackStatus.textContent = state.selectedTarget.kind === 'weapon'
+    ? getTrack(state.trackId).label
+    : targetLabel(state.selectedTarget);
 }
 
 function renderSegmentInfo(): void {
-  const normalized = normalizeKeyframes(state.keyframes, state.frameCount);
+  const normalized = normalizeKeyframes(getSelectedKeyframes(), state.frameCount);
   if (normalized.length === 0) {
     segmentInfo.textContent = 'No keyframes.';
     return;
@@ -620,7 +1144,11 @@ function renderAll(): void {
   viewSelect.value = state.view;
   interpolationSelect.value = state.interpolation;
   frameCountInput.value = String(state.frameCount);
+  showSkeletonToggle.checked = state.showSkeleton;
+  showSocketsToggle.checked = state.showSockets;
+  showLabelsToggle.checked = state.showLabels;
   refreshTrackOptions();
+  refreshTargetOptions();
   syncSceneVisibility();
   renderTransformButtons();
   renderAnchorRows();
@@ -641,9 +1169,10 @@ function resizeRenderer(): void {
 }
 
 function handlePoseInputChange(): void {
-  const pose = readPoseInputs(captureActivePose());
+  const pose = readPoseInputs(captureSelectedPose());
   setDraftPose(pose);
-  applyPoseToActive(pose);
+  applyPoseToSelected(pose);
+  updateRigOverlays();
   renderHud();
   renderSegmentInfo();
   setStatus(`Draft pose edited at frame ${state.currentFrame}.`);
@@ -655,22 +1184,49 @@ Object.values(poseInputs).forEach((input) => {
 
 weaponSelect.addEventListener('change', () => {
   state.weapon = weaponSelect.value as WeaponChoice;
+  if (state.selectedTarget.kind === 'weapon') {
+    state.selectedTarget.name = state.weapon;
+  }
   const compatibleTrack = TRACKS.find((track) => track.weapon === state.weapon);
   state.trackId = compatibleTrack?.id ?? state.trackId;
   refreshTrackOptions();
+  refreshTargetOptions();
   seedThreeFrames();
   updateCameraForView();
 });
 
 viewSelect.addEventListener('change', () => {
   state.view = viewSelect.value as EditorView;
+  state.selectedTarget = getDefaultTarget();
   seedThreeFrames();
   updateCameraForView();
 });
 
 trackSelect.addEventListener('change', () => {
   state.trackId = trackSelect.value;
+  state.selectedTarget = getDefaultTarget();
   seedThreeFrames();
+});
+
+targetSelect.addEventListener('change', () => {
+  const nextTarget = decodeTargetValue(targetSelect.value);
+  if (!nextTarget) return;
+  state.selectedTarget = nextTarget;
+  clearDraft();
+
+  if (getSelectedKeyframes().length === 0) {
+    setSelectedKeyframes([{
+      frame: state.currentFrame,
+      label: 'A',
+      pose: getCurrentSelectedPose(),
+    }]);
+    setSelectedGeneratedFrames(generatePoseFrames(getSelectedKeyframes(), state.frameCount, state.interpolation));
+  }
+
+  applyFrameToScene();
+  syncPoseInputs(getCurrentSelectedPose());
+  renderAll();
+  setStatus(`Selected ${targetLabel(state.selectedTarget)}.`);
 });
 
 frameCountInput.addEventListener('change', () => {
@@ -678,21 +1234,28 @@ frameCountInput.addEventListener('change', () => {
   state.frameCount = nextFrameCount;
   state.anchorFrames = makeAnchorFrames(state.frameCount);
   state.currentFrame = clampFrameIndex(state.currentFrame, state.frameCount);
-  state.keyframes = normalizeKeyframes(state.keyframes, state.frameCount);
+  regenerateAllFrames();
   clearDraft();
-  regenerateFrames('Frame count updated.');
+  applyFrameToScene();
+  syncPoseInputs(getCurrentSelectedPose());
+  renderAll();
+  setStatus('Frame count updated.');
 });
 
 interpolationSelect.addEventListener('change', () => {
   state.interpolation = interpolationSelect.value as AnimationInterpolationMode;
   clearDraft();
-  regenerateFrames('Interpolation mode updated.');
+  regenerateAllFrames();
+  applyFrameToScene();
+  syncPoseInputs(getCurrentSelectedPose());
+  renderAll();
+  setStatus('Interpolation mode updated.');
 });
 
 seedButton.addEventListener('click', seedThreeFrames);
-generateButton.addEventListener('click', () => regenerateFrames());
+generateButton.addEventListener('click', () => regenerateSelectedFrames());
 setKeyframeButton.addEventListener('click', () => {
-  setKeyframe(state.currentFrame, captureActivePose());
+  setKeyframe(state.currentFrame, captureSelectedPose());
 });
 
 translateButton.addEventListener('click', () => {
@@ -705,6 +1268,21 @@ rotateButton.addEventListener('click', () => {
   state.transformMode = 'rotate';
   transformControls.setMode('rotate');
   renderTransformButtons();
+});
+
+showSkeletonToggle.addEventListener('change', () => {
+  state.showSkeleton = showSkeletonToggle.checked;
+  updateRigOverlays();
+});
+
+showSocketsToggle.addEventListener('change', () => {
+  state.showSockets = showSocketsToggle.checked;
+  updateRigOverlays();
+});
+
+showLabelsToggle.addEventListener('change', () => {
+  state.showLabels = showLabelsToggle.checked;
+  updateRigOverlays();
 });
 
 frameSlider.addEventListener('input', () => {
@@ -748,9 +1326,10 @@ transformControls.addEventListener('dragging-changed', (event) => {
 });
 
 transformControls.addEventListener('objectChange', () => {
-  const pose = captureActivePose();
+  const pose = captureSelectedPose();
   setDraftPose(pose);
   syncPoseInputs(pose);
+  updateRigOverlays();
   renderHud();
   renderSegmentInfo();
 });
@@ -762,7 +1341,7 @@ function animate(): void {
   const now = performance.now();
   const dt = (now - lastAnimationTime) / 1000;
   lastAnimationTime = now;
-  if (state.playing && state.generatedFrames.length > 0) {
+  if (state.playing && getSelectedGeneratedFrames().length > 0) {
     playbackAccumulator += dt;
     if (playbackAccumulator >= playbackFrameDuration) {
       playbackAccumulator = 0;
@@ -771,10 +1350,13 @@ function animate(): void {
   }
 
   controls.update();
+  updateRigOverlays();
   renderer.render(scene, camera);
 }
 
 refreshTrackOptions();
+captureEditableTargetBaselines();
+buildOverlayMarkers();
 seedThreeFrames();
 syncSceneVisibility();
 updateCameraForView();

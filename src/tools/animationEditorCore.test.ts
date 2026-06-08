@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
+  buildAnimationEditorExportPayload,
   generatePoseFrames,
   interpolatePose,
   normalizeKeyframes,
   type AnimationKeyframe,
+  type RigTargetPose,
 } from './animationEditorCore';
 import { type WeaponPose } from '../components/grifball/attackAnimationPresets';
 
@@ -52,5 +54,65 @@ describe('animation editor interpolation', () => {
 
     assert.ok(halfway.rotation[2] > Math.PI - 0.01);
     assert.ok(halfway.rotation[2] < Math.PI + 0.01);
+  });
+
+  it('interpolates rig target poses with the same frame generator as weapons', () => {
+    const socketStart: RigTargetPose = pose(0, 0, 0);
+    const socketEnd: RigTargetPose = pose(0, 1, 0, 0, Math.PI, 0);
+    const frames = generatePoseFrames([
+      { frame: 0, pose: socketStart },
+      { frame: 4, pose: socketEnd },
+    ], 5, 'linear');
+
+    assert.equal(frames[2].pose.position[1], 0.5);
+    assert.ok(frames[2].pose.rotation[1] > 1.56);
+    assert.ok(frames[2].pose.rotation[1] < 1.58);
+  });
+
+  it('builds a versioned rig export while keeping the legacy weapon frames', () => {
+    const weaponFrames = generatePoseFrames([
+      { frame: 0, pose: pose(0), label: 'A' },
+      { frame: 2, pose: pose(2), label: 'B' },
+    ], 3, 'linear');
+    const socketFrames = generatePoseFrames([
+      { frame: 0, pose: pose(0, 0, 0), label: 'A' },
+      { frame: 2, pose: pose(0, 2, 0), label: 'B' },
+    ], 3, 'linear');
+
+    const payload = buildAnimationEditorExportPayload({
+      weapon: 'hammer',
+      view: 'thirdPerson',
+      track: 'hammer_windup',
+      frameCount: 3,
+      interpolation: 'linear',
+      keyframes: [
+        { frame: 0, pose: pose(0), label: 'A' },
+        { frame: 2, pose: pose(2), label: 'B' },
+      ],
+      frames: weaponFrames,
+      rig: {
+        bones: {
+          upperTorso: {
+            keyframes: [{ frame: 0, pose: pose(0, 0, 0), label: 'A' }],
+            frames: generatePoseFrames([{ frame: 0, pose: pose(0, 0, 0), label: 'A' }], 3, 'linear'),
+          },
+        },
+        sockets: {
+          thirdPersonWeaponGrip: {
+            keyframes: [
+              { frame: 0, pose: pose(0, 0, 0), label: 'A' },
+              { frame: 2, pose: pose(0, 2, 0), label: 'B' },
+            ],
+            frames: socketFrames,
+          },
+        },
+      },
+    });
+
+    assert.equal(payload.rigVersion, 1);
+    assert.equal(payload.frames.length, 3);
+    assert.equal(payload.rig.bones.upperTorso.frames.length, 3);
+    assert.equal(payload.rig.sockets.thirdPersonWeaponGrip.keyframes.length, 2);
+    assert.equal(payload.rig.sockets.thirdPersonWeaponGrip.frames[1].pose.position[1], 1);
   });
 });
