@@ -81,7 +81,7 @@
             <select id="evalModel"></select>
           </label>
           <label>Mode
-            <select id="evalMode"><option value="grifball">grifball</option><option value="combat">combat</option></select>
+            <select id="evalMode"><option value="combat">combat</option><option value="grifball">grifball</option></select>
           </label>
           <label id="evalOppWrap">Opponent
             <select id="evalOpponent">
@@ -122,14 +122,56 @@
       <div class="guide">
 
         <div class="panel guide-card">
-          <h2>The 30-second mental model</h2>
-          <p>You don't program tactics. You set the <b>reward</b> (what counts as "good") and the
-          <b>opponent</b>, then the bot discovers tactics by playing millions of ticks and nudging
-          its brain so future reward goes up. A match from start to win/timeout is an
-          <b>episode</b>. Training = play, measure, nudge, repeat.</p>
-          <p class="muted">Workflow: edit <b>Settings</b> on the Train tab → <b>Start training</b> →
-          watch the <b>Live progress</b> charts → <b>Evaluate</b> a saved brain for a real grade →
-          adjust and run the next stage.</p>
+          <h2>The 30-second mental model <small>combat is the focus</small></h2>
+          <p>You don't program tactics. You set the <b>reward</b> (what counts as "good"), then the
+          bot discovers tactics by playing millions of ticks and nudging its brain so future reward
+          goes up. A round from start to win/timeout is an <b>episode</b>. Training = play, measure,
+          nudge, repeat.</p>
+          <p class="muted">Workflow: edit <b>Settings</b> on the Train tab (mode is
+          <code>combat</code>) → <b>Start training</b> → watch the <b>Live progress</b> charts →
+          <b>Evaluate</b> the saved brain (mode = combat) for a real grade → optionally harden with
+          domain randomization.</p>
+          <p class="muted"><b>Grifball mode exists but isn't the current focus.</b> Everything below
+          is written for combat; the grifball curriculum is kept at the bottom for reference.</p>
+        </div>
+
+        <div class="panel guide-card">
+          <h2>Combat training <small>your main path</small></h2>
+          <p>Combat trains <b>one generalist</b> that handles 1v1, free-for-all, and team deathmatch
+          at any kill total. It does this by <b>self-playing a mix of match sizes at once</b> and
+          re-randomizing the teams each episode — that variety is what makes one brain generalize.
+          There's no opponent setting: every agent in every match <i>is</i> the learner.</p>
+          <table class="guide-table">
+            <thead><tr><th>Knob</th><th>What it does</th><th>Tip</th></tr></thead>
+            <tbody>
+              <tr><td><code>[combat] world_sizes</code></td>
+                <td>The fixed sizes of the parallel matches. <code>2</code> = a 1v1; <code>4</code>/<code>8</code>
+                = FFA or teams.</td>
+                <td>The <b>mix</b> is the generalization. Bias toward more <code>2</code>s early for a
+                faster, cleaner learning signal.</td></tr>
+              <tr><td><code>[combat] kill_min / kill_max</code></td>
+                <td>Per-episode kill target is sampled in this range.</td>
+                <td>Lower <code>kill_min</code> early so rounds end sooner → more episodes → faster
+                learning.</td></tr>
+              <tr><td><code>[combat] randomize_layout</code></td>
+                <td>Re-randomize team partition + kill target every episode.</td>
+                <td>Keep <b>on</b> for a true generalist.</td></tr>
+              <tr><td><code>[run] match_minutes</code></td>
+                <td>Hard timeout per round.</td>
+                <td>Keep short (≈ <code>1.0–1.5</code>) so rounds resolve instead of timing out.</td></tr>
+              <tr><td><code>[randomize] enabled / pct</code></td>
+                <td>Jitter the game mechanics ±pct each episode.</td>
+                <td>Leave <b>off</b> for the first run (learn the core skill), then a 2nd warm-started
+                run with <code>enabled = true, pct = 0.15</code> to survive balance patches.</td></tr>
+            </tbody>
+          </table>
+          <p class="muted"><b>The combat loop:</b> (1) train one run from scratch (e.g.
+          <code>runs/combat_v1</code>) until reward plateaus and episode length stops falling;
+          (2) grade it on the <b>Evaluate</b> tab with mode = combat (it duels 1v1 vs random);
+          (3) optionally warm-start (<i>network → init_model</i>) into a domain-randomized hardening
+          run. Usually <b>one self-play run + optional DR</b> — no multi-opponent curriculum.</p>
+          <p class="muted">Combat ignores the grifball-only knobs entirely (<i>opponent</i>,
+          <i>goal_target</i>, <i>parallel_matches</i>), so don't bother tuning those here.</p>
         </div>
 
         <div class="panel guide-card">
@@ -137,32 +179,35 @@
           <p class="muted">These are the live-progress / run-comparison charts. Watch the
           <b>trend</b>, not a single number. Reward magnitudes depend on your reward weights, so a
           rising line matters more than its absolute height.</p>
+          <p class="muted"><b>In combat there's no live <code>eval/win_rate</code> or
+          <code>eval/ep_return</code></b> — combat self-plays with no fixed opponent to grade against
+          mid-run, so those two charts only appear for grifball. Judge a combat run by
+          <code>rollout/ep_rew_mean</code> rising + <code>rollout/ep_len_mean</code> falling, then a
+          real grade on the <b>Evaluate</b> tab.</p>
           <table class="guide-table">
             <thead><tr><th>Chart</th><th>What it means</th><th>What you want</th></tr></thead>
             <tbody>
               <tr>
-                <td><b>Win rate vs opponent</b><br><span class="muted">eval/win_rate</span></td>
-                <td>Fraction of grading matches the bot won (0–1). During a <i>self</i> stage it's
-                still measured <i>vs random</i> as a steady yardstick.</td>
-                <td class="good-cell"><b>&gt; 0.9</b> before advancing a stage. 0.6 = undertrained,
-                give it more steps.</td>
-              </tr>
-              <tr>
                 <td><b>Episode reward</b><br><span class="muted">rollout/ep_rew_mean</span></td>
-                <td>Average total reward per match. The headline "is it learning?" line.</td>
+                <td>Average total reward per round. The headline "is it learning?" line — your
+                <b>primary</b> combat signal.</td>
                 <td class="good-cell">Trending <b>up</b>. Plateau = converged (or stuck).</td>
               </tr>
               <tr>
-                <td><b>Eval episode return</b><br><span class="muted">eval/ep_return</span></td>
-                <td>Average reward in the dedicated grading matches — a cleaner signal than the
-                rollout reward.</td>
-                <td class="good-cell">Rising, then plateauing high.</td>
+                <td><b>Episode length</b><br><span class="muted">rollout/ep_len_mean</span></td>
+                <td>Average round length in ticks.</td>
+                <td class="good-cell">Falling = <b>decisive fights</b>. Stuck high = passive / not
+                committing to kills.</td>
               </tr>
               <tr>
-                <td><b>Episode length</b><br><span class="muted">rollout/ep_len_mean</span></td>
-                <td>Average match length in ticks.</td>
-                <td class="good-cell">Falling = <b>decisive wins</b>. Stuck high = stalling /
-                can't close out.</td>
+                <td><b>Win rate vs opponent</b> <span class="muted">(grifball only)</span><br><span class="muted">eval/win_rate</span></td>
+                <td>Fraction of grading matches won (0–1). Not produced in combat.</td>
+                <td class="good-cell"><b>&gt; 0.9</b> before advancing a grifball stage.</td>
+              </tr>
+              <tr>
+                <td><b>Eval episode return</b> <span class="muted">(grifball only)</span><br><span class="muted">eval/ep_return</span></td>
+                <td>Average reward in the grifball grading matches. Not produced in combat.</td>
+                <td class="good-cell">Rising, then plateauing high.</td>
               </tr>
               <tr>
                 <td><b>Explained variance</b><br><span class="muted">train/explained_variance</span></td>
@@ -196,8 +241,8 @@
               <tr>
                 <td><b>Speed</b><br><span class="muted">time/fps</span></td>
                 <td>Environment steps per second (throughput). CPU-bound on the sim.</td>
-                <td class="good-cell">As high as your cores allow; raise <i>num_workers</i> /
-                <i>parallel_matches</i> to lift it.</td>
+                <td class="good-cell">As high as your cores allow; in combat raise <i>num_workers</i>
+                toward your core count (and widen <i>[combat] world_sizes</i>) to lift it.</td>
               </tr>
             </tbody>
           </table>
@@ -206,22 +251,29 @@
         <div class="panel guide-card">
           <h2>The reward trap <small>read this before tuning rewards</small></h2>
           <p>The bot does <b>exactly what pays best</b> — the reward <i>is</i> the strategy.
-          <b>Dense</b> rewards add up over thousands of ticks: <code>possession = 0.002</code> per
-          tick held for 1800 ticks pays <b>3.6</b> — more than scoring a goal (<code>1.0</code>) or
-          winning (<code>1.0</code>). So if dense terms are too big, the bot hoards the ball forever
-          instead of scoring.</p>
+          <b>Dense</b> rewards add up over thousands of ticks, so a small per-tick payout can quietly
+          out-earn the real objective. In combat the dense term to watch is <code>approach</code>
+          (paid per metre closing on the nearest enemy): if it's too large the bot learns to
+          <i>hug enemies for the shaping bonus</i> instead of committing to kills.</p>
           <ul>
-            <li><b>Sparse</b> (win, goal_scored, goal_conceded) = the <i>true</i> goal.</li>
-            <li><b>Dense</b> (possession, ball_progress, kill, death, approach, time_penalty) =
-            hints that speed up early learning but mislead if too strong.</li>
+            <li><b>Sparse / true goal (combat):</b> <code>kill</code>, <code>death</code>,
+            <code>win</code> — what you actually want it to optimize.</li>
+            <li><b>Dense hints (combat):</b> <code>approach</code>, <code>time_penalty</code> — a
+            foothold that gets a fresh brain moving toward fights, but misleading if too strong.</li>
+            <li><b>Grifball-only (ignored in combat):</b> <code>possession</code>,
+            <code>ball_progress</code>, <code>goal_scored</code>, <code>goal_conceded</code>.</li>
           </ul>
-          <p class="muted">Common fix: start with dense rewards a bit larger to learn the basics
-          fast, then <b>shrink them in a later run</b> so the bot optimizes the real objective
-          (winning).</p>
+          <p class="muted">Combat rule of thumb: keep <code>approach</code> small (≈0.03–0.05) as an
+          early foothold and make sure <code>kill</code> clearly out-pays it, so the bot graduates
+          from "approach enemies" to "actually kill them". Shrink <code>approach</code> in a later
+          warm-started run if it stays passive.</p>
         </div>
 
         <div class="panel guide-card">
-          <h2>Running the stages <small>the curriculum: easy → hard</small></h2>
+          <h2>Grifball curriculum <small>secondary — skip unless you train grifball</small></h2>
+          <p class="muted"><b>Not the current focus.</b> Combat (above) is a single self-play run, not
+          a multi-opponent curriculum, and ignores every knob in this card. Keep reading only if you
+          deliberately want a ball-carrying grifball bot.</p>
           <p>Train in stages, each <b>warm-started from the previous one</b> (set
           <i>network → init_model</i> to the prior stage's <code>final_model.zip</code>). Keep
           <i>width</i>/<i>depth</i> identical across stages or the weights won't transfer.
@@ -256,12 +308,9 @@
               </tr>
             </tbody>
           </table>
-          <p class="muted"><b>Combat mode</b> is separate: it always self-plays a mix of match
-          sizes — no opponent setting. You end up with two brains (one grifball, one combat); load
-          whichever matches the live game mode.</p>
           <p class="muted"><b>Stuck at win_rate ≈ 0?</b> The from-scratch brain never reaches the
           action. Shorten matches (<i>match_minutes = 1.0</i>, <i>goal_target = 1</i>) and raise
-          <i>reward → approach</i> to 0.05 so it gets pulled toward the ball/enemy, then lengthen
+          <i>reward → approach</i> to 0.05 so it gets pulled toward the ball, then lengthen
           matches once it's winning.</p>
         </div>
 
@@ -275,18 +324,19 @@
           <table class="guide-table">
             <thead><tr><th>Folder</th><th>Meaning</th></tr></thead>
             <tbody>
-              <tr><td><code>runs/s1_random</code></td><td>Stage 1, grifball vs random.</td></tr>
-              <tr><td><code>runs/s2_self</code></td><td>Stage 2, self-play (continues s1).</td></tr>
-              <tr><td><code>runs/s3_heur</code></td><td>Stage 3, vs heuristic (continues s2).</td></tr>
-              <tr><td><code>runs/s4_dr</code></td><td>Stage 4, domain-randomized hardening.</td></tr>
-              <tr><td><code>runs/combat_v1</code></td><td>Combat generalist, first attempt.</td></tr>
-              <tr><td><code>runs/s1_random_lr5e4</code></td><td>Variant: append the knob you changed
+              <tr><td><code>runs/combat_v1</code></td><td>Combat generalist, first run (from scratch).</td></tr>
+              <tr><td><code>runs/combat_v2</code></td><td>Next attempt / continued run (warm-started from v1).</td></tr>
+              <tr><td><code>runs/combat_dr</code></td><td>Domain-randomized hardening run (continues a combat_vN).</td></tr>
+              <tr><td><code>runs/combat_v2_lr1e4</code></td><td>Variant: append the knob you changed
               when sweeping (e.g. learning rate) so comparisons are obvious.</td></tr>
+              <tr><td class="muted"><code>runs/s1_random</code> …</td><td class="muted">Grifball stages (secondary):
+              <code>s1_random</code> → <code>s2_self</code> → <code>s3_heur</code> → <code>s4_dr</code>.</td></tr>
             </tbody>
           </table>
-          <p class="muted">Tips: prefix with <code>s1_/s2_</code> so stages sort in order; keep names
-          lowercase with underscores (no spaces); when re-running an experiment, bump a suffix
-          (<code>_v2</code>) rather than reusing a folder.</p>
+          <p class="muted">Tips: keep names lowercase with underscores (no spaces); when re-running an
+          experiment, bump a suffix (<code>_v2</code>) rather than reusing a folder; append the swept
+          knob (<code>_lr1e4</code>) so the Runs-tab comparison is self-explaining. (The Evaluate tab's
+          <b>Apply</b> button auto-bumps the dir to a fresh <code>_vN</code> for you.)</p>
         </div>
 
         <div class="panel guide-card">
@@ -294,15 +344,18 @@
           <table class="guide-table">
             <thead><tr><th>Symptom</th><th>Likely cause</th><th>Fix</th></tr></thead>
             <tbody>
-              <tr><td>win_rate flat near 0</td><td>opponent too hard to start</td>
-                <td>set opponent = <code>random</code> first</td></tr>
+              <tr><td>reward flat / bot won't engage</td><td>never reaches a fight under random
+                exploration</td><td>raise <i>reward.approach</i> (0.05), lower <i>match_minutes</i>
+                and <i>[combat] kill_min</i> so rounds resolve, add <i>total_steps</i></td></tr>
               <tr><td>nothing moves / no progress</td><td>learning too slow or stuck</td>
                 <td>raise <i>learning_rate</i> (e.g. 5e-4)</td></tr>
-              <tr><td>charts spiky, win_rate jumps wildly</td><td>steps too big / unstable</td>
-                <td>lower <i>learning_rate</i> (1e-4)</td></tr>
-              <tr><td>reward rises but win_rate flat</td><td>gaming the shaping (hoarding ball, never
-                scoring)</td><td>lower <i>possession</i>/<i>ball_progress</i>, raise
-                <i>win</i>/<i>goal_scored</i></td></tr>
+              <tr><td>charts spiky, reward jumps wildly</td><td>steps too big / unstable</td>
+                <td>lower <i>learning_rate</i> (1e-4); check <i>approx_kl</i> is ~0.005–0.03</td></tr>
+              <tr><td>positions near enemies but won't kill</td><td>gaming the shaping
+                (<i>approach</i> out-pays kills)</td><td>raise <i>reward.kill</i>, lower
+                <i>reward.approach</i></td></tr>
+              <tr><td>episode length stuck high</td><td>passive / rounds time out</td>
+                <td>lower <i>match_minutes</i> &amp; <i>kill_min</i>; raise <i>reward.kill</i></td></tr>
               <tr><td>improves then stalls early</td><td>stopped exploring too soon</td>
                 <td>raise <i>entropy_coef</i> (0.02–0.05)</td></tr>
               <tr><td>explained_variance negative</td><td>value predictor failing</td>

@@ -12,7 +12,7 @@ iBrawls is a React, Vite, Three.js browser game with a local Node/WebSocket rela
 
 The root dev server runs `server.ts`, which hosts Vite in middleware mode and provides the local WebSocket matchmaking/gameplay relay.
 
-Multiplayer rooms stay advertised while a match is already running as long as a player slot is open. The Global Broadcast player list shows the current slot count and lets late players join the active room; the local relay and Worker relay both cap active players at 8 total (host + 7 guests) and assign stable spawn slots so simultaneous joins or respawns do not stack players on one spawn point.
+Multiplayer rooms stay advertised while a match is already running as long as a player slot is open. The Global Broadcast player list shows the current slot count and lets late players join the active room; the local relay and Worker relay both cap active players at 8 total (host + 7 guests) and assign stable spawn slots so simultaneous joins or respawns do not stack players on one spawn point. Signed-in accounts are limited to one active browser page/location at a time: a newer signed-in page displaces older lobby/gameplay sockets for the same account to prevent player cloning.
 
 ## Worker Relay
 
@@ -200,6 +200,8 @@ Local play setups feature an interactive map selector overlay supported by a dyn
 `animation-editor.html` is a local frame-by-frame weapon animation editor served by the Vite/Node dev server. It previews the same voxel Spartan, gravity hammer, and katar sword builders used by the game, lets the editor set three anchor key poses at arbitrary frames, and generates every missing `WeaponPose` frame between those anchors with linear, smoothstep, or cubic interpolation. Position channels are interpolated directly, while Euler rotations use shortest-path angular interpolation so keyed poses rotate through the direct movement direction.
 
 Open it from the main menu via **Animation Editor** or visit `http://localhost:3000/animation-editor.html` while `npm run dev` is running. The tool can export the generated frame list as JSON or copy a TypeScript `WeaponPose[]` snippet for moving refined poses back into `src/components/grifball/attackAnimationPresets.ts`.
+
+Voxel Spartans now expose a lightweight combatant rig contract in `src/components/grifball/combatantRig.ts`. The rig maps the current body segment groups into named bones (`root`, `lowerTorso`, `upperTorso`, `head`, arms, and legs) and inserts named attachment lock points such as `thirdPersonWeaponGrip`, `firstPersonWeaponGrip`, `headCenter`, and `chestCenter`. Current weapon transforms still attach through identity lock points so existing attack poses, replay visuals, remote combatants, and the animation editor remain visually compatible while future whole-body and object-attachment animation work has a stable target.
 
 ## Standalone 3D Map Maker
 

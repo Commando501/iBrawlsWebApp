@@ -133,7 +133,7 @@ async function readJson(request: Request): Promise<Record<string, unknown> | nul
 }
 
 // Resolve the account for a valid, non-expired bearer token; slides the TTL.
-async function requireSession(request: Request, env: AccountsEnv): Promise<AccountRow | null> {
+export async function requireSession(request: Request, env: AccountsEnv): Promise<AccountRow | null> {
   const token = bearerToken(request);
   if (!token) return null;
   const tokenHash = await sha256Hex(token);

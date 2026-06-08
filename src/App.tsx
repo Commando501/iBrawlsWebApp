@@ -93,7 +93,7 @@ import { CharacterPreview } from './components/CharacterPreview';
 import { CharacterPainter } from './components/CharacterPainter';
 import { CharacterLoadout, DEFAULT_LOADOUT, AVAILABLE_PRESETS, HelmetPreset, TorsoPreset, ArmPreset, LegPreset } from './components/VoxelModels';
 
-const APP_VERSION = '0.638';
+const APP_VERSION = '0.639';
 const MAX_PLAYER_NAME_LENGTH = 10;
 const MAX_MULTIPLAYER_CLIENTS = 7;
 const MAX_MULTIPLAYER_PLAYERS = 1 + MAX_MULTIPLAYER_CLIENTS;
@@ -106,6 +106,21 @@ const MAIN_MENU_CUSTOMIZATION_MIN_PX = 420;
 const MAIN_MENU_CHAT_MIN_PX = 280;
 const MAIN_MENU_CHAT_MAX_PX = 520;
 const MAIN_MENU_SPLITTER_WIDTH_PX = 28;
+const SIGNED_IN_ELSEWHERE_CLOSE_CODE = 4001;
+const SIGNED_IN_ELSEWHERE_MESSAGE = 'Signed in elsewhere. This page was taken offline to prevent account cloning.';
+
+const createOnlineInstanceId = () => {
+  try {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return crypto.randomUUID();
+    }
+  } catch {
+    /* fall back below */
+  }
+  return `page_${Math.random().toString(36).slice(2)}_${Date.now().toString(36)}`;
+};
+
+const ONLINE_INSTANCE_ID = createOnlineInstanceId();
 
 interface MainMenuFrameLayout {
   setupFr: number;
@@ -2082,14 +2097,29 @@ export default function App() {
     return getSavedMatchmakerUrl();
   };
 
-  const buildWsUrl = (baseUrl: string, type: 'lobby' | 'gameplay', name?: string) => {
+  const buildWsUrl = (
+    baseUrl: string,
+    type: 'lobby' | 'gameplay',
+    name?: string,
+    includeAccountToken = true
+  ) => {
     const separator = baseUrl.includes('?') ? '&' : '?';
     let url = `${baseUrl}${separator}type=${type}`;
+    url += `&onlineInstanceId=${encodeURIComponent(ONLINE_INSTANCE_ID)}`;
     if (name) {
       url += `&name=${encodeURIComponent(name)}`;
     }
+    const token = account ? getStoredToken() : null;
+    if (account) {
+      url += `&accountId=${encodeURIComponent(account.id)}`;
+    }
+    if (account && token && includeAccountToken) {
+      url += `&accountToken=${encodeURIComponent(token)}`;
+    }
     return url;
   };
+
+  const redactWsUrl = (url: string) => url.replace(/([?&]accountToken=)[^&]*/g, '$1[redacted]');
 
   const getApiUrl = () => {
     const wsUrl = getWsUrl();
@@ -4901,7 +4931,7 @@ export default function App() {
       }
       
       const wsUrl = buildWsUrl(getWsUrl(), 'lobby', playerName);
-      console.log('Connecting persistent lobby socket to:', wsUrl);
+      console.log('Connecting persistent lobby socket to:', redactWsUrl(wsUrl));
       ws = new WebSocket(wsUrl);
 
       ws.onopen = () => {
@@ -4960,6 +4990,8 @@ export default function App() {
           } else if (data.type === 'quickplay_match_found') {
             setQuickPlayStatus('idle');
             handleJoinGameRef.current(data.roomCode);
+          } else if (data.type === 'signed_in_elsewhere') {
+            setConnectionError(data.message || SIGNED_IN_ELSEWHERE_MESSAGE);
           } else if (data.type === 'config_changed') {
             // Live tuning nudge: re-fetch the official preset if the server bumped past our version.
             setMultiplayerPreset(prev => {
@@ -4977,8 +5009,14 @@ export default function App() {
         }
       };
 
-      ws.onclose = () => {
+      ws.onclose = (event) => {
         setMenuSocket(null);
+        if (event.code === SIGNED_IN_ELSEWHERE_CLOSE_CODE) {
+          setConnectionError(event.reason || SIGNED_IN_ELSEWHERE_MESSAGE);
+          setOnlineCount(0);
+          setOnlineClients([]);
+          return;
+        }
         if (!isDestroyed) {
           reconnectTimeout = setTimeout(connect, 2000);
         }
@@ -4996,7 +5034,7 @@ export default function App() {
       if (ws) ws.close();
       clearTimeout(reconnectTimeout);
     };
-  }, [isOnline, playerName]);
+  }, [isOnline, playerName, account?.id]);
 
   // Heartbeat to measure RTT latency
   useEffect(() => {
@@ -5213,8 +5251,9 @@ export default function App() {
     }
 
     const wsUrl = connectionMode === 'relay' ? getWsUrl() : `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}`;
-    console.log('WS Host connection target URL resolved to:', wsUrl);
-    const ws = new WebSocket(buildWsUrl(wsUrl, 'gameplay'));
+    const gameplayWsUrl = buildWsUrl(wsUrl, 'gameplay', undefined, connectionMode === 'relay');
+    console.log('WS Host connection target URL resolved to:', redactWsUrl(gameplayWsUrl));
+    const ws = new WebSocket(gameplayWsUrl);
 
     ws.onopen = () => {
       console.log('WS Connection opened. Registering host...');
@@ -5262,9 +5301,14 @@ export default function App() {
 
     ws.addEventListener('message', handleHostMessage);
 
-    ws.onclose = () => {
+    ws.onclose = (event) => {
       console.log('Host socket disconnected.');
-      setConnectionStatus('idle');
+      if (event.code === SIGNED_IN_ELSEWHERE_CLOSE_CODE) {
+        setConnectionError(event.reason || SIGNED_IN_ELSEWHERE_MESSAGE);
+        setConnectionStatus('error');
+      } else {
+        setConnectionStatus('idle');
+      }
       setMultiplayerSocket(null);
       setMultiplayerSpawnSlot(0);
     };
@@ -5310,8 +5354,9 @@ export default function App() {
       }
     }
 
-    console.log('WS Join connection target URL resolved to:', wsUrl, 'isObserver:', isObserver);
-    const ws = new WebSocket(buildWsUrl(wsUrl, 'gameplay'));
+    const gameplayWsUrl = buildWsUrl(wsUrl, 'gameplay', undefined, connectionMode === 'relay');
+    console.log('WS Join connection target URL resolved to:', redactWsUrl(gameplayWsUrl), 'isObserver:', isObserver);
+    const ws = new WebSocket(gameplayWsUrl);
 
     ws.onopen = () => {
       console.log('WS Connection opened. Joining:', target, 'isObserver:', isObserver);
@@ -5367,9 +5412,14 @@ export default function App() {
 
     ws.addEventListener('message', handleJoinMessage);
 
-    ws.onclose = () => {
+    ws.onclose = (event) => {
       console.log('Guest join socket disconnected.');
-      setConnectionStatus('idle');
+      if (event.code === SIGNED_IN_ELSEWHERE_CLOSE_CODE) {
+        setConnectionError(event.reason || SIGNED_IN_ELSEWHERE_MESSAGE);
+        setConnectionStatus('error');
+      } else {
+        setConnectionStatus('idle');
+      }
       setMultiplayerSocket(null);
       setMultiplayerSpawnSlot(0);
     };

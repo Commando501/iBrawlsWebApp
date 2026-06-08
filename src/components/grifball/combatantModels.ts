@@ -7,26 +7,25 @@ import {
   buildVoxelSpartanModel,
   type CharacterLoadout,
 } from '../VoxelModels';
+import {
+  attachToCombatantAttachment,
+  buildCombatantRigForModel,
+  type CombatantRig,
+} from './combatantRig';
 
 export type CombatantMeshRig = {
   group: THREE.Group;
   hammer: THREE.Group;
   sword: THREE.Group;
   pistol?: THREE.Group;
+  rig: CombatantRig;
 };
 
 export type RebuiltDualWeaponCombatantModel = {
   group: THREE.Group;
   hammer: THREE.Group;
   sword: THREE.Group;
-};
-
-const attachToUpperTorso = (group: THREE.Group, child: THREE.Object3D) => {
-  if (group.userData.upperTorso) {
-    group.userData.upperTorso.add(child);
-  } else {
-    group.add(child);
-  }
+  rig: CombatantRig;
 };
 
 const positionHammer = (hammer: THREE.Group) => {
@@ -70,23 +69,24 @@ export const createCombatantMeshRig = (scene: THREE.Scene, hue: number, isEnemyB
   const resolvedLoadout = loadout ?? (isEnemyBot ? getRandomLoadout() : undefined);
   const group = buildVoxelSpartanModel(isEnemyBot, hue, resolvedLoadout);
   group.userData.appliedHue = hue;
+  const rig = buildCombatantRigForModel(group);
   scene.add(group);
 
   const hammer = buildGravityHammerModel(hue, resolvedLoadout?.hammerPreset);
   positionHammer(hammer);
-  attachToUpperTorso(group, hammer);
+  attachToCombatantAttachment(group, 'thirdPersonWeaponGrip', hammer);
 
   const sword = buildKatarSwordModel(hue, resolvedLoadout?.swordPreset);
   positionSword(sword);
   sword.visible = false;
-  attachToUpperTorso(group, sword);
+  attachToCombatantAttachment(group, 'thirdPersonWeaponGrip', sword);
 
   const pistol = buildPistolModel(hue);
   positionPistol(pistol);
   pistol.visible = false;
-  attachToUpperTorso(group, pistol);
+  attachToCombatantAttachment(group, 'thirdPersonWeaponGrip', pistol);
 
-  return { group, hammer, sword, pistol };
+  return { group, hammer, sword, pistol, rig };
 };
 
 export const rebuildDualWeaponCombatantModel = ({
@@ -114,6 +114,7 @@ export const rebuildDualWeaponCombatantModel = ({
 
   const group = buildVoxelSpartanModel(isEnemyBot, hue, loadout);
   group.position.copy(position);
+  const rig = buildCombatantRigForModel(group);
   scene.add(group);
 
   const resolvedWeaponHue = weaponHue === null ? undefined : (weaponHue ?? hue);
@@ -121,12 +122,12 @@ export const rebuildDualWeaponCombatantModel = ({
   const hammer = buildGravityHammerModel(resolvedWeaponHue, loadout?.hammerPreset);
   positionHammer(hammer);
   hammer.visible = activeWeapon === 'hammer';
-  attachToUpperTorso(group, hammer);
+  attachToCombatantAttachment(group, 'thirdPersonWeaponGrip', hammer);
 
   const sword = buildKatarSwordModel(resolvedWeaponHue, loadout?.swordPreset);
   positionSword(sword);
   sword.visible = activeWeapon === 'sword';
-  attachToUpperTorso(group, sword);
+  attachToCombatantAttachment(group, 'thirdPersonWeaponGrip', sword);
 
-  return { group, hammer, sword };
+  return { group, hammer, sword, rig };
 };

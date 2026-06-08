@@ -59,6 +59,8 @@ function writeLiveConfig(config: unknown) {
 const MAX_PLAYER_NAME_LENGTH = 10;
 const MAX_ROOM_CLIENTS = 7;
 const MAX_ROOM_PLAYERS = 1 + MAX_ROOM_CLIENTS;
+const SIGNED_IN_ELSEWHERE_CLOSE_CODE = 4001;
+const SIGNED_IN_ELSEWHERE_MESSAGE = "Signed in elsewhere. This page was taken offline to prevent account cloning.";
 
 function normalizePlayerName(name: unknown): string | undefined {
   if (typeof name !== "string") return undefined;
@@ -113,6 +115,12 @@ async function startServer() {
   function normalizeRoomCodeForPresence(roomCode: unknown): string | undefined {
     if (typeof roomCode !== "string") return undefined;
     const normalized = roomCode.trim();
+    return normalized.length > 0 ? normalized : undefined;
+  }
+
+  function normalizePresenceId(value: unknown, maxLength = 128): string | undefined {
+    if (typeof value !== "string") return undefined;
+    const normalized = value.trim().slice(0, maxLength);
     return normalized.length > 0 ? normalized : undefined;
   }
 
@@ -245,6 +253,26 @@ async function startServer() {
   // Attach WebSocket Server
   const wss = new WebSocketServer({ server });
 
+  function closeDuplicateAccountLocations(currentSocket: WebSocket) {
+    const accountId = (currentSocket as any).accountId;
+    const onlineInstanceId = (currentSocket as any).onlineInstanceId;
+    if (!accountId || !onlineInstanceId) return;
+
+    wss.clients.forEach(client => {
+      if (client === currentSocket || client.readyState !== WebSocket.OPEN) return;
+      if ((client as any).accountId !== accountId) return;
+      if ((client as any).onlineInstanceId === onlineInstanceId) return;
+
+      try {
+        client.send(JSON.stringify({
+          type: "signed_in_elsewhere",
+          message: SIGNED_IN_ELSEWHERE_MESSAGE
+        }));
+      } catch {}
+      client.close(SIGNED_IN_ELSEWHERE_CLOSE_CODE, SIGNED_IN_ELSEWHERE_MESSAGE);
+    });
+  }
+
   // Broadcast updated presence count and clients list to everyone
   function updatePresence() {
     const lobbyClients = Array.from(wss.clients)
@@ -297,8 +325,12 @@ async function startServer() {
     const urlParams = new URLSearchParams(req.url?.split("?")[1]);
     const connectionType = urlParams.get("type") || "lobby";
     const nameParam = urlParams.get("name");
+    const accountId = normalizePresenceId(urlParams.get("accountId"));
+    const onlineInstanceId = normalizePresenceId(urlParams.get("onlineInstanceId"));
 
     (ws as any).connectionType = connectionType;
+    (ws as any).accountId = accountId;
+    (ws as any).onlineInstanceId = onlineInstanceId;
     (ws as any).playerState = 'menu';
     (ws as any).roomCode = undefined;
     (ws as any).spaceAvailable = false;
@@ -307,7 +339,9 @@ async function startServer() {
     (ws as any).maxPlayers = undefined;
     (ws as any).lobbyStartedAt = undefined;
     
-    console.log(`New WebSocket connection received. Assigned Socket ID: ${wsId}, Type: ${connectionType}, Name: ${nameParam}`);
+    console.log(`New WebSocket connection received. Assigned Socket ID: ${wsId}, Type: ${connectionType}, Name: ${nameParam}, Account: ${accountId ? "signed-in" : "guest"}`);
+
+    closeDuplicateAccountLocations(ws);
 
     // Send immediate welcome greeting carrying the socket's client identity
     ws.send(JSON.stringify({ type: "welcome", clientId: wsId }));

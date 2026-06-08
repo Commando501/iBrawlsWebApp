@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { type CombatantMeshRig } from './combatantModels';
 
 export interface GrifballThreeRefs {
   scene: THREE.Scene | null;
@@ -48,15 +49,7 @@ export interface GrifballThreeRefs {
     maxLife: number;
     material: THREE.Material;
   }[];
-  otherPlayerMeshes: Map<
-    string,
-    {
-      group: THREE.Group;
-      hammer: THREE.Group;
-      sword: THREE.Group;
-      pistol?: THREE.Group;
-    }
-  >;
+  otherPlayerMeshes: Map<string, CombatantMeshRig>;
   navMesh?: any;
   customMapObjects?: THREE.Object3D[];
   skyboxMesh?: THREE.Mesh | null;

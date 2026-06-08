@@ -197,7 +197,7 @@ const METRIC_INFO = {
       const t = trendOf(s);
       if (t > 0) return { level: "good", text: "Still climbing — give it more run.total_steps; it hasn't converged." };
       if (t < 0) return { level: "warn", text: "Reward fell back — likely unstable. Lower ppo.learning_rate next run." };
-      return { level: "warn", text: "Plateaued — converged. To push further raise ppo.entropy_coef (0.02–0.05) to re-explore, or move to a harder opponent." };
+      return { level: "warn", text: "Plateaued — converged. To push further raise ppo.entropy_coef (0.02–0.05) to re-explore, or harden with domain randomization ([randomize] enabled=true)." };
     } },
   "eval/win_rate": { title: "Win rate vs opponent", goal: "Want > 0.9 to advance a stage",
     help: "Fraction of grading matches won (0–1). 0.6 = undertrained. During a self-play stage it's still measured vs random.",
@@ -218,8 +218,8 @@ const METRIC_INFO = {
     help: "Average match length. Stuck high means stalling or failing to close out matches.",
     advise: (v, s) => {
       const t = trendOf(s);
-      if (t > 0) return { level: "warn", text: "Matches getting longer — possible stalling. Lower reward.possession / reward.ball_progress, raise reward.win / reward.goal_scored." };
-      if (t < 0) return { level: "good", text: "Shortening — wins are getting decisive." };
+      if (t > 0) return { level: "warn", text: "Rounds getting longer — passive play. Combat: raise reward.kill, lower run.match_minutes / [combat] kill_min. Grifball: lower reward.possession/ball_progress, raise reward.goal_scored." };
+      if (t < 0) return { level: "good", text: "Shortening — fights are getting decisive." };
       return null;
     } },
   "train/loss": { title: "Total loss", goal: "No clean target — jittery is fine",

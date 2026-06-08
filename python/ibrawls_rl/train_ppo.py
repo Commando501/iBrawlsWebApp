@@ -209,10 +209,13 @@ def run_training(cfg: TrainConfig) -> str:
                 f"failed to load init_model ({e}). The width/depth must match the saved model."
             )
 
+    # save_freq is counted in vec-steps, so divide the desired step interval by the ACTUAL
+    # number of sub-envs (env.num_envs). Combat's env count comes from combat_world_sizes, not
+    # parallel_matches — using parallel_matches here would set a wrong cadence in combat mode.
     callbacks: list = [
         JSONLLoggerCallback(cfg.logdir),
         CheckpointCallback(
-            save_freq=max(1, cfg.save_every // cfg.parallel_matches),
+            save_freq=max(1, cfg.save_every // max(1, env.num_envs)),
             save_path=os.path.join(cfg.logdir, "checkpoints"),
             name_prefix="ppo_grifball",
         ),

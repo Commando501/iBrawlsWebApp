@@ -5,6 +5,10 @@ import {
   buildPistolModel,
   type CharacterLoadout,
 } from '../VoxelModels';
+import {
+  attachToAttachmentPoint,
+  createFirstPersonWeaponRig,
+} from './combatantRig';
 import { type GrifballThreeRefs } from './threeRefs';
 
 export type LocalPlayerViewAdminSettings = {
@@ -24,27 +28,27 @@ export function buildLocalPlayerViewForRefs({
   adminSettings: LocalPlayerViewAdminSettings;
   playerLoadout?: CharacterLoadout;
 }): void {
-  const fpWeaponContainer = new THREE.Group();
-  camera.add(fpWeaponContainer);
+  const firstPersonRig = createFirstPersonWeaponRig(camera);
+  const weaponGrip = firstPersonRig.attachments.firstPersonWeaponGrip;
 
   const playerHammer = buildGravityHammerModel(adminSettings.playerHue, playerLoadout?.hammerPreset);
   playerHammer.position.set(0.35, -0.38, -0.65);
   playerHammer.rotation.set(0.15, -0.3, -0.15);
-  fpWeaponContainer.add(playerHammer);
+  attachToAttachmentPoint(weaponGrip, playerHammer);
   refs.playerHammer = playerHammer;
 
   const playerSword = buildKatarSwordModel(adminSettings.playerHue, playerLoadout?.swordPreset);
   playerSword.position.set(0.35, -0.38, -0.5);
   playerSword.rotation.set(-Math.PI / 2, 0, -Math.PI / 8);
   playerSword.visible = false;
-  fpWeaponContainer.add(playerSword);
+  attachToAttachmentPoint(weaponGrip, playerSword);
   refs.playerSword = playerSword;
 
   const playerPistol = buildPistolModel(adminSettings.playerHue);
   playerPistol.position.set(0.25, -0.28, -0.4);
   playerPistol.rotation.set(0, 0, 0);
   playerPistol.visible = false;
-  fpWeaponContainer.add(playerPistol);
+  attachToAttachmentPoint(weaponGrip, playerPistol);
   refs.playerPistol = playerPistol;
 
   const debugGeo = new THREE.SphereGeometry(4.5, 32, 16);

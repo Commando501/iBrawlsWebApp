@@ -1,5 +1,5 @@
 import { LIVE_CONFIG_KEY_SET } from "./liveConfigKeys";
-import { handleAccountRequest, resolveAdminAccount } from "./accounts";
+import { handleAccountRequest, requireSession, resolveAdminAccount } from "./accounts";
 import { toAnalyticsDataPoint } from "./telemetrySchema";
 
 export interface Env {
@@ -150,6 +150,8 @@ interface Room {
 
 interface GameWebSocket extends WebSocket {
   id?: string;
+  accountId?: string;
+  onlineInstanceId?: string;
   playerState?: 'menu' | 'solo' | 'multi';
   roomCode?: string;
   spaceAvailable?: boolean;
@@ -162,6 +164,8 @@ interface GameWebSocket extends WebSocket {
 const MAX_PLAYER_NAME_LENGTH = 10;
 const MAX_ROOM_CLIENTS = 7;
 const MAX_ROOM_PLAYERS = 1 + MAX_ROOM_CLIENTS;
+const SIGNED_IN_ELSEWHERE_CLOSE_CODE = 4001;
+const SIGNED_IN_ELSEWHERE_MESSAGE = "Signed in elsewhere. This page was taken offline to prevent account cloning.";
 
 function normalizePlayerName(name: unknown): string | undefined {
   if (typeof name !== "string") return undefined;
@@ -172,6 +176,12 @@ function normalizePlayerName(name: unknown): string | undefined {
 function normalizeRoomCodeForPresence(roomCode: unknown): string | undefined {
   if (typeof roomCode !== "string") return undefined;
   const normalized = roomCode.trim();
+  return normalized.length > 0 ? normalized : undefined;
+}
+
+function normalizePresenceId(value: unknown, maxLength = 128): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const normalized = value.trim().slice(0, maxLength);
   return normalized.length > 0 ? normalized : undefined;
 }
 
@@ -773,7 +783,21 @@ export class GameLobby implements DurableObject {
     // Connect the socket server end to the Durable Object
     const connectionType = url.searchParams.get("type") || "lobby";
     const nameParam = url.searchParams.get("name");
-    await this.handleSession(serverSocket, connectionType, nameParam);
+    const onlineInstanceId = normalizePresenceId(url.searchParams.get("onlineInstanceId"));
+    const accountToken = url.searchParams.get("accountToken");
+    const claimedAccountId = normalizePresenceId(url.searchParams.get("accountId"));
+    let accountId: string | undefined;
+    if (accountToken) {
+      const accountRequest = new Request(request.url, {
+        headers: { Authorization: `Bearer ${accountToken}` },
+      });
+      const account = await requireSession(accountRequest, this.env);
+      if (!account || (claimedAccountId && claimedAccountId !== account.id)) {
+        return new Response("Invalid account session", { status: 401 });
+      }
+      accountId = account.id;
+    }
+    await this.handleSession(serverSocket, connectionType, nameParam, accountId, onlineInstanceId);
 
     // Return the 101 Switching Protocols response to upgrade the client connection
     return new Response(null, {
@@ -782,7 +806,35 @@ export class GameLobby implements DurableObject {
     });
   }
 
-  async handleSession(ws: WebSocket, connectionType: string, nameParam: string | null) {
+  closeDuplicateAccountLocations(currentSocket: GameWebSocket) {
+    const accountId = currentSocket.accountId;
+    const onlineInstanceId = currentSocket.onlineInstanceId;
+    if (!accountId || !onlineInstanceId) return;
+
+    this.sessions.forEach(client => {
+      if (client === currentSocket || client.readyState !== WebSocket.OPEN) return;
+      if (client.accountId !== accountId) return;
+      if (client.onlineInstanceId === onlineInstanceId) return;
+
+      try {
+        client.send(JSON.stringify({
+          type: "signed_in_elsewhere",
+          message: SIGNED_IN_ELSEWHERE_MESSAGE,
+        }));
+      } catch(e) {}
+      try {
+        client.close(SIGNED_IN_ELSEWHERE_CLOSE_CODE, SIGNED_IN_ELSEWHERE_MESSAGE);
+      } catch(e) {}
+    });
+  }
+
+  async handleSession(
+    ws: WebSocket,
+    connectionType: string,
+    nameParam: string | null,
+    accountId?: string,
+    onlineInstanceId?: string,
+  ) {
     const gameWs = ws as GameWebSocket;
     
     // Accept the WebSocket connection inside the Worker
@@ -792,6 +844,8 @@ export class GameLobby implements DurableObject {
     // Generate unique random socket ID (same as original backend)
     const wsId = Math.random().toString(36).substring(2, 9);
     gameWs.id = wsId;
+    gameWs.accountId = accountId;
+    gameWs.onlineInstanceId = onlineInstanceId;
     (gameWs as any).connectionType = connectionType;
     gameWs.playerState = 'menu';
     gameWs.roomCode = undefined;
@@ -801,7 +855,9 @@ export class GameLobby implements DurableObject {
     gameWs.maxPlayers = undefined;
     gameWs.lobbyStartedAt = undefined;
     
-    console.log(`New WebSocket connection received. Assigned Socket ID: ${wsId}, Type: ${connectionType}, Name: ${nameParam}`);
+    console.log(`New WebSocket connection received. Assigned Socket ID: ${wsId}, Type: ${connectionType}, Name: ${nameParam}, Account: ${accountId ? "signed-in" : "guest"}`);
+
+    this.closeDuplicateAccountLocations(gameWs);
 
     // Send immediate welcome greeting carrying the socket's client identity
     gameWs.send(JSON.stringify({ type: "welcome", clientId: wsId }));

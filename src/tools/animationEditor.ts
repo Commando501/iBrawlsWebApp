@@ -12,6 +12,10 @@ import {
   type HammerAttackPhase,
   type WeaponPose,
 } from '../components/grifball/attackAnimationPresets';
+import {
+  attachToAttachmentPoint,
+  createFirstPersonWeaponRig,
+} from '../components/grifball/combatantRig';
 import { createCombatantMeshRig, type CombatantMeshRig } from '../components/grifball/combatantModels';
 import { buildGravityHammerModel, buildKatarSwordModel } from '../components/VoxelModels';
 import {
@@ -232,11 +236,13 @@ thirdPersonRig.group.rotation.y = Math.PI;
 const firstPersonRoot = new THREE.Group();
 firstPersonRoot.position.set(0, 1.0, 0);
 scene.add(firstPersonRoot);
+const firstPersonRig = createFirstPersonWeaponRig(firstPersonRoot);
+const firstPersonWeaponGrip = firstPersonRig.attachments.firstPersonWeaponGrip;
 
 const firstPersonHammer = buildGravityHammerModel(192);
 const firstPersonSword = buildKatarSwordModel(192);
-firstPersonRoot.add(firstPersonHammer);
-firstPersonRoot.add(firstPersonSword);
+attachToAttachmentPoint(firstPersonWeaponGrip, firstPersonHammer);
+attachToAttachmentPoint(firstPersonWeaponGrip, firstPersonSword);
 
 const reticleMaterial = new THREE.LineBasicMaterial({ color: 0x22d3ee, transparent: true, opacity: 0.42 });
 const reticleGeometry = new THREE.BufferGeometry().setFromPoints([

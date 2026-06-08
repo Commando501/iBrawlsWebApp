@@ -24,6 +24,7 @@ export interface OnlineClientPayload {
 export type LobbyServerMessage =
   | { type: 'welcome'; clientId: string }
   | { type: 'presence'; onlineCount: number; clients: OnlineClientPayload[] }
+  | { type: 'signed_in_elsewhere'; message: string }
   | { type: 'pong'; timestamp: number }
   | { type: 'receive_invite'; fromId: string; roomCode: string }
   | { type: 'invite_declined'; fromId: string }
@@ -34,7 +35,7 @@ export type LobbyServerMessage =
   | { type: 'error'; message: string };
 
 export type LobbyClientMessage =
-  | { type: 'update_status'; status: ClientPresenceState; roomCode?: string; spaceAvailable: boolean; name?: string; playerCount?: number; maxPlayers?: number }
+  | { type: 'update_status'; status: ClientPresenceState; roomCode?: string; spaceAvailable: boolean; name?: string; playerCount?: number; maxPlayers?: number; accountId?: string; onlineInstanceId?: string }
   | { type: 'lobby_chat'; sender: string; text: string }
   | { type: 'ping'; timestamp: number }
   | { type: 'send_invite'; targetId: string; roomCode: string }

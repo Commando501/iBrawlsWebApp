@@ -6,6 +6,10 @@
 import React, { useEffect, useRef } from 'react';
 import * as THREE from 'three';
 import { buildVoxelSpartanModel, buildGravityHammerModel, buildKatarSwordModel, CharacterLoadout, DEFAULT_LOADOUT } from './VoxelModels';
+import {
+  attachToCombatantAttachment,
+  buildCombatantRigForModel,
+} from './grifball/combatantRig';
 
 interface CharacterPreviewProps {
   hue: number;
@@ -92,6 +96,7 @@ export const CharacterPreview: React.FC<CharacterPreviewProps> = ({ hue, heldWea
 
       characterGroup = buildVoxelSpartanModel(false, h, lo ?? DEFAULT_LOADOUT);
       characterGroup.position.set(0, 0, 0);
+      buildCombatantRigForModel(characterGroup);
       scene.add(characterGroup);
 
       if (w === 'hammer') {
@@ -99,11 +104,7 @@ export const CharacterPreview: React.FC<CharacterPreviewProps> = ({ hue, heldWea
         hammer.scale.set(0.6, 0.6, 0.6);
         hammer.position.set(0.5, 1.0 - 0.64, -0.4);
         hammer.rotation.set(Math.PI / 2.5, 0, 0);
-        if (characterGroup.userData.upperTorso) {
-          characterGroup.userData.upperTorso.add(hammer);
-        } else {
-          characterGroup.add(hammer);
-        }
+        attachToCombatantAttachment(characterGroup, 'thirdPersonWeaponGrip', hammer);
       } else if (w === 'sword') {
         const sword = buildKatarSwordModel(h, lo?.swordPreset);
         sword.scale.set(0.6, 0.6, 0.6);
@@ -111,11 +112,7 @@ export const CharacterPreview: React.FC<CharacterPreviewProps> = ({ hue, heldWea
         // Blade is built along +y; negative X rotation points it toward -z
         // (the character's forward / visor direction). +PI/2 aims it backward.
         sword.rotation.set(-Math.PI / 2, 0, -Math.PI / 8);
-        if (characterGroup.userData.upperTorso) {
-          characterGroup.userData.upperTorso.add(sword);
-        } else {
-          characterGroup.add(sword);
-        }
+        attachToCombatantAttachment(characterGroup, 'thirdPersonWeaponGrip', sword);
       }
     };
 

@@ -10,7 +10,7 @@ total_steps = 4500000
 parallel_matches = 32
 num_workers = 1
 goal_target = 3
-match_minutes = 3.6
+match_minutes = 2.0
 device = "cpu"
 seed = 1
 
@@ -33,26 +33,26 @@ clip_range = 0.2
 [network]
 width = 256
 depth = 2
-init_model = ""
+init_model = "runs/combat2/final_model.zip"
 
 [randomize]
-enabled = false
+enabled = true
 pct = 0.15
 
 [reward]
 win = 1.0
-goal_scored = 1.5
+goal_scored = 3.375
 goal_conceded = 1.0
-possession = 0.001
+possession = 0.0003
 ball_progress = 0.01
 kill = 0.2
-death = 0.1
-approach = 0.05
-time_penalty = 0.0005
+death = 0.3
+approach = 0.15
+time_penalty = 0.001
 bootstrap_truncation = false
 
 [logging]
-dir = "runs/combat1"
+dir = "runs/combat2_v2"
 save_every = 200000
 eval_every = 100000
 eval_episodes = 24

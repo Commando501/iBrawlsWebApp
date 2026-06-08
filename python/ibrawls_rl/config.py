@@ -15,7 +15,7 @@ from dataclasses import asdict, dataclass, field
 @dataclass
 class TrainConfig:
     # --- run ---
-    mode: str = "grifball"            # "grifball" | "combat" (deathmatch generalist)
+    mode: str = "combat"              # "combat" (deathmatch generalist; the focus) | "grifball"
     opponent: str = "random"          # grifball only: "random" | "self" | "heuristic"
     total_steps: int = 3_000_000      # how long to train (env steps)
     parallel_matches: int = 32        # grifball: matches at once (combat uses [combat].world_sizes)
@@ -73,7 +73,7 @@ class TrainConfig:
 
 # Plain-English descriptions for the self-documenting settings table.
 KNOB_DESCRIPTIONS: dict[str, str] = {
-    "mode": "'grifball' (carry the ball to score) or 'combat' (deathmatch; trains one generalist over 1v1/FFA/team via [combat]).",
+    "mode": "'combat' (deathmatch; trains one generalist over 1v1/FFA/team via [combat] — the main focus) or 'grifball' (carry the ball to score).",
     "combat_world_sizes": "Combat only: fixed sizes of the parallel matches. 2 = a 1v1; 4/8 = FFA or teams. The mix is what makes one model generalize.",
     "combat_kill_min": "Combat only: lower bound of the per-episode kill target.",
     "combat_kill_max": "Combat only: upper bound of the per-episode kill target.",
@@ -224,7 +224,7 @@ SECTION_TITLES = {
 
 # Fields that are a pick-one choice rather than a free value.
 _FIELD_CHOICES: dict[str, list[str]] = {
-    "mode": ["grifball", "combat"],
+    "mode": ["combat", "grifball"],
     "opponent": ["random", "self", "heuristic"],
     "device": ["auto", "cpu", "cuda"],
 }
