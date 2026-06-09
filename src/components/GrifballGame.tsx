@@ -7,6 +7,7 @@ import React, { useRef, useEffect, useState } from 'react';
 import * as THREE from 'three';
 import { sfx } from './AudioEngine';
 import { DEFAULT_KEYBINDINGS, CustomMapData } from '../types';
+import { resolveCharacterModelType } from '../characterModelTypes';
 import { GRIFBALL_TOTAL_AI } from '../game/grifballTeams';
 import {
   installLegacyTeamScoreBridges,
@@ -96,6 +97,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
   botBehaviors = {},
   botWeaponBehaviors = {},
   botArchetypes = {},
+  botModelTypes = {},
   aiPresets = [],
   aiMatchSessionKey = 'sandbox',
   matchKillsToWin,
@@ -154,6 +156,10 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
   installLegacyTeamScoreBridges(stateRef.current);
 
   useEffect(() => {
+    stateRef.current.playerModelType = resolveCharacterModelType(playerLoadout?.modelType, playerLoadout?.modelSystem);
+  }, [playerLoadout?.modelSystem, playerLoadout?.modelType]);
+
+  useEffect(() => {
     stateRef.current.localPlayerTeam = localPlayerTeamFromRole(multiplayerRole);
   }, [multiplayerRole]);
 
@@ -164,6 +170,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     botBehaviorsRef,
     botWeaponBehaviorsRef,
     botArchetypesRef,
+    botModelTypesRef,
   } = useOfflineRosterPropRefs({
     offlineBotCount: adminSettings.gameMode === 'grifball' ? GRIFBALL_TOTAL_AI : offlineBotCount,
     botDifficulties,
@@ -171,6 +178,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     botBehaviors,
     botWeaponBehaviors,
     botArchetypes,
+    botModelTypes,
   });
 
   const {
@@ -193,6 +201,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     botBehaviorsRef,
     botWeaponBehaviorsRef,
     botArchetypesRef,
+    botModelTypesRef,
     botColorsRef,
     aiPresets,
     matchKillsToWin,
@@ -219,6 +228,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     getRefs: () => threeRef.current,
     getActiveCustomMap,
     getMainAI: mai,
+    getPlayerModelType: () => resolveCharacterModelType(playerLoadout?.modelType, playerLoadout?.modelSystem),
     isMultiplayer,
     multiplayerRole,
     opponentClientId,

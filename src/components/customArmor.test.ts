@@ -75,3 +75,24 @@ test('catalog normalization and network sanitizer preserve valid selected custom
   assert.equal(loadout.customArmor.arm.id, snapshot.id);
   assert.equal(loadout.junk, undefined);
 });
+
+test('custom armor pieces and sanitized loadouts carry v2 model type', () => {
+  const piece = cloneBuiltInPiece('torso', 'mark-vi', 'torso');
+  const largeSnapshot = createCustomArmorSnapshot({
+    ...piece,
+    modelType: 'large',
+  } as any) as any;
+
+  assert.equal((createCustomArmorSnapshot(piece) as any).modelType, 'medium');
+  assert.equal(largeSnapshot.modelType, 'large');
+
+  const loadout = sanitizeCharacterLoadoutForNetwork({
+    modelSystem: 'v2',
+    modelType: 'large',
+    torso: 'mark-vi',
+    customArmor: { torso: largeSnapshot },
+  }) as any;
+
+  assert.equal(loadout.modelType, 'large');
+  assert.equal(loadout.customArmor.torso.modelType, 'large');
+});

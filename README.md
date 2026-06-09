@@ -206,7 +206,7 @@ An interactive, high-tech visual controller mapper panel in the hotkey adjustmen
 
 To prevent players and AI characters from passing straight through one another, iBrawls incorporates a 2.5D cylinder-based rigid-body collision system:
 
-- **Entity Cylinders**: Every active, living participant (local player, main AI, and custom bots/remote players) is bounded by a vertical collision cylinder with a radius of **0.55m** (diameter of **1.1m**) and state-dependent height ranges (**1.8m** standing, **1.2m** crouching).
+- **Entity Cylinders**: Every active, living participant (local player, main AI, and custom bots/remote players) is bounded by a model-profile collision cylinder. V2 Medium keeps the legacy radius of **0.55m** with **1.8m** standing / **1.2m** crouching height, while V2 Large uses a broader **0.75m** radius with **2.2m** standing / **1.45m** crouching height. Melee, hammer-impact, and sword-lunge target checks add the same Large radius bonus so the larger visual body has a matching gameplay hitbox.
 - **Kinematic Resolution**: When two participants overlap both horizontally and vertically, they are pushed apart by **50%** of the overlap depth each along the collision normal.
 - **Velocity Normal Damping**: To ensure collisions feel solid and prevent jittering or high-speed passthroughs, the relative velocity component along the collision normal is cancelled when entities are moving towards each other.
 - **Multi-iteration Solver**: The collision engine runs for **3 iterations** each frame inside `enforceArenaBounds` before bounding players to the circular arena, ensuring perfectly stable physics even in crowded multi-bot pincers.
@@ -298,6 +298,7 @@ iBrawls features a beautiful and comprehensive character customization suite, av
 - **Model System Versions**: Select between different model systems:
   - **Version 1 (Classic)**: Standard hierarchical rigid segment group.
   - **Version 2 (Rigged)**: High-fidelity skeletal bone & joint system with enhanced state-based animations (breathing idles, walking leg swing cycles with knees bending and ankle/toe flexes, sprinting leans and arm pumps, crouched sliding folds, and elbow-bending weapon swings).
+    - **Model Types**: V2 loadouts support **Medium** and **Large** body profiles. Medium is the current V2 Spartan footprint. Large uses denser powerarmor-style voxel volumes, a larger collision cylinder and target hitbox, and matching custom-armor editor bounds/catalog filtering so Large pieces do not mix with Medium pieces.
     - **Hitbox Constraints & Customizer Safety**: To support future custom voxel parts (via a model maker/editor), V2 enforces a strict, standardized hitbox size constraint (in voxels) for each of the 15 body parts. Any custom part must fit within these bounding boxes:
       * `pelvis`: Max `10 x 11 x 7`
       * `stomach`: Max `9 x 8 x 6`
@@ -336,6 +337,7 @@ iBrawls features a beautiful and comprehensive character customization suite, av
 - **Immersive 3D Paint Job Studio**: An extremely rich, fully integrated 3D **Paint Job** studio inside the character customization tab, built using Three.js and React to offer precise per-voxel coloring:
 
 - **Immersive 3D Viewport**: Click **"Start Paint Job"** to enter the painting studio. The camera shifts face-forward towards the Spartan, auto-rotation is paused, and continuous 360° mouse orbiting and scroll-wheel zooming are fully unlocked.
+- **Draggable Frame Scaling**: The paint studio's 3D viewport and tool/control frames have corner scale handles. Drag either handle to manually enlarge or shrink that frame; sizes persist locally under `ibrawls_paint_editor_frame_scale_v1`.
 - **Futuristic SVG Navigation Skeleton**: A glowing neon wireframe HUD of a Spartan is displayed in the top-left corner. Hovering and clicking on skeletal zones (Head, Chest, Arms, Legs) triggers a **smooth camera interpolation (lerp)** that glides the viewport close-up to focus on that specific armor piece, resetting any model translation and camera zoom to their default framing.
 - **Dual Paint Modes**:
   - **Voxel Paint**: Spawns every single voxel in the character's active armor loadout as an individual, raycastable 3D box mesh. Raycasting maps clicks precisely to the voxel's relative coordinates.

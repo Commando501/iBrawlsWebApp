@@ -75,6 +75,7 @@ export const buildPotentialTacticalTargets = (
       vel: s.playerVel,
       isCrouching: s.isCrouching,
       playerName: s.settings.playerName || 'Blue (You)',
+      modelType: s.playerModelType,
     });
   }
 
@@ -94,6 +95,7 @@ export const buildPotentialTacticalTargets = (
         vel: new THREE.Vector3(other.vel.x, other.vel.y, other.vel.z),
         isCrouching: other.isCrouching || false,
         playerName: other.playerName,
+        modelType: other.modelType,
       });
     }
   });

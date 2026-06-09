@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { type Combatant, type CustomMapData } from '../../types';
+import { type CharacterModelType, type Combatant, type CustomMapData } from '../../types';
 import { recoverCombatantAltitude as recoverCombatantAltitudeFromRunaway } from './altitudeRecovery';
 import { enforceArenaFrameSyncForState } from './arenaFrameSync';
 import { constrainCombatantToArenaBounds } from './arenaBounds';
@@ -12,6 +12,7 @@ export function createArenaCollisionCallbacksForState({
   getRefs,
   getActiveCustomMap,
   getMainAI,
+  getPlayerModelType,
   isMultiplayer,
   multiplayerRole,
   opponentClientId,
@@ -20,6 +21,7 @@ export function createArenaCollisionCallbacksForState({
   getRefs: () => GrifballThreeRefs;
   getActiveCustomMap: () => CustomMapData | null;
   getMainAI: () => Combatant | undefined;
+  getPlayerModelType?: () => CharacterModelType | undefined;
   isMultiplayer: boolean;
   multiplayerRole: 'host' | 'client' | 'observer' | null | undefined;
   opponentClientId: string;
@@ -60,6 +62,7 @@ export function createArenaCollisionCallbacksForState({
     resolvePlayerCombatantCollisionsForState({
       state: getState(),
       mainAI: getMainAI(),
+      playerModelType: getPlayerModelType?.(),
     });
   };
 

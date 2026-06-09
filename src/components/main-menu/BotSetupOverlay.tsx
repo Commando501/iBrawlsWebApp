@@ -27,8 +27,10 @@ export function BotSetupOverlay({
   botDifficulties,
   setBotDifficulties,
   botArchetypes,
+  botModelTypes,
   setAdminSettings,
   setBotArchetypes,
+  setBotModelTypes,
   aiPresets,
   onClose,
   onApplyAndResume,
@@ -75,6 +77,8 @@ export function BotSetupOverlay({
       setBotDifficulties={setBotDifficulties}
       botArchetypes={botArchetypes}
       setBotArchetypes={setBotArchetypes}
+      botModelTypes={botModelTypes}
+      setBotModelTypes={setBotModelTypes}
       aiPresets={aiPresets}
       onToggleGrifballMode={handleToggleGrifballMode}
       onMainAiArchetypeChange={handleMainAiArchetypeChange}

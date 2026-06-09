@@ -1,6 +1,7 @@
 import type React from 'react';
 import {
   type AIBehaviorPreset,
+  type CharacterModelType,
   type CustomMapData,
   type DeviceInfo,
   type GameStats,
@@ -31,6 +32,7 @@ export interface GrifballGameProps {
   botBehaviors?: Record<string, AIBehaviorPreset>;
   botWeaponBehaviors?: Record<string, string>;
   botArchetypes?: Record<string, string>;
+  botModelTypes?: Record<string, CharacterModelType>;
   aiPresets?: any[];
   /** Changes when a new match session starts (sandbox or tournament round). */
   aiMatchSessionKey?: string;

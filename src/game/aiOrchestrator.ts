@@ -104,6 +104,12 @@ export function applyRosterSlotConfigToCombatants(
       changed = true;
     }
 
+    if (combatant.modelType !== slot.modelType) {
+      combatant.modelType = slot.modelType;
+      events?.onHueChanged?.(combatant.id, combatant);
+      changed = true;
+    }
+
     if (slot.name && combatant.playerName !== slot.name) {
       combatant.playerName = slot.name;
       changed = true;
@@ -140,6 +146,7 @@ export function syncOfflineBotSlots(
       const name = OFFLINE_BOT_NAMES[i % OFFLINE_BOT_NAMES.length];
       const diff = input.legacy.botDifficulties?.[botId] || 'normal';
       const team = resolveCombatantTeam(botId, input.settings, input.legacy);
+      const slot = resolveRosterSlotForCombatant(botId, input.settings, input.legacy);
 
       const spawnPos = spawnCallbacks.getOptimalSpawnPoint(exclude, team);
       exclude.push(spawnPos.clone());
@@ -153,6 +160,7 @@ export function syncOfflineBotSlots(
         hue,
         difficulty: diff,
         settings: input.settings,
+        modelType: slot.modelType,
       });
 
       input.roster.set(botId, newBot);
@@ -195,6 +203,7 @@ export function seedOfflineRoster(
     yaw: spawnCallbacks.getInwardSpawnYaw(mainSpawn),
     hue: legacy.botColors?.[MAIN_AI_ID] ?? 0,
     difficulty: legacy.botDifficulties?.[MAIN_AI_ID] || 'normal',
+    modelType: legacy.botModelTypes?.[MAIN_AI_ID],
     ...params.mainAiParams,
   });
   events?.onMainAICreated?.(mainAi);
@@ -213,6 +222,7 @@ export function seedOfflineRoster(
         hue: legacy.botColors?.[botId] ?? OFFLINE_BOT_HUES[i % OFFLINE_BOT_HUES.length],
         difficulty: legacy.botDifficulties?.[botId] || 'normal',
         settings,
+        modelType: resolveRosterSlotForCombatant(botId, settings, legacy).modelType,
       })
     );
   }

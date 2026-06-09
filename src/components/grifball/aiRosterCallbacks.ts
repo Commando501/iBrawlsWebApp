@@ -10,7 +10,7 @@ import {
   resolveRosterSlotForCombatant,
 } from '../../game/rosterSlotConfig';
 import { resolvePersonalityFlags } from '../../game/aiPersonalities';
-import { type AIBehaviorPreset, type AIPreset, type Combatant } from '../../types';
+import { type AIBehaviorPreset, type AIPreset, type CharacterModelType, type Combatant } from '../../types';
 import { buildLegacyRosterProps } from './legacyRosterProps';
 import { createMatchScoreContext } from './matchPressure';
 import { type GrifballRuntimeState } from './runtimeState';
@@ -25,6 +25,7 @@ export function createAIRosterCallbacksForState({
   botBehaviorsRef,
   botWeaponBehaviorsRef,
   botArchetypesRef,
+  botModelTypesRef,
   botColorsRef,
   aiPresets,
   matchKillsToWin,
@@ -36,6 +37,7 @@ export function createAIRosterCallbacksForState({
   botBehaviorsRef: MutableRef<Record<string, AIBehaviorPreset>>;
   botWeaponBehaviorsRef: MutableRef<Record<string, string>>;
   botArchetypesRef: MutableRef<Record<string, string>>;
+  botModelTypesRef: MutableRef<Record<string, CharacterModelType>>;
   botColorsRef: MutableRef<Record<string, number>>;
   aiPresets: AIPreset[];
   matchKillsToWin?: number;
@@ -61,6 +63,7 @@ export function createAIRosterCallbacksForState({
     botBehaviors: botBehaviorsRef.current,
     botWeaponBehaviors: botWeaponBehaviorsRef.current,
     botArchetypes: botArchetypesRef.current,
+    botModelTypes: botModelTypesRef.current,
     botColors: botColorsRef.current,
   });
 

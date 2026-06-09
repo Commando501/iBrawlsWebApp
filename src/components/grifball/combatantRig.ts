@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { getCharacterModelProfile } from '../../characterModelTypes';
 
 export const COMBATANT_BONE_NAMES = [
   'root',
@@ -144,13 +145,15 @@ export const buildCombatantRigForModel = (model: THREE.Group): CombatantRig => {
   const isV2 = model.userData.modelSystem === 'v2';
   const rightWeaponBone = isV2 ? (model.userData.hand_r || bones.rightArm) : bones.rightArm;
   const leftWeaponBone = isV2 ? (model.userData.hand_l || bones.leftArm) : bones.leftArm;
-  const gripOffset: THREE.Vector3Tuple = isV2 ? [0, -0.05, 0] : [0, -0.35, -0.045];
+  const profile = isV2 ? getCharacterModelProfile(model.userData.modelType, 'v2') : undefined;
+  const rightGripOffset: THREE.Vector3Tuple = isV2 ? profile!.thirdPersonWeaponGripOffset : [0, -0.35, -0.045];
+  const leftGripOffset: THREE.Vector3Tuple = isV2 ? profile!.thirdPersonOffhandGripOffset : [0, -0.35, -0.045];
 
   const attachments: CombatantAttachmentMap = {
-    thirdPersonWeaponGrip: createAttachmentPoint(rightWeaponBone, 'thirdPersonWeaponGrip', 'rightArm', gripOffset),
-    thirdPersonOffhandGrip: createAttachmentPoint(leftWeaponBone, 'thirdPersonOffhandGrip', 'leftArm', gripOffset),
-    rightHandGrip: createAttachmentPoint(rightWeaponBone, 'rightHandGrip', 'rightArm', gripOffset),
-    leftHandGrip: createAttachmentPoint(leftWeaponBone, 'leftHandGrip', 'leftArm', gripOffset),
+    thirdPersonWeaponGrip: createAttachmentPoint(rightWeaponBone, 'thirdPersonWeaponGrip', 'rightArm', rightGripOffset),
+    thirdPersonOffhandGrip: createAttachmentPoint(leftWeaponBone, 'thirdPersonOffhandGrip', 'leftArm', leftGripOffset),
+    rightHandGrip: createAttachmentPoint(rightWeaponBone, 'rightHandGrip', 'rightArm', rightGripOffset),
+    leftHandGrip: createAttachmentPoint(leftWeaponBone, 'leftHandGrip', 'leftArm', leftGripOffset),
     headCenter: createAttachmentPoint(bones.head, 'headCenter', 'head'),
     chestCenter: createAttachmentPoint(bones.upperTorso, 'chestCenter', 'upperTorso'),
   };

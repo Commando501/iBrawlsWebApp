@@ -5,6 +5,7 @@ import { MAIN_AI_ID } from '../../game/roster';
 import { type Combatant, type CustomMapData, type DeathEvent, type MedalInfo } from '../../types';
 import { isVectorXZAtArenaBoundary } from './arenaBounds';
 import { type SwordLungeCurrentTrailStyle } from './combatGeometry';
+import { adjustRangeForTargetModel } from './modelHitbox';
 import { createReplayHeatmapCombatantSource, queueReplayHeatmapDeathEventsForState } from './replayHeatmapRuntime';
 import {
   findPlayerSwordLungeHitTargetForState,
@@ -93,7 +94,7 @@ export function updatePlayerSwordLungeForState({
       hit: false,
       recordLungeEnd: recordPlayerLungeEnd,
     });
-  } else if (dist <= 1.5) {
+  } else if (dist <= adjustRangeForTargetModel(1.5, closestTarget.modelType)) {
     state.isLunging = false;
     recordPlayerLungeEnd(true);
     playExplosion();

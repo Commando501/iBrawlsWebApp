@@ -237,6 +237,8 @@ export type GameState = 'menu' | 'playing' | 'paused';
 
 export type Stance = 'STANDING' | 'CROUCHING' | 'JUMPING';
 
+export type CharacterModelType = 'medium' | 'large';
+
 export type WeaponState = 'ready' | 'swing_up' | 'swing_down' | 'recovering' | 'melee_swing' | 'melee_recover' | 'melee_up' | 'melee_down';
 
 export type AIBehaviorPreset = 'passive' | 'defensive' | 'aggressive';
@@ -291,6 +293,7 @@ export interface RemotePlayerState {
   activeWeapon: 'hammer' | 'sword' | 'pistol';
   respawnTimer: number;
   hue: number;
+  modelType?: CharacterModelType;
   score: number;
   kills: number;
   deaths: number;
@@ -368,6 +371,7 @@ export interface Combatant {
   difficulty?: string;
   /** Roster team; defaults to red for AI combatants in sandbox. */
   team?: TeamId;
+  modelType?: CharacterModelType;
 
   // Physics / pose (live references, mutated in place each tick)
   pos: THREE.Vector3;

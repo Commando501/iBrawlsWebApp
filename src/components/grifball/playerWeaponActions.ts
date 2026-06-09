@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { MAIN_AI_ID } from '../../game/roster';
-import { type Combatant } from '../../types';
+import { type CharacterModelType, type Combatant } from '../../types';
+import { getCombatBodyCenter } from './combatGeometry';
 import { type GrifballRuntimeState } from './runtimeState';
 import { type GrifballThreeRefs } from './threeRefs';
 
@@ -19,6 +20,7 @@ export type PlayerSwordLungeHitTarget = {
   pos: THREE.Vector3;
   hp: number;
   name: string;
+  modelType?: CharacterModelType;
 };
 
 const canStartPlayerWeaponAction = (state: GrifballRuntimeState): boolean =>
@@ -149,6 +151,7 @@ export function findPlayerSwordLungeHitTargetForState({
 } {
   let closestTarget: PlayerSwordLungeHitTarget | null = null;
   let distance = Infinity;
+  const playerCenter = getCombatBodyCenter(state.playerPos, state.isCrouching);
 
   if (
     !isMultiplayer &&
@@ -157,8 +160,8 @@ export function findPlayerSwordLungeHitTargetForState({
     mainAi.aiState !== 'RESPAWNING' &&
     areCombatantsHostile('player', MAIN_AI_ID)
   ) {
-    closestTarget = { id: MAIN_AI_ID, pos: mainAi.pos, hp: mainAi.hp, name: 'Red (AI)' };
-    distance = state.playerPos.distanceTo(mainAi.pos);
+    closestTarget = { id: MAIN_AI_ID, pos: mainAi.pos, hp: mainAi.hp, name: 'Red (AI)', modelType: mainAi.modelType };
+    distance = playerCenter.distanceTo(getCombatBodyCenter(mainAi.pos, mainAi.isCrouching));
   }
 
   state.otherPlayers.forEach((other) => {
@@ -169,10 +172,10 @@ export function findPlayerSwordLungeHitTargetForState({
       areCombatantsHostile('player', other.id)
     ) {
       const otherPos = new THREE.Vector3(other.pos.x, other.pos.y, other.pos.z);
-      const candidateDistance = state.playerPos.distanceTo(otherPos);
+      const candidateDistance = playerCenter.distanceTo(getCombatBodyCenter(otherPos, other.isCrouching));
       if (candidateDistance < distance) {
         distance = candidateDistance;
-        closestTarget = { id: other.id, pos: otherPos, hp: other.hp, name: other.playerName };
+        closestTarget = { id: other.id, pos: otherPos, hp: other.hp, name: other.playerName, modelType: other.modelType };
       }
     }
   });

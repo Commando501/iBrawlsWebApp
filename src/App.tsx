@@ -37,7 +37,7 @@ import { useMatchLoadingGate } from './components/loading/useMatchLoadingGate';
 
 export { createHighFidelityObjectMesh } from './components/main-menu/MapPreview';
 
-const APP_VERSION = '0.644b';
+const APP_VERSION = '0.645';
 
 // Visual Keyboard + Mouse keybind editor component
 export default function App() {
@@ -100,6 +100,8 @@ export default function App() {
     botWeaponBehaviors,
     botArchetypes,
     setBotArchetypes,
+    botModelTypes,
+    setBotModelTypes,
     botColors,
     setBotColors,
     showBotSetupMenu,
@@ -698,6 +700,7 @@ export default function App() {
 	        botBehaviors={botBehaviors}
 	        botWeaponBehaviors={botWeaponBehaviors}
 	        botArchetypes={botArchetypes}
+	        botModelTypes={botModelTypes}
 	        aiPresets={aiPresets}
 	        deviceInfo={deviceInfo}
 	        forceMobileControls={forceMobileControls}
@@ -1017,6 +1020,8 @@ export default function App() {
           setBotDifficulties,
           botArchetypes,
           setBotArchetypes,
+          botModelTypes,
+          setBotModelTypes,
           aiPresets,
           onClose: () => setShowBotSetupMenu(false),
           onApplyAndResume: () => {

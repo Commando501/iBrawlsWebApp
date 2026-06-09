@@ -204,6 +204,8 @@ export function AppOverlayStack({
         setBotDifficulties={botSetup.setBotDifficulties}
         botArchetypes={botSetup.botArchetypes}
         setBotArchetypes={botSetup.setBotArchetypes}
+        botModelTypes={botSetup.botModelTypes}
+        setBotModelTypes={botSetup.setBotModelTypes}
         aiPresets={botSetup.aiPresets}
         onClose={botSetup.onClose}
         onApplyAndResume={botSetup.onApplyAndResume}

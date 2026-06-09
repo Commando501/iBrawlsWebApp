@@ -1,5 +1,5 @@
 import React from 'react';
-import type { AIPreset, CustomMapData, UniversalSettings } from '../../types';
+import type { AIPreset, CharacterModelType, CustomMapData, UniversalSettings } from '../../types';
 import { AI_ARCHETYPE_OPTIONS, type AIArchetypeId } from '../../game/aiPersonalities';
 import { PREMADE_MAPS } from '../../game/premadeMaps';
 import { MapPreview } from './MapPreview';
@@ -33,6 +33,7 @@ const EXTRA_BOTS = [
 type DifficultyMap = Record<string, string>;
 type ArchetypeMap = Record<string, AIArchetypeId>;
 type BotColorMap = Record<string, number>;
+type BotModelTypeMap = Record<string, CharacterModelType>;
 
 interface BotSetupModalProps {
   isPlaying: boolean;
@@ -50,6 +51,8 @@ interface BotSetupModalProps {
   setBotDifficulties: React.Dispatch<React.SetStateAction<DifficultyMap>>;
   botArchetypes: ArchetypeMap;
   setBotArchetypes: React.Dispatch<React.SetStateAction<ArchetypeMap>>;
+  botModelTypes: BotModelTypeMap;
+  setBotModelTypes: React.Dispatch<React.SetStateAction<BotModelTypeMap>>;
   aiPresets: AIPreset[];
   onToggleGrifballMode: () => void;
   onMainAiArchetypeChange: (archetypeId: AIArchetypeId) => void;
@@ -77,6 +80,8 @@ export function BotSetupModal({
   setBotDifficulties,
   botArchetypes,
   setBotArchetypes,
+  botModelTypes,
+  setBotModelTypes,
   aiPresets,
   onToggleGrifballMode,
   onMainAiArchetypeChange,
@@ -177,6 +182,29 @@ export function BotSetupModal({
     </div>
   );
 
+  const renderModelTypeToggle = (botId: string) => {
+    const selectedType = botModelTypes[botId] ?? 'medium';
+    return (
+      <div className="grid grid-cols-2 h-7 rounded border border-white/10 bg-black/50 overflow-hidden">
+        {(['medium', 'large'] as const).map((modelType) => (
+          <button
+            key={modelType}
+            type="button"
+            title={`${modelType === 'large' ? 'Large powerarmor body' : 'Medium Spartan body'}`}
+            onClick={() => setBotModelTypes((prev) => ({ ...prev, [botId]: modelType }))}
+            className={`text-[9px] font-bold uppercase transition-colors ${
+              selectedType === modelType
+                ? 'bg-cyan-400/20 text-cyan-200'
+                : 'text-white/45 hover:text-white/75 hover:bg-white/5'
+            }`}
+          >
+            {modelType}
+          </button>
+        ))}
+      </div>
+    );
+  };
+
   const renderBotControls = (botId: string, onArchetypeChange: (archetypeId: AIArchetypeId) => void) => {
     const difficulty = botDifficulties[botId] || 'normal';
     return (
@@ -199,6 +227,7 @@ export function BotSetupModal({
             {renderArchetypeOptions()}
           </select>
         )}
+        {renderModelTypeToggle(botId)}
       </div>
     );
   };

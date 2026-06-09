@@ -68,6 +68,7 @@ export const getRandomLoadout = (): CharacterLoadout => {
   const legs = AVAILABLE_PRESETS.leg;
   const hammers = AVAILABLE_PRESETS.hammer;
   const swords = AVAILABLE_PRESETS.sword;
+  const modelSystem = Math.random() < 0.5 ? 'v1' : 'v2';
   return {
     helmet: helmets[Math.floor(Math.random() * helmets.length)],
     torso: torsos[Math.floor(Math.random() * torsos.length)],
@@ -75,7 +76,8 @@ export const getRandomLoadout = (): CharacterLoadout => {
     leg: legs[Math.floor(Math.random() * legs.length)],
     hammerPreset: hammers[Math.floor(Math.random() * hammers.length)],
     swordPreset: swords[Math.floor(Math.random() * swords.length)],
-    modelSystem: Math.random() < 0.5 ? 'v1' : 'v2',
+    modelSystem,
+    modelType: modelSystem === 'v2' ? 'medium' : undefined,
   };
 };
 
@@ -83,6 +85,7 @@ export const createCombatantMeshRig = (scene: THREE.Scene, hue: number, isEnemyB
   const resolvedLoadout = loadout ?? (isEnemyBot ? getRandomLoadout() : undefined);
   const group = buildVoxelSpartanModel(isEnemyBot, hue, resolvedLoadout);
   group.userData.appliedHue = hue;
+  group.userData.appliedLoadoutKey = resolvedLoadout ? JSON.stringify(resolvedLoadout) : '';
   const rig = buildCombatantRigForModel(group);
   scene.add(group);
 
@@ -128,6 +131,8 @@ export const rebuildDualWeaponCombatantModel = ({
 
   const group = buildVoxelSpartanModel(isEnemyBot, hue, loadout);
   group.position.copy(position);
+  group.userData.appliedHue = hue;
+  group.userData.appliedLoadoutKey = loadout ? JSON.stringify(loadout) : '';
   const rig = buildCombatantRigForModel(group);
   scene.add(group);
 

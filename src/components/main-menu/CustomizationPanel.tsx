@@ -1,5 +1,5 @@
 import React from 'react';
-import type { UniversalSettings } from '../../types';
+import type { CharacterModelType, UniversalSettings } from '../../types';
 import {
   AVAILABLE_PRESETS,
   type ArmorPaintJob,
@@ -143,6 +143,10 @@ export function CustomizationPanel({
   onImportSaveCode,
 }: CustomizationPanelProps) {
   const contentRef = React.useRef<HTMLDivElement | null>(null);
+  const activeModelSystem = playerLoadout.modelSystem ?? 'v1';
+  const activeModelType: CharacterModelType = activeModelSystem === 'v2'
+    ? playerLoadout.modelType ?? 'medium'
+    : 'medium';
 
   React.useLayoutEffect(() => {
     const container = contentRef.current;
@@ -205,7 +209,7 @@ export function CustomizationPanel({
             target="_blank"
             rel="noopener noreferrer"
             onClick={() => {
-              updateLoadout({ modelSystem: 'v2' });
+              updateLoadout({ modelSystem: 'v2', modelType: activeModelType });
             }}
             className={`w-full py-2.5 border font-black uppercase tracking-widest rounded-lg shadow-lg transition-all active:scale-[0.98] cursor-pointer text-center text-xs ${
               (playerLoadout.modelSystem ?? 'v1') === 'v2'
@@ -283,7 +287,7 @@ export function CustomizationPanel({
 
             <div className="bg-white/5 border border-white/5 rounded-lg p-3">
               <span className="text-xs font-bold text-[#38bdf8] uppercase tracking-wider block mb-2.5">Armor Loadout</span>
-              <div className="flex items-center gap-2 mb-3 pb-3 border-b border-white/5">
+              <div className="flex items-center gap-2 mb-2">
                 <span className="text-[10px] font-black uppercase tracking-widest text-white/40 w-14 shrink-0">Model Sys</span>
                 <div className="flex gap-1.5 flex-1">
                   {([
@@ -295,7 +299,10 @@ export function CustomizationPanel({
                       <button
                         key={model.id}
                         type="button"
-                        onClick={() => updateLoadout({ modelSystem: model.id })}
+                        onClick={() => updateLoadout({
+                          modelSystem: model.id,
+                          modelType: model.id === 'v2' ? activeModelType : undefined,
+                        })}
                         className={`px-2 py-1 text-[10px] font-black uppercase tracking-widest border rounded transition-all active:scale-95 ${
                           isActive
                             ? 'bg-[#38bdf8]/15 border-[#38bdf8] text-[#38bdf8] shadow-[0_0_8px_rgba(56,189,248,0.25)]'
@@ -303,6 +310,28 @@ export function CustomizationPanel({
                         }`}
                       >
                         {model.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              <div className="flex items-center gap-2 mb-3 pb-3 border-b border-white/5">
+                <span className="text-[10px] font-black uppercase tracking-widest text-white/40 w-14 shrink-0">Body</span>
+                <div className="grid grid-cols-2 flex-1 h-8 rounded border border-white/10 bg-black/40 overflow-hidden">
+                  {(['medium', 'large'] as const).map((modelType) => {
+                    const isActive = activeModelSystem === 'v2' && activeModelType === modelType;
+                    return (
+                      <button
+                        key={modelType}
+                        type="button"
+                        onClick={() => updateLoadout({ modelSystem: 'v2', modelType })}
+                        className={`text-[10px] font-black uppercase tracking-widest transition-all ${
+                          isActive
+                            ? 'bg-purple-500/25 text-purple-100'
+                            : 'text-white/45 hover:text-white/75 hover:bg-white/5'
+                        }`}
+                      >
+                        {modelType}
                       </button>
                     );
                   })}
@@ -339,7 +368,10 @@ export function CustomizationPanel({
                         );
                       })}
                       {ARMOR_SLOT_KEYS.has(key) && customArmorCatalog.pieces
-                        .filter((piece) => piece.slot === key)
+                        .filter((piece) => (
+                          piece.slot === key &&
+                          ((piece.modelType ?? 'medium') === activeModelType)
+                        ))
                         .map((piece) => {
                           const isCustomActive = playerLoadout.customArmor?.[key as CustomArmorSlot]?.id === piece.id;
                           return (
@@ -348,6 +380,7 @@ export function CustomizationPanel({
                               type="button"
                               onClick={() => updateLoadout({
                                 modelSystem: 'v2',
+                                modelType: activeModelType,
                                 customArmor: {
                                   ...(playerLoadout.customArmor ?? {}),
                                   [key]: {
@@ -355,6 +388,7 @@ export function CustomizationPanel({
                                     id: piece.id,
                                     name: piece.name,
                                     slot: piece.slot,
+                                    modelType: piece.modelType ?? 'medium',
                                     sourcePreset: piece.sourcePreset,
                                     voxels: piece.voxels,
                                     thumbnail: piece.thumbnail,

@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { createRemoteCombatant } from '../../game/roster';
-import { type UniversalSettings } from '../../types';
+import { type CharacterModelType, type UniversalSettings } from '../../types';
+import { resolveCharacterModelType } from '../../characterModelTypes';
+import { type CharacterLoadout } from '../VoxelModels';
 import { createCombatantMeshRig } from './combatantModels';
 import { getInwardSpawnYaw } from './combatGeometry';
 import { type CustomMapData } from '../../types';
@@ -23,7 +25,15 @@ type RemoteCombatantUpdate = {
   vel?: { x: number; y: number; z: number };
   yaw?: number;
   pitch?: number;
+  modelType?: CharacterModelType;
+  loadout?: CharacterLoadout;
 };
+
+const createVisualLoadout = (data: RemoteCombatantUpdate, modelType: CharacterModelType): CharacterLoadout => ({
+  ...(data.loadout ?? {}),
+  modelSystem: 'v2',
+  modelType,
+});
 
 export function createOrUpdateRemoteCombatantForState({
   state,
@@ -68,6 +78,7 @@ export function createOrUpdateRemoteCombatantForState({
         activeWeapon: data.activeWeapon as any,
         respawnTimer: data.respawnTimer,
         invulnerabilityTimer: data.invulnerabilityTimer,
+        modelType: data.loadout?.modelType ?? data.modelType,
       },
     });
     playerState.yaw = spawnPos.spawnYaw ?? getInwardSpawnYaw(playerState.pos);
@@ -86,13 +97,19 @@ export function createOrUpdateRemoteCombatantForState({
   if (data.respawnTimer !== undefined) playerState.respawnTimer = data.respawnTimer;
   if (data.hue !== undefined) playerState.hue = data.hue;
   if (data.playerName) playerState.playerName = data.playerName;
+  if (data.loadout?.modelType || data.modelType) {
+    playerState.modelType = resolveCharacterModelType(data.loadout?.modelType ?? data.modelType, 'v2');
+  }
   if (data.invulnerabilityTimer !== undefined) playerState.invulnerabilityTimer = data.invulnerabilityTimer;
 
   let meshes = refs.otherPlayerMeshes.get(clientId);
   const hue = data.hue ?? playerState.hue;
-  if (!meshes || meshes.group.userData.appliedHue !== hue) {
+  const visualLoadout = createVisualLoadout(data, resolveCharacterModelType(playerState.modelType, 'v2'));
+  const visualLoadoutKey = JSON.stringify(visualLoadout);
+  if (!meshes || meshes.group.userData.appliedHue !== hue || meshes.group.userData.appliedLoadoutKey !== visualLoadoutKey) {
     if (meshes?.group) scene.remove(meshes.group);
-    meshes = createCombatantMeshRig(scene, hue, false);
+    meshes = createCombatantMeshRig(scene, hue, false, visualLoadout);
+    meshes.group.userData.appliedLoadoutKey = visualLoadoutKey;
     refs.otherPlayerMeshes.set(clientId, meshes);
     playerState.hue = hue;
   }

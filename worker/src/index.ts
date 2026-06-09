@@ -333,15 +333,32 @@ const CUSTOM_ARMOR_SLOT_MAX_VOXELS: Record<string, number> = {
   arm: 900,
   leg: 1000,
 };
+const LARGE_CUSTOM_ARMOR_SLOT_MAX_VOXELS: Record<string, number> = {
+  helmet: 1200,
+  torso: 3800,
+  arm: 1600,
+  leg: 2000,
+};
 const CUSTOM_ARMOR_ROLE_SET = new Set(["primary", "secondary", "accent", "visor", "dark", "highlight", "fixed"]);
 const CUSTOM_ARMOR_HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
 
-function sanitizeCustomArmorSnapshot(snapshot: unknown, expectedSlot: string): unknown | undefined {
+function normalizeCharacterModelType(value: unknown, modelSystem?: unknown): "medium" | "large" {
+  if (modelSystem === "v1") return "medium";
+  return value === "large" ? "large" : "medium";
+}
+
+function sanitizeCustomArmorSnapshot(
+  snapshot: unknown,
+  expectedSlot: string,
+  expectedModelType: "medium" | "large"
+): unknown | undefined {
   if (!snapshot || typeof snapshot !== "object" || Array.isArray(snapshot)) return undefined;
   const raw = snapshot as Record<string, unknown>;
   if (raw.version !== 1 || raw.slot !== expectedSlot) return undefined;
   if (!Array.isArray(raw.voxels)) return undefined;
-  const maxVoxels = CUSTOM_ARMOR_SLOT_MAX_VOXELS[expectedSlot] ?? 0;
+  const modelType = normalizeCharacterModelType(raw.modelType, "v2");
+  if (modelType !== expectedModelType) return undefined;
+  const maxVoxels = (modelType === "large" ? LARGE_CUSTOM_ARMOR_SLOT_MAX_VOXELS : CUSTOM_ARMOR_SLOT_MAX_VOXELS)[expectedSlot] ?? 0;
   const seen = new Set<string>();
   const voxels: Record<string, unknown>[] = [];
   for (const value of raw.voxels) {
@@ -371,6 +388,7 @@ function sanitizeCustomArmorSnapshot(snapshot: unknown, expectedSlot: string): u
     id: typeof raw.id === "string" ? raw.id.slice(0, 80) : `remote_${expectedSlot}`,
     name: typeof raw.name === "string" ? raw.name.trim().slice(0, 32) || "Custom Armor" : "Custom Armor",
     slot: expectedSlot,
+    modelType,
     sourcePreset: typeof raw.sourcePreset === "string" ? raw.sourcePreset.slice(0, 32) : undefined,
     voxels,
     thumbnail: typeof raw.thumbnail === "string" ? raw.thumbnail.slice(0, 160) : undefined,
@@ -388,6 +406,8 @@ function normalizePlayerLoadout(loadout: unknown): unknown | undefined {
     if (typeof value === "string" && allowed.has(value)) out[key] = value;
   }
   if (raw.modelSystem === "v1" || raw.modelSystem === "v2") out.modelSystem = raw.modelSystem;
+  const modelType = normalizeCharacterModelType(raw.modelType, raw.modelSystem);
+  if (out.modelSystem === "v2") out.modelType = modelType;
   if (raw.paintJob && typeof raw.paintJob === "object" && !Array.isArray(raw.paintJob)) {
     const paintPayload = JSON.stringify(raw.paintJob);
     if (paintPayload.length <= 48_000) out.paintJob = raw.paintJob;
@@ -395,7 +415,7 @@ function normalizePlayerLoadout(loadout: unknown): unknown | undefined {
   if (raw.customArmor && typeof raw.customArmor === "object" && !Array.isArray(raw.customArmor)) {
     const customArmor: Record<string, unknown> = {};
     for (const slot of CUSTOM_ARMOR_SLOTS) {
-      const snapshot = sanitizeCustomArmorSnapshot((raw.customArmor as Record<string, unknown>)[slot], slot);
+      const snapshot = sanitizeCustomArmorSnapshot((raw.customArmor as Record<string, unknown>)[slot], slot, modelType);
       if (snapshot) customArmor[slot] = snapshot;
     }
     if (Object.keys(customArmor).length > 0) out.customArmor = customArmor;
