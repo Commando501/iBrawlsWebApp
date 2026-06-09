@@ -3,8 +3,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
+import { Maximize2 } from 'lucide-react';
 import { 
   CharacterLoadout, 
   DEFAULT_LOADOUT, 
@@ -21,6 +22,43 @@ interface CharacterPainterProps {
   onCancel: () => void;
 }
 
+type PaintablePart = 'helmet' | 'torso' | 'leftArm' | 'rightArm' | 'leftLeg' | 'rightLeg';
+type CameraTargetPart = PaintablePart | 'all';
+type PaintEditorFrameId = 'viewport' | 'tools';
+type PaintEditorFrameScales = Record<PaintEditorFrameId, number>;
+
+const CAMERA_FOV_DEGREES = 40;
+const DEFAULT_CAMERA_YAW = 0;
+const DEFAULT_CAMERA_PITCH = 0.05;
+const PAINT_EDITOR_FRAME_SCALE_STORAGE_KEY = 'ibrawls_paint_editor_frame_scale_v1';
+const PAINT_EDITOR_FRAME_SCALE_MIN = 0.75;
+const PAINT_EDITOR_FRAME_SCALE_MAX = 1.45;
+const DEFAULT_PAINT_EDITOR_FRAME_SCALES: PaintEditorFrameScales = {
+  viewport: 1,
+  tools: 1,
+};
+
+const clampPaintEditorFrameScale = (scale: number) => (
+  Math.round(Math.min(PAINT_EDITOR_FRAME_SCALE_MAX, Math.max(PAINT_EDITOR_FRAME_SCALE_MIN, scale)) * 100) / 100
+);
+
+const clampPaintEditorFrameScales = (
+  scales: Partial<PaintEditorFrameScales> | null | undefined
+): PaintEditorFrameScales => ({
+  viewport: clampPaintEditorFrameScale(scales?.viewport ?? DEFAULT_PAINT_EDITOR_FRAME_SCALES.viewport),
+  tools: clampPaintEditorFrameScale(scales?.tools ?? DEFAULT_PAINT_EDITOR_FRAME_SCALES.tools),
+});
+
+const CAMERA_TARGET_FALLBACKS: Record<CameraTargetPart, { lookAt: [number, number, number]; distance: number }> = {
+  all: { lookAt: [0, 0.9, 0], distance: 3.2 },
+  helmet: { lookAt: [0, 1.8, 0], distance: 1.15 },
+  torso: { lookAt: [0, 1.0, 0], distance: 1.4 },
+  leftArm: { lookAt: [-0.25, 1.0, 0], distance: 1.15 },
+  rightArm: { lookAt: [0.25, 1.0, 0], distance: 1.15 },
+  leftLeg: { lookAt: [-0.11, 0.36, 0], distance: 1.15 },
+  rightLeg: { lookAt: [0.11, 0.36, 0], distance: 1.15 },
+};
+
 export const CharacterPainter: React.FC<CharacterPainterProps> = ({ 
   loadout, 
   hue = 200, 
@@ -28,6 +66,18 @@ export const CharacterPainter: React.FC<CharacterPainterProps> = ({
   onCancel 
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
+  const paintFrameScalesRef = useRef<PaintEditorFrameScales>(DEFAULT_PAINT_EDITOR_FRAME_SCALES);
+  const [paintFrameScales, setPaintFrameScales] = useState<PaintEditorFrameScales>(() => {
+    try {
+      const saved = localStorage.getItem(PAINT_EDITOR_FRAME_SCALE_STORAGE_KEY);
+      const initial = saved ? clampPaintEditorFrameScales(JSON.parse(saved)) : DEFAULT_PAINT_EDITOR_FRAME_SCALES;
+      paintFrameScalesRef.current = initial;
+      return initial;
+    } catch (error) {
+      console.error('Failed to load paint editor frame scales:', error);
+      return DEFAULT_PAINT_EDITOR_FRAME_SCALES;
+    }
+  });
 
   // --- UI Tools State ---
   const [activeColor, setActiveColor] = useState<string>('#38bdf8');
@@ -35,7 +85,68 @@ export const CharacterPainter: React.FC<CharacterPainterProps> = ({
   const [brushSize, setBrushSize] = useState<number>(1);
   const [isNeon, setIsNeon] = useState<boolean>(false);
   const [mirrorEnabled, setMirrorEnabled] = useState<boolean>(true);
-  const [selectedPart, setSelectedPart] = useState<string>('all');
+  const [selectedPart, setSelectedPart] = useState<CameraTargetPart>('all');
+
+  useEffect(() => {
+    paintFrameScalesRef.current = paintFrameScales;
+  }, [paintFrameScales]);
+
+  const persistPaintFrameScales = useCallback((scales: PaintEditorFrameScales) => {
+    try {
+      localStorage.setItem(PAINT_EDITOR_FRAME_SCALE_STORAGE_KEY, JSON.stringify(scales));
+    } catch (error) {
+      console.error('Failed to save paint editor frame scales:', error);
+    }
+  }, []);
+
+  const applyPaintFrameScales = useCallback((scales: PaintEditorFrameScales, shouldPersist = true) => {
+    const next = clampPaintEditorFrameScales(scales);
+    paintFrameScalesRef.current = next;
+    setPaintFrameScales(next);
+    if (shouldPersist) {
+      persistPaintFrameScales(next);
+    }
+  }, [persistPaintFrameScales]);
+
+  const handlePaintFrameScalePointerDown = useCallback((
+    frameId: PaintEditorFrameId,
+    event: React.PointerEvent<HTMLButtonElement>
+  ) => {
+    const pointerId = event.pointerId;
+    const startX = event.clientX;
+    const startY = event.clientY;
+    const startScale = paintFrameScalesRef.current[frameId];
+    const previousCursor = document.body.style.cursor;
+    const previousUserSelect = document.body.style.userSelect;
+
+    event.preventDefault();
+    event.stopPropagation();
+    document.body.style.cursor = 'nwse-resize';
+    document.body.style.userSelect = 'none';
+
+    const handleWindowPointerMove = (moveEvent: PointerEvent) => {
+      if (moveEvent.pointerId !== pointerId) return;
+      const dragDelta = (moveEvent.clientX - startX + moveEvent.clientY - startY) / 520;
+      applyPaintFrameScales({
+        ...paintFrameScalesRef.current,
+        [frameId]: clampPaintEditorFrameScale(startScale + dragDelta),
+      }, false);
+    };
+
+    const handleWindowPointerUp = (upEvent: PointerEvent) => {
+      if (upEvent.pointerId !== pointerId) return;
+      persistPaintFrameScales(paintFrameScalesRef.current);
+      document.body.style.cursor = previousCursor;
+      document.body.style.userSelect = previousUserSelect;
+      window.removeEventListener('pointermove', handleWindowPointerMove);
+      window.removeEventListener('pointerup', handleWindowPointerUp);
+      window.removeEventListener('pointercancel', handleWindowPointerUp);
+    };
+
+    window.addEventListener('pointermove', handleWindowPointerMove);
+    window.addEventListener('pointerup', handleWindowPointerUp);
+    window.addEventListener('pointercancel', handleWindowPointerUp);
+  }, [applyPaintFrameScales, persistPaintFrameScales]);
 
   // Top level camera zoom state refs (so they can be reset when pan/zoom is reset)
   const zoomDistanceRef = useRef<number>(3.2);
@@ -100,7 +211,7 @@ export const CharacterPainter: React.FC<CharacterPainterProps> = ({
   const voxelMeshesRef = useRef<THREE.Mesh[]>([]);
 
   // Pivot configurations matching VoxelModels.ts
-  const PIVOTS: Record<string, { x: number, y: number, z: number, px: number, py: number, pz: number, parent: 'upper' | 'lower' | 'root' }> = {
+  const PIVOTS: Record<PaintablePart, { x: number, y: number, z: number, px: number, py: number, pz: number, parent: 'upper' | 'lower' | 'root' }> = {
     helmet:   { x: 0,    y: 35, z: 0, px: 0,    py: 35, pz: 0, parent: 'upper' },
     torso:    { x: 0,    y: 11, z: 0, px: 0,    py: 11, pz: 0, parent: 'upper' },
     leftArm:  { x: -5.5, y: 25, z: 0, px: -5.5, py: 25, pz: 0, parent: 'upper' },
@@ -110,7 +221,7 @@ export const CharacterPainter: React.FC<CharacterPainterProps> = ({
   };
 
   // Preset slots in loadout
-  const presetSlots: Record<string, string> = {
+  const presetSlots: Record<PaintablePart, string> = {
     helmet: loadout.helmet ?? 'mark-vi',
     torso: loadout.torso ?? 'mark-vi',
     leftArm: loadout.arm ?? 'mark-vi',
@@ -177,40 +288,86 @@ export const CharacterPainter: React.FC<CharacterPainterProps> = ({
     onSave(paintJob);
   };
 
+  const renderPaintFrameScaleHandle = (
+    frameId: PaintEditorFrameId,
+    label: string,
+    scale: number
+  ) => (
+    <button
+      type="button"
+      aria-label={`Scale ${label} frame`}
+      title={`Drag to scale ${label} frame`}
+      onPointerDown={(event) => handlePaintFrameScalePointerDown(frameId, event)}
+      onPointerUp={(event) => event.stopPropagation()}
+      onClick={(event) => event.stopPropagation()}
+      className="absolute right-2 bottom-2 z-30 h-8 min-w-16 px-2 rounded-lg border border-cyan-400/45 bg-slate-950/85 text-cyan-200 shadow-[0_0_12px_rgba(34,211,238,0.22)] hover:border-cyan-300 hover:text-white cursor-nwse-resize flex items-center justify-center gap-1.5 text-[9px] font-mono font-black tabular-nums transition-colors"
+    >
+      <Maximize2 className="w-3 h-3" />
+      {Math.round(scale * 100)}%
+    </button>
+  );
+
+  const viewportFrameStyle: React.CSSProperties = {
+    flexGrow: paintFrameScales.viewport,
+    height: `clamp(380px, ${Math.round(600 * paintFrameScales.viewport)}px, 870px)`,
+    minWidth: 0,
+  };
+
+  const toolsFrameStyle: React.CSSProperties = {
+    width: `min(100%, ${Math.round(310 * paintFrameScales.tools)}px)`,
+    height: `clamp(420px, ${Math.round(600 * paintFrameScales.tools)}px, 870px)`,
+    overflowY: 'auto',
+  };
+
+  const getCameraTargetFrame = (part: CameraTargetPart) => {
+    const fallback = CAMERA_TARGET_FALLBACKS[part];
+    const fallbackFrame = {
+      lookAt: new THREE.Vector3(...fallback.lookAt),
+      distance: fallback.distance,
+    };
+    const meshes = part === 'all'
+      ? voxelMeshesRef.current
+      : voxelMeshesRef.current.filter(mesh => mesh.userData.slot === part);
+
+    if (!characterContainerRef.current || meshes.length === 0) {
+      return fallbackFrame;
+    }
+
+    characterContainerRef.current.updateWorldMatrix(true, true);
+    const bounds = new THREE.Box3();
+    meshes.forEach(mesh => bounds.expandByObject(mesh));
+
+    if (bounds.isEmpty()) {
+      return fallbackFrame;
+    }
+
+    const size = bounds.getSize(new THREE.Vector3());
+    const lookAt = bounds.getCenter(new THREE.Vector3());
+    const maxDimension = Math.max(size.x, size.y, size.z);
+    const padding = part === 'all' ? 1.36 : 1.48;
+    const fitDistance = (maxDimension * padding) / (2 * Math.tan(THREE.MathUtils.degToRad(CAMERA_FOV_DEGREES / 2)));
+    const minDistance = part === 'all' ? 2.85 : 0.95;
+    const maxDistance = part === 'all' ? 3.7 : 2.45;
+
+    return {
+      lookAt,
+      distance: THREE.MathUtils.clamp(fitDistance, minDistance, maxDistance),
+    };
+  };
+
   // --- Camera focus navigation skeleton handler ---
-  const navigateToPart = (part: string) => {
+  const navigateToPart = (part: CameraTargetPart) => {
     setSelectedPart(part);
-    targetCameraYawRef.current = 0;
-    targetCameraPitchRef.current = 0.05;
+    targetCameraYawRef.current = DEFAULT_CAMERA_YAW;
+    targetCameraPitchRef.current = DEFAULT_CAMERA_PITCH;
     if (characterContainerRef.current) {
       characterContainerRef.current.position.set(0, 0, 0); // Reset translation panned position
       characterContainerRef.current.rotation.set(0, 0, 0);
     }
-    
-    // Smooth camera offsets and targets in meters
-    const scale = 0.045;
-    if (part === 'all') {
-      targetCameraLookAtRef.current.set(0, 0.9, 0);
-      targetZoomDistanceRef.current = 3.2;
-    } else if (part === 'helmet') {
-      targetCameraLookAtRef.current.set(0, 1.8, 0);
-      targetZoomDistanceRef.current = 1.15;
-    } else if (part === 'torso') {
-      targetCameraLookAtRef.current.set(0, 1.0, 0);
-      targetZoomDistanceRef.current = 1.4;
-    } else if (part === 'leftArm') {
-      targetCameraLookAtRef.current.set(-5.5 * scale, 1.0, 0);
-      targetZoomDistanceRef.current = 1.15;
-    } else if (part === 'rightArm') {
-      targetCameraLookAtRef.current.set(5.5 * scale, 1.0, 0);
-      targetZoomDistanceRef.current = 1.15;
-    } else if (part === 'leftLeg') {
-      targetCameraLookAtRef.current.set(-2.5 * scale, 0.36, 0);
-      targetZoomDistanceRef.current = 1.15;
-    } else if (part === 'rightLeg') {
-      targetCameraLookAtRef.current.set(2.5 * scale, 0.36, 0);
-      targetZoomDistanceRef.current = 1.15;
-    }
+
+    const frame = getCameraTargetFrame(part);
+    targetCameraLookAtRef.current.copy(frame.lookAt);
+    targetZoomDistanceRef.current = frame.distance;
   };
 
   // --- Paint Can Segment Flood ---
@@ -310,7 +467,7 @@ export const CharacterPainter: React.FC<CharacterPainterProps> = ({
     voxelMeshesRef.current = [];
 
     // --- Instantiate Voxel Meshes Individually ---
-    Object.keys(PIVOTS).forEach(slot => {
+    (Object.keys(PIVOTS) as PaintablePart[]).forEach(slot => {
       const preset = presetSlots[slot];
       const voxels = getVoxelSegmentData(slot, preset, hue);
       const pivot = PIVOTS[slot];
@@ -571,7 +728,7 @@ export const CharacterPainter: React.FC<CharacterPainterProps> = ({
       renderer.domElement.style.cursor = dragMode === 'pan' ? 'grabbing' : 'move';
       e.preventDefault();
 
-      container.setPointerCapture(e.pointerId);
+      renderer.domElement.setPointerCapture(e.pointerId);
     };
 
     const onPointerMove = (e: PointerEvent) => {
@@ -633,7 +790,7 @@ export const CharacterPainter: React.FC<CharacterPainterProps> = ({
         ) {
           applyPaintClick(e);
         }
-        try { container.releasePointerCapture(e.pointerId); } catch {}
+        try { renderer.domElement.releasePointerCapture(e.pointerId); } catch {}
       }
     };
 
@@ -653,12 +810,12 @@ export const CharacterPainter: React.FC<CharacterPainterProps> = ({
 
     renderer.domElement.style.touchAction = 'none';
     renderer.domElement.style.cursor = 'grab';
-    container.addEventListener('pointerdown', onPointerDown);
-    container.addEventListener('pointermove', onPointerMove);
-    container.addEventListener('pointerup', onPointerUp);
-    container.addEventListener('pointercancel', onPointerUp);
-    container.addEventListener('wheel', onWheel, { passive: false });
-    container.addEventListener('contextmenu', onContextMenu);
+    renderer.domElement.addEventListener('pointerdown', onPointerDown);
+    renderer.domElement.addEventListener('pointermove', onPointerMove);
+    renderer.domElement.addEventListener('pointerup', onPointerUp);
+    renderer.domElement.addEventListener('pointercancel', onPointerUp);
+    renderer.domElement.addEventListener('wheel', onWheel, { passive: false });
+    renderer.domElement.addEventListener('contextmenu', onContextMenu);
 
     // --- WebGL Animation & Camera Lerp Loop ---
     const clock = new THREE.Clock();
@@ -712,17 +869,23 @@ export const CharacterPainter: React.FC<CharacterPainterProps> = ({
       renderer.setSize(w, h);
     };
     window.addEventListener('resize', handleResize);
+    const resizeObserver = typeof ResizeObserver !== 'undefined'
+      ? new ResizeObserver(handleResize)
+      : null;
+    resizeObserver?.observe(container);
+    handleResize();
 
     // --- Cleanup Engine ---
     return () => {
       cancelAnimationFrame(animationFrameId);
       window.removeEventListener('resize', handleResize);
-      container.removeEventListener('pointerdown', onPointerDown);
-      container.removeEventListener('pointermove', onPointerMove);
-      container.removeEventListener('pointerup', onPointerUp);
-      container.removeEventListener('pointercancel', onPointerUp);
-      container.removeEventListener('wheel', onWheel);
-      container.removeEventListener('contextmenu', onContextMenu);
+      resizeObserver?.disconnect();
+      renderer.domElement.removeEventListener('pointerdown', onPointerDown);
+      renderer.domElement.removeEventListener('pointermove', onPointerMove);
+      renderer.domElement.removeEventListener('pointerup', onPointerUp);
+      renderer.domElement.removeEventListener('pointercancel', onPointerUp);
+      renderer.domElement.removeEventListener('wheel', onWheel);
+      renderer.domElement.removeEventListener('contextmenu', onContextMenu);
       
       if (container && renderer.domElement && container.contains(renderer.domElement)) {
         container.removeChild(renderer.domElement);
@@ -742,6 +905,7 @@ export const CharacterPainter: React.FC<CharacterPainterProps> = ({
       <div 
         ref={containerRef}
         className="flex-1 h-[500px] md:h-[600px] rounded-xl border border-white/10 bg-slate-950/70 relative overflow-hidden shadow-2xl cursor-crosshair select-none"
+        style={viewportFrameStyle}
       >
         {/* Glowing cyber grid decoration */}
         <div className="absolute inset-0 pointer-events-none z-0 bg-[radial-gradient(circle_at_center,transparent_40%,rgba(3,7,18,0.7))] opacity-80" />
@@ -777,6 +941,8 @@ export const CharacterPainter: React.FC<CharacterPainterProps> = ({
             {/* Helmet (Head Zone) */}
             <circle 
               cx="50" cy="20" r="13" 
+              data-cam-target="helmet"
+              data-selected={selectedPart === 'helmet'}
               fill={selectedPart === 'helmet' ? 'rgba(56, 189, 248, 0.3)' : 'rgba(0, 0, 0, 0.4)'} 
               stroke={selectedPart === 'helmet' ? '#38bdf8' : 'rgba(255,255,255,0.2)'} 
               strokeWidth="1.5"
@@ -784,11 +950,13 @@ export const CharacterPainter: React.FC<CharacterPainterProps> = ({
               onClick={() => navigateToPart('helmet')}
             />
             {/* Visor slit line */}
-            <line x1="43" y1="20" x2="57" y2="20" stroke={selectedPart === 'helmet' ? '#00f3ff' : 'rgba(255,255,255,0.4)'} strokeWidth="1" />
+            <line x1="43" y1="20" x2="57" y2="20" stroke={selectedPart === 'helmet' ? '#00f3ff' : 'rgba(255,255,255,0.4)'} strokeWidth="1" pointerEvents="none" />
 
             {/* Torso (Chest Zone) */}
             <rect 
               x="32" y="38" width="36" height="42" rx="3"
+              data-cam-target="torso"
+              data-selected={selectedPart === 'torso'}
               fill={selectedPart === 'torso' ? 'rgba(56, 189, 248, 0.3)' : 'rgba(0, 0, 0, 0.4)'} 
               stroke={selectedPart === 'torso' ? '#38bdf8' : 'rgba(255,255,255,0.2)'} 
               strokeWidth="1.5"
@@ -799,6 +967,8 @@ export const CharacterPainter: React.FC<CharacterPainterProps> = ({
             {/* Left Arm Zone */}
             <rect 
               x="14" y="38" width="14" height="45" rx="2"
+              data-cam-target="leftArm"
+              data-selected={selectedPart === 'leftArm'}
               fill={selectedPart === 'leftArm' ? 'rgba(56, 189, 248, 0.3)' : 'rgba(0, 0, 0, 0.4)'} 
               stroke={selectedPart === 'leftArm' ? '#38bdf8' : 'rgba(255,255,255,0.2)'} 
               strokeWidth="1.5"
@@ -809,6 +979,8 @@ export const CharacterPainter: React.FC<CharacterPainterProps> = ({
             {/* Right Arm Zone */}
             <rect 
               x="72" y="38" width="14" height="45" rx="2"
+              data-cam-target="rightArm"
+              data-selected={selectedPart === 'rightArm'}
               fill={selectedPart === 'rightArm' ? 'rgba(56, 189, 248, 0.3)' : 'rgba(0, 0, 0, 0.4)'} 
               stroke={selectedPart === 'rightArm' ? '#38bdf8' : 'rgba(255,255,255,0.2)'} 
               strokeWidth="1.5"
@@ -819,6 +991,8 @@ export const CharacterPainter: React.FC<CharacterPainterProps> = ({
             {/* Left Leg Zone */}
             <rect 
               x="33" y="85" width="14" height="60" rx="2"
+              data-cam-target="leftLeg"
+              data-selected={selectedPart === 'leftLeg'}
               fill={selectedPart === 'leftLeg' ? 'rgba(56, 189, 248, 0.3)' : 'rgba(0, 0, 0, 0.4)'} 
               stroke={selectedPart === 'leftLeg' ? '#38bdf8' : 'rgba(255,255,255,0.2)'} 
               strokeWidth="1.5"
@@ -829,6 +1003,8 @@ export const CharacterPainter: React.FC<CharacterPainterProps> = ({
             {/* Right Leg Zone */}
             <rect 
               x="53" y="85" width="14" height="60" rx="2"
+              data-cam-target="rightLeg"
+              data-selected={selectedPart === 'rightLeg'}
               fill={selectedPart === 'rightLeg' ? 'rgba(56, 189, 248, 0.3)' : 'rgba(0, 0, 0, 0.4)'} 
               stroke={selectedPart === 'rightLeg' ? '#38bdf8' : 'rgba(255,255,255,0.2)'} 
               strokeWidth="1.5"
@@ -840,6 +1016,8 @@ export const CharacterPainter: React.FC<CharacterPainterProps> = ({
           {/* Reset Focus Fit */}
           <button 
             onClick={() => navigateToPart('all')}
+            data-cam-target="all"
+            data-selected={selectedPart === 'all'}
             className={`w-full py-1 rounded text-[9px] font-mono uppercase tracking-widest border transition-all active:scale-95 cursor-pointer ${
               selectedPart === 'all' 
                 ? 'bg-[#38bdf8]/20 border-[#38bdf8] text-[#38bdf8]' 
@@ -858,10 +1036,14 @@ export const CharacterPainter: React.FC<CharacterPainterProps> = ({
           <div><strong className="text-white/70">Shift Drag:</strong> Pan camera</div>
           <div><strong className="text-white/70">Scroll:</strong> Zoom view</div>
         </div>
+        {renderPaintFrameScaleHandle('viewport', '3D viewport', paintFrameScales.viewport)}
       </div>
 
       {/* Stylized Glassmorphic Controls Panel */}
-      <div className="w-full md:w-[310px] shrink-0 bg-slate-950/60 border border-white/10 rounded-xl p-4 flex flex-col gap-3.5 shadow-xl h-[500px] md:h-[600px] text-xs select-none">
+      <div
+        className="w-full md:w-[310px] shrink-0 bg-slate-950/60 border border-white/10 rounded-xl p-4 flex flex-col gap-3.5 shadow-xl h-[500px] md:h-[600px] text-xs select-none relative"
+        style={toolsFrameStyle}
+      >
         
         {/* Editor Title */}
         <div className="flex justify-between items-center border-b border-white/5 pb-2">
@@ -999,6 +1181,7 @@ export const CharacterPainter: React.FC<CharacterPainterProps> = ({
         >
           💾 Apply & Save Paint Job
         </button>
+        {renderPaintFrameScaleHandle('tools', 'tools', paintFrameScales.tools)}
       </div>
 
     </div>

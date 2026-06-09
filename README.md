@@ -336,6 +336,7 @@ iBrawls features a beautiful and comprehensive character customization suite, av
 - **Immersive 3D Paint Job Studio**: An extremely rich, fully integrated 3D **Paint Job** studio inside the character customization tab, built using Three.js and React to offer precise per-voxel coloring:
 
 - **Immersive 3D Viewport**: Click **"Start Paint Job"** to enter the painting studio. The camera shifts face-forward towards the Spartan, auto-rotation is paused, and continuous 360° mouse orbiting and scroll-wheel zooming are fully unlocked.
+- **Draggable Frame Scaling**: The paint studio's 3D viewport and tool/control frames have corner scale handles. Drag either handle to manually enlarge or shrink that frame; sizes persist locally under `ibrawls_paint_editor_frame_scale_v1`.
 - **Futuristic SVG Navigation Skeleton**: A glowing neon wireframe HUD of a Spartan is displayed in the top-left corner. Hovering and clicking on skeletal zones (Head, Chest, Arms, Legs) triggers a **smooth camera interpolation (lerp)** that glides the viewport close-up to focus on that specific armor piece, resetting any model translation and camera zoom to their default framing.
 - **Dual Paint Modes**:
   - **Voxel Paint**: Spawns every single voxel in the character's active armor loadout as an individual, raycastable 3D box mesh. Raycasting maps clicks precisely to the voxel's relative coordinates.
