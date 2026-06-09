@@ -35,8 +35,8 @@ export function createWeaponActionCallbacksForState({
   getEnemyAITarget,
   isMultiplayer,
   multiplayerSocket,
-  isPaused,
-  isPlaying,
+  getIsPaused,
+  getIsPlaying,
   recordLocalPlayerObservation,
   spawnVoxelShockwaveParticles,
   evaluatePlayerKillMedals,
@@ -54,8 +54,8 @@ export function createWeaponActionCallbacksForState({
   getEnemyAITarget: () => EnemyAITarget | null;
   isMultiplayer: boolean;
   multiplayerSocket: WebSocket | null;
-  isPaused: boolean;
-  isPlaying: boolean;
+  getIsPaused: () => boolean;
+  getIsPlaying: () => boolean;
   recordLocalPlayerObservation: LocalPlayerObservationRecorder;
   spawnVoxelShockwaveParticles: (impactCenter: THREE.Vector3, color: string) => void;
   evaluatePlayerKillMedals: (victimId: string) => MedalInfo[];
@@ -96,8 +96,8 @@ export function createWeaponActionCallbacksForState({
     triggerPlayerPistolFireForState({
       state: getState(),
       refs: getRefs(),
-      isPaused,
-      isPlaying,
+      isPaused: getIsPaused(),
+      isPlaying: getIsPlaying(),
       sendSync: sendPlayerWeaponSync,
       spawnVoxelShockwaveParticles,
       playImpact,
@@ -111,8 +111,8 @@ export function createWeaponActionCallbacksForState({
       state: getState(),
       refs: getRefs(),
       type,
-      isPaused,
-      isPlaying,
+      isPaused: getIsPaused(),
+      isPlaying: getIsPlaying(),
       recordWeaponSwap: (weapon) =>
         recordLocalPlayerObservation((model) => observePlayerWeaponSwap(model, weapon)),
       pushStatsUpdate,

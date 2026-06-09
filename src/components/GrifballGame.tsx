@@ -432,6 +432,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
   // useEffect does NOT re-run (destroy + recreate the WebGL canvas) every time
   // the user pauses/unpauses or changes keybindings.
   const isPausedRef = usePausedPointerLockRef(isPaused);
+  const isPlayingRef = useLatestRef(isPlaying);
 
   const keybindingsRef = useLatestRef(keybindings);
 
@@ -874,8 +875,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     getEnemyAITarget,
     isMultiplayer,
     multiplayerSocket,
-    isPaused,
-    isPlaying,
+    getIsPaused: () => isPausedRef.current,
+    getIsPlaying: () => isPlayingRef.current,
     recordLocalPlayerObservation,
     spawnVoxelShockwaveParticles,
     evaluatePlayerKillMedals,

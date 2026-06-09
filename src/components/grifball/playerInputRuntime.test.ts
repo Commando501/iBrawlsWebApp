@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createPlayerModel } from '../../game/aiPlayerModel';
 import {
   applyDragMouseLookForState,
   applyGamepadLookForState,
@@ -8,6 +9,7 @@ import {
   applyTouchSwipeLookForState,
 } from './playerInputRuntime';
 import { swapPlayerWeaponForState } from './playerWeaponActions';
+import { createWeaponActionCallbacksForState } from './weaponActionCallbacks';
 import type { GrifballRuntimeState } from './runtimeState';
 import type { GrifballThreeRefs } from './threeRefs';
 
@@ -212,4 +214,42 @@ test('weapon swap can recover from pistol state to sword', () => {
   assert.equal(refs.playerHammer?.visible, false);
   assert.equal(refs.playerSword?.visible, true);
   assert.equal(refs.playerPistol?.visible, false);
+});
+
+test('weapon action callbacks read live pause state for mounted input listeners', () => {
+  const state = makeWeaponState();
+  const refs = makeWeaponRefs();
+  let paused = true;
+  let observedSwaps = 0;
+
+  const callbacks = createWeaponActionCallbacksForState({
+    getState: () => state,
+    getRefs: () => refs,
+    getMainAI: () => undefined,
+    getOpponentDisplay: () => undefined,
+    getEnemyAITarget: () => null,
+    isMultiplayer: false,
+    multiplayerSocket: null,
+    getIsPaused: () => paused,
+    getIsPlaying: () => true,
+    recordLocalPlayerObservation: (observe) => {
+      observedSwaps += 1;
+      observe(createPlayerModel());
+    },
+    spawnVoxelShockwaveParticles: () => {},
+    evaluatePlayerKillMedals: () => [],
+    recordBotCalibrationDeath: () => {},
+    pushStatsUpdate: () => {},
+    playSwing: () => {},
+    playDash: () => {},
+    playImpact: () => {},
+    playDeath: () => {},
+  });
+
+  paused = false;
+  callbacks.swapPlayerWeapon('sword');
+
+  assert.equal(state.activeWeapon, 'sword');
+  assert.equal(refs.playerSword?.visible, true);
+  assert.equal(observedSwaps, 1);
 });
