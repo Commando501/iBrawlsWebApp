@@ -9,6 +9,7 @@ import {
   type TacticalTargetCandidate,
 } from './combatGeometry';
 import { applyAISwordLungeHitForState } from './aiSwordLungeHitRuntime';
+import { adjustRangeForTargetModel } from './modelHitbox';
 import { type ReplayHeatmapCombatantSource } from './replayHeatmapRuntime';
 import { type GrifballRuntimeState } from './runtimeState';
 import { type CombatTradeReason, resolveSwordLungeTradeReasonForState } from './tradeRuntime';
@@ -113,7 +114,7 @@ export function resolveAISwordLungeFlightForCombatant({
   const dist = getCombatBodyCenter(pos, self.isCrouching).distanceTo(getCombatBodyCenter(target.pos, target.isCrouching));
   if (target.hp <= 0 || !areCombatantsHostile(botId, target.id)) {
     finishSwordLunge(cooldownMult, 'target_dead', target.id);
-  } else if (dist <= 1.5) {
+  } else if (dist <= adjustRangeForTargetModel(1.5, target.modelType)) {
     const tradeReason = resolveSwordLungeTradeReasonForState({
       state,
       target,

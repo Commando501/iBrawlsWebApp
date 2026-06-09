@@ -17,6 +17,7 @@ type LegacyRosterPropValues = Pick<
   | 'botWeaponBehaviors'
   | 'botArchetypes'
   | 'botColors'
+  | 'botModelTypes'
 >;
 
 export const buildLegacyRosterProps = ({
@@ -26,6 +27,7 @@ export const buildLegacyRosterProps = ({
   botWeaponBehaviors,
   botArchetypes,
   botColors,
+  botModelTypes,
 }: LegacyRosterPropValues & {
   opponentPlayerName: string;
 }): LegacyRosterProps => {
@@ -42,6 +44,7 @@ export const buildLegacyRosterProps = ({
     botWeaponBehaviors,
     botArchetypes,
     botColors,
+    botModelTypes,
     botNames: names,
   };
 };

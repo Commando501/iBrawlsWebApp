@@ -1,14 +1,16 @@
 import { MAIN_AI_ID } from '../../game/roster';
-import { type Combatant } from '../../types';
+import { type CharacterModelType, type Combatant } from '../../types';
 import { resolveCombatantBodyCollisions, type CombatantColliderEntity } from './bodyCollisions';
 import { type GrifballRuntimeState } from './runtimeState';
 
 export function resolvePlayerCombatantCollisionsForState({
   state,
   mainAI,
+  playerModelType,
 }: {
   state: GrifballRuntimeState;
   mainAI: Combatant | undefined;
+  playerModelType?: CharacterModelType;
 }): void {
   if (state.isObserverMode) return;
 
@@ -20,6 +22,7 @@ export function resolvePlayerCombatantCollisionsForState({
       pos: state.playerPos,
       vel: state.playerVel,
       isCrouching: !!state.isCrouching,
+      modelType: playerModelType,
     });
   }
 
@@ -30,6 +33,7 @@ export function resolvePlayerCombatantCollisionsForState({
       pos: mainAI.pos,
       vel: mainAI.vel,
       isCrouching: !!mainAI.isCrouching,
+      modelType: mainAI.modelType,
     });
   }
 
@@ -41,6 +45,7 @@ export function resolvePlayerCombatantCollisionsForState({
         pos: bot.pos,
         vel: bot.vel,
         isCrouching: !!bot.isCrouching,
+        modelType: bot.modelType,
       });
     }
   });

@@ -3,6 +3,8 @@ import {
   getV2PartDimensions,
   V2_PART_CONSTRAINTS,
 } from './v2ArmorConstraints';
+import { resolveCharacterModelType } from '../characterModelTypes';
+import type { CharacterModelType } from '../types';
 
 export type CustomArmorSlot = 'helmet' | 'torso' | 'arm' | 'leg';
 export type CustomArmorMaterialRole =
@@ -28,6 +30,7 @@ export interface CustomArmorPieceSnapshot {
   id: string;
   name: string;
   slot: CustomArmorSlot;
+  modelType?: CharacterModelType;
   sourcePreset?: string;
   voxels: CustomArmorVoxel[];
   thumbnail?: string;
@@ -96,7 +99,7 @@ export const CUSTOM_ARMOR_MAX_SELECTED_BYTES = 128_000;
 export const CUSTOM_ARMOR_MAX_CATALOG_BYTES = 1_200_000;
 export const CUSTOM_ARMOR_MAX_HISTORY = 5;
 
-export const CUSTOM_ARMOR_SLOT_SPECS: Record<CustomArmorSlot, SlotSpec> = {
+const MEDIUM_CUSTOM_ARMOR_SLOT_SPECS: Record<CustomArmorSlot, SlotSpec> = {
   helmet: {
     label: 'Helmet',
     bounds: { minX: -4, maxX: 4, minY: 35, maxY: 45, minZ: -5, maxZ: 4 },
@@ -147,6 +150,41 @@ export const CUSTOM_ARMOR_SLOT_SPECS: Record<CustomArmorSlot, SlotSpec> = {
   },
 };
 
+const LARGE_CUSTOM_ARMOR_SLOT_SPECS: Record<CustomArmorSlot, SlotSpec> = {
+  helmet: {
+    ...MEDIUM_CUSTOM_ARMOR_SLOT_SPECS.helmet,
+    minTotal: 160,
+    maxVoxels: 1_200,
+  },
+  torso: {
+    ...MEDIUM_CUSTOM_ARMOR_SLOT_SPECS.torso,
+    bounds: { minX: -6, maxX: 6, minY: 11, maxY: 34, minZ: -6, maxZ: 7 },
+    minTotal: 380,
+    maxVoxels: 3_800,
+  },
+  arm: {
+    ...MEDIUM_CUSTOM_ARMOR_SLOT_SPECS.arm,
+    bounds: { minX: -10, maxX: -4, minY: 12, maxY: 32, minZ: -4, maxZ: 4 },
+    minTotal: 150,
+    maxVoxels: 1_600,
+  },
+  leg: {
+    ...MEDIUM_CUSTOM_ARMOR_SLOT_SPECS.leg,
+    bounds: { minX: -6, maxX: -1, minY: 0, maxY: 23, minZ: -7, maxZ: 6 },
+    minTotal: 180,
+    maxVoxels: 2_000,
+  },
+};
+
+export const CUSTOM_ARMOR_SLOT_SPECS: Record<CustomArmorSlot, SlotSpec> = MEDIUM_CUSTOM_ARMOR_SLOT_SPECS;
+
+export function getCustomArmorSlotSpec(
+  slot: CustomArmorSlot,
+  modelType: CharacterModelType = 'medium'
+): SlotSpec {
+  return (modelType === 'large' ? LARGE_CUSTOM_ARMOR_SLOT_SPECS : MEDIUM_CUSTOM_ARMOR_SLOT_SPECS)[slot];
+}
+
 const PRESET_FIELDS = {
   helmet: new Set(['mark-vi', 'odst', 'recon', 'eva', 'gungnir', 'eod', 'hayabusa', 'cqb']),
   torso: new Set(['mark-vi', 'scout', 'recon', 'eod', 'hayabusa']),
@@ -176,14 +214,17 @@ export function createCustomArmorPiece(
   slot: CustomArmorSlot,
   name: string,
   voxels: CustomArmorVoxel[] = [],
-  sourcePreset?: string
+  sourcePreset?: string,
+  modelType: CharacterModelType = 'medium'
 ): CustomArmorPiece {
   const now = Date.now();
+  const resolvedModelType = resolveCharacterModelType(modelType, 'v2');
   return {
     version: 1,
     id: createCustomArmorId(slot),
-    name: sanitizePieceName(name, CUSTOM_ARMOR_SLOT_SPECS[slot].label),
+    name: sanitizePieceName(name, getCustomArmorSlotSpec(slot, resolvedModelType).label),
     slot,
+    modelType: resolvedModelType,
     sourcePreset,
     voxels: dedupeCustomArmorVoxels(voxels),
     thumbnail: createCustomArmorThumbnail(slot, voxels.length),
@@ -199,6 +240,7 @@ export function createCustomArmorSnapshot(piece: CustomArmorPiece | CustomArmorP
     id: piece.id,
     name: piece.name,
     slot: piece.slot,
+    modelType: resolveCharacterModelType(piece.modelType, 'v2'),
     sourcePreset: piece.sourcePreset,
     voxels: piece.voxels.map(cloneVoxel),
     thumbnail: piece.thumbnail,
@@ -231,15 +273,23 @@ export function getCustomArmorBounds(voxels: Array<CustomArmorVoxel | VoxelData>
   return { minX, maxX, minY, maxY, minZ, maxZ };
 }
 
-export function isVoxelInSlotBounds(slot: CustomArmorSlot, voxel: { x: number; y: number; z: number }): boolean {
-  const b = CUSTOM_ARMOR_SLOT_SPECS[slot].bounds;
+export function isVoxelInSlotBounds(
+  slot: CustomArmorSlot,
+  voxel: { x: number; y: number; z: number },
+  modelType: CharacterModelType = 'medium'
+): boolean {
+  const b = getCustomArmorSlotSpec(slot, modelType).bounds;
   return voxel.x >= b.minX && voxel.x <= b.maxX
     && voxel.y >= b.minY && voxel.y <= b.maxY
     && voxel.z >= b.minZ && voxel.z <= b.maxZ;
 }
 
-export function clampVoxelToSlot(slot: CustomArmorSlot, voxel: CustomArmorVoxel): CustomArmorVoxel {
-  const b = CUSTOM_ARMOR_SLOT_SPECS[slot].bounds;
+export function clampVoxelToSlot(
+  slot: CustomArmorSlot,
+  voxel: CustomArmorVoxel,
+  modelType: CharacterModelType = 'medium'
+): CustomArmorVoxel {
+  const b = getCustomArmorSlotSpec(slot, modelType).bounds;
   return {
     ...voxel,
     x: Math.max(b.minX, Math.min(b.maxX, Math.round(voxel.x))),
@@ -248,11 +298,15 @@ export function clampVoxelToSlot(slot: CustomArmorSlot, voxel: CustomArmorVoxel)
   };
 }
 
-export function normalizeCustomArmorVoxel(value: unknown, slot: CustomArmorSlot): CustomArmorVoxel | null {
+export function normalizeCustomArmorVoxel(
+  value: unknown,
+  slot: CustomArmorSlot,
+  modelType: CharacterModelType = 'medium'
+): CustomArmorVoxel | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const raw = value as Partial<CustomArmorVoxel>;
   if (!Number.isInteger(raw.x) || !Number.isInteger(raw.y) || !Number.isInteger(raw.z)) return null;
-  if (!isVoxelInSlotBounds(slot, raw as { x: number; y: number; z: number })) return null;
+  if (!isVoxelInSlotBounds(slot, raw as { x: number; y: number; z: number }, modelType)) return null;
   const role = ROLE_SET.has(raw.role as CustomArmorMaterialRole) ? raw.role as CustomArmorMaterialRole : 'primary';
   const color = typeof raw.color === 'string' && HEX_COLOR.test(raw.color) ? raw.color : undefined;
   return {
@@ -280,12 +334,14 @@ export function normalizeCustomArmorPiece(value: unknown): CustomArmorPiece | nu
   const raw = value as Partial<CustomArmorPiece>;
   if (raw.version !== 1 || !SLOT_SET.has(raw.slot as CustomArmorSlot)) return null;
   const slot = raw.slot as CustomArmorSlot;
+  const modelType = resolveCharacterModelType(raw.modelType, 'v2');
+  const spec = getCustomArmorSlotSpec(slot, modelType);
   if (!Array.isArray(raw.voxels)) return null;
   const voxels = dedupeCustomArmorVoxels(
     raw.voxels
-      .map((voxel) => normalizeCustomArmorVoxel(voxel, slot))
+      .map((voxel) => normalizeCustomArmorVoxel(voxel, slot, modelType))
       .filter((voxel): voxel is CustomArmorVoxel => Boolean(voxel))
-  ).slice(0, CUSTOM_ARMOR_SLOT_SPECS[slot].maxVoxels);
+  ).slice(0, spec.maxVoxels);
   const now = Date.now();
   const id = typeof raw.id === 'string' && raw.id.trim() ? raw.id.trim().slice(0, 80) : createCustomArmorId(slot);
   const updatedAt = typeof raw.updatedAt === 'number' && Number.isFinite(raw.updatedAt) ? raw.updatedAt : now;
@@ -300,8 +356,9 @@ export function normalizeCustomArmorPiece(value: unknown): CustomArmorPiece | nu
   return {
     version: 1,
     id,
-    name: sanitizePieceName(raw.name, CUSTOM_ARMOR_SLOT_SPECS[slot].label),
+    name: sanitizePieceName(raw.name, spec.label),
     slot,
+    modelType,
     sourcePreset: typeof raw.sourcePreset === 'string' ? raw.sourcePreset.slice(0, 32) : undefined,
     voxels,
     thumbnail: typeof raw.thumbnail === 'string' ? raw.thumbnail.slice(0, 160) : createCustomArmorThumbnail(slot, voxels.length),
@@ -402,7 +459,7 @@ export function validateCustomArmorPiece(piece: CustomArmorPieceSnapshot | Custo
     };
   }
 
-  const spec = CUSTOM_ARMOR_SLOT_SPECS[normalized.slot];
+  const spec = getCustomArmorSlotSpec(normalized.slot, resolveCharacterModelType(normalized.modelType, 'v2'));
   const voxels = dedupeCustomArmorVoxels(normalized.voxels);
   const payloadBytes = JSON.stringify(createCustomArmorSnapshot({ ...normalized, voxels })).length;
   const bounds = getCustomArmorBounds(voxels);
@@ -431,7 +488,7 @@ export function validateCustomArmorPiece(piece: CustomArmorPieceSnapshot | Custo
   }
 
   for (const voxel of voxels) {
-    if (!isVoxelInSlotBounds(normalized.slot, voxel)) {
+    if (!isVoxelInSlotBounds(normalized.slot, voxel, resolveCharacterModelType(normalized.modelType, 'v2'))) {
       errors.push(`${spec.label} voxel ${coordKey(voxel)} is outside the editable hitbox.`);
       break;
     }
@@ -543,7 +600,8 @@ export function centerCustomArmorPiece(piece: CustomArmorPieceSnapshot): CustomA
   if (!normalized) return piece;
   const bounds = getCustomArmorBounds(normalized.voxels);
   if (!bounds) return normalized;
-  const slotBounds = CUSTOM_ARMOR_SLOT_SPECS[normalized.slot].bounds;
+  const modelType = resolveCharacterModelType(normalized.modelType, 'v2');
+  const slotBounds = getCustomArmorSlotSpec(normalized.slot, modelType).bounds;
   const currentCenterX = (bounds.minX + bounds.maxX) / 2;
   const targetCenterX = (slotBounds.minX + slotBounds.maxX) / 2;
   const currentCenterZ = (bounds.minZ + bounds.maxZ) / 2;
@@ -556,7 +614,7 @@ export function centerCustomArmorPiece(piece: CustomArmorPieceSnapshot): CustomA
       ...voxel,
       x: voxel.x + dx,
       z: voxel.z + dz,
-    }))),
+    }, modelType))),
     updatedAt: Date.now(),
   };
 }
@@ -564,13 +622,14 @@ export function centerCustomArmorPiece(piece: CustomArmorPieceSnapshot): CustomA
 export function seedCornerAnchor(piece: CustomArmorPieceSnapshot): CustomArmorPieceSnapshot {
   const normalized = normalizeCustomArmorSnapshot(piece);
   if (!normalized) return piece;
-  const b = CUSTOM_ARMOR_SLOT_SPECS[normalized.slot].bounds;
+  const modelType = resolveCharacterModelType(normalized.modelType, 'v2');
+  const b = getCustomArmorSlotSpec(normalized.slot, modelType).bounds;
   const anchorSeed: CustomArmorVoxel[] = [
     { x: b.minX, y: b.minY, z: b.minZ, role: 'accent' },
     { x: b.minX + 1, y: b.minY, z: b.minZ, role: 'accent' },
     { x: b.minX, y: b.minY + 1, z: b.minZ, role: 'accent' },
   ];
-  const anchor = anchorSeed.map((voxel) => clampVoxelToSlot(normalized.slot, voxel));
+  const anchor = anchorSeed.map((voxel) => clampVoxelToSlot(normalized.slot, voxel, modelType));
   return {
     ...normalized,
     voxels: dedupeCustomArmorVoxels([...normalized.voxels, ...anchor]),
@@ -583,7 +642,11 @@ export function fitCustomArmorToBounds(piece: CustomArmorPieceSnapshot): CustomA
   if (!normalized) return piece;
   return {
     ...normalized,
-    voxels: dedupeCustomArmorVoxels(normalized.voxels.map((voxel) => clampVoxelToSlot(normalized.slot, voxel))),
+    voxels: dedupeCustomArmorVoxels(normalized.voxels.map((voxel) => clampVoxelToSlot(
+      normalized.slot,
+      voxel,
+      resolveCharacterModelType(normalized.modelType, 'v2')
+    ))),
     updatedAt: Date.now(),
   };
 }
@@ -597,21 +660,27 @@ export function sanitizeCharacterLoadoutForNetwork(loadout: unknown): unknown | 
     if (typeof value === 'string' && allowed.has(value)) out[key] = value;
   }
   if (raw.modelSystem === 'v1' || raw.modelSystem === 'v2') out.modelSystem = raw.modelSystem;
+  const modelType = resolveCharacterModelType(raw.modelType, raw.modelSystem);
+  if (out.modelSystem === 'v2') out.modelType = modelType;
   if (raw.paintJob && typeof raw.paintJob === 'object' && !Array.isArray(raw.paintJob)) {
     const paintPayload = JSON.stringify(raw.paintJob);
     if (paintPayload.length <= 48_000) out.paintJob = raw.paintJob;
   }
-  const customArmor = sanitizeSelectedCustomArmor(raw.customArmor);
+  const customArmor = sanitizeSelectedCustomArmor(raw.customArmor, modelType);
   if (customArmor) out.customArmor = customArmor;
   return Object.keys(out).length > 0 ? out : undefined;
 }
 
-export function sanitizeSelectedCustomArmor(value: unknown): Partial<Record<CustomArmorSlot, CustomArmorPieceSnapshot>> | undefined {
+export function sanitizeSelectedCustomArmor(
+  value: unknown,
+  modelType: CharacterModelType = 'medium'
+): Partial<Record<CustomArmorSlot, CustomArmorPieceSnapshot>> | undefined {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
   const result: Partial<Record<CustomArmorSlot, CustomArmorPieceSnapshot>> = {};
   for (const slot of SLOT_SET) {
     const snapshot = normalizeCustomArmorSnapshot((value as Record<string, unknown>)[slot]);
     if (!snapshot || snapshot.slot !== slot) continue;
+    if (resolveCharacterModelType(snapshot.modelType, 'v2') !== modelType) continue;
     const validation = validateCustomArmorPiece(snapshot);
     if (validation.valid && validation.stats.payloadBytes <= CUSTOM_ARMOR_MAX_SELECTED_BYTES) {
       result[slot] = snapshot;

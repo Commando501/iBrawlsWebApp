@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { MAIN_AI_ID, isAICombatReady } from '../../game/roster';
 import { getForwardHeadingForYaw } from '../../game/yaw';
 import { getCombatBodyCenter, SWORD_SLASH_FORWARD_FACTOR, SWORD_SLASH_RADIUS } from './combatGeometry';
+import { adjustRangeForTargetModel } from './modelHitbox';
 import { recordBotDamageTagForState } from './aiBookkeeping';
 import { recordDeathEvent as recordDeathEventOnState } from './deathFeed';
 import { areGrifballCombatantsHostileForState } from './grifballObjectiveRuntime';
@@ -92,7 +93,8 @@ export function applyBotMeleeImpactForState({
     state.playerRespawnTimer <= 0 &&
     state.playerInvulnerabilityTimer <= 0 &&
     areGrifballCombatantsHostileForState(state, botId, 'player') &&
-    impactPos.distanceTo(getCombatBodyCenter(state.playerPos, state.isCrouching)) <= radius
+    impactPos.distanceTo(getCombatBodyCenter(state.playerPos, state.isCrouching)) <=
+      adjustRangeForTargetModel(radius, state.playerModelType)
   ) {
     recordLocalPlayerDamageTakenObservation(state);
     recordCombatantModelObservation(state, botId, (model) => observePlayerDamageDealt(model));
@@ -121,7 +123,10 @@ export function applyBotMeleeImpactForState({
     if (!isAICombatReady(other)) return;
     if (!areGrifballCombatantsHostileForState(state, botId, otherId)) return;
     const otherPos = new THREE.Vector3(other.pos.x, other.pos.y, other.pos.z);
-    if (impactPos.distanceTo(getCombatBodyCenter(otherPos, other.isCrouching || false)) > radius) return;
+    if (
+      impactPos.distanceTo(getCombatBodyCenter(otherPos, other.isCrouching || false)) >
+      adjustRangeForTargetModel(radius, other.modelType)
+    ) return;
     other.hp -= 1;
     recordCombatantModelObservation(state, botId, (model) => observePlayerDamageDealt(model));
     recordCombatantModelObservation(state, otherId, (model) => observePlayerDamageReceived(model));

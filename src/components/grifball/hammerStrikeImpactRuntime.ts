@@ -3,6 +3,7 @@ import { ballAsHammer } from '../../game/weaponCompat';
 import { MAIN_AI_ID } from '../../game/roster';
 import { type Combatant, type DeathEvent, type MedalInfo } from '../../types';
 import { getCombatBodyCenter } from './combatGeometry';
+import { adjustRangeForTargetModel } from './modelHitbox';
 import { createReplayHeatmapCombatantSource, queueReplayHeatmapDeathEventsForState } from './replayHeatmapRuntime';
 import { type GrifballRuntimeState } from './runtimeState';
 import { type EnemyAITarget } from './targetSelection';
@@ -132,7 +133,7 @@ export function applyHammerStrikeImpactForState({
       const enemyBodyCenter = new THREE.Vector3(mainAI.pos.x, mainAI.pos.y + 0.825, mainAI.pos.z);
       const dist = impactPos.distanceTo(enemyBodyCenter);
 
-      if (dist <= state.settings.attackRadius) {
+      if (dist <= adjustRangeForTargetModel(impactRadius, mainAI.modelType)) {
         mainAI.hp -= 1;
         playSwing();
         spawnVoxelShockwaveParticles(mainAI.pos, '#22d3ee');
@@ -185,7 +186,7 @@ export function applyHammerStrikeImpactForState({
         const otherBodyCenter = new THREE.Vector3(other.pos.x, other.pos.y + 0.825, other.pos.z);
         const dist = impactPos.distanceTo(otherBodyCenter);
 
-        if (dist <= state.settings.attackRadius) {
+        if (dist <= adjustRangeForTargetModel(impactRadius, other.modelType)) {
           if (isMultiplayer) {
             playSwing();
             spawnVoxelShockwaveParticles(new THREE.Vector3(other.pos.x, other.pos.y, other.pos.z), '#e2e8f0');
@@ -286,7 +287,7 @@ export function applyHammerStrikeImpactForState({
   if (target.hp > 0 && target.invuln <= 0 && areCombatantsHostile(MAIN_AI_ID, target.id)) {
     const dist = impactPos.distanceTo(targetBodyCenter);
 
-    if (dist <= impactRadius) {
+    if (dist <= adjustRangeForTargetModel(impactRadius, target.modelType)) {
       if (target.id === 'player') {
         recordPlayerDamageTaken();
         tryRecordCalibrationCounterSuccess(MAIN_AI_ID);

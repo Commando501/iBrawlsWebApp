@@ -1,15 +1,15 @@
 import * as THREE from 'three';
+import { getCharacterModelCollisionProfile } from '../../characterModelTypes';
+import type { CharacterModelType } from '../../types';
 
 export interface CombatantColliderEntity {
   id: string;
   pos: THREE.Vector3;
   vel: THREE.Vector3;
   isCrouching: boolean;
+  modelType?: CharacterModelType;
 }
 
-const COLLISION_RADIUS = 0.55;
-const MIN_DIST = COLLISION_RADIUS * 2;
-const MIN_DIST_SQ = MIN_DIST * MIN_DIST;
 const ITERATIONS = 3;
 
 export const resolveCombatantBodyCollisions = (colliders: CombatantColliderEntity[]) => {
@@ -21,8 +21,10 @@ export const resolveCombatantBodyCollisions = (colliders: CombatantColliderEntit
       for (let j = i + 1; j < colliders.length; j++) {
         const B = colliders[j];
 
-        const heightA = A.isCrouching ? 1.2 : 1.8;
-        const heightB = B.isCrouching ? 1.2 : 1.8;
+        const profileA = getCharacterModelCollisionProfile(A.modelType, 'v2');
+        const profileB = getCharacterModelCollisionProfile(B.modelType, 'v2');
+        const heightA = A.isCrouching ? profileA.crouchingHeight : profileA.standingHeight;
+        const heightB = B.isCrouching ? profileB.crouchingHeight : profileB.standingHeight;
 
         const verticalOverlap = (A.pos.y < B.pos.y + heightB) && (B.pos.y < A.pos.y + heightA);
         if (!verticalOverlap) continue;
@@ -31,7 +33,10 @@ export const resolveCombatantBodyCollisions = (colliders: CombatantColliderEntit
         let dz = B.pos.z - A.pos.z;
         const distSq = dx * dx + dz * dz;
 
-        if (distSq < MIN_DIST_SQ) {
+        const minDist = profileA.radius + profileB.radius;
+        const minDistSq = minDist * minDist;
+
+        if (distSq < minDistSq) {
           let dist = Math.sqrt(distSq);
           if (dist < 0.001) {
             dx = 0.01;
@@ -39,7 +44,7 @@ export const resolveCombatantBodyCollisions = (colliders: CombatantColliderEntit
             dist = 0.01;
           }
 
-          const overlap = MIN_DIST - dist;
+          const overlap = minDist - dist;
           const nx = dx / dist;
           const nz = dz / dist;
 

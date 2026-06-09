@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { createAIMatchContext, type AIMatchContext } from '../../game/aiMatchContext';
 import { createEmptyTeamScores, localPlayerTeamFromRole, type TeamId, type TeamScoresState } from '../../game/teamScoring';
 import { createInitialGrifballMatchState, type GrifballMatchState } from '../../game/grifballMatch';
-import { type Combatant, type DeathEvent, type MedalInfo, type ReplayHeatmapEvent, type UniversalSettings, type WeaponState } from '../../types';
+import { type CharacterModelType, type Combatant, type DeathEvent, type MedalInfo, type ReplayHeatmapEvent, type UniversalSettings, type WeaponState } from '../../types';
 import { getInwardSpawnYaw } from './combatGeometry';
 
 export interface GrifballRuntimeState {
@@ -13,6 +13,7 @@ export interface GrifballRuntimeState {
   crouchAmount: number;
   isCrouching: boolean;
   isJumping: boolean;
+  playerModelType: CharacterModelType;
 
   playerDashRemaining: number;
   playerDashDir: THREE.Vector3;
@@ -154,6 +155,7 @@ export function createInitialGrifballRuntimeState({
     crouchAmount: 0,
     isCrouching: false,
     isJumping: false,
+    playerModelType: 'medium',
     otherPlayers: new Map<string, Combatant>(),
 
     playerDashRemaining: 0,

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import type { AIBehaviorState, Combatant, UniversalSettings, WeaponState } from '../types';
+import type { AIBehaviorState, CharacterModelType, Combatant, UniversalSettings, WeaponState } from '../types';
+import { resolveCharacterModelType } from '../characterModelTypes';
 import { DEFAULT_AI_TEAM, resolveCombatantTeam } from './teamScoring';
 import { type LegacyRosterProps } from './rosterSlotConfig';
 
@@ -91,6 +92,7 @@ export interface CreateMainAIParams {
   yaw: number;
   hue?: number;
   difficulty?: string;
+  modelType?: CharacterModelType;
 }
 
 /** Factory for roster slot 0 — canonical offline main AI combatant. */
@@ -141,6 +143,7 @@ export function createMainAICombatant(params: CreateMainAIParams): Combatant {
     hammerJumpWindowTimer: 0,
     aiHammerJumpsInAir: 0,
     hue,
+    modelType: resolveCharacterModelType(params.modelType ?? legacy.botModelTypes?.[MAIN_AI_ID], 'v2'),
     difficulty: difficulty ?? legacy.botDifficulties?.[MAIN_AI_ID] ?? settings.aiDifficulty ?? 'normal',
     score: 0,
     kills: 0,
@@ -158,6 +161,7 @@ export interface CreateOfflineBotParams {
   hue: number;
   difficulty: string;
   settings: UniversalSettings;
+  modelType?: CharacterModelType;
 }
 
 export function createOfflineBotCombatant(params: CreateOfflineBotParams): Combatant {
@@ -178,6 +182,7 @@ export function createOfflineBotCombatant(params: CreateOfflineBotParams): Comba
     activeWeapon: 'hammer',
     respawnTimer: 0,
     hue: params.hue,
+    modelType: resolveCharacterModelType(params.modelType, 'v2'),
     difficulty: params.difficulty,
     score: 0,
     kills: 0,
@@ -203,6 +208,7 @@ export interface CreateRemoteCombatantParams {
     activeWeapon?: 'hammer' | 'sword' | 'pistol';
     respawnTimer?: number;
     invulnerabilityTimer?: number;
+    modelType?: CharacterModelType;
   };
 }
 
@@ -224,6 +230,7 @@ export function createRemoteCombatant(params: CreateRemoteCombatantParams): Comb
     activeWeapon: (data.activeWeapon === 'pistol' ? 'hammer' : data.activeWeapon) ?? 'hammer',
     respawnTimer: data.respawnTimer ?? 0,
     hue: data.hue ?? Math.floor(Math.random() * 360),
+    modelType: resolveCharacterModelType(data.modelType, 'v2'),
     score: 0,
     kills: 0,
     deaths: 0,

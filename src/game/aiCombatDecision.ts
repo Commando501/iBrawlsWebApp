@@ -4,6 +4,7 @@ import {
   NEUTRAL_MATCH_MULTIPLIERS,
   type MatchStateMultipliers,
 } from './aiTuning';
+import { type CharacterModelType } from '../types';
 
 export type AICombatWeapon = 'hammer' | 'sword';
 
@@ -33,6 +34,7 @@ export interface AITacticalTargetSnapshot extends AITacticalTarget {
   maxHp: number;
   isCrouching: boolean;
   playerName: string;
+  modelType?: CharacterModelType;
 }
 
 export interface AICombatDecisionInput {

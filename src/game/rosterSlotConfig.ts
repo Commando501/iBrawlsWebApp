@@ -1,4 +1,5 @@
-import { AIBehaviorPreset, AIPreset, UniversalSettings } from '../types';
+import { AIBehaviorPreset, AIPreset, CharacterModelType, UniversalSettings } from '../types';
+import { resolveCharacterModelType } from '../characterModelTypes';
 import { AIResolvedKnobs, DerivedAIParams } from './aiTuning';
 import {
   AIArchetypeId,
@@ -17,6 +18,7 @@ export interface RosterSlotConfig {
   team: string;
   hue: number;
   name: string;
+  modelType: CharacterModelType;
   /** Used when difficulty === 'custom'. */
   reactionLatency?: number;
   anticipationFactor?: number;
@@ -64,6 +66,7 @@ export function rosterTemplateFromSettings(settings: UniversalSettings): RosterS
     team: 'red',
     hue: 0,
     name: 'DoomBot',
+    modelType: 'medium',
     reactionLatency: settings.aiReactionLatency,
     anticipationFactor: settings.aiAnticipationFactor,
     movementComplexity: settings.aiMovementComplexity,
@@ -102,6 +105,7 @@ export function rosterOverrideFromLegacyProps(props: {
   archetype?: string;
   hue?: number;
   name?: string;
+  modelType?: CharacterModelType;
 }): RosterSlotOverride {
   const override: RosterSlotOverride = {};
 
@@ -109,6 +113,7 @@ export function rosterOverrideFromLegacyProps(props: {
   if (props.archetype !== undefined) override.archetype = props.archetype as AIArchetypeId;
   if (props.hue !== undefined) override.hue = props.hue;
   if (props.name) override.name = props.name;
+  if (props.modelType) override.modelType = resolveCharacterModelType(props.modelType, 'v2');
 
   if (props.behavior && props.behavior !== DEFAULT_LEGACY_BEHAVIOR) {
     override.behavior = props.behavior;
@@ -237,6 +242,7 @@ export interface LegacyRosterProps {
   botArchetypes?: Record<string, string>;
   botColors?: Record<string, number>;
   botNames?: Record<string, string>;
+  botModelTypes?: Record<string, CharacterModelType>;
 }
 
 /** Resolve one combatant's merged roster slot from template + legacy grid props. */
@@ -248,7 +254,7 @@ export function resolveRosterSlotForCombatant(
   const template = rosterTemplateFromSettings(settings);
   const override = rosterOverrideFromLegacyProps(
     botId === 'main_ai'
-      ? { hue: legacy.botColors?.[botId], name: legacy.botNames?.[botId] }
+      ? { hue: legacy.botColors?.[botId], name: legacy.botNames?.[botId], modelType: legacy.botModelTypes?.[botId] }
       : {
           difficulty: legacy.botDifficulties?.[botId],
           behavior: legacy.botBehaviors?.[botId],
@@ -256,6 +262,7 @@ export function resolveRosterSlotForCombatant(
           archetype: legacy.botArchetypes?.[botId],
           hue: legacy.botColors?.[botId],
           name: legacy.botNames?.[botId],
+          modelType: legacy.botModelTypes?.[botId],
         }
   );
   return mergeRosterSlotConfig(template, override);

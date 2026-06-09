@@ -8,7 +8,6 @@ import {
 import { getVoxelSegmentDataV2 } from '../VoxelModelsV2';
 import { buildCombatantRigForModel } from '../grifball/combatantRig';
 import {
-  CUSTOM_ARMOR_SLOT_SPECS,
   CUSTOM_ARMOR_MAX_HISTORY,
   centerCustomArmorPiece,
   createCustomArmorPiece,
@@ -17,6 +16,7 @@ import {
   customArmorPieceToVoxels,
   dedupeCustomArmorVoxels,
   fitCustomArmorToBounds,
+  getCustomArmorSlotSpec,
   removeFloatingVoxels,
   seedCornerAnchor,
   validateCustomArmorPiece,
@@ -28,6 +28,11 @@ import {
   type CustomArmorSlot,
   type CustomArmorVoxel,
 } from '../customArmor';
+import {
+  getCharacterModelCollisionProfile,
+  resolveCharacterModelType,
+} from '../../characterModelTypes';
+import type { CharacterModelType } from '../../types';
 
 interface ArmorModelEditorProps {
   catalog: CustomArmorCatalog;
@@ -50,6 +55,7 @@ type PaintSettings = {
   fixedColor: string;
   emissive: boolean;
   slot: CustomArmorSlot;
+  modelType: CharacterModelType;
 };
 type ArmorEditorCameraView = {
   target: { x: number; y: number; z: number };
@@ -166,15 +172,22 @@ const snapshotFromBuiltin = (
   slot: CustomArmorSlot,
   preset: string,
   hue: number,
+  modelType: CharacterModelType,
   name = `${preset} Remix`
 ): CustomArmorPieceSnapshot => {
-  const voxels = getVoxelSegmentDataV2(getV2SourceSlot(slot), preset, hue, false);
-  const piece = createCustomArmorPiece(slot, name, voxelDataToCustomArmorVoxels(voxels), preset);
+  const voxels = getVoxelSegmentDataV2(getV2SourceSlot(slot), preset, hue, false, modelType);
+  const piece = createCustomArmorPiece(slot, name, voxelDataToCustomArmorVoxels(voxels), preset, modelType);
   return createCustomArmorSnapshot(piece);
 };
 
-const createBlankSnapshot = (slot: CustomArmorSlot): CustomArmorPieceSnapshot =>
-  createCustomArmorSnapshot(createCustomArmorPiece(slot, `${CUSTOM_ARMOR_SLOT_SPECS[slot].label} Draft`, []));
+const createBlankSnapshot = (slot: CustomArmorSlot, modelType: CharacterModelType): CustomArmorPieceSnapshot =>
+  createCustomArmorSnapshot(createCustomArmorPiece(
+    slot,
+    `${getCustomArmorSlotSpec(slot, modelType).label} Draft`,
+    [],
+    undefined,
+    modelType
+  ));
 
 const getSlotPatchField = (slot: CustomArmorSlot): 'helmet' | 'torso' | 'arm' | 'leg' => slot;
 
@@ -184,7 +197,7 @@ function upsertPieceInCatalog(catalog: CustomArmorCatalog, draft: CustomArmorPie
   const historyEntry = existing ? createCustomArmorSnapshot(existing) : undefined;
   const nextPiece: CustomArmorPiece = {
     ...draft,
-    name: draft.name.trim() || `${CUSTOM_ARMOR_SLOT_SPECS[draft.slot].label} Custom`,
+    name: draft.name.trim() || `${getCustomArmorSlotSpec(draft.slot, draft.modelType ?? 'medium').label} Custom`,
     thumbnail: createCustomArmorThumbnail(draft.slot, draft.voxels.length),
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
@@ -212,13 +225,19 @@ export function ArmorModelEditor({
   layout = 'embedded',
 }: ArmorModelEditorProps) {
   const isStandalone = layout === 'standalone';
+  const initialModelType = resolveCharacterModelType(playerLoadout.modelType, 'v2');
   const initialSlot = (['helmet', 'torso', 'arm', 'leg'] as CustomArmorSlot[])
-    .find((slot) => playerLoadout.customArmor?.[slot]) ?? 'helmet';
+    .find((slot) => (
+      !!playerLoadout.customArmor?.[slot] &&
+      resolveCharacterModelType(playerLoadout.customArmor[slot]?.modelType, 'v2') === initialModelType
+    )) ?? 'helmet';
+  const [modelType, setModelType] = useState<CharacterModelType>(initialModelType);
   const [slot, setSlot] = useState<CustomArmorSlot>(initialSlot);
   const [draft, setDraft] = useState<CustomArmorPieceSnapshot>(() => (
-    playerLoadout.customArmor?.[initialSlot]
+    playerLoadout.customArmor?.[initialSlot] &&
+    resolveCharacterModelType(playerLoadout.customArmor[initialSlot]?.modelType, 'v2') === initialModelType
       ? cloneSnapshot(playerLoadout.customArmor[initialSlot]!)
-      : snapshotFromBuiltin(initialSlot, getDefaultPresetForSlot(initialSlot, playerLoadout), playerHue)
+      : snapshotFromBuiltin(initialSlot, getDefaultPresetForSlot(initialSlot, playerLoadout), playerHue, initialModelType)
   ));
   const [tool, setTool] = useState<EditorTool>('place');
   const [role, setRole] = useState<CustomArmorMaterialRole>('primary');
@@ -230,7 +249,7 @@ export function ArmorModelEditor({
   const [poseMode, setPoseMode] = useState<PoseMode>('idle');
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
   const [cursor, setCursor] = useState(() => {
-    const b = CUSTOM_ARMOR_SLOT_SPECS[slot].bounds;
+    const b = getCustomArmorSlotSpec(slot, initialModelType).bounds;
     return { x: Math.round((b.minX + b.maxX) / 2), y: b.minY, z: Math.round((b.minZ + b.maxZ) / 2) };
   });
   const [size, setSize] = useState({ x: 2, y: 2, z: 2 });
@@ -247,18 +266,29 @@ export function ArmorModelEditor({
   const [showPerformance, setShowPerformance] = useState(true);
   const [showClipping, setShowClipping] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const paintSettingsRef = useRef<PaintSettings>({ tool, role, fixedColor, emissive, slot });
+  const paintSettingsRef = useRef<PaintSettings>({ tool, role, fixedColor, emissive, slot, modelType });
   const cameraViewsRef = useRef<Record<ViewMode, ArmorEditorCameraView>>(createDefaultCameraViews());
 
   const validation = useMemo(() => validateCustomArmorPiece(draft), [draft]);
-  const slotPieces = catalog.pieces.filter((piece) => piece.slot === slot);
+  const slotPieces = catalog.pieces.filter((piece) => (
+    piece.slot === slot &&
+    resolveCharacterModelType(piece.modelType, 'v2') === modelType
+  ));
   const selectedPreset = draft.sourcePreset && BUILTIN_PRESETS[slot].includes(draft.sourcePreset)
     ? draft.sourcePreset
     : getDefaultPresetForSlot(slot, playerLoadout);
 
   useEffect(() => {
-    paintSettingsRef.current = { tool, role, fixedColor, emissive, slot };
-  }, [emissive, fixedColor, role, slot, tool]);
+    paintSettingsRef.current = { tool, role, fixedColor, emissive, slot, modelType };
+  }, [emissive, fixedColor, modelType, role, slot, tool]);
+
+  const getEquippedPieceForType = (
+    targetSlot: CustomArmorSlot,
+    targetModelType: CharacterModelType
+  ): CustomArmorPieceSnapshot | undefined => {
+    const piece = playerLoadout.customArmor?.[targetSlot];
+    return piece && resolveCharacterModelType(piece.modelType, 'v2') === targetModelType ? piece : undefined;
+  };
 
   const setFixedColorValue = (value: string) => {
     const normalized = value.toLowerCase();
@@ -296,6 +326,7 @@ export function ArmorModelEditor({
     setDraftWithHistory(() => ({
       ...next,
       slot,
+      modelType,
       voxels: dedupeCustomArmorVoxels(next.voxels),
     }));
     setSelectedKeys(new Set());
@@ -303,12 +334,29 @@ export function ArmorModelEditor({
 
   const switchSlot = (nextSlot: CustomArmorSlot) => {
     setSlot(nextSlot);
-    const b = CUSTOM_ARMOR_SLOT_SPECS[nextSlot].bounds;
+    const b = getCustomArmorSlotSpec(nextSlot, modelType).bounds;
     setCursor({ x: Math.round((b.minX + b.maxX) / 2), y: b.minY, z: Math.round((b.minZ + b.maxZ) / 2) });
+    const equipped = getEquippedPieceForType(nextSlot, modelType);
     setDraft(
-      playerLoadout.customArmor?.[nextSlot]
-        ? cloneSnapshot(playerLoadout.customArmor[nextSlot]!)
-        : snapshotFromBuiltin(nextSlot, getDefaultPresetForSlot(nextSlot, playerLoadout), playerHue)
+      equipped
+        ? cloneSnapshot(equipped)
+        : snapshotFromBuiltin(nextSlot, getDefaultPresetForSlot(nextSlot, playerLoadout), playerHue, modelType)
+    );
+    setUndoStack([]);
+    setRedoStack([]);
+    setSelectedKeys(new Set());
+  };
+
+  const switchModelType = (nextModelType: CharacterModelType) => {
+    setModelType(nextModelType);
+    onLoadoutChange({ modelSystem: 'v2', modelType: nextModelType });
+    const b = getCustomArmorSlotSpec(slot, nextModelType).bounds;
+    setCursor({ x: Math.round((b.minX + b.maxX) / 2), y: b.minY, z: Math.round((b.minZ + b.maxZ) / 2) });
+    const equipped = getEquippedPieceForType(slot, nextModelType);
+    setDraft(
+      equipped
+        ? cloneSnapshot(equipped)
+        : snapshotFromBuiltin(slot, getDefaultPresetForSlot(slot, playerLoadout), playerHue, nextModelType)
     );
     setUndoStack([]);
     setRedoStack([]);
@@ -341,12 +389,12 @@ export function ArmorModelEditor({
         }
       }
     }
-    return voxels.filter((voxel) => voxelWithinCurrentSlot(voxel, slot));
+    return voxels.filter((voxel) => voxelWithinCurrentSlot(voxel, slot, modelType));
   };
 
   const applyToolAtCursor = () => {
     if (tool === 'place') {
-      addVoxels([createVoxel(cursor.x, cursor.y, cursor.z, role, fixedColor, emissive)].filter((voxel) => voxelWithinCurrentSlot(voxel, slot)));
+      addVoxels([createVoxel(cursor.x, cursor.y, cursor.z, role, fixedColor, emissive)].filter((voxel) => voxelWithinCurrentSlot(voxel, slot, modelType)));
     } else if (tool === 'erase') {
       eraseKeys(new Set([`${cursor.x},${cursor.y},${cursor.z}`]));
     } else if (tool === 'box') {
@@ -364,7 +412,7 @@ export function ArmorModelEditor({
           emissive
         ));
       }
-      addVoxels(voxels.filter((voxel) => voxelWithinCurrentSlot(voxel, slot)));
+      addVoxels(voxels.filter((voxel) => voxelWithinCurrentSlot(voxel, slot, modelType)));
     } else if (tool === 'plane') {
       const voxels: CustomArmorVoxel[] = [];
       for (let a = 0; a < Math.max(1, size.x); a++) {
@@ -379,9 +427,9 @@ export function ArmorModelEditor({
           ));
         }
       }
-      addVoxels(voxels.filter((voxel) => voxelWithinCurrentSlot(voxel, slot)));
+      addVoxels(voxels.filter((voxel) => voxelWithinCurrentSlot(voxel, slot, modelType)));
     } else if (tool === 'fill') {
-      const b = CUSTOM_ARMOR_SLOT_SPECS[slot].bounds;
+      const b = getCustomArmorSlotSpec(slot, modelType).bounds;
       const voxels: CustomArmorVoxel[] = [];
       for (let x = b.minX; x <= b.maxX; x++) {
         for (let y = b.minY; y <= b.maxY; y++) {
@@ -407,7 +455,7 @@ export function ArmorModelEditor({
           y: voxel.y + offset.y,
           z: voxel.z + offset.z,
         }))
-        .filter((voxel) => voxelWithinCurrentSlot(voxel, slot));
+        .filter((voxel) => voxelWithinCurrentSlot(voxel, slot, modelType));
       const retained = removeOriginal
         ? current.voxels.filter((voxel) => !keys.has(`${voxel.x},${voxel.y},${voxel.z}`))
         : current.voxels;
@@ -421,6 +469,7 @@ export function ArmorModelEditor({
   const savePiece = () => {
     const nextDraft = {
       ...draft,
+      modelType,
       thumbnail: createCustomArmorThumbnail(draft.slot, draft.voxels.length),
       updatedAt: Date.now(),
     };
@@ -433,6 +482,7 @@ export function ArmorModelEditor({
     onCatalogChange((current) => upsertPieceInCatalog(current, snapshot));
     onLoadoutChange({
       modelSystem: 'v2',
+      modelType,
       customArmor: {
         ...(playerLoadout.customArmor ?? {}),
         [slot]: snapshot,
@@ -460,6 +510,7 @@ export function ArmorModelEditor({
     setDraft(snapshot);
     onLoadoutChange({
       modelSystem: 'v2',
+      modelType,
       customArmor: {
         ...(playerLoadout.customArmor ?? {}),
         [piece.slot]: snapshot,
@@ -501,8 +552,9 @@ export function ArmorModelEditor({
       const imported = createCustomArmorSnapshot({
         ...parsed,
         slot,
+        modelType,
         id: typeof parsed.id === 'string' ? parsed.id : draft.id,
-        name: typeof parsed.name === 'string' ? parsed.name : `${CUSTOM_ARMOR_SLOT_SPECS[slot].label} Import`,
+        name: typeof parsed.name === 'string' ? parsed.name : `${getCustomArmorSlotSpec(slot, modelType).label} Import`,
         updatedAt: Date.now(),
       });
       replaceDraft(imported);
@@ -581,9 +633,10 @@ export function ArmorModelEditor({
       const previewLoadout: CharacterLoadout = {
         ...playerLoadout,
         modelSystem: 'v2',
+        modelType,
         customArmor: {
           ...(playerLoadout.customArmor ?? {}),
-          [slot]: draft,
+          [slot]: { ...draft, modelType },
         },
       };
       const model = buildVoxelSpartanModel(false, playerHue, previewLoadout);
@@ -593,7 +646,7 @@ export function ArmorModelEditor({
       applyPreviewPose(model, poseMode);
       scene.add(model);
     } else {
-      const b = CUSTOM_ARMOR_SLOT_SPECS[slot].bounds;
+      const b = getCustomArmorSlotSpec(slot, modelType).bounds;
       const centerX = (b.minX + b.maxX) / 2;
       const centerY = (b.minY + b.maxY) / 2;
       const centerZ = (b.minZ + b.maxZ) / 2;
@@ -606,7 +659,7 @@ export function ArmorModelEditor({
         highlight: `hsl(${playerHue}, 75%, 65%)`,
       };
       const silhouetteVoxels = showSilhouette
-        ? getVoxelSegmentDataV2(getV2SourceSlot(slot), selectedPreset, playerHue, false)
+        ? getVoxelSegmentDataV2(getV2SourceSlot(slot), selectedPreset, playerHue, false, modelType)
         : [];
 
       if (showBounds) {
@@ -618,11 +671,19 @@ export function ArmorModelEditor({
       }
 
       if (showCollision) {
+        const collisionProfile = getCharacterModelCollisionProfile(modelType, 'v2');
         const cylinder = new THREE.Mesh(
-          new THREE.CylinderGeometry(0.55, 0.55, 1.8, 32, 1, true),
+          new THREE.CylinderGeometry(
+            collisionProfile.radius,
+            collisionProfile.radius,
+            collisionProfile.standingHeight,
+            32,
+            1,
+            true
+          ),
           new THREE.MeshBasicMaterial({ color: '#22d3ee', transparent: true, opacity: 0.08, wireframe: true })
         );
-        cylinder.position.y = 0.45;
+        cylinder.position.y = collisionProfile.standingHeight * 0.5 - 0.45;
         scene.add(cylinder);
       }
 
@@ -701,7 +762,7 @@ export function ArmorModelEditor({
               paintSettings.role,
               paintSettings.fixedColor,
               paintSettings.emissive
-            )].filter((candidate) => voxelWithinCurrentSlot(candidate, paintSettings.slot)));
+            )].filter((candidate) => voxelWithinCurrentSlot(candidate, paintSettings.slot, paintSettings.modelType)));
           } else {
             setSelectedKeys((keys) => {
               const next = new Set(keys);
@@ -829,6 +890,7 @@ export function ArmorModelEditor({
     poseMode,
     selectedKeys,
     selectedPreset,
+    modelType,
     showBounds,
     showCollision,
     showDensity,
@@ -856,6 +918,22 @@ export function ArmorModelEditor({
             </button>
           ))}
         </div>
+        <div className="grid grid-cols-2 h-9 rounded border border-white/10 bg-black/40 overflow-hidden">
+          {(['medium', 'large'] as const).map((type) => (
+            <button
+              key={type}
+              type="button"
+              onClick={() => switchModelType(type)}
+              className={`px-3 text-[10px] font-black uppercase tracking-widest ${
+                modelType === type
+                  ? 'bg-cyan-500/20 text-cyan-100'
+                  : 'text-white/45 hover:text-white/75 hover:bg-white/5'
+              }`}
+            >
+              {type}
+            </button>
+          ))}
+        </div>
         <input
           value={draft.name}
           onChange={(event) => renameDraft(event.target.value)}
@@ -872,17 +950,17 @@ export function ArmorModelEditor({
       <div className={`grid grid-cols-1 gap-3 min-h-0 ${isStandalone ? 'flex-1 overflow-hidden xl:grid-cols-[minmax(0,1fr)_390px]' : 'xl:grid-cols-[minmax(0,1fr)_340px]'}`}>
         <div className={`flex flex-col gap-3 min-h-0 ${isStandalone ? 'h-full' : ''}`}>
           <div className="flex flex-wrap gap-2">
-            <button type="button" onClick={() => replaceDraft(createBlankSnapshot(slot))} className="editor-chip">Blank</button>
+            <button type="button" onClick={() => replaceDraft(createBlankSnapshot(slot, modelType))} className="editor-chip">Blank</button>
             <select
               value={selectedPreset}
-              onChange={(event) => replaceDraft(snapshotFromBuiltin(slot, event.target.value, playerHue))}
+              onChange={(event) => replaceDraft(snapshotFromBuiltin(slot, event.target.value, playerHue, modelType))}
               className="h-8 bg-black/50 border border-white/10 rounded px-2 text-xs text-white"
             >
               {BUILTIN_PRESETS[slot].map((preset) => <option key={preset} value={preset}>{preset}</option>)}
             </select>
-            <button type="button" onClick={() => replaceDraft(snapshotFromBuiltin(slot, selectedPreset, playerHue, `${selectedPreset} Remix`))} className="editor-chip">Clone Built-In</button>
-            {playerLoadout.customArmor?.[slot] && (
-              <button type="button" onClick={() => replaceDraft(cloneSnapshot(playerLoadout.customArmor![slot]!))} className="editor-chip">Clone Equipped</button>
+            <button type="button" onClick={() => replaceDraft(snapshotFromBuiltin(slot, selectedPreset, playerHue, modelType, `${selectedPreset} Remix`))} className="editor-chip">Clone Built-In</button>
+            {getEquippedPieceForType(slot, modelType) && (
+              <button type="button" onClick={() => replaceDraft(cloneSnapshot(getEquippedPieceForType(slot, modelType)!))} className="editor-chip">Clone Equipped</button>
             )}
             <button type="button" onClick={undo} disabled={undoStack.length === 0} className="editor-chip disabled:opacity-30">Undo</button>
             <button type="button" onClick={redo} disabled={redoStack.length === 0} className="editor-chip disabled:opacity-30">Redo</button>
@@ -1035,7 +1113,7 @@ export function ArmorModelEditor({
           <Panel title="Catalog">
             <div className="flex flex-col gap-1.5 max-h-36 overflow-y-auto">
               {slotPieces.length === 0 ? (
-                <span className="text-[10px] text-white/35">No saved {CUSTOM_ARMOR_SLOT_SPECS[slot].label.toLowerCase()} pieces.</span>
+                <span className="text-[10px] text-white/35">No saved {getCustomArmorSlotSpec(slot, modelType).label.toLowerCase()} pieces.</span>
               ) : slotPieces.map((piece) => (
                 <div key={piece.id} className="flex items-center gap-1.5 bg-black/30 border border-purple-500/20 rounded p-1.5">
                   <span className="w-8 shrink-0 rounded bg-purple-500/25 border border-purple-300/25 text-purple-100 text-[9px] font-black text-center py-1">{piece.thumbnail}</span>
@@ -1067,8 +1145,12 @@ export function ArmorModelEditor({
   );
 }
 
-function voxelWithinCurrentSlot(voxel: CustomArmorVoxel, slot: CustomArmorSlot): boolean {
-  const b = CUSTOM_ARMOR_SLOT_SPECS[slot].bounds;
+function voxelWithinCurrentSlot(
+  voxel: CustomArmorVoxel,
+  slot: CustomArmorSlot,
+  modelType: CharacterModelType
+): boolean {
+  const b = getCustomArmorSlotSpec(slot, modelType).bounds;
   return voxel.x >= b.minX && voxel.x <= b.maxX
     && voxel.y >= b.minY && voxel.y <= b.maxY
     && voxel.z >= b.minZ && voxel.z <= b.maxZ;

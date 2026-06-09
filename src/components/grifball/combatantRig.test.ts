@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import * as THREE from 'three';
 import { buildVoxelSpartanModel, HelmetPreset, TorsoPreset, ArmPreset, LegPreset } from '../VoxelModels';
-import { verifyV2PartConstraints, getV2PartDimensions } from '../VoxelModelsV2';
+import { buildVoxelSpartanModelV2, getVoxelSegmentDataV2, verifyV2PartConstraints, getV2PartDimensions } from '../VoxelModelsV2';
 import { animateCombatantWeaponMeshes } from './combatantAnimation';
 import { createCombatantMeshRig } from './combatantModels';
 import { DEFAULT_HAMMER_SLAM_WINDUP_TIME } from '../../game/hammerSlamTiming';
@@ -200,4 +200,59 @@ test('V2 Model Hitbox Constraints Verification - validates all V1 armor presets'
   for (const leg of legs) {
     runValidation({ helmet: 'mark-vi', torso: 'mark-vi', arm: 'mark-vi', leg });
   }
+});
+
+test('large V2 model keeps the V2 skeleton while increasing armor footprint', () => {
+  const medium = buildVoxelSpartanModelV2(false, 200, {
+    modelSystem: 'v2',
+    modelType: 'medium',
+  } as any);
+  const large = buildVoxelSpartanModelV2(false, 200, {
+    modelSystem: 'v2',
+    modelType: 'large',
+  } as any);
+
+  const expectedBones = [
+    'pelvis',
+    'stomach',
+    'chest',
+    'neck',
+    'head',
+    'shoulder_l',
+    'arm_upper_l',
+    'arm_lower_l',
+    'hand_l',
+    'shoulder_r',
+    'arm_upper_r',
+    'arm_lower_r',
+    'hand_r',
+    'leg_upper_l',
+    'leg_lower_l',
+    'foot_l',
+    'toes_l',
+    'leg_upper_r',
+    'leg_lower_r',
+    'foot_r',
+    'toes_r',
+  ];
+
+  assert.equal(medium.userData.modelType, 'medium');
+  assert.equal(large.userData.modelType, 'large');
+  for (const bone of expectedBones) {
+    assert.ok(medium.userData[bone], `medium missing ${bone}`);
+    assert.ok(large.userData[bone], `large missing ${bone}`);
+  }
+
+  const mediumChest = getVoxelSegmentDataV2('torso', 'mark-vi', 200, false, 'medium' as any);
+  const largeChest = getVoxelSegmentDataV2('torso', 'mark-vi', 200, false, 'large' as any);
+  assert.ok(largeChest.length > mediumChest.length);
+
+  medium.updateWorldMatrix(true, true);
+  large.updateWorldMatrix(true, true);
+  const mediumSize = new THREE.Box3().setFromObject(medium).getSize(new THREE.Vector3());
+  const largeSize = new THREE.Box3().setFromObject(large).getSize(new THREE.Vector3());
+
+  assert.ok(largeSize.x > mediumSize.x, `expected large width > ${mediumSize.x}, got ${largeSize.x}`);
+  assert.ok(largeSize.y > mediumSize.y, `expected large height > ${mediumSize.y}, got ${largeSize.y}`);
+  assert.ok(largeSize.z > mediumSize.z, `expected large depth > ${mediumSize.z}, got ${largeSize.z}`);
 });

@@ -13,6 +13,12 @@ import {
   validateCustomArmorPiece,
 } from './customArmor';
 import {
+  CHARACTER_MODEL_PROFILES,
+  getCharacterModelProfile,
+  resolveCharacterModelType,
+} from '../characterModelTypes';
+import type { CharacterModelType } from '../types';
+import {
   verifyV2PartConstraints,
 } from './v2ArmorConstraints';
 export {
@@ -253,6 +259,73 @@ function addBox(v: VoxelData[], x1: number, x2: number, y1: number, y2: number, 
 
 function mirrorX(voxels: VoxelData[]): VoxelData[] {
   return voxels.map((v) => ({ ...v, x: -v.x }));
+}
+
+function voxelKey(v: VoxelData): string {
+  return `${v.x},${v.y},${v.z}`;
+}
+
+function dedupeVoxelData(voxels: VoxelData[]): VoxelData[] {
+  const map = new Map<string, VoxelData>();
+  for (const voxel of voxels) {
+    map.set(voxelKey(voxel), { ...voxel });
+  }
+  return [...map.values()].sort((a, b) => (
+    a.y !== b.y ? a.y - b.y : a.z !== b.z ? a.z - b.z : a.x - b.x
+  ));
+}
+
+function addPowerArmorVolume(
+  voxels: VoxelData[],
+  x1: number,
+  x2: number,
+  y1: number,
+  y2: number,
+  z1: number,
+  z2: number,
+  colors: SpartanColors,
+  options: { accent?: boolean } = {}
+): void {
+  for (let x = x1; x <= x2; x++) {
+    for (let y = y1; y <= y2; y++) {
+      for (let z = z1; z <= z2; z++) {
+        const edge = x === x1 || x === x2 || y === y1 || y === y2 || z === z1 || z === z2;
+        const reinforced = options.accent && (Math.abs(x) === Math.max(Math.abs(x1), Math.abs(x2)) || z === z1);
+        voxels.push({
+          x,
+          y,
+          z,
+          color: reinforced ? colors.accent : edge ? colors.primary : colors.secondary,
+        });
+      }
+    }
+  }
+}
+
+function applyLargeProfileVolume(slot: string, base: VoxelData[], colors: SpartanColors): VoxelData[] {
+  const large: VoxelData[] = [];
+
+  if (slot === 'helmet') {
+    addPowerArmorVolume(large, -3, 3, 35, 35, -2, 1, colors);
+    addPowerArmorVolume(large, -4, 4, 36, 45, -4, 4, colors, { accent: true });
+  } else if (slot === 'torso') {
+    addPowerArmorVolume(large, -4, 4, 11, 18, -2, 2, colors);
+    addPowerArmorVolume(large, -6, 6, 19, 34, -6, 7, colors, { accent: true });
+  } else if (slot === 'leftArm') {
+    addPowerArmorVolume(large, -10, -4, 25, 32, -3, 2, colors, { accent: true });
+    addPowerArmorVolume(large, -7, -4, 20, 24, -4, 4, colors);
+    addPowerArmorVolume(large, -8, -4, 16, 19, -4, 4, colors);
+    addPowerArmorVolume(large, -7, -4, 12, 15, -1, 2, colors);
+  } else if (slot === 'leftLeg') {
+    addPowerArmorVolume(large, -6, -1, 17, 23, -5, 6, colors, { accent: true });
+    addPowerArmorVolume(large, -6, -1, 8, 16, -7, 6, colors);
+    addPowerArmorVolume(large, -6, -1, 3, 7, -3, 1, colors);
+    addPowerArmorVolume(large, -6, -1, 0, 2, -4, -1, colors);
+  } else {
+    return base;
+  }
+
+  return dedupeVoxelData([...large, ...base]);
 }
 
 // ─── V2 HIGH-RESOLUTION SPARTAN GENERATORS ─────────────────────────────────────
@@ -549,15 +622,18 @@ function buildLeftLeg_Hayabusa(c: SpartanColors): VoxelData[] {
   return v;
 }
 
-function buildHip(c: SpartanColors): VoxelData[] {
+function buildHip(c: SpartanColors, modelType: CharacterModelType = 'medium'): VoxelData[] {
   const v: VoxelData[] = [];
+  if (modelType === 'large') {
+    addPowerArmorVolume(v, -5, 4, 0, 10, -3, 3, c, { accent: true });
+  }
   addBox(v, -4, 4, 4, 10, -2, 2, c.secondary);
   addBox(v, -2, 2, 0, 8, -3, -3, c.primary);
   addBox(v, -1, 1, 9, 10, -3, -3, c.accent);
   addBox(v, -3, 3, 3, 9, 3, 3, c.secondary);
   addBox(v, -4, -4, 2, 6, -2, 2, c.dark);
   addBox(v, 4, 4, 2, 6, -2, 2, c.dark);
-  return v;
+  return dedupeVoxelData(v);
 }
 
 // ─── Preset Loader for V2 ───────────────────────────────────────────────────────
@@ -566,7 +642,8 @@ export function getVoxelSegmentDataV2(
   slot: string,
   preset: string,
   customHue?: number,
-  isEnemy: boolean = false
+  isEnemy: boolean = false,
+  modelType: CharacterModelType = 'medium'
 ): VoxelData[] {
   const primaryHex = customHue !== undefined
     ? `hsl(${customHue}, 85%, 50%)`
@@ -589,6 +666,9 @@ export function getVoxelSegmentDataV2(
     dark: '#0f172a',
     highlight: highlightHex,
   };
+  const applyProfile = (sourceSlot: string, voxels: VoxelData[]) => (
+    modelType === 'large' ? applyLargeProfileVolume(sourceSlot, voxels, colors) : voxels
+  );
 
   if (slot === 'helmet') {
     const fn = {
@@ -601,7 +681,7 @@ export function getVoxelSegmentDataV2(
       'hayabusa': buildHelmet_Hayabusa,
       'cqb': buildHelmet_CQB,
     }[preset] || buildHelmet_MarkVI;
-    return fn(colors);
+    return applyProfile('helmet', fn(colors));
   } else if (slot === 'torso') {
     const fn = {
       'mark-vi': buildTorso_MarkVI,
@@ -610,7 +690,7 @@ export function getVoxelSegmentDataV2(
       'eod': buildTorso_EOD,
       'hayabusa': buildTorso_Hayabusa,
     }[preset] || buildTorso_MarkVI;
-    return fn(colors);
+    return applyProfile('torso', fn(colors));
   } else if (slot === 'leftArm') {
     const fn = {
       'mark-vi': buildLeftArm_MarkVI,
@@ -619,7 +699,7 @@ export function getVoxelSegmentDataV2(
       'eod': buildLeftArm_EOD,
       'hayabusa': buildLeftArm_Hayabusa,
     }[preset] || buildLeftArm_MarkVI;
-    return fn(colors);
+    return applyProfile('leftArm', fn(colors));
   } else if (slot === 'rightArm') {
     const fn = {
       'mark-vi': buildLeftArm_MarkVI,
@@ -628,7 +708,7 @@ export function getVoxelSegmentDataV2(
       'eod': buildLeftArm_EOD,
       'hayabusa': buildLeftArm_Hayabusa,
     }[preset] || buildLeftArm_MarkVI;
-    return mirrorX(fn(colors));
+    return mirrorX(applyProfile('leftArm', fn(colors)));
   } else if (slot === 'leftLeg') {
     const fn = {
       'mark-vi': buildLeftLeg_MarkVI,
@@ -637,7 +717,7 @@ export function getVoxelSegmentDataV2(
       'eod': buildLeftLeg_EOD,
       'hayabusa': buildLeftLeg_Hayabusa,
     }[preset] || buildLeftLeg_MarkVI;
-    return fn(colors);
+    return applyProfile('leftLeg', fn(colors));
   } else if (slot === 'rightLeg') {
     const fn = {
       'mark-vi': buildLeftLeg_MarkVI,
@@ -646,7 +726,7 @@ export function getVoxelSegmentDataV2(
       'eod': buildLeftLeg_EOD,
       'hayabusa': buildLeftLeg_Hayabusa,
     }[preset] || buildLeftLeg_MarkVI;
-    return mirrorX(fn(colors));
+    return mirrorX(applyProfile('leftLeg', fn(colors)));
   }
 
   return [];
@@ -681,7 +761,9 @@ export function buildVoxelSpartanModelV2(
     highlight: highlightHex,
   };
 
-  const scale = 0.045;
+  const modelType = resolveCharacterModelType(loadout.modelType, loadout.modelSystem);
+  const modelProfile = getCharacterModelProfile(modelType, 'v2');
+  const scale = modelProfile.voxelScale;
 
   const resolveCustomSlot = (
     slot: 'helmet' | 'torso' | 'arm' | 'leg',
@@ -690,6 +772,7 @@ export function buildVoxelSpartanModelV2(
   ): VoxelData[] => {
     const piece = loadout.customArmor?.[slot];
     if (!piece) return fallback();
+    if (resolveCharacterModelType(piece.modelType, 'v2') !== modelType) return fallback();
     const validation = validateCustomArmorPiece(piece);
     if (!validation.valid || piece.slot !== slot) return fallback();
     return customArmorPieceToVoxels(piece, colors, options);
@@ -697,31 +780,31 @@ export function buildVoxelSpartanModelV2(
 
   const helmetVoxels = resolveCustomSlot(
     'helmet',
-    () => getVoxelSegmentDataV2('helmet', loadout.helmet ?? 'mark-vi', customHue, isEnemy)
+    () => getVoxelSegmentDataV2('helmet', loadout.helmet ?? 'mark-vi', customHue, isEnemy, modelType)
   );
   const torsoVoxels = resolveCustomSlot(
     'torso',
-    () => getVoxelSegmentDataV2('torso', loadout.torso ?? 'mark-vi', customHue, isEnemy)
+    () => getVoxelSegmentDataV2('torso', loadout.torso ?? 'mark-vi', customHue, isEnemy, modelType)
   );
   const leftArmVoxels = resolveCustomSlot(
     'arm',
-    () => getVoxelSegmentDataV2('leftArm', loadout.arm ?? 'mark-vi', customHue, isEnemy)
+    () => getVoxelSegmentDataV2('leftArm', loadout.arm ?? 'mark-vi', customHue, isEnemy, modelType)
   );
   const rightArmVoxels = resolveCustomSlot(
     'arm',
-    () => getVoxelSegmentDataV2('rightArm', loadout.arm ?? 'mark-vi', customHue, isEnemy),
+    () => getVoxelSegmentDataV2('rightArm', loadout.arm ?? 'mark-vi', customHue, isEnemy, modelType),
     { mirrorX: true }
   );
   const leftLegVoxels = resolveCustomSlot(
     'leg',
-    () => getVoxelSegmentDataV2('leftLeg', loadout.leg ?? 'mark-vi', customHue, isEnemy)
+    () => getVoxelSegmentDataV2('leftLeg', loadout.leg ?? 'mark-vi', customHue, isEnemy, modelType)
   );
   const rightLegVoxels = resolveCustomSlot(
     'leg',
-    () => getVoxelSegmentDataV2('rightLeg', loadout.leg ?? 'mark-vi', customHue, isEnemy),
+    () => getVoxelSegmentDataV2('rightLeg', loadout.leg ?? 'mark-vi', customHue, isEnemy, modelType),
     { mirrorX: true }
   );
-  const hipVoxels = buildHip(colors);
+  const hipVoxels = buildHip(colors, modelType);
 
   const paintJob = loadout.paintJob;
   applyPaintJob(helmetVoxels, 'helmet', paintJob);
@@ -921,6 +1004,9 @@ export function buildVoxelSpartanModelV2(
 
   SpartanV2.userData = {
     modelSystem: 'v2',
+    modelType,
+    characterModelProfile: CHARACTER_MODEL_PROFILES[modelType],
+    collisionProfile: modelProfile.collision,
     lowerTorso: pelvisG,
     upperTorso: chestG,
     head: headG,

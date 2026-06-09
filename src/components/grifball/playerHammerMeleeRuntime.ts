@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { MAIN_AI_ID } from '../../game/roster';
 import { type Combatant, type DeathEvent, type MedalInfo } from '../../types';
 import { MELEE_HAMMER_SWIPE_REACH } from './combatGeometry';
+import { adjustRangeForTargetModel } from './modelHitbox';
 import { createReplayHeatmapCombatantSource, queueReplayHeatmapDeathEventsForState } from './replayHeatmapRuntime';
 import { type GrifballRuntimeState } from './runtimeState';
 
@@ -58,7 +59,7 @@ export function applyPlayerHammerMeleeImpactForState({
     const enemyCenter = new THREE.Vector3(mainAI.pos.x, mainAI.pos.y + 0.825, mainAI.pos.z);
     const toEnemy = enemyCenter.clone().sub(eyePos);
     const dist = toEnemy.length();
-    if (dist <= MELEE_HAMMER_SWIPE_REACH) {
+    if (dist <= adjustRangeForTargetModel(MELEE_HAMMER_SWIPE_REACH, mainAI.modelType)) {
       const toEnemyDir = toEnemy.clone().normalize();
       const dot = cameraLookDir.dot(toEnemyDir);
       const angle = Math.acos(Math.max(-1.0, Math.min(1.0, dot)));
@@ -117,7 +118,7 @@ export function applyPlayerHammerMeleeImpactForState({
       const otherBodyCenter = new THREE.Vector3(other.pos.x, other.pos.y + 0.825, other.pos.z);
       const toOther = otherBodyCenter.clone().sub(eyePos);
       const dist = toOther.length();
-      if (dist <= MELEE_HAMMER_SWIPE_REACH) {
+      if (dist <= adjustRangeForTargetModel(MELEE_HAMMER_SWIPE_REACH, other.modelType)) {
         const toOtherDir = toOther.clone().normalize();
         const dot = cameraLookDir.dot(toOtherDir);
         const angle = Math.acos(Math.max(-1.0, Math.min(1.0, dot)));

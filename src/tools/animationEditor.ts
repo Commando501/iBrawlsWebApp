@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import type { CharacterModelType } from '../types';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
 import {
@@ -99,6 +100,7 @@ interface EditorState {
   showSockets: boolean;
   showLabels: boolean;
   modelSystem: 'v1' | 'v2';
+  modelType: CharacterModelType;
   versionedData: Record<'v1' | 'v2', VersionedAnimationData>;
 }
 
@@ -448,6 +450,7 @@ thirdPersonRig.group.position.set(0, 0, 0);
 thirdPersonRig.group.rotation.y = Math.PI;
 
 const modelSystemSelect = requireElement<HTMLSelectElement>('modelSystemSelect');
+const modelTypeSelect = requireElement<HTMLSelectElement>('modelTypeSelect');
 
 const V2_BONE_NAMES = [
   'pelvis',
@@ -609,6 +612,7 @@ const state: EditorState = {
   showSockets: true,
   showLabels: true,
   modelSystem: 'v1',
+  modelType: 'medium',
   versionedData: {
     v1: createEmptyVersionedData(31),
     v2: createEmptyVersionedData(31),
@@ -1490,6 +1494,12 @@ function loadVersionedData(system: 'v1' | 'v2'): void {
   state.interpolation = data.interpolation;
 }
 
+function currentPreviewLoadout(system: 'v1' | 'v2' = state.modelSystem) {
+  return system === 'v2'
+    ? { modelSystem: 'v2' as const, modelType: state.modelType }
+    : { modelSystem: 'v1' as const };
+}
+
 function buildSkeletonLines(): void {
   if (skeletonLines) {
     rigOverlayRoot.remove(skeletonLines);
@@ -1532,7 +1542,7 @@ function swapModelSystem(newSystem: 'v1' | 'v2'): void {
   state.modelSystem = newSystem;
 
   // 4. Create the new rig
-  thirdPersonRig = createCombatantMeshRig(scene, 192, false, { modelSystem: newSystem });
+  thirdPersonRig = createCombatantMeshRig(scene, 192, false, currentPreviewLoadout(newSystem));
   thirdPersonRig.group.position.set(0, 0, 0);
   thirdPersonRig.group.rotation.y = Math.PI;
 
@@ -1554,10 +1564,37 @@ function swapModelSystem(newSystem: 'v1' | 'v2'): void {
   
   // Set values to DOM elements
   modelSystemSelect.value = newSystem;
+  modelTypeSelect.value = state.modelType;
   
   regenerateAllFrames();
   renderAll();
   setStatus(`Swapped to Model System ${newSystem.toUpperCase()}.`);
+}
+
+function swapModelType(newModelType: CharacterModelType): void {
+  if (state.modelType === newModelType) return;
+  state.modelType = newModelType;
+  if (state.modelSystem !== 'v2') {
+    modelTypeSelect.value = newModelType;
+    return;
+  }
+
+  clearRuntimeSocketLocks(true);
+  scene.remove(thirdPersonRig.group);
+  thirdPersonRig.hammer.parent?.remove(thirdPersonRig.hammer);
+  thirdPersonRig.sword.parent?.remove(thirdPersonRig.sword);
+
+  thirdPersonRig = createCombatantMeshRig(scene, 192, false, currentPreviewLoadout('v2'));
+  thirdPersonRig.group.position.set(0, 0, 0);
+  thirdPersonRig.group.rotation.y = Math.PI;
+
+  buildSkeletonLines();
+  rebuildRuntimeSocketLocks();
+  captureEditableTargetBaselines();
+  buildOverlayMarkers();
+  refreshTargetOptions();
+  regenerateAllFrames();
+  renderAll();
 }
 
 function updateCameraForView(): void {
@@ -1812,6 +1849,7 @@ function renderAll(): void {
   weaponSelect.value = state.weapon;
   viewSelect.value = state.view;
   modelSystemSelect.value = state.modelSystem;
+  modelTypeSelect.value = state.modelType;
   interpolationSelect.value = state.interpolation;
   frameCountInput.value = String(state.frameCount);
   showSkeletonToggle.checked = state.showSkeleton;
@@ -1868,6 +1906,10 @@ weaponSelect.addEventListener('change', () => {
 
 modelSystemSelect.addEventListener('change', () => {
   swapModelSystem(modelSystemSelect.value as 'v1' | 'v2');
+});
+
+modelTypeSelect.addEventListener('change', () => {
+  swapModelType(modelTypeSelect.value as CharacterModelType);
 });
 
 viewSelect.addEventListener('change', () => {

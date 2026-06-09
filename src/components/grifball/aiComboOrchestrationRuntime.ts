@@ -245,6 +245,7 @@ export function resolveAIComboOrchestrationForCombatant({
         self,
         activeWeapon: currentActiveWeapon as CombatantWeapon,
         attackDistanceToTarget,
+        targetModelType: target.modelType,
         cooldownMultiplier,
         triggerCombatantAttack,
       });

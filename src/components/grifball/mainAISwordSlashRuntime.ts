@@ -6,6 +6,7 @@ import {
   MELEE_EYE_HEIGHT,
   MELEE_SWORD_SLASH_REACH,
 } from './combatGeometry';
+import { adjustRangeForTargetModel } from './modelHitbox';
 import { createReplayHeatmapCombatantSource, queueReplayHeatmapDeathEventsForState } from './replayHeatmapRuntime';
 import { type GrifballRuntimeState } from './runtimeState';
 import { type EnemyAITarget } from './targetSelection';
@@ -70,7 +71,7 @@ export function applyMainAISwordSlashImpactForState({
   if (target.hp > 0 && target.invuln <= 0 && areCombatantsHostile(MAIN_AI_ID, target.id)) {
     const dist = aiEyePos.distanceTo(targetBodyCenter);
 
-    if (dist <= MELEE_SWORD_SLASH_REACH) {
+    if (dist <= adjustRangeForTargetModel(MELEE_SWORD_SLASH_REACH, target.modelType)) {
       const swordThreshold = state.settings.swordTradeWindow ?? 350;
       const isPlayerSwordActiveAttack = state.settings.enableSwordTrade && state.activeWeapon === 'sword' && (
         state.isLunging ||

@@ -124,3 +124,35 @@ test('getRosterCombatant and isAICombatReady', () => {
   mai.hp = 0;
   assert.ok(!isAICombatReady(mai));
 });
+
+test('combatant factories default to medium and preserve explicit large model type', () => {
+  const main = createMainAICombatant({
+    settings: baseSettings,
+    legacy,
+    spawnPos: new THREE.Vector3(0, 0, -12),
+    yaw: 0,
+  });
+  assert.equal(main.modelType, 'medium');
+
+  const bot = createOfflineBotCombatant({
+    id: 'bot_2',
+    playerName: 'Heavy Bot',
+    team: 'red',
+    spawnPos: new THREE.Vector3(1, 0, 0),
+    yaw: 0,
+    hue: 120,
+    difficulty: 'normal',
+    settings: baseSettings,
+    modelType: 'large',
+  } as any);
+  assert.equal(bot.modelType, 'large');
+
+  const remote = createRemoteCombatant({
+    id: 'peer',
+    playerName: 'Peer',
+    spawnZ: 12,
+    settings: baseSettings,
+    data: { modelType: 'large' },
+  } as any);
+  assert.equal(remote.modelType, 'large');
+});

@@ -3,6 +3,7 @@ import type { PointerEvent as ReactPointerEvent } from 'react';
 import type {
   AIPreset,
   AIBehaviorPreset,
+  CharacterModelType,
   CustomMapData,
   DeviceInfo,
   GameStats,
@@ -67,6 +68,7 @@ interface ActiveGameSurfaceProps {
   botBehaviors: Record<string, AIBehaviorPreset>;
   botWeaponBehaviors: Record<string, string>;
   botArchetypes: Record<string, AIArchetypeId>;
+  botModelTypes: Record<string, CharacterModelType>;
   aiPresets: AIPreset[];
   deviceInfo: DeviceInfo;
   forceMobileControls: boolean;
@@ -128,6 +130,7 @@ export function ActiveGameSurface({
   botBehaviors,
   botWeaponBehaviors,
   botArchetypes,
+  botModelTypes,
   aiPresets,
   deviceInfo,
   forceMobileControls,
@@ -205,6 +208,7 @@ export function ActiveGameSurface({
           botBehaviors={botBehaviors}
           botWeaponBehaviors={botWeaponBehaviors}
           botArchetypes={botArchetypes}
+          botModelTypes={botModelTypes}
           aiPresets={aiPresets}
           aiMatchSessionKey={aiMatchSessionKey}
           matchKillsToWin={matchKillsToWin}

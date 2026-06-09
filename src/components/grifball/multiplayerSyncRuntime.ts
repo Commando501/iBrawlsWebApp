@@ -71,6 +71,8 @@ export function createMultiplayerSyncMessageHandler({
                 role: player.role,
                 spawnSlot: player.spawnSlot,
                 playerName: player.playerName,
+                hue: player.hue,
+                loadout: player.loadout,
               });
             }
           });

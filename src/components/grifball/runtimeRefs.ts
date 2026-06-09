@@ -73,6 +73,7 @@ type OfflineRosterPropRefsInput = Pick<
   | 'botBehaviors'
   | 'botWeaponBehaviors'
   | 'botArchetypes'
+  | 'botModelTypes'
 >;
 
 export const useOfflineRosterPropRefs = ({
@@ -82,6 +83,7 @@ export const useOfflineRosterPropRefs = ({
   botBehaviors,
   botWeaponBehaviors,
   botArchetypes,
+  botModelTypes,
 }: OfflineRosterPropRefsInput) => {
   const offlineBotCountRef = useRef(offlineBotCount);
   const botDifficultiesRef = useRef(botDifficulties);
@@ -89,6 +91,7 @@ export const useOfflineRosterPropRefs = ({
   const botBehaviorsRef = useRef(botBehaviors);
   const botWeaponBehaviorsRef = useRef(botWeaponBehaviors);
   const botArchetypesRef = useRef(botArchetypes);
+  const botModelTypesRef = useRef(botModelTypes);
 
   useEffect(() => {
     offlineBotCountRef.current = offlineBotCount;
@@ -97,7 +100,8 @@ export const useOfflineRosterPropRefs = ({
     botBehaviorsRef.current = botBehaviors;
     botWeaponBehaviorsRef.current = botWeaponBehaviors;
     botArchetypesRef.current = botArchetypes;
-  }, [offlineBotCount, botDifficulties, botColors, botBehaviors, botWeaponBehaviors, botArchetypes]);
+    botModelTypesRef.current = botModelTypes;
+  }, [offlineBotCount, botDifficulties, botColors, botBehaviors, botWeaponBehaviors, botArchetypes, botModelTypes]);
 
   return {
     offlineBotCountRef,
@@ -106,5 +110,6 @@ export const useOfflineRosterPropRefs = ({
     botBehaviorsRef,
     botWeaponBehaviorsRef,
     botArchetypesRef,
+    botModelTypesRef,
   };
 };

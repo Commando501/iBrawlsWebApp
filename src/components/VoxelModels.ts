@@ -7,6 +7,7 @@ import * as THREE from 'three';
 import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { buildVoxelSpartanModelV2 } from './VoxelModelsV2';
 import type { CustomArmorPieceSnapshot, CustomArmorSlot } from './customArmor';
+import type { CharacterModelType } from '../types';
 
 // ─── Internal Types ───────────────────────────────────────────────────────────
 
@@ -70,6 +71,7 @@ export interface CharacterLoadout {
   hammerPreset?: HammerPreset;
   swordPreset?: SwordPreset;
   modelSystem?: 'v1' | 'v2';
+  modelType?: CharacterModelType;
   customArmor?: Partial<Record<CustomArmorSlot, CustomArmorPieceSnapshot>>;
 }
 

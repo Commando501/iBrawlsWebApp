@@ -6,6 +6,7 @@ import {
   MELEE_EYE_HEIGHT,
   MELEE_HAMMER_SWIPE_REACH,
 } from './combatGeometry';
+import { adjustRangeForTargetModel } from './modelHitbox';
 import { createReplayHeatmapCombatantSource, queueReplayHeatmapDeathEventsForState } from './replayHeatmapRuntime';
 import { type GrifballRuntimeState } from './runtimeState';
 import { type EnemyAITarget } from './targetSelection';
@@ -68,7 +69,7 @@ export function applyMainAIHammerMeleeImpactForState({
   if (target.hp > 0 && target.invuln <= 0 && areCombatantsHostile(MAIN_AI_ID, target.id)) {
     const dist = aiEyePos.distanceTo(targetBodyCenter);
 
-    if (dist <= MELEE_HAMMER_SWIPE_REACH) {
+    if (dist <= adjustRangeForTargetModel(MELEE_HAMMER_SWIPE_REACH, target.modelType)) {
       if (target.id === 'player') {
         recordPlayerDamageTaken();
         tryRecordCalibrationCounterSuccess(MAIN_AI_ID);

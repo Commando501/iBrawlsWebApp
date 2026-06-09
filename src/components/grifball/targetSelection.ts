@@ -1,6 +1,7 @@
 import * as THREE from 'three';
-import { type Combatant } from '../../types';
+import { type CharacterModelType, type Combatant } from '../../types';
 import { type TacticalTargetCandidate } from './combatGeometry';
+import { adjustRangeForTargetModel } from './modelHitbox';
 import { type GrifballRuntimeState } from './runtimeState';
 
 const SWORD_LOCK_BODY_CENTER_HEIGHT = 0.825;
@@ -24,6 +25,7 @@ export interface EnemyAITarget {
   isCrouching: boolean;
   isObserver: boolean;
   playerName: string;
+  modelType?: CharacterModelType;
 }
 
 const cloneTargetPosition = (pos: THREE.Vector3 | { x: number; y: number; z: number }): THREE.Vector3 => {
@@ -52,11 +54,11 @@ export const getPlayerSwordLockTarget = (
   const maxDistance = s.settings.swordLungeDistance ?? 14.5;
   let bestTarget: PlayerSwordLockTarget | null = null;
 
-  const considerTarget = (pos: THREE.Vector3) => {
+  const considerTarget = (pos: THREE.Vector3, modelType?: CharacterModelType) => {
     const center = new THREE.Vector3(pos.x, pos.y + SWORD_LOCK_BODY_CENTER_HEIGHT, pos.z);
     const toTarget = center.clone().sub(eyePos);
     const dist = toTarget.length();
-    if (dist <= 0.001 || dist > maxDistance) return;
+    if (dist <= 0.001 || dist > adjustRangeForTargetModel(maxDistance, modelType)) return;
 
     const dot = cameraLookDir.dot(toTarget.normalize());
     const angle = Math.acos(Math.max(-1.0, Math.min(1.0, dot)));
@@ -68,12 +70,12 @@ export const getPlayerSwordLockTarget = (
   };
 
   if ((!isMultiplayer || s.otherPlayers.size === 0) && mainAI && mainAI.hp > 0 && mainAI.aiState !== 'RESPAWNING') {
-    considerTarget(mainAI.pos);
+    considerTarget(mainAI.pos, mainAI.modelType);
   }
 
   s.otherPlayers.forEach((other) => {
     if (other.hp > 0 && !other.isObserver && other.respawnTimer <= 0) {
-      considerTarget(new THREE.Vector3(other.pos.x, other.pos.y, other.pos.z));
+      considerTarget(new THREE.Vector3(other.pos.x, other.pos.y, other.pos.z), other.modelType);
     }
   });
 
@@ -99,5 +101,6 @@ export const getEnemyAITargetFromTacticalTarget = (
     isCrouching: best.isCrouching,
     isObserver: false,
     playerName: best.playerName,
+    modelType: best.modelType,
   };
 };

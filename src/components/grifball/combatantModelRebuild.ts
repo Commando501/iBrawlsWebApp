@@ -33,13 +33,16 @@ export function rebuildEnemyCombatantModelForState({
   const activeWeapon = ballAsHammer(multiplayerRole === 'observer'
     ? state.clientActiveWeapon
     : (mainAI?.activeWeapon || 'hammer'));
+  const enemyLoadout = isEnemyBot
+    ? { modelSystem: 'v2' as const, modelType: mainAI?.modelType ?? 'medium' as const }
+    : isLocalClient ? playerLoadout : undefined;
   const { group: enemyGroup, hammer: enemyHammer, sword: enemySword } = rebuildDualWeaponCombatantModel({
     scene,
     previousGroup: refs.enemyGroup,
     isEnemyBot,
     hue,
     weaponHue: isEnemyBot ? null : hue,
-    loadout: isLocalClient ? playerLoadout : undefined,
+    loadout: enemyLoadout,
     position: multiplayerRole === 'observer' ? state.clientPos : (mainAI ? mainAI.pos : new THREE.Vector3(0, 0, 0)),
     activeWeapon,
   });
