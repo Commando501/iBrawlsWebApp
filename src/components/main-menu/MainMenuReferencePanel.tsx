@@ -38,7 +38,6 @@ interface MainMenuReferencePanelProps {
   saveSystemStatus: SaveSystemStatus;
   saveCodeImportInput: string;
   setPlayerLoadout: React.Dispatch<React.SetStateAction<CharacterLoadout>>;
-  setCustomArmorCatalog: React.Dispatch<React.SetStateAction<CustomArmorCatalog>>;
   setIsPainting: React.Dispatch<React.SetStateAction<boolean>>;
   setCustomizerWeapon: React.Dispatch<React.SetStateAction<PreviewWeapon>>;
   setAdminSettings: React.Dispatch<React.SetStateAction<UniversalSettings>>;
@@ -81,7 +80,6 @@ export function MainMenuReferencePanel({
   saveSystemStatus,
   saveCodeImportInput,
   setPlayerLoadout,
-  setCustomArmorCatalog,
   setIsPainting,
   setCustomizerWeapon,
   setAdminSettings,
@@ -149,7 +147,6 @@ export function MainMenuReferencePanel({
           saveSystemStatus={saveSystemStatus}
           saveCodeImportInput={saveCodeImportInput}
           setPlayerLoadout={setPlayerLoadout}
-          setCustomArmorCatalog={setCustomArmorCatalog}
           setIsPainting={setIsPainting}
           setCustomizerWeapon={setCustomizerWeapon}
           setAdminSettings={setAdminSettings}

@@ -289,6 +289,22 @@
       text-transform: uppercase;
     }
 
+    .socket-lock-controls {
+      display: grid;
+      gap: 8px;
+      padding: 9px;
+      border: 1px solid rgba(245, 158, 11, 0.18);
+      border-radius: 7px;
+      background: rgba(15, 23, 42, 0.42);
+    }
+
+    .socket-lock-status {
+      color: rgba(253, 230, 138, 0.82);
+      font-family: "JetBrains Mono", "Cascadia Code", Consolas, monospace;
+      font-size: 10px;
+      line-height: 1.4;
+    }
+
     .primary {
       border-color: rgba(34, 211, 238, 0.55);
       background: linear-gradient(180deg, rgba(34, 211, 238, 0.28), rgba(8, 145, 178, 0.24));
@@ -697,6 +713,18 @@
             <button id="translateButton" type="button" data-active="true">Move</button>
             <button id="rotateButton" type="button">Rotate</button>
             <button id="setKeyframeButton" class="primary" type="button">Set Keyframe</button>
+          </div>
+          <div class="socket-lock-controls">
+            <label>
+              Socket pivot
+              <select id="socketLockSelect"></select>
+            </label>
+            <div class="button-row">
+              <button id="lockSocketButton" type="button">Lock to Socket</button>
+              <button id="repositionSocketButton" type="button">Reposition</button>
+              <button id="unlockSocketButton" class="danger" type="button">Unlock</button>
+            </div>
+            <span id="socketLockStatus" class="socket-lock-status">No socket lock.</span>
           </div>
           <div class="toggle-row">
             <label><input id="showSkeletonToggle" type="checkbox" checked /> Bones</label>

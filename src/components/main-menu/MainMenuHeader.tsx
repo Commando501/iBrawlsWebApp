@@ -1,4 +1,4 @@
-import { Film, RotateCcw } from 'lucide-react';
+import { Film, RotateCcw, Shield } from 'lucide-react';
 import type { AccountInfo } from '../../services/account';
 import type { DeviceInfo } from '../../types';
 import type { MainMenuTab } from './useMainMenuFrameLayout';
@@ -121,6 +121,16 @@ export const MainMenuHeader = ({
       >
         <Film className="w-3.5 h-3.5" />
         Animation Editor
+      </a>
+
+      <a
+        href="/armor-model-editor.html"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="px-5 py-2 rounded-full text-xs font-bold font-display uppercase tracking-wider transition-all duration-200 cursor-pointer text-purple-200 hover:text-purple-100 hover:bg-purple-950/20 flex items-center gap-1.5 border border-purple-500/25 hover:border-purple-400/50"
+      >
+        <Shield className="w-3.5 h-3.5" />
+        Armor Editor
       </a>
 
       {account?.isAdmin && (

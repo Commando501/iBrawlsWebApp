@@ -27,9 +27,15 @@ export interface AnimationEditorRigTrack {
   frames: GeneratedAnimationFrame[];
 }
 
+export interface AnimationEditorSocketLock {
+  target: SelectedRigTarget;
+  socket: SelectedRigTarget;
+}
+
 export interface AnimationEditorRigExport {
   bones: Record<string, AnimationEditorRigTrack>;
   sockets: Record<string, AnimationEditorRigTrack>;
+  socketLocks?: AnimationEditorSocketLock[];
 }
 
 export interface AnimationEditorExportInput {
@@ -245,5 +251,9 @@ export const buildAnimationEditorExportPayload = (
   rig: {
     bones: roundRigTrackMap(input.rig?.bones, precision),
     sockets: roundRigTrackMap(input.rig?.sockets, precision),
+    socketLocks: input.rig?.socketLocks?.map((lock) => ({
+      target: { ...lock.target },
+      socket: { ...lock.socket },
+    })) ?? [],
   },
 });

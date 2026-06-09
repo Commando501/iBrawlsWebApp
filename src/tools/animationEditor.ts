@@ -33,6 +33,7 @@ import {
   roundPose,
   type AnimationInterpolationMode,
   type AnimationEditorRigTrack,
+  type AnimationEditorSocketLock,
   type AnimationKeyframe,
   type GeneratedAnimationFrame,
   type RigTargetKind,
@@ -65,6 +66,7 @@ interface VersionedAnimationData {
   boneGeneratedFrames: GeneratedRigTrackMap;
   socketKeyframes: RigTrackMap;
   socketGeneratedFrames: GeneratedRigTrackMap;
+  socketLocks: Record<string, string>;
   frameCount: number;
   anchorFrames: [number, number, number];
   interpolation: AnimationInterpolationMode;
@@ -85,6 +87,7 @@ interface EditorState {
   boneGeneratedFrames: GeneratedRigTrackMap;
   socketKeyframes: RigTrackMap;
   socketGeneratedFrames: GeneratedRigTrackMap;
+  socketLocks: Record<string, string>;
   anchorFrames: [number, number, number];
   playing: boolean;
   showSkeleton: boolean;
@@ -352,6 +355,11 @@ const generateButton = requireElement<HTMLButtonElement>('generateButton');
 const translateButton = requireElement<HTMLButtonElement>('translateButton');
 const rotateButton = requireElement<HTMLButtonElement>('rotateButton');
 const setKeyframeButton = requireElement<HTMLButtonElement>('setKeyframeButton');
+const socketLockSelect = requireElement<HTMLSelectElement>('socketLockSelect');
+const lockSocketButton = requireElement<HTMLButtonElement>('lockSocketButton');
+const repositionSocketButton = requireElement<HTMLButtonElement>('repositionSocketButton');
+const unlockSocketButton = requireElement<HTMLButtonElement>('unlockSocketButton');
+const socketLockStatus = requireElement<HTMLElement>('socketLockStatus');
 const showSkeletonToggle = requireElement<HTMLInputElement>('showSkeletonToggle');
 const showSocketsToggle = requireElement<HTMLInputElement>('showSocketsToggle');
 const showLabelsToggle = requireElement<HTMLInputElement>('showLabelsToggle');
@@ -565,6 +573,7 @@ const createEmptyVersionedData = (frameCount = 31): VersionedAnimationData => ({
   boneGeneratedFrames: {},
   socketKeyframes: {},
   socketGeneratedFrames: {},
+  socketLocks: {},
   frameCount,
   anchorFrames: makeAnchorFrames(frameCount),
   interpolation: 'smoothstep',
@@ -585,6 +594,7 @@ const state: EditorState = {
   boneGeneratedFrames: {},
   socketKeyframes: {},
   socketGeneratedFrames: {},
+  socketLocks: {},
   anchorFrames: makeAnchorFrames(31),
   playing: false,
   showSkeleton: true,
@@ -603,6 +613,16 @@ let playbackAccumulator = 0;
 const playbackFrameDuration = 1 / 18;
 let lastAnimationTime = performance.now();
 const baselineTargetPoses = new Map<string, RigTargetPose>();
+
+interface RuntimeSocketLock {
+  target: SelectedRigTarget;
+  socket: SelectedRigTarget;
+  pivot: THREE.Group;
+  child: THREE.Object3D;
+  originalParent: THREE.Object3D | null;
+}
+
+const runtimeSocketLocks = new Map<string, RuntimeSocketLock>();
 
 const armPoseToRigTargetPose = (
   boneName: Extract<CombatantBoneName, 'rightArm' | 'leftArm'>,
@@ -736,7 +756,7 @@ function getActiveWeaponObject(): THREE.Group {
   return getWeaponObject(state.view, state.weapon);
 }
 
-function getTargetObject(target: SelectedRigTarget): THREE.Group | null {
+function getRawTargetObject(target: SelectedRigTarget): THREE.Group | null {
   if (target.kind === 'weapon') {
     return getWeaponObject(target.view, target.name as WeaponChoice);
   }
@@ -759,6 +779,129 @@ function getTargetObject(target: SelectedRigTarget): THREE.Group | null {
   }
 
   return thirdPersonRig.rig.attachments[target.name as CombatantAttachmentPointName]?.group ?? null;
+}
+
+function canTargetLockToSocket(target: SelectedRigTarget): boolean {
+  return target.kind === 'weapon';
+}
+
+function getRuntimeSocketLock(target: SelectedRigTarget): RuntimeSocketLock | null {
+  const key = targetKey(target);
+  const socketKey = state.socketLocks[key];
+  if (!socketKey) return null;
+
+  const existing = runtimeSocketLocks.get(key);
+  if (existing && targetKey(existing.socket) === socketKey) return existing;
+
+  const socketTarget = decodeTargetValue(socketKey);
+  if (!socketTarget || socketTarget.kind !== 'socket') return null;
+
+  return createSocketLockRuntime(target, socketTarget, false);
+}
+
+function getTargetObject(target: SelectedRigTarget): THREE.Group | null {
+  return getRuntimeSocketLock(target)?.pivot ?? getRawTargetObject(target);
+}
+
+function resetSelectedTrackToPose(pose: RigTargetPose, message: string): void {
+  const keyframes = state.anchorFrames.map((frame, index) => ({
+    frame,
+    label: String.fromCharCode(65 + index),
+    pose: clonePose(pose),
+  }));
+  setSelectedKeyframes(keyframes);
+  setSelectedGeneratedFrames(generatePoseFrames(keyframes, state.frameCount, state.interpolation));
+  clearDraft();
+  applyFrameToScene();
+  syncPoseInputs(getCurrentSelectedPose());
+  renderAll();
+  setStatus(message);
+}
+
+function removeSocketLockRuntime(targetKeyValue: string, preserveWorld = true): RuntimeSocketLock | null {
+  const runtime = runtimeSocketLocks.get(targetKeyValue);
+  if (!runtime) return null;
+
+  runtime.pivot.updateWorldMatrix(true, true);
+  runtime.child.updateWorldMatrix(true, false);
+  if (preserveWorld && runtime.originalParent) {
+    runtime.originalParent.attach(runtime.child);
+  } else if (runtime.originalParent) {
+    runtime.originalParent.add(runtime.child);
+  }
+  runtime.pivot.parent?.remove(runtime.pivot);
+  runtimeSocketLocks.delete(targetKeyValue);
+  return runtime;
+}
+
+function createSocketLockRuntime(
+  target: SelectedRigTarget,
+  socket: SelectedRigTarget,
+  resetTrack: boolean
+): RuntimeSocketLock | null {
+  if (!canTargetLockToSocket(target) || socket.kind !== 'socket' || target.view !== socket.view) return null;
+
+  const targetKeyValue = targetKey(target);
+  const child = getRawTargetObject(target);
+  const socketObject = getRawTargetObject(socket);
+  if (!child || !socketObject) return null;
+
+  const existing = runtimeSocketLocks.get(targetKeyValue);
+  const originalParent = existing?.originalParent ?? child.parent;
+  if (existing) {
+    removeSocketLockRuntime(targetKeyValue, true);
+  }
+
+  const pivot = new THREE.Group();
+  pivot.name = `socketLock:${target.name}->${socket.name}`;
+  pivot.userData.socketLockTarget = targetKeyValue;
+  pivot.userData.socketLockSocket = targetKey(socket);
+  socketObject.add(pivot);
+  socketObject.updateWorldMatrix(true, false);
+  child.updateWorldMatrix(true, false);
+  pivot.updateWorldMatrix(true, false);
+  pivot.attach(child);
+
+  const runtime: RuntimeSocketLock = {
+    target: { ...target },
+    socket: { ...socket },
+    pivot,
+    child,
+    originalParent,
+  };
+
+  runtimeSocketLocks.set(targetKeyValue, runtime);
+  state.socketLocks[targetKeyValue] = targetKey(socket);
+  baselineTargetPoses.set(targetKeyValue, poseFromObject(pivot));
+
+  if (resetTrack && targetKey(state.selectedTarget) === targetKeyValue) {
+    resetSelectedTrackToPose(
+      poseFromObject(pivot),
+      `${targetLabel(target)} locked to ${targetLabel(socket)}.`
+    );
+  }
+
+  return runtime;
+}
+
+function repositionTargetToSocket(target: SelectedRigTarget, socket: SelectedRigTarget): RuntimeSocketLock | null {
+  const runtime = createSocketLockRuntime(target, socket, false);
+  if (!runtime) return null;
+
+  const socketPose: RigTargetPose = { position: [0, 0, 0], rotation: [0, 0, 0] };
+  applyPoseToObject(runtime.pivot, socketPose);
+  runtime.child.position.set(0, 0, 0);
+  runtime.child.rotation.set(0, 0, 0);
+  runtime.child.updateMatrixWorld(true);
+
+  baselineTargetPoses.set(targetKey(target), clonePose(socketPose));
+
+  if (targetKey(state.selectedTarget) === targetKey(target)) {
+    setKeyframe(state.currentFrame, socketPose);
+    setStatus(`${targetLabel(target)} repositioned to ${targetLabel(socket)}.`);
+  }
+
+  return runtime;
 }
 
 function getTargetOptionsForView(view: EditorView): TargetOption[] {
@@ -804,6 +947,12 @@ function getRigTargetsForView(view: EditorView): SelectedRigTarget[] {
     .filter((target) => target.kind !== 'weapon');
 }
 
+function getSocketTargetsForView(view: EditorView): SelectedRigTarget[] {
+  return getTargetOptionsForView(view)
+    .map((option) => option.target)
+    .filter((target) => target.kind === 'socket');
+}
+
 function getAllRigTargets(): SelectedRigTarget[] {
   return [
     ...getRigTargetsForView('thirdPerson'),
@@ -827,6 +976,48 @@ function ensureSelectedTarget(): void {
   }
   if (!isTargetAvailable(state.selectedTarget)) {
     state.selectedTarget = getDefaultTarget();
+  }
+}
+
+function clearRuntimeSocketLocks(preserveWorld = true): void {
+  Array.from(runtimeSocketLocks.keys()).forEach((key) => {
+    removeSocketLockRuntime(key, preserveWorld);
+  });
+}
+
+function rebuildRuntimeSocketLocks(): void {
+  clearRuntimeSocketLocks(true);
+  Object.entries(state.socketLocks).forEach(([targetKeyValue, socketKeyValue]) => {
+    const target = decodeTargetValue(targetKeyValue);
+    const socket = decodeTargetValue(socketKeyValue);
+    if (!target || !socket || socket.kind !== 'socket') {
+      delete state.socketLocks[targetKeyValue];
+      return;
+    }
+    createSocketLockRuntime(target, socket, false);
+  });
+}
+
+function unlockSocketLockForTarget(target: SelectedRigTarget, resetTrack: boolean): void {
+  const key = targetKey(target);
+  if (!state.socketLocks[key]) {
+    setStatus(`${targetLabel(target)} is not locked to a socket.`);
+    return;
+  }
+
+  removeSocketLockRuntime(key, true);
+  delete state.socketLocks[key];
+
+  const rawObject = getRawTargetObject(target);
+  if (rawObject) {
+    baselineTargetPoses.set(key, poseFromObject(rawObject));
+  }
+
+  if (resetTrack && targetKey(state.selectedTarget) === key) {
+    resetSelectedTrackToPose(
+      captureSelectedPose(),
+      `${targetLabel(target)} unlocked from socket pivot.`
+    );
   }
 }
 
@@ -1011,7 +1202,10 @@ function applyFrameToScene(): void {
   applyRigGeneratedTracks('socket', state.currentFrame);
 
   const weaponFrame = state.weaponGeneratedFrames[state.currentFrame];
-  if (weaponFrame) applyWeaponPose(getActiveWeaponObject(), weaponFrame.pose);
+  if (weaponFrame) {
+    const weaponTarget: SelectedRigTarget = { kind: 'weapon', name: state.weapon, view: state.view };
+    applyWeaponPose(getTargetObject(weaponTarget) ?? getActiveWeaponObject(), weaponFrame.pose);
+  }
 
   if (draftFrame === state.currentFrame && draftPose) {
     applyPoseToSelected(draftPose);
@@ -1267,6 +1461,7 @@ function saveVersionedData(system: 'v1' | 'v2'): void {
     boneGeneratedFrames: { ...state.boneGeneratedFrames },
     socketKeyframes: { ...state.socketKeyframes },
     socketGeneratedFrames: { ...state.socketGeneratedFrames },
+    socketLocks: { ...state.socketLocks },
     frameCount: state.frameCount,
     anchorFrames: [...state.anchorFrames],
     interpolation: state.interpolation,
@@ -1281,6 +1476,7 @@ function loadVersionedData(system: 'v1' | 'v2'): void {
   state.boneGeneratedFrames = { ...data.boneGeneratedFrames };
   state.socketKeyframes = { ...data.socketKeyframes };
   state.socketGeneratedFrames = { ...data.socketGeneratedFrames };
+  state.socketLocks = { ...(data.socketLocks ?? {}) };
   state.frameCount = data.frameCount;
   state.anchorFrames = [...data.anchorFrames];
   state.interpolation = data.interpolation;
@@ -1306,6 +1502,7 @@ function swapModelSystem(newSystem: 'v1' | 'v2'): void {
 
   // 1. Save current system data
   saveVersionedData(state.modelSystem);
+  clearRuntimeSocketLocks(true);
 
   // 2. Remove old character rig from scene
   if (thirdPersonRig) {
@@ -1331,20 +1528,19 @@ function swapModelSystem(newSystem: 'v1' | 'v2'): void {
   thirdPersonRig.group.position.set(0, 0, 0);
   thirdPersonRig.group.rotation.y = Math.PI;
 
-  // 5. Build dynamic skeleton visualizer and baselines
+  // 5. Load new system data and rebuild socket locks
   buildSkeletonLines();
+  loadVersionedData(newSystem);
+  rebuildRuntimeSocketLocks();
   captureEditableTargetBaselines();
   buildOverlayMarkers();
 
-  // 6. Load new system data
-  loadVersionedData(newSystem);
-
-  // 7. If the loaded system has no weapon keyframes, seed it for the first time
+  // 6. If the loaded system has no weapon keyframes, seed it for the first time
   if (state.weaponKeyframes.length === 0) {
     seedThreeFrames();
   }
 
-  // 8. Rebuild controls & UI
+  // 7. Rebuild controls & UI
   state.selectedTarget = getDefaultTarget();
   clearDraft();
   
@@ -1484,6 +1680,17 @@ function buildRigTrackExport(kind: 'bone' | 'socket'): Record<string, AnimationE
   return exportTracks;
 }
 
+function buildSocketLockExport(): AnimationEditorSocketLock[] {
+  return Object.entries(state.socketLocks)
+    .map(([targetKeyValue, socketKeyValue]) => {
+      const target = decodeTargetValue(targetKeyValue);
+      const socket = decodeTargetValue(socketKeyValue);
+      if (!target || !socket || socket.kind !== 'socket' || target.view !== state.view) return null;
+      return { target, socket };
+    })
+    .filter((lock): lock is AnimationEditorSocketLock => Boolean(lock));
+}
+
 function buildExportPayload() {
   return buildAnimationEditorExportPayload({
     weapon: state.weapon,
@@ -1496,6 +1703,7 @@ function buildExportPayload() {
     rig: {
       bones: buildRigTrackExport('bone'),
       sockets: buildRigTrackExport('socket'),
+      socketLocks: buildSocketLockExport(),
     },
   });
 }
@@ -1555,6 +1763,43 @@ function renderTransformButtons(): void {
   transformStatus.textContent = state.transformMode;
 }
 
+function renderSocketLockControls(): void {
+  const sockets = getSocketTargetsForView(state.view);
+  const selectedKey = targetKey(state.selectedTarget);
+  const activeSocketKey = state.socketLocks[selectedKey];
+  const canLock = canTargetLockToSocket(state.selectedTarget);
+
+  socketLockSelect.innerHTML = '';
+  sockets.forEach((socket) => {
+    const option = document.createElement('option');
+    option.value = targetKey(socket);
+    option.textContent = targetLabel(socket);
+    socketLockSelect.appendChild(option);
+  });
+
+  const fallbackSocketKey = sockets[0] ? targetKey(sockets[0]) : '';
+  socketLockSelect.value = activeSocketKey ?? fallbackSocketKey;
+  socketLockSelect.disabled = !canLock || sockets.length === 0;
+  lockSocketButton.disabled = !canLock || sockets.length === 0;
+  repositionSocketButton.disabled = !canLock || sockets.length === 0;
+  unlockSocketButton.disabled = !activeSocketKey;
+
+  if (!canLock) {
+    socketLockStatus.textContent = 'Socket locks are available for weapon targets.';
+    return;
+  }
+
+  if (!activeSocketKey) {
+    socketLockStatus.textContent = 'No socket lock.';
+    return;
+  }
+
+  const socket = decodeTargetValue(activeSocketKey);
+  socketLockStatus.textContent = socket
+    ? `Locked to ${targetLabel(socket)}.`
+    : 'Socket lock target is unavailable.';
+}
+
 function renderAll(): void {
   weaponSelect.value = state.weapon;
   viewSelect.value = state.view;
@@ -1568,6 +1813,7 @@ function renderAll(): void {
   refreshTargetOptions();
   syncSceneVisibility();
   renderTransformButtons();
+  renderSocketLockControls();
   renderAnchorRows();
   renderKeyframes();
   renderTimeline();
@@ -1677,6 +1923,52 @@ seedButton.addEventListener('click', seedThreeFrames);
 generateButton.addEventListener('click', () => regenerateSelectedFrames());
 setKeyframeButton.addEventListener('click', () => {
   setKeyframe(state.currentFrame, captureSelectedPose());
+});
+
+lockSocketButton.addEventListener('click', () => {
+  const socketTarget = decodeTargetValue(socketLockSelect.value);
+  if (!socketTarget || socketTarget.kind !== 'socket') {
+    setStatus('Choose a valid socket before locking.');
+    return;
+  }
+
+  const runtime = createSocketLockRuntime(state.selectedTarget, socketTarget, true);
+  if (!runtime) {
+    setStatus('Only weapon targets can lock to sockets in this editor pass.');
+    renderSocketLockControls();
+    return;
+  }
+
+  transformControls.detach();
+  transformControls.attach(runtime.pivot);
+  renderSocketLockControls();
+});
+
+repositionSocketButton.addEventListener('click', () => {
+  const socketTarget = decodeTargetValue(socketLockSelect.value);
+  if (!socketTarget || socketTarget.kind !== 'socket') {
+    setStatus('Choose a valid socket before repositioning.');
+    return;
+  }
+
+  const runtime = repositionTargetToSocket(state.selectedTarget, socketTarget);
+  if (!runtime) {
+    setStatus('Only weapon targets can reposition to sockets in this editor pass.');
+    renderSocketLockControls();
+    return;
+  }
+
+  transformControls.detach();
+  transformControls.attach(runtime.pivot);
+  renderSocketLockControls();
+});
+
+unlockSocketButton.addEventListener('click', () => {
+  unlockSocketLockForTarget(state.selectedTarget, true);
+  const selectedObject = getTargetObject(state.selectedTarget);
+  transformControls.detach();
+  if (selectedObject) transformControls.attach(selectedObject);
+  renderSocketLockControls();
 });
 
 translateButton.addEventListener('click', () => {

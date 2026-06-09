@@ -985,7 +985,7 @@ async function startServer() {
         next(error);
       }
     };
-    app.get(["/mapmaker.html", "/animation-editor.html"], (req, res, next) => {
+    app.get(["/mapmaker.html", "/animation-editor.html", "/armor-model-editor.html"], (req, res, next) => {
       sendDevHtml(req, res, next, req.path.slice(1));
     });
     app.get("*", (req, res, next) => {

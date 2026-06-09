@@ -36,7 +36,8 @@ interface ArmorModelEditorProps {
   onCatalogChange: React.Dispatch<React.SetStateAction<CustomArmorCatalog>>;
   onLoadoutChange: (patch: Partial<CharacterLoadout>) => void;
   onClose: () => void;
-  onPaintPiece: () => void;
+  onPaintPiece?: () => void;
+  layout?: 'embedded' | 'standalone';
 }
 
 type EditorTool = 'place' | 'erase' | 'box' | 'line' | 'plane' | 'extrude' | 'move' | 'duplicate' | 'fill';
@@ -180,7 +181,9 @@ export function ArmorModelEditor({
   onLoadoutChange,
   onClose,
   onPaintPiece,
+  layout = 'embedded',
 }: ArmorModelEditorProps) {
+  const isStandalone = layout === 'standalone';
   const initialSlot = (['helmet', 'torso', 'arm', 'leg'] as CustomArmorSlot[])
     .find((slot) => playerLoadout.customArmor?.[slot]) ?? 'helmet';
   const [slot, setSlot] = useState<CustomArmorSlot>(initialSlot);
@@ -471,13 +474,28 @@ export function ArmorModelEditor({
     const width = container.clientWidth || 520;
     const height = container.clientHeight || 420;
     const camera = new THREE.PerspectiveCamera(42, width / height, 0.1, 80);
-    if (viewMode === 'rig') {
-      camera.position.set(0, 1.2, 4.2);
-      camera.lookAt(0, 0.9, 0);
-    } else {
-      camera.position.set(0, 0.15, 2.25);
-      camera.lookAt(0, 0, 0);
-    }
+    const cameraTarget = new THREE.Vector3(0, viewMode === 'rig' ? 0.9 : 0, 0);
+    const cameraState = {
+      yaw: 0,
+      pitch: viewMode === 'rig' ? 0.08 : 0.07,
+      distance: viewMode === 'rig' ? 4.2 : 2.25,
+    };
+    const minCameraDistance = viewMode === 'rig' ? 2.3 : 0.65;
+    const maxCameraDistance = viewMode === 'rig' ? 7 : 4.5;
+    const applyCamera = () => {
+      const clampedPitch = Math.max(-1.25, Math.min(1.25, cameraState.pitch));
+      cameraState.pitch = clampedPitch;
+      cameraState.distance = Math.max(minCameraDistance, Math.min(maxCameraDistance, cameraState.distance));
+      const cosPitch = Math.cos(cameraState.pitch);
+      camera.position.set(
+        cameraTarget.x + Math.sin(cameraState.yaw) * cosPitch * cameraState.distance,
+        cameraTarget.y + Math.sin(cameraState.pitch) * cameraState.distance,
+        cameraTarget.z + Math.cos(cameraState.yaw) * cosPitch * cameraState.distance
+      );
+      camera.lookAt(cameraTarget);
+      camera.updateProjectionMatrix();
+    };
+    applyCamera();
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -584,14 +602,20 @@ export function ArmorModelEditor({
       scene.add(cursorMesh);
     }
 
+    type CameraDragMode = 'orbit' | 'pan';
     let dragging = false;
+    let pointerMoved = false;
+    let dragMode: CameraDragMode = 'orbit';
+    let activeButton = 0;
+    let startX = 0;
+    let startY = 0;
     let previousX = 0;
+    let previousY = 0;
+    const clickMoveThreshold = 5;
     const raycaster = new THREE.Raycaster();
     const pointer = new THREE.Vector2();
 
-    const onPointerDown = (event: PointerEvent) => {
-      dragging = true;
-      previousX = event.clientX;
+    const applyVoxelClick = (event: PointerEvent) => {
       if (viewMode === 'edit' && meshes.length > 0) {
         const rect = renderer.domElement.getBoundingClientRect();
         pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
@@ -623,26 +647,80 @@ export function ArmorModelEditor({
           }
         }
       }
+    };
+
+    const onPointerDown = (event: PointerEvent) => {
+      dragging = true;
+      pointerMoved = false;
+      dragMode = event.button === 1 || event.button === 2 || event.shiftKey ? 'pan' : 'orbit';
+      activeButton = event.button;
+      startX = event.clientX;
+      startY = event.clientY;
+      previousX = event.clientX;
+      previousY = event.clientY;
+      renderer.domElement.style.cursor = dragMode === 'pan' ? 'grabbing' : 'move';
+      event.preventDefault();
       renderer.domElement.setPointerCapture(event.pointerId);
     };
     const onPointerMove = (event: PointerEvent) => {
       if (!dragging) return;
       const dx = event.clientX - previousX;
+      const dy = event.clientY - previousY;
       previousX = event.clientX;
-      scene.rotation.y += dx * 0.006;
+      previousY = event.clientY;
+      if (Math.hypot(event.clientX - startX, event.clientY - startY) > clickMoveThreshold) {
+        pointerMoved = true;
+      }
+
+      if (dragMode === 'pan') {
+        const forward = new THREE.Vector3();
+        const right = new THREE.Vector3();
+        const up = new THREE.Vector3();
+        camera.getWorldDirection(forward);
+        right.crossVectors(forward, camera.up).normalize();
+        up.crossVectors(right, forward).normalize();
+        const panScale = cameraState.distance * 0.0014;
+        cameraTarget.addScaledVector(right, -dx * panScale);
+        cameraTarget.addScaledVector(up, dy * panScale);
+      } else {
+        cameraState.yaw -= dx * 0.006;
+        cameraState.pitch -= dy * 0.006;
+      }
+      applyCamera();
     };
-    const onPointerUp = (event: PointerEvent) => {
+    const finishPointerDrag = (event: PointerEvent, allowClick: boolean) => {
+      const isClick = activeButton === 0
+        && allowClick
+        && !pointerMoved
+        && Math.hypot(event.clientX - startX, event.clientY - startY) <= clickMoveThreshold;
       dragging = false;
+      renderer.domElement.style.cursor = 'grab';
+      if (isClick) {
+        applyVoxelClick(event);
+      }
       try { renderer.domElement.releasePointerCapture(event.pointerId); } catch {}
     };
+    const onPointerUp = (event: PointerEvent) => finishPointerDrag(event, true);
+    const onPointerCancel = (event: PointerEvent) => finishPointerDrag(event, false);
+    const onWheel = (event: WheelEvent) => {
+      event.preventDefault();
+      cameraState.distance *= Math.exp(event.deltaY * 0.001);
+      applyCamera();
+    };
+    const onContextMenu = (event: MouseEvent) => {
+      event.preventDefault();
+    };
+    renderer.domElement.style.touchAction = 'none';
+    renderer.domElement.style.cursor = 'grab';
     renderer.domElement.addEventListener('pointerdown', onPointerDown);
     renderer.domElement.addEventListener('pointermove', onPointerMove);
     renderer.domElement.addEventListener('pointerup', onPointerUp);
-    renderer.domElement.addEventListener('pointercancel', onPointerUp);
+    renderer.domElement.addEventListener('pointercancel', onPointerCancel);
+    renderer.domElement.addEventListener('wheel', onWheel, { passive: false });
+    renderer.domElement.addEventListener('contextmenu', onContextMenu);
 
     let frame = 0;
     const animate = () => {
-      if (viewMode === 'rig') scene.rotation.y += 0.006;
       renderer.render(scene, camera);
       frame = requestAnimationFrame(animate);
     };
@@ -653,6 +731,7 @@ export function ArmorModelEditor({
       const nextHeight = container.clientHeight || height;
       camera.aspect = nextWidth / nextHeight;
       camera.updateProjectionMatrix();
+      applyCamera();
       renderer.setSize(nextWidth, nextHeight);
     };
     window.addEventListener('resize', handleResize);
@@ -663,7 +742,9 @@ export function ArmorModelEditor({
       renderer.domElement.removeEventListener('pointerdown', onPointerDown);
       renderer.domElement.removeEventListener('pointermove', onPointerMove);
       renderer.domElement.removeEventListener('pointerup', onPointerUp);
-      renderer.domElement.removeEventListener('pointercancel', onPointerUp);
+      renderer.domElement.removeEventListener('pointercancel', onPointerCancel);
+      renderer.domElement.removeEventListener('wheel', onWheel);
+      renderer.domElement.removeEventListener('contextmenu', onContextMenu);
       if (renderer.domElement.parentElement === container) {
         container.removeChild(renderer.domElement);
       }
@@ -696,7 +777,7 @@ export function ArmorModelEditor({
   ]);
 
   return (
-    <div className="flex flex-col gap-3 min-h-0">
+    <div className={`flex flex-col gap-3 min-h-0 ${isStandalone ? 'h-full' : ''}`}>
       <div className="flex flex-wrap items-center gap-2 border-b border-white/10 pb-3">
         <div className="flex bg-black/40 border border-white/10 rounded p-1 gap-1">
           {SLOT_OPTIONS.map((option) => (
@@ -727,8 +808,8 @@ export function ArmorModelEditor({
         </button>
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_340px] gap-3 min-h-0">
-        <div className="flex flex-col gap-3 min-h-0">
+      <div className={`grid grid-cols-1 gap-3 min-h-0 ${isStandalone ? 'flex-1 overflow-hidden xl:grid-cols-[minmax(0,1fr)_390px]' : 'xl:grid-cols-[minmax(0,1fr)_340px]'}`}>
+        <div className={`flex flex-col gap-3 min-h-0 ${isStandalone ? 'h-full' : ''}`}>
           <div className="flex flex-wrap gap-2">
             <button type="button" onClick={() => replaceDraft(createBlankSnapshot(slot))} className="editor-chip">Blank</button>
             <select
@@ -746,7 +827,7 @@ export function ArmorModelEditor({
             <button type="button" onClick={redo} disabled={redoStack.length === 0} className="editor-chip disabled:opacity-30">Redo</button>
           </div>
 
-          <div className="min-h-[420px] rounded-lg border border-white/10 bg-slate-950/80 overflow-hidden relative" ref={containerRef}>
+          <div className={`min-h-[420px] rounded-lg border border-white/10 bg-slate-950/80 overflow-hidden relative ${isStandalone ? 'flex-1' : ''}`} ref={containerRef}>
             <div className="absolute left-3 top-3 z-10 flex flex-wrap gap-1.5">
               {(['edit', 'rig'] as ViewMode[]).map((mode) => (
                 <button
@@ -789,7 +870,7 @@ export function ArmorModelEditor({
           </div>
         </div>
 
-        <div className="flex flex-col gap-3 min-h-0">
+        <div className={`flex flex-col gap-3 min-h-0 ${isStandalone ? 'overflow-y-auto pr-1' : ''}`}>
           <Panel title="Tools">
             <div className="grid grid-cols-3 gap-1.5">
               {TOOL_OPTIONS.map((option) => (
@@ -904,9 +985,11 @@ export function ArmorModelEditor({
             </div>
             <textarea value={importText} onChange={(event) => setImportText(event.target.value)} placeholder="Paste custom armor JSON" className="mt-2 h-16 w-full resize-none bg-black/50 border border-white/10 rounded p-2 text-[10px] text-white/70 outline-none" />
             {exportText && <textarea readOnly value={exportText} className="mt-2 h-16 w-full resize-none bg-black/50 border border-white/10 rounded p-2 text-[10px] text-purple-100 outline-none" />}
-            <button type="button" onClick={onPaintPiece} className="mt-2 w-full py-2 rounded border border-purple-400/45 bg-purple-500/20 text-purple-100 text-[10px] font-black uppercase tracking-widest">
-              Paint This Piece
-            </button>
+            {onPaintPiece && (
+              <button type="button" onClick={onPaintPiece} className="mt-2 w-full py-2 rounded border border-purple-400/45 bg-purple-500/20 text-purple-100 text-[10px] font-black uppercase tracking-widest">
+                Paint This Piece
+              </button>
+            )}
             {status && <div className="mt-2 text-[10px] text-cyan-200">{status}</div>}
           </Panel>
         </div>

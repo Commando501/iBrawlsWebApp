@@ -106,6 +106,12 @@ describe('animation editor interpolation', () => {
             frames: socketFrames,
           },
         },
+        socketLocks: [
+          {
+            target: { kind: 'weapon', name: 'hammer', view: 'thirdPerson' },
+            socket: { kind: 'socket', name: 'rightHandGrip', view: 'thirdPerson' },
+          },
+        ],
       },
     });
 
@@ -114,5 +120,11 @@ describe('animation editor interpolation', () => {
     assert.equal(payload.rig.bones.upperTorso.frames.length, 3);
     assert.equal(payload.rig.sockets.thirdPersonWeaponGrip.keyframes.length, 2);
     assert.equal(payload.rig.sockets.thirdPersonWeaponGrip.frames[1].pose.position[1], 1);
+    assert.deepEqual(payload.rig.socketLocks, [
+      {
+        target: { kind: 'weapon', name: 'hammer', view: 'thirdPerson' },
+        socket: { kind: 'socket', name: 'rightHandGrip', view: 'thirdPerson' },
+      },
+    ]);
   });
 });

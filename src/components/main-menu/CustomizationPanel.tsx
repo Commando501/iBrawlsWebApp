@@ -8,7 +8,6 @@ import {
 import type { CustomArmorCatalog, CustomArmorSlot } from '../customArmor';
 import { CharacterPainter } from '../CharacterPainter';
 import { CharacterPreview } from '../CharacterPreview';
-import { ArmorModelEditor } from './ArmorModelEditor';
 
 export type PreviewWeapon = 'none' | 'hammer' | 'sword';
 export type SaveSystemStatus = { type: 'success' | 'error' | null; message: string };
@@ -23,7 +22,6 @@ interface CustomizationPanelProps {
   saveSystemStatus: SaveSystemStatus;
   saveCodeImportInput: string;
   setPlayerLoadout: React.Dispatch<React.SetStateAction<CharacterLoadout>>;
-  setCustomArmorCatalog: React.Dispatch<React.SetStateAction<CustomArmorCatalog>>;
   setIsPainting: React.Dispatch<React.SetStateAction<boolean>>;
   setCustomizerWeapon: React.Dispatch<React.SetStateAction<PreviewWeapon>>;
   setAdminSettings: React.Dispatch<React.SetStateAction<UniversalSettings>>;
@@ -135,7 +133,6 @@ export function CustomizationPanel({
   saveSystemStatus,
   saveCodeImportInput,
   setPlayerLoadout,
-  setCustomArmorCatalog,
   setIsPainting,
   setCustomizerWeapon,
   setAdminSettings,
@@ -145,14 +142,13 @@ export function CustomizationPanel({
   onSaveCodeImportInputChange,
   onImportSaveCode,
 }: CustomizationPanelProps) {
-  const [isModelEditing, setIsModelEditing] = React.useState(false);
   const contentRef = React.useRef<HTMLDivElement | null>(null);
 
   React.useLayoutEffect(() => {
     const container = contentRef.current;
     if (!container) return;
     container.scrollTop = 0;
-  }, [isPainting, isModelEditing]);
+  }, [isPainting]);
 
   const updateLoadout = (patch: Partial<CharacterLoadout>) => {
     setPlayerLoadout((previous) => {
@@ -190,19 +186,6 @@ export function CustomizationPanel({
           onSave={savePaintJob}
           onCancel={() => setIsPainting(false)}
         />
-      ) : isModelEditing ? (
-        <ArmorModelEditor
-          catalog={customArmorCatalog}
-          playerLoadout={playerLoadout}
-          playerHue={playerHue}
-          onCatalogChange={setCustomArmorCatalog}
-          onLoadoutChange={updateLoadout}
-          onClose={() => setIsModelEditing(false)}
-          onPaintPiece={() => {
-            setIsModelEditing(false);
-            setIsPainting(true);
-          }}
-        />
       ) : (
         <div className="flex flex-col gap-4">
           <div className="relative bg-slate-950/30 border border-white/5 rounded-xl select-none overflow-hidden h-[380px] shrink-0">
@@ -217,11 +200,12 @@ export function CustomizationPanel({
             Start Paint Job
           </button>
 
-          <button
-            type="button"
+          <a
+            href="/armor-model-editor.html"
+            target="_blank"
+            rel="noopener noreferrer"
             onClick={() => {
               updateLoadout({ modelSystem: 'v2' });
-              setIsModelEditing(true);
             }}
             className={`w-full py-2.5 border font-black uppercase tracking-widest rounded-lg shadow-lg transition-all active:scale-[0.98] cursor-pointer text-center text-xs ${
               (playerLoadout.modelSystem ?? 'v1') === 'v2'
@@ -230,7 +214,7 @@ export function CustomizationPanel({
             }`}
           >
             Create / Edit V2 Armor Model
-          </button>
+          </a>
 
           <div className="flex flex-col gap-3 font-sans text-xs">
             <div className="bg-white/5 border border-white/5 rounded-lg p-3">

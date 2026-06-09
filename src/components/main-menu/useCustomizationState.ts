@@ -4,6 +4,7 @@ import {
   DEFAULT_LOADOUT,
 } from '../VoxelModels';
 import {
+  CUSTOM_ARMOR_CATALOG_STORAGE_KEY,
   type CustomArmorCatalog,
   loadCustomArmorCatalog,
   persistCustomArmorCatalog,
@@ -37,6 +38,26 @@ export function useCustomizationState() {
   useEffect(() => {
     persistCustomArmorCatalog(customArmorCatalog);
   }, [customArmorCatalog]);
+
+  useEffect(() => {
+    const refreshStoredCustomization = () => {
+      setPlayerLoadout(loadStoredPlayerLoadout());
+      setCustomArmorCatalog(loadCustomArmorCatalog());
+    };
+
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === PLAYER_LOADOUT_STORAGE_KEY || event.key === CUSTOM_ARMOR_CATALOG_STORAGE_KEY) {
+        refreshStoredCustomization();
+      }
+    };
+
+    window.addEventListener('storage', handleStorage);
+    window.addEventListener('focus', refreshStoredCustomization);
+    return () => {
+      window.removeEventListener('storage', handleStorage);
+      window.removeEventListener('focus', refreshStoredCustomization);
+    };
+  }, []);
 
   return {
     rightPanelTab,

@@ -829,7 +829,6 @@ export default function App() {
           saveSystemStatus,
           saveCodeImportInput,
           setPlayerLoadout,
-          setCustomArmorCatalog,
           setIsPainting,
           setCustomizerWeapon,
           setAdminSettings,
