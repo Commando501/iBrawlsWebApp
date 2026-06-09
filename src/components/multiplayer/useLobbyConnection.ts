@@ -56,7 +56,7 @@ interface UseLobbyConnectionOptions {
   refreshMultiplayerPreset: (serverVersion?: number) => void;
   setConnectionError: Dispatch<SetStateAction<string>>;
   handleQuickplayHostRef: MutableRefObject<(overrideCode?: string, lobbyConfig?: Partial<MatchLobbyConfig>, password?: string) => void>;
-  handleQuickplayJoinRef: MutableRefObject<(target: string, isObserver?: boolean, password?: string, inviteToken?: string) => void>;
+  handleQuickplayJoinRef: MutableRefObject<(target: string, isObserver?: boolean, password?: string, inviteToken?: string, connectionModeOverride?: 'relay' | 'local') => void>;
 }
 
 const isOpenSocket = (socket: WebSocket | null): socket is WebSocket => {
@@ -171,7 +171,7 @@ export function useLobbyConnection({
             handleQuickplayHostRef.current(data.roomCode, { access: 'open' });
           } else if (data.type === 'quickplay_match_found') {
             setQuickPlayStatus('idle');
-            handleQuickplayJoinRef.current(data.roomCode);
+            handleQuickplayJoinRef.current(data.roomCode, false, undefined, undefined, 'relay');
           } else if (data.type === 'signed_in_elsewhere') {
             setConnectionError(data.message || SIGNED_IN_ELSEWHERE_MESSAGE);
           } else if (data.type === 'config_changed') {

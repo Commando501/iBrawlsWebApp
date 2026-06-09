@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { type DeathEvent } from '../../types';
+import { applyRemoteGrifbSecretUnlockForState } from './grifbSecretRuntime';
 import { createReplayHeatmapCombatantSource, queueReplayHeatmapDeathEventsForState } from './replayHeatmapRuntime';
 import { type GrifballRuntimeState } from './runtimeState';
 import { type GrifballThreeRefs } from './threeRefs';
@@ -109,34 +110,16 @@ export function createMultiplayerSyncMessageHandler({
         }
 
         if (data.action === 'unlock_secret') {
-          if (secretAudioRef.current) {
-            secretAudioRef.current.pause();
+          if (data.senderId) {
+            createOrUpdateRemotePlayer(data.senderId, data);
           }
-          const audio = new Audio('/Saudi Smurf Allah.mp3');
-          audio.volume = 0.55;
-          audio.play().catch((e) => console.error('Error playing secret song:', e));
-          secretAudioRef.current = audio;
-
-          if (data.senderId && state.otherPlayers.has(data.senderId)) {
-            const player = state.otherPlayers.get(data.senderId);
-            if (player) {
-              (player as any).activeWeapon = 'pistol';
-              const meshes = refs.otherPlayerMeshes.get(data.senderId);
-              if (meshes) {
-                meshes.hammer.visible = false;
-                meshes.sword.visible = false;
-              }
-              const announcement: DeathEvent = {
-                id: Math.random().toString(36).substring(2, 9),
-                attacker: 'SECRET UNLOCKED',
-                victim: `${player.playerName || 'Blue'} equipped GRIFB Pistol!`,
-                weapon: 'sword',
-              };
-              state.lastDeaths = [announcement, ...state.lastDeaths].slice(0, 3);
-              spawnVoxelShockwaveParticles(new THREE.Vector3(player.pos.x, player.pos.y, player.pos.z), '#38bdf8');
-              spawnVoxelShockwaveParticles(new THREE.Vector3(player.pos.x, player.pos.y, player.pos.z), '#fffa00');
-            }
-          }
+          applyRemoteGrifbSecretUnlockForState({
+            state,
+            refs,
+            senderId: data.senderId,
+            secretAudioRef,
+            spawnVoxelShockwaveParticles,
+          });
           pushStatsUpdate();
         } else if (data.action === 'swing_hammer') {
           if (data.senderId) {

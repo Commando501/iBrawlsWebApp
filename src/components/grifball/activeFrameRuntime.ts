@@ -1,8 +1,9 @@
 import * as THREE from 'three';
+import { type ReplayFile } from '../../types';
 import {
-  type DeathEvent,
-  type ReplayFile,
-} from '../../types';
+  buildGrifbSecretSyncPayload,
+  unlockLocalGrifbSecretForState,
+} from './grifbSecretRuntime';
 import { type GrifballRuntimeState } from './runtimeState';
 import { type GrifballThreeRefs } from './threeRefs';
 import { updateTransientVfxForFrame } from './vfxRuntime';
@@ -87,37 +88,18 @@ export function advanceGrifballFrameForState({
       requiredKeys.forEach(k => { keysPressed.current[k] = false; });
 
       if (state.activeWeapon !== 'pistol') {
-        state.activeWeapon = 'pistol';
-
-        if (refs.playerHammer) refs.playerHammer.visible = false;
-        if (refs.playerSword) refs.playerSword.visible = false;
-        if (refs.playerPistol) refs.playerPistol.visible = true;
-
-        spawnVoxelShockwaveParticles(state.playerPos, '#38bdf8');
-        spawnVoxelShockwaveParticles(state.playerPos, '#fffa00');
-
-        playRespawn();
-
-        if (secretAudioRef.current) {
-          secretAudioRef.current.pause();
-        }
-        const audio = new Audio('/Saudi Smurf Allah.mp3');
-        audio.volume = 0.55;
-        audio.play().catch(e => console.error('Error playing secret song:', e));
-        secretAudioRef.current = audio;
+        unlockLocalGrifbSecretForState({
+          state,
+          refs,
+          secretAudioRef,
+          spawnVoxelShockwaveParticles,
+          playRespawn,
+          pushStatsUpdate,
+        });
 
         if (isMultiplayer && multiplayerSocket && multiplayerSocket.readyState === WebSocket.OPEN) {
-          multiplayerSocket.send(JSON.stringify({ type: 'sync', action: 'unlock_secret' }));
+          multiplayerSocket.send(JSON.stringify(buildGrifbSecretSyncPayload(state)));
         }
-
-        const secretAnnouncement: DeathEvent = {
-          id: Math.random().toString(36).substring(2, 9),
-          attacker: 'SECRET',
-          victim: 'UNLOCKED: GRIFB Pistol!',
-          weapon: 'sword',
-        };
-        state.lastDeaths = [secretAnnouncement, ...state.lastDeaths].slice(0, 3);
-        pushStatsUpdate();
       }
     }
   } else {

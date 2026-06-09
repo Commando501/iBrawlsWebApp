@@ -51,6 +51,12 @@ type PaintSettings = {
   emissive: boolean;
   slot: CustomArmorSlot;
 };
+type ArmorEditorCameraView = {
+  target: { x: number; y: number; z: number };
+  yaw: number;
+  pitch: number;
+  distance: number;
+};
 
 const SLOT_OPTIONS: Array<{ slot: CustomArmorSlot; label: string }> = [
   { slot: 'helmet', label: 'Helmet' },
@@ -96,6 +102,21 @@ const BUILTIN_PRESETS: Record<CustomArmorSlot, string[]> = {
   arm: ['mark-vi', 'odst', 'recon', 'eod', 'hayabusa'],
   leg: ['mark-vi', 'jump-jet', 'odst', 'eod', 'hayabusa'],
 };
+
+const createDefaultCameraViews = (): Record<ViewMode, ArmorEditorCameraView> => ({
+  edit: {
+    target: { x: 0, y: 0, z: 0 },
+    yaw: 0,
+    pitch: 0.07,
+    distance: 2.25,
+  },
+  rig: {
+    target: { x: 0, y: 0.9, z: 0 },
+    yaw: 0,
+    pitch: 0.08,
+    distance: 4.2,
+  },
+});
 
 const roleColorPreview: Record<CustomArmorMaterialRole, string> = {
   primary: '#38bdf8',
@@ -227,6 +248,7 @@ export function ArmorModelEditor({
   const [showClipping, setShowClipping] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const paintSettingsRef = useRef<PaintSettings>({ tool, role, fixedColor, emissive, slot });
+  const cameraViewsRef = useRef<Record<ViewMode, ArmorEditorCameraView>>(createDefaultCameraViews());
 
   const validation = useMemo(() => validateCustomArmorPiece(draft), [draft]);
   const slotPieces = catalog.pieces.filter((piece) => piece.slot === slot);
@@ -501,11 +523,16 @@ export function ArmorModelEditor({
     const width = container.clientWidth || 520;
     const height = container.clientHeight || 420;
     const camera = new THREE.PerspectiveCamera(42, width / height, 0.1, 80);
-    const cameraTarget = new THREE.Vector3(0, viewMode === 'rig' ? 0.9 : 0, 0);
+    const savedCameraView = cameraViewsRef.current[viewMode];
+    const cameraTarget = new THREE.Vector3(
+      savedCameraView.target.x,
+      savedCameraView.target.y,
+      savedCameraView.target.z
+    );
     const cameraState = {
-      yaw: 0,
-      pitch: viewMode === 'rig' ? 0.08 : 0.07,
-      distance: viewMode === 'rig' ? 4.2 : 2.25,
+      yaw: savedCameraView.yaw,
+      pitch: savedCameraView.pitch,
+      distance: savedCameraView.distance,
     };
     const minCameraDistance = viewMode === 'rig' ? 2.3 : 0.65;
     const maxCameraDistance = viewMode === 'rig' ? 7 : 4.5;
@@ -521,6 +548,16 @@ export function ArmorModelEditor({
       );
       camera.lookAt(cameraTarget);
       camera.updateProjectionMatrix();
+      cameraViewsRef.current[viewMode] = {
+        target: {
+          x: cameraTarget.x,
+          y: cameraTarget.y,
+          z: cameraTarget.z,
+        },
+        yaw: cameraState.yaw,
+        pitch: cameraState.pitch,
+        distance: cameraState.distance,
+      };
     };
     applyCamera();
 

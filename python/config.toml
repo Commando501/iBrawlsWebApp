@@ -15,7 +15,7 @@ device = "cuda"
 seed = 1
 
 [combat]
-world_sizes = [2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2]
+world_sizes = [2, 2, 2, 2, 2, 2, 2, 2, 4, 4, 4, 4]
 kill_min = 5
 kill_max = 25
 randomize_layout = true
@@ -33,7 +33,7 @@ clip_range = 0.2
 [network]
 width = 512
 depth = 3
-init_model = "runs/combat2_v3_1/final_model.zip"
+init_model = "runs/combat2_v3/final_model_140obs.zip"
 
 [randomize]
 enabled = true

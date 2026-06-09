@@ -58,7 +58,8 @@ export function useMultiplayerSessionState() {
     target: string,
     isObserver?: boolean,
     password?: string,
-    inviteToken?: string
+    inviteToken?: string,
+    connectionModeOverride?: GameplayConnectionMode
   ) => void>(() => {});
 
   return {

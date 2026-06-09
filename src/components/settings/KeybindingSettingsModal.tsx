@@ -66,7 +66,7 @@ export function KeybindingSettingsModal({
 
   return (
     <div className={`mobile-modal mobile-keybind-modal bg-slate-950/95 border border-white/10 backdrop-blur-2xl rounded-2xl p-6 max-w-[95vw] shadow-2xl flex flex-col select-none max-h-[95vh] overflow-y-auto transition-all duration-300 ${
-      keybindsModalTab === 'gamepad' ? 'w-[1040px]' : 'w-[640px]'
+      keybindsModalTab === 'gamepad' ? 'w-[1040px]' : 'w-[1180px] xl:w-[1280px]'
     }`}>
       <div className="flex items-center justify-between mb-5 border-b border-white/5 pb-4 shrink-0">
         <div className="flex flex-col items-start text-left">

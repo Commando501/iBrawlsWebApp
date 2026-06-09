@@ -37,7 +37,7 @@ import { useMatchLoadingGate } from './components/loading/useMatchLoadingGate';
 
 export { createHighFidelityObjectMesh } from './components/main-menu/MapPreview';
 
-const APP_VERSION = '0.644';
+const APP_VERSION = '0.644a';
 
 // Visual Keyboard + Mouse keybind editor component
 export default function App() {
@@ -435,6 +435,21 @@ export default function App() {
     handleJoinGameRef.current = handleJoinGame;
   }, [handleHostGame, handleJoinGame]);
 
+  const handleJoinRelayLobby = useCallback((
+    target: string,
+    isObserver: boolean = false,
+    password?: string,
+    inviteToken?: string
+  ) => {
+    setConnectionMode('relay');
+    setActiveMenuTab('multi');
+    handleJoinGame(target, isObserver, password, inviteToken, 'relay');
+  }, [
+    handleJoinGame,
+    setConnectionMode,
+    setActiveMenuTab,
+  ]);
+
   const {
     gameplayPresets,
     selectedPresetName,
@@ -793,6 +808,7 @@ export default function App() {
           multiplayerSocket,
           multiplayerPlayerCount,
           lobbyParticipants: multiplayerLoadingSnapshot.participants,
+          chatMessages,
           isPlaying,
           onStartTournamentMatch: handleStartTournamentMatch,
           onResetTournament: handleResetTournament,
@@ -814,6 +830,7 @@ export default function App() {
           onQuickPlay: handleQuickPlay,
           onHostGame: (config, password) => handleHostGame(undefined, config, password),
           onStartHostedMatch: startHostedMatch,
+          onSendChatMessage: sendChatMessage,
           onJoinGame: handleJoinGame,
           onApplyMatchmakerUrl: handleApplyMatchmakerUrl,
           onResetMatchmakerUrl: handleResetMatchmakerUrl,
@@ -886,7 +903,7 @@ export default function App() {
           onLoggedIn: handleLoggedIn,
           onLoggedOut: handleLoggedOut,
           onAccountChanged: handleAccountChanged,
-          onJoinGame: handleJoinGame,
+          onJoinGame: handleJoinRelayLobby,
           setInviteNotifications,
           onSendLobbyChatMessage: sendLobbyChatMessage,
         }}
@@ -978,7 +995,7 @@ export default function App() {
           onAccept: (roomCode, inviteToken) => {
             clearActiveInvite();
             setConnectionMode('relay');
-            handleJoinGame(roomCode, false, undefined, inviteToken);
+            handleJoinGame(roomCode, false, undefined, inviteToken, 'relay');
           },
           onDecline: declineInvite,
         }}

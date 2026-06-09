@@ -543,7 +543,8 @@ export function useGameplayConnection({
     target: string,
     isObserver: boolean = false,
     password?: string,
-    inviteToken?: string
+    inviteToken?: string,
+    connectionModeOverride?: GameplayConnectionMode
   ) => {
     if (!target) {
       setConnectionError('Please provide a Host IP address or Room Code.');
@@ -558,10 +559,11 @@ export function useGameplayConnection({
     const cleanTarget = target.trim().replace(/^(hw|http|https|ws|wss):\/\//i, '');
     const isDirectAddress = cleanTarget.includes('.') || cleanTarget.includes(':') || isNaN(Number(cleanTarget));
 
-    const protocol = (window.location.protocol === 'https:' || connectionMode === 'relay') ? 'wss:' : 'ws:';
+    const activeConnectionMode = connectionModeOverride ?? connectionMode;
+    const protocol = (window.location.protocol === 'https:' || activeConnectionMode === 'relay') ? 'wss:' : 'ws:';
     let baseWsUrl = '';
 
-    if (connectionMode === 'relay') {
+    if (activeConnectionMode === 'relay') {
       baseWsUrl = getWsUrl();
     } else if (isDirectAddress) {
       let hostWithPort = cleanTarget;
@@ -574,7 +576,7 @@ export function useGameplayConnection({
       baseWsUrl = `${protocol}//${window.location.host}`;
     }
 
-    const gameplayWsUrl = buildGameplayWsUrl(baseWsUrl, connectionMode === 'relay');
+    const gameplayWsUrl = buildGameplayWsUrl(baseWsUrl, activeConnectionMode === 'relay');
     console.log('WS Join connection target URL resolved to:', redactWsUrl(gameplayWsUrl), 'isObserver:', isObserver);
     const ws = new WebSocket(gameplayWsUrl);
 

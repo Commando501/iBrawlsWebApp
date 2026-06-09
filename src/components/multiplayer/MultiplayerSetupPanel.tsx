@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState, type ChangeEvent, type KeyboardEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent, type KeyboardEvent } from 'react';
+import { MessageSquare, Send } from 'lucide-react';
 import type { CustomMapData, UniversalSettings } from '../../types';
 import { PREMADE_MAPS } from '../../game/premadeMaps';
 import {
@@ -17,6 +18,7 @@ import type {
   MatchLobbyConfig,
   MatchLobbyGameMode,
 } from '../../network/protocol';
+import type { ChatMessage } from '../ChatOverlay';
 import type { MultiplayerLoadingSlotPayload } from '../loading/loadingTypes';
 import type { GameplayConnectionMode, GameplayConnectionStatus, GameplayMultiplayerRole } from './multiplayerConnectionConstants';
 
@@ -42,6 +44,7 @@ interface MultiplayerSetupPanelProps {
   multiplayerSocket: WebSocket | null;
   multiplayerPlayerCount: number;
   lobbyParticipants: MultiplayerLoadingSlotPayload[];
+  chatMessages: ChatMessage[];
   joinIpOrId: string;
   onJoinIpOrIdChange: (value: string) => void;
   customUrlInput: string;
@@ -51,6 +54,7 @@ interface MultiplayerSetupPanelProps {
   onQuickPlay: () => void;
   onHostGame: (config: MatchLobbyConfig, password?: string) => void;
   onStartHostedMatch: () => void;
+  onSendChatMessage: (text: string) => void;
   onJoinGame: (target: string, isObserver?: boolean, password?: string, inviteToken?: string) => void;
   onApplyMatchmakerUrl: () => void;
   onResetMatchmakerUrl: () => void;
@@ -78,6 +82,7 @@ export function MultiplayerSetupPanel({
   multiplayerSocket,
   multiplayerPlayerCount,
   lobbyParticipants,
+  chatMessages,
   joinIpOrId,
   onJoinIpOrIdChange,
   customUrlInput,
@@ -87,6 +92,7 @@ export function MultiplayerSetupPanel({
   onQuickPlay,
   onHostGame,
   onStartHostedMatch,
+  onSendChatMessage,
   onJoinGame,
   onApplyMatchmakerUrl,
   onResetMatchmakerUrl,
@@ -200,6 +206,12 @@ export function MultiplayerSetupPanel({
             ))}
           </div>
         </div>
+
+        <MatchLobbyChatBox
+          messages={chatMessages}
+          onSendMessage={onSendChatMessage}
+          canSend={multiplayerSocket?.readyState === WebSocket.OPEN}
+        />
 
         <div className="flex gap-2 mt-auto">
           <button
@@ -465,6 +477,102 @@ export function MultiplayerSetupPanel({
           </div>
         </div>
       </details>
+    </div>
+  );
+}
+
+function MatchLobbyChatBox({
+  messages,
+  onSendMessage,
+  canSend,
+}: {
+  messages: ChatMessage[];
+  onSendMessage: (text: string) => void;
+  canSend: boolean;
+}) {
+  const [inputText, setInputText] = useState('');
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [messages]);
+
+  const handleSubmit = (event: FormEvent) => {
+    event.preventDefault();
+    const text = inputText.trim();
+    if (!text || !canSend) return;
+    onSendMessage(text);
+    setInputText('');
+  };
+
+  return (
+    <div className="bg-black/35 border border-white/5 rounded-lg p-3 min-h-[13rem] flex flex-col gap-2">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <MessageSquare className="w-3.5 h-3.5 text-cyan-300 shrink-0" />
+          <p className="text-[10px] text-[#38bdf8] font-black uppercase tracking-widest truncate">Match Lobby Chat</p>
+        </div>
+        <span className={`text-[9px] font-black uppercase tracking-widest ${canSend ? 'text-emerald-300' : 'text-white/30'}`}>
+          {canSend ? 'Live' : 'Offline'}
+        </span>
+      </div>
+
+      <div
+        ref={scrollRef}
+        className="flex-1 min-h-0 max-h-36 overflow-y-auto rounded border border-white/5 bg-black/35 p-2.5 flex flex-col gap-2 scrollbar-thin scrollbar-thumb-white/10"
+      >
+        {messages.length === 0 ? (
+          <p className="m-auto text-center text-[10px] font-mono text-white/30 uppercase tracking-widest italic">
+            No lobby messages yet.
+          </p>
+        ) : (
+          messages.map((message) => (
+            <div
+              key={message.id}
+              className={`max-w-[92%] rounded px-2.5 py-2 ${
+                message.isLocal
+                  ? 'self-end bg-cyan-500/10 border border-cyan-400/15'
+                  : 'self-start bg-white/[0.04] border border-white/5'
+              }`}
+            >
+              <div className="flex items-center gap-2 min-w-0">
+                <span className={`text-[10px] font-mono font-black truncate ${message.isLocal ? 'text-cyan-300' : 'text-white/55'}`}>
+                  {message.sender}
+                </span>
+                <span className="shrink-0 text-[9px] font-mono text-white/25">{message.timestamp}</span>
+              </div>
+              <p className="mt-1 text-xs text-white/85 leading-snug break-words">{message.text}</p>
+            </div>
+          ))
+        )}
+      </div>
+
+      <form onSubmit={handleSubmit} className="flex items-center gap-2">
+        <input
+          type="text"
+          value={inputText}
+          onChange={(event) => setInputText(event.target.value)}
+          placeholder={canSend ? 'Message this lobby...' : 'Lobby socket offline'}
+          disabled={!canSend}
+          maxLength={120}
+          autoComplete="off"
+          className="min-w-0 flex-1 h-10 bg-black/60 border border-white/10 rounded px-3 text-xs text-white placeholder:text-white/25 focus:border-cyan-400 outline-none disabled:cursor-not-allowed disabled:text-white/25"
+        />
+        <button
+          type="submit"
+          disabled={!canSend || !inputText.trim()}
+          className={`h-10 w-10 rounded border flex items-center justify-center transition-all ${
+            canSend && inputText.trim()
+              ? 'bg-cyan-400/15 border-cyan-300/40 text-cyan-200 hover:bg-cyan-400/25 cursor-pointer'
+              : 'bg-white/5 border-white/5 text-white/20 cursor-not-allowed'
+          }`}
+          title="Send lobby message"
+        >
+          <Send className="w-4 h-4" />
+        </button>
+      </form>
     </div>
   );
 }

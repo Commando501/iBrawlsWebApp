@@ -2,6 +2,7 @@ import type { Dispatch, SetStateAction } from 'react';
 import type { AIPreset, ReplayFile, TournamentState, UniversalSettings } from '../../types';
 import type { CustomMapData } from '../../types';
 import type { MatchLobbyConfig } from '../../network/protocol';
+import type { ChatMessage } from '../ChatOverlay';
 import type { MultiplayerLoadingSlotPayload } from '../loading/loadingTypes';
 import type { TournamentDifficulty } from '../../features/tournament/tournament';
 import type {
@@ -60,6 +61,7 @@ interface MainMenuPrimaryPanelProps {
   multiplayerSocket: WebSocket | null;
   multiplayerPlayerCount: number;
   lobbyParticipants: MultiplayerLoadingSlotPayload[];
+  chatMessages: ChatMessage[];
   isPlaying: boolean;
   onStartTournamentMatch: () => void;
   onResetTournament: () => void;
@@ -81,6 +83,7 @@ interface MainMenuPrimaryPanelProps {
   onQuickPlay: () => void;
   onHostGame: (config: MatchLobbyConfig, password?: string) => void;
   onStartHostedMatch: () => void;
+  onSendChatMessage: (text: string) => void;
   onJoinGame: (target: string, isObserver?: boolean, password?: string, inviteToken?: string) => void;
   onApplyMatchmakerUrl: () => void;
   onResetMatchmakerUrl: () => void;
@@ -136,6 +139,7 @@ export function MainMenuPrimaryPanel({
   multiplayerSocket,
   multiplayerPlayerCount,
   lobbyParticipants,
+  chatMessages,
   isPlaying,
   onStartTournamentMatch,
   onResetTournament,
@@ -157,6 +161,7 @@ export function MainMenuPrimaryPanel({
   onQuickPlay,
   onHostGame,
   onStartHostedMatch,
+  onSendChatMessage,
   onJoinGame,
   onApplyMatchmakerUrl,
   onResetMatchmakerUrl,
@@ -229,6 +234,7 @@ export function MainMenuPrimaryPanel({
           multiplayerSocket={multiplayerSocket}
           multiplayerPlayerCount={multiplayerPlayerCount}
           lobbyParticipants={lobbyParticipants}
+          chatMessages={chatMessages}
           joinIpOrId={joinIpOrId}
           onJoinIpOrIdChange={onJoinIpOrIdChange}
           customUrlInput={customUrlInput}
@@ -238,6 +244,7 @@ export function MainMenuPrimaryPanel({
           onQuickPlay={onQuickPlay}
           onHostGame={onHostGame}
           onStartHostedMatch={onStartHostedMatch}
+          onSendChatMessage={onSendChatMessage}
           onJoinGame={onJoinGame}
           onApplyMatchmakerUrl={onApplyMatchmakerUrl}
           onResetMatchmakerUrl={onResetMatchmakerUrl}

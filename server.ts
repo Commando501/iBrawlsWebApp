@@ -14,6 +14,10 @@ import {
   sanitizeLobbyPassword,
 } from "./src/network/matchLobbyConfig";
 import type { MatchLobbyConfig, MatchLobbySummary } from "./src/network/protocol";
+import {
+  createLobbyChatRateLimitState,
+  validateLobbyChatMessage,
+} from "./worker/src/lobbyChatRateLimit";
 
 // ── Live Tuning dev parity ────────────────────────────────────────────────────
 // The Cloudflare Worker stores the Official Multiplayer Preset in D1. D1 doesn't
@@ -440,6 +444,7 @@ async function startServer() {
     (ws as any).playerCount = undefined;
     (ws as any).maxPlayers = undefined;
     (ws as any).lobbyStartedAt = undefined;
+    (ws as any).lobbyChatRateLimit = createLobbyChatRateLimitState();
     
     console.log(`New WebSocket connection received. Assigned Socket ID: ${wsId}, Type: ${connectionType}, Name: ${nameParam}, Account: ${accountId ? "signed-in" : "guest"}`);
 
@@ -477,13 +482,23 @@ async function startServer() {
           }
 
           case "lobby_chat": {
-            const { text, sender } = message;
-            console.log(`Lobby chat message from ${wsId} (${sender}): ${text}`);
+            const chatRateLimitState = (ws as any).lobbyChatRateLimit ?? createLobbyChatRateLimitState();
+            (ws as any).lobbyChatRateLimit = chatRateLimitState;
+            const chat = validateLobbyChatMessage(
+              message,
+              chatRateLimitState,
+              (ws as any).playerName || `Client ${wsId}`,
+            );
+            if (chat.ok === false) {
+              ws.send(JSON.stringify({ type: "error", message: chat.message }));
+              break;
+            }
+            console.log(`Lobby chat message from ${wsId} (${chat.sender}): ${chat.text}`);
             const chatPayload = JSON.stringify({
               type: "lobby_chat",
               id: Math.random().toString(36).substring(2, 9),
-              sender: sender || `Client ${wsId}`,
-              text,
+              sender: chat.sender,
+              text: chat.text,
               timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
               clientId: wsId
             });

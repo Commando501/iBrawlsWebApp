@@ -199,7 +199,6 @@ export function swapPlayerWeaponForState({
 }): void {
   if (state.playerHP <= 0 || isPaused || !isPlaying) return;
   if (state.isLunging) return;
-  if (state.activeWeapon === 'pistol') return;
   if (state.swapLockoutTimer > 0) return;
 
   if (state.activeWeapon !== type) {

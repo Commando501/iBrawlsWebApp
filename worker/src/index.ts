@@ -1,6 +1,11 @@
 import { LIVE_CONFIG_KEY_SET } from "./liveConfigKeys";
 import { handleAccountRequest, requireSession, resolveAdminAccount } from "./accounts";
 import { toAnalyticsDataPoint } from "./telemetrySchema";
+import {
+  createLobbyChatRateLimitState,
+  type LobbyChatRateLimitState,
+  validateLobbyChatMessage,
+} from "./lobbyChatRateLimit";
 
 export interface Env {
   GAME_LOBBY: DurableObjectNamespace;
@@ -193,6 +198,7 @@ interface GameWebSocket extends WebSocket {
   maxPlayers?: number;
   lobbyStartedAt?: number;
   lobby?: MatchLobbySummary;
+  lobbyChatRateLimit?: LobbyChatRateLimitState;
 }
 
 const MAX_PLAYER_NAME_LENGTH = 10;
@@ -1110,6 +1116,7 @@ export class GameLobby implements DurableObject {
     gameWs.playerCount = undefined;
     gameWs.maxPlayers = undefined;
     gameWs.lobbyStartedAt = undefined;
+    gameWs.lobbyChatRateLimit = createLobbyChatRateLimitState();
     
     console.log(`New WebSocket connection received. Assigned Socket ID: ${wsId}, Type: ${connectionType}, Name: ${nameParam}, Account: ${accountId ? "signed-in" : "guest"}`);
 
@@ -1148,13 +1155,24 @@ export class GameLobby implements DurableObject {
           }
 
           case "lobby_chat": {
-            const { text, sender } = message;
-            console.log(`Lobby chat message from ${wsId} (${sender}): ${text}`);
+            gameWs.lobbyChatRateLimit = gameWs.lobbyChatRateLimit ?? createLobbyChatRateLimitState();
+            const chat = validateLobbyChatMessage(
+              message,
+              gameWs.lobbyChatRateLimit,
+              gameWs.playerName || `Client ${wsId}`,
+            );
+            if (chat.ok === false) {
+              try {
+                gameWs.send(JSON.stringify({ type: "error", message: chat.message }));
+              } catch(e) {}
+              break;
+            }
+            console.log(`Lobby chat message from ${wsId} (${chat.sender}): ${chat.text}`);
             const chatPayload = JSON.stringify({
               type: "lobby_chat",
               id: Math.random().toString(36).substring(2, 9),
-              sender: sender || `Client ${wsId}`,
-              text,
+              sender: chat.sender,
+              text: chat.text,
               timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
               clientId: wsId
             });

@@ -130,7 +130,7 @@ export const PilotIdentitySubframe = ({
   onLoggedOut,
   onAccountChanged,
 }: PilotIdentitySubframeProps) => {
-  const [isOpen, setIsOpen] = useState(true);
+  const [isOpen, setIsOpen] = useState(false);
   const [modeRequest, setModeRequest] = useState<{
     mode: LoggedOutAccountRequestMode;
     token: number;
@@ -454,10 +454,11 @@ export const PlayerListSubframe = ({
                       isSelected ? 'border-emerald-400/45' : 'border-white/5'
                     }`}
                   >
+                    <div className="w-full px-3 py-2.5 flex items-start gap-2">
                     <button
                       type="button"
                       onClick={() => setSelectedLobbyCode(isSelected ? null : lobby.roomCode)}
-                      className="w-full text-left px-3 py-2.5 flex justify-between items-start gap-2 cursor-pointer"
+                      className="min-w-0 flex-1 text-left flex justify-between items-start gap-2 cursor-pointer"
                       aria-expanded={isSelected}
                     >
                       <span className="flex flex-col gap-1 min-w-0">
@@ -477,6 +478,16 @@ export const PlayerListSubframe = ({
                         </span>
                       </span>
                     </button>
+                    {lobby.isOpen && (
+                      <button
+                        type="button"
+                        onClick={() => joinLobby(lobby.roomCode, Boolean(lobby.lobby?.hasPassword))}
+                        className="shrink-0 min-h-8 px-2.5 rounded border border-emerald-500/40 bg-emerald-500/15 text-[9px] text-emerald-300 font-black uppercase tracking-wider hover:bg-emerald-500/30 transition-all"
+                      >
+                        {lobby.lobby?.hasPassword ? 'Pass' : 'Join'}
+                      </button>
+                    )}
+                    </div>
 
                     {isSelected && (
                       <div className="px-3 pb-3 pt-2 border-t border-white/5 flex flex-col gap-2">

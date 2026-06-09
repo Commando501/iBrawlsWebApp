@@ -37,13 +37,9 @@ export const CharacterPainter: React.FC<CharacterPainterProps> = ({
   const [mirrorEnabled, setMirrorEnabled] = useState<boolean>(true);
   const [selectedPart, setSelectedPart] = useState<string>('all');
 
-  // Marquee selection overlay state
-  const [marquee, setMarquee] = useState<{ startX: number, startY: number, currX: number, currY: number } | null>(null);
-  const marqueeStartRef = useRef<{ x: number, y: number } | null>(null);
-
   // Top level camera zoom state refs (so they can be reset when pan/zoom is reset)
-  const zoomDistanceRef = useRef<number>(4.2);
-  const targetZoomDistanceRef = useRef<number>(4.2);
+  const zoomDistanceRef = useRef<number>(3.2);
+  const targetZoomDistanceRef = useRef<number>(3.2);
 
   // --- Active Paint Job State ---
   const [paintJob, setPaintJob] = useState<ArmorPaintJob>(() => {
@@ -95,13 +91,13 @@ export const CharacterPainter: React.FC<CharacterPainterProps> = ({
   // Track camera target lookAt
   const cameraLookAtRef = useRef<THREE.Vector3>(new THREE.Vector3(0, 0.9, 0));
   const targetCameraLookAtRef = useRef<THREE.Vector3>(new THREE.Vector3(0, 0.9, 0));
-  const targetCameraPosRef = useRef<THREE.Vector3>(new THREE.Vector3(0, 1.0, 3.2));
+  const cameraYawRef = useRef<number>(0);
+  const targetCameraYawRef = useRef<number>(0);
+  const cameraPitchRef = useRef<number>(0.05);
+  const targetCameraPitchRef = useRef<number>(0.05);
 
   // Voxel meshes group for raycasting
   const voxelMeshesRef = useRef<THREE.Mesh[]>([]);
-
-  // Click start voxel mesh ref
-  const expandStartMeshRef = useRef<THREE.Mesh | null>(null);
 
   // Pivot configurations matching VoxelModels.ts
   const PIVOTS: Record<string, { x: number, y: number, z: number, px: number, py: number, pz: number, parent: 'upper' | 'lower' | 'root' }> = {
@@ -184,34 +180,36 @@ export const CharacterPainter: React.FC<CharacterPainterProps> = ({
   // --- Camera focus navigation skeleton handler ---
   const navigateToPart = (part: string) => {
     setSelectedPart(part);
-    targetZoomDistanceRef.current = 4.2; // Reset zoom scale
+    targetCameraYawRef.current = 0;
+    targetCameraPitchRef.current = 0.05;
     if (characterContainerRef.current) {
       characterContainerRef.current.position.set(0, 0, 0); // Reset translation panned position
+      characterContainerRef.current.rotation.set(0, 0, 0);
     }
     
     // Smooth camera offsets and targets in meters
     const scale = 0.045;
     if (part === 'all') {
       targetCameraLookAtRef.current.set(0, 0.9, 0);
-      targetCameraPosRef.current.set(0, 1.0, 3.2);
+      targetZoomDistanceRef.current = 3.2;
     } else if (part === 'helmet') {
       targetCameraLookAtRef.current.set(0, 1.8, 0);
-      targetCameraPosRef.current.set(0, 1.8, 1.15);
+      targetZoomDistanceRef.current = 1.15;
     } else if (part === 'torso') {
       targetCameraLookAtRef.current.set(0, 1.0, 0);
-      targetCameraPosRef.current.set(0, 1.0, 1.4);
+      targetZoomDistanceRef.current = 1.4;
     } else if (part === 'leftArm') {
       targetCameraLookAtRef.current.set(-5.5 * scale, 1.0, 0);
-      targetCameraPosRef.current.set(-5.5 * scale, 1.0, 1.15);
+      targetZoomDistanceRef.current = 1.15;
     } else if (part === 'rightArm') {
       targetCameraLookAtRef.current.set(5.5 * scale, 1.0, 0);
-      targetCameraPosRef.current.set(5.5 * scale, 1.0, 1.15);
+      targetZoomDistanceRef.current = 1.15;
     } else if (part === 'leftLeg') {
       targetCameraLookAtRef.current.set(-2.5 * scale, 0.36, 0);
-      targetCameraPosRef.current.set(-2.5 * scale, 0.36, 1.15);
+      targetZoomDistanceRef.current = 1.15;
     } else if (part === 'rightLeg') {
       targetCameraLookAtRef.current.set(2.5 * scale, 0.36, 0);
-      targetCameraPosRef.current.set(2.5 * scale, 0.36, 1.15);
+      targetZoomDistanceRef.current = 1.15;
     }
   };
 
@@ -264,7 +262,7 @@ export const CharacterPainter: React.FC<CharacterPainterProps> = ({
     sceneRef.current = scene;
 
     const camera = new THREE.PerspectiveCamera(40, width / height, 0.1, 100);
-    camera.position.copy(targetCameraPosRef.current);
+    camera.position.set(0, 1.0, 3.2);
     cameraRef.current = camera;
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
@@ -391,11 +389,16 @@ export const CharacterPainter: React.FC<CharacterPainterProps> = ({
     scene.add(hoverHighlight);
 
     // --- Mouse & Touch Controls Logic ---
+    type CameraDragMode = 'orbit' | 'pan';
     let isDragging = false;
-    let isClickingVoxel = false;
-    let dragMode: 'paint' | 'rotate' | 'move' = 'rotate';
+    let pointerMoved = false;
+    let dragMode: CameraDragMode = 'orbit';
+    let activeButton = 0;
+    let startPointerX = 0;
+    let startPointerY = 0;
     let previousPointerX = 0;
     let previousPointerY = 0;
+    const clickMoveThreshold = 5;
 
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
@@ -533,41 +536,41 @@ export const CharacterPainter: React.FC<CharacterPainterProps> = ({
       }
     };
 
-    const onPointerDown = (e: PointerEvent) => {
-      isDragging = true;
-      previousPointerX = e.clientX;
-      previousPointerY = e.clientY;
-
+    const applyPaintClick = (e: PointerEvent) => {
       const intersect = getRaycastIntersect(e);
       const tool = stateRef.current.activeTool;
 
-      if (e.button === 0 && (tool === 'brush' || tool === 'eraser')) {
-        // Left click for painting -> Marquee selection!
-        dragMode = 'paint';
-        if (intersect) {
-          expandStartMeshRef.current = intersect.object as THREE.Mesh;
-        } else {
-          expandStartMeshRef.current = null;
-        }
-
-        const rect = renderer.domElement.getBoundingClientRect();
-        const startX = e.clientX - rect.left;
-        const startY = e.clientY - rect.top;
-        marqueeStartRef.current = { x: e.clientX, y: e.clientY };
-        setMarquee({ startX, startY, currX: startX, currY: startY });
-      } else if (e.button === 0 && tool === 'fill') {
-        // Paint can flood
+      if (tool === 'fill') {
         if (intersect) {
           floodFillSegment(intersect.object.userData.slot, stateRef.current.activeColor, stateRef.current.isNeon);
         }
-      } else if (e.button === 0 && tool === 'move') {
-        // Mover tool active -> Move Mode!
-        dragMode = 'move';
-      } else {
-        // Right click or background click -> Orbit Mode!
-        dragMode = 'rotate';
+        return;
       }
-      
+
+      if ((tool === 'brush' || tool === 'eraser') && intersect) {
+        paintSingleVoxelMesh(
+          intersect.object as THREE.Mesh,
+          stateRef.current.activeColor,
+          stateRef.current.isNeon,
+          tool
+        );
+      }
+    };
+
+    const onPointerDown = (e: PointerEvent) => {
+      isDragging = true;
+      pointerMoved = false;
+      activeButton = e.button;
+      startPointerX = e.clientX;
+      startPointerY = e.clientY;
+      previousPointerX = e.clientX;
+      previousPointerY = e.clientY;
+
+      const tool = stateRef.current.activeTool;
+      dragMode = e.button === 1 || e.button === 2 || e.shiftKey || tool === 'move' ? 'pan' : 'orbit';
+      renderer.domElement.style.cursor = dragMode === 'pan' ? 'grabbing' : 'move';
+      e.preventDefault();
+
       container.setPointerCapture(e.pointerId);
     };
 
@@ -584,157 +587,78 @@ export const CharacterPainter: React.FC<CharacterPainterProps> = ({
         hoverHighlight.visible = false;
       }
 
-      const revertMeshHighlight = (mesh: THREE.Mesh) => {
-        const colorVal = mesh.userData.colorOverride || mesh.userData.originalColor;
-        const isEmissive = mesh.userData.emissiveOverride !== null 
-          ? mesh.userData.emissiveOverride 
-          : mesh.userData.originalEmissive;
-        (mesh.material as THREE.MeshStandardMaterial).emissive.set(isEmissive ? new THREE.Color(colorVal) : new THREE.Color(0x000000));
-        (mesh.material as THREE.MeshStandardMaterial).emissiveIntensity = isEmissive ? 2.5 : 0;
-      };
-
       if (isDragging) {
         const deltaX = e.clientX - previousPointerX;
         const deltaY = e.clientY - previousPointerY;
         previousPointerX = e.clientX;
         previousPointerY = e.clientY;
-
-        if (dragMode === 'rotate') {
-          // Model 360° horizontal/vertical orbit rotation
-          characterContainer.rotation.y += deltaX * 0.007;
-          characterContainer.rotation.x += deltaY * 0.007;
-        } else if (dragMode === 'move') {
-          // Free "Mover" tool logic: translate container in screen plane
-          const moveSpeed = 0.005 * (zoomDistanceRef.current / 4.2);
-          characterContainer.position.x += deltaX * moveSpeed;
-          characterContainer.position.y -= deltaY * moveSpeed;
-        } else if (dragMode === 'paint' && marqueeStartRef.current) {
-          // Drag marquee box
-          const rect = renderer.domElement.getBoundingClientRect();
-          const currX = e.clientX - rect.left;
-          const currY = e.clientY - rect.top;
-          setMarquee(prev => prev ? { ...prev, currX, currY } : null);
-
-          // Find voxels within selection bounds in NDC and highlight them
-          const x1 = Math.min(marqueeStartRef.current.x, e.clientX);
-          const x2 = Math.max(marqueeStartRef.current.x, e.clientX);
-          const y1 = Math.min(marqueeStartRef.current.y, e.clientY);
-          const y2 = Math.max(marqueeStartRef.current.y, e.clientY);
-
-          const isSingleClick = Math.abs(e.clientX - marqueeStartRef.current.x) < 5 && 
-                               Math.abs(e.clientY - marqueeStartRef.current.y) < 5;
-
-          voxelMeshesRef.current.forEach(mesh => {
-            const tempV = new THREE.Vector3();
-            mesh.getWorldPosition(tempV);
-            
-            // Don't select voxels behind camera (z > 1 in NDC)
-            tempV.project(camera);
-            if (tempV.z > 1) {
-              revertMeshHighlight(mesh);
-              return;
-            }
-
-            const clientX = rect.left + (tempV.x * 0.5 + 0.5) * rect.width;
-            const clientY = rect.top + (-tempV.y * 0.5 + 0.5) * rect.height;
-
-            let isInside = false;
-            if (isSingleClick) {
-              isInside = (mesh === expandStartMeshRef.current);
-            } else {
-              isInside = (clientX >= x1 && clientX <= x2 && clientY >= y1 && clientY <= y2);
-            }
-
-            if (isInside) {
-              (mesh.material as THREE.MeshStandardMaterial).emissive.set(0x00f3ff);
-              (mesh.material as THREE.MeshStandardMaterial).emissiveIntensity = 3.0;
-            } else {
-              revertMeshHighlight(mesh);
-            }
-          });
+        if (Math.hypot(e.clientX - startPointerX, e.clientY - startPointerY) > clickMoveThreshold) {
+          pointerMoved = true;
         }
+
+        if (dragMode === 'pan') {
+          const forward = new THREE.Vector3();
+          const right = new THREE.Vector3();
+          const up = new THREE.Vector3();
+          camera.getWorldDirection(forward);
+          right.crossVectors(forward, camera.up).normalize();
+          up.crossVectors(right, forward).normalize();
+          const panScale = zoomDistanceRef.current * 0.0014;
+          targetCameraLookAtRef.current.addScaledVector(right, -deltaX * panScale);
+          targetCameraLookAtRef.current.addScaledVector(up, deltaY * panScale);
+          return;
+        }
+
+        if (dragMode === 'orbit') {
+          targetCameraYawRef.current -= deltaX * 0.006;
+          targetCameraPitchRef.current = THREE.MathUtils.clamp(
+            targetCameraPitchRef.current - deltaY * 0.006,
+            -1.25,
+            1.25
+          );
+          return;
+        }
+
       }
     };
 
     const onPointerUp = (e: PointerEvent) => {
       if (isDragging) {
         isDragging = false;
-        container.releasePointerCapture(e.pointerId);
-
-        const revertMeshHighlight = (mesh: THREE.Mesh) => {
-          const colorVal = mesh.userData.colorOverride || mesh.userData.originalColor;
-          const isEmissive = mesh.userData.emissiveOverride !== null 
-            ? mesh.userData.emissiveOverride 
-            : mesh.userData.originalEmissive;
-          (mesh.material as THREE.MeshStandardMaterial).emissive.set(isEmissive ? new THREE.Color(colorVal) : new THREE.Color(0x000000));
-          (mesh.material as THREE.MeshStandardMaterial).emissiveIntensity = isEmissive ? 2.5 : 0;
-        };
-
-        if (dragMode === 'paint' && marqueeStartRef.current) {
-          const rect = renderer.domElement.getBoundingClientRect();
-          const x1 = Math.min(marqueeStartRef.current.x, e.clientX);
-          const x2 = Math.max(marqueeStartRef.current.x, e.clientX);
-          const y1 = Math.min(marqueeStartRef.current.y, e.clientY);
-          const y2 = Math.max(marqueeStartRef.current.y, e.clientY);
-
-          const isSingleClick = Math.abs(e.clientX - marqueeStartRef.current.x) < 5 && 
-                               Math.abs(e.clientY - marqueeStartRef.current.y) < 5;
-
-          const tool = stateRef.current.activeTool;
-          const color = stateRef.current.activeColor;
-          const emissive = stateRef.current.isNeon;
-
-          // Paint/erase all highlighted voxels!
-          voxelMeshesRef.current.forEach(mesh => {
-            const tempV = new THREE.Vector3();
-            mesh.getWorldPosition(tempV);
-            tempV.project(camera);
-
-            let isInside = false;
-            if (tempV.z <= 1) {
-              const clientX = rect.left + (tempV.x * 0.5 + 0.5) * rect.width;
-              const clientY = rect.top + (-tempV.y * 0.5 + 0.5) * rect.height;
-
-              if (isSingleClick) {
-                isInside = (mesh === expandStartMeshRef.current);
-              } else {
-                isInside = (clientX >= x1 && clientX <= x2 && clientY >= y1 && clientY <= y2);
-              }
-            }
-
-            if (isInside) {
-              paintSingleVoxelMesh(mesh, color, emissive, tool as 'brush' | 'eraser');
-            } else {
-              revertMeshHighlight(mesh);
-            }
-          });
-
-          // Reset paint drag states
-          marqueeStartRef.current = null;
-          expandStartMeshRef.current = null;
-          setMarquee(null);
+        renderer.domElement.style.cursor = 'grab';
+        if (
+          activeButton === 0 &&
+          !pointerMoved &&
+          Math.hypot(e.clientX - startPointerX, e.clientY - startPointerY) <= clickMoveThreshold
+        ) {
+          applyPaintClick(e);
         }
+        try { container.releasePointerCapture(e.pointerId); } catch {}
       }
     };
 
     // Zoom mouse wheel zoom handler
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
-      const zoomSpeed = 0.15;
-      if (e.deltaY < 0) {
-        // Zoom in
-        targetZoomDistanceRef.current = Math.max(0.6, targetZoomDistanceRef.current - zoomSpeed);
-      } else {
-        // Zoom out
-        targetZoomDistanceRef.current = Math.min(4.5, targetZoomDistanceRef.current + zoomSpeed);
-      }
+      targetZoomDistanceRef.current = THREE.MathUtils.clamp(
+        targetZoomDistanceRef.current * Math.exp(e.deltaY * 0.001),
+        0.6,
+        4.5
+      );
     };
 
+    const onContextMenu = (e: MouseEvent) => {
+      e.preventDefault();
+    };
+
+    renderer.domElement.style.touchAction = 'none';
+    renderer.domElement.style.cursor = 'grab';
     container.addEventListener('pointerdown', onPointerDown);
     container.addEventListener('pointermove', onPointerMove);
     container.addEventListener('pointerup', onPointerUp);
     container.addEventListener('pointercancel', onPointerUp);
     container.addEventListener('wheel', onWheel, { passive: false });
+    container.addEventListener('contextmenu', onContextMenu);
 
     // --- WebGL Animation & Camera Lerp Loop ---
     const clock = new THREE.Clock();
@@ -746,17 +670,17 @@ export const CharacterPainter: React.FC<CharacterPainterProps> = ({
 
       // Compute targeted camera look at position
       cameraLookAtRef.current.lerp(targetCameraLookAtRef.current, 0.08);
+      cameraYawRef.current = THREE.MathUtils.lerp(cameraYawRef.current, targetCameraYawRef.current, 0.16);
+      cameraPitchRef.current = THREE.MathUtils.lerp(cameraPitchRef.current, targetCameraPitchRef.current, 0.16);
 
-      // Position camera at target lookAt plus directional zoom offsets
-      const camPos = targetCameraPosRef.current.clone();
-      
-      // Interpolate camera positioning vector smoothly
-      camera.position.lerp(camPos, 0.08);
-      
-      // Check if zoomed in to adjust camera distance multiplier
-      const scaleOffset = zoomDistanceRef.current / 4.2;
-      camera.position.z = camPos.z * scaleOffset;
-      
+      const cosPitch = Math.cos(cameraPitchRef.current);
+      const camPos = new THREE.Vector3(
+        cameraLookAtRef.current.x + Math.sin(cameraYawRef.current) * cosPitch * zoomDistanceRef.current,
+        cameraLookAtRef.current.y + Math.sin(cameraPitchRef.current) * zoomDistanceRef.current,
+        cameraLookAtRef.current.z + Math.cos(cameraYawRef.current) * cosPitch * zoomDistanceRef.current
+      );
+
+      camera.position.lerp(camPos, 0.18);
       camera.lookAt(cameraLookAtRef.current);
 
       // 2. Pulse emissive neon glowing voxels
@@ -767,7 +691,7 @@ export const CharacterPainter: React.FC<CharacterPainterProps> = ({
           ? mesh.userData.emissiveOverride 
           : mesh.userData.originalEmissive;
           
-        if (isEmissive && !marqueeStartRef.current) {
+        if (isEmissive) {
           mat.emissiveIntensity = 2.0 + Math.sin(elapsed * 4.0) * 0.8;
         }
       });
@@ -798,6 +722,7 @@ export const CharacterPainter: React.FC<CharacterPainterProps> = ({
       container.removeEventListener('pointerup', onPointerUp);
       container.removeEventListener('pointercancel', onPointerUp);
       container.removeEventListener('wheel', onWheel);
+      container.removeEventListener('contextmenu', onContextMenu);
       
       if (container && renderer.domElement && container.contains(renderer.domElement)) {
         container.removeChild(renderer.domElement);
@@ -925,26 +850,13 @@ export const CharacterPainter: React.FC<CharacterPainterProps> = ({
           </button>
         </div>
 
-        {/* Marquee Drag Box Overlay */}
-        {marquee && (
-          <div
-            className="absolute border border-dashed border-cyan-400 bg-cyan-400/10 pointer-events-none z-20 rounded shadow-[0_0_8px_rgba(34,211,238,0.4)]"
-            style={{
-              left: Math.min(marquee.startX, marquee.currX),
-              top: Math.min(marquee.startY, marquee.currY),
-              width: Math.abs(marquee.currX - marquee.startX),
-              height: Math.abs(marquee.currY - marquee.startY),
-            }}
-          />
-        )}
-
         {/* Floating Quick Navigation Hints */}
         <div className="absolute bottom-3 left-3 pointer-events-none z-10 text-[9px] font-mono text-white/40 bg-black/55 border border-white/5 p-2.5 rounded-lg leading-relaxed max-w-[220px]">
-          <div>🖱️ <strong className="text-white/70">Left Click:</strong> Paint voxel</div>
-          <div>🔲 <strong className="text-white/70">Left Drag:</strong> Marquee Box Select</div>
-          <div>✋ <strong className="text-white/70">Mover Tool:</strong> Drag to Move Model</div>
-          <div>🖱️ <strong className="text-white/70">Right Drag:</strong> Rotate Model</div>
-          <div>🌀 <strong className="text-white/70">Scroll:</strong> Zoom View</div>
+          <div><strong className="text-white/70">Left Click:</strong> Paint voxel</div>
+          <div><strong className="text-white/70">Left Drag:</strong> Orbit camera</div>
+          <div><strong className="text-white/70">Right/Middle Drag:</strong> Pan camera</div>
+          <div><strong className="text-white/70">Shift Drag:</strong> Pan camera</div>
+          <div><strong className="text-white/70">Scroll:</strong> Zoom view</div>
         </div>
       </div>
 

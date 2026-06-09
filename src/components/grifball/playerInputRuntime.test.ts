@@ -7,7 +7,9 @@ import {
   applyPointerLockMouseLookForState,
   applyTouchSwipeLookForState,
 } from './playerInputRuntime';
+import { swapPlayerWeaponForState } from './playerWeaponActions';
 import type { GrifballRuntimeState } from './runtimeState';
+import type { GrifballThreeRefs } from './threeRefs';
 
 function makeLookState(overrides: Partial<GrifballRuntimeState> = {}): GrifballRuntimeState {
   return {
@@ -34,6 +36,34 @@ function makeGamepad(overrides: Partial<Gamepad> = {}): Gamepad {
 
 function assertNear(actual: number, expected: number): void {
   assert.equal(Math.abs(actual - expected) < 1e-12, true);
+}
+
+function makeWeaponState(overrides: Partial<GrifballRuntimeState> = {}): GrifballRuntimeState {
+  return {
+    playerHP: 1,
+    isLunging: false,
+    activeWeapon: 'hammer',
+    swapLockoutTimer: 0,
+    swapCooldownTimer: 0,
+    swapCooldownDuration: 0,
+    pWeaponReady: true,
+    pSwordReady: true,
+    pWeaponCooldown: 1,
+    pSwordCooldown: 1,
+    settings: {
+      weaponReadyTime: 0.5,
+      weaponSwapLockout: 1,
+    },
+    ...overrides,
+  } as GrifballRuntimeState;
+}
+
+function makeWeaponRefs(): GrifballThreeRefs {
+  return {
+    playerHammer: { visible: true },
+    playerSword: { visible: false },
+    playerPistol: { visible: false },
+  } as GrifballThreeRefs;
 }
 
 test('pointer-lock mouse look preserves normal linear sensitivity', () => {
@@ -127,4 +157,59 @@ test('stick look clamps frame hitches and invalid axes', () => {
   assertNear(mobileState.pitch, 0.6);
   assertNear(gamepadState.yaw, -1.2);
   assertNear(gamepadState.pitch, 1.2);
+});
+
+test('weapon swap equips sword from hammer and starts readiness timers', () => {
+  const state = makeWeaponState();
+  const refs = makeWeaponRefs();
+  let recordedWeapon: string | null = null;
+  let pushedStats = false;
+
+  swapPlayerWeaponForState({
+    state,
+    refs,
+    type: 'sword',
+    isPaused: false,
+    isPlaying: true,
+    recordWeaponSwap: (weapon) => {
+      recordedWeapon = weapon;
+    },
+    pushStatsUpdate: () => {
+      pushedStats = true;
+    },
+  });
+
+  assert.equal(state.activeWeapon, 'sword');
+  assert.equal(state.swapCooldownTimer, 0.5);
+  assert.equal(state.swapCooldownDuration, 0.5);
+  assert.equal(state.swapLockoutTimer, 1);
+  assert.equal(state.pWeaponReady, false);
+  assert.equal(state.pSwordReady, false);
+  assert.equal(refs.playerHammer?.visible, false);
+  assert.equal(refs.playerSword?.visible, true);
+  assert.equal(refs.playerPistol?.visible, false);
+  assert.equal(recordedWeapon, 'sword');
+  assert.equal(pushedStats, true);
+});
+
+test('weapon swap can recover from pistol state to sword', () => {
+  const state = makeWeaponState({ activeWeapon: 'pistol' });
+  const refs = makeWeaponRefs();
+  refs.playerHammer!.visible = false;
+  refs.playerPistol!.visible = true;
+
+  swapPlayerWeaponForState({
+    state,
+    refs,
+    type: 'sword',
+    isPaused: false,
+    isPlaying: true,
+    recordWeaponSwap: () => {},
+    pushStatsUpdate: () => {},
+  });
+
+  assert.equal(state.activeWeapon, 'sword');
+  assert.equal(refs.playerHammer?.visible, false);
+  assert.equal(refs.playerSword?.visible, true);
+  assert.equal(refs.playerPistol?.visible, false);
 });
