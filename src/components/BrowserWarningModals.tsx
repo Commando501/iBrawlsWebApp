@@ -126,7 +126,7 @@ export function GraphicsAccelerationWarningModal({
         <div className="flex justify-between items-start border-b border-white/5 pb-4 shrink-0">
           <div className="flex flex-col">
             <span className="text-[10px] text-amber-500 font-bold uppercase tracking-[0.2em] mb-1 font-display flex items-center gap-1.5 animate-pulse">
-              âš ï¸ SYSTEM HARDWARE WARNING
+              SYSTEM HARDWARE WARNING
             </span>
             <h3 className="text-xl font-black tracking-tight text-white uppercase font-display leading-tight">
               Graphics Acceleration Disabled
@@ -137,7 +137,7 @@ export function GraphicsAccelerationWarningModal({
             className="text-white/40 hover:text-white font-bold cursor-pointer p-1 transition-colors text-base"
             title="Dismiss warning"
           >
-            âœ•
+            x
           </button>
         </div>
 
@@ -150,7 +150,7 @@ export function GraphicsAccelerationWarningModal({
             <div className="flex justify-between items-center border-b border-white/5 pb-2">
               <span className="text-white/45">WebGL 3D Context:</span>
               <span className={graphicsCheck.supported ? 'text-emerald-400 font-bold' : 'text-rose-500 font-bold'}>
-                {graphicsCheck.supported ? 'ðŸŸ¢ AVAILABLE' : 'ðŸ”´ UNSUPPORTED / BLOCKED'}
+                {graphicsCheck.supported ? 'AVAILABLE' : 'UNSUPPORTED / BLOCKED'}
               </span>
             </div>
             <div className="flex flex-col gap-1">
@@ -204,7 +204,7 @@ export function GraphicsAccelerationWarningModal({
 
               {hardwareTab === 'safari' && (
                 <ol className="list-decimal pl-4 flex flex-col gap-2 text-white/75 font-medium">
-                  <li>Open <strong className="text-white">Safari Settings / Preferences</strong> (or press <kbd className="bg-black/40 px-1 py-0.5 rounded text-[10px] font-mono">âŒ˜,</kbd>).</li>
+                  <li>Open <strong className="text-white">Safari Settings / Preferences</strong> (or press <kbd className="bg-black/40 px-1 py-0.5 rounded text-[10px] font-mono">Cmd+,</kbd>).</li>
                   <li>Go to the <strong className="text-white">Advanced</strong> tab.</li>
                   <li>Ensure that <strong className="text-white">"Use hardware acceleration"</strong> is checked (if available).</li>
                   <li>On iOS/macOS, ensure your system is not running in <strong className="text-amber-400">Low Power Mode</strong>, which often disables GPU acceleration for web pages.</li>

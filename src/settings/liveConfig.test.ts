@@ -8,6 +8,11 @@ import {
   stripPlayerIdentitySettings,
   withDefaultGameplaySettings,
 } from './gameplaySettings';
+import {
+  DEFAULT_HAMMER_SLAM_ATTACK_TIME,
+  DEFAULT_HAMMER_SLAM_TIMING_LOCKED,
+  DEFAULT_HAMMER_SLAM_WINDUP_TIME,
+} from '../game/hammerSlamTiming';
 import { UniversalSettings } from '../types';
 
 // Mirror of the App.tsx multiplayer overlay so the forcing rule is unit-tested.
@@ -56,6 +61,16 @@ test('pickLiveConfigSettings strips identity and unknown keys', () => {
   assert.ok(!('playerHue' in picked));
   assert.ok(!('playerName' in picked));
   assert.ok(!('bogusKey' in picked));
+});
+
+test('older saved presets receive hammer slam timing defaults', () => {
+  const settings = withDefaultGameplaySettings({
+    maxHP: 2,
+  });
+
+  assert.equal(settings.hammerSlamWindupTime, DEFAULT_HAMMER_SLAM_WINDUP_TIME);
+  assert.equal(settings.hammerSlamAttackTime, DEFAULT_HAMMER_SLAM_ATTACK_TIME);
+  assert.equal(settings.hammerSlamTimingLocked, DEFAULT_HAMMER_SLAM_TIMING_LOCKED);
 });
 
 test('official overlay forces mechanic keys but preserves identity', () => {

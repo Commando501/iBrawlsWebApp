@@ -3,10 +3,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { usePlayerSettings } from './settings/usePlayerSettings';
 import { useSaveAccountSync } from './settings/useSaveAccountSync';
 import {
+  OFFICIAL_MP_PRESET_NAME,
   useGameplayPresetControls,
 } from './settings/useGameplayPresetControls';
 import { useAiPresetControls } from './settings/useAiPresetControls';
@@ -36,12 +37,9 @@ import { useMatchLoadingGate } from './components/loading/useMatchLoadingGate';
 
 export { createHighFidelityObjectMesh } from './components/main-menu/MapPreview';
 
-const APP_VERSION = '0.642';
+const APP_VERSION = '0.644';
 
-// Reserved display name for the read-only, server-published Official Multiplayer Preset.
-const OFFICIAL_MP_PRESET_NAME = 'â˜… Official Multiplayer';
-
-// â”€â”€â”€ Visual Keyboard + Mouse keybind editor component â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Visual Keyboard + Mouse keybind editor component
 export default function App() {
   const {
     forceMobileControls,
@@ -173,6 +171,8 @@ export default function App() {
     setMultiplayerSpawnSlot,
     gameplayClientId,
     setGameplayClientId,
+    matchLobbyConfig,
+    setMatchLobbyConfig,
     handleHostGameRef,
     handleJoinGameRef,
   } = useMultiplayerSessionState();
@@ -286,7 +286,7 @@ export default function App() {
     handlePlayerNameChange,
   } = usePlayerSettings();
 
-  // â”€â”€ Account session + cloud settings sync â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // Account session + cloud settings sync
   const {
     showAdminDashboard,
     setShowAdminDashboard,
@@ -382,6 +382,7 @@ export default function App() {
     sendChatMessage,
     handleHostGame,
     handleJoinGame,
+    startHostedMatch,
     cancelHostOrJoin,
     handleJoinObserver,
     handleJoinPlayer,
@@ -399,6 +400,10 @@ export default function App() {
     setSelectedMap,
     lobbyCustomMapData,
     setLobbyCustomMapData,
+    adminSettings,
+    setAdminSettings,
+    matchLobbyConfig,
+    setMatchLobbyConfig,
     isMultiplayer,
     multiplayerSocket,
     multiplayerRole,
@@ -503,6 +508,7 @@ export default function App() {
     isMultiplayer,
     multiplayerRole,
     multiplayerPlayerCount,
+    matchLobbyConfig,
     buildLobbyWsUrl,
     redactWsUrl,
     refreshMultiplayerPreset,
@@ -612,7 +618,23 @@ export default function App() {
     ping,
     clientId,
     opponentClientId,
+    matchLobbyConfig,
   });
+
+  const activeMatchSettings = useMemo(() => {
+    if (!matchLobbyConfig) return effectiveAdminSettings;
+    return {
+      ...effectiveAdminSettings,
+      gameMode: matchLobbyConfig.gameMode,
+      iBrawlsKillTarget: matchLobbyConfig.gameMode === 'sandbox'
+        ? matchLobbyConfig.winTarget
+        : effectiveAdminSettings.iBrawlsKillTarget,
+      grifballGoalTarget: matchLobbyConfig.gameMode === 'grifball'
+        ? matchLobbyConfig.winTarget
+        : effectiveAdminSettings.grifballGoalTarget,
+      matchTimerSeconds: matchLobbyConfig.matchTimerSeconds,
+    };
+  }, [effectiveAdminSettings, matchLobbyConfig]);
 
   return (
     <div className="relative w-full h-[100dvh] bg-[#050b1a] text-white overflow-hidden select-none font-sans flex flex-col">
@@ -637,7 +659,7 @@ export default function App() {
 	        isPaused={isPaused}
 	        isMatchLoadingActive={isMatchLoadingActive}
 	        debugMode={debugMode}
-	        effectiveAdminSettings={effectiveAdminSettings}
+	        effectiveAdminSettings={activeMatchSettings}
 	        onStatsUpdate={handleStatsUpdate}
 	        onLoadingStateChange={handleGameLoadingStateChange}
 	        onPauseToggle={handlePauseToggle}
@@ -762,6 +784,15 @@ export default function App() {
           onInitializeTournament: handleInitializeTournament,
           playerName,
           playerHue: adminSettings.playerHue ?? 200,
+          selectedMap,
+          onSelectedMapChange: setSelectedMap,
+          lobbyCustomMapData,
+          onCustomMapDataChange: setLobbyCustomMapData,
+          matchLobbyConfig,
+          multiplayerRole,
+          multiplayerSocket,
+          multiplayerPlayerCount,
+          lobbyParticipants: multiplayerLoadingSnapshot.participants,
           isPlaying,
           onStartTournamentMatch: handleStartTournamentMatch,
           onResetTournament: handleResetTournament,
@@ -781,7 +812,8 @@ export default function App() {
           onCancelHostOrJoin: handleCancelHostOrJoin,
           onCancelQuickPlay: handleCancelQuickPlay,
           onQuickPlay: handleQuickPlay,
-          onHostGame: () => handleHostGame(),
+          onHostGame: (config, password) => handleHostGame(undefined, config, password),
+          onStartHostedMatch: startHostedMatch,
           onJoinGame: handleJoinGame,
           onApplyMatchmakerUrl: handleApplyMatchmakerUrl,
           onResetMatchmakerUrl: handleResetMatchmakerUrl,
@@ -943,10 +975,10 @@ export default function App() {
         }}
         directInvite={{
           invite: activeInvite,
-          onAccept: (roomCode) => {
+          onAccept: (roomCode, inviteToken) => {
             clearActiveInvite();
             setConnectionMode('relay');
-            handleJoinGame(roomCode);
+            handleJoinGame(roomCode, false, undefined, inviteToken);
           },
           onDecline: declineInvite,
         }}

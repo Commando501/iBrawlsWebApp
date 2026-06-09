@@ -1,19 +1,47 @@
-import type { KeyboardEvent } from 'react';
+import { useEffect, useMemo, useState, type ChangeEvent, type KeyboardEvent } from 'react';
+import type { CustomMapData, UniversalSettings } from '../../types';
+import { PREMADE_MAPS } from '../../game/premadeMaps';
+import {
+  DEFAULT_GRIFBALL_GOAL_TARGET,
+  DEFAULT_IBRAWLS_KILL_TARGET,
+  DEFAULT_MATCH_TIMER_SECONDS,
+  MAX_MATCH_LOBBY_PLAYERS,
+  formatMatchTimerLabel,
+  getDefaultWinTargetForMode,
+  getMatchLobbyModeLabel,
+  getMatchLobbyTargetLabel,
+  normalizeMatchLobbyConfig,
+} from '../../network/matchLobbyConfig';
+import type {
+  MatchLobbyAccess,
+  MatchLobbyConfig,
+  MatchLobbyGameMode,
+} from '../../network/protocol';
+import type { MultiplayerLoadingSlotPayload } from '../loading/loadingTypes';
+import type { GameplayConnectionMode, GameplayConnectionStatus, GameplayMultiplayerRole } from './multiplayerConnectionConstants';
 
-type ConnectionMode = 'relay' | 'local';
-type ConnectionStatus = 'idle' | 'fetching_ip' | 'hosting' | 'connecting' | 'connected' | 'error';
 type QuickPlayStatus = 'idle' | 'searching' | 'matching';
 
 interface MultiplayerSetupPanelProps {
-  connectionMode: ConnectionMode;
-  onConnectionModeChange: (mode: ConnectionMode) => void;
+  connectionMode: GameplayConnectionMode;
+  onConnectionModeChange: (mode: GameplayConnectionMode) => void;
   isOnline: boolean;
   userIp: string;
   lanIp: string;
   hostIdCode: string;
-  connectionStatus: ConnectionStatus;
+  connectionStatus: GameplayConnectionStatus;
   connectionError: string;
   quickPlayStatus: QuickPlayStatus;
+  adminSettings: UniversalSettings;
+  selectedMap: string;
+  onSelectedMapChange: (value: string) => void;
+  lobbyCustomMapData: CustomMapData | null;
+  onCustomMapDataChange: (value: CustomMapData | null) => void;
+  matchLobbyConfig: MatchLobbyConfig | null;
+  multiplayerRole: GameplayMultiplayerRole;
+  multiplayerSocket: WebSocket | null;
+  multiplayerPlayerCount: number;
+  lobbyParticipants: MultiplayerLoadingSlotPayload[];
   joinIpOrId: string;
   onJoinIpOrIdChange: (value: string) => void;
   customUrlInput: string;
@@ -21,11 +49,14 @@ interface MultiplayerSetupPanelProps {
   onCancelHostOrJoin: () => void;
   onCancelQuickPlay: () => void;
   onQuickPlay: () => void;
-  onHostGame: () => void;
-  onJoinGame: (target: string, isObserver?: boolean) => void;
+  onHostGame: (config: MatchLobbyConfig, password?: string) => void;
+  onStartHostedMatch: () => void;
+  onJoinGame: (target: string, isObserver?: boolean, password?: string, inviteToken?: string) => void;
   onApplyMatchmakerUrl: () => void;
   onResetMatchmakerUrl: () => void;
 }
+
+const toMinutes = (seconds: number): number => Math.max(1, Math.round(seconds / 60));
 
 export function MultiplayerSetupPanel({
   connectionMode,
@@ -37,6 +68,16 @@ export function MultiplayerSetupPanel({
   connectionStatus,
   connectionError,
   quickPlayStatus,
+  adminSettings,
+  selectedMap,
+  onSelectedMapChange,
+  lobbyCustomMapData,
+  onCustomMapDataChange,
+  matchLobbyConfig,
+  multiplayerRole,
+  multiplayerSocket,
+  multiplayerPlayerCount,
+  lobbyParticipants,
   joinIpOrId,
   onJoinIpOrIdChange,
   customUrlInput,
@@ -45,28 +86,154 @@ export function MultiplayerSetupPanel({
   onCancelQuickPlay,
   onQuickPlay,
   onHostGame,
+  onStartHostedMatch,
   onJoinGame,
   onApplyMatchmakerUrl,
   onResetMatchmakerUrl,
 }: MultiplayerSetupPanelProps) {
+  const [access, setAccess] = useState<MatchLobbyAccess>('open');
+  const [password, setPassword] = useState('');
+  const [gameMode, setGameMode] = useState<MatchLobbyGameMode>(adminSettings.gameMode ?? 'sandbox');
+  const [maxPlayers, setMaxPlayers] = useState(MAX_MATCH_LOBBY_PLAYERS);
+  const [allowObservers, setAllowObservers] = useState(true);
+  const [matchTimerMinutes, setMatchTimerMinutes] = useState(toMinutes(adminSettings.matchTimerSeconds ?? DEFAULT_MATCH_TIMER_SECONDS));
+  const [winTarget, setWinTarget] = useState(
+    gameMode === 'grifball'
+      ? adminSettings.grifballGoalTarget ?? DEFAULT_GRIFBALL_GOAL_TARGET
+      : adminSettings.iBrawlsKillTarget ?? DEFAULT_IBRAWLS_KILL_TARGET
+  );
+  const [joinPasswordInput, setJoinPasswordInput] = useState('');
+
+  useEffect(() => {
+    setWinTarget(getDefaultWinTargetForMode(gameMode));
+  }, [gameMode]);
+
+  const selectedPremadeMap = PREMADE_MAPS.find(map => map.id === selectedMap);
+  const activeConfig = useMemo(() => normalizeMatchLobbyConfig({
+    access,
+    gameMode,
+    selectedMap,
+    customMap: selectedMap === 'custom_file' ? lobbyCustomMapData : null,
+    maxPlayers,
+    allowObservers,
+    matchTimerSeconds: matchTimerMinutes * 60,
+    winTarget,
+  }), [
+    access,
+    gameMode,
+    selectedMap,
+    lobbyCustomMapData,
+    maxPlayers,
+    allowObservers,
+    matchTimerMinutes,
+    winTarget,
+  ]);
+  const stagedConfig = matchLobbyConfig ?? activeConfig;
+  const isStaging = Boolean(multiplayerSocket && matchLobbyConfig && (connectionStatus === 'hosting' || connectionStatus === 'connected'));
+  const canCreateLobby = access !== 'password' || password.trim().length > 0;
+  const canStartMatch = multiplayerRole === 'host' && multiplayerSocket?.readyState === WebSocket.OPEN;
+
   const handleJoinKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
     if (event.key === 'Enter') {
-      onJoinGame(joinIpOrId);
+      onJoinGame(joinIpOrId, false, joinPasswordInput || undefined);
     }
   };
 
-  return (
-    <div className="flex flex-col h-full min-h-0 justify-between gap-5">
-      <div className="flex flex-col gap-4 shrink-0">
-        <div className="flex items-center gap-2.5 mb-1">
-          <span className="w-2 h-4 bg-[#38bdf8]" />
-          <h2 className="text-sm uppercase font-bold tracking-[0.25em] text-white">
-            Multiplayer Setup
-          </h2>
+  const handleCustomMapFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      const parsed = JSON.parse(await file.text()) as CustomMapData;
+      onCustomMapDataChange(parsed);
+      onSelectedMapChange('custom_file');
+    } catch {
+      onCustomMapDataChange(null);
+    }
+  };
+
+  const participantRows = lobbyParticipants.length > 0
+    ? lobbyParticipants
+    : [{
+        clientId: 'host',
+        role: multiplayerRole || 'host',
+        spawnSlot: 0,
+      } satisfies MultiplayerLoadingSlotPayload];
+
+  if (isStaging) {
+    return (
+      <div className="flex flex-col h-full min-h-0 gap-4">
+        <PanelTitle title="Lobby Staging" />
+
+        <div className="bg-emerald-500/10 border border-emerald-500/25 rounded-lg p-3.5 flex flex-col gap-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-[10px] text-emerald-300 font-black uppercase tracking-widest">Room Code</p>
+              <p className="font-mono text-xl text-white font-black tracking-widest">{hostIdCode}</p>
+            </div>
+            <span className="shrink-0 text-[10px] text-white/45 uppercase tracking-wider">
+              {multiplayerPlayerCount}/{stagedConfig.maxPlayers} players
+            </span>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2 text-[10px] font-mono">
+            <LobbyStat label="Mode" value={getMatchLobbyModeLabel(stagedConfig.gameMode)} />
+            <LobbyStat label="Access" value={stagedConfig.access === 'password' ? 'Password' : stagedConfig.access} />
+            <LobbyStat label="Map" value={stagedConfig.customMap?.name || selectedPremadeMap?.name || stagedConfig.selectedMap} />
+            <LobbyStat label="Timer" value={formatMatchTimerLabel(stagedConfig.matchTimerSeconds)} />
+            <LobbyStat label="Target" value={getMatchLobbyTargetLabel(stagedConfig)} />
+            <LobbyStat label="Observers" value={stagedConfig.allowObservers ? 'Allowed' : 'Off'} />
+          </div>
         </div>
+
+        <div className="bg-black/35 border border-white/5 rounded-lg p-3 min-h-0 flex flex-col gap-2">
+          <p className="text-[10px] text-[#38bdf8] font-black uppercase tracking-widest">Participants</p>
+          <div className="min-h-0 max-h-44 overflow-y-auto flex flex-col gap-1.5 pr-1">
+            {participantRows.map((participant) => (
+              <div key={`${participant.clientId}-${participant.role}`} className="flex items-center justify-between gap-2 bg-white/[0.04] border border-white/5 rounded px-2.5 py-2">
+                <span className="text-xs text-white/80 truncate">
+                  {participant.playerName || participant.clientId}
+                </span>
+                <span className="text-[9px] text-white/40 uppercase tracking-widest">
+                  {participant.role}{participant.spawnSlot !== undefined ? ` ${participant.spawnSlot + 1}` : ''}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex gap-2 mt-auto">
+          <button
+            type="button"
+            onClick={onStartHostedMatch}
+            disabled={!canStartMatch}
+            className={`flex-1 h-12 rounded font-black text-xs uppercase tracking-widest border transition-all ${
+              canStartMatch
+                ? 'bg-emerald-500 hover:bg-emerald-400 border-emerald-300/40 text-slate-950 cursor-pointer'
+                : 'bg-white/5 border-white/5 text-white/25 cursor-not-allowed'
+            }`}
+          >
+            Start Match
+          </button>
+          <button
+            type="button"
+            onClick={onCancelHostOrJoin}
+            className="h-12 px-4 rounded border border-white/10 bg-white/5 hover:bg-white/10 text-white/70 font-black text-xs uppercase tracking-widest cursor-pointer"
+          >
+            Leave
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col h-full min-h-0 justify-between gap-4">
+      <div className="flex flex-col gap-3 shrink-0">
+        <PanelTitle title="Multiplayer Setup" />
 
         <div className="flex bg-black/40 p-1.5 rounded-lg border border-white/5 gap-2 select-none shadow-[inset_0_1px_3px_rgba(0,0,0,0.3)]">
           <button
+            type="button"
             onClick={() => onConnectionModeChange('relay')}
             className={`flex-1 py-2 text-xs font-black uppercase tracking-wider rounded transition-all cursor-pointer text-center ${
               connectionMode === 'relay'
@@ -74,9 +241,10 @@ export function MultiplayerSetupPanel({
                 : 'text-white/40 hover:text-white/70'
             }`}
           >
-            ðŸŒ Cloud Relay
+            Cloud Relay
           </button>
           <button
+            type="button"
             onClick={() => onConnectionModeChange('local')}
             className={`flex-1 py-2 text-xs font-black uppercase tracking-wider rounded transition-all cursor-pointer text-center ${
               connectionMode === 'local'
@@ -84,7 +252,7 @@ export function MultiplayerSetupPanel({
                 : 'text-white/40 hover:text-white/70'
             }`}
           >
-            ðŸ“¶ Local LAN IP
+            Local LAN IP
           </button>
         </div>
 
@@ -92,122 +260,127 @@ export function MultiplayerSetupPanel({
           <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-3 text-left">
             <p className="text-xs font-black uppercase tracking-widest text-amber-300">Offline Mode</p>
             <p className="mt-1 text-xs text-white/60 leading-relaxed">
-              Solo training remains available from the installed app cache. Multiplayer, matchmaker chat, invites, and public IP discovery will reconnect when the network is back.
+              Multiplayer, matchmaker chat, invites, and public IP discovery will reconnect when the network is back.
             </p>
           </div>
         )}
 
-        <div className={`p-3.5 rounded-lg border text-xs ${connectionMode === 'relay' ? 'bg-sky-500/5 border-sky-500/20' : 'bg-white/5 border-white/10'}`}>
-          <p className="text-[11px] text-[#38bdf8] font-bold uppercase tracking-wider mb-2">Your Connection Coordinates</p>
+        <div className={`p-3 rounded-lg border text-xs ${connectionMode === 'relay' ? 'bg-sky-500/5 border-sky-500/20' : 'bg-white/5 border-white/10'}`}>
+          <p className="text-[11px] text-[#38bdf8] font-bold uppercase tracking-wider mb-2">Connection Coordinates</p>
           <div className="flex flex-col gap-1.5 font-mono text-xs font-semibold">
-            {connectionMode === 'relay' ? (
-              <div className="flex justify-between items-center bg-black/40 px-3 py-1.5 rounded border border-white/5">
-                <span className="text-white/45 uppercase text-[10px] font-bold">Relay Status:</span>
-                <span className="text-sky-400 font-extrabold flex items-center gap-1.5">
-                  <span className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse inline-block" /> ONLINE
-                </span>
-              </div>
-            ) : (
-              <div className="flex justify-between items-center bg-black/40 px-3 py-1.5 rounded border border-white/5">
-                <span className="text-white/45 uppercase text-[10px] font-bold">Web/Host IP:</span>
-                <span className="text-[#38bdf8] font-black">{userIp === '127.0.0.1' ? '127.0.0.1' : userIp}</span>
-              </div>
-            )}
+            <CoordinateRow label={connectionMode === 'relay' ? 'Relay' : 'Web/Host IP'} value={connectionMode === 'relay' ? 'ONLINE' : userIp} />
             {connectionMode === 'local' && lanIp && lanIp !== '127.0.0.1' && (
-              <div className="flex justify-between items-center bg-emerald-500/10 px-3 py-1.5 rounded border border-emerald-500/10">
-                <span className="text-emerald-400 uppercase text-[10px] font-bold">LAN Network IP:</span>
-                <span className="text-emerald-400 font-extrabold">{lanIp}</span>
-              </div>
+              <CoordinateRow label="LAN IP" value={lanIp} />
             )}
-            <div className="flex justify-between items-center bg-black/40 px-3 py-1.5 rounded border border-white/5">
-              <span className="text-white/45 uppercase text-[10px] font-bold">Room Code:</span>
-              <span className="text-amber-400 font-black tracking-widest">{hostIdCode}</span>
-            </div>
+            <CoordinateRow label="Room Code" value={hostIdCode} />
           </div>
         </div>
 
-        {connectionStatus === 'hosting' && (
-          <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-lg p-3.5 flex flex-col items-center justify-center text-center gap-1.5 animate-pulse">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_10px_#10b981]" />
-            <p className="text-xs font-bold text-emerald-400 uppercase tracking-widest">Lobby Live & Broadcasting</p>
-            <p className="text-[10px] text-white/60">Awaiting player to join...</p>
-            <button
-              onClick={onCancelHostOrJoin}
-              className="mt-2 px-4 py-1.5 bg-white/10 hover:bg-white/20 text-xs font-bold uppercase tracking-widest text-white border border-white/10 rounded cursor-pointer transition-all"
-            >
-              Cancel
-            </button>
-          </div>
-        )}
-
-        {connectionStatus === 'connecting' && (
-          <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-3.5 flex flex-col items-center justify-center text-center gap-1.5 animate-pulse">
-            <span className="w-2 h-2 rounded-full bg-blue-500 shadow-[0_0_10px_#3b82f6]" />
-            <p className="text-xs font-bold text-blue-400 uppercase tracking-widest">Connecting Protocol</p>
-            <p className="text-[10px] text-white/60">Attaching to host session...</p>
-            <button
-              onClick={onCancelHostOrJoin}
-              className="mt-2 px-4 py-1.5 bg-white/10 hover:bg-white/20 text-xs font-bold uppercase tracking-widest text-white border border-white/10 rounded cursor-pointer transition-all"
-            >
-              Cancel
-            </button>
-          </div>
-        )}
-
-        {quickPlayStatus === 'searching' && (
-          <div className="bg-sky-500/10 border border-sky-500/30 rounded-lg p-6 flex flex-col items-center justify-center text-center gap-4 relative overflow-hidden">
-            <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-              <div className="w-32 h-32 border border-sky-500/20 rounded-full animate-ping absolute" />
-              <div className="w-20 h-20 border border-sky-500/30 rounded-full animate-pulse absolute" />
-            </div>
-
-            <span className="text-3xl animate-spin inline-block">ðŸ“¡</span>
-            <p className="text-sm font-black text-sky-400 uppercase tracking-widest">Searching for Match...</p>
-            <p className="text-xs text-white/60">Scanning open rooms and queuing players</p>
-
-            <button
-              onClick={onCancelQuickPlay}
-              className="z-10 px-5 py-2 bg-red-500/25 hover:bg-red-500/40 text-xs font-bold uppercase tracking-widest text-red-400 border border-red-500/30 rounded cursor-pointer transition-all active:scale-[0.97]"
-            >
-              Cancel Search
-            </button>
-          </div>
-        )}
-
-        {quickPlayStatus === 'matching' && (
-          <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-6 flex flex-col items-center justify-center text-center gap-2 animate-pulse">
-            <span className="text-2xl">âš¡</span>
-            <p className="text-sm font-black text-amber-400 uppercase tracking-widest font-bold">Match Found!</p>
-            <p className="text-xs text-white/60">Configuring arena host credentials...</p>
-          </div>
-        )}
-
         {(connectionStatus === 'idle' || connectionStatus === 'error' || connectionStatus === 'fetching_ip') && quickPlayStatus === 'idle' && (
-          <div className="flex flex-col gap-2.5">
+          <div className="flex flex-col gap-3">
             <button
+              type="button"
               onClick={onQuickPlay}
-              className="w-full h-14 bg-gradient-to-r from-sky-400 via-indigo-400 to-purple-500 hover:from-sky-500 hover:to-purple-600 text-slate-950 hover:text-white font-sans font-black text-xs uppercase tracking-[0.2em] transition-all rounded shadow-lg shadow-sky-500/25 border border-sky-300/30 cursor-pointer flex items-center justify-center gap-2 hover:shadow-indigo-500/40 active:scale-[0.98] select-none"
+              className="w-full h-12 bg-gradient-to-r from-sky-400 via-indigo-400 to-purple-500 hover:from-sky-500 hover:to-purple-600 text-slate-950 hover:text-white font-sans font-black text-xs uppercase tracking-[0.18em] transition-all rounded shadow-lg shadow-sky-500/25 border border-sky-300/30 cursor-pointer"
             >
-              âš¡ Quick Play Matchmaking
+              Quick Play Matchmaking
             </button>
 
-            <div className="flex items-center gap-2 py-0.5">
-              <hr className="flex-grow border-white/5" />
-              <span className="text-[10px] text-white/20 uppercase tracking-widest font-mono">OR DIRECT PLAY</span>
-              <hr className="flex-grow border-white/5" />
-            </div>
+            <div className="bg-white/5 border border-white/5 rounded-lg p-3 flex flex-col gap-3">
+              <div className="grid grid-cols-3 gap-1.5">
+                {(['open', 'private', 'password'] as const).map((option) => (
+                  <button
+                    key={option}
+                    type="button"
+                    onClick={() => setAccess(option)}
+                    className={`h-9 rounded text-[10px] font-black uppercase tracking-wider border transition-all ${
+                      access === option
+                        ? 'bg-emerald-500/20 border-emerald-400/45 text-emerald-300'
+                        : 'bg-black/30 border-white/10 text-white/45 hover:text-white/70'
+                    }`}
+                  >
+                    {option}
+                  </button>
+                ))}
+              </div>
 
-            <button
-              onClick={onHostGame}
-              className="w-full h-12 bg-white hover:bg-emerald-500 text-slate-900 hover:text-white hover:border-emerald-400 font-sans font-black text-xs uppercase tracking-widest transition-all rounded shadow border border-white/10 cursor-pointer flex items-center justify-center gap-1.5"
-            >
-              ðŸŽ™ï¸ Host New Match
-            </button>
+              {access === 'password' && (
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  placeholder="Lobby password"
+                  className="w-full h-10 bg-black/60 border border-white/10 rounded px-3 text-xs text-white placeholder:text-white/25 focus:border-emerald-400 outline-none"
+                />
+              )}
 
-            <div className="flex items-center gap-2 py-0.5">
-              <hr className="flex-grow border-white/10" />
-              <span className="text-[10px] text-white/30 uppercase tracking-widest font-mono">OR JOIN ROOM</span>
-              <hr className="flex-grow border-white/10" />
+              <div className="grid grid-cols-2 gap-2">
+                {(['sandbox', 'grifball'] as const).map((mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => setGameMode(mode)}
+                    className={`h-10 rounded text-xs font-black uppercase tracking-wider border transition-all ${
+                      gameMode === mode
+                        ? 'bg-[#38bdf8]/20 border-[#38bdf8]/45 text-[#7dd3fc]'
+                        : 'bg-black/30 border-white/10 text-white/45 hover:text-white/70'
+                    }`}
+                  >
+                    {getMatchLobbyModeLabel(mode)}
+                  </button>
+                ))}
+              </div>
+
+              <label className="flex flex-col gap-1.5">
+                <span className="text-[10px] text-white/45 uppercase tracking-widest font-mono">Map</span>
+                <select
+                  value={selectedMap}
+                  onChange={(event) => onSelectedMapChange(event.target.value)}
+                  className="h-10 bg-black/60 border border-white/10 rounded px-3 text-xs text-cyan-300 font-bold uppercase outline-none focus:border-cyan-400"
+                >
+                  <option value="hangar">Industrial Hangar</option>
+                  <option value="circle">Circle Arena</option>
+                  {PREMADE_MAPS.map((map) => (
+                    <option key={map.id} value={map.id}>{map.name}</option>
+                  ))}
+                  <option value="custom_file">Custom Map JSON</option>
+                </select>
+              </label>
+
+              {selectedMap === 'custom_file' && (
+                <label className="h-9 bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 text-cyan-400 font-mono text-[10px] font-bold uppercase tracking-wider rounded flex items-center justify-center cursor-pointer transition-all">
+                  {lobbyCustomMapData?.name || 'Select Map JSON'}
+                  <input type="file" accept=".json" className="hidden" onChange={handleCustomMapFileChange} />
+                </label>
+              )}
+
+              <div className="grid grid-cols-2 gap-2">
+                <NumberField label="Players" min={1} max={MAX_MATCH_LOBBY_PLAYERS} value={maxPlayers} onChange={setMaxPlayers} />
+                <NumberField label="Timer Min" min={1} max={60} value={matchTimerMinutes} onChange={setMatchTimerMinutes} />
+                <NumberField label={gameMode === 'grifball' ? 'Goals To Win' : 'Kills To Win'} min={1} max={100} value={winTarget} onChange={setWinTarget} />
+                <label className="flex items-center justify-between gap-2 bg-black/35 border border-white/10 rounded px-3">
+                  <span className="text-[10px] text-white/45 uppercase tracking-widest font-mono">Observers</span>
+                  <input
+                    type="checkbox"
+                    checked={allowObservers}
+                    onChange={(event) => setAllowObservers(event.target.checked)}
+                    className="accent-emerald-400"
+                  />
+                </label>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => onHostGame(activeConfig, password.trim() || undefined)}
+                disabled={!canCreateLobby}
+                className={`w-full h-12 rounded font-black text-xs uppercase tracking-widest border transition-all ${
+                  canCreateLobby
+                    ? 'bg-white hover:bg-emerald-500 text-slate-900 hover:text-white border-white/10 cursor-pointer'
+                    : 'bg-white/5 text-white/25 border-white/5 cursor-not-allowed'
+                }`}
+              >
+                Create Lobby
+              </button>
             </div>
 
             <div className="flex gap-2">
@@ -217,87 +390,163 @@ export function MultiplayerSetupPanel({
                 onChange={(event) => onJoinIpOrIdChange(event.target.value)}
                 onKeyDown={handleJoinKeyDown}
                 placeholder="Room Code or IP..."
-                className="flex-1 h-12 bg-black/60 border border-white/10 rounded px-3.5 text-center font-mono text-sm tracking-wide text-[#38bdf8] placeholder:text-white/20 focus:border-[#38bdf8] outline-none transition-all"
+                className="flex-1 h-11 bg-black/60 border border-white/10 rounded px-3 text-center font-mono text-xs tracking-wide text-[#38bdf8] placeholder:text-white/20 focus:border-[#38bdf8] outline-none"
               />
+              <input
+                type="password"
+                value={joinPasswordInput}
+                onChange={(event) => setJoinPasswordInput(event.target.value)}
+                placeholder="Password"
+                className="w-24 h-11 bg-black/60 border border-white/10 rounded px-2 text-center font-mono text-xs text-white placeholder:text-white/20 focus:border-[#38bdf8] outline-none"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
               <button
-                onClick={() => onJoinGame(joinIpOrId)}
+                type="button"
+                onClick={() => onJoinGame(joinIpOrId, false, joinPasswordInput || undefined)}
                 disabled={!joinIpOrId}
-                className={`px-4.5 h-12 font-sans font-black text-xs uppercase tracking-widest rounded transition-all border outline-none ${
+                className={`h-10 font-black text-xs uppercase tracking-widest rounded border ${
                   joinIpOrId
                     ? 'bg-[#38bdf8]/15 hover:bg-[#38bdf8]/35 border-[#38bdf8]/50 text-[#38bdf8] cursor-pointer'
                     : 'bg-white/5 border-white/5 text-white/20 cursor-not-allowed'
                 }`}
               >
-                Connect
+                Join
               </button>
               <button
-                onClick={() => onJoinGame(joinIpOrId, true)}
+                type="button"
+                onClick={() => onJoinGame(joinIpOrId, true, joinPasswordInput || undefined)}
                 disabled={!joinIpOrId}
-                className={`px-4.5 h-12 font-sans font-black text-xs uppercase tracking-widest rounded transition-all border outline-none ${
+                className={`h-10 font-black text-xs uppercase tracking-widest rounded border ${
                   joinIpOrId
-                    ? 'bg-amber-500/10 hover:bg-amber-500/30 border-amber-500/50 text-amber-400 cursor-pointer shadow-[0_0_12px_rgba(245,158,11,0.1)]'
+                    ? 'bg-amber-500/10 hover:bg-amber-500/30 border-amber-500/50 text-amber-400 cursor-pointer'
                     : 'bg-white/5 border-white/5 text-white/20 cursor-not-allowed'
                 }`}
               >
-                Spectate
+                Observe
               </button>
             </div>
           </div>
         )}
 
+        {connectionStatus === 'connecting' && <StatusCard title="Connecting Protocol" body="Attaching to host lobby..." onCancel={onCancelHostOrJoin} />}
+        {quickPlayStatus === 'searching' && <StatusCard title="Searching for Match" body="Scanning open public lobbies." onCancel={onCancelQuickPlay} />}
+        {quickPlayStatus === 'matching' && <StatusCard title="Match Found" body="Configuring arena host credentials..." />}
         {connectionStatus === 'error' && (
-          <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-2.5 text-center animate-pulse">
-            <p className="text-xs text-red-400 font-black uppercase tracking-wider mb-0.5">âš ï¸ Sync Timeout</p>
+          <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-2.5 text-center">
+            <p className="text-xs text-red-400 font-black uppercase tracking-wider mb-0.5">Sync Timeout</p>
             <p className="text-xs text-white/70">{connectionError || 'Connection failed.'}</p>
           </div>
         )}
-
-        <div className="mt-3.5 border-t border-white/5 pt-3.5">
-          <details className="group">
-            <summary className="flex justify-between items-center text-xs text-[#38bdf8] font-bold uppercase tracking-wider cursor-pointer select-none hover:text-white transition-colors">
-              <span>âš™ï¸ Advanced Settings</span>
-              <span className="text-[10px] transition-transform group-open:rotate-180 font-sans">â–¼</span>
-            </summary>
-
-            <div className="flex flex-col gap-2.5 mt-2.5 bg-black/30 p-3 rounded border border-white/5">
-              <label className="text-[10px] text-white/50 uppercase tracking-widest font-mono">Matchmaker Server URL:</label>
-              <input
-                type="text"
-                value={customUrlInput}
-                onChange={(event) => onCustomUrlInputChange(event.target.value)}
-                placeholder="wss://..."
-                className="w-full h-10 bg-black/60 border border-white/10 rounded px-2.5 font-mono text-xs tracking-wide text-white focus:border-[#38bdf8] outline-none transition-all"
-              />
-              <div className="flex gap-2.5">
-                <button
-                  onClick={onApplyMatchmakerUrl}
-                  className="flex-1 h-9 bg-[#38bdf8] hover:bg-[#38bdf8]/80 text-slate-950 font-sans font-black text-xs uppercase tracking-wider rounded cursor-pointer transition-all active:scale-[0.97]"
-                >
-                  Apply
-                </button>
-                <button
-                  onClick={onResetMatchmakerUrl}
-                  className="h-9 px-3 bg-white/5 hover:bg-white/10 text-white/60 hover:text-white border border-white/10 rounded text-xs font-bold uppercase tracking-wider cursor-pointer transition-all"
-                >
-                  Reset
-                </button>
-              </div>
-
-              <div className="flex items-start gap-2.5 mt-1.5 pt-2.5 border-t border-white/5">
-                <span className="text-sm mt-0.5">ðŸ“Š</span>
-                <span className="flex flex-col gap-0.5">
-                  <span className="text-[10px] text-white/70 uppercase tracking-widest font-mono">
-                    Data collection (tech demo)
-                  </span>
-                  <span className="text-[10px] text-white/40 font-medium leading-snug normal-case tracking-normal">
-                    This demo collects anonymized gameplay stats and a sampled subset of match replays (player names removed) to train and improve the AI. No accounts or personal info are stored.
-                  </span>
-                </span>
-              </div>
-            </div>
-          </details>
-        </div>
       </div>
+
+      <details className="group mt-auto border-t border-white/5 pt-3">
+        <summary className="flex justify-between items-center text-xs text-[#38bdf8] font-bold uppercase tracking-wider cursor-pointer select-none hover:text-white transition-colors">
+          <span>Advanced Settings</span>
+          <span className="text-[10px] transition-transform group-open:rotate-180 font-sans">v</span>
+        </summary>
+
+        <div className="flex flex-col gap-2.5 mt-2.5 bg-black/30 p-3 rounded border border-white/5">
+          <label className="text-[10px] text-white/50 uppercase tracking-widest font-mono">Matchmaker Server URL</label>
+          <input
+            type="text"
+            value={customUrlInput}
+            onChange={(event) => onCustomUrlInputChange(event.target.value)}
+            placeholder="wss://..."
+            className="w-full h-10 bg-black/60 border border-white/10 rounded px-2.5 font-mono text-xs tracking-wide text-white focus:border-[#38bdf8] outline-none"
+          />
+          <div className="flex gap-2.5">
+            <button type="button" onClick={onApplyMatchmakerUrl} className="flex-1 h-9 bg-[#38bdf8] hover:bg-[#38bdf8]/80 text-slate-950 font-black text-xs uppercase tracking-wider rounded cursor-pointer">
+              Apply
+            </button>
+            <button type="button" onClick={onResetMatchmakerUrl} className="h-9 px-3 bg-white/5 hover:bg-white/10 text-white/60 hover:text-white border border-white/10 rounded text-xs font-bold uppercase tracking-wider cursor-pointer">
+              Reset
+            </button>
+          </div>
+        </div>
+      </details>
+    </div>
+  );
+}
+
+function PanelTitle({ title }: { title: string }) {
+  return (
+    <div className="flex items-center gap-2.5 mb-1">
+      <span className="w-2 h-4 bg-[#38bdf8]" />
+      <h2 className="text-sm uppercase font-bold tracking-[0.25em] text-white">{title}</h2>
+    </div>
+  );
+}
+
+function CoordinateRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex justify-between items-center bg-black/40 px-3 py-1.5 rounded border border-white/5">
+      <span className="text-white/45 uppercase text-[10px] font-bold">{label}:</span>
+      <span className="text-[#38bdf8] font-black truncate max-w-[9rem]">{value}</span>
+    </div>
+  );
+}
+
+function LobbyStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="bg-black/35 border border-white/5 rounded p-2 min-w-0">
+      <p className="text-white/35 uppercase tracking-wider">{label}</p>
+      <p className="text-white/85 font-black truncate">{value}</p>
+    </div>
+  );
+}
+
+function NumberField({
+  label,
+  min,
+  max,
+  value,
+  onChange,
+}: {
+  label: string;
+  min: number;
+  max: number;
+  value: number;
+  onChange: (value: number) => void;
+}) {
+  return (
+    <label className="flex flex-col gap-1.5">
+      <span className="text-[10px] text-white/45 uppercase tracking-widest font-mono">{label}</span>
+      <input
+        type="number"
+        min={min}
+        max={max}
+        value={value}
+        onChange={(event) => onChange(Math.max(min, Math.min(max, Number(event.target.value) || min)))}
+        className="h-10 bg-black/60 border border-white/10 rounded px-3 text-xs text-white font-bold outline-none focus:border-cyan-400"
+      />
+    </label>
+  );
+}
+
+function StatusCard({
+  title,
+  body,
+  onCancel,
+}: {
+  title: string;
+  body: string;
+  onCancel?: () => void;
+}) {
+  return (
+    <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-3.5 flex flex-col items-center justify-center text-center gap-1.5">
+      <span className="w-2 h-2 rounded-full bg-blue-500 shadow-[0_0_10px_#3b82f6] animate-pulse" />
+      <p className="text-xs font-bold text-blue-400 uppercase tracking-widest">{title}</p>
+      <p className="text-[10px] text-white/60">{body}</p>
+      {onCancel && (
+        <button
+          type="button"
+          onClick={onCancel}
+          className="mt-2 px-4 py-1.5 bg-white/10 hover:bg-white/20 text-xs font-bold uppercase tracking-widest text-white border border-white/10 rounded cursor-pointer"
+        >
+          Cancel
+        </button>
+      )}
     </div>
   );
 }

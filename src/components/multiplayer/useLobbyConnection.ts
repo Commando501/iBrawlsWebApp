@@ -18,11 +18,14 @@ import type {
   ClientPresenceState,
   LobbyClientMessage,
   LobbyServerMessage,
+  MatchLobbyConfig,
 } from '../../network/protocol';
+import { createMatchLobbySummary } from '../../network/matchLobbyConfig';
 import {
   SIGNED_IN_ELSEWHERE_CLOSE_CODE,
   SIGNED_IN_ELSEWHERE_MESSAGE,
 } from './multiplayerConnectionConstants';
+import { normalizePublicRoomCode } from '../../network/roomCodePrivacy';
 
 export type LobbyConnectionStatus = 'idle' | 'fetching_ip' | 'hosting' | 'connecting' | 'connected' | 'error';
 export type LobbyQuickPlayStatus = 'idle' | 'searching' | 'matching';
@@ -47,12 +50,13 @@ interface UseLobbyConnectionOptions {
   isMultiplayer: boolean;
   multiplayerRole: MultiplayerRole;
   multiplayerPlayerCount: number;
+  matchLobbyConfig: MatchLobbyConfig | null;
   buildLobbyWsUrl: (playerName: string) => string;
   redactWsUrl: (url: string) => string;
   refreshMultiplayerPreset: (serverVersion?: number) => void;
   setConnectionError: Dispatch<SetStateAction<string>>;
-  handleQuickplayHostRef: MutableRefObject<(overrideCode?: string) => void>;
-  handleQuickplayJoinRef: MutableRefObject<(target: string) => void>;
+  handleQuickplayHostRef: MutableRefObject<(overrideCode?: string, lobbyConfig?: Partial<MatchLobbyConfig>, password?: string) => void>;
+  handleQuickplayJoinRef: MutableRefObject<(target: string, isObserver?: boolean, password?: string, inviteToken?: string) => void>;
 }
 
 const isOpenSocket = (socket: WebSocket | null): socket is WebSocket => {
@@ -71,6 +75,7 @@ export function useLobbyConnection({
   isMultiplayer,
   multiplayerRole,
   multiplayerPlayerCount,
+  matchLobbyConfig,
   buildLobbyWsUrl,
   redactWsUrl,
   refreshMultiplayerPreset,
@@ -83,7 +88,7 @@ export function useLobbyConnection({
   const clientIdRef = useRef<string>('');
   const [onlineCount, setOnlineCount] = useState<number>(0);
   const [onlineClients, setOnlineClients] = useState<OnlineClient[]>([]);
-  const [activeInvite, setActiveInvite] = useState<{ fromId: string; roomCode: string } | null>(null);
+  const [activeInvite, setActiveInvite] = useState<{ fromId: string; roomCode: string; inviteToken?: string } | null>(null);
   const [inviteNotifications, setInviteNotifications] = useState<string[]>([]);
   const [ping, setPing] = useState<number | undefined>(undefined);
   const [quickPlayStatus, setQuickPlayStatus] = useState<LobbyQuickPlayStatus>('idle');
@@ -138,6 +143,7 @@ export function useLobbyConnection({
             setActiveInvite({
               fromId: data.fromId,
               roomCode: data.roomCode,
+              inviteToken: data.inviteToken,
             });
             sfx.playRespawn();
           } else if (data.type === 'invite_declined') {
@@ -162,7 +168,7 @@ export function useLobbyConnection({
             setQuickPlayStatus('searching');
           } else if (data.type === 'quickplay_host') {
             setQuickPlayStatus('matching');
-            handleQuickplayHostRef.current(data.roomCode);
+            handleQuickplayHostRef.current(data.roomCode, { access: 'open' });
           } else if (data.type === 'quickplay_match_found') {
             setQuickPlayStatus('idle');
             handleQuickplayJoinRef.current(data.roomCode);
@@ -241,24 +247,29 @@ export function useLobbyConnection({
     let status: ClientPresenceState = 'menu';
     let roomCode: string | undefined = undefined;
     let spaceAvailable = false;
+    const maxPlayers = matchLobbyConfig?.maxPlayers ?? MAX_MULTIPLAYER_PLAYERS;
 
     if (isPlaying) {
       if (isMultiplayer) {
         status = 'multi';
-        roomCode = multiplayerRole === 'host' ? hostIdCode : joinIpOrId;
+        roomCode = normalizePublicRoomCode(multiplayerRole === 'host' ? hostIdCode : joinIpOrId);
         spaceAvailable = multiplayerRole !== 'observer'
           && Boolean(roomCode)
-          && multiplayerPlayerCount < MAX_MULTIPLAYER_PLAYERS;
+          && multiplayerPlayerCount < maxPlayers
+          && matchLobbyConfig?.access !== 'private';
       } else {
         status = 'solo';
       }
-    } else if (connectionStatus === 'hosting') {
+    } else if (isMultiplayer && matchLobbyConfig && (connectionStatus === 'hosting' || connectionStatus === 'connected')) {
       status = 'multi';
-      roomCode = hostIdCode;
-      spaceAvailable = true;
+      roomCode = normalizePublicRoomCode(multiplayerRole === 'host' ? hostIdCode : joinIpOrId);
+      spaceAvailable = multiplayerRole === 'host'
+        && Boolean(roomCode)
+        && multiplayerPlayerCount < maxPlayers
+        && matchLobbyConfig.access !== 'private';
     } else if (connectionStatus === 'connecting') {
       status = 'multi';
-      roomCode = joinIpOrId;
+      roomCode = normalizePublicRoomCode(joinIpOrId);
       spaceAvailable = false;
     }
 
@@ -268,7 +279,10 @@ export function useLobbyConnection({
       roomCode,
       spaceAvailable,
       playerCount: status === 'multi' ? multiplayerPlayerCount : undefined,
-      maxPlayers: status === 'multi' ? MAX_MULTIPLAYER_PLAYERS : undefined,
+      maxPlayers: status === 'multi' ? maxPlayers : undefined,
+      lobby: status === 'multi' && matchLobbyConfig
+        ? createMatchLobbySummary(matchLobbyConfig, { inProgress: isPlaying })
+        : undefined,
       name: normalizePlayerName(playerName),
     };
 
@@ -282,6 +296,7 @@ export function useLobbyConnection({
     joinIpOrId,
     multiplayerRole,
     multiplayerPlayerCount,
+    matchLobbyConfig,
     playerName,
   ]);
 

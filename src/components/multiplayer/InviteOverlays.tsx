@@ -1,11 +1,12 @@
 export interface DirectMultiplayerInvite {
   fromId: string;
   roomCode: string;
+  inviteToken?: string;
 }
 
 interface DirectInviteModalProps {
   invite: DirectMultiplayerInvite;
-  onAccept: (roomCode: string) => void;
+  onAccept: (roomCode: string, inviteToken?: string) => void;
   onDecline: (fromId: string) => void;
 }
 
@@ -33,16 +34,16 @@ export function DirectInviteModal({ invite, onAccept, onDecline }: DirectInviteM
 
         <div className="flex gap-4 mt-2">
           <button
-            onClick={() => onAccept(invite.roomCode)}
+            onClick={() => onAccept(invite.roomCode, invite.inviteToken)}
             className="flex-1 py-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 active:scale-95 text-xs text-white uppercase font-black tracking-widest transition-all rounded-lg border border-emerald-400/20 shadow-lg cursor-pointer flex items-center justify-center gap-2"
           >
-            ðŸŽ® Yes
+            Yes
           </button>
           <button
             onClick={() => onDecline(invite.fromId)}
             className="flex-1 py-3 bg-white/5 hover:bg-white/10 active:scale-95 text-xs text-white/70 hover:text-white uppercase font-black tracking-widest transition-all rounded-lg border border-white/10 cursor-pointer"
           >
-            âŒ No
+            No
           </button>
         </div>
       </div>

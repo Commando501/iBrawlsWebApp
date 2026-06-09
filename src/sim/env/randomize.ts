@@ -29,7 +29,7 @@ export const DOMAIN_RANDOMIZABLE_KEYS: (keyof UniversalSettings)[] = [
   'dashDistance', 'dashDuration', 'dashCooldown',
   'respawnInvulnerabilityDuration', 'weaponSwapLockout', 'weaponReadyTime',
   'attackRange', 'attackRadius',
-  'hammerReloadTime', 'hammerMeleeSpeed', 'hammerMeleeReload',
+  'hammerReloadTime', 'hammerSlamWindupTime', 'hammerSlamAttackTime', 'hammerMeleeSpeed', 'hammerMeleeReload',
   'swordSlashSpeed', 'swordSlashReload',
   'swordLungeDistance', 'swordLungeSpeed', 'swordLungeReload',
   'hammerJumpPower', 'hammerJumpWindow',

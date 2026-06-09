@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { resolveHammerSlamTiming } from '../../game/hammerSlamTiming';
 import { animateSpartanCombatantModel } from './combatantAnimation';
 import {
   updateFloatingNameplatesForState,
@@ -68,6 +69,7 @@ export function createVisualUpdateCallbacksForState({
     isSprinting = false
   ) => {
     const state = getState();
+    const hammerSlamTiming = resolveHammerSlamTiming(state.settings);
     animateSpartanCombatantModel({
       refs: getRefs(),
       mesh,
@@ -81,6 +83,8 @@ export function createVisualUpdateCallbacksForState({
       isSprinting,
       hammerReloadTime: state.settings.hammerReloadTime ?? 0.6,
       hammerMeleeReload: state.settings.hammerMeleeReload ?? 0.5,
+      hammerSlamWindupTime: hammerSlamTiming.windupTime,
+      hammerSlamAttackTime: hammerSlamTiming.attackTime,
     });
   };
 

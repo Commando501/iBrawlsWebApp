@@ -171,6 +171,8 @@ export function ActiveGameSurface({
     : 'sandbox';
   const matchKillsToWin = isTournamentMatch && tournamentState
     ? (tournamentState.killsToWin ?? TOURNAMENT_DEFAULT_KILLS_TO_WIN)
+    : isMultiplayer && effectiveAdminSettings.gameMode !== 'grifball'
+      ? (effectiveAdminSettings.iBrawlsKillTarget ?? 25)
     : undefined;
   const chatRole = multiplayerRole === 'observer' ? null : multiplayerRole;
 

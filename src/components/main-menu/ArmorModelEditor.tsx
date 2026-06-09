@@ -44,6 +44,13 @@ type EditorTool = 'place' | 'erase' | 'box' | 'line' | 'plane' | 'extrude' | 'mo
 type Axis = 'x' | 'y' | 'z';
 type ViewMode = 'edit' | 'rig';
 type PoseMode = 'idle' | 'walk' | 'sprint' | 'crouch' | 'hammer' | 'sword';
+type PaintSettings = {
+  tool: EditorTool;
+  role: CustomArmorMaterialRole;
+  fixedColor: string;
+  emissive: boolean;
+  slot: CustomArmorSlot;
+};
 
 const SLOT_OPTIONS: Array<{ slot: CustomArmorSlot; label: string }> = [
   { slot: 'helmet', label: 'Helmet' },
@@ -195,6 +202,7 @@ export function ArmorModelEditor({
   const [tool, setTool] = useState<EditorTool>('place');
   const [role, setRole] = useState<CustomArmorMaterialRole>('primary');
   const [fixedColor, setFixedColor] = useState('#38bdf8');
+  const [fixedColorText, setFixedColorText] = useState('#38bdf8');
   const [emissive, setEmissive] = useState(false);
   const [axis, setAxis] = useState<Axis>('y');
   const [viewMode, setViewMode] = useState<ViewMode>('edit');
@@ -218,12 +226,31 @@ export function ArmorModelEditor({
   const [showPerformance, setShowPerformance] = useState(true);
   const [showClipping, setShowClipping] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const paintSettingsRef = useRef<PaintSettings>({ tool, role, fixedColor, emissive, slot });
 
   const validation = useMemo(() => validateCustomArmorPiece(draft), [draft]);
   const slotPieces = catalog.pieces.filter((piece) => piece.slot === slot);
   const selectedPreset = draft.sourcePreset && BUILTIN_PRESETS[slot].includes(draft.sourcePreset)
     ? draft.sourcePreset
     : getDefaultPresetForSlot(slot, playerLoadout);
+
+  useEffect(() => {
+    paintSettingsRef.current = { tool, role, fixedColor, emissive, slot };
+  }, [emissive, fixedColor, role, slot, tool]);
+
+  const setFixedColorValue = (value: string) => {
+    const normalized = value.toLowerCase();
+    setFixedColor(normalized);
+    setFixedColorText(normalized);
+  };
+
+  const handleFixedColorTextChange = (value: string) => {
+    const normalized = value.trim();
+    setFixedColorText(value);
+    if (/^#[0-9a-fA-F]{6}$/.test(normalized)) {
+      setFixedColor(normalized.toLowerCase());
+    }
+  };
 
   const setDraftWithHistory = (updater: (current: CustomArmorPieceSnapshot) => CustomArmorPieceSnapshot) => {
     setDraft((current) => {
@@ -617,6 +644,7 @@ export function ArmorModelEditor({
 
     const applyVoxelClick = (event: PointerEvent) => {
       if (viewMode === 'edit' && meshes.length > 0) {
+        const paintSettings = paintSettingsRef.current;
         const rect = renderer.domElement.getBoundingClientRect();
         pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
         pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
@@ -624,19 +652,19 @@ export function ArmorModelEditor({
         const hit = raycaster.intersectObjects(meshes)[0];
         if (hit?.object?.userData?.key) {
           const key = hit.object.userData.key as string;
-          if (tool === 'erase') {
+          if (paintSettings.tool === 'erase') {
             eraseKeys(new Set([key]));
-          } else if (tool === 'place') {
+          } else if (paintSettings.tool === 'place') {
             const voxel = hit.object.userData.voxel as VoxelData;
             const normal = hit.face?.normal ?? new THREE.Vector3(0, 1, 0);
             addVoxels([createVoxel(
               voxel.x + Math.round(normal.x),
               voxel.y + Math.round(normal.y),
               voxel.z + Math.round(normal.z),
-              role,
-              fixedColor,
-              emissive
-            )].filter((candidate) => voxelWithinCurrentSlot(candidate, slot)));
+              paintSettings.role,
+              paintSettings.fixedColor,
+              paintSettings.emissive
+            )].filter((candidate) => voxelWithinCurrentSlot(candidate, paintSettings.slot)));
           } else {
             setSelectedKeys((keys) => {
               const next = new Set(keys);
@@ -759,12 +787,9 @@ export function ArmorModelEditor({
     };
   }, [
     draft,
-    emissive,
-    fixedColor,
     playerHue,
     playerLoadout,
     poseMode,
-    role,
     selectedKeys,
     selectedPreset,
     showBounds,
@@ -772,7 +797,6 @@ export function ArmorModelEditor({
     showDensity,
     showSilhouette,
     slot,
-    tool,
     viewMode,
   ]);
 
@@ -928,7 +952,15 @@ export function ArmorModelEditor({
               ))}
             </div>
             <div className="flex items-center gap-2 mt-2">
-              <input type="color" value={fixedColor} onChange={(event) => setFixedColor(event.target.value)} className="w-8 h-8 bg-transparent" />
+              <input aria-label="Fixed color picker" type="color" value={fixedColor} onChange={(event) => setFixedColorValue(event.target.value)} className="w-8 h-8 bg-transparent" />
+              <input
+                aria-label="Fixed color hex"
+                value={fixedColorText}
+                onChange={(event) => handleFixedColorTextChange(event.target.value)}
+                onBlur={() => setFixedColorText(fixedColor)}
+                spellCheck={false}
+                className="h-8 w-24 rounded border border-white/10 bg-black/35 px-2 font-mono text-[10px] font-black uppercase text-white/70 outline-none focus:border-cyan-400/60"
+              />
               <Toggle label="Emissive" checked={emissive} onChange={setEmissive} />
             </div>
           </Panel>

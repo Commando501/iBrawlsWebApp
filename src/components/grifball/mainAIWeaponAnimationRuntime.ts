@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { type Combatant } from '../../types';
+import { resolveHammerSlamTiming } from '../../game/hammerSlamTiming';
 import {
   applyWeaponPose,
   getThirdPersonCombatantArmPose,
@@ -60,6 +61,7 @@ export function updateMainAIWeaponAnimationsForState({
     });
   } else if (mainAI.activeWeapon === 'hammer') {
     const hammerAttackAnimation = getHammerAttackAnimationStyle(state.settings);
+    const hammerSlamTiming = resolveHammerSlamTiming(state.settings);
     if (mainAI.weaponState === 'ready') {
       applyThirdPersonWeaponPose(enemyHammerModel, {
         position: [0.48, 1.08 - 0.64, -0.48],
@@ -67,7 +69,7 @@ export function updateMainAIWeaponAnimationsForState({
       });
     } else if (mainAI.weaponState === 'swing_up') {
       mainAI.weaponTimer += dt;
-      const windup = 0.28;
+      const windup = hammerSlamTiming.windupTime;
       const pct = Math.min(1.0, mainAI.weaponTimer / windup);
 
       if (hammerAttackAnimation === 'highFidelity') {
@@ -93,7 +95,7 @@ export function updateMainAIWeaponAnimationsForState({
       }
     } else if (mainAI.weaponState === 'swing_down') {
       mainAI.weaponTimer += dt;
-      const strike = 0.12;
+      const strike = hammerSlamTiming.attackTime;
       const pct = Math.min(1.0, mainAI.weaponTimer / strike);
 
       if (hammerAttackAnimation === 'highFidelity') {

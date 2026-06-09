@@ -3,6 +3,32 @@ import { type CharacterLoadout } from '../components/VoxelModels';
 
 export type ClientPresenceState = 'menu' | 'solo' | 'multi';
 export type GameRole = 'host' | 'client' | 'observer';
+export type MatchLobbyAccess = 'open' | 'private' | 'password';
+export type MatchLobbyGameMode = 'sandbox' | 'grifball';
+
+export interface MatchLobbyConfig {
+  access: MatchLobbyAccess;
+  gameMode: MatchLobbyGameMode;
+  selectedMap: string;
+  customMap?: CustomMapData | null;
+  maxPlayers: number;
+  allowObservers: boolean;
+  matchTimerSeconds: number;
+  winTarget: number;
+}
+
+export interface MatchLobbySummary {
+  access: MatchLobbyAccess;
+  gameMode: MatchLobbyGameMode;
+  selectedMap: string;
+  customMapName?: string;
+  maxPlayers: number;
+  allowObservers: boolean;
+  matchTimerSeconds: number;
+  winTarget: number;
+  hasPassword: boolean;
+  inProgress?: boolean;
+}
 
 export interface GameplayPlayerSlotPayload {
   clientId: string;
@@ -22,6 +48,7 @@ export interface OnlineClientPayload {
   playerCount?: number;
   maxPlayers?: number;
   lobbyStartedAt?: number;
+  lobby?: MatchLobbySummary;
 }
 
 export type LobbyServerMessage =
@@ -29,7 +56,7 @@ export type LobbyServerMessage =
   | { type: 'presence'; onlineCount: number; clients: OnlineClientPayload[] }
   | { type: 'signed_in_elsewhere'; message: string }
   | { type: 'pong'; timestamp: number }
-  | { type: 'receive_invite'; fromId: string; roomCode: string }
+  | { type: 'receive_invite'; fromId: string; roomCode: string; inviteToken?: string }
   | { type: 'invite_declined'; fromId: string }
   | { type: 'lobby_chat'; id: string; sender: string; text: string; timestamp: string; clientId: string }
   | { type: 'quickplay_queued' }
@@ -38,7 +65,7 @@ export type LobbyServerMessage =
   | { type: 'error'; message: string };
 
 export type LobbyClientMessage =
-  | { type: 'update_status'; status: ClientPresenceState; roomCode?: string; spaceAvailable: boolean; name?: string; playerCount?: number; maxPlayers?: number; accountId?: string; onlineInstanceId?: string }
+  | { type: 'update_status'; status: ClientPresenceState; roomCode?: string; spaceAvailable: boolean; name?: string; playerCount?: number; maxPlayers?: number; accountId?: string; onlineInstanceId?: string; lobby?: MatchLobbySummary }
   | { type: 'lobby_chat'; sender: string; text: string }
   | { type: 'ping'; timestamp: number }
   | { type: 'send_invite'; targetId: string; roomCode: string }
@@ -47,7 +74,7 @@ export type LobbyClientMessage =
   | { type: 'quickplay_leave' };
 
 export type GameplayServerMessage =
-  | { type: 'hosted'; keys: string[] }
+  | { type: 'hosted'; keys: string[]; clientId?: string; role?: GameRole; spawnSlot?: number; lobbyConfig?: MatchLobbyConfig }
   | {
       type: 'connected';
       role: GameRole;
@@ -59,7 +86,10 @@ export type GameplayServerMessage =
       otherPlayers?: GameplayPlayerSlotPayload[];
       opponentPlayerName?: string;
       spawnSlot?: number;
+      lobbyConfig?: MatchLobbyConfig;
+      matchStarted?: boolean;
     }
+  | { type: 'match_start'; lobbyConfig: MatchLobbyConfig }
   | { type: 'player_joined'; clientId: string; playerName?: string; role?: GameRole; spawnSlot?: number; hue?: number; loadout?: CharacterLoadout }
   | { type: 'player_left'; leftPlayerId: string; role?: GameRole }
   | { type: 'observer_joined'; observerId: string; playerName?: string; role?: GameRole; hue?: number; loadout?: CharacterLoadout }
@@ -70,8 +100,9 @@ export type GameplayServerMessage =
   | GameplaySyncMessage;
 
 export type GameplayClientMessage =
-  | { type: 'host'; ip?: string; lanIp?: string; customId?: string; playerName?: string; hue?: number; loadout?: CharacterLoadout }
-  | { type: 'join'; targetIpOrId: string; isObserver?: boolean; playerName?: string; hue?: number; loadout?: CharacterLoadout }
+  | { type: 'host'; ip?: string; lanIp?: string; customId?: string; playerName?: string; hue?: number; loadout?: CharacterLoadout; lobbyConfig?: Partial<MatchLobbyConfig>; password?: string }
+  | { type: 'join'; targetIpOrId: string; isObserver?: boolean; playerName?: string; hue?: number; loadout?: CharacterLoadout; password?: string; inviteToken?: string }
+  | { type: 'start_match' }
   | { type: 'change_role'; role: GameRole }
   | GameplaySyncMessage;
 
@@ -81,6 +112,7 @@ export type GameplaySyncAction =
   | 'request_map'
   | 'sync_map'
   | 'match_loading_status'
+  | 'match_end'
   | 'swing_hammer'
   | 'melee_hammer'
   | 'hammer_impact'
@@ -128,4 +160,7 @@ export interface GameplaySyncMessage {
   loadout?: CharacterLoadout;
   selectedMap?: string;
   customMap?: CustomMapData | null;
+  lobbyConfig?: MatchLobbyConfig;
+  winner?: 'host' | 'client' | 'blue' | 'red' | 'draw';
+  reason?: 'target' | 'timer' | 'host_ended';
 }

@@ -17,6 +17,9 @@ export interface UniversalSettings {
   dashCooldown: number; // Dash cooldown in seconds (e.g. 0.5s to 10.0s)
   respawnInvulnerabilityDuration: number; // Invulnerability window in seconds (e.g. 0.5s to 5.0s)
   hammerReloadTime: number;               // Recovery/reload duration for Gravity Hammer in seconds (e.g. 0.1s to 3.0s)
+  hammerSlamWindupTime: number;           // Windup duration before the Gravity Hammer primary slam starts striking (e.g. 0.05s to 2.33s)
+  hammerSlamAttackTime: number;           // Attack/strike duration before the Gravity Hammer primary slam lands (e.g. 0.02s to 1.0s)
+  hammerSlamTimingLocked: boolean;        // Whether the slam windup/attack sliders stay in the default timing ratio
   hammerMeleeSpeed: number;               // Speed of the hammer melee side-swipe animation in seconds (e.g. 0.05s to 1.0s)
   hammerMeleeReload: number;              // Recovery reload duration for Hammer Melee in seconds (e.g. 0.1s to 3.0s)
   hammerAttackAnimation: 'current' | 'highFidelity'; // Gravity Hammer swing/melee animation preset
@@ -142,6 +145,10 @@ export interface UniversalSettings {
   // --- Grifball game mode ---
   /** Active game mode. 'sandbox' (default) preserves all legacy behavior. */
   gameMode?: 'sandbox' | 'grifball';
+  /** Kills required to win an iBrawls match (default 25). */
+  iBrawlsKillTarget?: number;
+  /** Match countdown duration in seconds (default 522). */
+  matchTimerSeconds?: number;
   /** Goals required to win a Grifball match (default 5). */
   grifballGoalTarget?: number;
   /** Seconds the "GOAL!" celebration / reset holds before the next round (default 4). */

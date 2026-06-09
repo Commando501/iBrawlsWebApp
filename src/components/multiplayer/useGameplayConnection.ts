@@ -1,10 +1,13 @@
 import {
   useCallback,
   useEffect,
+  useRef,
   type Dispatch,
   type SetStateAction,
 } from 'react';
-import type { CustomMapData } from '../../types';
+import type { CustomMapData, UniversalSettings } from '../../types';
+import type { MatchLobbyConfig } from '../../network/protocol';
+import { normalizeMatchLobbyConfig } from '../../network/matchLobbyConfig';
 import {
   MAX_MULTIPLAYER_PLAYERS,
   getConnectedMatchPlayerCount,
@@ -39,6 +42,10 @@ interface UseGameplayConnectionOptions {
   setSelectedMap: Dispatch<SetStateAction<string>>;
   lobbyCustomMapData: CustomMapData | null;
   setLobbyCustomMapData: Dispatch<SetStateAction<CustomMapData | null>>;
+  adminSettings: UniversalSettings;
+  setAdminSettings: Dispatch<SetStateAction<UniversalSettings>>;
+  matchLobbyConfig: MatchLobbyConfig | null;
+  setMatchLobbyConfig: Dispatch<SetStateAction<MatchLobbyConfig | null>>;
   isMultiplayer: boolean;
   multiplayerSocket: WebSocket | null;
   multiplayerRole: GameplayMultiplayerRole;
@@ -82,6 +89,10 @@ export function useGameplayConnection({
   setSelectedMap,
   lobbyCustomMapData,
   setLobbyCustomMapData,
+  adminSettings,
+  setAdminSettings,
+  matchLobbyConfig,
+  setMatchLobbyConfig,
   isMultiplayer,
   multiplayerSocket,
   multiplayerRole,
@@ -107,6 +118,51 @@ export function useGameplayConnection({
   upsertLoadingParticipantStatus,
   removeLoadingParticipantById,
 }: UseGameplayConnectionOptions) {
+  const multiplayerSocketRef = useRef(multiplayerSocket);
+  const multiplayerRoleRef = useRef(multiplayerRole);
+
+  useEffect(() => {
+    multiplayerSocketRef.current = multiplayerSocket;
+    multiplayerRoleRef.current = multiplayerRole;
+  }, [multiplayerRole, multiplayerSocket]);
+
+  const applyLobbyConfig = useCallback((incoming: Partial<MatchLobbyConfig> | null | undefined) => {
+    const normalized = normalizeMatchLobbyConfig(incoming);
+    setMatchLobbyConfig(normalized);
+    setSelectedMap(normalized.selectedMap);
+    setLobbyCustomMapData(normalized.customMap ?? null);
+    setAdminSettings(prev => ({
+      ...prev,
+      gameMode: normalized.gameMode,
+      grifballGoalTarget: normalized.gameMode === 'grifball' ? normalized.winTarget : prev.grifballGoalTarget,
+      iBrawlsKillTarget: normalized.gameMode === 'sandbox' ? normalized.winTarget : prev.iBrawlsKillTarget,
+      matchTimerSeconds: normalized.matchTimerSeconds,
+    }));
+    return normalized;
+  }, [
+    setAdminSettings,
+    setLobbyCustomMapData,
+    setMatchLobbyConfig,
+    setSelectedMap,
+  ]);
+
+  const beginMatchFromLobbyConfig = useCallback((incoming: Partial<MatchLobbyConfig> | null | undefined) => {
+    applyLobbyConfig(incoming);
+    sfx.init();
+    sfx.resume();
+    sfx.playRespawn();
+    setConnectionStatus('connected');
+    setIsPlaying(true);
+    setIsPaused(false);
+    setIsTerminated(false);
+  }, [
+    applyLobbyConfig,
+    setConnectionStatus,
+    setIsPlaying,
+    setIsPaused,
+    setIsTerminated,
+  ]);
+
   useEffect(() => {
     if (!multiplayerSocket) return;
 
@@ -131,7 +187,31 @@ export function useGameplayConnection({
           if (typeof data.clientId === 'string') {
             setGameplayClientId(data.clientId);
           }
+          if (data.lobbyConfig) {
+            applyLobbyConfig(data.lobbyConfig);
+          }
           mergeLoadingParticipants(data.participants ?? data.otherPlayers);
+          if (data.matchStarted && data.lobbyConfig) {
+            beginMatchFromLobbyConfig(data.lobbyConfig);
+          }
+        } else if (data.type === 'match_start') {
+          beginMatchFromLobbyConfig(data.lobbyConfig);
+        } else if (data.type === 'sync' && data.action === 'match_end') {
+          const winnerLabel = data.winner === 'draw'
+            ? 'Match ended in a draw.'
+            : `Match ended. Winner: ${data.winner || 'unknown'}.`;
+          setChatMessages(prev => [
+            ...prev,
+            {
+              id: `match-end-${Date.now()}`,
+              sender: 'Match Director',
+              text: winnerLabel,
+              timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+              role: 'host',
+              isLocal: false,
+            },
+          ]);
+          setIsPaused(true);
         } else if (data.type === 'player_joined') {
           upsertLoadingParticipantSlot({
             clientId: data.clientId,
@@ -173,6 +253,7 @@ export function useGameplayConnection({
               action: 'sync_map',
               selectedMap,
               customMap: lobbyCustomMapData,
+              lobbyConfig: matchLobbyConfig,
             }));
           }
         } else if (data.type === 'sync' && data.action === 'sync_map') {
@@ -182,6 +263,9 @@ export function useGameplayConnection({
           }
           if (data.customMap) {
             setLobbyCustomMapData(data.customMap);
+          }
+          if (data.lobbyConfig) {
+            applyLobbyConfig(data.lobbyConfig);
           }
         } else if (data.type === 'role_changed') {
           console.log('Role authoritatively updated to:', data.role);
@@ -239,6 +323,9 @@ export function useGameplayConnection({
     multiplayerRole,
     selectedMap,
     lobbyCustomMapData,
+    matchLobbyConfig,
+    applyLobbyConfig,
+    beginMatchFromLobbyConfig,
     mergeLoadingParticipants,
     upsertLoadingParticipantSlot,
     upsertLoadingParticipantStatus,
@@ -248,6 +335,7 @@ export function useGameplayConnection({
     playerHue,
     playerLoadout,
     setChatMessages,
+    setIsPaused,
     setMultiplayerPlayerCount,
     setMultiplayerSpawnSlot,
     setGameplayClientId,
@@ -291,17 +379,35 @@ export function useGameplayConnection({
     ]);
   }, [multiplayerSocket, multiplayerRole, playerName, setChatMessages]);
 
-  const handleHostGame = useCallback((overrideCode?: string) => {
+  const handleHostGame = useCallback((
+    overrideCode?: string,
+    lobbyConfigOverride?: Partial<MatchLobbyConfig>,
+    password?: string
+  ) => {
     setConnectionError('');
     setConnectionStatus('hosting');
     setChatMessages([]);
     setMultiplayerPlayerCount(1);
     setMultiplayerSpawnSlot(0);
+    setIsMultiplayer(true);
+    setMultiplayerRole('host');
 
     const activeCode = overrideCode || hostIdCode;
     if (overrideCode) {
       setHostIdCode(overrideCode);
     }
+    const outgoingLobbyConfig = normalizeMatchLobbyConfig({
+      ...matchLobbyConfig,
+      gameMode: adminSettings.gameMode ?? 'sandbox',
+      matchTimerSeconds: adminSettings.matchTimerSeconds,
+      winTarget: adminSettings.gameMode === 'grifball'
+        ? adminSettings.grifballGoalTarget
+        : adminSettings.iBrawlsKillTarget,
+      ...lobbyConfigOverride,
+      selectedMap: lobbyConfigOverride?.selectedMap ?? selectedMap,
+      customMap: lobbyConfigOverride?.customMap ?? lobbyCustomMapData,
+    });
+    setMatchLobbyConfig(outgoingLobbyConfig);
 
     const baseWsUrl = connectionMode === 'relay'
       ? getWsUrl()
@@ -320,6 +426,8 @@ export function useGameplayConnection({
         playerName,
         hue: playerHue,
         loadout: playerLoadout,
+        lobbyConfig: outgoingLobbyConfig,
+        password,
       }));
     };
 
@@ -328,6 +436,22 @@ export function useGameplayConnection({
         const data = JSON.parse(event.data);
         if (data.type === 'hosted') {
           console.log('Successfully hosted lobby inside room of keys:', data.keys);
+          setMultiplayerSocket(ws);
+          setIsMultiplayer(true);
+          setMultiplayerRole('host');
+          setConnectionStatus('hosting');
+          if (typeof data.clientId === 'string') {
+            setGameplayClientId(data.clientId);
+          }
+          applyLobbyConfig(data.lobbyConfig ?? outgoingLobbyConfig);
+          mergeLoadingParticipants([{
+            clientId: typeof data.clientId === 'string' ? data.clientId : 'host',
+            role: 'host',
+            spawnSlot: 0,
+            playerName,
+            hue: playerHue,
+            loadout: playerLoadout,
+          }]);
         } else if (data.type === 'connected') {
           ws.removeEventListener('message', handleHostMessage);
 
@@ -342,14 +466,12 @@ export function useGameplayConnection({
           setConnectionStatus('connected');
           setOpponentClientId(data.clientClientId || 'Opponent');
           setMultiplayerPlayerCount(getConnectedMatchPlayerCount({ ...data, role: 'host' }, 'host'));
-
-          sfx.init();
-          sfx.resume();
-          sfx.playRespawn();
-
-          setIsPlaying(true);
-          setIsPaused(false);
-          setIsTerminated(false);
+          if (data.lobbyConfig) {
+            applyLobbyConfig(data.lobbyConfig);
+          }
+          if (data.matchStarted && data.lobbyConfig) {
+            beginMatchFromLobbyConfig(data.lobbyConfig);
+          }
         } else if (data.type === 'error') {
           setConnectionError(data.message);
           setConnectionStatus('error');
@@ -372,6 +494,7 @@ export function useGameplayConnection({
       }
       setMultiplayerSocket(null);
       setMultiplayerSpawnSlot(0);
+      setMatchLobbyConfig(null);
     };
 
     ws.onerror = (err) => {
@@ -385,8 +508,15 @@ export function useGameplayConnection({
     setChatMessages,
     setMultiplayerPlayerCount,
     setMultiplayerSpawnSlot,
+    setIsMultiplayer,
+    setMultiplayerRole,
     hostIdCode,
     setHostIdCode,
+    matchLobbyConfig,
+    adminSettings,
+    selectedMap,
+    lobbyCustomMapData,
+    setMatchLobbyConfig,
     connectionMode,
     getWsUrl,
     buildGameplayWsUrl,
@@ -400,6 +530,8 @@ export function useGameplayConnection({
     setIsMultiplayer,
     setMultiplayerRole,
     setGameplayClientId,
+    applyLobbyConfig,
+    beginMatchFromLobbyConfig,
     mergeLoadingParticipants,
     setOpponentClientId,
     setIsPlaying,
@@ -407,7 +539,12 @@ export function useGameplayConnection({
     setIsTerminated,
   ]);
 
-  const handleJoinGame = useCallback((target: string, isObserver: boolean = false) => {
+  const handleJoinGame = useCallback((
+    target: string,
+    isObserver: boolean = false,
+    password?: string,
+    inviteToken?: string
+  ) => {
     if (!target) {
       setConnectionError('Please provide a Host IP address or Room Code.');
       return;
@@ -450,6 +587,8 @@ export function useGameplayConnection({
         playerName,
         hue: playerHue,
         loadout: playerLoadout,
+        password,
+        inviteToken,
       }));
     };
 
@@ -470,14 +609,12 @@ export function useGameplayConnection({
           setConnectionStatus('connected');
           setOpponentClientId(data.hostClientId || 'Opponent');
           setMultiplayerPlayerCount(getConnectedMatchPlayerCount(data, data.role || 'client'));
-
-          sfx.init();
-          sfx.resume();
-          sfx.playRespawn();
-
-          setIsPlaying(true);
-          setIsPaused(false);
-          setIsTerminated(false);
+          if (data.lobbyConfig) {
+            applyLobbyConfig(data.lobbyConfig);
+          }
+          if (data.matchStarted && data.lobbyConfig) {
+            beginMatchFromLobbyConfig(data.lobbyConfig);
+          }
 
           setTimeout(() => {
             if (ws.readyState === WebSocket.OPEN) {
@@ -510,6 +647,7 @@ export function useGameplayConnection({
       }
       setMultiplayerSocket(null);
       setMultiplayerSpawnSlot(0);
+      setMatchLobbyConfig(null);
     };
 
     ws.onerror = (err) => {
@@ -534,12 +672,28 @@ export function useGameplayConnection({
     setIsMultiplayer,
     setMultiplayerRole,
     setGameplayClientId,
+    applyLobbyConfig,
+    beginMatchFromLobbyConfig,
     mergeLoadingParticipants,
     setMultiplayerSpawnSlot,
     setOpponentClientId,
     setIsPlaying,
     setIsPaused,
     setIsTerminated,
+    setMatchLobbyConfig,
+  ]);
+
+  const startHostedMatch = useCallback(() => {
+    const activeSocket = multiplayerSocketRef.current;
+    const activeRole = multiplayerRoleRef.current;
+    if (!activeSocket || activeSocket.readyState !== WebSocket.OPEN || activeRole !== 'host') {
+      setConnectionError('Only the active host can start this lobby.');
+      return;
+    }
+    console.log('Host requested staged match start.');
+    activeSocket.send(JSON.stringify({ type: 'start_match' }));
+  }, [
+    setConnectionError,
   ]);
 
   const cancelHostOrJoin = useCallback(() => {
@@ -551,6 +705,9 @@ export function useGameplayConnection({
     setMultiplayerSocket(null);
     setMultiplayerPlayerCount(1);
     setMultiplayerSpawnSlot(0);
+    setIsMultiplayer(false);
+    setMultiplayerRole(null);
+    setMatchLobbyConfig(null);
   }, [
     multiplayerSocket,
     setConnectionStatus,
@@ -558,6 +715,9 @@ export function useGameplayConnection({
     setMultiplayerSocket,
     setMultiplayerPlayerCount,
     setMultiplayerSpawnSlot,
+    setIsMultiplayer,
+    setMultiplayerRole,
+    setMatchLobbyConfig,
   ]);
 
   const handleJoinObserver = useCallback(() => {
@@ -606,6 +766,7 @@ export function useGameplayConnection({
     sendChatMessage,
     handleHostGame,
     handleJoinGame,
+    startHostedMatch,
     cancelHostOrJoin,
     handleJoinObserver,
     handleJoinPlayer,

@@ -4,6 +4,7 @@ import type {
   GameplayConnectionStatus,
   GameplayMultiplayerRole,
 } from './multiplayerConnectionConstants';
+import type { MatchLobbyConfig } from '../../network/protocol';
 
 export interface MultiplayerSessionSnapshot {
   connectionMode: GameplayConnectionMode;
@@ -16,6 +17,7 @@ export interface MultiplayerSessionSnapshot {
   multiplayerPlayerCount: number;
   multiplayerSpawnSlot: number;
   gameplayClientId: string;
+  matchLobbyConfig: MatchLobbyConfig | null;
 }
 
 export function createInitialMultiplayerSessionSnapshot(): MultiplayerSessionSnapshot {
@@ -30,6 +32,7 @@ export function createInitialMultiplayerSessionSnapshot(): MultiplayerSessionSna
     multiplayerPlayerCount: 1,
     multiplayerSpawnSlot: 0,
     gameplayClientId: '',
+    matchLobbyConfig: null,
   };
 }
 
@@ -45,8 +48,18 @@ export function useMultiplayerSessionState() {
   const [multiplayerPlayerCount, setMultiplayerPlayerCount] = useState<number>(initial.multiplayerPlayerCount);
   const [multiplayerSpawnSlot, setMultiplayerSpawnSlot] = useState<number>(initial.multiplayerSpawnSlot);
   const [gameplayClientId, setGameplayClientId] = useState<string>(initial.gameplayClientId);
-  const handleHostGameRef = useRef<(overrideCode?: string) => void>(() => {});
-  const handleJoinGameRef = useRef<(target: string) => void>(() => {});
+  const [matchLobbyConfig, setMatchLobbyConfig] = useState<MatchLobbyConfig | null>(initial.matchLobbyConfig);
+  const handleHostGameRef = useRef<(
+    overrideCode?: string,
+    lobbyConfig?: Partial<MatchLobbyConfig>,
+    password?: string
+  ) => void>(() => {});
+  const handleJoinGameRef = useRef<(
+    target: string,
+    isObserver?: boolean,
+    password?: string,
+    inviteToken?: string
+  ) => void>(() => {});
 
   return {
     connectionMode,
@@ -69,6 +82,8 @@ export function useMultiplayerSessionState() {
     setMultiplayerSpawnSlot,
     gameplayClientId,
     setGameplayClientId,
+    matchLobbyConfig,
+    setMatchLobbyConfig,
     handleHostGameRef,
     handleJoinGameRef,
   };

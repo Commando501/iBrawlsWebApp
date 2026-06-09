@@ -145,7 +145,38 @@ interface Room {
   clients: GameWebSocket[]; // Array of up to MAX_ROOM_CLIENTS guest clients
   observers: Set<GameWebSocket>;
   keys: string[];
+  lobbyConfig: MatchLobbyConfig;
+  passwordHash?: string;
+  inviteTokens: Map<string, string>;
+  matchStarted: boolean;
   quickplayReserved?: boolean;
+}
+
+type MatchLobbyAccess = "open" | "private" | "password";
+type MatchLobbyGameMode = "sandbox" | "grifball";
+
+interface MatchLobbyConfig {
+  access: MatchLobbyAccess;
+  gameMode: MatchLobbyGameMode;
+  selectedMap: string;
+  customMap?: unknown;
+  maxPlayers: number;
+  allowObservers: boolean;
+  matchTimerSeconds: number;
+  winTarget: number;
+}
+
+interface MatchLobbySummary {
+  access: MatchLobbyAccess;
+  gameMode: MatchLobbyGameMode;
+  selectedMap: string;
+  customMapName?: string;
+  maxPlayers: number;
+  allowObservers: boolean;
+  matchTimerSeconds: number;
+  winTarget: number;
+  hasPassword: boolean;
+  inProgress?: boolean;
 }
 
 interface GameWebSocket extends WebSocket {
@@ -161,13 +192,112 @@ interface GameWebSocket extends WebSocket {
   playerCount?: number;
   maxPlayers?: number;
   lobbyStartedAt?: number;
+  lobby?: MatchLobbySummary;
 }
 
 const MAX_PLAYER_NAME_LENGTH = 10;
 const MAX_ROOM_CLIENTS = 7;
 const MAX_ROOM_PLAYERS = 1 + MAX_ROOM_CLIENTS;
+const DEFAULT_IBRAWLS_KILL_TARGET = 25;
+const DEFAULT_GRIFBALL_GOAL_TARGET = 5;
+const DEFAULT_MATCH_TIMER_SECONDS = 522;
 const SIGNED_IN_ELSEWHERE_CLOSE_CODE = 4001;
 const SIGNED_IN_ELSEWHERE_MESSAGE = "Signed in elsewhere. This page was taken offline to prevent account cloning.";
+
+function clampInt(value: unknown, fallback: number, min: number, max: number): number {
+  const numeric = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(numeric)) return fallback;
+  return Math.max(min, Math.min(max, Math.floor(numeric)));
+}
+
+function normalizeString(value: unknown, fallback: string, maxLength: number): string {
+  if (typeof value !== "string") return fallback;
+  const normalized = value.trim().slice(0, maxLength);
+  return normalized.length > 0 ? normalized : fallback;
+}
+
+function normalizeMatchLobbyConfig(input: unknown): MatchLobbyConfig {
+  const raw = input && typeof input === "object" ? input as Record<string, unknown> : {};
+  const gameMode = raw.gameMode === "grifball" ? "grifball" : "sandbox";
+  const fallbackTarget = gameMode === "grifball" ? DEFAULT_GRIFBALL_GOAL_TARGET : DEFAULT_IBRAWLS_KILL_TARGET;
+  const access = raw.access === "private" || raw.access === "password" ? raw.access : "open";
+  return {
+    access,
+    gameMode,
+    selectedMap: normalizeString(raw.selectedMap, "hangar", 64),
+    customMap: raw.customMap ?? null,
+    maxPlayers: clampInt(raw.maxPlayers, MAX_ROOM_PLAYERS, 1, MAX_ROOM_PLAYERS),
+    allowObservers: raw.allowObservers !== false,
+    matchTimerSeconds: clampInt(raw.matchTimerSeconds, DEFAULT_MATCH_TIMER_SECONDS, 60, 60 * 60),
+    winTarget: clampInt(raw.winTarget, fallbackTarget, 1, 100),
+  };
+}
+
+function sanitizeLobbyPassword(password: unknown): string | undefined {
+  if (typeof password !== "string") return undefined;
+  const normalized = password.trim().slice(0, 64);
+  return normalized.length > 0 ? normalized : undefined;
+}
+
+function hashLobbyPassword(password: string): string {
+  let hash = 2166136261;
+  for (let i = 0; i < password.length; i += 1) {
+    hash ^= password.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(16);
+}
+
+function createInviteToken(): string {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+}
+
+function getCustomMapName(customMap: unknown): string | undefined {
+  if (!customMap || typeof customMap !== "object") return undefined;
+  const name = (customMap as Record<string, unknown>).name;
+  if (typeof name !== "string") return undefined;
+  const normalized = name.trim().slice(0, 64);
+  return normalized.length > 0 ? normalized : undefined;
+}
+
+function createMatchLobbySummary(
+  config: MatchLobbyConfig,
+  { hasPassword = config.access === "password", inProgress = false }: { hasPassword?: boolean; inProgress?: boolean } = {},
+): MatchLobbySummary {
+  return {
+    access: config.access,
+    gameMode: config.gameMode,
+    selectedMap: config.selectedMap,
+    customMapName: getCustomMapName(config.customMap),
+    maxPlayers: config.maxPlayers,
+    allowObservers: config.allowObservers,
+    matchTimerSeconds: config.matchTimerSeconds,
+    winTarget: config.winTarget,
+    hasPassword,
+    inProgress,
+  };
+}
+
+function buildPresenceLobbySummary(value: unknown): MatchLobbySummary | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const raw = value as Record<string, unknown>;
+  return createMatchLobbySummary(normalizeMatchLobbyConfig(raw), {
+    hasPassword: Boolean(raw.hasPassword),
+    inProgress: Boolean(raw.inProgress),
+  });
+}
+
+function getRoomPlayerCount(room: Room): number {
+  return 1 + room.clients.length;
+}
+
+function hasRoomPlayerSpace(room: Room): boolean {
+  return getRoomPlayerCount(room) < room.lobbyConfig.maxPlayers;
+}
+
+function getInviteTokenBypass(room: Room, clientId: string, inviteToken: unknown): boolean {
+  return typeof inviteToken === "string" && room.inviteTokens.get(clientId) === inviteToken;
+}
 
 function normalizePlayerName(name: unknown): string | undefined {
   if (typeof name !== "string") return undefined;
@@ -276,10 +406,12 @@ function applyGameplayIdentity(socket: GameWebSocket, message: any) {
   if (loadout) socket.playerLoadout = loadout;
 }
 
-function normalizeRoomCodeForPresence(roomCode: unknown): string | undefined {
+const PUBLIC_ROOM_CODE_PATTERN = /^(?:\d{6}|QP_\d{6})$/i;
+
+function normalizePublicRoomCode(roomCode: unknown): string | undefined {
   if (typeof roomCode !== "string") return undefined;
   const normalized = roomCode.trim();
-  return normalized.length > 0 ? normalized : undefined;
+  return PUBLIC_ROOM_CODE_PATTERN.test(normalized) ? normalized.toUpperCase() : undefined;
 }
 
 function normalizePresenceId(value: unknown, maxLength = 128): string | undefined {
@@ -740,6 +872,14 @@ export class GameLobby implements DurableObject {
     return String(socket.id || "");
   }
 
+  getRoomPublicCode(room: Room): string | undefined {
+    for (const key of room.keys) {
+      const publicCode = normalizePublicRoomCode(key);
+      if (publicCode) return publicCode;
+    }
+    return undefined;
+  }
+
   getLobbyStartedAt(roomCode: string): number {
     const existing = this.lobbyStartedAtByRoomCode.get(roomCode);
     if (existing) return existing;
@@ -989,12 +1129,13 @@ export class GameLobby implements DurableObject {
         switch (message.type) {
           case "update_status": {
             const { status, roomCode, spaceAvailable, name, playerCount, maxPlayers } = message;
-            const normalizedRoomCode = status === 'multi' ? normalizeRoomCodeForPresence(roomCode) : undefined;
+            const normalizedRoomCode = status === 'multi' ? normalizePublicRoomCode(roomCode) : undefined;
             console.log(`Client ${wsId} updating playerState to: ${status}, roomCode: ${normalizedRoomCode}, spaceAvailable: ${spaceAvailable}, players: ${playerCount}/${maxPlayers}`);
             gameWs.playerState = status;
             gameWs.roomCode = normalizedRoomCode;
             gameWs.spaceAvailable = spaceAvailable;
             gameWs.playerName = normalizePlayerName(name);
+            gameWs.lobby = status === 'multi' ? buildPresenceLobbySummary(message.lobby) : undefined;
             gameWs.playerCount = typeof playerCount === 'number' && Number.isFinite(playerCount)
               ? Math.max(0, Math.min(MAX_ROOM_PLAYERS, Math.floor(playerCount)))
               : undefined;
@@ -1037,7 +1178,8 @@ export class GameLobby implements DurableObject {
 
           case "send_invite": {
             const { targetId, roomCode } = message;
-            console.log(`Direct invite from ${wsId} to ${targetId} referencing room ${roomCode}`);
+            const publicRoomCode = normalizePublicRoomCode(roomCode);
+            console.log(`Direct invite from ${wsId} to ${targetId} referencing room ${publicRoomCode ?? "[redacted]"}`);
             let destSocket: GameWebSocket | null = null;
             for (const client of this.sessions) {
               if (client.id === targetId) {
@@ -1045,12 +1187,18 @@ export class GameLobby implements DurableObject {
                 break;
               }
             }
-            if (destSocket && destSocket.readyState === WebSocket.OPEN) {
+            const inviteRoom = publicRoomCode ? this.rooms.get(publicRoomCode) : undefined;
+            const inviteToken = inviteRoom ? createInviteToken() : undefined;
+            if (inviteRoom && inviteToken) {
+              inviteRoom.inviteTokens.set(targetId, inviteToken);
+            }
+            if (destSocket && destSocket.readyState === WebSocket.OPEN && publicRoomCode) {
               try {
                 destSocket.send(JSON.stringify({
                   type: "receive_invite",
                   fromId: wsId,
-                  roomCode
+                  roomCode: publicRoomCode,
+                  inviteToken
                 }));
               } catch(e) {}
             }
@@ -1083,9 +1231,17 @@ export class GameLobby implements DurableObject {
             
             // 1. Search for any hosted match with an open player slot (not reserved)
             let foundRoomKey: string | null = null;
-            for (const [key, room] of this.rooms.entries()) {
-              if (room.clients.length < MAX_ROOM_CLIENTS && !room.quickplayReserved) {
-                foundRoomKey = key;
+            for (const room of this.rooms.values()) {
+              if (
+                !room.matchStarted &&
+                room.lobbyConfig.access === "open" &&
+                !room.passwordHash &&
+                hasRoomPlayerSpace(room) &&
+                !room.quickplayReserved
+              ) {
+                const publicRoomCode = this.getRoomPublicCode(room);
+                if (!publicRoomCode) continue;
+                foundRoomKey = publicRoomCode;
                 room.quickplayReserved = true; // Mark it as reserved
                 break;
               }
@@ -1149,6 +1305,12 @@ export class GameLobby implements DurableObject {
           case "host": {
             const { ip, lanIp, customId } = message;
             applyGameplayIdentity(gameWs, message);
+            const lobbyConfig = normalizeMatchLobbyConfig(message.lobbyConfig);
+            const password = sanitizeLobbyPassword(message.password);
+            if (lobbyConfig.access === "password" && !password) {
+              gameWs.send(JSON.stringify({ type: "error", message: "Password lobbies require a password." }));
+              return;
+            }
             const keysToRegister = [];
             if (ip) keysToRegister.push(ip);
             if (lanIp && lanIp !== '127.0.0.1') keysToRegister.push(lanIp);
@@ -1157,7 +1319,16 @@ export class GameLobby implements DurableObject {
             console.log(`Registering host with keys: ${keysToRegister.join(", ")}`);
 
             // Create a Room instance shared across registration keys
-            const room: Room = { host: gameWs, clients: [], observers: new Set<GameWebSocket>(), keys: keysToRegister };
+            const room: Room = {
+              host: gameWs,
+              clients: [],
+              observers: new Set<GameWebSocket>(),
+              keys: keysToRegister,
+              lobbyConfig,
+              passwordHash: password ? hashLobbyPassword(password) : undefined,
+              inviteTokens: new Map<string, string>(),
+              matchStarted: false,
+            };
 
             // Register room under all given keys
             keysToRegister.forEach(key => {
@@ -1177,7 +1348,14 @@ export class GameLobby implements DurableObject {
 
             this.socketToRoom.set(gameWs, room);
             try {
-              gameWs.send(JSON.stringify({ type: "hosted", keys: keysToRegister }));
+            gameWs.send(JSON.stringify({
+              type: "hosted",
+              keys: keysToRegister,
+              clientId: wsId,
+              role: "host",
+              spawnSlot: 0,
+              lobbyConfig,
+            }));
             } catch(e) {}
 
             // Trigger the waiting Quick Play client if this is a custom quickplay room code
@@ -1195,11 +1373,12 @@ export class GameLobby implements DurableObject {
           }
 
           case "join": {
-            const { targetIpOrId, isObserver } = message;
+            const { targetIpOrId, isObserver, inviteToken } = message;
             applyGameplayIdentity(gameWs, message);
             console.log(`Client attempting to join room matching: ${targetIpOrId} (isObserver: ${isObserver})`);
 
-            let room = this.rooms.get(targetIpOrId);
+            const normalizedTargetCode = normalizePublicRoomCode(targetIpOrId);
+            let room = this.rooms.get(normalizedTargetCode || targetIpOrId);
             
             // Local network fallback (same as original server.ts)
             if (!room && this.rooms.size > 0) {
@@ -1215,7 +1394,24 @@ export class GameLobby implements DurableObject {
               return;
             }
 
+            const inviteBypass = getInviteTokenBypass(room, wsId, inviteToken);
+            if (room.passwordHash && !inviteBypass) {
+              const password = sanitizeLobbyPassword(message.password);
+              if (!password || hashLobbyPassword(password) !== room.passwordHash) {
+                try {
+                  gameWs.send(JSON.stringify({ type: "error", message: "Lobby password is incorrect." }));
+                } catch(e) {}
+                return;
+              }
+            }
+
             if (isObserver) {
+              if (!room.lobbyConfig.allowObservers) {
+                try {
+                  gameWs.send(JSON.stringify({ type: "error", message: "This lobby does not allow observers." }));
+                } catch(e) {}
+                return;
+              }
               room.observers.add(gameWs);
               this.socketToRoom.set(gameWs, room);
               console.log(`Client ${wsId} connected as observer to room.`);
@@ -1232,7 +1428,12 @@ export class GameLobby implements DurableObject {
                   ],
                   otherPlayers: this.getRoomPlayerEntries(room),
                   participants: this.getOtherRoomParticipantEntries(room, wsId),
+                  lobbyConfig: room.lobbyConfig,
+                  matchStarted: room.matchStarted,
                 }));
+                if (room.matchStarted) {
+                  gameWs.send(JSON.stringify({ type: "match_start", lobbyConfig: room.lobbyConfig }));
+                }
               } catch (e) {}
               
               // Notify host and clients
@@ -1255,9 +1456,9 @@ export class GameLobby implements DurableObject {
               break;
             }
 
-            if (room.clients.length >= MAX_ROOM_CLIENTS) {
+            if (!hasRoomPlayerSpace(room)) {
               try {
-                gameWs.send(JSON.stringify({ type: "error", message: `Match is already full (${MAX_ROOM_PLAYERS}/${MAX_ROOM_PLAYERS} players present).` }));
+                gameWs.send(JSON.stringify({ type: "error", message: `Match is already full (${room.lobbyConfig.maxPlayers}/${room.lobbyConfig.maxPlayers} players present).` }));
               } catch(e) {}
               return;
             }
@@ -1283,7 +1484,12 @@ export class GameLobby implements DurableObject {
                 ],
                 otherPlayers: this.getOtherRoomPlayerEntries(room, wsId),
                 participants: this.getOtherRoomParticipantEntries(room, wsId),
+                lobbyConfig: room.lobbyConfig,
+                matchStarted: room.matchStarted,
               }));
+              if (room.matchStarted) {
+                gameWs.send(JSON.stringify({ type: "match_start", lobbyConfig: room.lobbyConfig }));
+              }
             } catch (e) {}
 
             // Notify host and all other clients of this new player joining
@@ -1312,6 +1518,8 @@ export class GameLobby implements DurableObject {
                     ],
                     otherPlayers: this.getOtherRoomPlayerEntries(room, this.getSocketId(room.host)),
                     participants: this.getOtherRoomParticipantEntries(room, this.getSocketId(room.host)),
+                    lobbyConfig: room.lobbyConfig,
+                    matchStarted: room.matchStarted,
                   }));
                 } catch (e) {}
               }
@@ -1326,6 +1534,25 @@ export class GameLobby implements DurableObject {
                 try { client.send(clientJoinedPayload); } catch (e) {}
               }
             });
+            break;
+          }
+
+          case "start_match": {
+            const room = this.socketToRoom.get(gameWs);
+            if (!room || room.host !== gameWs) {
+              try {
+                gameWs.send(JSON.stringify({ type: "error", message: "Only the host can start this match." }));
+              } catch(e) {}
+              break;
+            }
+            room.matchStarted = true;
+            const payload = JSON.stringify({ type: "match_start", lobbyConfig: room.lobbyConfig });
+            [room.host, ...room.clients, ...Array.from(room.observers)].forEach(socket => {
+              if (socket.readyState === WebSocket.OPEN) {
+                try { socket.send(payload); } catch(e) {}
+              }
+            });
+            this.updatePresence();
             break;
           }
 
@@ -1532,7 +1759,7 @@ export class GameLobby implements DurableObject {
     const activeRoomCodes = new Set<string>();
 
     lobbyClients.forEach((client) => {
-      const roomCode = normalizeRoomCodeForPresence(client.roomCode);
+      const roomCode = normalizePublicRoomCode(client.roomCode);
       if (client.playerState === 'multi' && roomCode) {
         activeRoomCodes.add(roomCode);
       }
@@ -1542,16 +1769,19 @@ export class GameLobby implements DurableObject {
     const clientPayloads = lobbyClients
       .map((client) => {
         const state = client.playerState || 'menu';
-        const roomCode = normalizeRoomCodeForPresence(client.roomCode);
+        const roomCode = normalizePublicRoomCode(client.roomCode);
+        const lobby = client.lobby;
+        const visibleRoomCode = lobby?.access === "private" ? undefined : roomCode;
         return {
           id: client.id,
           name: normalizePlayerName(client.playerName),
           state,
-          roomCode,
+          roomCode: visibleRoomCode,
           spaceAvailable: client.spaceAvailable !== undefined ? client.spaceAvailable : false,
           playerCount: client.playerCount,
           maxPlayers: client.maxPlayers,
-          lobbyStartedAt: state === 'multi' && roomCode ? this.getLobbyStartedAt(roomCode) : undefined
+          lobbyStartedAt: state === 'multi' && visibleRoomCode ? this.getLobbyStartedAt(visibleRoomCode) : undefined,
+          lobby,
         };
       })
       .filter(c => Boolean(c.id));

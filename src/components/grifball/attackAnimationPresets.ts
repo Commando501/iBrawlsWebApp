@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { type UniversalSettings } from '../../types';
+import { resolveHammerSlamTiming } from '../../game/hammerSlamTiming';
 
 export type AttackAnimationStyle = 'current' | 'highFidelity';
 export type HammerAttackPhase = 'windup' | 'strike' | 'recover' | 'melee_swing' | 'melee_recover';
@@ -398,8 +399,9 @@ export function getThirdPersonCombatantArmPose({
   };
 
   if (activeWeapon === 'hammer') {
+    const hammerSlamTiming = resolveHammerSlamTiming(settings);
     if (weaponState === 'swing_up') {
-      const pct = easeOutCubic(weaponTimer / 0.28);
+      const pct = easeOutCubic(weaponTimer / hammerSlamTiming.windupTime);
       return {
         rightArmRotation: lerpRotation(hammerReady.rightArmRotation, [-1.15, -0.48, -0.56], pct),
         leftArmRotation: lerpRotation(hammerReady.leftArmRotation, [-0.78, 0.34, 0.5], pct),
@@ -407,7 +409,7 @@ export function getThirdPersonCombatantArmPose({
     }
 
     if (weaponState === 'swing_down') {
-      const pct = easeInCubic(weaponTimer / 0.12);
+      const pct = easeInCubic(weaponTimer / hammerSlamTiming.attackTime);
       return {
         rightArmRotation: lerpRotation([-1.15, -0.48, -0.56], [1.05, 0.18, -0.24], pct),
         leftArmRotation: lerpRotation([-0.78, 0.34, 0.5], [0.62, -0.08, 0.28], pct),

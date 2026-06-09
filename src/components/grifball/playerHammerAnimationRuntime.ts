@@ -4,6 +4,7 @@ import {
   getFirstPersonHammerPose,
   getHammerAttackAnimationStyle,
 } from './attackAnimationPresets';
+import { resolveHammerSlamTiming } from '../../game/hammerSlamTiming';
 import { type GrifballRuntimeState } from './runtimeState';
 
 export function updatePlayerHammerAnimationForState({
@@ -42,7 +43,7 @@ export function updatePlayerHammerAnimationForState({
       }
     } else if (state.pWeaponState === 'swing_up') {
       state.pWeaponTimer += dt;
-      const windupDuration = 0.28;
+      const { windupTime: windupDuration } = resolveHammerSlamTiming(state.settings);
       const pct = Math.min(1.0, state.pWeaponTimer / windupDuration);
 
       if (getHammerAttackAnimationStyle(state.settings) === 'highFidelity') {
@@ -67,7 +68,7 @@ export function updatePlayerHammerAnimationForState({
       }
     } else if (state.pWeaponState === 'swing_down') {
       state.pWeaponTimer += dt;
-      const strikeDuration = 0.12;
+      const { attackTime: strikeDuration } = resolveHammerSlamTiming(state.settings);
       const pct = Math.min(1.0, state.pWeaponTimer / strikeDuration);
 
       if (getHammerAttackAnimationStyle(state.settings) === 'highFidelity') {

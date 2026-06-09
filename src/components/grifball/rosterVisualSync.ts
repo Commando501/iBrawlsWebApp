@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { MAIN_AI_ID } from '../../game/roster';
+import { resolveHammerSlamTiming } from '../../game/hammerSlamTiming';
 import { animateCombatantWeaponMeshes, animateSpartanCombatantModel } from './combatantAnimation';
 import { type SwordLungeCurrentTrailStyle } from './combatGeometry';
 import { type GrifballRuntimeState } from './runtimeState';
@@ -41,9 +42,10 @@ export function updateRosterCombatantVisualsForState({
     }
 
     const swingIsSword = player.activeWeapon === 'sword';
+    const hammerSlamTiming = resolveHammerSlamTiming(state.settings);
     if (weaponState === 'swing_up') {
       weaponTimer += dt;
-      const windup = swingIsSword ? (state.settings.swordSlashSpeed ?? 0.22) * 0.5 : 0.28;
+      const windup = swingIsSword ? (state.settings.swordSlashSpeed ?? 0.22) * 0.5 : hammerSlamTiming.windupTime;
       if (weaponTimer >= windup) {
         weaponState = 'swing_down';
         weaponTimer = 0;
@@ -51,7 +53,7 @@ export function updateRosterCombatantVisualsForState({
       }
     } else if (weaponState === 'swing_down') {
       weaponTimer += dt;
-      const strike = swingIsSword ? (state.settings.swordSlashSpeed ?? 0.22) * 0.5 : 0.12;
+      const strike = swingIsSword ? (state.settings.swordSlashSpeed ?? 0.22) * 0.5 : hammerSlamTiming.attackTime;
       if (weaponTimer >= strike) {
         weaponState = 'recovering';
         weaponTimer = 0;
@@ -107,6 +109,8 @@ export function updateRosterCombatantVisualsForState({
       isSprinting: isPlayerSprinting,
       hammerReloadTime: state.settings.hammerReloadTime ?? 0.6,
       hammerMeleeReload: state.settings.hammerMeleeReload ?? 0.5,
+      hammerSlamWindupTime: hammerSlamTiming.windupTime,
+      hammerSlamAttackTime: hammerSlamTiming.attackTime,
     });
 
     const isMainAiOffline = clientId === MAIN_AI_ID && !state.isMultiplayer;

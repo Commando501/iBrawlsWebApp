@@ -28,7 +28,7 @@ interface MainMenuBroadcastRailProps {
   onLoggedIn: (account: AccountInfo) => void;
   onLoggedOut: () => void;
   onAccountChanged: (account: AccountInfo) => void;
-  onJoinGame: (target: string) => void;
+  onJoinGame: (target: string, isObserver?: boolean, password?: string, inviteToken?: string) => void;
   setInviteNotifications: React.Dispatch<React.SetStateAction<string[]>>;
   onSendLobbyChatMessage: (text: string) => void;
 }

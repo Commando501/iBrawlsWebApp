@@ -1,5 +1,8 @@
 import type { Dispatch, SetStateAction } from 'react';
 import type { AIPreset, ReplayFile, TournamentState, UniversalSettings } from '../../types';
+import type { CustomMapData } from '../../types';
+import type { MatchLobbyConfig } from '../../network/protocol';
+import type { MultiplayerLoadingSlotPayload } from '../loading/loadingTypes';
 import type { TournamentDifficulty } from '../../features/tournament/tournament';
 import type {
   GameplayConnectionMode,
@@ -48,6 +51,15 @@ interface MainMenuPrimaryPanelProps {
   ) => void;
   playerName: string;
   playerHue: number;
+  selectedMap: string;
+  onSelectedMapChange: (value: string) => void;
+  lobbyCustomMapData: CustomMapData | null;
+  onCustomMapDataChange: (value: CustomMapData | null) => void;
+  matchLobbyConfig: MatchLobbyConfig | null;
+  multiplayerRole: 'host' | 'client' | 'observer' | null;
+  multiplayerSocket: WebSocket | null;
+  multiplayerPlayerCount: number;
+  lobbyParticipants: MultiplayerLoadingSlotPayload[];
   isPlaying: boolean;
   onStartTournamentMatch: () => void;
   onResetTournament: () => void;
@@ -67,8 +79,9 @@ interface MainMenuPrimaryPanelProps {
   onCancelHostOrJoin: () => void;
   onCancelQuickPlay: () => void;
   onQuickPlay: () => void;
-  onHostGame: () => void;
-  onJoinGame: (target: string, isObserver?: boolean) => void;
+  onHostGame: (config: MatchLobbyConfig, password?: string) => void;
+  onStartHostedMatch: () => void;
+  onJoinGame: (target: string, isObserver?: boolean, password?: string, inviteToken?: string) => void;
   onApplyMatchmakerUrl: () => void;
   onResetMatchmakerUrl: () => void;
   onSpectateLiveMatch: () => void;
@@ -114,6 +127,15 @@ export function MainMenuPrimaryPanel({
   onInitializeTournament,
   playerName,
   playerHue,
+  selectedMap,
+  onSelectedMapChange,
+  lobbyCustomMapData,
+  onCustomMapDataChange,
+  matchLobbyConfig,
+  multiplayerRole,
+  multiplayerSocket,
+  multiplayerPlayerCount,
+  lobbyParticipants,
   isPlaying,
   onStartTournamentMatch,
   onResetTournament,
@@ -134,6 +156,7 @@ export function MainMenuPrimaryPanel({
   onCancelQuickPlay,
   onQuickPlay,
   onHostGame,
+  onStartHostedMatch,
   onJoinGame,
   onApplyMatchmakerUrl,
   onResetMatchmakerUrl,
@@ -196,6 +219,16 @@ export function MainMenuPrimaryPanel({
           connectionStatus={connectionStatus}
           connectionError={connectionError}
           quickPlayStatus={quickPlayStatus}
+          adminSettings={adminSettings}
+          selectedMap={selectedMap}
+          onSelectedMapChange={onSelectedMapChange}
+          lobbyCustomMapData={lobbyCustomMapData}
+          onCustomMapDataChange={onCustomMapDataChange}
+          matchLobbyConfig={matchLobbyConfig}
+          multiplayerRole={multiplayerRole}
+          multiplayerSocket={multiplayerSocket}
+          multiplayerPlayerCount={multiplayerPlayerCount}
+          lobbyParticipants={lobbyParticipants}
           joinIpOrId={joinIpOrId}
           onJoinIpOrIdChange={onJoinIpOrIdChange}
           customUrlInput={customUrlInput}
@@ -204,6 +237,7 @@ export function MainMenuPrimaryPanel({
           onCancelQuickPlay={onCancelQuickPlay}
           onQuickPlay={onQuickPlay}
           onHostGame={onHostGame}
+          onStartHostedMatch={onStartHostedMatch}
           onJoinGame={onJoinGame}
           onApplyMatchmakerUrl={onApplyMatchmakerUrl}
           onResetMatchmakerUrl={onResetMatchmakerUrl}

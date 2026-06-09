@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { type Combatant, type Keybindings } from '../../types';
+import { resolveHammerSlamTiming } from '../../game/hammerSlamTiming';
 import { animateCombatantWeaponMeshes, animateSpartanCombatantModel } from './combatantAnimation';
 import { type GrifballRuntimeState } from './runtimeState';
 import { type SpectateTargetData, type SpectateTargetRole } from './spectateTargets';
@@ -25,6 +26,7 @@ export function updateObserverCombatantVisualsForState({
   getSpectateTargetData: (target: SpectateTargetRole) => SpectateTargetData;
 }): void {
   if (!state.isObserverMode) return;
+  const hammerSlamTiming = resolveHammerSlamTiming(state.settings);
 
   if (refs.hostGroup) {
     const hostData = getSpectateTargetData('host');
@@ -76,6 +78,8 @@ export function updateObserverCombatantVisualsForState({
       isSprinting: isHostSprinting,
       hammerReloadTime: state.settings.hammerReloadTime ?? 0.6,
       hammerMeleeReload: state.settings.hammerMeleeReload ?? 0.5,
+      hammerSlamWindupTime: hammerSlamTiming.windupTime,
+      hammerSlamAttackTime: hammerSlamTiming.attackTime,
     });
 
     if (refs.hostHammer || refs.hostSword) {
@@ -142,6 +146,8 @@ export function updateObserverCombatantVisualsForState({
         isSprinting: isClientSprinting,
         hammerReloadTime: state.settings.hammerReloadTime ?? 0.6,
         hammerMeleeReload: state.settings.hammerMeleeReload ?? 0.5,
+        hammerSlamWindupTime: hammerSlamTiming.windupTime,
+        hammerSlamAttackTime: hammerSlamTiming.attackTime,
       });
 
       if (refs.enemyHammer || refs.enemySword) {

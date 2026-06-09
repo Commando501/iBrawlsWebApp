@@ -5,6 +5,7 @@ import { buildVoxelSpartanModel, HelmetPreset, TorsoPreset, ArmPreset, LegPreset
 import { verifyV2PartConstraints, getV2PartDimensions } from '../VoxelModelsV2';
 import { animateCombatantWeaponMeshes } from './combatantAnimation';
 import { createCombatantMeshRig } from './combatantModels';
+import { DEFAULT_HAMMER_SLAM_WINDUP_TIME } from '../../game/hammerSlamTiming';
 import {
   COMBATANT_ATTACHMENT_POINT_NAMES,
   COMBATANT_BONE_NAMES,
@@ -127,7 +128,7 @@ test('third-person hammer animation poses hand-rigged arms with the weapon', () 
     swordModel: meshes.sword,
     activeWeapon: 'hammer',
     weaponState: 'swing_up',
-    weaponTimer: 0.28,
+    weaponTimer: DEFAULT_HAMMER_SLAM_WINDUP_TIME,
     isLunging: false,
     dt: 0,
     settings: {},

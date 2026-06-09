@@ -12,9 +12,9 @@ export function DataCollectionNotice({ onDismiss }: DataCollectionNoticeProps) {
   return (
     <div className="fixed bottom-0 inset-x-0 z-[200] flex justify-center px-3 pb-3 pointer-events-none">
       <div className="pointer-events-auto max-w-2xl w-full bg-slate-900/95 backdrop-blur border border-sky-500/30 rounded-xl shadow-2xl px-4 py-3 flex items-start gap-3">
-        <span className="text-lg leading-none mt-0.5">ðŸ“Š</span>
+        <span className="text-lg leading-none mt-0.5">Stats</span>
         <p className="text-[11px] text-white/70 leading-snug flex-1">
-          <span className="font-bold text-sky-300">Heads up â€” this is a tech demo.</span>{' '}
+          <span className="font-bold text-sky-300">Heads up - this is a tech demo.</span>{' '}
           It collects anonymized gameplay stats and a sampled subset of match replays
           (with player names removed) to train and improve the AI. No accounts or
           personal information are stored.

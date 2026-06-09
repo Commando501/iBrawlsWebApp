@@ -1,4 +1,11 @@
 import { UniversalSettings } from '../types';
+import {
+  HAMMER_SLAM_ATTACK_MAX,
+  HAMMER_SLAM_ATTACK_MIN,
+  HAMMER_SLAM_TIMING_STEP,
+  HAMMER_SLAM_WINDUP_MAX,
+  HAMMER_SLAM_WINDUP_MIN,
+} from '../game/hammerSlamTiming';
 
 export interface SettingSection {
   id: string;
@@ -321,6 +328,37 @@ export const SETTING_DEFINITIONS: SettingDefinition[] = [
     step: 0.1,
     unit: 's',
     formatValue: (v) => `${v.toFixed(1)}s`,
+  },
+  {
+    key: 'hammerSlamTimingLocked',
+    label: 'Lock Slam Timing',
+    type: 'toggle',
+    sectionId: 'hammer',
+    description: 'Keep windup and attack in the default ratio',
+  },
+  {
+    key: 'hammerSlamWindupTime',
+    label: 'Slam Windup Time',
+    type: 'slider',
+    sectionId: 'hammer',
+    min: HAMMER_SLAM_WINDUP_MIN,
+    max: HAMMER_SLAM_WINDUP_MAX,
+    step: HAMMER_SLAM_TIMING_STEP,
+    unit: 's',
+    formatValue: (v) => `${v.toFixed(2)}s`,
+    description: 'Backswing time before the slam strike starts',
+  },
+  {
+    key: 'hammerSlamAttackTime',
+    label: 'Slam Attack Time',
+    type: 'slider',
+    sectionId: 'hammer',
+    min: HAMMER_SLAM_ATTACK_MIN,
+    max: HAMMER_SLAM_ATTACK_MAX,
+    step: HAMMER_SLAM_TIMING_STEP,
+    unit: 's',
+    formatValue: (v) => `${v.toFixed(2)}s`,
+    description: 'Strike phase time before the slam lands',
   },
   {
     key: 'hammerMeleeSpeed',

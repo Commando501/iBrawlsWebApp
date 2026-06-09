@@ -24,6 +24,11 @@ import {
 import { createCombatantMeshRig, type CombatantMeshRig } from '../components/grifball/combatantModels';
 import { buildGravityHammerModel, buildKatarSwordModel } from '../components/VoxelModels';
 import {
+  DEFAULT_HAMMER_SLAM_ATTACK_TIME,
+  DEFAULT_HAMMER_SLAM_TIMING_LOCKED,
+  DEFAULT_HAMMER_SLAM_WINDUP_TIME,
+} from '../game/hammerSlamTiming';
+import {
   buildAnimationEditorExportPayload,
   buildPoseArraySnippet,
   clampFrameIndex,
@@ -162,6 +167,9 @@ function sampleHammerPose(view: EditorView, phase: HammerAttackPhase, progress: 
 
 const PREVIEW_ATTACK_SETTINGS = {
   hammerReloadTime: 0.6,
+  hammerSlamWindupTime: DEFAULT_HAMMER_SLAM_WINDUP_TIME,
+  hammerSlamAttackTime: DEFAULT_HAMMER_SLAM_ATTACK_TIME,
+  hammerSlamTimingLocked: DEFAULT_HAMMER_SLAM_TIMING_LOCKED,
   hammerMeleeSpeed: 0.24,
   hammerMeleeReload: 0.5,
   swordSlashSpeed: 0.22,
@@ -175,7 +183,7 @@ function sampleThirdPersonArmPose(trackId: string, progress: number): CombatantA
     return getThirdPersonCombatantArmPose({
       activeWeapon: 'hammer',
       weaponState: 'swing_up',
-      weaponTimer: 0.28 * pct,
+      weaponTimer: PREVIEW_ATTACK_SETTINGS.hammerSlamWindupTime * pct,
       isLunging: false,
       settings: PREVIEW_ATTACK_SETTINGS,
     });
@@ -185,7 +193,7 @@ function sampleThirdPersonArmPose(trackId: string, progress: number): CombatantA
     return getThirdPersonCombatantArmPose({
       activeWeapon: 'hammer',
       weaponState: 'swing_down',
-      weaponTimer: 0.12 * pct,
+      weaponTimer: PREVIEW_ATTACK_SETTINGS.hammerSlamAttackTime * pct,
       isLunging: false,
       settings: PREVIEW_ATTACK_SETTINGS,
     });

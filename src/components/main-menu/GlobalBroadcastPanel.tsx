@@ -12,6 +12,11 @@ import {
   normalizePlayerName,
   type OnlineClient,
 } from '../../network/onlineClients';
+import {
+  formatMatchTimerLabel,
+  getMatchLobbyModeLabel,
+  getMatchLobbyTargetLabel,
+} from '../../network/matchLobbyConfig';
 
 interface GlobalChatPanelProps {
   messages: ChatMessage[];
@@ -250,7 +255,7 @@ interface PlayerListSubframeProps {
   connectionMode: ConnectionMode;
   menuSocket: WebSocket | null;
   hostIdCode: string;
-  onJoinGame: (target: string, isObserver?: boolean) => void;
+  onJoinGame: (target: string, isObserver?: boolean, password?: string, inviteToken?: string) => void;
   setInviteNotifications: React.Dispatch<React.SetStateAction<string[]>>;
 }
 
@@ -268,6 +273,11 @@ export const PlayerListSubframe = ({
   const [selectedLobbyCode, setSelectedLobbyCode] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const activeLobbies = useMemo(() => buildActiveLobbies(onlineClients), [onlineClients]);
+  const joinLobby = (roomCode: string, requiresPassword: boolean) => {
+    const password = requiresPassword ? window.prompt('Enter lobby password')?.trim() : undefined;
+    if (requiresPassword && !password) return;
+    onJoinGame(roomCode, false, password);
+  };
 
   useEffect(() => {
     if (activeTab !== 'lobbies') return;
@@ -367,13 +377,13 @@ export const PlayerListSubframe = ({
                               type="button"
                               onClick={() => {
                                 if (client.roomCode) {
-                                  onJoinGame(client.roomCode);
+                                  joinLobby(client.roomCode, Boolean(client.lobby?.hasPassword));
                                 }
                               }}
                               className="text-[10px] bg-emerald-500/20 hover:bg-emerald-500/35 border border-emerald-500/40 text-emerald-400 font-bold uppercase tracking-wider px-2 py-0.5 rounded cursor-pointer transition-all flex items-center gap-1"
                             >
                               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block animate-ping" />
-                              {slotLabel ? `Join ${slotLabel}` : 'Join'}
+                              {client.lobby?.hasPassword ? 'Password' : slotLabel ? `Join ${slotLabel}` : 'Join'}
                             </button>
                           ) : (
                             <span className="text-[10px] text-blue-400 font-bold uppercase tracking-wider flex items-center gap-1">
@@ -430,6 +440,12 @@ export const PlayerListSubframe = ({
                 const memberSummary = remainingPlayerCount > 0
                   ? `${firstMemberName} and ${remainingPlayerCount} more`
                   : firstMemberName;
+                const lobbyMode = lobby.lobby ? getMatchLobbyModeLabel(lobby.lobby.gameMode) : 'iBrawls';
+                const accessLabel = lobby.lobby?.hasPassword
+                  ? 'Password'
+                  : lobby.lobby?.access === 'private'
+                    ? 'Private'
+                    : lobby.isOpen ? 'Open' : 'Closed';
 
                 return (
                   <div
@@ -449,7 +465,7 @@ export const PlayerListSubframe = ({
                           {lobbyLabel}
                         </span>
                         <span className="text-[10px] text-white/45 truncate">
-                          {memberSummary}
+                          {memberSummary} · {lobbyMode}
                         </span>
                       </span>
                       <span className="flex flex-col items-end gap-1 shrink-0">
@@ -457,7 +473,7 @@ export const PlayerListSubframe = ({
                           {Math.min(lobby.playerCount, lobby.maxPlayers)}/{lobby.maxPlayers}
                         </span>
                         <span className={`text-[9px] font-black uppercase tracking-wider ${lobby.isOpen ? 'text-emerald-400' : 'text-white/35'}`}>
-                          {lobby.isOpen ? 'Open' : 'Closed'}
+                          {accessLabel}
                         </span>
                       </span>
                     </button>
@@ -468,6 +484,23 @@ export const PlayerListSubframe = ({
                           <span className="text-white/45 uppercase tracking-wider">Live for</span>
                           <span className="text-cyan-300 font-black">{formatLobbyDuration(lobby.startedAt, now)}</span>
                         </div>
+
+                        {lobby.lobby && (
+                          <div className="grid grid-cols-2 gap-1.5 text-[9px] uppercase tracking-wider">
+                            <span className="bg-white/[0.03] border border-white/5 rounded px-2 py-1 text-white/55 truncate">
+                              Map: <strong className="text-white/80">{lobby.lobby.customMapName || lobby.lobby.selectedMap}</strong>
+                            </span>
+                            <span className="bg-white/[0.03] border border-white/5 rounded px-2 py-1 text-white/55 truncate">
+                              Target: <strong className="text-white/80">{getMatchLobbyTargetLabel(lobby.lobby)}</strong>
+                            </span>
+                            <span className="bg-white/[0.03] border border-white/5 rounded px-2 py-1 text-white/55 truncate">
+                              Timer: <strong className="text-white/80">{formatMatchTimerLabel(lobby.lobby.matchTimerSeconds)}</strong>
+                            </span>
+                            <span className="bg-white/[0.03] border border-white/5 rounded px-2 py-1 text-white/55 truncate">
+                              Obs: <strong className="text-white/80">{lobby.lobby.allowObservers ? 'Yes' : 'No'}</strong>
+                            </span>
+                          </div>
+                        )}
 
                         <div className="flex flex-col gap-1.5">
                           {lobby.members.map(member => {
@@ -488,10 +521,10 @@ export const PlayerListSubframe = ({
                         {lobby.isOpen ? (
                           <button
                             type="button"
-                            onClick={() => onJoinGame(lobby.roomCode)}
+                            onClick={() => joinLobby(lobby.roomCode, Boolean(lobby.lobby?.hasPassword))}
                             className="w-full min-h-8 bg-emerald-500/20 hover:bg-emerald-500/35 border border-emerald-500/40 text-emerald-300 font-black uppercase tracking-wider rounded transition-all"
                           >
-                            Join Lobby
+                            {lobby.lobby?.hasPassword ? 'Enter Password' : 'Join Lobby'}
                           </button>
                         ) : (
                           <div className="w-full min-h-8 flex items-center justify-center rounded border border-white/5 bg-white/[0.03] text-[10px] text-white/35 font-black uppercase tracking-wider">

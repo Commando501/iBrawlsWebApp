@@ -1,6 +1,11 @@
 import * as THREE from 'three';
 import { getYawForHeading } from '../../game/yaw';
 import {
+  DEFAULT_HAMMER_SLAM_ATTACK_TIME,
+  DEFAULT_HAMMER_SLAM_WINDUP_TIME,
+  resolveHammerSlamTiming,
+} from '../../game/hammerSlamTiming';
+import {
   applyWeaponPose,
   getThirdPersonCombatantArmPose,
   getHammerAttackAnimationStyle,
@@ -110,6 +115,8 @@ export function animateSpartanCombatantModelV2({
   isSprinting = false,
   hammerReloadTime = 0.6,
   hammerMeleeReload = 0.5,
+  hammerSlamWindupTime = DEFAULT_HAMMER_SLAM_WINDUP_TIME,
+  hammerSlamAttackTime = DEFAULT_HAMMER_SLAM_ATTACK_TIME,
 }: {
   refs: GrifballThreeRefs;
   mesh: THREE.Group | null;
@@ -123,6 +130,8 @@ export function animateSpartanCombatantModelV2({
   isSprinting?: boolean;
   hammerReloadTime?: number;
   hammerMeleeReload?: number;
+  hammerSlamWindupTime?: number;
+  hammerSlamAttackTime?: number;
 }): void {
   if (!mesh) return;
 
@@ -358,14 +367,14 @@ export function animateSpartanCombatantModelV2({
 
   // Weapon Attack Joint Overlays
   if (weaponState === 'swing_up') {
-    const windup = 0.28;
+    const windup = hammerSlamWindupTime;
     const pct = Math.min(1.0, weaponTimer / windup);
     // Bend elbows for backswing
     arm_lower_r.rotation.x = lerp(arm_lower_r.rotation.x, -1.6, dt * 15.0);
     arm_lower_l.rotation.x = lerp(arm_lower_l.rotation.x, -1.1, dt * 15.0);
     hand_r.rotation.x = lerp(hand_r.rotation.x, 0.4, dt * 15.0);
   } else if (weaponState === 'swing_down') {
-    const strike = 0.12;
+    const strike = hammerSlamAttackTime;
     const pct = Math.min(1.0, weaponTimer / strike);
     // Extend elbows for forward strike
     arm_lower_r.rotation.x = lerp(arm_lower_r.rotation.x, -0.1, dt * 25.0);
@@ -392,6 +401,8 @@ export function animateSpartanCombatantModel({
   isSprinting = false,
   hammerReloadTime = 0.6,
   hammerMeleeReload = 0.5,
+  hammerSlamWindupTime = DEFAULT_HAMMER_SLAM_WINDUP_TIME,
+  hammerSlamAttackTime = DEFAULT_HAMMER_SLAM_ATTACK_TIME,
 }: {
   refs: GrifballThreeRefs;
   mesh: THREE.Group | null;
@@ -405,6 +416,8 @@ export function animateSpartanCombatantModel({
   isSprinting?: boolean;
   hammerReloadTime?: number;
   hammerMeleeReload?: number;
+  hammerSlamWindupTime?: number;
+  hammerSlamAttackTime?: number;
 }): void {
   if (!mesh) return;
 
@@ -422,6 +435,8 @@ export function animateSpartanCombatantModel({
       isSprinting,
       hammerReloadTime,
       hammerMeleeReload,
+      hammerSlamWindupTime,
+      hammerSlamAttackTime,
     });
     return;
   }
@@ -595,6 +610,7 @@ export function animateCombatantWeaponMeshes({
   // Animating Gravity Hammer
   if (hammerModel && activeWeapon === 'hammer') {
     const hammerAttackAnimation = getHammerAttackAnimationStyle(settings);
+    const hammerSlamTiming = resolveHammerSlamTiming(settings);
     if (weaponState === 'ready') {
       applyThirdPersonWeaponPose(hammerModel, {
         position: [0.48, 1.08 - 0.64, -0.48],
@@ -602,7 +618,7 @@ export function animateCombatantWeaponMeshes({
       });
     } 
     else if (weaponState === 'swing_up') {
-      const windup = 0.28;
+      const windup = hammerSlamTiming.windupTime;
       const pct = Math.min(1.0, weaponTimer / windup);
       if (hammerAttackAnimation === 'highFidelity') {
         applyWeaponPose(hammerModel, getThirdPersonHammerPose('windup', pct));
@@ -622,7 +638,7 @@ export function animateCombatantWeaponMeshes({
       }
     } 
     else if (weaponState === 'swing_down') {
-      const strike = 0.12;
+      const strike = hammerSlamTiming.attackTime;
       const pct = Math.min(1.0, weaponTimer / strike);
       if (hammerAttackAnimation === 'highFidelity') {
         applyWeaponPose(hammerModel, getThirdPersonHammerPose('strike', pct));

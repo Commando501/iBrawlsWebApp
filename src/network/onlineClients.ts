@@ -1,3 +1,6 @@
+import { normalizePublicRoomCode } from './roomCodePrivacy';
+import type { MatchLobbySummary } from './protocol';
+
 export const MAX_PLAYER_NAME_LENGTH = 10;
 const MAX_MULTIPLAYER_CLIENTS = 7;
 export const MAX_MULTIPLAYER_PLAYERS = 1 + MAX_MULTIPLAYER_CLIENTS;
@@ -11,6 +14,7 @@ export interface OnlineClient {
   playerCount?: number;
   maxPlayers?: number;
   lobbyStartedAt?: number;
+  lobby?: MatchLobbySummary;
 }
 
 export interface ActiveLobby {
@@ -20,6 +24,7 @@ export interface ActiveLobby {
   maxPlayers: number;
   isOpen: boolean;
   startedAt?: number;
+  lobby?: MatchLobbySummary;
 }
 
 type MultiplayerRole = 'host' | 'client' | 'observer' | null;
@@ -42,8 +47,8 @@ export const buildActiveLobbies = (onlineClients: OnlineClient[]): ActiveLobby[]
   const lobbiesByCode = new Map<string, OnlineClient[]>();
 
   onlineClients.forEach(client => {
-    const roomCode = typeof client.roomCode === 'string' ? client.roomCode.trim() : '';
-    if (client.state !== 'multi' || roomCode.length === 0) return;
+    const roomCode = normalizePublicRoomCode(client.roomCode);
+    if (client.state !== 'multi' || !roomCode) return;
 
     const members = lobbiesByCode.get(roomCode) ?? [];
     members.push(client);
@@ -64,14 +69,19 @@ export const buildActiveLobbies = (onlineClients: OnlineClient[]): ActiveLobby[]
         .map(client => getNumericClientValue(client.lobbyStartedAt))
         .filter((value): value is number => value !== undefined && value > 0);
       const startedAt = startedAtValues.length > 0 ? Math.min(...startedAtValues) : undefined;
+      const lobby = members.find(member => member.lobby)?.lobby;
+      const allowsPlayerJoin = lobby
+        ? lobby.access !== 'private' && playerCount < maxPlayers
+        : playerCount < maxPlayers;
 
       return {
         roomCode,
         members: [...members].sort((a, b) => getOnlineClientDisplayName(a).localeCompare(getOnlineClientDisplayName(b))),
         playerCount,
         maxPlayers,
-        isOpen: members.some(client => client.spaceAvailable) && playerCount < maxPlayers,
+        isOpen: members.some(client => client.spaceAvailable) && allowsPlayerJoin,
         startedAt,
+        lobby,
       };
     })
     .sort((a, b) => {

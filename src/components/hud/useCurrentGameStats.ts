@@ -1,5 +1,10 @@
 import { useEffect, useState } from 'react';
 import { type GameStats } from '../../types';
+import {
+  DEFAULT_HAMMER_SLAM_ATTACK_TIME,
+  DEFAULT_HAMMER_SLAM_TIMING_LOCKED,
+  DEFAULT_HAMMER_SLAM_WINDUP_TIME,
+} from '../../game/hammerSlamTiming';
 
 export function createInitialGameStats(playerHue: number, ping: number): GameStats {
   return {
@@ -34,6 +39,9 @@ export function createInitialGameStats(playerHue: number, ping: number): GameSta
       dashCooldown: 2.0,
       respawnInvulnerabilityDuration: 1.0,
       hammerReloadTime: 0.6,
+      hammerSlamWindupTime: DEFAULT_HAMMER_SLAM_WINDUP_TIME,
+      hammerSlamAttackTime: DEFAULT_HAMMER_SLAM_ATTACK_TIME,
+      hammerSlamTimingLocked: DEFAULT_HAMMER_SLAM_TIMING_LOCKED,
       hammerMeleeSpeed: 0.24,
       hammerMeleeReload: 0.5,
       hammerAttackAnimation: 'current',

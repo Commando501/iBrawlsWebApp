@@ -20,6 +20,7 @@ policy dynamic (AI-only / unused) · 🎨 cosmetic.
 | `weaponSwapLockout` | weapons | swap lockout |
 | `attackRange` | weapons (`inHammerStrikeVolume`) | **NEW** — hammer-strike forward reach |
 | `attackRadius` | weapons (`inHammerStrikeVolume`) | **NEW** — hammer-strike splash radius |
+| `hammerSlamWindupTime` / `hammerSlamAttackTime` | weapons | hammer **primary** impact delay (`windup + attack`) |
 | `hammerReloadTime` | weapons | **NEW** — hammer **primary** reload |
 | `hammerMeleeSpeed` / `hammerMeleeReload` | weapons | hammer swipe (alt) windup / reload |
 | `swordSlashSpeed` / `swordSlashReload` | weapons | sword slash |
@@ -29,9 +30,10 @@ policy dynamic (AI-only / unused) · 🎨 cosmetic.
 | `grifballPassSpeedMin` / `grifballPassSpeedMax` | grifball | pass speed |
 
 **Audit fix landed:** the hammer **primary** is now the AoE *strike* (impact point projected
-`attackRange` ahead, splash `attackRadius`, reload `hammerReloadTime`) — faithful to
-`applyHammerStrikeImpactForState`. Previously it was modelled as the short swipe, so those
-three keys had **no effect** on the sim. The quick swipe is now the hammer **secondary**.
+`attackRange` ahead, splash `attackRadius`, impact delay `hammerSlamWindupTime +
+hammerSlamAttackTime`, reload `hammerReloadTime`) — faithful to `applyHammerStrikeImpactForState`.
+Previously it was modelled as the short swipe, so those keys had **no effect** on the sim. The
+quick swipe is now the hammer **secondary**.
 
 ## ⚙️ Constant in both sim and live (no drift — not preset-tunable)
 

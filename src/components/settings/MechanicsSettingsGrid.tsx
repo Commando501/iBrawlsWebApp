@@ -6,6 +6,11 @@ import {
   type SettingDefinition,
   type SettingSection,
 } from '../../settings/settingsSchema';
+import {
+  applyHammerSlamTimingLockChange,
+  applyHammerSlamTimingSliderChange,
+  type HammerSlamTimingKey,
+} from '../../game/hammerSlamTiming';
 
 interface MechanicsSettingsGridProps {
   settings: UniversalSettings;
@@ -55,6 +60,40 @@ const getSectionToggleClass = (sectionId: string) => {
   return 'bg-[#38bdf8]';
 };
 
+const HAMMER_SLAM_TIMING_KEYS = new Set<keyof UniversalSettings>([
+  'hammerSlamWindupTime',
+  'hammerSlamAttackTime',
+]);
+
+const updateSliderSetting = (
+  settings: UniversalSettings,
+  key: keyof UniversalSettings,
+  value: number
+): UniversalSettings => {
+  if (HAMMER_SLAM_TIMING_KEYS.has(key)) {
+    return applyHammerSlamTimingSliderChange(settings, key as HammerSlamTimingKey, value);
+  }
+
+  return {
+    ...settings,
+    [key]: value,
+  };
+};
+
+const updateToggleSetting = (
+  settings: UniversalSettings,
+  key: keyof UniversalSettings
+): UniversalSettings => {
+  if (key === 'hammerSlamTimingLocked') {
+    return applyHammerSlamTimingLockChange(settings, !settings.hammerSlamTimingLocked);
+  }
+
+  return {
+    ...settings,
+    [key]: !settings[key],
+  };
+};
+
 function MechanicsSettingControl({
   definition,
   settings,
@@ -84,7 +123,11 @@ function MechanicsSettingControl({
             max={definition.max}
             step={definition.step}
             value={(value as number) ?? 0}
-            onChange={(event) => setSettings((prev) => ({ ...prev, [definition.key]: parseFloat(event.target.value) }))}
+            onChange={(event) => setSettings((prev) => updateSliderSetting(
+              prev,
+              definition.key,
+              parseFloat(event.target.value)
+            ))}
             className={`w-full ${accentClass} h-1 bg-white/10 rounded-lg appearance-none cursor-pointer`}
           />
         </div>
@@ -101,7 +144,7 @@ function MechanicsSettingControl({
             {definition.description && <span className="text-[9px] text-white/40 font-mono">{definition.description}</span>}
           </div>
           <button
-            onClick={() => setSettings((prev) => ({ ...prev, [definition.key]: !prev[definition.key] }))}
+            onClick={() => setSettings((prev) => updateToggleSetting(prev, definition.key))}
             className={`relative inline-flex h-4 w-8 shrink-0 cursor-pointer rounded-full border border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
               value ? activeColorClass : 'bg-white/10'
             }`}

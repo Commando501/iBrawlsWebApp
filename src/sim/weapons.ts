@@ -18,6 +18,7 @@
  */
 
 import { type UniversalSettings } from '../types';
+import { resolveHammerSlamTiming } from '../game/hammerSlamTiming';
 import { dropBall } from '../game/grifballBall';
 import { awardTeamKill, recordTeamDeath } from '../game/teamScoring';
 import {
@@ -210,7 +211,11 @@ function resolveHammerStrike(
 /** Wind-up time before an attack's active frame, by kind. */
 function windupForKind(kind: SimCombatant['attackKind'], settings: UniversalSettings): number {
   if (kind === 'slash') return settings.swordSlashSpeed ?? 0.22;
-  return settings.hammerMeleeSpeed ?? 0.24; // strike / swipe / punch share the hammer swing speed
+  if (kind === 'strike') {
+    const { windupTime, attackTime } = resolveHammerSlamTiming(settings);
+    return windupTime + attackTime;
+  }
+  return settings.hammerMeleeSpeed ?? 0.24; // swipe / punch share the hammer melee timing
 }
 
 /** Recovery (and re-attack cooldown) after an attack lands, by kind. */

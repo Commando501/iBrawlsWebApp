@@ -14,6 +14,7 @@ test('createInitialMultiplayerSessionSnapshot preserves App bootstrap multiplaye
     multiplayerPlayerCount: 1,
     multiplayerSpawnSlot: 0,
     gameplayClientId: '',
+    matchLobbyConfig: null,
   });
 });
 

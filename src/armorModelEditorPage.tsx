@@ -1,4 +1,4 @@
-import { StrictMode, useEffect, useState } from 'react';
+import { StrictMode, useEffect, useState, type SetStateAction } from 'react';
 import { createRoot } from 'react-dom/client';
 import { ArrowLeft, Shield } from 'lucide-react';
 import { ArmorModelEditor } from './components/main-menu/ArmorModelEditor';
@@ -54,11 +54,23 @@ function ArmorModelEditorPage() {
   }, [playerHue]);
 
   const updateLoadout = (patch: Partial<CharacterLoadout>) => {
-    setPlayerLoadout((previous) => ({
-      ...previous,
-      ...patch,
-      modelSystem: patch.modelSystem ?? previous.modelSystem ?? 'v2',
-    }));
+    setPlayerLoadout((previous) => {
+      const next = {
+        ...previous,
+        ...patch,
+        modelSystem: patch.modelSystem ?? previous.modelSystem ?? 'v2',
+      };
+      persistPlayerLoadout(next);
+      return next;
+    });
+  };
+
+  const updateCustomArmorCatalog = (update: SetStateAction<CustomArmorCatalog>) => {
+    setCustomArmorCatalog((previous) => {
+      const next = typeof update === 'function' ? update(previous) : update;
+      persistCustomArmorCatalog(next);
+      return next;
+    });
   };
 
   const customPieceCount = customArmorCatalog.pieces.length;
@@ -117,7 +129,7 @@ function ArmorModelEditorPage() {
             catalog={customArmorCatalog}
             playerLoadout={playerLoadout}
             playerHue={playerHue}
-            onCatalogChange={setCustomArmorCatalog}
+            onCatalogChange={updateCustomArmorCatalog}
             onLoadoutChange={updateLoadout}
             onClose={() => {
               window.location.href = '/';

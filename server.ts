@@ -7,6 +7,13 @@ import { createServer as createViteServer } from "vite";
 import { WebSocketServer, WebSocket } from "ws";
 import { LIVE_CONFIG_KEY_SET } from "./worker/src/liveConfigKeys";
 import { sanitizeCharacterLoadoutForNetwork } from "./src/components/customArmor";
+import { normalizePublicRoomCode } from "./src/network/roomCodePrivacy";
+import {
+  createMatchLobbySummary,
+  normalizeMatchLobbyConfig,
+  sanitizeLobbyPassword,
+} from "./src/network/matchLobbyConfig";
+import type { MatchLobbyConfig, MatchLobbySummary } from "./src/network/protocol";
 
 // ── Live Tuning dev parity ────────────────────────────────────────────────────
 // The Cloudflare Worker stores the Official Multiplayer Preset in D1. D1 doesn't
@@ -21,7 +28,9 @@ const SEED_CONFIG = {
     maxHP: 1, speedForward: 100, speedSide: 100, speedBackward: 100,
     attackRange: 3.2, attackRadius: 4.5, dashDistance: 6, dashDuration: 0.25,
     dashCooldown: 2, respawnInvulnerabilityDuration: 1, hammerReloadTime: 0.6,
-    hammerMeleeSpeed: 0.24, hammerMeleeReload: 0.5, hammerSplashVfx: "current",
+    hammerSlamWindupTime: 0.28, hammerSlamAttackTime: 0.12,
+    hammerSlamTimingLocked: true, hammerMeleeSpeed: 0.24, hammerMeleeReload: 0.5,
+    hammerSplashVfx: "current",
     swordLungeVfx: "current", swordLungeDistance: 14.5, swordLungeSpeed: 24,
     swordSlashSpeed: 0.22, swordSlashReload: 0.6, swordLungeReload: 1.2,
     hammerJumpPower: 6.5, hammerJumpTriggerRadius: 3.5, hammerJumpWindow: 0.6,
@@ -36,6 +45,8 @@ const SEED_CONFIG = {
     aiArchetype: "none", enableBurnDecals: true, weaponReadyTime: 0.5,
     weaponSwapLockout: 1, enableSlide: false, enableSprint: false,
     speedSprint: 140, speedSlide: 160, slideDistance: 8, slideCooldown: 1.5,
+    gameMode: "sandbox", iBrawlsKillTarget: 25, matchTimerSeconds: 522,
+    grifballGoalTarget: 5,
   } as Record<string, unknown>,
 };
 
@@ -113,6 +124,10 @@ async function startServer() {
     clients: WebSocket[]; // Array of up to MAX_ROOM_CLIENTS guest clients
     observers: Set<WebSocket>;
     keys: string[];
+    lobbyConfig: MatchLobbyConfig;
+    passwordHash?: string;
+    inviteTokens: Map<string, string>;
+    matchStarted: boolean;
     quickplayReserved?: boolean;
   }
 
@@ -131,10 +146,12 @@ async function startServer() {
     return String((socket as any).id || "");
   }
 
-  function normalizeRoomCodeForPresence(roomCode: unknown): string | undefined {
-    if (typeof roomCode !== "string") return undefined;
-    const normalized = roomCode.trim();
-    return normalized.length > 0 ? normalized : undefined;
+  function getRoomPublicCode(room: Room): string | undefined {
+    for (const key of room.keys) {
+      const publicCode = normalizePublicRoomCode(key);
+      if (publicCode) return publicCode;
+    }
+    return undefined;
   }
 
   function normalizePresenceId(value: unknown, maxLength = 128): string | undefined {
@@ -149,6 +166,56 @@ async function startServer() {
     const startedAt = Date.now();
     lobbyStartedAtByRoomCode.set(roomCode, startedAt);
     return startedAt;
+  }
+
+  function hashLobbyPassword(password: string): string {
+    let hash = 2166136261;
+    for (let i = 0; i < password.length; i += 1) {
+      hash ^= password.charCodeAt(i);
+      hash = Math.imul(hash, 16777619);
+    }
+    return (hash >>> 0).toString(16);
+  }
+
+  function createInviteToken(): string {
+    return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+  }
+
+  function getRoomPlayerCount(room: Room): number {
+    return 1 + room.clients.length;
+  }
+
+  function hasRoomPlayerSpace(room: Room): boolean {
+    return getRoomPlayerCount(room) < room.lobbyConfig.maxPlayers;
+  }
+
+  function buildPresenceLobbySummary(value: unknown): MatchLobbySummary | undefined {
+    if (!value || typeof value !== "object") return undefined;
+    const raw = value as Record<string, unknown>;
+    return createMatchLobbySummary(normalizeMatchLobbyConfig(raw as Partial<MatchLobbyConfig>), {
+      hasPassword: Boolean(raw.hasPassword),
+      inProgress: Boolean(raw.inProgress),
+    });
+  }
+
+  function buildRoomLobbySummary(room: Room): MatchLobbySummary {
+    return createMatchLobbySummary(room.lobbyConfig, {
+      hasPassword: Boolean(room.passwordHash),
+      inProgress: room.matchStarted,
+    });
+  }
+
+  function getInviteTokenBypass(room: Room, clientId: string, inviteToken: unknown): boolean {
+    return typeof inviteToken === "string" && room.inviteTokens.get(clientId) === inviteToken;
+  }
+
+  function broadcastToRoom(room: Room, payload: string) {
+    const recipients = [room.host, ...room.clients, ...Array.from(room.observers)];
+    recipients.forEach(socket => {
+      if (socket.readyState === WebSocket.OPEN) {
+        try { socket.send(payload); } catch {}
+      }
+    });
   }
 
   function pruneInactiveLobbyStartTimes(activeRoomCodes: Set<string>) {
@@ -313,7 +380,7 @@ async function startServer() {
     const activeRoomCodes = new Set<string>();
 
     lobbyClients.forEach((client: any) => {
-      const roomCode = normalizeRoomCodeForPresence(client.roomCode);
+      const roomCode = normalizePublicRoomCode(client.roomCode);
       if (client.playerState === 'multi' && roomCode) {
         activeRoomCodes.add(roomCode);
       }
@@ -323,16 +390,19 @@ async function startServer() {
     const clientPayloads = lobbyClients
       .map((client: any) => {
         const state = client.playerState || 'menu';
-        const roomCode = normalizeRoomCodeForPresence(client.roomCode);
+        const roomCode = normalizePublicRoomCode(client.roomCode);
+        const lobby = client.lobby as MatchLobbySummary | undefined;
+        const visibleRoomCode = lobby?.access === "private" ? undefined : roomCode;
         return {
           id: client.id,
           name: normalizePlayerName(client.playerName),
           state,
-          roomCode,
+          roomCode: visibleRoomCode,
           spaceAvailable: client.spaceAvailable !== undefined ? client.spaceAvailable : false,
           playerCount: client.playerCount,
           maxPlayers: client.maxPlayers,
-          lobbyStartedAt: state === 'multi' && roomCode ? getLobbyStartedAt(roomCode) : undefined
+          lobbyStartedAt: state === 'multi' && visibleRoomCode ? getLobbyStartedAt(visibleRoomCode) : undefined,
+          lobby
         };
       })
       .filter(c => Boolean(c.id));
@@ -388,12 +458,13 @@ async function startServer() {
         switch (message.type) {
           case "update_status": {
             const { status, roomCode, spaceAvailable, name, playerCount, maxPlayers } = message;
-            const normalizedRoomCode = status === 'multi' ? normalizeRoomCodeForPresence(roomCode) : undefined;
+            const normalizedRoomCode = status === 'multi' ? normalizePublicRoomCode(roomCode) : undefined;
             console.log(`Client ${wsId} updating playerState to: ${status}, roomCode: ${normalizedRoomCode}, spaceAvailable: ${spaceAvailable}, name: ${name}, players: ${playerCount}/${maxPlayers}`);
             (ws as any).playerState = status;
             (ws as any).roomCode = normalizedRoomCode;
             (ws as any).spaceAvailable = spaceAvailable;
             (ws as any).playerName = normalizePlayerName(name);
+            (ws as any).lobby = status === 'multi' ? buildPresenceLobbySummary(message.lobby) : undefined;
             (ws as any).playerCount = typeof playerCount === 'number' && Number.isFinite(playerCount)
               ? Math.max(0, Math.min(MAX_ROOM_PLAYERS, Math.floor(playerCount)))
               : undefined;
@@ -432,7 +503,8 @@ async function startServer() {
 
           case "send_invite": {
             const { targetId, roomCode } = message;
-            console.log(`Direct invite from ${wsId} to ${targetId} referencing room ${roomCode}`);
+            const publicRoomCode = normalizePublicRoomCode(roomCode);
+            console.log(`Direct invite from ${wsId} to ${targetId} referencing room ${publicRoomCode ?? "[redacted]"}`);
             let destSocket: WebSocket | null = null;
             for (const client of wss.clients) {
               if ((client as any).id === targetId) {
@@ -440,11 +512,17 @@ async function startServer() {
                 break;
               }
             }
-            if (destSocket && destSocket.readyState === WebSocket.OPEN) {
+            const inviteRoom = publicRoomCode ? rooms.get(publicRoomCode) : undefined;
+            const inviteToken = inviteRoom ? createInviteToken() : undefined;
+            if (inviteRoom && inviteToken) {
+              inviteRoom.inviteTokens.set(targetId, inviteToken);
+            }
+            if (destSocket && destSocket.readyState === WebSocket.OPEN && publicRoomCode) {
               destSocket.send(JSON.stringify({
                 type: "receive_invite",
                 fromId: wsId,
-                roomCode
+                roomCode: publicRoomCode,
+                inviteToken
               }));
             }
             break;
@@ -474,9 +552,17 @@ async function startServer() {
             
             // 1. Search for any hosted match with an open player slot (not reserved)
             let foundRoomKey: string | null = null;
-            for (const [key, room] of rooms.entries()) {
-              if (room.clients.length < MAX_ROOM_CLIENTS && !room.quickplayReserved) {
-                foundRoomKey = key;
+            for (const room of rooms.values()) {
+              if (
+                !room.matchStarted &&
+                room.lobbyConfig.access === "open" &&
+                !room.passwordHash &&
+                hasRoomPlayerSpace(room) &&
+                !room.quickplayReserved
+              ) {
+                const publicRoomCode = getRoomPublicCode(room);
+                if (!publicRoomCode) continue;
+                foundRoomKey = publicRoomCode;
                 room.quickplayReserved = true; // Mark it as reserved
                 break;
               }
@@ -531,6 +617,12 @@ async function startServer() {
           case "host": {
             const { ip, lanIp, customId } = message;
             applyGameplayIdentity(ws, message);
+            const lobbyConfig = normalizeMatchLobbyConfig(message.lobbyConfig);
+            const password = sanitizeLobbyPassword(message.password);
+            if (lobbyConfig.access === "password" && !password) {
+              ws.send(JSON.stringify({ type: "error", message: "Password lobbies require a password." }));
+              return;
+            }
             const keysToRegister = [];
             if (ip) keysToRegister.push(ip);
             if (lanIp && lanIp !== '127.0.0.1') keysToRegister.push(lanIp);
@@ -539,7 +631,16 @@ async function startServer() {
             console.log(`Registering host with keys: ${keysToRegister.join(", ")}`);
 
             // Create a single Room instance shared by reference across all registration keys
-            const room: Room = { host: ws, clients: [], observers: new Set<WebSocket>(), keys: keysToRegister };
+            const room: Room = {
+              host: ws,
+              clients: [],
+              observers: new Set<WebSocket>(),
+              keys: keysToRegister,
+              lobbyConfig,
+              passwordHash: password ? hashLobbyPassword(password) : undefined,
+              inviteTokens: new Map<string, string>(),
+              matchStarted: false,
+            };
 
             // Register room under all given keys
             keysToRegister.forEach(key => {
@@ -559,7 +660,14 @@ async function startServer() {
 
 
             socketToRoom.set(ws, room);
-            ws.send(JSON.stringify({ type: "hosted", keys: keysToRegister }));
+            ws.send(JSON.stringify({
+              type: "hosted",
+              keys: keysToRegister,
+              clientId: wsId,
+              role: "host",
+              spawnSlot: 0,
+              lobbyConfig
+            }));
 
             // Trigger the waiting Quick Play client if this is a custom quickplay room code
             if (customId && waitingQuickPlayClients.has(customId)) {
@@ -574,11 +682,12 @@ async function startServer() {
           }
 
           case "join": {
-            const { targetIpOrId, isObserver } = message;
+            const { targetIpOrId, isObserver, inviteToken } = message;
             applyGameplayIdentity(ws, message);
             console.log(`Client attempting to join room matching: ${targetIpOrId} (isObserver: ${isObserver})`);
 
-            let room = rooms.get(targetIpOrId);
+            const normalizedTargetCode = normalizePublicRoomCode(targetIpOrId);
+            let room = rooms.get(normalizedTargetCode || targetIpOrId);
             
             // Local network fallback: If target is not found by exact string match,
             // but this server hosts exactly ONE active room (which always happens on local direct plays),
@@ -594,7 +703,20 @@ async function startServer() {
               return;
             }
 
+            const inviteBypass = getInviteTokenBypass(room, wsId, inviteToken);
+            if (room.passwordHash && !inviteBypass) {
+              const password = sanitizeLobbyPassword(message.password);
+              if (!password || hashLobbyPassword(password) !== room.passwordHash) {
+                ws.send(JSON.stringify({ type: "error", message: "Lobby password is incorrect." }));
+                return;
+              }
+            }
+
             if (isObserver) {
+              if (!room.lobbyConfig.allowObservers) {
+                ws.send(JSON.stringify({ type: "error", message: "This lobby does not allow observers." }));
+                return;
+              }
               room.observers.add(ws);
               socketToRoom.set(ws, room);
               console.log(`Client ${wsId} connected as observer to room.`);
@@ -610,7 +732,12 @@ async function startServer() {
                 ],
                 otherPlayers: getRoomPlayerEntries(room),
                 participants: getOtherRoomParticipantEntries(room, wsId),
+                lobbyConfig: room.lobbyConfig,
+                matchStarted: room.matchStarted,
               }));
+              if (room.matchStarted) {
+                ws.send(JSON.stringify({ type: "match_start", lobbyConfig: room.lobbyConfig }));
+              }
               
               // Notify host and clients
               const obsJoinedPayload = JSON.stringify({
@@ -632,8 +759,8 @@ async function startServer() {
               break;
             }
 
-            if (room.clients.length >= MAX_ROOM_CLIENTS) {
-              ws.send(JSON.stringify({ type: "error", message: `Match is already full (${MAX_ROOM_PLAYERS}/${MAX_ROOM_PLAYERS} players present).` }));
+            if (!hasRoomPlayerSpace(room)) {
+              ws.send(JSON.stringify({ type: "error", message: `Match is already full (${room.lobbyConfig.maxPlayers}/${room.lobbyConfig.maxPlayers} players present).` }));
               return;
             }
 
@@ -657,7 +784,12 @@ async function startServer() {
               ],
               otherPlayers: getOtherRoomPlayerEntries(room, wsId),
               participants: getOtherRoomParticipantEntries(room, wsId),
+              lobbyConfig: room.lobbyConfig,
+              matchStarted: room.matchStarted,
             }));
+            if (room.matchStarted) {
+              ws.send(JSON.stringify({ type: "match_start", lobbyConfig: room.lobbyConfig }));
+            }
 
             // Notify host and all other clients of this new player joining
             const clientJoinedPayload = JSON.stringify({
@@ -684,6 +816,8 @@ async function startServer() {
                   ],
                   otherPlayers: getOtherRoomPlayerEntries(room, getSocketId(room.host)),
                   participants: getOtherRoomParticipantEntries(room, getSocketId(room.host)),
+                  lobbyConfig: room.lobbyConfig,
+                  matchStarted: room.matchStarted,
                 }));
               }
             } else {
@@ -697,6 +831,19 @@ async function startServer() {
                 client.send(clientJoinedPayload);
               }
             });
+            break;
+          }
+
+          case "start_match": {
+            const room = socketToRoom.get(ws);
+            if (!room || room.host !== ws) {
+              ws.send(JSON.stringify({ type: "error", message: "Only the host can start this match." }));
+              break;
+            }
+            room.matchStarted = true;
+            const payload = JSON.stringify({ type: "match_start", lobbyConfig: room.lobbyConfig });
+            broadcastToRoom(room, payload);
+            updatePresence();
             break;
           }
 
@@ -718,6 +865,10 @@ async function startServer() {
             }
 
             if (role === 'observer') {
+              if (!room.lobbyConfig.allowObservers) {
+                ws.send(JSON.stringify({ type: "error", message: "This lobby does not allow observers." }));
+                break;
+              }
               // Transitioning from Player (client) to Observer
               const clientIdx = room.clients.indexOf(ws);
               if (clientIdx !== -1) {
@@ -751,7 +902,7 @@ async function startServer() {
               // Transitioning from Observer to Player
               if (room.observers.has(ws)) {
                 // Check if vacant slot available in clients
-                if (room.clients.length < MAX_ROOM_CLIENTS) {
+                if (hasRoomPlayerSpace(room)) {
                   room.observers.delete(ws);
                   if (!room.clients.includes(ws)) {
                     room.clients.push(ws);
@@ -786,7 +937,7 @@ async function startServer() {
                   // Player slots are fully occupied (secure server check)
                   ws.send(JSON.stringify({ 
                     type: "error", 
-                    message: `Cannot join as player. The match is already full (${MAX_ROOM_PLAYERS}/${MAX_ROOM_PLAYERS}).`
+                    message: `Cannot join as player. The match is already full (${room.lobbyConfig.maxPlayers}/${room.lobbyConfig.maxPlayers}).`
                   }));
                 }
               }

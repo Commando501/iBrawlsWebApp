@@ -1,5 +1,10 @@
 import { UniversalSettings } from '../types';
 import { buildExposedTuneDefaults } from '../game/aiBehaviorTuning';
+import {
+  DEFAULT_HAMMER_SLAM_ATTACK_TIME,
+  DEFAULT_HAMMER_SLAM_TIMING_LOCKED,
+  DEFAULT_HAMMER_SLAM_WINDUP_TIME,
+} from '../game/hammerSlamTiming';
 
 export type PersistedGameplaySettings = Omit<UniversalSettings, 'playerHue' | 'playerName'>;
 
@@ -16,6 +21,9 @@ export const DEFAULT_ADMIN_SETTINGS: UniversalSettings = {
   dashCooldown: 2.0,
   respawnInvulnerabilityDuration: 1.0,
   hammerReloadTime: 0.6,
+  hammerSlamWindupTime: DEFAULT_HAMMER_SLAM_WINDUP_TIME,
+  hammerSlamAttackTime: DEFAULT_HAMMER_SLAM_ATTACK_TIME,
+  hammerSlamTimingLocked: DEFAULT_HAMMER_SLAM_TIMING_LOCKED,
   hammerMeleeSpeed: 0.24,
   hammerMeleeReload: 0.5,
   hammerAttackAnimation: 'current',
@@ -67,6 +75,8 @@ export const DEFAULT_ADMIN_SETTINGS: UniversalSettings = {
 
   // Grifball game mode (sandbox default preserves legacy behavior).
   gameMode: 'sandbox',
+  iBrawlsKillTarget: 25,
+  matchTimerSeconds: 522,
   grifballGoalTarget: 5,
   grifballRoundResetDelay: 4.0,
   grifballCountdownDuration: 3.0,

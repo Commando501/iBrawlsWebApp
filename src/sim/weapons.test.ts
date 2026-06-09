@@ -2,7 +2,13 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createMatch, resolveSimSettings } from './factory';
 import { type SimCombatant } from './simState';
-import { inMeleeHitVolume, inHammerStrikeVolume } from './weapons';
+import {
+  type KillEvent,
+  inMeleeHitVolume,
+  inHammerStrikeVolume,
+  stepCombatantWeapons,
+} from './weapons';
+import { idleAction, type ActionInput } from './actions';
 import { type UniversalSettings } from '../types';
 
 const baseSettings = resolveSimSettings();
@@ -20,6 +26,36 @@ function pair(): { atk: SimCombatant; vic: SimCombatant } {
   vic.isCrouching = false;
   return { atk, vic };
 }
+
+function hammerStrikePair(settings: UniversalSettings): {
+  state: ReturnType<typeof createMatch>;
+  atk: SimCombatant;
+  vic: SimCombatant;
+  events: KillEvent[];
+} {
+  const state = createMatch({ seed: 1, teamSizes: { blue: 1, red: 1 }, settings });
+  const atk = state.combatants.find((c) => c.team === 'blue')!;
+  const vic = state.combatants.find((c) => c.team === 'red')!;
+  atk.pos = { x: 0, y: 0, z: 0 };
+  atk.yaw = 0;
+  atk.weapon = 'hammer';
+  atk.weaponState = 'idle';
+  atk.weaponTimer = 0;
+  atk.attackCooldown = 0;
+  atk.weaponReadyTimer = 0;
+  atk.attackKind = 'none';
+  vic.pos = { x: 0, y: 0, z: 3.2 };
+  vic.hp = 1;
+  vic.maxHp = 1;
+  vic.alive = true;
+  vic.invulnerabilityTimer = 0;
+  return { state, atk, vic, events: [] };
+}
+
+const hammerPrimaryAction = (): ActionInput => ({
+  ...idleAction(),
+  attackPrimary: true,
+});
 
 test('a target directly in front within reach is hit', () => {
   const { atk, vic } = pair();
@@ -132,4 +168,71 @@ test('attackRange is live-tunable: it moves the impact point forward', () => {
   vic.pos = { x: 0, y: 0, z: 8 };
   assert.equal(inHammerStrikeVolume(atk, vic, withReach(3.2, 4.5)), false); // impact at 3.2, far
   assert.equal(inHammerStrikeVolume(atk, vic, withReach(8.0, 4.5)), true);  // impact now at 8
+});
+
+test('hammer primary waits for configured windup plus attack before hitting', () => {
+  const settings = resolveSimSettings({
+    hammerSlamWindupTime: 0.5,
+    hammerSlamAttackTime: 0.25,
+    weaponReadyTime: 0,
+  });
+  const { state, atk, vic, events } = hammerStrikePair(settings);
+
+  stepCombatantWeapons(state, atk, hammerPrimaryAction(), settings, 0, events);
+  stepCombatantWeapons(state, atk, idleAction(), settings, 0.74, events);
+
+  assert.equal(vic.alive, true);
+  assert.equal(events.length, 0);
+
+  stepCombatantWeapons(state, atk, idleAction(), settings, 0.02, events);
+
+  assert.equal(vic.alive, false);
+  assert.equal(events.length, 1);
+});
+
+test('shorter hammer slam timing lands sooner than the default split', () => {
+  const defaultSettings = resolveSimSettings({ weaponReadyTime: 0 });
+  const shortSettings = resolveSimSettings({
+    hammerSlamWindupTime: 0.08,
+    hammerSlamAttackTime: 0.04,
+    weaponReadyTime: 0,
+  });
+  const defaultStrike = hammerStrikePair(defaultSettings);
+  const shortStrike = hammerStrikePair(shortSettings);
+
+  stepCombatantWeapons(
+    defaultStrike.state,
+    defaultStrike.atk,
+    hammerPrimaryAction(),
+    defaultSettings,
+    0,
+    defaultStrike.events
+  );
+  stepCombatantWeapons(
+    shortStrike.state,
+    shortStrike.atk,
+    hammerPrimaryAction(),
+    shortSettings,
+    0,
+    shortStrike.events
+  );
+  stepCombatantWeapons(
+    defaultStrike.state,
+    defaultStrike.atk,
+    idleAction(),
+    defaultSettings,
+    0.13,
+    defaultStrike.events
+  );
+  stepCombatantWeapons(
+    shortStrike.state,
+    shortStrike.atk,
+    idleAction(),
+    shortSettings,
+    0.13,
+    shortStrike.events
+  );
+
+  assert.equal(defaultStrike.vic.alive, true);
+  assert.equal(shortStrike.vic.alive, false);
 });

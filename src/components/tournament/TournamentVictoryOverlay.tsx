@@ -18,7 +18,7 @@ export function TournamentVictoryOverlay({
         <div className="absolute -bottom-20 -right-20 w-48 h-48 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
 
         <div className="w-16 h-16 rounded-full border border-emerald-500/30 flex items-center justify-center bg-emerald-950/40 shadow-[0_0_15px_rgba(52,211,153,0.2)] mb-5">
-          <span className="text-3xl">ðŸ†</span>
+          <span className="text-3xl font-black leading-none">1</span>
         </div>
 
         <h2 className="text-3xl font-display font-black uppercase tracking-wider text-emerald-400 mb-2 drop-shadow-[0_0_8px_rgba(52,211,153,0.3)]">

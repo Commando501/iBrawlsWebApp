@@ -16,7 +16,7 @@ import {
   withDefaultGameplaySettings,
 } from './gameplaySettings';
 
-export const OFFICIAL_MP_PRESET_NAME = '★ Official Multiplayer';
+export const OFFICIAL_MP_PRESET_NAME = '* Official Multiplayer';
 
 export interface GameplayPreset {
   name: string;

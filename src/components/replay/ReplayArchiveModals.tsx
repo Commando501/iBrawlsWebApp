@@ -38,7 +38,7 @@ export function ReplayEditModal({
             onClick={onClose}
             className="text-white/40 hover:text-white font-bold cursor-pointer p-1"
           >
-            âœ•
+            x
           </button>
         </div>
 
@@ -82,7 +82,7 @@ export function ReplayEditModal({
                 : 'bg-white/5 border-white/5 text-white/20 cursor-not-allowed'
             }`}
           >
-            ðŸ’¾ Update Record
+            Update Record
           </button>
           <button
             onClick={onClose}
@@ -118,12 +118,12 @@ export function ReplaySaveCachedModal({
             onClick={onClose}
             className="text-white/40 hover:text-white font-bold cursor-pointer p-1"
           >
-            âœ•
+            x
           </button>
         </div>
 
         <p className="text-[11.5px] text-white/60 leading-relaxed bg-yellow-500/5 border border-yellow-500/10 p-3 rounded">
-          âš ï¸ This will save the rolling auto-save match cache item permanently into your Archives, ensuring it won't be overwritten. Add a name and description to find it easily!
+          This will save the rolling auto-save match cache item permanently into your Archives, ensuring it won't be overwritten. Add a name and description to find it easily!
         </p>
 
         <div className="flex flex-col gap-4">
@@ -166,7 +166,7 @@ export function ReplaySaveCachedModal({
                 : 'bg-white/5 border-white/5 text-white/20 cursor-not-allowed'
             }`}
           >
-            ðŸ“¥ Commit to Archives
+            Commit to Archives
           </button>
           <button
             onClick={onClose}

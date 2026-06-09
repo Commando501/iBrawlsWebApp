@@ -216,7 +216,7 @@ export function createInitialGrifballRuntimeState({
     replayHeatmapElapsedTime: 0,
     pendingReplayHeatmapEvents: [],
 
-    gameTime: 522,
+    gameTime: adminSettings.matchTimerSeconds ?? 522,
 
     debugMode,
     lastStrikePos: null,
