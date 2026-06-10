@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { getSkyboxTexture } from '../../game/skyboxTextures';
 import { type CustomMapData, type UniversalSettings } from '../../types';
+import { buildSkyAtmosphereForRefs } from './skyAtmosphereRuntime';
 import { type GrifballThreeRefs } from './threeRefs';
 
 export interface InitializedGrifballScene {
@@ -39,6 +40,7 @@ export function initializeGrifballSceneForRefs({
   refs.hostGroup = null;
   refs.hostHammer = null;
   refs.hostSword = null;
+  refs.skyAtmosphere = null;
 
   const effectiveMapId = replayMapType ?? selectedMap;
   const isHangar = effectiveMapId === 'hangar';
@@ -89,6 +91,13 @@ export function initializeGrifballSceneForRefs({
   } catch (err) {
     console.error('Failed to create skybox mesh:', err);
   }
+
+  buildSkyAtmosphereForRefs({
+    refs,
+    skyboxTexture: skyType,
+    atmosphere: activeCustomMap?.atmosphere,
+    visible: adminSettings.showSkybox !== false,
+  });
 
   const width = container.clientWidth || window.innerWidth;
   const height = container.clientHeight || window.innerHeight;

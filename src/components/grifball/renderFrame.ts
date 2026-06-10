@@ -6,6 +6,7 @@ import {
   type LiveCameraFrameState,
 } from './liveCamera';
 import { type GrifballRuntimeState } from './runtimeState';
+import { updateSkyAtmosphereForRefs } from './skyAtmosphereRuntime';
 import { type GrifballThreeRefs } from './threeRefs';
 import { type SpectateTargetData, type SpectateTargetRole } from './spectateTargets';
 import {
@@ -90,7 +91,14 @@ export function renderLiveGrifballFrame({
   });
 
   updateEmissiveGlowPulseForScene({ scene, blinkMaterial: whiteBlinkMaterial });
-  updateWeatherParticlesForScene({ scene, frameState: weatherParticleFrameState });
+  const now = performance.now();
+  if (weatherParticleFrameState.lastAtmosphereTime === undefined) {
+    weatherParticleFrameState.lastAtmosphereTime = now;
+  }
+  const atmosphereDt = Math.min(0.1, (now - weatherParticleFrameState.lastAtmosphereTime) / 1000);
+  weatherParticleFrameState.lastAtmosphereTime = now;
+  updateSkyAtmosphereForRefs(refs, atmosphereDt, now / 1000);
+  updateWeatherParticlesForScene({ scene, frameState: weatherParticleFrameState, now });
 
   renderer.render(scene, camera);
 }

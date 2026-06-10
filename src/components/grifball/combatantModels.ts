@@ -68,7 +68,6 @@ export const getRandomLoadout = (): CharacterLoadout => {
   const legs = AVAILABLE_PRESETS.leg;
   const hammers = AVAILABLE_PRESETS.hammer;
   const swords = AVAILABLE_PRESETS.sword;
-  const modelSystem = Math.random() < 0.5 ? 'v1' : 'v2';
   return {
     helmet: helmets[Math.floor(Math.random() * helmets.length)],
     torso: torsos[Math.floor(Math.random() * torsos.length)],
@@ -76,8 +75,7 @@ export const getRandomLoadout = (): CharacterLoadout => {
     leg: legs[Math.floor(Math.random() * legs.length)],
     hammerPreset: hammers[Math.floor(Math.random() * hammers.length)],
     swordPreset: swords[Math.floor(Math.random() * swords.length)],
-    modelSystem,
-    modelType: modelSystem === 'v2' ? 'medium' : undefined,
+    modelSystem: 'v1',
   };
 };
 

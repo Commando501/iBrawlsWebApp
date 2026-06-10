@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { type CombatantMeshRig } from './combatantModels';
+import { type SkyAtmosphereRuntime } from './skyAtmosphereRuntime';
 
 export interface GrifballThreeRefs {
   scene: THREE.Scene | null;
@@ -53,6 +54,7 @@ export interface GrifballThreeRefs {
   navMesh?: any;
   customMapObjects?: THREE.Object3D[];
   skyboxMesh?: THREE.Mesh | null;
+  skyAtmosphere?: SkyAtmosphereRuntime | null;
 }
 
 export function createInitialGrifballThreeRefs(): GrifballThreeRefs {
@@ -72,6 +74,7 @@ export function createInitialGrifballThreeRefs(): GrifballThreeRefs {
     otherPlayerMeshes: new Map(),
     customMapObjects: [],
     skyboxMesh: null,
+    skyAtmosphere: null,
 
     debugPlayerSphere: null,
     debugEnemySphere: null,

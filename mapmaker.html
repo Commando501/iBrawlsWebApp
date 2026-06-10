@@ -592,6 +592,64 @@
       }
     ];
 
+    const SKYBOX_TEXTURE_IDS = [
+      'cyberpunk', 'hangar', 'nature', 'space', 'fantasy', 'forerunner', 'synthwave', 'rainy_streets',
+      'winter_rink', 'grifball_stadium', 'holodeck', 'rust', 'toxic', 'inferno', 'matrix', 'nebula'
+    ];
+    const ATMOSPHERE_SETTING_KEYS = [
+      'motion', 'clouds', 'haze', 'stars', 'weather', 'lightning', 'energy', 'celestial', 'horizonDetail'
+    ];
+    const ATMOSPHERE_CONTROL_LABELS = {
+      motion: 'Motion',
+      clouds: 'Cloud Layers',
+      haze: 'Volumetric Haze',
+      stars: 'Starfield',
+      weather: 'Weather / Particles',
+      lightning: 'Lightning Pulses',
+      energy: 'Energy Bands',
+      celestial: 'Moons / Planets',
+      horizonDetail: 'Horizon Detail'
+    };
+    const SKYBOX_PRESETS = {
+      cyberpunk: { label: 'Cyber Megacity', atmosphere: { motion: 58, clouds: 18, haze: 70, stars: 18, weather: 10, lightning: 8, energy: 88, celestial: 24, horizonDetail: 92 } },
+      hangar: { label: 'Orbital Hangar', atmosphere: { motion: 34, clouds: 4, haze: 42, stars: 62, weather: 0, lightning: 0, energy: 65, celestial: 82, horizonDetail: 88 } },
+      nature: { label: 'Ancient Canopy', atmosphere: { motion: 42, clouds: 64, haze: 72, stars: 0, weather: 18, lightning: 0, energy: 18, celestial: 64, horizonDetail: 90 } },
+      space: { label: 'Deep Space Expanse', atmosphere: { motion: 40, clouds: 8, haze: 36, stars: 100, weather: 0, lightning: 0, energy: 70, celestial: 96, horizonDetail: 72 } },
+      fantasy: { label: 'Mythic Skylands', atmosphere: { motion: 52, clouds: 76, haze: 58, stars: 72, weather: 8, lightning: 12, energy: 80, celestial: 92, horizonDetail: 86 } },
+      forerunner: { label: 'Forerunner Megastructure', atmosphere: { motion: 38, clouds: 20, haze: 62, stars: 12, weather: 0, lightning: 6, energy: 92, celestial: 56, horizonDetail: 94 } },
+      synthwave: { label: 'Neon Outrun Horizon', atmosphere: { motion: 66, clouds: 14, haze: 62, stars: 48, weather: 0, lightning: 0, energy: 98, celestial: 84, horizonDetail: 88 } },
+      rainy_streets: { label: 'Rain-Slick Megablock', atmosphere: { motion: 70, clouds: 82, haze: 86, stars: 0, weather: 96, lightning: 34, energy: 74, celestial: 12, horizonDetail: 96 } },
+      winter_rink: { label: 'Glacial Aurora Bowl', atmosphere: { motion: 48, clouds: 58, haze: 72, stars: 58, weather: 82, lightning: 0, energy: 42, celestial: 74, horizonDetail: 90 } },
+      grifball_stadium: { label: 'Championship Stadium', atmosphere: { motion: 52, clouds: 8, haze: 46, stars: 0, weather: 0, lightning: 0, energy: 90, celestial: 16, horizonDetail: 100 } },
+      holodeck: { label: 'Infinite Holodeck Grid', atmosphere: { motion: 54, clouds: 0, haze: 28, stars: 12, weather: 0, lightning: 0, energy: 96, celestial: 18, horizonDetail: 76 } },
+      rust: { label: 'Dustbound Wasteland', atmosphere: { motion: 58, clouds: 52, haze: 90, stars: 0, weather: 42, lightning: 0, energy: 22, celestial: 78, horizonDetail: 94 } },
+      toxic: { label: 'Toxic Wasteland', atmosphere: { motion: 62, clouds: 82, haze: 96, stars: 0, weather: 36, lightning: 14, energy: 80, celestial: 18, horizonDetail: 92 } },
+      inferno: { label: 'Magma Storm Front', atmosphere: { motion: 72, clouds: 76, haze: 86, stars: 0, weather: 54, lightning: 42, energy: 88, celestial: 62, horizonDetail: 96 } },
+      matrix: { label: 'Digital Rain Void', atmosphere: { motion: 82, clouds: 0, haze: 48, stars: 18, weather: 70, lightning: 0, energy: 100, celestial: 10, horizonDetail: 84 } },
+      nebula: { label: 'Planetary Nebula', atmosphere: { motion: 46, clouds: 52, haze: 54, stars: 100, weather: 0, lightning: 0, energy: 76, celestial: 100, horizonDetail: 80 } }
+    };
+
+    function resolveSkyboxTextureId(type) {
+      return SKYBOX_TEXTURE_IDS.includes(type) ? type : 'cyberpunk';
+    }
+
+    function getEffectiveSkyboxTextureId() {
+      return resolveSkyboxTextureId(skyboxTexture === 'matched' ? theme : skyboxTexture);
+    }
+
+    function clampAtmosphereValue(value, fallback) {
+      return Number.isFinite(value) ? Math.max(0, Math.min(100, Math.round(value))) : fallback;
+    }
+
+    function resolveAtmosphereSettings(type, overrides = {}) {
+      const preset = SKYBOX_PRESETS[resolveSkyboxTextureId(type)] || SKYBOX_PRESETS.cyberpunk;
+      const out = { ...preset.atmosphere };
+      ATMOSPHERE_SETTING_KEYS.forEach((key) => {
+        out[key] = clampAtmosphereValue(overrides?.[key], preset.atmosphere[key]);
+      });
+      return out;
+    }
+
     // GLOBAL EDITOR STATE
     let activeTab = 'scene';
     let currentTransformMode = 'translate';
@@ -609,6 +667,7 @@
     let skyboxHue = 280;
     let skyboxBrightness = 5;
     let skyboxTexture = 'matched';
+    let atmosphere = resolveAtmosphereSettings('cyberpunk');
     let fogColor = '#050811';
     let fogDensity = 0.015;
 
@@ -1909,6 +1968,7 @@
       if (skyboxMesh) {
         skyboxMesh.rotation.y += dt * 0.004;
       }
+      updateMapmakerSkyAtmosphere(dt, now / 1000);
 
       // Slow hover rotation on spawn indicators for micro-animations
       const time = Date.now() * 0.002;
@@ -2577,16 +2637,38 @@
 
     // Cache to prevent recreating canvas textures in editor
     const skyboxTextureCache = new Map();
+    let detectedSkyboxTextureSize = null;
+
+    function resolveSkyboxTextureSize() {
+      if (detectedSkyboxTextureSize) return detectedSkyboxTextureSize;
+      let maxTextureSize = 4096;
+      try {
+        const probe = document.createElement('canvas');
+        const gl = probe.getContext('webgl') || probe.getContext('experimental-webgl');
+        if (gl) maxTextureSize = gl.getParameter(gl.MAX_TEXTURE_SIZE);
+      } catch (err) {
+        maxTextureSize = 2048;
+      }
+      const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent || '');
+      detectedSkyboxTextureSize = (!isMobile && maxTextureSize >= 4096)
+        ? { width: 4096, height: 2048, quality: 'hd' }
+        : { width: 2048, height: 1024, quality: 'standard' };
+      return detectedSkyboxTextureSize;
+    }
+
     function getSkyboxTexture(type, hue, brightness, fogColor) {
-      const cacheKey = `${type}_${hue}_${brightness}_${fogColor}`;
+      const skyType = resolveSkyboxTextureId(type);
+      const size = resolveSkyboxTextureSize();
+      const cacheKey = `${skyType}_${hue}_${brightness}_${fogColor}_${size.quality}`;
       if (skyboxTextureCache.has(cacheKey)) {
         return skyboxTextureCache.get(cacheKey);
       }
 
       const canvas = document.createElement('canvas');
-      canvas.width = 1024;
-      canvas.height = 512;
+      canvas.width = size.width;
+      canvas.height = size.height;
       const ctx = canvas.getContext('2d');
+      ctx.scale(size.width / 1024, size.height / 512);
 
       const skyColor = `hsl(${hue}, 75%, ${Math.min(100, Math.max(0, brightness * 4.5))}%)`;
       const horizonColor = `hsl(${hue}, 60%, ${Math.min(100, Math.max(0, brightness * 10))}%)`;
@@ -2607,7 +2689,7 @@
       ctx.fillRect(0, 256, 1024, 256);
 
       // Draw theme-specific scenery
-      switch (type) {
+      switch (skyType) {
         case 'cyberpunk':
           drawCyberpunkSky(ctx, hue, brightness, fogColor);
           break;
@@ -2662,12 +2744,384 @@
           drawCyberpunkSky(ctx, hue, brightness, fogColor);
           break;
       }
+      drawHdSkyboxDetail(ctx, skyType, hue, brightness, fogColor);
 
       const texture = new THREE.CanvasTexture(canvas);
       texture.wrapS = THREE.ClampToEdgeWrapping;
       texture.wrapT = THREE.ClampToEdgeWrapping;
+      texture.minFilter = THREE.LinearMipmapLinearFilter;
+      texture.magFilter = THREE.LinearFilter;
+      texture.generateMipmaps = true;
       skyboxTextureCache.set(cacheKey, texture);
       return texture;
+    }
+
+    function drawHdSkyboxDetail(ctx, type, hue, brightness, fogColor) {
+      const horizon = 276;
+      const color = mapmakerSkyboxColor(type);
+      ctx.save();
+      ctx.globalCompositeOperation = 'screen';
+      for (let i = 0; i < 9; i++) {
+        const cx = (i * 149) % 1024;
+        const cy = 70 + ((i * 41) % 160);
+        const r = 90 + ((i * 31) % 110);
+        const grad = ctx.createRadialGradient(cx, cy, 4, cx, cy, r);
+        grad.addColorStop(0, `${color}44`);
+        grad.addColorStop(1, `${color}00`);
+        ctx.fillStyle = grad;
+        ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
+      }
+      ctx.restore();
+
+      if (type === 'space' || type === 'nebula' || type === 'fantasy' || type === 'winter_rink') {
+        ctx.fillStyle = 'rgba(255,255,255,0.72)';
+        for (let i = 0; i < 520; i++) {
+          const x = (i * 97 + (i % 11) * 19) % 1024;
+          const y = (i * 43 + (i % 7) * 17) % 260;
+          const s = i % 17 === 0 ? 2.1 : 1.0;
+          ctx.fillRect(x, y, s, s);
+        }
+      }
+
+      if (type === 'cyberpunk' || type === 'rainy_streets' || type === 'synthwave' || type === 'matrix') {
+        for (let layer = 0; layer < 3; layer++) {
+          ctx.fillStyle = `rgba(3,7,18,${0.78 - layer * 0.14})`;
+          for (let i = 0; i < 24; i++) {
+            const w = 24 + ((i * 13 + layer * 7) % 42);
+            const h = 58 + ((i * 29 + layer * 17) % 120);
+            const x = (i * 57 + layer * 29) % 1024;
+            const y = horizon - h + layer * 18;
+            ctx.fillRect(x, y, w, h);
+            ctx.fillStyle = i % 2 === 0 ? 'rgba(6,182,212,0.5)' : 'rgba(236,72,153,0.45)';
+            for (let wy = y + 18; wy < y + h - 10; wy += 18) {
+              ctx.fillRect(x + 7, wy, Math.max(3, w * 0.2), 3);
+              ctx.fillRect(x + w * 0.55, wy + 5, Math.max(3, w * 0.18), 3);
+            }
+            ctx.fillStyle = `rgba(3,7,18,${0.78 - layer * 0.14})`;
+          }
+        }
+      }
+
+      if (type === 'forerunner' || type === 'grifball_stadium' || type === 'hangar' || type === 'holodeck') {
+        ctx.strokeStyle = type === 'holodeck' ? 'rgba(234,179,8,0.5)' : 'rgba(148,163,184,0.34)';
+        ctx.lineWidth = 3;
+        for (let y = 35; y < horizon; y += 36) {
+          ctx.beginPath();
+          ctx.moveTo(0, y);
+          ctx.lineTo(1024, y + Math.sin(y * 0.04) * 8);
+          ctx.stroke();
+        }
+        for (let x = 0; x < 1024; x += 88) {
+          ctx.beginPath();
+          ctx.moveTo(x, 0);
+          ctx.lineTo(x + 44, horizon);
+          ctx.stroke();
+        }
+      }
+
+      if (type === 'nature' || type === 'rust' || type === 'toxic' || type === 'inferno' || type === 'winter_rink') {
+        const fill = type === 'winter_rink' ? 'rgba(219,234,254,0.84)' : (type === 'nature' ? 'rgba(20,83,45,0.78)' : 'rgba(44,24,16,0.82)');
+        ctx.fillStyle = fill;
+        ctx.beginPath();
+        ctx.moveTo(0, horizon);
+        for (let x = 0; x <= 1024; x += 32) {
+          const y = horizon - (45 + Math.sin(x * 0.018) * 32 + Math.cos(x * 0.009) * 18);
+          ctx.lineTo(x, y);
+        }
+        ctx.lineTo(1024, horizon);
+        ctx.closePath();
+        ctx.fill();
+      }
+
+      if (type === 'nebula') {
+        ctx.strokeStyle = 'rgba(253,224,71,0.32)';
+        ctx.lineWidth = 20;
+        ctx.beginPath();
+        ctx.ellipse(512, 126, 460, 58, -Math.PI / 9, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+
+      if (type === 'rainy_streets') {
+        ctx.strokeStyle = 'rgba(165,243,252,0.24)';
+        for (let i = 0; i < 80; i++) {
+          const x = (i * 53) % 1024;
+          ctx.beginPath();
+          ctx.moveTo(x, 0);
+          ctx.lineTo(x - 48, 512);
+          ctx.stroke();
+        }
+      }
+
+      void hue;
+      void brightness;
+      void fogColor;
+    }
+
+    function mapmakerSkyboxColor(type) {
+      if (type === 'nature') return '#86efac';
+      if (type === 'space') return '#93c5fd';
+      if (type === 'fantasy') return '#c4b5fd';
+      if (type === 'forerunner') return '#fbbf24';
+      if (type === 'synthwave') return '#ec4899';
+      if (type === 'rainy_streets') return '#f59e0b';
+      if (type === 'winter_rink') return '#bae6fd';
+      if (type === 'grifball_stadium') return '#f8fafc';
+      if (type === 'holodeck') return '#eab308';
+      if (type === 'rust') return '#fb923c';
+      if (type === 'toxic') return '#4ade80';
+      if (type === 'inferno') return '#ef4444';
+      if (type === 'matrix') return '#22c55e';
+      if (type === 'nebula') return '#a855f7';
+      if (type === 'hangar') return '#38bdf8';
+      return '#22d3ee';
+    }
+
+    function disposeMapmakerAtmosphereObject(object) {
+      object.traverse((child) => {
+        if (child.geometry) child.geometry.dispose();
+        if (child.material) {
+          const mats = Array.isArray(child.material) ? child.material : [child.material];
+          mats.forEach((mat) => mat.dispose());
+        }
+      });
+    }
+
+    function buildMapmakerSkyAtmosphere(skyType) {
+      const oldAtmosphere = scene.getObjectByName('sky_atmosphere');
+      if (oldAtmosphere) {
+        scene.remove(oldAtmosphere);
+        disposeMapmakerAtmosphereObject(oldAtmosphere);
+      }
+
+      const resolvedType = resolveSkyboxTextureId(skyType);
+      const settings = resolveAtmosphereSettings(resolvedType, atmosphere);
+      const color = mapmakerSkyboxColor(resolvedType);
+      const group = new THREE.Group();
+      group.name = 'sky_atmosphere';
+      group.userData.settings = settings;
+
+      if (settings.haze > 0) {
+        const haze = new THREE.Mesh(
+          new THREE.SphereGeometry(228, 32, 16),
+          new THREE.MeshBasicMaterial({
+            color,
+            transparent: true,
+            opacity: 0.035 + settings.haze / 1900,
+            side: THREE.BackSide,
+            depthWrite: false,
+            blending: THREE.AdditiveBlending
+          })
+        );
+        haze.name = 'sky_atmosphere_haze';
+        haze.userData.role = 'haze';
+        group.add(haze);
+      }
+
+      if (settings.celestial > 0) {
+        const celestialCount = ['space', 'fantasy', 'nebula', 'winter_rink'].includes(resolvedType) ? 3 : 1;
+        for (let i = 0; i < celestialCount; i++) {
+          const disc = new THREE.Mesh(
+            new THREE.CircleGeometry(4 + settings.celestial * 0.12 * (1 - i * 0.15), 48),
+            new THREE.MeshBasicMaterial({
+              color,
+              transparent: true,
+              opacity: 0.28 + settings.celestial / 240,
+              side: THREE.DoubleSide,
+              depthWrite: false,
+              blending: THREE.AdditiveBlending
+            })
+          );
+          const angle = -0.8 + i * 0.55;
+          disc.position.set(Math.sin(angle) * 120, 72 - i * 13, -150 + i * 8);
+          disc.lookAt(0, 8, 0);
+          disc.userData.role = 'celestial';
+          group.add(disc);
+        }
+      }
+
+      if (settings.stars > 0) {
+        const count = Math.max(40, Math.round(settings.stars * (resolvedType === 'space' || resolvedType === 'nebula' ? 8 : 3)));
+        const positions = new Float32Array(count * 3);
+        for (let i = 0; i < count; i++) {
+          const theta = (i * 2.399963229728653) % (Math.PI * 2);
+          const radius = 170 + ((i * 17) % 36);
+          positions[i * 3] = Math.cos(theta) * radius;
+          positions[i * 3 + 1] = 24 + ((i * 37) % 118);
+          positions[i * 3 + 2] = Math.sin(theta) * radius;
+        }
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        const stars = new THREE.Points(geo, new THREE.PointsMaterial({
+          color: resolvedType === 'matrix' ? '#22c55e' : '#ffffff',
+          size: 0.18 + settings.stars / 180,
+          transparent: true,
+          opacity: 0.3 + settings.stars / 160,
+          depthWrite: false,
+          blending: THREE.AdditiveBlending
+        }));
+        stars.userData.role = 'stars';
+        group.add(stars);
+      }
+
+      if (settings.clouds > 0) {
+        const count = Math.max(2, Math.round(settings.clouds / 16));
+        for (let i = 0; i < count; i++) {
+          const cloud = new THREE.Mesh(
+            new THREE.PlaneGeometry(26 + settings.clouds * 0.34, 8 + settings.clouds * 0.12),
+            new THREE.MeshBasicMaterial({
+              color,
+              transparent: true,
+              opacity: 0.14 + settings.clouds / 340,
+              side: THREE.DoubleSide,
+              depthWrite: false,
+              blending: THREE.AdditiveBlending
+            })
+          );
+          const angle = (i / count) * Math.PI * 2;
+          cloud.position.set(Math.cos(angle) * 118, 48 + (i % 4) * 8, Math.sin(angle) * 118);
+          cloud.lookAt(0, 10, 0);
+          cloud.userData.role = 'cloud';
+          cloud.userData.drift = 0.12 + (i % 5) * 0.03;
+          group.add(cloud);
+        }
+      }
+
+      if (settings.energy > 0) {
+        const ringCount = Math.max(1, Math.round(settings.energy / 26));
+        for (let i = 0; i < ringCount; i++) {
+          const ring = new THREE.Mesh(
+            new THREE.TorusGeometry(90 + i * 12, 0.08 + settings.energy / 1200, 8, 128),
+            new THREE.MeshBasicMaterial({
+              color,
+              transparent: true,
+              opacity: 0.1 + settings.energy / 430,
+              depthWrite: false,
+              blending: THREE.AdditiveBlending
+            })
+          );
+          ring.position.y = 5 + i * 2;
+          ring.rotation.x = Math.PI / 2;
+          ring.userData.role = 'energy';
+          ring.userData.drift = 0.18 + i * 0.04;
+          group.add(ring);
+        }
+      }
+
+      if (settings.lightning > 0) {
+        const branches = Math.max(1, Math.round(settings.lightning / 20));
+        const positions = [];
+        for (let i = 0; i < branches; i++) {
+          let x = -70 + i * (140 / Math.max(1, branches - 1));
+          let y = 118;
+          const z = -145;
+          for (let j = 0; j < 5; j++) {
+            const nx = x + (((i + j) % 2 === 0 ? 1 : -1) * (7 + j * 2));
+            const ny = y - 11 - j * 5;
+            positions.push(x, y, z, nx, ny, z + j);
+            x = nx;
+            y = ny;
+          }
+        }
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+        const mat = new THREE.LineBasicMaterial({
+          color,
+          transparent: true,
+          opacity: 0.22 + settings.lightning / 180,
+          depthWrite: false,
+          blending: THREE.AdditiveBlending
+        });
+        const lines = new THREE.LineSegments(geo, mat);
+        lines.userData.role = 'lightning';
+        lines.userData.baseOpacity = mat.opacity;
+        group.add(lines);
+      }
+
+      if (settings.weather > 0) {
+        const count = Math.max(80, Math.round(settings.weather * 8));
+        const positions = new Float32Array(count * 3);
+        const velocities = new Float32Array(count * 3);
+        for (let i = 0; i < count; i++) {
+          positions[i * 3] = ((i * 73) % 210) - 105;
+          positions[i * 3 + 1] = 14 + ((i * 41) % 120);
+          positions[i * 3 + 2] = ((i * 137) % 210) - 105;
+          velocities[i * 3] = resolvedType === 'rainy_streets' ? -2.6 : ((i % 5) - 2) * 0.18;
+          velocities[i * 3 + 1] = mapmakerWeatherFallSpeed(resolvedType, settings.weather, i);
+          velocities[i * 3 + 2] = ((i % 7) - 3) * 0.16;
+        }
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        const points = new THREE.Points(geo, new THREE.PointsMaterial({
+          color: mapmakerWeatherColor(resolvedType),
+          size: 0.1 + settings.weather / 360,
+          transparent: true,
+          opacity: 0.24 + settings.weather / 150,
+          depthWrite: false,
+          blending: THREE.AdditiveBlending
+        }));
+        points.userData.role = 'atmosphere_weather';
+        points.userData.velocities = velocities;
+        group.add(points);
+      }
+
+      scene.add(group);
+    }
+
+    function mapmakerWeatherColor(type) {
+      if (type === 'winter_rink') return '#ffffff';
+      if (type === 'inferno') return '#fdba74';
+      if (type === 'rust') return '#fb923c';
+      if (type === 'toxic') return '#86efac';
+      if (type === 'matrix') return '#22c55e';
+      return '#a5f3fc';
+    }
+
+    function mapmakerWeatherFallSpeed(type, value, index) {
+      if (type === 'winter_rink') return -0.8 - (index % 7) * 0.12 - value / 70;
+      if (type === 'inferno') return 2.0 + (index % 5) * 0.24 + value / 55;
+      if (type === 'matrix') return -10 - (index % 9) * 0.4;
+      if (type === 'rust' || type === 'toxic') return -0.25 - value / 180;
+      return -8 - value / 16;
+    }
+
+    function updateMapmakerSkyAtmosphere(dt, elapsed) {
+      const group = scene.getObjectByName('sky_atmosphere');
+      if (!group) return;
+      const settings = group.userData.settings || resolveAtmosphereSettings(getEffectiveSkyboxTextureId(), atmosphere);
+      const motionScale = Math.max(0.25, settings.motion / 100);
+      group.rotation.y += dt * 0.012 * motionScale;
+      group.traverse((child) => {
+        if (child.userData.role === 'cloud') {
+          child.rotation.z += dt * (child.userData.drift || 0.12) * 0.05 * motionScale;
+        } else if (child.userData.role === 'energy') {
+          child.rotation.z += dt * (child.userData.drift || 0.16) * motionScale;
+        } else if (child.userData.role === 'lightning' && child.material) {
+          const base = child.userData.baseOpacity || 0.45;
+          child.material.opacity = base * (0.18 + Math.max(0, Math.sin(elapsed * 5.5)) * 0.82);
+        } else if (child.userData.role === 'stars') {
+          child.rotation.y += dt * 0.006 * motionScale;
+        } else if (child.userData.role === 'atmosphere_weather') {
+          updateMapmakerAtmosphereWeather(child, dt, motionScale);
+        }
+      });
+    }
+
+    function updateMapmakerAtmosphereWeather(points, dt, motionScale) {
+      const positions = points.geometry.attributes.position.array;
+      const velocities = points.userData.velocities;
+      const count = positions.length / 3;
+      for (let i = 0; i < count; i++) {
+        positions[i * 3] += velocities[i * 3] * dt * motionScale;
+        positions[i * 3 + 1] += velocities[i * 3 + 1] * dt * motionScale;
+        positions[i * 3 + 2] += velocities[i * 3 + 2] * dt * motionScale;
+        const falling = velocities[i * 3 + 1] < 0;
+        if ((falling && positions[i * 3 + 1] < 4) || (!falling && positions[i * 3 + 1] > 150)) {
+          positions[i * 3] = ((i * 83) % 236) - 118;
+          positions[i * 3 + 1] = falling ? 150 : 4;
+          positions[i * 3 + 2] = ((i * 157) % 236) - 118;
+        }
+      }
+      points.geometry.attributes.position.needsUpdate = true;
     }
 
     function drawCyberpunkSky(ctx, hue, brightness, fogColor) {
@@ -3091,6 +3545,8 @@
       panel.innerHTML = ''; // reset
 
       if (activeTab === 'scene') {
+        const effectiveSkyboxId = getEffectiveSkyboxTextureId();
+        const resolvedAtmosphere = resolveAtmosphereSettings(effectiveSkyboxId, atmosphere);
         panel.innerHTML = `
           <!-- Global Map Settings -->
           <div class="flex flex-col gap-3 bg-white/2 border border-white/5 p-4 rounded-xl">
@@ -3161,6 +3617,51 @@
               <span class="mapmaker-label">Fog Density <span class="mapmaker-value-badge">${fogDensity.toFixed(3)}</span></span>
               <input type="range" min="0.001" max="0.08" step="0.001" oninput="fogDensity=parseFloat(this.value); rebuildScene();" class="mapmaker-slider" value="${fogDensity}">
             </div>
+          </div>
+
+          <!-- Skybox & Atmosphere -->
+          <div class="flex flex-col gap-3 bg-white/2 border border-white/5 p-4 rounded-xl">
+            <span class="text-xs font-black uppercase text-cyan-400 tracking-wider">Skybox Texture</span>
+            <div class="mapmaker-field">
+              <span class="mapmaker-label">Skybox Sky</span>
+              <select onchange="handleSkyboxTextureChange(this.value)" class="mapmaker-input cursor-pointer font-bold text-cyan-400 bg-slate-950 uppercase">
+                <option value="matched" ${skyboxTexture==='matched'?'selected':''}>Auto Match Theme</option>
+                <optgroup label="Theme Matches">
+                  <option value="cyberpunk" ${skyboxTexture==='cyberpunk'?'selected':''}>Cyber Holodeck</option>
+                  <option value="hangar" ${skyboxTexture==='hangar'?'selected':''}>Steel Hangar</option>
+                  <option value="nature" ${skyboxTexture==='nature'?'selected':''}>Overgrown Nature</option>
+                  <option value="space" ${skyboxTexture==='space'?'selected':''}>Cosmic Starbase</option>
+                  <option value="fantasy" ${skyboxTexture==='fantasy'?'selected':''}>Ancient Fantasy</option>
+                  <option value="forerunner" ${skyboxTexture==='forerunner'?'selected':''}>Forerunner Canyon</option>
+                  <option value="synthwave" ${skyboxTexture==='synthwave'?'selected':''}>Synthwave Grid</option>
+                  <option value="rainy_streets" ${skyboxTexture==='rainy_streets'?'selected':''}>Rainy Cyber Streets</option>
+                  <option value="winter_rink" ${skyboxTexture==='winter_rink'?'selected':''}>Glacier Ice Rink</option>
+                  <option value="grifball_stadium" ${skyboxTexture==='grifball_stadium'?'selected':''}>Championship Stadium</option>
+                  <option value="holodeck" ${skyboxTexture==='holodeck'?'selected':''}>Coordinate Grid Void</option>
+                  <option value="rust" ${skyboxTexture==='rust'?'selected':''}>Post-Apocalyptic Dust</option>
+                </optgroup>
+                <optgroup label="Premium Custom Skies">
+                  <option value="toxic" ${skyboxTexture==='toxic'?'selected':''}>Toxic Green Wasteland</option>
+                  <option value="inferno" ${skyboxTexture==='inferno'?'selected':''}>Jagged Lava Inferno</option>
+                  <option value="matrix" ${skyboxTexture==='matrix'?'selected':''}>Digital Matrix Code</option>
+                  <option value="nebula" ${skyboxTexture==='nebula'?'selected':''}>Surreal Planet Nebula</option>
+                </optgroup>
+              </select>
+            </div>
+            <div class="mapmaker-field">
+              <span class="mapmaker-label">Skybox Hue color <span class="mapmaker-value-badge">${skyboxHue}&deg;</span></span>
+              <input type="range" min="0" max="360" step="5" oninput="skyboxHue=parseInt(this.value); rebuildScene();" class="mapmaker-slider" value="${skyboxHue}">
+            </div>
+            <div class="flex justify-between items-center pt-2 border-t border-white/5">
+              <span class="text-[10px] text-white/45 uppercase tracking-wider font-bold">${SKYBOX_PRESETS[effectiveSkyboxId].label} Atmosphere</span>
+              <button onclick="handleResetAtmosphereControls()" class="text-[10px] px-2 py-1 rounded bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/20 font-black uppercase">Reset</button>
+            </div>
+            ${ATMOSPHERE_SETTING_KEYS.map((key) => `
+              <div class="mapmaker-field">
+                <span class="mapmaker-label">${ATMOSPHERE_CONTROL_LABELS[key]} <span class="mapmaker-value-badge">${resolvedAtmosphere[key]}%</span></span>
+                <input type="range" min="0" max="100" step="1" oninput="handleAtmosphereControl('${key}', parseInt(this.value, 10))" class="mapmaker-slider" value="${resolvedAtmosphere[key]}">
+              </div>
+            `).join('')}
           </div>
 
           <!-- Premade Starting Point -->
@@ -3247,40 +3748,6 @@
             </div>
           ` : ''}
 
-          <!-- Skybox & Atmosphere -->
-          <div class="flex flex-col gap-3 bg-white/2 border border-white/5 p-4 rounded-xl">
-            <span class="text-xs font-black uppercase text-cyan-400 tracking-wider">Skybox Texture</span>
-            <div class="mapmaker-field">
-              <span class="mapmaker-label">Skybox Sky</span>
-              <select onchange="skyboxTexture=this.value; rebuildScene(); renderInspector();" class="mapmaker-input cursor-pointer font-bold text-cyan-400 bg-slate-950 uppercase">
-                <option value="matched" ${skyboxTexture==='matched'?'selected':''}>Auto Match Theme</option>
-                <optgroup label="Theme Matches">
-                  <option value="cyberpunk" ${skyboxTexture==='cyberpunk'?'selected':''}>Cyber Holodeck</option>
-                  <option value="hangar" ${skyboxTexture==='hangar'?'selected':''}>Steel Hangar</option>
-                  <option value="nature" ${skyboxTexture==='nature'?'selected':''}>Overgrown Nature</option>
-                  <option value="space" ${skyboxTexture==='space'?'selected':''}>Cosmic Starbase</option>
-                  <option value="fantasy" ${skyboxTexture==='fantasy'?'selected':''}>Ancient Fantasy</option>
-                  <option value="forerunner" ${skyboxTexture==='forerunner'?'selected':''}>Forerunner Canyon</option>
-                  <option value="synthwave" ${skyboxTexture==='synthwave'?'selected':''}>Synthwave Grid</option>
-                  <option value="rainy_streets" ${skyboxTexture==='rainy_streets'?'selected':''}>Rainy Cyber Streets</option>
-                  <option value="winter_rink" ${skyboxTexture==='winter_rink'?'selected':''}>Glacier Ice Rink</option>
-                  <option value="grifball_stadium" ${skyboxTexture==='grifball_stadium'?'selected':''}>Championship Stadium</option>
-                  <option value="holodeck" ${skyboxTexture==='holodeck'?'selected':''}>Coordinate Grid Void</option>
-                  <option value="rust" ${skyboxTexture==='rust'?'selected':''}>Post-Apocalyptic Dust</option>
-                </optgroup>
-                <optgroup label="Premium Custom Skies">
-                  <option value="toxic" ${skyboxTexture==='toxic'?'selected':''}>Toxic Green Wasteland</option>
-                  <option value="inferno" ${skyboxTexture==='inferno'?'selected':''}>Jagged Lava Inferno</option>
-                  <option value="matrix" ${skyboxTexture==='matrix'?'selected':''}>Digital Matrix Code</option>
-                  <option value="nebula" ${skyboxTexture==='nebula'?'selected':''}>Surreal Planet Nebula</option>
-                </optgroup>
-              </select>
-            </div>
-            <div class="mapmaker-field">
-              <span class="mapmaker-label">Skybox Hue color <span class="mapmaker-value-badge">${skyboxHue}°</span></span>
-              <input type="range" min="0" max="360" step="5" oninput="skyboxHue=parseInt(this.value); rebuildScene();" class="mapmaker-slider" value="${skyboxHue}">
-            </div>
-          </div>
         `;
       } else if (activeTab === 'objects') {
         const activeObj = objects.find(o => o.id === selectedObjectId);
@@ -4606,6 +5073,11 @@
       // Clear old sky dome
       const oldSky = scene.getObjectByName('skybox_mesh');
       if (oldSky) scene.remove(oldSky);
+      const oldAtmosphere = scene.getObjectByName('sky_atmosphere');
+      if (oldAtmosphere) {
+        scene.remove(oldAtmosphere);
+        disposeMapmakerAtmosphereObject(oldAtmosphere);
+      }
 
       // Resolve sky texture type
       let skyType = skyboxTexture;
@@ -4628,6 +5100,7 @@
       } catch (err) {
         console.error('Failed to rebuild editor skybox:', err);
       }
+      buildMapmakerSkyAtmosphere(skyType);
 
       // Update base light colors & intensity
       const ambientLight = scene.children.find(c => c.isAmbientLight);
@@ -6101,6 +6574,7 @@
       skyboxHue = pm.skyboxHue ?? 280;
       skyboxBrightness = pm.skyboxBrightness ?? 5;
       skyboxTexture = pm.skyboxTexture || 'matched';
+      atmosphere = resolveAtmosphereSettings(skyboxTexture === 'matched' ? pm.theme : skyboxTexture, pm.atmosphere);
       fogColor = pm.fogColor || '#050811';
       fogDensity = pm.fogDensity ?? 0.015;
 
@@ -6308,6 +6782,7 @@
         skyboxHue,
         skyboxBrightness,
         skyboxTexture,
+        atmosphere: resolveAtmosphereSettings(getEffectiveSkyboxTextureId(), atmosphere),
         fogColor,
         fogDensity,
         spawnPoints: exportSpawnPoints,
@@ -6494,6 +6969,7 @@
             skyboxHue = data.skyboxHue ?? 280;
             skyboxBrightness = data.skyboxBrightness ?? 5;
             skyboxTexture = data.skyboxTexture || 'matched';
+            atmosphere = resolveAtmosphereSettings(skyboxTexture === 'matched' ? theme : skyboxTexture, data.atmosphere);
             fogColor = data.fogColor || '#050811';
             fogDensity = data.fogDensity ?? 0.015;
 
@@ -6637,6 +7113,30 @@
         skyboxHue = 280;
         ambientColor = '#0a0f1d';
       }
+      atmosphere = resolveAtmosphereSettings(getEffectiveSkyboxTextureId());
+      rebuildScene();
+      renderInspector();
+    }
+
+    function handleSkyboxTextureChange(value) {
+      skyboxTexture = value;
+      atmosphere = resolveAtmosphereSettings(getEffectiveSkyboxTextureId());
+      rebuildScene();
+      renderInspector();
+    }
+
+    function handleAtmosphereControl(key, value) {
+      if (!ATMOSPHERE_SETTING_KEYS.includes(key)) return;
+      atmosphere = resolveAtmosphereSettings(getEffectiveSkyboxTextureId(), {
+        ...atmosphere,
+        [key]: value
+      });
+      rebuildScene();
+      renderInspector();
+    }
+
+    function handleResetAtmosphereControls() {
+      atmosphere = resolveAtmosphereSettings(getEffectiveSkyboxTextureId());
       rebuildScene();
       renderInspector();
     }

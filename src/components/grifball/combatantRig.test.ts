@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import * as THREE from 'three';
 import { buildVoxelSpartanModel, HelmetPreset, TorsoPreset, ArmPreset, LegPreset } from '../VoxelModels';
 import { buildVoxelSpartanModelV2, getVoxelSegmentDataV2, verifyV2PartConstraints, getV2PartDimensions } from '../VoxelModelsV2';
-import { animateCombatantWeaponMeshes } from './combatantAnimation';
+import { animateCombatantWeaponMeshes, animateSpartanCombatantModel } from './combatantAnimation';
 import { createCombatantMeshRig } from './combatantModels';
 import { DEFAULT_HAMMER_SLAM_WINDUP_TIME } from '../../game/hammerSlamTiming';
 import {
@@ -255,6 +255,46 @@ test('large V2 model keeps the V2 skeleton while increasing armor footprint', ()
   assert.ok(largeSize.x > mediumSize.x, `expected large width > ${mediumSize.x}, got ${largeSize.x}`);
   assert.ok(largeSize.y > mediumSize.y, `expected large height > ${mediumSize.y}, got ${largeSize.y}`);
   assert.ok(largeSize.z > mediumSize.z, `expected large depth > ${mediumSize.z}, got ${largeSize.z}`);
+});
+
+test('rigged V2 gameplay animation keeps rendered feet on the combatant root', () => {
+  const refs = {
+    scene: new THREE.Scene(),
+    damageExplosionParticles: [],
+  } as any;
+
+  for (const modelType of ['medium', 'large'] as const) {
+    const scene = new THREE.Scene();
+    const meshes = createCombatantMeshRig(scene, 200, false, {
+      modelSystem: 'v2',
+      modelType,
+    });
+
+    for (let i = 0; i < 120; i++) {
+      animateSpartanCombatantModel({
+        refs,
+        mesh: meshes.group,
+        vel: new THREE.Vector3(0, 0, 0),
+        yaw: 0,
+        hp: 100,
+        weaponState: 'ready',
+        weaponTimer: 0,
+        dt: 1 / 60,
+      });
+    }
+
+    meshes.group.updateWorldMatrix(true, true);
+    const bounds = new THREE.Box3().setFromObject(meshes.group);
+
+    assert.ok(
+      bounds.min.y < 0.08,
+      `${modelType} V2 rig should not hover above root after animation, got bottom ${bounds.min.y.toFixed(3)}`
+    );
+    assert.ok(
+      bounds.min.y > -0.12,
+      `${modelType} V2 rig should not sink below root after animation, got bottom ${bounds.min.y.toFixed(3)}`
+    );
+  }
 });
 
 test('large V2 model builds every armor preset without exceeding part constraints', () => {

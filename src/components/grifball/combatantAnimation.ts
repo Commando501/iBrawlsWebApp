@@ -87,6 +87,15 @@ const lerpArmRotation = (
   arm.rotation.z = THREE.MathUtils.lerp(arm.rotation.z, target[2], alpha);
 };
 
+const getV2VoxelScale = (mesh: THREE.Group): number => {
+  const scale = mesh.userData.characterModelProfile?.voxelScale;
+  return typeof scale === 'number' && Number.isFinite(scale) ? scale : 0.045;
+};
+
+const getV2PelvisRestY = (pelvis: THREE.Group, scale: number): number => {
+  return pelvis.userData.articulationController instanceof THREE.Group ? 0 : 10 * scale;
+};
+
 export const applyCombatantArmPose = (
   mesh: THREE.Group | null | undefined,
   pose: CombatantArmPose,
@@ -170,13 +179,13 @@ export function animateSpartanCombatantModelV2({
   }
 
   const lerp = THREE.MathUtils.lerp;
-  const scale = 0.045;
-  const restY = 10.0;
+  const scale = getV2VoxelScale(mesh);
+  const pelvisRestY = getV2PelvisRestY(pelvis, scale);
   const speed = Math.sqrt(vel.x * vel.x + vel.z * vel.z);
 
   if (hp <= 0) {
     // Reset poses on death
-    pelvis.position.y = lerp(pelvis.position.y, restY * scale, dt * 10.0);
+    pelvis.position.y = lerp(pelvis.position.y, pelvisRestY, dt * 10.0);
     pelvis.rotation.set(0, 0, 0);
     stomach.rotation.set(0, 0, 0);
     chest.rotation.set(0, 0, 0);
@@ -223,7 +232,7 @@ export function animateSpartanCombatantModelV2({
 
   if (isSliding) {
     // Sliding Posture
-    pelvis.position.y = lerp(pelvis.position.y, (restY - 4.5) * scale, dt * 10.0);
+    pelvis.position.y = lerp(pelvis.position.y, pelvisRestY - 4.5 * scale, dt * 10.0);
     pelvis.rotation.x = lerp(pelvis.rotation.x, -0.28, dt * 10.0);
     stomach.rotation.x = lerp(stomach.rotation.x, 0.12, dt * 10.0);
     chest.rotation.x = lerp(chest.rotation.x, 0.1, dt * 10.0);
@@ -278,7 +287,7 @@ export function animateSpartanCombatantModelV2({
     toes_r.rotation.x = -Math.sin(phase) < 0 ? Math.sin(phase) * 0.45 : 0.0;
 
     // Hips bob and roll
-    pelvis.position.y = (restY - Math.abs(Math.sin(phase)) * 0.6) * scale;
+    pelvis.position.y = pelvisRestY - Math.abs(Math.sin(phase)) * 0.6 * scale;
     pelvis.rotation.z = Math.sin(phase) * 0.08;
 
     // Arm swing overlays (only if ready)
@@ -322,7 +331,7 @@ export function animateSpartanCombatantModelV2({
     toes_r.rotation.x = -Math.sin(phase) < 0 ? Math.sin(phase) * 0.28 : 0.0;
 
     // Hips bob and roll
-    pelvis.position.y = (restY - Math.abs(Math.sin(phase)) * 0.4) * scale;
+    pelvis.position.y = pelvisRestY - Math.abs(Math.sin(phase)) * 0.4 * scale;
     pelvis.rotation.z = Math.sin(phase) * 0.05;
 
     // Arm swing overlays (only if ready)
@@ -335,7 +344,7 @@ export function animateSpartanCombatantModelV2({
     stomach.rotation.x = lerp(stomach.rotation.x, 0.0, dt * 10.0);
     chest.rotation.x = lerp(chest.rotation.x, 0.0, dt * 10.0);
     pelvis.rotation.x = lerp(pelvis.rotation.x, 0.0, dt * 10.0);
-    pelvis.position.y = lerp(pelvis.position.y, restY * scale, dt * 10.0);
+    pelvis.position.y = lerp(pelvis.position.y, pelvisRestY, dt * 10.0);
 
     leg_upper_l.rotation.x = lerp(leg_upper_l.rotation.x, 0.0, dt * 10.0);
     leg_upper_r.rotation.x = lerp(leg_upper_r.rotation.x, 0.0, dt * 10.0);

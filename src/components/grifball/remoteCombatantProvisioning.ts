@@ -11,6 +11,7 @@ import { type GrifballRuntimeState } from './runtimeState';
 import { type GrifballThreeRefs } from './threeRefs';
 
 type RemoteCombatantUpdate = {
+  controller?: 'ai' | 'remote';
   role?: string;
   playerName?: string;
   hp?: number;
@@ -29,11 +30,15 @@ type RemoteCombatantUpdate = {
   loadout?: CharacterLoadout;
 };
 
-const createVisualLoadout = (data: RemoteCombatantUpdate, modelType: CharacterModelType): CharacterLoadout => ({
-  ...(data.loadout ?? {}),
-  modelSystem: 'v2',
-  modelType,
-});
+const createVisualLoadout = (data: RemoteCombatantUpdate, modelType: CharacterModelType): CharacterLoadout => (
+  data.controller === 'ai'
+    ? { modelSystem: 'v1' }
+    : {
+        ...(data.loadout ?? {}),
+        modelSystem: 'v2',
+        modelType,
+      }
+);
 
 export function createOrUpdateRemoteCombatantForState({
   state,

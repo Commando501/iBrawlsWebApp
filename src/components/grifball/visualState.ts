@@ -4,6 +4,7 @@ import { getPrimaryRemoteOpponent } from '../../game/roster';
 import { type Combatant, type CustomMapData, type ReplayFile, type UniversalSettings } from '../../types';
 import { resolveActiveCustomMap } from './mapSelection';
 import { type GrifballRuntimeState } from './runtimeState';
+import { syncSkyAtmosphereForRefs } from './skyAtmosphereRuntime';
 import { type SpectateTargetData } from './spectateTargets';
 import { type GrifballThreeRefs } from './threeRefs';
 
@@ -12,6 +13,7 @@ export const whiteBlinkMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff 
 export interface WeatherParticleFrameState {
   lastRainTime?: number;
   lastSnowTime?: number;
+  lastAtmosphereTime?: number;
 }
 
 export const updateInvulnerabilityBlinking = ({
@@ -298,26 +300,27 @@ export const syncAdminSettingsVisualStateForState = ({
     refs.scene.fog.color.copy(finalColor);
   }
 
+  let skyType = 'cyberpunk';
+  const activeCustomMap = resolveActiveCustomMap({
+    customMap,
+    replayData,
+    selectedMap,
+    gameMode: adminSettings.gameMode,
+  });
+  const effectiveMapId = replayData ? replayData.mapType : selectedMap;
+  const isHangar = effectiveMapId === 'hangar';
+
+  if (activeCustomMap) {
+    skyType = activeCustomMap.skyboxTexture || activeCustomMap.theme || 'cyberpunk';
+    if (skyType === 'matched') {
+      skyType = activeCustomMap.theme || 'cyberpunk';
+    }
+  } else if (isHangar) {
+    skyType = 'hangar';
+  }
+
   if (refs.skyboxMesh && refs.skyboxMesh.material) {
     refs.skyboxMesh.visible = adminSettings.showSkybox !== false;
-    let skyType = 'cyberpunk';
-    const activeCustomMap = resolveActiveCustomMap({
-      customMap,
-      replayData,
-      selectedMap,
-      gameMode: adminSettings.gameMode,
-    });
-    const effectiveMapId = replayData ? replayData.mapType : selectedMap;
-    const isHangar = effectiveMapId === 'hangar';
-
-    if (activeCustomMap) {
-      skyType = activeCustomMap.skyboxTexture || activeCustomMap.theme || 'cyberpunk';
-      if (skyType === 'matched') {
-        skyType = activeCustomMap.theme || 'cyberpunk';
-      }
-    } else if (isHangar) {
-      skyType = 'hangar';
-    }
 
     try {
       const newTex = getSkyboxTexture(skyType, hue, brightness, colorString);
@@ -328,6 +331,13 @@ export const syncAdminSettingsVisualStateForState = ({
       console.error('Failed to update skybox texture:', err);
     }
   }
+
+  syncSkyAtmosphereForRefs({
+    refs,
+    skyboxTexture: skyType,
+    atmosphere: activeCustomMap?.atmosphere,
+    visible: adminSettings.showSkybox !== false,
+  });
 };
 
 const updateFallingWeatherParticleSystem = ({

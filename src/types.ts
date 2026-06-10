@@ -796,6 +796,18 @@ export interface CustomMapFolder {
   collapsed: boolean;
 }
 
+export interface CustomMapAtmosphereSettings {
+  motion?: number;
+  clouds?: number;
+  haze?: number;
+  stars?: number;
+  weather?: number;
+  lightning?: number;
+  energy?: number;
+  celestial?: number;
+  horizonDetail?: number;
+}
+
 export interface CustomMapData {
   id: string;
   name: string;
@@ -818,6 +830,7 @@ export interface CustomMapData {
   skyboxHue?: number;
   skyboxBrightness?: number;
   skyboxTexture?: string;
+  atmosphere?: CustomMapAtmosphereSettings;
   fogColor?: string;
   fogDensity?: number;
   spawnPoints: { x: number; y: number; z: number; yaw?: number }[];

@@ -34,7 +34,7 @@ export function rebuildEnemyCombatantModelForState({
     ? state.clientActiveWeapon
     : (mainAI?.activeWeapon || 'hammer'));
   const enemyLoadout = isEnemyBot
-    ? { modelSystem: 'v2' as const, modelType: mainAI?.modelType ?? 'medium' as const }
+    ? undefined
     : isLocalClient ? playerLoadout : undefined;
   const { group: enemyGroup, hammer: enemyHammer, sword: enemySword } = rebuildDualWeaponCombatantModel({
     scene,

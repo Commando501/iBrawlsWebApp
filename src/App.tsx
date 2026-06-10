@@ -37,7 +37,7 @@ import { useMatchLoadingGate } from './components/loading/useMatchLoadingGate';
 
 export { createHighFidelityObjectMesh } from './components/main-menu/MapPreview';
 
-const APP_VERSION = '0.646a';
+const APP_VERSION = '0.647a';
 
 // Visual Keyboard + Mouse keybind editor component
 export default function App() {
