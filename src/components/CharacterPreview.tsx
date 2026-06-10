@@ -18,13 +18,70 @@ interface CharacterPreviewProps {
   loadout?: CharacterLoadout;
 }
 
+const CUSTOM_ARMOR_SIGNATURE_SLOTS = ['helmet', 'torso', 'arm', 'leg'] as const;
+
+function hashString(value: string): string {
+  let hash = 5381;
+  for (let index = 0; index < value.length; index++) {
+    hash = ((hash << 5) + hash) ^ value.charCodeAt(index);
+  }
+  return (hash >>> 0).toString(36);
+}
+
+function getPaintJobSignature(loadout?: CharacterLoadout): string {
+  if (!loadout?.paintJob) return 'paint:none';
+  return `paint:${hashString(JSON.stringify(loadout.paintJob))}`;
+}
+
+export function getCharacterPreviewLoadoutSignature(loadout?: CharacterLoadout): string {
+  if (!loadout) return 'default';
+  const customArmorSignature = CUSTOM_ARMOR_SIGNATURE_SLOTS
+    .map((slot) => {
+      const piece = loadout.customArmor?.[slot];
+      if (!piece) return `${slot}:builtin`;
+      return [
+        slot,
+        piece.id,
+        piece.slot,
+        piece.modelType ?? 'medium',
+        piece.sourcePreset ?? '',
+        piece.updatedAt,
+        piece.voxels.length,
+      ].join(':');
+    })
+    .join('|');
+  return [
+    loadout.modelSystem ?? 'v1',
+    loadout.modelType ?? 'medium',
+    loadout.helmet ?? 'mark-vi',
+    loadout.torso ?? 'mark-vi',
+    loadout.arm ?? 'mark-vi',
+    loadout.leg ?? 'mark-vi',
+    loadout.hammerPreset ?? 'default',
+    loadout.swordPreset ?? 'default',
+    getPaintJobSignature(loadout),
+    customArmorSignature,
+  ].join('~');
+}
+
+function disposePreviewObject(object: THREE.Object3D): void {
+  object.traverse((child) => {
+    if (child instanceof THREE.Mesh) {
+      child.geometry?.dispose();
+      const materials = Array.isArray(child.material) ? child.material : [child.material];
+      materials.forEach((material) => material.dispose());
+    }
+  });
+}
+
 export const CharacterPreview: React.FC<CharacterPreviewProps> = ({ hue, heldWeapon, loadout }) => {
   const containerRef = useRef<HTMLDivElement>(null);
+  const loadoutSignature = getCharacterPreviewLoadoutSignature(loadout);
 
-  const paramsRef = useRef({ hue, heldWeapon, loadout });
+  const paramsRef = useRef({ hue, heldWeapon, loadout, loadoutSignature });
   useEffect(() => {
-    paramsRef.current = { hue, heldWeapon, loadout };
-  }, [hue, heldWeapon, loadout]);
+    paramsRef.current = { hue, heldWeapon, loadout, loadoutSignature };
+  }, [hue, heldWeapon, loadout, loadoutSignature]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -91,9 +148,13 @@ export const CharacterPreview: React.FC<CharacterPreviewProps> = ({ hue, heldWea
     let currentHue = paramsRef.current.hue;
     let currentWeapon = paramsRef.current.heldWeapon;
     let currentLoadout = paramsRef.current.loadout;
+    let currentLoadoutSignature = paramsRef.current.loadoutSignature;
 
     const buildCharacter = (h: number, w: 'none' | 'hammer' | 'sword', lo: CharacterLoadout | undefined) => {
-      if (characterGroup) scene.remove(characterGroup);
+      if (characterGroup) {
+        scene.remove(characterGroup);
+        disposePreviewObject(characterGroup);
+      }
 
       characterGroup = buildVoxelSpartanModel(false, h, lo ?? DEFAULT_LOADOUT);
       characterGroup.position.set(0, 0, 0);
@@ -168,12 +229,14 @@ export const CharacterPreview: React.FC<CharacterPreviewProps> = ({ hue, heldWea
       const newHue = paramsRef.current.hue;
       const newWeapon = paramsRef.current.heldWeapon;
       const newLoadout = paramsRef.current.loadout;
+      const newLoadoutSignature = paramsRef.current.loadoutSignature;
 
-      const loadoutChanged = JSON.stringify(newLoadout) !== JSON.stringify(currentLoadout);
+      const loadoutChanged = newLoadoutSignature !== currentLoadoutSignature;
       if (newHue !== currentHue || newWeapon !== currentWeapon || loadoutChanged) {
         currentHue = newHue;
         currentWeapon = newWeapon;
         currentLoadout = newLoadout;
+        currentLoadoutSignature = newLoadoutSignature;
         buildCharacter(currentHue, currentWeapon, currentLoadout);
         ringMat.color.set(new THREE.Color(`hsl(${currentHue}, 85%, 60%)`));
       }
@@ -223,6 +286,11 @@ export const CharacterPreview: React.FC<CharacterPreviewProps> = ({ hue, heldWea
       container.removeEventListener('pointermove', onPointerMove);
       container.removeEventListener('pointerup', onPointerUp);
       container.removeEventListener('pointercancel', onPointerUp);
+      if (characterGroup) {
+        scene.remove(characterGroup);
+        disposePreviewObject(characterGroup);
+        characterGroup = null;
+      }
       if (container && renderer.domElement && container.contains(renderer.domElement)) {
         container.removeChild(renderer.domElement);
       }

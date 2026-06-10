@@ -96,3 +96,52 @@ test('custom armor pieces and sanitized loadouts carry v2 model type', () => {
   assert.equal(loadout.modelType, 'large');
   assert.equal(loadout.customArmor.torso.modelType, 'large');
 });
+
+test('character preview loadout signature tracks large custom armor without serializing voxels', async () => {
+  const { getCharacterPreviewLoadoutSignature } = await import('./CharacterPreview');
+  const voxels = Array.from({ length: 3_000 }, (_, index) => ({
+    x: index,
+    y: index % 40,
+    z: index % 8,
+    role: 'primary' as const,
+  }));
+  const baseSignature = getCharacterPreviewLoadoutSignature({
+    modelSystem: 'v2',
+    modelType: 'large',
+    helmet: 'mark-vi',
+    torso: 'mark-vi',
+    customArmor: {
+      torso: {
+        version: 1,
+        id: 'large-torso',
+        name: 'Large Torso',
+        slot: 'torso',
+        modelType: 'large',
+        voxels,
+        updatedAt: 100,
+      },
+    },
+  });
+  const updatedSignature = getCharacterPreviewLoadoutSignature({
+    modelSystem: 'v2',
+    modelType: 'large',
+    helmet: 'mark-vi',
+    torso: 'mark-vi',
+    customArmor: {
+      torso: {
+        version: 1,
+        id: 'large-torso',
+        name: 'Large Torso',
+        slot: 'torso',
+        modelType: 'large',
+        voxels,
+        updatedAt: 101,
+      },
+    },
+  });
+
+  assert.notEqual(baseSignature, updatedSignature);
+  assert.ok(baseSignature.length < 400);
+  assert.equal(baseSignature.includes('"voxels"'), false);
+  assert.equal(baseSignature.includes('2999'), false);
+});
