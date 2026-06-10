@@ -140,7 +140,7 @@ test('preset difficulty with archetype resets playstyle before personality merge
   assert.equal(knobs.weaponPrioritization, 82);
 });
 
-test('roster slots default to medium and accept legacy large model type overrides', () => {
+test('roster slots default to medium and reject legacy large model type overrides', () => {
   const template = rosterTemplateFromSettings(DEFAULT_ADMIN_SETTINGS);
   assert.equal(template.modelType, 'medium');
 
@@ -148,10 +148,10 @@ test('roster slots default to medium and accept legacy large model type override
     modelType: 'large',
   } as any);
   const merged = mergeRosterSlotConfig(template, override);
-  assert.equal(merged.modelType, 'large');
+  assert.equal(merged.modelType, 'medium');
 
   const slot = resolveRosterSlotForCombatant('bot_2', DEFAULT_ADMIN_SETTINGS, {
     botModelTypes: { bot_2: 'large' },
   } as any);
-  assert.equal(slot.modelType, 'large');
+  assert.equal(slot.modelType, 'medium');
 });

@@ -448,7 +448,7 @@ export function useGameplayConnection({
             clientId: typeof data.clientId === 'string' ? data.clientId : 'host',
             role: 'host',
             spawnSlot: 0,
-            playerName,
+            playerName: data.playerName || playerName,
             hue: playerHue,
             loadout: playerLoadout,
           }]);

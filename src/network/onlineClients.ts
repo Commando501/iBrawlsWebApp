@@ -8,6 +8,7 @@ export const MAX_MULTIPLAYER_PLAYERS = 1 + MAX_MULTIPLAYER_CLIENTS;
 export interface OnlineClient {
   id: string;
   name?: string;
+  publicDisplayName?: string;
   state: 'menu' | 'solo' | 'multi';
   roomCode?: string;
   spaceAvailable?: boolean;
@@ -36,6 +37,7 @@ export const normalizePlayerName = (name: unknown): string | undefined => {
 };
 
 export const getOnlineClientDisplayName = (client: OnlineClient): string => {
+  if (client.publicDisplayName) return client.publicDisplayName;
   return normalizePlayerName(client.name) || `Client ${client.id}`;
 };
 

@@ -125,7 +125,7 @@ test('getRosterCombatant and isAICombatReady', () => {
   assert.ok(!isAICombatReady(mai));
 });
 
-test('combatant factories default to medium and preserve explicit large model type', () => {
+test('combatant factories keep bots medium and preserve explicit remote large model type', () => {
   const main = createMainAICombatant({
     settings: baseSettings,
     legacy,
@@ -145,7 +145,7 @@ test('combatant factories default to medium and preserve explicit large model ty
     settings: baseSettings,
     modelType: 'large',
   } as any);
-  assert.equal(bot.modelType, 'large');
+  assert.equal(bot.modelType, 'medium');
 
   const remote = createRemoteCombatant({
     id: 'peer',

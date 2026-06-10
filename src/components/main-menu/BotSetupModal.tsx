@@ -91,6 +91,13 @@ export function BotSetupModal({
 }: BotSetupModalProps) {
   const selectedPremadeMap = PREMADE_MAPS.find((map) => map.id === selectedMap);
 
+  React.useEffect(() => {
+    if (!Object.values(botModelTypes).some((modelType) => modelType !== 'medium')) return;
+    setBotModelTypes((prev) => Object.fromEntries(
+      Object.keys(prev).map((botId) => [botId, 'medium' as CharacterModelType])
+    ));
+  }, [botModelTypes, setBotModelTypes]);
+
   const handleCustomMapFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -183,25 +190,15 @@ export function BotSetupModal({
   );
 
   const renderModelTypeToggle = (botId: string) => {
-    const selectedType = botModelTypes[botId] ?? 'medium';
     return (
-      <div className="grid grid-cols-2 h-7 rounded border border-white/10 bg-black/50 overflow-hidden">
-        {(['medium', 'large'] as const).map((modelType) => (
-          <button
-            key={modelType}
-            type="button"
-            title={`${modelType === 'large' ? 'Large powerarmor body' : 'Medium Spartan body'}`}
-            onClick={() => setBotModelTypes((prev) => ({ ...prev, [botId]: modelType }))}
-            className={`text-[9px] font-bold uppercase transition-colors ${
-              selectedType === modelType
-                ? 'bg-cyan-400/20 text-cyan-200'
-                : 'text-white/45 hover:text-white/75 hover:bg-white/5'
-            }`}
-          >
-            {modelType}
-          </button>
-        ))}
-      </div>
+      <button
+        type="button"
+        title="Medium Spartan body"
+        onClick={() => setBotModelTypes((prev) => ({ ...prev, [botId]: 'medium' }))}
+        className="h-7 rounded border border-cyan-400/25 bg-cyan-400/10 text-[9px] font-bold uppercase text-cyan-200 transition-colors"
+      >
+        medium
+      </button>
     );
   };
 

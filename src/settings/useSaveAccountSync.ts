@@ -199,6 +199,28 @@ export function useSaveAccountSync({
     }
   }, [resetUiLayouts, setAdminSettings, setCollapsedSections, setCustomArmorCatalog, setKeybindings, setPlayerLoadout, setPlayerName]);
 
+  const handleCloudSavePushResult = useCallback((
+    res: Awaited<ReturnType<typeof pushCloudSave>>,
+    sourceAccount: AccountInfo | null = account,
+  ) => {
+    if (res.ok) {
+      if (res.data?.account) setAccount(res.data.account);
+      return;
+    }
+
+    if (res.error && /display name/i.test(res.error)) {
+      const fallbackName = sourceAccount?.registeredDisplayName || sourceAccount?.username;
+      if (fallbackName) {
+        onPlayerNameChange(fallbackName);
+      }
+      setSaveSystemStatus({
+        type: 'error',
+        message: res.error,
+      });
+      setTimeout(() => setSaveSystemStatus({ type: null, message: '' }), 6000);
+    }
+  }, [account, onPlayerNameChange]);
+
   const handleLoggedIn = useCallback(async (acct: AccountInfo) => {
     await pullAndApplyCloudSave();
     setAccount(acct);
@@ -206,8 +228,11 @@ export function useSaveAccountSync({
 
   const handleRegistered = useCallback((acct: AccountInfo) => {
     setAccount(acct);
-    void pushCloudSave(buildCurrentSaveData());
-  }, [buildCurrentSaveData]);
+    void (async () => {
+      const res = await pushCloudSave(buildCurrentSaveData());
+      handleCloudSavePushResult(res, acct);
+    })();
+  }, [buildCurrentSaveData, handleCloudSavePushResult]);
 
   const handleLoggedOut = useCallback(() => {
     setAccount(null);
@@ -233,12 +258,15 @@ export function useSaveAccountSync({
     if (!account) return;
     if (cloudPushTimer.current) clearTimeout(cloudPushTimer.current);
     cloudPushTimer.current = setTimeout(() => {
-      void pushCloudSave(buildCurrentSaveData());
+      void (async () => {
+        const res = await pushCloudSave(buildCurrentSaveData());
+        handleCloudSavePushResult(res);
+      })();
     }, 1500);
     return () => {
       if (cloudPushTimer.current) clearTimeout(cloudPushTimer.current);
     };
-  }, [account, buildCurrentSaveData]);
+  }, [account, buildCurrentSaveData, handleCloudSavePushResult]);
 
   return {
     account,

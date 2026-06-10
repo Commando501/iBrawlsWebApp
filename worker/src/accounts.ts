@@ -3,6 +3,12 @@
 // `cloud_saves` tables (see migrations 0001/0002). Routed from index.ts via
 // handleAccountRequest(); returns null for non-account paths so the caller can
 // continue its own routing.
+import {
+  extractSavePlayerName,
+  getPreferredRegisteredDisplayNameFromSave,
+  normalizeRegisteredDisplayName,
+  normalizeRegisteredDisplayNameKey,
+} from "./displayNames";
 
 export interface AccountsEnv {
   DB: D1Database;
@@ -92,13 +98,110 @@ interface AccountRow {
   is_admin: number;
 }
 
+interface DisplayNameClaimResult {
+  ok: boolean;
+  displayName?: string;
+  error?: string;
+  status?: number;
+}
+
+async function getAccountRegisteredDisplayName(env: AccountsEnv, accountId: string): Promise<string | null> {
+  const row = await env.DB.prepare(
+    "SELECT display_name FROM registered_display_names WHERE account_id = ?"
+  )
+    .bind(accountId)
+    .first<{ display_name: string }>();
+  return row?.display_name ?? null;
+}
+
+export async function getRegisteredDisplayNameOwner(
+  env: AccountsEnv,
+  displayName: unknown
+): Promise<string | null> {
+  const normalizedName = normalizeRegisteredDisplayNameKey(displayName);
+  if (!normalizedName) return null;
+  const row = await env.DB.prepare(
+    "SELECT account_id FROM registered_display_names WHERE normalized_name = ? COLLATE NOCASE"
+  )
+    .bind(normalizedName)
+    .first<{ account_id: string }>();
+  return row?.account_id ?? null;
+}
+
+async function getPreferredRegisteredDisplayName(
+  env: AccountsEnv,
+  account: AccountRow
+): Promise<string | null> {
+  const saveRow = await env.DB.prepare("SELECT payload FROM cloud_saves WHERE account_id = ?")
+    .bind(account.id)
+    .first<{ payload: string }>();
+  if (saveRow?.payload) {
+    try {
+      return getPreferredRegisteredDisplayNameFromSave(JSON.parse(saveRow.payload), account.username);
+    } catch {
+      /* ignore malformed legacy save payloads */
+    }
+  }
+  return normalizeRegisteredDisplayName(account.username);
+}
+
+export async function claimRegisteredDisplayNameForAccount(
+  env: AccountsEnv,
+  accountId: string,
+  requestedDisplayName: unknown,
+  now = Date.now()
+): Promise<DisplayNameClaimResult> {
+  const displayName = normalizeRegisteredDisplayName(requestedDisplayName);
+  const normalizedName = normalizeRegisteredDisplayNameKey(requestedDisplayName);
+  if (!displayName || !normalizedName) {
+    return { ok: false, status: 400, error: "Enter a valid display name." };
+  }
+
+  const owner = await getRegisteredDisplayNameOwner(env, displayName);
+  if (owner && owner !== accountId) {
+    return { ok: false, status: 409, error: "That display name is already registered." };
+  }
+
+  try {
+    await env.DB.prepare(
+      `INSERT INTO registered_display_names (account_id, display_name, normalized_name, updated_at)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT(account_id) DO UPDATE SET
+         display_name = excluded.display_name,
+         normalized_name = excluded.normalized_name,
+         updated_at = excluded.updated_at`
+    )
+      .bind(accountId, displayName, normalizedName, now)
+      .run();
+  } catch {
+    return { ok: false, status: 409, error: "That display name is already registered." };
+  }
+
+  return { ok: true, displayName };
+}
+
+async function ensureRegisteredDisplayNameForAccount(
+  env: AccountsEnv,
+  account: AccountRow
+): Promise<string | null> {
+  const existing = await getAccountRegisteredDisplayName(env, account.id);
+  if (existing) return existing;
+
+  const preferred = await getPreferredRegisteredDisplayName(env, account);
+  if (!preferred) return null;
+  const claim = await claimRegisteredDisplayNameForAccount(env, account.id, preferred);
+  return claim.ok ? claim.displayName ?? preferred : null;
+}
+
 // Owner-facing account view. Includes recovery_code intentionally — it is shown
 // (obscured, with a reveal toggle) to the authenticated owner per the UI spec.
-function publicAccount(row: AccountRow) {
+async function publicAccount(row: AccountRow, env: AccountsEnv) {
+  const registeredDisplayName = await ensureRegisteredDisplayNameForAccount(env, row);
   return {
     id: row.id,
     email: row.email,
     username: row.username,
+    registeredDisplayName,
     recoveryCode: row.recovery_code,
     createdAt: row.created_at,
     usernameChangedAt: row.username_changed_at,
@@ -195,11 +298,14 @@ async function handleRegister(request: Request, env: AccountsEnv, cors: Cors): P
 
   const email = normalizeEmail(body.email);
   const username = normalizeUsername(body.username);
+  const registeredDisplayName = normalizeRegisteredDisplayName(body.playerName) ?? username;
   if (!email) return json({ error: "Enter a valid email address." }, 400, cors);
   if (!username)
     return json({ error: "Username must be 3–16 letters, numbers, or underscores." }, 400, cors);
   if (!validPassword(body.password))
     return json({ error: `Password must be at least ${MIN_PASSWORD_LEN} characters.` }, 400, cors);
+  if (!registeredDisplayName)
+    return json({ error: "Enter a valid display name." }, 400, cors);
 
   const existing = await env.DB.prepare(
     "SELECT email, username FROM accounts WHERE email = ? COLLATE NOCASE OR username = ? COLLATE NOCASE"
@@ -215,6 +321,11 @@ async function handleRegister(request: Request, env: AccountsEnv, cors: Cors): P
     );
   }
 
+  const existingDisplayNameOwner = await getRegisteredDisplayNameOwner(env, registeredDisplayName);
+  if (existingDisplayNameOwner) {
+    return json({ error: "That display name is already registered." }, 409, cors);
+  }
+
   const id = crypto.randomUUID();
   const salt = randomHex(16);
   const passwordHash = await hashPassword(body.password as string, salt);
@@ -222,13 +333,17 @@ async function handleRegister(request: Request, env: AccountsEnv, cors: Cors): P
   const now = Date.now();
 
   try {
-    await env.DB.prepare(
-      `INSERT INTO accounts
-         (id, email, username, password_hash, password_salt, recovery_code, created_at, last_seen, recovery_fail_count)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`
-    )
-      .bind(id, email, username, passwordHash, salt, recoveryCode, now, now)
-      .run();
+    await env.DB.batch([
+      env.DB.prepare(
+        `INSERT INTO accounts
+           (id, email, username, password_hash, password_salt, recovery_code, created_at, last_seen, recovery_fail_count)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`
+      ).bind(id, email, username, passwordHash, salt, recoveryCode, now, now),
+      env.DB.prepare(
+        `INSERT INTO registered_display_names (account_id, display_name, normalized_name, updated_at)
+         VALUES (?, ?, ?, ?)`
+      ).bind(id, registeredDisplayName, normalizeRegisteredDisplayNameKey(registeredDisplayName), now),
+    ]);
   } catch (err) {
     // The INSERT failed. Distinguish a genuine unique-index race (someone
     // registered the same email/username between our pre-check and here) from
@@ -248,6 +363,10 @@ async function handleRegister(request: Request, env: AccountsEnv, cors: Cors): P
         cors
       );
     }
+    const displayNameClash = await getRegisteredDisplayNameOwner(env, registeredDisplayName);
+    if (displayNameClash) {
+      return json({ error: "That display name is already registered." }, 409, cors);
+    }
     // Not a duplicate — surface the real error so the failure is diagnosable
     // instead of being mislabeled as a taken email/username.
     return json({ error: "Could not create account.", detail: String(err) }, 500, cors);
@@ -265,7 +384,7 @@ async function handleRegister(request: Request, env: AccountsEnv, cors: Cors): P
   const account = await env.DB.prepare("SELECT * FROM accounts WHERE id = ?")
     .bind(id)
     .first<AccountRow>();
-  return json({ token, account: account ? publicAccount(account) : null, recoveryCode }, 200, cors);
+  return json({ token, account: account ? await publicAccount(account, env) : null, recoveryCode }, 200, cors);
 }
 
 async function handleLogin(request: Request, env: AccountsEnv, cors: Cors): Promise<Response> {
@@ -288,7 +407,7 @@ async function handleLogin(request: Request, env: AccountsEnv, cors: Cors): Prom
   if (!safeEqual(candidate, account.password_hash)) return INVALID;
 
   const token = await createSession(account.id, env);
-  return json({ token, account: publicAccount(account) }, 200, cors);
+  return json({ token, account: await publicAccount(account, env) }, 200, cors);
 }
 
 async function handleLogout(request: Request, env: AccountsEnv, cors: Cors): Promise<Response> {
@@ -303,7 +422,7 @@ async function handleLogout(request: Request, env: AccountsEnv, cors: Cors): Pro
 async function handleMe(request: Request, env: AccountsEnv, cors: Cors): Promise<Response> {
   const account = await requireSession(request, env);
   if (!account) return json({ error: "Not authenticated." }, 401, cors);
-  return json({ account: publicAccount(account) }, 200, cors);
+  return json({ account: await publicAccount(account, env) }, 200, cors);
 }
 
 async function handleRecover(request: Request, env: AccountsEnv, cors: Cors): Promise<Response> {
@@ -395,7 +514,7 @@ async function handleChangeUsername(request: Request, env: AccountsEnv, cors: Co
   const updated = await env.DB.prepare("SELECT * FROM accounts WHERE id = ?")
     .bind(account.id)
     .first<AccountRow>();
-  return json({ account: publicAccount(updated!) }, 200, cors);
+  return json({ account: await publicAccount(updated!, env) }, 200, cors);
 }
 
 async function handleChangeEmail(request: Request, env: AccountsEnv, cors: Cors): Promise<Response> {
@@ -428,7 +547,7 @@ async function handleChangeEmail(request: Request, env: AccountsEnv, cors: Cors)
   const updated = await env.DB.prepare("SELECT * FROM accounts WHERE id = ?")
     .bind(account.id)
     .first<AccountRow>();
-  return json({ account: publicAccount(updated!) }, 200, cors);
+  return json({ account: await publicAccount(updated!, env) }, 200, cors);
 }
 
 async function handleChangePassword(request: Request, env: AccountsEnv, cors: Cors): Promise<Response> {
@@ -476,7 +595,7 @@ async function handlePromote(request: Request, env: AccountsEnv, cors: Cors): Pr
   const updated = await env.DB.prepare("SELECT * FROM accounts WHERE id = ?")
     .bind(account.id)
     .first<AccountRow>();
-  return json({ account: publicAccount(updated!) }, 200, cors);
+  return json({ account: await publicAccount(updated!, env) }, 200, cors);
 }
 
 // Resolve the account for a valid session ONLY when it has the admin flag set.
@@ -512,6 +631,13 @@ async function handlePutSave(request: Request, env: AccountsEnv, cors: Cors): Pr
   const body = await readJson(request);
   if (!body) return json({ error: "Invalid JSON body" }, 400, cors);
 
+  const displayName = extractSavePlayerName(body);
+  if (!displayName) return json({ error: "Enter a valid display name." }, 400, cors);
+  const claim = await claimRegisteredDisplayNameForAccount(env, account.id, displayName);
+  if (!claim.ok) {
+    return json({ error: claim.error || "That display name is already registered." }, claim.status ?? 409, cors);
+  }
+
   const payload = JSON.stringify(body);
   const now = Date.now();
   await env.DB.prepare(
@@ -521,7 +647,7 @@ async function handlePutSave(request: Request, env: AccountsEnv, cors: Cors): Pr
   )
     .bind(account.id, payload, now)
     .run();
-  return json({ ok: true, updatedAt: now }, 200, cors);
+  return json({ ok: true, updatedAt: now, account: await publicAccount(account, env) }, 200, cors);
 }
 
 // ── Dispatcher ───────────────────────────────────────────────────────────────

@@ -256,3 +256,54 @@ test('large V2 model keeps the V2 skeleton while increasing armor footprint', ()
   assert.ok(largeSize.y > mediumSize.y, `expected large height > ${mediumSize.y}, got ${largeSize.y}`);
   assert.ok(largeSize.z > mediumSize.z, `expected large depth > ${mediumSize.z}, got ${largeSize.z}`);
 });
+
+test('large V2 model builds every armor preset without exceeding part constraints', () => {
+  const helmets: HelmetPreset[] = ['mark-vi', 'odst', 'recon', 'eva', 'gungnir', 'eod', 'hayabusa', 'cqb'];
+  const torsos: TorsoPreset[] = ['mark-vi', 'scout', 'recon', 'eod', 'hayabusa'];
+  const arms: ArmPreset[] = ['mark-vi', 'odst', 'recon', 'eod', 'hayabusa'];
+  const legs: LegPreset[] = ['mark-vi', 'jump-jet', 'odst', 'eod', 'hayabusa'];
+
+  for (const helmet of helmets) {
+    assert.doesNotThrow(() => buildVoxelSpartanModel(false, 200, {
+      modelSystem: 'v2',
+      modelType: 'large',
+      helmet,
+      torso: 'mark-vi',
+      arm: 'mark-vi',
+      leg: 'mark-vi',
+    }));
+  }
+
+  for (const torso of torsos) {
+    assert.doesNotThrow(() => buildVoxelSpartanModel(false, 200, {
+      modelSystem: 'v2',
+      modelType: 'large',
+      helmet: 'mark-vi',
+      torso,
+      arm: 'mark-vi',
+      leg: 'mark-vi',
+    }));
+  }
+
+  for (const arm of arms) {
+    assert.doesNotThrow(() => buildVoxelSpartanModel(false, 200, {
+      modelSystem: 'v2',
+      modelType: 'large',
+      helmet: 'mark-vi',
+      torso: 'mark-vi',
+      arm,
+      leg: 'mark-vi',
+    }));
+  }
+
+  for (const leg of legs) {
+    assert.doesNotThrow(() => buildVoxelSpartanModel(false, 200, {
+      modelSystem: 'v2',
+      modelType: 'large',
+      helmet: 'mark-vi',
+      torso: 'mark-vi',
+      arm: 'mark-vi',
+      leg,
+    }));
+  }
+});

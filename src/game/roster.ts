@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import type { AIBehaviorState, CharacterModelType, Combatant, UniversalSettings, WeaponState } from '../types';
-import { resolveCharacterModelType } from '../characterModelTypes';
+import { DEFAULT_CHARACTER_MODEL_TYPE, resolveCharacterModelType } from '../characterModelTypes';
 import { DEFAULT_AI_TEAM, resolveCombatantTeam } from './teamScoring';
 import { type LegacyRosterProps } from './rosterSlotConfig';
 
@@ -143,7 +143,7 @@ export function createMainAICombatant(params: CreateMainAIParams): Combatant {
     hammerJumpWindowTimer: 0,
     aiHammerJumpsInAir: 0,
     hue,
-    modelType: resolveCharacterModelType(params.modelType ?? legacy.botModelTypes?.[MAIN_AI_ID], 'v2'),
+    modelType: DEFAULT_CHARACTER_MODEL_TYPE,
     difficulty: difficulty ?? legacy.botDifficulties?.[MAIN_AI_ID] ?? settings.aiDifficulty ?? 'normal',
     score: 0,
     kills: 0,
@@ -182,7 +182,7 @@ export function createOfflineBotCombatant(params: CreateOfflineBotParams): Comba
     activeWeapon: 'hammer',
     respawnTimer: 0,
     hue: params.hue,
-    modelType: resolveCharacterModelType(params.modelType, 'v2'),
+    modelType: DEFAULT_CHARACTER_MODEL_TYPE,
     difficulty: params.difficulty,
     score: 0,
     kills: 0,

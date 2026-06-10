@@ -20,6 +20,7 @@ import {
 
 interface Props {
   account: AccountInfo | null;
+  playerName: string;
   requestedLoggedOutMode?: Exclude<LoggedOutMode, 'menu'>;
   loggedOutModeRequestToken?: number;
   /** Register succeeded — App pushes the current local settings up as the first cloud save. */
@@ -61,6 +62,7 @@ const ghostBtn =
 
 const SpartanIdentityAccount: React.FC<Props> = ({
   account,
+  playerName,
   requestedLoggedOutMode,
   loggedOutModeRequestToken,
   onRegistered,
@@ -115,7 +117,7 @@ const SpartanIdentityAccount: React.FC<Props> = ({
   const handleRegister = async () => {
     resetMessages();
     setBusy(true);
-    const res = await apiRegister(email, username, password);
+    const res = await apiRegister(email, username, password, playerName);
     setBusy(false);
     if (!res.ok || !res.data) {
       setError(res.error || 'Registration failed.');

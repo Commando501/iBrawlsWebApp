@@ -1,5 +1,6 @@
 import { LIVE_CONFIG_KEY_SET } from "./liveConfigKeys";
-import { handleAccountRequest, requireSession, resolveAdminAccount } from "./accounts";
+import { handleAccountRequest, requireSession, resolveAdminAccount, getRegisteredDisplayNameOwner } from "./accounts";
+import { normalizeRegisteredDisplayName, resolvePublicDisplayName } from "./displayNames";
 import { toAnalyticsDataPoint } from "./telemetrySchema";
 import {
   createLobbyChatRateLimitState,
@@ -188,6 +189,7 @@ interface GameWebSocket extends WebSocket {
   id?: string;
   accountId?: string;
   onlineInstanceId?: string;
+  publicDisplayName?: string;
   playerState?: 'menu' | 'solo' | 'multi';
   roomCode?: string;
   spaceAvailable?: boolean;
@@ -306,9 +308,7 @@ function getInviteTokenBypass(room: Room, clientId: string, inviteToken: unknown
 }
 
 function normalizePlayerName(name: unknown): string | undefined {
-  if (typeof name !== "string") return undefined;
-  const normalized = name.trim().substring(0, MAX_PLAYER_NAME_LENGTH);
-  return normalized.length > 0 ? normalized : undefined;
+  return normalizeRegisteredDisplayName(name) ?? undefined;
 }
 
 function normalizePlayerHue(hue: unknown): number | undefined {
@@ -424,10 +424,8 @@ function normalizePlayerLoadout(loadout: unknown): unknown | undefined {
 }
 
 function applyGameplayIdentity(socket: GameWebSocket, message: any) {
-  const name = normalizePlayerName(message?.playerName);
   const hue = normalizePlayerHue(message?.hue);
   const loadout = normalizePlayerLoadout(message?.loadout);
-  if (name) socket.playerName = name;
   if (hue !== undefined) socket.playerHue = hue;
   if (loadout) socket.playerLoadout = loadout;
 }
@@ -898,6 +896,37 @@ export class GameLobby implements DurableObject {
     return String(socket.id || "");
   }
 
+  getActivePublicDisplayNames(exclude?: GameWebSocket): Set<string> {
+    const names = new Set<string>();
+    this.sessions.forEach(socket => {
+      if (socket === exclude) return;
+      if (socket.publicDisplayName) names.add(socket.publicDisplayName);
+    });
+    return names;
+  }
+
+  getSocketPublicDisplayName(socket: GameWebSocket): string {
+    const socketId = this.getSocketId(socket);
+    return socket.publicDisplayName || normalizePlayerName(socket.playerName) || `Client ${socketId}`;
+  }
+
+  async updateSocketDisplayName(socket: GameWebSocket, requestedName: unknown): Promise<void> {
+    const baseName = normalizePlayerName(requestedName);
+    socket.playerName = baseName;
+    if (!baseName) {
+      socket.publicDisplayName = undefined;
+      return;
+    }
+
+    const ownerAccountId = await getRegisteredDisplayNameOwner(this.env, baseName);
+    socket.publicDisplayName = resolvePublicDisplayName({
+      requestedName: baseName,
+      accountId: socket.accountId,
+      registeredOwnerAccountId: ownerAccountId,
+      activeDisplayNames: this.getActivePublicDisplayNames(socket),
+    });
+  }
+
   getRoomPublicCode(room: Room): string | undefined {
     for (const key of room.keys) {
       const publicCode = normalizePublicRoomCode(key);
@@ -928,7 +957,7 @@ export class GameLobby implements DurableObject {
       clientId: socketId,
       role,
       spawnSlot,
-      playerName: normalizePlayerName(socket.playerName) || `Client ${socketId}`,
+      playerName: this.getSocketPublicDisplayName(socket),
       hue: normalizePlayerHue(socket.playerHue),
       loadout: normalizePlayerLoadout(socket.playerLoadout),
     };
@@ -1132,7 +1161,7 @@ export class GameLobby implements DurableObject {
     gameWs.playerState = 'menu';
     gameWs.roomCode = undefined;
     gameWs.spaceAvailable = false;
-    gameWs.playerName = normalizePlayerName(nameParam);
+    await this.updateSocketDisplayName(gameWs, nameParam);
     gameWs.playerCount = undefined;
     gameWs.maxPlayers = undefined;
     gameWs.lobbyStartedAt = undefined;
@@ -1143,12 +1172,12 @@ export class GameLobby implements DurableObject {
     this.closeDuplicateAccountLocations(gameWs);
 
     // Send immediate welcome greeting carrying the socket's client identity
-    gameWs.send(JSON.stringify({ type: "welcome", clientId: wsId }));
+    gameWs.send(JSON.stringify({ type: "welcome", clientId: wsId, playerName: this.getSocketPublicDisplayName(gameWs) }));
     
     // Broadcast active roster update to everyone connected
     this.updatePresence();
 
-    gameWs.addEventListener("message", (event) => {
+    gameWs.addEventListener("message", async (event) => {
       try {
         const rawMessage = event.data as string;
         const message = JSON.parse(rawMessage);
@@ -1161,7 +1190,7 @@ export class GameLobby implements DurableObject {
             gameWs.playerState = status;
             gameWs.roomCode = normalizedRoomCode;
             gameWs.spaceAvailable = spaceAvailable;
-            gameWs.playerName = normalizePlayerName(name);
+            await this.updateSocketDisplayName(gameWs, name);
             gameWs.lobby = status === 'multi' ? buildPresenceLobbySummary(message.lobby) : undefined;
             gameWs.playerCount = typeof playerCount === 'number' && Number.isFinite(playerCount)
               ? Math.max(0, Math.min(MAX_ROOM_PLAYERS, Math.floor(playerCount)))
@@ -1179,7 +1208,7 @@ export class GameLobby implements DurableObject {
             const chat = validateLobbyChatMessage(
               message,
               gameWs.lobbyChatRateLimit,
-              gameWs.playerName || `Client ${wsId}`,
+              this.getSocketPublicDisplayName(gameWs),
             );
             if (chat.ok === false) {
               try {
@@ -1342,6 +1371,7 @@ export class GameLobby implements DurableObject {
 
           case "host": {
             const { ip, lanIp, customId } = message;
+            await this.updateSocketDisplayName(gameWs, message.playerName);
             applyGameplayIdentity(gameWs, message);
             const lobbyConfig = normalizeMatchLobbyConfig(message.lobbyConfig);
             const password = sanitizeLobbyPassword(message.password);
@@ -1392,6 +1422,7 @@ export class GameLobby implements DurableObject {
               clientId: wsId,
               role: "host",
               spawnSlot: 0,
+              playerName: this.getSocketPublicDisplayName(gameWs),
               lobbyConfig,
             }));
             } catch(e) {}
@@ -1412,6 +1443,7 @@ export class GameLobby implements DurableObject {
 
           case "join": {
             const { targetIpOrId, isObserver, inviteToken } = message;
+            await this.updateSocketDisplayName(gameWs, message.playerName);
             applyGameplayIdentity(gameWs, message);
             console.log(`Client attempting to join room matching: ${targetIpOrId} (isObserver: ${isObserver})`);
 
@@ -1457,6 +1489,7 @@ export class GameLobby implements DurableObject {
                 gameWs.send(JSON.stringify({ 
                   type: "connected", 
                   clientId: wsId,
+                  playerName: this.getSocketPublicDisplayName(gameWs),
                   role: "observer", 
                   hostClientId: room.host.id, 
                   clientClientId: room.clients.length > 0 ? room.clients[0].id : undefined,
@@ -1479,7 +1512,7 @@ export class GameLobby implements DurableObject {
                 type: "observer_joined",
                 observerId: wsId,
                 role: "observer",
-                playerName: normalizePlayerName(gameWs.playerName) || `Client ${wsId}`,
+                playerName: this.getSocketPublicDisplayName(gameWs),
                 hue: normalizePlayerHue(gameWs.playerHue),
                 loadout: normalizePlayerLoadout(gameWs.playerLoadout),
               });
@@ -1512,6 +1545,7 @@ export class GameLobby implements DurableObject {
               gameWs.send(JSON.stringify({ 
                 type: "connected", 
                 clientId: wsId,
+                playerName: this.getSocketPublicDisplayName(gameWs),
                 role: "client", 
                 hostClientId: room.host.id, 
                 clientClientId: wsId,
@@ -1536,7 +1570,7 @@ export class GameLobby implements DurableObject {
               role: "client",
               clientId: wsId,
               spawnSlot: this.getRoomSpawnSlot(room, gameWs),
-              playerName: normalizePlayerName(gameWs.playerName) || `Client ${wsId}`,
+              playerName: this.getSocketPublicDisplayName(gameWs),
               hue: normalizePlayerHue(gameWs.playerHue),
               loadout: normalizePlayerLoadout(gameWs.playerLoadout),
             });
@@ -1547,6 +1581,7 @@ export class GameLobby implements DurableObject {
                   room.host.send(JSON.stringify({
                     type: "connected",
                     clientId: this.getSocketId(room.host),
+                    playerName: this.getSocketPublicDisplayName(room.host),
                     role: "host",
                     hostClientId: this.getSocketId(room.host),
                     spawnSlot: 0,
@@ -1624,7 +1659,8 @@ export class GameLobby implements DurableObject {
               parsedMessage = {
                 ...message,
                 senderRole,
-                senderId: wsId
+                senderId: wsId,
+                playerName: this.getSocketPublicDisplayName(gameWs),
               };
             } catch (err) {}
             const syncPayload = JSON.stringify(parsedMessage);
@@ -1813,6 +1849,7 @@ export class GameLobby implements DurableObject {
         return {
           id: client.id,
           name: normalizePlayerName(client.playerName),
+          publicDisplayName: this.getSocketPublicDisplayName(client),
           state,
           roomCode: visibleRoomCode,
           spaceAvailable: client.spaceAvailable !== undefined ? client.spaceAvailable : false,

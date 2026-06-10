@@ -307,7 +307,7 @@ function applyLargeProfileVolume(slot: string, base: VoxelData[], colors: Sparta
 
   if (slot === 'helmet') {
     addPowerArmorVolume(large, -3, 3, 35, 35, -2, 1, colors);
-    addPowerArmorVolume(large, -4, 4, 36, 45, -4, 4, colors, { accent: true });
+    addPowerArmorVolume(large, -4, 4, 36, 45, -4, 3, colors, { accent: true });
   } else if (slot === 'torso') {
     addPowerArmorVolume(large, -4, 4, 11, 18, -2, 2, colors);
     addPowerArmorVolume(large, -6, 6, 19, 34, -6, 7, colors, { accent: true });
@@ -315,7 +315,7 @@ function applyLargeProfileVolume(slot: string, base: VoxelData[], colors: Sparta
     addPowerArmorVolume(large, -10, -4, 25, 32, -3, 2, colors, { accent: true });
     addPowerArmorVolume(large, -7, -4, 20, 24, -4, 4, colors);
     addPowerArmorVolume(large, -8, -4, 16, 19, -4, 4, colors);
-    addPowerArmorVolume(large, -7, -4, 12, 15, -1, 2, colors);
+    addPowerArmorVolume(large, -7, -4, 12, 15, -1, 1, colors);
   } else if (slot === 'leftLeg') {
     addPowerArmorVolume(large, -6, -1, 17, 23, -5, 6, colors, { accent: true });
     addPowerArmorVolume(large, -6, -1, 8, 16, -7, 6, colors);

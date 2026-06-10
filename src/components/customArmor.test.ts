@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { AVAILABLE_PRESETS } from './VoxelModels';
 import { getVoxelSegmentDataV2 } from './VoxelModelsV2';
 import {
   createCustomArmorPiece,
@@ -14,9 +15,14 @@ import {
   type CustomArmorVoxel,
 } from './customArmor';
 
-const cloneBuiltInPiece = (slot: CustomArmorSlot, preset: string, sourceSlot: string) => {
-  const voxels = getVoxelSegmentDataV2(sourceSlot, preset, 200, false);
-  return createCustomArmorPiece(slot, `${preset} clone`, voxelDataToCustomArmorVoxels(voxels), preset);
+const cloneBuiltInPiece = (
+  slot: CustomArmorSlot,
+  preset: string,
+  sourceSlot: string,
+  modelType: 'medium' | 'large' = 'medium'
+) => {
+  const voxels = getVoxelSegmentDataV2(sourceSlot, preset, 200, false, modelType);
+  return createCustomArmorPiece(slot, `${preset} clone`, voxelDataToCustomArmorVoxels(voxels), preset, modelType);
 };
 
 test('built-in V2 armor clones satisfy custom armor validation', () => {
@@ -30,6 +36,22 @@ test('built-in V2 armor clones satisfy custom armor validation', () => {
   for (const [slot, preset, sourceSlot] of cases) {
     const result = validateCustomArmorPiece(cloneBuiltInPiece(slot, preset, sourceSlot));
     assert.equal(result.valid, true, `${slot}: ${result.errors.join(', ')}`);
+  }
+});
+
+test('large built-in V2 armor clones satisfy custom armor validation', () => {
+  const cases: Array<[CustomArmorSlot, readonly string[], string]> = [
+    ['helmet', AVAILABLE_PRESETS.helmet, 'helmet'],
+    ['torso', AVAILABLE_PRESETS.torso, 'torso'],
+    ['arm', AVAILABLE_PRESETS.arm, 'leftArm'],
+    ['leg', AVAILABLE_PRESETS.leg, 'leftLeg'],
+  ];
+
+  for (const [slot, presets, sourceSlot] of cases) {
+    for (const preset of presets) {
+      const result = validateCustomArmorPiece(cloneBuiltInPiece(slot, preset, sourceSlot, 'large'));
+      assert.equal(result.valid, true, `${slot}/${preset}: ${result.errors.join(', ')}`);
+    }
   }
 });
 

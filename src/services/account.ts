@@ -17,6 +17,7 @@ export interface AccountInfo {
   id: string;
   email: string;
   username: string;
+  registeredDisplayName: string | null;
   recoveryCode: string;
   createdAt: number;
   usernameChangedAt: number | null;
@@ -93,12 +94,14 @@ export interface AuthSuccess {
 export async function register(
   email: string,
   username: string,
-  password: string
+  password: string,
+  playerName?: string
 ): Promise<ApiResult<AuthSuccess>> {
   const result = await request<AuthSuccess>('/api/account/register', 'POST', {
     email,
     username,
     password,
+    playerName,
   });
   if (result.ok && result.data) setStoredToken(result.data.token);
   return result;
@@ -170,6 +173,6 @@ export async function fetchCloudSave<T = unknown>(): Promise<ApiResult<{ save: T
   return request<{ save: T | null }>('/api/account/save', 'GET', undefined, true);
 }
 
-export async function pushCloudSave(save: unknown): Promise<ApiResult<{ ok: boolean }>> {
+export async function pushCloudSave(save: unknown): Promise<ApiResult<{ ok: boolean; account?: AccountInfo; updatedAt?: number }>> {
   return request('/api/account/save', 'PUT', save, true);
 }

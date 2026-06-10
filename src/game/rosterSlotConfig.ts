@@ -1,5 +1,5 @@
 import { AIBehaviorPreset, AIPreset, CharacterModelType, UniversalSettings } from '../types';
-import { resolveCharacterModelType } from '../characterModelTypes';
+import { DEFAULT_CHARACTER_MODEL_TYPE } from '../characterModelTypes';
 import { AIResolvedKnobs, DerivedAIParams } from './aiTuning';
 import {
   AIArchetypeId,
@@ -113,7 +113,7 @@ export function rosterOverrideFromLegacyProps(props: {
   if (props.archetype !== undefined) override.archetype = props.archetype as AIArchetypeId;
   if (props.hue !== undefined) override.hue = props.hue;
   if (props.name) override.name = props.name;
-  if (props.modelType) override.modelType = resolveCharacterModelType(props.modelType, 'v2');
+  if (props.modelType) override.modelType = DEFAULT_CHARACTER_MODEL_TYPE;
 
   if (props.behavior && props.behavior !== DEFAULT_LEGACY_BEHAVIOR) {
     override.behavior = props.behavior;

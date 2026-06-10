@@ -95,7 +95,7 @@ interface SlotSpec {
 export const CUSTOM_ARMOR_CATALOG_STORAGE_KEY = 'grifball_custom_armor_catalog';
 export const CUSTOM_ARMOR_DRAFT_STORAGE_KEY = 'grifball_custom_armor_draft';
 export const CUSTOM_ARMOR_MAX_CATALOG_PIECES = 64;
-export const CUSTOM_ARMOR_MAX_SELECTED_BYTES = 128_000;
+export const CUSTOM_ARMOR_MAX_SELECTED_BYTES = 256_000;
 export const CUSTOM_ARMOR_MAX_CATALOG_BYTES = 1_200_000;
 export const CUSTOM_ARMOR_MAX_HISTORY = 5;
 

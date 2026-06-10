@@ -42,6 +42,7 @@ export interface GameplayPlayerSlotPayload {
 export interface OnlineClientPayload {
   id: string;
   name?: string;
+  publicDisplayName?: string;
   state: ClientPresenceState;
   roomCode?: string;
   spaceAvailable?: boolean;
@@ -52,7 +53,7 @@ export interface OnlineClientPayload {
 }
 
 export type LobbyServerMessage =
-  | { type: 'welcome'; clientId: string }
+  | { type: 'welcome'; clientId: string; playerName?: string }
   | { type: 'presence'; onlineCount: number; clients: OnlineClientPayload[] }
   | { type: 'signed_in_elsewhere'; message: string }
   | { type: 'pong'; timestamp: number }
@@ -74,11 +75,12 @@ export type LobbyClientMessage =
   | { type: 'quickplay_leave' };
 
 export type GameplayServerMessage =
-  | { type: 'hosted'; keys: string[]; clientId?: string; role?: GameRole; spawnSlot?: number; lobbyConfig?: MatchLobbyConfig }
+  | { type: 'hosted'; keys: string[]; clientId?: string; playerName?: string; role?: GameRole; spawnSlot?: number; lobbyConfig?: MatchLobbyConfig }
   | {
       type: 'connected';
       role: GameRole;
       clientId?: string;
+      playerName?: string;
       hostClientId?: string;
       clientClientId?: string;
       participants?: GameplayPlayerSlotPayload[];

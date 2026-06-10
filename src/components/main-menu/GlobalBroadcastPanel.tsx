@@ -232,6 +232,7 @@ export const PilotIdentitySubframe = ({
 
         <SpartanIdentityAccount
           account={account}
+          playerName={playerName}
           requestedLoggedOutMode={modeRequest.token > 0 ? modeRequest.mode : undefined}
           loggedOutModeRequestToken={modeRequest.token}
           onRegistered={onRegistered}
