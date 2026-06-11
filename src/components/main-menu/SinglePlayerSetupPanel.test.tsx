@@ -49,10 +49,10 @@ const baseAiEditorProps = (): ComponentProps<typeof AiBehaviorEditorPanel> => ({
   onSaveAIPreset: noop,
 });
 
-test('SinglePlayerSetupPanel exposes AI behavior as a third single-player mode', () => {
+test('SinglePlayerSetupPanel exposes Sandbox Experience and AI Behavior Editor modes', () => {
   const html = renderToStaticMarkup(<SinglePlayerSetupPanel {...baseSinglePlayerProps()} />);
 
-  assert.match(html, /Sandbox Mode[\s\S]*Tournament Mode[\s\S]*AI Behavior[\s\S]*Training Sandbox Setup/);
+  assert.match(html, /Sandbox Experience[\s\S]*AI Behavior Editor[\s\S]*Training Sandbox Setup[\s\S]*Tournament Setup/);
 });
 
 test('SinglePlayerSetupPanel renders the custom AI editor from the AI behavior mode', () => {

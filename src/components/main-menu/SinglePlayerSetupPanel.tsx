@@ -74,22 +74,12 @@ export function SinglePlayerSetupPanel({
         <button
           onClick={() => setSinglePlayerMode('sandbox')}
           className={`flex-1 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all duration-200 cursor-pointer ${
-            singlePlayerMode === 'sandbox'
-              ? 'bg-gradient-to-b from-[#22d3ee] to-[#0891b2] text-white shadow-[0_0_10px_rgba(34,211,238,0.4)] font-black'
+            singlePlayerMode === 'sandbox' || singlePlayerMode === 'tournament'
+              ? 'bg-gradient-to-r from-[#22d3ee] via-[#0ea5e9] to-[#10b981] text-white shadow-[0_0_12px_rgba(14,165,233,0.35)] font-black'
               : 'text-white/40 hover:text-white/70'
           }`}
         >
-          Sandbox Mode
-        </button>
-        <button
-          onClick={() => setSinglePlayerMode('tournament')}
-          className={`flex-1 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all duration-200 cursor-pointer ${
-            singlePlayerMode === 'tournament'
-              ? 'bg-gradient-to-b from-emerald-400 to-emerald-600 text-slate-955 font-black text-white shadow-[0_0_10px_rgba(16,185,129,0.4)]'
-              : 'text-white/40 hover:text-white/70'
-          }`}
-        >
-          Tournament Mode
+          Sandbox Experience
         </button>
         <button
           onClick={() => {
@@ -102,15 +92,11 @@ export function SinglePlayerSetupPanel({
               : 'text-white/40 hover:text-white/70'
           }`}
         >
-          AI Behavior
+          AI Behavior Editor
         </button>
       </div>
 
-      {singlePlayerMode === 'sandbox' ? (
-        <SandboxSetupPanel
-          onOpenBotSetup={onOpenBotSetup}
-        />
-      ) : singlePlayerMode === 'ai-editor' ? (
+      {singlePlayerMode === 'ai-editor' ? (
         <div className="flex flex-col gap-4 min-h-0 overflow-y-auto pr-0.5">
           <AiBehaviorEditorPanel
             adminSettings={adminSettings}
@@ -125,28 +111,38 @@ export function SinglePlayerSetupPanel({
           />
         </div>
       ) : (
-        <div className="flex flex-col h-full min-h-0 justify-between">
-          {!tournamentState ? (
-            <TournamentSetupPanel
-              aiPresets={aiPresets}
-              selectedTournamentPresets={selectedTournamentPresets}
-              setSelectedTournamentPresets={setSelectedTournamentPresets}
-              tournamentKillsToWin={tournamentKillsToWin}
-              setTournamentKillsToWin={setTournamentKillsToWin}
-              tournamentRoundCount={tournamentRoundCount}
-              setTournamentRoundCount={setTournamentRoundCount}
-              onInitializeTournament={onInitializeTournament}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 h-full min-h-0 overflow-y-auto pr-0.5">
+          {/* Left Column: Sandbox Setup */}
+          <div className="flex flex-col h-full min-h-0 justify-between bg-black/20 p-5 rounded-2xl border border-white/5 shadow-md">
+            <SandboxSetupPanel
+              onOpenBotSetup={onOpenBotSetup}
             />
-          ) : (
-            <TournamentBracketPanel
-              tournamentState={tournamentState}
-              playerName={playerName}
-              playerHue={playerHue}
-              isPlaying={isPlaying}
-              onStartTournamentMatch={onStartTournamentMatch}
-              onResetTournament={onResetTournament}
-            />
-          )}
+          </div>
+
+          {/* Right Column: Tournament Setup or Active Bracket */}
+          <div className="flex flex-col h-full min-h-0 justify-between bg-black/20 p-5 rounded-2xl border border-white/5 shadow-md">
+            {!tournamentState ? (
+              <TournamentSetupPanel
+                aiPresets={aiPresets}
+                selectedTournamentPresets={selectedTournamentPresets}
+                setSelectedTournamentPresets={setSelectedTournamentPresets}
+                tournamentKillsToWin={tournamentKillsToWin}
+                setTournamentKillsToWin={setTournamentKillsToWin}
+                tournamentRoundCount={tournamentRoundCount}
+                setTournamentRoundCount={setTournamentRoundCount}
+                onInitializeTournament={onInitializeTournament}
+              />
+            ) : (
+              <TournamentBracketPanel
+                tournamentState={tournamentState}
+                playerName={playerName}
+                playerHue={playerHue}
+                isPlaying={isPlaying}
+                onStartTournamentMatch={onStartTournamentMatch}
+                onResetTournament={onResetTournament}
+              />
+            )}
+          </div>
         </div>
       )}
     </div>
