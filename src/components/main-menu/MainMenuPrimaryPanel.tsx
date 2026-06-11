@@ -12,7 +12,7 @@ import type {
 import type { SaveSystemStatus } from '../../settings/useSaveAccountSync';
 import type { CharacterLoadout } from '../VoxelModels';
 import type { CustomArmorCatalog } from '../customArmor';
-import type { CustomizationChild, MainMenuParent, MainMenuTab } from './useMainMenuNav';
+import type { CustomizationChild, MainMenuContentParent, MainMenuTab } from './useMainMenuNav';
 import { MultiplayerSetupPanel } from '../multiplayer/MultiplayerSetupPanel';
 import {
   TheaterLibraryPanel,
@@ -23,8 +23,6 @@ import {
 import { ManualControlsPanel } from './ManualControlsPanel';
 import { VisualGamepadMapper } from './VisualGamepadMapper';
 import { ArmoryPanel, type PreviewWeapon } from './ArmoryPanel';
-import { CreativeToolsPanel } from './CreativeToolsPanel';
-import { IdentityPanel } from './IdentityPanel';
 import { SaveCodesPanel } from './SaveCodesPanel';
 import { SinglePlayerSetupPanel } from './SinglePlayerSetupPanel';
 
@@ -32,7 +30,7 @@ type SinglePlayerMode = 'sandbox' | 'tournament';
 type QuickPlayStatus = 'idle' | 'searching' | 'matching';
 
 interface MainMenuPrimaryPanelProps {
-  parent: MainMenuParent;
+  parent: MainMenuContentParent;
   playChild: MainMenuTab;
   customizationChild: CustomizationChild;
   singlePlayerMode: SinglePlayerMode;
@@ -134,7 +132,6 @@ interface MainMenuPrimaryPanelProps {
   setPlayerLoadout: Dispatch<SetStateAction<CharacterLoadout>>;
   setIsPainting: Dispatch<SetStateAction<boolean>>;
   setCustomizerWeapon: Dispatch<SetStateAction<PreviewWeapon>>;
-  onPlayerNameChange: (value: string) => void;
   saveSystemStatus: SaveSystemStatus;
   saveCodeImportInput: string;
   onExportSaveCode: () => void;
@@ -272,15 +269,8 @@ export function MainMenuPrimaryPanel(props: MainMenuPrimaryPanelProps) {
             leftStickActive={props.leftStickActive}
             rightStickActive={props.rightStickActive}
           />
-        ) : (
-          <IdentityPanel
-            playerName={props.playerName}
-            onPlayerNameChange={props.onPlayerNameChange}
-          />
-        )
+        ) : null
       )}
-
-      {parent === 'tools' && <CreativeToolsPanel />}
 
       {parent === 'system' && (
         <SaveCodesPanel

@@ -1,11 +1,13 @@
 import { useCallback, useState } from 'react';
 
 export type MainMenuParent = 'play' | 'customization' | 'tools' | 'system';
+export type MainMenuContentParent = Exclude<MainMenuParent, 'tools'>;
 export type MainMenuTab = 'single' | 'multi' | 'theater';
-export type CustomizationChild = 'armory' | 'hotkeys' | 'gamepad' | 'identity';
+export type CustomizationChild = 'armory' | 'hotkeys' | 'gamepad';
 
 export interface MainMenuNavState {
   parent: MainMenuParent;
+  contentParent: MainMenuContentParent;
   playChild: MainMenuTab;
   customizationChild: CustomizationChild;
 }
@@ -15,22 +17,51 @@ const LEGACY_FRAME_LAYOUT_STORAGE_KEY = 'ibrawls_main_menu_frame_layout_v1';
 
 export const DEFAULT_MAIN_MENU_NAV: MainMenuNavState = {
   parent: 'play',
+  contentParent: 'play',
   playChild: 'single',
   customizationChild: 'armory',
 };
 
 const MAIN_MENU_PARENTS: readonly MainMenuParent[] = ['play', 'customization', 'tools', 'system'];
+const MAIN_MENU_CONTENT_PARENTS: readonly MainMenuContentParent[] = ['play', 'customization', 'system'];
 const MAIN_MENU_PLAY_CHILDREN: readonly MainMenuTab[] = ['single', 'multi', 'theater'];
-const MAIN_MENU_CUSTOMIZATION_CHILDREN: readonly CustomizationChild[] = ['armory', 'hotkeys', 'gamepad', 'identity'];
+const MAIN_MENU_CUSTOMIZATION_CHILDREN: readonly CustomizationChild[] = ['armory', 'hotkeys', 'gamepad'];
+
+function isMainMenuParent(value: unknown): value is MainMenuParent {
+  return MAIN_MENU_PARENTS.includes(value as MainMenuParent);
+}
+
+function isMainMenuContentParent(value: unknown): value is MainMenuContentParent {
+  return MAIN_MENU_CONTENT_PARENTS.includes(value as MainMenuContentParent);
+}
+
+export function getMainMenuContentParent(nav: Pick<MainMenuNavState, 'parent'> & Partial<Pick<MainMenuNavState, 'contentParent'>>): MainMenuContentParent {
+  if (isMainMenuContentParent(nav.contentParent)) {
+    return nav.contentParent;
+  }
+  return isMainMenuContentParent(nav.parent) ? nav.parent : DEFAULT_MAIN_MENU_NAV.contentParent;
+}
+
+export function selectMainMenuParentState(previous: MainMenuNavState, parent: MainMenuParent): MainMenuNavState {
+  return {
+    ...previous,
+    parent,
+    contentParent: parent === 'tools' ? getMainMenuContentParent(previous) : parent,
+  };
+}
 
 export function parseStoredMainMenuNav(raw: string | null): MainMenuNavState {
   if (!raw) return DEFAULT_MAIN_MENU_NAV;
   try {
     const parsed = JSON.parse(raw) as Partial<MainMenuNavState> | null;
+    const parent = isMainMenuParent(parsed?.parent)
+      ? parsed.parent
+      : DEFAULT_MAIN_MENU_NAV.parent;
     return {
-      parent: MAIN_MENU_PARENTS.includes(parsed?.parent as MainMenuParent)
-        ? (parsed?.parent as MainMenuParent)
-        : DEFAULT_MAIN_MENU_NAV.parent,
+      parent,
+      contentParent: isMainMenuContentParent(parsed?.contentParent)
+        ? parsed.contentParent
+        : getMainMenuContentParent({ parent }),
       playChild: MAIN_MENU_PLAY_CHILDREN.includes(parsed?.playChild as MainMenuTab)
         ? (parsed?.playChild as MainMenuTab)
         : DEFAULT_MAIN_MENU_NAV.playChild,
@@ -71,15 +102,24 @@ export function useMainMenuNav({ onNavChange }: UseMainMenuNavOptions = {}) {
   }, [onNavChange]);
 
   const selectParent = useCallback((parent: MainMenuParent) => {
-    updateNav({ parent });
-  }, [updateNav]);
+    setNav((previous) => {
+      const next = selectMainMenuParentState(previous, parent);
+      try {
+        localStorage.setItem(MAIN_MENU_NAV_STORAGE_KEY, JSON.stringify(next));
+      } catch {
+        // Persistence is best-effort; in-memory nav still changes.
+      }
+      return next;
+    });
+    onNavChange?.();
+  }, [onNavChange]);
 
   const selectPlayChild = useCallback((playChild: MainMenuTab) => {
-    updateNav({ parent: 'play', playChild });
+    updateNav({ parent: 'play', contentParent: 'play', playChild });
   }, [updateNav]);
 
   const selectCustomizationChild = useCallback((customizationChild: CustomizationChild) => {
-    updateNav({ parent: 'customization', customizationChild });
+    updateNav({ parent: 'customization', contentParent: 'customization', customizationChild });
   }, [updateNav]);
 
   return {

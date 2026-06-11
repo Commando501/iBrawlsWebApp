@@ -164,7 +164,7 @@ iBrawls includes a high-fidelity 3D "Theater Mode" archive that allows players t
 
 ## Controls & Inputs
 
-iBrawls supports both classic Keyboard + Mouse inputs and native Gamepad (Xbox/PlayStation controller) support, configurable via the custom settings panel. The main menu **Customization** navigation button toggles the docked Controls / Gamepad / Armor frame without leaving the selected play mode.
+iBrawls supports both classic Keyboard + Mouse inputs and native Gamepad (Xbox/PlayStation controller) support, configurable via the custom settings panel. Main-menu parent buttons such as **Play**, **Customization**, and **Creative Tools** reveal their child actions directly beneath the parent navigation row, so users can switch setup, controls, armor, and tooling views without hunting through a separate side dock.
 
 The main menu frames are resizable on desktop: drag the docked dividers between game setup, customization, and global chat to resize the layout. Frame sizes persist locally under `ibrawls_main_menu_frame_layout_v1`; use **Reset Frame Layout** in the menu header to restore the default proportions. Global chat messages are normalized, capped at 240 characters, and rate-limited by the relay so rapid spam bursts are rejected before broadcast.
 

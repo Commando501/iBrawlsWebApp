@@ -9,7 +9,6 @@ import {
   PilotIdentitySubframe,
   PlayerListSubframe,
 } from './GlobalBroadcastPanel';
-import { IdentityPanel } from './IdentityPanel';
 import { MainMenuBroadcastRail } from './MainMenuBroadcastRail';
 
 const noop = () => {};
@@ -57,19 +56,4 @@ test('MainMenuBroadcastRail places pilot identity before player list and chat', 
   assert.equal(childTypes[1], PilotIdentitySubframe);
   assert.equal(childTypes[2], PlayerListSubframe);
   assert.equal(childTypes[3], GlobalChatPanel);
-});
-
-test('IdentityPanel keeps only nameplate customization after account management moves to the front rail', () => {
-  const element = IdentityPanel({
-    playerName: 'Spartan',
-    onPlayerNameChange: noop,
-  });
-
-  const childTypes = React.isValidElement(element)
-    ? React.Children.toArray(element.props.children)
-        .filter(React.isValidElement)
-        .map((child) => child.type)
-    : [];
-
-  assert.equal(childTypes.includes(PilotIdentitySubframe), false);
 });
