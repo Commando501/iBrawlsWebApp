@@ -120,6 +120,36 @@ test('custom armor pieces and sanitized loadouts carry v2 model type', () => {
   assert.equal(loadout.customArmor.torso.modelType, 'large');
 });
 
+test('sanitizeCharacterLoadoutForNetwork preserves v3 model system without custom mesh data', () => {
+  const loadout = sanitizeCharacterLoadoutForNetwork({
+    modelSystem: 'v3',
+    modelType: 'large',
+    helmet: 'mark-vi',
+    torso: 'scout',
+    hammerPreset: 'gravity-axe',
+    meshImportPath: 'C:/private/reference.obj',
+    rawMesh: { vertices: [0, 1, 2] },
+  }) as any;
+
+  assert.equal(loadout.modelSystem, 'v3');
+  assert.equal(loadout.modelType, undefined);
+  assert.equal(loadout.helmet, 'mark-vi');
+  assert.equal(loadout.torso, 'scout');
+  assert.equal(loadout.hammerPreset, 'gravity-axe');
+  assert.equal(loadout.meshImportPath, undefined);
+  assert.equal(loadout.rawMesh, undefined);
+});
+
+test('sanitizeCharacterLoadoutForNetwork keeps v2 model type semantics unchanged', () => {
+  const loadout = sanitizeCharacterLoadoutForNetwork({
+    modelSystem: 'v2',
+    modelType: 'large',
+  }) as any;
+
+  assert.equal(loadout.modelSystem, 'v2');
+  assert.equal(loadout.modelType, 'large');
+});
+
 test('shared preview loadout signature tracks large custom armor without serializing voxels', async () => {
   const { getPreviewLoadoutSignature } = await import('./previewModelUtils');
   const voxels = Array.from({ length: 3_000 }, (_, index) => ({

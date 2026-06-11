@@ -88,6 +88,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
   isMultiplayer = false,
   multiplayerRole = null,
   multiplayerSocket = null,
+  matchLobbyConfig = null,
   multiplayerSpawnSlot = 0,
   opponentClientId = '',
   opponentPlayerName = '',
@@ -381,6 +382,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         refs: threeRef.current,
         multiplayerRole,
         secretAudioRef,
+        matchLobbyConfig,
         createOrUpdateRemotePlayer,
         resizeArena,
         pushStatsUpdate,
@@ -404,7 +406,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         multiplayerSocket.removeEventListener('message', handleWsMessage);
       };
     }
-  }, [isMultiplayer, multiplayerRole, multiplayerSocket, multiplayerSpawnSlot, selectedMap, customMap, replayData]);
+  }, [isMultiplayer, multiplayerRole, multiplayerSocket, matchLobbyConfig, multiplayerSpawnSlot, selectedMap, customMap, replayData]);
 
   // Keep isMultiplayer and multiplayerRole in sync with props
   useEffect(() => {

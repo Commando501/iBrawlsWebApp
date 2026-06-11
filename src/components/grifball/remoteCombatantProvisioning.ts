@@ -3,6 +3,8 @@ import { createRemoteCombatant } from '../../game/roster';
 import { type CharacterModelType, type UniversalSettings } from '../../types';
 import { resolveCharacterModelType } from '../../characterModelTypes';
 import { type CharacterLoadout } from '../VoxelModels';
+import { resolveLoadoutForVisualPolicy } from '../../model/modelVisualPolicy';
+import { type VisualModelPolicy } from '../../model/modelSystem';
 import { createCombatantMeshRig } from './combatantModels';
 import { getInwardSpawnYaw } from './combatGeometry';
 import { type CustomMapData } from '../../types';
@@ -27,18 +29,48 @@ type RemoteCombatantUpdate = {
   yaw?: number;
   pitch?: number;
   modelType?: CharacterModelType;
+  visualModelPolicy?: VisualModelPolicy | null;
   loadout?: CharacterLoadout;
 };
 
-const createVisualLoadout = (data: RemoteCombatantUpdate, modelType: CharacterModelType): CharacterLoadout => (
-  data.controller === 'ai'
-    ? { modelSystem: 'v1' }
-    : {
+const DEFAULT_REMOTE_VISUAL_MODEL_POLICY: VisualModelPolicy = 'v2';
+
+const resolveGameplayModelType = (data: RemoteCombatantUpdate): CharacterModelType | undefined => {
+  if (data.loadout?.modelType !== undefined) {
+    return resolveCharacterModelType(
+      data.loadout.modelType,
+      data.loadout.modelSystem ?? data.visualModelPolicy ?? DEFAULT_REMOTE_VISUAL_MODEL_POLICY
+    );
+  }
+
+  if (data.modelType !== undefined) {
+    return resolveCharacterModelType(
+      data.modelType,
+      data.visualModelPolicy ?? DEFAULT_REMOTE_VISUAL_MODEL_POLICY
+    );
+  }
+
+  return undefined;
+};
+
+const createVisualLoadout = (data: RemoteCombatantUpdate, modelType: CharacterModelType): CharacterLoadout => {
+  if (data.controller === 'ai') {
+    return { modelSystem: 'v1' };
+  }
+
+  const visualModelPolicy = data.visualModelPolicy ?? DEFAULT_REMOTE_VISUAL_MODEL_POLICY;
+  const loadout = visualModelPolicy === 'v2'
+    ? {
         ...(data.loadout ?? {}),
-        modelSystem: 'v2',
-        modelType,
+        modelType: data.loadout?.modelType ?? modelType,
       }
-);
+    : data.loadout;
+
+  return resolveLoadoutForVisualPolicy({
+    visualModelPolicy,
+    loadout,
+  });
+};
 
 export function createOrUpdateRemoteCombatantForState({
   state,
@@ -62,6 +94,7 @@ export function createOrUpdateRemoteCombatantForState({
   const scene = refs.scene;
   if (!scene) return;
 
+  const gameplayModelType = resolveGameplayModelType(data);
   let playerState = state.otherPlayers.get(clientId);
   if (!playerState) {
     const isHostPlayer =
@@ -83,7 +116,7 @@ export function createOrUpdateRemoteCombatantForState({
         activeWeapon: data.activeWeapon as any,
         respawnTimer: data.respawnTimer,
         invulnerabilityTimer: data.invulnerabilityTimer,
-        modelType: data.loadout?.modelType ?? data.modelType,
+        modelType: gameplayModelType,
       },
     });
     playerState.yaw = spawnPos.spawnYaw ?? getInwardSpawnYaw(playerState.pos);
@@ -102,8 +135,8 @@ export function createOrUpdateRemoteCombatantForState({
   if (data.respawnTimer !== undefined) playerState.respawnTimer = data.respawnTimer;
   if (data.hue !== undefined) playerState.hue = data.hue;
   if (data.playerName) playerState.playerName = data.playerName;
-  if (data.loadout?.modelType || data.modelType) {
-    playerState.modelType = resolveCharacterModelType(data.loadout?.modelType ?? data.modelType, 'v2');
+  if (gameplayModelType !== undefined) {
+    playerState.modelType = gameplayModelType;
   }
   if (data.invulnerabilityTimer !== undefined) playerState.invulnerabilityTimer = data.invulnerabilityTimer;
 

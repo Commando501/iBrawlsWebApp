@@ -4,6 +4,7 @@ import {
   V2_PART_CONSTRAINTS,
 } from './v2ArmorConstraints';
 import { resolveCharacterModelType } from '../characterModelTypes';
+import { isModelSystem } from '../model/modelSystem';
 import type { CharacterModelType } from '../types';
 
 export type CustomArmorSlot = 'helmet' | 'torso' | 'arm' | 'leg';
@@ -659,7 +660,7 @@ export function sanitizeCharacterLoadoutForNetwork(loadout: unknown): unknown | 
     const value = raw[key];
     if (typeof value === 'string' && allowed.has(value)) out[key] = value;
   }
-  if (raw.modelSystem === 'v1' || raw.modelSystem === 'v2') out.modelSystem = raw.modelSystem;
+  if (isModelSystem(raw.modelSystem)) out.modelSystem = raw.modelSystem;
   const modelType = resolveCharacterModelType(raw.modelType, raw.modelSystem);
   if (out.modelSystem === 'v2') out.modelType = modelType;
   if (raw.paintJob && typeof raw.paintJob === 'object' && !Array.isArray(raw.paintJob)) {

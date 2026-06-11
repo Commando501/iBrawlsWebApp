@@ -35,6 +35,15 @@ const provisionCombatant = (
   constrainCombatantToArena: () => {},
 });
 
+const getAppliedLoadout = (
+  refs: ReturnType<typeof createInitialGrifballThreeRefs>,
+  clientId: string
+) => {
+  const meshes = refs.otherPlayerMeshes.get(clientId);
+  assert.ok(meshes);
+  return JSON.parse(meshes.group.userData.appliedLoadoutKey);
+};
+
 test('offline AI roster visuals stay on the V1 model system', () => {
   const { state, refs } = createStateAndRefs();
   const bot = createOfflineBotCombatant({
@@ -78,4 +87,85 @@ test('remote human roster visuals can still use the V2 model system', () => {
   assert.ok(meshes);
   assert.equal(meshes.group.userData.modelSystem, 'v2');
   assert.equal(meshes.group.userData.modelType, 'large');
+  assert.equal(state.otherPlayers.get(remote.id)?.modelType, 'large');
+});
+
+test('remote human visual policy v1 forces V1 over V3 personal loadout', () => {
+  const { state, refs } = createStateAndRefs();
+
+  provisionCombatant(state, refs, 'peer', {
+    controller: 'remote',
+    visualModelPolicy: 'v1',
+    loadout: { modelSystem: 'v3', modelType: 'large' },
+  });
+
+  const meshes = refs.otherPlayerMeshes.get('peer');
+  assert.ok(meshes);
+  assert.notEqual(meshes.group.userData.modelSystem, 'v2');
+  assert.equal(meshes.group.userData.appliedLoadoutKey, JSON.stringify({ modelSystem: 'v1' }));
+});
+
+test('remote human visual policy v2 normalizes V3 personal model type to medium', () => {
+  const { state, refs } = createStateAndRefs();
+
+  provisionCombatant(state, refs, 'peer', {
+    controller: 'remote',
+    visualModelPolicy: 'v2',
+    loadout: { modelSystem: 'v3', modelType: 'large' },
+  });
+
+  const meshes = refs.otherPlayerMeshes.get('peer');
+  assert.ok(meshes);
+  assert.equal(meshes.group.userData.modelSystem, 'v2');
+  assert.equal(meshes.group.userData.modelType, 'medium');
+  assert.equal(state.otherPlayers.get('peer')?.modelType, 'medium');
+  assert.deepEqual(getAppliedLoadout(refs, 'peer'), { modelSystem: 'v2', modelType: 'medium' });
+});
+
+test('remote human visual policy v3 carries a V3 applied loadout key', () => {
+  const { state, refs } = createStateAndRefs();
+
+  provisionCombatant(state, refs, 'peer', {
+    controller: 'remote',
+    visualModelPolicy: 'v3',
+    loadout: {
+      modelSystem: 'v1',
+      helmet: 'odst',
+      hammerPreset: 'gravity-axe',
+    },
+  });
+
+  const appliedLoadout = getAppliedLoadout(refs, 'peer');
+  assert.equal(appliedLoadout.modelSystem, 'v3');
+  assert.equal(appliedLoadout.helmet, 'odst');
+  assert.equal(appliedLoadout.torso, 'mark-vi');
+  assert.equal(appliedLoadout.hammerPreset, 'gravity-axe');
+});
+
+test('remote human visual policy v3 does not let V3 personal model type affect gameplay state', () => {
+  const { state, refs } = createStateAndRefs();
+  const remote = createRemoteCombatant({
+    id: 'peer',
+    playerName: 'Peer',
+    spawnZ: -12,
+    settings: DEFAULT_ADMIN_SETTINGS,
+    data: { modelType: 'medium' },
+  });
+  state.otherPlayers.set(remote.id, remote);
+
+  provisionCombatant(state, refs, remote.id, {
+    ...remote,
+    controller: 'remote',
+    visualModelPolicy: 'v3',
+    loadout: {
+      modelSystem: 'v3',
+      modelType: 'large',
+      helmet: 'odst',
+    },
+  });
+
+  const appliedLoadout = getAppliedLoadout(refs, remote.id);
+  assert.equal(appliedLoadout.modelSystem, 'v3');
+  assert.equal(appliedLoadout.modelType, 'large');
+  assert.equal(state.otherPlayers.get(remote.id)?.modelType, 'medium');
 });

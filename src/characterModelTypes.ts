@@ -50,7 +50,7 @@ export function isCharacterModelType(value: unknown): value is CharacterModelTyp
 }
 
 export function resolveCharacterModelType(value: unknown, modelSystem?: unknown): CharacterModelType {
-  if (modelSystem === 'v1') return DEFAULT_CHARACTER_MODEL_TYPE;
+  if (modelSystem === 'v1' || modelSystem === 'v3') return DEFAULT_CHARACTER_MODEL_TYPE;
   return isCharacterModelType(value) ? value : DEFAULT_CHARACTER_MODEL_TYPE;
 }
 

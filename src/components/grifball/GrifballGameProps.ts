@@ -1,4 +1,5 @@
 import type React from 'react';
+import type { MatchLobbyConfig } from '../../network/protocol';
 import {
   type AIBehaviorPreset,
   type CharacterModelType,
@@ -23,6 +24,7 @@ export interface GrifballGameProps {
   isMultiplayer?: boolean;
   multiplayerRole?: 'host' | 'client' | 'observer' | null;
   multiplayerSocket?: WebSocket | null;
+  matchLobbyConfig?: MatchLobbyConfig | null;
   multiplayerSpawnSlot?: number;
   opponentClientId?: string;
   opponentPlayerName?: string;
