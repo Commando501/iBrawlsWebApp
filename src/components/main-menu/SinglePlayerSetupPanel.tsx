@@ -1,6 +1,7 @@
 import type { Dispatch, SetStateAction } from 'react';
 import type { AIPreset, TournamentState, UniversalSettings } from '../../types';
 import type { TournamentDifficulty } from '../../features/tournament/tournament';
+import { normalizeVisualModelPolicy, type VisualModelPolicy } from '../../model/modelSystem';
 import { SandboxSetupPanel } from './SandboxSetupPanel';
 import { AiBehaviorEditorPanel } from './AiBehaviorEditorPanel';
 import { TournamentBracketPanel } from '../tournament/TournamentBracketPanel';
@@ -108,6 +109,10 @@ export function SinglePlayerSetupPanel({
 
       {singlePlayerMode === 'sandbox' ? (
         <SandboxSetupPanel
+          visualModelPolicy={normalizeVisualModelPolicy(adminSettings.visualModelPolicy)}
+          onVisualModelPolicyChange={(visualModelPolicy: VisualModelPolicy) => {
+            setAdminSettings((previous) => ({ ...previous, visualModelPolicy }));
+          }}
           onOpenBotSetup={onOpenBotSetup}
         />
       ) : singlePlayerMode === 'ai-editor' ? (
