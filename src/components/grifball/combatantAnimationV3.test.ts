@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import * as THREE from 'three';
 import { buildV3SpartanModel } from '../v3/VoxelModelsV3';
+import { animateSpartanCombatantModel } from './combatantAnimation';
 import { buildCombatantRigForModel } from './combatantRig';
 import {
   animateV3CombatantModel,
@@ -101,6 +102,27 @@ describe('animateV3CombatantModel', () => {
 
     assert.deepEqual(model.userData.upperTorso.rotation.toArray().slice(0, 3), [0, 0, 0]);
     assert.deepEqual(model.userData.leftLeg.rotation.toArray().slice(0, 3), [0, 0, 0]);
+  });
+
+  it('animateSpartanCombatantModel dispatches V3 models to the V3 layered runtime', () => {
+    const model = createV3Model();
+    const refs = createInitialGrifballThreeRefs();
+
+    animateSpartanCombatantModel({
+      refs,
+      mesh: model,
+      vel: new THREE.Vector3(2.5, 0, 0),
+      yaw: 0,
+      hp: 100,
+      activeWeapon: 'pistol',
+      weaponState: 'firing',
+      weaponTimer: 0.04,
+      dt: 1,
+      settings: {},
+    });
+
+    assert.notEqual(model.userData.upperTorso.rotation.x, 0);
+    assert.notEqual(model.userData.leftLeg.rotation.x, 0);
   });
 });
 

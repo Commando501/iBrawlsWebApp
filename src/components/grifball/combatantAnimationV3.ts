@@ -5,6 +5,7 @@ import {
   DEFAULT_HAMMER_SLAM_WINDUP_TIME,
   resolveHammerSlamTiming,
 } from '../../game/hammerSlamTiming';
+import type { UniversalSettings } from '../../types';
 import type { WeaponPose } from './attackAnimationPresets';
 import type { GrifballThreeRefs } from './threeRefs';
 
@@ -33,7 +34,7 @@ export interface V3CombatantAnimationInput {
   isLunging?: boolean;
   hammerSlamWindupTime?: number;
   hammerSlamAttackTime?: number;
-  settings?: Record<string, unknown>;
+  settings?: Partial<UniversalSettings>;
 }
 
 export interface V3FirstPersonWeaponPoseInput {
@@ -41,7 +42,7 @@ export interface V3FirstPersonWeaponPoseInput {
   weaponState: string;
   weaponTimer: number;
   isLunging?: boolean;
-  settings?: Record<string, unknown>;
+  settings?: Partial<UniversalSettings>;
 }
 
 type V3BroadGroups = Record<V3BroadBodyGroupName, THREE.Group>;
@@ -172,14 +173,14 @@ const applyV3HammerLayer = ({
   weaponTimer: number;
   hammerSlamWindupTime?: number;
   hammerSlamAttackTime?: number;
-  settings: Record<string, unknown>;
+  settings: Partial<UniversalSettings>;
   alpha: number;
 }): void => {
   const timing = resolveHammerSlamTiming({
     ...settings,
     hammerSlamWindupTime,
     hammerSlamAttackTime,
-  } as any);
+  });
 
   if (weaponState === 'swing_up') {
     const pct = easeOutCubic(weaponTimer / timing.windupTime);
@@ -322,6 +323,7 @@ export function getFirstPersonV3WeaponPose({
   weaponState,
   weaponTimer,
   isLunging = false,
+  settings = {},
 }: V3FirstPersonWeaponPoseInput): WeaponPose {
   if (activeWeapon === 'sword') {
     const lunge = isLunging ? easeOutCubic(Math.min(weaponTimer / 0.18, 1)) : 0;
@@ -343,7 +345,7 @@ export function getFirstPersonV3WeaponPose({
     };
   }
 
-  const timing = resolveHammerSlamTiming({} as any);
+  const timing = resolveHammerSlamTiming(settings);
   const windup = weaponState === 'swing_up'
     ? easeOutCubic(weaponTimer / timing.windupTime)
     : 0;
