@@ -23,9 +23,12 @@ import { createRng, type Rng } from '../rng';
 import { encodeObservation, OBS_DIM } from '../env/observation';
 import { ACTION_DIM, decodeAction } from '../env/action';
 import {
-  computeStepRewards,
+  computeStepRewardDetails,
+  computeActionDisciplineRewards,
+  mergeRewardDetails,
   initRewardMemory,
   DEFAULT_REWARD_CONFIG,
+  REWARD_COMPONENT_KEYS,
   type RewardConfig,
   type RewardMemory,
 } from '../env/reward';
@@ -96,6 +99,7 @@ export class CombatVecEnv {
   private readonly doneBuf: Uint8Array;
   private readonly truncatedBuf: Uint8Array;
   private readonly terminalObs: (Float32Array | null)[];
+  private readonly rewardComponentBuf: Float32Array;
 
   constructor(config: CombatVecEnvConfig) {
     const sizes = config.worldSizes?.length ? config.worldSizes : DEFAULT_WORLD_SIZES;
@@ -137,6 +141,7 @@ export class CombatVecEnv {
     this.doneBuf = new Uint8Array(n);
     this.truncatedBuf = new Uint8Array(n);
     this.terminalObs = new Array(n).fill(null);
+    this.rewardComponentBuf = new Float32Array(REWARD_COMPONENT_KEYS.length);
     this.agentTeams = new Array(n).fill('t0');
   }
 
@@ -183,6 +188,7 @@ export class CombatVecEnv {
   }
 
   step(actions: Int32Array): VecStepResult {
+    this.rewardComponentBuf.fill(0);
     for (const w of this.worlds) {
       for (let j = 0; j < w.size; j++) {
         const g = w.offset + j;
@@ -202,11 +208,16 @@ export class CombatVecEnv {
           byId[id] = decodeAction(actions, state, id, (w.offset + j) * this.actDim);
         }
 
+        const details = computeActionDisciplineRewards(state, this.reward, w.memory, byId);
         const events = stepSimulation(state, byId, { settings: w.settings });
-        const rewards = computeStepRewards(state, events, this.reward, w.memory);
+        mergeRewardDetails(details, computeStepRewardDetails(state, events, this.reward, w.memory));
+        const rewards = details.rewards;
         for (let j = 0; j < w.size; j++) {
           this.rewardBuf[w.offset + j] += rewards[state.combatants[j].id] ?? 0;
         }
+        REWARD_COMPONENT_KEYS.forEach((key, i) => {
+          this.rewardComponentBuf[i] += details.components[key];
+        });
 
         const truncated = !events.matchEnded && state.tick >= this.maxTicks;
         const done = events.matchEnded || truncated;
@@ -233,6 +244,7 @@ export class CombatVecEnv {
       done: this.doneBuf,
       truncated: this.truncatedBuf,
       info: { terminalObs: this.terminalObs },
+      rewardComponents: this.rewardComponentBuf,
     };
   }
 }

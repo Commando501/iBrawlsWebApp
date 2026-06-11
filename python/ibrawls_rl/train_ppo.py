@@ -16,6 +16,7 @@ import shutil
 from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import BaseCallback, CheckpointCallback
 from stable_baselines3.common.logger import KVWriter
+from stable_baselines3.common.vec_env import VecFrameStack
 
 from .config import TrainConfig, reward_dict, settings_markdown, randomize_spec
 from .envs.grifball_vec_env import GrifballVecEnv
@@ -51,10 +52,12 @@ try:
                     num_worlds=min(16, max(4, self.episodes)),
                     kill_target=5, max_minutes=2.0,
                     decision_interval=self.cfg.decision_interval,
+                    frame_stack=self.cfg.frame_stack,
                 )
             return eval_vs(
                 self.model, opponent=self.opponent, matches=self.episodes,
                 decision_interval=self.cfg.decision_interval,
+                frame_stack=self.cfg.frame_stack,
             )
 
         def _on_step(self) -> bool:
@@ -137,6 +140,35 @@ class JSONLLoggerCallback(BaseCallback):
             self._writer.close()
 
 
+def _unwrap_env_attr(env, attr: str):  # noqa: ANN001
+    current = env
+    seen = set()
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if hasattr(current, attr):
+            return getattr(current, attr)
+        current = getattr(current, "venv", None)
+    return None
+
+
+class RewardComponentLoggerCallback(BaseCallback):
+    """Record sim-side reward component aggregates into SB3 metrics."""
+
+    def _on_step(self) -> bool:
+        components = _unwrap_env_attr(self.training_env, "last_reward_components")
+        if isinstance(components, dict):
+            for key, value in components.items():
+                self.logger.record(f"reward_component/{key}", float(value))
+        return True
+
+
+def _maybe_stack_env(env: GrifballVecEnv, frame_stack: int):  # noqa: ANN001
+    stack = max(1, int(frame_stack or 1))
+    if stack <= 1:
+        return env
+    return VecFrameStack(env, n_stack=stack)
+
+
 def _log_settings(cfg: TrainConfig) -> None:
     """Print the labeled settings table and write it to the TB TEXT tab + a file."""
     table = settings_markdown(cfg)
@@ -204,6 +236,7 @@ def run_training(cfg: TrainConfig) -> str:
             num_workers=cfg.num_workers,
             decision_interval=cfg.decision_interval,
         )
+    env = _maybe_stack_env(env, cfg.frame_stack)
 
     # Linear schedule: SB3 calls this with progress_remaining going 1 -> 0.
     lr = cfg.learning_rate
@@ -256,6 +289,7 @@ def run_training(cfg: TrainConfig) -> str:
     # parallel_matches — using parallel_matches here would set a wrong cadence in combat mode.
     callbacks: list = [
         JSONLLoggerCallback(cfg.logdir),
+        RewardComponentLoggerCallback(),
         CheckpointCallback(
             save_freq=max(1, cfg.save_every // max(1, env.num_envs)),
             save_path=os.path.join(cfg.logdir, "checkpoints"),

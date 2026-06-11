@@ -101,6 +101,8 @@ Championship stadium, synthwave, rainy-streets, and winter-rink custom-map scene
 | `teamScoring.ts` | Per-team tally (`blue` / `red`) as scoring source of truth; legacy `scorePlayer` / `scoreEnemy` / `enemy*` fields bridge through perspective-aware accessors; `RosterSlotConfig.team` drives combatant team assignment |
 | `aiGrifballRoles.ts` | Grifball AI role resolution (`runner`, `escort`, `chaser`), fanned V-shaped screening target positions, allied spacing repulsion, and runner obstacle-avoidance steering vectors |
 
+The reinforcement trainer and dashboard live under `python/ibrawls_rl/`. The TypeScript sim remains the gameplay source of truth while Python owns PPO training, frame-stacked short history, reward-component logging, combat evaluation matrices, and frozen snapshot league grades. The sim action schema includes nearest-hostile aim for combat policies, and optional reward-discipline penalties expose wasted attack/dash/jump/swap/repeated-action behavior as `reward_component/*` metrics in the control board.
+
 
 All offline AI combatants (including `main_ai` at roster slot 0) share the same voxel Spartan mesh rig via `otherPlayerMeshes` / `createOrUpdateRemotePlayer` (including mesh provisioning on orchestrator spawn/hue change). Offline AI is currently clamped to the Medium V2 model profile even if stale bot setup state requests Large; player and remote-human loadouts can still use Large. The legacy `enemyGroup` path is retained **only** for multiplayer observer/host-client spectate rendering — not for offline bot display. Offline sandbox stores every AI in `otherPlayers` with `controller: 'ai'`; multiplayer stores remote humans with `controller: 'remote'` and never runs local AI ticks on them.
 

@@ -67,6 +67,13 @@ Sparse rewards (`win`, `goal_scored`, `goal_conceded`) = the true goal.
 Dense rewards (`possession`, `ball_progress`, `kill`, `death`, `time_penalty`) = hints that
 help early learning but can mislead if too strong.
 
+Human-like combat also has **discipline rewards**. These are optional penalties for wasted
+inputs: `invalid_attack`, `invalid_dash`, `invalid_jump`, `invalid_swap`, and
+`action_repeat`. Leave them at `0` while proving a new reward setup can learn at all, then
+turn them on lightly when a model starts winning by mashing attack/dash/jump. The dashboard
+logs these under `reward_component/*`, alongside kill, approach, and time-penalty components,
+so you can see whether a run is learning combat or just paying itself through shaping.
+
 ## 5b. Combat mode (deathmatch) — one generalist for 1v1 + FFA
 
 Set `mode = "combat"` in `config.toml`. Combat trains **one model that handles 1v1, free-
@@ -145,8 +152,15 @@ Changing the interval starts a new training regime — don't warm-start a 60Hz b
 
 Every evaluation also reports **behavior stats** (and the trainer logs them under
 `behavior/*`): idle %, **move-switch rate** (twitchiness — humans hold a heading, ≲0.3;
-a jittery policy flips most decisions, ≳0.5), and attack/jump/dash usage. That makes
-"does it move like a person?" a measured number instead of a vibe.
+a jittery policy flips most decisions, ≳0.5), repeated-action rate, nearest-enemy aim usage,
+and attack/jump/dash usage. That makes "does it move like a person?" a measured number
+instead of a vibe. Combat policies can now aim directly at the nearest hostile target; if
+`aim_enemy_rate` stays near zero in combat, the model is not using the clean targeting action.
+
+For short-term timing memory without changing algorithms, set `[network] frame_stack = 4`.
+That stacks recent observations for the MLP policy. A frame-stacked brain has a different
+input shape, so train and evaluate it with the same `frame_stack` value and do not warm-start
+from an unstacked model.
 
 ## 5e. If it's NOT learning (win-rate flat at 0)
 
@@ -234,6 +248,18 @@ python -m ibrawls_rl.evaluate runs/s3_heur/final_model.zip   --opponent heuristi
 
 Checkpoints during a run live in `runs/<name>/checkpoints/` — you can evaluate any of them the
 same way to see how the bot improved over time.
+
+Combat has two stronger grading modes:
+
+```bash
+python -m ibrawls_rl.evaluate runs/combat/final_model.zip --mode combat --matrix --matches 100
+python -m ibrawls_rl.evaluate runs/combat/final_model.zip --mode combat \
+  --league-snapshot runs/combat_v1/final_model.zip --matches 100
+```
+
+The matrix grade checks 1v1, 4-player, and 8-player scenarios and returns a promotion score
+that rewards wins while penalizing draws and spammy behavior. Frozen snapshot grades use old
+checkpoints as opponents, which helps catch policies that only beat the current random test.
 
 ## 8. Speed notes
 

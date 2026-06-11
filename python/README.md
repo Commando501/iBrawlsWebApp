@@ -10,7 +10,7 @@ over a **batched binary protocol** so tens of millions of steps move only flat t
  Python (PPO)  ──HELLO(json)──▶  Node vec-env server (npx tsx src/sim/server/main.ts)
    GrifballVecEnv               ◀──header(json)──
         │       ──RESET / STEP(int32 actions)──▶   N parallel SimState matches
-        ▼       ◀──obs+reward+done (raw f32/u8)──
+        ▼       ◀──obs+reward+done+reward_components (raw f32/u8)──
    SB3 PPO MlpPolicy
 ```
 
@@ -29,6 +29,19 @@ over a **batched binary protocol** so tens of millions of steps move only flat t
 - `ibrawls_rl/train_ppo.py` — SB3 PPO baseline (learner vs heuristic), TensorBoard,
   checkpoints, periodic eval.
 - `ibrawls_rl/eval.py` — win-rate / episodic-return vs heuristic.
+
+## Human-likeness controls
+
+- Combat policies now get an explicit **nearest-hostile aim** factor, so the action space can
+  target enemies directly instead of discovering targeting through attack/dash spam.
+- Optional reward-discipline weights (`invalid_attack`, `invalid_dash`, `invalid_jump`,
+  `invalid_swap`, `action_repeat`) penalize wasted inputs. The sim reports aggregate
+  `reward_component/*` metrics so the dashboard can show whether reward came from kills,
+  approach shaping, time pressure, or action-discipline penalties.
+- `network.frame_stack` enables short observation history through SB3 `VecFrameStack`
+  (`1` = off). Train and evaluate a model with the same frame-stack value.
+- Combat evaluation supports a matrix grade (`--matrix`) across 1v1, 4-player, and 8-player
+  scenarios, plus frozen snapshot opponents via repeated `--league-snapshot` paths.
 
 ## Setup
 

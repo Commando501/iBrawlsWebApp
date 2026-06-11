@@ -253,6 +253,22 @@ const METRIC_INFO = {
     } },
   "time/fps": { title: "Speed (steps/sec)", goal: "As high as your cores allow",
     help: "Environment throughput. CPU-bound on the sim; raise num_workers / parallel_matches to lift it." },
+  "reward_component/kill": { title: "Reward: kills", goal: "Positive when fights resolve",
+    help: "Signed kill reward contribution aggregated by the sim for the latest PPO step." },
+  "reward_component/approach": { title: "Reward: approach", goal: "Helpful early, not dominant late",
+    help: "Signed approach shaping contribution. If this dominates, the bot may chase/circle instead of finishing." },
+  "reward_component/timePenalty": { title: "Reward: time pressure", goal: "Small negative",
+    help: "Signed stalling penalty contribution." },
+  "reward_component/invalidAttack": { title: "Penalty: wasted attacks", goal: "Near 0",
+    help: "Penalty from attack inputs while the weapon cannot fire." },
+  "reward_component/invalidDash": { title: "Penalty: wasted dashes", goal: "Near 0",
+    help: "Penalty from dash inputs while dash cannot fire." },
+  "reward_component/invalidJump": { title: "Penalty: wasted jumps", goal: "Near 0",
+    help: "Penalty from jump inputs while already airborne." },
+  "reward_component/invalidSwap": { title: "Penalty: wasted swaps", goal: "Near 0",
+    help: "Penalty from impossible weapon swaps." },
+  "reward_component/actionRepeat": { title: "Penalty: repeated action", goal: "Near 0",
+    help: "Penalty from repeating the exact same non-idle action decision." },
   "behavior/move_switch_rate": { title: "Twitchiness (move switches)", goal: "Human-like ≲ 0.3",
     help: "How often the move direction flips between decisions during eval. Humans hold a heading; ≳0.5 looks robotic-jittery.",
     advise: (v) => v > 0.5
@@ -260,6 +276,10 @@ const METRIC_INFO = {
       : { level: "good", text: "Movement commitment looks human-plausible." } },
   "behavior/idle_frac": { title: "Idle fraction", goal: "Low but nonzero",
     help: "Fraction of eval decisions with no movement input. ~0 = relentless robot; high = passive." },
+  "behavior/action_repeat_rate": { title: "Repeated actions", goal: "Lower is more varied",
+    help: "Fraction of eval decisions exactly repeating the previous full action factor vector." },
+  "behavior/aim_enemy_rate": { title: "Enemy aim usage", goal: "High in combat",
+    help: "Fraction of eval decisions using the nearest-enemy aim factor." },
   "behavior/attack_rate": { title: "Attack rate", goal: "Context-dependent",
     help: "Fraction of eval decisions pressing an attack. 1.0 = button-mashing every decision (not human)." },
   "behavior/jump_rate": { title: "Jump rate", goal: "Context-dependent",
@@ -483,11 +503,14 @@ async function loadModels() {
   syncEvalMode();
 }
 $("#evalModel").addEventListener("change", syncEvalMode);
-$("#evalMode").addEventListener("change", () => { $("#evalOppWrap").style.display = $("#evalMode").value === "combat" ? "none" : "flex"; });
+$("#evalMode").addEventListener("change", syncEvalMode);
 function syncEvalMode() {
   const opt = $("#evalModel").selectedOptions[0];
   if (opt && opt.dataset.mode) $("#evalMode").value = opt.dataset.mode;
-  $("#evalOppWrap").style.display = $("#evalMode").value === "combat" ? "none" : "flex";
+  const combat = $("#evalMode").value === "combat";
+  $("#evalOppWrap").style.display = combat ? "none" : "flex";
+  $("#evalMatrixWrap").style.display = combat ? "flex" : "none";
+  $("#evalLeagueWrap").style.display = combat ? "flex" : "none";
 }
 
 $("#btnEval").addEventListener("click", async () => {
@@ -495,6 +518,9 @@ $("#btnEval").addEventListener("click", async () => {
     model: $("#evalModel").value, mode: $("#evalMode").value,
     opponent: $("#evalOpponent").value, matches: Number($("#evalMatches").value),
     num_envs: Number($("#evalEnvs").value), device: $("#evalDevice").value,
+    frame_stack: Number($("#evalFrameStack").value),
+    matrix: $("#evalMatrix").checked,
+    league_snapshots: $("#evalLeagueSnapshots").value.split(/\r?\n|,/).map((s) => s.trim()).filter(Boolean),
   };
   const res = await api.post("/api/eval/start", body);
   if (!res.ok) { $("#evalState").textContent = res.error || "error"; return; }
@@ -540,8 +566,9 @@ function renderEvalHistory(history) {
   const root = $("#evalHistory");
   if (!history.length) { root.innerHTML = '<p class="muted">No evaluations yet — run one above and it\'ll show up here.</p>'; return; }
   const rows = history.slice();
-  if (histSortBest) rows.sort((a, b) => (b.win_rate || 0) - (a.win_rate || 0));
-  const best = Math.max(...rows.map((r) => r.win_rate || 0));
+  const histScore = (r) => r.win_rate ?? r.summary?.promotion_score ?? 0;
+  if (histSortBest) rows.sort((a, b) => histScore(b) - histScore(a));
+  const best = Math.max(...rows.map(histScore));
   const table = el("table", { class: "guide-table hist-table" },
     el("thead", {}, el("tr", {},
       el("th", {}, "When"), el("th", {}, "Model"), el("th", {}, "Mode"),
@@ -551,14 +578,17 @@ function renderEvalHistory(history) {
   root.innerHTML = ""; root.append(table);
 }
 function histRow(r, best) {
-  const w = (r.win_rate || 0) * 100, d = (r.draw_rate || 0) * 100, l = (r.loss_rate || 0) * 100;
+  const w = ((r.win_rate ?? r.summary?.mean_win_rate) || 0) * 100;
+  const d = ((r.draw_rate ?? r.summary?.mean_draw_rate) || 0) * 100;
+  const l = (r.loss_rate || 0) * 100;
   const bars = el("div", { class: "mini-bars" });
   if (w > 0) bars.append(el("div", { class: "bar win", style: `width:${w}%` }));
   if (d > 0) bars.append(el("div", { class: "bar draw", style: `width:${d}%` }));
   if (l > 0) bars.append(el("div", { class: "bar loss", style: `width:${l}%` }));
   const when = r.ts ? new Date(r.ts * 1000).toLocaleString() : "—";
   const model = (r.model || "—").replace(/^runs\//, "").replace(/\/final_model\.zip$/, " / final").replace(/\.zip$/, "");
-  const isBest = (r.win_rate || 0) === best && best > 0;
+  const score = r.win_rate ?? r.summary?.promotion_score ?? 0;
+  const isBest = score === best && best > 0;
   const b = r.behavior;
   const bTip = b ? Object.entries(BEHAVIOR_INFO)
     .filter(([k]) => b[k] != null)
@@ -587,6 +617,10 @@ $("#btnHistClear").addEventListener("click", async () => {
 });
 
 function renderEvalResult(r) {
+  if (r.summary && Array.isArray(r.scenarios)) {
+    renderEvalMatrixResult(r);
+    return;
+  }
   const w = (r.win_rate || 0) * 100, l = (r.loss_rate || 0) * 100, d = (r.draw_rate || 0) * 100;
   const bars = el("div", { class: "bars" });
   if (w > 0) bars.append(el("div", { class: "bar win", style: `width:${w}%` }, w >= 8 ? Math.round(w) + "%" : ""));
@@ -605,10 +639,41 @@ function renderEvalResult(r) {
   renderEvalAdvice(r);
 }
 
+function renderEvalMatrixResult(r) {
+  const rows = r.scenarios.map((s) => {
+    const b = s.behavior || {};
+    return el("tr", {},
+      el("td", {}, s.name),
+      el("td", {}, `${Math.round((s.win_rate || 0) * 100)}%`),
+      el("td", {}, `${Math.round((s.draw_rate || 0) * 100)}%`),
+      el("td", {}, s.world_size || "-"),
+      el("td", {}, s.kill_target || "-"),
+      el("td", {}, `${Math.round((b.attack_rate || 0) * 100)}% / ${Math.round((b.dash_rate || 0) * 100)}% / ${Math.round((b.action_repeat_rate || 0) * 100)}%`));
+  });
+  const table = el("table", { class: "guide-table" },
+    el("thead", {}, el("tr", {},
+      el("th", {}, "Scenario"), el("th", {}, "Win"), el("th", {}, "Draw"),
+      el("th", {}, "World"), el("th", {}, "Kills"), el("th", {}, "Atk / dash / repeat"))),
+    el("tbody", {}, ...rows));
+  const s = r.summary;
+  const summary = el("div", { class: "summary" },
+    el("div", {}, el("span", { class: "big" }, fmtNum(s.promotion_score)), " promotion score"),
+    el("div", { class: "muted" },
+      `mean win ${Math.round(s.mean_win_rate * 100)}% · mean draw ${Math.round(s.mean_draw_rate * 100)}% · behavior penalty ${Math.round(s.human_likeness_penalty * 100)}%`
+      + (r.decision_interval ? ` · decision interval ${r.decision_interval}` : "")
+      + (r.frame_stack ? ` · frame stack ${r.frame_stack}` : "")));
+  const reco = el("div", { id: "evalReco", class: "eval-reco" });
+  $("#evalResult").innerHTML = "";
+  $("#evalResult").append(summary, table, reco);
+  renderEvalAdvice({ ...r, win_rate: s.mean_win_rate, draw_rate: s.mean_draw_rate, mode: "combat" });
+}
+
 // Human-likeness snapshot: how the policy *moves*, not just whether it wins.
 const BEHAVIOR_INFO = {
   idle_frac: { label: "idle", help: "Fraction of decisions with no movement input. Humans idle a little; ~0 = relentless robot, high = passive." },
   move_switch_rate: { label: "twitchiness", help: "How often the move direction changes between decisions. Humans hold a heading (≲0.3); ≳0.5 looks robotic-jittery." },
+  action_repeat_rate: { label: "repeat", help: "Fraction of decisions repeating the exact previous action." },
+  aim_enemy_rate: { label: "enemy aim", help: "Fraction of decisions using the nearest-enemy aim factor." },
   attack_rate: { label: "attacking", help: "Fraction of decisions pressing an attack." },
   jump_rate: { label: "jumping", help: "Fraction of decisions jumping." },
   dash_rate: { label: "dashing", help: "Fraction of decisions dashing." },

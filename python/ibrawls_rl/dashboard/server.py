@@ -93,6 +93,10 @@ def _record_eval_if_new(st: dict) -> None:
             "ep_return": result.get("ep_return"),
             "behavior": result.get("behavior"),
             "decision_interval": result.get("decision_interval"),
+            "frame_stack": result.get("frame_stack") or meta.get("frame_stack"),
+            "summary": result.get("summary"),
+            "scenarios": result.get("scenarios"),
+            "league_snapshots": result.get("league_snapshots") or meta.get("league_snapshots"),
         })
 
 
@@ -301,8 +305,14 @@ class Handler(BaseHTTPRequestHandler):
                 "--matches", str(int(body.get("matches", 100))),
                 "--num-envs", str(int(body.get("num_envs", 16))),
                 "--device", body.get("device", "cpu")]
+        if int(body.get("frame_stack", 0) or 0) > 0:
+            args += ["--frame-stack", str(int(body.get("frame_stack", 0)))]
         if mode == "combat":
             args += ["--kill-target", str(int(body.get("kill_target", 10)))]
+            if body.get("matrix"):
+                args += ["--matrix"]
+            for path in body.get("league_snapshots") or []:
+                args += ["--league-snapshot", str(path)]
         else:
             args += ["--opponent", body.get("opponent", "random"),
                      "--goal-target", str(int(body.get("goal_target", 3)))]
@@ -312,6 +322,9 @@ class Handler(BaseHTTPRequestHandler):
             "matches": int(body.get("matches", 100)),
             "num_envs": int(body.get("num_envs", 16)),
             "device": body.get("device", "cpu"),
+            "matrix": bool(body.get("matrix")),
+            "frame_stack": int(body.get("frame_stack", 0) or 0),
+            "league_snapshots": body.get("league_snapshots") or [],
         }
         return EVALER.start(args, meta=meta)
 

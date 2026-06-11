@@ -20,13 +20,13 @@ export interface ActionFactor {
 /**
  * Factors (order is the wire order):
  *  - move: idle + 8 ego-relative directions (forward..forward-left)
- *  - aim: hold / toward-ball / toward-enemy-goal
+ *  - aim: hold / toward-ball / toward-enemy-goal / nearest hostile
  *  - attack: none / primary / secondary
  *  - jump / dash / swap: off / on
  */
 export const ACTION_FACTORS: ActionFactor[] = [
   { name: 'move', n: 9 },
-  { name: 'aim', n: 3 },
+  { name: 'aim', n: 4 },
   { name: 'attack', n: 3 },
   { name: 'jump', n: 2 },
   { name: 'dash', n: 2 },
@@ -55,6 +55,7 @@ const enum AimMode {
   Hold = 0,
   TowardBall = 1,
   TowardEnemyGoal = 2,
+  TowardNearestEnemy = 3,
 }
 
 const enum AttackMode {
@@ -94,7 +95,7 @@ export function decodeAction(
   if (!self || !self.alive) return idleAction();
 
   const move = clampFactor(factors[offset], 9);
-  const aim = clampFactor(factors[offset + 1], 3);
+  const aim = clampFactor(factors[offset + 1], 4);
   const attack = clampFactor(factors[offset + 2], 3);
   const jump = clampFactor(factors[offset + 3], 2) === 1;
   const dash = clampFactor(factors[offset + 4], 2) === 1;
@@ -126,7 +127,25 @@ function resolveAim(mode: number, self: SimCombatant, state: SimState): number {
     const g = enemyGoalForTeam(self.team, state.goalPlates);
     if (g) return yawToFace(g.position.x - self.pos.x, g.position.z - self.pos.z);
   }
+  if (mode === AimMode.TowardNearestEnemy) {
+    const enemy = nearestEnemy(self, state);
+    if (enemy) return yawToFace(enemy.pos.x - self.pos.x, enemy.pos.z - self.pos.z);
+  }
   return self.yaw; // hold
+}
+
+function nearestEnemy(self: SimCombatant, state: SimState): SimCombatant | null {
+  let best: SimCombatant | null = null;
+  let bestDist = Infinity;
+  for (const c of state.combatants) {
+    if (!c.alive || c.team === self.team) continue;
+    const d = Math.hypot(c.pos.x - self.pos.x, c.pos.z - self.pos.z);
+    if (d < bestDist) {
+      best = c;
+      bestDist = d;
+    }
+  }
+  return best;
 }
 
 /**

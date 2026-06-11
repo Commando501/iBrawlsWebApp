@@ -160,6 +160,15 @@
               <option value="cuda">cuda (GPU)</option>
             </select>
           </label>
+          <label>Frame stack <small>0 = auto</small>
+            <input type="number" id="evalFrameStack" value="0" min="0" step="1" />
+          </label>
+          <label id="evalMatrixWrap">
+            <span><input type="checkbox" id="evalMatrix" /> Combat matrix</span>
+          </label>
+          <label id="evalLeagueWrap">Frozen snapshots <small>one path per line</small>
+            <textarea id="evalLeagueSnapshots" rows="3" placeholder="runs/combat_v1/final_model.zip"></textarea>
+          </label>
           <div class="eval-actions">
             <button class="btn primary" id="btnEval">▶ Run evaluation</button>
             <button class="btn danger" id="btnEvalStop" disabled>■ Stop</button>

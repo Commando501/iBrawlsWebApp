@@ -19,9 +19,12 @@ import { createRng, type Rng } from '../rng';
 import { encodeObservation, OBS_DIM } from '../env/observation';
 import { ACTION_DIM, decodeAction } from '../env/action';
 import {
-  computeStepRewards,
+  computeStepRewardDetails,
+  computeActionDisciplineRewards,
+  mergeRewardDetails,
   initRewardMemory,
   DEFAULT_REWARD_CONFIG,
+  REWARD_COMPONENT_KEYS,
   type RewardConfig,
   type RewardMemory,
 } from '../env/reward';
@@ -67,6 +70,8 @@ export interface VecStepResult {
   /** 1 where a `done` was a maxTicks truncation (not a real match end) — bootstrap these. */
   truncated: Uint8Array;
   info: StepInfo;
+  /** Signed aggregate reward components for this vec-env step, in REWARD_COMPONENT_KEYS order. */
+  rewardComponents: Float32Array;
 }
 
 export class VecEnv {
@@ -102,6 +107,7 @@ export class VecEnv {
   private readonly doneBuf: Uint8Array;
   private readonly truncatedBuf: Uint8Array;
   private readonly terminalObs: (Float32Array | null)[];
+  private readonly rewardComponentBuf: Float32Array;
 
   constructor(config: VecEnvConfig) {
     this.numEnvs = config.numEnvs;
@@ -125,6 +131,7 @@ export class VecEnv {
     this.doneBuf = new Uint8Array(n);
     this.truncatedBuf = new Uint8Array(n);
     this.terminalObs = new Array(n).fill(null);
+    this.rewardComponentBuf = new Float32Array(REWARD_COMPONENT_KEYS.length);
   }
 
   /** Seed for env `e`'s current episode. */
@@ -169,6 +176,7 @@ export class VecEnv {
    * stops early (the fresh episode starts on the next decision).
    */
   step(actions: Int32Array): VecStepResult {
+    this.rewardComponentBuf.fill(0);
     for (let e = 0; e < this.numEnvs; e++) {
       const rBase = e * this.numAgents;
       const actionBase = rBase * this.actDim;
@@ -191,11 +199,16 @@ export class VecEnv {
           }
         }
 
+        const details = computeActionDisciplineRewards(state, this.reward, this.memories[e], byId);
         const events = stepSimulation(state, byId, { settings: this.envSettings[e] });
-        const rewards = computeStepRewards(state, events, this.reward, this.memories[e]);
+        mergeRewardDetails(details, computeStepRewardDetails(state, events, this.reward, this.memories[e]));
+        const rewards = details.rewards;
         for (let i = 0; i < this.numAgents; i++) {
           this.rewardBuf[rBase + i] += rewards[this.agentIds[i]] ?? 0;
         }
+        REWARD_COMPONENT_KEYS.forEach((key, i) => {
+          this.rewardComponentBuf[i] += details.components[key];
+        });
 
         // A real match end is a true terminal (no bootstrap); a maxTicks cut-off is a
         // truncation (bootstrap from the terminal obs). Early-training matches truncate
@@ -225,6 +238,7 @@ export class VecEnv {
       done: this.doneBuf,
       truncated: this.truncatedBuf,
       info: { terminalObs: this.terminalObs },
+      rewardComponents: this.rewardComponentBuf,
     };
   }
 

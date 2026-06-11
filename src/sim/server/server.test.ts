@@ -60,6 +60,20 @@ test('step response blocks round-trip incl. truncation + terminal obs (Verificat
   assert.deepEqual([...r.terminalObs.get(1)!], [9, 8, 7]);
 });
 
+test('step response can append aggregate reward components', () => {
+  const payload = buildStepResponse(
+    Float32Array.from([0, 0]),
+    Float32Array.from([1]),
+    Uint8Array.from([0]),
+    Uint8Array.from([0]),
+    [null],
+    2,
+    Float32Array.from([0.5, -0.25, -1])
+  );
+  const r = parseStepResponse(payload, 1, 2, 3);
+  assert.deepEqual([...r.rewardComponents], [0.5, -0.25, -1]);
+});
+
 test('float32 byte round-trip is exact for representable values', () => {
   const a = Float32Array.from([0, 1, -1, 0.5, 12345.0]);
   assert.deepEqual([...bytesToF32(f32Bytes(a), a.length)], [...a]);

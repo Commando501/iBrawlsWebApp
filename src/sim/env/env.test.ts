@@ -20,11 +20,13 @@ import {
 } from './action';
 import {
   computeStepRewards,
+  computeStepRewardDetails,
   initRewardMemory,
   DEFAULT_REWARD_CONFIG,
 } from './reward';
 import { buildEnvSpec } from './spec';
 import { forwardDir } from '../physics';
+import { idleAction } from '../actions';
 
 const settings = resolveSimSettings();
 
@@ -132,6 +134,19 @@ test('decodeAction aim-toward-ball faces the ball', () => {
   assert.ok(Math.abs(f.z) < 0.02, `forward.z=${f.z} ~ 0`);
 });
 
+test('decodeAction aim-toward-nearest-enemy faces the closest hostile combatant', () => {
+  const state = createMatch({ seed: 61 });
+  const self = state.combatants.find((c) => c.team === 'blue')!;
+  const enemies = state.combatants.filter((c) => c.team === 'red');
+  self.pos = { x: 0, y: 0, z: 0 };
+  enemies[0].pos = { x: 8, y: 0, z: 0 };
+  enemies[1].pos = { x: 0, y: 0, z: 3 };
+  const a = decodeAction([0, 3, 0, 0, 0, 0], state, self.id); // aim=toward-nearest-enemy
+  const f = forwardDir(a.aim);
+  assert.ok(Math.abs(f.x) < 0.02, `forward.x=${f.x} ~ 0`);
+  assert.ok(f.z > 0.99, `forward.z=${f.z} should face nearest +z enemy`);
+});
+
 test('out-of-range factors are clamped, dead agents idle', () => {
   const state = createMatch({ seed: 7 });
   const self = state.combatants[0];
@@ -199,6 +214,41 @@ test('reward: possession gives the holding team a small positive shaping', () =>
   const blue = carrier.id;
   const red = state.combatants.find((c) => c.team === 'red')!.id;
   assert.ok(rewards[blue] > rewards[red], 'holder team should out-reward the other');
+});
+
+test('reward: wasted actions are penalized and exposed as components', () => {
+  const state = createMatch({ seed: 101, teamSizes: { blue: 1, red: 1 } });
+  state.mode = 'combat';
+  state.match.phase = 'playing';
+  const self = state.combatants.find((c) => c.team === 'blue')!;
+  self.attackCooldown = 1;
+  self.dashCooldownTimer = 1;
+  self.isJumping = true;
+  self.swapLockoutTimer = 1;
+  self.weapon = 'hammer';
+  self.weaponState = 'windup';
+
+  const mem = initRewardMemory(state);
+  const details = computeStepRewardDetails(
+    state,
+    { startedPlaying: false, goal: null, pickup: null, roundReset: false, matchEnded: false, kills: [] },
+    {
+      ...DEFAULT_REWARD_CONFIG,
+      timePenalty: 0,
+      approach: 0,
+      invalidAttack: 0.4,
+      invalidDash: 0.3,
+      invalidJump: 0.2,
+      invalidSwap: 0.1,
+    },
+    mem,
+    { [self.id]: { ...idleAction(), attackPrimary: true, dash: true, jump: true, swapWeapon: true } }
+  );
+  assert.ok(Math.abs(details.rewards[self.id] + 1) < 1e-9);
+  assert.equal(details.components.invalidAttack, -0.4);
+  assert.equal(details.components.invalidDash, -0.3);
+  assert.equal(details.components.invalidJump, -0.2);
+  assert.equal(details.components.invalidSwap, -0.1);
 });
 
 test('env spec exposes consistent dims', () => {

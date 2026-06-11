@@ -49,6 +49,7 @@ class TrainConfig:
     # --- network (the brain) ---
     width: int = 256                  # neurons per hidden layer (bigger = more capacity, needs GPU)
     depth: int = 2                    # number of hidden layers
+    frame_stack: int = 1              # stack recent observations for short-term memory (1 = off)
     # Warm-start: continue from a previous stage's model (the curriculum's weight transfer).
     # Must use the SAME width/depth. Empty = train from scratch.
     init_model: str = ""              # e.g. "runs/s1_random/final_model.zip"
@@ -56,6 +57,10 @@ class TrainConfig:
     # --- domain randomization (robustness to live balance tweaks) ---
     randomize_enabled: bool = False   # jitter the dynamics settings each episode
     randomize_pct: float = 0.15       # +/- fraction each tunable is jittered by
+
+    # --- frozen snapshot league (evaluation + hardening opponents) ---
+    league_snapshots: list[str] = field(default_factory=list)  # saved models to grade against
+    league_latest_bias: float = 0.7    # future sampler hint: bias toward newer snapshots
 
     # --- reward (what the agent is paid for; see GUIDE.md) ---
     reward_win: float = 1.0           # winning the match (terminal)
@@ -67,6 +72,11 @@ class TrainConfig:
     reward_death: float = 0.1         # each of your team's deaths (subtracted)
     reward_approach: float = 0.03     # per metre closing on the objective (ball / nearest enemy)
     reward_time_penalty: float = 0.0005  # tiny per-tick nudge to stop stalling
+    reward_invalid_attack: float = 0.0 # penalize attacking while a weapon is unavailable
+    reward_invalid_dash: float = 0.0   # penalize dash inputs while dash cannot fire
+    reward_invalid_jump: float = 0.0   # penalize jump inputs while already airborne
+    reward_invalid_swap: float = 0.0   # penalize impossible weapon swaps
+    reward_action_repeat: float = 0.0  # penalize repeating the same non-idle decision
     bootstrap_truncation: bool = False   # value-bootstrap timeouts (usually leave off)
 
     # --- logging / output ---
@@ -106,9 +116,12 @@ KNOB_DESCRIPTIONS: dict[str, str] = {
     "lr_schedule": "'linear' decays the learning rate to 0 across the run — steadier late training, better final policies on long runs. 'constant' is simpler for short probes.",
     "width": "Neurons per layer. Bigger brain = more skill ceiling, but slower (use the GPU).",
     "depth": "Hidden layers. 2-3 is plenty here.",
+    "frame_stack": "Short action/position memory by stacking recent observations. 1 = off; 4 gives the MLP temporal context without switching algorithms. Train/evaluate with the same value.",
     "init_model": "Warm-start from a saved model (curriculum transfer). Same width/depth required. Empty = from scratch.",
     "randomize_enabled": "Jitter game mechanics each episode so the brain stays robust to live balance patches.",
     "randomize_pct": "How far mechanics are jittered (0.15 = +/-15%). Bigger = more robust but harder to learn.",
+    "league_snapshots": "Frozen saved models used as a league/evaluation opponent pool. Paths are relative to python/ unless absolute.",
+    "league_latest_bias": "Future snapshot sampler hint: 0 = uniform, 1 = heavily favor newer snapshots.",
     "reward_win": "Payout for winning the match.",
     "reward_goal_scored": "Payout per goal scored.",
     "reward_goal_conceded": "Penalty per goal conceded.",
@@ -118,6 +131,11 @@ KNOB_DESCRIPTIONS: dict[str, str] = {
     "reward_death": "Penalty per death.",
     "reward_approach": "Payout per metre closing on the objective (free ball / nearest enemy). The exploration foothold that gets a fresh brain moving toward the action.",
     "reward_time_penalty": "Small per-tick cost to discourage stalling.",
+    "reward_invalid_attack": "Penalty for attack inputs while the weapon is unavailable. Helps stop button-mashing policies.",
+    "reward_invalid_dash": "Penalty for dash inputs while dash is on cooldown/active.",
+    "reward_invalid_jump": "Penalty for jump inputs while already airborne.",
+    "reward_invalid_swap": "Penalty for impossible weapon swaps.",
+    "reward_action_repeat": "Penalty for repeating the exact same non-idle decision on consecutive policy ticks.",
     "bootstrap_truncation": "Treat timeouts as 'to be continued' (value bootstrap). Usually OFF for this win-focused task.",
     "logdir": "Folder for this run's logs, checkpoints, and final model.",
     "save_every": "Checkpoint frequency (steps).",
@@ -156,9 +174,12 @@ _TOML_MAP = {
     ("ppo", "lr_schedule"): "lr_schedule",
     ("network", "width"): "width",
     ("network", "depth"): "depth",
+    ("network", "frame_stack"): "frame_stack",
     ("network", "init_model"): "init_model",
     ("randomize", "enabled"): "randomize_enabled",
     ("randomize", "pct"): "randomize_pct",
+    ("league", "snapshots"): "league_snapshots",
+    ("league", "latest_bias"): "league_latest_bias",
     ("reward", "win"): "reward_win",
     ("reward", "goal_scored"): "reward_goal_scored",
     ("reward", "goal_conceded"): "reward_goal_conceded",
@@ -168,6 +189,11 @@ _TOML_MAP = {
     ("reward", "death"): "reward_death",
     ("reward", "approach"): "reward_approach",
     ("reward", "time_penalty"): "reward_time_penalty",
+    ("reward", "invalid_attack"): "reward_invalid_attack",
+    ("reward", "invalid_dash"): "reward_invalid_dash",
+    ("reward", "invalid_jump"): "reward_invalid_jump",
+    ("reward", "invalid_swap"): "reward_invalid_swap",
+    ("reward", "action_repeat"): "reward_action_repeat",
     ("reward", "bootstrap_truncation"): "bootstrap_truncation",
     ("logging", "dir"): "logdir",
     ("logging", "save_every"): "save_every",
@@ -201,6 +227,11 @@ def reward_dict(cfg: TrainConfig) -> dict:
         "death": cfg.reward_death,
         "approach": cfg.reward_approach,
         "timePenalty": cfg.reward_time_penalty,
+        "invalidAttack": cfg.reward_invalid_attack,
+        "invalidDash": cfg.reward_invalid_dash,
+        "invalidJump": cfg.reward_invalid_jump,
+        "invalidSwap": cfg.reward_invalid_swap,
+        "actionRepeatPenalty": cfg.reward_action_repeat,
     }
 
 
@@ -226,13 +257,14 @@ def settings_markdown(cfg: TrainConfig) -> str:
 # ----------------------------------------------------------------------------
 
 # Order + friendly titles for the grouped form. Mirrors the TOML sections.
-SECTION_ORDER = ["run", "combat", "ppo", "network", "randomize", "reward", "logging"]
+SECTION_ORDER = ["run", "combat", "ppo", "network", "randomize", "league", "reward", "logging"]
 SECTION_TITLES = {
     "run": "Run",
     "combat": "Combat (deathmatch generalist)",
     "ppo": "Learning algorithm (PPO)",
     "network": "Network (the brain)",
     "randomize": "Domain randomization",
+    "league": "Frozen snapshot league",
     "reward": "Rewards (what the agent is paid for)",
     "logging": "Logging & output",
 }
@@ -259,6 +291,8 @@ _FIELD_RANGES: dict[str, tuple[float, float, float]] = {
     "n_epochs": (1, 20, 1),
     "max_grad_norm": (0.1, 5.0, 0.1),
     "target_kl": (0.0, 0.1, 0.005),
+    "frame_stack": (1, 8, 1),
+    "league_latest_bias": (0.0, 1.0, 0.05),
 }
 
 
@@ -272,6 +306,8 @@ def _infer_type(field: str, value) -> str:
     if isinstance(value, float):
         return "float"
     if isinstance(value, list):
+        if field == "league_snapshots":
+            return "strlist"
         return "intlist"
     return "str"
 
@@ -340,7 +376,11 @@ def coerce_value(field: str, raw):
         return float(raw)
     if isinstance(default, list):
         if isinstance(raw, str):
+            if field == "league_snapshots":
+                return [x.strip() for x in raw.replace("\n", ",").split(",") if x.strip()]
             return [int(float(x)) for x in raw.replace(",", " ").split() if x.strip()]
+        if field == "league_snapshots":
+            return [str(x) for x in raw]
         return [int(float(x)) for x in raw]
     return str(raw)
 
@@ -361,6 +401,8 @@ def _toml_val(v) -> str:
     if isinstance(v, str):
         return '"' + v.replace("\\", "\\\\").replace('"', '\\"') + '"'
     if isinstance(v, list):
+        if any(isinstance(x, str) for x in v):
+            return "[" + ", ".join(_toml_val(str(x)) for x in v) + "]"
         return "[" + ", ".join(str(int(x)) for x in v) + "]"
     if isinstance(v, float):
         return repr(v)
