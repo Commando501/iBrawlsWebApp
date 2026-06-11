@@ -34,10 +34,7 @@ function persistPlayerHue(hue: number) {
 }
 
 function ArmorModelEditorPage() {
-  const [playerLoadout, setPlayerLoadout] = useState<CharacterLoadout>(() => ({
-    ...loadStoredPlayerLoadout(),
-    modelSystem: 'v2',
-  }));
+  const [playerLoadout, setPlayerLoadout] = useState<CharacterLoadout>(() => loadStoredPlayerLoadout());
   const [customArmorCatalog, setCustomArmorCatalog] = useState<CustomArmorCatalog>(() => loadCustomArmorCatalog());
   const [playerHue, setPlayerHue] = useState(() => getSavedPlayerHue());
 
@@ -87,14 +84,14 @@ function ArmorModelEditorPage() {
               </div>
               <div className="min-w-0">
                 <div className="font-display text-2xl font-black uppercase tracking-wider text-white">
-                  V2 Armor Model Editor
+                  {playerLoadout.modelSystem === 'v3' ? 'V3 Armor Model Editor' : 'V2 Armor Model Editor'}
                 </div>
                 <div className="mt-1 flex flex-wrap gap-2 text-[10px] font-black uppercase tracking-widest text-white/45">
                   <span>{customPieceCount} custom pieces</span>
                   <span className="text-white/20">/</span>
                   <span>{equippedCount} equipped</span>
                   <span className="text-white/20">/</span>
-                  <span>Version 2 rig only</span>
+                  <span>{playerLoadout.modelSystem === 'v3' ? 'Version 3 modular armor' : 'Version 2 rig'}</span>
                 </div>
               </div>
             </div>

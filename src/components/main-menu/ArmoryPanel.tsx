@@ -5,7 +5,13 @@ import {
   type ArmorPaintJob,
   type CharacterLoadout,
 } from '../VoxelModels';
-import type { CustomArmorCatalog, CustomArmorSlot } from '../customArmor';
+import {
+  V3_CUSTOM_ARMOR_SLOTS,
+  getCustomArmorPieceModelSystem,
+  getCustomArmorSlotLabel,
+  type CustomArmorCatalog,
+  type CustomArmorSlot,
+} from '../customArmor';
 import { CharacterPainter } from '../CharacterPainter';
 import { CharacterPreview } from '../CharacterPreview';
 
@@ -98,6 +104,17 @@ const LOADOUT_SLOTS = [
 
 const ARMOR_SLOT_KEYS = new Set(['helmet', 'torso', 'arm', 'leg']);
 
+const formatV3SlotLabel = (slot: string): string =>
+  slot
+    .replace(/([A-Z])/g, ' $1')
+    .replace(/^./, (value) => value.toUpperCase());
+
+const V3_LOADOUT_SLOTS = V3_CUSTOM_ARMOR_SLOTS.map((slot) => ({
+  key: slot,
+  label: formatV3SlotLabel(slot),
+  title: getCustomArmorSlotLabel(slot, 'v3'),
+}));
+
 function persistPlayerLoadout(loadout: CharacterLoadout) {
   try {
     localStorage.setItem(PLAYER_LOADOUT_STORAGE_KEY, JSON.stringify(loadout));
@@ -130,6 +147,7 @@ export function ArmoryPanel({
   const activeModelType: CharacterModelType = activeModelSystem === 'v2'
     ? playerLoadout.modelType ?? 'medium'
     : 'medium';
+  const editorModelSystem = activeModelSystem === 'v3' ? 'v3' : 'v2';
 
   React.useLayoutEffect(() => {
     const container = contentRef.current;
@@ -164,6 +182,16 @@ export function ArmoryPanel({
     } as Partial<CharacterLoadout>);
   };
 
+  const selectBuiltinV3Armor = (slot: CustomArmorSlot) => {
+    const nextCustomArmor = { ...(playerLoadout.customArmor ?? {}) };
+    delete nextCustomArmor[slot];
+    updateLoadout({
+      modelSystem: 'v3',
+      modelType: undefined,
+      customArmor: nextCustomArmor,
+    });
+  };
+
   return (
     <div ref={contentRef} className="flex-grow flex flex-col min-h-0 overflow-y-auto pr-1 justify-between gap-4">
       {isPainting ? (
@@ -192,15 +220,18 @@ export function ArmoryPanel({
             target="_blank"
             rel="noopener noreferrer"
             onClick={() => {
-              updateLoadout({ modelSystem: 'v2', modelType: activeModelType });
+              updateLoadout({
+                modelSystem: editorModelSystem,
+                modelType: editorModelSystem === 'v2' ? activeModelType : undefined,
+              });
             }}
             className={`w-full py-2.5 border font-black uppercase tracking-widest rounded-lg shadow-lg transition-all active:scale-[0.98] cursor-pointer text-center text-xs ${
-              (playerLoadout.modelSystem ?? 'v1') === 'v2'
+              (playerLoadout.modelSystem ?? 'v1') === editorModelSystem
                 ? 'bg-gradient-to-r from-purple-500/20 to-fuchsia-500/15 border-purple-400/45 text-purple-200 hover:border-purple-300'
                 : 'bg-purple-500/10 border-purple-500/25 text-purple-300/80 hover:border-purple-400/45'
             }`}
           >
-            Create / Edit V2 Armor Model
+            {editorModelSystem === 'v3' ? 'Create / Edit V3 Armor Model' : 'Create / Edit V2 Armor Model'}
           </a>
 
           <div className="flex flex-col gap-3 font-sans text-xs">
@@ -276,6 +307,7 @@ export function ArmoryPanel({
                   {([
                     { id: 'v1', label: 'V1 (Classic)' },
                     { id: 'v2', label: 'V2 (Rigged)' },
+                    { id: 'v3', label: 'V3 (Advanced)' },
                   ] as const).map((model) => {
                     const isActive = (playerLoadout.modelSystem ?? 'v1') === model.id;
                     return (
@@ -298,101 +330,172 @@ export function ArmoryPanel({
                   })}
                 </div>
               </div>
-              <div className="flex items-center gap-2 mb-3 pb-3 border-b border-white/5">
-                <span className="text-[10px] font-black uppercase tracking-widest text-white/40 w-14 shrink-0">Body</span>
-                <div className="grid grid-cols-2 flex-1 h-8 rounded border border-white/10 bg-black/40 overflow-hidden">
-                  {(['medium', 'large'] as const).map((modelType) => {
-                    const isActive = activeModelSystem === 'v2' && activeModelType === modelType;
-                    return (
-                      <button
-                        key={modelType}
-                        type="button"
-                        onClick={() => updateLoadout({ modelSystem: 'v2', modelType })}
-                        className={`text-[10px] font-black uppercase tracking-widest transition-all ${
-                          isActive
-                            ? 'bg-purple-500/25 text-purple-100'
-                            : 'text-white/45 hover:text-white/75 hover:bg-white/5'
-                        }`}
-                      >
-                        {modelType}
-                      </button>
-                    );
-                  })}
+              {activeModelSystem !== 'v3' && (
+                <div className="flex items-center gap-2 mb-3 pb-3 border-b border-white/5">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-white/40 w-14 shrink-0">Body</span>
+                  <div className="grid grid-cols-2 flex-1 h-8 rounded border border-white/10 bg-black/40 overflow-hidden">
+                    {(['medium', 'large'] as const).map((modelType) => {
+                      const isActive = activeModelSystem === 'v2' && activeModelType === modelType;
+                      return (
+                        <button
+                          key={modelType}
+                          type="button"
+                          onClick={() => updateLoadout({ modelSystem: 'v2', modelType })}
+                          className={`text-[10px] font-black uppercase tracking-widest transition-all ${
+                            isActive
+                              ? 'bg-purple-500/25 text-purple-100'
+                              : 'text-white/45 hover:text-white/75 hover:bg-white/5'
+                          }`}
+                        >
+                          {modelType}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
+              )}
               <div className="flex flex-col gap-2">
-                {LOADOUT_SLOTS.map(({ key, options }) => (
-                  <div key={key} className="flex items-center gap-2">
-                    <span className="text-[10px] font-black uppercase tracking-widest text-white/40 w-14 shrink-0">{SLOT_LABEL[key]}</span>
-                    <div className="flex flex-wrap gap-1.5 flex-1">
-                      {options.map((option) => {
-                        const isArmorSlot = ARMOR_SLOT_KEYS.has(key);
-                        const customForSlot = isArmorSlot ? playerLoadout.customArmor?.[key as CustomArmorSlot] : undefined;
-                        const isActive = !customForSlot && playerLoadout[key as keyof CharacterLoadout] === option;
-                        return (
+                {activeModelSystem === 'v3' ? (
+                  V3_LOADOUT_SLOTS.map(({ key, label, title }) => {
+                    const equippedPiece = playerLoadout.customArmor?.[key];
+                    const isBuiltinActive = !equippedPiece || getCustomArmorPieceModelSystem(equippedPiece) !== 'v3';
+                    return (
+                      <div key={key} className="flex items-center gap-2">
+                        <span
+                          title={title}
+                          className="w-20 shrink-0 truncate text-[10px] font-black uppercase tracking-widest text-white/40"
+                        >
+                          {label}
+                        </span>
+                        <div className="flex flex-1 flex-wrap gap-1.5">
                           <button
-                            key={option}
                             type="button"
-                            onClick={() => {
-                              if (isArmorSlot) {
-                                selectBuiltinArmor(key as 'helmet' | 'torso' | 'arm' | 'leg', option);
-                              } else {
-                                updateLoadout({ [key]: option } as Partial<CharacterLoadout>);
-                              }
-                            }}
+                            onClick={() => selectBuiltinV3Armor(key)}
                             className={`px-2 py-1 text-[10px] font-black uppercase tracking-widest border rounded transition-all active:scale-95 ${
-                              isActive
+                              isBuiltinActive
                                 ? 'bg-[#38bdf8]/15 border-[#38bdf8] text-[#38bdf8] shadow-[0_0_8px_rgba(56,189,248,0.25)]'
                                 : 'bg-black/30 border-white/10 text-white/40 hover:text-white/70 hover:border-white/20'
                             }`}
                           >
-                            {PRESET_LABEL[option] ?? option}
+                            Built-In
                           </button>
-                        );
-                      })}
-                      {ARMOR_SLOT_KEYS.has(key) && customArmorCatalog.pieces
-                        .filter((piece) => (
-                          piece.slot === key &&
-                          ((piece.modelType ?? 'medium') === activeModelType)
-                        ))
-                        .map((piece) => {
-                          const isCustomActive = playerLoadout.customArmor?.[key as CustomArmorSlot]?.id === piece.id;
+                          {customArmorCatalog.pieces
+                            .filter((piece) => piece.slot === key && getCustomArmorPieceModelSystem(piece) === 'v3')
+                            .map((piece) => {
+                              const isCustomActive = equippedPiece?.id === piece.id && getCustomArmorPieceModelSystem(equippedPiece) === 'v3';
+                              return (
+                                <button
+                                  key={piece.id}
+                                  type="button"
+                                  onClick={() => updateLoadout({
+                                    modelSystem: 'v3',
+                                    modelType: undefined,
+                                    customArmor: {
+                                      ...(playerLoadout.customArmor ?? {}),
+                                      [key]: {
+                                        version: 1,
+                                        id: piece.id,
+                                        name: piece.name,
+                                        slot: piece.slot,
+                                        modelSystem: 'v3',
+                                        sourcePreset: piece.sourcePreset,
+                                        voxels: piece.voxels,
+                                        thumbnail: piece.thumbnail,
+                                        updatedAt: piece.updatedAt,
+                                      },
+                                    },
+                                  })}
+                                  title={piece.name}
+                                  className={`px-2 py-1 text-[10px] font-black uppercase tracking-widest border rounded transition-all active:scale-95 ${
+                                    isCustomActive
+                                      ? 'bg-purple-500/25 border-purple-300 text-purple-100 shadow-[0_0_8px_rgba(168,85,247,0.35)]'
+                                      : 'bg-purple-950/30 border-purple-500/25 text-purple-200/70 hover:text-purple-100 hover:border-purple-400/50'
+                                  }`}
+                                >
+                                  {piece.thumbnail ?? 'V3'} {piece.name.slice(0, 8)}
+                                </button>
+                              );
+                            })}
+                        </div>
+                      </div>
+                    );
+                  })
+                ) : (
+                  LOADOUT_SLOTS.map(({ key, options }) => (
+                    <div key={key} className="flex items-center gap-2">
+                      <span className="text-[10px] font-black uppercase tracking-widest text-white/40 w-14 shrink-0">{SLOT_LABEL[key]}</span>
+                      <div className="flex flex-wrap gap-1.5 flex-1">
+                        {options.map((option) => {
+                          const isArmorSlot = ARMOR_SLOT_KEYS.has(key);
+                          const customForSlot = isArmorSlot ? playerLoadout.customArmor?.[key as CustomArmorSlot] : undefined;
+                          const isActive = !customForSlot && playerLoadout[key as keyof CharacterLoadout] === option;
                           return (
                             <button
-                              key={piece.id}
+                              key={option}
                               type="button"
-                              onClick={() => updateLoadout({
-                                modelSystem: 'v2',
-                                modelType: activeModelType,
-                                customArmor: {
-                                  ...(playerLoadout.customArmor ?? {}),
-                                  [key]: {
-                                    version: 1,
-                                    id: piece.id,
-                                    name: piece.name,
-                                    slot: piece.slot,
-                                    modelType: piece.modelType ?? 'medium',
-                                    sourcePreset: piece.sourcePreset,
-                                    voxels: piece.voxels,
-                                    thumbnail: piece.thumbnail,
-                                    updatedAt: piece.updatedAt,
-                                  },
-                                },
-                              })}
-                              title={piece.name}
+                              onClick={() => {
+                                if (isArmorSlot) {
+                                  selectBuiltinArmor(key as 'helmet' | 'torso' | 'arm' | 'leg', option);
+                                } else {
+                                  updateLoadout({ [key]: option } as Partial<CharacterLoadout>);
+                                }
+                              }}
                               className={`px-2 py-1 text-[10px] font-black uppercase tracking-widest border rounded transition-all active:scale-95 ${
-                                isCustomActive
-                                  ? 'bg-purple-500/25 border-purple-300 text-purple-100 shadow-[0_0_8px_rgba(168,85,247,0.35)]'
-                                  : 'bg-purple-950/30 border-purple-500/25 text-purple-200/70 hover:text-purple-100 hover:border-purple-400/50'
+                                isActive
+                                  ? 'bg-[#38bdf8]/15 border-[#38bdf8] text-[#38bdf8] shadow-[0_0_8px_rgba(56,189,248,0.25)]'
+                                  : 'bg-black/30 border-white/10 text-white/40 hover:text-white/70 hover:border-white/20'
                               }`}
                             >
-                              {piece.thumbnail ?? 'C'} {piece.name.slice(0, 8)}
+                              {PRESET_LABEL[option] ?? option}
                             </button>
                           );
                         })}
+                        {ARMOR_SLOT_KEYS.has(key) && customArmorCatalog.pieces
+                          .filter((piece) => (
+                            piece.slot === key &&
+                            getCustomArmorPieceModelSystem(piece) === 'v2' &&
+                            ((piece.modelType ?? 'medium') === activeModelType)
+                          ))
+                          .map((piece) => {
+                            const isCustomActive = playerLoadout.customArmor?.[key as CustomArmorSlot]?.id === piece.id;
+                            return (
+                              <button
+                                key={piece.id}
+                                type="button"
+                                onClick={() => updateLoadout({
+                                  modelSystem: 'v2',
+                                  modelType: activeModelType,
+                                  customArmor: {
+                                    ...(playerLoadout.customArmor ?? {}),
+                                    [key]: {
+                                      version: 1,
+                                      id: piece.id,
+                                      name: piece.name,
+                                      slot: piece.slot,
+                                      modelSystem: 'v2',
+                                      modelType: piece.modelType ?? 'medium',
+                                      sourcePreset: piece.sourcePreset,
+                                      voxels: piece.voxels,
+                                      thumbnail: piece.thumbnail,
+                                      updatedAt: piece.updatedAt,
+                                    },
+                                  },
+                                })}
+                                title={piece.name}
+                                className={`px-2 py-1 text-[10px] font-black uppercase tracking-widest border rounded transition-all active:scale-95 ${
+                                  isCustomActive
+                                    ? 'bg-purple-500/25 border-purple-300 text-purple-100 shadow-[0_0_8px_rgba(168,85,247,0.35)]'
+                                    : 'bg-purple-950/30 border-purple-500/25 text-purple-200/70 hover:text-purple-100 hover:border-purple-400/50'
+                                }`}
+                              >
+                                {piece.thumbnail ?? 'C'} {piece.name.slice(0, 8)}
+                              </button>
+                            );
+                          })}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  ))
+                )}
               </div>
             </div>
           </div>
