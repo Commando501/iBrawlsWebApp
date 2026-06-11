@@ -1,0 +1,463 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>V3 Asset Preview</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --background: #071014;
+        --surface: #0d181d;
+        --surface-strong: #12242b;
+        --border: #24414a;
+        --text: #eef8fb;
+        --muted: #a8bbc1;
+        --accent: #5dd6c9;
+        --accent-strong: #82f2df;
+        --danger: #ff8d7a;
+        --ok: #86f09f;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: var(--background);
+        color: var(--text);
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+          "Segoe UI", sans-serif;
+      }
+
+      main {
+        width: min(1120px, calc(100vw - 32px));
+        margin: 0 auto;
+        padding: 24px 0 32px;
+      }
+
+      h1 {
+        margin: 0 0 18px;
+        font-size: 24px;
+        font-weight: 700;
+        letter-spacing: 0;
+      }
+
+      .toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 12px;
+        padding: 12px;
+        margin-bottom: 14px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--surface);
+      }
+
+      label {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 40px;
+        color: var(--muted);
+        font-size: 14px;
+        font-weight: 600;
+      }
+
+      input {
+        width: 84px;
+        min-height: 40px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: var(--surface-strong);
+        color: var(--text);
+        font: inherit;
+        padding: 0 10px;
+      }
+
+      button {
+        min-height: 40px;
+        border: 1px solid color-mix(in srgb, var(--accent) 65%, #000);
+        border-radius: 6px;
+        background: #11352f;
+        color: var(--accent-strong);
+        font: inherit;
+        font-weight: 700;
+        padding: 0 14px;
+        cursor: pointer;
+      }
+
+      button:focus-visible,
+      input:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+      }
+
+      #preview {
+        display: block;
+        width: 100%;
+        max-width: 960px;
+        aspect-ratio: 16 / 9;
+        height: auto;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: #071014;
+      }
+
+      #summary {
+        width: 100%;
+        margin: 14px 0 0;
+        min-height: 144px;
+        overflow: auto;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--surface);
+        color: var(--text);
+        padding: 14px;
+        font: 13px/1.45 "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+        white-space: pre-wrap;
+      }
+
+      .status-pass {
+        border-color: color-mix(in srgb, var(--ok) 50%, var(--border));
+      }
+
+      .status-warn {
+        border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
+      }
+
+      @media (max-width: 560px) {
+        main {
+          width: min(100vw - 20px, 1120px);
+          padding-top: 14px;
+        }
+
+        h1 {
+          font-size: 20px;
+        }
+
+        .toolbar {
+          align-items: stretch;
+        }
+
+        label,
+        button {
+          width: 100%;
+          justify-content: space-between;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>V3 Asset Preview</h1>
+      <section class="toolbar">
+        <label>Resolution <input id="resolution" type="number" min="4" max="48" value="12"></label>
+        <button id="render">Render Synthetic Preview</button>
+      </section>
+      <canvas id="preview" width="960" height="540"></canvas>
+      <pre id="summary"></pre>
+    </main>
+
+    <script>
+      const materials = {
+        armor_primary: "#557d8f",
+        armor_secondary: "#273b44",
+        armor_accent: "#c78d43",
+        visor: "#69f4ff",
+        undersuit: "#182126",
+        weapon_mount: "#9aa9ad",
+      };
+
+      const materialOrder = [
+        "undersuit",
+        "armor_primary",
+        "armor_secondary",
+        "armor_accent",
+        "weapon_mount",
+        "visor",
+      ];
+
+      const resolutionInput = document.getElementById("resolution");
+      const renderButton = document.getElementById("render");
+      const canvas = document.getElementById("preview");
+      const summary = document.getElementById("summary");
+      const ctx = canvas.getContext("2d");
+
+      function clampResolution(value) {
+        const numeric = Number.parseInt(value, 10);
+        if (!Number.isFinite(numeric)) {
+          return 12;
+        }
+        return Math.max(4, Math.min(48, numeric));
+      }
+
+      function makeSyntheticShell(resolution) {
+        const height = Math.round(resolution * 2.7);
+        const depth = Math.max(4, Math.round(resolution * 0.66));
+        const voxels = new Map();
+
+        const xCell = (value) => Math.round(value * resolution);
+        const yCell = (value) => Math.round(value * height);
+        const zCell = (value) => Math.round(value * depth);
+
+        function addShellBox(name, bounds, material) {
+          const [x0, x1, y0, y1, z0, z1] = bounds;
+          const minX = Math.min(xCell(x0), xCell(x1));
+          const maxX = Math.max(xCell(x0), xCell(x1));
+          const minY = Math.min(yCell(y0), yCell(y1));
+          const maxY = Math.max(yCell(y0), yCell(y1));
+          const minZ = Math.min(zCell(z0), zCell(z1));
+          const maxZ = Math.max(zCell(z0), zCell(z1));
+
+          for (let x = minX; x <= maxX; x += 1) {
+            for (let y = minY; y <= maxY; y += 1) {
+              for (let z = minZ; z <= maxZ; z += 1) {
+                const shell =
+                  x === minX ||
+                  x === maxX ||
+                  y === minY ||
+                  y === maxY ||
+                  z === minZ ||
+                  z === maxZ;
+                if (shell) {
+                  voxels.set(`${x},${y},${z}`, { x, y, z, material, part: name });
+                }
+              }
+            }
+          }
+        }
+
+        addShellBox("pelvis", [-0.28, 0.28, 0.22, 0.42, -0.42, 0.42], "armor_secondary");
+        addShellBox("stomach", [-0.25, 0.25, 0.39, 0.58, -0.36, 0.36], "undersuit");
+        addShellBox("chest", [-0.42, 0.42, 0.55, 0.77, -0.50, 0.50], "armor_primary");
+        addShellBox("neck", [-0.14, 0.14, 0.75, 0.82, -0.22, 0.22], "undersuit");
+        addShellBox("helmet", [-0.30, 0.30, 0.80, 0.96, -0.38, 0.38], "armor_primary");
+        addShellBox("left_shoulder", [-0.63, -0.38, 0.62, 0.76, -0.42, 0.42], "armor_secondary");
+        addShellBox("right_shoulder", [0.38, 0.63, 0.62, 0.76, -0.42, 0.42], "armor_secondary");
+        addShellBox("left_upper_arm", [-0.73, -0.55, 0.40, 0.66, -0.30, 0.30], "armor_primary");
+        addShellBox("right_upper_arm", [0.55, 0.73, 0.40, 0.66, -0.30, 0.30], "armor_primary");
+        addShellBox("left_forearm", [-0.78, -0.58, 0.22, 0.43, -0.32, 0.32], "armor_accent");
+        addShellBox("right_forearm", [0.58, 0.78, 0.22, 0.43, -0.32, 0.32], "armor_accent");
+        addShellBox("left_hand", [-0.76, -0.58, 0.16, 0.24, -0.26, 0.26], "undersuit");
+        addShellBox("right_hand", [0.58, 0.76, 0.16, 0.24, -0.26, 0.26], "undersuit");
+        addShellBox("left_thigh", [-0.30, -0.08, 0.03, 0.25, -0.34, 0.34], "armor_primary");
+        addShellBox("right_thigh", [0.08, 0.30, 0.03, 0.25, -0.34, 0.34], "armor_primary");
+        addShellBox("left_shin", [-0.30, -0.08, -0.17, 0.07, -0.30, 0.30], "armor_secondary");
+        addShellBox("right_shin", [0.08, 0.30, -0.17, 0.07, -0.30, 0.30], "armor_secondary");
+        addShellBox("left_boot", [-0.34, -0.05, -0.25, -0.15, -0.42, 0.38], "armor_accent");
+        addShellBox("right_boot", [0.05, 0.34, -0.25, -0.15, -0.42, 0.38], "armor_accent");
+        addShellBox("back_weapon_mount", [-0.08, 0.08, 0.45, 0.80, -0.66, -0.54], "weapon_mount");
+        addShellBox("visor", [-0.20, 0.20, 0.86, 0.91, 0.38, 0.38], "visor");
+        addShellBox("torso_stripe", [-0.05, 0.05, 0.56, 0.76, 0.50, 0.50], "armor_accent");
+
+        return Array.from(voxels.values()).sort((a, b) => {
+          const materialDelta = materialOrder.indexOf(a.material) - materialOrder.indexOf(b.material);
+          if (materialDelta !== 0) {
+            return materialDelta;
+          }
+          return a.x - b.x || a.y - b.y || a.z - b.z;
+        });
+      }
+
+      function countConnectedComponents(voxels) {
+        const occupied = new Set(voxels.map((voxel) => `${voxel.x},${voxel.y},${voxel.z}`));
+        const visited = new Set();
+        const offsets = [
+          [1, 0, 0],
+          [-1, 0, 0],
+          [0, 1, 0],
+          [0, -1, 0],
+          [0, 0, 1],
+          [0, 0, -1],
+        ];
+        let components = 0;
+
+        for (const key of occupied) {
+          if (visited.has(key)) {
+            continue;
+          }
+
+          components += 1;
+          const stack = [key];
+          visited.add(key);
+
+          while (stack.length > 0) {
+            const current = stack.pop();
+            const [x, y, z] = current.split(",").map(Number);
+            for (const [dx, dy, dz] of offsets) {
+              const next = `${x + dx},${y + dy},${z + dz}`;
+              if (occupied.has(next) && !visited.has(next)) {
+                visited.add(next);
+                stack.push(next);
+              }
+            }
+          }
+        }
+
+        return components;
+      }
+
+      function validateSyntheticAsset(voxels, resolution) {
+        const materialCounts = {};
+        for (const voxel of voxels) {
+          materialCounts[voxel.material] = (materialCounts[voxel.material] || 0) + 1;
+        }
+
+        const materialNames = Object.keys(materialCounts).sort();
+        const connectedComponents = countConnectedComponents(voxels);
+        const maxVoxels = 18000;
+        const issues = [];
+
+        if (voxels.length === 0) {
+          issues.push("no voxels generated");
+        }
+        if (!materialCounts.armor_primary || !materialCounts.visor) {
+          issues.push("required materials missing");
+        }
+        if (connectedComponents > 1) {
+          issues.push(`${connectedComponents} disconnected shell components`);
+        }
+        if (voxels.length > maxVoxels) {
+          issues.push(`voxel count exceeds ${maxVoxels} preview budget`);
+        }
+
+        return {
+          resolution,
+          voxelCount: voxels.length,
+          maxVoxels,
+          materials: materialNames,
+          materialCounts,
+          connectedComponents,
+          validationStatus: issues.length === 0 ? "PASS" : "WARN",
+          issues: issues.length > 0 ? issues : ["none"],
+        };
+      }
+
+      function shade(hex, factor) {
+        const value = Number.parseInt(hex.slice(1), 16);
+        const red = Math.max(0, Math.min(255, Math.round(((value >> 16) & 255) * factor)));
+        const green = Math.max(0, Math.min(255, Math.round(((value >> 8) & 255) * factor)));
+        const blue = Math.max(0, Math.min(255, Math.round((value & 255) * factor)));
+        return `rgb(${red}, ${green}, ${blue})`;
+      }
+
+      function project(voxel) {
+        return {
+          x: (voxel.x - voxel.z) * 0.9,
+          y: (voxel.x + voxel.z) * 0.34 - voxel.y * 0.68,
+        };
+      }
+
+      function drawVoxel(projection, color, scale) {
+        const cubeWidth = Math.max(2.2, scale * 1.08);
+        const cubeHeight = Math.max(1.6, scale * 0.78);
+        const lift = Math.max(1.4, scale * 0.56);
+        const x = projection.x;
+        const y = projection.y;
+
+        ctx.fillStyle = shade(color, 1.16);
+        ctx.beginPath();
+        ctx.moveTo(x, y - lift);
+        ctx.lineTo(x + cubeWidth, y - lift / 2);
+        ctx.lineTo(x, y);
+        ctx.lineTo(x - cubeWidth, y - lift / 2);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.fillStyle = shade(color, 0.82);
+        ctx.beginPath();
+        ctx.moveTo(x - cubeWidth, y - lift / 2);
+        ctx.lineTo(x, y);
+        ctx.lineTo(x, y + cubeHeight);
+        ctx.lineTo(x - cubeWidth, y + cubeHeight - lift / 2);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.fillStyle = shade(color, 0.96);
+        ctx.beginPath();
+        ctx.moveTo(x + cubeWidth, y - lift / 2);
+        ctx.lineTo(x, y);
+        ctx.lineTo(x, y + cubeHeight);
+        ctx.lineTo(x + cubeWidth, y + cubeHeight - lift / 2);
+        ctx.closePath();
+        ctx.fill();
+      }
+
+      function drawScene(voxels, validation) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = "#071014";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        ctx.strokeStyle = "#173039";
+        ctx.lineWidth = 1;
+        for (let x = 96; x <= canvas.width - 96; x += 48) {
+          ctx.beginPath();
+          ctx.moveTo(x, canvas.height - 86);
+          ctx.lineTo(x + 84, canvas.height - 34);
+          ctx.stroke();
+        }
+        for (let x = canvas.width - 96; x >= 96; x -= 48) {
+          ctx.beginPath();
+          ctx.moveTo(x, canvas.height - 86);
+          ctx.lineTo(x - 84, canvas.height - 34);
+          ctx.stroke();
+        }
+
+        const projected = voxels.map((voxel) => ({ voxel, point: project(voxel) }));
+        const bounds = projected.reduce(
+          (accumulator, item) => ({
+            minX: Math.min(accumulator.minX, item.point.x),
+            maxX: Math.max(accumulator.maxX, item.point.x),
+            minY: Math.min(accumulator.minY, item.point.y),
+            maxY: Math.max(accumulator.maxY, item.point.y),
+          }),
+          { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity },
+        );
+        const width = Math.max(1, bounds.maxX - bounds.minX);
+        const height = Math.max(1, bounds.maxY - bounds.minY);
+        const scale = Math.min((canvas.width * 0.72) / width, (canvas.height * 0.68) / height);
+        const offsetX = canvas.width * 0.50 - ((bounds.minX + bounds.maxX) * scale) / 2;
+        const offsetY = canvas.height * 0.66 - ((bounds.minY + bounds.maxY) * scale) / 2;
+
+        projected
+          .sort((a, b) => a.voxel.x + a.voxel.z + a.voxel.y * 0.02 - (b.voxel.x + b.voxel.z + b.voxel.y * 0.02))
+          .forEach((item) => {
+            const screenPoint = {
+              x: offsetX + item.point.x * scale,
+              y: offsetY + item.point.y * scale,
+            };
+            drawVoxel(screenPoint, materials[item.voxel.material] || "#ffffff", scale);
+          });
+
+        ctx.fillStyle = validation.validationStatus === "PASS" ? "#86f09f" : "#ffb18a";
+        ctx.font = "700 14px Cascadia Mono, Consolas, monospace";
+        ctx.fillText(`V3 SYNTHETIC SHELL ${validation.validationStatus}`, 22, 30);
+        ctx.fillStyle = "#a8bbc1";
+        ctx.font = "13px Cascadia Mono, Consolas, monospace";
+        ctx.fillText(`${validation.voxelCount} voxels / ${validation.materials.length} materials / r${validation.resolution}`, 22, 52);
+      }
+
+      function render() {
+        const resolution = clampResolution(resolutionInput.value);
+        resolutionInput.value = String(resolution);
+
+        const voxels = makeSyntheticShell(resolution);
+        const validation = validateSyntheticAsset(voxels, resolution);
+
+        drawScene(voxels, validation);
+        summary.classList.toggle("status-pass", validation.validationStatus === "PASS");
+        summary.classList.toggle("status-warn", validation.validationStatus !== "PASS");
+        summary.textContent = JSON.stringify(validation, null, 2);
+      }
+
+      renderButton.addEventListener("click", render);
+      resolutionInput.addEventListener("change", render);
+      window.addEventListener("load", render);
+    </script>
+  </body>
+</html>
