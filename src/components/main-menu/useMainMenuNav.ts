@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react';
 
 export type MainMenuParent = 'play' | 'customization' | 'tools' | 'system';
-export type MainMenuTab = 'single' | 'multi' | 'spec' | 'theater';
+export type MainMenuTab = 'single' | 'multi' | 'theater';
 export type CustomizationChild = 'armory' | 'hotkeys' | 'gamepad' | 'identity';
 
 export interface MainMenuNavState {
@@ -20,7 +20,7 @@ export const DEFAULT_MAIN_MENU_NAV: MainMenuNavState = {
 };
 
 const MAIN_MENU_PARENTS: readonly MainMenuParent[] = ['play', 'customization', 'tools', 'system'];
-const MAIN_MENU_PLAY_CHILDREN: readonly MainMenuTab[] = ['single', 'multi', 'spec', 'theater'];
+const MAIN_MENU_PLAY_CHILDREN: readonly MainMenuTab[] = ['single', 'multi', 'theater'];
 const MAIN_MENU_CUSTOMIZATION_CHILDREN: readonly CustomizationChild[] = ['armory', 'hotkeys', 'gamepad', 'identity'];
 
 export function parseStoredMainMenuNav(raw: string | null): MainMenuNavState {

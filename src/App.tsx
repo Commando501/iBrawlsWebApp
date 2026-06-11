@@ -37,7 +37,7 @@ import { useMatchLoadingGate } from './components/loading/useMatchLoadingGate';
 
 export { createHighFidelityObjectMesh } from './components/main-menu/MapPreview';
 
-const APP_VERSION = '0.648a';
+const APP_VERSION = '0.649a';
 
 // Visual Keyboard + Mouse keybind editor component
 export default function App() {
@@ -816,7 +816,6 @@ export default function App() {
           onJoinGame: handleJoinGame,
           onApplyMatchmakerUrl: handleApplyMatchmakerUrl,
           onResetMatchmakerUrl: handleResetMatchmakerUrl,
-          onSpectateLiveMatch: () => selectMainMenuPlayChild('multi'),
           savedReplays,
           cachedReplays,
           replaySizes,
@@ -854,12 +853,7 @@ export default function App() {
           setPlayerLoadout,
           setIsPainting,
           setCustomizerWeapon,
-          account,
           onPlayerNameChange: handlePlayerNameChange,
-          onRegistered: handleRegistered,
-          onLoggedIn: handleLoggedIn,
-          onLoggedOut: handleLoggedOut,
-          onAccountChanged: handleAccountChanged,
           saveSystemStatus,
           saveCodeImportInput,
           onExportSaveCode: handleExportSaveCode,
@@ -868,6 +862,9 @@ export default function App() {
           onImportSaveCode: handleImportSaveCode,
         }}
         broadcastRail={{
+          account,
+          playerName,
+          playerHue: localPlayerHue,
           onlineClients,
           clientId,
           connectionStatus,
@@ -875,6 +872,11 @@ export default function App() {
           menuSocket,
           hostIdCode,
           lobbyChatMessages,
+          onPlayerNameChange: handlePlayerNameChange,
+          onRegistered: handleRegistered,
+          onLoggedIn: handleLoggedIn,
+          onLoggedOut: handleLoggedOut,
+          onAccountChanged: handleAccountChanged,
           onJoinGame: handleJoinRelayLobby,
           setInviteNotifications,
           onSendLobbyChatMessage: sendLobbyChatMessage,

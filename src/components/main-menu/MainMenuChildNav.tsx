@@ -14,7 +14,6 @@ interface MainMenuChildNavProps {
 const PLAY_CHILDREN: { id: MainMenuTab; label: string }[] = [
   { id: 'single', label: 'Single Player' },
   { id: 'multi', label: 'Multiplayer' },
-  { id: 'spec', label: 'Spectate' },
   { id: 'theater', label: 'Theater' },
 ];
 

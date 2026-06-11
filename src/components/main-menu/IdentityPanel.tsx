@@ -1,26 +1,11 @@
-import type { AccountInfo } from '../../services/account';
-import { PilotIdentitySubframe } from './GlobalBroadcastPanel';
-
 interface IdentityPanelProps {
-  account: AccountInfo | null;
   playerName: string;
-  playerHue?: number;
   onPlayerNameChange: (name: string) => void;
-  onRegistered: (account: AccountInfo) => void;
-  onLoggedIn: (account: AccountInfo) => void;
-  onLoggedOut: () => void;
-  onAccountChanged: (account: AccountInfo) => void;
 }
 
 export function IdentityPanel({
-  account,
   playerName,
-  playerHue,
   onPlayerNameChange,
-  onRegistered,
-  onLoggedIn,
-  onLoggedOut,
-  onAccountChanged,
 }: IdentityPanelProps) {
   return (
     <div className="flex flex-col h-full min-h-0 overflow-y-auto pr-1 gap-4 max-w-2xl">
@@ -38,17 +23,6 @@ export function IdentityPanel({
           <div className="absolute right-3.5 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
         </div>
       </div>
-
-      <PilotIdentitySubframe
-        account={account}
-        playerName={playerName}
-        playerHue={playerHue}
-        onPlayerNameChange={onPlayerNameChange}
-        onRegistered={onRegistered}
-        onLoggedIn={onLoggedIn}
-        onLoggedOut={onLoggedOut}
-        onAccountChanged={onAccountChanged}
-      />
     </div>
   );
 }

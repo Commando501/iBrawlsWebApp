@@ -37,6 +37,16 @@ test('parseStoredMainMenuNav replaces unknown values field-by-field', () => {
   });
 });
 
+test('parseStoredMainMenuNav migrates the removed spec tab to the default play child', () => {
+  const stored = JSON.stringify({
+    parent: 'play',
+    playChild: 'spec',
+    customizationChild: 'armory',
+  });
+
+  assert.deepEqual(parseStoredMainMenuNav(stored), DEFAULT_MAIN_MENU_NAV);
+});
+
 test('parseStoredMainMenuNav falls back to defaults on malformed JSON', () => {
   assert.deepEqual(parseStoredMainMenuNav('{'), DEFAULT_MAIN_MENU_NAV);
 });
