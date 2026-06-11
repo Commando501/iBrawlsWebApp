@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import * as THREE from 'three';
 import { buildVoxelSpartanModel } from '../VoxelModels';
+import { createCustomArmorPiece, createCustomArmorSnapshot } from '../customArmor';
 import { createCombatantMeshRig } from '../grifball/combatantModels';
 import {
   buildV3PistolModel,
@@ -34,6 +35,56 @@ describe('buildV3SpartanModel', () => {
     assert.ok(size.x > 0.5 && size.x < 2.2, `unexpected width ${size.x}`);
     assert.ok(size.y > 1.2 && size.y < 2.8, `unexpected height ${size.y}`);
     assert.ok(size.z > 0.25 && size.z < 1.8, `unexpected depth ${size.z}`);
+  });
+
+  it('builds V3 custom armor pieces in place of matching built-in V3 parts', () => {
+    const customHelmet = createCustomArmorSnapshot(createCustomArmorPiece(
+      'helmet',
+      'Test V3 Helmet',
+      Array.from({ length: 130 }, (_, index) => ({
+        x: index % 8,
+        y: Math.floor(index / 8) % 8,
+        z: Math.floor(index / 64),
+        role: index % 11 === 0 ? 'visor' : 'primary',
+        emissive: index % 11 === 0,
+      })),
+      'ibv3-aegis-helmet',
+      undefined,
+      'v3'
+    ));
+
+    const model = buildV3SpartanModel({
+      isEnemy: false,
+      customHue: 192,
+      loadout: { modelSystem: 'v3', customArmor: { helmet: customHelmet } },
+    });
+    const helmet = model.userData.v3PartGroups.helmet as THREE.Group;
+
+    assert.equal(helmet.userData.customArmorId, customHelmet.id);
+    assert.equal(helmet.userData.v3Slot, 'helmet');
+  });
+
+  it('ignores V2 custom armor snapshots when building a V3 model', () => {
+    const v2Helmet = createCustomArmorSnapshot(createCustomArmorPiece(
+      'helmet',
+      'V2 Helmet',
+      Array.from({ length: 130 }, (_, index) => ({
+        x: index % 4,
+        y: 35 + Math.floor(index / 4) % 8,
+        z: Math.floor(index / 32),
+        role: 'primary' as const,
+      }))
+    ));
+
+    const model = buildV3SpartanModel({
+      isEnemy: false,
+      customHue: 192,
+      loadout: { modelSystem: 'v3', customArmor: { helmet: v2Helmet } },
+    });
+    const helmet = model.userData.v3PartGroups.helmet as THREE.Group;
+
+    assert.equal(helmet.userData.customArmorId, undefined);
+    assert.equal(helmet.userData.v3PartId, 'ibv3-aegis-helmet');
   });
 });
 

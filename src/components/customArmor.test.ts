@@ -273,6 +273,34 @@ test('shared preview loadout signature tracks large custom armor without seriali
   assert.equal(baseSignature.includes('2999'), false);
 });
 
+test('shared preview loadout signature tracks V3 custom armor without serializing voxels', async () => {
+  const { getPreviewLoadoutSignature } = await import('./previewModelUtils');
+  const voxels = Array.from({ length: 1_000 }, (_, index) => ({
+    x: index % 10,
+    y: Math.floor(index / 10) % 10,
+    z: Math.floor(index / 100),
+    role: 'primary' as const,
+  }));
+  const signature = getPreviewLoadoutSignature({
+    modelSystem: 'v3',
+    customArmor: {
+      forearmRight: {
+        version: 1,
+        id: 'v3-forearm',
+        name: 'V3 Forearm',
+        slot: 'forearmRight',
+        modelSystem: 'v3',
+        voxels,
+        updatedAt: 200,
+      },
+    },
+  });
+
+  assert.ok(signature.includes('forearmRight:v3:v3-forearm'));
+  assert.equal(signature.includes('"voxels"'), false);
+  assert.equal(signature.includes('999'), false);
+});
+
 test('shared preview disposal releases nested mesh resources', async () => {
   const { disposePreviewObject } = await import('./previewModelUtils');
   const group = new THREE.Group();
