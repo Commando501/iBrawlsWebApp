@@ -26,6 +26,7 @@ import {
   type CustomArmorPiece,
   type CustomArmorPieceSnapshot,
   type CustomArmorSlot,
+  type V2CustomArmorSlot,
   type CustomArmorVoxel,
 } from '../customArmor';
 import {
@@ -64,7 +65,7 @@ type ArmorEditorCameraView = {
   distance: number;
 };
 
-const SLOT_OPTIONS: Array<{ slot: CustomArmorSlot; label: string }> = [
+const SLOT_OPTIONS: Array<{ slot: V2CustomArmorSlot; label: string }> = [
   { slot: 'helmet', label: 'Helmet' },
   { slot: 'torso', label: 'Chest' },
   { slot: 'arm', label: 'Arms' },
@@ -102,7 +103,7 @@ const POSE_OPTIONS: Array<{ id: PoseMode; label: string }> = [
   { id: 'sword', label: 'Sword' },
 ];
 
-const BUILTIN_PRESETS: Record<CustomArmorSlot, string[]> = {
+const BUILTIN_PRESETS: Record<V2CustomArmorSlot, string[]> = {
   helmet: ['mark-vi', 'odst', 'recon', 'eva', 'gungnir', 'eod', 'hayabusa', 'cqb'],
   torso: ['mark-vi', 'scout', 'recon', 'eod', 'hayabusa'],
   arm: ['mark-vi', 'odst', 'recon', 'eod', 'hayabusa'],
@@ -131,6 +132,9 @@ const roleColorPreview: Record<CustomArmorMaterialRole, string> = {
   visor: '#67e8f9',
   dark: '#020617',
   highlight: '#93c5fd',
+  undersuit: '#020617',
+  emissive: '#67e8f9',
+  decal: '#a855f7',
   fixed: '#f472b6',
 };
 
@@ -189,7 +193,9 @@ const createBlankSnapshot = (slot: CustomArmorSlot, modelType: CharacterModelTyp
     modelType
   ));
 
-const getSlotPatchField = (slot: CustomArmorSlot): 'helmet' | 'torso' | 'arm' | 'leg' => slot;
+const getSlotPatchField = (slot: CustomArmorSlot): 'helmet' | 'torso' | 'arm' | 'leg' => (
+  slot === 'torso' || slot === 'arm' || slot === 'leg' ? slot : 'helmet'
+);
 
 function upsertPieceInCatalog(catalog: CustomArmorCatalog, draft: CustomArmorPieceSnapshot): CustomArmorCatalog {
   const existing = catalog.pieces.find((piece) => piece.id === draft.id);
