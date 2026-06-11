@@ -1,10 +1,8 @@
 import React from 'react';
-import type { AccountInfo } from '../../services/account';
 import type { ChatMessage } from '../ChatOverlay';
 import type { OnlineClient } from '../../network/onlineClients';
 import {
   GlobalChatPanel,
-  PilotIdentitySubframe,
   PlayerListSubframe,
 } from './GlobalBroadcastPanel';
 
@@ -12,10 +10,6 @@ type ConnectionStatus = 'idle' | 'fetching_ip' | 'hosting' | 'connecting' | 'con
 type ConnectionMode = 'relay' | 'local';
 
 interface MainMenuBroadcastRailProps {
-  style: React.CSSProperties;
-  account: AccountInfo | null;
-  playerName: string;
-  playerHue?: number;
   onlineClients: OnlineClient[];
   clientId: string;
   connectionStatus: ConnectionStatus;
@@ -23,21 +17,12 @@ interface MainMenuBroadcastRailProps {
   menuSocket: WebSocket | null;
   hostIdCode: string;
   lobbyChatMessages: ChatMessage[];
-  onPlayerNameChange: (name: string) => void;
-  onRegistered: (account: AccountInfo) => void;
-  onLoggedIn: (account: AccountInfo) => void;
-  onLoggedOut: () => void;
-  onAccountChanged: (account: AccountInfo) => void;
   onJoinGame: (target: string, isObserver?: boolean, password?: string, inviteToken?: string) => void;
   setInviteNotifications: React.Dispatch<React.SetStateAction<string[]>>;
   onSendLobbyChatMessage: (text: string) => void;
 }
 
 export function MainMenuBroadcastRail({
-  style,
-  account,
-  playerName,
-  playerHue,
   onlineClients,
   clientId,
   connectionStatus,
@@ -45,17 +30,12 @@ export function MainMenuBroadcastRail({
   menuSocket,
   hostIdCode,
   lobbyChatMessages,
-  onPlayerNameChange,
-  onRegistered,
-  onLoggedIn,
-  onLoggedOut,
-  onAccountChanged,
   onJoinGame,
   setInviteNotifications,
   onSendLobbyChatMessage,
 }: MainMenuBroadcastRailProps) {
   return (
-    <aside className="mobile-lobby-chat" style={style}>
+    <aside className="mobile-lobby-chat main-menu-chat-rail">
       <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'rgba(2,6,23,0.45)', border: '1px solid rgba(255,255,255,0.10)', borderRadius: 12, padding: 16, gap: 12, boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.30)', overflow: 'hidden' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: 10, borderBottom: '1px solid rgba(255,255,255,0.05)', gap: 8, flexShrink: 0 }}>
           <span style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 12, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#38bdf8', whiteSpace: 'nowrap' }}>
@@ -66,16 +46,6 @@ export function MainMenuBroadcastRail({
             LIVE
           </span>
         </div>
-        <PilotIdentitySubframe
-          account={account}
-          playerName={playerName}
-          playerHue={playerHue}
-          onPlayerNameChange={onPlayerNameChange}
-          onRegistered={onRegistered}
-          onLoggedIn={onLoggedIn}
-          onLoggedOut={onLoggedOut}
-          onAccountChanged={onAccountChanged}
-        />
         <PlayerListSubframe
           onlineClients={onlineClients}
           clientId={clientId}

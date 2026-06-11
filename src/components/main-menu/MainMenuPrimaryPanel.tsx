@@ -1,5 +1,5 @@
 import type { Dispatch, SetStateAction } from 'react';
-import type { AIPreset, ReplayFile, TournamentState, UniversalSettings } from '../../types';
+import type { AIPreset, Keybindings, ReplayFile, TournamentState, UniversalSettings } from '../../types';
 import type { CustomMapData } from '../../types';
 import type { MatchLobbyConfig } from '../../network/protocol';
 import type { ChatMessage } from '../ChatOverlay';
@@ -9,7 +9,11 @@ import type {
   GameplayConnectionMode,
   GameplayConnectionStatus,
 } from '../multiplayer/multiplayerConnectionConstants';
-import type { MainMenuTab } from './useMainMenuFrameLayout';
+import type { AccountInfo } from '../../services/account';
+import type { SaveSystemStatus } from '../../settings/useSaveAccountSync';
+import type { CharacterLoadout } from '../VoxelModels';
+import type { CustomArmorCatalog } from '../customArmor';
+import type { CustomizationChild, MainMenuParent, MainMenuTab } from './useMainMenuNav';
 import { MultiplayerSetupPanel } from '../multiplayer/MultiplayerSetupPanel';
 import {
   TheaterLibraryPanel,
@@ -17,6 +21,12 @@ import {
   type TheaterMapFilter,
   type TheaterModeFilter,
 } from '../replay/TheaterLibraryPanel';
+import { ManualControlsPanel } from './ManualControlsPanel';
+import { VisualGamepadMapper } from './VisualGamepadMapper';
+import { ArmoryPanel, type PreviewWeapon } from './ArmoryPanel';
+import { CreativeToolsPanel } from './CreativeToolsPanel';
+import { IdentityPanel } from './IdentityPanel';
+import { SaveCodesPanel } from './SaveCodesPanel';
 import { SinglePlayerSetupPanel } from './SinglePlayerSetupPanel';
 import { SpectatorSetupPanel } from './SpectatorSetupPanel';
 
@@ -24,7 +34,9 @@ type SinglePlayerMode = 'sandbox' | 'tournament';
 type QuickPlayStatus = 'idle' | 'searching' | 'matching';
 
 interface MainMenuPrimaryPanelProps {
-  activeMenuTab: MainMenuTab;
+  parent: MainMenuParent;
+  playChild: MainMenuTab;
+  customizationChild: CustomizationChild;
   singlePlayerMode: SinglePlayerMode;
   setSinglePlayerMode: Dispatch<SetStateAction<SinglePlayerMode>>;
   adminSettings: UniversalSettings;
@@ -104,171 +116,196 @@ interface MainMenuPrimaryPanelProps {
   onOpenHeatmapReplay: (replay: ReplayFile) => void;
   onSaveCachedReplay: (replay: ReplayFile) => void;
   onWatchReplay: (replay: ReplayFile) => void;
+  keybindings: Keybindings;
+  setKeybindings: Dispatch<SetStateAction<Keybindings>>;
+  rebindingAction: keyof Keybindings | null;
+  setRebindingAction: Dispatch<SetStateAction<keyof Keybindings | null>>;
+  gamepadConnected: boolean;
+  gamepadName: string;
+  holdingGpButton: { buttonIndex: number; name: string; progress: number } | null;
+  unassignedButtonMap: number | null;
+  setUnassignedButtonMap: Dispatch<SetStateAction<number | null>>;
+  pressedGpButtons: boolean[];
+  hoveredAction: string | null;
+  setHoveredAction: Dispatch<SetStateAction<string | null>>;
+  leftStickActive: boolean;
+  rightStickActive: boolean;
+  isPainting: boolean;
+  playerLoadout: CharacterLoadout;
+  customArmorCatalog: CustomArmorCatalog;
+  customizerWeapon: PreviewWeapon;
+  setPlayerLoadout: Dispatch<SetStateAction<CharacterLoadout>>;
+  setIsPainting: Dispatch<SetStateAction<boolean>>;
+  setCustomizerWeapon: Dispatch<SetStateAction<PreviewWeapon>>;
+  account: AccountInfo | null;
+  onPlayerNameChange: (value: string) => void;
+  onRegistered: (account: AccountInfo) => void;
+  onLoggedIn: (account: AccountInfo) => void;
+  onLoggedOut: () => void;
+  onAccountChanged: (account: AccountInfo) => void;
+  saveSystemStatus: SaveSystemStatus;
+  saveCodeImportInput: string;
+  onExportSaveCode: () => void;
+  onResetAllSettings: () => void;
+  onSaveCodeImportInputChange: (value: string) => void;
+  onImportSaveCode: (value: string) => void;
 }
 
-export function MainMenuPrimaryPanel({
-  activeMenuTab,
-  singlePlayerMode,
-  setSinglePlayerMode,
-  adminSettings,
-  setAdminSettings,
-  aiPresets,
-  newAiPresetNameInput,
-  setNewAiPresetNameInput,
-  onSelectAIPreset,
-  onDeleteAIPreset,
-  onSelectAIArchetype,
-  onSaveAIPreset,
-  onOpenBotSetup,
-  tournamentState,
-  selectedTournamentPresets,
-  setSelectedTournamentPresets,
-  tournamentKillsToWin,
-  setTournamentKillsToWin,
-  tournamentRoundCount,
-  setTournamentRoundCount,
-  onInitializeTournament,
-  playerName,
-  playerHue,
-  selectedMap,
-  onSelectedMapChange,
-  lobbyCustomMapData,
-  onCustomMapDataChange,
-  matchLobbyConfig,
-  multiplayerRole,
-  multiplayerSocket,
-  multiplayerPlayerCount,
-  lobbyParticipants,
-  chatMessages,
-  isPlaying,
-  onStartTournamentMatch,
-  onResetTournament,
-  connectionMode,
-  onConnectionModeChange,
-  isOnline,
-  userIp,
-  lanIp,
-  hostIdCode,
-  connectionStatus,
-  connectionError,
-  quickPlayStatus,
-  joinIpOrId,
-  onJoinIpOrIdChange,
-  customUrlInput,
-  onCustomUrlInputChange,
-  onCancelHostOrJoin,
-  onCancelQuickPlay,
-  onQuickPlay,
-  onHostGame,
-  onStartHostedMatch,
-  onSendChatMessage,
-  onJoinGame,
-  onApplyMatchmakerUrl,
-  onResetMatchmakerUrl,
-  onSpectateLiveMatch,
-  savedReplays,
-  cachedReplays,
-  replaySizes,
-  replayUploadStatus,
-  theaterSearchQuery,
-  theaterMapFilter,
-  theaterModeFilter,
-  setTheaterSearchQuery,
-  setTheaterMapFilter,
-  setTheaterModeFilter,
-  onEditReplay,
-  onDeleteReplay,
-  onContributeReplay,
-  onOpenHeatmapReplay,
-  onSaveCachedReplay,
-  onWatchReplay,
-}: MainMenuPrimaryPanelProps) {
+export function MainMenuPrimaryPanel(props: MainMenuPrimaryPanelProps) {
+  const { parent, playChild, customizationChild } = props;
+
   return (
-    <div className="flex flex-col h-full min-h-0 overflow-y-auto pr-0.5">
-      {activeMenuTab === 'single' ? (
-        <SinglePlayerSetupPanel
-          singlePlayerMode={singlePlayerMode}
-          setSinglePlayerMode={setSinglePlayerMode}
-          adminSettings={adminSettings}
-          setAdminSettings={setAdminSettings}
-          aiPresets={aiPresets}
-          newAiPresetNameInput={newAiPresetNameInput}
-          setNewAiPresetNameInput={setNewAiPresetNameInput}
-          onSelectAIPreset={onSelectAIPreset}
-          onDeleteAIPreset={onDeleteAIPreset}
-          onSelectAIArchetype={onSelectAIArchetype}
-          onSaveAIPreset={onSaveAIPreset}
-          onOpenBotSetup={onOpenBotSetup}
-          tournamentState={tournamentState}
-          selectedTournamentPresets={selectedTournamentPresets}
-          setSelectedTournamentPresets={setSelectedTournamentPresets}
-          tournamentKillsToWin={tournamentKillsToWin}
-          setTournamentKillsToWin={setTournamentKillsToWin}
-          tournamentRoundCount={tournamentRoundCount}
-          setTournamentRoundCount={setTournamentRoundCount}
-          onInitializeTournament={onInitializeTournament}
-          playerName={playerName}
-          playerHue={playerHue}
-          isPlaying={isPlaying}
-          onStartTournamentMatch={onStartTournamentMatch}
-          onResetTournament={onResetTournament}
-        />
-      ) : activeMenuTab === 'multi' ? (
-        <MultiplayerSetupPanel
-          connectionMode={connectionMode}
-          onConnectionModeChange={onConnectionModeChange}
-          isOnline={isOnline}
-          userIp={userIp}
-          lanIp={lanIp}
-          hostIdCode={hostIdCode}
-          connectionStatus={connectionStatus}
-          connectionError={connectionError}
-          quickPlayStatus={quickPlayStatus}
-          adminSettings={adminSettings}
-          selectedMap={selectedMap}
-          onSelectedMapChange={onSelectedMapChange}
-          lobbyCustomMapData={lobbyCustomMapData}
-          onCustomMapDataChange={onCustomMapDataChange}
-          matchLobbyConfig={matchLobbyConfig}
-          multiplayerRole={multiplayerRole}
-          multiplayerSocket={multiplayerSocket}
-          multiplayerPlayerCount={multiplayerPlayerCount}
-          lobbyParticipants={lobbyParticipants}
-          chatMessages={chatMessages}
-          joinIpOrId={joinIpOrId}
-          onJoinIpOrIdChange={onJoinIpOrIdChange}
-          customUrlInput={customUrlInput}
-          onCustomUrlInputChange={onCustomUrlInputChange}
-          onCancelHostOrJoin={onCancelHostOrJoin}
-          onCancelQuickPlay={onCancelQuickPlay}
-          onQuickPlay={onQuickPlay}
-          onHostGame={onHostGame}
-          onStartHostedMatch={onStartHostedMatch}
-          onSendChatMessage={onSendChatMessage}
-          onJoinGame={onJoinGame}
-          onApplyMatchmakerUrl={onApplyMatchmakerUrl}
-          onResetMatchmakerUrl={onResetMatchmakerUrl}
-        />
-      ) : activeMenuTab === 'spec' ? (
-        <SpectatorSetupPanel onSpectateLiveMatch={onSpectateLiveMatch} />
-      ) : (
-        <TheaterLibraryPanel
-          savedReplays={savedReplays}
-          cachedReplays={cachedReplays}
-          replaySizes={replaySizes}
-          replayUploadStatus={replayUploadStatus}
-          searchQuery={theaterSearchQuery}
-          mapFilter={theaterMapFilter}
-          modeFilter={theaterModeFilter}
-          onSearchQueryChange={setTheaterSearchQuery}
-          onMapFilterChange={setTheaterMapFilter}
-          onModeFilterChange={setTheaterModeFilter}
-          onEditReplay={onEditReplay}
-          onDeleteReplay={onDeleteReplay}
-          onContributeReplay={onContributeReplay}
-          onOpenHeatmapReplay={onOpenHeatmapReplay}
-          onSaveCachedReplay={onSaveCachedReplay}
-          onWatchReplay={onWatchReplay}
+    <div className="flex flex-col h-full min-h-0 overflow-y-auto pr-0.5 flex-1 min-w-0">
+      {parent === 'play' && (
+        playChild === 'single' ? (
+          <SinglePlayerSetupPanel
+            singlePlayerMode={props.singlePlayerMode}
+            setSinglePlayerMode={props.setSinglePlayerMode}
+            adminSettings={props.adminSettings}
+            setAdminSettings={props.setAdminSettings}
+            aiPresets={props.aiPresets}
+            newAiPresetNameInput={props.newAiPresetNameInput}
+            setNewAiPresetNameInput={props.setNewAiPresetNameInput}
+            onSelectAIPreset={props.onSelectAIPreset}
+            onDeleteAIPreset={props.onDeleteAIPreset}
+            onSelectAIArchetype={props.onSelectAIArchetype}
+            onSaveAIPreset={props.onSaveAIPreset}
+            onOpenBotSetup={props.onOpenBotSetup}
+            tournamentState={props.tournamentState}
+            selectedTournamentPresets={props.selectedTournamentPresets}
+            setSelectedTournamentPresets={props.setSelectedTournamentPresets}
+            tournamentKillsToWin={props.tournamentKillsToWin}
+            setTournamentKillsToWin={props.setTournamentKillsToWin}
+            tournamentRoundCount={props.tournamentRoundCount}
+            setTournamentRoundCount={props.setTournamentRoundCount}
+            onInitializeTournament={props.onInitializeTournament}
+            playerName={props.playerName}
+            playerHue={props.playerHue}
+            isPlaying={props.isPlaying}
+            onStartTournamentMatch={props.onStartTournamentMatch}
+            onResetTournament={props.onResetTournament}
+          />
+        ) : playChild === 'multi' ? (
+          <MultiplayerSetupPanel
+            connectionMode={props.connectionMode}
+            onConnectionModeChange={props.onConnectionModeChange}
+            isOnline={props.isOnline}
+            userIp={props.userIp}
+            lanIp={props.lanIp}
+            hostIdCode={props.hostIdCode}
+            connectionStatus={props.connectionStatus}
+            connectionError={props.connectionError}
+            quickPlayStatus={props.quickPlayStatus}
+            adminSettings={props.adminSettings}
+            selectedMap={props.selectedMap}
+            onSelectedMapChange={props.onSelectedMapChange}
+            lobbyCustomMapData={props.lobbyCustomMapData}
+            onCustomMapDataChange={props.onCustomMapDataChange}
+            matchLobbyConfig={props.matchLobbyConfig}
+            multiplayerRole={props.multiplayerRole}
+            multiplayerSocket={props.multiplayerSocket}
+            multiplayerPlayerCount={props.multiplayerPlayerCount}
+            lobbyParticipants={props.lobbyParticipants}
+            chatMessages={props.chatMessages}
+            joinIpOrId={props.joinIpOrId}
+            onJoinIpOrIdChange={props.onJoinIpOrIdChange}
+            customUrlInput={props.customUrlInput}
+            onCustomUrlInputChange={props.onCustomUrlInputChange}
+            onCancelHostOrJoin={props.onCancelHostOrJoin}
+            onCancelQuickPlay={props.onCancelQuickPlay}
+            onQuickPlay={props.onQuickPlay}
+            onHostGame={props.onHostGame}
+            onStartHostedMatch={props.onStartHostedMatch}
+            onSendChatMessage={props.onSendChatMessage}
+            onJoinGame={props.onJoinGame}
+            onApplyMatchmakerUrl={props.onApplyMatchmakerUrl}
+            onResetMatchmakerUrl={props.onResetMatchmakerUrl}
+          />
+        ) : playChild === 'spec' ? (
+          <SpectatorSetupPanel onSpectateLiveMatch={props.onSpectateLiveMatch} />
+        ) : (
+          <TheaterLibraryPanel
+            savedReplays={props.savedReplays}
+            cachedReplays={props.cachedReplays}
+            replaySizes={props.replaySizes}
+            replayUploadStatus={props.replayUploadStatus}
+            searchQuery={props.theaterSearchQuery}
+            mapFilter={props.theaterMapFilter}
+            modeFilter={props.theaterModeFilter}
+            onSearchQueryChange={props.setTheaterSearchQuery}
+            onMapFilterChange={props.setTheaterMapFilter}
+            onModeFilterChange={props.setTheaterModeFilter}
+            onEditReplay={props.onEditReplay}
+            onDeleteReplay={props.onDeleteReplay}
+            onContributeReplay={props.onContributeReplay}
+            onOpenHeatmapReplay={props.onOpenHeatmapReplay}
+            onSaveCachedReplay={props.onSaveCachedReplay}
+            onWatchReplay={props.onWatchReplay}
+          />
+        )
+      )}
+
+      {parent === 'customization' && (
+        customizationChild === 'armory' ? (
+          <ArmoryPanel
+            isPainting={props.isPainting}
+            playerLoadout={props.playerLoadout}
+            customArmorCatalog={props.customArmorCatalog}
+            playerHue={props.playerHue}
+            customizerWeapon={props.customizerWeapon}
+            setPlayerLoadout={props.setPlayerLoadout}
+            setIsPainting={props.setIsPainting}
+            setCustomizerWeapon={props.setCustomizerWeapon}
+            setAdminSettings={props.setAdminSettings}
+          />
+        ) : customizationChild === 'hotkeys' ? (
+          <ManualControlsPanel
+            keybindings={props.keybindings}
+            setKeybindings={props.setKeybindings}
+            rebindingAction={props.rebindingAction}
+            setRebindingAction={props.setRebindingAction}
+          />
+        ) : customizationChild === 'gamepad' ? (
+          <VisualGamepadMapper
+            keybindings={props.keybindings}
+            setKeybindings={props.setKeybindings}
+            rebindingAction={props.rebindingAction}
+            setRebindingAction={props.setRebindingAction}
+            gamepadConnected={props.gamepadConnected}
+            gamepadName={props.gamepadName}
+            holdingGpButton={props.holdingGpButton}
+            unassignedButtonMap={props.unassignedButtonMap}
+            setUnassignedButtonMap={props.setUnassignedButtonMap}
+            pressedGpButtons={props.pressedGpButtons}
+            hoveredAction={props.hoveredAction}
+            setHoveredAction={props.setHoveredAction}
+            leftStickActive={props.leftStickActive}
+            rightStickActive={props.rightStickActive}
+          />
+        ) : (
+          <IdentityPanel
+            account={props.account}
+            playerName={props.playerName}
+            playerHue={props.playerHue}
+            onPlayerNameChange={props.onPlayerNameChange}
+            onRegistered={props.onRegistered}
+            onLoggedIn={props.onLoggedIn}
+            onLoggedOut={props.onLoggedOut}
+            onAccountChanged={props.onAccountChanged}
+          />
+        )
+      )}
+
+      {parent === 'tools' && <CreativeToolsPanel />}
+
+      {parent === 'system' && (
+        <SaveCodesPanel
+          saveSystemStatus={props.saveSystemStatus}
+          saveCodeImportInput={props.saveCodeImportInput}
+          onExportSaveCode={props.onExportSaveCode}
+          onResetAllSettings={props.onResetAllSettings}
+          onSaveCodeImportInputChange={props.onSaveCodeImportInputChange}
+          onImportSaveCode={props.onImportSaveCode}
         />
       )}
     </div>
