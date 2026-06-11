@@ -15,6 +15,7 @@ import {
   type HammerAttackPhase,
   type WeaponPose,
 } from '../components/grifball/attackAnimationPresets';
+import { getFirstPersonV3WeaponPose } from '../components/grifball/combatantAnimationV3';
 import {
   COMBATANT_BONE_NAMES,
   attachToAttachmentPoint,
@@ -23,7 +24,13 @@ import {
   type CombatantBoneName,
 } from '../components/grifball/combatantRig';
 import { createCombatantMeshRig, type CombatantMeshRig } from '../components/grifball/combatantModels';
-import { buildGravityHammerModel, buildKatarSwordModel } from '../components/VoxelModels';
+import {
+  buildGravityHammerModel,
+  buildKatarSwordModel,
+  buildPistolModel,
+  type CharacterLoadout,
+} from '../components/VoxelModels';
+import { buildV3HammerModel, buildV3PistolModel, buildV3SwordModel } from '../components/v3/VoxelModelsV3';
 import {
   DEFAULT_HAMMER_SLAM_ATTACK_TIME,
   DEFAULT_HAMMER_SLAM_TIMING_LOCKED,
@@ -49,7 +56,8 @@ import {
   type SelectedRigTarget,
 } from './animationEditorCore';
 
-type WeaponChoice = 'hammer' | 'sword';
+type WeaponChoice = 'hammer' | 'sword' | 'pistol';
+type ModelSystemChoice = 'v1' | 'v2' | 'v3';
 type EditorView = 'firstPerson' | 'thirdPerson';
 type TransformMode = 'translate' | 'rotate';
 type RigTrackMap = Record<string, AnimationKeyframe[]>;
@@ -101,9 +109,9 @@ interface EditorState {
   showSkeleton: boolean;
   showSockets: boolean;
   showLabels: boolean;
-  modelSystem: 'v1' | 'v2';
+  modelSystem: ModelSystemChoice;
   modelType: CharacterModelType;
-  versionedData: Record<'v1' | 'v2', VersionedAnimationData>;
+  versionedData: Record<ModelSystemChoice, VersionedAnimationData>;
 }
 
 const TRACKS: TrackDefinition[] = [
@@ -161,12 +169,43 @@ const TRACKS: TrackDefinition[] = [
       ? getFirstPersonSwordSlashPose('recover', progress)
       : getThirdPersonSwordSlashPose('recover', progress),
   },
+  {
+    id: 'pistol_fire',
+    label: 'Pistol fire',
+    weapon: 'pistol',
+    sample: (view, progress) => samplePistolPose(view, progress),
+  },
+  {
+    id: 'pistol_recover',
+    label: 'Pistol recover',
+    weapon: 'pistol',
+    sample: (view, progress) => samplePistolPose(view, 1 - progress),
+  },
 ];
 
 function sampleHammerPose(view: EditorView, phase: HammerAttackPhase, progress: number): WeaponPose {
   return view === 'firstPerson'
     ? getFirstPersonHammerPose(phase, progress)
     : getThirdPersonHammerPose(phase, progress);
+}
+
+function samplePistolPose(view: EditorView, progress: number): WeaponPose {
+  const pct = Math.max(0, Math.min(1, progress));
+  const weaponTimer = 0.18 * pct;
+  if (view === 'firstPerson') {
+    return getFirstPersonV3WeaponPose({
+      activeWeapon: 'pistol',
+      weaponState: 'firing',
+      weaponTimer,
+      settings: {},
+    });
+  }
+
+  const recoil = 1 - pct;
+  return {
+    position: [0.08, -0.04 + recoil * 0.02, -0.18 + recoil * 0.1],
+    rotation: [-0.04 - recoil * 0.28, 0.02, -0.06],
+  };
 }
 
 const PREVIEW_ATTACK_SETTINGS = {
@@ -261,6 +300,14 @@ function sampleThirdPersonArmPose(trackId: string, progress: number): CombatantA
       isLunging: false,
       settings: PREVIEW_ATTACK_SETTINGS,
     });
+  }
+
+  if (trackId === 'pistol_fire' || trackId === 'pistol_recover') {
+    const recoil = trackId === 'pistol_fire' ? 1 - pct : pct;
+    return {
+      rightArmRotation: [-0.42 - recoil * 0.36, 0.04, -0.08],
+      leftArmRotation: [-0.16, -0.12, 0.12],
+    };
   }
 
   return null;
@@ -478,6 +525,8 @@ const V2_BONE_NAMES = [
   'toes_r',
 ] as const;
 
+const V3_BONE_NAMES = ['lowerTorso', 'upperTorso', 'head', 'leftArm', 'rightArm', 'leftLeg', 'rightLeg'] as const;
+
 const V2_SKELETON_CONNECTIONS: Array<[string, string]> = [
   ['pelvis', 'stomach'],
   ['stomach', 'chest'],
@@ -507,10 +556,49 @@ scene.add(firstPersonRoot);
 const firstPersonRig = createFirstPersonWeaponRig(firstPersonRoot);
 const firstPersonWeaponGrip = firstPersonRig.attachments.firstPersonWeaponGrip;
 
-const firstPersonHammer = buildGravityHammerModel(192);
-const firstPersonSword = buildKatarSwordModel(192);
-attachToAttachmentPoint(firstPersonWeaponGrip, firstPersonHammer);
-attachToAttachmentPoint(firstPersonWeaponGrip, firstPersonSword);
+let firstPersonHammer: THREE.Group | undefined;
+let firstPersonSword: THREE.Group | undefined;
+let firstPersonPistol: THREE.Group | undefined;
+
+const disposeObjectTree = (object: THREE.Object3D | undefined): void => {
+  if (!object) return;
+  object.parent?.remove(object);
+  object.traverse((child) => {
+    if (child instanceof THREE.Mesh) {
+      child.geometry.dispose();
+      if (Array.isArray(child.material)) {
+        child.material.forEach((material) => material.dispose());
+      } else {
+        child.material.dispose();
+      }
+    }
+  });
+};
+
+const rebuildFirstPersonWeapons = (system: ModelSystemChoice): void => {
+  disposeObjectTree(firstPersonHammer);
+  disposeObjectTree(firstPersonSword);
+  disposeObjectTree(firstPersonPistol);
+
+  if (system === 'v3') {
+    firstPersonHammer = buildV3HammerModel(192);
+    firstPersonSword = buildV3SwordModel(192);
+    firstPersonPistol = buildV3PistolModel(192);
+  } else {
+    firstPersonHammer = buildGravityHammerModel(192);
+    firstPersonSword = buildKatarSwordModel(192);
+    firstPersonPistol = buildPistolModel(192);
+  }
+
+  firstPersonHammer.visible = false;
+  firstPersonSword.visible = false;
+  firstPersonPistol.visible = false;
+  attachToAttachmentPoint(firstPersonWeaponGrip, firstPersonHammer);
+  attachToAttachmentPoint(firstPersonWeaponGrip, firstPersonSword);
+  attachToAttachmentPoint(firstPersonWeaponGrip, firstPersonPistol);
+};
+
+rebuildFirstPersonWeapons('v1');
 
 const reticleMaterial = new THREE.LineBasicMaterial({ color: 0x22d3ee, transparent: true, opacity: 0.42 });
 const reticleGeometry = new THREE.BufferGeometry().setFromPoints([
@@ -618,6 +706,7 @@ const state: EditorState = {
   versionedData: {
     v1: createEmptyVersionedData(31),
     v2: createEmptyVersionedData(31),
+    v3: createEmptyVersionedData(31),
   },
 };
 
@@ -761,19 +850,36 @@ function seedLinkedThirdPersonArmTracksV2(weaponKeyframes: AnimationKeyframe[]):
   state.boneGeneratedFrames = nextGenerated;
 }
 
+function seedLinkedThirdPersonArmTracksV3(weaponKeyframes: AnimationKeyframe[]): void {
+  seedLinkedThirdPersonArmTracksV1(weaponKeyframes);
+}
+
 function seedLinkedThirdPersonArmTracks(weaponKeyframes: AnimationKeyframe[]): void {
-  if (state.modelSystem === 'v2') {
+  if (state.modelSystem === 'v3') {
+    seedLinkedThirdPersonArmTracksV3(weaponKeyframes);
+  } else if (state.modelSystem === 'v2') {
     seedLinkedThirdPersonArmTracksV2(weaponKeyframes);
   } else {
     seedLinkedThirdPersonArmTracksV1(weaponKeyframes);
   }
 }
 
+const requireWeaponObject = (weapon: WeaponChoice, object: THREE.Group | undefined): THREE.Group => {
+  if (!object) {
+    throw new Error(`Missing animation editor weapon object: ${weapon}`);
+  }
+  return object;
+};
+
 function getWeaponObject(view: EditorView, weapon: WeaponChoice): THREE.Group {
   if (view === 'firstPerson') {
-    return weapon === 'hammer' ? firstPersonHammer : firstPersonSword;
+    if (weapon === 'hammer') return requireWeaponObject(weapon, firstPersonHammer);
+    if (weapon === 'sword') return requireWeaponObject(weapon, firstPersonSword);
+    return requireWeaponObject(weapon, firstPersonPistol);
   }
-  return weapon === 'hammer' ? thirdPersonRig.hammer : thirdPersonRig.sword;
+  if (weapon === 'hammer') return thirdPersonRig.hammer;
+  if (weapon === 'sword') return thirdPersonRig.sword;
+  return requireWeaponObject(weapon, thirdPersonRig.pistol);
 }
 
 function getActiveWeaponObject(): THREE.Group {
@@ -937,7 +1043,11 @@ function getTargetOptionsForView(view: EditorView): TargetOption[] {
   ];
 
   if (view === 'thirdPerson') {
-    const bonesToUse = state.modelSystem === 'v2' ? V2_BONE_NAMES : COMBATANT_BONE_NAMES;
+    const bonesToUse = state.modelSystem === 'v3'
+      ? V3_BONE_NAMES
+      : state.modelSystem === 'v2'
+        ? V2_BONE_NAMES
+        : COMBATANT_BONE_NAMES;
     bonesToUse.forEach((name) => {
       options.push({
         target: { kind: 'bone', name, view },
@@ -1178,8 +1288,10 @@ function captureEditableTargetBaselines(): void {
   [
     { kind: 'weapon', name: 'hammer', view: 'thirdPerson' },
     { kind: 'weapon', name: 'sword', view: 'thirdPerson' },
+    { kind: 'weapon', name: 'pistol', view: 'thirdPerson' },
     { kind: 'weapon', name: 'hammer', view: 'firstPerson' },
     { kind: 'weapon', name: 'sword', view: 'firstPerson' },
+    { kind: 'weapon', name: 'pistol', view: 'firstPerson' },
     ...getAllRigTargets(),
   ].forEach((target) => {
     const typedTarget = target as SelectedRigTarget;
@@ -1465,8 +1577,12 @@ function syncSceneVisibility(): void {
 
   thirdPersonRig.hammer.visible = state.view === 'thirdPerson' && state.weapon === 'hammer';
   thirdPersonRig.sword.visible = state.view === 'thirdPerson' && state.weapon === 'sword';
-  firstPersonHammer.visible = state.view === 'firstPerson' && state.weapon === 'hammer';
-  firstPersonSword.visible = state.view === 'firstPerson' && state.weapon === 'sword';
+  if (thirdPersonRig.pistol) {
+    thirdPersonRig.pistol.visible = state.view === 'thirdPerson' && state.weapon === 'pistol';
+  }
+  if (firstPersonHammer) firstPersonHammer.visible = state.view === 'firstPerson' && state.weapon === 'hammer';
+  if (firstPersonSword) firstPersonSword.visible = state.view === 'firstPerson' && state.weapon === 'sword';
+  if (firstPersonPistol) firstPersonPistol.visible = state.view === 'firstPerson' && state.weapon === 'pistol';
   reticle.visible = state.view === 'firstPerson';
 
   transformControls.detach();
@@ -1477,7 +1593,7 @@ function syncSceneVisibility(): void {
   updateRigOverlays();
 }
 
-function saveVersionedData(system: 'v1' | 'v2'): void {
+function saveVersionedData(system: ModelSystemChoice): void {
   state.versionedData[system] = {
     weaponKeyframes: [...state.weaponKeyframes],
     weaponGeneratedFrames: [...state.weaponGeneratedFrames],
@@ -1492,7 +1608,7 @@ function saveVersionedData(system: 'v1' | 'v2'): void {
   };
 }
 
-function loadVersionedData(system: 'v1' | 'v2'): void {
+function loadVersionedData(system: ModelSystemChoice): void {
   const data = state.versionedData[system];
   state.weaponKeyframes = [...data.weaponKeyframes];
   state.weaponGeneratedFrames = [...data.weaponGeneratedFrames];
@@ -1506,10 +1622,11 @@ function loadVersionedData(system: 'v1' | 'v2'): void {
   state.interpolation = data.interpolation;
 }
 
-function currentPreviewLoadout(system: 'v1' | 'v2' = state.modelSystem) {
+function currentPreviewLoadout(system: ModelSystemChoice = state.modelSystem): CharacterLoadout {
+  if (system === 'v3') return { modelSystem: 'v3' };
   return system === 'v2'
-    ? { modelSystem: 'v2' as const, modelType: state.modelType }
-    : { modelSystem: 'v1' as const };
+    ? { modelSystem: 'v2', modelType: state.modelType }
+    : { modelSystem: 'v1' };
 }
 
 function buildSkeletonLines(): void {
@@ -1527,7 +1644,7 @@ function buildSkeletonLines(): void {
   rigOverlayRoot.add(skeletonLines);
 }
 
-function swapModelSystem(newSystem: 'v1' | 'v2'): void {
+function swapModelSystem(newSystem: ModelSystemChoice): void {
   if (state.modelSystem === newSystem) return;
 
   // 1. Save current system data
@@ -1557,6 +1674,7 @@ function swapModelSystem(newSystem: 'v1' | 'v2'): void {
   thirdPersonRig = createCombatantMeshRig(scene, 192, false, currentPreviewLoadout(newSystem));
   thirdPersonRig.group.position.set(0, 0, 0);
   thirdPersonRig.group.rotation.y = Math.PI;
+  rebuildFirstPersonWeapons(newSystem);
 
   // 5. Load new system data and rebuild socket locks
   buildSkeletonLines();
@@ -1595,6 +1713,7 @@ function swapModelType(newModelType: CharacterModelType): void {
   scene.remove(thirdPersonRig.group);
   thirdPersonRig.hammer.parent?.remove(thirdPersonRig.hammer);
   thirdPersonRig.sword.parent?.remove(thirdPersonRig.sword);
+  thirdPersonRig.pistol?.parent?.remove(thirdPersonRig.pistol);
 
   thirdPersonRig = createCombatantMeshRig(scene, 192, false, currentPreviewLoadout('v2'));
   thirdPersonRig.group.position.set(0, 0, 0);
@@ -1862,6 +1981,7 @@ function renderAll(): void {
   viewSelect.value = state.view;
   modelSystemSelect.value = state.modelSystem;
   modelTypeSelect.value = state.modelType;
+  modelTypeSelect.disabled = state.modelSystem !== 'v2';
   interpolationSelect.value = state.interpolation;
   frameCountInput.value = String(state.frameCount);
   showSkeletonToggle.checked = state.showSkeleton;
@@ -1917,7 +2037,7 @@ weaponSelect.addEventListener('change', () => {
 });
 
 modelSystemSelect.addEventListener('change', () => {
-  swapModelSystem(modelSystemSelect.value as 'v1' | 'v2');
+  swapModelSystem(modelSystemSelect.value as ModelSystemChoice);
 });
 
 modelTypeSelect.addEventListener('change', () => {
