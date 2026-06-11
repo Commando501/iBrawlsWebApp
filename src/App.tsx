@@ -20,7 +20,7 @@ import { useAppSessionState } from './components/useAppSessionState';
 import { useAppLifecycleActions, useCloseTournamentGameAction } from './components/useAppLifecycleActions';
 import { useAppStatsUpdateHandler } from './components/useAppStatsUpdateHandler';
 import { MainMenuOverlay } from './components/main-menu/MainMenuOverlay';
-import { useMainMenuNav, type MainMenuTab } from './components/main-menu/useMainMenuNav';
+import { getMainMenuContentParent, useMainMenuNav, type MainMenuTab } from './components/main-menu/useMainMenuNav';
 import { useMainMenuAdminState } from './components/main-menu/useMainMenuAdminState';
 import { useBotSetupState } from './components/main-menu/useBotSetupState';
 import { useCustomizationState } from './components/main-menu/useCustomizationState';
@@ -37,7 +37,7 @@ import { useMatchLoadingGate } from './components/loading/useMatchLoadingGate';
 
 export { createHighFidelityObjectMesh } from './components/main-menu/MapPreview';
 
-const APP_VERSION = '0.649a';
+const APP_VERSION = '0.649c';
 
 // Visual Keyboard + Mouse keybind editor component
 export default function App() {
@@ -188,6 +188,7 @@ export default function App() {
     selectCustomizationChild: selectMainMenuCustomizationChild,
   } = useMainMenuNav({ onNavChange: handleMainMenuNavChange });
   const activeMenuTab = mainMenuNav.playChild;
+  const activeMenuContentParent = getMainMenuContentParent(mainMenuNav);
 
   const handleReplayWatchSelected = useCallback(() => {
     setIsPlaying(true);
@@ -239,7 +240,7 @@ export default function App() {
     handleCloseSaveCachedModal,
     handleCommitCachedReplay,
   } = useTheaterReplays({
-    isTheaterTabActive: mainMenuNav.parent === 'play' && mainMenuNav.playChild === 'theater',
+    isTheaterTabActive: activeMenuContentParent === 'play' && mainMenuNav.playChild === 'theater',
     onWatchReplay: handleReplayWatchSelected,
   });
 
@@ -756,7 +757,7 @@ export default function App() {
           onOpenAdminDashboard: () => setShowAdminDashboard(true),
         }}
         primaryPanel={{
-          parent: mainMenuNav.parent,
+          parent: activeMenuContentParent,
           playChild: mainMenuNav.playChild,
           customizationChild: mainMenuNav.customizationChild,
           singlePlayerMode,
@@ -853,7 +854,6 @@ export default function App() {
           setPlayerLoadout,
           setIsPainting,
           setCustomizerWeapon,
-          onPlayerNameChange: handlePlayerNameChange,
           saveSystemStatus,
           saveCodeImportInput,
           onExportSaveCode: handleExportSaveCode,

@@ -6,7 +6,7 @@ import type { GameStats, TournamentState } from '../types';
 import type { GameplayMultiplayerRole } from './multiplayer/multiplayerConnectionConstants';
 import type { MatchLobbyConfig } from '../network/protocol';
 
-type SinglePlayerMode = 'sandbox' | 'tournament';
+type SinglePlayerMode = 'sandbox' | 'tournament' | 'ai-editor';
 
 interface CurrentStatsConnectionSnapshot {
   isMultiplayer: boolean;

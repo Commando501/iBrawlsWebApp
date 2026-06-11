@@ -1,5 +1,6 @@
 import type { DeviceInfo } from '../../types';
 import type { MainMenuParent } from './useMainMenuNav';
+import type { ReactNode } from 'react';
 
 interface MainMenuHeaderProps {
   appVersion: string;
@@ -7,6 +8,7 @@ interface MainMenuHeaderProps {
   activeParent: MainMenuParent;
   isOnline: boolean;
   onlineCount: number;
+  childNav?: ReactNode;
   onSelectParent: (parent: MainMenuParent) => void;
 }
 
@@ -23,6 +25,7 @@ export const MainMenuHeader = ({
   activeParent,
   isOnline,
   onlineCount,
+  childNav,
   onSelectParent,
 }: MainMenuHeaderProps) => (
   <div className="mobile-menu-header flex flex-wrap justify-between items-center gap-6 border-b border-white/10 pb-5 shrink-0">
@@ -58,23 +61,28 @@ export const MainMenuHeader = ({
       )}
     </div>
 
-    <div className="mobile-tabs flex bg-black/40 p-1.5 rounded-full border border-white/10 gap-2 select-none shrink-0 shadow-[inset_0_2px_4px_rgba(0,0,0,0.4)]">
-      {PARENT_TABS.map((tab) => {
-        const isTabActive = activeParent === tab.id;
-        return (
-          <button
-            key={tab.id}
-            onClick={() => onSelectParent(tab.id)}
-            className={`px-5 py-2 rounded-full text-xs font-bold font-display uppercase tracking-wider transition-all duration-200 cursor-pointer ${
-              isTabActive
-                ? 'bg-gradient-to-b from-[#22d3ee] to-[#0891b2] text-white shadow-[0_0_12px_rgba(34,211,238,0.60)] font-black'
-                : 'text-white/50 hover:text-white/80'
-            }`}
-          >
-            {tab.label}
-          </button>
-        );
-      })}
+    <div className="mobile-nav-cluster flex flex-col items-center gap-2 shrink-0">
+      <div className="mobile-tabs flex bg-black/40 p-1.5 rounded-full border border-white/10 gap-2 select-none shrink-0 shadow-[inset_0_2px_4px_rgba(0,0,0,0.4)]">
+        {PARENT_TABS.map((tab) => {
+          const isTabActive = activeParent === tab.id;
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => onSelectParent(tab.id)}
+              className={`px-5 py-2 rounded-full text-xs font-bold font-display uppercase tracking-wider transition-all duration-200 cursor-pointer ${
+                isTabActive
+                  ? 'bg-gradient-to-b from-[#22d3ee] to-[#0891b2] text-white shadow-[0_0_12px_rgba(34,211,238,0.60)] font-black'
+                  : 'text-white/50 hover:text-white/80'
+              }`}
+            >
+              {tab.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {childNav}
     </div>
 
     <div className="mobile-online-pill" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: 'rgba(16,185,129,0.10)', border: '1px solid rgba(16,185,129,0.30)', color: '#10b981', padding: '8px 16px', borderRadius: 9999, fontFamily: "'JetBrains Mono', monospace", fontWeight: 800, fontSize: 11, letterSpacing: '0.15em', textTransform: 'uppercase' }}>
