@@ -54,6 +54,16 @@ describe('V3 weapon builders', () => {
   it('exports pistol-specific convenience builder', () => {
     assert.equal(buildV3PistolModel(192).userData.weaponType, 'pistol');
   });
+
+  it('V3 weapon manifests include first-person socket metadata on built weapons', () => {
+    for (const weapon of V3_WEAPON_IDS) {
+      const model = buildV3WeaponModel(weapon, { customHue: 192 });
+      const socketNames = model.userData.v3Sockets.map((socket: { name: string }) => socket.name);
+
+      assert.ok(socketNames.includes('firstPersonPrimaryGrip'), `${weapon} missing first-person primary grip`);
+      assert.ok(socketNames.includes('firstPersonOffhandGrip'), `${weapon} missing first-person offhand grip`);
+    }
+  });
 });
 
 describe('buildVoxelSpartanModel V3 dispatch', () => {
