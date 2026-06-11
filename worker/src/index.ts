@@ -359,7 +359,7 @@ const CUSTOM_ARMOR_ROLE_SET = new Set(["primary", "secondary", "accent", "visor"
 const CUSTOM_ARMOR_HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
 
 function normalizeCharacterModelType(value: unknown, modelSystem?: unknown): "medium" | "large" {
-  if (modelSystem === "v1") return "medium";
+  if (modelSystem === "v1" || modelSystem === "v3") return "medium";
   return value === "large" ? "large" : "medium";
 }
 

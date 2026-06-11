@@ -56,7 +56,7 @@ test("worker loadout sanitation preserves v3 and drops arbitrary mesh data", () 
         id: "helmet-v3",
         name: "Helmet V3",
         slot: "helmet",
-        modelType: "large",
+        modelType: "medium",
         rawMesh: { vertices: [0, 1, 2] },
         meshImportPath: "/private/reference-helmet.glb",
         vertices: [0, 1, 2],
@@ -81,4 +81,28 @@ test("worker loadout sanitation preserves v3 and drops arbitrary mesh data", () 
   assert.equal(Object.hasOwn(helmet, "meshImportPath"), false);
   assert.equal(Object.hasOwn(helmet, "vertices"), false);
   assert.equal(Object.hasOwn(helmet, "faces"), false);
+});
+
+test("worker loadout sanitation treats v3 custom armor as medium profile", () => {
+  const normalizePlayerLoadout = getHelper("normalizePlayerLoadout");
+
+  const loadout = normalizePlayerLoadout({
+    modelSystem: "v3",
+    modelType: "large",
+    customArmor: {
+      helmet: {
+        version: 1,
+        id: "helmet-v3-large",
+        name: "Helmet V3 Large",
+        slot: "helmet",
+        modelType: "large",
+        voxels: [{ x: 0, y: 0, z: 0, role: "primary" }],
+      },
+    },
+  });
+
+  assert.ok(loadout);
+  assert.equal(loadout.modelSystem, "v3");
+  assert.equal(Object.hasOwn(loadout, "modelType"), false);
+  assert.equal(Object.hasOwn(loadout, "customArmor"), false);
 });

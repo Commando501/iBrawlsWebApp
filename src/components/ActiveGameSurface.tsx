@@ -25,6 +25,7 @@ import { ReplayHeatmapPanel } from './replay/ReplayHeatmapPanel';
 import { ReplayHeatmapTheaterOverlay } from './replay/ReplayHeatmapTheaterOverlay';
 import { TournamentVictoryOverlay } from './tournament/TournamentVictoryOverlay';
 import type { GameplayMultiplayerRole } from './multiplayer/multiplayerConnectionConstants';
+import type { MatchLobbyConfig } from '../network/protocol';
 
 type SinglePlayerMode = 'sandbox' | 'tournament';
 
@@ -55,6 +56,7 @@ interface ActiveGameSurfaceProps {
   isMultiplayer: boolean;
   multiplayerRole: GameplayMultiplayerRole;
   multiplayerSocket: WebSocket | null;
+  matchLobbyConfig: MatchLobbyConfig | null;
   multiplayerSpawnSlot: number;
   opponentClientId: string | undefined;
   selectedReplay: ReplayFile | null;
@@ -117,6 +119,7 @@ export function ActiveGameSurface({
   isMultiplayer,
   multiplayerRole,
   multiplayerSocket,
+  matchLobbyConfig,
   multiplayerSpawnSlot,
   opponentClientId,
   selectedReplay,
@@ -196,6 +199,7 @@ export function ActiveGameSurface({
           isMultiplayer={isMultiplayer}
           multiplayerRole={multiplayerRole}
           multiplayerSocket={multiplayerSocket}
+          matchLobbyConfig={matchLobbyConfig}
           multiplayerSpawnSlot={multiplayerSpawnSlot}
           opponentClientId={opponentClientId}
           replayData={selectedReplay}

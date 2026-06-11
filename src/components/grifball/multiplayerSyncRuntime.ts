@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import { normalizeVisualModelPolicy, type VisualModelPolicy } from '../../model/modelSystem';
+import type { MatchLobbyConfig } from '../../network/protocol';
 import { type DeathEvent } from '../../types';
 import { applyRemoteGrifbSecretUnlockForState } from './grifbSecretRuntime';
 import { createReplayHeatmapCombatantSource, queueReplayHeatmapDeathEventsForState } from './replayHeatmapRuntime';
@@ -13,6 +15,7 @@ export function createMultiplayerSyncMessageHandler({
   refs,
   multiplayerRole,
   secretAudioRef,
+  matchLobbyConfig,
   createOrUpdateRemotePlayer,
   resizeArena,
   pushStatsUpdate,
@@ -34,6 +37,7 @@ export function createMultiplayerSyncMessageHandler({
   refs: GrifballThreeRefs;
   multiplayerRole: MultiplayerRole;
   secretAudioRef: MutableRef<HTMLAudioElement | null>;
+  matchLobbyConfig?: MatchLobbyConfig | null;
   createOrUpdateRemotePlayer: (clientId: string, data: any) => void;
   resizeArena: (playerCount: number) => void;
   pushStatsUpdate: () => void;
@@ -51,12 +55,29 @@ export function createMultiplayerSyncMessageHandler({
   playDeath: () => void;
   onPauseToggle: () => void;
 }): (event: MessageEvent) => void {
+  let activeVisualModelPolicy: VisualModelPolicy | undefined = matchLobbyConfig?.visualModelPolicy;
+
+  const updateActiveVisualModelPolicy = (incomingLobbyConfig: unknown) => {
+    if (!incomingLobbyConfig || typeof incomingLobbyConfig !== 'object') return;
+    activeVisualModelPolicy = normalizeVisualModelPolicy(
+      (incomingLobbyConfig as Record<string, unknown>).visualModelPolicy
+    );
+  };
+
+  const withVisualModelPolicy = (payload: any) => {
+    const visualModelPolicy = payload?.visualModelPolicy
+      ? normalizeVisualModelPolicy(payload.visualModelPolicy)
+      : activeVisualModelPolicy;
+    return visualModelPolicy ? { ...payload, visualModelPolicy } : payload;
+  };
+
   return (event: MessageEvent) => {
     try {
       const data = JSON.parse(event.data);
       const state = stateRef.current;
 
       if (data.type === 'connected') {
+        updateActiveVisualModelPolicy(data.lobbyConfig);
         if (data.hostClientId) {
           state.hostClientId = data.hostClientId;
         }
@@ -73,6 +94,7 @@ export function createMultiplayerSyncMessageHandler({
                 playerName: player.playerName,
                 hue: player.hue,
                 loadout: player.loadout,
+                visualModelPolicy: activeVisualModelPolicy,
               });
             }
           });
@@ -88,9 +110,11 @@ export function createMultiplayerSyncMessageHandler({
           pushStatsUpdate();
         }
       } else if (data.type === 'player_joined') {
-        createOrUpdateRemotePlayer(data.clientId, data);
+        createOrUpdateRemotePlayer(data.clientId, withVisualModelPolicy(data));
         resizeArena(1 + state.otherPlayers.size);
         pushStatsUpdate();
+      } else if (data.type === 'match_start') {
+        updateActiveVisualModelPolicy(data.lobbyConfig);
       } else if (data.type === 'player_left') {
         const scene = refs.scene;
         const clientId = data.leftPlayerId;
@@ -113,7 +137,7 @@ export function createMultiplayerSyncMessageHandler({
 
         if (data.action === 'unlock_secret') {
           if (data.senderId) {
-            createOrUpdateRemotePlayer(data.senderId, data);
+            createOrUpdateRemotePlayer(data.senderId, withVisualModelPolicy(data));
           }
           applyRemoteGrifbSecretUnlockForState({
             state,
@@ -335,7 +359,7 @@ export function createMultiplayerSyncMessageHandler({
           }
         } else {
           if (data.senderId) {
-            createOrUpdateRemotePlayer(data.senderId, data);
+            createOrUpdateRemotePlayer(data.senderId, withVisualModelPolicy(data));
           }
 
           if (multiplayerRole === 'client') {
