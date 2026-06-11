@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { CustomMapData } from '../../types';
+import type { VisualModelPolicy } from '../../model/modelSystem';
 import type { CharacterLoadout } from '../VoxelModels';
 import {
   MATCH_LOADING_TIMEOUT_MS,
@@ -31,6 +32,7 @@ interface UseMatchLoadingGateOptions {
   playerName: string;
   playerHue: number;
   playerLoadout: CharacterLoadout;
+  visualModelPolicy?: VisualModelPolicy | null;
   selectedReplayId?: string | null;
   selectedMap: string;
   lobbyCustomMapData: CustomMapData | null;
@@ -47,6 +49,7 @@ export function useMatchLoadingGate({
   playerName,
   playerHue,
   playerLoadout,
+  visualModelPolicy,
   selectedReplayId,
   selectedMap,
   lobbyCustomMapData,
@@ -123,6 +126,7 @@ export function useMatchLoadingGate({
       playerName,
       hue: playerHue,
       loadout: playerLoadout,
+      visualModelPolicy: visualModelPolicy ?? undefined,
       progress: gameLoadingState.progress,
       stage: gameLoadingState.stage,
       ready: gameLoadingState.ready,
@@ -136,6 +140,7 @@ export function useMatchLoadingGate({
     playerName,
     playerHue,
     playerLoadout,
+    visualModelPolicy,
     gameLoadingState.progress,
     gameLoadingState.stage,
     gameLoadingState.ready,
@@ -154,6 +159,7 @@ export function useMatchLoadingGate({
       playerName,
       hue: playerHue,
       loadout: playerLoadout,
+      visualModelPolicy: visualModelPolicy ?? undefined,
       progress: gameLoadingState.progress,
       stage: gameLoadingState.stage,
       ready: gameLoadingState.ready,
@@ -168,6 +174,7 @@ export function useMatchLoadingGate({
     playerName,
     playerHue,
     playerLoadout,
+    visualModelPolicy,
     gameLoadingState.progress,
     gameLoadingState.stage,
     gameLoadingState.ready,

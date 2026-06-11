@@ -42,6 +42,21 @@ test('removing a participant releases the gate when remaining players are ready'
   assert.equal(snapshot.participants.length, 1);
 });
 
+test('loading participants preserve visual model policy for previews', () => {
+  const roster = upsertLoadingSlot({}, {
+    clientId: 'guest',
+    role: 'client',
+    playerName: 'Guest',
+    hue: 140,
+    visualModelPolicy: 'v1',
+    loadout: { modelSystem: 'v3' },
+  }, 1_000);
+
+  const participant = deriveMultiplayerLoadingSnapshot(roster, 1_000).participants[0];
+  assert.equal(participant.visualModelPolicy, 'v1');
+  assert.equal(participant.loadout?.modelSystem, 'v3');
+});
+
 test('top-down bounds resolve default and custom maps', () => {
   const hangar = resolveTopDownMapBounds({ selectedMap: 'hangar' });
   assert.equal(hangar.shape, 'circle');

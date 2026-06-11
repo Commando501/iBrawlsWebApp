@@ -20,6 +20,12 @@ import type {
 } from '../../network/protocol';
 import type { ChatMessage } from '../ChatOverlay';
 import type { MultiplayerLoadingSlotPayload } from '../loading/loadingTypes';
+import {
+  VISUAL_MODEL_POLICY_OPTIONS,
+  getVisualModelPolicyLabel,
+  normalizeVisualModelPolicy,
+  type VisualModelPolicy,
+} from '../../model/modelSystem';
 import { AdvancedSection } from '../main-menu/AdvancedSection';
 import { HeroCtaButton } from '../main-menu/HeroCtaButton';
 import type { GameplayConnectionMode, GameplayConnectionStatus, GameplayMultiplayerRole } from './multiplayerConnectionConstants';
@@ -105,6 +111,9 @@ export function MultiplayerSetupPanel({
   const [maxPlayers, setMaxPlayers] = useState(MAX_MATCH_LOBBY_PLAYERS);
   const [allowObservers, setAllowObservers] = useState(true);
   const [matchTimerMinutes, setMatchTimerMinutes] = useState(toMinutes(adminSettings.matchTimerSeconds ?? DEFAULT_MATCH_TIMER_SECONDS));
+  const [visualModelPolicy, setVisualModelPolicy] = useState<VisualModelPolicy>(
+    normalizeVisualModelPolicy(adminSettings.visualModelPolicy)
+  );
   const [winTarget, setWinTarget] = useState(
     gameMode === 'grifball'
       ? adminSettings.grifballGoalTarget ?? DEFAULT_GRIFBALL_GOAL_TARGET
@@ -126,6 +135,7 @@ export function MultiplayerSetupPanel({
     allowObservers,
     matchTimerSeconds: matchTimerMinutes * 60,
     winTarget,
+    visualModelPolicy,
   }), [
     access,
     gameMode,
@@ -135,6 +145,7 @@ export function MultiplayerSetupPanel({
     allowObservers,
     matchTimerMinutes,
     winTarget,
+    visualModelPolicy,
   ]);
   const stagedConfig = matchLobbyConfig ?? activeConfig;
   const isStaging = Boolean(multiplayerSocket && matchLobbyConfig && (connectionStatus === 'hosting' || connectionStatus === 'connected'));
@@ -189,6 +200,7 @@ export function MultiplayerSetupPanel({
             <LobbyStat label="Map" value={stagedConfig.customMap?.name || selectedPremadeMap?.name || stagedConfig.selectedMap} />
             <LobbyStat label="Timer" value={formatMatchTimerLabel(stagedConfig.matchTimerSeconds)} />
             <LobbyStat label="Target" value={getMatchLobbyTargetLabel(stagedConfig)} />
+            <LobbyStat label="Models" value={getVisualModelPolicyLabel(stagedConfig.visualModelPolicy)} />
             <LobbyStat label="Observers" value={stagedConfig.allowObservers ? 'Allowed' : 'Off'} />
           </div>
         </div>
@@ -268,6 +280,31 @@ export function MultiplayerSetupPanel({
             <p className="text-[10px] text-white/35 font-mono uppercase tracking-widest text-center">
               Or host your own lobby / join a friend below
             </p>
+
+            <div className="bg-white/[0.035] border border-white/5 rounded-lg p-3 flex flex-col gap-2">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-[10px] text-white/45 uppercase tracking-widest font-mono">Model Set</span>
+                <span className="text-[9px] text-cyan-300 font-black uppercase tracking-widest">
+                  Visual Only
+                </span>
+              </div>
+              <div className="grid grid-cols-3 gap-1.5">
+                {VISUAL_MODEL_POLICY_OPTIONS.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => setVisualModelPolicy(option.value)}
+                    className={`min-h-10 rounded px-2 text-[10px] font-black uppercase tracking-wider border transition-all ${
+                      visualModelPolicy === option.value
+                        ? 'bg-cyan-400/15 border-cyan-300/45 text-cyan-200'
+                        : 'bg-black/30 border-white/10 text-white/45 hover:text-white/70'
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            </div>
 
             <AdvancedSection sectionId="multiplayer-host" title="Host a Lobby" badge={`room ${hostIdCode || '—'}`}>
             <div className="bg-white/5 border border-white/5 rounded-lg p-3 flex flex-col gap-3">

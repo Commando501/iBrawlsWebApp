@@ -1,4 +1,5 @@
 import type { CustomMapData, ReplayFile } from '../../types';
+import type { VisualModelPolicy } from '../../model/modelSystem';
 import type { CharacterLoadout } from '../VoxelModels';
 
 export type MatchLoadingMode = 'solo' | 'replay' | 'multiplayer';
@@ -20,6 +21,7 @@ export interface MultiplayerLoadingParticipant {
   playerName: string;
   hue: number;
   loadout?: CharacterLoadout;
+  visualModelPolicy?: VisualModelPolicy;
   progress: number;
   stage: string;
   ready: boolean;
@@ -40,6 +42,7 @@ export interface MultiplayerLoadingSlotPayload {
   playerName?: string;
   hue?: number;
   loadout?: CharacterLoadout;
+  visualModelPolicy?: VisualModelPolicy;
 }
 
 export interface MultiplayerLoadingStatusPayload {
@@ -49,6 +52,7 @@ export interface MultiplayerLoadingStatusPayload {
   playerName?: string;
   hue?: number;
   loadout?: CharacterLoadout;
+  visualModelPolicy?: VisualModelPolicy;
   progress?: number;
   stage?: string;
   ready?: boolean;

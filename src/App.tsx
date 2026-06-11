@@ -34,6 +34,7 @@ import { useMultiplayerSessionState } from './components/multiplayer/useMultipla
 import { useHudLayoutControls } from './components/hud/useHudLayoutControls';
 import { useCurrentGameStats } from './components/hud/useCurrentGameStats';
 import { useMatchLoadingGate } from './components/loading/useMatchLoadingGate';
+import { normalizeVisualModelPolicy } from './model/modelSystem';
 
 export { createHighFidelityObjectMesh } from './components/main-menu/MapPreview';
 
@@ -333,6 +334,10 @@ export default function App() {
     setConnectionError,
   });
 
+  const activeVisualModelPolicy = useMemo(() => normalizeVisualModelPolicy(
+    matchLobbyConfig?.visualModelPolicy ?? adminSettings.visualModelPolicy
+  ), [adminSettings.visualModelPolicy, matchLobbyConfig?.visualModelPolicy]);
+
   const {
     gameLoadingState,
     multiplayerLoadingSnapshot,
@@ -354,6 +359,7 @@ export default function App() {
     playerName,
     playerHue: localPlayerHue,
     playerLoadout,
+    visualModelPolicy: activeVisualModelPolicy,
     selectedReplayId: selectedReplay?.id,
     selectedMap,
     lobbyCustomMapData,
@@ -622,7 +628,12 @@ export default function App() {
   });
 
   const activeMatchSettings = useMemo(() => {
-    if (!matchLobbyConfig) return effectiveAdminSettings;
+    if (!matchLobbyConfig) {
+      return {
+        ...effectiveAdminSettings,
+        visualModelPolicy: activeVisualModelPolicy,
+      };
+    }
     return {
       ...effectiveAdminSettings,
       gameMode: matchLobbyConfig.gameMode,
@@ -633,8 +644,9 @@ export default function App() {
         ? matchLobbyConfig.winTarget
         : effectiveAdminSettings.grifballGoalTarget,
       matchTimerSeconds: matchLobbyConfig.matchTimerSeconds,
+      visualModelPolicy: activeVisualModelPolicy,
     };
-  }, [effectiveAdminSettings, matchLobbyConfig]);
+  }, [activeVisualModelPolicy, effectiveAdminSettings, matchLobbyConfig]);
 
   return (
     <div className="relative w-full h-[100dvh] bg-[#050b1a] text-white overflow-hidden select-none font-sans flex flex-col">
@@ -656,6 +668,7 @@ export default function App() {
 	        selectedMap={selectedMap}
 	        lobbyCustomMapData={lobbyCustomMapData}
 	        playerLoadout={playerLoadout}
+	        visualModelPolicy={activeVisualModelPolicy}
 	        isPaused={isPaused}
 	        isMatchLoadingActive={isMatchLoadingActive}
 	        debugMode={debugMode}
