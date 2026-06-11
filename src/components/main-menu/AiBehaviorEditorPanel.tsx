@@ -1,4 +1,4 @@
-import { useState, type Dispatch, type SetStateAction } from 'react';
+import { useEffect, useState, type Dispatch, type SetStateAction } from 'react';
 import type { AIPreset, UniversalSettings } from '../../types';
 import { AI_ARCHETYPE_OPTIONS, getArchetypeDef } from '../../game/aiPersonalities';
 import { AdvancedSection } from './AdvancedSection';
@@ -15,8 +15,6 @@ interface AiBehaviorEditorPanelProps {
   onSelectAIArchetype: (id: string) => void;
   onSaveAIPreset: (name: string) => void;
 }
-
-const STANDARD_AI_PRESET_IDS = ['easy', 'normal', 'hard', 'nightmare', 'custom'];
 
 export function AiBehaviorEditorPanel({
   adminSettings,
@@ -43,28 +41,35 @@ export function AiBehaviorEditorPanel({
 
   const selectedDifficulty = adminSettings.aiDifficulty || 'normal';
   const selectedArchetype = adminSettings.aiArchetype || 'none';
+  const selectedSavedPreset = aiPresets.find((preset) => preset.id === selectedDifficulty);
+  const selectedCustomBuild = selectedSavedPreset ? selectedSavedPreset.id : 'custom';
+
+  useEffect(() => {
+    if (selectedDifficulty === 'custom' || selectedSavedPreset) return;
+    onSelectAIPreset('custom');
+  }, [onSelectAIPreset, selectedDifficulty, selectedSavedPreset]);
 
   return (
     <div className="bg-slate-950/45 border border-white/10 rounded-xl p-4.5 flex flex-col gap-3.5 text-left shrink-0">
       <div className="flex justify-between items-center pb-2 border-b border-white/5">
-        <span className="text-xs font-bold text-[#38bdf8] uppercase tracking-wider flex items-center gap-1.5 font-display">AI Behavior Editor</span>
+        <span className="text-xs font-bold text-[#38bdf8] uppercase tracking-wider flex items-center gap-1.5 font-display">Custom AI Behavior Editor</span>
         <span className="text-[10px] font-mono text-[#38bdf8] bg-[#38bdf8]/10 border border-[#38bdf8]/20 px-2 py-0.5 rounded uppercase font-black">Offline Play</span>
       </div>
 
+      <div className="text-[11px] text-white/55 leading-relaxed bg-white/5 border border-white/5 rounded-lg p-3.5 select-text">
+        Use this workspace to build custom single-player bot behavior. Start with an archetype, tune reflexes, movement, and combat style, then save a named build so it can be assigned to sandbox bots or selected for custom tournaments.
+      </div>
+
       <div className="flex flex-col gap-1.5">
-        <span className="text-[10.5px] text-white/50 uppercase tracking-widest font-mono">Cognitive Matrix Preset:</span>
+        <span className="text-[10.5px] text-white/50 uppercase tracking-widest font-mono">Saved Custom Builds:</span>
         <div className="flex gap-2">
           <select
-            value={selectedDifficulty}
+            value={selectedCustomBuild}
             onChange={(e) => onSelectAIPreset(e.target.value)}
             className="flex-1 h-11 bg-black/60 border border-white/10 rounded px-2.5 text-sm text-[#38bdf8] font-bold uppercase outline-none focus:border-[#38bdf8] transition-all cursor-pointer font-sans"
-            title={getPresetDescription(selectedDifficulty, aiPresets)}
+            title={selectedSavedPreset ? getPresetDescription(selectedSavedPreset.id, aiPresets) : 'Current unsaved custom AI behavior'}
           >
-            <option value="easy" title={getPresetDescription('easy', aiPresets)}>Easy (Sub-Normal)</option>
-            <option value="normal" title={getPresetDescription('normal', aiPresets)}>Normal - Standard Combat</option>
-            <option value="hard" title={getPresetDescription('hard', aiPresets)}>Hard (Calibrated)</option>
-            <option value="nightmare" title={getPresetDescription('nightmare', aiPresets)}>Nightmare - Override</option>
-            <option value="custom" title={getPresetDescription('custom', aiPresets)}>Custom AI Behavior</option>
+            <option value="custom" title="Current unsaved custom AI behavior">Current Custom Behavior</option>
             {aiPresets.length > 0 && (
               <optgroup label="Saved Presets">
                 {aiPresets.map((preset) => (
@@ -75,7 +80,7 @@ export function AiBehaviorEditorPanel({
               </optgroup>
             )}
           </select>
-          {!STANDARD_AI_PRESET_IDS.includes(selectedDifficulty) && (
+          {selectedSavedPreset && (
             <button
               onClick={() => onDeleteAIPreset(selectedDifficulty)}
               className="px-3.5 h-11 bg-red-950/40 hover:bg-red-900/60 border border-red-500/30 hover:border-red-500/50 text-red-400 text-xs font-bold uppercase rounded cursor-pointer transition-all"
@@ -85,21 +90,21 @@ export function AiBehaviorEditorPanel({
             </button>
           )}
         </div>
-        {adminSettings.aiDifficulty && adminSettings.aiDifficulty !== 'custom' && (
+        {selectedSavedPreset && (
           <span className="text-[10px] text-white/45 leading-snug">
-            {getPresetDescription(adminSettings.aiDifficulty, aiPresets)}
+            {getPresetDescription(selectedSavedPreset.id, aiPresets)}
           </span>
         )}
       </div>
 
       <AdvancedSection
         sectionId="sandbox-ai-tuning"
-        title="Advanced AI Tuning"
-        badge={adminSettings.aiDifficulty === 'custom' ? 'custom active' : undefined}
-        forceOpen={adminSettings.aiDifficulty === 'custom'}
+        title="Custom AI Tuning"
+        badge="custom active"
+        forceOpen
       >
       <div className="flex flex-col gap-1.5">
-        <span className="text-[10.5px] text-white/50 uppercase tracking-widest font-mono">Behavior Archetype Presets:</span>
+        <span className="text-[10.5px] text-white/50 uppercase tracking-widest font-mono">1. Pick a Starting Archetype:</span>
         <select
           value={selectedArchetype}
           onChange={(e) => onSelectAIArchetype(e.target.value)}
@@ -116,12 +121,16 @@ export function AiBehaviorEditorPanel({
             {getArchetypeDef(adminSettings.aiArchetype)?.description}
           </span>
         )}
+        {(!adminSettings.aiArchetype || adminSettings.aiArchetype === 'none') && (
+          <span className="text-[10px] text-white/40 leading-snug">
+            Archetypes are optional templates. Choose one when you want a fast personality baseline, then adjust the dials below.
+          </span>
+        )}
       </div>
 
-      {adminSettings.aiDifficulty === 'custom' && (
         <div className="flex flex-col gap-4 pt-1">
           <p className="text-[10px] text-white/40 leading-snug italic">
-            Tune every facet of the AI, or pick a Behavior Archetype Preset above to fill all dials as a starting point. Advanced dials marked Auto fall back to derived values until you set them.
+            2. Tune how the bot thinks and fights. Lower reflex latency makes it react faster; higher movement, spatial, and weapon IQ make it harder to predict. Advanced dials marked Auto fall back to derived values until you set them.
           </p>
           {AI_CUSTOM_KNOB_SECTIONS.map((sectionGroup) => {
             const collapsed = !!collapsedAiSections[sectionGroup.title];
@@ -191,7 +200,10 @@ export function AiBehaviorEditorPanel({
           })}
 
           <div className="flex flex-col gap-1.5 pt-2 border-t border-white/5 mt-2">
-            <span className="text-[10px] text-white/50 uppercase tracking-widest font-mono">Save Custom AI Preset:</span>
+            <span className="text-[10px] text-white/50 uppercase tracking-widest font-mono">3. Save Custom AI Build:</span>
+            <p className="text-[10px] text-white/35 leading-snug">
+              Saved builds become reusable bot personalities for single-player setup and custom tournament selections.
+            </p>
             <div className="flex gap-2">
               <input
                 type="text"
@@ -209,7 +221,6 @@ export function AiBehaviorEditorPanel({
             </div>
           </div>
         </div>
-      )}
       </AdvancedSection>
     </div>
   );

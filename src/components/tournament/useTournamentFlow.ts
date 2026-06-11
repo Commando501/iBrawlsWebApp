@@ -14,7 +14,7 @@ import {
 } from '../../features/tournament/tournament';
 import { getArchetypeDef, type AIArchetypeId } from '../../game/aiPersonalities';
 
-type SinglePlayerMode = 'sandbox' | 'tournament';
+type SinglePlayerMode = 'sandbox' | 'tournament' | 'ai-editor';
 type MultiplayerRole = 'host' | 'client' | 'observer' | null;
 
 interface UseTournamentFlowOptions {

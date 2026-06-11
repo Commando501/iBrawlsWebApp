@@ -26,7 +26,7 @@ import { ArmoryPanel, type PreviewWeapon } from './ArmoryPanel';
 import { SaveCodesPanel } from './SaveCodesPanel';
 import { SinglePlayerSetupPanel } from './SinglePlayerSetupPanel';
 
-type SinglePlayerMode = 'sandbox' | 'tournament';
+type SinglePlayerMode = 'sandbox' | 'tournament' | 'ai-editor';
 type QuickPlayStatus = 'idle' | 'searching' | 'matching';
 
 interface MainMenuPrimaryPanelProps {

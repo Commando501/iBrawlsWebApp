@@ -19,7 +19,7 @@ export type TournamentStatsResult =
   | { outcome: 'opponent_win'; playerScore: number; opponentScore: number };
 
 interface ResolveTournamentStatsResultOptions {
-  singlePlayerMode: 'sandbox' | 'tournament';
+  singlePlayerMode: 'sandbox' | 'tournament' | 'ai-editor';
   tournamentState: TournamentState | null;
   hasPendingMatchResult: boolean;
   stats: TournamentScoreSnapshot;
