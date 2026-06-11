@@ -251,6 +251,8 @@ V3 reference mesh tooling is developer-only and local. Use `node --import tsx sc
 
 Phase 3 canonical V3 asset contracts live in `src/components/v3/`. `v3ModelTypes.ts`, `v3PartBounds.ts`, `v3AssetManifest.ts`, and `v3Lod.ts` define original iBrawls modular armor slots, hammer/sword/pistol weapon manifests, paint roles, visual fit bounds, socket metadata, budget estimates, and desktop/mobile LOD selection. These files are manifest contracts only: they do not include private reference meshes, textures, generated conversions, voxel payload arrays, or any runtime upload path.
 
+Phase 4 adds original runtime V3 blockout builders for the default modular character and V3 hammer/sword/pistol weapons. These builders route `modelSystem: 'v3'` through the live model factory and expose broad rig-compatible segments plus V3 socket metadata, but full layered V3 animation, V3 custom armor editing, replay policy rollout, and V3-by-default matchmaking remain later phases.
+
 ## Standalone 3D Map Maker
 
 iBrawls features a beautiful, feature-rich, and completely standalone 3D Map Maker application that runs 100% locally and offline in the user's browser. Since it is entirely decoupled from the main web application, players simply open the local HTML file to design custom battle arenas using standard assets!
@@ -321,7 +323,7 @@ iBrawls features a beautiful and comprehensive character customization suite, av
       * `leg_lower`: Max `6 x 9 x 14`
       * `foot`: Max `6 x 8 x 5`
       * `toes`: Max `6 x 5 x 4`
-  - **Version 3 (Advanced, planned)**: A parallel voxel model system for modular armor, V3 weapons, first-person parity, and layered procedural animation. Matches resolve visible combatants through a visual model policy (`v1`, `v2`, or `v3`) while combat ranges, collision, hitboxes, and AI decisions remain normalized. V3 is the target advanced system, and V1/V2 remain selectable sandbox options for offline and hosted play. The current V3 asset phase is manifest-only: live gameplay still uses the existing V1/V2 model builders until the Phase 4 runtime builder work lands.
+  - **Version 3 (Advanced, in progress)**: A parallel voxel model system for modular armor, V3 weapons, first-person parity, and layered procedural animation. Matches resolve visible combatants through a visual model policy (`v1`, `v2`, or `v3`) while combat ranges, collision, hitboxes, and AI decisions remain normalized. V3 is the target advanced system, and V1/V2 remain selectable sandbox options for offline and hosted play. The current V3 runtime phase includes original blockout builders for the default V3 Spartan plus V3 hammer, sword, and pistol visuals; full layered V3 animation, V3 custom armor editing, replay policy rollout, and V3-by-default matchmaking remain later phases.
 - **Premium Hammer Model Swapping**: Swap between 9 distinct premium hammer variants shown in the game customizer, fully rendered in high-fidelity voxels:
   - **Akelas**: Sleek, aerodynamic dark carbon-like head with a thin, glowing red stripe along its edge.
   - **Akelus**: Sleek, white high-tech plating with pulsing neon blue energy channels on the back of the head.
