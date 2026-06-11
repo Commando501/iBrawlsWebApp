@@ -240,8 +240,13 @@ body {
     font-size: clamp(2rem, 10vw, 2.65rem) !important;
   }
 
-  .mobile-tabs {
+  .mobile-nav-cluster {
     order: 3;
+    width: 100%;
+    align-items: stretch;
+  }
+
+  .mobile-tabs {
     width: 100%;
     display: grid !important;
     grid-template-columns: repeat(2, minmax(0, 1fr));

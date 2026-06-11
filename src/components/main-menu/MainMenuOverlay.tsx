@@ -78,9 +78,10 @@ export function MainMenuOverlay({
 
       <div className="mobile-start-overlay absolute inset-0 z-50 flex items-stretch justify-center bg-slate-950/85 backdrop-blur-xl p-6 transition-all duration-300">
         <div className="mobile-menu-card w-full bg-slate-900/40 border border-white/10 rounded-3xl p-8 backdrop-blur-md flex flex-col gap-5 shadow-2xl select-none overflow-hidden">
-          <MainMenuHeader {...header} />
-
-          <MainMenuChildNav {...childNav} />
+          <MainMenuHeader
+            {...header}
+            childNav={<MainMenuChildNav {...childNav} />}
+          />
 
           <div className="mobile-menu-layout main-menu-dock-layout flex flex-1 min-h-0 overflow-hidden gap-6">
             <div className="mobile-content-grid main-menu-content-frame flex-1 min-w-0 min-h-0 flex">

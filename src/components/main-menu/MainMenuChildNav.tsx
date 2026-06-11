@@ -21,7 +21,6 @@ const CUSTOMIZATION_CHILDREN: { id: CustomizationChild; label: string }[] = [
   { id: 'armory', label: 'Armory' },
   { id: 'hotkeys', label: 'Hotkeys' },
   { id: 'gamepad', label: 'Gamepad' },
-  { id: 'identity', label: 'Identity' },
 ];
 
 const childButtonClass = (isActive: boolean) =>
