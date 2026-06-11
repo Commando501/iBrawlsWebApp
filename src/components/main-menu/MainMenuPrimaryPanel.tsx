@@ -28,7 +28,6 @@ import { CreativeToolsPanel } from './CreativeToolsPanel';
 import { IdentityPanel } from './IdentityPanel';
 import { SaveCodesPanel } from './SaveCodesPanel';
 import { SinglePlayerSetupPanel } from './SinglePlayerSetupPanel';
-import { SpectatorSetupPanel } from './SpectatorSetupPanel';
 
 type SinglePlayerMode = 'sandbox' | 'tournament';
 type QuickPlayStatus = 'idle' | 'searching' | 'matching';
@@ -99,7 +98,6 @@ interface MainMenuPrimaryPanelProps {
   onJoinGame: (target: string, isObserver?: boolean, password?: string, inviteToken?: string) => void;
   onApplyMatchmakerUrl: () => void;
   onResetMatchmakerUrl: () => void;
-  onSpectateLiveMatch: () => void;
   savedReplays: ReplayFile[];
   cachedReplays: ReplayFile[];
   replaySizes: Record<string, number>;
@@ -221,8 +219,6 @@ export function MainMenuPrimaryPanel(props: MainMenuPrimaryPanelProps) {
             onApplyMatchmakerUrl={props.onApplyMatchmakerUrl}
             onResetMatchmakerUrl={props.onResetMatchmakerUrl}
           />
-        ) : playChild === 'spec' ? (
-          <SpectatorSetupPanel onSpectateLiveMatch={props.onSpectateLiveMatch} />
         ) : (
           <TheaterLibraryPanel
             savedReplays={props.savedReplays}

@@ -20,6 +20,8 @@ import type {
 } from '../../network/protocol';
 import type { ChatMessage } from '../ChatOverlay';
 import type { MultiplayerLoadingSlotPayload } from '../loading/loadingTypes';
+import { AdvancedSection } from '../main-menu/AdvancedSection';
+import { HeroCtaButton } from '../main-menu/HeroCtaButton';
 import type { GameplayConnectionMode, GameplayConnectionStatus, GameplayMultiplayerRole } from './multiplayerConnectionConstants';
 
 type QuickPlayStatus = 'idle' | 'searching' | 'matching';
@@ -213,60 +215,32 @@ export function MultiplayerSetupPanel({
           canSend={multiplayerSocket?.readyState === WebSocket.OPEN}
         />
 
-        <div className="flex gap-2 mt-auto">
-          <button
-            type="button"
+        <div className="flex flex-col gap-2 mt-auto">
+          <HeroCtaButton
+            label="Start Match"
+            variant="emerald"
             onClick={onStartHostedMatch}
             disabled={!canStartMatch}
-            className={`flex-1 h-12 rounded font-black text-xs uppercase tracking-widest border transition-all ${
-              canStartMatch
-                ? 'bg-emerald-500 hover:bg-emerald-400 border-emerald-300/40 text-slate-950 cursor-pointer'
-                : 'bg-white/5 border-white/5 text-white/25 cursor-not-allowed'
-            }`}
-          >
-            Start Match
-          </button>
+            title={canStartMatch ? undefined : 'Waiting for host connection'}
+          />
           <button
             type="button"
             onClick={onCancelHostOrJoin}
-            className="h-12 px-4 rounded border border-white/10 bg-white/5 hover:bg-white/10 text-white/70 font-black text-xs uppercase tracking-widest cursor-pointer"
+            className="h-11 px-4 rounded border border-white/10 bg-white/5 hover:bg-white/10 text-white/70 font-black text-xs uppercase tracking-widest cursor-pointer"
           >
-            Leave
+            Leave Lobby
           </button>
         </div>
       </div>
     );
   }
 
+  const isIdle = (connectionStatus === 'idle' || connectionStatus === 'error' || connectionStatus === 'fetching_ip') && quickPlayStatus === 'idle';
+
   return (
     <div className="flex flex-col h-full min-h-0 justify-between gap-4">
       <div className="flex flex-col gap-3 shrink-0">
         <PanelTitle title="Multiplayer Setup" />
-
-        <div className="flex bg-black/40 p-1.5 rounded-lg border border-white/5 gap-2 select-none shadow-[inset_0_1px_3px_rgba(0,0,0,0.3)]">
-          <button
-            type="button"
-            onClick={() => onConnectionModeChange('relay')}
-            className={`flex-1 py-2 text-xs font-black uppercase tracking-wider rounded transition-all cursor-pointer text-center ${
-              connectionMode === 'relay'
-                ? 'bg-gradient-to-r from-sky-600 to-indigo-600 text-white shadow-md'
-                : 'text-white/40 hover:text-white/70'
-            }`}
-          >
-            Cloud Relay
-          </button>
-          <button
-            type="button"
-            onClick={() => onConnectionModeChange('local')}
-            className={`flex-1 py-2 text-xs font-black uppercase tracking-wider rounded transition-all cursor-pointer text-center ${
-              connectionMode === 'local'
-                ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md'
-                : 'text-white/40 hover:text-white/70'
-            }`}
-          >
-            Local LAN IP
-          </button>
-        </div>
 
         {!isOnline && (
           <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-3 text-left">
@@ -277,27 +251,25 @@ export function MultiplayerSetupPanel({
           </div>
         )}
 
-        <div className={`p-3 rounded-lg border text-xs ${connectionMode === 'relay' ? 'bg-sky-500/5 border-sky-500/20' : 'bg-white/5 border-white/10'}`}>
-          <p className="text-[11px] text-[#38bdf8] font-bold uppercase tracking-wider mb-2">Connection Coordinates</p>
-          <div className="flex flex-col gap-1.5 font-mono text-xs font-semibold">
-            <CoordinateRow label={connectionMode === 'relay' ? 'Relay' : 'Web/Host IP'} value={connectionMode === 'relay' ? 'ONLINE' : userIp} />
-            {connectionMode === 'local' && lanIp && lanIp !== '127.0.0.1' && (
-              <CoordinateRow label="LAN IP" value={lanIp} />
-            )}
-            <CoordinateRow label="Room Code" value={hostIdCode} />
-          </div>
-        </div>
-
-        {(connectionStatus === 'idle' || connectionStatus === 'error' || connectionStatus === 'fetching_ip') && quickPlayStatus === 'idle' && (
+        {isIdle && (
           <div className="flex flex-col gap-3">
-            <button
-              type="button"
+            <HeroCtaButton
+              label={isOnline ? 'Quick Play Matchmaking' : 'Quick Play (Offline)'}
+              variant="quickplay"
               onClick={onQuickPlay}
-              className="w-full h-12 bg-gradient-to-r from-sky-400 via-indigo-400 to-purple-500 hover:from-sky-500 hover:to-purple-600 text-slate-950 hover:text-white font-sans font-black text-xs uppercase tracking-[0.18em] transition-all rounded shadow-lg shadow-sky-500/25 border border-sky-300/30 cursor-pointer"
-            >
-              Quick Play Matchmaking
-            </button>
+              disabled={!isOnline}
+              title={isOnline ? 'Find an open public lobby automatically' : 'Reconnect to the network to use matchmaking'}
+              icon={(
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
+                </svg>
+              )}
+            />
+            <p className="text-[10px] text-white/35 font-mono uppercase tracking-widest text-center">
+              Or host your own lobby / join a friend below
+            </p>
 
+            <AdvancedSection sectionId="multiplayer-host" title="Host a Lobby" badge={`room ${hostIdCode || '—'}`}>
             <div className="bg-white/5 border border-white/5 rounded-lg p-3 flex flex-col gap-3">
               <div className="grid grid-cols-3 gap-1.5">
                 {(['open', 'private', 'password'] as const).map((option) => (
@@ -394,7 +366,9 @@ export function MultiplayerSetupPanel({
                 Create Lobby
               </button>
             </div>
+            </AdvancedSection>
 
+            <AdvancedSection sectionId="multiplayer-join" title="Join or Observe">
             <div className="flex gap-2">
               <input
                 type="text"
@@ -438,6 +412,10 @@ export function MultiplayerSetupPanel({
                 Observe
               </button>
             </div>
+            <p className="text-[10px] text-white/40 leading-snug">
+              Observe joins as a camera-only spectator: fly between brawlers with WASD + Space and cycle targets, without affecting the match.
+            </p>
+            </AdvancedSection>
           </div>
         )}
 
@@ -452,31 +430,71 @@ export function MultiplayerSetupPanel({
         )}
       </div>
 
-      <details className="group mt-auto border-t border-white/5 pt-3">
-        <summary className="flex justify-between items-center text-xs text-[#38bdf8] font-bold uppercase tracking-wider cursor-pointer select-none hover:text-white transition-colors">
-          <span>Advanced Settings</span>
-          <span className="text-[10px] transition-transform group-open:rotate-180 font-sans">v</span>
-        </summary>
-
-        <div className="flex flex-col gap-2.5 mt-2.5 bg-black/30 p-3 rounded border border-white/5">
-          <label className="text-[10px] text-white/50 uppercase tracking-widest font-mono">Matchmaker Server URL</label>
-          <input
-            type="text"
-            value={customUrlInput}
-            onChange={(event) => onCustomUrlInputChange(event.target.value)}
-            placeholder="wss://..."
-            className="w-full h-10 bg-black/60 border border-white/10 rounded px-2.5 font-mono text-xs tracking-wide text-white focus:border-[#38bdf8] outline-none"
-          />
-          <div className="flex gap-2.5">
-            <button type="button" onClick={onApplyMatchmakerUrl} className="flex-1 h-9 bg-[#38bdf8] hover:bg-[#38bdf8]/80 text-slate-950 font-black text-xs uppercase tracking-wider rounded cursor-pointer">
-              Apply
-            </button>
-            <button type="button" onClick={onResetMatchmakerUrl} className="h-9 px-3 bg-white/5 hover:bg-white/10 text-white/60 hover:text-white border border-white/10 rounded text-xs font-bold uppercase tracking-wider cursor-pointer">
-              Reset
-            </button>
+      <div className="mt-auto border-t border-white/5 pt-3">
+        <AdvancedSection
+          sectionId="multiplayer-advanced"
+          title="Advanced Settings"
+          badge={connectionMode === 'local' ? 'LAN mode' : undefined}
+        >
+          <div className="flex flex-col gap-1.5">
+            <span className="text-[10px] text-white/50 uppercase tracking-widest font-mono">Connection Mode</span>
+            <div className="flex bg-black/40 p-1.5 rounded-lg border border-white/5 gap-2 select-none shadow-[inset_0_1px_3px_rgba(0,0,0,0.3)]">
+              <button
+                type="button"
+                onClick={() => onConnectionModeChange('relay')}
+                className={`flex-1 py-2 text-xs font-black uppercase tracking-wider rounded transition-all cursor-pointer text-center ${
+                  connectionMode === 'relay'
+                    ? 'bg-gradient-to-r from-sky-600 to-indigo-600 text-white shadow-md'
+                    : 'text-white/40 hover:text-white/70'
+                }`}
+              >
+                Cloud Relay
+              </button>
+              <button
+                type="button"
+                onClick={() => onConnectionModeChange('local')}
+                className={`flex-1 py-2 text-xs font-black uppercase tracking-wider rounded transition-all cursor-pointer text-center ${
+                  connectionMode === 'local'
+                    ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md'
+                    : 'text-white/40 hover:text-white/70'
+                }`}
+              >
+                Local LAN IP
+              </button>
+            </div>
           </div>
-        </div>
-      </details>
+
+          <div className={`p-3 rounded-lg border text-xs ${connectionMode === 'relay' ? 'bg-sky-500/5 border-sky-500/20' : 'bg-white/5 border-white/10'}`}>
+            <p className="text-[11px] text-[#38bdf8] font-bold uppercase tracking-wider mb-2">Connection Coordinates</p>
+            <div className="flex flex-col gap-1.5 font-mono text-xs font-semibold">
+              <CoordinateRow label={connectionMode === 'relay' ? 'Relay' : 'Web/Host IP'} value={connectionMode === 'relay' ? 'ONLINE' : userIp} />
+              {connectionMode === 'local' && lanIp && lanIp !== '127.0.0.1' && (
+                <CoordinateRow label="LAN IP" value={lanIp} />
+              )}
+              <CoordinateRow label="Room Code" value={hostIdCode} />
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-2.5 bg-black/30 p-3 rounded border border-white/5">
+            <label className="text-[10px] text-white/50 uppercase tracking-widest font-mono">Matchmaker Server URL</label>
+            <input
+              type="text"
+              value={customUrlInput}
+              onChange={(event) => onCustomUrlInputChange(event.target.value)}
+              placeholder="wss://..."
+              className="w-full h-10 bg-black/60 border border-white/10 rounded px-2.5 font-mono text-xs tracking-wide text-white focus:border-[#38bdf8] outline-none"
+            />
+            <div className="flex gap-2.5">
+              <button type="button" onClick={onApplyMatchmakerUrl} className="flex-1 h-9 bg-[#38bdf8] hover:bg-[#38bdf8]/80 text-slate-950 font-black text-xs uppercase tracking-wider rounded cursor-pointer">
+                Apply
+              </button>
+              <button type="button" onClick={onResetMatchmakerUrl} className="h-9 px-3 bg-white/5 hover:bg-white/10 text-white/60 hover:text-white border border-white/10 rounded text-xs font-bold uppercase tracking-wider cursor-pointer">
+                Reset
+              </button>
+            </div>
+          </div>
+        </AdvancedSection>
+      </div>
     </div>
   );
 }

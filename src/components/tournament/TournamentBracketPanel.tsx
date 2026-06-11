@@ -3,6 +3,7 @@ import {
   TOURNAMENT_DEFAULT_KILLS_TO_WIN,
   getTournamentRoundLabels,
 } from '../../features/tournament/tournament';
+import { HeroCtaButton } from '../main-menu/HeroCtaButton';
 
 interface TournamentBracketPanelProps {
   tournamentState: TournamentState;
@@ -245,18 +246,12 @@ export function TournamentBracketPanel({
 
       {(tournamentState.status === 'bracket' || (tournamentState.status === 'playing' && !isPlaying)) && (
         <div className="flex flex-col gap-3 mt-auto shrink-0 pt-4">
-          <button
+          <HeroCtaButton
             id="start-tournament-match-btn"
+            label={tournamentState.status === 'playing' ? 'Resume Match' : 'Start Next Match'}
+            variant="emerald"
             onClick={onStartTournamentMatch}
-            className="group relative w-full h-16 bg-emerald-500 hover:bg-emerald-400 transition-all duration-300 flex items-center justify-center overflow-hidden cursor-pointer rounded shadow-2xl border border-emerald-400/20 select-none pointer-events-auto"
-          >
-            <span className="relative z-10 text-slate-950 font-sans font-black text-sm uppercase tracking-widest pointer-events-none flex items-center gap-2">
-              {tournamentState.status === 'playing' ? 'Resume Match' : 'Start Next Match'}
-              <svg className="w-5 h-5 text-slate-950" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
-              </svg>
-            </span>
-          </button>
+          />
 
           <button
             onClick={onResetTournament}

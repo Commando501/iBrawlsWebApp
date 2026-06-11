@@ -37,7 +37,7 @@ import { useMatchLoadingGate } from './components/loading/useMatchLoadingGate';
 
 export { createHighFidelityObjectMesh } from './components/main-menu/MapPreview';
 
-const APP_VERSION = '0.648a';
+const APP_VERSION = '0.648c';
 
 // Visual Keyboard + Mouse keybind editor component
 export default function App() {
@@ -816,7 +816,6 @@ export default function App() {
           onJoinGame: handleJoinGame,
           onApplyMatchmakerUrl: handleApplyMatchmakerUrl,
           onResetMatchmakerUrl: handleResetMatchmakerUrl,
-          onSpectateLiveMatch: () => selectMainMenuPlayChild('multi'),
           savedReplays,
           cachedReplays,
           replaySizes,
