@@ -1,5 +1,6 @@
 import type React from 'react';
 import type { MatchLobbyConfig } from '../../network/protocol';
+import type { VisualModelPolicy } from '../../model/modelSystem';
 import {
   type AIBehaviorPreset,
   type CharacterModelType,
@@ -51,4 +52,5 @@ export interface GrifballGameProps {
   replayData?: ReplayFile | null;
   onExitReplay?: () => void;
   playerLoadout?: CharacterLoadout;
+  visualModelPolicy?: VisualModelPolicy;
 }

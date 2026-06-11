@@ -66,6 +66,102 @@ test('offline AI roster visuals stay on the V1 model system', () => {
   assert.equal(meshes.group.userData.appliedLoadoutKey, JSON.stringify({ modelSystem: 'v1' }));
 });
 
+test('offline AI explicit V3 visual policy applies V3 visuals', () => {
+  const { state, refs } = createStateAndRefs();
+  const bot = createOfflineBotCombatant({
+    id: 'bot_v3',
+    playerName: 'Bot V3',
+    team: 'red',
+    spawnPos: new THREE.Vector3(1, 0, 0),
+    yaw: 0,
+    hue: 120,
+    difficulty: 'normal',
+    settings: DEFAULT_ADMIN_SETTINGS,
+  });
+  bot.modelType = 'medium';
+  state.otherPlayers.set(bot.id, bot);
+
+  provisionCombatant(state, refs, bot.id, {
+    ...bot,
+    visualModelPolicy: 'v3',
+    loadout: {
+      modelSystem: 'v1',
+      helmet: 'odst',
+      hammerPreset: 'gravity-axe',
+    },
+  });
+
+  const meshes = refs.otherPlayerMeshes.get(bot.id);
+  assert.ok(meshes);
+  assert.equal(meshes.group.userData.modelSystem, 'v3');
+  assert.deepEqual(getAppliedLoadout(refs, bot.id), {
+    helmet: 'odst',
+    torso: 'mark-vi',
+    arm: 'mark-vi',
+    leg: 'mark-vi',
+    hammerPreset: 'gravity-axe',
+    swordPreset: 'default',
+    modelSystem: 'v3',
+  });
+  assert.equal(state.otherPlayers.get(bot.id)?.modelType, 'medium');
+});
+
+test('offline AI explicit V3 visual policy does not change gameplay model type', () => {
+  const { state, refs } = createStateAndRefs();
+  const bot = createOfflineBotCombatant({
+    id: 'bot_v3_large',
+    playerName: 'Bot V3 Large',
+    team: 'red',
+    spawnPos: new THREE.Vector3(1, 0, 0),
+    yaw: 0,
+    hue: 120,
+    difficulty: 'normal',
+    settings: DEFAULT_ADMIN_SETTINGS,
+  });
+  state.otherPlayers.set(bot.id, bot);
+
+  provisionCombatant(state, refs, bot.id, {
+    ...bot,
+    modelType: 'large',
+    visualModelPolicy: 'v3',
+    loadout: {
+      modelSystem: 'v3',
+      modelType: 'large',
+    },
+  });
+
+  assert.equal(state.otherPlayers.get(bot.id)?.modelType, 'large');
+  assert.equal(getAppliedLoadout(refs, bot.id).modelType, 'large');
+});
+
+test('offline AI explicit V2 visual policy applies gameplay model type to V2 visuals', () => {
+  const { state, refs } = createStateAndRefs();
+  const bot = createOfflineBotCombatant({
+    id: 'bot_v2',
+    playerName: 'Bot V2',
+    team: 'red',
+    spawnPos: new THREE.Vector3(1, 0, 0),
+    yaw: 0,
+    hue: 120,
+    difficulty: 'normal',
+    settings: DEFAULT_ADMIN_SETTINGS,
+  });
+  state.otherPlayers.set(bot.id, bot);
+
+  provisionCombatant(state, refs, bot.id, {
+    ...bot,
+    modelType: 'large',
+    visualModelPolicy: 'v2',
+  });
+
+  const meshes = refs.otherPlayerMeshes.get(bot.id);
+  assert.ok(meshes);
+  assert.equal(meshes.group.userData.modelSystem, 'v2');
+  assert.equal(meshes.group.userData.modelType, 'large');
+  assert.deepEqual(getAppliedLoadout(refs, bot.id), { modelSystem: 'v2', modelType: 'large' });
+  assert.equal(state.otherPlayers.get(bot.id)?.modelType, 'large');
+});
+
 test('remote human roster visuals can still use the V2 model system', () => {
   const { state, refs } = createStateAndRefs();
   const remote = createRemoteCombatant({

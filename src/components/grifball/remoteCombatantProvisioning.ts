@@ -34,8 +34,15 @@ type RemoteCombatantUpdate = {
 };
 
 const DEFAULT_REMOTE_VISUAL_MODEL_POLICY: VisualModelPolicy = 'v2';
+const DEFAULT_AI_VISUAL_MODEL_POLICY: VisualModelPolicy = 'v1';
 
 const resolveGameplayModelType = (data: RemoteCombatantUpdate): CharacterModelType | undefined => {
+  if (data.controller === 'ai') {
+    return data.modelType !== undefined
+      ? resolveCharacterModelType(data.modelType, 'v2')
+      : undefined;
+  }
+
   if (data.loadout?.modelType !== undefined) {
     return resolveCharacterModelType(
       data.loadout.modelType,
@@ -55,7 +62,18 @@ const resolveGameplayModelType = (data: RemoteCombatantUpdate): CharacterModelTy
 
 const createVisualLoadout = (data: RemoteCombatantUpdate, modelType: CharacterModelType): CharacterLoadout => {
   if (data.controller === 'ai') {
-    return { modelSystem: 'v1' };
+    const visualModelPolicy = data.visualModelPolicy ?? DEFAULT_AI_VISUAL_MODEL_POLICY;
+    const loadout = visualModelPolicy === 'v2'
+      ? {
+          ...(data.loadout ?? {}),
+          modelType,
+        }
+      : data.loadout;
+
+    return resolveLoadoutForVisualPolicy({
+      visualModelPolicy,
+      loadout,
+    });
   }
 
   const visualModelPolicy = data.visualModelPolicy ?? DEFAULT_REMOTE_VISUAL_MODEL_POLICY;

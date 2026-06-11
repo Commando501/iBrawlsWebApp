@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { type LegacyRosterProps } from '../../game/rosterSlotConfig';
+import { type VisualModelPolicy } from '../../model/modelSystem';
 import { type CustomMapData } from '../../types';
 import {
   createGrifballAIOrchestratorEvents,
@@ -29,6 +30,7 @@ export function createArenaOrchestratorCallbacksForState({
   isPlaying,
   opponentClientId,
   constrainCombatantToArena,
+  getVisualModelPolicy,
   pushStatsUpdate,
   playRespawn,
 }: {
@@ -41,6 +43,7 @@ export function createArenaOrchestratorCallbacksForState({
   isPlaying: boolean;
   opponentClientId: string;
   constrainCombatantToArena: (pos: THREE.Vector3, vel?: THREE.Vector3) => void;
+  getVisualModelPolicy: () => VisualModelPolicy;
   pushStatsUpdate: () => void;
   playRespawn: () => void;
 }) {
@@ -85,11 +88,18 @@ export function createArenaOrchestratorCallbacksForState({
   };
 
   const createOrUpdateRemotePlayer = (clientId: string, data: any) => {
+    const updateData = data?.controller === 'ai'
+      ? {
+          ...data,
+          visualModelPolicy: data.visualModelPolicy ?? getVisualModelPolicy(),
+        }
+      : data;
+
     createOrUpdateRemoteCombatantForState({
       state: getState(),
       refs: getRefs(),
       clientId,
-      data,
+      data: updateData,
       opponentClientId,
       activeCustomMap: getActiveCustomMap(),
       spawnPoints,
