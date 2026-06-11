@@ -5,6 +5,7 @@ import {
   DEFAULT_HAMMER_SLAM_WINDUP_TIME,
   resolveHammerSlamTiming,
 } from '../../game/hammerSlamTiming';
+import type { UniversalSettings } from '../../types';
 import {
   applyWeaponPose,
   getThirdPersonCombatantArmPose,
@@ -17,6 +18,7 @@ import {
   type CombatantArmPose,
   type WeaponPose,
 } from './attackAnimationPresets';
+import { animateV3CombatantModel, animateV3WeaponMeshes } from './combatantAnimationV3';
 import { type GrifballThreeRefs } from './threeRefs';
 
 const spawnFrictionSparkParticle = (refs: GrifballThreeRefs, pos: THREE.Vector3): void => {
@@ -403,32 +405,59 @@ export function animateSpartanCombatantModel({
   vel,
   yaw,
   hp,
+  activeWeapon = 'hammer',
   weaponState,
   weaponTimer,
   dt,
   isSliding = false,
   isSprinting = false,
+  isLunging = false,
   hammerReloadTime = 0.6,
   hammerMeleeReload = 0.5,
   hammerSlamWindupTime = DEFAULT_HAMMER_SLAM_WINDUP_TIME,
   hammerSlamAttackTime = DEFAULT_HAMMER_SLAM_ATTACK_TIME,
+  settings = {},
 }: {
   refs: GrifballThreeRefs;
   mesh: THREE.Group | null;
   vel: THREE.Vector3;
   yaw: number;
   hp: number;
+  activeWeapon?: string;
   weaponState: string;
   weaponTimer: number;
   dt: number;
   isSliding?: boolean;
   isSprinting?: boolean;
+  isLunging?: boolean;
   hammerReloadTime?: number;
   hammerMeleeReload?: number;
   hammerSlamWindupTime?: number;
   hammerSlamAttackTime?: number;
+  settings?: Partial<UniversalSettings>;
 }): void {
   if (!mesh) return;
+
+  if (mesh.userData.modelSystem === 'v3') {
+    animateV3CombatantModel({
+      refs,
+      mesh,
+      vel,
+      yaw,
+      hp,
+      activeWeapon,
+      weaponState,
+      weaponTimer,
+      dt,
+      isSliding,
+      isSprinting,
+      isLunging,
+      hammerSlamWindupTime,
+      hammerSlamAttackTime,
+      settings,
+    });
+    return;
+  }
 
   if (mesh.userData.modelSystem === 'v2') {
     animateSpartanCombatantModelV2({
@@ -591,6 +620,7 @@ export function animateSpartanCombatantModel({
 export function animateCombatantWeaponMeshes({
   hammerModel,
   swordModel,
+  pistolModel,
   activeWeapon,
   weaponState,
   weaponTimer,
@@ -601,12 +631,13 @@ export function animateCombatantWeaponMeshes({
 }: {
   hammerModel: THREE.Group | undefined | null;
   swordModel: THREE.Group | undefined | null;
+  pistolModel?: THREE.Group | undefined | null;
   activeWeapon: string;
   weaponState: string;
   weaponTimer: number;
   isLunging: boolean;
   dt: number;
-  settings: any;
+  settings: Partial<UniversalSettings>;
   combatantModel?: THREE.Group | null;
 }): void {
   if (hammerModel) {
@@ -614,6 +645,28 @@ export function animateCombatantWeaponMeshes({
   }
   if (swordModel) {
     swordModel.visible = activeWeapon === 'sword';
+  }
+  if (pistolModel) {
+    pistolModel.visible = activeWeapon === 'pistol';
+  }
+
+  if (
+    hammerModel?.userData.modelSystem === 'v3' ||
+    swordModel?.userData.modelSystem === 'v3' ||
+    pistolModel?.userData.modelSystem === 'v3'
+  ) {
+    animateV3WeaponMeshes({
+      hammerModel,
+      swordModel,
+      pistolModel,
+      activeWeapon,
+      weaponState,
+      weaponTimer,
+      isLunging,
+      dt,
+      settings,
+    });
+    return;
   }
 
   // Animating Gravity Hammer

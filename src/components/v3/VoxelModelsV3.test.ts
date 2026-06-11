@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import * as THREE from 'three';
 import { buildVoxelSpartanModel } from '../VoxelModels';
+import { createCombatantMeshRig } from '../grifball/combatantModels';
 import {
   buildV3PistolModel,
   buildV3SpartanModel,
@@ -53,6 +54,16 @@ describe('V3 weapon builders', () => {
   it('exports pistol-specific convenience builder', () => {
     assert.equal(buildV3PistolModel(192).userData.weaponType, 'pistol');
   });
+
+  it('V3 weapon manifests include first-person socket metadata on built weapons', () => {
+    for (const weapon of V3_WEAPON_IDS) {
+      const model = buildV3WeaponModel(weapon, { customHue: 192 });
+      const socketNames = model.userData.v3Sockets.map((socket: { name: string }) => socket.name);
+
+      assert.ok(socketNames.includes('firstPersonPrimaryGrip'), `${weapon} missing first-person primary grip`);
+      assert.ok(socketNames.includes('firstPersonOffhandGrip'), `${weapon} missing first-person offhand grip`);
+    }
+  });
 });
 
 describe('buildVoxelSpartanModel V3 dispatch', () => {
@@ -60,5 +71,18 @@ describe('buildVoxelSpartanModel V3 dispatch', () => {
     assert.equal(buildVoxelSpartanModel(false, 192, { modelSystem: 'v1' }).userData.modelSystem, undefined);
     assert.equal(buildVoxelSpartanModel(false, 192, { modelSystem: 'v2' }).userData.modelSystem, 'v2');
     assert.equal(buildVoxelSpartanModel(false, 192, { modelSystem: 'v3' }).userData.modelSystem, 'v3');
+  });
+
+  it('createCombatantMeshRig uses V3 weapon builders for V3 loadouts', () => {
+    const scene = new THREE.Scene();
+    const meshes = createCombatantMeshRig(scene, 192, false, { modelSystem: 'v3' });
+
+    assert.equal(meshes.group.userData.modelSystem, 'v3');
+    assert.equal(meshes.hammer.userData.modelSystem, 'v3');
+    assert.equal(meshes.sword.userData.modelSystem, 'v3');
+    assert.equal(meshes.pistol?.userData.modelSystem, 'v3');
+    assert.equal(meshes.hammer.userData.weaponType, 'hammer');
+    assert.equal(meshes.sword.userData.weaponType, 'sword');
+    assert.equal(meshes.pistol?.userData.weaponType, 'pistol');
   });
 });

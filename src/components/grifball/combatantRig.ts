@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { getCharacterModelProfile } from '../../characterModelTypes';
+import { getV3AttachmentOffset } from './combatantRigV3';
 
 export const COMBATANT_BONE_NAMES = [
   'root',
@@ -143,17 +144,34 @@ export const buildCombatantRigForModel = (model: THREE.Group): CombatantRig => {
   };
 
   const isV2 = model.userData.modelSystem === 'v2';
-  const rightWeaponBone = isV2 ? (model.userData.hand_r || bones.rightArm) : bones.rightArm;
-  const leftWeaponBone = isV2 ? (model.userData.hand_l || bones.leftArm) : bones.leftArm;
+  const isV3 = model.userData.modelSystem === 'v3';
+  const rightWeaponBone = isV3
+    ? (model.userData.handRight || model.userData.hand_r || bones.rightArm)
+    : isV2 ? (model.userData.hand_r || bones.rightArm) : bones.rightArm;
+  const leftWeaponBone = isV3
+    ? (model.userData.handLeft || model.userData.hand_l || bones.leftArm)
+    : isV2 ? (model.userData.hand_l || bones.leftArm) : bones.leftArm;
   const profile = isV2 ? getCharacterModelProfile(model.userData.modelType, 'v2') : undefined;
-  const rightGripOffset: THREE.Vector3Tuple = isV2 ? profile!.thirdPersonWeaponGripOffset : [0, -0.35, -0.045];
-  const leftGripOffset: THREE.Vector3Tuple = isV2 ? profile!.thirdPersonOffhandGripOffset : [0, -0.35, -0.045];
+  const defaultRightGripOffset: THREE.Vector3Tuple = isV2 ? profile!.thirdPersonWeaponGripOffset : [0, -0.35, -0.045];
+  const defaultLeftGripOffset: THREE.Vector3Tuple = isV2 ? profile!.thirdPersonOffhandGripOffset : [0, -0.35, -0.045];
+  const rightGripOffset: THREE.Vector3Tuple = isV3
+    ? (getV3AttachmentOffset(model, 'thirdPersonWeaponGrip') ?? defaultRightGripOffset)
+    : defaultRightGripOffset;
+  const leftGripOffset: THREE.Vector3Tuple = isV3
+    ? (getV3AttachmentOffset(model, 'thirdPersonOffhandGrip') ?? defaultLeftGripOffset)
+    : defaultLeftGripOffset;
+  const rightHandGripOffset: THREE.Vector3Tuple = isV3
+    ? (getV3AttachmentOffset(model, 'rightHandGrip') ?? rightGripOffset)
+    : rightGripOffset;
+  const leftHandGripOffset: THREE.Vector3Tuple = isV3
+    ? (getV3AttachmentOffset(model, 'leftHandGrip') ?? leftGripOffset)
+    : leftGripOffset;
 
   const attachments: CombatantAttachmentMap = {
     thirdPersonWeaponGrip: createAttachmentPoint(rightWeaponBone, 'thirdPersonWeaponGrip', 'rightArm', rightGripOffset),
     thirdPersonOffhandGrip: createAttachmentPoint(leftWeaponBone, 'thirdPersonOffhandGrip', 'leftArm', leftGripOffset),
-    rightHandGrip: createAttachmentPoint(rightWeaponBone, 'rightHandGrip', 'rightArm', rightGripOffset),
-    leftHandGrip: createAttachmentPoint(leftWeaponBone, 'leftHandGrip', 'leftArm', leftGripOffset),
+    rightHandGrip: createAttachmentPoint(rightWeaponBone, 'rightHandGrip', 'rightArm', rightHandGripOffset),
+    leftHandGrip: createAttachmentPoint(leftWeaponBone, 'leftHandGrip', 'leftArm', leftHandGripOffset),
     headCenter: createAttachmentPoint(bones.head, 'headCenter', 'head'),
     chestCenter: createAttachmentPoint(bones.upperTorso, 'chestCenter', 'upperTorso'),
   };
