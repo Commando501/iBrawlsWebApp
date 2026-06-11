@@ -102,6 +102,18 @@ test('third-person weapon grip is rigged to the right hand controller', () => {
   assert.notEqual(before.z, after.z);
 });
 
+test('V3 combatant weapons attach to the third-person grip without changing legacy sockets', () => {
+  const scene = new THREE.Scene();
+  const meshes = createCombatantMeshRig(scene, 192, false, { modelSystem: 'v3' });
+  const grip = meshes.rig.attachments.thirdPersonWeaponGrip;
+
+  assert.ok(grip);
+  assert.equal(meshes.hammer.parent, grip.group);
+  assert.equal(meshes.sword.parent, grip.group);
+  assert.equal(meshes.pistol?.parent, grip.group);
+  assert.equal(meshes.hammer.userData.weaponType, 'hammer');
+});
+
 test('first-person weapon rig creates reusable grip lock points', () => {
   const camera = new THREE.Group();
   const rig = createFirstPersonWeaponRig(camera);

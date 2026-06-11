@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import * as THREE from 'three';
 import { buildVoxelSpartanModel } from '../VoxelModels';
+import { createCombatantMeshRig } from '../grifball/combatantModels';
 import {
   buildV3PistolModel,
   buildV3SpartanModel,
@@ -60,5 +61,18 @@ describe('buildVoxelSpartanModel V3 dispatch', () => {
     assert.equal(buildVoxelSpartanModel(false, 192, { modelSystem: 'v1' }).userData.modelSystem, undefined);
     assert.equal(buildVoxelSpartanModel(false, 192, { modelSystem: 'v2' }).userData.modelSystem, 'v2');
     assert.equal(buildVoxelSpartanModel(false, 192, { modelSystem: 'v3' }).userData.modelSystem, 'v3');
+  });
+
+  it('createCombatantMeshRig uses V3 weapon builders for V3 loadouts', () => {
+    const scene = new THREE.Scene();
+    const meshes = createCombatantMeshRig(scene, 192, false, { modelSystem: 'v3' });
+
+    assert.equal(meshes.group.userData.modelSystem, 'v3');
+    assert.equal(meshes.hammer.userData.modelSystem, 'v3');
+    assert.equal(meshes.sword.userData.modelSystem, 'v3');
+    assert.equal(meshes.pistol?.userData.modelSystem, 'v3');
+    assert.equal(meshes.hammer.userData.weaponType, 'hammer');
+    assert.equal(meshes.sword.userData.weaponType, 'sword');
+    assert.equal(meshes.pistol?.userData.weaponType, 'pistol');
   });
 });
