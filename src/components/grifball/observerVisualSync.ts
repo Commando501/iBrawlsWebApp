@@ -71,15 +71,18 @@ export function updateObserverCombatantVisualsForState({
       vel: hostVel,
       yaw: hostData.yaw,
       hp: hostData.hp,
+      activeWeapon: hostData.activeWeapon || 'hammer',
       weaponState: hostWeaponState,
       weaponTimer: hostWeaponTimer,
       dt,
       isSliding: isHostSliding,
       isSprinting: isHostSprinting,
+      isLunging: hostIsLunging,
       hammerReloadTime: state.settings.hammerReloadTime ?? 0.6,
       hammerMeleeReload: state.settings.hammerMeleeReload ?? 0.5,
       hammerSlamWindupTime: hammerSlamTiming.windupTime,
       hammerSlamAttackTime: hammerSlamTiming.attackTime,
+      settings: state.settings,
     });
 
     if (refs.hostHammer || refs.hostSword) {
@@ -139,15 +142,18 @@ export function updateObserverCombatantVisualsForState({
         vel: enemyVel,
         yaw: clientData.yaw,
         hp: clientData.hp,
+        activeWeapon: clientData.activeWeapon || 'hammer',
         weaponState: enemyWeaponState,
         weaponTimer: enemyWeaponTimer,
         dt,
         isSliding: isClientSliding,
         isSprinting: isClientSprinting,
+        isLunging: enemyIsLunging,
         hammerReloadTime: state.settings.hammerReloadTime ?? 0.6,
         hammerMeleeReload: state.settings.hammerMeleeReload ?? 0.5,
         hammerSlamWindupTime: hammerSlamTiming.windupTime,
         hammerSlamAttackTime: hammerSlamTiming.attackTime,
+        settings: state.settings,
       });
 
       if (refs.enemyHammer || refs.enemySword) {

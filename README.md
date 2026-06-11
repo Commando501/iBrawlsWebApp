@@ -235,11 +235,13 @@ Local play setups feature an interactive map selector overlay supported by a dyn
 
 ## Standalone Animation Editor
 
-`animation-editor.html` is a local frame-by-frame weapon animation editor served by the Vite/Node dev server. It previews the same voxel Spartan, gravity hammer, and katar sword builders used by the game, lets the editor set three anchor key poses at arbitrary frames, and generates every missing `WeaponPose` frame between those anchors with linear, smoothstep, or cubic interpolation. Position channels are interpolated directly, while Euler rotations use shortest-path angular interpolation so keyed poses rotate through the direct movement direction.
+`animation-editor.html` is a local frame-by-frame weapon animation editor served by the Vite/Node dev server. It previews the same voxel Spartan, gravity hammer, katar sword, and pistol builders used by the game, lets the editor set three anchor key poses at arbitrary frames, and generates every missing `WeaponPose` frame between those anchors with linear, smoothstep, or cubic interpolation. Position channels are interpolated directly, while Euler rotations use shortest-path angular interpolation so keyed poses rotate through the direct movement direction.
 
 Open it from the main menu via **Animation Editor** or visit `http://localhost:3000/animation-editor.html` while `npm run dev` is running. The tool can show bone/socket overlays, select weapons, bones, or sockets as transform targets, keyframe those rig targets independently, lock weapon targets to a chosen socket pivot for socket-relative rotation, reposition a weapon directly onto the selected socket, export versioned rig JSON including those socket-lock relationships, and still copy the original TypeScript `WeaponPose[]` snippet for moving refined weapon poses back into `src/components/grifball/attackAnimationPresets.ts`.
 
 Voxel Spartans now expose a lightweight combatant rig contract in `src/components/grifball/combatantRig.ts`. The rig wraps the current voxel body segments in explicit group-pivot articulation controllers (`root`, `lowerTorso`, `upperTorso`, `head`, arms, and legs), keeps the raw visible meshes under `segmentGroups`, and inserts named attachment lock points such as `thirdPersonWeaponGrip`, `thirdPersonOffhandGrip`, `rightHandGrip`, `leftHandGrip`, `firstPersonWeaponGrip`, `headCenter`, and `chestCenter`. Third-person weapons are mounted through the right-hand combat grip and the shared attack presets convert legacy torso-space weapon poses into hand-local transforms, so hammer windups/strikes/melee and sword lunges/slashes now drive matching right- and offhand arm poses across AI, roster, observer, and replay visuals. This is still a grouped voxel rig, not a full skinned-mesh skeleton with elbows, knees, and blend weights.
+
+Phase 5 adds a V3-only layered procedural animation runtime. V3 combatants now compose lower-body locomotion with upper-body hammer, sword, and pistol action layers so attacks can animate above active movement, and the local animation editor exposes Version 3 model and hammer/sword/pistol targets for refinement. V1/V2 animation paths remain selectable and unchanged.
 
 ## Standalone Armor Model Editor
 
@@ -252,6 +254,8 @@ The page reuses `src/components/main-menu/ArmorModelEditor.tsx` in standalone la
 V3 reference mesh tooling is developer-only and local. Use `node --import tsx scripts/v3/inspect-reference-asset.ts --obj <local.obj>` to inspect OBJ metadata, and use `/v3-asset-preview.html` during local development for synthetic voxel budget previews. Do not commit private reference meshes, textures, or direct conversions.
 
 Phase 3 canonical V3 asset contracts live in `src/components/v3/`. `v3ModelTypes.ts`, `v3PartBounds.ts`, `v3AssetManifest.ts`, and `v3Lod.ts` define original iBrawls modular armor slots, hammer/sword/pistol weapon manifests, paint roles, visual fit bounds, socket metadata, budget estimates, and desktop/mobile LOD selection. These files are manifest contracts only: they do not include private reference meshes, textures, generated conversions, voxel payload arrays, or any runtime upload path.
+
+Phase 4 adds original runtime V3 blockout builders for the default modular character and V3 hammer/sword/pistol weapons. These builders route `modelSystem: 'v3'` through the live model factory and expose broad rig-compatible segments plus V3 socket metadata. Phase 5 layers V3 procedural locomotion/action animation and V3 editor targets on top of those builders, while V3 custom armor editing, replay policy rollout, and V3-by-default matchmaking remain later phases.
 
 ## Standalone 3D Map Maker
 
@@ -323,7 +327,7 @@ iBrawls features a beautiful and comprehensive character customization suite, av
       * `leg_lower`: Max `6 x 9 x 14`
       * `foot`: Max `6 x 8 x 5`
       * `toes`: Max `6 x 5 x 4`
-  - **Version 3 (Advanced, planned)**: A parallel voxel model system for modular armor, V3 weapons, first-person parity, and layered procedural animation. Matches resolve visible combatants through a visual model policy (`v1`, `v2`, or `v3`) while combat ranges, collision, hitboxes, and AI decisions remain normalized. V3 is the target advanced system, and V1/V2 remain selectable sandbox options for offline and hosted play. The current V3 asset phase is manifest-only: live gameplay still uses the existing V1/V2 model builders until the Phase 4 runtime builder work lands.
+  - **Version 3 (Advanced, in progress)**: A parallel voxel model system for modular armor, V3 weapons, first-person parity, and layered procedural animation. Matches resolve visible combatants through a visual model policy (`v1`, `v2`, or `v3`) while combat ranges, collision, hitboxes, and AI decisions remain normalized. V3 is the target advanced system, and V1/V2 remain selectable sandbox options for offline and hosted play. The current V3 runtime phase includes original blockout builders for the default V3 Spartan plus V3 hammer, sword, and pistol visuals; full layered V3 animation, V3 custom armor editing, replay policy rollout, and V3-by-default matchmaking remain later phases.
 - **Premium Hammer Model Swapping**: Swap between 9 distinct premium hammer variants shown in the game customizer, fully rendered in high-fidelity voxels:
   - **Akelas**: Sleek, aerodynamic dark carbon-like head with a thin, glowing red stripe along its edge.
   - **Akelus**: Sleek, white high-tech plating with pulsing neon blue energy channels on the back of the head.

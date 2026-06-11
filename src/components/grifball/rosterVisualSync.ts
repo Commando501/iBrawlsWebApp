@@ -102,22 +102,26 @@ export function updateRosterCombatantVisualsForState({
       vel: playerVelocity,
       yaw: player.yaw,
       hp: player.hp,
+      activeWeapon: player.activeWeapon || 'hammer',
       weaponState,
       weaponTimer,
       dt,
       isSliding: isPlayerSliding,
       isSprinting: isPlayerSprinting,
+      isLunging: Boolean(player.isLunging),
       hammerReloadTime: state.settings.hammerReloadTime ?? 0.6,
       hammerMeleeReload: state.settings.hammerMeleeReload ?? 0.5,
       hammerSlamWindupTime: hammerSlamTiming.windupTime,
       hammerSlamAttackTime: hammerSlamTiming.attackTime,
+      settings: state.settings,
     });
 
     const isMainAiOffline = clientId === MAIN_AI_ID && !state.isMultiplayer;
-    if ((meshes.hammer || meshes.sword) && !isMainAiOffline) {
+    if ((meshes.hammer || meshes.sword || meshes.pistol) && !isMainAiOffline) {
       animateCombatantWeaponMeshes({
         hammerModel: meshes.hammer,
         swordModel: meshes.sword,
+        pistolModel: meshes.pistol,
         activeWeapon: player.activeWeapon || 'hammer',
         weaponState,
         weaponTimer,
