@@ -160,6 +160,10 @@ interface Room {
 
 type MatchLobbyAccess = "open" | "private" | "password";
 type MatchLobbyGameMode = "sandbox" | "grifball";
+type ModelSystem = "v1" | "v2" | "v3";
+type VisualModelPolicy = ModelSystem;
+
+const DEFAULT_VISUAL_MODEL_POLICY: VisualModelPolicy = "v3";
 
 interface MatchLobbyConfig {
   access: MatchLobbyAccess;
@@ -170,6 +174,7 @@ interface MatchLobbyConfig {
   allowObservers: boolean;
   matchTimerSeconds: number;
   winTarget: number;
+  visualModelPolicy: VisualModelPolicy;
 }
 
 interface MatchLobbySummary {
@@ -181,6 +186,7 @@ interface MatchLobbySummary {
   allowObservers: boolean;
   matchTimerSeconds: number;
   winTarget: number;
+  visualModelPolicy: VisualModelPolicy;
   hasPassword: boolean;
   inProgress?: boolean;
 }
@@ -224,7 +230,15 @@ function normalizeString(value: unknown, fallback: string, maxLength: number): s
   return normalized.length > 0 ? normalized : fallback;
 }
 
-function normalizeMatchLobbyConfig(input: unknown): MatchLobbyConfig {
+function normalizeModelSystem(value: unknown): ModelSystem | undefined {
+  return value === "v1" || value === "v2" || value === "v3" ? value : undefined;
+}
+
+function normalizeVisualModelPolicy(value: unknown): VisualModelPolicy {
+  return normalizeModelSystem(value) ?? DEFAULT_VISUAL_MODEL_POLICY;
+}
+
+export function normalizeMatchLobbyConfig(input: unknown): MatchLobbyConfig {
   const raw = input && typeof input === "object" ? input as Record<string, unknown> : {};
   const gameMode = raw.gameMode === "grifball" ? "grifball" : "sandbox";
   const fallbackTarget = gameMode === "grifball" ? DEFAULT_GRIFBALL_GOAL_TARGET : DEFAULT_IBRAWLS_KILL_TARGET;
@@ -238,6 +252,7 @@ function normalizeMatchLobbyConfig(input: unknown): MatchLobbyConfig {
     allowObservers: raw.allowObservers !== false,
     matchTimerSeconds: clampInt(raw.matchTimerSeconds, DEFAULT_MATCH_TIMER_SECONDS, 60, 60 * 60),
     winTarget: clampInt(raw.winTarget, fallbackTarget, 1, 100),
+    visualModelPolicy: normalizeVisualModelPolicy(raw.visualModelPolicy),
   };
 }
 
@@ -268,7 +283,7 @@ function getCustomMapName(customMap: unknown): string | undefined {
   return normalized.length > 0 ? normalized : undefined;
 }
 
-function createMatchLobbySummary(
+export function createMatchLobbySummary(
   config: MatchLobbyConfig,
   { hasPassword = config.access === "password", inProgress = false }: { hasPassword?: boolean; inProgress?: boolean } = {},
 ): MatchLobbySummary {
@@ -281,6 +296,7 @@ function createMatchLobbySummary(
     allowObservers: config.allowObservers,
     matchTimerSeconds: config.matchTimerSeconds,
     winTarget: config.winTarget,
+    visualModelPolicy: config.visualModelPolicy,
     hasPassword,
     inProgress,
   };
@@ -397,7 +413,7 @@ function sanitizeCustomArmorSnapshot(
   return JSON.stringify(sanitized).length <= CUSTOM_ARMOR_MAX_SELECTED_BYTES ? sanitized : undefined;
 }
 
-function normalizePlayerLoadout(loadout: unknown): unknown | undefined {
+export function normalizePlayerLoadout(loadout: unknown): unknown | undefined {
   if (!loadout || typeof loadout !== "object" || Array.isArray(loadout)) return undefined;
   const raw = loadout as Record<string, unknown>;
   const out: Record<string, unknown> = {};
@@ -405,7 +421,8 @@ function normalizePlayerLoadout(loadout: unknown): unknown | undefined {
     const value = raw[key];
     if (typeof value === "string" && allowed.has(value)) out[key] = value;
   }
-  if (raw.modelSystem === "v1" || raw.modelSystem === "v2") out.modelSystem = raw.modelSystem;
+  const modelSystem = normalizeModelSystem(raw.modelSystem);
+  if (modelSystem) out.modelSystem = modelSystem;
   const modelType = normalizeCharacterModelType(raw.modelType, raw.modelSystem);
   if (out.modelSystem === "v2") out.modelType = modelType;
   if (raw.paintJob && typeof raw.paintJob === "object" && !Array.isArray(raw.paintJob)) {
