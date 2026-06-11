@@ -17,6 +17,7 @@ import tomllib
 
 from stable_baselines3 import PPO
 
+from . import baseline
 from .eval import eval_vs, eval_combat_vs_random, eval_combat_matrix, eval_combat_vs_snapshots
 
 
@@ -52,16 +53,35 @@ def resolve_frame_stack(model_path: str) -> int:
     return 1
 
 
+_BEHAVIOR_LABELS = {
+    "idle_frac": ("idle", "no movement input"),
+    "move_switch_rate": ("move switches", "direction change rate; high = jittery, low = committed"),
+    "action_repeat_rate": ("button repeats", "same button combo on consecutive decisions"),
+    "attack_rate": ("attacking", ""),
+    "jump_rate": ("jumping", ""),
+    "dash_rate": ("dashing", ""),
+}
+
+
 def _print_behavior(res: dict) -> None:
     b = res.get("behavior") or {}
     if not b:
         return
-    print("  behavior (per decision):")
-    print(f"    idle          : {b.get('idle_frac', 0) * 100:5.1f}%   (no movement input)")
-    print(f"    move switches : {b.get('move_switch_rate', 0) * 100:5.1f}%   (direction change rate; high = jittery, low = committed)")
-    print(f"    attacking     : {b.get('attack_rate', 0) * 100:5.1f}%")
-    print(f"    jumping       : {b.get('jump_rate', 0) * 100:5.1f}%")
-    print(f"    dashing       : {b.get('dash_rate', 0) * 100:5.1f}%")
+    info = baseline.load_baseline()
+    notes = baseline.annotate(b)
+    print(f"  behavior (per decision; human bands from {info['source']}):")
+    for key, (label, hint) in _BEHAVIOR_LABELS.items():
+        if key not in b:
+            continue
+        note = notes.get(key)
+        if note:
+            lo, hi = note["band"]
+            mark = {"in": "OK", "high": "HIGH", "low": "LOW"}[note["status"]]
+            band_txt = f"[human {lo * 100:.0f}-{hi * 100:.0f}%  {mark}]"
+        else:
+            band_txt = ""
+        hint_txt = f"  ({hint})" if hint else ""
+        print(f"    {label:<13}: {b[key] * 100:5.1f}%  {band_txt}{hint_txt}")
 
 
 def main() -> None:
@@ -109,8 +129,13 @@ def main() -> None:
             print(f"\n# {args.model}  combat evaluation matrix")
             for row in res["scenarios"]:
                 print(f"  {row['name']:<15} win={row['win_rate'] * 100:5.1f}% "
+                      f"(lift {row.get('win_lift', 0):.2f}x; 1.0 = random, 2.0 = perfect) "
                       f"draw={row['draw_rate'] * 100:5.1f}%")
-            print(f"  promotion score: {res['summary']['promotion_score']:.3f}")
+            s = res["summary"]
+            print(f"  mean win lift        : {s['mean_win_lift']:.2f}x")
+            print(f"  human-likeness penalty: {s['human_likeness_penalty']:.3f} "
+                  f"(bands from {s.get('baseline_source', 'defaults')})")
+            print(f"  promotion score      : {s['promotion_score']:.3f}")
             return
 
         if args.league_snapshot:

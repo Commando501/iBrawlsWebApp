@@ -13,6 +13,7 @@
 
 import { VecEnv, type VecEnvConfig } from './vecEnv';
 import { CombatVecEnv, type CombatVecEnvConfig } from './combatVecEnv';
+import { buildStateSnapshot } from './stateSnapshot';
 import { buildEnvSpec } from '../env/spec';
 import { REWARD_COMPONENT_KEYS } from '../env/reward';
 import {
@@ -107,6 +108,14 @@ export function runServer(transport: Transport): void {
               )
             )
           );
+          break;
+        }
+        case OPCODE.STATE: {
+          if (!env) { log('[sim] STATE before HELLO'); break; }
+          const dv = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
+          const index = payload.length >= 5 ? dv.getUint32(1, true) : 0;
+          const snapshot = buildStateSnapshot(env.getState(index));
+          transport.write(writeFrame(new TextEncoder().encode(JSON.stringify(snapshot))));
           break;
         }
         case OPCODE.CLOSE: {

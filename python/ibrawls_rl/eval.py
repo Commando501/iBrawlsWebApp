@@ -13,6 +13,7 @@ from __future__ import annotations
 import numpy as np
 from stable_baselines3.common.vec_env import VecFrameStack
 
+from . import baseline
 from .envs.grifball_vec_env import GrifballVecEnv
 
 WIN_THRESHOLD = 0.5  # terminal reward magnitude separating a decisive result from a timeout
@@ -243,34 +244,52 @@ def combat_eval_matrix_specs() -> list[dict]:
     ]
 
 
+def win_lift(win_rate: float, world_size: int) -> float:
+    """Win rate normalized by the scenario's random baseline (1/world_size).
+
+    Raw win rates aren't comparable across world sizes: in an 8-player FFA half the
+    slots are the policy, so when one policy slot wins the others LOSE by definition —
+    a perfect policy caps at 2/world_size per slot. Lift maps every scenario onto the
+    same scale: 1.0 = no better than random, 2.0 = best achievable.
+    """
+    baseline = 1.0 / max(2, int(world_size or 2))
+    return float(win_rate) / baseline
+
+
 def summarize_eval_matrix(results: list[dict]) -> dict:
-    """Promotion score: win more, draw less, avoid robotic spam."""
+    """Promotion score: beat random everywhere, draw less, move like a person.
+
+    Wins enter as mean win-LIFT (see :func:`win_lift`) so big-world scenarios count
+    fairly; the human-likeness penalty measures behavior stats against the human
+    baseline bands (replay-derived when python/human_baseline.json exists).
+    """
     if not results:
         return {
             "scenarios": 0,
             "mean_win_rate": 0.0,
+            "mean_win_lift": 0.0,
             "mean_draw_rate": 0.0,
             "human_likeness_penalty": 0.0,
+            "baseline_source": baseline.load_baseline()["source"],
             "promotion_score": 0.0,
         }
 
+    bands = baseline.get_bands()
     win = float(np.mean([float(r.get("win_rate", 0.0)) for r in results]))
+    lift = float(np.mean([win_lift(r.get("win_rate", 0.0), r.get("world_size", 2))
+                          for r in results]))
     draw = float(np.mean([float(r.get("draw_rate", 0.0)) for r in results]))
-    penalties = []
-    for r in results:
-        b = r.get("behavior") or {}
-        attack_spam = max(0.0, float(b.get("attack_rate", 0.0)) - 0.8)
-        dash_spam = max(0.0, float(b.get("dash_rate", 0.0)) - 0.55)
-        jump_spam = max(0.0, float(b.get("jump_rate", 0.0)) - 0.45)
-        repeat_spam = max(0.0, float(b.get("action_repeat_rate", 0.0)) - 0.65)
-        penalties.append(min(1.0, attack_spam + dash_spam + jump_spam + repeat_spam))
-    human_penalty = float(np.mean(penalties))
-    score = max(0.0, win - draw * 0.35 - human_penalty * 0.4)
+    human_penalty = float(np.mean(
+        [baseline.band_penalty(r.get("behavior"), bands) for r in results]))
+    # lift/2 maps [random..perfect] onto [0.5..1.0]; draws and robotic play subtract.
+    score = max(0.0, lift / 2.0 - draw * 0.35 - human_penalty * 0.4)
     return {
         "scenarios": len(results),
         "mean_win_rate": round(win, 4),
+        "mean_win_lift": round(lift, 4),
         "mean_draw_rate": round(draw, 4),
         "human_likeness_penalty": round(human_penalty, 4),
+        "baseline_source": baseline.load_baseline()["source"],
         "promotion_score": round(score, 4),
     }
 
@@ -298,6 +317,8 @@ def eval_combat_matrix(
             world_size=spec["world_size"],
             frame_stack=frame_stack,
         )
+        res["win_lift"] = round(win_lift(res["win_rate"], spec["world_size"]), 4)
+        res["behavior_bands"] = baseline.annotate(res.get("behavior"))
         results.append({"name": spec["name"], **res})
     return {"summary": summarize_eval_matrix(results), "scenarios": results}
 

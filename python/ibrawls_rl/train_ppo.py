@@ -16,11 +16,13 @@ import shutil
 from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import BaseCallback, CheckpointCallback
 from stable_baselines3.common.logger import KVWriter
-from stable_baselines3.common.vec_env import VecFrameStack
+from stable_baselines3.common.vec_env import VecFrameStack, VecMonitor
 
+from .checkpoint_compat import CheckpointCompatibilityError, warm_start_sb3_model
 from .config import TrainConfig, reward_dict, settings_markdown, randomize_spec
 from .envs.grifball_vec_env import GrifballVecEnv
 from .eval import eval_vs, eval_combat_vs_random
+from .league import ConcatVecEnv, LeagueOpponentVecEnv, LeagueSnapshotCallback, SnapshotPool
 from .policies import sb3_policy_kwargs
 
 try:
@@ -236,6 +238,38 @@ def run_training(cfg: TrainConfig) -> str:
             num_workers=cfg.num_workers,
             decision_interval=cfg.decision_interval,
         )
+
+    # League (combat only): dedicate extra 1v1 worlds to fights vs FROZEN snapshots —
+    # the PFSP cure for pure-self-play brittleness. The learner's rows from these
+    # worlds are ordinary PPO experience; the frozen side runs inside the wrapper.
+    league_cb = None
+    if cfg.mode == "combat" and cfg.league_worlds > 0:
+        pool = SnapshotPool(latest_bias=cfg.league_latest_bias, device="cpu",
+                            seed=cfg.seed)
+        for p in cfg.league_snapshots:
+            pool.add(p)
+        league_base = GrifballVecEnv(
+            mode="combat",
+            reward=reward_dict(cfg),
+            base_seed=cfg.seed + 777_001,
+            max_ticks=int(60 * 60 * cfg.match_minutes),
+            bootstrap_truncation=cfg.bootstrap_truncation,
+            combat_world_sizes=[2] * cfg.league_worlds,
+            combat_kill_range=(cfg.combat_kill_min, cfg.combat_kill_min),
+            combat_randomize_layout=False,  # fixed 1v1 so learner/opponent slots are stable
+            randomize=dr,
+            num_workers=1,
+            decision_interval=cfg.decision_interval,
+        )
+        env = ConcatVecEnv([env, LeagueOpponentVecEnv(league_base, pool, seed=cfg.seed)])
+        league_cb = LeagueSnapshotCallback(
+            pool, cfg.league_snapshot_every, os.path.join(cfg.logdir, "league"))
+        print(f"[train] league: {cfg.league_worlds} 1v1 worlds vs frozen snapshots "
+              f"(pool seeds: {len(pool)}; auto-freeze every {cfg.league_snapshot_every:,})")
+
+    # VecMonitor emits info["episode"] so SB3 logs rollout/ep_rew_mean & ep_len_mean —
+    # the primary learning signals (without it those charts never exist).
+    env = VecMonitor(env)
     env = _maybe_stack_env(env, cfg.frame_stack)
 
     # Linear schedule: SB3 calls this with progress_remaining going 1 -> 0.
@@ -278,11 +312,17 @@ def run_training(cfg: TrainConfig) -> str:
             raise SystemExit(f"init_model not found: {cfg.init_model}")
         print(f"[train] warm-starting from {cfg.init_model}")
         try:
-            model.set_parameters(cfg.init_model, device=cfg.device)
-        except Exception as e:  # usually an architecture mismatch
-            raise SystemExit(
-                f"failed to load init_model ({e}). The width/depth must match the saved model."
-            )
+            warm_start = warm_start_sb3_model(model, cfg.init_model, device=cfg.device)
+            if warm_start.migration is not None:
+                m = warm_start.migration
+                print(
+                    "[train] migrated init_model action head: "
+                    f"nvec {list(m.old_nvec)} -> {list(m.new_nvec)}; "
+                    f"inserted logit at factor {m.factor_index}, row {m.insert_index}; "
+                    "optimizer state reset"
+                )
+        except CheckpointCompatibilityError as e:
+            raise SystemExit(str(e))
 
     # save_freq is counted in vec-steps, so divide the desired step interval by the ACTUAL
     # number of sub-envs (env.num_envs). Combat's env count comes from combat_world_sizes, not
@@ -301,6 +341,8 @@ def run_training(cfg: TrainConfig) -> str:
     # short eval sim, so an over-frequent cadence eats throughput.
     if EvalCallback is not None and cfg.eval_every > 0:
         callbacks.append(EvalCallback(cfg))
+    if league_cb is not None:
+        callbacks.append(league_cb)
 
     saved = os.path.join(cfg.logdir, "final_model")
     try:

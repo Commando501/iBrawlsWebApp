@@ -41,7 +41,17 @@ over a **batched binary protocol** so tens of millions of steps move only flat t
 - `network.frame_stack` enables short observation history through SB3 `VecFrameStack`
   (`1` = off). Train and evaluate a model with the same frame-stack value.
 - Combat evaluation supports a matrix grade (`--matrix`) across 1v1, 4-player, and 8-player
-  scenarios, plus frozen snapshot opponents via repeated `--league-snapshot` paths.
+  scenarios, plus frozen snapshot opponents via repeated `--league-snapshot` paths. Matrix
+  wins are scored as **lift** over each scenario's random baseline (1.0x = random, 2.0x =
+  perfect) so big-world FFAs count fairly, and the human-likeness penalty grades behavior
+  stats against `python/human_baseline.json` (build it with `npm run sim:baseline -- ./replays`).
+- Training-side league self-play: `[league] worlds = N` dedicates 1v1 worlds to fights vs
+  FROZEN snapshots (PFSP-sampled, auto-frozen every `snapshot_every` steps) — the cure for
+  pure-self-play brittleness. `python -m ibrawls_rl.watch <model>` (or the dashboard's Watch
+  tab) records a real match for top-down playback.
+- Warm-start compatibility handles the v3->v4 action-space bump: older `[9,3,3,2,2,2]`
+  checkpoints can seed the new `[9,4,3,2,2,2]` policy by inserting the new aim logit and
+  resetting optimizer state. Width/depth still must match.
 
 ## Setup
 

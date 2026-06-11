@@ -198,11 +198,65 @@
 
     <!-- ================= WATCH ================= -->
     <section id="tab-watch" class="tabpane">
-      <div class="panel narrow">
-        <h2>Watch the bot play <span class="badge soon">coming soon</span></h2>
-        <p class="muted">Planned next phase: load a checkpoint and watch a match render
-        (top-down view driven by the headless sim) so you can <i>see</i> what the policy
-        learned, not just the numbers.</p>
+      <div class="watch-layout">
+        <div class="panel">
+          <h2>Record a match <small>the fastest "does it look human?" check there is</small></h2>
+          <div class="eval-form">
+            <label>Model
+              <select id="watchModel"></select>
+            </label>
+            <label>World size
+              <select id="watchWorldSize">
+                <option value="2">2 (1v1)</option>
+                <option value="4" selected>4 (FFA)</option>
+                <option value="8">8 (brawl)</option>
+              </select>
+            </label>
+            <label>Kill target
+              <input type="number" id="watchKillTarget" value="10" min="1" step="1" />
+            </label>
+            <label>Opponent
+              <select id="watchOpponent">
+                <option value="self">self (model plays everyone)</option>
+                <option value="random">random (odd slots)</option>
+              </select>
+            </label>
+            <div class="eval-actions">
+              <button class="btn primary" id="btnWatchRecord">⏺ Record match</button>
+              <button class="btn danger" id="btnWatchStop" disabled>■ Stop</button>
+              <span id="watchState" class="muted"></span>
+            </div>
+            <div class="progress eval-progress" id="watchProgress" style="display:none">
+              <div class="progress-fill" id="watchProgressFill"></div>
+              <span class="progress-label" id="watchProgressLabel">—</span>
+            </div>
+          </div>
+          <pre id="watchLog" class="console small" style="margin-top:12px"></pre>
+        </div>
+
+        <div class="panel watch-viewer-panel">
+          <h2>Playback
+            <span class="hist-actions">
+              <button class="btn primary tiny" id="btnWatchPlay">▶ Play</button>
+              <select id="watchSpeed" class="btn tiny">
+                <option value="0.5">0.5×</option>
+                <option value="1" selected>1×</option>
+                <option value="2">2×</option>
+                <option value="4">4×</option>
+              </select>
+            </span>
+          </h2>
+          <div id="watchMeta" class="muted" style="margin-bottom:8px">No recording loaded yet —
+            record a match on the left (or the last one loads automatically).</div>
+          <div class="watch-stage">
+            <canvas id="watchCanvas"></canvas>
+          </div>
+          <div class="watch-controls">
+            <input type="range" id="watchScrub" min="0" max="0" value="0" step="1" />
+            <span id="watchClock" class="muted">0:00</span>
+          </div>
+          <div id="watchScore" class="watch-score"></div>
+        </div>
       </div>
     </section>
 

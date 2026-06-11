@@ -58,9 +58,11 @@ class TrainConfig:
     randomize_enabled: bool = False   # jitter the dynamics settings each episode
     randomize_pct: float = 0.15       # +/- fraction each tunable is jittered by
 
-    # --- frozen snapshot league (evaluation + hardening opponents) ---
-    league_snapshots: list[str] = field(default_factory=list)  # saved models to grade against
-    league_latest_bias: float = 0.7    # future sampler hint: bias toward newer snapshots
+    # --- frozen snapshot league (training opponents + evaluation pool) ---
+    league_snapshots: list[str] = field(default_factory=list)  # seed pool of saved models
+    league_latest_bias: float = 0.7    # P(pick newest snapshot); rest is PFSP-weighted
+    league_worlds: int = 0             # combat: extra 1v1 worlds vs frozen snapshots (0 = off)
+    league_snapshot_every: int = 2_000_000  # auto-freeze the learner into the pool every N steps
 
     # --- reward (what the agent is paid for; see GUIDE.md) ---
     reward_win: float = 1.0           # winning the match (terminal)
@@ -76,7 +78,7 @@ class TrainConfig:
     reward_invalid_dash: float = 0.0   # penalize dash inputs while dash cannot fire
     reward_invalid_jump: float = 0.0   # penalize jump inputs while already airborne
     reward_invalid_swap: float = 0.0   # penalize impossible weapon swaps
-    reward_action_repeat: float = 0.0  # penalize repeating the same non-idle decision
+    reward_action_repeat: float = 0.0  # penalize repeating the same button combo (mash loops)
     bootstrap_truncation: bool = False   # value-bootstrap timeouts (usually leave off)
 
     # --- logging / output ---
@@ -117,11 +119,13 @@ KNOB_DESCRIPTIONS: dict[str, str] = {
     "width": "Neurons per layer. Bigger brain = more skill ceiling, but slower (use the GPU).",
     "depth": "Hidden layers. 2-3 is plenty here.",
     "frame_stack": "Short action/position memory by stacking recent observations. 1 = off; 4 gives the MLP temporal context without switching algorithms. Train/evaluate with the same value.",
-    "init_model": "Warm-start from a saved model (curriculum transfer). Same width/depth required. Empty = from scratch.",
+    "init_model": "Warm-start from a saved model (curriculum transfer). Same width/depth required; one inserted action logit can auto-migrate. Empty = from scratch.",
     "randomize_enabled": "Jitter game mechanics each episode so the brain stays robust to live balance patches.",
     "randomize_pct": "How far mechanics are jittered (0.15 = +/-15%). Bigger = more robust but harder to learn.",
-    "league_snapshots": "Frozen saved models used as a league/evaluation opponent pool. Paths are relative to python/ unless absolute.",
-    "league_latest_bias": "Future snapshot sampler hint: 0 = uniform, 1 = heavily favor newer snapshots.",
+    "league_snapshots": "Seed pool of frozen saved models used as league/evaluation opponents. Paths are relative to python/ unless absolute. Auto-snapshots are added during training.",
+    "league_latest_bias": "Probability the league picks the NEWEST snapshot as opponent; the rest of the time it PFSP-samples (prefers snapshots the learner loses to).",
+    "league_worlds": "Combat: number of extra 1v1 worlds where the learner fights FROZEN league snapshots instead of itself. The cure for self-play brittleness — 4-8 is a good mix. 0 = pure self-play.",
+    "league_snapshot_every": "Auto-freeze the current learner into the league pool every N steps, so the opponent pool grows with skill.",
     "reward_win": "Payout for winning the match.",
     "reward_goal_scored": "Payout per goal scored.",
     "reward_goal_conceded": "Penalty per goal conceded.",
@@ -135,7 +139,7 @@ KNOB_DESCRIPTIONS: dict[str, str] = {
     "reward_invalid_dash": "Penalty for dash inputs while dash is on cooldown/active.",
     "reward_invalid_jump": "Penalty for jump inputs while already airborne.",
     "reward_invalid_swap": "Penalty for impossible weapon swaps.",
-    "reward_action_repeat": "Penalty for repeating the exact same non-idle decision on consecutive policy ticks.",
+    "reward_action_repeat": "Penalty for repeating the exact same BUTTON combo (attack/jump/dash/swap) on consecutive ticks — catches mash loops. Movement is excluded: holding a heading is human.",
     "bootstrap_truncation": "Treat timeouts as 'to be continued' (value bootstrap). Usually OFF for this win-focused task.",
     "logdir": "Folder for this run's logs, checkpoints, and final model.",
     "save_every": "Checkpoint frequency (steps).",
@@ -180,6 +184,8 @@ _TOML_MAP = {
     ("randomize", "pct"): "randomize_pct",
     ("league", "snapshots"): "league_snapshots",
     ("league", "latest_bias"): "league_latest_bias",
+    ("league", "worlds"): "league_worlds",
+    ("league", "snapshot_every"): "league_snapshot_every",
     ("reward", "win"): "reward_win",
     ("reward", "goal_scored"): "reward_goal_scored",
     ("reward", "goal_conceded"): "reward_goal_conceded",
@@ -293,6 +299,7 @@ _FIELD_RANGES: dict[str, tuple[float, float, float]] = {
     "target_kl": (0.0, 0.1, 0.005),
     "frame_stack": (1, 8, 1),
     "league_latest_bias": (0.0, 1.0, 0.05),
+    "league_worlds": (0, 16, 1),
 }
 
 

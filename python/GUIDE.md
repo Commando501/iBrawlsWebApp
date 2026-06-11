@@ -162,6 +162,53 @@ That stacks recent observations for the MLP policy. A frame-stacked brain has a 
 input shape, so train and evaluate it with the same `frame_stack` value and do not warm-start
 from an unstacked model.
 
+## 5d-3. The league: training against frozen past selves (PFSP)
+
+Pure self-play has a known failure mode: the policy only ever fights its **current** self,
+so it converges to brittle, same-y, exploitable styles. The league fixes it:
+
+```toml
+[league]
+worlds         = 6      # extra 1v1 worlds where the learner fights FROZEN snapshots
+snapshot_every = 2000000 # auto-freeze the learner into the pool every N steps
+latest_bias    = 0.7     # P(pick the newest snapshot); else PFSP (prefer ones it loses to)
+snapshots      = ["runs/older_run/final_model.zip"]  # optional seed opponents
+```
+
+The learner's rows from league worlds are ordinary PPO experience; the frozen side runs in
+Python and is invisible to the optimizer. Watch `league/learner_win_rate` on the Train tab:
+**~0.5–0.7 is healthy** (the pool keeps up); pinned at 1.0 = stale pool (freeze more often);
+collapsed near 0 = a regression. Old-action-space snapshots still work as opponents (they
+just never use the newest aim choice). Auto-frozen snapshots land in `<logdir>/league/`.
+
+## 5d-4. Human baseline: grading "moves like a person" against real players
+
+Evaluations score behavior stats against **bands derived from real human replays**. Build
+the baseline once you have replays (Theater exports or `npm run download:replays`):
+
+```bash
+npm run sim:baseline -- ./replays            # writes python/human_baseline.json
+```
+
+It resamples each replay's local-player track at the bot's decision cadence and derives
+idle / move-switch / jump / dash / attack bands. Until that file exists, hand-tuned defaults
+apply (the dashboard and `evaluate.py` both say which source is active). The eval matrix's
+**human-likeness penalty**, the behavior chips' colors, and the Advisor's twitchiness rule
+all read these bands.
+
+## 5d-5. Watching the bot (the fastest human-likeness check)
+
+Numbers don't catch "this looks robotic" — your eyes do. The dashboard's **Watch tab**
+records a real match from any saved model (top-down view straight from the headless sim)
+with play/pause/speed/scrub. CLI equivalent:
+
+```bash
+python -m ibrawls_rl.watch runs/<run>/final_model.zip --world-size 4 --opponent self
+```
+
+Decision interval and frame stack are read from the model's run automatically. Actions are
+*sampled* (not argmax) by default — livelier and closer to how it would feel in-game.
+
 ## 5e. If it's NOT learning (win-rate flat at 0)
 
 Symptom: `eval/win_rate` stays ~0 and `ep_return` sits at a big negative number (≈ the time
@@ -232,6 +279,9 @@ Notes:
   Expect it to be hard even with a strong self-play base; 0% from a weak/cold brain is normal.
 - During a `self` stage, `eval/win_rate` is measured **vs random** (a yardstick that rises);
   during a `heuristic` stage it's measured vs the heuristic.
+- Older combat checkpoints from before nearest-enemy aim had action nvec `[9,3,3,2,2,2]`.
+  Warm-start now auto-migrates those into `[9,4,3,2,2,2]` by inserting the new aim logit
+  and starting with a fresh optimizer. Network `width`/`depth` must still match.
 
 `self` = the bot plays copies of itself (it invents its own counters). `heuristic` = the
 strong scripted bot — a hard final exam, not a starting point.

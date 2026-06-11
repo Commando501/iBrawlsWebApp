@@ -43,6 +43,7 @@ $$(".tab").forEach((t) => t.addEventListener("click", () => {
   if (t.dataset.tab === "runs") loadRuns();
   if (t.dataset.tab === "evaluate") { loadModels(); loadEvalHistory(); }
   if (t.dataset.tab === "optimizer") loadOptimizer();
+  if (t.dataset.tab === "watch") loadWatch();
 }));
 
 // ================= CONFIG FORM =================
@@ -286,6 +287,15 @@ const METRIC_INFO = {
     help: "Fraction of eval decisions jumping. Constant bunny-hopping reads as robotic." },
   "behavior/dash_rate": { title: "Dash rate", goal: "Context-dependent",
     help: "Fraction of eval decisions dashing (cooldown-limited)." },
+  "league/learner_win_rate": { title: "League win rate", goal: "~0.5–0.7 vs the snapshot pool",
+    help: "Rolling win rate vs frozen past snapshots (PFSP league worlds). Hovering ≈0.5–0.7 = learning while the pool keeps up; pinned at 1.0 = the pool is stale (lower league.snapshot_every).",
+    advise: (v) => {
+      if (v >= 0.95) return { level: "warn", text: "Crushing the whole snapshot pool — opponents are stale. Lower league.snapshot_every so fresher selves join the pool." };
+      if (v <= 0.25) return { level: "warn", text: "Losing to past snapshots — possible regression. Check approx_kl/learning rate." };
+      return { level: "good", text: "Healthy league pressure — the pool is keeping the policy honest." };
+    } },
+  "league/pool_size": { title: "League pool size", goal: "Grows over the run",
+    help: "Number of frozen snapshots in the opponent pool (seeds + auto-freezes)." },
 };
 const METRIC_TITLES = Object.fromEntries(
   Object.entries(METRIC_INFO).map(([k, v]) => [k, v.title]));
@@ -642,8 +652,13 @@ function renderEvalResult(r) {
 function renderEvalMatrixResult(r) {
   const rows = r.scenarios.map((s) => {
     const b = s.behavior || {};
+    // Lift = win rate / random baseline: 1.0x = random-equal, 2.0x = perfect.
+    const lift = s.win_lift != null ? s.win_lift : (s.win_rate || 0) * (s.world_size || 2);
+    const liftClass = lift >= 1.7 ? "good-cell" : lift <= 1.05 ? "bad-cell" : "";
     return el("tr", {},
       el("td", {}, s.name),
+      el("td", { class: liftClass, title: "win rate ÷ random baseline (1/world size); 2.0x is the best achievable" },
+        `${lift.toFixed(2)}x`),
       el("td", {}, `${Math.round((s.win_rate || 0) * 100)}%`),
       el("td", {}, `${Math.round((s.draw_rate || 0) * 100)}%`),
       el("td", {}, s.world_size || "-"),
@@ -652,19 +667,27 @@ function renderEvalMatrixResult(r) {
   });
   const table = el("table", { class: "guide-table" },
     el("thead", {}, el("tr", {},
-      el("th", {}, "Scenario"), el("th", {}, "Win"), el("th", {}, "Draw"),
+      el("th", {}, "Scenario"), el("th", { title: "win rate normalized by world size" }, "Lift"),
+      el("th", {}, "Win"), el("th", {}, "Draw"),
       el("th", {}, "World"), el("th", {}, "Kills"), el("th", {}, "Atk / dash / repeat"))),
     el("tbody", {}, ...rows));
   const s = r.summary;
   const summary = el("div", { class: "summary" },
     el("div", {}, el("span", { class: "big" }, fmtNum(s.promotion_score)), " promotion score"),
     el("div", { class: "muted" },
-      `mean win ${Math.round(s.mean_win_rate * 100)}% · mean draw ${Math.round(s.mean_draw_rate * 100)}% · behavior penalty ${Math.round(s.human_likeness_penalty * 100)}%`
+      `mean lift ${(s.mean_win_lift != null ? s.mean_win_lift : 0).toFixed(2)}x (1 = random, 2 = perfect)`
+      + ` · mean draw ${Math.round(s.mean_draw_rate * 100)}% · human-likeness penalty ${Math.round(s.human_likeness_penalty * 100)}%`
+      + (s.baseline_source ? ` (bands: ${s.baseline_source})` : "")
       + (r.decision_interval ? ` · decision interval ${r.decision_interval}` : "")
       + (r.frame_stack ? ` · frame stack ${r.frame_stack}` : "")));
   const reco = el("div", { id: "evalReco", class: "eval-reco" });
   $("#evalResult").innerHTML = "";
-  $("#evalResult").append(summary, table, reco);
+  $("#evalResult").append(summary, table);
+  // Behavior chips for the duel scenario (the cleanest read on movement style).
+  const duel = r.scenarios.find((x) => (x.world_size || 2) === 2) || r.scenarios[0];
+  const chips = behaviorChips(duel && duel.behavior);
+  if (chips) $("#evalResult").append(chips);
+  $("#evalResult").append(reco);
   renderEvalAdvice({ ...r, win_rate: s.mean_win_rate, draw_rate: s.mean_draw_rate, mode: "combat" });
 }
 
@@ -678,13 +701,33 @@ const BEHAVIOR_INFO = {
   jump_rate: { label: "jumping", help: "Fraction of decisions jumping." },
   dash_rate: { label: "dashing", help: "Fraction of decisions dashing." },
 };
+// Human bands ({metric: [lo, hi]}) — replay-derived when human_baseline.json exists.
+let BASELINE = null;
+async function loadBaseline() {
+  if (BASELINE) return BASELINE;
+  try { BASELINE = await api.get("/api/baseline"); } catch { BASELINE = { bands: {}, source: "defaults" }; }
+  return BASELINE;
+}
+loadBaseline();
+
 function behaviorChips(b) {
   if (!b) return null;
+  const bands = (BASELINE && BASELINE.bands) || {};
+  const src = (BASELINE && BASELINE.source) || "defaults";
   const wrap = el("div", { class: "behavior-chips" },
-    el("span", { class: "muted bc-title" }, "behavior:"));
+    el("span", { class: "muted bc-title", title: `human bands from ${src}` }, "behavior:"));
   for (const [k, info] of Object.entries(BEHAVIOR_INFO)) {
     if (b[k] == null) continue;
-    wrap.append(el("span", { class: "bchip", title: info.help },
+    const band = bands[k];
+    let cls = "bchip", note = "";
+    if (band) {
+      const [lo, hi] = band;
+      const status = b[k] > hi ? "high" : b[k] < lo ? "low" : "in";
+      cls += " band-" + status;
+      note = `  ·  human ${Math.round(lo * 100)}–${Math.round(hi * 100)}%`
+        + (status === "in" ? " ✓" : status === "high" ? " (above)" : " (below)");
+    }
+    wrap.append(el("span", { class: cls, title: info.help + note },
       info.label + " ", el("b", {}, Math.round(b[k] * 100) + "%")));
   }
   return wrap;
@@ -1029,6 +1072,223 @@ function renderQueue(st) {
   root.append(el("p", { class: "muted", style: "margin:0 0 8px" },
     st.running ? "Queue is running — jobs advance automatically." : "Queue is paused."), table);
 }
+
+// ================= WATCH (top-down match playback) =================
+const TEAM_COLORS = ["#4f9dff", "#f85149", "#3fb950", "#d29922", "#7c5cff", "#36c5c5", "#e879f9", "#a3e635"];
+let watchTraj = null;       // {meta, outcome, frames}
+let watchFrame = 0;
+let watchPlaying = false;
+let watchLastTick = 0;
+let watchAcc = 0;
+let watchStatusTimer = null;
+let watchModelsLoaded = false;
+let watchTeamColor = {};
+
+async function loadWatch() {
+  if (!watchModelsLoaded) {
+    watchModelsLoaded = true;
+    try {
+      const data = await api.get("/api/models");
+      const sel = $("#watchModel");
+      sel.innerHTML = "";
+      (data.models || []).filter((m) => m.mode !== "grifball")
+        .forEach((m) => sel.append(el("option", { value: m.path }, m.label)));
+    } catch {}
+  }
+  pollWatchStatus();
+  if (!watchTraj) loadWatchTrajectory();   // last recording auto-loads
+}
+
+$("#btnWatchRecord").addEventListener("click", async () => {
+  const res = await api.post("/api/watch/start", {
+    model: $("#watchModel").value,
+    world_size: Number($("#watchWorldSize").value),
+    kill_target: Number($("#watchKillTarget").value),
+    opponent: $("#watchOpponent").value,
+  });
+  if (!res.ok) { $("#watchState").textContent = res.error || "error"; return; }
+  $("#watchState").textContent = "recording…";
+  pollWatchStatus();
+});
+$("#btnWatchStop").addEventListener("click", async () => { await api.post("/api/watch/stop", {}); pollWatchStatus(); });
+
+async function pollWatchStatus() {
+  let st;
+  try { st = await api.get("/api/watch/status"); } catch { return; }
+  $("#btnWatchRecord").disabled = st.running;
+  $("#btnWatchStop").disabled = !st.running;
+  $("#watchState").textContent = st.running ? "recording…" : (st.state === "idle" ? "" : st.state);
+  $("#watchLog").textContent = (st.log || []).join("\n");
+  const bar = $("#watchProgress");
+  if (st.running) {
+    bar.style.display = "block";
+    const pct = st.progress != null ? Math.round(st.progress * 100) : 0;
+    $("#watchProgressFill").style.width = pct + "%";
+    $("#watchProgressLabel").textContent = st.progress != null ? pct + "%" : "spinning up sim…";
+  } else {
+    bar.style.display = "none";
+  }
+  clearTimeout(watchStatusTimer);
+  if (st.running) {
+    watchStatusTimer = setTimeout(pollWatchStatus, 1200);
+  } else if (st.has_trajectory && (!watchTraj || (st.trajectory_mtime || 0) * 1000 > (watchTraj.loadedAt || 0))) {
+    loadWatchTrajectory();
+  }
+}
+
+async function loadWatchTrajectory() {
+  let traj;
+  try {
+    const r = await fetch("/api/watch/trajectory");
+    if (!r.ok) return;
+    traj = await r.json();
+  } catch { return; }
+  if (!traj || !Array.isArray(traj.frames) || !traj.frames.length) return;
+  traj.loadedAt = Date.now();
+  watchTraj = traj;
+  watchFrame = 0;
+  watchPlaying = false;
+  $("#btnWatchPlay").textContent = "▶ Play";
+  // Stable team colors in first-seen order.
+  watchTeamColor = {};
+  let ci = 0;
+  for (const c of traj.frames[0].combatants) {
+    if (!(c.team in watchTeamColor)) watchTeamColor[c.team] = TEAM_COLORS[ci++ % TEAM_COLORS.length];
+  }
+  const m = traj.meta || {};
+  const o = traj.outcome || {};
+  $("#watchMeta").textContent =
+    `${(m.model || "?").replace("runs/", "")} · ${m.world_size}-player vs ${m.opponent}`
+    + ` · kill target ${m.kill_target} · ${traj.frames.length} frames`
+    + ` @ ${(1 / (m.seconds_per_frame || 0.0833)).toFixed(0)}/s`
+    + (o.ended ? (o.truncated ? " · timed out" : " · decisive finish") : " · cut short");
+  const scrub = $("#watchScrub");
+  scrub.max = traj.frames.length - 1;
+  scrub.value = 0;
+  drawWatchFrame();
+  requestAnimationFrame(watchLoop);
+}
+
+$("#btnWatchPlay").addEventListener("click", () => {
+  if (!watchTraj) return;
+  watchPlaying = !watchPlaying;
+  if (watchPlaying && watchFrame >= watchTraj.frames.length - 1) watchFrame = 0; // replay
+  watchLastTick = performance.now();
+  $("#btnWatchPlay").textContent = watchPlaying ? "⏸ Pause" : "▶ Play";
+  if (watchPlaying) requestAnimationFrame(watchLoop);
+});
+$("#watchScrub").addEventListener("input", () => {
+  watchFrame = Number($("#watchScrub").value) || 0;
+  drawWatchFrame();
+});
+
+function watchLoop(now) {
+  if (!watchTraj) return;
+  if (watchPlaying) {
+    const spf = (watchTraj.meta.seconds_per_frame || 1 / 12) / Number($("#watchSpeed").value || 1);
+    watchAcc += (now - watchLastTick) / 1000;
+    watchLastTick = now;
+    while (watchAcc >= spf && watchFrame < watchTraj.frames.length - 1) {
+      watchAcc -= spf;
+      watchFrame++;
+    }
+    if (watchFrame >= watchTraj.frames.length - 1) {
+      watchPlaying = false;
+      $("#btnWatchPlay").textContent = "▶ Replay";
+    }
+    $("#watchScrub").value = watchFrame;
+    drawWatchFrame();
+  }
+  if (watchPlaying) requestAnimationFrame(watchLoop);
+}
+
+function drawWatchFrame() {
+  const traj = watchTraj;
+  if (!traj) return;
+  const f = traj.frames[Math.min(watchFrame, traj.frames.length - 1)];
+  const canvas = $("#watchCanvas");
+  const dpr = window.devicePixelRatio || 1;
+  const cssW = canvas.clientWidth || 600;
+  const arena = f.arena || { halfX: 30, halfZ: 20 };
+  const cssH = Math.max(260, cssW * (arena.halfZ / arena.halfX));
+  canvas.style.height = cssH + "px";
+  canvas.width = cssW * dpr; canvas.height = cssH * dpr;
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  // Arena floor + grid
+  ctx.fillStyle = "#0a0d12";
+  ctx.fillRect(0, 0, cssW, cssH);
+  const pad = 14;
+  const sx = (x) => pad + ((x + arena.halfX) / (2 * arena.halfX)) * (cssW - 2 * pad);
+  const sy = (z) => pad + ((z + arena.halfZ) / (2 * arena.halfZ)) * (cssH - 2 * pad);
+  ctx.strokeStyle = "#1b2330"; ctx.lineWidth = 1;
+  for (let gx = -arena.halfX; gx <= arena.halfX; gx += 8) {
+    ctx.beginPath(); ctx.moveTo(sx(gx), sy(-arena.halfZ)); ctx.lineTo(sx(gx), sy(arena.halfZ)); ctx.stroke();
+  }
+  for (let gz = -arena.halfZ; gz <= arena.halfZ; gz += 8) {
+    ctx.beginPath(); ctx.moveTo(sx(-arena.halfX), sy(gz)); ctx.lineTo(sx(arena.halfX), sy(gz)); ctx.stroke();
+  }
+  ctx.strokeStyle = "#2a323d"; ctx.lineWidth = 2;
+  ctx.strokeRect(sx(-arena.halfX), sy(-arena.halfZ),
+    sx(arena.halfX) - sx(-arena.halfX), sy(arena.halfZ) - sy(-arena.halfZ));
+
+  // Ball (grifball)
+  if (f.ball) {
+    ctx.fillStyle = "#ffb02e";
+    ctx.beginPath(); ctx.arc(sx(f.ball.x), sy(f.ball.z), 5, 0, Math.PI * 2); ctx.fill();
+  }
+
+  // Combatants
+  const r = 9;
+  for (const c of f.combatants) {
+    const X = sx(c.x), Y = sy(c.z);
+    const color = watchTeamColor[c.team] || "#888";
+    ctx.globalAlpha = c.alive ? 1 : 0.25;
+    // facing line (engine forward = (sin yaw, cos yaw))
+    ctx.strokeStyle = color; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(X, Y);
+    ctx.lineTo(X + Math.sin(c.yaw) * r * 1.9, Y + Math.cos(c.yaw) * r * 1.9); ctx.stroke();
+    // body
+    ctx.fillStyle = color;
+    ctx.beginPath(); ctx.arc(X, Y, r, 0, Math.PI * 2); ctx.fill();
+    if (c.hasBall) { ctx.strokeStyle = "#ffb02e"; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.arc(X, Y, r + 3, 0, Math.PI * 2); ctx.stroke(); }
+    // weapon glyph
+    ctx.fillStyle = "#001";
+    ctx.font = "bold 9px system-ui"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText(c.weapon === "hammer" ? "H" : c.weapon === "sword" ? "S" : "B", X, Y);
+    // hp bar
+    if (c.alive && c.maxHp > 0) {
+      const w = r * 2, frac = Math.max(0, Math.min(1, c.hp / c.maxHp));
+      ctx.fillStyle = "#000"; ctx.fillRect(X - r, Y - r - 6, w, 3);
+      ctx.fillStyle = frac > 0.5 ? "#3fb950" : frac > 0.25 ? "#d29922" : "#f85149";
+      ctx.fillRect(X - r, Y - r - 6, w * frac, 3);
+    }
+    // id label
+    ctx.globalAlpha = c.alive ? 0.85 : 0.3;
+    ctx.fillStyle = "#8b97a7"; ctx.font = "9px system-ui";
+    ctx.fillText(c.id, X, Y + r + 8);
+    ctx.globalAlpha = 1;
+  }
+
+  // Clock + scoreboard
+  const secs = (f.tick || 0) / 60;
+  $("#watchClock").textContent =
+    `${Math.floor(secs / 60)}:${String(Math.floor(secs % 60)).padStart(2, "0")}  ·  ${f.phase}`;
+  const score = $("#watchScore");
+  score.innerHTML = "";
+  for (const [team, s] of Object.entries(f.scores || {})) {
+    score.append(el("span", { class: "bchip", style: `border-color:${watchTeamColor[team] || "#888"}` },
+      el("i", { class: "team-dot", style: `background:${watchTeamColor[team] || "#888"}` }),
+      `${team}  `, el("b", {}, String(f.mode === "combat" ? s.kills : s.goals))));
+  }
+  score.append(el("span", { class: "muted", style: "margin-left:8px" },
+    `target ${f.killTarget}`));
+}
+
+window.addEventListener("resize", () => {
+  if ($("#tab-watch").classList.contains("active")) drawWatchFrame();
+});
 
 // ================= boot =================
 loadConfig();

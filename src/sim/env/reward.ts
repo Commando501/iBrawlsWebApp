@@ -42,7 +42,9 @@ export interface RewardConfig {
   invalidDash: number;
   invalidJump: number;
   invalidSwap: number;
-  /** Penalty for repeating the exact same non-idle action decision. */
+  /** Penalty for repeating the exact same BUTTON combo (attack/jump/dash/swap) on
+   * consecutive ticks — catches robotic mash loops. Movement is excluded on purpose:
+   * holding a heading is human. */
   actionRepeatPenalty: number;
 }
 
@@ -95,7 +97,7 @@ export interface RewardMemory {
   ballDistToEnemyGoal: Record<TeamId, number>;
   /** Per-AGENT distance to its approach objective (free ball / nearest enemy), captured pre-step. */
   approachDist: Record<string, number | null>;
-  /** Previous non-idle action signature per agent, used to discourage held spam loops. */
+  /** Previous button-combo signature per agent, used to discourage mash loops. */
   previousActionSignature: Record<string, string | null>;
 }
 
@@ -167,19 +169,22 @@ function addReward(
   addComponent(components, key, amount);
 }
 
+/**
+ * Signature of the BUTTON inputs only (attack/jump/dash/swap). Movement is deliberately
+ * excluded: humans HOLD a heading for whole seconds, so penalizing a repeated move
+ * direction would reward twitchy direction-flipping — the opposite of human-like play.
+ * The repeat penalty exists to catch button-mash loops (attack held every decision),
+ * which is exactly what reads as robotic.
+ */
 function actionSignature(action: ActionInput): string | null {
-  const moving = action.moveX !== 0 || action.moveZ !== 0;
-  const active =
-    moving ||
+  const anyButton =
     action.attackPrimary ||
     action.attackSecondary ||
     action.jump ||
     action.dash ||
     action.swapWeapon;
-  if (!active) return null;
+  if (!anyButton) return null;
   return [
-    action.moveX.toFixed(3),
-    action.moveZ.toFixed(3),
     action.attackPrimary ? 1 : 0,
     action.attackSecondary ? 1 : 0,
     action.jump ? 1 : 0,

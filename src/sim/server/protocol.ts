@@ -18,6 +18,9 @@ export const OPCODE = {
   RESET: 1,
   STEP: 2,
   CLOSE: 3,
+  /** Request: opcode + uint32 world index. Response: JSON {@link StateSnapshot} —
+   * the Watch tab's render feed. Off the hot path; JSON is fine here. */
+  STATE: 4,
 } as const;
 
 export type Opcode = (typeof OPCODE)[keyof typeof OPCODE];

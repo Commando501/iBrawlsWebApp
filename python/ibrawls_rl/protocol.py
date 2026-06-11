@@ -18,6 +18,7 @@ HELLO = 0
 RESET = 1
 STEP = 2
 CLOSE = 3
+STATE = 4  # request: opcode + uint32 world index; response: JSON state snapshot
 
 
 def write_frame(stream: IO[bytes], payload: bytes) -> None:
@@ -61,6 +62,15 @@ def reset_request() -> bytes:
 
 def close_request() -> bytes:
     return bytes([CLOSE])
+
+
+def state_request(world_index: int = 0) -> bytes:
+    """Ask for one world's render-ready JSON snapshot (the Watch tab's feed)."""
+    return bytes([STATE]) + struct.pack("<I", int(world_index))
+
+
+def parse_state_response(payload: bytes) -> dict:
+    return json.loads(payload.decode("utf-8"))
 
 
 def step_request(actions: np.ndarray) -> bytes:

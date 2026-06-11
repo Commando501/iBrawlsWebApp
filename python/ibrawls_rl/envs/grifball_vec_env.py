@@ -71,6 +71,11 @@ class SimWorker:
             reward_component_count=len(self.reward_component_keys),
         )
 
+    def get_state(self, world_index: int = 0) -> dict:
+        """One world's render-ready snapshot (Watch tab). Call between steps only."""
+        proto.write_frame(self.proc.stdin, proto.state_request(world_index))
+        return proto.parse_state_response(proto.read_frame(self.proc.stdout))
+
     def close(self) -> None:
         try:
             if self.proc.poll() is None and self.proc.stdin:
@@ -251,6 +256,10 @@ class GrifballVecEnv(VecEnv):
             for i, key in enumerate(self.reward_component_keys)
         }
         return self._last_obs, reward, done, infos
+
+    def get_state(self, world_index: int = 0) -> dict:
+        """Snapshot of one world on the FIRST worker (single-worker watch/debug envs)."""
+        return self.views[0].worker.get_state(world_index)
 
     def close(self) -> None:
         for v in self.views:

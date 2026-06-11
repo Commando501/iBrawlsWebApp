@@ -247,4 +247,9 @@ export class CombatVecEnv {
       rewardComponents: this.rewardComponentBuf,
     };
   }
+
+  /** Read-only access to a world's live state (Watch tab / debug). */
+  getState(index: number): SimState {
+    return this.worlds[index].state;
+  }
 }

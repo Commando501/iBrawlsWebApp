@@ -10,11 +10,50 @@ dict in TrainConfig field names the dashboard merges into config.toml.
 """
 from __future__ import annotations
 
+import json
+import os
+import re
+import zipfile
 from typing import Any
 
 Series = dict[str, list[list[float]]]
 
 _LEVEL_RANK = {"bad": 3, "warn": 2, "info": 1, "good": 0}
+
+# Live env interface — keep in sync with src/sim/env/action.ts (ACTION_NVEC) and
+# src/sim/env/observation.ts (OBS_DIM). The advisor compares saved checkpoints
+# against these to catch incompatible warm-starts BEFORE a run dies at startup.
+EXPECTED_ACTION_NVEC = (9, 4, 3, 2, 2, 2)
+OBS_DIM_BASE = 140
+
+
+def _inspect_model_zip(path: str) -> dict | None:
+    """Read an SB3 model zip's saved spaces without torch: {nvec, obs_dim} or None."""
+    try:
+        with zipfile.ZipFile(path) as z:
+            data = json.loads(z.read("data"))
+        nvec = None
+        action = data.get("action_space") or {}
+        raw = action.get("nvec")
+        if isinstance(raw, str):
+            nvec = tuple(int(x) for x in re.findall(r"\d+", raw))
+        elif isinstance(raw, list):
+            nvec = tuple(int(x) for x in raw)
+        obs_dim = None
+        shape = (data.get("observation_space") or {}).get("_shape")
+        if isinstance(shape, list) and len(shape) == 1:
+            obs_dim = int(shape[0])
+        return {"nvec": nvec, "obs_dim": obs_dim}
+    except Exception:
+        return None
+
+
+def _single_logit_migratable(old: tuple[int, ...], new: tuple[int, ...]) -> bool:
+    """True when exactly one factor grew by one choice (checkpoint_compat handles it)."""
+    if len(old) != len(new):
+        return False
+    diffs = [(o, n) for o, n in zip(old, new) if o != n]
+    return len(diffs) == 1 and diffs[0][1] == diffs[0][0] + 1
 
 
 def _last(series: Series, key: str) -> float | None:
@@ -73,6 +112,7 @@ def advise(
     running: bool = False,
     progress: float | None = None,
     cpus: int = 8,
+    project_dir: str | None = None,
 ) -> dict:
     """Produce {verdict: {level, text}, findings: [{level, title, detail, fixes}]}."""
     f: list[dict] = []
@@ -154,6 +194,91 @@ def advise(
             "DR makes the task harder; a fresh brain learns the core skill faster at fixed "
             "mechanics. Usual flow: train clean first, then a warm-started hardening run with "
             "randomize on.", None)
+
+    # ---------- reward sanity: the time penalty must never dominate ----------
+    if mode == "combat":
+        tp = _num(values, "reward_time_penalty", 0.0005)
+        ticks = 3600.0 * max(0.1, _num(values, "match_minutes", 1.5))
+        decisive = (_num(values, "reward_win", 1.0)
+                    + _num(values, "reward_kill", 0.1) * _num(values, "combat_kill_min", 10))
+        total_tp = tp * ticks
+        if decisive > 0 and total_tp > decisive:
+            suggested = round(max(0.0005, decisive * 0.25 / ticks), 5)
+            add("bad" if total_tp > 3 * decisive else "warn",
+                "Time penalty dominates the reward",
+                f"time_penalty accumulates per TICK: {tp} × {ticks:,.0f} ticks ≈ "
+                f"{total_tp:,.0f} per full round, vs only ~{decisive:,.0f} from winning + "
+                "hitting the kill target. The return becomes 'end the round at ANY cost' — "
+                "including feeding the enemy kills — and the value head can't predict "
+                "length-dominated returns (explained_variance sinks).",
+                {"reward_time_penalty": suggested})
+
+    # ---------- init_model compatibility (catches dead-on-arrival warm starts) ----------
+    init_model = str(values.get("init_model") or "").strip()
+    if init_model and project_dir:
+        path = init_model if os.path.isabs(init_model) else os.path.join(project_dir, init_model)
+        if not os.path.exists(path):
+            add("bad", "init_model file not found",
+                f"{init_model} doesn't exist — the run will exit at startup. Clear it or fix "
+                "the path.", {"init_model": ""})
+        else:
+            info = _inspect_model_zip(path)
+            frame_stack = max(1, int(_num(values, "frame_stack", 1)))
+            if info and info.get("nvec"):
+                nvec = tuple(info["nvec"])
+                if nvec != EXPECTED_ACTION_NVEC:
+                    if _single_logit_migratable(nvec, EXPECTED_ACTION_NVEC):
+                        add("info", "init_model uses the older action space (auto-migrates)",
+                            f"Saved action space {list(nvec)} vs live "
+                            f"{list(EXPECTED_ACTION_NVEC)} — the trainer inserts the new logit "
+                            "and resets the optimizer. Expect a brief performance dip while "
+                            "the new aim choice is learned.", None)
+                    else:
+                        add("bad", "init_model action space is incompatible",
+                            f"Saved action space {list(nvec)} can't be migrated to the live "
+                            f"{list(EXPECTED_ACTION_NVEC)} — the run will exit at startup. "
+                            "Train fresh.", {"init_model": ""})
+            if info and info.get("obs_dim"):
+                model_obs = int(info["obs_dim"])
+                if model_obs % OBS_DIM_BASE == 0:
+                    model_stack = model_obs // OBS_DIM_BASE
+                    if model_stack != frame_stack:
+                        add("bad", "frame_stack doesn't match init_model",
+                            f"The saved model expects {model_obs}-dim observations "
+                            f"(frame_stack {model_stack}) but the config says "
+                            f"frame_stack={frame_stack} — the first layer won't load. Match "
+                            "the model's stack, or clear init_model to change the stack.",
+                            {"frame_stack": model_stack})
+                else:
+                    add("bad", "init_model observation layout is incompatible",
+                        f"Saved obs dim {model_obs} isn't a stack of the live {OBS_DIM_BASE} — "
+                        "the observation encoding changed since it was trained. Train fresh.",
+                        {"init_model": ""})
+
+    # ---------- league (the self-play brittleness cure) ----------
+    if mode == "combat":
+        snaps = [str(p) for p in (values.get("league_snapshots") or [])]
+        if project_dir:
+            missing = [p for p in snaps
+                       if not os.path.exists(p if os.path.isabs(p)
+                                             else os.path.join(project_dir, p))]
+            if missing:
+                add("warn", "League snapshot path(s) missing",
+                    "These league_snapshots don't exist and will be skipped: "
+                    + ", ".join(missing), None)
+        if int(_num(values, "league_worlds", 0)) <= 0:
+            add("info", "Pure self-play (no league worlds)",
+                "The policy only ever fights its current self — that converges to brittle, "
+                "exploitable styles. Dedicating a few 1v1 worlds to FROZEN past snapshots "
+                "(PFSP) produces the robust, varied play that reads as human.",
+                {"league_worlds": 6})
+
+    if (mode == "combat" and not init_model
+            and int(_num(values, "frame_stack", 1)) <= 1):
+        add("info", "No short-term memory (frame_stack=1)",
+            "A fresh run is the cheapest moment to turn on frame stacking: 4 recent "
+            "observations give the MLP temporal context (dodging, tracking, momentum "
+            "reads) that pure-reactive policies lack.", {"frame_stack": 4})
 
     # ---------- metric rules (only when the run has produced data) ----------
     have_metrics = bool(series)
@@ -243,11 +368,19 @@ def advise(
                     "out-pay approach, and rounds must be short enough to resolve.", None)
 
         switch = _last(series, "behavior/move_switch_rate")
-        if switch is not None and switch > 0.5:
-            add("info", "Movement looks twitchy (human-likeness)",
-                f"behavior/move_switch_rate={switch:.2f} — the policy flips direction most "
-                "decisions. Humans hold a heading. A higher decision_interval and a lower "
-                "late-run entropy_coef both smooth this out.", None)
+        if switch is not None:
+            try:
+                from ..baseline import get_bands, load_baseline
+                hi = float(get_bands().get("move_switch_rate", [0.0, 0.5])[1])
+                src = load_baseline()["source"]
+            except Exception:
+                hi, src = 0.5, "defaults"
+            if switch > hi:
+                add("info", "Movement looks twitchy (human-likeness)",
+                    f"behavior/move_switch_rate={switch:.2f} vs the human band's upper edge "
+                    f"{hi:.2f} (bands from {src}) — the policy flips direction more than "
+                    "people do. A higher decision_interval and a lower late-run entropy_coef "
+                    "both smooth this out.", None)
 
     # ---------- verdict ----------
     worst = max((x["level"] for x in f), key=lambda lv: _LEVEL_RANK[lv], default="good")
