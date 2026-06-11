@@ -1,5 +1,6 @@
 import { type RemotePlayerState, type CustomMapData } from '../types';
 import { type CharacterLoadout } from '../components/VoxelModels';
+import { type VisualModelPolicy } from '../model/modelSystem';
 
 export type ClientPresenceState = 'menu' | 'solo' | 'multi';
 export type GameRole = 'host' | 'client' | 'observer';
@@ -15,6 +16,7 @@ export interface MatchLobbyConfig {
   allowObservers: boolean;
   matchTimerSeconds: number;
   winTarget: number;
+  visualModelPolicy: VisualModelPolicy;
 }
 
 export interface MatchLobbySummary {
@@ -26,6 +28,7 @@ export interface MatchLobbySummary {
   allowObservers: boolean;
   matchTimerSeconds: number;
   winTarget: number;
+  visualModelPolicy: VisualModelPolicy;
   hasPassword: boolean;
   inProgress?: boolean;
 }

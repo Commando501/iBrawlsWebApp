@@ -1,4 +1,5 @@
 import type { CustomMapData } from '../types';
+import { normalizeVisualModelPolicy } from '../model/modelSystem';
 import type {
   MatchLobbyAccess,
   MatchLobbyConfig,
@@ -72,6 +73,7 @@ export const normalizeMatchLobbyConfig = (
       MIN_MATCH_WIN_TARGET,
       MAX_MATCH_WIN_TARGET
     ),
+    visualModelPolicy: normalizeVisualModelPolicy(input?.visualModelPolicy),
   };
 };
 
@@ -99,6 +101,7 @@ export const createMatchLobbySummary = (
   allowObservers: config.allowObservers,
   matchTimerSeconds: config.matchTimerSeconds,
   winTarget: config.winTarget,
+  visualModelPolicy: config.visualModelPolicy,
   hasPassword,
   inProgress,
 });
