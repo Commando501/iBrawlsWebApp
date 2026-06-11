@@ -1,6 +1,7 @@
 import { useState, type Dispatch, type SetStateAction } from 'react';
 import type { AIPreset, UniversalSettings } from '../../types';
 import { AI_ARCHETYPE_OPTIONS, getArchetypeDef } from '../../game/aiPersonalities';
+import { AdvancedSection } from './AdvancedSection';
 import { AI_CUSTOM_KNOB_SECTIONS, getPresetDescription } from './aiMenuContent';
 
 interface AiBehaviorEditorPanelProps {
@@ -91,6 +92,12 @@ export function AiBehaviorEditorPanel({
         )}
       </div>
 
+      <AdvancedSection
+        sectionId="sandbox-ai-tuning"
+        title="Advanced AI Tuning"
+        badge={adminSettings.aiDifficulty === 'custom' ? 'custom active' : undefined}
+        forceOpen={adminSettings.aiDifficulty === 'custom'}
+      >
       <div className="flex flex-col gap-1.5">
         <span className="text-[10.5px] text-white/50 uppercase tracking-widest font-mono">Behavior Archetype Presets:</span>
         <select
@@ -203,6 +210,7 @@ export function AiBehaviorEditorPanel({
           </div>
         </div>
       )}
+      </AdvancedSection>
     </div>
   );
 }

@@ -9,7 +9,6 @@ import type {
   GameplayConnectionMode,
   GameplayConnectionStatus,
 } from '../multiplayer/multiplayerConnectionConstants';
-import type { AccountInfo } from '../../services/account';
 import type { SaveSystemStatus } from '../../settings/useSaveAccountSync';
 import type { CharacterLoadout } from '../VoxelModels';
 import type { CustomArmorCatalog } from '../customArmor';
@@ -28,7 +27,6 @@ import { CreativeToolsPanel } from './CreativeToolsPanel';
 import { IdentityPanel } from './IdentityPanel';
 import { SaveCodesPanel } from './SaveCodesPanel';
 import { SinglePlayerSetupPanel } from './SinglePlayerSetupPanel';
-import { SpectatorSetupPanel } from './SpectatorSetupPanel';
 
 type SinglePlayerMode = 'sandbox' | 'tournament';
 type QuickPlayStatus = 'idle' | 'searching' | 'matching';
@@ -99,7 +97,6 @@ interface MainMenuPrimaryPanelProps {
   onJoinGame: (target: string, isObserver?: boolean, password?: string, inviteToken?: string) => void;
   onApplyMatchmakerUrl: () => void;
   onResetMatchmakerUrl: () => void;
-  onSpectateLiveMatch: () => void;
   savedReplays: ReplayFile[];
   cachedReplays: ReplayFile[];
   replaySizes: Record<string, number>;
@@ -137,12 +134,7 @@ interface MainMenuPrimaryPanelProps {
   setPlayerLoadout: Dispatch<SetStateAction<CharacterLoadout>>;
   setIsPainting: Dispatch<SetStateAction<boolean>>;
   setCustomizerWeapon: Dispatch<SetStateAction<PreviewWeapon>>;
-  account: AccountInfo | null;
   onPlayerNameChange: (value: string) => void;
-  onRegistered: (account: AccountInfo) => void;
-  onLoggedIn: (account: AccountInfo) => void;
-  onLoggedOut: () => void;
-  onAccountChanged: (account: AccountInfo) => void;
   saveSystemStatus: SaveSystemStatus;
   saveCodeImportInput: string;
   onExportSaveCode: () => void;
@@ -221,8 +213,6 @@ export function MainMenuPrimaryPanel(props: MainMenuPrimaryPanelProps) {
             onApplyMatchmakerUrl={props.onApplyMatchmakerUrl}
             onResetMatchmakerUrl={props.onResetMatchmakerUrl}
           />
-        ) : playChild === 'spec' ? (
-          <SpectatorSetupPanel onSpectateLiveMatch={props.onSpectateLiveMatch} />
         ) : (
           <TheaterLibraryPanel
             savedReplays={props.savedReplays}
@@ -284,14 +274,8 @@ export function MainMenuPrimaryPanel(props: MainMenuPrimaryPanelProps) {
           />
         ) : (
           <IdentityPanel
-            account={props.account}
             playerName={props.playerName}
-            playerHue={props.playerHue}
             onPlayerNameChange={props.onPlayerNameChange}
-            onRegistered={props.onRegistered}
-            onLoggedIn={props.onLoggedIn}
-            onLoggedOut={props.onLoggedOut}
-            onAccountChanged={props.onAccountChanged}
           />
         )
       )}

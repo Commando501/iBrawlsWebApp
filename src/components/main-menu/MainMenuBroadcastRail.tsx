@@ -1,8 +1,10 @@
 import React from 'react';
+import type { AccountInfo } from '../../services/account';
 import type { ChatMessage } from '../ChatOverlay';
 import type { OnlineClient } from '../../network/onlineClients';
 import {
   GlobalChatPanel,
+  PilotIdentitySubframe,
   PlayerListSubframe,
 } from './GlobalBroadcastPanel';
 
@@ -10,6 +12,9 @@ type ConnectionStatus = 'idle' | 'fetching_ip' | 'hosting' | 'connecting' | 'con
 type ConnectionMode = 'relay' | 'local';
 
 interface MainMenuBroadcastRailProps {
+  account: AccountInfo | null;
+  playerName: string;
+  playerHue?: number;
   onlineClients: OnlineClient[];
   clientId: string;
   connectionStatus: ConnectionStatus;
@@ -17,12 +22,20 @@ interface MainMenuBroadcastRailProps {
   menuSocket: WebSocket | null;
   hostIdCode: string;
   lobbyChatMessages: ChatMessage[];
+  onPlayerNameChange: (name: string) => void;
+  onRegistered: (account: AccountInfo) => void;
+  onLoggedIn: (account: AccountInfo) => void;
+  onLoggedOut: () => void;
+  onAccountChanged: (account: AccountInfo) => void;
   onJoinGame: (target: string, isObserver?: boolean, password?: string, inviteToken?: string) => void;
   setInviteNotifications: React.Dispatch<React.SetStateAction<string[]>>;
   onSendLobbyChatMessage: (text: string) => void;
 }
 
 export function MainMenuBroadcastRail({
+  account,
+  playerName,
+  playerHue,
   onlineClients,
   clientId,
   connectionStatus,
@@ -30,6 +43,11 @@ export function MainMenuBroadcastRail({
   menuSocket,
   hostIdCode,
   lobbyChatMessages,
+  onPlayerNameChange,
+  onRegistered,
+  onLoggedIn,
+  onLoggedOut,
+  onAccountChanged,
   onJoinGame,
   setInviteNotifications,
   onSendLobbyChatMessage,
@@ -46,6 +64,16 @@ export function MainMenuBroadcastRail({
             LIVE
           </span>
         </div>
+        <PilotIdentitySubframe
+          account={account}
+          playerName={playerName}
+          playerHue={playerHue}
+          onPlayerNameChange={onPlayerNameChange}
+          onRegistered={onRegistered}
+          onLoggedIn={onLoggedIn}
+          onLoggedOut={onLoggedOut}
+          onAccountChanged={onAccountChanged}
+        />
         <PlayerListSubframe
           onlineClients={onlineClients}
           clientId={clientId}
