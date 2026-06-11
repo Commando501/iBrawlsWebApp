@@ -2,10 +2,11 @@ import type { Dispatch, SetStateAction } from 'react';
 import type { AIPreset, TournamentState, UniversalSettings } from '../../types';
 import type { TournamentDifficulty } from '../../features/tournament/tournament';
 import { SandboxSetupPanel } from './SandboxSetupPanel';
+import { AiBehaviorEditorPanel } from './AiBehaviorEditorPanel';
 import { TournamentBracketPanel } from '../tournament/TournamentBracketPanel';
 import { TournamentSetupPanel } from '../tournament/TournamentSetupPanel';
 
-type SinglePlayerMode = 'sandbox' | 'tournament';
+type SinglePlayerMode = 'sandbox' | 'tournament' | 'ai-editor';
 
 interface SinglePlayerSetupPanelProps {
   singlePlayerMode: SinglePlayerMode;
@@ -90,21 +91,39 @@ export function SinglePlayerSetupPanel({
         >
           Tournament Mode
         </button>
+        <button
+          onClick={() => {
+            setSinglePlayerMode('ai-editor');
+            onSelectAIPreset('custom');
+          }}
+          className={`flex-1 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all duration-200 cursor-pointer ${
+            singlePlayerMode === 'ai-editor'
+              ? 'bg-gradient-to-b from-[#38bdf8] to-[#2563eb] text-white shadow-[0_0_10px_rgba(56,189,248,0.35)] font-black'
+              : 'text-white/40 hover:text-white/70'
+          }`}
+        >
+          AI Behavior
+        </button>
       </div>
 
       {singlePlayerMode === 'sandbox' ? (
         <SandboxSetupPanel
-          adminSettings={adminSettings}
-          setAdminSettings={setAdminSettings}
-          aiPresets={aiPresets}
-          newAiPresetNameInput={newAiPresetNameInput}
-          setNewAiPresetNameInput={setNewAiPresetNameInput}
-          onSelectAIPreset={onSelectAIPreset}
-          onDeleteAIPreset={onDeleteAIPreset}
-          onSelectAIArchetype={onSelectAIArchetype}
-          onSaveAIPreset={onSaveAIPreset}
           onOpenBotSetup={onOpenBotSetup}
         />
+      ) : singlePlayerMode === 'ai-editor' ? (
+        <div className="flex flex-col gap-4 min-h-0 overflow-y-auto pr-0.5">
+          <AiBehaviorEditorPanel
+            adminSettings={adminSettings}
+            setAdminSettings={setAdminSettings}
+            aiPresets={aiPresets}
+            newAiPresetNameInput={newAiPresetNameInput}
+            setNewAiPresetNameInput={setNewAiPresetNameInput}
+            onSelectAIPreset={onSelectAIPreset}
+            onDeleteAIPreset={onDeleteAIPreset}
+            onSelectAIArchetype={onSelectAIArchetype}
+            onSaveAIPreset={onSaveAIPreset}
+          />
+        </div>
       ) : (
         <div className="flex flex-col h-full min-h-0 justify-between">
           {!tournamentState ? (

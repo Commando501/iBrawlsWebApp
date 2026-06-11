@@ -27,7 +27,7 @@ import { TournamentVictoryOverlay } from './tournament/TournamentVictoryOverlay'
 import type { GameplayMultiplayerRole } from './multiplayer/multiplayerConnectionConstants';
 import type { MatchLobbyConfig } from '../network/protocol';
 
-type SinglePlayerMode = 'sandbox' | 'tournament';
+type SinglePlayerMode = 'sandbox' | 'tournament' | 'ai-editor';
 
 interface ReplayHeatmapPanelSize {
   width: number;
