@@ -705,6 +705,10 @@ export interface ReplayFile {
    */
   gameMode?: 'sandbox' | 'grifball';
   maxScore: number;
+  /** Match visual model policy used when the replay was recorded. Missing means legacy V1 playback. */
+  visualModelPolicy?: VisualModelPolicy;
+  /** Sanitized loadout-like metadata keyed by replay combatant id. Values are re-sanitized before playback. */
+  visualLoadouts?: Record<string, Record<string, unknown>>;
   frames: ReplayFrame[];
   heatmap?: ReplayHeatmapData;
   isAutoSaved?: boolean;

@@ -758,6 +758,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     aiMatchSessionKey,
     opponentPlayerName,
     matchKillsToWin,
+    visualModelPolicy: activeVisualModelPolicy,
+    playerLoadout: visualPlayerLoadout,
     isMultiplayer,
     getActiveCustomMap,
     animateSpartanModel,

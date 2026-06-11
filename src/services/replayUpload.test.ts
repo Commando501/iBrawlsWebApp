@@ -123,6 +123,22 @@ test('stripReplayPII removes names everywhere but preserves behavior and the sou
   assert.equal(original.frames[0].otherPlayers![0].playerName, 'Alice');
 });
 
+test('stripReplayPII preserves sanitized visual replay metadata', () => {
+  const original = replay([]) as ReplayFile & {
+    visualModelPolicy: 'v3';
+    visualLoadouts: Record<string, Record<string, unknown>>;
+  };
+  original.visualModelPolicy = 'v3';
+  original.visualLoadouts = {
+    player: { modelSystem: 'v3', helmet: 'odst', rawMesh: { path: 'private.obj' } } as any,
+  };
+
+  const stripped = stripReplayPII(original);
+  assert.equal(stripped.visualModelPolicy, 'v3');
+  assert.equal(stripped.visualLoadouts?.player.modelSystem, 'v3');
+  assert.equal((stripped.visualLoadouts?.player as any).rawMesh, undefined);
+});
+
 test('gzip is lossless for replay JSON (the integrity guarantee)', () => {
   // Build a replay with full-precision floats like the real recorder produces.
   const frames = Array.from({ length: 200 }, (_, i) =>
