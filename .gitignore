@@ -15,6 +15,7 @@ gif_diff_app.txt
 EXAMPLE FILES/
 .playwright-cli/
 output/
+.worktrees/
 
 # Live Tuning dev parity (local-only mirror of the D1 official preset)
 data/multiplayer-config.json
