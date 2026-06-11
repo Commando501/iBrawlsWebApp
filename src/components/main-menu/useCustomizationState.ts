@@ -8,6 +8,7 @@ import {
   type CustomArmorCatalog,
   loadCustomArmorCatalog,
   persistCustomArmorCatalog,
+  sanitizeCharacterLoadoutForNetwork,
 } from '../customArmor';
 import { type PreviewWeapon } from './ArmoryPanel';
 
@@ -20,10 +21,15 @@ interface LoadoutStorage {
 export function loadStoredPlayerLoadout(storage: LoadoutStorage = localStorage): CharacterLoadout {
   try {
     const saved = storage.getItem(PLAYER_LOADOUT_STORAGE_KEY);
-    return saved ? { ...DEFAULT_LOADOUT, ...JSON.parse(saved) } : DEFAULT_LOADOUT;
+    return saved ? normalizeStoredPlayerLoadout(JSON.parse(saved)) : DEFAULT_LOADOUT;
   } catch {
     return DEFAULT_LOADOUT;
   }
+}
+
+export function normalizeStoredPlayerLoadout(value: unknown): CharacterLoadout {
+  const sanitized = sanitizeCharacterLoadoutForNetwork(value) as CharacterLoadout | undefined;
+  return sanitized ? { ...DEFAULT_LOADOUT, ...sanitized } : DEFAULT_LOADOUT;
 }
 
 export function useCustomizationState() {
