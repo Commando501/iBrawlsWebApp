@@ -1,8 +1,13 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import * as THREE from 'three';
-import { buildV3SpartanModel } from '../v3/VoxelModelsV3';
-import { animateSpartanCombatantModel } from './combatantAnimation';
+import {
+  buildV3HammerModel,
+  buildV3PistolModel,
+  buildV3SpartanModel,
+  buildV3SwordModel,
+} from '../v3/VoxelModelsV3';
+import { animateCombatantWeaponMeshes, animateSpartanCombatantModel } from './combatantAnimation';
 import { buildCombatantRigForModel } from './combatantRig';
 import {
   animateV3CombatantModel,
@@ -142,5 +147,47 @@ describe('getFirstPersonV3WeaponPose', () => {
       assert.equal(pose.position.every(Number.isFinite), true);
       assert.equal(pose.rotation.every(Number.isFinite), true);
     }
+  });
+});
+
+describe('animateCombatantWeaponMeshes V3 integration', () => {
+  it('applies V3 hammer poses without legacy V1/V2 offsets', () => {
+    const hammer = buildV3HammerModel(192);
+    const model = createV3Model();
+
+    animateCombatantWeaponMeshes({
+      hammerModel: hammer,
+      swordModel: buildV3SwordModel(192),
+      activeWeapon: 'hammer',
+      weaponState: 'swing_up',
+      weaponTimer: 0.18,
+      isLunging: false,
+      dt: 1,
+      settings: { hammerAttackAnimation: 'highFidelity' },
+      combatantModel: model,
+    });
+
+    assert.equal(hammer.visible, true);
+    assert.notEqual(hammer.rotation.x, 0);
+    assert.equal(hammer.userData.modelSystem, 'v3');
+  });
+
+  it('controls V3 pistol visibility by active pistol state when supplied', () => {
+    const pistol = buildV3PistolModel(192);
+
+    animateCombatantWeaponMeshes({
+      hammerModel: buildV3HammerModel(192),
+      swordModel: buildV3SwordModel(192),
+      pistolModel: pistol,
+      activeWeapon: 'pistol',
+      weaponState: 'firing',
+      weaponTimer: 0.04,
+      isLunging: false,
+      dt: 1,
+      settings: {},
+    });
+
+    assert.equal(pistol.visible, true);
+    assert.notEqual(pistol.position.z, 0);
   });
 });

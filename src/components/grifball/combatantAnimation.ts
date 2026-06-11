@@ -18,7 +18,7 @@ import {
   type CombatantArmPose,
   type WeaponPose,
 } from './attackAnimationPresets';
-import { animateV3CombatantModel } from './combatantAnimationV3';
+import { animateV3CombatantModel, animateV3WeaponMeshes } from './combatantAnimationV3';
 import { type GrifballThreeRefs } from './threeRefs';
 
 const spawnFrictionSparkParticle = (refs: GrifballThreeRefs, pos: THREE.Vector3): void => {
@@ -620,6 +620,7 @@ export function animateSpartanCombatantModel({
 export function animateCombatantWeaponMeshes({
   hammerModel,
   swordModel,
+  pistolModel,
   activeWeapon,
   weaponState,
   weaponTimer,
@@ -630,12 +631,13 @@ export function animateCombatantWeaponMeshes({
 }: {
   hammerModel: THREE.Group | undefined | null;
   swordModel: THREE.Group | undefined | null;
+  pistolModel?: THREE.Group | undefined | null;
   activeWeapon: string;
   weaponState: string;
   weaponTimer: number;
   isLunging: boolean;
   dt: number;
-  settings: any;
+  settings: Partial<UniversalSettings>;
   combatantModel?: THREE.Group | null;
 }): void {
   if (hammerModel) {
@@ -643,6 +645,28 @@ export function animateCombatantWeaponMeshes({
   }
   if (swordModel) {
     swordModel.visible = activeWeapon === 'sword';
+  }
+  if (pistolModel) {
+    pistolModel.visible = activeWeapon === 'pistol';
+  }
+
+  if (
+    hammerModel?.userData.modelSystem === 'v3' ||
+    swordModel?.userData.modelSystem === 'v3' ||
+    pistolModel?.userData.modelSystem === 'v3'
+  ) {
+    animateV3WeaponMeshes({
+      hammerModel,
+      swordModel,
+      pistolModel,
+      activeWeapon,
+      weaponState,
+      weaponTimer,
+      isLunging,
+      dt,
+      settings,
+    });
+    return;
   }
 
   // Animating Gravity Hammer

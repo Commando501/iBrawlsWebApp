@@ -117,10 +117,11 @@ export function updateRosterCombatantVisualsForState({
     });
 
     const isMainAiOffline = clientId === MAIN_AI_ID && !state.isMultiplayer;
-    if ((meshes.hammer || meshes.sword) && !isMainAiOffline) {
+    if ((meshes.hammer || meshes.sword || meshes.pistol) && !isMainAiOffline) {
       animateCombatantWeaponMeshes({
         hammerModel: meshes.hammer,
         swordModel: meshes.sword,
+        pistolModel: meshes.pistol,
         activeWeapon: player.activeWeapon || 'hammer',
         weaponState,
         weaponTimer,

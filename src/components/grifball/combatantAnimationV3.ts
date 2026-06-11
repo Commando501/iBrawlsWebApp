@@ -45,6 +45,18 @@ export interface V3FirstPersonWeaponPoseInput {
   settings?: Partial<UniversalSettings>;
 }
 
+export interface V3WeaponMeshAnimationInput {
+  hammerModel?: THREE.Group | null;
+  swordModel?: THREE.Group | null;
+  pistolModel?: THREE.Group | null;
+  activeWeapon: string;
+  weaponState: string;
+  weaponTimer: number;
+  isLunging: boolean;
+  dt: number;
+  settings: Partial<UniversalSettings>;
+}
+
 type V3BroadGroups = Record<V3BroadBodyGroupName, THREE.Group>;
 
 const V3_BODY_MASKS: Record<V3AnimationLayerName, readonly V3BroadBodyGroupName[]> = {
@@ -66,6 +78,11 @@ const easeInOutCubic = (value: number): number => {
 
 const setRotation = (group: THREE.Group, rotation: THREE.Vector3Tuple): void => {
   group.rotation.set(rotation[0], rotation[1], rotation[2]);
+};
+
+const setWeaponMeshPose = (group: THREE.Group, pose: WeaponPose): void => {
+  group.position.set(...pose.position);
+  group.rotation.set(...pose.rotation);
 };
 
 const lerpRotation = (
@@ -356,4 +373,118 @@ export function getFirstPersonV3WeaponPose({
     position: [0.35 + windup * 0.2 - strike * 0.42, -0.38 + windup * 0.28 - strike * 0.16, -0.65 + windup * 0.26 - strike * 0.42],
     rotation: [0.15 - windup * 1.5 + strike * 2.3, -0.3 - windup * 0.32 + strike * 0.52, -0.15 + windup * 0.42 - strike * 0.72],
   };
+}
+
+export function animateV3WeaponMeshes({
+  hammerModel,
+  swordModel,
+  pistolModel,
+  activeWeapon,
+  weaponState,
+  weaponTimer,
+  isLunging,
+  dt: _dt,
+  settings,
+}: V3WeaponMeshAnimationInput): void {
+  if (hammerModel) hammerModel.visible = activeWeapon === 'hammer';
+  if (swordModel) swordModel.visible = activeWeapon === 'sword';
+  if (pistolModel) pistolModel.visible = activeWeapon === 'pistol';
+
+  if (hammerModel?.userData.modelSystem === 'v3' && activeWeapon === 'hammer') {
+    const timing = resolveHammerSlamTiming(settings);
+    if (weaponState === 'swing_up') {
+      const pct = easeOutCubic(weaponTimer / timing.windupTime);
+      setWeaponMeshPose(hammerModel, {
+        position: [THREE.MathUtils.lerp(0.04, -0.02, pct), THREE.MathUtils.lerp(-0.02, 0.16, pct), THREE.MathUtils.lerp(-0.08, -0.02, pct)],
+        rotation: [THREE.MathUtils.lerp(0.28, -1.22, pct), 0.08, THREE.MathUtils.lerp(-0.12, -0.32, pct)],
+      });
+      return;
+    }
+
+    if (weaponState === 'swing_down') {
+      const pct = easeInOutCubic(weaponTimer / timing.attackTime);
+      setWeaponMeshPose(hammerModel, {
+        position: [THREE.MathUtils.lerp(-0.02, -0.12, pct), THREE.MathUtils.lerp(0.16, -0.1, pct), THREE.MathUtils.lerp(-0.02, -0.24, pct)],
+        rotation: [THREE.MathUtils.lerp(-1.22, 1.08, pct), 0.08, THREE.MathUtils.lerp(-0.32, -0.04, pct)],
+      });
+      return;
+    }
+
+    if (weaponState === 'recovering') {
+      const pct = easeOutCubic(weaponTimer / (settings.hammerReloadTime ?? 0.6));
+      setWeaponMeshPose(hammerModel, {
+        position: [THREE.MathUtils.lerp(-0.12, 0.04, pct), THREE.MathUtils.lerp(-0.1, -0.02, pct), THREE.MathUtils.lerp(-0.24, -0.08, pct)],
+        rotation: [THREE.MathUtils.lerp(1.08, 0.28, pct), 0.08, THREE.MathUtils.lerp(-0.04, -0.12, pct)],
+      });
+      return;
+    }
+
+    if (weaponState === 'melee_up' || weaponState === 'melee_swing' || weaponState === 'melee_down') {
+      const meleeSpeed = Math.max(settings.hammerMeleeSpeed ?? 0.24, 0.001);
+      const pct = easeInOutCubic(Math.min(1, weaponTimer / meleeSpeed));
+      setWeaponMeshPose(hammerModel, {
+        position: [THREE.MathUtils.lerp(0.05, -0.18, pct), THREE.MathUtils.lerp(-0.04, 0.08, pct), THREE.MathUtils.lerp(-0.1, -0.26, pct)],
+        rotation: [THREE.MathUtils.lerp(0.32, 0.72, pct), THREE.MathUtils.lerp(0.12, -0.78, pct), THREE.MathUtils.lerp(-0.16, -0.46, pct)],
+      });
+      return;
+    }
+
+    if (weaponState === 'melee_recover') {
+      const pct = easeOutCubic(weaponTimer / (settings.hammerMeleeReload ?? 0.5));
+      setWeaponMeshPose(hammerModel, {
+        position: [THREE.MathUtils.lerp(-0.18, 0.04, pct), THREE.MathUtils.lerp(0.08, -0.02, pct), THREE.MathUtils.lerp(-0.26, -0.08, pct)],
+        rotation: [THREE.MathUtils.lerp(0.72, 0.28, pct), THREE.MathUtils.lerp(-0.78, 0.08, pct), THREE.MathUtils.lerp(-0.46, -0.12, pct)],
+      });
+      return;
+    }
+
+    setWeaponMeshPose(hammerModel, {
+      position: [0.04, -0.02, -0.08],
+      rotation: [0.28, 0.08, -0.12],
+    });
+  }
+
+  if (swordModel?.userData.modelSystem === 'v3' && activeWeapon === 'sword') {
+    if (isLunging) {
+      const pct = easeOutCubic(Math.min(weaponTimer / 0.18, 1));
+      setWeaponMeshPose(swordModel, {
+        position: [0.02 + pct * 0.04, -0.02, -0.18 - pct * 0.18],
+        rotation: [-Math.PI / 2 - pct * 0.24, 0.02, -Math.PI / 8],
+      });
+      return;
+    }
+
+    if (weaponState === 'swing_up' || weaponState === 'slashing' || weaponState === 'swing_down') {
+      const slash = Math.max(settings.swordSlashSpeed ?? 0.22, 0.001);
+      const pct = easeInOutCubic(Math.min(weaponTimer / slash, 1));
+      setWeaponMeshPose(swordModel, {
+        position: [THREE.MathUtils.lerp(0.04, -0.12, pct), THREE.MathUtils.lerp(-0.02, 0.08, pct), THREE.MathUtils.lerp(-0.1, -0.22, pct)],
+        rotation: [-Math.PI / 2, THREE.MathUtils.lerp(-0.42, 0.64, pct), THREE.MathUtils.lerp(-Math.PI / 8, -0.72, pct)],
+      });
+      return;
+    }
+
+    if (weaponState === 'recovering') {
+      const pct = easeOutCubic(weaponTimer / (settings.swordSlashReload ?? 0.6));
+      setWeaponMeshPose(swordModel, {
+        position: [THREE.MathUtils.lerp(-0.12, 0.04, pct), THREE.MathUtils.lerp(0.08, -0.02, pct), THREE.MathUtils.lerp(-0.22, -0.1, pct)],
+        rotation: [-Math.PI / 2, THREE.MathUtils.lerp(0.64, -0.42, pct), THREE.MathUtils.lerp(-0.72, -Math.PI / 8, pct)],
+      });
+      return;
+    }
+
+    setWeaponMeshPose(swordModel, {
+      position: [0.04, -0.02, -0.1],
+      rotation: [-Math.PI / 2, -0.42, -Math.PI / 8],
+    });
+  }
+
+  if (pistolModel?.userData.modelSystem === 'v3' && activeWeapon === 'pistol') {
+    const isFiring = weaponState === 'firing' || weaponState === 'fire' || weaponState === 'shooting';
+    const recoil = isFiring ? 1 - clamp01(weaponTimer / 0.18) : 0;
+    setWeaponMeshPose(pistolModel, {
+      position: [0.08, -0.04 + recoil * 0.02, -0.18 + recoil * 0.1],
+      rotation: [-0.04 - recoil * 0.28, 0.02, -0.06],
+    });
+  }
 }

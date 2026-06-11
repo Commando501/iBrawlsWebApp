@@ -82,6 +82,7 @@ export function updateReplayCombatantVisualsForFrame({
       animateCombatantWeaponMeshes({
         hammerModel: hammer,
         swordModel: sword,
+        pistolModel: pistol,
         activeWeapon: player.activeWeapon,
         weaponState: player.weaponState,
         weaponTimer: player.weaponTimer || 0,
@@ -92,6 +93,7 @@ export function updateReplayCombatantVisualsForFrame({
       });
       hammer.visible = alive && player.activeWeapon === 'hammer';
       sword.visible = alive && player.activeWeapon === 'sword';
+      if (pistol) pistol.visible = alive && player.activeWeapon === 'pistol';
     } else if (player.weaponState !== 'ready') {
       if (player.activeWeapon === 'hammer') {
         if (player.weaponState === 'swing_up') {
