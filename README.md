@@ -315,6 +315,7 @@ iBrawls features a beautiful and comprehensive character customization suite, av
       * `leg_lower`: Max `6 x 9 x 14`
       * `foot`: Max `6 x 8 x 5`
       * `toes`: Max `6 x 5 x 4`
+  - **Version 3 (Advanced, planned)**: A parallel voxel model system for modular armor, V3 weapons, first-person parity, and layered procedural animation. Matches resolve visible combatants through a visual model policy (`v1`, `v2`, or `v3`) while combat ranges, collision, hitboxes, and AI decisions remain normalized. V3 is the target advanced system, and V1/V2 remain selectable sandbox options for offline and hosted play.
 - **Premium Hammer Model Swapping**: Swap between 9 distinct premium hammer variants shown in the game customizer, fully rendered in high-fidelity voxels:
   - **Akelas**: Sleek, aerodynamic dark carbon-like head with a thin, glowing red stripe along its edge.
   - **Akelus**: Sleek, white high-tech plating with pulsing neon blue energy channels on the back of the head.
