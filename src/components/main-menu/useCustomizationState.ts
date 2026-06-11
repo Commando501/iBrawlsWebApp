@@ -9,9 +9,7 @@ import {
   loadCustomArmorCatalog,
   persistCustomArmorCatalog,
 } from '../customArmor';
-import { type PreviewWeapon } from './CustomizationPanel';
-
-export type MainMenuReferenceTab = 'manual' | 'gamepad' | 'customize';
+import { type PreviewWeapon } from './ArmoryPanel';
 
 export const PLAYER_LOADOUT_STORAGE_KEY = 'grifball_player_loadout';
 
@@ -29,7 +27,6 @@ export function loadStoredPlayerLoadout(storage: LoadoutStorage = localStorage):
 }
 
 export function useCustomizationState() {
-  const [rightPanelTab, setRightPanelTab] = useState<MainMenuReferenceTab>('manual');
   const [customizerWeapon, setCustomizerWeapon] = useState<PreviewWeapon>('none');
   const [isPainting, setIsPainting] = useState<boolean>(false);
   const [playerLoadout, setPlayerLoadout] = useState<CharacterLoadout>(() => loadStoredPlayerLoadout());
@@ -60,8 +57,6 @@ export function useCustomizationState() {
   }, []);
 
   return {
-    rightPanelTab,
-    setRightPanelTab,
     customizerWeapon,
     setCustomizerWeapon,
     isPainting,

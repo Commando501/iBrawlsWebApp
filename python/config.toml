@@ -50,10 +50,10 @@ goal_scored = 5.063
 goal_conceded = 1.0
 possession = 0.0001
 ball_progress = 0.01
-kill = 6.0
-death = 0.5
-approach = 3.0
-time_penalty = 0.01
+kill = 22.5
+death = 3.0
+approach = 10.125
+time_penalty = 0.5
 bootstrap_truncation = false
 
 [logging]

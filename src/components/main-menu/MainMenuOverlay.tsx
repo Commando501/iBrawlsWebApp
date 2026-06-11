@@ -3,9 +3,9 @@ import AdminDashboard from '../AdminDashboard';
 import { MechanicsSettingsGrid } from '../settings/MechanicsSettingsGrid';
 import { AI_CUSTOM_KNOB_SECTIONS } from './aiMenuContent';
 import { MainMenuBroadcastRail } from './MainMenuBroadcastRail';
+import { MainMenuChildNav } from './MainMenuChildNav';
 import { MainMenuHeader } from './MainMenuHeader';
 import { MainMenuPrimaryPanel } from './MainMenuPrimaryPanel';
-import { MainMenuReferencePanel } from './MainMenuReferencePanel';
 
 type AdminDashboardProps = React.ComponentProps<typeof AdminDashboard>;
 type MechanicsSettingsGridProps = React.ComponentProps<typeof MechanicsSettingsGrid>;
@@ -30,18 +30,9 @@ interface MainMenuOverlayProps {
     onClose: AdminDashboardProps['onClose'];
   };
   header: React.ComponentProps<typeof MainMenuHeader>;
-  layoutRef: React.RefObject<HTMLDivElement | null>;
-  contentGridRef: React.RefObject<HTMLDivElement | null>;
-  layoutStyle: React.CSSProperties;
-  contentGridStyle: React.CSSProperties;
-  chatStyle: React.CSSProperties;
-  isPainting: boolean;
-  shouldRenderCustomizationFrame: boolean;
-  onCustomizationSplitterPointerDown: React.PointerEventHandler<HTMLButtonElement>;
-  onChatSplitterPointerDown: React.PointerEventHandler<HTMLButtonElement>;
+  childNav: React.ComponentProps<typeof MainMenuChildNav>;
   primaryPanel: React.ComponentProps<typeof MainMenuPrimaryPanel>;
-  referencePanel: React.ComponentProps<typeof MainMenuReferencePanel>;
-  broadcastRail: Omit<React.ComponentProps<typeof MainMenuBroadcastRail>, 'style'>;
+  broadcastRail: React.ComponentProps<typeof MainMenuBroadcastRail>;
 }
 
 export function MainMenuOverlay({
@@ -49,17 +40,8 @@ export function MainMenuOverlay({
   showAdminDashboard,
   adminDashboard,
   header,
-  layoutRef,
-  contentGridRef,
-  layoutStyle,
-  contentGridStyle,
-  chatStyle,
-  isPainting,
-  shouldRenderCustomizationFrame,
-  onCustomizationSplitterPointerDown,
-  onChatSplitterPointerDown,
+  childNav,
   primaryPanel,
-  referencePanel,
   broadcastRail,
 }: MainMenuOverlayProps) {
   const adminAccount = adminDashboard.account;
@@ -95,69 +77,17 @@ export function MainMenuOverlay({
       )}
 
       <div className="mobile-start-overlay absolute inset-0 z-50 flex items-stretch justify-center bg-slate-950/85 backdrop-blur-xl p-6 transition-all duration-300">
-        <div className="mobile-menu-card w-full bg-slate-900/40 border border-white/10 rounded-3xl p-8 backdrop-blur-md flex flex-col gap-7 shadow-2xl select-none overflow-hidden">
+        <div className="mobile-menu-card w-full bg-slate-900/40 border border-white/10 rounded-3xl p-8 backdrop-blur-md flex flex-col gap-5 shadow-2xl select-none overflow-hidden">
           <MainMenuHeader {...header} />
 
-          <div
-            ref={layoutRef}
-            className="mobile-menu-layout main-menu-dock-layout flex flex-1 min-h-0 overflow-hidden"
-            style={layoutStyle}
-          >
-            <div
-              ref={contentGridRef}
-              className="mobile-content-grid main-menu-content-grid flex-1 grid min-h-0"
-              style={contentGridStyle}
-            >
-              {!isPainting && <MainMenuPrimaryPanel {...primaryPanel} />}
+          <MainMenuChildNav {...childNav} />
 
-              {shouldRenderCustomizationFrame && !isPainting && (
-                <button
-                  type="button"
-                  className="main-menu-frame-splitter main-menu-frame-splitter-grid"
-                  aria-label="Resize setup and customization frames"
-                  title="Resize setup and customization frames"
-                  onPointerDown={onCustomizationSplitterPointerDown}
-                >
-                  <span />
-                </button>
-              )}
-
-              {shouldRenderCustomizationFrame && (
-                <MainMenuReferencePanel {...referencePanel} />
-              )}
+          <div className="mobile-menu-layout main-menu-dock-layout flex flex-1 min-h-0 overflow-hidden gap-6">
+            <div className="mobile-content-grid main-menu-content-frame flex-1 min-w-0 min-h-0 flex">
+              <MainMenuPrimaryPanel {...primaryPanel} />
             </div>
 
-            <button
-              type="button"
-              className="main-menu-frame-splitter main-menu-frame-splitter-chat"
-              aria-label="Resize content and chat frames"
-              title="Resize content and chat frames"
-              onPointerDown={onChatSplitterPointerDown}
-            >
-              <span />
-            </button>
-
-            <MainMenuBroadcastRail
-              style={chatStyle}
-              account={broadcastRail.account}
-              playerName={broadcastRail.playerName}
-              playerHue={broadcastRail.playerHue}
-              onlineClients={broadcastRail.onlineClients}
-              clientId={broadcastRail.clientId}
-              connectionStatus={broadcastRail.connectionStatus}
-              connectionMode={broadcastRail.connectionMode}
-              menuSocket={broadcastRail.menuSocket}
-              hostIdCode={broadcastRail.hostIdCode}
-              lobbyChatMessages={broadcastRail.lobbyChatMessages}
-              onPlayerNameChange={broadcastRail.onPlayerNameChange}
-              onRegistered={broadcastRail.onRegistered}
-              onLoggedIn={broadcastRail.onLoggedIn}
-              onLoggedOut={broadcastRail.onLoggedOut}
-              onAccountChanged={broadcastRail.onAccountChanged}
-              onJoinGame={broadcastRail.onJoinGame}
-              setInviteNotifications={broadcastRail.setInviteNotifications}
-              onSendLobbyChatMessage={broadcastRail.onSendLobbyChatMessage}
-            />
+            <MainMenuBroadcastRail {...broadcastRail} />
           </div>
         </div>
       </div>

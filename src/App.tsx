@@ -20,7 +20,7 @@ import { useAppSessionState } from './components/useAppSessionState';
 import { useAppLifecycleActions, useCloseTournamentGameAction } from './components/useAppLifecycleActions';
 import { useAppStatsUpdateHandler } from './components/useAppStatsUpdateHandler';
 import { MainMenuOverlay } from './components/main-menu/MainMenuOverlay';
-import { useMainMenuFrameLayout, type MainMenuTab } from './components/main-menu/useMainMenuFrameLayout';
+import { useMainMenuNav, type MainMenuTab } from './components/main-menu/useMainMenuNav';
 import { useMainMenuAdminState } from './components/main-menu/useMainMenuAdminState';
 import { useBotSetupState } from './components/main-menu/useBotSetupState';
 import { useCustomizationState } from './components/main-menu/useCustomizationState';
@@ -37,7 +37,7 @@ import { useMatchLoadingGate } from './components/loading/useMatchLoadingGate';
 
 export { createHighFidelityObjectMesh } from './components/main-menu/MapPreview';
 
-const APP_VERSION = '0.647a';
+const APP_VERSION = '0.648a';
 
 // Visual Keyboard + Mouse keybind editor component
 export default function App() {
@@ -112,8 +112,6 @@ export default function App() {
     setLobbyCustomMapData,
   } = useBotSetupState();
   const {
-    rightPanelTab,
-    setRightPanelTab,
     customizerWeapon,
     setCustomizerWeapon,
     isPainting,
@@ -151,7 +149,6 @@ export default function App() {
   });
 
   // Multiplayer States
-  const [activeMenuTab, setActiveMenuTab] = useState<MainMenuTab>('single');
   const {
     connectionMode,
     setConnectionMode,
@@ -179,33 +176,18 @@ export default function App() {
     handleJoinGameRef,
   } = useMultiplayerSessionState();
 
-  const handleMainMenuTabChange = useCallback((tab: MainMenuTab) => {
-    setActiveMenuTab(tab);
-    setIsPainting(false);
-  }, []);
-
-  const handleCustomizationFrameHidden = useCallback(() => {
+  const handleMainMenuNavChange = useCallback(() => {
     setIsPainting(false);
     setRebindingAction(null);
   }, []);
 
   const {
-    showCustomizationFrame,
-    shouldRenderCustomizationFrame,
-    mainMenuLayoutRef,
-    mainMenuContentGridRef,
-    mainMenuLayoutStyle,
-    mainMenuContentGridStyle,
-    mainMenuChatStyle,
-    handleToggleCustomizationFrame,
-    handleResetMainMenuFrameLayout,
-    handleMainMenuSplitterPointerDown,
-  } = useMainMenuFrameLayout({
-    activeMenuTab,
-    isMobile: deviceInfo.isMobile,
-    isPainting,
-    onCustomizationFrameHidden: handleCustomizationFrameHidden,
-  });
+    nav: mainMenuNav,
+    selectParent: selectMainMenuParent,
+    selectPlayChild: selectMainMenuPlayChild,
+    selectCustomizationChild: selectMainMenuCustomizationChild,
+  } = useMainMenuNav({ onNavChange: handleMainMenuNavChange });
+  const activeMenuTab = mainMenuNav.playChild;
 
   const handleReplayWatchSelected = useCallback(() => {
     setIsPlaying(true);
@@ -257,7 +239,7 @@ export default function App() {
     handleCloseSaveCachedModal,
     handleCommitCachedReplay,
   } = useTheaterReplays({
-    isTheaterTabActive: activeMenuTab === 'theater',
+    isTheaterTabActive: mainMenuNav.parent === 'play' && mainMenuNav.playChild === 'theater',
     onWatchReplay: handleReplayWatchSelected,
   });
 
@@ -444,12 +426,12 @@ export default function App() {
     inviteToken?: string
   ) => {
     setConnectionMode('relay');
-    setActiveMenuTab('multi');
+    selectMainMenuPlayChild('multi');
     handleJoinGame(target, isObserver, password, inviteToken, 'relay');
   }, [
     handleJoinGame,
     setConnectionMode,
-    setActiveMenuTab,
+    selectMainMenuPlayChild,
   ]);
 
   const {
@@ -759,28 +741,24 @@ export default function App() {
         header={{
           appVersion: APP_VERSION,
           deviceInfo,
-          account,
-          activeMenuTab,
-          isPainting,
-          showCustomizationFrame,
+          activeParent: mainMenuNav.parent,
           isOnline,
           onlineCount,
-          onMenuTabChange: handleMainMenuTabChange,
-          onToggleCustomizationFrame: handleToggleCustomizationFrame,
-          onOpenAdminDashboard: () => setShowAdminDashboard(true),
-          onResetFrameLayout: handleResetMainMenuFrameLayout,
+          onSelectParent: selectMainMenuParent,
         }}
-        layoutRef={mainMenuLayoutRef}
-        contentGridRef={mainMenuContentGridRef}
-        layoutStyle={mainMenuLayoutStyle}
-        contentGridStyle={mainMenuContentGridStyle}
-        chatStyle={mainMenuChatStyle}
-        isPainting={isPainting}
-        shouldRenderCustomizationFrame={shouldRenderCustomizationFrame}
-        onCustomizationSplitterPointerDown={(event) => handleMainMenuSplitterPointerDown('customization', event)}
-        onChatSplitterPointerDown={(event) => handleMainMenuSplitterPointerDown('chat', event)}
+        childNav={{
+          parent: mainMenuNav.parent,
+          playChild: mainMenuNav.playChild,
+          customizationChild: mainMenuNav.customizationChild,
+          isAdmin: account?.isAdmin ?? false,
+          onSelectPlayChild: selectMainMenuPlayChild,
+          onSelectCustomizationChild: selectMainMenuCustomizationChild,
+          onOpenAdminDashboard: () => setShowAdminDashboard(true),
+        }}
         primaryPanel={{
-          activeMenuTab,
+          parent: mainMenuNav.parent,
+          playChild: mainMenuNav.playChild,
+          customizationChild: mainMenuNav.customizationChild,
           singlePlayerMode,
           setSinglePlayerMode,
           adminSettings,
@@ -838,7 +816,7 @@ export default function App() {
           onJoinGame: handleJoinGame,
           onApplyMatchmakerUrl: handleApplyMatchmakerUrl,
           onResetMatchmakerUrl: handleResetMatchmakerUrl,
-          onSpectateLiveMatch: () => handleMainMenuTabChange('multi'),
+          onSpectateLiveMatch: () => selectMainMenuPlayChild('multi'),
           savedReplays,
           cachedReplays,
           replaySizes,
@@ -855,10 +833,6 @@ export default function App() {
           onOpenHeatmapReplay: handleOpenHeatmapReplay,
           onSaveCachedReplay: handleSaveCachedReplay,
           onWatchReplay: handleWatchReplay,
-        }}
-        referencePanel={{
-          rightPanelTab,
-          setRightPanelTab,
           keybindings,
           setKeybindings,
           rebindingAction,
@@ -876,25 +850,24 @@ export default function App() {
           isPainting,
           playerLoadout,
           customArmorCatalog,
-          playerHue: adminSettings.playerHue,
           customizerWeapon,
-          playerName,
-          saveSystemStatus,
-          saveCodeImportInput,
           setPlayerLoadout,
           setIsPainting,
           setCustomizerWeapon,
-          setAdminSettings,
+          account,
           onPlayerNameChange: handlePlayerNameChange,
+          onRegistered: handleRegistered,
+          onLoggedIn: handleLoggedIn,
+          onLoggedOut: handleLoggedOut,
+          onAccountChanged: handleAccountChanged,
+          saveSystemStatus,
+          saveCodeImportInput,
           onExportSaveCode: handleExportSaveCode,
           onResetAllSettings: handleResetAllSettings,
           onSaveCodeImportInputChange: setSaveCodeImportInput,
           onImportSaveCode: handleImportSaveCode,
         }}
         broadcastRail={{
-          account,
-          playerName,
-          playerHue: adminSettings.playerHue,
           onlineClients,
           clientId,
           connectionStatus,
@@ -902,11 +875,6 @@ export default function App() {
           menuSocket,
           hostIdCode,
           lobbyChatMessages,
-          onPlayerNameChange: handlePlayerNameChange,
-          onRegistered: handleRegistered,
-          onLoggedIn: handleLoggedIn,
-          onLoggedOut: handleLoggedOut,
-          onAccountChanged: handleAccountChanged,
           onJoinGame: handleJoinRelayLobby,
           setInviteNotifications,
           onSendLobbyChatMessage: sendLobbyChatMessage,
