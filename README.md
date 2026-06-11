@@ -245,6 +245,10 @@ Voxel Spartans now expose a lightweight combatant rig contract in `src/component
 
 The page reuses `src/components/main-menu/ArmorModelEditor.tsx` in standalone layout mode so the voxel canvas, validation panel, material tools, catalog, and import/export controls get the full browser workspace instead of the narrow customization rail. Its viewport supports direct mouse inspection with drag-to-orbit, modified/right/middle drag panning, and wheel zooming while keeping voxel edits reserved for intentional clicks. It reads and writes the same `grifball_player_loadout`, `grifball_player_hue`, and `grifball_custom_armor_catalog` localStorage keys as the main app. When an armor piece is saved in the standalone editor, the main menu refreshes its custom armor catalog on storage/focus events and the saved piece appears as a purple player-made armor tile in the regular Armor Loadout.
 
+### V3 Offline Asset Tooling
+
+V3 reference mesh tooling is developer-only and local. Use `node --import tsx scripts/v3/inspect-reference-asset.ts --obj <local.obj>` to inspect OBJ metadata, and use `/v3-asset-preview.html` during local development for synthetic voxel budget previews. Do not commit private reference meshes, textures, or direct conversions.
+
 ## Standalone 3D Map Maker
 
 iBrawls features a beautiful, feature-rich, and completely standalone 3D Map Maker application that runs 100% locally and offline in the user's browser. Since it is entirely decoupled from the main web application, players simply open the local HTML file to design custom battle arenas using standard assets!
