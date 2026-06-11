@@ -19,32 +19,57 @@ from stable_baselines3.common.logger import KVWriter
 
 from .config import TrainConfig, reward_dict, settings_markdown, randomize_spec
 from .envs.grifball_vec_env import GrifballVecEnv
-from .eval import eval_vs
+from .eval import eval_vs, eval_combat_vs_random
 from .policies import sb3_policy_kwargs
 
 try:
     from stable_baselines3.common.callbacks import BaseCallback
 
     class EvalCallback(BaseCallback):
-        def __init__(self, every: int, episodes: int, opponent: str, verbose: int = 1):
+        """Periodic in-training grade + behavior (human-likeness) stats.
+
+        Grifball: win rate vs the configured opponent ('self' is graded vs random — an
+        interpretable yardstick that rises as skill grows; the heuristic is a near-shutout,
+        so it's only the yardstick when you actually train against it).
+
+        Combat: quick 1v1 duels vs random (kill target 5, 2-minute cap so undertrained
+        policies don't stall the run) — gives combat a live eval/win_rate line too.
+        """
+
+        def __init__(self, cfg: TrainConfig, verbose: int = 1):
             super().__init__(verbose)
-            self.every = every
-            self.episodes = episodes
-            # Grade self-play vs random (an interpretable yardstick that rises as skill grows);
-            # the heuristic is a near-shutout, so it's only used as the yardstick when you're
-            # actually training against it.
-            self.opponent = "random" if opponent == "self" else opponent
+            self.cfg = cfg
+            self.every = cfg.eval_every
+            self.episodes = cfg.eval_episodes
+            self.opponent = "random" if cfg.opponent == "self" else cfg.opponent
             self._last = 0
+
+        def _grade(self) -> dict:
+            if self.cfg.mode == "combat":
+                return eval_combat_vs_random(
+                    self.model, matches=self.episodes,
+                    num_worlds=min(16, max(4, self.episodes)),
+                    kill_target=5, max_minutes=2.0,
+                    decision_interval=self.cfg.decision_interval,
+                )
+            return eval_vs(
+                self.model, opponent=self.opponent, matches=self.episodes,
+                decision_interval=self.cfg.decision_interval,
+            )
 
         def _on_step(self) -> bool:
             if self.num_timesteps - self._last >= self.every:
                 self._last = self.num_timesteps
-                res = eval_vs(self.model, opponent=self.opponent, matches=self.episodes)
+                res = self._grade()
                 self.logger.record("eval/win_rate", res["win_rate"])
-                self.logger.record("eval/ep_return", res["ep_return"])
+                if "ep_return" in res:
+                    self.logger.record("eval/ep_return", res["ep_return"])
+                for k, v in (res.get("behavior") or {}).items():
+                    self.logger.record(f"behavior/{k}", v)
                 if self.verbose:
-                    print(f"[eval vs {self.opponent}] t={self.num_timesteps} "
-                          f"winrate={res['win_rate']:.2f} ep_return={res['ep_return']:+.3f}")
+                    opp = "random 1v1" if self.cfg.mode == "combat" else self.opponent
+                    print(f"[eval vs {opp}] t={self.num_timesteps} "
+                          f"winrate={res['win_rate']:.2f}")
             return True
 except Exception:  # pragma: no cover
     EvalCallback = None  # type: ignore
@@ -164,6 +189,7 @@ def run_training(cfg: TrainConfig) -> str:
             combat_randomize_layout=cfg.combat_randomize_layout,
             randomize=dr,
             num_workers=cfg.num_workers,
+            decision_interval=cfg.decision_interval,
         )
     else:
         env = GrifballVecEnv(
@@ -176,19 +202,35 @@ def run_training(cfg: TrainConfig) -> str:
             bootstrap_truncation=cfg.bootstrap_truncation,
             randomize=dr,
             num_workers=cfg.num_workers,
+            decision_interval=cfg.decision_interval,
         )
+
+    # Linear schedule: SB3 calls this with progress_remaining going 1 -> 0.
+    lr = cfg.learning_rate
+    if cfg.lr_schedule == "linear":
+        lr0 = cfg.learning_rate
+        lr = lambda progress_remaining: lr0 * progress_remaining  # noqa: E731
+
+    # Warn-and-fix instead of crashing: SB3 wants batch_size <= buffer and ideally a divisor.
+    buffer = cfg.rollout_length * env.num_envs
+    batch_size = min(cfg.batch_size, buffer)
+    if batch_size != cfg.batch_size:
+        print(f"[train] batch_size {cfg.batch_size} > rollout buffer {buffer}; using {batch_size}")
 
     model = PPO(
         "MlpPolicy",
         env,
         n_steps=cfg.rollout_length,
-        batch_size=cfg.batch_size,
-        learning_rate=cfg.learning_rate,
+        batch_size=batch_size,
+        learning_rate=lr,
         gamma=cfg.gamma,
         gae_lambda=cfg.gae_lambda,
         ent_coef=cfg.entropy_coef,
         vf_coef=cfg.value_coef,
         clip_range=cfg.clip_range,
+        n_epochs=cfg.n_epochs,
+        max_grad_norm=cfg.max_grad_norm,
+        target_kl=cfg.target_kl if cfg.target_kl and cfg.target_kl > 0 else None,
         seed=cfg.seed,
         policy_kwargs=sb3_policy_kwargs(width=cfg.width, depth=cfg.depth),
         tensorboard_log=cfg.logdir,
@@ -220,10 +262,11 @@ def run_training(cfg: TrainConfig) -> str:
             name_prefix="ppo_grifball",
         ),
     ]
-    # Grifball gets a win-rate-vs-opponent eval. Combat is self-play (no fixed opponent to
-    # grade against mid-run); use `evaluate.py --mode combat` for an on-demand vs-random grade.
-    if EvalCallback is not None and cfg.mode != "combat":
-        callbacks.append(EvalCallback(cfg.eval_every, cfg.eval_episodes, cfg.opponent))
+    # Both modes get a periodic in-training grade (combat duels 1v1 vs random) plus live
+    # behavior/human-likeness stats. Set eval_every >= ~1M in combat: each grade spawns a
+    # short eval sim, so an over-frequent cadence eats throughput.
+    if EvalCallback is not None and cfg.eval_every > 0:
+        callbacks.append(EvalCallback(cfg))
 
     saved = os.path.join(cfg.logdir, "final_model")
     try:

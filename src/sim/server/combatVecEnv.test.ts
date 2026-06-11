@@ -93,6 +93,30 @@ test('domain randomization is deterministic and actually changes dynamics', () =
   assert.notDeepEqual([...onObs1], [...offObs]);
 });
 
+test('decisionInterval=4 equals four single-tick steps (obs identical, rewards summed)', () => {
+  const base = { worldSizes: [2, 4], baseSeed: 11, randomizeLayout: false as const };
+  const skip = new CombatVecEnv({ ...base, decisionInterval: 4 });
+  const tick = new CombatVecEnv({ ...base, decisionInterval: 1 });
+  skip.reset(); tick.reset();
+
+  const actions = new Int32Array(skip.numAgents * ACTION_DIM);
+  for (let i = 0; i < actions.length; i++) actions[i] = (i * 5) % 2; // varied, deterministic
+
+  for (let t = 0; t < 10; t++) {
+    const rs = skip.step(actions);
+    const summed = new Float32Array(tick.numAgents);
+    let rt!: ReturnType<typeof tick.step>;
+    for (let k = 0; k < 4; k++) {
+      rt = tick.step(actions);
+      for (let i = 0; i < tick.numAgents; i++) summed[i] += rt.reward[i];
+    }
+    assert.deepEqual([...rs.obs], [...rt.obs], `obs diverged at decision ${t}`);
+    for (let i = 0; i < skip.numAgents; i++) {
+      assert.ok(Math.abs(rs.reward[i] - summed[i]) < 1e-5, `reward sum diverged at ${t} agent ${i}`);
+    }
+  }
+});
+
 test('randomizeLayout=false gives a stable FFA layout', () => {
   const env = new CombatVecEnv({ worldSizes: [4], baseSeed: 9, randomizeLayout: false });
   env.reset();

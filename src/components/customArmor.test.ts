@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import * as THREE from 'three';
 import { AVAILABLE_PRESETS } from './VoxelModels';
 import { getVoxelSegmentDataV2 } from './VoxelModelsV2';
 import {
@@ -119,15 +120,15 @@ test('custom armor pieces and sanitized loadouts carry v2 model type', () => {
   assert.equal(loadout.customArmor.torso.modelType, 'large');
 });
 
-test('character preview loadout signature tracks large custom armor without serializing voxels', async () => {
-  const { getCharacterPreviewLoadoutSignature } = await import('./CharacterPreview');
+test('shared preview loadout signature tracks large custom armor without serializing voxels', async () => {
+  const { getPreviewLoadoutSignature } = await import('./previewModelUtils');
   const voxels = Array.from({ length: 3_000 }, (_, index) => ({
     x: index,
     y: index % 40,
     z: index % 8,
     role: 'primary' as const,
   }));
-  const baseSignature = getCharacterPreviewLoadoutSignature({
+  const baseSignature = getPreviewLoadoutSignature({
     modelSystem: 'v2',
     modelType: 'large',
     helmet: 'mark-vi',
@@ -144,7 +145,7 @@ test('character preview loadout signature tracks large custom armor without seri
       },
     },
   });
-  const updatedSignature = getCharacterPreviewLoadoutSignature({
+  const updatedSignature = getPreviewLoadoutSignature({
     modelSystem: 'v2',
     modelType: 'large',
     helmet: 'mark-vi',
@@ -166,4 +167,31 @@ test('character preview loadout signature tracks large custom armor without seri
   assert.ok(baseSignature.length < 400);
   assert.equal(baseSignature.includes('"voxels"'), false);
   assert.equal(baseSignature.includes('2999'), false);
+});
+
+test('shared preview disposal releases nested mesh resources', async () => {
+  const { disposePreviewObject } = await import('./previewModelUtils');
+  const group = new THREE.Group();
+  const geometry = new THREE.BoxGeometry(1, 1, 1);
+  const firstMaterial = new THREE.MeshBasicMaterial();
+  const secondMaterial = new THREE.MeshBasicMaterial();
+  let geometryDisposed = 0;
+  let firstMaterialDisposed = 0;
+  let secondMaterialDisposed = 0;
+  geometry.dispose = () => {
+    geometryDisposed += 1;
+  };
+  firstMaterial.dispose = () => {
+    firstMaterialDisposed += 1;
+  };
+  secondMaterial.dispose = () => {
+    secondMaterialDisposed += 1;
+  };
+  group.add(new THREE.Mesh(geometry, [firstMaterial, secondMaterial]));
+
+  disposePreviewObject(group);
+
+  assert.equal(geometryDisposed, 1);
+  assert.equal(firstMaterialDisposed, 1);
+  assert.equal(secondMaterialDisposed, 1);
 });

@@ -38,6 +38,7 @@ function helloResponse(env: SimVecEnv, seedInfo: { baseSeed: number }): Uint8Arr
     agentIds: env.agentIds,
     agentTeams: env.agentTeams,
     baseSeed: seedInfo.baseSeed,
+    decisionInterval: env.decisionInterval,
   };
   const json = new TextEncoder().encode(JSON.stringify(header));
   const out = new Uint8Array(1 + json.length);

@@ -4,7 +4,9 @@ import {
   buildAnimationEditorExportPayload,
   generatePoseFrames,
   interpolatePose,
+  mergeLinkedArmKeyframesPreservingPositions,
   normalizeKeyframes,
+  resolveSetKeyframePose,
   type AnimationKeyframe,
   type RigTargetPose,
 } from './animationEditorCore';
@@ -67,6 +69,68 @@ describe('animation editor interpolation', () => {
     assert.equal(frames[2].pose.position[1], 0.5);
     assert.ok(frames[2].pose.rotation[1] > 1.56);
     assert.ok(frames[2].pose.rotation[1] < 1.58);
+  });
+
+  it('preserves translated linked arm positions when reseeding weapon-driven arm rotations', () => {
+    const reseeded = mergeLinkedArmKeyframesPreservingPositions(
+      [
+        { frame: 0, label: 'A', pose: pose(0, 0, 0, 0.25, 0, 0) },
+        { frame: 4, label: 'B', pose: pose(0, 0, 0, 0.75, 0, 0) },
+      ],
+      [
+        { frame: 0, label: 'A', pose: pose(1, 2, 3, -0.1, 0, 0) },
+        { frame: 4, label: 'B', pose: pose(4, 5, 6, -0.2, 0, 0) },
+      ],
+      undefined,
+      5
+    );
+
+    assert.deepEqual(reseeded[0].pose.position, [1, 2, 3]);
+    assert.deepEqual(reseeded[1].pose.position, [4, 5, 6]);
+    assert.deepEqual(reseeded[0].pose.rotation, [0.25, 0, 0]);
+    assert.deepEqual(reseeded[1].pose.rotation, [0.75, 0, 0]);
+  });
+
+  it('uses existing generated linked arm positions when a weapon keyframe lands between arm keys', () => {
+    const existingKeyframes = [
+      { frame: 0, pose: pose(0, 0, 0, 0, 0, 0) },
+      { frame: 4, pose: pose(4, 8, 12, 0, 0, 0) },
+    ];
+    const existingFrames = generatePoseFrames(existingKeyframes, 5, 'linear');
+
+    const reseeded = mergeLinkedArmKeyframesPreservingPositions(
+      [{ frame: 2, label: 'Mid', pose: pose(0, 0, 0, 0.5, 0, 0) }],
+      existingKeyframes,
+      existingFrames,
+      5
+    );
+
+    assert.deepEqual(reseeded[0].pose.position, [2, 4, 6]);
+    assert.deepEqual(reseeded[0].pose.rotation, [0.5, 0, 0]);
+  });
+
+  it('uses the active draft pose when setting a keyframe on the edited frame', () => {
+    const resolved = resolveSetKeyframePose({
+      currentFrame: 15,
+      capturedPose: pose(0, 0, 0, -1.55, 0, 0),
+      draftFrame: 15,
+      draftPose: pose(0.84, 0.02, 0.03, -1.55, 0, 0),
+    });
+
+    assert.deepEqual(resolved.position, [0.84, 0.02, 0.03]);
+    assert.deepEqual(resolved.rotation, [-1.55, 0, 0]);
+  });
+
+  it('falls back to the captured pose when the draft belongs to another frame', () => {
+    const resolved = resolveSetKeyframePose({
+      currentFrame: 15,
+      capturedPose: pose(0, 0, 0, -1.55, 0, 0),
+      draftFrame: 14,
+      draftPose: pose(0.84, 0.02, 0.03, -1.55, 0, 0),
+    });
+
+    assert.deepEqual(resolved.position, [0, 0, 0]);
+    assert.deepEqual(resolved.rotation, [-1.55, 0, 0]);
   });
 
   it('builds a versioned rig export while keeping the legacy weapon frames', () => {

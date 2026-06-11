@@ -46,6 +46,8 @@ export interface CombatVecEnvConfig {
   randomize?: RandomizeSpec;
   /** Safety cap per match; exceeding it truncates (and bootstraps if enabled downstream). */
   maxTicks?: number;
+  /** Sim ticks per policy decision (frame-skip); see {@link VecEnvConfig.decisionInterval}. */
+  decisionInterval?: number;
 }
 
 interface World {
@@ -86,6 +88,7 @@ export class CombatVecEnv {
   private readonly randomizeLayout: boolean;
   private readonly dr: RandomizeSpec;
   private readonly maxTicks: number;
+  readonly decisionInterval: number;
   private readonly worlds: World[] = [];
 
   private readonly obsBuf: Float32Array;
@@ -102,6 +105,7 @@ export class CombatVecEnv {
     this.randomizeLayout = config.randomizeLayout ?? true;
     this.dr = config.randomize ?? { enabled: false, pct: 0 };
     this.maxTicks = config.maxTicks ?? 60 * 60 * 8;
+    this.decisionInterval = Math.max(1, Math.trunc(config.decisionInterval ?? 1));
     const baseSeed = config.baseSeed ?? 1;
 
     let offset = 0;
@@ -180,39 +184,47 @@ export class CombatVecEnv {
 
   step(actions: Int32Array): VecStepResult {
     for (const w of this.worlds) {
-      const state = w.state;
-      const byId: Record<string, ReturnType<typeof decodeAction>> = {};
-      for (let j = 0; j < w.size; j++) {
-        const id = state.combatants[j].id;
-        byId[id] = decodeAction(actions, state, id, (w.offset + j) * this.actDim);
-      }
-
-      const events = stepSimulation(state, byId, { settings: w.settings });
-      const rewards = computeStepRewards(state, events, this.reward, w.memory);
-
-      const truncated = !events.matchEnded && state.tick >= this.maxTicks;
-      const done = events.matchEnded || truncated;
-
       for (let j = 0; j < w.size; j++) {
         const g = w.offset + j;
-        this.rewardBuf[g] = rewards[state.combatants[j].id] ?? 0;
-        this.doneBuf[g] = done ? 1 : 0;
-        this.truncatedBuf[g] = truncated ? 1 : 0;
+        this.rewardBuf[g] = 0;
+        this.doneBuf[g] = 0;
+        this.truncatedBuf[g] = 0;
         this.terminalObs[g] = null;
       }
 
-      if (done) {
+      // Repeat the action block for decisionInterval ticks (re-decoded each tick so
+      // relative aim tracks and dead agents idle); a match ending mid-interval stops early.
+      for (let k = 0; k < this.decisionInterval; k++) {
+        const state = w.state;
+        const byId: Record<string, ReturnType<typeof decodeAction>> = {};
         for (let j = 0; j < w.size; j++) {
-          const term = new Float32Array(this.obsDim);
-          encodeObservation(state, state.combatants[j].id, term, 0);
-          this.terminalObs[w.offset + j] = term;
+          const id = state.combatants[j].id;
+          byId[id] = decodeAction(actions, state, id, (w.offset + j) * this.actDim);
         }
-        w.episode += 1;
-        this.makeWorld(w);
-        this.encodeWorldObs(w);
-      } else {
-        this.encodeWorldObs(w);
+
+        const events = stepSimulation(state, byId, { settings: w.settings });
+        const rewards = computeStepRewards(state, events, this.reward, w.memory);
+        for (let j = 0; j < w.size; j++) {
+          this.rewardBuf[w.offset + j] += rewards[state.combatants[j].id] ?? 0;
+        }
+
+        const truncated = !events.matchEnded && state.tick >= this.maxTicks;
+        const done = events.matchEnded || truncated;
+        if (done) {
+          for (let j = 0; j < w.size; j++) {
+            const g = w.offset + j;
+            const term = new Float32Array(this.obsDim);
+            encodeObservation(state, state.combatants[j].id, term, 0);
+            this.terminalObs[g] = term;
+            this.doneBuf[g] = 1;
+            this.truncatedBuf[g] = truncated ? 1 : 0;
+          }
+          w.episode += 1;
+          this.makeWorld(w);
+          break;
+        }
       }
+      this.encodeWorldObs(w);
     }
 
     return {

@@ -46,6 +46,13 @@ export interface VecEnvConfig {
   randomize?: RandomizeSpec;
   /** Safety cap; a match exceeding this many ticks is force-reset (counts as draw). */
   maxTicks?: number;
+  /**
+   * Sim ticks advanced per policy decision (frame-skip). Each `step()` repeats the action
+   * block for this many ticks, accumulating rewards. >1 is both a big throughput lever
+   * (fewer round-trips + smaller rollout buffers per sim-second) and a human-likeness one:
+   * 60Hz decisions are super-human twitch; 4–6 (≈10–15 decisions/sec) is a human cadence.
+   */
+  decisionInterval?: number;
 }
 
 export interface StepInfo {
@@ -78,6 +85,7 @@ export class VecEnv {
   private readonly builtin: Set<number>;
   private readonly builtinPolicy: Policy;
   private readonly maxTicks: number;
+  readonly decisionInterval: number;
 
   private readonly randomize: RandomizeSpec;
   private states: SimState[] = [];
@@ -107,6 +115,7 @@ export class VecEnv {
     this.builtin = new Set(config.builtinAgents ?? []);
     this.builtinPolicy = config.builtinPolicy === 'random' ? randomPolicy : heuristicPolicy;
     this.maxTicks = config.maxTicks ?? 60 * 60 * 30;
+    this.decisionInterval = Math.max(1, Math.trunc(config.decisionInterval ?? 1));
     this.randomize = config.randomize ?? { enabled: false, pct: 0 };
     this.baseSeed = config.baseSeed ?? 1;
 
@@ -153,55 +162,61 @@ export class VecEnv {
   }
 
   /**
-   * Advance every env by one tick using `actions` (`numEnvs × numAgents × actDim` int32s).
-   * Built-in opponent slots ignore their action block.
+   * Advance every env by `decisionInterval` ticks using `actions` (`numEnvs × numAgents ×
+   * actDim` int32s), accumulating rewards. Built-in opponent slots ignore their action
+   * block. Actions are re-decoded each tick so context-relative factors (aim toward ball /
+   * enemy goal) track the live state and dead agents idle out; a match that ends mid-interval
+   * stops early (the fresh episode starts on the next decision).
    */
   step(actions: Int32Array): VecStepResult {
     for (let e = 0; e < this.numEnvs; e++) {
-      const state = this.states[e];
-      const actionBase = e * this.numAgents * this.actDim;
-
-      const byId: Record<string, ActionInput> = {};
-      for (let i = 0; i < this.numAgents; i++) {
-        const id = this.agentIds[i];
-        if (this.builtin.has(i)) {
-          byId[id] = this.builtinPolicy(state, id, this.rngs[e]);
-        } else {
-          byId[id] = decodeAction(actions, state, id, actionBase + i * this.actDim);
-        }
-      }
-
-      const events = stepSimulation(state, byId, { settings: this.envSettings[e] });
-      const rewards = computeStepRewards(state, events, this.reward, this.memories[e]);
-
-      // A real match end is a true terminal (no bootstrap); a maxTicks cut-off is a
-      // truncation (bootstrap from the terminal obs). Early-training matches truncate
-      // often (weak policies rarely score), so this distinction matters.
-      const truncated = !events.matchEnded && state.tick >= this.maxTicks;
-      const done = events.matchEnded || truncated;
       const rBase = e * this.numAgents;
+      const actionBase = rBase * this.actDim;
       for (let i = 0; i < this.numAgents; i++) {
-        this.rewardBuf[rBase + i] = rewards[this.agentIds[i]] ?? 0;
-        this.doneBuf[rBase + i] = done ? 1 : 0;
-        this.truncatedBuf[rBase + i] = truncated ? 1 : 0;
+        this.rewardBuf[rBase + i] = 0;
+        this.doneBuf[rBase + i] = 0;
+        this.truncatedBuf[rBase + i] = 0;
         this.terminalObs[rBase + i] = null;
       }
 
-      if (done) {
-        // Capture terminal obs, then reset and write the fresh obs into the slot.
-        const obsBase = e * this.numAgents * this.obsDim;
+      for (let k = 0; k < this.decisionInterval; k++) {
+        const state = this.states[e];
+        const byId: Record<string, ActionInput> = {};
         for (let i = 0; i < this.numAgents; i++) {
-          const term = new Float32Array(this.obsDim);
-          encodeObservation(state, this.agentIds[i], term, 0);
-          this.terminalObs[rBase + i] = term;
+          const id = this.agentIds[i];
+          if (this.builtin.has(i)) {
+            byId[id] = this.builtinPolicy(state, id, this.rngs[e]);
+          } else {
+            byId[id] = decodeAction(actions, state, id, actionBase + i * this.actDim);
+          }
         }
-        this.episode[e] += 1;
-        this.makeEnv(e);
-        this.encodeEnvObs(e, this.obsBuf);
-        void obsBase;
-      } else {
-        this.encodeEnvObs(e, this.obsBuf);
+
+        const events = stepSimulation(state, byId, { settings: this.envSettings[e] });
+        const rewards = computeStepRewards(state, events, this.reward, this.memories[e]);
+        for (let i = 0; i < this.numAgents; i++) {
+          this.rewardBuf[rBase + i] += rewards[this.agentIds[i]] ?? 0;
+        }
+
+        // A real match end is a true terminal (no bootstrap); a maxTicks cut-off is a
+        // truncation (bootstrap from the terminal obs). Early-training matches truncate
+        // often (weak policies rarely score), so this distinction matters.
+        const truncated = !events.matchEnded && state.tick >= this.maxTicks;
+        const done = events.matchEnded || truncated;
+        if (done) {
+          // Capture terminal obs, then reset; the fresh obs is encoded below.
+          for (let i = 0; i < this.numAgents; i++) {
+            const term = new Float32Array(this.obsDim);
+            encodeObservation(state, this.agentIds[i], term, 0);
+            this.terminalObs[rBase + i] = term;
+            this.doneBuf[rBase + i] = 1;
+            this.truncatedBuf[rBase + i] = truncated ? 1 : 0;
+          }
+          this.episode[e] += 1;
+          this.makeEnv(e);
+          break;
+        }
       }
+      this.encodeEnvObs(e, this.obsBuf);
     }
 
     return {

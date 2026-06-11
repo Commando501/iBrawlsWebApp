@@ -11,6 +11,7 @@ import {
   resolveSkyboxTextureId,
   resolveSkyboxTextureSize,
 } from './skyboxTextures';
+import { resolveCloudLayerPlan } from '../components/grifball/skyAtmosphereRuntime';
 
 const EXPECTED_SKYBOX_IDS = [
   'cyberpunk',
@@ -123,4 +124,27 @@ test('standalone map maker skybox options match runtime ids', () => {
   assert.match(html, /data\.atmosphere/);
   assert.match(html, /pm\.atmosphere/);
   assert.match(html, /handleResetAtmosphereControls/);
+  assert.match(html, /resolveMapmakerCloudLayerPlan/);
+  assert.match(html, /THREE\.InstancedMesh/);
+  assert.match(html, /cloud_layer/);
+});
+
+test('cloud layer plan caps high density clouds into deterministic deck layers', () => {
+  const layers = resolveCloudLayerPlan(100);
+
+  assert.equal(layers.length, 3);
+  assert.deepEqual(layers.map((layer) => layer.instanceCount), [18, 14, 10]);
+  assert.equal(layers.every((layer) => layer.instanceCount <= 18), true);
+  assert.equal(layers.every((layer) => layer.opacity <= 0.46), true);
+  assert.equal(layers.every((layer) => layer.driftSpeed > 0), true);
+});
+
+test('cloud layer plan keeps low and disabled cloud settings cheap', () => {
+  assert.deepEqual(resolveCloudLayerPlan(0), []);
+
+  const layers = resolveCloudLayerPlan(12);
+
+  assert.equal(layers.length, 1);
+  assert.equal(layers[0].instanceCount, 5);
+  assert.equal(layers[0].height, 58);
 });

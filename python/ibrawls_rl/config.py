@@ -22,6 +22,7 @@ class TrainConfig:
     num_workers: int = 1              # parallel Node sim processes (set to ~CPU cores to feed a GPU)
     goal_target: int = 3              # grifball: goals needed to win a match
     match_minutes: float = 6.0        # safety cap on match length (sim-minutes)
+    decision_interval: int = 1        # sim ticks per decision (frame-skip; 4-6 = human cadence)
     device: str = "auto"              # auto | cpu | cuda
     seed: int = 1                     # base RNG seed (reproducibility)
 
@@ -40,6 +41,10 @@ class TrainConfig:
     entropy_coef: float = 0.01        # exploration pressure (higher = stays random longer)
     value_coef: float = 0.5           # weight of the value-prediction loss
     clip_range: float = 0.2           # PPO trust region (how far policy may move per update)
+    n_epochs: int = 10                # optimization passes over each rollout buffer
+    max_grad_norm: float = 0.5        # gradient clipping (stability)
+    target_kl: float = 0.0            # early-stop an update when KL exceeds this (0 = off)
+    lr_schedule: str = "constant"     # "constant" | "linear" (decay LR to 0 over the run)
 
     # --- network (the brain) ---
     width: int = 256                  # neurons per hidden layer (bigger = more capacity, needs GPU)
@@ -84,6 +89,7 @@ KNOB_DESCRIPTIONS: dict[str, str] = {
     "num_workers": "Parallel sim processes across CPU cores. Raise toward your core count to feed a GPU a big batch.",
     "goal_target": "Goals to win a match.",
     "match_minutes": "Hard cap on match length so stalemates end.",
+    "decision_interval": "Sim ticks per policy decision (frame-skip). 1 = decide at 60Hz (super-human twitch, slow training); 4-6 = ~10-15 decisions/sec — a HUMAN reaction cadence and a 4-6x throughput boost. Train and play at the same value.",
     "device": "Where the brain runs. 'auto' uses the GPU if available; small brains are fine on 'cpu'.",
     "seed": "Random seed; same seed = reproducible run.",
     "learning_rate": "Step size of each brain update. Too high = unstable; too low = slow. Try 1e-4..5e-4.",
@@ -94,6 +100,10 @@ KNOB_DESCRIPTIONS: dict[str, str] = {
     "entropy_coef": "Exploration. Raise (0.02-0.05) if it gives up exploring too soon; lower if too random late.",
     "value_coef": "How hard it also learns to predict future reward.",
     "clip_range": "Safety limit on how much the policy changes per update.",
+    "n_epochs": "Optimization passes over each rollout buffer. Big buffers (many envs) want fewer (3-5); small buffers tolerate 10.",
+    "max_grad_norm": "Clip gradients above this norm. Lower (0.3) if updates look explosive; rarely needs touching.",
+    "target_kl": "Stop an update early when the policy moved more than this (approx_kl). 0.03 is a good safety rail; 0 disables.",
+    "lr_schedule": "'linear' decays the learning rate to 0 across the run — steadier late training, better final policies on long runs. 'constant' is simpler for short probes.",
     "width": "Neurons per layer. Bigger brain = more skill ceiling, but slower (use the GPU).",
     "depth": "Hidden layers. 2-3 is plenty here.",
     "init_model": "Warm-start from a saved model (curriculum transfer). Same width/depth required. Empty = from scratch.",
@@ -129,6 +139,7 @@ _TOML_MAP = {
     ("run", "num_workers"): "num_workers",
     ("run", "goal_target"): "goal_target",
     ("run", "match_minutes"): "match_minutes",
+    ("run", "decision_interval"): "decision_interval",
     ("run", "device"): "device",
     ("run", "seed"): "seed",
     ("ppo", "learning_rate"): "learning_rate",
@@ -139,6 +150,10 @@ _TOML_MAP = {
     ("ppo", "entropy_coef"): "entropy_coef",
     ("ppo", "value_coef"): "value_coef",
     ("ppo", "clip_range"): "clip_range",
+    ("ppo", "n_epochs"): "n_epochs",
+    ("ppo", "max_grad_norm"): "max_grad_norm",
+    ("ppo", "target_kl"): "target_kl",
+    ("ppo", "lr_schedule"): "lr_schedule",
     ("network", "width"): "width",
     ("network", "depth"): "depth",
     ("network", "init_model"): "init_model",
@@ -227,6 +242,7 @@ _FIELD_CHOICES: dict[str, list[str]] = {
     "mode": ["combat", "grifball"],
     "opponent": ["random", "self", "heuristic"],
     "device": ["auto", "cpu", "cuda"],
+    "lr_schedule": ["constant", "linear"],
 }
 
 # Optional (min, max, step) hints for number inputs — purely to make the form
@@ -239,6 +255,10 @@ _FIELD_RANGES: dict[str, tuple[float, float, float]] = {
     "clip_range": (0.05, 0.5, 0.05),
     "value_coef": (0.1, 1.0, 0.05),
     "randomize_pct": (0.0, 0.5, 0.05),
+    "decision_interval": (1, 10, 1),
+    "n_epochs": (1, 20, 1),
+    "max_grad_norm": (0.1, 5.0, 0.1),
+    "target_kl": (0.0, 0.1, 0.005),
 }
 
 

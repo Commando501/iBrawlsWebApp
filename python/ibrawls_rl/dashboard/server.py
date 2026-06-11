@@ -21,13 +21,17 @@ from ..config import (
     load_config,
     save_config,
 )
+from .. import hardware
+from . import advisor
 from . import metrics as metricsmod
 from . import evalhistory
 from .paths import CONFIG_PATH, STATIC_DIR, PROJECT_DIR, safe_run_path
 from .procman import ManagedProcess
+from .trainqueue import TrainQueue
 
 TRAINER = ManagedProcess("train")
 EVALER = ManagedProcess("eval")
+QUEUE = TrainQueue(TRAINER)
 
 # Guards one-time recording of a finished eval into history (keyed by its start time).
 _eval_record_lock = threading.Lock()
@@ -87,6 +91,8 @@ def _record_eval_if_new(st: dict) -> None:
             "draw_rate": result.get("draw_rate"),
             "episodes": result.get("episodes"),
             "ep_return": result.get("ep_return"),
+            "behavior": result.get("behavior"),
+            "decision_interval": result.get("decision_interval"),
         })
 
 
@@ -180,6 +186,12 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(self._eval_status())
             elif path == "/api/eval/history":
                 self._send_json({"history": evalhistory.load()})
+            elif path == "/api/hardware":
+                self._send_json(hardware.detect_dict())
+            elif path == "/api/advice":
+                self._send_json(self._advice(qs.get("dir", [""])[0]))
+            elif path == "/api/queue":
+                self._send_json(QUEUE.status())
             else:
                 self._serve_static(path)
         except Exception as e:  # pragma: no cover
@@ -204,6 +216,16 @@ class Handler(BaseHTTPRequestHandler):
             elif path == "/api/eval/history/clear":
                 evalhistory.clear()
                 self._send_json({"ok": True})
+            elif path == "/api/queue/add":
+                self._send_json(QUEUE.add(body.get("jobs") or []))
+            elif path == "/api/queue/remove":
+                self._send_json(QUEUE.remove(int(body.get("id", 0))))
+            elif path == "/api/queue/clear_finished":
+                self._send_json(QUEUE.clear_finished())
+            elif path == "/api/queue/start":
+                self._send_json(QUEUE.start())
+            elif path == "/api/queue/pause":
+                self._send_json(QUEUE.pause())
             else:
                 self.send_error(404)
         except Exception as e:  # pragma: no cover
@@ -237,6 +259,34 @@ class Handler(BaseHTTPRequestHandler):
         st["total_steps"] = total
         st["progress"] = progress
         return st
+
+    # -- advisor ------------------------------------------------------------
+    def _advice(self, run_rel: str) -> dict:
+        """Advisor findings for a run dir (live or finished); config-lint-only when empty."""
+        series: dict = {}
+        values = _current_values()
+        progress = None
+        running = False
+        if run_rel:
+            run = safe_run_path(run_rel)
+            if run and os.path.isdir(run):
+                series = metricsmod.read_run_metrics(run).get("series", {})
+                cfg_used = os.path.join(run, "config_used.toml")
+                if os.path.exists(cfg_used):
+                    try:
+                        values = asdict(load_config(cfg_used))
+                    except Exception:
+                        pass
+                last = metricsmod._last_step(run)
+                total = values.get("total_steps")
+                if last is not None and total:
+                    progress = max(0.0, min(1.0, last / float(total)))
+                meta = TRAINER.status().get("meta", {})
+                running = TRAINER.is_running() and meta.get("logdir") == run_rel
+        # `step` isn't a metric series; drop it if the jsonl reader surfaced it.
+        series.pop("step", None)
+        return advisor.advise(series, values, running=running, progress=progress,
+                              cpus=os.cpu_count() or 8)
 
     # -- eval ---------------------------------------------------------------
     def _eval_start(self, body: dict) -> dict:

@@ -93,6 +93,28 @@ test('VecEnv is deterministic for a given config + actions', () => {
   }
 });
 
+test('VecEnv decisionInterval advances N ticks per step and accumulates reward', () => {
+  const skip = new VecEnv({ numEnvs: 1, baseSeed: 3, decisionInterval: 5 });
+  const tick = new VecEnv({ numEnvs: 1, baseSeed: 3, decisionInterval: 1 });
+  skip.reset(); tick.reset();
+  const actions = new Int32Array(skip.numEnvs * skip.numAgents * ACTION_DIM);
+  for (let i = 0; i < actions.length; i++) actions[i] = i % 2;
+
+  const rs = skip.step(actions);
+  assert.equal(skip.getState(0).tick, 5, 'one decision should advance 5 sim ticks');
+
+  const summed = new Float32Array(tick.numEnvs * tick.numAgents);
+  let rt!: ReturnType<typeof tick.step>;
+  for (let k = 0; k < 5; k++) {
+    rt = tick.step(actions);
+    for (let i = 0; i < summed.length; i++) summed[i] += rt.reward[i];
+  }
+  assert.deepEqual([...rs.obs], [...rt.obs]);
+  for (let i = 0; i < summed.length; i++) {
+    assert.ok(Math.abs(rs.reward[i] - summed[i]) < 1e-5, `reward sum diverged for agent ${i}`);
+  }
+});
+
 test('VecEnv auto-resets a finished match and signals done', () => {
   // Built-in heuristic on both teams, goal target 1 -> a quick, terminating match.
   const env = new VecEnv({
@@ -135,7 +157,8 @@ test('runServer drives a full HELLO/RESET/STEP/CLOSE handshake end-to-end', () =
   runServer(t);
 
   // HELLO with config.
-  const cfgJson = new TextEncoder().encode(JSON.stringify({ numEnvs: 2, baseSeed: 1 }));
+  const cfgJson = new TextEncoder().encode(
+    JSON.stringify({ numEnvs: 2, baseSeed: 1, decisionInterval: 3 }));
   const hello = new Uint8Array(1 + cfgJson.length);
   hello[0] = OPCODE.HELLO; hello.set(cfgJson, 1);
   t.feed(hello);
@@ -145,6 +168,7 @@ test('runServer drives a full HELLO/RESET/STEP/CLOSE handshake end-to-end', () =
   const header = JSON.parse(new TextDecoder().decode(t.out[0].subarray(1)));
   assert.equal(header.obsDim, OBS_DIM);
   assert.equal(header.numEnvs, 2);
+  assert.equal(header.decisionInterval, 3);
   const count = header.numEnvs * header.numAgents;
 
   // RESET.

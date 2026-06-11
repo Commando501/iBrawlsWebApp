@@ -11,6 +11,7 @@
     <div class="brand">iBrawls&nbsp;RL <span>Control Board</span></div>
     <nav class="tabs">
       <button class="tab active" data-tab="train">Train</button>
+      <button class="tab" data-tab="optimizer">Optimizer</button>
       <button class="tab" data-tab="runs">Runs</button>
       <button class="tab" data-tab="evaluate">Evaluate</button>
       <button class="tab" data-tab="watch">Watch</button>
@@ -36,6 +37,12 @@
         <button class="btn danger" id="btnStop" disabled>■ Stop</button>
       </div>
 
+      <div class="panel advisor-panel" id="advisorPanel">
+        <h2>Advisor <small>reads the run + config and says which knob to turn</small>
+          <span class="adv-verdict-wrap" id="advisorVerdict"></span></h2>
+        <div id="advisorBody" class="advisor-body muted">Checking your setup…</div>
+      </div>
+
       <div class="split">
         <div class="panel form-panel">
           <h2>Settings <small>every knob, in plain English</small></h2>
@@ -50,6 +57,55 @@
           <h2 style="margin-top:18px">Console</h2>
           <pre id="console" class="console"></pre>
         </div>
+      </div>
+    </section>
+
+    <!-- ================= OPTIMIZER ================= -->
+    <section id="tab-optimizer" class="tabpane">
+      <div class="optimizer-grid">
+
+        <div class="panel">
+          <h2>Your machine <small>detected hardware → recommended training settings</small></h2>
+          <div id="hwSpecs" class="hw-specs muted">Detecting…</div>
+          <div id="hwReco"></div>
+        </div>
+
+        <div class="panel">
+          <h2>Sweep builder <small>probe one knob across values, queued back-to-back</small></h2>
+          <p class="muted">Each value becomes a short <b>probe run</b> using the current Train-tab
+          settings with just that knob (and the run folder) changed. When the queue finishes,
+          compare results below and apply the winner with one click.</p>
+          <div class="sweep-form">
+            <label>Knob
+              <select id="sweepKnob"></select>
+            </label>
+            <label>Values <small>comma-separated</small>
+              <input type="text" id="sweepValues" placeholder="e.g. 0.0001, 0.0003, 0.0005" />
+            </label>
+            <label>Steps per probe
+              <input type="number" id="sweepSteps" value="2000000" min="100000" step="100000" />
+            </label>
+            <div class="sweep-actions">
+              <button class="btn primary" id="btnSweepAdd">＋ Add to queue</button>
+              <span class="muted" id="sweepHint"></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel queue-panel">
+          <h2>Training queue
+            <span class="hist-actions">
+              <button class="btn primary tiny" id="btnQueueStart">▶ Run queue</button>
+              <button class="btn ghost tiny" id="btnQueuePause">⏸ Pause</button>
+              <button class="btn ghost tiny" id="btnQueueClear">Clear finished</button>
+            </span>
+          </h2>
+          <p class="muted">Jobs run one at a time through the same trainer as the Train tab
+          (its status bar, charts, and Advisor all track the active job). Pause stops
+          <i>between</i> jobs; stop an in-flight run from the Train tab.</p>
+          <div id="queueList">No jobs queued.</div>
+        </div>
+
       </div>
     </section>
 
@@ -291,6 +347,34 @@
           early foothold and make sure <code>kill</code> clearly out-pays it, so the bot graduates
           from "approach enemies" to "actually kill them". Shrink <code>approach</code> in a later
           warm-started run if it stays passive.</p>
+        </div>
+
+        <div class="panel guide-card">
+          <h2>Human-like play <small>decision interval &amp; behavior stats</small></h2>
+          <p><b><code>[run] decision_interval</code></b> is the single most important knob for the
+          human-like goal. At <code>1</code> the bot re-decides <b>60 times a second</b> — super-human
+          twitch reactions and 5× slower training. At <code>5</code> it decides ~12×/sec, which is a
+          human reaction cadence (~80–200ms), <i>and</i> training throughput multiplies by ~5.
+          Train and evaluate at the same value (the Evaluate tab reads it from the run
+          automatically).</p>
+          <p>Every evaluation now also reports <b>behavior stats</b> — idle %, move-switch rate
+          (twitchiness), attack/jump/dash usage — and the trainer logs them live under
+          <code>behavior/*</code>. Watch <code>move_switch_rate</code>: humans hold a direction
+          (≲0.3); a jittery policy flips most decisions (≳0.5). The Advisor flags it.</p>
+          <p class="muted">With frame-skip, <code>gamma</code> is per <i>decision</i>: at interval 5,
+          <code>gamma = 0.99</code> covers the same time horizon the old 60Hz <code>0.997</code> did.</p>
+        </div>
+
+        <div class="panel guide-card">
+          <h2>The Optimizer tab <small>hardware presets + knob sweeps</small></h2>
+          <p><b>Your machine</b> detects CPU/RAM/GPU and proposes settings sized to keep the GPU fed
+          (workers ≈ threads − 4, ~3 worlds per worker, big rollout buffers). One click applies them
+          to the Train settings.</p>
+          <p><b>Sweep builder</b> answers "which learning rate / entropy / kill reward is best?"
+          empirically: pick the knob, list candidate values, and it queues one short probe run per
+          value. The <b>queue</b> runs them back-to-back overnight; the results table shows final
+          reward / win rate per value, highlights the best, and "Use config" promotes the winner.
+          Probe with ~2M steps — enough to rank values, cheap enough to try five.</p>
         </div>
 
         <div class="panel guide-card">

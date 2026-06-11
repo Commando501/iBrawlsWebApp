@@ -125,6 +125,29 @@ on. Two payoffs:
 Nothing to configure. (Internally the observation grew to include this block; the Python side
 reads all dims from the handshake, so it adapts automatically.)
 
+## 5d-2. Human-like play: the decision interval (read this — it's the big one)
+
+`[run] decision_interval` sets how many sim ticks pass per policy decision (frame-skip).
+
+- `1` = the bot re-decides **60 times a second**: super-human twitch reactions, and every
+  training step buys only 1/60s of experience.
+- `5` = ~12 decisions/sec — a **human reaction cadence** (~80–200ms) — and a ~5× training
+  throughput multiplier, because each round-trip advances 5 ticks.
+
+Two rules:
+1. **Train and evaluate at the same interval.** `evaluate.py` reads it automatically from
+   the model's run folder (`config_used.toml`); override with `--decision-interval`.
+2. **`gamma` is per decision.** At interval 5, `gamma = 0.99` covers the same time horizon
+   that `0.997` covered at 60Hz. If you raise the interval, lower gamma accordingly.
+
+Changing the interval starts a new training regime — don't warm-start a 60Hz brain into a
+12Hz run; train fresh, then harden with domain randomization as usual.
+
+Every evaluation also reports **behavior stats** (and the trainer logs them under
+`behavior/*`): idle %, **move-switch rate** (twitchiness — humans hold a heading, ≲0.3;
+a jittery policy flips most decisions, ≳0.5), and attack/jump/dash usage. That makes
+"does it move like a person?" a measured number instead of a vibe.
+
 ## 5e. If it's NOT learning (win-rate flat at 0)
 
 Symptom: `eval/win_rate` stays ~0 and `ep_return` sits at a big negative number (≈ the time
@@ -218,3 +241,27 @@ same way to see how the bot improved over time.
   but more CPU.
 - The GPU only helps a **big** brain (`network.width`/`depth`); a small one is fine on CPU.
   See README.md → "GPU (CUDA)".
+- The three throughput levers, in order: `decision_interval` (≈linear multiplier),
+  `num_workers` (≈ CPU threads − 4), and total agents (widen `[combat] world_sizes`).
+  The dashboard's **Optimizer tab** detects your hardware and applies all of this in one click.
+
+## 9. The dashboard's Advisor and Optimizer
+
+- **Advisor (Train tab):** continuously reads the active/last run's metrics + config and
+  posts findings ("value predictor failing — lower LR", "entropy pinned — raise approach")
+  with one-click fixes. It also lints your setup before you start (batch/buffer mismatch,
+  idle cores, 60Hz decisions, over-frequent eval).
+- **Optimizer tab:**
+  - *Your machine* — detected CPU/RAM/GPU → recommended settings, one click to apply.
+  - *Sweep builder* — pick a knob (e.g. `ppo.learning_rate`), list values, and it queues one
+    short probe run per value using your current settings as the baseline.
+  - *Training queue* — runs the probes back-to-back (overnight-friendly), then shows final
+    reward / win rate / fps per value, stars the best, and "Use config" promotes the winner.
+
+## 10. New PPO knobs (for the curious)
+
+- `n_epochs` — passes over each rollout buffer. Big buffers (128 agents × 256 steps) want
+  3–5; the old default 10 over-fits each batch.
+- `target_kl` — safety rail: stop an update early if the policy moved too far (0.03 ≈ good).
+- `lr_schedule = "linear"` — decay LR to 0 across the run; steadier late-stage training.
+- `max_grad_norm` — gradient clipping; leave at 0.5 unless updates look explosive.

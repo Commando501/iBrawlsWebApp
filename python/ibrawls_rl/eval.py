@@ -17,6 +17,50 @@ from .envs.grifball_vec_env import GrifballVecEnv
 WIN_THRESHOLD = 0.5  # terminal reward magnitude separating a decisive result from a timeout
 
 
+class BehaviorTracker:
+    """Aggregate action statistics that proxy "does it play like a person?".
+
+    Tracked per decision over the graded slots: idle fraction (no movement input),
+    move-direction switch rate (twitchiness — humans hold a direction; a jittery policy
+    flips every decision), and attack / jump / dash usage rates. These land in eval
+    results so human-likeness is measured, not guessed.
+    """
+
+    def __init__(self, slots: np.ndarray | None = None):
+        self.slots = slots
+        self.prev_move: np.ndarray | None = None
+        self.steps = 0
+        self.idle = 0
+        self.switch = 0
+        self.switch_n = 0
+        self.attack = 0
+        self.jump = 0
+        self.dash = 0
+
+    def update(self, action: np.ndarray) -> None:
+        a = action if self.slots is None else action[self.slots]
+        move = a[:, 0]
+        self.steps += a.shape[0]
+        self.idle += int((move == 0).sum())
+        self.attack += int((a[:, 2] != 0).sum())
+        self.jump += int((a[:, 3] == 1).sum())
+        self.dash += int((a[:, 4] == 1).sum())
+        if self.prev_move is not None:
+            self.switch += int((move != self.prev_move).sum())
+            self.switch_n += a.shape[0]
+        self.prev_move = move.copy()
+
+    def summary(self) -> dict:
+        n = max(1, self.steps)
+        return {
+            "idle_frac": round(self.idle / n, 4),
+            "move_switch_rate": round(self.switch / max(1, self.switch_n), 4),
+            "attack_rate": round(self.attack / n, 4),
+            "jump_rate": round(self.jump / n, 4),
+            "dash_rate": round(self.dash / n, 4),
+        }
+
+
 def _predict(model, env, obs, deterministic: bool) -> np.ndarray:
     if model is None:
         return np.stack([env.action_space.sample() for _ in range(env.num_envs)]).astype(np.int32)
@@ -45,13 +89,16 @@ def eval_vs(
     goal_target: int = 3,
     deterministic: bool = True,
     progress_every: int = 0,
+    decision_interval: int = 1,
+    max_minutes: float = 6.0,
 ) -> dict:
     """Grade a grifball policy vs a built-in opponent. Each learner sub-env's episode counts."""
     env = GrifballVecEnv(
         num_envs=num_envs,
         opponent=opponent,
         settings={"grifballGoalTarget": goal_target},
-        max_ticks=60 * 60 * 6,
+        max_ticks=int(60 * 60 * max_minutes),
+        decision_interval=decision_interval,
     )
     try:
         obs = env.reset()
@@ -59,11 +106,14 @@ def eval_vs(
         wins = losses = draws = completed = 0
         next_mark = progress_every
         returns: list[float] = []
+        behavior = BehaviorTracker()
         max_iters = matches * 60 * 60 * 8
         it = 0
         while completed < matches and it < max_iters:
             it += 1
-            obs, reward, done, _ = env.step(_predict(model, env, obs, deterministic))
+            action = _predict(model, env, obs, deterministic)
+            behavior.update(action)
+            obs, reward, done, _ = env.step(action)
             ep_return += reward
             for i in np.nonzero(done)[0]:
                 r = float(reward[i])
@@ -84,6 +134,7 @@ def eval_vs(
             "draw_rate": draws / total,
             "ep_return": float(np.mean(returns)) if returns else 0.0,
             "episodes": completed,
+            "behavior": behavior.summary(),
         }
     finally:
         env.close()
@@ -101,6 +152,8 @@ def eval_combat_vs_random(
     kill_target: int = 10,
     deterministic: bool = True,
     progress_every: int = 0,
+    decision_interval: int = 1,
+    max_minutes: float = 6.0,
 ) -> dict:
     """Grade a combat policy by 1v1 duels vs a random opponent (fixed 1v1 worlds).
 
@@ -112,7 +165,8 @@ def eval_combat_vs_random(
         combat_world_sizes=[2] * num_worlds,
         combat_kill_range=(kill_target, kill_target),
         combat_randomize_layout=False,
-        max_ticks=60 * 60 * 6,
+        max_ticks=int(60 * 60 * max_minutes),
+        decision_interval=decision_interval,
     )
     try:
         obs = env.reset()
@@ -120,6 +174,7 @@ def eval_combat_vs_random(
         random_idx = np.arange(1, env.num_envs, 2)
         wins = losses = draws = completed = 0
         next_mark = progress_every
+        behavior = BehaviorTracker(slots=policy_idx)
         max_iters = matches * 60 * 60 * 8
         it = 0
         while completed < matches and it < max_iters:
@@ -127,6 +182,7 @@ def eval_combat_vs_random(
             action = _predict(model, env, obs, deterministic)
             for j in random_idx:
                 action[j] = env.action_space.sample()
+            behavior.update(action)
             obs, reward, done, _ = env.step(action)
             for w in policy_idx:
                 if not done[w]:
@@ -146,6 +202,7 @@ def eval_combat_vs_random(
             "loss_rate": losses / total,
             "draw_rate": draws / total,
             "episodes": completed,
+            "behavior": behavior.summary(),
         }
     finally:
         env.close()

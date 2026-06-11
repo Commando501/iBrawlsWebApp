@@ -42,6 +42,7 @@ $$(".tab").forEach((t) => t.addEventListener("click", () => {
   $("#tab-" + t.dataset.tab).classList.add("active");
   if (t.dataset.tab === "runs") loadRuns();
   if (t.dataset.tab === "evaluate") { loadModels(); loadEvalHistory(); }
+  if (t.dataset.tab === "optimizer") loadOptimizer();
 }));
 
 // ================= CONFIG FORM =================
@@ -113,6 +114,7 @@ async function loadConfig() {
   const [schema, cfg] = await Promise.all([api.get("/api/schema"), api.get("/api/config")]);
   SCHEMA = schema;
   buildForm(schema, cfg.values || {});
+  buildSweepKnobs();  // the Optimizer's knob dropdown shares the schema
 }
 
 $("#btnSave").addEventListener("click", async () => {
@@ -251,6 +253,19 @@ const METRIC_INFO = {
     } },
   "time/fps": { title: "Speed (steps/sec)", goal: "As high as your cores allow",
     help: "Environment throughput. CPU-bound on the sim; raise num_workers / parallel_matches to lift it." },
+  "behavior/move_switch_rate": { title: "Twitchiness (move switches)", goal: "Human-like ≲ 0.3",
+    help: "How often the move direction flips between decisions during eval. Humans hold a heading; ≳0.5 looks robotic-jittery.",
+    advise: (v) => v > 0.5
+      ? { level: "warn", text: "Very twitchy movement. A higher run.decision_interval and lower late-run entropy smooth this out." }
+      : { level: "good", text: "Movement commitment looks human-plausible." } },
+  "behavior/idle_frac": { title: "Idle fraction", goal: "Low but nonzero",
+    help: "Fraction of eval decisions with no movement input. ~0 = relentless robot; high = passive." },
+  "behavior/attack_rate": { title: "Attack rate", goal: "Context-dependent",
+    help: "Fraction of eval decisions pressing an attack. 1.0 = button-mashing every decision (not human)." },
+  "behavior/jump_rate": { title: "Jump rate", goal: "Context-dependent",
+    help: "Fraction of eval decisions jumping. Constant bunny-hopping reads as robotic." },
+  "behavior/dash_rate": { title: "Dash rate", goal: "Context-dependent",
+    help: "Fraction of eval decisions dashing (cooldown-limited)." },
 };
 const METRIC_TITLES = Object.fromEntries(
   Object.entries(METRIC_INFO).map(([k, v]) => [k, v.title]));
@@ -286,6 +301,70 @@ function renderCharts(container, seriesByKey, opts = {}) {
   }
 }
 
+// ================= SHARED: apply a {field: value} patch to config.toml =================
+async function applyConfigPatch(patch, btn) {
+  // Merge onto the FULL current config (a partial POST would reset other fields to defaults).
+  const cur = (await api.get("/api/config")).values || {};
+  const res = await api.post("/api/config", { values: { ...cur, ...patch } });
+  if (btn) flash(btn, res.ok ? "Applied ✓" : (res.error || "Error"), res.ok);
+  if (res.ok) {
+    loadConfig();  // reflect the new values in the Train form
+    pollAdvisor(advisorLastDir || "", true);  // re-lint with the new config
+  }
+  return res.ok;
+}
+
+// ================= ADVISOR =================
+let advisorLastAt = 0;
+let advisorLastDir;
+
+async function pollAdvisor(dir, force = false) {
+  const now = Date.now();
+  if (!force && dir === advisorLastDir && now - advisorLastAt < 6000) return;
+  advisorLastAt = now; advisorLastDir = dir;
+  let out;
+  try { out = await api.get("/api/advice" + (dir ? "?dir=" + encodeURIComponent(dir) : "")); }
+  catch { return; }
+  renderAdvisor(out, dir);
+}
+
+function renderAdvisor(out, dir) {
+  const verdict = out.verdict || { level: "good", text: "" };
+  const vWrap = $("#advisorVerdict");
+  vWrap.innerHTML = "";
+  vWrap.append(el("span", { class: "adv-verdict " + verdict.level },
+    verdict.text + (dir ? `  ·  ${dir.replace("runs/", "")}` : "")));
+
+  const body = $("#advisorBody");
+  const findings = out.findings || [];
+  if (!findings.length) {
+    body.className = "advisor-body muted";
+    body.textContent = "Nothing to flag — settings look sound for this machine.";
+    return;
+  }
+  body.className = "advisor-body";
+  body.innerHTML = "";
+  const order = { bad: 0, warn: 1, info: 2, good: 3 };
+  findings.sort((a, b) => (order[a.level] ?? 9) - (order[b.level] ?? 9));
+  for (const f of findings) {
+    const card = el("div", { class: "adv-card " + f.level },
+      el("div", { class: "adv-title" }, f.title),
+      el("div", { class: "adv-detail" }, f.detail));
+    const fixes = f.fixes || {};
+    const keys = Object.keys(fixes);
+    if (keys.length) {
+      const row = el("div", { class: "adv-fixes" });
+      keys.forEach((k) => row.append(el("code", {}, `${k} → ${JSON.stringify(fixes[k])}`)));
+      row.append(el("button", {
+        class: "btn tiny primary",
+        onclick: (e) => applyConfigPatch(fixes, e.currentTarget),
+      }, "Apply"));
+      card.append(row);
+    }
+    body.append(card);
+  }
+}
+
 // ================= TRAIN POLLING =================
 let logCursor = 0;
 let trainTimer = null;
@@ -316,6 +395,9 @@ async function pollTrain() {
       if (atBottom) c.scrollTop = c.scrollHeight;
     }
   } catch {}
+
+  // advisor: diagnose the active/last run, or just lint the config when idle
+  pollAdvisor((status.meta && status.meta.logdir) || "");
 
   // metrics + fps/eta
   const logdir = status.meta && status.meta.logdir;
@@ -477,9 +559,14 @@ function histRow(r, best) {
   const when = r.ts ? new Date(r.ts * 1000).toLocaleString() : "—";
   const model = (r.model || "—").replace(/^runs\//, "").replace(/\/final_model\.zip$/, " / final").replace(/\.zip$/, "");
   const isBest = (r.win_rate || 0) === best && best > 0;
+  const b = r.behavior;
+  const bTip = b ? Object.entries(BEHAVIOR_INFO)
+    .filter(([k]) => b[k] != null)
+    .map(([k, info]) => `${info.label} ${Math.round(b[k] * 100)}%`).join(" · ") : "";
   return el("tr", { class: isBest ? "best-row" : "" },
     el("td", { class: "muted nowrap" }, when),
-    el("td", {}, model, isBest ? el("span", { class: "chip best" }, "★ best") : null),
+    el("td", { title: bTip ? "behavior: " + bTip : "" }, model,
+      isBest ? el("span", { class: "chip best" }, "★ best") : null),
     el("td", {}, r.mode || "—"),
     el("td", {}, r.mode === "combat" ? "random (1v1)" : (r.opponent || "—")),
     el("td", {}, fmtInt(r.matches)),
@@ -508,10 +595,34 @@ function renderEvalResult(r) {
   const summary = el("div", { class: "summary" },
     el("div", {}, el("span", { class: "big" }, Math.round(w) + "% wins"), " over " + fmtInt(r.episodes) + " matches"),
     el("div", { class: "muted" }, `win ${fmtNum(r.win_rate)} · draw ${fmtNum(r.draw_rate)} · loss ${fmtNum(r.loss_rate)}`
-      + (r.ep_return != null ? ` · avg return ${fmtNum(r.ep_return)}` : "")));
+      + (r.ep_return != null ? ` · avg return ${fmtNum(r.ep_return)}` : "")
+      + (r.decision_interval ? ` · decision interval ${r.decision_interval}` : "")));
   const reco = el("div", { id: "evalReco", class: "eval-reco" });
-  $("#evalResult").innerHTML = ""; $("#evalResult").append(bars, summary, reco);
+  $("#evalResult").innerHTML = ""; $("#evalResult").append(bars, summary);
+  const behavior = behaviorChips(r.behavior);
+  if (behavior) $("#evalResult").append(behavior);
+  $("#evalResult").append(reco);
   renderEvalAdvice(r);
+}
+
+// Human-likeness snapshot: how the policy *moves*, not just whether it wins.
+const BEHAVIOR_INFO = {
+  idle_frac: { label: "idle", help: "Fraction of decisions with no movement input. Humans idle a little; ~0 = relentless robot, high = passive." },
+  move_switch_rate: { label: "twitchiness", help: "How often the move direction changes between decisions. Humans hold a heading (≲0.3); ≳0.5 looks robotic-jittery." },
+  attack_rate: { label: "attacking", help: "Fraction of decisions pressing an attack." },
+  jump_rate: { label: "jumping", help: "Fraction of decisions jumping." },
+  dash_rate: { label: "dashing", help: "Fraction of decisions dashing." },
+};
+function behaviorChips(b) {
+  if (!b) return null;
+  const wrap = el("div", { class: "behavior-chips" },
+    el("span", { class: "muted bc-title" }, "behavior:"));
+  for (const [k, info] of Object.entries(BEHAVIOR_INFO)) {
+    if (b[k] == null) continue;
+    wrap.append(el("span", { class: "bchip", title: info.help },
+      info.label + " ", el("b", {}, Math.round(b[k] * 100) + "%")));
+  }
+  return wrap;
 }
 
 const round = (v, d = 3) => { const p = Math.pow(10, d); return Math.round(v * p) / p; };
@@ -689,6 +800,169 @@ async function applyEvalReco(btn) {
   const res = await api.post("/api/config", { values: merged });
   flash(btn, res.ok ? `Applied ${boxes.length} ✓` : (res.error || "Error"), res.ok);
   if (res.ok) loadConfig();  // reflect the new values in the Train form
+}
+
+// ================= OPTIMIZER =================
+let hwLoaded = false;
+let queueTimer = null;
+
+async function loadOptimizer() {
+  if (!hwLoaded) { hwLoaded = true; loadHardware(); }
+  buildSweepKnobs();
+  pollQueue();
+}
+
+async function loadHardware() {
+  let hw;
+  try { hw = await api.get("/api/hardware"); }
+  catch { $("#hwSpecs").textContent = "Hardware detection failed."; return; }
+  const specs = $("#hwSpecs");
+  specs.className = "hw-specs";
+  specs.innerHTML = "";
+  specs.append(
+    el("span", { class: "bchip" }, "CPU ", el("b", {}, hw.cpus + " threads")),
+    el("span", { class: "bchip" }, "RAM ", el("b", {}, hw.ram_gb != null ? hw.ram_gb + " GB" : "?")),
+    el("span", { class: "bchip" }, "GPU ", el("b", {}, hw.gpu_name
+      ? `${hw.gpu_name} (${hw.gpu_vram_gb} GB)` : "none detected")));
+
+  const rec = hw.recommended || {};
+  const rows = Object.entries(rec).map(([k, v]) =>
+    el("tr", {}, el("td", {}, el("code", {}, k)),
+      el("td", {}, el("code", {}, Array.isArray(v) ? summarizeList(v) : String(v)))));
+  const table = el("table", { class: "guide-table" },
+    el("thead", {}, el("tr", {}, el("th", {}, "Setting"), el("th", {}, "Recommended"))),
+    el("tbody", {}, ...rows));
+  const apply = el("button", {
+    class: "btn primary", style: "margin-top:10px",
+    onclick: (e) => applyConfigPatch(rec, e.currentTarget),
+  }, "Apply recommended to config");
+  const note = el("p", { class: "muted", style: "margin:8px 0 0" },
+    "Sized so the CPU-bound sim keeps the GPU fed: a worker per spare thread, ~3 worlds each, "
+    + "frame-skip 5 (human cadence), big clean rollout buffers. Your reward weights are untouched.");
+  $("#hwReco").innerHTML = "";
+  $("#hwReco").append(table, apply, note);
+}
+
+function summarizeList(v) {
+  // [2,2,2,...,4,4,8] -> "2×24, 4×12, 8×4" (readable world mixes)
+  const counts = {};
+  v.forEach((x) => { counts[x] = (counts[x] || 0) + 1; });
+  return Object.entries(counts).map(([k, n]) => `${k}×${n}`).join(", ") + `  (${v.length} worlds)`;
+}
+
+function buildSweepKnobs() {
+  const sel = $("#sweepKnob");
+  if (!SCHEMA || sel.options.length) return;
+  for (const section of SCHEMA.sections) {
+    const group = el("optgroup", { label: section.title });
+    for (const knob of section.knobs) {
+      if (knob.type !== "int" && knob.type !== "float") continue;
+      if (["total_steps", "save_every", "eval_every", "eval_episodes", "seed"].includes(knob.field)) continue;
+      group.append(el("option", { value: knob.field, "data-type": knob.type },
+        `${section.section}.${knob.key}`));
+    }
+    if (group.children.length) sel.append(group);
+  }
+  sel.addEventListener("change", sweepHint);
+  $("#sweepValues").addEventListener("input", sweepHint);
+}
+
+function parseSweepValues() {
+  return $("#sweepValues").value.split(",").map((s) => s.trim()).filter(Boolean)
+    .map(Number).filter((v) => Number.isFinite(v));
+}
+
+function sweepHint() {
+  const vals = parseSweepValues();
+  $("#sweepHint").textContent = vals.length
+    ? `${vals.length} probe run(s): ` + vals.map((v) => sweepDirName($("#sweepKnob").value, v)).join(", ")
+    : "";
+}
+
+function sweepDirName(field, v) {
+  const safe = String(v).replace(/\./g, "p").replace(/-/g, "m");
+  return `runs/sweep_${field}_${safe}`;
+}
+
+$("#btnSweepAdd").addEventListener("click", async (e) => {
+  const field = $("#sweepKnob").value;
+  const vals = parseSweepValues();
+  if (!field || !vals.length) { flash(e.currentTarget, "Pick knob + values", false); return; }
+  const probeSteps = Number($("#sweepSteps").value) || 2000000;
+  const base = collectValues();  // current Train-tab settings = the sweep baseline
+  const jobs = vals.map((v) => ({
+    name: `${field} = ${v}`,
+    values: { ...base, [field]: v, total_steps: probeSteps, logdir: sweepDirName(field, v) },
+  }));
+  const res = await api.post("/api/queue/add", { jobs });
+  flash(e.currentTarget, res.ok ? `Queued ${jobs.length} ✓` : (res.error || "Error"), res.ok);
+  pollQueue();
+});
+
+$("#btnQueueStart").addEventListener("click", async (e) => {
+  const res = await api.post("/api/queue/start", {});
+  flash(e.currentTarget, res.ok ? "Running ✓" : (res.error || "Error"), res.ok);
+  pollQueue(); pollTrain();
+});
+$("#btnQueuePause").addEventListener("click", async () => { await api.post("/api/queue/pause", {}); pollQueue(); });
+$("#btnQueueClear").addEventListener("click", async () => { await api.post("/api/queue/clear_finished", {}); pollQueue(); });
+
+async function pollQueue() {
+  let st;
+  try { st = await api.get("/api/queue"); } catch { return; }
+  renderQueue(st);
+  clearTimeout(queueTimer);
+  const visible = $("#tab-optimizer").classList.contains("active");
+  if (visible && (st.running || (st.jobs || []).some((j) => j.state === "running"))) {
+    queueTimer = setTimeout(pollQueue, 2500);
+  } else if (visible) {
+    queueTimer = setTimeout(pollQueue, 8000);
+  }
+}
+
+function renderQueue(st) {
+  const root = $("#queueList");
+  const jobs = st.jobs || [];
+  if (!jobs.length) { root.innerHTML = '<p class="muted">No jobs queued. Build a sweep above, or queue any config.</p>'; return; }
+
+  const doneJobs = jobs.filter((j) => j.state === "done" && j.summary);
+  const bestRew = Math.max(...doneJobs.map((j) => j.summary.ep_rew_mean ?? -Infinity));
+
+  const rows = jobs.map((j) => {
+    const s = j.summary || {};
+    const isBest = j.state === "done" && s.ep_rew_mean != null && s.ep_rew_mean === bestRew && doneJobs.length > 1;
+    const actions = el("td", { class: "nowrap" });
+    if (j.state === "done") {
+      actions.append(el("button", {
+        class: "btn tiny primary", title: "Make this job's settings the current config",
+        onclick: (e) => applyConfigPatch(j.values, e.currentTarget),
+      }, "Use config"));
+      actions.append(" ");
+    }
+    if (j.state !== "running") {
+      actions.append(el("button", {
+        class: "btn tiny ghost", title: "Remove from queue",
+        onclick: async () => { await api.post("/api/queue/remove", { id: j.id }); pollQueue(); },
+      }, "✕"));
+    }
+    return el("tr", { class: isBest ? "best-row" : "" },
+      el("td", {}, j.name, isBest ? el("span", { class: "chip best" }, "★ best") : null,
+        el("div", { class: "muted", style: "font-size:11px" }, j.logdir)),
+      el("td", {}, el("span", { class: "badge q-" + j.state }, j.state)),
+      el("td", {}, s.step != null ? fmtInt(s.step) : "—"),
+      el("td", {}, s.ep_rew_mean != null ? fmtNum(s.ep_rew_mean) : "—"),
+      el("td", {}, s.win_rate != null ? Math.round(s.win_rate * 100) + "%" : "—"),
+      el("td", {}, s.fps != null ? fmtInt(s.fps) : "—"),
+      actions);
+  });
+  const table = el("table", { class: "guide-table queue-table" },
+    el("thead", {}, el("tr", {},
+      el("th", {}, "Job"), el("th", {}, "State"), el("th", {}, "Steps"),
+      el("th", {}, "Reward"), el("th", {}, "Win rate"), el("th", {}, "FPS"), el("th", {}, ""))),
+    el("tbody", {}, ...rows));
+  root.innerHTML = "";
+  root.append(el("p", { class: "muted", style: "margin:0 0 8px" },
+    st.running ? "Queue is running — jobs advance automatically." : "Queue is paused."), table);
 }
 
 // ================= boot =================

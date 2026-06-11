@@ -20,13 +20,54 @@ interface BuildSkyAtmosphereOptions {
   visible: boolean;
 }
 
+export interface CloudLayerPlan {
+  layerIndex: number;
+  instanceCount: number;
+  height: number;
+  radius: number;
+  width: number;
+  heightScale: number;
+  opacity: number;
+  driftSpeed: number;
+}
+
 const SKY_RADIUS = 238;
+const MAX_CLOUD_LAYER_COUNT = 3;
+const MAX_CLOUD_INSTANCES_PER_LAYER = 18;
+const cloudTextureCache = new Map<string, THREE.CanvasTexture>();
+const cachedAtmosphereTextures = new WeakSet<THREE.Texture>();
+
+export function resolveCloudLayerPlan(clouds: number): CloudLayerPlan[] {
+  const value = Number.isFinite(clouds) ? Math.max(0, Math.min(100, Math.round(clouds))) : 0;
+  if (value <= 0) return [];
+
+  const density = value / 100;
+  const layerCount = value >= 68 ? 3 : value >= 26 ? 2 : 1;
+  const baseCount = Math.min(
+    MAX_CLOUD_INSTANCES_PER_LAYER,
+    Math.max(4, Math.floor(4 + value * 0.14))
+  );
+
+  return Array.from({ length: Math.min(MAX_CLOUD_LAYER_COUNT, layerCount) }, (_, layerIndex) => {
+    const layerFalloff = layerIndex === 0 ? 1 : layerIndex === 1 ? 0.78 : 0.58;
+    return {
+      layerIndex,
+      instanceCount: Math.max(3, Math.min(MAX_CLOUD_INSTANCES_PER_LAYER, Math.floor(baseCount * layerFalloff))),
+      height: 58 + layerIndex * 15,
+      radius: SKY_RADIUS * (0.42 + layerIndex * 0.08),
+      width: 34 + value * 0.46 + layerIndex * 10,
+      heightScale: 12 + value * 0.16 + layerIndex * 3,
+      opacity: Math.min(0.46, 0.14 + density * 0.32 - layerIndex * 0.045),
+      driftSpeed: 0.008 + density * 0.018 + layerIndex * 0.006,
+    };
+  });
+}
 
 const disposeMaterial = (material: THREE.Material | THREE.Material[]): void => {
   const materials = Array.isArray(material) ? material : [material];
   materials.forEach((mat) => {
     const maybeMap = (mat as THREE.MeshBasicMaterial).map;
-    if (maybeMap) maybeMap.dispose();
+    if (maybeMap && !cachedAtmosphereTextures.has(maybeMap)) maybeMap.dispose();
     mat.dispose();
   });
 };
@@ -176,18 +217,24 @@ const createSoftDiscTexture = (color: string, alpha = 1): THREE.CanvasTexture =>
   return texture;
 };
 
-const createCloudTexture = (id: SkyboxTextureId, opacity: number): THREE.CanvasTexture => {
+const createCloudDeckTexture = (id: SkyboxTextureId, layerIndex: number): THREE.CanvasTexture => {
+  const cacheKey = `${id}:${layerIndex}`;
+  const cached = cloudTextureCache.get(cacheKey);
+  if (cached) return cached;
+
   const canvas = document.createElement('canvas');
   canvas.width = 512;
   canvas.height = 256;
   const ctx = canvas.getContext('2d')!;
   const color = presetColor(id);
-  for (let i = 0; i < 26; i++) {
-    const x = (i * 97) % 512;
-    const y = 48 + ((i * 47) % 128);
-    const r = 34 + ((i * 19) % 56);
+  const alpha = 0.18 - layerIndex * 0.025;
+  for (let i = 0; i < 34; i++) {
+    const x = (i * 97 + layerIndex * 53) % 512;
+    const y = 42 + ((i * 47 + layerIndex * 29) % 138);
+    const r = 28 + ((i * 19 + layerIndex * 11) % 58);
     const grad = ctx.createRadialGradient(x, y, 3, x, y, r);
-    grad.addColorStop(0, `${color}${Math.round(opacity * 255).toString(16).padStart(2, '0')}`);
+    grad.addColorStop(0, `${color}${Math.round(alpha * 255).toString(16).padStart(2, '0')}`);
+    grad.addColorStop(0.56, `${color}${Math.round(alpha * 90).toString(16).padStart(2, '0')}`);
     grad.addColorStop(1, `${color}00`);
     ctx.fillStyle = grad;
     ctx.beginPath();
@@ -196,6 +243,8 @@ const createCloudTexture = (id: SkyboxTextureId, opacity: number): THREE.CanvasT
   }
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
+  cloudTextureCache.set(cacheKey, texture);
+  cachedAtmosphereTextures.add(texture);
   return texture;
 };
 
@@ -276,28 +325,45 @@ function addStarLayer(group: THREE.Group, id: SkyboxTextureId, settings: Require
 }
 
 function addCloudLayer(group: THREE.Group, id: SkyboxTextureId, settings: Required<CustomMapAtmosphereSettings>): void {
-  if (settings.clouds <= 0) return;
+  const cloudLayers = resolveCloudLayerPlan(settings.clouds);
+  if (cloudLayers.length === 0) return;
 
-  const count = Math.max(2, Math.round(settings.clouds / 14));
-  for (let i = 0; i < count; i++) {
-    const width = 34 + settings.clouds * 0.42 + (i % 3) * 8;
-    const height = width * 0.38;
+  const dummy = new THREE.Object3D();
+  for (const layer of cloudLayers) {
+    const geo = new THREE.PlaneGeometry(1, 1);
     const mat = new THREE.MeshBasicMaterial({
-      map: createCloudTexture(id, 0.08 + settings.clouds / 850),
+      map: createCloudDeckTexture(id, layer.layerIndex),
       transparent: true,
-      opacity: 0.22 + settings.clouds / 240,
+      opacity: layer.opacity,
       depthWrite: false,
       side: THREE.DoubleSide,
       blending: THREE.AdditiveBlending,
       fog: false,
     });
-    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(width, height), mat);
-    const angle = (i / count) * Math.PI * 2;
-    mesh.position.set(Math.cos(angle) * SKY_RADIUS * 0.48, 62 + (i % 4) * 10, Math.sin(angle) * SKY_RADIUS * 0.48);
-    mesh.lookAt(0, 12, 0);
-    mesh.name = `sky_atmosphere_cloud_${i}`;
-    mesh.userData.skyAtmosphereRole = 'cloud';
-    mesh.userData.drift = 0.12 + (i % 5) * 0.03;
+    const mesh = new THREE.InstancedMesh(geo, mat, layer.instanceCount);
+    mesh.instanceMatrix.setUsage(THREE.StaticDrawUsage);
+    mesh.frustumCulled = false;
+    mesh.name = `sky_atmosphere_cloud_layer_${layer.layerIndex}`;
+    mesh.userData.skyAtmosphereRole = 'cloud_layer';
+    mesh.userData.drift = layer.driftSpeed;
+
+    for (let i = 0; i < layer.instanceCount; i++) {
+      const angle = (i / layer.instanceCount) * Math.PI * 2 + layer.layerIndex * 0.41;
+      const radiusJitter = ((i * 37 + layer.layerIndex * 17) % 19) - 9;
+      const heightJitter = ((i * 23 + layer.layerIndex * 13) % 13) - 6;
+      const scaleJitter = 0.86 + ((i * 29 + layer.layerIndex * 7) % 24) / 100;
+      dummy.position.set(
+        Math.cos(angle) * (layer.radius + radiusJitter),
+        layer.height + heightJitter,
+        Math.sin(angle) * (layer.radius + radiusJitter)
+      );
+      dummy.lookAt(0, 12, 0);
+      dummy.rotateZ((((i * 31 + layer.layerIndex * 19) % 21) - 10) * 0.006);
+      dummy.scale.set(layer.width * scaleJitter, layer.heightScale * scaleJitter, 1);
+      dummy.updateMatrix();
+      mesh.setMatrixAt(i, dummy.matrix);
+    }
+    mesh.instanceMatrix.needsUpdate = true;
     group.add(mesh);
   }
 }
@@ -432,7 +498,9 @@ const weatherFallSpeed = (id: SkyboxTextureId, value: number, index: number): nu
 };
 
 function updateAtmosphereMesh(mesh: THREE.Mesh, role: string, dt: number, elapsed: number, motionScale: number): void {
-  if (role === 'cloud') {
+  if (role === 'cloud_layer') {
+    mesh.rotation.y += dt * mesh.userData.drift * motionScale;
+  } else if (role === 'cloud') {
     mesh.rotation.z += dt * mesh.userData.drift * 0.05 * motionScale;
   } else if (role === 'energy') {
     mesh.rotation.z += dt * mesh.userData.drift * motionScale;

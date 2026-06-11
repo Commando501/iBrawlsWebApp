@@ -49,6 +49,13 @@ export interface AnimationEditorExportInput {
   rig?: AnimationEditorRigExport;
 }
 
+export interface SetKeyframePoseInput {
+  currentFrame: number;
+  capturedPose: WeaponPose;
+  draftFrame: number | null;
+  draftPose: WeaponPose | null;
+}
+
 const TAU = Math.PI * 2;
 
 export const clampFrameIndex = (frame: number, frameCount: number): number => {
@@ -185,6 +192,54 @@ export const generatePoseFrames = (
       source: keyframeIndexes.has(frame) ? 'keyframe' : 'generated',
     };
   });
+};
+
+export const mergeLinkedArmKeyframesPreservingPositions = (
+  linkedKeyframes: AnimationKeyframe[],
+  existingKeyframes: AnimationKeyframe[] | undefined,
+  existingFrames: GeneratedAnimationFrame[] | undefined,
+  frameCount: number
+): AnimationKeyframe[] => {
+  const existingPositionsByFrame = new Map(
+    normalizeKeyframes(existingKeyframes ?? [], frameCount).map((keyframe) => [
+      keyframe.frame,
+      keyframe.pose.position,
+    ])
+  );
+  const generatedPositionsByFrame = new Map(
+    (existingFrames ?? []).map((frame) => [
+      clampFrameIndex(frame.frame, frameCount),
+      frame.pose.position,
+    ])
+  );
+
+  return normalizeKeyframes(linkedKeyframes, frameCount).map((keyframe) => {
+    const preservedPosition =
+      existingPositionsByFrame.get(keyframe.frame) ??
+      generatedPositionsByFrame.get(keyframe.frame) ??
+      keyframe.pose.position;
+
+    return {
+      ...keyframe,
+      pose: {
+        position: [preservedPosition[0], preservedPosition[1], preservedPosition[2]],
+        rotation: [keyframe.pose.rotation[0], keyframe.pose.rotation[1], keyframe.pose.rotation[2]],
+      },
+    };
+  });
+};
+
+export const resolveSetKeyframePose = ({
+  currentFrame,
+  capturedPose,
+  draftFrame,
+  draftPose,
+}: SetKeyframePoseInput): WeaponPose => {
+  if (draftFrame === currentFrame && draftPose) {
+    return clonePose(draftPose);
+  }
+
+  return clonePose(capturedPose);
 };
 
 export const poseToCode = (pose: WeaponPose, precision = 4): string => {

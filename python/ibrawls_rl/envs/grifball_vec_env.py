@@ -112,6 +112,7 @@ class GrifballVecEnv(VecEnv):
         combat_randomize_layout: bool = True,
         randomize: dict | None = None,
         num_workers: int = 1,
+        decision_interval: int = 1,
         node_cmd: Sequence[str] | None = None,
     ) -> None:
         self.mode = mode
@@ -134,6 +135,8 @@ class GrifballVecEnv(VecEnv):
                 cfg["maxTicks"] = max_ticks
             if randomize and randomize.get("enabled"):
                 cfg["randomize"] = randomize
+            if decision_interval and int(decision_interval) > 1:
+                cfg["decisionInterval"] = int(decision_interval)
             return cfg
 
         self.views: list[_WorkerView] = []

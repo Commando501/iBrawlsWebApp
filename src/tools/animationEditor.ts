@@ -35,7 +35,9 @@ import {
   clampFrameIndex,
   clonePose,
   generatePoseFrames,
+  mergeLinkedArmKeyframesPreservingPositions,
   normalizeKeyframes,
+  resolveSetKeyframePose,
   roundPose,
   type AnimationInterpolationMode,
   type AnimationEditorRigTrack,
@@ -678,7 +680,12 @@ function seedLinkedThirdPersonArmTracksV1(weaponKeyframes: AnimationKeyframe[]):
     if (armKeyframes[boneName].length === 0) return;
     const target: SelectedRigTarget = { kind: 'bone', name: boneName, view: 'thirdPerson' };
     const key = targetKey(target);
-    nextKeyframes[key] = normalizeKeyframes(armKeyframes[boneName], state.frameCount);
+    nextKeyframes[key] = mergeLinkedArmKeyframesPreservingPositions(
+      armKeyframes[boneName],
+      state.boneKeyframes[key],
+      state.boneGeneratedFrames[key],
+      state.frameCount
+    );
     nextGenerated[key] = generatePoseFrames(nextKeyframes[key], state.frameCount, state.interpolation);
   });
 
@@ -741,7 +748,12 @@ function seedLinkedThirdPersonArmTracksV2(weaponKeyframes: AnimationKeyframe[]):
   v2BonesToSeed.forEach((boneName) => {
     const target: SelectedRigTarget = { kind: 'bone', name: boneName, view: 'thirdPerson' };
     const key = targetKey(target);
-    nextKeyframes[key] = normalizeKeyframes(boneKeyframesMap[boneName], state.frameCount);
+    nextKeyframes[key] = mergeLinkedArmKeyframesPreservingPositions(
+      boneKeyframesMap[boneName],
+      state.boneKeyframes[key],
+      state.boneGeneratedFrames[key],
+      state.frameCount
+    );
     nextGenerated[key] = generatePoseFrames(nextKeyframes[key], state.frameCount, state.interpolation);
   });
 
@@ -1972,7 +1984,15 @@ interpolationSelect.addEventListener('change', () => {
 seedButton.addEventListener('click', seedThreeFrames);
 generateButton.addEventListener('click', () => regenerateSelectedFrames());
 setKeyframeButton.addEventListener('click', () => {
-  setKeyframe(state.currentFrame, captureSelectedPose());
+  setKeyframe(
+    state.currentFrame,
+    resolveSetKeyframePose({
+      currentFrame: state.currentFrame,
+      capturedPose: captureSelectedPose(),
+      draftFrame,
+      draftPose,
+    })
+  );
 });
 
 lockSocketButton.addEventListener('click', () => {
