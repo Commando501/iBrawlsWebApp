@@ -16,3 +16,14 @@ test('save codec round-trips exported data', () => {
   assert.equal(decoded.adminSettings.swordLungeVfx, 'current');
   assert.ok(decoded.uiLayouts?.desktop.some(item => item.id === 'medalPopup'));
 });
+
+test('save codec preserves the selected visual model policy', () => {
+  const settings = {
+    ...createDefaultAdminSettings('Sptn-4321', 120),
+    visualModelPolicy: 'v2' as const,
+  };
+  const data = buildSaveData(settings, 'Sptn-4321', getDefaultUiLayouts(), DEFAULT_KEYBINDINGS);
+  const decoded = decryptSaveCode(encryptSaveData(data));
+
+  assert.equal(decoded.adminSettings.visualModelPolicy, 'v2');
+});

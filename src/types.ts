@@ -4,6 +4,7 @@
  */
 
 import type * as THREE from 'three';
+import type { VisualModelPolicy } from './model/modelSystem';
 
 export interface UniversalSettings {
   maxHP: number;        // Health (whole number adjustment, e.g. 1 to 10)
@@ -52,6 +53,7 @@ export interface UniversalSettings {
   nameVisibilityOpacity?: number;         // Opacity of the floating name
   nameVisibilityFontSize?: number;        // Font size of the floating name
   playerName?: string;                    // Persistent customized player name / handle
+  visualModelPolicy?: VisualModelPolicy;  // Match-wide visual model set for offline sandbox/tournament previews.
   aiDifficulty?: 'easy' | 'normal' | 'hard' | 'nightmare' | 'custom' | string;
   aiReactionLatency?: number;             // Reaction latency in seconds (0.0 to 1.5)
   aiAnticipationFactor?: number;          // How aggressively it predicts player action (0.0 to 1.0)
