@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { createDefaultArenaFloorTextureCanvases } from '../grifball/defaultArenaFloorTexture';
 import type { CustomMapData, CustomMapObject, ReplayFile } from '../../types';
-import { resolveTopDownMapBounds, type TopDownMapBounds } from './topDownMapModel';
+import { resolveTopDownMapBounds, resolveTopDownPreviewScale, type TopDownMapBounds } from './topDownMapModel';
 
 interface TopDownMapPreviewProps {
   selectedMap: string;
@@ -165,10 +165,13 @@ function drawMap(canvas: HTMLCanvasElement, props: TopDownMapPreviewProps): void
 
   const bounds = resolveTopDownMapBounds(props);
   const padding = 18;
-  const scale = Math.min(
-    (width - padding * 2) / Math.max(1, bounds.halfX * 2),
-    (height - padding * 2) / Math.max(1, bounds.halfZ * 2)
-  );
+  const scale = resolveTopDownPreviewScale({
+    width,
+    height,
+    padding,
+    halfX: bounds.halfX,
+    halfZ: bounds.halfZ,
+  });
   const project: Projector = (x, z) => ({
     x: width / 2 + x * scale,
     y: height / 2 + z * scale,

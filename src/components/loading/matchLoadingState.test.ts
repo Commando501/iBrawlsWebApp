@@ -7,7 +7,7 @@ import {
   upsertLoadingSlot,
   upsertLoadingStatus,
 } from './matchLoadingState';
-import { resolveTopDownMapBounds } from './topDownMapModel';
+import { resolveTopDownMapBounds, resolveTopDownPreviewScale } from './topDownMapModel';
 
 test('clampLoadingProgress keeps progress inside percentage bounds', () => {
   assert.equal(clampLoadingProgress(-12), 0);
@@ -80,4 +80,17 @@ test('top-down bounds resolve default and custom maps', () => {
   assert.equal(custom.shape, 'rectangular');
   assert.equal(custom.halfX, 24);
   assert.equal(custom.halfZ, 12);
+});
+
+test('top-down preview scale stays positive when resize reports a tiny canvas', () => {
+  const bounds = resolveTopDownMapBounds({ selectedMap: 'hangar' });
+  const scale = resolveTopDownPreviewScale({
+    width: 1,
+    height: 1,
+    padding: 18,
+    halfX: bounds.halfX,
+    halfZ: bounds.halfZ,
+  });
+
+  assert.equal(scale > 0, true);
 });

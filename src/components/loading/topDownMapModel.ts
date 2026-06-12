@@ -13,6 +13,27 @@ export interface TopDownMapBounds {
 
 const DEFAULT_ARENA_RADIUS = 20;
 
+export function resolveTopDownPreviewScale({
+  width,
+  height,
+  padding,
+  halfX,
+  halfZ,
+}: {
+  width: number;
+  height: number;
+  padding: number;
+  halfX: number;
+  halfZ: number;
+}): number {
+  const drawableWidth = Math.max(1, width - padding * 2);
+  const drawableHeight = Math.max(1, height - padding * 2);
+  return Math.min(
+    drawableWidth / Math.max(1, halfX * 2),
+    drawableHeight / Math.max(1, halfZ * 2)
+  );
+}
+
 export function resolveTopDownCustomMap({
   selectedMap,
   customMap,

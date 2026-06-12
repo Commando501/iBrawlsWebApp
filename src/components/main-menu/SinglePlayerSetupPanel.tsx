@@ -116,6 +116,10 @@ export function SinglePlayerSetupPanel({
           {/* Left Column: Sandbox Setup */}
           <div className="flex flex-col h-full min-h-0 justify-between bg-black/20 p-5 rounded-2xl border border-white/5 shadow-md">
             <SandboxSetupPanel
+              visualModelPolicy={normalizeVisualModelPolicy(adminSettings.visualModelPolicy)}
+              onVisualModelPolicyChange={(visualModelPolicy) => {
+                setAdminSettings((prev) => ({ ...prev, visualModelPolicy }));
+              }}
               onOpenBotSetup={onOpenBotSetup}
             />
           </div>
