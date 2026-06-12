@@ -73,6 +73,12 @@ test('MultiplayerSetupPanel defaults new hosted lobbies to recommended V3', () =
   assert.match(html, /Version 3 Advanced \(Recommended\)/);
 });
 
+test('MultiplayerSetupPanel stacks model policy buttons on mobile widths', () => {
+  const html = renderToStaticMarkup(<MultiplayerSetupPanel {...baseProps()} />);
+
+  assert.match(html, /grid grid-cols-1 gap-1\.5 sm:grid-cols-3/);
+});
+
 test('MultiplayerSetupPanel staging summary shows the lobby model policy', () => {
   const html = renderToStaticMarkup(
     <MultiplayerSetupPanel
