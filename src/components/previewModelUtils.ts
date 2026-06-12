@@ -1,7 +1,11 @@
 import * as THREE from 'three';
 import type { CharacterLoadout } from './VoxelModels';
+import { V3_CHARACTER_SLOT_IDS, type V3CharacterSlotId } from './v3/v3ModelTypes';
 
-const CUSTOM_ARMOR_SIGNATURE_SLOTS = ['helmet', 'torso', 'arm', 'leg'] as const;
+type CustomArmorSignatureSlot = 'helmet' | 'torso' | 'arm' | 'leg' | V3CharacterSlotId;
+
+const V2_CUSTOM_ARMOR_SIGNATURE_SLOTS: CustomArmorSignatureSlot[] = ['helmet', 'torso', 'arm', 'leg'];
+const V3_CUSTOM_ARMOR_SIGNATURE_SLOTS: CustomArmorSignatureSlot[] = [...V3_CHARACTER_SLOT_IDS];
 
 function hashString(value: string): string {
   let hash = 5381;
@@ -18,12 +22,16 @@ function getPaintJobSignature(loadout?: CharacterLoadout): string {
 
 export function getPreviewLoadoutSignature(loadout?: CharacterLoadout): string {
   if (!loadout) return 'default';
-  const customArmorSignature = CUSTOM_ARMOR_SIGNATURE_SLOTS
+  const customArmorSlots = loadout.modelSystem === 'v3'
+    ? V3_CUSTOM_ARMOR_SIGNATURE_SLOTS
+    : V2_CUSTOM_ARMOR_SIGNATURE_SLOTS;
+  const customArmorSignature = customArmorSlots
     .map((slot) => {
       const piece = loadout.customArmor?.[slot];
       if (!piece) return `${slot}:builtin`;
       return [
         slot,
+        piece.modelSystem ?? 'v2',
         piece.id,
         piece.slot,
         piece.modelType ?? 'medium',

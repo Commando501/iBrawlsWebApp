@@ -245,9 +245,11 @@ Phase 5 adds a V3-only layered procedural animation runtime. V3 combatants now c
 
 ## Standalone Armor Model Editor
 
-`armor-model-editor.html` is a full-screen V2 armor model editor served by the Vite/Node dev server. Open it from the main menu via **Armor Editor**, from the Armor tab via **Create / Edit V2 Armor Model**, or visit `http://localhost:3000/armor-model-editor.html` while `npm run dev` is running.
+`armor-model-editor.html` is a full-screen V2/V3 armor model editor served by the Vite/Node dev server. Open it from the main menu via **Armor Editor**, from the Armor tab via **Create / Edit V2 Armor Model** or **Create / Edit V3 Armor Model**, or visit `http://localhost:3000/armor-model-editor.html` while `npm run dev` is running.
 
 The page reuses `src/components/main-menu/ArmorModelEditor.tsx` in standalone layout mode so the voxel canvas, validation panel, material tools, catalog, and import/export controls get the full browser workspace instead of the narrow customization rail. Its viewport supports direct mouse inspection with drag-to-orbit, modified/right/middle drag panning, and wheel zooming while keeping voxel edits reserved for intentional clicks. It reads and writes the same `grifball_player_loadout`, `grifball_player_hue`, and `grifball_custom_armor_catalog` localStorage keys as the main app. When an armor piece is saved in the standalone editor, the main menu refreshes its custom armor catalog on storage/focus events and the saved piece appears as a purple player-made armor tile in the regular Armor Loadout.
+
+Phase 6 adds V3 modular armor customization and a V3-aware local armor editor. V3 custom armor pieces are local voxel payloads keyed to V3 fit-bound slots and paint roles, saved in the existing custom armor catalog, and consumed only by the V3 visual builder. V1/V2 remain selectable, V2 medium/large editor behavior is preserved, and no mesh/OBJ/FBX upload path is exposed to end users.
 
 ### V3 Offline Asset Tooling
 
@@ -255,7 +257,7 @@ V3 reference mesh tooling is developer-only and local. Use `node --import tsx sc
 
 Phase 3 canonical V3 asset contracts live in `src/components/v3/`. `v3ModelTypes.ts`, `v3PartBounds.ts`, `v3AssetManifest.ts`, and `v3Lod.ts` define original iBrawls modular armor slots, hammer/sword/pistol weapon manifests, paint roles, visual fit bounds, socket metadata, budget estimates, and desktop/mobile LOD selection. These files are manifest contracts only: they do not include private reference meshes, textures, generated conversions, voxel payload arrays, or any runtime upload path.
 
-Phase 4 adds original runtime V3 blockout builders for the default modular character and V3 hammer/sword/pistol weapons. These builders route `modelSystem: 'v3'` through the live model factory and expose broad rig-compatible segments plus V3 socket metadata. Phase 5 layers V3 procedural locomotion/action animation and V3 editor targets on top of those builders, while V3 custom armor editing, replay policy rollout, and V3-by-default matchmaking remain later phases.
+Phase 4 adds original runtime V3 blockout builders for the default modular character and V3 hammer/sword/pistol weapons. These builders route `modelSystem: 'v3'` through the live model factory and expose broad rig-compatible segments plus V3 socket metadata. Phase 5 layers V3 procedural locomotion/action animation and V3 editor targets on top of those builders. Phase 6 adds local V3 modular custom armor editing; replay policy rollout and V3-by-default matchmaking remain later phases.
 
 ## Standalone 3D Map Maker
 
@@ -327,7 +329,7 @@ iBrawls features a beautiful and comprehensive character customization suite, av
       * `leg_lower`: Max `6 x 9 x 14`
       * `foot`: Max `6 x 8 x 5`
       * `toes`: Max `6 x 5 x 4`
-  - **Version 3 (Advanced, in progress)**: A parallel voxel model system for modular armor, V3 weapons, first-person parity, and layered procedural animation. Matches resolve visible combatants through a visual model policy (`v1`, `v2`, or `v3`) while combat ranges, collision, hitboxes, and AI decisions remain normalized. V3 is the target advanced system, and V1/V2 remain selectable sandbox options for offline and hosted play. The current V3 runtime phase includes original blockout builders for the default V3 Spartan plus V3 hammer, sword, and pistol visuals; full layered V3 animation, V3 custom armor editing, replay policy rollout, and V3-by-default matchmaking remain later phases.
+  - **Version 3 (Advanced, in progress)**: A parallel voxel model system for modular armor, V3 weapons, first-person parity, layered procedural animation, and local V3 custom armor editing. Matches resolve visible combatants through a visual model policy (`v1`, `v2`, or `v3`) while combat ranges, collision, hitboxes, and AI decisions remain normalized. V3 is the target advanced system, and V1/V2 remain selectable sandbox options for offline and hosted play. The current V3 runtime phase includes original blockout builders for the default V3 Spartan, V3 hammer/sword/pistol visuals, layered V3 animation, and V3 fit-bound modular armor customization; replay policy rollout and V3-by-default matchmaking remain later phases.
 - **Premium Hammer Model Swapping**: Swap between 9 distinct premium hammer variants shown in the game customizer, fully rendered in high-fidelity voxels:
   - **Akelas**: Sleek, aerodynamic dark carbon-like head with a thin, glowing red stripe along its edge.
   - **Akelus**: Sleek, white high-tech plating with pulsing neon blue energy channels on the back of the head.
@@ -366,14 +368,14 @@ iBrawls features a beautiful and comprehensive character customization suite, av
 - **Context-Aware Reset**: Reverts your changes in a smart, context-aware manner: resets just the currently focused armor piece if focused, or wipes the entire character back to defaults if viewing the whole model.
 - **In-Game Persistence**: Saving compiles your custom voxel paint maps directly into `localStorage` under `grifball_player_loadout`. These custom paint patterns are fully synced and rendered at run-time in singleplayer sandbox matches, bot battles, and theater replays!
 
-- **V2 Custom Armor Model Editor**: The Armor panel links to the standalone V2-only model editor for player-made Helmet, Chest, Arms, and Legs pieces:
-  - **Creation Sources**: Start from a blank piece, clone any built-in V2 preset, clone the equipped custom piece, import JSON, or remix saved catalog entries.
+- **V2/V3 Custom Armor Model Editor**: The Armor panel links to the standalone local model editor for player-made V2 Helmet, Chest, Arms, and Legs pieces or V3 modular armor slots:
+  - **Creation Sources**: Start from a blank piece, clone any built-in V2 preset or default V3 modular part, clone the equipped custom piece, import JSON, or remix saved catalog entries.
   - **Voxel Modeling Tools**: Place single voxels, erase, box-fill, draw lines and planes, extrude, move or duplicate selections, flood-fill a slot, and apply role-based materials (`primary`, `secondary`, `accent`, `visor`, `dark`, `highlight`, or fixed colors via picker or exact hex input) with optional emissive glow.
   - **Native Viewport Controls**: Drag the editor frame to orbit, use modified/right/middle drag to pan, and scroll to zoom without accidentally placing or deleting voxels during camera movement.
-  - **Live V2 Preview**: Toggle between an edit view and a rigged Spartan preview with idle, walk, sprint, crouch, hammer-swing, and sword-lunge poses to catch clipping and readability issues before saving.
-  - **Editor Overlays**: Toggle V2 hitbox bounds, original preset silhouette, player collision cylinder, density heatmap, clipping guidance, and payload/performance budget readouts.
-  - **Validation & Auto-Repair**: The editor explains invalid saves with exact causes such as too few voxels, missing subpart volume, oversized V2 subparts, sparse ghost-like shapes, missing far-corner anchor clusters, disconnected islands, or oversized payloads. Repair actions can center a piece, fit it back inside bounds, remove floating voxels, or seed a corner anchor.
-  - **Catalog & Loadout Integration**: Saved custom armor lives in `grifball_custom_armor_catalog`, appears as purple player-made tiles in Armor Loadout, can be renamed/duplicated/deleted through the editor, and is equipped as a selected custom snapshot on the V2 loadout.
+  - **Live Preview**: Toggle between an edit view and a rigged Spartan preview with idle, walk, sprint, crouch, hammer-swing, and sword-lunge poses to catch clipping and readability issues before saving.
+  - **Editor Overlays**: Toggle V2/V3 fit bounds, original preset/default part silhouette, player collision cylinder, density heatmap, clipping guidance, and payload/performance budget readouts.
+  - **Validation & Auto-Repair**: The editor explains invalid saves with exact causes such as too few voxels, missing subpart volume, oversized V2 subparts, V3 fit-bound or voxel-budget violations, sparse ghost-like shapes, missing far-corner anchor clusters, disconnected islands, or oversized payloads. Repair actions can center a piece, fit it back inside bounds, remove floating voxels, or seed a corner anchor.
+  - **Catalog & Loadout Integration**: Saved custom armor lives in `grifball_custom_armor_catalog`, appears as purple player-made tiles in Armor Loadout, can be renamed/duplicated/deleted through the editor, and is equipped as a selected custom snapshot on the matching V2 or V3 visual loadout.
   - **Sync & Multiplayer Safety**: Save codes/cloud saves use `SaveData` v3 to include the current loadout and full custom armor catalog while accepting older v2 saves. Multiplayer sends only the selected custom piece snapshots, and both the local server and Cloudflare Worker sanitize custom loadout payloads before relaying them.
 
 ## Secrets & Easter Eggs

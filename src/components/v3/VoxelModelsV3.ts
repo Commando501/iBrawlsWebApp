@@ -1,9 +1,17 @@
 import * as THREE from 'three';
 import {
   createVoxelGroup,
+  type CharacterLoadout,
   type SpartanColors,
   type VoxelData,
 } from '../VoxelModels';
+import {
+  customArmorPieceToVoxels,
+  getCustomArmorPieceModelSystem,
+  validateCustomArmorPiece,
+  type CustomArmorColors,
+  type CustomArmorPieceSnapshot,
+} from '../customArmor';
 import {
   BUILT_IN_V3_CHARACTER_PARTS,
   getDefaultV3CharacterLoadout,
@@ -16,6 +24,7 @@ import type { V3CharacterSlotId, V3WeaponId } from './v3ModelTypes';
 export interface V3SpartanBuildOptions {
   isEnemy?: boolean;
   customHue?: number;
+  loadout?: CharacterLoadout;
 }
 
 export interface V3WeaponBuildOptions {
@@ -71,6 +80,15 @@ const roleColor = (role: string, colors: SpartanColors): string => {
   if (role === 'fixed') return '#27272a';
   return colors.primary;
 };
+
+const createCustomArmorColors = (colors: SpartanColors): CustomArmorColors => ({
+  primary: colors.primary,
+  secondary: colors.secondary,
+  accent: colors.accent,
+  visor: colors.visor,
+  dark: colors.dark,
+  highlight: colors.highlight,
+});
 
 const addBox = (
   voxels: VoxelData[],
@@ -148,6 +166,24 @@ const createPartVoxels = (
   return voxels;
 };
 
+export function getV3BuiltinPartVoxels(slot: V3CharacterSlotId, customHue?: number): VoxelData[] {
+  const part = BUILT_IN_V3_CHARACTER_PARTS.find((candidate) => candidate.slot === slot);
+  if (!part) {
+    throw new Error(`Missing built-in V3 part for ${slot}`);
+  }
+  return createPartVoxels(part, V3_PART_SPECS[slot].dimensions, createColors(false, customHue));
+}
+
+function getValidV3CustomPiece(
+  loadout: CharacterLoadout | undefined,
+  slot: V3CharacterSlotId
+): CustomArmorPieceSnapshot | undefined {
+  const piece = loadout?.customArmor?.[slot];
+  if (!piece || piece.slot !== slot || getCustomArmorPieceModelSystem(piece) !== 'v3') return undefined;
+  const validation = validateCustomArmorPiece(piece);
+  return validation.valid ? piece : undefined;
+}
+
 const createSegmentGroups = (): Record<V3PartSpec['segment'], THREE.Group> => ({
   lowerTorso: new THREE.Group(),
   upperTorso: new THREE.Group(),
@@ -165,6 +201,7 @@ export function buildV3SpartanModel(options: V3SpartanBuildOptions = {}): THREE.
 
   const loadout = getDefaultV3CharacterLoadout();
   const colors = createColors(options.isEnemy, options.customHue);
+  const customArmorColors = createCustomArmorColors(colors);
   const segmentGroups = createSegmentGroups();
   const partGroups: Partial<Record<V3CharacterSlotId, THREE.Group>> = {};
 
@@ -175,12 +212,20 @@ export function buildV3SpartanModel(options: V3SpartanBuildOptions = {}): THREE.
 
   for (const part of BUILT_IN_V3_CHARACTER_PARTS) {
     const spec = V3_PART_SPECS[part.slot];
-    const group = createVoxelGroup(createPartVoxels(part, spec.dimensions, colors), V3_VOXEL_SCALE);
+    const customPiece = getValidV3CustomPiece(options.loadout, part.slot);
+    const voxels = customPiece
+      ? customArmorPieceToVoxels(customPiece, customArmorColors)
+      : createPartVoxels(part, spec.dimensions, colors);
+    const group = createVoxelGroup(voxels, V3_VOXEL_SCALE);
     group.name = `v3:${part.slot}`;
     group.position.set(...spec.position);
     group.userData.v3PartId = part.id;
     group.userData.v3Slot = part.slot;
     group.userData.v3BoundsId = part.boundsId;
+    if (customPiece) {
+      group.userData.customArmorId = customPiece.id;
+      group.userData.customArmorName = customPiece.name;
+    }
     segmentGroups[spec.segment].add(group);
     partGroups[part.slot] = group;
   }

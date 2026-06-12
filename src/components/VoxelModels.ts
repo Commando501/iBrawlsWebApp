@@ -1753,7 +1753,7 @@ export function buildVoxelSpartanModel(
   loadout: CharacterLoadout = DEFAULT_LOADOUT
 ): THREE.Group {
   if (loadout.modelSystem === 'v3') {
-    return buildV3SpartanModel({ isEnemy, customHue });
+    return buildV3SpartanModel({ isEnemy, customHue, loadout });
   }
 
   if (loadout.modelSystem === 'v2') {
