@@ -39,7 +39,10 @@ export function updateReplayCombatantVisualsForFrame({
     weaponTimer: number,
     dt: number,
     isSliding?: boolean,
-    isSprinting?: boolean
+    isSprinting?: boolean,
+    activeWeapon?: string,
+    isLunging?: boolean,
+    lookPitch?: number
   ) => void;
   renderSwordLungeTrailVfx: (
     pos: THREE.Vector3,
@@ -83,7 +86,10 @@ export function updateReplayCombatantVisualsForFrame({
       player.weaponTimer || 0,
       dt,
       player.isSliding || false,
-      player.isSprinting || false
+      player.isSprinting || false,
+      player.activeWeapon,
+      Boolean(player.isLunging),
+      player.pitch
     );
 
     const alive = player.hp > 0 && player.respawnTimer <= 0;

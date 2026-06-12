@@ -377,3 +377,70 @@ test('replay V3 visuals tag render quality without changing loadout identity', (
     modelSystem: 'v3',
   });
 });
+
+test('replay V3 body animation receives active weapon, lunge state, and pitch', () => {
+  const scene = new THREE.Scene();
+  const refs = {
+    scene,
+    otherPlayerMeshes: new Map(),
+    damageExplosionParticles: [],
+    enemyGroup: null,
+    hostGroup: null,
+  } as any;
+  const calls: any[] = [];
+
+  updateReplayCombatantVisualsForFrame({
+    refs,
+    replayData: {
+      id: 'v3-replay-body',
+      name: 'V3 Replay Body',
+      description: '',
+      date: new Date(0).toISOString(),
+      duration: 1,
+      playerHue: 200,
+      playerName: 'Player',
+      opponentName: 'Bot',
+      mapType: 'hangar' as ReplayFile['mapType'],
+      mode: 'sandbox',
+      maxScore: 25,
+      visualModelPolicy: 'v3',
+      frames: [],
+    },
+    updatedPlayers: new Map([['player', {
+      pos: new THREE.Vector3(),
+      vel: new THREE.Vector3(2, 0, 0),
+      yaw: 0,
+      pitch: -0.15,
+      crouchScaleY: 1,
+      hp: 5,
+      activeWeapon: 'sword',
+      weaponState: 'ready',
+      isCrouching: false,
+      isLunging: true,
+      isDashing: false,
+      isSprinting: true,
+      isSliding: false,
+      weaponTimer: 0.08,
+      score: 0,
+      kills: 0,
+      deaths: 0,
+      respawnTimer: 0,
+      invulnerabilityTimer: 0,
+      name: 'Player',
+      hue: 200,
+    }]]),
+    targetId: 'free',
+    observerCamMode: 'third',
+    replayPlayerName: 'Player',
+    dt: 0.016,
+    animateSpartanModel: (...args: any[]) => { calls.push(args); },
+    renderSwordLungeTrailVfx: () => {},
+    updateBlinking: () => {},
+    settings: {},
+  });
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0][9], 'sword');
+  assert.equal(calls[0][10], true);
+  assert.equal(calls[0][11], -0.15);
+});

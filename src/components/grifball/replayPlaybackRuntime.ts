@@ -34,7 +34,10 @@ type AnimateSpartanModel = (
   weaponTimer: number,
   dt: number,
   isSliding?: boolean,
-  isSprinting?: boolean
+  isSprinting?: boolean,
+  activeWeapon?: string,
+  isLunging?: boolean,
+  lookPitch?: number
 ) => void;
 
 type RenderSwordLungeTrailVfx = (
