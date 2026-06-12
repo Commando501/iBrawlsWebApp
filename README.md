@@ -272,6 +272,8 @@ Phase 12 hardens the developer-only offline V3 asset pipeline. Local OBJ/MTL ins
 
 Phase 12B expands V3 creator depth. V3 armor and V3 weapon visuals can share per-role paint overrides, the armory exposes V3 material-role controls, and the armor editor surfaces role coverage, budget comparison, built-in deltas, save-copy, and history restore workflows. These tools stay local and visual-only: V1/V2 customization remains available, gameplay simulation is unchanged, and mesh upload/import remains excluded from player-facing UI.
 
+Phase 13 finishes the production QA, optimization, and parity pass for the current V3 roadmap. The V3 performance smoke scene now gates eight V3 combatants across mobile-low, mobile, desktop, and ultra tiers, browser smoke metadata covers desktop and mobile surfaces, and parity tests protect V1/V2/V3 visual policy behavior across live combatants, loading previews, and replays. V3 remains visual-only: gameplay collision, timing, scoring, AI, network authority, and V1/V2 legacy model choices are unchanged.
+
 ## Standalone 3D Map Maker
 
 iBrawls features a beautiful, feature-rich, and completely standalone 3D Map Maker application that runs 100% locally and offline in the user's browser. Since it is entirely decoupled from the main web application, players simply open the local HTML file to design custom battle arenas using standard assets!
