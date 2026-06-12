@@ -29,3 +29,17 @@ test('ArmoryPanel renders V3 material role controls only for V3 loadouts', () =>
   assert.match(v3Html, /Emissive/);
   assert.doesNotMatch(v2Html, /V3 Material Roles/);
 });
+
+test('ArmoryPanel presents original sword preset labels', () => {
+  const html = renderToStaticMarkup(<ArmoryPanel {...baseProps('v2')} />);
+
+  assert.match(html, /Cyan Classic/);
+  assert.match(html, /Twin Arc/);
+  assert.match(html, /Prism Edge/);
+  assert.match(html, /Emberline/);
+  assert.match(html, /Aurum V/);
+  assert.doesNotMatch(html, /Halo 2/);
+  assert.doesNotMatch(html, /Halo 3/);
+  assert.doesNotMatch(html, /Halo 4/);
+  assert.doesNotMatch(html, /Halo 5/);
+});

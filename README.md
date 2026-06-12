@@ -356,16 +356,16 @@ iBrawls features a beautiful and comprehensive character customization suite, av
   - **Gravity Axe ("Diminisher of Hope")**: Double-sided axe configuration with molten glowing orange-red energy blades extending from a dark metal center.
   - **Gravity Mace ("Chainbreaker")**: Spiked mace head with glowing red-hot spikes radiating outwards and leather-wrapped handle.
   - **Fist of Rukt**: Massive gray stone mallet-head, gold/brass gears on the sides, and a brown wooden handle.
-- **Premium Energy Sword Model Swapping**: Swap between 10 distinct, beautifully recreated Halo-inspired energy sword variants in high-fidelity voxels, complete with programmatic lightning crackles:
-  - **CE Classic**: Retro chunkier profile with solid neon cyan glow and a glowing white energy core.
-  - **Halo 2**: Sleek, curved prongs, elegant purple/grey hilt, and pink/magenta energy crackles running along the light blue blade.
-  - **Halo 3**: Pristine white-blue blades with silver-accented dark hilt and subtle violet wisps.
-  - **Reach**: Sharp curved blades, dark hilt, with an amber/orange indicator light accent.
-  - **CEA**: High-contrast cyan and white electric crackles with a shiny steel hilt.
-  - **Halo 4**: Aggressive blocky triangular guard base with high-frequency electric blue energy.
-  - **H2A Blue**: Pristine sapphire and soft sky blue plasma curves with gray-blue alloy hilt.
-  - **H2A Pink**: Shadowy obsidian guard with glowing magenta, pink, and red-purple crackling energy (infected style).
-  - **Halo 5**: Sleek carbon hilt with premium gold/bronze emitter trims and advanced clean blue energy.
+- **Premium Energy Sword Model Swapping**: Swap between 10 distinct original energy sword variants in high-fidelity voxels, complete with programmatic lightning crackles:
+  - **Cyan Classic**: Retro chunkier profile with solid neon cyan glow and a glowing white energy core.
+  - **Twin Arc**: Sleek, curved prongs, elegant purple/grey hilt, and pink/magenta energy crackles running along the light blue blade.
+  - **Prism Edge**: Pristine white-blue blades with silver-accented dark hilt and subtle violet wisps.
+  - **Emberline**: Sharp curved blades, dark hilt, with an amber/orange indicator light accent.
+  - **Aegis Arc**: High-contrast cyan and white electric crackles with a shiny steel hilt.
+  - **Vanguard IV**: Aggressive blocky triangular guard base with high-frequency electric blue energy.
+  - **Cerulean Rift**: Pristine sapphire and soft sky blue plasma curves with gray-blue alloy hilt.
+  - **Crimson Rift**: Shadowy obsidian guard with glowing magenta, pink, and red-purple crackling energy.
+  - **Aurum V**: Sleek carbon hilt with premium gold/bronze emitter trims and advanced clean blue energy.
   - **Infinite**: Shiny chrome-silver hilt and classical curved blades with complex sky blue, deep blue, and white crackling patterns.
 - **Immersive 3D Paint Job Studio**: An extremely rich, fully integrated 3D **Paint Job** studio inside the character customization tab, built using Three.js and React to offer precise per-voxel coloring:
 

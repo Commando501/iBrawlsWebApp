@@ -2419,7 +2419,7 @@ export function buildKatarSwordModel(customHue?: number, preset: SwordPreset = '
       }
     }
 
-    // Reach indicator light / Halo 5 gold trim / Halo CE indicator
+    // Variant indicator lights and trim details.
     if (preset === 'reach') {
       data.push({ x: 0, y: 6, z: 1, color: '#f59e0b', emissive: true });
     } else if (preset === 'halo-5') {
@@ -2427,7 +2427,7 @@ export function buildKatarSwordModel(customHue?: number, preset: SwordPreset = '
       data.push({ x: 1, y: 6, z: 1, color: '#fbbf24' });
     }
 
-    // Halo 4 aggressive forward teeth
+    // Angular aggressive forward teeth.
     if (preset === 'halo-4') {
       data.push({ x: -4, y: 6, z: 0, color: hiltColor2 });
       data.push({ x: -4, y: 7, z: 0, color: hiltColor1 });
