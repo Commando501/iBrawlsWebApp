@@ -6,7 +6,10 @@ import {
   resolveHammerSlamTiming,
 } from '../../game/hammerSlamTiming';
 import type { UniversalSettings } from '../../types';
+import type { V3QualityTier } from '../v3/v3ModelTypes';
+import { normalizeV3QualityTier } from '../v3/v3QualityTiers';
 import type { WeaponPose } from './attackAnimationPresets';
+import { consumeV3AnimationThrottle } from './v3AnimationThrottle';
 import type { GrifballThreeRefs } from './threeRefs';
 
 export type V3AnimationLayerName = 'locomotion' | 'weapon' | 'additive' | 'death';
@@ -35,6 +38,9 @@ export interface V3CombatantAnimationInput {
   hammerSlamWindupTime?: number;
   hammerSlamAttackTime?: number;
   settings?: Partial<UniversalSettings>;
+  v3QualityTier?: V3QualityTier;
+  isLocalV3Animation?: boolean;
+  animationClockMs?: number;
 }
 
 export interface V3FirstPersonWeaponPoseInput {
@@ -301,14 +307,28 @@ export function animateV3CombatantModel({
   hammerSlamWindupTime,
   hammerSlamAttackTime,
   settings = {},
-}: V3CombatantAnimationInput): void {
-  if (!mesh) return;
+  v3QualityTier,
+  isLocalV3Animation = false,
+  animationClockMs,
+}: V3CombatantAnimationInput): boolean {
+  if (!mesh) return false;
   const groups = getV3BroadGroups(mesh);
-  if (!groups) return;
+  if (!groups) return false;
+  const fallbackNowMs = typeof performance !== 'undefined' ? performance.now() : Date.now();
+
+  const throttle = consumeV3AnimationThrottle({
+    mesh,
+    qualityTier: normalizeV3QualityTier(v3QualityTier),
+    isLocal: isLocalV3Animation,
+    nowMs: Number.isFinite(animationClockMs) ? animationClockMs ?? 0 : fallbackNowMs,
+    dt,
+  });
+  if (!throttle.shouldAnimate) return false;
+  dt = throttle.dt;
 
   if (hp <= 0) {
     resetV3BroadGroups(groups);
-    return;
+    return true;
   }
 
   const alpha = dt > 0 ? Math.min(1, dt * 12) : 1;
@@ -333,6 +353,7 @@ export function animateV3CombatantModel({
       alpha,
     });
   }
+  return true;
 }
 
 export function getFirstPersonV3WeaponPose({

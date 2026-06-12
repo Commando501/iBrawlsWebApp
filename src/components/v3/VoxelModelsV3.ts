@@ -20,14 +20,18 @@ import {
 } from './v3AssetManifest';
 import { selectV3LodLevel } from './v3Lod';
 import type { V3CharacterSlotId, V3WeaponId } from './v3ModelTypes';
+import {
+  normalizeV3QualityTier,
+  type V3RenderOptions,
+} from './v3QualityTiers';
 
-export interface V3SpartanBuildOptions {
+export interface V3SpartanBuildOptions extends V3RenderOptions {
   isEnemy?: boolean;
   customHue?: number;
   loadout?: CharacterLoadout;
 }
 
-export interface V3WeaponBuildOptions {
+export interface V3WeaponBuildOptions extends V3RenderOptions {
   customHue?: number;
 }
 
@@ -199,6 +203,8 @@ export function buildV3SpartanModel(options: V3SpartanBuildOptions = {}): THREE.
   root.name = 'v3SpartanRoot';
   root.userData.modelSystem = 'v3';
 
+  const v3QualityTier = normalizeV3QualityTier(options.v3QualityTier);
+  const v3Distance = Number.isFinite(options.v3Distance) ? Math.max(0, options.v3Distance ?? 0) : 0;
   const loadout = getDefaultV3CharacterLoadout();
   const colors = createColors(options.isEnemy, options.customHue);
   const customArmorColors = createCustomArmorColors(colors);
@@ -217,11 +223,19 @@ export function buildV3SpartanModel(options: V3SpartanBuildOptions = {}): THREE.
       ? customArmorPieceToVoxels(customPiece, customArmorColors)
       : createPartVoxels(part, spec.dimensions, colors);
     const group = createVoxelGroup(voxels, V3_VOXEL_SCALE);
+    const selectedLod = selectV3LodLevel({
+      lods: part.lods,
+      qualityTier: v3QualityTier,
+      distance: v3Distance,
+    });
     group.name = `v3:${part.slot}`;
     group.position.set(...spec.position);
     group.userData.v3PartId = part.id;
     group.userData.v3Slot = part.slot;
     group.userData.v3BoundsId = part.boundsId;
+    group.userData.v3QualityTier = v3QualityTier;
+    group.userData.v3Distance = v3Distance;
+    group.userData.v3SelectedLod = selectedLod;
     if (customPiece) {
       group.userData.customArmorId = customPiece.id;
       group.userData.customArmorName = customPiece.name;
@@ -231,6 +245,8 @@ export function buildV3SpartanModel(options: V3SpartanBuildOptions = {}): THREE.
   }
 
   root.userData.v3CharacterLoadout = loadout;
+  root.userData.v3QualityTier = v3QualityTier;
+  root.userData.v3Distance = v3Distance;
   root.userData.v3PartGroups = partGroups;
   root.userData.segmentGroups = segmentGroups;
   root.userData.lowerTorso = segmentGroups.lowerTorso;
@@ -283,11 +299,13 @@ const createWeaponVoxels = (weapon: V3WeaponId, colors: SpartanColors): VoxelDat
 export function buildV3WeaponModel(weapon: V3WeaponId, options: V3WeaponBuildOptions = {}): THREE.Group {
   const manifest = getDefaultV3WeaponManifest(weapon);
   const colors = createColors(false, options.customHue);
+  const v3QualityTier = normalizeV3QualityTier(options.v3QualityTier);
+  const v3Distance = Number.isFinite(options.v3Distance) ? Math.max(0, options.v3Distance ?? 0) : 0;
   const group = createVoxelGroup(createWeaponVoxels(weapon, colors), V3_WEAPON_SCALE);
   const selectedLod = selectV3LodLevel({
     lods: manifest.lods,
-    qualityTier: 'desktop',
-    distance: 0,
+    qualityTier: v3QualityTier,
+    distance: v3Distance,
   });
 
   group.name = `v3:${weapon}`;
@@ -295,19 +313,21 @@ export function buildV3WeaponModel(weapon: V3WeaponId, options: V3WeaponBuildOpt
   group.userData.weaponType = weapon;
   group.userData.v3ManifestId = manifest.id;
   group.userData.v3Sockets = manifest.sockets;
+  group.userData.v3QualityTier = v3QualityTier;
+  group.userData.v3Distance = v3Distance;
   group.userData.v3SelectedLod = selectedLod;
 
   return group;
 }
 
-export function buildV3HammerModel(customHue?: number): THREE.Group {
-  return buildV3WeaponModel('hammer', { customHue });
+export function buildV3HammerModel(customHue?: number, v3Options: V3RenderOptions = {}): THREE.Group {
+  return buildV3WeaponModel('hammer', { customHue, ...v3Options });
 }
 
-export function buildV3SwordModel(customHue?: number): THREE.Group {
-  return buildV3WeaponModel('sword', { customHue });
+export function buildV3SwordModel(customHue?: number, v3Options: V3RenderOptions = {}): THREE.Group {
+  return buildV3WeaponModel('sword', { customHue, ...v3Options });
 }
 
-export function buildV3PistolModel(customHue?: number): THREE.Group {
-  return buildV3WeaponModel('pistol', { customHue });
+export function buildV3PistolModel(customHue?: number, v3Options: V3RenderOptions = {}): THREE.Group {
+  return buildV3WeaponModel('pistol', { customHue, ...v3Options });
 }

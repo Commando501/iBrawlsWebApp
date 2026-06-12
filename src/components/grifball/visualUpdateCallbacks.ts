@@ -9,6 +9,7 @@ import { type GrifballRuntimeState } from './runtimeState';
 import { type GrifballThreeRefs } from './threeRefs';
 import { updateInvulnerabilityBlinking } from './visualState';
 import { type Combatant } from '../../types';
+import type { V3QualityTier } from '../v3/v3ModelTypes';
 
 type MutableRef<T> = { current: T };
 
@@ -66,7 +67,10 @@ export function createVisualUpdateCallbacksForState({
     weaponTimer: number,
     dt: number,
     isSliding = false,
-    isSprinting = false
+    isSprinting = false,
+    v3QualityTier?: V3QualityTier,
+    isLocalV3Animation = false,
+    animationClockMs?: number
   ) => {
     const state = getState();
     const hammerSlamTiming = resolveHammerSlamTiming(state.settings);
@@ -85,6 +89,9 @@ export function createVisualUpdateCallbacksForState({
       hammerMeleeReload: state.settings.hammerMeleeReload ?? 0.5,
       hammerSlamWindupTime: hammerSlamTiming.windupTime,
       hammerSlamAttackTime: hammerSlamTiming.attackTime,
+      v3QualityTier,
+      isLocalV3Animation,
+      animationClockMs,
     });
   };
 

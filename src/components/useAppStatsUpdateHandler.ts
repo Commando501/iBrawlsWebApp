@@ -63,7 +63,8 @@ interface UseAppStatsUpdateHandlerOptions extends CurrentStatsConnectionSnapshot
   setMatchResult: Dispatch<SetStateAction<AppMatchResult | null>>;
   setIsPaused: Dispatch<SetStateAction<boolean>>;
   handleCompleteTournamentMatch: (playerWon: boolean, playerScore: number, opponentScore: number) => void;
-  trackEdgeLowFps: (fps: number) => void;
+  trackEdgeLowFps: (fps: number | undefined) => void;
+  trackV3PerformanceSample: (fps: number | undefined) => void;
   setCurrentStats: Dispatch<SetStateAction<GameStats>>;
   matchLobbyConfig: MatchLobbyConfig | null;
 }
@@ -117,6 +118,7 @@ export function useAppStatsUpdateHandler({
   setIsPaused,
   handleCompleteTournamentMatch,
   trackEdgeLowFps,
+  trackV3PerformanceSample,
   setCurrentStats,
   matchLobbyConfig,
   isMultiplayer,
@@ -152,6 +154,7 @@ export function useAppStatsUpdateHandler({
     }
 
     trackEdgeLowFps(stats.fps);
+    trackV3PerformanceSample(stats.fps);
 
     if (!isMultiplayer || multiplayerRole !== 'host' || !matchLobbyConfig) {
       multiplayerMatchEndSentRef.current = false;
@@ -201,5 +204,6 @@ export function useAppStatsUpdateHandler({
     singlePlayerMode,
     tournamentState,
     trackEdgeLowFps,
+    trackV3PerformanceSample,
   ]);
 }

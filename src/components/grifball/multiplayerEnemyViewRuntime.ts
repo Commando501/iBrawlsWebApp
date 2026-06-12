@@ -4,6 +4,7 @@ import {
   buildKatarSwordModel,
   buildVoxelSpartanModel,
 } from '../VoxelModels';
+import type { V3RenderOptions } from '../v3/v3QualityTiers';
 import {
   attachToCombatantAttachment,
   buildCombatantRigForModel,
@@ -15,12 +16,14 @@ export function buildMultiplayerEnemyViewForRefs({
   refs,
   scene,
   mainAIHue,
+  v3Options = {},
 }: {
   refs: GrifballThreeRefs;
   scene: THREE.Scene;
   mainAIHue?: number;
+  v3Options?: V3RenderOptions;
 }): void {
-  const enemyGroup = buildVoxelSpartanModel(true, mainAIHue);
+  const enemyGroup = buildVoxelSpartanModel(true, mainAIHue, undefined, v3Options);
   enemyGroup.position.copy(new THREE.Vector3(0, 0, -12));
   enemyGroup.userData.appliedHue = mainAIHue;
   buildCombatantRigForModel(enemyGroup);

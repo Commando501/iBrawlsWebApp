@@ -5,6 +5,7 @@ import { buildCombatantRigForModel } from '../grifball/combatantRig';
 import { disposePreviewObject, getPreviewLoadoutSignature } from '../previewModelUtils';
 import type { VisualModelPolicy } from '../../model/modelSystem';
 import { resolveLoadoutForVisualPolicy } from '../../model/modelVisualPolicy';
+import type { V3RenderOptions } from '../v3/v3QualityTiers';
 
 interface PlayerModelPreviewProps {
   hue: number;
@@ -17,6 +18,11 @@ const resolvePreviewLoadout = (
   loadout: CharacterLoadout | undefined,
   visualModelPolicy: VisualModelPolicy | null | undefined
 ): CharacterLoadout => resolveLoadoutForVisualPolicy({ visualModelPolicy, loadout });
+
+const PREVIEW_V3_RENDER_OPTIONS: V3RenderOptions = {
+  v3QualityTier: 'desktop',
+  v3Distance: 0,
+};
 
 const getResolvedPreviewLoadoutSignature = ({
   loadout,
@@ -74,7 +80,7 @@ const PlayerModelPreviewComponent: React.FC<PlayerModelPreviewProps> = ({
         scene.remove(character);
         disposePreviewObject(character);
       }
-      character = buildVoxelSpartanModel(false, nextHue, nextLoadout ?? DEFAULT_LOADOUT);
+      character = buildVoxelSpartanModel(false, nextHue, nextLoadout ?? DEFAULT_LOADOUT, PREVIEW_V3_RENDER_OPTIONS);
       character.position.set(0, -0.05, 0);
       character.rotation.y = -0.35;
       buildCombatantRigForModel(character);

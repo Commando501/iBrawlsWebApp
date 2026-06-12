@@ -9,6 +9,7 @@ import {
 } from '../../types';
 import type { VisualModelPolicy } from '../../model/modelSystem';
 import type { CharacterLoadout } from '../VoxelModels';
+import type { V3RenderOptions } from '../v3/v3QualityTiers';
 import { type SwordLungeCurrentTrailStyle } from './combatGeometry';
 import {
   registerReplayPlaybackEventListenersForState,
@@ -71,6 +72,7 @@ export function createReplayRuntimeCallbacksForState({
   matchKillsToWin,
   visualModelPolicy,
   playerLoadout,
+  v3Options = { v3QualityTier: 'desktop' },
   isMultiplayer,
   getActiveCustomMap,
   animateSpartanModel,
@@ -110,6 +112,7 @@ export function createReplayRuntimeCallbacksForState({
   matchKillsToWin?: number;
   visualModelPolicy?: VisualModelPolicy | null;
   playerLoadout?: CharacterLoadout;
+  v3Options?: V3RenderOptions;
   isMultiplayer: boolean;
   getActiveCustomMap: () => CustomMapData | null;
   animateSpartanModel: AnimateSpartanModel;
@@ -203,6 +206,7 @@ export function createReplayRuntimeCallbacksForState({
       botColors,
       adminSettings,
       dt,
+      v3Options,
       getActiveCustomMap,
       animateSpartanModel,
       renderSwordLungeTrailVfx,

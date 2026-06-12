@@ -5,6 +5,7 @@ import { resolveCharacterModelType } from '../../characterModelTypes';
 import { type CharacterLoadout } from '../VoxelModels';
 import { resolveLoadoutForVisualPolicy } from '../../model/modelVisualPolicy';
 import { type VisualModelPolicy } from '../../model/modelSystem';
+import type { V3RenderOptions } from '../v3/v3QualityTiers';
 import { createCombatantMeshRig } from './combatantModels';
 import { getInwardSpawnYaw } from './combatGeometry';
 import { type CustomMapData } from '../../types';
@@ -99,6 +100,7 @@ export function createOrUpdateRemoteCombatantForState({
   activeCustomMap,
   spawnPoints,
   constrainCombatantToArena,
+  v3Options = {},
 }: {
   state: GrifballRuntimeState;
   refs: GrifballThreeRefs;
@@ -108,6 +110,7 @@ export function createOrUpdateRemoteCombatantForState({
   activeCustomMap: CustomMapData | null;
   spawnPoints: THREE.Vector3[];
   constrainCombatantToArena: (pos: THREE.Vector3, vel?: THREE.Vector3) => void;
+  v3Options?: V3RenderOptions;
 }): void {
   const scene = refs.scene;
   if (!scene) return;
@@ -162,9 +165,13 @@ export function createOrUpdateRemoteCombatantForState({
   const hue = data.hue ?? playerState.hue;
   const visualLoadout = createVisualLoadout(data, resolveCharacterModelType(playerState.modelType, 'v2'));
   const visualLoadoutKey = JSON.stringify(visualLoadout);
-  if (!meshes || meshes.group.userData.appliedHue !== hue || meshes.group.userData.appliedLoadoutKey !== visualLoadoutKey) {
+  const qualityChanged = visualLoadout.modelSystem === 'v3' && (
+    meshes?.group.userData.appliedV3QualityTier !== v3Options.v3QualityTier ||
+    meshes?.group.userData.appliedV3Distance !== v3Options.v3Distance
+  );
+  if (!meshes || meshes.group.userData.appliedHue !== hue || meshes.group.userData.appliedLoadoutKey !== visualLoadoutKey || qualityChanged) {
     if (meshes?.group) scene.remove(meshes.group);
-    meshes = createCombatantMeshRig(scene, hue, false, visualLoadout);
+    meshes = createCombatantMeshRig(scene, hue, false, visualLoadout, v3Options);
     meshes.group.userData.appliedLoadoutKey = visualLoadoutKey;
     refs.otherPlayerMeshes.set(clientId, meshes);
     playerState.hue = hue;

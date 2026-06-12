@@ -27,6 +27,7 @@ export function updateObserverCombatantVisualsForState({
 }): void {
   if (!state.isObserverMode) return;
   const hammerSlamTiming = resolveHammerSlamTiming(state.settings);
+  const animationClockMs = typeof performance !== 'undefined' ? performance.now() : Date.now();
 
   if (refs.hostGroup) {
     const hostData = getSpectateTargetData('host');
@@ -65,7 +66,7 @@ export function updateObserverCombatantVisualsForState({
       hostIsLunging = state.isLunging;
     }
 
-    animateSpartanCombatantModel({
+    const didAnimateHost = animateSpartanCombatantModel({
       refs,
       mesh: refs.hostGroup,
       vel: hostVel,
@@ -83,9 +84,12 @@ export function updateObserverCombatantVisualsForState({
       hammerSlamWindupTime: hammerSlamTiming.windupTime,
       hammerSlamAttackTime: hammerSlamTiming.attackTime,
       settings: state.settings,
+      v3QualityTier: refs.hostGroup.userData.appliedV3QualityTier,
+      isLocalV3Animation: multiplayerRole !== 'observer',
+      animationClockMs,
     });
 
-    if (refs.hostHammer || refs.hostSword) {
+    if (didAnimateHost && (refs.hostHammer || refs.hostSword)) {
       animateCombatantWeaponMeshes({
         hammerModel: refs.hostHammer,
         swordModel: refs.hostSword,
@@ -136,7 +140,7 @@ export function updateObserverCombatantVisualsForState({
         enemyIsLunging = mainAI.aiState === 'LUNGING';
       }
 
-      animateSpartanCombatantModel({
+      const didAnimateEnemy = animateSpartanCombatantModel({
         refs,
         mesh: refs.enemyGroup,
         vel: enemyVel,
@@ -154,9 +158,12 @@ export function updateObserverCombatantVisualsForState({
         hammerSlamWindupTime: hammerSlamTiming.windupTime,
         hammerSlamAttackTime: hammerSlamTiming.attackTime,
         settings: state.settings,
+        v3QualityTier: refs.enemyGroup.userData.appliedV3QualityTier,
+        isLocalV3Animation: false,
+        animationClockMs,
       });
 
-      if (refs.enemyHammer || refs.enemySword) {
+      if (didAnimateEnemy && (refs.enemyHammer || refs.enemySword)) {
         animateCombatantWeaponMeshes({
           hammerModel: refs.enemyHammer,
           swordModel: refs.enemySword,

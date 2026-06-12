@@ -52,6 +52,12 @@ describe('selectV3LodLevel', () => {
     assert.equal(selectV3LodLevel({ lods: sampleLods, qualityTier: 'mobile', distance: 2 }).qualityTier, 'mobile');
   });
 
+  it('mobileLow falls back to the cheapest available mobile LOD when no explicit mobileLow LOD exists', () => {
+    const lod = selectV3LodLevel({ lods: sampleLods, qualityTier: 'mobileLow', distance: 2 });
+
+    assert.equal(lod.qualityTier, 'mobile');
+  });
+
   it('uses richer entries on desktop and ultra when close enough', () => {
     assert.equal(selectV3LodLevel({ lods: sampleLods, qualityTier: 'desktop', distance: 2 }).qualityTier, 'desktop');
     assert.equal(selectV3LodLevel({ lods: sampleLods, qualityTier: 'ultra', distance: 2 }).qualityTier, 'ultra');
@@ -82,5 +88,12 @@ describe('selectV3LodLevel', () => {
 
     assert.equal(lod.sourceId.includes(hammer.id), true);
     assert.deepEqual(validateV3AssetBudget(lod.budget), []);
+  });
+
+  it('copies selected LOD budget data so callers cannot mutate manifest state', () => {
+    const lod = selectV3LodLevel({ lods: sampleLods, qualityTier: 'ultra', distance: 2 });
+    lod.budget.sourceVoxelCount = 1;
+
+    assert.notEqual(sampleLods[0].budget.sourceVoxelCount, 1);
   });
 });

@@ -6,6 +6,7 @@ import { createOfflineBotCombatant, createRemoteCombatant } from '../../game/ros
 import { createInitialGrifballRuntimeState } from './runtimeState';
 import { createInitialGrifballThreeRefs } from './threeRefs';
 import { createOrUpdateRemoteCombatantForState } from './remoteCombatantProvisioning';
+import type { V3RenderOptions } from '../v3/v3QualityTiers';
 
 const createStateAndRefs = () => {
   const state = createInitialGrifballRuntimeState({
@@ -23,7 +24,8 @@ const provisionCombatant = (
   state: ReturnType<typeof createInitialGrifballRuntimeState>,
   refs: ReturnType<typeof createInitialGrifballThreeRefs>,
   clientId: string,
-  data: any
+  data: any,
+  v3Options?: V3RenderOptions
 ) => createOrUpdateRemoteCombatantForState({
   state,
   refs,
@@ -33,6 +35,7 @@ const provisionCombatant = (
   activeCustomMap: null,
   spawnPoints: [],
   constrainCombatantToArena: () => {},
+  v3Options,
 });
 
 const getAppliedLoadout = (
@@ -264,4 +267,27 @@ test('remote human visual policy v3 does not let V3 personal model type affect g
   assert.equal(appliedLoadout.modelSystem, 'v3');
   assert.equal(appliedLoadout.modelType, 'large');
   assert.equal(state.otherPlayers.get(remote.id)?.modelType, 'medium');
+});
+
+test('remote V3 meshes rebuild when render quality changes without changing loadout identity', () => {
+  const { state, refs } = createStateAndRefs();
+  const data = {
+    controller: 'remote',
+    visualModelPolicy: 'v3',
+    loadout: { modelSystem: 'v3', helmet: 'odst' },
+    hue: 128,
+  };
+
+  provisionCombatant(state, refs, 'peer', data, { v3QualityTier: 'mobileLow' });
+  const firstMeshes = refs.otherPlayerMeshes.get('peer');
+  assert.ok(firstMeshes);
+  const appliedLoadoutKey = firstMeshes.group.userData.appliedLoadoutKey;
+  assert.equal(firstMeshes.group.userData.appliedV3QualityTier, 'mobileLow');
+
+  provisionCombatant(state, refs, 'peer', data, { v3QualityTier: 'desktop' });
+  const secondMeshes = refs.otherPlayerMeshes.get('peer');
+  assert.ok(secondMeshes);
+  assert.notEqual(secondMeshes.group, firstMeshes.group);
+  assert.equal(secondMeshes.group.userData.appliedLoadoutKey, appliedLoadoutKey);
+  assert.equal(secondMeshes.group.userData.appliedV3QualityTier, 'desktop');
 });

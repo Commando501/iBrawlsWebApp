@@ -18,6 +18,7 @@ import {
 } from './playerInputRuntime';
 import { buildReplayPlaybackFrameSlice } from './replayHelpers';
 import { updateReplayCombatantVisualsForFrame } from './replayPlaybackVisuals';
+import type { V3RenderOptions } from '../v3/v3QualityTiers';
 import { type GrifballRuntimeState } from './runtimeState';
 import { type GrifballThreeRefs } from './threeRefs';
 import { updateTransientVfxForFrame } from './vfxRuntime';
@@ -347,6 +348,7 @@ export function runReplayPlaybackLoopForState({
   botColors,
   adminSettings,
   dt,
+  v3Options = { v3QualityTier: 'desktop' },
   getActiveCustomMap,
   animateSpartanModel,
   renderSwordLungeTrailVfx,
@@ -376,6 +378,7 @@ export function runReplayPlaybackLoopForState({
   botColors: Record<string, number>;
   adminSettings: UniversalSettings;
   dt: number;
+  v3Options?: V3RenderOptions;
   getActiveCustomMap: () => CustomMapData | null;
   animateSpartanModel: AnimateSpartanModel;
   renderSwordLungeTrailVfx: RenderSwordLungeTrailVfx;
@@ -426,6 +429,7 @@ export function runReplayPlaybackLoopForState({
     observerCamMode: state.observerCamMode,
     replayPlayerName: replayData.playerName,
     dt,
+    v3Options,
     animateSpartanModel,
     renderSwordLungeTrailVfx,
     updateBlinking,

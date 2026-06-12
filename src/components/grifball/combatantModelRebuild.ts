@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { type Combatant } from '../../types';
 import { type CharacterLoadout } from '../VoxelModels';
+import type { V3RenderOptions } from '../v3/v3QualityTiers';
 import { rebuildDualWeaponCombatantModel } from './combatantModels';
 import { ballAsHammer } from '../../game/weaponCompat';
 import { type GrifballRuntimeState } from './runtimeState';
@@ -16,6 +17,7 @@ export function rebuildEnemyCombatantModelForState({
   multiplayerRole,
   playerLoadout,
   mainAI,
+  v3Options = {},
 }: {
   state: GrifballRuntimeState;
   refs: GrifballThreeRefs;
@@ -24,6 +26,7 @@ export function rebuildEnemyCombatantModelForState({
   multiplayerRole: MultiplayerRole;
   playerLoadout?: CharacterLoadout;
   mainAI: Combatant | undefined;
+  v3Options?: V3RenderOptions;
 }): void {
   const scene = refs.scene;
   if (!scene || !refs.enemyGroup) return;
@@ -45,6 +48,7 @@ export function rebuildEnemyCombatantModelForState({
     loadout: enemyLoadout,
     position: multiplayerRole === 'observer' ? state.clientPos : (mainAI ? mainAI.pos : new THREE.Vector3(0, 0, 0)),
     activeWeapon,
+    v3Options,
   });
   refs.enemyGroup = enemyGroup;
   refs.enemyHammer = enemyHammer;
@@ -58,6 +62,7 @@ export function rebuildHostCombatantModelForState({
   isMultiplayer,
   multiplayerRole,
   playerLoadout,
+  v3Options = {},
 }: {
   state: GrifballRuntimeState;
   refs: GrifballThreeRefs;
@@ -65,6 +70,7 @@ export function rebuildHostCombatantModelForState({
   isMultiplayer: boolean;
   multiplayerRole: MultiplayerRole;
   playerLoadout?: CharacterLoadout;
+  v3Options?: V3RenderOptions;
 }): void {
   const scene = refs.scene;
   if (!scene) return;
@@ -79,6 +85,7 @@ export function rebuildHostCombatantModelForState({
     loadout: isLocalHost ? playerLoadout : undefined,
     position: multiplayerRole === 'observer' ? state.hostPos : state.playerPos,
     activeWeapon,
+    v3Options,
   });
   refs.hostGroup = hostGroup;
   refs.hostHammer = hostHammer;
