@@ -264,6 +264,8 @@ Phase 8 adds adaptive V3 render quality using the canonical `mobileLow`, `mobile
 
 Phase 9 marks V3 as the recommended default model policy for new offline and hosted matches. V1 Classic and V2 Rigged remain available in the same Model Set controls, and explicit saved or hosted V1/V2 selections are preserved.
 
+Phase 10 starts the production asset quality pass. Built-in V3 character parts and V3 hammer/sword/pistol visuals now run through deterministic production-quality audits for material diversity, emissive/detail usage, silhouette variation, and budget compliance before they are treated as production candidates.
+
 ## Standalone 3D Map Maker
 
 iBrawls features a beautiful, feature-rich, and completely standalone 3D Map Maker application that runs 100% locally and offline in the user's browser. Since it is entirely decoupled from the main web application, players simply open the local HTML file to design custom battle arenas using standard assets!
