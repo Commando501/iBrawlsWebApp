@@ -5,6 +5,7 @@ import { buildVoxelSpartanModel } from '../VoxelModels';
 import { createCustomArmorPiece, createCustomArmorSnapshot } from '../customArmor';
 import { createCombatantMeshRig } from '../grifball/combatantModels';
 import {
+  buildV3HammerModel,
   buildV3PistolModel,
   buildV3SpartanModel,
   buildV3WeaponModel,
@@ -20,6 +21,33 @@ import {
 } from './v3ProductionQuality';
 
 const requiredSegments = ['lowerTorso', 'upperTorso', 'head', 'leftArm', 'rightArm', 'leftLeg', 'rightLeg'];
+
+const groupContainsHexColor = (group: THREE.Object3D, color: string): boolean => {
+  const target = color.replace('#', '').toLowerCase();
+  let found = false;
+  group.traverse((object) => {
+    if (found || !(object instanceof THREE.Mesh)) return;
+    const attribute = object.geometry.getAttribute('color');
+    if (attribute) {
+      for (let i = 0; i < attribute.count; i++) {
+        const vertexColor = new THREE.Color(attribute.getX(i), attribute.getY(i), attribute.getZ(i));
+        if (vertexColor.getHexString() === target) {
+          found = true;
+          return;
+        }
+      }
+    }
+    const materials = Array.isArray(object.material) ? object.material : [object.material];
+    for (const material of materials) {
+      const materialColor = (material as THREE.Material & { color?: THREE.Color }).color;
+      if (materialColor?.getHexString() === target) {
+        found = true;
+        return;
+      }
+    }
+  });
+  return found;
+};
 
 describe('buildV3SpartanModel', () => {
   it('builds a V3 model with required combatant segment groups and manifest metadata', () => {
@@ -69,6 +97,25 @@ describe('buildV3SpartanModel', () => {
 
     assert.equal(helmet.userData.customArmorId, customHelmet.id);
     assert.equal(helmet.userData.v3Slot, 'helmet');
+  });
+
+  it('applies V3 role paint overrides to built-in character parts', () => {
+    const model = buildV3SpartanModel({
+      isEnemy: false,
+      customHue: 192,
+      loadout: {
+        modelSystem: 'v3',
+        paintJob: {
+          v3RoleColors: {
+            primary: '#123456',
+            visor: '#ff00ff',
+          },
+        },
+      },
+    });
+
+    assert.equal(groupContainsHexColor(model, '#123456'), true);
+    assert.equal(groupContainsHexColor(model, '#ff00ff'), true);
   });
 
   it('ignores V2 custom armor snapshots when building a V3 model', () => {
@@ -155,6 +202,23 @@ describe('V3 weapon builders', () => {
       assert.equal(report.emissiveVoxelCount > 0, true, `${weapon} should expose readable emissive weapon state`);
     }
   });
+
+  it('applies V3 role paint overrides to weapon builders', () => {
+    const hammer = buildV3HammerModel(192, {
+      loadout: {
+        modelSystem: 'v3',
+        paintJob: {
+          v3RoleColors: {
+            primary: '#345678',
+            fixed: '#112233',
+          },
+        },
+      },
+    });
+
+    assert.equal(groupContainsHexColor(hammer, '#345678'), true);
+    assert.equal(groupContainsHexColor(hammer, '#112233'), true);
+  });
 });
 
 describe('buildVoxelSpartanModel V3 dispatch', () => {
@@ -185,5 +249,21 @@ describe('buildVoxelSpartanModel V3 dispatch', () => {
     assert.equal(meshes.hammer.userData.weaponType, 'hammer');
     assert.equal(meshes.sword.userData.weaponType, 'sword');
     assert.equal(meshes.pistol?.userData.weaponType, 'pistol');
+  });
+
+  it('createCombatantMeshRig passes V3 role paint into third-person weapons', () => {
+    const scene = new THREE.Scene();
+    const meshes = createCombatantMeshRig(scene, 192, false, {
+      modelSystem: 'v3',
+      paintJob: {
+        v3RoleColors: {
+          primary: '#456789',
+        },
+      },
+    });
+
+    assert.equal(groupContainsHexColor(meshes.hammer, '#456789'), true);
+    assert.equal(groupContainsHexColor(meshes.sword, '#456789'), true);
+    assert.equal(groupContainsHexColor(meshes.pistol as THREE.Group, '#456789'), true);
   });
 });

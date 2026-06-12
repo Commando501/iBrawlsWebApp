@@ -23,9 +23,9 @@ const buildLocalFirstPersonWeaponSet = (
   loadout?: CharacterLoadout,
   v3Options: V3RenderOptions = {}
 ) => ({
-  hammer: loadout?.modelSystem === 'v3' ? buildV3HammerModel(hue, v3Options) : buildGravityHammerModel(hue, loadout?.hammerPreset),
-  sword: loadout?.modelSystem === 'v3' ? buildV3SwordModel(hue, v3Options) : buildKatarSwordModel(hue, loadout?.swordPreset),
-  pistol: loadout?.modelSystem === 'v3' ? buildV3PistolModel(hue, v3Options) : buildPistolModel(hue),
+  hammer: loadout?.modelSystem === 'v3' ? buildV3HammerModel(hue, { ...v3Options, loadout }) : buildGravityHammerModel(hue, loadout?.hammerPreset),
+  sword: loadout?.modelSystem === 'v3' ? buildV3SwordModel(hue, { ...v3Options, loadout }) : buildKatarSwordModel(hue, loadout?.swordPreset),
+  pistol: loadout?.modelSystem === 'v3' ? buildV3PistolModel(hue, { ...v3Options, loadout }) : buildPistolModel(hue),
 });
 
 const applyLocalV3FirstPersonPose = (

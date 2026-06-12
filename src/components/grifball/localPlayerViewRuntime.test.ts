@@ -11,6 +11,34 @@ const assertWeaponPose = (model: THREE.Group | null | undefined, pose: ReturnTyp
   assert.deepEqual(model.rotation.toArray().slice(0, 3), pose.rotation);
 };
 
+const groupContainsHexColor = (group: THREE.Object3D | null | undefined, color: string): boolean => {
+  if (!group) return false;
+  const target = color.replace('#', '').toLowerCase();
+  let found = false;
+  group.traverse((object) => {
+    if (found || !(object instanceof THREE.Mesh)) return;
+    const attribute = object.geometry.getAttribute('color');
+    if (attribute) {
+      for (let i = 0; i < attribute.count; i++) {
+        const vertexColor = new THREE.Color(attribute.getX(i), attribute.getY(i), attribute.getZ(i));
+        if (vertexColor.getHexString() === target) {
+          found = true;
+          return;
+        }
+      }
+    }
+    const materials = Array.isArray(object.material) ? object.material : [object.material];
+    for (const material of materials) {
+      const materialColor = (material as THREE.Material & { color?: THREE.Color }).color;
+      if (materialColor?.getHexString() === target) {
+        found = true;
+        return;
+      }
+    }
+  });
+  return found;
+};
+
 test('local first-person view uses V3 weapon builders for V3 loadouts', () => {
   const refs = createInitialGrifballThreeRefs();
   const scene = new THREE.Scene();
@@ -51,6 +79,31 @@ test('local first-person V3 weapons receive render quality options', () => {
   assert.equal(refs.playerHammer?.userData.v3QualityTier, 'mobileLow');
   assert.equal(refs.playerSword?.userData.v3QualityTier, 'mobileLow');
   assert.equal(refs.playerPistol?.userData.v3QualityTier, 'mobileLow');
+});
+
+test('local first-person V3 weapons receive loadout role paint', () => {
+  const refs = createInitialGrifballThreeRefs();
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera();
+
+  buildLocalPlayerViewForRefs({
+    refs,
+    scene,
+    camera,
+    adminSettings: { playerHue: 192 },
+    playerLoadout: {
+      modelSystem: 'v3',
+      paintJob: {
+        v3RoleColors: {
+          primary: '#56789a',
+        },
+      },
+    },
+  });
+
+  assert.equal(groupContainsHexColor(refs.playerHammer, '#56789a'), true);
+  assert.equal(groupContainsHexColor(refs.playerSword, '#56789a'), true);
+  assert.equal(groupContainsHexColor(refs.playerPistol, '#56789a'), true);
 });
 
 test('local first-person V3 weapons start from shared V3 first-person poses', () => {
