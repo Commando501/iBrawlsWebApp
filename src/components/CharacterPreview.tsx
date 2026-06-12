@@ -12,12 +12,18 @@ import {
 } from './grifball/combatantRig';
 import { THIRD_PERSON_RIGHT_HAND_REST_OFFSET } from './grifball/attackAnimationPresets';
 import { disposePreviewObject, getPreviewLoadoutSignature } from './previewModelUtils';
+import type { V3RenderOptions } from './v3/v3QualityTiers';
 
 interface CharacterPreviewProps {
   hue: number;
   heldWeapon: 'none' | 'hammer' | 'sword';
   loadout?: CharacterLoadout;
 }
+
+const PREVIEW_V3_RENDER_OPTIONS: V3RenderOptions = {
+  v3QualityTier: 'desktop',
+  v3Distance: 0,
+};
 
 export function getCharacterPreviewLoadoutSignature(loadout?: CharacterLoadout): string {
   return getPreviewLoadoutSignature(loadout);
@@ -105,7 +111,7 @@ export const CharacterPreview: React.FC<CharacterPreviewProps> = ({ hue, heldWea
         disposePreviewObject(characterGroup);
       }
 
-      characterGroup = buildVoxelSpartanModel(false, h, lo ?? DEFAULT_LOADOUT);
+      characterGroup = buildVoxelSpartanModel(false, h, lo ?? DEFAULT_LOADOUT, PREVIEW_V3_RENDER_OPTIONS);
       characterGroup.position.set(0, 0, 0);
       buildCombatantRigForModel(characterGroup);
       scene.add(characterGroup);

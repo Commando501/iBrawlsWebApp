@@ -79,6 +79,7 @@ export default function App() {
     deviceInfo,
     isOnline,
     graphicsCheck,
+    v3QualityTier,
     showGraphicsWarning,
     dismissGraphicsWarning,
     edgeLowFpsSampleDurationMs,
@@ -672,6 +673,7 @@ export default function App() {
 	        lobbyCustomMapData={lobbyCustomMapData}
 	        playerLoadout={playerLoadout}
 	        visualModelPolicy={activeVisualModelPolicy}
+	        v3QualityTier={v3QualityTier}
 	        isPaused={isPaused}
 	        isMatchLoadingActive={isMatchLoadingActive}
 	        debugMode={debugMode}

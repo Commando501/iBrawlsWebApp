@@ -6,6 +6,7 @@ import {
   type CharacterLoadout,
 } from '../VoxelModels';
 import { buildV3HammerModel, buildV3PistolModel, buildV3SwordModel } from '../v3/VoxelModelsV3';
+import type { V3RenderOptions } from '../v3/v3QualityTiers';
 import {
   attachToAttachmentPoint,
   createFirstPersonWeaponRig,
@@ -16,10 +17,14 @@ export type LocalPlayerViewAdminSettings = {
   playerHue?: number;
 };
 
-const buildLocalFirstPersonWeaponSet = (hue: number | undefined, loadout?: CharacterLoadout) => ({
-  hammer: loadout?.modelSystem === 'v3' ? buildV3HammerModel(hue) : buildGravityHammerModel(hue, loadout?.hammerPreset),
-  sword: loadout?.modelSystem === 'v3' ? buildV3SwordModel(hue) : buildKatarSwordModel(hue, loadout?.swordPreset),
-  pistol: loadout?.modelSystem === 'v3' ? buildV3PistolModel(hue) : buildPistolModel(hue),
+const buildLocalFirstPersonWeaponSet = (
+  hue: number | undefined,
+  loadout?: CharacterLoadout,
+  v3Options: V3RenderOptions = {}
+) => ({
+  hammer: loadout?.modelSystem === 'v3' ? buildV3HammerModel(hue, v3Options) : buildGravityHammerModel(hue, loadout?.hammerPreset),
+  sword: loadout?.modelSystem === 'v3' ? buildV3SwordModel(hue, v3Options) : buildKatarSwordModel(hue, loadout?.swordPreset),
+  pistol: loadout?.modelSystem === 'v3' ? buildV3PistolModel(hue, v3Options) : buildPistolModel(hue),
 });
 
 export function buildLocalPlayerViewForRefs({
@@ -28,16 +33,18 @@ export function buildLocalPlayerViewForRefs({
   camera,
   adminSettings,
   playerLoadout,
+  v3Options = {},
 }: {
   refs: GrifballThreeRefs;
   scene: THREE.Scene;
   camera: THREE.PerspectiveCamera;
   adminSettings: LocalPlayerViewAdminSettings;
   playerLoadout?: CharacterLoadout;
+  v3Options?: V3RenderOptions;
 }): void {
   const firstPersonRig = createFirstPersonWeaponRig(camera);
   const weaponGrip = firstPersonRig.attachments.firstPersonWeaponGrip;
-  const localWeapons = buildLocalFirstPersonWeaponSet(adminSettings.playerHue, playerLoadout);
+  const localWeapons = buildLocalFirstPersonWeaponSet(adminSettings.playerHue, playerLoadout, v3Options);
 
   const playerHammer = localWeapons.hammer;
   playerHammer.position.set(0.35, -0.38, -0.65);

@@ -7,6 +7,7 @@ import * as THREE from 'three';
 import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { buildVoxelSpartanModelV2 } from './VoxelModelsV2';
 import { buildV3SpartanModel } from './v3/VoxelModelsV3';
+import type { V3RenderOptions } from './v3/v3QualityTiers';
 import type { CustomArmorPieceSnapshot, CustomArmorSlot } from './customArmor';
 import type { ModelSystem } from '../model/modelSystem';
 import type { CharacterModelType } from '../types';
@@ -1750,10 +1751,11 @@ export function getVoxelSegmentData(slot: string, preset: string, customHue?: nu
 export function buildVoxelSpartanModel(
   isEnemy: boolean = true,
   customHue?: number,
-  loadout: CharacterLoadout = DEFAULT_LOADOUT
+  loadout: CharacterLoadout = DEFAULT_LOADOUT,
+  v3Options: V3RenderOptions = {}
 ): THREE.Group {
   if (loadout.modelSystem === 'v3') {
-    return buildV3SpartanModel({ isEnemy, customHue, loadout });
+    return buildV3SpartanModel({ isEnemy, customHue, loadout, ...v3Options });
   }
 
   if (loadout.modelSystem === 'v2') {

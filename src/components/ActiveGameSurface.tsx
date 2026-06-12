@@ -27,6 +27,7 @@ import { TournamentVictoryOverlay } from './tournament/TournamentVictoryOverlay'
 import type { GameplayMultiplayerRole } from './multiplayer/multiplayerConnectionConstants';
 import type { MatchLobbyConfig } from '../network/protocol';
 import type { VisualModelPolicy } from '../model/modelSystem';
+import type { V3QualityTier } from './v3/v3ModelTypes';
 
 type SinglePlayerMode = 'sandbox' | 'tournament' | 'ai-editor';
 
@@ -48,6 +49,7 @@ interface ActiveGameSurfaceProps {
   lobbyCustomMapData: CustomMapData | null;
   playerLoadout: CharacterLoadout;
   visualModelPolicy?: VisualModelPolicy | null;
+  v3QualityTier?: V3QualityTier;
   isPaused: boolean;
   isMatchLoadingActive: boolean;
   debugMode: boolean;
@@ -112,6 +114,7 @@ export function ActiveGameSurface({
   lobbyCustomMapData,
   playerLoadout,
   visualModelPolicy,
+  v3QualityTier,
   isPaused,
   isMatchLoadingActive,
   debugMode,
@@ -194,6 +197,7 @@ export function ActiveGameSurface({
           customMap={selectedMap === 'custom_file' ? (lobbyCustomMapData || undefined) : undefined}
           playerLoadout={playerLoadout}
           visualModelPolicy={visualModelPolicy ?? undefined}
+          v3QualityTier={v3QualityTier}
           isPaused={isPaused || isMatchLoadingActive}
           debugMode={debugMode}
           adminSettings={effectiveAdminSettings}

@@ -2,6 +2,7 @@ import { type AIOrchestratorEvents, type AIOrchestratorSpawnCallbacks } from '..
 import { type LegacyRosterProps } from '../../game/rosterSlotConfig';
 import { type CustomMapData, type ReplayFile, type UniversalSettings } from '../../types';
 import { type CharacterLoadout } from '../VoxelModels';
+import type { V3RenderOptions } from '../v3/v3QualityTiers';
 import {
   initializeGrifballSceneForRefs,
   type InitializedGrifballScene,
@@ -45,6 +46,7 @@ export async function initializeGrifballMountSceneForState({
   isMultiplayer,
   mainAIHue,
   visualPlayerLoadout,
+  v3Options = {},
   resetTransientVfx,
   getLegacyRosterProps,
   getOfflineBotCount,
@@ -64,6 +66,7 @@ export async function initializeGrifballMountSceneForState({
   isMultiplayer: boolean;
   mainAIHue?: number;
   visualPlayerLoadout?: CharacterLoadout;
+  v3Options?: V3RenderOptions;
   resetTransientVfx: () => void;
   getLegacyRosterProps: () => LegacyRosterProps;
   getOfflineBotCount: () => number;
@@ -138,6 +141,7 @@ export async function initializeGrifballMountSceneForState({
         refs,
         scene,
         mainAIHue,
+        v3Options,
       });
     } else {
       await report(76, 'Spawning combatants');
@@ -159,6 +163,7 @@ export async function initializeGrifballMountSceneForState({
     camera,
     adminSettings,
     playerLoadout: visualPlayerLoadout,
+    v3Options,
   });
 
   await report(94, 'Finalizing render targets');

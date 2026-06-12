@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { type LegacyRosterProps } from '../../game/rosterSlotConfig';
 import { type VisualModelPolicy } from '../../model/modelSystem';
 import { type CustomMapData } from '../../types';
+import type { V3RenderOptions } from '../v3/v3QualityTiers';
 import {
   createGrifballAIOrchestratorEvents,
   createGrifballAIOrchestratorSpawnCallbacks,
@@ -31,6 +32,7 @@ export function createArenaOrchestratorCallbacksForState({
   opponentClientId,
   constrainCombatantToArena,
   getVisualModelPolicy,
+  getV3RenderOptions,
   pushStatsUpdate,
   playRespawn,
 }: {
@@ -44,6 +46,7 @@ export function createArenaOrchestratorCallbacksForState({
   opponentClientId: string;
   constrainCombatantToArena: (pos: THREE.Vector3, vel?: THREE.Vector3) => void;
   getVisualModelPolicy: () => VisualModelPolicy;
+  getV3RenderOptions?: () => V3RenderOptions;
   pushStatsUpdate: () => void;
   playRespawn: () => void;
 }) {
@@ -104,6 +107,7 @@ export function createArenaOrchestratorCallbacksForState({
       activeCustomMap: getActiveCustomMap(),
       spawnPoints,
       constrainCombatantToArena,
+      v3Options: getV3RenderOptions?.(),
     });
   };
 

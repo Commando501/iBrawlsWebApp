@@ -124,6 +124,16 @@ describe('buildVoxelSpartanModel V3 dispatch', () => {
     assert.equal(buildVoxelSpartanModel(false, 192, { modelSystem: 'v3' }).userData.modelSystem, 'v3');
   });
 
+  it('passes V3 quality options into V3 builders', () => {
+    const model = buildVoxelSpartanModel(false, 192, { modelSystem: 'v3' }, {
+      v3QualityTier: 'mobileLow',
+      v3Distance: 32,
+    });
+
+    assert.equal(model.userData.v3QualityTier, 'mobileLow');
+    assert.equal(model.userData.v3Distance, 32);
+  });
+
   it('createCombatantMeshRig uses V3 weapon builders for V3 loadouts', () => {
     const scene = new THREE.Scene();
     const meshes = createCombatantMeshRig(scene, 192, false, { modelSystem: 'v3' });

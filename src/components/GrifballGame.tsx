@@ -76,6 +76,7 @@ import {
 import { createVisualUpdateCallbacksForState } from './grifball/visualUpdateCallbacks';
 import { createWeaponActionCallbacksForState } from './grifball/weaponActionCallbacks';
 import { createVfxCallbacksForState } from './grifball/vfxCallbacks';
+import type { V3RenderOptions } from './v3/v3QualityTiers';
 
 export { createHighFidelityObjectMesh } from './grifball/customMapAssets';
 
@@ -116,6 +117,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
   onExitReplay,
   playerLoadout,
   visualModelPolicy,
+  v3QualityTier = 'desktop',
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -134,6 +136,10 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     }),
     [activeVisualModelPolicy, playerLoadout]
   );
+  const activeV3RenderOptions = useMemo<V3RenderOptions>(() => ({
+    v3QualityTier,
+    v3Distance: 0,
+  }), [v3QualityTier]);
 
   const getActiveCustomMap = (): CustomMapData | null =>
     resolveActiveCustomMap({ customMap, replayData, selectedMap, gameMode: adminSettings.gameMode });
@@ -528,6 +534,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     multiplayerRole,
     playerLoadout,
     visualPlayerLoadout,
+    v3Options: activeV3RenderOptions,
     pushStatsUpdate,
   });
 
@@ -553,6 +560,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     opponentClientId,
     constrainCombatantToArena,
     getVisualModelPolicy: () => activeVisualModelPolicy,
+    getV3RenderOptions: () => activeV3RenderOptions,
     pushStatsUpdate,
     playRespawn: () => sfx.playRespawn(),
   });
@@ -610,6 +618,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         isMultiplayer,
         mainAIHue: botColors['main_ai'],
         visualPlayerLoadout,
+        v3Options: activeV3RenderOptions,
         resetTransientVfx,
         getLegacyRosterProps,
         getOfflineBotCount: () => offlineBotCountRef.current,
@@ -760,6 +769,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     matchKillsToWin,
     visualModelPolicy: activeVisualModelPolicy,
     playerLoadout: visualPlayerLoadout,
+    v3Options: activeV3RenderOptions,
     isMultiplayer,
     getActiveCustomMap,
     animateSpartanModel,

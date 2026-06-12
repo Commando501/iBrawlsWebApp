@@ -6,6 +6,7 @@ import { type SwordLungeCurrentTrailStyle } from './combatGeometry';
 import { type ReplayInterpolatedPlayer } from './replayHelpers';
 import { resolveReplayCombatantVisualLoadout } from './replayVisualMetadata';
 import { type GrifballThreeRefs } from './threeRefs';
+import type { V3RenderOptions } from '../v3/v3QualityTiers';
 
 export function updateReplayCombatantVisualsForFrame({
   refs,
@@ -15,6 +16,7 @@ export function updateReplayCombatantVisualsForFrame({
   observerCamMode,
   replayPlayerName,
   dt,
+  v3Options = { v3QualityTier: 'desktop' },
   animateSpartanModel,
   renderSwordLungeTrailVfx,
   updateBlinking,
@@ -27,6 +29,7 @@ export function updateReplayCombatantVisualsForFrame({
   observerCamMode: string;
   replayPlayerName: string;
   dt: number;
+  v3Options?: V3RenderOptions;
   animateSpartanModel: (
     mesh: THREE.Group | null,
     vel: THREE.Vector3,
@@ -54,9 +57,13 @@ export function updateReplayCombatantVisualsForFrame({
     let meshes = refs.otherPlayerMeshes.get(id);
     const visualLoadout = resolveReplayCombatantVisualLoadout(replayData, id);
     const visualLoadoutKey = JSON.stringify(visualLoadout);
-    if (!meshes || meshes.group.userData.appliedHue !== player.hue || meshes.group.userData.appliedLoadoutKey !== visualLoadoutKey) {
+    const qualityChanged = visualLoadout.modelSystem === 'v3' && (
+      meshes?.group.userData.appliedV3QualityTier !== v3Options.v3QualityTier ||
+      meshes?.group.userData.appliedV3Distance !== v3Options.v3Distance
+    );
+    if (!meshes || meshes.group.userData.appliedHue !== player.hue || meshes.group.userData.appliedLoadoutKey !== visualLoadoutKey || qualityChanged) {
       if (meshes?.group) scene.remove(meshes.group);
-      meshes = createCombatantMeshRig(scene, player.hue, false, visualLoadout);
+      meshes = createCombatantMeshRig(scene, player.hue, false, visualLoadout, v3Options);
       meshes.group.userData.appliedHue = player.hue;
       meshes.group.userData.appliedLoadoutKey = visualLoadoutKey;
       refs.otherPlayerMeshes.set(id, meshes);

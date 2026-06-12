@@ -1,4 +1,5 @@
 import { type CharacterLoadout } from '../VoxelModels';
+import type { V3RenderOptions } from '../v3/v3QualityTiers';
 import { type Combatant } from '../../types';
 import {
   rebuildEnemyCombatantModelForState,
@@ -29,6 +30,7 @@ export function createViewTargetCallbacksForState({
   multiplayerRole,
   playerLoadout,
   visualPlayerLoadout,
+  v3Options = {},
   pushStatsUpdate,
 }: {
   getState: () => GrifballRuntimeState;
@@ -43,6 +45,7 @@ export function createViewTargetCallbacksForState({
   multiplayerRole: MultiplayerRole;
   playerLoadout?: CharacterLoadout;
   visualPlayerLoadout?: CharacterLoadout;
+  v3Options?: V3RenderOptions;
   pushStatsUpdate: () => void;
 }) {
   const meshPlayerLoadout = visualPlayerLoadout ?? playerLoadout;
@@ -82,6 +85,7 @@ export function createViewTargetCallbacksForState({
       multiplayerRole,
       playerLoadout: meshPlayerLoadout,
       mainAI: getMainAI(),
+      v3Options,
     });
   };
 
@@ -93,6 +97,7 @@ export function createViewTargetCallbacksForState({
       isMultiplayer,
       multiplayerRole,
       playerLoadout: meshPlayerLoadout,
+      v3Options,
     });
   };
 

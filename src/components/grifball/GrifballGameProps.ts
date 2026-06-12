@@ -1,6 +1,7 @@
 import type React from 'react';
 import type { MatchLobbyConfig } from '../../network/protocol';
 import type { VisualModelPolicy } from '../../model/modelSystem';
+import type { V3QualityTier } from '../v3/v3ModelTypes';
 import {
   type AIBehaviorPreset,
   type CharacterModelType,
@@ -53,4 +54,5 @@ export interface GrifballGameProps {
   onExitReplay?: () => void;
   playerLoadout?: CharacterLoadout;
   visualModelPolicy?: VisualModelPolicy;
+  v3QualityTier?: V3QualityTier;
 }

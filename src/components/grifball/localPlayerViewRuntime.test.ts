@@ -24,3 +24,24 @@ test('local first-person view uses V3 weapon builders for V3 loadouts', () => {
   assert.equal(refs.playerSword?.userData.weaponType, 'sword');
   assert.equal(refs.playerPistol?.userData.weaponType, 'pistol');
 });
+
+test('local first-person V3 weapons receive render quality options', () => {
+  const refs = createInitialGrifballThreeRefs();
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera();
+
+  buildLocalPlayerViewForRefs({
+    refs,
+    scene,
+    camera,
+    adminSettings: { playerHue: 192 },
+    playerLoadout: { modelSystem: 'v3' },
+    v3Options: {
+      v3QualityTier: 'mobileLow',
+    },
+  });
+
+  assert.equal(refs.playerHammer?.userData.v3QualityTier, 'mobileLow');
+  assert.equal(refs.playerSword?.userData.v3QualityTier, 'mobileLow');
+  assert.equal(refs.playerPistol?.userData.v3QualityTier, 'mobileLow');
+});

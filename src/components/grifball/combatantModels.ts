@@ -8,6 +8,7 @@ import {
   type CharacterLoadout,
 } from '../VoxelModels';
 import { buildV3HammerModel, buildV3PistolModel, buildV3SwordModel } from '../v3/VoxelModelsV3';
+import type { V3RenderOptions } from '../v3/v3QualityTiers';
 import {
   attachToCombatantAttachment,
   buildCombatantRigForModel,
@@ -64,14 +65,26 @@ const positionPistol = (pistol: THREE.Group) => {
 
 const isV3Loadout = (loadout?: CharacterLoadout): boolean => loadout?.modelSystem === 'v3';
 
-const buildCombatantHammer = (hue: number | undefined, loadout?: CharacterLoadout): THREE.Group =>
-  isV3Loadout(loadout) ? buildV3HammerModel(hue) : buildGravityHammerModel(hue, loadout?.hammerPreset);
+const buildCombatantHammer = (
+  hue: number | undefined,
+  loadout?: CharacterLoadout,
+  v3Options: V3RenderOptions = {}
+): THREE.Group =>
+  isV3Loadout(loadout) ? buildV3HammerModel(hue, v3Options) : buildGravityHammerModel(hue, loadout?.hammerPreset);
 
-const buildCombatantSword = (hue: number | undefined, loadout?: CharacterLoadout): THREE.Group =>
-  isV3Loadout(loadout) ? buildV3SwordModel(hue) : buildKatarSwordModel(hue, loadout?.swordPreset);
+const buildCombatantSword = (
+  hue: number | undefined,
+  loadout?: CharacterLoadout,
+  v3Options: V3RenderOptions = {}
+): THREE.Group =>
+  isV3Loadout(loadout) ? buildV3SwordModel(hue, v3Options) : buildKatarSwordModel(hue, loadout?.swordPreset);
 
-const buildCombatantPistol = (hue: number | undefined, loadout?: CharacterLoadout): THREE.Group =>
-  isV3Loadout(loadout) ? buildV3PistolModel(hue) : buildPistolModel(hue);
+const buildCombatantPistol = (
+  hue: number | undefined,
+  loadout?: CharacterLoadout,
+  v3Options: V3RenderOptions = {}
+): THREE.Group =>
+  isV3Loadout(loadout) ? buildV3PistolModel(hue, v3Options) : buildPistolModel(hue);
 
 export const getRandomLoadout = (): CharacterLoadout => {
   const helmets = AVAILABLE_PRESETS.helmet;
@@ -91,28 +104,36 @@ export const getRandomLoadout = (): CharacterLoadout => {
   };
 };
 
-export const createCombatantMeshRig = (scene: THREE.Scene, hue: number, isEnemyBot = false, loadout?: CharacterLoadout): CombatantMeshRig => {
+export const createCombatantMeshRig = (
+  scene: THREE.Scene,
+  hue: number,
+  isEnemyBot = false,
+  loadout?: CharacterLoadout,
+  v3Options: V3RenderOptions = {}
+): CombatantMeshRig => {
   const resolvedLoadout = loadout ?? (isEnemyBot ? getRandomLoadout() : undefined);
-  const group = buildVoxelSpartanModel(isEnemyBot, hue, resolvedLoadout);
+  const group = buildVoxelSpartanModel(isEnemyBot, hue, resolvedLoadout, v3Options);
   group.userData.appliedHue = hue;
   group.userData.appliedLoadoutKey = resolvedLoadout ? JSON.stringify(resolvedLoadout) : '';
+  group.userData.appliedV3QualityTier = v3Options.v3QualityTier;
+  group.userData.appliedV3Distance = v3Options.v3Distance;
   const rig = buildCombatantRigForModel(group);
   scene.add(group);
 
-  const hammer = buildCombatantHammer(hue, resolvedLoadout);
+  const hammer = buildCombatantHammer(hue, resolvedLoadout, v3Options);
   if (!isV3Loadout(resolvedLoadout)) {
     positionHammer(hammer);
   }
   attachToCombatantAttachment(group, 'thirdPersonWeaponGrip', hammer);
 
-  const sword = buildCombatantSword(hue, resolvedLoadout);
+  const sword = buildCombatantSword(hue, resolvedLoadout, v3Options);
   if (!isV3Loadout(resolvedLoadout)) {
     positionSword(sword);
   }
   sword.visible = false;
   attachToCombatantAttachment(group, 'thirdPersonWeaponGrip', sword);
 
-  const pistol = buildCombatantPistol(hue, resolvedLoadout);
+  const pistol = buildCombatantPistol(hue, resolvedLoadout, v3Options);
   if (!isV3Loadout(resolvedLoadout)) {
     positionPistol(pistol);
   }
@@ -131,6 +152,7 @@ export const rebuildDualWeaponCombatantModel = ({
   loadout,
   position,
   activeWeapon,
+  v3Options = {},
 }: {
   scene: THREE.Scene;
   previousGroup?: THREE.Group | null;
@@ -140,28 +162,31 @@ export const rebuildDualWeaponCombatantModel = ({
   loadout?: CharacterLoadout;
   position: THREE.Vector3;
   activeWeapon: 'hammer' | 'sword' | 'pistol';
+  v3Options?: V3RenderOptions;
 }): RebuiltDualWeaponCombatantModel => {
   if (previousGroup) {
     scene.remove(previousGroup);
   }
 
-  const group = buildVoxelSpartanModel(isEnemyBot, hue, loadout);
+  const group = buildVoxelSpartanModel(isEnemyBot, hue, loadout, v3Options);
   group.position.copy(position);
   group.userData.appliedHue = hue;
   group.userData.appliedLoadoutKey = loadout ? JSON.stringify(loadout) : '';
+  group.userData.appliedV3QualityTier = v3Options.v3QualityTier;
+  group.userData.appliedV3Distance = v3Options.v3Distance;
   const rig = buildCombatantRigForModel(group);
   scene.add(group);
 
   const resolvedWeaponHue = weaponHue === null ? undefined : (weaponHue ?? hue);
 
-  const hammer = buildCombatantHammer(resolvedWeaponHue, loadout);
+  const hammer = buildCombatantHammer(resolvedWeaponHue, loadout, v3Options);
   if (!isV3Loadout(loadout)) {
     positionHammer(hammer);
   }
   hammer.visible = activeWeapon === 'hammer';
   attachToCombatantAttachment(group, 'thirdPersonWeaponGrip', hammer);
 
-  const sword = buildCombatantSword(resolvedWeaponHue, loadout);
+  const sword = buildCombatantSword(resolvedWeaponHue, loadout, v3Options);
   if (!isV3Loadout(loadout)) {
     positionSword(sword);
   }

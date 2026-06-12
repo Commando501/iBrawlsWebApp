@@ -31,6 +31,7 @@ import {
   type CharacterLoadout,
 } from '../components/VoxelModels';
 import { buildV3HammerModel, buildV3PistolModel, buildV3SwordModel } from '../components/v3/VoxelModelsV3';
+import type { V3RenderOptions } from '../components/v3/v3QualityTiers';
 import {
   DEFAULT_HAMMER_SLAM_ATTACK_TIME,
   DEFAULT_HAMMER_SLAM_TIMING_LOCKED,
@@ -58,6 +59,11 @@ import {
 
 type WeaponChoice = 'hammer' | 'sword' | 'pistol';
 type ModelSystemChoice = 'v1' | 'v2' | 'v3';
+
+const EDITOR_V3_RENDER_OPTIONS: V3RenderOptions = {
+  v3QualityTier: 'desktop',
+  v3Distance: 0,
+};
 type EditorView = 'firstPerson' | 'thirdPerson';
 type TransformMode = 'translate' | 'rotate';
 type RigTrackMap = Record<string, AnimationKeyframe[]>;
@@ -581,9 +587,9 @@ const rebuildFirstPersonWeapons = (system: ModelSystemChoice): void => {
   disposeObjectTree(firstPersonPistol);
 
   if (system === 'v3') {
-    firstPersonHammer = buildV3HammerModel(192);
-    firstPersonSword = buildV3SwordModel(192);
-    firstPersonPistol = buildV3PistolModel(192);
+    firstPersonHammer = buildV3HammerModel(192, EDITOR_V3_RENDER_OPTIONS);
+    firstPersonSword = buildV3SwordModel(192, EDITOR_V3_RENDER_OPTIONS);
+    firstPersonPistol = buildV3PistolModel(192, EDITOR_V3_RENDER_OPTIONS);
   } else {
     firstPersonHammer = buildGravityHammerModel(192);
     firstPersonSword = buildKatarSwordModel(192);
@@ -1671,7 +1677,13 @@ function swapModelSystem(newSystem: ModelSystemChoice): void {
   state.modelSystem = newSystem;
 
   // 4. Create the new rig
-  thirdPersonRig = createCombatantMeshRig(scene, 192, false, currentPreviewLoadout(newSystem));
+  thirdPersonRig = createCombatantMeshRig(
+    scene,
+    192,
+    false,
+    currentPreviewLoadout(newSystem),
+    newSystem === 'v3' ? EDITOR_V3_RENDER_OPTIONS : undefined
+  );
   thirdPersonRig.group.position.set(0, 0, 0);
   thirdPersonRig.group.rotation.y = Math.PI;
   rebuildFirstPersonWeapons(newSystem);

@@ -5,7 +5,10 @@ import { DEFAULT_ADMIN_SETTINGS } from '../../settings/gameplaySettings';
 import { createMainAICombatant } from '../../game/roster';
 import { createInitialGrifballRuntimeState } from './runtimeState';
 import { createInitialGrifballThreeRefs } from './threeRefs';
-import { rebuildEnemyCombatantModelForState } from './combatantModelRebuild';
+import {
+  rebuildEnemyCombatantModelForState,
+  rebuildHostCombatantModelForState,
+} from './combatantModelRebuild';
 import { getRandomLoadout } from './combatantModels';
 import { createViewTargetCallbacksForState } from './viewTargetCallbacks';
 
@@ -95,5 +98,34 @@ test('host rebuild uses visual loadout without changing gameplay model type', ()
     modelSystem: 'v3',
     modelType: 'large',
   });
+  assert.equal(state.playerModelType, 'medium');
+});
+
+test('host combatant rebuild tags V3 quality without changing gameplay model type', () => {
+  const scene = new THREE.Scene();
+  const refs = createInitialGrifballThreeRefs();
+  refs.scene = scene;
+  const state = createInitialGrifballRuntimeState({
+    debugMode: false,
+    adminSettings: DEFAULT_ADMIN_SETTINGS,
+    multiplayerRole: 'host',
+    isMultiplayer: true,
+  });
+  state.playerModelType = 'medium';
+
+  rebuildHostCombatantModelForState({
+    state,
+    refs,
+    hue: 220,
+    isMultiplayer: true,
+    multiplayerRole: 'host',
+    playerLoadout: { modelSystem: 'v3', modelType: 'large' },
+    v3Options: {
+      v3QualityTier: 'mobileLow',
+    },
+  });
+
+  assert.equal(refs.hostGroup?.userData.v3QualityTier, 'mobileLow');
+  assert.equal(refs.hostGroup?.userData.appliedV3QualityTier, 'mobileLow');
   assert.equal(state.playerModelType, 'medium');
 });
