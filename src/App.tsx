@@ -36,6 +36,7 @@ import { useCurrentGameStats } from './components/hud/useCurrentGameStats';
 import { useMatchLoadingGate } from './components/loading/useMatchLoadingGate';
 import { statTracker } from './stats/statTracker';
 import { useStatCloudSync } from './stats/useStatCloudSync';
+import { normalizeVisualModelPolicy } from './model/modelSystem';
 
 export { createHighFidelityObjectMesh } from './components/main-menu/MapPreview';
 
@@ -336,6 +337,10 @@ export default function App() {
     setConnectionError,
   });
 
+  const activeVisualModelPolicy = useMemo(() => normalizeVisualModelPolicy(
+    matchLobbyConfig?.visualModelPolicy ?? adminSettings.visualModelPolicy
+  ), [adminSettings.visualModelPolicy, matchLobbyConfig?.visualModelPolicy]);
+
   const {
     gameLoadingState,
     multiplayerLoadingSnapshot,
@@ -357,6 +362,7 @@ export default function App() {
     playerName,
     playerHue: localPlayerHue,
     playerLoadout,
+    visualModelPolicy: activeVisualModelPolicy,
     selectedReplayId: selectedReplay?.id,
     selectedMap,
     lobbyCustomMapData,
@@ -625,7 +631,12 @@ export default function App() {
   });
 
   const activeMatchSettings = useMemo(() => {
-    if (!matchLobbyConfig) return effectiveAdminSettings;
+    if (!matchLobbyConfig) {
+      return {
+        ...effectiveAdminSettings,
+        visualModelPolicy: activeVisualModelPolicy,
+      };
+    }
     return {
       ...effectiveAdminSettings,
       gameMode: matchLobbyConfig.gameMode,
@@ -636,8 +647,9 @@ export default function App() {
         ? matchLobbyConfig.winTarget
         : effectiveAdminSettings.grifballGoalTarget,
       matchTimerSeconds: matchLobbyConfig.matchTimerSeconds,
+      visualModelPolicy: activeVisualModelPolicy,
     };
-  }, [effectiveAdminSettings, matchLobbyConfig]);
+  }, [activeVisualModelPolicy, effectiveAdminSettings, matchLobbyConfig]);
 
   // ── Lifetime stat tracking ────────────────────────────────────────────────
   // Open/close the tracked match on play transitions. Replays and the AI
@@ -681,6 +693,7 @@ export default function App() {
 	        selectedMap={selectedMap}
 	        lobbyCustomMapData={lobbyCustomMapData}
 	        playerLoadout={playerLoadout}
+	        visualModelPolicy={activeVisualModelPolicy}
 	        isPaused={isPaused}
 	        isMatchLoadingActive={isMatchLoadingActive}
 	        debugMode={debugMode}

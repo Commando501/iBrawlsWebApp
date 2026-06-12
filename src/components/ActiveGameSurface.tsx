@@ -26,6 +26,7 @@ import { ReplayHeatmapTheaterOverlay } from './replay/ReplayHeatmapTheaterOverla
 import { TournamentVictoryOverlay } from './tournament/TournamentVictoryOverlay';
 import type { GameplayMultiplayerRole } from './multiplayer/multiplayerConnectionConstants';
 import type { MatchLobbyConfig } from '../network/protocol';
+import type { VisualModelPolicy } from '../model/modelSystem';
 
 type SinglePlayerMode = 'sandbox' | 'tournament' | 'ai-editor';
 
@@ -46,6 +47,7 @@ interface ActiveGameSurfaceProps {
   selectedMap: string;
   lobbyCustomMapData: CustomMapData | null;
   playerLoadout: CharacterLoadout;
+  visualModelPolicy?: VisualModelPolicy | null;
   isPaused: boolean;
   isMatchLoadingActive: boolean;
   debugMode: boolean;
@@ -109,6 +111,7 @@ export function ActiveGameSurface({
   selectedMap,
   lobbyCustomMapData,
   playerLoadout,
+  visualModelPolicy,
   isPaused,
   isMatchLoadingActive,
   debugMode,
@@ -190,6 +193,7 @@ export function ActiveGameSurface({
           selectedMap={selectedMap}
           customMap={selectedMap === 'custom_file' ? (lobbyCustomMapData || undefined) : undefined}
           playerLoadout={playerLoadout}
+          visualModelPolicy={visualModelPolicy ?? undefined}
           isPaused={isPaused || isMatchLoadingActive}
           debugMode={debugMode}
           adminSettings={effectiveAdminSettings}
@@ -236,6 +240,7 @@ export function ActiveGameSurface({
           playerName={playerName}
           playerHue={localPlayerHue}
           playerLoadout={playerLoadout}
+          visualModelPolicy={visualModelPolicy}
           participants={multiplayerLoadingSnapshot.participants}
           waitingCount={multiplayerLoadingSnapshot.waitingCount}
         />

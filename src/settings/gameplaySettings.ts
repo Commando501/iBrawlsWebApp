@@ -5,6 +5,7 @@ import {
   DEFAULT_HAMMER_SLAM_TIMING_LOCKED,
   DEFAULT_HAMMER_SLAM_WINDUP_TIME,
 } from '../game/hammerSlamTiming';
+import { normalizeVisualModelPolicy } from '../model/modelSystem';
 
 export type PersistedGameplaySettings = Omit<UniversalSettings, 'playerHue' | 'playerName'>;
 
@@ -55,6 +56,7 @@ export const DEFAULT_ADMIN_SETTINGS: UniversalSettings = {
   nameVisibilityColor: '#00ffff',
   nameVisibilityOpacity: 0.8,
   nameVisibilityFontSize: 16,
+  visualModelPolicy: 'v3',
   aiDifficulty: 'normal',
   aiReactionLatency: 0.25,
   aiAnticipationFactor: 0.40,
@@ -96,6 +98,7 @@ export const withDefaultGameplaySettings = (
   return {
     ...persistedDefaults,
     ...settings,
+    visualModelPolicy: normalizeVisualModelPolicy(settings.visualModelPolicy ?? persistedDefaults.visualModelPolicy),
     hammerAttackAnimation: settings.hammerAttackAnimation ?? persistedDefaults.hammerAttackAnimation,
     hammerSplashVfx: settings.hammerSplashVfx ?? persistedDefaults.hammerSplashVfx,
     swordAttackAnimation: settings.swordAttackAnimation ?? persistedDefaults.swordAttackAnimation,

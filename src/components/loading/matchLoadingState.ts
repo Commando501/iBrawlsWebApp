@@ -8,6 +8,7 @@ import {
   type MultiplayerLoadingStatusPayload,
 } from './loadingTypes';
 import { DEFAULT_LOADOUT, type CharacterLoadout } from '../VoxelModels';
+import { normalizeVisualModelPolicy, type VisualModelPolicy } from '../../model/modelSystem';
 
 export const MATCH_LOADING_TIMEOUT_MS = 45_000;
 
@@ -44,6 +45,11 @@ function normalizeLoadout(loadout: unknown): CharacterLoadout | undefined {
   return { ...DEFAULT_LOADOUT, ...(loadout as CharacterLoadout) };
 }
 
+function normalizeParticipantPolicy(value: unknown): VisualModelPolicy | undefined {
+  if (value === undefined || value === null) return undefined;
+  return normalizeVisualModelPolicy(value);
+}
+
 export function upsertLoadingSlot(
   roster: Record<string, MultiplayerLoadingParticipant>,
   slot: MultiplayerLoadingSlotPayload,
@@ -60,6 +66,7 @@ export function upsertLoadingSlot(
       playerName: getParticipantDisplayName(slot.playerName, slot.clientId),
       hue: typeof slot.hue === 'number' && Number.isFinite(slot.hue) ? slot.hue : existing?.hue ?? 200,
       loadout: normalizeLoadout(slot.loadout) ?? existing?.loadout,
+      visualModelPolicy: normalizeParticipantPolicy(slot.visualModelPolicy) ?? existing?.visualModelPolicy,
       progress: existing?.progress ?? 0,
       stage: existing?.stage ?? 'Waiting',
       ready: existing?.ready ?? false,
@@ -97,6 +104,7 @@ export function upsertLoadingStatus(
       playerName: getParticipantDisplayName(status.playerName ?? existing?.playerName, clientId),
       hue: typeof status.hue === 'number' && Number.isFinite(status.hue) ? status.hue : existing?.hue ?? 200,
       loadout: normalizeLoadout(status.loadout) ?? existing?.loadout,
+      visualModelPolicy: normalizeParticipantPolicy(status.visualModelPolicy) ?? existing?.visualModelPolicy,
       progress,
       stage: status.stage || existing?.stage || 'Loading',
       ready: Boolean(status.ready) || progress >= 100,
