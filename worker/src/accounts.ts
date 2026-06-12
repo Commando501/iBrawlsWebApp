@@ -20,6 +20,7 @@ export interface AccountsEnv {
 
 // ── Tunables ─────────────────────────────────────────────────────────────────
 const SESSION_TTL_MS = 365 * 24 * 60 * 60 * 1000; // 1 year, slid forward on use
+const SESSION_REFRESH_WINDOW_MS = 30 * 24 * 60 * 60 * 1000; // only rewrite near expiry
 const USERNAME_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000;
 const EMAIL_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000;
 const PASSWORD_COOLDOWN_MS = 24 * 60 * 60 * 1000;
@@ -106,6 +107,10 @@ interface DisplayNameClaimResult {
   status?: number;
 }
 
+interface SessionResolution {
+  accountId: string;
+}
+
 async function getAccountRegisteredDisplayName(env: AccountsEnv, accountId: string): Promise<string | null> {
   const row = await env.DB.prepare(
     "SELECT display_name FROM registered_display_names WHERE account_id = ?"
@@ -158,11 +163,6 @@ export async function claimRegisteredDisplayNameForAccount(
     return { ok: false, status: 400, error: "Enter a valid display name." };
   }
 
-  const owner = await getRegisteredDisplayNameOwner(env, displayName);
-  if (owner && owner !== accountId) {
-    return { ok: false, status: 409, error: "That display name is already registered." };
-  }
-
   try {
     await env.DB.prepare(
       `INSERT INTO registered_display_names (account_id, display_name, normalized_name, updated_at)
@@ -170,7 +170,9 @@ export async function claimRegisteredDisplayNameForAccount(
        ON CONFLICT(account_id) DO UPDATE SET
          display_name = excluded.display_name,
          normalized_name = excluded.normalized_name,
-         updated_at = excluded.updated_at`
+         updated_at = excluded.updated_at
+       WHERE registered_display_names.display_name IS NOT excluded.display_name
+          OR registered_display_names.normalized_name IS NOT excluded.normalized_name`
     )
       .bind(accountId, displayName, normalizedName, now)
       .run();
@@ -196,8 +198,10 @@ async function ensureRegisteredDisplayNameForAccount(
 
 // Owner-facing account view. Includes recovery_code intentionally — it is shown
 // (obscured, with a reveal toggle) to the authenticated owner per the UI spec.
-async function publicAccount(row: AccountRow, env: AccountsEnv) {
-  const registeredDisplayName = await ensureRegisteredDisplayNameForAccount(env, row);
+function publicAccountWithRegisteredDisplayName(
+  row: AccountRow,
+  registeredDisplayName: string | null
+) {
   return {
     id: row.id,
     email: row.email,
@@ -210,6 +214,11 @@ async function publicAccount(row: AccountRow, env: AccountsEnv) {
     passwordChangedAt: row.password_changed_at,
     isAdmin: row.is_admin === 1,
   };
+}
+
+async function publicAccount(row: AccountRow, env: AccountsEnv) {
+  const registeredDisplayName = await ensureRegisteredDisplayNameForAccount(env, row);
+  return publicAccountWithRegisteredDisplayName(row, registeredDisplayName);
 }
 
 // ── HTTP helpers ─────────────────────────────────────────────────────────────
@@ -236,8 +245,10 @@ async function readJson(request: Request): Promise<Record<string, unknown> | nul
   }
 }
 
-// Resolve the account for a valid, non-expired bearer token; slides the TTL.
-export async function requireSession(request: Request, env: AccountsEnv): Promise<AccountRow | null> {
+async function resolveValidSession(
+  request: Request,
+  env: AccountsEnv
+): Promise<SessionResolution | null> {
   const token = bearerToken(request);
   if (!token) return null;
   const tokenHash = await sha256Hex(token);
@@ -249,17 +260,37 @@ export async function requireSession(request: Request, env: AccountsEnv): Promis
     .first<{ account_id: string; expires_at: number }>();
   if (!session || session.expires_at <= now) return null;
 
+  // Slide the session only near expiry. With a one-year TTL, rewriting this row
+  // on every authenticated request creates quota pressure without meaningfully
+  // extending the practical session lifetime.
+  if (session.expires_at <= now + SESSION_REFRESH_WINDOW_MS) {
+    await env.DB.prepare(
+      "UPDATE sessions SET expires_at = ?, last_seen = ? WHERE token_hash = ?"
+    )
+      .bind(now + SESSION_TTL_MS, now, tokenHash)
+      .run();
+  }
+  return { accountId: session.account_id };
+}
+
+export async function requireSessionAccountId(
+  request: Request,
+  env: AccountsEnv
+): Promise<string | null> {
+  const session = await resolveValidSession(request, env);
+  return session?.accountId ?? null;
+}
+
+// Resolve the account for a valid, non-expired bearer token; slides the TTL.
+export async function requireSession(request: Request, env: AccountsEnv): Promise<AccountRow | null> {
+  const session = await resolveValidSession(request, env);
+  if (!session) return null;
+
   const account = await env.DB.prepare("SELECT * FROM accounts WHERE id = ?")
-    .bind(session.account_id)
+    .bind(session.accountId)
     .first<AccountRow>();
   if (!account) return null;
 
-  // Slide the session expiry forward so active users stay logged in.
-  await env.DB.prepare(
-    "UPDATE sessions SET expires_at = ?, last_seen = ? WHERE token_hash = ?"
-  )
-    .bind(now + SESSION_TTL_MS, now, tokenHash)
-    .run();
   return account;
 }
 
@@ -611,10 +642,10 @@ export async function resolveAdminAccount(
 }
 
 async function handleGetSave(request: Request, env: AccountsEnv, cors: Cors): Promise<Response> {
-  const account = await requireSession(request, env);
-  if (!account) return json({ error: "Not authenticated." }, 401, cors);
+  const accountId = await requireSessionAccountId(request, env);
+  if (!accountId) return json({ error: "Not authenticated." }, 401, cors);
   const row = await env.DB.prepare("SELECT payload, updated_at FROM cloud_saves WHERE account_id = ?")
-    .bind(account.id)
+    .bind(accountId)
     .first<{ payload: string; updated_at: number }>();
   if (!row) return json({ save: null }, 200, cors);
   let save: unknown = null;
@@ -644,11 +675,22 @@ async function handlePutSave(request: Request, env: AccountsEnv, cors: Cors): Pr
   await env.DB.prepare(
     `INSERT INTO cloud_saves (account_id, payload, updated_at)
      VALUES (?, ?, ?)
-     ON CONFLICT(account_id) DO UPDATE SET payload = excluded.payload, updated_at = excluded.updated_at`
+     ON CONFLICT(account_id) DO UPDATE SET
+       payload = excluded.payload,
+       updated_at = excluded.updated_at
+     WHERE cloud_saves.payload IS NOT excluded.payload`
   )
     .bind(account.id, payload, now)
     .run();
-  return json({ ok: true, updatedAt: now, account: await publicAccount(account, env) }, 200, cors);
+  return json(
+    {
+      ok: true,
+      updatedAt: now,
+      account: publicAccountWithRegisteredDisplayName(account, claim.displayName ?? displayName),
+    },
+    200,
+    cors
+  );
 }
 
 // ── Dispatcher ───────────────────────────────────────────────────────────────

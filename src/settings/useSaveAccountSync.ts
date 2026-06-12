@@ -26,6 +26,22 @@ export type SaveSystemStatus = {
   message: string;
 };
 
+export interface CloudSaveSyncDecision {
+  payload: string;
+  shouldPush: boolean;
+}
+
+export function getCloudSaveSyncDecision(
+  lastPushedPayload: string | null,
+  saveData: SaveData
+): CloudSaveSyncDecision {
+  const payload = JSON.stringify(saveData);
+  return {
+    payload,
+    shouldPush: payload !== lastPushedPayload,
+  };
+}
+
 interface UseSaveAccountSyncOptions {
   adminSettings: UniversalSettings;
   setAdminSettings: Dispatch<SetStateAction<UniversalSettings>>;
@@ -67,6 +83,7 @@ export function useSaveAccountSync({
   const [saveCodeImportInput, setSaveCodeImportInput] = useState('');
   const [saveSystemStatus, setSaveSystemStatus] = useState<SaveSystemStatus>({ type: null, message: '' });
   const cloudPushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastCloudSavePayload = useRef<string | null>(null);
 
   const applySaveData = useCallback((decrypted: SaveData) => {
     onPlayerNameChange(decrypted.playerName);
@@ -117,6 +134,7 @@ export function useSaveAccountSync({
   const pullAndApplyCloudSave = useCallback(async () => {
     const res = await fetchCloudSave<SaveData>();
     if (res.ok && res.data && res.data.save) {
+      lastCloudSavePayload.current = JSON.stringify(res.data.save);
       applySaveData(res.data.save);
     }
   }, [applySaveData]);
@@ -229,13 +247,18 @@ export function useSaveAccountSync({
   const handleRegistered = useCallback((acct: AccountInfo) => {
     setAccount(acct);
     void (async () => {
-      const res = await pushCloudSave(buildCurrentSaveData());
+      const saveData = buildCurrentSaveData();
+      const decision = getCloudSaveSyncDecision(lastCloudSavePayload.current, saveData);
+      if (!decision.shouldPush) return;
+      const res = await pushCloudSave(saveData);
+      if (res.ok) lastCloudSavePayload.current = decision.payload;
       handleCloudSavePushResult(res, acct);
     })();
   }, [buildCurrentSaveData, handleCloudSavePushResult]);
 
   const handleLoggedOut = useCallback(() => {
     setAccount(null);
+    lastCloudSavePayload.current = null;
     onLoggedOut?.();
   }, [onLoggedOut]);
 
@@ -248,8 +271,8 @@ export function useSaveAccountSync({
     (async () => {
       const res = await fetchMe();
       if (res.ok && res.data) {
-        setAccount(res.data.account);
         try { await pullAndApplyCloudSave(); } catch { /* ignore */ }
+        setAccount(res.data.account);
       }
     })();
   }, []);
@@ -259,7 +282,11 @@ export function useSaveAccountSync({
     if (cloudPushTimer.current) clearTimeout(cloudPushTimer.current);
     cloudPushTimer.current = setTimeout(() => {
       void (async () => {
-        const res = await pushCloudSave(buildCurrentSaveData());
+        const saveData = buildCurrentSaveData();
+        const decision = getCloudSaveSyncDecision(lastCloudSavePayload.current, saveData);
+        if (!decision.shouldPush) return;
+        const res = await pushCloudSave(saveData);
+        if (res.ok) lastCloudSavePayload.current = decision.payload;
         handleCloudSavePushResult(res);
       })();
     }, 1500);

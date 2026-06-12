@@ -1,5 +1,10 @@
 import { LIVE_CONFIG_KEY_SET } from "./liveConfigKeys";
-import { handleAccountRequest, requireSession, resolveAdminAccount, getRegisteredDisplayNameOwner } from "./accounts";
+import {
+  handleAccountRequest,
+  requireSessionAccountId,
+  resolveAdminAccount,
+  getRegisteredDisplayNameOwner,
+} from "./accounts";
 import { normalizeRegisteredDisplayName, resolvePublicDisplayName } from "./displayNames";
 import { toAnalyticsDataPoint } from "./telemetrySchema";
 import {
@@ -1119,11 +1124,11 @@ export class GameLobby implements DurableObject {
       const accountRequest = new Request(request.url, {
         headers: { Authorization: `Bearer ${accountToken}` },
       });
-      const account = await requireSession(accountRequest, this.env);
-      if (!account || (claimedAccountId && claimedAccountId !== account.id)) {
+      const resolvedAccountId = await requireSessionAccountId(accountRequest, this.env);
+      if (!resolvedAccountId || (claimedAccountId && claimedAccountId !== resolvedAccountId)) {
         return new Response("Invalid account session", { status: 401 });
       }
-      accountId = account.id;
+      accountId = resolvedAccountId;
     }
     await this.handleSession(serverSocket, connectionType, nameParam, accountId, onlineInstanceId);
 

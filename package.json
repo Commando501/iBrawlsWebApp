@@ -13,6 +13,8 @@
     "typecheck:worker": "cd worker && npm run typecheck",
     "typecheck:analysis": "tsc -p analysis/tsconfig.json --noEmit",
     "typecheck:all": "npm run lint && npm run typecheck:worker && npm run typecheck:analysis",
+    "test:account-persistence": "node --import tsx --test worker/src/accountsPersistence.test.ts src/settings/useSaveAccountSync.test.ts",
+    "test:db-efficiency": "node --import tsx --test worker/src/accountsPersistence.test.ts worker/src/statsPersistence.test.ts src/settings/useSaveAccountSync.test.ts src/stats/useStatCloudSync.test.ts",
     "analyze": "tsx analysis/analyze.ts",
     "sim:serve": "tsx src/sim/server/main.ts",
     "sim:bench": "tsx scripts/sim/bench.ts",

@@ -4,6 +4,7 @@ import { fetchCloudStats, ingestStatDelta } from '../services/playerStats';
 import { loadMergedAccountId, profileToDelta, saveMergedAccountId } from './statStore';
 import { statTracker } from './statTracker';
 import { isDeltaEmpty } from './statTypes';
+import type { StatDelta } from './statTypes';
 
 /**
  * Keeps the local stat profile and the account's cloud stats in step.
@@ -17,6 +18,10 @@ import { isDeltaEmpty } from './statTypes';
  */
 
 const PUSH_DEBOUNCE_MS = 4000;
+
+export function shouldPushInitialStatProfile(localDelta: StatDelta): boolean {
+  return !isDeltaEmpty(localDelta);
+}
 
 export function useStatCloudSync(account: AccountInfo | null) {
   const accountId = account?.id ?? null;
@@ -82,12 +87,22 @@ export function useStatCloudSync(account: AccountInfo | null) {
           // completeFlush settles them without double counting.
           statTracker.beginFlush();
           const localDelta = profileToDelta(statTracker.getProfile());
-          const result = await ingestStatDelta(localDelta);
-          if (!cancelled && result.ok && result.data?.stats) {
-            saveMergedAccountId(accountId);
-            statTracker.completeFlush(result.data.stats);
+          if (shouldPushInitialStatProfile(localDelta)) {
+            const result = await ingestStatDelta(localDelta);
+            if (!cancelled && result.ok && result.data?.stats) {
+              saveMergedAccountId(accountId);
+              statTracker.completeFlush(result.data.stats);
+            } else {
+              statTracker.abortFlush();
+            }
           } else {
-            statTracker.abortFlush();
+            const result = await fetchCloudStats();
+            if (!cancelled && result.ok) {
+              saveMergedAccountId(accountId);
+              if (result.data?.stats) statTracker.adoptServerProfile(result.data.stats);
+            } else {
+              statTracker.abortFlush();
+            }
           }
         } else {
           const result = await fetchCloudStats();

@@ -8,7 +8,7 @@
 // Routes (dispatched from accounts.ts):
 //   GET  /api/account/stats         -> { stats: { totals, modes } | null }
 //   POST /api/account/stats/ingest  -> body StatDelta; returns merged totals
-import { requireSession, type AccountsEnv } from "./accounts";
+import { requireSessionAccountId, type AccountsEnv } from "./accounts";
 
 type CounterMap = Record<string, number>;
 
@@ -116,18 +116,18 @@ function json(body: unknown, status: number, cors: Cors): Response {
 }
 
 async function handleGetStats(request: Request, env: AccountsEnv, cors: Cors): Promise<Response> {
-  const account = await requireSession(request, env);
-  if (!account) return json({ error: "Not authenticated." }, 401, cors);
+  const accountId = await requireSessionAccountId(request, env);
+  if (!accountId) return json({ error: "Not authenticated." }, 401, cors);
   const row = await env.DB.prepare("SELECT payload, updated_at FROM player_stats WHERE account_id = ?")
-    .bind(account.id)
+    .bind(accountId)
     .first<{ payload: string; updated_at: number }>();
   if (!row) return json({ stats: null }, 200, cors);
   return json({ stats: parseStoredPayload(row.payload), updatedAt: row.updated_at }, 200, cors);
 }
 
 async function handleIngestStats(request: Request, env: AccountsEnv, cors: Cors): Promise<Response> {
-  const account = await requireSession(request, env);
-  if (!account) return json({ error: "Not authenticated." }, 401, cors);
+  const accountId = await requireSessionAccountId(request, env);
+  if (!accountId) return json({ error: "Not authenticated." }, 401, cors);
 
   let body: unknown;
   try {
@@ -138,7 +138,7 @@ async function handleIngestStats(request: Request, env: AccountsEnv, cors: Cors)
   const delta = sanitizeDelta(body);
 
   const row = await env.DB.prepare("SELECT payload FROM player_stats WHERE account_id = ?")
-    .bind(account.id)
+    .bind(accountId)
     .first<{ payload: string }>();
   const merged = applyDeltaToPayload(parseStoredPayload(row?.payload), delta);
 
@@ -148,7 +148,7 @@ async function handleIngestStats(request: Request, env: AccountsEnv, cors: Cors)
      VALUES (?, ?, ?)
      ON CONFLICT(account_id) DO UPDATE SET payload = excluded.payload, updated_at = excluded.updated_at`
   )
-    .bind(account.id, JSON.stringify(merged), now)
+    .bind(accountId, JSON.stringify(merged), now)
     .run();
 
   return json({ ok: true, stats: merged, updatedAt: now }, 200, cors);
