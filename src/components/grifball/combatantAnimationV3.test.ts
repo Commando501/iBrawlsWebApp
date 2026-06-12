@@ -14,6 +14,10 @@ import {
   getFirstPersonV3WeaponPose,
   getV3BodyMaskForLayer,
 } from './combatantAnimationV3';
+import {
+  sampleV3FirstPersonWeaponPose,
+  sampleV3ThirdPersonWeaponPose,
+} from './v3AnimationFidelity';
 import { createInitialGrifballThreeRefs } from './threeRefs';
 
 const createV3Model = () => {
@@ -196,6 +200,21 @@ describe('getFirstPersonV3WeaponPose', () => {
       assert.equal(pose.rotation.every(Number.isFinite), true);
     }
   });
+
+  it('matches the shared V3 first-person weapon pose profiles', () => {
+    const cases = [
+      { activeWeapon: 'hammer' as const, weaponState: 'swing_up', weaponTimer: 0.1, isLunging: false },
+      { activeWeapon: 'sword' as const, weaponState: 'ready', weaponTimer: 0.08, isLunging: true },
+      { activeWeapon: 'pistol' as const, weaponState: 'firing', weaponTimer: 0, isLunging: false },
+    ];
+
+    for (const input of cases) {
+      const expected = sampleV3FirstPersonWeaponPose({ ...input, settings: {} });
+      const actual = getFirstPersonV3WeaponPose({ ...input, settings: {} });
+
+      assert.deepEqual(actual, expected, `${input.activeWeapon} first-person pose should use shared profile`);
+    }
+  });
 });
 
 describe('animateCombatantWeaponMeshes V3 integration', () => {
@@ -237,5 +256,31 @@ describe('animateCombatantWeaponMeshes V3 integration', () => {
 
     assert.equal(pistol.visible, true);
     assert.notEqual(pistol.position.z, 0);
+  });
+
+  it('applies shared V3 third-person weapon mesh profiles', () => {
+    const pistol = buildV3PistolModel(192);
+    const expected = sampleV3ThirdPersonWeaponPose({
+      activeWeapon: 'pistol',
+      weaponState: 'firing',
+      weaponTimer: 0,
+      isLunging: false,
+      settings: {},
+    });
+
+    animateCombatantWeaponMeshes({
+      hammerModel: null,
+      swordModel: null,
+      pistolModel: pistol,
+      activeWeapon: 'pistol',
+      weaponState: 'firing',
+      weaponTimer: 0,
+      isLunging: false,
+      dt: 1,
+      settings: {},
+    });
+
+    assert.deepEqual(pistol.position.toArray(), expected.position);
+    assert.deepEqual(pistol.rotation.toArray().slice(0, 3), expected.rotation);
   });
 });
