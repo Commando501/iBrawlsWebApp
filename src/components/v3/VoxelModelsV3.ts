@@ -81,6 +81,7 @@ const roleColor = (role: string, colors: SpartanColors): string => {
   if (role === 'undersuit') return colors.dark;
   if (role === 'visor') return colors.visor;
   if (role === 'emissive') return colors.highlight;
+  if (role === 'decal') return '#f8fafc';
   if (role === 'fixed') return '#27272a';
   return colors.primary;
 };
@@ -133,6 +134,42 @@ const addTranslatedBox = (
   }
 };
 
+const addPanelStripe = (
+  voxels: VoxelData[],
+  axis: 'x' | 'y',
+  fixedZ: number,
+  color: string,
+  emissive = false
+) => {
+  const maxX = Math.max(...voxels.map((voxel) => voxel.x));
+  const maxY = Math.max(...voxels.map((voxel) => voxel.y));
+  const centerX = Math.floor(maxX / 2);
+  const centerY = Math.floor(maxY / 2);
+
+  if (axis === 'x') {
+    for (let x = 1; x < maxX; x++) {
+      voxels.push({ x, y: centerY, z: fixedZ, color, emissive });
+    }
+    return;
+  }
+
+  for (let y = 1; y < maxY; y++) {
+    voxels.push({ x: centerX, y, z: fixedZ, color, emissive });
+  }
+};
+
+const addCornerArmorTabs = (
+  voxels: VoxelData[],
+  dimensions: [number, number, number],
+  color: string
+) => {
+  const [width, height, depth] = dimensions;
+  const tabY = Math.max(1, height - 2);
+  const tabZ = Math.max(0, depth - 1);
+  voxels.push({ x: 0, y: tabY, z: tabZ, color });
+  voxels.push({ x: Math.max(0, width - 1), y: tabY, z: tabZ, color });
+};
+
 const createPartVoxels = (
   part: V3CharacterPartManifest,
   dimensions: [number, number, number],
@@ -142,26 +179,37 @@ const createPartVoxels = (
   addBox(voxels, dimensions, roleColor(part.paintRoles[0] ?? 'primary', colors));
 
   const [width, height, depth] = dimensions;
+  const frontZ = Math.max(0, depth - 1);
+  addPanelStripe(voxels, 'x', frontZ, roleColor('secondary', colors));
+  addPanelStripe(voxels, 'y', frontZ, roleColor('accent', colors), part.paintRoles.includes('emissive'));
+  addCornerArmorTabs(voxels, dimensions, roleColor('fixed', colors));
+
   if (part.paintRoles.includes('secondary')) {
     for (let x = 1; x < width - 1; x++) {
-      voxels.push({ x, y: Math.max(1, height - 2), z: Math.max(0, depth - 1), color: colors.secondary });
+      voxels.push({ x, y: Math.max(1, height - 2), z: frontZ, color: colors.secondary });
     }
   }
   if (part.paintRoles.includes('accent')) {
     for (let y = 1; y < height - 1; y++) {
-      voxels.push({ x: Math.max(0, width - 1), y, z: Math.max(0, depth - 1), color: colors.accent });
+      voxels.push({ x: Math.max(0, width - 1), y, z: frontZ, color: colors.accent });
     }
   }
   if (part.paintRoles.includes('visor')) {
     for (let x = 2; x < width - 2; x++) {
-      voxels.push({ x, y: Math.max(2, Math.floor(height * 0.48)), z: Math.max(0, depth - 1), color: colors.visor, emissive: true });
+      voxels.push({ x, y: Math.max(2, Math.floor(height * 0.48)), z: frontZ, color: colors.visor, emissive: true });
+    }
+  }
+  if (part.paintRoles.includes('decal')) {
+    const decalColor = roleColor('decal', colors);
+    for (let y = 1; y < height - 1; y += 2) {
+      voxels.push({ x: Math.floor(width / 2), y, z: frontZ, color: decalColor });
     }
   }
   if (part.paintRoles.includes('emissive')) {
     voxels.push({
       x: Math.floor(width / 2),
       y: Math.max(1, Math.floor(height / 2)),
-      z: Math.max(0, depth - 1),
+      z: frontZ,
       color: colors.highlight,
       emissive: true,
     });

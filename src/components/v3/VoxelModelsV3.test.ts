@@ -8,9 +8,15 @@ import {
   buildV3PistolModel,
   buildV3SpartanModel,
   buildV3WeaponModel,
+  getV3BuiltinPartVoxels,
 } from './VoxelModelsV3';
 import { V3_CHARACTER_SLOT_IDS, V3_WEAPON_IDS } from './v3ModelTypes';
 import { getDefaultV3CharacterLoadout, getDefaultV3WeaponManifest } from './v3AssetManifest';
+import {
+  V3_PRODUCTION_QUALITY_THRESHOLDS,
+  analyzeV3VoxelQuality,
+  classifyV3ProductionReadiness,
+} from './v3ProductionQuality';
 
 const requiredSegments = ['lowerTorso', 'upperTorso', 'head', 'leftArm', 'rightArm', 'leftLeg', 'rightLeg'];
 
@@ -85,6 +91,25 @@ describe('buildV3SpartanModel', () => {
 
     assert.equal(helmet.userData.customArmorId, undefined);
     assert.equal(helmet.userData.v3PartId, 'ibv3-aegis-helmet');
+  });
+
+  it('generates production-candidate built-in character part voxel payloads', () => {
+    const requiredEmissiveSlots = new Set(['helmet', 'back']);
+
+    for (const slot of V3_CHARACTER_SLOT_IDS) {
+      const voxels = getV3BuiltinPartVoxels(slot, 192);
+      const report = analyzeV3VoxelQuality(voxels);
+
+      assert.equal(
+        classifyV3ProductionReadiness(report, V3_PRODUCTION_QUALITY_THRESHOLDS.characterPart),
+        'productionCandidate',
+        `${slot} should be richer than a blockout`
+      );
+
+      if (requiredEmissiveSlots.has(slot)) {
+        assert.equal(report.emissiveVoxelCount > 0, true, `${slot} should include readable emissive detail`);
+      }
+    }
   });
 });
 
