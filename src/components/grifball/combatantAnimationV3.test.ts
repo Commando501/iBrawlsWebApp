@@ -346,4 +346,39 @@ describe('animateCombatantWeaponMeshes V3 integration', () => {
     assert.deepEqual(pistol.position.toArray(), expected.position);
     assert.deepEqual(pistol.rotation.toArray().slice(0, 3), expected.rotation);
   });
+
+  it('adds deterministic V3 first-person idle sway without affecting third-person combatant weapons', () => {
+    const pistol = buildV3PistolModel(192);
+    pistol.userData.v3View = 'firstPerson';
+
+    animateCombatantWeaponMeshes({
+      hammerModel: null,
+      swordModel: null,
+      pistolModel: pistol,
+      activeWeapon: 'pistol',
+      weaponState: 'ready',
+      weaponTimer: 0,
+      isLunging: false,
+      dt: 0.25,
+      settings: {},
+    });
+    const firstPersonY = pistol.position.y;
+
+    const thirdPerson = buildV3PistolModel(192);
+    animateCombatantWeaponMeshes({
+      hammerModel: null,
+      swordModel: null,
+      pistolModel: thirdPerson,
+      activeWeapon: 'pistol',
+      weaponState: 'ready',
+      weaponTimer: 0,
+      isLunging: false,
+      dt: 0.25,
+      settings: {},
+      combatantModel: createV3Model(),
+    });
+
+    assert.notEqual(firstPersonY, thirdPerson.position.y);
+    assert.equal(thirdPerson.userData.v3FirstPersonSwayPhase, undefined);
+  });
 });

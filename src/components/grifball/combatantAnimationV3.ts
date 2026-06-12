@@ -84,6 +84,33 @@ const setWeaponMeshPose = (group: THREE.Group, pose: WeaponPose): void => {
   group.rotation.set(...pose.rotation);
 };
 
+const applyV3FirstPersonWeaponSway = (
+  group: THREE.Group,
+  weaponState: string,
+  dt: number
+): void => {
+  const nextPhase = Number(group.userData.v3FirstPersonSwayPhase ?? 0) + Math.max(0, dt) * 1.8;
+  group.userData.v3FirstPersonSwayPhase = nextPhase;
+  const isReady = weaponState === 'ready';
+  const swayScale = isReady ? 1 : 0.35;
+
+  group.position.x += Math.cos(nextPhase * 0.7) * 0.006 * swayScale;
+  group.position.y += Math.sin(nextPhase) * 0.012 * swayScale;
+  group.rotation.z += Math.sin(nextPhase * 0.8) * 0.012 * swayScale;
+};
+
+const applyV3WeaponMeshPose = (
+  group: THREE.Group,
+  pose: WeaponPose,
+  weaponState: string,
+  dt: number
+): void => {
+  setWeaponMeshPose(group, pose);
+  if (group.userData.v3View === 'firstPerson') {
+    applyV3FirstPersonWeaponSway(group, weaponState, dt);
+  }
+};
+
 const lerpRotation = (
   group: THREE.Group,
   target: THREE.Vector3Tuple,
@@ -437,7 +464,7 @@ export function animateV3WeaponMeshes({
   weaponState,
   weaponTimer,
   isLunging,
-  dt: _dt,
+  dt,
   settings,
 }: V3WeaponMeshAnimationInput): void {
   if (hammerModel) hammerModel.visible = activeWeapon === 'hammer';
@@ -445,32 +472,41 @@ export function animateV3WeaponMeshes({
   if (pistolModel) pistolModel.visible = activeWeapon === 'pistol';
 
   if (hammerModel?.userData.modelSystem === 'v3' && activeWeapon === 'hammer') {
-    setWeaponMeshPose(hammerModel, sampleV3ThirdPersonWeaponPose({
+    const sample = hammerModel.userData.v3View === 'firstPerson'
+      ? sampleV3FirstPersonWeaponPose
+      : sampleV3ThirdPersonWeaponPose;
+    applyV3WeaponMeshPose(hammerModel, sample({
       activeWeapon: 'hammer',
       weaponState,
       weaponTimer,
       isLunging,
       settings,
-    }));
+    }), weaponState, dt);
   }
 
   if (swordModel?.userData.modelSystem === 'v3' && activeWeapon === 'sword') {
-    setWeaponMeshPose(swordModel, sampleV3ThirdPersonWeaponPose({
+    const sample = swordModel.userData.v3View === 'firstPerson'
+      ? sampleV3FirstPersonWeaponPose
+      : sampleV3ThirdPersonWeaponPose;
+    applyV3WeaponMeshPose(swordModel, sample({
       activeWeapon: 'sword',
       weaponState,
       weaponTimer,
       isLunging,
       settings,
-    }));
+    }), weaponState, dt);
   }
 
   if (pistolModel?.userData.modelSystem === 'v3' && activeWeapon === 'pistol') {
-    setWeaponMeshPose(pistolModel, sampleV3ThirdPersonWeaponPose({
+    const sample = pistolModel.userData.v3View === 'firstPerson'
+      ? sampleV3FirstPersonWeaponPose
+      : sampleV3ThirdPersonWeaponPose;
+    applyV3WeaponMeshPose(pistolModel, sample({
       activeWeapon: 'pistol',
       weaponState,
       weaponTimer,
       isLunging,
       settings,
-    }));
+    }), weaponState, dt);
   }
 }

@@ -6,6 +6,28 @@ import {
   getSwordAttackAnimationStyle,
 } from './attackAnimationPresets';
 import { type GrifballRuntimeState } from './runtimeState';
+import { sampleV3FirstPersonWeaponPose } from './v3AnimationFidelity';
+
+const applyV3SwordPose = (
+  playerSword: THREE.Group,
+  state: GrifballRuntimeState,
+  weaponState: string,
+  weaponTimer: number,
+  isLunging: boolean,
+  idleXBob: number,
+  idleYBob: number,
+  idleZRotBob: number
+): void => {
+  const pose = sampleV3FirstPersonWeaponPose({
+    activeWeapon: 'sword',
+    weaponState,
+    weaponTimer,
+    isLunging,
+    settings: state.settings,
+  });
+  playerSword.position.set(pose.position[0], pose.position[1] + idleYBob, pose.position[2] + idleXBob);
+  playerSword.rotation.set(pose.rotation[0], pose.rotation[1], pose.rotation[2] + idleZRotBob);
+};
 
 export function updatePlayerSwordAnimationForState({
   state,
@@ -27,13 +49,16 @@ export function updatePlayerSwordAnimationForState({
   applyPlayerSwordSlashImpact: () => boolean;
 }): boolean {
   if (!playerSword) return false;
+  const isV3Sword = playerSword.userData.modelSystem === 'v3';
 
   if (state.activeWeapon === 'sword') {
     playerSword.visible = true;
     if (playerHammer) playerHammer.visible = false;
 
     if (state.isLunging) {
-      if (getSwordAttackAnimationStyle(state.settings) === 'highFidelity') {
+      if (isV3Sword) {
+        applyV3SwordPose(playerSword, state, 'ready', state.lungeTimer, true, idleXBob, idleYBob, idleZRotBob);
+      } else if (getSwordAttackAnimationStyle(state.settings) === 'highFidelity') {
         const pose = getFirstPersonSwordLungePose(state.lungeTimer, idleYBob);
         pose.position[2] += idleXBob;
         applyWeaponPose(playerSword, pose);
@@ -45,8 +70,12 @@ export function updatePlayerSwordAnimationForState({
       state.pSwordReady = false;
       state.pSwordCooldown = 0.5;
     } else if (state.pSwordState === 'ready') {
-      playerSword.position.set(0.35, -0.38 + idleYBob, -0.5 + idleXBob);
-      playerSword.rotation.set(-Math.PI / 2, 0, -Math.PI / 8 + idleZRotBob);
+      if (isV3Sword) {
+        applyV3SwordPose(playerSword, state, state.pSwordState, state.pSwordTimer, false, idleXBob, idleYBob, idleZRotBob);
+      } else {
+        playerSword.position.set(0.35, -0.38 + idleYBob, -0.5 + idleXBob);
+        playerSword.rotation.set(-Math.PI / 2, 0, -Math.PI / 8 + idleZRotBob);
+      }
 
       if (state.swapCooldownTimer > 0) {
         state.pSwordReady = false;
@@ -62,7 +91,9 @@ export function updatePlayerSwordAnimationForState({
       const duration = state.settings.swordSlashSpeed ?? 0.22;
       const pct = Math.min(1.0, state.pSwordTimer / duration);
 
-      if (getSwordAttackAnimationStyle(state.settings) === 'highFidelity') {
+      if (isV3Sword) {
+        applyV3SwordPose(playerSword, state, state.pSwordState, state.pSwordTimer, false, idleXBob, idleYBob, idleZRotBob);
+      } else if (getSwordAttackAnimationStyle(state.settings) === 'highFidelity') {
         applyWeaponPose(playerSword, getFirstPersonSwordSlashPose('slash', pct, idleYBob));
       } else {
         playerSword.position.x = THREE.MathUtils.lerp(-0.45, 0.45, pct);
@@ -90,7 +121,9 @@ export function updatePlayerSwordAnimationForState({
       const recover = state.pSwordRecoverDuration ?? 0.6;
       const pct = Math.min(1.0, state.pSwordTimer / recover);
 
-      if (getSwordAttackAnimationStyle(state.settings) === 'highFidelity') {
+      if (isV3Sword) {
+        applyV3SwordPose(playerSword, state, state.pSwordState, state.pSwordTimer, false, idleXBob, idleYBob, idleZRotBob);
+      } else if (getSwordAttackAnimationStyle(state.settings) === 'highFidelity') {
         applyWeaponPose(playerSword, getFirstPersonSwordSlashPose('recover', pct, idleYBob));
       } else {
         playerSword.position.x = THREE.MathUtils.lerp(0.45, 0.35, pct);
