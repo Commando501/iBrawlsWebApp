@@ -19,6 +19,7 @@ import {
   type WeaponPose,
 } from './attackAnimationPresets';
 import { animateV3CombatantModel, animateV3WeaponMeshes } from './combatantAnimationV3';
+import type { V3QualityTier } from '../v3/v3ModelTypes';
 import { type GrifballThreeRefs } from './threeRefs';
 
 const spawnFrictionSparkParticle = (refs: GrifballThreeRefs, pos: THREE.Vector3): void => {
@@ -417,6 +418,9 @@ export function animateSpartanCombatantModel({
   hammerSlamWindupTime = DEFAULT_HAMMER_SLAM_WINDUP_TIME,
   hammerSlamAttackTime = DEFAULT_HAMMER_SLAM_ATTACK_TIME,
   settings = {},
+  v3QualityTier,
+  isLocalV3Animation = false,
+  animationClockMs,
 }: {
   refs: GrifballThreeRefs;
   mesh: THREE.Group | null;
@@ -435,11 +439,14 @@ export function animateSpartanCombatantModel({
   hammerSlamWindupTime?: number;
   hammerSlamAttackTime?: number;
   settings?: Partial<UniversalSettings>;
-}): void {
-  if (!mesh) return;
+  v3QualityTier?: V3QualityTier;
+  isLocalV3Animation?: boolean;
+  animationClockMs?: number;
+}): boolean {
+  if (!mesh) return false;
 
   if (mesh.userData.modelSystem === 'v3') {
-    animateV3CombatantModel({
+    return animateV3CombatantModel({
       refs,
       mesh,
       vel,
@@ -455,8 +462,10 @@ export function animateSpartanCombatantModel({
       hammerSlamWindupTime,
       hammerSlamAttackTime,
       settings,
+      v3QualityTier,
+      isLocalV3Animation,
+      animationClockMs,
     });
-    return;
   }
 
   if (mesh.userData.modelSystem === 'v2') {
@@ -476,7 +485,7 @@ export function animateSpartanCombatantModel({
       hammerSlamWindupTime,
       hammerSlamAttackTime,
     });
-    return;
+    return true;
   }
 
   const lowerTorso = mesh.userData.lowerTorso as THREE.Group | undefined;
@@ -484,7 +493,7 @@ export function animateSpartanCombatantModel({
   const leftLeg = mesh.userData.leftLeg as THREE.Group | undefined;
   const rightLeg = mesh.userData.rightLeg as THREE.Group | undefined;
 
-  if (!lowerTorso || !upperTorso || !leftLeg || !rightLeg) return;
+  if (!lowerTorso || !upperTorso || !leftLeg || !rightLeg) return false;
 
   const speed = Math.sqrt(vel.x * vel.x + vel.z * vel.z);
 
@@ -615,6 +624,7 @@ export function animateSpartanCombatantModel({
   upperTorso.rotation.y = THREE.MathUtils.lerp(upperTorso.rotation.y, targetUpperTorsoYaw, dt * 10.0);
   upperTorso.rotation.x = THREE.MathUtils.lerp(upperTorso.rotation.x, targetUpperTorsoPitch, dt * 10.0);
   upperTorso.rotation.z = THREE.MathUtils.lerp(upperTorso.rotation.z, targetUpperTorsoRoll, dt * 10.0);
+  return true;
 }
 
 export function animateCombatantWeaponMeshes({

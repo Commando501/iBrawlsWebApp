@@ -129,6 +129,54 @@ describe('animateV3CombatantModel', () => {
     assert.notEqual(model.userData.upperTorso.rotation.x, 0);
     assert.notEqual(model.userData.leftLeg.rotation.x, 0);
   });
+
+  it('throttles remote mobileLow V3 animation without throttling local V3 animation', () => {
+    const remoteModel = createV3Model();
+    const localModel = createV3Model();
+    const refs = createInitialGrifballThreeRefs();
+    const baseInput = {
+      refs,
+      vel: new THREE.Vector3(3, 0, 0),
+      yaw: 0,
+      hp: 100,
+      activeWeapon: 'hammer',
+      weaponState: 'ready',
+      weaponTimer: 0,
+      dt: 0.016,
+      settings: {},
+      v3QualityTier: 'mobileLow' as const,
+    };
+
+    animateSpartanCombatantModel({
+      ...baseInput,
+      mesh: remoteModel,
+      animationClockMs: 0,
+      isLocalV3Animation: false,
+    });
+    const firstRemotePhase = remoteModel.userData.v3WalkPhase;
+    animateSpartanCombatantModel({
+      ...baseInput,
+      mesh: remoteModel,
+      animationClockMs: 20,
+      isLocalV3Animation: false,
+    });
+    assert.equal(remoteModel.userData.v3WalkPhase, firstRemotePhase);
+
+    animateSpartanCombatantModel({
+      ...baseInput,
+      mesh: localModel,
+      animationClockMs: 0,
+      isLocalV3Animation: true,
+    });
+    const firstLocalPhase = localModel.userData.v3WalkPhase;
+    animateSpartanCombatantModel({
+      ...baseInput,
+      mesh: localModel,
+      animationClockMs: 20,
+      isLocalV3Animation: true,
+    });
+    assert.notEqual(localModel.userData.v3WalkPhase, firstLocalPhase);
+  });
 });
 
 describe('getFirstPersonV3WeaponPose', () => {

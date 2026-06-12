@@ -24,6 +24,7 @@ export function updateRosterCombatantVisualsForState({
   ) => void;
   applyBotMeleeImpact: (botId: string) => void;
 }): void {
+  const animationClockMs = typeof performance !== 'undefined' ? performance.now() : Date.now();
   state.otherPlayers.forEach((player, clientId) => {
     const meshes = refs.otherPlayerMeshes.get(clientId);
     if (!meshes?.group) return;
@@ -96,7 +97,7 @@ export function updateRosterCombatantVisualsForState({
       state.settings.enableSlide &&
       (player.aiSlideActive ?? (playerSpeed > 2.5 && (player.isCrouching || false)));
 
-    animateSpartanCombatantModel({
+    const didAnimate = animateSpartanCombatantModel({
       refs,
       mesh: meshes.group,
       vel: playerVelocity,
@@ -114,10 +115,13 @@ export function updateRosterCombatantVisualsForState({
       hammerSlamWindupTime: hammerSlamTiming.windupTime,
       hammerSlamAttackTime: hammerSlamTiming.attackTime,
       settings: state.settings,
+      v3QualityTier: meshes.group.userData.appliedV3QualityTier,
+      isLocalV3Animation: false,
+      animationClockMs,
     });
 
     const isMainAiOffline = clientId === MAIN_AI_ID && !state.isMultiplayer;
-    if ((meshes.hammer || meshes.sword || meshes.pistol) && !isMainAiOffline) {
+    if (didAnimate && (meshes.hammer || meshes.sword || meshes.pistol) && !isMainAiOffline) {
       animateCombatantWeaponMeshes({
         hammerModel: meshes.hammer,
         swordModel: meshes.sword,
