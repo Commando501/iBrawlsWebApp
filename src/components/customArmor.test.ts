@@ -216,6 +216,28 @@ test('sanitizeCharacterLoadoutForNetwork keeps valid V3 custom armor and strips 
   assert.equal(loadout.rawMesh, undefined);
 });
 
+test('sanitizeCharacterLoadoutForNetwork preserves sanitized V3 role paint only', () => {
+  const loadout = sanitizeCharacterLoadoutForNetwork({
+    modelSystem: 'v3',
+    paintJob: {
+      v3RoleColors: {
+        primary: '#ABCDEF',
+        visor: '#00ffaa',
+        accent: 'bad-color',
+        rawMesh: '#ffffff',
+      },
+      v3RoleEmissive: {
+        visor: true,
+        primary: false,
+        rawMesh: true,
+      },
+    },
+  }) as any;
+
+  assert.deepEqual(loadout.paintJob.v3RoleColors, { primary: '#abcdef', visor: '#00ffaa' });
+  assert.deepEqual(loadout.paintJob.v3RoleEmissive, { primary: false, visor: true });
+});
+
 test('V3 custom armor slot ids remain aligned with V3 manifest slots', () => {
   for (const slot of V3_CHARACTER_SLOT_IDS) {
     const piece = createCustomArmorPiece(slot, `${slot} draft`, [], undefined, undefined, 'v3');
