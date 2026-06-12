@@ -31,6 +31,20 @@ export interface V3PerformanceSmokeReport {
   issues: string[];
 }
 
+export interface V3PerformanceSmokeRuntimeSample {
+  sampledFrames: number;
+  elapsedMs: number;
+}
+
+export interface V3PerformanceSmokeRuntimeReport extends V3PerformanceSmokeReport {
+  runtimeReady: boolean;
+  sampledFrames: number;
+  elapsedMs: number;
+  averageFps: number;
+  averageFrameMs: number;
+  targetFps: number;
+}
+
 export const V3_PERFORMANCE_SMOKE_BUDGETS: Record<V3QualityTier, V3PerformanceSmokeBudgetGate> = {
   mobileLow: { maxDrawCallEstimate: 270, maxMergedBoxCount: 11250, maxMemoryEstimateKb: 9800 },
   mobile: { maxDrawCallEstimate: 270, maxMergedBoxCount: 11250, maxMemoryEstimateKb: 9800 },
@@ -38,6 +52,14 @@ export const V3_PERFORMANCE_SMOKE_BUDGETS: Record<V3QualityTier, V3PerformanceSm
   ultra: { maxDrawCallEstimate: 500, maxMergedBoxCount: 20250, maxMemoryEstimateKb: 17600 },
 };
 
+export const V3_PERFORMANCE_RUNTIME_TARGET_FPS: Record<V3QualityTier, number> = {
+  mobileLow: 20,
+  mobile: 24,
+  desktop: 30,
+  ultra: 30,
+};
+
+const MIN_RUNTIME_SAMPLE_FRAMES = 30;
 const weapons = ['hammer', 'sword', 'pistol'] as const;
 
 const smokePaints = [
@@ -194,4 +216,42 @@ export function assertV3PerformanceSmokeBudget(
   if (!report.ready) {
     throw new Error(`V3 performance smoke failed: ${report.issues.join('; ')}`);
   }
+}
+
+export function buildV3PerformanceSmokeRuntimeReport(
+  smoke: ReturnType<typeof buildV3PerformanceSmokeScene>,
+  sample?: V3PerformanceSmokeRuntimeSample
+): V3PerformanceSmokeRuntimeReport {
+  const staticReport = buildV3PerformanceSmokeReport(smoke);
+  const targetFps = V3_PERFORMANCE_RUNTIME_TARGET_FPS[smoke.qualityTier];
+  const sampledFrames = Math.max(0, Math.floor(sample?.sampledFrames ?? 0));
+  const elapsedMs = Math.max(0, sample?.elapsedMs ?? 0);
+  const averageFps = elapsedMs > 0 ? sampledFrames / (elapsedMs / 1000) : 0;
+  const averageFrameMs = averageFps > 0 ? 1000 / averageFps : 0;
+  const issues = [...staticReport.issues];
+
+  if (!sample || sampledFrames < MIN_RUNTIME_SAMPLE_FRAMES || elapsedMs <= 0) {
+    issues.push(`runtime sample pending: need ${MIN_RUNTIME_SAMPLE_FRAMES} frames`);
+  } else if (averageFps < targetFps) {
+    issues.push(`average FPS ${averageFps.toFixed(1)} below target ${targetFps}`);
+  }
+
+  const runtimeReady = Boolean(
+    sample &&
+    sampledFrames >= MIN_RUNTIME_SAMPLE_FRAMES &&
+    elapsedMs > 0 &&
+    averageFps >= targetFps
+  );
+
+  return {
+    ...staticReport,
+    ready: staticReport.ready && runtimeReady,
+    runtimeReady,
+    sampledFrames,
+    elapsedMs,
+    averageFps,
+    averageFrameMs,
+    targetFps,
+    issues,
+  };
 }

@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import {
   V3_PERFORMANCE_SMOKE_BUDGETS,
   assertV3PerformanceSmokeBudget,
+  buildV3PerformanceSmokeRuntimeReport,
   buildV3PerformanceSmokeReport,
   buildV3PerformanceSmokeScene,
   createV3PerformanceSmokeCombatants,
@@ -46,4 +47,22 @@ test('buildV3PerformanceSmokeReport gates every quality tier against production 
     assert.ok(smoke.budget.drawCallEstimate <= V3_PERFORMANCE_SMOKE_BUDGETS[tier].maxDrawCallEstimate);
     assert.doesNotThrow(() => assertV3PerformanceSmokeBudget(smoke));
   }
+});
+
+test('buildV3PerformanceSmokeRuntimeReport requires measured frame timing evidence', () => {
+  const smoke = buildV3PerformanceSmokeScene({ qualityTier: 'desktop' });
+
+  const pending = buildV3PerformanceSmokeRuntimeReport(smoke);
+  assert.equal(pending.ready, false);
+  assert.ok(pending.issues.some((issue) => issue.includes('runtime sample pending')));
+
+  const fast = buildV3PerformanceSmokeRuntimeReport(smoke, { sampledFrames: 120, elapsedMs: 2_000 });
+  assert.equal(fast.ready, true, fast.issues.join(', '));
+  assert.equal(fast.runtimeReady, true);
+  assert.equal(fast.averageFps >= fast.targetFps, true);
+
+  const slow = buildV3PerformanceSmokeRuntimeReport(smoke, { sampledFrames: 30, elapsedMs: 2_500 });
+  assert.equal(slow.ready, false);
+  assert.equal(slow.runtimeReady, false);
+  assert.ok(slow.issues.some((issue) => issue.includes('average FPS')));
 });
