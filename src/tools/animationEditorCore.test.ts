@@ -191,4 +191,35 @@ describe('animation editor interpolation', () => {
       },
     ]);
   });
+
+  it('can export V3 procedural profile metadata alongside editable rig frames', () => {
+    const frames = generatePoseFrames([
+      { frame: 0, pose: pose(0), label: 'Ready' },
+      { frame: 2, pose: pose(2), label: 'Peak' },
+    ], 3, 'linear');
+
+    const payload = buildAnimationEditorExportPayload({
+      weapon: 'pistol',
+      view: 'firstPerson',
+      track: 'pistol_fire',
+      frameCount: 3,
+      interpolation: 'linear',
+      keyframes: [
+        { frame: 0, pose: pose(0), label: 'Ready' },
+        { frame: 2, pose: pose(2), label: 'Peak' },
+      ],
+      frames,
+      proceduralProfile: {
+        modelSystem: 'v3',
+        profileVersion: 1,
+        source: 'v3AnimationFidelity',
+      },
+    });
+
+    assert.deepEqual(payload.proceduralProfile, {
+      modelSystem: 'v3',
+      profileVersion: 1,
+      source: 'v3AnimationFidelity',
+    });
+  });
 });
