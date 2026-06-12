@@ -318,38 +318,55 @@ export function buildV3SpartanModel(options: V3SpartanBuildOptions = {}): THREE.
   return root;
 }
 
-const createWeaponVoxels = (weapon: V3WeaponId, colors: SpartanColors): VoxelData[] => {
+export function getV3BuiltinWeaponVoxels(weapon: V3WeaponId, customHue?: number): VoxelData[] {
+  const colors = createColors(false, customHue);
   const voxels: VoxelData[] = [];
   if (weapon === 'hammer') {
-    addTranslatedBox(voxels, [3, 18, 3], [0, 0, 0], colors.dark);
-    addTranslatedBox(voxels, [13, 5, 6], [-5, 15, -1], colors.primary);
-    voxels.push({ x: 0, y: 18, z: 3, color: colors.highlight, emissive: true });
+    addTranslatedBox(voxels, [3, 22, 3], [0, 0, 0], colors.dark);
+    addTranslatedBox(voxels, [7, 3, 5], [-2, -2, -1], colors.secondary);
+    addTranslatedBox(voxels, [5, 2, 5], [-1, 5, -1], colors.accent);
+    addTranslatedBox(voxels, [5, 2, 5], [-1, 11, -1], colors.accent);
+    addTranslatedBox(voxels, [11, 5, 7], [-4, 18, -2], colors.primary);
+    addTranslatedBox(voxels, [3, 7, 5], [-5, 17, -1], roleColor('fixed', colors));
+    addTranslatedBox(voxels, [3, 7, 5], [5, 17, -1], roleColor('fixed', colors));
+    for (let x = -3; x <= 5; x += 2) {
+      voxels.push({ x, y: 22, z: 5, color: colors.highlight, emissive: true });
+      voxels.push({ x, y: 18, z: 5, color: colors.highlight, emissive: true });
+    }
     return voxels;
   }
   if (weapon === 'sword') {
     addBox(voxels, [3, 7, 3], colors.dark);
-    for (let y = 6; y < 29; y++) {
+    addTranslatedBox(voxels, [8, 2, 3], [-3, 5, 0], colors.primary);
+    for (let y = 7; y < 35; y++) {
       voxels.push({ x: 1, y, z: 1, color: colors.highlight, emissive: true });
       if (y % 2 === 0) {
         voxels.push({ x: 0, y, z: 1, color: colors.accent, emissive: true });
         voxels.push({ x: 2, y, z: 1, color: colors.accent, emissive: true });
+      } else {
+        voxels.push({ x: -1, y, z: 1, color: colors.secondary });
+        voxels.push({ x: 3, y, z: 1, color: colors.secondary });
       }
     }
+    voxels.push({ x: 1, y: 35, z: 1, color: colors.highlight, emissive: true });
     return voxels;
   }
 
-  addTranslatedBox(voxels, [4, 5, 3], [0, 0, 0], colors.dark);
-  addTranslatedBox(voxels, [11, 3, 3], [1, 4, 0], colors.primary);
-  voxels.push({ x: 10, y: 5, z: 1, color: colors.highlight, emissive: true });
+  addTranslatedBox(voxels, [4, 5, 3], [1, 0, 1], colors.dark);
+  addTranslatedBox(voxels, [8, 3, 3], [1, 4, 1], colors.primary);
+  addTranslatedBox(voxels, [3, 5, 3], [0, 1, 1], colors.secondary);
+  addTranslatedBox(voxels, [2, 2, 5], [7, 4, 0], roleColor('fixed', colors));
+  addTranslatedBox(voxels, [2, 1, 3], [3, 7, 1], colors.accent);
+  voxels.push({ x: 8, y: 5, z: 2, color: colors.highlight, emissive: true });
+  voxels.push({ x: 5, y: 6, z: 3, color: colors.highlight, emissive: true });
   return voxels;
-};
+}
 
 export function buildV3WeaponModel(weapon: V3WeaponId, options: V3WeaponBuildOptions = {}): THREE.Group {
   const manifest = getDefaultV3WeaponManifest(weapon);
-  const colors = createColors(false, options.customHue);
   const v3QualityTier = normalizeV3QualityTier(options.v3QualityTier);
   const v3Distance = Number.isFinite(options.v3Distance) ? Math.max(0, options.v3Distance ?? 0) : 0;
-  const group = createVoxelGroup(createWeaponVoxels(weapon, colors), V3_WEAPON_SCALE);
+  const group = createVoxelGroup(getV3BuiltinWeaponVoxels(weapon, options.customHue), V3_WEAPON_SCALE);
   const selectedLod = selectV3LodLevel({
     lods: manifest.lods,
     qualityTier: v3QualityTier,

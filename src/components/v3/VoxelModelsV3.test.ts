@@ -9,6 +9,7 @@ import {
   buildV3SpartanModel,
   buildV3WeaponModel,
   getV3BuiltinPartVoxels,
+  getV3BuiltinWeaponVoxels,
 } from './VoxelModelsV3';
 import { V3_CHARACTER_SLOT_IDS, V3_WEAPON_IDS } from './v3ModelTypes';
 import { getDefaultV3CharacterLoadout, getDefaultV3WeaponManifest } from './v3AssetManifest';
@@ -138,6 +139,20 @@ describe('V3 weapon builders', () => {
 
       assert.ok(socketNames.includes('firstPersonPrimaryGrip'), `${weapon} missing first-person primary grip`);
       assert.ok(socketNames.includes('firstPersonOffhandGrip'), `${weapon} missing first-person offhand grip`);
+    }
+  });
+
+  it('generates production-candidate built-in weapon voxel payloads', () => {
+    for (const weapon of V3_WEAPON_IDS) {
+      const voxels = getV3BuiltinWeaponVoxels(weapon, 192);
+      const report = analyzeV3VoxelQuality(voxels);
+
+      assert.equal(
+        classifyV3ProductionReadiness(report, V3_PRODUCTION_QUALITY_THRESHOLDS.weapon),
+        'productionCandidate',
+        `${weapon} should be richer than a blockout`
+      );
+      assert.equal(report.emissiveVoxelCount > 0, true, `${weapon} should expose readable emissive weapon state`);
     }
   });
 });
