@@ -21,9 +21,9 @@ import type {
 import type { ChatMessage } from '../ChatOverlay';
 import type { MultiplayerLoadingSlotPayload } from '../loading/loadingTypes';
 import {
-  VISUAL_MODEL_POLICY_OPTIONS,
+  getSelectableVisualModelPolicyOptions,
   getVisualModelPolicyLabel,
-  normalizeVisualModelPolicy,
+  normalizeSelectableVisualModelPolicy,
   type VisualModelPolicy,
 } from '../../model/modelSystem';
 import { AdvancedSection } from '../main-menu/AdvancedSection';
@@ -43,6 +43,7 @@ interface MultiplayerSetupPanelProps {
   connectionError: string;
   quickPlayStatus: QuickPlayStatus;
   adminSettings: UniversalSettings;
+  isAdmin?: boolean;
   selectedMap: string;
   onSelectedMapChange: (value: string) => void;
   lobbyCustomMapData: CustomMapData | null;
@@ -81,6 +82,7 @@ export function MultiplayerSetupPanel({
   connectionError,
   quickPlayStatus,
   adminSettings,
+  isAdmin = false,
   selectedMap,
   onSelectedMapChange,
   lobbyCustomMapData,
@@ -112,7 +114,7 @@ export function MultiplayerSetupPanel({
   const [allowObservers, setAllowObservers] = useState(true);
   const [matchTimerMinutes, setMatchTimerMinutes] = useState(toMinutes(adminSettings.matchTimerSeconds ?? DEFAULT_MATCH_TIMER_SECONDS));
   const [visualModelPolicy, setVisualModelPolicy] = useState<VisualModelPolicy>(
-    normalizeVisualModelPolicy(adminSettings.visualModelPolicy)
+    normalizeSelectableVisualModelPolicy(adminSettings.visualModelPolicy, isAdmin)
   );
   const [winTarget, setWinTarget] = useState(
     gameMode === 'grifball'
@@ -125,7 +127,13 @@ export function MultiplayerSetupPanel({
     setWinTarget(getDefaultWinTargetForMode(gameMode));
   }, [gameMode]);
 
+  useEffect(() => {
+    setVisualModelPolicy((current) => normalizeSelectableVisualModelPolicy(current, isAdmin));
+  }, [isAdmin]);
+
   const selectedPremadeMap = PREMADE_MAPS.find(map => map.id === selectedMap);
+  const selectedVisualModelPolicy = normalizeSelectableVisualModelPolicy(visualModelPolicy, isAdmin);
+  const selectableVisualModelPolicyOptions = getSelectableVisualModelPolicyOptions(isAdmin);
   const activeConfig = useMemo(() => normalizeMatchLobbyConfig({
     access,
     gameMode,
@@ -135,7 +143,7 @@ export function MultiplayerSetupPanel({
     allowObservers,
     matchTimerSeconds: matchTimerMinutes * 60,
     winTarget,
-    visualModelPolicy,
+    visualModelPolicy: selectedVisualModelPolicy,
   }), [
     access,
     gameMode,
@@ -145,9 +153,15 @@ export function MultiplayerSetupPanel({
     allowObservers,
     matchTimerMinutes,
     winTarget,
-    visualModelPolicy,
+    selectedVisualModelPolicy,
   ]);
-  const stagedConfig = matchLobbyConfig ?? activeConfig;
+  const stagedConfig = normalizeMatchLobbyConfig({
+    ...(matchLobbyConfig ?? activeConfig),
+    visualModelPolicy: normalizeSelectableVisualModelPolicy(
+      (matchLobbyConfig ?? activeConfig).visualModelPolicy,
+      isAdmin
+    ),
+  });
   const isStaging = Boolean(multiplayerSocket && matchLobbyConfig && (connectionStatus === 'hosting' || connectionStatus === 'connected'));
   const canCreateLobby = access !== 'password' || password.trim().length > 0;
   const canStartMatch = multiplayerRole === 'host' && multiplayerSocket?.readyState === WebSocket.OPEN;
@@ -289,13 +303,13 @@ export function MultiplayerSetupPanel({
                 </span>
               </div>
               <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
-                {VISUAL_MODEL_POLICY_OPTIONS.map((option) => (
+                {selectableVisualModelPolicyOptions.map((option) => (
                   <button
                     key={option.value}
                     type="button"
                     onClick={() => setVisualModelPolicy(option.value)}
                     className={`min-h-10 rounded px-2 text-[10px] font-black uppercase tracking-wider border transition-all ${
-                      visualModelPolicy === option.value
+                      selectedVisualModelPolicy === option.value
                         ? 'bg-cyan-400/15 border-cyan-300/45 text-cyan-200'
                         : 'bg-black/30 border-white/10 text-white/45 hover:text-white/70'
                     }`}

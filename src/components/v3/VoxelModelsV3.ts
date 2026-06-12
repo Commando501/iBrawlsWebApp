@@ -28,6 +28,12 @@ import {
   normalizeV3QualityTier,
   type V3RenderOptions,
 } from './v3QualityTiers';
+import {
+  V3_DETAIL_BONE_NAMES,
+  V3_DETAIL_BONE_SPECS,
+  V3_SLOT_DETAIL_BONES,
+  type V3DetailBoneName,
+} from './v3RigDetail';
 
 export interface V3SpartanBuildOptions extends V3RenderOptions {
   isEnemy?: boolean;
@@ -272,6 +278,51 @@ const createSegmentGroups = (): Record<V3PartSpec['segment'], THREE.Group> => ({
   rightLeg: new THREE.Group(),
 });
 
+type V3DetailBoneMap = Record<V3DetailBoneName, THREE.Group>;
+
+const subtractVec3Tuple = (
+  value: THREE.Vector3Tuple,
+  offset: THREE.Vector3Tuple
+): THREE.Vector3Tuple => [
+  value[0] - offset[0],
+  value[1] - offset[1],
+  value[2] - offset[2],
+];
+
+const createV3DetailBones = (
+  segmentGroups: Record<V3PartSpec['segment'], THREE.Group>
+): V3DetailBoneMap => {
+  const bones = {} as V3DetailBoneMap;
+
+  for (const boneName of V3_DETAIL_BONE_NAMES) {
+    const spec = V3_DETAIL_BONE_SPECS[boneName];
+    const bone = new THREE.Group();
+    bone.name = `v3bone:${boneName}`;
+    bone.userData.v3DetailBoneName = boneName;
+    bone.userData.v3ReferenceBoneName = spec.referenceBone;
+    bone.userData.v3ReferencePosition = [...spec.position];
+
+    const parent = spec.parent ? bones[spec.parent] : segmentGroups[spec.segment];
+    const parentPosition = spec.parent
+      ? V3_DETAIL_BONE_SPECS[spec.parent].position
+      : [0, 0, 0] as THREE.Vector3Tuple;
+
+    bone.position.fromArray(subtractVec3Tuple(spec.position, parentPosition));
+    parent.add(bone);
+    bones[boneName] = bone;
+  }
+
+  return bones;
+};
+
+const getV3PartLocalPosition = (
+  slot: V3CharacterSlotId,
+  spec: V3PartSpec
+): THREE.Vector3Tuple => {
+  const boneName = V3_SLOT_DETAIL_BONES[slot];
+  return subtractVec3Tuple(spec.position, V3_DETAIL_BONE_SPECS[boneName].position);
+};
+
 export function buildV3SpartanModel(options: V3SpartanBuildOptions = {}): THREE.Group {
   const root = new THREE.Group();
   root.name = 'v3SpartanRoot';
@@ -284,6 +335,7 @@ export function buildV3SpartanModel(options: V3SpartanBuildOptions = {}): THREE.
   const paintJob = options.loadout?.paintJob;
   const customArmorColors = createCustomArmorColors(colors, paintJob);
   const segmentGroups = createSegmentGroups();
+  const detailBones = createV3DetailBones(segmentGroups);
   const partGroups: Partial<Record<V3CharacterSlotId, THREE.Group>> = {};
 
   for (const [segmentName, segment] of Object.entries(segmentGroups)) {
@@ -304,7 +356,7 @@ export function buildV3SpartanModel(options: V3SpartanBuildOptions = {}): THREE.
       distance: v3Distance,
     });
     group.name = `v3:${part.slot}`;
-    group.position.set(...spec.position);
+    group.position.set(...getV3PartLocalPosition(part.slot, spec));
     group.userData.v3PartId = part.id;
     group.userData.v3Slot = part.slot;
     group.userData.v3BoundsId = part.boundsId;
@@ -315,7 +367,7 @@ export function buildV3SpartanModel(options: V3SpartanBuildOptions = {}): THREE.
       group.userData.customArmorId = customPiece.id;
       group.userData.customArmorName = customPiece.name;
     }
-    segmentGroups[spec.segment].add(group);
+    detailBones[V3_SLOT_DETAIL_BONES[part.slot]].add(group);
     partGroups[part.slot] = group;
   }
 
@@ -323,18 +375,26 @@ export function buildV3SpartanModel(options: V3SpartanBuildOptions = {}): THREE.
   root.userData.v3QualityTier = v3QualityTier;
   root.userData.v3Distance = v3Distance;
   root.userData.v3PartGroups = partGroups;
+  root.userData.v3DetailBones = detailBones;
   root.userData.segmentGroups = segmentGroups;
   root.userData.lowerTorso = segmentGroups.lowerTorso;
-  root.userData.upperTorso = segmentGroups.upperTorso;
-  root.userData.head = segmentGroups.head;
-  root.userData.leftArm = segmentGroups.leftArm;
-  root.userData.rightArm = segmentGroups.rightArm;
-  root.userData.leftLeg = segmentGroups.leftLeg;
-  root.userData.rightLeg = segmentGroups.rightLeg;
-  root.userData.handLeft = partGroups.handLeft;
-  root.userData.handRight = partGroups.handRight;
-  root.userData.hand_l = partGroups.handLeft;
-  root.userData.hand_r = partGroups.handRight;
+  root.userData.upperTorso = detailBones.chest;
+  root.userData.head = detailBones.head;
+  root.userData.leftArm = detailBones.upperArmLeft;
+  root.userData.rightArm = detailBones.upperArmRight;
+  root.userData.leftLeg = detailBones.thighLeft;
+  root.userData.rightLeg = detailBones.thighRight;
+  root.userData.pelvis = detailBones.pelvis;
+  root.userData.spine1 = detailBones.spine1;
+  root.userData.spine2 = detailBones.spine2;
+  root.userData.spine3 = detailBones.spine3;
+  root.userData.chest = detailBones.chest;
+  root.userData.neck = detailBones.neck;
+  root.userData.backpack = detailBones.backpack;
+  root.userData.handLeft = detailBones.handLeft;
+  root.userData.handRight = detailBones.handRight;
+  root.userData.hand_l = detailBones.handLeft;
+  root.userData.hand_r = detailBones.handRight;
   root.userData.v3AttachmentOffsets = {
     thirdPersonWeaponGrip: [0.08, -0.08, 0.02],
     thirdPersonOffhandGrip: [-0.08, -0.08, 0.02],

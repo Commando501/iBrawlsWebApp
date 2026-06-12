@@ -294,7 +294,7 @@ test('replay visuals use legacy V1 loadout when replay has no visual policy', ()
   assert.notEqual(meshes.group.userData.modelSystem, 'v3');
 });
 
-test('replay V3 visual policy falls back to V2 visuals', () => {
+test('replay V3 visual policy preserves advanced visuals', () => {
   const scene = new THREE.Scene();
   const refs = {
     scene,
@@ -364,12 +364,10 @@ test('replay V3 visual policy falls back to V2 visuals', () => {
 
   const meshes = refs.otherPlayerMeshes.get('player');
   assert.ok(meshes);
-  assert.equal(meshes.group.userData.modelSystem, 'v2');
-  assert.deepEqual(JSON.parse(meshes.group.userData.appliedLoadoutKey), {
-    helmet: 'odst',
-    modelSystem: 'v2',
-    modelType: 'medium',
-  });
+  assert.equal(meshes.group.userData.modelSystem, 'v3');
+  const appliedLoadout = JSON.parse(meshes.group.userData.appliedLoadoutKey);
+  assert.equal(appliedLoadout.helmet, 'odst');
+  assert.equal(appliedLoadout.modelSystem, 'v3');
 });
 
 test('replay V3 body animation receives active weapon, lunge state, and pitch', () => {

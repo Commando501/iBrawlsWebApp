@@ -50,10 +50,10 @@ test('normalizeMatchLobbyConfig defaults visual model policy to v2', () => {
   assert.equal(config.visualModelPolicy, 'v2');
 });
 
-test('normalizeMatchLobbyConfig preserves gameplay-ready visual model policy choices', () => {
+test('normalizeMatchLobbyConfig preserves supported visual model policy choices', () => {
   assert.equal(normalizeMatchLobbyConfig({ visualModelPolicy: 'v1' }).visualModelPolicy, 'v1');
   assert.equal(normalizeMatchLobbyConfig({ visualModelPolicy: 'v2' }).visualModelPolicy, 'v2');
-  assert.equal(normalizeMatchLobbyConfig({ visualModelPolicy: 'v3' }).visualModelPolicy, 'v2');
+  assert.equal(normalizeMatchLobbyConfig({ visualModelPolicy: 'v3' }).visualModelPolicy, 'v3');
 });
 
 test('normalizeMatchLobbyConfig rejects invalid visual model policy values', () => {

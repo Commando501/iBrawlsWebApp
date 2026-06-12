@@ -12,8 +12,8 @@ test('default gameplay settings use the recommended V2 visual model policy', () 
   assert.equal(withDefaultGameplaySettings({}).visualModelPolicy, 'v2');
 });
 
-test('default rollout preserves gameplay-ready visual model policy choices and locks V3 to V2', () => {
+test('default rollout preserves supported visual model policy choices', () => {
   assert.equal(withDefaultGameplaySettings({ visualModelPolicy: 'v1' }).visualModelPolicy, 'v1');
   assert.equal(withDefaultGameplaySettings({ visualModelPolicy: 'v2' }).visualModelPolicy, 'v2');
-  assert.equal(withDefaultGameplaySettings({ visualModelPolicy: 'v3' }).visualModelPolicy, 'v2');
+  assert.equal(withDefaultGameplaySettings({ visualModelPolicy: 'v3' }).visualModelPolicy, 'v3');
 });

@@ -240,7 +240,7 @@ function normalizeModelSystem(value: unknown): ModelSystem | undefined {
 }
 
 function normalizeVisualModelPolicy(value: unknown): VisualModelPolicy {
-  return value === "v1" || value === "v2" ? value : DEFAULT_VISUAL_MODEL_POLICY;
+  return normalizeModelSystem(value) ?? DEFAULT_VISUAL_MODEL_POLICY;
 }
 
 export function normalizeMatchLobbyConfig(input: unknown): MatchLobbyConfig {

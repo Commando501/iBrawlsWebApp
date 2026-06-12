@@ -38,6 +38,7 @@ interface SinglePlayerSetupPanelProps {
   playerName: string;
   playerHue: number;
   isPlaying: boolean;
+  isAdmin?: boolean;
   onStartTournamentMatch: () => void;
   onResetTournament: () => void;
 }
@@ -66,6 +67,7 @@ export function SinglePlayerSetupPanel({
   playerName,
   playerHue,
   isPlaying,
+  isAdmin = false,
   onStartTournamentMatch,
   onResetTournament,
 }: SinglePlayerSetupPanelProps) {
@@ -121,6 +123,7 @@ export function SinglePlayerSetupPanel({
                 setAdminSettings((prev) => ({ ...prev, visualModelPolicy }));
               }}
               onOpenBotSetup={onOpenBotSetup}
+              isAdmin={isAdmin}
             />
           </div>
 

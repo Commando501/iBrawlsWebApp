@@ -25,13 +25,13 @@ test('visual policy v2 forces v2 model system', () => {
   );
 });
 
-test('visual policy v3 is locked to v2 for gameplay', () => {
+test('visual policy v3 preserves advanced visual model system', () => {
   assert.equal(
     resolveCombatantVisualModelSystem({
       visualModelPolicy: 'v3',
       loadout: { modelSystem: 'v1' },
     }),
-    'v2'
+    'v3'
   );
 });
 
@@ -55,21 +55,17 @@ test('v2 visual policy forces v2 and normalizes v3 model type to medium', () => 
   );
 });
 
-test('v3 visual policy resolves through the v2 gameplay fallback', () => {
-  assert.deepEqual(
-    resolveLoadoutForVisualPolicy({
+test('v3 visual policy preserves sanitized advanced visual loadout details', () => {
+  const loadout = resolveLoadoutForVisualPolicy({
       visualModelPolicy: 'v3',
       loadout: {
         modelSystem: 'v1',
         helmet: 'odst',
         hammerPreset: 'gravity-axe',
       },
-    }),
-    {
-      helmet: 'odst',
-      hammerPreset: 'gravity-axe',
-      modelSystem: 'v2',
-      modelType: 'medium',
-    }
-  );
+    }) as any;
+
+  assert.equal(loadout.modelSystem, 'v3');
+  assert.equal(loadout.helmet, 'odst');
+  assert.equal(loadout.hammerPreset, 'gravity-axe');
 });

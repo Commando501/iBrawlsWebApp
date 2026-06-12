@@ -67,6 +67,32 @@ describe('animateV3CombatantModel', () => {
     assert.notEqual(model.userData.rightLeg.rotation.x, 0);
   });
 
+  it('drives V3 detail bones for higher fidelity upper and lower body layers', () => {
+    const model = createV3Model();
+    const refs = createInitialGrifballThreeRefs();
+    const detailBones = model.userData.v3DetailBones as Record<string, THREE.Group>;
+
+    animateV3CombatantModel({
+      refs,
+      mesh: model,
+      vel: new THREE.Vector3(3, 0, 0),
+      yaw: 0,
+      hp: 100,
+      activeWeapon: 'hammer',
+      weaponState: 'swing_up',
+      weaponTimer: 0.18,
+      dt: 1,
+      settings: { hammerAttackAnimation: 'highFidelity' },
+    });
+
+    assert.notEqual(detailBones.spine2.rotation.y, 0);
+    assert.notEqual(detailBones.forearmRight.rotation.x, 0);
+    assert.notEqual(detailBones.handLeft.rotation.x, 0);
+    assert.notEqual(detailBones.thighLeft.rotation.x, 0);
+    assert.notEqual(detailBones.calfRight.rotation.x, 0);
+    assert.equal(detailBones.footLeft.rotation.y, 0);
+  });
+
   it('pistol recoil affects upper-body groups without disturbing planted feet', () => {
     const model = createV3Model();
     const refs = createInitialGrifballThreeRefs();

@@ -52,13 +52,27 @@ const baseProps = (): ComponentProps<typeof MultiplayerSetupPanel> => ({
   onResetMatchmakerUrl: noop,
 });
 
-test('MultiplayerSetupPanel exposes host visual model policy choices', () => {
+test('MultiplayerSetupPanel hides V3 host visual model policy for non-admin players', () => {
   const html = renderToStaticMarkup(<MultiplayerSetupPanel {...baseProps()} />);
 
   assert.match(html, /Model Set/);
   assert.match(html, /Version 1 Classic/);
   assert.match(html, /Version 2 Rigged/);
   assert.doesNotMatch(html, /Version 3 Advanced/);
+});
+
+test('MultiplayerSetupPanel exposes V3 host visual model policy for admin players', () => {
+  const html = renderToStaticMarkup(
+    <MultiplayerSetupPanel
+      {...baseProps()}
+      {...({ isAdmin: true } as Partial<ComponentProps<typeof MultiplayerSetupPanel>>)}
+    />
+  );
+
+  assert.match(html, /Model Set/);
+  assert.match(html, /Version 1 Classic/);
+  assert.match(html, /Version 2 Rigged/);
+  assert.match(html, /Version 3 Advanced/);
 });
 
 test('MultiplayerSetupPanel defaults new hosted lobbies to recommended V2', () => {
@@ -105,7 +119,7 @@ test('MultiplayerSetupPanel staging summary shows the lobby model policy', () =>
   assert.match(html, /Version 2 Rigged/);
 });
 
-test('MultiplayerSetupPanel staging summary coerces V3 policy to V2 label', () => {
+test('MultiplayerSetupPanel staging summary clamps V3 policy for non-admin players', () => {
   const html = renderToStaticMarkup(
     <MultiplayerSetupPanel
       {...baseProps()}
@@ -129,4 +143,30 @@ test('MultiplayerSetupPanel staging summary coerces V3 policy to V2 label', () =
   assert.match(html, /Models/);
   assert.match(html, /Version 2 Rigged/);
   assert.doesNotMatch(html, /Version 3 Advanced/);
+});
+
+test('MultiplayerSetupPanel staging summary labels V3 policy for admin players', () => {
+  const html = renderToStaticMarkup(
+    <MultiplayerSetupPanel
+      {...baseProps()}
+      isAdmin={true}
+      connectionStatus="hosting"
+      multiplayerRole="host"
+      matchLobbyConfig={{
+        access: 'open',
+        gameMode: 'sandbox',
+        selectedMap: 'hangar',
+        customMap: null,
+        maxPlayers: 8,
+        allowObservers: true,
+        matchTimerSeconds: 522,
+        winTarget: 25,
+        visualModelPolicy: 'v3',
+      }}
+      multiplayerSocket={{ readyState: 1 } as WebSocket}
+    />
+  );
+
+  assert.match(html, /Models/);
+  assert.match(html, /Version 3 Advanced/);
 });

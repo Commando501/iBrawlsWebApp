@@ -69,7 +69,7 @@ test('offline AI roster visuals stay on the V1 model system', () => {
   assert.equal(meshes.group.userData.appliedLoadoutKey, JSON.stringify({ modelSystem: 'v1' }));
 });
 
-test('offline AI explicit V3 visual policy falls back to V2 visuals', () => {
+test('offline AI explicit V3 visual policy preserves V3 visuals', () => {
   const { state, refs } = createStateAndRefs();
   const bot = createOfflineBotCombatant({
     id: 'bot_v3',
@@ -96,13 +96,11 @@ test('offline AI explicit V3 visual policy falls back to V2 visuals', () => {
 
   const meshes = refs.otherPlayerMeshes.get(bot.id);
   assert.ok(meshes);
-  assert.equal(meshes.group.userData.modelSystem, 'v2');
-  assert.deepEqual(getAppliedLoadout(refs, bot.id), {
-    helmet: 'odst',
-    hammerPreset: 'gravity-axe',
-    modelSystem: 'v2',
-    modelType: 'medium',
-  });
+  assert.equal(meshes.group.userData.modelSystem, 'v3');
+  const appliedLoadout = getAppliedLoadout(refs, bot.id) as any;
+  assert.equal(appliedLoadout.modelSystem, 'v3');
+  assert.equal(appliedLoadout.helmet, 'odst');
+  assert.equal(appliedLoadout.hammerPreset, 'gravity-axe');
   assert.equal(state.otherPlayers.get(bot.id)?.modelType, 'medium');
 });
 
@@ -131,7 +129,9 @@ test('offline AI explicit V3 visual policy does not change gameplay model type',
   });
 
   assert.equal(state.otherPlayers.get(bot.id)?.modelType, 'large');
-  assert.deepEqual(getAppliedLoadout(refs, bot.id), { modelSystem: 'v2', modelType: 'medium' });
+  const appliedLoadout = getAppliedLoadout(refs, bot.id) as any;
+  assert.equal(appliedLoadout.modelSystem, 'v3');
+  assert.equal(appliedLoadout.modelType, 'large');
 });
 
 test('offline AI explicit V2 visual policy applies gameplay model type to V2 visuals', () => {
@@ -218,7 +218,7 @@ test('remote human visual policy v2 normalizes V3 personal model type to medium'
   assert.deepEqual(getAppliedLoadout(refs, 'peer'), { modelSystem: 'v2', modelType: 'medium' });
 });
 
-test('remote human visual policy v3 falls back to a V2 applied loadout key', () => {
+test('remote human visual policy v3 preserves an advanced applied loadout key', () => {
   const { state, refs } = createStateAndRefs();
 
   provisionCombatant(state, refs, 'peer', {
@@ -232,13 +232,12 @@ test('remote human visual policy v3 falls back to a V2 applied loadout key', () 
   });
 
   const appliedLoadout = getAppliedLoadout(refs, 'peer');
-  assert.equal(appliedLoadout.modelSystem, 'v2');
+  assert.equal(appliedLoadout.modelSystem, 'v3');
   assert.equal(appliedLoadout.helmet, 'odst');
   assert.equal(appliedLoadout.hammerPreset, 'gravity-axe');
-  assert.equal(appliedLoadout.modelType, 'medium');
 });
 
-test('remote human visual policy v3 falls back without letting V3 personal model type affect gameplay state', () => {
+test('remote human visual policy v3 keeps V3 visuals without letting V3 personal model type affect gameplay state', () => {
   const { state, refs } = createStateAndRefs();
   const remote = createRemoteCombatant({
     id: 'peer',
@@ -261,12 +260,12 @@ test('remote human visual policy v3 falls back without letting V3 personal model
   });
 
   const appliedLoadout = getAppliedLoadout(refs, remote.id);
-  assert.equal(appliedLoadout.modelSystem, 'v2');
-  assert.equal(appliedLoadout.modelType, 'medium');
+  assert.equal(appliedLoadout.modelSystem, 'v3');
+  assert.equal(appliedLoadout.modelType, 'large');
   assert.equal(state.otherPlayers.get(remote.id)?.modelType, 'medium');
 });
 
-test('remote V3 visual policy falls back to V2 and ignores V3 render quality rebuilds', () => {
+test('remote V3 visual policy rebuilds when V3 render quality changes', () => {
   const { state, refs } = createStateAndRefs();
   const data = {
     controller: 'remote',
@@ -279,14 +278,14 @@ test('remote V3 visual policy falls back to V2 and ignores V3 render quality reb
   const firstMeshes = refs.otherPlayerMeshes.get('peer');
   assert.ok(firstMeshes);
   const appliedLoadoutKey = firstMeshes.group.userData.appliedLoadoutKey;
-  assert.equal(firstMeshes.group.userData.modelSystem, 'v2');
+  assert.equal(firstMeshes.group.userData.modelSystem, 'v3');
 
   provisionCombatant(state, refs, 'peer', data, { v3QualityTier: 'desktop' });
   const secondMeshes = refs.otherPlayerMeshes.get('peer');
   assert.ok(secondMeshes);
-  assert.equal(secondMeshes.group, firstMeshes.group);
+  assert.notEqual(secondMeshes.group, firstMeshes.group);
   assert.equal(secondMeshes.group.userData.appliedLoadoutKey, appliedLoadoutKey);
-  assert.equal(secondMeshes.group.userData.modelSystem, 'v2');
+  assert.equal(secondMeshes.group.userData.modelSystem, 'v3');
 });
 
 test('remote V3 visual policy preserves sanitized V3 role paint while forced V1 and V2 remain legacy visual policies', () => {

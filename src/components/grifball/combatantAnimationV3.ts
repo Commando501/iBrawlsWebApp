@@ -3,6 +3,7 @@ import { getYawForHeading } from '../../game/yaw';
 import type { UniversalSettings } from '../../types';
 import type { V3QualityTier } from '../v3/v3ModelTypes';
 import { normalizeV3QualityTier } from '../v3/v3QualityTiers';
+import type { V3DetailBoneName } from '../v3/v3RigDetail';
 import type { WeaponPose } from './attackAnimationPresets';
 import { consumeV3AnimationThrottle } from './v3AnimationThrottle';
 import type { GrifballThreeRefs } from './threeRefs';
@@ -67,6 +68,7 @@ export interface V3WeaponMeshAnimationInput {
 }
 
 type V3BroadGroups = Record<V3BroadBodyGroupName, THREE.Group>;
+type V3DetailGroups = Partial<Record<V3DetailBoneName, THREE.Group>>;
 
 const V3_BODY_MASKS: Record<V3AnimationLayerName, readonly V3BroadBodyGroupName[]> = {
   locomotion: ['lowerTorso', 'leftLeg', 'rightLeg'],
@@ -121,15 +123,57 @@ const lerpRotation = (
   group.rotation.z = THREE.MathUtils.lerp(group.rotation.z, target[2], alpha);
 };
 
+const lerpDetailRotation = (
+  detailBones: V3DetailGroups | undefined,
+  boneName: V3DetailBoneName,
+  target: THREE.Vector3Tuple,
+  alpha: number
+): void => {
+  const bone = detailBones?.[boneName];
+  if (bone) {
+    lerpRotation(bone, target, alpha);
+  }
+};
+
+const scaledRotation = (
+  rotation: THREE.Vector3Tuple,
+  xScale: number,
+  yScale: number,
+  zScale: number
+): THREE.Vector3Tuple => [
+  rotation[0] * xScale,
+  rotation[1] * yScale,
+  rotation[2] * zScale,
+];
+
 const applyV3UpperBodyPose = (
   groups: V3BroadGroups,
   pose: ReturnType<typeof sampleV3UpperBodyWeaponPose>,
-  alpha: number
+  alpha: number,
+  detailBones?: V3DetailGroups
 ): void => {
   lerpRotation(groups.upperTorso, pose.upperTorsoRotation, alpha);
   lerpRotation(groups.head, pose.headRotation, alpha);
   lerpRotation(groups.leftArm, pose.leftArmRotation, alpha);
   lerpRotation(groups.rightArm, pose.rightArmRotation, alpha);
+
+  lerpDetailRotation(detailBones, 'spine1', scaledRotation(pose.upperTorsoRotation, 0.2, 0.2, 0.15), alpha);
+  lerpDetailRotation(detailBones, 'spine2', scaledRotation(pose.upperTorsoRotation, 0.35, 0.35, 0.3), alpha);
+  lerpDetailRotation(detailBones, 'spine3', scaledRotation(pose.upperTorsoRotation, 0.45, 0.45, 0.4), alpha);
+  lerpDetailRotation(detailBones, 'chest', scaledRotation(pose.upperTorsoRotation, 0.5, 0.55, 0.5), alpha);
+  lerpDetailRotation(detailBones, 'neck', scaledRotation(pose.headRotation, 0.3, 0.3, 0.25), alpha);
+  lerpDetailRotation(detailBones, 'head', scaledRotation(pose.headRotation, 0.7, 0.7, 0.7), alpha);
+  lerpDetailRotation(detailBones, 'helmet', scaledRotation(pose.headRotation, 0.7, 0.7, 0.7), alpha);
+  lerpDetailRotation(detailBones, 'clavicleLeft', scaledRotation(pose.leftArmRotation, 0.2, 0.2, 0.45), alpha);
+  lerpDetailRotation(detailBones, 'upperArmLeft', scaledRotation(pose.leftArmRotation, 0.65, 0.7, 0.7), alpha);
+  lerpDetailRotation(detailBones, 'forearmLeft', scaledRotation(pose.leftArmRotation, 0.35, 0.25, 0.25), alpha);
+  lerpDetailRotation(detailBones, 'handLeft', scaledRotation(pose.leftArmRotation, 0.18, 0.12, 0.2), alpha);
+  lerpDetailRotation(detailBones, 'gripLeft', scaledRotation(pose.leftArmRotation, 0.18, 0.12, 0.2), alpha);
+  lerpDetailRotation(detailBones, 'clavicleRight', scaledRotation(pose.rightArmRotation, 0.2, 0.2, 0.45), alpha);
+  lerpDetailRotation(detailBones, 'upperArmRight', scaledRotation(pose.rightArmRotation, 0.65, 0.7, 0.7), alpha);
+  lerpDetailRotation(detailBones, 'forearmRight', scaledRotation(pose.rightArmRotation, 0.35, 0.25, 0.25), alpha);
+  lerpDetailRotation(detailBones, 'handRight', scaledRotation(pose.rightArmRotation, 0.18, 0.12, 0.2), alpha);
+  lerpDetailRotation(detailBones, 'gripRight', scaledRotation(pose.rightArmRotation, 0.18, 0.12, 0.2), alpha);
 };
 
 const getV3BroadGroups = (mesh: THREE.Group): V3BroadGroups | undefined => {
@@ -139,6 +183,13 @@ const getV3BroadGroups = (mesh: THREE.Group): V3BroadGroups | undefined => {
 
   return V3_BODY_MASKS.death.every((name) => groups[name] instanceof THREE.Group)
     ? groups as V3BroadGroups
+    : undefined;
+};
+
+const getV3DetailBones = (mesh: THREE.Group): V3DetailGroups | undefined => {
+  const detailBones = mesh.userData.v3DetailBones ?? mesh.userData.detailBones;
+  return detailBones && typeof detailBones === 'object'
+    ? detailBones as V3DetailGroups
     : undefined;
 };
 
@@ -153,6 +204,66 @@ const resetV3BroadGroups = (groups: V3BroadGroups): void => {
   groups.lowerTorso.position.y = 0;
 };
 
+const resetV3DetailBones = (detailBones: V3DetailGroups | undefined): void => {
+  if (!detailBones) return;
+  for (const bone of Object.values(detailBones)) {
+    if (bone instanceof THREE.Group) {
+      bone.rotation.set(0, 0, 0);
+    }
+  }
+};
+
+const applyV3FineLocomotion = ({
+  detailBones,
+  phase,
+  isSliding,
+  isSprinting,
+  speed,
+  alpha,
+}: {
+  detailBones?: V3DetailGroups;
+  phase: number;
+  isSliding?: boolean;
+  isSprinting?: boolean;
+  speed: number;
+  alpha: number;
+}): void => {
+  if (!detailBones) return;
+
+  if (isSliding) {
+    lerpDetailRotation(detailBones, 'thighLeft', [-1.1, 0, -0.08], alpha);
+    lerpDetailRotation(detailBones, 'calfLeft', [1.25, 0, 0], alpha);
+    lerpDetailRotation(detailBones, 'footLeft', [-0.18, 0, 0], alpha);
+    lerpDetailRotation(detailBones, 'toeLeft', [0.08, 0, 0], alpha);
+    lerpDetailRotation(detailBones, 'thighRight', [-0.45, 0, 0.08], alpha);
+    lerpDetailRotation(detailBones, 'calfRight', [0.35, 0, 0], alpha);
+    lerpDetailRotation(detailBones, 'footRight', [0.12, 0, 0], alpha);
+    lerpDetailRotation(detailBones, 'toeRight', [0, 0, 0], alpha);
+    return;
+  }
+
+  if (speed > 0.15) {
+    const leftStep = Math.sin(phase);
+    const rightStep = -leftStep;
+    const stride = isSprinting ? 0.68 : 0.48;
+    const knee = isSprinting ? 0.82 : 0.52;
+    const ankle = isSprinting ? 0.3 : 0.2;
+    lerpDetailRotation(detailBones, 'thighLeft', [leftStep * stride, 0, 0], alpha);
+    lerpDetailRotation(detailBones, 'thighRight', [rightStep * stride, 0, 0], alpha);
+    lerpDetailRotation(detailBones, 'calfLeft', [leftStep < 0 ? -leftStep * knee : 0.04, 0, 0], alpha);
+    lerpDetailRotation(detailBones, 'calfRight', [rightStep < 0 ? -rightStep * knee : 0.04, 0, 0], alpha);
+    lerpDetailRotation(detailBones, 'footLeft', [leftStep > 0 ? leftStep * ankle : -leftStep * 0.08, 0, 0], alpha);
+    lerpDetailRotation(detailBones, 'footRight', [rightStep > 0 ? rightStep * ankle : -rightStep * 0.08, 0, 0], alpha);
+    lerpDetailRotation(detailBones, 'toeLeft', [leftStep < 0 ? -leftStep * 0.28 : 0, 0, 0], alpha);
+    lerpDetailRotation(detailBones, 'toeRight', [rightStep < 0 ? -rightStep * 0.28 : 0, 0, 0], alpha);
+    return;
+  }
+
+  for (const boneName of ['thighLeft', 'calfLeft', 'footLeft', 'toeLeft', 'thighRight', 'calfRight', 'footRight', 'toeRight'] as const) {
+    lerpDetailRotation(detailBones, boneName, [0, 0, 0], alpha);
+  }
+};
+
 const applyV3LocomotionLayer = ({
   groups,
   mesh,
@@ -161,6 +272,7 @@ const applyV3LocomotionLayer = ({
   dt,
   isSliding,
   isSprinting,
+  detailBones,
 }: {
   groups: V3BroadGroups;
   mesh: THREE.Group;
@@ -169,6 +281,7 @@ const applyV3LocomotionLayer = ({
   dt: number;
   isSliding?: boolean;
   isSprinting?: boolean;
+  detailBones?: V3DetailGroups;
 }): void => {
   const speed = Math.sqrt(vel.x * vel.x + vel.z * vel.z);
   const alpha = dt > 0 ? Math.min(1, dt * 10) : 1;
@@ -178,6 +291,7 @@ const applyV3LocomotionLayer = ({
     lerpRotation(groups.lowerTorso, [-0.24, groups.lowerTorso.rotation.y, 0], alpha);
     lerpRotation(groups.leftLeg, [-1.05, 0, -0.14], alpha);
     lerpRotation(groups.rightLeg, [-0.58, 0, 0.14], alpha);
+    applyV3FineLocomotion({ detailBones, phase: 0, isSliding, isSprinting, speed, alpha });
     return;
   }
 
@@ -196,12 +310,14 @@ const applyV3LocomotionLayer = ({
     groups.rightLeg.rotation.z = -Math.cos(phase) * side;
     groups.lowerTorso.position.y = -Math.abs(Math.sin(phase)) * (isSprinting ? 0.06 : 0.04);
     groups.lowerTorso.rotation.x = THREE.MathUtils.lerp(groups.lowerTorso.rotation.x, isSprinting ? 0.16 : 0, alpha);
+    applyV3FineLocomotion({ detailBones, phase, isSliding, isSprinting, speed, alpha });
   } else {
     mesh.userData.v3WalkPhase = 0;
     groups.lowerTorso.position.y = THREE.MathUtils.lerp(groups.lowerTorso.position.y, 0, alpha);
     groups.lowerTorso.rotation.x = THREE.MathUtils.lerp(groups.lowerTorso.rotation.x, 0, alpha);
     lerpRotation(groups.leftLeg, [0, 0, 0], alpha);
     lerpRotation(groups.rightLeg, [0, 0, 0], alpha);
+    applyV3FineLocomotion({ detailBones, phase: 0, isSliding, isSprinting, speed, alpha });
   }
 
   let targetYaw = 0;
@@ -221,6 +337,7 @@ const applyV3HammerLayer = ({
   hammerSlamAttackTime,
   settings,
   alpha,
+  detailBones,
 }: {
   groups: V3BroadGroups;
   weaponState: string;
@@ -229,6 +346,7 @@ const applyV3HammerLayer = ({
   hammerSlamAttackTime?: number;
   settings: Partial<UniversalSettings>;
   alpha: number;
+  detailBones?: V3DetailGroups;
 }): void => {
   applyV3UpperBodyPose(groups, sampleV3UpperBodyWeaponPose({
     activeWeapon: 'hammer',
@@ -240,7 +358,7 @@ const applyV3HammerLayer = ({
       hammerSlamWindupTime,
       hammerSlamAttackTime,
     },
-  }), alpha);
+  }), alpha, detailBones);
 };
 
 const applyV3SwordLayer = ({
@@ -250,6 +368,7 @@ const applyV3SwordLayer = ({
   isLunging,
   settings,
   alpha,
+  detailBones,
 }: {
   groups: V3BroadGroups;
   weaponState: string;
@@ -257,6 +376,7 @@ const applyV3SwordLayer = ({
   isLunging?: boolean;
   settings: Partial<UniversalSettings>;
   alpha: number;
+  detailBones?: V3DetailGroups;
 }): void => {
   applyV3UpperBodyPose(groups, sampleV3UpperBodyWeaponPose({
     activeWeapon: 'sword',
@@ -264,7 +384,7 @@ const applyV3SwordLayer = ({
     weaponTimer,
     isLunging: Boolean(isLunging),
     settings,
-  }), alpha);
+  }), alpha, detailBones);
 };
 
 const applyV3PistolLayer = ({
@@ -273,12 +393,14 @@ const applyV3PistolLayer = ({
   weaponTimer,
   settings,
   alpha,
+  detailBones,
 }: {
   groups: V3BroadGroups;
   weaponState: string;
   weaponTimer: number;
   settings: Partial<UniversalSettings>;
   alpha: number;
+  detailBones?: V3DetailGroups;
 }): void => {
   applyV3UpperBodyPose(groups, sampleV3UpperBodyWeaponPose({
     activeWeapon: 'pistol',
@@ -286,25 +408,45 @@ const applyV3PistolLayer = ({
     weaponTimer,
     isLunging: false,
     settings,
-  }), alpha);
+  }), alpha, detailBones);
 };
 
-const settleV3UpperBody = (groups: V3BroadGroups, alpha: number, breathingPhase: number): void => {
+const settleV3UpperBody = (
+  groups: V3BroadGroups,
+  alpha: number,
+  breathingPhase: number,
+  detailBones?: V3DetailGroups
+): void => {
   const breathe = Math.sin(breathingPhase) * 0.018;
   lerpRotation(groups.upperTorso, [breathe, 0, 0], alpha);
   lerpRotation(groups.head, [-breathe * 0.5, 0, 0], alpha);
   lerpRotation(groups.leftArm, [-0.12, 0, 0.08], alpha);
   lerpRotation(groups.rightArm, [-0.12, 0, -0.08], alpha);
+  lerpDetailRotation(detailBones, 'spine1', [breathe * 0.25, 0, 0], alpha);
+  lerpDetailRotation(detailBones, 'spine2', [breathe * 0.5, 0, 0], alpha);
+  lerpDetailRotation(detailBones, 'spine3', [breathe * 0.6, 0, 0], alpha);
+  lerpDetailRotation(detailBones, 'chest', [breathe * 0.5, 0, 0], alpha);
+  lerpDetailRotation(detailBones, 'neck', [-breathe * 0.2, 0, 0], alpha);
+  lerpDetailRotation(detailBones, 'head', [-breathe * 0.4, 0, 0], alpha);
+  lerpDetailRotation(detailBones, 'helmet', [-breathe * 0.4, 0, 0], alpha);
+  lerpDetailRotation(detailBones, 'upperArmLeft', [-0.08, 0, 0.04], alpha);
+  lerpDetailRotation(detailBones, 'forearmLeft', [-0.04, 0, 0.02], alpha);
+  lerpDetailRotation(detailBones, 'handLeft', [0, 0, 0], alpha);
+  lerpDetailRotation(detailBones, 'upperArmRight', [-0.08, 0, -0.04], alpha);
+  lerpDetailRotation(detailBones, 'forearmRight', [-0.04, 0, -0.02], alpha);
+  lerpDetailRotation(detailBones, 'handRight', [0, 0, 0], alpha);
 };
 
 const applyV3AdditiveLayer = ({
   groups,
+  detailBones,
   alpha,
   hitReactTimer,
   lookYawOffset = 0,
   lookPitch = 0,
 }: {
   groups: V3BroadGroups;
+  detailBones?: V3DetailGroups;
   alpha: number;
   hitReactTimer: number;
   lookYawOffset?: number;
@@ -335,6 +477,16 @@ const applyV3AdditiveLayer = ({
       groups.rightArm.rotation.y,
       groups.rightArm.rotation.z - hit * 0.05,
     ], alpha);
+    lerpDetailRotation(detailBones, 'spine3', [
+      (detailBones?.spine3?.rotation.x ?? 0) - hit * 0.03,
+      detailBones?.spine3?.rotation.y ?? 0,
+      (detailBones?.spine3?.rotation.z ?? 0) + hit * 0.08,
+    ], alpha);
+    lerpDetailRotation(detailBones, 'head', [
+      (detailBones?.head?.rotation.x ?? 0) - hit * 0.06,
+      (detailBones?.head?.rotation.y ?? 0) - hit * 0.04,
+      (detailBones?.head?.rotation.z ?? 0) + hit * 0.04,
+    ], alpha);
   }
 
   if (safeLookYaw !== 0 || safeLookPitch !== 0) {
@@ -347,6 +499,21 @@ const applyV3AdditiveLayer = ({
       groups.head.rotation.x + safeLookPitch * 0.75,
       groups.head.rotation.y + safeLookYaw * 0.75,
       groups.head.rotation.z,
+    ], alpha);
+    lerpDetailRotation(detailBones, 'neck', [
+      (detailBones?.neck?.rotation.x ?? 0) + safeLookPitch * 0.25,
+      (detailBones?.neck?.rotation.y ?? 0) + safeLookYaw * 0.2,
+      detailBones?.neck?.rotation.z ?? 0,
+    ], alpha);
+    lerpDetailRotation(detailBones, 'head', [
+      (detailBones?.head?.rotation.x ?? 0) + safeLookPitch * 0.55,
+      (detailBones?.head?.rotation.y ?? 0) + safeLookYaw * 0.55,
+      detailBones?.head?.rotation.z ?? 0,
+    ], alpha);
+    lerpDetailRotation(detailBones, 'helmet', [
+      (detailBones?.helmet?.rotation.x ?? 0) + safeLookPitch * 0.55,
+      (detailBones?.helmet?.rotation.y ?? 0) + safeLookYaw * 0.55,
+      detailBones?.helmet?.rotation.z ?? 0,
     ], alpha);
   }
 };
@@ -376,6 +543,7 @@ export function animateV3CombatantModel({
   if (!mesh) return false;
   const groups = getV3BroadGroups(mesh);
   if (!groups) return false;
+  const detailBones = getV3DetailBones(mesh);
   const fallbackNowMs = typeof performance !== 'undefined' ? performance.now() : Date.now();
 
   const throttle = consumeV3AnimationThrottle({
@@ -396,6 +564,7 @@ export function animateV3CombatantModel({
     mesh.userData.v3LastHp = hp;
     mesh.userData.v3HitReactTimer = 0;
     resetV3BroadGroups(groups);
+    resetV3DetailBones(detailBones);
     return true;
   }
 
@@ -405,16 +574,16 @@ export function animateV3CombatantModel({
   mesh.userData.v3LastHp = hp;
 
   const alpha = dt > 0 ? Math.min(1, dt * 12) : 1;
-  applyV3LocomotionLayer({ groups, mesh, vel, yaw, dt, isSliding, isSprinting });
+  applyV3LocomotionLayer({ groups, mesh, vel, yaw, dt, isSliding, isSprinting, detailBones });
 
   const breathingPhase = Number(mesh.userData.v3BreathingPhase ?? 0) + dt * 2.1;
   mesh.userData.v3BreathingPhase = breathingPhase;
-  settleV3UpperBody(groups, alpha, breathingPhase);
+  settleV3UpperBody(groups, alpha, breathingPhase, detailBones);
 
   if (activeWeapon === 'sword') {
-    applyV3SwordLayer({ groups, weaponState, weaponTimer, isLunging, settings, alpha });
+    applyV3SwordLayer({ groups, weaponState, weaponTimer, isLunging, settings, alpha, detailBones });
   } else if (activeWeapon === 'pistol') {
-    applyV3PistolLayer({ groups, weaponState, weaponTimer, settings, alpha });
+    applyV3PistolLayer({ groups, weaponState, weaponTimer, settings, alpha, detailBones });
   } else {
     applyV3HammerLayer({
       groups,
@@ -424,12 +593,14 @@ export function animateV3CombatantModel({
       hammerSlamAttackTime,
       settings,
       alpha,
+      detailBones,
     });
   }
 
   const hitReactTimer = Math.max(0, Number(mesh.userData.v3HitReactTimer ?? 0));
   applyV3AdditiveLayer({
     groups,
+    detailBones,
     alpha,
     hitReactTimer,
     lookYawOffset,

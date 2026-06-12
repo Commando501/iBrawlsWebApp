@@ -50,6 +50,52 @@ const groupContainsHexColor = (group: THREE.Object3D, color: string): boolean =>
 };
 
 describe('buildV3SpartanModel', () => {
+  it('builds reference-inspired V3 detail bones for procedural armor fit', () => {
+    const model = buildV3SpartanModel({ isEnemy: false, customHue: 192 });
+    const detailBones = model.userData.v3DetailBones as Record<string, THREE.Group>;
+
+    for (const boneName of [
+      'pelvis',
+      'spine1',
+      'spine2',
+      'spine3',
+      'chest',
+      'neck',
+      'head',
+      'helmet',
+      'backpack',
+      'clavicleLeft',
+      'upperArmLeft',
+      'forearmLeft',
+      'handLeft',
+      'gripLeft',
+      'clavicleRight',
+      'upperArmRight',
+      'forearmRight',
+      'handRight',
+      'gripRight',
+      'thighLeft',
+      'calfLeft',
+      'footLeft',
+      'toeLeft',
+      'thighRight',
+      'calfRight',
+      'footRight',
+      'toeRight',
+    ]) {
+      assert.ok(detailBones[boneName] instanceof THREE.Group, `missing detail bone ${boneName}`);
+      assert.equal(detailBones[boneName].userData.v3DetailBoneName, boneName);
+    }
+
+    assert.equal(model.userData.v3PartGroups.helmet.parent, detailBones.helmet);
+    assert.equal(model.userData.v3PartGroups.chest.parent, detailBones.chest);
+    assert.equal(model.userData.v3PartGroups.forearmLeft.parent, detailBones.forearmLeft);
+    assert.equal(model.userData.v3PartGroups.handRight.parent, detailBones.handRight);
+    assert.equal(model.userData.v3PartGroups.shinLeft.parent, detailBones.calfLeft);
+    assert.equal(model.userData.v3PartGroups.footRight.parent, detailBones.footRight);
+    assert.equal(model.userData.v3PartGroups.back.parent, detailBones.backpack);
+  });
+
   it('builds a V3 model with required combatant segment groups and manifest metadata', () => {
     const model = buildV3SpartanModel({ isEnemy: false, customHue: 192 });
 

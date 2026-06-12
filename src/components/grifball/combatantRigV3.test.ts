@@ -23,4 +23,15 @@ describe('combatantRigV3', () => {
     assert.equal(rig.attachments.thirdPersonOffhandGrip?.group.parent, model.userData.handLeft);
     assert.ok(getV3AttachmentOffset(model, 'thirdPersonWeaponGrip'));
   });
+
+  it('preserves V3 detail bones on the shared combatant rig', () => {
+    const model = buildV3SpartanModel({ isEnemy: false, customHue: 192 });
+    const rig = buildCombatantRigForModel(model);
+
+    assert.equal(rig.detailBones?.spine1, model.userData.v3DetailBones.spine1);
+    assert.equal(rig.detailBones?.forearmRight, model.userData.v3DetailBones.forearmRight);
+    assert.equal(rig.detailBones?.calfLeft, model.userData.v3DetailBones.calfLeft);
+    assert.equal(rig.detailBones?.gripRight, model.userData.v3DetailBones.gripRight);
+    assert.equal(model.userData.detailBones, rig.detailBones);
+  });
 });

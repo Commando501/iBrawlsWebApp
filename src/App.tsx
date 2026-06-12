@@ -36,11 +36,11 @@ import { useCurrentGameStats } from './components/hud/useCurrentGameStats';
 import { useMatchLoadingGate } from './components/loading/useMatchLoadingGate';
 import { statTracker } from './stats/statTracker';
 import { useStatCloudSync } from './stats/useStatCloudSync';
-import { normalizeVisualModelPolicy } from './model/modelSystem';
+import { normalizeSelectableVisualModelPolicy } from './model/modelSystem';
 
 export { createHighFidelityObjectMesh } from './components/main-menu/MapPreview';
 
-const APP_VERSION = '0.650c';
+const APP_VERSION = '0.651a';
 
 // Visual Keyboard + Mouse keybind editor component
 export default function App() {
@@ -340,9 +340,11 @@ export default function App() {
     setConnectionError,
   });
 
-  const activeVisualModelPolicy = useMemo(() => normalizeVisualModelPolicy(
-    matchLobbyConfig?.visualModelPolicy ?? adminSettings.visualModelPolicy
-  ), [adminSettings.visualModelPolicy, matchLobbyConfig?.visualModelPolicy]);
+  const isAdmin = account?.isAdmin ?? false;
+  const activeVisualModelPolicy = useMemo(() => normalizeSelectableVisualModelPolicy(
+    matchLobbyConfig?.visualModelPolicy ?? adminSettings.visualModelPolicy,
+    isAdmin
+  ), [adminSettings.visualModelPolicy, isAdmin, matchLobbyConfig?.visualModelPolicy]);
 
   const {
     gameLoadingState,
@@ -807,6 +809,7 @@ export default function App() {
           customizationChild: mainMenuNav.customizationChild,
           systemChild: mainMenuNav.systemChild,
           isSignedIn: account !== null,
+          isAdmin,
           singlePlayerMode,
           setSinglePlayerMode,
           adminSettings,

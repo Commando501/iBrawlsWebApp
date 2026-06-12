@@ -55,7 +55,7 @@ test('SinglePlayerSetupPanel exposes Sandbox Experience and AI Behavior Editor m
   assert.match(html, /Sandbox Experience[\s\S]*AI Behavior Editor[\s\S]*Training Sandbox Setup[\s\S]*Tournament Setup/);
 });
 
-test('SinglePlayerSetupPanel exposes sandbox visual model policy choices', () => {
+test('SinglePlayerSetupPanel hides V3 sandbox visual model policy for non-admin players', () => {
   const html = renderToStaticMarkup(
     <SinglePlayerSetupPanel
       {...baseSinglePlayerProps()}
@@ -67,6 +67,21 @@ test('SinglePlayerSetupPanel exposes sandbox visual model policy choices', () =>
   assert.match(html, /Version 1 Classic/);
   assert.match(html, /Version 2 Rigged/);
   assert.doesNotMatch(html, /Version 3 Advanced/);
+});
+
+test('SinglePlayerSetupPanel exposes V3 sandbox visual model policy for admin players', () => {
+  const html = renderToStaticMarkup(
+    <SinglePlayerSetupPanel
+      {...baseSinglePlayerProps()}
+      {...({ isAdmin: true } as Partial<ComponentProps<typeof SinglePlayerSetupPanel>>)}
+      adminSettings={{ ...DEFAULT_ADMIN_SETTINGS, visualModelPolicy: 'v2' }}
+    />
+  );
+
+  assert.match(html, /Model Set/);
+  assert.match(html, /Version 1 Classic/);
+  assert.match(html, /Version 2 Rigged/);
+  assert.match(html, /Version 3 Advanced/);
 });
 
 test('SinglePlayerSetupPanel defaults sandbox model policy to recommended V2', () => {

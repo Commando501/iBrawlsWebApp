@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { getCharacterModelProfile } from '../../characterModelTypes';
+import type { V3DetailBoneName } from '../v3/v3RigDetail';
 import { getV3AttachmentOffset } from './combatantRigV3';
 
 export const COMBATANT_BONE_NAMES = [
@@ -39,12 +40,14 @@ export type CombatantAttachmentMap = Partial<Record<CombatantAttachmentPointName
 export type CombatantSegmentBoneName = Exclude<CombatantBoneName, 'root'>;
 
 export type CombatantSegmentGroups = Record<CombatantSegmentBoneName, THREE.Group>;
+export type CombatantDetailBoneMap = Partial<Record<V3DetailBoneName, THREE.Group>>;
 
 export type CombatantRig = {
   root: THREE.Group;
   bones: Record<CombatantBoneName, THREE.Group>;
   attachments: CombatantAttachmentMap;
   segmentGroups: CombatantSegmentGroups;
+  detailBones?: CombatantDetailBoneMap;
 };
 
 export type FirstPersonWeaponRig = {
@@ -166,6 +169,9 @@ export const buildCombatantRigForModel = (model: THREE.Group): CombatantRig => {
   const leftHandGripOffset: THREE.Vector3Tuple = isV3
     ? (getV3AttachmentOffset(model, 'leftHandGrip') ?? leftGripOffset)
     : leftGripOffset;
+  const detailBones = isV3 && model.userData.v3DetailBones && typeof model.userData.v3DetailBones === 'object'
+    ? model.userData.v3DetailBones as CombatantDetailBoneMap
+    : undefined;
 
   const attachments: CombatantAttachmentMap = {
     thirdPersonWeaponGrip: createAttachmentPoint(rightWeaponBone, 'thirdPersonWeaponGrip', 'rightArm', rightGripOffset),
@@ -181,12 +187,16 @@ export const buildCombatantRigForModel = (model: THREE.Group): CombatantRig => {
     bones,
     attachments,
     segmentGroups,
+    detailBones,
   };
 
   model.userData.combatantRig = rig;
   model.userData.bones = bones;
   model.userData.attachments = attachments;
   model.userData.segmentGroups = segmentGroups;
+  if (detailBones) {
+    model.userData.detailBones = detailBones;
+  }
   model.userData.articulationMode = 'group-pivot';
   model.userData.lowerTorso = bones.lowerTorso;
   model.userData.upperTorso = bones.upperTorso;

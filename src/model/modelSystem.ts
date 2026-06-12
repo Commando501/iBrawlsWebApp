@@ -16,6 +16,7 @@ export interface VisualModelPolicyOption {
 export const VISUAL_MODEL_POLICY_OPTIONS = [
   { value: 'v1', label: 'Version 1 Classic', recommended: false },
   { value: 'v2', label: 'Version 2 Rigged', recommended: true },
+  { value: 'v3', label: 'Version 3 Advanced', recommended: false },
 ] as const satisfies readonly VisualModelPolicyOption[];
 
 export function isModelSystem(value: unknown): value is ModelSystem {
@@ -33,8 +34,28 @@ export function normalizeVisualModelPolicy(
   value: unknown,
   fallback: VisualModelPolicy = DEFAULT_VISUAL_MODEL_POLICY
 ): VisualModelPolicy {
-  if (value === 'v1' || value === 'v2') return value;
-  return fallback === 'v1' || fallback === 'v2' ? fallback : DEFAULT_VISUAL_MODEL_POLICY;
+  if (isModelSystem(value)) return value;
+  return isModelSystem(fallback) ? fallback : DEFAULT_VISUAL_MODEL_POLICY;
+}
+
+export function normalizeSelectableVisualModelPolicy(
+  value: unknown,
+  isAdmin: boolean,
+  fallback: VisualModelPolicy = DEFAULT_VISUAL_MODEL_POLICY
+): VisualModelPolicy {
+  const normalized = normalizeVisualModelPolicy(value, fallback);
+  if (isAdmin || normalized !== 'v3') return normalized;
+
+  const normalizedFallback = normalizeVisualModelPolicy(fallback);
+  return normalizedFallback === 'v3' ? DEFAULT_VISUAL_MODEL_POLICY : normalizedFallback;
+}
+
+export function getSelectableVisualModelPolicyOptions(
+  isAdmin: boolean
+): readonly VisualModelPolicyOption[] {
+  return isAdmin
+    ? VISUAL_MODEL_POLICY_OPTIONS
+    : VISUAL_MODEL_POLICY_OPTIONS.filter((option) => option.value !== 'v3');
 }
 
 export function getRecommendedVisualModelPolicy(): VisualModelPolicy {

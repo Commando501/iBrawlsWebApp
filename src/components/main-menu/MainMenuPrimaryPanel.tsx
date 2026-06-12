@@ -36,6 +36,7 @@ interface MainMenuPrimaryPanelProps {
   customizationChild: CustomizationChild;
   systemChild: SystemChild;
   isSignedIn: boolean;
+  isAdmin: boolean;
   singlePlayerMode: SinglePlayerMode;
   setSinglePlayerMode: Dispatch<SetStateAction<SinglePlayerMode>>;
   adminSettings: UniversalSettings;
@@ -174,6 +175,7 @@ export function MainMenuPrimaryPanel(props: MainMenuPrimaryPanelProps) {
             playerName={props.playerName}
             playerHue={props.playerHue}
             isPlaying={props.isPlaying}
+            isAdmin={props.isAdmin}
             onStartTournamentMatch={props.onStartTournamentMatch}
             onResetTournament={props.onResetTournament}
           />
@@ -189,6 +191,7 @@ export function MainMenuPrimaryPanel(props: MainMenuPrimaryPanelProps) {
             connectionError={props.connectionError}
             quickPlayStatus={props.quickPlayStatus}
             adminSettings={props.adminSettings}
+            isAdmin={props.isAdmin}
             selectedMap={props.selectedMap}
             onSelectedMapChange={props.onSelectedMapChange}
             lobbyCustomMapData={props.lobbyCustomMapData}

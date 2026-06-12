@@ -30,7 +30,7 @@ test('older replays without visual policy use legacy V1 visuals', () => {
   assert.deepEqual(resolveReplayCombatantVisualLoadout(replay, 'player'), { modelSystem: 'v1' });
 });
 
-test('V3 replay visual policy falls back to V2 sanitized stored loadouts', () => {
+test('V3 replay visual policy preserves sanitized stored advanced loadouts', () => {
   const replay = baseReplay({
     visualModelPolicy: 'v3',
     visualLoadouts: {
@@ -43,10 +43,9 @@ test('V3 replay visual policy falls back to V2 sanitized stored loadouts', () =>
   });
 
   const loadout = resolveReplayCombatantVisualLoadout(replay, 'player') as any;
-  assert.equal(resolveReplayVisualModelPolicy(replay), 'v2');
-  assert.equal(loadout.modelSystem, 'v2');
+  assert.equal(resolveReplayVisualModelPolicy(replay), 'v3');
+  assert.equal(loadout.modelSystem, 'v3');
   assert.equal(loadout.helmet, 'odst');
-  assert.equal(loadout.modelType, 'medium');
   assert.equal(loadout.rawMesh, undefined);
 });
 

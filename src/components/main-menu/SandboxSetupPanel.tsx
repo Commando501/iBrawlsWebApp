@@ -1,17 +1,26 @@
-import { VISUAL_MODEL_POLICY_OPTIONS, type VisualModelPolicy } from '../../model/modelSystem';
+import {
+  getSelectableVisualModelPolicyOptions,
+  normalizeSelectableVisualModelPolicy,
+  type VisualModelPolicy,
+} from '../../model/modelSystem';
 import { HeroCtaButton } from './HeroCtaButton';
 
 interface SandboxSetupPanelProps {
   visualModelPolicy: VisualModelPolicy;
   onVisualModelPolicyChange: (policy: VisualModelPolicy) => void;
   onOpenBotSetup: () => void;
+  isAdmin?: boolean;
 }
 
 export function SandboxSetupPanel({
   visualModelPolicy,
   onVisualModelPolicyChange,
   onOpenBotSetup,
+  isAdmin = false,
 }: SandboxSetupPanelProps) {
+  const selectableVisualModelPolicyOptions = getSelectableVisualModelPolicyOptions(isAdmin);
+  const selectedVisualModelPolicy = normalizeSelectableVisualModelPolicy(visualModelPolicy, isAdmin);
+
   return (
     <div className="flex flex-col h-full min-h-0 justify-between">
       <div className="flex flex-col gap-5 min-h-0 overflow-y-auto pr-0.5">
@@ -28,17 +37,17 @@ export function SandboxSetupPanel({
           <div className="mb-2 flex items-center justify-between gap-3">
             <span className="text-[10px] font-mono uppercase tracking-[0.22em] text-white/45">Model Set</span>
             <span className="text-[10px] font-mono uppercase tracking-[0.18em] text-cyan-300">
-              {visualModelPolicy.toUpperCase()}
+              {selectedVisualModelPolicy.toUpperCase()}
             </span>
           </div>
           <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
-            {VISUAL_MODEL_POLICY_OPTIONS.map((option) => (
+            {selectableVisualModelPolicyOptions.map((option) => (
               <button
                 key={option.value}
                 type="button"
                 onClick={() => onVisualModelPolicyChange(option.value)}
                 className={`min-h-10 rounded border px-2 text-[10px] font-black uppercase tracking-wider transition-all ${
-                  visualModelPolicy === option.value
+                  selectedVisualModelPolicy === option.value
                     ? 'border-cyan-300/60 bg-cyan-400/15 text-cyan-100'
                     : 'border-white/10 bg-black/35 text-white/45 hover:text-white/75'
                 }`}
