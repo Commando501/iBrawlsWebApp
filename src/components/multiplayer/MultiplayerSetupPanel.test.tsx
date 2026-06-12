@@ -58,7 +58,25 @@ test('MultiplayerSetupPanel exposes host visual model policy choices', () => {
   assert.match(html, /Model Set/);
   assert.match(html, /Version 1 Classic/);
   assert.match(html, /Version 2 Rigged/);
-  assert.match(html, /Version 3 Advanced/);
+  assert.match(html, /Version 3 Advanced \(Recommended\)/);
+});
+
+test('MultiplayerSetupPanel defaults new hosted lobbies to recommended V3', () => {
+  const html = renderToStaticMarkup(
+    <MultiplayerSetupPanel
+      {...baseProps()}
+      adminSettings={{ ...DEFAULT_ADMIN_SETTINGS }}
+    />
+  );
+
+  assert.match(html, /Model Set/);
+  assert.match(html, /Version 3 Advanced \(Recommended\)/);
+});
+
+test('MultiplayerSetupPanel stacks model policy buttons on mobile widths', () => {
+  const html = renderToStaticMarkup(<MultiplayerSetupPanel {...baseProps()} />);
+
+  assert.match(html, /grid grid-cols-1 gap-1\.5 sm:grid-cols-3/);
 });
 
 test('MultiplayerSetupPanel staging summary shows the lobby model policy', () => {
@@ -84,4 +102,29 @@ test('MultiplayerSetupPanel staging summary shows the lobby model policy', () =>
 
   assert.match(html, /Models/);
   assert.match(html, /Version 2 Rigged/);
+});
+
+test('MultiplayerSetupPanel staging summary labels recommended V3 policy', () => {
+  const html = renderToStaticMarkup(
+    <MultiplayerSetupPanel
+      {...baseProps()}
+      connectionStatus="hosting"
+      multiplayerRole="host"
+      matchLobbyConfig={{
+        access: 'open',
+        gameMode: 'sandbox',
+        selectedMap: 'hangar',
+        customMap: null,
+        maxPlayers: 8,
+        allowObservers: true,
+        matchTimerSeconds: 522,
+        winTarget: 25,
+        visualModelPolicy: 'v3',
+      }}
+      multiplayerSocket={{ readyState: 1 } as WebSocket}
+    />
+  );
+
+  assert.match(html, /Models/);
+  assert.match(html, /Version 3 Advanced \(Recommended\)/);
 });
