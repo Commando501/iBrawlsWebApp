@@ -47,3 +47,33 @@ test('V3 replay visual policy resolves sanitized stored loadouts', () => {
   assert.equal(loadout.helmet, 'odst');
   assert.equal(loadout.rawMesh, undefined);
 });
+
+test('V3 replay visual policy preserves role paint but strips unsafe mesh fields', () => {
+  const replay = baseReplay({
+    visualModelPolicy: 'v3',
+    visualLoadouts: {
+      player: {
+        modelSystem: 'v3',
+        paintJob: {
+          v3RoleColors: {
+            primary: '#123456',
+            accent: '#abcdef',
+            invalid: '#ffffff',
+          },
+          v3RoleEmissive: {
+            visor: true,
+          },
+        },
+        rawMesh: { vertices: [1, 2, 3] },
+      } as any,
+    },
+  });
+
+  const loadout = resolveReplayCombatantVisualLoadout(replay, 'player') as any;
+  assert.equal(loadout.modelSystem, 'v3');
+  assert.equal(loadout.paintJob.v3RoleColors.primary, '#123456');
+  assert.equal(loadout.paintJob.v3RoleColors.accent, '#abcdef');
+  assert.equal(loadout.paintJob.v3RoleColors.invalid, undefined);
+  assert.equal(loadout.paintJob.v3RoleEmissive.visor, true);
+  assert.equal(loadout.rawMesh, undefined);
+});

@@ -9,6 +9,7 @@ import {
 } from './loadingTypes';
 import { DEFAULT_LOADOUT, type CharacterLoadout } from '../VoxelModels';
 import { normalizeVisualModelPolicy, type VisualModelPolicy } from '../../model/modelSystem';
+import { sanitizeLoadoutV3RolePaint } from '../../model/modelVisualPolicy';
 
 export const MATCH_LOADING_TIMEOUT_MS = 45_000;
 
@@ -42,7 +43,7 @@ export function getParticipantDisplayName(value: unknown, fallbackId: string): s
 
 function normalizeLoadout(loadout: unknown): CharacterLoadout | undefined {
   if (!loadout || typeof loadout !== 'object') return undefined;
-  return { ...DEFAULT_LOADOUT, ...(loadout as CharacterLoadout) };
+  return sanitizeLoadoutV3RolePaint({ ...DEFAULT_LOADOUT, ...(loadout as CharacterLoadout) });
 }
 
 function normalizeParticipantPolicy(value: unknown): VisualModelPolicy | undefined {

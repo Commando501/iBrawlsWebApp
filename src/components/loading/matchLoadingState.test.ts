@@ -57,6 +57,50 @@ test('loading participants preserve visual model policy for previews', () => {
   assert.equal(participant.loadout?.modelSystem, 'v3');
 });
 
+test('loading participant previews preserve V3 role paint while V1 and V2 policies remain selectable', () => {
+  let roster = {};
+  roster = upsertLoadingSlot(roster, {
+    clientId: 'legacy',
+    role: 'host',
+    playerName: 'Legacy',
+    visualModelPolicy: 'v1',
+    loadout: { modelSystem: 'v3' },
+  }, 1_000);
+  roster = upsertLoadingSlot(roster, {
+    clientId: 'rigged',
+    role: 'client',
+    playerName: 'Rigged',
+    visualModelPolicy: 'v2',
+    loadout: { modelSystem: 'v2', modelType: 'large' },
+  }, 1_000);
+  roster = upsertLoadingSlot(roster, {
+    clientId: 'advanced',
+    role: 'observer',
+    playerName: 'Advanced',
+    visualModelPolicy: 'v3',
+    loadout: {
+      modelSystem: 'v3',
+      paintJob: {
+        v3RoleColors: {
+          primary: '#123456',
+          accent: '#abcdef',
+          invalid: '#ffffff',
+        },
+        v3RoleEmissive: {
+          visor: true,
+        },
+      },
+    } as any,
+  }, 1_000);
+
+  const participants = deriveMultiplayerLoadingSnapshot(roster, 1_000).participants;
+  assert.deepEqual(participants.map((entry) => entry.visualModelPolicy), ['v1', 'v2', 'v3']);
+  const advanced = participants.find((entry) => entry.clientId === 'advanced');
+  assert.equal((advanced?.loadout as any)?.paintJob.v3RoleColors.primary, '#123456');
+  assert.equal((advanced?.loadout as any)?.paintJob.v3RoleColors.invalid, undefined);
+  assert.equal((advanced?.loadout as any)?.paintJob.v3RoleEmissive.visor, true);
+});
+
 test('top-down bounds resolve default and custom maps', () => {
   const hangar = resolveTopDownMapBounds({ selectedMap: 'hangar' });
   assert.equal(hangar.shape, 'circle');
