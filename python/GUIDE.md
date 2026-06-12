@@ -67,6 +67,13 @@ Sparse rewards (`win`, `goal_scored`, `goal_conceded`) = the true goal.
 Dense rewards (`possession`, `ball_progress`, `kill`, `death`, `time_penalty`) = hints that
 help early learning but can mislead if too strong.
 
+Human-like combat also has **discipline rewards**. These are optional penalties for wasted
+inputs: `invalid_attack`, `invalid_dash`, `invalid_jump`, `invalid_swap`, and
+`action_repeat`. Leave them at `0` while proving a new reward setup can learn at all, then
+turn them on lightly when a model starts winning by mashing attack/dash/jump. The dashboard
+logs these under `reward_component/*`, alongside kill, approach, and time-penalty components,
+so you can see whether a run is learning combat or just paying itself through shaping.
+
 ## 5b. Combat mode (deathmatch) — one generalist for 1v1 + FFA
 
 Set `mode = "combat"` in `config.toml`. Combat trains **one model that handles 1v1, free-
@@ -145,8 +152,62 @@ Changing the interval starts a new training regime — don't warm-start a 60Hz b
 
 Every evaluation also reports **behavior stats** (and the trainer logs them under
 `behavior/*`): idle %, **move-switch rate** (twitchiness — humans hold a heading, ≲0.3;
-a jittery policy flips most decisions, ≳0.5), and attack/jump/dash usage. That makes
-"does it move like a person?" a measured number instead of a vibe.
+a jittery policy flips most decisions, ≳0.5), repeated-action rate, nearest-enemy aim usage,
+and attack/jump/dash usage. That makes "does it move like a person?" a measured number
+instead of a vibe. Combat policies can now aim directly at the nearest hostile target; if
+`aim_enemy_rate` stays near zero in combat, the model is not using the clean targeting action.
+
+For short-term timing memory without changing algorithms, set `[network] frame_stack = 4`.
+That stacks recent observations for the MLP policy. A frame-stacked brain has a different
+input shape, so train and evaluate it with the same `frame_stack` value and do not warm-start
+from an unstacked model.
+
+## 5d-3. The league: training against frozen past selves (PFSP)
+
+Pure self-play has a known failure mode: the policy only ever fights its **current** self,
+so it converges to brittle, same-y, exploitable styles. The league fixes it:
+
+```toml
+[league]
+worlds         = 6      # extra 1v1 worlds where the learner fights FROZEN snapshots
+snapshot_every = 2000000 # auto-freeze the learner into the pool every N steps
+latest_bias    = 0.7     # P(pick the newest snapshot); else PFSP (prefer ones it loses to)
+snapshots      = ["runs/older_run/final_model.zip"]  # optional seed opponents
+```
+
+The learner's rows from league worlds are ordinary PPO experience; the frozen side runs in
+Python and is invisible to the optimizer. Watch `league/learner_win_rate` on the Train tab:
+**~0.5–0.7 is healthy** (the pool keeps up); pinned at 1.0 = stale pool (freeze more often);
+collapsed near 0 = a regression. Old-action-space snapshots still work as opponents (they
+just never use the newest aim choice). Auto-frozen snapshots land in `<logdir>/league/`.
+
+## 5d-4. Human baseline: grading "moves like a person" against real players
+
+Evaluations score behavior stats against **bands derived from real human replays**. Build
+the baseline once you have replays (Theater exports or `npm run download:replays`):
+
+```bash
+npm run sim:baseline -- ./replays            # writes python/human_baseline.json
+```
+
+It resamples each replay's local-player track at the bot's decision cadence and derives
+idle / move-switch / jump / dash / attack bands. Until that file exists, hand-tuned defaults
+apply (the dashboard and `evaluate.py` both say which source is active). The eval matrix's
+**human-likeness penalty**, the behavior chips' colors, and the Advisor's twitchiness rule
+all read these bands.
+
+## 5d-5. Watching the bot (the fastest human-likeness check)
+
+Numbers don't catch "this looks robotic" — your eyes do. The dashboard's **Watch tab**
+records a real match from any saved model (top-down view straight from the headless sim)
+with play/pause/speed/scrub. CLI equivalent:
+
+```bash
+python -m ibrawls_rl.watch runs/<run>/final_model.zip --world-size 4 --opponent self
+```
+
+Decision interval and frame stack are read from the model's run automatically. Actions are
+*sampled* (not argmax) by default — livelier and closer to how it would feel in-game.
 
 ## 5e. If it's NOT learning (win-rate flat at 0)
 
@@ -218,6 +279,9 @@ Notes:
   Expect it to be hard even with a strong self-play base; 0% from a weak/cold brain is normal.
 - During a `self` stage, `eval/win_rate` is measured **vs random** (a yardstick that rises);
   during a `heuristic` stage it's measured vs the heuristic.
+- Older combat checkpoints from before nearest-enemy aim had action nvec `[9,3,3,2,2,2]`.
+  Warm-start now auto-migrates those into `[9,4,3,2,2,2]` by inserting the new aim logit
+  and starting with a fresh optimizer. Network `width`/`depth` must still match.
 
 `self` = the bot plays copies of itself (it invents its own counters). `heuristic` = the
 strong scripted bot — a hard final exam, not a starting point.
@@ -234,6 +298,18 @@ python -m ibrawls_rl.evaluate runs/s3_heur/final_model.zip   --opponent heuristi
 
 Checkpoints during a run live in `runs/<name>/checkpoints/` — you can evaluate any of them the
 same way to see how the bot improved over time.
+
+Combat has two stronger grading modes:
+
+```bash
+python -m ibrawls_rl.evaluate runs/combat/final_model.zip --mode combat --matrix --matches 100
+python -m ibrawls_rl.evaluate runs/combat/final_model.zip --mode combat \
+  --league-snapshot runs/combat_v1/final_model.zip --matches 100
+```
+
+The matrix grade checks 1v1, 4-player, and 8-player scenarios and returns a promotion score
+that rewards wins while penalizing draws and spammy behavior. Frozen snapshot grades use old
+checkpoints as opponents, which helps catch policies that only beat the current random test.
 
 ## 8. Speed notes
 

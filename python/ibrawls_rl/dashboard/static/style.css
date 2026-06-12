@@ -178,7 +178,8 @@ main { padding: 18px; }
 /* Eval */
 .eval-form { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 8px; }
 .eval-form label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; font-weight: 600; }
-.eval-form select, .eval-form input { background: var(--bg); border: 1px solid var(--line); color: var(--text); border-radius: 6px; padding: 7px 8px; }
+.eval-form select, .eval-form input, .eval-form textarea { background: var(--bg); border: 1px solid var(--line); color: var(--text); border-radius: 6px; padding: 7px 8px; }
+.eval-form textarea { resize: vertical; min-height: 68px; font-family: inherit; }
 .eval-actions { grid-column: 1 / -1; display: flex; align-items: center; gap: 12px; }
 .eval-progress { max-width: none; width: 100%; height: 24px; margin-top: 12px; }
 .eval-result { margin-top: 16px; }
@@ -285,3 +286,26 @@ main { padding: 18px; }
 .badge.q-running { color: #001; background: var(--good); }
 .badge.q-done { color: #001; background: var(--accent); }
 .badge.q-error { color: #fff; background: var(--bad); }
+
+/* Behavior chips vs human bands */
+.bchip.band-in { border-color: var(--good); }
+.bchip.band-in b { color: var(--good); }
+.bchip.band-high, .bchip.band-low { border-color: var(--warn); }
+.bchip.band-high b, .bchip.band-low b { color: var(--warn); }
+.guide-table .bad-cell { color: var(--bad); }
+
+/* Watch tab */
+.watch-layout { display: grid; grid-template-columns: minmax(360px, 440px) 1fr; gap: 18px; align-items: start; }
+@media (max-width: 1100px) { .watch-layout { grid-template-columns: 1fr; } }
+.watch-viewer-panel h2 { display: flex; align-items: center; justify-content: space-between; }
+.watch-stage {
+  background: #0a0d12; border: 1px solid var(--line); border-radius: 10px;
+  overflow: hidden;
+}
+.watch-stage canvas { display: block; width: 100%; }
+.watch-controls { display: flex; align-items: center; gap: 12px; margin-top: 10px; }
+.watch-controls input[type=range] { flex: 1; accent-color: var(--accent); }
+.watch-controls .muted { font-size: 12px; white-space: nowrap; min-width: 110px; text-align: right; }
+.watch-score { display: flex; align-items: center; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.watch-score .team-dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+#watchSpeed { background: var(--panel-2); border: 1px solid var(--line); color: var(--text); border-radius: 8px; }

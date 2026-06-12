@@ -13,7 +13,9 @@
 
 import { VecEnv, type VecEnvConfig } from './vecEnv';
 import { CombatVecEnv, type CombatVecEnvConfig } from './combatVecEnv';
+import { buildStateSnapshot } from './stateSnapshot';
 import { buildEnvSpec } from '../env/spec';
+import { REWARD_COMPONENT_KEYS } from '../env/reward';
 import {
   FrameDecoder,
   OPCODE,
@@ -39,6 +41,7 @@ function helloResponse(env: SimVecEnv, seedInfo: { baseSeed: number }): Uint8Arr
     agentTeams: env.agentTeams,
     baseSeed: seedInfo.baseSeed,
     decisionInterval: env.decisionInterval,
+    rewardComponentKeys: REWARD_COMPONENT_KEYS,
   };
   const json = new TextEncoder().encode(JSON.stringify(header));
   const out = new Uint8Array(1 + json.length);
@@ -94,9 +97,25 @@ export function runServer(transport: Transport): void {
           const r = env.step(actions);
           transport.write(
             writeFrame(
-              buildStepResponse(r.obs, r.reward, r.done, r.truncated, r.info.terminalObs, env.obsDim)
+              buildStepResponse(
+                r.obs,
+                r.reward,
+                r.done,
+                r.truncated,
+                r.info.terminalObs,
+                env.obsDim,
+                r.rewardComponents
+              )
             )
           );
+          break;
+        }
+        case OPCODE.STATE: {
+          if (!env) { log('[sim] STATE before HELLO'); break; }
+          const dv = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
+          const index = payload.length >= 5 ? dv.getUint32(1, true) : 0;
+          const snapshot = buildStateSnapshot(env.getState(index));
+          transport.write(writeFrame(new TextEncoder().encode(JSON.stringify(snapshot))));
           break;
         }
         case OPCODE.CLOSE: {

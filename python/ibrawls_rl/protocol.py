@@ -18,6 +18,7 @@ HELLO = 0
 RESET = 1
 STEP = 2
 CLOSE = 3
+STATE = 4  # request: opcode + uint32 world index; response: JSON state snapshot
 
 
 def write_frame(stream: IO[bytes], payload: bytes) -> None:
@@ -63,6 +64,15 @@ def close_request() -> bytes:
     return bytes([CLOSE])
 
 
+def state_request(world_index: int = 0) -> bytes:
+    """Ask for one world's render-ready JSON snapshot (the Watch tab's feed)."""
+    return bytes([STATE]) + struct.pack("<I", int(world_index))
+
+
+def parse_state_response(payload: bytes) -> dict:
+    return json.loads(payload.decode("utf-8"))
+
+
 def step_request(actions: np.ndarray) -> bytes:
     """Pack an int32 action block (any shape) into a STEP payload."""
     a = np.ascontiguousarray(actions, dtype="<i4")
@@ -77,9 +87,16 @@ class StepResponse:
     truncated: np.ndarray
     # agent-flat-index -> terminal observation (obs_dim,), for done agents.
     terminal_obs: dict
+    # Aggregate reward components for the worker step, in header["rewardComponentKeys"] order.
+    reward_components: np.ndarray
 
 
-def parse_step_response(payload: bytes, n_agents: int, obs_dim: int) -> StepResponse:
+def parse_step_response(
+    payload: bytes,
+    n_agents: int,
+    obs_dim: int,
+    reward_component_count: int = 0,
+) -> StepResponse:
     """Slice a step-response payload into obs / reward / done / truncated + terminal obs.
 
     Layout mirrors ``buildStepResponse`` in protocol.ts:
@@ -106,12 +123,25 @@ def parse_step_response(payload: bytes, n_agents: int, obs_dim: int) -> StepResp
         off += obs_dim * 4
         terminal_obs[idx] = term
 
+    reward_components = np.zeros((0,), dtype=np.float32)
+    if off + 4 <= len(payload):
+        (encoded_count,) = struct.unpack_from("<I", payload, off)
+        off += 4
+        count = reward_component_count or encoded_count
+        reward_components = np.zeros((count,), dtype=np.float32)
+        readable = min(count, encoded_count)
+        if readable:
+            reward_components[:readable] = np.frombuffer(
+                payload, dtype="<f4", count=readable, offset=off
+            )
+
     return StepResponse(
         obs=obs.reshape(n_agents, obs_dim).copy(),
         reward=reward.copy(),
         done=done.copy(),
         truncated=truncated.copy(),
         terminal_obs=terminal_obs,
+        reward_components=reward_components.copy(),
     )
 
 

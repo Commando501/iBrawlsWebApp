@@ -60,6 +60,20 @@ test('step response blocks round-trip incl. truncation + terminal obs (Verificat
   assert.deepEqual([...r.terminalObs.get(1)!], [9, 8, 7]);
 });
 
+test('step response can append aggregate reward components', () => {
+  const payload = buildStepResponse(
+    Float32Array.from([0, 0]),
+    Float32Array.from([1]),
+    Uint8Array.from([0]),
+    Uint8Array.from([0]),
+    [null],
+    2,
+    Float32Array.from([0.5, -0.25, -1])
+  );
+  const r = parseStepResponse(payload, 1, 2, 3);
+  assert.deepEqual([...r.rewardComponents], [0.5, -0.25, -1]);
+});
+
 test('float32 byte round-trip is exact for representable values', () => {
   const a = Float32Array.from([0, 1, -1, 0.5, 12345.0]);
   assert.deepEqual([...bytesToF32(f32Bytes(a), a.length)], [...a]);
@@ -185,6 +199,18 @@ test('runServer drives a full HELLO/RESET/STEP/CLOSE handshake end-to-end', () =
   assert.equal(resp.reward.length, count);
   assert.equal(resp.done.length, count);
   assert.equal(resp.truncated.length, count);
+
+  // STATE: world 0 snapshot for the Watch tab.
+  const stateReq = new Uint8Array(5);
+  stateReq[0] = OPCODE.STATE;
+  new DataView(stateReq.buffer).setUint32(1, 0, true);
+  t.feed(stateReq);
+  assert.equal(t.out.length, 4);
+  const snapshot = JSON.parse(new TextDecoder().decode(t.out[3]));
+  assert.equal(snapshot.combatants.length, header.numAgents);
+  assert.ok(snapshot.arena.halfX > 0 && snapshot.arena.halfZ > 0);
+  assert.ok(typeof snapshot.tick === 'number');
+  assert.ok(snapshot.scores && typeof snapshot.scores === 'object');
 
   // CLOSE.
   t.feed(new Uint8Array([OPCODE.CLOSE]));

@@ -18,6 +18,9 @@ export const OPCODE = {
   RESET: 1,
   STEP: 2,
   CLOSE: 3,
+  /** Request: opcode + uint32 world index. Response: JSON {@link StateSnapshot} —
+   * the Watch tab's render feed. Off the hot path; JSON is fine here. */
+  STATE: 4,
 } as const;
 
 export type Opcode = (typeof OPCODE)[keyof typeof OPCODE];
@@ -116,7 +119,8 @@ export function buildStepResponse(
   done: Uint8Array,
   truncated: Uint8Array,
   terminalObs: (Float32Array | null)[],
-  obsDim: number
+  obsDim: number,
+  rewardComponents: Float32Array = new Float32Array(0)
 ): Uint8Array {
   const obsB = f32Bytes(obs);
   const rewB = f32Bytes(reward);
@@ -125,8 +129,9 @@ export function buildStepResponse(
   const terminalIdx: number[] = [];
   for (let i = 0; i < terminalObs.length; i++) if (terminalObs[i]) terminalIdx.push(i);
   const termBlockLen = 4 + terminalIdx.length * (4 + obsDim * 4);
+  const componentBlockLen = 4 + rewardComponents.length * 4;
 
-  const out = new Uint8Array(obsB.length + rewB.length + n + n + termBlockLen);
+  const out = new Uint8Array(obsB.length + rewB.length + n + n + termBlockLen + componentBlockLen);
   let off = 0;
   out.set(obsB, off); off += obsB.length;
   out.set(rewB, off); off += rewB.length;
@@ -140,6 +145,11 @@ export function buildStepResponse(
     const term = terminalObs[idx] as Float32Array;
     for (let j = 0; j < obsDim; j++) { dv.setFloat32(off, term[j], LE); off += 4; }
   }
+
+  dv.setUint32(off, rewardComponents.length, LE); off += 4;
+  for (let i = 0; i < rewardComponents.length; i++) {
+    dv.setFloat32(off, rewardComponents[i], LE); off += 4;
+  }
   return out;
 }
 
@@ -150,10 +160,17 @@ export interface StepResponse {
   truncated: Uint8Array;
   /** agent-flat-index -> terminal observation, for done agents. */
   terminalObs: Map<number, Float32Array>;
+  /** Signed aggregate reward components for this step, in header.rewardComponentKeys order. */
+  rewardComponents: Float32Array;
 }
 
 /** Split a step-response payload back into its blocks given `n` agents and `obsDim`. */
-export function parseStepResponse(payload: Uint8Array, n: number, obsDim: number): StepResponse {
+export function parseStepResponse(
+  payload: Uint8Array,
+  n: number,
+  obsDim: number,
+  rewardComponentCount = 0
+): StepResponse {
   let off = 0;
   const obs = bytesToF32(payload.subarray(off, off + n * obsDim * 4), n * obsDim); off += n * obsDim * 4;
   const reward = bytesToF32(payload.subarray(off, off + n * 4), n); off += n * 4;
@@ -169,5 +186,17 @@ export function parseStepResponse(payload: Uint8Array, n: number, obsDim: number
     for (let j = 0; j < obsDim; j++) { term[j] = dv.getFloat32(off, LE); off += 4; }
     terminalObs.set(idx, term);
   }
-  return { obs, reward, done, truncated, terminalObs };
+
+  let rewardComponents = new Float32Array(0);
+  if (off + 4 <= payload.byteLength) {
+    const encodedCount = dv.getUint32(off, LE); off += 4;
+    const count = rewardComponentCount > 0 ? rewardComponentCount : encodedCount;
+    rewardComponents = new Float32Array(count);
+    const readable = Math.min(count, encodedCount);
+    for (let i = 0; i < readable && off + 4 <= payload.byteLength; i++) {
+      rewardComponents[i] = dv.getFloat32(off, LE);
+      off += 4;
+    }
+  }
+  return { obs, reward, done, truncated, terminalObs, rewardComponents };
 }

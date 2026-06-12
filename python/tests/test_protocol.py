@@ -53,6 +53,22 @@ def test_step_response_roundtrip():
     np.testing.assert_array_equal(r.truncated, truncated)
     assert set(r.terminal_obs) == {1}
     np.testing.assert_allclose(r.terminal_obs[1], terminal[1], atol=1e-6)
+    assert r.reward_components.shape == (0,)
+
+
+def test_step_response_parses_optional_reward_components():
+    n_agents, obs_dim = 1, 2
+    payload = _encode_step_response_like_ts(
+        np.array([0.0, 0.0], dtype="<f4"),
+        np.array([1.0], dtype="<f4"),
+        np.array([0], dtype=np.uint8),
+        np.array([0], dtype=np.uint8),
+        {},
+        obs_dim,
+    )
+    payload += struct.pack("<I", 3) + np.array([0.5, -0.25, -1.0], dtype="<f4").tobytes()
+    r = proto.parse_step_response(payload, n_agents, obs_dim, reward_component_count=3)
+    np.testing.assert_allclose(r.reward_components, [0.5, -0.25, -1.0], atol=1e-6)
 
 
 def test_step_request_pack_is_little_endian_int32():

@@ -52,6 +52,7 @@ class SimWorker:
         self.n_agents: int = int(self.header["numAgents"])
         self.obs_dim: int = int(self.header["obsDim"])
         self.act_dim: int = int(self.header["actionDim"])
+        self.reward_component_keys: list[str] = list(self.header.get("rewardComponentKeys") or [])
         self.slots: int = self.n_world_envs * self.n_agents  # total agent rows this worker owns
 
     def reset(self) -> np.ndarray:
@@ -63,7 +64,17 @@ class SimWorker:
         proto.write_frame(self.proc.stdin, proto.step_request(full_actions))
 
     def recv_step(self) -> proto.StepResponse:
-        return proto.parse_step_response(proto.read_frame(self.proc.stdout), self.slots, self.obs_dim)
+        return proto.parse_step_response(
+            proto.read_frame(self.proc.stdout),
+            self.slots,
+            self.obs_dim,
+            reward_component_count=len(self.reward_component_keys),
+        )
+
+    def get_state(self, world_index: int = 0) -> dict:
+        """One world's render-ready snapshot (Watch tab). Call between steps only."""
+        proto.write_frame(self.proc.stdin, proto.state_request(world_index))
+        return proto.parse_state_response(proto.read_frame(self.proc.stdout))
 
     def close(self) -> None:
         try:
@@ -183,6 +194,10 @@ class GrifballVecEnv(VecEnv):
         self.obs_dim = first.obs_dim
         self.act_dim = first.act_dim
         self.header = first.header
+        self.reward_component_keys = list(first.reward_component_keys)
+        self.last_reward_components: dict[str, float] = {
+            key: 0.0 for key in self.reward_component_keys
+        }
         n_sub = slot_off  # total learner rows across all workers
 
         super().__init__(n_sub, observation_space(first.header), action_space(first.header))
@@ -212,8 +227,11 @@ class GrifballVecEnv(VecEnv):
         reward = np.zeros(self.num_envs, dtype=np.float32)
         done = np.zeros(self.num_envs, dtype=bool)
         infos: list[dict[str, Any]] = [{} for _ in range(self.num_envs)]
+        component_totals = np.zeros((len(self.reward_component_keys),), dtype=np.float64)
         for v in self.views:
             resp = v.worker.recv_step()
+            if resp.reward_components.size:
+                component_totals[:resp.reward_components.size] += resp.reward_components
             o = v.slot_off
             self._last_obs[o:o + v.count] = v.select(resp.obs)
             reward[o:o + v.count] = v.select(resp.reward.reshape(-1, 1)).reshape(-1)
@@ -233,7 +251,15 @@ class GrifballVecEnv(VecEnv):
                     info["terminal_observation"] = term
                 if tr[k] and self.bootstrap_truncation:
                     info["TimeLimit.truncated"] = True
+        self.last_reward_components = {
+            key: float(component_totals[i])
+            for i, key in enumerate(self.reward_component_keys)
+        }
         return self._last_obs, reward, done, infos
+
+    def get_state(self, world_index: int = 0) -> dict:
+        """Snapshot of one world on the FIRST worker (single-worker watch/debug envs)."""
+        return self.views[0].worker.get_state(world_index)
 
     def close(self) -> None:
         for v in self.views:

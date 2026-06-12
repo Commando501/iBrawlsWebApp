@@ -19,7 +19,7 @@ export interface EnvSpec {
   version: number;
 }
 
-export const ENV_SPEC_VERSION = 3; // v3: added mechanics-aware block (current balance)
+export const ENV_SPEC_VERSION = 4; // v4: aim factor adds nearest-hostile targeting
 
 export function buildEnvSpec(): EnvSpec {
   return {

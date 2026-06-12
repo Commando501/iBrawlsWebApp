@@ -90,7 +90,7 @@ const AdminDashboard: React.FC<Props> = ({
   const curatedAiSections = aiSections.filter((s) => !s.expert);
 
   return (
-    <div className="fixed inset-0 z-[60] overflow-y-auto bg-gradient-to-b from-[#0a0f1c] to-[#05080f] text-left">
+    <div className="admin-dashboard-root fixed inset-0 z-[60] overflow-y-auto bg-gradient-to-b from-[#0a0f1c] to-[#05080f] text-left">
       <div className="max-w-6xl mx-auto px-6 py-8 flex flex-col gap-6">
         {/* Header */}
         <div className="flex flex-wrap items-center justify-between gap-4 border-b border-white/10 pb-5">

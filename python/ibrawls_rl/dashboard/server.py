@@ -21,6 +21,7 @@ from ..config import (
     load_config,
     save_config,
 )
+from .. import baseline as human_baseline
 from .. import hardware
 from . import advisor
 from . import metrics as metricsmod
@@ -31,7 +32,10 @@ from .trainqueue import TrainQueue
 
 TRAINER = ManagedProcess("train")
 EVALER = ManagedProcess("eval")
+WATCHER = ManagedProcess("watch")
 QUEUE = TrainQueue(TRAINER)
+
+WATCH_TRAJECTORY = os.path.join(PROJECT_DIR, "runs", "_watch", "latest.json")
 
 # Guards one-time recording of a finished eval into history (keyed by its start time).
 _eval_record_lock = threading.Lock()
@@ -54,6 +58,15 @@ def _current_values() -> dict:
 
 
 _EVAL_PROGRESS = re.compile(r"\[eval\]\s+(\d+)\s*/\s*(\d+)")
+_WATCH_PROGRESS = re.compile(r"\[watch\]\s+(\d+)\s*/\s*(\d+)")
+
+
+def _parse_watch_progress(lines: list[str]) -> tuple[int | None, int | None]:
+    for line in reversed(lines):
+        m = _WATCH_PROGRESS.search(line)
+        if m:
+            return int(m.group(1)), int(m.group(2))
+    return None, None
 
 
 def _parse_eval_progress(lines: list[str]) -> tuple[int | None, int | None]:
@@ -93,6 +106,10 @@ def _record_eval_if_new(st: dict) -> None:
             "ep_return": result.get("ep_return"),
             "behavior": result.get("behavior"),
             "decision_interval": result.get("decision_interval"),
+            "frame_stack": result.get("frame_stack") or meta.get("frame_stack"),
+            "summary": result.get("summary"),
+            "scenarios": result.get("scenarios"),
+            "league_snapshots": result.get("league_snapshots") or meta.get("league_snapshots"),
         })
 
 
@@ -188,10 +205,16 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"history": evalhistory.load()})
             elif path == "/api/hardware":
                 self._send_json(hardware.detect_dict())
+            elif path == "/api/baseline":
+                self._send_json(human_baseline.load_baseline())
             elif path == "/api/advice":
                 self._send_json(self._advice(qs.get("dir", [""])[0]))
             elif path == "/api/queue":
                 self._send_json(QUEUE.status())
+            elif path == "/api/watch/status":
+                self._send_json(self._watch_status())
+            elif path == "/api/watch/trajectory":
+                self._send_trajectory()
             else:
                 self._serve_static(path)
         except Exception as e:  # pragma: no cover
@@ -226,6 +249,10 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(QUEUE.start())
             elif path == "/api/queue/pause":
                 self._send_json(QUEUE.pause())
+            elif path == "/api/watch/start":
+                self._send_json(self._watch_start(body))
+            elif path == "/api/watch/stop":
+                self._send_json(WATCHER.stop())
             else:
                 self.send_error(404)
         except Exception as e:  # pragma: no cover
@@ -286,7 +313,49 @@ class Handler(BaseHTTPRequestHandler):
         # `step` isn't a metric series; drop it if the jsonl reader surfaced it.
         series.pop("step", None)
         return advisor.advise(series, values, running=running, progress=progress,
-                              cpus=os.cpu_count() or 8)
+                              cpus=os.cpu_count() or 8, project_dir=PROJECT_DIR)
+
+    # -- watch (record + replay a match from a saved model) ------------------
+    def _watch_start(self, body: dict) -> dict:
+        if WATCHER.is_running():
+            return {"ok": False, "error": "a watch recording is already running"}
+        model = (body.get("model") or "").strip()
+        safe = safe_run_path(model)
+        if not safe or not os.path.isfile(safe):
+            return {"ok": False, "error": f"model not found: {model}"}
+        args = ["ibrawls_rl.watch", model,
+                "--world-size", str(int(body.get("world_size", 4))),
+                "--kill-target", str(int(body.get("kill_target", 10))),
+                "--opponent", body.get("opponent", "self"),
+                "--max-minutes", str(float(body.get("max_minutes", 3.0)))]
+        meta = {"model": model, "world_size": int(body.get("world_size", 4)),
+                "kill_target": int(body.get("kill_target", 10)),
+                "opponent": body.get("opponent", "self")}
+        return WATCHER.start(args, meta=meta)
+
+    def _watch_status(self) -> dict:
+        st = WATCHER.status()
+        lines = WATCHER.log_since(0)["lines"]
+        st["log"] = lines[-15:]
+        completed, total = _parse_watch_progress(lines)
+        st["progress"] = (completed / total) if (completed is not None and total) else None
+        st["has_trajectory"] = os.path.exists(WATCH_TRAJECTORY)
+        if st["has_trajectory"]:
+            st["trajectory_mtime"] = os.path.getmtime(WATCH_TRAJECTORY)
+        return st
+
+    def _send_trajectory(self) -> None:
+        if not os.path.exists(WATCH_TRAJECTORY):
+            self._send_json({"error": "no trajectory recorded yet"}, 404)
+            return
+        with open(WATCH_TRAJECTORY, "rb") as fh:
+            body = fh.read()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
 
     # -- eval ---------------------------------------------------------------
     def _eval_start(self, body: dict) -> dict:
@@ -301,8 +370,14 @@ class Handler(BaseHTTPRequestHandler):
                 "--matches", str(int(body.get("matches", 100))),
                 "--num-envs", str(int(body.get("num_envs", 16))),
                 "--device", body.get("device", "cpu")]
+        if int(body.get("frame_stack", 0) or 0) > 0:
+            args += ["--frame-stack", str(int(body.get("frame_stack", 0)))]
         if mode == "combat":
             args += ["--kill-target", str(int(body.get("kill_target", 10)))]
+            if body.get("matrix"):
+                args += ["--matrix"]
+            for path in body.get("league_snapshots") or []:
+                args += ["--league-snapshot", str(path)]
         else:
             args += ["--opponent", body.get("opponent", "random"),
                      "--goal-target", str(int(body.get("goal_target", 3)))]
@@ -312,6 +387,9 @@ class Handler(BaseHTTPRequestHandler):
             "matches": int(body.get("matches", 100)),
             "num_envs": int(body.get("num_envs", 16)),
             "device": body.get("device", "cpu"),
+            "matrix": bool(body.get("matrix")),
+            "frame_stack": int(body.get("frame_stack", 0) or 0),
+            "league_snapshots": body.get("league_snapshots") or [],
         }
         return EVALER.start(args, meta=meta)
 
