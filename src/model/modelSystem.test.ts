@@ -4,6 +4,8 @@ import {
   DEFAULT_MODEL_SYSTEM,
   DEFAULT_VISUAL_MODEL_POLICY,
   MODEL_SYSTEMS,
+  VISUAL_MODEL_POLICY_OPTIONS,
+  getVisualModelPolicyLabel,
   isModelSystem,
   normalizeModelSystem,
   normalizeVisualModelPolicy,
@@ -32,4 +34,19 @@ test('normalizeVisualModelPolicy preserves visual-only policy choices', () => {
   assert.equal(normalizeVisualModelPolicy('v2'), 'v2');
   assert.equal(normalizeVisualModelPolicy('v3'), 'v3');
   assert.equal(normalizeVisualModelPolicy(null), DEFAULT_VISUAL_MODEL_POLICY);
+});
+
+test('visual model policy options expose legacy and advanced labels in order', () => {
+  assert.deepEqual(VISUAL_MODEL_POLICY_OPTIONS, [
+    { value: 'v1', label: 'Version 1 Classic' },
+    { value: 'v2', label: 'Version 2 Rigged' },
+    { value: 'v3', label: 'Version 3 Advanced' },
+  ]);
+});
+
+test('visual model policy labels normalize unknown values to v3', () => {
+  assert.equal(getVisualModelPolicyLabel('v1'), 'Version 1 Classic');
+  assert.equal(getVisualModelPolicyLabel('v2'), 'Version 2 Rigged');
+  assert.equal(getVisualModelPolicyLabel('v3'), 'Version 3 Advanced');
+  assert.equal(getVisualModelPolicyLabel('bad'), 'Version 3 Advanced');
 });

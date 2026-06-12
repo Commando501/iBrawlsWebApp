@@ -7,6 +7,12 @@ export type VisualModelPolicy = ModelSystem;
 export const DEFAULT_MODEL_SYSTEM: ModelSystem = 'v3';
 export const DEFAULT_VISUAL_MODEL_POLICY: VisualModelPolicy = DEFAULT_MODEL_SYSTEM;
 
+export const VISUAL_MODEL_POLICY_OPTIONS = [
+  { value: 'v1', label: 'Version 1 Classic' },
+  { value: 'v2', label: 'Version 2 Rigged' },
+  { value: 'v3', label: 'Version 3 Advanced' },
+] as const satisfies readonly { value: VisualModelPolicy; label: string }[];
+
 export function isModelSystem(value: unknown): value is ModelSystem {
   return value === 'v1' || value === 'v2' || value === 'v3';
 }
@@ -23,4 +29,10 @@ export function normalizeVisualModelPolicy(
   fallback: VisualModelPolicy = DEFAULT_VISUAL_MODEL_POLICY
 ): VisualModelPolicy {
   return normalizeModelSystem(value, fallback);
+}
+
+export function getVisualModelPolicyLabel(value: unknown): string {
+  const normalized = normalizeVisualModelPolicy(value);
+  return VISUAL_MODEL_POLICY_OPTIONS.find((option) => option.value === normalized)?.label
+    ?? VISUAL_MODEL_POLICY_OPTIONS[VISUAL_MODEL_POLICY_OPTIONS.length - 1].label;
 }

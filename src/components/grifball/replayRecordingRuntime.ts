@@ -8,6 +8,9 @@ import { MAIN_AI_ID } from '../../game/roster';
 import { maybeSendMatchTelemetry } from '../../services/matchTelemetry';
 import { maybeContributeReplay } from '../../services/replayUpload';
 import { type ReplayFile, type ReplayFrame, type UniversalSettings } from '../../types';
+import { normalizeVisualModelPolicy, type VisualModelPolicy } from '../../model/modelSystem';
+import { sanitizeCharacterLoadoutForNetwork } from '../customArmor';
+import type { CharacterLoadout } from '../VoxelModels';
 import {
   hasReplayEntityStateChanged,
   type ReplayEntityComparisonState,
@@ -35,6 +38,8 @@ export function initializeReplayRecordingForState({
   adminSettings,
   selectedMap,
   matchKillsToWin,
+  visualModelPolicy,
+  playerLoadout,
 }: {
   state: GrifballRuntimeState;
   replayData: ReplayFile | null;
@@ -47,11 +52,15 @@ export function initializeReplayRecordingForState({
   adminSettings: UniversalSettings;
   selectedMap?: string;
   matchKillsToWin?: number;
+  visualModelPolicy?: VisualModelPolicy | null;
+  playerLoadout?: CharacterLoadout;
 }): void {
   if (replayData || replayRecordingRef.current) return;
 
   const isTournament = !!aiMatchSessionKey && aiMatchSessionKey.startsWith('tournament');
   const initialOpponentName = opponentPlayerName || 'Red (AI)';
+  const replayVisualModelPolicy = normalizeVisualModelPolicy(visualModelPolicy ?? adminSettings.visualModelPolicy);
+  const playerVisualLoadout = sanitizeCharacterLoadoutForNetwork(playerLoadout) as Record<string, unknown> | undefined;
 
   replayRecordingRef.current = {
     id: Math.random().toString(36).substring(2, 9),
@@ -66,6 +75,8 @@ export function initializeReplayRecordingForState({
     mode: isTournament ? 'tournament' : 'sandbox',
     gameMode: adminSettings.gameMode ?? 'sandbox',
     maxScore: isTournament ? (matchKillsToWin ?? 25) : 25,
+    visualModelPolicy: replayVisualModelPolicy,
+    visualLoadouts: playerVisualLoadout ? { player: playerVisualLoadout } : {},
     recordedAsObserver: state.isObserverMode,
     frames: [],
     heatmap: { version: 1, events: [] },
@@ -198,6 +209,13 @@ export function recordReplayFrameForState({
       };
 
       if (hasPlayerChanged(id, botCompState)) {
+        const visualLoadout = sanitizeCharacterLoadoutForNetwork((bot as { loadout?: unknown }).loadout);
+        if (visualLoadout) {
+          replayRecordingRef.current!.visualLoadouts = {
+            ...(replayRecordingRef.current!.visualLoadouts ?? {}),
+            [id]: visualLoadout as Record<string, unknown>,
+          };
+        }
         frame.otherPlayers!.push(botState as ReplayParticipantFrame);
         lastRecordedStateRef.current.set(id, {
           pos: bot.pos.clone(),
@@ -255,6 +273,13 @@ export function recordReplayFrameForState({
       };
 
       if (hasPlayerChanged(id, botCompState)) {
+        const visualLoadout = sanitizeCharacterLoadoutForNetwork((bot as { loadout?: unknown }).loadout);
+        if (visualLoadout) {
+          replayRecordingRef.current!.visualLoadouts = {
+            ...(replayRecordingRef.current!.visualLoadouts ?? {}),
+            [id]: visualLoadout as Record<string, unknown>,
+          };
+        }
         frame.otherPlayers!.push(botState as ReplayParticipantFrame);
         lastRecordedStateRef.current.set(id, {
           pos: bot.pos.clone(),

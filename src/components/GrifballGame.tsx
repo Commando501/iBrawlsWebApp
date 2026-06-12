@@ -3,11 +3,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect, useState, useMemo } from 'react';
 import * as THREE from 'three';
 import { sfx } from './AudioEngine';
 import { DEFAULT_KEYBINDINGS, CustomMapData } from '../types';
 import { resolveCharacterModelType } from '../characterModelTypes';
+import { resolveLoadoutForVisualPolicy } from '../model/modelVisualPolicy';
+import { normalizeVisualModelPolicy, type VisualModelPolicy } from '../model/modelSystem';
 import { GRIFBALL_TOTAL_AI } from '../game/grifballTeams';
 import {
   installLegacyTeamScoreBridges,
@@ -113,12 +115,25 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
   replayData = null,
   onExitReplay,
   playerLoadout,
+  visualModelPolicy,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const nameplateContainerRef = useRef<HTMLDivElement>(null);
   const weatherParticleFrameRef = useRef<WeatherParticleFrameState>({});
   const liveCameraFrameRef = useRef<LiveCameraFrameState>({});
+  const activeVisualModelPolicy = normalizeVisualModelPolicy(
+    matchLobbyConfig?.visualModelPolicy
+      ?? visualModelPolicy
+      ?? (adminSettings as typeof adminSettings & { visualModelPolicy?: VisualModelPolicy }).visualModelPolicy
+  );
+  const visualPlayerLoadout = useMemo(
+    () => resolveLoadoutForVisualPolicy({
+      visualModelPolicy: activeVisualModelPolicy,
+      loadout: playerLoadout,
+    }),
+    [activeVisualModelPolicy, playerLoadout]
+  );
 
   const getActiveCustomMap = (): CustomMapData | null =>
     resolveActiveCustomMap({ customMap, replayData, selectedMap, gameMode: adminSettings.gameMode });
@@ -512,6 +527,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     isMultiplayer,
     multiplayerRole,
     playerLoadout,
+    visualPlayerLoadout,
     pushStatsUpdate,
   });
 
@@ -536,6 +552,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     isPlaying,
     opponentClientId,
     constrainCombatantToArena,
+    getVisualModelPolicy: () => activeVisualModelPolicy,
     pushStatsUpdate,
     playRespawn: () => sfx.playRespawn(),
   });
@@ -592,7 +609,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         adminSettings,
         isMultiplayer,
         mainAIHue: botColors['main_ai'],
-        playerLoadout,
+        visualPlayerLoadout,
         resetTransientVfx,
         getLegacyRosterProps,
         getOfflineBotCount: () => offlineBotCountRef.current,
@@ -708,7 +725,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         mountedRenderer.dispose();
       }
     };
-  }, [isPlaying, replayData, selectedMap, customMap]);
+  }, [isPlaying, replayData, selectedMap, customMap, visualPlayerLoadout]);
 
   const {
     initializeReplayRecording,
@@ -741,6 +758,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     aiMatchSessionKey,
     opponentPlayerName,
     matchKillsToWin,
+    visualModelPolicy: activeVisualModelPolicy,
+    playerLoadout: visualPlayerLoadout,
     isMultiplayer,
     getActiveCustomMap,
     animateSpartanModel,

@@ -420,6 +420,7 @@ export function runReplayPlaybackLoopForState({
 
   updateReplayCombatantVisualsForFrame({
     refs,
+    replayData,
     updatedPlayers,
     targetId,
     observerCamMode: state.observerCamMode,

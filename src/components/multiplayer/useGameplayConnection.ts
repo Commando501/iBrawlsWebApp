@@ -137,6 +137,7 @@ export function useGameplayConnection({
       grifballGoalTarget: normalized.gameMode === 'grifball' ? normalized.winTarget : prev.grifballGoalTarget,
       iBrawlsKillTarget: normalized.gameMode === 'sandbox' ? normalized.winTarget : prev.iBrawlsKillTarget,
       matchTimerSeconds: normalized.matchTimerSeconds,
+      visualModelPolicy: normalized.visualModelPolicy,
     }));
     return normalized;
   }, [
@@ -145,6 +146,22 @@ export function useGameplayConnection({
     setMatchLobbyConfig,
     setSelectedMap,
   ]);
+
+  const getLoadingVisualModelPolicy = useCallback((incoming?: Partial<MatchLobbyConfig> | null) => (
+    normalizeMatchLobbyConfig(incoming ?? matchLobbyConfig ?? { visualModelPolicy: adminSettings.visualModelPolicy }).visualModelPolicy
+  ), [adminSettings.visualModelPolicy, matchLobbyConfig]);
+
+  const applyLoadingVisualModelPolicy = useCallback((
+    slots: MultiplayerLoadingSlotPayload[] | undefined,
+    incomingLobbyConfig?: Partial<MatchLobbyConfig> | null
+  ): MultiplayerLoadingSlotPayload[] | undefined => {
+    if (!Array.isArray(slots)) return slots;
+    const visualModelPolicy = getLoadingVisualModelPolicy(incomingLobbyConfig);
+    return slots.map((slot) => ({
+      ...slot,
+      visualModelPolicy: slot.visualModelPolicy ?? visualModelPolicy,
+    }));
+  }, [getLoadingVisualModelPolicy]);
 
   const beginMatchFromLobbyConfig = useCallback((incoming: Partial<MatchLobbyConfig> | null | undefined) => {
     applyLobbyConfig(incoming);
@@ -190,7 +207,7 @@ export function useGameplayConnection({
           if (data.lobbyConfig) {
             applyLobbyConfig(data.lobbyConfig);
           }
-          mergeLoadingParticipants(data.participants ?? data.otherPlayers);
+          mergeLoadingParticipants(applyLoadingVisualModelPolicy(data.participants ?? data.otherPlayers, data.lobbyConfig));
           if (data.matchStarted && data.lobbyConfig) {
             beginMatchFromLobbyConfig(data.lobbyConfig);
           }
@@ -220,6 +237,7 @@ export function useGameplayConnection({
             playerName: data.playerName,
             hue: data.hue,
             loadout: data.loadout,
+            visualModelPolicy: data.visualModelPolicy ?? getLoadingVisualModelPolicy(data.lobbyConfig),
           });
           setMultiplayerPlayerCount(count => Math.min(MAX_MULTIPLAYER_PLAYERS, Math.max(2, count + 1)));
         } else if (data.type === 'observer_joined') {
@@ -229,6 +247,7 @@ export function useGameplayConnection({
             playerName: data.playerName,
             hue: data.hue,
             loadout: data.loadout,
+            visualModelPolicy: data.visualModelPolicy ?? getLoadingVisualModelPolicy(data.lobbyConfig),
           });
         } else if (data.type === 'player_left') {
           removeLoadingParticipantById(data.leftPlayerId);
@@ -241,6 +260,7 @@ export function useGameplayConnection({
             playerName: data.playerName,
             hue: data.hue,
             loadout: data.loadout,
+            visualModelPolicy: data.visualModelPolicy ?? getLoadingVisualModelPolicy(data.lobbyConfig),
             progress: data.progress,
             stage: data.stage,
             ready: data.ready,
@@ -277,6 +297,7 @@ export function useGameplayConnection({
               playerName,
               hue: playerHue,
               loadout: playerLoadout,
+              visualModelPolicy: getLoadingVisualModelPolicy(data.lobbyConfig),
             });
           }
           setMultiplayerPlayerCount(count => {
@@ -298,6 +319,7 @@ export function useGameplayConnection({
           upsertLoadingParticipantSlot({
             clientId: data.clientId,
             role: data.role || 'observer',
+            visualModelPolicy: getLoadingVisualModelPolicy(data.lobbyConfig),
           });
           if (data.role === 'observer') {
             setMultiplayerPlayerCount(count => Math.max(1, count - 1));
@@ -326,6 +348,8 @@ export function useGameplayConnection({
     matchLobbyConfig,
     applyLobbyConfig,
     beginMatchFromLobbyConfig,
+    getLoadingVisualModelPolicy,
+    applyLoadingVisualModelPolicy,
     mergeLoadingParticipants,
     upsertLoadingParticipantSlot,
     upsertLoadingParticipantStatus,
@@ -451,6 +475,7 @@ export function useGameplayConnection({
             playerName: data.playerName || playerName,
             hue: playerHue,
             loadout: playerLoadout,
+            visualModelPolicy: getLoadingVisualModelPolicy(data.lobbyConfig ?? outgoingLobbyConfig),
           }]);
         } else if (data.type === 'connected') {
           ws.removeEventListener('message', handleHostMessage);
@@ -461,7 +486,7 @@ export function useGameplayConnection({
           if (typeof data.clientId === 'string') {
             setGameplayClientId(data.clientId);
           }
-          mergeLoadingParticipants(data.participants ?? data.otherPlayers);
+          mergeLoadingParticipants(applyLoadingVisualModelPolicy(data.participants ?? data.otherPlayers, data.lobbyConfig ?? outgoingLobbyConfig));
           setMultiplayerSpawnSlot(getMultiplayerSpawnSlotFromMessage(data, 'host'));
           setConnectionStatus('connected');
           setOpponentClientId(data.clientClientId || 'Opponent');
@@ -532,6 +557,8 @@ export function useGameplayConnection({
     setGameplayClientId,
     applyLobbyConfig,
     beginMatchFromLobbyConfig,
+    getLoadingVisualModelPolicy,
+    applyLoadingVisualModelPolicy,
     mergeLoadingParticipants,
     setOpponentClientId,
     setIsPlaying,
@@ -606,7 +633,7 @@ export function useGameplayConnection({
           if (typeof data.clientId === 'string') {
             setGameplayClientId(data.clientId);
           }
-          mergeLoadingParticipants(data.participants ?? data.otherPlayers);
+          mergeLoadingParticipants(applyLoadingVisualModelPolicy(data.participants ?? data.otherPlayers, data.lobbyConfig));
           setMultiplayerSpawnSlot(getMultiplayerSpawnSlotFromMessage(data, data.role || 'client'));
           setConnectionStatus('connected');
           setOpponentClientId(data.hostClientId || 'Opponent');
@@ -676,6 +703,7 @@ export function useGameplayConnection({
     setGameplayClientId,
     applyLobbyConfig,
     beginMatchFromLobbyConfig,
+    applyLoadingVisualModelPolicy,
     mergeLoadingParticipants,
     setMultiplayerSpawnSlot,
     setOpponentClientId,

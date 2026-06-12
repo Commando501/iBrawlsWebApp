@@ -1,5 +1,6 @@
 import React from 'react';
 import type { CustomMapData, ReplayFile } from '../../types';
+import type { VisualModelPolicy } from '../../model/modelSystem';
 import type { CharacterLoadout } from '../VoxelModels';
 import { TopDownMapPreview } from './TopDownMapPreview';
 import { PlayerModelPreview } from './PlayerModelPreview';
@@ -18,6 +19,7 @@ interface MatchLoadingOverlayProps {
   playerName: string;
   playerHue: number;
   playerLoadout?: CharacterLoadout;
+  visualModelPolicy?: VisualModelPolicy | null;
   participants?: MultiplayerLoadingParticipant[];
   waitingCount?: number;
 }
@@ -49,9 +51,11 @@ function DashedProgressBar({ progress, timedOut }: { progress: number; timedOut?
 function LoadingRoster({
   participants,
   waitingCount,
+  visualModelPolicy,
 }: {
   participants: MultiplayerLoadingParticipant[];
   waitingCount?: number;
+  visualModelPolicy?: VisualModelPolicy | null;
 }) {
   return (
     <div className="min-h-0 rounded border border-cyan-400/20 bg-slate-950/80 shadow-[0_16px_50px_rgba(0,0,0,0.35)]">
@@ -75,6 +79,7 @@ function LoadingRoster({
             <PlayerModelPreview
               hue={participant.hue}
               loadout={participant.loadout}
+              visualModelPolicy={participant.visualModelPolicy ?? visualModelPolicy}
               className="h-16 w-16"
             />
             <div className="min-w-0">
@@ -111,6 +116,7 @@ export const MatchLoadingOverlay: React.FC<MatchLoadingOverlayProps> = ({
   playerName,
   playerHue,
   playerLoadout,
+  visualModelPolicy,
   participants = [],
   waitingCount,
 }) => {
@@ -161,10 +167,19 @@ export const MatchLoadingOverlay: React.FC<MatchLoadingOverlayProps> = ({
           </section>
 
           {isMultiplayer ? (
-            <LoadingRoster participants={participants} waitingCount={waitingCount} />
+            <LoadingRoster
+              participants={participants}
+              waitingCount={waitingCount}
+              visualModelPolicy={visualModelPolicy}
+            />
           ) : (
             <section className="grid min-h-0 grid-rows-[minmax(0,1fr)_auto] gap-3">
-              <PlayerModelPreview hue={playerHue} loadout={playerLoadout} className="min-h-[260px] w-full" />
+              <PlayerModelPreview
+                hue={playerHue}
+                loadout={playerLoadout}
+                visualModelPolicy={visualModelPolicy}
+                className="min-h-[260px] w-full"
+              />
               <div className="rounded border border-white/10 bg-slate-950/80 p-3">
                 <p className="text-[10px] font-mono uppercase tracking-[0.2em] text-white/45">Pilot</p>
                 <p className="truncate text-lg font-black uppercase tracking-[0.12em] text-white">{playerName || 'Spartan'}</p>

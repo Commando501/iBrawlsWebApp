@@ -3,6 +3,7 @@ import { UiLayoutState } from '../ui/hudLayouts';
 import { PersistedGameplaySettings } from './gameplaySettings';
 import type { CharacterLoadout } from '../components/VoxelModels';
 import type { CustomArmorCatalog } from '../components/customArmor';
+import { normalizeVisualModelPolicy } from '../model/modelSystem';
 
 export interface SaveData {
   version: number;
@@ -77,12 +78,16 @@ export const buildSaveData = (
   customArmorCatalog?: CustomArmorCatalog
 ): SaveData => {
   const { playerHue, playerName: _settingsName, ...restSettings } = settings;
+  const adminSettings = {
+    ...restSettings,
+    visualModelPolicy: normalizeVisualModelPolicy(restSettings.visualModelPolicy),
+  };
   return {
     version: 3,
     playerName,
     playerHue: playerHue ?? 200,
     uiLayouts,
-    adminSettings: restSettings,
+    adminSettings,
     keybindings,
     playerLoadout,
     customArmorCatalog,

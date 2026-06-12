@@ -28,6 +28,7 @@ export function createViewTargetCallbacksForState({
   isMultiplayer,
   multiplayerRole,
   playerLoadout,
+  visualPlayerLoadout,
   pushStatsUpdate,
 }: {
   getState: () => GrifballRuntimeState;
@@ -41,8 +42,11 @@ export function createViewTargetCallbacksForState({
   isMultiplayer: boolean;
   multiplayerRole: MultiplayerRole;
   playerLoadout?: CharacterLoadout;
+  visualPlayerLoadout?: CharacterLoadout;
   pushStatsUpdate: () => void;
 }) {
+  const meshPlayerLoadout = visualPlayerLoadout ?? playerLoadout;
+
   const getSpectateTargetData = (target: SpectateTargetRole) => resolveSpectateTargetData({
     target,
     state: getState(),
@@ -76,7 +80,7 @@ export function createViewTargetCallbacksForState({
       hue,
       isMultiplayer,
       multiplayerRole,
-      playerLoadout,
+      playerLoadout: meshPlayerLoadout,
       mainAI: getMainAI(),
     });
   };
@@ -88,7 +92,7 @@ export function createViewTargetCallbacksForState({
       hue,
       isMultiplayer,
       multiplayerRole,
-      playerLoadout,
+      playerLoadout: meshPlayerLoadout,
     });
   };
 

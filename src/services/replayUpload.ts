@@ -2,6 +2,7 @@ import { resolveHttpBase } from './liveConfig';
 import { getOrCreateAnonId } from './telemetryConsent';
 import { getTelemetryAdmissionProbability } from './matchTelemetry';
 import type { ReplayFile } from '../types';
+import { sanitizeCharacterLoadoutForNetwork } from '../components/customArmor';
 
 /**
  * Replay contribution (behavior-cloning corpus).
@@ -75,6 +76,13 @@ export function stripReplayPII(replay: ReplayFile): ReplayFile {
     if (frame.otherPlayers) {
       for (const op of frame.otherPlayers) op.playerName = '';
     }
+  }
+  if (clone.visualLoadouts) {
+    clone.visualLoadouts = Object.fromEntries(
+      Object.entries(clone.visualLoadouts)
+        .map(([id, loadout]) => [id, sanitizeCharacterLoadoutForNetwork(loadout) as Record<string, unknown> | undefined])
+        .filter((entry): entry is [string, Record<string, unknown>] => Boolean(entry[1]))
+    );
   }
   return clone;
 }

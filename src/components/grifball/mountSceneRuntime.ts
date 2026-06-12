@@ -44,7 +44,7 @@ export async function initializeGrifballMountSceneForState({
   adminSettings,
   isMultiplayer,
   mainAIHue,
-  playerLoadout,
+  visualPlayerLoadout,
   resetTransientVfx,
   getLegacyRosterProps,
   getOfflineBotCount,
@@ -63,7 +63,7 @@ export async function initializeGrifballMountSceneForState({
   adminSettings: UniversalSettings;
   isMultiplayer: boolean;
   mainAIHue?: number;
-  playerLoadout?: CharacterLoadout;
+  visualPlayerLoadout?: CharacterLoadout;
   resetTransientVfx: () => void;
   getLegacyRosterProps: () => LegacyRosterProps;
   getOfflineBotCount: () => number;
@@ -158,7 +158,7 @@ export async function initializeGrifballMountSceneForState({
     scene,
     camera,
     adminSettings,
-    playerLoadout,
+    playerLoadout: visualPlayerLoadout,
   });
 
   await report(94, 'Finalizing render targets');

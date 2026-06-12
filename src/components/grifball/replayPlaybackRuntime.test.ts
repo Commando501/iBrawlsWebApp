@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import type { ReplayFrame } from '../../types';
+import type { ReplayFile, ReplayFrame } from '../../types';
 import { updateReplayCombatantVisualsForFrame } from './replayPlaybackVisuals';
 import {
   collectReplayPlaybackEventsForFrame,
@@ -186,6 +186,7 @@ test('replay bot visuals apply recorded yaw and shared forward-facing sword rig'
   let animatedYaw: number | null = null;
   updateReplayCombatantVisualsForFrame({
     refs,
+    replayData: null,
     updatedPlayers: new Map([
       ['bot_1', {
         pos: new THREE.Vector3(1, 0, 2),
@@ -227,4 +228,68 @@ test('replay bot visuals apply recorded yaw and shared forward-facing sword rig'
   assert.equal(meshes.group.rotation.y, Math.PI / 2);
   assert.equal(animatedYaw, Math.PI / 2);
   assert.equal(meshes.sword.rotation.x, -Math.PI / 2);
+});
+
+test('replay visuals use legacy V1 loadout when replay has no visual policy', () => {
+  const scene = new THREE.Scene();
+  const refs = {
+    scene,
+    otherPlayerMeshes: new Map(),
+    damageExplosionParticles: [],
+    enemyGroup: null,
+    hostGroup: null,
+  } as any;
+
+  updateReplayCombatantVisualsForFrame({
+    refs,
+    replayData: {
+      id: 'old',
+      name: 'Old Replay',
+      description: '',
+      date: new Date(0).toISOString(),
+      duration: 1,
+      playerHue: 200,
+      playerName: 'Player',
+      opponentName: 'Bot',
+      mapType: 'hangar' as ReplayFile['mapType'],
+      mode: 'sandbox',
+      maxScore: 25,
+      frames: [],
+    },
+    updatedPlayers: new Map([['player', {
+      pos: new THREE.Vector3(),
+      vel: new THREE.Vector3(),
+      yaw: 0,
+      pitch: 0,
+      crouchScaleY: 1,
+      hp: 5,
+      activeWeapon: 'hammer',
+      weaponState: 'ready',
+      isCrouching: false,
+      isLunging: false,
+      isDashing: false,
+      isSprinting: false,
+      isSliding: false,
+      weaponTimer: 0,
+      score: 0,
+      kills: 0,
+      deaths: 0,
+      respawnTimer: 0,
+      invulnerabilityTimer: 0,
+      name: 'Player',
+      hue: 200,
+    }]]),
+    targetId: 'free',
+    observerCamMode: 'third',
+    replayPlayerName: 'Player',
+    dt: 0.016,
+    animateSpartanModel: () => {},
+    renderSwordLungeTrailVfx: () => {},
+    updateBlinking: () => {},
+  });
+
+  const meshes = refs.otherPlayerMeshes.get('player');
+  assert.ok(meshes);
+  assert.equal(meshes.group.userData.appliedLoadoutKey, JSON.stringify({ modelSystem: 'v1' }));
+  assert.notEqual(meshes.group.userData.modelSystem, 'v3');
 });

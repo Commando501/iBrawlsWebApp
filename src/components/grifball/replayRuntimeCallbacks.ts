@@ -7,6 +7,8 @@ import {
   type ReplayFrame,
   type UniversalSettings,
 } from '../../types';
+import type { VisualModelPolicy } from '../../model/modelSystem';
+import type { CharacterLoadout } from '../VoxelModels';
 import { type SwordLungeCurrentTrailStyle } from './combatGeometry';
 import {
   registerReplayPlaybackEventListenersForState,
@@ -67,6 +69,8 @@ export function createReplayRuntimeCallbacksForState({
   aiMatchSessionKey,
   opponentPlayerName,
   matchKillsToWin,
+  visualModelPolicy,
+  playerLoadout,
   isMultiplayer,
   getActiveCustomMap,
   animateSpartanModel,
@@ -104,6 +108,8 @@ export function createReplayRuntimeCallbacksForState({
   aiMatchSessionKey: string;
   opponentPlayerName: string;
   matchKillsToWin?: number;
+  visualModelPolicy?: VisualModelPolicy | null;
+  playerLoadout?: CharacterLoadout;
   isMultiplayer: boolean;
   getActiveCustomMap: () => CustomMapData | null;
   animateSpartanModel: AnimateSpartanModel;
@@ -132,6 +138,8 @@ export function createReplayRuntimeCallbacksForState({
       adminSettings,
       selectedMap,
       matchKillsToWin,
+      visualModelPolicy,
+      playerLoadout,
     });
 
   const registerReplayPlaybackEvents = () =>

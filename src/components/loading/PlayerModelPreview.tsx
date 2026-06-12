@@ -3,21 +3,42 @@ import * as THREE from 'three';
 import { buildVoxelSpartanModel, DEFAULT_LOADOUT, type CharacterLoadout } from '../VoxelModels';
 import { buildCombatantRigForModel } from '../grifball/combatantRig';
 import { disposePreviewObject, getPreviewLoadoutSignature } from '../previewModelUtils';
+import type { VisualModelPolicy } from '../../model/modelSystem';
+import { resolveLoadoutForVisualPolicy } from '../../model/modelVisualPolicy';
 
 interface PlayerModelPreviewProps {
   hue: number;
   loadout?: CharacterLoadout;
+  visualModelPolicy?: VisualModelPolicy | null;
   className?: string;
 }
 
-const PlayerModelPreviewComponent: React.FC<PlayerModelPreviewProps> = ({ hue, loadout, className }) => {
+const resolvePreviewLoadout = (
+  loadout: CharacterLoadout | undefined,
+  visualModelPolicy: VisualModelPolicy | null | undefined
+): CharacterLoadout => resolveLoadoutForVisualPolicy({ visualModelPolicy, loadout });
+
+const getResolvedPreviewLoadoutSignature = ({
+  loadout,
+  visualModelPolicy,
+}: Pick<PlayerModelPreviewProps, 'loadout' | 'visualModelPolicy'>): string => (
+  getPreviewLoadoutSignature(resolvePreviewLoadout(loadout, visualModelPolicy))
+);
+
+const PlayerModelPreviewComponent: React.FC<PlayerModelPreviewProps> = ({
+  hue,
+  loadout,
+  visualModelPolicy,
+  className,
+}) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const loadoutSignature = getPreviewLoadoutSignature(loadout);
-  const paramsRef = useRef({ hue, loadout, loadoutSignature });
+  const resolvedLoadout = resolvePreviewLoadout(loadout, visualModelPolicy);
+  const loadoutSignature = getPreviewLoadoutSignature(resolvedLoadout);
+  const paramsRef = useRef({ hue, loadout: resolvedLoadout, loadoutSignature });
 
   useEffect(() => {
-    paramsRef.current = { hue, loadout, loadoutSignature };
-  }, [hue, loadout, loadoutSignature]);
+    paramsRef.current = { hue, loadout: resolvedLoadout, loadoutSignature };
+  }, [hue, resolvedLoadout, loadoutSignature]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -120,5 +141,5 @@ export const PlayerModelPreview = React.memo(
   (prev, next) =>
     prev.hue === next.hue &&
     prev.className === next.className &&
-    getPreviewLoadoutSignature(prev.loadout) === getPreviewLoadoutSignature(next.loadout)
+    getResolvedPreviewLoadoutSignature(prev) === getResolvedPreviewLoadoutSignature(next)
 );
