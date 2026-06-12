@@ -270,6 +270,8 @@ Phase 11 upgrades V3 animation fidelity with shared procedural pose profiles, de
 
 Phase 12 hardens the developer-only offline V3 asset pipeline. Local OBJ/MTL inspection can now emit sanitized review packages with slot candidates, paint-role hints, coarse voxel previews, fit/budget validation, and source-safe metadata. These packages are for local art-direction review only: private reference files, texture paths, direct conversions, server uploads, and gameplay/runtime mesh import remain excluded.
 
+Phase 12B expands V3 creator depth. V3 armor and V3 weapon visuals can share per-role paint overrides, the armory exposes V3 material-role controls, and the armor editor surfaces role coverage, budget comparison, built-in deltas, save-copy, and history restore workflows. These tools stay local and visual-only: V1/V2 customization remains available, gameplay simulation is unchanged, and mesh upload/import remains excluded from player-facing UI.
+
 ## Standalone 3D Map Maker
 
 iBrawls features a beautiful, feature-rich, and completely standalone 3D Map Maker application that runs 100% locally and offline in the user's browser. Since it is entirely decoupled from the main web application, players simply open the local HTML file to design custom battle arenas using standard assets!
