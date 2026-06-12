@@ -40,7 +40,9 @@ import {
   getCharacterModelCollisionProfile,
   resolveCharacterModelType,
 } from '../../characterModelTypes';
+import { getV3CharacterPartManifest } from '../v3/v3AssetManifest';
 import type { CharacterModelType } from '../../types';
+import { buildArmorEditorValidationReport } from './armorEditorValidation';
 
 interface ArmorModelEditorProps {
   catalog: CustomArmorCatalog;
@@ -369,6 +371,27 @@ export function ArmorModelEditor({
       ? getV3PresetForSlot(slot as V3CustomArmorSlot)
       : getDefaultPresetForSlot(slot, playerLoadout);
   const activeSlotOptions = modelSystem === 'v3' ? V3_SLOT_OPTIONS : SLOT_OPTIONS;
+  const editorValidationReport = useMemo(() => {
+    const builtIn = modelSystem === 'v3'
+      ? getV3BuiltinPartVoxels(slot as V3CustomArmorSlot, playerHue)
+      : getVoxelSegmentDataV2(getV2SourceSlot(slot), selectedPreset, playerHue, false, modelType);
+    const v3Manifest = modelSystem === 'v3'
+      ? getV3CharacterPartManifest(getV3PresetForSlot(slot as V3CustomArmorSlot))
+      : undefined;
+    const slotBudget = modelSystem === 'v3'
+      ? v3Manifest?.budget.sourceVoxelCount ?? validation.stats.voxelCount
+      : getCustomArmorSlotSpec(slot, modelType).maxVoxels;
+
+    return buildArmorEditorValidationReport({
+      draft,
+      validation,
+      builtInVoxelCount: builtIn.length,
+      slotBudget,
+      recommendedRoles: modelSystem === 'v3'
+        ? [...(v3Manifest?.paintRoles ?? [])]
+        : ['primary', 'secondary', 'accent'],
+    });
+  }, [draft, modelSystem, modelType, playerHue, selectedPreset, slot, validation]);
 
   useEffect(() => {
     paintSettingsRef.current = { tool, role, fixedColor, emissive, slot, modelType, modelSystem };
@@ -1265,6 +1288,13 @@ export function ArmorModelEditor({
               <Metric label="Vox" value={validation.stats.voxelCount} />
               <Metric label="Bytes" value={validation.stats.payloadBytes} />
               <Metric label="Isles" value={validation.stats.components} />
+              <Metric label="Budget" value={`${editorValidationReport.budgetPercent}%`} />
+              <Metric
+                label="Built-in Delta"
+                value={editorValidationReport.builtInVoxelDelta > 0
+                  ? `+${editorValidationReport.builtInVoxelDelta}`
+                  : String(editorValidationReport.builtInVoxelDelta)}
+              />
             </div>
             {showPerformance && (
               <div className="mt-2 text-[10px] text-white/45 leading-relaxed">
@@ -1280,6 +1310,11 @@ export function ArmorModelEditor({
               {validation.warnings.map((warning) => (
                 <span key={warning} className="text-[10px] text-amber-300">{warning}</span>
               ))}
+              {modelSystem === 'v3' && editorValidationReport.missingRecommendedRoles.length > 0 && (
+                <span className="text-[10px] text-amber-300">
+                  Missing roles: {editorValidationReport.missingRecommendedRoles.join(', ')}
+                </span>
+              )}
               {showClipping && <span className="text-[10px] text-amber-300">Clipping view is heuristic; confirm in rig poses before saving.</span>}
             </div>
             <div className="grid grid-cols-2 gap-1.5 mt-2">
@@ -1427,7 +1462,7 @@ function NumberInput({ label, value, onChange }: { label: string; value: number;
   );
 }
 
-function Metric({ label, value }: { label: string; value: number }) {
+function Metric({ label, value }: { label: string; value: number | string }) {
   return (
     <div className="rounded border border-white/10 bg-black/35 p-1.5">
       <div className="text-white/35">{label}</div>
