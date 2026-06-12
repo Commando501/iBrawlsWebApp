@@ -158,6 +158,7 @@ describe('animateV3CombatantModel', () => {
       isLocalV3Animation: false,
     });
     const firstRemotePhase = remoteModel.userData.v3WalkPhase;
+    const firstRemoteBreath = remoteModel.userData.v3BreathingPhase;
     animateSpartanCombatantModel({
       ...baseInput,
       mesh: remoteModel,
@@ -165,6 +166,7 @@ describe('animateV3CombatantModel', () => {
       isLocalV3Animation: false,
     });
     assert.equal(remoteModel.userData.v3WalkPhase, firstRemotePhase);
+    assert.equal(remoteModel.userData.v3BreathingPhase, firstRemoteBreath);
 
     animateSpartanCombatantModel({
       ...baseInput,
@@ -180,6 +182,67 @@ describe('animateV3CombatantModel', () => {
       isLocalV3Animation: true,
     });
     assert.notEqual(localModel.userData.v3WalkPhase, firstLocalPhase);
+  });
+
+  it('adds V3 hit reaction when hp drops without changing lower-body locomotion phase', () => {
+    const model = createV3Model();
+    const refs = createInitialGrifballThreeRefs();
+
+    animateV3CombatantModel({
+      refs,
+      mesh: model,
+      vel: new THREE.Vector3(3, 0, 0),
+      yaw: 0,
+      hp: 100,
+      activeWeapon: 'hammer',
+      weaponState: 'ready',
+      weaponTimer: 0,
+      dt: 0.1,
+      settings: {},
+    });
+    const phaseBeforeHit = model.userData.v3WalkPhase;
+
+    animateV3CombatantModel({
+      refs,
+      mesh: model,
+      vel: new THREE.Vector3(3, 0, 0),
+      yaw: 0,
+      hp: 75,
+      activeWeapon: 'hammer',
+      weaponState: 'ready',
+      weaponTimer: 0,
+      dt: 0.1,
+      settings: {},
+    });
+
+    assert.equal(model.userData.v3WalkPhase > phaseBeforeHit, true);
+    assert.notEqual(model.userData.upperTorso.rotation.z, 0);
+    assert.notEqual(model.userData.head.rotation.x, 0);
+  });
+
+  it('applies optional V3 look offsets only to additive upper-body groups', () => {
+    const model = createV3Model();
+    const refs = createInitialGrifballThreeRefs();
+
+    animateV3CombatantModel({
+      refs,
+      mesh: model,
+      vel: new THREE.Vector3(0, 0, 0),
+      yaw: 0,
+      hp: 100,
+      activeWeapon: 'pistol',
+      weaponState: 'ready',
+      weaponTimer: 0,
+      dt: 1,
+      lookYawOffset: 0.35,
+      lookPitch: -0.2,
+      settings: {},
+    });
+
+    assert.equal(model.userData.head.rotation.y > 0.1, true);
+    assert.equal(model.userData.head.rotation.x < 0, true);
+    assert.equal(model.userData.leftLeg.rotation.x, 0);
+    assert.equal(model.userData.rightLeg.rotation.x, 0);
   });
 });
 

@@ -7,6 +7,7 @@ import type { WeaponPose } from './attackAnimationPresets';
 import { consumeV3AnimationThrottle } from './v3AnimationThrottle';
 import type { GrifballThreeRefs } from './threeRefs';
 import {
+  clamp01,
   sampleV3FirstPersonWeaponPose,
   sampleV3ThirdPersonWeaponPose,
   sampleV3UpperBodyWeaponPose,
@@ -41,6 +42,8 @@ export interface V3CombatantAnimationInput {
   v3QualityTier?: V3QualityTier;
   isLocalV3Animation?: boolean;
   animationClockMs?: number;
+  lookYawOffset?: number;
+  lookPitch?: number;
 }
 
 export interface V3FirstPersonWeaponPoseInput {
@@ -267,6 +270,60 @@ const settleV3UpperBody = (groups: V3BroadGroups, alpha: number, breathingPhase:
   lerpRotation(groups.rightArm, [-0.12, 0, -0.08], alpha);
 };
 
+const applyV3AdditiveLayer = ({
+  groups,
+  alpha,
+  hitReactTimer,
+  lookYawOffset = 0,
+  lookPitch = 0,
+}: {
+  groups: V3BroadGroups;
+  alpha: number;
+  hitReactTimer: number;
+  lookYawOffset?: number;
+  lookPitch?: number;
+}): void => {
+  const hit = clamp01(hitReactTimer / 0.18);
+  const safeLookYaw = THREE.MathUtils.clamp(lookYawOffset, -0.65, 0.65);
+  const safeLookPitch = THREE.MathUtils.clamp(lookPitch, -0.45, 0.45);
+
+  if (hit > 0) {
+    lerpRotation(groups.upperTorso, [
+      groups.upperTorso.rotation.x - hit * 0.05,
+      groups.upperTorso.rotation.y,
+      groups.upperTorso.rotation.z + hit * 0.16,
+    ], alpha);
+    lerpRotation(groups.head, [
+      groups.head.rotation.x - hit * 0.08,
+      groups.head.rotation.y - hit * 0.04,
+      groups.head.rotation.z + hit * 0.05,
+    ], alpha);
+    lerpRotation(groups.leftArm, [
+      groups.leftArm.rotation.x - hit * 0.1,
+      groups.leftArm.rotation.y,
+      groups.leftArm.rotation.z + hit * 0.05,
+    ], alpha);
+    lerpRotation(groups.rightArm, [
+      groups.rightArm.rotation.x - hit * 0.08,
+      groups.rightArm.rotation.y,
+      groups.rightArm.rotation.z - hit * 0.05,
+    ], alpha);
+  }
+
+  if (safeLookYaw !== 0 || safeLookPitch !== 0) {
+    lerpRotation(groups.upperTorso, [
+      groups.upperTorso.rotation.x + safeLookPitch * 0.15,
+      groups.upperTorso.rotation.y + safeLookYaw * 0.25,
+      groups.upperTorso.rotation.z,
+    ], alpha);
+    lerpRotation(groups.head, [
+      groups.head.rotation.x + safeLookPitch * 0.75,
+      groups.head.rotation.y + safeLookYaw * 0.75,
+      groups.head.rotation.z,
+    ], alpha);
+  }
+};
+
 export function animateV3CombatantModel({
   refs: _refs,
   mesh,
@@ -286,6 +343,8 @@ export function animateV3CombatantModel({
   v3QualityTier,
   isLocalV3Animation = false,
   animationClockMs,
+  lookYawOffset = 0,
+  lookPitch = 0,
 }: V3CombatantAnimationInput): boolean {
   if (!mesh) return false;
   const groups = getV3BroadGroups(mesh);
@@ -302,10 +361,21 @@ export function animateV3CombatantModel({
   if (!throttle.shouldAnimate) return false;
   dt = throttle.dt;
 
+  const previousHp = Number.isFinite(mesh.userData.v3LastHp)
+    ? Number(mesh.userData.v3LastHp)
+    : hp;
+
   if (hp <= 0) {
+    mesh.userData.v3LastHp = hp;
+    mesh.userData.v3HitReactTimer = 0;
     resetV3BroadGroups(groups);
     return true;
   }
+
+  if (hp < previousHp) {
+    mesh.userData.v3HitReactTimer = 0.18;
+  }
+  mesh.userData.v3LastHp = hp;
 
   const alpha = dt > 0 ? Math.min(1, dt * 12) : 1;
   applyV3LocomotionLayer({ groups, mesh, vel, yaw, dt, isSliding, isSprinting });
@@ -329,6 +399,17 @@ export function animateV3CombatantModel({
       alpha,
     });
   }
+
+  const hitReactTimer = Math.max(0, Number(mesh.userData.v3HitReactTimer ?? 0));
+  applyV3AdditiveLayer({
+    groups,
+    alpha,
+    hitReactTimer,
+    lookYawOffset,
+    lookPitch,
+  });
+  mesh.userData.v3HitReactTimer = Math.max(0, hitReactTimer - dt);
+
   return true;
 }
 
