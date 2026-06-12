@@ -34,6 +34,7 @@ export default defineConfig(() => {
           mapmaker: path.resolve(__dirname, 'mapmaker.html'),
           animationEditor: path.resolve(__dirname, 'animation-editor.html'),
           armorModelEditor: path.resolve(__dirname, 'armor-model-editor.html'),
+          v3PerformanceSmoke: path.resolve(__dirname, 'v3-performance-smoke.html'),
         },
       },
     },
