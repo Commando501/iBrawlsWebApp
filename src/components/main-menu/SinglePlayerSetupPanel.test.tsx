@@ -66,15 +66,16 @@ test('SinglePlayerSetupPanel exposes sandbox visual model policy choices', () =>
   assert.match(html, /Model Set/);
   assert.match(html, /Version 1 Classic/);
   assert.match(html, /Version 2 Rigged/);
-  assert.match(html, /Version 3 Advanced \(Recommended\)/);
+  assert.doesNotMatch(html, /Version 3 Advanced/);
 });
 
-test('SinglePlayerSetupPanel defaults sandbox model policy to recommended V3', () => {
+test('SinglePlayerSetupPanel defaults sandbox model policy to recommended V2', () => {
   const html = renderToStaticMarkup(<SinglePlayerSetupPanel {...baseSinglePlayerProps()} />);
 
   assert.match(html, /Model Set/);
-  assert.match(html, /V3/);
-  assert.match(html, /Version 3 Advanced \(Recommended\)/);
+  assert.match(html, /V2/);
+  assert.match(html, /Version 2 Rigged/);
+  assert.doesNotMatch(html, /Version 3 Advanced/);
 });
 
 test('SinglePlayerSetupPanel renders the custom AI editor from the AI behavior mode', () => {

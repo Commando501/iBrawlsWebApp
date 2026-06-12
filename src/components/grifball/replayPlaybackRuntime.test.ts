@@ -294,7 +294,7 @@ test('replay visuals use legacy V1 loadout when replay has no visual policy', ()
   assert.notEqual(meshes.group.userData.modelSystem, 'v3');
 });
 
-test('replay V3 visuals tag render quality without changing loadout identity', () => {
+test('replay V3 visual policy falls back to V2 visuals', () => {
   const scene = new THREE.Scene();
   const refs = {
     scene,
@@ -364,16 +364,10 @@ test('replay V3 visuals tag render quality without changing loadout identity', (
 
   const meshes = refs.otherPlayerMeshes.get('player');
   assert.ok(meshes);
-  assert.equal(meshes.group.userData.modelSystem, 'v3');
-  assert.equal(meshes.group.userData.appliedV3QualityTier, 'mobileLow');
-  assert.equal(meshes.hammer.userData.v3QualityTier, 'mobileLow');
+  assert.equal(meshes.group.userData.modelSystem, 'v2');
   assert.deepEqual(JSON.parse(meshes.group.userData.appliedLoadoutKey), {
     helmet: 'odst',
-    torso: 'mark-vi',
-    arm: 'mark-vi',
-    leg: 'mark-vi',
-    hammerPreset: 'default',
-    swordPreset: 'default',
-    modelSystem: 'v3',
+    modelSystem: 'v2',
+    modelType: 'medium',
   });
 });

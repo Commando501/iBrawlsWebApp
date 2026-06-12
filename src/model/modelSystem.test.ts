@@ -30,15 +30,15 @@ test('normalizeModelSystem falls back to the configured default', () => {
   assert.equal(normalizeModelSystem('bad'), DEFAULT_MODEL_SYSTEM);
 });
 
-test('normalizeVisualModelPolicy preserves visual-only policy choices', () => {
-  assert.equal(DEFAULT_VISUAL_MODEL_POLICY, 'v3');
+test('normalizeVisualModelPolicy locks v3 gameplay policy to v2', () => {
+  assert.equal(DEFAULT_VISUAL_MODEL_POLICY, 'v2');
   assert.equal(normalizeVisualModelPolicy('v1'), 'v1');
   assert.equal(normalizeVisualModelPolicy('v2'), 'v2');
-  assert.equal(normalizeVisualModelPolicy('v3'), 'v3');
+  assert.equal(normalizeVisualModelPolicy('v3'), 'v2');
   assert.equal(normalizeVisualModelPolicy(null), DEFAULT_VISUAL_MODEL_POLICY);
 });
 
-test('visual model policy labels mark V3 as the recommended default', () => {
+test('visual model policy labels expose only gameplay-ready policies', () => {
   assert.deepEqual(VISUAL_MODEL_POLICY_OPTIONS, [
     {
       value: 'v1',
@@ -48,21 +48,17 @@ test('visual model policy labels mark V3 as the recommended default', () => {
     {
       value: 'v2',
       label: 'Version 2 Rigged',
-      recommended: false,
-    },
-    {
-      value: 'v3',
-      label: 'Version 3 Advanced (Recommended)',
       recommended: true,
     },
   ]);
 
-  assert.equal(getRecommendedVisualModelPolicy(), 'v3');
-  assert.equal(isRecommendedVisualModelPolicy('v3'), true);
+  assert.equal(getRecommendedVisualModelPolicy(), 'v2');
+  assert.equal(isRecommendedVisualModelPolicy('v2'), true);
+  assert.equal(isRecommendedVisualModelPolicy('v3'), false);
   assert.equal(isRecommendedVisualModelPolicy('v1'), false);
   assert.equal(isRecommendedVisualModelPolicy('bad'), false);
   assert.equal(getVisualModelPolicyLabel('v1'), 'Version 1 Classic');
   assert.equal(getVisualModelPolicyLabel('v2'), 'Version 2 Rigged');
-  assert.equal(getVisualModelPolicyLabel('v3'), 'Version 3 Advanced (Recommended)');
-  assert.equal(getVisualModelPolicyLabel('bad'), 'Version 3 Advanced (Recommended)');
+  assert.equal(getVisualModelPolicyLabel('v3'), 'Version 2 Rigged');
+  assert.equal(getVisualModelPolicyLabel('bad'), 'Version 2 Rigged');
 });

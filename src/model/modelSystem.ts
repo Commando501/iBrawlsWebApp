@@ -5,7 +5,7 @@ export type ModelSystem = (typeof MODEL_SYSTEMS)[number];
 export type VisualModelPolicy = ModelSystem;
 
 export const DEFAULT_MODEL_SYSTEM: ModelSystem = 'v3';
-export const DEFAULT_VISUAL_MODEL_POLICY: VisualModelPolicy = DEFAULT_MODEL_SYSTEM;
+export const DEFAULT_VISUAL_MODEL_POLICY: VisualModelPolicy = 'v2';
 
 export interface VisualModelPolicyOption {
   value: VisualModelPolicy;
@@ -15,8 +15,7 @@ export interface VisualModelPolicyOption {
 
 export const VISUAL_MODEL_POLICY_OPTIONS = [
   { value: 'v1', label: 'Version 1 Classic', recommended: false },
-  { value: 'v2', label: 'Version 2 Rigged', recommended: false },
-  { value: 'v3', label: 'Version 3 Advanced (Recommended)', recommended: true },
+  { value: 'v2', label: 'Version 2 Rigged', recommended: true },
 ] as const satisfies readonly VisualModelPolicyOption[];
 
 export function isModelSystem(value: unknown): value is ModelSystem {
@@ -34,7 +33,8 @@ export function normalizeVisualModelPolicy(
   value: unknown,
   fallback: VisualModelPolicy = DEFAULT_VISUAL_MODEL_POLICY
 ): VisualModelPolicy {
-  return normalizeModelSystem(value, fallback);
+  if (value === 'v1' || value === 'v2') return value;
+  return fallback === 'v1' || fallback === 'v2' ? fallback : DEFAULT_VISUAL_MODEL_POLICY;
 }
 
 export function getRecommendedVisualModelPolicy(): VisualModelPolicy {

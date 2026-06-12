@@ -45,20 +45,20 @@ test('normalizeMatchLobbyConfig clamps lobby limits and applies mode defaults', 
   assert.equal(grifball.winTarget, DEFAULT_GRIFBALL_GOAL_TARGET);
 });
 
-test('normalizeMatchLobbyConfig defaults visual model policy to v3', () => {
+test('normalizeMatchLobbyConfig defaults visual model policy to v2', () => {
   const config = normalizeMatchLobbyConfig({});
-  assert.equal(config.visualModelPolicy, 'v3');
+  assert.equal(config.visualModelPolicy, 'v2');
 });
 
-test('normalizeMatchLobbyConfig preserves v1 and v2 visual model policy choices', () => {
+test('normalizeMatchLobbyConfig preserves gameplay-ready visual model policy choices', () => {
   assert.equal(normalizeMatchLobbyConfig({ visualModelPolicy: 'v1' }).visualModelPolicy, 'v1');
   assert.equal(normalizeMatchLobbyConfig({ visualModelPolicy: 'v2' }).visualModelPolicy, 'v2');
-  assert.equal(normalizeMatchLobbyConfig({ visualModelPolicy: 'v3' }).visualModelPolicy, 'v3');
+  assert.equal(normalizeMatchLobbyConfig({ visualModelPolicy: 'v3' }).visualModelPolicy, 'v2');
 });
 
 test('normalizeMatchLobbyConfig rejects invalid visual model policy values', () => {
   const config = normalizeMatchLobbyConfig({ visualModelPolicy: 'v4' } as any);
-  assert.equal(config.visualModelPolicy, 'v3');
+  assert.equal(config.visualModelPolicy, 'v2');
 });
 
 test('lobby summaries expose metadata without storing raw passwords', () => {
@@ -79,7 +79,7 @@ test('lobby summaries expose metadata without storing raw passwords', () => {
   assert.equal(summary.access, 'password');
   assert.equal(summary.hasPassword, true);
   assert.equal(summary.maxPlayers, 4);
-  assert.equal(summary.visualModelPolicy, 'v3');
+  assert.equal(summary.visualModelPolicy, 'v2');
   assert.equal(getMatchLobbyModeLabel(summary.gameMode), 'Grifball');
   assert.equal(getMatchLobbyTargetLabel(summary), '5 goals');
   assert.equal(formatMatchTimerLabel(summary.matchTimerSeconds), '5:00');

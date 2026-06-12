@@ -168,7 +168,7 @@ type MatchLobbyGameMode = "sandbox" | "grifball";
 type ModelSystem = "v1" | "v2" | "v3";
 type VisualModelPolicy = ModelSystem;
 
-const DEFAULT_VISUAL_MODEL_POLICY: VisualModelPolicy = "v3";
+const DEFAULT_VISUAL_MODEL_POLICY: VisualModelPolicy = "v2";
 
 interface MatchLobbyConfig {
   access: MatchLobbyAccess;
@@ -240,7 +240,7 @@ function normalizeModelSystem(value: unknown): ModelSystem | undefined {
 }
 
 function normalizeVisualModelPolicy(value: unknown): VisualModelPolicy {
-  return normalizeModelSystem(value) ?? DEFAULT_VISUAL_MODEL_POLICY;
+  return value === "v1" || value === "v2" ? value : DEFAULT_VISUAL_MODEL_POLICY;
 }
 
 export function normalizeMatchLobbyConfig(input: unknown): MatchLobbyConfig {

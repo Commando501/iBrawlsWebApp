@@ -69,7 +69,7 @@ test('offline AI roster visuals stay on the V1 model system', () => {
   assert.equal(meshes.group.userData.appliedLoadoutKey, JSON.stringify({ modelSystem: 'v1' }));
 });
 
-test('offline AI explicit V3 visual policy applies V3 visuals', () => {
+test('offline AI explicit V3 visual policy falls back to V2 visuals', () => {
   const { state, refs } = createStateAndRefs();
   const bot = createOfflineBotCombatant({
     id: 'bot_v3',
@@ -96,15 +96,12 @@ test('offline AI explicit V3 visual policy applies V3 visuals', () => {
 
   const meshes = refs.otherPlayerMeshes.get(bot.id);
   assert.ok(meshes);
-  assert.equal(meshes.group.userData.modelSystem, 'v3');
+  assert.equal(meshes.group.userData.modelSystem, 'v2');
   assert.deepEqual(getAppliedLoadout(refs, bot.id), {
     helmet: 'odst',
-    torso: 'mark-vi',
-    arm: 'mark-vi',
-    leg: 'mark-vi',
     hammerPreset: 'gravity-axe',
-    swordPreset: 'default',
-    modelSystem: 'v3',
+    modelSystem: 'v2',
+    modelType: 'medium',
   });
   assert.equal(state.otherPlayers.get(bot.id)?.modelType, 'medium');
 });
@@ -134,7 +131,7 @@ test('offline AI explicit V3 visual policy does not change gameplay model type',
   });
 
   assert.equal(state.otherPlayers.get(bot.id)?.modelType, 'large');
-  assert.equal(getAppliedLoadout(refs, bot.id).modelType, 'large');
+  assert.deepEqual(getAppliedLoadout(refs, bot.id), { modelSystem: 'v2', modelType: 'medium' });
 });
 
 test('offline AI explicit V2 visual policy applies gameplay model type to V2 visuals', () => {
@@ -221,7 +218,7 @@ test('remote human visual policy v2 normalizes V3 personal model type to medium'
   assert.deepEqual(getAppliedLoadout(refs, 'peer'), { modelSystem: 'v2', modelType: 'medium' });
 });
 
-test('remote human visual policy v3 carries a V3 applied loadout key', () => {
+test('remote human visual policy v3 falls back to a V2 applied loadout key', () => {
   const { state, refs } = createStateAndRefs();
 
   provisionCombatant(state, refs, 'peer', {
@@ -235,13 +232,13 @@ test('remote human visual policy v3 carries a V3 applied loadout key', () => {
   });
 
   const appliedLoadout = getAppliedLoadout(refs, 'peer');
-  assert.equal(appliedLoadout.modelSystem, 'v3');
+  assert.equal(appliedLoadout.modelSystem, 'v2');
   assert.equal(appliedLoadout.helmet, 'odst');
-  assert.equal(appliedLoadout.torso, 'mark-vi');
   assert.equal(appliedLoadout.hammerPreset, 'gravity-axe');
+  assert.equal(appliedLoadout.modelType, 'medium');
 });
 
-test('remote human visual policy v3 does not let V3 personal model type affect gameplay state', () => {
+test('remote human visual policy v3 falls back without letting V3 personal model type affect gameplay state', () => {
   const { state, refs } = createStateAndRefs();
   const remote = createRemoteCombatant({
     id: 'peer',
@@ -264,12 +261,12 @@ test('remote human visual policy v3 does not let V3 personal model type affect g
   });
 
   const appliedLoadout = getAppliedLoadout(refs, remote.id);
-  assert.equal(appliedLoadout.modelSystem, 'v3');
-  assert.equal(appliedLoadout.modelType, 'large');
+  assert.equal(appliedLoadout.modelSystem, 'v2');
+  assert.equal(appliedLoadout.modelType, 'medium');
   assert.equal(state.otherPlayers.get(remote.id)?.modelType, 'medium');
 });
 
-test('remote V3 meshes rebuild when render quality changes without changing loadout identity', () => {
+test('remote V3 visual policy falls back to V2 and ignores V3 render quality rebuilds', () => {
   const { state, refs } = createStateAndRefs();
   const data = {
     controller: 'remote',
@@ -282,12 +279,12 @@ test('remote V3 meshes rebuild when render quality changes without changing load
   const firstMeshes = refs.otherPlayerMeshes.get('peer');
   assert.ok(firstMeshes);
   const appliedLoadoutKey = firstMeshes.group.userData.appliedLoadoutKey;
-  assert.equal(firstMeshes.group.userData.appliedV3QualityTier, 'mobileLow');
+  assert.equal(firstMeshes.group.userData.modelSystem, 'v2');
 
   provisionCombatant(state, refs, 'peer', data, { v3QualityTier: 'desktop' });
   const secondMeshes = refs.otherPlayerMeshes.get('peer');
   assert.ok(secondMeshes);
-  assert.notEqual(secondMeshes.group, firstMeshes.group);
+  assert.equal(secondMeshes.group, firstMeshes.group);
   assert.equal(secondMeshes.group.userData.appliedLoadoutKey, appliedLoadoutKey);
-  assert.equal(secondMeshes.group.userData.appliedV3QualityTier, 'desktop');
+  assert.equal(secondMeshes.group.userData.modelSystem, 'v2');
 });

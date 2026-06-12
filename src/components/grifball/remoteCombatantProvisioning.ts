@@ -4,7 +4,7 @@ import { type CharacterModelType, type UniversalSettings } from '../../types';
 import { resolveCharacterModelType } from '../../characterModelTypes';
 import { type CharacterLoadout } from '../VoxelModels';
 import { resolveLoadoutForVisualPolicy } from '../../model/modelVisualPolicy';
-import { type VisualModelPolicy } from '../../model/modelSystem';
+import { normalizeVisualModelPolicy, type VisualModelPolicy } from '../../model/modelSystem';
 import type { V3RenderOptions } from '../v3/v3QualityTiers';
 import { createCombatantMeshRig } from './combatantModels';
 import { getInwardSpawnYaw } from './combatGeometry';
@@ -54,7 +54,7 @@ const resolveGameplayModelType = (data: RemoteCombatantUpdate): CharacterModelTy
   if (data.modelType !== undefined) {
     return resolveCharacterModelType(
       data.modelType,
-      data.visualModelPolicy ?? DEFAULT_REMOTE_VISUAL_MODEL_POLICY
+      normalizeVisualModelPolicy(data.visualModelPolicy ?? DEFAULT_REMOTE_VISUAL_MODEL_POLICY)
     );
   }
 
@@ -63,7 +63,7 @@ const resolveGameplayModelType = (data: RemoteCombatantUpdate): CharacterModelTy
 
 const createVisualLoadout = (data: RemoteCombatantUpdate, modelType: CharacterModelType): CharacterLoadout => {
   if (data.controller === 'ai') {
-    const visualModelPolicy = data.visualModelPolicy ?? DEFAULT_AI_VISUAL_MODEL_POLICY;
+    const visualModelPolicy = normalizeVisualModelPolicy(data.visualModelPolicy ?? DEFAULT_AI_VISUAL_MODEL_POLICY);
     const loadout = visualModelPolicy === 'v2'
       ? {
           ...(data.loadout ?? {}),
@@ -77,7 +77,7 @@ const createVisualLoadout = (data: RemoteCombatantUpdate, modelType: CharacterMo
     });
   }
 
-  const visualModelPolicy = data.visualModelPolicy ?? DEFAULT_REMOTE_VISUAL_MODEL_POLICY;
+  const visualModelPolicy = normalizeVisualModelPolicy(data.visualModelPolicy ?? DEFAULT_REMOTE_VISUAL_MODEL_POLICY);
   const loadout = visualModelPolicy === 'v2'
     ? {
         ...(data.loadout ?? {}),

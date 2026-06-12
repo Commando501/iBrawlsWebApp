@@ -131,5 +131,5 @@ test('match_start visual model policy applies to later remote sync updates', () 
   });
 
   assert.equal(capturedRemoteUpdates.length, 1);
-  assert.equal((capturedRemoteUpdates[0] as any).visualModelPolicy, 'v3');
+  assert.equal((capturedRemoteUpdates[0] as any).visualModelPolicy, 'v2');
 });

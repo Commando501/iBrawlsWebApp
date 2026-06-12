@@ -58,10 +58,10 @@ test('MultiplayerSetupPanel exposes host visual model policy choices', () => {
   assert.match(html, /Model Set/);
   assert.match(html, /Version 1 Classic/);
   assert.match(html, /Version 2 Rigged/);
-  assert.match(html, /Version 3 Advanced \(Recommended\)/);
+  assert.doesNotMatch(html, /Version 3 Advanced/);
 });
 
-test('MultiplayerSetupPanel defaults new hosted lobbies to recommended V3', () => {
+test('MultiplayerSetupPanel defaults new hosted lobbies to recommended V2', () => {
   const html = renderToStaticMarkup(
     <MultiplayerSetupPanel
       {...baseProps()}
@@ -70,13 +70,14 @@ test('MultiplayerSetupPanel defaults new hosted lobbies to recommended V3', () =
   );
 
   assert.match(html, /Model Set/);
-  assert.match(html, /Version 3 Advanced \(Recommended\)/);
+  assert.match(html, /Version 2 Rigged/);
+  assert.doesNotMatch(html, /Version 3 Advanced/);
 });
 
 test('MultiplayerSetupPanel stacks model policy buttons on mobile widths', () => {
   const html = renderToStaticMarkup(<MultiplayerSetupPanel {...baseProps()} />);
 
-  assert.match(html, /grid grid-cols-1 gap-1\.5 sm:grid-cols-3/);
+  assert.match(html, /grid grid-cols-1 gap-1\.5 sm:grid-cols-2/);
 });
 
 test('MultiplayerSetupPanel staging summary shows the lobby model policy', () => {
@@ -104,7 +105,7 @@ test('MultiplayerSetupPanel staging summary shows the lobby model policy', () =>
   assert.match(html, /Version 2 Rigged/);
 });
 
-test('MultiplayerSetupPanel staging summary labels recommended V3 policy', () => {
+test('MultiplayerSetupPanel staging summary coerces V3 policy to V2 label', () => {
   const html = renderToStaticMarkup(
     <MultiplayerSetupPanel
       {...baseProps()}
@@ -126,5 +127,6 @@ test('MultiplayerSetupPanel staging summary labels recommended V3 policy', () =>
   );
 
   assert.match(html, /Models/);
-  assert.match(html, /Version 3 Advanced \(Recommended\)/);
+  assert.match(html, /Version 2 Rigged/);
+  assert.doesNotMatch(html, /Version 3 Advanced/);
 });

@@ -25,13 +25,13 @@ test('visual policy v2 forces v2 model system', () => {
   );
 });
 
-test('visual policy v3 overrides personal v1 loadout model system', () => {
+test('visual policy v3 is locked to v2 for gameplay', () => {
   assert.equal(
     resolveCombatantVisualModelSystem({
       visualModelPolicy: 'v3',
       loadout: { modelSystem: 'v1' },
     }),
-    'v3'
+    'v2'
   );
 });
 
@@ -55,7 +55,7 @@ test('v2 visual policy forces v2 and normalizes v3 model type to medium', () => 
   );
 });
 
-test('v3 visual policy preserves personal customization while forcing v3', () => {
+test('v3 visual policy resolves through the v2 gameplay fallback', () => {
   assert.deepEqual(
     resolveLoadoutForVisualPolicy({
       visualModelPolicy: 'v3',
@@ -67,12 +67,9 @@ test('v3 visual policy preserves personal customization while forcing v3', () =>
     }),
     {
       helmet: 'odst',
-      torso: 'mark-vi',
-      arm: 'mark-vi',
-      leg: 'mark-vi',
       hammerPreset: 'gravity-axe',
-      swordPreset: 'default',
-      modelSystem: 'v3',
+      modelSystem: 'v2',
+      modelType: 'medium',
     }
   );
 });

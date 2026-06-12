@@ -7,7 +7,8 @@ import type { CharacterLoadout } from '../VoxelModels';
 export const DEFAULT_REPLAY_VISUAL_MODEL_POLICY: VisualModelPolicy = 'v1';
 
 export function resolveReplayVisualModelPolicy(replay: ReplayFile | null | undefined): VisualModelPolicy {
-  return normalizeVisualModelPolicy(replay?.visualModelPolicy, DEFAULT_REPLAY_VISUAL_MODEL_POLICY);
+  if (replay?.visualModelPolicy === undefined) return DEFAULT_REPLAY_VISUAL_MODEL_POLICY;
+  return normalizeVisualModelPolicy(replay.visualModelPolicy);
 }
 
 export function sanitizeReplayVisualLoadout(value: unknown): CharacterLoadout | undefined {

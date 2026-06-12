@@ -288,7 +288,7 @@ export function MultiplayerSetupPanel({
                   Visual Only
                 </span>
               </div>
-              <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-3">
+              <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
                 {VISUAL_MODEL_POLICY_OPTIONS.map((option) => (
                   <button
                     key={option.value}

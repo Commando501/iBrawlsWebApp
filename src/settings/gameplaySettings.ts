@@ -56,7 +56,7 @@ export const DEFAULT_ADMIN_SETTINGS: UniversalSettings = {
   nameVisibilityColor: '#00ffff',
   nameVisibilityOpacity: 0.8,
   nameVisibilityFontSize: 16,
-  visualModelPolicy: 'v3',
+  visualModelPolicy: 'v2',
   aiDifficulty: 'normal',
   aiReactionLatency: 0.25,
   aiAnticipationFactor: 0.40,

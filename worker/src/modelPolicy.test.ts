@@ -19,14 +19,14 @@ function getHelper<Name extends keyof WorkerHelpers>(name: Name): NonNullable<Wo
   return helper as NonNullable<WorkerHelpers[Name]>;
 }
 
-test("worker lobby config preserves supported visual model policies and defaults invalid values to v3", () => {
+test("worker lobby config locks v3 gameplay policy to v2 and defaults invalid values to v2", () => {
   const normalizeMatchLobbyConfig = getHelper("normalizeMatchLobbyConfig");
 
   assert.equal(normalizeMatchLobbyConfig({ visualModelPolicy: "v1" }).visualModelPolicy, "v1");
   assert.equal(normalizeMatchLobbyConfig({ visualModelPolicy: "v2" }).visualModelPolicy, "v2");
-  assert.equal(normalizeMatchLobbyConfig({ visualModelPolicy: "v3" }).visualModelPolicy, "v3");
-  assert.equal(normalizeMatchLobbyConfig({ visualModelPolicy: "forge" }).visualModelPolicy, "v3");
-  assert.equal(normalizeMatchLobbyConfig({}).visualModelPolicy, "v3");
+  assert.equal(normalizeMatchLobbyConfig({ visualModelPolicy: "v3" }).visualModelPolicy, "v2");
+  assert.equal(normalizeMatchLobbyConfig({ visualModelPolicy: "forge" }).visualModelPolicy, "v2");
+  assert.equal(normalizeMatchLobbyConfig({}).visualModelPolicy, "v2");
 });
 
 test("worker lobby summaries mirror the normalized visual model policy", () => {
