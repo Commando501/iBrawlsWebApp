@@ -266,6 +266,8 @@ Phase 9 marks V3 as the recommended default model policy for new offline and hos
 
 Phase 10 starts the production asset quality pass. Built-in V3 character parts and V3 hammer/sword/pistol visuals now run through deterministic production-quality audits for material diversity, emissive/detail usage, silhouette variation, and budget compliance before they are treated as production candidates.
 
+Phase 11 upgrades V3 animation fidelity with shared procedural pose profiles, deterministic additive motion, first-person weapon sway/recoil, replay-aware active weapon body animation, and animation-editor exports that identify their V3 procedural profile source. These changes remain visual-only: V1/V2 animation, hitboxes, weapon timings, network authority, replay timing, and gameplay simulation are unchanged.
+
 ## Standalone 3D Map Maker
 
 iBrawls features a beautiful, feature-rich, and completely standalone 3D Map Maker application that runs 100% locally and offline in the user's browser. Since it is entirely decoupled from the main web application, players simply open the local HTML file to design custom battle arenas using standard assets!
