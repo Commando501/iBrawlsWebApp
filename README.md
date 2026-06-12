@@ -258,6 +258,8 @@ Phase 3 canonical V3 asset contracts live in `src/components/v3/`. `v3ModelTypes
 
 Phase 4 adds original runtime V3 blockout builders for the default modular character and V3 hammer/sword/pistol weapons. These builders route `modelSystem: 'v3'` through the live model factory and expose broad rig-compatible segments plus V3 socket metadata. Phase 5 layers V3 procedural locomotion/action animation and V3 editor targets on top of those builders. Phase 6 adds local V3 modular custom armor editing. Phase 7 adds match-wide V1/V2/V3 visual policy controls, loading-preview policy resolution, and replay visual metadata; V3-by-default matchmaking remains a later phase.
 
+Phase 8 adds adaptive V3 render quality using the canonical `mobileLow`, `mobile`, `desktop`, and `ultra` tier names. Mobile devices default no higher than `mobile`, and unaccelerated graphics defaults to `mobileLow`. Quality is render-only: selected LODs, budget metadata, and constrained-tier remote animation throttling do not alter hitboxes, movement, AI decisions, weapon timings, scoring, replay timing, or network authority. Use `/v3-performance-smoke.html` while `npm run dev` is running to render eight V3 combatants with mixed hammer/sword/pistol loadouts for desktop and mobile smoke checks.
+
 ## Standalone 3D Map Maker
 
 iBrawls features a beautiful, feature-rich, and completely standalone 3D Map Maker application that runs 100% locally and offline in the user's browser. Since it is entirely decoupled from the main web application, players simply open the local HTML file to design custom battle arenas using standard assets!

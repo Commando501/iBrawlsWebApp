@@ -5,12 +5,15 @@ import { buildV3PerformanceSmokeScene } from './v3PerformanceSmoke';
 const canvas = document.getElementById('smoke-canvas') as HTMLCanvasElement;
 const tierSelect = document.getElementById('tier') as HTMLSelectElement;
 const summary = document.getElementById('summary') as HTMLSpanElement;
+const requestedTier = new URLSearchParams(window.location.search).get('tier');
+const initialTier = normalizeV3QualityTier(requestedTier ?? tierSelect.value);
+tierSelect.value = initialTier;
 
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 
 let current = buildV3PerformanceSmokeScene({
-  qualityTier: normalizeV3QualityTier(tierSelect.value),
+  qualityTier: initialTier,
 });
 
 function resize() {
