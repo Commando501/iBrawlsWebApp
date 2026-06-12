@@ -7,6 +7,11 @@ import {
   detectMicrosoftEdge,
   type GraphicsCheckResult,
 } from './browserCapabilities';
+import type { V3QualityTier } from '../components/v3/v3ModelTypes';
+import {
+  selectV3QualityTier,
+  type V3QualitySignals,
+} from '../components/v3/v3QualityTiers';
 
 export const EDGE_LOW_FPS_THRESHOLD = 20;
 export const EDGE_LOW_FPS_SUSTAINED_MS = 5000;
@@ -16,11 +21,39 @@ const EDGE_LOW_FPS_STATE_UPDATE_STEP_MS = 500;
 interface UseBrowserDiagnosticsOptions {
   isPlaying: boolean;
   isPaused: boolean;
+  forceMobileControls?: boolean;
 }
+
+const getHardwareConcurrency = (): number | undefined =>
+  typeof navigator === 'undefined' ? undefined : navigator.hardwareConcurrency;
+
+const getDeviceMemoryGb = (): number | undefined => {
+  const nav = typeof navigator === 'undefined'
+    ? undefined
+    : navigator as Navigator & { deviceMemory?: number };
+  return typeof nav?.deviceMemory === 'number' ? nav.deviceMemory : undefined;
+};
+
+const buildV3QualitySignals = (
+  device: DeviceInfo,
+  check: GraphicsCheckResult,
+  forceMobileControls?: boolean,
+  fps?: number,
+  previousTier?: V3QualityTier
+): V3QualitySignals => ({
+  isMobile: device.isMobile,
+  forceMobileControls,
+  graphicsAccelerated: check.checked ? check.accelerated : true,
+  hardwareConcurrency: getHardwareConcurrency(),
+  deviceMemoryGb: getDeviceMemoryGb(),
+  fps,
+  previousTier,
+});
 
 export function useBrowserDiagnostics({
   isPlaying,
   isPaused,
+  forceMobileControls,
 }: UseBrowserDiagnosticsOptions) {
   const [deviceInfo, setDeviceInfo] = useState<DeviceInfo>(() => detectDeviceOS());
   const [isOnline, setIsOnline] = useState<boolean>(() => typeof navigator === 'undefined' ? true : navigator.onLine);
@@ -30,6 +63,9 @@ export function useBrowserDiagnostics({
     supported: true,
     accelerated: true,
   });
+  const [v3QualityTier, setV3QualityTier] = useState<V3QualityTier>(() =>
+    selectV3QualityTier(buildV3QualitySignals(detectDeviceOS(), graphicsCheck, forceMobileControls))
+  );
   const [showGraphicsWarning, setShowGraphicsWarning] = useState<boolean>(false);
   const [edgeLowFpsSampleDurationMs, setEdgeLowFpsSampleDurationMs] = useState<number>(0);
   const [showEdgePerformanceWarning, setShowEdgePerformanceWarning] = useState<boolean>(false);
@@ -64,6 +100,19 @@ export function useBrowserDiagnostics({
       window.removeEventListener('offline', handleOffline);
     };
   }, []);
+
+  useEffect(() => {
+    setV3QualityTier((previous) => {
+      const next = selectV3QualityTier(buildV3QualitySignals(
+        deviceInfo,
+        graphicsCheck,
+        forceMobileControls,
+        undefined,
+        previous
+      ));
+      return next === previous ? previous : next;
+    });
+  }, [deviceInfo, graphicsCheck, forceMobileControls]);
 
   const resetEdgeLowFpsDetection = useCallback(() => {
     edgeLowFpsSampleRef.current = { lastSampleTime: 0, durationMs: 0 };
@@ -155,10 +204,24 @@ export function useBrowserDiagnostics({
     setShowGraphicsWarning(false);
   }, []);
 
+  const trackV3PerformanceSample = useCallback((fps: number | undefined) => {
+    setV3QualityTier((previous) => {
+      const next = selectV3QualityTier(buildV3QualitySignals(
+        deviceInfo,
+        graphicsCheck,
+        forceMobileControls,
+        fps,
+        previous
+      ));
+      return next === previous ? previous : next;
+    });
+  }, [deviceInfo, graphicsCheck, forceMobileControls]);
+
   return {
     deviceInfo,
     isOnline,
     graphicsCheck,
+    v3QualityTier,
     showGraphicsWarning,
     dismissGraphicsWarning,
     edgeLowFpsSampleDurationMs,
@@ -167,5 +230,6 @@ export function useBrowserDiagnostics({
     hardwareTab,
     setHardwareTab,
     trackEdgeLowFps,
+    trackV3PerformanceSample,
   };
 }

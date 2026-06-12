@@ -87,9 +87,11 @@ export default function App() {
     hardwareTab,
     setHardwareTab,
     trackEdgeLowFps,
+    trackV3PerformanceSample,
   } = useBrowserDiagnostics({
     isPlaying,
     isPaused,
+    forceMobileControls,
   });
   const {
     offlineBotCount,
@@ -617,6 +619,7 @@ export default function App() {
     setIsPaused,
     handleCompleteTournamentMatch,
     trackEdgeLowFps,
+    trackV3PerformanceSample,
     setCurrentStats,
     isMultiplayer,
     multiplayerRole,
