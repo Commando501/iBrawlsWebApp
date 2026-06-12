@@ -110,7 +110,18 @@ const createLods = (assetId: string, budget: V3AssetBudget): V3LodLevel[] => {
     },
   ];
 
-  return lods.slice(0, budget.lodCount);
+  if (budget.lodCount >= lods.length) {
+    return lods;
+  }
+
+  if (budget.lodCount <= 1) {
+    return [lods[lods.length - 1]];
+  }
+
+  return [
+    lods[0],
+    ...lods.slice(-(budget.lodCount - 1)),
+  ];
 };
 
 const createSocket = (

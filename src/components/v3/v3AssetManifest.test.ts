@@ -3,6 +3,7 @@ import { describe, it } from 'node:test';
 import {
   V3_CHARACTER_SLOT_IDS,
   V3_PAINT_ROLES,
+  V3_QUALITY_TIERS,
   V3_WEAPON_IDS,
   validateV3AssetBudget,
 } from './v3ModelTypes';
@@ -187,5 +188,31 @@ describe('V3 weapon manifest', () => {
 
     assert.notEqual(getDefaultV3WeaponManifest('hammer').budget.sourceVoxelCount, 999999);
     assert.notEqual(getDefaultV3WeaponManifest('hammer').sockets[0].position[0], 999999);
+  });
+});
+
+describe('V3 manifest LOD fallbacks', () => {
+  it('keeps every built-in V3 asset with at least one mobile-capable LOD fallback', () => {
+    const assets = [
+      ...BUILT_IN_V3_CHARACTER_PARTS,
+      ...BUILT_IN_V3_WEAPONS,
+    ];
+    const mobileRank = V3_QUALITY_TIERS.indexOf('mobile');
+
+    for (const asset of assets) {
+      assert.equal(asset.lods.length, asset.budget.lodCount);
+      assert.equal(
+        asset.lods.some((lod) => V3_QUALITY_TIERS.indexOf(lod.qualityTier) <= mobileRank),
+        true,
+        `${asset.id} should expose a mobile-capable LOD`
+      );
+    }
+  });
+
+  it('keeps richest plus cheapest LODs for two-LOD V3 assets', () => {
+    const pistol = getDefaultV3WeaponManifest('pistol');
+
+    assert.equal(pistol.budget.lodCount, 2);
+    assert.deepEqual(pistol.lods.map((lod) => lod.qualityTier), ['ultra', 'mobile']);
   });
 });

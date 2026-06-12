@@ -223,11 +223,19 @@ export function buildV3SpartanModel(options: V3SpartanBuildOptions = {}): THREE.
       ? customArmorPieceToVoxels(customPiece, customArmorColors)
       : createPartVoxels(part, spec.dimensions, colors);
     const group = createVoxelGroup(voxels, V3_VOXEL_SCALE);
+    const selectedLod = selectV3LodLevel({
+      lods: part.lods,
+      qualityTier: v3QualityTier,
+      distance: v3Distance,
+    });
     group.name = `v3:${part.slot}`;
     group.position.set(...spec.position);
     group.userData.v3PartId = part.id;
     group.userData.v3Slot = part.slot;
     group.userData.v3BoundsId = part.boundsId;
+    group.userData.v3QualityTier = v3QualityTier;
+    group.userData.v3Distance = v3Distance;
+    group.userData.v3SelectedLod = selectedLod;
     if (customPiece) {
       group.userData.customArmorId = customPiece.id;
       group.userData.customArmorName = customPiece.name;
