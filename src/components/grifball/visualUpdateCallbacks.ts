@@ -68,6 +68,9 @@ export function createVisualUpdateCallbacksForState({
     dt: number,
     isSliding = false,
     isSprinting = false,
+    activeWeapon?: string,
+    isLunging = false,
+    lookPitch?: number,
     v3QualityTier?: V3QualityTier,
     isLocalV3Animation = false,
     animationClockMs?: number
@@ -85,6 +88,8 @@ export function createVisualUpdateCallbacksForState({
       dt,
       isSliding,
       isSprinting,
+      activeWeapon,
+      isLunging,
       hammerReloadTime: state.settings.hammerReloadTime ?? 0.6,
       hammerMeleeReload: state.settings.hammerMeleeReload ?? 0.5,
       hammerSlamWindupTime: hammerSlamTiming.windupTime,
@@ -92,6 +97,7 @@ export function createVisualUpdateCallbacksForState({
       v3QualityTier,
       isLocalV3Animation,
       animationClockMs,
+      lookPitch,
     });
   };
 

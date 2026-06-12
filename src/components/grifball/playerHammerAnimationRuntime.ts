@@ -6,6 +6,25 @@ import {
 } from './attackAnimationPresets';
 import { resolveHammerSlamTiming } from '../../game/hammerSlamTiming';
 import { type GrifballRuntimeState } from './runtimeState';
+import { sampleV3FirstPersonWeaponPose } from './v3AnimationFidelity';
+
+const applyV3HammerPose = (
+  playerHammer: THREE.Group,
+  state: GrifballRuntimeState,
+  idleXBob: number,
+  idleYBob: number,
+  idleZRotBob: number
+): void => {
+  const pose = sampleV3FirstPersonWeaponPose({
+    activeWeapon: 'hammer',
+    weaponState: state.pWeaponState,
+    weaponTimer: state.pWeaponTimer,
+    isLunging: false,
+    settings: state.settings,
+  });
+  playerHammer.position.set(pose.position[0], pose.position[1] + idleYBob, pose.position[2] + idleXBob);
+  playerHammer.rotation.set(pose.rotation[0], pose.rotation[1], pose.rotation[2] + idleZRotBob);
+};
 
 export function updatePlayerHammerAnimationForState({
   state,
@@ -26,12 +45,18 @@ export function updatePlayerHammerAnimationForState({
   applyHammerStrikeImpact: (isPlayerStriking: boolean) => void;
   applyPlayerHammerMeleeImpact: () => void;
 }): void {
+  const isV3Hammer = playerHammer.userData.modelSystem === 'v3';
+
   if (state.activeWeapon === 'hammer') {
     playerHammer.visible = true;
 
     if (state.pWeaponState === 'ready') {
-      playerHammer.position.set(0.35, -0.38 + idleYBob, -0.65 + idleXBob);
-      playerHammer.rotation.set(0.15, -0.3, -0.15 + idleZRotBob);
+      if (isV3Hammer) {
+        applyV3HammerPose(playerHammer, state, idleXBob, idleYBob, idleZRotBob);
+      } else {
+        playerHammer.position.set(0.35, -0.38 + idleYBob, -0.65 + idleXBob);
+        playerHammer.rotation.set(0.15, -0.3, -0.15 + idleZRotBob);
+      }
       if (state.swapCooldownTimer > 0) {
         state.pWeaponReady = false;
         state.pWeaponCooldown = state.swapCooldownDuration > 0
@@ -46,7 +71,9 @@ export function updatePlayerHammerAnimationForState({
       const { windupTime: windupDuration } = resolveHammerSlamTiming(state.settings);
       const pct = Math.min(1.0, state.pWeaponTimer / windupDuration);
 
-      if (getHammerAttackAnimationStyle(state.settings) === 'highFidelity') {
+      if (isV3Hammer) {
+        applyV3HammerPose(playerHammer, state, idleXBob, idleYBob, idleZRotBob);
+      } else if (getHammerAttackAnimationStyle(state.settings) === 'highFidelity') {
         applyWeaponPose(playerHammer, getFirstPersonHammerPose('windup', pct, idleYBob));
       } else {
         const targetY = -0.1;
@@ -71,7 +98,9 @@ export function updatePlayerHammerAnimationForState({
       const { attackTime: strikeDuration } = resolveHammerSlamTiming(state.settings);
       const pct = Math.min(1.0, state.pWeaponTimer / strikeDuration);
 
-      if (getHammerAttackAnimationStyle(state.settings) === 'highFidelity') {
+      if (isV3Hammer) {
+        applyV3HammerPose(playerHammer, state, idleXBob, idleYBob, idleZRotBob);
+      } else if (getHammerAttackAnimationStyle(state.settings) === 'highFidelity') {
         applyWeaponPose(playerHammer, getFirstPersonHammerPose('strike', pct, idleYBob));
       } else {
         const startXRot = -1.13;
@@ -96,7 +125,9 @@ export function updatePlayerHammerAnimationForState({
       const recoveryDuration = state.settings.hammerReloadTime ?? 0.6;
       const pct = Math.min(1.0, state.pWeaponTimer / recoveryDuration);
 
-      if (getHammerAttackAnimationStyle(state.settings) === 'highFidelity') {
+      if (isV3Hammer) {
+        applyV3HammerPose(playerHammer, state, idleXBob, idleYBob, idleZRotBob);
+      } else if (getHammerAttackAnimationStyle(state.settings) === 'highFidelity') {
         applyWeaponPose(playerHammer, getFirstPersonHammerPose('recover', pct, idleYBob));
       } else {
         const startXRot = 0.95;
@@ -128,7 +159,9 @@ export function updatePlayerHammerAnimationForState({
       const duration = state.settings.hammerMeleeSpeed ?? 0.24;
       const pct = Math.min(1.0, state.pWeaponTimer / duration);
 
-      if (getHammerAttackAnimationStyle(state.settings) === 'highFidelity') {
+      if (isV3Hammer) {
+        applyV3HammerPose(playerHammer, state, idleXBob, idleYBob, idleZRotBob);
+      } else if (getHammerAttackAnimationStyle(state.settings) === 'highFidelity') {
         applyWeaponPose(playerHammer, getFirstPersonHammerPose('melee_swing', pct, idleYBob));
       } else {
         playerHammer.position.x = THREE.MathUtils.lerp(0.35, -0.45, pct);
@@ -155,7 +188,9 @@ export function updatePlayerHammerAnimationForState({
       const recoveryDuration = state.settings.hammerMeleeReload ?? 0.5;
       const pct = Math.min(1.0, state.pWeaponTimer / recoveryDuration);
 
-      if (getHammerAttackAnimationStyle(state.settings) === 'highFidelity') {
+      if (isV3Hammer) {
+        applyV3HammerPose(playerHammer, state, idleXBob, idleYBob, idleZRotBob);
+      } else if (getHammerAttackAnimationStyle(state.settings) === 'highFidelity') {
         applyWeaponPose(playerHammer, getFirstPersonHammerPose('melee_recover', pct, idleYBob));
       } else {
         playerHammer.position.x = THREE.MathUtils.lerp(-0.45, 0.35, pct);

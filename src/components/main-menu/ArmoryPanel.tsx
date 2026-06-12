@@ -12,8 +12,15 @@ import {
   type CustomArmorCatalog,
   type CustomArmorSlot,
 } from '../customArmor';
+import { V3_PAINT_ROLES } from '../v3/v3ModelTypes';
+import type { V3PaintRole } from '../v3/v3ModelTypes';
 import { CharacterPainter } from '../CharacterPainter';
 import { CharacterPreview } from '../CharacterPreview';
+import {
+  resetV3PaintRole,
+  updateV3PaintRoleColor,
+  updateV3PaintRoleEmissive,
+} from './v3PaintRoleControls';
 
 export type PreviewWeapon = 'none' | 'hammer' | 'sword';
 
@@ -81,15 +88,15 @@ const PRESET_LABEL: Record<string, string> = {
   'gravity-axe': 'Axe',
   'gravity-mace': 'Mace',
   'fist-of-rukt': 'Rukt',
-  'halo-ce': 'CE Classic',
-  'halo-2': 'Halo 2',
-  'halo-3': 'Halo 3',
-  reach: 'Reach',
-  anniversary: 'CEA',
-  'halo-4': 'Halo 4',
-  'h2a-blue': 'H2A Blue',
-  'h2a-pink': 'H2A Pink',
-  'halo-5': 'Halo 5',
+  'halo-ce': 'Cyan Classic',
+  'halo-2': 'Twin Arc',
+  'halo-3': 'Prism Edge',
+  reach: 'Emberline',
+  anniversary: 'Aegis Arc',
+  'halo-4': 'Vanguard IV',
+  'h2a-blue': 'Cerulean Rift',
+  'h2a-pink': 'Crimson Rift',
+  'halo-5': 'Aurum V',
   infinite: 'Infinite',
 };
 
@@ -108,6 +115,9 @@ const formatV3SlotLabel = (slot: string): string =>
   slot
     .replace(/([A-Z])/g, ' $1')
     .replace(/^./, (value) => value.toUpperCase());
+
+const formatV3PaintRoleLabel = (role: V3PaintRole): string =>
+  role.replace(/^./, (value) => value.toUpperCase());
 
 const V3_LOADOUT_SLOTS = V3_CUSTOM_ARMOR_SLOTS.map((slot) => ({
   key: slot,
@@ -171,6 +181,13 @@ export function ArmoryPanel({
   const savePaintJob = (paintJob: ArmorPaintJob) => {
     updateLoadout({ paintJob });
     setIsPainting(false);
+  };
+
+  const updateV3PaintJob = (paintJob: ArmorPaintJob) => {
+    updateLoadout({
+      modelSystem: 'v3',
+      paintJob,
+    });
   };
 
   const selectBuiltinArmor = (key: 'helmet' | 'torso' | 'arm' | 'leg', option: string) => {
@@ -278,6 +295,49 @@ export function ArmoryPanel({
                 ))}
               </div>
             </div>
+
+            {activeModelSystem === 'v3' && (
+              <div className="bg-white/5 border border-white/5 rounded-lg p-3">
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-xs font-bold text-[#38bdf8] uppercase tracking-wider">V3 Material Roles</span>
+                  <span className="text-[10px] text-white/45 uppercase tracking-widest">Armor + weapons</span>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  {V3_PAINT_ROLES.map((role) => {
+                    const color = playerLoadout.paintJob?.v3RoleColors?.[role] ?? '#38bdf8';
+                    const emissive = playerLoadout.paintJob?.v3RoleEmissive?.[role] ?? (role === 'emissive' || role === 'visor');
+                    return (
+                      <div key={role} className="flex items-center gap-2 bg-black/20 border border-white/5 rounded-md p-2 min-w-0">
+                        <input
+                          aria-label={`${role} color`}
+                          type="color"
+                          value={color}
+                          onChange={(event) => updateV3PaintJob(updateV3PaintRoleColor(playerLoadout.paintJob, role, event.target.value))}
+                          className="w-7 h-7 rounded border border-white/10 bg-transparent shrink-0"
+                        />
+                        <span className="text-[10px] text-white/70 uppercase truncate flex-1">{formatV3PaintRoleLabel(role)}</span>
+                        <label className="flex items-center gap-1 text-[9px] text-white/45 uppercase">
+                          <input
+                            type="checkbox"
+                            checked={emissive}
+                            onChange={(event) => updateV3PaintJob(updateV3PaintRoleEmissive(playerLoadout.paintJob, role, event.target.checked))}
+                            className="w-3 h-3"
+                          />
+                          Emissive
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => updateV3PaintJob(resetV3PaintRole(playerLoadout.paintJob, role))}
+                          className="text-[9px] text-white/35 hover:text-white"
+                        >
+                          Reset
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             <div className="bg-white/5 border border-white/5 rounded-lg p-3">
               <span className="text-xs font-bold text-[#38bdf8] uppercase tracking-wider block mb-2">Pose Weapon preview</span>

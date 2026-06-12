@@ -15,14 +15,32 @@ export interface V3ObjObjectMetadata {
   bounds: V3Bounds | null;
 }
 
+export interface V3ObjTriangleMetadata {
+  objectName: string;
+  groupNames: string[];
+  materialName: string | null;
+  a: V3Vec3;
+  b: V3Vec3;
+  c: V3Vec3;
+}
+
+export interface V3MtlMaterialSummary {
+  name: string;
+  diffuse: V3Vec3 | null;
+  emissive: V3Vec3 | null;
+  hasTextureReference: boolean;
+}
+
 export interface V3ObjMetadata {
   materialLibraries: string[];
   materials: string[];
+  materialSummaries: V3MtlMaterialSummary[];
   vertexCount: number;
   faceCount: number;
   triangleCountEstimate: number;
   bounds: V3Bounds | null;
   objects: V3ObjObjectMetadata[];
+  triangles: V3ObjTriangleMetadata[];
 }
 
 const REFERENCE_MIN_OBJECTS = 12;
@@ -33,11 +51,13 @@ const REFERENCE_MIN_FACES = 20_000;
 const createEmptyMetadata = (): V3ObjMetadata => ({
   materialLibraries: [],
   materials: [],
+  materialSummaries: [],
   vertexCount: 0,
   faceCount: 0,
   triangleCountEstimate: 0,
   bounds: null,
   objects: [],
+  triangles: [],
 });
 
 const createObjectMetadata = (name: string): V3ObjObjectMetadata => ({
@@ -90,6 +110,38 @@ const parseVertex = (value: string): V3Vec3 | null => {
   return [x, y, z];
 };
 
+const parseColor = (value: string): V3Vec3 | null => {
+  const [r, g, b] = value.split(/\s+/).map(Number);
+  if (!Number.isFinite(r) || !Number.isFinite(g) || !Number.isFinite(b)) return null;
+  return [r, g, b];
+};
+
+const parseV3MtlMaterialSummaries = (source: string | undefined): V3MtlMaterialSummary[] => {
+  if (!source) return [];
+
+  const summaries: V3MtlMaterialSummary[] = [];
+  let current: V3MtlMaterialSummary | null = null;
+
+  for (const line of source.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+
+    const { command, value } = readLineCommand(trimmed);
+    if (command === 'newmtl' && value) {
+      current = { name: value, diffuse: null, emissive: null, hasTextureReference: false };
+      summaries.push(current);
+      continue;
+    }
+
+    if (!current) continue;
+    if (command === 'Kd') current.diffuse = parseColor(value);
+    if (command === 'Ke') current.emissive = parseColor(value);
+    if (command.toLowerCase().startsWith('map_')) current.hasTextureReference = true;
+  }
+
+  return summaries;
+};
+
 const parseFaceVertexIndex = (token: string, vertexCount: number): number | null => {
   const rawIndex = Number.parseInt(token.split('/')[0], 10);
   if (!Number.isInteger(rawIndex) || rawIndex === 0) return null;
@@ -99,8 +151,9 @@ const parseFaceVertexIndex = (token: string, vertexCount: number): number | null
   return resolvedIndex;
 };
 
-export function parseV3ObjMetadata(source: string): V3ObjMetadata {
+export function parseV3ObjMetadata(source: string, mtlSource?: string): V3ObjMetadata {
   const metadata = createEmptyMetadata();
+  metadata.materialSummaries = parseV3MtlMaterialSummaries(mtlSource);
   const vertices: V3Vec3[] = [];
   let currentObject: V3ObjObjectMetadata | null = null;
   let currentMaterial: string | null = null;
@@ -167,12 +220,24 @@ export function parseV3ObjMetadata(source: string): V3ObjMetadata {
 
       if (currentMaterial) addUnique(object.materialNames, currentMaterial);
 
-      for (const token of faceTokens) {
-        const vertexIndex = parseFaceVertexIndex(token, vertices.length);
-        if (vertexIndex === null) continue;
+      const resolvedVertexIndexes = faceTokens
+        .map((token) => parseFaceVertexIndex(token, vertices.length))
+        .filter((vertexIndex): vertexIndex is number => vertexIndex !== null);
 
+      for (const vertexIndex of resolvedVertexIndexes) {
         addUnique(object.referencedVertexIndexes, vertexIndex);
         object.bounds = updateBounds(object.bounds, vertices[vertexIndex - 1]);
+      }
+
+      for (let index = 1; index < resolvedVertexIndexes.length - 1; index += 1) {
+        metadata.triangles.push({
+          objectName: object.name,
+          groupNames: [...object.groupNames],
+          materialName: currentMaterial,
+          a: [...vertices[resolvedVertexIndexes[0] - 1]],
+          b: [...vertices[resolvedVertexIndexes[index] - 1]],
+          c: [...vertices[resolvedVertexIndexes[index + 1] - 1]],
+        });
       }
     }
   }

@@ -288,3 +288,51 @@ test('remote V3 visual policy falls back to V2 and ignores V3 render quality reb
   assert.equal(secondMeshes.group.userData.appliedLoadoutKey, appliedLoadoutKey);
   assert.equal(secondMeshes.group.userData.modelSystem, 'v2');
 });
+
+test('remote V3 visual policy preserves sanitized V3 role paint while forced V1 and V2 remain legacy visual policies', () => {
+  const { state, refs } = createStateAndRefs();
+  const v3Loadout = {
+    modelSystem: 'v3',
+    helmet: 'odst',
+    paintJob: {
+      v3RoleColors: {
+        primary: '#123456',
+        accent: '#abcdef',
+        invalid: '#ffffff',
+      },
+      v3RoleEmissive: {
+        visor: true,
+        primary: false,
+      },
+    },
+  } as any;
+
+  provisionCombatant(state, refs, 'peer-v3', {
+    controller: 'remote',
+    visualModelPolicy: 'v3',
+    loadout: v3Loadout,
+  });
+  const v3Applied = getAppliedLoadout(refs, 'peer-v3') as any;
+  assert.equal(v3Applied.modelSystem, 'v3');
+  assert.equal(v3Applied.paintJob.v3RoleColors.primary, '#123456');
+  assert.equal(v3Applied.paintJob.v3RoleColors.accent, '#abcdef');
+  assert.equal(v3Applied.paintJob.v3RoleColors.invalid, undefined);
+  assert.equal(v3Applied.paintJob.v3RoleEmissive.visor, true);
+
+  provisionCombatant(state, refs, 'peer-v1', {
+    controller: 'remote',
+    visualModelPolicy: 'v1',
+    loadout: v3Loadout,
+  });
+  assert.deepEqual(getAppliedLoadout(refs, 'peer-v1'), { modelSystem: 'v1' });
+
+  provisionCombatant(state, refs, 'peer-v2', {
+    controller: 'remote',
+    visualModelPolicy: 'v2',
+    loadout: v3Loadout,
+  });
+  const v2Applied = getAppliedLoadout(refs, 'peer-v2') as any;
+  assert.equal(v2Applied.modelSystem, 'v2');
+  assert.equal(v2Applied.modelType, 'medium');
+  assert.equal(v2Applied.paintJob.v3RoleColors.invalid, undefined);
+});
