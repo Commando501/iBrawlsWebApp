@@ -1,6 +1,9 @@
 import * as THREE from 'three';
 import { normalizeV3QualityTier } from '../components/v3/v3QualityTiers';
-import { buildV3PerformanceSmokeScene } from './v3PerformanceSmoke';
+import {
+  buildV3PerformanceSmokeReport,
+  buildV3PerformanceSmokeScene,
+} from './v3PerformanceSmoke';
 
 const canvas = document.getElementById('smoke-canvas') as HTMLCanvasElement;
 const tierSelect = document.getElementById('tier') as HTMLSelectElement;
@@ -28,7 +31,10 @@ function rebuild() {
   current = buildV3PerformanceSmokeScene({
     qualityTier: normalizeV3QualityTier(tierSelect.value),
   });
-  summary.textContent = `${current.qualityTier} | models ${current.budget.modelCount} | parts ${current.budget.partCount} | draw ${current.budget.drawCallEstimate}`;
+  const report = buildV3PerformanceSmokeReport(current);
+  const status = report.ready ? 'Phase 13 Ready' : 'Phase 13 Blocked';
+  summary.textContent = `${status} | ${current.qualityTier} | models ${current.budget.modelCount} | parts ${current.budget.partCount} | draw ${current.budget.drawCallEstimate}`;
+  (window as any).__IBRAWLS_V3_PERFORMANCE_SMOKE__ = report;
   resize();
 }
 
