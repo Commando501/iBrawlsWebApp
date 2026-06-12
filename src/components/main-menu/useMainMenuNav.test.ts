@@ -24,6 +24,7 @@ test('parseStoredMainMenuNav restores a fully valid stored selection', () => {
     contentParent: 'customization',
     playChild: 'theater',
     customizationChild: 'gamepad',
+    systemChild: 'saves',
   });
 });
 
@@ -40,6 +41,7 @@ test('parseStoredMainMenuNav migrates the removed identity customization page to
     contentParent: 'customization',
     playChild: 'single',
     customizationChild: 'armory',
+    systemChild: 'saves',
   });
 });
 
@@ -55,6 +57,7 @@ test('parseStoredMainMenuNav keeps a restored tools tab over the default content
     contentParent: DEFAULT_MAIN_MENU_NAV.contentParent,
     playChild: DEFAULT_MAIN_MENU_NAV.playChild,
     customizationChild: DEFAULT_MAIN_MENU_NAV.customizationChild,
+    systemChild: DEFAULT_MAIN_MENU_NAV.systemChild,
   });
 });
 
@@ -83,6 +86,7 @@ test('selectMainMenuParentState opens tools without changing the current content
     contentParent: 'customization' as const,
     playChild: 'theater' as const,
     customizationChild: 'gamepad' as const,
+    systemChild: 'saves' as const,
   };
 
   assert.deepEqual(selectMainMenuParentState(previous, 'tools'), {
@@ -98,6 +102,7 @@ test('selectMainMenuParentState makes non-tools parents the active content paren
     contentParent: 'customization' as const,
     playChild: 'single' as const,
     customizationChild: 'armory' as const,
+    systemChild: 'saves' as const,
   };
 
   assert.deepEqual(selectMainMenuParentState(previous, 'play'), {

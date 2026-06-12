@@ -5,6 +5,23 @@ import type { AppMatchResult } from './useAppSessionState';
 import type { GameStats, TournamentState } from '../types';
 import type { GameplayMultiplayerRole } from './multiplayer/multiplayerConnectionConstants';
 import type { MatchLobbyConfig } from '../network/protocol';
+import { statTracker } from '../stats/statTracker';
+import type { MatchOutcome } from '../stats/statTypes';
+
+/** Local-perspective outcome of a multiplayer match-end broadcast. */
+export function multiplayerWinnerToLocalOutcome(
+  winner: MultiplayerMatchEndResult['winner'],
+  multiplayerRole: GameplayMultiplayerRole,
+  localTeam: string | undefined
+): MatchOutcome {
+  if (winner === 'draw') return 'draw';
+  if (winner === 'host' || winner === 'client') {
+    return winner === multiplayerRole ? 'win' : 'loss';
+  }
+  // Team result (grifball).
+  if (!localTeam) return 'draw';
+  return winner === localTeam ? 'win' : 'loss';
+}
 
 type SinglePlayerMode = 'sandbox' | 'tournament' | 'ai-editor';
 
@@ -112,6 +129,10 @@ export function useAppStatsUpdateHandler({
   const multiplayerMatchEndSentRef = useRef(false);
 
   return useCallback((stats: GameStats) => {
+    // Lifetime stat tracking observes every HUD frame (offline + online share
+    // this pipeline). It self-gates on replays/observer mode.
+    statTracker.observeFrame(stats);
+
     const tournamentStatsResult = resolveTournamentStatsResult({
       singlePlayerMode,
       tournamentState,
@@ -119,11 +140,13 @@ export function useAppStatsUpdateHandler({
       stats,
     });
     if (tournamentStatsResult.outcome === 'player_win') {
+      statTracker.endMatch('win');
       setMatchResult(tournamentStatsResult.matchResult);
       setIsPaused(true);
       return;
     }
     if (tournamentStatsResult.outcome === 'opponent_win') {
+      statTracker.endMatch('loss');
       handleCompleteTournamentMatch(false, tournamentStatsResult.playerScore, tournamentStatsResult.opponentScore);
       return;
     }
@@ -136,6 +159,9 @@ export function useAppStatsUpdateHandler({
       const matchEnd = resolveMultiplayerMatchEnd(stats, matchLobbyConfig);
       if (matchEnd && !multiplayerMatchEndSentRef.current) {
         multiplayerMatchEndSentRef.current = true;
+        statTracker.endMatch(
+          multiplayerWinnerToLocalOutcome(matchEnd.winner, multiplayerRole, stats.grifball?.localTeam)
+        );
         if (multiplayerSocket?.readyState === WebSocket.OPEN) {
           multiplayerSocket.send(JSON.stringify({
             type: 'sync',

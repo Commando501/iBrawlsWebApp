@@ -34,10 +34,12 @@ import { useMultiplayerSessionState } from './components/multiplayer/useMultipla
 import { useHudLayoutControls } from './components/hud/useHudLayoutControls';
 import { useCurrentGameStats } from './components/hud/useCurrentGameStats';
 import { useMatchLoadingGate } from './components/loading/useMatchLoadingGate';
+import { statTracker } from './stats/statTracker';
+import { useStatCloudSync } from './stats/useStatCloudSync';
 
 export { createHighFidelityObjectMesh } from './components/main-menu/MapPreview';
 
-const APP_VERSION = '0.650';
+const APP_VERSION = '0.650a';
 
 // Visual Keyboard + Mouse keybind editor component
 export default function App() {
@@ -186,6 +188,7 @@ export default function App() {
     selectParent: selectMainMenuParent,
     selectPlayChild: selectMainMenuPlayChild,
     selectCustomizationChild: selectMainMenuCustomizationChild,
+    selectSystemChild: selectMainMenuSystemChild,
   } = useMainMenuNav({ onNavChange: handleMainMenuNavChange });
   const activeMenuTab = mainMenuNav.playChild;
   const activeMenuContentParent = getMainMenuContentParent(mainMenuNav);
@@ -636,6 +639,28 @@ export default function App() {
     };
   }, [effectiveAdminSettings, matchLobbyConfig]);
 
+  // ── Lifetime stat tracking ────────────────────────────────────────────────
+  // Open/close the tracked match on play transitions. Replays and the AI
+  // editor never count; frames themselves are observed inside the stats
+  // update handler.
+  useStatCloudSync(account);
+  const statMatchGameMode = activeMatchSettings.gameMode === 'grifball' ? 'grifball' : 'sandbox';
+  const prevIsPlayingForStatsRef = useRef(false);
+  useEffect(() => {
+    const wasPlaying = prevIsPlayingForStatsRef.current;
+    prevIsPlayingForStatsRef.current = isPlaying;
+    if (isPlaying && !wasPlaying) {
+      if (selectedReplay || singlePlayerMode === 'ai-editor') return;
+      statTracker.beginMatch({
+        isMultiplayer,
+        gameMode: statMatchGameMode,
+        singlePlayerMode,
+      });
+    } else if (!isPlaying && wasPlaying) {
+      statTracker.endMatch('abandoned');
+    }
+  }, [isPlaying, selectedReplay, singlePlayerMode, isMultiplayer, statMatchGameMode]);
+
   return (
     <div className="relative w-full h-[100dvh] bg-[#050b1a] text-white overflow-hidden select-none font-sans flex flex-col">
       {/* BACKGROUND ARENA SIMULATION GRID */}
@@ -751,15 +776,19 @@ export default function App() {
           parent: mainMenuNav.parent,
           playChild: mainMenuNav.playChild,
           customizationChild: mainMenuNav.customizationChild,
+          systemChild: mainMenuNav.systemChild,
           isAdmin: account?.isAdmin ?? false,
           onSelectPlayChild: selectMainMenuPlayChild,
           onSelectCustomizationChild: selectMainMenuCustomizationChild,
+          onSelectSystemChild: selectMainMenuSystemChild,
           onOpenAdminDashboard: () => setShowAdminDashboard(true),
         }}
         primaryPanel={{
           parent: activeMenuContentParent,
           playChild: mainMenuNav.playChild,
           customizationChild: mainMenuNav.customizationChild,
+          systemChild: mainMenuNav.systemChild,
+          isSignedIn: account !== null,
           singlePlayerMode,
           setSinglePlayerMode,
           adminSettings,

@@ -12,7 +12,7 @@ import type {
 import type { SaveSystemStatus } from '../../settings/useSaveAccountSync';
 import type { CharacterLoadout } from '../VoxelModels';
 import type { CustomArmorCatalog } from '../customArmor';
-import type { CustomizationChild, MainMenuContentParent, MainMenuTab } from './useMainMenuNav';
+import type { CustomizationChild, MainMenuContentParent, MainMenuTab, SystemChild } from './useMainMenuNav';
 import { MultiplayerSetupPanel } from '../multiplayer/MultiplayerSetupPanel';
 import {
   TheaterLibraryPanel,
@@ -24,6 +24,7 @@ import { ManualControlsPanel } from './ManualControlsPanel';
 import { VisualGamepadMapper } from './VisualGamepadMapper';
 import { ArmoryPanel, type PreviewWeapon } from './ArmoryPanel';
 import { SaveCodesPanel } from './SaveCodesPanel';
+import { ServiceRecordPanel } from './ServiceRecordPanel';
 import { SinglePlayerSetupPanel } from './SinglePlayerSetupPanel';
 
 type SinglePlayerMode = 'sandbox' | 'tournament' | 'ai-editor';
@@ -33,6 +34,8 @@ interface MainMenuPrimaryPanelProps {
   parent: MainMenuContentParent;
   playChild: MainMenuTab;
   customizationChild: CustomizationChild;
+  systemChild: SystemChild;
+  isSignedIn: boolean;
   singlePlayerMode: SinglePlayerMode;
   setSinglePlayerMode: Dispatch<SetStateAction<SinglePlayerMode>>;
   adminSettings: UniversalSettings;
@@ -141,7 +144,7 @@ interface MainMenuPrimaryPanelProps {
 }
 
 export function MainMenuPrimaryPanel(props: MainMenuPrimaryPanelProps) {
-  const { parent, playChild, customizationChild } = props;
+  const { parent, playChild, customizationChild, systemChild } = props;
 
   return (
     <div className="flex flex-col h-full min-h-0 overflow-y-auto pr-0.5 flex-1 min-w-0">
@@ -273,14 +276,18 @@ export function MainMenuPrimaryPanel(props: MainMenuPrimaryPanelProps) {
       )}
 
       {parent === 'system' && (
-        <SaveCodesPanel
-          saveSystemStatus={props.saveSystemStatus}
-          saveCodeImportInput={props.saveCodeImportInput}
-          onExportSaveCode={props.onExportSaveCode}
-          onResetAllSettings={props.onResetAllSettings}
-          onSaveCodeImportInputChange={props.onSaveCodeImportInputChange}
-          onImportSaveCode={props.onImportSaveCode}
-        />
+        systemChild === 'service' ? (
+          <ServiceRecordPanel isSignedIn={props.isSignedIn} />
+        ) : (
+          <SaveCodesPanel
+            saveSystemStatus={props.saveSystemStatus}
+            saveCodeImportInput={props.saveCodeImportInput}
+            onExportSaveCode={props.onExportSaveCode}
+            onResetAllSettings={props.onResetAllSettings}
+            onSaveCodeImportInputChange={props.onSaveCodeImportInputChange}
+            onImportSaveCode={props.onImportSaveCode}
+          />
+        )
       )}
     </div>
   );

@@ -1,13 +1,15 @@
 import { Film, Map, Shield } from 'lucide-react';
-import type { CustomizationChild, MainMenuParent, MainMenuTab } from './useMainMenuNav';
+import type { CustomizationChild, MainMenuParent, MainMenuTab, SystemChild } from './useMainMenuNav';
 
 interface MainMenuChildNavProps {
   parent: MainMenuParent;
   playChild: MainMenuTab;
   customizationChild: CustomizationChild;
+  systemChild: SystemChild;
   isAdmin: boolean;
   onSelectPlayChild: (child: MainMenuTab) => void;
   onSelectCustomizationChild: (child: CustomizationChild) => void;
+  onSelectSystemChild: (child: SystemChild) => void;
   onOpenAdminDashboard: () => void;
 }
 
@@ -23,6 +25,11 @@ const CUSTOMIZATION_CHILDREN: { id: CustomizationChild; label: string }[] = [
   { id: 'gamepad', label: 'Gamepad' },
 ];
 
+const SYSTEM_CHILDREN: { id: SystemChild; label: string }[] = [
+  { id: 'saves', label: 'Save Codes' },
+  { id: 'service', label: 'Service Record' },
+];
+
 const childButtonClass = (isActive: boolean) =>
   `px-5 py-2 rounded-full text-xs font-bold font-display uppercase tracking-wider transition-all duration-200 cursor-pointer ${
     isActive
@@ -36,9 +43,11 @@ export function MainMenuChildNav({
   parent,
   playChild,
   customizationChild,
+  systemChild,
   isAdmin,
   onSelectPlayChild,
   onSelectCustomizationChild,
+  onSelectSystemChild,
   onOpenAdminDashboard,
 }: MainMenuChildNavProps) {
   return (
@@ -99,9 +108,16 @@ export function MainMenuChildNav({
 
       {parent === 'system' && (
         <>
-          <button type="button" className={childButtonClass(true)}>
-            Save Codes
-          </button>
+          {SYSTEM_CHILDREN.map((child) => (
+            <button
+              key={child.id}
+              type="button"
+              onClick={() => onSelectSystemChild(child.id)}
+              className={childButtonClass(systemChild === child.id)}
+            >
+              {child.label}
+            </button>
+          ))}
           {isAdmin && (
             <button
               type="button"

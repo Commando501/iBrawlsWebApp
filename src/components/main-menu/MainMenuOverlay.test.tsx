@@ -63,9 +63,11 @@ test('MainMenuChildNav does not render the removed customization identity tab', 
     parent: 'customization',
     playChild: 'single',
     customizationChild: 'armory',
+    systemChild: 'saves',
     isAdmin: false,
     onSelectPlayChild: () => {},
     onSelectCustomizationChild: () => {},
+    onSelectSystemChild: () => {},
     onOpenAdminDashboard: () => {},
   });
 

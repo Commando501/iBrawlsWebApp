@@ -9,6 +9,7 @@ import {
   normalizeRegisteredDisplayName,
   normalizeRegisteredDisplayNameKey,
 } from "./displayNames";
+import { handleStatsRequest } from "./stats";
 
 export interface AccountsEnv {
   DB: D1Database;
@@ -663,6 +664,9 @@ export async function handleAccountRequest(
 
   const m = request.method;
   try {
+    // Lifetime player stats (worker/src/stats.ts) — /api/account/stats*.
+    const statsResponse = await handleStatsRequest(request, env, cors);
+    if (statsResponse) return statsResponse;
     if (path === "/api/account/register" && m === "POST") return await handleRegister(request, env, cors);
     if (path === "/api/account/login" && m === "POST") return await handleLogin(request, env, cors);
     if (path === "/api/account/logout" && m === "POST") return await handleLogout(request, env, cors);
