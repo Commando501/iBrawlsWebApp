@@ -15,11 +15,13 @@ import {
   createCustomArmorThumbnail,
   customArmorPieceToVoxels,
   dedupeCustomArmorVoxels,
+  duplicateCustomArmorPiece,
   fitCustomArmorToBounds,
   getCustomArmorPieceModelSystem,
   getCustomArmorSlotSpec,
   getCustomArmorSlotLabel,
   removeFloatingVoxels,
+  restoreCustomArmorHistoryEntry,
   seedCornerAnchor,
   validateCustomArmorPiece,
   voxelDataToCustomArmorVoxels,
@@ -654,6 +656,37 @@ export function ArmorModelEditor({
     setStatus(`${snapshot.name} saved and equipped.`);
   };
 
+  const saveCopy = () => {
+    const copy = duplicateCustomArmorPiece(draft, `${draft.name} Copy`);
+    const result = validateCustomArmorPiece(copy);
+    if (!result.valid) {
+      setStatus('Resolve validation errors before saving a copy.');
+      return;
+    }
+    const snapshot = createCustomArmorSnapshot(copy);
+    onCatalogChange((current) => ({ version: 1, pieces: [...current.pieces, copy] }));
+    onLoadoutChange({
+      modelSystem,
+      modelType: modelSystem === 'v2' ? modelType : undefined,
+      customArmor: {
+        ...(playerLoadout.customArmor ?? {}),
+        [slot]: snapshot,
+      },
+    });
+    setDraft(snapshot);
+    setStatus(`${copy.name} saved as a new variant.`);
+  };
+
+  const restoreHistory = (piece: CustomArmorPiece, historyIndex: number) => {
+    const restored = restoreCustomArmorHistoryEntry(piece, historyIndex);
+    if (!restored) {
+      setStatus('History entry is unavailable.');
+      return;
+    }
+    replaceDraft(restored);
+    setStatus(`${restored.name} restored from history.`);
+  };
+
   const deletePiece = (piece: CustomArmorPiece) => {
     if (!confirm(`Delete "${piece.name}"?`)) return;
     onCatalogChange((current) => ({
@@ -1137,6 +1170,9 @@ export function ArmorModelEditor({
         <button type="button" onClick={savePiece} className="px-3 h-9 rounded border border-purple-400/50 bg-purple-500/20 text-purple-100 text-[10px] font-black uppercase tracking-widest">
           Save & Equip
         </button>
+        <button type="button" onClick={saveCopy} className="px-3 h-9 rounded border border-cyan-400/40 bg-cyan-500/15 text-cyan-100 text-[10px] font-black uppercase tracking-widest">
+          Save Copy
+        </button>
         <button type="button" onClick={onClose} className="px-3 h-9 rounded border border-white/10 bg-black/30 text-white/60 text-[10px] font-black uppercase tracking-widest">
           Close
         </button>
@@ -1334,6 +1370,9 @@ export function ArmorModelEditor({
                   <span className="w-8 shrink-0 rounded bg-purple-500/25 border border-purple-300/25 text-purple-100 text-[9px] font-black text-center py-1">{piece.thumbnail}</span>
                   <button type="button" onClick={() => equipPiece(piece)} className="min-w-0 flex-1 text-left text-[10px] text-white/70 truncate">{piece.name}</button>
                   <button type="button" onClick={() => replaceDraft(createCustomArmorSnapshot(piece))} className="text-[9px] text-cyan-300">Edit</button>
+                  {piece.history && piece.history.length > 0 && (
+                    <button type="button" onClick={() => restoreHistory(piece, 0)} className="editor-chip">Restore Previous</button>
+                  )}
                   <button type="button" onClick={() => deletePiece(piece)} className="text-[9px] text-red-300">Del</button>
                 </div>
               ))}

@@ -349,6 +349,39 @@ export function createCustomArmorSnapshot(piece: CustomArmorPiece | CustomArmorP
   };
 }
 
+export function duplicateCustomArmorPiece(
+  piece: CustomArmorPiece | CustomArmorPieceSnapshot,
+  name: string
+): CustomArmorPiece {
+  const modelSystem = getCustomArmorPieceModelSystem(piece);
+  const now = Date.now();
+  return {
+    ...createCustomArmorSnapshot(piece),
+    id: createCustomArmorId(piece.slot, modelSystem),
+    name: sanitizePieceName(name, `${piece.name} Copy`),
+    modelSystem,
+    modelType: modelSystem === 'v2' ? resolveCharacterModelType(piece.modelType, 'v2') : undefined,
+    voxels: piece.voxels.map(cloneVoxel),
+    thumbnail: createCustomArmorThumbnail(piece.slot, piece.voxels.length, modelSystem),
+    createdAt: now,
+    updatedAt: now,
+    history: [],
+  };
+}
+
+export function restoreCustomArmorHistoryEntry(
+  piece: CustomArmorPiece,
+  historyIndex: number
+): CustomArmorPieceSnapshot | undefined {
+  const entry = piece.history?.[historyIndex];
+  if (!entry) return undefined;
+  return {
+    ...createCustomArmorSnapshot(entry),
+    id: piece.id,
+    updatedAt: Date.now(),
+  };
+}
+
 export function sanitizePieceName(value: unknown, fallback = 'Custom Armor'): string {
   if (typeof value !== 'string') return fallback;
   const normalized = value.trim().replace(/\s+/g, ' ').slice(0, 32);

@@ -6,8 +6,10 @@ import { getVoxelSegmentDataV2 } from './VoxelModelsV2';
 import {
   createCustomArmorPiece,
   createCustomArmorSnapshot,
+  duplicateCustomArmorPiece,
   normalizeCustomArmorCatalog,
   removeFloatingVoxels,
+  restoreCustomArmorHistoryEntry,
   sanitizeCharacterLoadoutForNetwork,
   seedCornerAnchor,
   validateCustomArmorPiece,
@@ -348,4 +350,40 @@ test('shared preview disposal releases nested mesh resources', async () => {
   assert.equal(geometryDisposed, 1);
   assert.equal(firstMaterialDisposed, 1);
   assert.equal(secondMaterialDisposed, 1);
+});
+
+test('duplicateCustomArmorPiece creates a new variant without copying history', () => {
+  const piece = createCustomArmorPiece('helmet', 'Original', [
+    { x: 0, y: 0, z: 0, role: 'primary' },
+    { x: 1, y: 0, z: 0, role: 'secondary' },
+    { x: 0, y: 1, z: 0, role: 'visor' },
+  ], undefined, undefined, 'v3');
+  piece.history = [createCustomArmorSnapshot(piece)];
+
+  const copy = duplicateCustomArmorPiece(piece, 'Original Copy');
+
+  assert.notEqual(copy.id, piece.id);
+  assert.equal(copy.name, 'Original Copy');
+  assert.equal(copy.modelSystem, 'v3');
+  assert.equal(copy.history?.length ?? 0, 0);
+  assert.deepEqual(copy.voxels, piece.voxels);
+});
+
+test('restoreCustomArmorHistoryEntry returns a current snapshot from piece history', () => {
+  const piece = createCustomArmorPiece('helmet', 'Current', [
+    { x: 0, y: 0, z: 0, role: 'primary' },
+    { x: 1, y: 0, z: 0, role: 'secondary' },
+    { x: 0, y: 1, z: 0, role: 'visor' },
+  ], undefined, undefined, 'v3');
+  piece.history = [{
+    ...createCustomArmorSnapshot(piece),
+    name: 'Previous',
+    voxels: [{ x: 0, y: 0, z: 0, role: 'visor' }],
+  }];
+
+  const restored = restoreCustomArmorHistoryEntry(piece, 0);
+
+  assert.equal(restored?.id, piece.id);
+  assert.equal(restored?.name, 'Previous');
+  assert.deepEqual(restored?.voxels, [{ x: 0, y: 0, z: 0, role: 'visor' }]);
 });
