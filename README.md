@@ -266,6 +266,16 @@ Phase 8 adds adaptive V3 render quality using the canonical `mobileLow`, `mobile
 
 V3 gameplay selection is temporarily locked while the advanced models are still under development. New offline and hosted matches default to Version 2 Rigged, the Model Set controls expose Version 1 Classic and Version 2 Rigged only, and incoming or saved V3 gameplay policies are normalized back to Version 2.
 
+Phase 10 starts the production asset quality pass. Built-in V3 character parts and V3 hammer/sword/pistol visuals now run through deterministic production-quality audits for material diversity, emissive/detail usage, silhouette variation, and budget compliance before they are treated as production candidates.
+
+Phase 11 upgrades V3 animation fidelity with shared procedural pose profiles, deterministic additive motion, first-person weapon sway/recoil, replay-aware active weapon body animation, and animation-editor exports that identify their V3 procedural profile source. These changes remain visual-only: V1/V2 animation, hitboxes, weapon timings, network authority, replay timing, and gameplay simulation are unchanged.
+
+Phase 12 hardens the developer-only offline V3 asset pipeline. Local OBJ/MTL inspection can now emit sanitized review packages with slot candidates, paint-role hints, coarse voxel previews, fit/budget validation, and source-safe metadata. These packages are for local art-direction review only: private reference files, texture paths, direct conversions, server uploads, and gameplay/runtime mesh import remain excluded.
+
+Phase 12B expands V3 creator depth. V3 armor and V3 weapon visuals can share per-role paint overrides, the armory exposes V3 material-role controls, and the armor editor surfaces role coverage, budget comparison, built-in deltas, save-copy, and history restore workflows. These tools stay local and visual-only: V1/V2 customization remains available, gameplay simulation is unchanged, and mesh upload/import remains excluded from player-facing UI.
+
+Phase 13 finishes the production QA, optimization, and parity pass for the current V3 roadmap. The V3 performance smoke scene now gates eight V3 combatants across mobile-low, mobile, desktop, and ultra tiers, browser smoke metadata covers desktop and mobile surfaces, and parity tests protect V1/V2/V3 visual policy behavior across live combatants, loading previews, and replays. V3 remains visual-only: gameplay collision, timing, scoring, AI, network authority, and V1/V2 legacy model choices are unchanged.
+
 ## Standalone 3D Map Maker
 
 iBrawls features a beautiful, feature-rich, and completely standalone 3D Map Maker application that runs 100% locally and offline in the user's browser. Since it is entirely decoupled from the main web application, players simply open the local HTML file to design custom battle arenas using standard assets!
@@ -348,16 +358,16 @@ iBrawls features a beautiful and comprehensive character customization suite, av
   - **Gravity Axe ("Diminisher of Hope")**: Double-sided axe configuration with molten glowing orange-red energy blades extending from a dark metal center.
   - **Gravity Mace ("Chainbreaker")**: Spiked mace head with glowing red-hot spikes radiating outwards and leather-wrapped handle.
   - **Fist of Rukt**: Massive gray stone mallet-head, gold/brass gears on the sides, and a brown wooden handle.
-- **Premium Energy Sword Model Swapping**: Swap between 10 distinct, beautifully recreated Halo-inspired energy sword variants in high-fidelity voxels, complete with programmatic lightning crackles:
-  - **CE Classic**: Retro chunkier profile with solid neon cyan glow and a glowing white energy core.
-  - **Halo 2**: Sleek, curved prongs, elegant purple/grey hilt, and pink/magenta energy crackles running along the light blue blade.
-  - **Halo 3**: Pristine white-blue blades with silver-accented dark hilt and subtle violet wisps.
-  - **Reach**: Sharp curved blades, dark hilt, with an amber/orange indicator light accent.
-  - **CEA**: High-contrast cyan and white electric crackles with a shiny steel hilt.
-  - **Halo 4**: Aggressive blocky triangular guard base with high-frequency electric blue energy.
-  - **H2A Blue**: Pristine sapphire and soft sky blue plasma curves with gray-blue alloy hilt.
-  - **H2A Pink**: Shadowy obsidian guard with glowing magenta, pink, and red-purple crackling energy (infected style).
-  - **Halo 5**: Sleek carbon hilt with premium gold/bronze emitter trims and advanced clean blue energy.
+- **Premium Energy Sword Model Swapping**: Swap between 10 distinct original energy sword variants in high-fidelity voxels, complete with programmatic lightning crackles:
+  - **Cyan Classic**: Retro chunkier profile with solid neon cyan glow and a glowing white energy core.
+  - **Twin Arc**: Sleek, curved prongs, elegant purple/grey hilt, and pink/magenta energy crackles running along the light blue blade.
+  - **Prism Edge**: Pristine white-blue blades with silver-accented dark hilt and subtle violet wisps.
+  - **Emberline**: Sharp curved blades, dark hilt, with an amber/orange indicator light accent.
+  - **Aegis Arc**: High-contrast cyan and white electric crackles with a shiny steel hilt.
+  - **Vanguard IV**: Aggressive blocky triangular guard base with high-frequency electric blue energy.
+  - **Cerulean Rift**: Pristine sapphire and soft sky blue plasma curves with gray-blue alloy hilt.
+  - **Crimson Rift**: Shadowy obsidian guard with glowing magenta, pink, and red-purple crackling energy.
+  - **Aurum V**: Sleek carbon hilt with premium gold/bronze emitter trims and advanced clean blue energy.
   - **Infinite**: Shiny chrome-silver hilt and classical curved blades with complex sky blue, deep blue, and white crackling patterns.
 - **Immersive 3D Paint Job Studio**: An extremely rich, fully integrated 3D **Paint Job** studio inside the character customization tab, built using Three.js and React to offer precise per-voxel coloring:
 

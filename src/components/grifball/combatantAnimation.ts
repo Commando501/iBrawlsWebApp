@@ -421,6 +421,7 @@ export function animateSpartanCombatantModel({
   v3QualityTier,
   isLocalV3Animation = false,
   animationClockMs,
+  lookPitch,
 }: {
   refs: GrifballThreeRefs;
   mesh: THREE.Group | null;
@@ -442,6 +443,7 @@ export function animateSpartanCombatantModel({
   v3QualityTier?: V3QualityTier;
   isLocalV3Animation?: boolean;
   animationClockMs?: number;
+  lookPitch?: number;
 }): boolean {
   if (!mesh) return false;
 
@@ -465,6 +467,7 @@ export function animateSpartanCombatantModel({
       v3QualityTier,
       isLocalV3Animation,
       animationClockMs,
+      lookPitch,
     });
   }
 

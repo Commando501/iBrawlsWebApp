@@ -7,6 +7,7 @@ import * as THREE from 'three';
 import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { buildVoxelSpartanModelV2 } from './VoxelModelsV2';
 import { buildV3SpartanModel } from './v3/VoxelModelsV3';
+import type { V3PaintRole } from './v3/v3ModelTypes';
 import type { V3RenderOptions } from './v3/v3QualityTiers';
 import type { CustomArmorPieceSnapshot, CustomArmorSlot } from './customArmor';
 import type { ModelSystem } from '../model/modelSystem';
@@ -39,6 +40,8 @@ export type ArmPreset = 'mark-vi' | 'odst' | 'recon' | 'eod' | 'hayabusa';
 export type LegPreset = 'mark-vi' | 'jump-jet' | 'odst' | 'eod' | 'hayabusa';
 export type HammerPreset = 'default' | 'akelas' | 'akelus' | 'paegaas' | 'sepulotez' | 'halbashi' | 'eektah-fel' | 'gravity-axe' | 'gravity-mace' | 'fist-of-rukt';
 export type SwordPreset = 'default' | 'halo-ce' | 'halo-2' | 'halo-3' | 'reach' | 'anniversary' | 'halo-4' | 'h2a-blue' | 'h2a-pink' | 'halo-5' | 'infinite';
+export type V3RolePaintColors = Partial<Record<V3PaintRole, string>>;
+export type V3RolePaintEmissive = Partial<Record<V3PaintRole, boolean>>;
 
 export interface ArmorPaintJob {
   helmet?: { [key: string]: string };
@@ -47,6 +50,8 @@ export interface ArmorPaintJob {
   rightArm?: { [key: string]: string };
   leftLeg?: { [key: string]: string };
   rightLeg?: { [key: string]: string };
+  v3RoleColors?: V3RolePaintColors;
+  v3RoleEmissive?: V3RolePaintEmissive;
   emissive?: {
     helmet?: { [key: string]: boolean };
     torso?: { [key: string]: boolean };
@@ -2414,7 +2419,7 @@ export function buildKatarSwordModel(customHue?: number, preset: SwordPreset = '
       }
     }
 
-    // Reach indicator light / Halo 5 gold trim / Halo CE indicator
+    // Variant indicator lights and trim details.
     if (preset === 'reach') {
       data.push({ x: 0, y: 6, z: 1, color: '#f59e0b', emissive: true });
     } else if (preset === 'halo-5') {
@@ -2422,7 +2427,7 @@ export function buildKatarSwordModel(customHue?: number, preset: SwordPreset = '
       data.push({ x: 1, y: 6, z: 1, color: '#fbbf24' });
     }
 
-    // Halo 4 aggressive forward teeth
+    // Angular aggressive forward teeth.
     if (preset === 'halo-4') {
       data.push({ x: -4, y: 6, z: 0, color: hiltColor2 });
       data.push({ x: -4, y: 7, z: 0, color: hiltColor1 });

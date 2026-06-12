@@ -38,6 +38,12 @@ export interface AnimationEditorRigExport {
   socketLocks?: AnimationEditorSocketLock[];
 }
 
+export interface AnimationEditorProceduralProfile {
+  modelSystem: 'v3';
+  profileVersion: number;
+  source: 'v3AnimationFidelity';
+}
+
 export interface AnimationEditorExportInput {
   weapon: string;
   view: 'firstPerson' | 'thirdPerson';
@@ -47,6 +53,7 @@ export interface AnimationEditorExportInput {
   keyframes: AnimationKeyframe[];
   frames: GeneratedAnimationFrame[];
   rig?: AnimationEditorRigExport;
+  proceduralProfile?: AnimationEditorProceduralProfile;
 }
 
 export interface SetKeyframePoseInput {
@@ -299,6 +306,7 @@ export const buildAnimationEditorExportPayload = (
   weapon: input.weapon,
   view: input.view,
   track: input.track,
+  proceduralProfile: input.proceduralProfile ? { ...input.proceduralProfile } : undefined,
   frameCount: input.frameCount,
   interpolation: input.interpolation,
   keyframes: roundKeyframes(normalizeKeyframes(input.keyframes, input.frameCount), precision),

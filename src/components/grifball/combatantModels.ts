@@ -70,21 +70,21 @@ const buildCombatantHammer = (
   loadout?: CharacterLoadout,
   v3Options: V3RenderOptions = {}
 ): THREE.Group =>
-  isV3Loadout(loadout) ? buildV3HammerModel(hue, v3Options) : buildGravityHammerModel(hue, loadout?.hammerPreset);
+  isV3Loadout(loadout) ? buildV3HammerModel(hue, { ...v3Options, loadout }) : buildGravityHammerModel(hue, loadout?.hammerPreset);
 
 const buildCombatantSword = (
   hue: number | undefined,
   loadout?: CharacterLoadout,
   v3Options: V3RenderOptions = {}
 ): THREE.Group =>
-  isV3Loadout(loadout) ? buildV3SwordModel(hue, v3Options) : buildKatarSwordModel(hue, loadout?.swordPreset);
+  isV3Loadout(loadout) ? buildV3SwordModel(hue, { ...v3Options, loadout }) : buildKatarSwordModel(hue, loadout?.swordPreset);
 
 const buildCombatantPistol = (
   hue: number | undefined,
   loadout?: CharacterLoadout,
   v3Options: V3RenderOptions = {}
 ): THREE.Group =>
-  isV3Loadout(loadout) ? buildV3PistolModel(hue, v3Options) : buildPistolModel(hue);
+  isV3Loadout(loadout) ? buildV3PistolModel(hue, { ...v3Options, loadout }) : buildPistolModel(hue);
 
 export const getRandomLoadout = (): CharacterLoadout => {
   const helmets = AVAILABLE_PRESETS.helmet;

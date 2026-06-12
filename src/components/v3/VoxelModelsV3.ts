@@ -21,6 +21,10 @@ import {
 import { selectV3LodLevel } from './v3Lod';
 import type { V3CharacterSlotId, V3WeaponId } from './v3ModelTypes';
 import {
+  resolveV3RoleColor,
+  resolveV3RoleEmissive,
+} from './v3PaintPalette';
+import {
   normalizeV3QualityTier,
   type V3RenderOptions,
 } from './v3QualityTiers';
@@ -33,6 +37,7 @@ export interface V3SpartanBuildOptions extends V3RenderOptions {
 
 export interface V3WeaponBuildOptions extends V3RenderOptions {
   customHue?: number;
+  loadout?: CharacterLoadout;
 }
 
 type V3PartSpec = {
@@ -75,23 +80,28 @@ const createColors = (isEnemy = false, customHue?: number): SpartanColors => ({
   highlight: customHue !== undefined ? `hsl(${customHue}, 72%, 68%)` : '#93c5fd',
 });
 
-const roleColor = (role: string, colors: SpartanColors): string => {
-  if (role === 'secondary') return colors.secondary;
-  if (role === 'accent') return colors.accent;
-  if (role === 'undersuit') return colors.dark;
-  if (role === 'visor') return colors.visor;
-  if (role === 'emissive') return colors.highlight;
-  if (role === 'fixed') return '#27272a';
-  return colors.primary;
-};
+const roleColor = (
+  role: string,
+  colors: SpartanColors,
+  paintJob?: CharacterLoadout['paintJob']
+): string => resolveV3RoleColor(role, colors, paintJob);
 
-const createCustomArmorColors = (colors: SpartanColors): CustomArmorColors => ({
-  primary: colors.primary,
-  secondary: colors.secondary,
-  accent: colors.accent,
-  visor: colors.visor,
-  dark: colors.dark,
-  highlight: colors.highlight,
+const roleEmissive = (
+  role: string,
+  paintJob: CharacterLoadout['paintJob'] | undefined,
+  fallback: boolean
+): boolean => resolveV3RoleEmissive(role, paintJob, fallback);
+
+const createCustomArmorColors = (
+  colors: SpartanColors,
+  paintJob?: CharacterLoadout['paintJob']
+): CustomArmorColors => ({
+  primary: roleColor('primary', colors, paintJob),
+  secondary: roleColor('secondary', colors, paintJob),
+  accent: roleColor('accent', colors, paintJob),
+  visor: roleColor('visor', colors, paintJob),
+  dark: roleColor('undersuit', colors, paintJob),
+  highlight: roleColor('emissive', colors, paintJob),
 });
 
 const addBox = (
@@ -133,49 +143,113 @@ const addTranslatedBox = (
   }
 };
 
+const addPanelStripe = (
+  voxels: VoxelData[],
+  axis: 'x' | 'y',
+  fixedZ: number,
+  color: string,
+  emissive = false
+) => {
+  const maxX = Math.max(...voxels.map((voxel) => voxel.x));
+  const maxY = Math.max(...voxels.map((voxel) => voxel.y));
+  const centerX = Math.floor(maxX / 2);
+  const centerY = Math.floor(maxY / 2);
+
+  if (axis === 'x') {
+    for (let x = 1; x < maxX; x++) {
+      voxels.push({ x, y: centerY, z: fixedZ, color, emissive });
+    }
+    return;
+  }
+
+  for (let y = 1; y < maxY; y++) {
+    voxels.push({ x: centerX, y, z: fixedZ, color, emissive });
+  }
+};
+
+const addCornerArmorTabs = (
+  voxels: VoxelData[],
+  dimensions: [number, number, number],
+  color: string
+) => {
+  const [width, height, depth] = dimensions;
+  const tabY = Math.max(1, height - 2);
+  const tabZ = Math.max(0, depth - 1);
+  voxels.push({ x: 0, y: tabY, z: tabZ, color });
+  voxels.push({ x: Math.max(0, width - 1), y: tabY, z: tabZ, color });
+};
+
 const createPartVoxels = (
   part: V3CharacterPartManifest,
   dimensions: [number, number, number],
-  colors: SpartanColors
+  colors: SpartanColors,
+  paintJob?: CharacterLoadout['paintJob']
 ): VoxelData[] => {
   const voxels: VoxelData[] = [];
-  addBox(voxels, dimensions, roleColor(part.paintRoles[0] ?? 'primary', colors));
+  addBox(voxels, dimensions, roleColor(part.paintRoles[0] ?? 'primary', colors, paintJob));
 
   const [width, height, depth] = dimensions;
+  const frontZ = Math.max(0, depth - 1);
+  addPanelStripe(voxels, 'x', frontZ, roleColor('secondary', colors, paintJob));
+  addPanelStripe(
+    voxels,
+    'y',
+    frontZ,
+    roleColor('accent', colors, paintJob),
+    roleEmissive('accent', paintJob, part.paintRoles.includes('emissive'))
+  );
+  addCornerArmorTabs(voxels, dimensions, roleColor('fixed', colors, paintJob));
+
   if (part.paintRoles.includes('secondary')) {
     for (let x = 1; x < width - 1; x++) {
-      voxels.push({ x, y: Math.max(1, height - 2), z: Math.max(0, depth - 1), color: colors.secondary });
+      voxels.push({ x, y: Math.max(1, height - 2), z: frontZ, color: roleColor('secondary', colors, paintJob) });
     }
   }
   if (part.paintRoles.includes('accent')) {
     for (let y = 1; y < height - 1; y++) {
-      voxels.push({ x: Math.max(0, width - 1), y, z: Math.max(0, depth - 1), color: colors.accent });
+      voxels.push({ x: Math.max(0, width - 1), y, z: frontZ, color: roleColor('accent', colors, paintJob) });
     }
   }
   if (part.paintRoles.includes('visor')) {
     for (let x = 2; x < width - 2; x++) {
-      voxels.push({ x, y: Math.max(2, Math.floor(height * 0.48)), z: Math.max(0, depth - 1), color: colors.visor, emissive: true });
+      voxels.push({
+        x,
+        y: Math.max(2, Math.floor(height * 0.48)),
+        z: frontZ,
+        color: roleColor('visor', colors, paintJob),
+        emissive: roleEmissive('visor', paintJob, true),
+      });
+    }
+  }
+  if (part.paintRoles.includes('decal')) {
+    const decalColor = roleColor('decal', colors, paintJob);
+    for (let y = 1; y < height - 1; y += 2) {
+      voxels.push({ x: Math.floor(width / 2), y, z: frontZ, color: decalColor });
     }
   }
   if (part.paintRoles.includes('emissive')) {
     voxels.push({
       x: Math.floor(width / 2),
       y: Math.max(1, Math.floor(height / 2)),
-      z: Math.max(0, depth - 1),
-      color: colors.highlight,
-      emissive: true,
+      z: frontZ,
+      color: roleColor('emissive', colors, paintJob),
+      emissive: roleEmissive('emissive', paintJob, true),
     });
   }
 
   return voxels;
 };
 
-export function getV3BuiltinPartVoxels(slot: V3CharacterSlotId, customHue?: number): VoxelData[] {
+export function getV3BuiltinPartVoxels(
+  slot: V3CharacterSlotId,
+  customHue?: number,
+  paintJob?: CharacterLoadout['paintJob']
+): VoxelData[] {
   const part = BUILT_IN_V3_CHARACTER_PARTS.find((candidate) => candidate.slot === slot);
   if (!part) {
     throw new Error(`Missing built-in V3 part for ${slot}`);
   }
-  return createPartVoxels(part, V3_PART_SPECS[slot].dimensions, createColors(false, customHue));
+  return createPartVoxels(part, V3_PART_SPECS[slot].dimensions, createColors(false, customHue), paintJob);
 }
 
 function getValidV3CustomPiece(
@@ -207,7 +281,8 @@ export function buildV3SpartanModel(options: V3SpartanBuildOptions = {}): THREE.
   const v3Distance = Number.isFinite(options.v3Distance) ? Math.max(0, options.v3Distance ?? 0) : 0;
   const loadout = getDefaultV3CharacterLoadout();
   const colors = createColors(options.isEnemy, options.customHue);
-  const customArmorColors = createCustomArmorColors(colors);
+  const paintJob = options.loadout?.paintJob;
+  const customArmorColors = createCustomArmorColors(colors, paintJob);
   const segmentGroups = createSegmentGroups();
   const partGroups: Partial<Record<V3CharacterSlotId, THREE.Group>> = {};
 
@@ -221,7 +296,7 @@ export function buildV3SpartanModel(options: V3SpartanBuildOptions = {}): THREE.
     const customPiece = getValidV3CustomPiece(options.loadout, part.slot);
     const voxels = customPiece
       ? customArmorPieceToVoxels(customPiece, customArmorColors)
-      : createPartVoxels(part, spec.dimensions, colors);
+      : createPartVoxels(part, spec.dimensions, colors, paintJob);
     const group = createVoxelGroup(voxels, V3_VOXEL_SCALE);
     const selectedLod = selectV3LodLevel({
       lods: part.lods,
@@ -270,38 +345,59 @@ export function buildV3SpartanModel(options: V3SpartanBuildOptions = {}): THREE.
   return root;
 }
 
-const createWeaponVoxels = (weapon: V3WeaponId, colors: SpartanColors): VoxelData[] => {
+export function getV3BuiltinWeaponVoxels(
+  weapon: V3WeaponId,
+  customHue?: number,
+  paintJob?: CharacterLoadout['paintJob']
+): VoxelData[] {
+  const colors = createColors(false, customHue);
   const voxels: VoxelData[] = [];
   if (weapon === 'hammer') {
-    addTranslatedBox(voxels, [3, 18, 3], [0, 0, 0], colors.dark);
-    addTranslatedBox(voxels, [13, 5, 6], [-5, 15, -1], colors.primary);
-    voxels.push({ x: 0, y: 18, z: 3, color: colors.highlight, emissive: true });
-    return voxels;
-  }
-  if (weapon === 'sword') {
-    addBox(voxels, [3, 7, 3], colors.dark);
-    for (let y = 6; y < 29; y++) {
-      voxels.push({ x: 1, y, z: 1, color: colors.highlight, emissive: true });
-      if (y % 2 === 0) {
-        voxels.push({ x: 0, y, z: 1, color: colors.accent, emissive: true });
-        voxels.push({ x: 2, y, z: 1, color: colors.accent, emissive: true });
-      }
+    addTranslatedBox(voxels, [3, 22, 3], [0, 0, 0], roleColor('undersuit', colors, paintJob));
+    addTranslatedBox(voxels, [7, 3, 5], [-2, -2, -1], roleColor('secondary', colors, paintJob));
+    addTranslatedBox(voxels, [5, 2, 5], [-1, 5, -1], roleColor('accent', colors, paintJob));
+    addTranslatedBox(voxels, [5, 2, 5], [-1, 11, -1], roleColor('accent', colors, paintJob));
+    addTranslatedBox(voxels, [11, 5, 7], [-4, 18, -2], roleColor('primary', colors, paintJob));
+    addTranslatedBox(voxels, [3, 7, 5], [-5, 17, -1], roleColor('fixed', colors, paintJob));
+    addTranslatedBox(voxels, [3, 7, 5], [5, 17, -1], roleColor('fixed', colors, paintJob));
+    for (let x = -3; x <= 5; x += 2) {
+      voxels.push({ x, y: 22, z: 5, color: roleColor('emissive', colors, paintJob), emissive: roleEmissive('emissive', paintJob, true) });
+      voxels.push({ x, y: 18, z: 5, color: roleColor('emissive', colors, paintJob), emissive: roleEmissive('emissive', paintJob, true) });
     }
     return voxels;
   }
+  if (weapon === 'sword') {
+    addBox(voxels, [3, 7, 3], roleColor('undersuit', colors, paintJob));
+    addTranslatedBox(voxels, [8, 2, 3], [-3, 5, 0], roleColor('primary', colors, paintJob));
+    for (let y = 7; y < 35; y++) {
+      voxels.push({ x: 1, y, z: 1, color: roleColor('emissive', colors, paintJob), emissive: roleEmissive('emissive', paintJob, true) });
+      if (y % 2 === 0) {
+        voxels.push({ x: 0, y, z: 1, color: roleColor('accent', colors, paintJob), emissive: roleEmissive('accent', paintJob, true) });
+        voxels.push({ x: 2, y, z: 1, color: roleColor('accent', colors, paintJob), emissive: roleEmissive('accent', paintJob, true) });
+      } else {
+        voxels.push({ x: -1, y, z: 1, color: roleColor('secondary', colors, paintJob) });
+        voxels.push({ x: 3, y, z: 1, color: roleColor('secondary', colors, paintJob) });
+      }
+    }
+    voxels.push({ x: 1, y: 35, z: 1, color: roleColor('emissive', colors, paintJob), emissive: roleEmissive('emissive', paintJob, true) });
+    return voxels;
+  }
 
-  addTranslatedBox(voxels, [4, 5, 3], [0, 0, 0], colors.dark);
-  addTranslatedBox(voxels, [11, 3, 3], [1, 4, 0], colors.primary);
-  voxels.push({ x: 10, y: 5, z: 1, color: colors.highlight, emissive: true });
+  addTranslatedBox(voxels, [4, 5, 3], [1, 0, 1], roleColor('undersuit', colors, paintJob));
+  addTranslatedBox(voxels, [8, 3, 3], [1, 4, 1], roleColor('primary', colors, paintJob));
+  addTranslatedBox(voxels, [3, 5, 3], [0, 1, 1], roleColor('secondary', colors, paintJob));
+  addTranslatedBox(voxels, [2, 2, 5], [7, 4, 0], roleColor('fixed', colors, paintJob));
+  addTranslatedBox(voxels, [2, 1, 3], [3, 7, 1], roleColor('accent', colors, paintJob));
+  voxels.push({ x: 8, y: 5, z: 2, color: roleColor('emissive', colors, paintJob), emissive: roleEmissive('emissive', paintJob, true) });
+  voxels.push({ x: 5, y: 6, z: 3, color: roleColor('emissive', colors, paintJob), emissive: roleEmissive('emissive', paintJob, true) });
   return voxels;
-};
+}
 
 export function buildV3WeaponModel(weapon: V3WeaponId, options: V3WeaponBuildOptions = {}): THREE.Group {
   const manifest = getDefaultV3WeaponManifest(weapon);
-  const colors = createColors(false, options.customHue);
   const v3QualityTier = normalizeV3QualityTier(options.v3QualityTier);
   const v3Distance = Number.isFinite(options.v3Distance) ? Math.max(0, options.v3Distance ?? 0) : 0;
-  const group = createVoxelGroup(createWeaponVoxels(weapon, colors), V3_WEAPON_SCALE);
+  const group = createVoxelGroup(getV3BuiltinWeaponVoxels(weapon, options.customHue, options.loadout?.paintJob), V3_WEAPON_SCALE);
   const selectedLod = selectV3LodLevel({
     lods: manifest.lods,
     qualityTier: v3QualityTier,
@@ -320,14 +416,14 @@ export function buildV3WeaponModel(weapon: V3WeaponId, options: V3WeaponBuildOpt
   return group;
 }
 
-export function buildV3HammerModel(customHue?: number, v3Options: V3RenderOptions = {}): THREE.Group {
+export function buildV3HammerModel(customHue?: number, v3Options: V3WeaponBuildOptions = {}): THREE.Group {
   return buildV3WeaponModel('hammer', { customHue, ...v3Options });
 }
 
-export function buildV3SwordModel(customHue?: number, v3Options: V3RenderOptions = {}): THREE.Group {
+export function buildV3SwordModel(customHue?: number, v3Options: V3WeaponBuildOptions = {}): THREE.Group {
   return buildV3WeaponModel('sword', { customHue, ...v3Options });
 }
 
-export function buildV3PistolModel(customHue?: number, v3Options: V3RenderOptions = {}): THREE.Group {
+export function buildV3PistolModel(customHue?: number, v3Options: V3WeaponBuildOptions = {}): THREE.Group {
   return buildV3WeaponModel('pistol', { customHue, ...v3Options });
 }

@@ -76,11 +76,56 @@ describe('parseV3ObjMetadata', () => {
   });
 });
 
+describe('parseV3ObjMetadata face extraction and material summaries', () => {
+  it('captures triangulated faces with object, group, material, and vertex positions', () => {
+    const parsed = parseV3ObjMetadata([
+      'o Helmet',
+      'g Visor',
+      'usemtl visor_gold',
+      'v 0 0 0',
+      'v 1 0 0',
+      'v 1 1 0',
+      'v 0 1 0',
+      'f 1 2 3 4',
+    ].join('\n'));
+
+    assert.equal(parsed.triangles.length, 2);
+    assert.deepEqual(parsed.triangles[0], {
+      objectName: 'Helmet',
+      groupNames: ['Visor'],
+      materialName: 'visor_gold',
+      a: [0, 0, 0],
+      b: [1, 0, 0],
+      c: [1, 1, 0],
+    });
+    assert.deepEqual(parsed.triangles[1].c, [0, 1, 0]);
+  });
+
+  it('parses sanitized MTL material color and emissive hints without texture paths', () => {
+    const parsed = parseV3ObjMetadata('mtllib private.mtl\nv 0 0 0', [
+      'newmtl armor_primary',
+      'Kd 0.25 0.5 0.75',
+      'Ke 0.1 0.2 0.3',
+      'map_Kd C:/private/source/armor.png',
+      'newmtl visor_gold',
+      'Kd 1.0 0.75 0.2',
+    ].join('\n'));
+
+    assert.deepEqual(parsed.materialSummaries, [
+      { name: 'armor_primary', diffuse: [0.25, 0.5, 0.75], emissive: [0.1, 0.2, 0.3], hasTextureReference: true },
+      { name: 'visor_gold', diffuse: [1, 0.75, 0.2], emissive: null, hasTextureReference: false },
+    ]);
+    assert.equal(JSON.stringify(parsed).includes('armor.png'), false);
+    assert.equal(JSON.stringify(parsed).includes('C:/private'), false);
+  });
+});
+
 describe('assertV3ReferenceAssetShape', () => {
   it('accepts metadata that meets the private reference inspection floor', () => {
     const metadata: V3ObjMetadata = {
       materialLibraries: ['reference.mtl'],
       materials: ['spartan_armor'],
+      materialSummaries: [],
       vertexCount: 18_001,
       faceCount: 20_001,
       triangleCountEstimate: 20_001,
@@ -94,6 +139,7 @@ describe('assertV3ReferenceAssetShape', () => {
         referencedVertexIndexes: [1],
         bounds: { min: [0, 0, 0], max: [1, 1, 1] },
       })),
+      triangles: [],
     };
 
     assert.doesNotThrow(() => assertV3ReferenceAssetShape(metadata));

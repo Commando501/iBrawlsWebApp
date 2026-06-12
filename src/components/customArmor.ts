@@ -12,6 +12,7 @@ import {
   getV3CharacterPartManifest,
 } from './v3/v3AssetManifest';
 import { getV3CharacterPartBounds } from './v3/v3PartBounds';
+import { sanitizeV3RolePaintPayload } from './v3/v3PaintPalette';
 import { resolveCharacterModelType } from '../characterModelTypes';
 import { isModelSystem } from '../model/modelSystem';
 import type { ModelSystem } from '../model/modelSystem';
@@ -345,6 +346,39 @@ export function createCustomArmorSnapshot(piece: CustomArmorPiece | CustomArmorP
     voxels: piece.voxels.map(cloneVoxel),
     thumbnail: piece.thumbnail,
     updatedAt: piece.updatedAt,
+  };
+}
+
+export function duplicateCustomArmorPiece(
+  piece: CustomArmorPiece | CustomArmorPieceSnapshot,
+  name: string
+): CustomArmorPiece {
+  const modelSystem = getCustomArmorPieceModelSystem(piece);
+  const now = Date.now();
+  return {
+    ...createCustomArmorSnapshot(piece),
+    id: createCustomArmorId(piece.slot, modelSystem),
+    name: sanitizePieceName(name, `${piece.name} Copy`),
+    modelSystem,
+    modelType: modelSystem === 'v2' ? resolveCharacterModelType(piece.modelType, 'v2') : undefined,
+    voxels: piece.voxels.map(cloneVoxel),
+    thumbnail: createCustomArmorThumbnail(piece.slot, piece.voxels.length, modelSystem),
+    createdAt: now,
+    updatedAt: now,
+    history: [],
+  };
+}
+
+export function restoreCustomArmorHistoryEntry(
+  piece: CustomArmorPiece,
+  historyIndex: number
+): CustomArmorPieceSnapshot | undefined {
+  const entry = piece.history?.[historyIndex];
+  if (!entry) return undefined;
+  return {
+    ...createCustomArmorSnapshot(entry),
+    id: piece.id,
+    updatedAt: Date.now(),
   };
 }
 
@@ -859,7 +893,21 @@ export function sanitizeCharacterLoadoutForNetwork(loadout: unknown): unknown | 
   if (out.modelSystem === 'v2') out.modelType = modelType;
   if (raw.paintJob && typeof raw.paintJob === 'object' && !Array.isArray(raw.paintJob)) {
     const paintPayload = JSON.stringify(raw.paintJob);
-    if (paintPayload.length <= 48_000) out.paintJob = raw.paintJob;
+    if (paintPayload.length <= 48_000) {
+      const v3Paint = sanitizeV3RolePaintPayload(raw.paintJob);
+      const paintJob = { ...raw.paintJob } as Record<string, unknown>;
+      if (v3Paint.v3RoleColors) {
+        paintJob.v3RoleColors = v3Paint.v3RoleColors;
+      } else {
+        delete paintJob.v3RoleColors;
+      }
+      if (v3Paint.v3RoleEmissive) {
+        paintJob.v3RoleEmissive = v3Paint.v3RoleEmissive;
+      } else {
+        delete paintJob.v3RoleEmissive;
+      }
+      out.paintJob = paintJob;
+    }
   }
   const loadoutModelSystem: CustomArmorModelSystem = out.modelSystem === 'v3' ? 'v3' : 'v2';
   const customArmor = sanitizeSelectedCustomArmor(raw.customArmor, modelType, loadoutModelSystem);

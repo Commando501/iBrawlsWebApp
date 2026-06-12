@@ -6,8 +6,10 @@ import { getVoxelSegmentDataV2 } from './VoxelModelsV2';
 import {
   createCustomArmorPiece,
   createCustomArmorSnapshot,
+  duplicateCustomArmorPiece,
   normalizeCustomArmorCatalog,
   removeFloatingVoxels,
+  restoreCustomArmorHistoryEntry,
   sanitizeCharacterLoadoutForNetwork,
   seedCornerAnchor,
   validateCustomArmorPiece,
@@ -216,6 +218,28 @@ test('sanitizeCharacterLoadoutForNetwork keeps valid V3 custom armor and strips 
   assert.equal(loadout.rawMesh, undefined);
 });
 
+test('sanitizeCharacterLoadoutForNetwork preserves sanitized V3 role paint only', () => {
+  const loadout = sanitizeCharacterLoadoutForNetwork({
+    modelSystem: 'v3',
+    paintJob: {
+      v3RoleColors: {
+        primary: '#ABCDEF',
+        visor: '#00ffaa',
+        accent: 'bad-color',
+        rawMesh: '#ffffff',
+      },
+      v3RoleEmissive: {
+        visor: true,
+        primary: false,
+        rawMesh: true,
+      },
+    },
+  }) as any;
+
+  assert.deepEqual(loadout.paintJob.v3RoleColors, { primary: '#abcdef', visor: '#00ffaa' });
+  assert.deepEqual(loadout.paintJob.v3RoleEmissive, { primary: false, visor: true });
+});
+
 test('V3 custom armor slot ids remain aligned with V3 manifest slots', () => {
   for (const slot of V3_CHARACTER_SLOT_IDS) {
     const piece = createCustomArmorPiece(slot, `${slot} draft`, [], undefined, undefined, 'v3');
@@ -326,4 +350,40 @@ test('shared preview disposal releases nested mesh resources', async () => {
   assert.equal(geometryDisposed, 1);
   assert.equal(firstMaterialDisposed, 1);
   assert.equal(secondMaterialDisposed, 1);
+});
+
+test('duplicateCustomArmorPiece creates a new variant without copying history', () => {
+  const piece = createCustomArmorPiece('helmet', 'Original', [
+    { x: 0, y: 0, z: 0, role: 'primary' },
+    { x: 1, y: 0, z: 0, role: 'secondary' },
+    { x: 0, y: 1, z: 0, role: 'visor' },
+  ], undefined, undefined, 'v3');
+  piece.history = [createCustomArmorSnapshot(piece)];
+
+  const copy = duplicateCustomArmorPiece(piece, 'Original Copy');
+
+  assert.notEqual(copy.id, piece.id);
+  assert.equal(copy.name, 'Original Copy');
+  assert.equal(copy.modelSystem, 'v3');
+  assert.equal(copy.history?.length ?? 0, 0);
+  assert.deepEqual(copy.voxels, piece.voxels);
+});
+
+test('restoreCustomArmorHistoryEntry returns a current snapshot from piece history', () => {
+  const piece = createCustomArmorPiece('helmet', 'Current', [
+    { x: 0, y: 0, z: 0, role: 'primary' },
+    { x: 1, y: 0, z: 0, role: 'secondary' },
+    { x: 0, y: 1, z: 0, role: 'visor' },
+  ], undefined, undefined, 'v3');
+  piece.history = [{
+    ...createCustomArmorSnapshot(piece),
+    name: 'Previous',
+    voxels: [{ x: 0, y: 0, z: 0, role: 'visor' }],
+  }];
+
+  const restored = restoreCustomArmorHistoryEntry(piece, 0);
+
+  assert.equal(restored?.id, piece.id);
+  assert.equal(restored?.name, 'Previous');
+  assert.deepEqual(restored?.voxels, [{ x: 0, y: 0, z: 0, role: 'visor' }]);
 });

@@ -15,7 +15,15 @@ import {
   type HammerAttackPhase,
   type WeaponPose,
 } from '../components/grifball/attackAnimationPresets';
-import { getFirstPersonV3WeaponPose } from '../components/grifball/combatantAnimationV3';
+import {
+  V3_ANIMATION_PROFILE_VERSION,
+  V3_ANIMATION_TRACKS,
+  getV3AnimationTrackDefinition,
+  sampleV3FirstPersonWeaponPose,
+  sampleV3ThirdPersonWeaponPose,
+  type V3AnimationTrackId,
+  type V3AnimationWeaponId,
+} from '../components/grifball/v3AnimationFidelity';
 import {
   COMBATANT_BONE_NAMES,
   attachToAttachmentPoint,
@@ -57,7 +65,7 @@ import {
   type SelectedRigTarget,
 } from './animationEditorCore';
 
-type WeaponChoice = 'hammer' | 'sword' | 'pistol';
+type WeaponChoice = V3AnimationWeaponId;
 type ModelSystemChoice = 'v1' | 'v2' | 'v3';
 
 const EDITOR_V3_RENDER_OPTIONS: V3RenderOptions = {
@@ -75,10 +83,10 @@ interface TargetOption {
 }
 
 interface TrackDefinition {
-  id: string;
+  id: V3AnimationTrackId;
   label: string;
   weapon: WeaponChoice;
-  sample: (view: EditorView, progress: number) => WeaponPose;
+  sample: (view: EditorView, progress: number, modelSystem: ModelSystemChoice) => WeaponPose;
 }
 
 interface VersionedAnimationData {
@@ -120,74 +128,106 @@ interface EditorState {
   versionedData: Record<ModelSystemChoice, VersionedAnimationData>;
 }
 
-const TRACKS: TrackDefinition[] = [
-  {
-    id: 'hammer_windup',
-    label: 'Hammer windup',
-    weapon: 'hammer',
-    sample: (view, progress) => sampleHammerPose(view, 'windup', progress),
-  },
-  {
-    id: 'hammer_strike',
-    label: 'Hammer strike',
-    weapon: 'hammer',
-    sample: (view, progress) => sampleHammerPose(view, 'strike', progress),
-  },
-  {
-    id: 'hammer_recover',
-    label: 'Hammer recover',
-    weapon: 'hammer',
-    sample: (view, progress) => sampleHammerPose(view, 'recover', progress),
-  },
-  {
-    id: 'hammer_melee',
-    label: 'Hammer melee swing',
-    weapon: 'hammer',
-    sample: (view, progress) => sampleHammerPose(view, 'melee_swing', progress),
-  },
-  {
-    id: 'hammer_melee_recover',
-    label: 'Hammer melee recover',
-    weapon: 'hammer',
-    sample: (view, progress) => sampleHammerPose(view, 'melee_recover', progress),
-  },
-  {
-    id: 'sword_lunge',
-    label: 'Sword lunge',
-    weapon: 'sword',
-    sample: (view, progress) => view === 'firstPerson'
-      ? getFirstPersonSwordLungePose(progress * 0.18)
-      : getThirdPersonSwordLungePose(progress * 0.18),
-  },
-  {
-    id: 'sword_slash',
-    label: 'Sword slash',
-    weapon: 'sword',
-    sample: (view, progress) => view === 'firstPerson'
-      ? getFirstPersonSwordSlashPose('slash', progress)
-      : getThirdPersonSwordSlashPose('slash', progress),
-  },
-  {
-    id: 'sword_recover',
-    label: 'Sword recover',
-    weapon: 'sword',
-    sample: (view, progress) => view === 'firstPerson'
-      ? getFirstPersonSwordSlashPose('recover', progress)
-      : getThirdPersonSwordSlashPose('recover', progress),
-  },
-  {
-    id: 'pistol_fire',
-    label: 'Pistol fire',
-    weapon: 'pistol',
-    sample: (view, progress) => samplePistolPose(view, progress),
-  },
-  {
-    id: 'pistol_recover',
-    label: 'Pistol recover',
-    weapon: 'pistol',
-    sample: (view, progress) => samplePistolPose(view, 1 - progress),
-  },
-];
+const TRACKS: TrackDefinition[] = V3_ANIMATION_TRACKS.map((track) => ({
+  id: track.id,
+  label: track.label,
+  weapon: track.weapon,
+  sample: (view, progress, modelSystem) => sampleEditorTrackPose(track.id, view, progress, modelSystem),
+}));
+
+function sampleEditorTrackPose(
+  trackId: V3AnimationTrackId,
+  view: EditorView,
+  progress: number,
+  modelSystem: ModelSystemChoice
+): WeaponPose {
+  if (modelSystem === 'v3') {
+    return sampleV3EditorTrackPose(trackId, view, progress);
+  }
+
+  switch (trackId) {
+    case 'hammer_windup':
+      return sampleHammerPose(view, 'windup', progress);
+    case 'hammer_strike':
+      return sampleHammerPose(view, 'strike', progress);
+    case 'hammer_recover':
+      return sampleHammerPose(view, 'recover', progress);
+    case 'hammer_melee':
+      return sampleHammerPose(view, 'melee_swing', progress);
+    case 'hammer_melee_recover':
+      return sampleHammerPose(view, 'melee_recover', progress);
+    case 'sword_lunge':
+      return view === 'firstPerson'
+        ? getFirstPersonSwordLungePose(progress * 0.18)
+        : getThirdPersonSwordLungePose(progress * 0.18);
+    case 'sword_slash':
+      return view === 'firstPerson'
+        ? getFirstPersonSwordSlashPose('slash', progress)
+        : getThirdPersonSwordSlashPose('slash', progress);
+    case 'sword_recover':
+      return view === 'firstPerson'
+        ? getFirstPersonSwordSlashPose('recover', progress)
+        : getThirdPersonSwordSlashPose('recover', progress);
+    case 'pistol_fire':
+      return samplePistolPose(view, progress);
+    case 'pistol_recover':
+      return samplePistolPose(view, 1 - progress);
+  }
+}
+
+function sampleV3EditorTrackPose(
+  trackId: V3AnimationTrackId,
+  view: EditorView,
+  progress: number
+): WeaponPose {
+  const pct = Math.max(0, Math.min(1, progress));
+  const track = getV3AnimationTrackDefinition(trackId);
+  let weaponState = 'ready';
+  let isLunging = false;
+
+  switch (trackId) {
+    case 'hammer_windup':
+      weaponState = 'swing_up';
+      break;
+    case 'hammer_strike':
+      weaponState = 'swing_down';
+      break;
+    case 'hammer_recover':
+      weaponState = 'recovering';
+      break;
+    case 'hammer_melee':
+      weaponState = 'melee_swing';
+      break;
+    case 'hammer_melee_recover':
+      weaponState = 'melee_recover';
+      break;
+    case 'sword_lunge':
+      isLunging = true;
+      break;
+    case 'sword_slash':
+      weaponState = 'slashing';
+      break;
+    case 'sword_recover':
+      weaponState = 'recovering';
+      break;
+    case 'pistol_fire':
+    case 'pistol_recover':
+      weaponState = 'firing';
+      break;
+  }
+
+  const input = {
+    activeWeapon: track.weapon,
+    weaponState,
+    weaponTimer: track.defaultDuration * pct,
+    isLunging,
+    settings: PREVIEW_ATTACK_SETTINGS,
+  };
+
+  return view === 'firstPerson'
+    ? sampleV3FirstPersonWeaponPose(input)
+    : sampleV3ThirdPersonWeaponPose(input);
+}
 
 function sampleHammerPose(view: EditorView, phase: HammerAttackPhase, progress: number): WeaponPose {
   return view === 'firstPerson'
@@ -199,10 +239,11 @@ function samplePistolPose(view: EditorView, progress: number): WeaponPose {
   const pct = Math.max(0, Math.min(1, progress));
   const weaponTimer = 0.18 * pct;
   if (view === 'firstPerson') {
-    return getFirstPersonV3WeaponPose({
+    return sampleV3FirstPersonWeaponPose({
       activeWeapon: 'pistol',
       weaponState: 'firing',
       weaponTimer,
+      isLunging: false,
       settings: {},
     });
   }
@@ -1451,7 +1492,7 @@ function seedThreeFrames(): void {
     frame,
     label: String.fromCharCode(65 + index),
     pose: state.selectedTarget.kind === 'weapon'
-      ? track.sample(state.view, index / 2)
+      ? track.sample(state.view, index / 2, state.modelSystem)
       : clonePose(basePose ?? captureSelectedPose()),
   }));
   setSelectedKeyframes(keyframes);
@@ -1888,6 +1929,13 @@ function buildExportPayload() {
     interpolation: state.interpolation,
     keyframes: state.weaponKeyframes,
     frames: state.weaponGeneratedFrames,
+    proceduralProfile: state.modelSystem === 'v3'
+      ? {
+          modelSystem: 'v3',
+          profileVersion: V3_ANIMATION_PROFILE_VERSION,
+          source: 'v3AnimationFidelity',
+        }
+      : undefined,
     rig: {
       bones: buildRigTrackExport('bone'),
       sockets: buildRigTrackExport('socket'),
