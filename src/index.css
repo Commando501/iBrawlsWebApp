@@ -66,7 +66,7 @@ body {
   background: rgba(0, 0, 0, 0.3);
   padding: 0 0.5rem;
   color: rgba(255, 255, 255, 0.62);
-  font-size: 10px;
+  font-size: 13px;
   font-weight: 900;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -237,7 +237,7 @@ body {
   }
 
   .mobile-brand h1 {
-    font-size: clamp(2rem, 10vw, 2.65rem) !important;
+    font-size: calc(clamp(2rem, 10vw, 2.65rem) + 3px) !important;
   }
 
   .mobile-nav-cluster {
@@ -265,7 +265,7 @@ body {
     min-height: 2.75rem;
     padding-left: 0.5rem;
     padding-right: 0.5rem;
-    font-size: 0.68rem;
+    font-size: calc(0.68rem + 3px);
     white-space: nowrap;
     letter-spacing: 0.04em;
   }
@@ -328,7 +328,7 @@ body {
     min-height: 2.75rem;
     padding-left: 0.5rem;
     padding-right: 0.5rem;
-    font-size: 0.68rem;
+    font-size: calc(0.68rem + 3px);
     white-space: nowrap;
     letter-spacing: 0.04em;
   }
@@ -425,7 +425,7 @@ body {
     min-height: 2.75rem;
     padding-left: 0.35rem;
     padding-right: 0.35rem;
-    font-size: 0.62rem;
+    font-size: calc(0.62rem + 3px);
   }
 
   .mobile-lobby-chat {
@@ -534,3 +534,55 @@ body {
   box-shadow: 0 0 15px rgba(56, 189, 248, 0.4) !important;
   transition: all 0.15s ease-in-out !important;
 }
+
+/* Main Menu Font Size overrides: increase all by 3px */
+.mobile-start-overlay,
+.admin-dashboard-root {
+  font-size: 19px !important; /* Base font size: 16px + 3px */
+}
+
+.mobile-start-overlay .text-xs,
+.admin-dashboard-root .text-xs {
+  font-size: calc(0.75rem + 3px) !important; /* 12px -> 15px */
+}
+.mobile-start-overlay .text-sm,
+.admin-dashboard-root .text-sm {
+  font-size: calc(0.875rem + 3px) !important; /* 14px -> 17px */
+}
+.mobile-start-overlay .text-base,
+.admin-dashboard-root .text-base {
+  font-size: calc(1rem + 3px) !important; /* 16px -> 19px */
+}
+.mobile-start-overlay .text-lg,
+.admin-dashboard-root .text-lg {
+  font-size: calc(1.125rem + 3px) !important; /* 18px -> 21px */
+}
+.mobile-start-overlay .text-xl,
+.admin-dashboard-root .text-xl {
+  font-size: calc(1.25rem + 3px) !important; /* 20px -> 23px */
+}
+.mobile-start-overlay .text-2xl,
+.admin-dashboard-root .text-2xl {
+  font-size: calc(1.5rem + 3px) !important; /* 24px -> 27px */
+}
+.mobile-start-overlay .text-3xl,
+.admin-dashboard-root .text-3xl {
+  font-size: calc(1.875rem + 3px) !important; /* 30px -> 33px */
+}
+.mobile-start-overlay .text-4xl,
+.admin-dashboard-root .text-4xl {
+  font-size: calc(2.25rem + 3px) !important; /* 36px -> 39px */
+}
+.mobile-start-overlay .text-5xl,
+.admin-dashboard-root .text-5xl {
+  font-size: calc(3rem + 3px) !important; /* 48px -> 51px */
+}
+
+/* Arbitrary Tailwind sizes */
+.mobile-start-overlay .text-\[9px\], .admin-dashboard-root .text-\[9px\] { font-size: 12px !important; }
+.mobile-start-overlay .text-\[10px\], .admin-dashboard-root .text-\[10px\] { font-size: 13px !important; }
+.mobile-start-overlay .text-\[10\.5px\], .admin-dashboard-root .text-\[10\.5px\] { font-size: 13.5px !important; }
+.mobile-start-overlay .text-\[11px\], .admin-dashboard-root .text-\[11px\] { font-size: 14px !important; }
+.mobile-start-overlay .text-\[12px\], .admin-dashboard-root .text-\[12px\] { font-size: 15px !important; }
+.mobile-start-overlay .text-\[13px\], .admin-dashboard-root .text-\[13px\] { font-size: 16px !important; }
+.mobile-start-overlay .text-\[14px\], .admin-dashboard-root .text-\[14px\] { font-size: 17px !important; }

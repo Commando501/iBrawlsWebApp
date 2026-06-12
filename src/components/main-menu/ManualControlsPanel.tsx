@@ -74,12 +74,12 @@ export function ManualControlsPanel({
       </div>
 
       <div style={{ background: 'rgba(2,6,23,0.45)', border: '1px solid rgba(255,255,255,0.10)', borderRadius: 12, padding: 18, boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.30)' }}>
-        <span style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 12, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase' as const, color: '#38bdf8', display: 'block', marginBottom: 14, paddingBottom: 10, borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+        <span style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 15, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase' as const, color: '#38bdf8', display: 'block', marginBottom: 14, paddingBottom: 10, borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
           Mouse Settings
         </span>
         <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 14 }}>
           <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 6 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '0.1em', color: 'rgba(255,255,255,0.70)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontFamily: "'JetBrains Mono', monospace", fontSize: 13, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '0.1em', color: 'rgba(255,255,255,0.70)' }}>
               <span>Sensitivity</span>
               <span style={{ color: '#22d3ee' }}>{(keybindings.mouseSensitivity ?? 1.0).toFixed(1)}x</span>
             </div>
@@ -92,13 +92,13 @@ export function ManualControlsPanel({
               onChange={(event) => updateKeybindings({ mouseSensitivity: parseFloat(event.target.value) })}
               className="w-full accent-cyan-400 h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
             />
-            <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: 'rgba(255,255,255,0.35)' }}>
+            <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: 'rgba(255,255,255,0.35)' }}>
               0.1 (slow) - 5.0 (fast). Default: 1.0
             </span>
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 6 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '0.1em', color: 'rgba(255,255,255,0.70)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontFamily: "'JetBrains Mono', monospace", fontSize: 13, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '0.1em', color: 'rgba(255,255,255,0.70)' }}>
               <span>Acceleration</span>
               <span style={{ color: (keybindings.mouseAcceleration ?? 0) > 0 ? '#fbbf24' : 'rgba(255,255,255,0.40)' }}>
                 {(keybindings.mouseAcceleration ?? 0.0).toFixed(1)}{(keybindings.mouseAcceleration ?? 0) === 0 ? ' (OFF)' : ''}
@@ -113,7 +113,7 @@ export function ManualControlsPanel({
               onChange={(event) => updateKeybindings({ mouseAcceleration: parseFloat(event.target.value) })}
               className="w-full accent-amber-400 h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
             />
-            <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: 'rgba(255,255,255,0.35)' }}>
+            <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: 'rgba(255,255,255,0.35)' }}>
               0.0 = linear (off). Higher = faster as you move faster.
             </span>
           </div>
@@ -121,7 +121,7 @@ export function ManualControlsPanel({
       </div>
 
       <div style={{ background: 'rgba(2,6,23,0.45)', border: '1px solid rgba(255,255,255,0.10)', borderRadius: 12, padding: 18, boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.30)' }}>
-        <span style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 12, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase' as const, color: '#38bdf8', display: 'block', marginBottom: 14, paddingBottom: 10, borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+        <span style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 15, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase' as const, color: '#38bdf8', display: 'block', marginBottom: 14, paddingBottom: 10, borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
           Movement Settings
         </span>
         <SprintModeToggle keybindings={keybindings} setKeybindings={setKeybindings} />

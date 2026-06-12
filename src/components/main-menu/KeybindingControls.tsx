@@ -26,11 +26,11 @@ function KbBindRow({ label, action, bindings, rebinding, onPick }: {
       background: isActive ? 'rgba(245,158,11,0.15)' : 'rgba(0,0,0,0.35)',
       border: isActive ? '1px solid rgba(245,158,11,0.55)' : '1px solid rgba(255,255,255,0.05)',
     }}>
-      <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: 'rgba(255,255,255,0.55)', letterSpacing: '0.1em', textTransform: 'uppercase' }}>
+      <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13, color: 'rgba(255,255,255,0.55)', letterSpacing: '0.1em', textTransform: 'uppercase' }}>
         {label}
       </span>
       <span style={{
-        fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fontWeight: 900,
+        fontFamily: "'JetBrains Mono', monospace", fontSize: 13, fontWeight: 900,
         color: isActive ? '#fbbf24' : '#22d3ee',
         background: isActive ? 'rgba(245,158,11,0.10)' : 'rgba(34,211,238,0.10)',
         border: isActive ? '1px solid rgba(245,158,11,0.40)' : '1px solid rgba(34,211,238,0.30)',
@@ -89,7 +89,7 @@ export function KeyboardVisualizer({ bindings, rebinding, onPick }: KbVisualizer
           width: w, height: h, minWidth: w, minHeight: h, flexShrink: 0,
           borderRadius: 5, padding: 0, cursor: (action && !locked) ? 'pointer' : 'default',
           display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column' as const,
-          fontFamily: "'JetBrains Mono', monospace", fontWeight: 800, fontSize: 10,
+          fontFamily: "'JetBrains Mono', monospace", fontWeight: 800, fontSize: 13,
           lineHeight: 1, letterSpacing: '0.02em', transition: 'all 150ms',
           background: isActive ? 'rgba(245,158,11,0.30)' : isBound ? 'rgba(34,211,238,0.18)' : locked ? 'rgba(255,255,255,0.02)' : 'rgba(15,23,42,0.55)',
           border: isActive ? '1px solid rgba(245,158,11,0.7)' : isBound ? '1px solid rgba(34,211,238,0.55)' : locked ? '1px solid rgba(255,255,255,0.04)' : '1px solid rgba(255,255,255,0.08)',
@@ -99,7 +99,7 @@ export function KeyboardVisualizer({ bindings, rebinding, onPick }: KbVisualizer
       >
         <span style={{ lineHeight: 1 }}>{label}</span>
         {subLbl && (
-          <span style={{ fontSize: 8, fontWeight: 800, opacity: 0.95, letterSpacing: '0.03em', marginTop: 3, lineHeight: 1, color: isActive ? '#fde68a' : '#67e8f9' }}>
+          <span style={{ fontSize: 11, fontWeight: 800, opacity: 0.95, letterSpacing: '0.03em', marginTop: 3, lineHeight: 1, color: isActive ? '#fde68a' : '#67e8f9' }}>
             {subLbl}
           </span>
         )}
@@ -117,10 +117,10 @@ export function KeyboardVisualizer({ bindings, rebinding, onPick }: KbVisualizer
   return (
     <div style={{ background: 'rgba(2,6,23,0.45)', border: '1px solid rgba(255,255,255,0.10)', borderRadius: 12, padding: 18, boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.30)' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: 10, marginBottom: 14, borderBottom: '1px solid rgba(255,255,255,0.05)', gap: 8, flexWrap: 'wrap' as const }}>
-        <span style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 12, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase' as const, color: '#38bdf8', whiteSpace: 'nowrap' as const }}>
+        <span style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 15, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase' as const, color: '#38bdf8', whiteSpace: 'nowrap' as const }}>
           ⌨ Keyboard + Mouse Layout
         </span>
-        <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: rebinding ? '#fbbf24' : 'rgba(255,255,255,0.40)', background: rebinding ? 'rgba(245,158,11,0.10)' : 'rgba(255,255,255,0.05)', border: rebinding ? '1px solid rgba(245,158,11,0.30)' : '1px solid rgba(255,255,255,0.10)', padding: '2px 8px', borderRadius: 4, letterSpacing: '0.15em', textTransform: 'uppercase' as const }}>
+        <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: rebinding ? '#fbbf24' : 'rgba(255,255,255,0.40)', background: rebinding ? 'rgba(245,158,11,0.10)' : 'rgba(255,255,255,0.05)', border: rebinding ? '1px solid rgba(245,158,11,0.30)' : '1px solid rgba(255,255,255,0.10)', padding: '2px 8px', borderRadius: 4, letterSpacing: '0.15em', textTransform: 'uppercase' as const }}>
           {rebinding ? 'PRESS ANY KEY…' : 'CLICK A KEY TO REBIND'}
         </span>
       </div>
@@ -255,16 +255,16 @@ export function KeyboardVisualizer({ bindings, rebinding, onPick }: KbVisualizer
                 display: 'flex', flexDirection: 'column' as const, gap: 2,
                 background: rebinding === bk ? 'rgba(245,158,11,0.20)' : isBound ? 'rgba(34,211,238,0.10)' : 'rgba(15,23,42,0.55)',
                 border: rebinding === bk ? '1px solid rgba(245,158,11,0.5)' : isBound ? '1px solid rgba(34,211,238,0.30)' : '1px solid rgba(255,255,255,0.08)',
-                fontFamily: "'JetBrains Mono', monospace", fontSize: 11, fontWeight: 800,
+                fontFamily: "'JetBrains Mono', monospace", fontSize: 14, fontWeight: 800,
                 color: rebinding === bk ? '#fbbf24' : isBound ? '#22d3ee' : 'rgba(255,255,255,0.38)', letterSpacing: '0.06em', lineHeight: 1,
               }}>
-                <span style={{ fontSize: 12 }}>{label}</span>
-                <span style={{ fontSize: 9, opacity: 0.78 }}>{sub}</span>
+                <span style={{ fontSize: 15 }}>{label}</span>
+                <span style={{ fontSize: 12, opacity: 0.78 }}>{sub}</span>
               </div>
             ))}
-            <div style={{ padding: '6px 10px', borderRadius: 5, background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', fontFamily: "'JetBrains Mono', monospace", fontSize: 11, fontWeight: 800, color: 'rgba(255,255,255,0.25)', letterSpacing: '0.06em', lineHeight: 1 }}>
-              <span style={{ fontSize: 12, display: 'block', color: 'rgba(255,255,255,0.35)' }}>WHEEL</span>
-              <span style={{ fontSize: 9, opacity: 0.72, display: 'block', marginTop: 3 }}>SWAP WEAP</span>
+            <div style={{ padding: '6px 10px', borderRadius: 5, background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', fontFamily: "'JetBrains Mono', monospace", fontSize: 14, fontWeight: 800, color: 'rgba(255,255,255,0.25)', letterSpacing: '0.06em', lineHeight: 1 }}>
+              <span style={{ fontSize: 15, display: 'block', color: 'rgba(255,255,255,0.35)' }}>WHEEL</span>
+              <span style={{ fontSize: 12, opacity: 0.72, display: 'block', marginTop: 3 }}>SWAP WEAP</span>
             </div>
           </div>
         </div>
