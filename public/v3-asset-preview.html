@@ -68,7 +68,8 @@
         font-weight: 600;
       }
 
-      input {
+      input,
+      textarea {
         width: 84px;
         min-height: 40px;
         border: 1px solid var(--border);
@@ -92,9 +93,21 @@
       }
 
       button:focus-visible,
-      input:focus-visible {
+      input:focus-visible,
+      textarea:focus-visible {
         outline: 2px solid var(--accent);
         outline-offset: 2px;
+      }
+
+      #reviewInput {
+        display: block;
+        width: 100%;
+        min-height: 120px;
+        margin-bottom: 14px;
+        resize: vertical;
+        background: var(--surface);
+        padding: 12px;
+        font: 13px/1.45 "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
       }
 
       #preview {
@@ -158,7 +171,9 @@
       <section class="toolbar">
         <label>Resolution <input id="resolution" type="number" min="4" max="48" value="12"></label>
         <button id="render">Render Synthetic Preview</button>
+        <button id="loadReview">Load Review JSON</button>
       </section>
+      <textarea id="reviewInput" placeholder="Paste sanitized V3 review package JSON"></textarea>
       <canvas id="preview" width="960" height="540"></canvas>
       <pre id="summary"></pre>
     </main>
@@ -184,6 +199,8 @@
 
       const resolutionInput = document.getElementById("resolution");
       const renderButton = document.getElementById("render");
+      const loadReviewButton = document.getElementById("loadReview");
+      const reviewInput = document.getElementById("reviewInput");
       const canvas = document.getElementById("preview");
       const summary = document.getElementById("summary");
       const ctx = canvas.getContext("2d");
@@ -442,6 +459,39 @@
         ctx.fillText(`${validation.voxelCount} voxels / ${validation.materials.length} materials / r${validation.resolution}`, 22, 52);
       }
 
+      function renderReviewPackage(review) {
+        const parts = Array.isArray(review.parts) ? review.parts : [];
+        const lines = [
+          `Review package schema: ${review.schemaVersion}`,
+          `Source: ${review.source?.baseName ?? "unknown"}`,
+          `Parts: ${parts.length}`,
+          `Unknown parts: ${review.summary?.unknownPartCount ?? 0}`,
+          `Invalid parts: ${review.summary?.invalidPartCount ?? 0}`,
+          "",
+          ...parts.map((part) => {
+            const errors = Array.isArray(part.validation?.errors) ? part.validation.errors : [];
+            const status = errors.length > 0 ? `WARN ${errors.join("; ")}` : "PASS";
+            return `${status} ${part.objectName} -> ${part.slotCandidate} roles=${(part.paintRoles ?? []).join(", ")} voxels=${part.preview?.voxels?.length ?? 0}`;
+          }),
+        ];
+        const voxels = parts.flatMap((part) =>
+          Array.isArray(part.preview?.voxels) ? part.preview.voxels : []
+        );
+        const resolution = Math.max(1, ...parts.map((part) => part.preview?.resolution ?? 1));
+        const validation = {
+          resolution,
+          voxelCount: voxels.length,
+          materials: [...new Set(voxels.map((voxel) => voxel.material))].sort(),
+          validationStatus: (review.summary?.invalidPartCount ?? 0) > 0 ? "WARN" : "PASS",
+        };
+
+        if (voxels.length > 0) {
+          drawScene(voxels, validation);
+        }
+        summary.textContent = lines.join("\n");
+        summary.className = validation.validationStatus === "PASS" ? "status-pass" : "status-warn";
+      }
+
       function render() {
         const resolution = clampResolution(resolutionInput.value);
         resolutionInput.value = String(resolution);
@@ -456,6 +506,14 @@
       }
 
       renderButton.addEventListener("click", render);
+      loadReviewButton.addEventListener("click", () => {
+        try {
+          renderReviewPackage(JSON.parse(reviewInput.value));
+        } catch (error) {
+          summary.textContent = `Invalid review JSON: ${error instanceof Error ? error.message : String(error)}`;
+          summary.className = "status-warn";
+        }
+      });
       resolutionInput.addEventListener("change", render);
       window.addEventListener("load", render);
     </script>
