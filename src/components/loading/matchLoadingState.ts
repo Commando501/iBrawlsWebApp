@@ -7,9 +7,9 @@ import {
   type MultiplayerLoadingSnapshot,
   type MultiplayerLoadingStatusPayload,
 } from './loadingTypes';
-import { DEFAULT_LOADOUT, type CharacterLoadout } from '../VoxelModels';
+import type { CharacterLoadout } from '../VoxelModels';
 import { normalizeVisualModelPolicy, type VisualModelPolicy } from '../../model/modelSystem';
-import { sanitizeLoadoutV3RolePaint } from '../../model/modelVisualPolicy';
+import { sanitizeCharacterLoadoutForNetwork } from '../customArmor';
 
 export const MATCH_LOADING_TIMEOUT_MS = 45_000;
 
@@ -42,8 +42,7 @@ export function getParticipantDisplayName(value: unknown, fallbackId: string): s
 }
 
 function normalizeLoadout(loadout: unknown): CharacterLoadout | undefined {
-  if (!loadout || typeof loadout !== 'object') return undefined;
-  return sanitizeLoadoutV3RolePaint({ ...DEFAULT_LOADOUT, ...(loadout as CharacterLoadout) });
+  return sanitizeCharacterLoadoutForNetwork(loadout) as CharacterLoadout | undefined;
 }
 
 function normalizeParticipantPolicy(value: unknown): VisualModelPolicy | undefined {

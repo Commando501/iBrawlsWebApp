@@ -90,6 +90,7 @@ test('loading participant previews preserve V3 role paint while V1 and V2 polici
           visor: true,
         },
       },
+      rawMesh: { vertices: [1, 2, 3] },
     } as any,
   }, 1_000);
 
@@ -99,6 +100,7 @@ test('loading participant previews preserve V3 role paint while V1 and V2 polici
   assert.equal((advanced?.loadout as any)?.paintJob.v3RoleColors.primary, '#123456');
   assert.equal((advanced?.loadout as any)?.paintJob.v3RoleColors.invalid, undefined);
   assert.equal((advanced?.loadout as any)?.paintJob.v3RoleEmissive.visor, true);
+  assert.equal((advanced?.loadout as any)?.rawMesh, undefined);
 });
 
 test('top-down bounds resolve default and custom maps', () => {
