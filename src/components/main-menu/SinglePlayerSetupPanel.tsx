@@ -1,6 +1,7 @@
 import type { Dispatch, SetStateAction } from 'react';
 import type { AIPreset, TournamentState, UniversalSettings } from '../../types';
-import type { TournamentDifficulty } from '../../features/tournament/tournament';
+import type { TournamentAISelection } from '../../features/tournament/tournament';
+import type { NeuralBrainId } from '../../game/neuralBrains';
 import { normalizeVisualModelPolicy, type VisualModelPolicy } from '../../model/modelSystem';
 import { SandboxSetupPanel } from './SandboxSetupPanel';
 import { AiBehaviorEditorPanel } from './AiBehaviorEditorPanel';
@@ -30,10 +31,11 @@ interface SinglePlayerSetupPanelProps {
   tournamentRoundCount: number;
   setTournamentRoundCount: Dispatch<SetStateAction<number>>;
   onInitializeTournament: (
-    difficulty: TournamentDifficulty | 'custom',
+    difficulty: TournamentAISelection,
     killsToWin?: number,
     roundCount?: number,
-    selectedPresets?: AIPreset[]
+    selectedPresets?: AIPreset[],
+    neuralBrainId?: NeuralBrainId | string
   ) => void;
   playerName: string;
   playerHue: number;

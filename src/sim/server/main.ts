@@ -32,8 +32,9 @@ const log = (...a: unknown[]) => process.stderr.write(a.join(' ') + '\n');
 type SimVecEnv = VecEnv | CombatVecEnv;
 
 function helloResponse(env: SimVecEnv, seedInfo: { baseSeed: number }): Uint8Array {
+  const observationVersion = 'observationVersion' in env ? env.observationVersion : 1;
   const header = {
-    ...buildEnvSpec(),
+    ...buildEnvSpec(observationVersion),
     mode: env.mode,
     numEnvs: env.numEnvs,
     numAgents: env.numAgents,
@@ -41,6 +42,7 @@ function helloResponse(env: SimVecEnv, seedInfo: { baseSeed: number }): Uint8Arr
     agentTeams: env.agentTeams,
     baseSeed: seedInfo.baseSeed,
     decisionInterval: env.decisionInterval,
+    observationVersion,
     rewardComponentKeys: REWARD_COMPONENT_KEYS,
   };
   const json = new TextEncoder().encode(JSON.stringify(header));

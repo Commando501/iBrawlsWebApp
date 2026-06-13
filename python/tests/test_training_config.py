@@ -48,3 +48,26 @@ def test_train_config_defaults_keep_existing_behavior_off():
     assert cfg.frame_stack == 1
     assert cfg.league_snapshots == []
     assert reward_dict(cfg)["invalidAttack"] == 0.0
+
+
+def test_lone_wolf_combat_knobs_roundtrip_through_config_helpers():
+    cfg = config_from_values({
+        "combat_layout_mix": ["1v1x4", "1v3x2", "ffa8x1"],
+        "combat_lone_wolf_reward_scale": 1.35,
+        "league_scenario_mix": ["1v2x2"],
+        "league_random_opponent_rate": 0.25,
+        "observation_version": 1,
+    })
+
+    assert cfg.combat_layout_mix == ["1v1x4", "1v3x2", "ffa8x1"]
+    assert cfg.combat_lone_wolf_reward_scale == 1.35
+    assert cfg.league_scenario_mix == ["1v2x2"]
+    assert cfg.league_random_opponent_rate == 0.25
+    assert cfg.observation_version == 1
+
+    toml = dump_toml(cfg)
+    assert 'layout_mix = ["1v1x4", "1v3x2", "ffa8x1"]' in toml
+    assert "lone_wolf_reward_scale = 1.35" in toml
+    assert 'scenario_mix = ["1v2x2"]' in toml
+    assert "random_opponent_rate = 0.25" in toml
+    assert "observation_version = 1" in toml

@@ -11,6 +11,8 @@ import { resolveCharacterModelType } from '../characterModelTypes';
 import { resolveLoadoutForVisualPolicy } from '../model/modelVisualPolicy';
 import { normalizeVisualModelPolicy, type VisualModelPolicy } from '../model/modelSystem';
 import { GRIFBALL_TOTAL_AI } from '../game/grifballTeams';
+import { loadNeuralBrain, type LoadedNeuralBrain } from '../game/neuralBrainLoader';
+import { DEFAULT_NEURAL_BRAIN_ID, isNeuralNetDifficulty } from '../game/neuralBrains';
 import {
   installLegacyTeamScoreBridges,
   localPlayerTeamFromRole,
@@ -146,6 +148,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
   // Phase 4: main_ai lives in otherPlayers with controller:'ai' â€” see roster.ts helpers.
   const requestRef = useRef<number | null>(null);
   const fpsRef = useRef(createInitialFpsCounter());
+  const neuralBrainRuntimeRef = useRef<LoadedNeuralBrain | null>(null);
 
   // Grifball: ball render mesh + player Pass-charge tracking.
   const grifballBallMeshRef = useRef<THREE.Mesh | null>(null);
@@ -180,6 +183,37 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
   useEffect(() => {
     stateRef.current.playerModelType = resolveCharacterModelType(playerLoadout?.modelType, playerLoadout?.modelSystem);
   }, [playerLoadout?.modelSystem, playerLoadout?.modelType]);
+
+  useEffect(() => {
+    const brainId = adminSettings.aiNeuralBrainId ?? DEFAULT_NEURAL_BRAIN_ID;
+    if (!isNeuralNetDifficulty(adminSettings.aiDifficulty)) {
+      neuralBrainRuntimeRef.current = null;
+      return;
+    }
+
+    let cancelled = false;
+    neuralBrainRuntimeRef.current = null;
+    void loadNeuralBrain(brainId).then((brain) => {
+      if (cancelled) return;
+      neuralBrainRuntimeRef.current = brain;
+      (globalThis as typeof globalThis & { __ibrawlsNeuralBrains?: unknown }).__ibrawlsNeuralBrains = {
+        [brain.definition.id]: brain.telemetry,
+      };
+      console.info(`[iBrawls] Neural brain ready: ${brain.manifest.label}`);
+    }).catch((error) => {
+      if (cancelled) return;
+      const message = error instanceof Error ? error.message : String(error);
+      neuralBrainRuntimeRef.current = null;
+      (globalThis as typeof globalThis & { __ibrawlsNeuralBrains?: unknown }).__ibrawlsNeuralBrains = {
+        [brainId]: { status: 'error', lastError: message },
+      };
+      console.error(`[iBrawls] Failed to load neural brain ${brainId}:`, error);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [adminSettings.aiDifficulty, adminSettings.aiNeuralBrainId]);
 
   useEffect(() => {
     stateRef.current.localPlayerTeam = localPlayerTeamFromRole(multiplayerRole);
@@ -1079,6 +1113,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     pushStatsUpdate,
     isTargetOnCooldown,
     clearPressureTarget,
+    getNeuralBrainRuntime: () => neuralBrainRuntimeRef.current,
     playDash: () => sfx.playDash(),
     playJump: () => sfx.playJump(),
     playExplosion: () => sfx.playExplosion(),

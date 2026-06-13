@@ -40,11 +40,15 @@ over a **batched binary protocol** so tens of millions of steps move only flat t
   approach shaping, time pressure, or action-discipline penalties.
 - `network.frame_stack` enables short observation history through SB3 `VecFrameStack`
   (`1` = off). Train and evaluate a model with the same frame-stack value.
-- Combat evaluation supports a matrix grade (`--matrix`) across 1v1, 4-player, and 8-player
-  scenarios, plus frozen snapshot opponents via repeated `--league-snapshot` paths. Matrix
-  wins are scored as **lift** over each scenario's random baseline (1.0x = random, 2.0x =
-  perfect) so big-world FFAs count fairly, and the human-likeness penalty grades behavior
-  stats against `python/human_baseline.json` (build it with `npm run sim:baseline -- ./replays`).
+- `[combat].layout_mix` can replace generic world sizes with explicit combat curricula such
+  as `1v1x16`, `1v2x6`, `1v3x6`, `1v7x2`, `ffa4x6`, and `ffa8x4`. The singleton team in
+  asymmetric layouts can receive `[combat].lone_wolf_reward_scale`; combat mode does not add
+  a low-health scenario, which remains specific to Grifball runner situations.
+- Combat evaluation supports a matrix grade (`--matrix`) across 1v1, lone-wolf 1vN, 4-player,
+  and 8-player scenarios, plus frozen snapshot opponents via repeated `--league-snapshot`
+  paths. Matrix wins are scored from 0..1 against each scenario's random baseline so big-world
+  FFAs count fairly, and the human-likeness penalty grades behavior stats against
+  `python/human_baseline.json` (build it with `npm run sim:baseline -- ./replays`).
 - Training-side league self-play: `[league] worlds = N` dedicates 1v1 worlds to fights vs
   FROZEN snapshots (PFSP-sampled, auto-frozen every `snapshot_every` steps) — the cure for
   pure-self-play brittleness. `python -m ibrawls_rl.watch <model>` (or the dashboard's Watch

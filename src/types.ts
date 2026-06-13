@@ -55,6 +55,7 @@ export interface UniversalSettings {
   playerName?: string;                    // Persistent customized player name / handle
   visualModelPolicy?: VisualModelPolicy;  // Match-wide visual model set for offline sandbox/tournament previews.
   aiDifficulty?: 'easy' | 'normal' | 'hard' | 'nightmare' | 'custom' | string;
+  aiNeuralBrainId?: string;              // Selected browser inference brain when aiDifficulty === 'neural-net'
   aiReactionLatency?: number;             // Reaction latency in seconds (0.0 to 1.5)
   aiAnticipationFactor?: number;          // How aggressively it predicts player action (0.0 to 1.0)
   aiMovementComplexity?: number;          // 0 to 100%
@@ -371,6 +372,7 @@ export interface Combatant {
   /** Local AI vs remote human — orchestrator ticks `ai` entries only. */
   controller: CombatantController;
   difficulty?: string;
+  neuralBrainId?: string;
   /** Roster team; defaults to red for AI combatants in sandbox. */
   team?: TeamId;
   modelType?: CharacterModelType;
@@ -587,7 +589,8 @@ export interface TournamentOpponent {
   id: string;
   name: string;
   hue: number;
-  difficulty: 'easy' | 'normal' | 'hard' | 'nightmare' | 'custom';
+  difficulty: 'easy' | 'normal' | 'hard' | 'nightmare' | 'custom' | 'neural-net';
+  neuralBrainId?: string;
   reactionLatency: number;
   anticipationFactor: number;
   movementComplexity: number;
@@ -608,7 +611,8 @@ export interface TournamentMatch {
 }
 
 export interface TournamentState {
-  difficulty: 'easy' | 'normal' | 'hard' | 'nightmare' | 'custom';
+  difficulty: 'easy' | 'normal' | 'hard' | 'nightmare' | 'custom' | 'neural-net';
+  neuralBrainId?: string;
   killsToWin: number;
   roundCount: number; // Total elimination rounds in this bracket
   currentRound: number;

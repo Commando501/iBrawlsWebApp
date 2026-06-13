@@ -8,6 +8,7 @@ import {
   getTournamentRoundLabels,
   simulateBotMatch,
 } from './tournament';
+import { DEFAULT_NEURAL_BRAIN_ID, NEURAL_NET_DIFFICULTY } from '../../game/neuralBrains';
 
 test('builds the expected tournament bracket shape', () => {
   assert.equal(getTournamentBotCount(3), 7);
@@ -156,4 +157,18 @@ test('generateTournamentOpponents with multiple custom presets randomly assigns 
 
   assert.ok(usedPreset1);
   assert.ok(usedPreset2);
+});
+
+test('generateTournamentOpponents can seed a NeuralNet CombatDRV2 bracket', () => {
+  const opponents = generateTournamentOpponents(NEURAL_NET_DIFFICULTY, 4, undefined, DEFAULT_NEURAL_BRAIN_ID);
+
+  assert.equal(Object.keys(opponents).length, 4);
+  for (const opp of Object.values(opponents)) {
+    assert.equal(opp.difficulty, NEURAL_NET_DIFFICULTY);
+    assert.equal(opp.neuralBrainId, DEFAULT_NEURAL_BRAIN_ID);
+    assert.equal(opp.behavior, 'aggressive');
+    assert.equal(opp.archetype, 'neural_net');
+    assert.ok(opp.reactionLatency <= 0.02);
+    assert.ok(opp.movementComplexity >= 95);
+  }
 });

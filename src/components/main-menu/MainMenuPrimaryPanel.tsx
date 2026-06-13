@@ -4,7 +4,8 @@ import type { CustomMapData } from '../../types';
 import type { MatchLobbyConfig } from '../../network/protocol';
 import type { ChatMessage } from '../ChatOverlay';
 import type { MultiplayerLoadingSlotPayload } from '../loading/loadingTypes';
-import type { TournamentDifficulty } from '../../features/tournament/tournament';
+import type { TournamentAISelection } from '../../features/tournament/tournament';
+import type { NeuralBrainId } from '../../game/neuralBrains';
 import type {
   GameplayConnectionMode,
   GameplayConnectionStatus,
@@ -57,10 +58,11 @@ interface MainMenuPrimaryPanelProps {
   tournamentRoundCount: number;
   setTournamentRoundCount: Dispatch<SetStateAction<number>>;
   onInitializeTournament: (
-    difficulty: TournamentDifficulty | 'custom',
+    difficulty: TournamentAISelection,
     killsToWin?: number,
     roundCount?: number,
-    selectedPresets?: AIPreset[]
+    selectedPresets?: AIPreset[],
+    neuralBrainId?: NeuralBrainId | string
   ) => void;
   playerName: string;
   playerHue: number;

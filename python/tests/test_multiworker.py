@@ -36,6 +36,34 @@ def test_combat_multiworker_batches_and_steps():
 
 
 @pytest.mark.skipif(shutil.which("npx") is None, reason="npx/tsx toolchain not available")
+def test_combat_layout_mix_multiworker_batches_and_steps():
+    try:
+        from ibrawls_rl.envs.grifball_vec_env import GrifballVecEnv
+    except Exception as e:  # pragma: no cover
+        pytest.skip(f"python deps unavailable: {e}")
+
+    env = GrifballVecEnv(
+        mode="combat",
+        combat_layout_mix=["1v1x2", "1v3x2", "ffa4x1"],
+        combat_lone_wolf_reward_scale=1.35,
+        num_workers=2,
+    )
+    try:
+        assert len(env.views) == 2
+        assert env.num_envs == 2 + 2 + 4 + 4 + 4
+        obs = env.reset()
+        assert obs.shape == (env.num_envs, env.obs_dim)
+        a = np.stack([env.action_space.sample() for _ in range(env.num_envs)]).astype(np.int32)
+        obs, reward, done, infos = env.step(a)
+        assert obs.shape == (env.num_envs, env.obs_dim)
+        assert reward.shape == (env.num_envs,)
+        assert done.shape == (env.num_envs,)
+        assert len(infos) == env.num_envs
+    finally:
+        env.close()
+
+
+@pytest.mark.skipif(shutil.which("npx") is None, reason="npx/tsx toolchain not available")
 def test_grifball_multiworker_learner_batch():
     try:
         from ibrawls_rl.envs.grifball_vec_env import GrifballVecEnv

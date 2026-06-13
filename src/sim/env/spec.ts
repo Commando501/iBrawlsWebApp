@@ -5,7 +5,12 @@
  * hard-coded on either side. Keep it pure data.
  */
 
-import { OBS_DIM, OBS_LAYOUT, OBS_FIELDS, MAX_TEAM_SIZE } from './observation';
+import {
+  MAX_TEAM_SIZE,
+  obsDimForVersion,
+  obsFieldsForVersion,
+  obsLayoutForVersion,
+} from './observation';
 import { ACTION_NVEC, ACTION_DIM, ACTION_FACTORS } from './action';
 
 export interface EnvSpec {
@@ -20,19 +25,22 @@ export interface EnvSpec {
 }
 
 export const ENV_SPEC_VERSION = 4; // v4: aim factor adds nearest-hostile targeting
+export const ENV_SPEC_VERSION_V2 = 5; // v5: optional combat pressure observation block
 
-export function buildEnvSpec(): EnvSpec {
+export function buildEnvSpec(observationVersion = 1): EnvSpec {
+  const fields = obsFieldsForVersion(observationVersion);
+  const layout = obsLayoutForVersion(observationVersion);
   return {
-    obsDim: OBS_DIM,
-    obsFields: OBS_FIELDS.map((f) => ({
+    obsDim: obsDimForVersion(observationVersion),
+    obsFields: fields.map((f) => ({
       name: f.name,
-      offset: OBS_LAYOUT[f.name].offset,
+      offset: layout[f.name].offset,
       size: f.size,
     })),
     actionDim: ACTION_DIM,
     actionNvec: ACTION_NVEC,
     actionFactors: ACTION_FACTORS.map((f) => ({ name: f.name, n: f.n })),
     maxTeamSize: MAX_TEAM_SIZE,
-    version: ENV_SPEC_VERSION,
+    version: observationVersion >= 2 ? ENV_SPEC_VERSION_V2 : ENV_SPEC_VERSION,
   };
 }

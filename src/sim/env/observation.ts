@@ -90,6 +90,34 @@ export const OBS_LAYOUT: Record<string, { offset: number; size: number }> = (() 
 
 /** Total observation width per agent. */
 export const OBS_DIM = OBS_FIELDS.reduce((n, f) => n + f.size, 0);
+export const OBS_DIM_V1 = OBS_DIM;
+export const COMBAT_PRESSURE_SIZE = 12;
+export const OBS_FIELDS_V2: FieldSpec[] = [
+  ...OBS_FIELDS,
+  { name: 'combat_pressure', size: COMBAT_PRESSURE_SIZE },
+];
+export const OBS_LAYOUT_V2: Record<string, { offset: number; size: number }> = (() => {
+  const layout: Record<string, { offset: number; size: number }> = {};
+  let off = 0;
+  for (const f of OBS_FIELDS_V2) {
+    layout[f.name] = { offset: off, size: f.size };
+    off += f.size;
+  }
+  return layout;
+})();
+export const OBS_DIM_V2 = OBS_FIELDS_V2.reduce((n, f) => n + f.size, 0);
+
+export function obsFieldsForVersion(version = 1): FieldSpec[] {
+  return version >= 2 ? OBS_FIELDS_V2 : OBS_FIELDS;
+}
+
+export function obsLayoutForVersion(version = 1): Record<string, { offset: number; size: number }> {
+  return version >= 2 ? OBS_LAYOUT_V2 : OBS_LAYOUT;
+}
+
+export function obsDimForVersion(version = 1): number {
+  return version >= 2 ? OBS_DIM_V2 : OBS_DIM;
+}
 
 function weaponOneHot(c: SimCombatant, out: Float32Array, at: number): void {
   out[at] = c.weapon === 'hammer' ? 1 : 0;
@@ -176,8 +204,9 @@ export function encodeObservation(
   // --- Teammates then opponents (stable order = roster order) ---
   const teammates = state.combatants.filter((c) => c.id !== self.id && c.team === self.team);
   const opponents = state.combatants.filter((c) => c.team !== self.team);
+  const opponentSlots = state.mode === 'combat' ? sortCombatThreats(opponents, self) : opponents;
   p = encodeOthers(teammates, MAX_TEAMMATES, self, fx, fz, rx, rz, out, p);
-  p = encodeOthers(opponents, MAX_OPPONENTS, self, fx, fz, rx, rz, out, p);
+  p = encodeOthers(opponentSlots, MAX_OPPONENTS, self, fx, fz, rx, rz, out, p);
 
   // --- Match context ---
   // Score is goals in grifball, kills in combat (goalTarget doubles as the kill target).
@@ -202,6 +231,96 @@ export function encodeObservation(
     const dev = typeof v === 'number' ? v / MECHANICS_REF[i] - 1 : 0;
     out[p++] = dev < -1 ? -1 : dev > 1 ? 1 : dev; // clamp ±100%
   }
+}
+
+export function encodeObservationForVersion(
+  state: SimState,
+  agentId: string,
+  out: Float32Array,
+  offset = 0,
+  version = 1
+): void {
+  encodeObservation(state, agentId, out, offset);
+  if (version < 2) return;
+  out.fill(0, offset + OBS_DIM, offset + OBS_DIM_V2);
+  encodeCombatPressure(state, agentId, out, offset + OBS_DIM);
+}
+
+function sortCombatThreats(opponents: SimCombatant[], self: SimCombatant): SimCombatant[] {
+  return [...opponents].sort((a, b) => {
+    const aliveA = a.alive ? 0 : 1;
+    const aliveB = b.alive ? 0 : 1;
+    if (aliveA !== aliveB) return aliveA - aliveB;
+    const da = Math.hypot(a.pos.x - self.pos.x, a.pos.z - self.pos.z);
+    const db = Math.hypot(b.pos.x - self.pos.x, b.pos.z - self.pos.z);
+    return da - db;
+  });
+}
+
+function encodeCombatPressure(
+  state: SimState,
+  agentId: string,
+  out: Float32Array,
+  offset: number
+): void {
+  if (state.mode !== 'combat') return;
+  const self = state.combatants.find((c) => c.id === agentId);
+  if (!self) return;
+  const hostiles = sortCombatThreats(
+    state.combatants.filter((c) => c.team !== self.team && c.alive),
+    self
+  );
+  const f = forwardDir(self.yaw);
+  const r = rightDir(self.yaw);
+  const fx = f.x, fz = f.z, rx = r.x, rz = r.z;
+  const putEgoAt = (at: number, dx: number, dz: number, scale: number) => {
+    const [ef, er] = toEgo(dx, dz, fx, fz, rx, rz);
+    out[offset + at] = ef / scale;
+    out[offset + at + 1] = er / scale;
+  };
+
+  const nearest = hostiles[0];
+  if (nearest) {
+    putEgoAt(0, nearest.pos.x - self.pos.x, nearest.pos.z - self.pos.z, POS_SCALE);
+    putEgoAt(2, nearest.vel.x, nearest.vel.z, VEL_SCALE);
+    out[offset + 4] = nearest.maxHp > 0 ? nearest.hp / nearest.maxHp : 0;
+  }
+
+  let sx = 0, sz = 0;
+  for (const hostile of hostiles) {
+    const dx = hostile.pos.x - self.pos.x;
+    const dz = hostile.pos.z - self.pos.z;
+    const d = Math.hypot(dx, dz);
+    if (d <= 4) out[offset + 5] += 1;
+    if (d <= 8) out[offset + 6] += 1;
+    if (d <= 12) out[offset + 7] += 1;
+    if (d > 0 && d <= 8) {
+      sx -= dx / d;
+      sz -= dz / d;
+    }
+  }
+
+  const leader = scoreLeaderHostile(state, self.team, hostiles);
+  if (leader) putEgoAt(8, leader.pos.x - self.pos.x, leader.pos.z - self.pos.z, POS_SCALE);
+  const escapeLen = Math.hypot(sx, sz);
+  if (escapeLen > 0) putEgoAt(10, sx / escapeLen, sz / escapeLen, 1);
+}
+
+function scoreLeaderHostile(
+  state: SimState,
+  selfTeam: string,
+  hostiles: SimCombatant[]
+): SimCombatant | null {
+  let leader: SimCombatant | null = null;
+  let bestKills = -1;
+  for (const hostile of hostiles) {
+    const kills = state.scores[hostile.team]?.kills ?? 0;
+    if (hostile.team !== selfTeam && kills > bestKills) {
+      bestKills = kills;
+      leader = hostile;
+    }
+  }
+  return leader;
 }
 
 function encodeOthers(

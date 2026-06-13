@@ -124,3 +124,40 @@ test('randomizeLayout=false gives a stable FFA layout', () => {
   const r = env.step(new Int32Array(env.numAgents * ACTION_DIM));
   assert.equal(r.obs.length, 4 * OBS_DIM);
 });
+
+test('fixed world layouts support asymmetric lone-wolf combat scenarios', () => {
+  const env = new CombatVecEnv({
+    worldLayouts: [[1, 3], [1, 7], [1, 1, 1, 1]],
+    baseSeed: 12,
+    randomizeLayout: true,
+  });
+  assert.equal(env.numAgents, 16);
+  env.reset();
+  assert.deepEqual(env.getWorldTeamSizes(), [[1, 3], [1, 7], [1, 1, 1, 1]]);
+});
+
+test('lone-wolf reward scale applies only to singleton teams in asymmetric layouts', () => {
+  const env = new CombatVecEnv({
+    worldLayouts: [[1, 3]],
+    baseSeed: 13,
+    randomizeLayout: false,
+    loneWolfRewardScale: 2,
+    reward: {
+      timePenalty: 0.1,
+      approach: 0,
+      kill: 0,
+      death: 0,
+      win: 0,
+      goalScored: 0,
+      goalConceded: 0,
+      possession: 0,
+      ballProgress: 0,
+    },
+  });
+  env.reset();
+  const r = env.step(new Int32Array(env.numAgents * ACTION_DIM));
+  assert.ok(Math.abs(r.reward[0] + 0.2) < 1e-6, `singleton reward ${r.reward[0]}`);
+  assert.ok(Math.abs(r.reward[1] + 0.1) < 1e-6, `many-side reward ${r.reward[1]}`);
+  assert.ok(Math.abs(r.reward[2] + 0.1) < 1e-6, `many-side reward ${r.reward[2]}`);
+  assert.ok(Math.abs(r.reward[3] + 0.1) < 1e-6, `many-side reward ${r.reward[3]}`);
+});

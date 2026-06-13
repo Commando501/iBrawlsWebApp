@@ -36,6 +36,8 @@ import {
   tickCalibrationPendingDodge,
 } from '../../game/aiSkillCalibration';
 import { shouldAvoidCoinFlipTrade } from '../../game/aiTuning';
+import { isNeuralNetDifficulty } from '../../game/neuralBrains';
+import { type LoadedNeuralBrain } from '../../game/neuralBrainLoader';
 import { MAIN_AI_ID } from '../../game/roster';
 import { type Combatant } from '../../types';
 import { resolveAIAirborneHammerOpportunityForCombatant } from './aiAirborneHammerOpportunityRuntime';
@@ -86,6 +88,14 @@ import {
   recordAIEngagementApproachObservations,
 } from './playerModelObservations';
 import { type GrifballRuntimeState } from './runtimeState';
+import {
+  liveForwardVectorForYaw,
+  liveYawToSimYaw,
+  nextNeuralCombatantDecision,
+  resolveNeuralPlanarVelocity,
+  safeIdleNeuralAction,
+  simYawToLiveYaw,
+} from './neuralLiveAdapter';
 import { type GrifballThreeRefs } from './threeRefs';
 import { type CombatTradeReason } from './tradeRuntime';
 
@@ -98,6 +108,7 @@ type AISingleEntityUpdaterOptions = {
   playJump: () => void;
   playExplosion: () => void;
   playDeath: () => void;
+  getNeuralBrainRuntime?: () => LoadedNeuralBrain | null;
   [key: string]: any;
 };
 
@@ -139,6 +150,7 @@ export function createAISingleEntityUpdaterForState({
   pushStatsUpdate,
   isTargetOnCooldown,
   clearPressureTarget,
+  getNeuralBrainRuntime,
   playDash,
   playJump,
   playExplosion,
@@ -261,6 +273,160 @@ export function createAISingleEntityUpdaterForState({
         timer = lungeFinishFrame.timer;
         weaponState = lungeFinishFrame.weaponState;
       };
+
+      if (isNeuralNetDifficulty(self.difficulty) || isNeuralNetDifficulty(s.settings.aiDifficulty)) {
+        const brain = getNeuralBrainRuntime?.() ?? null;
+        if (!brain || brain.telemetry.status !== 'ready') {
+          if (brain) brain.telemetry.blockedFrames += 1;
+          vel.x = 0;
+          vel.z = 0;
+          state = 'COOLDOWN';
+          timer = 0.1;
+          syncStateAndMesh();
+          return;
+        }
+
+        if (self.isLunging) {
+          const target = getBestTacticalTarget(botId, pos, 'nightmare');
+          if (target) {
+            const lungeFlightResult = resolveAISwordLungeFlightForCombatant({
+              state: s,
+              self,
+              target,
+              mainAi: target.id === MAIN_AI_ID ? mai() : undefined,
+              botId,
+              botMesh,
+              pos,
+              vel,
+              dt,
+              cooldownMult,
+              activeCustomMap: getActiveCustomMap(),
+              gravityAcceleration: GRAVITY_ACCELERATION,
+              recoverCombatantAltitude,
+              constrainCombatantToArena,
+              areCombatantsHostile,
+              finishSwordLunge,
+              executeCustomBotTrade: (
+                attackerBot: Combatant,
+                tradeTarget: { id: string },
+                reason: CombatTradeReason
+              ) => executeCustomBotTrade(attackerBot, tradeTarget, reason),
+              renderSwordLungeTrailVfx,
+              recordPlayerDamageTaken,
+              playExplosion: () => sfx.playExplosion(),
+              playDeath: () => sfx.playDeath(),
+              spawnVoxelShockwaveParticles,
+              recordDeathEvent,
+              recordBotPsychKill,
+              recordBotCalibrationDeath,
+              pushStatsUpdate,
+            });
+            if (lungeFlightResult === 'trade_return') {
+              return;
+            }
+          } else {
+            finishSwordLunge(1, 'target_dead', undefined);
+          }
+          syncStateAndMesh();
+          return;
+        }
+
+        const decision = nextNeuralCombatantDecision({
+          brain,
+          state: s,
+          botId,
+          activeCustomMap: getActiveCustomMap(),
+        });
+        const action = decision?.action ?? safeIdleNeuralAction();
+
+        const policyYaw = Number.isFinite(action.aim) ? action.aim : liveYawToSimYaw(yaw);
+        yaw = simYawToLiveYaw(policyYaw);
+        botMesh.rotation.y = yaw;
+        const neuralCrouching = action.crouch;
+        self.isCrouching = neuralCrouching;
+        botMesh.scale.set(1, neuralCrouching ? 0.65 : 1, 1);
+
+        if (
+          action.swapWeapon &&
+          activeWeapon !== 'ball' &&
+          weaponState === 'ready' &&
+          (self.swapLockoutTimer ?? 0) <= 0
+        ) {
+          const nextWeapon = activeWeapon === 'hammer' ? 'sword' : 'hammer';
+          swapCombatantWeapon(self, nextWeapon, true);
+          activeWeapon = nextWeapon;
+          weaponState = 'ready';
+          canStartWeaponAction = false;
+        }
+
+        dashCooldownTimer = Math.max(0, dashCooldownTimer - dt);
+        if (dashRemaining > 0) {
+          dashRemaining = Math.max(0, dashRemaining - dt);
+          const dashDuration = s.settings.dashDuration || 0.25;
+          const dashSpeed = s.settings.dashDistance / dashDuration;
+          vel.x = dashDir.x * dashSpeed;
+          vel.z = dashDir.z * dashSpeed;
+          pos.addScaledVector(vel, dt);
+        } else {
+          if (action.dash && dashCooldownTimer <= 0) {
+            const moveVelocity = resolveNeuralPlanarVelocity(action, policyYaw, s.settings, activeWeapon, neuralCrouching);
+            if (moveVelocity.lengthSq() > 0.0001) {
+              dashDir.copy(moveVelocity).normalize();
+            } else {
+              dashDir.copy(liveForwardVectorForYaw(yaw)).normalize();
+            }
+            dashRemaining = s.settings.dashDuration || 0.25;
+            dashCooldownTimer = s.settings.dashCooldown || 2.0;
+            sfx.playDash();
+          }
+
+          const planarVelocity = resolveNeuralPlanarVelocity(action, policyYaw, s.settings, activeWeapon, neuralCrouching);
+          vel.x = planarVelocity.x;
+          vel.z = planarVelocity.z;
+          pos.addScaledVector(vel, dt);
+        }
+
+        if (action.jump && !self.isJumping && pos.y <= 0.01) {
+          self.isJumping = true;
+          vel.y = 7.2;
+          sfx.playJump();
+        }
+        if (self.isJumping || pos.y > 0.01) {
+          vel.y -= GRAVITY_ACCELERATION * dt;
+          pos.y += vel.y * dt;
+          if (pos.y <= 0) {
+            pos.y = 0;
+            vel.y = 0;
+            self.isJumping = false;
+            self.aiHammerJumpsInAir = 0;
+          }
+        } else {
+          vel.y = 0;
+        }
+
+        if (canStartWeaponAction && weaponState === 'ready') {
+          if (action.attackSecondary && activeWeapon === 'sword') {
+            const lungeDir = liveForwardVectorForYaw(yaw).normalize();
+            triggerCombatantLunge(self, lungeDir, pos, vel);
+            state = 'LUNGING';
+            weaponState = 'ready';
+          } else if (action.attackSecondary && activeWeapon === 'hammer') {
+            state = 'COOLDOWN';
+            timer = resolveScaledAIWeaponReloadTime(s.settings, activeWeapon, cooldownMult, true);
+            triggerCombatantAttack(self, activeWeapon, true);
+            weaponState = 'melee_up';
+          } else if (action.attackPrimary && (activeWeapon === 'hammer' || activeWeapon === 'sword')) {
+            state = 'COOLDOWN';
+            timer = resolveScaledAIWeaponReloadTime(s.settings, activeWeapon, cooldownMult);
+            triggerCombatantAttack(self, activeWeapon);
+            weaponState = 'swing_up';
+          }
+        }
+
+        constrainCombatantToArena(pos, vel);
+        syncStateAndMesh();
+        return;
+      }
   
       const {
         difficulty,

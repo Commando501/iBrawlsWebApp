@@ -55,11 +55,13 @@ try:
                     kill_target=5, max_minutes=2.0,
                     decision_interval=self.cfg.decision_interval,
                     frame_stack=self.cfg.frame_stack,
+                    observation_version=self.cfg.observation_version,
                 )
             return eval_vs(
                 self.model, opponent=self.opponent, matches=self.episodes,
                 decision_interval=self.cfg.decision_interval,
                 frame_stack=self.cfg.frame_stack,
+                observation_version=self.cfg.observation_version,
             )
 
         def _on_step(self) -> bool:
@@ -219,11 +221,14 @@ def run_training(cfg: TrainConfig) -> str:
             max_ticks=int(60 * 60 * cfg.match_minutes),
             bootstrap_truncation=cfg.bootstrap_truncation,
             combat_world_sizes=cfg.combat_world_sizes,
+            combat_layout_mix=cfg.combat_layout_mix,
+            combat_lone_wolf_reward_scale=cfg.combat_lone_wolf_reward_scale,
             combat_kill_range=(cfg.combat_kill_min, cfg.combat_kill_max),
             combat_randomize_layout=cfg.combat_randomize_layout,
             randomize=dr,
             num_workers=cfg.num_workers,
             decision_interval=cfg.decision_interval,
+            observation_version=cfg.observation_version,
         )
     else:
         env = GrifballVecEnv(
@@ -237,6 +242,7 @@ def run_training(cfg: TrainConfig) -> str:
             randomize=dr,
             num_workers=cfg.num_workers,
             decision_interval=cfg.decision_interval,
+            observation_version=cfg.observation_version,
         )
 
     # League (combat only): dedicate extra 1v1 worlds to fights vs FROZEN snapshots —
@@ -255,11 +261,13 @@ def run_training(cfg: TrainConfig) -> str:
             max_ticks=int(60 * 60 * cfg.match_minutes),
             bootstrap_truncation=cfg.bootstrap_truncation,
             combat_world_sizes=[2] * cfg.league_worlds,
+            combat_lone_wolf_reward_scale=cfg.combat_lone_wolf_reward_scale,
             combat_kill_range=(cfg.combat_kill_min, cfg.combat_kill_min),
             combat_randomize_layout=False,  # fixed 1v1 so learner/opponent slots are stable
             randomize=dr,
             num_workers=1,
             decision_interval=cfg.decision_interval,
+            observation_version=cfg.observation_version,
         )
         env = ConcatVecEnv([env, LeagueOpponentVecEnv(league_base, pool, seed=cfg.seed)])
         league_cb = LeagueSnapshotCallback(

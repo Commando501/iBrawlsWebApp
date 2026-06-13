@@ -24,6 +24,7 @@ import numpy as np
 from stable_baselines3.common.vec_env.base_vec_env import VecEnv, VecEnvStepReturn
 
 from .. import protocol as proto
+from ..config import expand_combat_layout_mix
 from ..spaces import action_space, observation_space
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
@@ -119,11 +120,15 @@ class GrifballVecEnv(VecEnv):
         bootstrap_truncation: bool = False,
         mode: str = "grifball",        # 'grifball' | 'combat'
         combat_world_sizes: list[int] | None = None,
+        combat_layout_mix: list[str] | None = None,
+        combat_world_layouts: list[list[int]] | None = None,
+        combat_lone_wolf_reward_scale: float = 1.0,
         combat_kill_range: tuple[int, int] | None = None,
         combat_randomize_layout: bool = True,
         randomize: dict | None = None,
         num_workers: int = 1,
         decision_interval: int = 1,
+        observation_version: int = 1,
         node_cmd: Sequence[str] | None = None,
     ) -> None:
         self.mode = mode
@@ -148,18 +153,28 @@ class GrifballVecEnv(VecEnv):
                 cfg["randomize"] = randomize
             if decision_interval and int(decision_interval) > 1:
                 cfg["decisionInterval"] = int(decision_interval)
+            if mode == "combat" and int(observation_version or 1) > 1:
+                cfg["observationVersion"] = int(observation_version)
             return cfg
 
         self.views: list[_WorkerView] = []
         slot_off = 0
 
         if mode == "combat":
-            sizes = combat_world_sizes or [2, 2, 2, 2, 4, 4, 8]
-            chunks = [sizes[w::W] for w in range(W)]
+            layouts = combat_world_layouts or expand_combat_layout_mix(combat_layout_mix or [])
+            if layouts:
+                chunks = [layouts[w::W] for w in range(W)]
+            else:
+                sizes = combat_world_sizes or [2, 2, 2, 2, 4, 4, 8]
+                chunks = [sizes[w::W] for w in range(W)]
             chunks = [c for c in chunks if c]  # drop empties if W > #worlds
             for w, chunk in enumerate(chunks):
                 cfg = base_cfg(base_seed + w * 1_000_003)
-                cfg["worldSizes"] = chunk
+                if layouts:
+                    cfg["worldLayouts"] = chunk
+                    cfg["loneWolfRewardScale"] = float(combat_lone_wolf_reward_scale)
+                else:
+                    cfg["worldSizes"] = chunk
                 if combat_kill_range:
                     cfg["killTargetRange"] = list(combat_kill_range)
                 cfg["randomizeLayout"] = combat_randomize_layout

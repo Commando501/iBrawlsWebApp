@@ -529,6 +529,7 @@ $("#btnEval").addEventListener("click", async () => {
     opponent: $("#evalOpponent").value, matches: Number($("#evalMatches").value),
     num_envs: Number($("#evalEnvs").value), device: $("#evalDevice").value,
     frame_stack: Number($("#evalFrameStack").value),
+    observation_version: Number($("#evalObservationVersion").value),
     matrix: $("#evalMatrix").checked,
     league_snapshots: $("#evalLeagueSnapshots").value.split(/\r?\n|,/).map((s) => s.trim()).filter(Boolean),
   };
@@ -576,7 +577,7 @@ function renderEvalHistory(history) {
   const root = $("#evalHistory");
   if (!history.length) { root.innerHTML = '<p class="muted">No evaluations yet — run one above and it\'ll show up here.</p>'; return; }
   const rows = history.slice();
-  const histScore = (r) => r.win_rate ?? r.summary?.promotion_score ?? 0;
+  const histScore = (r) => r.win_rate ?? r.summary?.lone_wolf_score ?? r.summary?.promotion_score ?? 0;
   if (histSortBest) rows.sort((a, b) => histScore(b) - histScore(a));
   const best = Math.max(...rows.map(histScore));
   const table = el("table", { class: "guide-table hist-table" },
@@ -597,7 +598,7 @@ function histRow(r, best) {
   if (l > 0) bars.append(el("div", { class: "bar loss", style: `width:${l}%` }));
   const when = r.ts ? new Date(r.ts * 1000).toLocaleString() : "—";
   const model = (r.model || "—").replace(/^runs\//, "").replace(/\/final_model\.zip$/, " / final").replace(/\.zip$/, "");
-  const score = r.win_rate ?? r.summary?.promotion_score ?? 0;
+  const score = r.win_rate ?? r.summary?.lone_wolf_score ?? r.summary?.promotion_score ?? 0;
   const isBest = score === best && best > 0;
   const b = r.behavior;
   const bTip = b ? Object.entries(BEHAVIOR_INFO)
@@ -641,6 +642,9 @@ function renderEvalResult(r) {
     el("div", { class: "muted" }, `win ${fmtNum(r.win_rate)} · draw ${fmtNum(r.draw_rate)} · loss ${fmtNum(r.loss_rate)}`
       + (r.ep_return != null ? ` · avg return ${fmtNum(r.ep_return)}` : "")
       + (r.decision_interval ? ` · decision interval ${r.decision_interval}` : "")));
+  if (r.observation_version) {
+    summary.append(el("div", { class: "muted" }, `obs v${r.observation_version}`));
+  }
   const reco = el("div", { id: "evalReco", class: "eval-reco" });
   $("#evalResult").innerHTML = ""; $("#evalResult").append(bars, summary);
   const behavior = behaviorChips(r.behavior);
@@ -652,14 +656,15 @@ function renderEvalResult(r) {
 function renderEvalMatrixResult(r) {
   const rows = r.scenarios.map((s) => {
     const b = s.behavior || {};
-    // Lift = win rate / random baseline: 1.0x = random-equal, 2.0x = perfect.
-    const lift = s.win_lift != null ? s.win_lift : (s.win_rate || 0) * (s.world_size || 2);
-    const liftClass = lift >= 1.7 ? "good-cell" : lift <= 1.05 ? "bad-cell" : "";
+    const score = s.win_score != null ? s.win_score : 0;
+    const scoreClass = score >= 0.75 ? "good-cell" : score <= 0.15 ? "bad-cell" : "";
+    const randomBaseline = s.random_baseline != null ? s.random_baseline : 0;
     return el("tr", {},
       el("td", {}, s.name),
-      el("td", { class: liftClass, title: "win rate ÷ random baseline (1/world size); 2.0x is the best achievable" },
-        `${lift.toFixed(2)}x`),
+      el("td", { class: scoreClass, title: "0 = random baseline, 1 = perfect win rate for this scenario" },
+        fmtNum(score)),
       el("td", {}, `${Math.round((s.win_rate || 0) * 100)}%`),
+      el("td", {}, `${Math.round(randomBaseline * 100)}%`),
       el("td", {}, `${Math.round((s.draw_rate || 0) * 100)}%`),
       el("td", {}, s.world_size || "-"),
       el("td", {}, s.kill_target || "-"),
@@ -667,20 +672,23 @@ function renderEvalMatrixResult(r) {
   });
   const table = el("table", { class: "guide-table" },
     el("thead", {}, el("tr", {},
-      el("th", {}, "Scenario"), el("th", { title: "win rate normalized by world size" }, "Lift"),
-      el("th", {}, "Win"), el("th", {}, "Draw"),
+      el("th", {}, "Scenario"), el("th", { title: "0 = random baseline, 1 = perfect" }, "Score"),
+      el("th", {}, "Win"), el("th", {}, "Random"), el("th", {}, "Draw"),
       el("th", {}, "World"), el("th", {}, "Kills"), el("th", {}, "Atk / dash / repeat"))),
     el("tbody", {}, ...rows));
   const s = r.summary;
   const summary = el("div", { class: "summary" },
-    el("div", {}, el("span", { class: "big" }, fmtNum(s.promotion_score)), " promotion score"),
+    el("div", {}, el("span", { class: "big" }, fmtNum(s.lone_wolf_score ?? s.promotion_score)), " lone-wolf score"),
     el("div", { class: "muted" },
-      `mean lift ${(s.mean_win_lift != null ? s.mean_win_lift : 0).toFixed(2)}x (1 = random, 2 = perfect)`
+      `mean scenario score ${fmtNum(s.mean_scenario_win_score ?? s.promotion_score ?? 0)} (0 = random, 1 = perfect)`
       + ` · mean draw ${Math.round(s.mean_draw_rate * 100)}% · human-likeness penalty ${Math.round(s.human_likeness_penalty * 100)}%`
       + (s.baseline_source ? ` (bands: ${s.baseline_source})` : "")
       + (r.decision_interval ? ` · decision interval ${r.decision_interval}` : "")
       + (r.frame_stack ? ` · frame stack ${r.frame_stack}` : "")));
   const reco = el("div", { id: "evalReco", class: "eval-reco" });
+  if (r.observation_version) {
+    summary.append(el("div", { class: "muted" }, `obs v${r.observation_version}`));
+  }
   $("#evalResult").innerHTML = "";
   $("#evalResult").append(summary, table);
   // Behavior chips for the duel scenario (the cleanest read on movement style).
@@ -1034,11 +1042,11 @@ function renderQueue(st) {
   if (!jobs.length) { root.innerHTML = '<p class="muted">No jobs queued. Build a sweep above, or queue any config.</p>'; return; }
 
   const doneJobs = jobs.filter((j) => j.state === "done" && j.summary);
-  const bestRew = Math.max(...doneJobs.map((j) => j.summary.ep_rew_mean ?? -Infinity));
+  const bestScore = Math.max(...doneJobs.map((j) => j.summary.rank_score ?? -Infinity));
 
   const rows = jobs.map((j) => {
     const s = j.summary || {};
-    const isBest = j.state === "done" && s.ep_rew_mean != null && s.ep_rew_mean === bestRew && doneJobs.length > 1;
+    const isBest = j.state === "done" && s.rank_score != null && s.rank_score === bestScore && doneJobs.length > 1;
     const actions = el("td", { class: "nowrap" });
     if (j.state === "done") {
       actions.append(el("button", {
@@ -1061,12 +1069,13 @@ function renderQueue(st) {
       el("td", {}, s.ep_rew_mean != null ? fmtNum(s.ep_rew_mean) : "—"),
       el("td", {}, s.win_rate != null ? Math.round(s.win_rate * 100) + "%" : "—"),
       el("td", {}, s.fps != null ? fmtInt(s.fps) : "—"),
+      el("td", {}, s.lone_wolf_score != null ? fmtNum(s.lone_wolf_score) : "-"),
       actions);
   });
   const table = el("table", { class: "guide-table queue-table" },
     el("thead", {}, el("tr", {},
       el("th", {}, "Job"), el("th", {}, "State"), el("th", {}, "Steps"),
-      el("th", {}, "Reward"), el("th", {}, "Win rate"), el("th", {}, "FPS"), el("th", {}, ""))),
+      el("th", {}, "Reward"), el("th", {}, "Win rate"), el("th", {}, "FPS"), el("th", {}, "Lone wolf"), el("th", {}, ""))),
     el("tbody", {}, ...rows));
   root.innerHTML = "";
   root.append(el("p", { class: "muted", style: "margin:0 0 8px" },

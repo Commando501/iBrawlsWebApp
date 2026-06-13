@@ -6,7 +6,7 @@ import os
 import zipfile
 
 from ibrawls_rl import baseline
-from ibrawls_rl.eval import summarize_eval_matrix, win_lift
+from ibrawls_rl.eval import scenario_win_score, summarize_eval_matrix, win_lift
 from ibrawls_rl.dashboard.advisor import advise
 
 
@@ -19,11 +19,17 @@ def test_win_lift_normalizes_world_sizes():
 
 
 def test_matrix_score_credits_big_worlds_fairly():
-    perfect_duel = {"win_rate": 1.0, "draw_rate": 0.0, "world_size": 2, "behavior": {}}
-    perfect_brawl = {"win_rate": 0.25, "draw_rate": 0.0, "world_size": 8, "behavior": {}}
+    perfect_duel = {"win_rate": 1.0, "draw_rate": 0.0, "team_sizes": [1, 1], "world_size": 2, "behavior": {}}
+    perfect_brawl = {"win_rate": 1.0, "draw_rate": 0.0, "team_sizes": [1] * 8, "world_size": 8, "behavior": {}}
     out = summarize_eval_matrix([perfect_duel, perfect_brawl])
-    assert out["mean_win_lift"] == 2.0
+    assert out["mean_scenario_win_score"] == 1.0
     assert out["promotion_score"] == 1.0
+
+
+def test_scenario_win_score_uses_focus_slot_random_baseline():
+    assert scenario_win_score(0.5, [1, 1]) == 0.0
+    assert scenario_win_score(0.125, [1] * 8) == 0.0
+    assert scenario_win_score(1.0, [1] * 8) == 1.0
 
 
 def test_band_penalty_zero_inside_and_grows_outside():

@@ -16,6 +16,8 @@ import re
 import zipfile
 from typing import Any
 
+from ..config import expand_combat_layout_mix
+
 Series = dict[str, list[list[float]]]
 
 _LEVEL_RANK = {"bad": 3, "warn": 2, "info": 1, "good": 0}
@@ -25,6 +27,7 @@ _LEVEL_RANK = {"bad": 3, "warn": 2, "info": 1, "good": 0}
 # against these to catch incompatible warm-starts BEFORE a run dies at startup.
 EXPECTED_ACTION_NVEC = (9, 4, 3, 2, 2, 2)
 OBS_DIM_BASE = 140
+RECOMMENDED_LONE_WOLF_MIX = ["1v1x16", "1v2x6", "1v3x6", "1v7x2", "ffa4x6", "ffa8x4"]
 
 
 def _inspect_model_zip(path: str) -> dict | None:
@@ -145,8 +148,21 @@ def advise(
 
     if mode == "combat":
         sizes = values.get("combat_world_sizes") or []
+        layout_mix = values.get("combat_layout_mix") or []
+        if not layout_mix:
+            add("info", "No explicit lone-wolf scenario mix",
+                "combat_world_sizes can expose 1v1/FFA/team layouts, but it does not guarantee "
+                "the direct 1-vs-many reps needed for lone-wolf skill. Add fixed asymmetric "
+                "layouts and keep FFA pressure in the same run.",
+                {
+                    "combat_layout_mix": RECOMMENDED_LONE_WOLF_MIX,
+                    "combat_lone_wolf_reward_scale": 1.35,
+                })
         try:
-            agents = sum(int(x) for x in sizes)
+            agents = (
+                sum(sum(layout) for layout in expand_combat_layout_mix(layout_mix))
+                if layout_mix else sum(int(x) for x in sizes)
+            )
         except (TypeError, ValueError):
             agents = 0
         if agents:
@@ -215,6 +231,12 @@ def advise(
 
     # ---------- init_model compatibility (catches dead-on-arrival warm starts) ----------
     init_model = str(values.get("init_model") or "").strip()
+    if mode == "combat" and int(_num(values, "observation_version", 1)) > 1 and init_model:
+        add("bad", "observation v2 needs a fresh checkpoint family",
+            "observation_version=2 changes the policy input layer for full FFA threat visibility. "
+            "Do not warm-start an observation-v1 model into it unless a dedicated input-layer "
+            "migration is added.",
+            {"init_model": ""})
     if init_model and project_dir:
         path = init_model if os.path.isabs(init_model) else os.path.join(project_dir, init_model)
         if not os.path.exists(path):

@@ -21,7 +21,7 @@ from stable_baselines3 import PPO
 
 from .envs.grifball_vec_env import GrifballVecEnv
 from .eval import _maybe_frame_stack
-from .evaluate import resolve_decision_interval, resolve_frame_stack
+from .evaluate import resolve_decision_interval, resolve_frame_stack, resolve_observation_version
 
 WATCH_DIR = os.path.join("runs", "_watch")
 
@@ -33,6 +33,7 @@ def record_match(
     opponent: str = "self",
     decision_interval: int = 5,
     frame_stack: int = 1,
+    observation_version: int = 1,
     max_minutes: float = 3.0,
     seed: int | None = None,
     deterministic: bool = False,
@@ -46,6 +47,7 @@ def record_match(
         combat_randomize_layout=False,
         max_ticks=int(60 * 60 * max_minutes),
         decision_interval=decision_interval,
+        observation_version=observation_version,
         base_seed=seed if seed is not None else int(time.time()) % 1_000_000,
     )
     env = _maybe_frame_stack(base, frame_stack)
@@ -88,6 +90,7 @@ def record_match(
             "opponent": opponent,
             "decision_interval": decision_interval,
             "frame_stack": frame_stack,
+            "observation_version": observation_version,
             "seconds_per_frame": decision_interval / 60.0,
             "recorded": time.strftime("%Y-%m-%dT%H:%M:%S"),
         },
@@ -105,6 +108,7 @@ def main() -> None:
     ap.add_argument("--max-minutes", type=float, default=3.0)
     ap.add_argument("--decision-interval", type=int, default=0, help="0 = auto from the run")
     ap.add_argument("--frame-stack", type=int, default=0, help="0 = auto from the run")
+    ap.add_argument("--observation-version", type=int, default=0, help="0 = auto from the run")
     ap.add_argument("--seed", type=int, default=-1, help="-1 = random each time")
     ap.add_argument("--deterministic", action="store_true",
                     help="argmax actions (default: sampled — livelier, more human)")
@@ -113,7 +117,11 @@ def main() -> None:
 
     interval = args.decision_interval or resolve_decision_interval(args.model)
     frame_stack = args.frame_stack or resolve_frame_stack(args.model)
-    print(f"[watch] loading {args.model} (interval {interval}, stack {frame_stack})", flush=True)
+    observation_version = args.observation_version or resolve_observation_version(args.model)
+    print(
+        f"[watch] loading {args.model} (interval {interval}, stack {frame_stack}, obs v{observation_version})",
+        flush=True,
+    )
     model = PPO.load(args.model, device="cpu")
 
     max_decisions = int(60 * 60 * args.max_minutes) // max(1, interval)
@@ -124,6 +132,7 @@ def main() -> None:
         opponent=args.opponent,
         decision_interval=interval,
         frame_stack=frame_stack,
+        observation_version=observation_version,
         max_minutes=args.max_minutes,
         seed=None if args.seed < 0 else args.seed,
         deterministic=args.deterministic,

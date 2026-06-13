@@ -112,6 +112,7 @@ def eval_vs(
     decision_interval: int = 1,
     max_minutes: float = 6.0,
     frame_stack: int = 1,
+    observation_version: int = 1,
 ) -> dict:
     """Grade a grifball policy vs a built-in opponent. Each learner sub-env's episode counts."""
     env = GrifballVecEnv(
@@ -120,6 +121,7 @@ def eval_vs(
         settings={"grifballGoalTarget": goal_target},
         max_ticks=int(60 * 60 * max_minutes),
         decision_interval=decision_interval,
+        observation_version=observation_version,
     )
     env = _maybe_frame_stack(env, frame_stack)
     try:
@@ -177,26 +179,30 @@ def eval_combat_vs_random(
     decision_interval: int = 1,
     max_minutes: float = 6.0,
     world_size: int = 2,
+    team_sizes: list[int] | None = None,
     frame_stack: int = 1,
+    observation_version: int = 1,
 ) -> dict:
-    """Grade a combat policy by 1v1 duels vs a random opponent (fixed 1v1 worlds).
+    """Grade a combat policy in fixed combat worlds with only team 0 controlled by policy.
 
-    Even agent slots = policy (team t0), odd = random (team t1). Win read from the policy
-    slot's terminal reward; timeouts (no decisive reward) count as draws.
+    `team_sizes=[1, 3]` means one policy-controlled lone-wolf slot against three random
+    opponents. `team_sizes=[1]*8` means one policy slot in an 8-player FFA. Win/loss is
+    read from the focus slot's terminal reward; timeouts count as draws.
     """
+    layout = team_sizes or [1] * int(world_size)
     env = GrifballVecEnv(
         mode="combat",
-        combat_world_sizes=[world_size] * num_worlds,
+        combat_world_layouts=[layout] * num_worlds,
         combat_kill_range=(kill_target, kill_target),
         combat_randomize_layout=False,
         max_ticks=int(60 * 60 * max_minutes),
         decision_interval=decision_interval,
+        observation_version=observation_version,
     )
     env = _maybe_frame_stack(env, frame_stack)
     try:
         obs = env.reset()
-        policy_idx = np.arange(0, env.num_envs, 2)
-        random_idx = np.arange(1, env.num_envs, 2)
+        policy_idx, random_idx = _scenario_indices(layout, num_worlds)
         wins = losses = draws = completed = 0
         next_mark = progress_every
         behavior = BehaviorTracker(slots=policy_idx)
@@ -228,7 +234,8 @@ def eval_combat_vs_random(
             "draw_rate": draws / total,
             "episodes": completed,
             "behavior": behavior.summary(),
-            "world_size": world_size,
+            "world_size": sum(layout),
+            "team_sizes": layout,
             "kill_target": kill_target,
         }
     finally:
@@ -236,41 +243,67 @@ def eval_combat_vs_random(
 
 
 def combat_eval_matrix_specs() -> list[dict]:
-    """The standard combat grade: duel, small group, and large brawl."""
+    """The standard combat grade: duel, asymmetric lone-wolf, and FFA pressure."""
     return [
-        {"name": "duel_k5", "world_size": 2, "kill_target": 5, "max_minutes": 2.0},
-        {"name": "skirmish4_k10", "world_size": 4, "kill_target": 10, "max_minutes": 3.0},
-        {"name": "brawl8_k15", "world_size": 8, "kill_target": 15, "max_minutes": 4.0},
+        {"name": "duel_1v1", "team_sizes": [1, 1], "kill_target": 5, "max_minutes": 2.0},
+        {"name": "lone_1v2", "team_sizes": [1, 2], "kill_target": 8, "max_minutes": 3.0},
+        {"name": "lone_1v3", "team_sizes": [1, 3], "kill_target": 10, "max_minutes": 3.0},
+        {"name": "lone_1v7", "team_sizes": [1, 7], "kill_target": 15, "max_minutes": 4.0},
+        {"name": "ffa4", "team_sizes": [1, 1, 1, 1], "kill_target": 10, "max_minutes": 3.0},
+        {"name": "ffa8", "team_sizes": [1, 1, 1, 1, 1, 1, 1, 1], "kill_target": 15, "max_minutes": 4.0},
     ]
 
 
-def win_lift(win_rate: float, world_size: int) -> float:
-    """Win rate normalized by the scenario's random baseline (1/world_size).
+def _scenario_indices(team_sizes: list[int], num_worlds: int) -> tuple[np.ndarray, np.ndarray]:
+    focus: list[int] = []
+    opponents: list[int] = []
+    width = sum(team_sizes)
+    for w in range(num_worlds):
+        base = w * width
+        for i in range(width):
+            (focus if i < team_sizes[0] else opponents).append(base + i)
+    return np.asarray(focus, dtype=np.int64), np.asarray(opponents, dtype=np.int64)
 
-    Raw win rates aren't comparable across world sizes: in an 8-player FFA half the
-    slots are the policy, so when one policy slot wins the others LOSE by definition —
-    a perfect policy caps at 2/world_size per slot. Lift maps every scenario onto the
-    same scale: 1.0 = no better than random, 2.0 = best achievable.
-    """
+
+def scenario_random_baseline(team_sizes: list[int] | None = None, world_size: int | None = None) -> float:
+    """Random chance that the focus team wins a scenario."""
+    if team_sizes:
+        total = max(1, sum(int(x) for x in team_sizes))
+        focus = max(1, int(team_sizes[0]))
+        return focus / total
+    return 1.0 / max(2, int(world_size or 2))
+
+
+def scenario_win_score(win_rate: float, team_sizes: list[int] | None = None, world_size: int | None = None) -> float:
+    """0 = random baseline, 1 = perfect focus-slot win rate."""
+    baseline = scenario_random_baseline(team_sizes, world_size)
+    denom = max(1e-9, 1.0 - baseline)
+    return max(0.0, min(1.0, (float(win_rate) - baseline) / denom))
+
+
+def win_lift(win_rate: float, world_size: int) -> float:
+    """Legacy win-rate normalization retained for old dashboard/history readers."""
     baseline = 1.0 / max(2, int(world_size or 2))
     return float(win_rate) / baseline
 
 
 def summarize_eval_matrix(results: list[dict]) -> dict:
-    """Promotion score: beat random everywhere, draw less, move like a person.
+    """Promotion score: beat random in every scenario, draw less, move like a person.
 
-    Wins enter as mean win-LIFT (see :func:`win_lift`) so big-world scenarios count
-    fairly; the human-likeness penalty measures behavior stats against the human
-    baseline bands (replay-derived when python/human_baseline.json exists).
+    Wins enter as scenario scores where 0 = random baseline and 1 = perfect. The
+    human-likeness penalty measures behavior stats against the human baseline bands
+    (replay-derived when python/human_baseline.json exists).
     """
     if not results:
         return {
             "scenarios": 0,
             "mean_win_rate": 0.0,
             "mean_win_lift": 0.0,
+            "mean_scenario_win_score": 0.0,
             "mean_draw_rate": 0.0,
             "human_likeness_penalty": 0.0,
             "baseline_source": baseline.load_baseline()["source"],
+            "lone_wolf_score": 0.0,
             "promotion_score": 0.0,
         }
 
@@ -278,18 +311,29 @@ def summarize_eval_matrix(results: list[dict]) -> dict:
     win = float(np.mean([float(r.get("win_rate", 0.0)) for r in results]))
     lift = float(np.mean([win_lift(r.get("win_rate", 0.0), r.get("world_size", 2))
                           for r in results]))
+    scenario_scores = [
+        float(r.get("win_score", scenario_win_score(
+            r.get("win_rate", 0.0),
+            r.get("team_sizes"),
+            r.get("world_size", 2),
+        )))
+        for r in results
+    ]
+    lone_wolf_score = float(np.mean(scenario_scores))
     draw = float(np.mean([float(r.get("draw_rate", 0.0)) for r in results]))
     human_penalty = float(np.mean(
         [baseline.band_penalty(r.get("behavior"), bands) for r in results]))
-    # lift/2 maps [random..perfect] onto [0.5..1.0]; draws and robotic play subtract.
-    score = max(0.0, lift / 2.0 - draw * 0.35 - human_penalty * 0.4)
+    # Scenario score maps [random..perfect] onto [0..1]; draws and robotic play subtract.
+    score = max(0.0, lone_wolf_score - draw * 0.35 - human_penalty * 0.4)
     return {
         "scenarios": len(results),
         "mean_win_rate": round(win, 4),
         "mean_win_lift": round(lift, 4),
+        "mean_scenario_win_score": round(lone_wolf_score, 4),
         "mean_draw_rate": round(draw, 4),
         "human_likeness_penalty": round(human_penalty, 4),
         "baseline_source": baseline.load_baseline()["source"],
+        "lone_wolf_score": round(score, 4),
         "promotion_score": round(score, 4),
     }
 
@@ -302,22 +346,45 @@ def eval_combat_matrix(
     progress_every: int = 0,
     decision_interval: int = 1,
     frame_stack: int = 1,
+    snapshot_paths: list[str] | None = None,
+    device: str = "cpu",
+    observation_version: int = 1,
 ) -> dict:
     results = []
     for spec in combat_eval_matrix_specs():
-        res = eval_combat_vs_random(
-            model,
-            matches=matches,
-            num_worlds=num_worlds,
-            kill_target=spec["kill_target"],
-            deterministic=deterministic,
-            progress_every=progress_every,
-            decision_interval=decision_interval,
-            max_minutes=spec["max_minutes"],
-            world_size=spec["world_size"],
-            frame_stack=frame_stack,
-        )
-        res["win_lift"] = round(win_lift(res["win_rate"], spec["world_size"]), 4)
+        if snapshot_paths:
+            res = eval_combat_vs_snapshots(
+                model,
+                snapshot_paths=snapshot_paths,
+                matches=matches,
+                num_worlds=num_worlds,
+                kill_target=spec["kill_target"],
+                deterministic=deterministic,
+                progress_every=progress_every,
+                decision_interval=decision_interval,
+                max_minutes=spec["max_minutes"],
+                team_sizes=spec["team_sizes"],
+                frame_stack=frame_stack,
+                device=device,
+                observation_version=observation_version,
+            )
+        else:
+            res = eval_combat_vs_random(
+                model,
+                matches=matches,
+                num_worlds=num_worlds,
+                kill_target=spec["kill_target"],
+                deterministic=deterministic,
+                progress_every=progress_every,
+                decision_interval=decision_interval,
+                max_minutes=spec["max_minutes"],
+                team_sizes=spec["team_sizes"],
+                frame_stack=frame_stack,
+                observation_version=observation_version,
+            )
+        res["win_lift"] = round(win_lift(res["win_rate"], res["world_size"]), 4)
+        res["random_baseline"] = round(scenario_random_baseline(res.get("team_sizes"), res["world_size"]), 4)
+        res["win_score"] = round(scenario_win_score(res["win_rate"], res.get("team_sizes"), res["world_size"]), 4)
         res["behavior_bands"] = baseline.annotate(res.get("behavior"))
         results.append({"name": spec["name"], **res})
     return {"summary": summarize_eval_matrix(results), "scenarios": results}
@@ -334,8 +401,10 @@ def eval_combat_vs_snapshots(
     decision_interval: int = 1,
     max_minutes: float = 6.0,
     world_size: int = 2,
+    team_sizes: list[int] | None = None,
     frame_stack: int = 1,
     device: str = "cpu",
+    observation_version: int = 1,
 ) -> dict:
     """Grade even policy slots against odd slots driven by frozen PPO snapshots."""
     if not snapshot_paths:
@@ -349,25 +418,28 @@ def eval_combat_vs_snapshots(
             decision_interval=decision_interval,
             max_minutes=max_minutes,
             world_size=world_size,
+            team_sizes=team_sizes,
             frame_stack=frame_stack,
+            observation_version=observation_version,
         )
 
     from stable_baselines3 import PPO
 
     opponents = [PPO.load(path, device=device) for path in snapshot_paths]
+    layout = team_sizes or [1] * int(world_size)
     env = GrifballVecEnv(
         mode="combat",
-        combat_world_sizes=[world_size] * num_worlds,
+        combat_world_layouts=[layout] * num_worlds,
         combat_kill_range=(kill_target, kill_target),
         combat_randomize_layout=False,
         max_ticks=int(60 * 60 * max_minutes),
         decision_interval=decision_interval,
+        observation_version=observation_version,
     )
     env = _maybe_frame_stack(env, frame_stack)
     try:
         obs = env.reset()
-        policy_idx = np.arange(0, env.num_envs, 2)
-        opponent_idx = np.arange(1, env.num_envs, 2)
+        policy_idx, opponent_idx = _scenario_indices(layout, num_worlds)
         wins = losses = draws = completed = 0
         next_mark = progress_every
         behavior = BehaviorTracker(slots=policy_idx)
@@ -401,7 +473,8 @@ def eval_combat_vs_snapshots(
             "draw_rate": draws / total,
             "episodes": completed,
             "behavior": behavior.summary(),
-            "world_size": world_size,
+            "world_size": sum(layout),
+            "team_sizes": layout,
             "kill_target": kill_target,
             "opponent": "league",
             "league_snapshots": snapshot_paths,

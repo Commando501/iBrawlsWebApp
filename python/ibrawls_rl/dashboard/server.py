@@ -107,6 +107,7 @@ def _record_eval_if_new(st: dict) -> None:
             "behavior": result.get("behavior"),
             "decision_interval": result.get("decision_interval"),
             "frame_stack": result.get("frame_stack") or meta.get("frame_stack"),
+            "observation_version": result.get("observation_version") or meta.get("observation_version"),
             "summary": result.get("summary"),
             "scenarios": result.get("scenarios"),
             "league_snapshots": result.get("league_snapshots") or meta.get("league_snapshots"),
@@ -372,6 +373,8 @@ class Handler(BaseHTTPRequestHandler):
                 "--device", body.get("device", "cpu")]
         if int(body.get("frame_stack", 0) or 0) > 0:
             args += ["--frame-stack", str(int(body.get("frame_stack", 0)))]
+        if int(body.get("observation_version", 0) or 0) > 0:
+            args += ["--observation-version", str(int(body.get("observation_version", 0)))]
         if mode == "combat":
             args += ["--kill-target", str(int(body.get("kill_target", 10)))]
             if body.get("matrix"):
@@ -389,6 +392,7 @@ class Handler(BaseHTTPRequestHandler):
             "device": body.get("device", "cpu"),
             "matrix": bool(body.get("matrix")),
             "frame_stack": int(body.get("frame_stack", 0) or 0),
+            "observation_version": int(body.get("observation_version", 0) or 0),
             "league_snapshots": body.get("league_snapshots") or [],
         }
         return EVALER.start(args, meta=meta)

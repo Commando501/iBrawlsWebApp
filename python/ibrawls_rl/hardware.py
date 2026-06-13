@@ -111,6 +111,8 @@ def recommended_values(hw: HardwareInfo | None = None) -> dict:
         "mode": "combat",
         "num_workers": workers,
         "combat_world_sizes": world_sizes,
+        "combat_layout_mix": ["1v1x16", "1v2x6", "1v3x6", "1v7x2", "ffa4x6", "ffa8x4"],
+        "combat_lone_wolf_reward_scale": 1.35,
         "decision_interval": 5,
         "rollout_length": rollout,
         "batch_size": batch,

@@ -9,13 +9,33 @@ the Train tab if needed).
 """
 from __future__ import annotations
 
+import json
 import os
+import subprocess
+import sys
 import threading
 import time
 
 from ..config import config_from_values, save_config
 from . import metrics as metricsmod
 from .paths import CONFIG_PATH, PROJECT_DIR, safe_run_path
+
+
+def queue_rank_score(summary: dict | None) -> float:
+    """Comparable optimizer score; full-matrix lone-wolf grades outrank raw rewards."""
+    if not summary:
+        return float("-inf")
+    for key in ("lone_wolf_score", "promotion_score"):
+        value = summary.get(key)
+        if isinstance(value, (int, float)):
+            return float(value)
+    win = summary.get("win_rate")
+    if isinstance(win, (int, float)):
+        return float(win) * 0.25
+    reward = summary.get("ep_rew_mean")
+    if isinstance(reward, (int, float)):
+        return float(reward) / 1000.0
+    return float("-inf")
 
 
 def _summarize_run(logdir: str) -> dict:
@@ -32,12 +52,71 @@ def _summarize_run(logdir: str) -> dict:
         pts = series.get(key)
         return pts[-1][1] if pts else None
 
-    return {
+    summary = {
         "step": last("step") or metricsmod._last_step(run),
         "ep_rew_mean": last("rollout/ep_rew_mean"),
         "ep_len_mean": last("rollout/ep_len_mean"),
         "win_rate": last("eval/win_rate"),
         "fps": last("time/fps"),
+    }
+    matrix_path = os.path.join(run, "optimizer_eval_matrix.json")
+    if os.path.exists(matrix_path):
+        try:
+            with open(matrix_path, "r", encoding="utf-8") as f:
+                result = json.load(f)
+            matrix = result.get("summary") or {}
+            summary.update({
+                "lone_wolf_score": matrix.get("lone_wolf_score"),
+                "promotion_score": matrix.get("promotion_score"),
+                "matrix_scenarios": matrix.get("scenarios"),
+            })
+        except Exception:
+            pass
+    summary["rank_score"] = queue_rank_score(summary)
+    return summary
+
+
+def _run_optimizer_matrix(model_path: str, cfg) -> dict:
+    """Run the full combat matrix after a queue job and persist the JSON result."""
+    run = safe_run_path(cfg.logdir)
+    if cfg.mode != "combat" or not run or not os.path.exists(model_path):
+        return {}
+    cmd = [
+        sys.executable, "-m", "ibrawls_rl.evaluate", model_path,
+        "--json", "--mode", "combat", "--matrix",
+        "--matches", str(max(1, int(cfg.eval_episodes))),
+        "--num-envs", "16",
+        "--device", "cpu",
+    ]
+    if int(getattr(cfg, "observation_version", 1) or 1) > 1:
+        cmd += ["--observation-version", str(int(cfg.observation_version))]
+    out = subprocess.run(
+        cmd,
+        cwd=PROJECT_DIR,
+        env={**os.environ, "PYTHONPATH": PROJECT_DIR},
+        capture_output=True,
+        text=True,
+        timeout=60 * 60 * 4,
+    )
+    if out.returncode != 0:
+        return {"optimizer_eval_error": (out.stderr or out.stdout or "").strip()[-500:]}
+    payload = None
+    for line in reversed((out.stdout or "").splitlines()):
+        try:
+            payload = json.loads(line)
+            break
+        except json.JSONDecodeError:
+            continue
+    if not payload:
+        return {"optimizer_eval_error": "matrix evaluator produced no JSON result"}
+    matrix_path = os.path.join(run, "optimizer_eval_matrix.json")
+    with open(matrix_path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=1)
+    summary = payload.get("summary") or {}
+    return {
+        "lone_wolf_score": summary.get("lone_wolf_score"),
+        "promotion_score": summary.get("promotion_score"),
+        "matrix_scenarios": summary.get("scenarios"),
     }
 
 
@@ -166,8 +245,15 @@ class TrainQueue:
                 time.sleep(2)
             st = self.trainer.status()
             ok = st.get("returncode") in (0, None)
+            matrix_summary = {}
             job["state"] = "done" if ok else "error"
             if not ok:
                 job["error"] = f"trainer exited with code {st.get('returncode')}"
+            elif job["state"] == "done":
+                model_path = os.path.join(PROJECT_DIR, cfg.logdir, "final_model.zip")
+                matrix_summary = _run_optimizer_matrix(model_path, cfg)
+                if matrix_summary.get("optimizer_eval_error"):
+                    job["error"] = matrix_summary["optimizer_eval_error"]
             job["finished_at"] = time.time()
-            job["summary"] = _summarize_run(job["logdir"])
+            job["summary"] = {**_summarize_run(job["logdir"]), **(matrix_summary if ok else {})}
+            job["summary"]["rank_score"] = queue_rank_score(job["summary"])

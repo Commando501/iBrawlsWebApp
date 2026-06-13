@@ -99,6 +99,8 @@ def test_recommended_values_fit_the_target_box():
     assert rec["num_workers"] == 12
     assert rec["device"] == "cuda"
     assert rec["decision_interval"] == 5
+    assert rec["combat_layout_mix"] == ["1v1x16", "1v2x6", "1v3x6", "1v7x2", "ffa4x6", "ffa8x4"]
+    assert rec["combat_lone_wolf_reward_scale"] == 1.35
     agents = sum(rec["combat_world_sizes"])
     buffer = rec["rollout_length"] * agents
     assert rec["batch_size"] <= buffer
@@ -111,3 +113,18 @@ def test_recommended_values_cpu_only_falls_back():
     rec = recommended_values(hw)
     assert rec["device"] == "cpu"
     assert rec["width"] == 256
+
+
+def test_advisor_recommends_asymmetric_lone_wolf_coverage():
+    out = advise({}, _values(combat_layout_mix=[]), cpus=16)
+    f = next(x for x in out["findings"] if "lone-wolf" in x["title"].lower())
+    assert f["level"] == "info"
+    assert f["fixes"]["combat_layout_mix"] == ["1v1x16", "1v2x6", "1v3x6", "1v7x2", "ffa4x6", "ffa8x4"]
+    assert f["fixes"]["combat_lone_wolf_reward_scale"] == 1.35
+
+
+def test_advisor_blocks_observation_v2_warm_start():
+    out = advise({}, _values(observation_version=2, init_model="runs/old/final_model.zip"), cpus=16)
+    f = next(x for x in out["findings"] if "observation v2" in x["title"].lower())
+    assert f["level"] == "bad"
+    assert f["fixes"] == {"init_model": ""}

@@ -2,7 +2,13 @@ from __future__ import annotations
 
 import numpy as np
 
-from ibrawls_rl.eval import BehaviorTracker, combat_eval_matrix_specs, summarize_eval_matrix
+from ibrawls_rl.eval import (
+    BehaviorTracker,
+    combat_eval_matrix_specs,
+    scenario_random_baseline,
+    scenario_win_score,
+    summarize_eval_matrix,
+)
 
 
 def test_behavior_tracker_reports_repetition_and_enemy_aim_usage():
@@ -24,9 +30,17 @@ def test_behavior_tracker_reports_repetition_and_enemy_aim_usage():
 
 def test_combat_eval_matrix_specs_cover_duels_small_groups_and_large_groups():
     specs = combat_eval_matrix_specs()
-    assert [s["name"] for s in specs] == ["duel_k5", "skirmish4_k10", "brawl8_k15"]
-    assert [s["world_size"] for s in specs] == [2, 4, 8]
-    assert [s["kill_target"] for s in specs] == [5, 10, 15]
+    assert [s["name"] for s in specs] == ["duel_1v1", "lone_1v2", "lone_1v3", "lone_1v7", "ffa4", "ffa8"]
+    assert [s["team_sizes"] for s in specs] == [[1, 1], [1, 2], [1, 3], [1, 7], [1, 1, 1, 1], [1] * 8]
+    assert [s["kill_target"] for s in specs] == [5, 8, 10, 15, 10, 15]
+
+
+def test_lone_wolf_scenario_score_uses_random_baseline():
+    assert scenario_random_baseline([1, 1]) == 0.5
+    assert scenario_random_baseline([1, 7]) == 0.125
+    assert scenario_win_score(0.5, [1, 1]) == 0.0
+    assert scenario_win_score(1.0, [1, 7]) == 1.0
+    assert round(scenario_win_score(0.5625, [1, 7]), 4) == 0.5
 
 
 def test_summarize_eval_matrix_penalizes_draws_and_spammy_behavior():
@@ -49,4 +63,4 @@ def test_summarize_eval_matrix_penalizes_draws_and_spammy_behavior():
     assert out["mean_win_rate"] == 0.65
     assert out["mean_draw_rate"] == 0.25
     assert out["human_likeness_penalty"] > 0.3
-    assert out["promotion_score"] < out["mean_win_rate"]
+    assert out["lone_wolf_score"] < out["mean_win_rate"]

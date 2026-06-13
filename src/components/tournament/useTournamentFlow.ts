@@ -5,6 +5,7 @@ import { sfx } from '../AudioEngine';
 import {
   TOURNAMENT_DEFAULT_KILLS_TO_WIN,
   TOURNAMENT_DEFAULT_ROUND_COUNT,
+  type TournamentAISelection,
   type TournamentDifficulty,
   buildInitialTournamentRounds,
   buildNextTournamentRoundMatches,
@@ -13,6 +14,12 @@ import {
   simulateBotMatch,
 } from '../../features/tournament/tournament';
 import { getArchetypeDef, type AIArchetypeId } from '../../game/aiPersonalities';
+import {
+  DEFAULT_NEURAL_BRAIN_ID,
+  NEURAL_NET_DIFFICULTY,
+  isNeuralNetDifficulty,
+  type NeuralBrainId,
+} from '../../game/neuralBrains';
 
 type SinglePlayerMode = 'sandbox' | 'tournament' | 'ai-editor';
 type MultiplayerRole = 'host' | 'client' | 'observer' | null;
@@ -103,16 +110,18 @@ export function useTournamentFlow({
   }, []);
 
   const handleInitializeTournament = useCallback((
-    difficulty: TournamentDifficulty | 'custom',
+    difficulty: TournamentAISelection,
     killsToWin: number = TOURNAMENT_DEFAULT_KILLS_TO_WIN,
     roundCount: number = TOURNAMENT_DEFAULT_ROUND_COUNT,
-    selectedPresets?: AIPreset[]
+    selectedPresets?: AIPreset[],
+    neuralBrainId: NeuralBrainId | string = DEFAULT_NEURAL_BRAIN_ID
   ) => {
-    const opponents = generateTournamentOpponents(difficulty, getTournamentBotCount(roundCount), selectedPresets);
+    const opponents = generateTournamentOpponents(difficulty, getTournamentBotCount(roundCount), selectedPresets, neuralBrainId);
     const rounds = buildInitialTournamentRounds(roundCount);
 
     saveTournamentState({
       difficulty,
+      neuralBrainId: isNeuralNetDifficulty(difficulty) ? neuralBrainId : undefined,
       killsToWin,
       roundCount,
       currentRound: 0,
@@ -146,17 +155,21 @@ export function useTournamentFlow({
     }
     setMultiplayerSocket(null);
 
+    const useNeuralBrain = isNeuralNetDifficulty(opponent.difficulty);
+    const resolvedNeuralBrainId = opponent.neuralBrainId ?? tournamentState.neuralBrainId ?? DEFAULT_NEURAL_BRAIN_ID;
+
     setOfflineBotCount(1);
     setBotColors({ main_ai: opponent.hue });
-    setBotDifficulties({ main_ai: 'custom' });
+    setBotDifficulties({ main_ai: useNeuralBrain ? NEURAL_NET_DIFFICULTY : 'custom' });
     setBotBehaviors({ main_ai: opponent.behavior });
 
-    const opponentArchetype = (opponent.archetype ?? 'none') as AIArchetypeId;
+    const opponentArchetype = (useNeuralBrain ? 'none' : opponent.archetype ?? 'none') as AIArchetypeId;
     setBotArchetypes(resetTournamentBotArchetypes(opponentArchetype));
 
     setAdminSettings(prev => ({
       ...prev,
-      aiDifficulty: 'custom',
+      aiDifficulty: useNeuralBrain ? NEURAL_NET_DIFFICULTY : 'custom',
+      aiNeuralBrainId: useNeuralBrain ? resolvedNeuralBrainId : prev.aiNeuralBrainId,
       aiReactionLatency: opponent.reactionLatency,
       aiAnticipationFactor: opponent.anticipationFactor,
       aiMovementComplexity: opponent.movementComplexity,

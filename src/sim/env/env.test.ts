@@ -6,10 +6,12 @@ import { setSimCarrier } from '../grifball';
 import {
   encodeObservation,
   OBS_DIM,
+  OBS_DIM_V2,
   OBS_LAYOUT,
   MAX_TEAMMATES,
   MAX_OPPONENTS,
   MECHANICS_OBS_KEYS,
+  encodeObservationForVersion,
 } from './observation';
 import {
   decodeAction,
@@ -82,6 +84,26 @@ test('presence masks zero-out absent teammate/opponent slots', () => {
     assert.equal(out[opp.offset + s * slotW + slotW - 1], 0, `opponent slot ${s} absent`);
   }
   void MAX_TEAMMATES;
+});
+
+test('combat opponent slots prioritize nearest hostile threats without changing OBS_DIM', () => {
+  const state = createMatch({ seed: 44, mode: 'combat', combat: { teamSizes: [1, 1, 1, 1, 1] } });
+  const self = state.combatants[0];
+  self.pos = { x: 0, y: 0, z: 0 };
+  self.yaw = 0;
+  state.combatants[1].pos = { x: 20, y: 0, z: 0 };
+  state.combatants[2].pos = { x: 0, y: 0, z: 3 };
+  state.combatants[3].pos = { x: -12, y: 0, z: 0 };
+  state.combatants[4].pos = { x: 0, y: 0, z: 9 };
+
+  const out = new Float32Array(OBS_DIM);
+  encodeObservation(state, self.id, out, 0);
+  const opp = OBS_LAYOUT['opponents'];
+  const slotW = opp.size / MAX_OPPONENTS;
+  assert.equal(OBS_DIM, buildEnvSpec().obsDim);
+  assert.equal(out[opp.offset + slotW - 1], 1);
+  assert.ok(out[opp.offset] > 0, 'nearest hostile should be in front of self');
+  assert.ok(Math.abs(out[opp.offset + 1]) < 0.001, 'nearest hostile should be centered laterally');
 });
 
 test('mechanics block is ~0 at nominal settings', () => {
@@ -251,6 +273,27 @@ test('reward: wasted actions are penalized and exposed as components', () => {
   assert.equal(details.components.invalidSwap, -0.1);
 });
 
+test('observation v2 appends full FFA pressure context while v1 remains unchanged', () => {
+  const state = createMatch({ seed: 45, mode: 'combat', combat: { teamSizes: [1, 1, 1, 1, 1, 1, 1, 1] } });
+  const self = state.combatants[0];
+  self.pos = { x: 0, y: 0, z: 0 };
+  self.yaw = 0;
+  state.combatants[1].pos = { x: 0, y: 0, z: 3 };
+  state.combatants[2].pos = { x: 4, y: 0, z: 0 };
+  state.combatants[3].pos = { x: 0, y: 0, z: 7 };
+
+  const v1 = new Float32Array(OBS_DIM);
+  const v2 = new Float32Array(OBS_DIM_V2);
+  encodeObservationForVersion(state, self.id, v1, 0, 1);
+  encodeObservationForVersion(state, self.id, v2, 0, 2);
+
+  assert.equal(OBS_DIM_V2, OBS_DIM + 12);
+  assert.deepEqual([...v2.slice(0, OBS_DIM)], [...v1]);
+  assert.ok(v2[OBS_DIM] > 0, 'nearest hostile should be in front in pressure summary');
+  assert.equal(v2[OBS_DIM + 5], 2, 'two hostiles within 4m');
+  assert.equal(v2[OBS_DIM + 6], 3, 'three hostiles within 8m');
+});
+
 test('env spec exposes consistent dims', () => {
   const spec = buildEnvSpec();
   assert.equal(spec.obsDim, OBS_DIM);
@@ -263,4 +306,11 @@ test('env spec exposes consistent dims', () => {
     assert.equal(f.offset, off);
     off += f.size;
   }
+});
+
+test('env spec exposes observation v2 when requested', () => {
+  const spec = buildEnvSpec(2);
+  assert.equal(spec.obsDim, OBS_DIM_V2);
+  assert.equal(spec.obsFields[spec.obsFields.length - 1].name, 'combat_pressure');
+  assert.equal(spec.version, 5);
 });

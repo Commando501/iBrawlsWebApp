@@ -4,6 +4,11 @@ import {
   pickRandomArchetype,
   playstyleToBehavior,
 } from '../../game/aiPersonalities';
+import {
+  DEFAULT_NEURAL_BRAIN_ID,
+  NEURAL_NET_DIFFICULTY,
+  type NeuralBrainId,
+} from '../../game/neuralBrains';
 
 export const TOURNAMENT_BOT_NAMES = [
   'Talon', 'Malcom', 'Sark', 'Brock', 'Lauren', 'Xan', 'Ravage', 'Diva', 'Gorge', 'Ares', 'Kraken'
@@ -17,6 +22,7 @@ export const TOURNAMENT_MIN_ROUND_COUNT = 1;
 export const TOURNAMENT_MAX_ROUND_COUNT = 4;
 
 export type TournamentDifficulty = 'easy' | 'normal' | 'hard' | 'nightmare';
+export type TournamentAISelection = TournamentDifficulty | 'custom' | typeof NEURAL_NET_DIFFICULTY;
 
 export function getTournamentBotCount(roundCount: number): number {
   return Math.pow(2, roundCount) - 1;
@@ -79,9 +85,10 @@ export function buildNextTournamentRoundMatches(winners: string[]): TournamentMa
 }
 
 export function generateTournamentOpponents(
-  difficulty: TournamentDifficulty | 'custom',
+  difficulty: TournamentAISelection,
   botCount: number,
-  customPresets?: AIPreset[]
+  customPresets?: AIPreset[],
+  neuralBrainId: NeuralBrainId | string = DEFAULT_NEURAL_BRAIN_ID
 ): Record<string, TournamentOpponent> {
   const shuffledNames = [...TOURNAMENT_BOT_NAMES].sort(() => Math.random() - 0.5);
   const opponents: Record<string, TournamentOpponent> = {};
@@ -95,6 +102,7 @@ export function generateTournamentOpponents(
   ).sort(() => Math.random() - 0.5);
 
   const usePresets = customPresets && customPresets.length > 0;
+  const useNeuralBrain = !usePresets && difficulty === NEURAL_NET_DIFFICULTY;
 
   botIds.forEach((id, index) => {
     const name = shuffledNames[index % shuffledNames.length];
@@ -121,6 +129,14 @@ export function generateTournamentOpponents(
       playstyle = preset.tuning.aiPlaystyle ?? 50;
       resolvedBehavior = playstyleToBehavior(playstyle);
       archetype = 'none';
+    } else if (useNeuralBrain) {
+      reactionLatency = 0.01;
+      anticipationFactor = 1.0;
+      movementComplexity = 100;
+      weaponSwapIQ = 100;
+      playstyle = 100;
+      resolvedBehavior = 'aggressive';
+      archetype = 'neural_net';
     } else {
       if (difficulty === 'easy') {
         reactionLatency = 0.5 + Math.random() * 0.15;
@@ -175,7 +191,8 @@ export function generateTournamentOpponents(
       id,
       name,
       hue,
-      difficulty: usePresets ? 'custom' : difficulty as TournamentDifficulty,
+      difficulty: usePresets ? 'custom' : difficulty,
+      neuralBrainId: useNeuralBrain ? neuralBrainId : undefined,
       reactionLatency,
       anticipationFactor,
       movementComplexity,

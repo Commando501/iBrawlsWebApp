@@ -8,6 +8,7 @@ run is self-documenting.
 from __future__ import annotations
 
 import os
+import re
 import tomllib
 from dataclasses import asdict, dataclass, field
 
@@ -28,6 +29,8 @@ class TrainConfig:
 
     # --- combat (deathmatch) generalist; ignored when mode = "grifball" ---
     combat_world_sizes: list[int] = field(default_factory=lambda: [2, 2, 2, 2, 4, 4, 8])
+    combat_layout_mix: list[str] = field(default_factory=list)
+    combat_lone_wolf_reward_scale: float = 1.35
     combat_kill_min: int = 10         # per-episode kill target sampled in [min, max]
     combat_kill_max: int = 25
     combat_randomize_layout: bool = True  # randomize team partition + kill target each episode
@@ -50,6 +53,7 @@ class TrainConfig:
     width: int = 256                  # neurons per hidden layer (bigger = more capacity, needs GPU)
     depth: int = 2                    # number of hidden layers
     frame_stack: int = 1              # stack recent observations for short-term memory (1 = off)
+    observation_version: int = 1       # 1 = checkpoint-compatible; 2 = full FFA pressure view
     # Warm-start: continue from a previous stage's model (the curriculum's weight transfer).
     # Must use the SAME width/depth. Empty = train from scratch.
     init_model: str = ""              # e.g. "runs/s1_random/final_model.zip"
@@ -60,6 +64,8 @@ class TrainConfig:
 
     # --- frozen snapshot league (training opponents + evaluation pool) ---
     league_snapshots: list[str] = field(default_factory=list)  # seed pool of saved models
+    league_scenario_mix: list[str] = field(default_factory=list)
+    league_random_opponent_rate: float = 0.0
     league_latest_bias: float = 0.7    # P(pick newest snapshot); rest is PFSP-weighted
     league_worlds: int = 0             # combat: extra 1v1 worlds vs frozen snapshots (0 = off)
     league_snapshot_every: int = 2_000_000  # auto-freeze the learner into the pool every N steps
@@ -92,6 +98,8 @@ class TrainConfig:
 KNOB_DESCRIPTIONS: dict[str, str] = {
     "mode": "'combat' (deathmatch; trains one generalist over 1v1/FFA/team via [combat] — the main focus) or 'grifball' (carry the ball to score).",
     "combat_world_sizes": "Combat only: fixed sizes of the parallel matches. 2 = a 1v1; 4/8 = FFA or teams. The mix is what makes one model generalize.",
+    "combat_layout_mix": "Combat only: optional explicit scenario mix such as 1v1x16, 1v2x6, 1v3x6, 1v7x2, ffa4x6, ffa8x4. When set, this replaces world_sizes with fixed team layouts.",
+    "combat_lone_wolf_reward_scale": "Combat only: reward multiplier for the singleton team in asymmetric layouts like 1v3 or 1v7. No combat low-health state is added.",
     "combat_kill_min": "Combat only: lower bound of the per-episode kill target.",
     "combat_kill_max": "Combat only: upper bound of the per-episode kill target.",
     "combat_randomize_layout": "Combat only: re-randomize team partition + kill target each episode (keep on for a generalist).",
@@ -119,10 +127,13 @@ KNOB_DESCRIPTIONS: dict[str, str] = {
     "width": "Neurons per layer. Bigger brain = more skill ceiling, but slower (use the GPU).",
     "depth": "Hidden layers. 2-3 is plenty here.",
     "frame_stack": "Short action/position memory by stacking recent observations. 1 = off; 4 gives the MLP temporal context without switching algorithms. Train/evaluate with the same value.",
+    "observation_version": "Observation contract. 1 preserves current checkpoint compatibility; 2 adds full FFA pressure context and needs a fresh checkpoint family.",
     "init_model": "Warm-start from a saved model (curriculum transfer). Same width/depth required; one inserted action logit can auto-migrate. Empty = from scratch.",
     "randomize_enabled": "Jitter game mechanics each episode so the brain stays robust to live balance patches.",
     "randomize_pct": "How far mechanics are jittered (0.15 = +/-15%). Bigger = more robust but harder to learn.",
     "league_snapshots": "Seed pool of frozen saved models used as league/evaluation opponents. Paths are relative to python/ unless absolute. Auto-snapshots are added during training.",
+    "league_scenario_mix": "Optional explicit snapshot/random scenario mix for future focused lone-wolf league worlds. Leave empty to use 1v1 league worlds.",
+    "league_random_opponent_rate": "Reserved probability that focused league scenarios use random opponents instead of snapshots.",
     "league_latest_bias": "Probability the league picks the NEWEST snapshot as opponent; the rest of the time it PFSP-samples (prefers snapshots the learner loses to).",
     "league_worlds": "Combat: number of extra 1v1 worlds where the learner fights FROZEN league snapshots instead of itself. The cure for self-play brittleness — 4-8 is a good mix. 0 = pure self-play.",
     "league_snapshot_every": "Auto-freeze the current learner into the league pool every N steps, so the opponent pool grows with skill.",
@@ -154,6 +165,8 @@ _TOML_MAP = {
     ("run", "opponent"): "opponent",
     ("run", "total_steps"): "total_steps",
     ("combat", "world_sizes"): "combat_world_sizes",
+    ("combat", "layout_mix"): "combat_layout_mix",
+    ("combat", "lone_wolf_reward_scale"): "combat_lone_wolf_reward_scale",
     ("combat", "kill_min"): "combat_kill_min",
     ("combat", "kill_max"): "combat_kill_max",
     ("combat", "randomize_layout"): "combat_randomize_layout",
@@ -179,10 +192,13 @@ _TOML_MAP = {
     ("network", "width"): "width",
     ("network", "depth"): "depth",
     ("network", "frame_stack"): "frame_stack",
+    ("network", "observation_version"): "observation_version",
     ("network", "init_model"): "init_model",
     ("randomize", "enabled"): "randomize_enabled",
     ("randomize", "pct"): "randomize_pct",
     ("league", "snapshots"): "league_snapshots",
+    ("league", "scenario_mix"): "league_scenario_mix",
+    ("league", "random_opponent_rate"): "league_random_opponent_rate",
     ("league", "latest_bias"): "league_latest_bias",
     ("league", "worlds"): "league_worlds",
     ("league", "snapshot_every"): "league_snapshot_every",
@@ -246,6 +262,37 @@ def randomize_spec(cfg: TrainConfig) -> dict:
     return {"enabled": bool(cfg.randomize_enabled), "pct": float(cfg.randomize_pct)}
 
 
+def parse_combat_layout_token(token: str) -> tuple[list[int], int]:
+    """Parse one layout token, e.g. '1v3x2' -> ([1, 3], 2), 'ffa8' -> ([1]*8, 1)."""
+    raw = str(token).strip().lower()
+    if not raw:
+        raise ValueError("empty combat layout token")
+    base, _, count_raw = raw.partition("x")
+    count = int(count_raw) if count_raw else 1
+    if count <= 0:
+        raise ValueError(f"layout count must be positive: {token}")
+    if base.startswith("ffa"):
+        total = int(base[3:])
+        if total < 2:
+            raise ValueError(f"FFA layout needs at least 2 players: {token}")
+        return [1] * total, count
+    parts = [int(x) for x in re.split(r"v", base) if x]
+    if len(parts) < 2 or any(size <= 0 for size in parts):
+        raise ValueError(f"invalid combat layout token: {token}")
+    if sum(parts) < 2:
+        raise ValueError(f"combat layout needs at least 2 players: {token}")
+    return parts, count
+
+
+def expand_combat_layout_mix(tokens: list[str]) -> list[list[int]]:
+    """Expand a compact combat layout mix into explicit per-world team-size layouts."""
+    out: list[list[int]] = []
+    for token in tokens or []:
+        layout, count = parse_combat_layout_token(token)
+        out.extend([list(layout) for _ in range(count)])
+    return out
+
+
 def settings_markdown(cfg: TrainConfig) -> str:
     """A labeled table of every setting + what it does (for console + TensorBoard TEXT tab)."""
     rows = ["| setting | value | what it does |", "|---|---|---|"]
@@ -298,7 +345,10 @@ _FIELD_RANGES: dict[str, tuple[float, float, float]] = {
     "max_grad_norm": (0.1, 5.0, 0.1),
     "target_kl": (0.0, 0.1, 0.005),
     "frame_stack": (1, 8, 1),
+    "observation_version": (1, 2, 1),
+    "combat_lone_wolf_reward_scale": (1.0, 3.0, 0.05),
     "league_latest_bias": (0.0, 1.0, 0.05),
+    "league_random_opponent_rate": (0.0, 1.0, 0.05),
     "league_worlds": (0, 16, 1),
 }
 
@@ -313,7 +363,7 @@ def _infer_type(field: str, value) -> str:
     if isinstance(value, float):
         return "float"
     if isinstance(value, list):
-        if field == "league_snapshots":
+        if field in ("league_snapshots", "combat_layout_mix", "league_scenario_mix"):
             return "strlist"
         return "intlist"
     return "str"
@@ -383,10 +433,10 @@ def coerce_value(field: str, raw):
         return float(raw)
     if isinstance(default, list):
         if isinstance(raw, str):
-            if field == "league_snapshots":
+            if field in ("league_snapshots", "combat_layout_mix", "league_scenario_mix"):
                 return [x.strip() for x in raw.replace("\n", ",").split(",") if x.strip()]
             return [int(float(x)) for x in raw.replace(",", " ").split() if x.strip()]
-        if field == "league_snapshots":
+        if field in ("league_snapshots", "combat_layout_mix", "league_scenario_mix"):
             return [str(x) for x in raw]
         return [int(float(x)) for x in raw]
     return str(raw)

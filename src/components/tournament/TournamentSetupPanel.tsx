@@ -6,8 +6,15 @@ import {
   TOURNAMENT_MIN_KILLS_TO_WIN,
   TOURNAMENT_MIN_ROUND_COUNT,
   getTournamentBotCount,
+  type TournamentAISelection,
   type TournamentDifficulty,
 } from '../../features/tournament/tournament';
+import {
+  DEFAULT_NEURAL_BRAIN_ID,
+  NEURAL_BRAIN_DEFINITIONS,
+  NEURAL_NET_DIFFICULTY,
+  type NeuralBrainId,
+} from '../../game/neuralBrains';
 import { AdvancedSection } from '../main-menu/AdvancedSection';
 import { HeroCtaButton } from '../main-menu/HeroCtaButton';
 import { getPresetDescription } from '../main-menu/aiMenuContent';
@@ -21,15 +28,16 @@ interface TournamentSetupPanelProps {
   tournamentRoundCount: number;
   setTournamentRoundCount: Dispatch<SetStateAction<number>>;
   onInitializeTournament: (
-    difficulty: TournamentDifficulty | 'custom',
+    difficulty: TournamentAISelection,
     killsToWin?: number,
     roundCount?: number,
-    selectedPresets?: AIPreset[]
+    selectedPresets?: AIPreset[],
+    neuralBrainId?: NeuralBrainId | string
   ) => void;
 }
 
 const STANDARD_TOURNAMENT_DIFFICULTIES: Array<{
-  id: TournamentDifficulty;
+  id: TournamentDifficulty | typeof NEURAL_NET_DIFFICULTY;
   label: string;
   color: string;
   selectedColor: string;
@@ -63,6 +71,13 @@ const STANDARD_TOURNAMENT_DIFFICULTIES: Array<{
     selectedColor: 'text-purple-300 border-purple-400/70 bg-purple-950/50 shadow-[0_0_14px_rgba(168,85,247,0.25)]',
     desc: 'Hyper-responsive matrix overrides. Zero anticipation errors.',
   },
+  {
+    id: NEURAL_NET_DIFFICULTY,
+    label: 'NeuralNet',
+    color: 'text-fuchsia-300 border-fuchsia-500/20 bg-fuchsia-950/20 hover:bg-fuchsia-950/40',
+    selectedColor: 'text-fuchsia-200 border-fuchsia-300/70 bg-fuchsia-950/50 shadow-[0_0_14px_rgba(217,70,239,0.25)]',
+    desc: 'Runs the exported CombatDRV2 reinforcement-learning brain.',
+  },
 ];
 
 export function TournamentSetupPanel({
@@ -75,7 +90,8 @@ export function TournamentSetupPanel({
   setTournamentRoundCount,
   onInitializeTournament,
 }: TournamentSetupPanelProps) {
-  const [selectedDifficulty, setSelectedDifficulty] = useState<TournamentDifficulty>('normal');
+  const [selectedDifficulty, setSelectedDifficulty] = useState<TournamentDifficulty | typeof NEURAL_NET_DIFFICULTY>('normal');
+  const [selectedNeuralBrainId, setSelectedNeuralBrainId] = useState<NeuralBrainId | string>(DEFAULT_NEURAL_BRAIN_ID);
   const usingCustomLineup = selectedTournamentPresets.length > 0;
 
   const handleStartTournament = () => {
@@ -84,7 +100,13 @@ export function TournamentSetupPanel({
       onInitializeTournament('custom', tournamentKillsToWin, tournamentRoundCount, presetsToUse);
       return;
     }
-    onInitializeTournament(selectedDifficulty, tournamentKillsToWin, tournamentRoundCount);
+    onInitializeTournament(
+      selectedDifficulty,
+      tournamentKillsToWin,
+      tournamentRoundCount,
+      undefined,
+      selectedDifficulty === NEURAL_NET_DIFFICULTY ? selectedNeuralBrainId : undefined
+    );
   };
 
   return (
@@ -124,6 +146,26 @@ export function TournamentSetupPanel({
             );
           })}
         </div>
+
+        {!usingCustomLineup && selectedDifficulty === NEURAL_NET_DIFFICULTY && (
+          <div className="flex flex-col gap-1.5 bg-white/5 border border-fuchsia-400/20 rounded-lg p-3.5 pointer-events-auto">
+            <label className="text-xs font-mono uppercase tracking-wider text-white/60" htmlFor="tournament-neural-brain">
+              NeuralNet Brain
+            </label>
+            <select
+              id="tournament-neural-brain"
+              value={selectedNeuralBrainId}
+              onChange={(e) => setSelectedNeuralBrainId(e.target.value)}
+              className="w-full bg-black/50 border border-white/10 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-fuchsia-300"
+            >
+              {NEURAL_BRAIN_DEFINITIONS.map((brain) => (
+                <option key={brain.id} value={brain.id}>
+                  {brain.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
 
         {usingCustomLineup && (
           <p className="text-[10px] text-sky-300/80 font-mono uppercase tracking-widest text-center">
@@ -223,7 +265,7 @@ export function TournamentSetupPanel({
       <div className="flex flex-col gap-3 mt-auto shrink-0 pt-4">
         <HeroCtaButton
           id="start-tournament-btn"
-          label={usingCustomLineup ? 'Start Custom Tournament' : `Start ${selectedDifficulty} Tournament`}
+          label={usingCustomLineup ? 'Start Custom Tournament' : `Start ${selectedDifficulty === NEURAL_NET_DIFFICULTY ? 'NeuralNet' : selectedDifficulty} Tournament`}
           variant="emerald"
           onClick={handleStartTournament}
         />
