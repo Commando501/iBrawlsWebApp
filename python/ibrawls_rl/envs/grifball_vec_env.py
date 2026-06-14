@@ -54,6 +54,7 @@ class SimWorker:
         self.obs_dim: int = int(self.header["obsDim"])
         self.act_dim: int = int(self.header["actionDim"])
         self.reward_component_keys: list[str] = list(self.header.get("rewardComponentKeys") or [])
+        self.learner_agent_indices: list[int] | None = self.header.get("learnerAgentIndices")
         self.slots: int = self.n_world_envs * self.n_agents  # total agent rows this worker owns
 
     def reset(self) -> np.ndarray:
@@ -105,6 +106,13 @@ class _WorkerView:
         return sel.reshape(self.count, *arr.shape[1:])
 
 
+def learner_indices_from_header(worker: SimWorker) -> list[int]:
+    indices = getattr(worker, "learner_agent_indices", None)
+    if indices:
+        return [int(i) for i in indices]
+    return list(range(worker.n_agents))
+
+
 class GrifballVecEnv(VecEnv):
     """Fans matches across `num_workers` Node processes; exposes learner agents as sub-envs."""
 
@@ -123,6 +131,7 @@ class GrifballVecEnv(VecEnv):
         combat_layout_mix: list[str] | None = None,
         combat_world_layouts: list[list[int]] | None = None,
         combat_lone_wolf_reward_scale: float = 1.0,
+        combat_scripted_opponent: str = "",
         combat_kill_range: tuple[int, int] | None = None,
         combat_randomize_layout: bool = True,
         randomize: dict | None = None,
@@ -155,6 +164,8 @@ class GrifballVecEnv(VecEnv):
                 cfg["decisionInterval"] = int(decision_interval)
             if mode == "combat" and int(observation_version or 1) > 1:
                 cfg["observationVersion"] = int(observation_version)
+            if mode == "combat" and combat_scripted_opponent:
+                cfg["scriptedOpponentProfile"] = str(combat_scripted_opponent)
             return cfg
 
         self.views: list[_WorkerView] = []
@@ -179,7 +190,7 @@ class GrifballVecEnv(VecEnv):
                     cfg["killTargetRange"] = list(combat_kill_range)
                 cfg["randomizeLayout"] = combat_randomize_layout
                 worker = SimWorker(cmd, shell, cfg)
-                learner_idx = list(range(worker.n_agents))  # self-play: all are learners
+                learner_idx = learner_indices_from_header(worker)
                 view = _WorkerView(worker, learner_idx, slot_off)
                 self.views.append(view)
                 slot_off += view.count

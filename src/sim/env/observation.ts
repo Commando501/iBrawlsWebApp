@@ -18,6 +18,7 @@ import { enemyGoalForTeam, ownGoalForTeam } from '../../game/aiGrifballRoles';
 import { GRIFBALL_HALF_X, GRIFBALL_HALF_Z } from '../../game/grifballMaps';
 import { DOMAIN_RANDOMIZABLE_KEYS } from './randomize';
 import { DEFAULT_ADMIN_SETTINGS } from '../../settings/gameplaySettings';
+import { analyzeCombatThreat } from '../combatThreat';
 
 /**
  * Mechanics-aware block: the live-tunable dynamics keys the policy should condition on, so
@@ -92,6 +93,7 @@ export const OBS_LAYOUT: Record<string, { offset: number; size: number }> = (() 
 export const OBS_DIM = OBS_FIELDS.reduce((n, f) => n + f.size, 0);
 export const OBS_DIM_V1 = OBS_DIM;
 export const COMBAT_PRESSURE_SIZE = 12;
+export const COMBAT_THREAT_V3_SIZE = 20;
 export const OBS_FIELDS_V2: FieldSpec[] = [
   ...OBS_FIELDS,
   { name: 'combat_pressure', size: COMBAT_PRESSURE_SIZE },
@@ -106,16 +108,33 @@ export const OBS_LAYOUT_V2: Record<string, { offset: number; size: number }> = (
   return layout;
 })();
 export const OBS_DIM_V2 = OBS_FIELDS_V2.reduce((n, f) => n + f.size, 0);
+export const OBS_FIELDS_V3: FieldSpec[] = [
+  ...OBS_FIELDS_V2,
+  { name: 'combat_threat_v3', size: COMBAT_THREAT_V3_SIZE },
+];
+export const OBS_LAYOUT_V3: Record<string, { offset: number; size: number }> = (() => {
+  const layout: Record<string, { offset: number; size: number }> = {};
+  let off = 0;
+  for (const f of OBS_FIELDS_V3) {
+    layout[f.name] = { offset: off, size: f.size };
+    off += f.size;
+  }
+  return layout;
+})();
+export const OBS_DIM_V3 = OBS_FIELDS_V3.reduce((n, f) => n + f.size, 0);
 
 export function obsFieldsForVersion(version = 1): FieldSpec[] {
+  if (version >= 3) return OBS_FIELDS_V3;
   return version >= 2 ? OBS_FIELDS_V2 : OBS_FIELDS;
 }
 
 export function obsLayoutForVersion(version = 1): Record<string, { offset: number; size: number }> {
+  if (version >= 3) return OBS_LAYOUT_V3;
   return version >= 2 ? OBS_LAYOUT_V2 : OBS_LAYOUT;
 }
 
 export function obsDimForVersion(version = 1): number {
+  if (version >= 3) return OBS_DIM_V3;
   return version >= 2 ? OBS_DIM_V2 : OBS_DIM;
 }
 
@@ -244,6 +263,9 @@ export function encodeObservationForVersion(
   if (version < 2) return;
   out.fill(0, offset + OBS_DIM, offset + OBS_DIM_V2);
   encodeCombatPressure(state, agentId, out, offset + OBS_DIM);
+  if (version < 3) return;
+  out.fill(0, offset + OBS_DIM_V2, offset + OBS_DIM_V3);
+  encodeCombatThreatV3(state, agentId, out, offset + OBS_DIM_V2);
 }
 
 function sortCombatThreats(opponents: SimCombatant[], self: SimCombatant): SimCombatant[] {
@@ -304,6 +326,57 @@ function encodeCombatPressure(
   if (leader) putEgoAt(8, leader.pos.x - self.pos.x, leader.pos.z - self.pos.z, POS_SCALE);
   const escapeLen = Math.hypot(sx, sz);
   if (escapeLen > 0) putEgoAt(10, sx / escapeLen, sz / escapeLen, 1);
+}
+
+function encodeCombatThreatV3(
+  state: SimState,
+  agentId: string,
+  out: Float32Array,
+  offset: number
+): void {
+  if (state.mode !== 'combat') return;
+  const self = state.combatants.find((c) => c.id === agentId);
+  if (!self) return;
+  const analysis = analyzeCombatThreat(state, self);
+  const threat = analysis.threat;
+  if (!threat) return;
+
+  const weaponStateOffset = weaponStateIndex(threat.weaponState);
+  if (weaponStateOffset >= 0) out[offset + weaponStateOffset] = 1;
+  const attackKindOffset = attackKindIndex(threat.attackKind);
+  if (attackKindOffset >= 0) out[offset + 5 + attackKindOffset] = 1;
+  out[offset + 10] = Math.min(1, Math.max(0, threat.attackCooldown));
+  out[offset + 11] = Math.min(1, Math.max(0, threat.weaponReadyTimer));
+  out[offset + 12] = Math.min(1, Math.max(0, threat.weaponTimer));
+  out[offset + 13] = analysis.targetFacingSelf ? 1 : 0;
+  out[offset + 14] = analysis.targetCanAttack ? 1 : 0;
+  out[offset + 15] = analysis.selfInsideMeleeRange ? 1 : 0;
+  out[offset + 16] = analysis.selfInsideLungeRange ? 1 : 0;
+  out[offset + 17] = analysis.normalizedClosingSpeed;
+  out[offset + 18] = analysis.normalizedRangeMargin;
+  out[offset + 19] = analysis.passiveBaitRisk;
+}
+
+function weaponStateIndex(state: SimCombatant['weaponState']): number {
+  switch (state) {
+    case 'idle': return 0;
+    case 'windup': return 1;
+    case 'active': return 2;
+    case 'recovering': return 3;
+    case 'swapping': return 4;
+    default: return -1;
+  }
+}
+
+function attackKindIndex(kind: SimCombatant['attackKind']): number {
+  switch (kind) {
+    case 'none': return 0;
+    case 'strike': return 1;
+    case 'swipe': return 2;
+    case 'slash': return 3;
+    case 'punch': return 4;
+    default: return -1;
+  }
 }
 
 function scoreLeaderHostile(

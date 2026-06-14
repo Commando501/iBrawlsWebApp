@@ -9,6 +9,14 @@ from typing import Iterable, Sequence
 import numpy as np
 
 
+def env_spec_version_for_observation(observation_version: int) -> int:
+    if int(observation_version) >= 3:
+        return 6
+    if int(observation_version) >= 2:
+        return 5
+    return 4
+
+
 def pack_actor_layers(layers: Iterable[dict]) -> tuple[np.ndarray, list[dict]]:
     chunks: list[np.ndarray] = []
     layout: list[dict] = []
@@ -200,7 +208,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--label", default="CombatDRV2")
     parser.add_argument("--mode", default="combat")
     parser.add_argument("--observation-version", type=int, default=1)
-    parser.add_argument("--env-spec-version", type=int, default=4)
+    parser.add_argument("--env-spec-version", type=int, default=0)
     parser.add_argument("--frame-stack", type=int, default=4)
     parser.add_argument("--decision-interval", type=int, default=5)
     parser.add_argument("--base-observation-dim", type=int, default=None)
@@ -213,7 +221,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         label=args.label,
         mode=args.mode,
         observation_version=args.observation_version,
-        env_spec_version=args.env_spec_version,
+        env_spec_version=args.env_spec_version or env_spec_version_for_observation(args.observation_version),
         frame_stack=args.frame_stack,
         decision_interval=args.decision_interval,
         base_observation_dim=args.base_observation_dim,

@@ -17,9 +17,12 @@ export interface V3AnimationThrottle {
   remoteAnimationIntervalMs: number;
 }
 
+export type V3ArmorRenderStyle = 'voxelEdit' | 'armorSurface';
+
 export interface V3RenderOptions {
   v3QualityTier?: V3QualityTier;
   v3Distance?: number;
+  v3ArmorRenderStyle?: V3ArmorRenderStyle;
 }
 
 const tierRank = (tier: V3QualityTier): number => V3_QUALITY_TIERS.indexOf(tier);
@@ -31,6 +34,13 @@ export function normalizeV3QualityTier(value: unknown, fallback: V3QualityTier =
   return typeof value === 'string' && V3_QUALITY_TIERS.includes(value as V3QualityTier)
     ? value as V3QualityTier
     : fallback;
+}
+
+export function normalizeV3ArmorRenderStyle(
+  value: unknown,
+  fallback: V3ArmorRenderStyle = 'armorSurface'
+): V3ArmorRenderStyle {
+  return value === 'voxelEdit' || value === 'armorSurface' ? value : fallback;
 }
 
 export function selectV3QualityTier(signals: V3QualitySignals): V3QualityTier {

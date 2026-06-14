@@ -49,6 +49,13 @@ export interface NeuralLiveFrameTelemetry {
   targetRespawnTimer: number;
   targetInvulnerabilityTimer: number;
   targetActionSuppressed: boolean;
+  targetWeaponState: string;
+  targetCanAttack: boolean;
+  targetFacingSelf: boolean;
+  selfInsideTargetRange: boolean;
+  passiveTrapRisk: number;
+  rangeMargin: number;
+  closingSpeed: number;
   selfAlive: boolean;
   selfRespawnTimer: number;
   selfInvulnerabilityTimer: number;

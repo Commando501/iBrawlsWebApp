@@ -136,6 +136,35 @@ test('fixed world layouts support asymmetric lone-wolf combat scenarios', () => 
   assert.deepEqual(env.getWorldTeamSizes(), [[1, 3], [1, 7], [1, 1, 1, 1]]);
 });
 
+test('scripted passive bait combat worlds expose only team-zero learner rows', () => {
+  const env = new CombatVecEnv({
+    worldLayouts: [[1, 3], [2, 2]],
+    baseSeed: 14,
+    randomizeLayout: false,
+    scriptedOpponentProfile: 'passive_bait',
+  });
+
+  assert.deepEqual(env.learnerAgentIndices, [0, 4, 5]);
+});
+
+test('scripted passive bait opponents ignore incoming PPO action rows', () => {
+  const env = new CombatVecEnv({
+    worldLayouts: [[1, 1]],
+    baseSeed: 15,
+    randomizeLayout: false,
+    scriptedOpponentProfile: 'passive_bait',
+  });
+  env.reset();
+  const before = env.getState(0).combatants[1].pos.z;
+  const actions = new Int32Array(env.numAgents * ACTION_DIM);
+  actions[ACTION_DIM] = 1; // if honored, opponent would move forward.
+
+  env.step(actions);
+
+  const after = env.getState(0).combatants[1].pos.z;
+  assert.ok(Math.abs(after - before) < 0.001, `scripted opponent moved from ${before} to ${after}`);
+});
+
 test('lone-wolf reward scale applies only to singleton teams in asymmetric layouts', () => {
   const env = new CombatVecEnv({
     worldLayouts: [[1, 3]],

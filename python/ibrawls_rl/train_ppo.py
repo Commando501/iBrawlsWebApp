@@ -230,6 +230,30 @@ def run_training(cfg: TrainConfig) -> str:
             decision_interval=cfg.decision_interval,
             observation_version=cfg.observation_version,
         )
+        if cfg.combat_bait_layout_mix:
+            bait_reward = reward_dict(cfg)
+            scale = float(cfg.combat_bait_reward_scale)
+            for key in ("dangerApproach", "baitDisengage", "trapDeath"):
+                bait_reward[key] = float(bait_reward.get(key, 0.0)) * scale
+            bait_env = GrifballVecEnv(
+                mode="combat",
+                reward=bait_reward,
+                base_seed=cfg.seed + 555_001,
+                max_ticks=int(60 * 60 * cfg.match_minutes),
+                bootstrap_truncation=cfg.bootstrap_truncation,
+                combat_layout_mix=cfg.combat_bait_layout_mix,
+                combat_lone_wolf_reward_scale=cfg.combat_lone_wolf_reward_scale,
+                combat_scripted_opponent=cfg.combat_bait_opponent,
+                combat_kill_range=(cfg.combat_kill_min, cfg.combat_kill_max),
+                combat_randomize_layout=cfg.combat_randomize_layout,
+                randomize=dr,
+                num_workers=cfg.num_workers,
+                decision_interval=cfg.decision_interval,
+                observation_version=cfg.observation_version,
+            )
+            env = ConcatVecEnv([env, bait_env])
+            print(f"[train] anti-bait curriculum: {cfg.combat_bait_layout_mix} "
+                  f"vs {cfg.combat_bait_opponent} (reward scale {scale:g})")
     else:
         env = GrifballVecEnv(
             num_envs=cfg.parallel_matches,

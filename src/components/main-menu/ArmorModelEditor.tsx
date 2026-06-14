@@ -17,6 +17,7 @@ import {
   dedupeCustomArmorVoxels,
   duplicateCustomArmorPiece,
   fitCustomArmorToBounds,
+  getCustomArmorGridScale,
   getCustomArmorPieceModelSystem,
   getCustomArmorSlotSpec,
   getCustomArmorSlotLabel,
@@ -37,6 +38,7 @@ import {
   type CustomArmorVoxel,
 } from '../customArmor';
 import { getV3BuiltinPartVoxels } from '../v3/VoxelModelsV3';
+import { createV3VoxelArmorGroup } from '../v3/v3VoxelArmorSurface';
 import { getV3CharacterPartBounds } from '../v3/v3PartBounds';
 import {
   getCharacterModelCollisionProfile,
@@ -59,7 +61,7 @@ interface ArmorModelEditorProps {
 
 type EditorTool = 'place' | 'erase' | 'box' | 'line' | 'plane' | 'extrude' | 'move' | 'duplicate' | 'fill';
 type Axis = 'x' | 'y' | 'z';
-type ViewMode = 'edit' | 'rig';
+type ViewMode = 'edit' | 'preview' | 'rig';
 type PoseMode = 'idle' | 'walk' | 'sprint' | 'crouch' | 'hammer' | 'sword';
 type PaintSettings = {
   tool: EditorTool;
@@ -69,6 +71,7 @@ type PaintSettings = {
   slot: CustomArmorSlot;
   modelType: CharacterModelType;
   modelSystem: CustomArmorModelSystem;
+  gridScale: 1 | 2;
 };
 type ArmorEditorCameraView = {
   target: { x: number; y: number; z: number };
@@ -140,6 +143,12 @@ const createDefaultCameraViews = (): Record<ViewMode, ArmorEditorCameraView> => 
     pitch: 0.07,
     distance: 2.25,
   },
+  preview: {
+    target: { x: 0, y: 0, z: 0 },
+    yaw: -0.25,
+    pitch: 0.08,
+    distance: 2.45,
+  },
   rig: {
     target: { x: 0, y: 0.9, z: 0 },
     yaw: 0,
@@ -175,17 +184,18 @@ const getV3PresetForSlot = (slot: V3CustomArmorSlot): string => `ibv3-aegis-${sl
 function getEditorSlotBounds(
   slot: CustomArmorSlot,
   modelType: CharacterModelType,
-  modelSystem: CustomArmorModelSystem
+  modelSystem: CustomArmorModelSystem,
+  gridScale: 1 | 2 = 1
 ): EditorBounds {
   if (modelSystem === 'v3') {
     const dimensions = getV3CharacterPartBounds(slot as V3CustomArmorSlot).maxDimensions;
     return {
       minX: 0,
-      maxX: dimensions.x - 1,
+      maxX: dimensions.x * gridScale - 1,
       minY: 0,
-      maxY: dimensions.y - 1,
+      maxY: dimensions.y * gridScale - 1,
       minZ: 0,
-      maxZ: dimensions.z - 1,
+      maxZ: dimensions.z * gridScale - 1,
     };
   }
   return getCustomArmorSlotSpec(slot, modelType).bounds;
@@ -234,7 +244,7 @@ const snapshotFromBuiltin = (
   name = `${preset} Remix`
 ): CustomArmorPieceSnapshot => {
   const voxels = modelSystem === 'v3'
-    ? getV3BuiltinPartVoxels(slot as V3CustomArmorSlot, hue)
+    ? getV3BuiltinPartVoxels(slot as V3CustomArmorSlot, hue, undefined, { gridScale: 1 })
     : getVoxelSegmentDataV2(getV2SourceSlot(slot), preset, hue, false, modelType);
   const piece = createCustomArmorPiece(
     slot,
@@ -242,7 +252,8 @@ const snapshotFromBuiltin = (
     voxelDataToCustomArmorVoxels(voxels),
     preset,
     modelSystem === 'v2' ? modelType : undefined,
-    modelSystem
+    modelSystem,
+    modelSystem === 'v3' ? 1 : undefined
   );
   return createCustomArmorSnapshot(piece);
 };
@@ -274,6 +285,7 @@ function upsertPieceInCatalog(catalog: CustomArmorCatalog, draft: CustomArmorPie
     ...draft,
     modelSystem: draftModelSystem,
     modelType: draftModelSystem === 'v2' ? draft.modelType ?? 'medium' : undefined,
+    gridScale: draftModelSystem === 'v3' ? getCustomArmorGridScale(draft) : undefined,
     name: draft.name.trim() || `${getCustomArmorSlotLabel(draft.slot, draftModelSystem, draft.modelType ?? 'medium')} Custom`,
     thumbnail: createCustomArmorThumbnail(draft.slot, draft.voxels.length, draftModelSystem),
     createdAt: existing?.createdAt ?? now,
@@ -342,7 +354,11 @@ export function ArmorModelEditor({
   const [poseMode, setPoseMode] = useState<PoseMode>('idle');
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
   const [cursor, setCursor] = useState(() => {
-    const b = getEditorSlotBounds(slot, initialModelType, initialModelSystem);
+    const initialPiece = playerLoadout.customArmor?.[initialSlot];
+    const initialGridScale = initialModelSystem === 'v3' && pieceMatchesMode(initialPiece, initialModelSystem, initialModelType)
+      ? getCustomArmorGridScale(initialPiece)
+      : 1;
+    const b = getEditorSlotBounds(slot, initialModelType, initialModelSystem, initialGridScale);
     return { x: Math.round((b.minX + b.maxX) / 2), y: b.minY, z: Math.round((b.minZ + b.maxZ) / 2) };
   });
   const [size, setSize] = useState({ x: 2, y: 2, z: 2 });
@@ -359,7 +375,7 @@ export function ArmorModelEditor({
   const [showPerformance, setShowPerformance] = useState(true);
   const [showClipping, setShowClipping] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const paintSettingsRef = useRef<PaintSettings>({ tool, role, fixedColor, emissive, slot, modelType, modelSystem });
+  const paintSettingsRef = useRef<PaintSettings>({ tool, role, fixedColor, emissive, slot, modelType, modelSystem, gridScale: 1 });
   const cameraViewsRef = useRef<Record<ViewMode, ArmorEditorCameraView>>(createDefaultCameraViews());
 
   const validation = useMemo(() => validateCustomArmorPiece(draft), [draft]);
@@ -373,6 +389,8 @@ export function ArmorModelEditor({
       ? getV3PresetForSlot(slot as V3CustomArmorSlot)
       : getDefaultPresetForSlot(slot, playerLoadout);
   const activeSlotOptions = modelSystem === 'v3' ? V3_SLOT_OPTIONS : SLOT_OPTIONS;
+  const draftGridScale = modelSystem === 'v3' ? getCustomArmorGridScale(draft) : 1;
+  const activeViewModes: ViewMode[] = modelSystem === 'v3' ? ['edit', 'preview', 'rig'] : ['edit', 'rig'];
   const editorValidationReport = useMemo(() => {
     const builtIn = modelSystem === 'v3'
       ? getV3BuiltinPartVoxels(slot as V3CustomArmorSlot, playerHue)
@@ -381,7 +399,7 @@ export function ArmorModelEditor({
       ? getV3CharacterPartManifest(getV3PresetForSlot(slot as V3CustomArmorSlot))
       : undefined;
     const slotBudget = modelSystem === 'v3'
-      ? v3Manifest?.budget.sourceVoxelCount ?? validation.stats.voxelCount
+      ? (v3Manifest?.budget.sourceVoxelCount ?? validation.stats.voxelCount) * draftGridScale * draftGridScale
       : getCustomArmorSlotSpec(slot, modelType).maxVoxels;
 
     return buildArmorEditorValidationReport({
@@ -393,11 +411,17 @@ export function ArmorModelEditor({
         ? [...(v3Manifest?.paintRoles ?? [])]
         : ['primary', 'secondary', 'accent'],
     });
-  }, [draft, modelSystem, modelType, playerHue, selectedPreset, slot, validation]);
+  }, [draft, draftGridScale, modelSystem, modelType, playerHue, selectedPreset, slot, validation]);
 
   useEffect(() => {
-    paintSettingsRef.current = { tool, role, fixedColor, emissive, slot, modelType, modelSystem };
-  }, [emissive, fixedColor, modelSystem, modelType, role, slot, tool]);
+    paintSettingsRef.current = { tool, role, fixedColor, emissive, slot, modelType, modelSystem, gridScale: draftGridScale };
+  }, [draftGridScale, emissive, fixedColor, modelSystem, modelType, role, slot, tool]);
+
+  useEffect(() => {
+    if (modelSystem !== 'v3' && viewMode === 'preview') {
+      setViewMode('edit');
+    }
+  }, [modelSystem, viewMode]);
 
   const getEquippedPieceForType = (
     targetSlot: CustomArmorSlot,
@@ -441,11 +465,19 @@ export function ArmorModelEditor({
   };
 
   const replaceDraft = (next: CustomArmorPieceSnapshot) => {
+    const nextGridScale = modelSystem === 'v3' ? getCustomArmorGridScale(next) : 1;
+    const nextBounds = getEditorSlotBounds(slot, modelType, modelSystem, nextGridScale);
+    setCursor({
+      x: Math.round((nextBounds.minX + nextBounds.maxX) / 2),
+      y: nextBounds.minY,
+      z: Math.round((nextBounds.minZ + nextBounds.maxZ) / 2),
+    });
     setDraftWithHistory(() => ({
       ...next,
       slot,
       modelSystem,
       modelType: modelSystem === 'v2' ? modelType : undefined,
+      gridScale: modelSystem === 'v3' ? nextGridScale : undefined,
       voxels: dedupeCustomArmorVoxels(next.voxels),
     }));
     setSelectedKeys(new Set());
@@ -453,21 +485,22 @@ export function ArmorModelEditor({
 
   const switchSlot = (nextSlot: CustomArmorSlot) => {
     setSlot(nextSlot);
-    const b = getEditorSlotBounds(nextSlot, modelType, modelSystem);
-    setCursor({ x: Math.round((b.minX + b.maxX) / 2), y: b.minY, z: Math.round((b.minZ + b.maxZ) / 2) });
     const equipped = getEquippedPieceForType(nextSlot, modelType, modelSystem);
+    const nextDraft = equipped
+      ? cloneSnapshot(equipped)
+      : snapshotFromBuiltin(
+        nextSlot,
+        modelSystem === 'v3'
+          ? getV3PresetForSlot(nextSlot as V3CustomArmorSlot)
+          : getDefaultPresetForSlot(nextSlot, playerLoadout),
+        playerHue,
+        modelType,
+        modelSystem
+      );
+    const b = getEditorSlotBounds(nextSlot, modelType, modelSystem, modelSystem === 'v3' ? getCustomArmorGridScale(nextDraft) : 1);
+    setCursor({ x: Math.round((b.minX + b.maxX) / 2), y: b.minY, z: Math.round((b.minZ + b.maxZ) / 2) });
     setDraft(
-      equipped
-        ? cloneSnapshot(equipped)
-        : snapshotFromBuiltin(
-          nextSlot,
-          modelSystem === 'v3'
-            ? getV3PresetForSlot(nextSlot as V3CustomArmorSlot)
-            : getDefaultPresetForSlot(nextSlot, playerLoadout),
-          playerHue,
-          modelType,
-          modelSystem
-        )
+      nextDraft
     );
     setUndoStack([]);
     setRedoStack([]);
@@ -482,6 +515,7 @@ export function ArmorModelEditor({
     setSlot(nextSlot);
     const b = getEditorSlotBounds(nextSlot, nextModelType, 'v2');
     setCursor({ x: Math.round((b.minX + b.maxX) / 2), y: b.minY, z: Math.round((b.minZ + b.maxZ) / 2) });
+    setViewMode((current) => current === 'preview' ? 'edit' : current);
     const equipped = getEquippedPieceForType(nextSlot, nextModelType, 'v2');
     setDraft(
       equipped
@@ -505,21 +539,23 @@ export function ArmorModelEditor({
       modelSystem: nextModelSystem,
       modelType: nextModelSystem === 'v2' ? nextModelType : undefined,
     });
-    const b = getEditorSlotBounds(nextSlot, nextModelType, nextModelSystem);
-    setCursor({ x: Math.round((b.minX + b.maxX) / 2), y: b.minY, z: Math.round((b.minZ + b.maxZ) / 2) });
     const equipped = getEquippedPieceForType(nextSlot, nextModelType, nextModelSystem);
+    const nextDraft = equipped
+      ? cloneSnapshot(equipped)
+      : snapshotFromBuiltin(
+        nextSlot,
+        nextModelSystem === 'v3'
+          ? getV3PresetForSlot(nextSlot as V3CustomArmorSlot)
+          : getDefaultPresetForSlot(nextSlot, playerLoadout),
+        playerHue,
+        nextModelType,
+        nextModelSystem
+      );
+    const b = getEditorSlotBounds(nextSlot, nextModelType, nextModelSystem, nextModelSystem === 'v3' ? getCustomArmorGridScale(nextDraft) : 1);
+    setCursor({ x: Math.round((b.minX + b.maxX) / 2), y: b.minY, z: Math.round((b.minZ + b.maxZ) / 2) });
+    setViewMode((current) => nextModelSystem === 'v2' && current === 'preview' ? 'edit' : current);
     setDraft(
-      equipped
-        ? cloneSnapshot(equipped)
-        : snapshotFromBuiltin(
-          nextSlot,
-          nextModelSystem === 'v3'
-            ? getV3PresetForSlot(nextSlot as V3CustomArmorSlot)
-            : getDefaultPresetForSlot(nextSlot, playerLoadout),
-          playerHue,
-          nextModelType,
-          nextModelSystem
-        )
+      nextDraft
     );
     setUndoStack([]);
     setRedoStack([]);
@@ -552,12 +588,12 @@ export function ArmorModelEditor({
         }
       }
     }
-    return voxels.filter((voxel) => voxelWithinCurrentSlot(voxel, slot, modelType, modelSystem));
+    return voxels.filter((voxel) => voxelWithinCurrentSlot(voxel, slot, modelType, modelSystem, draftGridScale));
   };
 
   const applyToolAtCursor = () => {
     if (tool === 'place') {
-      addVoxels([createVoxel(cursor.x, cursor.y, cursor.z, role, fixedColor, emissive)].filter((voxel) => voxelWithinCurrentSlot(voxel, slot, modelType, modelSystem)));
+      addVoxels([createVoxel(cursor.x, cursor.y, cursor.z, role, fixedColor, emissive)].filter((voxel) => voxelWithinCurrentSlot(voxel, slot, modelType, modelSystem, draftGridScale)));
     } else if (tool === 'erase') {
       eraseKeys(new Set([`${cursor.x},${cursor.y},${cursor.z}`]));
     } else if (tool === 'box') {
@@ -575,7 +611,7 @@ export function ArmorModelEditor({
           emissive
         ));
       }
-      addVoxels(voxels.filter((voxel) => voxelWithinCurrentSlot(voxel, slot, modelType, modelSystem)));
+      addVoxels(voxels.filter((voxel) => voxelWithinCurrentSlot(voxel, slot, modelType, modelSystem, draftGridScale)));
     } else if (tool === 'plane') {
       const voxels: CustomArmorVoxel[] = [];
       for (let a = 0; a < Math.max(1, size.x); a++) {
@@ -590,9 +626,9 @@ export function ArmorModelEditor({
           ));
         }
       }
-      addVoxels(voxels.filter((voxel) => voxelWithinCurrentSlot(voxel, slot, modelType, modelSystem)));
+      addVoxels(voxels.filter((voxel) => voxelWithinCurrentSlot(voxel, slot, modelType, modelSystem, draftGridScale)));
     } else if (tool === 'fill') {
-      const b = getEditorSlotBounds(slot, modelType, modelSystem);
+      const b = getEditorSlotBounds(slot, modelType, modelSystem, draftGridScale);
       const voxels: CustomArmorVoxel[] = [];
       for (let x = b.minX; x <= b.maxX; x++) {
         for (let y = b.minY; y <= b.maxY; y++) {
@@ -618,7 +654,7 @@ export function ArmorModelEditor({
           y: voxel.y + offset.y,
           z: voxel.z + offset.z,
         }))
-        .filter((voxel) => voxelWithinCurrentSlot(voxel, slot, modelType, modelSystem));
+        .filter((voxel) => voxelWithinCurrentSlot(voxel, slot, modelType, modelSystem, draftGridScale));
       const retained = removeOriginal
         ? current.voxels.filter((voxel) => !keys.has(`${voxel.x},${voxel.y},${voxel.z}`))
         : current.voxels;
@@ -824,7 +860,8 @@ export function ArmorModelEditor({
     scene.add(rimLight);
 
     const meshes: THREE.Mesh[] = [];
-    const scale = 0.045;
+    const baseScale = 0.045;
+    const scale = modelSystem === 'v3' ? baseScale / draftGridScale : baseScale;
 
     if (viewMode === 'rig') {
       const previewLoadout: CharacterLoadout = {
@@ -847,7 +884,7 @@ export function ArmorModelEditor({
       applyPreviewPose(model, poseMode);
       scene.add(model);
     } else {
-      const b = getEditorSlotBounds(slot, modelType, modelSystem);
+      const b = getEditorSlotBounds(slot, modelType, modelSystem, draftGridScale);
       const centerX = (b.minX + b.maxX) / 2;
       const centerY = (b.minY + b.maxY) / 2;
       const centerZ = (b.minZ + b.maxZ) / 2;
@@ -859,11 +896,19 @@ export function ArmorModelEditor({
         dark: '#0f172a',
         highlight: `hsl(${playerHue}, 75%, 65%)`,
       };
-      const silhouetteVoxels = showSilhouette
+      const baseSilhouetteVoxels = showSilhouette
         ? modelSystem === 'v3'
-          ? getV3BuiltinPartVoxels(slot as V3CustomArmorSlot, playerHue)
+          ? getV3BuiltinPartVoxels(slot as V3CustomArmorSlot, playerHue, undefined, { gridScale: 1 })
           : getVoxelSegmentDataV2(getV2SourceSlot(slot), selectedPreset, playerHue, false, modelType)
         : [];
+      const silhouetteVoxels = modelSystem === 'v3' && draftGridScale > 1
+        ? baseSilhouetteVoxels.map((voxel) => ({
+            ...voxel,
+            x: voxel.x * draftGridScale,
+            y: voxel.y * draftGridScale,
+            z: voxel.z * draftGridScale,
+          }))
+        : baseSilhouetteVoxels;
 
       if (showBounds) {
         const box = new THREE.Box3(
@@ -901,33 +946,43 @@ export function ArmorModelEditor({
 
       const renderVoxels = customArmorPieceToVoxels(draft, palette);
       const density = buildNeighborDensity(renderVoxels);
-      renderVoxels.forEach((voxel) => {
-        const key = `${voxel.x},${voxel.y},${voxel.z}`;
-        const baseColor = showDensity
-          ? densityColor(density.get(key) ?? 0)
-          : voxel.color;
-        const selected = selectedKeys.has(key);
-        const material = new THREE.MeshStandardMaterial({
-          color: selected ? '#fbbf24' : baseColor,
-          emissive: voxel.emissive || selected ? new THREE.Color(selected ? '#f59e0b' : baseColor) : new THREE.Color('#000000'),
-          emissiveIntensity: selected ? 1.6 : voxel.emissive ? 2.3 : 0,
-          roughness: 0.35,
-          metalness: 0.55,
+      if (viewMode === 'preview' && modelSystem === 'v3') {
+        const armorPreview = createV3VoxelArmorGroup(renderVoxels, {
+          voxelScale: scale,
+          renderStyle: 'armorSurface',
+          qualityTier: 'desktop',
+          pivot: [centerX, centerY, centerZ],
         });
-        const mesh = new THREE.Mesh(new THREE.BoxGeometry(scale, scale, scale), material);
-        mesh.position.set((voxel.x - centerX) * scale, (voxel.y - centerY) * scale, (voxel.z - centerZ) * scale);
-        mesh.userData.key = key;
-        mesh.userData.voxel = voxel;
-        scene.add(mesh);
-        meshes.push(mesh);
-      });
+        scene.add(armorPreview);
+      } else {
+        renderVoxels.forEach((voxel) => {
+          const key = `${voxel.x},${voxel.y},${voxel.z}`;
+          const baseColor = showDensity
+            ? densityColor(density.get(key) ?? 0)
+            : voxel.color;
+          const selected = selectedKeys.has(key);
+          const material = new THREE.MeshStandardMaterial({
+            color: selected ? '#fbbf24' : baseColor,
+            emissive: voxel.emissive || selected ? new THREE.Color(selected ? '#f59e0b' : baseColor) : new THREE.Color('#000000'),
+            emissiveIntensity: selected ? 1.6 : voxel.emissive ? 2.3 : 0,
+            roughness: 0.35,
+            metalness: 0.55,
+          });
+          const mesh = new THREE.Mesh(new THREE.BoxGeometry(scale, scale, scale), material);
+          mesh.position.set((voxel.x - centerX) * scale, (voxel.y - centerY) * scale, (voxel.z - centerZ) * scale);
+          mesh.userData.key = key;
+          mesh.userData.voxel = voxel;
+          scene.add(mesh);
+          meshes.push(mesh);
+        });
 
-      const cursorMesh = new THREE.Mesh(
-        new THREE.BoxGeometry(scale * 1.15, scale * 1.15, scale * 1.15),
-        new THREE.MeshBasicMaterial({ color: '#ffffff', wireframe: true, transparent: true, opacity: 0.78 })
-      );
-      cursorMesh.position.set((cursor.x - centerX) * scale, (cursor.y - centerY) * scale, (cursor.z - centerZ) * scale);
-      scene.add(cursorMesh);
+        const cursorMesh = new THREE.Mesh(
+          new THREE.BoxGeometry(scale * 1.15, scale * 1.15, scale * 1.15),
+          new THREE.MeshBasicMaterial({ color: '#ffffff', wireframe: true, transparent: true, opacity: 0.78 })
+        );
+        cursorMesh.position.set((cursor.x - centerX) * scale, (cursor.y - centerY) * scale, (cursor.z - centerZ) * scale);
+        scene.add(cursorMesh);
+      }
     }
 
     type CameraDragMode = 'orbit' | 'pan';
@@ -969,7 +1024,8 @@ export function ArmorModelEditor({
               candidate,
               paintSettings.slot,
               paintSettings.modelType,
-              paintSettings.modelSystem
+              paintSettings.modelSystem,
+              paintSettings.gridScale
             )));
           } else {
             setSelectedKeys((keys) => {
@@ -1085,6 +1141,7 @@ export function ArmorModelEditor({
       scene.traverse((child) => {
         if (child instanceof THREE.Mesh) {
           child.geometry?.dispose();
+          if (child.userData.v3CachedMaterial) return;
           const materials = Array.isArray(child.material) ? child.material : [child.material];
           materials.forEach((material) => material.dispose());
         }
@@ -1093,6 +1150,7 @@ export function ArmorModelEditor({
     };
   }, [
     draft,
+    draftGridScale,
     playerHue,
     playerLoadout,
     poseMode,
@@ -1207,7 +1265,7 @@ export function ArmorModelEditor({
 
           <div className={`min-h-[420px] rounded-lg border border-white/10 bg-slate-950/80 overflow-hidden relative ${isStandalone ? 'flex-1' : ''}`} ref={containerRef}>
             <div className="absolute left-3 top-3 z-10 flex flex-wrap gap-1.5">
-              {(['edit', 'rig'] as ViewMode[]).map((mode) => (
+              {activeViewModes.map((mode) => (
                 <button
                   key={mode}
                   type="button"
@@ -1216,7 +1274,7 @@ export function ArmorModelEditor({
                     viewMode === mode ? 'bg-cyan-500/20 border-cyan-400 text-cyan-200' : 'bg-black/50 border-white/10 text-white/45'
                   }`}
                 >
-                  {mode}
+                  {mode === 'edit' ? 'Voxel Edit' : mode === 'preview' ? 'Armor Preview' : 'Rig Preview'}
                 </button>
               ))}
             </div>
@@ -1403,9 +1461,10 @@ function voxelWithinCurrentSlot(
   voxel: CustomArmorVoxel,
   slot: CustomArmorSlot,
   modelType: CharacterModelType,
-  modelSystem: CustomArmorModelSystem
+  modelSystem: CustomArmorModelSystem,
+  gridScale: 1 | 2 = 1
 ): boolean {
-  const b = getEditorSlotBounds(slot, modelType, modelSystem);
+  const b = getEditorSlotBounds(slot, modelType, modelSystem, gridScale);
   return voxel.x >= b.minX && voxel.x <= b.maxX
     && voxel.y >= b.minY && voxel.y <= b.maxY
     && voxel.z >= b.minZ && voxel.z <= b.maxZ;

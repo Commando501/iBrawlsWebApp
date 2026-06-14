@@ -6,6 +6,7 @@ import {
   obsDimForVersion,
 } from '../../sim/env/observation';
 import { type SimCombatant, type SimState, type SimWeaponState } from '../../sim/simState';
+import { analyzeCombatThreat } from '../../sim/combatThreat';
 import { createInitialGrifballMatchState } from '../../game/grifballMatch';
 import { createInitialBall } from '../../game/grifballBall';
 import { createEmptyTeamScores, type TeamId, type TeamScoresState } from '../../game/teamScoring';
@@ -152,6 +153,7 @@ export function buildNeuralLiveFrameTelemetry(input: NeuralLiveFrameTelemetryInp
   const selfRespawnTimer = Math.max(0, self.respawnTimer ?? 0);
   const selfSwapLockoutTimer = Math.max(0, self.swapLockoutTimer ?? 0);
   const selfSwapCooldownTimer = Math.max(0, self.swapCooldownTimer ?? 0);
+  const threatTelemetry = buildLiveTargetThreatTelemetry(state, self);
 
   return {
     decisionReused: input.decisionReused,
@@ -162,6 +164,13 @@ export function buildNeuralLiveFrameTelemetry(input: NeuralLiveFrameTelemetryInp
     targetRespawnTimer,
     targetInvulnerabilityTimer: Math.max(0, state.playerInvulnerabilityTimer ?? 0),
     targetActionSuppressed: shouldSuppressNeuralLiveAction(state),
+    targetWeaponState: state.pWeaponState ?? 'ready',
+    targetCanAttack: threatTelemetry.targetCanAttack,
+    targetFacingSelf: threatTelemetry.targetFacingSelf,
+    selfInsideTargetRange: threatTelemetry.selfInsideTargetRange,
+    passiveTrapRisk: threatTelemetry.passiveTrapRisk,
+    rangeMargin: threatTelemetry.rangeMargin,
+    closingSpeed: threatTelemetry.closingSpeed,
     selfAlive: self.hp > 0 && selfRespawnTimer <= 0,
     selfRespawnTimer,
     selfInvulnerabilityTimer: Math.max(0, self.invulnerabilityTimer ?? 0),
@@ -196,6 +205,48 @@ export function buildNeuralLiveFrameTelemetry(input: NeuralLiveFrameTelemetryInp
     dashStarted: input.dashStarted,
     swapRequested: action.swapWeapon,
     swapStarted: input.swapStarted,
+  };
+}
+
+function buildLiveTargetThreatTelemetry(
+  state: GrifballRuntimeState,
+  self: NeuralLiveTelemetryCombatant
+): {
+  targetCanAttack: boolean;
+  targetFacingSelf: boolean;
+  selfInsideTargetRange: boolean;
+  passiveTrapRisk: number;
+  rangeMargin: number;
+  closingSpeed: number;
+} {
+  const target = livePlayerToSimCombatant(state);
+  const bot = liveTelemetrySelfToSimCombatant(self);
+  const sim: SimState = {
+    mode: 'combat',
+    combatants: [target, bot],
+    match: createInitialGrifballMatchState(state.settings),
+    scores: createEmptyTeamScores(['blue', 'red', 't0', 't1']),
+    settings: state.settings,
+    map: FALLBACK_COMBAT_MAP,
+    goalPlates: [],
+    spawns: {
+      blue: [],
+      red: [],
+      t0: [{ x: target.pos.x, y: 0, z: target.pos.z }],
+      t1: [{ x: bot.pos.x, y: 0, z: bot.pos.z }],
+    },
+    tick: Math.max(0, Math.round(state.gameTime * 60)),
+    seed: 0,
+    rngState: 0,
+  };
+  const analysis = analyzeCombatThreat(sim, bot);
+  return {
+    targetCanAttack: analysis.targetCanAttack,
+    targetFacingSelf: analysis.targetFacingSelf,
+    selfInsideTargetRange: analysis.selfInsideMeleeRange || analysis.selfInsideLungeRange,
+    passiveTrapRisk: analysis.passiveBaitRisk,
+    rangeMargin: analysis.rangeMargin,
+    closingSpeed: analysis.closingSpeed,
   };
 }
 
@@ -452,6 +503,47 @@ function liveAIToSimCombatant(combatant: GrifballRuntimeState['otherPlayers'] ex
       ? { x: lungeTarget.x, y: lungeTarget.y, z: lungeTarget.z }
       : { x: 0, y: 0, z: 0 },
     hasBall: combatant.activeWeapon === 'ball',
+  };
+}
+
+function liveTelemetrySelfToSimCombatant(self: NeuralLiveTelemetryCombatant): SimCombatant {
+  const maxHp = self.maxHp || 1;
+  return {
+    id: 'neural_self',
+    team: 't1',
+    controller: 'ai',
+    pos: { x: self.pos.x, y: self.pos.y, z: self.pos.z },
+    vel: { x: self.vel.x, y: self.vel.y, z: self.vel.z },
+    yaw: liveYawToSimYaw(self.yaw),
+    isCrouching: false,
+    isJumping: self.isJumping ?? false,
+    grounded: !(self.isJumping ?? false) && self.pos.y <= 0.01,
+    hp: self.hp,
+    maxHp,
+    alive: self.hp > 0 && Math.max(0, self.respawnTimer ?? 0) <= 0,
+    respawnTimer: self.respawnTimer ?? 0,
+    invulnerabilityTimer: self.invulnerabilityTimer ?? 0,
+    weapon: self.activeWeapon === 'sword' || self.activeWeapon === 'ball' ? self.activeWeapon : 'hammer',
+    weaponState: liveWeaponStateToSim(self.weaponState as WeaponState | 'slashing' | 'recovering' | undefined),
+    weaponTimer: self.weaponTimer ?? 0,
+    swapLockoutTimer: self.swapLockoutTimer ?? 0,
+    attackCooldown: self.weaponState === 'ready' || !self.weaponState ? 0 : self.weaponTimer ?? 0,
+    dashCooldownTimer: 0,
+    dashRemaining: 0,
+    dashDir: { x: 0, y: 0, z: 0 },
+    slideActive: false,
+    slideCooldownTimer: 0,
+    isSprinting: false,
+    attackKind: 'none',
+    lastAttackTick: 0,
+    weaponReadyTimer: self.swapCooldownTimer ?? 0,
+    hammerJumpWindowTimer: 0,
+    hammerJumpsInAir: 0,
+    passChargeTimer: 0,
+    isLunging: false,
+    lungeTimer: 0,
+    lungeDir: { x: 0, y: 0, z: 0 },
+    hasBall: self.activeWeapon === 'ball',
   };
 }
 

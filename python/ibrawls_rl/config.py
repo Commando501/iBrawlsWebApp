@@ -30,6 +30,9 @@ class TrainConfig:
     # --- combat (deathmatch) generalist; ignored when mode = "grifball" ---
     combat_world_sizes: list[int] = field(default_factory=lambda: [2, 2, 2, 2, 4, 4, 8])
     combat_layout_mix: list[str] = field(default_factory=list)
+    combat_bait_layout_mix: list[str] = field(default_factory=list)
+    combat_bait_opponent: str = "passive_bait_jitter"
+    combat_bait_reward_scale: float = 1.0
     combat_lone_wolf_reward_scale: float = 1.35
     combat_kill_min: int = 10         # per-episode kill target sampled in [min, max]
     combat_kill_max: int = 25
@@ -53,7 +56,7 @@ class TrainConfig:
     width: int = 256                  # neurons per hidden layer (bigger = more capacity, needs GPU)
     depth: int = 2                    # number of hidden layers
     frame_stack: int = 1              # stack recent observations for short-term memory (1 = off)
-    observation_version: int = 1       # 1 = checkpoint-compatible; 2 = full FFA pressure view
+    observation_version: int = 1       # 1 = checkpoint-compatible; 2 = pressure; 3 = anti-bait threat view
     # Warm-start: continue from a previous stage's model (the curriculum's weight transfer).
     # Must use the SAME width/depth. Empty = train from scratch.
     init_model: str = ""              # e.g. "runs/s1_random/final_model.zip"
@@ -85,6 +88,9 @@ class TrainConfig:
     reward_invalid_jump: float = 0.0   # penalize jump inputs while already airborne
     reward_invalid_swap: float = 0.0   # penalize impossible weapon swaps
     reward_action_repeat: float = 0.0  # penalize repeating the same button combo (mash loops)
+    reward_danger_approach: float = 0.0 # penalize closing into a ready passive threat
+    reward_bait_disengage: float = 0.0  # reward backing out of a ready passive threat
+    reward_trap_death: float = 0.0      # extra penalty for dying to a ready passive threat
     bootstrap_truncation: bool = False   # value-bootstrap timeouts (usually leave off)
 
     # --- logging / output ---
@@ -99,6 +105,9 @@ KNOB_DESCRIPTIONS: dict[str, str] = {
     "mode": "'combat' (deathmatch; trains one generalist over 1v1/FFA/team via [combat] — the main focus) or 'grifball' (carry the ball to score).",
     "combat_world_sizes": "Combat only: fixed sizes of the parallel matches. 2 = a 1v1; 4/8 = FFA or teams. The mix is what makes one model generalize.",
     "combat_layout_mix": "Combat only: optional explicit scenario mix such as 1v1x16, 1v2x6, 1v3x6, 1v7x2, ffa4x6, ffa8x4. When set, this replaces world_sizes with fixed team layouts.",
+    "combat_bait_layout_mix": "Combat only: optional extra scripted passive-bait curriculum worlds such as 1v1x4, 1v2x2, 1v3x2. Team 0 is learner-controlled; other teams use combat_bait_opponent.",
+    "combat_bait_opponent": "Combat only: scripted opponent used in bait curriculum worlds. passive_bait stands still; passive_bait_jitter adds small forward/back movement.",
+    "combat_bait_reward_scale": "Combat only: multiplier for the anti-bait reward weights inside bait curriculum worlds.",
     "combat_lone_wolf_reward_scale": "Combat only: reward multiplier for the singleton team in asymmetric layouts like 1v3 or 1v7. No combat low-health state is added.",
     "combat_kill_min": "Combat only: lower bound of the per-episode kill target.",
     "combat_kill_max": "Combat only: upper bound of the per-episode kill target.",
@@ -127,7 +136,7 @@ KNOB_DESCRIPTIONS: dict[str, str] = {
     "width": "Neurons per layer. Bigger brain = more skill ceiling, but slower (use the GPU).",
     "depth": "Hidden layers. 2-3 is plenty here.",
     "frame_stack": "Short action/position memory by stacking recent observations. 1 = off; 4 gives the MLP temporal context without switching algorithms. Train/evaluate with the same value.",
-    "observation_version": "Observation contract. 1 preserves current checkpoint compatibility; 2 adds full FFA pressure context and needs a fresh checkpoint family.",
+    "observation_version": "Observation contract. 1 preserves current checkpoint compatibility; 2 adds full FFA pressure context; 3 adds anti-bait threat context and needs a fresh checkpoint family.",
     "init_model": "Warm-start from a saved model (curriculum transfer). Same width/depth required; one inserted action logit can auto-migrate. Empty = from scratch.",
     "randomize_enabled": "Jitter game mechanics each episode so the brain stays robust to live balance patches.",
     "randomize_pct": "How far mechanics are jittered (0.15 = +/-15%). Bigger = more robust but harder to learn.",
@@ -151,6 +160,9 @@ KNOB_DESCRIPTIONS: dict[str, str] = {
     "reward_invalid_jump": "Penalty for jump inputs while already airborne.",
     "reward_invalid_swap": "Penalty for impossible weapon swaps.",
     "reward_action_repeat": "Penalty for repeating the exact same BUTTON combo (attack/jump/dash/swap) on consecutive ticks — catches mash loops. Movement is excluded: holding a heading is human.",
+    "reward_danger_approach": "Combat anti-bait penalty for moving deeper into a ready opponent's kill zone.",
+    "reward_bait_disengage": "Combat anti-bait reward for backing out of a ready opponent's kill zone.",
+    "reward_trap_death": "Combat anti-bait extra penalty when the learner dies to the prior ready passive threat.",
     "bootstrap_truncation": "Treat timeouts as 'to be continued' (value bootstrap). Usually OFF for this win-focused task.",
     "logdir": "Folder for this run's logs, checkpoints, and final model.",
     "save_every": "Checkpoint frequency (steps).",
@@ -166,6 +178,9 @@ _TOML_MAP = {
     ("run", "total_steps"): "total_steps",
     ("combat", "world_sizes"): "combat_world_sizes",
     ("combat", "layout_mix"): "combat_layout_mix",
+    ("combat", "bait_layout_mix"): "combat_bait_layout_mix",
+    ("combat", "bait_opponent"): "combat_bait_opponent",
+    ("combat", "bait_reward_scale"): "combat_bait_reward_scale",
     ("combat", "lone_wolf_reward_scale"): "combat_lone_wolf_reward_scale",
     ("combat", "kill_min"): "combat_kill_min",
     ("combat", "kill_max"): "combat_kill_max",
@@ -216,6 +231,9 @@ _TOML_MAP = {
     ("reward", "invalid_jump"): "reward_invalid_jump",
     ("reward", "invalid_swap"): "reward_invalid_swap",
     ("reward", "action_repeat"): "reward_action_repeat",
+    ("reward", "danger_approach"): "reward_danger_approach",
+    ("reward", "bait_disengage"): "reward_bait_disengage",
+    ("reward", "trap_death"): "reward_trap_death",
     ("reward", "bootstrap_truncation"): "bootstrap_truncation",
     ("logging", "dir"): "logdir",
     ("logging", "save_every"): "save_every",
@@ -254,6 +272,9 @@ def reward_dict(cfg: TrainConfig) -> dict:
         "invalidJump": cfg.reward_invalid_jump,
         "invalidSwap": cfg.reward_invalid_swap,
         "actionRepeatPenalty": cfg.reward_action_repeat,
+        "dangerApproach": cfg.reward_danger_approach,
+        "baitDisengage": cfg.reward_bait_disengage,
+        "trapDeath": cfg.reward_trap_death,
     }
 
 
@@ -328,6 +349,7 @@ _FIELD_CHOICES: dict[str, list[str]] = {
     "opponent": ["random", "self", "heuristic"],
     "device": ["auto", "cpu", "cuda"],
     "lr_schedule": ["constant", "linear"],
+    "combat_bait_opponent": ["passive_bait", "passive_bait_jitter"],
 }
 
 # Optional (min, max, step) hints for number inputs — purely to make the form
@@ -345,7 +367,8 @@ _FIELD_RANGES: dict[str, tuple[float, float, float]] = {
     "max_grad_norm": (0.1, 5.0, 0.1),
     "target_kl": (0.0, 0.1, 0.005),
     "frame_stack": (1, 8, 1),
-    "observation_version": (1, 2, 1),
+    "observation_version": (1, 3, 1),
+    "combat_bait_reward_scale": (0.0, 5.0, 0.05),
     "combat_lone_wolf_reward_scale": (1.0, 3.0, 0.05),
     "league_latest_bias": (0.0, 1.0, 0.05),
     "league_random_opponent_rate": (0.0, 1.0, 0.05),
@@ -363,7 +386,7 @@ def _infer_type(field: str, value) -> str:
     if isinstance(value, float):
         return "float"
     if isinstance(value, list):
-        if field in ("league_snapshots", "combat_layout_mix", "league_scenario_mix"):
+        if field in ("league_snapshots", "combat_layout_mix", "combat_bait_layout_mix", "league_scenario_mix"):
             return "strlist"
         return "intlist"
     return "str"
@@ -433,10 +456,10 @@ def coerce_value(field: str, raw):
         return float(raw)
     if isinstance(default, list):
         if isinstance(raw, str):
-            if field in ("league_snapshots", "combat_layout_mix", "league_scenario_mix"):
+            if field in ("league_snapshots", "combat_layout_mix", "combat_bait_layout_mix", "league_scenario_mix"):
                 return [x.strip() for x in raw.replace("\n", ",").split(",") if x.strip()]
             return [int(float(x)) for x in raw.replace(",", " ").split() if x.strip()]
-        if field in ("league_snapshots", "combat_layout_mix", "league_scenario_mix"):
+        if field in ("league_snapshots", "combat_layout_mix", "combat_bait_layout_mix", "league_scenario_mix"):
             return [str(x) for x in raw]
         return [int(float(x)) for x in raw]
     return str(raw)

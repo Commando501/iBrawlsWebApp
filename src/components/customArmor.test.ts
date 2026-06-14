@@ -8,6 +8,7 @@ import {
   createCustomArmorSnapshot,
   duplicateCustomArmorPiece,
   normalizeCustomArmorCatalog,
+  normalizeCustomArmorSnapshot,
   removeFloatingVoxels,
   restoreCustomArmorHistoryEntry,
   sanitizeCharacterLoadoutForNetwork,
@@ -170,6 +171,60 @@ test('V3 custom armor pieces validate against V3 slot bounds and budgets', () =>
   assert.equal(piece.modelSystem, 'v3');
   assert.equal(result.valid, true, result.errors.join(', '));
   assert.equal(result.stats.v3Slot, 'helmet');
+});
+
+test('new V3 custom armor drafts default to gridScale 2 while snapshots preserve it', () => {
+  const piece = createCustomArmorPiece('helmet', 'High Density V3 Helmet', [], undefined, undefined, 'v3');
+  const snapshot = createCustomArmorSnapshot(piece);
+
+  assert.equal(piece.gridScale, 2);
+  assert.equal(snapshot.gridScale, 2);
+});
+
+test('legacy V3 custom armor without gridScale normalizes as gridScale 1', () => {
+  const helmetBounds = getV3CharacterPartBounds('helmet');
+  const voxels: CustomArmorVoxel[] = Array.from({ length: 130 }, (_, index) => ({
+    x: index % helmetBounds.maxDimensions.x,
+    y: Math.floor(index / helmetBounds.maxDimensions.x) % helmetBounds.maxDimensions.y,
+    z: Math.floor(index / (helmetBounds.maxDimensions.x * helmetBounds.maxDimensions.y)) % helmetBounds.maxDimensions.z,
+    role: 'primary',
+  }));
+
+  const normalized = normalizeCustomArmorSnapshot({
+    version: 1,
+    id: 'legacy-v3-helmet',
+    name: 'Legacy V3 Helmet',
+    slot: 'helmet',
+    modelSystem: 'v3',
+    voxels,
+    updatedAt: 1,
+  });
+
+  assert.ok(normalized);
+  assert.equal(normalized.gridScale, 1);
+  assert.equal(validateCustomArmorPiece(normalized).valid, true);
+});
+
+test('gridScale 2 V3 custom armor validates against doubled local fit bounds', () => {
+  const helmetBounds = getV3CharacterPartBounds('helmet');
+  const gridScale = 2;
+  const validVoxels: CustomArmorVoxel[] = Array.from({ length: 130 }, (_, index) => ({
+    x: index % (helmetBounds.maxDimensions.x * gridScale),
+    y: Math.floor(index / (helmetBounds.maxDimensions.x * gridScale)) % (helmetBounds.maxDimensions.y * gridScale),
+    z: Math.floor(index / (helmetBounds.maxDimensions.x * helmetBounds.maxDimensions.y * gridScale)) % (helmetBounds.maxDimensions.z * gridScale),
+    role: 'primary',
+  }));
+  const validPiece = createCustomArmorPiece('helmet', 'HD Fit Helmet', validVoxels, undefined, undefined, 'v3', gridScale);
+  const invalidPiece = {
+    ...createCustomArmorSnapshot(validPiece),
+    voxels: [
+      ...validVoxels,
+      { x: helmetBounds.maxDimensions.x * gridScale, y: 0, z: 0, role: 'accent' as const },
+    ],
+  };
+
+  assert.equal(validateCustomArmorPiece(validPiece).valid, true);
+  assert.equal(validateCustomArmorPiece(invalidPiece).valid, false);
 });
 
 test('V3 custom armor rejects voxels outside the V3 local fit bounds', () => {

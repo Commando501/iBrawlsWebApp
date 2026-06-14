@@ -577,7 +577,7 @@ function renderEvalHistory(history) {
   const root = $("#evalHistory");
   if (!history.length) { root.innerHTML = '<p class="muted">No evaluations yet — run one above and it\'ll show up here.</p>'; return; }
   const rows = history.slice();
-  const histScore = (r) => r.win_rate ?? r.summary?.lone_wolf_score ?? r.summary?.promotion_score ?? 0;
+  const histScore = promotionRankScore;
   if (histSortBest) rows.sort((a, b) => histScore(b) - histScore(a));
   const best = Math.max(...rows.map(histScore));
   const table = el("table", { class: "guide-table hist-table" },
@@ -598,7 +598,7 @@ function histRow(r, best) {
   if (l > 0) bars.append(el("div", { class: "bar loss", style: `width:${l}%` }));
   const when = r.ts ? new Date(r.ts * 1000).toLocaleString() : "—";
   const model = (r.model || "—").replace(/^runs\//, "").replace(/\/final_model\.zip$/, " / final").replace(/\.zip$/, "");
-  const score = r.win_rate ?? r.summary?.lone_wolf_score ?? r.summary?.promotion_score ?? 0;
+  const score = promotionRankScore(r);
   const isBest = score === best && best > 0;
   const b = r.behavior;
   const bTip = b ? Object.entries(BEHAVIOR_INFO)
@@ -614,6 +614,17 @@ function histRow(r, best) {
     el("td", {}, r.device || "cpu"),
     el("td", {}, el("div", { class: "hist-result" },
       el("span", { class: "winpct" }, Math.round(w) + "%"), bars)));
+}
+function promotionRankScore(r) {
+  const s = r.summary || {};
+  if (s.anti_bait_score != null) {
+    const gates = [s.lone_wolf_score, s.frozen_snapshot_score, s.promotion_score]
+      .filter((v) => typeof v === "number");
+    const floor = gates.length ? Math.min(...gates) : s.anti_bait_score;
+    const trapPenalty = typeof s.trap_death_rate === "number" ? Math.max(0, s.trap_death_rate - 0.2) : 0;
+    return Math.min(s.anti_bait_score, floor) - trapPenalty;
+  }
+  return r.win_rate ?? s.lone_wolf_score ?? s.promotion_score ?? 0;
 }
 $("#btnHistRefresh").addEventListener("click", loadEvalHistory);
 $("#btnHistSort").addEventListener("click", () => {
@@ -654,7 +665,7 @@ function renderEvalResult(r) {
 }
 
 function renderEvalMatrixResult(r) {
-  const rows = r.scenarios.map((s) => {
+  const scenarioRows = (scenarios, options = {}) => scenarios.map((s) => {
     const b = s.behavior || {};
     const score = s.win_score != null ? s.win_score : 0;
     const scoreClass = score >= 0.75 ? "good-cell" : score <= 0.15 ? "bad-cell" : "";
@@ -666,16 +677,21 @@ function renderEvalMatrixResult(r) {
       el("td", {}, `${Math.round((s.win_rate || 0) * 100)}%`),
       el("td", {}, `${Math.round(randomBaseline * 100)}%`),
       el("td", {}, `${Math.round((s.draw_rate || 0) * 100)}%`),
+      options.trap ? el("td", {}, `${Math.round((s.trap_death_rate || 0) * 100)}%`) : null,
       el("td", {}, s.world_size || "-"),
       el("td", {}, s.kill_target || "-"),
       el("td", {}, `${Math.round((b.attack_rate || 0) * 100)}% / ${Math.round((b.dash_rate || 0) * 100)}% / ${Math.round((b.action_repeat_rate || 0) * 100)}%`));
   });
-  const table = el("table", { class: "guide-table" },
-    el("thead", {}, el("tr", {},
-      el("th", {}, "Scenario"), el("th", { title: "0 = random baseline, 1 = perfect" }, "Score"),
-      el("th", {}, "Win"), el("th", {}, "Random"), el("th", {}, "Draw"),
-      el("th", {}, "World"), el("th", {}, "Kills"), el("th", {}, "Atk / dash / repeat"))),
-    el("tbody", {}, ...rows));
+  const scenarioTable = (scenarios, title, options = {}) => el("div", {},
+    title ? el("h3", { style: "margin:14px 0 0" }, title) : null,
+    el("table", { class: "guide-table" },
+      el("thead", {}, el("tr", {},
+        el("th", {}, "Scenario"), el("th", { title: "0 = random baseline, 1 = perfect" }, "Score"),
+        el("th", {}, "Win"), el("th", {}, "Random"), el("th", {}, "Draw"),
+        options.trap ? el("th", {}, "Trap deaths") : null,
+        el("th", {}, "World"), el("th", {}, "Kills"), el("th", {}, "Atk / dash / repeat"))),
+      el("tbody", {}, ...scenarioRows(scenarios, options))));
+  const table = scenarioTable(r.scenarios, "");
   const s = r.summary;
   const summary = el("div", { class: "summary" },
     el("div", {}, el("span", { class: "big" }, fmtNum(s.lone_wolf_score ?? s.promotion_score)), " lone-wolf score"),
@@ -689,8 +705,21 @@ function renderEvalMatrixResult(r) {
   if (r.observation_version) {
     summary.append(el("div", { class: "muted" }, `obs v${r.observation_version}`));
   }
+  if (s.anti_bait_score != null) {
+    const frozen = s.frozen_snapshot_score != null ? fmtNum(s.frozen_snapshot_score) : "missing";
+    summary.append(el("div", { class: "muted" },
+      `anti-bait ${fmtNum(s.anti_bait_score)} | trap deaths ${Math.round((s.trap_death_rate || 0) * 100)}% | frozen snapshot ${frozen}`));
+    summary.append(el("div", { class: s.strict_promotion_ready ? "good-cell" : "bad-cell" },
+      `strict promotion: ${s.strict_promotion_ready ? "ready" : "not ready"}`));
+  }
   $("#evalResult").innerHTML = "";
   $("#evalResult").append(summary, table);
+  if (Array.isArray(r.frozen_snapshots) && r.frozen_snapshots.length) {
+    $("#evalResult").append(scenarioTable(r.frozen_snapshots, "Frozen snapshot matrix"));
+  }
+  if (Array.isArray(r.anti_bait) && r.anti_bait.length) {
+    $("#evalResult").append(scenarioTable(r.anti_bait, "Anti-bait matrix", { trap: true }));
+  }
   // Behavior chips for the duel scenario (the cleanest read on movement style).
   const duel = r.scenarios.find((x) => (x.world_size || 2) === 2) || r.scenarios[0];
   const chips = behaviorChips(duel && duel.behavior);
@@ -1070,12 +1099,17 @@ function renderQueue(st) {
       el("td", {}, s.win_rate != null ? Math.round(s.win_rate * 100) + "%" : "—"),
       el("td", {}, s.fps != null ? fmtInt(s.fps) : "—"),
       el("td", {}, s.lone_wolf_score != null ? fmtNum(s.lone_wolf_score) : "-"),
+      el("td", {}, s.anti_bait_score != null ? fmtNum(s.anti_bait_score) : "-"),
+      el("td", {}, s.frozen_snapshot_score != null ? fmtNum(s.frozen_snapshot_score) : "-"),
+      el("td", { class: s.strict_promotion_ready ? "good-cell" : "" },
+        s.strict_promotion_ready ? "ready" : "-"),
       actions);
   });
   const table = el("table", { class: "guide-table queue-table" },
     el("thead", {}, el("tr", {},
       el("th", {}, "Job"), el("th", {}, "State"), el("th", {}, "Steps"),
-      el("th", {}, "Reward"), el("th", {}, "Win rate"), el("th", {}, "FPS"), el("th", {}, "Lone wolf"), el("th", {}, ""))),
+      el("th", {}, "Reward"), el("th", {}, "Win rate"), el("th", {}, "FPS"), el("th", {}, "Lone wolf"),
+      el("th", {}, "Anti-bait"), el("th", {}, "Frozen"), el("th", {}, "Strict"), el("th", {}, ""))),
     el("tbody", {}, ...rows));
   root.innerHTML = "";
   root.append(el("p", { class: "muted", style: "margin:0 0 8px" },

@@ -34,6 +34,8 @@ import {
 } from '../env/reward';
 import { randomizeSettings, type RandomizeSpec } from '../env/randomize';
 import { type VecStepResult } from './vecEnv';
+import { passiveBaitPolicyFor, type PassiveBaitProfile } from '../harness/passiveBaitPolicy';
+import { type Policy } from '../harness/policy';
 
 export interface CombatVecEnvConfig {
   /** Fixed size of each world. Their sum is the (constant) agent batch. */
@@ -57,6 +59,8 @@ export interface CombatVecEnvConfig {
   loneWolfRewardScale?: number;
   /** Observation contract version: 1 keeps old checkpoints, 2 adds combat pressure context. */
   observationVersion?: number;
+  /** Optional scripted policy for non-team-0 combatants in fixed-layout curriculum worlds. */
+  scriptedOpponentProfile?: PassiveBaitProfile;
 }
 
 interface World {
@@ -92,6 +96,7 @@ export class CombatVecEnv {
   readonly numAgents: number;
   readonly agentIds: string[];
   readonly agentTeams: string[];
+  readonly learnerAgentIndices: number[];
 
   private readonly settings: UniversalSettings;
   private readonly reward: RewardConfig;
@@ -101,6 +106,7 @@ export class CombatVecEnv {
   private readonly maxTicks: number;
   readonly decisionInterval: number;
   private readonly loneWolfRewardScale: number;
+  private readonly scriptedOpponentPolicy: Policy | null;
   private readonly worlds: World[] = [];
 
   private readonly obsBuf: Float32Array;
@@ -126,6 +132,9 @@ export class CombatVecEnv {
     this.loneWolfRewardScale = Math.max(0, Number.isFinite(config.loneWolfRewardScale ?? 1)
       ? Number(config.loneWolfRewardScale ?? 1)
       : 1);
+    this.scriptedOpponentPolicy = config.scriptedOpponentProfile
+      ? passiveBaitPolicyFor(config.scriptedOpponentProfile)
+      : null;
     const baseSeed = config.baseSeed ?? 1;
 
     let offset = 0;
@@ -151,6 +160,7 @@ export class CombatVecEnv {
     for (const w of this.worlds) {
       for (let j = 0; j < w.size; j++) this.agentIds.push(`w${w.index}_c${j}`);
     }
+    this.learnerAgentIndices = inferLearnerAgentIndices(this.worlds, Boolean(this.scriptedOpponentPolicy));
 
     const n = this.numAgents;
     this.obsBuf = new Float32Array(n * this.obsDim);
@@ -159,7 +169,7 @@ export class CombatVecEnv {
     this.truncatedBuf = new Uint8Array(n);
     this.terminalObs = new Array(n).fill(null);
     this.rewardComponentBuf = new Float32Array(REWARD_COMPONENT_KEYS.length);
-    this.agentTeams = new Array(n).fill('t0');
+    this.agentTeams = inferAgentTeams(this.worlds);
   }
 
   getWorldTeamSizes(): number[][] {
@@ -241,8 +251,11 @@ export class CombatVecEnv {
         const state = w.state;
         const byId: Record<string, ReturnType<typeof decodeAction>> = {};
         for (let j = 0; j < w.size; j++) {
-          const id = state.combatants[j].id;
-          byId[id] = decodeAction(actions, state, id, (w.offset + j) * this.actDim);
+          const combatant = state.combatants[j];
+          const id = combatant.id;
+          byId[id] = this.scriptedOpponentPolicy && combatant.team !== 't0'
+            ? this.scriptedOpponentPolicy(state, id, w.layoutRng)
+            : decodeAction(actions, state, id, (w.offset + j) * this.actDim);
         }
 
         const details = computeActionDisciplineRewards(state, this.reward, w.memory, byId);
@@ -308,4 +321,30 @@ function normalizeWorldLayouts(layouts: number[][] | undefined): number[][] | un
   return layouts
     .map((layout) => layout.map((size) => Math.max(1, Math.trunc(size))))
     .filter((layout) => layout.length >= 2 && layout.reduce((n, size) => n + size, 0) >= 2);
+}
+
+function inferLearnerAgentIndices(worlds: World[], scriptedOpponents: boolean): number[] {
+  const out: number[] = [];
+  for (const w of worlds) {
+    const learnerCount = scriptedOpponents && w.fixedTeamSizes?.length
+      ? Math.max(1, w.fixedTeamSizes[0])
+      : w.size;
+    for (let j = 0; j < learnerCount; j++) out.push(w.offset + j);
+  }
+  return out;
+}
+
+function inferAgentTeams(worlds: World[]): string[] {
+  const teams: string[] = [];
+  for (const w of worlds) {
+    if (w.fixedTeamSizes?.length) {
+      let cursor = w.offset;
+      for (let t = 0; t < w.fixedTeamSizes.length; t++) {
+        for (let i = 0; i < w.fixedTeamSizes[t]; i++) teams[cursor++] = `t${t}`;
+      }
+      continue;
+    }
+    for (let j = 0; j < w.size; j++) teams[w.offset + j] = 't0';
+  }
+  return teams;
 }

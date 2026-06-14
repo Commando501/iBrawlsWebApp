@@ -7,7 +7,9 @@ import {
   encodeObservation,
   OBS_DIM,
   OBS_DIM_V2,
+  OBS_DIM_V3,
   OBS_LAYOUT,
+  OBS_LAYOUT_V3,
   MAX_TEAMMATES,
   MAX_OPPONENTS,
   MECHANICS_OBS_KEYS,
@@ -294,6 +296,150 @@ test('observation v2 appends full FFA pressure context while v1 remains unchange
   assert.equal(v2[OBS_DIM + 6], 3, 'three hostiles within 8m');
 });
 
+test('observation v3 appends combat threat context while v2 remains unchanged', () => {
+  const state = createMatch({ seed: 46, mode: 'combat', combat: { teamSizes: [1, 1] } });
+  const self = state.combatants[0];
+  const threat = state.combatants[1];
+  self.pos = { x: 0, y: 0, z: 0 };
+  self.vel = { x: 0, y: 0, z: 4 };
+  self.yaw = 0;
+  threat.pos = { x: 0, y: 0, z: 3 };
+  threat.vel = { x: 0, y: 0, z: 0 };
+  threat.yaw = Math.PI;
+  threat.weapon = 'hammer';
+  threat.weaponState = 'idle';
+  threat.attackKind = 'none';
+  threat.attackCooldown = 0;
+  threat.weaponReadyTimer = 0;
+  threat.weaponTimer = 0;
+
+  const v2 = new Float32Array(OBS_DIM_V2);
+  const v3 = new Float32Array(OBS_DIM_V3);
+  encodeObservationForVersion(state, self.id, v2, 0, 2);
+  encodeObservationForVersion(state, self.id, v3, 0, 3);
+
+  assert.equal(OBS_DIM_V3, OBS_DIM_V2 + 20);
+  assert.deepEqual([...v3.slice(0, OBS_DIM_V2)], [...v2]);
+  const block = OBS_LAYOUT_V3['combat_threat_v3'];
+  assert.equal(block.offset, OBS_DIM_V2);
+  assert.equal(block.size, 20);
+  const at = block.offset;
+  assert.equal(v3[at], 1, 'target weapon state idle one-hot');
+  assert.equal(v3[at + 5], 1, 'target attack kind none one-hot');
+  assert.equal(v3[at + 13], 1, 'target should be facing self');
+  assert.equal(v3[at + 14], 1, 'target can attack now');
+  assert.equal(v3[at + 15], 1, 'self is inside target melee range');
+  assert.ok(v3[at + 17] > 0, 'self closing speed should be positive');
+  assert.ok(v3[at + 18] > 0, 'range margin should be positive inside danger range');
+  assert.ok(v3[at + 19] > 0.5, 'stationary ready target should register passive-bait risk');
+});
+
+test('reward: approaching a ready passive bait threat is penalized', () => {
+  const state = createMatch({ seed: 102, mode: 'combat', combat: { teamSizes: [1, 1] } });
+  state.match.phase = 'playing';
+  const self = state.combatants[0];
+  const threat = state.combatants[1];
+  self.pos = { x: 0, y: 0, z: 0 };
+  threat.pos = { x: 0, y: 0, z: 5 };
+  threat.yaw = Math.PI;
+  threat.weapon = 'hammer';
+  threat.weaponState = 'idle';
+  threat.attackCooldown = 0;
+  threat.weaponReadyTimer = 0;
+  const mem = initRewardMemory(state);
+
+  self.pos = { x: 0, y: 0, z: 1 };
+  const details = computeStepRewardDetails(
+    state,
+    { startedPlaying: false, goal: null, pickup: null, roundReset: false, matchEnded: false, kills: [] },
+    {
+      ...DEFAULT_REWARD_CONFIG,
+      timePenalty: 0,
+      approach: 0,
+      dangerApproach: 0.5,
+      baitDisengage: 0,
+      trapDeath: 0,
+    },
+    mem
+  );
+
+  assert.ok(details.rewards[self.id] < 0);
+  assert.ok(details.components.dangerApproach < 0);
+});
+
+test('reward: disengaging from a ready passive bait threat is rewarded', () => {
+  const state = createMatch({ seed: 103, mode: 'combat', combat: { teamSizes: [1, 1] } });
+  state.match.phase = 'playing';
+  const self = state.combatants[0];
+  const threat = state.combatants[1];
+  self.pos = { x: 0, y: 0, z: 2.5 };
+  threat.pos = { x: 0, y: 0, z: 5 };
+  threat.yaw = Math.PI;
+  threat.weapon = 'hammer';
+  threat.weaponState = 'idle';
+  threat.attackCooldown = 0;
+  threat.weaponReadyTimer = 0;
+  const mem = initRewardMemory(state);
+
+  self.pos = { x: 0, y: 0, z: 1.5 };
+  const details = computeStepRewardDetails(
+    state,
+    { startedPlaying: false, goal: null, pickup: null, roundReset: false, matchEnded: false, kills: [] },
+    {
+      ...DEFAULT_REWARD_CONFIG,
+      timePenalty: 0,
+      approach: 0,
+      dangerApproach: 0,
+      baitDisengage: 0.4,
+      trapDeath: 0,
+    },
+    mem
+  );
+
+  assert.ok(details.rewards[self.id] > 0);
+  assert.ok(details.components.baitDisengage > 0);
+});
+
+test('reward: dying to the previously ready passive bait threat applies trapDeath', () => {
+  const state = createMatch({ seed: 104, mode: 'combat', combat: { teamSizes: [1, 1] } });
+  state.match.phase = 'playing';
+  const self = state.combatants[0];
+  const threat = state.combatants[1];
+  self.pos = { x: 0, y: 0, z: 2.8 };
+  threat.pos = { x: 0, y: 0, z: 5 };
+  threat.yaw = Math.PI;
+  threat.weapon = 'hammer';
+  threat.weaponState = 'idle';
+  threat.attackCooldown = 0;
+  threat.weaponReadyTimer = 0;
+  const mem = initRewardMemory(state);
+
+  const details = computeStepRewardDetails(
+    state,
+    {
+      startedPlaying: false,
+      goal: null,
+      pickup: null,
+      roundReset: false,
+      matchEnded: false,
+      kills: [{ attackerId: threat.id, victimId: self.id, weapon: 'hammer' }],
+    },
+    {
+      ...DEFAULT_REWARD_CONFIG,
+      timePenalty: 0,
+      approach: 0,
+      death: 0,
+      dangerApproach: 0,
+      baitDisengage: 0,
+      trapDeath: 0.7,
+    },
+    mem
+  );
+
+  assert.equal(details.rewards[self.id], -0.7);
+  assert.equal(details.components.trapDeath, -0.7);
+});
+
 test('env spec exposes consistent dims', () => {
   const spec = buildEnvSpec();
   assert.equal(spec.obsDim, OBS_DIM);
@@ -313,4 +459,11 @@ test('env spec exposes observation v2 when requested', () => {
   assert.equal(spec.obsDim, OBS_DIM_V2);
   assert.equal(spec.obsFields[spec.obsFields.length - 1].name, 'combat_pressure');
   assert.equal(spec.version, 5);
+});
+
+test('env spec exposes observation v3 combat threat contract when requested', () => {
+  const spec = buildEnvSpec(3);
+  assert.equal(spec.obsDim, OBS_DIM_V3);
+  assert.equal(spec.obsFields[spec.obsFields.length - 1].name, 'combat_threat_v3');
+  assert.equal(spec.version, 6);
 });

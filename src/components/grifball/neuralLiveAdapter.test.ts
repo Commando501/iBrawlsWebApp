@@ -264,3 +264,64 @@ test('dead live player suppresses neural target engagement and exposes raw targe
   assert.equal(frame.targetMaxHp, 1);
   assert.equal(frame.targetActionSuppressed, true);
 });
+
+test('buildNeuralLiveFrameTelemetry reports target threat fields without steering the action', () => {
+  const state = createInitialGrifballRuntimeState({
+    debugMode: false,
+    adminSettings: DEFAULT_ADMIN_SETTINGS,
+    isMultiplayer: false,
+    multiplayerRole: null,
+  });
+  state.playerPos.set(0, 0, 0);
+  state.playerVel.set(0, 0, 0);
+  state.playerHP = 1;
+  state.playerRespawnTimer = 0;
+  state.activeWeapon = 'hammer';
+  state.pWeaponState = 'ready';
+  state.pWeaponReady = true;
+  state.pWeaponCooldown = 0;
+
+  const frame = buildNeuralLiveFrameTelemetry({
+    state,
+    self: {
+      pos: new THREE.Vector3(0, 0, 3),
+      vel: new THREE.Vector3(0, 0, -2),
+      yaw: Math.PI,
+      hp: 1,
+      maxHp: 1,
+      activeWeapon: 'sword',
+      weaponState: 'ready',
+      weaponTimer: 0,
+      respawnTimer: 0,
+    },
+    action: {
+      moveX: 0,
+      moveZ: 1,
+      aim: 0,
+      jump: false,
+      dash: false,
+      crouch: false,
+      attackPrimary: false,
+      attackSecondary: false,
+      passCharge: 0,
+      swapWeapon: false,
+    },
+    decisionReused: false,
+    policyYaw: 0,
+    liveYaw: Math.PI,
+    planarSpeed: 2,
+    canStartWeaponAction: true,
+    jumpApplied: false,
+    dashStarted: false,
+    attackStarted: false,
+    swapStarted: false,
+  });
+
+  assert.equal(frame.targetWeaponState, 'ready');
+  assert.equal(frame.targetCanAttack, true);
+  assert.equal(typeof frame.targetFacingSelf, 'boolean');
+  assert.equal(typeof frame.selfInsideTargetRange, 'boolean');
+  assert.ok(Number.isFinite(frame.passiveTrapRisk));
+  assert.ok(Number.isFinite(frame.rangeMargin));
+  assert.ok(Number.isFinite(frame.closingSpeed));
+});

@@ -4,6 +4,7 @@ import React from 'react';
 import type { ComponentProps } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { ArmoryPanel } from './ArmoryPanel';
+import { ArmorModelEditor } from './ArmorModelEditor';
 import { DEFAULT_LOADOUT } from '../VoxelModels';
 
 const noop = () => {};
@@ -42,4 +43,22 @@ test('ArmoryPanel presents original sword preset labels', () => {
   assert.doesNotMatch(html, /Halo 3/);
   assert.doesNotMatch(html, /Halo 4/);
   assert.doesNotMatch(html, /Halo 5/);
+});
+
+test('ArmorModelEditor exposes V3 armor preview mode without removing voxel edit tools', () => {
+  const html = renderToStaticMarkup(
+    <ArmorModelEditor
+      catalog={{ version: 1, pieces: [] }}
+      playerLoadout={{ ...DEFAULT_LOADOUT, modelSystem: 'v3' }}
+      playerHue={200}
+      onCatalogChange={noop as React.Dispatch<React.SetStateAction<any>>}
+      onLoadoutChange={noop}
+      onClose={noop}
+    />
+  );
+
+  assert.match(html, /Voxel Edit/);
+  assert.match(html, /Armor Preview/);
+  assert.match(html, /Voxel/);
+  assert.match(html, /Box/);
 });

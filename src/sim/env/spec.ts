@@ -26,6 +26,7 @@ export interface EnvSpec {
 
 export const ENV_SPEC_VERSION = 4; // v4: aim factor adds nearest-hostile targeting
 export const ENV_SPEC_VERSION_V2 = 5; // v5: optional combat pressure observation block
+export const ENV_SPEC_VERSION_V3 = 6; // v6: optional combat anti-bait threat observation block
 
 export function buildEnvSpec(observationVersion = 1): EnvSpec {
   const fields = obsFieldsForVersion(observationVersion);
@@ -41,6 +42,10 @@ export function buildEnvSpec(observationVersion = 1): EnvSpec {
     actionNvec: ACTION_NVEC,
     actionFactors: ACTION_FACTORS.map((f) => ({ name: f.name, n: f.n })),
     maxTeamSize: MAX_TEAM_SIZE,
-    version: observationVersion >= 2 ? ENV_SPEC_VERSION_V2 : ENV_SPEC_VERSION,
+    version: observationVersion >= 3
+      ? ENV_SPEC_VERSION_V3
+      : observationVersion >= 2
+        ? ENV_SPEC_VERSION_V2
+        : ENV_SPEC_VERSION,
   };
 }

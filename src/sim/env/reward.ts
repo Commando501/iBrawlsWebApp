@@ -14,6 +14,7 @@ import { type StepEvents } from '../step';
 import { type ActionsById, type ActionInput } from '../actions';
 import { enemyGoalForTeam } from '../../game/aiGrifballRoles';
 import { type TeamId } from '../../game/teamScoring';
+import { combatThreatMemoryFor, type CombatThreatMemory } from '../combatThreat';
 
 export interface RewardConfig {
   /** Terminal: ± on match end for the winning / losing team. */
@@ -46,6 +47,9 @@ export interface RewardConfig {
    * consecutive ticks — catches robotic mash loops. Movement is excluded on purpose:
    * holding a heading is human. */
   actionRepeatPenalty: number;
+  dangerApproach: number;
+  baitDisengage: number;
+  trapDeath: number;
 }
 
 export const DEFAULT_REWARD_CONFIG: RewardConfig = {
@@ -63,6 +67,9 @@ export const DEFAULT_REWARD_CONFIG: RewardConfig = {
   invalidJump: 0,
   invalidSwap: 0,
   actionRepeatPenalty: 0,
+  dangerApproach: 0,
+  baitDisengage: 0,
+  trapDeath: 0,
 };
 
 /** Cap per-tick approach delta so respawn/teleport position jumps can't spike the reward. */
@@ -82,6 +89,9 @@ export const REWARD_COMPONENT_KEYS = [
   'invalidJump',
   'invalidSwap',
   'actionRepeat',
+  'dangerApproach',
+  'baitDisengage',
+  'trapDeath',
 ] as const;
 
 export type RewardComponentKey = (typeof REWARD_COMPONENT_KEYS)[number];
@@ -99,6 +109,7 @@ export interface RewardMemory {
   approachDist: Record<string, number | null>;
   /** Previous button-combo signature per agent, used to discourage mash loops. */
   previousActionSignature: Record<string, string | null>;
+  combatThreat: Record<string, CombatThreatMemory>;
 }
 
 /**
@@ -137,8 +148,10 @@ export function initRewardMemory(state: SimState): RewardMemory {
     dist[team] = ballDistanceToEnemyGoal(state, team);
   }
   const app: Record<string, number | null> = {};
+  const combatThreat: Record<string, CombatThreatMemory> = {};
   for (const c of state.combatants) app[c.id] = approachDistForAgent(state, c.id);
-  return { ballDistToEnemyGoal: dist, approachDist: app, previousActionSignature: {} };
+  for (const c of state.combatants) combatThreat[c.id] = combatThreatMemoryFor(state, c);
+  return { ballDistToEnemyGoal: dist, approachDist: app, previousActionSignature: {}, combatThreat };
 }
 
 function teamsInMatch(state: SimState): TeamId[] {
@@ -340,9 +353,55 @@ export function computeStepRewardDetails(
   for (const k of events.kills) {
     if (k.attackerId in out) addReward(out, components, k.attackerId, config.kill, 'kill');
     if (k.victimId in out) addReward(out, components, k.victimId, -config.death, 'death');
+    const previousThreat = memory.combatThreat[k.victimId];
+    if (
+      previousThreat?.threatId === k.attackerId &&
+      previousThreat.targetCanAttack &&
+      previousThreat.passiveBaitRisk >= 0.5
+    ) {
+      addReward(out, components, k.victimId, -config.trapDeath, 'trapDeath');
+    }
   }
+
+  applyCombatTrapDisciplineRewards(state, config, memory, out, components);
 
   const details = { rewards: out, components };
   if (actions) mergeRewardDetails(details, computeActionDisciplineRewards(state, config, memory, actions));
   return details;
+}
+
+function applyCombatTrapDisciplineRewards(
+  state: SimState,
+  config: RewardConfig,
+  memory: RewardMemory,
+  out: Record<string, number>,
+  components: RewardComponents
+): void {
+  if (state.mode !== 'combat') {
+    for (const c of state.combatants) memory.combatThreat[c.id] = combatThreatMemoryFor(state, c);
+    return;
+  }
+
+  for (const c of state.combatants) {
+    const previous = memory.combatThreat[c.id];
+    const current = combatThreatMemoryFor(state, c);
+    if (
+      c.alive &&
+      previous &&
+      previous.threatId &&
+      current.threatId === previous.threatId &&
+      previous.distance != null &&
+      current.distance != null &&
+      previous.targetCanAttack &&
+      previous.passiveBaitRisk >= 0.5
+    ) {
+      const delta = previous.distance - current.distance;
+      if (delta > 0) {
+        addReward(out, components, c.id, -config.dangerApproach * Math.min(1, delta), 'dangerApproach');
+      } else if (delta < 0) {
+        addReward(out, components, c.id, config.baitDisengage * Math.min(1, -delta), 'baitDisengage');
+      }
+    }
+    memory.combatThreat[c.id] = current;
+  }
 }

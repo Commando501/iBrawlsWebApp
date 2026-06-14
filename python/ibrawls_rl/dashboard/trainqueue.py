@@ -25,6 +25,16 @@ def queue_rank_score(summary: dict | None) -> float:
     """Comparable optimizer score; full-matrix lone-wolf grades outrank raw rewards."""
     if not summary:
         return float("-inf")
+    anti = summary.get("anti_bait_score")
+    if isinstance(anti, (int, float)):
+        base = None
+        for key in ("lone_wolf_score", "frozen_snapshot_score", "promotion_score"):
+            value = summary.get(key)
+            if isinstance(value, (int, float)):
+                base = float(value) if base is None else min(base, float(value))
+        trap = summary.get("trap_death_rate")
+        trap_penalty = max(0.0, float(trap) - 0.2) if isinstance(trap, (int, float)) else 0.0
+        return min(float(anti), base if base is not None else float(anti)) - trap_penalty
     for key in ("lone_wolf_score", "promotion_score"):
         value = summary.get(key)
         if isinstance(value, (int, float)):
@@ -69,6 +79,10 @@ def _summarize_run(logdir: str) -> dict:
                 "lone_wolf_score": matrix.get("lone_wolf_score"),
                 "promotion_score": matrix.get("promotion_score"),
                 "matrix_scenarios": matrix.get("scenarios"),
+                "anti_bait_score": matrix.get("anti_bait_score"),
+                "trap_death_rate": matrix.get("trap_death_rate"),
+                "frozen_snapshot_score": matrix.get("frozen_snapshot_score"),
+                "strict_promotion_ready": matrix.get("strict_promotion_ready"),
             })
         except Exception:
             pass
@@ -117,6 +131,10 @@ def _run_optimizer_matrix(model_path: str, cfg) -> dict:
         "lone_wolf_score": summary.get("lone_wolf_score"),
         "promotion_score": summary.get("promotion_score"),
         "matrix_scenarios": summary.get("scenarios"),
+        "anti_bait_score": summary.get("anti_bait_score"),
+        "trap_death_rate": summary.get("trap_death_rate"),
+        "frozen_snapshot_score": summary.get("frozen_snapshot_score"),
+        "strict_promotion_ready": summary.get("strict_promotion_ready"),
     }
 
 

@@ -152,11 +152,26 @@ def main() -> None:
                 print(f"  {row['name']:<15} win={row['win_rate'] * 100:5.1f}% "
                       f"(score {row.get('win_score', 0):.2f}; random {row.get('random_baseline', 0) * 100:.1f}%) "
                       f"draw={row['draw_rate'] * 100:5.1f}%")
+            for row in res.get("frozen_snapshots", []):
+                print(f"  frozen/{row['name']:<8} win={row['win_rate'] * 100:5.1f}% "
+                      f"(score {row.get('win_score', 0):.2f}) "
+                      f"draw={row['draw_rate'] * 100:5.1f}%")
+            for row in res.get("anti_bait", []):
+                print(f"  {row['name']:<15} win={row['win_rate'] * 100:5.1f}% "
+                      f"(score {row.get('win_score', 0):.2f}; trap deaths {row.get('trap_death_rate', 0) * 100:.1f}%) "
+                      f"draw={row['draw_rate'] * 100:5.1f}%")
             s = res["summary"]
             print(f"  mean scenario score  : {s['mean_scenario_win_score']:.3f}")
+            print(f"  anti-bait score      : {s.get('anti_bait_score', 0):.3f} "
+                  f"(trap deaths {s.get('trap_death_rate', 0) * 100:.1f}%)")
             print(f"  human-likeness penalty: {s['human_likeness_penalty']:.3f} "
                   f"(bands from {s.get('baseline_source', 'defaults')})")
             print(f"  lone-wolf score      : {s['lone_wolf_score']:.3f}")
+            if s.get("frozen_snapshot_score") is not None:
+                print(f"  frozen snapshot score: {s['frozen_snapshot_score']:.3f}")
+            elif s.get("strict_promotion_requires_frozen"):
+                print("  frozen snapshot score: missing")
+            print(f"  strict promotion     : {'ready' if s.get('strict_promotion_ready') else 'not ready'}")
             return
 
         if args.league_snapshot:

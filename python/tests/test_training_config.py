@@ -71,3 +71,44 @@ def test_lone_wolf_combat_knobs_roundtrip_through_config_helpers():
     assert 'scenario_mix = ["1v2x2"]' in toml
     assert "random_opponent_rate = 0.25" in toml
     assert "observation_version = 1" in toml
+
+
+def test_anti_bait_training_knobs_roundtrip_through_config_helpers():
+    cfg = config_from_values({
+        "combat_bait_layout_mix": ["1v1x2", "1v3x1"],
+        "combat_bait_opponent": "passive_bait",
+        "combat_bait_reward_scale": 2.0,
+        "observation_version": 3,
+        "reward_danger_approach": 0.25,
+        "reward_bait_disengage": 0.15,
+        "reward_trap_death": 0.8,
+    })
+
+    assert cfg.combat_bait_layout_mix == ["1v1x2", "1v3x1"]
+    assert cfg.combat_bait_opponent == "passive_bait"
+    assert cfg.combat_bait_reward_scale == 2.0
+    assert cfg.observation_version == 3
+    rewards = reward_dict(cfg)
+    assert rewards["dangerApproach"] == 0.25
+    assert rewards["baitDisengage"] == 0.15
+    assert rewards["trapDeath"] == 0.8
+
+    toml = dump_toml(cfg)
+    assert 'bait_layout_mix = ["1v1x2", "1v3x1"]' in toml
+    assert 'bait_opponent = "passive_bait"' in toml
+    assert "bait_reward_scale = 2.0" in toml
+    assert "danger_approach = 0.25" in toml
+
+
+def test_dashboard_schema_exposes_observation_v3_and_bait_knobs():
+    sections = config_schema()
+    by_field = {
+        knob["field"]: knob
+        for section in sections
+        for knob in section["knobs"]
+    }
+
+    assert by_field["observation_version"]["max"] == 3
+    assert by_field["combat_bait_layout_mix"]["type"] == "strlist"
+    assert by_field["combat_bait_opponent"]["choices"] == ["passive_bait", "passive_bait_jitter"]
+    assert by_field["reward_trap_death"]["type"] == "float"

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from ibrawls_rl.export_browser_brain import build_manifest, pack_actor_layers
+from ibrawls_rl.export_browser_brain import build_manifest, env_spec_version_for_observation, pack_actor_layers
 
 
 def test_pack_actor_layers_writes_offsets_and_float32_blob():
@@ -55,3 +55,9 @@ def test_build_manifest_pins_browser_policy_contract():
     assert manifest["inputDim"] == 560
     assert manifest["actionNvec"] == [9, 4, 3, 2, 2, 2]
     assert manifest["policyType"] == "mlp-multicategorical"
+
+
+def test_env_spec_version_for_observation_tracks_v3_contract():
+    assert env_spec_version_for_observation(1) == 4
+    assert env_spec_version_for_observation(2) == 5
+    assert env_spec_version_for_observation(3) == 6

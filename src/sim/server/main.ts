@@ -44,6 +44,9 @@ function helloResponse(env: SimVecEnv, seedInfo: { baseSeed: number }): Uint8Arr
     decisionInterval: env.decisionInterval,
     observationVersion,
     rewardComponentKeys: REWARD_COMPONENT_KEYS,
+    learnerAgentIndices: 'learnerAgentIndices' in env
+      ? env.learnerAgentIndices
+      : Array.from({ length: env.numEnvs * env.numAgents }, (_v, i) => i),
   };
   const json = new TextEncoder().encode(JSON.stringify(header));
   const out = new Uint8Array(1 + json.length);

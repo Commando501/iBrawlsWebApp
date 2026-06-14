@@ -254,6 +254,20 @@ def combat_eval_matrix_specs() -> list[dict]:
     ]
 
 
+def combat_anti_bait_specs() -> list[dict]:
+    """Scripted passive-bait scenarios that catch straight-line range-trap failures."""
+    return [
+        {"name": "bait_duel_1v1", "team_sizes": [1, 1], "kill_target": 5, "max_minutes": 2.0,
+         "opponent_profile": "passive_bait"},
+        {"name": "bait_jitter_1v1", "team_sizes": [1, 1], "kill_target": 5, "max_minutes": 2.0,
+         "opponent_profile": "passive_bait_jitter"},
+        {"name": "bait_lone_1v2", "team_sizes": [1, 2], "kill_target": 8, "max_minutes": 3.0,
+         "opponent_profile": "passive_bait_jitter"},
+        {"name": "bait_lone_1v3", "team_sizes": [1, 3], "kill_target": 10, "max_minutes": 3.0,
+         "opponent_profile": "passive_bait_jitter"},
+    ]
+
+
 def _scenario_indices(team_sizes: list[int], num_worlds: int) -> tuple[np.ndarray, np.ndarray]:
     focus: list[int] = []
     opponents: list[int] = []
@@ -285,6 +299,41 @@ def win_lift(win_rate: float, world_size: int) -> float:
     """Legacy win-rate normalization retained for old dashboard/history readers."""
     baseline = 1.0 / max(2, int(world_size or 2))
     return float(win_rate) / baseline
+
+
+def summarize_anti_bait_results(results: list[dict]) -> dict:
+    if not results:
+        return {
+            "anti_bait_scenarios": 0,
+            "mean_anti_bait_win_score": 0.0,
+            "trap_death_rate": 0.0,
+            "anti_bait_score": 0.0,
+        }
+    mean_score = float(np.mean([float(r.get("win_score", 0.0)) for r in results]))
+    trap_death_rate = float(np.mean([float(r.get("trap_death_rate", 0.0)) for r in results]))
+    score = max(0.0, min(1.0, mean_score - trap_death_rate * 0.5))
+    return {
+        "anti_bait_scenarios": len(results),
+        "mean_anti_bait_win_score": round(mean_score, 4),
+        "trap_death_rate": round(trap_death_rate, 4),
+        "anti_bait_score": round(score, 4),
+    }
+
+
+def summarize_strict_promotion(summary: dict, frozen_snapshot_score: float | None) -> dict:
+    frozen_present = isinstance(frozen_snapshot_score, (int, float))
+    frozen_score = round(float(frozen_snapshot_score), 4) if frozen_present else None
+    return {
+        "frozen_snapshot_score": frozen_score,
+        "strict_promotion_requires_frozen": not frozen_present,
+        "strict_promotion_ready": bool(
+            summary.get("lone_wolf_score", 0.0) >= 0.75 and
+            frozen_present and
+            float(frozen_snapshot_score) >= 0.55 and
+            summary.get("anti_bait_score", 0.0) >= 0.70 and
+            summary.get("trap_death_rate", 1.0) <= 0.20
+        ),
+    }
 
 
 def summarize_eval_matrix(results: list[dict]) -> dict:
@@ -338,6 +387,110 @@ def summarize_eval_matrix(results: list[dict]) -> dict:
     }
 
 
+def eval_combat_vs_scripted_bait(
+    model,
+    matches: int = 100,
+    num_worlds: int = 16,
+    kill_target: int = 10,
+    deterministic: bool = True,
+    progress_every: int = 0,
+    decision_interval: int = 1,
+    max_minutes: float = 6.0,
+    team_sizes: list[int] | None = None,
+    opponent_profile: str = "passive_bait_jitter",
+    frame_stack: int = 1,
+    observation_version: int = 1,
+) -> dict:
+    layout = team_sizes or [1, 1]
+    env = GrifballVecEnv(
+        mode="combat",
+        combat_world_layouts=[layout] * num_worlds,
+        combat_kill_range=(kill_target, kill_target),
+        combat_randomize_layout=False,
+        combat_scripted_opponent=opponent_profile,
+        reward={"trapDeath": 1.0},
+        max_ticks=int(60 * 60 * max_minutes),
+        decision_interval=decision_interval,
+        observation_version=observation_version,
+    )
+    env = _maybe_frame_stack(env, frame_stack)
+    try:
+        obs = env.reset()
+        wins = losses = draws = completed = 0
+        next_mark = progress_every
+        behavior = BehaviorTracker()
+        trap_deaths = 0.0
+        max_iters = matches * 60 * 60 * 8
+        it = 0
+        while completed < matches and it < max_iters:
+            it += 1
+            action = _predict(model, env, obs, deterministic)
+            behavior.update(action)
+            obs, reward, done, _ = env.step(action)
+            trap_component = getattr(env, "last_reward_components", {}).get("trapDeath", 0.0)
+            trap_deaths += max(0.0, -float(trap_component))
+            for i in np.nonzero(done)[0]:
+                r = float(reward[i])
+                if r > WIN_THRESHOLD:
+                    wins += 1
+                elif r < -WIN_THRESHOLD:
+                    losses += 1
+                else:
+                    draws += 1
+                completed += 1
+            next_mark = _emit_progress(progress_every, completed, matches, next_mark)
+        total = max(1, wins + losses + draws)
+        return {
+            "win_rate": wins / total,
+            "loss_rate": losses / total,
+            "draw_rate": draws / total,
+            "episodes": completed,
+            "behavior": behavior.summary(),
+            "world_size": sum(layout),
+            "team_sizes": layout,
+            "kill_target": kill_target,
+            "opponent_profile": opponent_profile,
+            "trap_deaths": round(trap_deaths, 4),
+            "trap_death_rate": round(trap_deaths / max(1, completed), 4),
+        }
+    finally:
+        env.close()
+
+
+def eval_combat_anti_bait(
+    model,
+    matches: int = 100,
+    num_worlds: int = 16,
+    deterministic: bool = True,
+    progress_every: int = 0,
+    decision_interval: int = 1,
+    frame_stack: int = 1,
+    observation_version: int = 1,
+) -> dict:
+    results = []
+    for spec in combat_anti_bait_specs():
+        res = eval_combat_vs_scripted_bait(
+            model,
+            matches=matches,
+            num_worlds=num_worlds,
+            kill_target=spec["kill_target"],
+            deterministic=deterministic,
+            progress_every=progress_every,
+            decision_interval=decision_interval,
+            max_minutes=spec["max_minutes"],
+            team_sizes=spec["team_sizes"],
+            opponent_profile=spec["opponent_profile"],
+            frame_stack=frame_stack,
+            observation_version=observation_version,
+        )
+        res["win_lift"] = round(win_lift(res["win_rate"], res["world_size"]), 4)
+        res["random_baseline"] = round(scenario_random_baseline(res.get("team_sizes"), res["world_size"]), 4)
+        res["win_score"] = round(scenario_win_score(res["win_rate"], res.get("team_sizes"), res["world_size"]), 4)
+        res["behavior_bands"] = baseline.annotate(res.get("behavior"))
+        results.append({"name": spec["name"], **res})
+    return {"summary": summarize_anti_bait_results(results), "scenarios": results}
+
+
 def eval_combat_matrix(
     model,
     matches: int = 100,
@@ -352,7 +505,29 @@ def eval_combat_matrix(
 ) -> dict:
     results = []
     for spec in combat_eval_matrix_specs():
-        if snapshot_paths:
+        res = eval_combat_vs_random(
+            model,
+            matches=matches,
+            num_worlds=num_worlds,
+            kill_target=spec["kill_target"],
+            deterministic=deterministic,
+            progress_every=progress_every,
+            decision_interval=decision_interval,
+            max_minutes=spec["max_minutes"],
+            team_sizes=spec["team_sizes"],
+            frame_stack=frame_stack,
+            observation_version=observation_version,
+        )
+        res["win_lift"] = round(win_lift(res["win_rate"], res["world_size"]), 4)
+        res["random_baseline"] = round(scenario_random_baseline(res.get("team_sizes"), res["world_size"]), 4)
+        res["win_score"] = round(scenario_win_score(res["win_rate"], res.get("team_sizes"), res["world_size"]), 4)
+        res["behavior_bands"] = baseline.annotate(res.get("behavior"))
+        results.append({"name": spec["name"], **res})
+    summary = summarize_eval_matrix(results)
+    frozen_snapshot_results = []
+    frozen_snapshot_score = None
+    if snapshot_paths:
+        for spec in combat_eval_matrix_specs():
             res = eval_combat_vs_snapshots(
                 model,
                 snapshot_paths=snapshot_paths,
@@ -360,7 +535,7 @@ def eval_combat_matrix(
                 num_worlds=num_worlds,
                 kill_target=spec["kill_target"],
                 deterministic=deterministic,
-                progress_every=progress_every,
+                progress_every=0,
                 decision_interval=decision_interval,
                 max_minutes=spec["max_minutes"],
                 team_sizes=spec["team_sizes"],
@@ -368,26 +543,30 @@ def eval_combat_matrix(
                 device=device,
                 observation_version=observation_version,
             )
-        else:
-            res = eval_combat_vs_random(
-                model,
-                matches=matches,
-                num_worlds=num_worlds,
-                kill_target=spec["kill_target"],
-                deterministic=deterministic,
-                progress_every=progress_every,
-                decision_interval=decision_interval,
-                max_minutes=spec["max_minutes"],
-                team_sizes=spec["team_sizes"],
-                frame_stack=frame_stack,
-                observation_version=observation_version,
-            )
-        res["win_lift"] = round(win_lift(res["win_rate"], res["world_size"]), 4)
-        res["random_baseline"] = round(scenario_random_baseline(res.get("team_sizes"), res["world_size"]), 4)
-        res["win_score"] = round(scenario_win_score(res["win_rate"], res.get("team_sizes"), res["world_size"]), 4)
-        res["behavior_bands"] = baseline.annotate(res.get("behavior"))
-        results.append({"name": spec["name"], **res})
-    return {"summary": summarize_eval_matrix(results), "scenarios": results}
+            res["win_lift"] = round(win_lift(res["win_rate"], res["world_size"]), 4)
+            res["random_baseline"] = round(scenario_random_baseline(res.get("team_sizes"), res["world_size"]), 4)
+            res["win_score"] = round(scenario_win_score(res["win_rate"], res.get("team_sizes"), res["world_size"]), 4)
+            res["behavior_bands"] = baseline.annotate(res.get("behavior"))
+            frozen_snapshot_results.append({"name": spec["name"], **res})
+        frozen_snapshot_score = summarize_eval_matrix(frozen_snapshot_results).get("lone_wolf_score")
+    anti_bait = eval_combat_anti_bait(
+        model,
+        matches=matches,
+        num_worlds=num_worlds,
+        deterministic=deterministic,
+        progress_every=0,
+        decision_interval=decision_interval,
+        frame_stack=frame_stack,
+        observation_version=observation_version,
+    )
+    summary.update(anti_bait["summary"])
+    summary.update(summarize_strict_promotion(summary, frozen_snapshot_score))
+    return {
+        "summary": summary,
+        "scenarios": results,
+        "frozen_snapshots": frozen_snapshot_results,
+        "anti_bait": anti_bait["scenarios"],
+    }
 
 
 def eval_combat_vs_snapshots(
