@@ -7,6 +7,7 @@ import {
   buildMlpPolicy,
   runGreedyPolicy,
   runSampledPolicy,
+  runSampledPolicyWithGreedyFactors,
   selectGreedyFactors,
   selectSampledFactors,
   validateNeuralBrainManifest,
@@ -115,6 +116,31 @@ test('runSampledPolicy preserves logits while using sampled factor choices', () 
 
   assert.equal(result.logits.length, 5);
   assert.deepEqual(Array.from(result.factors), [0, 0]);
+});
+
+test('runSampledPolicyWithGreedyFactors keeps selected factors deterministic', () => {
+  const weights = new Float32Array([
+    1, 0,
+    0, 1,
+    0, 0,
+    1, 0,
+    0, 1,
+    -1, 0,
+    0, -1,
+    0, 0,
+    0, 0, 0, 5, 1,
+  ]);
+  const policy = buildMlpPolicy(manifest, weights);
+  const randomValues = [0.95, 0.01];
+
+  const result = runSampledPolicyWithGreedyFactors(
+    policy,
+    new Float32Array([0, 0]),
+    [1],
+    () => randomValues.shift() ?? 0
+  );
+
+  assert.deepEqual(Array.from(result.factors), [1, 1]);
 });
 
 test('NeuralFrameStack appends observations on the trained decision cadence', () => {

@@ -117,7 +117,36 @@ export function runGreedyPolicy(policy: NeuralMlpPolicy, input: Float32Array): N
   };
 }
 
-function runMlp(policy: NeuralMlpPolicy, input: Float32Array): Float32Array {
+export function runSampledPolicy(
+  policy: NeuralMlpPolicy,
+  input: Float32Array,
+  random: () => number = Math.random
+): NeuralPolicyResult {
+  const logits = runMlp(policy, input);
+  return {
+    logits,
+    factors: selectSampledFactors(logits, policy.manifest.actionNvec, random),
+  };
+}
+
+export function runSampledPolicyWithGreedyFactors(
+  policy: NeuralMlpPolicy,
+  input: Float32Array,
+  greedyFactorIndexes: Iterable<number>,
+  random: () => number = Math.random
+): NeuralPolicyResult {
+  const logits = runMlp(policy, input);
+  const factors = selectSampledFactors(logits, policy.manifest.actionNvec, random);
+  const greedy = selectGreedyFactors(logits, policy.manifest.actionNvec);
+  for (const factorIndex of greedyFactorIndexes) {
+    if (factorIndex >= 0 && factorIndex < factors.length) {
+      factors[factorIndex] = greedy[factorIndex];
+    }
+  }
+  return { logits, factors };
+}
+
+export function runMlp(policy: NeuralMlpPolicy, input: Float32Array): Float32Array {
   if (input.length !== policy.manifest.inputDim) {
     throw new Error(`Neural input length ${input.length} does not match ${policy.manifest.inputDim}`);
   }
@@ -156,6 +185,47 @@ export function selectGreedyFactors(logits: Float32Array, actionNvec: ArrayLike<
       }
     }
     factors[factorIndex] = best;
+    offset += width;
+  }
+  if (offset !== logits.length) {
+    throw new Error(`Logit length ${logits.length} does not match action factors ${offset}`);
+  }
+  return factors;
+}
+
+export function selectSampledFactors(
+  logits: Float32Array,
+  actionNvec: ArrayLike<number>,
+  random: () => number = Math.random
+): Int32Array {
+  const factors = new Int32Array(actionNvec.length);
+  let offset = 0;
+  for (let factorIndex = 0; factorIndex < actionNvec.length; factorIndex++) {
+    const width = actionNvec[factorIndex];
+    if (width <= 0) {
+      throw new Error(`Invalid action factor width ${width}`);
+    }
+
+    let maxLogit = -Infinity;
+    for (let i = 0; i < width; i++) {
+      maxLogit = Math.max(maxLogit, logits[offset + i]);
+    }
+
+    let total = 0;
+    for (let i = 0; i < width; i++) {
+      total += Math.exp(logits[offset + i] - maxLogit);
+    }
+
+    let draw = Math.min(Math.max(random(), 0), 1 - Number.EPSILON) * total;
+    let selected = width - 1;
+    for (let i = 0; i < width; i++) {
+      draw -= Math.exp(logits[offset + i] - maxLogit);
+      if (draw <= 0) {
+        selected = i;
+        break;
+      }
+    }
+    factors[factorIndex] = selected;
     offset += width;
   }
   if (offset !== logits.length) {

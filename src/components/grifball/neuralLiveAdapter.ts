@@ -10,17 +10,19 @@ import { createInitialGrifballMatchState } from '../../game/grifballMatch';
 import { createInitialBall } from '../../game/grifballBall';
 import { createEmptyTeamScores, type TeamId, type TeamScoresState } from '../../game/teamScoring';
 import { getForwardHeadingForYaw } from '../../game/yaw';
-import { type CustomMapData, type UniversalSettings, type WeaponState } from '../../types';
+import { type AIBehaviorState, type CustomMapData, type UniversalSettings, type WeaponState } from '../../types';
 import {
   getNeuralAgentRuntime,
   type LoadedNeuralBrain,
+  type NeuralLiveFrameTelemetry,
 } from '../../game/neuralBrainLoader';
-import { runGreedyPolicy } from '../../game/neuralPolicy';
+import { runSampledPolicyWithGreedyFactors } from '../../game/neuralPolicy';
 import { type GrifballRuntimeState } from './runtimeState';
 
 const BASE_SPEED = 5.8;
 const RUNNER_MULT = 1.3;
 const CROUCH_SPEED = 2.5;
+const ATTACK_FACTOR_INDEX = 2;
 
 const FALLBACK_COMBAT_MAP: CustomMapData = {
   id: 'neural-combat-live',
@@ -51,12 +53,177 @@ export interface NeuralCombatantDecision {
   reused: boolean;
 }
 
+export interface NeuralLiveCooldownInput {
+  aiState: AIBehaviorState | undefined;
+  aiTimer: number | undefined;
+  dashCooldownTimer: number | undefined;
+  slideCooldownTimer: number | undefined;
+  hammerJumpCooldownTimer: number | undefined;
+  swapLockoutTimer: number | undefined;
+  swapCooldownTimer: number | undefined;
+  dt: number;
+  tickSwapTimers: boolean;
+}
+
+export interface NeuralLiveCooldownFrame {
+  aiState: AIBehaviorState | undefined;
+  aiTimer: number;
+  dashCooldownTimer: number;
+  slideCooldownTimer: number;
+  hammerJumpCooldownTimer: number;
+  swapLockoutTimer: number;
+  swapCooldownTimer: number;
+}
+
+type NeuralLiveTelemetryCombatant = {
+  pos: THREE.Vector3;
+  vel: THREE.Vector3;
+  yaw: number;
+  hp: number;
+  maxHp?: number;
+  respawnTimer?: number;
+  invulnerabilityTimer?: number;
+  activeWeapon?: string;
+  weaponState?: string;
+  weaponTimer?: number;
+  aiState?: AIBehaviorState;
+  aiTimer?: number;
+  swapLockoutTimer?: number;
+  swapCooldownTimer?: number;
+  isJumping?: boolean;
+};
+
+export interface NeuralLiveFrameTelemetryInput {
+  state: GrifballRuntimeState;
+  self: NeuralLiveTelemetryCombatant;
+  action: ActionInput;
+  decisionReused: boolean;
+  policyYaw: number;
+  liveYaw: number;
+  planarSpeed: number;
+  canStartWeaponAction: boolean;
+  jumpApplied: boolean;
+  dashStarted: boolean;
+  attackStarted: boolean;
+  swapStarted: boolean;
+}
+
 export function simYawToLiveYaw(yaw: number): number {
   return normalizeYaw(yaw + Math.PI);
 }
 
 export function liveYawToSimYaw(yaw: number): number {
   return normalizeYaw(yaw + Math.PI);
+}
+
+export function shouldSuppressNeuralLiveAction(state: Pick<GrifballRuntimeState, 'playerHP' | 'playerRespawnTimer'>): boolean {
+  return state.playerHP <= 0 || Math.max(0, state.playerRespawnTimer ?? 0) > 0;
+}
+
+export function advanceNeuralLiveCooldowns(input: NeuralLiveCooldownInput): NeuralLiveCooldownFrame {
+  const dt = Math.max(0, input.dt);
+  const tick = (value: number | undefined): number => Math.max(0, (value ?? 0) - dt);
+  let aiState = input.aiState;
+  let aiTimer = tick(input.aiTimer);
+  if (aiState === 'COOLDOWN' && aiTimer <= 0) {
+    aiState = 'APPROACHING';
+    aiTimer = 0;
+  }
+
+  return {
+    aiState,
+    aiTimer,
+    dashCooldownTimer: tick(input.dashCooldownTimer),
+    slideCooldownTimer: tick(input.slideCooldownTimer),
+    hammerJumpCooldownTimer: tick(input.hammerJumpCooldownTimer),
+    swapLockoutTimer: input.tickSwapTimers ? tick(input.swapLockoutTimer) : input.swapLockoutTimer ?? 0,
+    swapCooldownTimer: input.tickSwapTimers ? tick(input.swapCooldownTimer) : input.swapCooldownTimer ?? 0,
+  };
+}
+
+export function buildNeuralLiveFrameTelemetry(input: NeuralLiveFrameTelemetryInput): NeuralLiveFrameTelemetry {
+  const { state, self, action } = input;
+  const distanceToPlayer = Math.hypot(
+    state.playerPos.x - self.pos.x,
+    state.playerPos.z - self.pos.z
+  );
+  const targetRespawnTimer = Math.max(0, state.playerRespawnTimer ?? 0);
+  const targetMaxHp = state.playerMaxHP || state.settings.maxHP || 1;
+  const selfRespawnTimer = Math.max(0, self.respawnTimer ?? 0);
+  const selfSwapLockoutTimer = Math.max(0, self.swapLockoutTimer ?? 0);
+  const selfSwapCooldownTimer = Math.max(0, self.swapCooldownTimer ?? 0);
+
+  return {
+    decisionReused: input.decisionReused,
+    distanceToPlayer,
+    targetAlive: state.playerHP > 0 && targetRespawnTimer <= 0,
+    targetHp: state.playerHP,
+    targetMaxHp,
+    targetRespawnTimer,
+    targetInvulnerabilityTimer: Math.max(0, state.playerInvulnerabilityTimer ?? 0),
+    targetActionSuppressed: shouldSuppressNeuralLiveAction(state),
+    selfAlive: self.hp > 0 && selfRespawnTimer <= 0,
+    selfRespawnTimer,
+    selfInvulnerabilityTimer: Math.max(0, self.invulnerabilityTimer ?? 0),
+    selfWeapon: self.activeWeapon ?? 'hammer',
+    selfWeaponState: self.weaponState ?? 'ready',
+    selfWeaponTimer: Math.max(0, self.weaponTimer ?? 0),
+    selfAiState: self.aiState,
+    selfAiTimer: self.aiTimer ?? 0,
+    selfCanStartWeaponAction: input.canStartWeaponAction,
+    selfSwapLockoutTimer,
+    selfSwapCooldownTimer,
+    selfWeaponActionGate: resolveNeuralWeaponActionGate({
+      canStartWeaponAction: input.canStartWeaponAction,
+      weaponState: self.weaponState,
+      aiState: self.aiState,
+      aiTimer: self.aiTimer,
+      swapCooldownTimer: selfSwapCooldownTimer,
+    }),
+    selfGrounded: !(self.isJumping ?? false) && self.pos.y <= 0.01,
+    selfPosY: self.pos.y,
+    selfIsJumping: self.isJumping ?? false,
+    policyYaw: input.policyYaw,
+    liveYaw: input.liveYaw,
+    planarSpeed: input.planarSpeed,
+    moveX: action.moveX,
+    moveZ: action.moveZ,
+    attackRequested: action.attackPrimary || action.attackSecondary,
+    attackStarted: input.attackStarted,
+    jumpRequested: action.jump,
+    jumpApplied: input.jumpApplied,
+    dashRequested: action.dash,
+    dashStarted: input.dashStarted,
+    swapRequested: action.swapWeapon,
+    swapStarted: input.swapStarted,
+  };
+}
+
+function resolveNeuralWeaponActionGate({
+  canStartWeaponAction,
+  weaponState,
+  aiState,
+  aiTimer,
+  swapCooldownTimer,
+}: {
+  canStartWeaponAction: boolean;
+  weaponState?: string;
+  aiState?: AIBehaviorState;
+  aiTimer?: number;
+  swapCooldownTimer: number;
+}): string {
+  if ((weaponState ?? 'ready') !== 'ready') return 'weapon_state';
+  if (aiState === 'COOLDOWN' && (aiTimer ?? 0) > 0) return 'ai_cooldown';
+  if (swapCooldownTimer > 0) return 'weapon_ready_timer';
+  if (!canStartWeaponAction) return 'blocked';
+  return 'ready';
+}
+
+export function recordNeuralLiveFrameTelemetry(
+  brain: LoadedNeuralBrain,
+  frame: NeuralLiveFrameTelemetry
+): void {
+  brain.telemetry.lastLiveFrame = frame;
 }
 
 export function buildLiveCombatSimState(
@@ -123,8 +290,10 @@ export function nextNeuralCombatantDecision({
   if (agent.ticksUntilDecision > 0 && agent.lastFactors) {
     agent.ticksUntilDecision -= 1;
     brain.telemetry.reusedActions += 1;
+    const action = decodeAction(agent.lastFactors, sim, botId);
+    recordNeuralActionTelemetry(brain, action);
     return {
-      action: decodeAction(agent.lastFactors, sim, botId),
+      action,
       factors: agent.lastFactors,
       logits: agent.lastActionLogits ?? new Float32Array(0),
       reused: true,
@@ -135,16 +304,18 @@ export function nextNeuralCombatantDecision({
   const observation = new Float32Array(obsDim);
   encodeObservationForVersion(sim, botId, observation, 0, brain.manifest.observationVersion);
   const stacked = agent.frameStack.push(observation);
-  const result = runGreedyPolicy(brain.policy, stacked);
+  const result = runSampledPolicyWithGreedyFactors(brain.policy, stacked, [ATTACK_FACTOR_INDEX]);
   agent.lastFactors = result.factors;
   agent.lastActionLogits = result.logits;
   agent.ticksUntilDecision = Math.max(0, brain.manifest.decisionInterval - 1);
   brain.telemetry.decisions += 1;
   brain.telemetry.lastDecisionAt = performance.now();
   brain.telemetry.lastFactors = Array.from(result.factors);
+  const action = decodeAction(result.factors, sim, botId);
+  recordNeuralActionTelemetry(brain, action);
 
   return {
-    action: decodeAction(result.factors, sim, botId),
+    action,
     factors: result.factors,
     logits: result.logits,
     reused: false,
@@ -308,6 +479,18 @@ function fillLiveCombatScores(
 
 export function safeIdleNeuralAction(): ActionInput {
   return idleAction();
+}
+
+function recordNeuralActionTelemetry(brain: LoadedNeuralBrain, action: ActionInput): void {
+  brain.telemetry.lastAction = {
+    moveX: action.moveX,
+    moveZ: action.moveZ,
+    attackPrimary: action.attackPrimary,
+    attackSecondary: action.attackSecondary,
+    jump: action.jump,
+    dash: action.dash,
+    swapWeapon: action.swapWeapon,
+  };
 }
 
 export function liveForwardVectorForYaw(yaw: number): THREE.Vector3 {

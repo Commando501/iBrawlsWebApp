@@ -89,11 +89,15 @@ import {
 } from './playerModelObservations';
 import { type GrifballRuntimeState } from './runtimeState';
 import {
+  advanceNeuralLiveCooldowns,
+  buildNeuralLiveFrameTelemetry,
   liveForwardVectorForYaw,
   liveYawToSimYaw,
   nextNeuralCombatantDecision,
+  recordNeuralLiveFrameTelemetry,
   resolveNeuralPlanarVelocity,
   safeIdleNeuralAction,
+  shouldSuppressNeuralLiveAction,
   simYawToLiveYaw,
 } from './neuralLiveAdapter';
 import { type GrifballThreeRefs } from './threeRefs';
@@ -208,6 +212,28 @@ export function createAISingleEntityUpdaterForState({
       const dashDir = new THREE.Vector3(self.aiDashDir.x, self.aiDashDir.y, self.aiDashDir.z);
   
       const cooldownMult = 1;
+      const neuralControlled = isNeuralNetDifficulty(self.difficulty) || isNeuralNetDifficulty(s.settings.aiDifficulty);
+
+      if (neuralControlled) {
+        const cooldownFrame = advanceNeuralLiveCooldowns({
+          aiState: state,
+          aiTimer: timer,
+          dashCooldownTimer,
+          slideCooldownTimer,
+          hammerJumpCooldownTimer,
+          swapLockoutTimer: self.swapLockoutTimer,
+          swapCooldownTimer: self.swapCooldownTimer,
+          dt,
+          tickSwapTimers: true,
+        });
+        state = cooldownFrame.aiState;
+        timer = cooldownFrame.aiTimer;
+        dashCooldownTimer = cooldownFrame.dashCooldownTimer;
+        slideCooldownTimer = cooldownFrame.slideCooldownTimer;
+        hammerJumpCooldownTimer = cooldownFrame.hammerJumpCooldownTimer;
+        self.swapLockoutTimer = cooldownFrame.swapLockoutTimer;
+        self.swapCooldownTimer = cooldownFrame.swapCooldownTimer;
+      }
   
       // Single source of truth for AI attack reloads. Always the player's configured
       // mechanic settings (mirrors the player exactly) so no attack path can ever swing
@@ -274,7 +300,7 @@ export function createAISingleEntityUpdaterForState({
         weaponState = lungeFinishFrame.weaponState;
       };
 
-      if (isNeuralNetDifficulty(self.difficulty) || isNeuralNetDifficulty(s.settings.aiDifficulty)) {
+      if (neuralControlled) {
         const brain = getNeuralBrainRuntime?.() ?? null;
         if (!brain || brain.telemetry.status !== 'ready') {
           if (brain) brain.telemetry.blockedFrames += 1;
@@ -331,6 +357,42 @@ export function createAISingleEntityUpdaterForState({
           return;
         }
 
+        if (shouldSuppressNeuralLiveAction(s)) {
+          const action = safeIdleNeuralAction();
+          const policyYaw = liveYawToSimYaw(yaw);
+          vel.x = 0;
+          vel.z = 0;
+          if (self.isJumping || pos.y > 0.01) {
+            vel.y -= GRAVITY_ACCELERATION * dt;
+            pos.y += vel.y * dt;
+            if (pos.y <= 0) {
+              pos.y = 0;
+              vel.y = 0;
+              self.isJumping = false;
+              self.aiHammerJumpsInAir = 0;
+            }
+          } else {
+            vel.y = 0;
+          }
+          constrainCombatantToArena(pos, vel);
+          syncStateAndMesh();
+          recordNeuralLiveFrameTelemetry(brain, buildNeuralLiveFrameTelemetry({
+            state: s,
+            self,
+            action,
+            decisionReused: false,
+            policyYaw,
+            liveYaw: yaw,
+            planarSpeed: 0,
+            canStartWeaponAction: false,
+            jumpApplied: false,
+            dashStarted: false,
+            attackStarted: false,
+            swapStarted: false,
+          }));
+          return;
+        }
+
         const decision = nextNeuralCombatantDecision({
           brain,
           state: s,
@@ -338,6 +400,10 @@ export function createAISingleEntityUpdaterForState({
           activeCustomMap: getActiveCustomMap(),
         });
         const action = decision?.action ?? safeIdleNeuralAction();
+        let swapStarted = false;
+        let dashStarted = false;
+        let jumpApplied = false;
+        let attackStarted = false;
 
         const policyYaw = Number.isFinite(action.aim) ? action.aim : liveYawToSimYaw(yaw);
         yaw = simYawToLiveYaw(policyYaw);
@@ -357,9 +423,9 @@ export function createAISingleEntityUpdaterForState({
           activeWeapon = nextWeapon;
           weaponState = 'ready';
           canStartWeaponAction = false;
+          swapStarted = true;
         }
 
-        dashCooldownTimer = Math.max(0, dashCooldownTimer - dt);
         if (dashRemaining > 0) {
           dashRemaining = Math.max(0, dashRemaining - dt);
           const dashDuration = s.settings.dashDuration || 0.25;
@@ -378,6 +444,7 @@ export function createAISingleEntityUpdaterForState({
             dashRemaining = s.settings.dashDuration || 0.25;
             dashCooldownTimer = s.settings.dashCooldown || 2.0;
             sfx.playDash();
+            dashStarted = true;
           }
 
           const planarVelocity = resolveNeuralPlanarVelocity(action, policyYaw, s.settings, activeWeapon, neuralCrouching);
@@ -390,6 +457,7 @@ export function createAISingleEntityUpdaterForState({
           self.isJumping = true;
           vel.y = 7.2;
           sfx.playJump();
+          jumpApplied = true;
         }
         if (self.isJumping || pos.y > 0.01) {
           vel.y -= GRAVITY_ACCELERATION * dt;
@@ -410,21 +478,38 @@ export function createAISingleEntityUpdaterForState({
             triggerCombatantLunge(self, lungeDir, pos, vel);
             state = 'LUNGING';
             weaponState = 'ready';
+            attackStarted = true;
           } else if (action.attackSecondary && activeWeapon === 'hammer') {
             state = 'COOLDOWN';
             timer = resolveScaledAIWeaponReloadTime(s.settings, activeWeapon, cooldownMult, true);
             triggerCombatantAttack(self, activeWeapon, true);
             weaponState = 'melee_up';
+            attackStarted = true;
           } else if (action.attackPrimary && (activeWeapon === 'hammer' || activeWeapon === 'sword')) {
             state = 'COOLDOWN';
             timer = resolveScaledAIWeaponReloadTime(s.settings, activeWeapon, cooldownMult);
             triggerCombatantAttack(self, activeWeapon);
             weaponState = 'swing_up';
+            attackStarted = true;
           }
         }
 
         constrainCombatantToArena(pos, vel);
         syncStateAndMesh();
+        recordNeuralLiveFrameTelemetry(brain, buildNeuralLiveFrameTelemetry({
+          state: s,
+          self,
+          action,
+          decisionReused: decision?.reused ?? false,
+          policyYaw,
+          liveYaw: yaw,
+          planarSpeed: Math.hypot(vel.x, vel.z),
+          canStartWeaponAction,
+          jumpApplied,
+          dashStarted,
+          attackStarted,
+          swapStarted,
+        }));
         return;
       }
   

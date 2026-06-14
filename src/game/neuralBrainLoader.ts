@@ -21,12 +21,62 @@ export interface NeuralAgentRuntime {
 export interface NeuralBrainTelemetry {
   brainId: string;
   status: 'loading' | 'ready' | 'error';
+  actionMode: 'sampled-greedy-attack';
   decisions: number;
   reusedActions: number;
   blockedFrames: number;
   lastDecisionAt: number;
   lastError?: string;
   lastFactors?: number[];
+  lastAction?: {
+    moveX: number;
+    moveZ: number;
+    attackPrimary: boolean;
+    attackSecondary: boolean;
+    jump: boolean;
+    dash: boolean;
+    swapWeapon: boolean;
+  };
+  lastLiveFrame?: NeuralLiveFrameTelemetry;
+}
+
+export interface NeuralLiveFrameTelemetry {
+  decisionReused: boolean;
+  distanceToPlayer: number;
+  targetAlive: boolean;
+  targetHp: number;
+  targetMaxHp: number;
+  targetRespawnTimer: number;
+  targetInvulnerabilityTimer: number;
+  targetActionSuppressed: boolean;
+  selfAlive: boolean;
+  selfRespawnTimer: number;
+  selfInvulnerabilityTimer: number;
+  selfWeapon: string;
+  selfWeaponState: string;
+  selfWeaponTimer: number;
+  selfAiState?: string;
+  selfAiTimer: number;
+  selfCanStartWeaponAction: boolean;
+  selfSwapLockoutTimer: number;
+  selfSwapCooldownTimer: number;
+  selfWeaponActionGate: string;
+  selfGrounded: boolean;
+  selfPosY: number;
+  selfIsJumping: boolean;
+  policyYaw: number;
+  liveYaw: number;
+  planarSpeed: number;
+  moveX: number;
+  moveZ: number;
+  attackRequested: boolean;
+  attackStarted: boolean;
+  jumpRequested: boolean;
+  jumpApplied: boolean;
+  dashRequested: boolean;
+  dashStarted: boolean;
+  swapRequested: boolean;
+  swapStarted: boolean;
 }
 
 export interface LoadedNeuralBrain {
@@ -43,6 +93,7 @@ export function createNeuralBrainTelemetry(brainId: string): NeuralBrainTelemetr
   return {
     brainId,
     status: 'loading',
+    actionMode: 'sampled-greedy-attack',
     decisions: 0,
     reusedActions: 0,
     blockedFrames: 0,
