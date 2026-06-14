@@ -43,10 +43,25 @@ test('buildV3PerformanceSmokeReport gates every quality tier against production 
     assert.equal(report.qualityTier, tier);
     assert.equal(report.combatantCount, 8);
     assert.equal(report.ready, true, `${tier}: ${report.issues.join(', ')}`);
+    assert.equal(report.visualQaReady, true, `${tier}: ${report.visualQa.issues.map((issue) => issue.code).join(', ')}`);
+    assert.equal(report.visualQa.ready, true);
+    assert.equal(report.visualQa.summary.snapshotCount, 64);
     assert.deepEqual(report.weaponCoverage, ['hammer', 'pistol', 'sword']);
     assert.ok(smoke.budget.drawCallEstimate <= V3_PERFORMANCE_SMOKE_BUDGETS[tier].maxDrawCallEstimate);
     assert.doesNotThrow(() => assertV3PerformanceSmokeBudget(smoke));
   }
+});
+
+test('buildV3PerformanceSmokeReport gates fixed-angle V3 visual QA readiness', () => {
+  const smoke = buildV3PerformanceSmokeScene({ qualityTier: 'desktop' });
+  smoke.combatants[3].meshes.group.clear();
+
+  const report = buildV3PerformanceSmokeReport(smoke);
+
+  assert.equal(report.visualQaReady, false);
+  assert.equal(report.ready, false);
+  assert.ok(report.visualQa.issues.some((issue) => issue.code === 'missing_visual_mass'));
+  assert.ok(report.issues.some((issue) => issue.includes('visual QA')));
 });
 
 test('buildV3PerformanceSmokeRuntimeReport requires measured frame timing evidence', () => {

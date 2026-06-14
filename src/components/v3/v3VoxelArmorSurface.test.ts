@@ -3,9 +3,41 @@ import { describe, it } from 'node:test';
 import * as THREE from 'three';
 import type { VoxelData } from '../VoxelModels';
 import {
+  V3_ARMOR_SURFACE_DEFAULT_OPTIONS,
   analyzeV3ArmorSurface,
   createV3VoxelArmorGroup,
 } from './v3VoxelArmorSurface';
+
+const createPlateVoxels = (width: number, height: number, color = '#38bdf8'): VoxelData[] => {
+  const voxels: VoxelData[] = [];
+  for (let x = 0; x < width; x++) {
+    for (let y = 0; y < height; y++) {
+      voxels.push({ x, y, z: 0, color });
+    }
+  }
+  return voxels;
+};
+
+const getMeshes = (group: THREE.Group): THREE.Mesh[] =>
+  group.children.filter((child): child is THREE.Mesh => child instanceof THREE.Mesh);
+
+const getTotalVertexCount = (group: THREE.Group): number =>
+  getMeshes(group).reduce((total, mesh) => total + (mesh.geometry.getAttribute('position')?.count ?? 0), 0);
+
+const groupHasUsableNormals = (group: THREE.Group): boolean =>
+  getMeshes(group).every((mesh) => {
+    const position = mesh.geometry.getAttribute('position');
+    const normal = mesh.geometry.getAttribute('normal');
+    if (!position || !normal || normal.count !== position.count) return false;
+    for (let i = 0; i < normal.count; i++) {
+      const x = normal.getX(i);
+      const y = normal.getY(i);
+      const z = normal.getZ(i);
+      if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) return false;
+      if (Math.hypot(x, y, z) > 0.5) return true;
+    }
+    return false;
+  });
 
 describe('V3 voxel armor surface renderer', () => {
   it('removes internal faces and merges exposed coplanar panels', () => {
@@ -42,7 +74,105 @@ describe('V3 voxel armor surface renderer', () => {
     assert.ok(group.children.every((child) => child instanceof THREE.Mesh));
   });
 
-  it('keeps stable world bounds when rendering high-density armor at half scale', () => {
+  it('defaults armor surface panels to clipped recessed surface metadata', () => {
+    const voxels = createPlateVoxels(2, 2);
+
+    const group = createV3VoxelArmorGroup(voxels, {
+      ...V3_ARMOR_SURFACE_DEFAULT_OPTIONS,
+      renderStyle: 'armorSurface',
+    });
+    const report = group.userData.v3ArmorSurface;
+
+    assert.equal(group.userData.v3PanelCornerStyle, 'clipped');
+    assert.equal(group.userData.v3PanelDepthStyle, 'recessed');
+    assert.equal(report.panelCornerStyle, 'clipped');
+    assert.equal(report.panelDepthStyle, 'recessed');
+    assert.equal(report.beveledPanelCount, report.panelCount);
+    assert.equal(report.recessedPanelCount, report.panelCount);
+  });
+
+  it('allows armor surface panels to keep flush depth', () => {
+    const voxels = createPlateVoxels(2, 2);
+
+    const group = createV3VoxelArmorGroup(voxels, {
+      renderStyle: 'armorSurface',
+      panelDepthStyle: 'flush',
+    });
+    const report = group.userData.v3ArmorSurface;
+
+    assert.equal(group.userData.v3PanelCornerStyle, 'clipped');
+    assert.equal(group.userData.v3PanelDepthStyle, 'flush');
+    assert.equal(report.panelCornerStyle, 'clipped');
+    assert.equal(report.panelDepthStyle, 'flush');
+    assert.equal(report.beveledPanelCount, report.panelCount);
+    assert.equal(report.recessedPanelCount, 0);
+  });
+
+  it('allows armor surface panels to keep square corners', () => {
+    const voxels = createPlateVoxels(2, 2);
+
+    const group = createV3VoxelArmorGroup(voxels, {
+      renderStyle: 'armorSurface',
+      panelCornerStyle: 'square',
+    });
+
+    assert.equal(group.userData.v3PanelCornerStyle, 'square');
+    assert.equal(group.userData.v3ArmorSurface.panelCornerStyle, 'square');
+  });
+
+  it('keeps voxel edit rendering square and flush even when armor surfaces default to clipped recessed panels', () => {
+    const voxels: VoxelData[] = [
+      { x: 0, y: 0, z: 0, color: '#38bdf8' },
+      { x: 1, y: 0, z: 0, color: '#38bdf8' },
+    ];
+
+    const group = createV3VoxelArmorGroup(voxels, {
+      renderStyle: 'voxelEdit',
+      panelCornerStyle: 'clipped',
+      panelDepthStyle: 'recessed',
+    });
+    const report = group.userData.v3ArmorSurface;
+
+    assert.equal(group.userData.v3ArmorRenderStyle, 'voxelEdit');
+    assert.equal(group.userData.v3PanelCornerStyle, 'square');
+    assert.equal(group.userData.v3PanelDepthStyle, 'flush');
+    assert.equal(report.panelCornerStyle, 'square');
+    assert.equal(report.panelDepthStyle, 'flush');
+    assert.equal(report.beveledPanelCount, 0);
+    assert.equal(report.recessedPanelCount, 0);
+  });
+
+  it('bevels clipped recessed panels with valid normals and richer geometry than flush square panels', () => {
+    const voxels = createPlateVoxels(4, 4);
+
+    const flushSquareGroup = createV3VoxelArmorGroup(voxels, {
+      renderStyle: 'armorSurface',
+      panelCornerStyle: 'square',
+      panelDepthStyle: 'flush',
+      qualityTier: 'desktop',
+      voxelScale: 0.05,
+    });
+    const recessedClippedGroup = createV3VoxelArmorGroup(voxels, {
+      renderStyle: 'armorSurface',
+      panelCornerStyle: 'clipped',
+      panelDepthStyle: 'recessed',
+      qualityTier: 'desktop',
+      voxelScale: 0.05,
+    });
+    const flushSquareVertices = getTotalVertexCount(flushSquareGroup);
+    const recessedClippedVertices = getTotalVertexCount(recessedClippedGroup);
+    const report = recessedClippedGroup.userData.v3ArmorSurface;
+
+    assert.ok(groupHasUsableNormals(recessedClippedGroup));
+    assert.ok(
+      recessedClippedVertices > flushSquareVertices,
+      `expected clipped recessed geometry to be richer than flush square, got ${recessedClippedVertices} vs ${flushSquareVertices}`
+    );
+    assert.equal(report.beveledPanelCount, report.panelCount);
+    assert.equal(report.recessedPanelCount, report.panelCount);
+  });
+
+  it('keeps stable world bounds when rendering high-density clipped armor at half scale', () => {
     const lowDensity: VoxelData[] = [
       { x: 0, y: 0, z: 0, color: '#38bdf8' },
       { x: 1, y: 0, z: 0, color: '#38bdf8' },
@@ -54,11 +184,21 @@ describe('V3 voxel armor surface renderer', () => {
       { x: 3, y: 0, z: 0, color: '#38bdf8' },
     ];
 
-    const lowGroup = createV3VoxelArmorGroup(lowDensity, { voxelScale: 0.05 });
-    const highGroup = createV3VoxelArmorGroup(highDensity, { voxelScale: 0.025 });
+    const lowGroup = createV3VoxelArmorGroup(lowDensity, {
+      renderStyle: 'armorSurface',
+      panelCornerStyle: 'clipped',
+      voxelScale: 0.05,
+    });
+    const highGroup = createV3VoxelArmorGroup(highDensity, {
+      renderStyle: 'armorSurface',
+      panelCornerStyle: 'clipped',
+      voxelScale: 0.025,
+    });
     const lowSize = new THREE.Box3().setFromObject(lowGroup).getSize(new THREE.Vector3());
     const highSize = new THREE.Box3().setFromObject(highGroup).getSize(new THREE.Vector3());
 
+    assert.equal(lowGroup.userData.v3PanelCornerStyle, 'clipped');
+    assert.equal(highGroup.userData.v3PanelCornerStyle, 'clipped');
     assert.ok(Math.abs(lowSize.x - highSize.x) < 0.01, `expected similar width, got ${lowSize.x} vs ${highSize.x}`);
   });
 });

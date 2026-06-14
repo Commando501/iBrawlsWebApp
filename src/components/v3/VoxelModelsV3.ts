@@ -44,7 +44,7 @@ import {
   V3_SLOT_DETAIL_BONES,
   type V3DetailBoneName,
 } from './v3RigDetail';
-import { createV3VoxelArmorGroup } from './v3VoxelArmorSurface';
+import { V3_ARMOR_SURFACE_DEFAULT_OPTIONS, createV3VoxelArmorGroup } from './v3VoxelArmorSurface';
 
 export interface V3SpartanBuildOptions extends V3RenderOptions {
   isEnemy?: boolean;
@@ -176,16 +176,88 @@ const addTranslatedBox = (
   }
 };
 
+const V3_BASE_CORE_SHRINK: Partial<Record<V3CharacterSlotId, [number, number, number]>> = {
+  neck: [0.17, 0, 0.17],
+  chest: [0.16, 0.03, 0.25],
+  shoulderLeft: [0.14, 0, 0.18],
+  shoulderRight: [0.14, 0, 0.18],
+  upperArmLeft: [0.2, 0, 0.2],
+  upperArmRight: [0.2, 0, 0.2],
+  forearmLeft: [0.2, 0, 0.2],
+  forearmRight: [0.2, 0, 0.2],
+  handLeft: [0.25, 0, 0.25],
+  handRight: [0.25, 0, 0.25],
+  pelvis: [0.17, 0, 0.13],
+  thighLeft: [0.17, 0, 0.17],
+  thighRight: [0.17, 0, 0.17],
+  shinLeft: [0.17, 0, 0.17],
+  shinRight: [0.17, 0, 0.17],
+  footLeft: [0.14, 0, 0.12],
+  footRight: [0.14, 0, 0.12],
+  back: [0.18, 0.04, 0.25],
+};
+
+const V3_ARTICULATED_SLOTS_WITH_LOCAL_PANELS = new Set<V3CharacterSlotId>([
+  'shoulderLeft',
+  'shoulderRight',
+  'upperArmLeft',
+  'upperArmRight',
+  'forearmLeft',
+  'forearmRight',
+  'handLeft',
+  'handRight',
+  'thighLeft',
+  'thighRight',
+  'shinLeft',
+  'shinRight',
+  'back',
+]);
+
+const shrinkV3Dimensions = (
+  dimensions: [number, number, number],
+  shrink: [number, number, number]
+): { dimensions: [number, number, number]; offset: [number, number, number] } => {
+  const nextDimensions = dimensions.map((size, axis) => {
+    const inset = Math.max(0, Math.floor(size * shrink[axis]));
+    return Math.max(2, size - inset * 2);
+  }) as [number, number, number];
+  const offset = dimensions.map((size, axis) => Math.floor((size - nextDimensions[axis]) / 2)) as [number, number, number];
+  return { dimensions: nextDimensions, offset };
+};
+
+const translateV3Voxels = (
+  voxels: VoxelData[],
+  offset: [number, number, number]
+): VoxelData[] => voxels.map((voxel) => ({
+  ...voxel,
+  x: voxel.x + offset[0],
+  y: voxel.y + offset[1],
+  z: voxel.z + offset[2],
+}));
+
 const createBasePartShell = (
   part: V3CharacterPartManifest,
   dimensions: [number, number, number],
   colors: SpartanColors,
   paintJob?: CharacterLoadout['paintJob']
-): VoxelData[] => createV3SculptedShell({
-  dimensions,
-  profile: V3_AEGIS_SCULPT_PROFILES[part.slot],
-  color: roleColor(part.paintRoles[0] ?? 'primary', colors, paintJob),
-});
+): VoxelData[] => {
+  const shrink = V3_BASE_CORE_SHRINK[part.slot];
+  const baseColor = roleColor(shrink ? 'undersuit' : part.paintRoles[0] ?? 'primary', colors, paintJob);
+  if (!shrink) {
+    return createV3SculptedShell({
+      dimensions,
+      profile: V3_AEGIS_SCULPT_PROFILES[part.slot],
+      color: baseColor,
+    });
+  }
+
+  const core = shrinkV3Dimensions(dimensions, shrink);
+  return translateV3Voxels(createV3SculptedShell({
+    dimensions: core.dimensions,
+    profile: V3_AEGIS_SCULPT_PROFILES[part.slot],
+    color: baseColor,
+  }), core.offset);
+};
 
 const createAegisHelmetVoxels = (
   part: V3CharacterPartManifest,
@@ -215,14 +287,14 @@ const createAegisHelmetVoxels = (
   });
 
   appendV3ArmorPlate(voxels, {
-    origin: [2, visorY, frontZ],
-    dimensions: [Math.max(1, width - 4), 1, 1],
+    origin: [1, visorY, frontZ],
+    dimensions: [Math.max(1, width - 2), 1, 1],
     color: visorColor,
     emissive: roleEmissive('visor', paintJob, true),
   });
   appendV3ArmorPlate(voxels, {
-    origin: [3, visorY + 1, frontZ],
-    dimensions: [Math.max(1, width - 6), 1, 1],
+    origin: [2, visorY + 1, frontZ],
+    dimensions: [Math.max(1, width - 4), 1, 1],
     color: visorColor,
     emissive: roleEmissive('visor', paintJob, true),
   });
@@ -329,7 +401,7 @@ const createAegisChestVoxels = (
   });
   appendV3MirroredArmorPlates(voxels, {
     origin: [0, Math.max(1, Math.floor(height * 0.34)), frontZ],
-    dimensions: [1, Math.max(4, Math.floor(height * 0.22)), 1],
+    dimensions: [1, Math.max(3, Math.floor(height * 0.14)), 1],
     mirrorMaxX,
     color: fixedColor,
   });
@@ -429,6 +501,7 @@ const createAegisDetailedPartVoxels = (
     case 'upperArmRight': {
       appendBoundedV3ArmorPlate(voxels, dimensions, [2, height - 5, frontZ], [width - 4, 3, 1], secondaryColor);
       appendBoundedV3ArmorPlate(voxels, dimensions, [2, Math.floor(height * 0.45), frontZ], [width - 4, 1, 1], secondaryColor);
+      appendBoundedV3ArmorPlate(voxels, dimensions, [outerX === 0 ? 0 : width - 1, height - 7, frontZ - 2], [1, 4, 3], accentColor);
       appendBoundedV3ArmorPlate(voxels, dimensions, [innerX, 3, 2], [1, height - 6, depth - 4], undersuitColor);
       break;
     }
@@ -436,6 +509,7 @@ const createAegisDetailedPartVoxels = (
     case 'forearmRight': {
       appendBoundedV3ArmorPlate(voxels, dimensions, [1, 1, frontZ], [width - 2, 4, 1], accentColor);
       appendBoundedV3ArmorPlate(voxels, dimensions, [centerX - 1, 6, frontZ], [2, height - 8, 1], accentColor);
+      appendBoundedV3ArmorPlate(voxels, dimensions, [outerX === 0 ? 0 : width - 1, 4, frontZ - 2], [1, height - 9, 3], secondaryColor);
       appendBoundedV3ArmorPlate(voxels, dimensions, [innerX, 3, 2], [1, height - 6, depth - 4], undersuitColor);
       break;
     }
@@ -443,6 +517,7 @@ const createAegisDetailedPartVoxels = (
     case 'handRight': {
       appendBoundedV3ArmorPlate(voxels, dimensions, [2, height - 4, frontZ], [width - 4, 2, 1], accentColor);
       appendBoundedV3ArmorPlate(voxels, dimensions, [1, 1, frontZ], [width - 2, 1, 1], accentColor);
+      appendBoundedV3ArmorPlate(voxels, dimensions, [outerX === 0 ? 1 : width - 2, 2, frontZ - 1], [1, 2, 2], fixedColor);
       appendBoundedV3ArmorPlate(voxels, dimensions, [innerX, 1, 1], [1, height - 2, depth - 2], undersuitColor);
       break;
     }
@@ -457,6 +532,7 @@ const createAegisDetailedPartVoxels = (
     case 'thighRight': {
       appendBoundedV3ArmorPlate(voxels, dimensions, [2, 8, frontZ], [width - 4, 8, 1], secondaryColor);
       appendBoundedV3ArmorPlate(voxels, dimensions, [centerX - 1, height - 6, frontZ], [2, 4, 1], secondaryColor);
+      appendBoundedV3ArmorPlate(voxels, dimensions, [outerX === 0 ? 0 : width - 1, 6, frontZ - 2], [1, height - 10, 3], accentColor);
       appendBoundedV3ArmorPlate(voxels, dimensions, [innerX, 4, 2], [1, height - 8, depth - 4], undersuitColor);
       break;
     }
@@ -464,6 +540,7 @@ const createAegisDetailedPartVoxels = (
     case 'shinRight': {
       appendBoundedV3ArmorPlate(voxels, dimensions, [centerX - 1, 6, frontZ], [2, height - 8, 1], accentColor);
       appendBoundedV3ArmorPlate(voxels, dimensions, [2, height - 5, frontZ], [width - 4, 3, 1], accentColor);
+      appendBoundedV3ArmorPlate(voxels, dimensions, [outerX === 0 ? 0 : width - 1, 5, frontZ - 2], [1, height - 10, 3], secondaryColor);
       appendBoundedV3ArmorPlate(voxels, dimensions, [innerX, 3, 2], [1, height - 7, depth - 4], undersuitColor);
       break;
     }
@@ -487,14 +564,16 @@ const createAegisDetailedPartVoxels = (
       break;
   }
 
-  appendV3PanelStripe(voxels, { axis: 'x', fixedZ: frontZ, color: secondaryColor });
-  appendV3PanelStripe(voxels, {
-    axis: 'y',
-    fixedZ: frontZ,
-    color: accentColor,
-    emissive: roleEmissive('accent', paintJob, part.paintRoles.includes('emissive')),
-  });
-  appendV3CornerArmorTabs(voxels, { dimensions, color: fixedColor });
+  if (!V3_ARTICULATED_SLOTS_WITH_LOCAL_PANELS.has(part.slot)) {
+    appendV3PanelStripe(voxels, { axis: 'x', fixedZ: frontZ, color: secondaryColor });
+    appendV3PanelStripe(voxels, {
+      axis: 'y',
+      fixedZ: frontZ,
+      color: accentColor,
+      emissive: roleEmissive('accent', paintJob, part.paintRoles.includes('emissive')),
+    });
+    appendV3CornerArmorTabs(voxels, { dimensions, color: fixedColor });
+  }
 
   return voxels;
 };
@@ -629,6 +708,7 @@ export function buildV3SpartanModel(options: V3SpartanBuildOptions = {}): THREE.
       ? customArmorPieceToVoxels(customPiece, customArmorColors)
       : createPartVoxels(part, scaleV3Dimensions(spec.dimensions, gridScale), colors, paintJob);
     const group = createV3VoxelArmorGroup(voxels, {
+      ...V3_ARMOR_SURFACE_DEFAULT_OPTIONS,
       voxelScale: V3_VOXEL_SCALE / gridScale,
       renderStyle: v3ArmorRenderStyle,
       qualityTier: v3QualityTier,

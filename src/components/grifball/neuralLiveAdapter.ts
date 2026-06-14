@@ -117,8 +117,9 @@ export function liveYawToSimYaw(yaw: number): number {
   return normalizeYaw(yaw + Math.PI);
 }
 
-export function shouldSuppressNeuralLiveAction(state: Pick<GrifballRuntimeState, 'playerHP' | 'playerRespawnTimer'>): boolean {
-  return state.playerHP <= 0 || Math.max(0, state.playerRespawnTimer ?? 0) > 0;
+export function shouldSuppressNeuralLiveAction(_state: Pick<GrifballRuntimeState, 'playerHP' | 'playerRespawnTimer'>): boolean {
+  // Player respawn is target state, not a global pause; the live sim can still drive AI-vs-AI sandbox action.
+  return false;
 }
 
 export function advanceNeuralLiveCooldowns(input: NeuralLiveCooldownInput): NeuralLiveCooldownFrame {

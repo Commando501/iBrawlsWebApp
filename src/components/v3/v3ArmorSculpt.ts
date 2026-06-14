@@ -41,8 +41,8 @@ export interface V3MirroredArmorPlateOptions extends V3ArmorPlateOptions {
 
 export const V3_AEGIS_SCULPT_PROFILES: Record<V3CharacterSlotId, V3SculptProfile> = {
   helmet: {
-    xInsets: [[0, 2], [0.3, 1], [0.58, 0], [1, 2]],
-    zInsets: [[0, 2], [0.42, 0], [1, 1]],
+    xInsets: [[0, 3], [0.3, 2], [0.58, 1], [0.74, 1], [0.88, 3], [1, 3]],
+    zInsets: [[0, 3], [0.35, 1], [0.72, 1], [1, 3]],
   },
   neck: {
     xInsets: [[0, 1], [0.5, 0], [1, 1]],

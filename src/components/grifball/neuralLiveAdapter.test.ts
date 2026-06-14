@@ -209,7 +209,7 @@ test('buildNeuralLiveFrameTelemetry separates requested and applied actions', ()
   assert.equal(frame.planarSpeed, 4);
 });
 
-test('dead live player suppresses neural target engagement and exposes raw target health', () => {
+test('dead live player keeps neural sandbox AI active while exposing raw target health', () => {
   const state = createInitialGrifballRuntimeState({
     debugMode: false,
     adminSettings: DEFAULT_ADMIN_SETTINGS,
@@ -221,7 +221,7 @@ test('dead live player suppresses neural target engagement and exposes raw targe
   state.playerRespawnTimer = 2.5;
   state.playerInvulnerabilityTimer = 0;
 
-  assert.equal(shouldSuppressNeuralLiveAction(state), true);
+  assert.equal(shouldSuppressNeuralLiveAction(state), false);
 
   const frame = buildNeuralLiveFrameTelemetry({
     state,
@@ -262,7 +262,7 @@ test('dead live player suppresses neural target engagement and exposes raw targe
   assert.equal(frame.targetAlive, false);
   assert.equal(frame.targetHp, 0);
   assert.equal(frame.targetMaxHp, 1);
-  assert.equal(frame.targetActionSuppressed, true);
+  assert.equal(frame.targetActionSuppressed, false);
 });
 
 test('buildNeuralLiveFrameTelemetry reports target threat fields without steering the action', () => {

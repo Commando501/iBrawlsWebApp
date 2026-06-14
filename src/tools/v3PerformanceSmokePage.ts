@@ -1,8 +1,10 @@
 import * as THREE from 'three';
 import { normalizeV3QualityTier } from '../components/v3/v3QualityTiers';
 import {
+  buildV3PerformanceSmokeReport,
   buildV3PerformanceSmokeRuntimeReport,
   buildV3PerformanceSmokeScene,
+  type V3PerformanceSmokeReport,
   type V3PerformanceSmokeRuntimeReport,
 } from './v3PerformanceSmoke';
 
@@ -19,9 +21,10 @@ renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 let current = buildV3PerformanceSmokeScene({
   qualityTier: initialTier,
 });
+let staticReport: V3PerformanceSmokeReport = buildV3PerformanceSmokeReport(current);
 let sampleStartMs = 0;
 let sampledFrames = 0;
-let latestReport: V3PerformanceSmokeRuntimeReport = buildV3PerformanceSmokeRuntimeReport(current);
+let latestReport: V3PerformanceSmokeRuntimeReport = buildV3PerformanceSmokeRuntimeReport(current, undefined, staticReport);
 
 function resize() {
   const width = Math.max(1, window.innerWidth);
@@ -38,19 +41,20 @@ function publishReport(time?: number) {
         elapsedMs: Math.max(0, time - sampleStartMs),
       }
     : undefined;
-  latestReport = buildV3PerformanceSmokeRuntimeReport(current, sample);
+  latestReport = buildV3PerformanceSmokeRuntimeReport(current, sample, staticReport);
   const status = latestReport.ready
-    ? 'Phase 13 Ready'
+    ? 'Phase 18 Ready'
     : latestReport.runtimeReady
-      ? 'Phase 13 Blocked'
-      : 'Phase 13 Sampling';
+      ? 'Phase 18 Blocked'
+      : 'Phase 18 Sampling';
+  const visualLabel = latestReport.visualQaReady ? 'visual pass' : 'visual fail';
   const fpsLabel = latestReport.sampledFrames > 0
     ? latestReport.averageFps.toFixed(1)
     : 'sampling';
   const frameLabel = latestReport.averageFrameMs > 0
     ? latestReport.averageFrameMs.toFixed(1)
     : 'sampling';
-  summary.textContent = `${status} | ${current.qualityTier} | models ${current.budget.modelCount} | parts ${current.budget.partCount} | draw ${current.budget.drawCallEstimate} | fps ${fpsLabel} | frame ${frameLabel}ms`;
+  summary.textContent = `${status} | ${current.qualityTier} | ${visualLabel} | models ${current.budget.modelCount} | parts ${current.budget.partCount} | draw ${current.budget.drawCallEstimate} | fps ${fpsLabel} | frame ${frameLabel}ms`;
   (window as any).__IBRAWLS_V3_PERFORMANCE_SMOKE__ = latestReport;
 }
 
@@ -58,6 +62,7 @@ function rebuild() {
   current = buildV3PerformanceSmokeScene({
     qualityTier: normalizeV3QualityTier(tierSelect.value),
   });
+  staticReport = buildV3PerformanceSmokeReport(current);
   sampleStartMs = 0;
   sampledFrames = 0;
   publishReport();

@@ -10,6 +10,8 @@ import {
 } from './v3QualityTiers';
 
 type AxisDirection = 'px' | 'nx' | 'py' | 'ny' | 'pz' | 'nz';
+export type V3PanelCornerStyle = 'square' | 'clipped';
+export type V3PanelDepthStyle = 'flush' | 'recessed';
 
 interface SurfaceFace {
   direction: AxisDirection;
@@ -34,6 +36,8 @@ interface SurfacePanel {
 export interface V3ArmorSurfaceOptions {
   voxelScale?: number;
   renderStyle?: V3ArmorRenderStyle;
+  panelCornerStyle?: V3PanelCornerStyle;
+  panelDepthStyle?: V3PanelDepthStyle;
   qualityTier?: V3QualityTier;
   pivot?: THREE.Vector3Tuple;
 }
@@ -46,7 +50,16 @@ export interface V3ArmorSurfaceReport {
   materialGroupCount: number;
   emissivePanelCount: number;
   renderStyle: V3ArmorRenderStyle;
+  panelCornerStyle: V3PanelCornerStyle;
+  panelDepthStyle: V3PanelDepthStyle;
+  beveledPanelCount: number;
+  recessedPanelCount: number;
 }
+
+export const V3_ARMOR_SURFACE_DEFAULT_OPTIONS = {
+  panelCornerStyle: 'clipped',
+  panelDepthStyle: 'recessed',
+} as const satisfies Pick<V3ArmorSurfaceOptions, 'panelCornerStyle' | 'panelDepthStyle'>;
 
 const DEFAULT_VOXEL_SCALE = 0.055;
 const DIRECTIONS: Array<{
@@ -66,6 +79,22 @@ const materialKey = (color: string, emissive: boolean): string => `${color}|${em
 
 const normalizeScale = (scale: unknown): number =>
   typeof scale === 'number' && Number.isFinite(scale) && scale > 0 ? scale : DEFAULT_VOXEL_SCALE;
+
+const normalizePanelCornerStyle = (
+  style: unknown,
+  renderStyle: V3ArmorRenderStyle
+): V3PanelCornerStyle => {
+  if (renderStyle === 'voxelEdit') return 'square';
+  return style === 'square' ? 'square' : 'clipped';
+};
+
+const normalizePanelDepthStyle = (
+  style: unknown,
+  renderStyle: V3ArmorRenderStyle
+): V3PanelDepthStyle => {
+  if (renderStyle === 'voxelEdit') return 'flush';
+  return style === 'flush' ? 'flush' : 'recessed';
+};
 
 const normalizePivot = (pivot: THREE.Vector3Tuple | undefined): THREE.Vector3Tuple => (
   Array.isArray(pivot) && pivot.length === 3
@@ -113,6 +142,53 @@ function createPanelBoxGeometry(
     curveSegments: Math.max(3, segments + 2),
   });
   geometry.center();
+  return geometry;
+}
+
+function createClippedPanelGeometry(
+  width: number,
+  height: number,
+  depth: number,
+  clip: number,
+  bevelSegments: number
+): THREE.BufferGeometry {
+  const inset = Math.min(clip, width * 0.22, height * 0.22);
+  if (inset <= 0 || width <= inset * 2 || height <= inset * 2) {
+    return new THREE.BoxGeometry(width, height, depth);
+  }
+
+  const x = -width / 2;
+  const y = -height / 2;
+  const shape = new THREE.Shape();
+  shape.moveTo(x + inset, y);
+  shape.lineTo(x + width - inset, y);
+  shape.lineTo(x + width, y + inset);
+  shape.lineTo(x + width, y + height - inset);
+  shape.lineTo(x + width - inset, y + height);
+  shape.lineTo(x + inset, y + height);
+  shape.lineTo(x, y + height - inset);
+  shape.lineTo(x, y + inset);
+  shape.closePath();
+
+  const normalizedBevelSegments = Math.max(0, Math.floor(bevelSegments));
+  const bevelSize = normalizedBevelSegments > 0
+    ? Math.min(inset * 0.35, depth * 0.45, width * 0.08, height * 0.08)
+    : 0;
+  const bevelThickness = bevelSize;
+  const innerDepth = bevelSize > 0
+    ? Math.max(depth - bevelThickness * 2, depth * 0.2)
+    : depth;
+  const geometry = new THREE.ExtrudeGeometry(shape, {
+    depth: innerDepth,
+    steps: 1,
+    bevelEnabled: bevelSize > 0,
+    bevelSegments: normalizedBevelSegments,
+    bevelSize,
+    bevelThickness,
+    curveSegments: 1,
+  });
+  geometry.center();
+  geometry.computeVertexNormals();
   return geometry;
 }
 
@@ -241,7 +317,12 @@ function mergeCoplanarFaces(faces: SurfaceFace[]): SurfacePanel[] {
   return panels;
 }
 
-function buildSurface(voxels: VoxelData[], renderStyle: V3ArmorRenderStyle): {
+function buildSurface(
+  voxels: VoxelData[],
+  renderStyle: V3ArmorRenderStyle,
+  panelCornerStyle: V3PanelCornerStyle,
+  panelDepthStyle: V3PanelDepthStyle
+): {
   panels: SurfacePanel[];
   report: V3ArmorSurfaceReport;
 } {
@@ -249,6 +330,7 @@ function buildSurface(voxels: VoxelData[], renderStyle: V3ArmorRenderStyle): {
   const panels = mergeCoplanarFaces(faces);
   const materialGroups = new Set(faces.map((face) => materialKey(face.color, face.emissive)));
   const emissivePanelCount = panels.filter((panel) => panel.emissive).length;
+  const renderedSurfacePanelCount = renderStyle === 'armorSurface' ? panels.length : 0;
 
   return {
     panels,
@@ -260,15 +342,22 @@ function buildSurface(voxels: VoxelData[], renderStyle: V3ArmorRenderStyle): {
       materialGroupCount: materialGroups.size,
       emissivePanelCount,
       renderStyle,
+      panelCornerStyle,
+      panelDepthStyle,
+      beveledPanelCount: panelCornerStyle === 'clipped' ? renderedSurfacePanelCount : 0,
+      recessedPanelCount: panelDepthStyle === 'recessed' ? renderedSurfacePanelCount : 0,
     },
   };
 }
 
 export function analyzeV3ArmorSurface(
   voxels: VoxelData[],
-  options: Pick<V3ArmorSurfaceOptions, 'renderStyle'> = {}
+  options: Pick<V3ArmorSurfaceOptions, 'renderStyle' | 'panelCornerStyle' | 'panelDepthStyle'> = {}
 ): V3ArmorSurfaceReport {
-  return buildSurface(voxels, normalizeV3ArmorRenderStyle(options.renderStyle)).report;
+  const renderStyle = normalizeV3ArmorRenderStyle(options.renderStyle);
+  const panelCornerStyle = normalizePanelCornerStyle(options.panelCornerStyle, renderStyle);
+  const panelDepthStyle = normalizePanelDepthStyle(options.panelDepthStyle, renderStyle);
+  return buildSurface(voxels, renderStyle, panelCornerStyle, panelDepthStyle).report;
 }
 
 function getPanelQuality(tier: V3QualityTier): { thicknessFactor: number; radiusFactor: number; segments: number } {
@@ -276,6 +365,20 @@ function getPanelQuality(tier: V3QualityTier): { thicknessFactor: number; radius
   if (tier === 'mobile') return { thicknessFactor: 0.14, radiusFactor: 0.15, segments: 1 };
   if (tier === 'ultra') return { thicknessFactor: 0.18, radiusFactor: 0.24, segments: 3 };
   return { thicknessFactor: 0.16, radiusFactor: 0.2, segments: 2 };
+}
+
+function getPanelRenderDimension(
+  span: number,
+  voxelScale: number,
+  panelDepthStyle: V3PanelDepthStyle
+): number {
+  const base = Math.max(voxelScale * span, voxelScale * 0.15);
+  if (panelDepthStyle !== 'recessed' || span <= 1) return base;
+
+  const shrink = Math.min(voxelScale * 0.12, base * 0.08);
+  const minSafe = Math.max(voxelScale * 0.35, base * 0.55);
+  const recessed = base - shrink;
+  return recessed >= minSafe ? recessed : base;
 }
 
 function translatePanelGeometry(
@@ -316,6 +419,8 @@ function createSurfacePanelGeometries(
   panels: SurfacePanel[],
   options: Required<Pick<V3ArmorSurfaceOptions, 'qualityTier'>> & {
     voxelScale: number;
+    panelCornerStyle: V3PanelCornerStyle;
+    panelDepthStyle: V3PanelDepthStyle;
     pivot: THREE.Vector3Tuple;
   }
 ): Map<string, THREE.BufferGeometry[]> {
@@ -325,9 +430,11 @@ function createSurfacePanelGeometries(
   const byMaterial = new Map<string, THREE.BufferGeometry[]>();
 
   for (const panel of panels) {
-    const width = Math.max(options.voxelScale * panel.sizeU, options.voxelScale * 0.15);
-    const height = Math.max(options.voxelScale * panel.sizeV, options.voxelScale * 0.15);
-    const geometry = createPanelBoxGeometry(width, height, thickness, radius, quality.segments);
+    const width = getPanelRenderDimension(panel.sizeU, options.voxelScale, options.panelDepthStyle);
+    const height = getPanelRenderDimension(panel.sizeV, options.voxelScale, options.panelDepthStyle);
+    const geometry = options.panelCornerStyle === 'clipped'
+      ? createClippedPanelGeometry(width, height, thickness, radius, quality.segments)
+      : createPanelBoxGeometry(width, height, thickness, radius, quality.segments);
     translatePanelGeometry(geometry, panel, options.voxelScale, thickness, options.pivot);
     const key = materialKey(panel.color, panel.emissive);
     const list = byMaterial.get(key);
@@ -396,15 +503,19 @@ export function createV3VoxelArmorGroup(
   const voxelScale = normalizeScale(options.voxelScale);
   const pivot = normalizePivot(options.pivot);
   const group = new THREE.Group();
-  const { panels, report } = buildSurface(voxels, renderStyle);
+  const panelCornerStyle = normalizePanelCornerStyle(options.panelCornerStyle, renderStyle);
+  const panelDepthStyle = normalizePanelDepthStyle(options.panelDepthStyle, renderStyle);
+  const { panels, report } = buildSurface(voxels, renderStyle, panelCornerStyle, panelDepthStyle);
 
   const geometriesByMaterial = renderStyle === 'voxelEdit'
     ? createVoxelEditGeometries(voxels, { voxelScale, pivot })
-    : createSurfacePanelGeometries(panels, { voxelScale, pivot, qualityTier });
+    : createSurfacePanelGeometries(panels, { voxelScale, panelCornerStyle, panelDepthStyle, pivot, qualityTier });
 
   addMergedMeshes(group, geometriesByMaterial);
 
   group.userData.v3ArmorRenderStyle = renderStyle;
+  group.userData.v3PanelCornerStyle = panelCornerStyle;
+  group.userData.v3PanelDepthStyle = panelDepthStyle;
   group.userData.v3ArmorSurface = report;
   group.userData.v3QualityTier = qualityTier;
   group.userData.v3VoxelScale = voxelScale;

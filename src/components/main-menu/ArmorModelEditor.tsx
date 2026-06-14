@@ -38,7 +38,7 @@ import {
   type CustomArmorVoxel,
 } from '../customArmor';
 import { getV3BuiltinPartVoxels } from '../v3/VoxelModelsV3';
-import { createV3VoxelArmorGroup } from '../v3/v3VoxelArmorSurface';
+import { V3_ARMOR_SURFACE_DEFAULT_OPTIONS, createV3VoxelArmorGroup } from '../v3/v3VoxelArmorSurface';
 import { getV3CharacterPartBounds } from '../v3/v3PartBounds';
 import {
   getCharacterModelCollisionProfile,
@@ -948,6 +948,7 @@ export function ArmorModelEditor({
       const density = buildNeighborDensity(renderVoxels);
       if (viewMode === 'preview' && modelSystem === 'v3') {
         const armorPreview = createV3VoxelArmorGroup(renderVoxels, {
+          ...V3_ARMOR_SURFACE_DEFAULT_OPTIONS,
           voxelScale: scale,
           renderStyle: 'armorSurface',
           qualityTier: 'desktop',

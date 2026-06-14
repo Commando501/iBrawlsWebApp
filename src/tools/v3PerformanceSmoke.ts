@@ -7,6 +7,7 @@ import { summarizeV3SceneRenderBudget, type V3RenderBudgetSummary } from '../com
 import { normalizeV3QualityTier } from '../components/v3/v3QualityTiers';
 import { V3_QUALITY_TIERS, type V3QualityTier } from '../components/v3/v3ModelTypes';
 import type { CharacterLoadout } from '../components/VoxelModels';
+import { buildV3VisualQaReport, type V3VisualQaIssue, type V3VisualQaReport } from './v3VisualQa';
 
 export interface V3PerformanceSmokeCombatant {
   id: string;
@@ -28,6 +29,8 @@ export interface V3PerformanceSmokeReport {
   weaponCoverage: ('hammer' | 'pistol' | 'sword')[];
   budget: V3RenderBudgetSummary;
   gates: V3PerformanceSmokeBudgetGate;
+  visualQaReady: boolean;
+  visualQa: V3VisualQaReport;
   issues: string[];
 }
 
@@ -46,10 +49,10 @@ export interface V3PerformanceSmokeRuntimeReport extends V3PerformanceSmokeRepor
 }
 
 export const V3_PERFORMANCE_SMOKE_BUDGETS: Record<V3QualityTier, V3PerformanceSmokeBudgetGate> = {
-  mobileLow: { maxDrawCallEstimate: 410, maxMergedBoxCount: 14000, maxMemoryEstimateKb: 19000 },
-  mobile: { maxDrawCallEstimate: 410, maxMergedBoxCount: 14000, maxMemoryEstimateKb: 19000 },
-  desktop: { maxDrawCallEstimate: 550, maxMergedBoxCount: 20000, maxMemoryEstimateKb: 28000 },
-  ultra: { maxDrawCallEstimate: 680, maxMergedBoxCount: 25000, maxMemoryEstimateKb: 34000 },
+  mobileLow: { maxDrawCallEstimate: 410, maxMergedBoxCount: 11000, maxMemoryEstimateKb: 13500 },
+  mobile: { maxDrawCallEstimate: 410, maxMergedBoxCount: 11000, maxMemoryEstimateKb: 13500 },
+  desktop: { maxDrawCallEstimate: 550, maxMergedBoxCount: 16000, maxMemoryEstimateKb: 20000 },
+  ultra: { maxDrawCallEstimate: 650, maxMergedBoxCount: 19500, maxMemoryEstimateKb: 24000 },
 };
 
 export const V3_PERFORMANCE_RUNTIME_TARGET_FPS: Record<V3QualityTier, number> = {
@@ -166,12 +169,81 @@ export function buildV3PerformanceSmokeScene({
   };
 }
 
+function emptyV3VisualQaReport(): V3VisualQaReport {
+  return {
+    ready: false,
+    snapshots: [],
+    issues: [{
+      code: 'missing_visual_mass',
+      message: 'performance smoke has no combatants to sample',
+    }],
+    summary: {
+      snapshotCount: 0,
+      minOccupiedAreaRatio: 0,
+      maxOccupiedAreaRatio: 0,
+      minProjectedWidth: 0,
+      minProjectedHeight: 0,
+      maxDarkMaterialCoverage: 0,
+      maxEmissiveMaterialCoverage: 0,
+      panelCount: 0,
+      materialGroupCount: 0,
+      visibleImportantPartCount: 0,
+      importantPartCount: 0,
+    },
+  };
+}
+
+function roundSmokeMetric(value: number): number {
+  return Number.isFinite(value) ? Number(value.toFixed(6)) : 0;
+}
+
+function buildCombinedV3SmokeVisualQaReport(combatants: readonly V3PerformanceSmokeCombatant[]): V3VisualQaReport {
+  if (combatants.length === 0) {
+    return emptyV3VisualQaReport();
+  }
+
+  const reports = combatants.map((combatant) => ({
+    id: combatant.id,
+    report: buildV3VisualQaReport(combatant.meshes.group),
+  }));
+  const snapshots = reports.flatMap((entry) => entry.report.snapshots);
+  const issues: V3VisualQaIssue[] = reports.flatMap((entry) => (
+    entry.report.issues.map((issue) => ({
+      ...issue,
+      message: `${entry.id}: ${issue.message}`,
+    }))
+  ));
+  const occupied = snapshots.map((snapshot) => snapshot.occupiedAreaRatio);
+  const widths = snapshots.map((snapshot) => snapshot.projectedWidth);
+  const heights = snapshots.map((snapshot) => snapshot.projectedHeight);
+
+  return {
+    ready: issues.length === 0,
+    snapshots,
+    issues,
+    summary: {
+      snapshotCount: snapshots.length,
+      minOccupiedAreaRatio: roundSmokeMetric(occupied.length > 0 ? Math.min(...occupied) : 0),
+      maxOccupiedAreaRatio: roundSmokeMetric(occupied.length > 0 ? Math.max(...occupied) : 0),
+      minProjectedWidth: roundSmokeMetric(widths.length > 0 ? Math.min(...widths) : 0),
+      minProjectedHeight: roundSmokeMetric(heights.length > 0 ? Math.min(...heights) : 0),
+      maxDarkMaterialCoverage: roundSmokeMetric(Math.max(0, ...snapshots.map((snapshot) => snapshot.darkMaterialCoverage))),
+      maxEmissiveMaterialCoverage: roundSmokeMetric(Math.max(0, ...snapshots.map((snapshot) => snapshot.emissiveMaterialCoverage))),
+      panelCount: reports.reduce((total, entry) => total + entry.report.summary.panelCount, 0),
+      materialGroupCount: reports.reduce((total, entry) => total + entry.report.summary.materialGroupCount, 0),
+      visibleImportantPartCount: reports.reduce((total, entry) => total + entry.report.summary.visibleImportantPartCount, 0),
+      importantPartCount: reports.reduce((total, entry) => total + entry.report.summary.importantPartCount, 0),
+    },
+  };
+}
+
 export function buildV3PerformanceSmokeReport(
   smoke: ReturnType<typeof buildV3PerformanceSmokeScene>
 ): V3PerformanceSmokeReport {
   const gates = V3_PERFORMANCE_SMOKE_BUDGETS[smoke.qualityTier];
   const weaponCoverage = [...new Set(smoke.combatants.map((entry) => entry.activeWeapon))]
     .sort() as ('hammer' | 'pistol' | 'sword')[];
+  const visualQa = buildCombinedV3SmokeVisualQaReport(smoke.combatants);
   const issues: string[] = [];
 
   if (smoke.combatants.length !== 8) {
@@ -197,6 +269,10 @@ export function buildV3PerformanceSmokeReport(
   if (smoke.budget.memoryEstimateKb > gates.maxMemoryEstimateKb) {
     issues.push(`memory estimate ${smoke.budget.memoryEstimateKb}KB exceeds ${gates.maxMemoryEstimateKb}KB`);
   }
+  for (const issue of visualQa.issues) {
+    const viewLabel = issue.viewId && issue.viewportId ? ` ${issue.viewId}/${issue.viewportId}` : '';
+    issues.push(`visual QA${viewLabel} ${issue.code}: ${issue.message}`);
+  }
 
   return {
     ready: issues.length === 0,
@@ -205,6 +281,8 @@ export function buildV3PerformanceSmokeReport(
     weaponCoverage,
     budget: smoke.budget,
     gates,
+    visualQaReady: visualQa.ready,
+    visualQa,
     issues,
   };
 }
@@ -220,9 +298,9 @@ export function assertV3PerformanceSmokeBudget(
 
 export function buildV3PerformanceSmokeRuntimeReport(
   smoke: ReturnType<typeof buildV3PerformanceSmokeScene>,
-  sample?: V3PerformanceSmokeRuntimeSample
+  sample?: V3PerformanceSmokeRuntimeSample,
+  staticReport: V3PerformanceSmokeReport = buildV3PerformanceSmokeReport(smoke)
 ): V3PerformanceSmokeRuntimeReport {
-  const staticReport = buildV3PerformanceSmokeReport(smoke);
   const targetFps = V3_PERFORMANCE_RUNTIME_TARGET_FPS[smoke.qualityTier];
   const sampledFrames = Math.max(0, Math.floor(sample?.sampledFrames ?? 0));
   const elapsedMs = Math.max(0, sample?.elapsedMs ?? 0);
