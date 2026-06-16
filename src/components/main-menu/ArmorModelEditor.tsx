@@ -79,12 +79,26 @@ import {
   type V3SuitDraftMap,
   type V3SuitSavePlan,
 } from './v3ArmorEditorSuitWorkflow';
+import {
+  applyV3SuitProfileToLoadout,
+  createEmptyV3SuitProfileCatalog,
+  createV3SuitProfileFromLoadout,
+  deleteV3SuitProfile,
+  exportV3SuitProfileBundle,
+  importV3SuitProfileBundle,
+  upsertV3SuitProfile,
+  validateV3SuitProfile,
+  type V3SuitProfile,
+  type V3SuitProfileCatalog,
+} from './v3ArmorSuitProfiles';
 
 interface ArmorModelEditorProps {
   catalog: CustomArmorCatalog;
+  v3SuitProfileCatalog?: V3SuitProfileCatalog;
   playerLoadout: CharacterLoadout;
   playerHue: number;
   onCatalogChange: React.Dispatch<React.SetStateAction<CustomArmorCatalog>>;
+  onV3SuitProfileCatalogChange?: React.Dispatch<React.SetStateAction<V3SuitProfileCatalog>>;
   onLoadoutChange: (patch: Partial<CharacterLoadout>) => void;
   onClose: () => void;
   onPaintPiece?: () => void;
@@ -442,9 +456,11 @@ function createV3SmartPreviewOverlayGroup(
 
 export function ArmorModelEditor({
   catalog,
+  v3SuitProfileCatalog = createEmptyV3SuitProfileCatalog(),
   playerLoadout,
   playerHue,
   onCatalogChange,
+  onV3SuitProfileCatalogChange,
   onLoadoutChange,
   onClose,
   onPaintPiece,
@@ -511,6 +527,7 @@ export function ArmorModelEditor({
   const [v3SuitDrafts, setV3SuitDrafts] = useState<V3SuitDraftMap | null>(null);
   const [v3SuitPreviewEnabled, setV3SuitPreviewEnabled] = useState(false);
   const [pendingV3SuitSave, setPendingV3SuitSave] = useState<V3PendingSuitSave | null>(null);
+  const [selectedV3SuitProfileId, setSelectedV3SuitProfileId] = useState('');
   const [status, setStatus] = useState('');
   const [importText, setImportText] = useState('');
   const [exportText, setExportText] = useState('');
@@ -549,6 +566,13 @@ export function ArmorModelEditor({
   const v3SuitValidation = useMemo(() => (
     activeV3SuitDrafts ? validateV3SuitDrafts(activeV3SuitDrafts) : undefined
   ), [activeV3SuitDrafts]);
+  const selectedV3SuitProfile = useMemo<V3SuitProfile | undefined>(() => (
+    v3SuitProfileCatalog.profiles.find((profile) => profile.id === selectedV3SuitProfileId)
+    ?? v3SuitProfileCatalog.profiles[0]
+  ), [selectedV3SuitProfileId, v3SuitProfileCatalog]);
+  const selectedV3SuitProfileValidation = useMemo(() => (
+    selectedV3SuitProfile ? validateV3SuitProfile(selectedV3SuitProfile, catalog) : undefined
+  ), [catalog, selectedV3SuitProfile]);
   const editorValidationReport = useMemo(() => {
     const builtIn = modelSystem === 'v3'
       ? getV3BuiltinPartVoxels(slot as V3CustomArmorSlot, playerHue)
@@ -802,6 +826,144 @@ export function ArmorModelEditor({
       token: suitSaveTokenRef.current,
     });
     setStatus('Full suit save queued.');
+  };
+
+  const hasUnsavedV3SuitDrafts = (): boolean => {
+    if (modelSystem !== 'v3' || !v3SuitDrafts) return false;
+    const stagedDrafts = createStagedV3SuitDrafts();
+    return V3_CUSTOM_ARMOR_SLOTS.some((candidate) => {
+      const staged = stagedDrafts[candidate];
+      const equipped = playerLoadout.customArmor?.[candidate];
+      return !equipped || equipped.id !== staged.id || equipped.updatedAt !== staged.updatedAt;
+    });
+  };
+
+  const saveV3SuitProfile = () => {
+    if (!onV3SuitProfileCatalogChange) {
+      setStatus('Suit profile storage is unavailable.');
+      return;
+    }
+    if (hasUnsavedV3SuitDrafts()) {
+      setStatus('Save & Equip Suit before saving a suit profile.');
+      return;
+    }
+
+    const now = Date.now();
+    const createResult = createV3SuitProfileFromLoadout(playerLoadout, catalog, {
+      name: `Suit Profile ${v3SuitProfileCatalog.profiles.length + 1}`,
+      now,
+    });
+    if (!createResult.profile) {
+      setStatus(`Suit profile save blocked: ${createResult.errors[0]}`);
+      return;
+    }
+
+    const upserted = upsertV3SuitProfile(v3SuitProfileCatalog, createResult.profile, { now });
+    if (upserted.errors.length > 0 || !upserted.profile) {
+      setStatus(`Suit profile save blocked: ${upserted.errors[0]}`);
+      return;
+    }
+
+    onV3SuitProfileCatalogChange(upserted.catalog);
+    setSelectedV3SuitProfileId(upserted.profile.id);
+    setStatus(`${upserted.profile.name} saved as a suit profile.`);
+  };
+
+  const loadV3SuitProfile = () => {
+    if (!selectedV3SuitProfile) {
+      setStatus('No suit profile selected.');
+      return;
+    }
+    const result = applyV3SuitProfileToLoadout(playerLoadout, selectedV3SuitProfile, catalog);
+    if (!result.loadoutPatch) {
+      setStatus(`Suit profile load blocked: ${result.errors[0]}`);
+      return;
+    }
+
+    onLoadoutChange(result.loadoutPatch);
+    const previewLoadout: CharacterLoadout = {
+      ...playerLoadout,
+      ...result.loadoutPatch,
+    };
+    const drafts = createV3SuitDraftMap(previewLoadout, catalog, playerHue, Date.now());
+    const currentSlot = slot as V3CustomArmorSlot;
+    setV3SuitDrafts(drafts);
+    setV3SuitPreviewEnabled(true);
+    loadDraftForSlot(currentSlot, drafts[currentSlot], modelType, 'v3');
+    setStatus(result.missingSlotIds.length > 0
+      ? `${selectedV3SuitProfile.name} loaded with ${result.missingSlotIds.length} missing slots skipped.`
+      : `${selectedV3SuitProfile.name} loaded.`);
+  };
+
+  const duplicateV3SuitProfile = () => {
+    if (!onV3SuitProfileCatalogChange || !selectedV3SuitProfile) {
+      setStatus('No suit profile selected.');
+      return;
+    }
+    const now = Date.now();
+    const copy: V3SuitProfile = {
+      ...selectedV3SuitProfile,
+      id: `${selectedV3SuitProfile.id}_copy_${now.toString(36)}`.slice(0, 80),
+      name: `${selectedV3SuitProfile.name} Copy`.slice(0, 32),
+      createdAt: now,
+      updatedAt: now,
+    };
+    const upserted = upsertV3SuitProfile(v3SuitProfileCatalog, copy, { now });
+    if (upserted.errors.length > 0 || !upserted.profile) {
+      setStatus(`Suit profile duplicate blocked: ${upserted.errors[0]}`);
+      return;
+    }
+    onV3SuitProfileCatalogChange(upserted.catalog);
+    setSelectedV3SuitProfileId(upserted.profile.id);
+    setStatus(`${upserted.profile.name} duplicated.`);
+  };
+
+  const deleteSelectedV3SuitProfile = () => {
+    if (!onV3SuitProfileCatalogChange || !selectedV3SuitProfile) {
+      setStatus('No suit profile selected.');
+      return;
+    }
+    if (!confirm(`Delete "${selectedV3SuitProfile.name}"?`)) return;
+    onV3SuitProfileCatalogChange(deleteV3SuitProfile(v3SuitProfileCatalog, selectedV3SuitProfile.id));
+    setSelectedV3SuitProfileId('');
+    setStatus(`${selectedV3SuitProfile.name} deleted.`);
+  };
+
+  const exportSelectedV3SuitProfile = () => {
+    if (!selectedV3SuitProfile) {
+      setStatus('No suit profile selected.');
+      return;
+    }
+    const result = exportV3SuitProfileBundle(selectedV3SuitProfile, catalog);
+    if (!result.bundle) {
+      setStatus(`Suit profile export blocked: ${result.errors[0]}`);
+      return;
+    }
+    const payload = JSON.stringify(result.bundle, null, 2);
+    setExportText(payload);
+    void navigator.clipboard?.writeText(payload).catch(() => undefined);
+    setStatus(result.warnings.length > 0 ? `Suit profile exported with warnings: ${result.warnings[0]}` : 'Suit profile export JSON prepared.');
+  };
+
+  const importV3SuitProfile = () => {
+    if (!onV3SuitProfileCatalogChange) {
+      setStatus('Suit profile storage is unavailable.');
+      return;
+    }
+    try {
+      const parsed = JSON.parse(importText);
+      const result = importV3SuitProfileBundle(parsed, catalog, v3SuitProfileCatalog, { now: Date.now() });
+      if (result.errors.length > 0 || !result.profile) {
+        setStatus(`Suit profile import blocked: ${result.errors[0]}`);
+        return;
+      }
+      onCatalogChange(result.customArmorCatalog);
+      onV3SuitProfileCatalogChange(result.profileCatalog);
+      setSelectedV3SuitProfileId(result.profile.id);
+      setStatus(`${result.profile.name} imported.`);
+    } catch (error: any) {
+      setStatus(error?.message || 'Suit profile import failed.');
+    }
   };
 
   useEffect(() => {
@@ -1941,6 +2103,89 @@ export function ArmorModelEditor({
                   );
                 })}
               </div>
+            </Panel>
+          )}
+
+          {modelSystem === 'v3' && (
+            <Panel title="Suit Profiles">
+              <div className="grid grid-cols-2 gap-1.5">
+                <button
+                  type="button"
+                  onClick={saveV3SuitProfile}
+                  className="editor-chip border-emerald-400/40 text-emerald-100"
+                >
+                  Save Suit Profile
+                </button>
+                <button
+                  type="button"
+                  onClick={loadV3SuitProfile}
+                  disabled={!selectedV3SuitProfile}
+                  className="editor-chip border-cyan-400/40 text-cyan-100 disabled:opacity-35"
+                >
+                  Load Profile
+                </button>
+                <button
+                  type="button"
+                  onClick={duplicateV3SuitProfile}
+                  disabled={!selectedV3SuitProfile}
+                  className="editor-chip disabled:opacity-35"
+                >
+                  Duplicate
+                </button>
+                <button
+                  type="button"
+                  onClick={deleteSelectedV3SuitProfile}
+                  disabled={!selectedV3SuitProfile}
+                  className="editor-chip text-red-200 disabled:opacity-35"
+                >
+                  Delete
+                </button>
+                <button
+                  type="button"
+                  onClick={exportSelectedV3SuitProfile}
+                  disabled={!selectedV3SuitProfile}
+                  className="editor-chip border-purple-400/40 text-purple-100 disabled:opacity-35"
+                >
+                  Export Profile
+                </button>
+                <button
+                  type="button"
+                  onClick={importV3SuitProfile}
+                  className="editor-chip border-purple-400/40 text-purple-100"
+                >
+                  Import Profile
+                </button>
+              </div>
+              {v3SuitProfileCatalog.profiles.length > 0 ? (
+                <div className="mt-3 flex flex-col gap-2">
+                  <select
+                    value={selectedV3SuitProfile?.id ?? ''}
+                    onChange={(event) => setSelectedV3SuitProfileId(event.target.value)}
+                    className="h-8 bg-black/50 border border-white/10 rounded px-2 text-xs text-white"
+                  >
+                    {v3SuitProfileCatalog.profiles.map((profile) => (
+                      <option key={profile.id} value={profile.id}>{profile.name}</option>
+                    ))}
+                  </select>
+                  {selectedV3SuitProfileValidation && (
+                    <div className="flex flex-wrap items-center gap-1.5 text-[9px] font-black uppercase tracking-widest">
+                      <span className="rounded border border-cyan-400/30 bg-cyan-500/10 px-1.5 py-0.5 text-cyan-100">
+                        {selectedV3SuitProfileValidation.status}
+                      </span>
+                      <span className="rounded border border-white/10 bg-black/25 px-1.5 py-0.5 text-white/45">
+                        {selectedV3SuitProfileValidation.appliedSlotIds.length} ready
+                      </span>
+                      {selectedV3SuitProfileValidation.missingSlotIds.length > 0 && (
+                        <span className="rounded border border-amber-400/30 bg-amber-500/10 px-1.5 py-0.5 text-amber-100">
+                          {selectedV3SuitProfileValidation.missingSlotIds.length} missing
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="mt-3 text-[10px] italic text-white/35">No saved suit profiles.</div>
+              )}
             </Panel>
           )}
 

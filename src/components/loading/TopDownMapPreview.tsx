@@ -115,7 +115,7 @@ function drawObject(ctx: CanvasRenderingContext2D, object: CustomMapObject, proj
   ctx.lineWidth = object.floorTile ? 1 : 1.4;
   if (object.type === 'sphere' || object.type === 'cylinder') {
     ctx.beginPath();
-    ctx.arc(0, 0, Math.max(width, depth) / 2, 0, Math.PI * 2);
+    ctx.ellipse(0, 0, width / 2, depth / 2, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.stroke();
   } else {

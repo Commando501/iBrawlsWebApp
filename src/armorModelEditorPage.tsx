@@ -11,6 +11,11 @@ import {
   persistCustomArmorCatalog,
   type CustomArmorCatalog,
 } from './components/customArmor';
+import {
+  loadV3SuitProfileCatalog,
+  persistV3SuitProfileCatalog,
+  type V3SuitProfileCatalog,
+} from './components/main-menu/v3ArmorSuitProfiles';
 import type { CharacterLoadout } from './components/VoxelModels';
 import { getSavedPlayerHue } from './settings/usePlayerSettings';
 import './index.css';
@@ -36,6 +41,7 @@ function persistPlayerHue(hue: number) {
 function ArmorModelEditorPage() {
   const [playerLoadout, setPlayerLoadout] = useState<CharacterLoadout>(() => loadStoredPlayerLoadout());
   const [customArmorCatalog, setCustomArmorCatalog] = useState<CustomArmorCatalog>(() => loadCustomArmorCatalog());
+  const [v3SuitProfileCatalog, setV3SuitProfileCatalog] = useState<V3SuitProfileCatalog>(() => loadV3SuitProfileCatalog());
   const [playerHue, setPlayerHue] = useState(() => getSavedPlayerHue());
 
   useEffect(() => {
@@ -45,6 +51,10 @@ function ArmorModelEditorPage() {
   useEffect(() => {
     persistCustomArmorCatalog(customArmorCatalog);
   }, [customArmorCatalog]);
+
+  useEffect(() => {
+    persistV3SuitProfileCatalog(v3SuitProfileCatalog);
+  }, [v3SuitProfileCatalog]);
 
   useEffect(() => {
     persistPlayerHue(playerHue);
@@ -66,6 +76,14 @@ function ArmorModelEditorPage() {
     setCustomArmorCatalog((previous) => {
       const next = typeof update === 'function' ? update(previous) : update;
       persistCustomArmorCatalog(next);
+      return next;
+    });
+  };
+
+  const updateV3SuitProfileCatalog = (update: SetStateAction<V3SuitProfileCatalog>) => {
+    setV3SuitProfileCatalog((previous) => {
+      const next = typeof update === 'function' ? update(previous) : update;
+      persistV3SuitProfileCatalog(next);
       return next;
     });
   };
@@ -124,9 +142,11 @@ function ArmorModelEditorPage() {
         <section className="min-h-0 flex-1 rounded-2xl border border-white/10 bg-slate-900/45 p-4 shadow-2xl backdrop-blur-md">
           <ArmorModelEditor
             catalog={customArmorCatalog}
+            v3SuitProfileCatalog={v3SuitProfileCatalog}
             playerLoadout={playerLoadout}
             playerHue={playerHue}
             onCatalogChange={updateCustomArmorCatalog}
+            onV3SuitProfileCatalogChange={updateV3SuitProfileCatalog}
             onLoadoutChange={updateLoadout}
             onClose={() => {
               window.location.href = '/';

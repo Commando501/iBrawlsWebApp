@@ -13,6 +13,7 @@ import type {
 import type { SaveSystemStatus } from '../../settings/useSaveAccountSync';
 import type { CharacterLoadout } from '../VoxelModels';
 import type { CustomArmorCatalog } from '../customArmor';
+import type { V3SuitProfileCatalog } from './v3ArmorSuitProfiles';
 import type { CustomizationChild, MainMenuContentParent, MainMenuTab, SystemChild } from './useMainMenuNav';
 import { MultiplayerSetupPanel } from '../multiplayer/MultiplayerSetupPanel';
 import {
@@ -134,8 +135,10 @@ interface MainMenuPrimaryPanelProps {
   isPainting: boolean;
   playerLoadout: CharacterLoadout;
   customArmorCatalog: CustomArmorCatalog;
+  v3SuitProfileCatalog: V3SuitProfileCatalog;
   customizerWeapon: PreviewWeapon;
   setPlayerLoadout: Dispatch<SetStateAction<CharacterLoadout>>;
+  setV3SuitProfileCatalog: Dispatch<SetStateAction<V3SuitProfileCatalog>>;
   setIsPainting: Dispatch<SetStateAction<boolean>>;
   setCustomizerWeapon: Dispatch<SetStateAction<PreviewWeapon>>;
   saveSystemStatus: SaveSystemStatus;
@@ -246,9 +249,11 @@ export function MainMenuPrimaryPanel(props: MainMenuPrimaryPanelProps) {
             isPainting={props.isPainting}
             playerLoadout={props.playerLoadout}
             customArmorCatalog={props.customArmorCatalog}
+            v3SuitProfileCatalog={props.v3SuitProfileCatalog}
             playerHue={props.playerHue}
             customizerWeapon={props.customizerWeapon}
             setPlayerLoadout={props.setPlayerLoadout}
+            setV3SuitProfileCatalog={props.setV3SuitProfileCatalog}
             setIsPainting={props.setIsPainting}
             setCustomizerWeapon={props.setCustomizerWeapon}
             setAdminSettings={props.setAdminSettings}
