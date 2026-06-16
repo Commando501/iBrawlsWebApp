@@ -292,6 +292,12 @@ Phase 19 brings that visual QA into the V3 armor editor as player-facing readabi
 
 Phase 20 adds V3 editor Suggested Fixes and auto-polish actions for readability. These are reversible, advisory editor-assistance tools; saved custom armor remains voxel JSON, Visual QA does not block saving, and V1/V2 visuals plus gameplay collision, networking, and simulation are unchanged. Players continue authoring voxel armor rather than meshes.
 
+Phase 21 adds V3-only Smart V3 authoring tools and slot starter templates. These reversible editor helpers preserve voxel JSON and the save format, remain advisory-only rather than a save gate, and do not add mesh import or mesh authoring. V1/V2 visuals plus gameplay, collision, hitbox, reach, AI, networking, and simulation behavior are unchanged.
+
+Phase 22 adds live Smart V3 preview overlays, limited smart parameters, cheap readability feedback, and stronger slot-specific starter templates. Saved armor remains voxel JSON, Visual QA and readability remain advisory and are not save gates, and V1/V2 visuals plus gameplay, collision, hitbox, reach, AI, networking, and simulation are unchanged.
+
+Phase 23 adds a V3-only Suit Workspace to the armor editor. Players can stage every modular V3 slot from equipped custom pieces or starter templates, switch slots while keeping unsaved drafts in memory, preview the staged suit on the full rig, and batch save/equip all valid slots through the existing custom armor catalog and `CharacterLoadout.customArmor` map. The batch save is all-or-nothing for normal validation and catalog limits, while readability remains advisory; no kit/profile schema, mesh import, save migration, V1/V2 behavior, gameplay collision, hitboxes, reach, AI, networking, or simulation changes are introduced.
+
 ## Standalone 3D Map Maker
 
 iBrawls features a beautiful, feature-rich, and completely standalone 3D Map Maker application that runs 100% locally and offline in the user's browser. Since it is entirely decoupled from the main web application, players simply open the local HTML file to design custom battle arenas using standard assets!

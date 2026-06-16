@@ -4,17 +4,24 @@ import * as THREE from 'three';
 import { AVAILABLE_PRESETS } from './VoxelModels';
 import { getVoxelSegmentDataV2 } from './VoxelModelsV2';
 import {
+  CUSTOM_ARMOR_MAX_HISTORY,
   createCustomArmorPiece,
   createCustomArmorSnapshot,
+  createCustomArmorThumbnail,
   duplicateCustomArmorPiece,
+  getCustomArmorSlotLabel,
   normalizeCustomArmorCatalog,
   normalizeCustomArmorSnapshot,
   removeFloatingVoxels,
   restoreCustomArmorHistoryEntry,
   sanitizeCharacterLoadoutForNetwork,
   seedCornerAnchor,
+  upsertCustomArmorPieceInCatalog,
   validateCustomArmorPiece,
   voxelDataToCustomArmorVoxels,
+  type CustomArmorCatalog,
+  type CustomArmorPiece,
+  type CustomArmorPieceSnapshot,
   type CustomArmorSlot,
   type CustomArmorVoxel,
 } from './customArmor';
@@ -250,6 +257,153 @@ test('V3 custom armor catalog normalization keeps V3 slots without breaking V2 p
 
   assert.equal(catalog.pieces.find((piece) => piece.id === v2Piece.id)?.modelSystem ?? 'v2', 'v2');
   assert.equal(catalog.pieces.find((piece) => piece.id === v3Piece.id)?.modelSystem, 'v3');
+});
+
+test('upsertCustomArmorPieceInCatalog inserts new V3 snapshot with gridScale and deterministic timestamps', () => {
+  const now = 123_456;
+  const draft: CustomArmorPieceSnapshot = {
+    version: 1,
+    id: 'v3_helmet_new',
+    name: '   ',
+    slot: 'helmet',
+    modelSystem: 'v3',
+    modelType: 'large',
+    gridScale: 2,
+    voxels: [
+      { x: 0, y: 0, z: 0, role: 'primary' },
+      { x: 1, y: 0, z: 0, role: 'secondary' },
+      { x: 0, y: 1, z: 0, role: 'visor' },
+    ],
+    updatedAt: 1,
+  };
+  const catalog: CustomArmorCatalog = { version: 1, pieces: [] };
+
+  const result = upsertCustomArmorPieceInCatalog(catalog, draft, { now });
+
+  assert.equal(result.catalog.pieces.length, 1);
+  assert.deepEqual(result.catalog.pieces[0], result.piece);
+  assert.equal(result.piece.id, 'v3_helmet_new');
+  assert.equal(result.piece.name, `${getCustomArmorSlotLabel('helmet', 'v3')} Custom`);
+  assert.equal(result.piece.modelSystem, 'v3');
+  assert.equal(result.piece.modelType, undefined);
+  assert.equal(result.piece.gridScale, 2);
+  assert.equal(result.piece.thumbnail, createCustomArmorThumbnail('helmet', draft.voxels.length, 'v3'));
+  assert.equal(result.piece.createdAt, now);
+  assert.equal(result.piece.updatedAt, now);
+  assert.deepEqual(result.snapshot, createCustomArmorSnapshot(result.piece));
+});
+
+test('upsertCustomArmorPieceInCatalog updates existing piece and caps prepended history', () => {
+  const existing: CustomArmorPiece = {
+    ...createCustomArmorPiece('helmet', 'Existing Helmet', [
+      { x: 0, y: 0, z: 0, role: 'primary' },
+      { x: 1, y: 0, z: 0, role: 'secondary' },
+      { x: 0, y: 1, z: 0, role: 'visor' },
+    ], undefined, undefined, 'v3', 2),
+    id: 'v3_helmet_existing',
+    createdAt: 10,
+    updatedAt: 20,
+  };
+  existing.history = Array.from({ length: CUSTOM_ARMOR_MAX_HISTORY }, (_, index) => ({
+    ...createCustomArmorSnapshot(existing),
+    name: `History ${index}`,
+    updatedAt: 100 + index,
+  }));
+  const previousSnapshot = createCustomArmorSnapshot(existing);
+  const draft: CustomArmorPieceSnapshot = {
+    ...previousSnapshot,
+    name: 'Updated Helmet',
+    voxels: [
+      ...previousSnapshot.voxels,
+      { x: 2, y: 0, z: 0, role: 'accent' },
+    ],
+    updatedAt: 30,
+  };
+
+  const result = upsertCustomArmorPieceInCatalog({ version: 1, pieces: [existing] }, draft, { now: 999 });
+
+  assert.equal(result.catalog.pieces.length, 1);
+  assert.equal(result.piece.createdAt, 10);
+  assert.equal(result.piece.updatedAt, 999);
+  assert.equal(result.piece.name, 'Updated Helmet');
+  assert.equal(result.piece.history?.length, CUSTOM_ARMOR_MAX_HISTORY);
+  assert.deepEqual(result.piece.history?.[0], previousSnapshot);
+  assert.deepEqual(result.piece.history?.[1], existing.history[0]);
+  assert.equal(result.piece.history?.some((entry) => entry.name === `History ${CUSTOM_ARMOR_MAX_HISTORY - 1}`), false);
+  assert.deepEqual(result.snapshot, createCustomArmorSnapshot(result.piece));
+});
+
+test('upsertCustomArmorPieceInCatalog clones draft voxels before saving', () => {
+  const firstVoxel: CustomArmorVoxel = { x: 0, y: 0, z: 0, role: 'primary' };
+  const draft: CustomArmorPieceSnapshot = {
+    version: 1,
+    id: 'v3_helmet_clone_guard',
+    name: 'Clone Guard',
+    slot: 'helmet',
+    modelSystem: 'v3',
+    gridScale: 2,
+    voxels: [
+      firstVoxel,
+      { x: 1, y: 0, z: 0, role: 'secondary' },
+      { x: 0, y: 1, z: 0, role: 'visor' },
+    ],
+    updatedAt: 1,
+  };
+
+  const result = upsertCustomArmorPieceInCatalog({ version: 1, pieces: [] }, draft, { now: 111 });
+
+  draft.voxels.push({ x: 9, y: 9, z: 9, role: 'accent' });
+  firstVoxel.x = 7;
+  firstVoxel.role = 'dark';
+
+  assert.notStrictEqual(result.catalog.pieces[0].voxels, draft.voxels);
+  assert.notStrictEqual(result.piece.voxels, draft.voxels);
+  assert.notStrictEqual(result.catalog.pieces[0].voxels[0], firstVoxel);
+  assert.notStrictEqual(result.piece.voxels[0], firstVoxel);
+  assert.deepEqual(result.catalog.pieces[0].voxels, [
+    { x: 0, y: 0, z: 0, role: 'primary' },
+    { x: 1, y: 0, z: 0, role: 'secondary' },
+    { x: 0, y: 1, z: 0, role: 'visor' },
+  ]);
+  assert.deepEqual(result.piece.voxels, [
+    { x: 0, y: 0, z: 0, role: 'primary' },
+    { x: 1, y: 0, z: 0, role: 'secondary' },
+    { x: 0, y: 1, z: 0, role: 'visor' },
+  ]);
+});
+
+test('upsertCustomArmorPieceInCatalog preserves V2 modelType and leaves V3 modelType undefined', () => {
+  const v2Draft: CustomArmorPieceSnapshot = {
+    version: 1,
+    id: 'v2_large_torso',
+    name: 'Large Torso',
+    slot: 'torso',
+    modelSystem: 'v2',
+    modelType: 'large',
+    gridScale: 2,
+    voxels: [{ x: 0, y: 20, z: 0, role: 'primary' }],
+    updatedAt: 1,
+  };
+  const v3Draft: CustomArmorPieceSnapshot = {
+    version: 1,
+    id: 'v3_chest',
+    name: 'V3 Chest',
+    slot: 'chest',
+    modelSystem: 'v3',
+    modelType: 'large',
+    voxels: [{ x: 0, y: 0, z: 0, role: 'primary' }],
+    updatedAt: 2,
+  };
+
+  const v2Result = upsertCustomArmorPieceInCatalog({ version: 1, pieces: [] }, v2Draft, { now: 50 });
+  const v3Result = upsertCustomArmorPieceInCatalog({ version: 1, pieces: [] }, v3Draft, { now: 60 });
+
+  assert.equal(v2Result.piece.modelSystem, 'v2');
+  assert.equal(v2Result.piece.modelType, 'large');
+  assert.equal(v2Result.piece.gridScale, undefined);
+  assert.equal(v3Result.piece.modelSystem, 'v3');
+  assert.equal(v3Result.piece.modelType, undefined);
+  assert.equal(v3Result.piece.gridScale, 1);
 });
 
 test('sanitizeCharacterLoadoutForNetwork keeps valid V3 custom armor and strips mesh import data', () => {

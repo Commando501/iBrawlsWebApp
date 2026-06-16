@@ -390,6 +390,50 @@ export function createCustomArmorSnapshot(piece: CustomArmorPiece | CustomArmorP
   };
 }
 
+export function upsertCustomArmorPieceInCatalog(
+  catalog: CustomArmorCatalog,
+  draftSnapshotOrPiece: CustomArmorPieceSnapshot | CustomArmorPiece,
+  options: { now?: number } = {}
+): { catalog: CustomArmorCatalog; piece: CustomArmorPiece; snapshot: CustomArmorPieceSnapshot } {
+  const existing = catalog.pieces.find((piece) => piece.id === draftSnapshotOrPiece.id);
+  const now = options.now ?? Date.now();
+  const historyEntry = existing ? createCustomArmorSnapshot(existing) : undefined;
+  const draftModelSystem = getCustomArmorPieceModelSystem(draftSnapshotOrPiece);
+  const modelType = draftModelSystem === 'v2'
+    ? resolveCharacterModelType(draftSnapshotOrPiece.modelType, 'v2')
+    : undefined;
+  const gridScale = draftModelSystem === 'v3'
+    ? getCustomArmorGridScale(draftSnapshotOrPiece)
+    : undefined;
+  const nextPiece: CustomArmorPiece = {
+    ...draftSnapshotOrPiece,
+    modelSystem: draftModelSystem,
+    modelType,
+    gridScale,
+    name: draftSnapshotOrPiece.name.trim() || `${getCustomArmorSlotLabel(draftSnapshotOrPiece.slot, draftModelSystem, modelType ?? 'medium')} Custom`,
+    voxels: draftSnapshotOrPiece.voxels.map(cloneVoxel),
+    thumbnail: createCustomArmorThumbnail(draftSnapshotOrPiece.slot, draftSnapshotOrPiece.voxels.length, draftModelSystem),
+    createdAt: existing?.createdAt ?? now,
+    updatedAt: now,
+    history: [
+      ...(historyEntry ? [historyEntry] : []),
+      ...(existing?.history ?? []),
+    ].slice(0, CUSTOM_ARMOR_MAX_HISTORY),
+  };
+  const nextCatalog: CustomArmorCatalog = {
+    version: 1,
+    pieces: existing
+      ? catalog.pieces.map((piece) => piece.id === draftSnapshotOrPiece.id ? nextPiece : piece)
+      : [...catalog.pieces, nextPiece],
+  };
+
+  return {
+    catalog: nextCatalog,
+    piece: nextPiece,
+    snapshot: createCustomArmorSnapshot(nextPiece),
+  };
+}
+
 export function duplicateCustomArmorPiece(
   piece: CustomArmorPiece | CustomArmorPieceSnapshot,
   name: string
