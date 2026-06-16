@@ -8,7 +8,6 @@ import {
 import { getVoxelSegmentDataV2 } from '../VoxelModelsV2';
 import { buildCombatantRigForModel } from '../grifball/combatantRig';
 import {
-  CUSTOM_ARMOR_MAX_HISTORY,
   centerCustomArmorPiece,
   createCustomArmorPiece,
   createCustomArmorSnapshot,
@@ -24,6 +23,7 @@ import {
   removeFloatingVoxels,
   restoreCustomArmorHistoryEntry,
   seedCornerAnchor,
+  upsertCustomArmorPieceInCatalog,
   validateCustomArmorPiece,
   voxelDataToCustomArmorVoxels,
   V3_CUSTOM_ARMOR_SLOTS,
@@ -33,12 +33,17 @@ import {
   type CustomArmorPiece,
   type CustomArmorPieceSnapshot,
   type CustomArmorSlot,
+  type CustomArmorColors,
   type V2CustomArmorSlot,
   type V3CustomArmorSlot,
   type CustomArmorVoxel,
 } from '../customArmor';
 import { getV3BuiltinPartVoxels } from '../v3/VoxelModelsV3';
-import { V3_ARMOR_SURFACE_DEFAULT_OPTIONS, createV3VoxelArmorGroup } from '../v3/v3VoxelArmorSurface';
+import {
+  V3_ARMOR_SURFACE_BASE_VOXEL_SCALE,
+  V3_ARMOR_SURFACE_DEFAULT_OPTIONS,
+  createV3VoxelArmorGroup,
+} from '../v3/v3VoxelArmorSurface';
 import { getV3CharacterPartBounds } from '../v3/v3PartBounds';
 import {
   getCharacterModelCollisionProfile,
@@ -47,6 +52,33 @@ import {
 import { getV3CharacterPartManifest } from '../v3/v3AssetManifest';
 import type { CharacterModelType } from '../../types';
 import { buildArmorEditorValidationReport } from './armorEditorValidation';
+import { buildV3ArmorEditorVisualQa } from './v3ArmorEditorVisualQa';
+import {
+  applyV3ArmorEditorPolishAction,
+  buildV3ArmorEditorPolishActions,
+  type V3ArmorEditorPolishActionId,
+} from './v3ArmorEditorPolish';
+import {
+  applyV3SmartAuthoringTool,
+  buildV3SmartAuthoringPreview,
+  type V3ArmorSmartToolId,
+  type V3SmartAuthoringOptions,
+  type V3SmartAuthoringPreview,
+  type V3SmartAuthoringStrength,
+} from './v3ArmorEditorSmartAuthoring';
+import { buildV3SmartAuthoringFeedback } from './v3ArmorEditorSmartFeedback';
+import {
+  createV3ArmorTemplateDraft,
+  getV3ArmorTemplateLabel,
+} from './v3ArmorEditorTemplates';
+import {
+  buildV3SuitSavePlan,
+  createV3SuitDraftMap,
+  mergeV3SuitPreviewLoadout,
+  validateV3SuitDrafts,
+  type V3SuitDraftMap,
+  type V3SuitSavePlan,
+} from './v3ArmorEditorSuitWorkflow';
 
 interface ArmorModelEditorProps {
   catalog: CustomArmorCatalog;
@@ -63,6 +95,15 @@ type EditorTool = 'place' | 'erase' | 'box' | 'line' | 'plane' | 'extrude' | 'mo
 type Axis = 'x' | 'y' | 'z';
 type ViewMode = 'edit' | 'preview' | 'rig';
 type PoseMode = 'idle' | 'walk' | 'sprint' | 'crouch' | 'hammer' | 'sword';
+type V3SmartMirrorScope = 'piece' | 'cursorVolume';
+type V3PendingSuitSave = {
+  drafts: V3SuitDraftMap;
+  saveTime: number;
+  activeSlot: V3CustomArmorSlot;
+  token: number;
+  catalogCommitQueued?: boolean;
+  committedPlan?: V3SuitSavePlan;
+};
 type PaintSettings = {
   tool: EditorTool;
   role: CustomArmorMaterialRole;
@@ -120,6 +161,26 @@ const TOOL_OPTIONS: Array<{ id: EditorTool; label: string }> = [
   { id: 'fill', label: 'Fill' },
 ];
 
+const V3_SMART_TOOL_OPTIONS: Array<{ id: V3ArmorSmartToolId; label: string }> = [
+  { id: 'panelStripe', label: 'Panel Stripe' },
+  { id: 'edgeAccent', label: 'Edge Accent' },
+  { id: 'carveSeam', label: 'Carve Seam' },
+  { id: 'trimCorners', label: 'Trim Corners' },
+  { id: 'taperMass', label: 'Taper Mass' },
+  { id: 'mirrorLocalX', label: 'Mirror X' },
+];
+
+const V3_SMART_STRENGTH_OPTIONS: Array<{ id: V3SmartAuthoringStrength; label: string }> = [
+  { id: 'light', label: 'Light' },
+  { id: 'normal', label: 'Normal' },
+  { id: 'heavy', label: 'Heavy' },
+];
+
+const V3_SMART_MIRROR_SCOPE_OPTIONS: Array<{ id: V3SmartMirrorScope; label: string }> = [
+  { id: 'piece', label: 'Whole Piece' },
+  { id: 'cursorVolume', label: 'Cursor Volume' },
+];
+
 const POSE_OPTIONS: Array<{ id: PoseMode; label: string }> = [
   { id: 'idle', label: 'Idle' },
   { id: 'walk', label: 'Walk' },
@@ -169,6 +230,19 @@ const roleColorPreview: Record<CustomArmorMaterialRole, string> = {
   decal: '#a855f7',
   fixed: '#f472b6',
 };
+
+const createEditorPreviewPalette = (playerHue: number): CustomArmorColors => ({
+  primary: `hsl(${playerHue}, 85%, 50%)`,
+  secondary: '#1e293b',
+  accent: `hsl(${playerHue}, 90%, 75%)`,
+  visor: `hsl(${playerHue}, 95%, 70%)`,
+  dark: '#0f172a',
+  highlight: `hsl(${playerHue}, 75%, 65%)`,
+});
+
+const formatSignedReadDelta = (delta: number): string => (
+  delta > 0 ? `+${delta} Read` : `${delta} Read`
+);
 
 type EditorBounds = {
   minX: number;
@@ -235,6 +309,17 @@ const cloneSnapshot = (snapshot: CustomArmorPieceSnapshot): CustomArmorPieceSnap
   voxels: snapshot.voxels.map((voxel) => ({ ...voxel })),
 });
 
+const cloneV3SuitDraftForSlot = (
+  slot: V3CustomArmorSlot,
+  snapshot: CustomArmorPieceSnapshot
+): CustomArmorPieceSnapshot => cloneSnapshot({
+  ...snapshot,
+  slot,
+  modelSystem: 'v3',
+  modelType: undefined,
+  gridScale: getCustomArmorGridScale(snapshot),
+});
+
 const snapshotFromBuiltin = (
   slot: CustomArmorSlot,
   preset: string,
@@ -276,31 +361,83 @@ const getSlotPatchField = (slot: CustomArmorSlot): 'helmet' | 'torso' | 'arm' | 
   slot === 'torso' || slot === 'arm' || slot === 'leg' ? slot : 'helmet'
 );
 
-function upsertPieceInCatalog(catalog: CustomArmorCatalog, draft: CustomArmorPieceSnapshot): CustomArmorCatalog {
-  const existing = catalog.pieces.find((piece) => piece.id === draft.id);
-  const now = Date.now();
-  const historyEntry = existing ? createCustomArmorSnapshot(existing) : undefined;
-  const draftModelSystem = getCustomArmorPieceModelSystem(draft);
-  const nextPiece: CustomArmorPiece = {
-    ...draft,
-    modelSystem: draftModelSystem,
-    modelType: draftModelSystem === 'v2' ? draft.modelType ?? 'medium' : undefined,
-    gridScale: draftModelSystem === 'v3' ? getCustomArmorGridScale(draft) : undefined,
-    name: draft.name.trim() || `${getCustomArmorSlotLabel(draft.slot, draftModelSystem, draft.modelType ?? 'medium')} Custom`,
-    thumbnail: createCustomArmorThumbnail(draft.slot, draft.voxels.length, draftModelSystem),
-    createdAt: existing?.createdAt ?? now,
-    updatedAt: now,
-    history: [
-      ...(historyEntry ? [historyEntry] : []),
-      ...(existing?.history ?? []),
-    ].slice(0, CUSTOM_ARMOR_MAX_HISTORY),
-  };
-  return {
-    version: 1,
-    pieces: existing
-      ? catalog.pieces.map((piece) => piece.id === draft.id ? nextPiece : piece)
-      : [...catalog.pieces, nextPiece],
-  };
+function resolveOverlayVoxelColor(voxel: V3SmartAuthoringPreview['added'][number], palette: CustomArmorColors): string {
+  if (voxel.role === 'fixed' && voxel.color) return voxel.color;
+  if (voxel.role in palette) return palette[voxel.role as keyof CustomArmorColors];
+  return roleColorPreview[voxel.role] ?? '#38bdf8';
+}
+
+function addVoxelOverlayCube(
+  group: THREE.Group,
+  voxel: Pick<CustomArmorVoxel, 'x' | 'y' | 'z'>,
+  scale: number,
+  origin: { x: number; y: number; z: number },
+  material: THREE.Material,
+  sizeMultiplier = 1
+): void {
+  const mesh = new THREE.Mesh(
+    new THREE.BoxGeometry(scale * sizeMultiplier, scale * sizeMultiplier, scale * sizeMultiplier),
+    material
+  );
+  mesh.position.set(
+    (voxel.x - origin.x) * scale,
+    (voxel.y - origin.y) * scale,
+    (voxel.z - origin.z) * scale
+  );
+  group.add(mesh);
+}
+
+function createV3SmartPreviewOverlayGroup(
+  preview: V3SmartAuthoringPreview,
+  palette: CustomArmorColors,
+  scale: number,
+  origin: { x: number; y: number; z: number }
+): THREE.Group {
+  const group = new THREE.Group();
+  group.name = 'v3-smart-preview-overlay';
+  const addedMaterial = new THREE.MeshBasicMaterial({
+    color: '#22d3ee',
+    transparent: true,
+    opacity: 0.38,
+    depthWrite: false,
+  });
+  const removedMaterial = new THREE.MeshBasicMaterial({
+    color: '#ef4444',
+    transparent: true,
+    opacity: 0.86,
+    wireframe: true,
+    depthWrite: false,
+  });
+  const remappedBeforeMaterial = new THREE.MeshBasicMaterial({
+    color: '#f59e0b',
+    transparent: true,
+    opacity: 0.9,
+    wireframe: true,
+    depthWrite: false,
+  });
+  const remappedAfterOutlineMaterial = new THREE.MeshBasicMaterial({
+    color: '#a855f7',
+    transparent: true,
+    opacity: 0.9,
+    wireframe: true,
+    depthWrite: false,
+  });
+
+  preview.added.forEach((voxel) => addVoxelOverlayCube(group, voxel, scale, origin, addedMaterial, 1.08));
+  preview.removed.forEach((voxel) => addVoxelOverlayCube(group, voxel, scale, origin, removedMaterial, 1.12));
+  preview.remapped.forEach(({ before, after }) => {
+    addVoxelOverlayCube(group, before, scale, origin, remappedBeforeMaterial, 1.14);
+    const targetMaterial = new THREE.MeshBasicMaterial({
+      color: resolveOverlayVoxelColor(after, palette),
+      transparent: true,
+      opacity: 0.32,
+      depthWrite: false,
+    });
+    addVoxelOverlayCube(group, after, scale, origin, targetMaterial, 1.06);
+    addVoxelOverlayCube(group, after, scale, origin, remappedAfterOutlineMaterial, 1.18);
+  });
+
+  return group;
 }
 
 export function ArmorModelEditor({
@@ -363,8 +500,17 @@ export function ArmorModelEditor({
   });
   const [size, setSize] = useState({ x: 2, y: 2, z: 2 });
   const [offset, setOffset] = useState({ x: 1, y: 0, z: 0 });
+  const [selectedSmartToolId, setSelectedSmartToolId] = useState<V3ArmorSmartToolId>('panelStripe');
+  const [transientSmartToolId, setTransientSmartToolId] = useState<V3ArmorSmartToolId | null>(null);
+  const [smartStrength, setSmartStrength] = useState<V3SmartAuthoringStrength>('normal');
+  const [smartStripeWidth, setSmartStripeWidth] = useState(1);
+  const [smartMirrorScope, setSmartMirrorScope] = useState<V3SmartMirrorScope>('piece');
+  const [smartMirrorOverwrite, setSmartMirrorOverwrite] = useState(false);
   const [undoStack, setUndoStack] = useState<CustomArmorPieceSnapshot[]>([]);
   const [redoStack, setRedoStack] = useState<CustomArmorPieceSnapshot[]>([]);
+  const [v3SuitDrafts, setV3SuitDrafts] = useState<V3SuitDraftMap | null>(null);
+  const [v3SuitPreviewEnabled, setV3SuitPreviewEnabled] = useState(false);
+  const [pendingV3SuitSave, setPendingV3SuitSave] = useState<V3PendingSuitSave | null>(null);
   const [status, setStatus] = useState('');
   const [importText, setImportText] = useState('');
   const [exportText, setExportText] = useState('');
@@ -377,8 +523,10 @@ export function ArmorModelEditor({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const paintSettingsRef = useRef<PaintSettings>({ tool, role, fixedColor, emissive, slot, modelType, modelSystem, gridScale: 1 });
   const cameraViewsRef = useRef<Record<ViewMode, ArmorEditorCameraView>>(createDefaultCameraViews());
+  const suitSaveTokenRef = useRef(0);
 
   const validation = useMemo(() => validateCustomArmorPiece(draft), [draft]);
+  const editorPreviewPalette = useMemo(() => createEditorPreviewPalette(playerHue), [playerHue]);
   const slotPieces = catalog.pieces.filter((piece) => (
     piece.slot === slot &&
     pieceMatchesMode(piece, modelSystem, modelType)
@@ -391,6 +539,16 @@ export function ArmorModelEditor({
   const activeSlotOptions = modelSystem === 'v3' ? V3_SLOT_OPTIONS : SLOT_OPTIONS;
   const draftGridScale = modelSystem === 'v3' ? getCustomArmorGridScale(draft) : 1;
   const activeViewModes: ViewMode[] = modelSystem === 'v3' ? ['edit', 'preview', 'rig'] : ['edit', 'rig'];
+  const activeV3SuitDrafts = useMemo<V3SuitDraftMap | null>(() => {
+    if (modelSystem !== 'v3' || !v3SuitDrafts) return null;
+    return {
+      ...v3SuitDrafts,
+      [slot as V3CustomArmorSlot]: cloneV3SuitDraftForSlot(slot as V3CustomArmorSlot, draft),
+    };
+  }, [draft, modelSystem, slot, v3SuitDrafts]);
+  const v3SuitValidation = useMemo(() => (
+    activeV3SuitDrafts ? validateV3SuitDrafts(activeV3SuitDrafts) : undefined
+  ), [activeV3SuitDrafts]);
   const editorValidationReport = useMemo(() => {
     const builtIn = modelSystem === 'v3'
       ? getV3BuiltinPartVoxels(slot as V3CustomArmorSlot, playerHue)
@@ -401,6 +559,14 @@ export function ArmorModelEditor({
     const slotBudget = modelSystem === 'v3'
       ? (v3Manifest?.budget.sourceVoxelCount ?? validation.stats.voxelCount) * draftGridScale * draftGridScale
       : getCustomArmorSlotSpec(slot, modelType).maxVoxels;
+    const visualQa = modelSystem === 'v3'
+      ? buildV3ArmorEditorVisualQa({
+          draft,
+          colors: editorPreviewPalette,
+          slot: slot as V3CustomArmorSlot,
+          gridScale: draftGridScale,
+        })
+      : undefined;
 
     return buildArmorEditorValidationReport({
       draft,
@@ -410,8 +576,48 @@ export function ArmorModelEditor({
       recommendedRoles: modelSystem === 'v3'
         ? [...(v3Manifest?.paintRoles ?? [])]
         : ['primary', 'secondary', 'accent'],
+      visualQa,
     });
-  }, [draft, draftGridScale, modelSystem, modelType, playerHue, selectedPreset, slot, validation]);
+  }, [draft, draftGridScale, editorPreviewPalette, modelSystem, modelType, playerHue, selectedPreset, slot, validation]);
+  const v3ArmorEditorPolishActions = useMemo(() => (
+    modelSystem === 'v3'
+      ? buildV3ArmorEditorPolishActions(draft, {
+          visualQa: editorValidationReport.visualQa,
+          missingRecommendedRoles: editorValidationReport.missingRecommendedRoles,
+        })
+      : []
+  ), [draft, editorValidationReport.missingRecommendedRoles, editorValidationReport.visualQa, modelSystem]);
+  const v3SmartAuthoringContext = useMemo(() => ({
+    cursor,
+    size,
+    axis,
+    role,
+    fixedColor,
+    emissive,
+  }), [axis, cursor, emissive, fixedColor, role, size]);
+  const v3SmartAuthoringOptions = useMemo<V3SmartAuthoringOptions>(() => ({
+    strength: smartStrength,
+    panelStripe: {
+      thickness: smartStripeWidth,
+    },
+    mirrorLocalX: {
+      scope: smartMirrorScope,
+      overwriteExisting: smartMirrorOverwrite,
+    },
+  }), [smartMirrorOverwrite, smartMirrorScope, smartStrength, smartStripeWidth]);
+  const activeSmartToolId = transientSmartToolId ?? selectedSmartToolId;
+  const activeSmartToolLabel = V3_SMART_TOOL_OPTIONS.find((option) => option.id === activeSmartToolId)?.label ?? 'Smart Tool';
+  const selectedSmartToolLabel = V3_SMART_TOOL_OPTIONS.find((option) => option.id === selectedSmartToolId)?.label ?? 'Smart Tool';
+  const v3SmartAuthoringPreview = useMemo(() => (
+    modelSystem === 'v3'
+      ? buildV3SmartAuthoringPreview(draft, activeSmartToolId, v3SmartAuthoringContext, v3SmartAuthoringOptions)
+      : undefined
+  ), [activeSmartToolId, draft, modelSystem, v3SmartAuthoringContext, v3SmartAuthoringOptions]);
+  const v3SmartAuthoringFeedback = useMemo(() => (
+    v3SmartAuthoringPreview
+      ? buildV3SmartAuthoringFeedback(draft, v3SmartAuthoringPreview.previewDraft)
+      : undefined
+  ), [draft, v3SmartAuthoringPreview]);
 
   useEffect(() => {
     paintSettingsRef.current = { tool, role, fixedColor, emissive, slot, modelType, modelSystem, gridScale: draftGridScale };
@@ -483,7 +689,181 @@ export function ArmorModelEditor({
     setSelectedKeys(new Set());
   };
 
+  const applyPolishAction = (actionId: V3ArmorEditorPolishActionId, actionLabel: string) => {
+    const polished = applyV3ArmorEditorPolishAction(draft, actionId, {
+      visualQa: editorValidationReport.visualQa,
+      missingRecommendedRoles: editorValidationReport.missingRecommendedRoles,
+    });
+    replaceDraft(polished);
+    setStatus(`${actionLabel} applied.`);
+  };
+
+  const applyV3SmartStart = () => {
+    const v3Slot = slot as V3CustomArmorSlot;
+    const label = getV3ArmorTemplateLabel(v3Slot);
+    replaceDraft(createV3ArmorTemplateDraft(v3Slot, {
+      hue: playerHue,
+      now: Date.now(),
+      name: `${label} Smart Start`,
+    }));
+    setStatus(`${label} smart start loaded.`);
+  };
+
+  const selectV3SmartTool = (toolId: V3ArmorSmartToolId, toolLabel: string) => {
+    setSelectedSmartToolId(toolId);
+    setStatus(`${toolLabel} preview selected.`);
+  };
+
+  const applySelectedV3SmartTool = () => {
+    replaceDraft(applyV3SmartAuthoringTool(draft, selectedSmartToolId, {
+      cursor,
+      size,
+      axis,
+      role,
+      fixedColor,
+      emissive,
+      now: Date.now(),
+    }, v3SmartAuthoringOptions));
+    setStatus(`${selectedSmartToolLabel} applied.`);
+  };
+
+  const setSmartStripeWidthValue = (value: number) => {
+    setSmartStripeWidth(Math.max(1, Math.round(Number.isFinite(value) ? value : 1)));
+  };
+
+  const clearActiveDraftHistory = () => {
+    setUndoStack([]);
+    setRedoStack([]);
+    setSelectedKeys(new Set());
+  };
+
+  const loadDraftForSlot = (
+    nextSlot: CustomArmorSlot,
+    nextDraft: CustomArmorPieceSnapshot,
+    nextModelType: CharacterModelType = modelType,
+    nextModelSystem: CustomArmorModelSystem = modelSystem
+  ) => {
+    const nextGridScale = nextModelSystem === 'v3' ? getCustomArmorGridScale(nextDraft) : 1;
+    const b = getEditorSlotBounds(nextSlot, nextModelType, nextModelSystem, nextGridScale);
+    setSlot(nextSlot);
+    setCursor({ x: Math.round((b.minX + b.maxX) / 2), y: b.minY, z: Math.round((b.minZ + b.maxZ) / 2) });
+    setDraft(cloneSnapshot(nextDraft));
+    clearActiveDraftHistory();
+  };
+
+  const createStagedV3SuitDrafts = (baseDrafts: V3SuitDraftMap | null = v3SuitDrafts): V3SuitDraftMap => {
+    const base = baseDrafts ?? createV3SuitDraftMap(playerLoadout, catalog, playerHue, Date.now());
+    const currentSlot = slot as V3CustomArmorSlot;
+    return {
+      ...base,
+      [currentSlot]: cloneV3SuitDraftForSlot(currentSlot, draft),
+    };
+  };
+
+  const startV3SuitWorkspace = () => {
+    const nextDrafts = createStagedV3SuitDrafts(
+      v3SuitDrafts ?? createV3SuitDraftMap(playerLoadout, catalog, playerHue, Date.now())
+    );
+    const currentSlot = slot as V3CustomArmorSlot;
+    setV3SuitDrafts(nextDrafts);
+    setV3SuitPreviewEnabled(false);
+    loadDraftForSlot(currentSlot, nextDrafts[currentSlot], modelType, 'v3');
+    setStatus('Full suit workspace started.');
+  };
+
+  const previewV3SuitWorkspace = () => {
+    const stagedDrafts = createStagedV3SuitDrafts();
+    setV3SuitDrafts(stagedDrafts);
+    setV3SuitPreviewEnabled(true);
+    setViewMode('rig');
+    setStatus('Full suit preview enabled.');
+  };
+
+  const saveV3SuitWorkspace = () => {
+    const stagedDrafts = createStagedV3SuitDrafts();
+    const validationResult = validateV3SuitDrafts(stagedDrafts);
+    setV3SuitDrafts(stagedDrafts);
+
+    if (!validationResult.valid) {
+      const firstInvalidSlot = V3_CUSTOM_ARMOR_SLOTS.find((candidate) => !validationResult.slots[candidate]?.valid);
+      if (firstInvalidSlot) {
+        loadDraftForSlot(firstInvalidSlot, stagedDrafts[firstInvalidSlot], modelType, 'v3');
+      }
+      setStatus(`Full suit save blocked: ${validationResult.errors[0]}`);
+      return;
+    }
+
+    const saveTime = Date.now();
+    suitSaveTokenRef.current += 1;
+    setPendingV3SuitSave({
+      drafts: stagedDrafts,
+      saveTime,
+      activeSlot: slot as V3CustomArmorSlot,
+      token: suitSaveTokenRef.current,
+    });
+    setStatus('Full suit save queued.');
+  };
+
+  useEffect(() => {
+    if (!pendingV3SuitSave) return;
+
+    if (!pendingV3SuitSave.committedPlan) {
+      if (pendingV3SuitSave.catalogCommitQueued) return;
+
+      const { drafts, saveTime, token } = pendingV3SuitSave;
+      setPendingV3SuitSave((current) => (
+        current?.token === token ? { ...current, catalogCommitQueued: true } : current
+      ));
+      onCatalogChange((currentCatalog) => {
+        const currentPlan = buildV3SuitSavePlan(currentCatalog, playerLoadout, drafts, saveTime);
+        Promise.resolve().then(() => {
+          if (currentPlan.errors.length > 0) {
+            setStatus(`Full suit save blocked: ${currentPlan.errors[0]}`);
+            setPendingV3SuitSave((current) => current?.token === token ? null : current);
+            return;
+          }
+          setPendingV3SuitSave((current) => (
+            current?.token === token ? { ...current, committedPlan: currentPlan } : current
+          ));
+        });
+        return currentPlan.errors.length > 0 ? currentCatalog : currentPlan.nextCatalog;
+      });
+      return;
+    }
+
+    const plan = pendingV3SuitSave.committedPlan;
+
+    if (plan.errors.length > 0) {
+      setStatus(`Full suit save blocked: ${plan.errors[0]}`);
+      setPendingV3SuitSave(null);
+      return;
+    }
+
+    if (plan.loadoutPatch) {
+      onLoadoutChange(plan.loadoutPatch);
+    }
+
+    const savedDrafts = Object.fromEntries(
+      V3_CUSTOM_ARMOR_SLOTS.map((candidate) => [
+        candidate,
+        cloneSnapshot(plan.savedSnapshots[candidate] ?? pendingV3SuitSave.drafts[candidate]),
+      ])
+    ) as V3SuitDraftMap;
+    setV3SuitDrafts(savedDrafts);
+    setV3SuitPreviewEnabled(true);
+    loadDraftForSlot(pendingV3SuitSave.activeSlot, savedDrafts[pendingV3SuitSave.activeSlot], modelType, 'v3');
+    setPendingV3SuitSave(null);
+    setStatus('Full suit saved and equipped.');
+  }, [loadDraftForSlot, modelType, onCatalogChange, onLoadoutChange, pendingV3SuitSave, playerLoadout]);
+
   const switchSlot = (nextSlot: CustomArmorSlot) => {
+    if (modelSystem === 'v3' && v3SuitDrafts && V3_CUSTOM_ARMOR_SLOTS.includes(nextSlot as V3CustomArmorSlot)) {
+      const stagedDrafts = createStagedV3SuitDrafts();
+      const nextV3Slot = nextSlot as V3CustomArmorSlot;
+      setV3SuitDrafts(stagedDrafts);
+      loadDraftForSlot(nextV3Slot, stagedDrafts[nextV3Slot], modelType, 'v3');
+      return;
+    }
     setSlot(nextSlot);
     const equipped = getEquippedPieceForType(nextSlot, modelType, modelSystem);
     const nextDraft = equipped
@@ -510,6 +890,9 @@ export function ArmorModelEditor({
   const switchModelType = (nextModelType: CharacterModelType) => {
     setModelSystem('v2');
     setModelType(nextModelType);
+    setV3SuitDrafts(null);
+    setV3SuitPreviewEnabled(false);
+    setPendingV3SuitSave(null);
     onLoadoutChange({ modelSystem: 'v2', modelType: nextModelType });
     const nextSlot = SLOT_OPTIONS.some((option) => option.slot === slot) ? slot : 'helmet';
     setSlot(nextSlot);
@@ -529,6 +912,11 @@ export function ArmorModelEditor({
 
   const switchModelSystem = (nextModelSystem: CustomArmorModelSystem) => {
     setModelSystem(nextModelSystem);
+    if (nextModelSystem !== 'v3') {
+      setV3SuitDrafts(null);
+      setV3SuitPreviewEnabled(false);
+      setPendingV3SuitSave(null);
+    }
     const nextModelType = nextModelSystem === 'v2' ? modelType : 'medium';
     setModelType(nextModelType);
     const nextSlot = nextModelSystem === 'v3'
@@ -679,7 +1067,7 @@ export function ArmorModelEditor({
       return;
     }
     const snapshot = createCustomArmorSnapshot(nextDraft);
-    onCatalogChange((current) => upsertPieceInCatalog(current, snapshot));
+    onCatalogChange((current) => upsertCustomArmorPieceInCatalog(current, snapshot).catalog);
     onLoadoutChange({
       modelSystem,
       modelType: modelSystem === 'v2' ? modelType : undefined,
@@ -801,6 +1189,32 @@ export function ArmorModelEditor({
     setDraft((current) => ({ ...current, name: name.slice(0, 32) }));
   };
 
+  const getV3SuitSlotStatusLabels = (targetSlot: V3CustomArmorSlot): string[] => {
+    const labels: string[] = [];
+    const slotValidation = v3SuitValidation?.slots[targetSlot];
+    if (slotValidation) {
+      labels.push(!slotValidation.valid ? 'Invalid' : slotValidation.warnings.length > 0 ? 'Warn' : 'Valid');
+    } else {
+      labels.push('Draft');
+    }
+
+    const stagedDraft = activeV3SuitDrafts?.[targetSlot]
+      ?? (targetSlot === slot ? cloneV3SuitDraftForSlot(targetSlot, draft) : undefined);
+    if (stagedDraft && playerLoadout.customArmor?.[targetSlot]?.id === stagedDraft.id) {
+      labels.push('Equipped');
+    }
+
+    return labels;
+  };
+
+  const getV3SuitSlotStatusClass = (label: string): string => {
+    if (label === 'Invalid') return 'border-red-400/40 bg-red-500/15 text-red-200';
+    if (label === 'Warn') return 'border-amber-400/40 bg-amber-500/15 text-amber-200';
+    if (label === 'Valid') return 'border-emerald-400/40 bg-emerald-500/15 text-emerald-200';
+    if (label === 'Equipped') return 'border-purple-400/40 bg-purple-500/15 text-purple-100';
+    return 'border-white/10 bg-black/35 text-white/45';
+  };
+
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
@@ -860,42 +1274,49 @@ export function ArmorModelEditor({
     scene.add(rimLight);
 
     const meshes: THREE.Mesh[] = [];
-    const baseScale = 0.045;
+    const baseScale = modelSystem === 'v3' ? V3_ARMOR_SURFACE_BASE_VOXEL_SCALE : 0.045;
     const scale = modelSystem === 'v3' ? baseScale / draftGridScale : baseScale;
 
     if (viewMode === 'rig') {
-      const previewLoadout: CharacterLoadout = {
-        ...playerLoadout,
-        modelSystem,
-        modelType: modelSystem === 'v2' ? modelType : undefined,
-        customArmor: {
-          ...(playerLoadout.customArmor ?? {}),
-          [slot]: {
-            ...draft,
-            modelSystem,
-            modelType: modelSystem === 'v2' ? modelType : undefined,
+      const previewLoadout: CharacterLoadout = modelSystem === 'v3' && v3SuitPreviewEnabled && v3SuitDrafts
+        ? mergeV3SuitPreviewLoadout(playerLoadout, v3SuitDrafts, slot as V3CustomArmorSlot, draft)
+        : {
+          ...playerLoadout,
+          modelSystem,
+          modelType: modelSystem === 'v2' ? modelType : undefined,
+          customArmor: {
+            ...(playerLoadout.customArmor ?? {}),
+            [slot]: {
+              ...draft,
+              modelSystem,
+              modelType: modelSystem === 'v2' ? modelType : undefined,
+            },
           },
-        },
-      };
+        };
       const model = buildVoxelSpartanModel(false, playerHue, previewLoadout);
       model.position.set(0, 0, 0);
       model.rotation.y = -0.35;
       buildCombatantRigForModel(model);
       applyPreviewPose(model, poseMode);
+      if (modelSystem === 'v3' && v3SmartAuthoringPreview?.changed) {
+        const partGroups = model.userData.v3PartGroups as Partial<Record<V3CustomArmorSlot, THREE.Group>> | undefined;
+        const partGroup = partGroups?.[slot as V3CustomArmorSlot];
+        if (partGroup) {
+          partGroup.add(createV3SmartPreviewOverlayGroup(
+            v3SmartAuthoringPreview,
+            editorPreviewPalette,
+            V3_ARMOR_SURFACE_BASE_VOXEL_SCALE / draftGridScale,
+            { x: 0, y: 0, z: 0 }
+          ));
+        }
+      }
       scene.add(model);
     } else {
       const b = getEditorSlotBounds(slot, modelType, modelSystem, draftGridScale);
       const centerX = (b.minX + b.maxX) / 2;
       const centerY = (b.minY + b.maxY) / 2;
       const centerZ = (b.minZ + b.maxZ) / 2;
-      const palette = {
-        primary: `hsl(${playerHue}, 85%, 50%)`,
-        secondary: '#1e293b',
-        accent: `hsl(${playerHue}, 90%, 75%)`,
-        visor: `hsl(${playerHue}, 95%, 70%)`,
-        dark: '#0f172a',
-        highlight: `hsl(${playerHue}, 75%, 65%)`,
-      };
+      const palette = editorPreviewPalette;
       const baseSilhouetteVoxels = showSilhouette
         ? modelSystem === 'v3'
           ? getV3BuiltinPartVoxels(slot as V3CustomArmorSlot, playerHue, undefined, { gridScale: 1 })
@@ -983,6 +1404,15 @@ export function ArmorModelEditor({
         );
         cursorMesh.position.set((cursor.x - centerX) * scale, (cursor.y - centerY) * scale, (cursor.z - centerZ) * scale);
         scene.add(cursorMesh);
+      }
+
+      if (modelSystem === 'v3' && v3SmartAuthoringPreview?.changed) {
+        scene.add(createV3SmartPreviewOverlayGroup(
+          v3SmartAuthoringPreview,
+          palette,
+          scale,
+          { x: centerX, y: centerY, z: centerZ }
+        ));
       }
     }
 
@@ -1150,8 +1580,11 @@ export function ArmorModelEditor({
       renderer.dispose();
     };
   }, [
+    axis,
+    cursor,
     draft,
     draftGridScale,
+    editorPreviewPalette,
     playerHue,
     playerLoadout,
     poseMode,
@@ -1163,7 +1596,15 @@ export function ArmorModelEditor({
     showCollision,
     showDensity,
     showSilhouette,
+    size,
+    smartMirrorOverwrite,
+    smartMirrorScope,
+    smartStrength,
+    smartStripeWidth,
     slot,
+    v3SmartAuthoringPreview,
+    v3SuitDrafts,
+    v3SuitPreviewEnabled,
     viewMode,
   ]);
 
@@ -1348,6 +1789,161 @@ export function ArmorModelEditor({
             </button>
           </Panel>
 
+          {modelSystem === 'v3' && (
+            <Panel title="Smart V3">
+              <div className="grid grid-cols-2 gap-1.5">
+                <button
+                  type="button"
+                  onClick={applyV3SmartStart}
+                  className="editor-chip border-cyan-400/40 text-cyan-100"
+                >
+                  Start Shape
+                </button>
+                {V3_SMART_TOOL_OPTIONS.map((option) => (
+                  <button
+                    key={option.id}
+                    type="button"
+                    onClick={() => selectV3SmartTool(option.id, option.label)}
+                    onMouseEnter={() => setTransientSmartToolId(option.id)}
+                    onMouseLeave={() => setTransientSmartToolId(null)}
+                    onFocus={() => setTransientSmartToolId(option.id)}
+                    onBlur={() => setTransientSmartToolId(null)}
+                    aria-pressed={selectedSmartToolId === option.id}
+                    className={`editor-chip ${
+                      activeSmartToolId === option.id
+                        ? 'border-cyan-400/50 text-cyan-100'
+                        : selectedSmartToolId === option.id
+                          ? 'border-purple-400/45 text-purple-100'
+                          : ''
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <label className="flex flex-col gap-1 rounded border border-white/10 bg-black/35 p-2">
+                  <span className="text-[9px] font-black uppercase tracking-widest text-white/40">Strength</span>
+                  <select
+                    value={smartStrength}
+                    onChange={(event) => setSmartStrength(event.target.value as V3SmartAuthoringStrength)}
+                    className="bg-black/50 border border-white/10 rounded px-2 py-1 text-xs text-white outline-none"
+                  >
+                    {V3_SMART_STRENGTH_OPTIONS.map((option) => (
+                      <option key={option.id} value={option.id}>{option.label}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="flex flex-col gap-1 rounded border border-white/10 bg-black/35 p-2">
+                  <span className="text-[9px] font-black uppercase tracking-widest text-white/40">Stripe Width</span>
+                  <input
+                    type="number"
+                    min={1}
+                    value={smartStripeWidth}
+                    onChange={(event) => setSmartStripeWidthValue(parseInt(event.target.value || '1', 10))}
+                    className="bg-black/50 border border-white/10 rounded px-2 py-1 text-xs text-white outline-none"
+                  />
+                </label>
+                <label className="flex flex-col gap-1 rounded border border-white/10 bg-black/35 p-2">
+                  <span className="text-[9px] font-black uppercase tracking-widest text-white/40">Mirror Scope</span>
+                  <select
+                    value={smartMirrorScope}
+                    onChange={(event) => setSmartMirrorScope(event.target.value as V3SmartMirrorScope)}
+                    className="bg-black/50 border border-white/10 rounded px-2 py-1 text-xs text-white outline-none"
+                  >
+                    {V3_SMART_MIRROR_SCOPE_OPTIONS.map((option) => (
+                      <option key={option.id} value={option.id}>{option.label}</option>
+                    ))}
+                  </select>
+                </label>
+                <Toggle label="Mirror Overwrite" checked={smartMirrorOverwrite} onChange={setSmartMirrorOverwrite} />
+              </div>
+              <div className="mt-3 rounded border border-cyan-400/20 bg-cyan-500/10 p-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-cyan-100">Smart Tool Preview</span>
+                  <span className="text-[10px] font-mono text-white/55">{activeSmartToolLabel}</span>
+                </div>
+                {v3SmartAuthoringPreview && v3SmartAuthoringFeedback && (
+                  <div className="mt-2 flex flex-col gap-1 text-[10px] text-white/60">
+                    <div className="flex flex-wrap gap-1.5 font-mono">
+                      <span>{formatSignedReadDelta(v3SmartAuthoringFeedback.delta)}</span>
+                      <span>{v3SmartAuthoringPreview.added.length} added</span>
+                      <span>{v3SmartAuthoringPreview.removed.length} removed</span>
+                      <span>{v3SmartAuthoringPreview.remapped.length} remapped</span>
+                    </div>
+                    <div className="text-white/45">{v3SmartAuthoringFeedback.labels.join(' / ')}</div>
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={applySelectedV3SmartTool}
+                  disabled={!v3SmartAuthoringPreview?.changed}
+                  className="mt-2 w-full py-2 rounded border border-cyan-400/50 bg-cyan-500/20 text-cyan-100 text-[10px] font-black uppercase tracking-widest disabled:opacity-35"
+                >
+                  Apply Smart Tool
+                </button>
+              </div>
+            </Panel>
+          )}
+
+          {modelSystem === 'v3' && (
+            <Panel title="Suit Workspace">
+              <div className="grid grid-cols-3 gap-1.5">
+                <button
+                  type="button"
+                  onClick={startV3SuitWorkspace}
+                  className="editor-chip border-cyan-400/40 text-cyan-100"
+                >
+                  Start Full Suit
+                </button>
+                <button
+                  type="button"
+                  onClick={previewV3SuitWorkspace}
+                  className="editor-chip border-purple-400/40 text-purple-100"
+                >
+                  Preview Full Suit
+                </button>
+                <button
+                  type="button"
+                  onClick={saveV3SuitWorkspace}
+                  className="editor-chip border-emerald-400/40 text-emerald-100"
+                >
+                  Save & Equip Suit
+                </button>
+              </div>
+              <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-44 overflow-y-auto">
+                {V3_SLOT_OPTIONS.map((option) => {
+                  const statusLabels = getV3SuitSlotStatusLabels(option.slot);
+                  return (
+                    <button
+                      key={option.slot}
+                      type="button"
+                      onClick={() => switchSlot(option.slot)}
+                      title={option.title}
+                      className={`rounded border p-2 text-left ${
+                        slot === option.slot
+                          ? 'border-cyan-400/50 bg-cyan-500/10'
+                          : 'border-white/10 bg-black/25 hover:border-white/20'
+                      }`}
+                    >
+                      <span className="block text-[10px] font-black uppercase tracking-widest text-white/70">{option.label}</span>
+                      <span className="mt-1 flex flex-wrap gap-1">
+                        {statusLabels.map((label) => (
+                          <span
+                            key={label}
+                            className={`rounded border px-1.5 py-0.5 text-[9px] font-black uppercase tracking-widest ${getV3SuitSlotStatusClass(label)}`}
+                          >
+                            {label}
+                          </span>
+                        ))}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </Panel>
+          )}
+
           <Panel title="Materials">
             <div className="grid grid-cols-2 gap-1.5">
               {MATERIAL_OPTIONS.map((option) => (
@@ -1390,6 +1986,9 @@ export function ArmorModelEditor({
                   ? `+${editorValidationReport.builtInVoxelDelta}`
                   : String(editorValidationReport.builtInVoxelDelta)}
               />
+              {modelSystem === 'v3' && editorValidationReport.visualQa && (
+                <Metric label="Read" value={`${editorValidationReport.visualQa.score}%`} />
+              )}
             </div>
             {showPerformance && (
               <div className="mt-2 text-[10px] text-white/45 leading-relaxed">
@@ -1410,6 +2009,13 @@ export function ArmorModelEditor({
                   Missing roles: {editorValidationReport.missingRecommendedRoles.join(', ')}
                 </span>
               )}
+              {modelSystem === 'v3' && editorValidationReport.visualQa && (
+                <span className={`text-[10px] ${editorValidationReport.visualQa.ready ? 'text-emerald-300' : 'text-amber-300'}`}>
+                  Visual QA: {editorValidationReport.visualQa.ready
+                    ? 'armor preview reads clearly.'
+                    : editorValidationReport.visualQa.issues[0]?.message ?? 'armor preview needs readability polish.'}
+                </span>
+              )}
               {showClipping && <span className="text-[10px] text-amber-300">Clipping view is heuristic; confirm in rig poses before saving.</span>}
             </div>
             <div className="grid grid-cols-2 gap-1.5 mt-2">
@@ -1418,6 +2024,30 @@ export function ArmorModelEditor({
               <button type="button" onClick={() => mutateVoxels(removeFloatingVoxels)} className="editor-chip">No Floating</button>
               <button type="button" onClick={() => replaceDraft(seedCornerAnchor(draft))} className="editor-chip">Seed Anchor</button>
             </div>
+            {modelSystem === 'v3' && (
+              <div className="mt-3 border-t border-white/10 pt-3">
+                <div className="mb-2 text-[10px] font-black uppercase tracking-widest text-cyan-200">Suggested Fixes</div>
+                <div className="flex flex-col gap-2">
+                  {v3ArmorEditorPolishActions.map((action) => (
+                    <div key={action.id} className="grid grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] gap-2 items-start">
+                      <button
+                        type="button"
+                        onClick={() => applyPolishAction(action.id, action.label)}
+                        disabled={!action.enabled}
+                        className={`editor-chip text-left disabled:opacity-35 ${
+                          action.enabled ? 'border-cyan-400/40 text-cyan-100' : 'border-white/10 text-white/35'
+                        }`}
+                      >
+                        {action.label}
+                      </button>
+                      <span className={`text-[10px] leading-relaxed ${action.enabled ? 'text-white/55' : 'text-white/35'}`}>
+                        {action.reason}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </Panel>
 
           <Panel title="Catalog">
@@ -1528,6 +2158,7 @@ function Toggle({ label, checked, onChange }: { label: string; checked: boolean;
   return (
     <button
       type="button"
+      aria-pressed={checked}
       onClick={() => onChange(!checked)}
       className={`h-8 rounded border text-[10px] font-black uppercase tracking-widest ${
         checked ? 'bg-cyan-500/20 border-cyan-400 text-cyan-200' : 'bg-black/30 border-white/10 text-white/40'

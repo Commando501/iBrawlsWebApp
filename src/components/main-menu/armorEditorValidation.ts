@@ -3,6 +3,7 @@ import type {
   CustomArmorPieceSnapshot,
   CustomArmorValidationResult,
 } from '../customArmor';
+import type { V3ArmorEditorVisualQaReport } from './v3ArmorEditorVisualQa';
 
 export interface ArmorEditorValidationReportInput {
   draft: CustomArmorPieceSnapshot;
@@ -10,6 +11,7 @@ export interface ArmorEditorValidationReportInput {
   builtInVoxelCount: number;
   slotBudget: number;
   recommendedRoles: CustomArmorMaterialRole[];
+  visualQa?: V3ArmorEditorVisualQaReport;
 }
 
 export interface ArmorEditorValidationReport {
@@ -18,6 +20,7 @@ export interface ArmorEditorValidationReport {
   missingRecommendedRoles: CustomArmorMaterialRole[];
   builtInVoxelDelta: number;
   status: 'pass' | 'warn';
+  visualQa?: V3ArmorEditorVisualQaReport;
 }
 
 export function buildArmorEditorValidationReport(
@@ -33,6 +36,7 @@ export function buildArmorEditorValidationReport(
     roleCounts,
     missingRecommendedRoles: input.recommendedRoles.filter((role) => !roleCounts[role]),
     builtInVoxelDelta: input.validation.stats.voxelCount - input.builtInVoxelCount,
-    status: input.validation.valid ? 'pass' : 'warn',
+    status: input.validation.valid && input.visualQa?.ready !== false ? 'pass' : 'warn',
+    visualQa: input.visualQa,
   };
 }

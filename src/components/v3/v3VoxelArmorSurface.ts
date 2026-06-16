@@ -61,7 +61,7 @@ export const V3_ARMOR_SURFACE_DEFAULT_OPTIONS = {
   panelDepthStyle: 'recessed',
 } as const satisfies Pick<V3ArmorSurfaceOptions, 'panelCornerStyle' | 'panelDepthStyle'>;
 
-const DEFAULT_VOXEL_SCALE = 0.055;
+export const V3_ARMOR_SURFACE_BASE_VOXEL_SCALE = 0.055;
 const DIRECTIONS: Array<{
   id: AxisDirection;
   neighbor: readonly [number, number, number];
@@ -78,7 +78,7 @@ const coordKey = (voxel: { x: number; y: number; z: number }): string => `${voxe
 const materialKey = (color: string, emissive: boolean): string => `${color}|${emissive ? '1' : '0'}`;
 
 const normalizeScale = (scale: unknown): number =>
-  typeof scale === 'number' && Number.isFinite(scale) && scale > 0 ? scale : DEFAULT_VOXEL_SCALE;
+  typeof scale === 'number' && Number.isFinite(scale) && scale > 0 ? scale : V3_ARMOR_SURFACE_BASE_VOXEL_SCALE;
 
 const normalizePanelCornerStyle = (
   style: unknown,

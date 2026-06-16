@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { CustomArmorPieceSnapshot, CustomArmorValidationResult } from '../customArmor';
 import { buildArmorEditorValidationReport } from './armorEditorValidation';
+import type { V3ArmorEditorVisualQaReport } from './v3ArmorEditorVisualQa';
 
 const validation = (overrides: Partial<CustomArmorValidationResult> = {}): CustomArmorValidationResult => ({
   valid: true,
@@ -42,4 +43,42 @@ test('buildArmorEditorValidationReport reports role coverage and missing V3 reco
   assert.deepEqual(report.roleCounts, { primary: 1 });
   assert.deepEqual(report.missingRecommendedRoles, ['secondary', 'visor']);
   assert.equal(report.builtInVoxelDelta, -6);
+});
+
+test('buildArmorEditorValidationReport preserves advisory V3 visual QA without invalidating saves', () => {
+  const visualQa: V3ArmorEditorVisualQaReport = {
+    ready: false,
+    score: 61,
+    issues: [{
+      code: 'dark_coverage_high',
+      message: 'dark material coverage obscures silhouette readability',
+      value: 0.9,
+      threshold: 0.82,
+    }],
+    summary: {
+      snapshotCount: 8,
+      minOccupiedAreaRatio: 0.002,
+      maxOccupiedAreaRatio: 0.004,
+      minProjectedWidth: 0.18,
+      minProjectedHeight: 0.22,
+      maxDarkMaterialCoverage: 0.9,
+      maxEmissiveMaterialCoverage: 0,
+      panelCount: 12,
+      materialGroupCount: 1,
+      visibleImportantPartCount: 0,
+      importantPartCount: 0,
+    },
+  };
+
+  const report = buildArmorEditorValidationReport({
+    draft: piece(['primary', 'secondary', 'visor']),
+    validation: validation(),
+    builtInVoxelCount: 10,
+    slotBudget: 780,
+    recommendedRoles: ['primary', 'secondary', 'visor'],
+    visualQa,
+  });
+
+  assert.equal(report.status, 'warn');
+  assert.equal(report.visualQa, visualQa);
 });

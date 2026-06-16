@@ -76,7 +76,7 @@ const STANDARD_TOURNAMENT_DIFFICULTIES: Array<{
     label: 'NeuralNet',
     color: 'text-fuchsia-300 border-fuchsia-500/20 bg-fuchsia-950/20 hover:bg-fuchsia-950/40',
     selectedColor: 'text-fuchsia-200 border-fuchsia-300/70 bg-fuchsia-950/50 shadow-[0_0_14px_rgba(217,70,239,0.25)]',
-    desc: 'Runs the exported CombatDRV2 reinforcement-learning brain.',
+    desc: 'Runs a selected exported reinforcement-learning brain.',
   },
 ];
 

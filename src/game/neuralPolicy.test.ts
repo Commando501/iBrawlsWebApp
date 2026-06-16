@@ -152,22 +152,24 @@ test('NeuralFrameStack appends observations on the trained decision cadence', ()
   assert.deepEqual(Array.from(stack.current()), [0, 0, 0, 0, 0, 0]);
 });
 
-test('exported CombatDRV2 fixture matches the browser MLP runtime', () => {
-  const dir = path.resolve('public/brains/combat_dr_v2');
-  const manifest = JSON.parse(fs.readFileSync(path.join(dir, 'manifest.json'), 'utf8')) as NeuralBrainManifest;
-  const weightsBuffer = fs.readFileSync(path.join(dir, 'weights.bin'));
-  const weights = new Float32Array(
-    weightsBuffer.buffer.slice(weightsBuffer.byteOffset, weightsBuffer.byteOffset + weightsBuffer.byteLength)
-  );
-  const fixture = JSON.parse(fs.readFileSync(path.join(dir, 'fixtures.json'), 'utf8')) as {
-    zeroObservation: { logits: number[]; factors: number[] };
-  };
+for (const brainId of ['combat_dr_v2', 'combat_dr_v4']) {
+  test(`exported ${brainId} fixture matches the browser MLP runtime`, () => {
+    const dir = path.resolve('public/brains', brainId);
+    const manifest = JSON.parse(fs.readFileSync(path.join(dir, 'manifest.json'), 'utf8')) as NeuralBrainManifest;
+    const weightsBuffer = fs.readFileSync(path.join(dir, 'weights.bin'));
+    const weights = new Float32Array(
+      weightsBuffer.buffer.slice(weightsBuffer.byteOffset, weightsBuffer.byteOffset + weightsBuffer.byteLength)
+    );
+    const fixture = JSON.parse(fs.readFileSync(path.join(dir, 'fixtures.json'), 'utf8')) as {
+      zeroObservation: { logits: number[]; factors: number[] };
+    };
 
-  const policy = buildMlpPolicy(manifest, weights);
-  const result = runGreedyPolicy(policy, new Float32Array(manifest.inputDim));
+    const policy = buildMlpPolicy(manifest, weights);
+    const result = runGreedyPolicy(policy, new Float32Array(manifest.inputDim));
 
-  assert.deepEqual(Array.from(result.factors), fixture.zeroObservation.factors);
-  for (let i = 0; i < result.logits.length; i++) {
-    assert.ok(Math.abs(result.logits[i] - fixture.zeroObservation.logits[i]) < 1e-5);
-  }
-});
+    assert.deepEqual(Array.from(result.factors), fixture.zeroObservation.factors);
+    for (let i = 0; i < result.logits.length; i++) {
+      assert.ok(Math.abs(result.logits[i] - fixture.zeroObservation.logits[i]) < 1e-5);
+    }
+  });
+}

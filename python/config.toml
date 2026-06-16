@@ -6,17 +6,22 @@
 [run]
 mode = "combat"
 opponent = "heuristic"
-total_steps = 30000000
+total_steps = 40000000
 parallel_matches = 32
 num_workers = 12
 goal_target = 3
-match_minutes = 1.0
+match_minutes = 3.0
 decision_interval = 5
 device = "cuda"
 seed = 1
 
 [combat]
 world_sizes = [2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 8, 8, 8, 8]
+layout_mix = ["1v1x16", "1v2x6", "1v3x6", "1v7x2", "ffa4x6", "ffa8x4"]
+bait_layout_mix = []
+bait_opponent = "passive_bait_jitter"
+bait_reward_scale = 1.0
+lone_wolf_reward_scale = 1.35
 kill_min = 10
 kill_max = 25
 randomize_layout = true
@@ -39,7 +44,8 @@ lr_schedule = "linear"
 width = 512
 depth = 3
 frame_stack = 4
-init_model = "runs/combat_dr/final_model.zip"
+observation_version = 1
+init_model = "runs/combat_dr_v3/final_model.zip"
 
 [randomize]
 enabled = true
@@ -47,6 +53,8 @@ pct = 0.15
 
 [league]
 snapshots = ["runs/combat3_humanlike_v1/final_model.zip"]
+scenario_mix = []
+random_opponent_rate = 0.0
 latest_bias = 0.7
 worlds = 6
 snapshot_every = 2000000
@@ -59,17 +67,20 @@ possession = 0.0001
 ball_progress = 0.01
 kill = 16.0
 death = 3.0
-approach = 0.375
+approach = 0.562
 time_penalty = 0.005
 invalid_attack = 0.01
 invalid_dash = 0.01
 invalid_jump = 0.01
 invalid_swap = 0.01
 action_repeat = 0.01
+danger_approach = 0.0
+bait_disengage = 0.0
+trap_death = 0.0
 bootstrap_truncation = false
 
 [logging]
-dir = "runs/combat_dr_v2"
+dir = "runs/combat_dr_v4"
 save_every = 2000000
 eval_every = 2000000
 eval_episodes = 16
