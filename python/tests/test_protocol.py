@@ -71,6 +71,32 @@ def test_step_response_parses_optional_reward_components():
     np.testing.assert_allclose(r.reward_components, [0.5, -0.25, -1.0], atol=1e-6)
 
 
+def test_step_response_parses_optional_mechanics_coverage_after_reward_components():
+    n_agents, obs_dim = 1, 2
+    payload = _encode_step_response_like_ts(
+        np.array([0.0, 0.0], dtype="<f4"),
+        np.array([1.0], dtype="<f4"),
+        np.array([0], dtype=np.uint8),
+        np.array([0], dtype=np.uint8),
+        {},
+        obs_dim,
+    )
+    payload += struct.pack("<I", 1) + np.array([0.5], dtype="<f4").tobytes()
+    coverage = np.array([2, 2.7, 3.3, 6.0, 2, 4.5, 5.5, 10.0], dtype="<f4")
+    payload += struct.pack("<I", coverage.size) + coverage.tobytes()
+
+    r = proto.parse_step_response(
+        payload,
+        n_agents,
+        obs_dim,
+        reward_component_count=1,
+        mechanics_coverage_count=coverage.size,
+    )
+
+    np.testing.assert_allclose(r.reward_components, [0.5], atol=1e-6)
+    np.testing.assert_allclose(r.mechanics_coverage, coverage, atol=1e-6)
+
+
 def test_step_request_pack_is_little_endian_int32():
     actions = np.array([[0, 1, 2, 8, 3, 1]], dtype=np.int32)
     payload = proto.step_request(actions)

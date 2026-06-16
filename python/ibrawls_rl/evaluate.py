@@ -18,7 +18,14 @@ import tomllib
 from stable_baselines3 import PPO
 
 from . import baseline
-from .eval import eval_vs, eval_combat_vs_random, eval_combat_matrix, eval_combat_vs_snapshots
+from .eval import (
+    eval_vs,
+    eval_combat_vs_random,
+    eval_combat_matrix,
+    eval_combat_mechanics_suite,
+    eval_combat_vs_snapshots,
+)
+from .training_metadata import read_training_metadata
 
 
 def resolve_decision_interval(model_path: str) -> int:
@@ -67,6 +74,15 @@ def resolve_observation_version(model_path: str) -> int:
                 return 1
         d = os.path.dirname(d)
     return 1
+
+
+def resolve_mechanics_contract(model_path: str) -> tuple[dict, float]:
+    metadata = read_training_metadata(model_path) or {}
+    mechanics = metadata.get("mechanics", {}) if isinstance(metadata.get("mechanics"), dict) else {}
+    base_values = mechanics.get("base_values", {}) if isinstance(mechanics.get("base_values"), dict) else {}
+    randomize = mechanics.get("randomize", {}) if isinstance(mechanics.get("randomize"), dict) else {}
+    pct = float(randomize.get("pct", 0.15) or 0.15)
+    return dict(base_values), pct
 
 
 _BEHAVIOR_LABELS = {
@@ -119,6 +135,8 @@ def main() -> None:
                     help="observation contract used during training; 0 = auto from config_used.toml")
     ap.add_argument("--matrix", action="store_true",
                     help="combat only: run the standard 1v1/4-player/8-player evaluation matrix")
+    ap.add_argument("--mechanics-suite", action="store_true",
+                    help="combat matrix only: repeat the matrix over nominal/low/high/live-current mechanics")
     ap.add_argument("--league-snapshot", action="append", default=[],
                     help="combat only: frozen opponent model path; may be repeated")
     ap.add_argument("--json", action="store_true",
@@ -141,6 +159,22 @@ def main() -> None:
                 frame_stack=frame_stack, snapshot_paths=args.league_snapshot,
                 device=args.device, observation_version=observation_version,
             )
+            if args.mechanics_suite:
+                base_values, mechanics_pct = resolve_mechanics_contract(args.model)
+                suite = eval_combat_mechanics_suite(
+                    model,
+                    matches=args.matches,
+                    num_worlds=args.num_envs,
+                    decision_interval=interval,
+                    frame_stack=frame_stack,
+                    snapshot_paths=args.league_snapshot,
+                    device=args.device,
+                    observation_version=observation_version,
+                    base_values=base_values,
+                    pct=mechanics_pct,
+                )
+                res["mechanics_suite"] = suite["presets"]
+                res["mechanics_summary"] = suite["summary"]
             payload = {"model": args.model, "mode": "combat", "opponent": "matrix",
                        "decision_interval": interval, "frame_stack": frame_stack,
                        "observation_version": observation_version, **res}
@@ -172,6 +206,11 @@ def main() -> None:
             elif s.get("strict_promotion_requires_frozen"):
                 print("  frozen snapshot score: missing")
             print(f"  strict promotion     : {'ready' if s.get('strict_promotion_ready') else 'not ready'}")
+            if res.get("mechanics_summary"):
+                ms = res["mechanics_summary"]
+                print(f"  mechanics robustness: mean={ms['mean_score']:.3f}, "
+                      f"worst={ms['worst_preset']} {ms['worst_score']:.3f}, "
+                      f"drop={ms['nominal_to_worst_drop']:.3f}")
             return
 
         if args.league_snapshot:

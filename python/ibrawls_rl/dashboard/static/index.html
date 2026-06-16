@@ -137,6 +137,7 @@
           <label>Model
             <select id="evalModel"></select>
           </label>
+          <div id="modelContract" class="model-contract muted">Select a saved brain to view its contract.</div>
           <label>Mode
             <select id="evalMode"><option value="combat">combat</option><option value="grifball">grifball</option></select>
           </label>
@@ -164,10 +165,13 @@
             <input type="number" id="evalFrameStack" value="0" min="0" step="1" />
           </label>
           <label>Obs version <small>0 = auto</small>
-            <input type="number" id="evalObservationVersion" value="0" min="0" max="2" step="1" />
+            <input type="number" id="evalObservationVersion" value="0" min="0" max="3" step="1" />
           </label>
           <label id="evalMatrixWrap">
             <span><input type="checkbox" id="evalMatrix" /> Combat matrix</span>
+          </label>
+          <label id="evalMechanicsSuiteWrap">
+            <span><input type="checkbox" id="evalMechanicsSuite" /> Mechanics suite</span>
           </label>
           <label id="evalLeagueWrap">Frozen snapshots <small>one path per line</small>
             <textarea id="evalLeagueSnapshots" rows="3" placeholder="runs/combat_v1/final_model.zip"></textarea>

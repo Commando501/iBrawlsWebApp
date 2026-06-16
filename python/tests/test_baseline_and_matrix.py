@@ -6,7 +6,7 @@ import os
 import zipfile
 
 from ibrawls_rl import baseline
-from ibrawls_rl.eval import scenario_win_score, summarize_eval_matrix, win_lift
+from ibrawls_rl.eval import scenario_win_score, summarize_eval_matrix, summarize_mechanics_suite, win_lift
 from ibrawls_rl.dashboard.advisor import advise
 
 
@@ -24,6 +24,20 @@ def test_matrix_score_credits_big_worlds_fairly():
     out = summarize_eval_matrix([perfect_duel, perfect_brawl])
     assert out["mean_scenario_win_score"] == 1.0
     assert out["promotion_score"] == 1.0
+
+
+def test_mechanics_suite_summary_tracks_worst_setting_and_drop():
+    out = summarize_mechanics_suite([
+        {"name": "nominal", "summary": {"strict_promotion_score": 0.8, "lone_wolf_score": 0.7}},
+        {"name": "high", "summary": {"strict_promotion_score": 0.5, "lone_wolf_score": 0.5}},
+        {"name": "low", "summary": {"promotion_score": 0.65}},
+    ])
+
+    assert out["presets"] == 3
+    assert out["mean_score"] == 0.65
+    assert out["worst_preset"] == "high"
+    assert out["worst_score"] == 0.5
+    assert out["nominal_to_worst_drop"] == 0.3
 
 
 def test_scenario_win_score_uses_focus_slot_random_baseline():

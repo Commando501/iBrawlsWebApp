@@ -54,6 +54,15 @@ class SimWorker:
         self.obs_dim: int = int(self.header["obsDim"])
         self.act_dim: int = int(self.header["actionDim"])
         self.reward_component_keys: list[str] = list(self.header.get("rewardComponentKeys") or [])
+        self.mechanics_coverage_keys: list[str] = list(self.header.get("mechanicsCoverageKeys") or [])
+        self.mechanics_coverage_fields: list[str] = list(
+            self.header.get("mechanicsCoverageFields") or ["count", "min", "max", "sum"]
+        )
+        self.mechanics_base_values: dict[str, float] = {
+            str(k): float(v)
+            for k, v in (self.header.get("mechanicsBaseValues") or {}).items()
+            if isinstance(v, (int, float))
+        }
         self.learner_agent_indices: list[int] | None = self.header.get("learnerAgentIndices")
         self.slots: int = self.n_world_envs * self.n_agents  # total agent rows this worker owns
 
@@ -71,6 +80,7 @@ class SimWorker:
             self.slots,
             self.obs_dim,
             reward_component_count=len(self.reward_component_keys),
+            mechanics_coverage_count=len(self.mechanics_coverage_keys) * len(self.mechanics_coverage_fields),
         )
 
     def get_state(self, world_index: int = 0) -> dict:
@@ -111,6 +121,47 @@ def learner_indices_from_header(worker: SimWorker) -> list[int]:
     if indices:
         return [int(i) for i in indices]
     return list(range(worker.n_agents))
+
+
+def _coverage_to_rows(keys: list[str], fields: list[str], values: np.ndarray) -> dict[str, dict[str, float]]:
+    width = len(fields)
+    if width <= 0 or not keys or values.size <= 0:
+        return {}
+    index = {name: i for i, name in enumerate(fields)}
+    out: dict[str, dict[str, float]] = {}
+    for i, key in enumerate(keys):
+        start = i * width
+        if start + width > values.size:
+            break
+        row = values[start:start + width]
+        count = float(row[index.get("count", 0)])
+        if count <= 0:
+            continue
+        total = float(row[index.get("sum", width - 1)])
+        out[key] = {
+            "count": count,
+            "min": float(row[index.get("min", 1)]),
+            "max": float(row[index.get("max", 2)]),
+            "sum": total,
+            "mean": total / count if count else 0.0,
+        }
+    return out
+
+
+def _merge_coverage_rows(target: dict[str, dict[str, float]], rows: dict[str, dict[str, float]]) -> None:
+    for key, row in rows.items():
+        count = float(row.get("count", 0.0))
+        if count <= 0:
+            continue
+        current = target.get(key)
+        if not current or float(current.get("count", 0.0)) <= 0:
+            target[key] = dict(row)
+        else:
+            current["count"] = float(current.get("count", 0.0)) + count
+            current["min"] = min(float(current.get("min", row["min"])), float(row["min"]))
+            current["max"] = max(float(current.get("max", row["max"])), float(row["max"]))
+            current["sum"] = float(current.get("sum", 0.0)) + float(row.get("sum", 0.0))
+            current["mean"] = current["sum"] / max(1.0, current["count"])
 
 
 class GrifballVecEnv(VecEnv):
@@ -221,9 +272,13 @@ class GrifballVecEnv(VecEnv):
         self.act_dim = first.act_dim
         self.header = first.header
         self.reward_component_keys = list(first.reward_component_keys)
+        self.mechanics_coverage_keys = list(first.mechanics_coverage_keys)
+        self.mechanics_coverage_fields = list(first.mechanics_coverage_fields)
+        self.mechanics_base_values = dict(first.mechanics_base_values)
         self.last_reward_components: dict[str, float] = {
             key: 0.0 for key in self.reward_component_keys
         }
+        self.last_mechanics_coverage: dict[str, dict[str, float]] = {}
         n_sub = slot_off  # total learner rows across all workers
 
         super().__init__(n_sub, observation_space(first.header), action_space(first.header))
@@ -254,10 +309,20 @@ class GrifballVecEnv(VecEnv):
         done = np.zeros(self.num_envs, dtype=bool)
         infos: list[dict[str, Any]] = [{} for _ in range(self.num_envs)]
         component_totals = np.zeros((len(self.reward_component_keys),), dtype=np.float64)
+        coverage_totals: dict[str, dict[str, float]] = {}
         for v in self.views:
             resp = v.worker.recv_step()
             if resp.reward_components.size:
                 component_totals[:resp.reward_components.size] += resp.reward_components
+            if resp.mechanics_coverage.size:
+                _merge_coverage_rows(
+                    coverage_totals,
+                    _coverage_to_rows(
+                        v.worker.mechanics_coverage_keys,
+                        v.worker.mechanics_coverage_fields,
+                        resp.mechanics_coverage,
+                    ),
+                )
             o = v.slot_off
             self._last_obs[o:o + v.count] = v.select(resp.obs)
             reward[o:o + v.count] = v.select(resp.reward.reshape(-1, 1)).reshape(-1)
@@ -281,6 +346,7 @@ class GrifballVecEnv(VecEnv):
             key: float(component_totals[i])
             for i, key in enumerate(self.reward_component_keys)
         }
+        self.last_mechanics_coverage = coverage_totals
         return self._last_obs, reward, done, infos
 
     def get_state(self, world_index: int = 0) -> dict:

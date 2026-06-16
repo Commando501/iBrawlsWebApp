@@ -44,6 +44,9 @@ function helloResponse(env: SimVecEnv, seedInfo: { baseSeed: number }): Uint8Arr
     decisionInterval: env.decisionInterval,
     observationVersion,
     rewardComponentKeys: REWARD_COMPONENT_KEYS,
+    mechanicsCoverageKeys: env.mechanicsCoverageKeys,
+    mechanicsCoverageFields: env.mechanicsCoverageFields,
+    mechanicsBaseValues: env.mechanicsBaseValues,
     learnerAgentIndices: 'learnerAgentIndices' in env
       ? env.learnerAgentIndices
       : Array.from({ length: env.numEnvs * env.numAgents }, (_v, i) => i),
@@ -109,7 +112,8 @@ export function runServer(transport: Transport): void {
                 r.truncated,
                 r.info.terminalObs,
                 env.obsDim,
-                r.rewardComponents
+                r.rewardComponents,
+                r.mechanicsCoverage
               )
             )
           );

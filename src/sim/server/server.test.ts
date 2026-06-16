@@ -74,6 +74,23 @@ test('step response can append aggregate reward components', () => {
   assert.deepEqual([...r.rewardComponents], [0.5, -0.25, -1]);
 });
 
+test('step response can append aggregate mechanics coverage', () => {
+  const payload = buildStepResponse(
+    Float32Array.from([0, 0]),
+    Float32Array.from([1]),
+    Uint8Array.from([0]),
+    Uint8Array.from([0]),
+    [null],
+    2,
+    Float32Array.from([0.5]),
+    Float32Array.from([2, 2.7, 3.3, 6.0, 2, 4.5, 5.5, 10.0])
+  );
+  const r = parseStepResponse(payload, 1, 2, 1, 8);
+  assert.deepEqual([...r.rewardComponents], [0.5]);
+  const rounded = [...r.mechanicsCoverage].map((v) => Math.round(v * 1000) / 1000);
+  assert.deepEqual(rounded, [2, 2.7, 3.3, 6.0, 2, 4.5, 5.5, 10.0]);
+});
+
 test('float32 byte round-trip is exact for representable values', () => {
   const a = Float32Array.from([0, 1, -1, 0.5, 12345.0]);
   assert.deepEqual([...bytesToF32(f32Bytes(a), a.length)], [...a]);
@@ -91,6 +108,24 @@ test('VecEnv reset/step produce correctly-sized finite buffers', () => {
   assert.equal(r.done.length, env.numEnvs * env.numAgents);
   assert.equal(r.obs.length, obs.length);
 });
+
+test('VecEnv exposes per-step mechanics coverage for randomized settings', () => {
+  const env = new VecEnv({
+    numEnvs: 2,
+    baseSeed: 17,
+    randomize: { enabled: true, pct: 0.2, keys: ['attackRange', 'dashDistance'] },
+  });
+  env.reset();
+  const actions = new Int32Array(env.numEnvs * env.numAgents * ACTION_DIM);
+  const r = env.step(actions);
+  assert.deepEqual(env.mechanicsCoverageKeys, ['attackRange', 'dashDistance']);
+  assert.equal(r.mechanicsCoverage.length, 8);
+  assert.equal(r.mechanicsCoverage[0], 2);
+  assert.ok(r.mechanicsCoverage[1] <= r.mechanicsCoverage[2]);
+  assert.equal(r.mechanicsCoverage[4], 2);
+  assert.ok(r.mechanicsCoverage[5] <= r.mechanicsCoverage[6]);
+});
+
 
 test('VecEnv is deterministic for a given config + actions', () => {
   const cfg = { numEnvs: 3, baseSeed: 42 };

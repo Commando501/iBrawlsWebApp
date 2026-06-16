@@ -182,6 +182,7 @@ def eval_combat_vs_random(
     team_sizes: list[int] | None = None,
     frame_stack: int = 1,
     observation_version: int = 1,
+    settings: dict | None = None,
 ) -> dict:
     """Grade a combat policy in fixed combat worlds with only team 0 controlled by policy.
 
@@ -192,6 +193,7 @@ def eval_combat_vs_random(
     layout = team_sizes or [1] * int(world_size)
     env = GrifballVecEnv(
         mode="combat",
+        settings=settings,
         combat_world_layouts=[layout] * num_worlds,
         combat_kill_range=(kill_target, kill_target),
         combat_randomize_layout=False,
@@ -323,8 +325,17 @@ def summarize_anti_bait_results(results: list[dict]) -> dict:
 def summarize_strict_promotion(summary: dict, frozen_snapshot_score: float | None) -> dict:
     frozen_present = isinstance(frozen_snapshot_score, (int, float))
     frozen_score = round(float(frozen_snapshot_score), 4) if frozen_present else None
+    trap_survival = 1.0 - float(summary.get("trap_death_rate", 1.0))
+    strict_parts = [
+        float(summary.get("lone_wolf_score", 0.0)),
+        float(summary.get("anti_bait_score", 0.0)),
+        max(0.0, min(1.0, trap_survival)),
+    ]
+    if frozen_present:
+        strict_parts.append(float(frozen_snapshot_score))
     return {
         "frozen_snapshot_score": frozen_score,
+        "strict_promotion_score": round(max(0.0, min(1.0, min(strict_parts))), 4),
         "strict_promotion_requires_frozen": not frozen_present,
         "strict_promotion_ready": bool(
             summary.get("lone_wolf_score", 0.0) >= 0.75 and
@@ -387,6 +398,96 @@ def summarize_eval_matrix(results: list[dict]) -> dict:
     }
 
 
+def _mechanics_score(summary: dict) -> float:
+    for key in ("strict_promotion_score", "promotion_score", "lone_wolf_score", "mean_scenario_win_score"):
+        if key in summary:
+            try:
+                return float(summary[key])
+            except (TypeError, ValueError):
+                return 0.0
+    return 0.0
+
+
+def summarize_mechanics_suite(results: list[dict]) -> dict:
+    """Aggregate matrix scores across mechanics presets."""
+    if not results:
+        return {
+            "presets": 0,
+            "mean_score": 0.0,
+            "worst_preset": None,
+            "worst_score": 0.0,
+            "nominal_to_worst_drop": 0.0,
+        }
+    scored = [(str(r.get("name", "preset")), _mechanics_score(r.get("summary") or {})) for r in results]
+    worst_name, worst_score = min(scored, key=lambda item: item[1])
+    nominal = next((score for name, score in scored if name == "nominal"), scored[0][1])
+    return {
+        "presets": len(scored),
+        "mean_score": round(float(np.mean([score for _name, score in scored])), 4),
+        "worst_preset": worst_name,
+        "worst_score": round(float(worst_score), 4),
+        "nominal_to_worst_drop": round(max(0.0, float(nominal) - float(worst_score)), 4),
+    }
+
+
+def mechanics_suite_presets(base_values: dict | None, pct: float = 0.15) -> list[dict]:
+    """Nominal/low/high use the model's recorded base; live_current uses current sim defaults."""
+    base = {
+        str(k): float(v)
+        for k, v in (base_values or {}).items()
+        if isinstance(v, (int, float))
+    }
+    band = max(0.0, float(pct or 0.0))
+    return [
+        {"name": "nominal", "settings": dict(base), "description": "recorded training-base mechanics"},
+        {"name": "low", "settings": {k: max(0.001, v * (1.0 - band)) for k, v in base.items()},
+         "description": f"recorded base mechanics at -{band:.0%}"},
+        {"name": "high", "settings": {k: v * (1.0 + band) for k, v in base.items()},
+         "description": f"recorded base mechanics at +{band:.0%}"},
+        {"name": "live_current", "settings": {}, "description": "current simulator defaults"},
+    ]
+
+
+def eval_combat_mechanics_suite(
+    model,
+    matches: int = 100,
+    num_worlds: int = 16,
+    deterministic: bool = True,
+    decision_interval: int = 1,
+    frame_stack: int = 1,
+    snapshot_paths: list[str] | None = None,
+    device: str = "cpu",
+    observation_version: int = 1,
+    base_values: dict | None = None,
+    pct: float = 0.15,
+) -> dict:
+    results = []
+    for preset in mechanics_suite_presets(base_values, pct):
+        res = eval_combat_matrix(
+            model,
+            matches=matches,
+            num_worlds=num_worlds,
+            deterministic=deterministic,
+            progress_every=0,
+            decision_interval=decision_interval,
+            frame_stack=frame_stack,
+            snapshot_paths=snapshot_paths,
+            device=device,
+            observation_version=observation_version,
+            settings=preset["settings"],
+        )
+        results.append({
+            "name": preset["name"],
+            "description": preset["description"],
+            "settings": preset["settings"],
+            "summary": res.get("summary", {}),
+            "scenarios": res.get("scenarios", []),
+            "anti_bait": res.get("anti_bait", []),
+            "frozen_snapshots": res.get("frozen_snapshots", []),
+        })
+    return {"summary": summarize_mechanics_suite(results), "presets": results}
+
+
 def eval_combat_vs_scripted_bait(
     model,
     matches: int = 100,
@@ -400,10 +501,12 @@ def eval_combat_vs_scripted_bait(
     opponent_profile: str = "passive_bait_jitter",
     frame_stack: int = 1,
     observation_version: int = 1,
+    settings: dict | None = None,
 ) -> dict:
     layout = team_sizes or [1, 1]
     env = GrifballVecEnv(
         mode="combat",
+        settings=settings,
         combat_world_layouts=[layout] * num_worlds,
         combat_kill_range=(kill_target, kill_target),
         combat_randomize_layout=False,
@@ -466,6 +569,7 @@ def eval_combat_anti_bait(
     decision_interval: int = 1,
     frame_stack: int = 1,
     observation_version: int = 1,
+    settings: dict | None = None,
 ) -> dict:
     results = []
     for spec in combat_anti_bait_specs():
@@ -482,6 +586,7 @@ def eval_combat_anti_bait(
             opponent_profile=spec["opponent_profile"],
             frame_stack=frame_stack,
             observation_version=observation_version,
+            settings=settings,
         )
         res["win_lift"] = round(win_lift(res["win_rate"], res["world_size"]), 4)
         res["random_baseline"] = round(scenario_random_baseline(res.get("team_sizes"), res["world_size"]), 4)
@@ -502,6 +607,7 @@ def eval_combat_matrix(
     snapshot_paths: list[str] | None = None,
     device: str = "cpu",
     observation_version: int = 1,
+    settings: dict | None = None,
 ) -> dict:
     results = []
     for spec in combat_eval_matrix_specs():
@@ -517,6 +623,7 @@ def eval_combat_matrix(
             team_sizes=spec["team_sizes"],
             frame_stack=frame_stack,
             observation_version=observation_version,
+            settings=settings,
         )
         res["win_lift"] = round(win_lift(res["win_rate"], res["world_size"]), 4)
         res["random_baseline"] = round(scenario_random_baseline(res.get("team_sizes"), res["world_size"]), 4)
@@ -542,6 +649,7 @@ def eval_combat_matrix(
                 frame_stack=frame_stack,
                 device=device,
                 observation_version=observation_version,
+                settings=settings,
             )
             res["win_lift"] = round(win_lift(res["win_rate"], res["world_size"]), 4)
             res["random_baseline"] = round(scenario_random_baseline(res.get("team_sizes"), res["world_size"]), 4)
@@ -558,6 +666,7 @@ def eval_combat_matrix(
         decision_interval=decision_interval,
         frame_stack=frame_stack,
         observation_version=observation_version,
+        settings=settings,
     )
     summary.update(anti_bait["summary"])
     summary.update(summarize_strict_promotion(summary, frozen_snapshot_score))
@@ -584,6 +693,7 @@ def eval_combat_vs_snapshots(
     frame_stack: int = 1,
     device: str = "cpu",
     observation_version: int = 1,
+    settings: dict | None = None,
 ) -> dict:
     """Grade even policy slots against odd slots driven by frozen PPO snapshots."""
     if not snapshot_paths:
@@ -600,6 +710,7 @@ def eval_combat_vs_snapshots(
             team_sizes=team_sizes,
             frame_stack=frame_stack,
             observation_version=observation_version,
+            settings=settings,
         )
 
     from stable_baselines3 import PPO
@@ -608,6 +719,7 @@ def eval_combat_vs_snapshots(
     layout = team_sizes or [1] * int(world_size)
     env = GrifballVecEnv(
         mode="combat",
+        settings=settings,
         combat_world_layouts=[layout] * num_worlds,
         combat_kill_range=(kill_target, kill_target),
         combat_randomize_layout=False,

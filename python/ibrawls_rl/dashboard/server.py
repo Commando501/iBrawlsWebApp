@@ -26,6 +26,7 @@ from .. import hardware
 from . import advisor
 from . import metrics as metricsmod
 from . import evalhistory
+from . import model_contract
 from .paths import CONFIG_PATH, STATIC_DIR, PROJECT_DIR, safe_run_path
 from .procman import ManagedProcess
 from .trainqueue import TrainQueue
@@ -110,6 +111,8 @@ def _record_eval_if_new(st: dict) -> None:
             "observation_version": result.get("observation_version") or meta.get("observation_version"),
             "summary": result.get("summary"),
             "scenarios": result.get("scenarios"),
+            "mechanics_summary": result.get("mechanics_summary"),
+            "mechanics_suite": result.get("mechanics_suite"),
             "league_snapshots": result.get("league_snapshots") or meta.get("league_snapshots"),
         })
 
@@ -200,6 +203,13 @@ class Handler(BaseHTTPRequestHandler):
                     self._send_json(metricsmod.read_run_metrics(run))
             elif path == "/api/models":
                 self._send_json({"models": metricsmod.list_models()})
+            elif path == "/api/model/contract":
+                model = qs.get("model", [""])[0]
+                safe = safe_run_path(model)
+                if not safe or not os.path.isfile(safe):
+                    self._send_json({"error": "model not found"}, 404)
+                else:
+                    self._send_json(model_contract.build_model_contract(safe, project_dir=PROJECT_DIR))
             elif path == "/api/eval/status":
                 self._send_json(self._eval_status())
             elif path == "/api/eval/history":
@@ -379,6 +389,8 @@ class Handler(BaseHTTPRequestHandler):
             args += ["--kill-target", str(int(body.get("kill_target", 10)))]
             if body.get("matrix"):
                 args += ["--matrix"]
+            if body.get("mechanics_suite"):
+                args += ["--mechanics-suite"]
             for path in body.get("league_snapshots") or []:
                 args += ["--league-snapshot", str(path)]
         else:
@@ -391,6 +403,7 @@ class Handler(BaseHTTPRequestHandler):
             "num_envs": int(body.get("num_envs", 16)),
             "device": body.get("device", "cpu"),
             "matrix": bool(body.get("matrix")),
+            "mechanics_suite": bool(body.get("mechanics_suite")),
             "frame_stack": int(body.get("frame_stack", 0) or 0),
             "observation_version": int(body.get("observation_version", 0) or 0),
             "league_snapshots": body.get("league_snapshots") or [],
