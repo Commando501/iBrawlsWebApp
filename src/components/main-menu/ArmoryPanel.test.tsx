@@ -59,6 +59,34 @@ test('ArmorModelEditor exposes V3 armor preview mode without removing voxel edit
 
   assert.match(html, /Voxel Edit/);
   assert.match(html, /Armor Preview/);
+  assert.match(html, /Rig Preview/);
+  assert.match(html, /Read/);
+  assert.match(html, /Visual QA/);
   assert.match(html, /Voxel/);
   assert.match(html, /Box/);
+  assert.match(html, /Suggested Fixes/);
+  assert.match(html, /Boost readability/);
+  assert.match(html, /Reduce dark coverage/);
+  assert.match(html, /Improve paneling/);
+  assert.match(html, /Polish silhouette/);
+  assert.match(html, /Center/);
+  assert.match(html, /Fit/);
+  assert.match(html, /No Floating/);
+  assert.match(html, /Seed Anchor/);
+});
+
+test('ArmorModelEditor hides suggested fixes for V2 armor editing', () => {
+  const html = renderToStaticMarkup(
+    <ArmorModelEditor
+      catalog={{ version: 1, pieces: [] }}
+      playerLoadout={{ ...DEFAULT_LOADOUT, modelSystem: 'v2' }}
+      playerHue={200}
+      onCatalogChange={noop as React.Dispatch<React.SetStateAction<any>>}
+      onLoadoutChange={noop}
+      onClose={noop}
+    />
+  );
+
+  assert.doesNotMatch(html, /Suggested Fixes/);
+  assert.doesNotMatch(html, /Boost readability/);
 });

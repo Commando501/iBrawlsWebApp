@@ -44,7 +44,11 @@ import {
   V3_SLOT_DETAIL_BONES,
   type V3DetailBoneName,
 } from './v3RigDetail';
-import { V3_ARMOR_SURFACE_DEFAULT_OPTIONS, createV3VoxelArmorGroup } from './v3VoxelArmorSurface';
+import {
+  V3_ARMOR_SURFACE_BASE_VOXEL_SCALE,
+  V3_ARMOR_SURFACE_DEFAULT_OPTIONS,
+  createV3VoxelArmorGroup,
+} from './v3VoxelArmorSurface';
 
 export interface V3SpartanBuildOptions extends V3RenderOptions {
   isEnemy?: boolean;
@@ -65,7 +69,6 @@ type V3PartSpec = {
 
 type V3BuiltinPartGridScale = 1 | 2;
 
-const V3_VOXEL_SCALE = 0.055;
 const V3_WEAPON_SCALE = 0.06;
 
 const V3_PART_SPECS: Record<V3CharacterSlotId, V3PartSpec> = {
@@ -709,7 +712,7 @@ export function buildV3SpartanModel(options: V3SpartanBuildOptions = {}): THREE.
       : createPartVoxels(part, scaleV3Dimensions(spec.dimensions, gridScale), colors, paintJob);
     const group = createV3VoxelArmorGroup(voxels, {
       ...V3_ARMOR_SURFACE_DEFAULT_OPTIONS,
-      voxelScale: V3_VOXEL_SCALE / gridScale,
+      voxelScale: V3_ARMOR_SURFACE_BASE_VOXEL_SCALE / gridScale,
       renderStyle: v3ArmorRenderStyle,
       qualityTier: v3QualityTier,
     });

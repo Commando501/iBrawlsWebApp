@@ -33,12 +33,17 @@ import {
   type CustomArmorPiece,
   type CustomArmorPieceSnapshot,
   type CustomArmorSlot,
+  type CustomArmorColors,
   type V2CustomArmorSlot,
   type V3CustomArmorSlot,
   type CustomArmorVoxel,
 } from '../customArmor';
 import { getV3BuiltinPartVoxels } from '../v3/VoxelModelsV3';
-import { V3_ARMOR_SURFACE_DEFAULT_OPTIONS, createV3VoxelArmorGroup } from '../v3/v3VoxelArmorSurface';
+import {
+  V3_ARMOR_SURFACE_BASE_VOXEL_SCALE,
+  V3_ARMOR_SURFACE_DEFAULT_OPTIONS,
+  createV3VoxelArmorGroup,
+} from '../v3/v3VoxelArmorSurface';
 import { getV3CharacterPartBounds } from '../v3/v3PartBounds';
 import {
   getCharacterModelCollisionProfile,
@@ -47,6 +52,12 @@ import {
 import { getV3CharacterPartManifest } from '../v3/v3AssetManifest';
 import type { CharacterModelType } from '../../types';
 import { buildArmorEditorValidationReport } from './armorEditorValidation';
+import { buildV3ArmorEditorVisualQa } from './v3ArmorEditorVisualQa';
+import {
+  applyV3ArmorEditorPolishAction,
+  buildV3ArmorEditorPolishActions,
+  type V3ArmorEditorPolishActionId,
+} from './v3ArmorEditorPolish';
 
 interface ArmorModelEditorProps {
   catalog: CustomArmorCatalog;
@@ -169,6 +180,15 @@ const roleColorPreview: Record<CustomArmorMaterialRole, string> = {
   decal: '#a855f7',
   fixed: '#f472b6',
 };
+
+const createEditorPreviewPalette = (playerHue: number): CustomArmorColors => ({
+  primary: `hsl(${playerHue}, 85%, 50%)`,
+  secondary: '#1e293b',
+  accent: `hsl(${playerHue}, 90%, 75%)`,
+  visor: `hsl(${playerHue}, 95%, 70%)`,
+  dark: '#0f172a',
+  highlight: `hsl(${playerHue}, 75%, 65%)`,
+});
 
 type EditorBounds = {
   minX: number;
@@ -379,6 +399,7 @@ export function ArmorModelEditor({
   const cameraViewsRef = useRef<Record<ViewMode, ArmorEditorCameraView>>(createDefaultCameraViews());
 
   const validation = useMemo(() => validateCustomArmorPiece(draft), [draft]);
+  const editorPreviewPalette = useMemo(() => createEditorPreviewPalette(playerHue), [playerHue]);
   const slotPieces = catalog.pieces.filter((piece) => (
     piece.slot === slot &&
     pieceMatchesMode(piece, modelSystem, modelType)
@@ -401,6 +422,14 @@ export function ArmorModelEditor({
     const slotBudget = modelSystem === 'v3'
       ? (v3Manifest?.budget.sourceVoxelCount ?? validation.stats.voxelCount) * draftGridScale * draftGridScale
       : getCustomArmorSlotSpec(slot, modelType).maxVoxels;
+    const visualQa = modelSystem === 'v3'
+      ? buildV3ArmorEditorVisualQa({
+          draft,
+          colors: editorPreviewPalette,
+          slot: slot as V3CustomArmorSlot,
+          gridScale: draftGridScale,
+        })
+      : undefined;
 
     return buildArmorEditorValidationReport({
       draft,
@@ -410,8 +439,17 @@ export function ArmorModelEditor({
       recommendedRoles: modelSystem === 'v3'
         ? [...(v3Manifest?.paintRoles ?? [])]
         : ['primary', 'secondary', 'accent'],
+      visualQa,
     });
-  }, [draft, draftGridScale, modelSystem, modelType, playerHue, selectedPreset, slot, validation]);
+  }, [draft, draftGridScale, editorPreviewPalette, modelSystem, modelType, playerHue, selectedPreset, slot, validation]);
+  const v3ArmorEditorPolishActions = useMemo(() => (
+    modelSystem === 'v3'
+      ? buildV3ArmorEditorPolishActions(draft, {
+          visualQa: editorValidationReport.visualQa,
+          missingRecommendedRoles: editorValidationReport.missingRecommendedRoles,
+        })
+      : []
+  ), [draft, editorValidationReport.missingRecommendedRoles, editorValidationReport.visualQa, modelSystem]);
 
   useEffect(() => {
     paintSettingsRef.current = { tool, role, fixedColor, emissive, slot, modelType, modelSystem, gridScale: draftGridScale };
@@ -481,6 +519,15 @@ export function ArmorModelEditor({
       voxels: dedupeCustomArmorVoxels(next.voxels),
     }));
     setSelectedKeys(new Set());
+  };
+
+  const applyPolishAction = (actionId: V3ArmorEditorPolishActionId, actionLabel: string) => {
+    const polished = applyV3ArmorEditorPolishAction(draft, actionId, {
+      visualQa: editorValidationReport.visualQa,
+      missingRecommendedRoles: editorValidationReport.missingRecommendedRoles,
+    });
+    replaceDraft(polished);
+    setStatus(`${actionLabel} applied.`);
   };
 
   const switchSlot = (nextSlot: CustomArmorSlot) => {
@@ -860,7 +907,7 @@ export function ArmorModelEditor({
     scene.add(rimLight);
 
     const meshes: THREE.Mesh[] = [];
-    const baseScale = 0.045;
+    const baseScale = modelSystem === 'v3' ? V3_ARMOR_SURFACE_BASE_VOXEL_SCALE : 0.045;
     const scale = modelSystem === 'v3' ? baseScale / draftGridScale : baseScale;
 
     if (viewMode === 'rig') {
@@ -888,14 +935,7 @@ export function ArmorModelEditor({
       const centerX = (b.minX + b.maxX) / 2;
       const centerY = (b.minY + b.maxY) / 2;
       const centerZ = (b.minZ + b.maxZ) / 2;
-      const palette = {
-        primary: `hsl(${playerHue}, 85%, 50%)`,
-        secondary: '#1e293b',
-        accent: `hsl(${playerHue}, 90%, 75%)`,
-        visor: `hsl(${playerHue}, 95%, 70%)`,
-        dark: '#0f172a',
-        highlight: `hsl(${playerHue}, 75%, 65%)`,
-      };
+      const palette = editorPreviewPalette;
       const baseSilhouetteVoxels = showSilhouette
         ? modelSystem === 'v3'
           ? getV3BuiltinPartVoxels(slot as V3CustomArmorSlot, playerHue, undefined, { gridScale: 1 })
@@ -1152,6 +1192,7 @@ export function ArmorModelEditor({
   }, [
     draft,
     draftGridScale,
+    editorPreviewPalette,
     playerHue,
     playerLoadout,
     poseMode,
@@ -1390,6 +1431,9 @@ export function ArmorModelEditor({
                   ? `+${editorValidationReport.builtInVoxelDelta}`
                   : String(editorValidationReport.builtInVoxelDelta)}
               />
+              {modelSystem === 'v3' && editorValidationReport.visualQa && (
+                <Metric label="Read" value={`${editorValidationReport.visualQa.score}%`} />
+              )}
             </div>
             {showPerformance && (
               <div className="mt-2 text-[10px] text-white/45 leading-relaxed">
@@ -1410,6 +1454,13 @@ export function ArmorModelEditor({
                   Missing roles: {editorValidationReport.missingRecommendedRoles.join(', ')}
                 </span>
               )}
+              {modelSystem === 'v3' && editorValidationReport.visualQa && (
+                <span className={`text-[10px] ${editorValidationReport.visualQa.ready ? 'text-emerald-300' : 'text-amber-300'}`}>
+                  Visual QA: {editorValidationReport.visualQa.ready
+                    ? 'armor preview reads clearly.'
+                    : editorValidationReport.visualQa.issues[0]?.message ?? 'armor preview needs readability polish.'}
+                </span>
+              )}
               {showClipping && <span className="text-[10px] text-amber-300">Clipping view is heuristic; confirm in rig poses before saving.</span>}
             </div>
             <div className="grid grid-cols-2 gap-1.5 mt-2">
@@ -1418,6 +1469,30 @@ export function ArmorModelEditor({
               <button type="button" onClick={() => mutateVoxels(removeFloatingVoxels)} className="editor-chip">No Floating</button>
               <button type="button" onClick={() => replaceDraft(seedCornerAnchor(draft))} className="editor-chip">Seed Anchor</button>
             </div>
+            {modelSystem === 'v3' && (
+              <div className="mt-3 border-t border-white/10 pt-3">
+                <div className="mb-2 text-[10px] font-black uppercase tracking-widest text-cyan-200">Suggested Fixes</div>
+                <div className="flex flex-col gap-2">
+                  {v3ArmorEditorPolishActions.map((action) => (
+                    <div key={action.id} className="grid grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] gap-2 items-start">
+                      <button
+                        type="button"
+                        onClick={() => applyPolishAction(action.id, action.label)}
+                        disabled={!action.enabled}
+                        className={`editor-chip text-left disabled:opacity-35 ${
+                          action.enabled ? 'border-cyan-400/40 text-cyan-100' : 'border-white/10 text-white/35'
+                        }`}
+                      >
+                        {action.label}
+                      </button>
+                      <span className={`text-[10px] leading-relaxed ${action.enabled ? 'text-white/55' : 'text-white/35'}`}>
+                        {action.reason}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </Panel>
 
           <Panel title="Catalog">
