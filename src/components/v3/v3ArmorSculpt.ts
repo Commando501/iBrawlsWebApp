@@ -39,6 +39,50 @@ export interface V3MirroredArmorPlateOptions extends V3ArmorPlateOptions {
   mirrorMaxX: number;
 }
 
+export interface V3TaperedArmorPlateOptions extends V3ArmorPlateOptions {
+  taperAxis: 'x' | 'y';
+  taperAmount: number;
+}
+
+export interface V3SteppedRidgeOptions {
+  origin: V3VoxelDimensionsTuple;
+  axis: 'x' | 'y';
+  length: number;
+  width?: number;
+  stepEvery: number;
+  gapEvery?: number;
+  color: string;
+  emissive?: boolean;
+}
+
+type V3ChannelAxis = 'x' | 'y' | 'z';
+type V3ChannelCoordinateRange = number | readonly [number, number];
+
+export interface V3InsetChannelOptions {
+  axis: V3ChannelAxis;
+  fixed?: Partial<Record<V3ChannelAxis, V3ChannelCoordinateRange>>;
+  range?: V3ChannelCoordinateRange;
+  mode: 'remove' | 'recolor';
+  color?: string;
+  emissive?: boolean;
+}
+
+export interface V3VentPairOptions {
+  centerX: number;
+  y: number;
+  z: number;
+  pairs: number;
+  spacing?: number;
+  color: string;
+  emissive?: boolean;
+}
+
+export interface V3SegmentedBandOptions extends V3ArmorPlateOptions {
+  axis: 'x' | 'y';
+  segmentLength: number;
+  gapLength?: number;
+}
+
 export const V3_AEGIS_SCULPT_PROFILES: Record<V3CharacterSlotId, V3SculptProfile> = {
   helmet: {
     xInsets: [[0, 3], [0.3, 2], [0.58, 1], [0.74, 1], [0.88, 3], [1, 3]],
@@ -264,4 +308,158 @@ export function appendV3MirroredArmorPlates(
     color,
     emissive,
   });
+}
+
+export function appendV3TaperedArmorPlate(
+  voxels: VoxelData[],
+  { origin, dimensions, taperAxis, taperAmount, color, emissive = false }: V3TaperedArmorPlateOptions
+): void {
+  const [originX, originY, originZ] = origin;
+  const [width, height, depth] = dimensions;
+  const maxXInset = Math.max(0, Math.floor((width - 1) / 2));
+  const maxYInset = Math.max(0, Math.floor((height - 1) / 2));
+
+  for (let xIndex = 0; xIndex < width; xIndex += 1) {
+    const xRatio = width <= 1 ? 1 : xIndex / (width - 1);
+    const yInset = taperAxis === 'y'
+      ? Math.min(maxYInset, Math.max(0, Math.round(taperAmount * xRatio)))
+      : 0;
+
+    for (let yIndex = yInset; yIndex < height - yInset; yIndex += 1) {
+      const yRatio = height <= 1 ? 1 : yIndex / (height - 1);
+      const xInset = taperAxis === 'x'
+        ? Math.min(maxXInset, Math.max(0, Math.round(taperAmount * yRatio)))
+        : 0;
+
+      if (xIndex < xInset || xIndex >= width - xInset) continue;
+
+      for (let zIndex = 0; zIndex < depth; zIndex += 1) {
+        setV3Voxel(voxels, {
+          x: originX + xIndex,
+          y: originY + yIndex,
+          z: originZ + zIndex,
+          color,
+          emissive,
+        });
+      }
+    }
+  }
+}
+
+export function appendV3SteppedRidge(
+  voxels: VoxelData[],
+  {
+    origin,
+    axis,
+    length,
+    width = 1,
+    stepEvery,
+    gapEvery = 1,
+    color,
+    emissive = false,
+  }: V3SteppedRidgeOptions
+): void {
+  const [originX, originY, originZ] = origin;
+  const activeLength = Math.max(1, Math.floor(stepEvery));
+  const gapLength = Math.max(0, Math.floor(gapEvery));
+  const cycleLength = activeLength + gapLength;
+  const ridgeLength = Math.max(0, Math.floor(length));
+  const ridgeWidth = Math.max(1, Math.floor(width));
+
+  for (let index = 0; index < ridgeLength; index += 1) {
+    if (cycleLength > 0 && index % cycleLength >= activeLength) continue;
+
+    for (let offset = 0; offset < ridgeWidth; offset += 1) {
+      setV3Voxel(voxels, {
+        x: axis === 'x' ? originX + index : originX + offset,
+        y: axis === 'x' ? originY + offset : originY + index,
+        z: originZ,
+        color,
+        emissive,
+      });
+    }
+  }
+}
+
+const coordinateMatchesRange = (
+  value: number,
+  range: V3ChannelCoordinateRange | undefined
+): boolean => {
+  if (range === undefined) return true;
+  if (typeof range === 'number') return value === range;
+
+  const [min, max] = range[0] <= range[1] ? range : [range[1], range[0]];
+  return value >= min && value <= max;
+};
+
+export function appendV3InsetChannel(
+  voxels: VoxelData[],
+  options: V3InsetChannelOptions
+): void {
+  const { axis, fixed = {}, range, mode, color } = options;
+  const fixedEntries = Object.entries(fixed) as [V3ChannelAxis, V3ChannelCoordinateRange][];
+  const matchesChannel = (voxel: VoxelData): boolean =>
+    coordinateMatchesRange(voxel[axis], range) &&
+    fixedEntries.every(([fixedAxis, fixedRange]) => coordinateMatchesRange(voxel[fixedAxis], fixedRange));
+
+  if (mode === 'remove') {
+    for (let index = voxels.length - 1; index >= 0; index -= 1) {
+      if (matchesChannel(voxels[index])) {
+        voxels.splice(index, 1);
+      }
+    }
+    return;
+  }
+
+  for (const voxel of voxels) {
+    if (!matchesChannel(voxel)) continue;
+    if (color !== undefined) {
+      voxel.color = color;
+    }
+    if ('emissive' in options) {
+      voxel.emissive = options.emissive;
+    }
+  }
+}
+
+export function appendV3VentPair(
+  voxels: VoxelData[],
+  { centerX, y, z, pairs, spacing = 1, color, emissive = false }: V3VentPairOptions
+): void {
+  const pairCount = Math.max(0, Math.floor(pairs));
+  const ventSpacing = Math.max(1, Math.floor(spacing));
+
+  for (let index = 0; index < pairCount; index += 1) {
+    const offset = ventSpacing * (index + 1);
+    setV3Voxel(voxels, { x: centerX - offset, y, z, color, emissive });
+    setV3Voxel(voxels, { x: centerX + offset, y, z, color, emissive });
+  }
+}
+
+export function appendV3SegmentedBand(
+  voxels: VoxelData[],
+  { origin, dimensions, axis, segmentLength, gapLength = 1, color, emissive = false }: V3SegmentedBandOptions
+): void {
+  const [originX, originY, originZ] = origin;
+  const [width, height, depth] = dimensions;
+  const activeLength = Math.max(1, Math.floor(segmentLength));
+  const inactiveLength = Math.max(0, Math.floor(gapLength));
+  const cycleLength = activeLength + inactiveLength;
+
+  for (let xIndex = 0; xIndex < width; xIndex += 1) {
+    for (let yIndex = 0; yIndex < height; yIndex += 1) {
+      const bandIndex = axis === 'x' ? xIndex : yIndex;
+      if (cycleLength > 0 && bandIndex % cycleLength >= activeLength) continue;
+
+      for (let zIndex = 0; zIndex < depth; zIndex += 1) {
+        setV3Voxel(voxels, {
+          x: originX + xIndex,
+          y: originY + yIndex,
+          z: originZ + zIndex,
+          color,
+          emissive,
+        });
+      }
+    }
+  }
 }

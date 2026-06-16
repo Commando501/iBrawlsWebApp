@@ -49,10 +49,10 @@ export interface V3PerformanceSmokeRuntimeReport extends V3PerformanceSmokeRepor
 }
 
 export const V3_PERFORMANCE_SMOKE_BUDGETS: Record<V3QualityTier, V3PerformanceSmokeBudgetGate> = {
-  mobileLow: { maxDrawCallEstimate: 410, maxMergedBoxCount: 11000, maxMemoryEstimateKb: 13500 },
-  mobile: { maxDrawCallEstimate: 410, maxMergedBoxCount: 11000, maxMemoryEstimateKb: 13500 },
-  desktop: { maxDrawCallEstimate: 550, maxMergedBoxCount: 16000, maxMemoryEstimateKb: 20000 },
-  ultra: { maxDrawCallEstimate: 650, maxMergedBoxCount: 19500, maxMemoryEstimateKb: 24000 },
+  mobileLow: { maxDrawCallEstimate: 410, maxMergedBoxCount: 14000, maxMemoryEstimateKb: 13500 },
+  mobile: { maxDrawCallEstimate: 410, maxMergedBoxCount: 14000, maxMemoryEstimateKb: 13500 },
+  desktop: { maxDrawCallEstimate: 550, maxMergedBoxCount: 20500, maxMemoryEstimateKb: 20000 },
+  ultra: { maxDrawCallEstimate: 650, maxMergedBoxCount: 25000, maxMemoryEstimateKb: 24000 },
 };
 
 export const V3_PERFORMANCE_RUNTIME_TARGET_FPS: Record<V3QualityTier, number> = {

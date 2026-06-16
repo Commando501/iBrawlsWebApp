@@ -132,6 +132,12 @@ const getVoxelBounds = (voxels: VoxelData[]) => {
 
 const getRowXSpan = (voxels: VoxelData[], y: number): number => getVoxelXSpan(voxels.filter((voxel) => voxel.y === y));
 
+const getFrontFaceCoverage = (voxels: VoxelData[]): number => {
+  const bounds = getVoxelBounds(voxels);
+  const frontCells = voxels.filter((voxel) => voxel.z === bounds.maxZ).length;
+  return frontCells / (bounds.sizeX * bounds.sizeY);
+};
+
 const hasNearFullHeightFrontColumn = (voxels: VoxelData[]): boolean => {
   const bounds = getVoxelBounds(voxels);
   const frontZ = bounds.maxZ;
@@ -721,6 +727,25 @@ describe('buildV3SpartanModel', () => {
     assert.ok(collarBand.length >= 8, `expected neck collar band, found ${collarBand.length}`);
     assert.ok(backRails.length >= 14, `expected backpack spine rails, found ${backRails.length}`);
     assert.ok(backEmissive.length >= 4, `expected backpack emissive cells, found ${backEmissive.length}`);
+  });
+
+  it('segments remaining V3 built-in armor faces away from broad filled rectangles', () => {
+    const limits: Partial<Record<(typeof V3_CHARACTER_SLOT_IDS)[number], number>> = {
+      neck: 0.52,
+      shoulderLeft: 0.44,
+      shoulderRight: 0.44,
+      footLeft: 0.5,
+      footRight: 0.5,
+      back: 0.55,
+    };
+
+    for (const [slot, limit] of Object.entries(limits)) {
+      const coverage = getFrontFaceCoverage(getV3BuiltinPartVoxels(slot as (typeof V3_CHARACTER_SLOT_IDS)[number], 192));
+      assert.ok(
+        coverage <= limit,
+        `${slot} front face should be segmented below ${limit}, got ${coverage.toFixed(3)}`
+      );
+    }
   });
 
   it('builds V3 custom armor pieces in place of matching built-in V3 parts', () => {
