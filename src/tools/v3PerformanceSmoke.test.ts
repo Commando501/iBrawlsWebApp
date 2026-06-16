@@ -46,6 +46,9 @@ test('buildV3PerformanceSmokeReport gates every quality tier against production 
     assert.equal(report.visualQaReady, true, `${tier}: ${report.visualQa.issues.map((issue) => issue.code).join(', ')}`);
     assert.equal(report.visualQa.ready, true);
     assert.equal(report.visualQa.summary.snapshotCount, 64);
+    assert.equal(report.poseClearanceReady, true, `${tier}: ${report.poseClearance.issues.map((issue) => issue.code).join(', ')}`);
+    assert.equal(report.poseClearance.ready, true);
+    assert.equal(report.poseClearance.summary.caseCount, 12);
     assert.deepEqual(report.weaponCoverage, ['hammer', 'pistol', 'sword']);
     assert.ok(smoke.budget.drawCallEstimate <= V3_PERFORMANCE_SMOKE_BUDGETS[tier].maxDrawCallEstimate);
     assert.doesNotThrow(() => assertV3PerformanceSmokeBudget(smoke));
@@ -66,18 +69,25 @@ test('buildV3PerformanceSmokeReport gates fixed-angle V3 visual QA readiness', (
 
 test('buildV3PerformanceSmokeRuntimeReport requires measured frame timing evidence', () => {
   const smoke = buildV3PerformanceSmokeScene({ qualityTier: 'desktop' });
+  const staticReport = buildV3PerformanceSmokeReport(smoke);
 
-  const pending = buildV3PerformanceSmokeRuntimeReport(smoke);
+  const pending = buildV3PerformanceSmokeRuntimeReport(smoke, undefined, staticReport);
   assert.equal(pending.ready, false);
   assert.ok(pending.issues.some((issue) => issue.includes('runtime sample pending')));
+  assert.equal(pending.poseClearanceReady, true);
+  assert.equal(pending.poseClearance, staticReport.poseClearance);
 
-  const fast = buildV3PerformanceSmokeRuntimeReport(smoke, { sampledFrames: 120, elapsedMs: 2_000 });
+  const fast = buildV3PerformanceSmokeRuntimeReport(smoke, { sampledFrames: 120, elapsedMs: 2_000 }, staticReport);
   assert.equal(fast.ready, true, fast.issues.join(', '));
   assert.equal(fast.runtimeReady, true);
   assert.equal(fast.averageFps >= fast.targetFps, true);
+  assert.equal(fast.poseClearanceReady, true);
+  assert.equal(fast.poseClearance, staticReport.poseClearance);
 
-  const slow = buildV3PerformanceSmokeRuntimeReport(smoke, { sampledFrames: 30, elapsedMs: 2_500 });
+  const slow = buildV3PerformanceSmokeRuntimeReport(smoke, { sampledFrames: 30, elapsedMs: 2_500 }, staticReport);
   assert.equal(slow.ready, false);
   assert.equal(slow.runtimeReady, false);
   assert.ok(slow.issues.some((issue) => issue.includes('average FPS')));
+  assert.equal(slow.poseClearanceReady, true);
+  assert.equal(slow.poseClearance, staticReport.poseClearance);
 });
