@@ -45,7 +45,7 @@ export interface V3BudgetSummary {
 export const V3_DEFAULT_CHARACTER_BUDGET_LIMITS: V3BudgetSummary = {
   partCount: V3_CHARACTER_SLOT_IDS.length,
   sourceVoxelCount: 14500,
-  mergedBoxCount: 2100,
+  mergedBoxCount: 2950,
   materialGroupCount: 90,
   drawCallEstimate: 90,
   memoryEstimateKb: 2900,
@@ -172,7 +172,7 @@ export const BUILT_IN_V3_CHARACTER_PARTS: readonly V3CharacterPartManifest[] = [
     slot: 'neck',
     label: 'Aegis Sealed Collar',
     roles: ['undersuit', 'secondary'],
-    budget: createBudget(360, 105, 4, 4, 2, 70),
+    budget: createBudget(336, 162, 5, 5, 2, 65),
   }),
   createCharacterPart({
     slot: 'chest',
@@ -184,13 +184,13 @@ export const BUILT_IN_V3_CHARACTER_PARTS: readonly V3CharacterPartManifest[] = [
     slot: 'shoulderLeft',
     label: 'Aegis Left Guard',
     roles: ['primary', 'secondary', 'accent'],
-    budget: createBudget(770, 110, 4, 4, 3, 155),
+    budget: createBudget(759, 286, 4, 4, 3, 146),
   }),
   createCharacterPart({
     slot: 'shoulderRight',
     label: 'Aegis Right Guard',
     roles: ['primary', 'secondary', 'accent'],
-    budget: createBudget(770, 110, 4, 4, 3, 155),
+    budget: createBudget(759, 286, 4, 4, 3, 146),
   }),
   createCharacterPart({
     slot: 'upperArmLeft',
@@ -274,7 +274,7 @@ export const BUILT_IN_V3_CHARACTER_PARTS: readonly V3CharacterPartManifest[] = [
     slot: 'back',
     label: 'Aegis Utility Pack',
     roles: ['undersuit', 'secondary', 'emissive', 'fixed'],
-    budget: createBudget(840, 90, 5, 5, 3, 165),
+    budget: createBudget(733, 471, 5, 5, 3, 141),
   }),
 ];
 

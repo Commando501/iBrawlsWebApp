@@ -36,6 +36,12 @@ import { randomizeSettings, type RandomizeSpec } from '../env/randomize';
 import { type VecStepResult } from './vecEnv';
 import { passiveBaitPolicyFor, type PassiveBaitProfile } from '../harness/passiveBaitPolicy';
 import { type Policy } from '../harness/policy';
+import {
+  MECHANICS_COVERAGE_FIELDS,
+  MechanicsCoverageTracker,
+  mechanicsBaseValues as buildMechanicsBaseValues,
+  mechanicsCoverageKeys as buildMechanicsCoverageKeys,
+} from './mechanicsCoverage';
 
 export interface CombatVecEnvConfig {
   /** Fixed size of each world. Their sum is the (constant) agent batch. */
@@ -97,12 +103,17 @@ export class CombatVecEnv {
   readonly agentIds: string[];
   readonly agentTeams: string[];
   readonly learnerAgentIndices: number[];
+  readonly mechanicsCoverageKeys: string[];
+  readonly mechanicsCoverageFields: string[] = [...MECHANICS_COVERAGE_FIELDS];
+  readonly mechanicsBaseValues: Record<string, number>;
 
   private readonly settings: UniversalSettings;
   private readonly reward: RewardConfig;
   private readonly killTargetRange: [number, number];
   private readonly randomizeLayout: boolean;
   private readonly dr: RandomizeSpec;
+  private readonly mechanicsKeys: (keyof UniversalSettings)[];
+  private readonly mechanicsCoverage: MechanicsCoverageTracker;
   private readonly maxTicks: number;
   readonly decisionInterval: number;
   private readonly loneWolfRewardScale: number;
@@ -125,6 +136,10 @@ export class CombatVecEnv {
     this.killTargetRange = config.killTargetRange ?? [10, 25];
     this.randomizeLayout = config.randomizeLayout ?? true;
     this.dr = config.randomize ?? { enabled: false, pct: 0 };
+    this.mechanicsKeys = buildMechanicsCoverageKeys(this.dr);
+    this.mechanicsCoverageKeys = this.mechanicsKeys.map(String);
+    this.mechanicsBaseValues = buildMechanicsBaseValues(this.settings, this.mechanicsKeys);
+    this.mechanicsCoverage = new MechanicsCoverageTracker(this.mechanicsKeys);
     this.maxTicks = config.maxTicks ?? 60 * 60 * 8;
     this.decisionInterval = Math.max(1, Math.trunc(config.decisionInterval ?? 1));
     this.observationVersion = Math.max(1, Math.trunc(config.observationVersion ?? 1));
@@ -202,6 +217,7 @@ export class CombatVecEnv {
     const { teamSizes, killTarget } = this.sampleLayout(w);
     const seed = w.baseSeed + w.episode * 999983;
     w.settings = randomizeSettings(this.settings, this.dr, createRng(seed ^ 0x85ebca6b));
+    this.mechanicsCoverage.record(w.settings);
     w.state = createMatch({
       seed,
       mode: 'combat',
@@ -297,6 +313,7 @@ export class CombatVecEnv {
       truncated: this.truncatedBuf,
       info: { terminalObs: this.terminalObs },
       rewardComponents: this.rewardComponentBuf,
+      mechanicsCoverage: this.mechanicsCoverage.drain(),
     };
   }
 

@@ -49,6 +49,14 @@ over a **batched binary protocol** so tens of millions of steps move only flat t
   paths. Matrix wins are scored from 0..1 against each scenario's random baseline so big-world
   FFAs count fairly, and the human-likeness penalty grades behavior stats against
   `python/human_baseline.json` (build it with `npm run sim:baseline -- ./replays`).
+- Every run writes `training_metadata.json` beside `config_used.toml`. It records the brain
+  contract (mode, observation version, frame stack, action/obs dimensions, decision interval) and
+  the mechanics contract (base values, randomization band, and sampled min/mean/max coverage).
+  The dashboard's Evaluate tab reads this as the selected model's Brain Contract; old runs fall
+  back to partial `config_used.toml` data.
+- Combat matrix evaluation can add `--mechanics-suite` to repeat the matrix over nominal,
+  low-band, high-band, and live-current mechanics. The dashboard exposes this as Mechanics suite
+  and ranks a model by its worst mechanics preset instead of nominal score alone.
 - Training-side league self-play: `[league] worlds = N` dedicates 1v1 worlds to fights vs
   FROZEN snapshots (PFSP-sampled, auto-frozen every `snapshot_every` steps) — the cure for
   pure-self-play brittleness. `python -m ibrawls_rl.watch <model>` (or the dashboard's Watch

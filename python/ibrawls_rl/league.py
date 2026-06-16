@@ -243,6 +243,10 @@ class LeagueOpponentVecEnv(VecEnv):
     def last_reward_components(self) -> dict[str, float]:
         return getattr(self.base, "last_reward_components", {})
 
+    @property
+    def last_mechanics_coverage(self) -> dict[str, dict[str, float]]:
+        return getattr(self.base, "last_mechanics_coverage", {})
+
 
 class ConcatVecEnv(VecEnv):
     """Splice several VecEnvs (same obs/action spaces) into one flat batch."""
@@ -292,6 +296,35 @@ class ConcatVecEnv(VecEnv):
             if isinstance(comp, dict):
                 for k, v in comp.items():
                     merged[k] = merged.get(k, 0.0) + float(v)
+        return merged
+
+    @property
+    def last_mechanics_coverage(self) -> dict[str, dict[str, float]]:
+        merged: dict[str, dict[str, float]] = {}
+        for e in self.envs:
+            coverage = getattr(e, "last_mechanics_coverage", None)
+            if not isinstance(coverage, dict):
+                continue
+            for key, row in coverage.items():
+                if not isinstance(row, dict):
+                    continue
+                count = float(row.get("count", 0.0))
+                if count <= 0:
+                    continue
+                current = merged.get(key)
+                if current is None:
+                    merged[key] = {
+                        "count": count,
+                        "min": float(row.get("min", 0.0)),
+                        "max": float(row.get("max", 0.0)),
+                        "sum": float(row.get("sum", 0.0)),
+                    }
+                else:
+                    current["count"] += count
+                    current["min"] = min(current["min"], float(row.get("min", current["min"])))
+                    current["max"] = max(current["max"], float(row.get("max", current["max"])))
+                    current["sum"] += float(row.get("sum", 0.0))
+                merged[key]["mean"] = merged[key]["sum"] / max(1.0, merged[key]["count"])
         return merged
 
     # --- Required abstract stubs ---

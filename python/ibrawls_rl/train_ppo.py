@@ -24,6 +24,7 @@ from .envs.grifball_vec_env import GrifballVecEnv
 from .eval import eval_vs, eval_combat_vs_random
 from .league import ConcatVecEnv, LeagueOpponentVecEnv, LeagueSnapshotCallback, SnapshotPool
 from .policies import sb3_policy_kwargs
+from .training_metadata import build_training_metadata, merge_mechanics_coverage, write_training_metadata
 
 try:
     from stable_baselines3.common.callbacks import BaseCallback
@@ -166,6 +167,58 @@ class RewardComponentLoggerCallback(BaseCallback):
         return True
 
 
+class MechanicsCoverageLoggerCallback(BaseCallback):
+    """Record sampled mechanics ranges and keep training_metadata.json current."""
+
+    def __init__(self, logdir: str, metadata: dict, write_every: int = 10_000):
+        super().__init__()
+        self.logdir = logdir
+        self.metadata = metadata
+        self.write_every = max(1, int(write_every))
+        self._last_write = 0
+
+    def _record_rows(self, coverage: dict) -> None:
+        mechanics = self.metadata.get("mechanics", {}) if isinstance(self.metadata, dict) else {}
+        cumulative = mechanics.get("coverage", {}) if isinstance(mechanics, dict) else {}
+        base_values = mechanics.get("base_values", {}) if isinstance(mechanics, dict) else {}
+        for key, row in coverage.items():
+            if not isinstance(row, dict):
+                continue
+            count = float(row.get("count", 0.0))
+            if count <= 0:
+                continue
+            total = float(row.get("sum", row.get("mean", 0.0) * count))
+            mean = total / max(1.0, count)
+            self.logger.record(f"mechanics/{key}/count", count)
+            self.logger.record(f"mechanics/{key}/min", float(row.get("min", 0.0)))
+            self.logger.record(f"mechanics/{key}/mean", mean)
+            self.logger.record(f"mechanics/{key}/max", float(row.get("max", 0.0)))
+            if isinstance(base_values, dict) and key in base_values:
+                self.logger.record(f"mechanics/{key}/base", float(base_values[key]))
+            if isinstance(cumulative, dict) and isinstance(cumulative.get(key), dict):
+                cov = cumulative[key]
+                if "coverage_low" in cov:
+                    self.logger.record(f"mechanics/{key}/coverage_low", float(cov["coverage_low"]))
+                if "coverage_high" in cov:
+                    self.logger.record(f"mechanics/{key}/coverage_high", float(cov["coverage_high"]))
+
+    def _on_training_start(self) -> None:
+        write_training_metadata(self.logdir, self.metadata)
+
+    def _on_step(self) -> bool:
+        coverage = _unwrap_env_attr(self.training_env, "last_mechanics_coverage")
+        if isinstance(coverage, dict) and coverage:
+            merge_mechanics_coverage(self.metadata, coverage)
+            self._record_rows(coverage)
+            if self.num_timesteps - self._last_write >= self.write_every:
+                self._last_write = self.num_timesteps
+                write_training_metadata(self.logdir, self.metadata)
+        return True
+
+    def _on_training_end(self) -> None:
+        write_training_metadata(self.logdir, self.metadata)
+
+
 def _maybe_stack_env(env: GrifballVecEnv, frame_stack: int):  # noqa: ANN001
     stack = max(1, int(frame_stack or 1))
     if stack <= 1:
@@ -213,6 +266,7 @@ def run_training(cfg: TrainConfig) -> str:
             pass
 
     dr = randomize_spec(cfg)
+    metadata_header: dict = {}
     if cfg.mode == "combat":
         env = GrifballVecEnv(
             mode="combat",
@@ -230,6 +284,7 @@ def run_training(cfg: TrainConfig) -> str:
             decision_interval=cfg.decision_interval,
             observation_version=cfg.observation_version,
         )
+        metadata_header = dict(getattr(env, "header", {}) or {})
         if cfg.combat_bait_layout_mix:
             bait_reward = reward_dict(cfg)
             scale = float(cfg.combat_bait_reward_scale)
@@ -268,6 +323,7 @@ def run_training(cfg: TrainConfig) -> str:
             decision_interval=cfg.decision_interval,
             observation_version=cfg.observation_version,
         )
+        metadata_header = dict(getattr(env, "header", {}) or {})
 
     # League (combat only): dedicate extra 1v1 worlds to fights vs FROZEN snapshots —
     # the PFSP cure for pure-self-play brittleness. The learner's rows from these
@@ -301,6 +357,9 @@ def run_training(cfg: TrainConfig) -> str:
 
     # VecMonitor emits info["episode"] so SB3 logs rollout/ep_rew_mean & ep_len_mean —
     # the primary learning signals (without it those charts never exist).
+    training_metadata = build_training_metadata(cfg, metadata_header)
+    write_training_metadata(cfg.logdir, training_metadata)
+
     env = VecMonitor(env)
     env = _maybe_stack_env(env, cfg.frame_stack)
 
@@ -362,6 +421,7 @@ def run_training(cfg: TrainConfig) -> str:
     callbacks: list = [
         JSONLLoggerCallback(cfg.logdir),
         RewardComponentLoggerCallback(),
+        MechanicsCoverageLoggerCallback(cfg.logdir, training_metadata),
         CheckpointCallback(
             save_freq=max(1, cfg.save_every // max(1, env.num_envs)),
             save_path=os.path.join(cfg.logdir, "checkpoints"),

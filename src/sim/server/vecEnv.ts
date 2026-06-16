@@ -33,6 +33,12 @@ import { randomPolicy } from '../harness/randomPolicy';
 import { type Policy } from '../harness/policy';
 import { randomizeSettings, type RandomizeSpec } from '../env/randomize';
 import { idleAction, type ActionInput } from '../actions';
+import {
+  MECHANICS_COVERAGE_FIELDS,
+  MechanicsCoverageTracker,
+  mechanicsBaseValues as buildMechanicsBaseValues,
+  mechanicsCoverageKeys as buildMechanicsCoverageKeys,
+} from './mechanicsCoverage';
 
 export interface VecEnvConfig {
   numEnvs: number;
@@ -72,6 +78,8 @@ export interface VecStepResult {
   info: StepInfo;
   /** Signed aggregate reward components for this vec-env step, in REWARD_COMPONENT_KEYS order. */
   rewardComponents: Float32Array;
+  /** Aggregate mechanics coverage as [count, min, max, sum] per header.mechanicsCoverageKeys. */
+  mechanicsCoverage: Float32Array;
 }
 
 export class VecEnv {
@@ -83,6 +91,9 @@ export class VecEnv {
   readonly agentIds: string[];
   /** Team of each agent (roster order), so the trainer can pick learner vs opponent. */
   readonly agentTeams: string[];
+  readonly mechanicsCoverageKeys: string[];
+  readonly mechanicsCoverageFields: string[] = [...MECHANICS_COVERAGE_FIELDS];
+  readonly mechanicsBaseValues: Record<string, number>;
 
   private readonly settings: UniversalSettings;
   private readonly reward: RewardConfig;
@@ -93,6 +104,8 @@ export class VecEnv {
   readonly decisionInterval: number;
 
   private readonly randomize: RandomizeSpec;
+  private readonly mechanicsKeys: (keyof UniversalSettings)[];
+  private readonly mechanicsCoverage: MechanicsCoverageTracker;
   private states: SimState[] = [];
   private memories: RewardMemory[] = [];
   private rngs: Rng[] = [];
@@ -124,6 +137,10 @@ export class VecEnv {
     this.decisionInterval = Math.max(1, Math.trunc(config.decisionInterval ?? 1));
     this.randomize = config.randomize ?? { enabled: false, pct: 0 };
     this.baseSeed = config.baseSeed ?? 1;
+    this.mechanicsKeys = buildMechanicsCoverageKeys(this.randomize);
+    this.mechanicsCoverageKeys = this.mechanicsKeys.map(String);
+    this.mechanicsBaseValues = buildMechanicsBaseValues(this.settings, this.mechanicsKeys);
+    this.mechanicsCoverage = new MechanicsCoverageTracker(this.mechanicsKeys);
 
     const n = this.numEnvs * this.numAgents;
     this.obsBuf = new Float32Array(n * this.obsDim);
@@ -144,6 +161,7 @@ export class VecEnv {
     const seed = this.seedFor(e);
     const settings = randomizeSettings(this.settings, this.randomize, createRng(seed ^ 0x85ebca6b));
     this.envSettings[e] = settings;
+    this.mechanicsCoverage.record(settings);
     const state = createMatch({ seed, teamSizes: this.teamSizes, settings });
     this.states[e] = state;
     this.memories[e] = initRewardMemory(state);
@@ -239,6 +257,7 @@ export class VecEnv {
       truncated: this.truncatedBuf,
       info: { terminalObs: this.terminalObs },
       rewardComponents: this.rewardComponentBuf,
+      mechanicsCoverage: this.mechanicsCoverage.drain(),
     };
   }
 

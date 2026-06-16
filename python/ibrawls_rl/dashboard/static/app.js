@@ -505,22 +505,94 @@ async function renderRunComparison() {
 
 // ================= EVALUATE =================
 let evalTimer = null;
+let evalModelContract = null;
 async function loadModels() {
   const data = await api.get("/api/models");
   const sel = $("#evalModel"); sel.innerHTML = "";
-  if (!data.models || !data.models.length) { sel.append(el("option", { value: "" }, "— no models found —")); return; }
+  if (!data.models || !data.models.length) {
+    sel.append(el("option", { value: "" }, "— no models found —"));
+    renderModelContract(null);
+    return;
+  }
   data.models.forEach((m) => sel.append(el("option", { value: m.path, "data-mode": m.mode || "" }, m.label)));
   syncEvalMode();
 }
 $("#evalModel").addEventListener("change", syncEvalMode);
 $("#evalMode").addEventListener("change", syncEvalMode);
+$("#evalMatrix").addEventListener("change", syncEvalMode);
 function syncEvalMode() {
   const opt = $("#evalModel").selectedOptions[0];
   if (opt && opt.dataset.mode) $("#evalMode").value = opt.dataset.mode;
   const combat = $("#evalMode").value === "combat";
   $("#evalOppWrap").style.display = combat ? "none" : "flex";
   $("#evalMatrixWrap").style.display = combat ? "flex" : "none";
+  $("#evalMechanicsSuiteWrap").style.display = combat ? "flex" : "none";
+  $("#evalMechanicsSuite").disabled = !(combat && $("#evalMatrix").checked);
   $("#evalLeagueWrap").style.display = combat ? "flex" : "none";
+  loadModelContract();
+}
+
+async function loadModelContract() {
+  const model = $("#evalModel").value;
+  if (!model) { renderModelContract(null); return; }
+  const root = $("#modelContract");
+  root.className = "model-contract muted";
+  root.textContent = "Loading brain contract...";
+  try {
+    const contract = await api.get("/api/model/contract?model=" + encodeURIComponent(model));
+    evalModelContract = contract;
+    renderModelContract(contract);
+  } catch {
+    evalModelContract = null;
+    root.textContent = "Brain contract unavailable.";
+  }
+}
+
+function renderModelContract(contract) {
+  const root = $("#modelContract");
+  if (!root) return;
+  root.innerHTML = "";
+  if (!contract) {
+    root.className = "model-contract muted";
+    root.textContent = "Select a saved brain to view its contract.";
+    return;
+  }
+  const mc = contract.model_contract || {};
+  const mech = contract.mechanics || {};
+  const rand = mech.randomize || {};
+  const coverage = mech.coverage || {};
+  const coverageKeys = Object.keys(coverage);
+  const badges = el("div", { class: "contract-badges" },
+    el("span", { class: "badge " + (contract.partial ? "soon" : "finished") },
+      contract.partial ? "partial contract" : "metadata contract"),
+    el("span", { class: "badge idle" }, contract.mode || "unknown"),
+    el("span", { class: "badge idle" }, `obs v${mc.observation_version ?? "?"}`),
+    el("span", { class: "badge idle" }, `stack ${mc.frame_stack ?? "?"}`),
+    el("span", { class: "badge idle" }, `decision ${mc.decision_interval ?? "?"}`),
+    el("span", { class: "badge idle" }, rand.enabled ? `DR +/-${Math.round((rand.pct || 0) * 100)}%` : "DR off"),
+    el("span", { class: "badge idle" }, `${(mech.keys || []).length} mechanics keys`),
+    el("span", { class: "badge idle" }, `${coverageKeys.length} covered`));
+  root.className = "model-contract";
+  root.append(badges);
+  if ((contract.warnings || []).length) {
+    root.append(el("div", { class: "contract-warning" }, contract.warnings.join(" ")));
+  }
+  if (coverageKeys.length) {
+    const rows = coverageKeys.slice(0, 8).map((key) => {
+      const row = coverage[key] || {};
+      return el("tr", {},
+        el("td", {}, key),
+        el("td", {}, fmtInt(row.count)),
+        el("td", {}, fmtNum(row.min)),
+        el("td", {}, fmtNum(row.mean)),
+        el("td", {}, fmtNum(row.max)));
+    });
+    root.append(el("table", { class: "contract-table" },
+      el("thead", {}, el("tr", {},
+        el("th", {}, "Mechanic"), el("th", {}, "Samples"), el("th", {}, "Min"),
+        el("th", {}, "Mean"), el("th", {}, "Max"))),
+      el("tbody", {}, ...rows)));
+  }
 }
 
 $("#btnEval").addEventListener("click", async () => {
@@ -531,6 +603,7 @@ $("#btnEval").addEventListener("click", async () => {
     frame_stack: Number($("#evalFrameStack").value),
     observation_version: Number($("#evalObservationVersion").value),
     matrix: $("#evalMatrix").checked,
+    mechanics_suite: $("#evalMechanicsSuite").checked,
     league_snapshots: $("#evalLeagueSnapshots").value.split(/\r?\n|,/).map((s) => s.trim()).filter(Boolean),
   };
   const res = await api.post("/api/eval/start", body);
@@ -617,14 +690,17 @@ function histRow(r, best) {
 }
 function promotionRankScore(r) {
   const s = r.summary || {};
+  const ms = r.mechanics_summary || {};
+  const mechanicsFloor = typeof ms.worst_score === "number" ? ms.worst_score : null;
+  const applyMechanicsFloor = (score) => mechanicsFloor == null ? score : Math.min(score, mechanicsFloor);
   if (s.anti_bait_score != null) {
     const gates = [s.lone_wolf_score, s.frozen_snapshot_score, s.promotion_score]
       .filter((v) => typeof v === "number");
     const floor = gates.length ? Math.min(...gates) : s.anti_bait_score;
     const trapPenalty = typeof s.trap_death_rate === "number" ? Math.max(0, s.trap_death_rate - 0.2) : 0;
-    return Math.min(s.anti_bait_score, floor) - trapPenalty;
+    return applyMechanicsFloor(Math.min(s.anti_bait_score, floor) - trapPenalty);
   }
-  return r.win_rate ?? s.lone_wolf_score ?? s.promotion_score ?? 0;
+  return applyMechanicsFloor(r.win_rate ?? s.lone_wolf_score ?? s.promotion_score ?? 0);
 }
 $("#btnHistRefresh").addEventListener("click", loadEvalHistory);
 $("#btnHistSort").addEventListener("click", () => {
@@ -691,6 +767,28 @@ function renderEvalMatrixResult(r) {
         options.trap ? el("th", {}, "Trap deaths") : null,
         el("th", {}, "World"), el("th", {}, "Kills"), el("th", {}, "Atk / dash / repeat"))),
       el("tbody", {}, ...scenarioRows(scenarios, options))));
+  const mechanicsSuiteTable = (suite, ms) => {
+    const rows = (suite || []).map((preset) => {
+      const ps = preset.summary || {};
+      const score = ps.strict_promotion_score ?? ps.promotion_score ?? ps.lone_wolf_score ?? ps.mean_scenario_win_score ?? 0;
+      return el("tr", {},
+        el("td", {}, preset.name),
+        el("td", { title: preset.description || "" }, fmtNum(score)),
+        el("td", {}, fmtNum(ps.lone_wolf_score ?? ps.promotion_score)),
+        el("td", {}, fmtNum(ps.anti_bait_score)),
+        el("td", {}, ps.frozen_snapshot_score == null ? "missing" : fmtNum(ps.frozen_snapshot_score)),
+        el("td", {}, `${Math.round((ps.trap_death_rate || 0) * 100)}%`));
+    });
+    return el("div", { class: "mechanics-suite" },
+      el("h3", { style: "margin:14px 0 0" }, "Mechanics suite"),
+      el("div", { class: "muted" },
+        `mean ${fmtNum(ms.mean_score)} | worst ${ms.worst_preset || "-"} ${fmtNum(ms.worst_score)} | drop ${fmtNum(ms.nominal_to_worst_drop)}`),
+      el("table", { class: "guide-table" },
+        el("thead", {}, el("tr", {},
+          el("th", {}, "Preset"), el("th", {}, "Score"), el("th", {}, "Lone wolf"),
+          el("th", {}, "Anti-bait"), el("th", {}, "Frozen"), el("th", {}, "Trap deaths"))),
+        el("tbody", {}, ...rows)));
+  };
   const table = scenarioTable(r.scenarios, "");
   const s = r.summary;
   const summary = el("div", { class: "summary" },
@@ -719,6 +817,9 @@ function renderEvalMatrixResult(r) {
   }
   if (Array.isArray(r.anti_bait) && r.anti_bait.length) {
     $("#evalResult").append(scenarioTable(r.anti_bait, "Anti-bait matrix", { trap: true }));
+  }
+  if (Array.isArray(r.mechanics_suite) && r.mechanics_summary) {
+    $("#evalResult").append(mechanicsSuiteTable(r.mechanics_suite, r.mechanics_summary));
   }
   // Behavior chips for the duel scenario (the cleanest read on movement style).
   const duel = r.scenarios.find((x) => (x.world_size || 2) === 2) || r.scenarios[0];

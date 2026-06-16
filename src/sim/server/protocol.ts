@@ -120,7 +120,8 @@ export function buildStepResponse(
   truncated: Uint8Array,
   terminalObs: (Float32Array | null)[],
   obsDim: number,
-  rewardComponents: Float32Array = new Float32Array(0)
+  rewardComponents: Float32Array = new Float32Array(0),
+  mechanicsCoverage: Float32Array = new Float32Array(0)
 ): Uint8Array {
   const obsB = f32Bytes(obs);
   const rewB = f32Bytes(reward);
@@ -130,8 +131,11 @@ export function buildStepResponse(
   for (let i = 0; i < terminalObs.length; i++) if (terminalObs[i]) terminalIdx.push(i);
   const termBlockLen = 4 + terminalIdx.length * (4 + obsDim * 4);
   const componentBlockLen = 4 + rewardComponents.length * 4;
+  const mechanicsBlockLen = 4 + mechanicsCoverage.length * 4;
 
-  const out = new Uint8Array(obsB.length + rewB.length + n + n + termBlockLen + componentBlockLen);
+  const out = new Uint8Array(
+    obsB.length + rewB.length + n + n + termBlockLen + componentBlockLen + mechanicsBlockLen
+  );
   let off = 0;
   out.set(obsB, off); off += obsB.length;
   out.set(rewB, off); off += rewB.length;
@@ -150,6 +154,10 @@ export function buildStepResponse(
   for (let i = 0; i < rewardComponents.length; i++) {
     dv.setFloat32(off, rewardComponents[i], LE); off += 4;
   }
+  dv.setUint32(off, mechanicsCoverage.length, LE); off += 4;
+  for (let i = 0; i < mechanicsCoverage.length; i++) {
+    dv.setFloat32(off, mechanicsCoverage[i], LE); off += 4;
+  }
   return out;
 }
 
@@ -162,6 +170,8 @@ export interface StepResponse {
   terminalObs: Map<number, Float32Array>;
   /** Signed aggregate reward components for this step, in header.rewardComponentKeys order. */
   rewardComponents: Float32Array;
+  /** Aggregate mechanics coverage as [count, min, max, sum] per header.mechanicsCoverageKeys. */
+  mechanicsCoverage: Float32Array;
 }
 
 /** Split a step-response payload back into its blocks given `n` agents and `obsDim`. */
@@ -169,7 +179,8 @@ export function parseStepResponse(
   payload: Uint8Array,
   n: number,
   obsDim: number,
-  rewardComponentCount = 0
+  rewardComponentCount = 0,
+  mechanicsCoverageCount = 0
 ): StepResponse {
   let off = 0;
   const obs = bytesToF32(payload.subarray(off, off + n * obsDim * 4), n * obsDim); off += n * obsDim * 4;
@@ -193,10 +204,25 @@ export function parseStepResponse(
     const count = rewardComponentCount > 0 ? rewardComponentCount : encodedCount;
     rewardComponents = new Float32Array(count);
     const readable = Math.min(count, encodedCount);
-    for (let i = 0; i < readable && off + 4 <= payload.byteLength; i++) {
-      rewardComponents[i] = dv.getFloat32(off, LE);
-      off += 4;
+    const start = off;
+    for (let i = 0; i < readable && start + (i + 1) * 4 <= payload.byteLength; i++) {
+      const valueOffset = start + i * 4;
+      rewardComponents[i] = dv.getFloat32(valueOffset, LE);
     }
+    off = start + encodedCount * 4;
   }
-  return { obs, reward, done, truncated, terminalObs, rewardComponents };
+  let mechanicsCoverage = new Float32Array(0);
+  if (off + 4 <= payload.byteLength) {
+    const encodedCount = dv.getUint32(off, LE); off += 4;
+    const count = mechanicsCoverageCount > 0 ? mechanicsCoverageCount : encodedCount;
+    mechanicsCoverage = new Float32Array(count);
+    const readable = Math.min(count, encodedCount);
+    const start = off;
+    for (let i = 0; i < readable && start + (i + 1) * 4 <= payload.byteLength; i++) {
+      const valueOffset = start + i * 4;
+      mechanicsCoverage[i] = dv.getFloat32(valueOffset, LE);
+    }
+    off = start + encodedCount * 4;
+  }
+  return { obs, reward, done, truncated, terminalObs, rewardComponents, mechanicsCoverage };
 }
