@@ -10,6 +10,12 @@ import {
   persistCustomArmorCatalog,
   sanitizeCharacterLoadoutForNetwork,
 } from '../customArmor';
+import {
+  V3_SUIT_PROFILE_CATALOG_STORAGE_KEY,
+  type V3SuitProfileCatalog,
+  loadV3SuitProfileCatalog,
+  persistV3SuitProfileCatalog,
+} from './v3ArmorSuitProfiles';
 import { type PreviewWeapon } from './ArmoryPanel';
 
 export const PLAYER_LOADOUT_STORAGE_KEY = 'grifball_player_loadout';
@@ -37,19 +43,29 @@ export function useCustomizationState() {
   const [isPainting, setIsPainting] = useState<boolean>(false);
   const [playerLoadout, setPlayerLoadout] = useState<CharacterLoadout>(() => loadStoredPlayerLoadout());
   const [customArmorCatalog, setCustomArmorCatalog] = useState<CustomArmorCatalog>(() => loadCustomArmorCatalog());
+  const [v3SuitProfileCatalog, setV3SuitProfileCatalog] = useState<V3SuitProfileCatalog>(() => loadV3SuitProfileCatalog());
 
   useEffect(() => {
     persistCustomArmorCatalog(customArmorCatalog);
   }, [customArmorCatalog]);
 
   useEffect(() => {
+    persistV3SuitProfileCatalog(v3SuitProfileCatalog);
+  }, [v3SuitProfileCatalog]);
+
+  useEffect(() => {
     const refreshStoredCustomization = () => {
       setPlayerLoadout(loadStoredPlayerLoadout());
       setCustomArmorCatalog(loadCustomArmorCatalog());
+      setV3SuitProfileCatalog(loadV3SuitProfileCatalog());
     };
 
     const handleStorage = (event: StorageEvent) => {
-      if (event.key === PLAYER_LOADOUT_STORAGE_KEY || event.key === CUSTOM_ARMOR_CATALOG_STORAGE_KEY) {
+      if (
+        event.key === PLAYER_LOADOUT_STORAGE_KEY ||
+        event.key === CUSTOM_ARMOR_CATALOG_STORAGE_KEY ||
+        event.key === V3_SUIT_PROFILE_CATALOG_STORAGE_KEY
+      ) {
         refreshStoredCustomization();
       }
     };
@@ -71,5 +87,7 @@ export function useCustomizationState() {
     setPlayerLoadout,
     customArmorCatalog,
     setCustomArmorCatalog,
+    v3SuitProfileCatalog,
+    setV3SuitProfileCatalog,
   };
 }

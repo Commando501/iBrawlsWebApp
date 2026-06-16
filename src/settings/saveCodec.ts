@@ -3,6 +3,7 @@ import { UiLayoutState } from '../ui/hudLayouts';
 import { PersistedGameplaySettings } from './gameplaySettings';
 import type { CharacterLoadout } from '../components/VoxelModels';
 import type { CustomArmorCatalog } from '../components/customArmor';
+import type { V3SuitProfileCatalog } from '../components/main-menu/v3ArmorSuitProfiles';
 import { normalizeVisualModelPolicy } from '../model/modelSystem';
 
 export interface SaveData {
@@ -15,6 +16,7 @@ export interface SaveData {
   keybindings?: Keybindings;
   playerLoadout?: CharacterLoadout;
   customArmorCatalog?: CustomArmorCatalog;
+  v3SuitProfileCatalog?: V3SuitProfileCatalog;
 }
 
 const ENCRYPTION_KEY = 'GRIFBALL_NEURAL_LINK_2026';
@@ -75,7 +77,8 @@ export const buildSaveData = (
   uiLayouts: UiLayoutState,
   keybindings: Keybindings,
   playerLoadout?: CharacterLoadout,
-  customArmorCatalog?: CustomArmorCatalog
+  customArmorCatalog?: CustomArmorCatalog,
+  v3SuitProfileCatalog?: V3SuitProfileCatalog
 ): SaveData => {
   const { playerHue, playerName: _settingsName, ...restSettings } = settings;
   const adminSettings = {
@@ -91,5 +94,6 @@ export const buildSaveData = (
     keybindings,
     playerLoadout,
     customArmorCatalog,
+    v3SuitProfileCatalog,
   };
 };

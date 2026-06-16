@@ -481,8 +481,10 @@ function drawObject(
   ctx.lineWidth = object.floorTile ? 0.75 : 1.35;
 
   if (object.type === 'cylinder' || object.type === 'sphere') {
+    ctx.translate(center.x, center.y);
+    ctx.rotate(-(object.rotation?.y ?? 0));
     ctx.beginPath();
-    ctx.arc(center.x, center.y, Math.max(width, depth) / 2, 0, Math.PI * 2);
+    ctx.ellipse(0, 0, width / 2, depth / 2, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.stroke();
   } else {

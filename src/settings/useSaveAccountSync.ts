@@ -14,6 +14,13 @@ import {
   persistCustomArmorCatalog,
 } from '../components/customArmor';
 import {
+  V3_SUIT_PROFILE_CATALOG_STORAGE_KEY,
+  type V3SuitProfileCatalog,
+  createEmptyV3SuitProfileCatalog,
+  normalizeV3SuitProfileCatalog,
+  persistV3SuitProfileCatalog,
+} from '../components/main-menu/v3ArmorSuitProfiles';
+import {
   type AccountInfo,
   fetchCloudSave,
   fetchMe,
@@ -57,6 +64,8 @@ interface UseSaveAccountSyncOptions {
   setPlayerLoadout: Dispatch<SetStateAction<CharacterLoadout>>;
   customArmorCatalog: CustomArmorCatalog;
   setCustomArmorCatalog: Dispatch<SetStateAction<CustomArmorCatalog>>;
+  v3SuitProfileCatalog: V3SuitProfileCatalog;
+  setV3SuitProfileCatalog: Dispatch<SetStateAction<V3SuitProfileCatalog>>;
   setCollapsedSections: Dispatch<SetStateAction<Record<string, boolean>>>;
   onLoggedOut?: () => void;
 }
@@ -76,6 +85,8 @@ export function useSaveAccountSync({
   setPlayerLoadout,
   customArmorCatalog,
   setCustomArmorCatalog,
+  v3SuitProfileCatalog,
+  setV3SuitProfileCatalog,
   setCollapsedSections,
   onLoggedOut,
 }: UseSaveAccountSyncOptions) {
@@ -124,11 +135,17 @@ export function useSaveAccountSync({
       setCustomArmorCatalog(normalizedCatalog);
       persistCustomArmorCatalog(normalizedCatalog);
     }
-  }, [adminSettings, applySavedUiLayouts, onPlayerNameChange, setAdminSettings, setCustomArmorCatalog, setKeybindings, setPlayerLoadout]);
+
+    if (decrypted.v3SuitProfileCatalog) {
+      const normalizedProfiles = normalizeV3SuitProfileCatalog(decrypted.v3SuitProfileCatalog);
+      setV3SuitProfileCatalog(normalizedProfiles);
+      persistV3SuitProfileCatalog(normalizedProfiles);
+    }
+  }, [adminSettings, applySavedUiLayouts, onPlayerNameChange, setAdminSettings, setCustomArmorCatalog, setKeybindings, setPlayerLoadout, setV3SuitProfileCatalog]);
 
   const buildCurrentSaveData = useCallback(
-    () => buildSaveData(adminSettings, playerName, uiLayouts, keybindings, playerLoadout, customArmorCatalog),
-    [adminSettings, playerName, uiLayouts, keybindings, playerLoadout, customArmorCatalog]
+    () => buildSaveData(adminSettings, playerName, uiLayouts, keybindings, playerLoadout, customArmorCatalog, v3SuitProfileCatalog),
+    [adminSettings, playerName, uiLayouts, keybindings, playerLoadout, customArmorCatalog, v3SuitProfileCatalog]
   );
 
   const pullAndApplyCloudSave = useCallback(async () => {
@@ -194,6 +211,7 @@ export function useSaveAccountSync({
         localStorage.removeItem('grifball_keybindings');
         localStorage.removeItem('grifball_player_loadout');
         localStorage.removeItem(CUSTOM_ARMOR_CATALOG_STORAGE_KEY);
+        localStorage.removeItem(V3_SUIT_PROFILE_CATALOG_STORAGE_KEY);
         localStorage.removeItem('grifball_settings_version');
         localStorage.removeItem('grifball_collapsed_sections');
 
@@ -203,6 +221,7 @@ export function useSaveAccountSync({
         setKeybindings({ ...DEFAULT_KEYBINDINGS });
         setPlayerLoadout(DEFAULT_LOADOUT);
         setCustomArmorCatalog(createEmptyCustomArmorCatalog());
+        setV3SuitProfileCatalog(createEmptyV3SuitProfileCatalog());
         setAdminSettings(createDefaultAdminSettings(defaultName));
         setCollapsedSections({});
 
@@ -215,7 +234,7 @@ export function useSaveAccountSync({
         console.error(err);
       }
     }
-  }, [resetUiLayouts, setAdminSettings, setCollapsedSections, setCustomArmorCatalog, setKeybindings, setPlayerLoadout, setPlayerName]);
+  }, [resetUiLayouts, setAdminSettings, setCollapsedSections, setCustomArmorCatalog, setKeybindings, setPlayerLoadout, setPlayerName, setV3SuitProfileCatalog]);
 
   const handleCloudSavePushResult = useCallback((
     res: Awaited<ReturnType<typeof pushCloudSave>>,

@@ -1388,16 +1388,18 @@ export const PREMADE_MAPS: CustomMapData[] = [
         type: 'cylinder',
         position: { x: -47, y: 0.06, z: 0 },
         rotation: { x: 0, y: 0, z: 0 },
-        scale: { x: 4.5, y: 0.12, z: 4.5 },
-        color: '#3b82ff',
-        metalness: 0.2,
-        roughness: 0.4,
-        opacity: 0.82,
-        transparent: true,
+        scale: { x: 1.1, y: 0.12, z: 1.1 },
+        color: '#10342f',
+        metalness: 0.82,
+        roughness: 0.28,
+        opacity: 0.96,
+        transparent: false,
         emissive: '#3b82ff',
-        emissiveIntensity: 0.9,
+        emissiveIntensity: 1.15,
         isCollidable: false,
         texture: 'goal_plate_blue',
+        gameModeKind: 'grifball_goal',
+        team: 'blue',
         goalPlateTeam: 'blue'
       },
       {
@@ -1406,20 +1408,21 @@ export const PREMADE_MAPS: CustomMapData[] = [
         type: 'cylinder',
         position: { x: 47, y: 0.06, z: 0 },
         rotation: { x: 0, y: 0, z: 0 },
-        scale: { x: 4.5, y: 0.12, z: 4.5 },
-        color: '#ff3b3b',
-        metalness: 0.2,
-        roughness: 0.4,
-        opacity: 0.82,
-        transparent: true,
+        scale: { x: 1.1, y: 0.12, z: 1.1 },
+        color: '#10342f',
+        metalness: 0.82,
+        roughness: 0.28,
+        opacity: 0.96,
+        transparent: false,
         emissive: '#ff3b3b',
-        emissiveIntensity: 0.9,
+        emissiveIntensity: 1.15,
         isCollidable: false,
         texture: 'goal_plate_red',
+        gameModeKind: 'grifball_goal',
+        team: 'red',
         goalPlateTeam: 'red'
       }
     ]
   }
 ];
-
 

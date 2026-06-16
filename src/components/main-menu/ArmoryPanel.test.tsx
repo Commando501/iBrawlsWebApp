@@ -11,6 +11,8 @@ import {
   type CustomArmorCatalog,
   type CustomArmorPiece,
 } from '../customArmor';
+import { createV3ArmorTemplateDraft } from './v3ArmorEditorTemplates';
+import type { V3SuitProfileCatalog } from './v3ArmorSuitProfiles';
 
 const noop = () => {};
 
@@ -377,12 +379,38 @@ const baseProps = (modelSystem: 'v1' | 'v2' | 'v3'): ComponentProps<typeof Armor
   isPainting: false,
   playerLoadout: { ...DEFAULT_LOADOUT, modelSystem },
   customArmorCatalog: { version: 1, pieces: [] },
+  v3SuitProfileCatalog: { version: 1, profiles: [] },
   playerHue: 200,
   customizerWeapon: 'hammer',
   setPlayerLoadout: noop as React.Dispatch<React.SetStateAction<any>>,
+  setV3SuitProfileCatalog: noop as React.Dispatch<React.SetStateAction<any>>,
   setIsPainting: noop as React.Dispatch<React.SetStateAction<boolean>>,
   setCustomizerWeapon: noop as React.Dispatch<React.SetStateAction<any>>,
   setAdminSettings: noop as React.Dispatch<React.SetStateAction<any>>,
+});
+
+const v3ProfilePiece = (slot: 'helmet' | 'chest', id: string): CustomArmorPiece => ({
+  ...createV3ArmorTemplateDraft(slot, { hue: 200, now: 1_000, name: `${slot} profile piece` }),
+  id,
+  createdAt: 1_000,
+  updatedAt: 1_000,
+  history: [],
+});
+
+const profileCatalogFor = (): V3SuitProfileCatalog => ({
+  version: 1,
+  profiles: [{
+    version: 1,
+    id: 'profile_alpha',
+    name: 'Alpha Suit',
+    modelSystem: 'v3',
+    slotPieceIds: {
+      helmet: 'piece_helmet',
+      chest: 'piece_chest',
+    },
+    createdAt: 1_000,
+    updatedAt: 1_000,
+  }],
 });
 
 test('ArmoryPanel renders V3 material role controls only for V3 loadouts', () => {
@@ -413,9 +441,11 @@ test('ArmorModelEditor exposes V3 armor preview mode without removing voxel edit
   const html = renderToStaticMarkup(
     <ArmorModelEditor
       catalog={{ version: 1, pieces: [] }}
+      v3SuitProfileCatalog={{ version: 1, profiles: [] }}
       playerLoadout={{ ...DEFAULT_LOADOUT, modelSystem: 'v3' }}
       playerHue={200}
       onCatalogChange={noop as React.Dispatch<React.SetStateAction<any>>}
+      onV3SuitProfileCatalogChange={noop as React.Dispatch<React.SetStateAction<any>>}
       onLoadoutChange={noop}
       onClose={noop}
     />
@@ -431,9 +461,16 @@ test('ArmorModelEditor exposes V3 armor preview mode without removing voxel edit
   assert.match(html, /Suggested Fixes/);
   assert.match(html, /Smart V3/);
   assert.match(html, /Suit Workspace/);
+  assert.match(html, /Suit Profiles/);
   assert.match(html, /Start Full Suit/);
   assert.match(html, /Preview Full Suit/);
   assert.match(html, /Save &amp; Equip Suit/);
+  assert.match(html, /Save Suit Profile/);
+  assert.match(html, /Load Profile/);
+  assert.match(html, /Duplicate/);
+  assert.match(html, /Delete/);
+  assert.match(html, /Export Profile/);
+  assert.match(html, /Import Profile/);
   assert.match(html, /Shoulder Left/);
   assert.match(html, /Draft/);
   assert.match(html, /Start Shape/);
@@ -464,9 +501,11 @@ test('ArmorModelEditor hides suggested fixes for V2 armor editing', () => {
   const html = renderToStaticMarkup(
     <ArmorModelEditor
       catalog={{ version: 1, pieces: [] }}
+      v3SuitProfileCatalog={{ version: 1, profiles: [] }}
       playerLoadout={{ ...DEFAULT_LOADOUT, modelSystem: 'v2' }}
       playerHue={200}
       onCatalogChange={noop as React.Dispatch<React.SetStateAction<any>>}
+      onV3SuitProfileCatalogChange={noop as React.Dispatch<React.SetStateAction<any>>}
       onLoadoutChange={noop}
       onClose={noop}
     />
@@ -475,9 +514,12 @@ test('ArmorModelEditor hides suggested fixes for V2 armor editing', () => {
   assert.doesNotMatch(html, /Suggested Fixes/);
   assert.doesNotMatch(html, /Smart V3/);
   assert.doesNotMatch(html, /Suit Workspace/);
+  assert.doesNotMatch(html, /Suit Profiles/);
   assert.doesNotMatch(html, /Start Full Suit/);
   assert.doesNotMatch(html, /Preview Full Suit/);
   assert.doesNotMatch(html, /Save &amp; Equip Suit/);
+  assert.doesNotMatch(html, /Save Suit Profile/);
+  assert.doesNotMatch(html, /Load Profile/);
   assert.doesNotMatch(html, /Full Suit/);
   assert.doesNotMatch(html, /suitDrafts/);
   assert.doesNotMatch(html, /kit object/);
@@ -490,6 +532,30 @@ test('ArmorModelEditor hides suggested fixes for V2 armor editing', () => {
   assert.doesNotMatch(html, /Mirror Scope/);
   assert.doesNotMatch(html, /Mirror Overwrite/);
   assert.doesNotMatch(html, /Boost readability/);
+});
+
+test('ArmoryPanel renders V3 suit profile controls only for V3 loadouts', () => {
+  const helmet = v3ProfilePiece('helmet', 'piece_helmet');
+  const chest = v3ProfilePiece('chest', 'piece_chest');
+  const customArmorCatalog: CustomArmorCatalog = { version: 1, pieces: [helmet, chest] };
+  const v3Props = {
+    ...baseProps('v3'),
+    customArmorCatalog,
+    v3SuitProfileCatalog: profileCatalogFor(),
+  };
+  const v2Html = renderToStaticMarkup(
+    <ArmoryPanel
+      {...baseProps('v2')}
+      customArmorCatalog={customArmorCatalog}
+      v3SuitProfileCatalog={profileCatalogFor()}
+    />
+  );
+
+  assert.match(renderToStaticMarkup(<ArmoryPanel {...v3Props} />), /Suit Profiles/);
+  assert.match(renderToStaticMarkup(<ArmoryPanel {...v3Props} />), /Alpha Suit/);
+  assert.match(renderToStaticMarkup(<ArmoryPanel {...v3Props} />), /Apply Suit/);
+  assert.doesNotMatch(v2Html, /Suit Profiles/);
+  assert.doesNotMatch(v2Html, /Alpha Suit/);
 });
 
 test('ArmorModelEditor preserves active V3 suit draft through start and saves against current catalog', async () => {
@@ -556,6 +622,7 @@ test('ArmorModelEditor preserves active V3 suit draft through start and saves ag
 
     now = 3_000;
     findButtonByText(container, 'Save & Equip Suit').click();
+    await flushEffects();
     await flushEffects();
 
     assert.equal(loadoutPatch?.customArmor?.helmet?.id, 'v3_template_helmet_rs');

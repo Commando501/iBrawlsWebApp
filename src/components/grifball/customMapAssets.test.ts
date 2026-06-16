@@ -29,6 +29,40 @@ function renderedBottomForObject(obj: CustomMapObject): number {
   return bounds.min.y;
 }
 
+function goalPlateObject(team: 'blue' | 'red'): CustomMapObject {
+  return {
+    id: `test_goal_${team}`,
+    name: `${team} Goal Plate`,
+    type: 'cylinder',
+    position: { x: 0, y: 0.06, z: 0 },
+    rotation: { x: 0, y: 0, z: 0 },
+    scale: { x: 1.1, y: 0.12, z: 1.1 },
+    color: '#10342f',
+    metalness: 0.82,
+    roughness: 0.28,
+    opacity: 0.96,
+    transparent: false,
+    emissive: team === 'red' ? '#ff3b3b' : '#3b82ff',
+    emissiveIntensity: 1.15,
+    isCollidable: false,
+    texture: team === 'red' ? 'goal_plate_red' : 'goal_plate_blue',
+    gameModeKind: 'grifball_goal',
+    team,
+    goalPlateTeam: team,
+  };
+}
+
+test('goal plates render as a multi-part cyberpunk floor assembly', () => {
+  const obj = goalPlateObject('blue');
+  const mesh = createHighFidelityObjectMesh(obj, THREE, undefined);
+
+  assert.ok(mesh.children.length >= 5, 'goal plate should include base, rings, core, and tech accents');
+  assert.ok(mesh.children.some((child) => child.userData.goalPlateTeam === 'blue'));
+  assert.ok(
+    Math.abs(renderedBottomForObject(obj) - (obj.position.y - obj.scale.y / 2)) <= PLACEMENT_EPSILON
+  );
+});
+
 for (const map of PREMADE_MAPS) {
   for (const variant of variantsForMap(map)) {
     test(`${variant.name} map objects honor authored vertical placement`, () => {

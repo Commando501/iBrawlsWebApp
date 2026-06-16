@@ -410,27 +410,77 @@ export function createHighFidelityObjectMesh(
   const nameLower = (obj.name || '').toLowerCase();
   const emissiveHex = (obj.emissive && obj.emissive !== '#000000') ? obj.emissive : '#00ffff';
 
-  // --- Grifball goal plate: a flat, glowing, team-colored slab trigger ---
+  // --- Grifball goal plate: a low cyberpunk floor trigger scaled by object footprint. ---
   const goalTeam = obj.goalPlateTeam || (obj.texture === 'goal_plate_blue' ? 'blue' : obj.texture === 'goal_plate_red' ? 'red' : undefined);
   if (goalTeam) {
-    const plateColor = goalTeam === 'red' ? '#ff3b3b' : '#3b82ff';
-    const geo = obj.type === 'cylinder'
-      ? new three.CylinderGeometry(sx / 2, sx / 2, Math.max(0.1, sy), 32)
-      : new three.BoxGeometry(sx, Math.max(0.1, sy), sz);
-    const mat = new three.MeshStandardMaterial({
-      color: new three.Color(plateColor),
-      emissive: new three.Color(plateColor),
-      emissiveIntensity: obj.emissiveIntensity ?? 0.9,
-      metalness: 0.2,
-      roughness: 0.4,
-      opacity: obj.opacity ?? 0.85,
-      transparent: (obj.opacity ?? 0.85) < 1,
+    const accent = goalTeam === 'red' ? '#ff3b3b' : '#3b82ff';
+    const height = Math.max(0.08, sy);
+    const baseColor = obj.color || '#10342f';
+    const plateMat = new three.MeshStandardMaterial({
+      color: new three.Color(baseColor),
+      emissive: new three.Color('#071f1b'),
+      emissiveIntensity: 0.2,
+      metalness: obj.metalness ?? 0.82,
+      roughness: obj.roughness ?? 0.28,
+      opacity: obj.opacity ?? 0.96,
+      transparent: (obj.opacity ?? 0.96) < 1,
     });
-    const mesh = new three.Mesh(geo, mat);
-    mesh.receiveShadow = true;
-    mesh.castShadow = false;
-    mesh.userData = { id: obj.id, goalPlateTeam: goalTeam };
-    group.add(mesh);
+    const rimMat = new three.MeshStandardMaterial({
+      color: new three.Color('#182b2a'),
+      emissive: new three.Color(accent),
+      emissiveIntensity: 0.28,
+      metalness: 0.9,
+      roughness: 0.2,
+    });
+    const glowMat = new three.MeshBasicMaterial({
+      color: new three.Color(accent),
+      transparent: true,
+      opacity: 0.72,
+    });
+    const tag = (mesh: THREE.Mesh) => {
+      mesh.receiveShadow = true;
+      mesh.castShadow = false;
+      mesh.userData = { id: obj.id, goalPlateTeam: goalTeam };
+      return mesh;
+    };
+
+    const base = tag(new three.Mesh(new three.CylinderGeometry(0.5, 0.5, height * 0.72, 48), plateMat));
+    base.scale.set(sx, 1, sz);
+    base.position.y = -height * 0.14;
+    group.add(base);
+
+    const outerRing = tag(new three.Mesh(new three.TorusGeometry(0.45, Math.max(0.012, height * 0.11), 8, 72), rimMat));
+    outerRing.rotation.x = Math.PI / 2;
+    outerRing.scale.set(sx, sz, 1);
+    outerRing.position.y = height * 0.28;
+    group.add(outerRing);
+
+    const innerRing = tag(new three.Mesh(new three.TorusGeometry(0.25, Math.max(0.008, height * 0.07), 8, 48), glowMat));
+    innerRing.rotation.x = Math.PI / 2;
+    innerRing.scale.set(sx, sz, 1);
+    innerRing.position.y = height * 0.35;
+    group.add(innerRing);
+
+    const core = tag(new three.Mesh(new three.CylinderGeometry(0.12, 0.12, height * 0.08, 32), glowMat));
+    core.scale.set(sx, 1, sz);
+    core.position.y = height * 0.38;
+    group.add(core);
+
+    const barMat = new three.MeshStandardMaterial({
+      color: new three.Color('#071f1b'),
+      emissive: new three.Color(accent),
+      emissiveIntensity: 0.65,
+      metalness: 0.75,
+      roughness: 0.24,
+    });
+    const barGeo = new three.BoxGeometry(Math.max(0.08, sx * 0.36), Math.max(0.006, height * 0.06), Math.max(0.018, sz * 0.045));
+    for (const [zOffset, yaw] of [[-0.22, 0], [0.22, 0], [0, Math.PI / 2]] as const) {
+      const bar = tag(new three.Mesh(barGeo, barMat));
+      bar.position.set(0, height * 0.43, zOffset * sz);
+      bar.rotation.y = yaw;
+      group.add(bar);
+    }
+
     return group;
   }
 

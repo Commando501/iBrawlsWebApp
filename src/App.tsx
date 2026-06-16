@@ -126,6 +126,8 @@ export default function App() {
     setPlayerLoadout,
     customArmorCatalog,
     setCustomArmorCatalog,
+    v3SuitProfileCatalog,
+    setV3SuitProfileCatalog,
   } = useCustomizationState();
 
   const {
@@ -315,6 +317,8 @@ export default function App() {
     setPlayerLoadout,
     customArmorCatalog,
     setCustomArmorCatalog,
+    v3SuitProfileCatalog,
+    setV3SuitProfileCatalog,
     setCollapsedSections,
     onLoggedOut: closeAdminDashboard,
   });
@@ -900,8 +904,10 @@ export default function App() {
           isPainting,
           playerLoadout,
           customArmorCatalog,
+          v3SuitProfileCatalog,
           customizerWeapon,
           setPlayerLoadout,
+          setV3SuitProfileCatalog,
           setIsPainting,
           setCustomizerWeapon,
           saveSystemStatus,

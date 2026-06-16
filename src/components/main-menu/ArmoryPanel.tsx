@@ -12,6 +12,12 @@ import {
   type CustomArmorCatalog,
   type CustomArmorSlot,
 } from '../customArmor';
+import {
+  applyV3SuitProfileToLoadout,
+  validateV3SuitProfile,
+  type V3SuitProfile,
+  type V3SuitProfileCatalog,
+} from './v3ArmorSuitProfiles';
 import { V3_PAINT_ROLES } from '../v3/v3ModelTypes';
 import type { V3PaintRole } from '../v3/v3ModelTypes';
 import { CharacterPainter } from '../CharacterPainter';
@@ -28,9 +34,11 @@ interface ArmoryPanelProps {
   isPainting: boolean;
   playerLoadout: CharacterLoadout;
   customArmorCatalog: CustomArmorCatalog;
+  v3SuitProfileCatalog: V3SuitProfileCatalog;
   playerHue?: number;
   customizerWeapon: PreviewWeapon;
   setPlayerLoadout: React.Dispatch<React.SetStateAction<CharacterLoadout>>;
+  setV3SuitProfileCatalog: React.Dispatch<React.SetStateAction<V3SuitProfileCatalog>>;
   setIsPainting: React.Dispatch<React.SetStateAction<boolean>>;
   setCustomizerWeapon: React.Dispatch<React.SetStateAction<PreviewWeapon>>;
   setAdminSettings: React.Dispatch<React.SetStateAction<UniversalSettings>>;
@@ -145,6 +153,7 @@ export function ArmoryPanel({
   isPainting,
   playerLoadout,
   customArmorCatalog,
+  v3SuitProfileCatalog,
   playerHue = DEFAULT_PLAYER_HUE,
   customizerWeapon,
   setPlayerLoadout,
@@ -207,6 +216,23 @@ export function ArmoryPanel({
       modelType: undefined,
       customArmor: nextCustomArmor,
     });
+  };
+
+  const applyV3SuitProfile = (profile: V3SuitProfile) => {
+    const result = applyV3SuitProfileToLoadout(playerLoadout, profile, customArmorCatalog);
+    if (result.loadoutPatch) {
+      updateLoadout(result.loadoutPatch);
+    }
+  };
+
+  const getV3SuitProfileBadges = (profile: V3SuitProfile): string[] => {
+    const validation = validateV3SuitProfile(profile, customArmorCatalog);
+    const badges = [validation.status === 'ready' ? 'Ready' : validation.status === 'partial' ? 'Partial' : 'Missing'];
+    const equipped = validation.appliedSlotIds.length > 0 && validation.appliedSlotIds.every((candidate) => (
+      playerLoadout.customArmor?.[candidate]?.id === profile.slotPieceIds[candidate]
+    ));
+    if (equipped) badges.push('Equipped');
+    return badges;
   };
 
   return (
@@ -336,6 +362,42 @@ export function ArmoryPanel({
                     );
                   })}
                 </div>
+              </div>
+            )}
+
+            {activeModelSystem === 'v3' && (
+              <div className="bg-white/5 border border-white/5 rounded-lg p-3">
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-xs font-bold text-[#38bdf8] uppercase tracking-wider">Suit Profiles</span>
+                  <span className="text-[10px] text-white/45 uppercase tracking-widest">V3 quick apply</span>
+                </div>
+                {v3SuitProfileCatalog.profiles.length > 0 ? (
+                  <div className="flex flex-col gap-2">
+                    {v3SuitProfileCatalog.profiles.map((profile) => (
+                      <div key={profile.id} className="flex items-center gap-2 rounded border border-cyan-500/15 bg-black/20 p-2">
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-[10px] font-black uppercase tracking-widest text-white/75">{profile.name}</div>
+                          <div className="mt-1 flex flex-wrap gap-1">
+                            {getV3SuitProfileBadges(profile).map((badge) => (
+                              <span key={badge} className="rounded border border-white/10 bg-black/35 px-1.5 py-0.5 text-[8px] font-black uppercase tracking-widest text-white/45">
+                                {badge}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => applyV3SuitProfile(profile)}
+                          className="shrink-0 rounded border border-cyan-400/40 bg-cyan-500/15 px-2 py-1 text-[9px] font-black uppercase tracking-widest text-cyan-100 transition hover:border-cyan-300"
+                        >
+                          Apply Suit
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-[10px] italic text-white/35">No saved suit profiles.</div>
+                )}
               </div>
             )}
 

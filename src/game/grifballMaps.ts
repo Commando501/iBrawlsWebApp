@@ -1,5 +1,5 @@
 import { type CustomMapData, type CustomMapObject, type TeamId } from '../types';
-import { getGoalPlates } from './grifballGoals';
+import { DEFAULT_GRIFBALL_GOAL_PLATE_SCALE, getGoalPlates } from './grifballGoals';
 import { getRectHalfExtents } from './arenaDimensions';
 
 /**
@@ -20,22 +20,25 @@ const GOAL_ZONE_CLEAR_X = GRIFBALL_HALF_X - 14;
 const cache = new Map<string, CustomMapData>();
 
 function makeGoalPlate(team: TeamId, x: number): CustomMapObject {
+  const accent = team === 'red' ? '#ff3b3b' : '#3b82ff';
   return {
     id: `grifball_goal_${team}`,
     name: `${team === 'blue' ? 'Blue' : 'Red'} Goal Plate`,
-    type: 'box',
-    position: { x, y: 0.06, z: 0 },
+    type: 'cylinder',
+    position: { x, y: DEFAULT_GRIFBALL_GOAL_PLATE_SCALE.y / 2, z: 0 },
     rotation: { x: 0, y: 0, z: 0 },
-    scale: { x: 7, y: 0.12, z: 26 },
-    color: team === 'red' ? '#ff3b3b' : '#3b82ff',
-    metalness: 0.2,
-    roughness: 0.4,
-    opacity: 0.82,
-    transparent: true,
-    emissive: team === 'red' ? '#ff3b3b' : '#3b82ff',
-    emissiveIntensity: 0.9,
+    scale: { ...DEFAULT_GRIFBALL_GOAL_PLATE_SCALE },
+    color: '#10342f',
+    metalness: 0.82,
+    roughness: 0.28,
+    opacity: 0.96,
+    transparent: false,
+    emissive: accent,
+    emissiveIntensity: 1.15,
     isCollidable: false,
     texture: team === 'red' ? 'goal_plate_red' : 'goal_plate_blue',
+    gameModeKind: 'grifball_goal',
+    team,
     goalPlateTeam: team,
   };
 }
