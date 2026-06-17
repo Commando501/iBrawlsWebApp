@@ -26,6 +26,13 @@ from .league import ConcatVecEnv, LeagueOpponentVecEnv, LeagueSnapshotCallback, 
 from .policies import sb3_policy_kwargs
 from .training_metadata import build_training_metadata, merge_mechanics_coverage, write_training_metadata
 
+HUMAN_LOG_EXCLUDED = ("stdout", "log")
+
+
+def _record_non_human_metric(logger, key: str, value: float) -> None:  # noqa: ANN001
+    logger.record(key, value, exclude=HUMAN_LOG_EXCLUDED)
+
+
 try:
     from stable_baselines3.common.callbacks import BaseCallback
 
@@ -189,18 +196,26 @@ class MechanicsCoverageLoggerCallback(BaseCallback):
                 continue
             total = float(row.get("sum", row.get("mean", 0.0) * count))
             mean = total / max(1.0, count)
-            self.logger.record(f"mechanics/{key}/count", count)
-            self.logger.record(f"mechanics/{key}/min", float(row.get("min", 0.0)))
-            self.logger.record(f"mechanics/{key}/mean", mean)
-            self.logger.record(f"mechanics/{key}/max", float(row.get("max", 0.0)))
+            _record_non_human_metric(self.logger, f"mechanics/{key}/count", count)
+            _record_non_human_metric(self.logger, f"mechanics/{key}/min", float(row.get("min", 0.0)))
+            _record_non_human_metric(self.logger, f"mechanics/{key}/mean", mean)
+            _record_non_human_metric(self.logger, f"mechanics/{key}/max", float(row.get("max", 0.0)))
             if isinstance(base_values, dict) and key in base_values:
-                self.logger.record(f"mechanics/{key}/base", float(base_values[key]))
+                _record_non_human_metric(self.logger, f"mechanics/{key}/base", float(base_values[key]))
             if isinstance(cumulative, dict) and isinstance(cumulative.get(key), dict):
                 cov = cumulative[key]
                 if "coverage_low" in cov:
-                    self.logger.record(f"mechanics/{key}/coverage_low", float(cov["coverage_low"]))
+                    _record_non_human_metric(
+                        self.logger,
+                        f"mechanics/{key}/coverage_low",
+                        float(cov["coverage_low"]),
+                    )
                 if "coverage_high" in cov:
-                    self.logger.record(f"mechanics/{key}/coverage_high", float(cov["coverage_high"]))
+                    _record_non_human_metric(
+                        self.logger,
+                        f"mechanics/{key}/coverage_high",
+                        float(cov["coverage_high"]),
+                    )
 
     def _on_training_start(self) -> None:
         write_training_metadata(self.logdir, self.metadata)
