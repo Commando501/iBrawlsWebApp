@@ -20,6 +20,7 @@
 import { type UniversalSettings } from '../types';
 import { resolveHammerSlamTiming } from '../game/hammerSlamTiming';
 import { dropBall } from '../game/grifballBall';
+import { resolvePunchCooldown, resolvePunchLungeDistance } from '../game/runnerBallSettings';
 import { awardTeamKill, recordTeamDeath } from '../game/teamScoring';
 import {
   MELEE_HAMMER_SWIPE_REACH,
@@ -56,12 +57,14 @@ export function areHostile(a: SimCombatant, b: SimCombatant): boolean {
 }
 
 function recoverDuration(c: SimCombatant, settings: UniversalSettings): number {
+  if (c.weapon === 'ball') return resolvePunchCooldown(settings);
   if (c.weapon === 'sword') return settings.swordSlashReload ?? 0.6;
   return settings.hammerMeleeReload ?? 0.5;
 }
 
-function meleeReach(c: SimCombatant): number {
+function meleeReach(c: SimCombatant, settings?: UniversalSettings): number {
   if (c.weapon === 'sword') return MELEE_SWORD_SLASH_REACH;
+  if (c.weapon === 'ball') return settings ? resolvePunchLungeDistance(settings) : 1.8;
   return MELEE_HAMMER_SWIPE_REACH; // hammer & ball-punch share the swipe reach
 }
 
@@ -80,6 +83,7 @@ function strike(
   state: SimState,
   attacker: SimCombatant,
   victim: SimCombatant,
+  settings: UniversalSettings,
   events: KillEvent[]
 ): void {
   victim.hp -= 1;
@@ -93,6 +97,12 @@ function strike(
   if (state.match.ball.holderId === victim.id) {
     dropBall(state.match.ball, { x: victim.pos.x, y: 0, z: victim.pos.z });
     victim.hasBall = false;
+    victim.weapon = 'hammer';
+    victim.maxHp = settings.maxHP ?? 1;
+    victim.hp = Math.min(victim.hp, victim.maxHp);
+    victim.passChargeTimer = 0;
+    victim.runnerHealDelayTimer = 0;
+    victim.runnerLastHp = victim.hp;
   }
   events.push({ attackerId: attacker.id, victimId: victim.id, weapon: attacker.weapon });
 }
@@ -129,8 +139,8 @@ function applyHit(
   initiatesTrade: boolean
 ): boolean {
   const tradeBack = initiatesTrade && isTradeEligible(victim, settings, state.tick);
-  strike(state, attacker, victim, events);
-  if (tradeBack) strike(state, victim, attacker, events); // victim's team credits the trade kill
+  strike(state, attacker, victim, settings, events);
+  if (tradeBack) strike(state, victim, attacker, settings, events); // victim's team credits the trade kill
   return attacker.alive;
 }
 
@@ -140,8 +150,12 @@ function applyHit(
  * the victim must lie inside the 1.0-rad facing cone. Sim combatants have no pitch, so the
  * look heading is `forwardDir(yaw)` (y = 0). Pure geometry — no alive/hostile/invuln checks.
  */
-export function inMeleeHitVolume(attacker: SimCombatant, victim: SimCombatant): boolean {
-  const reach = meleeReach(attacker);
+export function inMeleeHitVolume(
+  attacker: SimCombatant,
+  victim: SimCombatant,
+  settings?: UniversalSettings
+): boolean {
+  const reach = meleeReach(attacker, settings);
   const fwd = forwardDir(attacker.yaw); // y = 0 (no pitch)
   const ey = attacker.pos.y + MELEE_EYE_HEIGHT;
   const cy = victim.pos.y + (victim.isCrouching ? CROUCH_BODY_CENTER_HEIGHT : BODY_CENTER_HEIGHT);
@@ -188,7 +202,7 @@ function resolveMeleeHit(
   for (const v of state.combatants) {
     if (!v.alive || !areHostile(attacker, v)) continue;
     if (v.invulnerabilityTimer > 0) continue;
-    if (inMeleeHitVolume(attacker, v)) {
+    if (inMeleeHitVolume(attacker, v, settings)) {
       if (!applyHit(state, attacker, v, settings, events, initiatesTrade)) break; // attacker traded out
     }
   }
@@ -204,7 +218,7 @@ function resolveHammerStrike(
   for (const v of state.combatants) {
     if (!v.alive || !areHostile(attacker, v)) continue;
     if (v.invulnerabilityTimer > 0) continue;
-    if (inHammerStrikeVolume(attacker, v, settings)) strike(state, attacker, v, events);
+    if (inHammerStrikeVolume(attacker, v, settings)) strike(state, attacker, v, settings, events);
   }
 }
 
@@ -223,6 +237,7 @@ function recoverForKind(kind: SimCombatant['attackKind'], settings: UniversalSet
   switch (kind) {
     case 'strike': return settings.hammerReloadTime ?? 0.6; // hammer PRIMARY reload (live-tunable)
     case 'slash': return settings.swordSlashReload ?? 0.6;
+    case 'punch': return resolvePunchCooldown(settings);
     default: return settings.hammerMeleeReload ?? 0.5;       // swipe / punch
   }
 }

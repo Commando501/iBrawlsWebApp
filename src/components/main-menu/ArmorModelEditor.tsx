@@ -7,6 +7,13 @@ import {
 } from '../VoxelModels';
 import { getVoxelSegmentDataV2 } from '../VoxelModelsV2';
 import { buildCombatantRigForModel } from '../grifball/combatantRig';
+import { createCombatantMeshRig } from '../grifball/combatantModels';
+import {
+  V3_POSE_CLEARANCE_CASES,
+  applyV3PoseClearanceCase,
+  type V3PoseClearanceCaseId,
+  type V3PoseClearanceOverlay,
+} from '../grifball/v3PoseClearance';
 import {
   centerCustomArmorPiece,
   createCustomArmorPiece,
@@ -91,6 +98,11 @@ import {
   type V3SuitProfile,
   type V3SuitProfileCatalog,
 } from './v3ArmorSuitProfiles';
+import {
+  buildV3ArmorEditorMotionQaReport,
+  type V3ArmorEditorMotionQaMode,
+  type V3ArmorEditorMotionQaReport,
+} from './v3ArmorEditorMotionQa';
 
 interface ArmorModelEditorProps {
   catalog: CustomArmorCatalog;
@@ -108,7 +120,8 @@ interface ArmorModelEditorProps {
 type EditorTool = 'place' | 'erase' | 'box' | 'line' | 'plane' | 'extrude' | 'move' | 'duplicate' | 'fill';
 type Axis = 'x' | 'y' | 'z';
 type ViewMode = 'edit' | 'preview' | 'rig';
-type PoseMode = 'idle' | 'walk' | 'sprint' | 'crouch' | 'hammer' | 'sword';
+type V2PoseMode = 'idle' | 'walk' | 'sprint' | 'crouch' | 'hammer' | 'sword';
+type PoseMode = V2PoseMode | V3PoseClearanceCaseId;
 type V3SmartMirrorScope = 'piece' | 'cursorVolume';
 type V3PendingSuitSave = {
   drafts: V3SuitDraftMap;
@@ -195,7 +208,7 @@ const V3_SMART_MIRROR_SCOPE_OPTIONS: Array<{ id: V3SmartMirrorScope; label: stri
   { id: 'cursorVolume', label: 'Cursor Volume' },
 ];
 
-const POSE_OPTIONS: Array<{ id: PoseMode; label: string }> = [
+const V2_POSE_OPTIONS: Array<{ id: V2PoseMode; label: string }> = [
   { id: 'idle', label: 'Idle' },
   { id: 'walk', label: 'Walk' },
   { id: 'sprint', label: 'Sprint' },
@@ -203,6 +216,38 @@ const POSE_OPTIONS: Array<{ id: PoseMode; label: string }> = [
   { id: 'hammer', label: 'Hammer' },
   { id: 'sword', label: 'Sword' },
 ];
+
+const V3_POSE_LABELS: Record<V3PoseClearanceCaseId, string> = {
+  idle: 'Idle',
+  walk: 'Walk',
+  sprint: 'Sprint',
+  slide: 'Slide',
+  hammerWindup: 'Hammer Windup',
+  hammerStrike: 'Hammer Strike',
+  hammerRecover: 'Hammer Recover',
+  swordLunge: 'Sword Lunge',
+  swordSlash: 'Sword Slash',
+  pistolFire: 'Pistol Fire',
+  hitReact: 'Hit React',
+  death: 'Death',
+};
+
+const V3_POSE_OPTIONS: Array<{ id: V3PoseClearanceCaseId; label: string }> =
+  V3_POSE_CLEARANCE_CASES.map((poseCase) => ({
+    id: poseCase.id,
+    label: V3_POSE_LABELS[poseCase.id],
+  }));
+
+const V3_POSE_CASE_IDS = new Set<string>(V3_POSE_CLEARANCE_CASES.map((poseCase) => poseCase.id));
+const V2_POSE_CASE_IDS = new Set<string>(V2_POSE_OPTIONS.map((pose) => pose.id));
+
+const normalizeV3PoseMode = (poseMode: PoseMode): V3PoseClearanceCaseId => (
+  V3_POSE_CASE_IDS.has(poseMode) ? poseMode as V3PoseClearanceCaseId : 'idle'
+);
+
+const normalizeV2PoseMode = (poseMode: PoseMode): V2PoseMode => (
+  V2_POSE_CASE_IDS.has(poseMode) ? poseMode as V2PoseMode : 'idle'
+);
 
 const BUILTIN_PRESETS: Record<V2CustomArmorSlot, string[]> = {
   helmet: ['mark-vi', 'odst', 'recon', 'eva', 'gungnir', 'eod', 'hayabusa', 'cqb'],
@@ -528,6 +573,9 @@ export function ArmorModelEditor({
   const [v3SuitPreviewEnabled, setV3SuitPreviewEnabled] = useState(false);
   const [pendingV3SuitSave, setPendingV3SuitSave] = useState<V3PendingSuitSave | null>(null);
   const [selectedV3SuitProfileId, setSelectedV3SuitProfileId] = useState('');
+  const [v3MotionQaReport, setV3MotionQaReport] = useState<V3ArmorEditorMotionQaReport | null>(null);
+  const [v3MotionQaReportToken, setV3MotionQaReportToken] = useState('');
+  const [v3MotionQaMode, setV3MotionQaMode] = useState<V3ArmorEditorMotionQaMode>('active-slot');
   const [status, setStatus] = useState('');
   const [importText, setImportText] = useState('');
   const [exportText, setExportText] = useState('');
@@ -537,6 +585,7 @@ export function ArmorModelEditor({
   const [showDensity, setShowDensity] = useState(false);
   const [showPerformance, setShowPerformance] = useState(true);
   const [showClipping, setShowClipping] = useState(false);
+  const [showMotionOverlay, setShowMotionOverlay] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const paintSettingsRef = useRef<PaintSettings>({ tool, role, fixedColor, emissive, slot, modelType, modelSystem, gridScale: 1 });
   const cameraViewsRef = useRef<Record<ViewMode, ArmorEditorCameraView>>(createDefaultCameraViews());
@@ -556,6 +605,8 @@ export function ArmorModelEditor({
   const activeSlotOptions = modelSystem === 'v3' ? V3_SLOT_OPTIONS : SLOT_OPTIONS;
   const draftGridScale = modelSystem === 'v3' ? getCustomArmorGridScale(draft) : 1;
   const activeViewModes: ViewMode[] = modelSystem === 'v3' ? ['edit', 'preview', 'rig'] : ['edit', 'rig'];
+  const selectedV3PoseCaseId = normalizeV3PoseMode(poseMode);
+  const activePoseOptions = modelSystem === 'v3' ? V3_POSE_OPTIONS : V2_POSE_OPTIONS;
   const activeV3SuitDrafts = useMemo<V3SuitDraftMap | null>(() => {
     if (modelSystem !== 'v3' || !v3SuitDrafts) return null;
     return {
@@ -642,6 +693,36 @@ export function ArmorModelEditor({
       ? buildV3SmartAuthoringFeedback(draft, v3SmartAuthoringPreview.previewDraft)
       : undefined
   ), [draft, v3SmartAuthoringPreview]);
+  const buildV3MotionQaSourceToken = (mode: V3ArmorEditorMotionQaMode): string => {
+    const stagedDrafts = activeV3SuitDrafts
+      ? (Object.entries(activeV3SuitDrafts) as Array<[V3CustomArmorSlot, CustomArmorPieceSnapshot]>)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([draftSlot, stagedDraft]) => ({
+          slot: draftSlot,
+          id: stagedDraft.id,
+          updatedAt: stagedDraft.updatedAt,
+          voxelCount: stagedDraft.voxels.length,
+        }))
+      : [];
+    return JSON.stringify({
+      mode,
+      activeSlot: slot,
+      pose: mode === 'active-slot' ? selectedV3PoseCaseId : 'all',
+      draft: {
+        id: draft.id,
+        slot: draft.slot,
+        updatedAt: draft.updatedAt,
+        voxelCount: draft.voxels.length,
+      },
+      stagedDrafts,
+    });
+  };
+  const currentV3MotionQaToken = useMemo(
+    () => buildV3MotionQaSourceToken(v3MotionQaMode),
+    [activeV3SuitDrafts, draft, selectedV3PoseCaseId, slot, v3MotionQaMode]
+  );
+  const v3MotionQaIsStale = Boolean(v3MotionQaReport) && v3MotionQaReportToken !== currentV3MotionQaToken;
+  const selectedV3MotionQaCase = v3MotionQaReport?.cases.find((testCase) => testCase.id === selectedV3PoseCaseId);
 
   useEffect(() => {
     paintSettingsRef.current = { tool, role, fixedColor, emissive, slot, modelType, modelSystem, gridScale: draftGridScale };
@@ -652,6 +733,12 @@ export function ArmorModelEditor({
       setViewMode('edit');
     }
   }, [modelSystem, viewMode]);
+
+  useEffect(() => {
+    if (modelSystem === 'v2') {
+      setPoseMode((current) => normalizeV2PoseMode(current));
+    }
+  }, [modelSystem]);
 
   const getEquippedPieceForType = (
     targetSlot: CustomArmorSlot,
@@ -753,6 +840,28 @@ export function ArmorModelEditor({
 
   const setSmartStripeWidthValue = (value: number) => {
     setSmartStripeWidth(Math.max(1, Math.round(Number.isFinite(value) ? value : 1)));
+  };
+
+  const runV3MotionQa = (mode: V3ArmorEditorMotionQaMode) => {
+    if (modelSystem !== 'v3') return;
+    const stagedDrafts = mode === 'full-suit'
+      ? activeV3SuitDrafts ?? createStagedV3SuitDrafts()
+      : undefined;
+    const report = buildV3ArmorEditorMotionQaReport({
+      mode,
+      activeSlot: slot as V3CustomArmorSlot,
+      draft,
+      suitDrafts: stagedDrafts ?? undefined,
+      loadout: playerLoadout,
+      catalog,
+      selectedCaseId: selectedV3PoseCaseId,
+      hue: playerHue,
+    });
+    setV3MotionQaMode(mode);
+    setV3MotionQaReport(report);
+    setV3MotionQaReportToken(buildV3MotionQaSourceToken(mode));
+    const scopeLabel = mode === 'full-suit' ? 'Full suit' : V3_POSE_LABELS[selectedV3PoseCaseId];
+    setStatus(`${scopeLabel} Motion QA ${report.ready ? 'passed' : `reported ${report.issues.length} advisory issue${report.issues.length === 1 ? '' : 's'}`}.`);
   };
 
   const clearActiveDraftHistory = () => {
@@ -1366,13 +1475,31 @@ export function ArmorModelEditor({
       labels.push('Equipped');
     }
 
+    if (
+      v3MotionQaReport
+      && !v3MotionQaIsStale
+      && v3MotionQaMode === 'full-suit'
+      && v3MotionQaReport.slotIssueCounts[targetSlot]
+    ) {
+      labels.push('Motion Warn');
+    } else if (
+      v3MotionQaReport
+      && !v3MotionQaIsStale
+      && v3MotionQaMode === 'full-suit'
+      && v3MotionQaReport.summary.supported
+    ) {
+      labels.push('Motion');
+    }
+
     return labels;
   };
 
   const getV3SuitSlotStatusClass = (label: string): string => {
     if (label === 'Invalid') return 'border-red-400/40 bg-red-500/15 text-red-200';
+    if (label === 'Motion Warn') return 'border-orange-400/40 bg-orange-500/15 text-orange-100';
     if (label === 'Warn') return 'border-amber-400/40 bg-amber-500/15 text-amber-200';
     if (label === 'Valid') return 'border-emerald-400/40 bg-emerald-500/15 text-emerald-200';
+    if (label === 'Motion') return 'border-sky-400/40 bg-sky-500/15 text-sky-100';
     if (label === 'Equipped') return 'border-purple-400/40 bg-purple-500/15 text-purple-100';
     return 'border-white/10 bg-black/35 text-white/45';
   };
@@ -1455,11 +1582,32 @@ export function ArmorModelEditor({
             },
           },
         };
-      const model = buildVoxelSpartanModel(false, playerHue, previewLoadout);
-      model.position.set(0, 0, 0);
-      model.rotation.y = -0.35;
-      buildCombatantRigForModel(model);
-      applyPreviewPose(model, poseMode);
+      let model: THREE.Group;
+      if (modelSystem === 'v3') {
+        const meshRig = createCombatantMeshRig(scene, playerHue, false, previewLoadout, {
+          v3QualityTier: 'desktop',
+        });
+        model = meshRig.group;
+        applyV3PoseClearanceCase({
+          model: meshRig.group,
+          rig: meshRig.rig,
+          hammerModel: meshRig.hammer,
+          swordModel: meshRig.sword,
+          pistolModel: meshRig.pistol,
+        }, selectedV3PoseCaseId);
+        model.position.set(0, 0, 0);
+        model.rotation.y = -0.35;
+        if (showMotionOverlay && selectedV3MotionQaCase && !v3MotionQaIsStale) {
+          model.add(createV3MotionOverlayGroup(selectedV3MotionQaCase.overlays));
+        }
+      } else {
+        model = buildVoxelSpartanModel(false, playerHue, previewLoadout);
+        model.position.set(0, 0, 0);
+        model.rotation.y = -0.35;
+        buildCombatantRigForModel(model);
+        applyPreviewPose(model, normalizeV2PoseMode(poseMode));
+        scene.add(model);
+      }
       if (modelSystem === 'v3' && v3SmartAuthoringPreview?.changed) {
         const partGroups = model.userData.v3PartGroups as Partial<Record<V3CustomArmorSlot, THREE.Group>> | undefined;
         const partGroup = partGroups?.[slot as V3CustomArmorSlot];
@@ -1472,7 +1620,6 @@ export function ArmorModelEditor({
           ));
         }
       }
-      scene.add(model);
     } else {
       const b = getEditorSlotBounds(slot, modelType, modelSystem, draftGridScale);
       const centerX = (b.minX + b.maxX) / 2;
@@ -1750,6 +1897,8 @@ export function ArmorModelEditor({
     playerHue,
     playerLoadout,
     poseMode,
+    selectedV3MotionQaCase,
+    selectedV3PoseCaseId,
     selectedKeys,
     selectedPreset,
     modelSystem,
@@ -1758,6 +1907,7 @@ export function ArmorModelEditor({
     showCollision,
     showDensity,
     showSilhouette,
+    showMotionOverlay,
     size,
     smartMirrorOverwrite,
     smartMirrorScope,
@@ -1765,6 +1915,7 @@ export function ArmorModelEditor({
     smartStripeWidth,
     slot,
     v3SmartAuthoringPreview,
+    v3MotionQaIsStale,
     v3SuitDrafts,
     v3SuitPreviewEnabled,
     viewMode,
@@ -1884,13 +2035,15 @@ export function ArmorModelEditor({
             </div>
             {viewMode === 'rig' && (
               <div className="absolute right-3 top-3 z-10 flex flex-wrap justify-end gap-1.5 max-w-[340px]">
-                {POSE_OPTIONS.map((pose) => (
+                {activePoseOptions.map((pose) => (
                   <button
                     key={pose.id}
                     type="button"
                     onClick={() => setPoseMode(pose.id)}
                     className={`px-2 py-1 rounded border text-[10px] font-black uppercase tracking-widest ${
-                      poseMode === pose.id ? 'bg-purple-500/25 border-purple-300 text-purple-100' : 'bg-black/50 border-white/10 text-white/45'
+                      (modelSystem === 'v3' ? selectedV3PoseCaseId : normalizeV2PoseMode(poseMode)) === pose.id
+                        ? 'bg-purple-500/25 border-purple-300 text-purple-100'
+                        : 'bg-black/50 border-white/10 text-white/45'
                     }`}
                   >
                     {pose.label}
@@ -1907,6 +2060,9 @@ export function ArmorModelEditor({
             <Toggle label="Density" checked={showDensity} onChange={setShowDensity} />
             <Toggle label="Clipping" checked={showClipping} onChange={setShowClipping} />
             <Toggle label="Budget" checked={showPerformance} onChange={setShowPerformance} />
+            {modelSystem === 'v3' && (
+              <Toggle label="Motion Overlay" checked={showMotionOverlay} onChange={setShowMotionOverlay} />
+            )}
           </div>
         </div>
 
@@ -2044,6 +2200,68 @@ export function ArmorModelEditor({
                 >
                   Apply Smart Tool
                 </button>
+              </div>
+            </Panel>
+          )}
+
+          {modelSystem === 'v3' && (
+            <Panel title="Motion QA">
+              <div className="grid grid-cols-2 gap-2">
+                <label className="flex flex-col gap-1 rounded border border-white/10 bg-black/35 p-2">
+                  <span className="text-[9px] font-black uppercase tracking-widest text-white/40">Pose Case</span>
+                  <select
+                    value={selectedV3PoseCaseId}
+                    onChange={(event) => setPoseMode(event.target.value as V3PoseClearanceCaseId)}
+                    className="bg-black/50 border border-white/10 rounded px-2 py-1 text-xs text-white outline-none"
+                  >
+                    {V3_POSE_OPTIONS.map((pose) => (
+                      <option key={pose.id} value={pose.id}>{pose.label}</option>
+                    ))}
+                  </select>
+                </label>
+                <div className="grid grid-cols-2 gap-1.5 text-[10px] font-mono">
+                  <Metric label="Motion" value={v3MotionQaReport ? `${v3MotionQaReport.score}%` : '--'} />
+                  <Metric
+                    label="Cases"
+                    value={v3MotionQaReport ? `${v3MotionQaReport.summary.readyCaseCount}/${v3MotionQaReport.summary.caseCount}` : '--'}
+                  />
+                </div>
+              </div>
+              <div className="mt-2 grid grid-cols-2 gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => runV3MotionQa('active-slot')}
+                  className="editor-chip border-cyan-400/40 text-cyan-100"
+                >
+                  Check Active Pose
+                </button>
+                <button
+                  type="button"
+                  onClick={() => runV3MotionQa('full-suit')}
+                  className="editor-chip border-purple-400/40 text-purple-100"
+                >
+                  Check Full Suit
+                </button>
+              </div>
+              <div className="mt-2 flex flex-col gap-1 text-[10px] leading-relaxed">
+                {!v3MotionQaReport ? (
+                  <span className="text-white/45">Motion QA: run an advisory check for the selected pose or staged suit.</span>
+                ) : v3MotionQaIsStale ? (
+                  <span className="text-amber-300">Motion QA: report is stale after draft or suit changes.</span>
+                ) : (
+                  <span className={v3MotionQaReport.ready ? 'text-emerald-300' : 'text-amber-300'}>
+                    Motion QA: {v3MotionQaReport.ready
+                      ? 'selected armor motion reads clearly.'
+                      : v3MotionQaReport.issues[0]?.message ?? 'pose clearance needs review.'}
+                  </span>
+                )}
+                {selectedV3MotionQaCase && !v3MotionQaIsStale && (
+                  <span className={selectedV3MotionQaCase.ready ? 'text-emerald-300' : 'text-amber-300'}>
+                    Selected pose: {V3_POSE_LABELS[selectedV3PoseCaseId]} {selectedV3MotionQaCase.ready
+                      ? 'passed.'
+                      : `${selectedV3MotionQaCase.issues.length} advisory issue${selectedV3MotionQaCase.issues.length === 1 ? '' : 's'}.`}
+                  </span>
+                )}
               </div>
             </Panel>
           )}
@@ -2369,7 +2587,58 @@ function densityColor(neighborCount: number): string {
   return '#22c55e';
 }
 
-function applyPreviewPose(model: THREE.Group, pose: PoseMode) {
+function motionOverlayColor(kind: V3PoseClearanceOverlay['kind']): string {
+  if (kind === 'part-overlap') return '#fb7185';
+  if (kind === 'limb-gap') return '#f59e0b';
+  if (kind === 'weapon-grip-drift') return '#a78bfa';
+  return '#38bdf8';
+}
+
+function createV3MotionOverlayGroup(overlays: readonly V3PoseClearanceOverlay[]): THREE.Group {
+  const group = new THREE.Group();
+  group.name = 'v3-motion-clearance-overlays';
+
+  overlays.forEach((overlay) => {
+    const color = motionOverlayColor(overlay.kind);
+    overlay.boxes?.forEach((box) => {
+      const min = new THREE.Vector3(...box.min);
+      const max = new THREE.Vector3(...box.max);
+      const size = max.clone().sub(min);
+      if (size.x <= 0 || size.y <= 0 || size.z <= 0) return;
+      const mesh = new THREE.Mesh(
+        new THREE.BoxGeometry(size.x, size.y, size.z),
+        new THREE.MeshBasicMaterial({
+          color,
+          transparent: true,
+          opacity: overlay.kind === 'part-overlap' ? 0.16 : 0.08,
+          wireframe: overlay.kind !== 'part-overlap',
+          depthWrite: false,
+        })
+      );
+      mesh.position.copy(min.add(max).multiplyScalar(0.5));
+      group.add(mesh);
+    });
+
+    if (overlay.line) {
+      const from = new THREE.Vector3(...overlay.line.from);
+      const to = new THREE.Vector3(...overlay.line.to);
+      const delta = to.clone().sub(from);
+      const length = delta.length();
+      if (length <= 0.0001) return;
+      const line = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.012, 0.012, length, 8),
+        new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.85, depthWrite: false })
+      );
+      line.position.copy(from.clone().add(to).multiplyScalar(0.5));
+      line.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), delta.normalize());
+      group.add(line);
+    }
+  });
+
+  return group;
+}
+
+function applyPreviewPose(model: THREE.Group, pose: V2PoseMode) {
   const data = model.userData as Record<string, THREE.Group | undefined>;
   if (pose === 'idle') return;
   if (pose === 'crouch') {

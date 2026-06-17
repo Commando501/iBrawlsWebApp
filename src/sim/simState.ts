@@ -85,6 +85,10 @@ export interface SimCombatant {
 
   // Grifball pass charge: held to wind up a throw (`grifballChargeMax`).
   passChargeTimer: number;
+  /** Runner healing delay timer while this combatant carries the ball. */
+  runnerHealDelayTimer: number;
+  /** Last observed runner HP, used to detect damage and restart healing delay. */
+  runnerLastHp: number;
 
   // Sword lunge flight
   isLunging: boolean;

@@ -10,6 +10,7 @@ import {
   tickBallPhysics,
   findBallPickup,
   isBallGrabbable,
+  predictThrowTrajectory,
   BALL_REST_Y,
 } from './grifballBall';
 
@@ -54,6 +55,20 @@ test('thrown ball flies, settles to loose, and is then grabbable', () => {
   assert.ok(settled, 'ball should settle to loose');
   assert.ok(ball.pos.x > 0, 'ball should travel in +x');
   assert.ok(isBallGrabbable(ball));
+});
+
+test('predictThrowTrajectory samples the throw arc through the landing point', () => {
+  const points = predictThrowTrajectory({
+    from: { x: 2, y: 1.1, z: -3 },
+    dir: { x: 0, y: 0, z: -1 },
+    speed: 20,
+    samples: 9,
+  });
+
+  assert.equal(points.length, 9);
+  assert.deepEqual(points[0], { x: 2, y: 1.1, z: -3 });
+  assert.equal(points.at(-1)?.y, BALL_REST_Y);
+  assert.ok((points.at(-1)?.z ?? 0) < -10, 'landing point should extend down the throw heading');
 });
 
 test('loose ball auto-returns home after the timeout', () => {

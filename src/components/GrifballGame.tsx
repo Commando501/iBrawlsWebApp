@@ -45,6 +45,7 @@ import {
   throwPlayerGrifballPassForState,
   updateGrifballObjectiveForState,
 } from './grifball/grifballObjectiveRuntime';
+import { disposeGrifballThrowTrajectoryVisualForRefs } from './grifball/grifballThrowTrajectoryRuntime';
 import {
   type LiveCameraFrameState,
 } from './grifball/liveCamera';
@@ -759,6 +760,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       }
       unregisterInputEventListeners?.();
 
+      disposeGrifballThrowTrajectoryVisualForRefs(threeRef.current);
       disposeTransientVfx();
 
       if (requestRef.current) {

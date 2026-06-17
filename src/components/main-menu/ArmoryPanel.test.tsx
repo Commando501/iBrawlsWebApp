@@ -462,6 +462,11 @@ test('ArmorModelEditor exposes V3 armor preview mode without removing voxel edit
   assert.match(html, /Smart V3/);
   assert.match(html, /Suit Workspace/);
   assert.match(html, /Suit Profiles/);
+  assert.match(html, /Motion QA/);
+  assert.match(html, /Check Active Pose/);
+  assert.match(html, /Check Full Suit/);
+  assert.match(html, /Hammer Strike/);
+  assert.match(html, /Motion Overlay/);
   assert.match(html, /Start Full Suit/);
   assert.match(html, /Preview Full Suit/);
   assert.match(html, /Save &amp; Equip Suit/);
@@ -515,6 +520,11 @@ test('ArmorModelEditor hides suggested fixes for V2 armor editing', () => {
   assert.doesNotMatch(html, /Smart V3/);
   assert.doesNotMatch(html, /Suit Workspace/);
   assert.doesNotMatch(html, /Suit Profiles/);
+  assert.doesNotMatch(html, /Motion QA/);
+  assert.doesNotMatch(html, /Check Active Pose/);
+  assert.doesNotMatch(html, /Check Full Suit/);
+  assert.doesNotMatch(html, /Hammer Strike/);
+  assert.doesNotMatch(html, /Motion Overlay/);
   assert.doesNotMatch(html, /Start Full Suit/);
   assert.doesNotMatch(html, /Preview Full Suit/);
   assert.doesNotMatch(html, /Save &amp; Equip Suit/);

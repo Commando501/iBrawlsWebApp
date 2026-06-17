@@ -19,16 +19,40 @@ function playingMatch(seed: number) {
   return state;
 }
 
-test('carrier pickup grants the punch weapon, +1 HP, and heals to full', () => {
+test('carrier pickup grants the punch weapon, configured runner HP, and heals to full', () => {
   const state = playingMatch(1);
   const c = state.combatants.find((x) => x.team === 'blue')!;
-  const baseMax = c.maxHp;
+  const tuned = { ...settings, grifballRunnerHealth: 4 } as any;
   c.hp = 1;
-  setSimCarrier(c, true, settings);
+  setSimCarrier(c, true, tuned);
   assert.equal(c.weapon, 'ball');
-  assert.equal(c.maxHp, baseMax + 1);
+  assert.equal(c.maxHp, 4);
   assert.equal(c.hp, c.maxHp, 'healed to full on pickup');
   assert.equal(c.hasBall, true);
+});
+
+test('carrier health regenerates after the configured delay and rate', () => {
+  const state = playingMatch(9);
+  const c = state.combatants.find((x) => x.team === 'blue')!;
+  const tuned = {
+    ...settings,
+    grifballRunnerHealth: 4,
+    grifballRunnerHealDelay: 0.5,
+    grifballRunnerHealRate: 2,
+  } as any;
+  state.match.ball.state = 'held';
+  state.match.ball.holderId = c.id;
+  setSimCarrier(c, true, tuned);
+  c.hp = 2;
+
+  tickGrifballObjective(state, tuned, 0.25);
+  assert.equal(c.hp, 2, 'healing waits through the delay window');
+
+  for (let i = 0; i < 30; i++) {
+    tickGrifballObjective(state, tuned, 0.1);
+  }
+
+  assert.equal(c.hp, 4);
 });
 
 test('dropping the ball reverts the loadout and clamps HP', () => {

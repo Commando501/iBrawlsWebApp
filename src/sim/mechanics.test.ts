@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createMatch, resolveSimSettings } from './factory';
 import { stepSimulation } from './step';
+import { stepCombatantMovement } from './physics';
 import { stepCombatantWeapons, isTradeEligible } from './weapons';
 import { setSimCarrier } from './grifball';
 import { idleAction, type ActionInput } from './actions';
@@ -12,6 +13,10 @@ const grifSettings = resolveSimSettings();
 
 function act(over: Partial<ActionInput>): ActionInput {
   return { ...idleAction(), ...over };
+}
+
+function assertNear(actual: number, expected: number): void {
+  assert.equal(Math.abs(actual - expected) < 1e-9, true);
 }
 
 // --- weaponReadyTime: a freshly-swapped weapon can't fire until it's ready ---
@@ -98,21 +103,61 @@ test('a normal jump (no window) is not boosted', () => {
   assert.ok(j.vel.y > 6 && j.vel.y < 7.5, `normal jump ~7.2, got ${j.vel.y}`);
 });
 
+test('sim ball carrier movement stacks runner directional speed on universal movement speed', () => {
+  const s = createMatch({ seed: 9 });
+  const carrier = s.combatants[0];
+  carrier.weapon = 'ball';
+  carrier.hasBall = true;
+  carrier.pos = { x: 0, y: 0, z: 0 };
+  carrier.yaw = 0;
+
+  stepCombatantMovement(
+    s,
+    carrier,
+    act({ moveZ: 1, aim: 0 }),
+    { ...grifSettings, speedForward: 100, grifballRunnerSpeedForward: 200 } as any,
+    1
+  );
+
+  assertNear(carrier.vel.x, 0);
+  assertNear(carrier.vel.z, 11.6);
+});
+
+test('sim disables new runner thrust starts while holding the ball', () => {
+  const s = createMatch({ seed: 10 });
+  const carrier = s.combatants[0];
+  carrier.weapon = 'ball';
+  carrier.hasBall = true;
+  carrier.pos = { x: 0, y: 0, z: 0 };
+  carrier.yaw = 0;
+
+  stepCombatantMovement(
+    s,
+    carrier,
+    act({ moveZ: 1, dash: true, aim: 0 }),
+    { ...grifSettings, grifballAllowRunnerThrust: false } as any,
+    1 / 60
+  );
+
+  assert.equal(carrier.dashRemaining, 0);
+  assert.equal(carrier.dashCooldownTimer, 0);
+});
+
 // --- grifball pass charge: longer hold throws the ball faster ---
 
-function chargeAndThrow(holdTicks: number): number {
+function chargeAndThrow(holdTicks: number, settings = grifSettings): number {
   const s = createMatch({ seed: 11 });
   s.match.phase = 'playing';
   const carrier = s.combatants.find((c) => c.team === 'blue')!;
   carrier.pos = { x: 0, y: 0, z: 0 }; carrier.yaw = 0;
   s.match.ball.state = 'held'; s.match.ball.holderId = carrier.id;
-  setSimCarrier(carrier, true, grifSettings);
+  setSimCarrier(carrier, true, settings);
 
   for (let i = 0; i < holdTicks; i++) {
-    stepSimulation(s, { [carrier.id]: act({ attackSecondary: true, aim: 0 }) }, { settings: grifSettings });
+    stepSimulation(s, { [carrier.id]: act({ attackSecondary: true, aim: 0 }) }, { settings });
   }
   // Release.
-  stepSimulation(s, { [carrier.id]: act({ aim: 0 }) }, { settings: grifSettings });
+  stepSimulation(s, { [carrier.id]: act({ aim: 0 }) }, { settings });
   return Math.hypot(s.match.ball.vel.x, s.match.ball.vel.z);
 }
 
@@ -123,4 +168,53 @@ test('holding the pass longer throws the ball faster (grifballChargeMax)', () =>
   assert.ok(longThrow > shortThrow + 2, `long charge faster: ${longThrow.toFixed(1)} vs ${shortThrow.toFixed(1)}`);
   const max = grifSettings.grifballPassSpeedMax ?? 26;
   assert.ok(longThrow <= max + 1e-6, 'capped at passSpeedMax');
+});
+
+test('disabled sim throwing prevents carrier pass charge and release', () => {
+  const s = createMatch({ seed: 12 });
+  const noThrowSettings = { ...grifSettings, grifballAllowThrowing: false } as any;
+  s.match.phase = 'playing';
+  const carrier = s.combatants.find((c) => c.team === 'blue')!;
+  carrier.pos = { x: 0, y: 0, z: 0 };
+  carrier.yaw = 0;
+  s.match.ball.state = 'held';
+  s.match.ball.holderId = carrier.id;
+  setSimCarrier(carrier, true, noThrowSettings);
+
+  for (let i = 0; i < 20; i++) {
+    stepSimulation(s, { [carrier.id]: act({ attackSecondary: true, aim: 0 }) }, { settings: noThrowSettings });
+  }
+  stepSimulation(s, { [carrier.id]: act({ aim: 0 }) }, { settings: noThrowSettings });
+
+  assert.equal(carrier.passChargeTimer, 0);
+  assert.equal(s.match.ball.state, 'held');
+  assert.equal(s.match.ball.holderId, carrier.id);
+});
+
+test('sim ball punch uses configured reach and punch cooldown', () => {
+  const s = createMatch({ seed: 13 });
+  s.match.phase = 'playing';
+  const attacker = s.combatants[0];
+  const victim = s.combatants[1];
+  attacker.pos = { x: 0, y: 0, z: 0 };
+  attacker.yaw = 0;
+  attacker.weapon = 'ball';
+  attacker.hasBall = true;
+  attacker.weaponState = 'idle';
+  attacker.weaponReadyTimer = 0;
+  attacker.attackCooldown = 0;
+  victim.pos = { x: 0, y: 0, z: 1.7 };
+  victim.invulnerabilityTimer = 0;
+  victim.hp = 5;
+  victim.maxHp = 5;
+  const tuned = { ...grifSettings, grifballPunchLungeDistance: 2.0, grifballPunchCooldown: 1.7 } as any;
+  const events: any[] = [];
+
+  stepCombatantWeapons(s, attacker, act({ attackPrimary: true, aim: 0 }), tuned, 1 / 60, events);
+  for (let i = 0; i < 20; i++) {
+    stepCombatantWeapons(s, attacker, act({ aim: 0 }), tuned, 1 / 60, events);
+  }
+
+  assert.ok(victim.hp < 5, 'victim inside configured punch reach should take damage');
+  assert.ok(attacker.attackCooldown > 1.5, `punch cooldown should use configured value, got ${attacker.attackCooldown}`);
 });

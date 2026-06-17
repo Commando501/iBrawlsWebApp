@@ -11,6 +11,7 @@ import { createInitialGrifballMatchState } from '../../game/grifballMatch';
 import { createInitialBall } from '../../game/grifballBall';
 import { createEmptyTeamScores, type TeamId, type TeamScoresState } from '../../game/teamScoring';
 import { getForwardHeadingForYaw } from '../../game/yaw';
+import { resolveDirectionalSpeedMultiplier } from '../../game/runnerBallSettings';
 import { type AIBehaviorState, type CustomMapData, type UniversalSettings, type WeaponState } from '../../types';
 import {
   getNeuralAgentRuntime,
@@ -21,7 +22,6 @@ import { runSampledPolicyWithGreedyFactors } from '../../game/neuralPolicy';
 import { type GrifballRuntimeState } from './runtimeState';
 
 const BASE_SPEED = 5.8;
-const RUNNER_MULT = 1.3;
 const CROUCH_SPEED = 2.5;
 const ATTACK_FACTOR_INDEX = 2;
 
@@ -394,19 +394,18 @@ export function resolveNeuralPlanarVelocity(
   const inputLength = Math.hypot(action.moveZ, action.moveX);
   if (inputLength <= 0) return new THREE.Vector3(0, 0, 0);
 
-  let baseSpeed = BASE_SPEED;
-  if (activeWeapon === 'ball') baseSpeed *= RUNNER_MULT;
-  else if (isCrouching) baseSpeed = CROUCH_SPEED;
+  const isRunner = activeWeapon === 'ball';
+  const baseSpeed = isCrouching && !isRunner ? CROUCH_SPEED : BASE_SPEED;
 
   const normForward = action.moveZ / inputLength;
   const normRight = action.moveX / inputLength;
   const fMultiplier =
     normForward > 0
-      ? settings.speedForward / 100
+      ? resolveDirectionalSpeedMultiplier(settings, 'forward', isRunner)
       : normForward < 0
-        ? settings.speedBackward / 100
+        ? resolveDirectionalSpeedMultiplier(settings, 'backward', isRunner)
         : 1.0;
-  const sMultiplier = settings.speedSide / 100;
+  const sMultiplier = resolveDirectionalSpeedMultiplier(settings, 'side', isRunner);
   const analogScale = Math.min(1, inputLength);
 
   return new THREE.Vector3()
@@ -452,6 +451,8 @@ function livePlayerToSimCombatant(state: GrifballRuntimeState): SimCombatant {
     hammerJumpWindowTimer: state.pHammerJumpWindowTimer,
     hammerJumpsInAir: state.pHammerJumpsInAir,
     passChargeTimer: state.grifballPassCharge,
+    runnerHealDelayTimer: state.playerRunnerHealDelayTimer,
+    runnerLastHp: state.playerRunnerLastHp,
     isLunging: state.isLunging,
     lungeTimer: state.lungeTimer,
     lungeDir: {
@@ -498,6 +499,8 @@ function liveAIToSimCombatant(combatant: GrifballRuntimeState['otherPlayers'] ex
     hammerJumpWindowTimer: combatant.hammerJumpWindowTimer ?? 0,
     hammerJumpsInAir: combatant.aiHammerJumpsInAir ?? 0,
     passChargeTimer: 0,
+    runnerHealDelayTimer: combatant.runnerHealDelayTimer ?? 0,
+    runnerLastHp: combatant.runnerLastHp ?? combatant.hp,
     isLunging: combatant.isLunging ?? false,
     lungeTimer: combatant.lungeTimer ?? 0,
     lungeDir: lungeTarget
@@ -541,6 +544,8 @@ function liveTelemetrySelfToSimCombatant(self: NeuralLiveTelemetryCombatant): Si
     hammerJumpWindowTimer: 0,
     hammerJumpsInAir: 0,
     passChargeTimer: 0,
+    runnerHealDelayTimer: 0,
+    runnerLastHp: self.hp,
     isLunging: false,
     lungeTimer: 0,
     lungeDir: { x: 0, y: 0, z: 0 },

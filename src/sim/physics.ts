@@ -20,6 +20,7 @@
 
 import * as THREE from 'three';
 import { type UniversalSettings } from '../types';
+import { resolveDirectionalSpeedMultiplier, resolveRunnerThrustAllowed } from '../game/runnerBallSettings';
 import { constrainCombatantToArenaBounds } from '../components/grifball/arenaBounds';
 import { GRAVITY_ACCELERATION } from '../components/grifball/combatGeometry';
 import { type SimState, type SimCombatant } from './simState';
@@ -27,8 +28,6 @@ import { type ActionInput } from './actions';
 
 /** Base walk speed (m/s), live `updatePhysics` baseSpeed. */
 const BASE_SPEED = 5.8;
-/** Ball carrier speed multiplier ("Runner is faster"). */
-const RUNNER_MULT = 1.3;
 /** Crouch walk speed (m/s). */
 const CROUCH_SPEED = 2.5;
 /** Standing-jump initial vertical velocity. */
@@ -91,9 +90,16 @@ export function stepCombatantMovement(
   // Face the requested aim instantly (mouse-equivalent), normalized to (-PI, PI].
   c.yaw = normalizeYaw(action.aim);
   c.isCrouching = action.crouch && !c.isJumping;
+  const isRunner = c.hasBall || c.weapon === 'ball';
 
   // Dash trigger (tap): only when grounded-ready and off cooldown.
-  if (action.dash && c.dashRemaining <= 0 && c.dashCooldownTimer <= 0 && c.alive) {
+  if (
+    action.dash &&
+    (!isRunner || resolveRunnerThrustAllowed(settings)) &&
+    c.dashRemaining <= 0 &&
+    c.dashCooldownTimer <= 0 &&
+    c.alive
+  ) {
     forwardDir(c.yaw, _f);
     rightDir(c.yaw, _r);
     const dd = new THREE.Vector3();
@@ -117,12 +123,7 @@ export function stepCombatantMovement(
     forwardDir(c.yaw, _f);
     rightDir(c.yaw, _r);
 
-    let baseSpeed = BASE_SPEED;
-    if (c.weapon === 'ball') {
-      baseSpeed = BASE_SPEED * RUNNER_MULT;
-    } else if (c.isCrouching) {
-      baseSpeed = CROUCH_SPEED;
-    }
+    const baseSpeed = c.isCrouching && !isRunner ? CROUCH_SPEED : BASE_SPEED;
 
     const moveForward = action.moveZ;
     const moveRight = action.moveX;
@@ -134,11 +135,11 @@ export function stepCombatantMovement(
       const normRight = moveRight / inputLength;
       const fMultiplier =
         normForward > 0
-          ? settings.speedForward / 100
+          ? resolveDirectionalSpeedMultiplier(settings, 'forward', isRunner)
           : normForward < 0
-            ? settings.speedBackward / 100
+            ? resolveDirectionalSpeedMultiplier(settings, 'backward', isRunner)
             : 1.0;
-      const sMultiplier = settings.speedSide / 100;
+      const sMultiplier = resolveDirectionalSpeedMultiplier(settings, 'side', isRunner);
       // Clamp magnitude so an over-driven analog action can't exceed unit speed.
       const analogScale = Math.min(1, inputLength);
       vx = _f.x * normForward * fMultiplier * baseSpeed * analogScale +

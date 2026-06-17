@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { type Combatant } from '../../types';
 import { resolveHammerSlamTiming } from '../../game/hammerSlamTiming';
+import { resolvePunchCooldown } from '../../game/runnerBallSettings';
 import {
   applyWeaponPose,
   getThirdPersonCombatantArmPose,
@@ -59,7 +60,8 @@ export function updateMainAIWeaponAnimationsForState({
       position: [0.48, 1.08 - 0.64, -0.32],
       rotation: [Math.PI / 2, 0, -Math.PI / 8],
     });
-  } else if (mainAI.activeWeapon === 'hammer') {
+  } else if (mainAI.activeWeapon === 'hammer' || mainAI.activeWeapon === 'ball') {
+    const isBallPunch = mainAI.activeWeapon === 'ball';
     const hammerAttackAnimation = getHammerAttackAnimationStyle(state.settings);
     const hammerSlamTiming = resolveHammerSlamTiming(state.settings);
     if (mainAI.weaponState === 'ready') {
@@ -69,7 +71,7 @@ export function updateMainAIWeaponAnimationsForState({
       });
     } else if (mainAI.weaponState === 'swing_up') {
       mainAI.weaponTimer += dt;
-      const windup = hammerSlamTiming.windupTime;
+      const windup = isBallPunch ? (state.settings.hammerMeleeSpeed ?? 0.24) : hammerSlamTiming.windupTime;
       const pct = Math.min(1.0, mainAI.weaponTimer / windup);
 
       if (hammerAttackAnimation === 'highFidelity') {
@@ -95,7 +97,7 @@ export function updateMainAIWeaponAnimationsForState({
       }
     } else if (mainAI.weaponState === 'swing_down') {
       mainAI.weaponTimer += dt;
-      const strike = hammerSlamTiming.attackTime;
+      const strike = isBallPunch ? Math.max(0.03, (state.settings.hammerMeleeSpeed ?? 0.24) * 0.5) : hammerSlamTiming.attackTime;
       const pct = Math.min(1.0, mainAI.weaponTimer / strike);
 
       if (hammerAttackAnimation === 'highFidelity') {
@@ -122,7 +124,7 @@ export function updateMainAIWeaponAnimationsForState({
       }
     } else if (mainAI.weaponState === 'recovering') {
       mainAI.weaponTimer += dt;
-      const recover = state.settings.hammerReloadTime ?? 0.6;
+      const recover = isBallPunch ? resolvePunchCooldown(state.settings) : (state.settings.hammerReloadTime ?? 0.6);
       const pct = Math.min(1.0, mainAI.weaponTimer / recover);
 
       if (hammerAttackAnimation === 'highFidelity') {
@@ -201,7 +203,7 @@ export function updateMainAIWeaponAnimationsForState({
       }
     } else if (mainAI.weaponState === 'melee_recover') {
       mainAI.weaponTimer += dt;
-      const recover = state.settings.hammerMeleeReload ?? 0.5;
+      const recover = isBallPunch ? resolvePunchCooldown(state.settings) : (state.settings.hammerMeleeReload ?? 0.5);
       const pct = Math.min(1.0, mainAI.weaponTimer / recover);
 
       if (hammerAttackAnimation === 'highFidelity') {
@@ -330,10 +332,11 @@ export function updateMainAIWeaponAnimationsForState({
   const armTimer = mainAI.activeWeapon === 'sword' && mainAI.aiState === 'LUNGING'
     ? Number(enemySwordModel.userData.lungePoseTimer ?? mainAI.weaponTimer)
     : mainAI.weaponTimer;
+  const armWeapon = mainAI.activeWeapon === 'ball' ? 'hammer' : mainAI.activeWeapon;
   applyCombatantArmPose(
     enemyGroup,
     getThirdPersonCombatantArmPose({
-      activeWeapon: mainAI.activeWeapon,
+      activeWeapon: armWeapon,
       weaponState: mainAI.weaponState,
       weaponTimer: armTimer,
       isLunging: mainAI.aiState === 'LUNGING',

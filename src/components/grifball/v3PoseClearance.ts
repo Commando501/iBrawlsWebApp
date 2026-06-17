@@ -54,6 +54,49 @@ export interface V3PoseClearanceIssue {
   partIds?: string[];
 }
 
+export type V3PoseClearanceOverlayIssueCode = Extract<
+  V3PoseClearanceIssueCode,
+  | 'part-overlap-high'
+  | 'limb-gap-low'
+  | 'weapon-drift-high'
+  | 'foot-floor-penetration'
+  | 'foot-lift-high'
+>;
+
+export type V3PoseClearanceOverlayKind =
+  | 'part-overlap'
+  | 'limb-gap'
+  | 'weapon-grip-drift'
+  | 'foot-floor-penetration'
+  | 'foot-lift';
+
+export type V3PoseClearancePoint = [number, number, number];
+
+export interface V3PoseClearanceOverlayBox {
+  partId: string;
+  min: V3PoseClearancePoint;
+  max: V3PoseClearancePoint;
+}
+
+export interface V3PoseClearanceOverlayLine {
+  from: V3PoseClearancePoint;
+  to: V3PoseClearancePoint;
+}
+
+export interface V3PoseClearanceOverlay {
+  id: string;
+  caseId: V3PoseClearanceCaseId;
+  kind: V3PoseClearanceOverlayKind;
+  issueCode: V3PoseClearanceOverlayIssueCode;
+  message: string;
+  partIds: string[];
+  value?: number;
+  threshold?: number;
+  boxes?: V3PoseClearanceOverlayBox[];
+  line?: V3PoseClearanceOverlayLine;
+  floorY?: number;
+}
+
 export interface V3PoseClearanceWeaponMetrics {
   activeWeapon: 'hammer' | 'sword' | 'pistol';
   gripDrift: number;
@@ -77,6 +120,7 @@ export interface V3PoseClearanceCaseReport {
   id: V3PoseClearanceCaseId;
   ready: boolean;
   metrics: V3PoseClearanceMetrics;
+  overlays: V3PoseClearanceOverlay[];
   visualQaSummary: V3VisualQaSummary | null;
   issues: V3PoseClearanceIssue[];
 }
@@ -123,7 +167,7 @@ export interface V3PoseClearanceOptions {
   hue?: number;
 }
 
-interface BuiltSubject {
+export interface V3PoseClearanceSubject {
   model: THREE.Group;
   rig?: CombatantRig;
   hammerModel?: THREE.Group | null;
@@ -150,6 +194,12 @@ interface SubjectSnapshot {
   objects: ObjectTransformSnapshot[];
   hadLastHp: boolean;
   lastHp: unknown;
+}
+
+interface WeaponMeasurement {
+  metrics: V3PoseClearanceWeaponMetrics;
+  weaponPosition: THREE.Vector3;
+  gripPosition: THREE.Vector3;
 }
 
 const DEFAULT_THRESHOLDS: V3PoseClearanceThresholds = {
@@ -184,9 +234,11 @@ const MIRRORED_LIMB_STEMS = [
 ] as const;
 const FOOT_PART_IDS = ['footLeft', 'footRight', 'leftFoot', 'rightFoot'] as const;
 
-const roundMetric = (value: number): number => (
-  Number.isFinite(value) ? Number(value.toFixed(ROUND_DIGITS)) : 0
-);
+const roundMetric = (value: number): number => {
+  if (!Number.isFinite(value)) return 0;
+  const rounded = Number(value.toFixed(ROUND_DIGITS));
+  return Object.is(rounded, -0) ? 0 : rounded;
+};
 
 const isObject3D = (value: unknown): value is THREE.Object3D =>
   value instanceof THREE.Object3D;
@@ -249,7 +301,7 @@ const createIssue = (
   ...details,
 });
 
-const createBuiltSubject = (options: V3PoseClearanceOptions): BuiltSubject => {
+const createBuiltSubject = (options: V3PoseClearanceOptions): V3PoseClearanceSubject => {
   if (options.model) {
     return {
       model: options.model,
@@ -277,7 +329,7 @@ const createBuiltSubject = (options: V3PoseClearanceOptions): BuiltSubject => {
   };
 };
 
-const snapshotSubject = (subject: BuiltSubject): SubjectSnapshot => {
+const snapshotSubject = (subject: V3PoseClearanceSubject): SubjectSnapshot => {
   const seen = new Set<string>();
   const objects: ObjectTransformSnapshot[] = [];
   const maybeRoots: Array<THREE.Object3D | null | undefined> = [
@@ -312,7 +364,7 @@ const snapshotSubject = (subject: BuiltSubject): SubjectSnapshot => {
   };
 };
 
-const restoreSubject = (subject: BuiltSubject, snapshot: SubjectSnapshot): void => {
+const restoreSubject = (subject: V3PoseClearanceSubject, snapshot: SubjectSnapshot): void => {
   for (const entry of snapshot.objects) {
     entry.object.position.copy(entry.position);
     entry.object.quaternion.copy(entry.quaternion);
@@ -424,16 +476,23 @@ const measureMirroredLimbGap = (parts: PartBounds[]): { gap: number; partIds: st
 const measureFootFloor = (
   parts: PartBounds[],
   baselineFloorY: number
-): { penetration: number; lift: number } => {
+): { penetration: number; lift: number; partIds: string[] } => {
   const footBounds = FOOT_PART_IDS
     .map((id) => findPart(parts, id))
     .filter((part): part is PartBounds => Boolean(part));
-  if (footBounds.length === 0) return { penetration: 0, lift: 0 };
+  if (footBounds.length === 0) {
+    return {
+      penetration: 0,
+      lift: 0,
+      partIds: [],
+    };
+  }
 
   const minFootY = Math.min(...footBounds.map((part) => part.bounds.min.y));
   return {
     penetration: roundMetric(Math.max(0, baselineFloorY - minFootY)),
     lift: roundMetric(Math.max(0, minFootY - baselineFloorY)),
+    partIds: footBounds.map((part) => part.id),
   };
 };
 
@@ -479,7 +538,7 @@ const measureUpperLowerCoupling = (rig: CombatantRig | undefined): number => {
 };
 
 const getWeaponModel = (
-  subject: BuiltSubject,
+  subject: V3PoseClearanceSubject,
   activeWeapon: 'hammer' | 'sword' | 'pistol'
 ): THREE.Group | null | undefined => {
   if (activeWeapon === 'sword') return subject.swordModel;
@@ -488,10 +547,10 @@ const getWeaponModel = (
 };
 
 const measureWeapon = (
-  subject: BuiltSubject,
+  subject: V3PoseClearanceSubject,
   parts: PartBounds[],
   activeWeapon: 'hammer' | 'sword' | 'pistol'
-): V3PoseClearanceWeaponMetrics | undefined => {
+): WeaponMeasurement | undefined => {
   const weapon = getWeaponModel(subject, activeWeapon);
   const grip = subject.rig?.attachments.thirdPersonWeaponGrip?.group;
   if (!weapon || !grip) return undefined;
@@ -507,14 +566,135 @@ const measureWeapon = (
   );
 
   return {
-    activeWeapon,
-    gripDrift: roundMetric(weaponPosition.distanceTo(gripPosition)),
-    bodyClearance: roundMetric(
-      isFiniteBox(weaponBounds) && isFiniteBox(bodyBounds)
-        ? distanceBetweenBoxes(weaponBounds, bodyBounds)
-        : 0
-    ),
+    metrics: {
+      activeWeapon,
+      gripDrift: roundMetric(weaponPosition.distanceTo(gripPosition)),
+      bodyClearance: roundMetric(
+        isFiniteBox(weaponBounds) && isFiniteBox(bodyBounds)
+          ? distanceBetweenBoxes(weaponBounds, bodyBounds)
+          : 0
+      ),
+    },
+    weaponPosition,
+    gripPosition,
   };
+};
+
+const serializePoint = (point: THREE.Vector3): V3PoseClearancePoint => [
+  roundMetric(point.x),
+  roundMetric(point.y),
+  roundMetric(point.z),
+];
+
+const serializeBounds = (part: PartBounds): V3PoseClearanceOverlayBox => ({
+  partId: part.id,
+  min: serializePoint(part.bounds.min),
+  max: serializePoint(part.bounds.max),
+});
+
+const findPartsByIds = (parts: PartBounds[], partIds: readonly string[]): PartBounds[] => {
+  const byId = new Map(parts.map((part) => [part.id, part]));
+  return partIds
+    .map((partId) => byId.get(partId))
+    .filter((part): part is PartBounds => Boolean(part));
+};
+
+const lineBetweenParts = (
+  left: PartBounds | undefined,
+  right: PartBounds | undefined
+): V3PoseClearanceOverlayLine | undefined => {
+  if (!left || !right) return undefined;
+  return {
+    from: serializePoint(left.bounds.getCenter(new THREE.Vector3())),
+    to: serializePoint(right.bounds.getCenter(new THREE.Vector3())),
+  };
+};
+
+const floorLineForParts = (
+  footParts: PartBounds[],
+  floorY: number
+): V3PoseClearanceOverlayLine | undefined => {
+  if (footParts.length === 0) return undefined;
+  const bodyBounds = footParts.reduce(
+    (bounds, part) => bounds.union(part.bounds),
+    new THREE.Box3()
+  );
+  if (!isFiniteBox(bodyBounds)) return undefined;
+  const center = bodyBounds.getCenter(new THREE.Vector3());
+  return {
+    from: serializePoint(new THREE.Vector3(center.x, floorY, center.z)),
+    to: serializePoint(new THREE.Vector3(center.x, bodyBounds.min.y, center.z)),
+  };
+};
+
+const buildBaseOverlay = (
+  issue: V3PoseClearanceIssue,
+  kind: V3PoseClearanceOverlayKind
+): V3PoseClearanceOverlay => {
+  const partIds = issue.partIds ?? [];
+  const overlay: V3PoseClearanceOverlay = {
+    id: `${issue.caseId}:${issue.code}:${partIds.length > 0 ? partIds.join('-') : kind}`,
+    caseId: issue.caseId,
+    kind,
+    issueCode: issue.code as V3PoseClearanceOverlayIssueCode,
+    message: issue.message,
+    partIds: [...partIds],
+  };
+  if (typeof issue.value === 'number') overlay.value = roundMetric(issue.value);
+  if (typeof issue.threshold === 'number') overlay.threshold = roundMetric(issue.threshold);
+  return overlay;
+};
+
+const buildV3PoseClearanceOverlays = (
+  issues: V3PoseClearanceIssue[],
+  parts: PartBounds[],
+  floorY: number,
+  weaponMeasurement: WeaponMeasurement | undefined
+): V3PoseClearanceOverlay[] => {
+  const overlays: V3PoseClearanceOverlay[] = [];
+
+  for (const issue of issues) {
+    if (issue.code === 'part-overlap-high') {
+      const overlay = buildBaseOverlay(issue, 'part-overlap');
+      const issueParts = findPartsByIds(parts, issue.partIds ?? []);
+      if (issueParts.length > 0) overlay.boxes = issueParts.map(serializeBounds);
+      overlays.push(overlay);
+      continue;
+    }
+
+    if (issue.code === 'limb-gap-low') {
+      const overlay = buildBaseOverlay(issue, 'limb-gap');
+      const issueParts = findPartsByIds(parts, issue.partIds ?? []);
+      if (issueParts.length > 0) overlay.boxes = issueParts.map(serializeBounds);
+      overlay.line = lineBetweenParts(issueParts[0], issueParts[1]);
+      overlays.push(overlay);
+      continue;
+    }
+
+    if (issue.code === 'foot-floor-penetration' || issue.code === 'foot-lift-high') {
+      const kind: V3PoseClearanceOverlayKind = issue.code === 'foot-floor-penetration'
+        ? 'foot-floor-penetration'
+        : 'foot-lift';
+      const overlay = buildBaseOverlay(issue, kind);
+      const footParts = findPartsByIds(parts, issue.partIds ?? FOOT_PART_IDS);
+      if (footParts.length > 0) overlay.boxes = footParts.map(serializeBounds);
+      overlay.floorY = roundMetric(floorY);
+      overlay.line = floorLineForParts(footParts, floorY);
+      overlays.push(overlay);
+      continue;
+    }
+
+    if (issue.code === 'weapon-drift-high' && weaponMeasurement) {
+      const overlay = buildBaseOverlay(issue, 'weapon-grip-drift');
+      overlay.line = {
+        from: serializePoint(weaponMeasurement.gripPosition),
+        to: serializePoint(weaponMeasurement.weaponPosition),
+      };
+      overlays.push(overlay);
+    }
+  }
+
+  return overlays;
 };
 
 const caseHorizontalSpeed = (definition: (typeof V3_POSE_CLEARANCE_CASES)[number]): number => {
@@ -530,7 +710,7 @@ const shouldCheckStaticLimbGap = (definition: (typeof V3_POSE_CLEARANCE_CASES)[n
 );
 
 const applyPoseCase = (
-  subject: BuiltSubject,
+  subject: V3PoseClearanceSubject,
   caseId: V3PoseClearanceCaseId
 ): void => {
   const definition = findCaseDefinition(caseId);
@@ -572,6 +752,16 @@ const applyPoseCase = (
   });
   subject.model.updateWorldMatrix(true, true);
 };
+
+export function applyV3PoseClearanceCase(
+  subject: V3PoseClearanceSubject,
+  caseId: V3PoseClearanceCaseId
+): void {
+  applyPoseCase({
+    ...subject,
+    rig: subject.rig ?? getCombatantRig(subject.model),
+  }, caseId);
+}
 
 const buildSummary = (cases: V3PoseClearanceCaseReport[]): V3PoseClearanceSummary => {
   const weaponDrifts = cases
@@ -647,9 +837,10 @@ export function analyzeV3PoseClearance(
   const includeWeaponMetrics = 'includeWeaponMetrics' in definition
     ? definition.includeWeaponMetrics
     : false;
-  const weapon = activeWeapon && includeWeaponMetrics
+  const weaponMeasurement = activeWeapon && includeWeaponMetrics
     ? measureWeapon(subject, parts, activeWeapon)
     : undefined;
+  const weapon = weaponMeasurement?.metrics;
   if (hasRig && activeWeapon && includeWeaponMetrics && !weapon) {
     issues.push(createIssue(
       caseId,
@@ -722,7 +913,7 @@ export function analyzeV3PoseClearance(
       caseId,
       'foot-floor-penetration',
       'V3 foot bounds penetrate below the neutral pose floor',
-      { value: footFloor.penetration, threshold: thresholds.maxFootFloorPenetration }
+      { value: footFloor.penetration, threshold: thresholds.maxFootFloorPenetration, partIds: footFloor.partIds }
     ));
   }
 
@@ -731,7 +922,7 @@ export function analyzeV3PoseClearance(
       caseId,
       'foot-lift-high',
       'V3 foot bounds lift too far above the neutral pose floor',
-      { value: footFloor.lift, threshold: thresholds.maxFootLift }
+      { value: footFloor.lift, threshold: thresholds.maxFootLift, partIds: footFloor.partIds }
     ));
   }
 
@@ -759,11 +950,13 @@ export function analyzeV3PoseClearance(
     minProjectedHeight: visualQaSummary?.minProjectedHeight ?? 0,
     ...(weapon ? { weapon } : {}),
   };
+  const overlays = buildV3PoseClearanceOverlays(issues, parts, floorY, weaponMeasurement);
 
   const caseReport: V3PoseClearanceCaseReport = {
     id: caseId,
     ready: issues.length === 0,
     metrics,
+    overlays,
     visualQaSummary,
     issues,
   };

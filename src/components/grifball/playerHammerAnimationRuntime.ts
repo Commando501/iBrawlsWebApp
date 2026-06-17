@@ -5,6 +5,7 @@ import {
   getHammerAttackAnimationStyle,
 } from './attackAnimationPresets';
 import { resolveHammerSlamTiming } from '../../game/hammerSlamTiming';
+import { resolvePunchCooldown } from '../../game/runnerBallSettings';
 import { type GrifballRuntimeState } from './runtimeState';
 import { sampleV3FirstPersonWeaponPose } from './v3AnimationFidelity';
 
@@ -46,9 +47,10 @@ export function updatePlayerHammerAnimationForState({
   applyPlayerHammerMeleeImpact: () => void;
 }): void {
   const isV3Hammer = playerHammer.userData.modelSystem === 'v3';
+  const isBallPunch = state.activeWeapon === 'ball';
 
-  if (state.activeWeapon === 'hammer') {
-    playerHammer.visible = true;
+  if (state.activeWeapon === 'hammer' || isBallPunch) {
+    playerHammer.visible = !isBallPunch;
 
     if (state.pWeaponState === 'ready') {
       if (isV3Hammer) {
@@ -68,7 +70,8 @@ export function updatePlayerHammerAnimationForState({
       }
     } else if (state.pWeaponState === 'swing_up') {
       state.pWeaponTimer += dt;
-      const { windupTime: windupDuration } = resolveHammerSlamTiming(state.settings);
+      const { windupTime } = resolveHammerSlamTiming(state.settings);
+      const windupDuration = isBallPunch ? (state.settings.hammerMeleeSpeed ?? 0.24) : windupTime;
       const pct = Math.min(1.0, state.pWeaponTimer / windupDuration);
 
       if (isV3Hammer) {
@@ -95,7 +98,8 @@ export function updatePlayerHammerAnimationForState({
       }
     } else if (state.pWeaponState === 'swing_down') {
       state.pWeaponTimer += dt;
-      const { attackTime: strikeDuration } = resolveHammerSlamTiming(state.settings);
+      const { attackTime } = resolveHammerSlamTiming(state.settings);
+      const strikeDuration = isBallPunch ? Math.max(0.03, (state.settings.hammerMeleeSpeed ?? 0.24) * 0.5) : attackTime;
       const pct = Math.min(1.0, state.pWeaponTimer / strikeDuration);
 
       if (isV3Hammer) {
@@ -122,7 +126,7 @@ export function updatePlayerHammerAnimationForState({
       }
     } else if (state.pWeaponState === 'recovering') {
       state.pWeaponTimer += dt;
-      const recoveryDuration = state.settings.hammerReloadTime ?? 0.6;
+      const recoveryDuration = isBallPunch ? resolvePunchCooldown(state.settings) : (state.settings.hammerReloadTime ?? 0.6);
       const pct = Math.min(1.0, state.pWeaponTimer / recoveryDuration);
 
       if (isV3Hammer) {

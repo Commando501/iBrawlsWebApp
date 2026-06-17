@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { type Keybindings } from '../../types';
+import { resolveDirectionalSpeedMultiplier } from '../../game/runnerBallSettings';
 import { type GrifballRuntimeState } from './runtimeState';
 import { type GrifballThreeRefs } from './threeRefs';
 
@@ -169,11 +170,10 @@ export function updatePlayerHorizontalMovementForState({
   const isSliding = state.playerSlideActive;
 
   let baseSpeed = BASE_WALK_SPEED;
-  if (state.settings.gameMode === 'grifball' && state.activeWeapon === 'ball') {
-    baseSpeed = BASE_WALK_SPEED * 1.3;
-  } else if (state.isCrouching) {
+  const isRunner = state.settings.gameMode === 'grifball' && state.activeWeapon === 'ball' && state.grifball.ball.holderId === 'player';
+  if (state.isCrouching && !isRunner) {
     baseSpeed = isSliding ? BASE_WALK_SPEED * (state.settings.speedSlide / 100) : 2.5;
-  } else if (isSprinting) {
+  } else if (isSprinting && !isRunner) {
     baseSpeed = BASE_WALK_SPEED * (state.settings.speedSprint / 100);
   }
 
@@ -183,8 +183,12 @@ export function updatePlayerHorizontalMovementForState({
     const normRight = moveRight / inputLength;
 
     const fMultiplier =
-      normForward > 0 ? state.settings.speedForward / 100 : normForward < 0 ? state.settings.speedBackward / 100 : 1.0;
-    const sMultiplier = state.settings.speedSide / 100;
+      normForward > 0
+        ? resolveDirectionalSpeedMultiplier(state.settings, 'forward', isRunner)
+        : normForward < 0
+          ? resolveDirectionalSpeedMultiplier(state.settings, 'backward', isRunner)
+          : 1.0;
+    const sMultiplier = resolveDirectionalSpeedMultiplier(state.settings, 'side', isRunner);
     const analogScale = mobileControlsActive && inputLength < 1.0 ? inputLength : 1.0;
 
     moveDirection.addScaledVector(forwardDir, normForward * fMultiplier * baseSpeed * analogScale);

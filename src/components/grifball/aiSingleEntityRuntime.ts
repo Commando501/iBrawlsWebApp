@@ -609,7 +609,6 @@ export function createAISingleEntityUpdaterForState({
         enemiesList,
         dt,
         canStartWeaponAction,
-        weaponReloadTime: (weapon, isMelee) => resolveScaledAIWeaponReloadTime(s.settings, weapon, cooldownMult, isMelee),
         triggerCombatantAttack,
         constrainCombatantToArena,
         getEnemyGoalPos: grifballEnemyGoalPos,

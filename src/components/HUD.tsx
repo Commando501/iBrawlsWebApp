@@ -433,13 +433,13 @@ export const HUD: React.FC<HUDProps> = ({
 
       {/* Grifball ball-carrier controls + Pass-charge meter (local player) */}
       {stats.grifball && stats.grifball.localCarrying && (
-        <div className="absolute bottom-24 left-1/2 -translate-x-1/2 pointer-events-none z-20 flex flex-col items-center gap-2">
+        <div className="absolute top-[58%] left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none z-20 flex flex-col items-center gap-3">
           <div className="bg-black/60 backdrop-blur-md border border-orange-400/40 rounded-lg px-4 py-1.5 flex items-center gap-3">
             <span className="text-orange-300 font-black text-sm uppercase tracking-wider">🏉 Ball</span>
             <span className="text-[11px] text-white/70 font-mono">LMB Punch · Hold RMB Pass</span>
           </div>
           {stats.grifball.passCharge > 0 && (
-            <div className="w-48 h-2.5 bg-black/60 border border-white/20 rounded-full overflow-hidden">
+            <div className="w-96 h-5 bg-black/60 border border-white/20 rounded-full overflow-hidden">
               <div
                 className="h-full bg-gradient-to-r from-amber-400 to-orange-500 transition-[width] duration-75"
                 style={{ width: `${Math.round(stats.grifball.passCharge * 100)}%` }}

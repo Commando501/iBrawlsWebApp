@@ -11,10 +11,11 @@ test('buildV3RuntimeSmokeChecklist includes desktop and mobile viewports', () =>
   assert.deepEqual(V3_RUNTIME_SMOKE_VIEWPORTS.map((viewport) => viewport.id), ['desktop', 'mobile']);
 });
 
-test('buildV3RuntimeSmokeChecklist covers every required Phase 26 browser surface', () => {
+test('buildV3RuntimeSmokeChecklist covers every required Phase 27 browser surface', () => {
   const checklist = buildV3RuntimeSmokeChecklist();
   const routes = checklist.map((item) => item.path);
   const performanceItems = checklist.filter((item) => item.path.startsWith('/v3-performance-smoke.html'));
+  const editorItem = checklist.find((item) => item.id === 'armor-editor-v3-validation');
 
   assert.ok(routes.includes('/'));
   assert.ok(routes.includes('/armor-model-editor.html'));
@@ -24,6 +25,9 @@ test('buildV3RuntimeSmokeChecklist covers every required Phase 26 browser surfac
   assert.ok(performanceItems.every((item) => item.expectedText.includes('Phase 26 Ready')));
   assert.ok(performanceItems.every((item) => item.expectedText.includes('visual pass')));
   assert.ok(performanceItems.every((item) => item.expectedText.includes('motion pass')));
+  assert.ok(editorItem?.expectedText.includes('Motion QA'));
+  assert.ok(editorItem?.expectedText.includes('Check Active Pose'));
+  assert.ok(editorItem?.expectedText.includes('Hammer Strike'));
   assert.ok(checklist.every((item) => item.expectedText.length > 0));
   assert.ok(checklist.every((item) => item.viewports.length > 0));
 });

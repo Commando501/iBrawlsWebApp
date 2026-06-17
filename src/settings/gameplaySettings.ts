@@ -88,6 +88,18 @@ export const DEFAULT_ADMIN_SETTINGS: UniversalSettings = {
   grifballPassSpeedMin: 9.0,
   grifballPassSpeedMax: 26.0,
   grifballPunchLungeRange: 4.5,
+  grifballRunnerSpeedForward: 130,
+  grifballRunnerSpeedSide: 130,
+  grifballRunnerSpeedBackward: 130,
+  grifballAllowThrowing: true,
+  grifballTrajectoryLineThickness: 0.14,
+  grifballTrajectoryLineColor: '#ff2b2b',
+  grifballPunchLungeDistance: 1.8,
+  grifballPunchCooldown: 0.5,
+  grifballRunnerHealth: 2,
+  grifballRunnerHealDelay: 3.0,
+  grifballRunnerHealRate: 1.0,
+  grifballAllowRunnerThrust: true,
   grifballEscortSpacing: 4.0,
 };
 

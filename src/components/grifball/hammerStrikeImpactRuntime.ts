@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { ballAsHammer } from '../../game/weaponCompat';
 import { MAIN_AI_ID } from '../../game/roster';
+import { resolvePunchLungeDistance } from '../../game/runnerBallSettings';
 import { type Combatant, type DeathEvent, type MedalInfo } from '../../types';
 import { getCombatBodyCenter } from './combatGeometry';
 import { adjustRangeForTargetModel } from './modelHitbox';
@@ -93,7 +94,7 @@ export function applyHammerStrikeImpactForState({
       .normalize();
 
     const isBall = state.activeWeapon === 'ball';
-    const range = isBall ? 1.8 : state.settings.attackRange;
+    const range = isBall ? resolvePunchLungeDistance(state.settings) : state.settings.attackRange;
     const impactPos = eyePos.clone().addScaledVector(lookHeading, range);
 
     state.lastStrikePos = impactPos;
@@ -257,7 +258,7 @@ export function applyHammerStrikeImpactForState({
   }
 
   const isBall = mainAI.activeWeapon === 'ball';
-  const range = isBall ? 1.8 : state.settings.attackRange * 0.875;
+  const range = isBall ? resolvePunchLungeDistance(state.settings) : state.settings.attackRange * 0.875;
   const impactPos = aiEyePos.clone().addScaledVector(aiHeading3D, range);
 
   const distToBase = impactPos.distanceTo(mainAI.pos);

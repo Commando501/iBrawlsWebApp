@@ -10,6 +10,7 @@
  */
 
 import { type UniversalSettings } from '../types';
+import { resolveRunnerThrowAllowed } from '../game/runnerBallSettings';
 import { resolveSimSettings } from './factory';
 import { type SimState } from './simState';
 import { type ActionsById, idleAction } from './actions';
@@ -62,10 +63,13 @@ export function stepSimulation(
 
   // Phase 3 — passes: hold secondary to charge the throw (grifballChargeMax), release to throw.
   const chargeMax = settings.grifballChargeMax ?? 1.2;
+  const throwingAllowed = resolveRunnerThrowAllowed(settings);
   for (const c of state.combatants) {
     if (!c.alive || !c.hasBall) continue;
     const a = act(c.id);
-    if (a.attackSecondary) {
+    if (!throwingAllowed) {
+      c.passChargeTimer = 0;
+    } else if (a.attackSecondary) {
       c.passChargeTimer = Math.min(chargeMax, c.passChargeTimer + dt);
     } else if (c.passChargeTimer > 0) {
       throwSimPass(state, c, c.passChargeTimer / chargeMax, settings);

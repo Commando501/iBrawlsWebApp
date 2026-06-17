@@ -4,6 +4,7 @@ import {
   getGrifballRunnerSteering,
   getGrifballSpacingOffset,
 } from '../../game/aiGrifballRoles';
+import { resolveDirectionalSpeedMultiplier, resolvePunchCooldown } from '../../game/runnerBallSettings';
 import { getYawForHeading } from '../../game/yaw';
 import { type AIBehaviorState, type WeaponState } from '../../types';
 import { type GrifballAwarenessPoint } from './grifballAITeamAwareness';
@@ -88,7 +89,6 @@ export function resolvePrimaryGrifballAIObjectiveMovementForCombatant({
   enemiesList,
   dt,
   canStartWeaponAction,
-  weaponReloadTime,
   triggerCombatantAttack,
   constrainCombatantToArena,
   getEnemyGoalPos,
@@ -101,7 +101,6 @@ export function resolvePrimaryGrifballAIObjectiveMovementForCombatant({
   enemiesList: GrifballAwarenessPoint[];
   dt: number;
   canStartWeaponAction: boolean;
-  weaponReloadTime: (weapon: 'hammer' | 'sword', isMelee?: boolean) => number;
   triggerCombatantAttack: (self: CombatantLike, weapon: 'hammer' | 'sword', melee?: boolean) => void;
   constrainCombatantToArena: GroundConstraint;
   getEnemyGoalPos: (team: string | undefined) => { x: number; z: number } | null;
@@ -140,7 +139,7 @@ export function resolvePrimaryGrifballAIObjectiveMovementForCombatant({
       const toEnemy = closestEnemy.pos.clone().sub(frame.pos);
       frame.yaw = getYawForHeading(toEnemy.x, toEnemy.z);
       frame.aiState = 'COOLDOWN';
-      frame.timer = weaponReloadTime('hammer');
+      frame.timer = resolvePunchCooldown(state.settings);
       triggerCombatantAttack(self, 'hammer');
       frame.weaponState = 'swing_up';
       return true;
@@ -153,7 +152,7 @@ export function resolvePrimaryGrifballAIObjectiveMovementForCombatant({
       8.0
     );
 
-    applyGroundDirection(frame, steer.x, steer.z, 5.8 * 1.3 * (state.settings.speedForward / 100), dt);
+    applyGroundDirection(frame, steer.x, steer.z, 5.8 * resolveDirectionalSpeedMultiplier(state.settings, 'forward', true), dt);
     settleAsApproaching(frame, true);
     self.isLunging = false;
     constrainCombatantToArena(frame.pos, frame.vel);

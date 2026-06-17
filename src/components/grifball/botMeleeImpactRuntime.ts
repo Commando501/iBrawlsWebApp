@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { MAIN_AI_ID, isAICombatReady } from '../../game/roster';
+import { resolvePunchLungeDistance } from '../../game/runnerBallSettings';
 import { getForwardHeadingForYaw } from '../../game/yaw';
 import { getCombatBodyCenter, SWORD_SLASH_FORWARD_FACTOR, SWORD_SLASH_RADIUS } from './combatGeometry';
 import { adjustRangeForTargetModel } from './modelHitbox';
@@ -44,7 +45,7 @@ export function applyBotMeleeImpactForState({
   const isHammer = weapon === 'hammer';
   const isBall = weapon === 'ball';
   const forward = isBall
-    ? 1.8
+    ? resolvePunchLungeDistance(state.settings)
     : (isHammer
       ? (state.settings.attackRange ?? 3.2)
       : (state.settings.attackRange ?? 3.2) * SWORD_SLASH_FORWARD_FACTOR);
