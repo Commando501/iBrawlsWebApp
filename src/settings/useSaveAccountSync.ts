@@ -4,6 +4,7 @@ import type { Keybindings, UniversalSettings } from '../types';
 import type { UiLayoutState } from '../ui/hudLayouts';
 import { DEFAULT_KEYBINDINGS } from '../types';
 import { createDefaultAdminSettings, withDefaultGameplaySettings } from './gameplaySettings';
+import { KEYBINDINGS_STORAGE_KEY, normalizeKeybindings } from './keybindingNormalization';
 import { type SaveData, buildSaveData, decryptSaveCode, encryptSaveData } from './saveCodec';
 import { DEFAULT_LOADOUT, type CharacterLoadout } from '../components/VoxelModels';
 import {
@@ -119,9 +120,9 @@ export function useSaveAccountSync({
     }
 
     if (decrypted.keybindings) {
-      const merged = { ...DEFAULT_KEYBINDINGS, ...decrypted.keybindings };
+      const merged = normalizeKeybindings(decrypted.keybindings);
       setKeybindings(merged);
-      localStorage.setItem('grifball_keybindings', JSON.stringify(merged));
+      localStorage.setItem(KEYBINDINGS_STORAGE_KEY, JSON.stringify(merged));
     }
 
     if (decrypted.playerLoadout) {
@@ -208,7 +209,7 @@ export function useSaveAccountSync({
         localStorage.removeItem('grifball_player_hue');
         localStorage.removeItem('grifball_ui_positions');
         localStorage.removeItem('grifball_admin_settings');
-        localStorage.removeItem('grifball_keybindings');
+        localStorage.removeItem(KEYBINDINGS_STORAGE_KEY);
         localStorage.removeItem('grifball_player_loadout');
         localStorage.removeItem(CUSTOM_ARMOR_CATALOG_STORAGE_KEY);
         localStorage.removeItem(V3_SUIT_PROFILE_CATALOG_STORAGE_KEY);

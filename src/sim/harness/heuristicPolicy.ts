@@ -66,7 +66,9 @@ export const heuristicPolicy: Policy = (state, agentId, rng) => {
     nav = enemyGoalPos; // carry to score
   } else if (!holder) {
     // Free ball: closest teammate fetches it; others advance to set up.
-    nav = isClosestToPoint(state, self, ball.pos) ? ball.pos : enemyGoalPos;
+    const fetcher = isClosestToPoint(state, self, ball.pos);
+    nav = fetcher ? ball.pos : enemyGoalPos;
+    a.pickup = fetcher;
   } else if (holder.team !== self.team) {
     nav = holder.pos; // chase the enemy carrier
   } else {

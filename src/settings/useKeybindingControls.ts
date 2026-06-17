@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { Dispatch, RefObject, SetStateAction } from 'react';
 import { DEFAULT_KEYBINDINGS, type DeviceInfo, type Keybindings } from '../types';
 import { getGamepadButtonName } from '../components/main-menu/KeybindingControls';
+import { KEYBINDINGS_STORAGE_KEY, normalizeKeybindings } from './keybindingNormalization';
 
 type KeybindsModalTab = 'keyboard' | 'gamepad';
 
@@ -19,10 +20,10 @@ interface GamepadHoldState {
   progress: number;
 }
 
-const KEYBINDINGS_STORAGE_KEY = 'grifball_keybindings';
 const GAMEPAD_BUTTON_KEYS: Array<keyof Keybindings> = [
   'gamepadJump',
   'gamepadCrouch',
+  'gamepadPickup',
   'gamepadDash',
   'gamepadSwapWeapon',
   'gamepadAttack',
@@ -36,12 +37,12 @@ const loadStoredKeybindings = (): Keybindings => {
   try {
     const saved = localStorage.getItem(KEYBINDINGS_STORAGE_KEY);
     if (saved) {
-      return { ...DEFAULT_KEYBINDINGS, ...JSON.parse(saved) };
+      return normalizeKeybindings(JSON.parse(saved));
     }
   } catch {
     /* fall back to defaults */
   }
-  return { ...DEFAULT_KEYBINDINGS };
+  return normalizeKeybindings(DEFAULT_KEYBINDINGS);
 };
 
 const persistKeybindings = (keybindings: Keybindings) => {

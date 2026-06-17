@@ -63,15 +63,71 @@ def test_migrates_one_inserted_multidiscrete_action_logit_without_shifting_later
     torch.testing.assert_close(migrated["action_net.bias"][13:], old_state["action_net.bias"][12:])
 
 
-def test_leaves_matching_action_heads_unchanged():
+def test_migrates_current_action_head_to_pickup_factor():
     old_state = _policy_state(22)
-    target_state = _policy_state(22)
+    target_state = _policy_state(23)
+    target_state["action_net.weight"].fill_(-7.0)
+    target_state["action_net.bias"].fill_(-3.0)
 
     migrated, info = migrate_policy_state_for_action_space(
         old_state,
         target_state,
         old_nvec=[9, 4, 3, 2, 2, 2],
-        new_nvec=[9, 4, 3, 2, 2, 2],
+        new_nvec=[9, 4, 4, 2, 2, 2],
+    )
+
+    assert info is not None
+    assert [(ins.factor_index, ins.insert_index) for ins in info.insertions] == [(2, 16)]
+    assert migrated["action_net.weight"].shape == (23, 2)
+    assert migrated["action_net.bias"].shape == (23,)
+
+    torch.testing.assert_close(migrated["action_net.weight"][:16], old_state["action_net.weight"][:16])
+    torch.testing.assert_close(migrated["action_net.bias"][:16], old_state["action_net.bias"][:16])
+    torch.testing.assert_close(migrated["action_net.weight"][16], target_state["action_net.weight"][16])
+    torch.testing.assert_close(migrated["action_net.bias"][16], target_state["action_net.bias"][16])
+    torch.testing.assert_close(migrated["action_net.weight"][17:], old_state["action_net.weight"][16:])
+    torch.testing.assert_close(migrated["action_net.bias"][17:], old_state["action_net.bias"][16:])
+
+
+def test_migrates_older_action_head_with_aim_and_pickup_insertions():
+    old_state = _policy_state(21)
+    target_state = _policy_state(23)
+    target_state["action_net.weight"].fill_(-7.0)
+    target_state["action_net.bias"].fill_(-3.0)
+
+    migrated, info = migrate_policy_state_for_action_space(
+        old_state,
+        target_state,
+        old_nvec=[9, 3, 3, 2, 2, 2],
+        new_nvec=[9, 4, 4, 2, 2, 2],
+    )
+
+    assert info is not None
+    assert [(ins.factor_index, ins.insert_index) for ins in info.insertions] == [(1, 12), (2, 16)]
+    assert migrated["action_net.weight"].shape == (23, 2)
+    assert migrated["action_net.bias"].shape == (23,)
+
+    torch.testing.assert_close(migrated["action_net.weight"][:12], old_state["action_net.weight"][:12])
+    torch.testing.assert_close(migrated["action_net.bias"][:12], old_state["action_net.bias"][:12])
+    torch.testing.assert_close(migrated["action_net.weight"][12], target_state["action_net.weight"][12])
+    torch.testing.assert_close(migrated["action_net.bias"][12], target_state["action_net.bias"][12])
+    torch.testing.assert_close(migrated["action_net.weight"][13:16], old_state["action_net.weight"][12:15])
+    torch.testing.assert_close(migrated["action_net.bias"][13:16], old_state["action_net.bias"][12:15])
+    torch.testing.assert_close(migrated["action_net.weight"][16], target_state["action_net.weight"][16])
+    torch.testing.assert_close(migrated["action_net.bias"][16], target_state["action_net.bias"][16])
+    torch.testing.assert_close(migrated["action_net.weight"][17:], old_state["action_net.weight"][15:])
+    torch.testing.assert_close(migrated["action_net.bias"][17:], old_state["action_net.bias"][15:])
+
+
+def test_leaves_matching_action_heads_unchanged():
+    old_state = _policy_state(23)
+    target_state = _policy_state(23)
+
+    migrated, info = migrate_policy_state_for_action_space(
+        old_state,
+        target_state,
+        old_nvec=[9, 4, 4, 2, 2, 2],
+        new_nvec=[9, 4, 4, 2, 2, 2],
     )
 
     assert info is None
@@ -79,16 +135,16 @@ def test_leaves_matching_action_heads_unchanged():
     torch.testing.assert_close(migrated["action_net.bias"], old_state["action_net.bias"])
 
 
-def test_rejects_non_single_factor_action_space_changes():
+def test_rejects_unsupported_action_space_changes():
     old_state = _policy_state(21)
-    target_state = _policy_state(23)
+    target_state = _policy_state(24)
 
-    with pytest.raises(ValueError, match="single action-factor expansion"):
+    with pytest.raises(ValueError, match="unsupported action-factor expansion"):
         migrate_policy_state_for_action_space(
             old_state,
             target_state,
             old_nvec=[9, 3, 3, 2, 2, 2],
-            new_nvec=[9, 4, 4, 2, 2, 2],
+            new_nvec=[9, 5, 4, 2, 2, 2],
         )
 
 
@@ -105,10 +161,11 @@ def test_warm_start_sb3_model_migrates_saved_ppo_action_head(tmp_path):
     old_path = tmp_path / "old_policy"
     old_model.save(old_path)
 
-    new_model = PPO("MlpPolicy", TinyActionEnv([9, 4, 3, 2, 2, 2]), **kwargs)
+    new_model = PPO("MlpPolicy", TinyActionEnv([9, 4, 4, 2, 2, 2]), **kwargs)
     result = warm_start_sb3_model(new_model, str(old_path), device="cpu")
 
     assert result.migration is not None
     assert result.migration.insert_index == 12
+    assert [(ins.factor_index, ins.insert_index) for ins in result.migration.insertions] == [(1, 12), (2, 16)]
     action, _ = new_model.predict(np.zeros(5, dtype=np.float32), deterministic=True)
     assert action.shape == (6,)

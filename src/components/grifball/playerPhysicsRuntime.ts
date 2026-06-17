@@ -188,7 +188,7 @@ export function updatePlayerPhysicsForState({
       }
     }
 
-    const dashBtn = actionKeybindings.gamepadDash ?? 2;
+    const dashBtn = actionKeybindings.gamepadDash ?? 4;
     if (isNewlyPressed(dashBtn)) {
       const runnerThrustAllowed =
         state.activeWeapon !== 'ball' ||
@@ -232,6 +232,11 @@ export function updatePlayerPhysicsForState({
         recordGamepadDash(dDir);
         playDash();
       }
+    }
+
+    const pickupBtn = actionKeybindings.gamepadPickup ?? 2;
+    if (isNewlyPressed(pickupBtn) && state.playerHP > 0 && !isPaused && isPlaying) {
+      state.playerPickupRequested = true;
     }
 
     const crouchBtn = actionKeybindings.gamepadCrouch ?? 1;

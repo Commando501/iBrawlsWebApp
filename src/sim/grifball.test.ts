@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createMatch, resolveSimSettings } from './factory';
 import { SIM_DT } from './step';
+import { idleAction } from './actions';
 import {
   tickGrifballObjective,
   setSimCarrier,
@@ -120,7 +121,7 @@ test('a loose ball auto-returns home after the timeout', () => {
   assert.equal(ball.pos.z, ball.home.z);
 });
 
-test('a free ball is picked up by an adjacent combatant when live', () => {
+test('a free ball is not picked up by contact alone when live', () => {
   const state = playingMatch(6);
   const c = state.combatants.find((x) => x.team === 'blue')!;
   const ball = state.match.ball;
@@ -129,9 +130,41 @@ test('a free ball is picked up by an adjacent combatant when live', () => {
   ball.pos = { x: c.pos.x, y: 0.35, z: c.pos.z };
 
   const ev = tickGrifballObjective(state, settings, SIM_DT);
+  assert.equal(ev.pickup, null);
+  assert.equal(ball.holderId, null);
+  assert.equal(c.hasBall, false);
+});
+
+test('pickup action picks up an adjacent free ball when live', () => {
+  const state = playingMatch(66);
+  const c = state.combatants.find((x) => x.team === 'blue')!;
+  const ball = state.match.ball;
+  ball.state = 'idle';
+  ball.holderId = null;
+  ball.pos = { x: c.pos.x, y: 0.35, z: c.pos.z };
+
+  const ev = tickGrifballObjective(state, settings, SIM_DT, {
+    [c.id]: { ...idleAction(), pickup: true },
+  });
   assert.equal(ev.pickup, c.id);
   assert.equal(ball.holderId, c.id);
   assert.equal(c.hasBall, true);
+});
+
+test('pickup action out of range does not pick up a free ball', () => {
+  const state = playingMatch(67);
+  const c = state.combatants.find((x) => x.team === 'blue')!;
+  const ball = state.match.ball;
+  ball.state = 'idle';
+  ball.holderId = null;
+  ball.pos = { x: c.pos.x + 10, y: 0.35, z: c.pos.z };
+
+  const ev = tickGrifballObjective(state, settings, SIM_DT, {
+    [c.id]: { ...idleAction(), pickup: true },
+  });
+  assert.equal(ev.pickup, null);
+  assert.equal(ball.holderId, null);
+  assert.equal(c.hasBall, false);
 });
 
 test('throwSimPass launches the ball and clears the carrier', () => {

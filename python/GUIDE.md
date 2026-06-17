@@ -280,8 +280,9 @@ Notes:
 - During a `self` stage, `eval/win_rate` is measured **vs random** (a yardstick that rises);
   during a `heuristic` stage it's measured vs the heuristic.
 - Older combat checkpoints from before nearest-enemy aim had action nvec `[9,3,3,2,2,2]`.
-  Warm-start now auto-migrates those into `[9,4,3,2,2,2]` by inserting the new aim logit
-  and starting with a fresh optimizer. Network `width`/`depth` must still match.
+  Current pre-pickup checkpoints use `[9,4,3,2,2,2]`. Warm-start auto-migrates both
+  into `[9,4,4,2,2,2]` by inserting the new aim/pickup logits and starting with a fresh optimizer.
+  Network `width`/`depth` must still match.
 
 `self` = the bot plays copies of itself (it invents its own counters). `heuristic` = the
 strong scripted bot — a hard final exam, not a starting point.

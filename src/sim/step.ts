@@ -81,7 +81,7 @@ export function stepSimulation(
   const objective =
     state.mode === 'combat'
       ? tickCombat(state, settings, dt)
-      : tickGrifballObjective(state, settings, dt);
+      : tickGrifballObjective(state, settings, dt, actionsById);
 
   // Phase 5 — respawns.
   tickRespawns(state, settings, dt);

@@ -613,8 +613,10 @@ export function createAISingleEntityUpdaterForState({
         constrainCombatantToArena,
         getEnemyGoalPos: grifballEnemyGoalPos,
       })) {
-        ({ yaw, aiState: state, timer, dashRemaining, slideActive, weaponState } =
+        let pickupRequested = false;
+        ({ yaw, aiState: state, timer, dashRemaining, slideActive, weaponState, pickupRequested } =
           applyGrifballAIObjectiveFrameToLocals(primaryGrifballFrame));
+        self.pickupRequested = pickupRequested;
         syncStateAndMesh();
         return;
       }
@@ -664,8 +666,10 @@ export function createAISingleEntityUpdaterForState({
           getCombatantRef: grifballCombatantRef,
           getEnemyGoalPos: grifballEnemyGoalPos,
         });
-        ({ yaw, aiState: state, timer, dashRemaining, slideActive, weaponState } =
+        let pickupRequested = false;
+        ({ yaw, aiState: state, timer, dashRemaining, slideActive, weaponState, pickupRequested } =
           applyGrifballAIObjectiveFrameToLocals(noTargetFrame));
+        self.pickupRequested = pickupRequested;
   
         if (noTargetMode === 'airborne' || noTargetMode === 'support_objective') {
           syncStateAndMesh();

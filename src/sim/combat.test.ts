@@ -89,6 +89,7 @@ test('a combat match is deterministic for a given seed + actions', () => {
           moveX: rng.range(-1, 1), moveZ: rng.range(-1, 1), aim: rng.range(-Math.PI, Math.PI),
           jump: rng.chance(0.02), dash: rng.chance(0.05), crouch: false,
           attackPrimary: rng.chance(0.2), attackSecondary: rng.chance(0.05),
+          pickup: false,
           passCharge: 0, swapWeapon: rng.chance(0.01),
         };
         acts[c.id] = a;
@@ -119,7 +120,7 @@ test('a melee kill in combat credits the attacker team and counts toward the tar
     stepSimulation(s, {
       [atk.id]: {
         moveX: 0, moveZ: 0, aim: 0, jump: false, dash: false, crouch: false,
-        attackPrimary: true, attackSecondary: false, passCharge: 0, swapWeapon: false,
+        attackPrimary: true, attackSecondary: false, pickup: false, passCharge: 0, swapWeapon: false,
       },
     }, { settings });
     if (!findCombatant(s, vic.id)!.alive) killed = true;

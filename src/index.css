@@ -90,6 +90,7 @@ body {
 
 .mobile-crouch-button,
 .mobile-dash-button,
+.mobile-pickup-button,
 .mobile-boost-button,
 .mobile-weapon-button,
 .mobile-stats-button,
@@ -157,6 +158,13 @@ body {
 .mobile-dash-button {
   left: 33%;
   top: 34%;
+  width: clamp(2.75rem, 7.5vmin, 3.25rem);
+  height: clamp(2.75rem, 7.5vmin, 3.25rem);
+}
+
+.mobile-pickup-button {
+  right: 30%;
+  bottom: clamp(0.55rem, 3vmin, 1rem);
   width: clamp(2.75rem, 7.5vmin, 3.25rem);
   height: clamp(2.75rem, 7.5vmin, 3.25rem);
 }

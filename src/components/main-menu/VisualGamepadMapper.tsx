@@ -37,7 +37,7 @@ export function VisualGamepadMapper({
 }: VisualGamepadMapperProps) {
   const getActionKeyForButton = (idx: number): keyof Keybindings | null => {
     const keys: (keyof Keybindings)[] = [
-      'gamepadJump', 'gamepadCrouch', 'gamepadDash', 'gamepadSwapWeapon',
+      'gamepadJump', 'gamepadCrouch', 'gamepadPickup', 'gamepadDash', 'gamepadSwapWeapon',
       'gamepadAttack', 'gamepadAltAttack', 'gamepadSprint', 'gamepadScoreboard', 'gamepadPause'
     ];
     return keys.find(k => keybindings[k] === idx) || null;
@@ -104,7 +104,8 @@ export function VisualGamepadMapper({
                   gamepadAcceleration: 0.0,
                   gamepadJump: 0,
                   gamepadCrouch: 1,
-                  gamepadDash: 2,
+                  gamepadPickup: 2,
+                  gamepadDash: 4,
                   gamepadSwapWeapon: 3,
                   gamepadAttack: 7,
                   gamepadAltAttack: 5,
@@ -242,10 +243,10 @@ export function VisualGamepadMapper({
             <path
               d="M 780,270 L 705,270 L 705,300 L 560,300 L 560,235 L 584,235"
               fill="none"
-              stroke={getLineColor(2, 'gamepadDash')}
-              strokeWidth={hoveredAction === 'gamepadDash' || rebindingAction === 'gamepadDash' || pressedGpButtons[2] ? "2.5" : "1.5"}
-              strokeOpacity={getLineOpacity(2, 'gamepadDash')}
-              filter={hoveredAction === 'gamepadDash' || rebindingAction === 'gamepadDash' || pressedGpButtons[2] ? "url(#glow-cyan)" : ""}
+              stroke={getLineColor(2, 'gamepadPickup')}
+              strokeWidth={hoveredAction === 'gamepadPickup' || rebindingAction === 'gamepadPickup' || pressedGpButtons[2] ? "2.5" : "1.5"}
+              strokeOpacity={getLineOpacity(2, 'gamepadPickup')}
+              filter={hoveredAction === 'gamepadPickup' || rebindingAction === 'gamepadPickup' || pressedGpButtons[2] ? "url(#glow-cyan)" : ""}
               className="transition-all duration-200"
             />
 
@@ -295,7 +296,7 @@ export function VisualGamepadMapper({
             <circle cx="611" cy="139" r="12" fill={pressedGpButtons[5] ? 'rgba(34, 211, 238, 0.4)' : 'transparent'} stroke={pressedGpButtons[5] ? '#22d3ee' : 'transparent'} strokeWidth="1.5" />
             <circle cx="546" cy="234" r="8" fill={pressedGpButtons[9] ? 'rgba(34, 211, 238, 0.4)' : 'transparent'} stroke={pressedGpButtons[9] ? '#22d3ee' : 'transparent'} strokeWidth="1.5" />
             <circle cx="616" cy="208" r="11" fill={pressedGpButtons[3] ? 'rgba(250, 204, 21, 0.4)' : hoveredAction === 'gamepadSwapWeapon' ? 'rgba(250, 204, 21, 0.2)' : 'transparent'} stroke={pressedGpButtons[3] || hoveredAction === 'gamepadSwapWeapon' ? '#facc15' : 'transparent'} strokeWidth="1.5" />
-            <circle cx="584" cy="235" r="11" fill={pressedGpButtons[2] ? 'rgba(96, 165, 250, 0.4)' : hoveredAction === 'gamepadDash' ? 'rgba(96, 165, 250, 0.2)' : 'transparent'} stroke={pressedGpButtons[2] || hoveredAction === 'gamepadDash' ? '#60a5fa' : 'transparent'} strokeWidth="1.5" />
+            <circle cx="584" cy="235" r="11" fill={pressedGpButtons[2] ? 'rgba(96, 165, 250, 0.4)' : hoveredAction === 'gamepadPickup' ? 'rgba(96, 165, 250, 0.2)' : 'transparent'} stroke={pressedGpButtons[2] || hoveredAction === 'gamepadPickup' ? '#60a5fa' : 'transparent'} strokeWidth="1.5" />
             <circle cx="646" cy="232" r="11" fill={pressedGpButtons[1] ? 'rgba(248, 113, 113, 0.4)' : hoveredAction === 'gamepadCrouch' ? 'rgba(248, 113, 113, 0.2)' : 'transparent'} stroke={pressedGpButtons[1] || hoveredAction === 'gamepadCrouch' ? '#f87171' : 'transparent'} strokeWidth="1.5" />
             <circle cx="613" cy="260" r="11" fill={pressedGpButtons[0] ? 'rgba(74, 222, 128, 0.4)' : hoveredAction === 'gamepadJump' ? 'rgba(74, 222, 128, 0.2)' : 'transparent'} stroke={pressedGpButtons[0] || hoveredAction === 'gamepadJump' ? '#4ade80' : 'transparent'} strokeWidth="1.5" />
             <circle cx="550" cy="296" r="24" fill={rightStickActive ? 'rgba(34, 211, 238, 0.25)' : pressedGpButtons[11] ? 'rgba(34, 211, 238, 0.4)' : 'transparent'} stroke={rightStickActive || pressedGpButtons[11] ? '#22d3ee' : 'transparent'} strokeWidth="1.5" />
@@ -522,20 +523,20 @@ export function VisualGamepadMapper({
             {/* X */}
             <foreignObject x="780" y="245" width="200" height="50" className="overflow-visible pointer-events-auto">
               <div
-                onMouseEnter={() => setHoveredAction('gamepadDash')}
+                onMouseEnter={() => setHoveredAction('gamepadPickup')}
                 onMouseLeave={() => setHoveredAction(null)}
-                onClick={() => setRebindingAction('gamepadDash')}
+                onClick={() => setRebindingAction('gamepadPickup')}
                 className={`group w-[200px] h-[50px] bg-slate-900/50 hover:bg-cyan-950/20 border transition-all duration-200 rounded-xl p-2 cursor-pointer flex flex-col justify-center items-start text-left select-none ${
-                  hoveredAction === 'gamepadDash' || rebindingAction === 'gamepadDash' || pressedGpButtons[2]
+                  hoveredAction === 'gamepadPickup' || rebindingAction === 'gamepadPickup' || pressedGpButtons[2]
                     ? 'border-cyan-500/50 shadow-[0_0_12px_rgba(34,211,238,0.15)] bg-slate-900/80'
                     : 'border-white/5 hover:border-cyan-500/30'
                 }`}
               >
                 <span className="text-[10px] font-black uppercase tracking-wider text-white group-hover:text-cyan-400">
-                  Thrust / Dash
+                  Pickup
                 </span>
                 <span className="text-[8px] font-mono text-cyan-400/70 group-hover:text-cyan-300 font-bold bg-cyan-950/40 border border-cyan-500/20 px-1.5 py-0.5 rounded mt-0.5 uppercase tracking-wide">
-                  [{getGamepadButtonName(keybindings.gamepadDash)}]
+                  [{getGamepadButtonName(keybindings.gamepadPickup)}]
                 </span>
               </div>
             </foreignObject>
@@ -676,6 +677,7 @@ export function VisualGamepadMapper({
                   {([
                     { key: 'gamepadJump', label: 'Jump' },
                     { key: 'gamepadCrouch', label: 'Crouch / Slide' },
+                    { key: 'gamepadPickup', label: 'Pickup' },
                     { key: 'gamepadDash', label: 'Thrust (Dash)' },
                     { key: 'gamepadSwapWeapon', label: 'Swap Weapon' },
                     { key: 'gamepadAttack', label: 'Primary Attack' },

@@ -11,10 +11,10 @@ import numpy as np
 
 def env_spec_version_for_observation(observation_version: int) -> int:
     if int(observation_version) >= 3:
-        return 6
+        return 9
     if int(observation_version) >= 2:
-        return 5
-    return 4
+        return 8
+    return 7
 
 
 def pack_actor_layers(layers: Iterable[dict]) -> tuple[np.ndarray, list[dict]]:

@@ -154,6 +154,7 @@ export function ManualControlsPanel({
                 { action: 'moveRight' as keyof Keybindings, label: 'Move Right' },
                 { action: 'jump' as keyof Keybindings, label: 'Jump (Boost)' },
                 { action: 'dash' as keyof Keybindings, label: 'Sonic Dash' },
+                { action: 'pickup' as keyof Keybindings, label: 'Pickup' },
                 { action: 'crouch' as keyof Keybindings, label: 'Crouch / Slide' },
                 { action: 'sprint' as keyof Keybindings, label: 'Sprint' },
                 { action: 'scoreboard' as keyof Keybindings, label: 'Scoreboard' },

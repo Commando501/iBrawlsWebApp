@@ -9,7 +9,7 @@ interface KbVisualizerProps {
 
 const ACTION_LABELS: Record<string, string> = {
   moveForward: 'FWD', moveLeft: 'LEFT', moveBackward: 'BACK', moveRight: 'RIGHT',
-  jump: 'JUMP', dash: 'THRUST', crouch: 'CROUCH', sprint: 'SPRINT', scoreboard: 'SCORE',
+  jump: 'JUMP', dash: 'THRUST', pickup: 'PICKUP', crouch: 'CROUCH', sprint: 'SPRINT', scoreboard: 'SCORE',
   weapon1: 'HAMMER', weapon2: 'SWORD', attack: 'ATTACK', altAttack: 'ALT-ATK',
 };
 
@@ -278,6 +278,7 @@ export function KeyboardVisualizer({ bindings, rebinding, onPick }: KbVisualizer
         <KbBindRow label="RIGHT"   action="moveRight"    bindings={bindings} rebinding={rebinding} onPick={onPick} />
         <KbBindRow label="JUMP"    action="jump"         bindings={bindings} rebinding={rebinding} onPick={onPick} />
         <KbBindRow label="THRUST"  action="dash"         bindings={bindings} rebinding={rebinding} onPick={onPick} />
+        <KbBindRow label="PICKUP"  action="pickup"       bindings={bindings} rebinding={rebinding} onPick={onPick} />
         <KbBindRow label="CROUCH"  action="crouch"       bindings={bindings} rebinding={rebinding} onPick={onPick} />
         <KbBindRow label="SPRINT"  action="sprint"       bindings={bindings} rebinding={rebinding} onPick={onPick} />
         <KbBindRow label="SCORE"   action="scoreboard"   bindings={bindings} rebinding={rebinding} onPick={onPick} />
@@ -303,6 +304,7 @@ const COMPACT_KEYBIND_SECTIONS: Array<{
       { action: 'moveRight', label: 'Move Right' },
       { action: 'jump', label: 'Jump / Boost' },
       { action: 'dash', label: 'Dash' },
+      { action: 'pickup', label: 'Pickup' },
       { action: 'crouch', label: 'Crouch / Slide' },
       { action: 'sprint', label: 'Sprint' },
     ],

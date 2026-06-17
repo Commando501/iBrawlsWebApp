@@ -41,11 +41,11 @@ def test_build_manifest_pins_browser_policy_contract():
         label="CombatDRV2",
         mode="combat",
         observation_version=1,
-        env_spec_version=4,
+        env_spec_version=7,
         frame_stack=4,
         decision_interval=5,
         base_observation_dim=140,
-        action_nvec=[9, 4, 3, 2, 2, 2],
+        action_nvec=[9, 4, 4, 2, 2, 2],
         weights_file="weights.bin",
         checksum_sha256="abc123",
         layers=[],
@@ -53,11 +53,11 @@ def test_build_manifest_pins_browser_policy_contract():
 
     assert manifest["id"] == "combat_dr_v2"
     assert manifest["inputDim"] == 560
-    assert manifest["actionNvec"] == [9, 4, 3, 2, 2, 2]
+    assert manifest["actionNvec"] == [9, 4, 4, 2, 2, 2]
     assert manifest["policyType"] == "mlp-multicategorical"
 
 
 def test_env_spec_version_for_observation_tracks_v3_contract():
-    assert env_spec_version_for_observation(1) == 4
-    assert env_spec_version_for_observation(2) == 5
-    assert env_spec_version_for_observation(3) == 6
+    assert env_spec_version_for_observation(1) == 7
+    assert env_spec_version_for_observation(2) == 8
+    assert env_spec_version_for_observation(3) == 9

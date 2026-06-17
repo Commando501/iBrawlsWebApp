@@ -146,6 +146,16 @@ test('decodeAction maps factors into an ActionInput', () => {
   assert.equal(a.aim, self.yaw); // hold keeps current yaw
 });
 
+test('decodeAction maps pickup attack factor into pickup intent', () => {
+  const state = createMatch({ seed: 62 });
+  const self = state.combatants[0];
+  const a = decodeAction([0, 0, 3, 0, 0, 0], state, self.id);
+  assert.equal(a.pickup, true);
+  assert.equal(a.attackPrimary, false);
+  assert.equal(a.attackSecondary, false);
+  assert.equal(a.passCharge, 0);
+});
+
 test('decodeAction aim-toward-ball faces the ball', () => {
   const state = createMatch({ seed: 6 });
   const self = state.combatants[0];
@@ -458,12 +468,12 @@ test('env spec exposes observation v2 when requested', () => {
   const spec = buildEnvSpec(2);
   assert.equal(spec.obsDim, OBS_DIM_V2);
   assert.equal(spec.obsFields[spec.obsFields.length - 1].name, 'combat_pressure');
-  assert.equal(spec.version, 5);
+  assert.equal(spec.version, 8);
 });
 
 test('env spec exposes observation v3 combat threat contract when requested', () => {
   const spec = buildEnvSpec(3);
   assert.equal(spec.obsDim, OBS_DIM_V3);
   assert.equal(spec.obsFields[spec.obsFields.length - 1].name, 'combat_threat_v3');
-  assert.equal(spec.version, 6);
+  assert.equal(spec.version, 9);
 });

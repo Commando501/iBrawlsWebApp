@@ -36,6 +36,7 @@ import {
 } from '../game/grifballMatch';
 import { awardTeamGoal, type TeamId } from '../game/teamScoring';
 import { type SimState, type SimCombatant, findCombatant } from './simState';
+import { type ActionsById } from './actions';
 import { forwardDir } from './physics';
 import { inwardSpawnYaw } from './factory';
 
@@ -176,7 +177,8 @@ export function throwSimPass(
 export function tickGrifballObjective(
   state: SimState,
   settings: UniversalSettings,
-  dt: number
+  dt: number,
+  actionsById: ActionsById = {}
 ): ObjectiveEvents {
   const events = NO_EVENTS();
   const g = state.match;
@@ -211,7 +213,7 @@ export function tickGrifballObjective(
     // Pickups.
     if (isBallGrabbable(g.ball)) {
       const candidates: BallPickupCandidate[] = state.combatants
-        .filter((c) => c.alive)
+        .filter((c) => c.alive && actionsById[c.id]?.pickup === true)
         .map((c) => ({ id: c.id, pos: c.pos, alive: true }));
       const grabId = findBallPickup(g.ball, candidates, settings.grifballPickupRadius ?? 1.6);
       if (grabId) {

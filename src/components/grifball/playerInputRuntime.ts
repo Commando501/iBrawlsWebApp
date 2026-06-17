@@ -494,6 +494,12 @@ export function handlePlayerKeyboardActionForState({
     callbacks.swapPlayerWeapon('sword');
   }
 
+  if (!repeat && key === keybindings.pickup) {
+    if (state.playerHP > 0 && !isPaused && isPlaying) {
+      state.playerPickupRequested = true;
+    }
+  }
+
   if (key === keybindings.jump || key === 'spacebar') {
     if (state.playerHP > 0 && !isPaused && isPlaying) {
       const limit = state.settings.hammerJumpAirLimit ?? 1;

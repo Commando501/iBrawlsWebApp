@@ -21,13 +21,13 @@ export interface ActionFactor {
  * Factors (order is the wire order):
  *  - move: idle + 8 ego-relative directions (forward..forward-left)
  *  - aim: hold / toward-ball / toward-enemy-goal / nearest hostile
- *  - attack: none / primary / secondary
+ *  - attack: none / primary / secondary / pickup
  *  - jump / dash / swap: off / on
  */
 export const ACTION_FACTORS: ActionFactor[] = [
   { name: 'move', n: 9 },
   { name: 'aim', n: 4 },
-  { name: 'attack', n: 3 },
+  { name: 'attack', n: 4 },
   { name: 'jump', n: 2 },
   { name: 'dash', n: 2 },
   { name: 'swap', n: 2 },
@@ -62,6 +62,7 @@ const enum AttackMode {
   None = 0,
   Primary = 1,
   Secondary = 2,
+  Pickup = 3,
 }
 
 /**
@@ -96,7 +97,7 @@ export function decodeAction(
 
   const move = clampFactor(factors[offset], 9);
   const aim = clampFactor(factors[offset + 1], 4);
-  const attack = clampFactor(factors[offset + 2], 3);
+  const attack = clampFactor(factors[offset + 2], 4);
   const jump = clampFactor(factors[offset + 3], 2) === 1;
   const dash = clampFactor(factors[offset + 4], 2) === 1;
   const swap = clampFactor(factors[offset + 5], 2) === 1;
@@ -109,6 +110,7 @@ export function decodeAction(
   a.aim = resolveAim(aim, self, state);
   a.attackPrimary = attack === AttackMode.Primary;
   a.attackSecondary = attack === AttackMode.Secondary;
+  a.pickup = attack === AttackMode.Pickup;
   // A full-charge pass when the carrier uses secondary.
   a.passCharge = a.attackSecondary && self.hasBall ? 1 : 0;
   a.jump = jump;

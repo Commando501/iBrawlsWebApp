@@ -61,9 +61,9 @@ over a **batched binary protocol** so tens of millions of steps move only flat t
   FROZEN snapshots (PFSP-sampled, auto-frozen every `snapshot_every` steps) — the cure for
   pure-self-play brittleness. `python -m ibrawls_rl.watch <model>` (or the dashboard's Watch
   tab) records a real match for top-down playback.
-- Warm-start compatibility handles the v3->v4 action-space bump: older `[9,3,3,2,2,2]`
-  checkpoints can seed the new `[9,4,3,2,2,2]` policy by inserting the new aim logit and
-  resetting optimizer state. Width/depth still must match.
+- Warm-start compatibility handles append-only action-space bumps: older `[9,3,3,2,2,2]`
+  and current `[9,4,3,2,2,2]` checkpoints can seed the new `[9,4,4,2,2,2]`
+  policy by inserting the new aim/pickup logits and resetting optimizer state. Width/depth still must match.
 
 ## Setup
 

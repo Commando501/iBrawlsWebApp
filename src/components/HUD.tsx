@@ -808,6 +808,10 @@ export const HUD: React.FC<HUDProps> = ({
                   <span>SWAP WEAPONS:</span>
                   <span>[1] or [2] / [SCROLL]</span>
                 </div>
+                <div className="flex justify-between text-[8s] text-emerald-300">
+                  <span>PICKUP BALL:</span>
+                  <span>[E] / [X]</span>
+                </div>
               </div>
             </div>
 
@@ -836,7 +840,7 @@ export const HUD: React.FC<HUDProps> = ({
               <div className="flex flex-col">
                 <div className="flex justify-between w-44 mb-1">
                   <span className="text-[9px] font-mono text-white/40 uppercase">
-                    THRUST BOOST [Q]
+                    THRUST BOOST [Q / LB]
                   </span>
                   <span className={`text-[9.5px] font-mono font-bold tracking-tight ${stats.playerDashReady ? 'text-cyan-400 drop-shadow-[0_0_4px_rgba(34,211,238,0.5)]' : 'text-amber-400'}`}>
                     {stats.playerDashReady ? 'READY' : `${stats.playerDashCooldownTimer.toFixed(1)}s`}

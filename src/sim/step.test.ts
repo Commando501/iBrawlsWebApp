@@ -19,6 +19,7 @@ function scriptedActions(state: ReturnType<typeof createMatch>, rng = createRng(
       jump: rng.chance(0.02),
       dash: rng.chance(0.05),
       crouch: rng.chance(0.1),
+      pickup: rng.chance(0.03),
       attackPrimary: rng.chance(0.15),
       attackSecondary: rng.chance(0.08),
       passCharge: rng.next(),
@@ -133,7 +134,7 @@ test('a hostile melee strike kills and drops the ball loose', () => {
       {
         [attacker.id]: {
           moveX: 0, moveZ: 0, aim: Math.PI / 2,
-          jump: false, dash: false, crouch: false,
+          jump: false, dash: false, crouch: false, pickup: false,
           attackPrimary: true, attackSecondary: false, passCharge: 0, swapWeapon: false,
         },
       },
@@ -146,4 +147,33 @@ test('a hostile melee strike kills and drops the ball loose', () => {
   // The dead carrier no longer holds the ball (it dropped loose where they fell).
   assert.notEqual(state.match.ball.holderId, victim.id);
   assert.equal(findCombatant(state, victim.id)!.hasBall, false);
+});
+
+test('stepSimulation requires pickup intent before a free ball attaches', () => {
+  const settings = resolveSimSettings();
+  const state = createMatch({ seed: 44 });
+  state.match.phase = 'playing';
+  state.match.phaseTimer = 0;
+  const carrier = state.combatants.find((c) => c.team === 'blue')!;
+  state.match.ball.state = 'idle';
+  state.match.ball.holderId = null;
+  state.match.ball.pos = { x: carrier.pos.x, y: 0.35, z: carrier.pos.z };
+
+  let ev = stepSimulation(state, {}, { settings });
+  assert.equal(ev.pickup, null);
+  assert.equal(state.match.ball.holderId, null);
+
+  ev = stepSimulation(
+    state,
+    {
+      [carrier.id]: {
+        moveX: 0, moveZ: 0, aim: carrier.yaw,
+        jump: false, dash: false, crouch: false, pickup: true,
+        attackPrimary: false, attackSecondary: false, passCharge: 0, swapWeapon: false,
+      },
+    },
+    { settings }
+  );
+  assert.equal(ev.pickup, carrier.id);
+  assert.equal(state.match.ball.holderId, carrier.id);
 });

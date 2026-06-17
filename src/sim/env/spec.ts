@@ -24,9 +24,9 @@ export interface EnvSpec {
   version: number;
 }
 
-export const ENV_SPEC_VERSION = 4; // v4: aim factor adds nearest-hostile targeting
-export const ENV_SPEC_VERSION_V2 = 5; // v5: optional combat pressure observation block
-export const ENV_SPEC_VERSION_V3 = 6; // v6: optional combat anti-bait threat observation block
+export const ENV_SPEC_VERSION = 7; // v7: attack factor adds explicit pickup intent
+export const ENV_SPEC_VERSION_V2 = 8; // v8: v2 obs plus explicit pickup action nvec
+export const ENV_SPEC_VERSION_V3 = 9; // v9: v3 obs plus explicit pickup action nvec
 
 export function buildEnvSpec(observationVersion = 1): EnvSpec {
   const fields = obsFieldsForVersion(observationVersion);

@@ -20,6 +20,8 @@ export interface ActionInput {
   dash: boolean;
   /** Hold to crouch / slide. */
   crouch: boolean;
+  /** One-frame request to pick up an objective object in range. */
+  pickup: boolean;
   /** Primary attack (hammer swing / sword slash / punch). */
   attackPrimary: boolean;
   /** Secondary action: sword lunge, or — while carrying the ball — pass/throw. */
@@ -39,6 +41,7 @@ export function idleAction(): ActionInput {
     jump: false,
     dash: false,
     crouch: false,
+    pickup: false,
     attackPrimary: false,
     attackSecondary: false,
     passCharge: 0,

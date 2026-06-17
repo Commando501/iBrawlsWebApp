@@ -211,6 +211,7 @@ export interface Keybindings {
   weapon2: string;
   attack: string;
   altAttack: string;
+  pickup: string;
   sprint: string;
   holdToSprint?: boolean;     // true = hold sprint button to sprint (default); false = tap once to toggle sprint
   mouseSensitivity?: number;  // multiplier applied to base sensitivity (0.1 – 5.0, default 1.0)
@@ -220,7 +221,8 @@ export interface Keybindings {
   gamepadCursorSpeed?: number;  // speed modifier for menu navigation cursor (0.2 – 4.0, default 1.0)
   gamepadJump?: number;       // A button (index 0)
   gamepadCrouch?: number;     // B button (index 1)
-  gamepadDash?: number;       // X button (index 2)
+  gamepadPickup?: number;     // X button (index 2)
+  gamepadDash?: number;       // LB button (index 4)
   gamepadSwapWeapon?: number; // Y button (index 3)
   gamepadAttack?: number;     // RT (index 7)
   gamepadAltAttack?: number;  // RB (index 5)
@@ -242,6 +244,7 @@ export const DEFAULT_KEYBINDINGS: Keybindings = {
   weapon2: '2',
   attack: 'lmb',
   altAttack: 'rmb',
+  pickup: 'e',
   sprint: 'shift',
   holdToSprint: true,
   mouseSensitivity: 1.0,
@@ -251,7 +254,8 @@ export const DEFAULT_KEYBINDINGS: Keybindings = {
   gamepadCursorSpeed: 1.0,
   gamepadJump: 0,
   gamepadCrouch: 1,
-  gamepadDash: 2,
+  gamepadPickup: 2,
+  gamepadDash: 4,
   gamepadSwapWeapon: 3,
   gamepadAttack: 7,
   gamepadAltAttack: 5,
@@ -433,6 +437,8 @@ export interface Combatant {
   runnerHealDelayTimer?: number;
   /** Last observed runner HP, used to detect damage and restart healing delay. */
   runnerLastHp?: number;
+  /** One-frame Grifball pickup intent consumed by the objective tick. */
+  pickupRequested?: boolean;
 
   // AI behavioral sub-state
   aiState?: AIBehaviorState;

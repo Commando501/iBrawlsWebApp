@@ -48,7 +48,7 @@ observation_version = 3
 init_model = ""
 
 [randomize]
-enabled = true
+enabled = false
 pct = 0.15
 
 [league]

@@ -5,7 +5,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { GameStats, Keybindings, DEFAULT_KEYBINDINGS } from '../types';
-import { Shield, Zap, Sparkles, Sword } from 'lucide-react';
+import { Hand, Shield, Zap, Sparkles, Sword } from 'lucide-react';
 
 interface LeftStickProps {
   mobileJoystickRef: React.MutableRefObject<{ x: number; y: number }>;
@@ -314,6 +314,17 @@ export const RightActionButtonPad: React.FC<RightPadProps> = ({
       >
         <Zap className="w-5.5 h-5.5 mb-0.5" />
         <span className="text-[7.5px] font-black font-mono tracking-tighter">DASH</span>
+      </button>
+
+      {/* PICKUP BUTTON */}
+      <button
+        type="button"
+        onPointerDown={(e) => handleActionPointerDown(e, () => triggerKeyAction('pickup'))}
+        className="mobile-pickup-button absolute rounded-full pointer-events-auto flex flex-col items-center justify-center bg-emerald-500/15 backdrop-blur-md border border-emerald-400/45 text-emerald-300 shadow-[0_0_14px_rgba(52,211,153,0.22)] transition-all duration-150 active:scale-90"
+        style={{ pointerEvents: isAdjustmentMode ? 'none' : 'auto' }}
+      >
+        <Hand className="w-5 h-5 mb-0.5" />
+        <span className="text-[7.5px] font-black font-mono tracking-tighter">PICKUP</span>
       </button>
 
       {/* JUMP / BOOST BUTTON */}

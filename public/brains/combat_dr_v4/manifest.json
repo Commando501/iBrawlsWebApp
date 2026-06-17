@@ -6,7 +6,7 @@
   "policyType": "mlp-multicategorical",
   "mode": "combat",
   "observationVersion": 1,
-  "envSpecVersion": 4,
+  "envSpecVersion": 7,
   "frameStack": 4,
   "decisionInterval": 5,
   "baseObservationDim": 140,
@@ -14,13 +14,13 @@
   "actionNvec": [
     9,
     4,
-    3,
+    4,
     2,
     2,
     2
   ],
   "weightsFile": "weights.bin",
-  "checksumSha256": "a0200fc1decc68d1ff7a2eeeb404348cb5cf96b94402f79befe3744a2f637055",
+  "checksumSha256": "ea36e4a502078a0826b7d64a2314895bb039a2464ea9224aa5b915da0715af86",
   "layers": [
     {
       "name": "policy.0",
@@ -67,15 +67,15 @@
     {
       "name": "action",
       "inputDim": 512,
-      "outputDim": 22,
+      "outputDim": 23,
       "activation": "linear",
       "weights": {
         "offset": 812544,
-        "count": 11264
+        "count": 11776
       },
       "bias": {
-        "offset": 823808,
-        "count": 22
+        "offset": 824320,
+        "count": 23
       }
     }
   ]

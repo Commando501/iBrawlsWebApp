@@ -85,6 +85,7 @@ const keybindings = {
   weapon2: '2',
   attack: 'lmb',
   altAttack: 'rmb',
+  pickup: 'e',
   sprint: 'shift',
   gamepadSensitivity: 1,
   gamepadAcceleration: 0,
@@ -235,6 +236,7 @@ test('stick look clamps frame hitches and invalid axes', () => {
       weapon2: '2',
       attack: 'lmb',
       altAttack: 'rmb',
+      pickup: 'e',
       sprint: 'shift',
       gamepadSensitivity: 10,
       gamepadAcceleration: 0,
@@ -346,6 +348,48 @@ test('disabled runner thrust blocks new player dash starts while holding the bal
 
   assert.equal(state.playerDashRemaining, 0);
   assert.equal(state.playerDashCooldownTimer, 0);
+});
+
+test('pickup key queues a local pickup request when playing and alive', () => {
+  const state = makeRunnerBallState({
+    activeWeapon: 'hammer',
+    playerPickupRequested: false,
+  });
+
+  handlePlayerKeyboardActionForState({
+    state,
+    key: 'e',
+    rawKey: 'e',
+    repeat: false,
+    keybindings,
+    keysPressed: {},
+    isPaused: false,
+    isPlaying: true,
+    callbacks: makeKeyboardCallbacks(),
+  });
+
+  assert.equal(state.playerPickupRequested, true);
+});
+
+test('pickup key is ignored while paused', () => {
+  const state = makeRunnerBallState({
+    activeWeapon: 'hammer',
+    playerPickupRequested: false,
+  });
+
+  handlePlayerKeyboardActionForState({
+    state,
+    key: 'e',
+    rawKey: 'e',
+    repeat: false,
+    keybindings,
+    keysPressed: {},
+    isPaused: true,
+    isPlaying: true,
+    callbacks: makeKeyboardCallbacks(),
+  });
+
+  assert.equal(state.playerPickupRequested, false);
 });
 
 test('disabled throwing prevents local ball pass charging', () => {

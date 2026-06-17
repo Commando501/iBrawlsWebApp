@@ -25,7 +25,7 @@ _LEVEL_RANK = {"bad": 3, "warn": 2, "info": 1, "good": 0}
 # Live env interface — keep in sync with src/sim/env/action.ts (ACTION_NVEC) and
 # src/sim/env/observation.ts (OBS_DIM). The advisor compares saved checkpoints
 # against these to catch incompatible warm-starts BEFORE a run dies at startup.
-EXPECTED_ACTION_NVEC = (9, 4, 3, 2, 2, 2)
+EXPECTED_ACTION_NVEC = (9, 4, 4, 2, 2, 2)
 OBS_DIM_BASE = 140
 RECOMMENDED_LONE_WOLF_MIX = ["1v1x16", "1v2x6", "1v3x6", "1v7x2", "ffa4x6", "ffa8x4"]
 
@@ -51,12 +51,12 @@ def _inspect_model_zip(path: str) -> dict | None:
         return None
 
 
-def _single_logit_migratable(old: tuple[int, ...], new: tuple[int, ...]) -> bool:
-    """True when exactly one factor grew by one choice (checkpoint_compat handles it)."""
+def _append_only_action_head_migratable(old: tuple[int, ...], new: tuple[int, ...]) -> bool:
+    """True when factors only append at most one choice each (checkpoint_compat handles it)."""
     if len(old) != len(new):
         return False
-    diffs = [(o, n) for o, n in zip(old, new) if o != n]
-    return len(diffs) == 1 and diffs[0][1] == diffs[0][0] + 1
+    diffs = [n - o for o, n in zip(old, new) if o != n]
+    return bool(diffs) and all(diff == 1 for diff in diffs)
 
 
 def _last(series: Series, key: str) -> float | None:
@@ -249,12 +249,12 @@ def advise(
             if info and info.get("nvec"):
                 nvec = tuple(info["nvec"])
                 if nvec != EXPECTED_ACTION_NVEC:
-                    if _single_logit_migratable(nvec, EXPECTED_ACTION_NVEC):
+                    if _append_only_action_head_migratable(nvec, EXPECTED_ACTION_NVEC):
                         add("info", "init_model uses the older action space (auto-migrates)",
                             f"Saved action space {list(nvec)} vs live "
-                            f"{list(EXPECTED_ACTION_NVEC)} — the trainer inserts the new logit "
+                            f"{list(EXPECTED_ACTION_NVEC)} — the trainer inserts the new logits "
                             "and resets the optimizer. Expect a brief performance dip while "
-                            "the new aim choice is learned.", None)
+                            "the new choices are learned.", None)
                     else:
                         add("bad", "init_model action space is incompatible",
                             f"Saved action space {list(nvec)} can't be migrated to the live "

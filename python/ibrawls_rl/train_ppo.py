@@ -406,10 +406,14 @@ def run_training(cfg: TrainConfig) -> str:
             warm_start = warm_start_sb3_model(model, cfg.init_model, device=cfg.device)
             if warm_start.migration is not None:
                 m = warm_start.migration
+                inserted = ", ".join(
+                    f"factor {ins.factor_index}, row {ins.insert_index}"
+                    for ins in m.insertions
+                )
                 print(
                     "[train] migrated init_model action head: "
                     f"nvec {list(m.old_nvec)} -> {list(m.new_nvec)}; "
-                    f"inserted logit at factor {m.factor_index}, row {m.insert_index}; "
+                    f"inserted logits at {inserted}; "
                     "optimizer state reset"
                 )
         except CheckpointCompatibilityError as e:

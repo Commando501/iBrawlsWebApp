@@ -20,6 +20,7 @@ export interface GrifballAIObjectiveFrame {
   dashRemaining: number;
   slideActive: boolean;
   weaponState: WeaponState | string;
+  pickupRequested: boolean;
 }
 
 type CombatantLike = any;
@@ -160,6 +161,7 @@ export function resolvePrimaryGrifballAIObjectiveMovementForCombatant({
   }
 
   if (!heldByAnyone) {
+    frame.pickupRequested = true;
     const spacing = getGrifballSpacingOffset(
       { x: frame.pos.x, z: frame.pos.z },
       alliesList,

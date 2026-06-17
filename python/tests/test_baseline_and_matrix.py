@@ -105,7 +105,14 @@ def test_advisor_flags_incompatible_init_model(tmp_path):
     out = advise({}, _values(init_model="old.zip", frame_stack=1),
                  cpus=16, project_dir=str(tmp_path))
     titles = [x["title"] for x in out["findings"]]
-    assert any("auto-migrates" in t for t in titles)  # one-logit aim bump is fine
+    assert any("auto-migrates" in t for t in titles)
+
+    current = os.path.join(tmp_path, "current.zip")
+    _fake_model_zip(current, nvec=[9, 4, 3, 2, 2, 2], obs_dim=140)
+    out = advise({}, _values(init_model="current.zip", frame_stack=1),
+                 cpus=16, project_dir=str(tmp_path))
+    titles = [x["title"] for x in out["findings"]]
+    assert any("auto-migrates" in t for t in titles)
 
     weird = os.path.join(tmp_path, "weird.zip")
     _fake_model_zip(weird, nvec=[9, 6, 3, 2, 2, 2], obs_dim=140)
@@ -117,7 +124,7 @@ def test_advisor_flags_incompatible_init_model(tmp_path):
 
 def test_advisor_flags_frame_stack_mismatch(tmp_path):
     stacked = os.path.join(tmp_path, "stacked.zip")
-    _fake_model_zip(stacked, nvec=[9, 4, 3, 2, 2, 2], obs_dim=560)  # stack 4
+    _fake_model_zip(stacked, nvec=[9, 4, 4, 2, 2, 2], obs_dim=560)  # stack 4
     out = advise({}, _values(init_model="stacked.zip", frame_stack=1),
                  cpus=16, project_dir=str(tmp_path))
     f = next(x for x in out["findings"] if "frame_stack" in x["title"])

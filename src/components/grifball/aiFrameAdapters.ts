@@ -13,6 +13,7 @@ export interface GrifballAIObjectiveFrameLocals {
   dashRemaining: number;
   slideActive: boolean;
   weaponState: GrifballAIObjectiveFrame['weaponState'];
+  pickupRequested?: boolean;
 }
 
 export function createGrifballAIObjectiveFrameFromLocals(
@@ -27,6 +28,7 @@ export function createGrifballAIObjectiveFrameFromLocals(
     dashRemaining: locals.dashRemaining,
     slideActive: locals.slideActive,
     weaponState: locals.weaponState,
+    pickupRequested: locals.pickupRequested ?? false,
   };
 }
 
@@ -40,6 +42,7 @@ export function applyGrifballAIObjectiveFrameToLocals(
     dashRemaining: frame.dashRemaining,
     slideActive: frame.slideActive,
     weaponState: frame.weaponState,
+    pickupRequested: frame.pickupRequested,
   };
 }
 

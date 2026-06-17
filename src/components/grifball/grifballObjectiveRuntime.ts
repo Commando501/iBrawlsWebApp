@@ -75,6 +75,13 @@ export function areGrifballCombatantsHostileForState(
   return a !== b;
 }
 
+function clearGrifballPickupRequestsForState(state: GrifballRuntimeState): void {
+  state.playerPickupRequested = false;
+  for (const bot of state.otherPlayers.values()) {
+    bot.pickupRequested = false;
+  }
+}
+
 function tickRunnerHealingValue({
   hp,
   maxHp,
@@ -271,6 +278,7 @@ export function updateGrifballObjectiveForState({
 }): void {
   if (state.settings.gameMode !== 'grifball' || isMultiplayer) {
     hideGrifballThrowTrajectoryVisualForRefs(refs);
+    clearGrifballPickupRequestsForState(state);
     return;
   }
   ensureGrifballBallMeshForRefs({ refs, ballMeshRef });
@@ -338,11 +346,11 @@ export function updateGrifballObjectiveForState({
   if (isGrifballLive(g)) {
     if (isBallGrabbable(g.ball)) {
       const candidates: { id: string; pos: { x: number; y: number; z: number }; alive: boolean }[] = [];
-      if (state.playerHP > 0) {
+      if (state.playerPickupRequested && state.playerHP > 0) {
         candidates.push({ id: 'player', pos: { x: state.playerPos.x, y: state.playerPos.y, z: state.playerPos.z }, alive: true });
       }
       for (const bot of state.otherPlayers.values()) {
-        if (bot.controller === 'ai' && bot.hp > 0 && (bot.respawnTimer ?? 0) <= 0) {
+        if (bot.pickupRequested === true && bot.controller === 'ai' && bot.hp > 0 && (bot.respawnTimer ?? 0) <= 0) {
           candidates.push({ id: bot.id, pos: { x: bot.pos.x, y: bot.pos.y, z: bot.pos.z }, alive: true });
         }
       }
@@ -371,6 +379,8 @@ export function updateGrifballObjectiveForState({
       }
     }
   }
+
+  clearGrifballPickupRequestsForState(state);
 
   const mesh = ballMeshRef.current;
   if (mesh) {
