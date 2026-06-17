@@ -26,6 +26,44 @@ const createV3Model = () => {
   return model;
 };
 
+const lowerBodyGroupNames = ['lowerTorso', 'leftLeg', 'rightLeg'] as const;
+const lowerDetailBoneNames = [
+  'thighLeft',
+  'calfLeft',
+  'footLeft',
+  'toeLeft',
+  'thighRight',
+  'calfRight',
+  'footRight',
+  'toeRight',
+] as const;
+
+const finiteTransformValues = (group: THREE.Group) => [
+  group.position.x,
+  group.position.y,
+  group.position.z,
+  group.rotation.x,
+  group.rotation.y,
+  group.rotation.z,
+];
+
+const assertFiniteTransform = (group: THREE.Group, label: string) => {
+  assert.equal(finiteTransformValues(group).every(Number.isFinite), true, `${label} transform must stay finite`);
+};
+
+const assertRotationRange = (group: THREE.Group, label: string, maxRadians = 1.35) => {
+  for (const value of [group.rotation.x, group.rotation.y, group.rotation.z]) {
+    assert.equal(Math.abs(value) <= maxRadians, true, `${label} rotation ${value} exceeded readable range`);
+  }
+};
+
+const assertWorldYAbove = (group: THREE.Group, label: string, minimumY: number) => {
+  const worldPosition = new THREE.Vector3();
+  group.getWorldPosition(worldPosition);
+  assert.equal(Number.isFinite(worldPosition.y), true, `${label} world y must stay finite`);
+  assert.equal(worldPosition.y >= minimumY, true, `${label} world y ${worldPosition.y} dropped below floor-safe range`);
+};
+
 describe('combatantAnimationV3 body masks', () => {
   it('declares separate lower-body, upper-body, and full-body masks', () => {
     assert.deepEqual(getV3BodyMaskForLayer('locomotion'), ['lowerTorso', 'leftLeg', 'rightLeg']);
@@ -63,6 +101,30 @@ describe('animateV3CombatantModel', () => {
     assert.notEqual(model.userData.upperTorso.rotation.y, 0);
     assert.notEqual(model.userData.rightArm.rotation.x, 0);
     assert.notEqual(model.userData.leftArm.rotation.x, 0);
+    assert.notEqual(model.userData.leftLeg.rotation.x, 0);
+    assert.notEqual(model.userData.rightLeg.rotation.x, 0);
+  });
+
+  it('keeps lower-body locomotion active during sword lunge upper-body animation', () => {
+    const model = createV3Model();
+    const refs = createInitialGrifballThreeRefs();
+
+    animateV3CombatantModel({
+      refs,
+      mesh: model,
+      vel: new THREE.Vector3(3, 0, 0),
+      yaw: 0,
+      hp: 100,
+      activeWeapon: 'sword',
+      weaponState: 'swing_up',
+      weaponTimer: 0.12,
+      dt: 1,
+      isLunging: true,
+      settings: {},
+    });
+
+    assert.notEqual(model.userData.upperTorso.rotation.x, 0);
+    assert.notEqual(model.userData.rightArm.rotation.x, 0);
     assert.notEqual(model.userData.leftLeg.rotation.x, 0);
     assert.notEqual(model.userData.rightLeg.rotation.x, 0);
   });
@@ -137,6 +199,84 @@ describe('animateV3CombatantModel', () => {
 
     assert.deepEqual(model.userData.upperTorso.rotation.toArray().slice(0, 3), [0, 0, 0]);
     assert.deepEqual(model.userData.leftLeg.rotation.toArray().slice(0, 3), [0, 0, 0]);
+  });
+
+  it('resets V3 detail bones on death', () => {
+    const model = createV3Model();
+    const refs = createInitialGrifballThreeRefs();
+    const detailBones = model.userData.v3DetailBones as Record<string, THREE.Group>;
+    model.userData.lowerTorso.position.y = -0.18;
+    model.userData.upperTorso.rotation.set(1, 1, 1);
+    model.userData.leftLeg.rotation.set(1, 1, 1);
+    detailBones.spine2.rotation.set(0.2, -0.3, 0.1);
+    detailBones.forearmRight.rotation.set(-0.4, 0.1, -0.2);
+    detailBones.calfLeft.rotation.set(0.5, 0, 0);
+    detailBones.toeRight.rotation.set(0.2, 0, 0);
+
+    animateV3CombatantModel({
+      refs,
+      mesh: model,
+      vel: new THREE.Vector3(0, 0, 0),
+      yaw: 0,
+      hp: 0,
+      activeWeapon: 'hammer',
+      weaponState: 'ready',
+      weaponTimer: 0,
+      dt: 1,
+      settings: {},
+    });
+
+    assert.equal(model.userData.lowerTorso.position.y, 0);
+    for (const groupName of ['upperTorso', 'leftLeg'] as const) {
+      assert.deepEqual(model.userData[groupName].rotation.toArray().slice(0, 3), [0, 0, 0]);
+    }
+    for (const [name, bone] of Object.entries(detailBones)) {
+      assert.deepEqual(bone.rotation.toArray().slice(0, 3), [0, 0, 0], `${name} should reset on death`);
+    }
+  });
+
+  it('keeps slide and sprint lower-body transforms finite and floor-safe', () => {
+    const cases = [
+      { label: 'slide', isSliding: true, isSprinting: false },
+      { label: 'sprint', isSliding: false, isSprinting: true },
+    ];
+
+    for (const mode of cases) {
+      const model = createV3Model();
+      const refs = createInitialGrifballThreeRefs();
+      const detailBones = model.userData.v3DetailBones as Record<string, THREE.Group>;
+
+      animateV3CombatantModel({
+        refs,
+        mesh: model,
+        vel: new THREE.Vector3(4, 0, 0),
+        yaw: 0,
+        hp: 100,
+        activeWeapon: 'hammer',
+        weaponState: 'ready',
+        weaponTimer: 0,
+        dt: 1,
+        isSliding: mode.isSliding,
+        isSprinting: mode.isSprinting,
+        settings: {},
+      });
+      model.updateMatrixWorld(true);
+
+      for (const groupName of lowerBodyGroupNames) {
+        const group = model.userData[groupName] as THREE.Group;
+        assertFiniteTransform(group, `${mode.label} ${groupName}`);
+        assertRotationRange(group, `${mode.label} ${groupName}`);
+        assertWorldYAbove(group, `${mode.label} ${groupName}`, -0.2);
+      }
+
+      for (const boneName of lowerDetailBoneNames) {
+        const bone = detailBones[boneName];
+        assertFiniteTransform(bone, `${mode.label} ${boneName}`);
+        assertRotationRange(bone, `${mode.label} ${boneName}`);
+        assertWorldYAbove(bone, `${mode.label} ${boneName}`, -0.2);
+      }
+      assert.equal(model.userData.lowerTorso.position.y >= -0.2, true);
+    }
   });
 
   it('animateSpartanCombatantModel dispatches V3 models to the V3 layered runtime', () => {

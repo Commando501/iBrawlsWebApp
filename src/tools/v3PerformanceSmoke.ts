@@ -3,6 +3,10 @@ import {
   createCombatantMeshRig,
   type CombatantMeshRig,
 } from '../components/grifball/combatantModels';
+import {
+  analyzeV3BuiltInPoseClearance,
+  type V3PoseClearanceReport,
+} from '../components/grifball/v3PoseClearance';
 import { summarizeV3SceneRenderBudget, type V3RenderBudgetSummary } from '../components/v3/v3PerformanceBudget';
 import { normalizeV3QualityTier } from '../components/v3/v3QualityTiers';
 import { V3_QUALITY_TIERS, type V3QualityTier } from '../components/v3/v3ModelTypes';
@@ -31,6 +35,8 @@ export interface V3PerformanceSmokeReport {
   gates: V3PerformanceSmokeBudgetGate;
   visualQaReady: boolean;
   visualQa: V3VisualQaReport;
+  poseClearanceReady: boolean;
+  poseClearance: V3PoseClearanceReport;
   issues: string[];
 }
 
@@ -244,6 +250,9 @@ export function buildV3PerformanceSmokeReport(
   const weaponCoverage = [...new Set(smoke.combatants.map((entry) => entry.activeWeapon))]
     .sort() as ('hammer' | 'pistol' | 'sword')[];
   const visualQa = buildCombinedV3SmokeVisualQaReport(smoke.combatants);
+  const poseClearance = analyzeV3BuiltInPoseClearance({
+    v3Options: { v3QualityTier: smoke.qualityTier },
+  });
   const issues: string[] = [];
 
   if (smoke.combatants.length !== 8) {
@@ -273,6 +282,12 @@ export function buildV3PerformanceSmokeReport(
     const viewLabel = issue.viewId && issue.viewportId ? ` ${issue.viewId}/${issue.viewportId}` : '';
     issues.push(`visual QA${viewLabel} ${issue.code}: ${issue.message}`);
   }
+  for (const issue of poseClearance.issues) {
+    const metricLabel = typeof issue.value === 'number' && typeof issue.threshold === 'number'
+      ? ` (${issue.value} vs ${issue.threshold})`
+      : '';
+    issues.push(`pose clearance ${issue.caseId} ${issue.code}: ${issue.message}${metricLabel}`);
+  }
 
   return {
     ready: issues.length === 0,
@@ -283,6 +298,8 @@ export function buildV3PerformanceSmokeReport(
     gates,
     visualQaReady: visualQa.ready,
     visualQa,
+    poseClearanceReady: poseClearance.ready,
+    poseClearance,
     issues,
   };
 }

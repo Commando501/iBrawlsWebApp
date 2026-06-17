@@ -57,13 +57,13 @@ export function buildV3RuntimeSmokeChecklist(): V3RuntimeSmokeChecklistItem[] {
     {
       id: 'performance-smoke-mobile-low',
       path: '/v3-performance-smoke.html?tier=mobileLow',
-      expectedText: ['Phase 18 Ready', 'mobileLow', 'visual pass', 'models 8'],
+      expectedText: ['Phase 26 Ready', 'mobileLow', 'visual pass', 'motion pass', 'models 8'],
       viewports: ['mobile'],
     },
     {
       id: 'performance-smoke-desktop',
       path: '/v3-performance-smoke.html?tier=desktop',
-      expectedText: ['Phase 18 Ready', 'desktop', 'visual pass', 'models 8'],
+      expectedText: ['Phase 26 Ready', 'desktop', 'visual pass', 'motion pass', 'models 8'],
       viewports: ['desktop'],
     },
   ];

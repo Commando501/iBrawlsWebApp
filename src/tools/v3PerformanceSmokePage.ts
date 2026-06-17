@@ -43,18 +43,19 @@ function publishReport(time?: number) {
     : undefined;
   latestReport = buildV3PerformanceSmokeRuntimeReport(current, sample, staticReport);
   const status = latestReport.ready
-    ? 'Phase 18 Ready'
+    ? 'Phase 26 Ready'
     : latestReport.runtimeReady
-      ? 'Phase 18 Blocked'
-      : 'Phase 18 Sampling';
+      ? 'Phase 26 Blocked'
+      : 'Phase 26 Sampling';
   const visualLabel = latestReport.visualQaReady ? 'visual pass' : 'visual fail';
+  const motionLabel = latestReport.poseClearanceReady ? 'motion pass' : 'motion fail';
   const fpsLabel = latestReport.sampledFrames > 0
     ? latestReport.averageFps.toFixed(1)
     : 'sampling';
   const frameLabel = latestReport.averageFrameMs > 0
     ? latestReport.averageFrameMs.toFixed(1)
     : 'sampling';
-  summary.textContent = `${status} | ${current.qualityTier} | ${visualLabel} | models ${current.budget.modelCount} | parts ${current.budget.partCount} | draw ${current.budget.drawCallEstimate} | fps ${fpsLabel} | frame ${frameLabel}ms`;
+  summary.textContent = `${status} | ${current.qualityTier} | ${visualLabel} | ${motionLabel} | models ${current.budget.modelCount} | parts ${current.budget.partCount} | draw ${current.budget.drawCallEstimate} | fps ${fpsLabel} | frame ${frameLabel}ms`;
   (window as any).__IBRAWLS_V3_PERFORMANCE_SMOKE__ = latestReport;
 }
 
@@ -71,7 +72,8 @@ function rebuild() {
 
 tierSelect.addEventListener('change', rebuild);
 window.addEventListener('resize', resize);
-rebuild();
+publishReport();
+resize();
 
 function frame(time: number) {
   if (sampleStartMs === 0) {

@@ -10,6 +10,52 @@ import {
 
 const finiteTuple = (tuple: readonly number[]) => tuple.every(Number.isFinite);
 
+const tupleDistance = (a: readonly number[], b: readonly number[]) => Math.sqrt(
+  a.reduce((sum, value, index) => sum + (value - b[index]) ** 2, 0)
+);
+
+const poseDistance = (
+  a: { position: readonly number[]; rotation: readonly number[] },
+  b: { position: readonly number[]; rotation: readonly number[] }
+) => tupleDistance(a.position, b.position) + tupleDistance(a.rotation, b.rotation);
+
+const upperBodyValues = (pose: ReturnType<typeof sampleV3UpperBodyWeaponPose>) => [
+  ...pose.upperTorsoRotation,
+  ...pose.headRotation,
+  ...pose.leftArmRotation,
+  ...pose.rightArmRotation,
+];
+
+const upperBodyDistance = (
+  a: ReturnType<typeof sampleV3UpperBodyWeaponPose>,
+  b: ReturnType<typeof sampleV3UpperBodyWeaponPose>
+) => tupleDistance(upperBodyValues(a), upperBodyValues(b));
+
+const assertReadableWeaponPose = (
+  pose: { position: readonly number[]; rotation: readonly number[] },
+  label: string
+) => {
+  assert.equal(finiteTuple(pose.position), true, `${label} position must stay finite`);
+  assert.equal(finiteTuple(pose.rotation), true, `${label} rotation must stay finite`);
+  for (const value of pose.position) {
+    assert.equal(Math.abs(value) <= 1.5, true, `${label} position ${value} exceeded readable range`);
+  }
+  for (const value of pose.rotation) {
+    assert.equal(Math.abs(value) <= Math.PI, true, `${label} rotation ${value} exceeded readable range`);
+  }
+};
+
+const assertReadableUpperBodyPose = (
+  pose: ReturnType<typeof sampleV3UpperBodyWeaponPose>,
+  label: string
+) => {
+  const values = upperBodyValues(pose);
+  assert.equal(values.every(Number.isFinite), true, `${label} upper-body rotations must stay finite`);
+  for (const value of values) {
+    assert.equal(Math.abs(value) <= 1.6, true, `${label} upper-body rotation ${value} exceeded readable range`);
+  }
+};
+
 describe('V3 animation fidelity profiles', () => {
   it('declares a stable profile version and known editor track ids', () => {
     assert.equal(V3_ANIMATION_PROFILE_VERSION, 1);
@@ -69,5 +115,114 @@ describe('V3 animation fidelity profiles', () => {
     assert.equal(Math.abs(hammer.headRotation[1]) > 0.02, true);
     assert.equal(sword.upperTorsoRotation[0] > 0.1, true);
     assert.equal(sword.rightArmRotation[0] < -0.6, true);
+  });
+
+  it('keeps hammer windup strike and recover samples finite and readable', () => {
+    const settings = {
+      hammerSlamWindupTime: 0.45,
+      hammerSlamAttackTime: 0.3,
+      hammerReloadTime: 0.6,
+    };
+    const makeInput = (weaponState: string, weaponTimer: number) => ({
+      activeWeapon: 'hammer' as const,
+      weaponState,
+      weaponTimer,
+      isLunging: false,
+      settings,
+    });
+
+    for (const sample of [sampleV3FirstPersonWeaponPose, sampleV3ThirdPersonWeaponPose]) {
+      const ready = sample(makeInput('ready', 0));
+      const windup = sample(makeInput('swing_up', settings.hammerSlamWindupTime));
+      const strike = sample(makeInput('swing_down', settings.hammerSlamAttackTime));
+      const recover = sample(makeInput('recovering', settings.hammerReloadTime));
+
+      assertReadableWeaponPose(windup, 'hammer windup');
+      assertReadableWeaponPose(strike, 'hammer strike');
+      assertReadableWeaponPose(recover, 'hammer recover');
+      assert.equal(strike.position[1] < windup.position[1] - 0.1, true);
+      assert.equal(strike.position[2] < windup.position[2] - 0.18, true);
+      assert.equal(poseDistance(recover, ready) < poseDistance(strike, ready), true);
+    }
+
+    const ready = sampleV3UpperBodyWeaponPose(makeInput('ready', 0));
+    const windup = sampleV3UpperBodyWeaponPose(makeInput('swing_up', settings.hammerSlamWindupTime));
+    const strike = sampleV3UpperBodyWeaponPose(makeInput('swing_down', settings.hammerSlamAttackTime));
+    const recover = sampleV3UpperBodyWeaponPose(makeInput('recovering', settings.hammerReloadTime));
+
+    assertReadableUpperBodyPose(windup, 'hammer upper-body windup');
+    assertReadableUpperBodyPose(strike, 'hammer upper-body strike');
+    assertReadableUpperBodyPose(recover, 'hammer upper-body recover');
+    assert.equal(strike.upperTorsoRotation[0] > windup.upperTorsoRotation[0] + 0.2, true);
+    assert.equal(upperBodyDistance(recover, ready) < upperBodyDistance(strike, ready), true);
+  });
+
+  it('keeps sword lunge and slash samples finite without extreme upper-body rotations', () => {
+    const readyInput = {
+      activeWeapon: 'sword' as const,
+      weaponState: 'ready',
+      weaponTimer: 0,
+      isLunging: false,
+      settings: {},
+    };
+    const lungeInput = {
+      ...readyInput,
+      weaponTimer: 0.18,
+      isLunging: true,
+    };
+    const slashInput = {
+      ...readyInput,
+      weaponState: 'swing_up',
+      weaponTimer: 0.22,
+    };
+
+    for (const sample of [sampleV3FirstPersonWeaponPose, sampleV3ThirdPersonWeaponPose]) {
+      const ready = sample(readyInput);
+      const lunge = sample(lungeInput);
+      const slash = sample(slashInput);
+
+      assertReadableWeaponPose(lunge, 'sword lunge');
+      assertReadableWeaponPose(slash, 'sword slash');
+      assert.equal(lunge.position[2] < ready.position[2] - 0.15, true);
+    }
+
+    const lungeUpper = sampleV3UpperBodyWeaponPose(lungeInput);
+    const slashUpper = sampleV3UpperBodyWeaponPose(slashInput);
+
+    assertReadableUpperBodyPose(lungeUpper, 'sword upper-body lunge');
+    assertReadableUpperBodyPose(slashUpper, 'sword upper-body slash');
+    assert.equal(Math.abs(lungeUpper.upperTorsoRotation[0]) <= 0.35, true);
+    assert.equal(Math.abs(lungeUpper.rightArmRotation[0]) <= 0.9, true);
+    assert.equal(Math.abs(lungeUpper.leftArmRotation[1]) <= 0.4, true);
+  });
+
+  it('keeps pistol fire samples finite and decays recoil by timer 0.18', () => {
+    const makeInput = (weaponTimer: number) => ({
+      activeWeapon: 'pistol' as const,
+      weaponState: 'firing',
+      weaponTimer,
+      isLunging: false,
+      settings: {},
+    });
+
+    for (const sample of [sampleV3FirstPersonWeaponPose, sampleV3ThirdPersonWeaponPose]) {
+      const ready = sample({ ...makeInput(0), weaponState: 'ready' });
+      const fire = sample(makeInput(0));
+      const recovered = sample(makeInput(0.18));
+
+      assertReadableWeaponPose(fire, 'pistol fire');
+      assertReadableWeaponPose(recovered, 'pistol recovered');
+      assert.equal(poseDistance(recovered, ready) < 1e-9, true);
+      assert.equal(Math.abs(fire.rotation[0]) > Math.abs(recovered.rotation[0]) + 0.1, true);
+    }
+
+    const ready = sampleV3UpperBodyWeaponPose({ ...makeInput(0), weaponState: 'ready' });
+    const fire = sampleV3UpperBodyWeaponPose(makeInput(0));
+    const recovered = sampleV3UpperBodyWeaponPose(makeInput(0.18));
+
+    assertReadableUpperBodyPose(fire, 'pistol upper-body fire');
+    assertReadableUpperBodyPose(recovered, 'pistol upper-body recovered');
+    assert.equal(upperBodyDistance(recovered, ready) < 1e-9, true);
+    assert.equal(Math.abs(fire.rightArmRotation[0]) > Math.abs(recovered.rightArmRotation[0]) + 0.25, true);
   });
 });
