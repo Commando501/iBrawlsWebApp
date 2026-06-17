@@ -73,6 +73,13 @@ import {
   type V3SmartAuthoringPreview,
   type V3SmartAuthoringStrength,
 } from './v3ArmorEditorSmartAuthoring';
+import {
+  applyV3ArmorMotionRepairAction,
+  buildV3ArmorMotionRepairActions,
+  buildV3ArmorMotionRepairPreview,
+  type V3ArmorMotionRepairActionId,
+  type V3ArmorMotionRepairContext,
+} from './v3ArmorEditorMotionRepair';
 import { buildV3SmartAuthoringFeedback } from './v3ArmorEditorSmartFeedback';
 import {
   createV3ArmorTemplateDraft,
@@ -141,6 +148,7 @@ type PaintSettings = {
   modelSystem: CustomArmorModelSystem;
   gridScale: 1 | 2;
 };
+type V3PreviewOverlayDiff = Pick<V3SmartAuthoringPreview, 'added' | 'removed' | 'remapped'>;
 type ArmorEditorCameraView = {
   target: { x: number; y: number; z: number };
   yaw: number;
@@ -447,7 +455,7 @@ function addVoxelOverlayCube(
 }
 
 function createV3SmartPreviewOverlayGroup(
-  preview: V3SmartAuthoringPreview,
+  preview: V3PreviewOverlayDiff,
   palette: CustomArmorColors,
   scale: number,
   origin: { x: number; y: number; z: number }
@@ -576,6 +584,8 @@ export function ArmorModelEditor({
   const [v3MotionQaReport, setV3MotionQaReport] = useState<V3ArmorEditorMotionQaReport | null>(null);
   const [v3MotionQaReportToken, setV3MotionQaReportToken] = useState('');
   const [v3MotionQaMode, setV3MotionQaMode] = useState<V3ArmorEditorMotionQaMode>('active-slot');
+  const [selectedV3MotionRepairActionId, setSelectedV3MotionRepairActionId] =
+    useState<V3ArmorMotionRepairActionId>('poseSafePolish');
   const [status, setStatus] = useState('');
   const [importText, setImportText] = useState('');
   const [exportText, setExportText] = useState('');
@@ -693,9 +703,38 @@ export function ArmorModelEditor({
       ? buildV3SmartAuthoringFeedback(draft, v3SmartAuthoringPreview.previewDraft)
       : undefined
   ), [draft, v3SmartAuthoringPreview]);
-  const buildV3MotionQaSourceToken = (mode: V3ArmorEditorMotionQaMode): string => {
-    const stagedDrafts = activeV3SuitDrafts
-      ? (Object.entries(activeV3SuitDrafts) as Array<[V3CustomArmorSlot, CustomArmorPieceSnapshot]>)
+  const buildV3MotionQaSourceToken = (
+    mode: V3ArmorEditorMotionQaMode,
+    stagedDraftOverride?: V3SuitDraftMap
+  ): string => {
+    const sourceDrafts = stagedDraftOverride ?? activeV3SuitDrafts;
+    if (mode === 'full-suit') {
+      const currentSlot = slot as V3CustomArmorSlot;
+      const stagedDrafts = sourceDrafts
+        ? ({
+            ...sourceDrafts,
+            [currentSlot]: cloneV3SuitDraftForSlot(currentSlot, draft),
+          } as V3SuitDraftMap)
+        : undefined;
+      const draftRows = stagedDrafts
+        ? (Object.entries(stagedDrafts) as Array<[V3CustomArmorSlot, CustomArmorPieceSnapshot]>)
+          .sort(([left], [right]) => left.localeCompare(right))
+          .map(([draftSlot, stagedDraft]) => ({
+            slot: draftSlot,
+            id: stagedDraft.id,
+            updatedAt: stagedDraft.updatedAt,
+            voxelCount: stagedDraft.voxels.length,
+          }))
+        : [];
+      return JSON.stringify({
+        mode,
+        pose: 'all',
+        stagedDrafts: draftRows,
+      });
+    }
+
+    const stagedDrafts = sourceDrafts
+      ? (Object.entries(sourceDrafts) as Array<[V3CustomArmorSlot, CustomArmorPieceSnapshot]>)
         .sort(([left], [right]) => left.localeCompare(right))
         .map(([draftSlot, stagedDraft]) => ({
           slot: draftSlot,
@@ -723,6 +762,29 @@ export function ArmorModelEditor({
   );
   const v3MotionQaIsStale = Boolean(v3MotionQaReport) && v3MotionQaReportToken !== currentV3MotionQaToken;
   const selectedV3MotionQaCase = v3MotionQaReport?.cases.find((testCase) => testCase.id === selectedV3PoseCaseId);
+  const freshV3MotionQaReport = v3MotionQaReport && !v3MotionQaIsStale ? v3MotionQaReport : undefined;
+  const v3MotionRepairContext = useMemo<V3ArmorMotionRepairContext>(() => ({
+    motionQa: freshV3MotionQaReport,
+    selectedCaseId: v3MotionQaMode === 'active-slot' ? selectedV3PoseCaseId : undefined,
+    activeSlot: slot as V3CustomArmorSlot,
+    gridScale: draftGridScale,
+    cursor,
+    size,
+  }), [cursor, draftGridScale, freshV3MotionQaReport, selectedV3PoseCaseId, size, slot, v3MotionQaMode]);
+  const v3MotionRepairActions = useMemo(() => (
+    modelSystem === 'v3'
+      ? buildV3ArmorMotionRepairActions(draft, v3MotionRepairContext)
+      : []
+  ), [draft, modelSystem, v3MotionRepairContext]);
+  const selectedV3MotionRepairAction = v3MotionRepairActions.find((action) => action.id === selectedV3MotionRepairActionId)
+    ?? v3MotionRepairActions[0];
+  const selectedV3MotionRepairLabel = selectedV3MotionRepairAction?.label ?? 'Motion Fix';
+  const v3MotionRepairPreview = useMemo(() => (
+    modelSystem === 'v3' && freshV3MotionQaReport && selectedV3MotionRepairAction
+      ? buildV3ArmorMotionRepairPreview(draft, selectedV3MotionRepairAction.id, v3MotionRepairContext)
+      : undefined
+  ), [draft, freshV3MotionQaReport, modelSystem, selectedV3MotionRepairAction, v3MotionRepairContext]);
+  const activeV3PreviewOverlay = v3MotionRepairPreview?.changed ? v3MotionRepairPreview : v3SmartAuthoringPreview;
 
   useEffect(() => {
     paintSettingsRef.current = { tool, role, fixedColor, emissive, slot, modelType, modelSystem, gridScale: draftGridScale };
@@ -838,6 +900,15 @@ export function ArmorModelEditor({
     setStatus(`${selectedSmartToolLabel} applied.`);
   };
 
+  const applySelectedV3MotionRepair = () => {
+    if (!selectedV3MotionRepairAction || !v3MotionRepairPreview?.changed) return;
+    replaceDraft(applyV3ArmorMotionRepairAction(draft, selectedV3MotionRepairAction.id, {
+      ...v3MotionRepairContext,
+      now: Date.now(),
+    }));
+    setStatus(`${selectedV3MotionRepairAction.label} applied.`);
+  };
+
   const setSmartStripeWidthValue = (value: number) => {
     setSmartStripeWidth(Math.max(1, Math.round(Number.isFinite(value) ? value : 1)));
   };
@@ -857,9 +928,13 @@ export function ArmorModelEditor({
       selectedCaseId: selectedV3PoseCaseId,
       hue: playerHue,
     });
+    if (mode === 'full-suit' && stagedDrafts) {
+      setV3SuitDrafts(stagedDrafts);
+      setV3SuitPreviewEnabled(true);
+    }
     setV3MotionQaMode(mode);
     setV3MotionQaReport(report);
-    setV3MotionQaReportToken(buildV3MotionQaSourceToken(mode));
+    setV3MotionQaReportToken(buildV3MotionQaSourceToken(mode, stagedDrafts));
     const scopeLabel = mode === 'full-suit' ? 'Full suit' : V3_POSE_LABELS[selectedV3PoseCaseId];
     setStatus(`${scopeLabel} Motion QA ${report.ready ? 'passed' : `reported ${report.issues.length} advisory issue${report.issues.length === 1 ? '' : 's'}`}.`);
   };
@@ -1608,12 +1683,12 @@ export function ArmorModelEditor({
         applyPreviewPose(model, normalizeV2PoseMode(poseMode));
         scene.add(model);
       }
-      if (modelSystem === 'v3' && v3SmartAuthoringPreview?.changed) {
+      if (modelSystem === 'v3' && activeV3PreviewOverlay?.changed) {
         const partGroups = model.userData.v3PartGroups as Partial<Record<V3CustomArmorSlot, THREE.Group>> | undefined;
         const partGroup = partGroups?.[slot as V3CustomArmorSlot];
         if (partGroup) {
           partGroup.add(createV3SmartPreviewOverlayGroup(
-            v3SmartAuthoringPreview,
+            activeV3PreviewOverlay,
             editorPreviewPalette,
             V3_ARMOR_SURFACE_BASE_VOXEL_SCALE / draftGridScale,
             { x: 0, y: 0, z: 0 }
@@ -1715,9 +1790,9 @@ export function ArmorModelEditor({
         scene.add(cursorMesh);
       }
 
-      if (modelSystem === 'v3' && v3SmartAuthoringPreview?.changed) {
+      if (modelSystem === 'v3' && activeV3PreviewOverlay?.changed) {
         scene.add(createV3SmartPreviewOverlayGroup(
-          v3SmartAuthoringPreview,
+          activeV3PreviewOverlay,
           palette,
           scale,
           { x: centerX, y: centerY, z: centerZ }
@@ -1914,7 +1989,7 @@ export function ArmorModelEditor({
     smartStrength,
     smartStripeWidth,
     slot,
-    v3SmartAuthoringPreview,
+    activeV3PreviewOverlay,
     v3MotionQaIsStale,
     v3SuitDrafts,
     v3SuitPreviewEnabled,
@@ -2262,6 +2337,71 @@ export function ArmorModelEditor({
                       : `${selectedV3MotionQaCase.issues.length} advisory issue${selectedV3MotionQaCase.issues.length === 1 ? '' : 's'}.`}
                   </span>
                 )}
+              </div>
+            </Panel>
+          )}
+
+          {modelSystem === 'v3' && (
+            <Panel title="Motion Fixes">
+              <div className="flex flex-col gap-2 text-[10px] leading-relaxed">
+                {!freshV3MotionQaReport ? (
+                  <span className="text-white/45">
+                    Run Motion QA to preview pose-aware fixes such as Clear Limb Overlap.
+                  </span>
+                ) : freshV3MotionQaReport.ready ? (
+                  <span className="text-emerald-300">Motion Fixes: no pose repair is currently needed.</span>
+                ) : (
+                  <span className="text-amber-300">
+                    Motion Fixes: select a repair for the active slot, preview it, then apply it through undoable history.
+                  </span>
+                )}
+                {freshV3MotionQaReport && (
+                  <div className="flex flex-col gap-2">
+                    {v3MotionRepairActions.map((action) => (
+                      <div key={action.id} className="grid grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] gap-2 items-start">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedV3MotionRepairActionId(action.id)}
+                          disabled={!action.enabled}
+                          aria-pressed={selectedV3MotionRepairActionId === action.id}
+                          className={`editor-chip text-left disabled:opacity-35 ${
+                            selectedV3MotionRepairActionId === action.id && action.enabled
+                              ? 'border-cyan-400/50 text-cyan-100'
+                              : action.enabled
+                                ? 'border-purple-400/40 text-purple-100'
+                                : 'border-white/10 text-white/35'
+                          }`}
+                        >
+                          {action.label}
+                        </button>
+                        <span className={`text-[10px] leading-relaxed ${action.enabled ? 'text-white/55' : 'text-white/35'}`}>
+                          {action.reason}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {v3MotionRepairPreview && (
+                  <div className="rounded border border-cyan-400/20 bg-cyan-500/10 p-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[10px] font-black uppercase tracking-widest text-cyan-100">Motion Fix Preview</span>
+                      <span className="text-[10px] font-mono text-white/55">{selectedV3MotionRepairLabel}</span>
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-1.5 font-mono text-[10px] text-white/60">
+                      <span>{v3MotionRepairPreview.added.length} added</span>
+                      <span>{v3MotionRepairPreview.removed.length} removed</span>
+                      <span>{v3MotionRepairPreview.remapped.length} remapped</span>
+                    </div>
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={applySelectedV3MotionRepair}
+                  disabled={!v3MotionRepairPreview?.changed}
+                  className="w-full py-2 rounded border border-cyan-400/50 bg-cyan-500/20 text-cyan-100 text-[10px] font-black uppercase tracking-widest disabled:opacity-35"
+                >
+                  Apply Motion Fix
+                </button>
               </div>
             </Panel>
           )}

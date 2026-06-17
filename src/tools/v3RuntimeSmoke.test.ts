@@ -11,7 +11,7 @@ test('buildV3RuntimeSmokeChecklist includes desktop and mobile viewports', () =>
   assert.deepEqual(V3_RUNTIME_SMOKE_VIEWPORTS.map((viewport) => viewport.id), ['desktop', 'mobile']);
 });
 
-test('buildV3RuntimeSmokeChecklist covers every required Phase 27 browser surface', () => {
+test('buildV3RuntimeSmokeChecklist covers every required Phase 28 browser surface', () => {
   const checklist = buildV3RuntimeSmokeChecklist();
   const routes = checklist.map((item) => item.path);
   const performanceItems = checklist.filter((item) => item.path.startsWith('/v3-performance-smoke.html'));
@@ -28,6 +28,9 @@ test('buildV3RuntimeSmokeChecklist covers every required Phase 27 browser surfac
   assert.ok(editorItem?.expectedText.includes('Motion QA'));
   assert.ok(editorItem?.expectedText.includes('Check Active Pose'));
   assert.ok(editorItem?.expectedText.includes('Hammer Strike'));
+  assert.ok(editorItem?.expectedText.includes('Motion Fixes'));
+  assert.ok(editorItem?.expectedText.includes('Apply Motion Fix'));
+  assert.ok(editorItem?.expectedText.includes('Clear Limb Overlap'));
   assert.ok(checklist.every((item) => item.expectedText.length > 0));
   assert.ok(checklist.every((item) => item.viewports.length > 0));
 });
