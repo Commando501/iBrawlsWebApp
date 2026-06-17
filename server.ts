@@ -1151,7 +1151,13 @@ async function startServer() {
         next(error);
       }
     };
-    app.get(["/mapmaker.html", "/animation-editor.html", "/armor-model-editor.html", "/v3-performance-smoke.html"], (req, res, next) => {
+    app.get([
+      "/mapmaker.html",
+      "/animation-editor.html",
+      "/armor-model-editor.html",
+      "/v3-performance-smoke.html",
+      "/v3-readiness-dashboard.html",
+    ], (req, res, next) => {
       sendDevHtml(req, res, next, req.path.slice(1));
     });
     app.get("*", (req, res, next) => {

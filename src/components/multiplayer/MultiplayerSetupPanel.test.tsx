@@ -3,6 +3,7 @@ import test from 'node:test';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { ComponentProps } from 'react';
+import { V3_INTERNAL_PROTOTYPE_LABEL } from '../../model/v3InternalStatus';
 import { DEFAULT_ADMIN_SETTINGS } from '../../settings/gameplaySettings';
 import { MultiplayerSetupPanel } from './MultiplayerSetupPanel';
 
@@ -59,9 +60,10 @@ test('MultiplayerSetupPanel hides V3 host visual model policy for non-admin play
   assert.match(html, /Version 1 Classic/);
   assert.match(html, /Version 2 Rigged/);
   assert.doesNotMatch(html, /Version 3 Advanced/);
+  assert.doesNotMatch(html, new RegExp(V3_INTERNAL_PROTOTYPE_LABEL));
 });
 
-test('MultiplayerSetupPanel exposes V3 host visual model policy for admin players', () => {
+test('MultiplayerSetupPanel hides V3 host visual model policy for admin players', () => {
   const html = renderToStaticMarkup(
     <MultiplayerSetupPanel
       {...baseProps()}
@@ -72,7 +74,8 @@ test('MultiplayerSetupPanel exposes V3 host visual model policy for admin player
   assert.match(html, /Model Set/);
   assert.match(html, /Version 1 Classic/);
   assert.match(html, /Version 2 Rigged/);
-  assert.match(html, /Version 3 Advanced/);
+  assert.doesNotMatch(html, /Version 3 Advanced/);
+  assert.doesNotMatch(html, new RegExp(V3_INTERNAL_PROTOTYPE_LABEL));
 });
 
 test('MultiplayerSetupPanel defaults new hosted lobbies to recommended V2', () => {
@@ -86,6 +89,7 @@ test('MultiplayerSetupPanel defaults new hosted lobbies to recommended V2', () =
   assert.match(html, /Model Set/);
   assert.match(html, /Version 2 Rigged/);
   assert.doesNotMatch(html, /Version 3 Advanced/);
+  assert.doesNotMatch(html, new RegExp(V3_INTERNAL_PROTOTYPE_LABEL));
 });
 
 test('MultiplayerSetupPanel stacks model policy buttons on mobile widths', () => {
@@ -145,7 +149,7 @@ test('MultiplayerSetupPanel staging summary clamps V3 policy for non-admin playe
   assert.doesNotMatch(html, /Version 3 Advanced/);
 });
 
-test('MultiplayerSetupPanel staging summary labels V3 policy for admin players', () => {
+test('MultiplayerSetupPanel staging summary clamps V3 policy for admin players', () => {
   const html = renderToStaticMarkup(
     <MultiplayerSetupPanel
       {...baseProps()}
@@ -168,5 +172,6 @@ test('MultiplayerSetupPanel staging summary labels V3 policy for admin players',
   );
 
   assert.match(html, /Models/);
-  assert.match(html, /Version 3 Advanced/);
+  assert.match(html, /Version 2 Rigged/);
+  assert.doesNotMatch(html, /Version 3 Advanced/);
 });

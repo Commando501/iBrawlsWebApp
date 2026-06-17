@@ -1,0 +1,342 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>V3 Readiness Dashboard</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #061018;
+        --panel: #0c1a24;
+        --panel-strong: #132938;
+        --line: #25475a;
+        --text: #eef8fb;
+        --muted: #9fb8c4;
+        --cyan: #5dd6c9;
+        --amber: #fbbf24;
+        --red: #fb7185;
+        --green: #86efac;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        min-height: 100%;
+        background: var(--bg);
+        color: var(--text);
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      body {
+        overflow-x: hidden;
+      }
+
+      button,
+      input {
+        font: inherit;
+      }
+
+      button {
+        min-height: 36px;
+        border: 1px solid color-mix(in srgb, var(--cyan) 56%, #000);
+        border-radius: 7px;
+        background: #11352f;
+        color: #c7fff6;
+        font-size: 12px;
+        font-weight: 900;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        padding: 0 12px;
+        cursor: pointer;
+      }
+
+      input[type="file"] {
+        width: 100%;
+        min-height: 40px;
+        border: 1px solid var(--line);
+        border-radius: 7px;
+        background: var(--panel-strong);
+        color: var(--text);
+        padding: 8px;
+      }
+
+      main {
+        display: grid;
+        gap: 16px;
+        width: min(1440px, calc(100vw - 28px));
+        margin: 0 auto;
+        padding: 18px 0 28px;
+      }
+
+      header,
+      section {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: color-mix(in srgb, var(--panel) 92%, #000);
+      }
+
+      header {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 16px;
+      }
+
+      h1,
+      h2,
+      h3,
+      p {
+        margin: 0;
+      }
+
+      h1 {
+        font-size: 24px;
+        letter-spacing: 0;
+      }
+
+      h2 {
+        font-size: 13px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--cyan);
+      }
+
+      h3 {
+        font-size: 12px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .subtitle {
+        margin-top: 6px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .status {
+        display: grid;
+        gap: 4px;
+        min-width: min(100%, 360px);
+        border: 1px solid rgba(251, 191, 36, 0.42);
+        border-radius: 8px;
+        background: rgba(251, 191, 36, 0.1);
+        padding: 10px 12px;
+      }
+
+      .status strong {
+        color: var(--amber);
+        font-size: 12px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+
+      .status span {
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: minmax(280px, 380px) minmax(0, 1fr);
+        gap: 16px;
+      }
+
+      .stack {
+        display: grid;
+        gap: 16px;
+      }
+
+      section {
+        display: grid;
+        gap: 12px;
+        padding: 14px;
+      }
+
+      .metrics {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 10px;
+      }
+
+      .metric {
+        display: grid;
+        gap: 4px;
+        border: 1px solid rgba(93, 214, 201, 0.18);
+        border-radius: 7px;
+        background: rgba(2, 6, 23, 0.38);
+        padding: 10px;
+      }
+
+      .metric span {
+        color: var(--muted);
+        font-size: 10px;
+        font-weight: 900;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .metric strong {
+        font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+        font-size: 15px;
+      }
+
+      .checklist {
+        display: grid;
+        gap: 8px;
+      }
+
+      .checklist label {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        min-height: 34px;
+        border: 1px solid rgba(148, 163, 184, 0.15);
+        border-radius: 7px;
+        background: rgba(2, 6, 23, 0.32);
+        color: var(--text);
+        padding: 7px 9px;
+        font-size: 13px;
+      }
+
+      .checklist input {
+        accent-color: var(--cyan);
+      }
+
+      .canvas-shell {
+        display: grid;
+        gap: 10px;
+      }
+
+      #comparisonCanvas {
+        width: 100%;
+        aspect-ratio: 16 / 9;
+        min-height: 320px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #020617;
+      }
+
+      .button-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      .button-row button {
+        flex: 1 1 160px;
+      }
+
+      .issues {
+        display: grid;
+        gap: 7px;
+        max-height: 240px;
+        overflow: auto;
+      }
+
+      .issue {
+        border: 1px solid rgba(251, 113, 133, 0.24);
+        border-radius: 7px;
+        background: rgba(127, 29, 29, 0.14);
+        color: #fecdd3;
+        padding: 8px 10px;
+        font-size: 12px;
+        line-height: 1.4;
+      }
+
+      .issue.warning {
+        border-color: rgba(251, 191, 36, 0.24);
+        background: rgba(120, 53, 15, 0.16);
+        color: #fde68a;
+      }
+
+      pre {
+        max-height: 340px;
+        overflow: auto;
+        border: 1px solid rgba(148, 163, 184, 0.15);
+        border-radius: 7px;
+        background: rgba(2, 6, 23, 0.46);
+        color: #bfdbfe;
+        padding: 10px;
+        font: 12px/1.5 "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+        white-space: pre-wrap;
+      }
+
+      @media (max-width: 980px) {
+        .grid {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <div>
+          <h1>V3 Readiness Dashboard</h1>
+          <p class="subtitle">Internal prototype review for model fidelity, pose clarity, reference comparison, and performance.</p>
+        </div>
+        <div class="status">
+          <strong id="statusLabel">Not Player Ready</strong>
+          <span id="statusSummary">Preparing readiness evidence...</span>
+        </div>
+      </header>
+
+      <div class="grid">
+        <div class="stack">
+          <section>
+            <h2>Manual Readiness Checklist</h2>
+            <div id="checklist" class="checklist"></div>
+          </section>
+
+          <section>
+            <h2>Reference File</h2>
+            <input id="referenceInput" type="file" accept=".fbx,.glb,.gltf,.obj" />
+            <div class="button-row">
+              <button id="ackReference" type="button">Acknowledge Reference Comparison</button>
+              <button id="downloadReport" type="button">Download Readiness Report</button>
+              <button id="copyReport" type="button">Copy Readiness Report</button>
+            </div>
+            <pre id="referenceSummary">No local reference loaded. Load FBX, GLB, GLTF, or OBJ to complete review.</pre>
+          </section>
+        </div>
+
+        <div class="stack">
+          <section class="canvas-shell">
+            <h2>Side-by-Side Reference Comparison</h2>
+            <canvas id="comparisonCanvas" width="1280" height="720"></canvas>
+          </section>
+
+          <section>
+            <h2>Evidence Snapshot</h2>
+            <div id="metrics" class="metrics"></div>
+            <pre id="reportSummary"></pre>
+          </section>
+
+          <section>
+            <h2>Baseline Gaps</h2>
+            <div id="baselineSummary" class="metrics"></div>
+            <div class="button-row">
+              <button id="downloadBaseline" type="button">Download Baseline Markdown</button>
+              <button id="copyBaseline" type="button">Copy Baseline Markdown</button>
+            </div>
+            <div id="baselineFindings" class="issues"></div>
+          </section>
+
+          <section>
+            <h2>Blockers + Warnings</h2>
+            <div id="issues" class="issues"></div>
+          </section>
+        </div>
+      </div>
+    </main>
+
+    <script type="module" src="/src/tools/v3ReadinessDashboardPage.ts"></script>
+  </body>
+</html>

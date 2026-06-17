@@ -39,7 +39,7 @@ export function buildV3RuntimeSmokeChecklist(): V3RuntimeSmokeChecklistItem[] {
     {
       id: 'main-menu-model-policy',
       path: '/',
-      expectedText: ['Customization', 'V1', 'V2', 'V3'],
+      expectedText: ['Customization', 'V1', 'V2'],
       viewports: ['desktop', 'mobile'],
     },
     {
@@ -67,6 +67,21 @@ export function buildV3RuntimeSmokeChecklist(): V3RuntimeSmokeChecklistItem[] {
       id: 'asset-preview-local-tooling',
       path: '/v3-asset-preview.html',
       expectedText: ['V3 Asset Preview', 'Render Synthetic Preview'],
+      viewports: ['desktop'],
+    },
+    {
+      id: 'readiness-dashboard-local-tooling',
+      path: '/v3-readiness-dashboard.html',
+      expectedText: [
+        'V3 Readiness Dashboard',
+        'Not Player Ready',
+        'Manual Readiness Checklist',
+        'Reference File',
+        'Download Readiness Report',
+        'Baseline Gaps',
+        'Download Baseline Markdown',
+        'Copy Baseline Markdown',
+      ],
       viewports: ['desktop'],
     },
     {
