@@ -320,6 +320,8 @@ Phase 30 resets V3 to an internal prototype gate. Match model selection now expo
 
 Phase 31 adds a reference-grounded readiness baseline without tuning models or animations. The readiness dashboard now derives a sanitized baseline gap report from its JSON export, exposes `Baseline Gaps`, copy/download Markdown actions, and `window.__IBRAWLS_V3_READINESS_BASELINE__`, while raw FBX/GLB/OBJ assets remain browser-local and private. The checked-in `docs/v3/phase-31-readiness-baseline.md` records the blocked internal baseline and the local private JSON export convention; V3 remains internal and not player-ready.
 
+Phase 32 starts model dialing with OBJ reference proportion calibration. The non-warped `Halo Reach - Spartans [IK Rigged] V3 UNSC Armory.obj` is the canonical local reference for base Aegis body-envelope tuning; FBX upload remains available on the readiness dashboard for browser-local inspection, but it is not used as the calibration source. `v3ReferenceProportions` now measures global and vertical-band front/side ratios, the dashboard exports sanitized proportion bands, and the first Aegis tuning pass narrows lower limbs, terminal pieces, and torso depth while preserving gridScale 2 voxel sources, V3 internal gating, custom armor compatibility, and the visual-only contract.
+
 ## Standalone 3D Map Maker
 
 iBrawls features a beautiful, feature-rich, and completely standalone 3D Map Maker application that runs 100% locally and offline in the user's browser. Since it is entirely decoupled from the main web application, players simply open the local HTML file to design custom battle arenas using standard assets!

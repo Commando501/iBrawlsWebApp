@@ -32,9 +32,10 @@ const readyExport = (): V3ReadinessDashboardExportObject => ({
   label: 'Player Ready',
   checklist: completeChecklist(),
   evidence: {
-    suitFidelity: readyEvidence(),
-    visualQa: readyEvidence(),
-    poseClearance: readyEvidence(),
+      suitFidelity: readyEvidence(),
+      referenceProportions: readyEvidence(),
+      visualQa: readyEvidence(),
+      poseClearance: readyEvidence(),
     performanceSmoke: readyEvidence(),
     referenceComparison: {
       acknowledged: true,
@@ -134,12 +135,18 @@ test('buildV3ReadinessBaseline produces prioritized findings from blockers, warn
     finding.recommendedNextPhase,
   ]);
 
-  assert.deepEqual(findingKeys.slice(0, 4), [
+  assert.deepEqual(findingKeys.slice(0, 5), [
     [
       'poseAtlas',
       'blocker',
       'Pose atlas has not been manually confirmed.',
       'Phase 32 pose atlas clearance',
+    ],
+    [
+      'baseProportions',
+      'blocker',
+      'V3 remains an internal prototype and is not player-ready.',
+      'Phase 32 base proportion tuning',
     ],
     [
       'baseProportions',
@@ -165,11 +172,32 @@ test('buildV3ReadinessBaseline produces prioritized findings from blockers, warn
   )));
 });
 
+test('buildV3ReadinessBaseline maps reference proportion evidence failures to base proportions', () => {
+  const input = readyExport();
+  input.evidence.referenceProportions = {
+    ready: false,
+    issueCount: 1,
+    issues: ['thigh band width remains 22% wider than OBJ reference'],
+    summary: { worstWidthBand: 'thigh' },
+  };
+
+  const report = buildV3ReadinessBaseline(input);
+
+  assert.equal(report.status, 'blocked');
+  assert.equal(report.categories.baseProportions.ready, false);
+  assert.ok(report.findings.some((finding) => (
+    finding.category === 'baseProportions' &&
+    finding.severity === 'blocker' &&
+    finding.message.includes('thigh band width')
+  )));
+});
+
 test('formatV3ReadinessBaselineMarkdown includes baseline sections and local JSON path convention', () => {
   const markdown = formatV3ReadinessBaselineMarkdown(buildV3ReadinessBaseline(readyExport()));
 
   assert.match(markdown, /^# V3 Readiness Baseline/m);
-  assert.match(markdown, /Status: ready/);
+  assert.match(markdown, /Status: blocked/);
+  assert.match(markdown, /internal prototype/);
   assert.match(markdown, /phase30-reference\.fbx/);
   assert.match(markdown, /## Prioritized Findings/);
   assert.match(markdown, /## Category Readiness/);

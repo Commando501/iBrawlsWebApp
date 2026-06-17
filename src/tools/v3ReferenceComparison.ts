@@ -73,6 +73,7 @@ const PAYLOAD_KEYS = new Set([
   'object3d',
   'parsedobject',
   'payload',
+  'rawgeometry',
   'rawsource',
   'rawtext',
   'root',

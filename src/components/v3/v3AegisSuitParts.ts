@@ -33,25 +33,25 @@ type ReadonlyV3AegisPartSpec = {
 };
 
 export const V3_AEGIS_PART_SPECS: Readonly<Record<V3CharacterSlotId, ReadonlyV3AegisPartSpec>> = {
-  helmet: { segment: 'head', dimensions: [9, 8, 8], position: [-0.22, 1.56, -0.19] },
+  helmet: { segment: 'head', dimensions: [9, 8, 6], position: [-0.22, 1.56, -0.15] },
   neck: { segment: 'upperTorso', dimensions: [6, 4, 6], position: [-0.16, 1.39, -0.15] },
-  chest: { segment: 'upperTorso', dimensions: [16, 15, 11], position: [-0.42, 0.97, -0.27] },
-  shoulderLeft: { segment: 'leftArm', dimensions: [7, 5, 8], position: [-0.64, 1.31, -0.18] },
-  shoulderRight: { segment: 'rightArm', dimensions: [7, 5, 8], position: [0.27, 1.31, -0.18] },
-  upperArmLeft: { segment: 'leftArm', dimensions: [5, 9, 5], position: [-0.58, 0.95, -0.12] },
-  upperArmRight: { segment: 'rightArm', dimensions: [5, 9, 5], position: [0.31, 0.95, -0.12] },
-  forearmLeft: { segment: 'leftArm', dimensions: [5, 9, 5], position: [-0.58, 0.54, -0.12] },
-  forearmRight: { segment: 'rightArm', dimensions: [5, 9, 5], position: [0.31, 0.54, -0.12] },
-  handLeft: { segment: 'leftArm', dimensions: [4, 4, 4], position: [-0.55, 0.3, -0.1] },
-  handRight: { segment: 'rightArm', dimensions: [4, 4, 4], position: [0.34, 0.3, -0.1] },
-  pelvis: { segment: 'lowerTorso', dimensions: [12, 6, 8], position: [-0.31, 0.78, -0.19] },
-  thighLeft: { segment: 'leftLeg', dimensions: [6, 10, 6], position: [-0.32, 0.38, -0.14] },
-  thighRight: { segment: 'rightLeg', dimensions: [6, 10, 6], position: [0.04, 0.38, -0.14] },
-  shinLeft: { segment: 'leftLeg', dimensions: [6, 10, 6], position: [-0.32, 0.0, -0.14] },
-  shinRight: { segment: 'rightLeg', dimensions: [6, 10, 6], position: [0.04, 0.0, -0.14] },
-  footLeft: { segment: 'leftLeg', dimensions: [7, 3, 9], position: [-0.34, -0.04, -0.1] },
-  footRight: { segment: 'rightLeg', dimensions: [7, 3, 9], position: [0.02, -0.04, -0.1] },
-  back: { segment: 'upperTorso', dimensions: [8, 12, 4], position: [-0.2, 1.04, -0.44] },
+  chest: { segment: 'upperTorso', dimensions: [15, 15, 8], position: [-0.39, 0.97, -0.2] },
+  shoulderLeft: { segment: 'leftArm', dimensions: [6, 5, 6], position: [-0.54, 1.24, -0.15] },
+  shoulderRight: { segment: 'rightArm', dimensions: [6, 5, 6], position: [0.21, 1.24, -0.15] },
+  upperArmLeft: { segment: 'leftArm', dimensions: [4, 9, 4], position: [-0.45, 0.95, -0.1] },
+  upperArmRight: { segment: 'rightArm', dimensions: [4, 9, 4], position: [0.23, 0.95, -0.1] },
+  forearmLeft: { segment: 'leftArm', dimensions: [4, 9, 4], position: [-0.445, 0.54, -0.1] },
+  forearmRight: { segment: 'rightArm', dimensions: [4, 9, 4], position: [0.225, 0.54, -0.1] },
+  handLeft: { segment: 'leftArm', dimensions: [3, 4, 3], position: [-0.415, 0.3, -0.08] },
+  handRight: { segment: 'rightArm', dimensions: [3, 4, 3], position: [0.255, 0.3, -0.08] },
+  pelvis: { segment: 'lowerTorso', dimensions: [11, 6, 7], position: [-0.285, 0.78, -0.17] },
+  thighLeft: { segment: 'leftLeg', dimensions: [4, 10, 5], position: [-0.25, 0.38, -0.12] },
+  thighRight: { segment: 'rightLeg', dimensions: [4, 10, 5], position: [0.03, 0.38, -0.12] },
+  shinLeft: { segment: 'leftLeg', dimensions: [4, 10, 5], position: [-0.25, 0.0, -0.12] },
+  shinRight: { segment: 'rightLeg', dimensions: [4, 10, 5], position: [0.03, 0.0, -0.12] },
+  footLeft: { segment: 'leftLeg', dimensions: [6, 3, 7], position: [-0.28, -0.04, -0.07] },
+  footRight: { segment: 'rightLeg', dimensions: [6, 3, 7], position: [0.0, -0.04, -0.07] },
+  back: { segment: 'upperTorso', dimensions: [7, 12, 3], position: [-0.17, 1.04, -0.32] },
 };
 
 export function getV3BuiltinPartGridScale(slot: V3CharacterSlotId): V3BuiltinPartGridScale {
@@ -274,7 +274,7 @@ const carveAegisFidelityGaps = (
         voxel.y <= height - 2 &&
         voxel.x >= interiorXStart &&
         voxel.x <= interiorXEnd &&
-        voxel.x % 3 !== 1
+        ((slot.endsWith('Right') ? width - 1 - voxel.x : voxel.x) % 3) !== 1
       );
       break;
     case 'back':
@@ -563,6 +563,14 @@ const createAegisDetailedPartVoxels = (
   }
 
   carveAegisFidelityGaps(voxels, part.slot, dimensions, undersuitColor);
+
+  if (part.slot === 'footRight') {
+    carveV3FaceGaps(voxels, secondaryColor, (voxel) =>
+      voxel.x === 1 &&
+      voxel.y === Math.max(1, Math.floor(height * 0.35)) &&
+      voxel.z === frontZ
+    );
+  }
 
   if (part.slot === 'shoulderLeft' || part.slot === 'shoulderRight') {
     appendBoundedV3ArmorPlate(voxels, dimensions, [centerX - 1, height - 2, frontZ], [2, 1, 1], secondaryColor);

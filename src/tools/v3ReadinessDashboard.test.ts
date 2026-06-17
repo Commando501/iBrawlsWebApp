@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  V3_OBJ_REFERENCE_PROPORTION_TARGETS,
+} from '../components/v3/v3ReferenceProportions';
+import {
   V3_READINESS_CHECKLIST_ITEM_IDS,
   V3_READINESS_CHECKLIST_STORAGE_KEY,
   V3_READINESS_STATUS_COPY,
@@ -18,6 +21,17 @@ const readyEvidence = {
   summary: { checked: true },
 };
 
+const readyReferenceProportions = {
+  ready: true,
+  issues: [],
+  summary: {
+    maxBandWidthDelta: 0.12,
+    maxBandDepthDelta: 0.04,
+    worstWidthBand: 'thigh',
+    worstDepthBand: 'chest',
+  },
+};
+
 const completeChecklist = () => (
   Object.fromEntries(
     V3_READINESS_CHECKLIST_ITEM_IDS.map((id) => [id, true])
@@ -27,6 +41,7 @@ const completeChecklist = () => (
 const readyInput = (): V3ReadinessDashboardInput => ({
   checklist: completeChecklist(),
   suitFidelity: readyEvidence,
+  referenceProportions: readyReferenceProportions,
   visualQa: readyEvidence,
   poseClearance: readyEvidence,
   performanceSmoke: readyEvidence,
@@ -34,8 +49,14 @@ const readyInput = (): V3ReadinessDashboardInput => ({
     acknowledged: true,
     acknowledgedBy: 'Phase 30',
     metadata: {
-      sourceName: 'reference-bundle.fbx',
+      fileName: 'Halo Reach - Spartans [IK Rigged] V3 UNSC Armory.obj',
+      kind: 'obj',
       rawAssetData: 'do-not-export',
+    },
+    proportionBands: {
+      reference: V3_OBJ_REFERENCE_PROPORTION_TARGETS.bands,
+      global: V3_OBJ_REFERENCE_PROPORTION_TARGETS.global,
+      rawGeometry: 'do-not-export',
     },
   },
 });
@@ -59,6 +80,7 @@ test('normalizeV3ReadinessChecklist returns every known manual item with false d
 test('buildV3ReadinessDashboardReport keeps passing metrics not player-ready until manual gates and reference acknowledgement pass', () => {
   const report = buildV3ReadinessDashboardReport({
     suitFidelity: readyEvidence,
+    referenceProportions: readyReferenceProportions,
     visualQa: readyEvidence,
     poseClearance: readyEvidence,
     performanceSmoke: readyEvidence,
@@ -72,15 +94,16 @@ test('buildV3ReadinessDashboardReport keeps passing metrics not player-ready unt
   assert.match(report.summary, /reference comparison/i);
 });
 
-test('buildV3ReadinessDashboardReport returns player-ready only after manual checklist, acknowledgement, and evidence are clean', () => {
+test('buildV3ReadinessDashboardReport stays not-player-ready even after manual checklist, acknowledgement, and evidence are clean', () => {
   const report = buildV3ReadinessDashboardReport(readyInput());
 
-  assert.equal(report.ready, true);
-  assert.equal(report.status, 'player-ready');
-  assert.equal(report.label, V3_READINESS_STATUS_COPY['player-ready'].label);
-  assert.deepEqual(report.blockers, []);
+  assert.equal(report.ready, false);
+  assert.equal(report.status, 'not-player-ready');
+  assert.equal(report.label, V3_READINESS_STATUS_COPY['not-player-ready'].label);
+  assert.ok(report.blockers.some((blocker) => blocker.id === 'v3InternalPrototypeGate'));
   assert.deepEqual(report.warnings, []);
   assert.equal(report.evidence.suitFidelity.ready, true);
+  assert.equal(report.evidence.referenceProportions.ready, true);
   assert.equal(report.evidence.referenceComparison.acknowledged, true);
 });
 
@@ -103,6 +126,28 @@ test('buildV3ReadinessDashboardReport adds automated evidence blockers without m
   assert.equal(report.evidence.performanceSmoke.ready, false);
 });
 
+test('buildV3ReadinessDashboardReport keeps inspection-only reference files blocked', () => {
+  const report = buildV3ReadinessDashboardReport({
+    ...readyInput(),
+    referenceComparison: {
+      acknowledged: false,
+      metadata: {
+        fileName: 'Halo Reach - Spartans [IK Rigged] V3 UNSC Armory.fbx',
+        kind: 'fbx',
+      },
+      issues: ['Phase 32 calibration requires the canonical OBJ reference; FBX is inspection-only.'],
+    },
+  });
+
+  assert.equal(report.ready, false);
+  assert.equal(report.status, 'not-player-ready');
+  assert.ok(report.blockers.some((blocker) => blocker.id === 'referenceComparisonAcknowledgement'));
+  assert.ok(report.blockers.some((blocker) => (
+    blocker.id === 'referenceComparisonEvidence' &&
+    blocker.message.includes('canonical OBJ')
+  )));
+});
+
 test('buildV3ReadinessDashboardReport blocks readiness when automated evidence is missing', () => {
   const report = buildV3ReadinessDashboardReport({
     checklist: completeChecklist(),
@@ -118,9 +163,25 @@ test('buildV3ReadinessDashboardReport blocks readiness when automated evidence i
     blocker.id === 'suitFidelityEvidence' &&
     blocker.message.includes('readiness evidence is missing')
   )));
+  assert.ok(report.blockers.some((blocker) => blocker.id === 'referenceProportionsEvidence'));
   assert.ok(report.blockers.some((blocker) => blocker.id === 'visualQaEvidence'));
   assert.ok(report.blockers.some((blocker) => blocker.id === 'poseClearanceEvidence'));
   assert.ok(report.blockers.some((blocker) => blocker.id === 'performanceSmokeEvidence'));
+});
+
+test('buildV3ReadinessExport preserves sanitized OBJ proportion bands and strips raw payloads', () => {
+  const report = buildV3ReadinessDashboardReport(readyInput());
+  const exportObject = buildV3ReadinessExport(report);
+  const exportedJson = JSON.stringify(exportObject);
+  const proportionBands = exportObject.evidence.referenceComparison.proportionBands as {
+    reference: { shin: { widthRatio: number } };
+  };
+
+  assert.equal(proportionBands.reference.shin.widthRatio, 0.3218);
+  assert.equal(exportObject.evidence.referenceProportions.ready, true);
+  assert.equal(exportedJson.includes('rawGeometry'), false);
+  assert.equal(exportedJson.includes('do-not-export'), false);
+  assert.equal(exportedJson.includes('C:\\'), false);
 });
 
 test('readV3ReadinessChecklist and persistV3ReadinessChecklist use a tiny storage interface', () => {
@@ -171,7 +232,7 @@ test('buildV3ReadinessExport returns JSON-safe object or string without raw refe
   const objectExport = buildV3ReadinessExport(report);
   assert.equal(objectExport.kind, 'v3-readiness-dashboard');
   assert.equal(objectExport.version, 1);
-  assert.equal(objectExport.status, 'player-ready');
+  assert.equal(objectExport.status, 'not-player-ready');
   assert.equal(objectExport.exportedAt, '2026-06-17T12:00:00.000Z');
   assert.equal(
     JSON.stringify(objectExport).includes('do-not-export'),
