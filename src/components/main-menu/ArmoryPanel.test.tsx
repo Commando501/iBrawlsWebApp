@@ -15,6 +15,7 @@ import { createV3ArmorTemplateDraft } from './v3ArmorEditorTemplates';
 import type { V3SuitProfileCatalog } from './v3ArmorSuitProfiles';
 
 const noop = () => {};
+const V3_INTERNAL_PROTOTYPE_LABEL = 'V3 Internal Prototype - Not Player Ready';
 
 class FakeDomEvent {
   type: string;
@@ -418,9 +419,13 @@ test('ArmoryPanel renders V3 material role controls only for V3 loadouts', () =>
   const v2Html = renderToStaticMarkup(<ArmoryPanel {...baseProps('v2')} />);
 
   assert.match(v3Html, /V3 Material Roles/);
+  assert.match(v3Html, new RegExp(V3_INTERNAL_PROTOTYPE_LABEL));
   assert.match(v3Html, /Primary/);
   assert.match(v3Html, /Emissive/);
+  assert.doesNotMatch(v3Html, /V3 \(Advanced\)/);
   assert.doesNotMatch(v2Html, /V3 Material Roles/);
+  assert.doesNotMatch(v2Html, new RegExp(V3_INTERNAL_PROTOTYPE_LABEL));
+  assert.doesNotMatch(v2Html, /V3 \(Advanced\)/);
 });
 
 test('ArmoryPanel presents original sword preset labels', () => {
@@ -452,6 +457,7 @@ test('ArmorModelEditor exposes V3 armor preview mode without removing voxel edit
   );
 
   assert.match(html, /Voxel Edit/);
+  assert.match(html, new RegExp(V3_INTERNAL_PROTOTYPE_LABEL));
   assert.match(html, /Armor Preview/);
   assert.match(html, /Rig Preview/);
   assert.match(html, /Read/);
@@ -524,6 +530,7 @@ test('ArmorModelEditor hides suggested fixes for V2 armor editing', () => {
   );
 
   assert.doesNotMatch(html, /Suggested Fixes/);
+  assert.doesNotMatch(html, new RegExp(V3_INTERNAL_PROTOTYPE_LABEL));
   assert.doesNotMatch(html, /Smart V3/);
   assert.doesNotMatch(html, /Suit Workspace/);
   assert.doesNotMatch(html, /Suit Profiles/);
@@ -576,6 +583,7 @@ test('ArmoryPanel renders V3 suit profile controls only for V3 loadouts', () => 
   );
 
   assert.match(renderToStaticMarkup(<ArmoryPanel {...v3Props} />), /Suit Profiles/);
+  assert.match(renderToStaticMarkup(<ArmoryPanel {...v3Props} />), new RegExp(V3_INTERNAL_PROTOTYPE_LABEL));
   assert.match(renderToStaticMarkup(<ArmoryPanel {...v3Props} />), /Alpha Suit/);
   assert.match(renderToStaticMarkup(<ArmoryPanel {...v3Props} />), /Apply Suit/);
   assert.doesNotMatch(v2Html, /Suit Profiles/);

@@ -2,7 +2,10 @@ node_modules/
 build/
 dist/
 coverage/
-docs/
+docs/*
+!docs/v3/
+docs/v3/*
+!docs/v3/phase-31-readiness-baseline.md
 .DS_Store
 *.log
 .env*

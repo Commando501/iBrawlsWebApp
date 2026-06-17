@@ -11,17 +11,29 @@ test('buildV3RuntimeSmokeChecklist includes desktop and mobile viewports', () =>
   assert.deepEqual(V3_RUNTIME_SMOKE_VIEWPORTS.map((viewport) => viewport.id), ['desktop', 'mobile']);
 });
 
-test('buildV3RuntimeSmokeChecklist covers every required Phase 29 browser surface', () => {
+test('buildV3RuntimeSmokeChecklist covers every required Phase 31 browser surface', () => {
   const checklist = buildV3RuntimeSmokeChecklist();
   const routes = checklist.map((item) => item.path);
   const performanceItems = checklist.filter((item) => item.path.startsWith('/v3-performance-smoke.html'));
   const editorItem = checklist.find((item) => item.id === 'armor-editor-v3-validation');
+  const mainMenuItem = checklist.find((item) => item.id === 'main-menu-model-policy');
+  const dashboardItem = checklist.find((item) => item.id === 'readiness-dashboard-local-tooling');
 
   assert.ok(routes.includes('/'));
   assert.ok(routes.includes('/armor-model-editor.html'));
   assert.ok(routes.includes('/v3-asset-preview.html'));
+  assert.ok(routes.includes('/v3-readiness-dashboard.html'));
   assert.ok(routes.includes('/v3-performance-smoke.html?tier=mobileLow'));
   assert.ok(routes.includes('/v3-performance-smoke.html?tier=desktop'));
+  assert.ok(mainMenuItem?.expectedText.includes('V1'));
+  assert.ok(mainMenuItem?.expectedText.includes('V2'));
+  assert.equal(mainMenuItem?.expectedText.includes('V3'), false);
+  assert.ok(dashboardItem?.expectedText.includes('V3 Readiness Dashboard'));
+  assert.ok(dashboardItem?.expectedText.includes('Not Player Ready'));
+  assert.ok(dashboardItem?.expectedText.includes('Download Readiness Report'));
+  assert.ok(dashboardItem?.expectedText.includes('Baseline Gaps'));
+  assert.ok(dashboardItem?.expectedText.includes('Download Baseline Markdown'));
+  assert.ok(dashboardItem?.expectedText.includes('Copy Baseline Markdown'));
   assert.ok(performanceItems.every((item) => item.expectedText.includes('Phase 26 Ready')));
   assert.ok(performanceItems.every((item) => item.expectedText.includes('visual pass')));
   assert.ok(performanceItems.every((item) => item.expectedText.includes('motion pass')));
@@ -39,14 +51,19 @@ test('buildV3RuntimeSmokeChecklist covers every required Phase 29 browser surfac
   assert.ok(checklist.every((item) => item.viewports.length > 0));
 });
 
+const routeHasCanvas = (path: string): boolean =>
+  path === '/v3-asset-preview.html' ||
+  path === '/v3-readiness-dashboard.html' ||
+  path.startsWith('/v3-performance-smoke.html');
+
 const completeObservations = (): V3RuntimeSmokeObservation[] =>
   buildV3RuntimeSmokeChecklist().flatMap((item) => item.viewports.map((viewport) => ({
     itemId: item.id,
     viewport,
     title: item.expectedText[0],
     visibleText: item.expectedText.join(' '),
-    rootChildCount: item.path === '/v3-asset-preview.html' || item.path.startsWith('/v3-performance-smoke.html') ? 0 : 1,
-    canvasCount: item.path === '/v3-asset-preview.html' || item.path.startsWith('/v3-performance-smoke.html') ? 1 : 0,
+    rootChildCount: routeHasCanvas(item.path) ? 0 : 1,
+    canvasCount: routeHasCanvas(item.path) ? 1 : 0,
     horizontalOverflow: false,
     performanceReady: item.path.startsWith('/v3-performance-smoke.html') ? true : undefined,
   })));

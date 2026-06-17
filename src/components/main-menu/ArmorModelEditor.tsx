@@ -56,6 +56,7 @@ import {
   getCharacterModelCollisionProfile,
   resolveCharacterModelType,
 } from '../../characterModelTypes';
+import { V3_INTERNAL_PROTOTYPE_LABEL } from '../../model/v3InternalStatus';
 import { getV3CharacterPartManifest } from '../v3/v3AssetManifest';
 import type { CharacterModelType } from '../../types';
 import { buildArmorEditorValidationReport } from './armorEditorValidation';
@@ -2118,6 +2119,11 @@ export function ArmorModelEditor({
             </button>
           ))}
         </div>
+        {modelSystem === 'v3' && (
+          <span className="inline-flex min-h-9 items-center rounded border border-amber-400/30 bg-amber-500/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-amber-100">
+            {V3_INTERNAL_PROTOTYPE_LABEL}
+          </span>
+        )}
         {modelSystem === 'v2' && (
           <div className="grid grid-cols-2 h-9 rounded border border-white/10 bg-black/40 overflow-hidden">
             {(['medium', 'large'] as const).map((type) => (

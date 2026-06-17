@@ -1,5 +1,6 @@
 import React from 'react';
 import type { CharacterModelType, UniversalSettings } from '../../types';
+import { V3_INTERNAL_PROTOTYPE_LABEL } from '../../model/v3InternalStatus';
 import {
   AVAILABLE_PRESETS,
   type ArmorPaintJob,
@@ -169,6 +170,16 @@ export function ArmoryPanel({
     ? playerLoadout.modelType ?? 'medium'
     : 'medium';
   const editorModelSystem = activeModelSystem === 'v3' ? 'v3' : 'v2';
+  const loadoutModelOptions = activeModelSystem === 'v3'
+    ? ([
+      { id: 'v1', label: 'V1 (Classic)' },
+      { id: 'v2', label: 'V2 (Rigged)' },
+      { id: 'v3', label: 'V3 (Internal)' },
+    ] as const)
+    : ([
+      { id: 'v1', label: 'V1 (Classic)' },
+      { id: 'v2', label: 'V2 (Rigged)' },
+    ] as const);
 
   React.useLayoutEffect(() => {
     const container = contentRef.current;
@@ -288,6 +299,12 @@ export function ArmoryPanel({
           >
             {editorModelSystem === 'v3' ? 'Create / Edit V3 Armor Model' : 'Create / Edit V2 Armor Model'}
           </a>
+
+          {activeModelSystem === 'v3' && (
+            <div className="rounded border border-amber-400/30 bg-amber-500/10 px-3 py-2 text-center text-[10px] font-black uppercase tracking-widest text-amber-100">
+              {V3_INTERNAL_PROTOTYPE_LABEL}
+            </div>
+          )}
 
           <div className="flex flex-col gap-3 font-sans text-xs">
             <div className="bg-white/5 border border-white/5 rounded-lg p-3">
@@ -438,11 +455,7 @@ export function ArmoryPanel({
               <div className="flex items-center gap-2 mb-2">
                 <span className="text-[10px] font-black uppercase tracking-widest text-white/40 w-14 shrink-0">Model Sys</span>
                 <div className="flex gap-1.5 flex-1">
-                  {([
-                    { id: 'v1', label: 'V1 (Classic)' },
-                    { id: 'v2', label: 'V2 (Rigged)' },
-                    { id: 'v3', label: 'V3 (Advanced)' },
-                  ] as const).map((model) => {
+                  {loadoutModelOptions.map((model) => {
                     const isActive = (playerLoadout.modelSystem ?? 'v1') === model.id;
                     return (
                       <button

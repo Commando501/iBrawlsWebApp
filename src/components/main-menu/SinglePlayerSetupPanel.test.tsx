@@ -3,6 +3,7 @@ import test from 'node:test';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { ComponentProps } from 'react';
+import { V3_INTERNAL_PROTOTYPE_LABEL } from '../../model/v3InternalStatus';
 import { DEFAULT_ADMIN_SETTINGS } from '../../settings/gameplaySettings';
 import { AiBehaviorEditorPanel } from './AiBehaviorEditorPanel';
 import { SinglePlayerSetupPanel } from './SinglePlayerSetupPanel';
@@ -67,9 +68,10 @@ test('SinglePlayerSetupPanel hides V3 sandbox visual model policy for non-admin 
   assert.match(html, /Version 1 Classic/);
   assert.match(html, /Version 2 Rigged/);
   assert.doesNotMatch(html, /Version 3 Advanced/);
+  assert.doesNotMatch(html, new RegExp(V3_INTERNAL_PROTOTYPE_LABEL));
 });
 
-test('SinglePlayerSetupPanel exposes V3 sandbox visual model policy for admin players', () => {
+test('SinglePlayerSetupPanel hides V3 sandbox visual model policy for admin players', () => {
   const html = renderToStaticMarkup(
     <SinglePlayerSetupPanel
       {...baseSinglePlayerProps()}
@@ -81,7 +83,8 @@ test('SinglePlayerSetupPanel exposes V3 sandbox visual model policy for admin pl
   assert.match(html, /Model Set/);
   assert.match(html, /Version 1 Classic/);
   assert.match(html, /Version 2 Rigged/);
-  assert.match(html, /Version 3 Advanced/);
+  assert.doesNotMatch(html, /Version 3 Advanced/);
+  assert.doesNotMatch(html, new RegExp(V3_INTERNAL_PROTOTYPE_LABEL));
 });
 
 test('SinglePlayerSetupPanel defaults sandbox model policy to recommended V2', () => {
@@ -91,6 +94,7 @@ test('SinglePlayerSetupPanel defaults sandbox model policy to recommended V2', (
   assert.match(html, /V2/);
   assert.match(html, /Version 2 Rigged/);
   assert.doesNotMatch(html, /Version 3 Advanced/);
+  assert.doesNotMatch(html, new RegExp(V3_INTERNAL_PROTOTYPE_LABEL));
 });
 
 test('SinglePlayerSetupPanel renders the custom AI editor from the AI behavior mode', () => {
