@@ -59,6 +59,8 @@ export interface GrifballRuntimeState {
   grifball: GrifballMatchState;
   /** Local player's Pass charge level (0–1) while holding alt-attack with the ball. */
   grifballPassCharge: number;
+  playerRunnerHealDelayTimer: number;
+  playerRunnerLastHp: number;
   scorePlayer: number;
   scoreEnemy: number;
   playerKills: number;
@@ -199,6 +201,8 @@ export function createInitialGrifballRuntimeState({
     localPlayerTeam: localPlayerTeamFromRole(multiplayerRole),
     grifball: createInitialGrifballMatchState(adminSettings),
     grifballPassCharge: 0,
+    playerRunnerHealDelayTimer: 0,
+    playerRunnerLastHp: 1,
     scorePlayer: 0,
     scoreEnemy: 0,
     playerKills: 0,

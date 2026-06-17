@@ -25,7 +25,8 @@ export interface GrifballBall {
 
 /** Resting height of the ball center above the floor. */
 export const BALL_REST_Y = 0.35;
-const GRAVITY = 18.0;
+export const GRIFBALL_BALL_GRAVITY = 18.0;
+export const GRIFBALL_THROW_ARC = 0.35;
 const GROUND_RESTITUTION = 0.45;
 const GROUND_FRICTION = 0.86;
 const SETTLE_SPEED = 1.2;
@@ -74,12 +75,51 @@ export function dropBall(ball: GrifballBall, at: Vec3): void {
 }
 
 /** Throw the ball along a (normalized) direction at a given speed. */
-export function throwBall(ball: GrifballBall, from: Vec3, dir: Vec3, speed: number, arc = 0.35): void {
+export function throwBall(ball: GrifballBall, from: Vec3, dir: Vec3, speed: number, arc = GRIFBALL_THROW_ARC): void {
   ball.state = 'thrown';
   ball.holderId = null;
   ball.pos = { x: from.x, y: Math.max(BALL_REST_Y, from.y), z: from.z };
   ball.vel = { x: dir.x * speed, y: speed * arc, z: dir.z * speed };
   ball.looseTimer = 0;
+}
+
+export function predictThrowTrajectory({
+  from,
+  dir,
+  speed,
+  arc = GRIFBALL_THROW_ARC,
+  samples = 24,
+}: {
+  from: Vec3;
+  dir: Vec3;
+  speed: number;
+  arc?: number;
+  samples?: number;
+}): Vec3[] {
+  const sampleCount = Math.max(2, Math.floor(samples));
+  const start = { x: from.x, y: Math.max(BALL_REST_Y, from.y), z: from.z };
+  const headingLength = Math.hypot(dir.x, dir.z);
+  if (headingLength <= 0.0001 || speed <= 0) {
+    return Array.from({ length: sampleCount }, () => ({ ...start }));
+  }
+
+  const headingX = dir.x / headingLength;
+  const headingZ = dir.z / headingLength;
+  const velX = headingX * speed;
+  const velY = speed * arc;
+  const velZ = headingZ * speed;
+  const heightAboveGround = Math.max(0, start.y - BALL_REST_Y);
+  const impactTime = (velY + Math.sqrt((velY * velY) + (2 * GRIFBALL_BALL_GRAVITY * heightAboveGround))) / GRIFBALL_BALL_GRAVITY;
+
+  return Array.from({ length: sampleCount }, (_, index) => {
+    const t = impactTime * (index / (sampleCount - 1));
+    const y = Math.max(BALL_REST_Y, start.y + (velY * t) - (0.5 * GRIFBALL_BALL_GRAVITY * t * t));
+    return {
+      x: start.x + velX * t,
+      y,
+      z: start.z + velZ * t,
+    };
+  });
 }
 
 /** True when the ball is grabbable (on/near the ground, not held, not mid-flight). */
@@ -99,7 +139,7 @@ export function tickBallPhysics(
   if (ball.state === 'held') return false;
 
   if (ball.state === 'thrown') {
-    ball.vel.y -= GRAVITY * dt;
+    ball.vel.y -= GRIFBALL_BALL_GRAVITY * dt;
     ball.pos.x += ball.vel.x * dt;
     ball.pos.y += ball.vel.y * dt;
     ball.pos.z += ball.vel.z * dt;

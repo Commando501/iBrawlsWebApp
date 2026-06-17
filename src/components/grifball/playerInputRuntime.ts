@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { type Keybindings } from '../../types';
+import { resolveRunnerThrowAllowed, resolveRunnerThrustAllowed } from '../../game/runnerBallSettings';
 import { type GrifballRuntimeState } from './runtimeState';
 
 type JoystickVector = {
@@ -338,7 +339,7 @@ export function triggerPointerAltPlayerActionForState({
   if (state.playerHP <= 0) return;
 
   if (state.activeWeapon === 'ball') {
-    if (state.grifball.ball.holderId === 'player') {
+    if (state.grifball.ball.holderId === 'player' && resolveRunnerThrowAllowed(state.settings)) {
       ballChargingRef.current = true;
       ballChargeTimerRef.current = 0;
     }
@@ -523,7 +524,11 @@ export function handlePlayerKeyboardActionForState({
   }
 
   if (key === keybindings.dash) {
-    if (state.playerHP > 0 && !isPaused && isPlaying && state.playerDashCooldownTimer <= 0 && state.playerDashRemaining <= 0) {
+    const runnerThrustAllowed =
+      state.activeWeapon !== 'ball' ||
+      state.grifball.ball.holderId !== 'player' ||
+      resolveRunnerThrustAllowed(state.settings);
+    if (runnerThrustAllowed && state.playerHP > 0 && !isPaused && isPlaying && state.playerDashCooldownTimer <= 0 && state.playerDashRemaining <= 0) {
       let fMove = 0;
       let rMove = 0;
       if (keysPressed[keybindings.moveForward] || keysPressed['arrowup']) fMove += 1;

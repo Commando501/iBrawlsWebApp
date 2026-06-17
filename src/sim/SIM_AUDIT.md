@@ -28,6 +28,16 @@ policy dynamic (AI-only / unused) · 🎨 cosmetic.
 | `grifballGoalTarget` / `grifballCountdownDuration` / `grifballRoundResetDelay` | grifball (via `resolveMatchConfig`) | match flow |
 | `grifballPickupRadius` / `grifballBallReturnTimeout` | grifball | ball |
 | `grifballPassSpeedMin` / `grifballPassSpeedMax` | grifball | pass speed |
+| `grifballAllowThrowing` | step, grifball | blocks pass charge and release |
+| `grifballRunnerSpeedForward` / `grifballRunnerSpeedBackward` / `grifballRunnerSpeedSide` | physics | carrier-only multipliers stacked on universal directional speed |
+| `grifballAllowRunnerThrust` | physics | blocks new dash/thrust starts while carrying |
+| `grifballPunchLungeDistance` / `grifballPunchCooldown` | weapons | ball-punch reach and recovery cooldown |
+| `grifballRunnerHealth` / `grifballRunnerHealDelay` / `grifballRunnerHealRate` | grifball | carrier pickup HP and delayed healing |
+
+Runner / Ball settings are wired into the sim and live gameplay, but this change intentionally
+does not add them to `DOMAIN_RANDOMIZABLE_KEYS` or the mechanics observation vector. That avoids
+an RL contract bump; policies see the previous observation schema until a dedicated training
+contract update.
 
 **Audit fix landed:** the hammer **primary** is now the AoE *strike* (impact point projected
 `attackRange` ahead, splash `attackRadius`, impact delay `hammerSlamWindupTime +
@@ -37,7 +47,7 @@ quick swipe is now the hammer **secondary**.
 
 ## ⚙️ Constant in both sim and live (no drift — not preset-tunable)
 
-Walk base `5.8`, ball-runner `×1.3`, crouch `2.5`, jump `7.2`, gravity `18`, swipe reach
+Walk base `5.8`, crouch `2.5`, jump `7.2`, gravity `18`, swipe reach
 `3.0`, slash reach `2.8`, eye height `1.65`, body center `0.825`, melee cone `1.0 rad`. These
 are hardcoded constants in `updatePhysics` / `combatGeometry` in the live game too, so the
 preset cannot change them without a code deploy. The sim mirrors the constants — faithful.
@@ -55,6 +65,9 @@ preset cannot change them without a code deploy. The sim mirrors the constants �
 - **`grifballChargeMax`:** the pass is now a hold-to-charge / release-to-throw — longer hold
   ⇒ faster throw (capped at `grifballPassSpeedMax`).
 
+- **Runner / Ball controls:** carrier movement speed, throw enablement, punch reach/cooldown,
+  runner health/regen, and runner thrust gating are live-setting driven in both gameplay and sim.
+
 Observation gained `self_pass_charge`, `self_hammerjump_window`, `self_weapon_ready_lockout`
 so the (memoryless) policy can perceive and use these (OBS spec bumped to v2).
 
@@ -70,16 +83,18 @@ If sprint/slide become important levers, they're a bounded follow-up like the ab
 
 - **AI-only** (drive the scripted heuristic, not the RL agent's physics): all `ai*` tuning
   keys, `aiDifficulty`, `aiArchetype`, `grifballEscortSpacing`.
-- **Unused in live:** `grifballPunchLungeRange` (defined, never referenced).
+- **Legacy unused:** `grifballPunchLungeRange` (kept for older saved settings; current punch
+  reach uses `grifballPunchLungeDistance`).
 
 ## 🎨 Cosmetic (no dynamics)
 
 Lighting / skybox / fog / `nameVisibility*` / VFX style (`hammerSplashVfx`, `swordLungeVfx`) /
-`visualizeJumpZone` / `enableBurnDecals`. Irrelevant to a headless policy.
+`visualizeJumpZone` / `enableBurnDecals` / Grifball trajectory color and thickness. Irrelevant
+to a headless policy.
 
 ## Takeaway
 
 Every **currently-modelled** dynamic is now parameterized by the live setting, so pointing the
-sim at the current preset (or fine-tuning on a balance patch) keeps it faithful. The remaining
-risk is the 🔶 omitted mechanics — the sim can't track those levers until they're implemented.
-The ✅ "wired" set is exactly what domain randomization should range over.
+sim at the current preset keeps it faithful. The remaining risk is the omitted mechanics above:
+the sim can't track those levers until they're implemented. Domain randomization and mechanics
+observation still use the pre-existing contract unless that contract is explicitly bumped.

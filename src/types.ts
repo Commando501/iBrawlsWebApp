@@ -170,6 +170,30 @@ export interface UniversalSettings {
   grifballPassSpeedMax?: number;
   /** Lock-on range (m) under which a Punch performs a short lunge (default 4.5). */
   grifballPunchLungeRange?: number;
+  /** Runner forward movement multiplier while carrying the ball (default 130%). */
+  grifballRunnerSpeedForward?: number;
+  /** Runner strafe movement multiplier while carrying the ball (default 130%). */
+  grifballRunnerSpeedSide?: number;
+  /** Runner backward movement multiplier while carrying the ball (default 130%). */
+  grifballRunnerSpeedBackward?: number;
+  /** Whether carriers can charge and throw the ball (default true). */
+  grifballAllowThrowing?: boolean;
+  /** Trajectory preview line thickness in meters (default 0.14). */
+  grifballTrajectoryLineThickness?: number;
+  /** Trajectory preview color (default #ff2b2b). */
+  grifballTrajectoryLineColor?: string;
+  /** Forward reach used by runner Punch while holding the ball (default 1.8m). */
+  grifballPunchLungeDistance?: number;
+  /** Runner Punch recovery cooldown in seconds (default 0.5s). */
+  grifballPunchCooldown?: number;
+  /** Max HP while carrying the ball (default 2 HP). */
+  grifballRunnerHealth?: number;
+  /** Delay after runner damage before healing begins (default 3.0s). */
+  grifballRunnerHealDelay?: number;
+  /** Runner healing rate while carrying the ball (default 1.0 HP/s). */
+  grifballRunnerHealRate?: number;
+  /** Whether carriers can start new dash/thrust actions (default true). */
+  grifballAllowRunnerThrust?: boolean;
   /** Desired spacing (m) escorts keep from the runner and each other (default 4). */
   grifballEscortSpacing?: number;
 }
@@ -403,6 +427,12 @@ export interface Combatant {
   lastSwordAttackTime?: number;
   lastHammerAttackTime?: number;
   swapLockoutTimer?: number;
+  /** Grifball pass charge level (0-1) when this combatant is winding up a throw. */
+  grifballPassCharge?: number;
+  /** Runner healing delay timer while carrying the Grifball. */
+  runnerHealDelayTimer?: number;
+  /** Last observed runner HP, used to detect damage and restart healing delay. */
+  runnerLastHp?: number;
 
   // AI behavioral sub-state
   aiState?: AIBehaviorState;

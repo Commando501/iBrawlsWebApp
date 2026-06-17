@@ -25,6 +25,7 @@ const MECHANICS_EXCLUDED_SECTIONS = new Set(['ai', 'aitune']);
 const getSectionAccentClass = (sectionId: string) => {
   if (sectionId === 'hammer') return 'accent-amber-400';
   if (sectionId === 'launch') return 'accent-yellow-400';
+  if (sectionId === 'runnerBall') return 'accent-lime-400';
   if (sectionId === 'trades') return 'accent-red-500';
   if (sectionId === 'sword') return 'accent-[#22d3ee]';
   return 'accent-[#38bdf8]';
@@ -33,6 +34,7 @@ const getSectionAccentClass = (sectionId: string) => {
 const getSectionTextClass = (sectionId: string) => {
   if (sectionId === 'hammer') return 'text-amber-400';
   if (sectionId === 'launch') return 'text-yellow-400';
+  if (sectionId === 'runnerBall') return 'text-lime-400';
   if (sectionId === 'trades') return 'text-red-400';
   if (sectionId === 'sword') return 'text-[#22d3ee]';
   return 'text-[#38bdf8]';
@@ -41,6 +43,7 @@ const getSectionTextClass = (sectionId: string) => {
 const getSectionSelectTextClass = (sectionId: string) => {
   if (sectionId === 'hammer') return 'text-amber-300';
   if (sectionId === 'launch') return 'text-yellow-300';
+  if (sectionId === 'runnerBall') return 'text-lime-300';
   if (sectionId === 'sword') return 'text-[#22d3ee]';
   return 'text-[#38bdf8]';
 };
@@ -48,6 +51,7 @@ const getSectionSelectTextClass = (sectionId: string) => {
 const getSectionFocusClass = (sectionId: string) => {
   if (sectionId === 'hammer') return 'focus:border-amber-400';
   if (sectionId === 'launch') return 'focus:border-yellow-400';
+  if (sectionId === 'runnerBall') return 'focus:border-lime-400';
   if (sectionId === 'sword') return 'focus:border-[#22d3ee]';
   return 'focus:border-[#38bdf8]';
 };
@@ -55,6 +59,7 @@ const getSectionFocusClass = (sectionId: string) => {
 const getSectionToggleClass = (sectionId: string) => {
   if (sectionId === 'hammer') return 'bg-amber-400';
   if (sectionId === 'launch') return 'bg-yellow-400';
+  if (sectionId === 'runnerBall') return 'bg-lime-400';
   if (sectionId === 'trades') return 'bg-red-500';
   if (sectionId === 'sword') return 'bg-[#22d3ee]';
   return 'bg-[#38bdf8]';

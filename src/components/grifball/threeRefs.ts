@@ -50,6 +50,9 @@ export interface GrifballThreeRefs {
     maxLife: number;
     material: THREE.Material;
   }[];
+  grifballThrowTrajectoryLine?: THREE.Line | null;
+  grifballThrowTrajectoryDashes?: THREE.Group | null;
+  grifballThrowTrajectoryMarker?: THREE.Mesh | null;
   otherPlayerMeshes: Map<string, CombatantMeshRig>;
   navMesh?: any;
   customMapObjects?: THREE.Object3D[];
@@ -86,5 +89,8 @@ export function createInitialGrifballThreeRefs(): GrifballThreeRefs {
     swordLungeSpeedLines: [],
     burnDecals: [],
     tracers: [],
+    grifballThrowTrajectoryLine: null,
+    grifballThrowTrajectoryDashes: null,
+    grifballThrowTrajectoryMarker: null,
   };
 }

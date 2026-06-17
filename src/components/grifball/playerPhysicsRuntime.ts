@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { type Combatant, type CustomMapData, type Keybindings, type MedalInfo } from '../../types';
+import { resolveRunnerThrustAllowed } from '../../game/runnerBallSettings';
 import {
   applyGamepadLookForState,
   applyMobileRightJoystickLookForState,
@@ -189,7 +190,12 @@ export function updatePlayerPhysicsForState({
 
     const dashBtn = actionKeybindings.gamepadDash ?? 2;
     if (isNewlyPressed(dashBtn)) {
+      const runnerThrustAllowed =
+        state.activeWeapon !== 'ball' ||
+        state.grifball.ball.holderId !== 'player' ||
+        resolveRunnerThrustAllowed(state.settings);
       if (
+        runnerThrustAllowed &&
         state.playerHP > 0 &&
         !isPaused &&
         isPlaying &&

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { MAIN_AI_ID } from '../../game/roster';
 import { resolveHammerSlamTiming } from '../../game/hammerSlamTiming';
+import { resolvePunchCooldown } from '../../game/runnerBallSettings';
 import { animateCombatantWeaponMeshes, animateSpartanCombatantModel } from './combatantAnimation';
 import { type SwordLungeCurrentTrailStyle } from './combatGeometry';
 import { type GrifballRuntimeState } from './runtimeState';
@@ -43,10 +44,15 @@ export function updateRosterCombatantVisualsForState({
     }
 
     const swingIsSword = player.activeWeapon === 'sword';
+    const swingIsBall = player.activeWeapon === 'ball';
     const hammerSlamTiming = resolveHammerSlamTiming(state.settings);
     if (weaponState === 'swing_up') {
       weaponTimer += dt;
-      const windup = swingIsSword ? (state.settings.swordSlashSpeed ?? 0.22) * 0.5 : hammerSlamTiming.windupTime;
+      const windup = swingIsSword
+        ? (state.settings.swordSlashSpeed ?? 0.22) * 0.5
+        : swingIsBall
+          ? (state.settings.hammerMeleeSpeed ?? 0.24)
+          : hammerSlamTiming.windupTime;
       if (weaponTimer >= windup) {
         weaponState = 'swing_down';
         weaponTimer = 0;
@@ -54,7 +60,11 @@ export function updateRosterCombatantVisualsForState({
       }
     } else if (weaponState === 'swing_down') {
       weaponTimer += dt;
-      const strike = swingIsSword ? (state.settings.swordSlashSpeed ?? 0.22) * 0.5 : hammerSlamTiming.attackTime;
+      const strike = swingIsSword
+        ? (state.settings.swordSlashSpeed ?? 0.22) * 0.5
+        : swingIsBall
+          ? Math.max(0.03, (state.settings.hammerMeleeSpeed ?? 0.24) * 0.5)
+          : hammerSlamTiming.attackTime;
       if (weaponTimer >= strike) {
         weaponState = 'recovering';
         weaponTimer = 0;
@@ -70,7 +80,7 @@ export function updateRosterCombatantVisualsForState({
       }
     } else if (weaponState === 'melee_recover') {
       weaponTimer += dt;
-      const reload = state.settings.hammerMeleeReload ?? 0.5;
+      const reload = swingIsBall ? resolvePunchCooldown(state.settings) : (state.settings.hammerMeleeReload ?? 0.5);
       if (weaponTimer >= reload) {
         weaponState = 'ready';
         weaponTimer = 0;
@@ -79,7 +89,9 @@ export function updateRosterCombatantVisualsForState({
       weaponTimer += dt;
       const reload = swingIsSword
         ? (state.settings.swordSlashReload ?? 0.6)
-        : (state.settings.hammerReloadTime ?? 0.6);
+        : swingIsBall
+          ? resolvePunchCooldown(state.settings)
+          : (state.settings.hammerReloadTime ?? 0.6);
       if (weaponTimer >= reload) {
         weaponState = 'ready';
         weaponTimer = 0;

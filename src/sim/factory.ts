@@ -162,6 +162,8 @@ function createCombatant(
     hammerJumpWindowTimer: 0,
     hammerJumpsInAir: 0,
     passChargeTimer: 0,
+    runnerHealDelayTimer: 0,
+    runnerLastHp: maxHp,
     isLunging: false,
     lungeTimer: 0,
     lungeDir: { x: 0, y: 0, z: 0 },

@@ -1,13 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import * as THREE from 'three';
 import { createPlayerModel } from '../../game/aiPlayerModel';
 import {
   applyDragMouseLookForState,
   applyGamepadLookForState,
+  handlePlayerKeyboardActionForState,
   applyMobileRightJoystickLookForState,
   applyPointerLockMouseLookForState,
   applyTouchSwipeLookForState,
+  triggerPointerAltPlayerActionForState,
 } from './playerInputRuntime';
+import { updatePlayerHorizontalMovementForState } from './playerMovementRuntime';
 import { swapPlayerWeaponForState } from './playerWeaponActions';
 import { createWeaponActionCallbacksForState } from './weaponActionCallbacks';
 import type { GrifballRuntimeState } from './runtimeState';
@@ -66,6 +70,89 @@ function makeWeaponRefs(): GrifballThreeRefs {
     playerSword: { visible: false },
     playerPistol: { visible: false },
   } as GrifballThreeRefs;
+}
+
+const keybindings = {
+  moveForward: 'w',
+  moveLeft: 'a',
+  moveBackward: 's',
+  moveRight: 'd',
+  jump: ' ',
+  dash: 'q',
+  crouch: 'c',
+  scoreboard: 'u',
+  weapon1: '1',
+  weapon2: '2',
+  attack: 'lmb',
+  altAttack: 'rmb',
+  sprint: 'shift',
+  gamepadSensitivity: 1,
+  gamepadAcceleration: 0,
+};
+
+function makeRunnerBallState(overrides: Partial<GrifballRuntimeState> = {}): GrifballRuntimeState {
+  return {
+    playerHP: 2,
+    yaw: 0,
+    pitch: 0,
+    playerInvulnerabilityTimer: 0,
+    playerDashCooldownTimer: 0,
+    playerSlideCooldownTimer: 0,
+    playerDashRemaining: 0,
+    playerDashDir: new THREE.Vector3(),
+    playerVel: new THREE.Vector3(),
+    playerPos: new THREE.Vector3(),
+    crouchAmount: 0,
+    isCrouching: false,
+    isJumping: false,
+    playerSlideActive: false,
+    playerSlideDistanceTraveled: 0,
+    playerSlideLastPos: new THREE.Vector3(),
+    activeWeapon: 'ball',
+    pHammerJumpWindowTimer: 0,
+    pHammerJumpsInAir: 0,
+    grifball: {
+      ball: { holderId: 'player' },
+    },
+    settings: {
+      gameMode: 'grifball',
+      enableSlide: false,
+      enableSprint: false,
+      dashDistance: 6,
+      dashDuration: 0.25,
+      dashCooldown: 2,
+      slideCooldown: 1.5,
+      slideDistance: 8,
+      speedForward: 100,
+      speedSide: 100,
+      speedBackward: 100,
+      speedSlide: 160,
+      speedSprint: 140,
+      grifballRunnerSpeedForward: 200,
+      grifballRunnerSpeedSide: 125,
+      grifballRunnerSpeedBackward: 80,
+      grifballAllowThrowing: true,
+      grifballAllowRunnerThrust: true,
+      hammerJumpAirLimit: 1,
+      hammerJumpPower: 6.5,
+      hammerJumpWindow: 0.6,
+      hammerJumpInputGate: 0,
+    },
+    ...overrides,
+  } as GrifballRuntimeState;
+}
+
+function makeKeyboardCallbacks() {
+  return {
+    onPauseToggle: () => {},
+    swapPlayerWeapon: () => {},
+    recordDashObservation: () => {},
+    spawnVoxelShockwaveParticles: () => {},
+    pushStatsUpdate: () => {},
+    playCrouch: () => {},
+    playJump: () => {},
+    playDash: () => {},
+  };
 }
 
 test('pointer-lock mouse look preserves normal linear sensitivity', () => {
@@ -214,6 +301,75 @@ test('weapon swap can recover from pistol state to sword', () => {
   assert.equal(refs.playerHammer?.visible, false);
   assert.equal(refs.playerSword?.visible, true);
   assert.equal(refs.playerPistol?.visible, false);
+});
+
+test('ball carrier movement stacks runner directional speed on universal movement speed', () => {
+  const state = makeRunnerBallState();
+
+  updatePlayerHorizontalMovementForState({
+    state,
+    refs: {} as GrifballThreeRefs,
+    dt: 1 / 60,
+    keysPressed: { w: true },
+    movementKeybindings: keybindings,
+    actionKeybindings: keybindings,
+    gamepad: null,
+    mobileJoystick: null,
+    mobileControlsActive: false,
+    sprintToggleActiveRef: { current: false },
+    prevSprintInputRef: { current: false },
+  });
+
+  assertNear(state.playerVel.x, 0);
+  assertNear(state.playerVel.z, -11.6);
+});
+
+test('disabled runner thrust blocks new player dash starts while holding the ball', () => {
+  const state = makeRunnerBallState({
+    settings: {
+      ...makeRunnerBallState().settings,
+      grifballAllowRunnerThrust: false,
+    } as any,
+  });
+
+  handlePlayerKeyboardActionForState({
+    state,
+    key: 'q',
+    rawKey: 'q',
+    repeat: false,
+    keybindings,
+    keysPressed: { w: true },
+    isPaused: false,
+    isPlaying: true,
+    callbacks: makeKeyboardCallbacks(),
+  });
+
+  assert.equal(state.playerDashRemaining, 0);
+  assert.equal(state.playerDashCooldownTimer, 0);
+});
+
+test('disabled throwing prevents local ball pass charging', () => {
+  const state = makeRunnerBallState({
+    settings: {
+      ...makeRunnerBallState().settings,
+      grifballAllowThrowing: false,
+    } as any,
+  });
+  const ballChargingRef = { current: false };
+  const ballChargeTimerRef = { current: 0 };
+
+  triggerPointerAltPlayerActionForState({
+    state,
+    ballChargingRef,
+    ballChargeTimerRef,
+    callbacks: {
+      triggerPlayerHammerMelee: () => {},
+      triggerPlayerSwordSlash: () => {},
+    },
+  });
+
+  assert.equal(ballChargingRef.current, false);
+  assert.equal(ballChargeTimerRef.current, 0);
 });
 
 test('weapon action callbacks read live pause state for mounted input listeners', () => {

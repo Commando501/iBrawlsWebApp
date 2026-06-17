@@ -12,6 +12,12 @@
 
 import { type UniversalSettings } from '../types';
 import {
+  resolveRunnerHealDelay,
+  resolveRunnerHealRate,
+  resolveRunnerMaxHp,
+  resolveRunnerThrowAllowed,
+} from '../game/runnerBallSettings';
+import {
   attachBallTo,
   dropBall,
   findBallPickup,
@@ -66,18 +72,44 @@ export function setSimCarrier(
   const baseMaxHp = settings.maxHP ?? 1;
   if (carrying) {
     c.weapon = 'ball';
-    c.maxHp = baseMaxHp + 1; // Runner has extra health.
-    c.hp = c.maxHp; // Heal to full on pickup.
+    c.maxHp = resolveRunnerMaxHp(settings);
+    c.hp = c.maxHp;
     c.hasBall = true;
     c.weaponState = 'idle';
     c.weaponTimer = 0;
+    c.runnerHealDelayTimer = 0;
+    c.runnerLastHp = c.hp;
   } else {
     c.weapon = 'hammer';
     c.maxHp = baseMaxHp;
     c.hp = Math.min(c.hp, c.maxHp);
     c.hasBall = false;
     c.passChargeTimer = 0;
+    c.runnerHealDelayTimer = 0;
+    c.runnerLastHp = c.hp;
   }
+}
+
+export function tickSimRunnerHealing(
+  state: SimState,
+  settings: UniversalSettings,
+  dt: number
+): void {
+  const holderId = state.match.ball.state === 'held' ? state.match.ball.holderId : null;
+  if (!holderId) return;
+  const carrier = findCombatant(state, holderId);
+  if (!carrier || !carrier.alive || !carrier.hasBall) return;
+
+  carrier.maxHp = resolveRunnerMaxHp(settings);
+  carrier.hp = Math.min(carrier.hp, carrier.maxHp);
+  if (carrier.hp < carrier.runnerLastHp) {
+    carrier.runnerHealDelayTimer = resolveRunnerHealDelay(settings);
+  } else if (carrier.runnerHealDelayTimer > 0) {
+    carrier.runnerHealDelayTimer = Math.max(0, carrier.runnerHealDelayTimer - dt);
+  } else if (carrier.hp > 0 && carrier.hp < carrier.maxHp) {
+    carrier.hp = Math.min(carrier.maxHp, carrier.hp + resolveRunnerHealRate(settings) * dt);
+  }
+  carrier.runnerLastHp = carrier.hp;
 }
 
 /** Reset every combatant to its team spawn cluster, revived and re-armed. */
@@ -104,6 +136,8 @@ export function placeCombatantsAtSpawns(state: SimState, settings: UniversalSett
     c.hammerJumpWindowTimer = 0;
     c.hammerJumpsInAir = 0;
     c.passChargeTimer = 0;
+    c.runnerHealDelayTimer = 0;
+    c.runnerLastHp = c.hp;
     c.hasBall = false;
     c.isLunging = false;
     c.lungeTimer = 0;
@@ -122,7 +156,7 @@ export function throwSimPass(
   settings: UniversalSettings
 ): void {
   const ball = state.match.ball;
-  if (ball.holderId !== c.id) return;
+  if (ball.holderId !== c.id || !resolveRunnerThrowAllowed(settings)) return;
   const t = Math.min(1, Math.max(0, chargeT));
   const minSpeed = settings.grifballPassSpeedMin ?? 9;
   const maxSpeed = settings.grifballPassSpeedMax ?? 26;
@@ -164,6 +198,7 @@ export function tickGrifballObjective(
       dropBall(g.ball, holder ? { x: holder.pos.x, y: 0, z: holder.pos.z } : g.ball.home);
       if (holder) setSimCarrier(holder, false, settings);
     } else {
+      tickSimRunnerHealing(state, settings, dt);
       g.ball.pos.x = holder.pos.x;
       g.ball.pos.y = holder.pos.y + CARRY_HEIGHT;
       g.ball.pos.z = holder.pos.z;
