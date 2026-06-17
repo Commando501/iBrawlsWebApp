@@ -110,6 +110,10 @@ import {
   type V3ArmorEditorMotionQaMode,
   type V3ArmorEditorMotionQaReport,
 } from './v3ArmorEditorMotionQa';
+import {
+  buildV3SuitReadinessReport,
+  type V3SuitReadinessReport,
+} from './v3ArmorSuitReadiness';
 
 interface ArmorModelEditorProps {
   catalog: CustomArmorCatalog;
@@ -586,6 +590,8 @@ export function ArmorModelEditor({
   const [v3MotionQaMode, setV3MotionQaMode] = useState<V3ArmorEditorMotionQaMode>('active-slot');
   const [selectedV3MotionRepairActionId, setSelectedV3MotionRepairActionId] =
     useState<V3ArmorMotionRepairActionId>('poseSafePolish');
+  const [v3SuitReadinessReport, setV3SuitReadinessReport] = useState<V3SuitReadinessReport | null>(null);
+  const [v3SuitReadinessMode, setV3SuitReadinessMode] = useState<'suit' | 'profile'>('suit');
   const [status, setStatus] = useState('');
   const [importText, setImportText] = useState('');
   const [exportText, setExportText] = useState('');
@@ -937,6 +943,86 @@ export function ArmorModelEditor({
     setV3MotionQaReportToken(buildV3MotionQaSourceToken(mode, stagedDrafts));
     const scopeLabel = mode === 'full-suit' ? 'Full suit' : V3_POSE_LABELS[selectedV3PoseCaseId];
     setStatus(`${scopeLabel} Motion QA ${report.ready ? 'passed' : `reported ${report.issues.length} advisory issue${report.issues.length === 1 ? '' : 's'}`}.`);
+  };
+
+  const buildV3SuitVisualQaBySlot = (stagedDrafts: V3SuitDraftMap) => (
+    Object.fromEntries(V3_CUSTOM_ARMOR_SLOTS.map((candidate) => {
+      const candidateDraft = stagedDrafts[candidate];
+      return [candidate, buildV3ArmorEditorVisualQa({
+        draft: candidateDraft,
+        colors: editorPreviewPalette,
+        slot: candidate,
+        gridScale: getCustomArmorGridScale(candidateDraft),
+      })];
+    }))
+  );
+
+  const reviewV3SuitReadiness = () => {
+    if (modelSystem !== 'v3') return;
+    const stagedDrafts = createStagedV3SuitDrafts();
+    const suitValidation = validateV3SuitDrafts(stagedDrafts);
+    const motionQa = buildV3ArmorEditorMotionQaReport({
+      mode: 'full-suit',
+      activeSlot: slot as V3CustomArmorSlot,
+      draft,
+      suitDrafts: stagedDrafts,
+      loadout: playerLoadout,
+      catalog,
+      selectedCaseId: selectedV3PoseCaseId,
+      hue: playerHue,
+    });
+    const savePlan = buildV3SuitSavePlan(catalog, playerLoadout, stagedDrafts, Date.now());
+    const report = buildV3SuitReadinessReport({
+      source: 'stagedSuit',
+      catalog,
+      suitDrafts: stagedDrafts,
+      suitValidation,
+      visualQaBySlot: buildV3SuitVisualQaBySlot(stagedDrafts),
+      motionQa,
+      motionQaStale: false,
+      saveErrors: savePlan.errors,
+      catalogPieceCountAfterSave: savePlan.nextCatalog.pieces.length,
+      catalogByteLengthAfterSave: JSON.stringify(savePlan.nextCatalog).length,
+      dirty: suitValidation.dirty,
+    });
+    setV3SuitDrafts(stagedDrafts);
+    setV3SuitPreviewEnabled(true);
+    setV3MotionQaMode('full-suit');
+    setV3MotionQaReport(motionQa);
+    setV3MotionQaReportToken(buildV3MotionQaSourceToken('full-suit', stagedDrafts));
+    setV3SuitReadinessMode('suit');
+    setV3SuitReadinessReport(report);
+    setStatus(`Publish Check: ${report.summary}`);
+  };
+
+  const reviewV3ProfileReadiness = () => {
+    if (modelSystem !== 'v3') return;
+    if (!selectedV3SuitProfile) {
+      setStatus('No suit profile selected for Publish Check.');
+      return;
+    }
+    const profileValidation = validateV3SuitProfile(selectedV3SuitProfile, catalog);
+    const exportResult = exportV3SuitProfileBundle(selectedV3SuitProfile, catalog);
+    const report = buildV3SuitReadinessReport({
+      source: 'profile',
+      catalog,
+      profile: selectedV3SuitProfile,
+      profileValidation,
+      exportErrors: exportResult.errors,
+      exportWarnings: exportResult.warnings,
+    });
+    setV3SuitReadinessMode('profile');
+    setV3SuitReadinessReport(report);
+    setStatus(`Profile Publish Check: ${report.summary}`);
+  };
+
+  const jumpToV3ReadinessIssue = () => {
+    if (modelSystem !== 'v3' || !v3SuitReadinessReport?.firstActionSlot) return;
+    const stagedDrafts = createStagedV3SuitDrafts();
+    const targetSlot = v3SuitReadinessReport.firstActionSlot;
+    setV3SuitDrafts(stagedDrafts);
+    loadDraftForSlot(targetSlot, stagedDrafts[targetSlot], modelType, 'v3');
+    setStatus(`Jumped to ${getV3ArmorTemplateLabel(targetSlot)} from Publish Check.`);
   };
 
   const clearActiveDraftHistory = () => {
@@ -2461,6 +2547,102 @@ export function ArmorModelEditor({
                   );
                 })}
               </div>
+            </Panel>
+          )}
+
+          {modelSystem === 'v3' && (
+            <Panel title="Publish Check">
+              <div className="grid grid-cols-3 gap-1.5">
+                <button
+                  type="button"
+                  onClick={reviewV3SuitReadiness}
+                  className="editor-chip border-emerald-400/40 text-emerald-100"
+                >
+                  Review Suit
+                </button>
+                <button
+                  type="button"
+                  onClick={reviewV3ProfileReadiness}
+                  disabled={!selectedV3SuitProfile}
+                  className="editor-chip border-purple-400/40 text-purple-100 disabled:opacity-35"
+                >
+                  Review Profile
+                </button>
+                <button
+                  type="button"
+                  onClick={jumpToV3ReadinessIssue}
+                  disabled={!v3SuitReadinessReport?.firstActionSlot}
+                  className="editor-chip border-cyan-400/40 text-cyan-100 disabled:opacity-35"
+                >
+                  Jump to Issue
+                </button>
+              </div>
+              <div className="mt-2 grid grid-cols-3 gap-1.5 text-[10px] font-mono">
+                <Metric label="Publish" value={v3SuitReadinessReport ? `${v3SuitReadinessReport.score}%` : '--'} />
+                <Metric
+                  label="Save"
+                  value={v3SuitReadinessReport
+                    ? v3SuitReadinessReport.readyToSaveSuit ? 'Ready' : 'Blocked'
+                    : '--'}
+                />
+                <Metric
+                  label="Export"
+                  value={v3SuitReadinessReport
+                    ? v3SuitReadinessReport.readyToExportProfile ? 'Ready' : 'Blocked'
+                    : '--'}
+                />
+              </div>
+              <div className="mt-2 flex flex-col gap-1 text-[10px] leading-relaxed">
+                {!v3SuitReadinessReport ? (
+                  <span className="text-white/45">
+                    Publish Check: review the staged suit or selected profile before sharing.
+                  </span>
+                ) : (
+                  <>
+                    <span className={v3SuitReadinessReport.status === 'blocked'
+                      ? 'text-red-200'
+                      : v3SuitReadinessReport.status === 'warnings' ? 'text-amber-200' : 'text-emerald-300'}
+                    >
+                      Publish Check: {v3SuitReadinessReport.summary}
+                    </span>
+                    <span className="text-white/45">
+                      {v3SuitReadinessMode === 'profile' ? 'Profile review' : 'Suit review'} · {v3SuitReadinessReport.blockers.length} blockers · {v3SuitReadinessReport.warnings.length} warnings
+                    </span>
+                  </>
+                )}
+                {v3SuitReadinessReport?.firstActionSlot && (
+                  <span className="text-cyan-200">
+                    First issue: {getV3ArmorTemplateLabel(v3SuitReadinessReport.firstActionSlot)}.
+                  </span>
+                )}
+              </div>
+              {v3SuitReadinessReport && (
+                <div className="mt-2 max-h-32 overflow-y-auto grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                  {v3SuitReadinessReport.slotReports
+                    .filter((slotReport) => slotReport.state !== 'ready' || slotReport.slot === v3SuitReadinessReport.firstActionSlot)
+                    .slice(0, 8)
+                    .map((slotReport) => (
+                      <div key={slotReport.slot} className="rounded border border-white/10 bg-black/25 p-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[9px] font-black uppercase tracking-widest text-white/65">
+                            {getV3ArmorTemplateLabel(slotReport.slot)}
+                          </span>
+                          <span className={`rounded border px-1.5 py-0.5 text-[8px] font-black uppercase tracking-widest ${getV3SuitSlotStatusClass(
+                            slotReport.state === 'blocked' || slotReport.state === 'missing'
+                              ? 'Invalid'
+                              : slotReport.state === 'warning' ? 'Warn' : 'Valid'
+                          )}`}
+                          >
+                            {slotReport.state}
+                          </span>
+                        </div>
+                        {slotReport.issues[0] && (
+                          <div className="mt-1 text-[9px] text-white/45 line-clamp-2">{slotReport.issues[0].message}</div>
+                        )}
+                      </div>
+                    ))}
+                </div>
+              )}
             </Panel>
           )}
 

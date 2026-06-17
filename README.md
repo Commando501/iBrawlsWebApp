@@ -314,6 +314,8 @@ Phase 27 brings that motion QA into the V3 armor editor. Rig Preview now uses th
 
 Phase 28 adds V3-only pose-aware repair suggestions to the armor editor. Motion Fixes are preview-first, undoable, advisory-only helpers such as Clear Limb Overlap; applying one preserves the player-authored voxel format and does not change V1/V2 behavior, gameplay, collision, hitboxes, reach, AI, networking, simulation, suit profiles, or the save schema.
 
+Phase 29 adds V3 Suit Publish Readiness + Share QA as a V3-only preflight and reporting layer for staged suits and suit profiles. It is advisory for Visual QA and Motion QA review, while normal validation, catalog capacity, and export/import limits remain the hard blockers. Voxel JSON payloads and the suit profile schema are unchanged.
+
 ## Standalone 3D Map Maker
 
 iBrawls features a beautiful, feature-rich, and completely standalone 3D Map Maker application that runs 100% locally and offline in the user's browser. Since it is entirely decoupled from the main web application, players simply open the local HTML file to design custom battle arenas using standard assets!
