@@ -14,10 +14,12 @@ import {
 } from '../customArmor';
 import {
   applyV3SuitProfileToLoadout,
+  exportV3SuitProfileBundle,
   validateV3SuitProfile,
   type V3SuitProfile,
   type V3SuitProfileCatalog,
 } from './v3ArmorSuitProfiles';
+import { buildV3SuitReadinessReport } from './v3ArmorSuitReadiness';
 import { V3_PAINT_ROLES } from '../v3/v3ModelTypes';
 import type { V3PaintRole } from '../v3/v3ModelTypes';
 import { CharacterPainter } from '../CharacterPainter';
@@ -227,11 +229,21 @@ export function ArmoryPanel({
 
   const getV3SuitProfileBadges = (profile: V3SuitProfile): string[] => {
     const validation = validateV3SuitProfile(profile, customArmorCatalog);
+    const exportability = exportV3SuitProfileBundle(profile, customArmorCatalog);
+    const readiness = buildV3SuitReadinessReport({
+      source: 'profile',
+      catalog: customArmorCatalog,
+      profile,
+      profileValidation: validation,
+      exportErrors: exportability.errors,
+      exportWarnings: exportability.warnings,
+    });
     const badges = [validation.status === 'ready' ? 'Ready' : validation.status === 'partial' ? 'Partial' : 'Missing'];
     const equipped = validation.appliedSlotIds.length > 0 && validation.appliedSlotIds.every((candidate) => (
       playerLoadout.customArmor?.[candidate]?.id === profile.slotPieceIds[candidate]
     ));
     if (equipped) badges.push('Equipped');
+    if (!readiness.readyToExportProfile) badges.push('Export Blocked');
     return badges;
   };
 

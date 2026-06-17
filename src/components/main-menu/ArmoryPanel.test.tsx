@@ -470,6 +470,10 @@ test('ArmorModelEditor exposes V3 armor preview mode without removing voxel edit
   assert.match(html, /Motion Fixes/);
   assert.match(html, /Apply Motion Fix/);
   assert.match(html, /Clear Limb Overlap/);
+  assert.match(html, /Publish Check/);
+  assert.match(html, /Review Suit/);
+  assert.match(html, /Review Profile/);
+  assert.match(html, /Jump to Issue/);
   assert.match(html, /Start Full Suit/);
   assert.match(html, /Preview Full Suit/);
   assert.match(html, /Save &amp; Equip Suit/);
@@ -531,6 +535,10 @@ test('ArmorModelEditor hides suggested fixes for V2 armor editing', () => {
   assert.doesNotMatch(html, /Motion Fixes/);
   assert.doesNotMatch(html, /Apply Motion Fix/);
   assert.doesNotMatch(html, /Clear Limb Overlap/);
+  assert.doesNotMatch(html, /Publish Check/);
+  assert.doesNotMatch(html, /Review Suit/);
+  assert.doesNotMatch(html, /Review Profile/);
+  assert.doesNotMatch(html, /Jump to Issue/);
   assert.doesNotMatch(html, /Start Full Suit/);
   assert.doesNotMatch(html, /Preview Full Suit/);
   assert.doesNotMatch(html, /Save &amp; Equip Suit/);
@@ -572,6 +580,52 @@ test('ArmoryPanel renders V3 suit profile controls only for V3 loadouts', () => 
   assert.match(renderToStaticMarkup(<ArmoryPanel {...v3Props} />), /Apply Suit/);
   assert.doesNotMatch(v2Html, /Suit Profiles/);
   assert.doesNotMatch(v2Html, /Alpha Suit/);
+});
+
+test('ArmoryPanel shows Export Blocked for a V3 suit profile with missing export references', () => {
+  const helmet = v3ProfilePiece('helmet', 'piece_helmet');
+  const html = renderToStaticMarkup(
+    <ArmoryPanel
+      {...baseProps('v3')}
+      customArmorCatalog={{ version: 1, pieces: [helmet] }}
+      v3SuitProfileCatalog={profileCatalogFor()}
+    />
+  );
+
+  assert.match(html, /Alpha Suit/);
+  assert.match(html, /Partial/);
+  assert.match(html, /Export Blocked/);
+});
+
+test('ArmoryPanel does not show Export Blocked for a ready V3 suit profile', () => {
+  const helmet = v3ProfilePiece('helmet', 'piece_helmet');
+  const chest = v3ProfilePiece('chest', 'piece_chest');
+  const html = renderToStaticMarkup(
+    <ArmoryPanel
+      {...baseProps('v3')}
+      customArmorCatalog={{ version: 1, pieces: [helmet, chest] }}
+      v3SuitProfileCatalog={profileCatalogFor()}
+    />
+  );
+
+  assert.match(html, /Alpha Suit/);
+  assert.match(html, /Ready/);
+  assert.doesNotMatch(html, /Export Blocked/);
+});
+
+test('ArmoryPanel hides V3 suit profile badges for V2 loadouts', () => {
+  const helmet = v3ProfilePiece('helmet', 'piece_helmet');
+  const html = renderToStaticMarkup(
+    <ArmoryPanel
+      {...baseProps('v2')}
+      customArmorCatalog={{ version: 1, pieces: [helmet] }}
+      v3SuitProfileCatalog={profileCatalogFor()}
+    />
+  );
+
+  assert.doesNotMatch(html, /Suit Profiles/);
+  assert.doesNotMatch(html, /Alpha Suit/);
+  assert.doesNotMatch(html, /Export Blocked/);
 });
 
 test('ArmorModelEditor preserves active V3 suit draft through start and saves against current catalog', async () => {

@@ -5,12 +5,12 @@
 
 [run]
 mode = "combat"
-opponent = "random"
+opponent = "self"
 total_steps = 40000000
 parallel_matches = 32
 num_workers = 12
 goal_target = 3
-match_minutes = 3.0
+match_minutes = 5.0
 decision_interval = 5
 device = "cuda"
 seed = 1
@@ -22,7 +22,7 @@ bait_layout_mix = ["1v1x12", "1v2x4", "1v3x4"]
 bait_opponent = "passive_bait_jitter"
 bait_reward_scale = 2.0
 lone_wolf_reward_scale = 1.35
-kill_min = 10
+kill_min = 18
 kill_max = 25
 randomize_layout = true
 
@@ -45,10 +45,10 @@ width = 512
 depth = 3
 frame_stack = 4
 observation_version = 3
-init_model = ""
+init_model = "runs/combat_upgrade_v1/final_model.zip"
 
 [randomize]
-enabled = false
+enabled = true
 pct = 0.15
 
 [league]
@@ -65,7 +65,7 @@ goal_scored = 5.063
 goal_conceded = 1.0
 possession = 0.0001
 ball_progress = 0.01
-kill = 16.0
+kill = 24.0
 death = 3.0
 approach = 0.562
 time_penalty = 0.005
@@ -80,7 +80,7 @@ trap_death = 0.8
 bootstrap_truncation = false
 
 [logging]
-dir = "runs/combat_upgrade_v1"
+dir = "runs/combat_upgrade_v2"
 save_every = 2000000
 eval_every = 2000000
 eval_episodes = 16
