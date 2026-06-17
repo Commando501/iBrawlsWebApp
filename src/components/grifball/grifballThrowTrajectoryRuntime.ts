@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import {
   BALL_REST_Y,
   predictThrowTrajectory,
+  type BallArenaBounds,
   type Vec3,
 } from '../../game/grifballBall';
 import {
@@ -267,10 +268,12 @@ export function updateGrifballThrowTrajectoryVisualForState({
   state,
   refs,
   chargingHolderId,
+  arenaBounds,
 }: {
   state: GrifballRuntimeState;
   refs: GrifballThreeRefs;
   chargingHolderId: string | null;
+  arenaBounds?: BallArenaBounds | null;
 }): void {
   const trajectoryInput = resolveThrowTrajectoryInput(state, chargingHolderId);
   if (!trajectoryInput || !refs.scene) {
@@ -290,6 +293,7 @@ export function updateGrifballThrowTrajectoryVisualForState({
   const points = predictThrowTrajectory({
     ...trajectoryInput,
     samples: TRAJECTORY_SAMPLES,
+    arenaBounds: arenaBounds ?? { arenaRadius: state.arenaRadius },
   }).map((point) => new THREE.Vector3(point.x, point.y + TRAJECTORY_Y_OFFSET, point.z));
 
   line.geometry.dispose();

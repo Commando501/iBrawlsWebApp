@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import * as THREE from 'three';
 
 import { DEFAULT_ADMIN_SETTINGS } from '../../settings/gameplaySettings';
-import { attachBallTo } from '../../game/grifballBall';
+import { attachBallTo, BALL_REST_Y } from '../../game/grifballBall';
 import { createInitialGrifballRuntimeState } from './runtimeState';
 import { createInitialGrifballThreeRefs } from './threeRefs';
 import {
@@ -94,7 +94,47 @@ test('updateGrifballThrowTrajectoryVisualForState supports charging AI carriers'
 
   assert.equal(refs.grifballThrowTrajectoryLine?.visible, true);
   assert.equal(refs.grifballThrowTrajectoryMarker?.visible, true);
-  assert.ok((refs.grifballThrowTrajectoryMarker?.position.x ?? 0) > 10);
+  const marker = refs.grifballThrowTrajectoryMarker;
+  assert.ok(marker);
+  assert.ok(Math.hypot(marker.position.x, marker.position.z) <= state.arenaRadius - BALL_REST_Y + 0.05);
+
+  disposeGrifballThrowTrajectoryVisualForRefs(refs);
+});
+
+test('updateGrifballThrowTrajectoryVisualForState draws the post-bounce landing marker inside arena walls', () => {
+  const scene = new THREE.Scene();
+  const refs = createInitialGrifballThreeRefs();
+  refs.scene = scene;
+  const state = createInitialGrifballRuntimeState({
+    debugMode: false,
+    adminSettings: {
+      ...DEFAULT_ADMIN_SETTINGS,
+      gameMode: 'grifball',
+      grifballPassSpeedMin: 14,
+      grifballPassSpeedMax: 14,
+    } as any,
+    multiplayerRole: null,
+    isMultiplayer: false,
+  });
+  state.playerPos.set(0, 0, 0);
+  state.yaw = -Math.PI / 2;
+  state.grifballPassCharge = 1;
+  attachBallTo(state.grifball.ball, 'player');
+
+  updateGrifballThrowTrajectoryVisualForState({
+    state,
+    refs,
+    chargingHolderId: 'player',
+    arenaBounds: {
+      arenaRadius: 5,
+      mapShape: 'rectangular',
+      arenaHalfExtents: { x: 6, z: 3 },
+    },
+  });
+
+  assert.ok(refs.grifballThrowTrajectoryMarker);
+  assert.ok(refs.grifballThrowTrajectoryMarker.position.x <= 6 - BALL_REST_Y + 0.05);
+  assert.ok(refs.grifballThrowTrajectoryMarker.position.x < 4, 'marker should show the inward post-bounce landing');
 
   disposeGrifballThrowTrajectoryVisualForRefs(refs);
 });

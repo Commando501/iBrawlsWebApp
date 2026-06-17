@@ -57,6 +57,31 @@ test('thrown ball flies, settles to loose, and is then grabbable', () => {
   assert.ok(isBallGrabbable(ball));
 });
 
+test('loose ball is clamped inside circular arena walls', () => {
+  const ball = createInitialBall({ x: 0, y: 0, z: 0 });
+  dropBall(ball, { x: 10, y: 0, z: 0 });
+
+  tickBallPhysics(ball, 0, 8, { arenaRadius: 5 });
+
+  assert.equal(ball.state, 'loose');
+  assert.ok(ball.pos.x <= 5 - BALL_REST_Y);
+  assert.equal(ball.pos.z, 0);
+});
+
+test('thrown ball bounces off rectangular arena walls', () => {
+  const ball = createInitialBall({ x: 0, y: 0, z: 0 });
+  throwBall(ball, { x: 0, y: 1, z: 0 }, { x: 1, y: 0, z: 0 }, 30);
+
+  tickBallPhysics(ball, 1, 8, {
+    arenaRadius: 5,
+    mapShape: 'rectangular',
+    arenaHalfExtents: { x: 6, z: 3 },
+  });
+
+  assert.ok(ball.pos.x <= 6 - BALL_REST_Y);
+  assert.ok(ball.vel.x < 0, 'ball should reflect back into the arena');
+});
+
 test('predictThrowTrajectory samples the throw arc through the landing point', () => {
   const points = predictThrowTrajectory({
     from: { x: 2, y: 1.1, z: -3 },
@@ -69,6 +94,28 @@ test('predictThrowTrajectory samples the throw arc through the landing point', (
   assert.deepEqual(points[0], { x: 2, y: 1.1, z: -3 });
   assert.equal(points.at(-1)?.y, BALL_REST_Y);
   assert.ok((points.at(-1)?.z ?? 0) < -10, 'landing point should extend down the throw heading');
+});
+
+test('predictThrowTrajectory bends after rectangular wall bounce', () => {
+  const boundX = 6 - BALL_REST_Y;
+  const points = predictThrowTrajectory({
+    from: { x: 0, y: 1.1, z: 0 },
+    dir: { x: 1, y: 0, z: 0 },
+    speed: 14,
+    samples: 21,
+    arenaBounds: {
+      arenaRadius: 5,
+      mapShape: 'rectangular',
+      arenaHalfExtents: { x: 6, z: 3 },
+    },
+  });
+
+  const xs = points.map((point) => point.x);
+  const peakIndex = xs.reduce((best, value, index) => value > xs[best] ? index : best, 0);
+
+  assert.ok(points.every((point) => point.x <= boundX + 0.01 && point.x >= -boundX - 0.01));
+  assert.ok(peakIndex > 0 && peakIndex < xs.length - 1, 'trajectory should peak at the wall before landing');
+  assert.ok(xs.at(-1)! < xs[peakIndex] - 1, 'landing point should continue inward after the bounce');
 });
 
 test('loose ball auto-returns home after the timeout', () => {

@@ -3,6 +3,8 @@
  * unit-tested directly; the component owns rendering, weapon swaps and respawns.
  */
 
+import { getRectHalfExtents, type ArenaHalfExtents } from './arenaDimensions';
+
 export type GrifballBallState = 'idle' | 'held' | 'loose' | 'thrown';
 
 export interface Vec3 {
@@ -27,14 +29,29 @@ export interface GrifballBall {
 export const BALL_REST_Y = 0.35;
 export const GRIFBALL_BALL_GRAVITY = 18.0;
 export const GRIFBALL_THROW_ARC = 0.35;
+export const GRIFBALL_BALL_RADIUS = BALL_REST_Y;
 const GROUND_RESTITUTION = 0.45;
 const GROUND_FRICTION = 0.86;
+const WALL_RESTITUTION = 0.78;
 const SETTLE_SPEED = 1.2;
+const TRAJECTORY_SIMULATION_STEP = 1 / 240;
+
+export interface BallArenaBounds {
+  mapShape?: 'circle' | 'rectangular';
+  arenaRadius: number;
+  arenaHalfExtents?: ArenaHalfExtents | null;
+  arenaCeiling?: number | null;
+}
 
 export interface BallPickupCandidate {
   id: string;
   pos: Vec3;
   alive: boolean;
+}
+
+interface BallPhysicsBody {
+  pos: Vec3;
+  vel: Vec3;
 }
 
 export function createInitialBall(home: Vec3): GrifballBall {
@@ -89,12 +106,14 @@ export function predictThrowTrajectory({
   speed,
   arc = GRIFBALL_THROW_ARC,
   samples = 24,
+  arenaBounds = null,
 }: {
   from: Vec3;
   dir: Vec3;
   speed: number;
   arc?: number;
   samples?: number;
+  arenaBounds?: BallArenaBounds | null;
 }): Vec3[] {
   const sampleCount = Math.max(2, Math.floor(samples));
   const start = { x: from.x, y: Math.max(BALL_REST_Y, from.y), z: from.z };
@@ -110,21 +129,79 @@ export function predictThrowTrajectory({
   const velZ = headingZ * speed;
   const heightAboveGround = Math.max(0, start.y - BALL_REST_Y);
   const impactTime = (velY + Math.sqrt((velY * velY) + (2 * GRIFBALL_BALL_GRAVITY * heightAboveGround))) / GRIFBALL_BALL_GRAVITY;
+  const body: BallPhysicsBody = {
+    pos: { ...start },
+    vel: { x: velX, y: velY, z: velZ },
+  };
+  const points: Vec3[] = [{ ...start }];
+  let elapsed = 0;
 
-  return Array.from({ length: sampleCount }, (_, index) => {
-    const t = impactTime * (index / (sampleCount - 1));
-    const y = Math.max(BALL_REST_Y, start.y + (velY * t) - (0.5 * GRIFBALL_BALL_GRAVITY * t * t));
-    return {
-      x: start.x + velX * t,
-      y,
-      z: start.z + velZ * t,
-    };
-  });
+  for (let index = 1; index < sampleCount; index += 1) {
+    const targetTime = impactTime * (index / (sampleCount - 1));
+    while (elapsed < targetTime - 0.000001) {
+      const dt = Math.min(TRAJECTORY_SIMULATION_STEP, targetTime - elapsed);
+      body.pos.x += body.vel.x * dt;
+      body.pos.z += body.vel.z * dt;
+      elapsed += dt;
+      body.vel.y = velY - (GRIFBALL_BALL_GRAVITY * elapsed);
+      body.pos.y = start.y + (velY * elapsed) - (0.5 * GRIFBALL_BALL_GRAVITY * elapsed * elapsed);
+      if (body.pos.y < BALL_REST_Y || index === sampleCount - 1) body.pos.y = BALL_REST_Y;
+      constrainBallToArenaBounds(body, arenaBounds);
+    }
+    points.push({ ...body.pos });
+  }
+
+  return points;
 }
 
 /** True when the ball is grabbable (on/near the ground, not held, not mid-flight). */
 export function isBallGrabbable(ball: GrifballBall): boolean {
   return ball.state === 'idle' || ball.state === 'loose';
+}
+
+function reflectOutwardVelocity(ball: BallPhysicsBody, normalX: number, normalZ: number): void {
+  const outwardSpeed = (ball.vel.x * normalX) + (ball.vel.z * normalZ);
+  if (outwardSpeed <= 0) return;
+  ball.vel.x -= normalX * outwardSpeed * (1 + WALL_RESTITUTION);
+  ball.vel.z -= normalZ * outwardSpeed * (1 + WALL_RESTITUTION);
+}
+
+function constrainBallToArenaBounds(ball: BallPhysicsBody, bounds?: BallArenaBounds | null): void {
+  if (!bounds || !Number.isFinite(bounds.arenaRadius) || bounds.arenaRadius <= 0) return;
+
+  if (bounds.mapShape === 'rectangular') {
+    const half = getRectHalfExtents(bounds.arenaRadius, bounds.arenaHalfExtents);
+    const boundX = Math.max(0, half.x - GRIFBALL_BALL_RADIUS);
+    const boundZ = Math.max(0, half.z - GRIFBALL_BALL_RADIUS);
+
+    if (Math.abs(ball.pos.x) > boundX) {
+      const sign = ball.pos.x >= 0 ? 1 : -1;
+      ball.pos.x = sign * boundX;
+      reflectOutwardVelocity(ball, sign, 0);
+    }
+
+    if (Math.abs(ball.pos.z) > boundZ) {
+      const sign = ball.pos.z >= 0 ? 1 : -1;
+      ball.pos.z = sign * boundZ;
+      reflectOutwardVelocity(ball, 0, sign);
+    }
+  } else {
+    const maxRadius = Math.max(0, bounds.arenaRadius - GRIFBALL_BALL_RADIUS);
+    const distFromCenter = Math.hypot(ball.pos.x, ball.pos.z);
+    if (distFromCenter > maxRadius && distFromCenter > 0) {
+      const normalX = ball.pos.x / distFromCenter;
+      const normalZ = ball.pos.z / distFromCenter;
+      ball.pos.x = normalX * maxRadius;
+      ball.pos.z = normalZ * maxRadius;
+      reflectOutwardVelocity(ball, normalX, normalZ);
+    }
+  }
+
+  const ceiling = bounds.arenaCeiling;
+  if (ceiling && ceiling > 0 && ball.pos.y > ceiling) {
+    ball.pos.y = ceiling;
+    if (ball.vel.y > 0) ball.vel.y = 0;
+  }
 }
 
 /**
@@ -134,9 +211,12 @@ export function isBallGrabbable(ball: GrifballBall): boolean {
 export function tickBallPhysics(
   ball: GrifballBall,
   dt: number,
-  returnTimeout: number
+  returnTimeout: number,
+  arenaBounds?: BallArenaBounds | null
 ): boolean {
   if (ball.state === 'held') return false;
+
+  constrainBallToArenaBounds(ball, arenaBounds);
 
   if (ball.state === 'thrown') {
     ball.vel.y -= GRIFBALL_BALL_GRAVITY * dt;
@@ -157,6 +237,7 @@ export function tickBallPhysics(
         ball.looseTimer = 0;
       }
     }
+    constrainBallToArenaBounds(ball, arenaBounds);
     return false;
   }
 

@@ -222,6 +222,7 @@ To prevent players and AI characters from passing straight through one another, 
 - **Kinematic Resolution**: When two participants overlap both horizontally and vertically, they are pushed apart by **50%** of the overlap depth each along the collision normal.
 - **Velocity Normal Damping**: To ensure collisions feel solid and prevent jittering or high-speed passthroughs, the relative velocity component along the collision normal is cancelled when entities are moving towards each other.
 - **Multi-iteration Solver**: The collision engine runs for **3 iterations** each frame inside `enforceArenaBounds` before bounding players to the circular arena, ensuring perfectly stable physics even in crowded multi-bot pincers.
+- **Arena Boundary Walls**: Circular and rectangular arena bounds act as hard walls for live combatants and the Grifball ball. Free-ball physics receives the active map bounds in both the browser runtime and the headless sim, clamps the ball center by its radius, and reflects thrown-ball horizontal velocity so wall bounces are visible in both live play and the throw trajectory preview.
 - **Zero-lag Rendering**: State positions are proactively synchronized to Three.js group meshes immediately following collision resolution to eliminate 1-frame rendering lag.
 
 ## Map Selection & Environments
@@ -308,6 +309,8 @@ Phase 25 upgrades the built-in V3 Aegis suit fidelity while keeping V3 procedura
 Phase 26 adds deterministic V3 pose clearance and motion QA. `v3PoseClearance` checks representative idle, walk, sprint, slide, weapon, hit, and death poses for armor/body clearance, and the V3 performance smoke report now includes a `motion pass` gate alongside visual readiness. This is a visual-only guarantee: saved custom armor remains voxel JSON and is not blocked by pose QA, and there are no V1/V2, gameplay collision, hitbox, reach, AI, networking, save schema, or mesh import changes.
 
 Phase 27 brings that motion QA into the V3 armor editor. Rig Preview now uses the same Phase 26 pose cases for V3 armor, including weapon poses, and the editor can run advisory Motion QA against the active slot or staged full suit with optional overlay hints for pose-clearance issues. Motion warnings do not block saving; custom armor remains voxel JSON, suit profiles stay reference-based, and V1/V2 visuals plus gameplay, collision, hitbox, reach, AI, networking, and simulation behavior are unchanged.
+
+Phase 28 adds V3-only pose-aware repair suggestions to the armor editor. Motion Fixes are preview-first, undoable, advisory-only helpers such as Clear Limb Overlap; applying one preserves the player-authored voxel format and does not change V1/V2 behavior, gameplay, collision, hitboxes, reach, AI, networking, simulation, suit profiles, or the save schema.
 
 ## Standalone 3D Map Maker
 

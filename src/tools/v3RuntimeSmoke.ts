@@ -45,7 +45,18 @@ export function buildV3RuntimeSmokeChecklist(): V3RuntimeSmokeChecklistItem[] {
     {
       id: 'armor-editor-v3-validation',
       path: '/armor-model-editor.html',
-      expectedText: ['V3', 'Validation', 'Budget', 'Save Copy', 'Motion QA', 'Check Active Pose', 'Hammer Strike'],
+      expectedText: [
+        'V3',
+        'Validation',
+        'Budget',
+        'Save Copy',
+        'Motion QA',
+        'Check Active Pose',
+        'Hammer Strike',
+        'Motion Fixes',
+        'Apply Motion Fix',
+        'Clear Limb Overlap',
+      ],
       viewports: ['desktop', 'mobile'],
     },
     {

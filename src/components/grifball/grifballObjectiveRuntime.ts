@@ -327,7 +327,12 @@ export function updateGrifballObjectiveForState({
       g.ball.pos.z = ref.pos.z;
     }
   } else {
-    tickBallPhysics(g.ball, dt, state.settings.grifballBallReturnTimeout ?? 8);
+    tickBallPhysics(
+      g.ball,
+      dt,
+      state.settings.grifballBallReturnTimeout ?? 8,
+      activeCustomMap ?? { arenaRadius: state.arenaRadius }
+    );
   }
 
   if (isGrifballLive(g)) {
@@ -384,5 +389,6 @@ export function updateGrifballObjectiveForState({
     state,
     refs,
     chargingHolderId,
+    arenaBounds: activeCustomMap ?? { arenaRadius: state.arenaRadius },
   });
 }

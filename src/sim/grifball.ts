@@ -204,7 +204,7 @@ export function tickGrifballObjective(
       g.ball.pos.z = holder.pos.z;
     }
   } else {
-    tickBallPhysics(g.ball, dt, settings.grifballBallReturnTimeout ?? 8);
+    tickBallPhysics(g.ball, dt, settings.grifballBallReturnTimeout ?? 8, state.map);
   }
 
   if (isGrifballLive(g)) {
