@@ -35,6 +35,7 @@ const readyExport = (): V3ReadinessDashboardExportObject => ({
       suitFidelity: readyEvidence(),
       referenceProportions: readyEvidence(),
       referenceFeatureMatch: readyEvidence(),
+      referenceVoxelSource: readyEvidence(),
       visualQa: readyEvidence(),
       poseClearance: readyEvidence(),
     performanceSmoke: readyEvidence(),
