@@ -25,7 +25,7 @@ const easeOutCubic = (value: number): number => {
 };
 const lerp = THREE.MathUtils.lerp;
 
-const HOLD_OFFSET: LocalBallOffset = { right: 0, up: 0, forward: 0 };
+const HOLD_OFFSET: LocalBallOffset = { right: 0.34, up: 0.03, forward: 0.28 };
 const COCKED_OFFSET: LocalBallOffset = { right: 0.48, up: 0.08, forward: 0.14 };
 const STRIKE_OFFSET: LocalBallOffset = { right: -0.32, up: 0.02, forward: 0.86 };
 
@@ -89,10 +89,7 @@ export function resolveHeldGrifballBallVisualPosition({
     return basePosition.clone();
   }
 
-  const offset = resolvePunchOffset({ weaponState, weaponTimer, settings });
-  if (!offset) {
-    return basePosition.clone();
-  }
+  const offset = resolvePunchOffset({ weaponState, weaponTimer, settings }) ?? HOLD_OFFSET;
 
   const forward = getForwardHeadingForYaw(yaw);
   const right = { x: Math.cos(yaw), z: -Math.sin(yaw) };

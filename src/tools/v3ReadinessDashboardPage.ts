@@ -7,6 +7,7 @@ import {
   analyzeV3AegisReferenceProportions,
   formatV3ReferenceProportionGapSummary,
   sampleV3ReferenceProportionBands,
+  type V3ReferenceProportionReport,
 } from '../components/v3/v3ReferenceProportions';
 import { V3_AEGIS_REFERENCE_VOXEL_SOURCE } from '../components/v3/v3AegisReferenceVoxels.generated';
 import {
@@ -16,18 +17,18 @@ import {
   type V3ReferenceFeatureMatchReport,
 } from '../components/v3/v3SuitFidelity';
 import {
-  buildV3PerformanceSmokeReport,
-  buildV3PerformanceSmokeScene,
-} from './v3PerformanceSmoke';
-import {
   V3_READINESS_CHECKLIST_COPY,
   V3_READINESS_CHECKLIST_ITEM_IDS,
   buildV3ReadinessDashboardReport,
   buildV3ReadinessExport,
+  formatV3ReadinessCalibrationWorkflowText,
+  getV3ReadinessCalibrationWorkflowState,
   persistV3ReadinessChecklist,
   readV3ReadinessChecklist,
   type V3ReadinessChecklist,
+  type V3ReadinessCalibrationWorkflowState,
   type V3ReadinessDashboardReport,
+  type V3ReadinessEvidenceSummaryInput,
   type V3ReadinessReferenceComparisonInput,
 } from './v3ReadinessDashboard';
 import {
@@ -57,8 +58,38 @@ import {
   buildV3ReferenceFeatureGuide,
   type V3ReferenceFeatureGuide,
 } from './v3ReferenceFeatureGuide';
+import {
+  analyzeV3ReferenceFitGaps,
+  formatV3ReferenceFitGapSummary,
+  type V3ReferenceFitGapReport,
+} from './v3ReferenceFitGaps';
+import {
+  hideV3ReadinessComparisonWeapons,
+  normalizeV3ReadinessComparisonSubject,
+} from './v3ReadinessDashboardPreview';
 
 type RenderView = 'front' | 'side';
+type V3SmokeEvidenceReport = {
+  ready: boolean;
+  issues: readonly unknown[];
+  qualityTier: string;
+  combatantCount: number;
+  budget: {
+    drawCallEstimate: number;
+    mergedBoxCount: number;
+    memoryEstimateKb: number;
+  };
+  visualQaReady: boolean;
+  visualQa: {
+    issues: readonly unknown[];
+    summary: unknown;
+  };
+  poseClearanceReady: boolean;
+  poseClearance: {
+    issues: readonly unknown[];
+    summary: unknown;
+  };
+};
 
 const canvas = document.getElementById('comparisonCanvas') as HTMLCanvasElement;
 const statusLabel = document.getElementById('statusLabel') as HTMLSpanElement;
@@ -77,6 +108,8 @@ const calibrationSummary = document.getElementById('calibrationSummary') as HTML
 const calibrationReport = document.getElementById('calibrationReport') as HTMLPreElement;
 const featureGuideSummary = document.getElementById('featureGuideSummary') as HTMLDivElement;
 const featureMatchReport = document.getElementById('featureMatchReport') as HTMLPreElement;
+const fitGapSummary = document.getElementById('fitGapSummary') as HTMLDivElement | null;
+const fitGapReport = document.getElementById('fitGapReport') as HTMLPreElement | null;
 const acknowledgeReferenceButton = document.getElementById('ackReference') as HTMLButtonElement;
 const downloadReportButton = document.getElementById('downloadReport') as HTMLButtonElement;
 const copyReportButton = document.getElementById('copyReport') as HTMLButtonElement;
@@ -86,6 +119,7 @@ const downloadCalibrationButton = document.getElementById('downloadCalibration')
 const copyCalibrationButton = document.getElementById('copyCalibration') as HTMLButtonElement;
 const downloadCalibrationJsonButton = document.getElementById('downloadCalibrationJson') as HTMLButtonElement;
 const copyCalibrationJsonButton = document.getElementById('copyCalibrationJson') as HTMLButtonElement;
+const runAutomatedEvidenceButton = document.getElementById('runAutomatedEvidence') as HTMLButtonElement | null;
 
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -102,10 +136,20 @@ let checklist: V3ReadinessChecklist = readV3ReadinessChecklist(window.localStora
 let latestReferenceMetadata: V3ReferenceMetadata | null = null;
 let latestComparison: V3ReferenceSilhouetteComparison | null = null;
 let latestReferenceProportionBands: Record<string, unknown> | null = null;
+let latestReferenceProportionReport: V3ReferenceProportionReport | null = null;
 let latestReferenceScaffold: V3ReferenceScaffold | null = null;
 let latestReferenceFeatureGuide: V3ReferenceFeatureGuide | null = null;
-let latestReferenceFeatureMatch: V3ReferenceFeatureMatchReport = analyzeV3BuiltInReferenceFeatureMatch();
+let latestReferenceFeatureMatch: V3ReferenceFeatureMatchReport | null = null;
+let latestReferenceFitGaps: V3ReferenceFitGapReport | null = null;
 let latestCalibrationReport: V3AegisCalibrationReport | null = null;
+let latestSuitFidelityEvidence: V3ReadinessEvidenceSummaryInput;
+let latestReferenceProportionEvidence: V3ReadinessEvidenceSummaryInput;
+let latestVisualQaEvidence: V3ReadinessEvidenceSummaryInput;
+let latestPoseEvidence: V3ReadinessEvidenceSummaryInput;
+let latestPerformanceEvidence: V3ReadinessEvidenceSummaryInput;
+let automatedEvidenceRunning = false;
+let v3PreviewReady = false;
+let v3PreviewError: string | null = null;
 let referenceAcknowledged = false;
 let referenceAcknowledgedAt: string | undefined;
 let referenceLoadError: string | null = null;
@@ -139,32 +183,66 @@ setupScene(referenceScene);
 v3Scene.add(v3Root);
 referenceScene.add(referenceRoot);
 
-const v3Rig = createCombatantMeshRig(v3Scene, 188, false, {
-  modelSystem: 'v3',
-  paintJob: {
-    v3RoleColors: {
-      primary: '#38bdf8',
-      secondary: '#0f172a',
-      accent: '#fbbf24',
-      visor: '#67e8f9',
-      emissive: '#5eead4',
-    },
-    v3RoleEmissive: {
-      visor: true,
-      emissive: true,
-    },
+const pendingEvidence = (label: string): V3ReadinessEvidenceSummaryInput => ({
+  issues: [],
+  summary: {
+    status: 'pending',
+    message: `${label} has not been run for this dashboard session. Use Run Automated Evidence when you need the full local QA pass.`,
   },
-}, {
-  v3QualityTier: 'desktop',
 });
-v3Root.add(v3Rig.group);
 
-const smokeScene = buildV3PerformanceSmokeScene({ qualityTier: 'desktop' });
-const smokeReport = buildV3PerformanceSmokeReport(smokeScene);
-const suitFidelity = analyzeV3BuiltInSuitFidelity();
-const referenceProportions = analyzeV3AegisReferenceProportions();
+const failedEvidence = (label: string, error: unknown): V3ReadinessEvidenceSummaryInput => ({
+  ready: false,
+  issues: [error instanceof Error ? error.message : String(error)],
+  summary: {
+    status: 'failed',
+    label,
+  },
+});
 
-function compactSuitFidelityEvidence() {
+latestSuitFidelityEvidence = pendingEvidence('Suit fidelity');
+latestReferenceProportionEvidence = pendingEvidence('Reference proportions');
+latestVisualQaEvidence = pendingEvidence('Visual QA');
+latestPoseEvidence = pendingEvidence('Pose clearance');
+latestPerformanceEvidence = pendingEvidence('Performance smoke');
+
+function ensureV3PreviewModel(): boolean {
+  if (v3PreviewReady) return true;
+  if (v3PreviewError) return false;
+
+  try {
+    const v3Rig = createCombatantMeshRig(v3Scene, 188, false, {
+      modelSystem: 'v3',
+      paintJob: {
+        v3RoleColors: {
+          primary: '#38bdf8',
+          secondary: '#0f172a',
+          accent: '#fbbf24',
+          visor: '#67e8f9',
+          emissive: '#5eead4',
+        },
+        v3RoleEmissive: {
+          visor: true,
+          emissive: true,
+        },
+      },
+    }, {
+      v3QualityTier: 'desktop',
+    });
+    hideV3ReadinessComparisonWeapons(v3Rig);
+    v3Root.add(v3Rig.group);
+    normalizeV3ReadinessComparisonSubject(v3Root);
+    v3PreviewReady = true;
+    return true;
+  } catch (error) {
+    v3PreviewError = error instanceof Error ? error.message : String(error);
+    return false;
+  }
+}
+
+function compactSuitFidelityEvidence(
+  suitFidelity: ReturnType<typeof analyzeV3BuiltInSuitFidelity>
+): V3ReadinessEvidenceSummaryInput {
   const reports = Object.values(suitFidelity);
   const issues = reports.flatMap((report) => (
     report.issues.map((issue) => `${report.slot} ${issue.code}: ${issue.message}`)
@@ -181,7 +259,9 @@ function compactSuitFidelityEvidence() {
   };
 }
 
-function compactReferenceProportionEvidence() {
+function compactReferenceProportionEvidence(
+  referenceProportions: V3ReferenceProportionReport
+): V3ReadinessEvidenceSummaryInput {
   return {
     ready: referenceProportions.ready,
     issues: referenceProportions.issues.map((issue) => `${issue.code}: ${issue.message}`),
@@ -192,7 +272,11 @@ function compactReferenceProportionEvidence() {
   };
 }
 
-function compactReferenceFeatureMatchEvidence() {
+function compactReferenceFeatureMatchEvidence(): V3ReadinessEvidenceSummaryInput {
+  if (!latestReferenceFeatureMatch) {
+    return pendingEvidence('Reference feature match');
+  }
+
   return {
     ready: latestReferenceFeatureMatch.ready,
     issues: latestReferenceFeatureMatch.issues.map((issue) => `${issue.slot} ${issue.code}: ${issue.message}`),
@@ -228,7 +312,14 @@ function compactReferenceVoxelSourceEvidence() {
   };
 }
 
-function compactVisualQaEvidence() {
+function currentCalibrationWorkflowState(): V3ReadinessCalibrationWorkflowState {
+  return getV3ReadinessCalibrationWorkflowState({
+    referenceKind: latestReferenceMetadata?.kind ?? null,
+    referenceVoxelSource: compactReferenceVoxelSourceEvidence(),
+  });
+}
+
+function compactVisualQaEvidence(smokeReport: V3SmokeEvidenceReport): V3ReadinessEvidenceSummaryInput {
   return {
     ready: smokeReport.visualQaReady,
     issues: smokeReport.visualQa.issues,
@@ -236,7 +327,7 @@ function compactVisualQaEvidence() {
   };
 }
 
-function compactPoseEvidence() {
+function compactPoseEvidence(smokeReport: V3SmokeEvidenceReport): V3ReadinessEvidenceSummaryInput {
   return {
     ready: smokeReport.poseClearanceReady,
     issues: smokeReport.poseClearance.issues,
@@ -244,7 +335,7 @@ function compactPoseEvidence() {
   };
 }
 
-function compactPerformanceEvidence() {
+function compactPerformanceEvidence(smokeReport: V3SmokeEvidenceReport): V3ReadinessEvidenceSummaryInput {
   return {
     ready: smokeReport.ready,
     issues: smokeReport.issues,
@@ -263,6 +354,7 @@ function buildReferenceEvidence(): V3ReadinessReferenceComparisonInput {
   const hasCanonicalObjReference = latestReferenceMetadata?.kind === 'obj';
   const issues = [
     ...(referenceAcknowledgementIssue ? [referenceAcknowledgementIssue] : []),
+    ...(v3PreviewError ? [`V3 preview model failed to initialize: ${v3PreviewError}`] : []),
     ...(referenceLoadError
       ? [referenceLoadError]
       : hasComparison ? latestComparison?.mismatchNotes ?? [] : []),
@@ -273,7 +365,32 @@ function buildReferenceEvidence(): V3ReadinessReferenceComparisonInput {
   return {
     acknowledged: referenceAcknowledged && hasComparison && hasCanonicalObjReference,
     metadata: latestReferenceMetadata ?? undefined,
-    comparison: latestComparison ? assertNoV3ReferencePayloadPersisted(latestComparison) : undefined,
+    comparison: latestComparison ? assertNoV3ReferencePayloadPersisted({
+      silhouette: latestComparison,
+      referenceFitGaps: latestReferenceFitGaps ? {
+        ready: latestReferenceFitGaps.ready,
+        summary: latestReferenceFitGaps.summary,
+        topSlots: latestReferenceFitGaps.slots.slice(0, 8).map((slot) => ({
+          slot: slot.slot,
+          v3Slots: slot.v3Slots,
+          current: slot.current,
+          target: slot.target,
+          targetConfidence: slot.targetConfidence,
+          targetWarnings: slot.targetWarnings,
+          maxSeverity: slot.maxSeverity,
+          issues: slot.issues.map((issue) => ({
+            code: issue.code,
+            axis: issue.axis,
+            direction: issue.direction,
+            current: issue.current,
+            target: issue.target,
+            delta: issue.delta,
+            severity: issue.severity,
+            message: issue.message,
+          })),
+        })),
+      } : null,
+    }) : undefined,
     proportionBands: latestReferenceProportionBands
       ? assertNoV3ReferencePayloadPersisted(latestReferenceProportionBands)
       : undefined,
@@ -288,13 +405,13 @@ function buildReferenceEvidence(): V3ReadinessReferenceComparisonInput {
 function buildDashboardReport(): V3ReadinessDashboardReport {
   return buildV3ReadinessDashboardReport({
     checklist,
-    suitFidelity: compactSuitFidelityEvidence(),
-    referenceProportions: compactReferenceProportionEvidence(),
+    suitFidelity: latestSuitFidelityEvidence,
+    referenceProportions: latestReferenceProportionEvidence,
     referenceFeatureMatch: compactReferenceFeatureMatchEvidence(),
     referenceVoxelSource: compactReferenceVoxelSourceEvidence(),
-    visualQa: compactVisualQaEvidence(),
-    poseClearance: compactPoseEvidence(),
-    performanceSmoke: compactPerformanceEvidence(),
+    visualQa: latestVisualQaEvidence,
+    poseClearance: latestPoseEvidence,
+    performanceSmoke: latestPerformanceEvidence,
     referenceComparison: buildReferenceEvidence(),
   });
 }
@@ -395,15 +512,23 @@ function renderBaseline(baseline: V3ReadinessBaselineReport): void {
 
 function renderCalibration(): void {
   calibrationSummary.innerHTML = '';
+  const workflowState = currentCalibrationWorkflowState();
 
   if (!latestCalibrationReport) {
+    const renderedGateClosureStatus = workflowState.status === 'source-active'
+      ? 'Generated Source Active'
+      : workflowState.status === 'candidate-required'
+        ? 'Reconstruction Required'
+        : 'waiting';
     calibrationSummary.append(
       metric('Calibration Source', latestReferenceScaffold?.source.kind ?? 'none'),
-      metric('Calibration Status', 'waiting'),
-      metric('Rendered Gate Closure', 'waiting'),
+      metric('Calibration Status', workflowState.status),
+      metric('Rendered Gate Closure', renderedGateClosureStatus),
       metric('Candidates', 0)
     );
-    calibrationReport.textContent = 'Load the canonical OBJ reference to build local V3 Aegis calibration candidates. Rendered Gate Closure will report Reconstruction Required when envelope candidates improve score but fail focused OBJ bands. FBX, GLB, and GLTF remain inspection-only.';
+    calibrationReport.textContent = workflowState.status === 'source-active'
+      ? `${workflowState.message} Reconstruction Required now means a rendered model gap should be handled through the OBJ-derived voxel source and reconstruction pipeline, not another envelope patch.`
+      : `${workflowState.message} Rendered Gate Closure will report Reconstruction Required when envelope candidates improve score but fail focused OBJ bands.`;
     return;
   }
 
@@ -425,12 +550,18 @@ function renderCalibration(): void {
 
 function renderFeatureMatch(): void {
   featureGuideSummary.innerHTML = '';
+  const match = latestReferenceFeatureMatch;
   featureGuideSummary.append(
     metric('Guide Source', latestReferenceFeatureGuide?.source.fileName ?? 'built-in fallback'),
     metric('Guide Slots', latestReferenceFeatureGuide?.summary.slotCount ?? 0),
-    metric('Feature Match', latestReferenceFeatureMatch.ready),
-    metric('Average Score', latestReferenceFeatureMatch.summary.averageScore.toFixed(4))
+    metric('Feature Match', match?.ready ?? 'pending'),
+    metric('Average Score', match ? match.summary.averageScore.toFixed(4) : 'pending')
   );
+
+  if (!match) {
+    featureMatchReport.textContent = 'Reference feature match has not been run for this dashboard session. Use Run Automated Evidence for the built-in fallback gate, or load the canonical OBJ to build guide-aware evidence.';
+    return;
+  }
 
   featureMatchReport.textContent = JSON.stringify({
     guide: latestReferenceFeatureGuide ? {
@@ -447,23 +578,73 @@ function renderFeatureMatch(): void {
       })),
     } : null,
     match: {
-      ready: latestReferenceFeatureMatch.ready,
-      summary: latestReferenceFeatureMatch.summary,
-      issues: latestReferenceFeatureMatch.issues.slice(0, 20),
+      ready: match.ready,
+      summary: match.summary,
+      issues: match.issues.slice(0, 20),
     },
   }, null, 2);
 }
 
+function renderFitGaps(): void {
+  if (!fitGapSummary || !fitGapReport) return;
+
+  fitGapSummary.innerHTML = '';
+  const report = latestReferenceFitGaps;
+  fitGapSummary.append(
+    metric('Fit Gap Status', report?.ready ?? 'pending'),
+    metric('Slot Families', report?.summary.slotCount ?? 0),
+    metric('Fit Issues', report?.summary.issueCount ?? 'pending'),
+    metric('Target Warnings', report?.summary.targetWarningCount ?? 'pending'),
+    metric('Max Severity', report ? report.summary.maxSeverity.toFixed(2) : 'pending')
+  );
+
+  if (!report) {
+    fitGapReport.textContent = 'Reference Fit Gaps have not been built for this dashboard session. Load the canonical OBJ reference to compare current V3 slot-family bounds against OBJ slot guides.';
+    return;
+  }
+
+  fitGapReport.textContent = JSON.stringify({
+    summary: {
+      ...report.summary,
+      text: formatV3ReferenceFitGapSummary(report),
+    },
+    topSlots: report.slots.slice(0, 10).map((slot) => ({
+      slot: slot.slot,
+      v3Slots: slot.v3Slots,
+      current: slot.current,
+      target: slot.target,
+      targetConfidence: slot.targetConfidence,
+      targetWarnings: slot.targetWarnings,
+      maxSeverity: slot.maxSeverity,
+      ready: slot.ready,
+      issues: slot.issues,
+    })),
+  }, null, 2);
+}
+
 function buildCalibrationJsonExport(): string {
+  const workflowState = currentCalibrationWorkflowState();
   return JSON.stringify({
     kind: 'v3-aegis-calibration-report',
     version: 1,
     exportedAt: new Date().toISOString(),
-    status: latestCalibrationReport?.hardGateStatus ?? 'missing',
-    sourceKind: latestCalibrationReport?.sourceKind ?? 'none',
+    status: latestCalibrationReport?.hardGateStatus ?? workflowState.status,
+    sourceKind: latestCalibrationReport?.sourceKind ?? latestReferenceMetadata?.kind ?? 'none',
+    workflow: workflowState,
+    referenceVoxelSource: compactReferenceVoxelSourceEvidence().summary,
     report: latestCalibrationReport,
-    issue: latestCalibrationReport ? undefined : 'No V3 Aegis calibration report is available. Load the canonical OBJ reference first.',
+    issue: latestCalibrationReport
+      ? undefined
+      : workflowState.status === 'source-active'
+        ? 'Envelope calibration skipped because OBJ-derived reference voxel source is active.'
+        : 'No V3 Aegis calibration report is available. Load the canonical OBJ reference first.',
   }, null, 2);
+}
+
+function buildCalibrationTextExport(): string {
+  return latestCalibrationReport
+    ? formatV3AegisCalibrationReport(latestCalibrationReport)
+    : formatV3ReadinessCalibrationWorkflowText(currentCalibrationWorkflowState());
 }
 
 function renderReferenceSummary(): void {
@@ -486,11 +667,18 @@ function renderReferenceSummary(): void {
       slotOrder: latestReferenceFeatureGuide.slotOrder,
       summary: latestReferenceFeatureGuide.summary,
     } : undefined,
-    referenceFeatureMatch: latestReferenceFeatureMatch.summary,
+    referenceFeatureMatch: latestReferenceFeatureMatch?.summary ?? {
+      status: 'pending',
+    },
+    referenceFitGaps: latestReferenceFitGaps ? {
+      ready: latestReferenceFitGaps.ready,
+      summary: latestReferenceFitGaps.summary,
+      topSlots: latestReferenceFitGaps.slots.slice(0, 8),
+    } : {
+      status: 'pending',
+    },
     referenceVoxelSource: compactReferenceVoxelSourceEvidence().summary,
-    calibration: latestReferenceMetadata.kind === 'obj'
-      ? 'OBJ canonical Phase 33 calibration source'
-      : 'Inspection-only reference; use OBJ for Phase 33 calibration',
+    calibration: currentCalibrationWorkflowState(),
     calibrationCandidate: latestCalibrationReport ? {
       status: latestCalibrationReport.hardGateStatus,
       improvement: latestCalibrationReport.improvement,
@@ -503,9 +691,14 @@ function renderReferenceSummary(): void {
 }
 
 function renderDashboard(): void {
-  latestReferenceFeatureMatch = analyzeV3BuiltInReferenceFeatureMatch(latestReferenceFeatureGuide);
   latestReport = buildDashboardReport();
   latestBaseline = buildV3ReadinessBaseline(buildV3ReadinessExport(latestReport));
+  if (runAutomatedEvidenceButton) {
+    runAutomatedEvidenceButton.disabled = automatedEvidenceRunning;
+    runAutomatedEvidenceButton.textContent = automatedEvidenceRunning
+      ? 'Running Evidence...'
+      : 'Run Automated Evidence';
+  }
   statusLabel.textContent = latestReport.label;
   statusSummary.textContent = latestReport.summary;
   renderMetrics(latestReport);
@@ -513,6 +706,7 @@ function renderDashboard(): void {
   renderBaseline(latestBaseline);
   renderCalibration();
   renderFeatureMatch();
+  renderFitGaps();
   renderReferenceSummary();
   reportSummary.textContent = buildV3ReadinessExport(latestReport, {
     format: 'string',
@@ -522,6 +716,53 @@ function renderDashboard(): void {
   (window as any).__IBRAWLS_V3_READINESS_BASELINE__ = latestBaseline;
   (window as any).__IBRAWLS_V3_AEGIS_CALIBRATION__ = latestCalibrationReport;
   (window as any).__IBRAWLS_V3_REFERENCE_FEATURE_MATCH__ = latestReferenceFeatureMatch;
+  (window as any).__IBRAWLS_V3_REFERENCE_FIT_GAPS__ = latestReferenceFitGaps;
+}
+
+async function runAutomatedEvidence(): Promise<void> {
+  if (automatedEvidenceRunning) return;
+
+  automatedEvidenceRunning = true;
+  latestSuitFidelityEvidence = pendingEvidence('Suit fidelity is running');
+  latestReferenceProportionEvidence = pendingEvidence('Reference proportions are running');
+  latestVisualQaEvidence = pendingEvidence('Visual QA is running');
+  latestPoseEvidence = pendingEvidence('Pose clearance is running');
+  latestPerformanceEvidence = pendingEvidence('Performance smoke is running');
+  renderDashboard();
+
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+
+  try {
+    ensureV3PreviewModel();
+    const suitFidelity = analyzeV3BuiltInSuitFidelity();
+    latestSuitFidelityEvidence = compactSuitFidelityEvidence(suitFidelity);
+
+    latestReferenceProportionReport = analyzeV3AegisReferenceProportions();
+    latestReferenceProportionEvidence = compactReferenceProportionEvidence(latestReferenceProportionReport);
+    latestReferenceFeatureMatch = analyzeV3BuiltInReferenceFeatureMatch(latestReferenceFeatureGuide);
+    latestReferenceFitGaps = latestReferenceFeatureGuide
+      ? analyzeV3ReferenceFitGaps(latestReferenceFeatureGuide)
+      : null;
+
+    const {
+      buildV3PerformanceSmokeReport,
+      buildV3PerformanceSmokeScene,
+    } = await import('./v3PerformanceSmoke');
+    const smokeScene = buildV3PerformanceSmokeScene({ qualityTier: 'desktop' });
+    const smokeReport = buildV3PerformanceSmokeReport(smokeScene);
+    latestVisualQaEvidence = compactVisualQaEvidence(smokeReport);
+    latestPoseEvidence = compactPoseEvidence(smokeReport);
+    latestPerformanceEvidence = compactPerformanceEvidence(smokeReport);
+  } catch (error) {
+    latestSuitFidelityEvidence = failedEvidence('Suit fidelity', error);
+    latestReferenceProportionEvidence = failedEvidence('Reference proportions', error);
+    latestVisualQaEvidence = failedEvidence('Visual QA', error);
+    latestPoseEvidence = failedEvidence('Pose clearance', error);
+    latestPerformanceEvidence = failedEvidence('Performance smoke', error);
+  } finally {
+    automatedEvidenceRunning = false;
+    renderDashboard();
+  }
 }
 
 function objectBounds(object: THREE.Object3D): THREE.Box3 {
@@ -572,14 +813,7 @@ function countObjectMetadata(object: THREE.Object3D): {
 function normalizeObjectForReview(object: THREE.Object3D): THREE.Group {
   const root = new THREE.Group();
   root.add(object);
-  const sourceBounds = objectBounds(object);
-  const center = sourceBounds.getCenter(new THREE.Vector3());
-  object.position.sub(center);
-  const centeredBounds = objectBounds(root);
-  const size = centeredBounds.getSize(new THREE.Vector3());
-  const scale = size.y > 0 ? 1.8 / size.y : 1;
-  root.scale.setScalar(scale);
-  root.position.y = 0.9;
+  normalizeV3ReadinessComparisonSubject(root);
   return root;
 }
 
@@ -626,12 +860,15 @@ async function parseReferenceFileFromSource(
 async function loadReference(file: File): Promise<void> {
   referenceFileName.textContent = file.name;
   referenceSummary.textContent = `Loading ${file.name}...`;
+  referenceLoadError = null;
+  renderDashboard();
   referenceAcknowledged = false;
   referenceAcknowledgedAt = undefined;
-  referenceLoadError = null;
   referenceAcknowledgementIssue = null;
   latestReferenceScaffold = null;
   latestReferenceFeatureGuide = null;
+  latestReferenceFeatureMatch = null;
+  latestReferenceFitGaps = null;
   latestCalibrationReport = null;
   const kind = getV3ReferenceFileKind(file.name);
   const objText = kind === 'obj' ? await file.text() : undefined;
@@ -640,6 +877,9 @@ async function loadReference(file: File): Promise<void> {
   referenceRoot.clear();
   referenceRoot.add(normalized);
   const referenceSilhouette = silhouetteFromObject(referenceRoot);
+  ensureV3PreviewModel();
+  latestReferenceProportionReport = latestReferenceProportionReport ?? analyzeV3AegisReferenceProportions();
+  latestReferenceProportionEvidence = compactReferenceProportionEvidence(latestReferenceProportionReport);
 
   const metadataCounts = countObjectMetadata(normalized);
   latestReferenceMetadata = buildV3ReferenceMetadata({
@@ -653,11 +893,11 @@ async function loadReference(file: File): Promise<void> {
     referenceSilhouette
   );
   latestReferenceProportionBands = {
-    current: referenceProportions.current.bands,
-    target: referenceProportions.targets.bands,
+    current: latestReferenceProportionReport.current.bands,
+    target: latestReferenceProportionReport.targets.bands,
     reference: sampleV3ReferenceProportionBands(referenceRoot),
     global: referenceSilhouette,
-    summary: referenceProportions.summary,
+    summary: latestReferenceProportionReport.summary,
     canonical: latestReferenceMetadata.kind === 'obj',
   };
   if (latestReferenceMetadata.kind === 'obj' && objText) {
@@ -677,9 +917,14 @@ async function loadReference(file: File): Promise<void> {
         label: file.name,
       },
     });
-    latestCalibrationReport = buildV3AegisCalibrationCandidates(latestReferenceScaffold, {
-      maxCandidates: 5,
-    });
+    const workflowState = currentCalibrationWorkflowState();
+    latestCalibrationReport = workflowState.shouldBuildEnvelopeCandidates
+      ? buildV3AegisCalibrationCandidates(latestReferenceScaffold, {
+        maxCandidates: 5,
+      })
+      : null;
+    latestReferenceFeatureMatch = analyzeV3BuiltInReferenceFeatureMatch(latestReferenceFeatureGuide);
+    latestReferenceFitGaps = analyzeV3ReferenceFitGaps(latestReferenceFeatureGuide);
   }
   renderDashboard();
 }
@@ -851,9 +1096,7 @@ copyBaselineButton.addEventListener('click', () => {
 });
 
 downloadCalibrationButton.addEventListener('click', () => {
-  const contents = latestCalibrationReport
-    ? formatV3AegisCalibrationReport(latestCalibrationReport)
-    : 'No V3 Aegis calibration report is available. Load the canonical OBJ reference first.';
+  const contents = buildCalibrationTextExport();
   const url = URL.createObjectURL(new Blob([contents], { type: 'text/plain' }));
   const anchor = document.createElement('a');
   anchor.href = url;
@@ -863,10 +1106,7 @@ downloadCalibrationButton.addEventListener('click', () => {
 });
 
 copyCalibrationButton.addEventListener('click', () => {
-  const contents = latestCalibrationReport
-    ? formatV3AegisCalibrationReport(latestCalibrationReport)
-    : 'No V3 Aegis calibration report is available. Load the canonical OBJ reference first.';
-  navigator.clipboard?.writeText(contents).catch(() => undefined);
+  navigator.clipboard?.writeText(buildCalibrationTextExport()).catch(() => undefined);
 });
 
 downloadCalibrationJsonButton.addEventListener('click', () => {
@@ -880,6 +1120,10 @@ downloadCalibrationJsonButton.addEventListener('click', () => {
 
 copyCalibrationJsonButton.addEventListener('click', () => {
   navigator.clipboard?.writeText(buildCalibrationJsonExport()).catch(() => undefined);
+});
+
+runAutomatedEvidenceButton?.addEventListener('click', () => {
+  void runAutomatedEvidence();
 });
 
 window.addEventListener('resize', renderComparison);

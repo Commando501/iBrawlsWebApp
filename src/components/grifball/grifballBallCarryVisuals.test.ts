@@ -39,7 +39,7 @@ test('non-V1 ball carriers keep the existing centered held-ball position', () =>
   }
 });
 
-test('V1 carriers keep the centered held-ball position while not punching', () => {
+test('V1 carriers reset the held ball to a visible carry pose after punching', () => {
   const basePosition = new THREE.Vector3(0, 1.1, 0);
 
   const posed = resolveHeldGrifballBallVisualPosition({
@@ -51,5 +51,8 @@ test('V1 carriers keep the centered held-ball position while not punching', () =
     settings: { hammerMeleeSpeed: 0.24 },
   });
 
-  assert.deepEqual(posed.toArray(), basePosition.toArray());
+  assert.notDeepEqual(posed.toArray(), basePosition.toArray());
+  assert.ok(posed.z < -0.2, `expected reset pose to keep the ball in front of the carrier, got z=${posed.z}`);
+  assert.ok(Math.abs(posed.x) > 0.05, `expected reset pose to stay in the carrier's hands, got x=${posed.x}`);
+  assert.ok(posed.y > basePosition.y - 0.1, `expected reset pose to stay near hand height, got y=${posed.y}`);
 });

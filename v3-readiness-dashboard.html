@@ -346,7 +346,6 @@
           <section>
             <h2>Reference File</h2>
             <p class="subtitle">OBJ Canonical Reference: use the non-warped OBJ for Phase 33 scaffold calibration. FBX, GLB, and GLTF remain supported for local inspection only.</p>
-            <input id="referenceInput" type="file" accept=".fbx,.glb,.gltf,.obj" />
             <div id="referenceDropZone" class="reference-drop-zone" role="button" tabindex="0">
               <strong>Choose Local Reference File</strong>
               <span>Drop FBX, GLB, GLTF, or OBJ here, or click to browse. Files stay local to this browser session.</span>
@@ -370,7 +369,10 @@
 
           <section>
             <h2>Evidence Snapshot</h2>
-            <p class="subtitle">Proportion Bands are sanitized dashboard evidence only; raw reference geometry never leaves the browser.</p>
+            <p class="subtitle">Proportion Bands are sanitized dashboard evidence only; raw reference geometry never leaves the browser. Heavy generated-model QA runs only when requested so the local dashboard stays responsive.</p>
+            <div class="button-row">
+              <button id="runAutomatedEvidence" type="button">Run Automated Evidence</button>
+            </div>
             <div id="metrics" class="metrics"></div>
             <pre id="reportSummary"></pre>
           </section>
@@ -403,6 +405,13 @@
             <p class="subtitle">Phase 34 extracts sanitized OBJ feature guides and compares current Aegis voxel sources against visor, jaw, chest, back, bracer, boot, and limb feature targets.</p>
             <div id="featureGuideSummary" class="metrics"></div>
             <pre id="featureMatchReport">Load the canonical OBJ reference to build feature-guide evidence, or inspect the built-in fallback feature gate.</pre>
+          </section>
+
+          <section>
+            <h2>Reference Fit Gaps</h2>
+            <p class="subtitle">Ranks V3 slot-family width, height, depth, and vertical-position mismatches against the sanitized OBJ guide so tuning work can target the worst armor parts first.</p>
+            <div id="fitGapSummary" class="metrics"></div>
+            <pre id="fitGapReport">Load the canonical OBJ reference to rank per-slot armor fit gaps.</pre>
           </section>
 
           <section>

@@ -154,6 +154,22 @@ export interface V3ReadinessDashboardExportOptions {
   exportedAt?: string;
 }
 
+export type V3ReadinessCalibrationWorkflowStatus =
+  | 'waiting'
+  | 'candidate-required'
+  | 'source-active';
+
+export interface V3ReadinessCalibrationWorkflowInput {
+  referenceKind?: string | null;
+  referenceVoxelSource?: V3ReadinessEvidenceSummaryInput | V3ReadinessEvidenceSummary | null;
+}
+
+export interface V3ReadinessCalibrationWorkflowState {
+  status: V3ReadinessCalibrationWorkflowStatus;
+  shouldBuildEnvelopeCandidates: boolean;
+  message: string;
+}
+
 const EVIDENCE_LABELS: Record<V3ReadinessEvidenceKey, string> = {
   suitFidelity: 'Suit fidelity',
   referenceProportions: 'Reference proportions',
@@ -238,6 +254,60 @@ function normalizeIssueMessages(issues: readonly unknown[] | undefined): string[
     .map(issueToMessage)
     .filter((message) => message.trim().length > 0)
     .slice(0, MAX_ISSUES_PER_ENTRY);
+}
+
+function evidenceHasGeneratedReferenceVoxelSource(
+  input: V3ReadinessEvidenceSummaryInput | V3ReadinessEvidenceSummary | null | undefined
+): boolean {
+  if (input?.ready !== true || !isPlainObject(input.summary)) return false;
+  return input.summary.schemaVersion === 'v3-aegis-reference-voxels/v1';
+}
+
+export function getV3ReadinessCalibrationWorkflowState(
+  input: V3ReadinessCalibrationWorkflowInput = {}
+): V3ReadinessCalibrationWorkflowState {
+  const referenceKind = input.referenceKind ?? 'none';
+  if (referenceKind !== 'obj') {
+    return {
+      status: 'waiting',
+      shouldBuildEnvelopeCandidates: false,
+      message: 'Load the canonical OBJ reference to inspect local reference alignment. FBX, GLB, and GLTF remain inspection-only.',
+    };
+  }
+
+  if (evidenceHasGeneratedReferenceVoxelSource(input.referenceVoxelSource)) {
+    return {
+      status: 'source-active',
+      shouldBuildEnvelopeCandidates: false,
+      message: 'OBJ-derived reference voxel source is active; envelope calibration is retired. Use Reference Voxel Source, Reference Feature Match, and automated evidence to inspect current model gaps.',
+    };
+  }
+
+  return {
+    status: 'candidate-required',
+    shouldBuildEnvelopeCandidates: true,
+    message: 'Generated OBJ-derived reference voxel source is missing or failing validation, so envelope calibration candidates remain available as a fallback diagnostic.',
+  };
+}
+
+export function formatV3ReadinessCalibrationWorkflowText(
+  state: V3ReadinessCalibrationWorkflowState
+): string {
+  const renderedGateClosureStatus = state.status === 'source-active'
+    ? 'Generated Source Active'
+    : state.status === 'candidate-required'
+      ? 'Reconstruction Required'
+      : 'waiting';
+  return [
+    `Calibration Status: ${state.status}`,
+    `Rendered Gate Closure: ${renderedGateClosureStatus}`,
+    `Candidates: ${state.shouldBuildEnvelopeCandidates ? 'pending' : 0}`,
+    '',
+    state.message,
+    state.status === 'source-active'
+      ? 'Envelope calibration is retired for the checked-in OBJ-derived voxel source. Use Reference Voxel Source, Reference Feature Match, and Run Automated Evidence to inspect current model gaps.'
+      : 'Envelope calibration remains a fallback diagnostic only when the generated OBJ-derived source is missing or failing validation.',
+  ].join('\n');
 }
 
 function normalizeEvidenceSummary(

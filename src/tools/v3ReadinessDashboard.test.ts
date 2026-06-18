@@ -4,11 +4,17 @@ import {
   V3_OBJ_REFERENCE_PROPORTION_TARGETS,
 } from '../components/v3/v3ReferenceProportions';
 import {
+  hideV3ReadinessComparisonWeapons,
+  normalizeV3ReadinessComparisonSubject,
+} from './v3ReadinessDashboardPreview';
+import {
   V3_READINESS_CHECKLIST_ITEM_IDS,
   V3_READINESS_CHECKLIST_STORAGE_KEY,
   V3_READINESS_STATUS_COPY,
   buildV3ReadinessDashboardReport,
   buildV3ReadinessExport,
+  formatV3ReadinessCalibrationWorkflowText,
+  getV3ReadinessCalibrationWorkflowState,
   normalizeV3ReadinessChecklist,
   persistV3ReadinessChecklist,
   readV3ReadinessChecklist,
@@ -191,6 +197,125 @@ test('buildV3ReadinessDashboardReport blocks readiness when automated evidence i
   assert.ok(report.blockers.some((blocker) => blocker.id === 'visualQaEvidence'));
   assert.ok(report.blockers.some((blocker) => blocker.id === 'poseClearanceEvidence'));
   assert.ok(report.blockers.some((blocker) => blocker.id === 'performanceSmokeEvidence'));
+});
+
+test('buildV3ReadinessDashboardReport supports deferred heavy evidence while generated source evidence is ready', () => {
+  const report = buildV3ReadinessDashboardReport({
+    checklist: completeChecklist(),
+    referenceVoxelSource: readyInput().referenceVoxelSource,
+    referenceComparison: {
+      acknowledged: true,
+      metadata: {
+        fileName: 'Halo Reach - Spartans [IK Rigged] V3 UNSC Armory.obj',
+        kind: 'obj',
+      },
+    },
+  });
+
+  assert.equal(report.ready, false);
+  assert.equal(report.status, 'not-player-ready');
+  assert.equal(report.evidence.referenceVoxelSource.ready, true);
+  assert.equal(report.evidence.visualQa.ready, null);
+  assert.equal(report.evidence.poseClearance.ready, null);
+  assert.equal(report.evidence.performanceSmoke.ready, null);
+  assert.ok(report.blockers.some((blocker) => blocker.id === 'visualQaEvidence'));
+  assert.ok(report.blockers.some((blocker) => blocker.id === 'performanceSmokeEvidence'));
+});
+
+test('getV3ReadinessCalibrationWorkflowState retires envelope candidates when generated OBJ voxel source is active', () => {
+  const sourceActive = getV3ReadinessCalibrationWorkflowState({
+    referenceKind: 'obj',
+    referenceVoxelSource: readyInput().referenceVoxelSource,
+  });
+
+  assert.equal(sourceActive.status, 'source-active');
+  assert.equal(sourceActive.shouldBuildEnvelopeCandidates, false);
+  assert.match(sourceActive.message, /OBJ-derived reference voxel source is active/i);
+  assert.match(sourceActive.message, /envelope calibration is retired/i);
+
+  const missingSource = getV3ReadinessCalibrationWorkflowState({
+    referenceKind: 'obj',
+    referenceVoxelSource: {
+      ready: false,
+      issues: ['Generated source has no voxels.'],
+      summary: { schemaVersion: 'v3-aegis-reference-voxels/v1' },
+    },
+  });
+
+  assert.equal(missingSource.status, 'candidate-required');
+  assert.equal(missingSource.shouldBuildEnvelopeCandidates, true);
+
+  const inspectionOnly = getV3ReadinessCalibrationWorkflowState({
+    referenceKind: 'fbx',
+    referenceVoxelSource: readyInput().referenceVoxelSource,
+  });
+
+  assert.equal(inspectionOnly.status, 'waiting');
+  assert.equal(inspectionOnly.shouldBuildEnvelopeCandidates, false);
+});
+
+test('formatV3ReadinessCalibrationWorkflowText explains source-active calibration exports', () => {
+  const state = getV3ReadinessCalibrationWorkflowState({
+    referenceKind: 'obj',
+    referenceVoxelSource: readyInput().referenceVoxelSource,
+  });
+  const text = formatV3ReadinessCalibrationWorkflowText(state);
+
+  assert.match(text, /Calibration Status: source-active/);
+  assert.match(text, /Rendered Gate Closure: Generated Source Active/);
+  assert.match(text, /Candidates: 0/);
+  assert.match(text, /Envelope calibration is retired/i);
+  assert.doesNotMatch(text, /Load the canonical OBJ reference first/);
+});
+
+test('hideV3ReadinessComparisonWeapons hides all weapon groups without hiding the armor root', async () => {
+  const THREE = await import('three');
+  const group = new THREE.Group();
+  const hammer = new THREE.Group();
+  const sword = new THREE.Group();
+  const pistol = new THREE.Group();
+  hammer.userData.weaponType = 'hammer';
+  sword.userData.weaponType = 'sword';
+  pistol.userData.weaponType = 'pistol';
+  hammer.visible = true;
+  sword.visible = true;
+  pistol.visible = true;
+  group.visible = true;
+
+  hideV3ReadinessComparisonWeapons({ group, hammer, sword, pistol });
+
+  assert.equal(group.visible, true);
+  assert.equal(hammer.visible, false);
+  assert.equal(sword.visible, false);
+  assert.equal(pistol.visible, false);
+  assert.equal(hammer.userData.v3ReadinessComparisonHidden, true);
+  assert.equal(sword.userData.v3ReadinessComparisonHidden, true);
+  assert.equal(pistol.userData.v3ReadinessComparisonHidden, true);
+});
+
+test('normalizeV3ReadinessComparisonSubject scales review subjects to a shared standing height', async () => {
+  const THREE = await import('three');
+  const root = new THREE.Group();
+  const mesh = new THREE.Mesh(
+    new THREE.BoxGeometry(2, 4, 1),
+    new THREE.MeshBasicMaterial()
+  );
+  mesh.position.set(4, 8, -3);
+  root.add(mesh);
+
+  const result = normalizeV3ReadinessComparisonSubject(root, {
+    targetHeight: 1.8,
+  });
+  const bounds = new THREE.Box3().setFromObject(root);
+  const size = bounds.getSize(new THREE.Vector3());
+  const center = bounds.getCenter(new THREE.Vector3());
+
+  assert.equal(Number(size.y.toFixed(6)), 1.8);
+  assert.ok(Math.abs(bounds.min.y) < 0.000001);
+  assert.ok(Math.abs(center.x) < 0.000001);
+  assert.ok(Math.abs(center.z) < 0.000001);
+  assert.equal(Number(result.scale.toFixed(6)), 0.45);
+  assert.equal(Number(result.normalizedHeight.toFixed(6)), 1.8);
 });
 
 test('buildV3ReadinessExport preserves sanitized OBJ proportion bands and strips raw payloads', () => {
