@@ -106,6 +106,7 @@ const MANUAL_SOURCE_TO_CATEGORY: Record<V3ReadinessChecklistItemId, V3ReadinessB
 
 const EVIDENCE_TO_CATEGORY: Record<V3ReadinessEvidenceKey, V3ReadinessBaselineCategory> = {
   suitFidelity: 'baseProportions',
+  referenceProportions: 'baseProportions',
   visualQa: 'builtInArmorFidelity',
   poseClearance: 'poseAtlas',
   performanceSmoke: 'performanceSmoke',
@@ -113,13 +114,14 @@ const EVIDENCE_TO_CATEGORY: Record<V3ReadinessEvidenceKey, V3ReadinessBaselineCa
 
 const EVIDENCE_LABELS: Record<V3ReadinessEvidenceKey, string> = {
   suitFidelity: 'Suit fidelity',
+  referenceProportions: 'Reference proportions',
   visualQa: 'Visual QA',
   poseClearance: 'Pose clearance',
   performanceSmoke: 'Performance smoke',
 };
 
 const RAW_OR_PRIVATE_KEY_PATTERN =
-  /^(raw|rawAssetData|assetData|assetBytes|buffer|bytes|blob|geometry|mesh|meshes|scene|camera|voxels|snapshots|cases|overlays|sourcePath|path|absolutePath|localPath|filePath|payload)$/i;
+  /^(raw|rawAssetData|rawGeometry|assetData|assetBytes|buffer|bytes|blob|geometry|mesh|meshes|scene|camera|voxels|snapshots|cases|overlays|sourcePath|path|absolutePath|localPath|filePath|payload)$/i;
 
 const PRIVATE_PATH_PATTERN = /(?:[A-Za-z]:\\|\/Users\/|\\Users\\|\/home\/|\/var\/|\/tmp\/)/i;
 
@@ -231,6 +233,7 @@ function normalizeReferenceComparison(value: unknown): V3ReadinessDashboardExpor
   const issues = normalizeIssues(value.issues);
   const metadata = sanitizeJsonValue(value.metadata);
   const comparison = sanitizeJsonValue(value.comparison);
+  const proportionBands = sanitizeJsonValue(value.proportionBands);
   return {
     acknowledged: value.acknowledged === true,
     issueCount: typeof value.issueCount === 'number' && Number.isFinite(value.issueCount)
@@ -241,6 +244,7 @@ function normalizeReferenceComparison(value: unknown): V3ReadinessDashboardExpor
     ...(typeof value.acknowledgedBy === 'string' ? { acknowledgedBy: sanitizeString(value.acknowledgedBy) } : {}),
     ...(metadata !== undefined ? { metadata } : {}),
     ...(comparison !== undefined ? { comparison } : {}),
+    ...(proportionBands !== undefined ? { proportionBands } : {}),
   };
 }
 
@@ -267,6 +271,7 @@ function normalizeExport(raw: Record<string, unknown>): V3ReadinessDashboardExpo
     checklist: normalizeChecklist(raw.checklist),
     evidence: {
       suitFidelity: normalizeEvidenceEntry(evidence.suitFidelity),
+      referenceProportions: normalizeEvidenceEntry(evidence.referenceProportions),
       visualQa: normalizeEvidenceEntry(evidence.visualQa),
       poseClearance: normalizeEvidenceEntry(evidence.poseClearance),
       performanceSmoke: normalizeEvidenceEntry(evidence.performanceSmoke),
@@ -285,6 +290,7 @@ function normalizeExport(raw: Record<string, unknown>): V3ReadinessDashboardExpo
   const rebuilt = buildV3ReadinessExport(buildV3ReadinessDashboardReport({
     checklist: normalized.checklist,
     suitFidelity: normalized.evidence.suitFidelity,
+    referenceProportions: normalized.evidence.referenceProportions,
     visualQa: normalized.evidence.visualQa,
     poseClearance: normalized.evidence.poseClearance,
     performanceSmoke: normalized.evidence.performanceSmoke,

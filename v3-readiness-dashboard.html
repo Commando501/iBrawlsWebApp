@@ -345,6 +345,8 @@
 
           <section>
             <h2>Reference File</h2>
+            <p class="subtitle">OBJ Canonical Reference: use the non-warped OBJ for Phase 33 scaffold calibration. FBX, GLB, and GLTF remain supported for local inspection only.</p>
+            <input id="referenceInput" type="file" accept=".fbx,.glb,.gltf,.obj" />
             <div id="referenceDropZone" class="reference-drop-zone" role="button" tabindex="0">
               <strong>Choose Local Reference File</strong>
               <span>Drop FBX, GLB, GLTF, or OBJ here, or click to browse. Files stay local to this browser session.</span>
@@ -368,6 +370,7 @@
 
           <section>
             <h2>Evidence Snapshot</h2>
+            <p class="subtitle">Proportion Bands are sanitized dashboard evidence only; raw reference geometry never leaves the browser.</p>
             <div id="metrics" class="metrics"></div>
             <pre id="reportSummary"></pre>
           </section>
@@ -380,6 +383,17 @@
               <button id="copyBaseline" type="button">Copy Baseline Markdown</button>
             </div>
             <div id="baselineFindings" class="issues"></div>
+          </section>
+
+          <section>
+            <h2>Calibration Candidates</h2>
+            <p class="subtitle">Phase 33 uses the canonical OBJ to build sanitized scaffold data and local Aegis base-envelope candidates. Candidate reports never include raw reference geometry.</p>
+            <div id="calibrationSummary" class="metrics"></div>
+            <div class="button-row">
+              <button id="downloadCalibration" type="button">Download Calibration Report</button>
+              <button id="copyCalibration" type="button">Copy Calibration Report</button>
+            </div>
+            <pre id="calibrationReport">Load the canonical OBJ reference to build local calibration candidates.</pre>
           </section>
 
           <section>

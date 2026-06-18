@@ -61,12 +61,14 @@ export interface V3ReadinessReferenceComparisonInput {
   acknowledgedBy?: string;
   metadata?: unknown;
   comparison?: unknown;
+  proportionBands?: unknown;
   issues?: readonly unknown[];
 }
 
 export interface V3ReadinessDashboardInput {
   checklist?: Record<string, unknown> | Partial<Record<V3ReadinessChecklistItemId, unknown>>;
   suitFidelity?: V3ReadinessEvidenceSummaryInput | null;
+  referenceProportions?: V3ReadinessEvidenceSummaryInput | null;
   visualQa?: V3ReadinessEvidenceSummaryInput | null;
   poseClearance?: V3ReadinessEvidenceSummaryInput | null;
   performanceSmoke?: V3ReadinessEvidenceSummaryInput | null;
@@ -76,6 +78,7 @@ export interface V3ReadinessDashboardInput {
 
 export type V3ReadinessEvidenceKey =
   | 'suitFidelity'
+  | 'referenceProportions'
   | 'visualQa'
   | 'poseClearance'
   | 'performanceSmoke';
@@ -95,10 +98,12 @@ export interface V3ReadinessReferenceComparisonEvidence {
   acknowledgedBy?: string;
   metadata?: V3ReadinessJsonValue;
   comparison?: V3ReadinessJsonValue;
+  proportionBands?: V3ReadinessJsonValue;
 }
 
 export interface V3ReadinessDashboardEvidence {
   suitFidelity: V3ReadinessEvidenceSummary;
+  referenceProportions: V3ReadinessEvidenceSummary;
   visualQa: V3ReadinessEvidenceSummary;
   poseClearance: V3ReadinessEvidenceSummary;
   performanceSmoke: V3ReadinessEvidenceSummary;
@@ -145,13 +150,14 @@ export interface V3ReadinessDashboardExportOptions {
 
 const EVIDENCE_LABELS: Record<V3ReadinessEvidenceKey, string> = {
   suitFidelity: 'Suit fidelity',
+  referenceProportions: 'Reference proportions',
   visualQa: 'Visual QA',
   poseClearance: 'Pose clearance',
   performanceSmoke: 'Performance smoke',
 };
 
 const RAW_EXPORT_KEY_PATTERN =
-  /^(raw|rawAssetData|assetData|assetBytes|buffer|bytes|blob|geometry|mesh|meshes|scene|camera|voxels|snapshots|cases|overlays|sourcePath|path|absolutePath|localPath|filePath|payload)$/i;
+  /^(raw|rawAssetData|rawGeometry|assetData|assetBytes|buffer|bytes|blob|geometry|mesh|meshes|scene|camera|voxels|snapshots|cases|overlays|sourcePath|path|absolutePath|localPath|filePath|payload)$/i;
 const PRIVATE_PATH_PATTERN = /(?:[A-Za-z]:\\|\/Users\/|\\Users\\|\/home\/|\/var\/|\/tmp\/)/i;
 const MAX_ISSUES_PER_ENTRY = 12;
 const MAX_STRING_LENGTH = 1_000;
@@ -245,6 +251,7 @@ function normalizeReferenceComparison(
   const issues = normalizeIssueMessages(input?.issues);
   const metadata = sanitizeJsonValue(input?.metadata);
   const comparison = sanitizeJsonValue(input?.comparison);
+  const proportionBands = sanitizeJsonValue(input?.proportionBands);
   return {
     acknowledged: input?.acknowledged === true,
     issueCount: issues.length,
@@ -253,12 +260,14 @@ function normalizeReferenceComparison(
     ...(typeof input?.acknowledgedBy === 'string' ? { acknowledgedBy: input.acknowledgedBy } : {}),
     ...(metadata !== undefined ? { metadata } : {}),
     ...(comparison !== undefined ? { comparison } : {}),
+    ...(proportionBands !== undefined ? { proportionBands } : {}),
   };
 }
 
 function buildEvidence(input: V3ReadinessDashboardInput): V3ReadinessDashboardEvidence {
   return {
     suitFidelity: normalizeEvidenceSummary(input.suitFidelity),
+    referenceProportions: normalizeEvidenceSummary(input.referenceProportions),
     visualQa: normalizeEvidenceSummary(input.visualQa),
     poseClearance: normalizeEvidenceSummary(input.poseClearance),
     performanceSmoke: normalizeEvidenceSummary(input.performanceSmoke),
@@ -340,6 +349,9 @@ function buildReportSummary({
   if (manualMissingCount > 0) {
     parts.push(`${manualMissingCount} manual checklist item${manualMissingCount === 1 ? '' : 's'} remain`);
   }
+  if (blockers.some((blocker) => blocker.id === 'v3InternalPrototypeGate')) {
+    parts.push('internal prototype gate remains');
+  }
   if (!referenceAcknowledged) {
     parts.push('reference comparison has not been acknowledged');
   }
@@ -398,6 +410,11 @@ export function buildV3ReadinessDashboardReport(
   const manualBlockers = V3_READINESS_CHECKLIST_ITEM_IDS
     .filter((id) => !checklist[id])
     .map(manualBlocker);
+  const internalPrototypeBlocker: V3ReadinessDashboardIssue = {
+    id: 'v3InternalPrototypeGate',
+    severity: 'blocker',
+    message: 'V3 remains an internal prototype and is not player-ready.',
+  };
   const referenceBlocker: V3ReadinessDashboardIssue[] = evidence.referenceComparison.acknowledged
     ? []
     : [{
@@ -407,7 +424,7 @@ export function buildV3ReadinessDashboardReport(
       message: 'Reference comparison has not been acknowledged.',
     }];
   const evidenceIssues = collectEvidenceIssues(evidence);
-  const blockers = [...manualBlockers, ...referenceBlocker, ...evidenceIssues.blockers];
+  const blockers = [internalPrototypeBlocker, ...manualBlockers, ...referenceBlocker, ...evidenceIssues.blockers];
   const warnings = evidenceIssues.warnings;
   const manualReady = V3_READINESS_CHECKLIST_ITEM_IDS.every((id) => checklist[id]);
   const ready = manualReady && evidence.referenceComparison.acknowledged && blockers.length === 0;
@@ -454,6 +471,7 @@ export function buildV3ReadinessExport(
     checklist: normalizeV3ReadinessChecklist(report.checklist),
     evidence: buildEvidence({
       suitFidelity: report.evidence.suitFidelity,
+      referenceProportions: report.evidence.referenceProportions,
       visualQa: report.evidence.visualQa,
       poseClearance: report.evidence.poseClearance,
       performanceSmoke: report.evidence.performanceSmoke,

@@ -30,11 +30,16 @@ test('buildV3RuntimeSmokeChecklist covers every required Phase 31 browser surfac
   assert.equal(mainMenuItem?.expectedText.includes('V3'), false);
   assert.ok(dashboardItem?.expectedText.includes('V3 Readiness Dashboard'));
   assert.ok(dashboardItem?.expectedText.includes('Not Player Ready'));
+  assert.ok(dashboardItem?.expectedText.includes('OBJ Canonical Reference'));
+  assert.ok(dashboardItem?.expectedText.includes('Proportion Bands'));
   assert.ok(dashboardItem?.expectedText.includes('Choose Local Reference File'));
   assert.ok(dashboardItem?.expectedText.includes('Download Readiness Report'));
   assert.ok(dashboardItem?.expectedText.includes('Baseline Gaps'));
   assert.ok(dashboardItem?.expectedText.includes('Download Baseline Markdown'));
   assert.ok(dashboardItem?.expectedText.includes('Copy Baseline Markdown'));
+  assert.ok(dashboardItem?.expectedText.includes('Calibration Candidates'));
+  assert.ok(dashboardItem?.expectedText.includes('Download Calibration Report'));
+  assert.ok(dashboardItem?.expectedText.includes('Copy Calibration Report'));
   assert.ok(performanceItems.every((item) => item.expectedText.includes('Phase 26 Ready')));
   assert.ok(performanceItems.every((item) => item.expectedText.includes('visual pass')));
   assert.ok(performanceItems.every((item) => item.expectedText.includes('motion pass')));
