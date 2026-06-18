@@ -452,6 +452,52 @@ describe('buildV3SpartanModel', () => {
     ), 'forehead emissive detail should remain on the helmet front');
   });
 
+  it('applies Phase 35 core reference-rebuild silhouette gates to helmet, chest, back, and shoulders', () => {
+    const helmet = getV3BuiltinPartVoxels('helmet', 192, V3_SCULPT_TEST_PAINT_JOB);
+    const helmetBounds = getVoxelBounds(helmet);
+    const helmetTopSpan = getVoxelXSpan(helmet.filter((voxel) => voxel.y >= helmetBounds.maxY - 1));
+
+    const chest = getV3BuiltinPartVoxels('chest', 192, V3_SCULPT_TEST_PAINT_JOB);
+    const chestBounds = getVoxelBounds(chest);
+
+    const back = getV3BuiltinPartVoxels('back', 192, V3_SCULPT_TEST_PAINT_JOB);
+    const backBounds = getVoxelBounds(back);
+    const backRearZ = backBounds.minZ;
+    const backRearCoverage = back.filter((voxel) => voxel.z === backRearZ).length / (backBounds.sizeX * backBounds.sizeY);
+    const rearRailCells = back.filter((voxel) =>
+      voxel.color === V3_SCULPT_TEST_COLORS.secondary &&
+      voxel.z === backRearZ &&
+      voxel.y >= Math.floor(backBounds.sizeY * 0.2)
+    );
+    const leftRearRailCells = rearRailCells.filter((voxel) => voxel.x <= backBounds.minX + 3);
+    const rightRearRailCells = rearRailCells.filter((voxel) => voxel.x >= backBounds.maxX - 3);
+    const rearCenterModuleCells = back.filter((voxel) =>
+      voxel.color === V3_SCULPT_TEST_COLORS.emissive &&
+      voxel.emissive === true &&
+      voxel.z === backRearZ &&
+      voxel.x >= Math.floor(backBounds.sizeX * 0.35) &&
+      voxel.x <= Math.ceil(backBounds.sizeX * 0.65)
+    );
+
+    const shoulderLeft = getV3BuiltinPartVoxels('shoulderLeft', 192, V3_SCULPT_TEST_PAINT_JOB);
+    const shoulderRight = getV3BuiltinPartVoxels('shoulderRight', 192, V3_SCULPT_TEST_PAINT_JOB);
+    const leftBounds = getVoxelBounds(shoulderLeft);
+    const rightBounds = getVoxelBounds(shoulderRight);
+    const leftTopSpan = getVoxelXSpan(shoulderLeft.filter((voxel) => voxel.y >= leftBounds.maxY - 1));
+    const rightTopSpan = getVoxelXSpan(shoulderRight.filter((voxel) => voxel.y >= rightBounds.maxY - 1));
+
+    assert.ok(helmetTopSpan <= 12, `helmet crown needs stronger reference taper, got top span ${helmetTopSpan}`);
+    assert.ok(chestBounds.sizeZ <= 13, `chest depth should reduce below slab profile, got ${chestBounds.sizeZ}`);
+    assert.ok(backRearCoverage <= 0.34, `back rear should be rail/module segmented, got coverage ${backRearCoverage.toFixed(3)}`);
+    assert.ok(leftRearRailCells.length >= 12, `left backpack rail is under-modeled (${leftRearRailCells.length})`);
+    assert.ok(rightRearRailCells.length >= 12, `right backpack rail is under-modeled (${rightRearRailCells.length})`);
+    assert.ok(rearCenterModuleCells.length >= 4, `center backpack module should remain visible (${rearCenterModuleCells.length})`);
+    assert.ok(leftBounds.sizeZ <= 12, `left shoulder depth should avoid cuboid pauldron mass, got ${leftBounds.sizeZ}`);
+    assert.ok(rightBounds.sizeZ <= 12, `right shoulder depth should avoid cuboid pauldron mass, got ${rightBounds.sizeZ}`);
+    assert.ok(leftTopSpan <= 10, `left shoulder cap should taper, got top span ${leftTopSpan}`);
+    assert.ok(rightTopSpan <= 10, `right shoulder cap should taper, got top span ${rightTopSpan}`);
+  });
+
   it('tunes V3 limbs with tapered wrists, ankles, and no full-height front scaffolding columns', () => {
     const forearm = getV3BuiltinPartVoxels('forearmRight', 192, V3_SCULPT_TEST_PAINT_JOB);
     const hand = getV3BuiltinPartVoxels('handRight', 192, V3_SCULPT_TEST_PAINT_JOB);

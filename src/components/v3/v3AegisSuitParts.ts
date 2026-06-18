@@ -415,6 +415,11 @@ const createAegisHelmetVoxels = (
     emissive: roleEmissive('emissive', paintJob, part.paintRoles.includes('emissive')),
   });
 
+  carveV3FaceGaps(voxels, undefined, (voxel) =>
+    voxel.y >= height - 2 &&
+    (voxel.x < Math.floor(width * 0.22) || voxel.x > Math.floor(width * 0.78))
+  );
+
   return voxels;
 };
 
@@ -516,6 +521,7 @@ const createAegisChestVoxels = (
     dimensions: [2, 1, 1],
     color: fixedColor,
   });
+  carveV3FaceGaps(voxels, undefined, (voxel) => voxel.z <= Math.max(0, frontZ - 13));
 
   return voxels;
 };
@@ -690,6 +696,14 @@ const createAegisDetailedPartVoxels = (
         featureDimensions: [2, Math.max(6, height - 11), 1],
         color: secondaryColor,
       });
+      carveV3FaceGaps(voxels, undersuitColor, (voxel) =>
+        voxel.z === rearZ &&
+        voxel.y >= Math.floor(height * 0.12) &&
+        voxel.y <= Math.ceil(height * 0.88) &&
+        voxel.x >= 2 &&
+        voxel.x <= width - 3
+      );
+      carveV3FaceGaps(voxels, fixedColor, (voxel) => voxel.z === rearZ);
       break;
     }
     default:
@@ -726,6 +740,10 @@ const createAegisDetailedPartVoxels = (
     appendBoundedV3ArmorPlate(voxels, dimensions, [mirrorShoulderX(centerX - 2, 4), height - 3, frontZ], [4, 1, 1], secondaryColor);
     appendBoundedV3ArmorPlate(voxels, dimensions, [mirrorShoulderX(centerX, 1), height - 4, frontZ], [1, 1, 1], secondaryColor);
     appendBoundedV3ArmorPlate(voxels, dimensions, [mirrorShoulderX(centerX - 4, 1), height - 1, frontZ], [1, 1, 1], secondaryColor);
+    carveV3FaceGaps(voxels, undefined, (voxel) =>
+      voxel.z <= Math.max(0, frontZ - 12) ||
+      (voxel.y >= height - 2 && (voxel.x < 2 || voxel.x > width - 3))
+    );
   }
 
   return voxels;

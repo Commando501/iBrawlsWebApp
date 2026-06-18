@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import type { VoxelData } from '../VoxelModels';
+import type {
+  V3ReferenceFeatureGuide,
+  V3ReferenceFeaturePanelZoneKind,
+  V3ReferenceFeatureSlot,
+  V3ReferenceFeatureSlotGuide,
+} from '../../tools/v3ReferenceFeatureGuide';
 import {
   analyzeV3BuiltInReferenceFeatureMatch,
   analyzeV3BuiltInSuitFidelity,
@@ -12,6 +18,15 @@ import { V3_CHARACTER_SLOT_IDS } from './v3ModelTypes';
 import { getV3BuiltinPartVoxels } from './VoxelModelsV3';
 
 const TEST_COLOR = '#ffffff';
+const REFERENCE_COLORS = {
+  primary: '#101010',
+  secondary: '#202020',
+  accent: '#303030',
+  visor: '#404040',
+  emissive: '#505050',
+  decal: '#606060',
+  fixed: '#707070',
+} as const;
 
 const filledBox = (width: number, height: number, depth: number): VoxelData[] => {
   const voxels: VoxelData[] = [];
@@ -42,6 +57,115 @@ const scaffoldLimb = (): VoxelData[] => {
 
   return voxels;
 };
+
+const recolorWhere = (
+  voxels: readonly VoxelData[],
+  color: string,
+  predicate: (voxel: VoxelData) => boolean
+): VoxelData[] => voxels.map((voxel) => (predicate(voxel) ? { ...voxel, color } : voxel));
+
+const roleColoredHelmetBlockout = (): VoxelData[] => {
+  let voxels: VoxelData[] = filledBox(10, 8, 8).map((voxel) => ({ ...voxel, color: REFERENCE_COLORS.primary }));
+  voxels = recolorWhere(voxels, REFERENCE_COLORS.secondary, (voxel) => voxel.y >= 5 && voxel.z <= 6);
+  voxels = recolorWhere(voxels, REFERENCE_COLORS.fixed, (voxel) => voxel.z === 7 && voxel.y <= 2);
+  voxels = recolorWhere(voxels, REFERENCE_COLORS.visor, (voxel) => voxel.z === 7 && voxel.y >= 4);
+  return voxels;
+};
+
+const roleColoredChestBlockout = (): VoxelData[] => {
+  let voxels: VoxelData[] = filledBox(20, 16, 8).map((voxel) => ({ ...voxel, color: REFERENCE_COLORS.primary }));
+  voxels = recolorWhere(voxels, REFERENCE_COLORS.secondary, (voxel) => voxel.z === 7 && voxel.y >= 10);
+  voxels = recolorWhere(voxels, REFERENCE_COLORS.fixed, (voxel) => voxel.z === 7 && voxel.y >= 5 && voxel.y <= 10);
+  voxels = recolorWhere(voxels, REFERENCE_COLORS.decal, (voxel) => voxel.z === 7 && Math.abs(voxel.x - 10) <= 1 && voxel.y >= 8);
+  return voxels;
+};
+
+const roleColoredBackBlockout = (): VoxelData[] => {
+  let voxels: VoxelData[] = filledBox(16, 14, 8).map((voxel) => ({ ...voxel, color: REFERENCE_COLORS.primary }));
+  voxels = recolorWhere(voxels, REFERENCE_COLORS.secondary, (voxel) => voxel.z === 0 && voxel.y >= 4);
+  voxels = recolorWhere(voxels, REFERENCE_COLORS.emissive, (voxel) => voxel.z === 0 && Math.abs(voxel.x - 8) <= 1 && voxel.y >= 4);
+  return voxels;
+};
+
+const roleColoredShoulderBlockout = (): VoxelData[] => {
+  let voxels: VoxelData[] = filledBox(12, 10, 8).map((voxel) => ({ ...voxel, color: REFERENCE_COLORS.primary }));
+  voxels = recolorWhere(voxels, REFERENCE_COLORS.accent, (voxel) => voxel.y <= 1);
+  voxels = recolorWhere(voxels, REFERENCE_COLORS.secondary, (voxel) => voxel.z === 7 && voxel.y >= 5);
+  return voxels;
+};
+
+const makePanelZone = (kind: V3ReferenceFeaturePanelZoneKind) => ({
+  kind,
+  objectCount: 1,
+  verticalBand: 'middle' as const,
+  side: 'center' as const,
+  materialRoleHints: [],
+});
+
+const makeSlotGuide = (
+  slot: V3ReferenceFeatureSlot,
+  panelKinds: readonly V3ReferenceFeaturePanelZoneKind[]
+): V3ReferenceFeatureSlotGuide => ({
+  slot,
+  objectCount: Math.max(1, panelKinds.length),
+  objectNames: panelKinds.length === 0 ? [`${slot}-placeholder`] : panelKinds.map((kind) => `${slot}-${kind}`),
+  materialRoleHints: [],
+  boundsRatio: {
+    widthToReferenceHeight: 0.1,
+    depthToReferenceHeight: 0.1,
+    heightToReferenceHeight: 0.1,
+  },
+  verticalRange: {
+    minRatio: 0,
+    maxRatio: 1,
+  },
+  panelZones: panelKinds.map(makePanelZone),
+  centerlineGaps: [],
+  ridgeHints: [],
+  ventHints: [],
+  channelHints: [],
+  symmetrySignature: {
+    leftCount: 0,
+    rightCount: 0,
+    centerCount: 1,
+    pairedObjectCount: 0,
+    balance: 1,
+    hasLeftRightPair: false,
+  },
+});
+
+const makeReferenceGuide = (slotGuides: readonly V3ReferenceFeatureSlotGuide[]): V3ReferenceFeatureGuide => ({
+  schemaVersion: 'v3-reference-feature-guide/v1',
+  version: 1,
+  source: {
+    kind: 'obj',
+    canonicalKind: 'obj',
+    fileName: 'synthetic-phase-35-guide.obj',
+    label: 'synthetic phase 35 guide',
+    metadata: {
+      objectCount: slotGuides.reduce((total, slotGuide) => total + slotGuide.objectCount, 0),
+      materialCount: 0,
+      vertexCount: 0,
+      faceCount: 0,
+      triangleCountEstimate: 0,
+    },
+  },
+  slotOrder: slotGuides.map((slotGuide) => slotGuide.slot),
+  slotGuides: [...slotGuides],
+  summary: {
+    slotCount: slotGuides.length,
+    objectCount: slotGuides.reduce((total, slotGuide) => total + slotGuide.objectCount, 0),
+    materialRoleHints: [],
+    symmetrySignature: {
+      leftCount: 0,
+      rightCount: 0,
+      centerCount: slotGuides.length,
+      pairedObjectCount: 0,
+      balance: 1,
+      hasLeftRightPair: false,
+    },
+  },
+});
 
 const issueCodes = (slotReport: ReturnType<typeof analyzeV3PartFidelity>): V3PartFidelityIssueCode[] =>
   slotReport.issues.map((issue) => issue.code);
@@ -199,5 +323,53 @@ describe('analyzeV3ReferenceFeatureMatch', () => {
     assert.ok(helmet?.issues.some((issue) => issue.code === 'missing-reference-feature'));
     assert.ok(helmet?.issues.some((issue) => issue.code === 'material-role-diversity-low'));
     assert.ok((helmet?.score ?? 1) < 0.5);
+  });
+
+  it('fails role-colored blockouts that only paint expected feature bands onto a filled box', () => {
+    const report = analyzeV3ReferenceFeatureMatch({
+      slots: ['helmet'],
+      voxelsBySlot: {
+        helmet: roleColoredHelmetBlockout(),
+      },
+    });
+    const helmet = report.slots.helmet;
+
+    assert.equal(helmet?.score, 1, 'the fixture intentionally satisfies the old feature-count score');
+    assert.equal(report.ready, false);
+    assert.equal(helmet?.ready, false);
+    assert.ok(helmet?.issues.some((issue) => issue.code === 'slot-fidelity-blocked'));
+  });
+
+  it('fails helmet, chest, back, and shoulder matches when guide coverage omits their required zones', () => {
+    const report = analyzeV3ReferenceFeatureMatch({
+      guide: makeReferenceGuide([
+        makeSlotGuide('helmet', ['visor']),
+        makeSlotGuide('chest', ['pectoral']),
+        makeSlotGuide('back', ['rail']),
+        makeSlotGuide('shoulder', []),
+      ]),
+      slots: ['helmet', 'chest', 'back', 'shoulderRight'],
+      voxelsBySlot: {
+        helmet: roleColoredHelmetBlockout(),
+        chest: roleColoredChestBlockout(),
+        back: roleColoredBackBlockout(),
+        shoulderRight: roleColoredShoulderBlockout(),
+      },
+    });
+    const missingGuideSlots = new Set(
+      report.issues
+        .filter((issue) => issue.code === 'missing-guide-coverage')
+        .map((issue) => issue.slot)
+    );
+
+    assert.equal(report.ready, false);
+    assert.deepEqual(
+      [...missingGuideSlots].sort(),
+      ['back', 'chest', 'helmet', 'shoulderRight'].sort()
+    );
+    assert.equal(report.slots.helmet?.ready, false);
+    assert.equal(report.slots.chest?.ready, false);
+    assert.equal(report.slots.back?.ready, false);
+    assert.equal(report.slots.shoulderRight?.ready, false);
   });
 });

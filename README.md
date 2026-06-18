@@ -326,6 +326,8 @@ Phase 33 adds the local V3 reference scaffold and auto-calibration pipeline. Can
 
 Phase 34 starts reference-guided V3 model reconstruction. The readiness dashboard can now extract a sanitized `Reference Feature Match` guide from the canonical OBJ, and built-in Aegis sources use deterministic voxel sculpt primitives for visor/jaw/crown forms, chest panel zones, pelvis/back segmentation, bracers, shins, and boots. The OBJ remains browser-local/private; committed data stays export-safe, saved armor remains voxel JSON, V3 stays internal/not-player-ready, and gameplay/collision/hitbox/reach/networking/save-schema behavior remains unchanged.
 
+Phase 35 expands the OBJ reference guide with geometry-band segmentation so coarse reference objects can still produce sanitized slot guides for helmet, chest, back, shoulders, pelvis, forearms, hands, thighs, shins, and feet. Reference Feature Match now fails missing core guide coverage and blocky role-colored fixtures, while the built-in Aegis helmet, chest, back, and shoulders receive a focused core silhouette rebuild for stronger crown taper, shallower chest/back depth, segmented backpack rails, and less cuboid shoulder caps. V3 remains internal/not-player-ready, the OBJ stays local/private reference input only, and gameplay, collision, networking, save schemas, and V1/V2 behavior remain unchanged.
+
 ## Standalone 3D Map Maker
 
 iBrawls features a beautiful, feature-rich, and completely standalone 3D Map Maker application that runs 100% locally and offline in the user's browser. Since it is entirely decoupled from the main web application, players simply open the local HTML file to design custom battle arenas using standard assets!

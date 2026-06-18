@@ -84,8 +84,10 @@ export interface V3PartFidelityReport {
 
 export type V3ReferenceFeatureMatchIssueCode =
   | 'empty-payload'
+  | 'missing-guide-coverage'
   | 'missing-reference-feature'
   | 'material-role-diversity-low'
+  | 'slot-fidelity-blocked'
   | 'low-reference-feature-score';
 
 export interface V3ReferenceFeatureMatchIssue {
@@ -206,6 +208,26 @@ const V3_DEFAULT_REFERENCE_FEATURES: Record<V3ReferenceFeatureSlot, readonly V3R
   shin: ['knee'],
   foot: ['boot', 'toe'],
 };
+
+const V3_REQUIRED_GUIDE_COVERAGE_FEATURES: Partial<
+  Record<V3ReferenceFeatureSlot, readonly V3ReferenceFeaturePanelZoneKind[]>
+> = {
+  helmet: V3_DEFAULT_REFERENCE_FEATURES.helmet,
+  chest: V3_DEFAULT_REFERENCE_FEATURES.chest,
+  back: V3_DEFAULT_REFERENCE_FEATURES.back,
+  shoulder: V3_DEFAULT_REFERENCE_FEATURES.shoulder,
+};
+
+const V3_REFERENCE_FEATURE_FIDELITY_BLOCKERS = new Set<V3PartFidelityIssueCode>([
+  'slab-profile',
+  'center-gap-filled',
+  'panel-hierarchy-flat',
+  'cube-profile',
+  'terminal-taper-flat',
+  'vertical-scaffold',
+  'silhouette-too-sparse',
+  'terminal-proportion-oversized',
+]);
 
 const V3_REFERENCE_FEATURE_MATCH_SLOTS: readonly V3CharacterSlotId[] = V3_CHARACTER_SLOT_IDS.filter(
   (slot) => slot !== 'neck'
@@ -708,15 +730,35 @@ const getGuideFeatureKinds = (
   const guideKinds = guide?.slotGuides
     .find((slotGuide) => slotGuide.slot === referenceSlot)
     ?.panelZones.map((zone) => zone.kind) ?? [];
-  return uniqueFeatureKinds(guideKinds.length > 0
-    ? guideKinds
-    : V3_DEFAULT_REFERENCE_FEATURES[referenceSlot]);
+  return uniqueFeatureKinds([
+    ...V3_DEFAULT_REFERENCE_FEATURES[referenceSlot],
+    ...guideKinds,
+  ]);
 };
+
+const getGuideSlot = (
+  guide: V3ReferenceFeatureGuide | null | undefined,
+  referenceSlot: V3ReferenceFeatureSlot
+) => guide?.slotGuides.find((slotGuide) => slotGuide.slot === referenceSlot);
 
 const getGuideObjectCount = (
   guide: V3ReferenceFeatureGuide | null | undefined,
   referenceSlot: V3ReferenceFeatureSlot
-): number => guide?.slotGuides.find((slotGuide) => slotGuide.slot === referenceSlot)?.objectCount ?? 0;
+): number => getGuideSlot(guide, referenceSlot)?.objectCount ?? 0;
+
+const getMissingGuideCoverageKinds = (
+  guide: V3ReferenceFeatureGuide | null | undefined,
+  referenceSlot: V3ReferenceFeatureSlot
+): V3ReferenceFeaturePanelZoneKind[] => {
+  if (!guide) return [];
+
+  const requiredKinds = V3_REQUIRED_GUIDE_COVERAGE_FEATURES[referenceSlot] ?? [];
+  if (requiredKinds.length === 0) return [];
+
+  const slotGuide = getGuideSlot(guide, referenceSlot);
+  const guideKinds = new Set(slotGuide?.panelZones.map((zone) => zone.kind) ?? []);
+  return requiredKinds.filter((kind) => !slotGuide || slotGuide.objectCount <= 0 || !guideKinds.has(kind));
+};
 
 const countMatchingVoxels = (
   voxels: readonly VoxelData[],
@@ -878,6 +920,11 @@ export function analyzeV3ReferenceFeatureMatch(
     const matchedFeatureCount = features.filter((feature) => feature.present).length;
     const score = features.length === 0 ? 1 : Number((matchedFeatureCount / features.length).toFixed(4));
     const materialRoleDiversity = getReferenceMaterialRoleDiversity(uniqueVoxels);
+    const missingGuideCoverageKinds = getMissingGuideCoverageKinds(options.guide, referenceSlot);
+    const slotFidelity = uniqueVoxels.length > 0 ? analyzeV3PartFidelity(slot, uniqueVoxels) : null;
+    const slotFidelityBlockers = slotFidelity?.issues.filter((issue) =>
+      V3_REFERENCE_FEATURE_FIDELITY_BLOCKERS.has(issue.code)
+    ) ?? [];
     const issues: V3ReferenceFeatureMatchIssue[] = [];
 
     if (uniqueVoxels.length === 0) {
@@ -885,6 +932,16 @@ export function analyzeV3ReferenceFeatureMatch(
         code: 'empty-payload',
         slot,
         message: `${slot} has no voxels to compare against reference feature guidance`,
+      });
+    }
+
+    for (const kind of missingGuideCoverageKinds) {
+      issues.push({
+        code: 'missing-guide-coverage',
+        slot,
+        message: `${slot} reference guide is missing required ${referenceSlot} ${kind} coverage`,
+        value: 0,
+        threshold: 1,
       });
     }
 
@@ -898,6 +955,16 @@ export function analyzeV3ReferenceFeatureMatch(
           threshold: feature.threshold,
         });
       }
+    }
+
+    if (slotFidelityBlockers.length > 0) {
+      issues.push({
+        code: 'slot-fidelity-blocked',
+        slot,
+        message: `${slot} has blocky or non-slot-specific silhouette issues that cannot satisfy reference feature matching`,
+        value: slotFidelityBlockers.length,
+        threshold: 0,
+      });
     }
 
     if (materialRoleDiversity < V3_REFERENCE_FEATURE_MATERIAL_ROLE_MIN) {

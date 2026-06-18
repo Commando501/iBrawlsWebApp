@@ -60,6 +60,54 @@ function syntheticFeatureObj(): string {
   return lines.join('\n');
 }
 
+function syntheticCoarseTriangleObj(): string {
+  const lines: string[] = [
+    '# local synthetic coarse OBJ reference',
+    'mtllib C:/Users/private/source/coarse-reference.mtl',
+    'o MergedReferenceShell',
+    'g merged_shell',
+  ];
+  let vertex = 1;
+
+  const addBox = (material: string, min: Vec3, max: Vec3) => {
+    const start = vertex;
+    lines.push(`usemtl ${material}`);
+    for (const x of [min[0], max[0]]) {
+      for (const y of [min[1], max[1]]) {
+        for (const z of [min[2], max[2]]) {
+          lines.push(`v ${x} ${y} ${z}`);
+          vertex += 1;
+        }
+      }
+    }
+    lines.push(
+      `f ${start} ${start + 1} ${start + 3} ${start + 2}`,
+      `f ${start + 4} ${start + 6} ${start + 7} ${start + 5}`,
+      `f ${start} ${start + 4} ${start + 5} ${start + 1}`,
+      `f ${start + 2} ${start + 3} ${start + 7} ${start + 6}`
+    );
+  };
+
+  addBox('visor_gold_glass', [-0.7, 10.0, 0.2], [0.7, 12.0, 0.7]);
+  addBox('armor_primary', [-1.35, 7.0, 0.1], [1.35, 9.2, 0.8]);
+  addBox('armor_primary', [-1.05, 7.0, -1.1], [1.05, 9.1, -0.45]);
+  addBox('armor_secondary', [-2.6, 7.6, -0.5], [-1.6, 8.8, 0.55]);
+  addBox('armor_secondary', [1.6, 7.6, -0.5], [2.6, 8.8, 0.55]);
+  addBox('armor_primary', [-1.2, 5.1, -0.55], [1.2, 6.2, 0.55]);
+  addBox('armor_secondary', [-2.45, 4.2, -0.45], [-1.65, 5.8, 0.45]);
+  addBox('armor_secondary', [1.65, 4.2, -0.45], [2.45, 5.8, 0.45]);
+  addBox('undersuit_rubber_black', [-2.35, 3.45, -0.35], [-1.65, 4.1, 0.35]);
+  addBox('undersuit_rubber_black', [1.65, 3.45, -0.35], [2.35, 4.1, 0.35]);
+  addBox('armor_primary', [-1.15, 3.2, -0.5], [-0.25, 5.05, 0.5]);
+  addBox('armor_primary', [0.25, 3.2, -0.5], [1.15, 5.05, 0.5]);
+  addBox('armor_secondary', [-1.0, 1.25, -0.45], [-0.25, 3.1, 0.5]);
+  addBox('armor_secondary', [0.25, 1.25, -0.45], [1.0, 3.1, 0.5]);
+  addBox('armor_primary', [-1.05, 0.0, -0.65], [-0.15, 1.15, 0.95]);
+  addBox('armor_primary', [0.15, 0.0, -0.65], [1.05, 1.15, 0.95]);
+
+  return lines.join('\n');
+}
+
 describe('buildV3ReferenceFeatureGuide', () => {
   it('extracts deterministic slot feature hints from OBJ metadata', () => {
     const guide = buildV3ReferenceFeatureGuide({
@@ -164,5 +212,59 @@ describe('buildV3ReferenceFeatureGuide', () => {
     assert.equal(serialized.includes('triangles'), false);
     assert.equal(serialized.includes('referencedVertexIndexes'), false);
     assert.equal(serialized.includes('v -0.8 10.8 -0.6'), false);
+  });
+
+  it('derives export-safe slot guides from coarse triangle geometry bands', () => {
+    const guide = buildV3ReferenceFeatureGuide({
+      objText: syntheticCoarseTriangleObj(),
+      source: { kind: 'obj', fileName: 'C:/Users/private/source/coarse-reference.obj' },
+    });
+
+    const expectedDerivedSlots = [
+      'helmet',
+      'chest',
+      'pelvis',
+      'back',
+      'shoulder',
+      'forearm',
+      'hand',
+      'thigh',
+      'shin',
+      'foot',
+    ] as const;
+    for (const slot of expectedDerivedSlots) {
+      assert(guide.slotOrder.includes(slot), `expected ${slot} guide`);
+    }
+
+    assert.equal(guide.source.metadata.objectCount, 1);
+    assert(guide.summary.objectCount >= expectedDerivedSlots.length);
+
+    const helmet = guide.slotGuides.find((slot) => slot.slot === 'helmet');
+    const chest = guide.slotGuides.find((slot) => slot.slot === 'chest');
+    const back = guide.slotGuides.find((slot) => slot.slot === 'back');
+    const shoulder = guide.slotGuides.find((slot) => slot.slot === 'shoulder');
+    const foot = guide.slotGuides.find((slot) => slot.slot === 'foot');
+    assert(helmet);
+    assert(chest);
+    assert(back);
+    assert(shoulder);
+    assert(foot);
+
+    assert(helmet.verticalRange.minRatio > chest.verticalRange.minRatio);
+    assert(foot.verticalRange.maxRatio < chest.verticalRange.minRatio);
+    assert(back.panelZones.some((zone) => zone.kind === 'spine'));
+    assert(shoulder.symmetrySignature.hasLeftRightPair);
+    assert.deepEqual(foot.panelZones.map((zone) => zone.kind), ['boot', 'toe']);
+
+    const objectNames = guide.slotGuides.flatMap((slot) => slot.objectNames);
+    assert(objectNames.every((name) => name.startsWith('derived-')));
+
+    const serialized = JSON.stringify(guide);
+    assert.equal(serialized.includes('C:/Users/private'), false);
+    assert.equal(serialized.includes('coarse-reference.mtl'), false);
+    assert.equal(serialized.includes('MergedReferenceShell'), false);
+    assert.equal(serialized.includes('v -0.7 10 0.2'), false);
+    assert.equal(serialized.includes('triangles'), false);
+    assert.equal(serialized.includes('referencedVertexIndexes'), false);
   });
 });

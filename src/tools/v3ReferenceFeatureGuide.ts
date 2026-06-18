@@ -145,6 +145,14 @@ interface ClassifiedObject {
   side: 'left' | 'right' | 'center';
 }
 
+interface GeometryDerivedObjectBucket {
+  slot: V3ReferenceFeatureSlot;
+  side: 'left' | 'right' | 'center';
+  bounds: V3Bounds | null;
+  triangleCountEstimate: number;
+  materialRoleHints: V3ReferenceFeatureMaterialRoleHint[];
+}
+
 const SLOT_ORDER: V3ReferenceFeatureSlot[] = [
   'helmet',
   'chest',
@@ -196,6 +204,9 @@ const LINE_KEYWORD_ORDER: V3ReferenceFeatureLineHint['keyword'][] = [
   'crown',
 ];
 
+const GEOMETRY_SIDE_ORDER: Array<'left' | 'right' | 'center'> = ['left', 'right', 'center'];
+const COARSE_OBJECT_HEIGHT_RATIO = 0.45;
+
 export function buildV3ReferenceFeatureGuide(
   input: V3ReferenceFeatureGuideInput
 ): V3ReferenceFeatureGuide {
@@ -205,9 +216,15 @@ export function buildV3ReferenceFeatureGuide(
   const classifiedObjects = metadata.objects
     .map((object) => classifyObject(object))
     .filter((entry): entry is ClassifiedObject => entry !== null);
+  const geometryDerivedObjects = buildGeometryDerivedObjects(metadata.triangles, referenceBounds);
+  const guideObjects = mergeClassifiedAndGeometryObjects(
+    classifiedObjects,
+    geometryDerivedObjects,
+    referenceHeight
+  );
   const triangleRoleHintsBySlot = buildTriangleRoleHintsBySlot(metadata.triangles);
   const slotGuides = SLOT_ORDER.flatMap((slot) => {
-    const objects = classifiedObjects.filter((entry) => entry.slot === slot);
+    const objects = guideObjects.filter((entry) => entry.slot === slot);
     if (objects.length === 0) return [];
     return [buildSlotGuide(slot, objects, triangleRoleHintsBySlot.get(slot) ?? [], referenceBounds, referenceHeight)];
   });
@@ -232,9 +249,9 @@ export function buildV3ReferenceFeatureGuide(
     slotGuides,
     summary: {
       slotCount: slotGuides.length,
-      objectCount: classifiedObjects.length,
+      objectCount: guideObjects.length,
       materialRoleHints: uniqueMaterialRoles(slotGuides.flatMap((guide) => guide.materialRoleHints)),
-      symmetrySignature: buildSymmetrySignature(classifiedObjects),
+      symmetrySignature: buildSymmetrySignature(guideObjects),
     },
   };
 }
@@ -313,6 +330,235 @@ function buildTriangleRoleHintsBySlot(
     ]));
   }
   return hintsBySlot;
+}
+
+function buildGeometryDerivedObjects(
+  triangles: V3ObjTriangleMetadata[],
+  referenceBounds: V3Bounds | null
+): ClassifiedObject[] {
+  if (!referenceBounds || triangles.length === 0) return [];
+
+  const buckets = new Map<string, GeometryDerivedObjectBucket>();
+  for (const triangle of triangles) {
+    const bounds = triangleBounds(triangle);
+    const slot = classifyTriangleGeometrySlot(bounds, referenceBounds);
+    if (!slot) continue;
+
+    const side = isPairedGeometrySlot(slot) ? resolveGeometrySide(bounds, referenceBounds) : 'center';
+    const key = `${slot}:${side}`;
+    const bucket = buckets.get(key) ?? {
+      slot,
+      side,
+      bounds: null,
+      triangleCountEstimate: 0,
+      materialRoleHints: [],
+    };
+    bucket.bounds = unionBounds(bucket.bounds, bounds);
+    bucket.triangleCountEstimate += 1;
+    bucket.materialRoleHints = uniqueMaterialRoles([
+      ...bucket.materialRoleHints,
+      ...classifyTriangleMaterialRoles(triangle),
+    ]);
+    buckets.set(key, bucket);
+  }
+
+  return SLOT_ORDER.flatMap((slot) => GEOMETRY_SIDE_ORDER.flatMap((side) => {
+    const bucket = buckets.get(`${slot}:${side}`);
+    return bucket ? [buildGeometryDerivedObject(bucket)] : [];
+  }));
+}
+
+function mergeClassifiedAndGeometryObjects(
+  classifiedObjects: ClassifiedObject[],
+  geometryDerivedObjects: ClassifiedObject[],
+  referenceHeight: number
+): ClassifiedObject[] {
+  if (geometryDerivedObjects.length === 0) return classifiedObjects;
+
+  const derivedSlots = new Set(geometryDerivedObjects.map((entry) => entry.slot));
+  const coarseSlots = new Set(
+    classifiedObjects
+      .filter((entry) => derivedSlots.has(entry.slot) && isCoarseClassifiedObject(entry, referenceHeight))
+      .map((entry) => entry.slot)
+  );
+  const retainedClassifiedObjects = classifiedObjects.filter((entry) => !coarseSlots.has(entry.slot));
+  const retainedSlots = new Set(retainedClassifiedObjects.map((entry) => entry.slot));
+  const retainedDerivedObjects = geometryDerivedObjects.filter(
+    (entry) =>
+      coarseSlots.has(entry.slot) ||
+      !retainedSlots.has(entry.slot) ||
+      derivedObjectAddsPanelCoverage(entry, retainedClassifiedObjects.filter((classified) => classified.slot === entry.slot))
+  );
+  return [...retainedClassifiedObjects, ...retainedDerivedObjects];
+}
+
+function derivedObjectAddsPanelCoverage(
+  derivedObject: ClassifiedObject,
+  retainedObjects: ClassifiedObject[]
+): boolean {
+  if (retainedObjects.length === 0) return true;
+  const retainedKinds = getPanelKindsForObjects(retainedObjects);
+  return [...getPanelKindsForObjects([derivedObject])].some((kind) => !retainedKinds.has(kind));
+}
+
+function getPanelKindsForObjects(objects: ClassifiedObject[]): Set<V3ReferenceFeaturePanelZoneKind> {
+  return new Set(PANEL_ZONE_ORDER.filter((kind) =>
+    objects.some((entry) => panelZoneMatches(entry.haystack, kind))
+  ));
+}
+
+function isCoarseClassifiedObject(entry: ClassifiedObject, referenceHeight: number): boolean {
+  const dimensions = getDimensions(entry.object.bounds);
+  return ratio(dimensions.height, referenceHeight, 6) >= COARSE_OBJECT_HEIGHT_RATIO;
+}
+
+function buildGeometryDerivedObject(bucket: GeometryDerivedObjectBucket): ClassifiedObject {
+  const name = buildGeometryDerivedObjectName(bucket.slot, bucket.side);
+  const haystack = normalize(`${name} ${derivedGeometryKeywords(bucket.slot)}`);
+  return {
+    object: {
+      name,
+      groupNames: ['derived-geometry'],
+      materialNames: [],
+      faceCount: bucket.triangleCountEstimate,
+      triangleCountEstimate: bucket.triangleCountEstimate,
+      referencedVertexIndexes: [],
+      bounds: cloneBounds(bucket.bounds),
+    },
+    slot: bucket.slot,
+    materialRoleHints: bucket.materialRoleHints,
+    haystack,
+    side: bucket.side,
+  };
+}
+
+function buildGeometryDerivedObjectName(
+  slot: V3ReferenceFeatureSlot,
+  side: 'left' | 'right' | 'center'
+): string {
+  const sidePrefix = side === 'center' ? '' : `${side}-`;
+  return `derived-${sidePrefix}${slot}-${derivedGeometryNameSuffix(slot)}`;
+}
+
+function derivedGeometryNameSuffix(slot: V3ReferenceFeatureSlot): string {
+  switch (slot) {
+    case 'helmet': return 'crown-visor-jaw';
+    case 'chest': return 'pectoral-core-abdomen';
+    case 'pelvis': return 'core';
+    case 'back': return 'spine-rail-channel';
+    case 'shoulder': return 'pauldron-ridge';
+    case 'upperArm': return 'bicep';
+    case 'forearm': return 'wrist-channel';
+    case 'hand': return 'glove';
+    case 'thigh': return 'armor';
+    case 'shin': return 'knee-vent';
+    case 'foot': return 'boot-toe';
+  }
+}
+
+function derivedGeometryKeywords(slot: V3ReferenceFeatureSlot): string {
+  switch (slot) {
+    case 'helmet': return 'helmet crown visor jaw';
+    case 'chest': return 'chest pectoral core';
+    case 'pelvis': return 'pelvis core';
+    case 'back': return 'back spine rail channel';
+    case 'shoulder': return 'shoulder pauldron ridge';
+    case 'upperArm': return 'upper arm bicep';
+    case 'forearm': return 'forearm wrist channel';
+    case 'hand': return 'hand glove';
+    case 'thigh': return 'thigh armor';
+    case 'shin': return 'shin knee vent';
+    case 'foot': return 'foot boot toe';
+  }
+}
+
+function classifyTriangleGeometrySlot(
+  bounds: V3Bounds,
+  referenceBounds: V3Bounds
+): V3ReferenceFeatureSlot | null {
+  const referenceHeight = safePositive(referenceBounds.max[1] - referenceBounds.min[1]);
+  const centerYRatio = (centerOf(bounds, 1) - referenceBounds.min[1]) / referenceHeight;
+  if (centerYRatio < -0.05 || centerYRatio > 1.05) return null;
+
+  const referenceCenterX = centerOf(referenceBounds, 0);
+  const referenceCenterZ = centerOf(referenceBounds, 2);
+  const referenceHalfWidth = safePositive(Math.max(
+    Math.abs(referenceBounds.min[0] - referenceCenterX),
+    Math.abs(referenceBounds.max[0] - referenceCenterX)
+  ));
+  const referenceHalfDepth = safePositive(Math.max(
+    Math.abs(referenceBounds.min[2] - referenceCenterZ),
+    Math.abs(referenceBounds.max[2] - referenceCenterZ)
+  ));
+  const xOutboardRatio = Math.abs(centerOf(bounds, 0) - referenceCenterX) / referenceHalfWidth;
+  const zFrontBackRatio = (centerOf(bounds, 2) - referenceCenterZ) / referenceHalfDepth;
+
+  if (centerYRatio >= 0.78) return 'helmet';
+  if (centerYRatio >= 0.58) {
+    if (xOutboardRatio >= 0.62) return 'shoulder';
+    if (zFrontBackRatio <= -0.35) return 'back';
+    return 'chest';
+  }
+  if (centerYRatio >= 0.44) {
+    if (xOutboardRatio >= 0.45) return 'upperArm';
+    return 'pelvis';
+  }
+  if (centerYRatio >= 0.34) {
+    if (xOutboardRatio >= 0.35) return 'forearm';
+    return 'thigh';
+  }
+  if (centerYRatio >= 0.26) {
+    if (xOutboardRatio >= 0.35) return 'hand';
+    return 'thigh';
+  }
+  if (centerYRatio >= 0.1) return 'shin';
+  return 'foot';
+}
+
+function classifyTriangleMaterialRoles(triangle: V3ObjTriangleMetadata): V3ReferenceFeatureMaterialRoleHint[] {
+  const classification = classifyV3ReferencePart({
+    objectName: '',
+    groupNames: [],
+    materialNames: triangle.materialName ? [triangle.materialName] : [],
+  });
+  return uniqueMaterialRoles(classification.paintRoles.filter(isMaterialRoleHint));
+}
+
+function isPairedGeometrySlot(slot: V3ReferenceFeatureSlot): boolean {
+  return slot === 'shoulder'
+    || slot === 'upperArm'
+    || slot === 'forearm'
+    || slot === 'hand'
+    || slot === 'thigh'
+    || slot === 'shin'
+    || slot === 'foot';
+}
+
+function resolveGeometrySide(
+  bounds: V3Bounds,
+  referenceBounds: V3Bounds
+): 'left' | 'right' | 'center' {
+  const referenceCenterX = centerOf(referenceBounds, 0);
+  const referenceWidth = safePositive(referenceBounds.max[0] - referenceBounds.min[0]);
+  const offset = centerOf(bounds, 0) - referenceCenterX;
+  if (offset < -referenceWidth * 0.04) return 'left';
+  if (offset > referenceWidth * 0.04) return 'right';
+  return 'center';
+}
+
+function triangleBounds(triangle: V3ObjTriangleMetadata): V3Bounds {
+  return {
+    min: [
+      Math.min(triangle.a[0], triangle.b[0], triangle.c[0]),
+      Math.min(triangle.a[1], triangle.b[1], triangle.c[1]),
+      Math.min(triangle.a[2], triangle.b[2], triangle.c[2]),
+    ],
+    max: [
+      Math.max(triangle.a[0], triangle.b[0], triangle.c[0]),
+      Math.max(triangle.a[1], triangle.b[1], triangle.c[1]),
+      Math.max(triangle.a[2], triangle.b[2], triangle.c[2]),
+    ],
+  };
 }
 
 function buildPanelZones(
