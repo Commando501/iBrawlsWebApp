@@ -166,7 +166,7 @@ export const BUILT_IN_V3_CHARACTER_PARTS: readonly V3CharacterPartManifest[] = [
     slot: 'helmet',
     label: 'Aegis Vanguard Helmet',
     roles: ['primary', 'secondary', 'visor', 'accent', 'emissive', 'fixed'],
-    budget: createBudget(6300, 4100, 5, 5, 3, 1250),
+    budget: createBudget(6300, 5800, 5, 5, 3, 1450),
   }),
   createCharacterPart({
     slot: 'neck',
@@ -184,13 +184,13 @@ export const BUILT_IN_V3_CHARACTER_PARTS: readonly V3CharacterPartManifest[] = [
     slot: 'shoulderLeft',
     label: 'Aegis Left Guard',
     roles: ['primary', 'secondary', 'accent'],
-    budget: createBudget(1350, 1500, 3, 3, 3, 260),
+    budget: createBudget(1350, 1850, 3, 3, 3, 320),
   }),
   createCharacterPart({
     slot: 'shoulderRight',
     label: 'Aegis Right Guard',
     roles: ['primary', 'secondary', 'accent'],
-    budget: createBudget(1350, 1500, 3, 3, 3, 260),
+    budget: createBudget(1350, 1850, 3, 3, 3, 320),
   }),
   createCharacterPart({
     slot: 'upperArmLeft',
@@ -262,19 +262,19 @@ export const BUILT_IN_V3_CHARACTER_PARTS: readonly V3CharacterPartManifest[] = [
     slot: 'footLeft',
     label: 'Aegis Left Boot',
     roles: ['primary', 'secondary', 'accent'],
-    budget: createBudget(1800, 1200, 4, 4, 3, 350),
+    budget: createBudget(1800, 1320, 4, 4, 3, 380),
   }),
   createCharacterPart({
     slot: 'footRight',
     label: 'Aegis Right Boot',
     roles: ['primary', 'secondary', 'accent'],
-    budget: createBudget(1800, 1200, 4, 4, 3, 350),
+    budget: createBudget(1800, 1320, 4, 4, 3, 380),
   }),
   createCharacterPart({
     slot: 'back',
     label: 'Aegis Utility Pack',
     roles: ['undersuit', 'secondary', 'emissive', 'fixed'],
-    budget: createBudget(3100, 3200, 5, 5, 3, 620),
+    budget: createBudget(3100, 3700, 5, 5, 3, 700),
   }),
 ];
 

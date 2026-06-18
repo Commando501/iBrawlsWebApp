@@ -23,7 +23,7 @@ export const V3_CHARACTER_PART_BOUNDS: Record<V3CharacterSlotId, V3FitBounds> = 
   helmet: {
     id: 'helmet',
     kind: 'characterPart',
-    maxDimensions: { x: 10, y: 9, z: 9 },
+    maxDimensions: { x: 13, y: 9, z: 10 },
     centerOffset: [0, 0.02, 0],
   },
   neck: {
@@ -131,7 +131,7 @@ export const V3_CHARACTER_PART_BOUNDS: Record<V3CharacterSlotId, V3FitBounds> = 
   back: {
     id: 'back',
     kind: 'characterPart',
-    maxDimensions: { x: 10, y: 15, z: 6 },
+    maxDimensions: { x: 14, y: 15, z: 6 },
     centerOffset: [0, 0, -0.03],
   },
 };

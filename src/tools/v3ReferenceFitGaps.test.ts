@@ -5,7 +5,11 @@ import {
   formatV3ReferenceFitGapSummary,
   type V3ReferenceFitGapBounds,
 } from './v3ReferenceFitGaps';
-import type { V3ReferenceFeatureGuide } from './v3ReferenceFeatureGuide';
+import type {
+  V3ReferenceFeatureGuide,
+  V3ReferenceFeatureSlot,
+  V3ReferenceFeatureSlotGuide,
+} from './v3ReferenceFeatureGuide';
 
 const guide = {
   schemaVersion: 'v3-reference-feature-guide/v1',
@@ -139,6 +143,111 @@ const bounds = ({
   maxZ,
 });
 
+const slotGuide = (
+  slot: V3ReferenceFeatureSlot,
+  boundsRatio: V3ReferenceFeatureSlotGuide['boundsRatio'],
+  verticalRange: V3ReferenceFeatureSlotGuide['verticalRange']
+): V3ReferenceFeatureSlotGuide => ({
+  slot,
+  objectCount: 1,
+  objectNames: [`${slot}-sanitized-target`],
+  materialRoleHints: ['primary'],
+  boundsRatio,
+  verticalRange,
+  panelZones: [],
+  centerlineGaps: [],
+  ridgeHints: [],
+  ventHints: [],
+  channelHints: [],
+  symmetrySignature: {
+    leftCount: 0,
+    rightCount: 0,
+    centerCount: 1,
+    pairedObjectCount: 0,
+    balance: 1,
+    hasLeftRightPair: false,
+  },
+});
+
+const dashboardFitGuide = {
+  ...guide,
+  slotOrder: [
+    'helmet',
+    'chest',
+    'pelvis',
+    'back',
+    'shoulder',
+    'upperArm',
+    'forearm',
+    'hand',
+    'thigh',
+    'shin',
+    'foot',
+  ],
+  slotGuides: [
+    slotGuide('helmet', {
+      widthToReferenceHeight: 0.36101,
+      heightToReferenceHeight: 0.234946,
+      depthToReferenceHeight: 0.280131,
+    }, { minRatio: 0.765054, maxRatio: 1 }),
+    slotGuide('chest', {
+      widthToReferenceHeight: 0.386194,
+      heightToReferenceHeight: 0.229129,
+      depthToReferenceHeight: 0.178913,
+    }, { minRatio: 0.569174, maxRatio: 0.798303 }),
+    slotGuide('pelvis', {
+      widthToReferenceHeight: 0.277559,
+      heightToReferenceHeight: 0.182721,
+      depthToReferenceHeight: 0.198394,
+    }, { minRatio: 0.420157, maxRatio: 0.602878 }),
+    slotGuide('back', {
+      widthToReferenceHeight: 0.382521,
+      heightToReferenceHeight: 0.247511,
+      depthToReferenceHeight: 0.133618,
+    }, { minRatio: 0.554002, maxRatio: 0.801512 }),
+    slotGuide('shoulder', {
+      widthToReferenceHeight: 0.587807,
+      heightToReferenceHeight: 0.213205,
+      depthToReferenceHeight: 0.191844,
+    }, { minRatio: 0.569485, maxRatio: 0.78269 }),
+    slotGuide('upperArm', {
+      widthToReferenceHeight: 0.600598,
+      heightToReferenceHeight: 0.418295,
+      depthToReferenceHeight: 0.295601,
+    }, { minRatio: 0.447768, maxRatio: 0.866063 }),
+    slotGuide('forearm', {
+      widthToReferenceHeight: 0.270748,
+      heightToReferenceHeight: 0.114111,
+      depthToReferenceHeight: 0.134953,
+    }, { minRatio: 0.340424, maxRatio: 0.454535 }),
+    slotGuide('hand', {
+      widthToReferenceHeight: 0.293502,
+      heightToReferenceHeight: 0.096147,
+      depthToReferenceHeight: 0.153495,
+    }, { minRatio: 0.250526, maxRatio: 0.346672 }),
+    slotGuide('thigh', {
+      widthToReferenceHeight: 0.231964,
+      heightToReferenceHeight: 0.21019,
+      depthToReferenceHeight: 0.173828,
+    }, { minRatio: 0.24654, maxRatio: 0.45673 }),
+    slotGuide('shin', {
+      widthToReferenceHeight: 0.262666,
+      heightToReferenceHeight: 0.070698,
+      depthToReferenceHeight: 0.055968,
+    }, { minRatio: 0.24644, maxRatio: 0.317138 }),
+    slotGuide('foot', {
+      widthToReferenceHeight: 0.376106,
+      heightToReferenceHeight: 0.120292,
+      depthToReferenceHeight: 0.200334,
+    }, { minRatio: 0, maxRatio: 0.120292 }),
+  ],
+  summary: {
+    ...guide.summary,
+    slotCount: 11,
+    objectCount: 11,
+  },
+} satisfies V3ReferenceFeatureGuide;
+
 test('analyzeV3ReferenceFitGaps ranks oversized and undersized slot-family mismatches', () => {
   const report = analyzeV3ReferenceFitGaps(guide, {
     modelHeight: 100,
@@ -223,4 +332,32 @@ test('analyzeV3ReferenceFitGaps flags implausible reference targets before ranki
   assert.deepEqual(shin?.targetWarnings.map((warning) => warning.axis).sort(), ['depth', 'height']);
   assert.equal(shin?.issues.some((issue) => issue.code === 'too-tall'), false);
   assert.match(formatV3ReferenceFitGapSummary(report), /2 reference targets need review/);
+});
+
+test('built-in OBJ-derived Aegis source stays under the first reliable fit-gap budget', () => {
+  const report = analyzeV3ReferenceFitGaps(dashboardFitGuide);
+  const chest = report.slots.find((slot) => slot.slot === 'chest');
+  const helmet = report.slots.find((slot) => slot.slot === 'helmet');
+  const back = report.slots.find((slot) => slot.slot === 'back');
+
+  assert.equal(report.summary.targetWarningCount, 3, 'exported noisy guide targets should remain explicitly flagged');
+  assert.ok(
+    report.summary.modelIssueCount <= 8,
+    formatV3ReferenceFitGapSummary(report)
+  );
+  assert.equal(
+    chest?.issues.some((issue) => issue.axis === 'height' || issue.axis === 'depth'),
+    false,
+    `chest reliable height/depth gaps should be closed: ${chest?.issues.map((issue) => issue.message).join('; ')}`
+  );
+  assert.equal(
+    helmet?.issues.some((issue) => issue.axis === 'width' || issue.axis === 'depth'),
+    false,
+    `helmet reliable width/depth gaps should be closed: ${helmet?.issues.map((issue) => issue.message).join('; ')}`
+  );
+  assert.equal(
+    back?.issues.some((issue) => issue.axis === 'width'),
+    false,
+    `back reliable width gap should be closed: ${back?.issues.map((issue) => issue.message).join('; ')}`
+  );
 });

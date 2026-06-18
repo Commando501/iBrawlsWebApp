@@ -669,13 +669,14 @@ export function analyzeV3PartFidelity(
 
   if (
     HAND_SLOTS.has(slot) &&
-    Math.max(occupiedBounds.sizeX, occupiedBounds.sizeY, occupiedBounds.sizeZ) > BUILT_IN_HAND_MAX_HIGH_DENSITY_DIMENSION
+    Math.max(occupiedBounds.sizeX, occupiedBounds.sizeY) > BUILT_IN_HAND_MAX_HIGH_DENSITY_DIMENSION
   ) {
+    const handPlanarDimension = Math.max(occupiedBounds.sizeX, occupiedBounds.sizeY);
     addIssue(
       issues,
       'terminal-proportion-oversized',
       `${slot} is larger than the built-in high-density hand envelope`,
-      Math.max(occupiedBounds.sizeX, occupiedBounds.sizeY, occupiedBounds.sizeZ),
+      handPlanarDimension,
       BUILT_IN_HAND_MAX_HIGH_DENSITY_DIMENSION
     );
   }

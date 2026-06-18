@@ -38,25 +38,25 @@ type ReadonlyV3AegisPartSpec = {
 };
 
 export const V3_AEGIS_PART_SPECS: Readonly<Record<V3CharacterSlotId, ReadonlyV3AegisPartSpec>> = {
-  helmet: { segment: 'head', dimensions: [10, 8, 8], position: [-0.2392, 1.56, -0.19] },
+  helmet: { segment: 'head', dimensions: [13, 8, 9], position: [-0.3217, 1.56, -0.245] },
   neck: { segment: 'upperTorso', dimensions: [6, 4, 6], position: [-0.1592, 1.39, -0.15] },
-  chest: { segment: 'upperTorso', dimensions: [16, 15, 9], position: [-0.4174, 0.97, -0.22] },
-  shoulderLeft: { segment: 'leftArm', dimensions: [7, 5, 8], position: [-0.6416, 1.24, -0.19] },
-  shoulderRight: { segment: 'rightArm', dimensions: [7, 5, 8], position: [0.2716, 1.24, -0.19] },
+  chest: { segment: 'upperTorso', dimensions: [14, 9, 7], position: [-0.3624, 1.16, -0.165] },
+  shoulderLeft: { segment: 'leftArm', dimensions: [7, 8, 8], position: [-0.6416, 1.1575, -0.19] },
+  shoulderRight: { segment: 'rightArm', dimensions: [7, 8, 8], position: [0.2716, 1.1575, -0.19] },
   upperArmLeft: { segment: 'leftArm', dimensions: [4, 9, 5], position: [-0.4499, 0.95, -0.12] },
   upperArmRight: { segment: 'rightArm', dimensions: [4, 9, 5], position: [0.2299, 0.95, -0.12] },
-  forearmLeft: { segment: 'leftArm', dimensions: [4, 9, 5], position: [-0.4449, 0.54, -0.12] },
-  forearmRight: { segment: 'rightArm', dimensions: [4, 9, 5], position: [0.2249, 0.54, -0.12] },
-  handLeft: { segment: 'leftArm', dimensions: [3, 4, 4], position: [-0.4149, 0.3, -0.1] },
-  handRight: { segment: 'rightArm', dimensions: [3, 4, 4], position: [0.2549, 0.3, -0.1] },
-  pelvis: { segment: 'lowerTorso', dimensions: [13, 6, 9], position: [-0.3283, 0.83, -0.205] },
-  thighLeft: { segment: 'leftLeg', dimensions: [4, 10, 4], position: [-0.2499, 0.38, -0.105] },
-  thighRight: { segment: 'rightLeg', dimensions: [4, 10, 4], position: [0.0299, 0.38, -0.105] },
+  forearmLeft: { segment: 'leftArm', dimensions: [3, 6, 5], position: [-0.36, 0.62, -0.12] },
+  forearmRight: { segment: 'rightArm', dimensions: [3, 6, 5], position: [0.195, 0.62, -0.12] },
+  handLeft: { segment: 'leftArm', dimensions: [2, 4, 5], position: [-0.32, 0.48, -0.1275] },
+  handRight: { segment: 'rightArm', dimensions: [2, 4, 5], position: [0.16, 0.48, -0.1275] },
+  pelvis: { segment: 'lowerTorso', dimensions: [11, 6, 10], position: [-0.2733, 0.83, -0.2325] },
+  thighLeft: { segment: 'leftLeg', dimensions: [4, 8, 6], position: [-0.2499, 0.435, -0.16] },
+  thighRight: { segment: 'rightLeg', dimensions: [4, 8, 6], position: [0.0299, 0.435, -0.16] },
   shinLeft: { segment: 'leftLeg', dimensions: [4, 10, 7], position: [-0.2499, 0.0, -0.155] },
   shinRight: { segment: 'rightLeg', dimensions: [4, 10, 7], position: [0.0299, 0.0, -0.155] },
-  footLeft: { segment: 'leftLeg', dimensions: [6, 3, 8], position: [-0.2799, -0.04, -0.09] },
-  footRight: { segment: 'rightLeg', dimensions: [6, 3, 8], position: [-0.0001, -0.04, -0.09] },
-  back: { segment: 'upperTorso', dimensions: [8, 12, 4], position: [-0.1875, 1.04, -0.34] },
+  footLeft: { segment: 'leftLeg', dimensions: [7, 3, 8], position: [-0.3074, -0.04, -0.09] },
+  footRight: { segment: 'rightLeg', dimensions: [7, 3, 8], position: [-0.0276, -0.04, -0.09] },
+  back: { segment: 'upperTorso', dimensions: [14, 9, 4], position: [-0.3525, 1.148, -0.34] },
 };
 
 export function getV3BuiltinPartGridScale(slot: V3CharacterSlotId): V3BuiltinPartGridScale {
@@ -138,6 +138,72 @@ const createAegisReferenceVoxelSource = (
     left.color.localeCompare(right.color) ||
     Number(left.emissive === true) - Number(right.emissive === true)
   ));
+};
+
+const clampV3VoxelCoordinate = (value: number, size: number): number =>
+  Math.max(0, Math.min(size - 1, value));
+
+const setV3AegisFeatureVoxel = (
+  voxels: VoxelData[],
+  dimensions: [number, number, number],
+  position: [number, number, number],
+  color: string,
+  emissive = false
+): void => {
+  const x = clampV3VoxelCoordinate(position[0], dimensions[0]);
+  const y = clampV3VoxelCoordinate(position[1], dimensions[1]);
+  const z = clampV3VoxelCoordinate(position[2], dimensions[2]);
+
+  for (let index = voxels.length - 1; index >= 0; index -= 1) {
+    const voxel = voxels[index];
+    if (voxel.x === x && voxel.y === y && voxel.z === z) {
+      voxels.splice(index, 1);
+    }
+  }
+
+  voxels.push({
+    x,
+    y,
+    z,
+    color,
+    emissive: emissive || undefined,
+  });
+};
+
+const applyV3AegisReferenceFeaturePolish = (
+  slot: V3CharacterSlotId,
+  voxels: VoxelData[],
+  dimensions: [number, number, number],
+  colors: SpartanColors,
+  paintJob?: CharacterLoadout['paintJob']
+): VoxelData[] => {
+  const [width, height, depth] = dimensions;
+  const frontZ = Math.max(0, depth - 1);
+  const centerX = Math.floor(width / 2);
+  const accentColor = roleColor('accent', colors, paintJob);
+  const secondaryColor = roleColor('secondary', colors, paintJob);
+
+  if (slot === 'helmet') {
+    const jawY = Math.max(1, Math.floor(height * 0.25));
+    for (const x of [2, width - 3]) {
+      setV3AegisFeatureVoxel(voxels, dimensions, [x, jawY, frontZ], secondaryColor);
+      setV3AegisFeatureVoxel(voxels, dimensions, [x, jawY + 1, frontZ], secondaryColor);
+    }
+  } else if (slot === 'forearmLeft' || slot === 'forearmRight') {
+    const wristY = Math.max(1, Math.floor(height * 0.18));
+    for (let x = centerX - 1; x <= centerX + 1; x += 1) {
+      setV3AegisFeatureVoxel(voxels, dimensions, [x, wristY, frontZ], accentColor);
+    }
+    setV3AegisFeatureVoxel(voxels, dimensions, [centerX, wristY + 1, Math.max(0, frontZ - 1)], secondaryColor);
+  } else if (slot === 'handLeft' || slot === 'handRight') {
+    const knuckleY = Math.min(height - 1, Math.floor(height * 0.62));
+    for (let x = Math.max(1, centerX - 1); x <= Math.min(width - 2, centerX + 1); x += 1) {
+      setV3AegisFeatureVoxel(voxels, dimensions, [x, knuckleY, frontZ], accentColor);
+    }
+    setV3AegisFeatureVoxel(voxels, dimensions, [centerX, Math.max(1, knuckleY - 2), Math.max(0, frontZ - 1)], secondaryColor);
+  }
+
+  return voxels;
 };
 
 const V3_BASE_CORE_SHRINK: Partial<Record<V3CharacterSlotId, [number, number, number]>> = {
@@ -801,5 +867,11 @@ export function createV3AegisPartVoxels(
   colors: SpartanColors,
   paintJob?: CharacterLoadout['paintJob']
 ): VoxelData[] {
-  return createAegisReferenceVoxelSource(part.slot, dimensions, colors, paintJob);
+  return applyV3AegisReferenceFeaturePolish(
+    part.slot,
+    createAegisReferenceVoxelSource(part.slot, dimensions, colors, paintJob),
+    dimensions,
+    colors,
+    paintJob
+  );
 }
