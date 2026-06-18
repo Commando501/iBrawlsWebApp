@@ -249,14 +249,14 @@ export const BUILT_IN_V3_CHARACTER_PARTS: readonly V3CharacterPartManifest[] = [
   createCharacterPart({
     slot: 'shinLeft',
     label: 'Aegis Left Shin Guard',
-    roles: ['undersuit', 'accent', 'secondary'],
-    budget: createBudget(780, 85, 4, 4, 3, 155),
+    roles: ['undersuit', 'accent', 'secondary', 'fixed'],
+    budget: createBudget(780, 105, 4, 4, 3, 155),
   }),
   createCharacterPart({
     slot: 'shinRight',
     label: 'Aegis Right Shin Guard',
-    roles: ['undersuit', 'accent', 'secondary'],
-    budget: createBudget(780, 85, 4, 4, 3, 155),
+    roles: ['undersuit', 'accent', 'secondary', 'fixed'],
+    budget: createBudget(780, 105, 4, 4, 3, 155),
   }),
   createCharacterPart({
     slot: 'footLeft',

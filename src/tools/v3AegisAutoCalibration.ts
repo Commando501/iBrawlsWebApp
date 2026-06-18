@@ -7,7 +7,9 @@ import { V3_CHARACTER_SLOT_IDS, type V3CharacterSlotId } from '../components/v3/
 import { V3_CHARACTER_PART_BOUNDS } from '../components/v3/v3PartBounds';
 import {
   analyzeV3AegisReferenceProportions,
+  getV3RenderedObjGateClosureIssues,
   V3_OBJ_REFERENCE_PROPORTION_TARGETS,
+  V3_RENDERED_OBJ_GATE_CLOSURE_FOCUS,
   V3_REFERENCE_PROPORTION_BANDS,
   type V3ReferenceProportionBandId,
   type V3ReferenceProportionTargets,
@@ -624,11 +626,14 @@ function validateRenderedCanonicalProportions(
   const report = withTemporaryRuntimeAegisSpecs(specs, () => (
     analyzeV3AegisReferenceProportions({ targets })
   ));
-  if (report.ready) return [];
-
-  return report.issues.map((issue) => (
+  const focusedReasons = getV3RenderedObjGateClosureIssues(report).map((issue) => (
     `rendered OBJ proportion gate failed: ${issue.message}`
   ));
+  if (report.ready && focusedReasons.length === 0) return [];
+
+  return [...new Set([...focusedReasons, ...report.issues.map((issue) => (
+    `rendered OBJ proportion gate failed: ${issue.message}`
+  ))])];
 }
 
 function sameVec(left: readonly number[], right: readonly number[]): boolean {
@@ -742,6 +747,25 @@ export function applyV3AegisCalibrationCandidate(
   };
 }
 
+function extractRenderedGateIdsFromReasons(reasons: readonly string[]): string[] {
+  const reasonText = reasons.join('\n');
+  return V3_RENDERED_OBJ_GATE_CLOSURE_FOCUS
+    .map((focus) => `${focus.band}.${focus.axis}`)
+    .filter((gateId) => reasonText.includes(gateId));
+}
+
+function getRejectedImprovingRenderedGateIds(report: V3AegisCalibrationReport): string[] {
+  const gateIds = [
+    ...extractRenderedGateIdsFromReasons(report.rejectionReasons),
+    ...report.candidates.flatMap((candidate) => (
+      candidate.hardGateStatus === 'rejected' && candidate.improvement > 0
+        ? extractRenderedGateIdsFromReasons(candidate.rejectionReasons)
+        : []
+    )),
+  ];
+  return [...new Set(gateIds)];
+}
+
 export function formatV3AegisCalibrationReport(report: V3AegisCalibrationReport): string {
   const lines = [
     `V3 Aegis auto-calibration ${report.hardGateStatus} for ${report.sourceLabel} (${report.sourceKind}).`,
@@ -761,6 +785,11 @@ export function formatV3AegisCalibrationReport(report: V3AegisCalibrationReport)
 
   if (report.rejectionReasons.length > 0) {
     lines.push(`rejections: ${report.rejectionReasons.join('; ')}.`);
+  }
+
+  const renderedGateIds = getRejectedImprovingRenderedGateIds(report);
+  if (renderedGateIds.length > 0) {
+    lines.push(`reconstruction required; failing rendered gates: ${renderedGateIds.join(', ')}.`);
   }
 
   lines.push(`candidates: ${report.candidates.map((candidate) => (

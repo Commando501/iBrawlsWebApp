@@ -32,6 +32,11 @@ import {
 } from './v3ProductionQuality';
 import { analyzeV3BuiltInShapeLanguage } from './v3ShapeLanguage';
 import { analyzeV3ArmorSurface } from './v3VoxelArmorSurface';
+import {
+  analyzeV3AegisReferenceProportions,
+  formatV3ReferenceProportionGapSummary,
+  getV3RenderedObjGateClosureIssues,
+} from './v3ReferenceProportions';
 
 const requiredSegments = ['lowerTorso', 'upperTorso', 'head', 'leftArm', 'rightArm', 'leftLeg', 'rightLeg'];
 
@@ -515,6 +520,128 @@ describe('buildV3SpartanModel', () => {
     assert.ok(shinBottomSpan <= shinBounds.sizeX - 4, `ankle rows should taper under shin armor (${shinBottomSpan} vs ${shinBounds.sizeX})`);
     assert.equal(hasNearFullHeightFrontColumn(forearm), false, 'forearm front should not contain full-height vertical bars');
     assert.equal(hasNearFullHeightFrontColumn(shin), false, 'shin front should not contain full-height vertical bars');
+  });
+
+  it('closes the focused rendered OBJ gate for built-in Aegis proportions', () => {
+    const report = analyzeV3AegisReferenceProportions();
+    const focusedIssues = getV3RenderedObjGateClosureIssues(report);
+
+    assert.deepEqual(focusedIssues, [], formatV3ReferenceProportionGapSummary(report));
+  });
+
+  it('preserves lower helmet jaw and cheek width while keeping the Phase 35 crown taper', () => {
+    const helmet = getV3BuiltinPartVoxels('helmet', 192, V3_SCULPT_TEST_PAINT_JOB);
+    const bounds = getVoxelBounds(helmet);
+    const frontZ = bounds.maxZ;
+    const crownRows = helmet.filter((voxel) => voxel.y >= bounds.maxY - 1);
+    const lowerCheekAndJaw = helmet.filter((voxel) =>
+      (voxel.color === V3_SCULPT_TEST_COLORS.fixed || voxel.color === V3_SCULPT_TEST_COLORS.secondary) &&
+      voxel.y >= bounds.minY + 3 &&
+      voxel.y <= bounds.minY + 8 &&
+      voxel.z >= frontZ - 1
+    );
+    const sideEarArmor = helmet.filter((voxel) =>
+      voxel.color === V3_SCULPT_TEST_COLORS.secondary &&
+      (voxel.x <= bounds.minX + 3 || voxel.x >= bounds.maxX - 3) &&
+      voxel.y >= bounds.minY + 4 &&
+      voxel.y <= bounds.minY + 10 &&
+      voxel.z <= frontZ - 2
+    );
+
+    assert.ok(getVoxelXSpan(crownRows) <= 12, `helmet crown taper regressed to span ${getVoxelXSpan(crownRows)}`);
+    assert.ok(getVoxelXSpan(lowerCheekAndJaw) >= 14, `lower helmet cheek/jaw span should stay wide, got ${getVoxelXSpan(lowerCheekAndJaw)}`);
+    assert.ok(sideEarArmor.length >= 8, `side-ear lower helmet armor is under-modeled (${sideEarArmor.length})`);
+  });
+
+  it('adds segmented pelvis side and rear hip, belt, cod, and waist depth without a slab rear', () => {
+    const pelvis = getV3BuiltinPartVoxels('pelvis', 192, V3_SCULPT_TEST_PAINT_JOB);
+    const bounds = getVoxelBounds(pelvis);
+    const rearZ = bounds.minZ;
+    const sideRearHipModules = pelvis.filter((voxel) =>
+      voxel.z <= rearZ + 6 &&
+      voxel.y >= bounds.minY + 3 &&
+      voxel.y <= bounds.minY + 8 &&
+      (voxel.x <= bounds.minX + 5 || voxel.x >= bounds.maxX - 5)
+    );
+    const rearBeltModules = pelvis.filter((voxel) =>
+      voxel.z <= rearZ + 6 &&
+      voxel.y >= bounds.maxY - 4
+    );
+    const codDepthModule = pelvis.filter((voxel) =>
+      voxel.z <= rearZ + 6 &&
+      voxel.x >= Math.floor(bounds.sizeX * 0.42) &&
+      voxel.x <= Math.ceil(bounds.sizeX * 0.58)
+    );
+    const waistDepthModules = pelvis.filter((voxel) =>
+      voxel.z <= rearZ + 6 &&
+      voxel.y >= bounds.maxY - 6 &&
+      (voxel.x <= bounds.minX + 6 || voxel.x >= bounds.maxX - 6)
+    );
+    const rearCoverage = pelvis.filter((voxel) => voxel.z === rearZ).length / (bounds.sizeX * bounds.sizeY);
+
+    assert.ok(bounds.minZ <= -4, `pelvis should add rear depth modules beyond the old shell, got rear z ${bounds.minZ}`);
+    assert.ok(sideRearHipModules.length >= 16, `segmented side/rear hip depth modules are under-modeled (${sideRearHipModules.length})`);
+    assert.ok(rearBeltModules.length >= 12, `rear belt depth modules are under-modeled (${rearBeltModules.length})`);
+    assert.ok(codDepthModule.length >= 4, `center cod depth module is under-modeled (${codDepthModule.length})`);
+    assert.ok(waistDepthModules.length >= 8, `rear waist depth modules are under-modeled (${waistDepthModules.length})`);
+    assert.ok(rearCoverage <= 0.34, `pelvis rear should stay segmented, got coverage ${rearCoverage.toFixed(3)}`);
+  });
+
+  it('adds upper-shin knee caps plus mirrored side and rear wrap depth while preserving ankle taper', () => {
+    const shinLeft = getV3BuiltinPartVoxels('shinLeft', 192, V3_SCULPT_TEST_PAINT_JOB);
+    const shinRight = getV3BuiltinPartVoxels('shinRight', 192, V3_SCULPT_TEST_PAINT_JOB);
+    const leftBounds = getVoxelBounds(shinLeft);
+    const rightBounds = getVoxelBounds(shinRight);
+    const frontZ = rightBounds.maxZ;
+    const rearZ = rightBounds.minZ;
+    const upperBandY = Math.floor(rightBounds.sizeY * 0.68);
+    const ankleSpan = Math.max(
+      getRowXSpan(shinRight, rightBounds.minY),
+      getRowXSpan(shinRight, rightBounds.minY + 1),
+      getRowXSpan(shinRight, rightBounds.minY + 2)
+    );
+    const kneeCaps = shinRight.filter((voxel) =>
+      voxel.color === V3_SCULPT_TEST_COLORS.fixed &&
+      voxel.z >= frontZ - 1 &&
+      voxel.y >= upperBandY
+    );
+    const sideWrap = shinRight.filter((voxel) =>
+      voxel.z <= rearZ + 3 &&
+      voxel.y >= upperBandY &&
+      voxel.x >= rightBounds.maxX - 1
+    );
+    const rearWrap = shinRight.filter((voxel) =>
+      voxel.z <= rearZ + 3 &&
+      voxel.y >= upperBandY
+    );
+    const mirrorSample = (voxel: VoxelData): string => [
+      rightBounds.maxX - voxel.x,
+      voxel.y,
+      voxel.z,
+      voxel.color,
+    ].join(':');
+    const leftSamples = new Set(shinLeft.map((voxel) => [
+      voxel.x - leftBounds.minX,
+      voxel.y,
+      voxel.z,
+      voxel.color,
+    ].join(':')));
+    const mirroredRightUpperWrap = shinRight.filter((voxel) =>
+      voxel.y >= upperBandY &&
+      (voxel.color === V3_SCULPT_TEST_COLORS.fixed || voxel.color === V3_SCULPT_TEST_COLORS.secondary) &&
+      voxel.z <= frontZ - 1
+    );
+
+    assert.ok(rightBounds.minZ <= -1, `shin should add upper rear wrap depth beyond the old shell, got rear z ${rightBounds.minZ}`);
+    assert.ok(kneeCaps.length >= 8, `upper-shin knee cap is under-modeled (${kneeCaps.length})`);
+    assert.ok(sideWrap.length >= 8, `upper-shin side wrap depth is under-modeled (${sideWrap.length})`);
+    assert.ok(rearWrap.length >= 6, `upper-shin rear wrap ridge is under-modeled (${rearWrap.length})`);
+    assert.ok(ankleSpan <= rightBounds.sizeX - 4, `ankle taper regressed (${ankleSpan} vs ${rightBounds.sizeX})`);
+    assert.equal(hasNearFullHeightFrontColumn(shinRight), false, 'shin front should not grow full-height scaffolding columns');
+    assert.ok(
+      mirroredRightUpperWrap.every((voxel) => leftSamples.has(mirrorSample(voxel))),
+      'left/right shin upper wrap details should stay mirrored'
+    );
   });
 
   it('keeps gridScale 2 helmet and chest within normalized runtime fit bounds', () => {

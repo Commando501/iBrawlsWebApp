@@ -352,6 +352,12 @@ const createAegisHelmetVoxels = (
     featureDimensions: [Math.max(2, Math.floor(width * 0.14)), Math.max(3, Math.floor(height * 0.22)), 2],
     color: secondaryColor,
   });
+  appendV3MirroredArmorPlates(voxels, {
+    origin: [1, Math.max(1, jawY + 2), Math.max(0, frontZ - 2)],
+    dimensions: [1, Math.max(3, Math.floor(height * 0.25)), 1],
+    mirrorMaxX,
+    color: secondaryColor,
+  });
 
   appendV3ArmorPlate(voxels, {
     origin: [1, visorY, frontZ],
@@ -537,6 +543,7 @@ const createAegisDetailedPartVoxels = (
   const frontZ = Math.max(0, depth - 1);
   const rearZ = 0;
   const centerX = Math.floor(width / 2);
+  const mirrorMaxX = Math.max(0, width - 1);
   const isRightSlot = part.slot.endsWith('Right');
   const innerX = isRightSlot ? 0 : width - 1;
   const outerX = isRightSlot ? width - 1 : 0;
@@ -604,23 +611,14 @@ const createAegisDetailedPartVoxels = (
       break;
     }
     case 'pelvis': {
-      carveV3NotchedSeam(voxels, {
-        dimensions,
-        axis: 'x',
-        positionRatio: 0.5,
-        width: 2,
-        z: frontZ,
-        preserveEvery: 3,
-      });
       appendBoundedV3ArmorPlate(voxels, dimensions, [2, height - 4, frontZ], [width - 4, 2, 1], secondaryColor);
       appendBoundedV3ArmorPlate(voxels, dimensions, [centerX - 1, height - 5, frontZ], [2, 3, 1], decalColor);
       appendBoundedMirroredV3ArmorPlates(voxels, dimensions, [1, height - 6, frontZ], [4, 3, 1], accentColor);
       appendBoundedV3ArmorPlate(voxels, dimensions, [centerX - 2, 1, frontZ], [4, 4, 1], undersuitColor);
-      appendV3MirroredReferenceFeature(voxels, {
-        dimensions,
-        origin: [1, Math.max(1, Math.floor(height * 0.28)), frontZ - 1],
-        featureDimensions: [Math.max(3, Math.floor(width * 0.16)), Math.max(2, Math.floor(height * 0.24)), 2],
-        color: fixedColor,
+      appendV3ArmorPlate(voxels, {
+        origin: [centerX, Math.max(1, Math.floor(height * 0.4)), -4],
+        dimensions: [1, 1, 1],
+        color: decalColor,
       });
       break;
     }
@@ -634,26 +632,27 @@ const createAegisDetailedPartVoxels = (
     }
     case 'shinLeft':
     case 'shinRight': {
-      carveV3NotchedSeam(voxels, {
-        dimensions,
-        axis: 'y',
-        positionRatio: 0.36,
-        width: 1,
-        z: frontZ,
-        preserveEvery: 4,
-      });
       appendBoundedV3ArmorPlate(voxels, dimensions, [centerX - 1, 6, frontZ], [2, height - 8, 1], accentColor);
       appendBoundedV3ArmorPlate(voxels, dimensions, [2, height - 5, frontZ], [width - 4, 3, 1], accentColor);
       appendBoundedV3ArmorPlate(voxels, dimensions, [outerX === 0 ? 0 : width - 1, 5, frontZ - 2], [1, height - 10, 3], secondaryColor);
       appendBoundedV3ArmorPlate(voxels, dimensions, [innerX, 3, 2], [1, height - 7, depth - 4], undersuitColor);
-      appendV3ReferenceVentSet(voxels, {
-        dimensions,
-        side: isRightSlot ? 'right' : 'left',
-        yRatio: 0.64,
-        z: frontZ,
-        count: Math.max(2, Math.floor(width * 0.25)),
-        color: secondaryColor,
+      appendV3ArmorPlate(voxels, {
+        origin: [centerX - 1, Math.max(1, height - 6), frontZ - 1],
+        dimensions: [2, 4, 1],
+        color: fixedColor,
       });
+      appendV3ArmorPlate(voxels, {
+        origin: [centerX - 1, Math.max(1, height - 2), -1],
+        dimensions: [2, 1, 1],
+        color: fixedColor,
+      });
+      appendBoundedV3ArmorPlate(
+        voxels,
+        dimensions,
+        [isRightSlot ? width - 2 : 0, Math.max(1, height - 7), 0],
+        [2, 4, 3],
+        secondaryColor
+      );
       break;
     }
     case 'footLeft':

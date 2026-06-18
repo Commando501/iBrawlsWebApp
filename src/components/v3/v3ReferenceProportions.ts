@@ -106,12 +106,36 @@ export interface V3ReferenceProportionAnalysisOptions {
   thresholds?: Partial<V3ReferenceProportionThresholds>;
 }
 
+export type V3RenderedObjGateClosureAxis = 'width' | 'depth';
+export type V3RenderedObjGateClosureDirection = 'below-target';
+
+export interface V3RenderedObjGateClosureFocus {
+  band: V3ReferenceProportionBandId;
+  axis: V3RenderedObjGateClosureAxis;
+}
+
+export interface V3RenderedObjGateClosureIssue extends V3RenderedObjGateClosureFocus {
+  direction: V3RenderedObjGateClosureDirection;
+  current: number;
+  target: number;
+  delta: number;
+  tolerance: number;
+  message: string;
+}
+
 const DEFAULT_THRESHOLDS: V3ReferenceProportionThresholds = {
   maxGlobalFrontWidthDelta: 0.08,
   maxGlobalSideDepthDelta: 0.06,
   maxBandWidthDelta: 0.2,
   maxBandDepthDelta: 0.08,
 };
+export const V3_RENDERED_OBJ_GATE_CLOSURE_TOLERANCE = 0.005;
+export const V3_RENDERED_OBJ_GATE_CLOSURE_FOCUS = [
+  { band: 'helmetLower', axis: 'width' },
+  { band: 'pelvis', axis: 'depth' },
+  { band: 'knee', axis: 'depth' },
+  { band: 'shin', axis: 'depth' },
+] as const satisfies readonly V3RenderedObjGateClosureFocus[];
 const MIN_TARGET_RATIO_FOR_LOW_BAND = 0.25;
 
 const OBJ_REFERENCE_BANDS: V3ReferenceProportionBandMap = {
@@ -473,6 +497,35 @@ export function analyzeV3AegisReferenceProportions(
     issues,
     summary,
   };
+}
+
+export function getV3RenderedObjGateClosureIssues(
+  report: V3ReferenceProportionReport
+): V3RenderedObjGateClosureIssue[] {
+  return V3_RENDERED_OBJ_GATE_CLOSURE_FOCUS.flatMap((focus) => {
+    const band = report.bands.find((entry) => entry.id === focus.band);
+    if (!band) return [];
+    const current = focus.axis === 'width'
+      ? band.current.widthRatio
+      : band.current.depthRatio;
+    const target = focus.axis === 'width'
+      ? band.target.widthRatio
+      : band.target.depthRatio;
+    const delta = signedDelta(current, target);
+
+    if (delta >= -V3_RENDERED_OBJ_GATE_CLOSURE_TOLERANCE) return [];
+
+    return [{
+      band: focus.band,
+      axis: focus.axis,
+      direction: 'below-target' as const,
+      current,
+      target,
+      delta,
+      tolerance: V3_RENDERED_OBJ_GATE_CLOSURE_TOLERANCE,
+      message: `${focus.band}.${focus.axis} is below the rendered OBJ target by ${Math.abs(delta).toFixed(4)}; reconstruction required.`,
+    }];
+  });
 }
 
 export function formatV3ReferenceProportionGapSummary(

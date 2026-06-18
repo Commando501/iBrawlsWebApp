@@ -372,21 +372,27 @@ function renderCalibration(): void {
     calibrationSummary.append(
       metric('Calibration Source', latestReferenceScaffold?.source.kind ?? 'none'),
       metric('Calibration Status', 'waiting'),
+      metric('Rendered Gate Closure', 'waiting'),
       metric('Candidates', 0)
     );
-    calibrationReport.textContent = 'Load the canonical OBJ reference to build local V3 Aegis calibration candidates. FBX, GLB, and GLTF remain inspection-only.';
+    calibrationReport.textContent = 'Load the canonical OBJ reference to build local V3 Aegis calibration candidates. Rendered Gate Closure will report Reconstruction Required when envelope candidates improve score but fail focused OBJ bands. FBX, GLB, and GLTF remain inspection-only.';
     return;
   }
 
   const best = latestCalibrationReport.candidates[0];
+  const formattedCalibrationReport = formatV3AegisCalibrationReport(latestCalibrationReport);
+  const renderedGateClosureStatus = formattedCalibrationReport.includes('reconstruction required')
+    ? 'Reconstruction Required'
+    : 'Closed';
   calibrationSummary.append(
     metric('Calibration Source', latestCalibrationReport.sourceKind),
     metric('Calibration Status', latestCalibrationReport.hardGateStatus),
+    metric('Rendered Gate Closure', renderedGateClosureStatus),
     metric('Best Candidate', best?.id ?? 'none'),
     metric('Improvement', latestCalibrationReport.improvement.toFixed(6)),
     metric('Candidates', latestCalibrationReport.candidates.length)
   );
-  calibrationReport.textContent = formatV3AegisCalibrationReport(latestCalibrationReport);
+  calibrationReport.textContent = formattedCalibrationReport;
 }
 
 function renderFeatureMatch(): void {

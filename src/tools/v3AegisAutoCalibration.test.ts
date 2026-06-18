@@ -6,6 +6,8 @@ import {
   buildV3AegisCalibrationCandidates,
   formatV3AegisCalibrationReport,
   scoreV3AegisCalibrationCandidate,
+  type V3AegisCalibrationProportionSummary,
+  type V3AegisCalibrationReport,
 } from './v3AegisAutoCalibration';
 import { V3_AEGIS_PART_SPECS } from '../components/v3/v3AegisSuitParts';
 import {
@@ -116,6 +118,24 @@ const makeNativeScaffold = (
       unknown: 0,
     },
   },
+});
+
+const makeCalibrationSummary = (): V3AegisCalibrationProportionSummary => ({
+  globalFrontWidthRatio: 0.6,
+  globalSideDepthRatio: 0.32,
+  globalFrontWidthDelta: 0.01,
+  globalSideDepthDelta: 0.01,
+  maxBandWidthDelta: 0.01,
+  maxBandDepthDelta: 0.01,
+  worstWidthBand: 'helmetLower',
+  worstDepthBand: 'pelvis',
+  bands: V3_REFERENCE_PROPORTION_BANDS.map((band) => ({
+    id: band,
+    widthRatio: 0.2,
+    depthRatio: 0.12,
+    widthDelta: 0.01,
+    depthDelta: 0.01,
+  })),
 });
 
 describe('V3 Aegis auto-calibration solver', () => {
@@ -249,12 +269,15 @@ describe('V3 Aegis auto-calibration solver', () => {
       V3_OBJ_REFERENCE_PROPORTION_TARGETS.global.side.widthRatio
     ), { maxCandidates: 5 });
     const globalCandidate = report.candidates.find((candidate) => candidate.id === 'base-envelope-global');
+    const formatted = formatV3AegisCalibrationReport(report);
 
     assert.ok(globalCandidate, 'expected the global candidate to be generated');
     assert.equal(globalCandidate.hardGateStatus, 'rejected');
     assert.ok(globalCandidate.rejectionReasons.some((reason) => (
       reason.includes('rendered OBJ proportion gate failed')
     )));
+    assert.match(formatted, /reconstruction required/);
+    assert.match(formatted, /failing rendered gates: .*shin\.depth/);
   });
 
   it('hard rejects missing and non-OBJ scaffolds', () => {
@@ -294,5 +317,48 @@ describe('V3 Aegis auto-calibration solver', () => {
     assert.match(formatted, /synthetic-wide-blocky\.obj/);
     assert.match(formatted, /improvement/);
     assert.match(formatted, /accepted/);
+  });
+
+  it('formats rejected improving rendered gate candidates as reconstruction required without raw source data', () => {
+    const beforeSummary = makeCalibrationSummary();
+    const afterSummary = makeCalibrationSummary();
+    const report: V3AegisCalibrationReport = {
+      sourceLabel: 'private-reference.obj',
+      sourceKind: 'obj',
+      hardGateStatus: 'rejected',
+      rejectionReasons: [
+        'rendered OBJ proportion gate failed: helmetLower.width is below the rendered OBJ target by 0.0120; reconstruction required.',
+        'rendered OBJ proportion gate failed: pelvis.depth is below the rendered OBJ target by 0.0120; reconstruction required.',
+      ],
+      scoreBefore: 1,
+      scoreAfter: 0.75,
+      improvement: 0.25,
+      beforeSummary,
+      afterSummary,
+      candidates: [
+        {
+          id: 'synthetic-rejected-rendered-gates',
+          scope: 'manual',
+          patch: { slots: {} },
+          scoreBefore: 1,
+          scoreAfter: 0.75,
+          improvement: 0.25,
+          hardGateStatus: 'rejected',
+          rejectionReasons: [
+            'rendered OBJ proportion gate failed: helmetLower.width is below the rendered OBJ target by 0.0120; reconstruction required.',
+            'rendered OBJ proportion gate failed: pelvis.depth is below the rendered OBJ target by 0.0120; reconstruction required.',
+          ],
+          beforeSummary,
+          afterSummary,
+        },
+      ],
+    };
+
+    const formatted = formatV3AegisCalibrationReport(report);
+
+    assert.match(formatted, /reconstruction required/);
+    assert.match(formatted, /failing rendered gates: helmetLower\.width, pelvis\.depth/);
+    assert.equal(formatted.includes('SECRET OBJ PAYLOAD'), false);
+    assert.equal(formatted.includes('C:\\Private'), false);
   });
 });
