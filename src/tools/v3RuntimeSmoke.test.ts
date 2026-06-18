@@ -32,6 +32,7 @@ test('buildV3RuntimeSmokeChecklist covers every required Phase 31 browser surfac
   assert.ok(dashboardItem?.expectedText.includes('Not Player Ready'));
   assert.ok(dashboardItem?.expectedText.includes('OBJ Canonical Reference'));
   assert.ok(dashboardItem?.expectedText.includes('Proportion Bands'));
+  assert.ok(dashboardItem?.expectedText.includes('Choose Local Reference File'));
   assert.ok(dashboardItem?.expectedText.includes('Download Readiness Report'));
   assert.ok(dashboardItem?.expectedText.includes('Baseline Gaps'));
   assert.ok(dashboardItem?.expectedText.includes('Download Baseline Markdown'));

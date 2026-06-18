@@ -79,6 +79,7 @@ export function buildV3RuntimeSmokeChecklist(): V3RuntimeSmokeChecklistItem[] {
         'Reference File',
         'OBJ Canonical Reference',
         'Proportion Bands',
+        'Choose Local Reference File',
         'Download Readiness Report',
         'Baseline Gaps',
         'Download Baseline Markdown',

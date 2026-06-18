@@ -65,6 +65,54 @@
         padding: 8px;
       }
 
+      .reference-file-input {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        opacity: 0;
+        pointer-events: none;
+      }
+
+      .reference-drop-zone {
+        display: grid;
+        gap: 6px;
+        min-height: 86px;
+        align-content: center;
+        border: 1px dashed color-mix(in srgb, var(--cyan) 54%, var(--line));
+        border-radius: 8px;
+        background: rgba(93, 214, 201, 0.08);
+        color: var(--text);
+        cursor: pointer;
+        padding: 12px;
+      }
+
+      .reference-drop-zone:hover,
+      .reference-drop-zone:focus-visible,
+      .reference-drop-zone.dragging {
+        border-color: var(--cyan);
+        background: rgba(93, 214, 201, 0.16);
+        outline: none;
+      }
+
+      .reference-drop-zone strong {
+        color: #c7fff6;
+        font-size: 12px;
+        font-weight: 900;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .reference-drop-zone span {
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.35;
+      }
+
+      .reference-drop-zone .file-name {
+        color: var(--text);
+        font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+      }
+
       main {
         display: grid;
         gap: 16px;
@@ -299,6 +347,12 @@
             <h2>Reference File</h2>
             <p class="subtitle">OBJ Canonical Reference: use the non-warped OBJ for Phase 33 scaffold calibration. FBX, GLB, and GLTF remain supported for local inspection only.</p>
             <input id="referenceInput" type="file" accept=".fbx,.glb,.gltf,.obj" />
+            <div id="referenceDropZone" class="reference-drop-zone" role="button" tabindex="0">
+              <strong>Choose Local Reference File</strong>
+              <span>Drop FBX, GLB, GLTF, or OBJ here, or click to browse. Files stay local to this browser session.</span>
+              <span id="referenceFileName" class="file-name">No file selected.</span>
+            </div>
+            <input id="referenceInput" class="reference-file-input" type="file" accept=".fbx,.glb,.gltf,.obj" />
             <div class="button-row">
               <button id="ackReference" type="button">Acknowledge Reference Comparison</button>
               <button id="downloadReport" type="button">Download Readiness Report</button>

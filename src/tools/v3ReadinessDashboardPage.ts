@@ -55,6 +55,8 @@ const statusLabel = document.getElementById('statusLabel') as HTMLSpanElement;
 const statusSummary = document.getElementById('statusSummary') as HTMLSpanElement;
 const checklistRoot = document.getElementById('checklist') as HTMLDivElement;
 const referenceInput = document.getElementById('referenceInput') as HTMLInputElement;
+const referenceDropZone = document.getElementById('referenceDropZone') as HTMLDivElement;
+const referenceFileName = document.getElementById('referenceFileName') as HTMLSpanElement;
 const referenceSummary = document.getElementById('referenceSummary') as HTMLPreElement;
 const metricsRoot = document.getElementById('metrics') as HTMLDivElement;
 const reportSummary = document.getElementById('reportSummary') as HTMLPreElement;
@@ -507,6 +509,7 @@ async function parseReferenceFileFromSource(
 }
 
 async function loadReference(file: File): Promise<void> {
+  referenceFileName.textContent = file.name;
   referenceSummary.textContent = `Loading ${file.name}...`;
   referenceAcknowledged = false;
   referenceAcknowledgedAt = undefined;
@@ -555,6 +558,19 @@ async function loadReference(file: File): Promise<void> {
     });
   }
   renderDashboard();
+}
+
+function handleReferenceFile(file: File): void {
+  referenceFileName.textContent = file.name;
+  loadReference(file).catch((error) => {
+    latestReferenceMetadata = null;
+    latestComparison = null;
+    referenceAcknowledged = false;
+    referenceAcknowledgedAt = undefined;
+    referenceLoadError = error instanceof Error ? error.message : String(error);
+    referenceFileName.textContent = 'Load failed - choose another file.';
+    renderDashboard();
+  });
 }
 
 function resizeRenderer(): void {
@@ -614,7 +630,41 @@ referenceInput.addEventListener('change', () => {
     referenceLoadError = error instanceof Error ? error.message : String(error);
     referenceAcknowledgementIssue = null;
     renderDashboard();
+  handleReferenceFile(file);
+});
+
+referenceDropZone.addEventListener('click', () => {
+  referenceInput.click();
+});
+
+referenceDropZone.addEventListener('keydown', (event) => {
+  if (event.key !== 'Enter' && event.key !== ' ') return;
+  event.preventDefault();
+  referenceInput.click();
+});
+
+for (const eventName of ['dragenter', 'dragover']) {
+  referenceDropZone.addEventListener(eventName, (event) => {
+    event.preventDefault();
+    referenceDropZone.classList.add('dragging');
   });
+}
+
+for (const eventName of ['dragleave', 'drop']) {
+  referenceDropZone.addEventListener(eventName, () => {
+    referenceDropZone.classList.remove('dragging');
+  });
+}
+
+referenceDropZone.addEventListener('drop', (event) => {
+  event.preventDefault();
+  const file = event.dataTransfer?.files?.[0];
+  if (!file) {
+    referenceLoadError = 'Drop a local FBX, GLB, GLTF, or OBJ reference file.';
+    renderDashboard();
+    return;
+  }
+  handleReferenceFile(file);
 });
 
 acknowledgeReferenceButton.addEventListener('click', () => {
