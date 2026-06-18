@@ -227,11 +227,16 @@ function buildSlotArtifact(slot: MutableSlot): V3ObjVoxelSlotArtifact {
   for (const sample of samples) {
     const base = mapSampleToSlotVoxel(sample.point, sampleBounds, slot);
     for (const voxel of dilateVoxel(base, slot.dimensions, sample.role, sample.emissive)) {
-      voxelMap.set(voxelKey(voxel), voxel);
+      setPreferredVoxel(voxelMap, voxel);
     }
   }
 
-  const voxels = [...voxelMap.values()].sort(compareVoxels);
+  const decoratedMap = new Map<string, V3ObjVoxel>();
+  for (const voxel of voxelMap.values()) {
+    setPreferredVoxel(decoratedMap, decorateSlotVoxel(slot.slot, voxel, slot.dimensions));
+  }
+
+  const voxels = [...decoratedMap.values()].sort(compareVoxels);
   const bounds = boundsFromVoxels(voxels, slot.dimensions);
   const runs = encodeRuns(voxels);
   const roleHints = [...new Set(voxels.map((voxel) => voxel.role))].sort() as V3ObjVoxelRole[];
@@ -466,7 +471,82 @@ function toGridIndex(ratio: number, size: number): number {
 }
 
 function voxelKey(voxel: V3ObjVoxel): string {
-  return `${voxel.role}:${voxel.emissive === true ? 1 : 0}:${voxel.x}:${voxel.y}:${voxel.z}`;
+  return `${voxel.x}:${voxel.y}:${voxel.z}`;
+}
+
+function setPreferredVoxel(map: Map<string, V3ObjVoxel>, voxel: V3ObjVoxel): void {
+  const key = voxelKey(voxel);
+  const current = map.get(key);
+  if (!current || rolePriority(voxel) >= rolePriority(current)) {
+    map.set(key, voxel);
+  }
+}
+
+function rolePriority(voxel: V3ObjVoxel): number {
+  if (voxel.emissive === true || voxel.role === 'visor' || voxel.role === 'emissive') return 8;
+  if (voxel.role === 'fixed') return 7;
+  if (voxel.role === 'decal') return 6;
+  if (voxel.role === 'accent') return 5;
+  if (voxel.role === 'secondary') return 4;
+  if (voxel.role === 'undersuit') return 3;
+  return 2;
+}
+
+function decorateSlotVoxel(
+  slot: V3CharacterSlotId,
+  voxel: V3ObjVoxel,
+  dimensions: [number, number, number]
+): V3ObjVoxel {
+  if (voxel.emissive === true || voxel.role === 'visor' || voxel.role === 'emissive' || voxel.role === 'decal') {
+    return voxel;
+  }
+
+  const [width, height, depth] = dimensions;
+  const sideBand = Math.max(1, Math.floor(width * 0.16));
+  const rearBand = Math.max(1, Math.floor(depth * 0.16));
+  const frontBand = Math.max(1, Math.floor(depth * 0.16));
+  const isSide = voxel.x <= sideBand || voxel.x >= width - 1 - sideBand;
+  const isRear = voxel.z <= rearBand;
+  const isFront = voxel.z >= depth - 1 - frontBand;
+  const isUpper = voxel.y >= Math.floor(height * 0.62);
+  const isLower = voxel.y <= Math.floor(height * 0.28);
+  const isCenterStripe = Math.abs(voxel.x - (width - 1) / 2) <= Math.max(0.5, width * 0.08);
+
+  if (slot === 'handLeft' || slot === 'handRight') {
+    if (isSide || isRear) return { ...voxel, role: 'undersuit', emissive: undefined };
+    if (isUpper && isFront) return { ...voxel, role: 'accent', emissive: undefined };
+    return { ...voxel, role: 'fixed', emissive: undefined };
+  }
+
+  if (slot === 'forearmLeft' || slot === 'forearmRight') {
+    if (isSide || isRear) return { ...voxel, role: 'undersuit', emissive: undefined };
+    if (isLower && isFront) return { ...voxel, role: 'accent', emissive: undefined };
+    if (isUpper && isFront) return { ...voxel, role: 'secondary', emissive: undefined };
+    return voxel;
+  }
+
+  if (slot === 'shoulderLeft' || slot === 'shoulderRight') {
+    if (isSide || isRear) return { ...voxel, role: 'accent', emissive: undefined };
+    if (isUpper && isFront) return { ...voxel, role: 'secondary', emissive: undefined };
+    return voxel;
+  }
+
+  if (
+    slot === 'upperArmLeft' ||
+    slot === 'upperArmRight' ||
+    slot === 'thighLeft' ||
+    slot === 'thighRight' ||
+    slot === 'shinLeft' ||
+    slot === 'shinRight' ||
+    slot === 'footLeft' ||
+    slot === 'footRight'
+  ) {
+    if (isSide || isRear) return { ...voxel, role: 'undersuit', emissive: undefined };
+    if (isCenterStripe && isFront) return { ...voxel, role: 'accent', emissive: undefined };
+    if (isUpper && isFront) return { ...voxel, role: 'secondary', emissive: undefined };
+  }
+
+  return voxel;
 }
 
 function normalizeGridScale(value: number | undefined): V3BuiltinPartGridScale {
