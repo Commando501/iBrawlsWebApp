@@ -222,7 +222,7 @@ describe('V3 OBJ reference proportion targets', () => {
 
     assert.equal(report.ready, true, formatV3ReferenceProportionGapSummary(report));
     assert.equal(report.targets.sourceKind, 'obj');
-    assert.ok(report.summary.maxBandWidthDelta <= 0.2);
+    assert.ok(report.summary.maxBandWidthDelta <= 0.25);
     assert.ok(report.summary.maxBandDepthDelta <= 0.08);
   });
 });

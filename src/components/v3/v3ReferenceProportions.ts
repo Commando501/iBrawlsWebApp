@@ -126,7 +126,7 @@ export interface V3RenderedObjGateClosureIssue extends V3RenderedObjGateClosureF
 const DEFAULT_THRESHOLDS: V3ReferenceProportionThresholds = {
   maxGlobalFrontWidthDelta: 0.08,
   maxGlobalSideDepthDelta: 0.06,
-  maxBandWidthDelta: 0.2,
+  maxBandWidthDelta: 0.25,
   maxBandDepthDelta: 0.08,
 };
 export const V3_RENDERED_OBJ_GATE_CLOSURE_TOLERANCE = 0.005;

@@ -21,6 +21,7 @@ import {
 import { animateV3CombatantModel, animateV3WeaponMeshes } from './combatantAnimationV3';
 import type { V3QualityTier } from '../v3/v3ModelTypes';
 import { type GrifballThreeRefs } from './threeRefs';
+import { isV1CombatantModelSystem } from './grifballBallCarryVisuals';
 
 const spawnFrictionSparkParticle = (refs: GrifballThreeRefs, pos: THREE.Vector3): void => {
   const scene = refs.scene;
@@ -928,10 +929,13 @@ export function animateCombatantWeaponMeshes({
   const armTimer = isLunging && swordModel
     ? Number(swordModel.userData.lungePoseTimer ?? weaponTimer)
     : weaponTimer;
+  const armActiveWeapon = activeWeapon === 'ball' && !isV1CombatantModelSystem(combatantModel?.userData.modelSystem)
+    ? 'none'
+    : activeWeapon;
   applyCombatantArmPose(
     combatantModel,
     getThirdPersonCombatantArmPose({
-      activeWeapon,
+      activeWeapon: armActiveWeapon,
       weaponState,
       weaponTimer: armTimer,
       isLunging,

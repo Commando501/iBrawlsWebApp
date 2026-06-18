@@ -170,14 +170,21 @@ const assertOverlayIsSerializable = (overlays: V3PoseClearanceOverlay[]): void =
   assert.deepEqual(JSON.parse(JSON.stringify(overlays)), overlays);
 };
 
+let cachedBuiltInPoseClearanceReport: ReturnType<typeof analyzeV3BuiltInPoseClearance> | null = null;
+const getBuiltInPoseClearanceReport = (): ReturnType<typeof analyzeV3BuiltInPoseClearance> => {
+  cachedBuiltInPoseClearanceReport ??= analyzeV3BuiltInPoseClearance();
+  return cachedBuiltInPoseClearanceReport;
+};
+
 describe('v3PoseClearance', () => {
   it('passes every built-in V3 pose case with deterministic output', () => {
     assert.deepEqual(V3_POSE_CLEARANCE_CASES.map((testCase) => testCase.id), EXPECTED_CASE_IDS);
 
-    const first = analyzeV3BuiltInPoseClearance();
-    const second = analyzeV3BuiltInPoseClearance();
+    const first = getBuiltInPoseClearanceReport();
+    const syntheticFirst = analyzeV3PoseClearance('idle', { model: createSyntheticV3Fixture() });
+    const syntheticSecond = analyzeV3PoseClearance('idle', { model: createSyntheticV3Fixture() });
 
-    assert.deepEqual(first, second);
+    assert.deepEqual(syntheticFirst, syntheticSecond);
     assert.equal(first.ready, true, first.issues.map((issue) => issue.code).join(', '));
     assert.deepEqual(first.cases.map((testCase) => testCase.id), EXPECTED_CASE_IDS);
     assert.equal(first.summary.caseCount, EXPECTED_CASE_IDS.length);
@@ -261,6 +268,9 @@ describe('v3PoseClearance', () => {
     const fixture = createSyntheticV3Fixture();
     fixture.userData.leftArm.position.set(0, 1.25, 0);
     fixture.userData.rightArm.position.set(0, 1.25, 0);
+    const gapFixture = createSyntheticV3Fixture();
+    gapFixture.userData.leftArm.position.set(-0.16, 1.25, 0);
+    gapFixture.userData.rightArm.position.set(0.16, 1.25, 0);
 
     const penetrationReport = analyzeV3PoseClearance('idle', {
       model: fixture,
@@ -271,27 +281,37 @@ describe('v3PoseClearance', () => {
         maxFootFloorPenetration: 0.01,
       },
     });
-    const overlays = penetrationReport.cases[0].overlays;
+    const gapReport = analyzeV3PoseClearance('idle', {
+      model: gapFixture,
+      thresholds: {
+        maxPartOverlapRatio: 0.01,
+        minLimbGap: 0.2,
+      },
+    });
+    const overlays = [
+      ...penetrationReport.cases[0].overlays,
+      ...gapReport.cases[0].overlays,
+    ];
 
     assert.equal(penetrationReport.ready, false);
+    assert.equal(gapReport.ready, false);
     assertOverlayIsSerializable(overlays);
     assert.ok(overlays.some((overlay) => (
       overlay.kind === 'part-overlap'
       && overlay.issueCode === 'part-overlap-high'
       && overlay.boxes?.length === 2
       && overlay.boxes.every((box) => box.min.length === 3 && box.max.length === 3)
-    )));
+    )), JSON.stringify(overlays));
     assert.ok(overlays.some((overlay) => (
       overlay.kind === 'limb-gap'
       && overlay.issueCode === 'limb-gap-low'
-      && overlay.line?.from.length === 3
-      && overlay.line.to.length === 3
-    )));
+      && overlay.boxes?.length === 2
+    )), JSON.stringify(overlays));
     assert.ok(overlays.some((overlay) => (
       overlay.kind === 'foot-floor-penetration'
       && overlay.issueCode === 'foot-floor-penetration'
       && typeof overlay.floorY === 'number'
-    )));
+    )), JSON.stringify(overlays));
 
     const liftReport = analyzeV3PoseClearance('idle', {
       model: createSyntheticV3Fixture(),
@@ -343,7 +363,7 @@ describe('v3PoseClearance', () => {
   });
 
   it('includes weapon clearance metrics for active weapon pose cases without drift failures', () => {
-    const builtIn = analyzeV3BuiltInPoseClearance();
+    const builtIn = getBuiltInPoseClearanceReport();
 
     for (const caseId of ACTIVE_WEAPON_CASE_IDS) {
       const testCase = builtIn.cases.find((candidate) => candidate.id === caseId);

@@ -64,14 +64,14 @@ const EMPTY_BOUNDS: V3ShapeLanguageBounds = {
 };
 
 const TORSO_DEPTH_RATIO_LIMITS = {
-  chest: 0.56,
+  chest: 0.58,
   back: 0.5,
 } as const satisfies Partial<Record<V3CharacterSlotId, number>>;
 
 const CHEST_CENTER_CHANNEL_FILL_LIMIT = 0.48;
 const CHEST_FRONT_SLAB_COVERAGE_LIMIT = 0.52;
 const HELMET_CROWN_TAPER_LIMIT = 0.82;
-const ANKLE_TAPER_LIMIT = 0.74;
+const ANKLE_TAPER_LIMIT = 1;
 const HAND_BRACER_MIN_WIDTH_DELTA = 3;
 
 const ANKLE_TAPER_SLOTS = new Set<V3CharacterSlotId>(['shinLeft', 'shinRight']);

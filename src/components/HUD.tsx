@@ -689,7 +689,7 @@ export const HUD: React.FC<HUDProps> = ({
             <span id="radar-compass-s" className="absolute text-[8px] font-mono text-cyan-400/30 font-extrabold" style={{ left: 0, top: 0 }}>S</span>
             <span id="radar-compass-w" className="absolute text-[8px] font-mono text-cyan-400/30 font-extrabold" style={{ left: 0, top: 0 }}>W</span>
 
-            {/* Enemy dots — dynamically populated per-frame by updateRadarDOM (supports N enemies) */}
+            {/* Team contact dots — dynamically populated per-frame by updateRadarDOM */}
             <div id="radar-enemies-container" className="absolute inset-0 pointer-events-none" />
 
             {/* Player friendly indicator arrow centered */}

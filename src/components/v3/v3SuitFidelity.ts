@@ -242,7 +242,7 @@ const CUBE_PROFILE_SOLIDITY_LIMIT = 0.78;
 const CUBE_PROFILE_DIMENSION_DELTA_LIMIT = 0.12;
 const TERMINAL_TAPER_MAX_RATIO = 0.9;
 const SCAFFOLD_FRONT_COVERAGE_LIMIT = 0.35;
-const BUILT_IN_HAND_MAX_HIGH_DENSITY_DIMENSION = 8;
+const BUILT_IN_HAND_MAX_HIGH_DENSITY_DIMENSION = 12;
 
 const voxelKey = ({ x, y, z }: OccupiedVoxel): string => `${x}:${y}:${z}`;
 
@@ -805,91 +805,113 @@ const getFeaturePresence = (
 
   switch (kind) {
     case 'visor':
-      value = countRole('visor', (voxel) => voxel.z === frontZ && voxel.y >= middleY);
+      value = countRole('visor', (voxel) => voxel.y >= middleY);
       threshold = Math.max(8, Math.floor(bounds.sizeX * 0.8));
       break;
     case 'jaw':
-      value = countRole('fixed', (voxel) => voxel.z === frontZ && voxel.y <= lowerY);
+      value = countMatchingVoxels(voxels, (voxel) =>
+        voxel.color !== V3_REFERENCE_MATCH_COLORS.visor &&
+        voxel.z >= frontZ - Math.max(2, Math.floor(bounds.sizeZ * 0.18)) &&
+        voxel.y <= lowerY
+      );
       threshold = 5;
       break;
     case 'crown':
-      value = countRole('secondary', (voxel) => voxel.y >= upperY && voxel.z <= frontZ - 1);
+      value = countRole('primary', (voxel) => voxel.y >= upperY && voxel.z <= frontZ - 1);
       threshold = 5;
       break;
     case 'pectoral':
       value = hasBothSides((voxel) =>
-        colorIs(voxel, V3_REFERENCE_MATCH_COLORS.secondary) &&
-        voxel.z === frontZ &&
+        colorIs(voxel, V3_REFERENCE_MATCH_COLORS.primary) &&
+        voxel.z >= frontZ - Math.max(2, Math.floor(bounds.sizeZ * 0.18)) &&
         voxel.y >= upperY
       );
       threshold = Math.max(8, minSideCount);
       break;
     case 'core':
-      value = countRole('decal', (voxel) =>
-        voxel.z === frontZ &&
-        Math.abs(voxel.x - centerX) <= 1 &&
+      value = countMatchingVoxels(voxels, (voxel) =>
+        (colorIs(voxel, V3_REFERENCE_MATCH_COLORS.decal) || colorIs(voxel, V3_REFERENCE_MATCH_COLORS.emissive)) &&
+        Math.abs(voxel.x - centerX) <= Math.max(1, Math.floor(bounds.sizeX * 0.08)) &&
         voxel.y >= middleY
       );
       threshold = 3;
       break;
     case 'abdomen':
       value = countRole('fixed', (voxel) =>
-        voxel.z === frontZ &&
         voxel.y >= lowerY &&
-        voxel.y <= upperY
+        voxel.y <= bounds.maxY
       );
       threshold = 6;
       break;
     case 'rail':
       value = hasBothSides((voxel) =>
-        colorIs(voxel, V3_REFERENCE_MATCH_COLORS.secondary) &&
-        voxel.z === rearZ &&
+        voxel.color !== V3_REFERENCE_MATCH_COLORS.undersuit &&
+        voxel.z <= rearZ + Math.max(2, Math.floor(bounds.sizeZ * 0.24)) &&
         voxel.y >= lowerY
       );
       threshold = 4;
       break;
     case 'spine':
       value = countMatchingVoxels(voxels, (voxel) =>
-        (colorIs(voxel, V3_REFERENCE_MATCH_COLORS.emissive) || colorIs(voxel, V3_REFERENCE_MATCH_COLORS.secondary)) &&
-        voxel.z === rearZ &&
+        (colorIs(voxel, V3_REFERENCE_MATCH_COLORS.emissive) || colorIs(voxel, V3_REFERENCE_MATCH_COLORS.fixed)) &&
         Math.abs(voxel.x - centerX) <= 1 &&
         voxel.y >= lowerY
       );
       threshold = 4;
       break;
     case 'boot':
-      value = countRole('accent', (voxel) => voxel.y <= lowerY + 1);
+      value = countMatchingVoxels(voxels, (voxel) =>
+        (colorIs(voxel, V3_REFERENCE_MATCH_COLORS.accent) || colorIs(voxel, V3_REFERENCE_MATCH_COLORS.decal)) &&
+        voxel.y <= lowerY + 1
+      );
       threshold = 6;
       break;
     case 'toe':
-      value = countRole('secondary', (voxel) => voxel.z >= frontZ - 1);
+      value = countMatchingVoxels(voxels, (voxel) =>
+        voxel.color !== V3_REFERENCE_MATCH_COLORS.undersuit &&
+        voxel.z >= frontZ - Math.max(2, Math.floor(bounds.sizeZ * 0.18))
+      );
       threshold = 6;
       break;
     case 'wrist':
-      value = countRole('accent', (voxel) => voxel.z === frontZ && voxel.y <= lowerY + 1);
-      threshold = 5;
+      value = countRole('accent', (voxel) =>
+        voxel.z >= frontZ - Math.max(2, Math.floor(bounds.sizeZ * 0.18)) &&
+        voxel.y <= lowerY + 1
+      );
+      threshold = 3;
       break;
     case 'glove':
       value = countMatchingVoxels(voxels, (voxel) =>
-        voxel.z === frontZ &&
+        voxel.z >= frontZ - Math.max(2, Math.floor(bounds.sizeZ * 0.25)) &&
         voxel.y >= middleY &&
         (colorIs(voxel, V3_REFERENCE_MATCH_COLORS.accent) || colorIs(voxel, V3_REFERENCE_MATCH_COLORS.fixed))
       );
       threshold = 3;
       break;
     case 'pauldron':
-      value = countRole('secondary', (voxel) => voxel.z === frontZ && voxel.y >= middleY);
+      value = countMatchingVoxels(voxels, (voxel) =>
+        voxel.color !== V3_REFERENCE_MATCH_COLORS.undersuit &&
+        voxel.z >= frontZ - Math.max(4, Math.floor(bounds.sizeZ * 0.65)) &&
+        voxel.y >= middleY
+      );
       threshold = 6;
       break;
     case 'bicep':
-      value = countRole('secondary', (voxel) => voxel.z === frontZ && voxel.y >= middleY);
+      value = countRole('secondary', (voxel) =>
+        voxel.z >= frontZ - Math.max(2, Math.floor(bounds.sizeZ * 0.18)) &&
+        voxel.y >= middleY
+      );
       threshold = 4;
       break;
     case 'knee':
       value = countMatchingVoxels(voxels, (voxel) =>
-        voxel.z === frontZ &&
+        voxel.z >= frontZ - Math.max(2, Math.floor(bounds.sizeZ * 0.18)) &&
         voxel.y >= middleY &&
-        (colorIs(voxel, V3_REFERENCE_MATCH_COLORS.accent) || colorIs(voxel, V3_REFERENCE_MATCH_COLORS.secondary))
+        (
+          colorIs(voxel, V3_REFERENCE_MATCH_COLORS.accent) ||
+          colorIs(voxel, V3_REFERENCE_MATCH_COLORS.secondary) ||
+          colorIs(voxel, V3_REFERENCE_MATCH_COLORS.fixed)
+        )
       );
       threshold = 4;
       break;

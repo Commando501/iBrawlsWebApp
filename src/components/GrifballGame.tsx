@@ -384,6 +384,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       dt,
       isMultiplayer,
       activeCustomMap: getActiveCustomMap(),
+      localPlayerModelSystem: visualPlayerLoadout?.modelSystem,
       placeCombatantsAtGrifballSpawns,
       pushStatsUpdate,
     });

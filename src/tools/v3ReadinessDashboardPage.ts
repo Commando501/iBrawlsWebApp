@@ -8,6 +8,7 @@ import {
   formatV3ReferenceProportionGapSummary,
   sampleV3ReferenceProportionBands,
 } from '../components/v3/v3ReferenceProportions';
+import { V3_AEGIS_REFERENCE_VOXEL_SOURCE } from '../components/v3/v3AegisReferenceVoxels.generated';
 import {
   analyzeV3BuiltInReferenceFeatureMatch,
   analyzeV3BuiltInSuitFidelity,
@@ -202,6 +203,31 @@ function compactReferenceFeatureMatchEvidence() {
   };
 }
 
+function compactReferenceVoxelSourceEvidence() {
+  const source = V3_AEGIS_REFERENCE_VOXEL_SOURCE;
+  const issues = [
+    ...(source.schemaVersion === 'v3-aegis-reference-voxels/v1' ? [] : ['Generated source schema is not recognized.']),
+    ...(source.metrics.slotCount === 19 ? [] : [`Generated source slot count is ${source.metrics.slotCount}; expected 19.`]),
+    ...(source.metrics.totalVoxelCount > 0 ? [] : ['Generated source has no voxels.']),
+    ...(source.source.hash.startsWith('sha256:') ? [] : ['Generated source hash is missing.']),
+  ];
+
+  return {
+    ready: issues.length === 0,
+    issues,
+    summary: {
+      schemaVersion: source.schemaVersion,
+      gridScale: source.gridScale,
+      slotCount: source.metrics.slotCount,
+      totalVoxelCount: source.metrics.totalVoxelCount,
+      totalRunCount: source.metrics.totalRunCount,
+      maxSlotVoxelCount: source.metrics.maxSlotVoxelCount,
+      sourceHash: source.source.hash,
+      sourceFileName: source.source.fileName,
+    },
+  };
+}
+
 function compactVisualQaEvidence() {
   return {
     ready: smokeReport.visualQaReady,
@@ -265,6 +291,7 @@ function buildDashboardReport(): V3ReadinessDashboardReport {
     suitFidelity: compactSuitFidelityEvidence(),
     referenceProportions: compactReferenceProportionEvidence(),
     referenceFeatureMatch: compactReferenceFeatureMatchEvidence(),
+    referenceVoxelSource: compactReferenceVoxelSourceEvidence(),
     visualQa: compactVisualQaEvidence(),
     poseClearance: compactPoseEvidence(),
     performanceSmoke: compactPerformanceEvidence(),
@@ -312,6 +339,7 @@ function renderMetrics(report: V3ReadinessDashboardReport): void {
     metric('Reference Acknowledged', report.evidence.referenceComparison.acknowledged),
     metric('Reference Proportions', report.evidence.referenceProportions.ready ?? 'unknown'),
     metric('Reference Feature Match', report.evidence.referenceFeatureMatch.ready ?? 'unknown'),
+    metric('Reference Voxel Source', report.evidence.referenceVoxelSource.ready ?? 'unknown'),
     metric('Suit Fidelity', report.evidence.suitFidelity.ready ?? 'unknown'),
     metric('Visual QA', report.evidence.visualQa.ready ?? 'unknown'),
     metric('Pose Clearance', report.evidence.poseClearance.ready ?? 'unknown'),
@@ -459,6 +487,7 @@ function renderReferenceSummary(): void {
       summary: latestReferenceFeatureGuide.summary,
     } : undefined,
     referenceFeatureMatch: latestReferenceFeatureMatch.summary,
+    referenceVoxelSource: compactReferenceVoxelSourceEvidence().summary,
     calibration: latestReferenceMetadata.kind === 'obj'
       ? 'OBJ canonical Phase 33 calibration source'
       : 'Inspection-only reference; use OBJ for Phase 33 calibration',

@@ -1,8 +1,21 @@
 """Advisor rule engine + hardware recommendation sanity (pure functions, no sim)."""
 from __future__ import annotations
 
+import json
+import os
+import zipfile
+
 from ibrawls_rl.dashboard.advisor import advise
 from ibrawls_rl.hardware import HardwareInfo, recommended_values
+
+
+def _fake_model_zip(path: str, nvec: list[int], obs_dim: int) -> None:
+    data = {
+        "action_space": {"nvec": "[" + " ".join(str(x) for x in nvec) + "]"},
+        "observation_space": {"_shape": [obs_dim]},
+    }
+    with zipfile.ZipFile(path, "w") as z:
+        z.writestr("data", json.dumps(data))
 
 
 def _values(**over) -> dict:
@@ -25,6 +38,7 @@ def _values(**over) -> dict:
         "eval_every": 2_000_000,
         "randomize_enabled": False,
         "init_model": "",
+        "frame_stack": 1,
         "match_minutes": 1.5,
     }
     base.update(over)
@@ -123,8 +137,17 @@ def test_advisor_recommends_asymmetric_lone_wolf_coverage():
     assert f["fixes"]["combat_lone_wolf_reward_scale"] == 1.35
 
 
-def test_advisor_blocks_observation_v2_warm_start():
-    out = advise({}, _values(observation_version=2, init_model="runs/old/final_model.zip"), cpus=16)
-    f = next(x for x in out["findings"] if "observation v2" in x["title"].lower())
+def test_advisor_blocks_cross_observation_warm_start(tmp_path):
+    model = os.path.join(tmp_path, "old_obs_v1.zip")
+    _fake_model_zip(model, nvec=[9, 4, 4, 2, 2, 2], obs_dim=140)
+
+    out = advise({}, _values(
+        observation_version=2,
+        init_model="old_obs_v1.zip",
+        frame_stack=1,
+    ), cpus=16, project_dir=str(tmp_path))
+
+    f = next(x for x in out["findings"] if "observation layout" in x["title"].lower())
     assert f["level"] == "bad"
     assert f["fixes"] == {"init_model": ""}
+    assert "obs v1/stack 1" in f["detail"]

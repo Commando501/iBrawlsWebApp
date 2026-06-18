@@ -92,6 +92,7 @@ export function buildV3RuntimeSmokeChecklist(): V3RuntimeSmokeChecklistItem[] {
         'Rendered Gate Closure',
         'Reconstruction Required',
         'Reference Feature Match',
+        'Reference Voxel Source',
       ],
       viewports: ['desktop'],
     },

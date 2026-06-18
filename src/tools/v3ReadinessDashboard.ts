@@ -70,6 +70,7 @@ export interface V3ReadinessDashboardInput {
   suitFidelity?: V3ReadinessEvidenceSummaryInput | null;
   referenceProportions?: V3ReadinessEvidenceSummaryInput | null;
   referenceFeatureMatch?: V3ReadinessEvidenceSummaryInput | null;
+  referenceVoxelSource?: V3ReadinessEvidenceSummaryInput | null;
   visualQa?: V3ReadinessEvidenceSummaryInput | null;
   poseClearance?: V3ReadinessEvidenceSummaryInput | null;
   performanceSmoke?: V3ReadinessEvidenceSummaryInput | null;
@@ -81,6 +82,7 @@ export type V3ReadinessEvidenceKey =
   | 'suitFidelity'
   | 'referenceProportions'
   | 'referenceFeatureMatch'
+  | 'referenceVoxelSource'
   | 'visualQa'
   | 'poseClearance'
   | 'performanceSmoke';
@@ -107,6 +109,7 @@ export interface V3ReadinessDashboardEvidence {
   suitFidelity: V3ReadinessEvidenceSummary;
   referenceProportions: V3ReadinessEvidenceSummary;
   referenceFeatureMatch: V3ReadinessEvidenceSummary;
+  referenceVoxelSource: V3ReadinessEvidenceSummary;
   visualQa: V3ReadinessEvidenceSummary;
   poseClearance: V3ReadinessEvidenceSummary;
   performanceSmoke: V3ReadinessEvidenceSummary;
@@ -155,6 +158,7 @@ const EVIDENCE_LABELS: Record<V3ReadinessEvidenceKey, string> = {
   suitFidelity: 'Suit fidelity',
   referenceProportions: 'Reference proportions',
   referenceFeatureMatch: 'Reference feature match',
+  referenceVoxelSource: 'Reference voxel source',
   visualQa: 'Visual QA',
   poseClearance: 'Pose clearance',
   performanceSmoke: 'Performance smoke',
@@ -273,6 +277,7 @@ function buildEvidence(input: V3ReadinessDashboardInput): V3ReadinessDashboardEv
     suitFidelity: normalizeEvidenceSummary(input.suitFidelity),
     referenceProportions: normalizeEvidenceSummary(input.referenceProportions),
     referenceFeatureMatch: normalizeEvidenceSummary(input.referenceFeatureMatch),
+    referenceVoxelSource: normalizeEvidenceSummary(input.referenceVoxelSource),
     visualQa: normalizeEvidenceSummary(input.visualQa),
     poseClearance: normalizeEvidenceSummary(input.poseClearance),
     performanceSmoke: normalizeEvidenceSummary(input.performanceSmoke),
@@ -478,6 +483,7 @@ export function buildV3ReadinessExport(
       suitFidelity: report.evidence.suitFidelity,
       referenceProportions: report.evidence.referenceProportions,
       referenceFeatureMatch: report.evidence.referenceFeatureMatch,
+      referenceVoxelSource: report.evidence.referenceVoxelSource,
       visualQa: report.evidence.visualQa,
       poseClearance: report.evidence.poseClearance,
       performanceSmoke: report.evidence.performanceSmoke,

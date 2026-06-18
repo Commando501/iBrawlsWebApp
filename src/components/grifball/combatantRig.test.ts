@@ -153,6 +153,51 @@ test('third-person hammer animation poses hand-rigged arms with the weapon', () 
   assert.ok(meshes.rig.bones.leftArm.rotation.x < -0.7);
 });
 
+test('V1 ball punch animation swings the carrier arms without showing weapon meshes', () => {
+  const scene = new THREE.Scene();
+  const meshes = createCombatantMeshRig(scene, 192, false, { modelSystem: 'v1' });
+
+  animateCombatantWeaponMeshes({
+    hammerModel: meshes.hammer,
+    swordModel: meshes.sword,
+    activeWeapon: 'ball',
+    weaponState: 'swing_down',
+    weaponTimer: 0.06,
+    isLunging: false,
+    dt: 0,
+    settings: { hammerMeleeSpeed: 0.24 },
+    combatantModel: meshes.group,
+  });
+
+  assert.equal(meshes.hammer.visible, false);
+  assert.equal(meshes.sword.visible, false);
+  assert.ok(meshes.rig.bones.rightArm.rotation.x > 0.55);
+  assert.ok(meshes.rig.bones.rightArm.rotation.y < -0.4);
+});
+
+test('V2 ball carriers do not receive the V1-only ball punch arm swing', () => {
+  const scene = new THREE.Scene();
+  const meshes = createCombatantMeshRig(scene, 192, false, {
+    modelSystem: 'v2',
+    modelType: 'medium',
+  });
+
+  animateCombatantWeaponMeshes({
+    hammerModel: meshes.hammer,
+    swordModel: meshes.sword,
+    activeWeapon: 'ball',
+    weaponState: 'swing_down',
+    weaponTimer: 0.06,
+    isLunging: false,
+    dt: 0,
+    settings: { hammerMeleeSpeed: 0.24 },
+    combatantModel: meshes.group,
+  });
+
+  assert.equal(meshes.rig.bones.rightArm.rotation.x, 0);
+  assert.equal(meshes.rig.bones.leftArm.rotation.x, 0);
+});
+
 test('V2 Model Hitbox Constraints Verification - validates all V1 armor presets', () => {
   const helmets: HelmetPreset[] = ['mark-vi', 'odst', 'recon', 'eva', 'gungnir', 'eod', 'hayabusa', 'cqb'];
   const torsos: TorsoPreset[] = ['mark-vi', 'scout', 'recon', 'eod', 'hayabusa'];

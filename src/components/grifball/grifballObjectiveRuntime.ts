@@ -31,6 +31,7 @@ import {
   hideGrifballThrowTrajectoryVisualForRefs,
   updateGrifballThrowTrajectoryVisualForState,
 } from './grifballThrowTrajectoryRuntime';
+import { resolveHeldGrifballBallVisualPosition } from './grifballBallCarryVisuals';
 
 type MutableRef<T> = { current: T };
 
@@ -220,6 +221,54 @@ export function ensureGrifballBallMeshForRefs({
   ballMeshRef.current = mesh;
 }
 
+function resolveHeldBallMeshPositionForState({
+  state,
+  refs,
+  basePosition,
+  localPlayerModelSystem,
+}: {
+  state: GrifballRuntimeState;
+  refs: GrifballThreeRefs;
+  basePosition: THREE.Vector3;
+  localPlayerModelSystem?: unknown;
+}): THREE.Vector3 {
+  const holderId = state.grifball.ball.holderId;
+  if (state.grifball.ball.state !== 'held' || !holderId) {
+    return basePosition;
+  }
+
+  if (holderId === 'player') {
+    return resolveHeldGrifballBallVisualPosition({
+      basePosition,
+      yaw: state.yaw,
+      activeWeapon: state.activeWeapon,
+      weaponState: state.pWeaponState,
+      weaponTimer: state.pWeaponTimer,
+      settings: state.settings,
+      modelSystem: localPlayerModelSystem,
+    });
+  }
+
+  const holder = state.otherPlayers.get(holderId);
+  if (!holder) {
+    return basePosition;
+  }
+
+  const meshes = refs.otherPlayerMeshes.get(holderId);
+  const modelSystem = meshes?.group.userData.modelSystem
+    ?? (holderId === 'main_ai' ? refs.enemyGroup?.userData.modelSystem : undefined);
+
+  return resolveHeldGrifballBallVisualPosition({
+    basePosition,
+    yaw: holder.yaw,
+    activeWeapon: holder.activeWeapon,
+    weaponState: holder.weaponState ?? 'ready',
+    weaponTimer: holder.weaponTimer ?? 0,
+    settings: state.settings,
+    modelSystem,
+  });
+}
+
 export function throwPlayerGrifballPassForState({
   state,
   refs,
@@ -262,6 +311,7 @@ export function updateGrifballObjectiveForState({
   dt,
   isMultiplayer,
   activeCustomMap,
+  localPlayerModelSystem,
   placeCombatantsAtGrifballSpawns,
   pushStatsUpdate,
 }: {
@@ -273,6 +323,7 @@ export function updateGrifballObjectiveForState({
   dt: number;
   isMultiplayer: boolean;
   activeCustomMap: CustomMapData | null;
+  localPlayerModelSystem?: unknown;
   placeCombatantsAtGrifballSpawns: () => void;
   pushStatsUpdate: () => void;
 }): void {
@@ -384,8 +435,15 @@ export function updateGrifballObjectiveForState({
 
   const mesh = ballMeshRef.current;
   if (mesh) {
+    const basePosition = new THREE.Vector3(g.ball.pos.x, g.ball.pos.y, g.ball.pos.z);
+    const visualPosition = resolveHeldBallMeshPositionForState({
+      state,
+      refs,
+      basePosition,
+      localPlayerModelSystem,
+    });
     mesh.visible = true;
-    mesh.position.set(g.ball.pos.x, g.ball.pos.y, g.ball.pos.z);
+    mesh.position.copy(visualPosition);
     mesh.rotation.y += dt * 2.5;
   }
 
