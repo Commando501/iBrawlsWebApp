@@ -6,6 +6,7 @@ import {
 import { V3_CHARACTER_SLOT_IDS, type V3CharacterSlotId } from '../components/v3/v3ModelTypes';
 import { V3_CHARACTER_PART_BOUNDS } from '../components/v3/v3PartBounds';
 import {
+  analyzeV3AegisReferenceProportions,
   V3_OBJ_REFERENCE_PROPORTION_TARGETS,
   V3_REFERENCE_PROPORTION_BANDS,
   type V3ReferenceProportionBandId,
@@ -86,6 +87,7 @@ export interface V3AegisAppliedCalibration {
 const VOXEL_WORLD_UNIT = 0.04;
 const MIN_PART_DIMENSION = 2;
 const PAIR_EPSILON = 0.0001;
+const CANONICAL_TARGET_EPSILON = 0.0005;
 
 const MIRRORED_SLOT_PAIRS = [
   ['shoulderLeft', 'shoulderRight'],
@@ -200,6 +202,27 @@ function cloneSpecs(
       position: [...specs[slot].position],
     },
   ])) as Record<V3CharacterSlotId, V3AegisPartSpec>;
+}
+
+function assignRuntimeAegisSpecs(specs: Record<V3CharacterSlotId, V3AegisPartSpec>): void {
+  const mutableSpecs = V3_AEGIS_PART_SPECS as unknown as Record<V3CharacterSlotId, V3AegisPartSpec>;
+  for (const slot of V3_CHARACTER_SLOT_IDS) {
+    mutableSpecs[slot].dimensions = [...specs[slot].dimensions];
+    mutableSpecs[slot].position = [...specs[slot].position];
+  }
+}
+
+function withTemporaryRuntimeAegisSpecs<T>(
+  specs: Record<V3CharacterSlotId, V3AegisPartSpec>,
+  callback: () => T
+): T {
+  const originalSpecs = cloneBaseSpecs();
+  try {
+    assignRuntimeAegisSpecs(specs);
+    return callback();
+  } finally {
+    assignRuntimeAegisSpecs(originalSpecs);
+  }
 }
 
 function slotEnvelope(spec: V3AegisPartSpec): {
@@ -574,6 +597,40 @@ function validateSpecs(specs: Record<V3CharacterSlotId, V3AegisPartSpec>): strin
   return [...new Set(reasons)];
 }
 
+function matchesCanonicalObjTarget(value: number, target: number): boolean {
+  return Math.abs(value - target) <= CANONICAL_TARGET_EPSILON;
+}
+
+function isCanonicalObjReferenceTarget(targets: V3ReferenceProportionTargets): boolean {
+  return (
+    targets.sourceKind === 'obj' &&
+    matchesCanonicalObjTarget(
+      targets.global.front.widthRatio,
+      V3_OBJ_REFERENCE_PROPORTION_TARGETS.global.front.widthRatio
+    ) &&
+    matchesCanonicalObjTarget(
+      targets.global.side.widthRatio,
+      V3_OBJ_REFERENCE_PROPORTION_TARGETS.global.side.widthRatio
+    )
+  );
+}
+
+function validateRenderedCanonicalProportions(
+  specs: Record<V3CharacterSlotId, V3AegisPartSpec>,
+  targets: V3ReferenceProportionTargets
+): string[] {
+  if (!isCanonicalObjReferenceTarget(targets)) return [];
+
+  const report = withTemporaryRuntimeAegisSpecs(specs, () => (
+    analyzeV3AegisReferenceProportions({ targets })
+  ));
+  if (report.ready) return [];
+
+  return report.issues.map((issue) => (
+    `rendered OBJ proportion gate failed: ${issue.message}`
+  ));
+}
+
 function sameVec(left: readonly number[], right: readonly number[]): boolean {
   return left.length === right.length && left.every((value, index) => (
     Math.abs(value - right[index]) <= PAIR_EPSILON
@@ -597,6 +654,7 @@ export function scoreV3AegisCalibrationCandidate(
   const rejectionReasons = [
     ...scaffoldReasons,
     ...validateSpecs(nextSpecs),
+    ...validateRenderedCanonicalProportions(nextSpecs, targets),
   ];
 
   if (improvement <= 0) {

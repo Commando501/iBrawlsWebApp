@@ -69,6 +69,7 @@ export interface V3ReadinessDashboardInput {
   checklist?: Record<string, unknown> | Partial<Record<V3ReadinessChecklistItemId, unknown>>;
   suitFidelity?: V3ReadinessEvidenceSummaryInput | null;
   referenceProportions?: V3ReadinessEvidenceSummaryInput | null;
+  referenceFeatureMatch?: V3ReadinessEvidenceSummaryInput | null;
   visualQa?: V3ReadinessEvidenceSummaryInput | null;
   poseClearance?: V3ReadinessEvidenceSummaryInput | null;
   performanceSmoke?: V3ReadinessEvidenceSummaryInput | null;
@@ -79,6 +80,7 @@ export interface V3ReadinessDashboardInput {
 export type V3ReadinessEvidenceKey =
   | 'suitFidelity'
   | 'referenceProportions'
+  | 'referenceFeatureMatch'
   | 'visualQa'
   | 'poseClearance'
   | 'performanceSmoke';
@@ -104,6 +106,7 @@ export interface V3ReadinessReferenceComparisonEvidence {
 export interface V3ReadinessDashboardEvidence {
   suitFidelity: V3ReadinessEvidenceSummary;
   referenceProportions: V3ReadinessEvidenceSummary;
+  referenceFeatureMatch: V3ReadinessEvidenceSummary;
   visualQa: V3ReadinessEvidenceSummary;
   poseClearance: V3ReadinessEvidenceSummary;
   performanceSmoke: V3ReadinessEvidenceSummary;
@@ -151,6 +154,7 @@ export interface V3ReadinessDashboardExportOptions {
 const EVIDENCE_LABELS: Record<V3ReadinessEvidenceKey, string> = {
   suitFidelity: 'Suit fidelity',
   referenceProportions: 'Reference proportions',
+  referenceFeatureMatch: 'Reference feature match',
   visualQa: 'Visual QA',
   poseClearance: 'Pose clearance',
   performanceSmoke: 'Performance smoke',
@@ -268,6 +272,7 @@ function buildEvidence(input: V3ReadinessDashboardInput): V3ReadinessDashboardEv
   return {
     suitFidelity: normalizeEvidenceSummary(input.suitFidelity),
     referenceProportions: normalizeEvidenceSummary(input.referenceProportions),
+    referenceFeatureMatch: normalizeEvidenceSummary(input.referenceFeatureMatch),
     visualQa: normalizeEvidenceSummary(input.visualQa),
     poseClearance: normalizeEvidenceSummary(input.poseClearance),
     performanceSmoke: normalizeEvidenceSummary(input.performanceSmoke),
@@ -472,6 +477,7 @@ export function buildV3ReadinessExport(
     evidence: buildEvidence({
       suitFidelity: report.evidence.suitFidelity,
       referenceProportions: report.evidence.referenceProportions,
+      referenceFeatureMatch: report.evidence.referenceFeatureMatch,
       visualQa: report.evidence.visualQa,
       poseClearance: report.evidence.poseClearance,
       performanceSmoke: report.evidence.performanceSmoke,

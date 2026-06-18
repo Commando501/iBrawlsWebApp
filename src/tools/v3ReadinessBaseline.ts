@@ -107,6 +107,7 @@ const MANUAL_SOURCE_TO_CATEGORY: Record<V3ReadinessChecklistItemId, V3ReadinessB
 const EVIDENCE_TO_CATEGORY: Record<V3ReadinessEvidenceKey, V3ReadinessBaselineCategory> = {
   suitFidelity: 'baseProportions',
   referenceProportions: 'baseProportions',
+  referenceFeatureMatch: 'builtInArmorFidelity',
   visualQa: 'builtInArmorFidelity',
   poseClearance: 'poseAtlas',
   performanceSmoke: 'performanceSmoke',
@@ -115,6 +116,7 @@ const EVIDENCE_TO_CATEGORY: Record<V3ReadinessEvidenceKey, V3ReadinessBaselineCa
 const EVIDENCE_LABELS: Record<V3ReadinessEvidenceKey, string> = {
   suitFidelity: 'Suit fidelity',
   referenceProportions: 'Reference proportions',
+  referenceFeatureMatch: 'Reference feature match',
   visualQa: 'Visual QA',
   poseClearance: 'Pose clearance',
   performanceSmoke: 'Performance smoke',
@@ -272,6 +274,7 @@ function normalizeExport(raw: Record<string, unknown>): V3ReadinessDashboardExpo
     evidence: {
       suitFidelity: normalizeEvidenceEntry(evidence.suitFidelity),
       referenceProportions: normalizeEvidenceEntry(evidence.referenceProportions),
+      referenceFeatureMatch: normalizeEvidenceEntry(evidence.referenceFeatureMatch),
       visualQa: normalizeEvidenceEntry(evidence.visualQa),
       poseClearance: normalizeEvidenceEntry(evidence.poseClearance),
       performanceSmoke: normalizeEvidenceEntry(evidence.performanceSmoke),
@@ -291,6 +294,7 @@ function normalizeExport(raw: Record<string, unknown>): V3ReadinessDashboardExpo
     checklist: normalized.checklist,
     suitFidelity: normalized.evidence.suitFidelity,
     referenceProportions: normalized.evidence.referenceProportions,
+    referenceFeatureMatch: normalized.evidence.referenceFeatureMatch,
     visualQa: normalized.evidence.visualQa,
     poseClearance: normalized.evidence.poseClearance,
     performanceSmoke: normalized.evidence.performanceSmoke,

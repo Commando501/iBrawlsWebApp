@@ -2,8 +2,10 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import type { VoxelData } from '../VoxelModels';
 import {
+  analyzeV3BuiltInReferenceFeatureMatch,
   analyzeV3BuiltInSuitFidelity,
   analyzeV3PartFidelity,
+  analyzeV3ReferenceFeatureMatch,
   type V3PartFidelityIssueCode,
 } from './v3SuitFidelity';
 import { V3_CHARACTER_SLOT_IDS } from './v3ModelTypes';
@@ -96,6 +98,32 @@ describe('analyzeV3BuiltInSuitFidelity', () => {
       );
     }
   });
+
+  it('passes the built-in V3 suit through Phase 34 reference feature-match gates', () => {
+    const report = analyzeV3BuiltInReferenceFeatureMatch();
+
+    assert.equal(report.ready, true, JSON.stringify(report.issues));
+    assert.ok(report.summary.slotCount >= 18, 'neck is excluded, every guided armor slot is checked');
+    assert.ok(report.summary.averageScore >= 0.9, `average reference score too low: ${report.summary.averageScore}`);
+    assert.equal(report.summary.issueCount, 0);
+
+    const helmet = report.slots.helmet;
+    const chest = report.slots.chest;
+    const back = report.slots.back;
+    const shin = report.slots.shinRight;
+    const foot = report.slots.footRight;
+
+    assert.equal(helmet?.features.find((feature) => feature.kind === 'visor')?.present, true);
+    assert.equal(helmet?.features.find((feature) => feature.kind === 'jaw')?.present, true);
+    assert.equal(helmet?.features.find((feature) => feature.kind === 'crown')?.present, true);
+    assert.equal(chest?.features.find((feature) => feature.kind === 'pectoral')?.present, true);
+    assert.equal(chest?.features.find((feature) => feature.kind === 'core')?.present, true);
+    assert.equal(chest?.features.find((feature) => feature.kind === 'abdomen')?.present, true);
+    assert.equal(back?.features.find((feature) => feature.kind === 'rail')?.present, true);
+    assert.equal(back?.features.find((feature) => feature.kind === 'spine')?.present, true);
+    assert.equal(shin?.features.find((feature) => feature.kind === 'knee')?.present, true);
+    assert.equal(foot?.features.find((feature) => feature.kind === 'toe')?.present, true);
+  });
 });
 
 describe('analyzeV3PartFidelity', () => {
@@ -153,5 +181,23 @@ describe('analyzeV3PartFidelity', () => {
     assert.ok(codes.includes('terminal-proportion-oversized'));
     assert.ok(codes.includes('cube-profile'));
     assert.ok(report.occupiedBounds.sizeY >= 9);
+  });
+});
+
+describe('analyzeV3ReferenceFeatureMatch', () => {
+  it('fails a blockout fixture that lacks role contrast and reference feature hierarchy', () => {
+    const report = analyzeV3ReferenceFeatureMatch({
+      slots: ['helmet'],
+      voxelsBySlot: {
+        helmet: filledBox(10, 8, 8),
+      },
+    });
+    const helmet = report.slots.helmet;
+
+    assert.equal(report.ready, false);
+    assert.equal(helmet?.ready, false);
+    assert.ok(helmet?.issues.some((issue) => issue.code === 'missing-reference-feature'));
+    assert.ok(helmet?.issues.some((issue) => issue.code === 'material-role-diversity-low'));
+    assert.ok((helmet?.score ?? 1) < 0.5);
   });
 });

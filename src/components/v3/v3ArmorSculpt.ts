@@ -55,6 +55,56 @@ export interface V3SteppedRidgeOptions {
   emissive?: boolean;
 }
 
+export interface V3ProjectedPanelZone {
+  xMinRatio: number;
+  xMaxRatio: number;
+  yMinRatio: number;
+  yMaxRatio: number;
+}
+
+export interface V3ProjectedPanelZoneOptions {
+  dimensions: V3VoxelDimensionsTuple;
+  zone: V3ProjectedPanelZone;
+  z: number;
+  color: string;
+  emissive?: boolean;
+}
+
+export interface V3NotchedSeamOptions {
+  dimensions: V3VoxelDimensionsTuple;
+  axis: 'x' | 'y';
+  positionRatio: number;
+  width?: number;
+  z?: number;
+  preserveEvery?: number;
+}
+
+export type V3ReferenceVentSide = 'left' | 'right' | 'both';
+
+export interface V3ReferenceVentSetOptions {
+  dimensions: V3VoxelDimensionsTuple;
+  side?: V3ReferenceVentSide;
+  yRatio: number;
+  z: number;
+  count: number;
+  color: string;
+  emissive?: boolean;
+}
+
+export interface V3MirroredReferenceFeatureOptions {
+  dimensions: V3VoxelDimensionsTuple;
+  origin: V3VoxelDimensionsTuple;
+  featureDimensions: V3VoxelDimensionsTuple;
+  color: string;
+  emissive?: boolean;
+}
+
+export interface V3ReferenceTaperBand {
+  yRatio: number;
+  widthRatio: number;
+  depthRatio: number;
+}
+
 type V3ChannelAxis = 'x' | 'y' | 'z';
 type V3ChannelCoordinateRange = number | readonly [number, number];
 
@@ -164,6 +214,30 @@ export const V3_AEGIS_SCULPT_PROFILES: Record<V3CharacterSlotId, V3SculptProfile
 
 const clampInteger = (value: number, min: number, max: number): number =>
   Math.max(min, Math.min(max, Math.round(value)));
+
+const clampRatio = (value: number): number =>
+  Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : 0;
+
+const clampVoxelIndex = (value: number, size: number): number =>
+  clampInteger(Number.isFinite(value) ? value : 0, 0, Math.max(0, size - 1));
+
+const normalizeExtent = (value: number): number =>
+  Math.max(0, Math.floor(Number.isFinite(value) ? value : 0));
+
+const normalizedRangeToBounds = (
+  minRatio: number,
+  maxRatio: number,
+  size: number
+): readonly [number, number] | null => {
+  const extent = normalizeExtent(size);
+  if (extent <= 0) return null;
+
+  const min = Math.min(clampRatio(minRatio), clampRatio(maxRatio));
+  const max = Math.max(clampRatio(minRatio), clampRatio(maxRatio));
+  const start = clampVoxelIndex(Math.floor(min * extent), extent);
+  const end = clampVoxelIndex(Math.ceil(max * extent) - 1, extent);
+  return start <= end ? [start, end] : [end, start];
+};
 
 const setV3Voxel = (
   voxels: VoxelData[],
@@ -379,6 +453,175 @@ export function appendV3SteppedRidge(
       });
     }
   }
+}
+
+export function appendV3ProjectedPanelZone(
+  voxels: VoxelData[],
+  { dimensions, zone, z, color, emissive = false }: V3ProjectedPanelZoneOptions
+): void {
+  const [width, height, depth] = dimensions.map(normalizeExtent) as V3VoxelDimensionsTuple;
+  if (width <= 0 || height <= 0 || depth <= 0) return;
+
+  const xBounds = normalizedRangeToBounds(zone.xMinRatio, zone.xMaxRatio, width);
+  const yBounds = normalizedRangeToBounds(zone.yMinRatio, zone.yMaxRatio, height);
+  if (!xBounds || !yBounds) return;
+
+  const fixedZ = clampVoxelIndex(z, depth);
+  for (let x = xBounds[0]; x <= xBounds[1]; x += 1) {
+    for (let y = yBounds[0]; y <= yBounds[1]; y += 1) {
+      setV3Voxel(voxels, { x, y, z: fixedZ, color, emissive });
+    }
+  }
+}
+
+export function carveV3NotchedSeam(
+  voxels: VoxelData[],
+  { dimensions, axis, positionRatio, width = 1, z, preserveEvery }: V3NotchedSeamOptions
+): void {
+  const [partWidth, partHeight, partDepth] = dimensions.map(normalizeExtent) as V3VoxelDimensionsTuple;
+  if (partWidth <= 0 || partHeight <= 0 || partDepth <= 0 || voxels.length === 0) return;
+
+  const axisSize = axis === 'x' ? partWidth : partHeight;
+  const seamCenter = clampVoxelIndex(clampRatio(positionRatio) * Math.max(0, axisSize - 1), axisSize);
+  const seamWidth = Math.max(1, Math.floor(Number.isFinite(width) ? width : 1));
+  const seamStart = clampVoxelIndex(seamCenter - Math.floor((seamWidth - 1) / 2), axisSize);
+  const seamEnd = clampVoxelIndex(seamCenter + Math.ceil((seamWidth - 1) / 2), axisSize);
+  const fixedZ = z === undefined ? undefined : clampVoxelIndex(z, partDepth);
+  const preserveStride = Math.max(0, Math.floor(Number.isFinite(preserveEvery) ? preserveEvery ?? 0 : 0));
+  const inPart = (voxel: VoxelData): boolean =>
+    voxel.x >= 0 &&
+    voxel.x < partWidth &&
+    voxel.y >= 0 &&
+    voxel.y < partHeight &&
+    voxel.z >= 0 &&
+    voxel.z < partDepth &&
+    (fixedZ === undefined || voxel.z === fixedZ);
+  const matchesSeam = (voxel: VoxelData): boolean =>
+    inPart(voxel) &&
+    voxel[axis] >= Math.min(seamStart, seamEnd) &&
+    voxel[axis] <= Math.max(seamStart, seamEnd);
+  const candidates = voxels
+    .filter(matchesSeam)
+    .sort((a, b) => a.z - b.z || a.y - b.y || a.x - b.x);
+  if (candidates.length === 0) return;
+
+  const inPartCount = voxels.filter(inPart).length;
+  let removable = preserveStride > 0
+    ? candidates.filter((_, index) => index % preserveStride !== 0)
+    : [...candidates];
+  if (inPartCount > 0 && removable.length >= inPartCount) {
+    removable = removable.slice(1);
+  }
+
+  const removalKeys = new Set(removable.map((voxel) => `${voxel.x}:${voxel.y}:${voxel.z}`));
+  for (let index = voxels.length - 1; index >= 0; index -= 1) {
+    const voxel = voxels[index];
+    if (removalKeys.has(`${voxel.x}:${voxel.y}:${voxel.z}`)) {
+      voxels.splice(index, 1);
+    }
+  }
+}
+
+export function appendV3ReferenceVentSet(
+  voxels: VoxelData[],
+  { dimensions, side = 'both', yRatio, z, count, color, emissive = false }: V3ReferenceVentSetOptions
+): void {
+  const [width, height, depth] = dimensions.map(normalizeExtent) as V3VoxelDimensionsTuple;
+  if (width <= 0 || height <= 0 || depth <= 0) return;
+
+  const ventCount = Math.max(0, Math.floor(Number.isFinite(count) ? count : 0));
+  const y = clampVoxelIndex(clampRatio(yRatio) * Math.max(0, height - 1), height);
+  const fixedZ = clampVoxelIndex(z, depth);
+  for (let index = 0; index < ventCount; index += 1) {
+    if (side === 'left' || side === 'both') {
+      setV3Voxel(voxels, { x: clampVoxelIndex(index, width), y, z: fixedZ, color, emissive });
+    }
+    if (side === 'right' || side === 'both') {
+      setV3Voxel(voxels, { x: clampVoxelIndex(width - 1 - index, width), y, z: fixedZ, color, emissive });
+    }
+  }
+}
+
+const appendBoundedV3Feature = (
+  voxels: VoxelData[],
+  {
+    dimensions,
+    origin,
+    featureDimensions,
+    color,
+    emissive = false,
+  }: V3MirroredReferenceFeatureOptions
+): void => {
+  const [partWidth, partHeight, partDepth] = dimensions.map(normalizeExtent) as V3VoxelDimensionsTuple;
+  const [featureWidth, featureHeight, featureDepth] = featureDimensions.map(normalizeExtent) as V3VoxelDimensionsTuple;
+  if (
+    partWidth <= 0 ||
+    partHeight <= 0 ||
+    partDepth <= 0 ||
+    featureWidth <= 0 ||
+    featureHeight <= 0 ||
+    featureDepth <= 0
+  ) {
+    return;
+  }
+
+  const [originX, originY, originZ] = origin.map((value) =>
+    Math.round(Number.isFinite(value) ? value : 0)
+  ) as V3VoxelDimensionsTuple;
+  const maxX = Math.min(partWidth, originX + featureWidth);
+  const maxY = Math.min(partHeight, originY + featureHeight);
+  const maxZ = Math.min(partDepth, originZ + featureDepth);
+  for (let x = Math.max(0, originX); x < maxX; x += 1) {
+    for (let y = Math.max(0, originY); y < maxY; y += 1) {
+      for (let z = Math.max(0, originZ); z < maxZ; z += 1) {
+        setV3Voxel(voxels, { x, y, z, color, emissive });
+      }
+    }
+  }
+};
+
+export function appendV3MirroredReferenceFeature(
+  voxels: VoxelData[],
+  options: V3MirroredReferenceFeatureOptions
+): void {
+  const [partWidth] = options.dimensions.map(normalizeExtent) as V3VoxelDimensionsTuple;
+  const [featureWidth] = options.featureDimensions.map(normalizeExtent) as V3VoxelDimensionsTuple;
+  const [originX, originY, originZ] = options.origin.map((value) =>
+    Math.round(Number.isFinite(value) ? value : 0)
+  ) as V3VoxelDimensionsTuple;
+  if (partWidth <= 0 || featureWidth <= 0) return;
+
+  appendBoundedV3Feature(voxels, options);
+  appendBoundedV3Feature(voxels, {
+    ...options,
+    origin: [partWidth - originX - featureWidth, originY, originZ],
+  });
+}
+
+export function buildV3ReferenceTaperProfile(
+  dimensions: V3VoxelDimensionsTuple,
+  bands: readonly V3ReferenceTaperBand[]
+): V3SculptProfile {
+  const [width, , depth] = dimensions.map(normalizeExtent) as V3VoxelDimensionsTuple;
+  const maxXInset = Math.max(0, Math.floor((width - 1) / 2));
+  const maxZInset = Math.max(0, Math.floor((depth - 1) / 2));
+  const insetForRatio = (size: number, ratio: number, maxInset: number): number => {
+    if (size <= 0) return 0;
+    const targetSize = clampInteger(Math.round(size * clampRatio(ratio)), 1, size);
+    return clampInteger(Math.floor((size - targetSize) / 2), 0, maxInset);
+  };
+  const sortedBands = [...bands].sort((a, b) => clampRatio(a.yRatio) - clampRatio(b.yRatio));
+
+  return {
+    xInsets: sortedBands.map((band) => [
+      clampRatio(band.yRatio),
+      insetForRatio(width, band.widthRatio, maxXInset),
+    ]),
+    zInsets: sortedBands.map((band) => [
+      clampRatio(band.yRatio),
+      insetForRatio(depth, band.depthRatio, maxZInset),
+    ]),
+  };
 }
 
 const coordinateMatchesRange = (

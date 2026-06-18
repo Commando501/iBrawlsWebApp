@@ -166,7 +166,7 @@ export const BUILT_IN_V3_CHARACTER_PARTS: readonly V3CharacterPartManifest[] = [
     slot: 'helmet',
     label: 'Aegis Vanguard Helmet',
     roles: ['primary', 'secondary', 'visor', 'accent', 'emissive', 'fixed'],
-    budget: createBudget(1170, 240, 7, 7, 3, 230),
+    budget: createBudget(1170, 265, 7, 7, 3, 230),
   }),
   createCharacterPart({
     slot: 'neck',
@@ -232,7 +232,7 @@ export const BUILT_IN_V3_CHARACTER_PARTS: readonly V3CharacterPartManifest[] = [
     slot: 'pelvis',
     label: 'Aegis Belt Assembly',
     roles: ['undersuit', 'secondary', 'accent', 'decal'],
-    budget: createBudget(950, 160, 6, 6, 3, 185),
+    budget: createBudget(1010, 160, 6, 6, 3, 185),
   }),
   createCharacterPart({
     slot: 'thighLeft',

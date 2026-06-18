@@ -243,6 +243,20 @@ describe('V3 Aegis auto-calibration solver', () => {
     assert.ok(noImprovement.rejectionReasons.some((reason) => reason.includes('does not improve')));
   });
 
+  it('hard rejects canonical OBJ candidates that fail the rendered proportion gate', () => {
+    const report = buildV3AegisCalibrationCandidates(makeNativeScaffold(
+      V3_OBJ_REFERENCE_PROPORTION_TARGETS.global.front.widthRatio,
+      V3_OBJ_REFERENCE_PROPORTION_TARGETS.global.side.widthRatio
+    ), { maxCandidates: 5 });
+    const globalCandidate = report.candidates.find((candidate) => candidate.id === 'base-envelope-global');
+
+    assert.ok(globalCandidate, 'expected the global candidate to be generated');
+    assert.equal(globalCandidate.hardGateStatus, 'rejected');
+    assert.ok(globalCandidate.rejectionReasons.some((reason) => (
+      reason.includes('rendered OBJ proportion gate failed')
+    )));
+  });
+
   it('hard rejects missing and non-OBJ scaffolds', () => {
     const missingReport = buildV3AegisCalibrationCandidates(undefined as unknown as V3ReferenceScaffold);
     const nonObjReport = buildV3AegisCalibrationCandidates(makeScaffold(makeTargets(0.42, 0.18), {

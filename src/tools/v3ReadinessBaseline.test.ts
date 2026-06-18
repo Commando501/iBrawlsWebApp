@@ -34,6 +34,7 @@ const readyExport = (): V3ReadinessDashboardExportObject => ({
   evidence: {
       suitFidelity: readyEvidence(),
       referenceProportions: readyEvidence(),
+      referenceFeatureMatch: readyEvidence(),
       visualQa: readyEvidence(),
       poseClearance: readyEvidence(),
     performanceSmoke: readyEvidence(),
@@ -189,6 +190,26 @@ test('buildV3ReadinessBaseline maps reference proportion evidence failures to ba
     finding.category === 'baseProportions' &&
     finding.severity === 'blocker' &&
     finding.message.includes('thigh band width')
+  )));
+});
+
+test('buildV3ReadinessBaseline maps reference feature-match failures to built-in armor fidelity', () => {
+  const input = readyExport();
+  input.evidence.referenceFeatureMatch = {
+    ready: false,
+    issueCount: 1,
+    issues: ['helmet missing reference jaw feature coverage'],
+    summary: { averageScore: 0.68 },
+  };
+
+  const report = buildV3ReadinessBaseline(input);
+
+  assert.equal(report.status, 'blocked');
+  assert.equal(report.categories.builtInArmorFidelity.ready, false);
+  assert.ok(report.findings.some((finding) => (
+    finding.category === 'builtInArmorFidelity' &&
+    finding.severity === 'blocker' &&
+    finding.message.includes('helmet missing reference jaw')
   )));
 });
 

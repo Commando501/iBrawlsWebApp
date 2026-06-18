@@ -324,6 +324,8 @@ Phase 32 starts model dialing with OBJ reference proportion calibration. The non
 
 Phase 33 adds the local V3 reference scaffold and auto-calibration pipeline. Canonical OBJ text can be reduced into sanitized scaffold ratios and slot-family envelopes, then `v3AegisAutoCalibration` generates deterministic base-envelope candidates before any Aegis source tuning is applied. The readiness dashboard exposes `Calibration Candidates` plus copy/download report actions, but raw OBJ geometry, absolute paths, buffers, and direct mesh conversions remain excluded from committed data and runtime gameplay. The applied Aegis update is still procedural `gridScale: 2` voxel source, V3 remains `Not Player Ready`, and V1/V2 visuals plus gameplay collision, hitboxes, reach, AI, networking, and save schemas are unchanged.
 
+Phase 34 starts reference-guided V3 model reconstruction. The readiness dashboard can now extract a sanitized `Reference Feature Match` guide from the canonical OBJ, and built-in Aegis sources use deterministic voxel sculpt primitives for visor/jaw/crown forms, chest panel zones, pelvis/back segmentation, bracers, shins, and boots. The OBJ remains browser-local/private; committed data stays export-safe, saved armor remains voxel JSON, V3 stays internal/not-player-ready, and gameplay/collision/hitbox/reach/networking/save-schema behavior remains unchanged.
+
 ## Standalone 3D Map Maker
 
 iBrawls features a beautiful, feature-rich, and completely standalone 3D Map Maker application that runs 100% locally and offline in the user's browser. Since it is entirely decoupled from the main web application, players simply open the local HTML file to design custom battle arenas using standard assets!

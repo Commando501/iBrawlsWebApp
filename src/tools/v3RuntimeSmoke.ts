@@ -89,6 +89,7 @@ export function buildV3RuntimeSmokeChecklist(): V3RuntimeSmokeChecklistItem[] {
         'Copy Calibration Report',
         'Download Calibration JSON',
         'Copy Calibration JSON',
+        'Reference Feature Match',
       ],
       viewports: ['desktop'],
     },

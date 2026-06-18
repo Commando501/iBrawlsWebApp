@@ -8,8 +8,12 @@ import {
   V3_AEGIS_SCULPT_PROFILES,
   appendV3ArmorPlate,
   appendV3CornerArmorTabs,
+  appendV3MirroredReferenceFeature,
   appendV3MirroredArmorPlates,
   appendV3PanelStripe,
+  appendV3ProjectedPanelZone,
+  appendV3ReferenceVentSet,
+  carveV3NotchedSeam,
   createV3SculptedShell,
 } from './v3ArmorSculpt';
 import type { V3CharacterSlotId } from './v3ModelTypes';
@@ -123,6 +127,8 @@ const V3_ARTICULATED_SLOTS_WITH_LOCAL_PANELS = new Set<V3CharacterSlotId>([
   'thighRight',
   'shinLeft',
   'shinRight',
+  'footLeft',
+  'footRight',
   'back',
 ]);
 
@@ -312,10 +318,38 @@ const createAegisHelmetVoxels = (
   const fixedColor = roleColor('fixed', colors, paintJob);
   const emissiveColor = roleColor('emissive', colors, paintJob);
 
+  carveV3NotchedSeam(voxels, {
+    dimensions,
+    axis: 'x',
+    positionRatio: 0.5,
+    width: 2,
+    z: frontZ,
+    preserveEvery: 4,
+  });
+
+  appendV3ProjectedPanelZone(voxels, {
+    dimensions,
+    zone: {
+      xMinRatio: 0.18,
+      xMaxRatio: 0.82,
+      yMinRatio: 0.5,
+      yMaxRatio: 0.64,
+    },
+    z: frontZ,
+    color: visorColor,
+    emissive: roleEmissive('visor', paintJob, true),
+  });
+
   appendV3MirroredArmorPlates(voxels, {
     origin: [2, Math.max(1, jawY + 2), frontZ],
     dimensions: [Math.max(1, Math.floor(width * 0.25)), Math.max(1, Math.floor(height * 0.28)), 1],
     mirrorMaxX,
+    color: secondaryColor,
+  });
+  appendV3MirroredReferenceFeature(voxels, {
+    dimensions,
+    origin: [2, Math.max(1, jawY + 1), frontZ - 1],
+    featureDimensions: [Math.max(2, Math.floor(width * 0.14)), Math.max(3, Math.floor(height * 0.22)), 2],
     color: secondaryColor,
   });
 
@@ -366,6 +400,14 @@ const createAegisHelmetVoxels = (
     dimensions: [1, 1, Math.max(3, Math.floor(depth * 0.3))],
     color: secondaryColor,
   });
+  appendV3ReferenceVentSet(voxels, {
+    dimensions,
+    side: 'both',
+    yRatio: 0.78,
+    z: Math.max(1, frontZ - 4),
+    count: Math.max(3, Math.floor(width * 0.16)),
+    color: secondaryColor,
+  });
   appendV3ArmorPlate(voxels, {
     origin: [Math.floor(width / 2), browY, frontZ],
     dimensions: [1, 1, 1],
@@ -394,6 +436,15 @@ const createAegisChestVoxels = (
   const coreY = Math.max(1, Math.floor(height * 0.34));
   const abdomenY = Math.max(1, Math.floor(height * 0.3));
   const waistY = Math.max(1, Math.floor(height * 0.15));
+
+  carveV3NotchedSeam(voxels, {
+    dimensions,
+    axis: 'x',
+    positionRatio: 0.5,
+    width: 2,
+    z: frontZ,
+    preserveEvery: 5,
+  });
 
   appendV3MirroredArmorPlates(voxels, {
     origin: [3, upperPlateY, frontZ],
@@ -425,6 +476,28 @@ const createAegisChestVoxels = (
     mirrorMaxX,
     color: accentColor,
     emissive: roleEmissive('accent', paintJob, false),
+  });
+  appendV3ProjectedPanelZone(voxels, {
+    dimensions,
+    zone: {
+      xMinRatio: 0.3,
+      xMaxRatio: 0.43,
+      yMinRatio: 0.32,
+      yMaxRatio: 0.54,
+    },
+    z: frontZ,
+    color: fixedColor,
+  });
+  appendV3ProjectedPanelZone(voxels, {
+    dimensions,
+    zone: {
+      xMinRatio: 0.57,
+      xMaxRatio: 0.7,
+      yMinRatio: 0.32,
+      yMaxRatio: 0.54,
+    },
+    z: frontZ,
+    color: fixedColor,
   });
   appendV3MirroredArmorPlates(voxels, {
     origin: [Math.max(1, Math.floor(width * 0.34)), abdomenY, frontZ],
@@ -494,10 +567,26 @@ const createAegisDetailedPartVoxels = (
     }
     case 'forearmLeft':
     case 'forearmRight': {
+      carveV3NotchedSeam(voxels, {
+        dimensions,
+        axis: 'y',
+        positionRatio: 0.5,
+        width: 1,
+        z: frontZ,
+        preserveEvery: 3,
+      });
       appendBoundedV3ArmorPlate(voxels, dimensions, [1, 1, frontZ], [width - 2, 4, 1], accentColor);
       appendBoundedV3ArmorPlate(voxels, dimensions, [centerX - 1, 6, frontZ], [2, height - 8, 1], accentColor);
       appendBoundedV3ArmorPlate(voxels, dimensions, [outerX === 0 ? 0 : width - 1, 4, frontZ - 2], [1, height - 9, 3], secondaryColor);
       appendBoundedV3ArmorPlate(voxels, dimensions, [innerX, 3, 2], [1, height - 6, depth - 4], undersuitColor);
+      appendV3ReferenceVentSet(voxels, {
+        dimensions,
+        side: isRightSlot ? 'right' : 'left',
+        yRatio: 0.22,
+        z: frontZ,
+        count: Math.max(2, Math.floor(width * 0.28)),
+        color: fixedColor,
+      });
       break;
     }
     case 'handLeft':
@@ -509,10 +598,24 @@ const createAegisDetailedPartVoxels = (
       break;
     }
     case 'pelvis': {
+      carveV3NotchedSeam(voxels, {
+        dimensions,
+        axis: 'x',
+        positionRatio: 0.5,
+        width: 2,
+        z: frontZ,
+        preserveEvery: 3,
+      });
       appendBoundedV3ArmorPlate(voxels, dimensions, [2, height - 4, frontZ], [width - 4, 2, 1], secondaryColor);
       appendBoundedV3ArmorPlate(voxels, dimensions, [centerX - 1, height - 5, frontZ], [2, 3, 1], decalColor);
       appendBoundedMirroredV3ArmorPlates(voxels, dimensions, [1, height - 6, frontZ], [4, 3, 1], accentColor);
       appendBoundedV3ArmorPlate(voxels, dimensions, [centerX - 2, 1, frontZ], [4, 4, 1], undersuitColor);
+      appendV3MirroredReferenceFeature(voxels, {
+        dimensions,
+        origin: [1, Math.max(1, Math.floor(height * 0.28)), frontZ - 1],
+        featureDimensions: [Math.max(3, Math.floor(width * 0.16)), Math.max(2, Math.floor(height * 0.24)), 2],
+        color: fixedColor,
+      });
       break;
     }
     case 'thighLeft':
@@ -525,25 +628,68 @@ const createAegisDetailedPartVoxels = (
     }
     case 'shinLeft':
     case 'shinRight': {
+      carveV3NotchedSeam(voxels, {
+        dimensions,
+        axis: 'y',
+        positionRatio: 0.36,
+        width: 1,
+        z: frontZ,
+        preserveEvery: 4,
+      });
       appendBoundedV3ArmorPlate(voxels, dimensions, [centerX - 1, 6, frontZ], [2, height - 8, 1], accentColor);
       appendBoundedV3ArmorPlate(voxels, dimensions, [2, height - 5, frontZ], [width - 4, 3, 1], accentColor);
       appendBoundedV3ArmorPlate(voxels, dimensions, [outerX === 0 ? 0 : width - 1, 5, frontZ - 2], [1, height - 10, 3], secondaryColor);
       appendBoundedV3ArmorPlate(voxels, dimensions, [innerX, 3, 2], [1, height - 7, depth - 4], undersuitColor);
+      appendV3ReferenceVentSet(voxels, {
+        dimensions,
+        side: isRightSlot ? 'right' : 'left',
+        yRatio: 0.64,
+        z: frontZ,
+        count: Math.max(2, Math.floor(width * 0.25)),
+        color: secondaryColor,
+      });
       break;
     }
     case 'footLeft':
     case 'footRight': {
-      appendBoundedV3ArmorPlate(voxels, dimensions, [2, 2, frontZ - 1], [width - 4, 3, 2], secondaryColor);
-      appendBoundedV3ArmorPlate(voxels, dimensions, [1, 0, 1], [width - 2, 2, depth - 2], accentColor);
-      appendBoundedV3ArmorPlate(voxels, dimensions, [outerX === 0 ? 0 : width - 2, 1, frontZ - 4], [2, 3, 4], fixedColor);
+      const toeZ = Math.max(1, frontZ - 3);
+      carveV3FaceGaps(voxels, undersuitColor, (voxel) => voxel.z >= frontZ - 1);
+      appendBoundedV3ArmorPlate(voxels, dimensions, [2, 2, toeZ], [width - 4, 3, 2], secondaryColor);
+      appendBoundedV3ArmorPlate(voxels, dimensions, [1, 0, 1], [width - 2, 2, Math.max(2, depth - 4)], accentColor);
+      appendBoundedV3ArmorPlate(voxels, dimensions, [outerX === 0 ? 0 : width - 2, 1, Math.max(1, frontZ - 5)], [2, 3, 3], fixedColor);
+      appendV3ProjectedPanelZone(voxels, {
+        dimensions,
+        zone: {
+          xMinRatio: 0.22,
+          xMaxRatio: 0.78,
+          yMinRatio: 0.5,
+          yMaxRatio: 1,
+        },
+        z: toeZ + 1,
+        color: secondaryColor,
+      });
       break;
     }
     case 'back': {
+      carveV3NotchedSeam(voxels, {
+        dimensions,
+        axis: 'x',
+        positionRatio: 0.5,
+        width: 2,
+        z: rearZ,
+        preserveEvery: 5,
+      });
       appendBoundedV3ArmorPlate(voxels, dimensions, [2, 4, rearZ], [2, height - 8, 1], secondaryColor);
       appendBoundedV3ArmorPlate(voxels, dimensions, [width - 4, 4, rearZ], [2, height - 8, 1], secondaryColor);
       appendBoundedV3ArmorPlate(voxels, dimensions, [centerX - 1, height - 8, rearZ], [2, 4, 1], emissiveColor, roleEmissive('emissive', paintJob, true));
       appendBoundedV3ArmorPlate(voxels, dimensions, [centerX - 1, 6, rearZ], [2, height - 14, 1], emissiveColor, roleEmissive('emissive', paintJob, true));
       appendBoundedMirroredV3ArmorPlates(voxels, dimensions, [3, 2, rearZ], [3, 4, 2], fixedColor);
+      appendV3MirroredReferenceFeature(voxels, {
+        dimensions,
+        origin: [1, 5, rearZ],
+        featureDimensions: [2, Math.max(6, height - 11), 1],
+        color: secondaryColor,
+      });
       break;
     }
     default:

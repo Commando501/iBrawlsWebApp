@@ -8,7 +8,12 @@ import {
   formatV3ReferenceProportionGapSummary,
   sampleV3ReferenceProportionBands,
 } from '../components/v3/v3ReferenceProportions';
-import { analyzeV3BuiltInSuitFidelity } from '../components/v3/v3SuitFidelity';
+import {
+  analyzeV3BuiltInReferenceFeatureMatch,
+  analyzeV3BuiltInSuitFidelity,
+  formatV3ReferenceFeatureMatchSummary,
+  type V3ReferenceFeatureMatchReport,
+} from '../components/v3/v3SuitFidelity';
 import {
   buildV3PerformanceSmokeReport,
   buildV3PerformanceSmokeScene,
@@ -47,6 +52,10 @@ import {
   formatV3AegisCalibrationReport,
   type V3AegisCalibrationReport,
 } from './v3AegisAutoCalibration';
+import {
+  buildV3ReferenceFeatureGuide,
+  type V3ReferenceFeatureGuide,
+} from './v3ReferenceFeatureGuide';
 
 type RenderView = 'front' | 'side';
 
@@ -65,6 +74,8 @@ const baselineSummary = document.getElementById('baselineSummary') as HTMLDivEle
 const baselineFindingsRoot = document.getElementById('baselineFindings') as HTMLDivElement;
 const calibrationSummary = document.getElementById('calibrationSummary') as HTMLDivElement;
 const calibrationReport = document.getElementById('calibrationReport') as HTMLPreElement;
+const featureGuideSummary = document.getElementById('featureGuideSummary') as HTMLDivElement;
+const featureMatchReport = document.getElementById('featureMatchReport') as HTMLPreElement;
 const acknowledgeReferenceButton = document.getElementById('ackReference') as HTMLButtonElement;
 const downloadReportButton = document.getElementById('downloadReport') as HTMLButtonElement;
 const copyReportButton = document.getElementById('copyReport') as HTMLButtonElement;
@@ -91,6 +102,8 @@ let latestReferenceMetadata: V3ReferenceMetadata | null = null;
 let latestComparison: V3ReferenceSilhouetteComparison | null = null;
 let latestReferenceProportionBands: Record<string, unknown> | null = null;
 let latestReferenceScaffold: V3ReferenceScaffold | null = null;
+let latestReferenceFeatureGuide: V3ReferenceFeatureGuide | null = null;
+let latestReferenceFeatureMatch: V3ReferenceFeatureMatchReport = analyzeV3BuiltInReferenceFeatureMatch();
 let latestCalibrationReport: V3AegisCalibrationReport | null = null;
 let referenceAcknowledged = false;
 let referenceAcknowledgedAt: string | undefined;
@@ -178,6 +191,17 @@ function compactReferenceProportionEvidence() {
   };
 }
 
+function compactReferenceFeatureMatchEvidence() {
+  return {
+    ready: latestReferenceFeatureMatch.ready,
+    issues: latestReferenceFeatureMatch.issues.map((issue) => `${issue.slot} ${issue.code}: ${issue.message}`),
+    summary: {
+      ...latestReferenceFeatureMatch.summary,
+      match: formatV3ReferenceFeatureMatchSummary(latestReferenceFeatureMatch),
+    },
+  };
+}
+
 function compactVisualQaEvidence() {
   return {
     ready: smokeReport.visualQaReady,
@@ -240,6 +264,7 @@ function buildDashboardReport(): V3ReadinessDashboardReport {
     checklist,
     suitFidelity: compactSuitFidelityEvidence(),
     referenceProportions: compactReferenceProportionEvidence(),
+    referenceFeatureMatch: compactReferenceFeatureMatchEvidence(),
     visualQa: compactVisualQaEvidence(),
     poseClearance: compactPoseEvidence(),
     performanceSmoke: compactPerformanceEvidence(),
@@ -286,6 +311,7 @@ function renderMetrics(report: V3ReadinessDashboardReport): void {
     metric('Reference Loaded', Boolean(latestReferenceMetadata)),
     metric('Reference Acknowledged', report.evidence.referenceComparison.acknowledged),
     metric('Reference Proportions', report.evidence.referenceProportions.ready ?? 'unknown'),
+    metric('Reference Feature Match', report.evidence.referenceFeatureMatch.ready ?? 'unknown'),
     metric('Suit Fidelity', report.evidence.suitFidelity.ready ?? 'unknown'),
     metric('Visual QA', report.evidence.visualQa.ready ?? 'unknown'),
     metric('Pose Clearance', report.evidence.poseClearance.ready ?? 'unknown'),
@@ -363,6 +389,37 @@ function renderCalibration(): void {
   calibrationReport.textContent = formatV3AegisCalibrationReport(latestCalibrationReport);
 }
 
+function renderFeatureMatch(): void {
+  featureGuideSummary.innerHTML = '';
+  featureGuideSummary.append(
+    metric('Guide Source', latestReferenceFeatureGuide?.source.fileName ?? 'built-in fallback'),
+    metric('Guide Slots', latestReferenceFeatureGuide?.summary.slotCount ?? 0),
+    metric('Feature Match', latestReferenceFeatureMatch.ready),
+    metric('Average Score', latestReferenceFeatureMatch.summary.averageScore.toFixed(4))
+  );
+
+  featureMatchReport.textContent = JSON.stringify({
+    guide: latestReferenceFeatureGuide ? {
+      source: latestReferenceFeatureGuide.source,
+      slotOrder: latestReferenceFeatureGuide.slotOrder,
+      summary: latestReferenceFeatureGuide.summary,
+      slots: latestReferenceFeatureGuide.slotGuides.map((slotGuide) => ({
+        slot: slotGuide.slot,
+        objectCount: slotGuide.objectCount,
+        panelZones: slotGuide.panelZones,
+        centerlineGaps: slotGuide.centerlineGaps,
+        materialRoleHints: slotGuide.materialRoleHints,
+        symmetrySignature: slotGuide.symmetrySignature,
+      })),
+    } : null,
+    match: {
+      ready: latestReferenceFeatureMatch.ready,
+      summary: latestReferenceFeatureMatch.summary,
+      issues: latestReferenceFeatureMatch.issues.slice(0, 20),
+    },
+  }, null, 2);
+}
+
 function buildCalibrationJsonExport(): string {
   return JSON.stringify({
     kind: 'v3-aegis-calibration-report',
@@ -390,6 +447,12 @@ function renderReferenceSummary(): void {
     metadata: latestReferenceMetadata,
     comparison: latestComparison,
     proportionBands: latestReferenceProportionBands,
+    referenceFeatureGuide: latestReferenceFeatureGuide ? {
+      source: latestReferenceFeatureGuide.source,
+      slotOrder: latestReferenceFeatureGuide.slotOrder,
+      summary: latestReferenceFeatureGuide.summary,
+    } : undefined,
+    referenceFeatureMatch: latestReferenceFeatureMatch.summary,
     calibration: latestReferenceMetadata.kind === 'obj'
       ? 'OBJ canonical Phase 33 calibration source'
       : 'Inspection-only reference; use OBJ for Phase 33 calibration',
@@ -405,6 +468,7 @@ function renderReferenceSummary(): void {
 }
 
 function renderDashboard(): void {
+  latestReferenceFeatureMatch = analyzeV3BuiltInReferenceFeatureMatch(latestReferenceFeatureGuide);
   latestReport = buildDashboardReport();
   latestBaseline = buildV3ReadinessBaseline(buildV3ReadinessExport(latestReport));
   statusLabel.textContent = latestReport.label;
@@ -413,6 +477,7 @@ function renderDashboard(): void {
   renderIssues(latestReport);
   renderBaseline(latestBaseline);
   renderCalibration();
+  renderFeatureMatch();
   renderReferenceSummary();
   reportSummary.textContent = buildV3ReadinessExport(latestReport, {
     format: 'string',
@@ -421,6 +486,7 @@ function renderDashboard(): void {
   (window as any).__IBRAWLS_V3_READINESS_DASHBOARD__ = latestReport;
   (window as any).__IBRAWLS_V3_READINESS_BASELINE__ = latestBaseline;
   (window as any).__IBRAWLS_V3_AEGIS_CALIBRATION__ = latestCalibrationReport;
+  (window as any).__IBRAWLS_V3_REFERENCE_FEATURE_MATCH__ = latestReferenceFeatureMatch;
 }
 
 function objectBounds(object: THREE.Object3D): THREE.Box3 {
@@ -530,6 +596,7 @@ async function loadReference(file: File): Promise<void> {
   referenceLoadError = null;
   referenceAcknowledgementIssue = null;
   latestReferenceScaffold = null;
+  latestReferenceFeatureGuide = null;
   latestCalibrationReport = null;
   const kind = getV3ReferenceFileKind(file.name);
   const objText = kind === 'obj' ? await file.text() : undefined;
@@ -559,6 +626,14 @@ async function loadReference(file: File): Promise<void> {
     canonical: latestReferenceMetadata.kind === 'obj',
   };
   if (latestReferenceMetadata.kind === 'obj' && objText) {
+    latestReferenceFeatureGuide = buildV3ReferenceFeatureGuide({
+      objText,
+      source: {
+        kind: 'obj',
+        fileName: file.name,
+        label: file.name,
+      },
+    });
     latestReferenceScaffold = buildV3ReferenceScaffold({
       objText,
       source: {
@@ -579,6 +654,7 @@ function handleReferenceFile(file: File): void {
   loadReference(file).catch((error) => {
     latestReferenceMetadata = null;
     latestComparison = null;
+    latestReferenceFeatureGuide = null;
     referenceAcknowledged = false;
     referenceAcknowledgedAt = undefined;
     referenceLoadError = error instanceof Error ? error.message : String(error);

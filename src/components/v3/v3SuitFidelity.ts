@@ -1,4 +1,9 @@
-import type { VoxelData } from '../VoxelModels';
+import type { CharacterLoadout, VoxelData } from '../VoxelModels';
+import type {
+  V3ReferenceFeatureGuide,
+  V3ReferenceFeaturePanelZoneKind,
+  V3ReferenceFeatureSlot,
+} from '../../tools/v3ReferenceFeatureGuide';
 import { getV3BuiltinPartVoxels } from './VoxelModelsV3';
 import { V3_CHARACTER_SLOT_IDS, type V3CharacterSlotId } from './v3ModelTypes';
 import {
@@ -77,6 +82,60 @@ export interface V3PartFidelityReport {
   ready: boolean;
 }
 
+export type V3ReferenceFeatureMatchIssueCode =
+  | 'empty-payload'
+  | 'missing-reference-feature'
+  | 'material-role-diversity-low'
+  | 'low-reference-feature-score';
+
+export interface V3ReferenceFeatureMatchIssue {
+  code: V3ReferenceFeatureMatchIssueCode;
+  slot: V3CharacterSlotId;
+  message: string;
+  value?: number;
+  threshold?: number;
+}
+
+export interface V3ReferenceFeaturePresence {
+  kind: V3ReferenceFeaturePanelZoneKind;
+  present: boolean;
+  value: number;
+  threshold: number;
+}
+
+export interface V3ReferenceFeatureMatchSlotReport {
+  slot: V3CharacterSlotId;
+  referenceSlot: V3ReferenceFeatureSlot;
+  voxelCount: number;
+  score: number;
+  requiredFeatureCount: number;
+  matchedFeatureCount: number;
+  materialRoleDiversity: number;
+  guideObjectCount: number;
+  features: V3ReferenceFeaturePresence[];
+  issues: V3ReferenceFeatureMatchIssue[];
+  ready: boolean;
+}
+
+export interface V3ReferenceFeatureMatchReport {
+  ready: boolean;
+  slots: Partial<Record<V3CharacterSlotId, V3ReferenceFeatureMatchSlotReport>>;
+  issues: V3ReferenceFeatureMatchIssue[];
+  summary: {
+    slotCount: number;
+    readySlotCount: number;
+    averageScore: number;
+    issueCount: number;
+    guideSlotCount: number;
+  };
+}
+
+export interface V3ReferenceFeatureMatchOptions {
+  guide?: V3ReferenceFeatureGuide | null;
+  slots?: readonly V3CharacterSlotId[];
+  voxelsBySlot?: Partial<Record<V3CharacterSlotId, readonly VoxelData[]>>;
+}
+
 type OccupiedVoxel = Pick<VoxelData, 'x' | 'y' | 'z'>;
 type VoxelWithMaterialRole = VoxelData & {
   role?: unknown;
@@ -111,6 +170,46 @@ const LIMB_SLOTS = new Set<V3CharacterSlotId>([
   'shinRight',
 ]);
 const HAND_SLOTS = new Set<V3CharacterSlotId>(['handLeft', 'handRight']);
+
+const V3_REFERENCE_MATCH_COLORS = {
+  primary: '#101010',
+  secondary: '#202020',
+  accent: '#303030',
+  undersuit: '#353535',
+  visor: '#404040',
+  emissive: '#505050',
+  decal: '#606060',
+  fixed: '#707070',
+} as const;
+
+const V3_REFERENCE_MATCH_PAINT_JOB: CharacterLoadout['paintJob'] = {
+  v3RoleColors: V3_REFERENCE_MATCH_COLORS,
+  v3RoleEmissive: {
+    visor: true,
+    emissive: true,
+  },
+};
+
+const V3_REFERENCE_FEATURE_SCORE_MIN = 0.72;
+const V3_REFERENCE_FEATURE_MATERIAL_ROLE_MIN = 3;
+
+const V3_DEFAULT_REFERENCE_FEATURES: Record<V3ReferenceFeatureSlot, readonly V3ReferenceFeaturePanelZoneKind[]> = {
+  helmet: ['visor', 'jaw', 'crown'],
+  chest: ['pectoral', 'core', 'abdomen'],
+  pelvis: ['core'],
+  back: ['rail', 'spine'],
+  shoulder: ['pauldron'],
+  upperArm: ['bicep'],
+  forearm: ['wrist'],
+  hand: ['glove'],
+  thigh: ['knee'],
+  shin: ['knee'],
+  foot: ['boot', 'toe'],
+};
+
+const V3_REFERENCE_FEATURE_MATCH_SLOTS: readonly V3CharacterSlotId[] = V3_CHARACTER_SLOT_IDS.filter(
+  (slot) => slot !== 'neck'
+);
 
 const SLAB_PROFILE_COVERAGE_LIMIT = 0.9;
 const SLAB_PROFILE_SOLIDITY_LIMIT = 0.78;
@@ -573,6 +672,298 @@ export function analyzeV3PartFidelity(
     issues,
     ready: issues.length === 0,
   };
+}
+
+const uniqueFeatureKinds = (
+  kinds: readonly V3ReferenceFeaturePanelZoneKind[]
+): V3ReferenceFeaturePanelZoneKind[] => {
+  const seen = new Set<V3ReferenceFeaturePanelZoneKind>();
+  const unique: V3ReferenceFeaturePanelZoneKind[] = [];
+  for (const kind of kinds) {
+    if (seen.has(kind)) continue;
+    seen.add(kind);
+    unique.push(kind);
+  }
+  return unique;
+};
+
+const slotToReferenceFeatureSlot = (slot: V3CharacterSlotId): V3ReferenceFeatureSlot => {
+  if (slot === 'helmet') return 'helmet';
+  if (slot === 'chest' || slot === 'neck') return 'chest';
+  if (slot === 'pelvis') return 'pelvis';
+  if (slot === 'back') return 'back';
+  if (slot === 'shoulderLeft' || slot === 'shoulderRight') return 'shoulder';
+  if (slot === 'upperArmLeft' || slot === 'upperArmRight') return 'upperArm';
+  if (slot === 'forearmLeft' || slot === 'forearmRight') return 'forearm';
+  if (slot === 'handLeft' || slot === 'handRight') return 'hand';
+  if (slot === 'thighLeft' || slot === 'thighRight') return 'thigh';
+  if (slot === 'shinLeft' || slot === 'shinRight') return 'shin';
+  return 'foot';
+};
+
+const getGuideFeatureKinds = (
+  guide: V3ReferenceFeatureGuide | null | undefined,
+  referenceSlot: V3ReferenceFeatureSlot
+): V3ReferenceFeaturePanelZoneKind[] => {
+  const guideKinds = guide?.slotGuides
+    .find((slotGuide) => slotGuide.slot === referenceSlot)
+    ?.panelZones.map((zone) => zone.kind) ?? [];
+  return uniqueFeatureKinds(guideKinds.length > 0
+    ? guideKinds
+    : V3_DEFAULT_REFERENCE_FEATURES[referenceSlot]);
+};
+
+const getGuideObjectCount = (
+  guide: V3ReferenceFeatureGuide | null | undefined,
+  referenceSlot: V3ReferenceFeatureSlot
+): number => guide?.slotGuides.find((slotGuide) => slotGuide.slot === referenceSlot)?.objectCount ?? 0;
+
+const countMatchingVoxels = (
+  voxels: readonly VoxelData[],
+  predicate: (voxel: VoxelData) => boolean
+): number => voxels.reduce((count, voxel) => count + (predicate(voxel) ? 1 : 0), 0);
+
+const colorIs = (voxel: VoxelData, color: string): boolean => voxel.color.toLowerCase() === color;
+
+const getReferenceMaterialRoleDiversity = (voxels: readonly VoxelData[]): number => {
+  const roles = new Set<string>();
+  for (const voxel of voxels) {
+    for (const [role, color] of Object.entries(V3_REFERENCE_MATCH_COLORS)) {
+      if (colorIs(voxel, color)) {
+        roles.add(role);
+      }
+    }
+  }
+  return roles.size;
+};
+
+const getFeaturePresence = (
+  kind: V3ReferenceFeaturePanelZoneKind,
+  voxels: readonly VoxelData[],
+  bounds: V3PartFidelityBounds
+): V3ReferenceFeaturePresence => {
+  const frontZ = bounds.maxZ;
+  const rearZ = bounds.minZ;
+  const centerX = bounds.minX + Math.floor(bounds.sizeX / 2);
+  const lowerY = bounds.minY + Math.floor(bounds.sizeY * 0.34);
+  const middleY = bounds.minY + Math.floor(bounds.sizeY * 0.52);
+  const upperY = bounds.minY + Math.floor(bounds.sizeY * 0.66);
+  const minSideCount = Math.max(2, Math.floor(bounds.sizeY * 0.2));
+  const minPanelCount = Math.max(3, Math.floor(bounds.sizeX * bounds.sizeY * 0.04));
+  const hasBothSides = (predicate: (voxel: VoxelData) => boolean): number => {
+    const left = countMatchingVoxels(voxels, (voxel) => predicate(voxel) && voxel.x < centerX - 1);
+    const right = countMatchingVoxels(voxels, (voxel) => predicate(voxel) && voxel.x > centerX + 1);
+    return Math.min(left, right);
+  };
+  const countRole = (role: keyof typeof V3_REFERENCE_MATCH_COLORS, predicate: (voxel: VoxelData) => boolean): number =>
+    countMatchingVoxels(voxels, (voxel) => colorIs(voxel, V3_REFERENCE_MATCH_COLORS[role]) && predicate(voxel));
+
+  let value = 0;
+  let threshold = minPanelCount;
+
+  switch (kind) {
+    case 'visor':
+      value = countRole('visor', (voxel) => voxel.z === frontZ && voxel.y >= middleY);
+      threshold = Math.max(8, Math.floor(bounds.sizeX * 0.8));
+      break;
+    case 'jaw':
+      value = countRole('fixed', (voxel) => voxel.z === frontZ && voxel.y <= lowerY);
+      threshold = 5;
+      break;
+    case 'crown':
+      value = countRole('secondary', (voxel) => voxel.y >= upperY && voxel.z <= frontZ - 1);
+      threshold = 5;
+      break;
+    case 'pectoral':
+      value = hasBothSides((voxel) =>
+        colorIs(voxel, V3_REFERENCE_MATCH_COLORS.secondary) &&
+        voxel.z === frontZ &&
+        voxel.y >= upperY
+      );
+      threshold = Math.max(8, minSideCount);
+      break;
+    case 'core':
+      value = countRole('decal', (voxel) =>
+        voxel.z === frontZ &&
+        Math.abs(voxel.x - centerX) <= 1 &&
+        voxel.y >= middleY
+      );
+      threshold = 3;
+      break;
+    case 'abdomen':
+      value = countRole('fixed', (voxel) =>
+        voxel.z === frontZ &&
+        voxel.y >= lowerY &&
+        voxel.y <= upperY
+      );
+      threshold = 6;
+      break;
+    case 'rail':
+      value = hasBothSides((voxel) =>
+        colorIs(voxel, V3_REFERENCE_MATCH_COLORS.secondary) &&
+        voxel.z === rearZ &&
+        voxel.y >= lowerY
+      );
+      threshold = 4;
+      break;
+    case 'spine':
+      value = countMatchingVoxels(voxels, (voxel) =>
+        (colorIs(voxel, V3_REFERENCE_MATCH_COLORS.emissive) || colorIs(voxel, V3_REFERENCE_MATCH_COLORS.secondary)) &&
+        voxel.z === rearZ &&
+        Math.abs(voxel.x - centerX) <= 1 &&
+        voxel.y >= lowerY
+      );
+      threshold = 4;
+      break;
+    case 'boot':
+      value = countRole('accent', (voxel) => voxel.y <= lowerY + 1);
+      threshold = 6;
+      break;
+    case 'toe':
+      value = countRole('secondary', (voxel) => voxel.z >= frontZ - 1);
+      threshold = 6;
+      break;
+    case 'wrist':
+      value = countRole('accent', (voxel) => voxel.z === frontZ && voxel.y <= lowerY + 1);
+      threshold = 5;
+      break;
+    case 'glove':
+      value = countMatchingVoxels(voxels, (voxel) =>
+        voxel.z === frontZ &&
+        voxel.y >= middleY &&
+        (colorIs(voxel, V3_REFERENCE_MATCH_COLORS.accent) || colorIs(voxel, V3_REFERENCE_MATCH_COLORS.fixed))
+      );
+      threshold = 3;
+      break;
+    case 'pauldron':
+      value = countRole('secondary', (voxel) => voxel.z === frontZ && voxel.y >= middleY);
+      threshold = 6;
+      break;
+    case 'bicep':
+      value = countRole('secondary', (voxel) => voxel.z === frontZ && voxel.y >= middleY);
+      threshold = 4;
+      break;
+    case 'knee':
+      value = countMatchingVoxels(voxels, (voxel) =>
+        voxel.z === frontZ &&
+        voxel.y >= middleY &&
+        (colorIs(voxel, V3_REFERENCE_MATCH_COLORS.accent) || colorIs(voxel, V3_REFERENCE_MATCH_COLORS.secondary))
+      );
+      threshold = 4;
+      break;
+  }
+
+  return {
+    kind,
+    present: value >= threshold,
+    value,
+    threshold,
+  };
+};
+
+export function analyzeV3ReferenceFeatureMatch(
+  options: V3ReferenceFeatureMatchOptions = {}
+): V3ReferenceFeatureMatchReport {
+  const slots = options.slots ?? V3_REFERENCE_FEATURE_MATCH_SLOTS;
+  const slotReports: Partial<Record<V3CharacterSlotId, V3ReferenceFeatureMatchSlotReport>> = {};
+  const allIssues: V3ReferenceFeatureMatchIssue[] = [];
+
+  for (const slot of slots) {
+    const referenceSlot = slotToReferenceFeatureSlot(slot);
+    const voxels = [...(options.voxelsBySlot?.[slot] ?? getV3BuiltinPartVoxels(slot, 192, V3_REFERENCE_MATCH_PAINT_JOB))];
+    const uniqueVoxels = getUniqueVoxels(voxels);
+    const bounds = getBounds(uniqueVoxels);
+    const requiredKinds = getGuideFeatureKinds(options.guide, referenceSlot);
+    const features = requiredKinds.map((kind) => getFeaturePresence(kind, uniqueVoxels, bounds));
+    const matchedFeatureCount = features.filter((feature) => feature.present).length;
+    const score = features.length === 0 ? 1 : Number((matchedFeatureCount / features.length).toFixed(4));
+    const materialRoleDiversity = getReferenceMaterialRoleDiversity(uniqueVoxels);
+    const issues: V3ReferenceFeatureMatchIssue[] = [];
+
+    if (uniqueVoxels.length === 0) {
+      issues.push({
+        code: 'empty-payload',
+        slot,
+        message: `${slot} has no voxels to compare against reference feature guidance`,
+      });
+    }
+
+    for (const feature of features) {
+      if (!feature.present) {
+        issues.push({
+          code: 'missing-reference-feature',
+          slot,
+          message: `${slot} is missing reference ${feature.kind} feature coverage`,
+          value: feature.value,
+          threshold: feature.threshold,
+        });
+      }
+    }
+
+    if (materialRoleDiversity < V3_REFERENCE_FEATURE_MATERIAL_ROLE_MIN) {
+      issues.push({
+        code: 'material-role-diversity-low',
+        slot,
+        message: `${slot} does not have enough role-colored feature contrast for reference matching`,
+        value: materialRoleDiversity,
+        threshold: V3_REFERENCE_FEATURE_MATERIAL_ROLE_MIN,
+      });
+    }
+
+    if (score < V3_REFERENCE_FEATURE_SCORE_MIN) {
+      issues.push({
+        code: 'low-reference-feature-score',
+        slot,
+        message: `${slot} reference feature score is below the Phase 34 gate`,
+        value: score,
+        threshold: V3_REFERENCE_FEATURE_SCORE_MIN,
+      });
+    }
+
+    const slotReport: V3ReferenceFeatureMatchSlotReport = {
+      slot,
+      referenceSlot,
+      voxelCount: voxels.length,
+      score,
+      requiredFeatureCount: features.length,
+      matchedFeatureCount,
+      materialRoleDiversity,
+      guideObjectCount: getGuideObjectCount(options.guide, referenceSlot),
+      features,
+      issues,
+      ready: issues.length === 0,
+    };
+    slotReports[slot] = slotReport;
+    allIssues.push(...issues);
+  }
+
+  const reports = Object.values(slotReports);
+  const averageScore = reports.length === 0
+    ? 0
+    : Number((reports.reduce((total, report) => total + report.score, 0) / reports.length).toFixed(4));
+
+  return {
+    ready: allIssues.length === 0,
+    slots: slotReports,
+    issues: allIssues,
+    summary: {
+      slotCount: reports.length,
+      readySlotCount: reports.filter((report) => report.ready).length,
+      averageScore,
+      issueCount: allIssues.length,
+      guideSlotCount: options.guide?.slotGuides.length ?? 0,
+    },
+  };
+}
+
+export function analyzeV3BuiltInReferenceFeatureMatch(
+  guide?: V3ReferenceFeatureGuide | null
+): V3ReferenceFeatureMatchReport {
+  return analyzeV3ReferenceFeatureMatch({ guide });
+}
+
+export function formatV3ReferenceFeatureMatchSummary(report: V3ReferenceFeatureMatchReport): string {
+  return `Reference Feature Match ${report.ready ? 'ready' : 'blocked'}: ${report.summary.readySlotCount}/${report.summary.slotCount} slots, average score ${report.summary.averageScore.toFixed(4)}, ${report.summary.issueCount} issue${report.summary.issueCount === 1 ? '' : 's'}.`;
 }
 
 export function analyzeV3BuiltInSuitFidelity(): Record<V3CharacterSlotId, V3PartFidelityReport> {

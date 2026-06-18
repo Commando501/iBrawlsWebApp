@@ -4,10 +4,15 @@ import type { VoxelData } from '../VoxelModels';
 import {
   appendV3ArmorPlate,
   appendV3InsetChannel,
+  appendV3MirroredReferenceFeature,
+  appendV3ProjectedPanelZone,
+  appendV3ReferenceVentSet,
   appendV3SegmentedBand,
   appendV3SteppedRidge,
   appendV3TaperedArmorPlate,
   appendV3VentPair,
+  buildV3ReferenceTaperProfile,
+  carveV3NotchedSeam,
 } from './v3ArmorSculpt';
 
 const hasVoxel = (voxels: VoxelData[], x: number, y: number, z: number): boolean =>
@@ -118,5 +123,101 @@ describe('V3 armor sculpt primitives', () => {
     assert.ok(voxels.every((voxel) => voxel.z === 0));
     assert.equal(hasVoxel(voxels, 3, 2, 0), false);
     assert.equal(hasVoxel(voxels, 6, 3, 0), false);
+  });
+
+  it('projects a normalized panel zone into clamped integer bounds and overwrites duplicate cells', () => {
+    const voxels: VoxelData[] = [
+      { x: 0, y: 2, z: 2, color: '#111827', emissive: false },
+    ];
+
+    appendV3ProjectedPanelZone(voxels, {
+      dimensions: [6, 5, 3],
+      zone: {
+        xMinRatio: -0.25,
+        xMaxRatio: 0.35,
+        yMinRatio: 0.4,
+        yMaxRatio: 1.2,
+      },
+      z: 8,
+      color: '#38bdf8',
+      emissive: true,
+    });
+
+    assert.deepEqual(uniqueValues(voxels, 'x'), [0, 1, 2]);
+    assert.deepEqual(uniqueValues(voxels, 'y'), [2, 3, 4]);
+    assert.deepEqual(uniqueValues(voxels, 'z'), [2]);
+    assert.equal(voxels.length, 9);
+    const overwritten = voxels.find((voxel) => voxel.x === 0 && voxel.y === 2 && voxel.z === 2);
+    assert.equal(overwritten?.color, '#38bdf8');
+    assert.equal(overwritten?.emissive, true);
+  });
+
+  it('carves a notched seam while preserving deterministic cells on tiny parts', () => {
+    const voxels: VoxelData[] = [];
+    appendV3ArmorPlate(voxels, {
+      origin: [0, 0, 0],
+      dimensions: [1, 3, 1],
+      color: '#64748b',
+    });
+
+    carveV3NotchedSeam(voxels, {
+      dimensions: [1, 3, 1],
+      axis: 'x',
+      positionRatio: 0.5,
+      width: 1,
+      z: 0,
+      preserveEvery: 2,
+    });
+
+    assert.equal(voxels.length, 2);
+    assert.equal(hasVoxel(voxels, 0, 0, 0), true);
+    assert.equal(hasVoxel(voxels, 0, 1, 0), false);
+    assert.equal(hasVoxel(voxels, 0, 2, 0), true);
+  });
+
+  it('places a deterministic reference vent set with the requested count', () => {
+    const voxels: VoxelData[] = [];
+
+    appendV3ReferenceVentSet(voxels, {
+      dimensions: [8, 4, 2],
+      side: 'left',
+      yRatio: 0.5,
+      z: 3,
+      count: 3,
+      color: '#22d3ee',
+      emissive: true,
+    });
+
+    assert.deepEqual(uniqueValues(voxels, 'x'), [0, 1, 2]);
+    assert.equal(voxels.length, 3);
+    assert.ok(voxels.every((voxel) => voxel.y === 2 && voxel.z === 1));
+    assert.ok(voxels.every((voxel) => voxel.color === '#22d3ee' && voxel.emissive === true));
+  });
+
+  it('mirrors a bounded reference feature around local x', () => {
+    const voxels: VoxelData[] = [];
+
+    appendV3MirroredReferenceFeature(voxels, {
+      dimensions: [8, 6, 3],
+      origin: [1, 2, 1],
+      featureDimensions: [2, 2, 1],
+      color: '#f97316',
+    });
+
+    assert.deepEqual(uniqueValues(voxels, 'x'), [1, 2, 5, 6]);
+    assert.deepEqual(uniqueValues(voxels, 'y'), [2, 3]);
+    assert.deepEqual(uniqueValues(voxels, 'z'), [1]);
+    assert.equal(voxels.length, 8);
+  });
+
+  it('builds a reference taper profile from normalized width and depth bands', () => {
+    const profile = buildV3ReferenceTaperProfile([10, 5, 8], [
+      { yRatio: 1, widthRatio: 0.2, depthRatio: 0.25 },
+      { yRatio: 0, widthRatio: 1, depthRatio: 1 },
+      { yRatio: 0.5, widthRatio: 0.6, depthRatio: 0.5 },
+    ]);
+
+    assert.deepEqual(profile.xInsets, [[0, 0], [0.5, 2], [1, 4]]);
+    assert.deepEqual(profile.zInsets, [[0, 0], [0.5, 2], [1, 3]]);
   });
 });
