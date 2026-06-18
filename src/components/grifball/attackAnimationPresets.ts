@@ -393,10 +393,78 @@ export function getThirdPersonCombatantArmPose({
     rightArmRotation: [0.32, -0.14, -0.22],
     leftArmRotation: [-0.04, 0.04, 0.18],
   };
+  const ballReady: CombatantArmPose = {
+    rightArmRotation: [0.18, -0.12, -0.18],
+    leftArmRotation: [0.14, 0.12, 0.18],
+  };
   const idle: CombatantArmPose = {
     rightArmRotation: [0, 0, 0],
     leftArmRotation: [0, 0, 0],
   };
+
+  if (activeWeapon === 'ball') {
+    const meleeSpeed = settings.hammerMeleeSpeed ?? 0.24;
+    const ballCocked: CombatantArmPose = {
+      rightArmRotation: [0.36, 0.5, -0.42],
+      leftArmRotation: [0.16, -0.2, 0.36],
+    };
+    const ballStrike: CombatantArmPose = {
+      rightArmRotation: [0.78, -0.82, -0.16],
+      leftArmRotation: [0.36, 0.52, 0.12],
+    };
+
+    if (weaponState === 'swing_up') {
+      const pct = easeOutCubic(weaponTimer / Math.max(meleeSpeed, 0.001));
+      return {
+        rightArmRotation: lerpRotation(ballReady.rightArmRotation, ballCocked.rightArmRotation, pct),
+        leftArmRotation: lerpRotation(ballReady.leftArmRotation, ballCocked.leftArmRotation, pct),
+      };
+    }
+
+    if (weaponState === 'swing_down') {
+      const strike = Math.max(0.03, meleeSpeed * 0.5);
+      const pct = easeOutCubic(weaponTimer / strike);
+      return {
+        rightArmRotation: lerpRotation(ballCocked.rightArmRotation, ballStrike.rightArmRotation, pct),
+        leftArmRotation: lerpRotation(ballCocked.leftArmRotation, ballStrike.leftArmRotation, pct),
+      };
+    }
+
+    if (weaponState === 'recovering') {
+      const pct = easeOutCubic(weaponTimer / Math.max(settings.grifballPunchCooldown ?? 0.5, 0.001));
+      return {
+        rightArmRotation: lerpRotation(ballStrike.rightArmRotation, ballReady.rightArmRotation, pct),
+        leftArmRotation: lerpRotation(ballStrike.leftArmRotation, ballReady.leftArmRotation, pct),
+      };
+    }
+
+    if (weaponState === 'melee_up' || weaponState === 'melee_swing' || weaponState === 'melee_down') {
+      const progress = weaponState === 'melee_down'
+        ? Math.min(1, 0.4 + (weaponTimer / Math.max(meleeSpeed * 0.6, 0.001)) * 0.6)
+        : Math.min(1, weaponTimer / Math.max(meleeSpeed, 0.001));
+      const windup = progress < 0.35;
+      const windupPct = easeOutCubic(progress / 0.35);
+      const strikePct = easeOutCubic((progress - 0.35) / 0.65);
+      return {
+        rightArmRotation: windup
+          ? lerpRotation(ballReady.rightArmRotation, ballCocked.rightArmRotation, windupPct)
+          : lerpRotation(ballCocked.rightArmRotation, ballStrike.rightArmRotation, strikePct),
+        leftArmRotation: windup
+          ? lerpRotation(ballReady.leftArmRotation, ballCocked.leftArmRotation, windupPct)
+          : lerpRotation(ballCocked.leftArmRotation, ballStrike.leftArmRotation, strikePct),
+      };
+    }
+
+    if (weaponState === 'melee_recover') {
+      const pct = easeOutCubic(weaponTimer / Math.max(settings.grifballPunchCooldown ?? 0.5, 0.001));
+      return {
+        rightArmRotation: lerpRotation(ballStrike.rightArmRotation, ballReady.rightArmRotation, pct),
+        leftArmRotation: lerpRotation(ballStrike.leftArmRotation, ballReady.leftArmRotation, pct),
+      };
+    }
+
+    return ballReady;
+  }
 
   if (activeWeapon === 'hammer') {
     const hammerSlamTiming = resolveHammerSlamTiming(settings);

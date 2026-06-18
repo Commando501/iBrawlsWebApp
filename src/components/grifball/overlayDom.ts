@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { MAIN_AI_ID } from '../../game/roster';
+import { type TeamId } from '../../game/teamScoring';
 import { type Combatant } from '../../types';
 import { type GrifballRuntimeState } from './runtimeState';
 
@@ -122,50 +123,57 @@ export function updateFloatingNameplatesForState({
   });
 }
 
-type RadarEnemy = {
+const RADAR_HOSTILE_MARKER_CLASS = 'absolute w-3 h-3 bg-red-500 rounded-full border border-white/40 shadow-[0_0_12px_#ef4444] animate-pulse z-30 flex items-center justify-center';
+const RADAR_FRIENDLY_MARKER_CLASS = 'absolute w-3 h-3 bg-blue-500 rounded-full border border-sky-200/60 shadow-[0_0_12px_#3b82f6] animate-pulse z-30 flex items-center justify-center';
+
+type RadarContact = {
   id: string;
   pos: THREE.Vector3;
   hp: number;
   vel: THREE.Vector3 | null;
   isCrouching: boolean;
+  team?: TeamId;
 };
 
-const collectRadarEnemies = (state: GrifballRuntimeState, mainAI: Combatant | undefined): RadarEnemy[] => {
-  const enemies: RadarEnemy[] = [];
+const collectRadarContacts = (state: GrifballRuntimeState, mainAI: Combatant | undefined): RadarContact[] => {
+  const contacts: RadarContact[] = [];
 
   if (!state.isMultiplayer) {
     if (mainAI) {
-      enemies.push({
+      contacts.push({
         id: MAIN_AI_ID,
         pos: mainAI.pos,
         hp: mainAI.hp,
         vel: mainAI.vel,
         isCrouching: mainAI.isCrouching,
+        team: mainAI.team,
       });
     }
 
     state.otherPlayers.forEach((bot, id) => {
-      enemies.push({
+      contacts.push({
         id,
         pos: bot.pos,
         hp: bot.hp,
         vel: bot.vel,
         isCrouching: bot.isCrouching,
+        team: bot.team,
       });
     });
   } else {
     state.otherPlayers.forEach((player, id) => {
-      enemies.push({
+      contacts.push({
         id,
         pos: player.pos,
         hp: player.hp,
         vel: player.vel,
         isCrouching: player.isCrouching || false,
+        team: player.team,
       });
     });
   }
 
-  return enemies;
+  return contacts;
 };
 
 export function updateRadarDomForState({
@@ -207,15 +215,15 @@ export function updateRadarDomForState({
     const rightZ = -Math.sin(state.yaw);
     const activeIds = new Set<string>();
 
-    for (const enemy of collectRadarEnemies(state, mainAI)) {
-      if (!isPlayerAlive || enemy.hp <= 0) continue;
+    for (const contact of collectRadarContacts(state, mainAI)) {
+      if (!isPlayerAlive || contact.hp <= 0) continue;
 
-      const dx = enemy.pos.x - state.playerPos.x;
-      const dz = enemy.pos.z - state.playerPos.z;
+      const dx = contact.pos.x - state.playerPos.x;
+      const dz = contact.pos.z - state.playerPos.z;
       const dist = Math.sqrt(dx * dx + dz * dz);
 
-      const velLength = enemy.vel ? enemy.vel.length() : 0;
-      const isCrouchMoving = enemy.isCrouching && velLength > 0.15;
+      const velLength = contact.vel ? contact.vel.length() : 0;
+      const isCrouchMoving = contact.isCrouching && velLength > 0.15;
       if (isCrouchMoving || dist > maxRange) continue;
 
       const localX = dx * rightX + dz * rightZ;
@@ -225,24 +233,26 @@ export function updateRadarDomForState({
       const left = radarRadius + ex - 6;
       const top = radarRadius + ey - 6;
 
-      let dot = radarDotPool.get(enemy.id);
+      let dot = radarDotPool.get(contact.id);
       if (!dot) {
         dot = document.createElement('div');
-        dot.className = 'absolute w-3 h-3 bg-red-500 rounded-full border border-white/40 shadow-[0_0_12px_#ef4444] animate-pulse z-30 flex items-center justify-center';
         dot.style.willChange = 'transform';
         const inner = document.createElement('div');
         inner.className = 'w-1.5 h-1.5 bg-white rounded-full';
         dot.appendChild(inner);
-        radarDotPool.set(enemy.id, dot);
+        radarDotPool.set(contact.id, dot);
       }
 
       if (dot.parentElement !== enemiesContainer) {
         enemiesContainer.appendChild(dot);
       }
 
+      dot.className = contact.team === state.localPlayerTeam
+        ? RADAR_FRIENDLY_MARKER_CLASS
+        : RADAR_HOSTILE_MARKER_CLASS;
       dot.style.transform = `translate(${left}px, ${top}px)`;
       dot.style.display = 'flex';
-      activeIds.add(enemy.id);
+      activeIds.add(contact.id);
     }
 
     radarDotPool.forEach((dot, id) => {

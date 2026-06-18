@@ -21,8 +21,9 @@ import {
   resolveV3RoleColor,
   resolveV3RoleEmissive,
 } from './v3PaintPalette';
+import { V3_AEGIS_REFERENCE_VOXEL_SOURCE } from './v3AegisReferenceVoxels.generated';
 
-export type V3BuiltinPartGridScale = 1 | 2;
+export type V3BuiltinPartGridScale = 1 | 2 | 3 | 4;
 
 export type V3AegisPartSpec = {
   segment: 'lowerTorso' | 'upperTorso' | 'head' | 'leftArm' | 'rightArm' | 'leftLeg' | 'rightLeg';
@@ -48,7 +49,7 @@ export const V3_AEGIS_PART_SPECS: Readonly<Record<V3CharacterSlotId, ReadonlyV3A
   forearmRight: { segment: 'rightArm', dimensions: [4, 9, 5], position: [0.2249, 0.54, -0.12] },
   handLeft: { segment: 'leftArm', dimensions: [3, 4, 4], position: [-0.4149, 0.3, -0.1] },
   handRight: { segment: 'rightArm', dimensions: [3, 4, 4], position: [0.2549, 0.3, -0.1] },
-  pelvis: { segment: 'lowerTorso', dimensions: [13, 6, 8], position: [-0.3283, 0.78, -0.19] },
+  pelvis: { segment: 'lowerTorso', dimensions: [13, 6, 9], position: [-0.3283, 0.78, -0.205] },
   thighLeft: { segment: 'leftLeg', dimensions: [4, 10, 6], position: [-0.2499, 0.38, -0.14] },
   thighRight: { segment: 'rightLeg', dimensions: [4, 10, 6], position: [0.0299, 0.38, -0.14] },
   shinLeft: { segment: 'leftLeg', dimensions: [4, 10, 6], position: [-0.2499, 0.0, -0.14] },
@@ -59,8 +60,7 @@ export const V3_AEGIS_PART_SPECS: Readonly<Record<V3CharacterSlotId, ReadonlyV3A
 };
 
 export function getV3BuiltinPartGridScale(slot: V3CharacterSlotId): V3BuiltinPartGridScale {
-  void slot;
-  return 2;
+  return V3_AEGIS_REFERENCE_VOXEL_SOURCE.slots[slot].gridScale as V3BuiltinPartGridScale;
 }
 
 export const scaleV3Dimensions = (
@@ -92,6 +92,53 @@ const roleEmissive = (
   paintJob: CharacterLoadout['paintJob'] | undefined,
   fallback: boolean
 ): boolean => resolveV3RoleEmissive(role, paintJob, fallback);
+
+const mapReferenceVoxelCoordinate = (
+  value: number,
+  sourceSize: number,
+  targetSize: number
+): number => {
+  if (targetSize <= 1 || sourceSize <= 1) return 0;
+  return Math.max(0, Math.min(targetSize - 1, Math.round((value / (sourceSize - 1)) * (targetSize - 1))));
+};
+
+const createAegisReferenceVoxelSource = (
+  slot: V3CharacterSlotId,
+  dimensions: [number, number, number],
+  colors: SpartanColors,
+  paintJob?: CharacterLoadout['paintJob']
+): VoxelData[] => {
+  const sourceSlot = V3_AEGIS_REFERENCE_VOXEL_SOURCE.slots[slot];
+  const rolePalette = V3_AEGIS_REFERENCE_VOXEL_SOURCE.rolePalette;
+  const sourceDimensions = sourceSlot.dimensions;
+  const voxels = new Map<string, VoxelData>();
+
+  for (const run of sourceSlot.runs) {
+    const role = rolePalette[run[0]] ?? 'primary';
+    const color = roleColor(role, colors, paintJob);
+    const emissive = run[5] === 1 || roleEmissive(role, paintJob, false);
+    const y = mapReferenceVoxelCoordinate(run[1], sourceDimensions[1], dimensions[1]);
+    const z = mapReferenceVoxelCoordinate(run[2], sourceDimensions[2], dimensions[2]);
+    for (let sourceX = run[3]; sourceX <= run[4]; sourceX += 1) {
+      const x = mapReferenceVoxelCoordinate(sourceX, sourceDimensions[0], dimensions[0]);
+      voxels.set(`${x}:${y}:${z}:${color}:${emissive ? 1 : 0}`, {
+        x,
+        y,
+        z,
+        color,
+        emissive: emissive || undefined,
+      });
+    }
+  }
+
+  return [...voxels.values()].sort((left, right) => (
+    left.y - right.y ||
+    left.z - right.z ||
+    left.x - right.x ||
+    left.color.localeCompare(right.color) ||
+    Number(left.emissive === true) - Number(right.emissive === true)
+  ));
+};
 
 const V3_BASE_CORE_SHRINK: Partial<Record<V3CharacterSlotId, [number, number, number]>> = {
   neck: [0.17, 0, 0.17],
@@ -754,13 +801,5 @@ export function createV3AegisPartVoxels(
   colors: SpartanColors,
   paintJob?: CharacterLoadout['paintJob']
 ): VoxelData[] {
-  if (part.slot === 'helmet') {
-    return createAegisHelmetVoxels(part, dimensions, colors, paintJob);
-  }
-
-  if (part.slot === 'chest') {
-    return createAegisChestVoxels(part, dimensions, colors, paintJob);
-  }
-
-  return createAegisDetailedPartVoxels(part, dimensions, colors, paintJob);
+  return createAegisReferenceVoxelSource(part.slot, dimensions, colors, paintJob);
 }

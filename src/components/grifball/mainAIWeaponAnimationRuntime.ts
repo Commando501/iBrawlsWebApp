@@ -15,6 +15,7 @@ import {
 } from './attackAnimationPresets';
 import { applyCombatantArmPose } from './combatantAnimation';
 import { getCombatantWeaponMeshes } from './combatantMeshLookup';
+import { isV1CombatantModelSystem } from './grifballBallCarryVisuals';
 import { type GrifballRuntimeState } from './runtimeState';
 import { type GrifballThreeRefs } from './threeRefs';
 
@@ -332,7 +333,9 @@ export function updateMainAIWeaponAnimationsForState({
   const armTimer = mainAI.activeWeapon === 'sword' && mainAI.aiState === 'LUNGING'
     ? Number(enemySwordModel.userData.lungePoseTimer ?? mainAI.weaponTimer)
     : mainAI.weaponTimer;
-  const armWeapon = mainAI.activeWeapon === 'ball' ? 'hammer' : mainAI.activeWeapon;
+  const armWeapon = mainAI.activeWeapon === 'ball'
+    ? isV1CombatantModelSystem(enemyGroup?.userData.modelSystem) ? 'ball' : 'none'
+    : mainAI.activeWeapon;
   applyCombatantArmPose(
     enemyGroup,
     getThirdPersonCombatantArmPose({
