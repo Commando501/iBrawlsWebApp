@@ -6,6 +6,7 @@ docs/*
 !docs/v3/
 docs/v3/*
 !docs/v3/phase-31-readiness-baseline.md
+!docs/v3/phase-33-reference-scaffold-auto-calibration.md
 .DS_Store
 *.log
 .env*
@@ -19,6 +20,7 @@ EXAMPLE FILES/
 .playwright-cli/
 output/
 .worktrees/
+.claude/settings.local.json
 
 # Live Tuning dev parity (local-only mirror of the D1 official preset)
 data/multiplayer-config.json
@@ -28,3 +30,4 @@ worker/.dev.vars
 # RL trainer artifacts (TensorBoard runs, venv, checkpoints) — see python/
 /runs/
 python/.venv/
+python/.pytest_tmp/

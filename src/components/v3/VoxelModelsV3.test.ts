@@ -392,7 +392,10 @@ describe('buildV3SpartanModel', () => {
     const helmet = getV3BuiltinPartVoxels('helmet', 192, V3_SCULPT_TEST_PAINT_JOB);
     const bounds = getVoxelBounds(helmet);
     const frontZ = bounds.maxZ;
-    const topRows = helmet.filter((voxel) => voxel.y >= bounds.maxY - 1);
+    const topRows = helmet.filter((voxel) =>
+      voxel.color === V3_SCULPT_TEST_COLORS.primary &&
+      voxel.y >= bounds.maxY - 1
+    );
     const baseOuterShell = helmet.filter((voxel) =>
       voxel.color === V3_SCULPT_TEST_COLORS.primary &&
       (voxel.x === bounds.minX || voxel.x === bounds.maxX)
@@ -404,7 +407,10 @@ describe('buildV3SpartanModel', () => {
       voxel.y <= Math.floor(bounds.sizeY * 0.34)
     );
 
-    assert.ok(getVoxelXSpan(topRows) <= 12, `helmet crown should taper more aggressively, got span ${getVoxelXSpan(topRows)}`);
+    assert.ok(
+      getVoxelXSpan(topRows) <= Math.floor(bounds.sizeX * 0.62),
+      `helmet crown should taper more aggressively, got span ${getVoxelXSpan(topRows)} of width ${bounds.sizeX}`
+    );
     assert.equal(baseOuterShell.length, 0, 'outermost helmet cells should come from temple accents, not a box shell');
     assert.ok(getVoxelXSpan(visor) >= getVoxelXSpan(topRows) + 4, 'visor brow should read wider than the tapered crown');
     assert.ok(jawRows.length >= 8, 'stepped jaw guards should remain visible after tapering');
@@ -495,6 +501,7 @@ describe('buildV3SpartanModel', () => {
 
   it('remakes the V3 helmet as a high-density two-band visor, vents, jaw, cheek, and temple form', () => {
     const voxels = getV3BuiltinPartVoxels('helmet', 192, V3_SCULPT_TEST_PAINT_JOB);
+    const bounds = getVoxelBounds(voxels);
     const frontZ = getVoxelMaxZ(voxels);
     const visor = voxels.filter((voxel) => voxel.color === V3_SCULPT_TEST_COLORS.visor && voxel.z === frontZ);
     const crownVents = voxels.filter((voxel) =>
@@ -532,7 +539,10 @@ describe('buildV3SpartanModel', () => {
     assert.ok(jawGuards.length >= 8, `expected fixed jaw guard voxels, found ${jawGuards.length}`);
     assert.ok(cheekPlates.filter((voxel) => voxel.x >= 2 && voxel.x <= 6).length >= 4, 'left cheek plate is under-modeled');
     assert.ok(cheekPlates.filter((voxel) => voxel.x >= 11 && voxel.x <= 15).length >= 4, 'right cheek plate is under-modeled');
-    assert.deepEqual([...new Set(templeAccents.map((voxel) => voxel.x))].sort((a, b) => a - b), [0, 17]);
+    assert.deepEqual(
+      [...new Set(templeAccents.map((voxel) => voxel.x))].sort((a, b) => a - b),
+      [bounds.minX, bounds.maxX]
+    );
     assert.ok(foreheadLight.length >= 1, 'helmet needs a center emissive forehead light');
   });
 

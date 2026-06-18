@@ -36,6 +36,9 @@ test('buildV3RuntimeSmokeChecklist covers every required Phase 31 browser surfac
   assert.ok(dashboardItem?.expectedText.includes('Baseline Gaps'));
   assert.ok(dashboardItem?.expectedText.includes('Download Baseline Markdown'));
   assert.ok(dashboardItem?.expectedText.includes('Copy Baseline Markdown'));
+  assert.ok(dashboardItem?.expectedText.includes('Calibration Candidates'));
+  assert.ok(dashboardItem?.expectedText.includes('Download Calibration Report'));
+  assert.ok(dashboardItem?.expectedText.includes('Copy Calibration Report'));
   assert.ok(performanceItems.every((item) => item.expectedText.includes('Phase 26 Ready')));
   assert.ok(performanceItems.every((item) => item.expectedText.includes('visual pass')));
   assert.ok(performanceItems.every((item) => item.expectedText.includes('motion pass')));

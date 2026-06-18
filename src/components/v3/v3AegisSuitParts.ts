@@ -33,25 +33,25 @@ type ReadonlyV3AegisPartSpec = {
 };
 
 export const V3_AEGIS_PART_SPECS: Readonly<Record<V3CharacterSlotId, ReadonlyV3AegisPartSpec>> = {
-  helmet: { segment: 'head', dimensions: [9, 8, 6], position: [-0.22, 1.56, -0.15] },
-  neck: { segment: 'upperTorso', dimensions: [6, 4, 6], position: [-0.16, 1.39, -0.15] },
-  chest: { segment: 'upperTorso', dimensions: [15, 15, 8], position: [-0.39, 0.97, -0.2] },
-  shoulderLeft: { segment: 'leftArm', dimensions: [6, 5, 6], position: [-0.54, 1.24, -0.15] },
-  shoulderRight: { segment: 'rightArm', dimensions: [6, 5, 6], position: [0.21, 1.24, -0.15] },
+  helmet: { segment: 'head', dimensions: [10, 8, 7], position: [-0.2392, 1.56, -0.17] },
+  neck: { segment: 'upperTorso', dimensions: [6, 4, 6], position: [-0.1592, 1.39, -0.15] },
+  chest: { segment: 'upperTorso', dimensions: [16, 15, 8], position: [-0.4174, 0.97, -0.2] },
+  shoulderLeft: { segment: 'leftArm', dimensions: [7, 5, 7], position: [-0.6218, 1.24, -0.17] },
+  shoulderRight: { segment: 'rightArm', dimensions: [7, 5, 7], position: [0.2518, 1.24, -0.17] },
   upperArmLeft: { segment: 'leftArm', dimensions: [4, 9, 4], position: [-0.45, 0.95, -0.1] },
   upperArmRight: { segment: 'rightArm', dimensions: [4, 9, 4], position: [0.23, 0.95, -0.1] },
   forearmLeft: { segment: 'leftArm', dimensions: [4, 9, 4], position: [-0.445, 0.54, -0.1] },
   forearmRight: { segment: 'rightArm', dimensions: [4, 9, 4], position: [0.225, 0.54, -0.1] },
   handLeft: { segment: 'leftArm', dimensions: [3, 4, 3], position: [-0.415, 0.3, -0.08] },
   handRight: { segment: 'rightArm', dimensions: [3, 4, 3], position: [0.255, 0.3, -0.08] },
-  pelvis: { segment: 'lowerTorso', dimensions: [11, 6, 7], position: [-0.285, 0.78, -0.17] },
+  pelvis: { segment: 'lowerTorso', dimensions: [13, 6, 7], position: [-0.3283, 0.78, -0.17] },
   thighLeft: { segment: 'leftLeg', dimensions: [4, 10, 5], position: [-0.25, 0.38, -0.12] },
   thighRight: { segment: 'rightLeg', dimensions: [4, 10, 5], position: [0.03, 0.38, -0.12] },
   shinLeft: { segment: 'leftLeg', dimensions: [4, 10, 5], position: [-0.25, 0.0, -0.12] },
   shinRight: { segment: 'rightLeg', dimensions: [4, 10, 5], position: [0.03, 0.0, -0.12] },
   footLeft: { segment: 'leftLeg', dimensions: [6, 3, 7], position: [-0.28, -0.04, -0.07] },
   footRight: { segment: 'rightLeg', dimensions: [6, 3, 7], position: [0.0, -0.04, -0.07] },
-  back: { segment: 'upperTorso', dimensions: [7, 12, 3], position: [-0.17, 1.04, -0.32] },
+  back: { segment: 'upperTorso', dimensions: [8, 12, 3], position: [-0.1875, 1.04, -0.32] },
 };
 
 export function getV3BuiltinPartGridScale(slot: V3CharacterSlotId): V3BuiltinPartGridScale {
@@ -240,7 +240,7 @@ const carveAegisFidelityGaps = (
   const [width, height, depth] = dimensions;
   const occupiedFrontZ = voxels.length > 0 ? Math.max(...voxels.map((voxel) => voxel.z)) : Math.max(0, depth - 1);
   const interiorXStart = Math.max(1, Math.floor(width * 0.18));
-  const interiorXEnd = Math.min(width - 2, Math.ceil(width * 0.82));
+  const interiorXEnd = Math.min(width - 2, Math.max(interiorXStart, width - 1 - interiorXStart));
   const interiorYStart = Math.max(1, Math.floor(height * 0.16));
   const interiorYEnd = Math.min(height - 2, Math.ceil(height * 0.84));
 
@@ -263,7 +263,7 @@ const carveAegisFidelityGaps = (
         voxel.y <= interiorYEnd &&
         voxel.x >= interiorXStart &&
         voxel.x <= interiorXEnd &&
-        (voxel.x + voxel.y) % 2 === 0
+        (((slot === 'shoulderRight' ? width - 1 - voxel.x : voxel.x) + voxel.y) % 2) === 0
       );
       break;
     case 'footLeft':
@@ -573,11 +573,13 @@ const createAegisDetailedPartVoxels = (
   }
 
   if (part.slot === 'shoulderLeft' || part.slot === 'shoulderRight') {
-    appendBoundedV3ArmorPlate(voxels, dimensions, [centerX - 1, height - 2, frontZ], [2, 1, 1], secondaryColor);
-    appendBoundedV3ArmorPlate(voxels, dimensions, [centerX - 3, height - 1, frontZ], [6, 1, 1], secondaryColor);
-    appendBoundedV3ArmorPlate(voxels, dimensions, [centerX - 2, height - 3, frontZ], [4, 1, 1], secondaryColor);
-    appendBoundedV3ArmorPlate(voxels, dimensions, [centerX, height - 4, frontZ], [1, 1, 1], secondaryColor);
-    appendBoundedV3ArmorPlate(voxels, dimensions, [centerX - 4, height - 1, frontZ], [1, 1, 1], secondaryColor);
+    const mirrorShoulderX = (originX: number, plateWidth: number): number =>
+      isRightSlot ? width - originX - plateWidth : originX;
+    appendBoundedV3ArmorPlate(voxels, dimensions, [mirrorShoulderX(centerX - 1, 2), height - 2, frontZ], [2, 1, 1], secondaryColor);
+    appendBoundedV3ArmorPlate(voxels, dimensions, [mirrorShoulderX(centerX - 3, 6), height - 1, frontZ], [6, 1, 1], secondaryColor);
+    appendBoundedV3ArmorPlate(voxels, dimensions, [mirrorShoulderX(centerX - 2, 4), height - 3, frontZ], [4, 1, 1], secondaryColor);
+    appendBoundedV3ArmorPlate(voxels, dimensions, [mirrorShoulderX(centerX, 1), height - 4, frontZ], [1, 1, 1], secondaryColor);
+    appendBoundedV3ArmorPlate(voxels, dimensions, [mirrorShoulderX(centerX - 4, 1), height - 1, frontZ], [1, 1, 1], secondaryColor);
   }
 
   return voxels;

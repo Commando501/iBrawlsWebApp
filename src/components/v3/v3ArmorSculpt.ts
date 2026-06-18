@@ -85,7 +85,7 @@ export interface V3SegmentedBandOptions extends V3ArmorPlateOptions {
 
 export const V3_AEGIS_SCULPT_PROFILES: Record<V3CharacterSlotId, V3SculptProfile> = {
   helmet: {
-    xInsets: [[0, 3], [0.3, 2], [0.58, 1], [0.74, 1], [0.88, 3], [1, 3]],
+    xInsets: [[0, 3], [0.3, 2], [0.58, 1], [0.74, 1], [0.88, 5], [1, 5]],
     zInsets: [[0, 3], [0.35, 1], [0.72, 1], [1, 3]],
   },
   neck: {

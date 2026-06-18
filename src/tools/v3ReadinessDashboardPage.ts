@@ -38,6 +38,15 @@ import {
   formatV3ReadinessBaselineMarkdown,
   type V3ReadinessBaselineReport,
 } from './v3ReadinessBaseline';
+import {
+  buildV3ReferenceScaffold,
+  type V3ReferenceScaffold,
+} from './v3ReferenceScaffold';
+import {
+  buildV3AegisCalibrationCandidates,
+  formatV3AegisCalibrationReport,
+  type V3AegisCalibrationReport,
+} from './v3AegisAutoCalibration';
 
 type RenderView = 'front' | 'side';
 
@@ -52,11 +61,15 @@ const reportSummary = document.getElementById('reportSummary') as HTMLPreElement
 const issuesRoot = document.getElementById('issues') as HTMLDivElement;
 const baselineSummary = document.getElementById('baselineSummary') as HTMLDivElement;
 const baselineFindingsRoot = document.getElementById('baselineFindings') as HTMLDivElement;
+const calibrationSummary = document.getElementById('calibrationSummary') as HTMLDivElement;
+const calibrationReport = document.getElementById('calibrationReport') as HTMLPreElement;
 const acknowledgeReferenceButton = document.getElementById('ackReference') as HTMLButtonElement;
 const downloadReportButton = document.getElementById('downloadReport') as HTMLButtonElement;
 const copyReportButton = document.getElementById('copyReport') as HTMLButtonElement;
 const downloadBaselineButton = document.getElementById('downloadBaseline') as HTMLButtonElement;
 const copyBaselineButton = document.getElementById('copyBaseline') as HTMLButtonElement;
+const downloadCalibrationButton = document.getElementById('downloadCalibration') as HTMLButtonElement;
+const copyCalibrationButton = document.getElementById('copyCalibration') as HTMLButtonElement;
 
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -73,6 +86,8 @@ let checklist: V3ReadinessChecklist = readV3ReadinessChecklist(window.localStora
 let latestReferenceMetadata: V3ReferenceMetadata | null = null;
 let latestComparison: V3ReferenceSilhouetteComparison | null = null;
 let latestReferenceProportionBands: Record<string, unknown> | null = null;
+let latestReferenceScaffold: V3ReferenceScaffold | null = null;
+let latestCalibrationReport: V3AegisCalibrationReport | null = null;
 let referenceAcknowledged = false;
 let referenceAcknowledgedAt: string | undefined;
 let referenceLoadError: string | null = null;
@@ -198,7 +213,7 @@ function buildReferenceEvidence(): V3ReadinessReferenceComparisonInput {
       ? [referenceLoadError]
       : hasComparison ? latestComparison?.mismatchNotes ?? [] : []),
     ...(hasComparison && !hasCanonicalObjReference
-      ? ['Phase 32 calibration requires the canonical OBJ reference; FBX, GLB, and GLTF are inspection-only.']
+      ? ['Phase 33 calibration requires the canonical OBJ reference; FBX, GLB, and GLTF are inspection-only.']
       : []),
   ];
   return {
@@ -320,6 +335,30 @@ function renderBaseline(baseline: V3ReadinessBaselineReport): void {
   }
 }
 
+function renderCalibration(): void {
+  calibrationSummary.innerHTML = '';
+
+  if (!latestCalibrationReport) {
+    calibrationSummary.append(
+      metric('Calibration Source', latestReferenceScaffold?.source.kind ?? 'none'),
+      metric('Calibration Status', 'waiting'),
+      metric('Candidates', 0)
+    );
+    calibrationReport.textContent = 'Load the canonical OBJ reference to build local V3 Aegis calibration candidates. FBX, GLB, and GLTF remain inspection-only.';
+    return;
+  }
+
+  const best = latestCalibrationReport.candidates[0];
+  calibrationSummary.append(
+    metric('Calibration Source', latestCalibrationReport.sourceKind),
+    metric('Calibration Status', latestCalibrationReport.hardGateStatus),
+    metric('Best Candidate', best?.id ?? 'none'),
+    metric('Improvement', latestCalibrationReport.improvement.toFixed(6)),
+    metric('Candidates', latestCalibrationReport.candidates.length)
+  );
+  calibrationReport.textContent = formatV3AegisCalibrationReport(latestCalibrationReport);
+}
+
 function renderReferenceSummary(): void {
   if (referenceLoadError) {
     referenceSummary.textContent = referenceLoadError;
@@ -327,7 +366,7 @@ function renderReferenceSummary(): void {
   }
 
   if (!latestReferenceMetadata) {
-    referenceSummary.textContent = 'No local reference loaded. Load the OBJ canonical reference for Phase 32 calibration. FBX, GLB, and GLTF remain supported for inspection only.';
+    referenceSummary.textContent = 'No local reference loaded. Load the OBJ canonical reference for Phase 33 calibration. FBX, GLB, and GLTF remain supported for inspection only.';
     return;
   }
 
@@ -336,8 +375,14 @@ function renderReferenceSummary(): void {
     comparison: latestComparison,
     proportionBands: latestReferenceProportionBands,
     calibration: latestReferenceMetadata.kind === 'obj'
-      ? 'OBJ canonical Phase 32 calibration source'
-      : 'Inspection-only reference; use OBJ for Phase 32 calibration',
+      ? 'OBJ canonical Phase 33 calibration source'
+      : 'Inspection-only reference; use OBJ for Phase 33 calibration',
+    calibrationCandidate: latestCalibrationReport ? {
+      status: latestCalibrationReport.hardGateStatus,
+      improvement: latestCalibrationReport.improvement,
+      candidateCount: latestCalibrationReport.candidates.length,
+      bestCandidate: latestCalibrationReport.candidates[0]?.id,
+    } : undefined,
     acknowledgementIssue: referenceAcknowledgementIssue ?? undefined,
     acknowledged: referenceAcknowledged,
   }, null, 2);
@@ -351,6 +396,7 @@ function renderDashboard(): void {
   renderMetrics(latestReport);
   renderIssues(latestReport);
   renderBaseline(latestBaseline);
+  renderCalibration();
   renderReferenceSummary();
   reportSummary.textContent = buildV3ReadinessExport(latestReport, {
     format: 'string',
@@ -358,6 +404,7 @@ function renderDashboard(): void {
   });
   (window as any).__IBRAWLS_V3_READINESS_DASHBOARD__ = latestReport;
   (window as any).__IBRAWLS_V3_READINESS_BASELINE__ = latestBaseline;
+  (window as any).__IBRAWLS_V3_AEGIS_CALIBRATION__ = latestCalibrationReport;
 }
 
 function objectBounds(object: THREE.Object3D): THREE.Box3 {
@@ -428,13 +475,20 @@ function boundsToMetadataBounds(object: THREE.Object3D) {
 }
 
 async function parseReferenceFile(file: File): Promise<THREE.Object3D> {
+  return parseReferenceFileFromSource(file, undefined);
+}
+
+async function parseReferenceFileFromSource(
+  file: File,
+  objText: string | undefined
+): Promise<THREE.Object3D> {
   const kind = getV3ReferenceFileKind(file.name);
   if (kind === 'unsupported') {
     throw new Error(`Unsupported reference file: ${file.name}`);
   }
 
   if (kind === 'obj') {
-    return new OBJLoader().parse(await file.text());
+    return new OBJLoader().parse(objText ?? await file.text());
   }
 
   if (kind === 'fbx') {
@@ -458,7 +512,11 @@ async function loadReference(file: File): Promise<void> {
   referenceAcknowledgedAt = undefined;
   referenceLoadError = null;
   referenceAcknowledgementIssue = null;
-  const parsed = await parseReferenceFile(file);
+  latestReferenceScaffold = null;
+  latestCalibrationReport = null;
+  const kind = getV3ReferenceFileKind(file.name);
+  const objText = kind === 'obj' ? await file.text() : undefined;
+  const parsed = await parseReferenceFileFromSource(file, objText);
   const normalized = normalizeObjectForReview(parsed);
   referenceRoot.clear();
   referenceRoot.add(normalized);
@@ -483,6 +541,19 @@ async function loadReference(file: File): Promise<void> {
     summary: referenceProportions.summary,
     canonical: latestReferenceMetadata.kind === 'obj',
   };
+  if (latestReferenceMetadata.kind === 'obj' && objText) {
+    latestReferenceScaffold = buildV3ReferenceScaffold({
+      objText,
+      source: {
+        kind: 'obj',
+        fileName: file.name,
+        label: file.name,
+      },
+    });
+    latestCalibrationReport = buildV3AegisCalibrationCandidates(latestReferenceScaffold, {
+      maxCandidates: 5,
+    });
+  }
   renderDashboard();
 }
 
@@ -555,7 +626,7 @@ acknowledgeReferenceButton.addEventListener('click', () => {
   if (latestReferenceMetadata.kind !== 'obj') {
     referenceAcknowledged = false;
     referenceAcknowledgedAt = undefined;
-    referenceAcknowledgementIssue = 'Phase 32 calibration requires the canonical OBJ reference before acknowledgement; FBX, GLB, and GLTF remain inspection-only.';
+    referenceAcknowledgementIssue = 'Phase 33 calibration requires the canonical OBJ reference before acknowledgement; FBX, GLB, and GLTF remain inspection-only.';
     checklist = {
       ...checklist,
       referenceComparison: false,
@@ -611,6 +682,25 @@ downloadBaselineButton.addEventListener('click', () => {
 
 copyBaselineButton.addEventListener('click', () => {
   navigator.clipboard?.writeText(formatV3ReadinessBaselineMarkdown(latestBaseline)).catch(() => undefined);
+});
+
+downloadCalibrationButton.addEventListener('click', () => {
+  const contents = latestCalibrationReport
+    ? formatV3AegisCalibrationReport(latestCalibrationReport)
+    : 'No V3 Aegis calibration report is available. Load the canonical OBJ reference first.';
+  const url = URL.createObjectURL(new Blob([contents], { type: 'text/plain' }));
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = 'v3-aegis-calibration-report.txt';
+  anchor.click();
+  URL.revokeObjectURL(url);
+});
+
+copyCalibrationButton.addEventListener('click', () => {
+  const contents = latestCalibrationReport
+    ? formatV3AegisCalibrationReport(latestCalibrationReport)
+    : 'No V3 Aegis calibration report is available. Load the canonical OBJ reference first.';
+  navigator.clipboard?.writeText(contents).catch(() => undefined);
 });
 
 window.addEventListener('resize', renderComparison);
