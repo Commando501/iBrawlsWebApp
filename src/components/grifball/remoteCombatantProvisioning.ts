@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { createRemoteCombatant } from '../../game/roster';
+import { DEFAULT_AI_TEAM, PLAYER_TEAM, type TeamId } from '../../game/teamScoring';
 import { type CharacterModelType, type UniversalSettings } from '../../types';
 import { resolveCharacterModelType } from '../../characterModelTypes';
 import { type CharacterLoadout } from '../VoxelModels';
@@ -7,6 +8,7 @@ import { resolveLoadoutForVisualPolicy } from '../../model/modelVisualPolicy';
 import { normalizeVisualModelPolicy, type VisualModelPolicy } from '../../model/modelSystem';
 import type { V3RenderOptions } from '../v3/v3QualityTiers';
 import { createCombatantMeshRig } from './combatantModels';
+import { syncCombatantTeamOutline } from './combatantTeamOutlines';
 import { getInwardSpawnYaw } from './combatGeometry';
 import { type CustomMapData } from '../../types';
 import { getMultiplayerSpawnPoint } from './arenaSpawns';
@@ -29,6 +31,7 @@ type RemoteCombatantUpdate = {
   vel?: { x: number; y: number; z: number };
   yaw?: number;
   pitch?: number;
+  team?: TeamId;
   modelType?: CharacterModelType;
   visualModelPolicy?: VisualModelPolicy | null;
   loadout?: CharacterLoadout;
@@ -89,6 +92,18 @@ const createVisualLoadout = (data: RemoteCombatantUpdate, modelType: CharacterMo
     visualModelPolicy,
     loadout,
   });
+};
+
+const inferGrifballRemoteTeam = (
+  state: GrifballRuntimeState,
+  clientId: string,
+  data: RemoteCombatantUpdate
+): TeamId | undefined => {
+  if (data.team) return data.team;
+  if (state.settings.gameMode !== 'grifball') return undefined;
+  if (data.role === 'host' || clientId === state.hostClientId) return PLAYER_TEAM;
+  if (data.role === 'client' || clientId === state.clientClientId) return DEFAULT_AI_TEAM;
+  return undefined;
 };
 
 export function createOrUpdateRemoteCombatantForState({
@@ -160,6 +175,13 @@ export function createOrUpdateRemoteCombatantForState({
     playerState.modelType = gameplayModelType;
   }
   if (data.invulnerabilityTimer !== undefined) playerState.invulnerabilityTimer = data.invulnerabilityTimer;
+  const incomingTeam = inferGrifballRemoteTeam(state, clientId, data);
+  if (incomingTeam) {
+    playerState.team = incomingTeam;
+  }
+  const teamOutlineTeam = state.settings.gameMode === 'grifball'
+    ? playerState.team ?? incomingTeam ?? null
+    : null;
 
   let meshes = refs.otherPlayerMeshes.get(clientId);
   const hue = data.hue ?? playerState.hue;
@@ -171,13 +193,14 @@ export function createOrUpdateRemoteCombatantForState({
   );
   if (!meshes || meshes.group.userData.appliedHue !== hue || meshes.group.userData.appliedLoadoutKey !== visualLoadoutKey || qualityChanged) {
     if (meshes?.group) scene.remove(meshes.group);
-    meshes = createCombatantMeshRig(scene, hue, false, visualLoadout, v3Options);
+    meshes = createCombatantMeshRig(scene, hue, false, visualLoadout, v3Options, teamOutlineTeam);
     meshes.group.userData.appliedLoadoutKey = visualLoadoutKey;
     refs.otherPlayerMeshes.set(clientId, meshes);
     playerState.hue = hue;
   }
 
   const { group, hammer, sword, pistol } = meshes;
+  syncCombatantTeamOutline(group, teamOutlineTeam);
   group.position.copy(playerState.pos);
   group.rotation.y = playerState.yaw;
 

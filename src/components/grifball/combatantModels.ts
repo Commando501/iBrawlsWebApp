@@ -9,12 +9,17 @@ import {
 } from '../VoxelModels';
 import { buildV3HammerModel, buildV3PistolModel, buildV3SwordModel } from '../v3/VoxelModelsV3';
 import type { V3RenderOptions } from '../v3/v3QualityTiers';
+import type { TeamId } from '../../game/teamScoring';
 import {
   attachToCombatantAttachment,
   buildCombatantRigForModel,
   type CombatantRig,
 } from './combatantRig';
 import { THIRD_PERSON_RIGHT_HAND_REST_OFFSET } from './attackAnimationPresets';
+import {
+  registerCombatantTeamOutlineSources,
+  syncCombatantTeamOutline,
+} from './combatantTeamOutlines';
 
 export type CombatantMeshRig = {
   group: THREE.Group;
@@ -109,7 +114,8 @@ export const createCombatantMeshRig = (
   hue: number,
   isEnemyBot = false,
   loadout?: CharacterLoadout,
-  v3Options: V3RenderOptions = {}
+  v3Options: V3RenderOptions = {},
+  teamOutlineTeam?: TeamId | null
 ): CombatantMeshRig => {
   const resolvedLoadout = loadout ?? (isEnemyBot ? getRandomLoadout() : undefined);
   const group = buildVoxelSpartanModel(isEnemyBot, hue, resolvedLoadout, v3Options);
@@ -118,6 +124,8 @@ export const createCombatantMeshRig = (
   group.userData.appliedV3QualityTier = v3Options.v3QualityTier;
   group.userData.appliedV3Distance = v3Options.v3Distance;
   const rig = buildCombatantRigForModel(group);
+  registerCombatantTeamOutlineSources(group);
+  syncCombatantTeamOutline(group, teamOutlineTeam);
   scene.add(group);
 
   const hammer = buildCombatantHammer(hue, resolvedLoadout, v3Options);
@@ -153,6 +161,7 @@ export const rebuildDualWeaponCombatantModel = ({
   position,
   activeWeapon,
   v3Options = {},
+  teamOutlineTeam,
 }: {
   scene: THREE.Scene;
   previousGroup?: THREE.Group | null;
@@ -163,6 +172,7 @@ export const rebuildDualWeaponCombatantModel = ({
   position: THREE.Vector3;
   activeWeapon: 'hammer' | 'sword' | 'pistol';
   v3Options?: V3RenderOptions;
+  teamOutlineTeam?: TeamId | null;
 }): RebuiltDualWeaponCombatantModel => {
   if (previousGroup) {
     scene.remove(previousGroup);
@@ -175,6 +185,8 @@ export const rebuildDualWeaponCombatantModel = ({
   group.userData.appliedV3QualityTier = v3Options.v3QualityTier;
   group.userData.appliedV3Distance = v3Options.v3Distance;
   const rig = buildCombatantRigForModel(group);
+  registerCombatantTeamOutlineSources(group);
+  syncCombatantTeamOutline(group, teamOutlineTeam);
   scene.add(group);
 
   const resolvedWeaponHue = weaponHue === null ? undefined : (weaponHue ?? hue);

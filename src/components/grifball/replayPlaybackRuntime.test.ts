@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import type { ReplayFile, ReplayFrame } from '../../types';
 import { updateReplayCombatantVisualsForFrame } from './replayPlaybackVisuals';
+import { getCombatantTeamOutlineState } from './combatantTeamOutlines';
+import { buildReplayPlaybackFrameSlice } from './replayHelpers';
 import {
   collectReplayPlaybackEventsForFrame,
   getReplayPlaybackEventFrameIndexes,
@@ -40,6 +42,52 @@ function frame(time: number, replayPlayer?: NonNullable<ReplayFrame['player']>):
 function sounds(events: ReturnType<typeof collectReplayPlaybackEventsForFrame>): string[] {
   return events.flatMap(event => event.type === 'sound' ? [event.sound] : []);
 }
+
+test('replay frame slice preserves recorded Grifball team identity', () => {
+  const replayData: ReplayFile = {
+    id: 'grifball-team-slice',
+    name: 'Grifball Team Slice',
+    description: '',
+    date: new Date(0).toISOString(),
+    duration: 1,
+    playerHue: 200,
+    playerName: 'Player',
+    opponentName: 'Bot',
+    mapType: 'rectangular',
+    mode: 'sandbox',
+    gameMode: 'grifball',
+    maxScore: 25,
+    frames: [{
+      time: 0,
+      otherPlayers: [{
+        id: 'bot_2',
+        playerName: 'Blue Bot',
+        hue: 140,
+        pos: { x: 0, y: 0, z: 0 },
+        vel: { x: 0, y: 0, z: 0 },
+        yaw: 0,
+        hp: 5,
+        isCrouching: false,
+        activeWeapon: 'hammer',
+        weaponState: 'ready',
+        score: 0,
+        kills: 0,
+        deaths: 0,
+        respawnTimer: 0,
+        invulnerabilityTimer: 0,
+        team: 'blue',
+      } as NonNullable<ReplayFrame['otherPlayers']>[number] & { team: 'blue' }],
+    }],
+  };
+
+  const slice = buildReplayPlaybackFrameSlice({
+    replayData,
+    time: 0,
+    botColors: {},
+  });
+
+  assert.equal((slice?.updatedPlayers.get('bot_2') as any)?.team, 'blue');
+});
 
 test('replay event cursor processes a replay frame only once across render ticks', () => {
   let cursor: number | null = null;
@@ -292,6 +340,71 @@ test('replay visuals use legacy V1 loadout when replay has no visual policy', ()
   assert.ok(meshes);
   assert.equal(meshes.group.userData.appliedLoadoutKey, JSON.stringify({ modelSystem: 'v1' }));
   assert.notEqual(meshes.group.userData.modelSystem, 'v3');
+});
+
+test('grifball replay visuals attach team body outline from replay player team', () => {
+  const scene = new THREE.Scene();
+  const refs = {
+    scene,
+    otherPlayerMeshes: new Map(),
+    damageExplosionParticles: [],
+    enemyGroup: null,
+    hostGroup: null,
+  } as any;
+
+  updateReplayCombatantVisualsForFrame({
+    refs,
+    replayData: {
+      id: 'grifball-replay-outline',
+      name: 'Grifball Replay Outline',
+      description: '',
+      date: new Date(0).toISOString(),
+      duration: 1,
+      playerHue: 200,
+      playerName: 'Player',
+      opponentName: 'Bot',
+      mapType: 'rectangular',
+      mode: 'sandbox',
+      gameMode: 'grifball',
+      maxScore: 25,
+      frames: [],
+    },
+    updatedPlayers: new Map([['bot_3', {
+      pos: new THREE.Vector3(),
+      vel: new THREE.Vector3(),
+      yaw: 0,
+      pitch: 0,
+      crouchScaleY: 1,
+      hp: 5,
+      activeWeapon: 'hammer',
+      weaponState: 'ready',
+      isCrouching: false,
+      isLunging: false,
+      isDashing: false,
+      isSprinting: false,
+      isSliding: false,
+      weaponTimer: 0,
+      score: 0,
+      kills: 0,
+      deaths: 0,
+      respawnTimer: 0,
+      invulnerabilityTimer: 0,
+      name: 'Red Bot',
+      hue: 0,
+      team: 'red',
+    } as any]]),
+    targetId: 'free',
+    observerCamMode: 'third',
+    replayPlayerName: 'Player',
+    dt: 0.016,
+    animateSpartanModel: () => {},
+    renderSwordLungeTrailVfx: () => {},
+    updateBlinking: () => {},
+  });
+
+  const meshes = refs.otherPlayerMeshes.get('bot_3');
+  assert.ok(meshes);
+  assert.equal(getCombatantTeamOutlineState(meshes.group)?.team, 'red');
 });
 
 test('replay V3 visual policy preserves advanced visuals', () => {

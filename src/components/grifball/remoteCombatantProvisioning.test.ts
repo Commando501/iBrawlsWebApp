@@ -7,11 +7,14 @@ import { createInitialGrifballRuntimeState } from './runtimeState';
 import { createInitialGrifballThreeRefs } from './threeRefs';
 import { createOrUpdateRemoteCombatantForState } from './remoteCombatantProvisioning';
 import type { V3RenderOptions } from '../v3/v3QualityTiers';
+import { getCombatantTeamOutlineState } from './combatantTeamOutlines';
 
-const createStateAndRefs = () => {
+const createStateAndRefs = (
+  adminSettings = DEFAULT_ADMIN_SETTINGS
+) => {
   const state = createInitialGrifballRuntimeState({
     debugMode: false,
-    adminSettings: DEFAULT_ADMIN_SETTINGS,
+    adminSettings,
     multiplayerRole: null,
     isMultiplayer: false,
   });
@@ -102,6 +105,54 @@ test('offline AI explicit V3 visual policy preserves V3 visuals', () => {
   assert.equal(appliedLoadout.helmet, 'odst');
   assert.equal(appliedLoadout.hammerPreset, 'gravity-axe');
   assert.equal(state.otherPlayers.get(bot.id)?.modelType, 'medium');
+});
+
+test('grifball AI roster visuals attach team body outlines from combatant team', () => {
+  const { state, refs } = createStateAndRefs({
+    ...DEFAULT_ADMIN_SETTINGS,
+    gameMode: 'grifball',
+  });
+  const bot = createOfflineBotCombatant({
+    id: 'bot_blue_outline',
+    playerName: 'Blue Bot',
+    team: 'blue',
+    spawnPos: new THREE.Vector3(1, 0, 0),
+    yaw: 0,
+    hue: 120,
+    difficulty: 'normal',
+    settings: state.settings,
+  });
+  state.otherPlayers.set(bot.id, bot);
+
+  provisionCombatant(state, refs, bot.id, bot);
+
+  const meshes = refs.otherPlayerMeshes.get(bot.id);
+  assert.ok(meshes);
+  const outline = getCombatantTeamOutlineState(meshes.group);
+  assert.ok(outline);
+  assert.equal(outline.team, 'blue');
+  assert.ok(outline.meshes.length > 0);
+});
+
+test('sandbox roster visuals do not keep Grifball team body outlines', () => {
+  const { state, refs } = createStateAndRefs();
+  const bot = createOfflineBotCombatant({
+    id: 'bot_sandbox_outline',
+    playerName: 'Sandbox Bot',
+    team: 'red',
+    spawnPos: new THREE.Vector3(1, 0, 0),
+    yaw: 0,
+    hue: 120,
+    difficulty: 'normal',
+    settings: state.settings,
+  });
+  state.otherPlayers.set(bot.id, bot);
+
+  provisionCombatant(state, refs, bot.id, bot);
+
+  const meshes = refs.otherPlayerMeshes.get(bot.id);
+  assert.ok(meshes);
+  assert.equal(getCombatantTeamOutlineState(meshes.group), null);
 });
 
 test('offline AI explicit V3 visual policy does not change gameplay model type', () => {

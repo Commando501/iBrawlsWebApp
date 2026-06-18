@@ -146,6 +146,8 @@ test('preview reports panelStripe added voxels without changing the draft', () =
     { x: 17, y: 8, z: 7, role: 'fixed', color: '#ff00aa', emissive: true },
     { x: 18, y: 8, z: 7, role: 'fixed', color: '#ff00aa', emissive: true },
     { x: 19, y: 8, z: 7, role: 'fixed', color: '#ff00aa', emissive: true },
+    { x: 20, y: 8, z: 7, role: 'fixed', color: '#ff00aa', emissive: true },
+    { x: 21, y: 8, z: 7, role: 'fixed', color: '#ff00aa', emissive: true },
   ]);
 });
 
@@ -563,8 +565,8 @@ test('mirrorLocalX creates matching mirrored voxels across the slot-local X cent
     assert.equal(mirrored.color, voxel.color);
     assert.equal(mirrored.emissive, voxel.emissive);
   }
-  assert.deepEqual(voxelAt(authored, 16, 5, 5), {
-    x: 16,
+  assert.deepEqual(voxelAt(authored, slotMaxX - 3, 5, 5), {
+    x: slotMaxX - 3,
     y: 5,
     z: 5,
     role: 'fixed',

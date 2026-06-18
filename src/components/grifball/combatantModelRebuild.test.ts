@@ -11,6 +11,7 @@ import {
 } from './combatantModelRebuild';
 import { getRandomLoadout } from './combatantModels';
 import { createViewTargetCallbacksForState } from './viewTargetCallbacks';
+import { getCombatantTeamOutlineState } from './combatantTeamOutlines';
 
 test('random bot loadouts stay on the V1 model system', () => {
   const originalRandom = Math.random;
@@ -128,4 +129,53 @@ test('host combatant rebuild tags V3 quality without changing gameplay model typ
   assert.equal(refs.hostGroup?.userData.v3QualityTier, 'mobileLow');
   assert.equal(refs.hostGroup?.userData.appliedV3QualityTier, 'mobileLow');
   assert.equal(state.playerModelType, 'medium');
+});
+
+test('grifball host and enemy rebuilds attach perspective-correct team body outlines', () => {
+  const scene = new THREE.Scene();
+  const refs = createInitialGrifballThreeRefs();
+  refs.scene = scene;
+  refs.enemyGroup = new THREE.Group();
+  scene.add(refs.enemyGroup);
+
+  const settings = {
+    ...DEFAULT_ADMIN_SETTINGS,
+    gameMode: 'grifball' as const,
+  };
+  const state = createInitialGrifballRuntimeState({
+    debugMode: false,
+    adminSettings: settings,
+    multiplayerRole: 'host',
+    isMultiplayer: true,
+  });
+  const mainAI = createMainAICombatant({
+    settings,
+    legacy: {},
+    spawnPos: new THREE.Vector3(0, 0, -12),
+    yaw: 0,
+  });
+  mainAI.team = 'red';
+
+  rebuildHostCombatantModelForState({
+    state,
+    refs,
+    hue: 220,
+    isMultiplayer: true,
+    multiplayerRole: 'host',
+    playerLoadout: { modelSystem: 'v2', modelType: 'medium' },
+  });
+  rebuildEnemyCombatantModelForState({
+    state,
+    refs,
+    hue: 0,
+    isMultiplayer: false,
+    multiplayerRole: null,
+    playerLoadout: { modelSystem: 'v2', modelType: 'medium' },
+    mainAI,
+  });
+
+  assert.ok(refs.hostGroup);
+  assert.ok(refs.enemyGroup);
+  assert.equal(getCombatantTeamOutlineState(refs.hostGroup)?.team, 'blue');
+  assert.equal(getCombatantTeamOutlineState(refs.enemyGroup)?.team, 'red');
 });

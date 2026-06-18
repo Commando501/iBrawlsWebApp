@@ -1,7 +1,9 @@
 import * as THREE from 'three';
+import { resolveGrifballTeam } from '../../game/grifballTeams';
 import { type ReplayFile, type UniversalSettings } from '../../types';
 import { animateCombatantWeaponMeshes } from './combatantAnimation';
 import { createCombatantMeshRig } from './combatantModels';
+import { syncCombatantTeamOutline } from './combatantTeamOutlines';
 import { type SwordLungeCurrentTrailStyle } from './combatGeometry';
 import { type ReplayInterpolatedPlayer } from './replayHelpers';
 import { resolveReplayCombatantVisualLoadout } from './replayVisualMetadata';
@@ -58,6 +60,9 @@ export function updateReplayCombatantVisualsForFrame({
 
   updatedPlayers.forEach((player, id) => {
     let meshes = refs.otherPlayerMeshes.get(id);
+    const teamOutlineTeam = replayData?.gameMode === 'grifball'
+      ? player.team ?? resolveGrifballTeam(id)
+      : null;
     const visualLoadout = resolveReplayCombatantVisualLoadout(replayData, id);
     const visualLoadoutKey = JSON.stringify(visualLoadout);
     const qualityChanged = visualLoadout.modelSystem === 'v3' && (
@@ -66,13 +71,14 @@ export function updateReplayCombatantVisualsForFrame({
     );
     if (!meshes || meshes.group.userData.appliedHue !== player.hue || meshes.group.userData.appliedLoadoutKey !== visualLoadoutKey || qualityChanged) {
       if (meshes?.group) scene.remove(meshes.group);
-      meshes = createCombatantMeshRig(scene, player.hue, false, visualLoadout, v3Options);
+      meshes = createCombatantMeshRig(scene, player.hue, false, visualLoadout, v3Options, teamOutlineTeam);
       meshes.group.userData.appliedHue = player.hue;
       meshes.group.userData.appliedLoadoutKey = visualLoadoutKey;
       refs.otherPlayerMeshes.set(id, meshes);
     }
 
     const { group, hammer, sword, pistol } = meshes;
+    syncCombatantTeamOutline(group, teamOutlineTeam);
     group.position.copy(player.pos);
     group.rotation.y = player.yaw;
     group.scale.set(1, player.crouchScaleY, 1);

@@ -680,6 +680,7 @@ export interface ReplayFrame {
     deaths: number;
     respawnTimer: number;
     invulnerabilityTimer: number;
+    team?: TeamId;
   };
   ai?: {
     pos: { x: number; y: number; z: number };
@@ -700,6 +701,7 @@ export interface ReplayFrame {
     deaths: number;
     respawnTimer: number;
     invulnerabilityTimer: number;
+    team?: TeamId;
   };
   otherPlayers?: {
     id: string;
@@ -723,6 +725,7 @@ export interface ReplayFrame {
     deaths: number;
     respawnTimer: number;
     invulnerabilityTimer: number;
+    team?: TeamId;
   }[];
 }
 

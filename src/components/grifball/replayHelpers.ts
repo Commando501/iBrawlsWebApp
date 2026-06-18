@@ -1,5 +1,7 @@
 import * as THREE from 'three';
+import { resolveGrifballTeam } from '../../game/grifballTeams';
 import { MAIN_AI_ID } from '../../game/roster';
+import type { TeamId } from '../../game/teamScoring';
 import { type ReplayFile, type ReplayFrame } from '../../types';
 import { type LastRecordedReplayEntityState } from './runtimeRefs';
 
@@ -46,6 +48,7 @@ export interface ReplayInterpolatedPlayer {
   hue: number;
   playerName?: string;
   maxHp?: number;
+  team?: TeamId;
 }
 
 export interface ReplayPlaybackFrameSlice {
@@ -139,6 +142,9 @@ const interpolateReplayPlayer = (
   const crouchScaleY = crouchA + (crouchB - crouchA) * alpha;
 
   const nearestState = alpha > 0.5 ? stateB : stateA;
+  const team = nearestState.team ?? (
+    replayData.gameMode === 'grifball' ? resolveGrifballTeam(id) : undefined
+  );
 
   return {
     pos,
@@ -160,6 +166,7 @@ const interpolateReplayPlayer = (
     deaths: nearestState.deaths,
     respawnTimer: nearestState.respawnTimer,
     invulnerabilityTimer: nearestState.invulnerabilityTimer,
+    team,
   };
 };
 

@@ -137,6 +137,7 @@ export function recordReplayFrameForState({
     deaths: state.playerDeaths ?? 0,
     respawnTimer: state.playerRespawnTimer,
     invulnerabilityTimer: state.playerInvulnerabilityTimer,
+    team: state.localPlayerTeam,
   };
 
   const playerCompState = {
@@ -193,6 +194,7 @@ export function recordReplayFrameForState({
         deaths: id === MAIN_AI_ID ? (state.enemyDeaths ?? 0) : (bot.deaths ?? 0),
         respawnTimer: id === MAIN_AI_ID ? state.enemyRespawnTimer : (bot.respawnTimer ?? 0),
         invulnerabilityTimer: bot.invulnerabilityTimer ?? 0,
+        team: bot.team,
       };
 
       const botCompState = {
@@ -257,6 +259,7 @@ export function recordReplayFrameForState({
         deaths: bot.deaths ?? 0,
         respawnTimer: bot.respawnTimer ?? 0,
         invulnerabilityTimer: bot.invulnerabilityTimer ?? 0,
+        team: bot.team,
       };
 
       const botCompState = {

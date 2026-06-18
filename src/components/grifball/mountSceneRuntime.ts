@@ -1,4 +1,9 @@
 import { type AIOrchestratorEvents, type AIOrchestratorSpawnCallbacks } from '../../game/aiOrchestrator';
+import {
+  DEFAULT_AI_TEAM,
+  opponentTeamId,
+  type TeamId,
+} from '../../game/teamScoring';
 import { type LegacyRosterProps } from '../../game/rosterSlotConfig';
 import { type CustomMapData, type ReplayFile, type UniversalSettings } from '../../types';
 import { type CharacterLoadout } from '../VoxelModels';
@@ -33,6 +38,12 @@ const yieldToBrowser = (): Promise<void> =>
     }
     setTimeout(resolve, 0);
   });
+
+const resolveInitialEnemyTeamOutlineTeam = (state: GrifballRuntimeState): TeamId | null => {
+  if (state.settings.gameMode !== 'grifball') return null;
+  if (state.multiplayerRole === 'observer') return DEFAULT_AI_TEAM;
+  return opponentTeamId(state.localPlayerTeam);
+};
 
 export async function initializeGrifballMountSceneForState({
   state,
@@ -142,6 +153,7 @@ export async function initializeGrifballMountSceneForState({
         scene,
         mainAIHue,
         v3Options,
+        teamOutlineTeam: resolveInitialEnemyTeamOutlineTeam(state),
       });
     } else {
       await report(76, 'Spawning combatants');
