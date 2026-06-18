@@ -59,6 +59,10 @@ def _current_values() -> dict:
 
 
 _EVAL_PROGRESS = re.compile(r"\[eval\]\s+(\d+)\s*/\s*(\d+)")
+_EVAL_SIM_STATUS = re.compile(
+    r"\[eval-sims\]\s+open=(\d+)\s+closing=(\d+)\s+closed=(\d+)\s+started=(\d+)"
+    r"(?:\s+expected=(\d+)\s+remaining=(\d+))?"
+)
 _WATCH_PROGRESS = re.compile(r"\[watch\]\s+(\d+)\s*/\s*(\d+)")
 
 
@@ -77,6 +81,28 @@ def _parse_eval_progress(lines: list[str]) -> tuple[int | None, int | None]:
         if m:
             return int(m.group(1)), int(m.group(2))
     return None, None
+
+
+def _parse_eval_sim_status(lines: list[str]) -> dict[str, int] | None:
+    """Latest sim-worker lifecycle counts from evaluator `[eval-sims] ...` lines."""
+    for line in reversed(lines):
+        m = _EVAL_SIM_STATUS.search(line)
+        if not m:
+            continue
+        open_count = int(m.group(1))
+        closing_count = int(m.group(2))
+        out = {
+            "open": open_count,
+            "closing": closing_count,
+            "closed": int(m.group(3)),
+            "started": int(m.group(4)),
+            "alive": open_count + closing_count,
+        }
+        if m.group(5) is not None:
+            out["expected"] = int(m.group(5))
+            out["remaining"] = int(m.group(6))
+        return out
+    return None
 
 
 def _record_eval_if_new(st: dict) -> None:
@@ -418,6 +444,7 @@ class Handler(BaseHTTPRequestHandler):
         completed, total = _parse_eval_progress(lines)
         st["completed"] = completed
         st["total"] = total
+        st["sim_workers"] = _parse_eval_sim_status(lines)
         progress = eta = None
         if total and completed is not None:
             progress = max(0.0, min(1.0, completed / float(total)))

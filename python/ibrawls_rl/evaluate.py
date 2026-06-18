@@ -19,13 +19,38 @@ from stable_baselines3 import PPO
 
 from . import baseline
 from .eval import (
+    combat_anti_bait_specs,
+    combat_eval_matrix_specs,
     eval_vs,
     eval_combat_vs_random,
     eval_combat_matrix,
     eval_combat_mechanics_suite,
     eval_combat_vs_snapshots,
+    mechanics_suite_presets,
 )
+from .envs.grifball_vec_env import configure_sim_worker_status
 from .training_metadata import read_training_metadata
+
+
+def expected_sim_workers_for_eval(args) -> int:  # noqa: ANN001
+    """Expected Node sim subprocesses for one evaluator run.
+
+    The lifecycle counter tracks real worker starts/closes. This helper gives the
+    dashboard a denominator for long matrix/mechanics-suite runs.
+    """
+    if getattr(args, "mode", "") != "combat":
+        return 2  # grifball eval probes once, then opens the real worker
+    if not getattr(args, "matrix", False):
+        return 1
+
+    standard = len(combat_eval_matrix_specs())
+    anti_bait = len(combat_anti_bait_specs())
+    frozen = standard if getattr(args, "league_snapshot", None) else 0
+    per_matrix = standard + frozen + anti_bait
+    mechanics_multiplier = 1 + (
+        len(mechanics_suite_presets({}, 0.15)) if getattr(args, "mechanics_suite", False) else 0
+    )
+    return per_matrix * mechanics_multiplier
 
 
 def resolve_decision_interval(model_path: str) -> int:
@@ -142,6 +167,7 @@ def main() -> None:
     ap.add_argument("--json", action="store_true",
                     help="print a single machine-readable JSON line (used by the control board)")
     args = ap.parse_args()
+    configure_sim_worker_status(enabled=True, expected=expected_sim_workers_for_eval(args))
 
     interval = args.decision_interval or resolve_decision_interval(args.model)
     frame_stack = args.frame_stack or resolve_frame_stack(args.model)

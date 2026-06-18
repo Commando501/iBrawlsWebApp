@@ -18,6 +18,7 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+import threading
 from typing import Any, Sequence
 
 import numpy as np
@@ -37,14 +38,131 @@ def _default_cmd() -> list[str]:
     return ["npx", "tsx", "src/sim/server/main.ts"]
 
 
+class SimWorkerStatusTracker:
+    """Small process-local counter for evaluator-visible sim worker lifecycle status."""
+
+    def __init__(self, enabled: bool = False, sink=None) -> None:  # noqa: ANN001
+        self.enabled = bool(enabled)
+        self._sink = sink or (lambda line: print(line, flush=True))
+        self._lock = threading.Lock()
+        self._open: set[int] = set()
+        self._closing: set[int] = set()
+        self._closed: set[int] = set()
+        self._started = 0
+        self._expected: int | None = None
+
+    def configure(
+        self,
+        enabled: bool = True,
+        sink=None,  # noqa: ANN001
+        reset: bool = True,
+        expected: int | None = None,
+    ) -> dict[str, int]:
+        with self._lock:
+            self.enabled = bool(enabled)
+            if sink is not None:
+                self._sink = sink
+            if reset:
+                self._open.clear()
+                self._closing.clear()
+                self._closed.clear()
+                self._started = 0
+                self._expected = None
+            if expected is not None:
+                self._expected = max(0, int(expected))
+            return self._snapshot_locked()
+
+    def snapshot(self) -> dict[str, int]:
+        with self._lock:
+            return self._snapshot_locked()
+
+    def opened(self, pid: int | None) -> None:
+        if pid is None:
+            return
+        with self._lock:
+            pid = int(pid)
+            self._open.add(pid)
+            self._closing.discard(pid)
+            self._closed.discard(pid)
+            self._started += 1
+            self._emit_locked("open", pid)
+
+    def closing(self, pid: int | None) -> None:
+        if pid is None:
+            return
+        with self._lock:
+            pid = int(pid)
+            if pid in self._closed:
+                return
+            self._open.discard(pid)
+            self._closing.add(pid)
+            self._emit_locked("closing", pid)
+
+    def closed(self, pid: int | None) -> None:
+        if pid is None:
+            return
+        with self._lock:
+            pid = int(pid)
+            if pid in self._closed:
+                return
+            self._open.discard(pid)
+            self._closing.discard(pid)
+            self._closed.add(pid)
+            self._emit_locked("closed", pid)
+
+    def _snapshot_locked(self) -> dict[str, int]:
+        open_count = len(self._open)
+        closing_count = len(self._closing)
+        out = {
+            "open": open_count,
+            "closing": closing_count,
+            "closed": len(self._closed),
+            "started": self._started,
+            "alive": open_count + closing_count,
+        }
+        if self._expected is not None:
+            out["expected"] = self._expected
+            out["remaining"] = max(0, self._expected - out["closed"])
+        return out
+
+    def _emit_locked(self, event: str, pid: int) -> None:
+        if not self.enabled:
+            return
+        snap = self._snapshot_locked()
+        expected = ""
+        if "expected" in snap:
+            expected = f" expected={snap['expected']} remaining={snap['remaining']}"
+        self._sink(
+            "[eval-sims] "
+            f"open={snap['open']} closing={snap['closing']} "
+            f"closed={snap['closed']} started={snap['started']}"
+            f"{expected} "
+            f"event={event} pid={pid}"
+        )
+
+
+SIM_WORKER_STATUS = SimWorkerStatusTracker()
+
+
+def configure_sim_worker_status(
+    enabled: bool = True,
+    sink=None,  # noqa: ANN001
+    reset: bool = True,
+    expected: int | None = None,
+) -> dict[str, int]:
+    return SIM_WORKER_STATUS.configure(enabled=enabled, sink=sink, reset=reset, expected=expected)
+
+
 class SimWorker:
     """One Node sim subprocess: handshake + raw (whole-worker) reset/step over the wire."""
 
     def __init__(self, cmd: list[str], shell: bool, config: dict) -> None:
+        self._closed = False
         self.proc = subprocess.Popen(
             cmd, cwd=REPO_ROOT, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
             stderr=sys.stderr, bufsize=0, shell=shell,
         )
+        SIM_WORKER_STATUS.opened(self.proc.pid)
         assert self.proc.stdin and self.proc.stdout
         proto.write_frame(self.proc.stdin, proto.hello_request(config))
         self.header = proto.parse_hello_response(proto.read_frame(self.proc.stdout))
@@ -89,6 +207,9 @@ class SimWorker:
         return proto.parse_state_response(proto.read_frame(self.proc.stdout))
 
     def close(self) -> None:
+        if self._closed:
+            return
+        SIM_WORKER_STATUS.closing(self.proc.pid)
         try:
             if self.proc.poll() is None and self.proc.stdin:
                 proto.write_frame(self.proc.stdin, proto.close_request())
@@ -98,6 +219,8 @@ class SimWorker:
         finally:
             if self.proc.poll() is None:
                 self.proc.kill()
+            self._closed = True
+            SIM_WORKER_STATUS.closed(self.proc.pid)
 
 
 class _WorkerView:

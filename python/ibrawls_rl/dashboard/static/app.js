@@ -619,6 +619,7 @@ async function pollEval() {
 
   // progress + ETA bar
   const bar = $("#evalProgress");
+  const simStatus = $("#evalSimStatus");
   if (st.running) {
     bar.style.display = "block";
     const pct = st.progress != null ? Math.round(st.progress * 100) : 0;
@@ -627,8 +628,18 @@ async function pollEval() {
     const eta = st.eta != null ? `~${fmtDur(st.eta)} left`
       : (st.completed ? "estimating…" : "spinning up sim…");
     $("#evalProgressLabel").textContent = `${count}  ·  ${fmtDur(st.elapsed)} elapsed  ·  ${eta}`;
+    if (st.sim_workers && st.sim_workers.started) {
+      const sims = st.sim_workers;
+      const closedTotal = sims.expected ? `${fmtInt(sims.closed)} / ${fmtInt(sims.expected)}` : `${fmtInt(sims.closed)} / ${fmtInt(sims.started)}`;
+      const remaining = sims.expected ? ` · ${fmtInt(sims.remaining)} remaining` : "";
+      simStatus.style.display = "block";
+      simStatus.textContent = `Sim workers: ${fmtInt(sims.open)} open · ${fmtInt(sims.closing)} closing · ${fmtInt(sims.alive)} alive · ${closedTotal} closed${remaining}`;
+    } else {
+      simStatus.style.display = "none";
+    }
   } else {
     bar.style.display = "none";
+    simStatus.style.display = "none";
   }
 
   $("#evalLog").textContent = (st.log || []).join("\n");
