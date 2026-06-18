@@ -889,6 +889,7 @@ export function analyzeV3PoseClearance(
   if (
     limbGap.partIds.length > 0
     && limbGap.gap < thresholds.minLimbGap
+    && overlap.ratio <= 0
     && shouldCheckStaticLimbGap(definition)
   ) {
     issues.push(createIssue(

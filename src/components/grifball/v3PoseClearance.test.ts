@@ -261,6 +261,9 @@ describe('v3PoseClearance', () => {
     const fixture = createSyntheticV3Fixture();
     fixture.userData.leftArm.position.set(0, 1.25, 0);
     fixture.userData.rightArm.position.set(0, 1.25, 0);
+    const gapFixture = createSyntheticV3Fixture();
+    gapFixture.userData.leftArm.position.set(-0.12, 1.25, 0);
+    gapFixture.userData.rightArm.position.set(0.12, 1.25, 0);
 
     const penetrationReport = analyzeV3PoseClearance('idle', {
       model: fixture,
@@ -271,9 +274,20 @@ describe('v3PoseClearance', () => {
         maxFootFloorPenetration: 0.01,
       },
     });
-    const overlays = penetrationReport.cases[0].overlays;
+    const gapReport = analyzeV3PoseClearance('idle', {
+      model: gapFixture,
+      thresholds: {
+        maxPartOverlapRatio: 0.01,
+        minLimbGap: 0.2,
+      },
+    });
+    const overlays = [
+      ...penetrationReport.cases[0].overlays,
+      ...gapReport.cases[0].overlays,
+    ];
 
     assert.equal(penetrationReport.ready, false);
+    assert.equal(gapReport.ready, false);
     assertOverlayIsSerializable(overlays);
     assert.ok(overlays.some((overlay) => (
       overlay.kind === 'part-overlap'

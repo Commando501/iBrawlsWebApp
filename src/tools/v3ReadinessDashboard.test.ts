@@ -51,6 +51,17 @@ const readyInput = (): V3ReadinessDashboardInput => ({
       slotCount: 18,
     },
   },
+  referenceVoxelSource: {
+    ready: true,
+    issues: [],
+    summary: {
+      schemaVersion: 'v3-aegis-reference-voxels/v1',
+      slotCount: 19,
+      totalVoxelCount: 43198,
+      gridScale: 3,
+      sourceHash: 'sha256:abc123',
+    },
+  },
   visualQa: readyEvidence,
   poseClearance: readyEvidence,
   performanceSmoke: readyEvidence,
@@ -114,6 +125,7 @@ test('buildV3ReadinessDashboardReport stays not-player-ready even after manual c
   assert.deepEqual(report.warnings, []);
   assert.equal(report.evidence.suitFidelity.ready, true);
   assert.equal(report.evidence.referenceProportions.ready, true);
+  assert.equal(report.evidence.referenceVoxelSource.ready, true);
   assert.equal(report.evidence.referenceComparison.acknowledged, true);
 });
 
@@ -175,6 +187,7 @@ test('buildV3ReadinessDashboardReport blocks readiness when automated evidence i
   )));
   assert.ok(report.blockers.some((blocker) => blocker.id === 'referenceProportionsEvidence'));
   assert.ok(report.blockers.some((blocker) => blocker.id === 'referenceFeatureMatchEvidence'));
+  assert.ok(report.blockers.some((blocker) => blocker.id === 'referenceVoxelSourceEvidence'));
   assert.ok(report.blockers.some((blocker) => blocker.id === 'visualQaEvidence'));
   assert.ok(report.blockers.some((blocker) => blocker.id === 'poseClearanceEvidence'));
   assert.ok(report.blockers.some((blocker) => blocker.id === 'performanceSmokeEvidence'));
@@ -191,6 +204,7 @@ test('buildV3ReadinessExport preserves sanitized OBJ proportion bands and strips
   assert.equal(proportionBands.reference.shin.widthRatio, 0.3218);
   assert.equal(exportObject.evidence.referenceProportions.ready, true);
   assert.equal(exportObject.evidence.referenceFeatureMatch.ready, true);
+  assert.equal(exportObject.evidence.referenceVoxelSource.ready, true);
   assert.equal(exportedJson.includes('rawGeometry'), false);
   assert.equal(exportedJson.includes('do-not-export'), false);
   assert.equal(exportedJson.includes('C:\\'), false);

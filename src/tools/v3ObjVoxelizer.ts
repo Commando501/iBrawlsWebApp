@@ -117,6 +117,15 @@ const PAIR_SLOTS = new Set<V3CharacterSlotId>([
   'footLeft',
   'footRight',
 ]);
+const PAIRED_SLOT_GROUPS: readonly [V3CharacterSlotId, V3CharacterSlotId][] = [
+  ['shoulderLeft', 'shoulderRight'],
+  ['upperArmLeft', 'upperArmRight'],
+  ['forearmLeft', 'forearmRight'],
+  ['handLeft', 'handRight'],
+  ['thighLeft', 'thighRight'],
+  ['shinLeft', 'shinRight'],
+  ['footLeft', 'footRight'],
+];
 
 export function buildV3ObjVoxelizationArtifact(input: V3ObjVoxelizerInput): V3ObjVoxelizationArtifact {
   const metadata = input.metadata ?? parseV3ObjMetadata(input.objText ?? '');
@@ -145,6 +154,7 @@ export function buildV3ObjVoxelizationArtifact(input: V3ObjVoxelizerInput): V3Ob
     const slotArtifact = buildSlotArtifact(mutableSlot);
     return [slot, slotArtifact];
   })) as Record<V3CharacterSlotId, V3ObjVoxelSlotArtifact>;
+  mirrorPairedSlotArtifacts(artifacts);
 
   const totalVoxelCount = Object.values(artifacts).reduce((sum, slot) => sum + slot.voxelCount, 0);
   const totalRunCount = Object.values(artifacts).reduce((sum, slot) => sum + slot.runCount, 0);
@@ -251,6 +261,59 @@ function buildSlotArtifact(slot: MutableSlot): V3ObjVoxelSlotArtifact {
     runCount: runs.length,
     runs,
   };
+}
+
+function buildSlotArtifactFromVoxels(
+  slot: V3CharacterSlotId,
+  dimensions: [number, number, number],
+  voxels: readonly V3ObjVoxel[]
+): V3ObjVoxelSlotArtifact {
+  const sorted = [...voxels].sort(compareVoxels);
+  const bounds = boundsFromVoxels(sorted, dimensions);
+  const runs = encodeRuns(sorted);
+  const roleHints = [...new Set(sorted.map((voxel) => voxel.role))].sort() as V3ObjVoxelRole[];
+
+  return {
+    slot,
+    gridScale: dimensions[0] / V3_AEGIS_PART_SPECS[slot].dimensions[0],
+    dimensions,
+    bounds,
+    roleHints,
+    voxelCount: sorted.length,
+    runCount: runs.length,
+    runs,
+  };
+}
+
+function mirrorPairedSlotArtifacts(
+  artifacts: Record<V3CharacterSlotId, V3ObjVoxelSlotArtifact>
+): void {
+  for (const [leftSlot, rightSlot] of PAIRED_SLOT_GROUPS) {
+    const left = artifacts[leftSlot];
+    const right = artifacts[rightSlot];
+    const useLeftAsSource = left.voxelCount >= right.voxelCount;
+    const source = useLeftAsSource ? left : right;
+    const sourceVoxels = expandV3ObjVoxelRuns(source);
+    const leftVoxels = useLeftAsSource
+      ? sourceVoxels
+      : mirrorVoxelsAcrossLocalX(sourceVoxels, left.dimensions);
+    const rightVoxels = useLeftAsSource
+      ? mirrorVoxelsAcrossLocalX(sourceVoxels, right.dimensions)
+      : sourceVoxels;
+
+    artifacts[leftSlot] = buildSlotArtifactFromVoxels(leftSlot, left.dimensions, leftVoxels);
+    artifacts[rightSlot] = buildSlotArtifactFromVoxels(rightSlot, right.dimensions, rightVoxels);
+  }
+}
+
+function mirrorVoxelsAcrossLocalX(
+  voxels: readonly V3ObjVoxel[],
+  dimensions: [number, number, number]
+): V3ObjVoxel[] {
+  return voxels.map((voxel) => ({
+    ...voxel,
+    x: dimensions[0] - 1 - voxel.x,
+  }));
 }
 
 function sampleTriangle(triangle: V3ObjTriangleMetadata): V3Vec3[] {

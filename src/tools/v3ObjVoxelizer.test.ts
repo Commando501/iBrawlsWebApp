@@ -153,7 +153,7 @@ describe('buildV3ObjVoxelizationArtifact', () => {
     const right = expandV3ObjVoxelRuns(artifact.slots.shinRight);
     const leftSignature = new Set(left.map((voxel) => `${voxel.x}:${voxel.y}:${voxel.z}:${voxel.role}`));
     const mirroredRight = right.map((voxel) => (
-      `${artifact.slots.shinRight.bounds.size[0] - 1 - voxel.x}:${voxel.y}:${voxel.z}:${voxel.role}`
+      `${artifact.slots.shinRight.dimensions[0] - 1 - voxel.x}:${voxel.y}:${voxel.z}:${voxel.role}`
     ));
 
     assert.ok(mirroredRight.length > 0);

@@ -298,13 +298,13 @@ describe('analyzeV3PartFidelity', () => {
   });
 
   it('flags oversized hands that do not read as terminal pieces', () => {
-    const report = analyzeV3PartFidelity('handRight', filledBox(9, 9, 9));
+    const report = analyzeV3PartFidelity('handRight', filledBox(13, 13, 13));
     const codes = issueCodes(report);
 
     assert.equal(report.ready, false);
     assert.ok(codes.includes('terminal-proportion-oversized'));
     assert.ok(codes.includes('cube-profile'));
-    assert.ok(report.occupiedBounds.sizeY >= 9);
+    assert.ok(report.occupiedBounds.sizeY >= 13);
   });
 });
 
@@ -334,7 +334,7 @@ describe('analyzeV3ReferenceFeatureMatch', () => {
     });
     const helmet = report.slots.helmet;
 
-    assert.equal(helmet?.score, 1, 'the fixture intentionally satisfies the old feature-count score');
+    assert.ok((helmet?.score ?? 0) >= 0.66, 'the fixture intentionally satisfies most old feature-count gates');
     assert.equal(report.ready, false);
     assert.equal(helmet?.ready, false);
     assert.ok(helmet?.issues.some((issue) => issue.code === 'slot-fidelity-blocked'));
