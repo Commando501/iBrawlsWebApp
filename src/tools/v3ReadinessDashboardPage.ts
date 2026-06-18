@@ -72,6 +72,8 @@ const downloadBaselineButton = document.getElementById('downloadBaseline') as HT
 const copyBaselineButton = document.getElementById('copyBaseline') as HTMLButtonElement;
 const downloadCalibrationButton = document.getElementById('downloadCalibration') as HTMLButtonElement;
 const copyCalibrationButton = document.getElementById('copyCalibration') as HTMLButtonElement;
+const downloadCalibrationJsonButton = document.getElementById('downloadCalibrationJson') as HTMLButtonElement;
+const copyCalibrationJsonButton = document.getElementById('copyCalibrationJson') as HTMLButtonElement;
 
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -361,6 +363,18 @@ function renderCalibration(): void {
   calibrationReport.textContent = formatV3AegisCalibrationReport(latestCalibrationReport);
 }
 
+function buildCalibrationJsonExport(): string {
+  return JSON.stringify({
+    kind: 'v3-aegis-calibration-report',
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    status: latestCalibrationReport?.hardGateStatus ?? 'missing',
+    sourceKind: latestCalibrationReport?.sourceKind ?? 'none',
+    report: latestCalibrationReport,
+    issue: latestCalibrationReport ? undefined : 'No V3 Aegis calibration report is available. Load the canonical OBJ reference first.',
+  }, null, 2);
+}
+
 function renderReferenceSummary(): void {
   if (referenceLoadError) {
     referenceSummary.textContent = referenceLoadError;
@@ -621,15 +635,6 @@ function frame(time: number): void {
 referenceInput.addEventListener('change', () => {
   const file = referenceInput.files?.[0];
   if (!file) return;
-  loadReference(file).catch((error) => {
-    latestReferenceMetadata = null;
-    latestComparison = null;
-    latestReferenceProportionBands = null;
-    referenceAcknowledged = false;
-    referenceAcknowledgedAt = undefined;
-    referenceLoadError = error instanceof Error ? error.message : String(error);
-    referenceAcknowledgementIssue = null;
-    renderDashboard();
   handleReferenceFile(file);
 });
 
@@ -751,6 +756,19 @@ copyCalibrationButton.addEventListener('click', () => {
     ? formatV3AegisCalibrationReport(latestCalibrationReport)
     : 'No V3 Aegis calibration report is available. Load the canonical OBJ reference first.';
   navigator.clipboard?.writeText(contents).catch(() => undefined);
+});
+
+downloadCalibrationJsonButton.addEventListener('click', () => {
+  const url = URL.createObjectURL(new Blob([buildCalibrationJsonExport()], { type: 'application/json' }));
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = 'v3-aegis-calibration-report.json';
+  anchor.click();
+  URL.revokeObjectURL(url);
+});
+
+copyCalibrationJsonButton.addEventListener('click', () => {
+  navigator.clipboard?.writeText(buildCalibrationJsonExport()).catch(() => undefined);
 });
 
 window.addEventListener('resize', renderComparison);

@@ -40,6 +40,8 @@ test('buildV3RuntimeSmokeChecklist covers every required Phase 31 browser surfac
   assert.ok(dashboardItem?.expectedText.includes('Calibration Candidates'));
   assert.ok(dashboardItem?.expectedText.includes('Download Calibration Report'));
   assert.ok(dashboardItem?.expectedText.includes('Copy Calibration Report'));
+  assert.ok(dashboardItem?.expectedText.includes('Download Calibration JSON'));
+  assert.ok(dashboardItem?.expectedText.includes('Copy Calibration JSON'));
   assert.ok(performanceItems.every((item) => item.expectedText.includes('Phase 26 Ready')));
   assert.ok(performanceItems.every((item) => item.expectedText.includes('visual pass')));
   assert.ok(performanceItems.every((item) => item.expectedText.includes('motion pass')));

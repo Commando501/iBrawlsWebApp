@@ -24,6 +24,7 @@ import {
   createV3SculptedShell,
 } from './v3ArmorSculpt';
 import { getV3CharacterPartBounds } from './v3PartBounds';
+import { V3_AEGIS_PART_SPECS } from './v3AegisSuitParts';
 import {
   V3_PRODUCTION_QUALITY_THRESHOLDS,
   analyzeV3VoxelQuality,
@@ -225,6 +226,36 @@ describe('V3 armor sculpt helpers', () => {
 });
 
 describe('buildV3SpartanModel', () => {
+  it('bakes the accepted OBJ base-envelope calibration into built-in Aegis specs with hard-gate correction', () => {
+    const expected = {
+      helmet: { dimensions: [10, 8, 8], position: [-0.2392, 1.56, -0.19] },
+      neck: { dimensions: [6, 4, 6], position: [-0.1592, 1.39, -0.15] },
+      chest: { dimensions: [16, 15, 9], position: [-0.4174, 0.97, -0.22] },
+      shoulderLeft: { dimensions: [7, 5, 8], position: [-0.6216, 1.24, -0.19] },
+      shoulderRight: { dimensions: [7, 5, 8], position: [0.2516, 1.24, -0.19] },
+      upperArmLeft: { dimensions: [4, 9, 5], position: [-0.4499, 0.95, -0.12] },
+      upperArmRight: { dimensions: [4, 9, 5], position: [0.2299, 0.95, -0.12] },
+      forearmLeft: { dimensions: [4, 9, 5], position: [-0.4449, 0.54, -0.12] },
+      forearmRight: { dimensions: [4, 9, 5], position: [0.2249, 0.54, -0.12] },
+      handLeft: { dimensions: [3, 4, 4], position: [-0.4149, 0.3, -0.1] },
+      handRight: { dimensions: [3, 4, 4], position: [0.2549, 0.3, -0.1] },
+      pelvis: { dimensions: [13, 6, 8], position: [-0.3283, 0.78, -0.19] },
+      thighLeft: { dimensions: [4, 10, 6], position: [-0.2499, 0.38, -0.14] },
+      thighRight: { dimensions: [4, 10, 6], position: [0.0299, 0.38, -0.14] },
+      shinLeft: { dimensions: [4, 10, 6], position: [-0.2499, 0, -0.14] },
+      shinRight: { dimensions: [4, 10, 6], position: [0.0299, 0, -0.14] },
+      footLeft: { dimensions: [6, 3, 8], position: [-0.2799, -0.04, -0.09] },
+      footRight: { dimensions: [6, 3, 8], position: [-0.0001, -0.04, -0.09] },
+      back: { dimensions: [8, 12, 4], position: [-0.1875, 1.04, -0.34] },
+    } as const;
+
+    for (const [slot, spec] of Object.entries(expected)) {
+      const actual = V3_AEGIS_PART_SPECS[slot as keyof typeof V3_AEGIS_PART_SPECS];
+      assert.deepEqual(actual.dimensions, spec.dimensions, `${slot} dimensions should match calibrated OBJ envelope`);
+      assert.deepEqual(actual.position, spec.position, `${slot} position should match calibrated OBJ envelope`);
+    }
+  });
+
   it('uses gridScale 2 for every built-in V3 character part', () => {
     const model = buildV3SpartanModel({ isEnemy: false, customHue: 192 });
     const partGroups = model.userData.v3PartGroups as Record<string, THREE.Group>;
