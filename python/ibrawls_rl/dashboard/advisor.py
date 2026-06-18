@@ -26,7 +26,11 @@ _LEVEL_RANK = {"bad": 3, "warn": 2, "info": 1, "good": 0}
 # src/sim/env/observation.ts (OBS_DIM). The advisor compares saved checkpoints
 # against these to catch incompatible warm-starts BEFORE a run dies at startup.
 EXPECTED_ACTION_NVEC = (9, 4, 4, 2, 2, 2)
-OBS_DIM_BASE = 140
+EXPECTED_OBS_DIM_BASE_BY_VERSION = {
+    1: 140,
+    2: 152,
+    3: 172,
+}
 RECOMMENDED_LONE_WOLF_MIX = ["1v1x16", "1v2x6", "1v3x6", "1v7x2", "ffa4x6", "ffa8x4"]
 
 
@@ -57,6 +61,15 @@ def _append_only_action_head_migratable(old: tuple[int, ...], new: tuple[int, ..
         return False
     diffs = [n - o for o, n in zip(old, new) if o != n]
     return bool(diffs) and all(diff == 1 for diff in diffs)
+
+
+def _obs_dim_base_for_version(version: int) -> int:
+    version = max(1, int(version or 1))
+    if version >= 3:
+        return EXPECTED_OBS_DIM_BASE_BY_VERSION[3]
+    if version >= 2:
+        return EXPECTED_OBS_DIM_BASE_BY_VERSION[2]
+    return EXPECTED_OBS_DIM_BASE_BY_VERSION[1]
 
 
 def _last(series: Series, key: str) -> float | None:
@@ -231,12 +244,8 @@ def advise(
 
     # ---------- init_model compatibility (catches dead-on-arrival warm starts) ----------
     init_model = str(values.get("init_model") or "").strip()
-    if mode == "combat" and int(_num(values, "observation_version", 1)) > 1 and init_model:
-        add("bad", "observation v2 needs a fresh checkpoint family",
-            "observation_version=2 changes the policy input layer for full FFA threat visibility. "
-            "Do not warm-start an observation-v1 model into it unless a dedicated input-layer "
-            "migration is added.",
-            {"init_model": ""})
+    observation_version = max(1, int(_num(values, "observation_version", 1)))
+    expected_obs_base = _obs_dim_base_for_version(observation_version)
     if init_model and project_dir:
         path = init_model if os.path.isabs(init_model) else os.path.join(project_dir, init_model)
         if not os.path.exists(path):
@@ -262,19 +271,28 @@ def advise(
                             "Train fresh.", {"init_model": ""})
             if info and info.get("obs_dim"):
                 model_obs = int(info["obs_dim"])
-                if model_obs % OBS_DIM_BASE == 0:
-                    model_stack = model_obs // OBS_DIM_BASE
+                if model_obs % expected_obs_base == 0:
+                    model_stack = model_obs // expected_obs_base
                     if model_stack != frame_stack:
                         add("bad", "frame_stack doesn't match init_model",
                             f"The saved model expects {model_obs}-dim observations "
-                            f"(frame_stack {model_stack}) but the config says "
-                            f"frame_stack={frame_stack} — the first layer won't load. Match "
-                            "the model's stack, or clear init_model to change the stack.",
+                            f"(observation_version {observation_version}, frame_stack "
+                            f"{model_stack}) but the config says frame_stack={frame_stack} — "
+                            "the first layer won't load. Match the model's stack, or clear "
+                            "init_model to change the stack.",
                             {"frame_stack": model_stack})
                 else:
+                    matching = [
+                        f"obs v{version}/stack {model_obs // base}"
+                        for version, base in EXPECTED_OBS_DIM_BASE_BY_VERSION.items()
+                        if model_obs % base == 0
+                    ]
+                    prior = f" It looks like {', '.join(matching)}." if matching else ""
                     add("bad", "init_model observation layout is incompatible",
-                        f"Saved obs dim {model_obs} isn't a stack of the live {OBS_DIM_BASE} — "
-                        "the observation encoding changed since it was trained. Train fresh.",
+                        f"Saved obs dim {model_obs} isn't a stack of observation_version="
+                        f"{observation_version}'s live base {expected_obs_base}.{prior} "
+                        "Use a checkpoint from the same observation version and frame stack, "
+                        "or clear init_model to train a fresh checkpoint family.",
                         {"init_model": ""})
 
     # ---------- league (the self-play brittleness cure) ----------

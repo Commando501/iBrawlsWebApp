@@ -9,7 +9,30 @@ import {
   buildV3PerformanceSmokeScene,
   createV3PerformanceSmokeCombatants,
 } from './v3PerformanceSmoke';
-import { V3_QUALITY_TIERS } from '../components/v3/v3ModelTypes';
+import { V3_QUALITY_TIERS, type V3QualityTier } from '../components/v3/v3ModelTypes';
+
+type V3SmokeScene = ReturnType<typeof buildV3PerformanceSmokeScene>;
+type V3SmokeReport = ReturnType<typeof buildV3PerformanceSmokeReport>;
+
+const smokeScenes = new Map<V3QualityTier, V3SmokeScene>();
+const smokeReports = new Map<V3QualityTier, V3SmokeReport>();
+
+const getSmokeScene = (qualityTier: V3QualityTier): V3SmokeScene => {
+  const cached = smokeScenes.get(qualityTier);
+  if (cached) return cached;
+  const smoke = buildV3PerformanceSmokeScene({ qualityTier });
+  smokeScenes.set(qualityTier, smoke);
+  return smoke;
+};
+
+const getSmokeReport = (qualityTier: V3QualityTier): V3SmokeReport => {
+  const cached = smokeReports.get(qualityTier);
+  if (cached) return cached;
+  const smoke = getSmokeScene(qualityTier);
+  const report = buildV3PerformanceSmokeReport(smoke);
+  smokeReports.set(qualityTier, report);
+  return report;
+};
 
 test('createV3PerformanceSmokeCombatants builds eight V3 combatants with mixed weapons and role paint', () => {
   const scene = new THREE.Scene();
@@ -26,7 +49,7 @@ test('createV3PerformanceSmokeCombatants builds eight V3 combatants with mixed w
 });
 
 test('buildV3PerformanceSmokeScene creates a nonblank scene with V3 budget metadata', () => {
-  const { scene, camera, combatants, budget } = buildV3PerformanceSmokeScene({ qualityTier: 'mobileLow' });
+  const { scene, camera, combatants, budget } = getSmokeScene('mobileLow');
 
   assert.ok(scene.children.length > 0);
   assert.ok(camera.position.length() > 0);
@@ -37,8 +60,8 @@ test('buildV3PerformanceSmokeScene creates a nonblank scene with V3 budget metad
 
 test('buildV3PerformanceSmokeReport gates every quality tier against production smoke budgets', () => {
   for (const tier of V3_QUALITY_TIERS) {
-    const smoke = buildV3PerformanceSmokeScene({ qualityTier: tier });
-    const report = buildV3PerformanceSmokeReport(smoke);
+    const smoke = getSmokeScene(tier);
+    const report = getSmokeReport(tier);
 
     assert.equal(report.qualityTier, tier);
     assert.equal(report.combatantCount, 8);
@@ -68,8 +91,8 @@ test('buildV3PerformanceSmokeReport gates fixed-angle V3 visual QA readiness', (
 });
 
 test('buildV3PerformanceSmokeRuntimeReport requires measured frame timing evidence', () => {
-  const smoke = buildV3PerformanceSmokeScene({ qualityTier: 'desktop' });
-  const staticReport = buildV3PerformanceSmokeReport(smoke);
+  const smoke = getSmokeScene('desktop');
+  const staticReport = getSmokeReport('desktop');
 
   const pending = buildV3PerformanceSmokeRuntimeReport(smoke, undefined, staticReport);
   assert.equal(pending.ready, false);

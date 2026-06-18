@@ -131,6 +131,25 @@ def test_advisor_flags_frame_stack_mismatch(tmp_path):
     assert f["fixes"] == {"frame_stack": 4}
 
 
+def test_advisor_allows_same_observation_v3_warm_start(tmp_path):
+    model = os.path.join(tmp_path, "obs_v3_stack4.zip")
+    _fake_model_zip(model, nvec=[9, 4, 4, 2, 2, 2], obs_dim=172 * 4)
+
+    out = advise({}, _values(
+        init_model="obs_v3_stack4.zip",
+        frame_stack=4,
+        observation_version=3,
+    ), cpus=16, project_dir=str(tmp_path))
+
+    bad_titles = [
+        f["title"]
+        for f in out["findings"]
+        if f["level"] == "bad"
+        and ("init_model" in f["title"] or "observation" in f["title"].lower())
+    ]
+    assert bad_titles == []
+
+
 def test_advisor_suggests_league_for_pure_selfplay():
     out = advise({}, _values(league_worlds=0), cpus=16)
     f = next(x for x in out["findings"] if "Pure self-play" in x["title"])

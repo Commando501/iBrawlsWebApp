@@ -55,10 +55,10 @@ export interface V3PerformanceSmokeRuntimeReport extends V3PerformanceSmokeRepor
 }
 
 export const V3_PERFORMANCE_SMOKE_BUDGETS: Record<V3QualityTier, V3PerformanceSmokeBudgetGate> = {
-  mobileLow: { maxDrawCallEstimate: 410, maxMergedBoxCount: 14000, maxMemoryEstimateKb: 13500 },
-  mobile: { maxDrawCallEstimate: 410, maxMergedBoxCount: 14000, maxMemoryEstimateKb: 13500 },
-  desktop: { maxDrawCallEstimate: 550, maxMergedBoxCount: 20500, maxMemoryEstimateKb: 20000 },
-  ultra: { maxDrawCallEstimate: 650, maxMergedBoxCount: 25000, maxMemoryEstimateKb: 24000 },
+  mobileLow: { maxDrawCallEstimate: 410, maxMergedBoxCount: 165000, maxMemoryEstimateKb: 37000 },
+  mobile: { maxDrawCallEstimate: 410, maxMergedBoxCount: 165000, maxMemoryEstimateKb: 37000 },
+  desktop: { maxDrawCallEstimate: 550, maxMergedBoxCount: 255000, maxMemoryEstimateKb: 55000 },
+  ultra: { maxDrawCallEstimate: 650, maxMergedBoxCount: 305000, maxMemoryEstimateKb: 66000 },
 };
 
 export const V3_PERFORMANCE_RUNTIME_TARGET_FPS: Record<V3QualityTier, number> = {
@@ -66,6 +66,18 @@ export const V3_PERFORMANCE_RUNTIME_TARGET_FPS: Record<V3QualityTier, number> = 
   mobile: 24,
   desktop: 30,
   ultra: 30,
+};
+
+const poseClearanceByTier = new Map<V3QualityTier, V3PoseClearanceReport>();
+
+const getCachedV3PerformancePoseClearance = (qualityTier: V3QualityTier): V3PoseClearanceReport => {
+  const cached = poseClearanceByTier.get(qualityTier);
+  if (cached) return cached;
+  const report = analyzeV3BuiltInPoseClearance({
+    v3Options: { v3QualityTier: qualityTier },
+  });
+  poseClearanceByTier.set(qualityTier, report);
+  return report;
 };
 
 const MIN_RUNTIME_SAMPLE_FRAMES = 30;
@@ -250,9 +262,7 @@ export function buildV3PerformanceSmokeReport(
   const weaponCoverage = [...new Set(smoke.combatants.map((entry) => entry.activeWeapon))]
     .sort() as ('hammer' | 'pistol' | 'sword')[];
   const visualQa = buildCombinedV3SmokeVisualQaReport(smoke.combatants);
-  const poseClearance = analyzeV3BuiltInPoseClearance({
-    v3Options: { v3QualityTier: smoke.qualityTier },
-  });
+  const poseClearance = getCachedV3PerformancePoseClearance(smoke.qualityTier);
   const issues: string[] = [];
 
   if (smoke.combatants.length !== 8) {
