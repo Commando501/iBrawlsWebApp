@@ -7,6 +7,7 @@ import { type SwordLungeCurrentTrailStyle } from './combatGeometry';
 import { updateRunnerVisualStateForGroup } from './runnerVisualState';
 import { type GrifballRuntimeState } from './runtimeState';
 import { type GrifballThreeRefs } from './threeRefs';
+import { syncV3DeathVoxelBurstForCombatant } from './v3DeathVoxelBurstRuntime';
 
 export function updateRosterCombatantVisualsForState({
   refs,
@@ -150,6 +151,15 @@ export function updateRosterCombatantVisualsForState({
     }
 
     const alive = player.hp > 0 && player.respawnTimer <= 0;
+    syncV3DeathVoxelBurstForCombatant({
+      refs,
+      id: `combatant:${clientId}`,
+      model: meshes.group,
+      weapons: [meshes.hammer, meshes.sword, meshes.pistol],
+      alive,
+      dt,
+      qualityTier: meshes.group.userData.appliedV3QualityTier,
+    });
     meshes.group.visible = alive;
     meshes.hammer.visible = alive && player.activeWeapon === 'hammer';
     meshes.sword.visible = alive && player.activeWeapon === 'sword';

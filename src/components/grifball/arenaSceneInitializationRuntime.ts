@@ -3,6 +3,7 @@ import { getSkyboxTexture } from '../../game/skyboxTextures';
 import { type CustomMapData, type UniversalSettings } from '../../types';
 import { buildSkyAtmosphereForRefs } from './skyAtmosphereRuntime';
 import { type GrifballThreeRefs } from './threeRefs';
+import { clearAllV3DeathVoxelBursts } from './v3DeathVoxelBurstRuntime';
 
 export interface InitializedGrifballScene {
   scene: THREE.Scene;
@@ -30,6 +31,7 @@ export function initializeGrifballSceneForRefs({
   adminSettings: UniversalSettings;
   resetTransientVfx: () => void;
 }): InitializedGrifballScene {
+  clearAllV3DeathVoxelBursts(refs);
   const scene = new THREE.Scene();
   refs.scene = scene;
 

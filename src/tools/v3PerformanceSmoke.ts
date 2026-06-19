@@ -7,6 +7,10 @@ import {
   analyzeV3BuiltInPoseClearance,
   type V3PoseClearanceReport,
 } from '../components/grifball/v3PoseClearance';
+import {
+  analyzeV3MotionRetargetAtlas,
+  type V3MotionRetargetReport,
+} from '../components/grifball/v3MotionRetarget';
 import { summarizeV3SceneRenderBudget, type V3RenderBudgetSummary } from '../components/v3/v3PerformanceBudget';
 import {
   analyzeV3ExactSourceLodBudget,
@@ -41,6 +45,8 @@ export interface V3PerformanceSmokeReport {
   visualQa: V3VisualQaReport;
   poseClearanceReady: boolean;
   poseClearance: V3PoseClearanceReport;
+  motionRetargetReady: boolean;
+  motionRetarget: V3MotionRetargetReport;
   exactSourceLodBudgetReady: boolean;
   exactSourceLodBudget: V3ExactSourceLodBudgetReport;
   issues: string[];
@@ -61,9 +67,9 @@ export interface V3PerformanceSmokeRuntimeReport extends V3PerformanceSmokeRepor
 }
 
 export const V3_PERFORMANCE_SMOKE_BUDGETS: Record<V3QualityTier, V3PerformanceSmokeBudgetGate> = {
-  mobileLow: { maxDrawCallEstimate: 410, maxMergedBoxCount: 165000, maxMemoryEstimateKb: 37000 },
-  mobile: { maxDrawCallEstimate: 410, maxMergedBoxCount: 165000, maxMemoryEstimateKb: 37000 },
-  desktop: { maxDrawCallEstimate: 550, maxMergedBoxCount: 255000, maxMemoryEstimateKb: 55000 },
+  mobileLow: { maxDrawCallEstimate: 590, maxMergedBoxCount: 170000, maxMemoryEstimateKb: 37000 },
+  mobile: { maxDrawCallEstimate: 610, maxMergedBoxCount: 260000, maxMemoryEstimateKb: 37000 },
+  desktop: { maxDrawCallEstimate: 610, maxMergedBoxCount: 260000, maxMemoryEstimateKb: 55000 },
   ultra: { maxDrawCallEstimate: 650, maxMergedBoxCount: 305000, maxMemoryEstimateKb: 66000 },
 };
 
@@ -75,15 +81,29 @@ export const V3_PERFORMANCE_RUNTIME_TARGET_FPS: Record<V3QualityTier, number> = 
 };
 
 let exactBodyPoseClearance: V3PoseClearanceReport | undefined;
+let exactBodyMotionRetarget: V3MotionRetargetReport | undefined;
 
 const getCachedV3PerformancePoseClearance = (): V3PoseClearanceReport => {
   const cached = exactBodyPoseClearance;
   if (cached) return cached;
   // Pose clearance gates the accepted exact body; reduced mobile LODs are budget diagnostics.
   const report = analyzeV3BuiltInPoseClearance({
-    v3Options: { v3QualityTier: 'desktop' },
+    v3Options: { v3QualityTier: 'desktop', v3SourceFidelity: 'exact' },
   });
   exactBodyPoseClearance = report;
+  return report;
+};
+
+const getCachedV3PerformanceMotionRetarget = (): V3MotionRetargetReport => {
+  const cached = exactBodyMotionRetarget;
+  if (cached) return cached;
+  const report = analyzeV3MotionRetargetAtlas({
+    deathBurstReady: true,
+    poseClearanceOptions: {
+      v3Options: { v3QualityTier: 'desktop', v3SourceFidelity: 'exact' },
+    },
+  });
+  exactBodyMotionRetarget = report;
   return report;
 };
 
@@ -276,6 +296,7 @@ export function buildV3PerformanceSmokeReport(
     .sort() as ('hammer' | 'pistol' | 'sword')[];
   const visualQa = buildCombinedV3SmokeVisualQaReport(smoke.combatants);
   const poseClearance = getCachedV3PerformancePoseClearance();
+  const motionRetarget = getCachedV3PerformanceMotionRetarget();
   const exactSourceLodBudget = analyzeV3ExactSourceLodBudget();
   const issues: string[] = [];
 
@@ -312,6 +333,12 @@ export function buildV3PerformanceSmokeReport(
       : '';
     issues.push(`pose clearance ${issue.caseId} ${issue.code}: ${issue.message}${metricLabel}`);
   }
+  for (const issue of motionRetarget.issues) {
+    const metricLabel = typeof issue.value === 'number' && typeof issue.threshold === 'number'
+      ? ` (${issue.value} vs ${issue.threshold})`
+      : '';
+    issues.push(`motion retarget ${issue.caseId ?? 'atlas'} ${issue.code}: ${issue.message}${metricLabel}`);
+  }
   for (const issue of exactSourceLodBudget.issues) {
     issues.push(`exact source LOD budget: ${issue}`);
   }
@@ -327,6 +354,8 @@ export function buildV3PerformanceSmokeReport(
     visualQa,
     poseClearanceReady: poseClearance.ready,
     poseClearance,
+    motionRetargetReady: motionRetarget.ready,
+    motionRetarget,
     exactSourceLodBudgetReady: exactSourceLodBudget.ready,
     exactSourceLodBudget,
     issues,

@@ -23,6 +23,7 @@ test('buildV3RuntimeSmokeChecklist covers every required Phase 31 browser surfac
   assert.ok(routes.includes('/armor-model-editor.html'));
   assert.ok(routes.includes('/v3-asset-preview.html'));
   assert.ok(routes.includes('/v3-readiness-dashboard.html'));
+  assert.ok(routes.includes('/v3-animation-atlas-smoke.html'));
   assert.ok(routes.includes('/v3-performance-smoke.html?tier=mobileLow'));
   assert.ok(routes.includes('/v3-performance-smoke.html?tier=desktop'));
   assert.ok(mainMenuItem?.expectedText.includes('V1'));
@@ -48,9 +49,17 @@ test('buildV3RuntimeSmokeChecklist covers every required Phase 31 browser surfac
   assert.ok(dashboardItem?.expectedText.includes('Reference Feature Match'));
   assert.ok(dashboardItem?.expectedText.includes('Exact OBJ Voxel Source'));
   assert.ok(dashboardItem?.expectedText.includes('Segmentation Review'));
-  assert.ok(performanceItems.every((item) => item.expectedText.includes('Phase 26 Ready')));
+  assert.ok(dashboardItem?.expectedText.includes('Motion Retarget'));
+  const atlasItem = checklist.find((item) => item.id === 'animation-atlas-smoke-local-tooling');
+  assert.ok(atlasItem?.expectedText.includes('V3 Animation Atlas Smoke'));
+  assert.ok(atlasItem?.expectedText.includes('Play All'));
+  assert.ok(atlasItem?.expectedText.includes('Normalized Review'));
+  assert.ok(atlasItem?.expectedText.includes('Runtime Simulation'));
+  assert.ok(atlasItem?.expectedText.includes('Hammer Strike'));
+  assert.ok(performanceItems.every((item) => item.expectedText.includes('Phase 41 Ready')));
   assert.ok(performanceItems.every((item) => item.expectedText.includes('visual pass')));
   assert.ok(performanceItems.every((item) => item.expectedText.includes('motion pass')));
+  assert.ok(performanceItems.every((item) => item.expectedText.includes('motion-retarget pass')));
   assert.ok(performanceItems.every((item) => item.expectedText.includes('LOD pass')));
   assert.ok(editorItem?.expectedText.includes('Motion QA'));
   assert.ok(editorItem?.expectedText.includes('Check Active Pose'));
@@ -69,6 +78,7 @@ test('buildV3RuntimeSmokeChecklist covers every required Phase 31 browser surfac
 const routeHasCanvas = (path: string): boolean =>
   path === '/v3-asset-preview.html' ||
   path === '/v3-readiness-dashboard.html' ||
+  path === '/v3-animation-atlas-smoke.html' ||
   path.startsWith('/v3-performance-smoke.html');
 
 const completeObservations = (): V3RuntimeSmokeObservation[] =>

@@ -111,6 +111,7 @@ const EVIDENCE_TO_CATEGORY: Record<V3ReadinessEvidenceKey, V3ReadinessBaselineCa
   referenceVoxelSource: 'baseProportions',
   visualQa: 'builtInArmorFidelity',
   poseClearance: 'poseAtlas',
+  motionRetarget: 'attackMovementAnimation',
   performanceSmoke: 'performanceSmoke',
 };
 
@@ -121,6 +122,7 @@ const EVIDENCE_LABELS: Record<V3ReadinessEvidenceKey, string> = {
   referenceVoxelSource: 'Reference voxel source',
   visualQa: 'Visual QA',
   poseClearance: 'Pose clearance',
+  motionRetarget: 'Motion retarget',
   performanceSmoke: 'Performance smoke',
 };
 
@@ -280,6 +282,7 @@ function normalizeExport(raw: Record<string, unknown>): V3ReadinessDashboardExpo
       referenceVoxelSource: normalizeEvidenceEntry(evidence.referenceVoxelSource),
       visualQa: normalizeEvidenceEntry(evidence.visualQa),
       poseClearance: normalizeEvidenceEntry(evidence.poseClearance),
+      motionRetarget: normalizeEvidenceEntry(evidence.motionRetarget),
       performanceSmoke: normalizeEvidenceEntry(evidence.performanceSmoke),
       referenceComparison: normalizeReferenceComparison(evidence.referenceComparison),
     },
@@ -301,6 +304,7 @@ function normalizeExport(raw: Record<string, unknown>): V3ReadinessDashboardExpo
     referenceVoxelSource: normalized.evidence.referenceVoxelSource,
     visualQa: normalized.evidence.visualQa,
     poseClearance: normalized.evidence.poseClearance,
+    motionRetarget: normalized.evidence.motionRetarget,
     performanceSmoke: normalized.evidence.performanceSmoke,
     referenceComparison: normalized.evidence.referenceComparison,
     exportedAt: normalized.exportedAt,
@@ -322,6 +326,7 @@ function categoryForIssue(issue: V3ReadinessDashboardIssue): V3ReadinessBaseline
     return EVIDENCE_TO_CATEGORY[issue.source as V3ReadinessEvidenceKey];
   }
   if (issue.id.includes('performanceSmoke')) return 'performanceSmoke';
+  if (issue.id.includes('motionRetarget')) return 'attackMovementAnimation';
   if (issue.id.includes('poseClearance')) return 'poseAtlas';
   if (issue.id.includes('visualQa')) return 'builtInArmorFidelity';
   if (issue.id.includes('suitFidelity')) return 'baseProportions';

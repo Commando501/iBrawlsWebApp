@@ -7,7 +7,7 @@ import {
 import type { UniversalSettings } from '../../types';
 import type { WeaponPose } from './attackAnimationPresets';
 
-export const V3_ANIMATION_PROFILE_VERSION = 1;
+export const V3_ANIMATION_PROFILE_VERSION = 2;
 
 export type V3AnimationWeaponId = 'hammer' | 'sword' | 'pistol';
 export type V3AnimationTrackId =

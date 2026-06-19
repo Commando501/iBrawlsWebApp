@@ -14,6 +14,10 @@ import { type CustomMapData } from '../../types';
 import { getMultiplayerSpawnPoint } from './arenaSpawns';
 import { type GrifballRuntimeState } from './runtimeState';
 import { type GrifballThreeRefs } from './threeRefs';
+import {
+  clearV3DeathVoxelBurstForCombatant,
+  syncV3DeathVoxelBurstForCombatant,
+} from './v3DeathVoxelBurstRuntime';
 
 type RemoteCombatantUpdate = {
   controller?: 'ai' | 'remote';
@@ -192,7 +196,10 @@ export function createOrUpdateRemoteCombatantForState({
     meshes?.group.userData.appliedV3Distance !== v3Options.v3Distance
   );
   if (!meshes || meshes.group.userData.appliedHue !== hue || meshes.group.userData.appliedLoadoutKey !== visualLoadoutKey || qualityChanged) {
-    if (meshes?.group) scene.remove(meshes.group);
+    if (meshes?.group) {
+      clearV3DeathVoxelBurstForCombatant(refs, `combatant:${clientId}`);
+      scene.remove(meshes.group);
+    }
     meshes = createCombatantMeshRig(scene, hue, false, visualLoadout, v3Options, teamOutlineTeam, state.settings);
     meshes.group.userData.appliedLoadoutKey = visualLoadoutKey;
     refs.otherPlayerMeshes.set(clientId, meshes);
@@ -211,10 +218,19 @@ export function createOrUpdateRemoteCombatantForState({
   }
 
   const activeWeapon = playerState.activeWeapon as string;
-  hammer.visible = playerState.hp > 0 && playerState.respawnTimer <= 0 && activeWeapon === 'hammer';
-  sword.visible = playerState.hp > 0 && playerState.respawnTimer <= 0 && activeWeapon === 'sword';
+  const alive = playerState.hp > 0 && playerState.respawnTimer <= 0;
+  syncV3DeathVoxelBurstForCombatant({
+    refs,
+    id: `combatant:${clientId}`,
+    model: group,
+    weapons: [hammer, sword, pistol],
+    alive,
+    qualityTier: group.userData.appliedV3QualityTier,
+  });
+  hammer.visible = alive && activeWeapon === 'hammer';
+  sword.visible = alive && activeWeapon === 'sword';
   if (pistol) {
-    pistol.visible = playerState.hp > 0 && playerState.respawnTimer <= 0 && activeWeapon === 'pistol';
+    pistol.visible = alive && activeWeapon === 'pistol';
   }
-  group.visible = playerState.hp > 0 && playerState.respawnTimer <= 0;
+  group.visible = alive;
 }

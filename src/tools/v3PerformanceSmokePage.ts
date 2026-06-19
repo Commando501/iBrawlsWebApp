@@ -43,12 +43,13 @@ function publishReport(time?: number) {
     : undefined;
   latestReport = buildV3PerformanceSmokeRuntimeReport(current, sample, staticReport);
   const status = latestReport.ready
-    ? 'Phase 26 Ready'
+    ? 'Phase 41 Ready'
     : latestReport.runtimeReady
-      ? 'Phase 26 Blocked'
-      : 'Phase 26 Sampling';
+      ? 'Phase 41 Blocked'
+      : 'Phase 41 Sampling';
   const visualLabel = latestReport.visualQaReady ? 'visual pass' : 'visual fail';
   const motionLabel = latestReport.poseClearanceReady ? 'motion pass' : 'motion fail';
+  const retargetLabel = latestReport.motionRetargetReady ? 'motion-retarget pass' : 'motion-retarget review';
   const lodLabel = latestReport.exactSourceLodBudgetReady ? 'LOD pass' : 'LOD review';
   const fpsLabel = latestReport.sampledFrames > 0
     ? latestReport.averageFps.toFixed(1)
@@ -56,7 +57,7 @@ function publishReport(time?: number) {
   const frameLabel = latestReport.averageFrameMs > 0
     ? latestReport.averageFrameMs.toFixed(1)
     : 'sampling';
-  summary.textContent = `${status} | ${current.qualityTier} | ${visualLabel} | ${motionLabel} | ${lodLabel} | models ${current.budget.modelCount} | parts ${current.budget.partCount} | draw ${current.budget.drawCallEstimate} | fps ${fpsLabel} | frame ${frameLabel}ms`;
+  summary.textContent = `${status} | ${current.qualityTier} | ${visualLabel} | ${motionLabel} | ${retargetLabel} | ${lodLabel} | models ${current.budget.modelCount} | parts ${current.budget.partCount} | draw ${current.budget.drawCallEstimate} | fps ${fpsLabel} | frame ${frameLabel}ms`;
   (window as any).__IBRAWLS_V3_PERFORMANCE_SMOKE__ = latestReport;
 }
 

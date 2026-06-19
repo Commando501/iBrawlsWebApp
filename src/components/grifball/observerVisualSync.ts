@@ -6,6 +6,7 @@ import { type GrifballRuntimeState } from './runtimeState';
 import { updateRunnerVisualStateForGroup } from './runnerVisualState';
 import { type SpectateTargetData, type SpectateTargetRole } from './spectateTargets';
 import { type GrifballThreeRefs } from './threeRefs';
+import { syncV3DeathVoxelBurstForCombatant } from './v3DeathVoxelBurstRuntime';
 
 export function updateObserverCombatantVisualsForState({
   refs,
@@ -111,6 +112,15 @@ export function updateObserverCombatantVisualsForState({
       hp: hostData.hp,
       alive: hostData.hp > 0,
     });
+    syncV3DeathVoxelBurstForCombatant({
+      refs,
+      id: 'observer:host',
+      model: refs.hostGroup,
+      weapons: [refs.hostHammer, refs.hostSword],
+      alive: hostData.hp > 0,
+      dt,
+      qualityTier: refs.hostGroup.userData.appliedV3QualityTier,
+    });
   }
 
   if (refs.enemyGroup) {
@@ -192,6 +202,15 @@ export function updateObserverCombatantVisualsForState({
         carrying: state.grifball.ball.state === 'held' && !!enemyHolderId && state.grifball.ball.holderId === enemyHolderId,
         hp: clientData.hp,
         alive: clientData.hp > 0,
+      });
+      syncV3DeathVoxelBurstForCombatant({
+        refs,
+        id: 'observer:client',
+        model: refs.enemyGroup,
+        weapons: [refs.enemyHammer, refs.enemySword],
+        alive: clientData.hp > 0,
+        dt,
+        qualityTier: refs.enemyGroup.userData.appliedV3QualityTier,
       });
     }
   }

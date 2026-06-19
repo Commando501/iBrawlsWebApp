@@ -18,6 +18,7 @@ import { getCombatantWeaponMeshes } from './combatantMeshLookup';
 import { isV1CombatantModelSystem } from './grifballBallCarryVisuals';
 import { type GrifballRuntimeState } from './runtimeState';
 import { type GrifballThreeRefs } from './threeRefs';
+import { syncV3DeathVoxelBurstForCombatant } from './v3DeathVoxelBurstRuntime';
 
 const applyThirdPersonWeaponPose = (group: THREE.Group, pose: WeaponPose): void => {
   applyWeaponPose(group, toThirdPersonHandPose(pose));
@@ -47,10 +48,21 @@ export function updateMainAIWeaponAnimationsForState({
 
   if (state.isMultiplayer || !enemyHammerModel || !enemySwordModel || !mainAI) return;
 
-  enemyHammerModel.visible = mainAI.hp > 0 && mainAI.aiState !== 'RESPAWNING' && mainAI.activeWeapon === 'hammer';
-  enemySwordModel.visible = mainAI.hp > 0 && mainAI.aiState !== 'RESPAWNING' && mainAI.activeWeapon === 'sword';
+  const alive = mainAI.hp > 0 && mainAI.aiState !== 'RESPAWNING';
+  syncV3DeathVoxelBurstForCombatant({
+    refs,
+    id: 'combatant:main_ai',
+    model: enemyGroup,
+    weapons: [enemyHammerModel, enemySwordModel],
+    alive,
+    dt,
+    qualityTier: enemyGroup?.userData.appliedV3QualityTier,
+  });
 
-  if (mainAI.hp <= 0 || mainAI.aiState === 'RESPAWNING') {
+  enemyHammerModel.visible = alive && mainAI.activeWeapon === 'hammer';
+  enemySwordModel.visible = alive && mainAI.activeWeapon === 'sword';
+
+  if (!alive) {
     mainAI.weaponState = 'ready';
     mainAI.weaponTimer = 0;
     applyThirdPersonWeaponPose(enemyHammerModel, {

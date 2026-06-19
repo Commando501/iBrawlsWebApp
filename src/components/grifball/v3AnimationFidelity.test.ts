@@ -58,7 +58,7 @@ const assertReadableUpperBodyPose = (
 
 describe('V3 animation fidelity profiles', () => {
   it('declares a stable profile version and known editor track ids', () => {
-    assert.equal(V3_ANIMATION_PROFILE_VERSION, 1);
+    assert.equal(V3_ANIMATION_PROFILE_VERSION, 2);
     assert.equal(getV3AnimationTrackDefinition('hammer_windup').weapon, 'hammer');
     assert.equal(getV3AnimationTrackDefinition('sword_lunge').weapon, 'sword');
     assert.equal(getV3AnimationTrackDefinition('pistol_fire').weapon, 'pistol');

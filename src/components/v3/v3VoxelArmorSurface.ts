@@ -1,7 +1,11 @@
 import * as THREE from 'three';
 import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { VoxelData } from '../VoxelModels';
-import { getV3CachedMaterial } from './v3GeometryCache';
+import {
+  getOrCreateV3CachedGeometryEntries,
+  getV3CachedMaterial,
+  type V3CachedGeometryEntry,
+} from './v3GeometryCache';
 import { type V3QualityTier } from './v3ModelTypes';
 import {
   normalizeV3ArmorRenderStyle,
@@ -40,6 +44,8 @@ export interface V3ArmorSurfaceOptions {
   panelDepthStyle?: V3PanelDepthStyle;
   qualityTier?: V3QualityTier;
   pivot?: THREE.Vector3Tuple;
+  builtInGeometryCacheKey?: string;
+  cacheKey?: string;
 }
 
 export interface V3ArmorSurfaceReport {
@@ -474,7 +480,10 @@ function createVoxelEditGeometries(
   return byMaterial;
 }
 
-function addMergedMeshes(group: THREE.Group, geometriesByMaterial: Map<string, THREE.BufferGeometry[]>): void {
+function createMergedGeometryEntries(
+  geometriesByMaterial: Map<string, THREE.BufferGeometry[]>
+): V3CachedGeometryEntry[] {
+  const entries: V3CachedGeometryEntry[] = [];
   for (const [key, geometries] of geometriesByMaterial.entries()) {
     const [color, emissiveFlag] = key.split('|');
     const merged = geometries.length === 1 ? geometries[0] : BufferGeometryUtils.mergeGeometries(geometries, false);
@@ -485,10 +494,22 @@ function addMergedMeshes(group: THREE.Group, geometriesByMaterial: Map<string, T
     if (geometries.length > 1) {
       geometries.forEach((geometry) => geometry.dispose());
     }
-    const mesh = new THREE.Mesh(merged, getV3CachedMaterial(color, emissiveFlag === '1'));
+    entries.push({
+      materialKey: key,
+      color,
+      emissive: emissiveFlag === '1',
+      geometry: merged,
+    });
+  }
+  return entries;
+}
+
+function addMergedMeshes(group: THREE.Group, entries: readonly V3CachedGeometryEntry[]): void {
+  for (const entry of entries) {
+    const mesh = new THREE.Mesh(entry.geometry, getV3CachedMaterial(entry.color, entry.emissive));
     mesh.castShadow = true;
     mesh.receiveShadow = true;
-    mesh.userData.v3MaterialKey = key;
+    mesh.userData.v3MaterialKey = entry.materialKey;
     mesh.userData.v3CachedMaterial = true;
     group.add(mesh);
   }
@@ -507,11 +528,18 @@ export function createV3VoxelArmorGroup(
   const panelDepthStyle = normalizePanelDepthStyle(options.panelDepthStyle, renderStyle);
   const { panels, report } = buildSurface(voxels, renderStyle, panelCornerStyle, panelDepthStyle);
 
-  const geometriesByMaterial = renderStyle === 'voxelEdit'
-    ? createVoxelEditGeometries(voxels, { voxelScale, pivot })
-    : createSurfacePanelGeometries(panels, { voxelScale, panelCornerStyle, panelDepthStyle, pivot, qualityTier });
+  const createGeometryEntries = (): V3CachedGeometryEntry[] => {
+    const geometriesByMaterial = renderStyle === 'voxelEdit'
+      ? createVoxelEditGeometries(voxels, { voxelScale, pivot })
+      : createSurfacePanelGeometries(panels, { voxelScale, panelCornerStyle, panelDepthStyle, pivot, qualityTier });
+    return createMergedGeometryEntries(geometriesByMaterial);
+  };
+  const geometryCacheKey = options.builtInGeometryCacheKey ?? options.cacheKey;
+  const geometryEntries = geometryCacheKey
+    ? getOrCreateV3CachedGeometryEntries(geometryCacheKey, createGeometryEntries)
+    : createGeometryEntries();
 
-  addMergedMeshes(group, geometriesByMaterial);
+  addMergedMeshes(group, geometryEntries);
 
   group.userData.v3ArmorRenderStyle = renderStyle;
   group.userData.v3PanelCornerStyle = panelCornerStyle;

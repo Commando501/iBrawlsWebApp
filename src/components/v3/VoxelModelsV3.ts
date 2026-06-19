@@ -37,8 +37,13 @@ import {
 import {
   normalizeV3ArmorRenderStyle,
   normalizeV3QualityTier,
+  normalizeV3SourceFidelity,
   type V3RenderOptions,
 } from './v3QualityTiers';
+import {
+  deriveV3ExactSourceSlotBudget,
+} from './v3ExactSourceLod';
+import { V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE } from './v3AegisObjSurfaceVoxels.generated';
 import {
   V3_DETAIL_BONE_NAMES,
   V3_DETAIL_BONE_SPECS,
@@ -140,7 +145,11 @@ export function getV3BuiltinPartVoxels(
   slot: V3CharacterSlotId,
   customHue?: number,
   paintJob?: CharacterLoadout['paintJob'],
-  options: { gridScale?: V3BuiltinPartGridScale; qualityTier?: V3RenderOptions['v3QualityTier'] } = {}
+  options: {
+    gridScale?: V3BuiltinPartGridScale;
+    qualityTier?: V3RenderOptions['v3QualityTier'];
+    sourceFidelity?: V3RenderOptions['v3SourceFidelity'];
+  } = {}
 ): VoxelData[] {
   const part = BUILT_IN_V3_CHARACTER_PARTS.find((candidate) => candidate.slot === slot);
   if (!part) {
@@ -152,7 +161,10 @@ export function getV3BuiltinPartVoxels(
     scaleV3Dimensions(getV3AegisPartSpec(slot).dimensions, gridScale),
     createColors(false, customHue),
     paintJob,
-    { qualityTier: normalizeV3QualityTier(options.qualityTier) }
+    {
+      qualityTier: normalizeV3QualityTier(options.qualityTier),
+      sourceFidelity: normalizeV3SourceFidelity(options.sourceFidelity, 'exact'),
+    }
   );
 }
 
@@ -227,6 +239,41 @@ const getV3PartLocalPosition = (
   return subtractVec3Tuple(spec.position, V3_DETAIL_BONE_SPECS[boneName].position);
 };
 
+const V3_CACHE_PAINT_ROLES = [
+  'primary',
+  'secondary',
+  'accent',
+  'visor',
+  'undersuit',
+  'emissive',
+  'decal',
+  'fixed',
+] as const;
+
+const createV3BuiltInGeometryCacheKey = (
+  slot: V3CharacterSlotId,
+  sourceFidelity: V3RenderOptions['v3SourceFidelity'],
+  qualityTier: V3RenderOptions['v3QualityTier'],
+  renderStyle: V3RenderOptions['v3ArmorRenderStyle'],
+  colors: SpartanColors,
+  paintJob: CharacterLoadout['paintJob'] | undefined
+): string => [
+  'v3-exact-source',
+  V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.source.hash,
+  slot,
+  sourceFidelity ?? 'runtimeLod',
+  qualityTier ?? 'desktop',
+  renderStyle ?? 'armorSurface',
+  JSON.stringify(Object.fromEntries(V3_CACHE_PAINT_ROLES.map((role) => [
+    role,
+    roleColor(role, colors, paintJob),
+  ]))),
+  JSON.stringify(Object.fromEntries(V3_CACHE_PAINT_ROLES.map((role) => [
+    role,
+    roleEmissive(role, paintJob, false),
+  ]))),
+].join('|');
+
 export function buildV3SpartanModel(options: V3SpartanBuildOptions = {}): THREE.Group {
   const root = new THREE.Group();
   root.name = 'v3SpartanRoot';
@@ -234,6 +281,7 @@ export function buildV3SpartanModel(options: V3SpartanBuildOptions = {}): THREE.
 
   const v3QualityTier = normalizeV3QualityTier(options.v3QualityTier);
   const v3ArmorRenderStyle = normalizeV3ArmorRenderStyle(options.v3ArmorRenderStyle);
+  const v3SourceFidelity = normalizeV3SourceFidelity(options.v3SourceFidelity);
   const v3Distance = Number.isFinite(options.v3Distance) ? Math.max(0, options.v3Distance ?? 0) : 0;
   const loadout = getDefaultV3CharacterLoadout();
   const colors = createColors(options.isEnemy, options.customHue);
@@ -262,19 +310,49 @@ export function buildV3SpartanModel(options: V3SpartanBuildOptions = {}): THREE.
         scaleV3Dimensions(spec.dimensions, gridScale),
         colors,
         paintJob,
-        { qualityTier: v3QualityTier }
+        { qualityTier: v3QualityTier, sourceFidelity: v3SourceFidelity }
       );
+    const builtInBudget = customPiece ? undefined : deriveV3ExactSourceSlotBudget(part.slot, {
+      ...V3_ARMOR_SURFACE_DEFAULT_OPTIONS,
+      qualityTier: v3QualityTier,
+      sourceFidelity: v3SourceFidelity,
+      renderStyle: v3ArmorRenderStyle,
+    });
     const group = createV3VoxelArmorGroup(voxels, {
       ...V3_ARMOR_SURFACE_DEFAULT_OPTIONS,
       voxelScale,
       renderStyle: v3ArmorRenderStyle,
       qualityTier: v3QualityTier,
+      builtInGeometryCacheKey: customPiece ? undefined : createV3BuiltInGeometryCacheKey(
+        part.slot,
+        v3SourceFidelity,
+        v3QualityTier,
+        v3ArmorRenderStyle,
+        colors,
+        paintJob
+      ),
     });
     const selectedLod = selectV3LodLevel({
       lods: part.lods,
       qualityTier: v3QualityTier,
       distance: v3Distance,
     });
+    const selectedLodWithMeasuredBudget = customPiece || !builtInBudget
+      ? selectedLod
+      : {
+        ...selectedLod,
+        id: `${selectedLod.id}:${v3SourceFidelity}`,
+        sourceId: `${selectedLod.sourceId}:${v3SourceFidelity}`,
+        qualityTier: v3QualityTier,
+        budget: {
+          sourceVoxelCount: builtInBudget.sourceVoxelCount,
+          mergedBoxCount: builtInBudget.mergedBoxCount,
+          materialGroupCount: builtInBudget.materialGroupCount,
+          drawCallEstimate: builtInBudget.drawCallEstimate,
+          lodCount: builtInBudget.lodCount,
+          memoryEstimateKb: builtInBudget.memoryEstimateKb,
+        },
+      };
     group.name = `v3:${part.slot}`;
     group.position.set(...(customPiece ? getV3PartLocalPosition(part.slot, spec) : [0, 0, 0] as THREE.Vector3Tuple));
     group.userData.v3PartId = part.id;
@@ -282,10 +360,11 @@ export function buildV3SpartanModel(options: V3SpartanBuildOptions = {}): THREE.
     group.userData.v3BoundsId = part.boundsId;
     group.userData.v3QualityTier = v3QualityTier;
     group.userData.v3Distance = v3Distance;
-    group.userData.v3SelectedLod = selectedLod;
+    group.userData.v3SelectedLod = selectedLodWithMeasuredBudget;
     group.userData.v3GridScale = gridScale;
     group.userData.v3ObjSurfaceSource = !customPiece;
     group.userData.v3ExactSourceLodQualityTier = customPiece ? undefined : v3QualityTier;
+    group.userData.v3SourceFidelity = customPiece ? undefined : v3SourceFidelity;
     group.userData.v3VoxelScale = voxelScale;
     if (customPiece) {
       group.userData.customArmorId = customPiece.id;
@@ -300,6 +379,7 @@ export function buildV3SpartanModel(options: V3SpartanBuildOptions = {}): THREE.
   root.userData.v3QualityTier = v3QualityTier;
   root.userData.v3Distance = v3Distance;
   root.userData.v3ArmorRenderStyle = v3ArmorRenderStyle;
+  root.userData.v3SourceFidelity = v3SourceFidelity;
   root.userData.v3PartGroups = partGroups;
   root.userData.v3DetailBones = detailBones;
   root.userData.segmentGroups = segmentGroups;

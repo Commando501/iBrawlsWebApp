@@ -36,6 +36,7 @@ export default defineConfig(() => {
           armorModelEditor: path.resolve(__dirname, 'armor-model-editor.html'),
           v3PerformanceSmoke: path.resolve(__dirname, 'v3-performance-smoke.html'),
           v3ReadinessDashboard: path.resolve(__dirname, 'v3-readiness-dashboard.html'),
+          v3AnimationAtlasSmoke: path.resolve(__dirname, 'v3-animation-atlas-smoke.html'),
         },
       },
     },

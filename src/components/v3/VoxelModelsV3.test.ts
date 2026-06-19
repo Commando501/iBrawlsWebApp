@@ -35,11 +35,13 @@ import {
 } from './v3ProductionQuality';
 import { analyzeV3BuiltInShapeLanguage } from './v3ShapeLanguage';
 import { analyzeV3ArmorSurface } from './v3VoxelArmorSurface';
+import { clearV3GeometryCache } from './v3GeometryCache';
 import {
   analyzeV3AegisReferenceProportions,
   formatV3ReferenceProportionGapSummary,
   getV3RenderedObjGateClosureIssues,
 } from './v3ReferenceProportions';
+import { deriveV3ExactSourceSlotBudget } from './v3ExactSourceLod';
 
 const requiredSegments = ['lowerTorso', 'upperTorso', 'head', 'leftArm', 'rightArm', 'leftLeg', 'rightLeg'];
 
@@ -275,6 +277,50 @@ describe('buildV3SpartanModel', () => {
       assert.equal(partGroups[slot].userData.v3ObjSurfaceSource, true, `${slot} should render from exact OBJ surface source`);
       assert.equal(partGroups[slot].userData.v3VoxelScale, exactVoxelScale, `${slot} runtime group should use exact OBJ voxel scale`);
     }
+  });
+
+  it('defaults built-in V3 rendering to runtime LOD while preserving explicit exact source inspection', () => {
+    const runtimeModel = buildV3SpartanModel({
+      isEnemy: false,
+      customHue: 192,
+      v3QualityTier: 'desktop',
+    });
+    const exactModel = buildV3SpartanModel({
+      isEnemy: false,
+      customHue: 192,
+      v3QualityTier: 'desktop',
+      v3SourceFidelity: 'exact',
+    });
+    const runtimeHelmet = runtimeModel.userData.v3PartGroups.helmet as THREE.Group;
+    const exactHelmet = exactModel.userData.v3PartGroups.helmet as THREE.Group;
+    const expectedRuntimeBudget = deriveV3ExactSourceSlotBudget('helmet', {
+      qualityTier: 'desktop',
+      sourceFidelity: 'runtimeLod',
+    });
+    const expectedExactBudget = deriveV3ExactSourceSlotBudget('helmet', {
+      qualityTier: 'desktop',
+      sourceFidelity: 'exact',
+    });
+
+    assert.equal(runtimeModel.userData.v3SourceFidelity, 'runtimeLod');
+    assert.equal(runtimeHelmet.userData.v3SourceFidelity, 'runtimeLod');
+    assert.equal(runtimeHelmet.userData.v3SelectedLod.budget.sourceVoxelCount, expectedRuntimeBudget.sourceVoxelCount);
+    assert.equal(runtimeHelmet.userData.v3SelectedLod.budget.mergedBoxCount, expectedRuntimeBudget.mergedBoxCount);
+    assert.ok(runtimeHelmet.userData.v3SelectedLod.budget.sourceVoxelCount < expectedExactBudget.sourceVoxelCount);
+
+    assert.equal(exactModel.userData.v3SourceFidelity, 'exact');
+    assert.equal(exactHelmet.userData.v3SourceFidelity, 'exact');
+    assert.equal(exactHelmet.userData.v3SelectedLod.budget.sourceVoxelCount, expectedExactBudget.sourceVoxelCount);
+  });
+
+  it('keys built-in V3 geometry cache by resolved default palette', () => {
+    clearV3GeometryCache();
+    const friendlyModel = buildV3SpartanModel({ isEnemy: false });
+    const enemyModel = buildV3SpartanModel({ isEnemy: true });
+
+    assert.equal(groupContainsHexColor(friendlyModel, '#3b82f6'), true);
+    assert.equal(groupContainsHexColor(enemyModel, '#ef4444'), true);
+    assert.equal(groupContainsHexColor(enemyModel, '#3b82f6'), false);
   });
 
   it('renders V3 character armor through the armor surface renderer by default', () => {

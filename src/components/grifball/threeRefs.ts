@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { type CombatantMeshRig } from './combatantModels';
 import { type SkyAtmosphereRuntime } from './skyAtmosphereRuntime';
+import type { V3DeathVoxelBurstInstance } from './v3DeathVoxelBurst';
 
 export interface GrifballThreeRefs {
   scene: THREE.Scene | null;
@@ -54,6 +55,8 @@ export interface GrifballThreeRefs {
   grifballThrowTrajectoryDashes?: THREE.Group | null;
   grifballThrowTrajectoryMarker?: THREE.Mesh | null;
   otherPlayerMeshes: Map<string, CombatantMeshRig>;
+  v3DeathVoxelBursts: Map<string, V3DeathVoxelBurstInstance>;
+  v3DeathAliveState: Map<string, boolean>;
   navMesh?: any;
   customMapObjects?: THREE.Object3D[];
   skyboxMesh?: THREE.Mesh | null;
@@ -75,6 +78,8 @@ export function createInitialGrifballThreeRefs(): GrifballThreeRefs {
     hostHammer: null,
     hostSword: null,
     otherPlayerMeshes: new Map(),
+    v3DeathVoxelBursts: new Map(),
+    v3DeathAliveState: new Map(),
     customMapObjects: [],
     skyboxMesh: null,
     skyAtmosphere: null,

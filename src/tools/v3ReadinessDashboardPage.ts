@@ -93,6 +93,11 @@ type V3SmokeEvidenceReport = {
     issues: readonly unknown[];
     summary: unknown;
   };
+  motionRetargetReady: boolean;
+  motionRetarget: {
+    issues: readonly unknown[];
+    summary: unknown;
+  };
 };
 
 const canvas = document.getElementById('comparisonCanvas') as HTMLCanvasElement;
@@ -151,6 +156,7 @@ let latestSuitFidelityEvidence: V3ReadinessEvidenceSummaryInput;
 let latestReferenceProportionEvidence: V3ReadinessEvidenceSummaryInput;
 let latestVisualQaEvidence: V3ReadinessEvidenceSummaryInput;
 let latestPoseEvidence: V3ReadinessEvidenceSummaryInput;
+let latestMotionRetargetEvidence: V3ReadinessEvidenceSummaryInput;
 let latestPerformanceEvidence: V3ReadinessEvidenceSummaryInput;
 let automatedEvidenceRunning = false;
 let v3PreviewReady = false;
@@ -209,6 +215,7 @@ latestSuitFidelityEvidence = pendingEvidence('Suit fidelity');
 latestReferenceProportionEvidence = pendingEvidence('Reference proportions');
 latestVisualQaEvidence = pendingEvidence('Visual QA');
 latestPoseEvidence = pendingEvidence('Pose clearance');
+latestMotionRetargetEvidence = pendingEvidence('Motion retarget');
 latestPerformanceEvidence = pendingEvidence('Performance smoke');
 
 function ensureV3PreviewModel(): boolean {
@@ -222,6 +229,7 @@ function ensureV3PreviewModel(): boolean {
       loadout: createV3ReadinessComparisonLoadout(),
       v3ArmorRenderStyle: 'voxelEdit',
       v3QualityTier: 'desktop',
+      v3SourceFidelity: 'exact',
     });
     v3Root.add(v3Model);
     normalizeV3ReadinessComparisonSubject(v3Root);
@@ -304,6 +312,14 @@ function compactPoseEvidence(smokeReport: V3SmokeEvidenceReport): V3ReadinessEvi
     ready: smokeReport.poseClearanceReady,
     issues: smokeReport.poseClearance.issues,
     summary: smokeReport.poseClearance.summary,
+  };
+}
+
+function compactMotionRetargetEvidence(smokeReport: V3SmokeEvidenceReport): V3ReadinessEvidenceSummaryInput {
+  return {
+    ready: smokeReport.motionRetargetReady,
+    issues: smokeReport.motionRetarget.issues,
+    summary: smokeReport.motionRetarget.summary,
   };
 }
 
@@ -390,6 +406,7 @@ function buildDashboardReport(): V3ReadinessDashboardReport {
     referenceVoxelSource: compactReferenceVoxelSourceEvidence(),
     visualQa: latestVisualQaEvidence,
     poseClearance: latestPoseEvidence,
+    motionRetarget: latestMotionRetargetEvidence,
     performanceSmoke: latestPerformanceEvidence,
     referenceComparison: buildReferenceEvidence(),
   });
@@ -441,6 +458,7 @@ function renderMetrics(report: V3ReadinessDashboardReport): void {
     metric('Suit Fidelity', report.evidence.suitFidelity.ready ?? 'unknown'),
     metric('Visual QA', report.evidence.visualQa.ready ?? 'unknown'),
     metric('Pose Clearance', report.evidence.poseClearance.ready ?? 'unknown'),
+    metric('Motion Retarget', report.evidence.motionRetarget.ready ?? 'unknown'),
     metric('Performance Smoke', report.evidence.performanceSmoke.ready ?? 'unknown')
   );
 }
@@ -725,6 +743,7 @@ async function runAutomatedEvidence(): Promise<void> {
   latestReferenceProportionEvidence = pendingEvidence('Reference proportions are running');
   latestVisualQaEvidence = pendingEvidence('Visual QA is running');
   latestPoseEvidence = pendingEvidence('Pose clearance is running');
+  latestMotionRetargetEvidence = pendingEvidence('Motion retarget is running');
   latestPerformanceEvidence = pendingEvidence('Performance smoke is running');
   renderDashboard();
 
@@ -750,12 +769,14 @@ async function runAutomatedEvidence(): Promise<void> {
     const smokeReport = buildV3PerformanceSmokeReport(smokeScene);
     latestVisualQaEvidence = compactVisualQaEvidence(smokeReport);
     latestPoseEvidence = compactPoseEvidence(smokeReport);
+    latestMotionRetargetEvidence = compactMotionRetargetEvidence(smokeReport);
     latestPerformanceEvidence = compactPerformanceEvidence(smokeReport);
   } catch (error) {
     latestSuitFidelityEvidence = failedEvidence('Suit fidelity', error);
     latestReferenceProportionEvidence = failedEvidence('Reference proportions', error);
     latestVisualQaEvidence = failedEvidence('Visual QA', error);
     latestPoseEvidence = failedEvidence('Pose clearance', error);
+    latestMotionRetargetEvidence = failedEvidence('Motion retarget', error);
     latestPerformanceEvidence = failedEvidence('Performance smoke', error);
   } finally {
     automatedEvidenceRunning = false;

@@ -15,6 +15,12 @@ import {
   type V3PoseClearanceOverlay,
 } from '../grifball/v3PoseClearance';
 import {
+  createV3DeathVoxelBurst,
+  disposeV3DeathVoxelBurst,
+  updateV3DeathVoxelBurst,
+  type V3DeathVoxelBurstInstance,
+} from '../grifball/v3DeathVoxelBurst';
+import {
   centerCustomArmorPiece,
   createCustomArmorPiece,
   createCustomArmorSnapshot,
@@ -1725,6 +1731,7 @@ export function ArmorModelEditor({
     scene.add(rimLight);
 
     const meshes: THREE.Mesh[] = [];
+    let rigPreviewDeathBurst: V3DeathVoxelBurstInstance | null = null;
     const baseScale = modelSystem === 'v3' ? V3_ARMOR_SURFACE_BASE_VOXEL_SCALE : 0.045;
     const scale = modelSystem === 'v3' ? baseScale / draftGridScale : baseScale;
 
@@ -1757,6 +1764,19 @@ export function ArmorModelEditor({
           swordModel: meshRig.sword,
           pistolModel: meshRig.pistol,
         }, selectedV3PoseCaseId);
+        if (selectedV3PoseCaseId === 'death') {
+          rigPreviewDeathBurst = createV3DeathVoxelBurst(scene, model, {
+            qualityTier: 'desktop',
+            seed: 41,
+            duration: 1.1,
+          });
+          if (rigPreviewDeathBurst) {
+            model.visible = false;
+            meshRig.hammer.visible = false;
+            meshRig.sword.visible = false;
+            if (meshRig.pistol) meshRig.pistol.visible = false;
+          }
+        }
         model.position.set(0, 0, 0);
         model.rotation.y = -0.35;
         if (showMotionOverlay && selectedV3MotionQaCase && !v3MotionQaIsStale) {
@@ -2012,7 +2032,18 @@ export function ArmorModelEditor({
     renderer.domElement.addEventListener('contextmenu', onContextMenu);
 
     let frame = 0;
+    let lastFrameTime = 0;
     const animate = () => {
+      const now = performance.now();
+      const dt = lastFrameTime > 0 ? Math.min(0.05, (now - lastFrameTime) / 1000) : 0;
+      lastFrameTime = now;
+      if (rigPreviewDeathBurst) {
+        const active = updateV3DeathVoxelBurst(rigPreviewDeathBurst, dt);
+        if (!active) {
+          rigPreviewDeathBurst.elapsed = 0;
+          updateV3DeathVoxelBurst(rigPreviewDeathBurst, 0);
+        }
+      }
       renderer.render(scene, camera);
       frame = requestAnimationFrame(animate);
     };
@@ -2039,6 +2070,10 @@ export function ArmorModelEditor({
       renderer.domElement.removeEventListener('contextmenu', onContextMenu);
       if (renderer.domElement.parentElement === container) {
         container.removeChild(renderer.domElement);
+      }
+      if (rigPreviewDeathBurst) {
+        disposeV3DeathVoxelBurst(rigPreviewDeathBurst);
+        rigPreviewDeathBurst = null;
       }
       scene.traverse((child) => {
         if (child instanceof THREE.Mesh) {

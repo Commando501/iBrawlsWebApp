@@ -12,6 +12,7 @@ import {
 import { getRandomLoadout } from './combatantModels';
 import { createViewTargetCallbacksForState } from './viewTargetCallbacks';
 import { getCombatantTeamOutlineState } from './combatantTeamOutlines';
+import { syncV3DeathVoxelBurstForCombatant } from './v3DeathVoxelBurstRuntime';
 
 test('random bot loadouts stay on the V1 model system', () => {
   const originalRandom = Math.random;
@@ -129,6 +130,65 @@ test('host combatant rebuild tags V3 quality without changing gameplay model typ
   assert.equal(refs.hostGroup?.userData.v3QualityTier, 'mobileLow');
   assert.equal(refs.hostGroup?.userData.appliedV3QualityTier, 'mobileLow');
   assert.equal(state.playerModelType, 'medium');
+});
+
+test('host combatant rebuild clears stale V3 death burst state', () => {
+  const scene = new THREE.Scene();
+  const refs = createInitialGrifballThreeRefs();
+  refs.scene = scene;
+  const state = createInitialGrifballRuntimeState({
+    debugMode: false,
+    adminSettings: DEFAULT_ADMIN_SETTINGS,
+    multiplayerRole: 'host',
+    isMultiplayer: true,
+  });
+
+  rebuildHostCombatantModelForState({
+    state,
+    refs,
+    hue: 220,
+    isMultiplayer: true,
+    multiplayerRole: 'host',
+    playerLoadout: { modelSystem: 'v3' },
+    v3Options: {
+      v3QualityTier: 'mobileLow',
+    },
+  });
+  assert.ok(refs.hostGroup);
+
+  syncV3DeathVoxelBurstForCombatant({
+    refs,
+    id: 'observer:host',
+    model: refs.hostGroup,
+    weapons: [refs.hostHammer, refs.hostSword],
+    alive: true,
+  });
+  syncV3DeathVoxelBurstForCombatant({
+    refs,
+    id: 'observer:host',
+    model: refs.hostGroup,
+    weapons: [refs.hostHammer, refs.hostSword],
+    alive: false,
+    qualityTier: 'mobileLow',
+  });
+  const burst = refs.v3DeathVoxelBursts.get('observer:host');
+  assert.ok(burst);
+
+  rebuildHostCombatantModelForState({
+    state,
+    refs,
+    hue: 260,
+    isMultiplayer: true,
+    multiplayerRole: 'host',
+    playerLoadout: { modelSystem: 'v3' },
+    v3Options: {
+      v3QualityTier: 'mobileLow',
+    },
+  });
+
+  assert.equal(burst.disposed, true);
+  assert.equal(refs.v3DeathVoxelBursts.has('observer:host'), false);
+  assert.equal(refs.v3DeathAliveState.has('observer:host'), false);
 });
 
 test('grifball host and enemy rebuilds attach perspective-correct team body outlines', () => {

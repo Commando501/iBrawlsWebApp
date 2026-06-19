@@ -15,7 +15,15 @@ describe('v3GeometryCache', () => {
 
     assert.equal(a, b);
     assert.notEqual(a, c);
-    assert.deepEqual(getV3GeometryCacheStats(), { materials: 2 });
+    assert.deepEqual(getV3GeometryCacheStats(), {
+      materials: 2,
+      geometryEntries: 0,
+      planCount: 0,
+      geometryCount: 0,
+      approximateBytes: 0,
+      hits: 0,
+      misses: 0,
+    });
   });
 
   it('clears and disposes cached materials', () => {
@@ -29,6 +37,14 @@ describe('v3GeometryCache', () => {
     clearV3GeometryCache();
 
     assert.equal(disposed, true);
-    assert.deepEqual(getV3GeometryCacheStats(), { materials: 0 });
+    assert.deepEqual(getV3GeometryCacheStats(), {
+      materials: 0,
+      geometryEntries: 0,
+      planCount: 0,
+      geometryCount: 0,
+      approximateBytes: 0,
+      hits: 0,
+      misses: 0,
+    });
   });
 });

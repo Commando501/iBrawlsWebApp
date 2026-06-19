@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import * as THREE from 'three';
 import type { VoxelData } from '../VoxelModels';
+import { clearV3GeometryCache, getV3GeometryCacheStats } from './v3GeometryCache';
 import {
   V3_ARMOR_SURFACE_DEFAULT_OPTIONS,
   analyzeV3ArmorSurface,
@@ -200,5 +201,87 @@ describe('V3 voxel armor surface renderer', () => {
     assert.equal(lowGroup.userData.v3PanelCornerStyle, 'clipped');
     assert.equal(highGroup.userData.v3PanelCornerStyle, 'clipped');
     assert.ok(Math.abs(lowSize.x - highSize.x) < 0.01, `expected similar width, got ${lowSize.x} vs ${highSize.x}`);
+  });
+
+  it('reuses keyed built-in geometry while creating fresh mesh instances', () => {
+    clearV3GeometryCache();
+    const voxels = createPlateVoxels(3, 2);
+    const options = {
+      builtInGeometryCacheKey: 'builtin:plate:3x2',
+      renderStyle: 'armorSurface' as const,
+      voxelScale: 0.05,
+    };
+
+    const firstGroup = createV3VoxelArmorGroup(voxels, options);
+    const firstMeshes = getMeshes(firstGroup);
+    const statsAfterFirst = getV3GeometryCacheStats();
+    const secondGroup = createV3VoxelArmorGroup(voxels, options);
+    const secondMeshes = getMeshes(secondGroup);
+    const statsAfterSecond = getV3GeometryCacheStats();
+
+    assert.ok(firstMeshes.length > 0);
+    assert.equal(firstMeshes.length, secondMeshes.length);
+    assert.equal(statsAfterFirst.geometryEntries, firstMeshes.length);
+    assert.equal(statsAfterFirst.misses, 1);
+    assert.equal(statsAfterSecond.geometryEntries, firstMeshes.length);
+    assert.equal(statsAfterSecond.hits, 1);
+    assert.notEqual(firstMeshes[0], secondMeshes[0]);
+    assert.equal(firstMeshes[0].geometry, secondMeshes[0].geometry);
+    assert.equal(firstMeshes[0].material, secondMeshes[0].material);
+    assert.ok(statsAfterSecond.approximateBytes > 0);
+  });
+
+  it('does not hit the built-in geometry cache for different or omitted cache keys', () => {
+    clearV3GeometryCache();
+    const voxels = createPlateVoxels(2, 2);
+
+    const keyedA = createV3VoxelArmorGroup(voxels, {
+      builtInGeometryCacheKey: 'builtin:plate:a',
+      renderStyle: 'armorSurface',
+    });
+    const keyedB = createV3VoxelArmorGroup(voxels, {
+      builtInGeometryCacheKey: 'builtin:plate:b',
+      renderStyle: 'armorSurface',
+    });
+    const unkeyedA = createV3VoxelArmorGroup(voxels, { renderStyle: 'armorSurface' });
+    const unkeyedB = createV3VoxelArmorGroup(voxels, { renderStyle: 'armorSurface' });
+    const keyedAMesh = getMeshes(keyedA)[0];
+    const keyedBMesh = getMeshes(keyedB)[0];
+    const unkeyedAMesh = getMeshes(unkeyedA)[0];
+    const unkeyedBMesh = getMeshes(unkeyedB)[0];
+    const stats = getV3GeometryCacheStats();
+
+    assert.notEqual(keyedAMesh.geometry, keyedBMesh.geometry);
+    assert.notEqual(unkeyedAMesh.geometry, unkeyedBMesh.geometry);
+    assert.equal(stats.hits, 0);
+    assert.equal(stats.misses, 2);
+    assert.equal(stats.geometryEntries, getMeshes(keyedA).length + getMeshes(keyedB).length);
+  });
+
+  it('clears disposed keyed geometry and can rebuild the same built-in cache key', () => {
+    clearV3GeometryCache();
+    const voxels = createPlateVoxels(2, 1);
+    const firstGroup = createV3VoxelArmorGroup(voxels, {
+      builtInGeometryCacheKey: 'builtin:plate:clearable',
+      renderStyle: 'armorSurface',
+    });
+    const firstGeometry = getMeshes(firstGroup)[0].geometry;
+    let disposed = false;
+    firstGeometry.addEventListener('dispose', () => {
+      disposed = true;
+    });
+
+    clearV3GeometryCache();
+
+    const rebuiltGroup = createV3VoxelArmorGroup(voxels, {
+      builtInGeometryCacheKey: 'builtin:plate:clearable',
+      renderStyle: 'armorSurface',
+    });
+    const rebuiltGeometry = getMeshes(rebuiltGroup)[0].geometry;
+
+    assert.equal(disposed, true);
+    assert.notEqual(rebuiltGeometry, firstGeometry);
+    assert.equal(getV3GeometryCacheStats().misses, 1);
+    assert.ok(getTotalVertexCount(rebuiltGroup) > 0);
   });
 });

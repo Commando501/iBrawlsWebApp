@@ -73,6 +73,7 @@ const readyInput = (): V3ReadinessDashboardInput => ({
   },
   visualQa: readyEvidence,
   poseClearance: readyEvidence,
+  motionRetarget: readyEvidence,
   performanceSmoke: readyEvidence,
   referenceComparison: {
     acknowledged: true,
@@ -113,6 +114,7 @@ test('buildV3ReadinessDashboardReport keeps passing metrics not player-ready unt
     referenceFeatureMatch: readyEvidence,
     visualQa: readyEvidence,
     poseClearance: readyEvidence,
+    motionRetarget: readyEvidence,
     performanceSmoke: readyEvidence,
   });
 
@@ -199,6 +201,7 @@ test('buildV3ReadinessDashboardReport blocks readiness when automated evidence i
   assert.ok(report.blockers.some((blocker) => blocker.id === 'referenceVoxelSourceEvidence'));
   assert.ok(report.blockers.some((blocker) => blocker.id === 'visualQaEvidence'));
   assert.ok(report.blockers.some((blocker) => blocker.id === 'poseClearanceEvidence'));
+  assert.ok(report.blockers.some((blocker) => blocker.id === 'motionRetargetEvidence'));
   assert.ok(report.blockers.some((blocker) => blocker.id === 'performanceSmokeEvidence'));
 });
 
@@ -220,6 +223,7 @@ test('buildV3ReadinessDashboardReport supports deferred heavy evidence while gen
   assert.equal(report.evidence.referenceVoxelSource.ready, true);
   assert.equal(report.evidence.visualQa.ready, null);
   assert.equal(report.evidence.poseClearance.ready, null);
+  assert.equal(report.evidence.motionRetarget.ready, null);
   assert.equal(report.evidence.performanceSmoke.ready, null);
   assert.ok(report.blockers.some((blocker) => blocker.id === 'visualQaEvidence'));
   assert.ok(report.blockers.some((blocker) => blocker.id === 'performanceSmokeEvidence'));

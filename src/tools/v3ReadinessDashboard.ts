@@ -73,6 +73,7 @@ export interface V3ReadinessDashboardInput {
   referenceVoxelSource?: V3ReadinessEvidenceSummaryInput | null;
   visualQa?: V3ReadinessEvidenceSummaryInput | null;
   poseClearance?: V3ReadinessEvidenceSummaryInput | null;
+  motionRetarget?: V3ReadinessEvidenceSummaryInput | null;
   performanceSmoke?: V3ReadinessEvidenceSummaryInput | null;
   referenceComparison?: V3ReadinessReferenceComparisonInput | null;
   exportedAt?: string;
@@ -85,6 +86,7 @@ export type V3ReadinessEvidenceKey =
   | 'referenceVoxelSource'
   | 'visualQa'
   | 'poseClearance'
+  | 'motionRetarget'
   | 'performanceSmoke';
 
 export interface V3ReadinessEvidenceSummary {
@@ -112,6 +114,7 @@ export interface V3ReadinessDashboardEvidence {
   referenceVoxelSource: V3ReadinessEvidenceSummary;
   visualQa: V3ReadinessEvidenceSummary;
   poseClearance: V3ReadinessEvidenceSummary;
+  motionRetarget: V3ReadinessEvidenceSummary;
   performanceSmoke: V3ReadinessEvidenceSummary;
   referenceComparison: V3ReadinessReferenceComparisonEvidence;
 }
@@ -177,6 +180,7 @@ const EVIDENCE_LABELS: Record<V3ReadinessEvidenceKey, string> = {
   referenceVoxelSource: 'Exact OBJ voxel source',
   visualQa: 'Visual QA',
   poseClearance: 'Pose clearance',
+  motionRetarget: 'Motion retarget',
   performanceSmoke: 'Performance smoke',
 };
 
@@ -350,6 +354,7 @@ function buildEvidence(input: V3ReadinessDashboardInput): V3ReadinessDashboardEv
     referenceVoxelSource: normalizeEvidenceSummary(input.referenceVoxelSource),
     visualQa: normalizeEvidenceSummary(input.visualQa),
     poseClearance: normalizeEvidenceSummary(input.poseClearance),
+    motionRetarget: normalizeEvidenceSummary(input.motionRetarget),
     performanceSmoke: normalizeEvidenceSummary(input.performanceSmoke),
     referenceComparison: normalizeReferenceComparison(input.referenceComparison),
   };
@@ -556,6 +561,7 @@ export function buildV3ReadinessExport(
       referenceVoxelSource: report.evidence.referenceVoxelSource,
       visualQa: report.evidence.visualQa,
       poseClearance: report.evidence.poseClearance,
+      motionRetarget: report.evidence.motionRetarget,
       performanceSmoke: report.evidence.performanceSmoke,
       referenceComparison: report.evidence.referenceComparison,
     }),

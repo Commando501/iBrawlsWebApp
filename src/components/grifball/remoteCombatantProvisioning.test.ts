@@ -386,3 +386,91 @@ test('remote V3 visual policy preserves sanitized V3 role paint while forced V1 
   assert.equal(v2Applied.modelType, 'medium');
   assert.equal(v2Applied.paintJob.v3RoleColors.invalid, undefined);
 });
+
+test('remote V3 visual policy triggers death voxel burst on alive-to-dead transition only', () => {
+  const { state, refs } = createStateAndRefs();
+  const data = {
+    controller: 'remote',
+    visualModelPolicy: 'v3',
+    loadout: { modelSystem: 'v3' },
+    hue: 180,
+    hp: 100,
+    respawnTimer: 0,
+    activeWeapon: 'hammer',
+  };
+
+  provisionCombatant(state, refs, 'peer-burst', data, { v3QualityTier: 'mobileLow' });
+  assert.equal(refs.v3DeathVoxelBursts.size, 0);
+
+  provisionCombatant(state, refs, 'peer-burst', {
+    ...data,
+    hp: 0,
+  }, { v3QualityTier: 'mobileLow' });
+  const firstBurst = refs.v3DeathVoxelBursts.get('combatant:peer-burst');
+  const meshes = refs.otherPlayerMeshes.get('peer-burst');
+
+  assert.ok(firstBurst);
+  assert.ok(meshes);
+  assert.equal(meshes.group.visible, false);
+  assert.equal(meshes.hammer.visible, false);
+
+  provisionCombatant(state, refs, 'peer-burst', {
+    ...data,
+    hp: 0,
+  }, { v3QualityTier: 'mobileLow' });
+  assert.equal(refs.v3DeathVoxelBursts.get('combatant:peer-burst'), firstBurst);
+
+  provisionCombatant(state, refs, 'peer-burst', data, { v3QualityTier: 'mobileLow' });
+  assert.equal(refs.v3DeathVoxelBursts.has('combatant:peer-burst'), false);
+  assert.equal(firstBurst.disposed, true);
+});
+
+test('remote V3 visual policy clears death voxel burst state when rebuilt while dead', () => {
+  const { state, refs } = createStateAndRefs();
+  const data = {
+    controller: 'remote',
+    visualModelPolicy: 'v3',
+    loadout: { modelSystem: 'v3' },
+    hue: 180,
+    hp: 100,
+    respawnTimer: 0,
+    activeWeapon: 'hammer',
+  };
+
+  provisionCombatant(state, refs, 'peer-burst-rebuild', data, { v3QualityTier: 'mobileLow' });
+  provisionCombatant(state, refs, 'peer-burst-rebuild', {
+    ...data,
+    hp: 0,
+  }, { v3QualityTier: 'mobileLow' });
+  const firstBurst = refs.v3DeathVoxelBursts.get('combatant:peer-burst-rebuild');
+  assert.ok(firstBurst);
+
+  provisionCombatant(state, refs, 'peer-burst-rebuild', {
+    ...data,
+    hp: 0,
+    hue: 220,
+  }, { v3QualityTier: 'mobileLow' });
+
+  assert.equal(firstBurst.disposed, true);
+  assert.equal(refs.v3DeathVoxelBursts.has('combatant:peer-burst-rebuild'), false);
+  assert.equal(refs.v3DeathAliveState.get('combatant:peer-burst-rebuild'), false);
+});
+
+test('remote V2 visual policy does not trigger V3 death voxel burst', () => {
+  const { state, refs } = createStateAndRefs();
+  const data = {
+    controller: 'remote',
+    visualModelPolicy: 'v2',
+    loadout: { modelSystem: 'v2' },
+    hp: 100,
+    respawnTimer: 0,
+  };
+
+  provisionCombatant(state, refs, 'peer-v2-burst', data);
+  provisionCombatant(state, refs, 'peer-v2-burst', {
+    ...data,
+    hp: 0,
+  });
+
+  assert.equal(refs.v3DeathVoxelBursts.size, 0);
+});

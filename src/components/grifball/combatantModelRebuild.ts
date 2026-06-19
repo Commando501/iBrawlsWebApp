@@ -12,6 +12,7 @@ import { rebuildDualWeaponCombatantModel } from './combatantModels';
 import { ballAsHammer } from '../../game/weaponCompat';
 import { type GrifballRuntimeState } from './runtimeState';
 import { type GrifballThreeRefs } from './threeRefs';
+import { clearV3DeathVoxelBurstForCombatant } from './v3DeathVoxelBurstRuntime';
 
 type MultiplayerRole = 'host' | 'client' | 'observer' | null;
 
@@ -74,6 +75,8 @@ export function rebuildEnemyCombatantModelForState({
   const enemyLoadout = isEnemyBot
     ? undefined
     : isLocalClient ? playerLoadout : undefined;
+  clearV3DeathVoxelBurstForCombatant(refs, 'combatant:main_ai');
+  clearV3DeathVoxelBurstForCombatant(refs, 'observer:client');
   const teamOutlineTeam = resolveEnemyTeamOutlineTeam({
     state,
     isMultiplayer,
@@ -121,6 +124,7 @@ export function rebuildHostCombatantModelForState({
   const isLocalHost = !isMultiplayer || multiplayerRole === 'host';
   const activeWeapon = ballAsHammer(multiplayerRole === 'observer' ? state.hostActiveWeapon : state.activeWeapon);
   const teamOutlineTeam = resolveHostTeamOutlineTeam({ state, multiplayerRole });
+  clearV3DeathVoxelBurstForCombatant(refs, 'observer:host');
   const { group: hostGroup, hammer: hostHammer, sword: hostSword } = rebuildDualWeaponCombatantModel({
     scene,
     previousGroup: refs.hostGroup,

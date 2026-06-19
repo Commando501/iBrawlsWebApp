@@ -27,6 +27,7 @@ import {
 } from './v3RigDetail';
 import { V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE } from './v3AegisObjSurfaceVoxels.generated';
 import { getV3ExactSourceRenderableSlot } from './v3ExactSourceLod';
+import type { V3SourceFidelity } from './v3QualityTiers';
 
 export type V3BuiltinPartGridScale = 1 | 2 | 3 | 4;
 
@@ -123,9 +124,10 @@ const createAegisObjSurfaceVoxelSource = (
   slot: V3CharacterSlotId,
   colors: SpartanColors,
   paintJob?: CharacterLoadout['paintJob'],
-  qualityTier: V3QualityTier = 'desktop'
+  qualityTier: V3QualityTier = 'desktop',
+  sourceFidelity: V3SourceFidelity = 'exact'
 ): VoxelData[] => {
-  const sourceSlot = getV3ExactSourceRenderableSlot(slot, qualityTier);
+  const sourceSlot = getV3ExactSourceRenderableSlot(slot, { qualityTier, sourceFidelity });
   const rolePalette = V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.rolePalette;
   const sourcePivot = V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.coordinateSystem.pivot;
   const voxelScale = V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.coordinateSystem.voxelScale;
@@ -889,8 +891,14 @@ export function createV3AegisPartVoxels(
   dimensions: [number, number, number],
   colors: SpartanColors,
   paintJob?: CharacterLoadout['paintJob'],
-  options: { qualityTier?: V3QualityTier } = {}
+  options: { qualityTier?: V3QualityTier; sourceFidelity?: V3SourceFidelity } = {}
 ): VoxelData[] {
   void dimensions;
-  return createAegisObjSurfaceVoxelSource(part.slot, colors, paintJob, options.qualityTier);
+  return createAegisObjSurfaceVoxelSource(
+    part.slot,
+    colors,
+    paintJob,
+    options.qualityTier,
+    options.sourceFidelity
+  );
 }

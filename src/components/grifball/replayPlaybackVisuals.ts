@@ -10,6 +10,10 @@ import { updateRunnerVisualStateForGroup } from './runnerVisualState';
 import { resolveReplayCombatantVisualLoadout } from './replayVisualMetadata';
 import { type GrifballThreeRefs } from './threeRefs';
 import type { V3RenderOptions } from '../v3/v3QualityTiers';
+import {
+  clearV3DeathVoxelBurstForCombatant,
+  syncV3DeathVoxelBurstForCombatant,
+} from './v3DeathVoxelBurstRuntime';
 
 export function updateReplayCombatantVisualsForFrame({
   refs,
@@ -71,7 +75,10 @@ export function updateReplayCombatantVisualsForFrame({
       meshes?.group.userData.appliedV3Distance !== v3Options.v3Distance
     );
     if (!meshes || meshes.group.userData.appliedHue !== player.hue || meshes.group.userData.appliedLoadoutKey !== visualLoadoutKey || qualityChanged) {
-      if (meshes?.group) scene.remove(meshes.group);
+      if (meshes?.group) {
+        clearV3DeathVoxelBurstForCombatant(refs, `replay:${id}`);
+        scene.remove(meshes.group);
+      }
       meshes = createCombatantMeshRig(scene, player.hue, false, visualLoadout, v3Options, teamOutlineTeam, settings);
       meshes.group.userData.appliedHue = player.hue;
       meshes.group.userData.appliedLoadoutKey = visualLoadoutKey;
@@ -101,6 +108,15 @@ export function updateReplayCombatantVisualsForFrame({
 
     const alive = player.hp > 0 && player.respawnTimer <= 0;
     const isSpectatedInFirstPerson = observerCamMode === 'first' && targetId === id;
+    syncV3DeathVoxelBurstForCombatant({
+      refs,
+      id: `replay:${id}`,
+      model: group,
+      weapons: [hammer, sword, pistol],
+      alive,
+      dt,
+      qualityTier: group.userData.appliedV3QualityTier,
+    });
     group.visible = alive && !isSpectatedInFirstPerson;
     hammer.visible = alive && player.activeWeapon === 'hammer';
     sword.visible = alive && player.activeWeapon === 'sword';
