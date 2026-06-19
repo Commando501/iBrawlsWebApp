@@ -40,10 +40,31 @@ export interface V3ExactSourceLodBudgetReport {
 const EXACT_TIERS = new Set<V3QualityTier>(['desktop', 'ultra']);
 const ROLE_PRIORITY_KEEP = new Set(['visor', 'emissive']);
 
-const lodModuloForTier = (qualityTier: V3QualityTier): number => {
-  if (qualityTier === 'mobileLow') return 3;
-  if (qualityTier === 'mobile') return 2;
-  return 1;
+interface V3ExactSourceLodProfile {
+  rowModulo: number;
+  xModulo: number;
+  priorityRowModulo: number;
+  priorityXModulo: number;
+}
+
+const lodProfileForTier = (qualityTier: V3QualityTier): V3ExactSourceLodProfile | undefined => {
+  if (qualityTier === 'mobileLow') {
+    return {
+      rowModulo: 10,
+      xModulo: 14,
+      priorityRowModulo: 2,
+      priorityXModulo: 5,
+    };
+  }
+  if (qualityTier === 'mobile') {
+    return {
+      rowModulo: 6,
+      xModulo: 10,
+      priorityRowModulo: 1,
+      priorityXModulo: 4,
+    };
+  }
+  return undefined;
 };
 
 const runVoxelCount = (run: V3ExactSourceRun): number => Math.max(0, run[4] - run[3] + 1);
@@ -51,67 +72,43 @@ const runVoxelCount = (run: V3ExactSourceRun): number => Math.max(0, run[4] - ru
 const countRunVoxels = (runs: readonly V3ExactSourceRun[]): number =>
   runs.reduce((total, run) => total + runVoxelCount(run), 0);
 
-const compactRunXs = (
+const createRun = (
   template: V3ExactSourceRun,
-  xs: readonly number[]
-): V3ExactSourceRun[] => {
-  if (xs.length === 0) return [];
-  const sorted = [...new Set(xs)].sort((left, right) => left - right);
-  const runs: V3ExactSourceRun[] = [];
-  let start = sorted[0];
-  let previous = sorted[0];
+  startX: number,
+  endX: number
+): V3ExactSourceRun => (
+  template[5] === 1
+    ? [template[0], template[1], template[2], startX, endX, 1]
+    : [template[0], template[1], template[2], startX, endX]
+);
 
-  for (const x of sorted.slice(1)) {
-    if (x === previous + 1) {
-      previous = x;
-      continue;
-    }
-    runs.push([
-      template[0],
-      template[1],
-      template[2],
-      start,
-      previous,
-      ...(template[5] === 1 ? [1] : []),
-    ] as V3ExactSourceRun);
-    start = x;
-    previous = x;
-  }
-
-  runs.push([
-    template[0],
-    template[1],
-    template[2],
-    start,
-    previous,
-    ...(template[5] === 1 ? [1] : []),
-  ] as V3ExactSourceRun);
-  return runs;
-};
+const cloneRun = (run: V3ExactSourceRun): V3ExactSourceRun =>
+  createRun(run, run[3], run[4]);
 
 function filterRunForTier(
   source: V3ExactSource,
   run: V3ExactSourceRun,
-  modulo: number
+  profile: V3ExactSourceLodProfile | undefined
 ): V3ExactSourceRun[] {
-  if (modulo <= 1) return [[...run] as V3ExactSourceRun];
+  if (!profile) return [cloneRun(run)];
 
   const role = source.rolePalette[run[0]];
-  if (ROLE_PRIORITY_KEEP.has(role) || run[5] === 1) {
-    return [[...run] as V3ExactSourceRun];
+  const priority = ROLE_PRIORITY_KEEP.has(role) || run[5] === 1;
+  const rowSeed = Math.abs(run[1] * 3 + run[2] * 5 + run[0] * 7);
+  const rowModulo = priority ? profile.priorityRowModulo : profile.rowModulo;
+  if (rowModulo > 1 && rowSeed % rowModulo !== 0) {
+    return [];
   }
 
-  const kept: number[] = [];
-  for (let x = run[3]; x <= run[4]; x += 1) {
-    const seed = x + run[1] * 3 + run[2] * 5 + run[0] * 7;
-    if (seed % modulo === 0) {
-      kept.push(x);
-    }
-  }
-  if (kept.length === 0 && run[4] >= run[3]) {
-    kept.push(Math.round((run[3] + run[4]) / 2));
-  }
-  return compactRunXs(run, kept);
+  const length = runVoxelCount(run);
+  if (length <= 0) return [];
+
+  const xModulo = priority ? profile.priorityXModulo : profile.xModulo;
+  const keptLength = Math.max(1, Math.ceil(length / Math.max(1, xModulo)));
+  const maxOffset = Math.max(0, length - keptLength);
+  const offset = maxOffset > 0 ? rowSeed % (maxOffset + 1) : 0;
+  const startX = run[3] + offset;
+  return [createRun(run, startX, startX + keptLength - 1)];
 }
 
 export function getV3ExactSourceRenderableSlot(
@@ -121,10 +118,13 @@ export function getV3ExactSourceRenderableSlot(
 ): V3ExactSourceRenderableSlot {
   const sourceSlot = source.slots[slot];
   const exact = EXACT_TIERS.has(qualityTier);
-  const modulo = lodModuloForTier(qualityTier);
-  const runs = exact
-    ? sourceSlot.runs.map((run) => [...run] as V3ExactSourceRun)
-    : sourceSlot.runs.flatMap((run) => filterRunForTier(source, run, modulo));
+  const profile = lodProfileForTier(qualityTier);
+  const filteredRuns = exact
+    ? sourceSlot.runs.map((run) => cloneRun(run))
+    : sourceSlot.runs.flatMap((run) => filterRunForTier(source, run, profile));
+  const runs = filteredRuns.length > 0
+    ? filteredRuns
+    : sourceSlot.runs.slice(0, 1).map((run) => cloneRun(run));
   const voxelCount = countRunVoxels(runs);
   const sourceVoxelCount = sourceSlot.voxelCount;
 

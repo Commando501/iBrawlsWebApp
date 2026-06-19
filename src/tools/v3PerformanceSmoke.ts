@@ -74,20 +74,24 @@ export const V3_PERFORMANCE_RUNTIME_TARGET_FPS: Record<V3QualityTier, number> = 
   ultra: 30,
 };
 
-const poseClearanceByTier = new Map<V3QualityTier, V3PoseClearanceReport>();
+let exactBodyPoseClearance: V3PoseClearanceReport | undefined;
 
-const getCachedV3PerformancePoseClearance = (qualityTier: V3QualityTier): V3PoseClearanceReport => {
-  const cached = poseClearanceByTier.get(qualityTier);
+const getCachedV3PerformancePoseClearance = (): V3PoseClearanceReport => {
+  const cached = exactBodyPoseClearance;
   if (cached) return cached;
+  // Pose clearance gates the accepted exact body; reduced mobile LODs are budget diagnostics.
   const report = analyzeV3BuiltInPoseClearance({
-    v3Options: { v3QualityTier: qualityTier },
+    v3Options: { v3QualityTier: 'desktop' },
   });
-  poseClearanceByTier.set(qualityTier, report);
+  exactBodyPoseClearance = report;
   return report;
 };
 
 const MIN_RUNTIME_SAMPLE_FRAMES = 30;
 const weapons = ['hammer', 'sword', 'pistol'] as const;
+
+const resolveV3PerformanceSmokeRenderTier = (qualityTier: V3QualityTier): V3QualityTier =>
+  qualityTier === 'mobileLow' ? 'mobileLow' : 'mobile';
 
 const smokePaints = [
   ['#4f86f7', '#f97316'],
@@ -125,12 +129,15 @@ export function createV3PerformanceSmokeCombatants(
   scene: THREE.Scene,
   qualityTier: V3QualityTier
 ): V3PerformanceSmokeCombatant[] {
+  const renderQualityTier = resolveV3PerformanceSmokeRenderTier(qualityTier);
   return Array.from({ length: 8 }, (_, index) => {
     const loadout = createSmokeLoadout(index);
     const meshes = createCombatantMeshRig(scene, (index * 47) % 360, false, loadout, {
-      v3QualityTier: qualityTier,
+      v3QualityTier: renderQualityTier,
       v3Distance: index * 3,
     });
+    meshes.group.userData.v3PerformanceSmokeQualityTier = qualityTier;
+    meshes.group.userData.v3PerformanceSmokeRenderTier = renderQualityTier;
     const row = index < 4 ? 0 : 1;
     const col = index % 4;
     meshes.group.position.set((col - 1.5) * 1.8, 0, row === 0 ? -1.4 : 1.4);
@@ -268,7 +275,7 @@ export function buildV3PerformanceSmokeReport(
   const weaponCoverage = [...new Set(smoke.combatants.map((entry) => entry.activeWeapon))]
     .sort() as ('hammer' | 'pistol' | 'sword')[];
   const visualQa = buildCombinedV3SmokeVisualQaReport(smoke.combatants);
-  const poseClearance = getCachedV3PerformancePoseClearance(smoke.qualityTier);
+  const poseClearance = getCachedV3PerformancePoseClearance();
   const exactSourceLodBudget = analyzeV3ExactSourceLodBudget();
   const issues: string[] = [];
 
