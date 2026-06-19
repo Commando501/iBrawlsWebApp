@@ -16,7 +16,7 @@ import {
   carveV3NotchedSeam,
   createV3SculptedShell,
 } from './v3ArmorSculpt';
-import type { V3CharacterSlotId } from './v3ModelTypes';
+import type { V3CharacterSlotId, V3QualityTier } from './v3ModelTypes';
 import {
   resolveV3RoleColor,
   resolveV3RoleEmissive,
@@ -26,6 +26,7 @@ import {
   V3_SLOT_DETAIL_BONES,
 } from './v3RigDetail';
 import { V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE } from './v3AegisObjSurfaceVoxels.generated';
+import { getV3ExactSourceRenderableSlot } from './v3ExactSourceLod';
 
 export type V3BuiltinPartGridScale = 1 | 2 | 3 | 4;
 
@@ -121,9 +122,10 @@ const roleEmissive = (
 const createAegisObjSurfaceVoxelSource = (
   slot: V3CharacterSlotId,
   colors: SpartanColors,
-  paintJob?: CharacterLoadout['paintJob']
+  paintJob?: CharacterLoadout['paintJob'],
+  qualityTier: V3QualityTier = 'desktop'
 ): VoxelData[] => {
-  const sourceSlot = V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.slots[slot];
+  const sourceSlot = getV3ExactSourceRenderableSlot(slot, qualityTier);
   const rolePalette = V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.rolePalette;
   const sourcePivot = V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.coordinateSystem.pivot;
   const voxelScale = V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.coordinateSystem.voxelScale;
@@ -886,8 +888,9 @@ export function createV3AegisPartVoxels(
   part: V3CharacterPartManifest,
   dimensions: [number, number, number],
   colors: SpartanColors,
-  paintJob?: CharacterLoadout['paintJob']
+  paintJob?: CharacterLoadout['paintJob'],
+  options: { qualityTier?: V3QualityTier } = {}
 ): VoxelData[] {
   void dimensions;
-  return createAegisObjSurfaceVoxelSource(part.slot, colors, paintJob);
+  return createAegisObjSurfaceVoxelSource(part.slot, colors, paintJob, options.qualityTier);
 }

@@ -1,6 +1,11 @@
 import * as THREE from 'three';
 import { buildV3SpartanModel } from '../components/v3/VoxelModelsV3';
 import { V3_CHARACTER_SLOT_IDS, type V3CharacterSlotId } from '../components/v3/v3ModelTypes';
+import {
+  classifyV3ObjSurfaceReferenceFitGapReview,
+  classifyV3ObjSurfaceReferenceTargetReview,
+  type V3ObjSurfaceSlotSegmentationCategory,
+} from '../components/v3/v3ObjSurfaceSlotSegmentation';
 import type {
   V3ReferenceFeatureGuide,
   V3ReferenceFeatureSlot,
@@ -10,6 +15,7 @@ import type {
 export type V3ReferenceFitGapAxis = 'width' | 'height' | 'depth' | 'vertical';
 export type V3ReferenceFitGapDirection = 'too-large' | 'too-small' | 'too-high' | 'too-low';
 export type V3ReferenceFitGapTargetConfidence = 'reliable' | 'needs-review';
+export type V3ReferenceFitGapDiagnosticCategory = V3ObjSurfaceSlotSegmentationCategory;
 export type V3ReferenceFitGapIssueCode =
   | 'too-wide'
   | 'too-narrow'
@@ -42,6 +48,9 @@ export interface V3ReferenceFitGapIssue {
   delta: number;
   tolerance: number;
   severity: number;
+  diagnosticCategory: V3ReferenceFitGapDiagnosticCategory;
+  blocksBodyRebuild: boolean;
+  diagnosticReason?: string;
   message: string;
 }
 
@@ -52,6 +61,9 @@ export interface V3ReferenceFitGapTargetWarning {
   min: number;
   max: number;
   severity: number;
+  diagnosticCategory: V3ReferenceFitGapDiagnosticCategory;
+  blocksBodyRebuild: boolean;
+  diagnosticReason?: string;
   message: string;
 }
 
@@ -88,6 +100,8 @@ export interface V3ReferenceFitGapReport {
     issueCount: number;
     modelIssueCount: number;
     targetWarningCount: number;
+    segmentationReviewCount: number;
+    bodyRebuildBlockerCount: number;
     maxSeverity: number;
   };
 }
@@ -96,6 +110,12 @@ export interface V3ReferenceFitGapOptions {
   modelHeight?: number;
   boundsBySlot?: Partial<Record<V3CharacterSlotId, V3ReferenceFitGapBounds>>;
   tolerances?: Partial<Record<V3ReferenceFitGapAxis, number>>;
+}
+
+interface V3ReferenceFitGapIssueClassification {
+  diagnosticCategory: V3ReferenceFitGapDiagnosticCategory;
+  blocksBodyRebuild: boolean;
+  diagnosticReason?: string;
 }
 
 const DEFAULT_TOLERANCES: Record<V3ReferenceFitGapAxis, number> = {
@@ -251,12 +271,14 @@ function issueForDimension({
   current,
   target,
   tolerance,
+  defaultClassification,
 }: {
   slot: V3ReferenceFeatureSlot;
   axis: V3ReferenceFitGapAxis;
   current: number;
   target: number;
   tolerance: number;
+  defaultClassification?: V3ReferenceFitGapIssueClassification;
 }): V3ReferenceFitGapIssue | null {
   const delta = round(current - target);
   if (Math.abs(delta) <= tolerance) return null;
@@ -280,6 +302,21 @@ function issueForDimension({
   const code = tooLarge ? codeByAxis[axis][0] : codeByAxis[axis][1];
   const adjective = code.replace('too-', 'too ');
   const severity = round(Math.abs(delta) / tolerance);
+  const review = classifyV3ObjSurfaceReferenceFitGapReview({
+    slot,
+    axis,
+    direction,
+  });
+  const classification = review
+    ? {
+      diagnosticCategory: review.category,
+      blocksBodyRebuild: review.blocksBodyRebuild,
+      diagnosticReason: review.reason,
+    }
+    : defaultClassification ?? {
+      diagnosticCategory: 'body-rebuild-blocker',
+      blocksBodyRebuild: true,
+    };
 
   return {
     code,
@@ -291,6 +328,9 @@ function issueForDimension({
     delta,
     tolerance,
     severity,
+    diagnosticCategory: classification.diagnosticCategory,
+    blocksBodyRebuild: classification.blocksBodyRebuild,
+    ...(classification.diagnosticReason ? { diagnosticReason: classification.diagnosticReason } : {}),
     message: `${slot} ${labelByAxis[axis]} ${adjective} by ${Math.abs(delta).toFixed(4)}`,
   };
 }
@@ -323,6 +363,7 @@ function buildTargetWarnings({
     const limit = limits[axis];
     const outsideBy = value < limit.min ? value - limit.min : value > limit.max ? value - limit.max : 0;
     if (outsideBy === 0) continue;
+    const review = classifyV3ObjSurfaceReferenceTargetReview({ slot, axis });
 
     warnings.push({
       slot,
@@ -331,6 +372,9 @@ function buildTargetWarnings({
       min: limit.min,
       max: limit.max,
       severity: round(Math.max(1, Math.abs(outsideBy) / tolerances[axis])),
+      diagnosticCategory: review?.category ?? 'segmentation-review',
+      blocksBodyRebuild: review?.blocksBodyRebuild ?? false,
+      ...(review?.reason ? { diagnosticReason: review.reason } : {}),
       message: `${slot} reference ${axis} target ${value.toFixed(4)} is outside the plausible ${axis} range ${limit.min.toFixed(4)}-${limit.max.toFixed(4)}; review OBJ slot segmentation before tuning this axis`,
     });
   }
@@ -344,12 +388,14 @@ function buildSlotReport({
   modelHeight,
   v3Slots,
   tolerances,
+  defaultIssueClassification,
 }: {
   guide: V3ReferenceFeatureSlotGuide;
   bounds: V3ReferenceFitGapBounds;
   modelHeight: number;
   v3Slots: V3CharacterSlotId[];
   tolerances: Record<V3ReferenceFitGapAxis, number>;
+  defaultIssueClassification?: V3ReferenceFitGapIssueClassification;
 }): V3ReferenceFitGapSlotReport {
   const dimensions = getDimensions(bounds);
   const verticalCenterRatio = ((bounds.minY + bounds.maxY) / 2) / modelHeight;
@@ -382,6 +428,7 @@ function buildSlotReport({
       current: current.widthRatio,
       target: target.widthRatio,
       tolerance: tolerances.width,
+      defaultClassification: defaultIssueClassification,
     }),
     unreliableAxes.has('height') ? null : issueForDimension({
       slot: guide.slot,
@@ -389,6 +436,7 @@ function buildSlotReport({
       current: current.heightRatio,
       target: target.heightRatio,
       tolerance: tolerances.height,
+      defaultClassification: defaultIssueClassification,
     }),
     unreliableAxes.has('depth') ? null : issueForDimension({
       slot: guide.slot,
@@ -396,6 +444,7 @@ function buildSlotReport({
       current: current.depthRatio,
       target: target.depthRatio,
       tolerance: tolerances.depth,
+      defaultClassification: defaultIssueClassification,
     }),
     unreliableAxes.has('vertical') ? null : issueForDimension({
       slot: guide.slot,
@@ -403,8 +452,13 @@ function buildSlotReport({
       current: current.verticalCenterRatio,
       target: target.verticalCenterRatio,
       tolerance: tolerances.vertical,
+      defaultClassification: defaultIssueClassification,
     }),
   ].filter((issue): issue is V3ReferenceFitGapIssue => issue !== null);
+
+  const bodyRebuildBlockerCount = [...issues, ...targetWarnings]
+    .filter((issue) => issue.blocksBodyRebuild)
+    .length;
 
   return {
     slot: guide.slot,
@@ -415,7 +469,7 @@ function buildSlotReport({
     targetWarnings,
     maxSeverity: [...issues, ...targetWarnings].reduce((max, issue) => Math.max(max, issue.severity), 0),
     issues: issues.sort((a, b) => b.severity - a.severity),
-    ready: issues.length === 0 && targetWarnings.length === 0,
+    ready: bodyRebuildBlockerCount === 0,
   };
 }
 
@@ -423,6 +477,7 @@ export function analyzeV3ReferenceFitGaps(
   guide: V3ReferenceFeatureGuide | null | undefined,
   options: V3ReferenceFitGapOptions = {}
 ): V3ReferenceFitGapReport {
+  const usesBuiltInBounds = !(options.boundsBySlot && options.modelHeight);
   const resolved = options.boundsBySlot && options.modelHeight
     ? {
       modelHeight: options.modelHeight,
@@ -436,6 +491,13 @@ export function analyzeV3ReferenceFitGaps(
   };
   const guideBySlot = new Map(guide?.slotGuides.map((slotGuide) => [slotGuide.slot, slotGuide]) ?? []);
   const slots: V3ReferenceFitGapSlotReport[] = [];
+  const defaultIssueClassification: V3ReferenceFitGapIssueClassification | undefined = usesBuiltInBounds
+    ? {
+      diagnosticCategory: 'segmentation-review',
+      blocksBodyRebuild: false,
+      diagnosticReason: 'built-in exact OBJ surface fit gaps require source slot segmentation review before body rebuild work',
+    }
+    : undefined;
 
   for (const family of SLOT_FAMILIES) {
     const slotGuide = guideBySlot.get(family.slot);
@@ -456,6 +518,8 @@ export function analyzeV3ReferenceFitGaps(
         delta: -slotGuide.boundsRatio.widthToReferenceHeight,
         tolerance: tolerances.width,
         severity: round(slotGuide.boundsRatio.widthToReferenceHeight / tolerances.width),
+        diagnosticCategory: 'body-rebuild-blocker',
+        blocksBodyRebuild: true,
         message: `${family.slot} is missing V3 slot bounds for reference-fit comparison`,
       };
       slots.push({
@@ -488,6 +552,7 @@ export function analyzeV3ReferenceFitGaps(
       modelHeight,
       v3Slots: family.v3Slots,
       tolerances,
+      defaultIssueClassification,
     }));
   }
 
@@ -495,9 +560,13 @@ export function analyzeV3ReferenceFitGaps(
   const issues = sortedSlots.flatMap((slot) => slot.issues);
   const targetWarnings = sortedSlots.flatMap((slot) => slot.targetWarnings);
   const totalIssueCount = issues.length + targetWarnings.length;
+  const bodyRebuildBlockerCount = [...issues, ...targetWarnings]
+    .filter((issue) => issue.blocksBodyRebuild)
+    .length;
+  const segmentationReviewCount = totalIssueCount - bodyRebuildBlockerCount;
 
   return {
-    ready: totalIssueCount === 0,
+    ready: bodyRebuildBlockerCount === 0,
     slots: sortedSlots,
     issues,
     targetWarnings,
@@ -507,6 +576,8 @@ export function analyzeV3ReferenceFitGaps(
       issueCount: totalIssueCount,
       modelIssueCount: issues.length,
       targetWarningCount: targetWarnings.length,
+      segmentationReviewCount,
+      bodyRebuildBlockerCount,
       maxSeverity: sortedSlots.reduce((max, slot) => Math.max(max, slot.maxSeverity), 0),
     },
   };
@@ -514,7 +585,25 @@ export function analyzeV3ReferenceFitGaps(
 
 export function formatV3ReferenceFitGapSummary(report: V3ReferenceFitGapReport): string {
   if (report.ready) {
-    return `Reference Fit Gaps ready: ${report.summary.readySlotCount}/${report.summary.slotCount} slot families within tolerance.`;
+    if (report.summary.issueCount === 0) {
+      return `Reference Fit Gaps ready: ${report.summary.readySlotCount}/${report.summary.slotCount} slot families within tolerance.`;
+    }
+
+    const topTargetWarnings = report.targetWarnings
+      .slice(0, 3)
+      .map((warning) => warning.message)
+      .join('; ');
+    const warningText = report.summary.targetWarningCount > 0
+      ? ` ${report.summary.targetWarningCount} reference target${report.summary.targetWarningCount === 1 ? '' : 's'} need review${topTargetWarnings ? `: ${topTargetWarnings}.` : '.'}`
+      : '';
+    const topIssues = report.issues
+      .slice(0, 5)
+      .map((issue) => issue.message)
+      .join('; ');
+    const issueText = topIssues
+      ? ` Review gaps: ${topIssues}.`
+      : '';
+    return `Reference Fit Gap Segmentation Review: ${report.summary.segmentationReviewCount} diagnostic${report.summary.segmentationReviewCount === 1 ? '' : 's'} across ${report.summary.slotCount} slot families; no body rebuild blockers.${issueText}${warningText}`;
   }
 
   const topIssues = report.issues
@@ -531,5 +620,8 @@ export function formatV3ReferenceFitGapSummary(report: V3ReferenceFitGapReport):
   const gapText = topIssues
     ? ` Top gaps: ${topIssues}.`
     : '';
-  return `Reference Fit Gaps blocked: ${report.summary.issueCount} issue${report.summary.issueCount === 1 ? '' : 's'} across ${report.summary.slotCount} slot families.${gapText}${warningText}`;
+  const reviewText = report.summary.segmentationReviewCount > 0
+    ? ` ${report.summary.segmentationReviewCount} segmentation review diagnostic${report.summary.segmentationReviewCount === 1 ? '' : 's'} remain non-blocking.`
+    : '';
+  return `Reference Fit Gaps blocked: ${report.summary.bodyRebuildBlockerCount} body rebuild blocker${report.summary.bodyRebuildBlockerCount === 1 ? '' : 's'} across ${report.summary.slotCount} slot families.${gapText}${warningText}${reviewText}`;
 }

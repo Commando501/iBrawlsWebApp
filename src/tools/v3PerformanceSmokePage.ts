@@ -49,13 +49,14 @@ function publishReport(time?: number) {
       : 'Phase 26 Sampling';
   const visualLabel = latestReport.visualQaReady ? 'visual pass' : 'visual fail';
   const motionLabel = latestReport.poseClearanceReady ? 'motion pass' : 'motion fail';
+  const lodLabel = latestReport.exactSourceLodBudgetReady ? 'LOD pass' : 'LOD review';
   const fpsLabel = latestReport.sampledFrames > 0
     ? latestReport.averageFps.toFixed(1)
     : 'sampling';
   const frameLabel = latestReport.averageFrameMs > 0
     ? latestReport.averageFrameMs.toFixed(1)
     : 'sampling';
-  summary.textContent = `${status} | ${current.qualityTier} | ${visualLabel} | ${motionLabel} | models ${current.budget.modelCount} | parts ${current.budget.partCount} | draw ${current.budget.drawCallEstimate} | fps ${fpsLabel} | frame ${frameLabel}ms`;
+  summary.textContent = `${status} | ${current.qualityTier} | ${visualLabel} | ${motionLabel} | ${lodLabel} | models ${current.budget.modelCount} | parts ${current.budget.partCount} | draw ${current.budget.drawCallEstimate} | fps ${fpsLabel} | frame ${frameLabel}ms`;
   (window as any).__IBRAWLS_V3_PERFORMANCE_SMOKE__ = latestReport;
 }
 

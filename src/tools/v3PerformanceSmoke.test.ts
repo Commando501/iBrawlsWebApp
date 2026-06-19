@@ -72,6 +72,9 @@ test('buildV3PerformanceSmokeReport reports exact-source budget pressure for eve
     assert.equal(report.poseClearanceReady, true, `${tier}: ${report.poseClearance.issues.map((issue) => issue.code).join(', ')}`);
     assert.equal(report.poseClearance.ready, true);
     assert.equal(report.poseClearance.summary.caseCount, 12);
+    assert.equal(report.exactSourceLodBudgetReady, true, `${tier}: ${report.exactSourceLodBudget.issues.join(', ')}`);
+    assert.ok(report.exactSourceLodBudget.byTier.mobile.totalVoxelCount < report.exactSourceLodBudget.exact.totalVoxelCount);
+    assert.ok(report.exactSourceLodBudget.byTier.mobileLow.totalVoxelCount < report.exactSourceLodBudget.byTier.mobile.totalVoxelCount);
     assert.deepEqual(report.weaponCoverage, ['hammer', 'pistol', 'sword']);
     assert.ok(smoke.budget.drawCallEstimate <= V3_PERFORMANCE_SMOKE_BUDGETS[tier].maxDrawCallEstimate);
     assert.ok(
@@ -103,6 +106,7 @@ test('buildV3PerformanceSmokeRuntimeReport requires measured frame timing eviden
   assert.ok(pending.issues.some((issue) => issue.includes('runtime sample pending')));
   assert.equal(pending.poseClearanceReady, true);
   assert.equal(pending.poseClearance, staticReport.poseClearance);
+  assert.equal(pending.exactSourceLodBudgetReady, true);
 
   const fast = buildV3PerformanceSmokeRuntimeReport(smoke, { sampledFrames: 120, elapsedMs: 2_000 }, staticReport);
   assert.equal(fast.ready, false);
@@ -110,6 +114,7 @@ test('buildV3PerformanceSmokeRuntimeReport requires measured frame timing eviden
   assert.equal(fast.averageFps >= fast.targetFps, true);
   assert.equal(fast.poseClearanceReady, true);
   assert.equal(fast.poseClearance, staticReport.poseClearance);
+  assert.equal(fast.exactSourceLodBudgetReady, true);
   assert.ok(fast.issues.some((issue) => issue.includes('merged box count') || issue.includes('memory estimate')));
 
   const slow = buildV3PerformanceSmokeRuntimeReport(smoke, { sampledFrames: 30, elapsedMs: 2_500 }, staticReport);

@@ -44,11 +44,14 @@ test('buildV3RuntimeSmokeChecklist covers every required Phase 31 browser surfac
   assert.ok(dashboardItem?.expectedText.includes('Copy Calibration JSON'));
   assert.ok(dashboardItem?.expectedText.includes('Rendered Gate Closure'));
   assert.ok(dashboardItem?.expectedText.includes('Reconstruction Required'));
+  assert.ok(dashboardItem?.expectedText.includes('Static Body Baseline'));
   assert.ok(dashboardItem?.expectedText.includes('Reference Feature Match'));
-  assert.ok(dashboardItem?.expectedText.includes('Reference Voxel Source'));
+  assert.ok(dashboardItem?.expectedText.includes('Exact OBJ Voxel Source'));
+  assert.ok(dashboardItem?.expectedText.includes('Segmentation Review'));
   assert.ok(performanceItems.every((item) => item.expectedText.includes('Phase 26 Ready')));
   assert.ok(performanceItems.every((item) => item.expectedText.includes('visual pass')));
   assert.ok(performanceItems.every((item) => item.expectedText.includes('motion pass')));
+  assert.ok(performanceItems.every((item) => item.expectedText.includes('LOD pass')));
   assert.ok(editorItem?.expectedText.includes('Motion QA'));
   assert.ok(editorItem?.expectedText.includes('Check Active Pose'));
   assert.ok(editorItem?.expectedText.includes('Hammer Strike'));

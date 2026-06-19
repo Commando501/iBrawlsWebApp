@@ -140,7 +140,7 @@ export function getV3BuiltinPartVoxels(
   slot: V3CharacterSlotId,
   customHue?: number,
   paintJob?: CharacterLoadout['paintJob'],
-  options: { gridScale?: V3BuiltinPartGridScale } = {}
+  options: { gridScale?: V3BuiltinPartGridScale; qualityTier?: V3RenderOptions['v3QualityTier'] } = {}
 ): VoxelData[] {
   const part = BUILT_IN_V3_CHARACTER_PARTS.find((candidate) => candidate.slot === slot);
   if (!part) {
@@ -151,7 +151,8 @@ export function getV3BuiltinPartVoxels(
     part,
     scaleV3Dimensions(getV3AegisPartSpec(slot).dimensions, gridScale),
     createColors(false, customHue),
-    paintJob
+    paintJob,
+    { qualityTier: normalizeV3QualityTier(options.qualityTier) }
   );
 }
 
@@ -256,7 +257,13 @@ export function buildV3SpartanModel(options: V3SpartanBuildOptions = {}): THREE.
       : getV3BuiltinPartVoxelScale(part.slot);
     const voxels = customPiece
       ? customArmorPieceToVoxels(customPiece, customArmorColors)
-      : createV3AegisPartVoxels(part, scaleV3Dimensions(spec.dimensions, gridScale), colors, paintJob);
+      : createV3AegisPartVoxels(
+        part,
+        scaleV3Dimensions(spec.dimensions, gridScale),
+        colors,
+        paintJob,
+        { qualityTier: v3QualityTier }
+      );
     const group = createV3VoxelArmorGroup(voxels, {
       ...V3_ARMOR_SURFACE_DEFAULT_OPTIONS,
       voxelScale,
@@ -278,6 +285,7 @@ export function buildV3SpartanModel(options: V3SpartanBuildOptions = {}): THREE.
     group.userData.v3SelectedLod = selectedLod;
     group.userData.v3GridScale = gridScale;
     group.userData.v3ObjSurfaceSource = !customPiece;
+    group.userData.v3ExactSourceLodQualityTier = customPiece ? undefined : v3QualityTier;
     group.userData.v3VoxelScale = voxelScale;
     if (customPiece) {
       group.userData.customArmorId = customPiece.id;

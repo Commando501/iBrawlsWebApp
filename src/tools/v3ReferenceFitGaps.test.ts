@@ -326,34 +326,94 @@ test('analyzeV3ReferenceFitGaps flags implausible reference targets before ranki
   });
   const shin = report.slots.find((slot) => slot.slot === 'shin');
 
-  assert.equal(report.ready, false);
+  assert.equal(report.ready, true);
   assert.equal(report.summary.targetWarningCount, 2);
+  assert.equal(report.summary.bodyRebuildBlockerCount, 0);
+  assert.equal(report.summary.segmentationReviewCount, 2);
   assert.equal(shin?.targetConfidence, 'needs-review');
   assert.deepEqual(shin?.targetWarnings.map((warning) => warning.axis).sort(), ['depth', 'height']);
+  assert.equal(shin?.targetWarnings.every((warning) =>
+    warning.diagnosticCategory === 'segmentation-review' &&
+    warning.blocksBodyRebuild === false
+  ), true);
   assert.equal(shin?.issues.some((issue) => issue.code === 'too-tall'), false);
+  assert.match(formatV3ReferenceFitGapSummary(report), /Segmentation Review/);
   assert.match(formatV3ReferenceFitGapSummary(report), /2 reference targets need review/);
 });
 
-test('built-in exact OBJ surface source reports remaining reliable fit gaps', () => {
+test('built-in exact OBJ surface source reclassifies old slot-family fit gaps as segmentation review diagnostics', () => {
   const report = analyzeV3ReferenceFitGaps(dashboardFitGuide);
   const forearm = report.slots.find((slot) => slot.slot === 'forearm');
   const hand = report.slots.find((slot) => slot.slot === 'hand');
   const helmet = report.slots.find((slot) => slot.slot === 'helmet');
+  const shoulder = report.slots.find((slot) => slot.slot === 'shoulder');
+  const chest = report.slots.find((slot) => slot.slot === 'chest');
+  const upperArm = report.slots.find((slot) => slot.slot === 'upperArm');
+  const shin = report.slots.find((slot) => slot.slot === 'shin');
 
   assert.equal(report.summary.targetWarningCount, 3, 'exported noisy guide targets should remain explicitly flagged');
-  assert.equal(report.ready, false);
+  assert.equal(report.ready, true);
+  assert.equal(report.summary.bodyRebuildBlockerCount, 0);
+  assert.equal(report.summary.segmentationReviewCount, report.summary.issueCount);
   assert.ok(report.summary.modelIssueCount > 0, formatV3ReferenceFitGapSummary(report));
   assert.ok(
-    forearm?.issues.some((issue) => issue.axis === 'width' && issue.direction === 'too-large'),
+    forearm?.issues.some((issue) =>
+      issue.axis === 'width' &&
+      issue.direction === 'too-large' &&
+      issue.diagnosticCategory === 'segmentation-review' &&
+      issue.blocksBodyRebuild === false
+    ),
     `forearm width gap should stay visible for Phase 38 diagnostics: ${forearm?.issues.map((issue) => issue.message).join('; ')}`
   );
   assert.ok(
-    hand?.issues.some((issue) => issue.axis === 'width' && issue.direction === 'too-large'),
+    hand?.issues.some((issue) =>
+      issue.axis === 'width' &&
+      issue.direction === 'too-large' &&
+      issue.diagnosticCategory === 'segmentation-review' &&
+      issue.blocksBodyRebuild === false
+    ),
     `hand width gap should stay visible for Phase 38 diagnostics: ${hand?.issues.map((issue) => issue.message).join('; ')}`
   );
   assert.ok(
-    helmet?.issues.some((issue) => issue.axis === 'width' && issue.direction === 'too-small'),
+    helmet?.issues.some((issue) =>
+      issue.axis === 'width' &&
+      issue.direction === 'too-small' &&
+      issue.diagnosticCategory === 'segmentation-review' &&
+      issue.blocksBodyRebuild === false
+    ),
     `helmet width gap should stay visible for Phase 38 diagnostics: ${helmet?.issues.map((issue) => issue.message).join('; ')}`
   );
-  assert.match(formatV3ReferenceFitGapSummary(report), /Reference Fit Gaps blocked/);
+  assert.ok(
+    shoulder?.issues.some((issue) =>
+      issue.direction === 'too-small' &&
+      issue.diagnosticCategory === 'segmentation-review' &&
+      issue.blocksBodyRebuild === false
+    ),
+    `shoulder undersized gaps should stay review-only: ${shoulder?.issues.map((issue) => issue.message).join('; ')}`
+  );
+  assert.ok(
+    chest?.issues.some((issue) =>
+      issue.direction === 'too-small' &&
+      issue.diagnosticCategory === 'segmentation-review' &&
+      issue.blocksBodyRebuild === false
+    ),
+    `chest undersized gaps should stay review-only: ${chest?.issues.map((issue) => issue.message).join('; ')}`
+  );
+  assert.ok(
+    upperArm?.targetWarnings.every((warning) =>
+      warning.diagnosticCategory === 'segmentation-review' &&
+      warning.blocksBodyRebuild === false
+    ),
+    `upperArm target warnings should be segmentation review diagnostics: ${upperArm?.targetWarnings.map((warning) => warning.message).join('; ')}`
+  );
+  assert.ok(
+    shin?.targetWarnings.every((warning) =>
+      warning.diagnosticCategory === 'segmentation-review' &&
+      warning.blocksBodyRebuild === false
+    ),
+    `shin target warnings should be segmentation review diagnostics: ${shin?.targetWarnings.map((warning) => warning.message).join('; ')}`
+  );
+  const summary = formatV3ReferenceFitGapSummary(report);
+  assert.match(summary, /Segmentation Review/);
+  assert.doesNotMatch(summary, /blocked/i);
 });

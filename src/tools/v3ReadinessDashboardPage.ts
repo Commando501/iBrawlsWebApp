@@ -9,7 +9,11 @@ import {
   sampleV3ReferenceProportionBands,
   type V3ReferenceProportionReport,
 } from '../components/v3/v3ReferenceProportions';
-import { V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE } from '../components/v3/v3AegisObjSurfaceVoxels.generated';
+import { buildV3ExactSourceDashboardEvidence } from '../components/v3/v3ExactSourceBaseline';
+import {
+  analyzeV3AegisObjSurfaceSlotSegmentation,
+  formatV3ObjSurfaceSlotSegmentationSummary,
+} from '../components/v3/v3ObjSurfaceSlotSegmentation';
 import {
   analyzeV3BuiltInReferenceFeatureMatch,
   analyzeV3BuiltInSuitFidelity,
@@ -142,6 +146,7 @@ let latestReferenceFeatureGuide: V3ReferenceFeatureGuide | null = null;
 let latestReferenceFeatureMatch: V3ReferenceFeatureMatchReport | null = null;
 let latestReferenceFitGaps: V3ReferenceFitGapReport | null = null;
 let latestCalibrationReport: V3AegisCalibrationReport | null = null;
+const exactSourceSegmentation = analyzeV3AegisObjSurfaceSlotSegmentation();
 let latestSuitFidelityEvidence: V3ReadinessEvidenceSummaryInput;
 let latestReferenceProportionEvidence: V3ReadinessEvidenceSummaryInput;
 let latestVisualQaEvidence: V3ReadinessEvidenceSummaryInput;
@@ -276,33 +281,7 @@ function compactReferenceFeatureMatchEvidence(): V3ReadinessEvidenceSummaryInput
 }
 
 function compactReferenceVoxelSourceEvidence() {
-  const source = V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE;
-  const issues = [
-    ...(source.schemaVersion === 'v3-obj-surface-voxels/v1' ? [] : ['Exact OBJ voxel source schema is not recognized.']),
-    ...(source.metrics.slotCount === 19 ? [] : [`Generated source slot count is ${source.metrics.slotCount}; expected 19.`]),
-    ...(source.metrics.totalVoxelCount > 0 ? [] : ['Generated source has no voxels.']),
-    ...(source.source.hash.startsWith('sha256:') ? [] : ['Generated source hash is missing.']),
-    ...(source.options.targetHeightVoxels === 192 ? [] : [`Exact source target height is ${source.options.targetHeightVoxels}; expected 192.`]),
-    ...(source.options.surfaceThicknessVoxels === 1 ? [] : [`Exact source thickness is ${source.options.surfaceThicknessVoxels}; expected 1.`]),
-  ];
-
-  return {
-    ready: issues.length === 0,
-    issues,
-    summary: {
-      schemaVersion: source.schemaVersion,
-      targetHeightVoxels: source.options.targetHeightVoxels,
-      surfaceThicknessVoxels: source.options.surfaceThicknessVoxels,
-      voxelScale: source.coordinateSystem.voxelScale,
-      slotCount: source.metrics.slotCount,
-      totalVoxelCount: source.metrics.totalVoxelCount,
-      totalRunCount: source.metrics.totalRunCount,
-      maxSlotVoxelCount: source.metrics.maxSlotVoxelCount,
-      excludedObjectCount: source.metrics.excludedObjectCount,
-      sourceHash: source.source.hash,
-      sourceFileName: source.source.fileName,
-    },
-  };
+  return buildV3ExactSourceDashboardEvidence();
 }
 
 function currentCalibrationWorkflowState(): V3ReadinessCalibrationWorkflowState {
@@ -360,29 +339,36 @@ function buildReferenceEvidence(): V3ReadinessReferenceComparisonInput {
     metadata: latestReferenceMetadata ?? undefined,
     comparison: latestComparison ? assertNoV3ReferencePayloadPersisted({
       silhouette: latestComparison,
-      referenceFitGaps: latestReferenceFitGaps ? {
-        ready: latestReferenceFitGaps.ready,
-        summary: latestReferenceFitGaps.summary,
-        topSlots: latestReferenceFitGaps.slots.slice(0, 8).map((slot) => ({
-          slot: slot.slot,
-          v3Slots: slot.v3Slots,
-          current: slot.current,
-          target: slot.target,
-          targetConfidence: slot.targetConfidence,
-          targetWarnings: slot.targetWarnings,
-          maxSeverity: slot.maxSeverity,
-          issues: slot.issues.map((issue) => ({
-            code: issue.code,
-            axis: issue.axis,
-            direction: issue.direction,
-            current: issue.current,
-            target: issue.target,
-            delta: issue.delta,
-            severity: issue.severity,
-            message: issue.message,
+      segmentationReview: {
+        ready: exactSourceSegmentation.ready,
+        summary: exactSourceSegmentation.summary,
+        bodyRebuildRequired: false,
+        diagnostics: exactSourceSegmentation.diagnostics.slice(0, 12),
+        referenceFitGaps: latestReferenceFitGaps ? {
+          ready: latestReferenceFitGaps.ready,
+          summary: latestReferenceFitGaps.summary,
+          bodyRebuildRequired: false,
+          topSlots: latestReferenceFitGaps.slots.slice(0, 8).map((slot) => ({
+            slot: slot.slot,
+            v3Slots: slot.v3Slots,
+            current: slot.current,
+            target: slot.target,
+            targetConfidence: slot.targetConfidence,
+            targetWarnings: slot.targetWarnings,
+            maxSeverity: slot.maxSeverity,
+            issues: slot.issues.map((issue) => ({
+              code: issue.code,
+              axis: issue.axis,
+              direction: issue.direction,
+              current: issue.current,
+              target: issue.target,
+              delta: issue.delta,
+              severity: issue.severity,
+              message: issue.message,
+            })),
           })),
-        })),
-      } : null,
+        } : null,
+      },
     }) : undefined,
     proportionBands: latestReferenceProportionBands
       ? assertNoV3ReferencePayloadPersisted(latestReferenceProportionBands)
@@ -447,9 +433,11 @@ function renderMetrics(report: V3ReadinessDashboardReport): void {
     metric('Manual Items', `${Object.values(report.checklist).filter(Boolean).length}/${V3_READINESS_CHECKLIST_ITEM_IDS.length}`),
     metric('Reference Loaded', Boolean(latestReferenceMetadata)),
     metric('Reference Acknowledged', report.evidence.referenceComparison.acknowledged),
+    metric('Static Body Baseline', report.evidence.referenceVoxelSource.ready ? 'Accepted' : 'Blocked'),
     metric('Reference Proportions', report.evidence.referenceProportions.ready ?? 'unknown'),
     metric('Reference Feature Match', report.evidence.referenceFeatureMatch.ready ?? 'unknown'),
     metric('Exact OBJ Voxel Source', report.evidence.referenceVoxelSource.ready ?? 'unknown'),
+    metric('Segmentation Review', exactSourceSegmentation.summary.segmentationReviewCount),
     metric('Suit Fidelity', report.evidence.suitFidelity.ready ?? 'unknown'),
     metric('Visual QA', report.evidence.visualQa.ready ?? 'unknown'),
     metric('Pose Clearance', report.evidence.poseClearance.ready ?? 'unknown'),
@@ -584,22 +572,31 @@ function renderFitGaps(): void {
   fitGapSummary.innerHTML = '';
   const report = latestReferenceFitGaps;
   fitGapSummary.append(
-    metric('Fit Gap Status', report?.ready ?? 'pending'),
+    metric('Segmentation Status', exactSourceSegmentation.ready ? 'review' : 'blocked'),
     metric('Slot Families', report?.summary.slotCount ?? 0),
-    metric('Fit Issues', report?.summary.issueCount ?? 'pending'),
+    metric('Review Issues', report?.summary.issueCount ?? exactSourceSegmentation.summary.segmentationReviewCount),
     metric('Target Warnings', report?.summary.targetWarningCount ?? 'pending'),
+    metric('Body Rebuild Required', 'false'),
     metric('Max Severity', report ? report.summary.maxSeverity.toFixed(2) : 'pending')
   );
 
   if (!report) {
-    fitGapReport.textContent = 'Reference Fit Gaps have not been built for this dashboard session. Load the canonical OBJ reference to compare current V3 slot-family bounds against OBJ slot guides.';
+    fitGapReport.textContent = `${formatV3ObjSurfaceSlotSegmentationSummary(exactSourceSegmentation)} Load the canonical OBJ reference to attach legacy slot-family fit gaps as segmentation diagnostics.`;
     return;
   }
 
   fitGapReport.textContent = JSON.stringify({
+    segmentationReview: {
+      ready: exactSourceSegmentation.ready,
+      summary: exactSourceSegmentation.summary,
+      text: formatV3ObjSurfaceSlotSegmentationSummary(exactSourceSegmentation),
+      bodyRebuildRequired: false,
+      diagnostics: exactSourceSegmentation.diagnostics.slice(0, 20),
+    },
     summary: {
       ...report.summary,
-      text: formatV3ReferenceFitGapSummary(report),
+      text: `${formatV3ReferenceFitGapSummary(report)} These are Phase 39 segmentation review diagnostics, not accepted-body reshape blockers.`,
+      bodyRebuildRequired: false,
     },
     topSlots: report.slots.slice(0, 10).map((slot) => ({
       slot: slot.slot,
@@ -663,12 +660,19 @@ function renderReferenceSummary(): void {
     referenceFeatureMatch: latestReferenceFeatureMatch?.summary ?? {
       status: 'pending',
     },
-    referenceFitGaps: latestReferenceFitGaps ? {
-      ready: latestReferenceFitGaps.ready,
-      summary: latestReferenceFitGaps.summary,
-      topSlots: latestReferenceFitGaps.slots.slice(0, 8),
-    } : {
-      status: 'pending',
+    segmentationReview: {
+      ready: exactSourceSegmentation.ready,
+      summary: exactSourceSegmentation.summary,
+      bodyRebuildRequired: false,
+      diagnostics: exactSourceSegmentation.diagnostics.slice(0, 12),
+      referenceFitGaps: latestReferenceFitGaps ? {
+        ready: latestReferenceFitGaps.ready,
+        summary: latestReferenceFitGaps.summary,
+        bodyRebuildRequired: false,
+        topSlots: latestReferenceFitGaps.slots.slice(0, 8),
+      } : {
+        status: 'pending',
+      },
     },
     referenceVoxelSource: compactReferenceVoxelSourceEvidence().summary,
     calibration: currentCalibrationWorkflowState(),
@@ -710,6 +714,7 @@ function renderDashboard(): void {
   (window as any).__IBRAWLS_V3_AEGIS_CALIBRATION__ = latestCalibrationReport;
   (window as any).__IBRAWLS_V3_REFERENCE_FEATURE_MATCH__ = latestReferenceFeatureMatch;
   (window as any).__IBRAWLS_V3_REFERENCE_FIT_GAPS__ = latestReferenceFitGaps;
+  (window as any).__IBRAWLS_V3_SEGMENTATION_REVIEW__ = exactSourceSegmentation;
 }
 
 async function runAutomatedEvidence(): Promise<void> {

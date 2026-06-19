@@ -8,6 +8,10 @@ import {
   type V3PoseClearanceReport,
 } from '../components/grifball/v3PoseClearance';
 import { summarizeV3SceneRenderBudget, type V3RenderBudgetSummary } from '../components/v3/v3PerformanceBudget';
+import {
+  analyzeV3ExactSourceLodBudget,
+  type V3ExactSourceLodBudgetReport,
+} from '../components/v3/v3ExactSourceLod';
 import { normalizeV3QualityTier } from '../components/v3/v3QualityTiers';
 import { V3_QUALITY_TIERS, type V3QualityTier } from '../components/v3/v3ModelTypes';
 import type { CharacterLoadout } from '../components/VoxelModels';
@@ -37,6 +41,8 @@ export interface V3PerformanceSmokeReport {
   visualQa: V3VisualQaReport;
   poseClearanceReady: boolean;
   poseClearance: V3PoseClearanceReport;
+  exactSourceLodBudgetReady: boolean;
+  exactSourceLodBudget: V3ExactSourceLodBudgetReport;
   issues: string[];
 }
 
@@ -263,6 +269,7 @@ export function buildV3PerformanceSmokeReport(
     .sort() as ('hammer' | 'pistol' | 'sword')[];
   const visualQa = buildCombinedV3SmokeVisualQaReport(smoke.combatants);
   const poseClearance = getCachedV3PerformancePoseClearance(smoke.qualityTier);
+  const exactSourceLodBudget = analyzeV3ExactSourceLodBudget();
   const issues: string[] = [];
 
   if (smoke.combatants.length !== 8) {
@@ -298,6 +305,9 @@ export function buildV3PerformanceSmokeReport(
       : '';
     issues.push(`pose clearance ${issue.caseId} ${issue.code}: ${issue.message}${metricLabel}`);
   }
+  for (const issue of exactSourceLodBudget.issues) {
+    issues.push(`exact source LOD budget: ${issue}`);
+  }
 
   return {
     ready: issues.length === 0,
@@ -310,6 +320,8 @@ export function buildV3PerformanceSmokeReport(
     visualQa,
     poseClearanceReady: poseClearance.ready,
     poseClearance,
+    exactSourceLodBudgetReady: exactSourceLodBudget.ready,
+    exactSourceLodBudget,
     issues,
   };
 }
