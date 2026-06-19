@@ -2,14 +2,14 @@ import * as THREE from 'three';
 import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
-import { createCombatantMeshRig } from '../components/grifball/combatantModels';
+import { buildV3SpartanModel } from '../components/v3/VoxelModelsV3';
 import {
   analyzeV3AegisReferenceProportions,
   formatV3ReferenceProportionGapSummary,
   sampleV3ReferenceProportionBands,
   type V3ReferenceProportionReport,
 } from '../components/v3/v3ReferenceProportions';
-import { V3_AEGIS_REFERENCE_VOXEL_SOURCE } from '../components/v3/v3AegisReferenceVoxels.generated';
+import { V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE } from '../components/v3/v3AegisObjSurfaceVoxels.generated';
 import {
   analyzeV3BuiltInReferenceFeatureMatch,
   analyzeV3BuiltInSuitFidelity,
@@ -64,7 +64,7 @@ import {
   type V3ReferenceFitGapReport,
 } from './v3ReferenceFitGaps';
 import {
-  hideV3ReadinessComparisonWeapons,
+  createV3ReadinessComparisonLoadout,
   normalizeV3ReadinessComparisonSubject,
 } from './v3ReadinessDashboardPreview';
 
@@ -211,26 +211,14 @@ function ensureV3PreviewModel(): boolean {
   if (v3PreviewError) return false;
 
   try {
-    const v3Rig = createCombatantMeshRig(v3Scene, 188, false, {
-      modelSystem: 'v3',
-      paintJob: {
-        v3RoleColors: {
-          primary: '#38bdf8',
-          secondary: '#0f172a',
-          accent: '#fbbf24',
-          visor: '#67e8f9',
-          emissive: '#5eead4',
-        },
-        v3RoleEmissive: {
-          visor: true,
-          emissive: true,
-        },
-      },
-    }, {
+    const v3Model = buildV3SpartanModel({
+      customHue: 188,
+      isEnemy: false,
+      loadout: createV3ReadinessComparisonLoadout(),
+      v3ArmorRenderStyle: 'voxelEdit',
       v3QualityTier: 'desktop',
     });
-    hideV3ReadinessComparisonWeapons(v3Rig);
-    v3Root.add(v3Rig.group);
+    v3Root.add(v3Model);
     normalizeV3ReadinessComparisonSubject(v3Root);
     v3PreviewReady = true;
     return true;
@@ -288,12 +276,14 @@ function compactReferenceFeatureMatchEvidence(): V3ReadinessEvidenceSummaryInput
 }
 
 function compactReferenceVoxelSourceEvidence() {
-  const source = V3_AEGIS_REFERENCE_VOXEL_SOURCE;
+  const source = V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE;
   const issues = [
-    ...(source.schemaVersion === 'v3-aegis-reference-voxels/v1' ? [] : ['Generated source schema is not recognized.']),
+    ...(source.schemaVersion === 'v3-obj-surface-voxels/v1' ? [] : ['Exact OBJ voxel source schema is not recognized.']),
     ...(source.metrics.slotCount === 19 ? [] : [`Generated source slot count is ${source.metrics.slotCount}; expected 19.`]),
     ...(source.metrics.totalVoxelCount > 0 ? [] : ['Generated source has no voxels.']),
     ...(source.source.hash.startsWith('sha256:') ? [] : ['Generated source hash is missing.']),
+    ...(source.options.targetHeightVoxels === 192 ? [] : [`Exact source target height is ${source.options.targetHeightVoxels}; expected 192.`]),
+    ...(source.options.surfaceThicknessVoxels === 1 ? [] : [`Exact source thickness is ${source.options.surfaceThicknessVoxels}; expected 1.`]),
   ];
 
   return {
@@ -301,11 +291,14 @@ function compactReferenceVoxelSourceEvidence() {
     issues,
     summary: {
       schemaVersion: source.schemaVersion,
-      gridScale: source.gridScale,
+      targetHeightVoxels: source.options.targetHeightVoxels,
+      surfaceThicknessVoxels: source.options.surfaceThicknessVoxels,
+      voxelScale: source.coordinateSystem.voxelScale,
       slotCount: source.metrics.slotCount,
       totalVoxelCount: source.metrics.totalVoxelCount,
       totalRunCount: source.metrics.totalRunCount,
       maxSlotVoxelCount: source.metrics.maxSlotVoxelCount,
+      excludedObjectCount: source.metrics.excludedObjectCount,
       sourceHash: source.source.hash,
       sourceFileName: source.source.fileName,
     },
@@ -456,7 +449,7 @@ function renderMetrics(report: V3ReadinessDashboardReport): void {
     metric('Reference Acknowledged', report.evidence.referenceComparison.acknowledged),
     metric('Reference Proportions', report.evidence.referenceProportions.ready ?? 'unknown'),
     metric('Reference Feature Match', report.evidence.referenceFeatureMatch.ready ?? 'unknown'),
-    metric('Reference Voxel Source', report.evidence.referenceVoxelSource.ready ?? 'unknown'),
+    metric('Exact OBJ Voxel Source', report.evidence.referenceVoxelSource.ready ?? 'unknown'),
     metric('Suit Fidelity', report.evidence.suitFidelity.ready ?? 'unknown'),
     metric('Visual QA', report.evidence.visualQa.ready ?? 'unknown'),
     metric('Pose Clearance', report.evidence.poseClearance.ready ?? 'unknown'),
@@ -516,7 +509,7 @@ function renderCalibration(): void {
 
   if (!latestCalibrationReport) {
     const renderedGateClosureStatus = workflowState.status === 'source-active'
-      ? 'Generated Source Active'
+      ? 'Exact Source Active'
       : workflowState.status === 'candidate-required'
         ? 'Reconstruction Required'
         : 'waiting';
@@ -527,7 +520,7 @@ function renderCalibration(): void {
       metric('Candidates', 0)
     );
     calibrationReport.textContent = workflowState.status === 'source-active'
-      ? `${workflowState.message} Reconstruction Required now means a rendered model gap should be handled through the OBJ-derived voxel source and reconstruction pipeline, not another envelope patch.`
+      ? `${workflowState.message} Reconstruction Required now means a rendered model gap should be handled through the exact OBJ voxel source pipeline, not another envelope patch.`
       : `${workflowState.message} Rendered Gate Closure will report Reconstruction Required when envelope candidates improve score but fail focused OBJ bands.`;
     return;
   }
@@ -636,7 +629,7 @@ function buildCalibrationJsonExport(): string {
     issue: latestCalibrationReport
       ? undefined
       : workflowState.status === 'source-active'
-        ? 'Envelope calibration skipped because OBJ-derived reference voxel source is active.'
+        ? 'Envelope calibration skipped because exact OBJ surface voxel source is active.'
         : 'No V3 Aegis calibration report is available. Load the canonical OBJ reference first.',
   }, null, 2);
 }

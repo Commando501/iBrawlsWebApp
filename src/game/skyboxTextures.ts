@@ -235,8 +235,27 @@ function detectSkyboxTextureSize(): SkyboxTextureSize {
 const hsl = (hue: number, saturation: number, lightness: number, alpha = 1): string =>
   `hsla(${((hue % 360) + 360) % 360}, ${saturation}%, ${Math.max(0, Math.min(100, lightness))}%, ${alpha})`;
 
+const HEX_COLOR_PATTERN = /^#?[0-9a-f]{3}(?:[0-9a-f]{3})?$/i;
+
+export const normalizeSkyboxFogColor = (color: string): string => {
+  const trimmed = color.trim();
+  if (HEX_COLOR_PATTERN.test(trimmed)) {
+    const raw = trimmed.replace('#', '');
+    const full = raw.length === 3
+      ? raw.split('').map((char) => `${char}${char}`).join('')
+      : raw.slice(0, 6);
+    return `#${full.toLowerCase()}`;
+  }
+
+  const parsed = new THREE.Color(trimmed);
+  const channels = [parsed.r, parsed.g, parsed.b];
+  return channels.every((channel) => Number.isFinite(channel))
+    ? `#${parsed.getHexString()}`
+    : '#000000';
+};
+
 const hexToRgb = (hex: string): { r: number; g: number; b: number } => {
-  const normalized = hex.trim().replace('#', '');
+  const normalized = normalizeSkyboxFogColor(hex).replace('#', '');
   const full = normalized.length === 3
     ? normalized.split('').map((char) => `${char}${char}`).join('')
     : normalized.padEnd(6, '0').slice(0, 6);

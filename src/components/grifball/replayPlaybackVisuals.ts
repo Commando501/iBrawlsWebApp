@@ -6,6 +6,7 @@ import { createCombatantMeshRig } from './combatantModels';
 import { syncCombatantTeamOutline } from './combatantTeamOutlines';
 import { type SwordLungeCurrentTrailStyle } from './combatGeometry';
 import { type ReplayInterpolatedPlayer } from './replayHelpers';
+import { updateRunnerVisualStateForGroup } from './runnerVisualState';
 import { resolveReplayCombatantVisualLoadout } from './replayVisualMetadata';
 import { type GrifballThreeRefs } from './threeRefs';
 import type { V3RenderOptions } from '../v3/v3QualityTiers';
@@ -71,14 +72,14 @@ export function updateReplayCombatantVisualsForFrame({
     );
     if (!meshes || meshes.group.userData.appliedHue !== player.hue || meshes.group.userData.appliedLoadoutKey !== visualLoadoutKey || qualityChanged) {
       if (meshes?.group) scene.remove(meshes.group);
-      meshes = createCombatantMeshRig(scene, player.hue, false, visualLoadout, v3Options, teamOutlineTeam);
+      meshes = createCombatantMeshRig(scene, player.hue, false, visualLoadout, v3Options, teamOutlineTeam, settings);
       meshes.group.userData.appliedHue = player.hue;
       meshes.group.userData.appliedLoadoutKey = visualLoadoutKey;
       refs.otherPlayerMeshes.set(id, meshes);
     }
 
     const { group, hammer, sword, pistol } = meshes;
-    syncCombatantTeamOutline(group, teamOutlineTeam);
+    syncCombatantTeamOutline(group, teamOutlineTeam, settings);
     group.position.copy(player.pos);
     group.rotation.y = player.yaw;
     group.scale.set(1, player.crouchScaleY, 1);
@@ -104,6 +105,12 @@ export function updateReplayCombatantVisualsForFrame({
     hammer.visible = alive && player.activeWeapon === 'hammer';
     sword.visible = alive && player.activeWeapon === 'sword';
     if (pistol) pistol.visible = alive && player.activeWeapon === 'pistol';
+    updateRunnerVisualStateForGroup({
+      group,
+      carrying: player.activeWeapon === 'ball',
+      hp: player.hp,
+      alive: alive && !isSpectatedInFirstPerson,
+    });
 
     if (settings) {
       animateCombatantWeaponMeshes({

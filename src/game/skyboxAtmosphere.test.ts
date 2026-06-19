@@ -7,6 +7,7 @@ import {
   SKYBOX_TEXTURE_IDS,
   SKYBOX_PRESETS,
   clampAtmosphereSettings,
+  normalizeSkyboxFogColor,
   resolveSkyboxAtmosphereSettings,
   resolveSkyboxTextureId,
   resolveSkyboxTextureSize,
@@ -55,6 +56,13 @@ test('unknown skybox ids fall back to cyberpunk', () => {
   assert.equal(resolveSkyboxTextureId('missing'), 'cyberpunk');
   assert.equal(resolveSkyboxTextureId(''), 'cyberpunk');
   assert.equal(resolveSkyboxTextureId(undefined), 'cyberpunk');
+});
+
+test('skybox fog color accepts runtime hsl colors for canvas gradients', () => {
+  const normalized = normalizeSkyboxFogColor('hsl(224, 70%, 4%)');
+
+  assert.match(normalized, /^#[0-9a-f]{6}$/);
+  assert.notEqual(normalized, '#000000');
 });
 
 test('atmosphere settings merge with preset defaults and clamp user values', () => {

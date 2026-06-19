@@ -193,14 +193,14 @@ export function createOrUpdateRemoteCombatantForState({
   );
   if (!meshes || meshes.group.userData.appliedHue !== hue || meshes.group.userData.appliedLoadoutKey !== visualLoadoutKey || qualityChanged) {
     if (meshes?.group) scene.remove(meshes.group);
-    meshes = createCombatantMeshRig(scene, hue, false, visualLoadout, v3Options, teamOutlineTeam);
+    meshes = createCombatantMeshRig(scene, hue, false, visualLoadout, v3Options, teamOutlineTeam, state.settings);
     meshes.group.userData.appliedLoadoutKey = visualLoadoutKey;
     refs.otherPlayerMeshes.set(clientId, meshes);
     playerState.hue = hue;
   }
 
   const { group, hammer, sword, pistol } = meshes;
-  syncCombatantTeamOutline(group, teamOutlineTeam);
+  syncCombatantTeamOutline(group, teamOutlineTeam, state.settings);
   group.position.copy(playerState.pos);
   group.rotation.y = playerState.yaw;
 

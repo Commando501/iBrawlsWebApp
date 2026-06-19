@@ -8,6 +8,7 @@ import {
   generateV3AegisReferenceVoxelSourceFile,
 } from './generateV3AegisFromObj';
 import { buildV3ObjVoxelizationArtifact } from './v3ObjVoxelizer';
+import { buildV3ObjSurfaceVoxelizationArtifact } from './v3ObjSurfaceVoxelizer';
 
 const objText = [
   'o Helmet:_Mark_V_[B]',
@@ -69,25 +70,55 @@ describe('generateV3AegisFromObj', () => {
     assert.equal(source.includes('as const'), true);
   });
 
-  it('generates a source file from a local OBJ path using only sanitized metadata', () => {
+  it('formats an exact OBJ surface source with global voxel metadata and no raw payloads', () => {
+    const artifact = buildV3ObjSurfaceVoxelizationArtifact({
+      objText,
+      mtlText: [
+        'newmtl spartan_visor_default',
+        'Ke 0.2 0.9 1.0',
+      ].join('\n'),
+      fileName: 'C:/private/reference.obj',
+    }, {
+      targetHeightVoxels: 48,
+      surfaceThicknessVoxels: 1,
+    });
+    const source = buildV3AegisGeneratedSource(artifact);
+
+    assert.match(source, /V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE/);
+    assert.match(source, /v3-obj-surface-voxels\/v1/);
+    assert.match(source, /"targetHeightVoxels":48/);
+    assert.match(source, /"voxelScale":/);
+    assert.equal(source.includes('C:/private'), false);
+    assert.equal(source.includes('v -0.1'), false);
+    assert.equal(source.includes('"triangles"'), false);
+    assert.equal(source.includes('spartan_visor_default\\n'), false);
+  });
+
+  it('generates an exact surface source file from a local OBJ path using only sanitized metadata', () => {
     const tempRoot = mkdtempSync(join(tmpdir(), 'ibrawls-v3-aegis-'));
     try {
       const inputPath = join(tempRoot, 'private-reference.obj');
-      const outputPath = join(tempRoot, 'v3AegisReferenceVoxels.generated.ts');
-      writeFileSync(inputPath, objText, 'utf8');
+      const mtlPath = join(tempRoot, 'local.mtl');
+      const outputPath = join(tempRoot, 'v3AegisObjSurfaceVoxels.generated.ts');
+      writeFileSync(inputPath, `mtllib local.mtl\n${objText}`, 'utf8');
+      writeFileSync(mtlPath, 'newmtl spartan_visor_default\nKe 0.2 0.9 1.0\n', 'utf8');
 
       const artifact = generateV3AegisReferenceVoxelSourceFile({
         inputPath,
         outputPath,
-        gridScale: 4,
+        mode: 'surface',
+        targetHeightVoxels: 48,
       });
       const generated = readFileSync(outputPath, 'utf8');
 
-      assert.equal(artifact.gridScale, 4);
+      assert.equal(artifact.schemaVersion, 'v3-obj-surface-voxels/v1');
+      assert.equal(artifact.options.targetHeightVoxels, 48);
       assert.ok(artifact.metrics.totalVoxelCount > 0);
       assert.match(generated, /private-reference\.obj/);
+      assert.match(generated, /V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE/);
       assert.equal(generated.includes(tempRoot), false);
       assert.equal(generated.includes('v -0.1'), false);
+      assert.equal(generated.includes('Ke 0.2'), false);
     } finally {
       rmSync(tempRoot, { recursive: true, force: true });
     }

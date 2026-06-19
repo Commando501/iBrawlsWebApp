@@ -18,6 +18,10 @@ const createBodyMesh = (name: string): THREE.Mesh => {
   return mesh;
 };
 
+const assertNearlyEqual = (actual: number, expected: number): void => {
+  assert.ok(Math.abs(actual - expected) < 0.000001, `${actual} !== ${expected}`);
+};
+
 test('team outline follows registered body sources and skips later weapon meshes', () => {
   const root = new THREE.Group();
   const torso = createBodyMesh('torso');
@@ -43,6 +47,52 @@ test('team outline follows registered body sources and skips later weapon meshes
   assert.equal(outline.meshes[0].mesh.geometry, torso.geometry);
   assert.equal(outline.meshes[0].mesh.parent, torso.parent);
   assert.equal(outline.meshes[0].mesh.userData.teamOutlineMesh, true);
+});
+
+test('team outline defaults are bright and thick enough for team readability', () => {
+  const root = new THREE.Group();
+  const torso = createBodyMesh('torso');
+  root.add(torso);
+  registerCombatantTeamOutlineSources(root);
+
+  const outline = syncCombatantTeamOutline(root, 'blue');
+
+  assert.ok(outline);
+  assert.equal(outline.material.opacity, 0.72);
+  assertNearlyEqual(outline.meshes[0].mesh.scale.x, 1.08);
+});
+
+test('team outline accepts custom thickness brightness and color settings', () => {
+  const root = new THREE.Group();
+  const torso = createBodyMesh('torso');
+  torso.scale.set(2, 3, 4);
+  root.add(torso);
+  registerCombatantTeamOutlineSources(root);
+
+  const outline = syncCombatantTeamOutline(root, 'blue', {
+    thickness: 0.12,
+    brightness: 0.9,
+    colorMode: 'custom',
+    customColor: '#facc15',
+  });
+
+  assert.ok(outline);
+  assert.equal(outline.material.color.getHexString(), 'facc15');
+  assert.equal(outline.material.opacity, 0.9);
+  assertNearlyEqual(outline.meshes[0].mesh.scale.x, 2.24);
+  assertNearlyEqual(outline.meshes[0].mesh.scale.y, 3.36);
+  assertNearlyEqual(outline.meshes[0].mesh.scale.z, 4.48);
+
+  syncCombatantTeamOutline(root, 'red', {
+    thickness: 0.05,
+    brightness: 0.6,
+    colorMode: 'team',
+    customColor: '#facc15',
+  });
+
+  assert.equal(outline.material.color.getHexString(), RED_TEAM_OUTLINE_COLOR.slice(1));
+  assert.equal(outline.material.opacity, 0.6);
+  assertNearlyEqual(outline.meshes[0].mesh.scale.x, 2.1);
 });
 
 test('team outline updates color in place and removes cleanly when disabled', () => {

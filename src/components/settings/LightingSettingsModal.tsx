@@ -12,6 +12,11 @@ export function LightingSettingsModal({
   setAdminSettings,
   onClose,
 }: LightingSettingsModalProps) {
+  const teamOutlineThickness = adminSettings.teamOutlineThickness ?? 0.08;
+  const teamOutlineBrightness = adminSettings.teamOutlineBrightness ?? 0.72;
+  const teamOutlineColorMode = adminSettings.teamOutlineColorMode ?? 'team';
+  const teamOutlineColor = adminSettings.teamOutlineColor ?? '#38bdf8';
+
   return (
     <div className="mobile-modal bg-slate-950/90 border border-white/10 backdrop-blur-2xl rounded-2xl p-6 w-[400px] max-w-[calc(100vw-1.5rem)] max-h-[calc(100dvh-1.5rem)] shadow-2xl flex flex-col select-none overflow-y-auto overflow-x-hidden">
       <div className="text-center mb-6 border-b border-white/5 pb-4">
@@ -116,6 +121,72 @@ export function LightingSettingsModal({
               adminSettings.showSkybox !== false ? 'translate-x-4' : 'translate-x-0'
             }`} />
           </button>
+        </div>
+
+        <div className="flex flex-col gap-2 border-t border-white/5 pt-5">
+          <div className="flex justify-between text-[11px] font-bold uppercase tracking-wider text-white/80">
+            <span>Team Outline Thickness</span>
+            <span className="text-amber-400 font-mono">{Math.round(teamOutlineThickness * 100)}%</span>
+          </div>
+          <input
+            type="range"
+            min="0.02"
+            max="0.20"
+            step="0.01"
+            value={teamOutlineThickness}
+            onChange={(event) => setAdminSettings((prev) => ({ ...prev, teamOutlineThickness: parseFloat(event.target.value) }))}
+            className="w-full accent-amber-400 h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
+          />
+          <p className="text-[10px] text-white/40">Expands team body outlines around visible Grifball combatants.</p>
+        </div>
+
+        <div className="flex flex-col gap-2">
+          <div className="flex justify-between text-[11px] font-bold uppercase tracking-wider text-white/80">
+            <span>Team Outline Brightness</span>
+            <span className="text-amber-400 font-mono">{Math.round(teamOutlineBrightness * 100)}%</span>
+          </div>
+          <input
+            type="range"
+            min="0.1"
+            max="1.0"
+            step="0.05"
+            value={teamOutlineBrightness}
+            onChange={(event) => setAdminSettings((prev) => ({ ...prev, teamOutlineBrightness: parseFloat(event.target.value) }))}
+            className="w-full accent-amber-400 h-1 bg-white/10 rounded-lg appearance-none cursor-pointer"
+          />
+          <p className="text-[10px] text-white/40">Controls outline opacity and additive glow intensity.</p>
+        </div>
+
+        <div className="flex flex-col gap-3">
+          <div className="flex justify-between items-center text-[11px] font-bold uppercase tracking-wider text-white/80">
+            <div className="flex items-center gap-2">
+              <span>Team Outline Color</span>
+              <span
+                className="w-4 h-4 rounded-full border border-white/20 shadow-inner"
+                style={{ backgroundColor: teamOutlineColorMode === 'custom' ? teamOutlineColor : '#38bdf8' }}
+              />
+            </div>
+            <span className="text-amber-400 font-mono">{teamOutlineColorMode === 'custom' ? 'Custom' : 'Team'}</span>
+          </div>
+          <select
+            value={teamOutlineColorMode}
+            onChange={(event) => setAdminSettings((prev) => ({
+              ...prev,
+              teamOutlineColorMode: event.target.value === 'custom' ? 'custom' : 'team',
+            }))}
+            className="h-9 bg-black/60 border border-white/10 rounded px-2.5 text-xs text-white font-bold uppercase outline-none focus:border-amber-400 cursor-pointer transition-all font-sans"
+          >
+            <option value="team">Team Colors</option>
+            <option value="custom">Custom Color</option>
+          </select>
+          <input
+            type="color"
+            value={teamOutlineColor}
+            onChange={(event) => setAdminSettings((prev) => ({ ...prev, teamOutlineColor: event.target.value }))}
+            className="h-9 w-full cursor-pointer rounded border border-white/10 bg-black/60 p-1"
+            aria-label="Team Outline Color"
+          />
+          <p className="text-[10px] text-white/40">Team colors keep blue and red outlines; custom applies one shared outline color.</p>
         </div>
       </div>
 

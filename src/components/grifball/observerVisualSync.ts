@@ -3,6 +3,7 @@ import { type Combatant, type Keybindings } from '../../types';
 import { resolveHammerSlamTiming } from '../../game/hammerSlamTiming';
 import { animateCombatantWeaponMeshes, animateSpartanCombatantModel } from './combatantAnimation';
 import { type GrifballRuntimeState } from './runtimeState';
+import { updateRunnerVisualStateForGroup } from './runnerVisualState';
 import { type SpectateTargetData, type SpectateTargetRole } from './spectateTargets';
 import { type GrifballThreeRefs } from './threeRefs';
 
@@ -102,6 +103,14 @@ export function updateObserverCombatantVisualsForState({
         combatantModel: refs.hostGroup,
       });
     }
+
+    const hostHolderId = multiplayerRole === 'observer' ? state.hostClientId : 'player';
+    updateRunnerVisualStateForGroup({
+      group: refs.hostGroup,
+      carrying: state.grifball.ball.state === 'held' && state.grifball.ball.holderId === hostHolderId,
+      hp: hostData.hp,
+      alive: hostData.hp > 0,
+    });
   }
 
   if (refs.enemyGroup) {
@@ -176,6 +185,14 @@ export function updateObserverCombatantVisualsForState({
           combatantModel: refs.enemyGroup,
         });
       }
+
+      const enemyHolderId = multiplayerRole === 'observer' ? state.clientClientId : mainAI?.id;
+      updateRunnerVisualStateForGroup({
+        group: refs.enemyGroup,
+        carrying: state.grifball.ball.state === 'held' && !!enemyHolderId && state.grifball.ball.holderId === enemyHolderId,
+        hp: clientData.hp,
+        alive: clientData.hp > 0,
+      });
     }
   }
 }

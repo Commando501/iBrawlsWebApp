@@ -52,3 +52,22 @@ test('saved gameplay settings backfill Runner / Ball defaults', () => {
   assert.equal(settings.grifballRunnerHealRate, 1.0);
   assert.equal(settings.grifballAllowRunnerThrust, true);
 });
+
+test('default gameplay settings include team outline controls', () => {
+  const defaults = DEFAULT_ADMIN_SETTINGS as any;
+
+  assert.equal(defaults.teamOutlineThickness, 0.08);
+  assert.equal(defaults.teamOutlineBrightness, 0.72);
+  assert.equal(defaults.teamOutlineColorMode, 'team');
+  assert.equal(defaults.teamOutlineColor, '#38bdf8');
+});
+
+test('saved gameplay settings backfill team outline controls', () => {
+  const settings = withDefaultGameplaySettings({ maxHP: 7 } as any) as any;
+
+  assert.equal(settings.maxHP, 7);
+  assert.equal(settings.teamOutlineThickness, 0.08);
+  assert.equal(settings.teamOutlineBrightness, 0.72);
+  assert.equal(settings.teamOutlineColorMode, 'team');
+  assert.equal(settings.teamOutlineColor, '#38bdf8');
+});

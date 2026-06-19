@@ -23,6 +23,7 @@ import {
   createV3AegisPartVoxels,
   getV3AegisPartSpec,
   getV3BuiltinPartGridScale,
+  getV3BuiltinPartVoxelScale,
   scaleV3Dimensions,
   type V3AegisPartSpec,
   type V3BuiltinPartGridScale,
@@ -164,7 +165,11 @@ function getValidV3CustomPiece(
   return validation.valid ? piece : undefined;
 }
 
-export { getV3BuiltinPartGridScale } from './v3AegisSuitParts';
+export {
+  getV3AegisObjSurfaceSourceSummary,
+  getV3BuiltinPartGridScale,
+  getV3BuiltinPartVoxelScale,
+} from './v3AegisSuitParts';
 
 const createSegmentGroups = (): Record<V3AegisPartSpec['segment'], THREE.Group> => ({
   lowerTorso: new THREE.Group(),
@@ -246,12 +251,15 @@ export function buildV3SpartanModel(options: V3SpartanBuildOptions = {}): THREE.
     const spec = getV3AegisPartSpec(part.slot);
     const customPiece = getValidV3CustomPiece(options.loadout, part.slot);
     const gridScale = customPiece ? getCustomArmorGridScale(customPiece) : getV3BuiltinPartGridScale(part.slot);
+    const voxelScale = customPiece
+      ? V3_ARMOR_SURFACE_BASE_VOXEL_SCALE / gridScale
+      : getV3BuiltinPartVoxelScale(part.slot);
     const voxels = customPiece
       ? customArmorPieceToVoxels(customPiece, customArmorColors)
       : createV3AegisPartVoxels(part, scaleV3Dimensions(spec.dimensions, gridScale), colors, paintJob);
     const group = createV3VoxelArmorGroup(voxels, {
       ...V3_ARMOR_SURFACE_DEFAULT_OPTIONS,
-      voxelScale: V3_ARMOR_SURFACE_BASE_VOXEL_SCALE / gridScale,
+      voxelScale,
       renderStyle: v3ArmorRenderStyle,
       qualityTier: v3QualityTier,
     });
@@ -261,7 +269,7 @@ export function buildV3SpartanModel(options: V3SpartanBuildOptions = {}): THREE.
       distance: v3Distance,
     });
     group.name = `v3:${part.slot}`;
-    group.position.set(...getV3PartLocalPosition(part.slot, spec));
+    group.position.set(...(customPiece ? getV3PartLocalPosition(part.slot, spec) : [0, 0, 0] as THREE.Vector3Tuple));
     group.userData.v3PartId = part.id;
     group.userData.v3Slot = part.slot;
     group.userData.v3BoundsId = part.boundsId;
@@ -269,6 +277,8 @@ export function buildV3SpartanModel(options: V3SpartanBuildOptions = {}): THREE.
     group.userData.v3Distance = v3Distance;
     group.userData.v3SelectedLod = selectedLod;
     group.userData.v3GridScale = gridScale;
+    group.userData.v3ObjSurfaceSource = !customPiece;
+    group.userData.v3VoxelScale = voxelScale;
     if (customPiece) {
       group.userData.customArmorId = customPiece.id;
       group.userData.customArmorName = customPiece.name;

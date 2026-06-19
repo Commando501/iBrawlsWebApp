@@ -21,7 +21,11 @@ import {
   resolveV3RoleColor,
   resolveV3RoleEmissive,
 } from './v3PaintPalette';
-import { V3_AEGIS_REFERENCE_VOXEL_SOURCE } from './v3AegisReferenceVoxels.generated';
+import {
+  V3_DETAIL_BONE_SPECS,
+  V3_SLOT_DETAIL_BONES,
+} from './v3RigDetail';
+import { V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE } from './v3AegisObjSurfaceVoxels.generated';
 
 export type V3BuiltinPartGridScale = 1 | 2 | 3 | 4;
 
@@ -60,7 +64,28 @@ export const V3_AEGIS_PART_SPECS: Readonly<Record<V3CharacterSlotId, ReadonlyV3A
 };
 
 export function getV3BuiltinPartGridScale(slot: V3CharacterSlotId): V3BuiltinPartGridScale {
-  return V3_AEGIS_REFERENCE_VOXEL_SOURCE.slots[slot].gridScale as V3BuiltinPartGridScale;
+  void slot;
+  return 1;
+}
+
+export function getV3BuiltinPartVoxelScale(slot: V3CharacterSlotId): number {
+  void slot;
+  return V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.coordinateSystem.voxelScale;
+}
+
+export function getV3AegisObjSurfaceSourceSummary() {
+  return {
+    schemaVersion: V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.schemaVersion,
+    targetHeightVoxels: V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.options.targetHeightVoxels,
+    surfaceThicknessVoxels: V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.options.surfaceThicknessVoxels,
+    slotCount: V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.metrics.slotCount,
+    totalVoxelCount: V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.metrics.totalVoxelCount,
+    totalRunCount: V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.metrics.totalRunCount,
+    maxSlotVoxelCount: V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.metrics.maxSlotVoxelCount,
+    sourceHash: V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.source.hash,
+    sourceFileName: V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.source.fileName,
+    excludedObjectCount: V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.metrics.excludedObjectCount,
+  };
 }
 
 export const scaleV3Dimensions = (
@@ -93,35 +118,31 @@ const roleEmissive = (
   fallback: boolean
 ): boolean => resolveV3RoleEmissive(role, paintJob, fallback);
 
-const mapReferenceVoxelCoordinate = (
-  value: number,
-  sourceSize: number,
-  targetSize: number
-): number => {
-  if (targetSize <= 1 || sourceSize <= 1) return 0;
-  return Math.max(0, Math.min(targetSize - 1, Math.round((value / (sourceSize - 1)) * (targetSize - 1))));
-};
-
-const createAegisReferenceVoxelSource = (
+const createAegisObjSurfaceVoxelSource = (
   slot: V3CharacterSlotId,
-  dimensions: [number, number, number],
   colors: SpartanColors,
   paintJob?: CharacterLoadout['paintJob']
 ): VoxelData[] => {
-  const sourceSlot = V3_AEGIS_REFERENCE_VOXEL_SOURCE.slots[slot];
-  const rolePalette = V3_AEGIS_REFERENCE_VOXEL_SOURCE.rolePalette;
-  const sourceDimensions = sourceSlot.dimensions;
+  const sourceSlot = V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.slots[slot];
+  const rolePalette = V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.rolePalette;
+  const sourcePivot = V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.coordinateSystem.pivot;
+  const voxelScale = V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.coordinateSystem.voxelScale;
+  const boneName = V3_SLOT_DETAIL_BONES[slot];
+  const bonePosition = V3_DETAIL_BONE_SPECS[boneName].position;
   const voxels = new Map<string, VoxelData>();
 
   for (const run of sourceSlot.runs) {
     const role = rolePalette[run[0]] ?? 'primary';
     const color = roleColor(role, colors, paintJob);
     const emissive = run[5] === 1 || roleEmissive(role, paintJob, false);
-    const y = mapReferenceVoxelCoordinate(run[1], sourceDimensions[1], dimensions[1]);
-    const z = mapReferenceVoxelCoordinate(run[2], sourceDimensions[2], dimensions[2]);
     for (let sourceX = run[3]; sourceX <= run[4]; sourceX += 1) {
-      const x = mapReferenceVoxelCoordinate(sourceX, sourceDimensions[0], dimensions[0]);
-      voxels.set(`${x}:${y}:${z}:${color}:${emissive ? 1 : 0}`, {
+      const worldX = (sourceX - sourcePivot[0]) * voxelScale;
+      const worldY = run[1] * voxelScale;
+      const worldZ = (run[2] - sourcePivot[2]) * voxelScale;
+      const x = Math.round((worldX - bonePosition[0]) / voxelScale);
+      const y = Math.round((worldY - bonePosition[1]) / voxelScale);
+      const z = Math.round((worldZ - bonePosition[2]) / voxelScale);
+      voxels.set(`${x}:${y}:${z}`, {
         x,
         y,
         z,
@@ -867,11 +888,6 @@ export function createV3AegisPartVoxels(
   colors: SpartanColors,
   paintJob?: CharacterLoadout['paintJob']
 ): VoxelData[] {
-  return applyV3AegisReferenceFeaturePolish(
-    part.slot,
-    createAegisReferenceVoxelSource(part.slot, dimensions, colors, paintJob),
-    dimensions,
-    colors,
-    paintJob
-  );
+  void dimensions;
+  return createAegisObjSurfaceVoxelSource(part.slot, colors, paintJob);
 }

@@ -174,7 +174,7 @@ const EVIDENCE_LABELS: Record<V3ReadinessEvidenceKey, string> = {
   suitFidelity: 'Suit fidelity',
   referenceProportions: 'Reference proportions',
   referenceFeatureMatch: 'Reference feature match',
-  referenceVoxelSource: 'Reference voxel source',
+  referenceVoxelSource: 'Exact OBJ voxel source',
   visualQa: 'Visual QA',
   poseClearance: 'Pose clearance',
   performanceSmoke: 'Performance smoke',
@@ -260,7 +260,7 @@ function evidenceHasGeneratedReferenceVoxelSource(
   input: V3ReadinessEvidenceSummaryInput | V3ReadinessEvidenceSummary | null | undefined
 ): boolean {
   if (input?.ready !== true || !isPlainObject(input.summary)) return false;
-  return input.summary.schemaVersion === 'v3-aegis-reference-voxels/v1';
+  return input.summary.schemaVersion === 'v3-obj-surface-voxels/v1';
 }
 
 export function getV3ReadinessCalibrationWorkflowState(
@@ -279,14 +279,14 @@ export function getV3ReadinessCalibrationWorkflowState(
     return {
       status: 'source-active',
       shouldBuildEnvelopeCandidates: false,
-      message: 'OBJ-derived reference voxel source is active; envelope calibration is retired. Use Reference Voxel Source, Reference Feature Match, and automated evidence to inspect current model gaps.',
+      message: 'Exact OBJ surface voxel source is active; envelope calibration is retired. Use Exact OBJ Voxel Source, Reference Feature Match, and automated evidence to inspect current model gaps.',
     };
   }
 
   return {
     status: 'candidate-required',
     shouldBuildEnvelopeCandidates: true,
-    message: 'Generated OBJ-derived reference voxel source is missing or failing validation, so envelope calibration candidates remain available as a fallback diagnostic.',
+    message: 'Exact OBJ surface voxel source is missing or failing validation, so envelope calibration candidates remain available as a fallback diagnostic.',
   };
 }
 
@@ -294,7 +294,7 @@ export function formatV3ReadinessCalibrationWorkflowText(
   state: V3ReadinessCalibrationWorkflowState
 ): string {
   const renderedGateClosureStatus = state.status === 'source-active'
-    ? 'Generated Source Active'
+    ? 'Exact Source Active'
     : state.status === 'candidate-required'
       ? 'Reconstruction Required'
       : 'waiting';
@@ -305,7 +305,7 @@ export function formatV3ReadinessCalibrationWorkflowText(
     '',
     state.message,
     state.status === 'source-active'
-      ? 'Envelope calibration is retired for the checked-in OBJ-derived voxel source. Use Reference Voxel Source, Reference Feature Match, and Run Automated Evidence to inspect current model gaps.'
+      ? 'Envelope calibration is retired for the checked-in exact OBJ voxel source. Use Exact OBJ Voxel Source, Reference Feature Match, and Run Automated Evidence to inspect current model gaps.'
       : 'Envelope calibration remains a fallback diagnostic only when the generated OBJ-derived source is missing or failing validation.',
   ].join('\n');
 }

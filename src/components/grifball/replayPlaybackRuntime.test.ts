@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import type { ReplayFile, ReplayFrame } from '../../types';
 import { updateReplayCombatantVisualsForFrame } from './replayPlaybackVisuals';
 import { getCombatantTeamOutlineState } from './combatantTeamOutlines';
+import { RUNNER_ARMOR_ORANGE } from './runnerVisualState';
 import { buildReplayPlaybackFrameSlice } from './replayHelpers';
 import {
   collectReplayPlaybackEventsForFrame,
@@ -41,6 +42,18 @@ function frame(time: number, replayPlayer?: NonNullable<ReplayFrame['player']>):
 
 function sounds(events: ReturnType<typeof collectReplayPlaybackEventsForFrame>): string[] {
   return events.flatMap(event => event.type === 'sound' ? [event.sound] : []);
+}
+
+function firstGroupVertexHex(group: THREE.Group): string | null {
+  let hex: string | null = null;
+  group.traverse((child) => {
+    if (hex || !(child instanceof THREE.Mesh) || child.userData.teamOutlineMesh === true) return;
+    const colors = child.geometry.getAttribute('color');
+    if (colors instanceof THREE.BufferAttribute) {
+      hex = new THREE.Color(colors.getX(0), colors.getY(0), colors.getZ(0)).getHexString();
+    }
+  });
+  return hex;
 }
 
 test('replay frame slice preserves recorded Grifball team identity', () => {
@@ -405,6 +418,71 @@ test('grifball replay visuals attach team body outline from replay player team',
   const meshes = refs.otherPlayerMeshes.get('bot_3');
   assert.ok(meshes);
   assert.equal(getCombatantTeamOutlineState(meshes.group)?.team, 'red');
+});
+
+test('grifball replay visuals paint recorded ball carrier orange', () => {
+  const scene = new THREE.Scene();
+  const refs = {
+    scene,
+    otherPlayerMeshes: new Map(),
+    damageExplosionParticles: [],
+    enemyGroup: null,
+    hostGroup: null,
+  } as any;
+
+  updateReplayCombatantVisualsForFrame({
+    refs,
+    replayData: {
+      id: 'grifball-replay-runner',
+      name: 'Grifball Replay Runner',
+      description: '',
+      date: new Date(0).toISOString(),
+      duration: 1,
+      playerHue: 200,
+      playerName: 'Player',
+      opponentName: 'Bot',
+      mapType: 'rectangular',
+      mode: 'sandbox',
+      gameMode: 'grifball',
+      maxScore: 25,
+      frames: [],
+    },
+    updatedPlayers: new Map([['bot_runner', {
+      pos: new THREE.Vector3(),
+      vel: new THREE.Vector3(),
+      yaw: 0,
+      pitch: 0,
+      crouchScaleY: 1,
+      hp: 2,
+      activeWeapon: 'ball',
+      weaponState: 'ready',
+      isCrouching: false,
+      isLunging: false,
+      isDashing: false,
+      isSprinting: false,
+      isSliding: false,
+      weaponTimer: 0,
+      score: 0,
+      kills: 0,
+      deaths: 0,
+      respawnTimer: 0,
+      invulnerabilityTimer: 0,
+      name: 'Runner',
+      hue: 0,
+      team: 'blue',
+    }]]),
+    targetId: 'free',
+    observerCamMode: 'third',
+    replayPlayerName: 'Player',
+    dt: 0.016,
+    animateSpartanModel: () => {},
+    renderSwordLungeTrailVfx: () => {},
+    updateBlinking: () => {},
+  });
+
+  const meshes = refs.otherPlayerMeshes.get('bot_runner');
+  assert.ok(meshes);
+  assert.equal(firstGroupVertexHex(meshes.group), RUNNER_ARMOR_ORANGE.getHexString());
 });
 
 test('replay V3 visual policy preserves advanced visuals', () => {

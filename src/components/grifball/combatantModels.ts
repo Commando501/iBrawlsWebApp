@@ -17,6 +17,7 @@ import {
 } from './combatantRig';
 import { THIRD_PERSON_RIGHT_HAND_REST_OFFSET } from './attackAnimationPresets';
 import {
+  type CombatantTeamOutlineOptions,
   registerCombatantTeamOutlineSources,
   syncCombatantTeamOutline,
 } from './combatantTeamOutlines';
@@ -115,7 +116,8 @@ export const createCombatantMeshRig = (
   isEnemyBot = false,
   loadout?: CharacterLoadout,
   v3Options: V3RenderOptions = {},
-  teamOutlineTeam?: TeamId | null
+  teamOutlineTeam?: TeamId | null,
+  teamOutlineOptions?: CombatantTeamOutlineOptions | null
 ): CombatantMeshRig => {
   const resolvedLoadout = loadout ?? (isEnemyBot ? getRandomLoadout() : undefined);
   const group = buildVoxelSpartanModel(isEnemyBot, hue, resolvedLoadout, v3Options);
@@ -125,7 +127,7 @@ export const createCombatantMeshRig = (
   group.userData.appliedV3Distance = v3Options.v3Distance;
   const rig = buildCombatantRigForModel(group);
   registerCombatantTeamOutlineSources(group);
-  syncCombatantTeamOutline(group, teamOutlineTeam);
+  syncCombatantTeamOutline(group, teamOutlineTeam, teamOutlineOptions);
   scene.add(group);
 
   const hammer = buildCombatantHammer(hue, resolvedLoadout, v3Options);
@@ -162,6 +164,7 @@ export const rebuildDualWeaponCombatantModel = ({
   activeWeapon,
   v3Options = {},
   teamOutlineTeam,
+  teamOutlineOptions,
 }: {
   scene: THREE.Scene;
   previousGroup?: THREE.Group | null;
@@ -173,6 +176,7 @@ export const rebuildDualWeaponCombatantModel = ({
   activeWeapon: 'hammer' | 'sword' | 'pistol';
   v3Options?: V3RenderOptions;
   teamOutlineTeam?: TeamId | null;
+  teamOutlineOptions?: CombatantTeamOutlineOptions | null;
 }): RebuiltDualWeaponCombatantModel => {
   if (previousGroup) {
     scene.remove(previousGroup);
@@ -186,7 +190,7 @@ export const rebuildDualWeaponCombatantModel = ({
   group.userData.appliedV3Distance = v3Options.v3Distance;
   const rig = buildCombatantRigForModel(group);
   registerCombatantTeamOutlineSources(group);
-  syncCombatantTeamOutline(group, teamOutlineTeam);
+  syncCombatantTeamOutline(group, teamOutlineTeam, teamOutlineOptions);
   scene.add(group);
 
   const resolvedWeaponHue = weaponHue === null ? undefined : (weaponHue ?? hue);

@@ -91,6 +91,7 @@ export function rebuildEnemyCombatantModelForState({
     activeWeapon,
     v3Options,
     teamOutlineTeam,
+    teamOutlineOptions: state.settings,
   });
   refs.enemyGroup = enemyGroup;
   refs.enemyHammer = enemyHammer;
@@ -130,6 +131,7 @@ export function rebuildHostCombatantModelForState({
     activeWeapon,
     v3Options,
     teamOutlineTeam,
+    teamOutlineOptions: state.settings,
   });
   refs.hostGroup = hostGroup;
   refs.hostHammer = hostHammer;

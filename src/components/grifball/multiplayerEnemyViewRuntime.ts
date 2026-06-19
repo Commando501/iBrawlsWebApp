@@ -13,6 +13,7 @@ import {
 import { THIRD_PERSON_RIGHT_HAND_REST_OFFSET } from './attackAnimationPresets';
 import { type GrifballThreeRefs } from './threeRefs';
 import {
+  type CombatantTeamOutlineOptions,
   registerCombatantTeamOutlineSources,
   syncCombatantTeamOutline,
 } from './combatantTeamOutlines';
@@ -23,19 +24,21 @@ export function buildMultiplayerEnemyViewForRefs({
   mainAIHue,
   v3Options = {},
   teamOutlineTeam = null,
+  teamOutlineOptions = null,
 }: {
   refs: GrifballThreeRefs;
   scene: THREE.Scene;
   mainAIHue?: number;
   v3Options?: V3RenderOptions;
   teamOutlineTeam?: TeamId | null;
+  teamOutlineOptions?: CombatantTeamOutlineOptions | null;
 }): void {
   const enemyGroup = buildVoxelSpartanModel(true, mainAIHue, undefined, v3Options);
   enemyGroup.position.copy(new THREE.Vector3(0, 0, -12));
   enemyGroup.userData.appliedHue = mainAIHue;
   buildCombatantRigForModel(enemyGroup);
   registerCombatantTeamOutlineSources(enemyGroup);
-  syncCombatantTeamOutline(enemyGroup, teamOutlineTeam);
+  syncCombatantTeamOutline(enemyGroup, teamOutlineTeam, teamOutlineOptions);
   scene.add(enemyGroup);
   refs.enemyGroup = enemyGroup;
   enemyGroup.visible = false;

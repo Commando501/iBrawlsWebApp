@@ -334,30 +334,26 @@ test('analyzeV3ReferenceFitGaps flags implausible reference targets before ranki
   assert.match(formatV3ReferenceFitGapSummary(report), /2 reference targets need review/);
 });
 
-test('built-in OBJ-derived Aegis source stays under the first reliable fit-gap budget', () => {
+test('built-in exact OBJ surface source reports remaining reliable fit gaps', () => {
   const report = analyzeV3ReferenceFitGaps(dashboardFitGuide);
-  const chest = report.slots.find((slot) => slot.slot === 'chest');
+  const forearm = report.slots.find((slot) => slot.slot === 'forearm');
+  const hand = report.slots.find((slot) => slot.slot === 'hand');
   const helmet = report.slots.find((slot) => slot.slot === 'helmet');
-  const back = report.slots.find((slot) => slot.slot === 'back');
 
   assert.equal(report.summary.targetWarningCount, 3, 'exported noisy guide targets should remain explicitly flagged');
+  assert.equal(report.ready, false);
+  assert.ok(report.summary.modelIssueCount > 0, formatV3ReferenceFitGapSummary(report));
   assert.ok(
-    report.summary.modelIssueCount <= 8,
-    formatV3ReferenceFitGapSummary(report)
+    forearm?.issues.some((issue) => issue.axis === 'width' && issue.direction === 'too-large'),
+    `forearm width gap should stay visible for Phase 38 diagnostics: ${forearm?.issues.map((issue) => issue.message).join('; ')}`
   );
-  assert.equal(
-    chest?.issues.some((issue) => issue.axis === 'height' || issue.axis === 'depth'),
-    false,
-    `chest reliable height/depth gaps should be closed: ${chest?.issues.map((issue) => issue.message).join('; ')}`
+  assert.ok(
+    hand?.issues.some((issue) => issue.axis === 'width' && issue.direction === 'too-large'),
+    `hand width gap should stay visible for Phase 38 diagnostics: ${hand?.issues.map((issue) => issue.message).join('; ')}`
   );
-  assert.equal(
-    helmet?.issues.some((issue) => issue.axis === 'width' || issue.axis === 'depth'),
-    false,
-    `helmet reliable width/depth gaps should be closed: ${helmet?.issues.map((issue) => issue.message).join('; ')}`
+  assert.ok(
+    helmet?.issues.some((issue) => issue.axis === 'width' && issue.direction === 'too-small'),
+    `helmet width gap should stay visible for Phase 38 diagnostics: ${helmet?.issues.map((issue) => issue.message).join('; ')}`
   );
-  assert.equal(
-    back?.issues.some((issue) => issue.axis === 'width'),
-    false,
-    `back reliable width gap should be closed: ${back?.issues.map((issue) => issue.message).join('; ')}`
-  );
+  assert.match(formatV3ReferenceFitGapSummary(report), /Reference Fit Gaps blocked/);
 });

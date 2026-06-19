@@ -4,6 +4,7 @@ import { resolveHammerSlamTiming } from '../../game/hammerSlamTiming';
 import { resolvePunchCooldown } from '../../game/runnerBallSettings';
 import { animateCombatantWeaponMeshes, animateSpartanCombatantModel } from './combatantAnimation';
 import { type SwordLungeCurrentTrailStyle } from './combatGeometry';
+import { updateRunnerVisualStateForGroup } from './runnerVisualState';
 import { type GrifballRuntimeState } from './runtimeState';
 import { type GrifballThreeRefs } from './threeRefs';
 
@@ -155,5 +156,11 @@ export function updateRosterCombatantVisualsForState({
     if (meshes.pistol) {
       meshes.pistol.visible = alive && (player.activeWeapon as string) === 'pistol';
     }
+    updateRunnerVisualStateForGroup({
+      group: meshes.group,
+      carrying: state.grifball.ball.state === 'held' && state.grifball.ball.holderId === clientId,
+      hp: player.hp,
+      alive,
+    });
   });
 }

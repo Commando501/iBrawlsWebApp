@@ -154,6 +154,7 @@ export async function initializeGrifballMountSceneForState({
         mainAIHue,
         v3Options,
         teamOutlineTeam: resolveInitialEnemyTeamOutlineTeam(state),
+        teamOutlineOptions: adminSettings,
       });
     } else {
       await report(76, 'Spawning combatants');

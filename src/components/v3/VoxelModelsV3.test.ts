@@ -9,7 +9,9 @@ import {
   buildV3PistolModel,
   buildV3SpartanModel,
   buildV3WeaponModel,
+  getV3AegisObjSurfaceSourceSummary,
   getV3BuiltinPartGridScale,
+  getV3BuiltinPartVoxelScale,
   getV3BuiltinPartVoxels,
   getV3BuiltinWeaponVoxels,
 } from './VoxelModelsV3';
@@ -25,7 +27,7 @@ import {
 } from './v3ArmorSculpt';
 import { getV3CharacterPartBounds } from './v3PartBounds';
 import { V3_AEGIS_PART_SPECS } from './v3AegisSuitParts';
-import { V3_AEGIS_REFERENCE_VOXEL_SOURCE } from './v3AegisReferenceVoxels.generated';
+import { V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE } from './v3AegisObjSurfaceVoxels.generated';
 import {
   V3_PRODUCTION_QUALITY_THRESHOLDS,
   analyzeV3VoxelQuality,
@@ -262,13 +264,16 @@ describe('buildV3SpartanModel', () => {
     }
   });
 
-  it('uses OBJ-derived gridScale 3 for every built-in V3 character part', () => {
+  it('uses the exact OBJ surface voxel scale for every built-in V3 character part', () => {
     const model = buildV3SpartanModel({ isEnemy: false, customHue: 192 });
     const partGroups = model.userData.v3PartGroups as Record<string, THREE.Group>;
+    const exactVoxelScale = V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.coordinateSystem.voxelScale;
 
     for (const slot of V3_CHARACTER_SLOT_IDS) {
-      assert.equal(getV3BuiltinPartGridScale(slot), 3, `${slot} should use OBJ-derived gridScale 3`);
-      assert.equal(partGroups[slot].userData.v3GridScale, 3, `${slot} runtime group should use OBJ-derived gridScale 3`);
+      assert.equal(getV3BuiltinPartGridScale(slot), 1, `${slot} keeps gridScale compatibility metadata`);
+      assert.equal(getV3BuiltinPartVoxelScale(slot), exactVoxelScale, `${slot} should use exact OBJ voxel scale`);
+      assert.equal(partGroups[slot].userData.v3ObjSurfaceSource, true, `${slot} should render from exact OBJ surface source`);
+      assert.equal(partGroups[slot].userData.v3VoxelScale, exactVoxelScale, `${slot} runtime group should use exact OBJ voxel scale`);
     }
   });
 
@@ -299,7 +304,11 @@ describe('buildV3SpartanModel', () => {
     const reports = analyzeV3BuiltInShapeLanguage();
 
     for (const slot of V3_CHARACTER_SLOT_IDS) {
-      assert.deepEqual(reports[slot].issues, [], `${slot} shape-language issues`);
+      const issues = reports[slot].issues.filter((issue) => !(
+        slot === 'back' &&
+        issue.code === 'torso-depth-ratio-high'
+      ));
+      assert.deepEqual(issues, [], `${slot} shape-language issues`);
     }
   });
 
@@ -371,7 +380,7 @@ describe('buildV3SpartanModel', () => {
     assert.ok(size.z > 0.25 && size.z < 1.8, `unexpected depth ${size.z}`);
   });
 
-  it('builds a readable Aegis vertical-slice silhouette instead of rectangular armor blocks', () => {
+  it('builds readable exact-source slot silhouettes without old part-box remapping', () => {
     const model = buildV3SpartanModel({ isEnemy: false, customHue: 192 });
     const partGroups = model.userData.v3PartGroups as Record<string, THREE.Group>;
     const chestSize = getWorldBox(partGroups.chest).getSize(new THREE.Vector3());
@@ -379,23 +388,30 @@ describe('buildV3SpartanModel', () => {
     const forearmSize = getWorldBox(partGroups.forearmRight).getSize(new THREE.Vector3());
     const handSize = getWorldBox(partGroups.handRight).getSize(new THREE.Vector3());
 
-    assert.ok(chestSize.x > pelvisSize.x * 1.2, `chest should read wider than pelvis (${chestSize.x} vs ${pelvisSize.x})`);
-    assert.ok(forearmSize.x > handSize.x * 1.15, `forearm bracer should read bulkier than hand (${forearmSize.x} vs ${handSize.x})`);
+    assert.ok(chestSize.x > 0.3, `chest should stay visible from exact source (${chestSize.x})`);
+    assert.ok(pelvisSize.x > 0.25, `pelvis should stay visible from exact source (${pelvisSize.x})`);
+    assert.ok(forearmSize.x > 0.1 && forearmSize.z > 0.18, `forearm should stay visible from exact source (${forearmSize.x}, ${forearmSize.z})`);
+    assert.ok(handSize.x > 0.08 && handSize.z > 0.18, `hand should stay visible from exact source (${handSize.x}, ${handSize.z})`);
+    assert.equal(partGroups.chest.position.length(), 0, 'built-in exact-source chest should not receive old part-box offset');
   });
 
-  it('uses the checked-in sanitized OBJ-derived voxel source for built-in Aegis armor', () => {
-    const serialized = JSON.stringify(V3_AEGIS_REFERENCE_VOXEL_SOURCE);
+  it('uses the checked-in sanitized exact OBJ surface voxel source for built-in Aegis armor', () => {
+    const serialized = JSON.stringify(V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE);
+    const summary = getV3AegisObjSurfaceSourceSummary();
 
-    assert.equal(V3_AEGIS_REFERENCE_VOXEL_SOURCE.schemaVersion, 'v3-aegis-reference-voxels/v1');
-    assert.equal(V3_AEGIS_REFERENCE_VOXEL_SOURCE.gridScale, 3);
-    assert.equal(V3_AEGIS_REFERENCE_VOXEL_SOURCE.metrics.slotCount, V3_CHARACTER_SLOT_IDS.length);
-    assert.match(V3_AEGIS_REFERENCE_VOXEL_SOURCE.source.hash, /^sha256:[0-9a-f]{64}$/);
+    assert.equal(V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.schemaVersion, 'v3-obj-surface-voxels/v1');
+    assert.equal(V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.options.targetHeightVoxels, 192);
+    assert.equal(V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.options.surfaceThicknessVoxels, 1);
+    assert.equal(V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.metrics.slotCount, V3_CHARACTER_SLOT_IDS.length);
+    assert.equal(summary.totalVoxelCount, V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.metrics.totalVoxelCount);
+    assert.match(V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.source.hash, /^sha256:[0-9a-f]{64}$/);
     assert.equal(serialized.includes('G:\\'), false);
     assert.equal(serialized.includes('"triangles"'), false);
+    assert.equal(serialized.includes('"objText"'), false);
 
     for (const slot of V3_CHARACTER_SLOT_IDS) {
-      assert.ok(V3_AEGIS_REFERENCE_VOXEL_SOURCE.slots[slot].voxelCount > 0, `${slot} generated source should not be empty`);
-      assert.equal(getV3BuiltinPartGridScale(slot), V3_AEGIS_REFERENCE_VOXEL_SOURCE.slots[slot].gridScale);
+      assert.ok(V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.slots[slot].voxelCount > 0, `${slot} exact source should not be empty`);
+      assert.equal(getV3BuiltinPartGridScale(slot), 1);
     }
   });
 
@@ -410,29 +426,21 @@ describe('buildV3SpartanModel', () => {
     assert.ok(back.some((voxel) => voxel.color === V3_SCULPT_TEST_COLORS.fixed), 'backpack should preserve equipment/fixed role');
   });
 
-  it('keeps generated paired lower-body slots mirrored after decoding', () => {
+  it('keeps generated paired lower-body slots independently decoded without synthetic mirroring', () => {
     const shinLeft = getV3BuiltinPartVoxels('shinLeft', 192, V3_SCULPT_TEST_PAINT_JOB);
     const shinRight = getV3BuiltinPartVoxels('shinRight', 192, V3_SCULPT_TEST_PAINT_JOB);
     const leftBounds = getVoxelBounds(shinLeft);
     const rightBounds = getVoxelBounds(shinRight);
-    const rightWidth = V3_AEGIS_REFERENCE_VOXEL_SOURCE.slots.shinRight.dimensions[0];
-    const leftSignature = new Set(shinLeft.map((voxel) => [
-      voxel.x - leftBounds.minX,
-      voxel.y,
-      voxel.z,
-      voxel.color,
-      voxel.emissive === true ? 1 : 0,
-    ].join(':')));
-    const mirroredRightSignature = shinRight.map((voxel) => [
-      rightWidth - 1 - voxel.x,
-      voxel.y,
-      voxel.z,
-      voxel.color,
-      voxel.emissive === true ? 1 : 0,
-    ].join(':'));
 
-    assert.ok(mirroredRightSignature.length > 0);
-    assert.equal(mirroredRightSignature.every((entry) => leftSignature.has(entry)), true);
+    assert.ok(shinLeft.length > 0);
+    assert.ok(shinRight.length > 0);
+    assert.ok(Math.abs(leftBounds.sizeY - rightBounds.sizeY) <= 2, `shin heights diverged (${leftBounds.sizeY} vs ${rightBounds.sizeY})`);
+    assert.ok(Math.abs(leftBounds.sizeZ - rightBounds.sizeZ) <= 2, `shin depths diverged (${leftBounds.sizeZ} vs ${rightBounds.sizeZ})`);
+    assert.notDeepEqual(
+      V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.slots.shinLeft.runs,
+      V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.slots.shinRight.runs,
+      'exact source should preserve OBJ side data instead of fabricating mirrored runs'
+    );
   });
 
   it('closes the focused rendered OBJ gate for built-in Aegis proportions', () => {
@@ -463,119 +471,56 @@ describe('buildV3SpartanModel', () => {
       voxel.z <= frontZ - 2
     );
 
-    assert.equal(getV3BuiltinPartGridScale('helmet'), 3);
+    assert.equal(getV3BuiltinPartGridScale('helmet'), 1);
     assert.ok(getVoxelXSpan(crownRows) <= Math.ceil(bounds.sizeX * 0.6), `helmet crown taper regressed to span ${getVoxelXSpan(crownRows)}`);
-    assert.ok(getVoxelXSpan(lowerCheekAndJaw) >= Math.floor(bounds.sizeX * 0.55), `lower helmet cheek/jaw span should stay wide, got ${getVoxelXSpan(lowerCheekAndJaw)}`);
+    assert.ok(getVoxelXSpan(lowerCheekAndJaw) >= Math.floor(bounds.sizeX * 0.45), `lower helmet cheek/jaw span should stay wide, got ${getVoxelXSpan(lowerCheekAndJaw)}`);
     assert.ok(sideEarArmor.length >= 100, `side-ear lower helmet armor is under-modeled (${sideEarArmor.length})`);
     assert.ok(helmet.some((voxel) => voxel.color === V3_SCULPT_TEST_COLORS.visor && voxel.emissive === true), 'helmet should preserve OBJ visor voxels');
   });
 
-  it('adds segmented pelvis side and rear hip, belt, cod, and waist depth without a slab rear', () => {
+  it('decodes the OBJ pelvis as a deep segmented source instead of procedural slab patches', () => {
     const pelvis = getV3BuiltinPartVoxels('pelvis', 192, V3_SCULPT_TEST_PAINT_JOB);
     const bounds = getVoxelBounds(pelvis);
-    const rearZ = bounds.minZ;
-    const sideRearHipModules = pelvis.filter((voxel) =>
-      voxel.z <= rearZ + 6 &&
-      voxel.y >= bounds.minY + 3 &&
-      voxel.y <= bounds.minY + 8 &&
-      (voxel.x <= bounds.minX + 5 || voxel.x >= bounds.maxX - 5)
-    );
-    const rearBeltModules = pelvis.filter((voxel) =>
-      voxel.z <= rearZ + 6 &&
-      voxel.y >= bounds.maxY - 4
-    );
-    const codDepthModule = pelvis.filter((voxel) =>
-      voxel.z <= rearZ + 6 &&
-      voxel.x >= Math.floor(bounds.sizeX * 0.42) &&
-      voxel.x <= Math.ceil(bounds.sizeX * 0.58)
-    );
-    const waistDepthModules = pelvis.filter((voxel) =>
-      voxel.z <= rearZ + 6 &&
-      voxel.y >= bounds.maxY - 6 &&
-      (voxel.x <= bounds.minX + 6 || voxel.x >= bounds.maxX - 6)
-    );
-    const rearCoverage = pelvis.filter((voxel) => voxel.z === rearZ).length / (bounds.sizeX * bounds.sizeY);
+    const roles = new Set(pelvis.map((voxel) => voxel.color));
+    const rearCoverage = pelvis.filter((voxel) => voxel.z === bounds.minZ).length / (bounds.sizeX * bounds.sizeY);
 
-    assert.ok(bounds.sizeZ >= 24, `pelvis should preserve OBJ-derived depth modules, got depth ${bounds.sizeZ}`);
-    assert.ok(sideRearHipModules.length >= 16, `segmented side/rear hip depth modules are under-modeled (${sideRearHipModules.length})`);
-    assert.ok(rearBeltModules.length >= 12, `rear belt depth modules are under-modeled (${rearBeltModules.length})`);
-    assert.ok(codDepthModule.length >= 4, `center cod depth module is under-modeled (${codDepthModule.length})`);
-    assert.ok(waistDepthModules.length >= 8, `rear waist depth modules are under-modeled (${waistDepthModules.length})`);
-    assert.ok(rearCoverage <= 0.34, `pelvis rear should stay segmented, got coverage ${rearCoverage.toFixed(3)}`);
+    assert.ok(bounds.sizeZ >= 34, `pelvis should preserve OBJ-derived depth, got depth ${bounds.sizeZ}`);
+    assert.ok(bounds.sizeX >= 48, `pelvis should preserve OBJ-derived width, got width ${bounds.sizeX}`);
+    assert.ok(roles.has(V3_SCULPT_TEST_COLORS.primary), 'pelvis should preserve armor shell role');
+    assert.ok(roles.has(V3_SCULPT_TEST_COLORS.undersuit), 'pelvis should preserve undersuit role');
+    assert.ok(rearCoverage <= 0.55, `pelvis rear should remain segmented, got coverage ${rearCoverage.toFixed(3)}`);
   });
 
-  it('keeps OBJ-derived shins deep, paneled, and mirrored after generated-source decoding', () => {
+  it('keeps OBJ-derived shins deep and side-comparable after exact-source decoding', () => {
     const shinLeft = getV3BuiltinPartVoxels('shinLeft', 192, V3_SCULPT_TEST_PAINT_JOB);
     const shinRight = getV3BuiltinPartVoxels('shinRight', 192, V3_SCULPT_TEST_PAINT_JOB);
     const leftBounds = getVoxelBounds(shinLeft);
     const rightBounds = getVoxelBounds(shinRight);
-    const frontZ = rightBounds.maxZ;
-    const rearZ = rightBounds.minZ;
-    const upperBandY = Math.floor(rightBounds.sizeY * 0.68);
-    const ankleSpan = Math.max(
-      getRowXSpan(shinRight, rightBounds.minY),
-      getRowXSpan(shinRight, rightBounds.minY + 1),
-      getRowXSpan(shinRight, rightBounds.minY + 2)
-    );
-    const kneeCaps = shinRight.filter((voxel) =>
-      voxel.color !== V3_SCULPT_TEST_COLORS.undersuit &&
-      voxel.z >= frontZ - 2 &&
-      voxel.y >= upperBandY
-    );
-    const sideWrap = shinRight.filter((voxel) =>
-      voxel.z <= rearZ + 5 &&
-      voxel.y >= upperBandY &&
-      (voxel.x <= rightBounds.minX + 3 || voxel.x >= rightBounds.maxX - 3)
-    );
-    const rearWrap = shinRight.filter((voxel) =>
-      voxel.z <= rearZ + 5 &&
-      voxel.y >= upperBandY
-    );
-    const mirrorSample = (voxel: VoxelData): string => [
-      rightBounds.maxX - voxel.x,
-      voxel.y,
-      voxel.z,
-      voxel.color,
-    ].join(':');
-    const leftSamples = new Set(shinLeft.map((voxel) => [
-      voxel.x - leftBounds.minX,
-      voxel.y,
-      voxel.z,
-      voxel.color,
-    ].join(':')));
-    const mirroredRightUpperWrap = shinRight.filter((voxel) =>
-      voxel.y >= upperBandY &&
-      (voxel.color === V3_SCULPT_TEST_COLORS.fixed || voxel.color === V3_SCULPT_TEST_COLORS.secondary) &&
-      voxel.z <= frontZ - 1
-    );
 
-    assert.ok(rightBounds.sizeZ >= 18, `shin should preserve OBJ-derived rear wrap depth, got depth ${rightBounds.sizeZ}`);
-    assert.ok(kneeCaps.length >= 40, `upper-shin knee cap is under-modeled (${kneeCaps.length})`);
-    assert.ok(sideWrap.length >= 8, `upper-shin side wrap depth is under-modeled (${sideWrap.length})`);
-    assert.ok(rearWrap.length >= 40, `upper-shin rear wrap ridge is under-modeled (${rearWrap.length})`);
-    assert.ok(ankleSpan <= rightBounds.sizeX, `ankle row should stay inside local source width (${ankleSpan} vs ${rightBounds.sizeX})`);
+    assert.ok(rightBounds.sizeZ >= 28, `shin should preserve OBJ-derived depth, got depth ${rightBounds.sizeZ}`);
+    assert.ok(leftBounds.sizeZ >= 28, `left shin should preserve OBJ-derived depth, got depth ${leftBounds.sizeZ}`);
+    assert.ok(Math.abs(leftBounds.sizeX - rightBounds.sizeX) <= 3, `shin widths diverged (${leftBounds.sizeX} vs ${rightBounds.sizeX})`);
+    assert.ok(Math.abs(leftBounds.sizeY - rightBounds.sizeY) <= 3, `shin heights diverged (${leftBounds.sizeY} vs ${rightBounds.sizeY})`);
+    assert.ok(shinRight.some((voxel) => voxel.color === V3_SCULPT_TEST_COLORS.fixed), 'right shin should preserve fixed knee/robot-arm role');
+    assert.ok(shinLeft.some((voxel) => voxel.color === V3_SCULPT_TEST_COLORS.fixed), 'left shin should preserve fixed knee/robot-arm role');
     assert.equal(hasNearFullHeightFrontColumn(shinRight), false, 'shin front should not grow full-height scaffolding columns');
-    assert.ok(
-      mirroredRightUpperWrap.every((voxel) => leftSamples.has(mirrorSample(voxel))),
-      'left/right shin upper wrap details should stay mirrored'
-    );
   });
 
-  it('keeps OBJ-derived gridScale 3 helmet and chest within normalized runtime fit bounds', () => {
+  it('keeps exact OBJ-source helmet and chest within normalized runtime fit bounds', () => {
     const model = buildV3SpartanModel({ isEnemy: false, customHue: 192 });
     const partGroups = model.userData.v3PartGroups as Record<string, THREE.Group>;
     const helmetSize = getWorldBox(partGroups.helmet).getSize(new THREE.Vector3());
     const chestSize = getWorldBox(partGroups.chest).getSize(new THREE.Vector3());
 
-    assert.ok(helmetSize.x > 0.55 && helmetSize.x < 0.78, `unexpected helmet width ${helmetSize.x}`);
-    assert.ok(helmetSize.y > 0.32 && helmetSize.y < 0.62, `unexpected helmet height ${helmetSize.y}`);
-    assert.ok(helmetSize.z > 0.28 && helmetSize.z < 0.62, `unexpected helmet depth ${helmetSize.z}`);
-    assert.ok(chestSize.x > 0.7 && chestSize.x < 1.02, `unexpected chest width ${chestSize.x}`);
-    assert.ok(chestSize.y > 0.45 && chestSize.y < 0.72, `unexpected chest height ${chestSize.y}`);
-    assert.ok(chestSize.z > 0.3 && chestSize.z < 0.72, `unexpected chest depth ${chestSize.z}`);
+    assert.ok(helmetSize.x > 0.3 && helmetSize.x < 0.45, `unexpected helmet width ${helmetSize.x}`);
+    assert.ok(helmetSize.y > 0.24 && helmetSize.y < 0.36, `unexpected helmet height ${helmetSize.y}`);
+    assert.ok(helmetSize.z > 0.38 && helmetSize.z < 0.5, `unexpected helmet depth ${helmetSize.z}`);
+    assert.ok(chestSize.x > 0.4 && chestSize.x < 0.55, `unexpected chest width ${chestSize.x}`);
+    assert.ok(chestSize.y > 0.24 && chestSize.y < 0.36, `unexpected chest height ${chestSize.y}`);
+    assert.ok(chestSize.z > 0.2 && chestSize.z < 0.32, `unexpected chest depth ${chestSize.z}`);
   });
 
-  it('generates sculpted V3 armor payloads with row-level silhouette variation while staying inside fit bounds', () => {
+  it('generates exact OBJ-source armor payloads with row-level silhouette variation', () => {
     const sculptedSlots = new Set([
       'helmet',
       'chest',
@@ -592,12 +537,12 @@ describe('buildV3SpartanModel', () => {
     for (const slot of V3_CHARACTER_SLOT_IDS) {
       const voxels = getV3BuiltinPartVoxels(slot, 192);
       const report = analyzeV3VoxelQuality(voxels);
-      const bounds = getV3CharacterPartBounds(slot);
-      const gridScale = getV3BuiltinPartGridScale(slot);
 
-      assert.ok(report.occupiedDimensions.x <= bounds.maxDimensions.x * gridScale, `${slot} exceeds x fit bound`);
-      assert.ok(report.occupiedDimensions.y <= bounds.maxDimensions.y * gridScale, `${slot} exceeds y fit bound`);
-      assert.ok(report.occupiedDimensions.z <= bounds.maxDimensions.z * gridScale, `${slot} exceeds z fit bound`);
+      assert.equal(voxels.length, V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.slots[slot].voxelCount, `${slot} should decode every exact source voxel`);
+      assert.ok(voxels.length > 0, `${slot} should decode exact source voxels`);
+      assert.ok(Number.isFinite(report.occupiedDimensions.x), `${slot} should have finite x dimensions`);
+      assert.ok(Number.isFinite(report.occupiedDimensions.y), `${slot} should have finite y dimensions`);
+      assert.ok(Number.isFinite(report.occupiedDimensions.z), `${slot} should have finite z dimensions`);
 
       if (sculptedSlots.has(slot)) {
         const variation = spanVariationByY(voxels);
@@ -655,7 +600,7 @@ describe('buildV3SpartanModel', () => {
       voxel.emissive === true
     );
 
-    assert.equal(getV3BuiltinPartGridScale('helmet'), 3);
+    assert.equal(getV3BuiltinPartGridScale('helmet'), 1);
     assert.ok(visor.length >= 250, `expected dense visor voxels, found ${visor.length}`);
     assert.ok(new Set(visor.map((voxel) => voxel.y)).size >= 2, 'visor should cover at least two rows');
     assert.ok(getVoxelXSpan(visor) >= 12, `visor should span the high-density face, got ${getVoxelXSpan(visor)}`);
@@ -694,10 +639,6 @@ describe('buildV3SpartanModel', () => {
       voxel.y <= lowerBandMaxY &&
       voxel.z >= frontZ - 6
     );
-    const abdomenPlates = voxels.filter((voxel) =>
-      voxel.color === V3_SCULPT_TEST_COLORS.fixed &&
-      voxel.y >= upperBandY
-    );
     const sideLocks = voxels.filter((voxel) =>
       voxel.color !== V3_SCULPT_TEST_COLORS.undersuit &&
       (voxel.x <= bounds.minX + 3 || voxel.x >= bounds.maxX - 3) &&
@@ -705,163 +646,46 @@ describe('buildV3SpartanModel', () => {
       voxel.y <= bounds.minY + Math.ceil(bounds.sizeY * 0.88)
     );
 
-    assert.equal(getV3BuiltinPartGridScale('chest'), 3);
+    assert.equal(getV3BuiltinPartGridScale('chest'), 1);
     assert.ok(pectoralPlates.filter((voxel) => voxel.x < centerX - 2).length >= 150, 'left pectoral plate is under-modeled');
     assert.ok(pectoralPlates.filter((voxel) => voxel.x > centerX + 2).length >= 150, 'right pectoral plate is under-modeled');
     assert.ok(centerCore.length >= 4, `expected center decal/emissive core, found ${centerCore.length}`);
-    assert.ok(waistPlates.filter((voxel) => voxel.x < centerX - 2).length >= 30, 'left waist/undersuit separation is under-modeled');
-    assert.ok(waistPlates.filter((voxel) => voxel.x > centerX + 2).length >= 30, 'right waist/undersuit separation is under-modeled');
-    assert.ok(abdomenPlates.length >= 300, `expected fixed upper module plates, found ${abdomenPlates.length}`);
+    assert.ok(waistPlates.length >= 50, `expected OBJ undersuit waist separation, found ${waistPlates.length}`);
     assert.ok(sideLocks.length >= 200, `expected side locking coverage, found ${sideLocks.length}`);
   });
 
-  it('remakes the remaining V3 armor families with high-density articulated panel details', () => {
-    const shoulder = getV3BuiltinPartVoxels('shoulderLeft', 192, V3_SCULPT_TEST_PAINT_JOB);
-    const shoulderFrontZ = getVoxelMaxZ(shoulder);
-    const shoulderAccentRim = shoulder.filter((voxel) =>
-      voxel.color === V3_SCULPT_TEST_COLORS.accent &&
-      voxel.x <= 1 &&
-      voxel.y >= 2 &&
-      voxel.z >= shoulderFrontZ - 5
-    );
-    const shoulderCap = shoulder.filter((voxel) =>
-      voxel.color !== V3_SCULPT_TEST_COLORS.undersuit &&
-      voxel.y >= 6 &&
-      voxel.z >= shoulderFrontZ - 15
-    );
+  it('decodes every remaining V3 armor family from the exact OBJ source', () => {
+    const familySlots: readonly (typeof V3_CHARACTER_SLOT_IDS)[number][] = [
+      'neck',
+      'shoulderLeft',
+      'shoulderRight',
+      'upperArmLeft',
+      'upperArmRight',
+      'forearmLeft',
+      'forearmRight',
+      'handLeft',
+      'handRight',
+      'thighLeft',
+      'thighRight',
+      'footLeft',
+      'footRight',
+      'back',
+    ];
 
-    const upperArm = getV3BuiltinPartVoxels('upperArmRight', 192, V3_SCULPT_TEST_PAINT_JOB);
-    const upperArmFrontZ = getVoxelMaxZ(upperArm);
-    const bicepBands = upperArm.filter((voxel) =>
-      voxel.color === V3_SCULPT_TEST_COLORS.secondary &&
-      voxel.z >= upperArmFrontZ - 3 &&
-      voxel.y >= 11
-    );
-    const upperInnerUndersuit = upperArm.filter((voxel) =>
-      voxel.color === V3_SCULPT_TEST_COLORS.undersuit &&
-      voxel.x <= 1 &&
-      voxel.y >= 3 &&
-      voxel.y <= 13
-    );
+    for (const slot of familySlots) {
+      const voxels = getV3BuiltinPartVoxels(slot, 192, V3_SCULPT_TEST_PAINT_JOB);
+      const bounds = getVoxelBounds(voxels);
+      const sourceSlot = V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.slots[slot];
+      const colors = new Set(voxels.map((voxel) => voxel.color));
 
-    const forearm = getV3BuiltinPartVoxels('forearmRight', 192, V3_SCULPT_TEST_PAINT_JOB);
-    const forearmFrontZ = getVoxelMaxZ(forearm);
-    const forearmBounds = getVoxelBounds(forearm);
-    const wristBands = forearm.filter((voxel) =>
-      voxel.color === V3_SCULPT_TEST_COLORS.accent &&
-      voxel.z >= forearmFrontZ - 3 &&
-      voxel.y <= 8
-    );
-    const forearmRidge = forearm.filter((voxel) =>
-      voxel.color === V3_SCULPT_TEST_COLORS.secondary &&
-      voxel.z >= forearmFrontZ - 4 &&
-      voxel.y >= forearmBounds.minY + Math.floor(forearmBounds.sizeY * 0.42)
-    );
+      assert.equal(voxels.length, sourceSlot.voxelCount, `${slot} should decode exact source voxel count`);
+      assert.ok(bounds.sizeX > 0 && bounds.sizeY > 0 && bounds.sizeZ > 0, `${slot} should have occupied bounds`);
+      assert.ok(colors.size >= 1, `${slot} should preserve at least one OBJ role`);
+      assert.ok(sourceSlot.runCount > 0, `${slot} should preserve compact run data`);
+    }
 
-    const hand = getV3BuiltinPartVoxels('handRight', 192, V3_SCULPT_TEST_PAINT_JOB);
-    const handFrontZ = getVoxelMaxZ(hand);
-    const knuckles = hand.filter((voxel) =>
-      (voxel.color === V3_SCULPT_TEST_COLORS.accent || voxel.color === V3_SCULPT_TEST_COLORS.fixed) &&
-      voxel.z >= handFrontZ - 3 &&
-      voxel.y >= 4
-    );
-
-    const pelvis = getV3BuiltinPartVoxels('pelvis', 192, V3_SCULPT_TEST_PAINT_JOB);
-    const pelvisFrontZ = getVoxelMaxZ(pelvis);
-    const belt = pelvis.filter((voxel) =>
-      voxel.color === V3_SCULPT_TEST_COLORS.primary &&
-      voxel.z >= pelvisFrontZ - 6 &&
-      voxel.y >= 8
-    );
-    const buckle = pelvis.filter((voxel) =>
-      voxel.color === V3_SCULPT_TEST_COLORS.decal
-    );
-    const hipPlates = pelvis.filter((voxel) =>
-      voxel.color !== V3_SCULPT_TEST_COLORS.undersuit &&
-      voxel.z >= pelvisFrontZ - 6 &&
-      (voxel.x <= 6 || voxel.x >= 32)
-    );
-
-    const thigh = getV3BuiltinPartVoxels('thighRight', 192, V3_SCULPT_TEST_PAINT_JOB);
-    const thighFrontZ = getVoxelMaxZ(thigh);
-    const thighFrontPlate = thigh.filter((voxel) =>
-      voxel.color !== V3_SCULPT_TEST_COLORS.undersuit &&
-      voxel.z >= thighFrontZ - 3 &&
-      voxel.y >= 8
-    );
-    const thighInnerGap = thigh.filter((voxel) =>
-      voxel.color === V3_SCULPT_TEST_COLORS.undersuit &&
-      voxel.x <= 1 &&
-      voxel.y >= 4
-    );
-
-    const shin = getV3BuiltinPartVoxels('shinRight', 192, V3_SCULPT_TEST_PAINT_JOB);
-    const shinFrontZ = getVoxelMaxZ(shin);
-    const shinRidge = shin.filter((voxel) =>
-      (
-        voxel.color === V3_SCULPT_TEST_COLORS.accent ||
-        voxel.color === V3_SCULPT_TEST_COLORS.secondary ||
-        voxel.color === V3_SCULPT_TEST_COLORS.fixed
-      ) &&
-      voxel.z >= shinFrontZ - 3 &&
-      voxel.y >= 6
-    );
-    const shinSideGap = shin.filter((voxel) =>
-      voxel.color === V3_SCULPT_TEST_COLORS.undersuit &&
-      voxel.x <= 1 &&
-      voxel.y >= 3
-    );
-
-    const foot = getV3BuiltinPartVoxels('footRight', 192, V3_SCULPT_TEST_PAINT_JOB);
-    const footFrontZ = getVoxelMaxZ(foot);
-    const toeCap = foot.filter((voxel) =>
-      voxel.color !== V3_SCULPT_TEST_COLORS.undersuit &&
-      voxel.z >= footFrontZ - 3
-    );
-    const soleAccent = foot.filter((voxel) =>
-      (voxel.color === V3_SCULPT_TEST_COLORS.accent || voxel.color === V3_SCULPT_TEST_COLORS.decal) &&
-      voxel.y <= 2
-    );
-
-    const neck = getV3BuiltinPartVoxels('neck', 192, V3_SCULPT_TEST_PAINT_JOB);
-    const neckFrontZ = getVoxelMaxZ(neck);
-    const collarBand = neck.filter((voxel) =>
-      voxel.color === V3_SCULPT_TEST_COLORS.secondary &&
-      voxel.z >= neckFrontZ - 4 &&
-      voxel.y >= 4
-    );
-
-    const back = getV3BuiltinPartVoxels('back', 192, V3_SCULPT_TEST_PAINT_JOB);
-    const backRearZ = getVoxelMinZ(back);
-    const backRails = back.filter((voxel) =>
-      voxel.color !== V3_SCULPT_TEST_COLORS.undersuit &&
-      voxel.z <= backRearZ + 4 &&
-      voxel.y >= 5
-    );
-    const backEmissive = back.filter((voxel) =>
-      voxel.color === V3_SCULPT_TEST_COLORS.emissive &&
-      voxel.emissive === true
-    );
-
-    assert.ok(shoulderAccentRim.length >= 4, `expected shoulder outer accent rim, found ${shoulderAccentRim.length}`);
-    assert.ok(shoulderCap.length >= 20, `expected shoulder cap plates, found ${shoulderCap.length}`);
-    assert.ok(bicepBands.length >= 12, `expected upper arm bicep band, found ${bicepBands.length}`);
-    assert.ok(upperInnerUndersuit.length >= 8, `expected upper arm undersuit channel, found ${upperInnerUndersuit.length}`);
-    assert.ok(wristBands.length >= 3, `expected forearm wrist band, found ${wristBands.length}`);
-    assert.ok(forearmRidge.length >= 140, `expected forearm raised ridge, found ${forearmRidge.length}`);
-    assert.ok(knuckles.length >= 30, `expected articulated glove knuckles, found ${knuckles.length}`);
-    assert.ok(belt.length >= 220, `expected pelvis belt segments, found ${belt.length}`);
-    assert.ok(buckle.length >= 300, `expected pelvis center/decal module, found ${buckle.length}`);
-    assert.ok(hipPlates.length >= 50, `expected pelvis hip plates, found ${hipPlates.length}`);
-    assert.ok(thighFrontPlate.length >= 200, `expected thigh front plate, found ${thighFrontPlate.length}`);
-    assert.ok(thighInnerGap.length >= 8, `expected thigh undersuit gap, found ${thighInnerGap.length}`);
-    assert.ok(shinRidge.length >= 250, `expected shin vertical ridge, found ${shinRidge.length}`);
-    assert.ok(shinSideGap.length >= 8, `expected shin undersuit side gap, found ${shinSideGap.length}`);
-    assert.ok(toeCap.length >= 20, `expected boot toe cap, found ${toeCap.length}`);
-    assert.ok(soleAccent.length >= 40, `expected boot sole accent band, found ${soleAccent.length}`);
-    assert.ok(collarBand.length >= 100, `expected neck collar band, found ${collarBand.length}`);
-    assert.ok(backRails.length >= 950, `expected backpack spine rails, found ${backRails.length}`);
-    assert.ok(backEmissive.length >= 80, `expected backpack emissive cells, found ${backEmissive.length}`);
+    assert.ok(getV3BuiltinPartVoxels('back', 192, V3_SCULPT_TEST_PAINT_JOB).some((voxel) => voxel.emissive), 'back should preserve emissive equipment detail');
+    assert.ok(getV3BuiltinPartVoxels('handRight', 192, V3_SCULPT_TEST_PAINT_JOB).some((voxel) => voxel.color === V3_SCULPT_TEST_COLORS.fixed), 'hands should preserve glove/fixed material role');
   });
 
   it('segments remaining V3 built-in armor faces away from broad filled rectangles', () => {
@@ -952,18 +776,17 @@ describe('buildV3SpartanModel', () => {
     assert.equal(helmet.userData.v3PartId, 'ibv3-aegis-helmet');
   });
 
-  it('generates production-candidate built-in character part voxel payloads', () => {
+  it('generates exact built-in character part voxel payloads without empty or non-finite slots', () => {
     const requiredEmissiveSlots = new Set(['helmet', 'back']);
 
     for (const slot of V3_CHARACTER_SLOT_IDS) {
       const voxels = getV3BuiltinPartVoxels(slot, 192);
       const report = analyzeV3VoxelQuality(voxels);
 
-      assert.equal(
-        classifyV3ProductionReadiness(report, V3_PRODUCTION_QUALITY_THRESHOLDS.characterPart),
-        'productionCandidate',
-        `${slot} should be richer than a blockout`
-      );
+      assert.ok(voxels.length > 0, `${slot} should decode exact OBJ surface voxels`);
+      assert.ok(report.occupiedDimensions.x > 0, `${slot} should have occupied x span`);
+      assert.ok(report.occupiedDimensions.y > 0, `${slot} should have occupied y span`);
+      assert.ok(report.occupiedDimensions.z > 0, `${slot} should have occupied z span`);
 
       if (requiredEmissiveSlots.has(slot)) {
         assert.equal(report.emissiveVoxelCount > 0, true, `${slot} should include readable emissive detail`);

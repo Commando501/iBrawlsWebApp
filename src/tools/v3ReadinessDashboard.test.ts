@@ -4,6 +4,7 @@ import {
   V3_OBJ_REFERENCE_PROPORTION_TARGETS,
 } from '../components/v3/v3ReferenceProportions';
 import {
+  createV3ReadinessComparisonLoadout,
   hideV3ReadinessComparisonWeapons,
   normalizeV3ReadinessComparisonSubject,
 } from './v3ReadinessDashboardPreview';
@@ -61,10 +62,12 @@ const readyInput = (): V3ReadinessDashboardInput => ({
     ready: true,
     issues: [],
     summary: {
-      schemaVersion: 'v3-aegis-reference-voxels/v1',
+      schemaVersion: 'v3-obj-surface-voxels/v1',
       slotCount: 19,
-      totalVoxelCount: 43198,
-      gridScale: 3,
+      totalVoxelCount: 101550,
+      targetHeightVoxels: 192,
+      surfaceThicknessVoxels: 1,
+      excludedObjectCount: 4,
       sourceHash: 'sha256:abc123',
     },
   },
@@ -230,7 +233,7 @@ test('getV3ReadinessCalibrationWorkflowState retires envelope candidates when ge
 
   assert.equal(sourceActive.status, 'source-active');
   assert.equal(sourceActive.shouldBuildEnvelopeCandidates, false);
-  assert.match(sourceActive.message, /OBJ-derived reference voxel source is active/i);
+  assert.match(sourceActive.message, /Exact OBJ surface voxel source is active/i);
   assert.match(sourceActive.message, /envelope calibration is retired/i);
 
   const missingSource = getV3ReadinessCalibrationWorkflowState({
@@ -238,7 +241,7 @@ test('getV3ReadinessCalibrationWorkflowState retires envelope candidates when ge
     referenceVoxelSource: {
       ready: false,
       issues: ['Generated source has no voxels.'],
-      summary: { schemaVersion: 'v3-aegis-reference-voxels/v1' },
+      summary: { schemaVersion: 'v3-obj-surface-voxels/v1' },
     },
   });
 
@@ -262,7 +265,7 @@ test('formatV3ReadinessCalibrationWorkflowText explains source-active calibratio
   const text = formatV3ReadinessCalibrationWorkflowText(state);
 
   assert.match(text, /Calibration Status: source-active/);
-  assert.match(text, /Rendered Gate Closure: Generated Source Active/);
+  assert.match(text, /Rendered Gate Closure: Exact Source Active/);
   assert.match(text, /Candidates: 0/);
   assert.match(text, /Envelope calibration is retired/i);
   assert.doesNotMatch(text, /Load the canonical OBJ reference first/);
@@ -291,6 +294,22 @@ test('hideV3ReadinessComparisonWeapons hides all weapon groups without hiding th
   assert.equal(hammer.userData.v3ReadinessComparisonHidden, true);
   assert.equal(sword.userData.v3ReadinessComparisonHidden, true);
   assert.equal(pistol.userData.v3ReadinessComparisonHidden, true);
+});
+
+test('createV3ReadinessComparisonLoadout uses a neutral body-only review palette', () => {
+  const loadout = createV3ReadinessComparisonLoadout();
+  const colors = loadout.paintJob?.v3RoleColors ?? {};
+
+  assert.equal(loadout.modelSystem, 'v3');
+  assert.equal(colors.primary, '#7dd3fc');
+  assert.equal(colors.secondary, '#334155');
+  assert.equal(colors.accent, '#94a3b8');
+  assert.equal(colors.undersuit, '#111827');
+  assert.notEqual(colors.accent, '#fbbf24');
+  assert.deepEqual(loadout.paintJob?.v3RoleEmissive, {
+    visor: true,
+    emissive: true,
+  });
 });
 
 test('normalizeV3ReadinessComparisonSubject scales review subjects to a shared standing height', async () => {

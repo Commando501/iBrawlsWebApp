@@ -1,6 +1,24 @@
 import * as THREE from 'three';
+import type { CharacterLoadout } from '../components/VoxelModels';
 
 export const V3_READINESS_COMPARISON_TARGET_HEIGHT = 1.8;
+
+export const V3_READINESS_COMPARISON_PAINT_JOB: NonNullable<CharacterLoadout['paintJob']> = {
+  v3RoleColors: {
+    primary: '#7dd3fc',
+    secondary: '#334155',
+    accent: '#94a3b8',
+    undersuit: '#111827',
+    visor: '#67e8f9',
+    emissive: '#5eead4',
+    decal: '#cbd5e1',
+    fixed: '#64748b',
+  },
+  v3RoleEmissive: {
+    visor: true,
+    emissive: true,
+  },
+};
 
 export interface V3ReadinessComparisonWeaponRig {
   group: THREE.Object3D;
@@ -31,6 +49,13 @@ export function hideV3ReadinessComparisonWeapons(
   hideWeaponGroup(rig.hammer);
   hideWeaponGroup(rig.sword);
   hideWeaponGroup(rig.pistol);
+}
+
+export function createV3ReadinessComparisonLoadout(): CharacterLoadout {
+  return {
+    modelSystem: 'v3',
+    paintJob: V3_READINESS_COMPARISON_PAINT_JOB,
+  };
 }
 
 export function normalizeV3ReadinessComparisonSubject(

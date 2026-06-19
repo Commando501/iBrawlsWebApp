@@ -43,6 +43,10 @@ export interface UniversalSettings {
   skyboxBrightness: number;               // Brightness of the skybox / background (e.g. 0 to 100)
   skyboxHue: number;                      // Color hue of the skybox / background (e.g. 0 to 360)
   showSkybox: boolean;                    // Whether the skybox is visible or disabled
+  teamOutlineThickness: number;           // Team body outline thickness scale offset (e.g. 0.02 to 0.20)
+  teamOutlineBrightness: number;          // Team body outline opacity/brightness (e.g. 0.1 to 1.0)
+  teamOutlineColorMode: 'team' | 'custom'; // Team blue/red colors or a custom shared outline color
+  teamOutlineColor: string;               // Custom team body outline color when color mode is custom
   enableSwordTrade: boolean;              // Toggle for Sword vs Sword trades
   enableHammerSwordTrade: boolean;         // Toggle for Hammer vs Sword trades
   swordTradeWindow: number;               // Timing window for Sword vs Sword in ms (e.g. 50ms to 800ms)
@@ -673,7 +677,7 @@ export interface ReplayFrame {
     isSprinting?: boolean;
     isSliding?: boolean;
     weaponTimer?: number;
-    activeWeapon: 'hammer' | 'sword' | 'pistol';
+    activeWeapon: 'hammer' | 'sword' | 'pistol' | 'ball';
     weaponState: string;
     score: number;
     kills: number;
@@ -694,7 +698,7 @@ export interface ReplayFrame {
     isSprinting?: boolean;
     isSliding?: boolean;
     weaponTimer?: number;
-    activeWeapon: 'hammer' | 'sword';
+    activeWeapon: 'hammer' | 'sword' | 'ball';
     weaponState: string;
     score: number;
     kills: number;
@@ -718,7 +722,7 @@ export interface ReplayFrame {
     isSprinting?: boolean;
     isSliding?: boolean;
     weaponTimer?: number;
-    activeWeapon: 'hammer' | 'sword';
+    activeWeapon: 'hammer' | 'sword' | 'ball';
     weaponState: string;
     score: number;
     kills: number;
