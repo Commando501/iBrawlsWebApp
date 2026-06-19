@@ -769,11 +769,17 @@ test('ArmorModelEditor does not equip full suit when live catalog rejects batch 
     });
     await flushEffects();
 
+    findButtonByText(container, 'Start Shape').click();
+    await flushEffects();
+
     findButtonByText(container, 'Start Full Suit').click();
     await flushEffects();
 
     findButtonByText(container, 'Save & Equip Suit').click();
     await flushEffects();
+    await flushEffects();
+    await flushEffects();
+    await tick();
 
     assert.equal(loadoutPatch, undefined);
     assert.equal(nextCatalog?.pieces.length, CUSTOM_ARMOR_MAX_CATALOG_PIECES);
