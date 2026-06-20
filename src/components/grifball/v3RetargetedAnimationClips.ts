@@ -152,6 +152,31 @@ const CLIP_LOWER_BODY_ROTATION_SCALE: Record<V3RetargetedClipId, V3JointRotation
   },
 };
 
+const LOCOMOTION_FORWARD_AXIS_SIGN: Partial<Record<V3RetargetedClipId, Partial<Record<V3DetailBoneName, -1 | 1>>>> = {
+  walk: {
+    pelvis: -1,
+    thighLeft: -1,
+    thighRight: -1,
+    calfLeft: -1,
+    calfRight: -1,
+    footLeft: -1,
+    footRight: -1,
+    toeLeft: -1,
+    toeRight: -1,
+  },
+  run: {
+    pelvis: -1,
+    thighLeft: -1,
+    thighRight: -1,
+    calfLeft: -1,
+    calfRight: -1,
+    footLeft: -1,
+    footRight: -1,
+    toeLeft: -1,
+    toeRight: -1,
+  },
+};
+
 const BROAD_LEG_SCALE = 0;
 const RUN_BROAD_LEG_BOOST = 1.18;
 const PELVIS_VERTICAL_SCALE = 0.18;
@@ -272,8 +297,9 @@ const scaleRotation = (
   rotation: readonly [number, number, number]
 ): [number, number, number] => {
   const scale = CLIP_LOWER_BODY_ROTATION_SCALE[clipId][joint] ?? JOINT_ROTATION_SCALE[joint] ?? [0.12, 0.12, 0.12];
+  const forwardAxisSign = LOCOMOTION_FORWARD_AXIS_SIGN[clipId]?.[joint] ?? 1;
   return [
-    roundMetric(clampRotation(rotation[0] * scale[0], 0.65)),
+    roundMetric(clampRotation(rotation[0] * scale[0] * forwardAxisSign, 0.65)),
     roundMetric(clampRotation(rotation[1] * scale[1], 0.35)),
     roundMetric(clampRotation(rotation[2] * scale[2], 0.42)),
   ];
