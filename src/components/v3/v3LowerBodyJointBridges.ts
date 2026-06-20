@@ -10,6 +10,7 @@ export interface V3LowerBodyJointBridgeSet {
 }
 
 const BRIDGE_LINK_IDS = new Set([
+  'lowerTorso-pelvis',
   'pelvis-thigh-left',
   'pelvis-thigh-right',
   'thigh-shin-left',
@@ -17,7 +18,16 @@ const BRIDGE_LINK_IDS = new Set([
   'shin-foot-left',
   'shin-foot-right',
 ]);
-const BRIDGE_WIDTH = 0.055;
+const DEFAULT_BRIDGE_PROFILE = {
+  width: 0.055,
+  depth: 0.055,
+};
+
+const BRIDGE_PROFILES: Record<string, { width: number; depth: number }> = {
+  'lowerTorso-pelvis': { width: 0.38, depth: 0.18 },
+  'pelvis-thigh-left': { width: 0.16, depth: 0.12 },
+  'pelvis-thigh-right': { width: 0.16, depth: 0.12 },
+};
 
 const makeBridgeMesh = (linkId: string): THREE.Mesh => {
   const material = new THREE.MeshStandardMaterial({
@@ -65,10 +75,11 @@ export function updateV3LowerBodyJointBridges(model: THREE.Object3D, visible = t
     const to = anchors.to.sub(rootWorld);
     const midpoint = from.clone().add(to).multiplyScalar(0.5);
     const delta = to.clone().sub(from);
-    const length = Math.max(BRIDGE_WIDTH, delta.length());
+    const profile = BRIDGE_PROFILES[linkId] ?? DEFAULT_BRIDGE_PROFILE;
+    const length = Math.max(profile.width, delta.length());
     mesh.visible = true;
     mesh.position.copy(midpoint);
-    mesh.scale.set(BRIDGE_WIDTH, length, BRIDGE_WIDTH);
+    mesh.scale.set(profile.width, length, profile.depth);
     mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), delta.normalize());
   }
 }

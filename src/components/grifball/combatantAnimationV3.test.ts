@@ -332,6 +332,42 @@ describe('animateV3CombatantModel', () => {
     assert.equal(isBridgeRootVisible(sprintModel), false, 'sprint remains deferred and should hide lower-body bridges');
   });
 
+  it('covers torso-pelvis and pelvis-thigh walk seams with readable undersuit bridges', () => {
+    const model = createV3Model();
+    const refs = createInitialGrifballThreeRefs();
+
+    animateV3CombatantModel({
+      refs,
+      mesh: model,
+      vel: new THREE.Vector3(3, 0, 0),
+      yaw: 0,
+      hp: 100,
+      activeWeapon: 'hammer',
+      weaponState: 'ready',
+      weaponTimer: 0,
+      dt: 1,
+      settings: {},
+    });
+
+    const bridgeSet = model.userData.v3LowerBodyJointBridges;
+    assert.ok(bridgeSet?.bridges?.['lowerTorso-pelvis'], 'walk needs a lower torso to pelvis bridge');
+    assert.equal(bridgeSet.bridges['lowerTorso-pelvis'].visible, true);
+    assert.equal(bridgeSet.bridges['pelvis-thigh-left'].visible, true);
+    assert.equal(bridgeSet.bridges['pelvis-thigh-right'].visible, true);
+    assert.ok(
+      bridgeSet.bridges['lowerTorso-pelvis'].scale.x >= 0.32,
+      'torso/pelvis bridge should be wide enough to read as undersuit, not a thin connector'
+    );
+    assert.ok(
+      bridgeSet.bridges['pelvis-thigh-left'].scale.x >= 0.14,
+      'pelvis/thigh bridge should cover the hip seam instead of leaving a visible tear'
+    );
+    assert.ok(
+      bridgeSet.bridges['pelvis-thigh-right'].scale.x >= 0.14,
+      'pelvis/thigh bridge should cover the hip seam instead of leaving a visible tear'
+    );
+  });
+
   it('animateSpartanCombatantModel dispatches V3 models to the V3 layered runtime', () => {
     const model = createV3Model();
     const refs = createInitialGrifballThreeRefs();

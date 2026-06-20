@@ -107,6 +107,20 @@ interface ActiveGameSurfaceProps {
   onSendChatMessage: (text: string) => void;
 }
 
+export function resolveActiveGameSettings(
+  effectiveAdminSettings: UniversalSettings,
+  isTournamentMatch: boolean
+): UniversalSettings {
+  if (!isTournamentMatch || effectiveAdminSettings.gameMode !== 'grifball') {
+    return effectiveAdminSettings;
+  }
+
+  return {
+    ...effectiveAdminSettings,
+    gameMode: 'sandbox',
+  };
+}
+
 export function ActiveGameSurface({
   isPlaying,
   isTerminated,
@@ -172,6 +186,7 @@ export function ActiveGameSurface({
   onSendChatMessage,
 }: ActiveGameSurfaceProps) {
   const isTournamentMatch = singlePlayerMode === 'tournament' && tournamentState?.status === 'playing';
+  const activeGameSettings = resolveActiveGameSettings(effectiveAdminSettings, isTournamentMatch);
   const tournamentMatch = isTournamentMatch
     ? tournamentState.rounds[tournamentState.currentRound]?.[tournamentState.currentMatchIndex]
     : undefined;
@@ -183,8 +198,8 @@ export function ActiveGameSurface({
     : 'sandbox';
   const matchKillsToWin = isTournamentMatch && tournamentState
     ? (tournamentState.killsToWin ?? TOURNAMENT_DEFAULT_KILLS_TO_WIN)
-    : isMultiplayer && effectiveAdminSettings.gameMode !== 'grifball'
-      ? (effectiveAdminSettings.iBrawlsKillTarget ?? 25)
+    : isMultiplayer && activeGameSettings.gameMode !== 'grifball'
+      ? (activeGameSettings.iBrawlsKillTarget ?? 25)
     : undefined;
   const chatRole = multiplayerRole === 'observer' ? null : multiplayerRole;
 
@@ -200,7 +215,7 @@ export function ActiveGameSurface({
           v3QualityTier={v3QualityTier}
           isPaused={isPaused || isMatchLoadingActive}
           debugMode={debugMode}
-          adminSettings={effectiveAdminSettings}
+          adminSettings={activeGameSettings}
           onStatsUpdate={onStatsUpdate}
           onLoadingStateChange={onLoadingStateChange}
           onPauseToggle={onPauseToggle}
