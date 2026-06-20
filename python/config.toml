@@ -5,7 +5,7 @@
 
 [run]
 mode = "combat"
-opponent = "heuristic"
+opponent = "self"
 total_steps = 40000000
 parallel_matches = 32
 num_workers = 12
@@ -45,10 +45,10 @@ width = 512
 depth = 3
 frame_stack = 4
 observation_version = 3
-init_model = "runs/combat_upgrade_v2/final_model.zip"
+init_model = "runs/combat_upgrade_v3/final_model.zip"
 
 [randomize]
-enabled = true
+enabled = false
 pct = 0.15
 
 [league]
@@ -80,7 +80,7 @@ trap_death = 1.2
 bootstrap_truncation = false
 
 [logging]
-dir = "runs/combat_upgrade_v3"
+dir = "runs/combat_upgrade_v4"
 save_every = 2000000
 eval_every = 2000000
 eval_episodes = 16

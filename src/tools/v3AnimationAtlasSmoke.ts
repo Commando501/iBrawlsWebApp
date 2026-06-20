@@ -241,8 +241,9 @@ const normalizedVelocity = (
   caseId: V3AnimationAtlasCaseId
 ): [number, number, number] => {
   const phase = Math.sin(normalizedTime * Math.PI * 2);
-  if (caseId === 'walk') return [roundMetric(baseVelocity[0]), 0, roundMetric(phase * 0.08)];
-  if (caseId === 'sprint') return [roundMetric(baseVelocity[0]), 0, roundMetric(phase * 0.12)];
+  const forwardVelocity = baseVelocity[2] !== 0 ? baseVelocity[2] : baseVelocity[0];
+  if (caseId === 'walk') return [roundMetric(phase * 0.08), 0, roundMetric(forwardVelocity)];
+  if (caseId === 'sprint') return [roundMetric(phase * 0.12), 0, roundMetric(forwardVelocity)];
   if (caseId === 'slide') return [roundMetric(baseVelocity[0] * (1 - normalizedTime * 0.35)), 0, 0];
   if (caseId === 'swordLunge') return [0, 0, roundMetric(baseVelocity[2] * (1 - normalizedTime * 0.25))];
   if (caseId === 'hitReact') return [roundMetric(baseVelocity[0] * (1 - normalizedTime * 0.45)), 0, 0];
@@ -255,8 +256,9 @@ const runtimeVelocity = (
   caseId: V3AnimationAtlasCaseId
 ): [number, number, number] => {
   const pulse = Math.sin(elapsedSeconds * Math.PI * 3);
-  if (caseId === 'walk') return [roundMetric(baseVelocity[0] * (0.82 + pulse * 0.08)), 0, roundMetric(pulse * 0.18)];
-  if (caseId === 'sprint') return [roundMetric(baseVelocity[0] * (0.9 + pulse * 0.05)), 0, roundMetric(pulse * 0.22)];
+  const forwardVelocity = baseVelocity[2] !== 0 ? baseVelocity[2] : baseVelocity[0];
+  if (caseId === 'walk') return [roundMetric(pulse * 0.18), 0, roundMetric(forwardVelocity * (0.82 + pulse * 0.08))];
+  if (caseId === 'sprint') return [roundMetric(pulse * 0.22), 0, roundMetric(forwardVelocity * (0.9 + pulse * 0.05))];
   if (caseId === 'slide') return [roundMetric(baseVelocity[0] * Math.max(0.42, 1 - elapsedSeconds * 0.38)), 0, 0];
   if (caseId === 'swordLunge') return [0, 0, roundMetric(baseVelocity[2] * (0.9 + pulse * 0.04))];
   if (caseId === 'hitReact') return [roundMetric(baseVelocity[0] * 0.74), 0, roundMetric(pulse * 0.06)];

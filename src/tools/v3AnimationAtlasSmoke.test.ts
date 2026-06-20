@@ -13,6 +13,13 @@ import {
 } from './v3AnimationAtlasSmoke';
 
 describe('v3AnimationAtlasSmoke', () => {
+  const slotCenter = (model: THREE.Group, slot: string): THREE.Vector3 => {
+    const partGroups = model.userData.v3PartGroups as Record<string, THREE.Object3D> | undefined;
+    const part = partGroups?.[slot];
+    assert.ok(part, `expected V3 part group for ${slot}`);
+    return new THREE.Box3().setFromObject(part).getCenter(new THREE.Vector3());
+  };
+
   test('case list is ordered and covers every Phase 41 pose-clearance case', () => {
     assert.deepEqual(
       buildV3AnimationAtlasCases().map((entry) => entry.id),
@@ -64,6 +71,36 @@ describe('v3AnimationAtlasSmoke', () => {
     assert.equal(normalized.motionRetention?.ready, true);
     assert.match(normalized.sourceHash ?? '', /^sha256:[0-9a-f]{64}$/);
     assert.equal(JSON.stringify(V3_POSE_CLEARANCE_CASES), before);
+  });
+
+  test('locomotion atlas samples use Mixamo forward instead of playing review motion sideways or backward', () => {
+    const walk = sampleV3AnimationAtlasCase('walk', createV3AnimationAtlasFrameState(18, 90, 60), 'normalizedReview');
+    const sprint = sampleV3AnimationAtlasCase('sprint', createV3AnimationAtlasFrameState(18, 90, 60), 'normalizedReview');
+
+    assert.ok(walk.velocity[2] > 0, `walk should review forward on +Z, got ${walk.velocity.join(',')}`);
+    assert.ok(Math.abs(walk.velocity[0]) < 0.1, `walk should keep only lateral X sway, got ${walk.velocity.join(',')}`);
+    assert.ok(sprint.velocity[2] > walk.velocity[2], `sprint should move faster on +Z, got walk=${walk.velocity.join(',')} sprint=${sprint.velocity.join(',')}`);
+    assert.ok(Math.abs(sprint.velocity[0]) < 0.15, `sprint should keep only lateral X sway, got ${sprint.velocity.join(',')}`);
+  });
+
+  test('retargeted locomotion poses put the Mixamo forward foot ahead of the pelvis', () => {
+    const assertForwardStride = (caseId: 'walk' | 'sprint', frame: number): void => {
+      const atlas = buildV3AnimationAtlasScene({ caseId });
+      updateV3AnimationAtlasScene(atlas, { caseId, frame });
+      atlas.scene.updateMatrixWorld(true);
+
+      const model = atlas.views.find((view) => view.id === 'front')?.rig.group;
+      assert.ok(model);
+      const pelvis = slotCenter(model, 'pelvis');
+      const leftFoot = slotCenter(model, 'footLeft');
+      const rightFoot = slotCenter(model, 'footRight');
+
+      assert.ok(leftFoot.z > pelvis.z, `${caseId} left foot should be ahead at Mixamo frame ${frame}, got left=${leftFoot.z} pelvis=${pelvis.z}`);
+      assert.ok(rightFoot.z < pelvis.z, `${caseId} right foot should trail at Mixamo frame ${frame}, got right=${rightFoot.z} pelvis=${pelvis.z}`);
+    };
+
+    assertForwardStride('walk', 18);
+    assertForwardStride('sprint', 12);
   });
 
   test('death sampling is marked for deterministic death-burst playback', () => {
