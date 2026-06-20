@@ -55,6 +55,10 @@ test('buildV3RuntimeSmokeChecklist covers every required Phase 31 browser surfac
   assert.ok(atlasItem?.expectedText.includes('Play All'));
   assert.ok(atlasItem?.expectedText.includes('Normalized Review'));
   assert.ok(atlasItem?.expectedText.includes('Runtime Simulation'));
+  assert.ok(atlasItem?.expectedText.includes('Show Defects'));
+  assert.ok(atlasItem?.expectedText.includes('Slot Continuity'));
+  assert.ok(atlasItem?.expectedText.includes('Copy Defect Report'));
+  assert.ok(atlasItem?.expectedText.includes('Download Defect Report'));
   assert.ok(atlasItem?.expectedText.includes('Hammer Strike'));
   assert.ok(performanceItems.every((item) => item.expectedText.includes('Phase 41 Ready')));
   assert.ok(performanceItems.every((item) => item.expectedText.includes('visual pass')));

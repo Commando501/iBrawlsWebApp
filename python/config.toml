@@ -5,7 +5,7 @@
 
 [run]
 mode = "combat"
-opponent = "self"
+opponent = "heuristic"
 total_steps = 40000000
 parallel_matches = 32
 num_workers = 12

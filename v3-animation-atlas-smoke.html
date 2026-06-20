@@ -122,6 +122,28 @@
         letter-spacing: 0;
       }
 
+      #defect-panel {
+        display: grid;
+        gap: 8px;
+        padding: 10px;
+        max-width: 760px;
+      }
+
+      #defect-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      #defect-report {
+        max-height: 140px;
+        overflow: auto;
+        margin: 0;
+        color: #cbd5e1;
+        font: 11px/1.45 "Cascadia Mono", monospace;
+        white-space: pre-wrap;
+      }
+
       #view-labels {
         position: fixed;
         left: 8%;
@@ -188,6 +210,15 @@
         <label><input id="floor-overlay" type="checkbox" checked /> Foot Floor Contact</label>
         <label><input id="weapon-overlay" type="checkbox" /> Weapon Grip Drift</label>
         <label><input id="isolation-overlay" type="checkbox" /> Upper/Lower Isolation</label>
+        <label><input id="slot-continuity-overlay" type="checkbox" /> Slot Continuity</label>
+      </div>
+      <div id="defect-panel" class="panel">
+        <div id="defect-actions">
+          <label><input id="show-defects" type="checkbox" /> Show Defects</label>
+          <button id="copy-defect-report" type="button">Copy Defect Report</button>
+          <button id="download-defect-report" type="button">Download Defect Report</button>
+        </div>
+        <pre id="defect-report" hidden>Defect Report hidden. Enable Show Defects to measure the selected case.</pre>
       </div>
     </div>
     <div id="view-labels" aria-hidden="true">

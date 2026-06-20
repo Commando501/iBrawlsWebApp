@@ -17,6 +17,7 @@ import {
   V3_POSE_CLEARANCE_CASES,
   type V3PoseClearanceCaseId,
 } from '../components/grifball/v3PoseClearance';
+import { analyzeV3SlotContinuity } from '../components/grifball/v3SlotContinuity';
 import { createInitialGrifballThreeRefs } from '../components/grifball/threeRefs';
 import { normalizeV3QualityTier } from '../components/v3/v3QualityTiers';
 import type { V3QualityTier } from '../components/v3/v3ModelTypes';
@@ -89,6 +90,7 @@ export interface V3AnimationAtlasView {
   rig: CombatantMeshRig;
   labelAnchor: THREE.Group;
   overlayRoot: THREE.Group;
+  slotContinuityOverlay: THREE.Group;
   boundsHelper: THREE.Box3Helper;
   deathBurst: V3DeathVoxelBurstInstance | null;
 }
@@ -100,6 +102,7 @@ export interface V3AnimationAtlasScene {
   clock: V3AnimationAtlasClock;
   cases: V3AnimationAtlasCaseDefinition[];
   qualityTier: V3QualityTier;
+  v3Options: V3RenderOptions;
   seed: number;
   overlayRoot: THREE.Group;
 }
@@ -113,6 +116,7 @@ export interface V3AnimationAtlasSceneUpdateOptions {
   showFloorContact?: boolean;
   showWeaponGripDrift?: boolean;
   showUpperLowerIsolation?: boolean;
+  showSlotContinuity?: boolean;
 }
 
 const CASE_DURATIONS: Record<V3AnimationAtlasCaseId, number> = {
@@ -360,6 +364,50 @@ function createFloorContactOverlay(): THREE.Line {
   return line;
 }
 
+function createSlotContinuityOverlay(viewId: V3AnimationAtlasViewId): THREE.Group {
+  const group = new THREE.Group();
+  group.name = `v3AnimationAtlasSlotContinuityOverlay:${viewId}`;
+  group.visible = false;
+  return group;
+}
+
+function disposeOverlayChildren(group: THREE.Group): void {
+  for (const child of [...group.children]) {
+    group.remove(child);
+    if (child instanceof THREE.Line || child instanceof THREE.Mesh) {
+      child.geometry.dispose();
+      const materials = Array.isArray(child.material) ? child.material : [child.material];
+      for (const material of materials) material.dispose();
+    }
+  }
+}
+
+function createSlotContinuityLine(from: THREE.Vector3, to: THREE.Vector3, linkId: string): THREE.Line {
+  const geometry = new THREE.BufferGeometry().setFromPoints([from, to]);
+  const material = new THREE.LineBasicMaterial({
+    color: '#ef4444',
+    transparent: true,
+    opacity: 0.94,
+  });
+  const line = new THREE.Line(geometry, material);
+  line.name = `v3AnimationAtlasSlotContinuityLine:${linkId}`;
+  return line;
+}
+
+function createSlotContinuityMarker(position: THREE.Vector3, linkId: string): THREE.Mesh {
+  const marker = new THREE.Mesh(
+    new THREE.SphereGeometry(0.025, 8, 6),
+    new THREE.MeshBasicMaterial({
+      color: '#f59e0b',
+      transparent: true,
+      opacity: 0.92,
+    })
+  );
+  marker.name = `v3AnimationAtlasSlotContinuityMarker:${linkId}`;
+  marker.position.copy(position);
+  return marker;
+}
+
 function setWeaponVisibility(
   rig: CombatantMeshRig,
   visibleWeapon: V3AnimationAtlasWeapon | null
@@ -419,6 +467,23 @@ function updateBoundsHelper(view: V3AnimationAtlasView, visible: boolean): void 
   if (!visible) return;
   view.rig.group.updateWorldMatrix(true, true);
   view.boundsHelper.box.copy(new THREE.Box3().setFromObject(view.rig.group));
+}
+
+function updateSlotContinuityOverlay(view: V3AnimationAtlasView, visible: boolean): void {
+  view.slotContinuityOverlay.visible = visible;
+  disposeOverlayChildren(view.slotContinuityOverlay);
+  if (!visible) return;
+
+  const report = analyzeV3SlotContinuity(view.rig.group);
+  const overlayOrigin = view.overlayRoot.getWorldPosition(new THREE.Vector3());
+  for (const link of report.links) {
+    if (link.ready) continue;
+    const from = new THREE.Vector3(...link.endpoints.from).sub(overlayOrigin);
+    const to = new THREE.Vector3(...link.endpoints.to).sub(overlayOrigin);
+    const midpoint = from.clone().add(to).multiplyScalar(0.5);
+    view.slotContinuityOverlay.add(createSlotContinuityLine(from, to, link.id));
+    view.slotContinuityOverlay.add(createSlotContinuityMarker(midpoint, link.id));
+  }
 }
 
 function disposeViewDeathBurst(view: V3AnimationAtlasView): void {
@@ -501,6 +566,8 @@ export function buildV3AnimationAtlasScene(
     overlayRootForView.name = `v3AnimationAtlasOverlay:${layout.id}`;
     overlayRootForView.position.set(layout.x, 0, 0);
     overlayRootForView.add(createFloorContactOverlay());
+    const slotContinuityOverlay = createSlotContinuityOverlay(layout.id);
+    overlayRootForView.add(slotContinuityOverlay);
     overlayRoot.add(overlayRootForView);
     const boundsHelper = createBoundsHelper();
     overlayRoot.add(boundsHelper);
@@ -510,6 +577,7 @@ export function buildV3AnimationAtlasScene(
       rig,
       labelAnchor,
       overlayRoot: overlayRootForView,
+      slotContinuityOverlay,
       boundsHelper,
       deathBurst: null,
     };
@@ -530,6 +598,7 @@ export function buildV3AnimationAtlasScene(
     },
     cases: buildV3AnimationAtlasCases(),
     qualityTier,
+    v3Options,
     seed,
     overlayRoot,
   };
@@ -577,10 +646,12 @@ export function updateV3AnimationAtlasScene(
     }
 
     updateBoundsHelper(view, options.showBounds === true);
+    updateSlotContinuityOverlay(view, options.showSlotContinuity === true);
     view.overlayRoot.visible =
       options.showFloorContact === true ||
       options.showWeaponGripDrift === true ||
-      options.showUpperLowerIsolation === true;
+      options.showUpperLowerIsolation === true ||
+      options.showSlotContinuity === true;
   });
 
   atlas.scene.updateMatrixWorld(true);

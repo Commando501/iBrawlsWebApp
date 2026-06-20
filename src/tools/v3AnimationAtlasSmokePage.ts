@@ -1,5 +1,10 @@
 import * as THREE from 'three';
 import {
+  analyzeV3AnimationAtlasDefects,
+  formatV3AnimationAtlasDefectSummary,
+  type V3AnimationAtlasDefectReport,
+} from '../components/grifball/v3AnimationAtlasDefects';
+import {
   buildV3AnimationAtlasScene,
   createV3AnimationAtlasFrameState,
   sampleV3AnimationAtlasCase,
@@ -24,6 +29,11 @@ const boundsOverlayInput = document.getElementById('bounds-overlay') as HTMLInpu
 const floorOverlayInput = document.getElementById('floor-overlay') as HTMLInputElement;
 const weaponOverlayInput = document.getElementById('weapon-overlay') as HTMLInputElement;
 const isolationOverlayInput = document.getElementById('isolation-overlay') as HTMLInputElement;
+const slotContinuityOverlayInput = document.getElementById('slot-continuity-overlay') as HTMLInputElement;
+const showDefectsInput = document.getElementById('show-defects') as HTMLInputElement;
+const copyDefectReportButton = document.getElementById('copy-defect-report') as HTMLButtonElement;
+const downloadDefectReportButton = document.getElementById('download-defect-report') as HTMLButtonElement;
+const defectReportElement = document.getElementById('defect-report') as HTMLPreElement;
 const summary = document.getElementById('summary') as HTMLSpanElement;
 
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -32,15 +42,13 @@ renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 const atlas = buildV3AnimationAtlasScene({
   caseId: 'idle',
   qualityTier: 'desktop',
-  v3Options: {
-    v3SourceFidelity: 'exact',
-    v3QualityTier: 'desktop',
-  },
 });
 
 let playAll = false;
 let lastTimeMs = 0;
 let frameCarry = 0;
+let currentDefectReport: V3AnimationAtlasDefectReport | null = null;
+let currentDefectSignature: string | null = null;
 
 for (const atlasCase of atlas.cases) {
   const option = document.createElement('option');
@@ -55,6 +63,30 @@ function currentCase() {
 
 function currentMode(): V3AnimationAtlasPlaybackMode {
   return modeSelect.value === 'runtimeSimulation' ? 'runtimeSimulation' : 'normalizedReview';
+}
+
+function buildDefectSignature(): string {
+  return [
+    atlas.clock.caseId,
+    atlas.clock.mode,
+    atlas.qualityTier,
+    atlas.v3Options.v3SourceFidelity ?? 'runtimeLod',
+    atlas.v3Options.v3QualityTier ?? atlas.qualityTier,
+  ].join('|');
+}
+
+function ensureDefectReport(): V3AnimationAtlasDefectReport {
+  const signature = buildDefectSignature();
+  if (!currentDefectReport || currentDefectSignature !== signature) {
+    currentDefectReport = analyzeV3AnimationAtlasDefects({
+    caseIds: [atlas.clock.caseId],
+    mode: atlas.clock.mode,
+    qualityTier: atlas.qualityTier,
+    v3Options: atlas.v3Options,
+  });
+    currentDefectSignature = signature;
+  }
+  return currentDefectReport;
 }
 
 function resize() {
@@ -75,6 +107,12 @@ function publishReport() {
   const frameState = createV3AnimationAtlasFrameState(atlas.clock.frame, atlasCase.durationFrames, atlas.clock.fps);
   const sample = sampleV3AnimationAtlasCase(atlasCase.id, frameState, atlas.clock.mode);
   const deathFragments = atlas.views.reduce((total, view) => total + (view.deathBurst?.plan.fragments.length ?? 0), 0);
+  const defectReport = showDefectsInput.checked
+    ? ensureDefectReport()
+    : currentDefectReport;
+  const defectSummary = defectReport
+    ? formatV3AnimationAtlasDefectSummary(defectReport)
+    : 'V3 animation atlas defects: not measured';
   const report = {
     ready: true,
     title: 'V3 Animation Atlas Smoke',
@@ -89,15 +127,25 @@ function publishReport() {
     visibleWeapon: sample.visibleWeapon,
     deathBurstActive: sample.deathBurstActive,
     deathFragments,
+    defectSummary,
+    defects: defectReport,
     overlays: {
       bounds: boundsOverlayInput.checked,
       floorContact: floorOverlayInput.checked,
       weaponGripDrift: weaponOverlayInput.checked,
       upperLowerIsolation: isolationOverlayInput.checked,
+      slotContinuity: slotContinuityOverlayInput.checked,
     },
   };
   (window as any).__IBRAWLS_V3_ANIMATION_ATLAS_SMOKE__ = report;
+  (window as any).__IBRAWLS_V3_ANIMATION_ATLAS_DEFECTS__ = defectReport;
+  (globalThis as any).__IBRAWLS_V3_ANIMATION_ATLAS_SMOKE__ = report;
+  (globalThis as any).__IBRAWLS_V3_ANIMATION_ATLAS_DEFECTS__ = defectReport;
   summary.textContent = `${report.title} | ${report.status} | ${atlasCase.label} | ${atlas.clock.mode} | frame ${atlas.clock.frame}/${atlasCase.durationFrames} | weapon ${sample.visibleWeapon ?? 'hidden'} | views ${atlas.views.length}`;
+  defectReportElement.hidden = !showDefectsInput.checked;
+  defectReportElement.textContent = showDefectsInput.checked
+    ? `${defectSummary}\n${JSON.stringify(ensureDefectReport().summary, null, 2)}`
+    : 'Defect Report hidden. Enable Show Defects to measure the selected case.';
 }
 
 function syncControls() {
@@ -121,6 +169,7 @@ function renderAtlas(resetDeathBurst = false) {
     showFloorContact: floorOverlayInput.checked,
     showWeaponGripDrift: weaponOverlayInput.checked,
     showUpperLowerIsolation: isolationOverlayInput.checked,
+    showSlotContinuity: slotContinuityOverlayInput.checked,
   });
   syncControls();
   renderer.render(atlas.scene, atlas.camera);
@@ -151,8 +200,39 @@ boundsOverlayInput.addEventListener('change', () => renderAtlas());
 floorOverlayInput.addEventListener('change', () => renderAtlas());
 weaponOverlayInput.addEventListener('change', () => renderAtlas());
 isolationOverlayInput.addEventListener('change', () => renderAtlas());
+slotContinuityOverlayInput.addEventListener('change', () => renderAtlas());
+showDefectsInput.addEventListener('change', () => publishReport());
 speedInput.addEventListener('change', () => syncControls());
 timelineInput.addEventListener('input', () => setFrame(Number(timelineInput.value), atlas.clock.caseId === 'death'));
+
+copyDefectReportButton.addEventListener('click', async () => {
+  const report = ensureDefectReport();
+  publishReport();
+  const payload = JSON.stringify(report, null, 2);
+  try {
+    await navigator.clipboard?.writeText(payload);
+    copyDefectReportButton.textContent = 'Copied Defect Report';
+  } catch {
+    copyDefectReportButton.textContent = 'Copy Unavailable';
+  }
+  window.setTimeout(() => {
+    copyDefectReportButton.textContent = 'Copy Defect Report';
+  }, 1400);
+});
+
+downloadDefectReportButton.addEventListener('click', () => {
+  const report = ensureDefectReport();
+  publishReport();
+  const blob = new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `v3-animation-atlas-defects-${atlas.clock.caseId}.json`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+});
 
 playPauseButton.addEventListener('click', () => {
   atlas.clock.playing = !atlas.clock.playing;

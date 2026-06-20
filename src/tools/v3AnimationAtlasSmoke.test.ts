@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test, { describe } from 'node:test';
 import * as THREE from 'three';
 import { V3_POSE_CLEARANCE_CASES } from '../components/grifball/v3PoseClearance';
@@ -80,6 +81,13 @@ describe('v3AnimationAtlasSmoke', () => {
     );
     assert.equal(atlas.clock.caseId, 'idle');
     assert.equal(atlas.clock.frame, 0);
+    assert.equal(atlas.v3Options.v3SourceFidelity, 'exact');
+  });
+
+  test('browser atlas page preserves exact-source review fidelity by default', () => {
+    const pageSource = readFileSync('src/tools/v3AnimationAtlasSmokePage.ts', 'utf8');
+
+    assert.equal(pageSource.includes("v3SourceFidelity: 'runtimeLod'"), false);
   });
 
   test('frame stepping clamps or loops deterministically', () => {
@@ -101,5 +109,16 @@ describe('v3AnimationAtlasSmoke', () => {
     assert.ok(firstCounts.every((count) => count > 0));
     assert.deepEqual(secondCounts, firstCounts);
     assert.ok(atlas.scene instanceof THREE.Scene);
+  });
+
+  test('slot continuity overlay roots are controlled by scene update options', () => {
+    const atlas = buildV3AnimationAtlasScene({ caseId: 'hammerStrike' });
+
+    updateV3AnimationAtlasScene(atlas, { showSlotContinuity: true });
+    assert.ok(atlas.views.every((view) => view.slotContinuityOverlay.name.includes(view.id)));
+    assert.ok(atlas.views.every((view) => view.slotContinuityOverlay.visible === true));
+
+    updateV3AnimationAtlasScene(atlas, { showSlotContinuity: false });
+    assert.ok(atlas.views.every((view) => view.slotContinuityOverlay.visible === false));
   });
 });

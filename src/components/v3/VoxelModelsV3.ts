@@ -44,6 +44,13 @@ import {
   deriveV3ExactSourceSlotBudget,
 } from './v3ExactSourceLod';
 import { V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE } from './v3AegisObjSurfaceVoxels.generated';
+import { applyV3ExactSourceRigBinding } from './v3ExactSourceRigBinding';
+import {
+  applyV3CanonicalRigContract,
+  deriveV3CanonicalRigContract,
+  type V3CanonicalRigContract,
+} from './v3CanonicalRigContract';
+import { applyV3WeaponScaleProfile } from './v3WeaponScaleProfile';
 import {
   V3_DETAIL_BONE_NAMES,
   V3_DETAIL_BONE_SPECS,
@@ -205,25 +212,81 @@ const subtractVec3Tuple = (
   value[2] - offset[2],
 ];
 
+const lerpVec3Tuple = (
+  from: THREE.Vector3Tuple,
+  to: THREE.Vector3Tuple,
+  amount: number
+): THREE.Vector3Tuple => [
+  from[0] + (to[0] - from[0]) * amount,
+  from[1] + (to[1] - from[1]) * amount,
+  from[2] + (to[2] - from[2]) * amount,
+];
+
+const vec3Tuple = (value: readonly number[]): THREE.Vector3Tuple => [
+  value[0] ?? 0,
+  value[1] ?? 0,
+  value[2] ?? 0,
+];
+
+const createCanonicalDetailBonePositions = (
+  contract: V3CanonicalRigContract
+): Record<V3DetailBoneName, THREE.Vector3Tuple> => {
+  const pelvis = vec3Tuple(contract.joints.pelvis.position);
+  const chest = vec3Tuple(contract.joints.chest.position);
+  return {
+    pelvis,
+    spine1: lerpVec3Tuple(pelvis, chest, 0.25),
+    spine2: lerpVec3Tuple(pelvis, chest, 0.52),
+    spine3: lerpVec3Tuple(pelvis, chest, 0.78),
+    chest,
+    neck: vec3Tuple(contract.joints.neck.position),
+    head: vec3Tuple(contract.joints.head.position),
+    helmet: vec3Tuple(contract.slotPivots.helmet.position),
+    collar: vec3Tuple(contract.slotPivots.neck.position),
+    backpack: vec3Tuple(contract.slotPivots.back.position),
+    clavicleLeft: vec3Tuple(contract.joints.shoulderLeft.position),
+    upperArmLeft: vec3Tuple(contract.joints.shoulderLeft.position),
+    forearmLeft: vec3Tuple(contract.joints.elbowLeft.position),
+    handLeft: vec3Tuple(contract.joints.wristLeft.position),
+    gripLeft: vec3Tuple(contract.joints.gripLeft.position),
+    clavicleRight: vec3Tuple(contract.joints.shoulderRight.position),
+    upperArmRight: vec3Tuple(contract.joints.shoulderRight.position),
+    forearmRight: vec3Tuple(contract.joints.elbowRight.position),
+    handRight: vec3Tuple(contract.joints.wristRight.position),
+    gripRight: vec3Tuple(contract.joints.gripRight.position),
+    thighLeft: vec3Tuple(contract.joints.hipLeft.position),
+    calfLeft: vec3Tuple(contract.joints.kneeLeft.position),
+    footLeft: vec3Tuple(contract.joints.ankleLeft.position),
+    toeLeft: vec3Tuple(contract.joints.toeLeft.position),
+    thighRight: vec3Tuple(contract.joints.hipRight.position),
+    calfRight: vec3Tuple(contract.joints.kneeRight.position),
+    footRight: vec3Tuple(contract.joints.ankleRight.position),
+    toeRight: vec3Tuple(contract.joints.toeRight.position),
+  };
+};
+
 const createV3DetailBones = (
-  segmentGroups: Record<V3AegisPartSpec['segment'], THREE.Group>
+  segmentGroups: Record<V3AegisPartSpec['segment'], THREE.Group>,
+  canonicalPositions?: Record<V3DetailBoneName, THREE.Vector3Tuple>
 ): V3DetailBoneMap => {
   const bones = {} as V3DetailBoneMap;
 
   for (const boneName of V3_DETAIL_BONE_NAMES) {
     const spec = V3_DETAIL_BONE_SPECS[boneName];
+    const position = canonicalPositions?.[boneName] ?? spec.position;
     const bone = new THREE.Group();
     bone.name = `v3bone:${boneName}`;
     bone.userData.v3DetailBoneName = boneName;
     bone.userData.v3ReferenceBoneName = spec.referenceBone;
     bone.userData.v3ReferencePosition = [...spec.position];
+    bone.userData.v3CanonicalPosition = [...position];
 
     const parent = spec.parent ? bones[spec.parent] : segmentGroups[spec.segment];
     const parentPosition = spec.parent
-      ? V3_DETAIL_BONE_SPECS[spec.parent].position
+      ? canonicalPositions?.[spec.parent] ?? V3_DETAIL_BONE_SPECS[spec.parent].position
       : [0, 0, 0] as THREE.Vector3Tuple;
 
-    bone.position.fromArray(subtractVec3Tuple(spec.position, parentPosition));
+    bone.position.fromArray(subtractVec3Tuple(position, parentPosition));
     parent.add(bone);
     bones[boneName] = bone;
   }
@@ -233,10 +296,16 @@ const createV3DetailBones = (
 
 const getV3PartLocalPosition = (
   slot: V3CharacterSlotId,
-  spec: V3AegisPartSpec
+  spec: V3AegisPartSpec,
+  detailBonePositions?: Record<V3DetailBoneName, THREE.Vector3Tuple>,
+  isBuiltInExactSource = false
 ): THREE.Vector3Tuple => {
   const boneName = V3_SLOT_DETAIL_BONES[slot];
-  return subtractVec3Tuple(spec.position, V3_DETAIL_BONE_SPECS[boneName].position);
+  const bonePosition = detailBonePositions?.[boneName] ?? V3_DETAIL_BONE_SPECS[boneName].position;
+  const sourcePosition = isBuiltInExactSource
+    ? V3_DETAIL_BONE_SPECS[boneName].position
+    : spec.position;
+  return subtractVec3Tuple(sourcePosition, bonePosition);
 };
 
 const V3_CACHE_PAINT_ROLES = [
@@ -288,7 +357,9 @@ export function buildV3SpartanModel(options: V3SpartanBuildOptions = {}): THREE.
   const paintJob = options.loadout?.paintJob;
   const customArmorColors = createCustomArmorColors(colors, paintJob);
   const segmentGroups = createSegmentGroups();
-  const detailBones = createV3DetailBones(segmentGroups);
+  const canonicalRigContract = deriveV3CanonicalRigContract();
+  const canonicalDetailBonePositions = createCanonicalDetailBonePositions(canonicalRigContract);
+  const detailBones = createV3DetailBones(segmentGroups, canonicalDetailBonePositions);
   const partGroups: Partial<Record<V3CharacterSlotId, THREE.Group>> = {};
 
   for (const [segmentName, segment] of Object.entries(segmentGroups)) {
@@ -354,7 +425,12 @@ export function buildV3SpartanModel(options: V3SpartanBuildOptions = {}): THREE.
         },
       };
     group.name = `v3:${part.slot}`;
-    group.position.set(...(customPiece ? getV3PartLocalPosition(part.slot, spec) : [0, 0, 0] as THREE.Vector3Tuple));
+    group.position.set(...getV3PartLocalPosition(
+      part.slot,
+      spec,
+      canonicalDetailBonePositions,
+      !customPiece
+    ));
     group.userData.v3PartId = part.id;
     group.userData.v3Slot = part.slot;
     group.userData.v3BoundsId = part.boundsId;
@@ -407,6 +483,8 @@ export function buildV3SpartanModel(options: V3SpartanBuildOptions = {}): THREE.
     rightHandGrip: [0.08, -0.08, 0.02],
     leftHandGrip: [-0.08, -0.08, 0.02],
   };
+  applyV3CanonicalRigContract(root, canonicalRigContract);
+  applyV3ExactSourceRigBinding(root);
 
   return root;
 }
@@ -478,6 +556,7 @@ export function buildV3WeaponModel(weapon: V3WeaponId, options: V3WeaponBuildOpt
   group.userData.v3QualityTier = v3QualityTier;
   group.userData.v3Distance = v3Distance;
   group.userData.v3SelectedLod = selectedLod;
+  applyV3WeaponScaleProfile(group, weapon);
 
   return group;
 }

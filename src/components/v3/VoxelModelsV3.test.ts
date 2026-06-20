@@ -36,12 +36,16 @@ import {
 import { analyzeV3BuiltInShapeLanguage } from './v3ShapeLanguage';
 import { analyzeV3ArmorSurface } from './v3VoxelArmorSurface';
 import { clearV3GeometryCache } from './v3GeometryCache';
+import { analyzeV3RigContinuity } from './v3ExactSourceRigBinding';
+import { analyzeV3WeaponScaleFit } from './v3WeaponScaleProfile';
+import { analyzeV3CanonicalRigContract } from './v3CanonicalRigContract';
 import {
   analyzeV3AegisReferenceProportions,
   formatV3ReferenceProportionGapSummary,
   getV3RenderedObjGateClosureIssues,
 } from './v3ReferenceProportions';
 import { deriveV3ExactSourceSlotBudget } from './v3ExactSourceLod';
+import { V3_SLOT_DETAIL_BONES } from './v3RigDetail';
 
 const requiredSegments = ['lowerTorso', 'upperTorso', 'head', 'leftArm', 'rightArm', 'leftLeg', 'rightLeg'];
 
@@ -169,6 +173,12 @@ const getWorldBox = (object: THREE.Object3D): THREE.Box3 => {
   object.updateWorldMatrix(true, true);
   return new THREE.Box3().setFromObject(object);
 };
+
+const tupleCloseTo = (
+  actual: readonly number[],
+  expected: readonly number[],
+  tolerance = 0.000001
+): boolean => actual.every((value, index) => Math.abs(value - expected[index]) <= tolerance);
 
 describe('V3 armor sculpt helpers', () => {
   it('creates tapered shell rows from sculpt profile keyframes', () => {
@@ -404,6 +414,40 @@ describe('buildV3SpartanModel', () => {
     assert.equal(model.userData.v3PartGroups.back.parent, detailBones.backpack);
   });
 
+  it('rebases built-in V3 detail bones onto canonical anatomical slot pivots without shifting exact-source geometry', () => {
+    const model = buildV3SpartanModel({
+      isEnemy: false,
+      customHue: 192,
+      v3ArmorRenderStyle: 'voxelEdit',
+      v3SourceFidelity: 'exact',
+    });
+    const report = analyzeV3CanonicalRigContract(model);
+    const detailBones = model.userData.v3DetailBones as Record<string, THREE.Group>;
+    const partGroups = model.userData.v3PartGroups as Record<string, THREE.Group>;
+    const contract = model.userData.v3CanonicalRigContract;
+    const voxelScale = V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.coordinateSystem.voxelScale;
+
+    assert.equal(report.ready, true, report.issues.join('; '));
+    assert.equal(contract.sourceHash, V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.source.hash);
+
+    for (const slot of V3_CHARACTER_SLOT_IDS) {
+      const detailBone = detailBones[V3_SLOT_DETAIL_BONES[slot]];
+      const pivot = contract.slotPivots[slot].position as [number, number, number];
+      const boneWorld = detailBone.getWorldPosition(new THREE.Vector3()).toArray();
+      assert.equal(tupleCloseTo(boneWorld, pivot, 0.00001), true, `${slot} detail bone should use canonical pivot`);
+
+      const boxCenter = getWorldBox(partGroups[slot]).getCenter(new THREE.Vector3()).toArray();
+      const geometryCenter = contract.slotGeometryOffsets[slot].geometryCenter as [number, number, number];
+      assert.equal(
+        tupleCloseTo(boxCenter, geometryCenter, voxelScale * 2.5),
+        true,
+        `${slot} exact-source geometry shifted from canonical source center`
+      );
+      assert.equal(partGroups[slot].userData.v3CanonicalSlotPivot, contract.slotPivots[slot]);
+      assert.equal(partGroups[slot].userData.v3CanonicalSlotGeometryOffset, contract.slotGeometryOffsets[slot]);
+    }
+  });
+
   it('builds a V3 model with required combatant segment groups and manifest metadata', () => {
     const model = buildV3SpartanModel({ isEnemy: false, customHue: 192 });
 
@@ -438,7 +482,11 @@ describe('buildV3SpartanModel', () => {
     assert.ok(pelvisSize.x > 0.25, `pelvis should stay visible from exact source (${pelvisSize.x})`);
     assert.ok(forearmSize.x > 0.1 && forearmSize.z > 0.18, `forearm should stay visible from exact source (${forearmSize.x}, ${forearmSize.z})`);
     assert.ok(handSize.x > 0.08 && handSize.z > 0.18, `hand should stay visible from exact source (${handSize.x}, ${handSize.z})`);
-    assert.equal(partGroups.chest.position.length(), 0, 'built-in exact-source chest should not receive old part-box offset');
+    assert.equal(
+      partGroups.chest.userData.v3ObjSurfaceSource,
+      true,
+      'built-in exact-source chest should not receive old part-box remapping'
+    );
   });
 
   it('uses the checked-in sanitized exact OBJ surface voxel source for built-in Aegis armor', () => {
@@ -839,6 +887,16 @@ describe('buildV3SpartanModel', () => {
       }
     }
   });
+
+  it('applies exact-source rig binding metadata to built-in V3 Spartans without reshaping the source', () => {
+    const model = buildV3SpartanModel({ isEnemy: false, customHue: 192 });
+    const report = analyzeV3RigContinuity(model);
+
+    assert.equal(model.userData.v3ExactSourceRigBinding?.sourceHash, V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.source.hash);
+    assert.equal(report.ready, true);
+    assert.equal(report.boundSlotCount, V3_CHARACTER_SLOT_IDS.length);
+    assert.equal(report.issues.length, 0);
+  });
 });
 
 describe('V3 weapon builders', () => {
@@ -852,6 +910,23 @@ describe('V3 weapon builders', () => {
       assert.equal(model.userData.v3ManifestId, manifest.id);
       assert.equal(model.userData.v3Sockets.length, manifest.sockets.length);
       assert.ok(model.children.length > 0, `${weapon} should render geometry`);
+    }
+  });
+
+  it('applies normalized V3 third-person weapon scale metadata to built weapons', () => {
+    const bodyBounds = new THREE.Box3(
+      new THREE.Vector3(-0.45, 0, -0.21),
+      new THREE.Vector3(0.45, 1.8, 0.21)
+    );
+
+    for (const weapon of V3_WEAPON_IDS) {
+      const model = buildV3WeaponModel(weapon, { customHue: 192 });
+      const report = analyzeV3WeaponScaleFit(model, bodyBounds, { weapon });
+
+      assert.equal(model.userData.v3WeaponScaleProfile?.weapon, weapon);
+      assert.equal(model.userData.v3WeaponScaleProfile?.modelSystem, 'v3');
+      assert.equal(report.issues.some((issue) => issue.code === 'height-ratio-high'), false, `${weapon} height ratio`);
+      assert.equal(report.issues.some((issue) => issue.code === 'hand-span-ratio-high'), false, `${weapon} hand span ratio`);
     }
   });
 

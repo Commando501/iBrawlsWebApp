@@ -1,0 +1,64 @@
+import assert from 'node:assert/strict';
+import { describe, it } from 'node:test';
+import { V3_POSE_CLEARANCE_CASES } from './v3PoseClearance';
+import {
+  analyzeV3AnimationAtlasCaseDefects,
+  analyzeV3AnimationAtlasDefects,
+  formatV3AnimationAtlasDefectSummary,
+} from './v3AnimationAtlasDefects';
+
+describe('v3AnimationAtlasDefects', () => {
+  it('reports deterministic defects for every atlas case and four review views', () => {
+    const report = analyzeV3AnimationAtlasDefects({ mode: 'normalizedReview' });
+    const caseIds = V3_POSE_CLEARANCE_CASES.map((entry) => entry.id);
+
+    assert.deepEqual(report.cases.map((entry) => entry.caseId), caseIds);
+    assert.equal(report.summary.caseCount, caseIds.length);
+    assert.equal(report.summary.viewCount, 4);
+    assert.equal(report.cases.every((entry) => entry.views.length === 4), true);
+    assert.deepEqual(report.cases[0].views.map((view) => view.viewId), ['front', 'left', 'rear', 'right']);
+    assert.deepEqual(report, analyzeV3AnimationAtlasDefects({ mode: 'normalizedReview' }));
+  });
+
+  it('reports weapon scale, grip drift, floor, coupling, and transform metrics for weapon cases', () => {
+    const report = analyzeV3AnimationAtlasCaseDefects('hammerStrike', { mode: 'normalizedReview' });
+    const front = report.views.find((view) => view.viewId === 'front');
+
+    assert.ok(front);
+    assert.equal(front.metrics.visibleWeapon, 'hammer');
+    assert.equal(typeof front.metrics.weaponBodyHeightRatio, 'number');
+    assert.equal(typeof front.metrics.weaponGripDrift, 'number');
+    assert.equal(typeof front.metrics.footFloorPenetration, 'number');
+    assert.equal(typeof front.metrics.upperLowerCoupling, 'number');
+    assert.equal(front.metrics.nonFiniteTransformCount, 0);
+    assert.equal(typeof front.metrics.maxSlotContinuityGap, 'number');
+    assert.equal(typeof front.metrics.maxProjectedSlotGap, 'number');
+    assert.equal(typeof front.metrics.maxJointAnchorError, 'number');
+    assert.equal(typeof front.metrics.slotContinuityWarningCount, 'number');
+    assert.ok(Array.isArray(front.metrics.slotContinuityIssues));
+    assert.ok(front.metrics.slotContinuityIssues.every((issue) => (
+      typeof issue.frameFraction === 'number' &&
+      typeof issue.linkId === 'string' &&
+      typeof issue.label === 'string' &&
+      issue.viewId === front.viewId
+    )));
+    assert.deepEqual(report.sampledFrameFractions, [0, 0.25, 0.5, 0.75, 1]);
+  });
+
+  it('does not classify expected locomotion lower-body motion as upper/lower coupling', () => {
+    const report = analyzeV3AnimationAtlasCaseDefects('sprint', { mode: 'normalizedReview' });
+
+    assert.ok(report.views[0].metrics.upperLowerCoupling > 0);
+    assert.equal(report.views.some((view) => view.warnings.includes('upper/lower coupling high')), false);
+  });
+
+  it('formats a concise human-readable summary', () => {
+    const report = analyzeV3AnimationAtlasDefects({ caseIds: ['idle', 'pistolFire'] });
+    const summary = formatV3AnimationAtlasDefectSummary(report);
+
+    assert.match(summary, /V3 animation atlas defects/i);
+    assert.match(summary, /cases 2/i);
+    assert.match(summary, /weapon/i);
+    assert.match(summary, /slot continuity/i);
+  });
+});
