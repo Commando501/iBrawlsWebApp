@@ -110,5 +110,9 @@ def test_dashboard_schema_exposes_observation_v3_and_bait_knobs():
 
     assert by_field["observation_version"]["max"] == 3
     assert by_field["combat_bait_layout_mix"]["type"] == "strlist"
-    assert by_field["combat_bait_opponent"]["choices"] == ["passive_bait", "passive_bait_jitter"]
+    assert by_field["combat_bait_opponent"]["choices"] == [
+        "passive_bait",
+        "passive_bait_jitter",
+        "passive_bait_duelist",
+    ]
     assert by_field["reward_trap_death"]["type"] == "float"

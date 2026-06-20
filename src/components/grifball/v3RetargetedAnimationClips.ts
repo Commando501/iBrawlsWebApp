@@ -454,7 +454,7 @@ export function analyzeV3RetargetedMotionRetention(
       track ? sampleKeyframes(track.keyframes, normalizedTime).rotation : [0, 0, 0] as [number, number, number]
     ));
     const appliedRotations = RETENTION_SAMPLE_TIMES.map((normalizedTime) => (
-      sampleV3RetargetedClip(id, { normalizedTime }).joints[jointName]?.rotation ?? [0, 0, 0]
+      sampleV3RetargetedClip(id, { normalizedTime }).joints[jointName]?.rotation ?? [0, 0, 0] as [number, number, number]
     ));
     const rawMaxRotation = maxAbsXRotation(rawRotations);
     const appliedMaxRotation = maxAbsXRotation(appliedRotations);

@@ -137,6 +137,23 @@ def test_advisor_recommends_asymmetric_lone_wolf_coverage():
     assert f["fixes"]["combat_lone_wolf_reward_scale"] == 1.35
 
 
+def test_advisor_flags_weak_anti_bait_reward_balance():
+    out = advise({}, _values(
+        combat_bait_layout_mix=["1v1x4"],
+        reward_approach=0.843,
+        reward_danger_approach=0.25,
+        reward_bait_disengage=0.15,
+        reward_trap_death=0.8,
+    ), cpus=16)
+
+    f = next(x for x in out["findings"] if "anti-bait reward balance" in x["title"].lower())
+    assert f["level"] == "warn"
+    assert f["fixes"]["reward_danger_approach"] == 1.0
+    assert f["fixes"]["reward_bait_disengage"] == 0.35
+    assert f["fixes"]["reward_trap_death"] == 1.2
+    assert f["fixes"]["combat_bait_reward_scale"] == 3.0
+
+
 def test_advisor_blocks_cross_observation_warm_start(tmp_path):
     model = os.path.join(tmp_path, "old_obs_v1.zip")
     _fake_model_zip(model, nvec=[9, 4, 4, 2, 2, 2], obs_dim=140)

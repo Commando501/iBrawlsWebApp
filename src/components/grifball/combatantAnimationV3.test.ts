@@ -156,7 +156,7 @@ describe('animateV3CombatantModel', () => {
     assert.notEqual(detailBones.thighLeft.rotation.x, 0);
     assert.notEqual(detailBones.thighRight.rotation.x, 0);
     assert.equal(model.userData.v3RetargetedClip?.clipId, 'walk');
-    assert.equal(detailBones.footLeft.rotation.y, 0);
+    assert.notEqual(detailBones.footLeft.rotation.x, 0);
   });
 
   it('pistol recoil affects upper-body groups without disturbing planted feet', () => {

@@ -31,7 +31,7 @@ class TrainConfig:
     combat_world_sizes: list[int] = field(default_factory=lambda: [2, 2, 2, 2, 4, 4, 8])
     combat_layout_mix: list[str] = field(default_factory=list)
     combat_bait_layout_mix: list[str] = field(default_factory=list)
-    combat_bait_opponent: str = "passive_bait_jitter"
+    combat_bait_opponent: str = "passive_bait_duelist"
     combat_bait_reward_scale: float = 1.0
     combat_lone_wolf_reward_scale: float = 1.35
     combat_kill_min: int = 10         # per-episode kill target sampled in [min, max]
@@ -106,7 +106,7 @@ KNOB_DESCRIPTIONS: dict[str, str] = {
     "combat_world_sizes": "Combat only: fixed sizes of the parallel matches. 2 = a 1v1; 4/8 = FFA or teams. The mix is what makes one model generalize.",
     "combat_layout_mix": "Combat only: optional explicit scenario mix such as 1v1x16, 1v2x6, 1v3x6, 1v7x2, ffa4x6, ffa8x4. When set, this replaces world_sizes with fixed team layouts.",
     "combat_bait_layout_mix": "Combat only: optional extra scripted passive-bait curriculum worlds such as 1v1x4, 1v2x2, 1v3x2. Team 0 is learner-controlled; other teams use combat_bait_opponent.",
-    "combat_bait_opponent": "Combat only: scripted opponent used in bait curriculum worlds. passive_bait stands still; passive_bait_jitter adds small forward/back movement.",
+    "combat_bait_opponent": "Combat only: scripted opponent used in bait curriculum worlds. passive_bait stands still; passive_bait_jitter adds small forward/back movement; passive_bait_duelist holds sword spacing, backs out of ready threat range, and punishes whiffs.",
     "combat_bait_reward_scale": "Combat only: multiplier for the anti-bait reward weights inside bait curriculum worlds.",
     "combat_lone_wolf_reward_scale": "Combat only: reward multiplier for the singleton team in asymmetric layouts like 1v3 or 1v7. No combat low-health state is added.",
     "combat_kill_min": "Combat only: lower bound of the per-episode kill target.",
@@ -349,7 +349,7 @@ _FIELD_CHOICES: dict[str, list[str]] = {
     "opponent": ["random", "self", "heuristic"],
     "device": ["auto", "cpu", "cuda"],
     "lr_schedule": ["constant", "linear"],
-    "combat_bait_opponent": ["passive_bait", "passive_bait_jitter"],
+    "combat_bait_opponent": ["passive_bait", "passive_bait_jitter", "passive_bait_duelist"],
 }
 
 # Optional (min, max, step) hints for number inputs — purely to make the form
