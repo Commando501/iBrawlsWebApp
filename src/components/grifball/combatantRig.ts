@@ -99,6 +99,14 @@ const createArticulationController = (
   return controller;
 };
 
+const captureV3AnimationRestPosition = (group: THREE.Group): void => {
+  group.userData.v3AnimationRestPosition = [
+    group.position.x,
+    group.position.y,
+    group.position.z,
+  ];
+};
+
 const createAttachmentPoint = (
   parent: THREE.Object3D,
   name: CombatantAttachmentPointName,
@@ -205,6 +213,13 @@ export const buildCombatantRigForModel = (model: THREE.Group): CombatantRig => {
   model.userData.rightArm = bones.rightArm;
   model.userData.leftLeg = bones.leftLeg;
   model.userData.rightLeg = bones.rightLeg;
+  if (isV3) {
+    for (const [name, bone] of Object.entries(bones)) {
+      if (name !== 'root') {
+        captureV3AnimationRestPosition(bone);
+      }
+    }
+  }
   return rig;
 };
 

@@ -148,6 +148,14 @@ const addTranslatedBox = (
   }
 };
 
+const captureV3AnimationRestPosition = (group: THREE.Group): void => {
+  group.userData.v3AnimationRestPosition = [
+    group.position.x,
+    group.position.y,
+    group.position.z,
+  ];
+};
+
 export function getV3BuiltinPartVoxels(
   slot: V3CharacterSlotId,
   customHue?: number,
@@ -477,6 +485,9 @@ export function buildV3SpartanModel(options: V3SpartanBuildOptions = {}): THREE.
   root.userData.handRight = detailBones.handRight;
   root.userData.hand_l = detailBones.handLeft;
   root.userData.hand_r = detailBones.handRight;
+  captureV3AnimationRestPosition(root.userData.lowerTorso);
+  captureV3AnimationRestPosition(root.userData.leftLeg);
+  captureV3AnimationRestPosition(root.userData.rightLeg);
   root.userData.v3AttachmentOffsets = {
     thirdPersonWeaponGrip: [0.08, -0.08, 0.02],
     thirdPersonOffhandGrip: [-0.08, -0.08, 0.02],

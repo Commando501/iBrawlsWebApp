@@ -95,6 +95,18 @@ export interface V3AnimationAtlasDefectOptions {
 
 const VIEW_IDS: readonly V3AnimationAtlasDefectViewId[] = ['front', 'left', 'rear', 'right'];
 const DEFAULT_SLOT_CONTINUITY_FRAME_FRACTIONS = [0, 0.25, 0.5, 0.75, 1] as const;
+const ATLAS_WARNING_THRESHOLDS = {
+  maxLimbSeparation: 0.135,
+  maxSlotBoneDrift: 0.16,
+  maxWeaponGripDrift: 0.12,
+  maxFootFloorPenetration: 0.025,
+  maxUpperLowerCoupling: 0.4,
+  maxWeaponBodyHeightRatio: {
+    hammer: 0.42,
+    sword: 0.66,
+    pistol: 0.24,
+  } satisfies Record<V3WeaponId, number>,
+} as const;
 const WEAPON_CASES = new Set<V3PoseClearanceCaseId>([
   'hammerWindup',
   'hammerStrike',
@@ -203,12 +215,20 @@ const buildWarnings = (
     : false;
   const warnings: string[] = [];
   if (metrics.nonFiniteTransformCount > 0) warnings.push('non-finite transform');
-  if (metrics.limbSeparation > 0.45) warnings.push('limb separation high');
-  if (metrics.slotBoneDrift > 0.7) warnings.push('slot/bone drift high');
-  if ((metrics.weaponBodyHeightRatio ?? 0) > 0.72) warnings.push('weapon scale high');
-  if ((metrics.weaponGripDrift ?? 0) > 0.65) warnings.push('weapon grip drift high');
-  if (metrics.footFloorPenetration > 0.35) warnings.push('foot floor penetration');
-  if (expectUpperLowerIsolation && metrics.upperLowerCoupling > 0.4) warnings.push('upper/lower coupling high');
+  if (metrics.limbSeparation > ATLAS_WARNING_THRESHOLDS.maxLimbSeparation) warnings.push('limb separation high');
+  if (metrics.slotBoneDrift > ATLAS_WARNING_THRESHOLDS.maxSlotBoneDrift) warnings.push('slot/bone drift high');
+  const weaponScaleLimit = metrics.visibleWeapon
+    ? ATLAS_WARNING_THRESHOLDS.maxWeaponBodyHeightRatio[metrics.visibleWeapon]
+    : Number.POSITIVE_INFINITY;
+  if ((metrics.weaponBodyHeightRatio ?? 0) > weaponScaleLimit) warnings.push('weapon scale high');
+  if ((metrics.weaponGripDrift ?? 0) > ATLAS_WARNING_THRESHOLDS.maxWeaponGripDrift) warnings.push('weapon grip drift high');
+  if (metrics.footFloorPenetration > ATLAS_WARNING_THRESHOLDS.maxFootFloorPenetration) warnings.push('foot floor penetration');
+  if (
+    expectUpperLowerIsolation
+    && metrics.upperLowerCoupling > ATLAS_WARNING_THRESHOLDS.maxUpperLowerCoupling
+  ) {
+    warnings.push('upper/lower coupling high');
+  }
   if (metrics.slotContinuityWarningCount > 0) warnings.push('slot continuity gap high');
   return warnings;
 };

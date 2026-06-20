@@ -45,6 +45,38 @@ describe('v3AnimationAtlasDefects', () => {
     assert.deepEqual(report.sampledFrameFractions, [0, 0.25, 0.5, 0.75, 1]);
   });
 
+  it('keeps Phase 45 weapon cases below grip-drift and slot-drift thresholds', () => {
+    const cases = ['hammerWindup', 'hammerStrike', 'swordLunge', 'swordSlash', 'pistolFire'] as const;
+
+    for (const caseId of cases) {
+      const report = analyzeV3AnimationAtlasCaseDefects(caseId, { mode: 'normalizedReview' });
+      const front = report.views.find((view) => view.viewId === 'front');
+
+      assert.ok(front);
+      assert.equal(report.ready, true, `${caseId} warnings: ${front.warnings.join(', ')}`);
+      assert.ok((front.metrics.weaponGripDrift ?? 0) <= 0.12, `${caseId} weapon drift ${front.metrics.weaponGripDrift}`);
+      if (caseId === 'hammerWindup' || caseId === 'hammerStrike') {
+        assert.ok(front.metrics.slotBoneDrift <= 0.16, `${caseId} slot drift ${front.metrics.slotBoneDrift}`);
+      }
+    }
+  });
+
+  it('keeps Phase 45 lower-body cases below slot-drift and foot-floor thresholds', () => {
+    const cases = ['walk', 'slide', 'hitReact', 'swordLunge'] as const;
+
+    for (const caseId of cases) {
+      const report = analyzeV3AnimationAtlasCaseDefects(caseId, { mode: 'normalizedReview' });
+      const front = report.views.find((view) => view.viewId === 'front');
+
+      assert.ok(front);
+      assert.equal(report.ready, true, `${caseId} warnings: ${front.warnings.join(', ')}`);
+      if (caseId !== 'swordLunge') {
+        assert.ok(front.metrics.slotBoneDrift <= 0.16, `${caseId} slot drift ${front.metrics.slotBoneDrift}`);
+      }
+      assert.ok(front.metrics.footFloorPenetration <= 0.025, `${caseId} foot penetration ${front.metrics.footFloorPenetration}`);
+    }
+  });
+
   it('does not classify expected locomotion lower-body motion as upper/lower coupling', () => {
     const report = analyzeV3AnimationAtlasCaseDefects('sprint', { mode: 'normalizedReview' });
 

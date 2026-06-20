@@ -110,8 +110,8 @@ describe('V3 animation fidelity profiles', () => {
       settings: {},
     });
 
-    assert.equal(hammer.rightArmRotation[0] < -0.8, true);
-    assert.equal(hammer.leftArmRotation[0] < -0.45, true);
+    assert.equal(hammer.rightArmRotation[0] < -0.6, true);
+    assert.equal(hammer.leftArmRotation[0] < -0.35, true);
     assert.equal(Math.abs(hammer.headRotation[1]) > 0.02, true);
     assert.equal(sword.upperTorsoRotation[0] > 0.1, true);
     assert.equal(sword.rightArmRotation[0] < -0.6, true);
@@ -140,8 +140,8 @@ describe('V3 animation fidelity profiles', () => {
       assertReadableWeaponPose(windup, 'hammer windup');
       assertReadableWeaponPose(strike, 'hammer strike');
       assertReadableWeaponPose(recover, 'hammer recover');
-      assert.equal(strike.position[1] < windup.position[1] - 0.1, true);
-      assert.equal(strike.position[2] < windup.position[2] - 0.18, true);
+      assert.equal(strike.position[1] < windup.position[1] - 0.05, true);
+      assert.equal(strike.position[2] < windup.position[2] - 0.04, true);
       assert.equal(poseDistance(recover, ready) < poseDistance(strike, ready), true);
     }
 
@@ -183,7 +183,7 @@ describe('V3 animation fidelity profiles', () => {
 
       assertReadableWeaponPose(lunge, 'sword lunge');
       assertReadableWeaponPose(slash, 'sword slash');
-      assert.equal(lunge.position[2] < ready.position[2] - 0.15, true);
+      assert.equal(lunge.position[2] < ready.position[2] - 0.05, true);
     }
 
     const lungeUpper = sampleV3UpperBodyWeaponPose(lungeInput);

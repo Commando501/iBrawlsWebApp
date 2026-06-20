@@ -86,6 +86,24 @@ const setWeaponMeshPose = (group: THREE.Group, pose: WeaponPose): void => {
   group.rotation.set(...pose.rotation);
 };
 
+const getRestPosition = (group: THREE.Group): THREE.Vector3Tuple => {
+  const rest = group.userData.v3AnimationRestPosition;
+  if (Array.isArray(rest) && rest.length === 3) {
+    return [Number(rest[0]) || 0, Number(rest[1]) || 0, Number(rest[2]) || 0];
+  }
+  const captured: THREE.Vector3Tuple = [group.position.x, group.position.y, group.position.z];
+  group.userData.v3AnimationRestPosition = captured;
+  return captured;
+};
+
+const setFromRestPosition = (
+  group: THREE.Group,
+  offset: THREE.Vector3Tuple = [0, 0, 0]
+): void => {
+  const rest = getRestPosition(group);
+  group.position.set(rest[0] + offset[0], rest[1] + offset[1], rest[2] + offset[2]);
+};
+
 const applyV3FirstPersonWeaponSway = (
   group: THREE.Group,
   weaponState: string,
@@ -201,7 +219,9 @@ const resetV3BroadGroups = (groups: V3BroadGroups): void => {
   for (const name of V3_BODY_MASKS.death) {
     setRotation(groups[name], [0, 0, 0]);
   }
-  groups.lowerTorso.position.y = 0;
+  setFromRestPosition(groups.lowerTorso);
+  setFromRestPosition(groups.leftLeg);
+  setFromRestPosition(groups.rightLeg);
 };
 
 const resetV3DetailBones = (detailBones: V3DetailGroups | undefined): void => {
@@ -231,13 +251,13 @@ const applyV3FineLocomotion = ({
   if (!detailBones) return;
 
   if (isSliding) {
-    lerpDetailRotation(detailBones, 'thighLeft', [-1.1, 0, -0.08], alpha);
-    lerpDetailRotation(detailBones, 'calfLeft', [1.25, 0, 0], alpha);
-    lerpDetailRotation(detailBones, 'footLeft', [-0.18, 0, 0], alpha);
-    lerpDetailRotation(detailBones, 'toeLeft', [0.08, 0, 0], alpha);
-    lerpDetailRotation(detailBones, 'thighRight', [-0.45, 0, 0.08], alpha);
-    lerpDetailRotation(detailBones, 'calfRight', [0.35, 0, 0], alpha);
-    lerpDetailRotation(detailBones, 'footRight', [0.12, 0, 0], alpha);
+    lerpDetailRotation(detailBones, 'thighLeft', [-0.24, 0, -0.02], alpha);
+    lerpDetailRotation(detailBones, 'calfLeft', [0.32, 0, 0], alpha);
+    lerpDetailRotation(detailBones, 'footLeft', [0, 0, 0], alpha);
+    lerpDetailRotation(detailBones, 'toeLeft', [0, 0, 0], alpha);
+    lerpDetailRotation(detailBones, 'thighRight', [-0.12, 0, 0.02], alpha);
+    lerpDetailRotation(detailBones, 'calfRight', [0.12, 0, 0], alpha);
+    lerpDetailRotation(detailBones, 'footRight', [0, 0, 0], alpha);
     lerpDetailRotation(detailBones, 'toeRight', [0, 0, 0], alpha);
     return;
   }
@@ -245,17 +265,16 @@ const applyV3FineLocomotion = ({
   if (speed > 0.15) {
     const leftStep = Math.sin(phase);
     const rightStep = -leftStep;
-    const stride = isSprinting ? 0.68 : 0.48;
-    const knee = isSprinting ? 0.82 : 0.52;
-    const ankle = isSprinting ? 0.3 : 0.2;
+    const stride = isSprinting ? 0.18 : 0.12;
+    const knee = isSprinting ? 0.32 : 0.18;
     lerpDetailRotation(detailBones, 'thighLeft', [leftStep * stride, 0, 0], alpha);
     lerpDetailRotation(detailBones, 'thighRight', [rightStep * stride, 0, 0], alpha);
     lerpDetailRotation(detailBones, 'calfLeft', [leftStep < 0 ? -leftStep * knee : 0.04, 0, 0], alpha);
     lerpDetailRotation(detailBones, 'calfRight', [rightStep < 0 ? -rightStep * knee : 0.04, 0, 0], alpha);
-    lerpDetailRotation(detailBones, 'footLeft', [leftStep > 0 ? leftStep * ankle : -leftStep * 0.08, 0, 0], alpha);
-    lerpDetailRotation(detailBones, 'footRight', [rightStep > 0 ? rightStep * ankle : -rightStep * 0.08, 0, 0], alpha);
-    lerpDetailRotation(detailBones, 'toeLeft', [leftStep < 0 ? -leftStep * 0.28 : 0, 0, 0], alpha);
-    lerpDetailRotation(detailBones, 'toeRight', [rightStep < 0 ? -rightStep * 0.28 : 0, 0, 0], alpha);
+    lerpDetailRotation(detailBones, 'footLeft', [0, 0, 0], alpha);
+    lerpDetailRotation(detailBones, 'footRight', [0, 0, 0], alpha);
+    lerpDetailRotation(detailBones, 'toeLeft', [0, 0, 0], alpha);
+    lerpDetailRotation(detailBones, 'toeRight', [0, 0, 0], alpha);
     return;
   }
 
@@ -287,10 +306,12 @@ const applyV3LocomotionLayer = ({
   const alpha = dt > 0 ? Math.min(1, dt * 10) : 1;
 
   if (isSliding) {
-    groups.lowerTorso.position.y = THREE.MathUtils.lerp(groups.lowerTorso.position.y, -0.18, alpha);
-    lerpRotation(groups.lowerTorso, [-0.24, groups.lowerTorso.rotation.y, 0], alpha);
-    lerpRotation(groups.leftLeg, [-1.05, 0, -0.14], alpha);
-    lerpRotation(groups.rightLeg, [-0.58, 0, 0.14], alpha);
+    setFromRestPosition(groups.leftLeg, [0.06, 0, 0]);
+    setFromRestPosition(groups.rightLeg, [-0.06, 0, 0]);
+    setFromRestPosition(groups.lowerTorso, [0, 0.03, 0]);
+    lerpRotation(groups.lowerTorso, [-0.08, groups.lowerTorso.rotation.y, 0], alpha);
+    lerpRotation(groups.leftLeg, [-0.24, 0, -0.03], alpha);
+    lerpRotation(groups.rightLeg, [-0.12, 0, 0.03], alpha);
     applyV3FineLocomotion({ detailBones, phase: 0, isSliding, isSprinting, speed, alpha });
     return;
   }
@@ -302,18 +323,22 @@ const applyV3LocomotionLayer = ({
     mesh.userData.v3WalkPhase = nextPhase;
 
     const phase = nextPhase;
-    const swing = (isSprinting ? 0.72 : 0.5) * strideScale;
+    const swing = (isSprinting ? 0.2 : 0.14) * strideScale;
     const side = isSprinting ? 0.08 : 0.05;
+    setFromRestPosition(groups.leftLeg, [0.06, 0, 0]);
+    setFromRestPosition(groups.rightLeg, [-0.06, 0, 0]);
+    setFromRestPosition(groups.lowerTorso, [0, 0.03, 0]);
     groups.leftLeg.rotation.x = Math.sin(phase) * swing;
     groups.rightLeg.rotation.x = -Math.sin(phase) * swing;
     groups.leftLeg.rotation.z = Math.cos(phase) * side;
     groups.rightLeg.rotation.z = -Math.cos(phase) * side;
-    groups.lowerTorso.position.y = -Math.abs(Math.sin(phase)) * (isSprinting ? 0.06 : 0.04);
-    groups.lowerTorso.rotation.x = THREE.MathUtils.lerp(groups.lowerTorso.rotation.x, isSprinting ? 0.16 : 0, alpha);
+    groups.lowerTorso.rotation.x = THREE.MathUtils.lerp(groups.lowerTorso.rotation.x, isSprinting ? 0.06 : 0, alpha);
     applyV3FineLocomotion({ detailBones, phase, isSliding, isSprinting, speed, alpha });
   } else {
     mesh.userData.v3WalkPhase = 0;
-    groups.lowerTorso.position.y = THREE.MathUtils.lerp(groups.lowerTorso.position.y, 0, alpha);
+    setFromRestPosition(groups.leftLeg);
+    setFromRestPosition(groups.rightLeg);
+    setFromRestPosition(groups.lowerTorso);
     groups.lowerTorso.rotation.x = THREE.MathUtils.lerp(groups.lowerTorso.rotation.x, 0, alpha);
     lerpRotation(groups.leftLeg, [0, 0, 0], alpha);
     lerpRotation(groups.rightLeg, [0, 0, 0], alpha);

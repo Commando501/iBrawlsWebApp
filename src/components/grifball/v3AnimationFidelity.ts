@@ -178,7 +178,7 @@ const sampleHammerThirdPersonPose = ({
   if (weaponState === 'swing_up') {
     const pct = easeOutCubic(weaponTimer / timing.windupTime);
     return {
-      position: [lerp(0.04, -0.02, pct), lerp(-0.02, 0.16, pct), lerp(-0.08, -0.02, pct)],
+      position: [lerp(0.02, -0.01, pct), lerp(-0.01, 0.08, pct), lerp(-0.04, -0.01, pct)],
       rotation: [lerp(0.28, -1.22, pct), 0.08, lerp(-0.12, -0.32, pct)],
     };
   }
@@ -186,7 +186,7 @@ const sampleHammerThirdPersonPose = ({
   if (weaponState === 'swing_down') {
     const pct = easeInOutCubic(weaponTimer / timing.attackTime);
     return {
-      position: [lerp(-0.02, -0.12, pct), lerp(0.16, -0.1, pct), lerp(-0.02, -0.24, pct)],
+      position: [lerp(-0.01, -0.06, pct), lerp(0.08, -0.05, pct), lerp(-0.01, -0.1, pct)],
       rotation: [lerp(-1.22, 1.08, pct), 0.08, lerp(-0.32, -0.04, pct)],
     };
   }
@@ -194,7 +194,7 @@ const sampleHammerThirdPersonPose = ({
   if (weaponState === 'recovering') {
     const pct = easeOutCubic(weaponTimer / Math.max(settings.hammerReloadTime ?? 0.6, 0.001));
     return {
-      position: [lerp(-0.12, 0.04, pct), lerp(-0.1, -0.02, pct), lerp(-0.24, -0.08, pct)],
+      position: [lerp(-0.06, 0.02, pct), lerp(-0.05, -0.01, pct), lerp(-0.1, -0.04, pct)],
       rotation: [lerp(1.08, 0.28, pct), 0.08, lerp(-0.04, -0.12, pct)],
     };
   }
@@ -202,7 +202,7 @@ const sampleHammerThirdPersonPose = ({
   if (isHammerMeleeState(weaponState)) {
     const pct = easeInOutCubic(weaponTimer / Math.max(settings.hammerMeleeSpeed ?? 0.24, 0.001));
     return {
-      position: [lerp(0.05, -0.18, pct), lerp(-0.04, 0.08, pct), lerp(-0.1, -0.26, pct)],
+      position: [lerp(0.03, -0.08, pct), lerp(-0.02, 0.04, pct), lerp(-0.05, -0.11, pct)],
       rotation: [lerp(0.32, 0.72, pct), lerp(0.12, -0.78, pct), lerp(-0.16, -0.46, pct)],
     };
   }
@@ -210,13 +210,13 @@ const sampleHammerThirdPersonPose = ({
   if (weaponState === 'melee_recover') {
     const pct = easeOutCubic(weaponTimer / Math.max(settings.hammerMeleeReload ?? 0.5, 0.001));
     return {
-      position: [lerp(-0.18, 0.04, pct), lerp(0.08, -0.02, pct), lerp(-0.26, -0.08, pct)],
+      position: [lerp(-0.08, 0.02, pct), lerp(0.04, -0.01, pct), lerp(-0.11, -0.04, pct)],
       rotation: [lerp(0.72, 0.28, pct), lerp(-0.78, 0.08, pct), lerp(-0.46, -0.12, pct)],
     };
   }
 
   return {
-    position: [0.04, -0.02, -0.08],
+    position: [0.02, -0.01, -0.04],
     rotation: [0.28, 0.08, -0.12],
   };
 };
@@ -230,7 +230,7 @@ const sampleSwordThirdPersonPose = ({
   if (isLunging) {
     const pct = easeOutCubic(weaponTimer / 0.18);
     return {
-      position: [0.02 + pct * 0.04, -0.02, -0.18 - pct * 0.18],
+      position: [0.01 + pct * 0.02, -0.01, -0.07 - pct * 0.04],
       rotation: [-Math.PI / 2 - pct * 0.24, 0.02, -Math.PI / 8],
     };
   }
@@ -238,7 +238,7 @@ const sampleSwordThirdPersonPose = ({
   if (isSwordSlashState(weaponState)) {
     const pct = easeInOutCubic(weaponTimer / Math.max(settings.swordSlashSpeed ?? 0.22, 0.001));
     return {
-      position: [lerp(0.04, -0.12, pct), lerp(-0.02, 0.08, pct), lerp(-0.1, -0.22, pct)],
+      position: [lerp(0.02, -0.06, pct), lerp(-0.01, 0.04, pct), lerp(-0.05, -0.1, pct)],
       rotation: [-Math.PI / 2, lerp(-0.42, 0.64, pct), lerp(-Math.PI / 8, -0.72, pct)],
     };
   }
@@ -246,13 +246,13 @@ const sampleSwordThirdPersonPose = ({
   if (weaponState === 'recovering') {
     const pct = easeOutCubic(weaponTimer / Math.max(settings.swordSlashReload ?? 0.6, 0.001));
     return {
-      position: [lerp(-0.12, 0.04, pct), lerp(0.08, -0.02, pct), lerp(-0.22, -0.1, pct)],
+      position: [lerp(-0.06, 0.02, pct), lerp(0.04, -0.01, pct), lerp(-0.1, -0.05, pct)],
       rotation: [-Math.PI / 2, lerp(0.64, -0.42, pct), lerp(-0.72, -Math.PI / 8, pct)],
     };
   }
 
   return {
-    position: [0.04, -0.02, -0.1],
+    position: [0.02, -0.01, -0.05],
     rotation: [-Math.PI / 2, -0.42, -Math.PI / 8],
   };
 };
@@ -264,7 +264,7 @@ const samplePistolThirdPersonPose = ({
   const recoil = isPistolFiringState(weaponState) ? 1 - clamp01(weaponTimer / 0.18) : 0;
 
   return {
-    position: [0.08, -0.04 + recoil * 0.02, -0.18 + recoil * 0.1],
+    position: [0.04, -0.02 + recoil * 0.01, -0.08 + recoil * 0.04],
     rotation: [-0.04 - recoil * 0.32, 0.02 + recoil * 0.02, -0.06],
   };
 };
@@ -292,10 +292,10 @@ const sampleHammerUpperBodyPose = ({
   if (weaponState === 'swing_up') {
     const pct = easeOutCubic(weaponTimer / timing.windupTime);
     return {
-      upperTorsoRotation: [-0.12, lerp(0, -0.34, pct), 0.08 + pct * 0.06],
-      headRotation: [-0.02 * pct, -0.1 * pct, -0.03 * pct],
-      rightArmRotation: [lerp(-0.24, -1.35, pct), 0.16, -0.24 - pct * 0.08],
-      leftArmRotation: [lerp(-0.18, -0.88, pct), -0.18 - pct * 0.05, 0.26 + pct * 0.06],
+      upperTorsoRotation: [-0.08, lerp(0, -0.12, pct), 0.03 + pct * 0.02],
+      headRotation: [-0.02 * pct, -0.04 * pct, -0.01 * pct],
+      rightArmRotation: [lerp(-0.18, -0.72, pct), 0.04, -0.08 - pct * 0.03],
+      leftArmRotation: [lerp(-0.14, -0.42, pct), -0.05 - pct * 0.02, 0.08 + pct * 0.03],
     };
   }
 
@@ -303,10 +303,10 @@ const sampleHammerUpperBodyPose = ({
     const pct = easeInOutCubic(weaponTimer / timing.attackTime);
     const recover = clamp01(weaponTimer / Math.max(timing.attackTime, 0.001));
     return {
-      upperTorsoRotation: [lerp(-0.12, 0.3, pct), 0.42 * (1 - recover * 0.25), -0.12 - pct * 0.06],
-      headRotation: [0.03 * pct, 0.12 * pct, -0.03 * pct],
-      rightArmRotation: [lerp(-1.35, -0.08, pct), -0.12, 0.14],
-      leftArmRotation: [lerp(-0.88, -0.08, pct), 0.12, -0.14],
+      upperTorsoRotation: [lerp(-0.08, 0.14, pct), 0.12 * (1 - recover * 0.25), -0.04 - pct * 0.02],
+      headRotation: [0.02 * pct, 0.04 * pct, -0.01 * pct],
+      rightArmRotation: [lerp(-0.72, -0.04, pct), -0.02, 0.03],
+      leftArmRotation: [lerp(-0.42, -0.04, pct), 0.02, -0.03],
     };
   }
 
