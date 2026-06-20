@@ -16,6 +16,7 @@ import {
 
 const canvas = document.getElementById('atlas-canvas') as HTMLCanvasElement;
 const animationSelect = document.getElementById('animation-select') as HTMLSelectElement;
+const carryWeaponSelect = document.getElementById('carry-weapon') as HTMLSelectElement;
 const playAllButton = document.getElementById('play-all') as HTMLButtonElement;
 const playPauseButton = document.getElementById('play-pause') as HTMLButtonElement;
 const resetButton = document.getElementById('reset') as HTMLButtonElement;
@@ -65,10 +66,17 @@ function currentMode(): V3AnimationAtlasPlaybackMode {
   return modeSelect.value === 'runtimeSimulation' ? 'runtimeSimulation' : 'normalizedReview';
 }
 
+function currentCarryWeapon() {
+  return carryWeaponSelect.value === 'hammer' || carryWeaponSelect.value === 'sword' || carryWeaponSelect.value === 'pistol'
+    ? carryWeaponSelect.value
+    : null;
+}
+
 function buildDefectSignature(): string {
   return [
     atlas.clock.caseId,
     atlas.clock.mode,
+    currentCarryWeapon() ?? 'no-carry',
     atlas.qualityTier,
     atlas.v3Options.v3SourceFidelity ?? 'runtimeLod',
     atlas.v3Options.v3QualityTier ?? atlas.qualityTier,
@@ -105,7 +113,9 @@ function resize() {
 function publishReport() {
   const atlasCase = currentCase();
   const frameState = createV3AnimationAtlasFrameState(atlas.clock.frame, atlasCase.durationFrames, atlas.clock.fps);
-  const sample = sampleV3AnimationAtlasCase(atlasCase.id, frameState, atlas.clock.mode);
+  const sample = sampleV3AnimationAtlasCase(atlasCase.id, frameState, atlas.clock.mode, {
+    carryWeapon: currentCarryWeapon(),
+  });
   const deathFragments = atlas.views.reduce((total, view) => total + (view.deathBurst?.plan.fragments.length ?? 0), 0);
   const defectReport = showDefectsInput.checked
     ? ensureDefectReport()
@@ -129,6 +139,7 @@ function publishReport() {
     sourceHash: sample.sourceHash ?? null,
     viewCount: atlas.views.length,
     visibleWeapon: sample.visibleWeapon,
+    carryWeapon: currentCarryWeapon(),
     deathBurstActive: sample.deathBurstActive,
     deathFragments,
     defectSummary,
@@ -174,6 +185,7 @@ function renderAtlas(resetDeathBurst = false) {
     showWeaponGripDrift: weaponOverlayInput.checked,
     showUpperLowerIsolation: isolationOverlayInput.checked,
     showSlotContinuity: slotContinuityOverlayInput.checked,
+    carryWeapon: currentCarryWeapon(),
   });
   syncControls();
   renderer.render(atlas.scene, atlas.camera);
@@ -198,6 +210,7 @@ function nextCase() {
 }
 
 animationSelect.addEventListener('change', () => setCase(animationSelect.value as V3AnimationAtlasCaseId));
+carryWeaponSelect.addEventListener('change', () => renderAtlas(true));
 modeSelect.addEventListener('change', () => renderAtlas(true));
 loopInput.addEventListener('change', () => renderAtlas());
 boundsOverlayInput.addEventListener('change', () => renderAtlas());

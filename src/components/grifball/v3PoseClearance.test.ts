@@ -269,8 +269,8 @@ describe('v3PoseClearance', () => {
     fixture.userData.leftArm.position.set(0, 1.25, 0);
     fixture.userData.rightArm.position.set(0, 1.25, 0);
     const gapFixture = createSyntheticV3Fixture();
-    gapFixture.userData.leftArm.position.set(-0.16, 1.25, 0);
-    gapFixture.userData.rightArm.position.set(0.16, 1.25, 0);
+    gapFixture.userData.leftArm.position.set(-0.19, 1.25, 0);
+    gapFixture.userData.rightArm.position.set(0.19, 1.25, 0);
 
     const penetrationReport = analyzeV3PoseClearance('idle', {
       model: fixture,

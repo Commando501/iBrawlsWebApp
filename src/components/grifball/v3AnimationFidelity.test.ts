@@ -3,9 +3,11 @@ import { describe, it } from 'node:test';
 import {
   V3_ANIMATION_PROFILE_VERSION,
   getV3AnimationTrackDefinition,
+  sampleV3ProceduralWeaponTrackPose,
   sampleV3FirstPersonWeaponPose,
   sampleV3ThirdPersonWeaponPose,
   sampleV3UpperBodyWeaponPose,
+  sampleV3WeaponCarryPose,
 } from './v3AnimationFidelity';
 
 const finiteTuple = (tuple: readonly number[]) => tuple.every(Number.isFinite);
@@ -115,6 +117,60 @@ describe('V3 animation fidelity profiles', () => {
     assert.equal(Math.abs(hammer.headRotation[1]) > 0.02, true);
     assert.equal(sword.upperTorsoRotation[0] > 0.1, true);
     assert.equal(sword.rightArmRotation[0] < -0.6, true);
+  });
+
+  it('defines finite weapon-specific carry poses for V3 third-person movement', () => {
+    for (const weapon of ['hammer', 'sword', 'pistol'] as const) {
+      const carry = sampleV3WeaponCarryPose(weapon);
+
+      assertReadableWeaponPose(carry.weaponPose, `${weapon} carry weapon`);
+      assertReadableUpperBodyPose(carry.upperBodyPose, `${weapon} carry upper-body`);
+      assert.equal(carry.trackSource, 'v3ProceduralCarry');
+      assert.equal(carry.weapon, weapon);
+    }
+
+    const hammer = sampleV3WeaponCarryPose('hammer');
+    const sword = sampleV3WeaponCarryPose('sword');
+    const pistol = sampleV3WeaponCarryPose('pistol');
+    assert.ok(upperBodyDistance(hammer.upperBodyPose, sword.upperBodyPose) > 0.15);
+    assert.ok(upperBodyDistance(sword.upperBodyPose, pistol.upperBodyPose) > 0.15);
+  });
+
+  it('samples procedural weapon tracks from carry and back to carry', () => {
+    const tracks = [
+      'hammer_windup',
+      'hammer_strike',
+      'hammer_recover',
+      'sword_lunge',
+      'sword_slash',
+      'sword_recover',
+      'pistol_fire',
+      'pistol_recover',
+    ] as const;
+
+    for (const trackId of tracks) {
+      const definition = getV3AnimationTrackDefinition(trackId);
+      const carry = sampleV3WeaponCarryPose(definition.weapon);
+      const start = sampleV3ProceduralWeaponTrackPose(trackId, 0);
+      const mid = sampleV3ProceduralWeaponTrackPose(trackId, 0.5);
+      const end = sampleV3ProceduralWeaponTrackPose(trackId, 1);
+
+      assert.equal(start.trackId, trackId);
+      assert.equal(start.trackSource, 'v3ProceduralWeaponTrack');
+      assertReadableWeaponPose(mid.weaponPose, `${trackId} mid weapon`);
+      assertReadableUpperBodyPose(mid.upperBodyPose, `${trackId} mid upper-body`);
+      if (trackId.endsWith('_recover')) {
+        assert.ok(poseDistance(end.weaponPose, carry.weaponPose) < 1e-9, `${trackId} should end at carry`);
+        assert.ok(upperBodyDistance(end.upperBodyPose, carry.upperBodyPose) < 1e-9, `${trackId} upper-body should end at carry`);
+      } else {
+        assert.ok(poseDistance(start.weaponPose, carry.weaponPose) < 1e-9, `${trackId} should start at carry`);
+        assert.ok(upperBodyDistance(start.upperBodyPose, carry.upperBodyPose) < 1e-9, `${trackId} upper-body should start at carry`);
+        assert.ok(
+          poseDistance(mid.weaponPose, carry.weaponPose) + upperBodyDistance(mid.upperBodyPose, carry.upperBodyPose) > 0.1,
+          `${trackId} should visibly leave carry at midpoint`
+        );
+      }
+    }
   });
 
   it('keeps hammer windup strike and recover samples finite and readable', () => {

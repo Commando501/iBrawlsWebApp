@@ -116,18 +116,35 @@ describe('v3AnimationAtlasSmoke', () => {
   });
 
   test('weapon cases expose only the selected relevant weapon', () => {
-    assert.equal(
-      sampleV3AnimationAtlasCase('swordLunge', createV3AnimationAtlasFrameState(10, 60, 60), 'normalizedReview').visibleWeapon,
-      'sword'
-    );
-    assert.equal(
-      sampleV3AnimationAtlasCase('pistolFire', createV3AnimationAtlasFrameState(10, 60, 60), 'normalizedReview').visibleWeapon,
-      'pistol'
-    );
+    const sword = sampleV3AnimationAtlasCase('swordLunge', createV3AnimationAtlasFrameState(10, 60, 60), 'normalizedReview');
+    const pistol = sampleV3AnimationAtlasCase('pistolFire', createV3AnimationAtlasFrameState(10, 60, 60), 'normalizedReview');
+
+    assert.equal(sword.visibleWeapon, 'sword');
+    assert.match(sword.motionSourceLabel ?? '', /V3 procedural weapon track/);
+    assert.equal(pistol.visibleWeapon, 'pistol');
+    assert.match(pistol.motionSourceLabel ?? '', /V3 procedural weapon track/);
     assert.equal(
       sampleV3AnimationAtlasCase('idle', createV3AnimationAtlasFrameState(10, 60, 60), 'normalizedReview').visibleWeapon,
       null
     );
+  });
+
+  test('locomotion atlas can preview movement with each V3 carry weapon without changing Mixamo motion', () => {
+    for (const weapon of ['hammer', 'sword', 'pistol'] as const) {
+      const sample = sampleV3AnimationAtlasCase(
+        'walk',
+        createV3AnimationAtlasFrameState(18, 90, 60),
+        'normalizedReview',
+        { carryWeapon: weapon }
+      );
+
+      assert.equal(sample.visibleWeapon, weapon);
+      assert.equal(sample.activeWeapon, weapon);
+      assert.equal(sample.weaponState, 'ready');
+      assert.equal(sample.clipId, 'walk');
+      assert.match(sample.motionSourceLabel ?? '', /retargeted Mixamo/);
+      assert.match(sample.motionSourceLabel ?? '', /V3 carry layer/);
+    }
   });
 
   test('four-view scene creates synchronized V3 rigs with distinct facing rotations', () => {
@@ -149,6 +166,7 @@ describe('v3AnimationAtlasSmoke', () => {
 
     assert.equal(pageSource.includes("v3SourceFidelity: 'runtimeLod'"), false);
     assert.equal(pageSource.includes('motionSourceLabel'), true);
+    assert.equal(pageSource.includes('carry-weapon'), true);
   });
 
   test('frame stepping clamps or loops deterministically', () => {

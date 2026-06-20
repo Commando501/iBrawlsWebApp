@@ -12,6 +12,7 @@ import {
   sampleV3FirstPersonWeaponPose,
   sampleV3ThirdPersonWeaponPose,
   sampleV3UpperBodyWeaponPose,
+  sampleV3WeaponCarryPose,
 } from './v3AnimationFidelity';
 import { sampleV3LowerBodyWalkPose } from './v3LowerBodyChain';
 import {
@@ -728,6 +729,15 @@ export function animateV3CombatantModel({
       alpha,
       detailBones,
     });
+  }
+  if (activeWeapon === 'hammer' || activeWeapon === 'sword' || activeWeapon === 'pistol') {
+    const carry = sampleV3WeaponCarryPose(activeWeapon);
+    mesh.userData.v3WeaponCarry = {
+      weapon: activeWeapon,
+      trackSource: carry.trackSource,
+    };
+  } else {
+    delete mesh.userData.v3WeaponCarry;
   }
 
   const hitReactTimer = Math.max(0, Number(mesh.userData.v3HitReactTimer ?? 0));

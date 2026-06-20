@@ -17,6 +17,7 @@ import {
 import {
   sampleV3FirstPersonWeaponPose,
   sampleV3ThirdPersonWeaponPose,
+  sampleV3WeaponCarryPose,
 } from './v3AnimationFidelity';
 import { getV3LowerBodySeamAnchorPair } from './v3LowerBodyContinuity';
 import { createInitialGrifballThreeRefs } from './threeRefs';
@@ -180,6 +181,41 @@ describe('animateV3CombatantModel', () => {
     assert.notEqual(model.userData.rightArm.rotation.x, 0);
     assert.equal(model.userData.leftLeg.rotation.x, 0);
     assert.equal(model.userData.rightLeg.rotation.x, 0);
+  });
+
+  it('layers V3 weapon carry over Mixamo locomotion without flattening lower-body motion', () => {
+    for (const weapon of ['hammer', 'sword', 'pistol'] as const) {
+      const model = createV3Model();
+      const refs = createInitialGrifballThreeRefs();
+      const expectedCarry = sampleV3WeaponCarryPose(weapon);
+
+      animateV3CombatantModel({
+        refs,
+        mesh: model,
+        vel: new THREE.Vector3(3, 0, 0),
+        yaw: 0,
+        hp: 100,
+        activeWeapon: weapon,
+        weaponState: 'ready',
+        weaponTimer: 0,
+        dt: 1,
+        settings: {},
+      });
+
+      const detailBones = model.userData.v3DetailBones as Record<string, THREE.Group>;
+      assert.equal(model.userData.v3RetargetedClip?.clipId, 'walk');
+      assert.notEqual(detailBones.thighLeft.rotation.x, 0, `${weapon} carry should preserve Mixamo thigh motion`);
+      assert.notEqual(detailBones.calfLeft.rotation.x, 0, `${weapon} carry should preserve Mixamo calf motion`);
+      assert.deepEqual(
+        model.userData.v3WeaponCarry?.weapon,
+        weapon,
+        `${weapon} carry metadata should be stored on the model`
+      );
+      assert.ok(
+        Math.abs(model.userData.upperTorso.rotation.x - expectedCarry.upperBodyPose.upperTorsoRotation[0]) < 0.001,
+        `${weapon} upper torso should use carry pose`
+      );
+    }
   });
 
   it('resets V3 broad rig groups on death', () => {

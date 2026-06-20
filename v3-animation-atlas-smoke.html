@@ -45,7 +45,7 @@
 
       #topbar {
         display: grid;
-        grid-template-columns: minmax(180px, 260px) repeat(5, auto) minmax(160px, 1fr);
+        grid-template-columns: minmax(180px, 260px) minmax(150px, 190px) repeat(5, auto) minmax(160px, 1fr);
         align-items: end;
         gap: 8px;
         padding: 10px;
@@ -179,6 +179,15 @@
         <label>
           Animation
           <select id="animation-select" aria-label="Animation Selector"></select>
+        </label>
+        <label>
+          Carry
+          <select id="carry-weapon" aria-label="Carry Weapon Selector">
+            <option value="">Hidden</option>
+            <option value="hammer">Hammer</option>
+            <option value="sword">Sword</option>
+            <option value="pistol">Pistol</option>
+          </select>
         </label>
         <button id="play-all" type="button">Play All</button>
         <button id="play-pause" type="button">Play</button>

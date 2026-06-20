@@ -87,6 +87,10 @@ export interface V3AnimationAtlasSample {
   motionSourceLabel?: string;
 }
 
+export interface V3AnimationAtlasSampleOptions {
+  carryWeapon?: V3AnimationAtlasWeapon | null;
+}
+
 export interface V3AnimationAtlasSceneOptions {
   caseId?: V3AnimationAtlasCaseId;
   qualityTier?: V3QualityTier;
@@ -137,6 +141,7 @@ export interface V3AnimationAtlasSceneUpdateOptions {
   showWeaponGripDrift?: boolean;
   showUpperLowerIsolation?: boolean;
   showSlotContinuity?: boolean;
+  carryWeapon?: V3AnimationAtlasWeapon | null;
 }
 
 const CASE_DURATIONS: Record<V3AnimationAtlasCaseId, number> = {
@@ -189,6 +194,7 @@ const WEAPON_REVIEW_CASES = new Set<V3AnimationAtlasCaseId>([
   'swordSlash',
   'pistolFire',
 ]);
+const LOCOMOTION_REVIEW_CASES = new Set<V3AnimationAtlasCaseId>(['idle', 'walk', 'sprint']);
 
 const roundMetric = (value: number): number => {
   if (!Number.isFinite(value)) return 0;
@@ -327,15 +333,17 @@ export function stepV3AnimationAtlasFrame({
 export function sampleV3AnimationAtlasCase(
   caseId: V3AnimationAtlasCaseId,
   frameState: V3AnimationAtlasFrameState,
-  mode: V3AnimationAtlasPlaybackMode
+  mode: V3AnimationAtlasPlaybackMode,
+  options: V3AnimationAtlasSampleOptions = {}
 ): V3AnimationAtlasSample {
   const definition = caseDefinition(caseId);
   const isRuntime = mode === 'runtimeSimulation';
   const velocity = isRuntime
     ? runtimeVelocity(definition.vel, frameState.elapsedSeconds, caseId)
     : normalizedVelocity(definition.vel, frameState.normalizedTime, caseId);
-  const activeWeapon = definition.activeWeapon;
-  const showsWeapon = WEAPON_REVIEW_CASES.has(caseId);
+  const carryWeapon = LOCOMOTION_REVIEW_CASES.has(caseId) ? options.carryWeapon ?? null : null;
+  const activeWeapon = carryWeapon ?? definition.activeWeapon;
+  const showsWeapon = WEAPON_REVIEW_CASES.has(caseId) || carryWeapon !== null;
   const weaponTimer = sampleWeaponTimer(
     caseId,
     definition.weaponTimer,
@@ -349,6 +357,12 @@ export function sampleV3AnimationAtlasCase(
   const motionRetention = clipMetadata?.clipId
     ? analyzeV3RetargetedMotionRetention(clipMetadata.clipId)
     : undefined;
+  const motionSourceLabel = clipMetadata
+    ? [
+      clipMetadata.label,
+      carryWeapon ? `${carryWeapon} V3 carry layer` : undefined,
+    ].filter(Boolean).join(' + ')
+    : (WEAPON_REVIEW_CASES.has(caseId) ? `${activeWeapon} V3 procedural weapon track` : undefined);
 
   return {
     caseId,
@@ -364,7 +378,7 @@ export function sampleV3AnimationAtlasCase(
     previousHp,
     activeWeapon,
     visibleWeapon: showsWeapon && hp > 0 ? activeWeapon : null,
-    weaponState: definition.weaponState,
+    weaponState: carryWeapon ? 'ready' : definition.weaponState,
     weaponTimer,
     isSliding: 'isSliding' in definition ? Boolean(definition.isSliding) : false,
     isSprinting: 'isSprinting' in definition ? Boolean(definition.isSprinting) : false,
@@ -376,8 +390,8 @@ export function sampleV3AnimationAtlasCase(
       sourceHash: clipMetadata.sourceHash,
       clipReady: clipMetadata.ready,
       ...(motionRetention ? { motionRetention } : {}),
-      motionSourceLabel: clipMetadata.label,
     } : {}),
+    ...(motionSourceLabel ? { motionSourceLabel } : {}),
   };
 }
 
@@ -674,7 +688,9 @@ export function updateV3AnimationAtlasScene(
   const frame = Math.max(0, Math.min(definition.durationFrames, Math.floor(options.frame ?? atlas.clock.frame)));
   const mode = options.mode ?? atlas.clock.mode;
   const frameState = createV3AnimationAtlasFrameState(frame, definition.durationFrames, atlas.clock.fps);
-  const sample = sampleV3AnimationAtlasCase(caseId, frameState, mode);
+  const sample = sampleV3AnimationAtlasCase(caseId, frameState, mode, {
+    carryWeapon: options.carryWeapon,
+  });
   atlas.clock.caseId = caseId;
   atlas.clock.frame = frame;
   atlas.clock.mode = mode;
