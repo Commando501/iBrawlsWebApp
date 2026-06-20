@@ -18,6 +18,7 @@ import {
   sampleV3FirstPersonWeaponPose,
   sampleV3ThirdPersonWeaponPose,
 } from './v3AnimationFidelity';
+import { getV3LowerBodySeamAnchorPair } from './v3LowerBodyContinuity';
 import { createInitialGrifballThreeRefs } from './threeRefs';
 
 const createV3Model = () => {
@@ -101,8 +102,10 @@ describe('animateV3CombatantModel', () => {
     assert.notEqual(model.userData.upperTorso.rotation.y, 0);
     assert.notEqual(model.userData.rightArm.rotation.x, 0);
     assert.notEqual(model.userData.leftArm.rotation.x, 0);
-    assert.notEqual(model.userData.leftLeg.rotation.x, 0);
-    assert.notEqual(model.userData.rightLeg.rotation.x, 0);
+    const detailBones = model.userData.v3DetailBones as Record<string, THREE.Group>;
+    assert.equal(model.userData.v3RetargetedClip?.clipId, 'walk');
+    assert.notEqual(detailBones.thighLeft.rotation.x, 0);
+    assert.notEqual(detailBones.thighRight.rotation.x, 0);
   });
 
   it('keeps lower-body locomotion active during sword lunge upper-body animation', () => {
@@ -151,8 +154,9 @@ describe('animateV3CombatantModel', () => {
     assert.notEqual(detailBones.forearmRight.rotation.x, 0);
     assert.notEqual(detailBones.handLeft.rotation.x, 0);
     assert.notEqual(detailBones.thighLeft.rotation.x, 0);
-    assert.notEqual(detailBones.calfRight.rotation.x, 0);
-    assert.equal(detailBones.footLeft.rotation.y, 0);
+    assert.notEqual(detailBones.thighRight.rotation.x, 0);
+    assert.equal(model.userData.v3RetargetedClip?.clipId, 'walk');
+    assert.notEqual(detailBones.footLeft.rotation.x, 0);
   });
 
   it('pistol recoil affects upper-body groups without disturbing planted feet', () => {
@@ -329,7 +333,7 @@ describe('animateV3CombatantModel', () => {
       isSprinting: true,
       settings: {},
     });
-    assert.equal(isBridgeRootVisible(sprintModel), false, 'sprint remains deferred and should hide lower-body bridges');
+    assert.equal(isBridgeRootVisible(sprintModel), true, 'retargeted run should show lower-body bridges');
   });
 
   it('covers torso-pelvis and pelvis-thigh walk seams with readable undersuit bridges', () => {
@@ -368,6 +372,38 @@ describe('animateV3CombatantModel', () => {
     );
   });
 
+  it('keeps walk bridge meshes centered on seam anchors when atlas views rotate the model', () => {
+    const model = createV3Model();
+    const refs = createInitialGrifballThreeRefs();
+    model.rotation.y = Math.PI / 2;
+
+    animateV3CombatantModel({
+      refs,
+      mesh: model,
+      vel: new THREE.Vector3(3, 0, 0),
+      yaw: 0,
+      hp: 100,
+      activeWeapon: 'hammer',
+      weaponState: 'ready',
+      weaponTimer: 0,
+      dt: 1,
+      settings: {},
+    });
+    model.updateWorldMatrix(true, true);
+
+    for (const linkId of ['lowerTorso-pelvis', 'pelvis-thigh-left', 'pelvis-thigh-right']) {
+      const bridge = model.userData.v3LowerBodyJointBridges.bridges[linkId] as THREE.Mesh;
+      const anchors = getV3LowerBodySeamAnchorPair(model, linkId);
+      assert.ok(anchors, `${linkId} should expose seam anchors`);
+      const midpoint = anchors.from.clone().add(anchors.to).multiplyScalar(0.5);
+      const bridgeWorld = bridge.getWorldPosition(new THREE.Vector3());
+      assert.ok(
+        bridgeWorld.distanceTo(midpoint) < 0.02,
+        `${linkId} bridge should stay on its seam midpoint in rotated atlas views`
+      );
+    }
+  });
+
   it('animateSpartanCombatantModel dispatches V3 models to the V3 layered runtime', () => {
     const model = createV3Model();
     const refs = createInitialGrifballThreeRefs();
@@ -386,7 +422,9 @@ describe('animateV3CombatantModel', () => {
     });
 
     assert.notEqual(model.userData.upperTorso.rotation.x, 0);
-    assert.notEqual(model.userData.leftLeg.rotation.x, 0);
+    assert.equal(model.userData.v3RetargetedClip?.clipId, 'walk');
+    const detailBones = model.userData.v3DetailBones as Record<string, THREE.Group>;
+    assert.notEqual(detailBones.thighLeft.rotation.x, 0);
   });
 
   it('throttles remote mobileLow V3 animation without throttling local V3 animation', () => {
@@ -412,7 +450,7 @@ describe('animateV3CombatantModel', () => {
       animationClockMs: 0,
       isLocalV3Animation: false,
     });
-    const firstRemotePhase = remoteModel.userData.v3WalkPhase;
+    const firstRemotePhase = remoteModel.userData.v3RetargetedLocomotionSeconds;
     const firstRemoteBreath = remoteModel.userData.v3BreathingPhase;
     animateSpartanCombatantModel({
       ...baseInput,
@@ -420,7 +458,7 @@ describe('animateV3CombatantModel', () => {
       animationClockMs: 20,
       isLocalV3Animation: false,
     });
-    assert.equal(remoteModel.userData.v3WalkPhase, firstRemotePhase);
+    assert.equal(remoteModel.userData.v3RetargetedLocomotionSeconds, firstRemotePhase);
     assert.equal(remoteModel.userData.v3BreathingPhase, firstRemoteBreath);
 
     animateSpartanCombatantModel({
@@ -429,14 +467,14 @@ describe('animateV3CombatantModel', () => {
       animationClockMs: 0,
       isLocalV3Animation: true,
     });
-    const firstLocalPhase = localModel.userData.v3WalkPhase;
+    const firstLocalPhase = localModel.userData.v3RetargetedLocomotionSeconds;
     animateSpartanCombatantModel({
       ...baseInput,
       mesh: localModel,
       animationClockMs: 20,
       isLocalV3Animation: true,
     });
-    assert.notEqual(localModel.userData.v3WalkPhase, firstLocalPhase);
+    assert.notEqual(localModel.userData.v3RetargetedLocomotionSeconds, firstLocalPhase);
   });
 
   it('adds V3 hit reaction when hp drops without changing lower-body locomotion phase', () => {
@@ -455,7 +493,7 @@ describe('animateV3CombatantModel', () => {
       dt: 0.1,
       settings: {},
     });
-    const phaseBeforeHit = model.userData.v3WalkPhase;
+    const phaseBeforeHit = model.userData.v3RetargetedLocomotionSeconds;
 
     animateV3CombatantModel({
       refs,
@@ -470,7 +508,7 @@ describe('animateV3CombatantModel', () => {
       settings: {},
     });
 
-    assert.equal(model.userData.v3WalkPhase > phaseBeforeHit, true);
+    assert.equal(model.userData.v3RetargetedLocomotionSeconds > phaseBeforeHit, true);
     assert.notEqual(model.userData.upperTorso.rotation.z, 0);
     assert.notEqual(model.userData.head.rotation.x, 0);
   });

@@ -34,3 +34,5 @@ python/.venv/
 python/.pytest_tmp/
 
 Halo Reach - Spartans \[IK Rigged] V3 UNSC Armory.obj
+reference/mixamo-v3/*.fbx
+reference/mixamo-v3/*.FBX

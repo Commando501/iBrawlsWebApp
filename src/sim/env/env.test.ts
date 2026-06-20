@@ -377,6 +377,42 @@ test('reward: approaching a ready passive bait threat is penalized', () => {
   assert.ok(details.components.dangerApproach < 0);
 });
 
+test('reward: generic approach does not outpay walking into a ready passive threat', () => {
+  const state = createMatch({ seed: 112, mode: 'combat', combat: { teamSizes: [1, 1] } });
+  state.match.phase = 'playing';
+  const self = state.combatants[0];
+  const threat = state.combatants[1];
+  self.pos = { x: 0, y: 0, z: 0 };
+  threat.pos = { x: 0, y: 0, z: 5 };
+  threat.yaw = Math.PI;
+  threat.weapon = 'hammer';
+  threat.weaponState = 'idle';
+  threat.attackCooldown = 0;
+  threat.weaponReadyTimer = 0;
+  const mem = initRewardMemory(state);
+
+  self.pos = { x: 0, y: 0, z: 1 };
+  const details = computeStepRewardDetails(
+    state,
+    { startedPlaying: false, goal: null, pickup: null, roundReset: false, matchEnded: false, kills: [] },
+    {
+      ...DEFAULT_REWARD_CONFIG,
+      timePenalty: 0,
+      approach: 0.843,
+      dangerApproach: 0.25,
+      baitDisengage: 0.15,
+      trapDeath: 0.8,
+    },
+    mem
+  );
+
+  assert.ok(
+    details.rewards[self.id] < 0,
+    `entering a ready passive threat should be net-negative, got ${details.rewards[self.id]}`
+  );
+  assert.ok(details.components.dangerApproach < 0);
+});
+
 test('reward: disengaging from a ready passive bait threat is rewarded', () => {
   const state = createMatch({ seed: 103, mode: 'combat', combat: { teamSizes: [1, 1] } });
   state.match.phase = 'playing';

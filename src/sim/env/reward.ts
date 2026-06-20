@@ -341,7 +341,9 @@ export function computeStepRewardDetails(
     const nowApp = approachDistForAgent(state, c.id);
     if (prevApp != null && nowApp != null) {
       const delta = Math.max(-MAX_APPROACH_DELTA, Math.min(MAX_APPROACH_DELTA, prevApp - nowApp));
-      const amount = config.approach * delta;
+      const amount = shouldSuppressCombatTrapApproach(state, config, memory, c.id, delta)
+        ? 0
+        : config.approach * delta;
       r += amount;
       addComponent(components, 'approach', amount);
     }
@@ -368,6 +370,19 @@ export function computeStepRewardDetails(
   const details = { rewards: out, components };
   if (actions) mergeRewardDetails(details, computeActionDisciplineRewards(state, config, memory, actions));
   return details;
+}
+
+function shouldSuppressCombatTrapApproach(
+  state: SimState,
+  config: RewardConfig,
+  memory: RewardMemory,
+  agentId: string,
+  approachDelta: number
+): boolean {
+  if (state.mode !== 'combat' || approachDelta <= 0) return false;
+  if (config.dangerApproach <= 0 && config.baitDisengage <= 0 && config.trapDeath <= 0) return false;
+  const previous = memory.combatThreat[agentId];
+  return !!previous?.targetCanAttack && previous.passiveBaitRisk >= 0.5;
 }
 
 function applyCombatTrapDisciplineRewards(

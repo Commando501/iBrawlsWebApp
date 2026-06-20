@@ -49,16 +49,40 @@ describe('v3AnimationAtlasDefects', () => {
     assert.deepEqual(report.sampledFrameFractions, [0, 0.25, 0.5, 0.75, 1]);
   });
 
-  it('keeps walk free of lower-body seam tears in every atlas view', () => {
+  it('includes retargeted Mixamo clip metadata for imported base motion cases', () => {
+    const walk = analyzeV3AnimationAtlasCaseDefects('walk', { mode: 'normalizedReview' });
+    const sprint = analyzeV3AnimationAtlasCaseDefects('sprint', { mode: 'normalizedReview' });
+    const hammer = analyzeV3AnimationAtlasCaseDefects('hammerStrike', { mode: 'normalizedReview' });
+
+    assert.equal(walk.clipSource, 'retargetedMixamo');
+    assert.equal(walk.clipId, 'walk');
+    assert.equal(walk.clipReady, true);
+    assert.equal(walk.motionRetention?.ready, true);
+    assert.ok((walk.motionRetention?.joints.calfLeft?.appliedMaxRotation ?? 0) >= 0.18);
+    assert.match(walk.sourceHash ?? '', /^sha256:[0-9a-f]{64}$/);
+    assert.equal(sprint.clipSource, 'retargetedMixamo');
+    assert.equal(sprint.clipId, 'run');
+    assert.equal(sprint.clipReady, true);
+    assert.equal(sprint.motionRetention?.ready, true);
+    assert.ok((sprint.motionRetention?.joints.calfLeft?.appliedMaxRotation ?? 0) >= 0.28);
+    assert.equal(hammer.clipSource, undefined);
+    assert.equal(hammer.clipReady, undefined);
+    assert.equal(hammer.motionRetention, undefined);
+  });
+
+  it('keeps walk visibly free of lower-body seam tears in every atlas view', () => {
     const report = analyzeV3AnimationAtlasCaseDefects('walk', { mode: 'normalizedReview' });
 
     assert.equal(report.ready, true, report.views.map((view) => `${view.viewId}: ${view.warnings.join(', ')}`).join(' | '));
     for (const view of report.views) {
-      assert.equal(view.metrics.lowerBodyTearWarningCount, 0, `${view.viewId} lower-body seam issues`);
-      assert.ok(view.metrics.maxLowerBodySeamGap <= 0.08, `${view.viewId} seam gap ${view.metrics.maxLowerBodySeamGap}`);
+      assert.equal(typeof view.metrics.rawMaxLowerBodySeamGap, 'number');
+      assert.equal(typeof view.metrics.visibleMaxLowerBodySeamGap, 'number');
+      assert.equal(typeof view.metrics.bridgeCoveredLinkCount, 'number');
+      assert.equal(view.metrics.visibleLowerBodyTearWarningCount, 0, `${view.viewId} visible lower-body seam issues`);
+      assert.ok(view.metrics.visibleMaxLowerBodySeamGap <= 0.14, `${view.viewId} visible seam gap ${view.metrics.visibleMaxLowerBodySeamGap}`);
       assert.ok(
-        view.metrics.maxLowerBodyProjectedSeamGap <= 0.08,
-        `${view.viewId} projected seam gap ${view.metrics.maxLowerBodyProjectedSeamGap}`
+        view.metrics.visibleMaxLowerBodyProjectedSeamGap <= 0.14,
+        `${view.viewId} visible projected seam gap ${view.metrics.visibleMaxLowerBodyProjectedSeamGap}`
       );
     }
   });

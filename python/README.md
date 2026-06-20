@@ -44,6 +44,10 @@ over a **batched binary protocol** so tens of millions of steps move only flat t
   as `1v1x16`, `1v2x6`, `1v3x6`, `1v7x2`, `ffa4x6`, and `ffa8x4`. The singleton team in
   asymmetric layouts can receive `[combat].lone_wolf_reward_scale`; combat mode does not add
   a low-health scenario, which remains specific to Grifball runner situations.
+- `[combat].bait_layout_mix` adds scripted passive-player curriculum worlds. The
+  `passive_bait_duelist` opponent is the strongest profile: it swaps to sword, stays outside
+  a ready target's threat range, dances in the spacing band, and only commits when the target
+  is recovering or otherwise unable to punish.
 - Combat evaluation supports a matrix grade (`--matrix`) across 1v1, lone-wolf 1vN, 4-player,
   and 8-player scenarios, plus frozen snapshot opponents via repeated `--league-snapshot`
   paths. Matrix wins are scored from 0..1 against each scenario's random baseline so big-world

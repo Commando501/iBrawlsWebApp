@@ -20,6 +20,25 @@ describe('v3AnimationAtlasSmoke', () => {
     );
   });
 
+  test('base locomotion atlas cases are labeled as retargeted Mixamo clips', () => {
+    const cases = new Map(buildV3AnimationAtlasCases().map((entry) => [entry.id, entry]));
+
+    assert.equal(cases.get('idle')?.clipSource, 'retargetedMixamo');
+    assert.equal(cases.get('idle')?.clipId, 'idle');
+    assert.equal(cases.get('idle')?.motionSourceLabel, 'retargeted Mixamo');
+    assert.equal(cases.get('idle')?.motionRetention?.ready, true);
+    assert.equal(cases.get('walk')?.clipSource, 'retargetedMixamo');
+    assert.equal(cases.get('walk')?.clipId, 'walk');
+    assert.equal(cases.get('walk')?.motionRetention?.ready, true);
+    assert.ok((cases.get('walk')?.motionRetention?.joints.calfLeft?.appliedMaxRotation ?? 0) >= 0.18);
+    assert.equal(cases.get('sprint')?.clipSource, 'retargetedMixamo');
+    assert.equal(cases.get('sprint')?.clipId, 'run');
+    assert.equal(cases.get('sprint')?.motionRetention?.ready, true);
+    assert.ok((cases.get('sprint')?.motionRetention?.joints.calfLeft?.appliedMaxRotation ?? 0) >= 0.28);
+    assert.match(cases.get('sprint')?.sourceHash ?? '', /^sha256:[0-9a-f]{64}$/);
+    assert.equal(cases.get('hammerStrike')?.clipSource, undefined);
+  });
+
   test('normalized review sampling is deterministic across frame states', () => {
     const frameState = createV3AnimationAtlasFrameState(24, 60, 60);
     const first = sampleV3AnimationAtlasCase('hammerStrike', frameState, 'normalizedReview');
@@ -40,6 +59,10 @@ describe('v3AnimationAtlasSmoke', () => {
 
     assert.notDeepEqual(runtime.velocity, normalized.velocity);
     assert.equal(runtime.dt, 1 / 60);
+    assert.equal(normalized.clipSource, 'retargetedMixamo');
+    assert.equal(normalized.clipId, 'walk');
+    assert.equal(normalized.motionRetention?.ready, true);
+    assert.match(normalized.sourceHash ?? '', /^sha256:[0-9a-f]{64}$/);
     assert.equal(JSON.stringify(V3_POSE_CLEARANCE_CASES), before);
   });
 
@@ -88,6 +111,7 @@ describe('v3AnimationAtlasSmoke', () => {
     const pageSource = readFileSync('src/tools/v3AnimationAtlasSmokePage.ts', 'utf8');
 
     assert.equal(pageSource.includes("v3SourceFidelity: 'runtimeLod'"), false);
+    assert.equal(pageSource.includes('motionSourceLabel'), true);
   });
 
   test('frame stepping clamps or loops deterministically', () => {
@@ -134,8 +158,39 @@ describe('v3AnimationAtlasSmoke', () => {
         summary?.linkCount === 7 &&
         typeof summary.maxLowerBodySeamGap === 'number' &&
         typeof summary.maxLowerBodyProjectedSeamGap === 'number' &&
-        typeof summary.lowerBodyTearWarningCount === 'number'
+        typeof summary.lowerBodyTearWarningCount === 'number' &&
+        typeof summary.maxVisibleLowerBodySeamGap === 'number' &&
+        typeof summary.visibleLowerBodyTearWarningCount === 'number'
       );
     }));
+  });
+
+  test('walk review frames pose a readable stride instead of a tiny first-frame shuffle', () => {
+    const atlas = buildV3AnimationAtlasScene({ caseId: 'walk' });
+
+    updateV3AnimationAtlasScene(atlas, { frame: 22, mode: 'normalizedReview' });
+
+    const model = atlas.views[0].rig.group;
+    const detailBones = model.userData.v3DetailBones as Record<string, THREE.Group>;
+    const maxThighSwing = Math.max(
+      Math.abs(detailBones.thighLeft.rotation.x),
+      Math.abs(detailBones.thighRight.rotation.x)
+    );
+
+    assert.equal(model.userData.v3RetargetedClip?.clipId, 'walk');
+    assert.equal(model.userData.v3RetargetedClip?.clipSource, 'retargetedMixamo');
+    assert.ok(maxThighSwing >= 0.085, `walk atlas frame should show real thigh swing, got ${maxThighSwing}`);
+    assert.ok(
+      Math.max(Math.abs(detailBones.calfLeft.rotation.x), Math.abs(detailBones.calfRight.rotation.x)) >= 0.12,
+      'walk atlas frame should show imported knee/calf motion, not just broad thigh swing'
+    );
+    assert.ok(
+      Math.max(Math.abs(detailBones.footLeft.rotation.x), Math.abs(detailBones.footRight.rotation.x)) >= 0.05,
+      'walk atlas frame should show imported foot motion'
+    );
+    assert.ok(
+      Math.abs((model.userData.lowerTorso as THREE.Group).position.y) <= 0.015,
+      'walk atlas frame should not jump hips upward into the torso'
+    );
   });
 });

@@ -180,7 +180,7 @@ const EVIDENCE_LABELS: Record<V3ReadinessEvidenceKey, string> = {
   referenceVoxelSource: 'Exact OBJ voxel source',
   visualQa: 'Visual QA',
   poseClearance: 'Pose clearance',
-  motionRetarget: 'Motion retarget',
+  motionRetarget: 'Retargeted motion clips',
   performanceSmoke: 'Performance smoke',
 };
 

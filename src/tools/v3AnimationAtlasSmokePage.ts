@@ -123,6 +123,10 @@ function publishReport() {
     frame: atlas.clock.frame,
     durationFrames: atlasCase.durationFrames,
     normalizedTime: sample.normalizedTime,
+    motionSourceLabel: sample.motionSourceLabel ?? 'procedural runtime',
+    clipId: sample.clipId ?? null,
+    clipSource: sample.clipSource ?? null,
+    sourceHash: sample.sourceHash ?? null,
     viewCount: atlas.views.length,
     visibleWeapon: sample.visibleWeapon,
     deathBurstActive: sample.deathBurstActive,
@@ -141,7 +145,7 @@ function publishReport() {
   (window as any).__IBRAWLS_V3_ANIMATION_ATLAS_DEFECTS__ = defectReport;
   (globalThis as any).__IBRAWLS_V3_ANIMATION_ATLAS_SMOKE__ = report;
   (globalThis as any).__IBRAWLS_V3_ANIMATION_ATLAS_DEFECTS__ = defectReport;
-  summary.textContent = `${report.title} | ${report.status} | ${atlasCase.label} | ${atlas.clock.mode} | frame ${atlas.clock.frame}/${atlasCase.durationFrames} | weapon ${sample.visibleWeapon ?? 'hidden'} | views ${atlas.views.length}`;
+  summary.textContent = `${report.title} | ${report.status} | ${atlasCase.label} | ${report.motionSourceLabel} | ${atlas.clock.mode} | frame ${atlas.clock.frame}/${atlasCase.durationFrames} | weapon ${sample.visibleWeapon ?? 'hidden'} | views ${atlas.views.length}`;
   defectReportElement.hidden = !showDefectsInput.checked;
   defectReportElement.textContent = showDefectsInput.checked
     ? `${defectSummary}\n${JSON.stringify(ensureDefectReport().summary, null, 2)}`

@@ -204,6 +204,23 @@ def advise(
                 "signal without eating the run.",
                 {"eval_every": 2_000_000})
 
+        bait_mix = values.get("combat_bait_layout_mix") or []
+        if bait_mix:
+            approach = _num(values, "reward_approach", 0.03)
+            danger = _num(values, "reward_danger_approach", 0.0)
+            bait_scale = _num(values, "combat_bait_reward_scale", 1.0)
+            if danger * max(1.0, bait_scale) <= approach:
+                add("warn", "Weak anti-bait reward balance",
+                    "The learner can still be paid more for closing on a passive ready target "
+                    "than it is punished for entering the trap. Harden bait worlds so passive "
+                    "spacing is a losing line instead of a profitable approach shortcut.",
+                    {
+                        "reward_danger_approach": 1.0,
+                        "reward_bait_disengage": 0.35,
+                        "reward_trap_death": 1.2,
+                        "combat_bait_reward_scale": 3.0,
+                    })
+
     if interval >= 4 and _num(values, "gamma", 0.997) >= 0.995:
         add("info", "Discount tuned for 60Hz decisions",
             "gamma is per DECISION, and with frame-skip each decision covers "

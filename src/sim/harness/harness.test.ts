@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomPolicy } from './randomPolicy';
 import { heuristicPolicy } from './heuristicPolicy';
+import { passiveBaitPolicyFor } from './passiveBaitPolicy';
 import { playMatch, evaluate } from './rollout';
 import { createMatch } from '../factory';
 import { createRng } from '../rng';
@@ -30,6 +31,55 @@ test('heuristic carrier aims toward the enemy goal', () => {
   const fx = Math.sin(a.aim);
   assert.ok(fx > 0.5, `carrier should face +x toward enemy goal, fx=${fx}`);
   assert.equal(a.moveZ, 1);
+});
+
+test('passive bait duelist backs away from a ready sword instead of lunging into it', () => {
+  const state = createMatch({ seed: 31, mode: 'combat', combat: { teamSizes: [1, 1] }, startWeapon: 'sword' });
+  state.match.phase = 'playing';
+  const learner = state.combatants[0];
+  const baiter = state.combatants[1];
+  learner.pos = { x: 0, y: 0, z: 0 };
+  learner.yaw = 0;
+  learner.weapon = 'sword';
+  learner.weaponState = 'idle';
+  learner.attackCooldown = 0;
+  learner.weaponReadyTimer = 0;
+  baiter.pos = { x: 0, y: 0, z: 12 };
+  baiter.yaw = Math.PI;
+  baiter.weapon = 'sword';
+  baiter.weaponState = 'idle';
+  baiter.attackCooldown = 0;
+  baiter.weaponReadyTimer = 0;
+
+  const action = passiveBaitPolicyFor('passive_bait_duelist')(state, baiter.id, createRng(31));
+
+  assert.equal(action.attackSecondary, false);
+  assert.equal(action.attackPrimary, false);
+  assert.ok(action.moveZ < 0, `duelist should back out of ready sword range, got moveZ=${action.moveZ}`);
+});
+
+test('passive bait duelist punishes after the target has whiffed', () => {
+  const state = createMatch({ seed: 32, mode: 'combat', combat: { teamSizes: [1, 1] }, startWeapon: 'sword' });
+  state.match.phase = 'playing';
+  const learner = state.combatants[0];
+  const baiter = state.combatants[1];
+  learner.pos = { x: 0, y: 0, z: 0 };
+  learner.yaw = 0;
+  learner.weapon = 'sword';
+  learner.weaponState = 'recovering';
+  learner.attackCooldown = 0.4;
+  learner.weaponReadyTimer = 0;
+  baiter.pos = { x: 0, y: 0, z: 12 };
+  baiter.yaw = Math.PI;
+  baiter.weapon = 'sword';
+  baiter.weaponState = 'idle';
+  baiter.attackCooldown = 0;
+  baiter.weaponReadyTimer = 0;
+
+  const action = passiveBaitPolicyFor('passive_bait_duelist')(state, baiter.id, createRng(32));
+
+  assert.equal(action.attackSecondary, true);
+  assert.ok(action.moveZ >= 0, `duelist should not retreat from a recovering target, got moveZ=${action.moveZ}`);
 });
 
 test('a match plays to a natural conclusion', () => {
