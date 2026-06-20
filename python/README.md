@@ -34,8 +34,9 @@ over a **batched binary protocol** so tens of millions of steps move only flat t
 
 - Combat policies now get an explicit **nearest-hostile aim** factor, so the action space can
   target enemies directly instead of discovering targeting through attack/dash spam.
-- Optional reward-discipline weights (`invalid_attack`, `invalid_dash`, `invalid_jump`,
-  `invalid_swap`, `action_repeat`) penalize wasted inputs. The sim reports aggregate
+- Optional reward-discipline weights (`invalid_attack`, `missed_attack_opportunity`,
+  `invalid_dash`, `invalid_jump`, `invalid_swap`, `action_repeat`) penalize wasted inputs
+  and point-blank ready weapons that do not swing. The sim reports aggregate
   `reward_component/*` metrics so the dashboard can show whether reward came from kills,
   approach shaping, time pressure, or action-discipline penalties.
 - `network.frame_stack` enables short observation history through SB3 `VecFrameStack`

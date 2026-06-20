@@ -220,6 +220,13 @@ def advise(
                         "reward_trap_death": 1.2,
                         "combat_bait_reward_scale": 3.0,
                     })
+            missed = _num(values, "reward_missed_attack_opportunity", 0.0)
+            if missed <= 0:
+                add("warn", "Missing close-range attack discipline",
+                    "A policy can learn to close distance and then idle inside melee range because "
+                    "there is no per-tick penalty for holding a ready weapon while a hostile is "
+                    "already in immediate hit volume.",
+                    {"reward_missed_attack_opportunity": 0.12})
 
     if interval >= 4 and _num(values, "gamma", 0.997) >= 0.995:
         add("info", "Discount tuned for 60Hz decisions",

@@ -154,6 +154,19 @@ def test_advisor_flags_weak_anti_bait_reward_balance():
     assert f["fixes"]["combat_bait_reward_scale"] == 3.0
 
 
+def test_advisor_flags_missing_close_range_attack_discipline():
+    out = advise({}, _values(
+        combat_bait_layout_mix=["1v1x4"],
+        reward_missed_attack_opportunity=0.0,
+        reward_danger_approach=1.0,
+        combat_bait_reward_scale=3.0,
+    ), cpus=16)
+
+    f = next(x for x in out["findings"] if "close-range attack discipline" in x["title"].lower())
+    assert f["level"] == "warn"
+    assert f["fixes"]["reward_missed_attack_opportunity"] == 0.12
+
+
 def test_advisor_blocks_cross_observation_warm_start(tmp_path):
     model = os.path.join(tmp_path, "old_obs_v1.zip")
     _fake_model_zip(model, nvec=[9, 4, 4, 2, 2, 2], obs_dim=140)

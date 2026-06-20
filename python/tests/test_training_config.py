@@ -12,6 +12,7 @@ def test_human_likeness_training_knobs_roundtrip_through_config_helpers():
         "reward_invalid_dash": 0.3,
         "reward_invalid_jump": 0.2,
         "reward_invalid_swap": 0.1,
+        "reward_missed_attack_opportunity": 0.25,
     })
 
     assert cfg.frame_stack == 4
@@ -21,12 +22,14 @@ def test_human_likeness_training_knobs_roundtrip_through_config_helpers():
     assert reward_dict(cfg)["invalidDash"] == 0.3
     assert reward_dict(cfg)["invalidJump"] == 0.2
     assert reward_dict(cfg)["invalidSwap"] == 0.1
+    assert reward_dict(cfg)["missedAttackOpportunity"] == 0.25
 
     toml = dump_toml(cfg)
     assert "[league]" in toml
     assert 'snapshots = ["runs/a/final_model.zip", "runs/b/final_model.zip"]' in toml
     assert "frame_stack = 4" in toml
     assert "invalid_attack = 0.4" in toml
+    assert "missed_attack_opportunity = 0.25" in toml
 
 
 def test_dashboard_schema_exposes_frame_stack_and_snapshot_league():
@@ -40,6 +43,7 @@ def test_dashboard_schema_exposes_frame_stack_and_snapshot_league():
     assert by_field["frame_stack"]["type"] == "int"
     assert by_field["league_snapshots"]["type"] == "strlist"
     assert by_field["reward_invalid_attack"]["type"] == "float"
+    assert by_field["reward_missed_attack_opportunity"]["type"] == "float"
     assert any(section["section"] == "league" for section in sections)
 
 
@@ -48,6 +52,7 @@ def test_train_config_defaults_keep_existing_behavior_off():
     assert cfg.frame_stack == 1
     assert cfg.league_snapshots == []
     assert reward_dict(cfg)["invalidAttack"] == 0.0
+    assert reward_dict(cfg)["missedAttackOpportunity"] == 0.0
 
 
 def test_lone_wolf_combat_knobs_roundtrip_through_config_helpers():

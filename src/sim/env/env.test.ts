@@ -285,6 +285,54 @@ test('reward: wasted actions are penalized and exposed as components', () => {
   assert.equal(details.components.invalidSwap, -0.1);
 });
 
+test('reward: ready point-blank combatants are penalized for not attacking', () => {
+  const state = createMatch({ seed: 113, mode: 'combat', combat: { teamSizes: [1, 1] } });
+  state.match.phase = 'playing';
+  const self = state.combatants[0];
+  const target = state.combatants[1];
+  self.pos = { x: 0, y: 0, z: 0 };
+  self.yaw = 0;
+  self.weapon = 'hammer';
+  self.weaponState = 'idle';
+  self.attackCooldown = 0;
+  self.weaponReadyTimer = 0;
+  target.pos = { x: 0, y: 0, z: 1 };
+  target.invulnerabilityTimer = 0;
+
+  const mem = initRewardMemory(state);
+  const details = computeStepRewardDetails(
+    state,
+    { startedPlaying: false, goal: null, pickup: null, roundReset: false, matchEnded: false, kills: [] },
+    {
+      ...DEFAULT_REWARD_CONFIG,
+      timePenalty: 0,
+      approach: 0,
+      missedAttackOpportunity: 0.25,
+    },
+    mem,
+    { [self.id]: idleAction() }
+  );
+
+  assert.equal(details.rewards[self.id], -0.25);
+  assert.equal(details.components.missedAttackOpportunity, -0.25);
+
+  self.weaponReadyTimer = 0.5;
+  const blocked = computeStepRewardDetails(
+    state,
+    { startedPlaying: false, goal: null, pickup: null, roundReset: false, matchEnded: false, kills: [] },
+    {
+      ...DEFAULT_REWARD_CONFIG,
+      timePenalty: 0,
+      approach: 0,
+      missedAttackOpportunity: 0.25,
+    },
+    mem,
+    { [self.id]: idleAction() }
+  );
+
+  assert.equal(blocked.components.missedAttackOpportunity, 0);
+});
+
 test('observation v2 appends full FFA pressure context while v1 remains unchanged', () => {
   const state = createMatch({ seed: 45, mode: 'combat', combat: { teamSizes: [1, 1, 1, 1, 1, 1, 1, 1] } });
   const self = state.combatants[0];

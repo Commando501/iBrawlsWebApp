@@ -68,11 +68,12 @@ Dense rewards (`possession`, `ball_progress`, `kill`, `death`, `time_penalty`) =
 help early learning but can mislead if too strong.
 
 Human-like combat also has **discipline rewards**. These are optional penalties for wasted
-inputs: `invalid_attack`, `invalid_dash`, `invalid_jump`, `invalid_swap`, and
-`action_repeat`. Leave them at `0` while proving a new reward setup can learn at all, then
-turn them on lightly when a model starts winning by mashing attack/dash/jump. The dashboard
-logs these under `reward_component/*`, alongside kill, approach, and time-penalty components,
-so you can see whether a run is learning combat or just paying itself through shaping.
+inputs: `invalid_attack`, `missed_attack_opportunity`, `invalid_dash`, `invalid_jump`,
+`invalid_swap`, and `action_repeat`. Leave them at `0` while proving a new reward setup can
+learn at all, then turn them on lightly when a model starts winning by mashing buttons or by
+closing to point-blank range without swinging. The dashboard logs these under
+`reward_component/*`, alongside kill, approach, and time-penalty components, so you can see
+whether a run is learning combat or just paying itself through shaping.
 
 ## 5b. Combat mode (deathmatch) — one generalist for 1v1 + FFA
 

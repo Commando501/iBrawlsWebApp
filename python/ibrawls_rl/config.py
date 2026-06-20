@@ -84,6 +84,7 @@ class TrainConfig:
     reward_approach: float = 0.03     # per metre closing on the objective (ball / nearest enemy)
     reward_time_penalty: float = 0.0005  # tiny per-tick nudge to stop stalling
     reward_invalid_attack: float = 0.0 # penalize attacking while a weapon is unavailable
+    reward_missed_attack_opportunity: float = 0.0 # penalize not attacking with a ready weapon and immediate hit
     reward_invalid_dash: float = 0.0   # penalize dash inputs while dash cannot fire
     reward_invalid_jump: float = 0.0   # penalize jump inputs while already airborne
     reward_invalid_swap: float = 0.0   # penalize impossible weapon swaps
@@ -156,6 +157,7 @@ KNOB_DESCRIPTIONS: dict[str, str] = {
     "reward_approach": "Payout per metre closing on the objective (free ball / nearest enemy). The exploration foothold that gets a fresh brain moving toward the action.",
     "reward_time_penalty": "Small per-tick cost to discourage stalling.",
     "reward_invalid_attack": "Penalty for attack inputs while the weapon is unavailable. Helps stop button-mashing policies.",
+    "reward_missed_attack_opportunity": "Penalty for choosing no attack while ready and a hostile is already inside the current weapon's immediate hit volume.",
     "reward_invalid_dash": "Penalty for dash inputs while dash is on cooldown/active.",
     "reward_invalid_jump": "Penalty for jump inputs while already airborne.",
     "reward_invalid_swap": "Penalty for impossible weapon swaps.",
@@ -227,6 +229,7 @@ _TOML_MAP = {
     ("reward", "approach"): "reward_approach",
     ("reward", "time_penalty"): "reward_time_penalty",
     ("reward", "invalid_attack"): "reward_invalid_attack",
+    ("reward", "missed_attack_opportunity"): "reward_missed_attack_opportunity",
     ("reward", "invalid_dash"): "reward_invalid_dash",
     ("reward", "invalid_jump"): "reward_invalid_jump",
     ("reward", "invalid_swap"): "reward_invalid_swap",
@@ -268,6 +271,7 @@ def reward_dict(cfg: TrainConfig) -> dict:
         "approach": cfg.reward_approach,
         "timePenalty": cfg.reward_time_penalty,
         "invalidAttack": cfg.reward_invalid_attack,
+        "missedAttackOpportunity": cfg.reward_missed_attack_opportunity,
         "invalidDash": cfg.reward_invalid_dash,
         "invalidJump": cfg.reward_invalid_jump,
         "invalidSwap": cfg.reward_invalid_swap,
@@ -370,6 +374,7 @@ _FIELD_RANGES: dict[str, tuple[float, float, float]] = {
     "observation_version": (1, 3, 1),
     "combat_bait_reward_scale": (0.0, 5.0, 0.05),
     "combat_lone_wolf_reward_scale": (1.0, 3.0, 0.05),
+    "reward_missed_attack_opportunity": (0.0, 1.0, 0.01),
     "league_latest_bias": (0.0, 1.0, 0.05),
     "league_random_opponent_rate": (0.0, 1.0, 0.05),
     "league_worlds": (0, 16, 1),

@@ -15,6 +15,7 @@ import { type ActionsById, type ActionInput } from '../actions';
 import { enemyGoalForTeam } from '../../game/aiGrifballRoles';
 import { type TeamId } from '../../game/teamScoring';
 import { combatThreatMemoryFor, type CombatThreatMemory } from '../combatThreat';
+import { areHostile, inHammerStrikeVolume, inMeleeHitVolume } from '../weapons';
 
 export interface RewardConfig {
   /** Terminal: ± on match end for the winning / losing team. */
@@ -40,6 +41,8 @@ export interface RewardConfig {
   timePenalty: number;
   /** Action-discipline penalties: wasted inputs that make bots look spammy/robotic. */
   invalidAttack: number;
+  /** Penalty for holding an available weapon while a hostile is already in immediate hit volume. */
+  missedAttackOpportunity: number;
   invalidDash: number;
   invalidJump: number;
   invalidSwap: number;
@@ -63,6 +66,7 @@ export const DEFAULT_REWARD_CONFIG: RewardConfig = {
   approach: 0.01,
   timePenalty: 0.0005,
   invalidAttack: 0,
+  missedAttackOpportunity: 0,
   invalidDash: 0,
   invalidJump: 0,
   invalidSwap: 0,
@@ -85,6 +89,7 @@ export const REWARD_COMPONENT_KEYS = [
   'kill',
   'death',
   'invalidAttack',
+  'missedAttackOpportunity',
   'invalidDash',
   'invalidJump',
   'invalidSwap',
@@ -206,6 +211,19 @@ function actionSignature(action: ActionInput): string | null {
   ].join('|');
 }
 
+function hasImmediateAttackOpportunity(state: SimState, attacker: SimState['combatants'][number]): boolean {
+  if (state.mode !== 'combat') return false;
+  for (const target of state.combatants) {
+    if (!target.alive || target.invulnerabilityTimer > 0 || !areHostile(attacker, target)) continue;
+    if (attacker.weapon === 'hammer') {
+      if (inHammerStrikeVolume(attacker, target, state.settings)) return true;
+      continue;
+    }
+    if (inMeleeHitVolume(attacker, target, state.settings)) return true;
+  }
+  return false;
+}
+
 export function computeActionDisciplineRewards(
   state: SimState,
   config: RewardConfig,
@@ -230,6 +248,9 @@ export function computeActionDisciplineRewards(
       c.isLunging;
     if (attackRequested && attackBlocked) {
       addReward(rewards, components, c.id, -config.invalidAttack, 'invalidAttack');
+    }
+    if (!attackRequested && !attackBlocked && hasImmediateAttackOpportunity(state, c)) {
+      addReward(rewards, components, c.id, -config.missedAttackOpportunity, 'missedAttackOpportunity');
     }
 
     if (action.dash && (c.dashCooldownTimer > 0 || c.dashRemaining > 0)) {
