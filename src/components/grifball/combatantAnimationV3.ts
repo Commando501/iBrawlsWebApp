@@ -18,6 +18,11 @@ import {
   setV3LowerBodyJointBridgesVisible,
   updateV3LowerBodyJointBridges,
 } from './v3LowerBodyJointBridges';
+import {
+  applyV3RetargetedClipPose,
+  sampleV3RetargetedClip,
+  type V3RetargetedClipId,
+} from './v3RetargetedAnimationClips';
 
 export type V3AnimationLayerName = 'locomotion' | 'weapon' | 'additive' | 'death';
 export type V3BroadBodyGroupName =
@@ -338,7 +343,9 @@ const applyV3LocomotionLayer = ({
   dt,
   isSliding,
   isSprinting,
+  isLunging,
   detailBones,
+  animationClockMs,
 }: {
   groups: V3BroadGroups;
   mesh: THREE.Group;
@@ -347,10 +354,48 @@ const applyV3LocomotionLayer = ({
   dt: number;
   isSliding?: boolean;
   isSprinting?: boolean;
+  isLunging?: boolean;
   detailBones?: V3DetailGroups;
+  animationClockMs?: number;
 }): void => {
   const speed = Math.sqrt(vel.x * vel.x + vel.z * vel.z);
   const alpha = dt > 0 ? Math.min(1, dt * 10) : 1;
+  const hasClockPhase = Number.isFinite(animationClockMs);
+  const elapsedSeconds = hasClockPhase
+    ? Number(animationClockMs) / 1000
+    : Number(mesh.userData.v3RetargetedLocomotionSeconds ?? 0) + Math.max(0, dt);
+  mesh.userData.v3RetargetedLocomotionSeconds = elapsedSeconds;
+  const retargetClipId: V3RetargetedClipId | null = isSliding || isLunging
+    ? null
+    : speed > 0.15
+      ? isSprinting ? 'run' : 'walk'
+      : 'idle';
+  if (retargetClipId) {
+    const playbackRate = retargetClipId === 'run'
+      ? Math.max(0.75, Math.min(1.55, speed / 4.4))
+      : retargetClipId === 'walk'
+        ? Math.max(0.72, Math.min(1.35, speed / 2.4))
+        : 1;
+    const sample = sampleV3RetargetedClip(retargetClipId, {
+      elapsedSeconds: elapsedSeconds * playbackRate,
+    });
+    const applied = applyV3RetargetedClipPose(mesh, sample, {
+      alpha: hasClockPhase ? 1 : alpha,
+    });
+    if (applied) {
+      if (speed <= 0.15) {
+        setFromRestPosition(groups.leftLeg);
+        setFromRestPosition(groups.rightLeg);
+        groups.leftLeg.rotation.x = THREE.MathUtils.lerp(groups.leftLeg.rotation.x, 0, alpha);
+        groups.rightLeg.rotation.x = THREE.MathUtils.lerp(groups.rightLeg.rotation.x, 0, alpha);
+      }
+      groups.lowerTorso.rotation.y = THREE.MathUtils.lerp(groups.lowerTorso.rotation.y, 0, alpha);
+      if (retargetClipId === 'idle') {
+        mesh.userData.v3LowerBodyBridgeActive = false;
+      }
+      return;
+    }
+  }
   const useSingleChainWalk = (
     speed > 0.15 &&
     !isSliding &&
@@ -373,14 +418,17 @@ const applyV3LocomotionLayer = ({
   if (speed > 0.15) {
     const strideScale = isSprinting ? 1.25 : 1;
     const frequency = (isSprinting ? 6.8 : 4.4) * Math.max(0.35, speed / 4);
-    const nextPhase = Number(mesh.userData.v3WalkPhase ?? 0) + dt * frequency;
+    const nextPhase = hasClockPhase
+      ? (Number(animationClockMs) / 1000) * frequency
+      : Number(mesh.userData.v3WalkPhase ?? 0) + dt * frequency;
     mesh.userData.v3WalkPhase = nextPhase;
 
     const phase = nextPhase;
     const swing = (isSprinting ? 0.2 : 0.14) * strideScale;
     const side = isSprinting ? 0.08 : 0.05;
     if (useSingleChainWalk) {
-      applyV3SingleChainWalk({ groups, detailBones, phase, speed, alpha });
+      const chainSpeed = isLunging ? Math.min(speed, 1.6) : speed;
+      applyV3SingleChainWalk({ groups, detailBones, phase, speed: chainSpeed, alpha: hasClockPhase ? 1 : alpha });
     } else {
       setFromRestPosition(groups.leftLeg, [0.06, 0, 0]);
       setFromRestPosition(groups.rightLeg, [-0.06, 0, 0]);
@@ -659,7 +707,7 @@ export function animateV3CombatantModel({
   mesh.userData.v3LastHp = hp;
 
   const alpha = dt > 0 ? Math.min(1, dt * 12) : 1;
-  applyV3LocomotionLayer({ groups, mesh, vel, yaw, dt, isSliding, isSprinting, detailBones });
+  applyV3LocomotionLayer({ groups, mesh, vel, yaw, dt, isSliding, isSprinting, isLunging, detailBones, animationClockMs });
 
   const breathingPhase = Number(mesh.userData.v3BreathingPhase ?? 0) + dt * 2.1;
   mesh.userData.v3BreathingPhase = breathingPhase;

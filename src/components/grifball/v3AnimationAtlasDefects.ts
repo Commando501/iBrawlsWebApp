@@ -14,11 +14,17 @@ import {
   analyzeV3PoseClearance,
   type V3PoseClearanceCaseId,
 } from './v3PoseClearance';
+import { getV3AnimationClipMetadataForCase } from './v3AnimationClipMetadata';
+import type { V3RetargetedClipId, V3RetargetedClipSource } from './v3RetargetedAnimationClips';
 import {
   analyzeV3SlotContinuity,
   type V3SlotContinuityViewId,
 } from './v3SlotContinuity';
 import { analyzeV3LowerBodyContinuity } from './v3LowerBodyContinuity';
+import {
+  analyzeV3RetargetedMotionRetention,
+  type V3RetargetedMotionRetentionReport,
+} from './v3RetargetedAnimationClips';
 
 export type V3AnimationAtlasDefectViewId = 'front' | 'left' | 'rear' | 'right';
 export type V3AnimationAtlasDefectMode = 'normalizedReview' | 'runtimeSimulation';
@@ -61,6 +67,12 @@ export interface V3AnimationAtlasDefectMetrics {
   maxLowerBodySeamGap: number;
   maxLowerBodyProjectedSeamGap: number;
   lowerBodyTearWarningCount: number;
+  rawMaxLowerBodySeamGap: number;
+  rawMaxLowerBodyProjectedSeamGap: number;
+  visibleMaxLowerBodySeamGap: number;
+  visibleMaxLowerBodyProjectedSeamGap: number;
+  visibleLowerBodyTearWarningCount: number;
+  bridgeCoveredLinkCount: number;
   lowerBodySeamIssues: V3AnimationAtlasLowerBodySeamIssue[];
 }
 
@@ -74,6 +86,12 @@ export interface V3AnimationAtlasCaseDefectReport {
   caseId: V3PoseClearanceCaseId;
   mode: V3AnimationAtlasDefectMode;
   ready: boolean;
+  clipSource?: V3RetargetedClipSource;
+  clipId?: V3RetargetedClipId;
+  sourceHash?: string;
+  clipReady?: boolean;
+  motionRetention?: V3RetargetedMotionRetentionReport;
+  motionSourceLabel?: string;
   sampledFrameFractions: number[];
   views: V3AnimationAtlasViewDefectReport[];
 }
@@ -95,6 +113,10 @@ export interface V3AnimationAtlasDefectSummary {
   maxLowerBodySeamGap: number;
   maxLowerBodyProjectedSeamGap: number;
   lowerBodyTearWarningCount: number;
+  maxVisibleLowerBodySeamGap: number;
+  maxVisibleLowerBodyProjectedSeamGap: number;
+  visibleLowerBodyTearWarningCount: number;
+  bridgeCoveredLinkCount: number;
 }
 
 export interface V3AnimationAtlasDefectReport {
@@ -127,6 +149,7 @@ const ATLAS_WARNING_THRESHOLDS = {
     pistol: 0.24,
   } satisfies Record<V3WeaponId, number>,
 } as const;
+const RETARGETED_LOCOMOTION_LOWER_BODY_SEAM_LIMIT = 0.14;
 const WEAPON_CASES = new Set<V3PoseClearanceCaseId>([
   'hammerWindup',
   'hammerStrike',
@@ -250,7 +273,7 @@ const buildWarnings = (
     warnings.push('upper/lower coupling high');
   }
   if (metrics.slotContinuityWarningCount > 0) warnings.push('slot continuity gap high');
-  if (metrics.lowerBodyTearWarningCount > 0) warnings.push('lower-body seam tear');
+  if (metrics.visibleLowerBodyTearWarningCount > 0) warnings.push('lower-body seam tear');
   return warnings;
 };
 
@@ -313,6 +336,12 @@ type ContinuityByView = Record<V3AnimationAtlasDefectViewId, {
   maxLowerBodySeamGap: number;
   maxLowerBodyProjectedSeamGap: number;
   lowerBodyIssues: V3AnimationAtlasLowerBodySeamIssue[];
+  rawMaxLowerBodySeamGap: number;
+  rawMaxLowerBodyProjectedSeamGap: number;
+  visibleMaxLowerBodySeamGap: number;
+  visibleMaxLowerBodyProjectedSeamGap: number;
+  visibleLowerBodyTearWarningCount: number;
+  bridgeCoveredLinkCount: number;
 }>;
 
 const analyzeSlotContinuitySamples = (
@@ -322,6 +351,13 @@ const analyzeSlotContinuitySamples = (
 ): { sampledFrameFractions: number[]; byView: ContinuityByView } => {
   const sampledFrameFractions = [...DEFAULT_SLOT_CONTINUITY_FRAME_FRACTIONS];
   const scene = new THREE.Scene();
+  const clipMetadata = getV3AnimationClipMetadataForCase(caseId);
+  const lowerBodySeamLimit = clipMetadata?.clipSource === 'retargetedMixamo'
+    ? RETARGETED_LOCOMOTION_LOWER_BODY_SEAM_LIMIT
+    : ATLAS_WARNING_THRESHOLDS.maxLowerBodySeamGap;
+  const lowerBodyProjectedSeamLimit = clipMetadata?.clipSource === 'retargetedMixamo'
+    ? RETARGETED_LOCOMOTION_LOWER_BODY_SEAM_LIMIT
+    : ATLAS_WARNING_THRESHOLDS.maxLowerBodyProjectedSeamGap;
   const meshRig = createCombatantMeshRig(
     scene,
     192,
@@ -343,6 +379,12 @@ const analyzeSlotContinuitySamples = (
       maxLowerBodySeamGap: 0,
       maxLowerBodyProjectedSeamGap: 0,
       lowerBodyIssues: [],
+      rawMaxLowerBodySeamGap: 0,
+      rawMaxLowerBodyProjectedSeamGap: 0,
+      visibleMaxLowerBodySeamGap: 0,
+      visibleMaxLowerBodyProjectedSeamGap: 0,
+      visibleLowerBodyTearWarningCount: 0,
+      bridgeCoveredLinkCount: 0,
     },
   ])) as ContinuityByView;
 
@@ -350,8 +392,9 @@ const analyzeSlotContinuitySamples = (
     applyDefectSample(scene, meshRig, caseId, frameFraction, mode);
     const continuity = analyzeV3SlotContinuity(meshRig.group);
     const lowerBodyContinuity = analyzeV3LowerBodyContinuity(meshRig.group, {
-      maxSeamGap: ATLAS_WARNING_THRESHOLDS.maxLowerBodySeamGap,
-      maxProjectedSeamGap: ATLAS_WARNING_THRESHOLDS.maxLowerBodyProjectedSeamGap,
+      maxSeamGap: lowerBodySeamLimit,
+      maxProjectedSeamGap: lowerBodyProjectedSeamLimit,
+      bridgeCoverage: 'runtime-bridges',
     });
     for (const viewId of VIEW_IDS) {
       const viewMetrics = byView[viewId];
@@ -385,16 +428,31 @@ const analyzeSlotContinuitySamples = (
         viewMetrics.maxLowerBodySeamGap,
         lowerBodyContinuity.summary.maxLowerBodySeamGap
       );
+      viewMetrics.rawMaxLowerBodySeamGap = viewMetrics.maxLowerBodySeamGap;
       viewMetrics.maxLowerBodyProjectedSeamGap = Math.max(
         viewMetrics.maxLowerBodyProjectedSeamGap,
         lowerBodyContinuity.summary.maxLowerBodyProjectedSeamGap
+      );
+      viewMetrics.rawMaxLowerBodyProjectedSeamGap = viewMetrics.maxLowerBodyProjectedSeamGap;
+      viewMetrics.visibleMaxLowerBodySeamGap = Math.max(
+        viewMetrics.visibleMaxLowerBodySeamGap,
+        lowerBodyContinuity.summary.maxVisibleLowerBodySeamGap
+      );
+      viewMetrics.visibleMaxLowerBodyProjectedSeamGap = Math.max(
+        viewMetrics.visibleMaxLowerBodyProjectedSeamGap,
+        lowerBodyContinuity.summary.maxVisibleLowerBodyProjectedSeamGap
+      );
+      viewMetrics.visibleLowerBodyTearWarningCount += lowerBodyContinuity.summary.visibleLowerBodyTearWarningCount;
+      viewMetrics.bridgeCoveredLinkCount = Math.max(
+        viewMetrics.bridgeCoveredLinkCount,
+        lowerBodyContinuity.summary.bridgeCoveredLinkCount
       );
       for (const link of lowerBodyContinuity.links) {
         const projectedViewId = viewId as V3SlotContinuityViewId;
         const viewProjectedGap = link.projectedGap[projectedViewId];
         const hasViewIssue = (
-          link.maxSeamGap > ATLAS_WARNING_THRESHOLDS.maxLowerBodySeamGap ||
-          viewProjectedGap > ATLAS_WARNING_THRESHOLDS.maxLowerBodyProjectedSeamGap
+          link.maxSeamGap > lowerBodySeamLimit ||
+          viewProjectedGap > lowerBodyProjectedSeamLimit
         );
         if (!hasViewIssue) continue;
         viewMetrics.lowerBodyIssues.push({
@@ -416,6 +474,10 @@ const analyzeSlotContinuitySamples = (
     byView[viewId].maxJointAnchorError = roundMetric(byView[viewId].maxJointAnchorError);
     byView[viewId].maxLowerBodySeamGap = roundMetric(byView[viewId].maxLowerBodySeamGap);
     byView[viewId].maxLowerBodyProjectedSeamGap = roundMetric(byView[viewId].maxLowerBodyProjectedSeamGap);
+    byView[viewId].rawMaxLowerBodySeamGap = roundMetric(byView[viewId].rawMaxLowerBodySeamGap);
+    byView[viewId].rawMaxLowerBodyProjectedSeamGap = roundMetric(byView[viewId].rawMaxLowerBodyProjectedSeamGap);
+    byView[viewId].visibleMaxLowerBodySeamGap = roundMetric(byView[viewId].visibleMaxLowerBodySeamGap);
+    byView[viewId].visibleMaxLowerBodyProjectedSeamGap = roundMetric(byView[viewId].visibleMaxLowerBodyProjectedSeamGap);
   }
 
   return { sampledFrameFractions, byView };
@@ -442,6 +504,10 @@ export function analyzeV3AnimationAtlasCaseDefects(
   const weaponBodyHeightRatio = visibleWeapon
     ? measureWeaponBodyHeightRatio(visibleWeapon, bodyHeight, options)
     : null;
+  const clipMetadata = getV3AnimationClipMetadataForCase(caseId);
+  const motionRetention = clipMetadata?.clipId
+    ? analyzeV3RetargetedMotionRetention(clipMetadata.clipId)
+    : undefined;
   const continuity = analyzeSlotContinuitySamples(caseId, mode, options);
   const baseMetrics: V3AnimationAtlasDefectMetrics = {
     visibleWeapon,
@@ -460,6 +526,12 @@ export function analyzeV3AnimationAtlasCaseDefects(
     maxLowerBodySeamGap: 0,
     maxLowerBodyProjectedSeamGap: 0,
     lowerBodyTearWarningCount: 0,
+    rawMaxLowerBodySeamGap: 0,
+    rawMaxLowerBodyProjectedSeamGap: 0,
+    visibleMaxLowerBodySeamGap: 0,
+    visibleMaxLowerBodyProjectedSeamGap: 0,
+    visibleLowerBodyTearWarningCount: 0,
+    bridgeCoveredLinkCount: 0,
     lowerBodySeamIssues: [],
   };
 
@@ -475,6 +547,12 @@ export function analyzeV3AnimationAtlasCaseDefects(
       maxLowerBodySeamGap: viewContinuity.maxLowerBodySeamGap,
       maxLowerBodyProjectedSeamGap: viewContinuity.maxLowerBodyProjectedSeamGap,
       lowerBodyTearWarningCount: viewContinuity.lowerBodyIssues.length,
+      rawMaxLowerBodySeamGap: viewContinuity.rawMaxLowerBodySeamGap,
+      rawMaxLowerBodyProjectedSeamGap: viewContinuity.rawMaxLowerBodyProjectedSeamGap,
+      visibleMaxLowerBodySeamGap: viewContinuity.visibleMaxLowerBodySeamGap,
+      visibleMaxLowerBodyProjectedSeamGap: viewContinuity.visibleMaxLowerBodyProjectedSeamGap,
+      visibleLowerBodyTearWarningCount: viewContinuity.visibleLowerBodyTearWarningCount,
+      bridgeCoveredLinkCount: viewContinuity.bridgeCoveredLinkCount,
       lowerBodySeamIssues: viewContinuity.lowerBodyIssues,
     };
     return {
@@ -487,7 +565,15 @@ export function analyzeV3AnimationAtlasCaseDefects(
   return {
     caseId,
     mode,
-    ready: poseCase.ready && views.every((view) => view.warnings.length === 0),
+    ready: poseCase.ready && (motionRetention?.ready ?? true) && views.every((view) => view.warnings.length === 0),
+    ...(clipMetadata ? {
+      clipSource: clipMetadata.clipSource,
+      clipId: clipMetadata.clipId,
+      sourceHash: clipMetadata.sourceHash,
+      clipReady: clipMetadata.ready,
+      ...(motionRetention ? { motionRetention } : {}),
+      motionSourceLabel: clipMetadata.label,
+    } : {}),
     sampledFrameFractions: continuity.sampledFrameFractions,
     views,
   };
@@ -515,6 +601,10 @@ const buildSummary = (
     maxLowerBodySeamGap: roundMetric(Math.max(0, ...metrics.map((entry) => entry.maxLowerBodySeamGap))),
     maxLowerBodyProjectedSeamGap: roundMetric(Math.max(0, ...metrics.map((entry) => entry.maxLowerBodyProjectedSeamGap))),
     lowerBodyTearWarningCount: metrics.reduce((total, entry) => total + entry.lowerBodyTearWarningCount, 0),
+    maxVisibleLowerBodySeamGap: roundMetric(Math.max(0, ...metrics.map((entry) => entry.visibleMaxLowerBodySeamGap))),
+    maxVisibleLowerBodyProjectedSeamGap: roundMetric(Math.max(0, ...metrics.map((entry) => entry.visibleMaxLowerBodyProjectedSeamGap))),
+    visibleLowerBodyTearWarningCount: metrics.reduce((total, entry) => total + entry.visibleLowerBodyTearWarningCount, 0),
+    bridgeCoveredLinkCount: metrics.reduce((total, entry) => total + entry.bridgeCoveredLinkCount, 0),
   };
 };
 

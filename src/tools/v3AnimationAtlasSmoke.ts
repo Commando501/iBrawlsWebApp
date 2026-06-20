@@ -17,6 +17,13 @@ import {
   V3_POSE_CLEARANCE_CASES,
   type V3PoseClearanceCaseId,
 } from '../components/grifball/v3PoseClearance';
+import { getV3AnimationClipMetadataForCase } from '../components/grifball/v3AnimationClipMetadata';
+import {
+  analyzeV3RetargetedMotionRetention,
+  type V3RetargetedClipId,
+  type V3RetargetedClipSource,
+  type V3RetargetedMotionRetentionReport,
+} from '../components/grifball/v3RetargetedAnimationClips';
 import { analyzeV3LowerBodyContinuity } from '../components/grifball/v3LowerBodyContinuity';
 import { analyzeV3SlotContinuity } from '../components/grifball/v3SlotContinuity';
 import { createInitialGrifballThreeRefs } from '../components/grifball/threeRefs';
@@ -44,6 +51,12 @@ export interface V3AnimationAtlasCaseDefinition {
   durationSeconds: number;
   activeWeapon: V3AnimationAtlasWeapon;
   showsWeapon: boolean;
+  clipSource?: V3RetargetedClipSource;
+  clipId?: V3RetargetedClipId;
+  sourceHash?: string;
+  clipReady?: boolean;
+  motionRetention?: V3RetargetedMotionRetentionReport;
+  motionSourceLabel?: string;
 }
 
 export interface V3AnimationAtlasSample {
@@ -66,6 +79,12 @@ export interface V3AnimationAtlasSample {
   isSprinting: boolean;
   isLunging: boolean;
   deathBurstActive: boolean;
+  clipSource?: V3RetargetedClipSource;
+  clipId?: V3RetargetedClipId;
+  sourceHash?: string;
+  clipReady?: boolean;
+  motionRetention?: V3RetargetedMotionRetentionReport;
+  motionSourceLabel?: string;
 }
 
 export interface V3AnimationAtlasSceneOptions {
@@ -188,6 +207,10 @@ const caseDefinition = (caseId: V3AnimationAtlasCaseId) => {
 const caseMeta = (caseId: V3AnimationAtlasCaseId): V3AnimationAtlasCaseDefinition => {
   const definition = caseDefinition(caseId);
   const durationFrames = CASE_DURATIONS[caseId];
+  const clipMetadata = getV3AnimationClipMetadataForCase(caseId);
+  const motionRetention = clipMetadata?.clipId
+    ? analyzeV3RetargetedMotionRetention(clipMetadata.clipId)
+    : undefined;
   return {
     id: caseId,
     label: CASE_LABELS[caseId],
@@ -195,6 +218,14 @@ const caseMeta = (caseId: V3AnimationAtlasCaseId): V3AnimationAtlasCaseDefinitio
     durationSeconds: roundMetric(durationFrames / 60),
     activeWeapon: definition.activeWeapon,
     showsWeapon: WEAPON_REVIEW_CASES.has(caseId),
+    ...(clipMetadata ? {
+      clipSource: clipMetadata.clipSource,
+      clipId: clipMetadata.clipId,
+      sourceHash: clipMetadata.sourceHash,
+      clipReady: clipMetadata.ready,
+      ...(motionRetention ? { motionRetention } : {}),
+      motionSourceLabel: clipMetadata.label,
+    } : {}),
   };
 };
 
@@ -312,6 +343,10 @@ export function sampleV3AnimationAtlasCase(
   );
   const hp = 'hp' in definition ? definition.hp : 100;
   const previousHp = 'previousHp' in definition ? definition.previousHp : undefined;
+  const clipMetadata = getV3AnimationClipMetadataForCase(caseId);
+  const motionRetention = clipMetadata?.clipId
+    ? analyzeV3RetargetedMotionRetention(clipMetadata.clipId)
+    : undefined;
 
   return {
     caseId,
@@ -333,6 +368,14 @@ export function sampleV3AnimationAtlasCase(
     isSprinting: 'isSprinting' in definition ? Boolean(definition.isSprinting) : false,
     isLunging: 'isLunging' in definition ? Boolean(definition.isLunging) : false,
     deathBurstActive: hp <= 0,
+    ...(clipMetadata ? {
+      clipSource: clipMetadata.clipSource,
+      clipId: clipMetadata.clipId,
+      sourceHash: clipMetadata.sourceHash,
+      clipReady: clipMetadata.ready,
+      ...(motionRetention ? { motionRetention } : {}),
+      motionSourceLabel: clipMetadata.label,
+    } : {}),
   };
 }
 

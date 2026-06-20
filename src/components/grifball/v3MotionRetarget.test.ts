@@ -88,6 +88,22 @@ describe('analyzeV3MotionRetargetAtlas', () => {
     assert.deepEqual(defaultReport.cases[0], exactReport.cases[0]);
   });
 
+  it('reports retargeted Mixamo clip readiness for idle, walk, and sprint', () => {
+    const report = analyzeV3MotionRetargetAtlas({
+      deathBurstReady: true,
+      caseIds: ['idle', 'walk', 'sprint', 'hammerStrike'],
+    });
+
+    assert.equal(report.summary.retargetedClipCount, 3);
+    assert.equal(report.summary.readyRetargetedClipCount, 3);
+    assert.equal(getCase(report, 'idle').clipSource, 'retargetedMixamo');
+    assert.equal(getCase(report, 'idle').clipId, 'idle');
+    assert.equal(getCase(report, 'walk').clipId, 'walk');
+    assert.equal(getCase(report, 'sprint').clipId, 'run');
+    assert.match(getCase(report, 'walk').sourceHash ?? '', /^sha256:[0-9a-f]{64}$/);
+    assert.equal(getCase(report, 'hammerStrike').clipSource, undefined);
+  });
+
   it('treats explicitly undefined source fidelity as exact-source evidence', () => {
     const undefinedSourceReport = analyzeV3MotionRetargetAtlas({
       deathBurstReady: true,

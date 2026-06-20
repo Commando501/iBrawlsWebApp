@@ -8,6 +8,10 @@ import {
   analyzeV3LowerBodyContinuity,
   buildV3LowerBodyContinuityOverlays,
 } from './v3LowerBodyContinuity';
+import {
+  createV3LowerBodyJointBridges,
+  updateV3LowerBodyJointBridges,
+} from './v3LowerBodyJointBridges';
 
 const makePart = (slot: V3CharacterSlotId, center: THREE.Vector3Tuple, size: THREE.Vector3Tuple): THREE.Group => {
   const group = new THREE.Group();
@@ -116,5 +120,29 @@ describe('v3LowerBodyContinuity', () => {
     assert.ok(pelvisThigh);
     assert.equal(pelvisThigh.ready, false);
     assert.ok(pelvisThigh.maxSeamGap > 0.1);
+  });
+
+  it('reports runtime bridge-covered visible seam metrics without clearing raw tear evidence', () => {
+    const model = buildLowerBodyFixture(true);
+    const bridgeSet = createV3LowerBodyJointBridges();
+    model.add(bridgeSet.root);
+    model.userData.v3LowerBodyJointBridges = bridgeSet;
+    updateV3LowerBodyJointBridges(model, true);
+
+    const seamReport = analyzeV3LowerBodyContinuity(model, {
+      maxSeamGap: 0.1,
+      maxProjectedSeamGap: 0.1,
+      bridgeCoverage: 'runtime-bridges',
+    });
+    const pelvisThigh = seamReport.links.find((link) => link.id === 'pelvis-thigh-left');
+
+    assert.ok(pelvisThigh);
+    assert.equal(pelvisThigh.ready, false, 'raw seam tear remains diagnostic evidence');
+    assert.ok(pelvisThigh.maxSeamGap > 0.1);
+    assert.equal(pelvisThigh.bridgeCovered, true);
+    assert.ok(pelvisThigh.visibleMaxSeamGap <= 0.1);
+    assert.ok(seamReport.summary.lowerBodyTearWarningCount > 0);
+    assert.equal(seamReport.summary.visibleLowerBodyTearWarningCount, 0);
+    assert.ok(seamReport.summary.bridgeCoveredLinkCount > 0);
   });
 });

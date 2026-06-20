@@ -64,15 +64,15 @@ export function updateV3LowerBodyJointBridges(model: THREE.Object3D, visible = t
   if (!bridgeSet) return;
   bridgeSet.root.visible = visible;
   model.updateMatrixWorld(true);
-  const rootWorld = bridgeSet.root.getWorldPosition(new THREE.Vector3());
+  bridgeSet.root.updateWorldMatrix(true, false);
   for (const [linkId, mesh] of Object.entries(bridgeSet.bridges)) {
     const anchors = getV3LowerBodySeamAnchorPair(model, linkId);
     if (!anchors || !visible) {
       mesh.visible = false;
       continue;
     }
-    const from = anchors.from.sub(rootWorld);
-    const to = anchors.to.sub(rootWorld);
+    const from = bridgeSet.root.worldToLocal(anchors.from.clone());
+    const to = bridgeSet.root.worldToLocal(anchors.to.clone());
     const midpoint = from.clone().add(to).multiplyScalar(0.5);
     const delta = to.clone().sub(from);
     const profile = BRIDGE_PROFILES[linkId] ?? DEFAULT_BRIDGE_PROFILE;

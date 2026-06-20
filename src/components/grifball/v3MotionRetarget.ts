@@ -1,5 +1,7 @@
 import { V3_ANIMATION_PROFILE_VERSION } from './v3AnimationFidelity';
 import type { V3SourceFidelity } from '../v3/v3QualityTiers';
+import { getV3AnimationClipMetadataForCase } from './v3AnimationClipMetadata';
+import type { V3RetargetedClipId, V3RetargetedClipSource } from './v3RetargetedAnimationClips';
 import {
   V3_POSE_CLEARANCE_CASES,
   analyzeV3BuiltInPoseClearance,
@@ -17,6 +19,7 @@ export const V3_MOTION_RETARGET_EXPECTED_PROFILE_VERSION = 2;
 export type V3MotionRetargetIssueCode =
   | V3PoseClearanceIssueCode
   | 'death-burst-missing'
+  | 'retargeted-clip-not-ready'
   | 'profile-version-mismatch';
 
 export interface V3MotionRetargetIssue {
@@ -30,6 +33,10 @@ export interface V3MotionRetargetIssue {
 export interface V3MotionRetargetCaseReport {
   caseId: V3PoseClearanceCaseId;
   ready: boolean;
+  clipSource?: V3RetargetedClipSource;
+  clipId?: V3RetargetedClipId;
+  sourceHash?: string;
+  clipReady?: boolean;
   weaponGripDrift: number | null;
   footFloorPenetration: number;
   footLift: number;
@@ -46,6 +53,8 @@ export interface V3MotionRetargetSummary {
   profileVersion: number;
   expectedProfileVersion: number;
   deathBurstReady: boolean;
+  retargetedClipCount: number;
+  readyRetargetedClipCount: number;
   maxWeaponGripDrift: number;
   maxFootFloorPenetration: number;
   maxFootLift: number;
@@ -110,6 +119,17 @@ const deathBurstIssue = (): V3MotionRetargetIssue => ({
   threshold: null,
 });
 
+const clipReadinessIssue = (
+  caseId: V3PoseClearanceCaseId,
+  clipId: V3RetargetedClipId
+): V3MotionRetargetIssue => ({
+  code: 'retargeted-clip-not-ready',
+  message: `Retargeted Mixamo clip ${clipId} is not ready for ${caseId}.`,
+  caseId,
+  value: null,
+  threshold: null,
+});
+
 const getPoseClearanceReport = (
   caseIds: readonly V3PoseClearanceCaseId[],
   options: V3PoseClearanceOptions
@@ -144,11 +164,19 @@ const buildCaseReport = (
   deathBurstReady: boolean
 ): V3MotionRetargetCaseReport => {
   const issueCodes: V3MotionRetargetIssueCode[] = testCase.issues.map((issue) => issue.code);
+  const clipMetadata = getV3AnimationClipMetadataForCase(testCase.id);
   if (testCase.id === 'death' && !deathBurstReady) issueCodes.push('death-burst-missing');
+  if (clipMetadata && !clipMetadata.ready) issueCodes.push('retargeted-clip-not-ready');
 
   return {
     caseId: testCase.id,
-    ready: testCase.ready && (testCase.id !== 'death' || deathBurstReady),
+    ready: testCase.ready && (testCase.id !== 'death' || deathBurstReady) && (clipMetadata?.ready ?? true),
+    ...(clipMetadata ? {
+      clipSource: clipMetadata.clipSource,
+      clipId: clipMetadata.clipId,
+      sourceHash: clipMetadata.sourceHash,
+      clipReady: clipMetadata.ready,
+    } : {}),
     weaponGripDrift: typeof testCase.metrics.weapon?.gripDrift === 'number'
       ? roundMetric(testCase.metrics.weapon.gripDrift)
       : null,
@@ -168,6 +196,11 @@ export function analyzeV3MotionRetargetAtlas(
   const poseReport = getPoseClearanceReport(caseIds, poseClearanceOptions);
   const cases = poseReport.cases.map((testCase) => buildCaseReport(testCase, deathBurstReady));
   const issues: V3MotionRetargetIssue[] = poseReport.issues.map(toIssue);
+  for (const testCase of cases) {
+    if (testCase.clipId && testCase.clipReady === false) {
+      issues.push(clipReadinessIssue(testCase.caseId, testCase.clipId));
+    }
+  }
 
   if (V3_ANIMATION_PROFILE_VERSION !== V3_MOTION_RETARGET_EXPECTED_PROFILE_VERSION) {
     issues.push(profileVersionIssue());
@@ -185,6 +218,10 @@ export function analyzeV3MotionRetargetAtlas(
     profileVersion: V3_ANIMATION_PROFILE_VERSION,
     expectedProfileVersion: V3_MOTION_RETARGET_EXPECTED_PROFILE_VERSION,
     deathBurstReady,
+    retargetedClipCount: cases.filter((testCase) => testCase.clipSource === 'retargetedMixamo').length,
+    readyRetargetedClipCount: cases.filter((testCase) => (
+      testCase.clipSource === 'retargetedMixamo' && testCase.clipReady === true
+    )).length,
     maxWeaponGripDrift: roundMetric(Math.max(0, ...cases.map((testCase) => testCase.weaponGripDrift ?? 0))),
     maxFootFloorPenetration: roundMetric(Math.max(0, ...cases.map((testCase) => testCase.footFloorPenetration))),
     maxFootLift: roundMetric(Math.max(0, ...cases.map((testCase) => testCase.footLift))),

@@ -82,4 +82,36 @@ describe('v3LowerBodyChain', () => {
     assert.ok(Math.abs(first.sides.left.kneeBend) <= 0.28);
     assert.ok(Math.abs(first.sides.right.kneeBend) <= 0.28);
   });
+
+  it('samples a readable V3 walk stride without reintroducing broad-leg ownership', () => {
+    const pose = sampleV3LowerBodyWalkPose({
+      phase: Math.PI / 2,
+      speed: 3,
+      isSprinting: false,
+    });
+
+    assert.deepEqual(pose.broadLegRotation, [0, 0, 0]);
+    assert.ok(pose.sides.left.thighRotation[0] >= 0.16, 'front leg should have a readable forward walking swing');
+    assert.ok(pose.sides.right.thighRotation[0] <= -0.16, 'rear leg should have a readable walking backswing');
+    assert.ok(pose.sides.right.kneeBend >= 0.18, 'rear leg should visibly bend at the knee');
+    assert.ok(Math.abs(pose.pelvisOffset[1]) <= 0.05, 'walk bob should stay bounded');
+  });
+
+  it('uses a small symmetric pelvis bob instead of pushing hips upward into the torso', () => {
+    const upPose = sampleV3LowerBodyWalkPose({
+      phase: Math.PI / 4,
+      speed: 3,
+      isSprinting: false,
+    });
+    const downPose = sampleV3LowerBodyWalkPose({
+      phase: (Math.PI * 3) / 4,
+      speed: 3,
+      isSprinting: false,
+    });
+
+    assert.ok(upPose.pelvisOffset[1] > 0, 'walk bob should rise slightly during step transition');
+    assert.ok(downPose.pelvisOffset[1] < 0, 'walk bob should also settle downward instead of only rising');
+    assert.ok(Math.abs(upPose.pelvisOffset[1]) <= 0.012, 'upward hip bob should stay subtle');
+    assert.ok(Math.abs(downPose.pelvisOffset[1]) <= 0.012, 'downward hip bob should stay subtle');
+  });
 });

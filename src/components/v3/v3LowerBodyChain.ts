@@ -148,20 +148,20 @@ export function applyV3LowerBodyChainBinding(
 export function sampleV3LowerBodyWalkPose(input: V3LowerBodyWalkPoseInput): V3LowerBodyWalkPose {
   const speedFactor = clamp(input.speed / 4, 0, 1);
   const sprintFactor = input.isSprinting ? 1.2 : 1;
-  const stride = 0.025 * speedFactor * sprintFactor;
-  const knee = 0.12 * speedFactor * sprintFactor;
-  const lateral = 0.01 * speedFactor;
+  const stride = 0.32 * speedFactor * sprintFactor;
+  const knee = 0.34 * speedFactor * sprintFactor;
+  const lateral = 0.018 * speedFactor;
   const phase = Number.isFinite(input.phase) ? input.phase : 0;
   const leftStep = Math.sin(phase);
   const rightStep = -leftStep;
   const side = Math.cos(phase);
-  const bob = Math.max(0, Math.sin(phase * 2)) * 0.012 * speedFactor;
+  const bob = Math.sin(phase * 2) * 0.008 * speedFactor;
   const pelvisRoll = 0;
 
   const sidePose = (step: number, sideSign: -1 | 1): V3LowerBodyWalkSidePose => {
     const forward = step * stride;
-    const kneeBend = step < 0 ? -step * knee : 0.045 * speedFactor;
-    const ankleCounter = -forward * 0.42;
+    const kneeBend = step < 0 ? -step * knee : 0.065 * speedFactor;
+    const ankleCounter = -forward * 0.5;
     return {
       thighRotation: [
         roundMetric(forward),
@@ -170,7 +170,7 @@ export function sampleV3LowerBodyWalkPose(input: V3LowerBodyWalkPoseInput): V3Lo
       ],
       calfRotation: [roundMetric(kneeBend), 0, 0],
       footRotation: [roundMetric(ankleCounter), 0, 0],
-      toeRotation: [roundMetric(Math.max(0, step) * 0.035 * speedFactor), 0, 0],
+      toeRotation: [roundMetric(Math.max(0, step) * 0.05 * speedFactor), 0, 0],
       kneeBend: roundMetric(kneeBend),
     };
   };

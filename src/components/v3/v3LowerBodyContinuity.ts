@@ -46,6 +46,10 @@ export interface V3LowerBodySeamLinkReport {
   maxSeamGap: number;
   projectedGap: Record<V3LowerBodyContinuityViewId, number>;
   warnings: Array<V3LowerBodyContinuityWarning & { code: V3LowerBodySeamWarningCode }>;
+  bridgeCovered: boolean;
+  visibleMaxSeamGap: number;
+  visibleProjectedGap: Record<V3LowerBodyContinuityViewId, number>;
+  visibleWarnings: Array<V3LowerBodyContinuityWarning & { code: V3LowerBodySeamWarningCode }>;
   endpoints: {
     from: [number, number, number];
     to: [number, number, number];
@@ -62,6 +66,10 @@ export interface V3LowerBodyContinuitySummary {
   maxLowerBodySeamGap: number;
   maxLowerBodyProjectedSeamGap: number;
   lowerBodyTearWarningCount: number;
+  maxVisibleLowerBodySeamGap: number;
+  maxVisibleLowerBodyProjectedSeamGap: number;
+  visibleLowerBodyTearWarningCount: number;
+  bridgeCoveredLinkCount: number;
 }
 
 export interface V3LowerBodyContinuityReport {
@@ -74,6 +82,7 @@ export interface V3LowerBodyContinuityOptions {
   maxSeamGap?: number;
   maxProjectedSeamGap?: number;
   useRestBaseline?: boolean;
+  bridgeCoverage?: 'ignore' | 'runtime-bridges';
 }
 
 export interface V3LowerBodyRestSeamBaseline {
@@ -228,6 +237,10 @@ const missingReport = (
     maxSeamGap: 0,
     projectedGap,
     warnings: [{ code, message: `${definition.label} cannot be measured because ${missingTarget} is missing` }],
+    bridgeCovered: false,
+    visibleMaxSeamGap: 0,
+    visibleProjectedGap: projectedGap,
+    visibleWarnings: [{ code, message: `${definition.label} cannot be measured because ${missingTarget} is missing` }],
     endpoints: { from: [0, 0, 0], to: [0, 0, 0] },
     projectedEndpoints,
   };
@@ -241,6 +254,29 @@ const getRestBaseline = (
   if (!useRestBaseline) return undefined;
   const baselines = model.userData?.v3LowerBodyRestSeamBaselines as V3LowerBodyRestSeamBaselines | undefined;
   return baselines?.[linkId];
+};
+
+const isRuntimeBridgeCoveringLink = (
+  model: THREE.Object3D,
+  linkId: string,
+  anchors: { from: THREE.Vector3; to: THREE.Vector3 }
+): boolean => {
+  const bridgeSet = model.userData?.v3LowerBodyJointBridges;
+  if (!bridgeSet || typeof bridgeSet !== 'object') return false;
+  const root = (bridgeSet as { root?: unknown }).root;
+  const bridges = (bridgeSet as { bridges?: Record<string, unknown> }).bridges;
+  const bridge = bridges?.[linkId];
+  if (!(root instanceof THREE.Object3D) || !(bridge instanceof THREE.Object3D)) return false;
+  if (root.visible !== true || bridge.visible !== true) return false;
+  if (root.userData?.v3LowerBodyJointBridges !== true) return false;
+  if (bridge.userData?.v3LowerBodyJointBridge !== true) return false;
+  if (bridge.userData?.v3LowerBodyBridgeLinkId !== linkId) return false;
+  bridge.updateWorldMatrix(true, true);
+  const worldScale = bridge.getWorldScale(new THREE.Vector3());
+  if (Math.max(Math.abs(worldScale.x), Math.abs(worldScale.y), Math.abs(worldScale.z)) <= 0.0001) return false;
+  const midpoint = anchors.from.clone().add(anchors.to).multiplyScalar(0.5);
+  const box = getObjectBox(bridge);
+  return box.containsPoint(midpoint);
 };
 
 const analyzeLink = (
@@ -283,6 +319,28 @@ const analyzeLink = (
       message: `${definition.label} has projected lower-body seam gap ${roundMetric(maxProjectedGap).toFixed(3)}`,
     });
   }
+  const bridgeCovered = options.bridgeCoverage === 'runtime-bridges'
+    ? isRuntimeBridgeCoveringLink(model, definition.id, anchors)
+    : false;
+  const visibleMaxSeamGap = bridgeCovered ? 0 : maxSeamGap;
+  const visibleProjectedGap = Object.fromEntries(VIEW_IDS.map((viewId) => [
+    viewId,
+    bridgeCovered ? 0 : normalizedProjectedGap[viewId],
+  ])) as Record<V3LowerBodyContinuityViewId, number>;
+  const maxVisibleProjectedGap = Math.max(...Object.values(visibleProjectedGap));
+  const visibleWarnings: V3LowerBodySeamLinkReport['visibleWarnings'] = [];
+  if (visibleMaxSeamGap > options.maxSeamGap) {
+    visibleWarnings.push({
+      code: 'lower-body-seam-gap',
+      message: `${definition.label} has visible lower-body seam gap ${visibleMaxSeamGap.toFixed(3)}`,
+    });
+  }
+  if (maxVisibleProjectedGap > options.maxProjectedSeamGap) {
+    visibleWarnings.push({
+      code: 'lower-body-projected-seam-gap',
+      message: `${definition.label} has visible projected lower-body seam gap ${roundMetric(maxVisibleProjectedGap).toFixed(3)}`,
+    });
+  }
 
   return {
     ...definition,
@@ -291,6 +349,10 @@ const analyzeLink = (
     maxSeamGap,
     projectedGap: normalizedProjectedGap,
     warnings,
+    bridgeCovered,
+    visibleMaxSeamGap,
+    visibleProjectedGap,
+    visibleWarnings,
     endpoints: {
       from: tuple3(anchors.from),
       to: tuple3(anchors.to),
@@ -305,6 +367,10 @@ const summary = (links: readonly V3LowerBodySeamLinkReport[]): V3LowerBodyContin
   maxLowerBodySeamGap: roundMetric(Math.max(0, ...links.map((link) => link.maxSeamGap))),
   maxLowerBodyProjectedSeamGap: roundMetric(Math.max(0, ...links.flatMap((link) => Object.values(link.projectedGap)))),
   lowerBodyTearWarningCount: links.reduce((total, link) => total + link.warnings.length, 0),
+  maxVisibleLowerBodySeamGap: roundMetric(Math.max(0, ...links.map((link) => link.visibleMaxSeamGap))),
+  maxVisibleLowerBodyProjectedSeamGap: roundMetric(Math.max(0, ...links.flatMap((link) => Object.values(link.visibleProjectedGap)))),
+  visibleLowerBodyTearWarningCount: links.reduce((total, link) => total + link.visibleWarnings.length, 0),
+  bridgeCoveredLinkCount: links.filter((link) => link.bridgeCovered).length,
 });
 
 export function analyzeV3LowerBodyContinuity(
@@ -316,6 +382,7 @@ export function analyzeV3LowerBodyContinuity(
     maxSeamGap: options.maxSeamGap ?? DEFAULT_MAX_SEAM_GAP,
     maxProjectedSeamGap: options.maxProjectedSeamGap ?? DEFAULT_MAX_PROJECTED_SEAM_GAP,
     useRestBaseline: options.useRestBaseline ?? true,
+    bridgeCoverage: options.bridgeCoverage ?? 'ignore',
   };
   const links = V3_LOWER_BODY_SEAM_LINKS.map((definition) => analyzeLink(model, definition, normalizedOptions));
   const reportSummary = summary(links);
