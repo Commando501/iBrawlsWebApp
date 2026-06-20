@@ -35,7 +35,11 @@ describe('v3AnimationAtlasDefects', () => {
     assert.equal(typeof front.metrics.maxProjectedSlotGap, 'number');
     assert.equal(typeof front.metrics.maxJointAnchorError, 'number');
     assert.equal(typeof front.metrics.slotContinuityWarningCount, 'number');
+    assert.equal(typeof front.metrics.maxLowerBodySeamGap, 'number');
+    assert.equal(typeof front.metrics.maxLowerBodyProjectedSeamGap, 'number');
+    assert.equal(typeof front.metrics.lowerBodyTearWarningCount, 'number');
     assert.ok(Array.isArray(front.metrics.slotContinuityIssues));
+    assert.ok(Array.isArray(front.metrics.lowerBodySeamIssues));
     assert.ok(front.metrics.slotContinuityIssues.every((issue) => (
       typeof issue.frameFraction === 'number' &&
       typeof issue.linkId === 'string' &&
@@ -43,6 +47,20 @@ describe('v3AnimationAtlasDefects', () => {
       issue.viewId === front.viewId
     )));
     assert.deepEqual(report.sampledFrameFractions, [0, 0.25, 0.5, 0.75, 1]);
+  });
+
+  it('keeps walk free of lower-body seam tears in every atlas view', () => {
+    const report = analyzeV3AnimationAtlasCaseDefects('walk', { mode: 'normalizedReview' });
+
+    assert.equal(report.ready, true, report.views.map((view) => `${view.viewId}: ${view.warnings.join(', ')}`).join(' | '));
+    for (const view of report.views) {
+      assert.equal(view.metrics.lowerBodyTearWarningCount, 0, `${view.viewId} lower-body seam issues`);
+      assert.ok(view.metrics.maxLowerBodySeamGap <= 0.08, `${view.viewId} seam gap ${view.metrics.maxLowerBodySeamGap}`);
+      assert.ok(
+        view.metrics.maxLowerBodyProjectedSeamGap <= 0.08,
+        `${view.viewId} projected seam gap ${view.metrics.maxLowerBodyProjectedSeamGap}`
+      );
+    }
   });
 
   it('keeps Phase 45 weapon cases below grip-drift and slot-drift thresholds', () => {
@@ -69,7 +87,11 @@ describe('v3AnimationAtlasDefects', () => {
       const front = report.views.find((view) => view.viewId === 'front');
 
       assert.ok(front);
-      assert.equal(report.ready, true, `${caseId} warnings: ${front.warnings.join(', ')}`);
+      const nonSeamWarnings = front.warnings.filter((warning) => warning !== 'lower-body seam tear');
+      assert.deepEqual(nonSeamWarnings, [], `${caseId} warnings: ${front.warnings.join(', ')}`);
+      if (caseId === 'walk') {
+        assert.equal(report.ready, true, `${caseId} warnings: ${front.warnings.join(', ')}`);
+      }
       if (caseId !== 'swordLunge') {
         assert.ok(front.metrics.slotBoneDrift <= 0.16, `${caseId} slot drift ${front.metrics.slotBoneDrift}`);
       }
@@ -92,5 +114,6 @@ describe('v3AnimationAtlasDefects', () => {
     assert.match(summary, /cases 2/i);
     assert.match(summary, /weapon/i);
     assert.match(summary, /slot continuity/i);
+    assert.match(summary, /lower-body seams/i);
   });
 });

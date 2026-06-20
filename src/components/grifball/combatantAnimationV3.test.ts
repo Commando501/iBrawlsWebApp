@@ -279,6 +279,59 @@ describe('animateV3CombatantModel', () => {
     }
   });
 
+  it('only shows lower-body joint bridges during the V3 single-chain walk path', () => {
+    const refs = createInitialGrifballThreeRefs();
+    const isBridgeRootVisible = (model: THREE.Group): boolean => (
+      model.userData.v3LowerBodyJointBridges?.root?.visible === true
+    );
+
+    const idleModel = createV3Model();
+    animateV3CombatantModel({
+      refs,
+      mesh: idleModel,
+      vel: new THREE.Vector3(0, 0, 0),
+      yaw: 0,
+      hp: 100,
+      activeWeapon: 'hammer',
+      weaponState: 'ready',
+      weaponTimer: 0,
+      dt: 1,
+      settings: {},
+    });
+    assert.equal(isBridgeRootVisible(idleModel), false, 'idle should keep lower-body bridges hidden');
+
+    const walkModel = createV3Model();
+    animateV3CombatantModel({
+      refs,
+      mesh: walkModel,
+      vel: new THREE.Vector3(3, 0, 0),
+      yaw: 0,
+      hp: 100,
+      activeWeapon: 'hammer',
+      weaponState: 'ready',
+      weaponTimer: 0,
+      dt: 1,
+      settings: {},
+    });
+    assert.equal(isBridgeRootVisible(walkModel), true, 'walk should show lower-body bridges');
+
+    const sprintModel = createV3Model();
+    animateV3CombatantModel({
+      refs,
+      mesh: sprintModel,
+      vel: new THREE.Vector3(4, 0, 0),
+      yaw: 0,
+      hp: 100,
+      activeWeapon: 'hammer',
+      weaponState: 'ready',
+      weaponTimer: 0,
+      dt: 1,
+      isSprinting: true,
+      settings: {},
+    });
+    assert.equal(isBridgeRootVisible(sprintModel), false, 'sprint remains deferred and should hide lower-body bridges');
+  });
+
   it('animateSpartanCombatantModel dispatches V3 models to the V3 layered runtime', () => {
     const model = createV3Model();
     const refs = createInitialGrifballThreeRefs();

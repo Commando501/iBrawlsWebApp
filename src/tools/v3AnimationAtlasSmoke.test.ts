@@ -121,4 +121,21 @@ describe('v3AnimationAtlasSmoke', () => {
     updateV3AnimationAtlasScene(atlas, { showSlotContinuity: false });
     assert.ok(atlas.views.every((view) => view.slotContinuityOverlay.visible === false));
   });
+
+  test('slot continuity overlay includes lower-body seam reports for walk review', () => {
+    const atlas = buildV3AnimationAtlasScene({ caseId: 'walk' });
+
+    updateV3AnimationAtlasScene(atlas, { showSlotContinuity: true, frame: 30 });
+
+    assert.ok(atlas.views.every((view) => view.slotContinuityOverlay.visible === true));
+    assert.ok(atlas.views.every((view) => {
+      const summary = view.slotContinuityOverlay.userData.v3LowerBodyContinuityReport?.summary;
+      return (
+        summary?.linkCount === 7 &&
+        typeof summary.maxLowerBodySeamGap === 'number' &&
+        typeof summary.maxLowerBodyProjectedSeamGap === 'number' &&
+        typeof summary.lowerBodyTearWarningCount === 'number'
+      );
+    }));
+  });
 });

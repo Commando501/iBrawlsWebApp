@@ -1,0 +1,82 @@
+{
+  "version": 1,
+  "id": "combat_upgrade_v3",
+  "label": "CombatUpgradeV3",
+  "framework": "sb3-ppo",
+  "policyType": "mlp-multicategorical",
+  "mode": "combat",
+  "observationVersion": 3,
+  "envSpecVersion": 9,
+  "frameStack": 4,
+  "decisionInterval": 5,
+  "baseObservationDim": 172,
+  "inputDim": 688,
+  "actionNvec": [
+    9,
+    4,
+    4,
+    2,
+    2,
+    2
+  ],
+  "weightsFile": "weights.bin",
+  "checksumSha256": "7ec2af3f255601c579fea0dd5d2436c8374a315b26983081ebe45f105eab30e1",
+  "layers": [
+    {
+      "name": "policy.0",
+      "inputDim": 688,
+      "outputDim": 512,
+      "activation": "tanh",
+      "weights": {
+        "offset": 0,
+        "count": 352256
+      },
+      "bias": {
+        "offset": 352256,
+        "count": 512
+      }
+    },
+    {
+      "name": "policy.2",
+      "inputDim": 512,
+      "outputDim": 512,
+      "activation": "tanh",
+      "weights": {
+        "offset": 352768,
+        "count": 262144
+      },
+      "bias": {
+        "offset": 614912,
+        "count": 512
+      }
+    },
+    {
+      "name": "policy.4",
+      "inputDim": 512,
+      "outputDim": 512,
+      "activation": "tanh",
+      "weights": {
+        "offset": 615424,
+        "count": 262144
+      },
+      "bias": {
+        "offset": 877568,
+        "count": 512
+      }
+    },
+    {
+      "name": "action",
+      "inputDim": 512,
+      "outputDim": 23,
+      "activation": "linear",
+      "weights": {
+        "offset": 878080,
+        "count": 11776
+      },
+      "bias": {
+        "offset": 889856,
+        "count": 23
+      }
+    }
+  ]
+}

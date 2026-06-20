@@ -8,7 +8,7 @@ import {
   isNeuralNetDifficulty,
 } from './neuralBrains';
 import { ACTION_NVEC } from '../sim/env/action';
-import { OBS_DIM_V1 } from '../sim/env/observation';
+import { OBS_DIM_V1, OBS_DIM_V3 } from '../sim/env/observation';
 
 test('CombatDRV2 browser brain definition pins the trained contract', () => {
   const brain = getNeuralBrainDefinition(DEFAULT_NEURAL_BRAIN_ID);
@@ -39,6 +39,21 @@ test('CombatDRV4 browser brain definition is selectable with the trained contrac
   assert.deepEqual(brain.actionNvec, ACTION_NVEC);
   assert.equal(brain.decisionInterval, 5);
   assert.match(brain.manifestUrl, /\/brains\/combat_dr_v4\/manifest\.json$/);
+});
+
+test('CombatUpgradeV3 browser brain definition is selectable with the trained contract', () => {
+  const brain = getNeuralBrainDefinition('combat_upgrade_v3');
+
+  assert.equal(brain.id, 'combat_upgrade_v3');
+  assert.equal(brain.label, 'CombatUpgradeV3');
+  assert.equal(brain.mode, 'combat');
+  assert.equal(brain.observationVersion, 3);
+  assert.equal(brain.baseObservationDim, OBS_DIM_V3);
+  assert.equal(brain.frameStack, 4);
+  assert.equal(brain.inputDim, OBS_DIM_V3 * 4);
+  assert.deepEqual(brain.actionNvec, ACTION_NVEC);
+  assert.equal(brain.decisionInterval, 5);
+  assert.match(brain.manifestUrl, /\/brains\/combat_upgrade_v3\/manifest\.json$/);
 });
 
 test('NeuralNet difficulty discriminator stays explicit', () => {

@@ -40,7 +40,7 @@ import { normalizeSelectableVisualModelPolicy } from './model/modelSystem';
 
 export { createHighFidelityObjectMesh } from './components/main-menu/MapPreview';
 
-const APP_VERSION = '0.653a';
+const APP_VERSION = '0.653b';
 
 // Visual Keyboard + Mouse keybind editor component
 export default function App() {

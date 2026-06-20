@@ -45,6 +45,9 @@ import {
 } from './v3ExactSourceLod';
 import { V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE } from './v3AegisObjSurfaceVoxels.generated';
 import { applyV3ExactSourceRigBinding } from './v3ExactSourceRigBinding';
+import { applyV3LowerBodyChainBinding } from './v3LowerBodyChain';
+import { captureV3LowerBodyRestSeamBaselines } from './v3LowerBodyContinuity';
+import { createV3LowerBodyJointBridges } from './v3LowerBodyJointBridges';
 import {
   applyV3CanonicalRigContract,
   deriveV3CanonicalRigContract,
@@ -496,6 +499,12 @@ export function buildV3SpartanModel(options: V3SpartanBuildOptions = {}): THREE.
   };
   applyV3CanonicalRigContract(root, canonicalRigContract);
   applyV3ExactSourceRigBinding(root);
+  applyV3LowerBodyChainBinding(root);
+  root.updateMatrixWorld(true);
+  root.userData.v3LowerBodyRestSeamBaselines = captureV3LowerBodyRestSeamBaselines(root);
+  const lowerBodyJointBridges = createV3LowerBodyJointBridges();
+  root.userData.v3LowerBodyJointBridges = lowerBodyJointBridges;
+  root.add(lowerBodyJointBridges.root);
 
   return root;
 }

@@ -13,6 +13,11 @@ import {
   sampleV3ThirdPersonWeaponPose,
   sampleV3UpperBodyWeaponPose,
 } from './v3AnimationFidelity';
+import { sampleV3LowerBodyWalkPose } from './v3LowerBodyChain';
+import {
+  setV3LowerBodyJointBridgesVisible,
+  updateV3LowerBodyJointBridges,
+} from './v3LowerBodyJointBridges';
 
 export type V3AnimationLayerName = 'locomotion' | 'weapon' | 'additive' | 'death';
 export type V3BroadBodyGroupName =
@@ -283,6 +288,48 @@ const applyV3FineLocomotion = ({
   }
 };
 
+const hasV3SingleChainLowerBody = (
+  mesh: THREE.Group,
+  detailBones?: V3DetailGroups
+): detailBones is V3DetailGroups => (
+  mesh.userData.v3LowerBodyChainMode === 'single-chain' &&
+  detailBones?.thighLeft instanceof THREE.Group &&
+  detailBones.thighRight instanceof THREE.Group &&
+  detailBones.calfLeft instanceof THREE.Group &&
+  detailBones.calfRight instanceof THREE.Group
+);
+
+const applyV3SingleChainWalk = ({
+  groups,
+  detailBones,
+  phase,
+  speed,
+  alpha,
+}: {
+  groups: V3BroadGroups;
+  detailBones: V3DetailGroups;
+  phase: number;
+  speed: number;
+  alpha: number;
+}): void => {
+  const pose = sampleV3LowerBodyWalkPose({ phase, speed, isSprinting: false });
+  setFromRestPosition(groups.leftLeg);
+  setFromRestPosition(groups.rightLeg);
+  setFromRestPosition(groups.lowerTorso, pose.pelvisOffset);
+
+  groups.lowerTorso.rotation.x = THREE.MathUtils.lerp(groups.lowerTorso.rotation.x, pose.pelvisRotation[0], alpha);
+  groups.lowerTorso.rotation.z = THREE.MathUtils.lerp(groups.lowerTorso.rotation.z, pose.pelvisRotation[2], alpha);
+  lerpDetailRotation(detailBones, 'pelvis', pose.pelvisRotation, alpha);
+  lerpRotation(groups.leftLeg, pose.sides.left.thighRotation, alpha);
+  lerpRotation(groups.rightLeg, pose.sides.right.thighRotation, alpha);
+  lerpDetailRotation(detailBones, 'calfLeft', pose.sides.left.calfRotation, alpha);
+  lerpDetailRotation(detailBones, 'calfRight', pose.sides.right.calfRotation, alpha);
+  lerpDetailRotation(detailBones, 'footLeft', pose.sides.left.footRotation, alpha);
+  lerpDetailRotation(detailBones, 'footRight', pose.sides.right.footRotation, alpha);
+  lerpDetailRotation(detailBones, 'toeLeft', pose.sides.left.toeRotation, alpha);
+  lerpDetailRotation(detailBones, 'toeRight', pose.sides.right.toeRotation, alpha);
+};
+
 const applyV3LocomotionLayer = ({
   groups,
   mesh,
@@ -304,6 +351,13 @@ const applyV3LocomotionLayer = ({
 }): void => {
   const speed = Math.sqrt(vel.x * vel.x + vel.z * vel.z);
   const alpha = dt > 0 ? Math.min(1, dt * 10) : 1;
+  const useSingleChainWalk = (
+    speed > 0.15 &&
+    !isSliding &&
+    !isSprinting &&
+    hasV3SingleChainLowerBody(mesh, detailBones)
+  );
+  mesh.userData.v3LowerBodyBridgeActive = useSingleChainWalk;
 
   if (isSliding) {
     setFromRestPosition(groups.leftLeg, [0.06, 0, 0]);
@@ -325,15 +379,19 @@ const applyV3LocomotionLayer = ({
     const phase = nextPhase;
     const swing = (isSprinting ? 0.2 : 0.14) * strideScale;
     const side = isSprinting ? 0.08 : 0.05;
-    setFromRestPosition(groups.leftLeg, [0.06, 0, 0]);
-    setFromRestPosition(groups.rightLeg, [-0.06, 0, 0]);
-    setFromRestPosition(groups.lowerTorso, [0, 0.03, 0]);
-    groups.leftLeg.rotation.x = Math.sin(phase) * swing;
-    groups.rightLeg.rotation.x = -Math.sin(phase) * swing;
-    groups.leftLeg.rotation.z = Math.cos(phase) * side;
-    groups.rightLeg.rotation.z = -Math.cos(phase) * side;
-    groups.lowerTorso.rotation.x = THREE.MathUtils.lerp(groups.lowerTorso.rotation.x, isSprinting ? 0.06 : 0, alpha);
-    applyV3FineLocomotion({ detailBones, phase, isSliding, isSprinting, speed, alpha });
+    if (useSingleChainWalk) {
+      applyV3SingleChainWalk({ groups, detailBones, phase, speed, alpha });
+    } else {
+      setFromRestPosition(groups.leftLeg, [0.06, 0, 0]);
+      setFromRestPosition(groups.rightLeg, [-0.06, 0, 0]);
+      setFromRestPosition(groups.lowerTorso, [0, 0.03, 0]);
+      groups.leftLeg.rotation.x = Math.sin(phase) * swing;
+      groups.rightLeg.rotation.x = -Math.sin(phase) * swing;
+      groups.leftLeg.rotation.z = Math.cos(phase) * side;
+      groups.rightLeg.rotation.z = -Math.cos(phase) * side;
+      groups.lowerTorso.rotation.x = THREE.MathUtils.lerp(groups.lowerTorso.rotation.x, isSprinting ? 0.06 : 0, alpha);
+      applyV3FineLocomotion({ detailBones, phase, isSliding, isSprinting, speed, alpha });
+    }
   } else {
     mesh.userData.v3WalkPhase = 0;
     setFromRestPosition(groups.leftLeg);
@@ -346,7 +404,7 @@ const applyV3LocomotionLayer = ({
   }
 
   let targetYaw = 0;
-  if (speed > 0.15) {
+  if (speed > 0.15 && !useSingleChainWalk) {
     const moveYaw = getYawForHeading(vel.x, vel.z);
     const diff = Math.atan2(Math.sin(moveYaw - yaw), Math.cos(moveYaw - yaw));
     targetYaw = THREE.MathUtils.clamp(diff, -Math.PI / 3, Math.PI / 3);
@@ -590,6 +648,8 @@ export function animateV3CombatantModel({
     mesh.userData.v3HitReactTimer = 0;
     resetV3BroadGroups(groups);
     resetV3DetailBones(detailBones);
+    mesh.userData.v3LowerBodyBridgeActive = false;
+    setV3LowerBodyJointBridgesVisible(mesh, false);
     return true;
   }
 
@@ -632,6 +692,7 @@ export function animateV3CombatantModel({
     lookPitch,
   });
   mesh.userData.v3HitReactTimer = Math.max(0, hitReactTimer - dt);
+  updateV3LowerBodyJointBridges(mesh, mesh.userData.v3LowerBodyBridgeActive === true);
 
   return true;
 }

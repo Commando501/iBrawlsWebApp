@@ -152,7 +152,7 @@ test('NeuralFrameStack appends observations on the trained decision cadence', ()
   assert.deepEqual(Array.from(stack.current()), [0, 0, 0, 0, 0, 0]);
 });
 
-for (const brainId of ['combat_dr_v2', 'combat_dr_v4']) {
+for (const brainId of ['combat_dr_v2', 'combat_dr_v4', 'combat_upgrade_v3']) {
   test(`exported ${brainId} fixture matches the browser MLP runtime`, () => {
     const dir = path.resolve('public/brains', brainId);
     const manifest = JSON.parse(fs.readFileSync(path.join(dir, 'manifest.json'), 'utf8')) as NeuralBrainManifest;

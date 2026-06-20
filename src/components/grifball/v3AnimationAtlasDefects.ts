@@ -18,6 +18,7 @@ import {
   analyzeV3SlotContinuity,
   type V3SlotContinuityViewId,
 } from './v3SlotContinuity';
+import { analyzeV3LowerBodyContinuity } from './v3LowerBodyContinuity';
 
 export type V3AnimationAtlasDefectViewId = 'front' | 'left' | 'rear' | 'right';
 export type V3AnimationAtlasDefectMode = 'normalizedReview' | 'runtimeSimulation';
@@ -30,6 +31,16 @@ export interface V3AnimationAtlasSlotContinuityIssue {
   worldGap: number;
   projectedGap: number;
   jointAnchorError: number;
+  warnings: string[];
+}
+
+export interface V3AnimationAtlasLowerBodySeamIssue {
+  frameFraction: number;
+  linkId: string;
+  label: string;
+  viewId: V3AnimationAtlasDefectViewId;
+  maxSeamGap: number;
+  projectedSeamGap: number;
   warnings: string[];
 }
 
@@ -47,6 +58,10 @@ export interface V3AnimationAtlasDefectMetrics {
   maxJointAnchorError: number;
   slotContinuityWarningCount: number;
   slotContinuityIssues: V3AnimationAtlasSlotContinuityIssue[];
+  maxLowerBodySeamGap: number;
+  maxLowerBodyProjectedSeamGap: number;
+  lowerBodyTearWarningCount: number;
+  lowerBodySeamIssues: V3AnimationAtlasLowerBodySeamIssue[];
 }
 
 export interface V3AnimationAtlasViewDefectReport {
@@ -77,6 +92,9 @@ export interface V3AnimationAtlasDefectSummary {
   maxProjectedSlotGap: number;
   maxJointAnchorError: number;
   slotContinuityWarningCount: number;
+  maxLowerBodySeamGap: number;
+  maxLowerBodyProjectedSeamGap: number;
+  lowerBodyTearWarningCount: number;
 }
 
 export interface V3AnimationAtlasDefectReport {
@@ -101,6 +119,8 @@ const ATLAS_WARNING_THRESHOLDS = {
   maxWeaponGripDrift: 0.12,
   maxFootFloorPenetration: 0.025,
   maxUpperLowerCoupling: 0.4,
+  maxLowerBodySeamGap: 0.08,
+  maxLowerBodyProjectedSeamGap: 0.08,
   maxWeaponBodyHeightRatio: {
     hammer: 0.42,
     sword: 0.66,
@@ -230,6 +250,7 @@ const buildWarnings = (
     warnings.push('upper/lower coupling high');
   }
   if (metrics.slotContinuityWarningCount > 0) warnings.push('slot continuity gap high');
+  if (metrics.lowerBodyTearWarningCount > 0) warnings.push('lower-body seam tear');
   return warnings;
 };
 
@@ -289,6 +310,9 @@ type ContinuityByView = Record<V3AnimationAtlasDefectViewId, {
   maxProjectedSlotGap: number;
   maxJointAnchorError: number;
   issues: V3AnimationAtlasSlotContinuityIssue[];
+  maxLowerBodySeamGap: number;
+  maxLowerBodyProjectedSeamGap: number;
+  lowerBodyIssues: V3AnimationAtlasLowerBodySeamIssue[];
 }>;
 
 const analyzeSlotContinuitySamples = (
@@ -316,12 +340,19 @@ const analyzeSlotContinuitySamples = (
       maxProjectedSlotGap: 0,
       maxJointAnchorError: 0,
       issues: [],
+      maxLowerBodySeamGap: 0,
+      maxLowerBodyProjectedSeamGap: 0,
+      lowerBodyIssues: [],
     },
   ])) as ContinuityByView;
 
   for (const frameFraction of sampledFrameFractions) {
     applyDefectSample(scene, meshRig, caseId, frameFraction, mode);
     const continuity = analyzeV3SlotContinuity(meshRig.group);
+    const lowerBodyContinuity = analyzeV3LowerBodyContinuity(meshRig.group, {
+      maxSeamGap: ATLAS_WARNING_THRESHOLDS.maxLowerBodySeamGap,
+      maxProjectedSeamGap: ATLAS_WARNING_THRESHOLDS.maxLowerBodyProjectedSeamGap,
+    });
     for (const viewId of VIEW_IDS) {
       const viewMetrics = byView[viewId];
       viewMetrics.maxSlotContinuityGap = Math.max(
@@ -350,6 +381,32 @@ const analyzeSlotContinuitySamples = (
           warnings: link.warnings.map((warning) => `${warning.code}: ${warning.message}`),
         });
       }
+      viewMetrics.maxLowerBodySeamGap = Math.max(
+        viewMetrics.maxLowerBodySeamGap,
+        lowerBodyContinuity.summary.maxLowerBodySeamGap
+      );
+      viewMetrics.maxLowerBodyProjectedSeamGap = Math.max(
+        viewMetrics.maxLowerBodyProjectedSeamGap,
+        lowerBodyContinuity.summary.maxLowerBodyProjectedSeamGap
+      );
+      for (const link of lowerBodyContinuity.links) {
+        const projectedViewId = viewId as V3SlotContinuityViewId;
+        const viewProjectedGap = link.projectedGap[projectedViewId];
+        const hasViewIssue = (
+          link.maxSeamGap > ATLAS_WARNING_THRESHOLDS.maxLowerBodySeamGap ||
+          viewProjectedGap > ATLAS_WARNING_THRESHOLDS.maxLowerBodyProjectedSeamGap
+        );
+        if (!hasViewIssue) continue;
+        viewMetrics.lowerBodyIssues.push({
+          frameFraction,
+          linkId: link.id,
+          label: link.label,
+          viewId,
+          maxSeamGap: link.maxSeamGap,
+          projectedSeamGap: viewProjectedGap,
+          warnings: link.warnings.map((warning) => `${warning.code}: ${warning.message}`),
+        });
+      }
     }
   }
 
@@ -357,6 +414,8 @@ const analyzeSlotContinuitySamples = (
     byView[viewId].maxSlotContinuityGap = roundMetric(byView[viewId].maxSlotContinuityGap);
     byView[viewId].maxProjectedSlotGap = roundMetric(byView[viewId].maxProjectedSlotGap);
     byView[viewId].maxJointAnchorError = roundMetric(byView[viewId].maxJointAnchorError);
+    byView[viewId].maxLowerBodySeamGap = roundMetric(byView[viewId].maxLowerBodySeamGap);
+    byView[viewId].maxLowerBodyProjectedSeamGap = roundMetric(byView[viewId].maxLowerBodyProjectedSeamGap);
   }
 
   return { sampledFrameFractions, byView };
@@ -398,6 +457,10 @@ export function analyzeV3AnimationAtlasCaseDefects(
     maxJointAnchorError: 0,
     slotContinuityWarningCount: 0,
     slotContinuityIssues: [],
+    maxLowerBodySeamGap: 0,
+    maxLowerBodyProjectedSeamGap: 0,
+    lowerBodyTearWarningCount: 0,
+    lowerBodySeamIssues: [],
   };
 
   const views = VIEW_IDS.map((viewId): V3AnimationAtlasViewDefectReport => {
@@ -409,6 +472,10 @@ export function analyzeV3AnimationAtlasCaseDefects(
       maxJointAnchorError: viewContinuity.maxJointAnchorError,
       slotContinuityWarningCount: viewContinuity.issues.length,
       slotContinuityIssues: viewContinuity.issues,
+      maxLowerBodySeamGap: viewContinuity.maxLowerBodySeamGap,
+      maxLowerBodyProjectedSeamGap: viewContinuity.maxLowerBodyProjectedSeamGap,
+      lowerBodyTearWarningCount: viewContinuity.lowerBodyIssues.length,
+      lowerBodySeamIssues: viewContinuity.lowerBodyIssues,
     };
     return {
       viewId,
@@ -445,6 +512,9 @@ const buildSummary = (
     maxProjectedSlotGap: roundMetric(Math.max(0, ...metrics.map((entry) => entry.maxProjectedSlotGap))),
     maxJointAnchorError: roundMetric(Math.max(0, ...metrics.map((entry) => entry.maxJointAnchorError))),
     slotContinuityWarningCount: metrics.reduce((total, entry) => total + entry.slotContinuityWarningCount, 0),
+    maxLowerBodySeamGap: roundMetric(Math.max(0, ...metrics.map((entry) => entry.maxLowerBodySeamGap))),
+    maxLowerBodyProjectedSeamGap: roundMetric(Math.max(0, ...metrics.map((entry) => entry.maxLowerBodyProjectedSeamGap))),
+    lowerBodyTearWarningCount: metrics.reduce((total, entry) => total + entry.lowerBodyTearWarningCount, 0),
   };
 };
 
@@ -472,5 +542,6 @@ export function formatV3AnimationAtlasDefectSummary(
     `weapon drift ${report.summary.maxWeaponGripDrift.toFixed(3)}`,
     `limb separation ${report.summary.maxLimbSeparation.toFixed(3)}`,
     `slot continuity ${report.summary.maxSlotContinuityGap.toFixed(3)}`,
+    `lower-body seams ${report.summary.maxLowerBodySeamGap.toFixed(3)}`,
   ].join(' | ');
 }

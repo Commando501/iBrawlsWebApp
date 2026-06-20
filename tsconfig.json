@@ -24,5 +24,5 @@
     "types": ["vite/client"],
     "noEmit": true
   },
-  "exclude": ["node_modules", "dist", "worker", "analysis"]
+  "exclude": ["node_modules", "dist", "release", "worker", "analysis"]
 }

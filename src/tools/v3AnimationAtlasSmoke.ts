@@ -17,6 +17,7 @@ import {
   V3_POSE_CLEARANCE_CASES,
   type V3PoseClearanceCaseId,
 } from '../components/grifball/v3PoseClearance';
+import { analyzeV3LowerBodyContinuity } from '../components/grifball/v3LowerBodyContinuity';
 import { analyzeV3SlotContinuity } from '../components/grifball/v3SlotContinuity';
 import { createInitialGrifballThreeRefs } from '../components/grifball/threeRefs';
 import { normalizeV3QualityTier } from '../components/v3/v3QualityTiers';
@@ -475,6 +476,11 @@ function updateSlotContinuityOverlay(view: V3AnimationAtlasView, visible: boolea
   if (!visible) return;
 
   const report = analyzeV3SlotContinuity(view.rig.group);
+  const lowerBodyReport = analyzeV3LowerBodyContinuity(view.rig.group, {
+    maxSeamGap: 0.08,
+    maxProjectedSeamGap: 0.08,
+  });
+  view.slotContinuityOverlay.userData.v3LowerBodyContinuityReport = lowerBodyReport;
   const overlayOrigin = view.overlayRoot.getWorldPosition(new THREE.Vector3());
   for (const link of report.links) {
     if (link.ready) continue;
@@ -483,6 +489,14 @@ function updateSlotContinuityOverlay(view: V3AnimationAtlasView, visible: boolea
     const midpoint = from.clone().add(to).multiplyScalar(0.5);
     view.slotContinuityOverlay.add(createSlotContinuityLine(from, to, link.id));
     view.slotContinuityOverlay.add(createSlotContinuityMarker(midpoint, link.id));
+  }
+  for (const link of lowerBodyReport.links) {
+    if (link.ready) continue;
+    const from = new THREE.Vector3(...link.endpoints.from).sub(overlayOrigin);
+    const to = new THREE.Vector3(...link.endpoints.to).sub(overlayOrigin);
+    const midpoint = from.clone().add(to).multiplyScalar(0.5);
+    view.slotContinuityOverlay.add(createSlotContinuityLine(from, to, `lowerBody:${link.id}`));
+    view.slotContinuityOverlay.add(createSlotContinuityMarker(midpoint, `lowerBody:${link.id}`));
   }
 }
 
