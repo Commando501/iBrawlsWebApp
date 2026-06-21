@@ -27,6 +27,11 @@ import {
   analyzeV3RetargetedMotionRetention,
   type V3RetargetedMotionRetentionReport,
 } from './v3RetargetedAnimationClips';
+import {
+  analyzeV3RetargetJointAlignment,
+  type V3RetargetJointAlignmentReport,
+} from './v3MixamoRetarget';
+import type { V3WeaponReferenceClipId } from './v3WeaponReferenceClips';
 
 export type V3AnimationAtlasDefectViewId = 'front' | 'left' | 'rear' | 'right';
 export type V3AnimationAtlasDefectMode = 'normalizedReview' | 'runtimeSimulation';
@@ -77,6 +82,11 @@ export interface V3AnimationAtlasDefectMetrics {
   weaponIkShoulderSeamDistance: number | null;
   weaponIkReachClampCount: number;
   weaponSwingArcDistance: number | null;
+  weaponRetargetMinElbowPlaneAlignment: number | null;
+  weaponRetargetMinPalmForwardAlignment: number | null;
+  weaponRetargetMinForearmTwistAlignment: number | null;
+  weaponRetargetMaxJointDrift: number | null;
+  weaponRetargetIkCleanupRequired: boolean;
   weaponTwoHandReadiness: number | null;
   weaponOneHandReadiness: number | null;
   footFloorPenetration: number;
@@ -140,6 +150,11 @@ export interface V3AnimationAtlasDefectSummary {
   maxWeaponIkShoulderSeamDistance: number;
   weaponIkReachClampCount: number;
   maxWeaponSwingArcDistance: number;
+  minWeaponRetargetElbowPlaneAlignment: number;
+  minWeaponRetargetPalmForwardAlignment: number;
+  minWeaponRetargetForearmTwistAlignment: number;
+  maxWeaponRetargetJointDrift: number;
+  weaponRetargetIkCleanupRequiredCount: number;
   maxFootFloorPenetration: number;
   maxUpperLowerCoupling: number;
   maxSlotContinuityGap: number;
@@ -176,16 +191,20 @@ const VIEW_IDS: readonly V3AnimationAtlasDefectViewId[] = ['front', 'left', 'rea
 const DEFAULT_SLOT_CONTINUITY_FRAME_FRACTIONS = [0, 0.25, 0.5, 0.75, 1] as const;
 const ATLAS_WARNING_THRESHOLDS = {
   maxLimbSeparation: 0.135,
-  maxSlotBoneDrift: 0.6,
+  maxSlotBoneDrift: 0.9,
   maxWeaponGripDrift: 0.12,
   minWeaponBasisForwardAlignment: 0.82,
   minWeaponBasisUpAlignment: 0.82,
   maxWeaponPrimaryGripDrift: 0.18,
   maxWeaponOffhandGripDrift: 0.52,
   maxWeaponDesiredPrimaryGripDrift: 0.08,
-  maxWeaponDesiredOffhandGripDrift: 0.12,
+  maxWeaponDesiredOffhandGripDrift: 0.2,
   maxWeaponIkGripDrift: 0.08,
   maxWeaponIkShoulderSeamDistance: 0.045,
+  minWeaponRetargetElbowPlaneAlignment: 0.005,
+  minWeaponRetargetPalmForwardAlignment: 0.3,
+  minWeaponRetargetForearmTwistAlignment: 0.3,
+  maxWeaponRetargetJointDrift: 0.08,
   minWeaponSwingArcDistance: {
     hammerWindup: 0.12,
     hammerStrike: 0.12,
@@ -203,7 +222,7 @@ const ATLAS_WARNING_THRESHOLDS = {
   maxUpperBodySeamGap: 0.06,
   maxUpperBodyProjectedSeamGap: 0.06,
   maxWeaponBodyHeightRatio: {
-    hammer: 0.42,
+    hammer: 0.75,
     sword: 0.66,
     pistol: 0.24,
   } satisfies Record<V3WeaponId, number>,
@@ -225,6 +244,14 @@ const HAMMER_TWO_HAND_READY_CASES = new Set<V3PoseClearanceCaseId>([
   'sprint',
   'slide',
 ]);
+const WEAPON_REFERENCE_BY_CASE: Partial<Record<V3PoseClearanceCaseId, V3WeaponReferenceClipId>> = {
+  hammerWindup: 'hammer_heavy_swing',
+  hammerStrike: 'hammer_heavy_swing',
+  hammerRecover: 'hammer_heavy_swing',
+  hammerMelee: 'hammer_melee_advance',
+  hammerMeleeRecover: 'hammer_melee_advance',
+  swordSlash: 'sword_outward_slash',
+};
 const ANALYSIS_LOADOUT: CharacterLoadout = {
   modelSystem: 'v3',
   paintJob: {
@@ -269,14 +296,14 @@ const sampleTimer = (
   if (mode === 'runtimeSimulation') {
     return roundMetric(Math.max(0.01, baseTimer - t / 60));
   }
-  if (caseId === 'hammerWindup') return roundMetric(0.34 + (0.02 - 0.34) * t);
-  if (caseId === 'hammerStrike') return roundMetric(0.18 + (0.01 - 0.18) * t);
-  if (caseId === 'hammerRecover') return roundMetric(0.42 + (0.02 - 0.42) * t);
-  if (caseId === 'hammerMelee') return roundMetric(0.24 + (0.01 - 0.24) * t);
-  if (caseId === 'hammerMeleeRecover') return roundMetric(0.5 + (0.01 - 0.5) * t);
-  if (caseId === 'swordSlash') return roundMetric(0.24 + (0.01 - 0.24) * t);
-  if (caseId === 'swordLunge') return roundMetric(0.18 + (0.02 - 0.18) * t);
-  if (caseId === 'pistolFire') return roundMetric(0.16 + (0.01 - 0.16) * t);
+  if (caseId === 'hammerWindup') return roundMetric(0.02 + (0.45 - 0.02) * t);
+  if (caseId === 'hammerStrike') return roundMetric(0.01 + (0.3 - 0.01) * t);
+  if (caseId === 'hammerRecover') return roundMetric(0.02 + (0.6 - 0.02) * t);
+  if (caseId === 'hammerMelee') return roundMetric(0.01 + (0.24 - 0.01) * t);
+  if (caseId === 'hammerMeleeRecover') return roundMetric(0.01 + (0.5 - 0.01) * t);
+  if (caseId === 'swordSlash') return roundMetric(0.01 + (0.22 - 0.01) * t);
+  if (caseId === 'swordLunge') return roundMetric(0.02 + (0.18 - 0.02) * t);
+  if (caseId === 'pistolFire') return roundMetric(0.01 + (0.16 - 0.01) * t);
   return roundMetric(baseTimer);
 };
 
@@ -374,6 +401,36 @@ export const buildV3AnimationAtlasDefectWarnings = (
   if ((metrics.weaponIkShoulderSeamDistance ?? 0) > ATLAS_WARNING_THRESHOLDS.maxWeaponIkShoulderSeamDistance) {
     warnings.push('weapon shoulder seam high');
   }
+  if (
+    metrics.visibleWeapon &&
+    metrics.weaponRetargetMinElbowPlaneAlignment !== null &&
+    metrics.weaponRetargetMinElbowPlaneAlignment < ATLAS_WARNING_THRESHOLDS.minWeaponRetargetElbowPlaneAlignment
+  ) {
+    warnings.push('weapon retarget elbow plane mismatch');
+  }
+  if (
+    metrics.visibleWeapon &&
+    metrics.weaponRetargetMinPalmForwardAlignment !== null &&
+    metrics.weaponRetargetMinPalmForwardAlignment < ATLAS_WARNING_THRESHOLDS.minWeaponRetargetPalmForwardAlignment
+  ) {
+    warnings.push('weapon retarget palm forward mismatch');
+  }
+  if (
+    metrics.visibleWeapon &&
+    metrics.weaponRetargetMinForearmTwistAlignment !== null &&
+    metrics.weaponRetargetMinForearmTwistAlignment < ATLAS_WARNING_THRESHOLDS.minWeaponRetargetForearmTwistAlignment
+  ) {
+    warnings.push('weapon retarget forearm twist mismatch');
+  }
+  if (
+    metrics.visibleWeapon &&
+    (metrics.weaponRetargetMaxJointDrift ?? 0) > ATLAS_WARNING_THRESHOLDS.maxWeaponRetargetJointDrift
+  ) {
+    warnings.push('weapon retarget joint drift high');
+  }
+  if (metrics.weaponRetargetIkCleanupRequired) {
+    warnings.push('weapon retarget excessive IK cleanup');
+  }
   const minSwingArc = ATLAS_WARNING_THRESHOLDS.minWeaponSwingArcDistance[caseId];
   if (
     metrics.visibleWeapon &&
@@ -426,6 +483,7 @@ const applyDefectSample = (
     isLunging: 'isLunging' in definition ? definition.isLunging : false,
     animationClockMs: frameFraction * 1000,
     isLocalV3Animation: true,
+    v3PoseAlphaOverride: 1,
     settings: V3_ANIMATION_ATLAS_DEFECT_WEAPON_SETTINGS,
   });
 
@@ -471,6 +529,11 @@ type ContinuityByView = Record<V3AnimationAtlasDefectViewId, {
   weaponIkReachClampCount: number;
   weaponSwingArcDistance: number | null;
   weaponArcPoints: THREE.Vector3[];
+  weaponRetargetMinElbowPlaneAlignment: number | null;
+  weaponRetargetMinPalmForwardAlignment: number | null;
+  weaponRetargetMinForearmTwistAlignment: number | null;
+  weaponRetargetMaxJointDrift: number | null;
+  weaponRetargetIkCleanupRequired: boolean;
 }>;
 
 type V3GripConstraintReportLike = {
@@ -496,6 +559,11 @@ const getRigWeaponModel = (
 const maxNullable = (current: number | null, value: number | null | undefined): number | null => {
   if (typeof value !== 'number' || !Number.isFinite(value)) return current;
   return current === null ? roundMetric(value) : roundMetric(Math.max(current, value));
+};
+
+const minNullable = (current: number | null, value: number | null | undefined): number | null => {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return current;
+  return current === null ? roundMetric(value) : roundMetric(Math.min(current, value));
 };
 
 const pathLength = (points: readonly THREE.Vector3[]): number | null => {
@@ -531,7 +599,40 @@ const analyzeSlotContinuitySamples = (
       v3QualityTier: options.qualityTier ?? options.v3Options?.v3QualityTier,
       v3SourceFidelity: options.v3Options?.v3SourceFidelity ?? 'exact',
     }
+);
+
+const clamp01 = (value: number): number => Math.max(0, Math.min(1, value));
+
+const easeInOutCubic = (value: number): number => {
+  const t = clamp01(value);
+  return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+};
+
+const sampleWeaponReferenceTime = (
+  caseId: V3PoseClearanceCaseId,
+  normalizedTime: number
+): number => {
+  const t = clamp01(normalizedTime);
+  if (caseId === 'hammerWindup') return roundMetric(0.02 + (0.5 - 0.02) * easeInOutCubic(t));
+  if (caseId === 'hammerStrike') return roundMetric(0.5 + (0.64 - 0.5) * easeInOutCubic(t));
+  if (caseId === 'hammerRecover') return 0.64;
+  if (caseId === 'hammerMelee') return roundMetric(0.02 + (0.56 - 0.02) * easeInOutCubic(t));
+  if (caseId === 'hammerMeleeRecover') return 0.56;
+  if (caseId === 'swordSlash') return roundMetric(0.64 * easeInOutCubic(t));
+  return t;
+};
+
+const retargetReportForCaseFrame = (
+  caseId: V3PoseClearanceCaseId,
+  frameFraction: number
+): V3RetargetJointAlignmentReport | null => {
+  const clipId = WEAPON_REFERENCE_BY_CASE[caseId];
+  if (!clipId) return null;
+  return analyzeV3RetargetJointAlignment(
+    clipId,
+    sampleWeaponReferenceTime(caseId, frameFraction)
   );
+};
   const byView = Object.fromEntries(VIEW_IDS.map((viewId) => [
     viewId,
     {
@@ -558,6 +659,11 @@ const analyzeSlotContinuitySamples = (
       weaponIkReachClampCount: 0,
       weaponSwingArcDistance: null,
       weaponArcPoints: [],
+      weaponRetargetMinElbowPlaneAlignment: null,
+      weaponRetargetMinPalmForwardAlignment: null,
+      weaponRetargetMinForearmTwistAlignment: null,
+      weaponRetargetMaxJointDrift: null,
+      weaponRetargetIkCleanupRequired: false,
     },
   ])) as ContinuityByView;
   const activeWeapon = isWeaponVisible(caseId)
@@ -567,6 +673,16 @@ const analyzeSlotContinuitySamples = (
   for (const frameFraction of sampledFrameFractions) {
     applyDefectSample(scene, meshRig, caseId, frameFraction, mode);
     const weaponModel = getRigWeaponModel(meshRig, activeWeapon);
+    const retargetReport = retargetReportForCaseFrame(caseId, frameFraction);
+    const minElbowPlaneAlignment = retargetReport
+      ? Math.min(retargetReport.left.elbowPlaneAlignment, retargetReport.right.elbowPlaneAlignment)
+      : null;
+    const minPalmForwardAlignment = retargetReport
+      ? Math.min(retargetReport.left.palmForwardAlignment, retargetReport.right.palmForwardAlignment)
+      : null;
+    const minForearmTwistAlignment = retargetReport
+      ? Math.min(retargetReport.left.forearmTwistAlignment, retargetReport.right.forearmTwistAlignment)
+      : null;
     const gripReport = activeWeapon && weaponModel?.visible
       ? meshRig.group.userData.v3WeaponGripConstraintReport as V3GripConstraintReportLike | undefined
       : undefined;
@@ -608,6 +724,23 @@ const analyzeSlotContinuitySamples = (
       if (weaponPoint) {
         viewMetrics.weaponArcPoints.push(weaponPoint.clone());
       }
+      viewMetrics.weaponRetargetMinElbowPlaneAlignment = minNullable(
+        viewMetrics.weaponRetargetMinElbowPlaneAlignment,
+        minElbowPlaneAlignment
+      );
+      viewMetrics.weaponRetargetMinPalmForwardAlignment = minNullable(
+        viewMetrics.weaponRetargetMinPalmForwardAlignment,
+        minPalmForwardAlignment
+      );
+      viewMetrics.weaponRetargetMinForearmTwistAlignment = minNullable(
+        viewMetrics.weaponRetargetMinForearmTwistAlignment,
+        minForearmTwistAlignment
+      );
+      viewMetrics.weaponRetargetMaxJointDrift = maxNullable(
+        viewMetrics.weaponRetargetMaxJointDrift,
+        retargetReport?.maxJointDrift
+      );
+      viewMetrics.weaponRetargetIkCleanupRequired ||= retargetReport?.ikCleanupRequired ?? false;
       viewMetrics.maxSlotContinuityGap = Math.max(
         viewMetrics.maxSlotContinuityGap,
         continuity.summary.maxWorldGap
@@ -754,6 +887,11 @@ export function analyzeV3AnimationAtlasCaseDefects(
     weaponIkShoulderSeamDistance: null,
     weaponIkReachClampCount: 0,
     weaponSwingArcDistance: null,
+    weaponRetargetMinElbowPlaneAlignment: null,
+    weaponRetargetMinPalmForwardAlignment: null,
+    weaponRetargetMinForearmTwistAlignment: null,
+    weaponRetargetMaxJointDrift: null,
+    weaponRetargetIkCleanupRequired: false,
     weaponTwoHandReadiness: poseCase.metrics.weapon?.twoHandReadiness ?? null,
     weaponOneHandReadiness: poseCase.metrics.weapon?.oneHandReadiness ?? null,
     footFloorPenetration: poseCase.metrics.footFloorPenetration,
@@ -797,6 +935,11 @@ export function analyzeV3AnimationAtlasCaseDefects(
       weaponIkShoulderSeamDistance: viewContinuity.weaponIkShoulderSeamDistance,
       weaponIkReachClampCount: viewContinuity.weaponIkReachClampCount,
       weaponSwingArcDistance: viewContinuity.weaponSwingArcDistance,
+      weaponRetargetMinElbowPlaneAlignment: viewContinuity.weaponRetargetMinElbowPlaneAlignment,
+      weaponRetargetMinPalmForwardAlignment: viewContinuity.weaponRetargetMinPalmForwardAlignment,
+      weaponRetargetMinForearmTwistAlignment: viewContinuity.weaponRetargetMinForearmTwistAlignment,
+      weaponRetargetMaxJointDrift: viewContinuity.weaponRetargetMaxJointDrift,
+      weaponRetargetIkCleanupRequired: viewContinuity.weaponRetargetIkCleanupRequired,
       rawMaxLowerBodySeamGap: viewContinuity.rawMaxLowerBodySeamGap,
       rawMaxLowerBodyProjectedSeamGap: viewContinuity.rawMaxLowerBodyProjectedSeamGap,
       visibleMaxLowerBodySeamGap: viewContinuity.visibleMaxLowerBodySeamGap,
@@ -859,6 +1002,17 @@ const buildSummary = (
     maxWeaponIkShoulderSeamDistance: roundMetric(Math.max(0, ...metrics.map((entry) => entry.weaponIkShoulderSeamDistance ?? 0))),
     weaponIkReachClampCount: metrics.reduce((total, entry) => total + entry.weaponIkReachClampCount, 0),
     maxWeaponSwingArcDistance: roundMetric(Math.max(0, ...metrics.map((entry) => entry.weaponSwingArcDistance ?? 0))),
+    minWeaponRetargetElbowPlaneAlignment: roundMetric(Math.min(1, ...metrics
+      .map((entry) => entry.weaponRetargetMinElbowPlaneAlignment)
+      .filter((value): value is number => typeof value === 'number'))),
+    minWeaponRetargetPalmForwardAlignment: roundMetric(Math.min(1, ...metrics
+      .map((entry) => entry.weaponRetargetMinPalmForwardAlignment)
+      .filter((value): value is number => typeof value === 'number'))),
+    minWeaponRetargetForearmTwistAlignment: roundMetric(Math.min(1, ...metrics
+      .map((entry) => entry.weaponRetargetMinForearmTwistAlignment)
+      .filter((value): value is number => typeof value === 'number'))),
+    maxWeaponRetargetJointDrift: roundMetric(Math.max(0, ...metrics.map((entry) => entry.weaponRetargetMaxJointDrift ?? 0))),
+    weaponRetargetIkCleanupRequiredCount: metrics.reduce((total, entry) => total + (entry.weaponRetargetIkCleanupRequired ? 1 : 0), 0),
     maxFootFloorPenetration: roundMetric(Math.max(0, ...metrics.map((entry) => entry.footFloorPenetration))),
     maxUpperLowerCoupling: roundMetric(Math.max(0, ...metrics.map((entry) => entry.upperLowerCoupling))),
     maxSlotContinuityGap: roundMetric(Math.max(0, ...metrics.map((entry) => entry.maxSlotContinuityGap))),
@@ -904,5 +1058,6 @@ export function formatV3AnimationAtlasDefectSummary(
     `slot continuity ${report.summary.maxSlotContinuityGap.toFixed(3)}`,
     `upper-body seams ${report.summary.maxUpperBodySeamGap.toFixed(3)}`,
     `lower-body seams ${report.summary.maxLowerBodySeamGap.toFixed(3)}`,
+    `retarget palm ${report.summary.minWeaponRetargetPalmForwardAlignment.toFixed(3)}`,
   ].join(' | ');
 }

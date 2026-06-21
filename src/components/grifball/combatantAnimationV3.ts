@@ -56,6 +56,7 @@ export interface V3CombatantAnimationInput {
   v3QualityTier?: V3QualityTier;
   isLocalV3Animation?: boolean;
   animationClockMs?: number;
+  v3PoseAlphaOverride?: number;
   lookYawOffset?: number;
   lookPitch?: number;
 }
@@ -180,6 +181,22 @@ const lerpDetailRotation = (
   }
 };
 
+const lerpDetailQuaternion = (
+  detailBones: V3DetailGroups | undefined,
+  boneName: V3DetailBoneName,
+  target: readonly [number, number, number, number],
+  alpha: number
+): void => {
+  const bone = detailBones?.[boneName];
+  if (!bone) return;
+  const targetQuaternion = new THREE.Quaternion(target[0], target[1], target[2], target[3]).normalize();
+  if (alpha >= 1) {
+    bone.quaternion.copy(targetQuaternion);
+  } else {
+    bone.quaternion.slerp(targetQuaternion, Math.max(0, Math.min(1, alpha)));
+  }
+};
+
 const lerpDetailRotationIfDistinct = (
   detailBones: V3DetailGroups | undefined,
   boneName: V3DetailBoneName,
@@ -209,6 +226,19 @@ const applyV3UpperBodyPose = (
   alpha: number,
   detailBones?: V3DetailGroups
 ): void => {
+  if (pose.detailBoneQuaternions && detailBones) {
+    if (groups.upperTorso !== detailBones.chest) lerpRotation(groups.upperTorso, [0, 0, 0], alpha);
+    if (groups.head !== detailBones.head) lerpRotation(groups.head, [0, 0, 0], alpha);
+    if (groups.leftArm !== detailBones.upperArmLeft) lerpRotation(groups.leftArm, [0, 0, 0], alpha);
+    if (groups.rightArm !== detailBones.upperArmRight) lerpRotation(groups.rightArm, [0, 0, 0], alpha);
+
+    for (const [jointName, quaternion] of Object.entries(pose.detailBoneQuaternions)) {
+      if (!quaternion) continue;
+      lerpDetailQuaternion(detailBones, jointName as V3DetailBoneName, quaternion as [number, number, number, number], alpha);
+    }
+    return;
+  }
+
   if (pose.detailBoneRotations && detailBones) {
     if (groups.upperTorso !== detailBones.chest) lerpRotation(groups.upperTorso, pose.upperTorsoRotation, alpha);
     if (groups.head !== detailBones.head) lerpRotation(groups.head, pose.headRotation, alpha);
@@ -521,16 +551,17 @@ const applyV3HammerLayer = ({
   alpha: number;
   detailBones?: V3DetailGroups;
 }): void => {
+  const timingSettings: Partial<UniversalSettings> = {
+    ...settings,
+    ...(Number.isFinite(hammerSlamWindupTime) ? { hammerSlamWindupTime } : {}),
+    ...(Number.isFinite(hammerSlamAttackTime) ? { hammerSlamAttackTime } : {}),
+  };
   applyV3UpperBodyPose(groups, sampleV3UpperBodyWeaponPose({
     activeWeapon: 'hammer',
     weaponState,
     weaponTimer,
     isLunging: false,
-    settings: {
-      ...settings,
-      hammerSlamWindupTime,
-      hammerSlamAttackTime,
-    },
+    settings: timingSettings,
   }), alpha, detailBones);
 };
 
@@ -710,6 +741,7 @@ export function animateV3CombatantModel({
   v3QualityTier,
   isLocalV3Animation = false,
   animationClockMs,
+  v3PoseAlphaOverride,
   lookYawOffset = 0,
   lookPitch = 0,
 }: V3CombatantAnimationInput): boolean {
@@ -748,7 +780,9 @@ export function animateV3CombatantModel({
   }
   mesh.userData.v3LastHp = hp;
 
-  const alpha = dt > 0 ? Math.min(1, dt * 12) : 1;
+  const alpha = Number.isFinite(v3PoseAlphaOverride)
+    ? clamp01(Number(v3PoseAlphaOverride))
+    : dt > 0 ? Math.min(1, dt * 12) : 1;
   applyV3LocomotionLayer({ groups, mesh, vel, yaw, dt, isSliding, isSprinting, isLunging, detailBones, animationClockMs });
 
   const breathingPhase = Number(mesh.userData.v3BreathingPhase ?? 0) + dt * 2.1;

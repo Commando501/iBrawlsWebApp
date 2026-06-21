@@ -1,6 +1,10 @@
 import * as THREE from 'three';
 import type { V3SocketName } from '../v3/v3ModelTypes';
-import { getCombatantRig, type CombatantDetailBoneMap } from './combatantRig';
+import {
+  getCombatantRig,
+  type CombatantAttachmentPointName,
+  type CombatantDetailBoneMap,
+} from './combatantRig';
 import type { V3GripConstraint } from './v3WeaponMotionTracks';
 import { getV3WeaponSocketWorldPosition } from './v3WeaponSocketBasis';
 
@@ -34,6 +38,7 @@ export interface V3WeaponGripConstraintResult extends V3ArmIkResult {
   socketName: V3SocketName;
   required: boolean;
   maxDrift: number;
+  mode: V3GripConstraint['mode'];
 }
 
 export interface V3WeaponGripConstraintReport {
@@ -161,6 +166,37 @@ const emptyResult = (side: V3ArmIkSide, target: THREE.Vector3): V3ArmIkResult =>
   actualGripWorldPosition: EMPTY_VECTOR.clone(),
 });
 
+const measureCurrentArmIkResult = (
+  model: THREE.Group,
+  side: V3ArmIkSide,
+  targetWorldPosition: THREE.Vector3,
+  actualGripWorldPosition?: THREE.Vector3
+): V3ArmIkResult => {
+  model.updateWorldMatrix(true, true);
+  const chain = getArmChain(model, side);
+  if (!chain) return emptyResult(side, targetWorldPosition);
+  const clavicleWorldPosition = worldPosition(chain.clavicle);
+  const shoulderWorldPosition = worldPosition(chain.upperArm);
+  const elbowWorldPosition = worldPosition(chain.forearm);
+  const gripWorldPosition = actualGripWorldPosition ?? worldPosition(chain.grip);
+  return {
+    ready: true,
+    side,
+    reachClamped: false,
+    clampDistance: 0,
+    drift: roundMetric(gripWorldPosition.distanceTo(targetWorldPosition)),
+    clavicleAssistRotation: 0,
+    shoulderSeamDistance: roundMetric(clavicleWorldPosition.distanceTo(shoulderWorldPosition)),
+    upperArmWorldLength: roundMetric(shoulderWorldPosition.distanceTo(elbowWorldPosition)),
+    lowerArmWorldLength: roundMetric(elbowWorldPosition.distanceTo(gripWorldPosition)),
+    clavicleWorldPosition,
+    shoulderWorldPosition,
+    elbowWorldPosition,
+    targetWorldPosition: targetWorldPosition.clone(),
+    actualGripWorldPosition: gripWorldPosition,
+  };
+};
+
 const applyClavicleAssist = (
   chain: V3ArmIkChain,
   target: V3ArmIkTarget,
@@ -275,6 +311,12 @@ const poleToWorld = (model: THREE.Group, poleDirection: readonly number[]): THRE
   ).applyQuaternion(model.getWorldQuaternion(new THREE.Quaternion())).normalize();
 };
 
+const attachmentForSocket = (socketName: V3SocketName): CombatantAttachmentPointName | null => {
+  if (socketName === 'thirdPersonPrimaryGrip') return 'thirdPersonWeaponGrip';
+  if (socketName === 'thirdPersonOffhandGrip') return 'thirdPersonOffhandGrip';
+  return null;
+};
+
 export function applyV3WeaponGripConstraints(
   model: THREE.Group | null | undefined,
   weaponModel: THREE.Object3D | null | undefined,
@@ -286,6 +328,29 @@ export function applyV3WeaponGripConstraints(
   for (const constraint of constraints) {
     const targetWorldPosition = getV3WeaponSocketWorldPosition(weaponModel, constraint.socketName);
     if (!targetWorldPosition) continue;
+    const mode = constraint.mode ?? 'lock';
+    if (mode === 'cleanup') {
+      const attachmentName = attachmentForSocket(constraint.socketName);
+      const attachment = attachmentName
+        ? getCombatantRig(model)?.attachments[attachmentName]?.group
+        : undefined;
+      const attachmentWorldPosition = attachment?.getWorldPosition(new THREE.Vector3());
+      const measured = measureCurrentArmIkResult(
+        model,
+        constraint.side,
+        targetWorldPosition,
+        attachmentWorldPosition
+      );
+      results.push({
+        ...measured,
+        ready: measured.ready && measured.drift <= constraint.maxDrift,
+        socketName: constraint.socketName,
+        required: constraint.required,
+        maxDrift: constraint.maxDrift,
+        mode,
+      });
+      continue;
+    }
     const result = applyV3ArmIkTarget(model, {
       side: constraint.side,
       targetWorldPosition,
@@ -297,6 +362,7 @@ export function applyV3WeaponGripConstraints(
       socketName: constraint.socketName,
       required: constraint.required,
       maxDrift: constraint.maxDrift,
+      mode,
     });
   }
 
@@ -306,7 +372,11 @@ export function applyV3WeaponGripConstraints(
   const report: V3WeaponGripConstraintReport = {
     ready: results.every((result) => (
       result.ready &&
-      (!result.required || result.drift <= result.maxDrift || result.reachClamped)
+      (!result.required || (
+        result.mode === 'cleanup'
+          ? result.drift <= result.maxDrift && !result.reachClamped
+          : result.drift <= result.maxDrift || result.reachClamped
+      ))
     )),
     maxGripDrift,
     maxShoulderSeamDistance,

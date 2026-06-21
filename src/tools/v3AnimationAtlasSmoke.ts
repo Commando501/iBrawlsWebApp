@@ -35,6 +35,7 @@ import {
   sampleV3WeaponReferenceClip,
   type V3WeaponReferenceClipId,
 } from '../components/grifball/v3WeaponReferenceClips';
+import { analyzeV3RetargetJointAlignment } from '../components/grifball/v3MixamoRetarget';
 import { createInitialGrifballThreeRefs } from '../components/grifball/threeRefs';
 import { normalizeV3QualityTier } from '../components/v3/v3QualityTiers';
 import type { V3QualityTier } from '../components/v3/v3ModelTypes';
@@ -291,6 +292,11 @@ const interpolateTimer = (
   normalizedTime: number
 ): number => roundMetric(start + (end - start) * clamp01(normalizedTime));
 
+const easeInOutCubic = (value: number): number => {
+  const t = clamp01(value);
+  return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+};
+
 const normalizedVelocity = (
   baseVelocity: readonly [number, number, number],
   normalizedTime: number,
@@ -332,12 +338,14 @@ const sampleWeaponTimer = (
     ? normalizedTime
     : (elapsedSeconds % Math.max(0.001, CASE_DURATIONS[caseId] / 60)) / Math.max(0.001, CASE_DURATIONS[caseId] / 60);
 
-  if (caseId === 'hammerWindup') return interpolateTimer(0.34, 0.02, t);
-  if (caseId === 'hammerStrike') return interpolateTimer(0.18, 0.01, t);
-  if (caseId === 'hammerRecover') return interpolateTimer(0.42, 0.02, t);
-  if (caseId === 'swordSlash') return interpolateTimer(0.24, 0.01, t);
-  if (caseId === 'swordLunge') return interpolateTimer(0.18, 0.02, t);
-  if (caseId === 'pistolFire') return interpolateTimer(0.16, 0.01, t);
+  if (caseId === 'hammerWindup') return interpolateTimer(0.02, 0.45, t);
+  if (caseId === 'hammerStrike') return interpolateTimer(0.01, 0.3, t);
+  if (caseId === 'hammerRecover') return interpolateTimer(0.02, 0.6, t);
+  if (caseId === 'hammerMelee') return interpolateTimer(0.01, 0.24, t);
+  if (caseId === 'hammerMeleeRecover') return interpolateTimer(0.01, 0.5, t);
+  if (caseId === 'swordSlash') return interpolateTimer(0.01, 0.22, t);
+  if (caseId === 'swordLunge') return interpolateTimer(0.02, 0.18, t);
+  if (caseId === 'pistolFire') return interpolateTimer(0.01, 0.16, t);
   return roundMetric(baseTimer);
 };
 
@@ -346,12 +354,12 @@ const sampleWeaponReferenceTime = (
   normalizedTime: number
 ): number => {
   const t = clamp01(normalizedTime);
-  if (caseId === 'hammerWindup') return roundMetric(0.1 + t * 0.28);
-  if (caseId === 'hammerStrike') return roundMetric(0.42 + t * 0.22);
-  if (caseId === 'hammerRecover') return roundMetric(0.62 + t * 0.28);
-  if (caseId === 'hammerMelee') return roundMetric(0.12 + t * 0.42);
-  if (caseId === 'hammerMeleeRecover') return roundMetric(0.54 + t * 0.3);
-  if (caseId === 'swordSlash') return roundMetric(0.18 + t * 0.42);
+  if (caseId === 'hammerWindup') return roundMetric(0.02 + (0.5 - 0.02) * easeInOutCubic(t));
+  if (caseId === 'hammerStrike') return roundMetric(0.5 + (0.64 - 0.5) * easeInOutCubic(t));
+  if (caseId === 'hammerRecover') return 0.64;
+  if (caseId === 'hammerMelee') return roundMetric(0.02 + (0.56 - 0.02) * easeInOutCubic(t));
+  if (caseId === 'hammerMeleeRecover') return 0.56;
+  if (caseId === 'swordSlash') return roundMetric(0.64 * easeInOutCubic(t));
   return t;
 };
 
@@ -634,6 +642,7 @@ function applySampleToRig(
     isLunging: sample.isLunging,
     animationClockMs: sample.elapsedSeconds * 1000,
     isLocalV3Animation: true,
+    v3PoseAlphaOverride: 1,
     settings: V3_ANIMATION_ATLAS_WEAPON_SETTINGS,
     v3QualityTier: qualityTier,
   });
@@ -750,6 +759,10 @@ function updateWeaponGripOverlay(
   }
   if (sample?.weaponReferenceClipId && rightGrip) {
     const clip = getV3WeaponReferenceClip(sample.weaponReferenceClipId);
+    const retargetAlignment = analyzeV3RetargetJointAlignment(
+      sample.weaponReferenceClipId,
+      sample.weaponReferenceNormalizedTime ?? sample.normalizedTime
+    );
     const trailTimes = Array.from(new Set([
       0,
       0.25,
@@ -796,6 +809,26 @@ function updateWeaponGripOverlay(
         `v3AnimationAtlasMixamoLeftHandTrail:${sample.weaponReferenceClipId}:${index}`
       ));
     }
+    const detailBones = view.rig.group.userData.v3DetailBones as Record<string, THREE.Object3D> | undefined;
+    const drawRuntimeArm = (
+      side: 'Left' | 'Right',
+      color: string
+    ): [number, number, number][] => {
+      const chain = [`upperArm${side}`, `forearm${side}`, `hand${side}`]
+        .map((joint) => detailBones?.[joint]?.getWorldPosition(new THREE.Vector3()).sub(origin))
+        .filter((point): point is THREE.Vector3 => Boolean(point));
+      for (let index = 1; index < chain.length; index += 1) {
+        view.weaponGripOverlay.add(createDiagnosticLine(
+          chain[index - 1],
+          chain[index],
+          color,
+          `v3AnimationAtlasRuntime${side}Arm:${sample.weaponReferenceClipId}:${index}`
+        ));
+      }
+      return chain.map(tuple3);
+    };
+    const runtimeRightArm = drawRuntimeArm('Right', '#0ea5e9');
+    const runtimeLeftArm = drawRuntimeArm('Left', '#eab308');
     view.weaponGripOverlay.userData.v3WeaponReferenceOverlay = {
       clipId: sample.weaponReferenceClipId,
       runtimeRole: clip.runtimeRole,
@@ -803,6 +836,16 @@ function updateWeaponGripOverlay(
       normalizedTime: sample.weaponReferenceNormalizedTime ?? sample.normalizedTime,
       rightHandTrail: rightHandTrail.map(tuple3),
       leftHandTrail: leftHandTrail.map(tuple3),
+      runtimeRightArm,
+      runtimeLeftArm,
+      retargetAlignment: {
+        ready: retargetAlignment.ready,
+        left: retargetAlignment.left,
+        right: retargetAlignment.right,
+        maxJointDrift: retargetAlignment.maxJointDrift,
+        ikCleanupRequired: retargetAlignment.ikCleanupRequired,
+        issues: retargetAlignment.issues,
+      },
     };
   }
   const trailKey = `v3WeaponTrail:${view.id}:${visibleWeapon}`;

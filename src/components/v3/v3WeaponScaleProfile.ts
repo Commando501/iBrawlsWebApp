@@ -56,7 +56,8 @@ const V3_WEAPON_SCALE_PROFILES: Record<V3WeaponId, V3WeaponScaleProfile> = {
   hammer: Object.freeze({
     weapon: 'hammer',
     modelSystem: 'v3',
-    targetBodyHeightRatio: 0.72,
+    // Gravity hammer stands three-quarters of the character's height.
+    targetBodyHeightRatio: 0.75,
     maxHandSpanRatio: 2,
     minUniformScale: 0.35,
     maxUniformScale: 1.25,
@@ -64,7 +65,8 @@ const V3_WEAPON_SCALE_PROFILES: Record<V3WeaponId, V3WeaponScaleProfile> = {
   sword: Object.freeze({
     weapon: 'sword',
     modelSystem: 'v3',
-    targetBodyHeightRatio: 0.64,
+    // Energy katar reaches half the character's height along its thrust axis.
+    targetBodyHeightRatio: 0.5,
     maxHandSpanRatio: 1.8,
     minUniformScale: 0.35,
     maxUniformScale: 1.25,

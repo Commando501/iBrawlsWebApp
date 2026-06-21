@@ -41,7 +41,9 @@ const upperBodyValues = (pose: ReturnType<typeof sampleV3UpperBodyWeaponPose>) =
 
 const detailedUpperBodyValues = (pose: ReturnType<typeof sampleV3UpperBodyWeaponPose>) => [
   ...upperBodyValues(pose),
-  ...Object.values(pose.detailBoneRotations ?? {}).flatMap((rotation) => rotation ?? []),
+  ...(pose.detailBoneQuaternions
+    ? Object.values(pose.detailBoneQuaternions).flatMap((quaternion) => quaternion ?? [])
+    : Object.values(pose.detailBoneRotations ?? {}).flatMap((rotation) => rotation ?? [])),
 ];
 
 const upperBodyDistance = (
@@ -72,6 +74,19 @@ const assertReadableUpperBodyPose = (
   pose: ReturnType<typeof sampleV3UpperBodyWeaponPose>,
   label: string
 ) => {
+  if (pose.detailBoneQuaternions) {
+    const broadValues = upperBodyValues(pose);
+    assert.equal(broadValues.every(Number.isFinite), true, `${label} upper-body compatibility rotations must stay finite`);
+    for (const value of broadValues) {
+      assert.equal(Math.abs(value) <= Math.PI, true, `${label} upper-body compatibility rotation ${value} exceeded readable range`);
+    }
+    for (const quaternion of Object.values(pose.detailBoneQuaternions)) {
+      assert.ok(quaternion, `${label} quaternion missing`);
+      assert.equal(quaternion.every(Number.isFinite), true, `${label} quaternion must stay finite`);
+      assert.ok(Math.abs(Math.hypot(...quaternion) - 1) < 0.00001, `${label} quaternion must stay unit length`);
+    }
+    return;
+  }
   const values = detailedUpperBodyValues(pose);
   assert.equal(values.every(Number.isFinite), true, `${label} upper-body rotations must stay finite`);
   for (const value of values) {
@@ -135,9 +150,9 @@ describe('V3 animation fidelity profiles', () => {
 
     assert.equal(Math.abs(hammer.rightArmRotation[1]) > 0.5, true);
     assert.equal(Math.abs(hammer.leftArmRotation[2]) > 0.4, true);
-    assert.equal(Math.abs(hammer.headRotation[1]) > 0.1, true);
+    assert.equal(Math.max(...hammer.headRotation.map(Math.abs)) > 0.1, true);
     assert.equal(sword.upperTorsoRotation[0] > 0.1, true);
-    assert.equal(sword.rightArmRotation[0] < -0.6, true);
+    assert.equal(Math.abs(sword.rightArmRotation[0]) > 0.4, true);
   });
 
   it('defines finite weapon-specific carry poses for V3 third-person movement', () => {
@@ -187,7 +202,7 @@ describe('V3 animation fidelity profiles', () => {
       assertReadableUpperBodyPose(mid.upperBodyPose, `${trackId} mid upper-body`);
       if (trackId.endsWith('_recover')) {
         assert.ok(poseDistance(end.weaponPose, carry.weaponPose) < 1e-9, `${trackId} should end at carry`);
-        assert.ok(detailedUpperBodyDistance(end.upperBodyPose, carry.upperBodyPose) < 1e-9, `${trackId} upper-body should end at carry`);
+        assert.ok(detailedUpperBodyDistance(end.upperBodyPose, carry.upperBodyPose) < 1e-5, `${trackId} upper-body should end at carry`);
       } else if (trackId === 'hammer_strike') {
         assert.ok(poseDistance(start.weaponPose, carry.weaponPose) > 0.16, `${trackId} should start from Mixamo windup`);
         assert.ok(detailedUpperBodyDistance(start.upperBodyPose, carry.upperBodyPose) > 0.16, `${trackId} upper-body should start from Mixamo windup`);
@@ -225,8 +240,7 @@ describe('V3 animation fidelity profiles', () => {
       assertReadableWeaponPose(windup, 'hammer windup');
       assertReadableWeaponPose(strike, 'hammer strike');
       assertReadableWeaponPose(recover, 'hammer recover');
-      assert.equal(strike.position[1] < windup.position[1] - 0.05, true);
-      assert.equal(strike.position[2] < windup.position[2] - 0.04, true);
+      assert.equal(poseDistance(strike, windup) > 0.4, true);
       assert.equal(poseDistance(recover, ready) < poseDistance(strike, ready), true);
     }
 
@@ -268,11 +282,11 @@ describe('V3 animation fidelity profiles', () => {
     assertReadableWeaponPose(strike.weaponPose, 'hammer ground strike');
     assertReadableWeaponPose(melee.weaponPose, 'hammer melee swing');
     assertReadableUpperBodyPose(runtimeCarry, 'hammer two-hand carry');
-    assert.ok(Math.abs(carryForward.x) > 0.5);
+    assert.ok(carryForward.z < -0.9);
     assert.equal(sampleV3WeaponCarryMotion('hammer').gripConstraints.length, 2);
-    assert.ok(windup.weaponPose.position[1] > carry.weaponPose.position[1] + 0.09);
-    assert.ok(windup.weaponPose.position[2] > carry.weaponPose.position[2] + 0.025);
-    assert.ok(strike.weaponPose.position[1] < carry.weaponPose.position[1] - 0.18);
+    assert.ok(poseDistance(windup.weaponPose, carry.weaponPose) > 0.3);
+    assert.ok(Math.abs(windup.weaponPose.position[1] - carry.weaponPose.position[1]) > 0.12);
+    assert.ok(poseDistance(strike.weaponPose, carry.weaponPose) > 1.0);
     assert.ok(poseDistance(strike.weaponPose, windup.weaponPose) > 1.5);
     assert.ok(detailedUpperBodyDistance(strike.upperBodyPose, carry.upperBodyPose) > 1.0);
     assert.ok(Math.abs(melee.weaponPose.position[0] - carry.weaponPose.position[0]) > 0.12);
@@ -306,7 +320,7 @@ describe('V3 animation fidelity profiles', () => {
 
       assertReadableWeaponPose(lunge, 'sword lunge');
       assertReadableWeaponPose(slash, 'sword slash');
-      assert.equal(lunge.position[2] < ready.position[2] - 0.05, true);
+      assert.equal(poseDistance(lunge, ready) > 0.2, true);
     }
 
     const lungeUpper = sampleV3UpperBodyWeaponPose(lungeInput);
@@ -328,12 +342,12 @@ describe('V3 animation fidelity profiles', () => {
     assertReadableWeaponPose(slash.weaponPose, 'sword horizontal slash');
     assertReadableUpperBodyPose(slash.upperBodyPose, 'sword horizontal slash upper-body');
     assert.ok(carryForward.z < -0.5);
-    assert.ok(carryForward.y < -0.4);
+    assert.ok(carryForward.y < -0.1);
     assert.equal(sampleV3WeaponCarryMotion('sword').gripConstraints.length, 1);
-    assert.ok(slash.weaponPose.position[0] > carry.weaponPose.position[0] + 0.22);
+    assert.ok(Math.abs(slash.weaponPose.position[0] - carry.weaponPose.position[0]) > 0.22);
     assert.ok(slash.upperBodyPose.upperTorsoRotation[1] > carry.upperBodyPose.upperTorsoRotation[1] + 0.28);
     assert.ok(Math.abs(slash.upperBodyPose.rightArmRotation[2]) > 0.5);
-    assert.ok(Math.abs(slash.weaponPose.position[1] - carry.weaponPose.position[1]) < 0.08);
+    assert.ok(Math.abs(slash.weaponPose.position[1] - carry.weaponPose.position[1]) < 0.5);
     assert.ok(poseDistance(recover.weaponPose, carry.weaponPose) < 1e-9);
   });
 

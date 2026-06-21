@@ -13,9 +13,16 @@ export const V3_MIXAMO_WEAPON_REFERENCE_CLIP_IDS = [
 
 export type V3WeaponReferenceClipId = (typeof V3_MIXAMO_WEAPON_REFERENCE_CLIP_IDS)[number];
 export type V3WeaponReferenceRuntimeRole = 'runtimeReference' | 'analysisOnly';
+export type V3QuatTuple = [number, number, number, number];
 
 export interface V3WeaponReferenceJointSample {
   rotation: [number, number, number];
+  quaternion: V3QuatTuple;
+  position: [number, number, number];
+}
+
+export interface V3WeaponReferenceRestJoint {
+  quaternion: V3QuatTuple;
   position: [number, number, number];
 }
 
@@ -64,6 +71,14 @@ export interface V3WeaponReferenceClip {
   fps: number;
   frameCount: number;
   calibration?: V3WeaponReferenceCalibration;
+  restPose?: {
+    source: {
+      fileName: string;
+      sha256: string;
+      byteLength: number;
+    };
+    joints: Partial<Record<V3DetailBoneName, V3WeaponReferenceRestJoint>>;
+  };
   normalizedTimes: readonly number[];
   keyframes: readonly {
     normalizedTime: number;
@@ -76,6 +91,7 @@ export interface V3WeaponReferenceClip {
 export type V3WeaponReferenceJointName = keyof V3WeaponReferenceClip['keyframes'][number]['joints'] & V3DetailBoneName;
 
 const V3_WEAPON_REFERENCE_SET = V3_MIXAMO_WEAPON_REFERENCE_SET as unknown as {
+  restPose?: V3WeaponReferenceClip['restPose'];
   clips: readonly V3WeaponReferenceClip[];
 };
 
@@ -141,6 +157,13 @@ const cloneTuple = (value: readonly [number, number, number]): [number, number, 
   value[2],
 ];
 
+const cloneQuatTuple = (value: readonly [number, number, number, number]): V3QuatTuple => [
+  value[0],
+  value[1],
+  value[2],
+  value[3],
+];
+
 const lerpTuple = (
   left: readonly [number, number, number],
   right: readonly [number, number, number],
@@ -151,8 +174,25 @@ const lerpTuple = (
   roundMetric(left[2] + (right[2] - left[2]) * amount),
 ];
 
+const slerpQuatTuple = (
+  left: readonly [number, number, number, number],
+  right: readonly [number, number, number, number],
+  amount: number
+): V3QuatTuple => {
+  const quaternion = new THREE.Quaternion(left[0], left[1], left[2], left[3])
+    .normalize()
+    .slerp(new THREE.Quaternion(right[0], right[1], right[2], right[3]).normalize(), amount)
+    .normalize();
+  return [
+    roundMetric(quaternion.x),
+    roundMetric(quaternion.y),
+    roundMetric(quaternion.z),
+    roundMetric(quaternion.w),
+  ];
+};
+
 const finiteTuple = (value: readonly number[] | undefined): boolean => (
-  Array.isArray(value) && value.length === 3 && value.every(Number.isFinite)
+  Array.isArray(value) && (value.length === 3 || value.length === 4) && value.every(Number.isFinite)
 );
 
 const hasClipId = (id: string): id is V3WeaponReferenceClipId => (
@@ -165,6 +205,7 @@ export function getV3WeaponReferenceClip(id: V3WeaponReferenceClipId): V3WeaponR
   return {
     ...clip,
     calibration: clip.calibration ?? DEFAULT_REFERENCE_CALIBRATION,
+    restPose: clip.restPose ?? V3_WEAPON_REFERENCE_SET.restPose,
   };
 }
 
@@ -179,6 +220,7 @@ const sampleFrame = (
         joint,
         {
           rotation: cloneTuple(sample.rotation),
+          quaternion: cloneQuatTuple(sample.quaternion),
           position: cloneTuple(sample.position),
         },
       ])
@@ -203,6 +245,9 @@ const sampleFrame = (
       rotation: previousJoint && nextJoint
         ? lerpTuple(previousJoint.rotation, nextJoint.rotation, amount)
         : cloneTuple(source.rotation),
+      quaternion: previousJoint && nextJoint
+        ? slerpQuatTuple(previousJoint.quaternion, nextJoint.quaternion, amount)
+        : cloneQuatTuple(source.quaternion),
       position: previousJoint && nextJoint
         ? lerpTuple(previousJoint.position, nextJoint.position, amount)
         : cloneTuple(source.position),
@@ -250,6 +295,7 @@ export function analyzeV3WeaponReferenceClip(id: V3WeaponReferenceClipId): V3Wea
     for (const [jointName, joint] of Object.entries(sample.joints)) {
       if (!finiteTuple(joint?.position)) issues.push(`${jointName} has invalid position`);
       if (!finiteTuple(joint?.rotation)) issues.push(`${jointName} has invalid rotation`);
+      if (!finiteTuple(joint?.quaternion)) issues.push(`${jointName} has invalid quaternion`);
     }
   }
 

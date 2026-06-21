@@ -296,7 +296,7 @@ export const BUILT_IN_V3_WEAPONS: readonly V3WeaponManifest[] = [
     lods: createLods('ibv3-aegis-rift-hammer', createBudget(1700, 420, 6, 6, 3, 360)),
     sockets: [
       createSocket('thirdPersonPrimaryGrip', 'handRight', [0.08, -0.1, 0.02], [0, 0, -0.22]),
-      createSocket('thirdPersonOffhandGrip', 'handLeft', [0.6, -0.3, 0.2], [0.1, 0, 0.18]),
+      createSocket('thirdPersonOffhandGrip', 'handLeft', [0.52, -0.27, 0.17], [0.1, 0, 0.18]),
       createSocket('firstPersonPrimaryGrip', 'viewRightHand', [0.18, -0.32, -0.52], [-0.2, 0.08, -0.18]),
       createSocket('firstPersonOffhandGrip', 'viewLeftHand', [-0.18, -0.12, -0.46], [-0.1, -0.08, 0.16]),
     ],

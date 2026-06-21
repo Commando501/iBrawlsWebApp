@@ -6,11 +6,12 @@ import {
 import type { V3SocketName, V3Vec3Tuple } from '../v3/v3ModelTypes';
 import type { V3DetailBoneName } from '../v3/v3RigDetail';
 import type { WeaponPose } from './attackAnimationPresets';
+import type { V3WeaponReferenceClipId } from './v3WeaponReferenceClips';
 import {
-  fitV3WeaponPoseFromReferenceSample,
-  sampleV3WeaponReferenceClip,
-  type V3WeaponReferenceClipId,
-} from './v3WeaponReferenceClips';
+  fitV3RetargetedWeaponPoseFromReferenceSample,
+  sampleV3RetargetedUpperBodyPose,
+  type V3QuatTuple,
+} from './v3MixamoRetarget';
 
 export type V3AnimationWeaponId = 'hammer' | 'sword' | 'pistol';
 export type V3AnimationTrackId =
@@ -31,6 +32,7 @@ export interface V3UpperBodyPose {
   leftArmRotation: THREE.Vector3Tuple;
   rightArmRotation: THREE.Vector3Tuple;
   detailBoneRotations?: Partial<Record<V3DetailBoneName, THREE.Vector3Tuple>>;
+  detailBoneQuaternions?: Partial<Record<V3DetailBoneName, V3QuatTuple>>;
 }
 
 export interface V3GripConstraint {
@@ -39,6 +41,8 @@ export interface V3GripConstraint {
   poleDirection: V3Vec3Tuple;
   maxDrift: number;
   required: boolean;
+  mode?: 'lock' | 'cleanup';
+  cleanupAlpha?: number;
 }
 
 export interface V3ArmIkHint {
@@ -92,27 +96,37 @@ const HAMMER_RIGHT_HAND_POLE: V3Vec3Tuple = [-1, 0.16, -0.18];
 const HAMMER_LEFT_HAND_POLE: V3Vec3Tuple = [1, 0.16, -0.18];
 const RIGHT_ONE_HAND_POLE: V3Vec3Tuple = [-1, 0.08, -0.12];
 
-const rightPrimaryGrip = (poleDirection: V3Vec3Tuple = RIGHT_ONE_HAND_POLE): V3GripConstraint => ({
+const rightPrimaryGrip = (
+  poleDirection: V3Vec3Tuple = RIGHT_ONE_HAND_POLE,
+  mode: V3GripConstraint['mode'] = 'lock'
+): V3GripConstraint => ({
   side: 'right',
   socketName: 'thirdPersonPrimaryGrip',
   poleDirection,
-  maxDrift: 0.035,
+  maxDrift: mode === 'cleanup' ? 0.12 : 0.035,
   required: true,
+  mode,
+  ...(mode === 'cleanup' ? { cleanupAlpha: 0.32 } : {}),
 });
 
-const leftOffhandGrip = (poleDirection: V3Vec3Tuple = HAMMER_LEFT_HAND_POLE): V3GripConstraint => ({
+const leftOffhandGrip = (
+  poleDirection: V3Vec3Tuple = HAMMER_LEFT_HAND_POLE,
+  mode: V3GripConstraint['mode'] = 'lock'
+): V3GripConstraint => ({
   side: 'left',
   socketName: 'thirdPersonOffhandGrip',
   poleDirection,
-  maxDrift: 0.05,
+  maxDrift: mode === 'cleanup' ? 0.2 : 0.05,
   required: true,
+  mode,
+  ...(mode === 'cleanup' ? { cleanupAlpha: 0.32 } : {}),
 });
 
 const HAMMER_GRIP_CONSTRAINTS = [
-  rightPrimaryGrip(HAMMER_RIGHT_HAND_POLE),
-  leftOffhandGrip(HAMMER_LEFT_HAND_POLE),
+  rightPrimaryGrip(HAMMER_RIGHT_HAND_POLE, 'cleanup'),
+  leftOffhandGrip(HAMMER_LEFT_HAND_POLE, 'cleanup'),
 ] as const;
-const SWORD_GRIP_CONSTRAINTS = [rightPrimaryGrip([-1, 0.08, -0.18])] as const;
+const SWORD_GRIP_CONSTRAINTS = [rightPrimaryGrip([-1, 0.08, -0.18], 'cleanup')] as const;
 const PISTOL_GRIP_CONSTRAINTS = [rightPrimaryGrip([-1, 0.04, -0.08])] as const;
 
 const HAMMER_CARRY_POSE: WeaponPose = {
@@ -442,10 +456,19 @@ const shortestAngleDelta = (start: number, end: number): number => {
   return delta;
 };
 
+const normalizeAngle = (angle: number): number => {
+  let normalized = angle % (Math.PI * 2);
+  if (normalized > Math.PI) normalized -= Math.PI * 2;
+  if (normalized < -Math.PI) normalized += Math.PI * 2;
+  return normalized;
+};
+
 const lerpAngle = (start: number, end: number, t: number): number =>
-  t <= 0 ? start : t >= 1 ? end : start + shortestAngleDelta(start, end) * t;
+  normalizeAngle(t <= 0 ? start : t >= 1 ? end : start + shortestAngleDelta(start, end) * t);
 
 const cloneTuple = (value: THREE.Vector3Tuple): THREE.Vector3Tuple => [value[0], value[1], value[2]];
+
+const cloneQuatTuple = (value: V3QuatTuple): V3QuatTuple => [value[0], value[1], value[2], value[3]];
 
 const lerpTuple = (
   from: THREE.Vector3Tuple,
@@ -457,6 +480,18 @@ const lerpTuple = (
   angular ? lerpAngle(from[1], to[1], amount) : lerp(from[1], to[1], amount),
   angular ? lerpAngle(from[2], to[2], amount) : lerp(from[2], to[2], amount),
 ];
+
+const lerpQuatTuple = (
+  from: V3QuatTuple,
+  to: V3QuatTuple,
+  amount: number
+): V3QuatTuple => {
+  const quaternion = new THREE.Quaternion(from[0], from[1], from[2], from[3])
+    .normalize()
+    .slerp(new THREE.Quaternion(to[0], to[1], to[2], to[3]).normalize(), amount)
+    .normalize();
+  return [quaternion.x, quaternion.y, quaternion.z, quaternion.w];
+};
 
 const cloneWeaponPose = (pose: WeaponPose): WeaponPose => ({
   position: cloneTuple(pose.position),
@@ -475,6 +510,14 @@ const cloneUpperBodyPose = (pose: V3UpperBodyPose): V3UpperBodyPose => ({
         cloneTuple(rotation as THREE.Vector3Tuple),
       ])
     ) as Partial<Record<V3DetailBoneName, THREE.Vector3Tuple>>,
+  } : {}),
+  ...(pose.detailBoneQuaternions ? {
+    detailBoneQuaternions: Object.fromEntries(
+      Object.entries(pose.detailBoneQuaternions).map(([joint, quaternion]) => [
+        joint,
+        cloneQuatTuple(quaternion as V3QuatTuple),
+      ])
+    ) as Partial<Record<V3DetailBoneName, V3QuatTuple>>,
   } : {}),
 });
 
@@ -499,6 +542,26 @@ const lerpDetailBoneRotations = (
   ])) as Partial<Record<V3DetailBoneName, THREE.Vector3Tuple>>;
 };
 
+const lerpDetailBoneQuaternions = (
+  from: V3UpperBodyPose['detailBoneQuaternions'],
+  to: V3UpperBodyPose['detailBoneQuaternions'],
+  amount: number
+): V3UpperBodyPose['detailBoneQuaternions'] | undefined => {
+  if (!from && !to) return undefined;
+  const joints = new Set<V3DetailBoneName>([
+    ...Object.keys(from ?? {}) as V3DetailBoneName[],
+    ...Object.keys(to ?? {}) as V3DetailBoneName[],
+  ]);
+  return Object.fromEntries([...joints].map((joint) => [
+    joint,
+    lerpQuatTuple(
+      from?.[joint] ?? [0, 0, 0, 1],
+      to?.[joint] ?? [0, 0, 0, 1],
+      amount
+    ),
+  ])) as Partial<Record<V3DetailBoneName, V3QuatTuple>>;
+};
+
 const lerpWeaponPose = (from: WeaponPose, to: WeaponPose, amount: number): WeaponPose => ({
   position: lerpTuple(from.position, to.position, amount),
   rotation: lerpTuple(from.rotation, to.rotation, amount, true),
@@ -515,6 +578,9 @@ const lerpUpperBodyPose = (
   rightArmRotation: lerpTuple(from.rightArmRotation, to.rightArmRotation, amount, true),
   ...(lerpDetailBoneRotations(from.detailBoneRotations, to.detailBoneRotations, amount)
     ? { detailBoneRotations: lerpDetailBoneRotations(from.detailBoneRotations, to.detailBoneRotations, amount) }
+    : {}),
+  ...(lerpDetailBoneQuaternions(from.detailBoneQuaternions, to.detailBoneQuaternions, amount)
+    ? { detailBoneQuaternions: lerpDetailBoneQuaternions(from.detailBoneQuaternions, to.detailBoneQuaternions, amount) }
     : {}),
 });
 
@@ -539,69 +605,6 @@ const cloneReference = (sourceReference: V3WeaponMotionReference | undefined): V
     : undefined
 );
 
-const REFERENCE_JOINT_ROTATION_SCALE: Partial<Record<V3DetailBoneName, THREE.Vector3Tuple>> = {
-  chest: [0.95, 0.95, 0.95],
-  neck: [0.45, 0.45, 0.45],
-  head: [0.34, 0.34, 0.34],
-  clavicleLeft: [0.9, 0.9, 0.9],
-  upperArmLeft: [0.95, 0.95, 0.95],
-  forearmLeft: [0.9, 0.9, 0.9],
-  handLeft: [0.55, 0.55, 0.55],
-  clavicleRight: [0.9, 0.9, 0.9],
-  upperArmRight: [0.95, 0.95, 0.95],
-  forearmRight: [0.9, 0.9, 0.9],
-  handRight: [0.55, 0.55, 0.55],
-};
-
-const REFERENCE_DETAIL_JOINTS = [
-  'chest',
-  'neck',
-  'head',
-  'clavicleLeft',
-  'upperArmLeft',
-  'forearmLeft',
-  'handLeft',
-  'clavicleRight',
-  'upperArmRight',
-  'forearmRight',
-  'handRight',
-] as const satisfies readonly V3DetailBoneName[];
-
-const clampReferenceRotation = (value: number): number =>
-  THREE.MathUtils.clamp(value, -1.45, 1.45);
-
-const referenceRotation = (
-  joint: V3DetailBoneName,
-  rotation: readonly [number, number, number] | undefined
-): THREE.Vector3Tuple => {
-  const scale = REFERENCE_JOINT_ROTATION_SCALE[joint] ?? [0.8, 0.8, 0.8];
-  const source = rotation ?? [0, 0, 0];
-  return [
-    clampReferenceRotation(source[0] * scale[0]),
-    clampReferenceRotation(source[1] * scale[1]),
-    clampReferenceRotation(source[2] * scale[2]),
-  ];
-};
-
-const upperBodyPoseFromReference = (
-  clipId: V3WeaponReferenceClipId,
-  normalizedTime: number
-): V3UpperBodyPose => {
-  const sample = sampleV3WeaponReferenceClip(clipId, { normalizedTime });
-  const detailBoneRotations = Object.fromEntries(REFERENCE_DETAIL_JOINTS.map((joint) => [
-    joint,
-    referenceRotation(joint, sample.joints[joint]?.rotation),
-  ])) as Partial<Record<V3DetailBoneName, THREE.Vector3Tuple>>;
-
-  return {
-    upperTorsoRotation: detailBoneRotations.chest ?? [0, 0, 0],
-    headRotation: detailBoneRotations.head ?? [0, 0, 0],
-    leftArmRotation: detailBoneRotations.upperArmLeft ?? [0, 0, 0],
-    rightArmRotation: detailBoneRotations.upperArmRight ?? [0, 0, 0],
-    detailBoneRotations,
-  };
-};
-
 const referenceMotionSample = (
   weapon: Extract<V3AnimationWeaponId, 'hammer' | 'sword'>,
   trackId: V3WeaponMotionSample['trackId'],
@@ -610,7 +613,7 @@ const referenceMotionSample = (
   gripConstraints: readonly V3GripConstraint[],
   ikHints: readonly V3ArmIkHint[]
 ): V3WeaponMotionSample => {
-  const fit = fitV3WeaponPoseFromReferenceSample(clipId, {
+  const fit = fitV3RetargetedWeaponPoseFromReferenceSample(clipId, {
     normalizedTime,
     weapon,
   });
@@ -620,7 +623,7 @@ const referenceMotionSample = (
     trackSource: 'v3MixamoWeaponReference',
     phase: trackId === 'carry' ? 0 : clampV3MotionPhase(normalizedTime),
     weaponPose: fit.weaponPose,
-    upperBodyPose: upperBodyPoseFromReference(clipId, fit.normalizedTime),
+    upperBodyPose: sampleV3RetargetedUpperBodyPose(clipId, fit.normalizedTime),
     gripConstraints: cloneConstraints(gripConstraints),
     ikHints: cloneHints(ikHints),
     reference: reference(clipId, fit.normalizedTime),
@@ -737,6 +740,15 @@ const mixamoTrackReference = (
       ikHints: [{ side: 'right', poleDirection: SWORD_GRIP_CONSTRAINTS[0].poleDirection }],
     };
   }
+  if (trackId === 'sword_lunge') {
+    return {
+      weapon: 'sword',
+      clipId: 'sword_outward_slash',
+      normalizedTime: lerp(0, 0.18, easeInOutCubic(t)),
+      gripConstraints: SWORD_GRIP_CONSTRAINTS,
+      ikHints: [{ side: 'right', poleDirection: SWORD_GRIP_CONSTRAINTS[0].poleDirection }],
+    };
+  }
   if (trackId === 'sword_recover') {
     return {
       weapon: 'sword',
@@ -823,22 +835,6 @@ export function sampleV3WeaponMotionTrack(
       ...sampleV3WeaponMotionCarry(track.weapon),
       trackId,
       phase: safePhase,
-    };
-  }
-  if (trackId === 'sword_lunge') {
-    const carry = sampleV3WeaponMotionCarry('sword');
-    const endpoint = getV3WeaponMotionTrack('sword_lunge').keyframes[getV3WeaponMotionTrack('sword_lunge').keyframes.length - 1];
-    const eased = easeOutCubic(safePhase);
-    return {
-      weapon: 'sword',
-      trackId,
-      trackSource: 'v3MixamoWeaponReference',
-      phase: safePhase,
-      weaponPose: lerpWeaponPose(carry.weaponPose, endpoint.weaponPose, eased),
-      upperBodyPose: lerpUpperBodyPose(carry.upperBodyPose, endpoint.upperBodyPose, eased),
-      gripConstraints: cloneConstraints(endpoint.gripConstraints),
-      ikHints: cloneHints(track.ikHints),
-      reference: cloneReference(carry.reference),
     };
   }
   const referenceTrack = mixamoTrackReference(trackId, safePhase);

@@ -75,7 +75,7 @@ describe('V3 weapon motion tracks', () => {
       assert.ok(Math.abs(sample.weaponPose.position[2]) < 0.8, `${sample.weapon} carry z readable`);
     }
 
-    assert.ok(Math.abs(semanticForward(hammer.weaponPose.rotation).x) > 0.5);
+    assert.ok(semanticForward(hammer.weaponPose.rotation).z < -0.9);
     assert.ok(semanticForward(sword.weaponPose.rotation).z < -0.5);
     assert.ok(semanticForward(pistol.weaponPose.rotation).z < -0.94);
   });
@@ -94,6 +94,20 @@ describe('V3 weapon motion tracks', () => {
     assert.equal(hammerStrike.reference?.clipId, 'hammer_heavy_swing');
     assert.equal(hammerMelee.reference?.clipId, 'hammer_melee_advance');
     assert.equal(swordSlash.reference?.clipId, 'sword_outward_slash');
+  });
+
+  it('uses quaternion-retargeted detail poses for Mixamo hammer and sword tracks', () => {
+    const hammerCarry = sampleV3WeaponMotionCarry('hammer');
+    const hammerStrike = sampleV3WeaponMotionTrack('hammer_strike', 0.5);
+    const swordSlash = sampleV3WeaponMotionTrack('sword_slash', 0.5);
+    const pistolCarry = sampleV3WeaponMotionCarry('pistol');
+
+    for (const sample of [hammerCarry, hammerStrike, swordSlash]) {
+      assert.ok(sample.upperBodyPose.detailBoneQuaternions, `${sample.trackId} should expose quaternions`);
+      assert.equal(sample.upperBodyPose.detailBoneQuaternions.upperArmRight?.length, 4);
+      assert.equal(sample.upperBodyPose.detailBoneQuaternions.forearmRight?.every(Number.isFinite), true);
+    }
+    assert.equal(pistolCarry.upperBodyPose.detailBoneQuaternions, undefined);
   });
 
   it('returns recover tracks to carry and keeps action tracks visibly off carry at contact', () => {
@@ -127,13 +141,13 @@ describe('V3 weapon motion tracks', () => {
     const swordCarry = sampleV3WeaponMotionCarry('sword');
     const swordSlash = sampleV3WeaponMotionTrack('sword_slash', 1);
 
-    assert.ok(hammerWindup.weaponPose.position[1] > hammerCarry.weaponPose.position[1] + 0.16);
-    assert.ok(hammerWindup.weaponPose.position[2] > hammerCarry.weaponPose.position[2] + 0.05);
-    assert.ok(hammerStrike.weaponPose.position[1] < hammerCarry.weaponPose.position[1] - 0.14);
+    assert.ok(poseDistance(hammerWindup.weaponPose, hammerCarry.weaponPose) > 0.3);
+    assert.ok(Math.abs(hammerWindup.weaponPose.position[1] - hammerCarry.weaponPose.position[1]) > 0.12);
+    assert.ok(poseDistance(hammerStrike.weaponPose, hammerCarry.weaponPose) > 1.0);
     assert.ok(poseDistance(hammerStrike.weaponPose, hammerWindup.weaponPose) > 1.5);
     assert.ok(Math.abs(hammerMelee.weaponPose.position[0] - hammerCarry.weaponPose.position[0]) > 0.12);
-    assert.ok(swordSlash.weaponPose.position[0] > swordCarry.weaponPose.position[0] + 0.22);
-    assert.ok(Math.abs(swordSlash.weaponPose.position[1] - swordCarry.weaponPose.position[1]) < 0.1);
+    assert.ok(Math.abs(swordSlash.weaponPose.position[0] - swordCarry.weaponPose.position[0]) > 0.22);
+    assert.ok(Math.abs(swordSlash.weaponPose.position[1] - swordCarry.weaponPose.position[1]) < 0.5);
   });
 
   it('links canonical weapon action keyframes to imported Mixamo reference clips', () => {

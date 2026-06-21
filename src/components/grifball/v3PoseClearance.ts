@@ -752,6 +752,7 @@ const applyPoseCase = (
     isLunging: 'isLunging' in definition ? definition.isLunging : false,
     animationClockMs: 1000,
     isLocalV3Animation: true,
+    v3PoseAlphaOverride: 1,
     settings: { hammerAttackAnimation: 'highFidelity' },
   });
 

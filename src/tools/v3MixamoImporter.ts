@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { basename, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import * as THREE from 'three';
 import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
 import type { V3DetailBoneName } from '../components/v3/v3RigDetail';
@@ -33,6 +33,7 @@ export const V3_MIXAMO_WEAPON_REFERENCE_SOURCE_FILE_NAMES = {
 export type V3MixamoRetargetedClipId = 'idle' | 'walk' | 'run';
 export type V3MixamoWeaponReferenceClipId = (typeof V3_MIXAMO_WEAPON_REFERENCE_CLIP_IDS)[number];
 export type V3MixamoWeaponReferenceRuntimeRole = 'runtimeReference' | 'analysisOnly';
+export type V3MixamoQuaternionTuple = [number, number, number, number];
 
 export interface V3MixamoJointKeyframe {
   t: number;
@@ -97,12 +98,28 @@ export interface V3MixamoSanitizationReport {
 
 export interface V3MixamoWeaponReferenceJointFrame {
   rotation: [number, number, number];
+  quaternion: V3MixamoQuaternionTuple;
   position: [number, number, number];
 }
 
 export interface V3MixamoWeaponReferenceJointTrack {
   rotations: [number, number, number][];
+  quaternions: V3MixamoQuaternionTuple[];
   positions: [number, number, number][];
+}
+
+export interface V3MixamoWeaponReferenceRestJoint {
+  quaternion: V3MixamoQuaternionTuple;
+  position: [number, number, number];
+}
+
+export interface V3MixamoWeaponReferenceRestPoseArtifact {
+  source: V3MixamoSourceSummary;
+  joints: Partial<Record<V3DetailBoneName, V3MixamoWeaponReferenceRestJoint>>;
+  metrics: {
+    mappedJointCount: number;
+    nonFiniteTransformCount: number;
+  };
 }
 
 export interface V3MixamoWeaponReferenceClipMetrics {
@@ -151,6 +168,7 @@ export interface V3MixamoWeaponReferenceSetArtifact {
   schemaVersion: 'v3-mixamo-weapon-reference-set/v1';
   fps: number;
   sources: Record<V3MixamoWeaponReferenceClipId, V3MixamoSourceSummary>;
+  restPose: V3MixamoWeaponReferenceRestPoseArtifact;
   clips: V3MixamoWeaponReferenceClipArtifact[];
   metrics: {
     sourceFileCount: 5;
@@ -169,6 +187,7 @@ export interface BuildV3MixamoWeaponReferenceClipOptions {
 
 export interface BuildV3MixamoWeaponReferenceSetOptions {
   sourceFiles: Record<V3MixamoWeaponReferenceClipId, string>;
+  tPoseFilePath?: string;
   fps?: number;
 }
 
@@ -282,6 +301,13 @@ const quaternionAt = (track: THREE.KeyframeTrack, frameIndex: number): THREE.Qua
     Number(track.values[index + 3] ?? 1)
   ).normalize();
 };
+
+const quaternionTuple = (quaternion: THREE.Quaternion): V3MixamoQuaternionTuple => [
+  round(quaternion.x),
+  round(quaternion.y),
+  round(quaternion.z),
+  round(quaternion.w),
+];
 
 const vectorAt = (track: THREE.KeyframeTrack, frameIndex: number): THREE.Vector3 => {
   const index = Math.min(Math.max(0, frameIndex), track.times.length - 1) * 3;
@@ -803,10 +829,58 @@ const countNonFiniteReferenceTransforms = (
   for (const keyframe of keyframes) {
     for (const joint of Object.values(keyframe.joints)) {
       if (!joint) continue;
-      if (!finiteTuple(joint.position) || !finiteTuple(joint.rotation)) count += 1;
+      if (!finiteTuple(joint.position) || !finiteTuple(joint.rotation) || !finiteTuple(joint.quaternion)) count += 1;
     }
   }
   return count;
+};
+
+const buildWeaponReferenceRestPose = (
+  filePath: string,
+  buffer: Buffer
+): V3MixamoWeaponReferenceRestPoseArtifact => {
+  const root = parseFbxBuffer(buffer);
+  const animation = root.animations[0];
+  if (animation) {
+    const mixer = new THREE.AnimationMixer(root);
+    mixer.clipAction(animation).play();
+    mixer.setTime(0);
+  }
+  root.updateMatrixWorld(true);
+  const bones = collectMixamoBones(root);
+  const chest = bones.get('Spine2');
+  const chestWorldPosition = chest?.getWorldPosition(new THREE.Vector3()) ?? new THREE.Vector3();
+  const inverseChestWorldQuaternion = (chest?.getWorldQuaternion(new THREE.Quaternion()) ?? new THREE.Quaternion())
+    .invert();
+  const joints: V3MixamoWeaponReferenceRestPoseArtifact['joints'] = {};
+
+  for (const [mixamoBone, v3Joint] of Object.entries(WEAPON_REFERENCE_JOINTS) as [string, V3DetailBoneName][]) {
+    const bone = bones.get(mixamoBone);
+    if (!bone) continue;
+    const worldPosition = bone.getWorldPosition(new THREE.Vector3());
+    const chestSpace = mixamoBone === 'Spine2'
+      ? new THREE.Vector3()
+      : worldPosition.sub(chestWorldPosition).applyQuaternion(inverseChestWorldQuaternion).multiplyScalar(MIXAMO_UNIT_SCALE);
+    joints[v3Joint] = {
+      quaternion: quaternionTuple(bone.quaternion.clone().normalize()),
+      position: [round(chestSpace.x), round(chestSpace.y), round(chestSpace.z)],
+    };
+  }
+
+  const nonFiniteTransformCount = Object.values(joints).filter((joint) => (
+    !joint ||
+    !finiteTuple(joint.position) ||
+    !finiteTuple(joint.quaternion)
+  )).length;
+
+  return {
+    source: sourceSummary(filePath, buffer),
+    joints,
+    metrics: {
+      mappedJointCount: Object.keys(joints).length,
+      nonFiniteTransformCount,
+    },
+  };
 };
 
 const buildWeaponReferenceClipFromBuffer = (
@@ -856,6 +930,7 @@ const buildWeaponReferenceClipFromBuffer = (
         .clone()
         .multiply(quaternionAtNormalizedTime(rotationTrack, normalizedTime))
         .normalize();
+      const sourceQuaternion = quaternionAtNormalizedTime(rotationTrack, normalizedTime);
       const euler = new THREE.Euler().setFromQuaternion(delta, 'XYZ');
       const worldPosition = bone.getWorldPosition(new THREE.Vector3());
       const chestSpace = mixamoBone === 'Spine2'
@@ -863,6 +938,7 @@ const buildWeaponReferenceClipFromBuffer = (
         : worldPosition.sub(chestWorldPosition).applyQuaternion(inverseChestWorldQuaternion).multiplyScalar(MIXAMO_UNIT_SCALE);
       joints[v3Joint] = {
         rotation: [round(euler.x), round(euler.y), round(euler.z)],
+        quaternion: quaternionTuple(sourceQuaternion),
         position: [round(chestSpace.x), round(chestSpace.y), round(chestSpace.z)],
       };
     }
@@ -882,6 +958,7 @@ const buildWeaponReferenceClipFromBuffer = (
     if (frames.length === 0) continue;
     joints[v3Joint] = {
       rotations: frames.map((frame) => frame.rotation),
+      quaternions: frames.map((frame) => frame.quaternion),
       positions: frames.map((frame) => frame.position),
     };
   }
@@ -935,6 +1012,10 @@ export function buildV3MixamoWeaponReferenceSetArtifact(
   options: BuildV3MixamoWeaponReferenceSetOptions
 ): V3MixamoWeaponReferenceSetArtifact {
   const fps = options.fps ?? 30;
+  const firstSourcePath = options.sourceFiles[V3_MIXAMO_WEAPON_REFERENCE_CLIP_IDS[0]];
+  const tPoseFilePath = options.tPoseFilePath ?? join(dirname(firstSourcePath), V3_MIXAMO_DEFAULT_SOURCE_FILE_NAMES.tPose);
+  const tPoseBuffer = readFileSync(tPoseFilePath);
+  const restPose = buildWeaponReferenceRestPose(tPoseFilePath, tPoseBuffer);
   const clips = V3_MIXAMO_WEAPON_REFERENCE_CLIP_IDS.map((clipId) => (
     buildV3MixamoWeaponReferenceClipArtifact({
       clipId,
@@ -949,6 +1030,7 @@ export function buildV3MixamoWeaponReferenceSetArtifact(
       V3MixamoWeaponReferenceClipId,
       V3MixamoSourceSummary
     >,
+    restPose,
     clips,
     metrics: {
       sourceFileCount: 5,

@@ -42,8 +42,8 @@ describe('V3 weapon scale profile', () => {
       assert.equal(Object.isFrozen(first), true, `${weapon} profile is immutable`);
     }
 
-    assert.equal(getV3WeaponScaleProfile('hammer').targetBodyHeightRatio, 0.72);
-    assert.equal(getV3WeaponScaleProfile('sword').targetBodyHeightRatio, 0.64);
+    assert.equal(getV3WeaponScaleProfile('hammer').targetBodyHeightRatio, 0.75);
+    assert.equal(getV3WeaponScaleProfile('sword').targetBodyHeightRatio, 0.5);
     assert.equal(getV3WeaponScaleProfile('pistol').targetBodyHeightRatio, 0.16);
   });
 
@@ -59,7 +59,7 @@ describe('V3 weapon scale profile', () => {
     assert.equal(objectReport.handSpan, 0.18);
     assert.equal(objectReport.currentBodyHeightRatio, 1.333333);
     assert.equal(objectReport.currentHandSpanRatio, 2.333333);
-    assert.equal(objectReport.recommendedUniformScale, 0.54);
+    assert.equal(objectReport.recommendedUniformScale, 0.5625);
     assert.equal(objectReport.ready, false);
     assert.deepEqual(objectReport.issues.map((issue) => issue.code), [
       'height-ratio-high',
@@ -76,8 +76,8 @@ describe('V3 weapon scale profile', () => {
     const second = applyV3WeaponScaleProfile(hammerModel, 'hammer', { bodyBounds });
     const afterSecond = new THREE.Box3().setFromObject(hammerModel).getSize(new THREE.Vector3());
 
-    assert.equal(applied.appliedUniformScale, 0.54);
-    assert.equal(Number(afterFirst.y.toFixed(6)), 1.296);
+    assert.equal(applied.appliedUniformScale, 0.5625);
+    assert.equal(Number(afterFirst.y.toFixed(6)), 1.35);
     assert.deepEqual(
       afterFirst.toArray().map((value) => Number(value.toFixed(6))),
       afterSecond.toArray().map((value) => Number(value.toFixed(6)))
@@ -85,7 +85,7 @@ describe('V3 weapon scale profile', () => {
     assert.equal(second.appliedUniformScale, 1);
     assert.equal(hammerModel.userData.v3WeaponScaleProfile.weapon, 'hammer');
     assert.equal(hammerModel.userData.v3WeaponScaleProfile.modelSystem, 'v3');
-    assert.equal(hammerModel.userData.v3WeaponScaleProfile.appliedUniformScale, 0.54);
+    assert.equal(hammerModel.userData.v3WeaponScaleProfile.appliedUniformScale, 0.5625);
   });
 
   it('uses explicit hand span context when the caller has measured V3 hand sockets', () => {

@@ -45,6 +45,8 @@ describe('v3WeaponReferenceClips', () => {
         assert.equal(finiteTuple(sample.joints.handLeft?.position ?? []), true, `${clipId} left hand position`);
         assert.equal(finiteTuple(sample.joints.handRight?.rotation ?? []), true, `${clipId} right hand rotation`);
         assert.equal(finiteTuple(sample.joints.handLeft?.rotation ?? []), true, `${clipId} left hand rotation`);
+        assert.equal(finiteTuple(sample.joints.handRight?.quaternion ?? []), true, `${clipId} right hand quaternion`);
+        assert.equal(sample.joints.handRight?.quaternion.length, 4, `${clipId} right hand quaternion length`);
       }
     }
   });
@@ -57,6 +59,9 @@ describe('v3WeaponReferenceClips', () => {
     assert.equal(finiteTuple(clip.calibration?.scale ?? []), true);
     assert.ok((clip.calibration?.shoulderSpan ?? 0) > 0.1);
     assert.ok((clip.calibration?.handSpan ?? 0) > 0.1);
+    assert.equal(clip.restPose?.source.fileName, 'T-Pose.fbx');
+    assert.equal(finiteTuple(clip.restPose?.joints.upperArmRight?.quaternion ?? []), true);
+    assert.equal(finiteTuple(clip.restPose?.joints.handRight?.position ?? []), true);
   });
 
   it('reports useful reference motion metrics for hammer and sword clips', () => {

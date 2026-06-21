@@ -139,6 +139,8 @@ describe('v3MixamoImporter', () => {
     assert.ok(firstFrame.joints.handRight);
     assert.ok(firstFrame.joints.handLeft);
     assert.deepEqual(firstFrame.joints.chest.position, [0, 0, 0]);
+    assert.equal(firstFrame.joints.handRight.quaternion.length, 4);
+    assert.equal(firstFrame.joints.handRight.quaternion.every(Number.isFinite), true);
     assert.equal(firstFrame.joints.handRight.position.every(Number.isFinite), true);
     assert.equal(firstFrame.joints.handLeft.position.every(Number.isFinite), true);
   });
@@ -167,6 +169,12 @@ describe('v3MixamoImporter', () => {
     );
     assert.equal(referenceSet.metrics.clipCount, 5);
     assert.equal(referenceSet.metrics.analysisOnlyClipCount, 1);
+    assert.equal(referenceSet.restPose.source.fileName, 'T-Pose.fbx');
+    assert.match(referenceSet.restPose.source.sha256, /^[a-f0-9]{64}$/);
+    assert.ok(referenceSet.restPose.joints.chest);
+    assert.ok(referenceSet.restPose.joints.upperArmRight);
+    assert.equal(referenceSet.restPose.joints.upperArmRight.quaternion.length, 4);
+    assert.equal(referenceSet.restPose.joints.upperArmRight.position.every(Number.isFinite), true);
 
     const serialized = JSON.stringify(referenceSet);
     assert.equal(serialized.includes(referenceRoot), false);

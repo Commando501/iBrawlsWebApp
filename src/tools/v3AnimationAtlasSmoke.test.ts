@@ -149,6 +149,10 @@ describe('v3AnimationAtlasSmoke', () => {
     assert.ok(overlayData.rightHandTrail.length >= 3);
     assert.ok(overlayData.leftHandTrail.length >= 3);
     assert.ok(overlayData.rightHandTrail.every((point: number[]) => point.length === 3 && point.every(Number.isFinite)));
+    assert.ok(overlayData.runtimeRightArm.length >= 3);
+    assert.ok(overlayData.runtimeLeftArm.length >= 3);
+    assert.equal(typeof overlayData.retargetAlignment.ready, 'boolean');
+    assert.equal(typeof overlayData.retargetAlignment.right.palmForwardAlignment, 'number');
   });
 
   test('locomotion atlas can preview movement with each V3 carry weapon without changing Mixamo motion', () => {

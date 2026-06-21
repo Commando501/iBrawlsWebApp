@@ -18,6 +18,7 @@ import {
 import { createCombatantMeshRig } from './combatantModels';
 import {
   sampleV3FirstPersonWeaponPose,
+  sampleV3UpperBodyWeaponPose,
   sampleV3ThirdPersonWeaponPose,
   sampleV3WeaponCarryPose,
 } from './v3AnimationFidelity';
@@ -109,10 +110,10 @@ describe('animateV3CombatantModel', () => {
       settings: { hammerAttackAnimation: 'highFidelity' },
     });
 
-    assert.notEqual(model.userData.upperTorso.rotation.y, 0);
-    assert.notEqual(model.userData.rightArm.rotation.x, 0);
-    assert.notEqual(model.userData.leftArm.rotation.x, 0);
     const detailBones = model.userData.v3DetailBones as Record<string, THREE.Group>;
+    assert.notEqual(detailBones.chest.rotation.x, 0);
+    assert.notEqual(detailBones.upperArmRight.rotation.x, 0);
+    assert.notEqual(detailBones.upperArmLeft.rotation.x, 0);
     assert.equal(model.userData.v3RetargetedClip?.clipId, 'walk');
     assert.notEqual(detailBones.thighLeft.rotation.x, 0);
     assert.notEqual(detailBones.thighRight.rotation.x, 0);
@@ -136,8 +137,9 @@ describe('animateV3CombatantModel', () => {
       settings: {},
     });
 
-    assert.notEqual(model.userData.upperTorso.rotation.x, 0);
-    assert.notEqual(model.userData.rightArm.rotation.x, 0);
+    const detailBones = model.userData.v3DetailBones as Record<string, THREE.Group>;
+    assert.notEqual(detailBones.chest.rotation.x, 0);
+    assert.notEqual(detailBones.upperArmRight.rotation.x, 0);
     assert.notEqual(model.userData.leftLeg.rotation.x, 0);
     assert.notEqual(model.userData.rightLeg.rotation.x, 0);
   });
@@ -167,6 +169,51 @@ describe('animateV3CombatantModel', () => {
     assert.notEqual(detailBones.thighRight.rotation.x, 0);
     assert.equal(model.userData.v3RetargetedClip?.clipId, 'walk');
     assert.notEqual(detailBones.footLeft.rotation.x, 0);
+  });
+
+  it('supports exact absolute Mixamo weapon pose sampling for atlas review', () => {
+    const model = createV3Model();
+    const refs = createInitialGrifballThreeRefs();
+    const detailBones = model.userData.v3DetailBones as Record<string, THREE.Group>;
+    const settings = {
+      hammerAttackAnimation: 'highFidelity',
+      hammerSlamWindupTime: 0.45,
+      hammerSlamAttackTime: 0.3,
+      hammerReloadTime: 0.6,
+      hammerMeleeSpeed: 0.24,
+      swordSlashSpeed: 0.22,
+    } as const;
+    const weaponTimer = 0.235;
+    const expected = sampleV3UpperBodyWeaponPose({
+      activeWeapon: 'hammer',
+      weaponState: 'swing_up',
+      weaponTimer,
+      isLunging: false,
+      settings,
+    });
+    const expectedChest = expected.detailBoneQuaternions?.chest;
+    assert.ok(expectedChest, 'hammer windup should provide a retargeted chest quaternion');
+
+    animateV3CombatantModel({
+      refs,
+      mesh: model,
+      vel: new THREE.Vector3(0, 0, 0),
+      yaw: 0,
+      hp: 100,
+      activeWeapon: 'hammer',
+      weaponState: 'swing_up',
+      weaponTimer,
+      dt: 1 / 60,
+      settings,
+      animationClockMs: 522,
+      isLocalV3Animation: true,
+      v3PoseAlphaOverride: 1,
+    });
+
+    assert.ok(
+      detailBones.chest.quaternion.angleTo(new THREE.Quaternion(...expectedChest)) < 0.003,
+      'exact review pose should not be softened by frame dt smoothing'
+    );
   });
 
   it('pistol recoil affects upper-body groups without disturbing planted feet', () => {
@@ -220,10 +267,17 @@ describe('animateV3CombatantModel', () => {
         weapon,
         `${weapon} carry metadata should be stored on the model`
       );
-      assert.ok(
-        Math.abs(model.userData.upperTorso.rotation.x - expectedCarry.upperBodyPose.upperTorsoRotation[0]) < 0.001,
-        `${weapon} upper torso should use carry pose`
-      );
+      if (expectedCarry.upperBodyPose.detailBoneQuaternions?.chest) {
+        assert.ok(
+          detailBones.chest.quaternion.angleTo(new THREE.Quaternion(...expectedCarry.upperBodyPose.detailBoneQuaternions.chest)) < 0.003,
+          `${weapon} chest detail bone should use carry pose`
+        );
+      } else {
+        assert.ok(
+          Math.abs(model.userData.upperTorso.rotation.x - expectedCarry.upperBodyPose.upperTorsoRotation[0]) < 0.001,
+          `${weapon} upper torso should use carry pose`
+        );
+      }
     }
   });
 

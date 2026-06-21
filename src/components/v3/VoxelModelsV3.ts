@@ -517,33 +517,88 @@ export function getV3BuiltinWeaponVoxels(
   const colors = createColors(false, customHue);
   const voxels: VoxelData[] = [];
   if (weapon === 'hammer') {
-    addTranslatedBox(voxels, [3, 22, 3], [0, 0, 0], roleColor('undersuit', colors, paintJob));
-    addTranslatedBox(voxels, [7, 3, 5], [-2, -2, -1], roleColor('secondary', colors, paintJob));
-    addTranslatedBox(voxels, [5, 2, 5], [-1, 5, -1], roleColor('accent', colors, paintJob));
-    addTranslatedBox(voxels, [5, 2, 5], [-1, 11, -1], roleColor('accent', colors, paintJob));
-    addTranslatedBox(voxels, [11, 5, 7], [-4, 18, -2], roleColor('primary', colors, paintJob));
-    addTranslatedBox(voxels, [3, 7, 5], [-5, 17, -1], roleColor('fixed', colors, paintJob));
-    addTranslatedBox(voxels, [3, 7, 5], [5, 17, -1], roleColor('fixed', colors, paintJob));
-    for (let x = -3; x <= 5; x += 2) {
-      voxels.push({ x, y: 22, z: 5, color: roleColor('emissive', colors, paintJob), emissive: roleEmissive('emissive', paintJob, true) });
-      voxels.push({ x, y: 18, z: 5, color: roleColor('emissive', colors, paintJob), emissive: roleEmissive('emissive', paintJob, true) });
+    // Gravity hammer: a long two-handed haft topped by a massive forked head
+    // with a glowing energy core, scaled to ~3/4 of the character's height.
+    const emissive = (x: number, y: number, z: number, role: 'emissive' | 'accent') =>
+      voxels.push({
+        x,
+        y,
+        z,
+        color: roleColor(role, colors, paintJob),
+        emissive: roleEmissive(role, paintJob, true),
+      });
+
+    // Counterweight pommel and the long wrapped haft.
+    addTranslatedBox(voxels, [5, 3, 5], [-2, 0, -2], roleColor('fixed', colors, paintJob));
+    addTranslatedBox(voxels, [3, 24, 3], [-1, 2, -1], roleColor('undersuit', colors, paintJob));
+    for (let y = 4; y <= 12; y += 2) {
+      addTranslatedBox(voxels, [5, 1, 5], [-2, y, -2], roleColor('secondary', colors, paintJob));
+    }
+
+    // Collar, underside lip, broad head block, and beveled crown.
+    addTranslatedBox(voxels, [5, 3, 7], [-2, 22, -3], roleColor('fixed', colors, paintJob));
+    addTranslatedBox(voxels, [9, 1, 9], [-4, 24, -4], roleColor('fixed', colors, paintJob));
+    addTranslatedBox(voxels, [9, 8, 8], [-4, 25, -4], roleColor('primary', colors, paintJob));
+    addTranslatedBox(voxels, [7, 2, 7], [-3, 33, -3], roleColor('fixed', colors, paintJob));
+
+    // Twin glowing fork prongs and energy core on the forward striking face.
+    for (let y = 26; y <= 32; y++) {
+      emissive(-3, y, 4, 'accent');
+      emissive(-2, y, 4, 'emissive');
+      emissive(3, y, 4, 'emissive');
+      emissive(4, y, 4, 'accent');
+    }
+    for (let x = -3; x <= 4; x++) {
+      emissive(x, 29, 4, 'emissive');
+    }
+    // Energy line feeding up the front of the haft, plus a pommel ring.
+    for (let y = 14; y <= 23; y++) {
+      emissive(0, y, 2, 'emissive');
+    }
+    for (let x = -2; x <= 2; x++) {
+      emissive(x, 1, 3, 'accent');
     }
     return voxels;
   }
   if (weapon === 'sword') {
-    addBox(voxels, [3, 7, 3], roleColor('undersuit', colors, paintJob));
-    addTranslatedBox(voxels, [8, 2, 3], [-3, 5, 0], roleColor('primary', colors, paintJob));
-    for (let y = 7; y < 35; y++) {
-      voxels.push({ x: 1, y, z: 1, color: roleColor('emissive', colors, paintJob), emissive: roleEmissive('emissive', paintJob, true) });
-      if (y % 2 === 0) {
-        voxels.push({ x: 0, y, z: 1, color: roleColor('accent', colors, paintJob), emissive: roleEmissive('accent', paintJob, true) });
-        voxels.push({ x: 2, y, z: 1, color: roleColor('accent', colors, paintJob), emissive: roleEmissive('accent', paintJob, true) });
-      } else {
-        voxels.push({ x: -1, y, z: 1, color: roleColor('secondary', colors, paintJob) });
-        voxels.push({ x: 3, y, z: 1, color: roleColor('secondary', colors, paintJob) });
+    // Energy katar: an H-frame fist grip with a forward broad energy blade that
+    // splits into twin prongs, sized to ~1/2 of the character's height.
+    const blade = (x: number, y: number, role: 'emissive' | 'accent') =>
+      voxels.push({
+        x,
+        y,
+        z: 1,
+        color: roleColor(role, colors, paintJob),
+        emissive: roleEmissive(role, paintJob, true),
+      });
+
+    // Base guard, side rails, twin cross grip bars, and the blade emitter.
+    addTranslatedBox(voxels, [7, 1, 3], [-3, 0, 0], roleColor('secondary', colors, paintJob));
+    addTranslatedBox(voxels, [2, 9, 3], [-3, 1, 0], roleColor('primary', colors, paintJob));
+    addTranslatedBox(voxels, [2, 9, 3], [2, 1, 0], roleColor('primary', colors, paintJob));
+    addTranslatedBox(voxels, [7, 2, 3], [-3, 3, 0], roleColor('undersuit', colors, paintJob));
+    addTranslatedBox(voxels, [7, 2, 3], [-3, 6, 0], roleColor('undersuit', colors, paintJob));
+    addTranslatedBox(voxels, [7, 3, 3], [-3, 9, 0], roleColor('fixed', colors, paintJob));
+    addTranslatedBox(voxels, [5, 1, 3], [-2, 11, 0], roleColor('accent', colors, paintJob));
+
+    // Broad katar blade base tapering toward the split.
+    for (let y = 12; y <= 17; y++) {
+      const half = Math.max(1, 3 - Math.floor((y - 12) * 0.4));
+      for (let x = -half; x <= half + 1; x++) {
+        const edge = x === -half || x === half + 1;
+        blade(x, y, edge ? 'accent' : 'emissive');
       }
     }
-    voxels.push({ x: 1, y: 35, z: 1, color: roleColor('emissive', colors, paintJob), emissive: roleEmissive('emissive', paintJob, true) });
+    // Twin energy prongs sweeping out to points.
+    for (let y = 18; y <= 25; y++) {
+      const spread = Math.min(2, Math.floor((y - 18) * 0.4));
+      blade(-1 - spread, y, 'accent');
+      blade(2 + spread, y, 'accent');
+      if (y <= 21) {
+        blade(0, y, 'emissive');
+        blade(1, y, 'emissive');
+      }
+    }
     return voxels;
   }
 
