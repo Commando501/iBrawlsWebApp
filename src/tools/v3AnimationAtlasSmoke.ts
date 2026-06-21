@@ -26,16 +26,35 @@ import {
 } from '../components/grifball/v3RetargetedAnimationClips';
 import { analyzeV3LowerBodyContinuity } from '../components/grifball/v3LowerBodyContinuity';
 import { analyzeV3SlotContinuity } from '../components/grifball/v3SlotContinuity';
+import {
+  analyzeV3WeaponCarryAlignment,
+  getV3WeaponSocketWorldPosition,
+} from '../components/grifball/v3WeaponSocketBasis';
+import {
+  getV3WeaponReferenceClip,
+  sampleV3WeaponReferenceClip,
+  type V3WeaponReferenceClipId,
+} from '../components/grifball/v3WeaponReferenceClips';
 import { createInitialGrifballThreeRefs } from '../components/grifball/threeRefs';
 import { normalizeV3QualityTier } from '../components/v3/v3QualityTiers';
 import type { V3QualityTier } from '../components/v3/v3ModelTypes';
 import type { V3RenderOptions } from '../components/v3/v3QualityTiers';
 import type { CharacterLoadout } from '../components/VoxelModels';
+import type { UniversalSettings } from '../types';
 
 export type V3AnimationAtlasCaseId = V3PoseClearanceCaseId;
 export type V3AnimationAtlasPlaybackMode = 'normalizedReview' | 'runtimeSimulation';
 export type V3AnimationAtlasWeapon = 'hammer' | 'sword' | 'pistol';
 export type V3AnimationAtlasViewId = 'front' | 'left' | 'rear' | 'right';
+
+const V3_ANIMATION_ATLAS_WEAPON_SETTINGS: Partial<UniversalSettings> = {
+  hammerAttackAnimation: 'highFidelity',
+  hammerSlamWindupTime: 0.45,
+  hammerSlamAttackTime: 0.3,
+  hammerReloadTime: 0.6,
+  hammerMeleeSpeed: 0.24,
+  swordSlashSpeed: 0.22,
+};
 
 export interface V3AnimationAtlasFrameState {
   frame: number;
@@ -57,6 +76,9 @@ export interface V3AnimationAtlasCaseDefinition {
   clipReady?: boolean;
   motionRetention?: V3RetargetedMotionRetentionReport;
   motionSourceLabel?: string;
+  weaponReferenceClipId?: V3WeaponReferenceClipId;
+  weaponReferenceRuntimeRole?: 'runtimeReference' | 'analysisOnly';
+  weaponReferenceSourceHash?: string;
 }
 
 export interface V3AnimationAtlasSample {
@@ -85,6 +107,10 @@ export interface V3AnimationAtlasSample {
   clipReady?: boolean;
   motionRetention?: V3RetargetedMotionRetentionReport;
   motionSourceLabel?: string;
+  weaponReferenceClipId?: V3WeaponReferenceClipId;
+  weaponReferenceRuntimeRole?: 'runtimeReference' | 'analysisOnly';
+  weaponReferenceSourceHash?: string;
+  weaponReferenceNormalizedTime?: number;
 }
 
 export interface V3AnimationAtlasSampleOptions {
@@ -114,6 +140,7 @@ export interface V3AnimationAtlasView {
   rig: CombatantMeshRig;
   labelAnchor: THREE.Group;
   overlayRoot: THREE.Group;
+  weaponGripOverlay: THREE.Group;
   slotContinuityOverlay: THREE.Group;
   boundsHelper: THREE.Box3Helper;
   deathBurst: V3DeathVoxelBurstInstance | null;
@@ -152,6 +179,8 @@ const CASE_DURATIONS: Record<V3AnimationAtlasCaseId, number> = {
   hammerWindup: 60,
   hammerStrike: 48,
   hammerRecover: 60,
+  hammerMelee: 36,
+  hammerMeleeRecover: 60,
   swordLunge: 60,
   swordSlash: 60,
   pistolFire: 42,
@@ -167,6 +196,8 @@ const CASE_LABELS: Record<V3AnimationAtlasCaseId, string> = {
   hammerWindup: 'Hammer Windup',
   hammerStrike: 'Hammer Strike',
   hammerRecover: 'Hammer Recover',
+  hammerMelee: 'Hammer Melee',
+  hammerMeleeRecover: 'Hammer Melee Recover',
   swordLunge: 'Sword Lunge',
   swordSlash: 'Sword Slash',
   pistolFire: 'Pistol Fire',
@@ -190,11 +221,21 @@ const WEAPON_REVIEW_CASES = new Set<V3AnimationAtlasCaseId>([
   'hammerWindup',
   'hammerStrike',
   'hammerRecover',
+  'hammerMelee',
+  'hammerMeleeRecover',
   'swordLunge',
   'swordSlash',
   'pistolFire',
 ]);
 const LOCOMOTION_REVIEW_CASES = new Set<V3AnimationAtlasCaseId>(['idle', 'walk', 'sprint']);
+const WEAPON_REFERENCE_BY_CASE: Partial<Record<V3AnimationAtlasCaseId, V3WeaponReferenceClipId>> = {
+  hammerWindup: 'hammer_heavy_swing',
+  hammerStrike: 'hammer_heavy_swing',
+  hammerRecover: 'hammer_heavy_swing',
+  hammerMelee: 'hammer_melee_advance',
+  hammerMeleeRecover: 'hammer_melee_advance',
+  swordSlash: 'sword_outward_slash',
+};
 
 const roundMetric = (value: number): number => {
   if (!Number.isFinite(value)) return 0;
@@ -217,6 +258,10 @@ const caseMeta = (caseId: V3AnimationAtlasCaseId): V3AnimationAtlasCaseDefinitio
   const motionRetention = clipMetadata?.clipId
     ? analyzeV3RetargetedMotionRetention(clipMetadata.clipId)
     : undefined;
+  const weaponReferenceClipId = WEAPON_REFERENCE_BY_CASE[caseId];
+  const weaponReferenceClip = weaponReferenceClipId
+    ? getV3WeaponReferenceClip(weaponReferenceClipId)
+    : undefined;
   return {
     id: caseId,
     label: CASE_LABELS[caseId],
@@ -231,6 +276,11 @@ const caseMeta = (caseId: V3AnimationAtlasCaseId): V3AnimationAtlasCaseDefinitio
       clipReady: clipMetadata.ready,
       ...(motionRetention ? { motionRetention } : {}),
       motionSourceLabel: clipMetadata.label,
+    } : {}),
+    ...(weaponReferenceClip ? {
+      weaponReferenceClipId,
+      weaponReferenceRuntimeRole: weaponReferenceClip.runtimeRole,
+      weaponReferenceSourceHash: weaponReferenceClip.source.sha256,
     } : {}),
   };
 };
@@ -289,6 +339,20 @@ const sampleWeaponTimer = (
   if (caseId === 'swordLunge') return interpolateTimer(0.18, 0.02, t);
   if (caseId === 'pistolFire') return interpolateTimer(0.16, 0.01, t);
   return roundMetric(baseTimer);
+};
+
+const sampleWeaponReferenceTime = (
+  caseId: V3AnimationAtlasCaseId,
+  normalizedTime: number
+): number => {
+  const t = clamp01(normalizedTime);
+  if (caseId === 'hammerWindup') return roundMetric(0.1 + t * 0.28);
+  if (caseId === 'hammerStrike') return roundMetric(0.42 + t * 0.22);
+  if (caseId === 'hammerRecover') return roundMetric(0.62 + t * 0.28);
+  if (caseId === 'hammerMelee') return roundMetric(0.12 + t * 0.42);
+  if (caseId === 'hammerMeleeRecover') return roundMetric(0.54 + t * 0.3);
+  if (caseId === 'swordSlash') return roundMetric(0.18 + t * 0.42);
+  return t;
 };
 
 export function buildV3AnimationAtlasCases(): V3AnimationAtlasCaseDefinition[] {
@@ -357,12 +421,24 @@ export function sampleV3AnimationAtlasCase(
   const motionRetention = clipMetadata?.clipId
     ? analyzeV3RetargetedMotionRetention(clipMetadata.clipId)
     : undefined;
+  const weaponReferenceClipId = WEAPON_REFERENCE_BY_CASE[caseId];
+  const weaponReferenceClip = weaponReferenceClipId
+    ? getV3WeaponReferenceClip(weaponReferenceClipId)
+    : undefined;
+  const weaponReferenceNormalizedTime = weaponReferenceClipId
+    ? sampleWeaponReferenceTime(caseId, frameState.normalizedTime)
+    : undefined;
   const motionSourceLabel = clipMetadata
     ? [
       clipMetadata.label,
       carryWeapon ? `${carryWeapon} V3 carry layer` : undefined,
     ].filter(Boolean).join(' + ')
-    : (WEAPON_REVIEW_CASES.has(caseId) ? `${activeWeapon} V3 procedural weapon track` : undefined);
+    : (WEAPON_REVIEW_CASES.has(caseId)
+      ? [
+        `${activeWeapon} V3 procedural weapon track`,
+        weaponReferenceClip ? `${weaponReferenceClip.label} Mixamo weapon reference` : undefined,
+      ].filter(Boolean).join(' + ')
+      : undefined);
 
   return {
     caseId,
@@ -392,6 +468,12 @@ export function sampleV3AnimationAtlasCase(
       ...(motionRetention ? { motionRetention } : {}),
     } : {}),
     ...(motionSourceLabel ? { motionSourceLabel } : {}),
+    ...(weaponReferenceClip && weaponReferenceClipId && typeof weaponReferenceNormalizedTime === 'number' ? {
+      weaponReferenceClipId,
+      weaponReferenceRuntimeRole: weaponReferenceClip.runtimeRole,
+      weaponReferenceSourceHash: weaponReferenceClip.source.sha256,
+      weaponReferenceNormalizedTime,
+    } : {}),
   };
 }
 
@@ -431,6 +513,13 @@ function createSlotContinuityOverlay(viewId: V3AnimationAtlasViewId): THREE.Grou
   return group;
 }
 
+function createWeaponGripOverlay(viewId: V3AnimationAtlasViewId): THREE.Group {
+  const group = new THREE.Group();
+  group.name = `v3AnimationAtlasWeaponGripOverlay:${viewId}`;
+  group.visible = false;
+  return group;
+}
+
 function disposeOverlayChildren(group: THREE.Group): void {
   for (const child of [...group.children]) {
     group.remove(child);
@@ -454,11 +543,32 @@ function createSlotContinuityLine(from: THREE.Vector3, to: THREE.Vector3, linkId
   return line;
 }
 
-function createSlotContinuityMarker(position: THREE.Vector3, linkId: string): THREE.Mesh {
+function createDiagnosticLine(
+  from: THREE.Vector3,
+  to: THREE.Vector3,
+  color: string,
+  name: string
+): THREE.Line {
+  const geometry = new THREE.BufferGeometry().setFromPoints([from, to]);
+  const material = new THREE.LineBasicMaterial({
+    color,
+    transparent: true,
+    opacity: 0.94,
+  });
+  const line = new THREE.Line(geometry, material);
+  line.name = name;
+  return line;
+}
+
+function createDiagnosticMarker(
+  position: THREE.Vector3,
+  linkId: string,
+  color = '#f59e0b'
+): THREE.Mesh {
   const marker = new THREE.Mesh(
     new THREE.SphereGeometry(0.025, 8, 6),
     new THREE.MeshBasicMaterial({
-      color: '#f59e0b',
+      color,
       transparent: true,
       opacity: 0.92,
     })
@@ -466,6 +576,26 @@ function createSlotContinuityMarker(position: THREE.Vector3, linkId: string): TH
   marker.name = `v3AnimationAtlasSlotContinuityMarker:${linkId}`;
   marker.position.copy(position);
   return marker;
+}
+
+function createSlotContinuityMarker(position: THREE.Vector3, linkId: string): THREE.Mesh {
+  return createDiagnosticMarker(position, linkId);
+}
+
+const tuple3 = (value: THREE.Vector3): [number, number, number] => [
+  roundMetric(value.x),
+  roundMetric(value.y),
+  roundMetric(value.z),
+];
+
+function getVisibleWeaponModel(
+  rig: CombatantMeshRig,
+  weapon: V3AnimationAtlasWeapon | null
+): THREE.Group | null {
+  if (weapon === 'hammer') return rig.hammer;
+  if (weapon === 'sword') return rig.sword;
+  if (weapon === 'pistol') return rig.pistol ?? null;
+  return null;
 }
 
 function setWeaponVisibility(
@@ -504,7 +634,7 @@ function applySampleToRig(
     isLunging: sample.isLunging,
     animationClockMs: sample.elapsedSeconds * 1000,
     isLocalV3Animation: true,
-    settings: { hammerAttackAnimation: 'highFidelity' },
+    settings: V3_ANIMATION_ATLAS_WEAPON_SETTINGS,
     v3QualityTier: qualityTier,
   });
 
@@ -517,7 +647,8 @@ function applySampleToRig(
     weaponTimer: sample.weaponTimer,
     isLunging: sample.isLunging,
     dt: sample.dt,
-    settings: { hammerAttackAnimation: 'highFidelity' },
+    settings: V3_ANIMATION_ATLAS_WEAPON_SETTINGS,
+    combatantModel: rig.group,
   });
   setWeaponVisibility(rig, sample.visibleWeapon);
 }
@@ -557,6 +688,174 @@ function updateSlotContinuityOverlay(view: V3AnimationAtlasView, visible: boolea
     view.slotContinuityOverlay.add(createSlotContinuityLine(from, to, `lowerBody:${link.id}`));
     view.slotContinuityOverlay.add(createSlotContinuityMarker(midpoint, `lowerBody:${link.id}`));
   }
+}
+
+function updateWeaponGripOverlay(
+  view: V3AnimationAtlasView,
+  visible: boolean,
+  visibleWeapon: V3AnimationAtlasWeapon | null,
+  sample?: V3AnimationAtlasSample
+): void {
+  view.weaponGripOverlay.visible = visible;
+  disposeOverlayChildren(view.weaponGripOverlay);
+  delete view.weaponGripOverlay.userData.v3WeaponReferenceOverlay;
+  if (!visible || !visibleWeapon) return;
+
+  const weaponModel = getVisibleWeaponModel(view.rig, visibleWeapon);
+  if (!weaponModel) return;
+  const report = analyzeV3WeaponCarryAlignment(view.rig.group, weaponModel, visibleWeapon);
+  const origin = view.overlayRoot.getWorldPosition(new THREE.Vector3());
+  const primary = report.primaryGripWorldPosition?.clone().sub(origin);
+  const offhand = report.offhandGripWorldPosition?.clone().sub(origin);
+  const primaryTarget = getV3WeaponSocketWorldPosition(weaponModel, 'thirdPersonPrimaryGrip')?.sub(origin);
+  const offhandTarget = getV3WeaponSocketWorldPosition(weaponModel, 'thirdPersonOffhandGrip')?.sub(origin);
+  const rightGrip = view.rig.rig.attachments.thirdPersonWeaponGrip?.group.getWorldPosition(new THREE.Vector3()).sub(origin);
+  const leftGrip = view.rig.rig.attachments.thirdPersonOffhandGrip?.group.getWorldPosition(new THREE.Vector3()).sub(origin);
+  if (!primary) return;
+
+  view.weaponGripOverlay.userData.v3WeaponCarryAlignment = {
+    weapon: visibleWeapon,
+    basisForwardAlignment: report.basisForwardAlignment,
+    basisUpAlignment: report.basisUpAlignment,
+    primaryGripDrift: report.primaryGripDrift,
+    offhandGripDrift: report.offhandGripDrift,
+  };
+  view.weaponGripOverlay.add(createDiagnosticMarker(primary, `${visibleWeapon}:primaryGrip`, '#22d3ee'));
+  if (rightGrip) {
+    view.weaponGripOverlay.add(createDiagnosticMarker(rightGrip, `${visibleWeapon}:rightHandTarget`, '#38bdf8'));
+    view.weaponGripOverlay.add(createDiagnosticLine(
+      primary,
+      rightGrip,
+      '#fb923c',
+      `v3AnimationAtlasWeaponDesiredPrimaryGrip:${visibleWeapon}`
+    ));
+  }
+  if (offhand) {
+    view.weaponGripOverlay.add(createDiagnosticMarker(offhand, `${visibleWeapon}:offhandGrip`, '#f59e0b'));
+    if (leftGrip) {
+      view.weaponGripOverlay.add(createDiagnosticMarker(leftGrip, `${visibleWeapon}:leftHandTarget`, '#facc15'));
+      view.weaponGripOverlay.add(createDiagnosticLine(
+        offhand,
+        leftGrip,
+        '#f97316',
+        `v3AnimationAtlasWeaponDesiredOffhandGrip:${visibleWeapon}`
+      ));
+    }
+    view.weaponGripOverlay.add(createDiagnosticLine(
+      primary,
+      offhand,
+      '#f59e0b',
+      `v3AnimationAtlasWeaponGripSpan:${visibleWeapon}`
+    ));
+  }
+  if (sample?.weaponReferenceClipId && rightGrip) {
+    const clip = getV3WeaponReferenceClip(sample.weaponReferenceClipId);
+    const trailTimes = Array.from(new Set([
+      0,
+      0.25,
+      0.5,
+      0.75,
+      1,
+      sample.weaponReferenceNormalizedTime ?? sample.normalizedTime,
+    ].map((time) => roundMetric(Math.max(0, Math.min(1, time)))))).sort((left, right) => left - right);
+    const firstReference = sampleV3WeaponReferenceClip(sample.weaponReferenceClipId, { normalizedTime: 0 });
+    const firstRight = firstReference.joints.handRight?.position ?? [0, 0, 0];
+    const firstLeft = firstReference.joints.handLeft?.position ?? [0, 0, 0];
+    const referenceScale = 0.62;
+    const buildReferencePoint = (
+      base: THREE.Vector3,
+      position: readonly [number, number, number],
+      firstPosition: readonly [number, number, number]
+    ): THREE.Vector3 => base.clone().add(new THREE.Vector3(
+      (position[0] - firstPosition[0]) * referenceScale,
+      (position[1] - firstPosition[1]) * referenceScale,
+      (position[2] - firstPosition[2]) * referenceScale
+    ));
+    const rightHandTrail: THREE.Vector3[] = [];
+    const leftHandTrail: THREE.Vector3[] = [];
+    for (const normalizedTime of trailTimes) {
+      const referenceSample = sampleV3WeaponReferenceClip(sample.weaponReferenceClipId, { normalizedTime });
+      const rightHand = referenceSample.joints.handRight?.position;
+      const leftHand = referenceSample.joints.handLeft?.position;
+      if (rightHand) rightHandTrail.push(buildReferencePoint(rightGrip, rightHand, firstRight));
+      if (leftHand && leftGrip) leftHandTrail.push(buildReferencePoint(leftGrip, leftHand, firstLeft));
+    }
+    for (let index = 1; index < rightHandTrail.length; index += 1) {
+      view.weaponGripOverlay.add(createDiagnosticLine(
+        rightHandTrail[index - 1],
+        rightHandTrail[index],
+        '#38bdf8',
+        `v3AnimationAtlasMixamoRightHandTrail:${sample.weaponReferenceClipId}:${index}`
+      ));
+    }
+    for (let index = 1; index < leftHandTrail.length; index += 1) {
+      view.weaponGripOverlay.add(createDiagnosticLine(
+        leftHandTrail[index - 1],
+        leftHandTrail[index],
+        '#facc15',
+        `v3AnimationAtlasMixamoLeftHandTrail:${sample.weaponReferenceClipId}:${index}`
+      ));
+    }
+    view.weaponGripOverlay.userData.v3WeaponReferenceOverlay = {
+      clipId: sample.weaponReferenceClipId,
+      runtimeRole: clip.runtimeRole,
+      sourceHash: clip.source.sha256,
+      normalizedTime: sample.weaponReferenceNormalizedTime ?? sample.normalizedTime,
+      rightHandTrail: rightHandTrail.map(tuple3),
+      leftHandTrail: leftHandTrail.map(tuple3),
+    };
+  }
+  const trailKey = `v3WeaponTrail:${view.id}:${visibleWeapon}`;
+  const trail = (view.weaponGripOverlay.userData[trailKey] as THREE.Vector3[] | undefined) ?? [];
+  if (primaryTarget) {
+    if (trail.length === 0 || trail[trail.length - 1].distanceTo(primaryTarget) > 0.01) {
+      trail.push(primaryTarget.clone());
+    }
+    while (trail.length > 14) trail.shift();
+    view.weaponGripOverlay.userData[trailKey] = trail;
+    for (let index = 1; index < trail.length; index += 1) {
+      view.weaponGripOverlay.add(createDiagnosticLine(
+        trail[index - 1],
+        trail[index],
+        '#c084fc',
+        `v3AnimationAtlasWeaponTrail:${visibleWeapon}:${index}`
+      ));
+    }
+  }
+  if (primaryTarget && primaryTarget.distanceTo(primary) > 0.001) {
+    view.weaponGripOverlay.add(createDiagnosticLine(
+      primary,
+      primaryTarget,
+      '#fb7185',
+      `v3AnimationAtlasWeaponPrimarySocketError:${visibleWeapon}`
+    ));
+  }
+  if (offhandTarget && offhand && offhandTarget.distanceTo(offhand) > 0.001) {
+    view.weaponGripOverlay.add(createDiagnosticLine(
+      offhand,
+      offhandTarget,
+      '#fb7185',
+      `v3AnimationAtlasWeaponOffhandSocketError:${visibleWeapon}`
+    ));
+  }
+  view.weaponGripOverlay.add(createDiagnosticLine(
+    primary,
+    primary.clone().add(report.weaponForwardWorld.clone().multiplyScalar(0.32)),
+    '#22d3ee',
+    `v3AnimationAtlasWeaponForwardAxis:${visibleWeapon}`
+  ));
+  view.weaponGripOverlay.add(createDiagnosticLine(
+    primary,
+    primary.clone().add(report.weaponUpWorld.clone().multiplyScalar(0.24)),
+    '#a3e635',
+    `v3AnimationAtlasWeaponUpAxis:${visibleWeapon}`
+  ));
+  view.weaponGripOverlay.add(createDiagnosticLine(
+    primary,
+    primary.clone().add(report.weaponForwardWorld.clone().cross(report.weaponUpWorld).normalize().multiplyScalar(0.22)),
+    '#f43f5e',
+    `v3AnimationAtlasWeaponRightAxis:${visibleWeapon}`
+  ));
 }
 
 function disposeViewDeathBurst(view: V3AnimationAtlasView): void {
@@ -639,6 +938,8 @@ export function buildV3AnimationAtlasScene(
     overlayRootForView.name = `v3AnimationAtlasOverlay:${layout.id}`;
     overlayRootForView.position.set(layout.x, 0, 0);
     overlayRootForView.add(createFloorContactOverlay());
+    const weaponGripOverlay = createWeaponGripOverlay(layout.id);
+    overlayRootForView.add(weaponGripOverlay);
     const slotContinuityOverlay = createSlotContinuityOverlay(layout.id);
     overlayRootForView.add(slotContinuityOverlay);
     overlayRoot.add(overlayRootForView);
@@ -650,6 +951,7 @@ export function buildV3AnimationAtlasScene(
       rig,
       labelAnchor,
       overlayRoot: overlayRootForView,
+      weaponGripOverlay,
       slotContinuityOverlay,
       boundsHelper,
       deathBurst: null,
@@ -722,6 +1024,7 @@ export function updateV3AnimationAtlasScene(
 
     updateBoundsHelper(view, options.showBounds === true);
     updateSlotContinuityOverlay(view, options.showSlotContinuity === true);
+    updateWeaponGripOverlay(view, options.showWeaponGripDrift === true, sample.visibleWeapon, sample);
     view.overlayRoot.visible =
       options.showFloorContact === true ||
       options.showWeaponGripDrift === true ||

@@ -30,7 +30,7 @@ describe('analyzeV3MotionRetargetAtlas', () => {
     assert.equal(first.summary.caseCount, CASE_IDS.length);
   });
 
-  it('fails synthetic active weapon cases under a stricter third-person weapon drift threshold', () => {
+  it('keeps corrected active weapon cases ready under a strict legacy grip drift threshold', () => {
     const report = analyzeV3MotionRetargetAtlas({
       deathBurstReady: true,
       poseClearanceOptions: {
@@ -40,10 +40,10 @@ describe('analyzeV3MotionRetargetAtlas', () => {
     });
     const testCase = getCase(report, 'hammerWindup');
 
-    assert.equal(report.ready, false);
-    assert.equal(testCase.ready, false);
-    assert.equal(testCase.issueCodes.includes('weapon-drift-high'), true);
-    assert.equal(testCase.weaponGripDrift > 0.01, true);
+    assert.equal(report.ready, true, report.issues.map((issue) => issue.code).join(', '));
+    assert.equal(testCase.ready, true);
+    assert.equal(testCase.issueCodes.includes('weapon-drift-high'), false);
+    assert.equal(testCase.weaponGripDrift, 0);
   });
 
   it('includes death-burst readiness in report readiness', () => {

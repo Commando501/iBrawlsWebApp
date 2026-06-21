@@ -48,6 +48,7 @@ export type CombatantRig = {
   attachments: CombatantAttachmentMap;
   segmentGroups: CombatantSegmentGroups;
   detailBones?: CombatantDetailBoneMap;
+  v3WeaponMotionAnchor?: THREE.Group;
 };
 
 export type FirstPersonWeaponRig = {
@@ -127,6 +128,29 @@ export const getCombatantRig = (model: THREE.Group): CombatantRig | undefined =>
   return rig && typeof rig === 'object' ? rig as CombatantRig : undefined;
 };
 
+export const getV3WeaponMotionAnchor = (model: THREE.Group): THREE.Group | null => {
+  const anchor = model.userData?.v3WeaponMotionAnchor;
+  return anchor instanceof THREE.Group ? anchor : null;
+};
+
+const createV3WeaponMotionAnchor = (
+  model: THREE.Group,
+  bones: Record<CombatantBoneName, THREE.Group>,
+  detailBones?: CombatantDetailBoneMap
+): THREE.Group | undefined => {
+  if (model.userData.modelSystem !== 'v3') return undefined;
+  const existing = getV3WeaponMotionAnchor(model);
+  if (existing) return existing;
+
+  const parent = detailBones?.chest ?? bones.upperTorso;
+  const anchor = new THREE.Group();
+  anchor.name = 'v3WeaponMotionAnchor';
+  anchor.userData.v3WeaponMotionAnchor = true;
+  parent.add(anchor);
+  model.userData.v3WeaponMotionAnchor = anchor;
+  return anchor;
+};
+
 export const buildCombatantRigForModel = (model: THREE.Group): CombatantRig => {
   const existing = getCombatantRig(model);
   if (existing) return existing;
@@ -180,6 +204,7 @@ export const buildCombatantRigForModel = (model: THREE.Group): CombatantRig => {
   const detailBones = isV3 && model.userData.v3DetailBones && typeof model.userData.v3DetailBones === 'object'
     ? model.userData.v3DetailBones as CombatantDetailBoneMap
     : undefined;
+  const v3WeaponMotionAnchor = createV3WeaponMotionAnchor(model, bones, detailBones);
 
   const attachments: CombatantAttachmentMap = {
     thirdPersonWeaponGrip: createAttachmentPoint(rightWeaponBone, 'thirdPersonWeaponGrip', 'rightArm', rightGripOffset),
@@ -196,6 +221,7 @@ export const buildCombatantRigForModel = (model: THREE.Group): CombatantRig => {
     attachments,
     segmentGroups,
     detailBones,
+    v3WeaponMotionAnchor,
   };
 
   model.userData.combatantRig = rig;
@@ -237,6 +263,17 @@ export const attachToCombatantAttachment = (
   child: THREE.Object3D
 ): THREE.Group => {
   const rig = buildCombatantRigForModel(model);
+  if (
+    model.userData.modelSystem === 'v3' &&
+    attachmentName === 'thirdPersonWeaponGrip' &&
+    child.userData.modelSystem === 'v3'
+  ) {
+    const anchor = rig.v3WeaponMotionAnchor ?? getV3WeaponMotionAnchor(model);
+    if (anchor) {
+      anchor.add(child);
+      return anchor;
+    }
+  }
   const attachment = rig.attachments[attachmentName];
   if (!attachment) {
     model.add(child);

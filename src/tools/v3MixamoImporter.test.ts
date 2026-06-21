@@ -2,8 +2,11 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { join } from 'node:path';
 import {
+  V3_MIXAMO_WEAPON_REFERENCE_SOURCE_FILE_NAMES,
   buildV3MixamoClipArtifact,
   buildV3MixamoClipSetArtifact,
+  buildV3MixamoWeaponReferenceClipArtifact,
+  buildV3MixamoWeaponReferenceSetArtifact,
 } from './v3MixamoImporter';
 
 const referenceRoot = join(process.cwd(), 'reference', 'mixamo-v3');
@@ -13,6 +16,14 @@ const sourceFiles = {
   walk: join(referenceRoot, 'Walking.fbx'),
   run: join(referenceRoot, 'Running.fbx'),
   tPose: join(referenceRoot, 'T-Pose.fbx'),
+} as const;
+
+const weaponReferenceSourceFiles = {
+  hammer_2hand_idle: join(referenceRoot, V3_MIXAMO_WEAPON_REFERENCE_SOURCE_FILE_NAMES.hammer_2hand_idle),
+  hammer_heavy_swing: join(referenceRoot, V3_MIXAMO_WEAPON_REFERENCE_SOURCE_FILE_NAMES.hammer_heavy_swing),
+  hammer_melee_advance: join(referenceRoot, V3_MIXAMO_WEAPON_REFERENCE_SOURCE_FILE_NAMES.hammer_melee_advance),
+  sword_outward_slash: join(referenceRoot, V3_MIXAMO_WEAPON_REFERENCE_SOURCE_FILE_NAMES.sword_outward_slash),
+  hammer_smash_reference: join(referenceRoot, V3_MIXAMO_WEAPON_REFERENCE_SOURCE_FILE_NAMES.hammer_smash_reference),
 } as const;
 
 describe('v3MixamoImporter', () => {
@@ -97,5 +108,73 @@ describe('v3MixamoImporter', () => {
         assert.equal(Math.abs(offset[1]) <= 0.35, true);
       }
     }
+  });
+
+  it('imports weapon reference clips with sanitized chest-space upper-body samples', () => {
+    const first = buildV3MixamoWeaponReferenceClipArtifact({
+      clipId: 'hammer_2hand_idle',
+      filePath: weaponReferenceSourceFiles.hammer_2hand_idle,
+      fps: 30,
+    });
+    const second = buildV3MixamoWeaponReferenceClipArtifact({
+      clipId: 'hammer_2hand_idle',
+      filePath: weaponReferenceSourceFiles.hammer_2hand_idle,
+      fps: 30,
+    });
+
+    assert.deepEqual(second, first);
+    assert.equal(first.schemaVersion, 'v3-mixamo-weapon-reference-clip/v1');
+    assert.equal(first.clipId, 'hammer_2hand_idle');
+    assert.equal(first.source.fileName, 'hammer_2hand_idle.fbx');
+    assert.match(first.source.sha256, /^[a-f0-9]{64}$/);
+    assert.ok(first.frameCount > 1);
+    assert.ok(first.duration > 0);
+    assert.ok(first.metrics.mappedJointCount >= 9);
+    assert.ok(first.metrics.handPathDistance.right > 0);
+    assert.ok(first.metrics.handSeparation.max > first.metrics.handSeparation.min);
+    assert.equal(first.metrics.nonFiniteTransformCount, 0);
+
+    const firstFrame = first.keyframes[0];
+    assert.ok(firstFrame.joints.chest);
+    assert.ok(firstFrame.joints.handRight);
+    assert.ok(firstFrame.joints.handLeft);
+    assert.deepEqual(firstFrame.joints.chest.position, [0, 0, 0]);
+    assert.equal(firstFrame.joints.handRight.position.every(Number.isFinite), true);
+    assert.equal(firstFrame.joints.handLeft.position.every(Number.isFinite), true);
+  });
+
+  it('builds a weapon reference set and marks Smash as analysis-only', () => {
+    const referenceSet = buildV3MixamoWeaponReferenceSetArtifact({
+      sourceFiles: weaponReferenceSourceFiles,
+      fps: 30,
+    });
+
+    assert.equal(referenceSet.schemaVersion, 'v3-mixamo-weapon-reference-set/v1');
+    assert.deepEqual(
+      referenceSet.clips.map((clip) => clip.clipId),
+      [
+        'hammer_2hand_idle',
+        'hammer_heavy_swing',
+        'hammer_melee_advance',
+        'sword_outward_slash',
+        'hammer_smash_reference',
+      ]
+    );
+    assert.equal(referenceSet.sources.hammer_smash_reference.fileName, 'Smash.fbx');
+    assert.equal(
+      referenceSet.clips.find((clip) => clip.clipId === 'hammer_smash_reference')?.runtimeRole,
+      'analysisOnly'
+    );
+    assert.equal(referenceSet.metrics.clipCount, 5);
+    assert.equal(referenceSet.metrics.analysisOnlyClipCount, 1);
+
+    const serialized = JSON.stringify(referenceSet);
+    assert.equal(serialized.includes(referenceRoot), false);
+    assert.equal(serialized.includes(process.cwd()), false);
+    assert.equal(serialized.includes('G:'), false);
+    assert.equal(serialized.includes('C:'), false);
+    assert.equal(serialized.includes('mixamorig'), false);
+    assert.equal(serialized.includes('FBXHeaderExtension'), false);
+    assert.equal(serialized.includes('Vertices:'), false);
   });
 });

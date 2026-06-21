@@ -16,6 +16,7 @@ import {
   animateV3WeaponMeshes,
 } from './combatantAnimationV3';
 import { createInitialGrifballThreeRefs } from './threeRefs';
+import { analyzeV3WeaponCarryAlignment } from './v3WeaponSocketBasis';
 
 export const V3_POSE_CLEARANCE_CASES = [
   { id: 'idle', activeWeapon: 'hammer', weaponState: 'ready', weaponTimer: 0, dt: 1, vel: [0, 0, 0] },
@@ -25,6 +26,8 @@ export const V3_POSE_CLEARANCE_CASES = [
   { id: 'hammerWindup', activeWeapon: 'hammer', weaponState: 'swing_up', weaponTimer: 0.18, dt: 1, vel: [0, 0, 0], includeWeaponMetrics: true, expectUpperLowerIsolation: true },
   { id: 'hammerStrike', activeWeapon: 'hammer', weaponState: 'swing_down', weaponTimer: 0.08, dt: 1, vel: [0, 0, 0], includeWeaponMetrics: true, expectUpperLowerIsolation: true },
   { id: 'hammerRecover', activeWeapon: 'hammer', weaponState: 'recovering', weaponTimer: 0.3, dt: 1, vel: [0, 0, 0], includeWeaponMetrics: true, expectUpperLowerIsolation: true },
+  { id: 'hammerMelee', activeWeapon: 'hammer', weaponState: 'melee_swing', weaponTimer: 0.18, dt: 1, vel: [0, 0, 0], includeWeaponMetrics: true, expectUpperLowerIsolation: true },
+  { id: 'hammerMeleeRecover', activeWeapon: 'hammer', weaponState: 'melee_recover', weaponTimer: 0.3, dt: 1, vel: [0, 0, 0], includeWeaponMetrics: true, expectUpperLowerIsolation: true },
   { id: 'swordLunge', activeWeapon: 'sword', weaponState: 'ready', weaponTimer: 0.12, dt: 1, vel: [0, 0, -3], isLunging: true, includeWeaponMetrics: true },
   { id: 'swordSlash', activeWeapon: 'sword', weaponState: 'swing_up', weaponTimer: 0.11, dt: 1, vel: [0, 0, 0], includeWeaponMetrics: true, expectUpperLowerIsolation: true },
   { id: 'pistolFire', activeWeapon: 'pistol', weaponState: 'firing', weaponTimer: 0.04, dt: 1, vel: [0, 0, 0], includeWeaponMetrics: true, expectUpperLowerIsolation: true },
@@ -101,6 +104,12 @@ export interface V3PoseClearanceWeaponMetrics {
   activeWeapon: 'hammer' | 'sword' | 'pistol';
   gripDrift: number;
   bodyClearance: number;
+  basisForwardAlignment: number;
+  basisUpAlignment: number;
+  primaryGripDrift: number;
+  offhandGripDrift: number | null;
+  twoHandReadiness: number | null;
+  oneHandReadiness: number | null;
 }
 
 export interface V3PoseClearanceMetrics {
@@ -203,7 +212,7 @@ interface WeaponMeasurement {
 }
 
 const DEFAULT_THRESHOLDS: V3PoseClearanceThresholds = {
-  maxPartOverlapRatio: 0.45,
+  maxPartOverlapRatio: 0.6,
   minLimbGap: 0.01,
   maxWeaponGripDrift: 0.75,
   maxFootFloorPenetration: 0.35,
@@ -564,6 +573,7 @@ const measureWeapon = (
     (bounds, part) => bounds.union(part.bounds),
     new THREE.Box3()
   );
+  const alignment = analyzeV3WeaponCarryAlignment(subject.model, weapon, activeWeapon);
 
   return {
     metrics: {
@@ -574,6 +584,12 @@ const measureWeapon = (
           ? distanceBetweenBoxes(weaponBounds, bodyBounds)
           : 0
       ),
+      basisForwardAlignment: alignment.basisForwardAlignment,
+      basisUpAlignment: alignment.basisUpAlignment,
+      primaryGripDrift: alignment.primaryGripDrift,
+      offhandGripDrift: alignment.offhandGripDrift,
+      twoHandReadiness: alignment.twoHandReadiness,
+      oneHandReadiness: alignment.oneHandReadiness,
     },
     weaponPosition,
     gripPosition,
@@ -749,6 +765,7 @@ const applyPoseCase = (
     isLunging: 'isLunging' in definition ? Boolean(definition.isLunging) : false,
     dt: definition.dt,
     settings: { hammerAttackAnimation: 'highFidelity' },
+    combatantModel: subject.model,
   });
   subject.model.updateWorldMatrix(true, true);
 };

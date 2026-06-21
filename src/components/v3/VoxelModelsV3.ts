@@ -573,6 +573,7 @@ export function buildV3WeaponModel(weapon: V3WeaponId, options: V3WeaponBuildOpt
   group.userData.weaponType = weapon;
   group.userData.v3ManifestId = manifest.id;
   group.userData.v3Sockets = manifest.sockets;
+  group.userData.v3WeaponSemanticAxes = manifest.semanticAxes;
   group.userData.v3QualityTier = v3QualityTier;
   group.userData.v3Distance = v3Distance;
   group.userData.v3SelectedLod = selectedLod;

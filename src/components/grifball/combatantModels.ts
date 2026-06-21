@@ -10,11 +10,13 @@ import {
 import { buildV3HammerModel, buildV3PistolModel, buildV3SwordModel } from '../v3/VoxelModelsV3';
 import type { V3RenderOptions } from '../v3/v3QualityTiers';
 import type { TeamId } from '../../game/teamScoring';
+import type { V3WeaponId } from '../v3/v3ModelTypes';
 import {
   attachToCombatantAttachment,
   buildCombatantRigForModel,
   type CombatantRig,
 } from './combatantRig';
+import { applyV3WeaponSocketBasis } from './v3WeaponSocketBasis';
 import { THIRD_PERSON_RIGHT_HAND_REST_OFFSET } from './attackAnimationPresets';
 import {
   type CombatantTeamOutlineOptions,
@@ -71,6 +73,16 @@ const positionPistol = (pistol: THREE.Group) => {
 
 const isV3Loadout = (loadout?: CharacterLoadout): boolean => loadout?.modelSystem === 'v3';
 
+const prepareV3ThirdPersonWeaponBasis = (
+  weaponModel: THREE.Group,
+  weapon: V3WeaponId,
+  loadout?: CharacterLoadout
+): void => {
+  if (isV3Loadout(loadout)) {
+    applyV3WeaponSocketBasis(weaponModel, weapon, 'thirdPersonPrimaryGrip');
+  }
+};
+
 const buildCombatantHammer = (
   hue: number | undefined,
   loadout?: CharacterLoadout,
@@ -91,6 +103,19 @@ const buildCombatantPistol = (
   v3Options: V3RenderOptions = {}
 ): THREE.Group =>
   isV3Loadout(loadout) ? buildV3PistolModel(hue, { ...v3Options, loadout }) : buildPistolModel(hue);
+
+const attachCombatantWeapon = (
+  group: THREE.Group,
+  rig: CombatantRig,
+  weaponModel: THREE.Group,
+  loadout?: CharacterLoadout
+): void => {
+  if (isV3Loadout(loadout) && rig.v3WeaponMotionAnchor) {
+    rig.v3WeaponMotionAnchor.add(weaponModel);
+    return;
+  }
+  attachToCombatantAttachment(group, 'thirdPersonWeaponGrip', weaponModel);
+};
 
 export const getRandomLoadout = (): CharacterLoadout => {
   const helmets = AVAILABLE_PRESETS.helmet;
@@ -134,21 +159,24 @@ export const createCombatantMeshRig = (
   if (!isV3Loadout(resolvedLoadout)) {
     positionHammer(hammer);
   }
-  attachToCombatantAttachment(group, 'thirdPersonWeaponGrip', hammer);
+  prepareV3ThirdPersonWeaponBasis(hammer, 'hammer', resolvedLoadout);
+  attachCombatantWeapon(group, rig, hammer, resolvedLoadout);
 
   const sword = buildCombatantSword(hue, resolvedLoadout, v3Options);
   if (!isV3Loadout(resolvedLoadout)) {
     positionSword(sword);
   }
+  prepareV3ThirdPersonWeaponBasis(sword, 'sword', resolvedLoadout);
   sword.visible = false;
-  attachToCombatantAttachment(group, 'thirdPersonWeaponGrip', sword);
+  attachCombatantWeapon(group, rig, sword, resolvedLoadout);
 
   const pistol = buildCombatantPistol(hue, resolvedLoadout, v3Options);
   if (!isV3Loadout(resolvedLoadout)) {
     positionPistol(pistol);
   }
+  prepareV3ThirdPersonWeaponBasis(pistol, 'pistol', resolvedLoadout);
   pistol.visible = false;
-  attachToCombatantAttachment(group, 'thirdPersonWeaponGrip', pistol);
+  attachCombatantWeapon(group, rig, pistol, resolvedLoadout);
 
   return { group, hammer, sword, pistol, rig };
 };
@@ -199,15 +227,17 @@ export const rebuildDualWeaponCombatantModel = ({
   if (!isV3Loadout(loadout)) {
     positionHammer(hammer);
   }
+  prepareV3ThirdPersonWeaponBasis(hammer, 'hammer', loadout);
   hammer.visible = activeWeapon === 'hammer';
-  attachToCombatantAttachment(group, 'thirdPersonWeaponGrip', hammer);
+  attachCombatantWeapon(group, rig, hammer, loadout);
 
   const sword = buildCombatantSword(resolvedWeaponHue, loadout, v3Options);
   if (!isV3Loadout(loadout)) {
     positionSword(sword);
   }
+  prepareV3ThirdPersonWeaponBasis(sword, 'sword', loadout);
   sword.visible = activeWeapon === 'sword';
-  attachToCombatantAttachment(group, 'thirdPersonWeaponGrip', sword);
+  attachCombatantWeapon(group, rig, sword, loadout);
 
   return { group, hammer, sword, rig };
 };

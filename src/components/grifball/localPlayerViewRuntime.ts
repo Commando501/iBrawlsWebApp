@@ -12,6 +12,7 @@ import {
   createFirstPersonWeaponRig,
 } from './combatantRig';
 import { getFirstPersonV3WeaponPose } from './combatantAnimationV3';
+import { applyV3WeaponSocketBasis } from './v3WeaponSocketBasis';
 import { type GrifballThreeRefs } from './threeRefs';
 
 export type LocalPlayerViewAdminSettings = {
@@ -32,6 +33,7 @@ const applyLocalV3FirstPersonPose = (
   weapon: THREE.Group,
   activeWeapon: 'hammer' | 'sword' | 'pistol'
 ): void => {
+  applyV3WeaponSocketBasis(weapon, activeWeapon, 'firstPersonPrimaryGrip');
   const pose = getFirstPersonV3WeaponPose({
     activeWeapon,
     weaponState: 'ready',

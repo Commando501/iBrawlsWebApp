@@ -13,7 +13,9 @@ import {
   attachToCombatantAttachment,
   buildCombatantRigForModel,
   createFirstPersonWeaponRig,
+  getV3WeaponMotionAnchor,
 } from './combatantRig';
+import { analyzeV3WeaponCarryAlignment } from './v3WeaponSocketBasis';
 
 test('buildCombatantRigForModel maps voxel body parts into named bones', () => {
   const model = buildVoxelSpartanModel(false, 192);
@@ -102,16 +104,24 @@ test('third-person weapon grip is rigged to the right hand controller', () => {
   assert.notEqual(before.z, after.z);
 });
 
-test('V3 combatant weapons attach to the third-person grip without changing legacy sockets', () => {
+test('V3 combatant weapons attach to the chest motion anchor without changing legacy sockets', () => {
   const scene = new THREE.Scene();
   const meshes = createCombatantMeshRig(scene, 192, false, { modelSystem: 'v3' });
   const grip = meshes.rig.attachments.thirdPersonWeaponGrip;
+  const anchor = getV3WeaponMotionAnchor(meshes.group);
+  const alignment = analyzeV3WeaponCarryAlignment(meshes.group, meshes.hammer, 'hammer');
 
   assert.ok(grip);
-  assert.equal(meshes.hammer.parent, grip.group);
-  assert.equal(meshes.sword.parent, grip.group);
-  assert.equal(meshes.pistol?.parent, grip.group);
+  assert.ok(anchor);
+  assert.equal(anchor.parent, meshes.group.userData.v3DetailBones.chest);
+  assert.equal(meshes.hammer.parent, anchor);
+  assert.equal(meshes.sword.parent, anchor);
+  assert.equal(meshes.pistol?.parent, anchor);
+  assert.notEqual(meshes.hammer.parent, grip.group);
   assert.equal(meshes.hammer.userData.weaponType, 'hammer');
+  assert.equal(meshes.hammer.userData.v3WeaponSocketBasis.socketName, 'thirdPersonPrimaryGrip');
+  assert.ok(alignment.basisForwardAlignment > 0.95);
+  assert.ok(alignment.basisUpAlignment > 0.98);
 });
 
 test('first-person weapon rig creates reusable grip lock points', () => {

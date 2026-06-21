@@ -679,6 +679,7 @@ export function animateCombatantWeaponMeshes({
       isLunging,
       dt,
       settings,
+      combatantModel,
     });
     return;
   }

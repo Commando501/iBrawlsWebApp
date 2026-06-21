@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { getYawForHeading } from '../../game/yaw';
 import type { UniversalSettings } from '../../types';
-import type { V3QualityTier } from '../v3/v3ModelTypes';
+import type { V3QualityTier, V3WeaponId } from '../v3/v3ModelTypes';
 import { normalizeV3QualityTier } from '../v3/v3QualityTiers';
 import type { V3DetailBoneName } from '../v3/v3RigDetail';
 import type { WeaponPose } from './attackAnimationPresets';
@@ -10,7 +10,7 @@ import type { GrifballThreeRefs } from './threeRefs';
 import {
   clamp01,
   sampleV3FirstPersonWeaponPose,
-  sampleV3ThirdPersonWeaponPose,
+  sampleV3ThirdPersonWeaponMotion,
   sampleV3UpperBodyWeaponPose,
   sampleV3WeaponCarryPose,
 } from './v3AnimationFidelity';
@@ -24,6 +24,8 @@ import {
   sampleV3RetargetedClip,
   type V3RetargetedClipId,
 } from './v3RetargetedAnimationClips';
+import { applyV3WeaponSocketBasis } from './v3WeaponSocketBasis';
+import { applyV3WeaponGripConstraints } from './v3ArmIk';
 
 export type V3AnimationLayerName = 'locomotion' | 'weapon' | 'additive' | 'death';
 export type V3BroadBodyGroupName =
@@ -70,6 +72,7 @@ export interface V3WeaponMeshAnimationInput {
   hammerModel?: THREE.Group | null;
   swordModel?: THREE.Group | null;
   pistolModel?: THREE.Group | null;
+  combatantModel?: THREE.Group | null;
   activeWeapon: string;
   weaponState: string;
   weaponTimer: number;
@@ -142,6 +145,19 @@ const applyV3WeaponMeshPose = (
   }
 };
 
+const ensureV3WeaponSocketBasis = (
+  group: THREE.Group,
+  weapon: V3WeaponId
+): void => {
+  const socketName = group.userData.v3View === 'firstPerson'
+    ? 'firstPersonPrimaryGrip'
+    : 'thirdPersonPrimaryGrip';
+  const current = group.userData.v3WeaponSocketBasis as { socketName?: string } | undefined;
+  if (current?.socketName !== socketName) {
+    applyV3WeaponSocketBasis(group, weapon, socketName);
+  }
+};
+
 const lerpRotation = (
   group: THREE.Group,
   target: THREE.Vector3Tuple,
@@ -164,6 +180,18 @@ const lerpDetailRotation = (
   }
 };
 
+const lerpDetailRotationIfDistinct = (
+  detailBones: V3DetailGroups | undefined,
+  boneName: V3DetailBoneName,
+  target: THREE.Vector3Tuple,
+  alpha: number,
+  distinctFrom: readonly (THREE.Group | undefined)[]
+): void => {
+  const bone = detailBones?.[boneName];
+  if (!bone || distinctFrom.includes(bone)) return;
+  lerpRotation(bone, target, alpha);
+};
+
 const scaledRotation = (
   rotation: THREE.Vector3Tuple,
   xScale: number,
@@ -181,25 +209,38 @@ const applyV3UpperBodyPose = (
   alpha: number,
   detailBones?: V3DetailGroups
 ): void => {
+  if (pose.detailBoneRotations && detailBones) {
+    if (groups.upperTorso !== detailBones.chest) lerpRotation(groups.upperTorso, pose.upperTorsoRotation, alpha);
+    if (groups.head !== detailBones.head) lerpRotation(groups.head, pose.headRotation, alpha);
+    if (groups.leftArm !== detailBones.upperArmLeft) lerpRotation(groups.leftArm, pose.leftArmRotation, alpha);
+    if (groups.rightArm !== detailBones.upperArmRight) lerpRotation(groups.rightArm, pose.rightArmRotation, alpha);
+
+    for (const [jointName, rotation] of Object.entries(pose.detailBoneRotations)) {
+      if (!rotation) continue;
+      lerpDetailRotation(detailBones, jointName as V3DetailBoneName, rotation, alpha);
+    }
+    return;
+  }
+
   lerpRotation(groups.upperTorso, pose.upperTorsoRotation, alpha);
   lerpRotation(groups.head, pose.headRotation, alpha);
   lerpRotation(groups.leftArm, pose.leftArmRotation, alpha);
   lerpRotation(groups.rightArm, pose.rightArmRotation, alpha);
 
-  lerpDetailRotation(detailBones, 'spine1', scaledRotation(pose.upperTorsoRotation, 0.2, 0.2, 0.15), alpha);
-  lerpDetailRotation(detailBones, 'spine2', scaledRotation(pose.upperTorsoRotation, 0.35, 0.35, 0.3), alpha);
-  lerpDetailRotation(detailBones, 'spine3', scaledRotation(pose.upperTorsoRotation, 0.45, 0.45, 0.4), alpha);
-  lerpDetailRotation(detailBones, 'chest', scaledRotation(pose.upperTorsoRotation, 0.5, 0.55, 0.5), alpha);
-  lerpDetailRotation(detailBones, 'neck', scaledRotation(pose.headRotation, 0.3, 0.3, 0.25), alpha);
-  lerpDetailRotation(detailBones, 'head', scaledRotation(pose.headRotation, 0.7, 0.7, 0.7), alpha);
+  lerpDetailRotationIfDistinct(detailBones, 'spine1', scaledRotation(pose.upperTorsoRotation, 0.2, 0.2, 0.15), alpha, [groups.upperTorso]);
+  lerpDetailRotationIfDistinct(detailBones, 'spine2', scaledRotation(pose.upperTorsoRotation, 0.35, 0.35, 0.3), alpha, [groups.upperTorso]);
+  lerpDetailRotationIfDistinct(detailBones, 'spine3', scaledRotation(pose.upperTorsoRotation, 0.45, 0.45, 0.4), alpha, [groups.upperTorso]);
+  lerpDetailRotationIfDistinct(detailBones, 'chest', scaledRotation(pose.upperTorsoRotation, 0.5, 0.55, 0.5), alpha, [groups.upperTorso]);
+  lerpDetailRotationIfDistinct(detailBones, 'neck', scaledRotation(pose.headRotation, 0.3, 0.3, 0.25), alpha, [groups.head]);
+  lerpDetailRotationIfDistinct(detailBones, 'head', scaledRotation(pose.headRotation, 0.7, 0.7, 0.7), alpha, [groups.head]);
   lerpDetailRotation(detailBones, 'helmet', scaledRotation(pose.headRotation, 0.7, 0.7, 0.7), alpha);
-  lerpDetailRotation(detailBones, 'clavicleLeft', scaledRotation(pose.leftArmRotation, 0.2, 0.2, 0.45), alpha);
-  lerpDetailRotation(detailBones, 'upperArmLeft', scaledRotation(pose.leftArmRotation, 0.65, 0.7, 0.7), alpha);
+  lerpDetailRotationIfDistinct(detailBones, 'clavicleLeft', scaledRotation(pose.leftArmRotation, 0.2, 0.2, 0.45), alpha, [groups.leftArm]);
+  lerpDetailRotationIfDistinct(detailBones, 'upperArmLeft', scaledRotation(pose.leftArmRotation, 0.65, 0.7, 0.7), alpha, [groups.leftArm]);
   lerpDetailRotation(detailBones, 'forearmLeft', scaledRotation(pose.leftArmRotation, 0.35, 0.25, 0.25), alpha);
   lerpDetailRotation(detailBones, 'handLeft', scaledRotation(pose.leftArmRotation, 0.18, 0.12, 0.2), alpha);
   lerpDetailRotation(detailBones, 'gripLeft', scaledRotation(pose.leftArmRotation, 0.18, 0.12, 0.2), alpha);
-  lerpDetailRotation(detailBones, 'clavicleRight', scaledRotation(pose.rightArmRotation, 0.2, 0.2, 0.45), alpha);
-  lerpDetailRotation(detailBones, 'upperArmRight', scaledRotation(pose.rightArmRotation, 0.65, 0.7, 0.7), alpha);
+  lerpDetailRotationIfDistinct(detailBones, 'clavicleRight', scaledRotation(pose.rightArmRotation, 0.2, 0.2, 0.45), alpha, [groups.rightArm]);
+  lerpDetailRotationIfDistinct(detailBones, 'upperArmRight', scaledRotation(pose.rightArmRotation, 0.65, 0.7, 0.7), alpha, [groups.rightArm]);
   lerpDetailRotation(detailBones, 'forearmRight', scaledRotation(pose.rightArmRotation, 0.35, 0.25, 0.25), alpha);
   lerpDetailRotation(detailBones, 'handRight', scaledRotation(pose.rightArmRotation, 0.18, 0.12, 0.2), alpha);
   lerpDetailRotation(detailBones, 'gripRight', scaledRotation(pose.rightArmRotation, 0.18, 0.12, 0.2), alpha);
@@ -775,6 +816,7 @@ export function animateV3WeaponMeshes({
   hammerModel,
   swordModel,
   pistolModel,
+  combatantModel,
   activeWeapon,
   weaponState,
   weaponTimer,
@@ -787,41 +829,56 @@ export function animateV3WeaponMeshes({
   if (pistolModel) pistolModel.visible = activeWeapon === 'pistol';
 
   if (hammerModel?.userData.modelSystem === 'v3' && activeWeapon === 'hammer') {
-    const sample = hammerModel.userData.v3View === 'firstPerson'
-      ? sampleV3FirstPersonWeaponPose
-      : sampleV3ThirdPersonWeaponPose;
-    applyV3WeaponMeshPose(hammerModel, sample({
+    ensureV3WeaponSocketBasis(hammerModel, 'hammer');
+    const input = {
       activeWeapon: 'hammer',
       weaponState,
       weaponTimer,
       isLunging,
       settings,
-    }), weaponState, dt);
+    } as const;
+    if (hammerModel.userData.v3View === 'firstPerson') {
+      applyV3WeaponMeshPose(hammerModel, sampleV3FirstPersonWeaponPose(input), weaponState, dt);
+    } else {
+      const sample = sampleV3ThirdPersonWeaponMotion(input);
+      applyV3WeaponMeshPose(hammerModel, sample.weaponPose, weaponState, dt);
+      applyV3WeaponGripConstraints(combatantModel, hammerModel, sample.gripConstraints);
+    }
   }
 
   if (swordModel?.userData.modelSystem === 'v3' && activeWeapon === 'sword') {
-    const sample = swordModel.userData.v3View === 'firstPerson'
-      ? sampleV3FirstPersonWeaponPose
-      : sampleV3ThirdPersonWeaponPose;
-    applyV3WeaponMeshPose(swordModel, sample({
+    ensureV3WeaponSocketBasis(swordModel, 'sword');
+    const input = {
       activeWeapon: 'sword',
       weaponState,
       weaponTimer,
       isLunging,
       settings,
-    }), weaponState, dt);
+    } as const;
+    if (swordModel.userData.v3View === 'firstPerson') {
+      applyV3WeaponMeshPose(swordModel, sampleV3FirstPersonWeaponPose(input), weaponState, dt);
+    } else {
+      const sample = sampleV3ThirdPersonWeaponMotion(input);
+      applyV3WeaponMeshPose(swordModel, sample.weaponPose, weaponState, dt);
+      applyV3WeaponGripConstraints(combatantModel, swordModel, sample.gripConstraints);
+    }
   }
 
   if (pistolModel?.userData.modelSystem === 'v3' && activeWeapon === 'pistol') {
-    const sample = pistolModel.userData.v3View === 'firstPerson'
-      ? sampleV3FirstPersonWeaponPose
-      : sampleV3ThirdPersonWeaponPose;
-    applyV3WeaponMeshPose(pistolModel, sample({
+    ensureV3WeaponSocketBasis(pistolModel, 'pistol');
+    const input = {
       activeWeapon: 'pistol',
       weaponState,
       weaponTimer,
       isLunging,
       settings,
-    }), weaponState, dt);
+    } as const;
+    if (pistolModel.userData.v3View === 'firstPerson') {
+      applyV3WeaponMeshPose(pistolModel, sampleV3FirstPersonWeaponPose(input), weaponState, dt);
+    } else {
+      const sample = sampleV3ThirdPersonWeaponMotion(input);
+      applyV3WeaponMeshPose(pistolModel, sample.weaponPose, weaponState, dt);
+      applyV3WeaponGripConstraints(combatantModel, pistolModel, sample.gripConstraints);
+    }
   }
 }

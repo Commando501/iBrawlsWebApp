@@ -11,14 +11,20 @@ import { animateCombatantWeaponMeshes, animateSpartanCombatantModel } from './co
 import { buildCombatantRigForModel } from './combatantRig';
 import {
   animateV3CombatantModel,
+  animateV3WeaponMeshes,
   getFirstPersonV3WeaponPose,
   getV3BodyMaskForLayer,
 } from './combatantAnimationV3';
+import { createCombatantMeshRig } from './combatantModels';
 import {
   sampleV3FirstPersonWeaponPose,
   sampleV3ThirdPersonWeaponPose,
   sampleV3WeaponCarryPose,
 } from './v3AnimationFidelity';
+import {
+  analyzeV3WeaponCarryAlignment,
+  getV3WeaponSocketBasisVisualRoot,
+} from './v3WeaponSocketBasis';
 import { getV3LowerBodySeamAnchorPair } from './v3LowerBodyContinuity';
 import { createInitialGrifballThreeRefs } from './threeRefs';
 
@@ -65,6 +71,9 @@ const assertWorldYAbove = (group: THREE.Group, label: string, minimumY: number) 
   assert.equal(Number.isFinite(worldPosition.y), true, `${label} world y must stay finite`);
   assert.equal(worldPosition.y >= minimumY, true, `${label} world y ${worldPosition.y} dropped below floor-safe range`);
 };
+
+const getWorldBoxCenter = (object: THREE.Object3D): THREE.Vector3 =>
+  new THREE.Box3().setFromObject(object).getCenter(new THREE.Vector3());
 
 describe('combatantAnimationV3 body masks', () => {
   it('declares separate lower-body, upper-body, and full-body masks', () => {
@@ -151,7 +160,7 @@ describe('animateV3CombatantModel', () => {
       settings: { hammerAttackAnimation: 'highFidelity' },
     });
 
-    assert.notEqual(detailBones.spine2.rotation.y, 0);
+    assert.notEqual(detailBones.chest.rotation.y, 0);
     assert.notEqual(detailBones.forearmRight.rotation.x, 0);
     assert.notEqual(detailBones.handLeft.rotation.x, 0);
     assert.notEqual(detailBones.thighLeft.rotation.x, 0);
@@ -215,6 +224,76 @@ describe('animateV3CombatantModel', () => {
         Math.abs(model.userData.upperTorso.rotation.x - expectedCarry.upperBodyPose.upperTorsoRotation[0]) < 0.001,
         `${weapon} upper torso should use carry pose`
       );
+    }
+  });
+
+  it('keeps V3 carry grips pinned to the right hand without tearing the left arm from the shoulder', () => {
+    for (const weapon of ['hammer', 'sword', 'pistol'] as const) {
+      const scene = new THREE.Scene();
+      const meshes = createCombatantMeshRig(scene, 192, false, { modelSystem: 'v3' });
+      const parts = meshes.group.userData.v3PartGroups as Record<string, THREE.Group>;
+      const restingLeftShoulderDistance = getWorldBoxCenter(parts.shoulderLeft)
+        .distanceTo(getWorldBoxCenter(parts.upperArmLeft));
+
+      animateV3CombatantModel({
+        refs: createInitialGrifballThreeRefs(),
+        mesh: meshes.group,
+        vel: new THREE.Vector3(0, 0, 0),
+        yaw: 0,
+        hp: 100,
+        activeWeapon: weapon,
+        weaponState: 'ready',
+        weaponTimer: 0,
+        dt: 1,
+        settings: {},
+        animationClockMs: 0,
+        isLocalV3Animation: true,
+      });
+      animateV3WeaponMeshes({
+        hammerModel: meshes.hammer,
+        swordModel: meshes.sword,
+        pistolModel: meshes.pistol,
+        activeWeapon: weapon,
+        weaponState: 'ready',
+        weaponTimer: 0,
+        isLunging: false,
+        dt: 1,
+        settings: {},
+        combatantModel: meshes.group,
+      });
+      meshes.group.updateWorldMatrix(true, true);
+
+      const weaponModel = weapon === 'hammer'
+        ? meshes.hammer
+        : weapon === 'sword'
+          ? meshes.sword
+          : meshes.pistol;
+      const alignment = analyzeV3WeaponCarryAlignment(meshes.group, weaponModel, weapon);
+      const leftShoulderDistance = getWorldBoxCenter(parts.shoulderLeft)
+        .distanceTo(getWorldBoxCenter(parts.upperArmLeft));
+
+      assert.ok(
+        alignment.primaryGripDrift < 0.025,
+        `${weapon} carry primary grip drift ${alignment.primaryGripDrift} should stay pinned to the right hand`
+      );
+      if (weapon === 'hammer') {
+        const gripReport = meshes.group.userData.v3WeaponGripConstraintReport;
+        assert.equal(gripReport?.ready, true, 'hammer carry grip constraints should solve');
+        assert.equal(gripReport?.reachClampCount, 0, 'hammer carry should not require IK reach clamping');
+        assert.ok(
+          (alignment.offhandGripDrift ?? Number.POSITIVE_INFINITY) < 0.055,
+          `hammer carry offhand drift ${alignment.offhandGripDrift} should lock to the left hand`
+        );
+        assert.ok(
+          leftShoulderDistance < 0.5,
+          `hammer carry left shoulder distance ${leftShoulderDistance} should remain visually connected`
+        );
+      } else {
+        assert.ok(
+          leftShoulderDistance < restingLeftShoulderDistance + 0.12,
+          `${weapon} carry left shoulder distance ${leftShoulderDistance} should not tear away from rest ${restingLeftShoulderDistance}`
+        );
+      }
     }
   });
 
@@ -674,6 +753,44 @@ describe('animateCombatantWeaponMeshes V3 integration', () => {
 
     assert.deepEqual(pistol.position.toArray(), expected.position);
     assert.deepEqual(pistol.rotation.toArray().slice(0, 3), expected.rotation);
+    assert.equal(pistol.userData.v3WeaponSocketBasis.socketName, 'thirdPersonPrimaryGrip');
+    assert.ok(getV3WeaponSocketBasisVisualRoot(pistol));
+  });
+
+  it('preserves the inner V3 socket basis root while animating third-person weapon poses', () => {
+    const hammer = buildV3HammerModel(192);
+
+    animateCombatantWeaponMeshes({
+      hammerModel: hammer,
+      swordModel: buildV3SwordModel(192),
+      pistolModel: buildV3PistolModel(192),
+      activeWeapon: 'hammer',
+      weaponState: 'swing_up',
+      weaponTimer: 0.18,
+      isLunging: false,
+      dt: 1,
+      settings: { hammerAttackAnimation: 'highFidelity' },
+      combatantModel: createV3Model(),
+    });
+    const visualRoot = getV3WeaponSocketBasisVisualRoot(hammer);
+    const animatedRotation = hammer.rotation.x;
+
+    animateCombatantWeaponMeshes({
+      hammerModel: hammer,
+      swordModel: null,
+      pistolModel: null,
+      activeWeapon: 'hammer',
+      weaponState: 'swing_down',
+      weaponTimer: 0.08,
+      isLunging: false,
+      dt: 1,
+      settings: { hammerAttackAnimation: 'highFidelity' },
+      combatantModel: createV3Model(),
+    });
+
+    assert.equal(getV3WeaponSocketBasisVisualRoot(hammer), visualRoot);
+    assert.notEqual(hammer.rotation.x, animatedRotation);
+    assert.equal(hammer.userData.v3WeaponSocketBasis.socketName, 'thirdPersonPrimaryGrip');
   });
 
   it('adds deterministic V3 first-person idle sway without affecting third-person combatant weapons', () => {
@@ -709,5 +826,7 @@ describe('animateCombatantWeaponMeshes V3 integration', () => {
 
     assert.notEqual(firstPersonY, thirdPerson.position.y);
     assert.equal(thirdPerson.userData.v3FirstPersonSwayPhase, undefined);
+    assert.equal(pistol.userData.v3WeaponSocketBasis.socketName, 'firstPersonPrimaryGrip');
+    assert.equal(thirdPerson.userData.v3WeaponSocketBasis.socketName, 'thirdPersonPrimaryGrip');
   });
 });

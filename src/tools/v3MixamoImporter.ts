@@ -14,7 +14,25 @@ export const V3_MIXAMO_DEFAULT_SOURCE_FILE_NAMES = {
   tPose: 'T-Pose.fbx',
 } as const;
 
+export const V3_MIXAMO_WEAPON_REFERENCE_CLIP_IDS = [
+  'hammer_2hand_idle',
+  'hammer_heavy_swing',
+  'hammer_melee_advance',
+  'sword_outward_slash',
+  'hammer_smash_reference',
+] as const;
+
+export const V3_MIXAMO_WEAPON_REFERENCE_SOURCE_FILE_NAMES = {
+  hammer_2hand_idle: 'hammer_2hand_idle.fbx',
+  hammer_heavy_swing: 'hammer_heavy_swing.fbx',
+  hammer_melee_advance: 'hammer_melee_advance.fbx',
+  sword_outward_slash: 'sword_outward_slash.fbx',
+  hammer_smash_reference: 'Smash.fbx',
+} as const satisfies Record<V3MixamoWeaponReferenceClipId, string>;
+
 export type V3MixamoRetargetedClipId = 'idle' | 'walk' | 'run';
+export type V3MixamoWeaponReferenceClipId = (typeof V3_MIXAMO_WEAPON_REFERENCE_CLIP_IDS)[number];
+export type V3MixamoWeaponReferenceRuntimeRole = 'runtimeReference' | 'analysisOnly';
 
 export interface V3MixamoJointKeyframe {
   t: number;
@@ -77,6 +95,83 @@ export interface V3MixamoSanitizationReport {
   issues: string[];
 }
 
+export interface V3MixamoWeaponReferenceJointFrame {
+  rotation: [number, number, number];
+  position: [number, number, number];
+}
+
+export interface V3MixamoWeaponReferenceJointTrack {
+  rotations: [number, number, number][];
+  positions: [number, number, number][];
+}
+
+export interface V3MixamoWeaponReferenceClipMetrics {
+  sourceTrackCount: number;
+  sourceFrameCount: number;
+  mappedJointCount: number;
+  droppedTrackCount: number;
+  handPathDistance: {
+    left: number;
+    right: number;
+  };
+  handSeparation: {
+    min: number;
+    max: number;
+    mean: number;
+  };
+  shoulderMotion: {
+    left: number;
+    right: number;
+  };
+  forwardSweep: number;
+  upSweep: number;
+  nonFiniteTransformCount: number;
+}
+
+export interface V3MixamoWeaponReferenceClipArtifact {
+  schemaVersion: 'v3-mixamo-weapon-reference-clip/v1';
+  clipId: V3MixamoWeaponReferenceClipId;
+  label: string;
+  runtimeRole: V3MixamoWeaponReferenceRuntimeRole;
+  source: V3MixamoSourceSummary;
+  duration: number;
+  fps: number;
+  frameCount: number;
+  normalizedTimes: number[];
+  keyframes: Array<{
+    time: number;
+    normalizedTime: number;
+    joints: Partial<Record<V3DetailBoneName, V3MixamoWeaponReferenceJointFrame>>;
+  }>;
+  joints: Partial<Record<V3DetailBoneName, V3MixamoWeaponReferenceJointTrack>>;
+  metrics: V3MixamoWeaponReferenceClipMetrics;
+}
+
+export interface V3MixamoWeaponReferenceSetArtifact {
+  schemaVersion: 'v3-mixamo-weapon-reference-set/v1';
+  fps: number;
+  sources: Record<V3MixamoWeaponReferenceClipId, V3MixamoSourceSummary>;
+  clips: V3MixamoWeaponReferenceClipArtifact[];
+  metrics: {
+    sourceFileCount: 5;
+    clipCount: 5;
+    analysisOnlyClipCount: number;
+    totalKeyframes: number;
+    maxClipFrameCount: number;
+  };
+}
+
+export interface BuildV3MixamoWeaponReferenceClipOptions {
+  clipId: V3MixamoWeaponReferenceClipId;
+  filePath: string;
+  fps?: number;
+}
+
+export interface BuildV3MixamoWeaponReferenceSetOptions {
+  sourceFiles: Record<V3MixamoWeaponReferenceClipId, string>;
+  fps?: number;
+}
+
 const MIXAMO_TO_V3_JOINTS: Record<string, V3DetailBoneName> = {
   Hips: 'pelvis',
   Spine: 'spine1',
@@ -107,6 +202,39 @@ const CLIP_LABELS: Record<V3MixamoRetargetedClipId, string> = {
   walk: 'Walk',
   run: 'Run',
 };
+
+const WEAPON_REFERENCE_LABELS: Record<V3MixamoWeaponReferenceClipId, string> = {
+  hammer_2hand_idle: 'Hammer 2H Idle',
+  hammer_heavy_swing: 'Hammer Heavy Swing',
+  hammer_melee_advance: 'Hammer Melee Advance',
+  sword_outward_slash: 'Sword Outward Slash',
+  hammer_smash_reference: 'Hammer Smash Reference',
+};
+
+const WEAPON_REFERENCE_RUNTIME_ROLES: Record<
+  V3MixamoWeaponReferenceClipId,
+  V3MixamoWeaponReferenceRuntimeRole
+> = {
+  hammer_2hand_idle: 'runtimeReference',
+  hammer_heavy_swing: 'runtimeReference',
+  hammer_melee_advance: 'runtimeReference',
+  sword_outward_slash: 'runtimeReference',
+  hammer_smash_reference: 'analysisOnly',
+};
+
+const WEAPON_REFERENCE_JOINTS = {
+  Spine2: 'chest',
+  Neck: 'neck',
+  Head: 'head',
+  LeftShoulder: 'clavicleLeft',
+  LeftArm: 'upperArmLeft',
+  LeftForeArm: 'forearmLeft',
+  LeftHand: 'handLeft',
+  RightShoulder: 'clavicleRight',
+  RightArm: 'upperArmRight',
+  RightForeArm: 'forearmRight',
+  RightHand: 'handRight',
+} as const satisfies Partial<Record<string, V3DetailBoneName>>;
 
 const HIPS_MIXAMO_BONE = 'Hips';
 const MIXAMO_UNIT_SCALE = 0.01;
@@ -577,6 +705,257 @@ export function buildV3MixamoClipSetArtifact(options: BuildV3MixamoClipSetOption
       tPoseDeduped: true,
       tPoseFrameCount: tPoseClip?.tracks[0]?.times.length ?? 0,
       tPoseDuration: round(tPoseClip?.duration ?? 0),
+    },
+  };
+}
+
+const collectMixamoBones = (root: THREE.Object3D): Map<string, THREE.Object3D> => {
+  const bones = new Map<string, THREE.Object3D>();
+  root.traverse((child) => {
+    const name = child.name?.replace(/^mixamorig/, '');
+    if (name) bones.set(name, child);
+  });
+  return bones;
+};
+
+const normalizedFrameTimes = (animation: THREE.AnimationClip, tracks: TrackMap): number[] => {
+  const preferredTrack = tracks.get(trackKey('Spine2', 'quaternion')) ?? animation.tracks[0];
+  const times = preferredTrack?.times;
+  if (!times || times.length === 0) return [0];
+  return Array.from(times, (time) => (
+    animation.duration > 0 ? round(Number(time) / animation.duration) : 0
+  ));
+};
+
+const quaternionAtNormalizedTime = (
+  track: THREE.KeyframeTrack | undefined,
+  normalizedTime: number
+): THREE.Quaternion => {
+  if (!track || track.times.length === 0) return new THREE.Quaternion();
+  const index = Math.max(0, Math.min(track.times.length - 1, Math.round(normalizedTime * (track.times.length - 1))));
+  return quaternionAt(track, index);
+};
+
+const finiteTuple = (values: readonly number[]): boolean => values.every(Number.isFinite);
+
+const pathLength = (positions: readonly (readonly [number, number, number])[]): number => {
+  let distance = 0;
+  for (let index = 1; index < positions.length; index += 1) {
+    const previous = positions[index - 1];
+    const current = positions[index];
+    distance += Math.sqrt(
+      (current[0] - previous[0]) ** 2 +
+      (current[1] - previous[1]) ** 2 +
+      (current[2] - previous[2]) ** 2
+    );
+  }
+  return round(distance);
+};
+
+const rotationPathLength = (rotations: readonly (readonly [number, number, number])[]): number => {
+  let distance = 0;
+  for (let index = 1; index < rotations.length; index += 1) {
+    const previous = rotations[index - 1];
+    const current = rotations[index];
+    distance += Math.sqrt(
+      (current[0] - previous[0]) ** 2 +
+      (current[1] - previous[1]) ** 2 +
+      (current[2] - previous[2]) ** 2
+    );
+  }
+  return round(distance);
+};
+
+const axisRange = (
+  positions: readonly (readonly [number, number, number])[],
+  axisIndex: 0 | 1 | 2
+): number => {
+  if (positions.length === 0) return 0;
+  const values = positions.map((position) => position[axisIndex]);
+  return round(Math.max(...values) - Math.min(...values));
+};
+
+const measureHandSeparation = (
+  left: readonly (readonly [number, number, number])[],
+  right: readonly (readonly [number, number, number])[]
+): V3MixamoWeaponReferenceClipMetrics['handSeparation'] => {
+  const count = Math.min(left.length, right.length);
+  if (count === 0) return { min: 0, max: 0, mean: 0 };
+  const distances: number[] = [];
+  for (let index = 0; index < count; index += 1) {
+    distances.push(Math.sqrt(
+      (left[index][0] - right[index][0]) ** 2 +
+      (left[index][1] - right[index][1]) ** 2 +
+      (left[index][2] - right[index][2]) ** 2
+    ));
+  }
+  return {
+    min: round(Math.min(...distances)),
+    max: round(Math.max(...distances)),
+    mean: round(distances.reduce((total, value) => total + value, 0) / distances.length),
+  };
+};
+
+const countNonFiniteReferenceTransforms = (
+  keyframes: V3MixamoWeaponReferenceClipArtifact['keyframes']
+): number => {
+  let count = 0;
+  for (const keyframe of keyframes) {
+    for (const joint of Object.values(keyframe.joints)) {
+      if (!joint) continue;
+      if (!finiteTuple(joint.position) || !finiteTuple(joint.rotation)) count += 1;
+    }
+  }
+  return count;
+};
+
+const buildWeaponReferenceClipFromBuffer = (
+  clipId: V3MixamoWeaponReferenceClipId,
+  filePath: string,
+  buffer: Buffer,
+  fps: number | undefined
+): V3MixamoWeaponReferenceClipArtifact => {
+  const root = parseFbxBuffer(buffer);
+  const animation = root.animations[0];
+  if (!animation) {
+    throw new Error(`Mixamo weapon reference FBX ${filePath} did not contain an animation clip.`);
+  }
+
+  const tracks = mapAnimationTracks(animation);
+  const bones = collectMixamoBones(root);
+  const normalizedTimes = normalizedFrameTimes(animation, tracks);
+  const frameTimes = normalizedTimes.map((normalizedTime) => normalizedTime * animation.duration);
+  const mixer = new THREE.AnimationMixer(root);
+  mixer.clipAction(animation).play();
+  const baseQuaternions = new Map<string, THREE.Quaternion>();
+  for (const mixamoBone of Object.keys(WEAPON_REFERENCE_JOINTS)) {
+    baseQuaternions.set(
+      mixamoBone,
+      quaternionAtNormalizedTime(tracks.get(trackKey(mixamoBone, 'quaternion')), 0).invert()
+    );
+  }
+
+  const keyframes: V3MixamoWeaponReferenceClipArtifact['keyframes'] = [];
+  for (let frameIndex = 0; frameIndex < normalizedTimes.length; frameIndex += 1) {
+    const normalizedTime = normalizedTimes[frameIndex];
+    const time = frameTimes[frameIndex];
+    mixer.setTime(time);
+    root.updateMatrixWorld(true);
+
+    const chest = bones.get('Spine2');
+    const chestWorldPosition = chest?.getWorldPosition(new THREE.Vector3()) ?? new THREE.Vector3();
+    const inverseChestWorldQuaternion = (chest?.getWorldQuaternion(new THREE.Quaternion()) ?? new THREE.Quaternion())
+      .invert();
+    const joints: V3MixamoWeaponReferenceClipArtifact['keyframes'][number]['joints'] = {};
+
+    for (const [mixamoBone, v3Joint] of Object.entries(WEAPON_REFERENCE_JOINTS) as [string, V3DetailBoneName][]) {
+      const bone = bones.get(mixamoBone);
+      const rotationTrack = tracks.get(trackKey(mixamoBone, 'quaternion'));
+      if (!bone || !rotationTrack) continue;
+      const delta = (baseQuaternions.get(mixamoBone) ?? new THREE.Quaternion())
+        .clone()
+        .multiply(quaternionAtNormalizedTime(rotationTrack, normalizedTime))
+        .normalize();
+      const euler = new THREE.Euler().setFromQuaternion(delta, 'XYZ');
+      const worldPosition = bone.getWorldPosition(new THREE.Vector3());
+      const chestSpace = mixamoBone === 'Spine2'
+        ? new THREE.Vector3()
+        : worldPosition.sub(chestWorldPosition).applyQuaternion(inverseChestWorldQuaternion).multiplyScalar(MIXAMO_UNIT_SCALE);
+      joints[v3Joint] = {
+        rotation: [round(euler.x), round(euler.y), round(euler.z)],
+        position: [round(chestSpace.x), round(chestSpace.y), round(chestSpace.z)],
+      };
+    }
+
+    keyframes.push({
+      time: round(time),
+      normalizedTime,
+      joints,
+    });
+  }
+
+  const joints = {} as Partial<Record<V3DetailBoneName, V3MixamoWeaponReferenceJointTrack>>;
+  for (const v3Joint of Object.values(WEAPON_REFERENCE_JOINTS)) {
+    const frames = keyframes
+      .map((keyframe) => keyframe.joints[v3Joint])
+      .filter((frame): frame is V3MixamoWeaponReferenceJointFrame => frame !== undefined);
+    if (frames.length === 0) continue;
+    joints[v3Joint] = {
+      rotations: frames.map((frame) => frame.rotation),
+      positions: frames.map((frame) => frame.position),
+    };
+  }
+
+  const leftHandPositions = joints.handLeft?.positions ?? [];
+  const rightHandPositions = joints.handRight?.positions ?? [];
+  const rightHandForwardRange = axisRange(rightHandPositions, 2);
+  const rightHandUpRange = axisRange(rightHandPositions, 1);
+
+  return {
+    schemaVersion: 'v3-mixamo-weapon-reference-clip/v1',
+    clipId,
+    label: WEAPON_REFERENCE_LABELS[clipId],
+    runtimeRole: WEAPON_REFERENCE_RUNTIME_ROLES[clipId],
+    source: sourceSummary(filePath, buffer),
+    duration: round(animation.duration),
+    fps: fps ?? estimateFps(animation, normalizedTimes.length),
+    frameCount: normalizedTimes.length,
+    normalizedTimes,
+    keyframes,
+    joints,
+    metrics: {
+      sourceTrackCount: animation.tracks.length,
+      sourceFrameCount: normalizedTimes.length,
+      mappedJointCount: Object.keys(joints).length,
+      droppedTrackCount: Math.max(0, animation.tracks.length - Object.keys(joints).length),
+      handPathDistance: {
+        left: pathLength(leftHandPositions),
+        right: pathLength(rightHandPositions),
+      },
+      handSeparation: measureHandSeparation(leftHandPositions, rightHandPositions),
+      shoulderMotion: {
+        left: rotationPathLength(joints.clavicleLeft?.rotations ?? []),
+        right: rotationPathLength(joints.clavicleRight?.rotations ?? []),
+      },
+      forwardSweep: rightHandForwardRange,
+      upSweep: rightHandUpRange,
+      nonFiniteTransformCount: countNonFiniteReferenceTransforms(keyframes),
+    },
+  };
+};
+
+export function buildV3MixamoWeaponReferenceClipArtifact(
+  options: BuildV3MixamoWeaponReferenceClipOptions
+): V3MixamoWeaponReferenceClipArtifact {
+  const buffer = readFileSync(options.filePath);
+  return buildWeaponReferenceClipFromBuffer(options.clipId, options.filePath, buffer, options.fps);
+}
+
+export function buildV3MixamoWeaponReferenceSetArtifact(
+  options: BuildV3MixamoWeaponReferenceSetOptions
+): V3MixamoWeaponReferenceSetArtifact {
+  const fps = options.fps ?? 30;
+  const clips = V3_MIXAMO_WEAPON_REFERENCE_CLIP_IDS.map((clipId) => (
+    buildV3MixamoWeaponReferenceClipArtifact({
+      clipId,
+      filePath: options.sourceFiles[clipId],
+      fps,
+    })
+  ));
+  return {
+    schemaVersion: 'v3-mixamo-weapon-reference-set/v1',
+    fps,
+    sources: Object.fromEntries(clips.map((clip) => [clip.clipId, clip.source])) as Record<
+      V3MixamoWeaponReferenceClipId,
+      V3MixamoSourceSummary
+    >,
+    clips,
+    metrics: {
+      sourceFileCount: 5,
+      clipCount: 5,
+      analysisOnlyClipCount: clips.filter((clip) => clip.runtimeRole === 'analysisOnly').length,
+      totalKeyframes: clips.reduce((total, clip) => total + clip.keyframes.length, 0),
+      maxClipFrameCount: Math.max(0, ...clips.map((clip) => clip.frameCount)),
     },
   };
 }

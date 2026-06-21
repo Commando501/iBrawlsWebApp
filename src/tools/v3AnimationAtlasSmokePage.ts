@@ -103,10 +103,12 @@ function resize() {
   renderer.setSize(width, height, false);
   const aspect = width / height;
   const viewHeight = 4.4;
+  const minViewWidth = 15;
+  const viewWidth = Math.max(viewHeight * aspect, minViewWidth);
   atlas.camera.top = viewHeight / 2;
   atlas.camera.bottom = -viewHeight / 2;
-  atlas.camera.left = -(viewHeight * aspect) / 2;
-  atlas.camera.right = (viewHeight * aspect) / 2;
+  atlas.camera.left = -viewWidth / 2;
+  atlas.camera.right = viewWidth / 2;
   atlas.camera.updateProjectionMatrix();
 }
 

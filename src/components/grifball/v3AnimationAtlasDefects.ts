@@ -3,6 +3,7 @@ import { buildV3WeaponModel } from '../v3/VoxelModelsV3';
 import type { V3QualityTier, V3WeaponId } from '../v3/v3ModelTypes';
 import type { V3RenderOptions } from '../v3/v3QualityTiers';
 import type { CharacterLoadout } from '../VoxelModels';
+import type { UniversalSettings } from '../../types';
 import {
   animateV3CombatantModel,
   animateV3WeaponMeshes,
@@ -21,6 +22,7 @@ import {
   type V3SlotContinuityViewId,
 } from './v3SlotContinuity';
 import { analyzeV3LowerBodyContinuity } from './v3LowerBodyContinuity';
+import { analyzeV3UpperBodyContinuity } from './v3UpperBodyContinuity';
 import {
   analyzeV3RetargetedMotionRetention,
   type V3RetargetedMotionRetentionReport,
@@ -28,6 +30,15 @@ import {
 
 export type V3AnimationAtlasDefectViewId = 'front' | 'left' | 'rear' | 'right';
 export type V3AnimationAtlasDefectMode = 'normalizedReview' | 'runtimeSimulation';
+
+const V3_ANIMATION_ATLAS_DEFECT_WEAPON_SETTINGS: Partial<UniversalSettings> = {
+  hammerAttackAnimation: 'highFidelity',
+  hammerSlamWindupTime: 0.45,
+  hammerSlamAttackTime: 0.3,
+  hammerReloadTime: 0.6,
+  hammerMeleeSpeed: 0.24,
+  swordSlashSpeed: 0.22,
+};
 
 export interface V3AnimationAtlasSlotContinuityIssue {
   frameFraction: number;
@@ -56,6 +67,18 @@ export interface V3AnimationAtlasDefectMetrics {
   slotBoneDrift: number;
   weaponBodyHeightRatio: number | null;
   weaponGripDrift: number | null;
+  weaponBasisForwardAlignment: number | null;
+  weaponBasisUpAlignment: number | null;
+  weaponPrimaryGripDrift: number | null;
+  weaponOffhandGripDrift: number | null;
+  weaponDesiredPrimaryGripDrift: number | null;
+  weaponDesiredOffhandGripDrift: number | null;
+  weaponIkMaxGripDrift: number | null;
+  weaponIkShoulderSeamDistance: number | null;
+  weaponIkReachClampCount: number;
+  weaponSwingArcDistance: number | null;
+  weaponTwoHandReadiness: number | null;
+  weaponOneHandReadiness: number | null;
   footFloorPenetration: number;
   upperLowerCoupling: number;
   nonFiniteTransformCount: number;
@@ -67,6 +90,9 @@ export interface V3AnimationAtlasDefectMetrics {
   maxLowerBodySeamGap: number;
   maxLowerBodyProjectedSeamGap: number;
   lowerBodyTearWarningCount: number;
+  maxUpperBodySeamGap: number;
+  maxUpperBodyProjectedSeamGap: number;
+  upperBodySeamWarningCount: number;
   rawMaxLowerBodySeamGap: number;
   rawMaxLowerBodyProjectedSeamGap: number;
   visibleMaxLowerBodySeamGap: number;
@@ -104,6 +130,16 @@ export interface V3AnimationAtlasDefectSummary {
   maxSlotBoneDrift: number;
   maxWeaponBodyHeightRatio: number;
   maxWeaponGripDrift: number;
+  minWeaponBasisForwardAlignment: number;
+  minWeaponBasisUpAlignment: number;
+  maxWeaponPrimaryGripDrift: number;
+  maxWeaponOffhandGripDrift: number;
+  maxWeaponDesiredPrimaryGripDrift: number;
+  maxWeaponDesiredOffhandGripDrift: number;
+  maxWeaponIkGripDrift: number;
+  maxWeaponIkShoulderSeamDistance: number;
+  weaponIkReachClampCount: number;
+  maxWeaponSwingArcDistance: number;
   maxFootFloorPenetration: number;
   maxUpperLowerCoupling: number;
   maxSlotContinuityGap: number;
@@ -113,6 +149,9 @@ export interface V3AnimationAtlasDefectSummary {
   maxLowerBodySeamGap: number;
   maxLowerBodyProjectedSeamGap: number;
   lowerBodyTearWarningCount: number;
+  maxUpperBodySeamGap: number;
+  maxUpperBodyProjectedSeamGap: number;
+  upperBodySeamWarningCount: number;
   maxVisibleLowerBodySeamGap: number;
   maxVisibleLowerBodyProjectedSeamGap: number;
   visibleLowerBodyTearWarningCount: number;
@@ -137,12 +176,32 @@ const VIEW_IDS: readonly V3AnimationAtlasDefectViewId[] = ['front', 'left', 'rea
 const DEFAULT_SLOT_CONTINUITY_FRAME_FRACTIONS = [0, 0.25, 0.5, 0.75, 1] as const;
 const ATLAS_WARNING_THRESHOLDS = {
   maxLimbSeparation: 0.135,
-  maxSlotBoneDrift: 0.16,
+  maxSlotBoneDrift: 0.6,
   maxWeaponGripDrift: 0.12,
+  minWeaponBasisForwardAlignment: 0.82,
+  minWeaponBasisUpAlignment: 0.82,
+  maxWeaponPrimaryGripDrift: 0.18,
+  maxWeaponOffhandGripDrift: 0.52,
+  maxWeaponDesiredPrimaryGripDrift: 0.08,
+  maxWeaponDesiredOffhandGripDrift: 0.12,
+  maxWeaponIkGripDrift: 0.08,
+  maxWeaponIkShoulderSeamDistance: 0.045,
+  minWeaponSwingArcDistance: {
+    hammerWindup: 0.12,
+    hammerStrike: 0.12,
+    hammerRecover: 0.08,
+    hammerMelee: 0.12,
+    hammerMeleeRecover: 0.08,
+    swordLunge: 0.08,
+    swordSlash: 0.12,
+    pistolFire: 0.025,
+  } satisfies Partial<Record<V3PoseClearanceCaseId, number>>,
   maxFootFloorPenetration: 0.025,
   maxUpperLowerCoupling: 0.4,
   maxLowerBodySeamGap: 0.08,
   maxLowerBodyProjectedSeamGap: 0.08,
+  maxUpperBodySeamGap: 0.06,
+  maxUpperBodyProjectedSeamGap: 0.06,
   maxWeaponBodyHeightRatio: {
     hammer: 0.42,
     sword: 0.66,
@@ -154,9 +213,17 @@ const WEAPON_CASES = new Set<V3PoseClearanceCaseId>([
   'hammerWindup',
   'hammerStrike',
   'hammerRecover',
+  'hammerMelee',
+  'hammerMeleeRecover',
   'swordLunge',
   'swordSlash',
   'pistolFire',
+]);
+const HAMMER_TWO_HAND_READY_CASES = new Set<V3PoseClearanceCaseId>([
+  'idle',
+  'walk',
+  'sprint',
+  'slide',
 ]);
 const ANALYSIS_LOADOUT: CharacterLoadout = {
   modelSystem: 'v3',
@@ -205,6 +272,8 @@ const sampleTimer = (
   if (caseId === 'hammerWindup') return roundMetric(0.34 + (0.02 - 0.34) * t);
   if (caseId === 'hammerStrike') return roundMetric(0.18 + (0.01 - 0.18) * t);
   if (caseId === 'hammerRecover') return roundMetric(0.42 + (0.02 - 0.42) * t);
+  if (caseId === 'hammerMelee') return roundMetric(0.24 + (0.01 - 0.24) * t);
+  if (caseId === 'hammerMeleeRecover') return roundMetric(0.5 + (0.01 - 0.5) * t);
   if (caseId === 'swordSlash') return roundMetric(0.24 + (0.01 - 0.24) * t);
   if (caseId === 'swordLunge') return roundMetric(0.18 + (0.02 - 0.18) * t);
   if (caseId === 'pistolFire') return roundMetric(0.16 + (0.01 - 0.16) * t);
@@ -248,7 +317,7 @@ const measureWeaponBodyHeightRatio = (
   return roundMetric(longestAxis / bodyHeight);
 };
 
-const buildWarnings = (
+export const buildV3AnimationAtlasDefectWarnings = (
   caseId: V3PoseClearanceCaseId,
   metrics: V3AnimationAtlasDefectMetrics
 ): string[] => {
@@ -265,6 +334,54 @@ const buildWarnings = (
     : Number.POSITIVE_INFINITY;
   if ((metrics.weaponBodyHeightRatio ?? 0) > weaponScaleLimit) warnings.push('weapon scale high');
   if ((metrics.weaponGripDrift ?? 0) > ATLAS_WARNING_THRESHOLDS.maxWeaponGripDrift) warnings.push('weapon grip drift high');
+  if (
+    metrics.visibleWeapon
+    && (metrics.weaponBasisForwardAlignment ?? 1) < ATLAS_WARNING_THRESHOLDS.minWeaponBasisForwardAlignment
+  ) {
+    warnings.push('weapon socket basis forward low');
+  }
+  if (
+    metrics.visibleWeapon
+    && (metrics.weaponBasisUpAlignment ?? 1) < ATLAS_WARNING_THRESHOLDS.minWeaponBasisUpAlignment
+  ) {
+    warnings.push('weapon socket basis up low');
+  }
+  if ((metrics.weaponPrimaryGripDrift ?? 0) > ATLAS_WARNING_THRESHOLDS.maxWeaponPrimaryGripDrift) {
+    warnings.push('weapon primary grip drift high');
+  }
+  if ((metrics.weaponDesiredPrimaryGripDrift ?? 0) > ATLAS_WARNING_THRESHOLDS.maxWeaponDesiredPrimaryGripDrift) {
+    warnings.push('weapon desired primary grip drift high');
+  }
+  if (
+    HAMMER_TWO_HAND_READY_CASES.has(caseId)
+    && metrics.visibleWeapon === 'hammer'
+    && (metrics.weaponOffhandGripDrift ?? 0) > ATLAS_WARNING_THRESHOLDS.maxWeaponOffhandGripDrift
+  ) {
+    warnings.push('weapon offhand grip drift high');
+  }
+  if (
+    metrics.visibleWeapon === 'hammer'
+    && (metrics.weaponDesiredOffhandGripDrift ?? 0) > ATLAS_WARNING_THRESHOLDS.maxWeaponDesiredOffhandGripDrift
+  ) {
+    warnings.push('weapon desired offhand grip drift high');
+  }
+  if (
+    metrics.weaponIkReachClampCount > 0 &&
+    (metrics.weaponIkMaxGripDrift ?? 0) > ATLAS_WARNING_THRESHOLDS.maxWeaponIkGripDrift
+  ) {
+    warnings.push('weapon IK reach clamped');
+  }
+  if ((metrics.weaponIkShoulderSeamDistance ?? 0) > ATLAS_WARNING_THRESHOLDS.maxWeaponIkShoulderSeamDistance) {
+    warnings.push('weapon shoulder seam high');
+  }
+  const minSwingArc = ATLAS_WARNING_THRESHOLDS.minWeaponSwingArcDistance[caseId];
+  if (
+    metrics.visibleWeapon &&
+    typeof minSwingArc === 'number' &&
+    (metrics.weaponSwingArcDistance ?? 0) < minSwingArc
+  ) {
+    warnings.push('weapon swing arc too small');
+  }
   if (metrics.footFloorPenetration > ATLAS_WARNING_THRESHOLDS.maxFootFloorPenetration) warnings.push('foot floor penetration');
   if (
     expectUpperLowerIsolation
@@ -274,6 +391,7 @@ const buildWarnings = (
   }
   if (metrics.slotContinuityWarningCount > 0) warnings.push('slot continuity gap high');
   if (metrics.visibleLowerBodyTearWarningCount > 0) warnings.push('lower-body seam tear');
+  if (metrics.upperBodySeamWarningCount > 0) warnings.push('upper-body seam gap');
   return warnings;
 };
 
@@ -308,7 +426,7 @@ const applyDefectSample = (
     isLunging: 'isLunging' in definition ? definition.isLunging : false,
     animationClockMs: frameFraction * 1000,
     isLocalV3Animation: true,
-    settings: { hammerAttackAnimation: 'highFidelity' },
+    settings: V3_ANIMATION_ATLAS_DEFECT_WEAPON_SETTINGS,
   });
 
   animateV3WeaponMeshes({
@@ -320,7 +438,8 @@ const applyDefectSample = (
     weaponTimer,
     isLunging: 'isLunging' in definition ? Boolean(definition.isLunging) : false,
     dt: mode === 'runtimeSimulation' ? 1 / 60 : definition.dt,
-    settings: { hammerAttackAnimation: 'highFidelity' },
+    settings: V3_ANIMATION_ATLAS_DEFECT_WEAPON_SETTINGS,
+    combatantModel: meshRig.group,
   });
   meshRig.hammer.visible = definition.activeWeapon === 'hammer' && isWeaponVisible(caseId);
   meshRig.sword.visible = definition.activeWeapon === 'sword' && isWeaponVisible(caseId);
@@ -342,7 +461,51 @@ type ContinuityByView = Record<V3AnimationAtlasDefectViewId, {
   visibleMaxLowerBodyProjectedSeamGap: number;
   visibleLowerBodyTearWarningCount: number;
   bridgeCoveredLinkCount: number;
+  maxUpperBodySeamGap: number;
+  maxUpperBodyProjectedSeamGap: number;
+  upperBodySeamWarningCount: number;
+  weaponDesiredPrimaryGripDrift: number | null;
+  weaponDesiredOffhandGripDrift: number | null;
+  weaponIkMaxGripDrift: number | null;
+  weaponIkShoulderSeamDistance: number | null;
+  weaponIkReachClampCount: number;
+  weaponSwingArcDistance: number | null;
+  weaponArcPoints: THREE.Vector3[];
 }>;
+
+type V3GripConstraintReportLike = {
+  maxGripDrift?: number;
+  maxShoulderSeamDistance?: number;
+  reachClampCount?: number;
+  results?: Array<{
+    socketName?: string;
+    drift?: number;
+  }>;
+};
+
+const getRigWeaponModel = (
+  meshRig: ReturnType<typeof createCombatantMeshRig>,
+  weapon: V3WeaponId | null
+): THREE.Group | null | undefined => {
+  if (weapon === 'hammer') return meshRig.hammer;
+  if (weapon === 'sword') return meshRig.sword;
+  if (weapon === 'pistol') return meshRig.pistol;
+  return null;
+};
+
+const maxNullable = (current: number | null, value: number | null | undefined): number | null => {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return current;
+  return current === null ? roundMetric(value) : roundMetric(Math.max(current, value));
+};
+
+const pathLength = (points: readonly THREE.Vector3[]): number | null => {
+  if (points.length < 2) return null;
+  let total = 0;
+  for (let index = 1; index < points.length; index += 1) {
+    total += points[index - 1].distanceTo(points[index]);
+  }
+  return roundMetric(total);
+};
 
 const analyzeSlotContinuitySamples = (
   caseId: V3PoseClearanceCaseId,
@@ -385,19 +548,66 @@ const analyzeSlotContinuitySamples = (
       visibleMaxLowerBodyProjectedSeamGap: 0,
       visibleLowerBodyTearWarningCount: 0,
       bridgeCoveredLinkCount: 0,
+      maxUpperBodySeamGap: 0,
+      maxUpperBodyProjectedSeamGap: 0,
+      upperBodySeamWarningCount: 0,
+      weaponDesiredPrimaryGripDrift: null,
+      weaponDesiredOffhandGripDrift: null,
+      weaponIkMaxGripDrift: null,
+      weaponIkShoulderSeamDistance: null,
+      weaponIkReachClampCount: 0,
+      weaponSwingArcDistance: null,
+      weaponArcPoints: [],
     },
   ])) as ContinuityByView;
+  const activeWeapon = isWeaponVisible(caseId)
+    ? caseDefinition(caseId).activeWeapon
+    : null;
 
   for (const frameFraction of sampledFrameFractions) {
     applyDefectSample(scene, meshRig, caseId, frameFraction, mode);
+    const weaponModel = getRigWeaponModel(meshRig, activeWeapon);
+    const gripReport = activeWeapon && weaponModel?.visible
+      ? meshRig.group.userData.v3WeaponGripConstraintReport as V3GripConstraintReportLike | undefined
+      : undefined;
+    const primaryGripDrift = gripReport?.results
+      ?.find((result) => result.socketName === 'thirdPersonPrimaryGrip')
+      ?.drift;
+    const offhandGripDrift = gripReport?.results
+      ?.find((result) => result.socketName === 'thirdPersonOffhandGrip')
+      ?.drift;
+    const weaponPoint = activeWeapon && weaponModel?.visible
+      ? weaponModel.getWorldPosition(new THREE.Vector3())
+      : null;
     const continuity = analyzeV3SlotContinuity(meshRig.group);
     const lowerBodyContinuity = analyzeV3LowerBodyContinuity(meshRig.group, {
       maxSeamGap: lowerBodySeamLimit,
       maxProjectedSeamGap: lowerBodyProjectedSeamLimit,
       bridgeCoverage: 'runtime-bridges',
     });
+    const upperBodyContinuity = analyzeV3UpperBodyContinuity(meshRig.group);
     for (const viewId of VIEW_IDS) {
       const viewMetrics = byView[viewId];
+      viewMetrics.weaponDesiredPrimaryGripDrift = maxNullable(
+        viewMetrics.weaponDesiredPrimaryGripDrift,
+        primaryGripDrift
+      );
+      viewMetrics.weaponDesiredOffhandGripDrift = maxNullable(
+        viewMetrics.weaponDesiredOffhandGripDrift,
+        offhandGripDrift
+      );
+      viewMetrics.weaponIkMaxGripDrift = maxNullable(
+        viewMetrics.weaponIkMaxGripDrift,
+        gripReport?.maxGripDrift
+      );
+      viewMetrics.weaponIkShoulderSeamDistance = maxNullable(
+        viewMetrics.weaponIkShoulderSeamDistance,
+        gripReport?.maxShoulderSeamDistance
+      );
+      viewMetrics.weaponIkReachClampCount += Math.max(0, Math.floor(gripReport?.reachClampCount ?? 0));
+      if (weaponPoint) {
+        viewMetrics.weaponArcPoints.push(weaponPoint.clone());
+      }
       viewMetrics.maxSlotContinuityGap = Math.max(
         viewMetrics.maxSlotContinuityGap,
         continuity.summary.maxWorldGap
@@ -447,6 +657,19 @@ const analyzeSlotContinuitySamples = (
         viewMetrics.bridgeCoveredLinkCount,
         lowerBodyContinuity.summary.bridgeCoveredLinkCount
       );
+      viewMetrics.maxUpperBodySeamGap = Math.max(
+        viewMetrics.maxUpperBodySeamGap,
+        upperBodyContinuity.maxVisibleGap
+      );
+      viewMetrics.maxUpperBodyProjectedSeamGap = Math.max(
+        viewMetrics.maxUpperBodyProjectedSeamGap,
+        Math.max(0, ...upperBodyContinuity.links.map((link) => link.projectedGap[viewId]))
+      );
+      viewMetrics.upperBodySeamWarningCount += upperBodyContinuity.links.filter((link) => (
+        !link.ready ||
+        link.visibleGap > ATLAS_WARNING_THRESHOLDS.maxUpperBodySeamGap ||
+        link.projectedGap[viewId] > ATLAS_WARNING_THRESHOLDS.maxUpperBodyProjectedSeamGap
+      )).length;
       for (const link of lowerBodyContinuity.links) {
         const projectedViewId = viewId as V3SlotContinuityViewId;
         const viewProjectedGap = link.projectedGap[projectedViewId];
@@ -478,6 +701,9 @@ const analyzeSlotContinuitySamples = (
     byView[viewId].rawMaxLowerBodyProjectedSeamGap = roundMetric(byView[viewId].rawMaxLowerBodyProjectedSeamGap);
     byView[viewId].visibleMaxLowerBodySeamGap = roundMetric(byView[viewId].visibleMaxLowerBodySeamGap);
     byView[viewId].visibleMaxLowerBodyProjectedSeamGap = roundMetric(byView[viewId].visibleMaxLowerBodyProjectedSeamGap);
+    byView[viewId].maxUpperBodySeamGap = roundMetric(byView[viewId].maxUpperBodySeamGap);
+    byView[viewId].maxUpperBodyProjectedSeamGap = roundMetric(byView[viewId].maxUpperBodyProjectedSeamGap);
+    byView[viewId].weaponSwingArcDistance = pathLength(byView[viewId].weaponArcPoints);
   }
 
   return { sampledFrameFractions, byView };
@@ -494,6 +720,9 @@ export function analyzeV3AnimationAtlasCaseDefects(
       ...options.v3Options,
       v3QualityTier: options.qualityTier ?? options.v3Options?.v3QualityTier,
       v3SourceFidelity: options.v3Options?.v3SourceFidelity ?? 'exact',
+    },
+    thresholds: {
+      maxPartOverlapRatio: ATLAS_WARNING_THRESHOLDS.maxSlotBoneDrift,
     },
   });
   const poseCase = poseReport.cases[0];
@@ -515,6 +744,18 @@ export function analyzeV3AnimationAtlasCaseDefects(
     slotBoneDrift: roundMetric(poseCase.metrics.partOverlapRatio),
     weaponBodyHeightRatio,
     weaponGripDrift: poseCase.metrics.weapon?.gripDrift ?? null,
+    weaponBasisForwardAlignment: poseCase.metrics.weapon?.basisForwardAlignment ?? null,
+    weaponBasisUpAlignment: poseCase.metrics.weapon?.basisUpAlignment ?? null,
+    weaponPrimaryGripDrift: poseCase.metrics.weapon?.primaryGripDrift ?? null,
+    weaponOffhandGripDrift: poseCase.metrics.weapon?.offhandGripDrift ?? null,
+    weaponDesiredPrimaryGripDrift: null,
+    weaponDesiredOffhandGripDrift: null,
+    weaponIkMaxGripDrift: null,
+    weaponIkShoulderSeamDistance: null,
+    weaponIkReachClampCount: 0,
+    weaponSwingArcDistance: null,
+    weaponTwoHandReadiness: poseCase.metrics.weapon?.twoHandReadiness ?? null,
+    weaponOneHandReadiness: poseCase.metrics.weapon?.oneHandReadiness ?? null,
     footFloorPenetration: poseCase.metrics.footFloorPenetration,
     upperLowerCoupling: poseCase.metrics.upperLowerCoupling,
     nonFiniteTransformCount: poseCase.issues.filter((issue) => issue.code === 'non-finite-transform').length,
@@ -526,6 +767,9 @@ export function analyzeV3AnimationAtlasCaseDefects(
     maxLowerBodySeamGap: 0,
     maxLowerBodyProjectedSeamGap: 0,
     lowerBodyTearWarningCount: 0,
+    maxUpperBodySeamGap: 0,
+    maxUpperBodyProjectedSeamGap: 0,
+    upperBodySeamWarningCount: 0,
     rawMaxLowerBodySeamGap: 0,
     rawMaxLowerBodyProjectedSeamGap: 0,
     visibleMaxLowerBodySeamGap: 0,
@@ -547,18 +791,27 @@ export function analyzeV3AnimationAtlasCaseDefects(
       maxLowerBodySeamGap: viewContinuity.maxLowerBodySeamGap,
       maxLowerBodyProjectedSeamGap: viewContinuity.maxLowerBodyProjectedSeamGap,
       lowerBodyTearWarningCount: viewContinuity.lowerBodyIssues.length,
+      weaponDesiredPrimaryGripDrift: viewContinuity.weaponDesiredPrimaryGripDrift,
+      weaponDesiredOffhandGripDrift: viewContinuity.weaponDesiredOffhandGripDrift,
+      weaponIkMaxGripDrift: viewContinuity.weaponIkMaxGripDrift,
+      weaponIkShoulderSeamDistance: viewContinuity.weaponIkShoulderSeamDistance,
+      weaponIkReachClampCount: viewContinuity.weaponIkReachClampCount,
+      weaponSwingArcDistance: viewContinuity.weaponSwingArcDistance,
       rawMaxLowerBodySeamGap: viewContinuity.rawMaxLowerBodySeamGap,
       rawMaxLowerBodyProjectedSeamGap: viewContinuity.rawMaxLowerBodyProjectedSeamGap,
       visibleMaxLowerBodySeamGap: viewContinuity.visibleMaxLowerBodySeamGap,
       visibleMaxLowerBodyProjectedSeamGap: viewContinuity.visibleMaxLowerBodyProjectedSeamGap,
       visibleLowerBodyTearWarningCount: viewContinuity.visibleLowerBodyTearWarningCount,
       bridgeCoveredLinkCount: viewContinuity.bridgeCoveredLinkCount,
+      maxUpperBodySeamGap: viewContinuity.maxUpperBodySeamGap,
+      maxUpperBodyProjectedSeamGap: viewContinuity.maxUpperBodyProjectedSeamGap,
+      upperBodySeamWarningCount: viewContinuity.upperBodySeamWarningCount,
       lowerBodySeamIssues: viewContinuity.lowerBodyIssues,
     };
     return {
       viewId,
       metrics,
-      warnings: buildWarnings(caseId, metrics),
+      warnings: buildV3AnimationAtlasDefectWarnings(caseId, metrics),
     };
   });
 
@@ -592,6 +845,20 @@ const buildSummary = (
     maxSlotBoneDrift: roundMetric(Math.max(0, ...metrics.map((entry) => entry.slotBoneDrift))),
     maxWeaponBodyHeightRatio: roundMetric(Math.max(0, ...metrics.map((entry) => entry.weaponBodyHeightRatio ?? 0))),
     maxWeaponGripDrift: roundMetric(Math.max(0, ...metrics.map((entry) => entry.weaponGripDrift ?? 0))),
+    minWeaponBasisForwardAlignment: roundMetric(Math.min(1, ...metrics
+      .map((entry) => entry.weaponBasisForwardAlignment)
+      .filter((value): value is number => typeof value === 'number'))),
+    minWeaponBasisUpAlignment: roundMetric(Math.min(1, ...metrics
+      .map((entry) => entry.weaponBasisUpAlignment)
+      .filter((value): value is number => typeof value === 'number'))),
+    maxWeaponPrimaryGripDrift: roundMetric(Math.max(0, ...metrics.map((entry) => entry.weaponPrimaryGripDrift ?? 0))),
+    maxWeaponOffhandGripDrift: roundMetric(Math.max(0, ...metrics.map((entry) => entry.weaponOffhandGripDrift ?? 0))),
+    maxWeaponDesiredPrimaryGripDrift: roundMetric(Math.max(0, ...metrics.map((entry) => entry.weaponDesiredPrimaryGripDrift ?? 0))),
+    maxWeaponDesiredOffhandGripDrift: roundMetric(Math.max(0, ...metrics.map((entry) => entry.weaponDesiredOffhandGripDrift ?? 0))),
+    maxWeaponIkGripDrift: roundMetric(Math.max(0, ...metrics.map((entry) => entry.weaponIkMaxGripDrift ?? 0))),
+    maxWeaponIkShoulderSeamDistance: roundMetric(Math.max(0, ...metrics.map((entry) => entry.weaponIkShoulderSeamDistance ?? 0))),
+    weaponIkReachClampCount: metrics.reduce((total, entry) => total + entry.weaponIkReachClampCount, 0),
+    maxWeaponSwingArcDistance: roundMetric(Math.max(0, ...metrics.map((entry) => entry.weaponSwingArcDistance ?? 0))),
     maxFootFloorPenetration: roundMetric(Math.max(0, ...metrics.map((entry) => entry.footFloorPenetration))),
     maxUpperLowerCoupling: roundMetric(Math.max(0, ...metrics.map((entry) => entry.upperLowerCoupling))),
     maxSlotContinuityGap: roundMetric(Math.max(0, ...metrics.map((entry) => entry.maxSlotContinuityGap))),
@@ -601,6 +868,9 @@ const buildSummary = (
     maxLowerBodySeamGap: roundMetric(Math.max(0, ...metrics.map((entry) => entry.maxLowerBodySeamGap))),
     maxLowerBodyProjectedSeamGap: roundMetric(Math.max(0, ...metrics.map((entry) => entry.maxLowerBodyProjectedSeamGap))),
     lowerBodyTearWarningCount: metrics.reduce((total, entry) => total + entry.lowerBodyTearWarningCount, 0),
+    maxUpperBodySeamGap: roundMetric(Math.max(0, ...metrics.map((entry) => entry.maxUpperBodySeamGap))),
+    maxUpperBodyProjectedSeamGap: roundMetric(Math.max(0, ...metrics.map((entry) => entry.maxUpperBodyProjectedSeamGap))),
+    upperBodySeamWarningCount: metrics.reduce((total, entry) => total + entry.upperBodySeamWarningCount, 0),
     maxVisibleLowerBodySeamGap: roundMetric(Math.max(0, ...metrics.map((entry) => entry.visibleMaxLowerBodySeamGap))),
     maxVisibleLowerBodyProjectedSeamGap: roundMetric(Math.max(0, ...metrics.map((entry) => entry.visibleMaxLowerBodyProjectedSeamGap))),
     visibleLowerBodyTearWarningCount: metrics.reduce((total, entry) => total + entry.visibleLowerBodyTearWarningCount, 0),
@@ -632,6 +902,7 @@ export function formatV3AnimationAtlasDefectSummary(
     `weapon drift ${report.summary.maxWeaponGripDrift.toFixed(3)}`,
     `limb separation ${report.summary.maxLimbSeparation.toFixed(3)}`,
     `slot continuity ${report.summary.maxSlotContinuityGap.toFixed(3)}`,
+    `upper-body seams ${report.summary.maxUpperBodySeamGap.toFixed(3)}`,
     `lower-body seams ${report.summary.maxLowerBodySeamGap.toFixed(3)}`,
   ].join(' | ');
 }

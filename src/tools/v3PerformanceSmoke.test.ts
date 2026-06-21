@@ -10,6 +10,7 @@ import {
   createV3PerformanceSmokeCombatants,
 } from './v3PerformanceSmoke';
 import { V3_QUALITY_TIERS, type V3QualityTier } from '../components/v3/v3ModelTypes';
+import { V3_POSE_CLEARANCE_CASES } from '../components/grifball/v3PoseClearance';
 
 type V3SmokeScene = ReturnType<typeof buildV3PerformanceSmokeScene>;
 type V3SmokeReport = ReturnType<typeof buildV3PerformanceSmokeReport>;
@@ -71,10 +72,10 @@ test('buildV3PerformanceSmokeReport reports runtime LOD budget readiness for eve
     assert.equal(report.visualQa.summary.snapshotCount, 64);
     assert.equal(report.poseClearanceReady, true, `${tier}: ${report.poseClearance.issues.map((issue) => issue.code).join(', ')}`);
     assert.equal(report.poseClearance.ready, true);
-    assert.equal(report.poseClearance.summary.caseCount, 12);
+    assert.equal(report.poseClearance.summary.caseCount, V3_POSE_CLEARANCE_CASES.length);
     assert.equal(report.motionRetargetReady, true, `${tier}: ${report.motionRetarget.issues.map((issue) => issue.code).join(', ')}`);
     assert.equal(report.motionRetarget.ready, true);
-    assert.equal(report.motionRetarget.summary.caseCount, 12);
+    assert.equal(report.motionRetarget.summary.caseCount, V3_POSE_CLEARANCE_CASES.length);
     assert.equal(report.motionRetarget.summary.deathBurstReady, true);
     assert.equal(report.exactSourceLodBudgetReady, true, `${tier}: ${report.exactSourceLodBudget.issues.join(', ')}`);
     assert.ok(report.exactSourceLodBudget.byTier.mobile.totalVoxelCount < report.exactSourceLodBudget.exact.totalVoxelCount);

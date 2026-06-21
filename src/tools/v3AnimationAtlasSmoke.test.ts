@@ -116,9 +116,13 @@ describe('v3AnimationAtlasSmoke', () => {
   });
 
   test('weapon cases expose only the selected relevant weapon', () => {
+    const hammer = sampleV3AnimationAtlasCase('hammerStrike', createV3AnimationAtlasFrameState(10, 60, 60), 'normalizedReview');
     const sword = sampleV3AnimationAtlasCase('swordLunge', createV3AnimationAtlasFrameState(10, 60, 60), 'normalizedReview');
     const pistol = sampleV3AnimationAtlasCase('pistolFire', createV3AnimationAtlasFrameState(10, 60, 60), 'normalizedReview');
 
+    assert.equal(hammer.visibleWeapon, 'hammer');
+    assert.equal(hammer.weaponReferenceClipId, 'hammer_heavy_swing');
+    assert.match(hammer.motionSourceLabel ?? '', /Mixamo weapon reference/);
     assert.equal(sword.visibleWeapon, 'sword');
     assert.match(sword.motionSourceLabel ?? '', /V3 procedural weapon track/);
     assert.equal(pistol.visibleWeapon, 'pistol');
@@ -127,6 +131,24 @@ describe('v3AnimationAtlasSmoke', () => {
       sampleV3AnimationAtlasCase('idle', createV3AnimationAtlasFrameState(10, 60, 60), 'normalizedReview').visibleWeapon,
       null
     );
+  });
+
+  test('weapon grip overlay records Mixamo reference hand trails for weapon review cases', () => {
+    const atlas = buildV3AnimationAtlasScene({ caseId: 'hammerStrike' });
+
+    updateV3AnimationAtlasScene(atlas, {
+      caseId: 'hammerStrike',
+      frame: 24,
+      mode: 'normalizedReview',
+      showWeaponGripDrift: true,
+    });
+
+    const overlayData = atlas.views[0].weaponGripOverlay.userData.v3WeaponReferenceOverlay;
+    assert.equal(overlayData.clipId, 'hammer_heavy_swing');
+    assert.equal(overlayData.runtimeRole, 'runtimeReference');
+    assert.ok(overlayData.rightHandTrail.length >= 3);
+    assert.ok(overlayData.leftHandTrail.length >= 3);
+    assert.ok(overlayData.rightHandTrail.every((point: number[]) => point.length === 3 && point.every(Number.isFinite)));
   });
 
   test('locomotion atlas can preview movement with each V3 carry weapon without changing Mixamo motion', () => {
@@ -159,6 +181,33 @@ describe('v3AnimationAtlasSmoke', () => {
     assert.equal(atlas.clock.caseId, 'idle');
     assert.equal(atlas.clock.frame, 0);
     assert.equal(atlas.v3Options.v3SourceFidelity, 'exact');
+  });
+
+  test('browser atlas resize preserves enough horizontal world space for all four views', () => {
+    const pageSource = readFileSync('src/tools/v3AnimationAtlasSmokePage.ts', 'utf8');
+    const viewHeightMatch = pageSource.match(/const viewHeight = ([0-9.]+);/);
+    const minViewWidthMatch = pageSource.match(/const minViewWidth = ([0-9.]+);/);
+    assert.ok(viewHeightMatch, 'expected browser resize to declare a viewHeight');
+
+    const viewHeight = Number(viewHeightMatch[1]);
+    const aspect = 16 / 9;
+    const viewWidth = Math.max(
+      viewHeight * aspect,
+      minViewWidthMatch ? Number(minViewWidthMatch[1]) : 0
+    );
+    const cameraLeft = -viewWidth / 2;
+    const cameraRight = viewWidth / 2;
+    const atlas = buildV3AnimationAtlasScene({ caseId: 'idle' });
+    const viewPositions = atlas.views.map((view) => view.rig.group.position.x);
+
+    assert.ok(
+      Math.min(...viewPositions) >= cameraLeft,
+      `front view should remain in resized camera frustum: left=${cameraLeft}, views=${viewPositions.join(',')}`
+    );
+    assert.ok(
+      Math.max(...viewPositions) <= cameraRight,
+      `right profile should remain in resized camera frustum: right=${cameraRight}, views=${viewPositions.join(',')}`
+    );
   });
 
   test('browser atlas page preserves exact-source review fidelity by default', () => {

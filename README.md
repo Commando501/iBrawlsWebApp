@@ -71,6 +71,10 @@ Useful commands:
 
 This workspace has previously had Windows `EPERM` locks on stale files under `dist\assets`. Vite is configured with `build.emptyOutDir: false` so `npm run build` can still produce a fresh `index.html`, CSS bundle, JS bundle, and server bundle. Run `npm run clean` when no process is holding `dist` files open.
 
+## V3 Weapon Animation QA
+
+V3 third-person hammer and sword animation is driven by sanitized local Mixamo reference data in `src/components/grifball/v3MixamoWeaponReferences.generated.ts`. Runtime weapons attach to the V3 chest motion anchor, keep socket-basis correction on an inner visual root, and use grip constraints/IK as cleanup around Mixamo-fitted hand targets. Use `/v3-animation-atlas-smoke.html` with weapon grip, slot-continuity, and defect overlays enabled to review reference hand trails, runtime grips, semantic axes, swing arcs, and upper-body seam warnings.
+
 ## Browser Performance
 
 iBrawls expects hardware-accelerated WebGL. The app warns when WebGL is unavailable, blocked, or routed through a slow software rasterizer. Microsoft Edge remains supported, but if Edge reports accelerated WebGL while sustained gameplay stays below 20 FPS for 5 seconds, the app shows an Edge-specific degraded graphics-path warning with `edge://gpu`, `edge://settings/system`, Edge update, and GPU driver troubleshooting steps, then recommends Chrome or Firefox for best performance on that device.
@@ -356,6 +360,8 @@ Phase 47 adds the local-only Mixamo retarget pipeline for V3 base motion. Develo
 Phase 48 makes the imported Mixamo base motion visually authoritative instead of merely present. `v3RetargetedAnimationClips` now audits retained lower-body motion so walk and sprint/run must keep visible thigh, calf, and foot articulation while idle remains subtle; the atlas defect and smoke reports expose those retention metrics. Lower-body continuity keeps raw seam gaps as diagnostics but adds bridge-aware visible seam metrics so authenticated runtime undersuit bridges can cover hip/knee/ankle gaps without hiding synthetic tear failures. V3 remains internal and `Not Player Ready`; the accepted exact OBJ voxel body, attack animations, V1/V2 behavior, gameplay collision, hitboxes, reach, AI, networking, custom armor JSON, suit profiles, and save data are unchanged.
 
 Phase 49 and Phase 50 polish the V3 animation stack around the accepted exact OBJ voxel body. Idle, walk, and sprint remain retargeted Mixamo locomotion, while the animation atlas can now preview those movement cases with a persistent V3 hammer, sword, or pistol carry layer without flattening lower-body motion. Third-person hammer, sword, and pistol attack poses now route through V3 procedural weapon tracks that start from carry, keep grip drift under atlas thresholds, and return through recovery poses; first-person weapons, death burst behavior, hitboxes, collision, reach, gameplay authority, V1/V2 behavior, save data, custom armor JSON, and suit profiles remain unchanged. V3 remains internal and `Not Player Ready`.
+
+Phase 51 through Phase 53 rebuild V3 weapon handling around socket-basis correction, constrained grip solving, and local-only Mixamo weapon reference clips. V3 weapon models keep an animated grip root with an inner visual correction layer, third-person weapons attach through a chest-space motion anchor, arm IK includes clavicle-assisted shoulder continuity, and sanitized `reference/mixamo-v3/` hammer/sword reference data now informs carry and swing tracks without committing raw FBX files. The animation atlas shows weapon axes, hand targets, reference trails, IK clamps, shoulder seam warnings, and swing diagnostics for V3-only review; V1/V2 behavior, gameplay collision, hitboxes, reach, weapon mechanics, networking, save data, custom armor JSON, and player-facing V3 access remain unchanged.
 
 ## Standalone 3D Map Maker
 

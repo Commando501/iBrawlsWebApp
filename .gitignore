@@ -8,6 +8,7 @@ docs/*
 docs/v3/*
 !docs/v3/phase-31-readiness-baseline.md
 !docs/v3/phase-33-reference-scaffold-auto-calibration.md
+!docs/v3/model-version-3-animation-redux-handoff.md
 .DS_Store
 *.log
 .env*

@@ -244,6 +244,8 @@ const V3_POSE_LABELS: Record<V3PoseClearanceCaseId, string> = {
   hammerWindup: 'Hammer Windup',
   hammerStrike: 'Hammer Strike',
   hammerRecover: 'Hammer Recover',
+  hammerMelee: 'Hammer Melee',
+  hammerMeleeRecover: 'Hammer Melee Recover',
   swordLunge: 'Sword Lunge',
   swordSlash: 'Sword Slash',
   pistolFire: 'Pistol Fire',

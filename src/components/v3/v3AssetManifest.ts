@@ -8,6 +8,7 @@ import {
   type V3PaintRole,
   type V3SocketDefinition,
   type V3SocketName,
+  type V3Vec3Tuple,
   type V3WeaponId,
 } from './v3ModelTypes';
 
@@ -24,6 +25,10 @@ export interface V3WeaponManifest extends Omit<V3AssetMetadata, 'sockets'> {
   boundsId: V3WeaponId;
   designLine: string;
   sockets: V3SocketDefinition[];
+  semanticAxes?: {
+    forward: V3Vec3Tuple;
+    up: V3Vec3Tuple;
+  };
 }
 
 export interface V3CharacterLoadoutManifest {
@@ -291,10 +296,11 @@ export const BUILT_IN_V3_WEAPONS: readonly V3WeaponManifest[] = [
     lods: createLods('ibv3-aegis-rift-hammer', createBudget(1700, 420, 6, 6, 3, 360)),
     sockets: [
       createSocket('thirdPersonPrimaryGrip', 'handRight', [0.08, -0.1, 0.02], [0, 0, -0.22]),
-      createSocket('thirdPersonOffhandGrip', 'handLeft', [-0.08, 0.26, 0.01], [0.1, 0, 0.18]),
+      createSocket('thirdPersonOffhandGrip', 'handLeft', [0.6, -0.3, 0.2], [0.1, 0, 0.18]),
       createSocket('firstPersonPrimaryGrip', 'viewRightHand', [0.18, -0.32, -0.52], [-0.2, 0.08, -0.18]),
       createSocket('firstPersonOffhandGrip', 'viewLeftHand', [-0.18, -0.12, -0.46], [-0.1, -0.08, 0.16]),
     ],
+    semanticAxes: { forward: [0, 1, 0], up: [0, 0, 1] },
   },
   {
     id: 'ibv3-aegis-flux-blade',
@@ -312,6 +318,7 @@ export const BUILT_IN_V3_WEAPONS: readonly V3WeaponManifest[] = [
       createSocket('firstPersonPrimaryGrip', 'viewRightHand', [0.22, -0.22, -0.48], [-0.18, 0.16, -0.32]),
       createSocket('firstPersonOffhandGrip', 'viewLeftHand', [-0.12, -0.08, -0.42], [-0.08, -0.06, 0.2]),
     ],
+    semanticAxes: { forward: [0, 1, 0], up: [0, 0, 1] },
   },
   {
     id: 'ibv3-aegis-sidearm',
@@ -329,6 +336,7 @@ export const BUILT_IN_V3_WEAPONS: readonly V3WeaponManifest[] = [
       createSocket('firstPersonPrimaryGrip', 'viewRightHand', [0.16, -0.18, -0.34], [-0.06, 0.1, -0.1]),
       createSocket('firstPersonOffhandGrip', 'viewLeftHand', [-0.08, -0.1, -0.3], [-0.04, -0.04, 0.08]),
     ],
+    semanticAxes: { forward: [1, 0, 0], up: [0, 0, 1] },
   },
 ];
 
@@ -373,6 +381,12 @@ const copyWeapon = (weapon: V3WeaponManifest): V3WeaponManifest => ({
   budget: copyBudget(weapon.budget),
   lods: weapon.lods.map(copyLod),
   sockets: weapon.sockets.map(copySocket),
+  semanticAxes: weapon.semanticAxes
+    ? {
+      forward: [...weapon.semanticAxes.forward],
+      up: [...weapon.semanticAxes.up],
+    }
+    : undefined,
 });
 
 export function getDefaultV3CharacterLoadout(): V3CharacterLoadoutManifest {
