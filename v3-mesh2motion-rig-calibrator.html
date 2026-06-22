@@ -1,0 +1,386 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>V3 Mesh2Motion Rig Calibrator</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #071014;
+        --panel: rgb(8 20 26 / 92%);
+        --panel-soft: rgb(14 32 40 / 82%);
+        --line: rgb(96 204 202 / 28%);
+        --line-strong: rgb(103 232 249 / 62%);
+        --text: #eef8fb;
+        --muted: #a8c8cf;
+        --cyan: #67e8f9;
+        --amber: #facc15;
+        --red: #fb7185;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+        background: var(--bg);
+        color: var(--text);
+        font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+      }
+
+      button,
+      input,
+      select,
+      textarea {
+        font: 12px/1.2 "Cascadia Mono", monospace;
+      }
+
+      button,
+      select,
+      input {
+        min-height: 30px;
+        border: 1px solid #24414a;
+        border-radius: 6px;
+        background: #10232b;
+        color: var(--text);
+      }
+
+      button {
+        padding: 0 9px;
+        color: var(--cyan);
+        cursor: pointer;
+      }
+
+      button:hover,
+      select:focus,
+      input:focus,
+      textarea:focus {
+        border-color: var(--line-strong);
+        outline: none;
+      }
+
+      button.active {
+        border-color: var(--cyan);
+        background: #14333b;
+      }
+
+      label {
+        display: grid;
+        gap: 4px;
+        color: var(--cyan);
+        font: 10px/1.2 "Cascadia Mono", monospace;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      input,
+      select,
+      textarea {
+        width: 100%;
+        padding: 7px;
+      }
+
+      textarea {
+        min-height: 220px;
+        resize: vertical;
+        white-space: pre;
+        border: 1px solid #24414a;
+        border-radius: 6px;
+        background: #071014;
+        color: #cbd5e1;
+      }
+
+      #app {
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr);
+        width: 100%;
+        height: 100%;
+      }
+
+      #topbar {
+        display: grid;
+        grid-template-columns: minmax(260px, auto) repeat(7, auto) minmax(220px, 1fr);
+        align-items: center;
+        gap: 8px;
+        padding: 10px;
+        border-bottom: 1px solid var(--line);
+        background: rgb(5 13 18 / 94%);
+      }
+
+      #topbar h1 {
+        margin: 0;
+        font-size: 16px;
+        letter-spacing: 0.02em;
+      }
+
+      #status {
+        justify-self: end;
+        color: var(--muted);
+        font: 11px/1.35 "Cascadia Mono", monospace;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      #workspace {
+        display: grid;
+        grid-template-columns: 360px minmax(420px, 1fr) 400px;
+        min-height: 0;
+      }
+
+      .panel {
+        display: grid;
+        align-content: start;
+        gap: 10px;
+        min-height: 0;
+        padding: 10px;
+        overflow: auto;
+        background: var(--panel);
+        border-right: 1px solid var(--line);
+      }
+
+      .panel.right {
+        border-right: 0;
+        border-left: 1px solid var(--line);
+      }
+
+      .section {
+        display: grid;
+        gap: 9px;
+        padding: 10px;
+        background: var(--panel-soft);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+      }
+
+      details.section {
+        display: block;
+      }
+
+      details.section[open] {
+        display: grid;
+      }
+
+      summary.section-title {
+        cursor: pointer;
+      }
+
+      .section-title {
+        margin: 0;
+        color: var(--text);
+        font: 700 11px/1.2 "Cascadia Mono", monospace;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+
+      .grid-2 {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+      }
+
+      .grid-3 {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 8px;
+      }
+
+      .row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      #viewport-wrap {
+        position: relative;
+        min-width: 0;
+        min-height: 0;
+        background: #030b0f;
+      }
+
+      #calibrator-canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+
+      #viewport-label {
+        position: absolute;
+        left: 12px;
+        bottom: 12px;
+        color: var(--muted);
+        font: 11px/1.4 "Cascadia Mono", monospace;
+        pointer-events: none;
+      }
+
+      #diagnostics {
+        min-height: 180px;
+        margin: 0;
+        padding: 8px;
+        overflow: auto;
+        white-space: pre-wrap;
+        color: #cbd5e1;
+        background: #071014;
+        border: 1px solid #24414a;
+        border-radius: 6px;
+        font: 11px/1.45 "Cascadia Mono", monospace;
+      }
+
+      .warn {
+        color: var(--amber);
+      }
+
+      .fail {
+        color: var(--red);
+      }
+
+      @media (max-width: 1100px) {
+        body {
+          overflow: auto;
+        }
+
+        #topbar {
+          display: flex;
+          flex-wrap: wrap;
+        }
+
+        #topbar h1,
+        #status {
+          flex: 1 1 100%;
+          justify-self: start;
+          white-space: normal;
+        }
+
+        #workspace {
+          grid-template-columns: 320px minmax(360px, 1fr);
+        }
+
+        .panel.right {
+          grid-column: 1 / -1;
+          border-left: 0;
+          border-top: 1px solid var(--line);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <div id="topbar">
+        <h1>V3 Mesh2Motion Rig Calibrator</h1>
+        <button id="play" type="button">Play</button>
+        <button id="prev-frame" type="button">Frame -</button>
+        <button id="next-frame" type="button">Frame +</button>
+        <button id="reset-calibration" type="button">Reset</button>
+        <button id="save-local" type="button">Save Local</button>
+        <button id="copy-json" type="button">Copy JSON</button>
+        <button id="download-json" type="button">Download JSON</button>
+        <span id="status">Preparing calibrator...</span>
+      </div>
+      <div id="workspace">
+        <aside class="panel">
+          <section class="section">
+            <p class="section-title">Preview</p>
+            <label>
+              Mesh2Motion Clip
+              <select id="clip-select">
+                <option value="clean_sprint">Sprint</option>
+                <option value="clean_slide">Slide</option>
+                <option value="clean_sword_carry">Sword Carry</option>
+                <option value="clean_sword_lunge">Sword Lunge</option>
+                <option value="clean_sword_slash" selected>Sword Slash</option>
+              </select>
+            </label>
+            <div class="grid-3">
+              <label>Frame<input id="frame-input" type="number" min="0" max="60" step="1" value="30" /></label>
+              <label>Frames<input id="duration-input" type="number" min="1" step="1" value="60" /></label>
+              <label>Speed<input id="speed-input" type="number" min="0.1" max="4" step="0.1" value="1" /></label>
+            </div>
+            <input id="timeline" type="range" min="0" max="60" value="30" />
+          </section>
+
+          <section class="section">
+            <p class="section-title">Arm Spread</p>
+            <div class="grid-2">
+              <label>Left Spread<input id="left-spread" type="number" min="0" max="0.35" step="0.01" value="0.26" /></label>
+              <label>Right Spread<input id="right-spread" type="number" min="0" max="0.35" step="0.01" value="0.26" /></label>
+            </div>
+          </section>
+
+          <details class="section">
+            <summary class="section-title">Advanced Arm Nudges</summary>
+            <label title="Fine adjustment for one Mesh2Motion driver joint after arm spread is applied.">
+              Driver Joint
+              <select id="joint-select">
+                <option value="clavicle_l">Left Clavicle</option>
+                <option value="upperarm_l">Left Upper Arm</option>
+                <option value="lowerarm_l">Left Forearm</option>
+                <option value="hand_l">Left Hand</option>
+                <option value="clavicle_r">Right Clavicle</option>
+                <option value="upperarm_r">Right Upper Arm</option>
+                <option value="lowerarm_r">Right Forearm</option>
+                <option value="hand_r">Right Hand</option>
+              </select>
+            </label>
+            <div class="grid-3">
+              <label>Nudge X<input id="joint-x" type="number" min="-0.3" max="0.3" step="0.01" value="0" /></label>
+              <label>Nudge Y<input id="joint-y" type="number" min="-0.3" max="0.3" step="0.01" value="0" /></label>
+              <label>Nudge Z<input id="joint-z" type="number" min="-0.3" max="0.3" step="0.01" value="0" /></label>
+            </div>
+            <div class="row">
+              <button id="apply-joint" type="button">Apply Nudge</button>
+              <button id="clear-joint" type="button">Clear Nudge</button>
+            </div>
+          </details>
+
+          <section class="section">
+            <p class="section-title">Right Hand Socket</p>
+            <div class="grid-3">
+              <label>Pos X<input id="socket-x" type="number" min="-0.5" max="0.5" step="0.01" value="0" /></label>
+              <label>Pos Y<input id="socket-y" type="number" min="-0.5" max="0.5" step="0.01" value="0" /></label>
+              <label>Pos Z<input id="socket-z" type="number" min="-0.5" max="0.5" step="0.01" value="0" /></label>
+            </div>
+            <div class="grid-3">
+              <label>Rot X<input id="socket-rx" type="number" min="-3.14" max="3.14" step="0.01" value="0" /></label>
+              <label>Rot Y<input id="socket-ry" type="number" min="-3.14" max="3.14" step="0.01" value="0" /></label>
+              <label>Rot Z<input id="socket-rz" type="number" min="-3.14" max="3.14" step="0.01" value="0" /></label>
+            </div>
+            <div class="row">
+              <button id="apply-socket" type="button">Apply Socket</button>
+              <button id="transform-translate" type="button">Move Socket</button>
+              <button id="transform-rotate" type="button">Rotate Socket</button>
+            </div>
+          </section>
+        </aside>
+
+        <main id="viewport-wrap">
+          <canvas id="calibrator-canvas"></canvas>
+          <div id="viewport-label">Right-hand sword socket</div>
+        </main>
+
+        <aside class="panel right">
+          <section class="section">
+            <p class="section-title">Diagnostics</p>
+            <pre id="diagnostics">No diagnostics yet.</pre>
+          </section>
+          <section class="section">
+            <p class="section-title">Import / Export</p>
+            <div class="row">
+              <button id="import-json" type="button">Import JSON</button>
+              <button id="choose-json" type="button">Choose JSON</button>
+              <button id="clear-local" type="button">Clear Local</button>
+            </div>
+            <input id="import-file" type="file" accept="application/json,.json" hidden />
+            <textarea id="json-output" spellcheck="false" aria-label="Mesh2Motion calibration JSON"></textarea>
+          </section>
+        </aside>
+      </div>
+    </div>
+    <script type="module" src="/src/tools/v3Mesh2MotionRigCalibrator.ts"></script>
+  </body>
+</html>

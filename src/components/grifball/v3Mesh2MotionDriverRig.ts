@@ -1,6 +1,11 @@
 import * as THREE from 'three';
 import type { V3CharacterSlotId } from '../v3/v3ModelTypes';
 import { V3_MESH2MOTION_CLIP_SET } from './v3Mesh2MotionClips.generated';
+import {
+  getV3Mesh2MotionCalibration,
+  type V3Mesh2MotionCalibration,
+  type V3Mesh2MotionCalibrationVec3,
+} from './v3Mesh2MotionCalibration';
 
 export type V3Mesh2MotionDriverVec3Tuple = [number, number, number];
 export type V3Mesh2MotionDriverQuatTuple = [number, number, number, number];
@@ -34,12 +39,23 @@ export interface V3Mesh2MotionPartBinding {
   bindMatrix: THREE.Matrix4;
 }
 
+export type V3Mesh2MotionDriverWeaponSocketName = 'rightHandGrip' | 'leftHandGrip';
+
+export interface V3Mesh2MotionDriverWeaponSocket {
+  name: V3Mesh2MotionDriverWeaponSocketName;
+  sourceJointName: string;
+  slot: Extract<V3CharacterSlotId, 'handRight' | 'handLeft'>;
+  object: THREE.Group;
+  restLocalPosition: V3Mesh2MotionDriverVec3Tuple;
+}
+
 export interface V3Mesh2MotionDriverRig {
   root: THREE.Group;
   ready: boolean;
   warnings: string[];
   joints: Record<string, V3Mesh2MotionDriverJoint>;
   partBindings: Partial<Record<V3CharacterSlotId, V3Mesh2MotionPartBinding>>;
+  weaponSockets: Record<V3Mesh2MotionDriverWeaponSocketName, V3Mesh2MotionDriverWeaponSocket>;
 }
 
 export interface V3Mesh2MotionDriverApplyReport {
@@ -47,6 +63,18 @@ export interface V3Mesh2MotionDriverApplyReport {
   warnings: string[];
   jointCount: number;
   partBindingCount: number;
+}
+
+export interface V3Mesh2MotionDriverCalibrationReport {
+  calibrationVersion: V3Mesh2MotionCalibration['version'];
+  armSpread: V3Mesh2MotionCalibration['armSpread'];
+  calibratedJointOffsetCount: number;
+  postBindPartAdjustments: 0;
+}
+
+export interface V3Mesh2MotionDriverWeaponSocketWorldTransform {
+  position: THREE.Vector3;
+  quaternion: THREE.Quaternion;
 }
 
 type GeneratedSkeletonJoint = {
@@ -77,6 +105,14 @@ export const V3_MESH2MOTION_SLOT_DRIVER_JOINTS = {
   footRight: 'foot_r',
   back: 'spine_03',
 } as const satisfies Record<V3CharacterSlotId, string>;
+
+const V3_MESH2MOTION_DRIVER_WEAPON_SOCKETS = {
+  rightHandGrip: { slot: 'handRight', sourceJointName: 'hand_r' },
+  leftHandGrip: { slot: 'handLeft', sourceJointName: 'hand_l' },
+} as const satisfies Record<
+  V3Mesh2MotionDriverWeaponSocketName,
+  { slot: Extract<V3CharacterSlotId, 'handRight' | 'handLeft'>; sourceJointName: string }
+>;
 
 const ZERO_VEC3: V3Mesh2MotionDriverVec3Tuple = [0, 0, 0];
 const ONE_VEC3: V3Mesh2MotionDriverVec3Tuple = [1, 1, 1];
@@ -121,6 +157,118 @@ const restorePartBinding = (binding: V3Mesh2MotionPartBinding): void => {
   binding.partGroup.quaternion.fromArray(binding.restLocalQuaternion);
   binding.partGroup.rotation.setFromQuaternion(binding.partGroup.quaternion);
   binding.partGroup.scale.fromArray(binding.restLocalScale);
+};
+
+const worldBoxCenter = (object: THREE.Object3D): THREE.Vector3 =>
+  new THREE.Box3().setFromObject(object).getCenter(new THREE.Vector3());
+
+const createDriverWeaponSockets = (
+  joints: Record<string, V3Mesh2MotionDriverJoint>,
+  partBindings: Partial<Record<V3CharacterSlotId, V3Mesh2MotionPartBinding>>,
+  warnings: string[]
+): Record<V3Mesh2MotionDriverWeaponSocketName, V3Mesh2MotionDriverWeaponSocket> => {
+  const sockets = {} as Record<V3Mesh2MotionDriverWeaponSocketName, V3Mesh2MotionDriverWeaponSocket>;
+  for (const [name, spec] of Object.entries(V3_MESH2MOTION_DRIVER_WEAPON_SOCKETS) as [
+    V3Mesh2MotionDriverWeaponSocketName,
+    (typeof V3_MESH2MOTION_DRIVER_WEAPON_SOCKETS)[V3Mesh2MotionDriverWeaponSocketName],
+  ][]) {
+    const joint = joints[spec.sourceJointName];
+    const binding = partBindings[spec.slot];
+    const socket = new THREE.Group();
+    socket.name = `v3Mesh2MotionDriverSocket:${name}`;
+    socket.userData.v3Mesh2MotionDriverWeaponSocket = name;
+    if (!joint || !binding) {
+      warnings.push(`V3 Mesh2Motion driver missing ${name} weapon socket binding`);
+      sockets[name] = {
+        name,
+        sourceJointName: spec.sourceJointName,
+        slot: spec.slot,
+        object: socket,
+        restLocalPosition: [...ZERO_VEC3],
+      };
+      continue;
+    }
+    joint.object.updateWorldMatrix(true, false);
+    const centerWorld = worldBoxCenter(binding.partGroup);
+    const restLocalPosition = tupleFromVector(joint.object.worldToLocal(centerWorld.clone()));
+    socket.position.fromArray(restLocalPosition);
+    joint.object.add(socket);
+    sockets[name] = {
+      name,
+      sourceJointName: spec.sourceJointName,
+      slot: spec.slot,
+      object: socket,
+      restLocalPosition,
+    };
+  }
+  return sockets;
+};
+
+const addVec3Tuple = (
+  value: THREE.Vector3,
+  offset: V3Mesh2MotionCalibrationVec3
+): void => {
+  value.x += offset[0];
+  value.y += offset[1];
+  value.z += offset[2];
+};
+
+const applyDriverCalibration = (
+  model: THREE.Group,
+  rig: V3Mesh2MotionDriverRig,
+  pose: V3Mesh2MotionDriverPose,
+  calibration: V3Mesh2MotionCalibration
+): V3Mesh2MotionDriverCalibrationReport => {
+  const report: V3Mesh2MotionDriverCalibrationReport = {
+    calibrationVersion: calibration.version,
+    armSpread: { ...calibration.armSpread },
+    calibratedJointOffsetCount: 0,
+    postBindPartAdjustments: 0,
+  };
+  if (pose.sourceClipName === 'TPose') return report;
+
+  const modelRight = new THREE.Vector3(1, 0, 0)
+    .applyQuaternion(model.getWorldQuaternion(new THREE.Quaternion()))
+    .normalize();
+  const applyOutwardChainSpread = (
+    joint: V3Mesh2MotionDriverJoint | undefined,
+    amount: number,
+    side: 1 | -1
+  ): void => {
+    if (!joint?.object.parent) return;
+    joint.object.parent.updateWorldMatrix(true, false);
+    const parentWorldQuaternion = joint.object.parent.getWorldQuaternion(new THREE.Quaternion()).invert();
+    const localDelta = modelRight.clone()
+      .multiplyScalar(amount * side)
+      .applyQuaternion(parentWorldQuaternion);
+    joint.object.position.add(localDelta);
+  };
+
+  const leftClavicle = rig.joints.clavicle_l;
+  const rightClavicle = rig.joints.clavicle_r;
+  applyOutwardChainSpread(leftClavicle, calibration.armSpread.left, 1);
+  applyOutwardChainSpread(rightClavicle, calibration.armSpread.right, -1);
+
+  for (const [jointName, offset] of Object.entries(calibration.jointOffsets)) {
+    const joint = rig.joints[jointName];
+    if (!joint) continue;
+    addVec3Tuple(joint.object.position, offset);
+    report.calibratedJointOffsetCount += 1;
+  }
+  return report;
+};
+
+const applyDriverWeaponSocketCalibration = (
+  rig: V3Mesh2MotionDriverRig,
+  calibration: V3Mesh2MotionCalibration
+): void => {
+  const socket = rig.weaponSockets.rightHandGrip;
+  socket.object.position.fromArray(socket.restLocalPosition);
+  addVec3Tuple(socket.object.position, calibration.weaponSockets.rightHandGrip.position);
+  socket.object.quaternion.setFromEuler(
+    new THREE.Euler(...calibration.weaponSockets.rightHandGrip.rotation, 'XYZ')
+  ).normalize();
+  socket.object.rotation.setFromQuaternion(socket.object.quaternion);
 };
 
 export function getV3Mesh2MotionDriverRig(model: THREE.Group): V3Mesh2MotionDriverRig {
@@ -185,6 +333,7 @@ export function getV3Mesh2MotionDriverRig(model: THREE.Group): V3Mesh2MotionDriv
       bindMatrix,
     };
   }
+  const weaponSockets = createDriverWeaponSockets(joints, partBindings, warnings);
 
   const rig: V3Mesh2MotionDriverRig = {
     root,
@@ -192,6 +341,7 @@ export function getV3Mesh2MotionDriverRig(model: THREE.Group): V3Mesh2MotionDriv
     warnings,
     joints,
     partBindings,
+    weaponSockets,
   };
   model.userData.v3Mesh2MotionDriverRig = rig;
   model.userData.v3Mesh2MotionDriverActive = false;
@@ -210,10 +360,16 @@ export function resetV3Mesh2MotionDriverRigPose(model: THREE.Group): void {
     joint.object.rotation.setFromQuaternion(joint.object.quaternion);
     joint.object.scale.set(1, 1, 1);
   }
+  for (const socket of Object.values(rig.weaponSockets)) {
+    socket.object.position.fromArray(socket.restLocalPosition);
+    socket.object.quaternion.identity();
+    socket.object.scale.set(1, 1, 1);
+  }
   for (const binding of Object.values(rig.partBindings)) {
     if (binding) restorePartBinding(binding);
   }
   model.userData.v3Mesh2MotionDriverActive = false;
+  delete model.userData.v3Mesh2MotionDriverCalibrationReport;
   model.updateMatrixWorld(true);
 }
 
@@ -225,6 +381,7 @@ export function applyV3Mesh2MotionDriverRigPose(
   const rig = getV3Mesh2MotionDriverRig(model);
   const alpha = Number.isFinite(options.alpha) ? Math.max(0, Math.min(1, Number(options.alpha))) : 1;
   const warnings = [...rig.warnings];
+  const calibration = getV3Mesh2MotionCalibration();
 
   for (const joint of Object.values(rig.joints)) {
     const jointPose = pose.joints[joint.name];
@@ -243,6 +400,8 @@ export function applyV3Mesh2MotionDriverRigPose(
     joint.object.rotation.setFromQuaternion(joint.object.quaternion);
     joint.object.scale.fromArray(ONE_VEC3);
   }
+  const calibrationReport = applyDriverCalibration(model, rig, pose, calibration);
+  applyDriverWeaponSocketCalibration(rig, calibration);
 
   model.updateMatrixWorld(true);
   for (const binding of Object.values(rig.partBindings)) {
@@ -267,8 +426,10 @@ export function applyV3Mesh2MotionDriverRigPose(
     binding.partGroup.updateMatrixWorld(true);
   }
 
+  model.updateMatrixWorld(true);
   model.userData.v3Mesh2MotionDriverActive = true;
   model.userData.v3Mesh2MotionDriverPose = pose;
+  model.userData.v3Mesh2MotionDriverCalibrationReport = calibrationReport;
   model.updateMatrixWorld(true);
 
   return {
@@ -276,5 +437,27 @@ export function applyV3Mesh2MotionDriverRigPose(
     warnings,
     jointCount: Object.keys(rig.joints).length,
     partBindingCount: Object.keys(rig.partBindings).length,
+  };
+}
+
+export function getV3Mesh2MotionDriverWeaponSocketWorldPosition(
+  model: THREE.Group,
+  socketName: V3Mesh2MotionDriverWeaponSocketName
+): THREE.Vector3 | null {
+  return getV3Mesh2MotionDriverWeaponSocketWorldTransform(model, socketName)?.position ?? null;
+}
+
+export function getV3Mesh2MotionDriverWeaponSocketWorldTransform(
+  model: THREE.Group,
+  socketName: V3Mesh2MotionDriverWeaponSocketName
+): V3Mesh2MotionDriverWeaponSocketWorldTransform | null {
+  const rig = getV3Mesh2MotionDriverRig(model);
+  const socket = rig.weaponSockets[socketName];
+  if (!socket) return null;
+  model.updateMatrixWorld(true);
+  socket.object.updateWorldMatrix(true, false);
+  return {
+    position: socket.object.getWorldPosition(new THREE.Vector3()),
+    quaternion: socket.object.getWorldQuaternion(new THREE.Quaternion()).normalize(),
   };
 }

@@ -96,5 +96,9 @@ describe('service worker routing', () => {
       serviceWorker.fetch(createNavigationRequest('/v3-clean-animation-editor.html')),
       /network unavailable/
     );
+    await assert.rejects(
+      serviceWorker.fetch(createNavigationRequest('/v3-mesh2motion-rig-calibrator.html')),
+      /network unavailable/
+    );
   });
 });

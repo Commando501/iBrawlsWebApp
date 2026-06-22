@@ -12,12 +12,16 @@ import {
   getV3Mesh2MotionDriverRig,
   resetV3Mesh2MotionDriverRigPose,
 } from './v3Mesh2MotionDriverRig';
+import { V3_MESH2MOTION_DEFAULT_CALIBRATION } from './v3Mesh2MotionCalibration';
 
 const roundTuple = (value: readonly number[]): number[] =>
   value.map((component) => Number(component.toFixed(5)));
 
 const worldPosition = (object: THREE.Object3D): number[] =>
   roundTuple(object.getWorldPosition(new THREE.Vector3()).toArray());
+
+const worldBoxCenter = (object: THREE.Object3D): THREE.Vector3 =>
+  new THREE.Box3().setFromObject(object).getCenter(new THREE.Vector3());
 
 const createModel = () => {
   const model = buildV3SpartanModel({ isEnemy: false, customHue: 192 });
@@ -39,6 +43,8 @@ describe('v3Mesh2MotionDriverRig', () => {
     assert.equal(rig.joints.pelvis.parentName, 'root');
     assert.equal(rig.partBindings.handRight?.sourceJointName, 'hand_r');
     assert.equal(rig.partBindings.chest?.sourceJointName, 'spine_03');
+    assert.equal(rig.weaponSockets.rightHandGrip.sourceJointName, 'hand_r');
+    assert.equal(rig.weaponSockets.leftHandGrip.sourceJointName, 'hand_l');
   });
 
   it('applies Mesh2Motion clips through the driver skeleton instead of rotating clean detail bones', () => {
@@ -86,5 +92,47 @@ describe('v3Mesh2MotionDriverRig', () => {
     resetV3Mesh2MotionDriverRigPose(model);
     assert.equal(model.userData.v3Mesh2MotionDriverActive, false);
     assert.deepEqual(roundTuple(partGroups.chest.position.toArray()), chestRestLocal);
+  });
+
+  it('keeps Mesh2Motion sprint arms laterally clear of the torso armor', () => {
+    const model = createModel();
+    const partGroups = model.userData.v3PartGroups as Record<string, THREE.Group>;
+    const sprint = sampleV3AuthoredClip('clean_sprint', { normalizedTime: 0.5 });
+
+    applyV3CleanRigPose(model, sprint.pose);
+    model.updateMatrixWorld(true);
+
+    const chestCenter = worldBoxCenter(partGroups.chest);
+    for (const slot of ['upperArmLeft', 'forearmLeft', 'handLeft', 'upperArmRight', 'forearmRight', 'handRight'] as const) {
+      const gap = Math.abs(worldBoxCenter(partGroups[slot]).x - chestCenter.x);
+      assert.ok(gap >= 0.18, `${slot} lateral gap ${gap.toFixed(4)} should keep sprint arms out of the chest`);
+    }
+  });
+
+  it('applies Mesh2Motion arm calibration through the driver chain before visible part binding', () => {
+    const model = createModel();
+    const partGroups = model.userData.v3PartGroups as Record<string, THREE.Group>;
+    const restForearmHandDistance = worldBoxCenter(partGroups.forearmRight)
+      .distanceTo(worldBoxCenter(partGroups.handRight));
+    const slash = sampleV3AuthoredClip('clean_sword_slash', { normalizedTime: 0.75 });
+
+    applyV3CleanRigPose(model, slash.pose);
+    model.updateMatrixWorld(true);
+
+    const report = model.userData.v3Mesh2MotionDriverCalibrationReport as {
+      calibrationVersion?: string;
+      postBindPartAdjustments?: number;
+      armSpread?: { left: number; right: number };
+    } | undefined;
+    const animatedForearmHandDistance = worldBoxCenter(partGroups.forearmRight)
+      .distanceTo(worldBoxCenter(partGroups.handRight));
+
+    assert.equal(report?.calibrationVersion, V3_MESH2MOTION_DEFAULT_CALIBRATION.version);
+    assert.equal(report?.postBindPartAdjustments, 0);
+    assert.equal(report?.armSpread?.right, V3_MESH2MOTION_DEFAULT_CALIBRATION.armSpread.right);
+    assert.ok(
+      animatedForearmHandDistance <= restForearmHandDistance + 0.16,
+      `right forearm/hand center distance ${animatedForearmHandDistance.toFixed(4)} should stay close to rest ${restForearmHandDistance.toFixed(4)}`
+    );
   });
 });

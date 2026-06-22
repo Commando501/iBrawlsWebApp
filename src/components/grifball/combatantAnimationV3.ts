@@ -24,12 +24,16 @@ import {
   sampleV3RetargetedClip,
   type V3RetargetedClipId,
 } from './v3RetargetedAnimationClips';
-import { applyV3WeaponSocketBasis } from './v3WeaponSocketBasis';
+import {
+  applyV3WeaponSocketBasis,
+  getV3WeaponSocketWorldPosition,
+} from './v3WeaponSocketBasis';
 import { applyV3WeaponGripConstraints } from './v3ArmIk';
 import {
   applyV3CleanRigPose,
   type V3AnimationAuthority,
 } from './v3CleanRig';
+import { getV3Mesh2MotionDriverWeaponSocketWorldTransform } from './v3Mesh2MotionDriverRig';
 import {
   mapV3RuntimeStateToAuthoredClip,
   sampleV3AuthoredClip,
@@ -175,6 +179,30 @@ const ensureV3WeaponSocketBasis = (
   if (current?.socketName !== socketName) {
     applyV3WeaponSocketBasis(group, weapon, socketName);
   }
+};
+
+const alignV3WeaponToMesh2MotionDriverHand = (
+  combatantModel: THREE.Group | undefined,
+  weaponModel: THREE.Group,
+): void => {
+  if (!combatantModel || combatantModel.userData.v3Mesh2MotionDriverActive !== true) return;
+  const target = getV3Mesh2MotionDriverWeaponSocketWorldTransform(combatantModel, 'rightHandGrip');
+  const parent = weaponModel.parent;
+  if (!target || !parent) return;
+
+  parent.updateMatrixWorld(true);
+  const parentQuaternion = parent.getWorldQuaternion(new THREE.Quaternion());
+  weaponModel.quaternion.copy(parentQuaternion.invert().multiply(target.quaternion)).normalize();
+  weaponModel.rotation.setFromQuaternion(weaponModel.quaternion);
+  weaponModel.updateMatrixWorld(true);
+
+  const socket = getV3WeaponSocketWorldPosition(weaponModel, 'thirdPersonPrimaryGrip');
+  if (!socket) return;
+
+  const currentWeaponWorld = weaponModel.getWorldPosition(new THREE.Vector3());
+  const desiredWeaponWorld = currentWeaponWorld.add(target.position.clone().sub(socket));
+  weaponModel.position.copy(parent.worldToLocal(desiredWeaponWorld));
+  weaponModel.updateMatrixWorld(true);
 };
 
 const authoredNormalizedTime = (
@@ -957,6 +985,9 @@ export function animateV3WeaponMeshes({
       if (!model || model.userData.modelSystem !== 'v3' || activeWeapon !== weapon || pose?.weapon !== weapon) return;
       ensureV3WeaponSocketBasis(model, weapon);
       applyV3WeaponMeshPose(model, pose, weaponState, dt);
+      if (resolvedSample.pose.mesh2MotionDriverPose) {
+        alignV3WeaponToMesh2MotionDriverHand(combatantModel, model);
+      }
       model.userData.v3CleanAuthoredClip = clipId;
       model.userData.v3AnimationAuthority = 'cleanRig';
       model.userData.v3CleanMotionSource = resolvedSample.motionSource;
