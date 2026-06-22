@@ -25,6 +25,7 @@ describe('v3Mesh2MotionImporter', () => {
     assert.equal(first.skeleton.sourceJointCount, 56);
     assert.equal(first.skeleton.joints.some((joint) => joint.name === 'spine_03' && joint.parent === 'spine_02'), true);
     assert.equal(first.skeleton.joints.some((joint) => joint.name === 'hand_r' && joint.parent === 'lowerarm_r'), true);
+    assert.equal(first.skeleton.joints.every((joint) => joint.restLocalPosition.length === 3), true);
     assert.equal(first.metrics.clipCount, 9);
     assert.equal(first.metrics.mappedJointCount >= 20, true);
     assert.equal(first.diagnostics.virtualAttachmentCount >= 5, true);
@@ -35,6 +36,9 @@ describe('v3Mesh2MotionImporter', () => {
     assert.equal(sprint.joints.thighLeft?.quaternions.length, sprint.frameCount);
     assert.equal(sprint.joints.calfRight?.quaternions.length, sprint.frameCount);
     assert.equal(sprint.jointOffsets.upperArmRight?.offsets.length, sprint.frameCount);
+    assert.equal(sprint.driverJoints.pelvis?.positions.length, sprint.frameCount);
+    assert.equal(sprint.driverJoints.hand_r?.quaternions.length, sprint.frameCount);
+    assert.equal(sprint.driverJoints.root?.positions[0].every(Number.isFinite), true);
     assert.equal(sprint.metrics.maxAbsJointOffset > 0, true);
   });
 
@@ -65,6 +69,12 @@ describe('v3Mesh2MotionImporter', () => {
         assert.ok(Math.abs(quaternion[2]) < 0.00001);
         assert.ok(Math.abs(quaternion[3] - 1) < 0.00001);
       }
+    }
+    for (const [jointName, track] of Object.entries(tPose.driverJoints)) {
+      const restJoint = artifact.skeleton.joints.find((joint) => joint.name === jointName);
+      assert.ok(restJoint, `${jointName} should be present in skeleton metadata`);
+      assert.deepEqual(track.positions[0], restJoint.restLocalPosition);
+      assert.deepEqual(track.quaternions[0], restJoint.restLocalQuaternion);
     }
   });
 

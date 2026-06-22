@@ -91,6 +91,9 @@ describe('v3AuthoredAnimationClips', () => {
     const sprint = sampleV3AuthoredClip('clean_sprint', { normalizedTime: 0.25 });
     assert.equal(sprint.motionSource, 'mesh2Motion');
     assert.equal(sprint.mixamoClipId, 'Sprint_Loop');
+    assert.equal(sprint.pose.mesh2MotionDriverPose?.sourceClipName, 'Sprint_Loop');
+    assert.ok(sprint.pose.mesh2MotionDriverPose?.joints.pelvis);
+    assert.ok(sprint.pose.mesh2MotionDriverPose?.joints.hand_r);
     assert.ok(sprint.pose.jointQuaternions.thighLeft);
     assert.ok(sprint.pose.jointQuaternions.calfRight);
     assert.ok(sprint.pose.jointOffsets?.upperArmRight);

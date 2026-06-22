@@ -64,21 +64,26 @@ describe('v3CleanRig', () => {
     assert.ok(detailBones.handLeft.quaternion.angleTo(new THREE.Quaternion()) < 0.0001);
   });
 
-  it('applies Mesh2Motion driver joint offsets and clears them on the next clean pose', () => {
+  it('applies Mesh2Motion driver poses through visible part bindings and clears them on the next clean pose', () => {
     const model = createModel();
-    const rig = getV3CleanRig(model);
     const detailBones = model.userData.v3DetailBones as Record<string, THREE.Group>;
-    const handRest = [...rig.joints.handRight.restLocalPosition];
+    const partGroups = model.userData.v3PartGroups as Record<string, THREE.Group>;
+    const handRest = partGroups.handRight.position.toArray();
+    const detailBoneRest = detailBones.handRight.position.toArray();
 
     const sprint = sampleV3AuthoredClip('clean_sprint', { normalizedTime: 0.25 });
     assert.equal(sprint.motionSource, 'mesh2Motion');
-    assert.ok(sprint.pose.jointOffsets?.handRight);
+    assert.ok(sprint.pose.mesh2MotionDriverPose);
 
     const appliedSprint = applyV3CleanRigPose(model, sprint.pose);
     assert.equal(appliedSprint.ready, true);
     assert.notDeepEqual(
-      detailBones.handRight.position.toArray().map((value) => Number(value.toFixed(5))),
+      partGroups.handRight.position.toArray().map((value) => Number(value.toFixed(5))),
       handRest.map((value) => Number(value.toFixed(5)))
+    );
+    assert.deepEqual(
+      detailBones.handRight.position.toArray().map((value) => Number(value.toFixed(5))),
+      detailBoneRest.map((value) => Number(value.toFixed(5)))
     );
 
     const cleanIdle: V3CleanRigPose = {
@@ -89,7 +94,7 @@ describe('v3CleanRig', () => {
     const appliedIdle = applyV3CleanRigPose(model, cleanIdle);
     assert.equal(appliedIdle.ready, true);
     assert.deepEqual(
-      detailBones.handRight.position.toArray().map((value) => Number(value.toFixed(5))),
+      partGroups.handRight.position.toArray().map((value) => Number(value.toFixed(5))),
       handRest.map((value) => Number(value.toFixed(5)))
     );
   });

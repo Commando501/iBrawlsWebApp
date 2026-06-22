@@ -2,7 +2,7 @@
 
 Status: internal prototype
 Player readiness: Not Player Ready
-Last updated: 2026-06-20
+Last updated: 2026-06-22
 
 ## Purpose
 
@@ -82,7 +82,7 @@ The intended V3 animation architecture is layered:
 
 1. Exact OBJ-derived voxel body.
 2. Canonical V3 rig contract derived from exact-source slot bounds.
-3. External clean-rig motion sources: Mixamo remains authoritative for idle/walk and hammer references, while Mesh2Motion GLB data now drives sprint, slide, sword carry, sword lunge, and sword slash through a TPose-calibrated driver skeleton.
+3. External clean-rig motion sources: Mixamo remains authoritative for idle/walk and hammer references, while Mesh2Motion GLB data now drives sprint, slide, sword carry, sword lunge, and sword slash through a hidden TPose-calibrated driver skeleton.
 4. Runtime-only lower-body bridges to hide voxel seam tearing without changing source geometry.
 5. Persistent upper-body weapon carry layer.
 6. V3 procedural weapon attack tracks.
@@ -94,6 +94,7 @@ Relevant files:
 - `src/components/grifball/v3AnimationFidelity.ts`
 - `src/components/grifball/v3RetargetedAnimationClips.ts`
 - `src/components/grifball/v3Mesh2MotionClips.ts`
+- `src/components/grifball/v3Mesh2MotionDriverRig.ts`
 - `src/components/grifball/v3MotionRetarget.ts`
 - `src/components/grifball/v3PoseClearance.ts`
 - `src/components/grifball/v3AnimationAtlasDefects.ts`
@@ -116,20 +117,23 @@ Relevant files:
 
 - Mixamo `Idle`, `Walking`, `Running`, and `T-Pose` FBX files were imported through a local-only pipeline.
 - Generated clip data is sanitized and checked into code, while raw FBX files remain private authoring inputs.
-- Idle and walk use retargeted Mixamo clips. Sprint now uses the generated Mesh2Motion `Sprint_Loop` clean-rig clip.
+- Idle and walk still use retargeted Mixamo clips. Sprint, slide, sword carry, sword lunge, and sword slash use generated Mesh2Motion clips.
 - Mesh2Motion grouped GLB exports are imported through `src/tools/v3Mesh2MotionImporter.ts`; local raw GLBs live under `reference/mesh2motion-v3/` and sanitized generated data lives in `src/components/grifball/v3Mesh2MotionClips.generated.ts`.
-- The Mesh2Motion importer now emits schema v2 data: sanitized source skeleton metadata, `TPose` calibration, direct mappings such as `spine_03 -> spine3`, virtual V3 attachments such as `chest`, `helmet`, `collar`, `backpack`, and `grip*`, retargeted joint quaternions, and per-joint offsets for driver-rig playback.
+- The Mesh2Motion importer now emits schema v2 data: sanitized source skeleton metadata, `TPose` calibration, direct mappings such as `spine_03 -> spine3`, virtual V3 attachments such as `chest`, `helmet`, `collar`, `backpack`, and `grip*`, retargeted diagnostic joint quaternions, per-joint offsets, and source driver local transform tracks for all 56 source skin joints.
+- Runtime Mesh2Motion playback builds a hidden Mesh2Motion driver skeleton in `v3Mesh2MotionDriverRig.ts`. Visible V3 armor part groups stay in the existing V3 hierarchy but follow Mesh2Motion bones through rest-pose bind matrices, so Mesh2Motion local transforms are no longer forced onto unrelated V3 detail-bone pivots.
 - Earlier lower-body tearing was reduced through a single-chain lower-body binding and runtime undersuit bridge geometry.
-- Current user assessment: idle, walk, and sprint are good enough for now.
+- Current direction: Mesh2Motion-compatible clips are now on the driver skeleton path. Old Mixamo/manual clips are still on the prior clean-detail-bone path until they are deliberately reintegrated or recreated for the Mesh2Motion skeleton.
 
 ### Death
 
 - V3 death uses a deterministic voxel burst.
 - The user has stated hit react is not needed and death is good enough as-is.
 
-## Current Blocking Problem: Weapon Carry + Attack Animations
+## Current Blocking Problem: Full Animation Rework
 
-The next major issue is V3 weapon handling. The current carry sockets and weapon animations are visually wrong.
+The next major issue is reauthoring or reintegrating the rest of V3 animation around the Mesh2Motion-compatible skeleton. The driver skeleton is now available for first-pass Mesh2Motion replacement clips, but legacy Mixamo/manual clips still target the older V3 detail rig and should not be assumed compatible.
+
+Weapon carry and attack animation remain part of that work. The current carry sockets and weapon animations are visually wrong.
 
 User requirements:
 
@@ -252,7 +256,7 @@ Useful focused tests:
 
 ```powershell
 node --import tsx --test src/tools/v3Mesh2MotionImporter.test.ts
-node --import tsx --test src/components/grifball/v3AuthoredAnimationClips.test.ts src/components/grifball/v3CleanRig.test.ts
+node --import tsx --test src/components/grifball/v3Mesh2MotionDriverRig.test.ts src/components/grifball/v3AuthoredAnimationClips.test.ts src/components/grifball/v3CleanRig.test.ts
 node --import tsx --test src/components/grifball/v3AnimationFidelity.test.ts
 node --import tsx --test src/components/grifball/v3AnimationAtlasDefects.test.ts
 node --import tsx --test src/components/grifball/combatantAnimationV3.test.ts
@@ -262,7 +266,7 @@ node --import tsx --test src/tools/v3AnimationAtlasSmoke.test.ts
 Broader V3 animation check:
 
 ```powershell
-node --import tsx --test src/tools/v3Mesh2MotionImporter.test.ts src/components/grifball/v3AuthoredAnimationClips.test.ts src/components/grifball/v3CleanRig.test.ts src/tools/v3AnimationAtlasSmoke.test.ts src/components/grifball/combatantAnimationV3.test.ts src/components/grifball/v3RetargetedAnimationClips.test.ts src/components/grifball/v3MotionRetarget.test.ts src/components/grifball/v3PoseClearance.test.ts
+node --import tsx --test src/tools/v3Mesh2MotionImporter.test.ts src/components/grifball/v3Mesh2MotionDriverRig.test.ts src/components/grifball/v3AuthoredAnimationClips.test.ts src/components/grifball/v3CleanRig.test.ts src/tools/v3AnimationAtlasSmoke.test.ts src/components/grifball/combatantAnimationV3.test.ts src/components/grifball/v3RetargetedAnimationClips.test.ts src/components/grifball/v3MotionRetarget.test.ts src/components/grifball/v3PoseClearance.test.ts
 ```
 
 Final verification before claiming completion:

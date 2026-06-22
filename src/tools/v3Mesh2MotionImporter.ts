@@ -50,6 +50,7 @@ export interface V3Mesh2MotionSkeletonJoint {
   parent: string | null;
   targetJoints: V3DetailBoneName[];
   role: 'direct' | 'virtualAttachment' | 'ignored';
+  restLocalPosition: V3Vec3Tuple;
   restWorldPosition: V3Vec3Tuple;
   restWorldQuaternion: V3QuatTuple;
   restLocalQuaternion: V3QuatTuple;
@@ -92,6 +93,12 @@ export interface V3Mesh2MotionJointOffsetTrack {
   offsets: V3Vec3Tuple[];
 }
 
+export interface V3Mesh2MotionDriverJointTrack {
+  joint: string;
+  positions: V3Vec3Tuple[];
+  quaternions: V3QuatTuple[];
+}
+
 export interface V3Mesh2MotionRootMotionReport {
   horizontalStripped: true;
   maxSourceHorizontalOffset: number;
@@ -110,9 +117,11 @@ export interface V3Mesh2MotionClipArtifact {
   rootMotion: V3Mesh2MotionRootMotionReport;
   joints: Partial<Record<V3DetailBoneName, V3Mesh2MotionJointTrack>>;
   jointOffsets: Partial<Record<V3DetailBoneName, V3Mesh2MotionJointOffsetTrack>>;
+  driverJoints: Record<string, V3Mesh2MotionDriverJointTrack>;
   metrics: {
     sourceChannelCount: number;
     mappedJointCount: number;
+    driverJointCount: number;
     sourceFrameCount: number;
     maxAbsRotation: number;
     maxAbsJointOffset: number;
@@ -263,6 +272,19 @@ type FrameSample = {
   jointOffsets: Partial<Record<V3DetailBoneName, V3Vec3Tuple>>;
   maxAbsRotation: number;
   maxAbsJointOffset: number;
+};
+
+type DriverLocalTransform = {
+  position: THREE.Vector3;
+  quaternion: THREE.Quaternion;
+};
+
+type DriverFrameSample = {
+  joints: Record<string, {
+    position: V3Vec3Tuple;
+    quaternion: V3QuatTuple;
+  }>;
+  localTransformsByIndex: Map<number, DriverLocalTransform>;
 };
 
 const DIRECT_MESH2MOTION_TO_V3_JOINTS: Record<string, V3DetailBoneName> = {
@@ -781,35 +803,36 @@ const buildCalibration = (
 };
 
 const buildSkeletonArtifact = (
-  parsed: ParsedGlb,
-  sourceRestPose: SourcePose,
-  sourceJointIndexes: number[],
-  parentBySourceIndex: Map<number, number>,
-  calibration: V3Mesh2MotionCalibrationArtifact
+  context: BuildContext
 ): V3Mesh2MotionSkeletonArtifact => {
   const targetsBySource = new Map<string, V3DetailBoneName[]>();
-  for (const [targetJoint, jointCalibration] of Object.entries(calibration.joints) as [V3DetailBoneName, V3Mesh2MotionJointCalibration][]) {
+  for (const [targetJoint, jointCalibration] of Object.entries(context.calibration.joints) as [V3DetailBoneName, V3Mesh2MotionJointCalibration][]) {
     targetsBySource.set(jointCalibration.sourceNodeName, [
       ...(targetsBySource.get(jointCalibration.sourceNodeName) ?? []),
       targetJoint,
     ]);
   }
+  const driverRest = buildDriverLocalTransforms(context, context.tPose, 0);
+  const driverWorlds = composeDriverWorldTransforms(context, driverRest.localTransformsByIndex);
 
   return {
-    sourceJointCount: sourceJointIndexes.length,
-    joints: sourceJointIndexes.map((sourceIndex) => {
-      const name = nodeName(parsed.json, sourceIndex);
-      const parentIndex = parentBySourceIndex.get(sourceIndex);
+    sourceJointCount: context.sourceJointIndexes.length,
+    joints: context.sourceJointIndexes.map((sourceIndex) => {
+      const name = nodeName(context.parsed.json, sourceIndex);
+      const parentIndex = context.parentBySourceIndex.get(sourceIndex);
       const targetJoints = [...(targetsBySource.get(name) ?? [])].sort((left, right) => left.localeCompare(right));
-      const direct = targetJoints.some((targetJoint) => calibration.joints[targetJoint]?.role === 'direct');
+      const direct = targetJoints.some((targetJoint) => context.calibration.joints[targetJoint]?.role === 'direct');
+      const driverRestJoint = driverRest.joints[name];
+      const driverWorld = driverWorlds.get(sourceIndex);
       return {
         name,
-        parent: parentIndex === undefined ? null : nodeName(parsed.json, parentIndex),
+        parent: parentIndex === undefined ? null : nodeName(context.parsed.json, parentIndex),
         targetJoints,
         role: targetJoints.length === 0 ? 'ignored' : direct ? 'direct' : 'virtualAttachment',
-        restWorldPosition: tupleVec3(sourceRestPose.worldPositions[sourceIndex]),
-        restWorldQuaternion: tupleQuat(sourceRestPose.worldQuaternions[sourceIndex]),
-        restLocalQuaternion: tupleQuat(sourceRestPose.locals[sourceIndex].quaternion),
+        restLocalPosition: driverRestJoint?.position ?? ZERO_VEC3,
+        restWorldPosition: driverWorld ? tupleVec3(driverWorld.position) : ZERO_VEC3,
+        restWorldQuaternion: driverWorld ? tupleQuat(driverWorld.quaternion) : IDENTITY_QUATERNION,
+        restLocalQuaternion: driverRestJoint?.quaternion ?? IDENTITY_QUATERNION,
       };
     }),
   };
@@ -840,6 +863,114 @@ const sourcePelvisDelta = (
   const pelvisIndex = context.sourceIndexByName.get('pelvis');
   if (pelvisIndex === undefined) return new THREE.Vector3();
   return pose.worldPositions[pelvisIndex].clone().sub(context.sourceRestPose.worldPositions[pelvisIndex]);
+};
+
+const driverPelvisLocalPosition = (
+  context: BuildContext,
+  pose: SourcePose
+): THREE.Vector3 | null => {
+  const pelvisIndex = context.sourceIndexByName.get('pelvis');
+  if (pelvisIndex === undefined) return null;
+  const pelvisDelta = sourcePelvisDelta(context, pose);
+  const inverseScale = context.calibration.sourceToTargetScale > 0
+    ? 1 / context.calibration.sourceToTargetScale
+    : 1;
+  const verticalOffset = THREE.MathUtils.clamp(
+    pelvisDelta.y,
+    -MAX_VERTICAL_ROOT_OFFSET * inverseScale,
+    MAX_VERTICAL_ROOT_OFFSET * inverseScale
+  );
+  const desiredWorldPosition = context.sourceRestPose.worldPositions[pelvisIndex]
+    .clone()
+    .add(new THREE.Vector3(0, verticalOffset, 0));
+  const parentIndex = context.parentBySourceIndex.get(pelvisIndex);
+  if (parentIndex === undefined) return desiredWorldPosition;
+  const parentWorld = pose.worlds[parentIndex];
+  if (!parentWorld) return pose.locals[pelvisIndex].position.clone();
+  return desiredWorldPosition.applyMatrix4(parentWorld.clone().invert());
+};
+
+const buildDriverLocalTransforms = (
+  context: BuildContext,
+  clip: ClipChannels,
+  time: number,
+  sourceJointIndexes: readonly number[] = context.sourceJointIndexes
+): DriverFrameSample => {
+  const pose = sampleSourcePose(context.parsed, context.tPose, clip, time, context.parentBySourceIndex);
+  const scale = context.calibration.sourceToTargetScale;
+  const pelvisIndex = context.sourceIndexByName.get('pelvis');
+  const pelvisLocalPosition = driverPelvisLocalPosition(context, pose);
+  const localTransformsByIndex = new Map<number, DriverLocalTransform>();
+  const joints: DriverFrameSample['joints'] = {};
+
+  for (const sourceIndex of sourceJointIndexes) {
+    const sourceName = nodeName(context.parsed.json, sourceIndex);
+    const local = pose.locals[sourceIndex];
+    const position = sourceIndex === pelvisIndex && pelvisLocalPosition
+      ? pelvisLocalPosition.clone()
+      : local.position.clone();
+    position.multiplyScalar(scale);
+    const quaternion = local.quaternion.clone().normalize();
+    localTransformsByIndex.set(sourceIndex, { position, quaternion });
+    joints[sourceName] = {
+      position: tupleVec3(position),
+      quaternion: tupleQuat(quaternion),
+    };
+  }
+
+  return { joints, localTransformsByIndex };
+};
+
+const collectRuntimeDriverJointIndexes = (context: BuildContext): number[] => {
+  const requiredIndexes = new Set<number>();
+  const addWithAncestors = (sourceIndex: number | undefined) => {
+    if (sourceIndex === undefined || requiredIndexes.has(sourceIndex)) return;
+    requiredIndexes.add(sourceIndex);
+    addWithAncestors(context.parentBySourceIndex.get(sourceIndex));
+  };
+  for (const sourceNodeName of new Set(Object.values(TARGET_TO_SOURCE_NODE))) {
+    addWithAncestors(context.sourceIndexByName.get(sourceNodeName));
+  }
+  return context.sourceJointIndexes.filter((sourceIndex) => requiredIndexes.has(sourceIndex));
+};
+
+const composeDriverWorldTransforms = (
+  context: BuildContext,
+  localTransformsByIndex: Map<number, DriverLocalTransform>
+): Map<number, { matrix: THREE.Matrix4; position: THREE.Vector3; quaternion: THREE.Quaternion }> => {
+  const worlds = new Map<number, { matrix: THREE.Matrix4; position: THREE.Vector3; quaternion: THREE.Quaternion }>();
+  const visiting = new Set<number>();
+  const compose = (sourceIndex: number) => {
+    const existing = worlds.get(sourceIndex);
+    if (existing) return existing;
+    if (visiting.has(sourceIndex)) {
+      throw new Error(`Mesh2Motion source skeleton contains a parent cycle at ${nodeName(context.parsed.json, sourceIndex)}`);
+    }
+    visiting.add(sourceIndex);
+    const local = localTransformsByIndex.get(sourceIndex);
+    if (!local) throw new Error(`Missing Mesh2Motion driver local transform for ${nodeName(context.parsed.json, sourceIndex)}`);
+    const localMatrix = new THREE.Matrix4().compose(
+      local.position,
+      local.quaternion,
+      new THREE.Vector3(1, 1, 1)
+    );
+    const parentIndex = context.parentBySourceIndex.get(sourceIndex);
+    const parentWorld = parentIndex === undefined || !localTransformsByIndex.has(parentIndex)
+      ? null
+      : compose(parentIndex).matrix;
+    const matrix = parentWorld ? parentWorld.clone().multiply(localMatrix) : localMatrix;
+    const position = new THREE.Vector3();
+    const quaternion = new THREE.Quaternion();
+    const scale = new THREE.Vector3();
+    matrix.decompose(position, quaternion, scale);
+    const world = { matrix, position, quaternion: quaternion.normalize() };
+    worlds.set(sourceIndex, world);
+    visiting.delete(sourceIndex);
+    return world;
+  };
+
+  for (const sourceIndex of context.sourceJointIndexes) compose(sourceIndex);
+  return worlds;
 };
 
 const buildFrameSample = (
@@ -969,10 +1100,18 @@ const buildClipArtifact = (
     durationSeconds > 0 ? roundMetric(time / durationSeconds) : 0
   ));
   const frameSamples = sampleTimes.map((time) => buildFrameSample(context, clip, time));
+  const runtimeDriverJointIndexes = collectRuntimeDriverJointIndexes(context);
+  const driverFrameSamples = sampleTimes.map((time) => buildDriverLocalTransforms(
+    context,
+    clip,
+    time,
+    runtimeDriverJointIndexes
+  ));
   const rootOffsets = frameSamples.map((sample) => sample.rootOffset);
   const verticalValues = rootOffsets.map((offset) => offset[1]);
   const joints: Partial<Record<V3DetailBoneName, V3Mesh2MotionJointTrack>> = {};
   const jointOffsets: Partial<Record<V3DetailBoneName, V3Mesh2MotionJointOffsetTrack>> = {};
+  const driverJoints: Record<string, V3Mesh2MotionDriverJointTrack> = {};
 
   for (const jointName of V3_DETAIL_BONE_NAMES) {
     joints[jointName] = {
@@ -982,6 +1121,14 @@ const buildClipArtifact = (
     jointOffsets[jointName] = {
       joint: jointName,
       offsets: frameSamples.map((sample) => sample.jointOffsets[jointName] ?? ZERO_VEC3),
+    };
+  }
+  for (const sourceIndex of runtimeDriverJointIndexes) {
+    const sourceJointName = nodeName(context.parsed.json, sourceIndex);
+    driverJoints[sourceJointName] = {
+      joint: sourceJointName,
+      positions: driverFrameSamples.map((sample) => sample.joints[sourceJointName]?.position ?? ZERO_VEC3),
+      quaternions: driverFrameSamples.map((sample) => sample.joints[sourceJointName]?.quaternion ?? IDENTITY_QUATERNION),
     };
   }
 
@@ -1004,9 +1151,11 @@ const buildClipArtifact = (
     },
     joints,
     jointOffsets,
+    driverJoints,
     metrics: {
       sourceChannelCount: clip.channels.length,
       mappedJointCount: Object.keys(joints).length,
+      driverJointCount: Object.keys(driverJoints).length,
       sourceFrameCount: sampleTimes.length,
       maxAbsRotation: roundMetric(Math.max(...frameSamples.map((sample) => sample.maxAbsRotation))),
       maxAbsJointOffset: roundMetric(Math.max(...frameSamples.map((sample) => sample.maxAbsJointOffset))),
@@ -1077,13 +1226,7 @@ export function buildV3Mesh2MotionClipSetArtifact(
   const parsed = parseGlb(options.filePath);
   const context = buildContext(parsed);
   const fps = options.fps ?? 30;
-  const skeleton = buildSkeletonArtifact(
-    parsed,
-    context.sourceRestPose,
-    context.sourceJointIndexes,
-    context.parentBySourceIndex,
-    context.calibration
-  );
+  const skeleton = buildSkeletonArtifact(context);
   const restPose = buildRestPose(context, context.tPose);
   const clips = context.clipChannels.map((clip) => buildClipArtifact(context, clip, fps));
   const tPoseClip = clips.find((clip) => clip.sourceClipName === 'TPose') ?? clips[0];

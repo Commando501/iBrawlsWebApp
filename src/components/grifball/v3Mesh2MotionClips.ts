@@ -4,6 +4,9 @@ import type {
   V3QuatTuple,
   V3Vec3Tuple,
 } from './v3CleanRig';
+import type {
+  V3Mesh2MotionDriverPose,
+} from './v3Mesh2MotionDriverRig';
 import { V3_MESH2MOTION_CLIP_SET } from './v3Mesh2MotionClips.generated';
 
 export type V3Mesh2MotionClipId = (typeof V3_MESH2MOTION_CLIP_SET.clips)[number]['sourceClipName'];
@@ -25,6 +28,11 @@ type GeneratedClip = (typeof V3_MESH2MOTION_CLIP_SET.clips)[number];
 type GeneratedJointOffsetTrack = {
   readonly joint: string;
   readonly offsets: readonly (readonly number[])[];
+};
+type GeneratedDriverJointTrack = {
+  readonly joint: string;
+  readonly positions: readonly (readonly number[])[];
+  readonly quaternions: readonly (readonly number[])[];
 };
 
 const IDENTITY_QUATERNION: V3QuatTuple = [0, 0, 0, 1];
@@ -141,6 +149,20 @@ export function sampleV3CleanMesh2MotionClip(
       sampleVec3Track(track?.offsets ?? [], span),
     ])
   ) as V3CleanRigPose['jointOffsets'];
+  const generatedDriverJoints = (
+    'driverJoints' in clip
+      ? clip.driverJoints as Record<string, GeneratedDriverJointTrack>
+      : {}
+  );
+  const driverJoints = Object.fromEntries(
+    Object.entries(generatedDriverJoints).map(([jointName, track]) => [
+      jointName,
+      {
+        position: sampleVec3Track(track.positions, span),
+        quaternion: sampleQuatTrack(track.quaternions, span),
+      },
+    ])
+  ) as V3Mesh2MotionDriverPose['joints'];
   const rootOffset = sampleVec3Track(clip.rootOffsets, span);
   const hasRootOffset = rootOffset.some((component) => Math.abs(component) > 0.000001);
   const hasJointOffsets = Object.values(jointOffsets ?? {})
@@ -152,6 +174,11 @@ export function sampleV3CleanMesh2MotionClip(
     jointQuaternions,
     ...(hasRootOffset ? { rootOffset } : {}),
     ...(hasJointOffsets ? { jointOffsets } : {}),
+    mesh2MotionDriverPose: {
+      sourceClipName: clip.sourceClipName,
+      sourceNormalizedTime: safeTime,
+      joints: driverJoints,
+    },
   };
 
   return {

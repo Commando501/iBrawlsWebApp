@@ -4,6 +4,11 @@ import {
   V3_DETAIL_BONE_SPECS,
   type V3DetailBoneName,
 } from '../v3/v3RigDetail';
+import {
+  applyV3Mesh2MotionDriverRigPose,
+  resetV3Mesh2MotionDriverRigPose,
+  type V3Mesh2MotionDriverPose,
+} from './v3Mesh2MotionDriverRig';
 
 export type V3AnimationAuthority = 'legacyLayered' | 'cleanRig';
 export type V3CleanJointName = V3DetailBoneName;
@@ -53,6 +58,7 @@ export interface V3CleanRigPose {
   rootOffset?: V3Vec3Tuple;
   jointQuaternions: Partial<Record<V3CleanJointName, V3QuatTuple>>;
   jointOffsets?: Partial<Record<V3CleanJointName, V3Vec3Tuple>>;
+  mesh2MotionDriverPose?: V3Mesh2MotionDriverPose;
   weaponPose?: V3CleanRigWeaponPose;
 }
 
@@ -197,6 +203,7 @@ export function resetV3CleanRigPose(model: THREE.Group): V3CleanRig {
     joint.object.rotation.setFromQuaternion(joint.object.quaternion);
     joint.object.scale.set(1, 1, 1);
   }
+  resetV3Mesh2MotionDriverRigPose(model);
   model.userData.v3LowerBodyBridgeActive = false;
   return rig;
 }
@@ -209,32 +216,38 @@ export function applyV3CleanRigPose(
   const rig = resetV3CleanRigPose(model);
   const alpha = Number.isFinite(options.alpha) ? Math.max(0, Math.min(1, Number(options.alpha))) : 1;
   const warnings: string[] = [];
+  const usesMesh2MotionDriver = Boolean(pose.mesh2MotionDriverPose);
 
   const pelvisOffset = pose.rootOffset ?? ZERO_VEC3;
-  if (pose.rootOffset && finiteTuple(pelvisOffset)) {
+  if (!usesMesh2MotionDriver && pose.rootOffset && finiteTuple(pelvisOffset)) {
     const pelvis = rig.joints.pelvis.object;
     pelvis.position.add(vec3FromTuple(pelvisOffset));
   }
 
-  for (const [jointName, quaternionTuple] of Object.entries(pose.jointQuaternions)) {
-    const joint = rig.joints[jointName as V3CleanJointName];
-    if (!joint) {
-      warnings.push(`unknown clean rig joint ${jointName}`);
-      continue;
+  if (!usesMesh2MotionDriver) {
+    for (const [jointName, quaternionTuple] of Object.entries(pose.jointQuaternions)) {
+      const joint = rig.joints[jointName as V3CleanJointName];
+      if (!joint) {
+        warnings.push(`unknown clean rig joint ${jointName}`);
+        continue;
+      }
+      const target = normalizeQuaternion(quaternionTuple);
+      if (alpha >= 1) {
+        joint.object.quaternion.copy(target);
+      } else {
+        joint.object.quaternion.slerp(target, alpha);
+      }
+      joint.object.rotation.setFromQuaternion(joint.object.quaternion);
     }
-    const target = normalizeQuaternion(quaternionTuple);
-    if (alpha >= 1) {
-      joint.object.quaternion.copy(target);
-    } else {
-      joint.object.quaternion.slerp(target, alpha);
-    }
-    joint.object.rotation.setFromQuaternion(joint.object.quaternion);
-  }
 
-  for (const [jointName, offset] of Object.entries(pose.jointOffsets ?? {})) {
-    const joint = rig.joints[jointName as V3CleanJointName];
-    if (!joint || !finiteTuple(offset as V3Vec3Tuple)) continue;
-    joint.object.position.add(vec3FromTuple(offset as V3Vec3Tuple));
+    for (const [jointName, offset] of Object.entries(pose.jointOffsets ?? {})) {
+      const joint = rig.joints[jointName as V3CleanJointName];
+      if (!joint || !finiteTuple(offset as V3Vec3Tuple)) continue;
+      joint.object.position.add(vec3FromTuple(offset as V3Vec3Tuple));
+    }
+  } else if (pose.mesh2MotionDriverPose) {
+    const driverReport = applyV3Mesh2MotionDriverRigPose(model, pose.mesh2MotionDriverPose, { alpha });
+    warnings.push(...driverReport.warnings);
   }
 
   model.userData.v3AnimationAuthority = 'cleanRig';
