@@ -78,6 +78,16 @@ export interface V3WeaponBuildOptions extends V3RenderOptions {
 }
 
 const V3_WEAPON_SCALE = 0.06;
+let v3RenderedBodyWeaponScaleBoundsCache: THREE.Box3 | null = null;
+
+const createV3RenderedBodyWeaponScaleBounds = (): THREE.Box3 => {
+  if (!v3RenderedBodyWeaponScaleBoundsCache) {
+    const body = buildV3SpartanModel({ isEnemy: false, customHue: 192 });
+    body.updateMatrixWorld(true);
+    v3RenderedBodyWeaponScaleBoundsCache = new THREE.Box3().setFromObject(body);
+  }
+  return v3RenderedBodyWeaponScaleBoundsCache.clone();
+};
 
 const createColors = (isEnemy = false, customHue?: number): SpartanColors => ({
   primary: customHue !== undefined ? `hsl(${customHue}, 86%, 50%)` : isEnemy ? '#ef4444' : '#3b82f6',
@@ -517,8 +527,8 @@ export function getV3BuiltinWeaponVoxels(
   const colors = createColors(false, customHue);
   const voxels: VoxelData[] = [];
   if (weapon === 'hammer') {
-    // Gravity hammer: a long two-handed haft topped by a massive forked head
-    // with a glowing energy core, scaled to ~3/4 of the character's height.
+    // V1-themed gravity hammer: slim wrapped haft, compact pommel, and a
+    // front energy strike face sized for V3 hands.
     const emissive = (x: number, y: number, z: number, role: 'emissive' | 'accent') =>
       voxels.push({
         x,
@@ -528,41 +538,63 @@ export function getV3BuiltinWeaponVoxels(
         emissive: roleEmissive(role, paintJob, true),
       });
 
-    // Counterweight pommel and the long wrapped haft.
-    addTranslatedBox(voxels, [5, 3, 5], [-2, 0, -2], roleColor('fixed', colors, paintJob));
-    addTranslatedBox(voxels, [3, 24, 3], [-1, 2, -1], roleColor('undersuit', colors, paintJob));
-    for (let y = 4; y <= 12; y += 2) {
-      addTranslatedBox(voxels, [5, 1, 5], [-2, y, -2], roleColor('secondary', colors, paintJob));
+    addTranslatedBox(voxels, [3, 3, 3], [-1, 0, -1], roleColor('fixed', colors, paintJob));
+    addTranslatedBox(voxels, [3, 23, 3], [-1, 2, -1], roleColor('undersuit', colors, paintJob));
+    for (let y = 4; y <= 17; y += 3) {
+      addTranslatedBox(voxels, [3, 1, 3], [-1, y, -1], roleColor('secondary', colors, paintJob));
     }
 
-    // Collar, underside lip, broad head block, and beveled crown.
-    addTranslatedBox(voxels, [5, 3, 7], [-2, 22, -3], roleColor('fixed', colors, paintJob));
-    addTranslatedBox(voxels, [9, 1, 9], [-4, 24, -4], roleColor('fixed', colors, paintJob));
-    addTranslatedBox(voxels, [9, 8, 8], [-4, 25, -4], roleColor('primary', colors, paintJob));
-    addTranslatedBox(voxels, [7, 2, 7], [-3, 33, -3], roleColor('fixed', colors, paintJob));
+    addTranslatedBox(voxels, [5, 2, 5], [-2, 22, -2], roleColor('fixed', colors, paintJob));
+    addTranslatedBox(voxels, [7, 1, 7], [-3, 24, -3], roleColor('secondary', colors, paintJob));
 
-    // Twin glowing fork prongs and energy core on the forward striking face.
-    for (let y = 26; y <= 32; y++) {
-      emissive(-3, y, 4, 'accent');
-      emissive(-2, y, 4, 'emissive');
-      emissive(3, y, 4, 'emissive');
-      emissive(4, y, 4, 'accent');
+    for (let hx = -2; hx <= 2; hx++) {
+      for (let hy = 25; hy <= 31; hy++) {
+        for (let hz = -4; hz <= -1; hz++) {
+          const edge = Math.abs(hx) === 2 || hy === 25 || hy === 31 || hz === -4;
+          voxels.push({
+            x: hx,
+            y: hy,
+            z: hz,
+            color: edge ? roleColor('secondary', colors, paintJob) : roleColor('primary', colors, paintJob),
+          });
+        }
+      }
     }
-    for (let x = -3; x <= 4; x++) {
-      emissive(x, 29, 4, 'emissive');
+
+    for (let hy = 26; hy <= 30; hy++) {
+      for (let hz = 1; hz <= 3; hz++) {
+        const rearEdge = hz === 3 || hy === 26 || hy === 30;
+        voxels.push({
+          x: 0,
+          y: hy,
+          z: hz,
+          color: rearEdge ? roleColor('fixed', colors, paintJob) : roleColor('secondary', colors, paintJob),
+        });
+      }
+      voxels.push({ x: -1, y: hy, z: 1, color: roleColor('fixed', colors, paintJob) });
+      voxels.push({ x: 1, y: hy, z: 1, color: roleColor('fixed', colors, paintJob) });
     }
-    // Energy line feeding up the front of the haft, plus a pommel ring.
-    for (let y = 14; y <= 23; y++) {
-      emissive(0, y, 2, 'emissive');
+
+    for (let hy = 27; hy <= 29; hy++) {
+      for (let hx = -1; hx <= 1; hx++) {
+        emissive(hx, hy, -5, 'emissive');
+      }
     }
-    for (let x = -2; x <= 2; x++) {
-      emissive(x, 1, 3, 'accent');
+    for (let hy = 25; hy <= 31; hy++) {
+      emissive(-3, hy, -1, 'accent');
+      emissive(3, hy, -1, 'accent');
     }
+    for (let y = 18; y <= 23; y += 2) {
+      emissive(0, y, -2, 'emissive');
+    }
+    for (let x = -1; x <= 1; x++) {
+      emissive(x, 1, 2, 'accent');
+    }
+    addTranslatedBox(voxels, [5, 2, 5], [-2, 33, -2], roleColor('fixed', colors, paintJob));
     return voxels;
   }
   if (weapon === 'sword') {
-    // Energy katar: an H-frame fist grip with a forward broad energy blade that
-    // splits into twin prongs, sized to ~1/2 of the character's height.
+    // V1-themed energy katar: compact H-frame grip and centered tapered blade.
     const blade = (x: number, y: number, role: 'emissive' | 'accent') =>
       voxels.push({
         x,
@@ -572,31 +604,23 @@ export function getV3BuiltinWeaponVoxels(
         emissive: roleEmissive(role, paintJob, true),
       });
 
-    // Base guard, side rails, twin cross grip bars, and the blade emitter.
-    addTranslatedBox(voxels, [7, 1, 3], [-3, 0, 0], roleColor('secondary', colors, paintJob));
-    addTranslatedBox(voxels, [2, 9, 3], [-3, 1, 0], roleColor('primary', colors, paintJob));
-    addTranslatedBox(voxels, [2, 9, 3], [2, 1, 0], roleColor('primary', colors, paintJob));
-    addTranslatedBox(voxels, [7, 2, 3], [-3, 3, 0], roleColor('undersuit', colors, paintJob));
-    addTranslatedBox(voxels, [7, 2, 3], [-3, 6, 0], roleColor('undersuit', colors, paintJob));
-    addTranslatedBox(voxels, [7, 3, 3], [-3, 9, 0], roleColor('fixed', colors, paintJob));
+    addTranslatedBox(voxels, [3, 1, 3], [-1, 0, 0], roleColor('secondary', colors, paintJob));
+    addTranslatedBox(voxels, [1, 9, 3], [-1, 1, 0], roleColor('primary', colors, paintJob));
+    addTranslatedBox(voxels, [1, 9, 3], [1, 1, 0], roleColor('primary', colors, paintJob));
+    addTranslatedBox(voxels, [3, 1, 3], [-1, 3, 0], roleColor('undersuit', colors, paintJob));
+    addTranslatedBox(voxels, [3, 1, 3], [-1, 6, 0], roleColor('undersuit', colors, paintJob));
+    addTranslatedBox(voxels, [7, 2, 3], [-3, 9, 0], roleColor('fixed', colors, paintJob));
     addTranslatedBox(voxels, [5, 1, 3], [-2, 11, 0], roleColor('accent', colors, paintJob));
 
-    // Broad katar blade base tapering toward the split.
-    for (let y = 12; y <= 17; y++) {
-      const half = Math.max(1, 3 - Math.floor((y - 12) * 0.4));
-      for (let x = -half; x <= half + 1; x++) {
-        const edge = x === -half || x === half + 1;
+    for (let y = 12; y <= 27; y++) {
+      let half = 0;
+      if (y <= 14) half = 3;
+      else if (y <= 18) half = 2;
+      else if (y <= 22) half = 1;
+
+      for (let x = -half; x <= half; x++) {
+        const edge = x === -half || x === half || y === 27;
         blade(x, y, edge ? 'accent' : 'emissive');
-      }
-    }
-    // Twin energy prongs sweeping out to points.
-    for (let y = 18; y <= 25; y++) {
-      const spread = Math.min(2, Math.floor((y - 18) * 0.4));
-      blade(-1 - spread, y, 'accent');
-      blade(2 + spread, y, 'accent');
-      if (y <= 21) {
-        blade(0, y, 'emissive');
-        blade(1, y, 'emissive');
       }
     }
     return voxels;
@@ -632,7 +656,11 @@ export function buildV3WeaponModel(weapon: V3WeaponId, options: V3WeaponBuildOpt
   group.userData.v3QualityTier = v3QualityTier;
   group.userData.v3Distance = v3Distance;
   group.userData.v3SelectedLod = selectedLod;
-  applyV3WeaponScaleProfile(group, weapon);
+  applyV3WeaponScaleProfile(group, weapon, (
+    weapon === 'hammer' || weapon === 'sword'
+      ? { bodyBounds: createV3RenderedBodyWeaponScaleBounds() }
+      : {}
+  ));
 
   return group;
 }

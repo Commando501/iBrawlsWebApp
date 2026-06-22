@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { V3SocketDefinition, V3SocketName, V3WeaponId } from '../v3/v3ModelTypes';
 import { getCombatantRig } from './combatantRig';
+import { getV3Mesh2MotionDriverWeaponSocketWorldPosition } from './v3Mesh2MotionDriverRig';
 
 export interface V3WeaponSocketBasis {
   weapon: V3WeaponId;
@@ -339,8 +340,18 @@ export function analyzeV3WeaponCarryAlignment(
   const visualWorldQuaternion = (visualRoot ?? weaponModel).getWorldQuaternion(new THREE.Quaternion());
   const weaponForwardWorld = axisWithQuaternion(semanticAxes.sourceForward, visualWorldQuaternion);
   const weaponUpWorld = axisWithQuaternion(semanticAxes.sourceUp, visualWorldQuaternion);
-  const rightGrip = rig?.attachments.thirdPersonWeaponGrip?.group.getWorldPosition(new THREE.Vector3()) ?? null;
-  const offhandGrip = rig?.attachments.thirdPersonOffhandGrip?.group.getWorldPosition(new THREE.Vector3()) ?? null;
+  const driverRightGrip = model.userData.v3Mesh2MotionDriverActive === true
+    ? getV3Mesh2MotionDriverWeaponSocketWorldPosition(model, 'rightHandGrip')
+    : null;
+  const driverLeftGrip = model.userData.v3Mesh2MotionDriverActive === true
+    ? getV3Mesh2MotionDriverWeaponSocketWorldPosition(model, 'leftHandGrip')
+    : null;
+  const rightGrip = driverRightGrip
+    ?? rig?.attachments.thirdPersonWeaponGrip?.group.getWorldPosition(new THREE.Vector3())
+    ?? null;
+  const offhandGrip = driverLeftGrip
+    ?? rig?.attachments.thirdPersonOffhandGrip?.group.getWorldPosition(new THREE.Vector3())
+    ?? null;
   const primaryGripWorldPosition = socketName
     ? socketWorldPosition(weaponModel, socketName)
     : null;

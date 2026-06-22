@@ -1159,6 +1159,7 @@ async function startServer() {
       "/v3-readiness-dashboard.html",
       "/v3-animation-atlas-smoke.html",
       "/v3-clean-animation-editor.html",
+      "/v3-mesh2motion-rig-calibrator.html",
     ], (req, res, next) => {
       sendDevHtml(req, res, next, req.path.slice(1));
     });

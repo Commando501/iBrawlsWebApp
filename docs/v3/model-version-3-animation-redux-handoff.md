@@ -121,6 +121,8 @@ Relevant files:
 - Mesh2Motion grouped GLB exports are imported through `src/tools/v3Mesh2MotionImporter.ts`; local raw GLBs live under `reference/mesh2motion-v3/` and sanitized generated data lives in `src/components/grifball/v3Mesh2MotionClips.generated.ts`.
 - The Mesh2Motion importer now emits schema v2 data: sanitized source skeleton metadata, `TPose` calibration, direct mappings such as `spine_03 -> spine3`, virtual V3 attachments such as `chest`, `helmet`, `collar`, `backpack`, and `grip*`, retargeted diagnostic joint quaternions, per-joint offsets, and source driver local transform tracks for all 56 source skin joints.
 - Runtime Mesh2Motion playback builds a hidden Mesh2Motion driver skeleton in `v3Mesh2MotionDriverRig.ts`. Visible V3 armor part groups stay in the existing V3 hierarchy but follow Mesh2Motion bones through rest-pose bind matrices, so Mesh2Motion local transforms are no longer forced onto unrelated V3 detail-bone pivots.
+- Mesh2Motion driver playback now applies shared driver-chain calibration from `v3Mesh2MotionCalibration.ts` before visible part binding, which prevents the old post-bind arm clearance from moving hand and forearm pieces independently.
+- Clean Mesh2Motion sword weapon playback aligns the weapon primary socket to a calibrated `rightHandGrip` driver socket by both position and orientation. Use `/v3-mesh2motion-rig-calibrator.html` to preview Mesh2Motion clips, tune arm spread/joint offsets/right-hand socket rotation, and export safe calibration JSON without editing animation keyframes.
 - Earlier lower-body tearing was reduced through a single-chain lower-body binding and runtime undersuit bridge geometry.
 - Current direction: Mesh2Motion-compatible clips are now on the driver skeleton path. Old Mixamo/manual clips are still on the prior clean-detail-bone path until they are deliberately reintegrated or recreated for the Mesh2Motion skeleton.
 
@@ -131,9 +133,9 @@ Relevant files:
 
 ## Current Blocking Problem: Full Animation Rework
 
-The next major issue is reauthoring or reintegrating the rest of V3 animation around the Mesh2Motion-compatible skeleton. The driver skeleton is now available for first-pass Mesh2Motion replacement clips, but legacy Mixamo/manual clips still target the older V3 detail rig and should not be assumed compatible.
+The next major issue is reauthoring or reintegrating the rest of V3 animation around the Mesh2Motion-compatible skeleton. The driver skeleton and Mesh2Motion calibrator are now available for first-pass Mesh2Motion replacement clips, but legacy Mixamo/manual clips still target the older V3 detail rig and should not be assumed compatible.
 
-Weapon carry and attack animation remain part of that work. The current carry sockets and weapon animations are visually wrong.
+Weapon carry and attack animation remain part of that work. Mesh2Motion sword socket position/orientation is now calibrated in runtime, but old Mixamo/manual weapon clips still need deliberate reintegration before they should be treated as final.
 
 User requirements:
 

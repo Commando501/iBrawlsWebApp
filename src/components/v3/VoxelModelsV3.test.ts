@@ -174,6 +174,9 @@ const getWorldBox = (object: THREE.Object3D): THREE.Box3 => {
   return new THREE.Box3().setFromObject(object);
 };
 
+const getWorldSize = (object: THREE.Object3D): THREE.Vector3 =>
+  getWorldBox(object).getSize(new THREE.Vector3());
+
 const tupleCloseTo = (
   actual: readonly number[],
   expected: readonly number[],
@@ -914,19 +917,81 @@ describe('V3 weapon builders', () => {
   });
 
   it('applies normalized V3 third-person weapon scale metadata to built weapons', () => {
-    const bodyBounds = new THREE.Box3(
+    const canonicalBodyBounds = new THREE.Box3(
       new THREE.Vector3(-0.45, 0, -0.21),
       new THREE.Vector3(0.45, 1.8, 0.21)
     );
+    const renderedBodyBounds = getWorldBox(buildV3SpartanModel({ isEnemy: false, customHue: 192 }));
 
     for (const weapon of V3_WEAPON_IDS) {
       const model = buildV3WeaponModel(weapon, { customHue: 192 });
+      const bodyBounds = weapon === 'hammer' || weapon === 'sword'
+        ? renderedBodyBounds
+        : canonicalBodyBounds;
       const report = analyzeV3WeaponScaleFit(model, bodyBounds, { weapon });
 
       assert.equal(model.userData.v3WeaponScaleProfile?.weapon, weapon);
       assert.equal(model.userData.v3WeaponScaleProfile?.modelSystem, 'v3');
       assert.equal(report.issues.some((issue) => issue.code === 'height-ratio-high'), false, `${weapon} height ratio`);
       assert.equal(report.issues.some((issue) => issue.code === 'hand-span-ratio-high'), false, `${weapon} hand span ratio`);
+    }
+  });
+
+  it('scales recreated V3 hammer and katar against the actual rendered V3 body height', () => {
+    const bodyHeight = getWorldSize(buildV3SpartanModel({ isEnemy: false, customHue: 192 })).y;
+    const cases = [
+      { weapon: 'hammer', targetRatio: 0.75 },
+      { weapon: 'sword', targetRatio: 0.5 },
+    ] as const;
+
+    for (const { weapon, targetRatio } of cases) {
+      const model = buildV3WeaponModel(weapon, { customHue: 192 });
+      const ratio = getWorldSize(model).y / bodyHeight;
+
+      assert.ok(
+        Math.abs(ratio - targetRatio) <= 0.015,
+        `${weapon} rendered body ratio ${ratio.toFixed(6)} should be ${targetRatio}`
+      );
+    }
+  });
+
+  it('keeps recreated V3 hammer and katar grip zones within V3 hand-fit envelopes', () => {
+    const hammer = getV3BuiltinWeaponVoxels('hammer', 192);
+    const sword = getV3BuiltinWeaponVoxels('sword', 192);
+    const hammerWorldVoxel = getWorldSize(buildV3WeaponModel('hammer', { customHue: 192 })).y / getVoxelBounds(hammer).sizeY;
+    const swordWorldVoxel = getWorldSize(buildV3WeaponModel('sword', { customHue: 192 })).y / getVoxelBounds(sword).sizeY;
+    const rowSpan = (voxels: VoxelData[], y: number, axis: 'x' | 'z'): number => {
+      const values = voxels.filter((voxel) => voxel.y === y).map((voxel) => voxel[axis]);
+      return values.length > 0 ? Math.max(...values) - Math.min(...values) + 1 : 0;
+    };
+    const hammerGripDiameter = Math.max(
+      ...Array.from({ length: 14 }, (_, index) => index + 4)
+        .map((y) => Math.max(rowSpan(hammer, y, 'x'), rowSpan(hammer, y, 'z')) * hammerWorldVoxel)
+    );
+    const swordGripDiameter = Math.max(
+      ...Array.from({ length: 8 }, (_, index) => index + 1)
+        .map((y) => Math.max(rowSpan(sword, y, 'x'), rowSpan(sword, y, 'z')) * swordWorldVoxel)
+    );
+
+    assert.ok(hammerGripDiameter >= 0.08, `hammer grip diameter ${hammerGripDiameter.toFixed(6)} too small`);
+    assert.ok(hammerGripDiameter <= 0.14, `hammer grip diameter ${hammerGripDiameter.toFixed(6)} too large`);
+    assert.ok(swordGripDiameter >= 0.07, `sword grip diameter ${swordGripDiameter.toFixed(6)} too small`);
+    assert.ok(swordGripDiameter <= 0.13, `sword grip diameter ${swordGripDiameter.toFixed(6)} too large`);
+  });
+
+  it('recreates the V1 default katar as a centered tapered blade instead of twin prongs', () => {
+    const sword = getV3BuiltinWeaponVoxels('sword', 192);
+    const bounds = getVoxelBounds(sword);
+    const bladeTipRows = Array.from({ length: 5 }, (_, index) => bounds.maxY - 4 + index);
+
+    for (const y of bladeTipRows) {
+      const row = sword.filter((voxel) => voxel.y === y);
+      const xs = row.map((voxel) => voxel.x);
+      const hasCenterBlade = xs.includes(0);
+      const xSpan = Math.max(...xs) - Math.min(...xs) + 1;
+
+      assert.equal(hasCenterBlade, true, `sword blade row ${y} should stay centered`);
+      assert.ok(xSpan <= 3, `sword blade row ${y} should taper instead of splitting into prongs`);
     }
   });
 

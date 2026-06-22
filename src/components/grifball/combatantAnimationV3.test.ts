@@ -24,8 +24,10 @@ import {
 } from './v3AnimationFidelity';
 import {
   analyzeV3WeaponCarryAlignment,
+  getV3WeaponSocketWorldPosition,
   getV3WeaponSocketBasisVisualRoot,
 } from './v3WeaponSocketBasis';
+import { getV3Mesh2MotionDriverWeaponSocketWorldTransform } from './v3Mesh2MotionDriverRig';
 import { getV3LowerBodySeamAnchorPair } from './v3LowerBodyContinuity';
 import { createInitialGrifballThreeRefs } from './threeRefs';
 import { getV3CleanRig } from './v3CleanRig';
@@ -386,6 +388,110 @@ describe('animateV3CombatantModel', () => {
         );
       }
     }
+  });
+
+  it('pins Mesh2Motion sword clean clips to the visible driver hand socket', () => {
+    const scene = new THREE.Scene();
+    const meshes = createCombatantMeshRig(scene, 192, false, { modelSystem: 'v3' });
+    const parts = meshes.group.userData.v3PartGroups as Record<string, THREE.Group>;
+    const normalizedTime = 0.5;
+
+    animateV3CombatantModel({
+      refs: createInitialGrifballThreeRefs(),
+      mesh: meshes.group,
+      vel: new THREE.Vector3(4, 0, 0),
+      yaw: 0,
+      hp: 100,
+      activeWeapon: 'sword',
+      weaponState: 'slashing',
+      weaponTimer: normalizedTime,
+      dt: 1,
+      settings: {},
+      animationClockMs: normalizedTime * 1000,
+      isLocalV3Animation: true,
+      v3PoseAlphaOverride: 1,
+      v3AnimationAuthority: 'cleanRig',
+      v3AuthoredClipId: 'clean_sword_slash',
+      v3AuthoredNormalizedTime: normalizedTime,
+    });
+    animateV3WeaponMeshes({
+      hammerModel: meshes.hammer,
+      swordModel: meshes.sword,
+      pistolModel: meshes.pistol,
+      activeWeapon: 'sword',
+      weaponState: 'slashing',
+      weaponTimer: normalizedTime,
+      isLunging: false,
+      dt: 1,
+      settings: {},
+      combatantModel: meshes.group,
+      v3AnimationAuthority: 'cleanRig',
+      v3AuthoredClipId: 'clean_sword_slash',
+      v3AuthoredNormalizedTime: normalizedTime,
+    });
+
+    meshes.group.updateMatrixWorld(true);
+    meshes.sword.updateMatrixWorld(true);
+    const socket = getV3WeaponSocketWorldPosition(meshes.sword, 'thirdPersonPrimaryGrip');
+    const handCenter = getWorldBoxCenter(parts.handRight);
+
+    assert.ok(socket, 'sword should expose a third-person primary grip socket');
+    assert.ok(
+      socket.distanceTo(handCenter) < 0.14,
+      `sword primary socket drift ${socket.distanceTo(handCenter).toFixed(4)} should stay in the visible driver hand`
+    );
+  });
+
+  it('orients Mesh2Motion sword clean clips from the driver hand socket basis', () => {
+    const scene = new THREE.Scene();
+    const meshes = createCombatantMeshRig(scene, 192, false, { modelSystem: 'v3' });
+    const normalizedTime = 0.5;
+
+    animateV3CombatantModel({
+      refs: createInitialGrifballThreeRefs(),
+      mesh: meshes.group,
+      vel: new THREE.Vector3(4, 0, 0),
+      yaw: 0,
+      hp: 100,
+      activeWeapon: 'sword',
+      weaponState: 'slashing',
+      weaponTimer: normalizedTime,
+      dt: 1,
+      settings: {},
+      animationClockMs: normalizedTime * 1000,
+      isLocalV3Animation: true,
+      v3PoseAlphaOverride: 1,
+      v3AnimationAuthority: 'cleanRig',
+      v3AuthoredClipId: 'clean_sword_slash',
+      v3AuthoredNormalizedTime: normalizedTime,
+    });
+    animateV3WeaponMeshes({
+      hammerModel: meshes.hammer,
+      swordModel: meshes.sword,
+      pistolModel: meshes.pistol,
+      activeWeapon: 'sword',
+      weaponState: 'slashing',
+      weaponTimer: normalizedTime,
+      isLunging: false,
+      dt: 1,
+      settings: {},
+      combatantModel: meshes.group,
+      v3AnimationAuthority: 'cleanRig',
+      v3AuthoredClipId: 'clean_sword_slash',
+      v3AuthoredNormalizedTime: normalizedTime,
+    });
+
+    const transform = getV3Mesh2MotionDriverWeaponSocketWorldTransform(meshes.group, 'rightHandGrip');
+    const alignment = analyzeV3WeaponCarryAlignment(meshes.group, meshes.sword, 'sword');
+    const socketForward = new THREE.Vector3(0, 0, -1)
+      .applyQuaternion(transform?.quaternion ?? new THREE.Quaternion())
+      .normalize();
+
+    assert.ok(transform, 'Mesh2Motion driver should expose a right hand socket transform');
+    assert.ok(
+      alignment.weaponForwardWorld.dot(socketForward) > 0.82,
+      `sword forward axis should follow driver hand socket forward; dot ${alignment.weaponForwardWorld.dot(socketForward).toFixed(4)}`
+    );
   });
 
   it('resets V3 broad rig groups on death', () => {

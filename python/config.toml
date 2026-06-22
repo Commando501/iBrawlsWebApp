@@ -5,7 +5,7 @@
 
 [run]
 mode = "combat"
-opponent = "self"
+opponent = "random"
 total_steps = 40000000
 parallel_matches = 32
 num_workers = 12
@@ -45,14 +45,14 @@ width = 512
 depth = 3
 frame_stack = 4
 observation_version = 3
-init_model = "runs/combat_upgrade_v3/final_model.zip"
+init_model = ""
 
 [randomize]
 enabled = false
 pct = 0.15
 
 [league]
-snapshots = []
+snapshots = ["runs/combat_upgrade_v4/final_model.zip"]
 scenario_mix = []
 random_opponent_rate = 0.0
 latest_bias = 0.7
@@ -81,7 +81,7 @@ trap_death = 1.2
 bootstrap_truncation = false
 
 [logging]
-dir = "runs/combat_upgrade_v4"
+dir = "runs/combat_n1_1"
 save_every = 2000000
 eval_every = 2000000
 eval_episodes = 16
