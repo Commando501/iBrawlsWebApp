@@ -82,7 +82,7 @@ The intended V3 animation architecture is layered:
 
 1. Exact OBJ-derived voxel body.
 2. Canonical V3 rig contract derived from exact-source slot bounds.
-3. Lower-body Mixamo-retargeted base locomotion for idle, walk, and sprint/run.
+3. External clean-rig motion sources: Mixamo remains authoritative for idle/walk and hammer references, while Mesh2Motion GLB data now drives sprint, slide, sword carry, sword lunge, and sword slash through a TPose-calibrated driver skeleton.
 4. Runtime-only lower-body bridges to hide voxel seam tearing without changing source geometry.
 5. Persistent upper-body weapon carry layer.
 6. V3 procedural weapon attack tracks.
@@ -93,6 +93,7 @@ Relevant files:
 - `src/components/grifball/combatantAnimationV3.ts`
 - `src/components/grifball/v3AnimationFidelity.ts`
 - `src/components/grifball/v3RetargetedAnimationClips.ts`
+- `src/components/grifball/v3Mesh2MotionClips.ts`
 - `src/components/grifball/v3MotionRetarget.ts`
 - `src/components/grifball/v3PoseClearance.ts`
 - `src/components/grifball/v3AnimationAtlasDefects.ts`
@@ -115,7 +116,9 @@ Relevant files:
 
 - Mixamo `Idle`, `Walking`, `Running`, and `T-Pose` FBX files were imported through a local-only pipeline.
 - Generated clip data is sanitized and checked into code, while raw FBX files remain private authoring inputs.
-- Idle, walk, and sprint/run now use retargeted Mixamo clips.
+- Idle and walk use retargeted Mixamo clips. Sprint now uses the generated Mesh2Motion `Sprint_Loop` clean-rig clip.
+- Mesh2Motion grouped GLB exports are imported through `src/tools/v3Mesh2MotionImporter.ts`; local raw GLBs live under `reference/mesh2motion-v3/` and sanitized generated data lives in `src/components/grifball/v3Mesh2MotionClips.generated.ts`.
+- The Mesh2Motion importer now emits schema v2 data: sanitized source skeleton metadata, `TPose` calibration, direct mappings such as `spine_03 -> spine3`, virtual V3 attachments such as `chest`, `helmet`, `collar`, `backpack`, and `grip*`, retargeted joint quaternions, and per-joint offsets for driver-rig playback.
 - Earlier lower-body tearing was reduced through a single-chain lower-body binding and runtime undersuit bridge geometry.
 - Current user assessment: idle, walk, and sprint are good enough for now.
 
@@ -248,6 +251,8 @@ git status --short
 Useful focused tests:
 
 ```powershell
+node --import tsx --test src/tools/v3Mesh2MotionImporter.test.ts
+node --import tsx --test src/components/grifball/v3AuthoredAnimationClips.test.ts src/components/grifball/v3CleanRig.test.ts
 node --import tsx --test src/components/grifball/v3AnimationFidelity.test.ts
 node --import tsx --test src/components/grifball/v3AnimationAtlasDefects.test.ts
 node --import tsx --test src/components/grifball/combatantAnimationV3.test.ts
@@ -257,7 +262,7 @@ node --import tsx --test src/tools/v3AnimationAtlasSmoke.test.ts
 Broader V3 animation check:
 
 ```powershell
-node --import tsx --test src/tools/v3AnimationAtlasSmoke.test.ts src/components/grifball/combatantAnimationV3.test.ts src/components/grifball/v3RetargetedAnimationClips.test.ts src/components/grifball/v3MotionRetarget.test.ts src/components/grifball/v3PoseClearance.test.ts
+node --import tsx --test src/tools/v3Mesh2MotionImporter.test.ts src/components/grifball/v3AuthoredAnimationClips.test.ts src/components/grifball/v3CleanRig.test.ts src/tools/v3AnimationAtlasSmoke.test.ts src/components/grifball/combatantAnimationV3.test.ts src/components/grifball/v3RetargetedAnimationClips.test.ts src/components/grifball/v3MotionRetarget.test.ts src/components/grifball/v3PoseClearance.test.ts
 ```
 
 Final verification before claiming completion:
@@ -306,4 +311,3 @@ Do not revert or depend on those unrelated files when continuing V3 work.
 - Do not expose V3 to players as part of weapon animation work.
 - Do not change V1/V2 weapon behavior.
 - Do not change gameplay reach, hitboxes, collision, or weapon mechanics.
-

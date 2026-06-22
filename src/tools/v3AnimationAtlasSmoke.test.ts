@@ -31,7 +31,7 @@ describe('v3AnimationAtlasSmoke', () => {
     );
   });
 
-  test('base locomotion atlas cases are labeled as clean Mixamo clips', () => {
+  test('base locomotion atlas cases are labeled with their clean external clip sources', () => {
     const cases = new Map(buildV3AnimationAtlasCases().map((entry) => [entry.id, entry]));
 
     assert.equal(cases.get('idle')?.animationAuthority, 'cleanRig');
@@ -45,8 +45,9 @@ describe('v3AnimationAtlasSmoke', () => {
     assert.equal(cases.get('walk')?.cleanMixamoClipId, 'walk');
     assert.equal(cases.get('sprint')?.animationAuthority, 'cleanRig');
     assert.equal(cases.get('sprint')?.authoredClipId, 'clean_sprint');
-    assert.equal(cases.get('sprint')?.cleanMotionSource, 'retargetedMixamo');
-    assert.equal(cases.get('sprint')?.cleanMixamoClipId, 'run');
+    assert.equal(cases.get('sprint')?.cleanMotionSource, 'mesh2Motion');
+    assert.equal(cases.get('sprint')?.cleanMixamoClipId, 'Sprint_Loop');
+    assert.equal(cases.get('sprint')?.motionSourceLabel, 'Sprint_Loop Mesh2Motion driver rig');
     assert.equal(cases.get('hammerStrike')?.clipSource, undefined);
   });
 
@@ -157,7 +158,7 @@ describe('v3AnimationAtlasSmoke', () => {
   });
 
   test('clean locomotion poses put the authored forward foot ahead of the pelvis', () => {
-    const assertForwardStride = (caseId: 'walk' | 'sprint', frame: number): void => {
+    const assertForwardStride = (caseId: 'walk' | 'sprint', frame: number, expectedLead: 'left' | 'right' | 'either'): void => {
       const atlas = buildV3AnimationAtlasScene({ caseId });
       updateV3AnimationAtlasScene(atlas, { caseId, frame });
       atlas.scene.updateMatrixWorld(true);
@@ -168,12 +169,28 @@ describe('v3AnimationAtlasSmoke', () => {
       const leftFoot = slotCenter(model, 'footLeft');
       const rightFoot = slotCenter(model, 'footRight');
 
-      assert.ok(leftFoot.z > pelvis.z, `${caseId} left foot should be ahead at clean frame ${frame}, got left=${leftFoot.z} pelvis=${pelvis.z}`);
-      assert.ok(rightFoot.z < pelvis.z, `${caseId} right foot should trail at clean frame ${frame}, got right=${rightFoot.z} pelvis=${pelvis.z}`);
+      if (expectedLead === 'left') {
+        assert.ok(leftFoot.z > pelvis.z, `${caseId} left foot should be ahead at clean frame ${frame}, got left=${leftFoot.z} pelvis=${pelvis.z}`);
+        assert.ok(rightFoot.z < pelvis.z, `${caseId} right foot should trail at clean frame ${frame}, got right=${rightFoot.z} pelvis=${pelvis.z}`);
+        return;
+      }
+      if (expectedLead === 'right') {
+        assert.ok(rightFoot.z > pelvis.z, `${caseId} right foot should be ahead at clean frame ${frame}, got right=${rightFoot.z} pelvis=${pelvis.z}`);
+        assert.ok(leftFoot.z < pelvis.z, `${caseId} left foot should trail at clean frame ${frame}, got left=${leftFoot.z} pelvis=${pelvis.z}`);
+        return;
+      }
+      assert.ok(
+        Math.max(leftFoot.z, rightFoot.z) > pelvis.z,
+        `${caseId} should have one foot ahead at clean frame ${frame}, got left=${leftFoot.z} right=${rightFoot.z} pelvis=${pelvis.z}`
+      );
+      assert.ok(
+        Math.min(leftFoot.z, rightFoot.z) < pelvis.z,
+        `${caseId} should have one foot trailing at clean frame ${frame}, got left=${leftFoot.z} right=${rightFoot.z} pelvis=${pelvis.z}`
+      );
     };
 
-    assertForwardStride('walk', 18);
-    assertForwardStride('sprint', 12);
+    assertForwardStride('walk', 18, 'left');
+    assertForwardStride('sprint', 30, 'right');
   });
 
   test('death sampling is marked for deterministic death-burst playback', () => {
@@ -201,9 +218,9 @@ describe('v3AnimationAtlasSmoke', () => {
     assert.match(hammer.motionSourceLabel ?? '', /Mixamo weapon reference/);
     assert.equal(sword.visibleWeapon, 'sword');
     assert.equal(sword.authoredClipId, 'clean_sword_lunge');
-    assert.equal(sword.cleanMotionSource, 'mixamoWeaponReference');
-    assert.equal(sword.cleanMixamoClipId, 'sword_outward_slash');
-    assert.match(sword.motionSourceLabel ?? '', /Mixamo weapon runtime motion/);
+    assert.equal(sword.cleanMotionSource, 'mesh2Motion');
+    assert.equal(sword.cleanMixamoClipId, 'Sword_Dash_RM');
+    assert.match(sword.motionSourceLabel ?? '', /Mesh2Motion driver rig/);
     assert.equal(pistol.visibleWeapon, 'pistol');
     assert.equal(pistol.authoredClipId, 'clean_pistol_fire');
     assert.equal(pistol.cleanMotionSource, 'atlasAuthored');
@@ -252,6 +269,9 @@ describe('v3AnimationAtlasSmoke', () => {
       if (weapon === 'pistol') {
         assert.equal(sample.cleanMotionSource, 'atlasAuthored');
         assert.match(sample.motionSourceLabel ?? '', /atlas-authored fallback/);
+      } else if (weapon === 'sword') {
+        assert.equal(sample.cleanMotionSource, 'mesh2Motion');
+        assert.match(sample.motionSourceLabel ?? '', /Mesh2Motion driver rig/);
       } else {
         assert.equal(sample.cleanMotionSource, 'mixamoWeaponReference');
         assert.match(sample.motionSourceLabel ?? '', /Mixamo weapon runtime motion/);

@@ -286,6 +286,7 @@ const cleanMotionSourceLabel = (
 ): string => {
   if (motionSource === 'retargetedMixamo') return `${mixamoClipId ?? 'Mixamo'} retargeted Mixamo clean motion`;
   if (motionSource === 'mixamoWeaponReference') return `${mixamoClipId ?? 'Mixamo'} Mixamo weapon runtime motion`;
+  if (motionSource === 'mesh2Motion') return `${mixamoClipId ?? 'Mesh2Motion'} Mesh2Motion driver rig`;
   return 'clean V3 atlas-authored fallback';
 };
 

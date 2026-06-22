@@ -207,6 +207,33 @@
       text-transform: uppercase;
     }
 
+    .dirty-indicator {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 36px;
+      padding: 0 10px;
+      border: 1px solid rgba(52, 211, 153, 0.2);
+      border-radius: 7px;
+      color: rgba(209, 250, 229, 0.9);
+      background: rgba(6, 78, 59, 0.18);
+      font-family: "JetBrains Mono", "Cascadia Code", Consolas, monospace;
+      font-size: 10px;
+      font-weight: 900;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .dirty-indicator.dirty {
+      border-color: rgba(245, 158, 11, 0.42);
+      color: #fde68a;
+      background: rgba(120, 53, 15, 0.24);
+    }
+
+    .topbar-actions .drawer-toggle {
+      display: none;
+    }
+
     .workspace {
       display: grid;
       grid-template-columns: 320px minmax(360px, 1fr) 380px;
@@ -289,6 +316,37 @@
       text-transform: uppercase;
     }
 
+    .button-row.compact button {
+      flex-basis: 76px;
+    }
+
+    .stack {
+      display: grid;
+      gap: 8px;
+    }
+
+    .dropzone {
+      display: grid;
+      place-items: center;
+      min-height: 68px;
+      padding: 12px;
+      border: 1px dashed rgba(34, 211, 238, 0.36);
+      border-radius: 7px;
+      color: var(--muted);
+      background: rgba(8, 145, 178, 0.08);
+      font-size: 11px;
+      font-weight: 900;
+      letter-spacing: 0.08em;
+      text-align: center;
+      text-transform: uppercase;
+    }
+
+    .dropzone.drag-over {
+      border-color: rgba(34, 211, 238, 0.9);
+      color: white;
+      background: rgba(8, 145, 178, 0.22);
+    }
+
     .socket-lock-controls {
       display: grid;
       gap: 8px;
@@ -341,6 +399,10 @@
       width: auto;
       min-height: 0;
       accent-color: var(--cyan);
+    }
+
+    .toggle-row.two {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
     .viewport-shell {
@@ -401,7 +463,7 @@
 
     .timeline-controls {
       display: grid;
-      grid-template-columns: auto minmax(160px, 1fr) auto;
+      grid-template-columns: auto minmax(160px, 1fr) auto auto auto;
       gap: 10px;
       align-items: center;
     }
@@ -453,6 +515,78 @@
     }
 
     .frame-cell[data-current="true"] {
+      outline: 2px solid white;
+      outline-offset: 1px;
+    }
+
+    .dope-sheet {
+      display: grid;
+      gap: 6px;
+      max-height: 142px;
+      overflow-y: auto;
+      padding-right: 2px;
+    }
+
+    .dope-row {
+      display: grid;
+      grid-template-columns: 112px minmax(0, 1fr);
+      gap: 8px;
+      align-items: center;
+    }
+
+    .dope-label {
+      overflow: hidden;
+      color: var(--muted);
+      font-family: "JetBrains Mono", "Cascadia Code", Consolas, monospace;
+      font-size: 10px;
+      font-weight: 900;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .dope-track {
+      position: relative;
+      min-height: 28px;
+      border: 1px solid rgba(148, 163, 184, 0.16);
+      border-radius: 6px;
+      background:
+        linear-gradient(90deg, rgba(148, 163, 184, 0.08) 1px, transparent 1px),
+        rgba(15, 23, 42, 0.72);
+      background-size: 10% 100%;
+    }
+
+    .dope-track::before,
+    .dope-track::after {
+      content: "";
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      width: 2px;
+      background: rgba(245, 158, 11, 0.84);
+      pointer-events: none;
+    }
+
+    .dope-track::before {
+      left: var(--loop-in, 0%);
+    }
+
+    .dope-track::after {
+      left: var(--loop-out, 100%);
+    }
+
+    .dope-key {
+      position: absolute;
+      top: 50%;
+      width: 11px;
+      height: 18px;
+      min-height: 0;
+      padding: 0;
+      border-radius: 3px;
+      background: rgba(34, 211, 238, 0.72);
+      transform: translate(-50%, -50%);
+    }
+
+    .dope-key[data-current="true"] {
       outline: 2px solid white;
       outline-offset: 1px;
     }
@@ -564,13 +698,74 @@
       line-height: 1.45;
     }
 
+    .validation-report {
+      display: grid;
+      gap: 7px;
+      max-height: 180px;
+      overflow-y: auto;
+    }
+
+    .validation-item {
+      display: grid;
+      gap: 3px;
+      width: 100%;
+      min-height: 0;
+      padding: 8px;
+      border-radius: 7px;
+      text-align: left;
+    }
+
+    .validation-item.info {
+      border-color: rgba(34, 211, 238, 0.24);
+      color: #bae6fd;
+    }
+
+    .validation-item.warning {
+      border-color: rgba(245, 158, 11, 0.38);
+      color: #fde68a;
+    }
+
+    .validation-item.error {
+      border-color: rgba(248, 113, 113, 0.38);
+      color: #fecaca;
+    }
+
+    .validation-item strong {
+      font-size: 10px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .validation-item span {
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.35;
+    }
+
     @media (max-width: 1180px) {
       .workspace {
         grid-template-columns: minmax(260px, 300px) minmax(360px, 1fr);
       }
 
+      .topbar-actions .drawer-toggle {
+        display: inline-flex;
+      }
+
       .panel.right {
-        display: none;
+        position: fixed;
+        top: 72px;
+        right: 0;
+        bottom: 0;
+        z-index: 20;
+        width: min(400px, calc(100vw - 24px));
+        border-left: 1px solid var(--line);
+        box-shadow: -24px 0 40px rgba(0, 0, 0, 0.34);
+        transform: translateX(104%);
+        transition: transform 160ms ease;
+      }
+
+      .workspace[data-export-open="true"] .panel.right {
+        transform: translateX(0);
       }
     }
 
@@ -608,10 +803,18 @@
 
       .panel,
       .panel.right {
+        position: static;
+        width: auto;
         display: flex;
         border: 0;
         border-bottom: 1px solid var(--line);
+        box-shadow: none;
+        transform: none;
         overflow: visible;
+      }
+
+      .topbar-actions .drawer-toggle {
+        display: none;
       }
 
       .viewport-shell {
@@ -619,7 +822,7 @@
       }
 
       .timeline-controls {
-        grid-template-columns: auto minmax(120px, 1fr);
+        grid-template-columns: auto minmax(120px, 1fr) auto auto;
       }
 
       .frame-readout {
@@ -641,12 +844,17 @@
       </div>
       <div class="topbar-actions">
         <a href="/">Back to iBrawls</a>
+        <span id="dirtyIndicator" class="dirty-indicator">Saved</span>
+        <button id="undoButton" type="button">Undo</button>
+        <button id="redoButton" type="button">Redo</button>
+        <button id="exportDrawerButton" class="drawer-toggle" type="button">Export/QA</button>
+        <button id="openAtlasButton" type="button">Open Atlas</button>
         <button id="downloadJsonButton" type="button">Download JSON</button>
         <button id="copySnippetButton" type="button">Copy TS</button>
       </div>
     </header>
 
-    <div class="workspace">
+    <div class="workspace" id="workspace" data-export-open="false">
       <aside class="panel">
         <section class="section">
           <div class="section-header">
@@ -711,6 +919,12 @@
             <button id="seedButton" type="button">Seed Three Frames</button>
             <button id="generateButton" class="primary" type="button">Generate Missing</button>
           </div>
+          <div class="button-row compact">
+            <button id="duplicateClipButton" type="button">Duplicate</button>
+            <button id="newFromCurrentButton" type="button">New Current</button>
+            <button id="saveLocalButton" type="button">Save Local</button>
+            <button id="clearLocalButton" class="danger" type="button">Clear Local</button>
+          </div>
         </section>
 
         <section class="section">
@@ -722,6 +936,27 @@
             <button id="translateButton" type="button" data-active="true">Move</button>
             <button id="rotateButton" type="button">Rotate</button>
             <button id="setKeyframeButton" class="primary" type="button">Set Keyframe</button>
+          </div>
+          <div class="toggle-row two">
+            <label><input id="autoKeyToggle" type="checkbox" /> Auto Key</label>
+            <label><input id="localSpaceToggle" type="checkbox" checked /> Local Space</label>
+          </div>
+          <div class="grid-2">
+            <label>
+              Pose preset
+              <select id="posePresetSelect">
+                <option value="guard">Guard</option>
+                <option value="windup">Windup</option>
+                <option value="strike">Strike</option>
+                <option value="recoil">Recoil</option>
+                <option value="reload">Reload</option>
+                <option value="idleHands">Idle hands</option>
+              </select>
+            </label>
+            <label>
+              Apply
+              <button id="applyPosePresetButton" type="button">Apply Pose</button>
+            </label>
           </div>
           <div class="socket-lock-controls">
             <label>
@@ -782,13 +1017,22 @@
           <div class="timeline-controls">
             <button id="playButton" type="button">Play</button>
             <input id="frameSlider" type="range" min="0" max="30" value="0" />
+            <label>
+              In
+              <input id="loopInInput" type="number" min="0" step="1" value="0" />
+            </label>
+            <label>
+              Out
+              <input id="loopOutInput" type="number" min="0" step="1" value="30" />
+            </label>
             <div class="frame-readout" id="frameReadout">Frame 0 / 30</div>
           </div>
           <div id="timeline" class="timeline"></div>
+          <div id="dopeSheet" class="dope-sheet"></div>
         </div>
       </main>
 
-      <aside class="panel right">
+      <aside class="panel right" id="exportPanel">
         <section class="section">
           <div class="section-header">
             <span>Export</span>
@@ -809,6 +1053,28 @@
             </div>
           </div>
           <textarea id="exportText" spellcheck="false"></textarea>
+        </section>
+        <section class="section">
+          <div class="section-header">
+            <span>Import</span>
+            <small>json</small>
+          </div>
+          <div class="stack">
+            <textarea id="importText" spellcheck="false" placeholder="Paste exported animation editor JSON here"></textarea>
+            <div class="button-row compact">
+              <button id="importJsonButton" type="button">Import JSON</button>
+              <button id="chooseJsonButton" type="button">Choose File</button>
+            </div>
+            <input id="importFileInput" type="file" accept=".json,application/json" hidden />
+            <div id="importDropzone" class="dropzone">Drop JSON file here</div>
+          </div>
+        </section>
+        <section class="section">
+          <div class="section-header">
+            <span>QA</span>
+            <small id="validationStatus">0 issues</small>
+          </div>
+          <div class="validation-report" id="validationReport"></div>
         </section>
         <section class="section">
           <div class="section-header">

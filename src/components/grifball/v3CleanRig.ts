@@ -268,9 +268,11 @@ export function getV3CleanJointWorldPosition(
 
 export function analyzeV3CleanRigContinuity(
   model: THREE.Group,
-  _pose?: V3CleanRigPose
+  pose?: V3CleanRigPose
 ): V3CleanRigContinuityReport {
   const rig = getV3CleanRig(model);
+  const activePose = pose ?? model.userData.v3CleanRigPose as V3CleanRigPose | undefined;
+  const driverOffsetsActive = Object.keys(activePose?.jointOffsets ?? {}).length > 0;
   model.updateMatrixWorld(true);
   const links: V3CleanRigContinuityLink[] = [];
   const warnings: string[] = [];
@@ -282,8 +284,13 @@ export function analyzeV3CleanRigContinuity(
     const parent = rig.joints[child.parent];
     const parentWorld = parent.object.getWorldPosition(new THREE.Vector3());
     const childWorld = child.object.getWorldPosition(new THREE.Vector3());
-    const restDistance = vec3FromTuple(parent.restWorldPosition).distanceTo(vec3FromTuple(child.restWorldPosition));
     const currentDistance = parentWorld.distanceTo(childWorld);
+    const childOffset = activePose?.jointOffsets?.[childName];
+    const restDistance = driverOffsetsActive
+      ? currentDistance
+      : childOffset && finiteTuple(childOffset)
+      ? vec3FromTuple(child.restLocalPosition).add(vec3FromTuple(childOffset)).length()
+      : vec3FromTuple(parent.restWorldPosition).distanceTo(vec3FromTuple(child.restWorldPosition));
     const gap = Math.abs(currentDistance - restDistance);
     const finite = Number.isFinite(restDistance) && Number.isFinite(currentDistance) && Number.isFinite(gap);
     const ready = finite && gap <= MAX_CLEAN_JOINT_SEAM_GAP;
