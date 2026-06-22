@@ -8,6 +8,11 @@ import {
   sampleV3RetargetedClip,
   type V3RetargetedClipId,
 } from './v3RetargetedAnimationClips';
+import {
+  getV3CleanMesh2MotionClipBinding,
+  sampleV3CleanMesh2MotionClip,
+  type V3Mesh2MotionClipId,
+} from './v3Mesh2MotionClips';
 import type {
   V3CleanRigPose,
   V3CleanRigWeaponPose,
@@ -17,8 +22,8 @@ import type {
 } from './v3CleanRig';
 import type { V3WeaponReferenceClipId } from './v3WeaponReferenceClips';
 
-export type V3CleanMixamoMotionSource = 'retargetedMixamo' | 'mixamoWeaponReference';
-export type V3CleanMixamoClipId = V3RetargetedClipId | V3WeaponReferenceClipId;
+export type V3CleanMixamoMotionSource = 'retargetedMixamo' | 'mixamoWeaponReference' | 'mesh2Motion';
+export type V3CleanMixamoClipId = V3RetargetedClipId | V3WeaponReferenceClipId | V3Mesh2MotionClipId;
 
 export interface V3CleanMixamoClipSample {
   pose: V3CleanRigPose;
@@ -217,6 +222,8 @@ const sampleCleanWeaponClip = (
 };
 
 export function getV3CleanMixamoClipBinding(cleanClipId: string): V3CleanMixamoClipBinding | null {
+  const mesh2Motion = getV3CleanMesh2MotionClipBinding(cleanClipId);
+  if (mesh2Motion) return mesh2Motion;
   const locomotion = locomotionClipForCleanClip(cleanClipId);
   if (locomotion) {
     return {
@@ -237,6 +244,20 @@ export function sampleV3CleanMixamoClip(
   normalizedTime: number
 ): V3CleanMixamoClipSample | null {
   const safeTime = clamp01(normalizedTime);
+  const mesh2Motion = sampleV3CleanMesh2MotionClip(cleanClipId, safeTime);
+  if (mesh2Motion) {
+    const weapon = WEAPON_BINDINGS[cleanClipId];
+    if (!weapon) return mesh2Motion;
+    const weaponSample = sampleCleanWeaponClip(cleanClipId, weapon, safeTime);
+    return {
+      ...mesh2Motion,
+      pose: {
+        ...mesh2Motion.pose,
+        weaponPose: weaponSample.weaponPose,
+      },
+      weaponPose: weaponSample.weaponPose,
+    };
+  }
   const locomotion = locomotionClipForCleanClip(cleanClipId);
   if (locomotion) return sampleCleanLocomotionClip(cleanClipId, locomotion, safeTime);
   const weapon = WEAPON_BINDINGS[cleanClipId];

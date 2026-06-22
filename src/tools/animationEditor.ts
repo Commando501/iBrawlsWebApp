@@ -47,17 +47,36 @@ import {
 } from '../game/hammerSlamTiming';
 import {
   buildAnimationEditorExportPayload,
+  buildAnimationEditorValidationReport,
   buildPoseArraySnippet,
+  clampAnimationEditorLoopRange,
   clampFrameIndex,
   clonePose,
+  commitAnimationEditorHistory,
+  createAnimationEditorDuplicateVariant,
+  createAnimationEditorHistory,
+  createAnimationEditorVariantFromCurrentFrame,
   generatePoseFrames,
+  markAnimationEditorHistorySaved,
   mergeLinkedArmKeyframesPreservingPositions,
+  mirrorAnimationEditorPose,
+  mirrorAnimationEditorTarget,
+  nextAnimationEditorLoopFrame,
   normalizeKeyframes,
+  parseAnimationEditorImportText,
+  redoAnimationEditorHistory,
+  retimeAnimationEditorKeyframe,
   resolveSetKeyframePose,
   roundPose,
+  undoAnimationEditorHistory,
+  type AnimationEditorExportPayload,
+  type AnimationEditorHistory,
   type AnimationInterpolationMode,
   type AnimationEditorRigTrack,
+  type AnimationEditorLocalVariantRecord,
+  type AnimationEditorLoopRange,
   type AnimationEditorSocketLock,
+  type AnimationEditorValidationItem,
   type AnimationKeyframe,
   type GeneratedAnimationFrame,
   type RigTargetKind,
@@ -123,10 +142,36 @@ interface EditorState {
   showSkeleton: boolean;
   showSockets: boolean;
   showLabels: boolean;
+  autoKey: boolean;
+  localTransformSpace: boolean;
   modelSystem: ModelSystemChoice;
   modelType: CharacterModelType;
   versionedData: Record<ModelSystemChoice, VersionedAnimationData>;
 }
+
+interface AnimationEditorSnapshot {
+  weapon: WeaponChoice;
+  view: EditorView;
+  trackId: string;
+  frameCount: number;
+  currentFrame: number;
+  interpolation: AnimationInterpolationMode;
+  transformMode: TransformMode;
+  selectedTarget: SelectedRigTarget;
+  weaponKeyframes: AnimationKeyframe[];
+  weaponGeneratedFrames: GeneratedAnimationFrame[];
+  boneKeyframes: RigTrackMap;
+  boneGeneratedFrames: GeneratedRigTrackMap;
+  socketKeyframes: RigTrackMap;
+  socketGeneratedFrames: GeneratedRigTrackMap;
+  socketLocks: Record<string, string>;
+  anchorFrames: [number, number, number];
+  modelSystem: ModelSystemChoice;
+  modelType: CharacterModelType;
+  versionedData: Record<ModelSystemChoice, VersionedAnimationData>;
+}
+
+type PosePresetId = 'guard' | 'windup' | 'strike' | 'recoil' | 'reload' | 'idleHands';
 
 const TRACKS: TrackDefinition[] = V3_ANIMATION_TRACKS.map((track) => ({
   id: track.id,
@@ -450,17 +495,31 @@ const applyPoseToObject = (object: THREE.Object3D, pose: RigTargetPose): void =>
 };
 
 const viewport = requireElement<HTMLDivElement>('viewport');
+const workspace = requireElement<HTMLDivElement>('workspace');
 const weaponSelect = requireElement<HTMLSelectElement>('weaponSelect');
 const viewSelect = requireElement<HTMLSelectElement>('viewSelect');
 const trackSelect = requireElement<HTMLSelectElement>('trackSelect');
 const targetSelect = requireElement<HTMLSelectElement>('targetSelect');
 const frameCountInput = requireElement<HTMLInputElement>('frameCountInput');
 const interpolationSelect = requireElement<HTMLSelectElement>('interpolationSelect');
+const dirtyIndicator = requireElement<HTMLSpanElement>('dirtyIndicator');
+const undoButton = requireElement<HTMLButtonElement>('undoButton');
+const redoButton = requireElement<HTMLButtonElement>('redoButton');
+const exportDrawerButton = requireElement<HTMLButtonElement>('exportDrawerButton');
+const openAtlasButton = requireElement<HTMLButtonElement>('openAtlasButton');
 const seedButton = requireElement<HTMLButtonElement>('seedButton');
 const generateButton = requireElement<HTMLButtonElement>('generateButton');
+const duplicateClipButton = requireElement<HTMLButtonElement>('duplicateClipButton');
+const newFromCurrentButton = requireElement<HTMLButtonElement>('newFromCurrentButton');
+const saveLocalButton = requireElement<HTMLButtonElement>('saveLocalButton');
+const clearLocalButton = requireElement<HTMLButtonElement>('clearLocalButton');
 const translateButton = requireElement<HTMLButtonElement>('translateButton');
 const rotateButton = requireElement<HTMLButtonElement>('rotateButton');
 const setKeyframeButton = requireElement<HTMLButtonElement>('setKeyframeButton');
+const autoKeyToggle = requireElement<HTMLInputElement>('autoKeyToggle');
+const localSpaceToggle = requireElement<HTMLInputElement>('localSpaceToggle');
+const posePresetSelect = requireElement<HTMLSelectElement>('posePresetSelect');
+const applyPosePresetButton = requireElement<HTMLButtonElement>('applyPosePresetButton');
 const socketLockSelect = requireElement<HTMLSelectElement>('socketLockSelect');
 const lockSocketButton = requireElement<HTMLButtonElement>('lockSocketButton');
 const repositionSocketButton = requireElement<HTMLButtonElement>('repositionSocketButton');
@@ -474,9 +533,17 @@ const keyframeList = requireElement<HTMLDivElement>('keyframeList');
 const keyframeCount = requireElement<HTMLElement>('keyframeCount');
 const playButton = requireElement<HTMLButtonElement>('playButton');
 const frameSlider = requireElement<HTMLInputElement>('frameSlider');
+const loopInInput = requireElement<HTMLInputElement>('loopInInput');
+const loopOutInput = requireElement<HTMLInputElement>('loopOutInput');
 const frameReadout = requireElement<HTMLElement>('frameReadout');
 const timeline = requireElement<HTMLDivElement>('timeline');
+const dopeSheet = requireElement<HTMLDivElement>('dopeSheet');
 const exportText = requireElement<HTMLTextAreaElement>('exportText');
+const importText = requireElement<HTMLTextAreaElement>('importText');
+const importJsonButton = requireElement<HTMLButtonElement>('importJsonButton');
+const chooseJsonButton = requireElement<HTMLButtonElement>('chooseJsonButton');
+const importFileInput = requireElement<HTMLInputElement>('importFileInput');
+const importDropzone = requireElement<HTMLDivElement>('importDropzone');
 const copySnippetButton = requireElement<HTMLButtonElement>('copySnippetButton');
 const downloadJsonButton = requireElement<HTMLButtonElement>('downloadJsonButton');
 const statusText = requireElement<HTMLElement>('statusText');
@@ -489,6 +556,8 @@ const metricFrames = requireElement<HTMLElement>('metricFrames');
 const metricKeys = requireElement<HTMLElement>('metricKeys');
 const metricMode = requireElement<HTMLElement>('metricMode');
 const exportStatus = requireElement<HTMLElement>('exportStatus');
+const validationStatus = requireElement<HTMLElement>('validationStatus');
+const validationReport = requireElement<HTMLDivElement>('validationReport');
 const segmentInfo = requireElement<HTMLElement>('segmentInfo');
 
 const poseInputs = {
@@ -519,6 +588,9 @@ controls.maxDistance = 8;
 
 const transformControls = new TransformControls(camera, renderer.domElement);
 transformControls.setSize(0.78);
+transformControls.setSpace('local');
+transformControls.setTranslationSnap(0.01);
+transformControls.setRotationSnap(0.05);
 scene.add(transformControls.getHelper());
 
 const hemiLight = new THREE.HemisphereLight(0x9bdcff, 0x111827, 1.8);
@@ -748,6 +820,8 @@ const state: EditorState = {
   showSkeleton: true,
   showSockets: true,
   showLabels: true,
+  autoKey: false,
+  localTransformSpace: true,
   modelSystem: 'v1',
   modelType: 'medium',
   versionedData: {
@@ -763,6 +837,8 @@ let playbackAccumulator = 0;
 const playbackFrameDuration = 1 / 18;
 let lastAnimationTime = performance.now();
 const baselineTargetPoses = new Map<string, RigTargetPose>();
+const SAVED_DRAFT_STORAGE_KEY = 'ibrawls_animation_editor_saved_draft';
+const CUSTOM_CLIPS_STORAGE_KEY = 'ibrawls_animation_editor_custom_clips';
 
 interface RuntimeSocketLock {
   target: SelectedRigTarget;
@@ -773,6 +849,54 @@ interface RuntimeSocketLock {
 }
 
 const runtimeSocketLocks = new Map<string, RuntimeSocketLock>();
+let loopRange: AnimationEditorLoopRange = { inFrame: 0, outFrame: state.frameCount - 1 };
+let historyState: AnimationEditorHistory<AnimationEditorSnapshot> | null = null;
+let customVariants: AnimationEditorLocalVariantRecord[] = [];
+let draggingDopeKey: { targetKeyValue: string; frame: number; pointerId: number; track: HTMLElement } | null = null;
+
+const cloneTarget = (target: SelectedRigTarget): SelectedRigTarget => ({ ...target });
+
+const cloneKeyframe = (keyframe: AnimationKeyframe): AnimationKeyframe => ({
+  ...keyframe,
+  pose: clonePose(keyframe.pose),
+});
+
+const cloneGeneratedFrame = (frame: GeneratedAnimationFrame): GeneratedAnimationFrame => ({
+  ...frame,
+  pose: clonePose(frame.pose),
+});
+
+const cloneKeyframes = (keyframes: AnimationKeyframe[]): AnimationKeyframe[] => keyframes.map(cloneKeyframe);
+
+const cloneGeneratedFrames = (frames: GeneratedAnimationFrame[]): GeneratedAnimationFrame[] =>
+  frames.map(cloneGeneratedFrame);
+
+const cloneKeyframeMap = (map: RigTrackMap): RigTrackMap =>
+  Object.fromEntries(Object.entries(map).map(([key, keyframes]) => [key, cloneKeyframes(keyframes)]));
+
+const cloneGeneratedMap = (map: GeneratedRigTrackMap): GeneratedRigTrackMap =>
+  Object.fromEntries(Object.entries(map).map(([key, frames]) => [key, cloneGeneratedFrames(frames)]));
+
+const cloneSocketLocks = (locks: Record<string, string>): Record<string, string> => ({ ...locks });
+
+const cloneAnchorFrames = (frames: [number, number, number]): [number, number, number] => [
+  frames[0],
+  frames[1],
+  frames[2],
+];
+
+const cloneVersionedData = (data: VersionedAnimationData): VersionedAnimationData => ({
+  weaponKeyframes: cloneKeyframes(data.weaponKeyframes),
+  weaponGeneratedFrames: cloneGeneratedFrames(data.weaponGeneratedFrames),
+  boneKeyframes: cloneKeyframeMap(data.boneKeyframes),
+  boneGeneratedFrames: cloneGeneratedMap(data.boneGeneratedFrames),
+  socketKeyframes: cloneKeyframeMap(data.socketKeyframes),
+  socketGeneratedFrames: cloneGeneratedMap(data.socketGeneratedFrames),
+  socketLocks: cloneSocketLocks(data.socketLocks),
+  frameCount: data.frameCount,
+  anchorFrames: cloneAnchorFrames(data.anchorFrames),
+  interpolation: data.interpolation,
+});
 
 const armPoseToRigTargetPose = (
   boneName: Extract<CombatantBoneName, 'rightArm' | 'leftArm'>,
@@ -1241,34 +1365,51 @@ function getSelectedKeyframes(): AnimationKeyframe[] {
 }
 
 function setSelectedKeyframes(keyframes: AnimationKeyframe[]): void {
-  if (state.selectedTarget.kind === 'weapon') {
+  setKeyframesForTarget(state.selectedTarget, keyframes);
+}
+
+function getKeyframesForTarget(target: SelectedRigTarget): AnimationKeyframe[] {
+  if (target.kind === 'weapon') return state.weaponKeyframes;
+  return getRigKeyframeMap(target.kind)[targetKey(target)] ?? [];
+}
+
+function setKeyframesForTarget(target: SelectedRigTarget, keyframes: AnimationKeyframe[]): void {
+  if (target.kind === 'weapon') {
     state.weaponKeyframes = keyframes;
     return;
   }
 
   const map = {
-    ...getRigKeyframeMap(state.selectedTarget.kind),
-    [targetKey(state.selectedTarget)]: keyframes,
+    ...getRigKeyframeMap(target.kind),
+    [targetKey(target)]: keyframes,
   };
-  setRigKeyframeMap(state.selectedTarget.kind, map);
+  setRigKeyframeMap(target.kind, map);
 }
 
 function getSelectedGeneratedFrames(): GeneratedAnimationFrame[] {
-  if (state.selectedTarget.kind === 'weapon') return state.weaponGeneratedFrames;
-  return getRigGeneratedMap(state.selectedTarget.kind)[targetKey(state.selectedTarget)] ?? [];
+  return getGeneratedFramesForTarget(state.selectedTarget);
 }
 
 function setSelectedGeneratedFrames(frames: GeneratedAnimationFrame[]): void {
-  if (state.selectedTarget.kind === 'weapon') {
+  setGeneratedFramesForTarget(state.selectedTarget, frames);
+}
+
+function getGeneratedFramesForTarget(target: SelectedRigTarget): GeneratedAnimationFrame[] {
+  if (target.kind === 'weapon') return state.weaponGeneratedFrames;
+  return getRigGeneratedMap(target.kind)[targetKey(target)] ?? [];
+}
+
+function setGeneratedFramesForTarget(target: SelectedRigTarget, frames: GeneratedAnimationFrame[]): void {
+  if (target.kind === 'weapon') {
     state.weaponGeneratedFrames = frames;
     return;
   }
 
   const map = {
-    ...getRigGeneratedMap(state.selectedTarget.kind),
-    [targetKey(state.selectedTarget)]: frames,
+    ...getRigGeneratedMap(target.kind),
+    [targetKey(target)]: frames,
   };
-  setRigGeneratedMap(state.selectedTarget.kind, map);
+  setRigGeneratedMap(target.kind, map);
 }
 
 function getCurrentSelectedPose(): RigTargetPose {
@@ -1329,6 +1470,190 @@ function setDraftPose(pose: WeaponPose): void {
 function clearDraft(): void {
   draftFrame = null;
   draftPose = null;
+}
+
+function captureEditorSnapshot(): AnimationEditorSnapshot {
+  saveVersionedData(state.modelSystem);
+  return {
+    weapon: state.weapon,
+    view: state.view,
+    trackId: state.trackId,
+    frameCount: state.frameCount,
+    currentFrame: state.currentFrame,
+    interpolation: state.interpolation,
+    transformMode: state.transformMode,
+    selectedTarget: cloneTarget(state.selectedTarget),
+    weaponKeyframes: cloneKeyframes(state.weaponKeyframes),
+    weaponGeneratedFrames: cloneGeneratedFrames(state.weaponGeneratedFrames),
+    boneKeyframes: cloneKeyframeMap(state.boneKeyframes),
+    boneGeneratedFrames: cloneGeneratedMap(state.boneGeneratedFrames),
+    socketKeyframes: cloneKeyframeMap(state.socketKeyframes),
+    socketGeneratedFrames: cloneGeneratedMap(state.socketGeneratedFrames),
+    socketLocks: cloneSocketLocks(state.socketLocks),
+    anchorFrames: cloneAnchorFrames(state.anchorFrames),
+    modelSystem: state.modelSystem,
+    modelType: state.modelType,
+    versionedData: {
+      v1: cloneVersionedData(state.versionedData.v1),
+      v2: cloneVersionedData(state.versionedData.v2),
+      v3: cloneVersionedData(state.versionedData.v3),
+    },
+  };
+}
+
+function rebuildPreviewRig(system: ModelSystemChoice): void {
+  clearRuntimeSocketLocks(true);
+  disposeObjectTree(thirdPersonRig.group);
+  thirdPersonRig = createCombatantMeshRig(
+    scene,
+    192,
+    false,
+    currentPreviewLoadout(system),
+    system === 'v3' ? EDITOR_V3_RENDER_OPTIONS : undefined
+  );
+  thirdPersonRig.group.position.set(0, 0, 0);
+  thirdPersonRig.group.rotation.y = Math.PI;
+  rebuildFirstPersonWeapons(system);
+  buildSkeletonLines();
+  rebuildRuntimeSocketLocks();
+  captureEditableTargetBaselines();
+  buildOverlayMarkers();
+}
+
+function restoreEditorSnapshot(snapshot: AnimationEditorSnapshot, message?: string): void {
+  const needsRigRebuild = state.modelSystem !== snapshot.modelSystem || state.modelType !== snapshot.modelType;
+  clearRuntimeSocketLocks(true);
+  state.weapon = snapshot.weapon;
+  state.view = snapshot.view;
+  state.trackId = snapshot.trackId;
+  state.frameCount = snapshot.frameCount;
+  state.currentFrame = clampFrameIndex(snapshot.currentFrame, snapshot.frameCount);
+  state.interpolation = snapshot.interpolation;
+  state.transformMode = snapshot.transformMode;
+  state.selectedTarget = cloneTarget(snapshot.selectedTarget);
+  state.weaponKeyframes = cloneKeyframes(snapshot.weaponKeyframes);
+  state.weaponGeneratedFrames = cloneGeneratedFrames(snapshot.weaponGeneratedFrames);
+  state.boneKeyframes = cloneKeyframeMap(snapshot.boneKeyframes);
+  state.boneGeneratedFrames = cloneGeneratedMap(snapshot.boneGeneratedFrames);
+  state.socketKeyframes = cloneKeyframeMap(snapshot.socketKeyframes);
+  state.socketGeneratedFrames = cloneGeneratedMap(snapshot.socketGeneratedFrames);
+  state.socketLocks = cloneSocketLocks(snapshot.socketLocks);
+  state.anchorFrames = cloneAnchorFrames(snapshot.anchorFrames);
+  state.modelSystem = snapshot.modelSystem;
+  state.modelType = snapshot.modelType;
+  state.versionedData = {
+    v1: cloneVersionedData(snapshot.versionedData.v1),
+    v2: cloneVersionedData(snapshot.versionedData.v2),
+    v3: cloneVersionedData(snapshot.versionedData.v3),
+  };
+  loopRange = clampAnimationEditorLoopRange(state.frameCount, loopRange);
+  clearDraft();
+
+  if (needsRigRebuild) {
+    rebuildPreviewRig(state.modelSystem);
+  } else {
+    rebuildRuntimeSocketLocks();
+  }
+
+  syncFormControls();
+  updateCameraForView();
+  syncSceneVisibility();
+  applyFrameToScene();
+  syncPoseInputs(getCurrentSelectedPose());
+  renderAll();
+  if (message) setStatus(message);
+}
+
+function syncFormControls(): void {
+  weaponSelect.value = state.weapon;
+  viewSelect.value = state.view;
+  modelSystemSelect.value = state.modelSystem;
+  modelTypeSelect.value = state.modelType;
+  frameCountInput.value = String(state.frameCount);
+  interpolationSelect.value = state.interpolation;
+  autoKeyToggle.checked = state.autoKey;
+  localSpaceToggle.checked = state.localTransformSpace;
+  transformControls.setSpace(state.localTransformSpace ? 'local' : 'world');
+  transformControls.setMode(state.transformMode);
+}
+
+function renderHistoryControls(): void {
+  const dirty = Boolean(historyState?.dirty);
+  dirtyIndicator.textContent = dirty ? 'Unsaved' : 'Saved';
+  dirtyIndicator.classList.toggle('dirty', dirty);
+  undoButton.disabled = !historyState || historyState.past.length === 0;
+  redoButton.disabled = !historyState || historyState.future.length === 0;
+}
+
+function initializeHistory(): void {
+  historyState = createAnimationEditorHistory(captureEditorSnapshot());
+  renderHistoryControls();
+}
+
+function commitEditorChange(): void {
+  if (!historyState) return;
+  historyState = commitAnimationEditorHistory(historyState, captureEditorSnapshot());
+  renderHistoryControls();
+}
+
+function markEditorSaved(): void {
+  if (!historyState) {
+    initializeHistory();
+    return;
+  }
+  historyState = markAnimationEditorHistorySaved(historyState);
+  renderHistoryControls();
+}
+
+function undoEditorChange(): void {
+  if (!historyState || historyState.past.length === 0) return;
+  historyState = undoAnimationEditorHistory(historyState);
+  restoreEditorSnapshot(historyState.present, 'Undo.');
+  renderHistoryControls();
+}
+
+function redoEditorChange(): void {
+  if (!historyState || historyState.future.length === 0) return;
+  historyState = redoAnimationEditorHistory(historyState);
+  restoreEditorSnapshot(historyState.present, 'Redo.');
+  renderHistoryControls();
+}
+
+function loadCustomVariants(): void {
+  try {
+    const raw = window.localStorage.getItem(CUSTOM_CLIPS_STORAGE_KEY);
+    if (!raw) {
+      customVariants = [];
+      return;
+    }
+    const parsed = JSON.parse(raw);
+    customVariants = Array.isArray(parsed) ? parsed : [];
+  } catch {
+    customVariants = [];
+  }
+}
+
+function saveCustomVariants(): void {
+  window.localStorage.setItem(CUSTOM_CLIPS_STORAGE_KEY, JSON.stringify(customVariants));
+}
+
+function saveLocalDraft(): void {
+  window.localStorage.setItem(SAVED_DRAFT_STORAGE_KEY, JSON.stringify(captureEditorSnapshot()));
+  markEditorSaved();
+  setStatus('Local draft saved.');
+}
+
+function loadLocalDraft(): boolean {
+  try {
+    const raw = window.localStorage.getItem(SAVED_DRAFT_STORAGE_KEY);
+    if (!raw) return false;
+    restoreEditorSnapshot(JSON.parse(raw) as AnimationEditorSnapshot, 'Local draft loaded.');
+    initializeHistory();
+    return true;
+  } catch {
+    window.localStorage.removeItem(SAVED_DRAFT_STORAGE_KEY);
+    return false;
+  }
 }
 
 function captureEditableTargetBaselines(): void {
@@ -1482,7 +1807,7 @@ function sampleTrackProgressForFrame(frame: number): number {
   return state.frameCount <= 1 ? 0 : frame / (state.frameCount - 1);
 }
 
-function seedThreeFrames(): void {
+function seedThreeFrames(commit = true): void {
   state.anchorFrames = makeAnchorFrames(state.frameCount);
   const track = getTrack(state.trackId);
   const basePose = state.selectedTarget.kind === 'weapon'
@@ -1500,10 +1825,10 @@ function seedThreeFrames(): void {
   clearDraft();
   regenerateSelectedFrames(state.view === 'thirdPerson' && state.selectedTarget.kind === 'weapon'
     ? 'Seeded weapon and linked arm key poses.'
-    : 'Seeded three key poses.');
+    : 'Seeded three key poses.', commit);
 }
 
-function regenerateSelectedFrames(message = 'Generated missing frames.'): void {
+function regenerateSelectedFrames(message = 'Generated missing frames.', commit = true): void {
   const normalizedKeyframes = normalizeKeyframes(getSelectedKeyframes(), state.frameCount);
   setSelectedKeyframes(normalizedKeyframes);
   setSelectedGeneratedFrames(generatePoseFrames(normalizedKeyframes, state.frameCount, state.interpolation));
@@ -1515,6 +1840,7 @@ function regenerateSelectedFrames(message = 'Generated missing frames.'): void {
   syncPoseInputs(getCurrentSelectedPose());
   renderAll();
   setStatus(message);
+  if (commit) commitEditorChange();
 }
 
 function regenerateAllFrames(): void {
@@ -1549,17 +1875,17 @@ function setCurrentFrame(frame: number): void {
   renderSegmentInfo();
 }
 
-function setKeyframe(frame: number, pose: RigTargetPose, label?: string): void {
+function setKeyframe(frame: number, pose: RigTargetPose, label?: string, commit = true): void {
   const resolvedFrame = clampFrameIndex(frame, state.frameCount);
   setSelectedKeyframes(normalizeKeyframes([
     ...getSelectedKeyframes().filter((keyframe) => keyframe.frame !== resolvedFrame),
     { frame: resolvedFrame, label, pose },
   ], state.frameCount));
   clearDraft();
-  regenerateSelectedFrames(`Keyframe set at frame ${resolvedFrame}.`);
+  regenerateSelectedFrames(`Keyframe set at frame ${resolvedFrame}.`, commit);
 }
 
-function deleteKeyframe(frame: number): void {
+function deleteKeyframe(frame: number, commit = true): void {
   const selectedKeyframes = getSelectedKeyframes();
   if (selectedKeyframes.length <= 1) {
     setStatus('At least one keyframe is required.');
@@ -1567,7 +1893,7 @@ function deleteKeyframe(frame: number): void {
   }
   setSelectedKeyframes(selectedKeyframes.filter((keyframe) => keyframe.frame !== frame));
   clearDraft();
-  regenerateSelectedFrames(`Keyframe ${frame} removed.`);
+  regenerateSelectedFrames(`Keyframe ${frame} removed.`, commit);
 }
 
 function refreshTrackOptions(): void {
@@ -1642,30 +1968,30 @@ function syncSceneVisibility(): void {
 
 function saveVersionedData(system: ModelSystemChoice): void {
   state.versionedData[system] = {
-    weaponKeyframes: [...state.weaponKeyframes],
-    weaponGeneratedFrames: [...state.weaponGeneratedFrames],
-    boneKeyframes: { ...state.boneKeyframes },
-    boneGeneratedFrames: { ...state.boneGeneratedFrames },
-    socketKeyframes: { ...state.socketKeyframes },
-    socketGeneratedFrames: { ...state.socketGeneratedFrames },
-    socketLocks: { ...state.socketLocks },
+    weaponKeyframes: cloneKeyframes(state.weaponKeyframes),
+    weaponGeneratedFrames: cloneGeneratedFrames(state.weaponGeneratedFrames),
+    boneKeyframes: cloneKeyframeMap(state.boneKeyframes),
+    boneGeneratedFrames: cloneGeneratedMap(state.boneGeneratedFrames),
+    socketKeyframes: cloneKeyframeMap(state.socketKeyframes),
+    socketGeneratedFrames: cloneGeneratedMap(state.socketGeneratedFrames),
+    socketLocks: cloneSocketLocks(state.socketLocks),
     frameCount: state.frameCount,
-    anchorFrames: [...state.anchorFrames],
+    anchorFrames: cloneAnchorFrames(state.anchorFrames),
     interpolation: state.interpolation,
   };
 }
 
 function loadVersionedData(system: ModelSystemChoice): void {
   const data = state.versionedData[system];
-  state.weaponKeyframes = [...data.weaponKeyframes];
-  state.weaponGeneratedFrames = [...data.weaponGeneratedFrames];
-  state.boneKeyframes = { ...data.boneKeyframes };
-  state.boneGeneratedFrames = { ...data.boneGeneratedFrames };
-  state.socketKeyframes = { ...data.socketKeyframes };
-  state.socketGeneratedFrames = { ...data.socketGeneratedFrames };
-  state.socketLocks = { ...(data.socketLocks ?? {}) };
+  state.weaponKeyframes = cloneKeyframes(data.weaponKeyframes);
+  state.weaponGeneratedFrames = cloneGeneratedFrames(data.weaponGeneratedFrames);
+  state.boneKeyframes = cloneKeyframeMap(data.boneKeyframes);
+  state.boneGeneratedFrames = cloneGeneratedMap(data.boneGeneratedFrames);
+  state.socketKeyframes = cloneKeyframeMap(data.socketKeyframes);
+  state.socketGeneratedFrames = cloneGeneratedMap(data.socketGeneratedFrames);
+  state.socketLocks = cloneSocketLocks(data.socketLocks ?? {});
   state.frameCount = data.frameCount;
-  state.anchorFrames = [...data.anchorFrames];
+  state.anchorFrames = cloneAnchorFrames(data.anchorFrames);
   state.interpolation = data.interpolation;
 }
 
@@ -1810,6 +2136,7 @@ function renderAnchorRows(): void {
     input.addEventListener('change', () => {
       state.anchorFrames[index] = clampFrameIndex(Number(input.value), state.frameCount);
       renderAnchorRows();
+      commitEditorChange();
     });
 
     const goButton = document.createElement('button');
@@ -1871,8 +2198,13 @@ function renderKeyframes(): void {
 }
 
 function renderTimeline(): void {
+  loopRange = clampAnimationEditorLoopRange(state.frameCount, loopRange);
   frameSlider.max = String(state.frameCount - 1);
   frameSlider.value = String(state.currentFrame);
+  loopInInput.max = String(state.frameCount - 1);
+  loopOutInput.max = String(state.frameCount - 1);
+  loopInInput.value = String(loopRange.inFrame);
+  loopOutInput.value = String(loopRange.outFrame);
   frameReadout.textContent = `Frame ${state.currentFrame} / ${state.frameCount - 1}`;
   timeline.innerHTML = '';
 
@@ -1885,6 +2217,140 @@ function renderTimeline(): void {
     button.dataset.current = String(frame.frame === state.currentFrame);
     button.addEventListener('click', () => setCurrentFrame(frame.frame));
     timeline.appendChild(button);
+  });
+
+  renderDopeSheet();
+}
+
+function framePercent(frame: number): string {
+  const maxFrame = Math.max(1, state.frameCount - 1);
+  return `${(clampFrameIndex(frame, state.frameCount) / maxFrame) * 100}%`;
+}
+
+function frameFromTrackPointer(track: HTMLElement, clientX: number): number {
+  const rect = track.getBoundingClientRect();
+  const pct = rect.width <= 0 ? 0 : (clientX - rect.left) / rect.width;
+  return clampFrameIndex(pct * (state.frameCount - 1), state.frameCount);
+}
+
+function dopeRows(): Array<{ key: string; target: SelectedRigTarget; label: string; keyframes: AnimationKeyframe[] }> {
+  const rows = new Map<string, { key: string; target: SelectedRigTarget; label: string; keyframes: AnimationKeyframe[] }>();
+  const addRow = (target: SelectedRigTarget): void => {
+    const key = targetKey(target);
+    if (rows.has(key)) return;
+    rows.set(key, {
+      key,
+      target,
+      label: target.kind === 'weapon' ? `weapon.${target.name}` : `${target.kind}.${target.name}`,
+      keyframes: normalizeKeyframes(getKeyframesForTarget(target), state.frameCount),
+    });
+  };
+
+  addRow({ kind: 'weapon', name: state.weapon, view: state.view });
+  addRow(state.selectedTarget);
+
+  (['bone', 'socket'] as const).forEach((kind) => {
+    Object.entries(getRigKeyframeMap(kind)).forEach(([key, keyframes]) => {
+      const target = decodeTargetValue(key);
+      if (!target || target.view !== state.view || keyframes.length === 0) return;
+      addRow(target);
+    });
+  });
+
+  return [...rows.values()].filter((row) => row.keyframes.length > 0 || row.target.kind === 'weapon');
+}
+
+function renderDopeSheet(): void {
+  dopeSheet.innerHTML = '';
+  dopeRows().forEach((row) => {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'dope-row';
+
+    const label = document.createElement('div');
+    label.className = 'dope-label';
+    label.textContent = row.label;
+
+    const track = document.createElement('div');
+    track.className = 'dope-track';
+    track.style.setProperty('--loop-in', framePercent(loopRange.inFrame));
+    track.style.setProperty('--loop-out', framePercent(loopRange.outFrame));
+    track.addEventListener('click', (event) => {
+      setCurrentFrame(frameFromTrackPointer(track, event.clientX));
+    });
+
+    row.keyframes.forEach((keyframe) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'dope-key';
+      button.title = `${row.label} frame ${keyframe.frame}`;
+      button.style.left = framePercent(keyframe.frame);
+      button.dataset.current = String(keyframe.frame === state.currentFrame);
+      button.addEventListener('click', (event) => {
+        event.stopPropagation();
+        setCurrentFrame(keyframe.frame);
+      });
+      button.addEventListener('pointerdown', (event) => {
+        event.stopPropagation();
+        button.setPointerCapture(event.pointerId);
+        draggingDopeKey = { targetKeyValue: row.key, frame: keyframe.frame, pointerId: event.pointerId, track };
+      });
+      track.appendChild(button);
+    });
+
+    wrapper.append(label, track);
+    dopeSheet.appendChild(wrapper);
+  });
+}
+
+function regenerateFramesForTarget(target: SelectedRigTarget, message: string, commit = true): void {
+  const normalized = normalizeKeyframes(getKeyframesForTarget(target), state.frameCount);
+  setKeyframesForTarget(target, normalized);
+  if (normalized.length > 0) {
+    setGeneratedFramesForTarget(target, generatePoseFrames(normalized, state.frameCount, state.interpolation));
+    if (target.kind === 'weapon' && state.view === 'thirdPerson') {
+      seedLinkedThirdPersonArmTracks(normalized);
+    }
+  }
+  clearDraft();
+  applyFrameToScene();
+  syncPoseInputs(getCurrentSelectedPose());
+  renderAll();
+  setStatus(message);
+  if (commit) commitEditorChange();
+}
+
+function renderValidation(): void {
+  const report = buildAnimationEditorValidationReport(buildExportPayload());
+  validationStatus.textContent = report.ok ? 'ok' : `${report.items.length} issue${report.items.length === 1 ? '' : 's'}`;
+  validationReport.innerHTML = '';
+  if (report.items.length === 0) {
+    const item = document.createElement('div');
+    item.className = 'validation-item info';
+    item.innerHTML = '<strong>OK</strong><span>No validation issues.</span>';
+    validationReport.appendChild(item);
+    return;
+  }
+
+  report.items.forEach((issue: AnimationEditorValidationItem) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = `validation-item ${issue.severity}`;
+    const heading = [issue.severity, issue.code, issue.frame === undefined ? '' : `frame ${issue.frame}`]
+      .filter(Boolean)
+      .join(' | ');
+    button.innerHTML = `<strong>${heading}</strong><span>${issue.message}</span>`;
+    button.addEventListener('click', () => {
+      if (issue.frame !== undefined) setCurrentFrame(issue.frame);
+      if (issue.target === 'weapon') {
+        state.selectedTarget = { kind: 'weapon', name: state.weapon, view: state.view };
+      } else if (issue.target?.startsWith('bones.')) {
+        state.selectedTarget = { kind: 'bone', name: issue.target.slice('bones.'.length), view: state.view };
+      } else if (issue.target?.startsWith('sockets.')) {
+        state.selectedTarget = { kind: 'socket', name: issue.target.slice('sockets.'.length), view: state.view };
+      }
+      renderAll();
+    });
+    validationReport.appendChild(button);
   });
 }
 
@@ -1920,7 +2386,7 @@ function buildSocketLockExport(): AnimationEditorSocketLock[] {
     .filter((lock): lock is AnimationEditorSocketLock => Boolean(lock));
 }
 
-function buildExportPayload() {
+function buildExportPayload(): AnimationEditorExportPayload {
   return buildAnimationEditorExportPayload({
     weapon: state.weapon,
     view: state.view,
@@ -1947,6 +2413,162 @@ function buildExportPayload() {
 function buildSnippet(): string {
   const constName = `${state.trackId}_${state.view}_frames`;
   return buildPoseArraySnippet(constName, state.weaponGeneratedFrames, 4);
+}
+
+function isWeaponChoice(value: string): value is WeaponChoice {
+  return value === 'hammer' || value === 'sword' || value === 'pistol';
+}
+
+function safeTrackForWeapon(trackId: string, weapon: WeaponChoice): string {
+  return TRACKS.some((track) => track.id === trackId && track.weapon === weapon)
+    ? trackId
+    : TRACKS.find((track) => track.weapon === weapon)?.id ?? TRACKS[0].id;
+}
+
+function encodeRigTrackMap(
+  kind: 'bone' | 'socket',
+  view: EditorView,
+  tracks: Record<string, AnimationEditorRigTrack>
+): { keyframes: RigTrackMap; frames: GeneratedRigTrackMap } {
+  const keyframes: RigTrackMap = {};
+  const frames: GeneratedRigTrackMap = {};
+  Object.entries(tracks).forEach(([name, track]) => {
+    const key = targetKey({ kind, name, view });
+    keyframes[key] = cloneKeyframes(track.keyframes);
+    frames[key] = cloneGeneratedFrames(track.frames);
+  });
+  return { keyframes, frames };
+}
+
+function applyExportPayload(payload: AnimationEditorExportPayload, options: { dirty: boolean; message: string }): void {
+  const nextWeapon = isWeaponChoice(payload.weapon) ? payload.weapon : state.weapon;
+  const nextSystem: ModelSystemChoice = payload.proceduralProfile?.modelSystem === 'v3'
+    ? 'v3'
+    : state.modelSystem;
+  const needsRigRebuild = state.modelSystem !== nextSystem;
+  clearRuntimeSocketLocks(true);
+
+  state.weapon = nextWeapon;
+  state.view = payload.view;
+  state.trackId = safeTrackForWeapon(payload.track, nextWeapon);
+  state.frameCount = Math.max(1, Math.floor(payload.frameCount));
+  state.currentFrame = 0;
+  state.interpolation = payload.interpolation;
+  state.selectedTarget = { kind: 'weapon', name: nextWeapon, view: payload.view };
+  state.modelSystem = nextSystem;
+  state.weaponKeyframes = cloneKeyframes(payload.keyframes);
+  state.weaponGeneratedFrames = cloneGeneratedFrames(payload.frames);
+
+  const boneTracks = encodeRigTrackMap('bone', payload.view, payload.rig.bones);
+  const socketTracks = encodeRigTrackMap('socket', payload.view, payload.rig.sockets);
+  state.boneKeyframes = boneTracks.keyframes;
+  state.boneGeneratedFrames = boneTracks.frames;
+  state.socketKeyframes = socketTracks.keyframes;
+  state.socketGeneratedFrames = socketTracks.frames;
+  state.socketLocks = Object.fromEntries(payload.rig.socketLocks.map((lock) => [
+    targetKey(lock.target),
+    targetKey(lock.socket),
+  ]));
+  state.anchorFrames = makeAnchorFrames(state.frameCount);
+  loopRange = clampAnimationEditorLoopRange(state.frameCount, { inFrame: 0, outFrame: state.frameCount - 1 });
+  saveVersionedData(state.modelSystem);
+  clearDraft();
+
+  if (needsRigRebuild) {
+    rebuildPreviewRig(state.modelSystem);
+  } else {
+    rebuildRuntimeSocketLocks();
+  }
+
+  syncFormControls();
+  updateCameraForView();
+  syncSceneVisibility();
+  applyFrameToScene();
+  syncPoseInputs(getCurrentSelectedPose());
+  renderAll();
+  setStatus(options.message);
+  if (options.dirty) {
+    commitEditorChange();
+  } else {
+    markEditorSaved();
+  }
+}
+
+function importJsonText(text: string): void {
+  try {
+    const imported = parseAnimationEditorImportText(text);
+    applyExportPayload(imported.payload, {
+      dirty: true,
+      message: `Imported ${imported.payload.track}.`,
+    });
+  } catch (error) {
+    setStatus(error instanceof Error ? error.message : 'Unable to import JSON.');
+  }
+}
+
+function createVariantStorageId(prefix: string): string {
+  return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function addCustomVariant(record: AnimationEditorLocalVariantRecord): void {
+  customVariants = [
+    ...customVariants.filter((candidate) => candidate.storageId !== record.storageId),
+    record,
+  ].slice(-40);
+  saveCustomVariants();
+}
+
+function duplicateCurrentClip(): void {
+  const record = createAnimationEditorDuplicateVariant(buildExportPayload(), {
+    storageId: createVariantStorageId('duplicate'),
+  });
+  addCustomVariant(record);
+  setStatus(`Saved local duplicate ${record.label}.`);
+}
+
+function newClipFromCurrentFrame(): void {
+  try {
+    const record = createAnimationEditorVariantFromCurrentFrame(buildExportPayload(), {
+      storageId: createVariantStorageId('current'),
+      frame: state.currentFrame,
+    });
+    addCustomVariant(record);
+    applyExportPayload(record.payload, {
+      dirty: false,
+      message: `Created local current-pose clip ${record.label}.`,
+    });
+  } catch (error) {
+    setStatus(error instanceof Error ? error.message : 'Unable to create current-pose clip.');
+  }
+}
+
+const POSE_PRESETS: Record<PosePresetId, { trackId: V3AnimationTrackId; progress: number }> = {
+  guard: { trackId: 'sword_lunge', progress: 0 },
+  windup: { trackId: 'hammer_windup', progress: 1 },
+  strike: { trackId: 'hammer_strike', progress: 0.58 },
+  recoil: { trackId: 'hammer_recover', progress: 0 },
+  reload: { trackId: 'pistol_recover', progress: 0.35 },
+  idleHands: { trackId: 'hammer_windup', progress: 0 },
+};
+
+function applyPosePreset(): void {
+  const preset = POSE_PRESETS[posePresetSelect.value as PosePresetId] ?? POSE_PRESETS.guard;
+  const pose = sampleEditorTrackPose(preset.trackId, state.view, preset.progress, state.modelSystem);
+  setKeyframe(state.currentFrame, pose, posePresetSelect.value);
+}
+
+function mirrorCurrentFrame(): void {
+  const sourceTarget = cloneTarget(state.selectedTarget);
+  const destinationTarget = mirrorAnimationEditorTarget(sourceTarget);
+  const target = isTargetAvailable(destinationTarget) ? destinationTarget : sourceTarget;
+  const mirroredPose = mirrorAnimationEditorPose(getCurrentSelectedPose());
+  const resolvedFrame = clampFrameIndex(state.currentFrame, state.frameCount);
+  setKeyframesForTarget(target, normalizeKeyframes([
+    ...getKeyframesForTarget(target).filter((keyframe) => keyframe.frame !== resolvedFrame),
+    { frame: resolvedFrame, label: 'Mirror', pose: mirroredPose },
+  ], state.frameCount));
+  state.selectedTarget = target;
+  regenerateFramesForTarget(target, `Mirrored ${targetLabel(sourceTarget)} to ${targetLabel(target)}.`);
 }
 
 function renderExport(): void {
@@ -1996,7 +2618,7 @@ function renderSegmentInfo(): void {
 function renderTransformButtons(): void {
   translateButton.dataset.active = String(state.transformMode === 'translate');
   rotateButton.dataset.active = String(state.transformMode === 'rotate');
-  transformStatus.textContent = state.transformMode;
+  transformStatus.textContent = `${state.transformMode} | ${state.localTransformSpace ? 'local' : 'world'}`;
 }
 
 function renderSocketLockControls(): void {
@@ -2037,13 +2659,8 @@ function renderSocketLockControls(): void {
 }
 
 function renderAll(): void {
-  weaponSelect.value = state.weapon;
-  viewSelect.value = state.view;
-  modelSystemSelect.value = state.modelSystem;
-  modelTypeSelect.value = state.modelType;
+  syncFormControls();
   modelTypeSelect.disabled = state.modelSystem !== 'v2';
-  interpolationSelect.value = state.interpolation;
-  frameCountInput.value = String(state.frameCount);
   showSkeletonToggle.checked = state.showSkeleton;
   showSocketsToggle.checked = state.showSockets;
   showLabelsToggle.checked = state.showLabels;
@@ -2058,6 +2675,8 @@ function renderAll(): void {
   renderExport();
   renderHud();
   renderSegmentInfo();
+  renderValidation();
+  renderHistoryControls();
 }
 
 function resizeRenderer(): void {
@@ -2074,6 +2693,10 @@ function handlePoseInputChange(): void {
   setDraftPose(pose);
   applyPoseToSelected(pose);
   updateRigOverlays();
+  if (state.autoKey) {
+    setKeyframe(state.currentFrame, pose);
+    return;
+  }
   renderHud();
   renderSegmentInfo();
   setStatus(`Draft pose edited at frame ${state.currentFrame}.`);
@@ -2082,6 +2705,38 @@ function handlePoseInputChange(): void {
 Object.values(poseInputs).forEach((input) => {
   input.addEventListener('input', handlePoseInputChange);
 });
+
+undoButton.addEventListener('click', undoEditorChange);
+redoButton.addEventListener('click', redoEditorChange);
+exportDrawerButton.addEventListener('click', () => {
+  const open = workspace.dataset.exportOpen !== 'true';
+  workspace.dataset.exportOpen = String(open);
+  exportDrawerButton.dataset.active = String(open);
+});
+openAtlasButton.addEventListener('click', () => {
+  const atlasWindow = window.open('/v3-animation-atlas-smoke.html', '_blank', 'noopener');
+  setStatus(atlasWindow ? 'Atlas opened.' : 'Open /v3-animation-atlas-smoke.html');
+});
+duplicateClipButton.addEventListener('click', duplicateCurrentClip);
+newFromCurrentButton.addEventListener('click', newClipFromCurrentFrame);
+saveLocalButton.addEventListener('click', saveLocalDraft);
+clearLocalButton.addEventListener('click', () => {
+  window.localStorage.removeItem(SAVED_DRAFT_STORAGE_KEY);
+  customVariants = [];
+  saveCustomVariants();
+  setStatus('Local animation editor drafts cleared.');
+});
+autoKeyToggle.addEventListener('change', () => {
+  state.autoKey = autoKeyToggle.checked;
+  setStatus(state.autoKey ? 'Auto Key enabled.' : 'Auto Key disabled.');
+  renderHistoryControls();
+});
+localSpaceToggle.addEventListener('change', () => {
+  state.localTransformSpace = localSpaceToggle.checked;
+  transformControls.setSpace(state.localTransformSpace ? 'local' : 'world');
+  renderTransformButtons();
+});
+applyPosePresetButton.addEventListener('click', applyPosePreset);
 
 weaponSelect.addEventListener('change', () => {
   state.weapon = weaponSelect.value as WeaponChoice;
@@ -2098,10 +2753,12 @@ weaponSelect.addEventListener('change', () => {
 
 modelSystemSelect.addEventListener('change', () => {
   swapModelSystem(modelSystemSelect.value as ModelSystemChoice);
+  commitEditorChange();
 });
 
 modelTypeSelect.addEventListener('change', () => {
   swapModelType(modelTypeSelect.value as CharacterModelType);
+  commitEditorChange();
 });
 
 viewSelect.addEventListener('change', () => {
@@ -2123,6 +2780,7 @@ targetSelect.addEventListener('change', () => {
   state.selectedTarget = nextTarget;
   clearDraft();
 
+  let createdTrack = false;
   if (getSelectedKeyframes().length === 0) {
     setSelectedKeyframes([{
       frame: state.currentFrame,
@@ -2130,12 +2788,14 @@ targetSelect.addEventListener('change', () => {
       pose: getCurrentSelectedPose(),
     }]);
     setSelectedGeneratedFrames(generatePoseFrames(getSelectedKeyframes(), state.frameCount, state.interpolation));
+    createdTrack = true;
   }
 
   applyFrameToScene();
   syncPoseInputs(getCurrentSelectedPose());
   renderAll();
   setStatus(`Selected ${targetLabel(state.selectedTarget)}.`);
+  if (createdTrack) commitEditorChange();
 });
 
 frameCountInput.addEventListener('change', () => {
@@ -2149,6 +2809,7 @@ frameCountInput.addEventListener('change', () => {
   syncPoseInputs(getCurrentSelectedPose());
   renderAll();
   setStatus('Frame count updated.');
+  commitEditorChange();
 });
 
 interpolationSelect.addEventListener('change', () => {
@@ -2159,9 +2820,10 @@ interpolationSelect.addEventListener('change', () => {
   syncPoseInputs(getCurrentSelectedPose());
   renderAll();
   setStatus('Interpolation mode updated.');
+  commitEditorChange();
 });
 
-seedButton.addEventListener('click', seedThreeFrames);
+seedButton.addEventListener('click', () => seedThreeFrames());
 generateButton.addEventListener('click', () => regenerateSelectedFrames());
 setKeyframeButton.addEventListener('click', () => {
   setKeyframe(
@@ -2192,6 +2854,7 @@ lockSocketButton.addEventListener('click', () => {
   transformControls.detach();
   transformControls.attach(runtime.pivot);
   renderSocketLockControls();
+  commitEditorChange();
 });
 
 repositionSocketButton.addEventListener('click', () => {
@@ -2211,6 +2874,7 @@ repositionSocketButton.addEventListener('click', () => {
   transformControls.detach();
   transformControls.attach(runtime.pivot);
   renderSocketLockControls();
+  commitEditorChange();
 });
 
 unlockSocketButton.addEventListener('click', () => {
@@ -2219,17 +2883,20 @@ unlockSocketButton.addEventListener('click', () => {
   transformControls.detach();
   if (selectedObject) transformControls.attach(selectedObject);
   renderSocketLockControls();
+  commitEditorChange();
 });
 
 translateButton.addEventListener('click', () => {
   state.transformMode = 'translate';
   transformControls.setMode('translate');
+  transformControls.setSpace(state.localTransformSpace ? 'local' : 'world');
   renderTransformButtons();
 });
 
 rotateButton.addEventListener('click', () => {
   state.transformMode = 'rotate';
   transformControls.setMode('rotate');
+  transformControls.setSpace(state.localTransformSpace ? 'local' : 'world');
   renderTransformButtons();
 });
 
@@ -2252,8 +2919,27 @@ frameSlider.addEventListener('input', () => {
   setCurrentFrame(Number(frameSlider.value));
 });
 
+loopInInput.addEventListener('change', () => {
+  loopRange = clampAnimationEditorLoopRange(state.frameCount, {
+    inFrame: Number(loopInInput.value),
+    outFrame: loopRange.outFrame,
+  });
+  renderTimeline();
+});
+
+loopOutInput.addEventListener('change', () => {
+  loopRange = clampAnimationEditorLoopRange(state.frameCount, {
+    inFrame: loopRange.inFrame,
+    outFrame: Number(loopOutInput.value),
+  });
+  renderTimeline();
+});
+
 playButton.addEventListener('click', () => {
   state.playing = !state.playing;
+  if (state.playing && (state.currentFrame < loopRange.inFrame || state.currentFrame > loopRange.outFrame)) {
+    setCurrentFrame(loopRange.inFrame);
+  }
   playButton.textContent = state.playing ? 'Pause' : 'Play';
   setStatus(state.playing ? 'Playback running.' : 'Playback paused.');
 });
@@ -2284,6 +2970,37 @@ downloadJsonButton.addEventListener('click', () => {
   setStatus('JSON export downloaded.');
 });
 
+importJsonButton.addEventListener('click', () => importJsonText(importText.value || exportText.value));
+chooseJsonButton.addEventListener('click', () => importFileInput.click());
+importFileInput.addEventListener('change', async () => {
+  const file = importFileInput.files?.[0];
+  importFileInput.value = '';
+  if (!file) return;
+  try {
+    importJsonText(await file.text());
+  } catch (error) {
+    setStatus(error instanceof Error ? error.message : 'Unable to read JSON file.');
+  }
+});
+importDropzone.addEventListener('dragover', (event) => {
+  event.preventDefault();
+  importDropzone.classList.add('drag-over');
+});
+importDropzone.addEventListener('dragleave', () => {
+  importDropzone.classList.remove('drag-over');
+});
+importDropzone.addEventListener('drop', async (event) => {
+  event.preventDefault();
+  importDropzone.classList.remove('drag-over');
+  const file = event.dataTransfer?.files?.[0];
+  if (!file) return;
+  try {
+    importJsonText(await file.text());
+  } catch (error) {
+    setStatus(error instanceof Error ? error.message : 'Unable to read dropped JSON.');
+  }
+});
+
 transformControls.addEventListener('dragging-changed', (event) => {
   controls.enabled = !Boolean(event.value);
 });
@@ -2293,8 +3010,95 @@ transformControls.addEventListener('objectChange', () => {
   setDraftPose(pose);
   syncPoseInputs(pose);
   updateRigOverlays();
+  if (state.autoKey) {
+    setKeyframe(state.currentFrame, pose);
+    return;
+  }
   renderHud();
   renderSegmentInfo();
+});
+
+window.addEventListener('pointerup', (event) => {
+  if (!draggingDopeKey || draggingDopeKey.pointerId !== event.pointerId) return;
+  const target = decodeTargetValue(draggingDopeKey.targetKeyValue);
+  if (!target) {
+    draggingDopeKey = null;
+    return;
+  }
+  const toFrame = frameFromTrackPointer(draggingDopeKey.track, event.clientX);
+  const retimed = retimeAnimationEditorKeyframe(getKeyframesForTarget(target), {
+    fromFrame: draggingDopeKey.frame,
+    toFrame,
+    frameCount: state.frameCount,
+  });
+  draggingDopeKey = null;
+  setKeyframesForTarget(target, retimed);
+  state.selectedTarget = target;
+  state.currentFrame = toFrame;
+  regenerateFramesForTarget(target, `Retimed ${targetLabel(target)} key to frame ${toFrame}.`);
+});
+
+function isTypingTarget(target: EventTarget | null): boolean {
+  const element = target as HTMLElement | null;
+  if (!element) return false;
+  const tag = element.tagName.toLowerCase();
+  return tag === 'input' || tag === 'textarea' || tag === 'select' || element.isContentEditable;
+}
+
+function stepFrame(delta: number): void {
+  state.playing = false;
+  playButton.textContent = 'Play';
+  setCurrentFrame(clampFrameIndex(state.currentFrame + delta, state.frameCount));
+}
+
+window.addEventListener('keydown', (event) => {
+  if (isTypingTarget(event.target)) return;
+  if (event.code === 'Space') {
+    event.preventDefault();
+    playButton.click();
+    return;
+  }
+  if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+    event.preventDefault();
+    stepFrame((event.key === 'ArrowRight' ? 1 : -1) * (event.shiftKey ? 10 : 1));
+    return;
+  }
+  if (event.key.toLowerCase() === 's' && !event.ctrlKey && !event.metaKey) {
+    event.preventDefault();
+    setKeyframe(
+      state.currentFrame,
+      resolveSetKeyframePose({
+        currentFrame: state.currentFrame,
+        capturedPose: captureSelectedPose(),
+        draftFrame,
+        draftPose,
+      })
+    );
+    return;
+  }
+  if (event.key === 'Delete') {
+    event.preventDefault();
+    deleteKeyframe(state.currentFrame);
+    return;
+  }
+  if (event.key.toLowerCase() === 'm' && !event.ctrlKey && !event.metaKey) {
+    event.preventDefault();
+    mirrorCurrentFrame();
+    return;
+  }
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') {
+    event.preventDefault();
+    if (event.shiftKey) {
+      redoEditorChange();
+    } else {
+      undoEditorChange();
+    }
+    return;
+  }
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'y') {
+    event.preventDefault();
+    redoEditorChange();
+  }
 });
 
 window.addEventListener('resize', resizeRenderer);
@@ -2308,7 +3112,7 @@ function animate(): void {
     playbackAccumulator += dt;
     if (playbackAccumulator >= playbackFrameDuration) {
       playbackAccumulator = 0;
-      setCurrentFrame(state.currentFrame >= state.frameCount - 1 ? 0 : state.currentFrame + 1);
+      setCurrentFrame(nextAnimationEditorLoopFrame(state.currentFrame, 1, state.frameCount, loopRange));
     }
   }
 
@@ -2321,7 +3125,11 @@ refreshTrackOptions();
 buildSkeletonLines();
 captureEditableTargetBaselines();
 buildOverlayMarkers();
-seedThreeFrames();
+loadCustomVariants();
+seedThreeFrames(false);
+if (!loadLocalDraft()) {
+  initializeHistory();
+}
 syncSceneVisibility();
 updateCameraForView();
 resizeRenderer();

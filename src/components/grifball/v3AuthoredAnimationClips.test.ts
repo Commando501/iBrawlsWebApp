@@ -87,7 +87,46 @@ describe('v3AuthoredAnimationClips', () => {
     assertQuatClose(sample.pose.jointQuaternions.calfLeft, quatFromEuler(calf), 'clean walk left calf');
   });
 
-  it('samples hammer and sword clean weapon clips from generated Mixamo weapon references', () => {
+  it('uses generated Mesh2Motion clips for the first-pass replacement set', () => {
+    const sprint = sampleV3AuthoredClip('clean_sprint', { normalizedTime: 0.25 });
+    assert.equal(sprint.motionSource, 'mesh2Motion');
+    assert.equal(sprint.mixamoClipId, 'Sprint_Loop');
+    assert.equal(sprint.pose.mesh2MotionDriverPose?.sourceClipName, 'Sprint_Loop');
+    assert.ok(sprint.pose.mesh2MotionDriverPose?.joints.pelvis);
+    assert.ok(sprint.pose.mesh2MotionDriverPose?.joints.hand_r);
+    assert.ok(sprint.pose.jointQuaternions.thighLeft);
+    assert.ok(sprint.pose.jointQuaternions.calfRight);
+    assert.ok(sprint.pose.jointOffsets?.upperArmRight);
+    assert.equal(sprint.pose.jointOffsets.upperArmRight.every(Number.isFinite), true);
+    assert.equal(Math.max(...sprint.pose.jointOffsets.upperArmRight.map(Math.abs)) < 1, true);
+    assert.equal(sprint.pose.rootOffset?.[0] ?? 0, 0);
+    assert.equal(sprint.pose.rootOffset?.[2] ?? 0, 0);
+
+    const slide = sampleV3AuthoredClip('clean_slide', { normalizedTime: 0.5 });
+    assert.equal(slide.motionSource, 'mesh2Motion');
+    assert.equal(slide.mixamoClipId, 'Slide_Loop');
+    assert.ok(slide.pose.jointQuaternions.pelvis);
+    assert.ok(slide.pose.jointOffsets?.spine3);
+    assert.ok((slide.pose.rootOffset?.[1] ?? 0) < 0);
+
+    const carry = sampleV3AuthoredClip('clean_sword_carry', { normalizedTime: 0.25 });
+    assert.equal(carry.motionSource, 'mesh2Motion');
+    assert.equal(carry.mixamoClipId, 'Sword_Idle');
+    assert.equal(carry.weaponPose?.source, 'mixamoReferenceClip');
+
+    const lunge = sampleV3AuthoredClip('clean_sword_lunge', { normalizedTime: 0.5 });
+    assert.equal(lunge.motionSource, 'mesh2Motion');
+    assert.equal(lunge.mixamoClipId, 'Sword_Dash_RM');
+    assert.ok(lunge.pose.jointQuaternions.upperArmRight);
+    assert.ok(lunge.pose.jointOffsets?.handRight);
+
+    const slash = sampleV3AuthoredClip('clean_sword_slash', { normalizedTime: 0.5 });
+    assert.equal(slash.motionSource, 'mesh2Motion');
+    assert.equal(slash.mixamoClipId, 'Sword_Regular_B');
+    assert.ok(slash.pose.jointQuaternions.handRight);
+  });
+
+  it('samples hammer weapon clips from generated Mixamo references and keeps sword weapon poses on Mesh2Motion body clips', () => {
     const hammer = sampleV3AuthoredClip('clean_hammer_strike', { normalizedTime: 0.5 });
     const hammerReference = sampleV3RetargetedUpperBodyPose('hammer_heavy_swing', 0.375);
 
@@ -102,16 +141,9 @@ describe('v3AuthoredAnimationClips', () => {
     );
 
     const sword = sampleV3AuthoredClip('clean_sword_slash', { normalizedTime: 0.5 });
-    const swordReference = sampleV3RetargetedUpperBodyPose('sword_outward_slash', 0.57);
-
-    assert.equal(sword.motionSource, 'mixamoWeaponReference');
-    assert.equal(sword.mixamoClipId, 'sword_outward_slash');
-    assert.equal(sword.sourceNormalizedTime, 0.57);
+    assert.equal(sword.motionSource, 'mesh2Motion');
+    assert.equal(sword.mixamoClipId, 'Sword_Regular_B');
     assert.equal(sword.weaponPose?.source, 'mixamoReferenceClip');
-    assertQuatClose(
-      sword.pose.jointQuaternions.upperArmRight,
-      swordReference.detailBoneQuaternions.upperArmRight ?? [0, 0, 0, 1],
-      'clean sword slash right upper arm'
-    );
+    assert.ok(sword.pose.jointQuaternions.upperArmRight);
   });
 });

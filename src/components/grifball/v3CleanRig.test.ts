@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { buildV3SpartanModel } from '../v3/VoxelModelsV3';
 import { V3_DETAIL_BONE_NAMES, V3_DETAIL_BONE_SPECS } from '../v3/v3RigDetail';
 import { buildCombatantRigForModel } from './combatantRig';
+import { sampleV3AuthoredClip } from './v3AuthoredAnimationClips';
 import {
   analyzeV3CleanRigContinuity,
   applyV3CleanRigPose,
@@ -61,5 +62,59 @@ describe('v3CleanRig', () => {
     assert.equal(report.jointSeamWarnings.length, 0);
     assert.ok(detailBones.upperArmLeft.quaternion.angleTo(new THREE.Quaternion()) < 0.0001);
     assert.ok(detailBones.handLeft.quaternion.angleTo(new THREE.Quaternion()) < 0.0001);
+  });
+
+  it('applies Mesh2Motion driver poses through visible part bindings and clears them on the next clean pose', () => {
+    const model = createModel();
+    const detailBones = model.userData.v3DetailBones as Record<string, THREE.Group>;
+    const partGroups = model.userData.v3PartGroups as Record<string, THREE.Group>;
+    const handRest = partGroups.handRight.position.toArray();
+    const detailBoneRest = detailBones.handRight.position.toArray();
+
+    const sprint = sampleV3AuthoredClip('clean_sprint', { normalizedTime: 0.25 });
+    assert.equal(sprint.motionSource, 'mesh2Motion');
+    assert.ok(sprint.pose.mesh2MotionDriverPose);
+
+    const appliedSprint = applyV3CleanRigPose(model, sprint.pose);
+    assert.equal(appliedSprint.ready, true);
+    assert.notDeepEqual(
+      partGroups.handRight.position.toArray().map((value) => Number(value.toFixed(5))),
+      handRest.map((value) => Number(value.toFixed(5)))
+    );
+    assert.deepEqual(
+      detailBones.handRight.position.toArray().map((value) => Number(value.toFixed(5))),
+      detailBoneRest.map((value) => Number(value.toFixed(5)))
+    );
+
+    const cleanIdle: V3CleanRigPose = {
+      clipId: 'clean_idle',
+      normalizedTime: 0,
+      jointQuaternions: {},
+    };
+    const appliedIdle = applyV3CleanRigPose(model, cleanIdle);
+    assert.equal(appliedIdle.ready, true);
+    assert.deepEqual(
+      partGroups.handRight.position.toArray().map((value) => Number(value.toFixed(5))),
+      handRest.map((value) => Number(value.toFixed(5)))
+    );
+  });
+
+  it('treats Mesh2Motion driver joint offsets as expected continuity distances', () => {
+    for (const [clipId, normalizedTime] of [
+      ['clean_sprint', 0.25],
+      ['clean_slide', 0.5],
+      ['clean_sword_lunge', 0.5],
+      ['clean_sword_slash', 0.5],
+    ] as const) {
+      const model = createModel();
+      const sample = sampleV3AuthoredClip(clipId, { normalizedTime });
+      assert.equal(sample.motionSource, 'mesh2Motion');
+
+      applyV3CleanRigPose(model, sample.pose);
+      const report = analyzeV3CleanRigContinuity(model);
+
+      assert.equal(report.ready, true, `${clipId}: ${report.warnings.join(', ')}`);
+      assert.ok(report.maxJointSeamGap < 0.001, `${clipId}: seam gap ${report.maxJointSeamGap}`);
+    }
   });
 });
