@@ -26,6 +26,16 @@ import {
 } from './v3RetargetedAnimationClips';
 import { applyV3WeaponSocketBasis } from './v3WeaponSocketBasis';
 import { applyV3WeaponGripConstraints } from './v3ArmIk';
+import {
+  applyV3CleanRigPose,
+  type V3AnimationAuthority,
+} from './v3CleanRig';
+import {
+  mapV3RuntimeStateToAuthoredClip,
+  sampleV3AuthoredClip,
+  type V3AuthoredAnimationSample,
+  type V3AuthoredClipId,
+} from './v3AuthoredAnimationClips';
 
 export type V3AnimationLayerName = 'locomotion' | 'weapon' | 'additive' | 'death';
 export type V3BroadBodyGroupName =
@@ -57,6 +67,10 @@ export interface V3CombatantAnimationInput {
   isLocalV3Animation?: boolean;
   animationClockMs?: number;
   v3PoseAlphaOverride?: number;
+  v3AnimationAuthority?: V3AnimationAuthority;
+  v3AuthoredClipId?: V3AuthoredClipId;
+  v3AuthoredNormalizedTime?: number;
+  v3AuthoredSampleOverride?: V3AuthoredAnimationSample;
   lookYawOffset?: number;
   lookPitch?: number;
 }
@@ -80,6 +94,10 @@ export interface V3WeaponMeshAnimationInput {
   isLunging: boolean;
   dt: number;
   settings: Partial<UniversalSettings>;
+  v3AnimationAuthority?: V3AnimationAuthority;
+  v3AuthoredClipId?: V3AuthoredClipId;
+  v3AuthoredNormalizedTime?: number;
+  v3AuthoredSampleOverride?: V3AuthoredAnimationSample;
 }
 
 type V3BroadGroups = Record<V3BroadBodyGroupName, THREE.Group>;
@@ -157,6 +175,17 @@ const ensureV3WeaponSocketBasis = (
   if (current?.socketName !== socketName) {
     applyV3WeaponSocketBasis(group, weapon, socketName);
   }
+};
+
+const authoredNormalizedTime = (
+  explicit: number | undefined,
+  animationClockMs: number | undefined,
+  weaponTimer: number
+): number => {
+  if (Number.isFinite(explicit)) return clamp01(Number(explicit));
+  if (Number.isFinite(weaponTimer) && weaponTimer > 0) return clamp01(weaponTimer);
+  const seconds = Number.isFinite(animationClockMs) ? Number(animationClockMs) / 1000 : 0;
+  return clamp01(seconds - Math.floor(seconds));
 };
 
 const lerpRotation = (
@@ -742,6 +771,10 @@ export function animateV3CombatantModel({
   isLocalV3Animation = false,
   animationClockMs,
   v3PoseAlphaOverride,
+  v3AnimationAuthority = 'legacyLayered',
+  v3AuthoredClipId,
+  v3AuthoredNormalizedTime,
+  v3AuthoredSampleOverride,
   lookYawOffset = 0,
   lookPitch = 0,
 }: V3CombatantAnimationInput): boolean {
@@ -783,6 +816,46 @@ export function animateV3CombatantModel({
   const alpha = Number.isFinite(v3PoseAlphaOverride)
     ? clamp01(Number(v3PoseAlphaOverride))
     : dt > 0 ? Math.min(1, dt * 12) : 1;
+
+  if (v3AnimationAuthority === 'cleanRig') {
+    const clipId = v3AuthoredClipId ?? mapV3RuntimeStateToAuthoredClip({
+      activeWeapon,
+      weaponState,
+      isSliding,
+      isSprinting,
+      isLunging,
+      velocityLength: vel.length(),
+    });
+    const normalizedTime = authoredNormalizedTime(v3AuthoredNormalizedTime, animationClockMs, weaponTimer);
+    const authoredSample = v3AuthoredSampleOverride?.clipId === clipId
+      ? v3AuthoredSampleOverride
+      : sampleV3AuthoredClip(clipId, { normalizedTime });
+    applyV3CleanRigPose(mesh, authoredSample.pose, { alpha });
+    mesh.userData.v3LastHp = hp;
+    mesh.userData.v3HitReactTimer = 0;
+    mesh.userData.v3CleanMotionSource = authoredSample.motionSource;
+    if (authoredSample.mixamoClipId) {
+      mesh.userData.v3CleanMixamoClipId = authoredSample.mixamoClipId;
+      mesh.userData.v3CleanSourceNormalizedTime = authoredSample.sourceNormalizedTime;
+    } else {
+      delete mesh.userData.v3CleanMixamoClipId;
+      delete mesh.userData.v3CleanSourceNormalizedTime;
+    }
+    mesh.userData.v3LowerBodyBridgeActive = false;
+    setV3LowerBodyJointBridgesVisible(mesh, false);
+    if (authoredSample.weaponPose) {
+      mesh.userData.v3WeaponCarry = {
+        weapon: authoredSample.weaponPose.weapon,
+        trackSource: authoredSample.motionSource === 'mixamoWeaponReference'
+          ? 'v3CleanMixamoReferenceClip'
+          : 'v3CleanAuthoredClip',
+      };
+    } else {
+      delete mesh.userData.v3WeaponCarry;
+    }
+    return true;
+  }
+
   applyV3LocomotionLayer({ groups, mesh, vel, yaw, dt, isSliding, isSprinting, isLunging, detailBones, animationClockMs });
 
   const breathingPhase = Number(mesh.userData.v3BreathingPhase ?? 0) + dt * 2.1;
@@ -857,10 +930,49 @@ export function animateV3WeaponMeshes({
   isLunging,
   dt,
   settings,
+  v3AnimationAuthority = 'legacyLayered',
+  v3AuthoredClipId,
+  v3AuthoredNormalizedTime,
+  v3AuthoredSampleOverride,
 }: V3WeaponMeshAnimationInput): void {
   if (hammerModel) hammerModel.visible = activeWeapon === 'hammer';
   if (swordModel) swordModel.visible = activeWeapon === 'sword';
   if (pistolModel) pistolModel.visible = activeWeapon === 'pistol';
+
+  if (v3AnimationAuthority === 'cleanRig') {
+    const clipId = v3AuthoredClipId ?? mapV3RuntimeStateToAuthoredClip({
+      activeWeapon,
+      weaponState,
+      isLunging,
+    });
+    const sample = sampleV3AuthoredClip(clipId, {
+      normalizedTime: authoredNormalizedTime(v3AuthoredNormalizedTime, undefined, weaponTimer),
+    });
+    const resolvedSample = v3AuthoredSampleOverride?.clipId === clipId ? v3AuthoredSampleOverride : sample;
+    const pose = resolvedSample.weaponPose;
+    const applyCleanWeapon = (
+      model: THREE.Group | null | undefined,
+      weapon: V3WeaponId
+    ): void => {
+      if (!model || model.userData.modelSystem !== 'v3' || activeWeapon !== weapon || pose?.weapon !== weapon) return;
+      ensureV3WeaponSocketBasis(model, weapon);
+      applyV3WeaponMeshPose(model, pose, weaponState, dt);
+      model.userData.v3CleanAuthoredClip = clipId;
+      model.userData.v3AnimationAuthority = 'cleanRig';
+      model.userData.v3CleanMotionSource = resolvedSample.motionSource;
+      if (resolvedSample.mixamoClipId) {
+        model.userData.v3CleanMixamoClipId = resolvedSample.mixamoClipId;
+        model.userData.v3CleanSourceNormalizedTime = resolvedSample.sourceNormalizedTime;
+      } else {
+        delete model.userData.v3CleanMixamoClipId;
+        delete model.userData.v3CleanSourceNormalizedTime;
+      }
+    };
+    applyCleanWeapon(hammerModel, 'hammer');
+    applyCleanWeapon(swordModel, 'sword');
+    applyCleanWeapon(pistolModel, 'pistol');
+    return;
+  }
 
   if (hammerModel?.userData.modelSystem === 'v3' && activeWeapon === 'hammer') {
     ensureV3WeaponSocketBasis(hammerModel, 'hammer');

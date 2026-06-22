@@ -1158,6 +1158,7 @@ async function startServer() {
       "/v3-performance-smoke.html",
       "/v3-readiness-dashboard.html",
       "/v3-animation-atlas-smoke.html",
+      "/v3-clean-animation-editor.html",
     ], (req, res, next) => {
       sendDevHtml(req, res, next, req.path.slice(1));
     });

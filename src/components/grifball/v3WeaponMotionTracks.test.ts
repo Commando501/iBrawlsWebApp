@@ -7,6 +7,8 @@ import {
   sampleV3WeaponMotionCarry,
   sampleV3WeaponMotionTrack,
 } from './v3WeaponMotionTracks';
+import { buildV3WeaponModel } from '../v3/VoxelModelsV3';
+import { applyV3WeaponSocketBasis } from './v3WeaponSocketBasis';
 
 const finiteTuple = (values: readonly number[]): boolean => values.every(Number.isFinite);
 
@@ -24,6 +26,18 @@ const semanticForward = (rotation: readonly number[]): THREE.Vector3 =>
   new THREE.Vector3(0, 0, -1)
     .applyEuler(new THREE.Euler(rotation[0], rotation[1], rotation[2]))
     .normalize();
+
+const weaponBounds = (
+  weapon: 'hammer' | 'sword',
+  pose: { position: readonly number[]; rotation: readonly number[] }
+): THREE.Box3 => {
+  const model = buildV3WeaponModel(weapon, { v3SourceFidelity: 'exact' });
+  applyV3WeaponSocketBasis(model, weapon, 'thirdPersonPrimaryGrip');
+  model.position.set(pose.position[0], pose.position[1], pose.position[2]);
+  model.rotation.set(pose.rotation[0], pose.rotation[1], pose.rotation[2]);
+  model.updateWorldMatrix(true, true);
+  return new THREE.Box3().setFromObject(model);
+};
 
 describe('V3 weapon motion tracks', () => {
   it('defines deterministic V3-only tracks for every current weapon action', () => {
@@ -139,13 +153,23 @@ describe('V3 weapon motion tracks', () => {
     const hammerStrike = sampleV3WeaponMotionTrack('hammer_strike', 1);
     const hammerMelee = sampleV3WeaponMotionTrack('hammer_melee', 1);
     const swordCarry = sampleV3WeaponMotionCarry('sword');
+    const swordMidSlash = sampleV3WeaponMotionTrack('sword_slash', 0.5);
     const swordSlash = sampleV3WeaponMotionTrack('sword_slash', 1);
+    const carryHammerBounds = weaponBounds('hammer', hammerCarry.weaponPose);
+    const windupHammerBounds = weaponBounds('hammer', hammerWindup.weaponPose);
+    const strikeHammerBounds = weaponBounds('hammer', hammerStrike.weaponPose);
+    const carrySwordBounds = weaponBounds('sword', swordCarry.weaponPose);
+    const midSwordBounds = weaponBounds('sword', swordMidSlash.weaponPose);
 
     assert.ok(poseDistance(hammerWindup.weaponPose, hammerCarry.weaponPose) > 0.3);
     assert.ok(Math.abs(hammerWindup.weaponPose.position[1] - hammerCarry.weaponPose.position[1]) > 0.12);
-    assert.ok(poseDistance(hammerStrike.weaponPose, hammerCarry.weaponPose) > 1.0);
-    assert.ok(poseDistance(hammerStrike.weaponPose, hammerWindup.weaponPose) > 1.5);
+    assert.ok(windupHammerBounds.max.y > carryHammerBounds.max.y + 0.5, 'hammer windup should load high above carry');
+    assert.ok(strikeHammerBounds.max.y < windupHammerBounds.max.y - 0.8, 'hammer strike should land well below windup');
+    assert.ok(strikeHammerBounds.min.y < carryHammerBounds.min.y - 0.1, 'hammer strike should reach a low contact pose');
+    assert.ok(poseDistance(hammerStrike.weaponPose, hammerWindup.weaponPose) > 0.5);
     assert.ok(Math.abs(hammerMelee.weaponPose.position[0] - hammerCarry.weaponPose.position[0]) > 0.12);
+    assert.ok(swordMidSlash.weaponPose.position[0] < swordCarry.weaponPose.position[0] - 0.5);
+    assert.ok(midSwordBounds.min.y > carrySwordBounds.min.y - 0.4, 'sword slash should stay readable instead of dropping below the body');
     assert.ok(Math.abs(swordSlash.weaponPose.position[0] - swordCarry.weaponPose.position[0]) > 0.22);
     assert.ok(Math.abs(swordSlash.weaponPose.position[1] - swordCarry.weaponPose.position[1]) < 0.5);
   });

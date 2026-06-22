@@ -613,12 +613,12 @@ const sampleWeaponReferenceTime = (
   normalizedTime: number
 ): number => {
   const t = clamp01(normalizedTime);
-  if (caseId === 'hammerWindup') return roundMetric(0.02 + (0.5 - 0.02) * easeInOutCubic(t));
-  if (caseId === 'hammerStrike') return roundMetric(0.5 + (0.64 - 0.5) * easeInOutCubic(t));
-  if (caseId === 'hammerRecover') return 0.64;
+  if (caseId === 'hammerWindup') return roundMetric(0.02 + (0.25 - 0.02) * easeInOutCubic(t));
+  if (caseId === 'hammerStrike') return roundMetric(0.25 + (0.5 - 0.25) * easeInOutCubic(t));
+  if (caseId === 'hammerRecover') return 0.5;
   if (caseId === 'hammerMelee') return roundMetric(0.02 + (0.56 - 0.02) * easeInOutCubic(t));
   if (caseId === 'hammerMeleeRecover') return 0.56;
-  if (caseId === 'swordSlash') return roundMetric(0.64 * easeInOutCubic(t));
+  if (caseId === 'swordSlash') return roundMetric(0.5 + (0.64 - 0.5) * easeInOutCubic(t));
   return t;
 };
 

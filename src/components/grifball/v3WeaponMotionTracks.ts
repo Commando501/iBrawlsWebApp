@@ -449,6 +449,13 @@ const easeOutCubic = (value: number): number => {
   return 1 - t * t * t;
 };
 
+const HAMMER_HEAVY_WINDUP_REFERENCE_START = 0.02;
+const HAMMER_HEAVY_WINDUP_REFERENCE_END = 0.25;
+const HAMMER_HEAVY_STRIKE_REFERENCE_START = HAMMER_HEAVY_WINDUP_REFERENCE_END;
+const HAMMER_HEAVY_STRIKE_REFERENCE_END = 0.5;
+const SWORD_SLASH_REFERENCE_START = 0.5;
+const SWORD_SLASH_REFERENCE_END = 0.64;
+
 const shortestAngleDelta = (start: number, end: number): number => {
   let delta = (end - start) % (Math.PI * 2);
   if (delta > Math.PI) delta -= Math.PI * 2;
@@ -673,7 +680,7 @@ const mixamoTrackReference = (
     return {
       weapon: 'hammer',
       clipId: 'hammer_heavy_swing',
-      normalizedTime: lerp(0.02, 0.5, easeInOutCubic(t)),
+      normalizedTime: lerp(HAMMER_HEAVY_WINDUP_REFERENCE_START, HAMMER_HEAVY_WINDUP_REFERENCE_END, easeInOutCubic(t)),
       gripConstraints: HAMMER_GRIP_CONSTRAINTS,
       ikHints: [
         { side: 'right', poleDirection: HAMMER_RIGHT_HAND_POLE },
@@ -685,7 +692,7 @@ const mixamoTrackReference = (
     return {
       weapon: 'hammer',
       clipId: 'hammer_heavy_swing',
-      normalizedTime: lerp(0.5, 0.64, easeInOutCubic(t)),
+      normalizedTime: lerp(HAMMER_HEAVY_STRIKE_REFERENCE_START, HAMMER_HEAVY_STRIKE_REFERENCE_END, easeInOutCubic(t)),
       gripConstraints: HAMMER_GRIP_CONSTRAINTS,
       ikHints: [
         { side: 'right', poleDirection: HAMMER_RIGHT_HAND_POLE },
@@ -697,7 +704,7 @@ const mixamoTrackReference = (
     return {
       weapon: 'hammer',
       clipId: 'hammer_heavy_swing',
-      normalizedTime: 0.64,
+      normalizedTime: HAMMER_HEAVY_STRIKE_REFERENCE_END,
       gripConstraints: HAMMER_GRIP_CONSTRAINTS,
       ikHints: [
         { side: 'right', poleDirection: HAMMER_RIGHT_HAND_POLE },
@@ -735,7 +742,7 @@ const mixamoTrackReference = (
     return {
       weapon: 'sword',
       clipId: 'sword_outward_slash',
-      normalizedTime: lerp(0, 0.64, easeInOutCubic(t)),
+      normalizedTime: lerp(SWORD_SLASH_REFERENCE_START, SWORD_SLASH_REFERENCE_END, easeInOutCubic(t)),
       gripConstraints: SWORD_GRIP_CONSTRAINTS,
       ikHints: [{ side: 'right', poleDirection: SWORD_GRIP_CONSTRAINTS[0].poleDirection }],
     };
@@ -753,7 +760,7 @@ const mixamoTrackReference = (
     return {
       weapon: 'sword',
       clipId: 'sword_outward_slash',
-      normalizedTime: 0.64,
+      normalizedTime: SWORD_SLASH_REFERENCE_END,
       gripConstraints: SWORD_GRIP_CONSTRAINTS,
       ikHints: [{ side: 'right', poleDirection: SWORD_GRIP_CONSTRAINTS[0].poleDirection }],
       recoverToCarry: true,

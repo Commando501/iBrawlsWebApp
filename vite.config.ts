@@ -37,6 +37,7 @@ export default defineConfig(() => {
           v3PerformanceSmoke: path.resolve(__dirname, 'v3-performance-smoke.html'),
           v3ReadinessDashboard: path.resolve(__dirname, 'v3-readiness-dashboard.html'),
           v3AnimationAtlasSmoke: path.resolve(__dirname, 'v3-animation-atlas-smoke.html'),
+          v3CleanAnimationEditor: path.resolve(__dirname, 'v3-clean-animation-editor.html'),
         },
       },
     },

@@ -129,10 +129,55 @@
         max-width: 760px;
       }
 
+      #clean-editor-panel {
+        display: grid;
+        gap: 8px;
+        padding: 10px;
+        max-width: 760px;
+      }
+
       #defect-actions {
         display: flex;
         flex-wrap: wrap;
         gap: 8px;
+      }
+
+      #clean-editor-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: end;
+      }
+
+      #clean-editor-actions a {
+        min-height: 32px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0 10px;
+        background: #10232b;
+        color: #67e8f9;
+        border: 1px solid #24414a;
+        border-radius: 6px;
+        font: 12px/1 "Cascadia Mono", monospace;
+        text-decoration: none;
+      }
+
+      #clean-editor-actions a:hover {
+        border-color: #22d3ee;
+        color: #ffffff;
+      }
+
+      output {
+        min-height: 32px;
+        display: inline-flex;
+        align-items: center;
+        background: #10232b;
+        color: #eef8fb;
+        border: 1px solid #24414a;
+        border-radius: 6px;
+        padding: 0 10px;
+        font: 12px/1 "Cascadia Mono", monospace;
       }
 
       #defect-report {
@@ -142,6 +187,19 @@
         color: #cbd5e1;
         font: 11px/1.45 "Cascadia Mono", monospace;
         white-space: pre-wrap;
+      }
+
+      #clean-editor-export {
+        min-height: 86px;
+        max-height: 150px;
+        resize: vertical;
+        overflow: auto;
+        background: #071014;
+        color: #cbd5e1;
+        border: 1px solid #24414a;
+        border-radius: 6px;
+        padding: 8px;
+        font: 11px/1.45 "Cascadia Mono", monospace;
       }
 
       #view-labels {
@@ -228,6 +286,32 @@
           <button id="download-defect-report" type="button">Download Defect Report</button>
         </div>
         <pre id="defect-report" hidden>Defect Report hidden. Enable Show Defects to measure the selected case.</pre>
+      </div>
+      <div id="clean-editor-panel" class="panel">
+        <div id="clean-editor-actions">
+          <label>
+            Authority
+            <output id="clean-authority">cleanRig</output>
+          </label>
+          <label>
+            Authored Clip
+            <output id="clean-authored-clip">clean_idle</output>
+          </label>
+          <label>
+            Motion Source
+            <output id="clean-motion-source">retargetedMixamo</output>
+          </label>
+          <label>
+            Mixamo Clip
+            <output id="clean-mixamo-clip">idle @ 0.000</output>
+          </label>
+          <button id="copy-clean-clip" type="button">Copy Clean Clip JSON</button>
+          <button id="download-clean-clip" type="button">Download Clean Clip JSON</button>
+          <button id="preview-clean-clip" type="button">Preview JSON</button>
+          <button id="clear-clean-preview" type="button">Clear Preview</button>
+          <a href="/v3-clean-animation-editor.html" target="_blank" rel="noreferrer">Open Clean Rig Editor</a>
+        </div>
+        <textarea id="clean-editor-export" spellcheck="false" aria-label="Clean Rig Authored Clip Export"></textarea>
       </div>
     </div>
     <div id="view-labels" aria-hidden="true">

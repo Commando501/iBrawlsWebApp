@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { getCharacterModelProfile } from '../../characterModelTypes';
 import type { V3DetailBoneName } from '../v3/v3RigDetail';
 import { getV3AttachmentOffset } from './combatantRigV3';
+import { getV3CleanRig } from './v3CleanRig';
 
 export const COMBATANT_BONE_NAMES = [
   'root',
@@ -245,6 +246,7 @@ export const buildCombatantRigForModel = (model: THREE.Group): CombatantRig => {
         captureV3AnimationRestPosition(bone);
       }
     }
+    getV3CleanRig(model);
   }
   return rig;
 };

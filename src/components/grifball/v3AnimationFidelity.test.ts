@@ -133,6 +133,13 @@ describe('V3 animation fidelity profiles', () => {
   });
 
   it('samples expressive upper-body poses without lower-body data', () => {
+    const hammerCarry = sampleV3UpperBodyWeaponPose({
+      activeWeapon: 'hammer',
+      weaponState: 'ready',
+      weaponTimer: 0,
+      isLunging: false,
+      settings: { hammerSlamWindupTime: 0.45, hammerSlamAttackTime: 0.3 },
+    });
     const hammer = sampleV3UpperBodyWeaponPose({
       activeWeapon: 'hammer',
       weaponState: 'swing_up',
@@ -148,7 +155,8 @@ describe('V3 animation fidelity profiles', () => {
       settings: {},
     });
 
-    assert.equal(Math.abs(hammer.rightArmRotation[1]) > 0.5, true);
+    assert.ok(hammer.detailBoneQuaternions?.upperArmRight, 'hammer Mixamo windup should expose right upper-arm quaternion');
+    assert.ok(detailedUpperBodyDistance(hammer, hammerCarry) > 1.0);
     assert.equal(Math.abs(hammer.leftArmRotation[2]) > 0.4, true);
     assert.equal(Math.max(...hammer.headRotation.map(Math.abs)) > 0.1, true);
     assert.equal(sword.upperTorsoRotation[0] > 0.1, true);
@@ -286,8 +294,9 @@ describe('V3 animation fidelity profiles', () => {
     assert.equal(sampleV3WeaponCarryMotion('hammer').gripConstraints.length, 2);
     assert.ok(poseDistance(windup.weaponPose, carry.weaponPose) > 0.3);
     assert.ok(Math.abs(windup.weaponPose.position[1] - carry.weaponPose.position[1]) > 0.12);
-    assert.ok(poseDistance(strike.weaponPose, carry.weaponPose) > 1.0);
-    assert.ok(poseDistance(strike.weaponPose, windup.weaponPose) > 1.5);
+    assert.ok(strike.weaponPose.position[1] < windup.weaponPose.position[1] - 0.35);
+    assert.ok(strike.weaponPose.position[1] < carry.weaponPose.position[1] - 0.1);
+    assert.ok(poseDistance(strike.weaponPose, windup.weaponPose) > 0.5);
     assert.ok(detailedUpperBodyDistance(strike.upperBodyPose, carry.upperBodyPose) > 1.0);
     assert.ok(Math.abs(melee.weaponPose.position[0] - carry.weaponPose.position[0]) > 0.12);
     assert.ok(detailedUpperBodyDistance(melee.upperBodyPose, carry.upperBodyPose) > 0.5);

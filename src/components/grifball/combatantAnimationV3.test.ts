@@ -28,6 +28,8 @@ import {
 } from './v3WeaponSocketBasis';
 import { getV3LowerBodySeamAnchorPair } from './v3LowerBodyContinuity';
 import { createInitialGrifballThreeRefs } from './threeRefs';
+import { getV3CleanRig } from './v3CleanRig';
+import { sampleV3AuthoredClip } from './v3AuthoredAnimationClips';
 
 const createV3Model = () => {
   const model = buildV3SpartanModel({ isEnemy: false, customHue: 192 });
@@ -93,6 +95,41 @@ describe('combatantAnimationV3 body masks', () => {
 });
 
 describe('animateV3CombatantModel', () => {
+  it('clean-authority mode applies an authored clip and bypasses legacy layered retarget state', () => {
+    const model = createV3Model();
+    getV3CleanRig(model);
+    const refs = createInitialGrifballThreeRefs();
+    const detailBones = model.userData.v3DetailBones as Record<string, THREE.Group>;
+    detailBones.upperArmLeft.rotation.set(1.1, -0.6, 0.4);
+    model.userData.v3RetargetedClip = { clipId: 'walk' };
+
+    animateV3CombatantModel({
+      refs,
+      mesh: model,
+      vel: new THREE.Vector3(3, 0, 0),
+      yaw: 0,
+      hp: 100,
+      activeWeapon: 'hammer',
+      weaponState: 'ready',
+      weaponTimer: 0,
+      dt: 1 / 60,
+      isLocalV3Animation: true,
+      animationClockMs: 0,
+      v3PoseAlphaOverride: 1,
+      v3AnimationAuthority: 'cleanRig',
+      v3AuthoredClipId: 'clean_idle',
+      v3AuthoredNormalizedTime: 0,
+    });
+
+    assert.equal(model.userData.v3AnimationAuthority, 'cleanRig');
+    assert.equal(model.userData.v3CleanAuthoredClip, 'clean_idle');
+    assert.equal(model.userData.v3CleanMotionSource, 'retargetedMixamo');
+    assert.equal(model.userData.v3CleanMixamoClipId, 'idle');
+    assert.equal(model.userData.v3CleanSourceNormalizedTime, 0);
+    assert.equal(model.userData.v3RetargetedClip, undefined);
+    assert.ok(detailBones.upperArmLeft.quaternion.angleTo(new THREE.Quaternion()) < 0.0001);
+  });
+
   it('keeps lower-body locomotion active during hammer windup upper-body animation', () => {
     const model = createV3Model();
     const refs = createInitialGrifballThreeRefs();
@@ -845,6 +882,40 @@ describe('animateCombatantWeaponMeshes V3 integration', () => {
     assert.equal(getV3WeaponSocketBasisVisualRoot(hammer), visualRoot);
     assert.notEqual(hammer.rotation.x, animatedRotation);
     assert.equal(hammer.userData.v3WeaponSocketBasis.socketName, 'thirdPersonPrimaryGrip');
+  });
+
+  it('clean-authority weapon playback uses authored weapon pose without grip IK overrides', () => {
+    const hammer = buildV3HammerModel(192);
+    const expected = sampleV3AuthoredClip('clean_hammer_strike', { normalizedTime: 0.5 }).weaponPose;
+    assert.ok(expected);
+
+    animateV3WeaponMeshes({
+      hammerModel: hammer,
+      swordModel: null,
+      pistolModel: null,
+      activeWeapon: 'hammer',
+      weaponState: 'swing_down',
+      weaponTimer: 0.15,
+      isLunging: false,
+      dt: 1 / 60,
+      settings: {},
+      v3AnimationAuthority: 'cleanRig',
+      v3AuthoredClipId: 'clean_hammer_strike',
+      v3AuthoredNormalizedTime: 0.5,
+    });
+
+    assert.equal(hammer.userData.v3CleanAuthoredClip, 'clean_hammer_strike');
+    assert.equal(hammer.userData.v3CleanMotionSource, 'mixamoWeaponReference');
+    assert.equal(hammer.userData.v3CleanMixamoClipId, 'hammer_heavy_swing');
+    assert.equal(hammer.userData.v3CleanSourceNormalizedTime, 0.375);
+    assert.deepEqual(
+      hammer.position.toArray().map((value) => Number(value.toFixed(6))),
+      expected.position.map((value) => Number(value.toFixed(6)))
+    );
+    assert.deepEqual(
+      [hammer.rotation.x, hammer.rotation.y, hammer.rotation.z].map((value) => Number(value.toFixed(6))),
+      expected.rotation.map((value) => Number(value.toFixed(6)))
+    );
   });
 
   it('adds deterministic V3 first-person idle sway without affecting third-person combatant weapons', () => {

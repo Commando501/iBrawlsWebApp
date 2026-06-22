@@ -13,6 +13,11 @@ import {
   type V3AnimationAtlasCaseId,
   type V3AnimationAtlasPlaybackMode,
 } from './v3AnimationAtlasSmoke';
+import {
+  exportV3AuthoredClipToJson,
+  normalizeV3AuthoredClipExport,
+  type V3AuthoredClipExport,
+} from '../components/grifball/v3AuthoredAnimationClips';
 
 const canvas = document.getElementById('atlas-canvas') as HTMLCanvasElement;
 const animationSelect = document.getElementById('animation-select') as HTMLSelectElement;
@@ -35,6 +40,15 @@ const showDefectsInput = document.getElementById('show-defects') as HTMLInputEle
 const copyDefectReportButton = document.getElementById('copy-defect-report') as HTMLButtonElement;
 const downloadDefectReportButton = document.getElementById('download-defect-report') as HTMLButtonElement;
 const defectReportElement = document.getElementById('defect-report') as HTMLPreElement;
+const cleanAuthorityElement = document.getElementById('clean-authority') as HTMLOutputElement;
+const cleanAuthoredClipElement = document.getElementById('clean-authored-clip') as HTMLOutputElement;
+const cleanMotionSourceElement = document.getElementById('clean-motion-source') as HTMLOutputElement;
+const cleanMixamoClipElement = document.getElementById('clean-mixamo-clip') as HTMLOutputElement;
+const cleanEditorExportElement = document.getElementById('clean-editor-export') as HTMLTextAreaElement;
+const copyCleanClipButton = document.getElementById('copy-clean-clip') as HTMLButtonElement;
+const downloadCleanClipButton = document.getElementById('download-clean-clip') as HTMLButtonElement;
+const previewCleanClipButton = document.getElementById('preview-clean-clip') as HTMLButtonElement;
+const clearCleanPreviewButton = document.getElementById('clear-clean-preview') as HTMLButtonElement;
 const summary = document.getElementById('summary') as HTMLSpanElement;
 
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -50,6 +64,8 @@ let lastTimeMs = 0;
 let frameCarry = 0;
 let currentDefectReport: V3AnimationAtlasDefectReport | null = null;
 let currentDefectSignature: string | null = null;
+let manualClipExport: V3AuthoredClipExport | null = null;
+const MANUAL_PREVIEW_STORAGE_KEY = 'ibrawls_v3_clean_editor_preview_clip';
 
 for (const atlasCase of atlas.cases) {
   const option = document.createElement('option');
@@ -72,6 +88,23 @@ function currentCarryWeapon() {
     : null;
 }
 
+function loadManualClipPreview(): void {
+  try {
+    const raw = window.localStorage.getItem(MANUAL_PREVIEW_STORAGE_KEY);
+    manualClipExport = raw ? normalizeV3AuthoredClipExport(raw) : null;
+  } catch {
+    manualClipExport = null;
+  }
+}
+
+function saveManualClipPreview(): void {
+  if (!manualClipExport) {
+    window.localStorage.removeItem(MANUAL_PREVIEW_STORAGE_KEY);
+    return;
+  }
+  window.localStorage.setItem(MANUAL_PREVIEW_STORAGE_KEY, JSON.stringify(manualClipExport));
+}
+
 function buildDefectSignature(): string {
   return [
     atlas.clock.caseId,
@@ -80,6 +113,8 @@ function buildDefectSignature(): string {
     atlas.qualityTier,
     atlas.v3Options.v3SourceFidelity ?? 'runtimeLod',
     atlas.v3Options.v3QualityTier ?? atlas.qualityTier,
+    manualClipExport?.id ?? 'no-manual-preview',
+    manualClipExport?.label ?? 'no-manual-label',
   ].join('|');
 }
 
@@ -117,6 +152,7 @@ function publishReport() {
   const frameState = createV3AnimationAtlasFrameState(atlas.clock.frame, atlasCase.durationFrames, atlas.clock.fps);
   const sample = sampleV3AnimationAtlasCase(atlasCase.id, frameState, atlas.clock.mode, {
     carryWeapon: currentCarryWeapon(),
+    manualClipExport,
   });
   const deathFragments = atlas.views.reduce((total, view) => total + (view.deathBurst?.plan.fragments.length ?? 0), 0);
   const defectReport = showDefectsInput.checked
@@ -136,6 +172,16 @@ function publishReport() {
     durationFrames: atlasCase.durationFrames,
     normalizedTime: sample.normalizedTime,
     motionSourceLabel: sample.motionSourceLabel ?? 'procedural runtime',
+    animationAuthority: sample.animationAuthority,
+    authoredClipId: sample.authoredClipId,
+    cleanMotionSource: sample.cleanMotionSource,
+    cleanMixamoClipId: sample.cleanMixamoClipId ?? null,
+    cleanSourceNormalizedTime: sample.cleanSourceNormalizedTime ?? null,
+    cleanRigReady: sample.cleanRigReady,
+    jointSeamWarnings: sample.jointSeamWarnings,
+    manualClipPreviewActive: sample.manualClipPreviewActive === true,
+    manualClipLabel: sample.manualClipLabel ?? null,
+    atlasEditorExportVersion: sample.atlasEditorExportVersion,
     clipId: sample.clipId ?? null,
     clipSource: sample.clipSource ?? null,
     sourceHash: sample.sourceHash ?? null,
@@ -154,10 +200,33 @@ function publishReport() {
       slotContinuity: slotContinuityOverlayInput.checked,
     },
   };
+  const editorState = {
+    ready: true,
+    animationAuthority: sample.animationAuthority,
+    authoredClipId: sample.authoredClipId,
+    cleanMotionSource: sample.cleanMotionSource,
+    cleanMixamoClipId: sample.cleanMixamoClipId ?? null,
+    cleanSourceNormalizedTime: sample.cleanSourceNormalizedTime ?? null,
+    atlasEditorExportVersion: sample.atlasEditorExportVersion,
+    manualClipPreviewActive: sample.manualClipPreviewActive === true,
+    manualClipLabel: sample.manualClipLabel ?? null,
+    export: sample.manualClipExport ?? exportV3AuthoredClipToJson(sample.authoredClipId),
+  };
+  cleanAuthorityElement.value = sample.animationAuthority;
+  cleanAuthoredClipElement.value = sample.authoredClipId;
+  cleanMotionSourceElement.value = sample.cleanMotionSource;
+  cleanMixamoClipElement.value = sample.cleanMixamoClipId
+    ? `${sample.cleanMixamoClipId} @ ${(sample.cleanSourceNormalizedTime ?? 0).toFixed(3)}`
+    : 'none';
+  if (document.activeElement !== cleanEditorExportElement) {
+    cleanEditorExportElement.value = JSON.stringify(editorState.export, null, 2);
+  }
   (window as any).__IBRAWLS_V3_ANIMATION_ATLAS_SMOKE__ = report;
   (window as any).__IBRAWLS_V3_ANIMATION_ATLAS_DEFECTS__ = defectReport;
+  (window as any).__IBRAWLS_V3_ANIMATION_ATLAS_EDITOR__ = editorState;
   (globalThis as any).__IBRAWLS_V3_ANIMATION_ATLAS_SMOKE__ = report;
   (globalThis as any).__IBRAWLS_V3_ANIMATION_ATLAS_DEFECTS__ = defectReport;
+  (globalThis as any).__IBRAWLS_V3_ANIMATION_ATLAS_EDITOR__ = editorState;
   summary.textContent = `${report.title} | ${report.status} | ${atlasCase.label} | ${report.motionSourceLabel} | ${atlas.clock.mode} | frame ${atlas.clock.frame}/${atlasCase.durationFrames} | weapon ${sample.visibleWeapon ?? 'hidden'} | views ${atlas.views.length}`;
   defectReportElement.hidden = !showDefectsInput.checked;
   defectReportElement.textContent = showDefectsInput.checked
@@ -188,6 +257,8 @@ function renderAtlas(resetDeathBurst = false) {
     showUpperLowerIsolation: isolationOverlayInput.checked,
     showSlotContinuity: slotContinuityOverlayInput.checked,
     carryWeapon: currentCarryWeapon(),
+    animationAuthority: atlas.animationAuthority,
+    manualClipExport,
   });
   syncControls();
   renderer.render(atlas.scene, atlas.camera);
@@ -251,6 +322,54 @@ downloadDefectReportButton.addEventListener('click', () => {
   link.click();
   link.remove();
   URL.revokeObjectURL(url);
+});
+
+copyCleanClipButton.addEventListener('click', async () => {
+  publishReport();
+  const payload = cleanEditorExportElement.value;
+  try {
+    await navigator.clipboard?.writeText(payload);
+    copyCleanClipButton.textContent = 'Copied Clean Clip JSON';
+  } catch {
+    copyCleanClipButton.textContent = 'Copy Unavailable';
+  }
+  window.setTimeout(() => {
+    copyCleanClipButton.textContent = 'Copy Clean Clip JSON';
+  }, 1400);
+});
+
+downloadCleanClipButton.addEventListener('click', () => {
+  publishReport();
+  const clipId = cleanAuthoredClipElement.value || 'clean_clip';
+  const blob = new Blob([cleanEditorExportElement.value], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `v3-authored-${clipId}.json`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+});
+
+previewCleanClipButton.addEventListener('click', () => {
+  try {
+    manualClipExport = normalizeV3AuthoredClipExport(cleanEditorExportElement.value);
+    saveManualClipPreview();
+    previewCleanClipButton.textContent = 'Previewing JSON';
+    renderAtlas(true);
+  } catch (error) {
+    previewCleanClipButton.textContent = error instanceof Error ? error.message.slice(0, 28) : 'Invalid JSON';
+  }
+  window.setTimeout(() => {
+    previewCleanClipButton.textContent = 'Preview JSON';
+  }, 1800);
+});
+
+clearCleanPreviewButton.addEventListener('click', () => {
+  manualClipExport = null;
+  saveManualClipPreview();
+  renderAtlas(true);
 });
 
 playPauseButton.addEventListener('click', () => {
@@ -333,6 +452,7 @@ function animate(timeMs: number) {
   requestAnimationFrame(animate);
 }
 
+loadManualClipPreview();
 resize();
 renderAtlas(true);
 requestAnimationFrame(animate);

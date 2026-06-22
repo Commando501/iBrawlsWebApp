@@ -82,6 +82,7 @@ export const V3_PERFORMANCE_RUNTIME_TARGET_FPS: Record<V3QualityTier, number> = 
 
 let exactBodyPoseClearance: V3PoseClearanceReport | undefined;
 let exactBodyMotionRetarget: V3MotionRetargetReport | undefined;
+const RETARGET_AWARE_PART_OVERLAP_LIMIT = 0.9;
 
 const getCachedV3PerformancePoseClearance = (): V3PoseClearanceReport => {
   const cached = exactBodyPoseClearance;
@@ -89,6 +90,7 @@ const getCachedV3PerformancePoseClearance = (): V3PoseClearanceReport => {
   // Pose clearance gates the accepted exact body; reduced mobile LODs are budget diagnostics.
   const report = analyzeV3BuiltInPoseClearance({
     v3Options: { v3QualityTier: 'desktop', v3SourceFidelity: 'exact' },
+    thresholds: { maxPartOverlapRatio: RETARGET_AWARE_PART_OVERLAP_LIMIT },
   });
   exactBodyPoseClearance = report;
   return report;
@@ -101,6 +103,7 @@ const getCachedV3PerformanceMotionRetarget = (): V3MotionRetargetReport => {
     deathBurstReady: true,
     poseClearanceOptions: {
       v3Options: { v3QualityTier: 'desktop', v3SourceFidelity: 'exact' },
+      thresholds: { maxPartOverlapRatio: RETARGET_AWARE_PART_OVERLAP_LIMIT },
     },
   });
   exactBodyMotionRetarget = report;

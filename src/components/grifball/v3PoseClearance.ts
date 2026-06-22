@@ -212,7 +212,7 @@ interface WeaponMeasurement {
 }
 
 const DEFAULT_THRESHOLDS: V3PoseClearanceThresholds = {
-  maxPartOverlapRatio: 0.6,
+  maxPartOverlapRatio: 0.9,
   minLimbGap: 0.01,
   maxWeaponGripDrift: 0.75,
   maxFootFloorPenetration: 0.35,

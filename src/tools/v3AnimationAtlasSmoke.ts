@@ -37,6 +37,23 @@ import {
 } from '../components/grifball/v3WeaponReferenceClips';
 import { analyzeV3RetargetJointAlignment } from '../components/grifball/v3MixamoRetarget';
 import { createInitialGrifballThreeRefs } from '../components/grifball/threeRefs';
+import {
+  analyzeV3CleanRigContinuity,
+  type V3AnimationAuthority,
+} from '../components/grifball/v3CleanRig';
+import {
+  ATLAS_EDITOR_EXPORT_VERSION,
+  mapV3AtlasCaseToAuthoredClip,
+  sampleV3AuthoredClip,
+  sampleV3AuthoredClipData,
+  type V3AuthoredClipExport,
+  type V3AuthoredClipId,
+} from '../components/grifball/v3AuthoredAnimationClips';
+import {
+  getV3CleanMixamoClipBinding,
+  type V3CleanMixamoClipId,
+  type V3CleanMixamoMotionSource,
+} from '../components/grifball/v3CleanMixamoClips';
 import { normalizeV3QualityTier } from '../components/v3/v3QualityTiers';
 import type { V3QualityTier } from '../components/v3/v3ModelTypes';
 import type { V3RenderOptions } from '../components/v3/v3QualityTiers';
@@ -77,6 +94,14 @@ export interface V3AnimationAtlasCaseDefinition {
   clipReady?: boolean;
   motionRetention?: V3RetargetedMotionRetentionReport;
   motionSourceLabel?: string;
+  animationAuthority: V3AnimationAuthority;
+  authoredClipId: V3AuthoredClipId;
+  cleanMotionSource: V3CleanMixamoMotionSource | 'atlasAuthored';
+  cleanMixamoClipId?: V3CleanMixamoClipId;
+  cleanSourceNormalizedTime?: number;
+  cleanRigReady: boolean;
+  jointSeamWarnings: string[];
+  atlasEditorExportVersion: number;
   weaponReferenceClipId?: V3WeaponReferenceClipId;
   weaponReferenceRuntimeRole?: 'runtimeReference' | 'analysisOnly';
   weaponReferenceSourceHash?: string;
@@ -108,14 +133,27 @@ export interface V3AnimationAtlasSample {
   clipReady?: boolean;
   motionRetention?: V3RetargetedMotionRetentionReport;
   motionSourceLabel?: string;
+  animationAuthority: V3AnimationAuthority;
+  authoredClipId: V3AuthoredClipId;
+  cleanMotionSource: V3CleanMixamoMotionSource | 'atlasAuthored';
+  cleanMixamoClipId?: V3CleanMixamoClipId;
+  cleanSourceNormalizedTime?: number;
+  cleanRigReady: boolean;
+  jointSeamWarnings: string[];
+  atlasEditorExportVersion: number;
   weaponReferenceClipId?: V3WeaponReferenceClipId;
   weaponReferenceRuntimeRole?: 'runtimeReference' | 'analysisOnly';
   weaponReferenceSourceHash?: string;
   weaponReferenceNormalizedTime?: number;
+  manualClipPreviewActive?: boolean;
+  manualClipLabel?: string;
+  manualClipExport?: V3AuthoredClipExport;
 }
 
 export interface V3AnimationAtlasSampleOptions {
   carryWeapon?: V3AnimationAtlasWeapon | null;
+  animationAuthority?: V3AnimationAuthority;
+  manualClipExport?: V3AuthoredClipExport | null;
 }
 
 export interface V3AnimationAtlasSceneOptions {
@@ -123,6 +161,7 @@ export interface V3AnimationAtlasSceneOptions {
   qualityTier?: V3QualityTier;
   v3Options?: V3RenderOptions;
   seed?: number;
+  animationAuthority?: V3AnimationAuthority;
 }
 
 export interface V3AnimationAtlasClock {
@@ -157,6 +196,7 @@ export interface V3AnimationAtlasScene {
   v3Options: V3RenderOptions;
   seed: number;
   overlayRoot: THREE.Group;
+  animationAuthority: V3AnimationAuthority;
 }
 
 export interface V3AnimationAtlasSceneUpdateOptions {
@@ -170,6 +210,8 @@ export interface V3AnimationAtlasSceneUpdateOptions {
   showUpperLowerIsolation?: boolean;
   showSlotContinuity?: boolean;
   carryWeapon?: V3AnimationAtlasWeapon | null;
+  animationAuthority?: V3AnimationAuthority;
+  manualClipExport?: V3AuthoredClipExport | null;
 }
 
 const CASE_DURATIONS: Record<V3AnimationAtlasCaseId, number> = {
@@ -238,6 +280,15 @@ const WEAPON_REFERENCE_BY_CASE: Partial<Record<V3AnimationAtlasCaseId, V3WeaponR
   swordSlash: 'sword_outward_slash',
 };
 
+const cleanMotionSourceLabel = (
+  motionSource: V3CleanMixamoMotionSource | 'atlasAuthored',
+  mixamoClipId?: V3CleanMixamoClipId
+): string => {
+  if (motionSource === 'retargetedMixamo') return `${mixamoClipId ?? 'Mixamo'} retargeted Mixamo clean motion`;
+  if (motionSource === 'mixamoWeaponReference') return `${mixamoClipId ?? 'Mixamo'} Mixamo weapon runtime motion`;
+  return 'clean V3 atlas-authored fallback';
+};
+
 const roundMetric = (value: number): number => {
   if (!Number.isFinite(value)) return 0;
   const rounded = Number(value.toFixed(6));
@@ -255,10 +306,9 @@ const caseDefinition = (caseId: V3AnimationAtlasCaseId) => {
 const caseMeta = (caseId: V3AnimationAtlasCaseId): V3AnimationAtlasCaseDefinition => {
   const definition = caseDefinition(caseId);
   const durationFrames = CASE_DURATIONS[caseId];
-  const clipMetadata = getV3AnimationClipMetadataForCase(caseId);
-  const motionRetention = clipMetadata?.clipId
-    ? analyzeV3RetargetedMotionRetention(clipMetadata.clipId)
-    : undefined;
+  const authoredClipId = mapV3AtlasCaseToAuthoredClip(caseId);
+  const cleanBinding = getV3CleanMixamoClipBinding(authoredClipId);
+  const cleanMotionSource = cleanBinding?.motionSource ?? 'atlasAuthored';
   const weaponReferenceClipId = WEAPON_REFERENCE_BY_CASE[caseId];
   const weaponReferenceClip = weaponReferenceClipId
     ? getV3WeaponReferenceClip(weaponReferenceClipId)
@@ -270,14 +320,14 @@ const caseMeta = (caseId: V3AnimationAtlasCaseId): V3AnimationAtlasCaseDefinitio
     durationSeconds: roundMetric(durationFrames / 60),
     activeWeapon: definition.activeWeapon,
     showsWeapon: WEAPON_REVIEW_CASES.has(caseId),
-    ...(clipMetadata ? {
-      clipSource: clipMetadata.clipSource,
-      clipId: clipMetadata.clipId,
-      sourceHash: clipMetadata.sourceHash,
-      clipReady: clipMetadata.ready,
-      ...(motionRetention ? { motionRetention } : {}),
-      motionSourceLabel: clipMetadata.label,
-    } : {}),
+    animationAuthority: 'cleanRig',
+    authoredClipId,
+    cleanMotionSource,
+    ...(cleanBinding?.mixamoClipId ? { cleanMixamoClipId: cleanBinding.mixamoClipId } : {}),
+    cleanRigReady: true,
+    jointSeamWarnings: [],
+    atlasEditorExportVersion: ATLAS_EDITOR_EXPORT_VERSION,
+    motionSourceLabel: cleanMotionSourceLabel(cleanMotionSource, cleanBinding?.mixamoClipId),
     ...(weaponReferenceClip ? {
       weaponReferenceClipId,
       weaponReferenceRuntimeRole: weaponReferenceClip.runtimeRole,
@@ -354,12 +404,12 @@ const sampleWeaponReferenceTime = (
   normalizedTime: number
 ): number => {
   const t = clamp01(normalizedTime);
-  if (caseId === 'hammerWindup') return roundMetric(0.02 + (0.5 - 0.02) * easeInOutCubic(t));
-  if (caseId === 'hammerStrike') return roundMetric(0.5 + (0.64 - 0.5) * easeInOutCubic(t));
-  if (caseId === 'hammerRecover') return 0.64;
+  if (caseId === 'hammerWindup') return roundMetric(0.02 + (0.25 - 0.02) * easeInOutCubic(t));
+  if (caseId === 'hammerStrike') return roundMetric(0.25 + (0.5 - 0.25) * easeInOutCubic(t));
+  if (caseId === 'hammerRecover') return 0.5;
   if (caseId === 'hammerMelee') return roundMetric(0.02 + (0.56 - 0.02) * easeInOutCubic(t));
   if (caseId === 'hammerMeleeRecover') return 0.56;
-  if (caseId === 'swordSlash') return roundMetric(0.64 * easeInOutCubic(t));
+  if (caseId === 'swordSlash') return roundMetric(0.5 + (0.64 - 0.5) * easeInOutCubic(t));
   return t;
 };
 
@@ -416,6 +466,14 @@ export function sampleV3AnimationAtlasCase(
   const carryWeapon = LOCOMOTION_REVIEW_CASES.has(caseId) ? options.carryWeapon ?? null : null;
   const activeWeapon = carryWeapon ?? definition.activeWeapon;
   const showsWeapon = WEAPON_REVIEW_CASES.has(caseId) || carryWeapon !== null;
+  const animationAuthority = options.animationAuthority ?? 'cleanRig';
+  const authoredClipId = mapV3AtlasCaseToAuthoredClip(caseId, carryWeapon);
+  const manualClipExport = options.manualClipExport?.id === authoredClipId ? options.manualClipExport : null;
+  const cleanSample = manualClipExport ? sampleV3AuthoredClipData(manualClipExport, {
+    normalizedTime: frameState.normalizedTime,
+  }) : sampleV3AuthoredClip(authoredClipId, {
+    normalizedTime: frameState.normalizedTime,
+  });
   const weaponTimer = sampleWeaponTimer(
     caseId,
     definition.weaponTimer,
@@ -425,10 +483,6 @@ export function sampleV3AnimationAtlasCase(
   );
   const hp = 'hp' in definition ? definition.hp : 100;
   const previousHp = 'previousHp' in definition ? definition.previousHp : undefined;
-  const clipMetadata = getV3AnimationClipMetadataForCase(caseId);
-  const motionRetention = clipMetadata?.clipId
-    ? analyzeV3RetargetedMotionRetention(clipMetadata.clipId)
-    : undefined;
   const weaponReferenceClipId = WEAPON_REFERENCE_BY_CASE[caseId];
   const weaponReferenceClip = weaponReferenceClipId
     ? getV3WeaponReferenceClip(weaponReferenceClipId)
@@ -436,17 +490,16 @@ export function sampleV3AnimationAtlasCase(
   const weaponReferenceNormalizedTime = weaponReferenceClipId
     ? sampleWeaponReferenceTime(caseId, frameState.normalizedTime)
     : undefined;
-  const motionSourceLabel = clipMetadata
-    ? [
-      clipMetadata.label,
-      carryWeapon ? `${carryWeapon} V3 carry layer` : undefined,
-    ].filter(Boolean).join(' + ')
-    : (WEAPON_REVIEW_CASES.has(caseId)
-      ? [
-        `${activeWeapon} V3 procedural weapon track`,
-        weaponReferenceClip ? `${weaponReferenceClip.label} Mixamo weapon reference` : undefined,
-      ].filter(Boolean).join(' + ')
-      : undefined);
+  const motionSourceLabel = [
+    manualClipExport
+      ? `${manualClipExport.label} manual clean rig preview`
+      : animationAuthority === 'cleanRig'
+      ? cleanMotionSourceLabel(cleanSample.motionSource, cleanSample.mixamoClipId)
+      : 'legacy layered V3 animation',
+    carryWeapon ? `${carryWeapon} clean carry authoring` : undefined,
+    WEAPON_REVIEW_CASES.has(caseId) ? `${authoredClipId} clean rig playback` : undefined,
+    weaponReferenceClip ? `${weaponReferenceClip.label} Mixamo weapon reference overlay` : undefined,
+  ].filter(Boolean).join(' + ');
 
   return {
     caseId,
@@ -468,14 +521,22 @@ export function sampleV3AnimationAtlasCase(
     isSprinting: 'isSprinting' in definition ? Boolean(definition.isSprinting) : false,
     isLunging: 'isLunging' in definition ? Boolean(definition.isLunging) : false,
     deathBurstActive: hp <= 0,
-    ...(clipMetadata ? {
-      clipSource: clipMetadata.clipSource,
-      clipId: clipMetadata.clipId,
-      sourceHash: clipMetadata.sourceHash,
-      clipReady: clipMetadata.ready,
-      ...(motionRetention ? { motionRetention } : {}),
+    motionSourceLabel,
+    animationAuthority,
+    authoredClipId,
+    cleanMotionSource: cleanSample.motionSource,
+    ...(cleanSample.mixamoClipId ? { cleanMixamoClipId: cleanSample.mixamoClipId } : {}),
+    ...(typeof cleanSample.sourceNormalizedTime === 'number' ? {
+      cleanSourceNormalizedTime: cleanSample.sourceNormalizedTime,
     } : {}),
-    ...(motionSourceLabel ? { motionSourceLabel } : {}),
+    cleanRigReady: true,
+    jointSeamWarnings: [],
+    atlasEditorExportVersion: ATLAS_EDITOR_EXPORT_VERSION,
+    ...(manualClipExport ? {
+      manualClipPreviewActive: true,
+      manualClipLabel: manualClipExport.label,
+      manualClipExport,
+    } : {}),
     ...(weaponReferenceClip && weaponReferenceClipId && typeof weaponReferenceNormalizedTime === 'number' ? {
       weaponReferenceClipId,
       weaponReferenceRuntimeRole: weaponReferenceClip.runtimeRole,
@@ -626,6 +687,9 @@ function applySampleToRig(
   if (typeof sample.previousHp === 'number') {
     rig.group.userData.v3LastHp = sample.previousHp;
   }
+  const authoredSampleOverride = sample.manualClipExport
+    ? sampleV3AuthoredClipData(sample.manualClipExport, { normalizedTime: sample.normalizedTime })
+    : undefined;
 
   animateV3CombatantModel({
     refs,
@@ -643,6 +707,10 @@ function applySampleToRig(
     animationClockMs: sample.elapsedSeconds * 1000,
     isLocalV3Animation: true,
     v3PoseAlphaOverride: 1,
+    v3AnimationAuthority: sample.animationAuthority,
+    v3AuthoredClipId: sample.authoredClipId,
+    v3AuthoredNormalizedTime: sample.normalizedTime,
+    v3AuthoredSampleOverride: authoredSampleOverride,
     settings: V3_ANIMATION_ATLAS_WEAPON_SETTINGS,
     v3QualityTier: qualityTier,
   });
@@ -658,7 +726,14 @@ function applySampleToRig(
     dt: sample.dt,
     settings: V3_ANIMATION_ATLAS_WEAPON_SETTINGS,
     combatantModel: rig.group,
+    v3AnimationAuthority: sample.animationAuthority,
+    v3AuthoredClipId: sample.authoredClipId,
+    v3AuthoredNormalizedTime: sample.normalizedTime,
+    v3AuthoredSampleOverride: authoredSampleOverride,
   });
+  if (sample.animationAuthority === 'cleanRig') {
+    rig.group.userData.v3CleanRigContinuity = analyzeV3CleanRigContinuity(rig.group);
+  }
   setWeaponVisibility(rig, sample.visibleWeapon);
 }
 
@@ -913,6 +988,7 @@ export function buildV3AnimationAtlasScene(
   const qualityTier = normalizeV3QualityTier(options.qualityTier ?? options.v3Options?.v3QualityTier ?? 'desktop');
   const caseId = options.caseId ?? 'idle';
   const seed = Number.isFinite(options.seed) ? Number(options.seed) : 42142;
+  const animationAuthority = options.animationAuthority ?? 'cleanRig';
   const scene = new THREE.Scene();
   scene.background = new THREE.Color('#061016');
 
@@ -1019,8 +1095,9 @@ export function buildV3AnimationAtlasScene(
     v3Options,
     seed,
     overlayRoot,
+    animationAuthority,
   };
-  updateV3AnimationAtlasScene(atlas, { caseId, frame: 0, resetDeathBurst: true });
+  updateV3AnimationAtlasScene(atlas, { caseId, frame: 0, resetDeathBurst: true, animationAuthority });
   return atlas;
 }
 
@@ -1032,13 +1109,17 @@ export function updateV3AnimationAtlasScene(
   const definition = caseMeta(caseId);
   const frame = Math.max(0, Math.min(definition.durationFrames, Math.floor(options.frame ?? atlas.clock.frame)));
   const mode = options.mode ?? atlas.clock.mode;
+  const animationAuthority = options.animationAuthority ?? atlas.animationAuthority;
   const frameState = createV3AnimationAtlasFrameState(frame, definition.durationFrames, atlas.clock.fps);
   const sample = sampleV3AnimationAtlasCase(caseId, frameState, mode, {
     carryWeapon: options.carryWeapon,
+    animationAuthority,
+    manualClipExport: options.manualClipExport,
   });
   atlas.clock.caseId = caseId;
   atlas.clock.frame = frame;
   atlas.clock.mode = mode;
+  atlas.animationAuthority = animationAuthority;
 
   atlas.views.forEach((view, index) => {
     if (options.resetDeathBurst || caseId !== 'death') {

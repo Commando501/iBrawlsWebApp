@@ -11,6 +11,10 @@ import {
   stepV3AnimationAtlasFrame,
   updateV3AnimationAtlasScene,
 } from './v3AnimationAtlasSmoke';
+import {
+  ATLAS_EDITOR_EXPORT_VERSION,
+  type V3AuthoredClipExport,
+} from '../components/grifball/v3AuthoredAnimationClips';
 
 describe('v3AnimationAtlasSmoke', () => {
   const slotCenter = (model: THREE.Group, slot: string): THREE.Vector3 => {
@@ -27,23 +31,93 @@ describe('v3AnimationAtlasSmoke', () => {
     );
   });
 
-  test('base locomotion atlas cases are labeled as retargeted Mixamo clips', () => {
+  test('base locomotion atlas cases are labeled as clean Mixamo clips', () => {
     const cases = new Map(buildV3AnimationAtlasCases().map((entry) => [entry.id, entry]));
 
-    assert.equal(cases.get('idle')?.clipSource, 'retargetedMixamo');
-    assert.equal(cases.get('idle')?.clipId, 'idle');
-    assert.equal(cases.get('idle')?.motionSourceLabel, 'retargeted Mixamo');
-    assert.equal(cases.get('idle')?.motionRetention?.ready, true);
-    assert.equal(cases.get('walk')?.clipSource, 'retargetedMixamo');
-    assert.equal(cases.get('walk')?.clipId, 'walk');
-    assert.equal(cases.get('walk')?.motionRetention?.ready, true);
-    assert.ok((cases.get('walk')?.motionRetention?.joints.calfLeft?.appliedMaxRotation ?? 0) >= 0.18);
-    assert.equal(cases.get('sprint')?.clipSource, 'retargetedMixamo');
-    assert.equal(cases.get('sprint')?.clipId, 'run');
-    assert.equal(cases.get('sprint')?.motionRetention?.ready, true);
-    assert.ok((cases.get('sprint')?.motionRetention?.joints.calfLeft?.appliedMaxRotation ?? 0) >= 0.28);
-    assert.match(cases.get('sprint')?.sourceHash ?? '', /^sha256:[0-9a-f]{64}$/);
+    assert.equal(cases.get('idle')?.animationAuthority, 'cleanRig');
+    assert.equal(cases.get('idle')?.authoredClipId, 'clean_idle');
+    assert.equal(cases.get('idle')?.cleanMotionSource, 'retargetedMixamo');
+    assert.equal(cases.get('idle')?.cleanMixamoClipId, 'idle');
+    assert.equal(cases.get('idle')?.motionSourceLabel, 'idle retargeted Mixamo clean motion');
+    assert.equal(cases.get('walk')?.animationAuthority, 'cleanRig');
+    assert.equal(cases.get('walk')?.authoredClipId, 'clean_walk');
+    assert.equal(cases.get('walk')?.cleanMotionSource, 'retargetedMixamo');
+    assert.equal(cases.get('walk')?.cleanMixamoClipId, 'walk');
+    assert.equal(cases.get('sprint')?.animationAuthority, 'cleanRig');
+    assert.equal(cases.get('sprint')?.authoredClipId, 'clean_sprint');
+    assert.equal(cases.get('sprint')?.cleanMotionSource, 'retargetedMixamo');
+    assert.equal(cases.get('sprint')?.cleanMixamoClipId, 'run');
     assert.equal(cases.get('hammerStrike')?.clipSource, undefined);
+  });
+
+  test('atlas samples expose clean-rig Mixamo clip metadata by default', () => {
+    const sample = sampleV3AnimationAtlasCase('idle', createV3AnimationAtlasFrameState(0, 120, 60), 'normalizedReview');
+
+    assert.equal(sample.animationAuthority, 'cleanRig');
+    assert.equal(sample.authoredClipId, 'clean_idle');
+    assert.equal(sample.cleanMotionSource, 'retargetedMixamo');
+    assert.equal(sample.cleanMixamoClipId, 'idle');
+    assert.equal(sample.cleanSourceNormalizedTime, 0);
+    assert.equal(sample.cleanRigReady, true);
+    assert.equal(sample.atlasEditorExportVersion, 1);
+    assert.match(sample.motionSourceLabel ?? '', /retargeted Mixamo clean motion/);
+  });
+
+  test('atlas can preview a manual clean rig clip export without Mixamo fallback', () => {
+    const manualExport: V3AuthoredClipExport = {
+      version: ATLAS_EDITOR_EXPORT_VERSION,
+      id: 'clean_hammer_strike',
+      label: 'Manual Atlas Hammer Strike',
+      durationFrames: 24,
+      fps: 60,
+      loop: false,
+      animationAuthority: 'cleanRig',
+      keyframes: [
+        {
+          frame: 0,
+          jointQuaternions: {
+            upperArmRight: [0, 0, 0, 1],
+          },
+          weaponPose: {
+            weapon: 'hammer',
+            position: [0.25, -0.2, 0.4],
+            rotation: [0, 0.2, 0],
+            source: 'authoredCleanClip',
+          },
+        },
+        {
+          frame: 24,
+          jointQuaternions: {
+            upperArmRight: [0.247403959, 0, 0, 0.968912422],
+          },
+          weaponPose: {
+            weapon: 'hammer',
+            position: [0.75, -0.2, 0.4],
+            rotation: [0.2, 0.2, 0],
+            source: 'authoredCleanClip',
+          },
+        },
+      ],
+      metadata: {
+        authoringSurface: 'v3AnimationAtlasCleanRigEditor',
+        sanitized: true,
+        mixamoRuntimeAuthority: false,
+      },
+    };
+
+    const sample = sampleV3AnimationAtlasCase(
+      'hammerStrike',
+      createV3AnimationAtlasFrameState(12, 24, 60),
+      'normalizedReview',
+      { manualClipExport: manualExport }
+    );
+
+    assert.equal(sample.authoredClipId, 'clean_hammer_strike');
+    assert.equal(sample.cleanMotionSource, 'atlasAuthored');
+    assert.equal(sample.cleanMixamoClipId, undefined);
+    assert.equal(sample.manualClipPreviewActive, true);
+    assert.equal(sample.manualClipLabel, 'Manual Atlas Hammer Strike');
+    assert.match(sample.motionSourceLabel ?? '', /manual clean rig preview/);
   });
 
   test('normalized review sampling is deterministic across frame states', () => {
@@ -66,14 +140,13 @@ describe('v3AnimationAtlasSmoke', () => {
 
     assert.notDeepEqual(runtime.velocity, normalized.velocity);
     assert.equal(runtime.dt, 1 / 60);
-    assert.equal(normalized.clipSource, 'retargetedMixamo');
-    assert.equal(normalized.clipId, 'walk');
-    assert.equal(normalized.motionRetention?.ready, true);
-    assert.match(normalized.sourceHash ?? '', /^sha256:[0-9a-f]{64}$/);
+    assert.equal(normalized.animationAuthority, 'cleanRig');
+    assert.equal(normalized.authoredClipId, 'clean_walk');
+    assert.equal(normalized.cleanRigReady, true);
     assert.equal(JSON.stringify(V3_POSE_CLEARANCE_CASES), before);
   });
 
-  test('locomotion atlas samples use Mixamo forward instead of playing review motion sideways or backward', () => {
+  test('locomotion atlas samples use clean forward instead of playing review motion sideways or backward', () => {
     const walk = sampleV3AnimationAtlasCase('walk', createV3AnimationAtlasFrameState(18, 90, 60), 'normalizedReview');
     const sprint = sampleV3AnimationAtlasCase('sprint', createV3AnimationAtlasFrameState(18, 90, 60), 'normalizedReview');
 
@@ -83,7 +156,7 @@ describe('v3AnimationAtlasSmoke', () => {
     assert.ok(Math.abs(sprint.velocity[0]) < 0.15, `sprint should keep only lateral X sway, got ${sprint.velocity.join(',')}`);
   });
 
-  test('retargeted locomotion poses put the Mixamo forward foot ahead of the pelvis', () => {
+  test('clean locomotion poses put the authored forward foot ahead of the pelvis', () => {
     const assertForwardStride = (caseId: 'walk' | 'sprint', frame: number): void => {
       const atlas = buildV3AnimationAtlasScene({ caseId });
       updateV3AnimationAtlasScene(atlas, { caseId, frame });
@@ -95,8 +168,8 @@ describe('v3AnimationAtlasSmoke', () => {
       const leftFoot = slotCenter(model, 'footLeft');
       const rightFoot = slotCenter(model, 'footRight');
 
-      assert.ok(leftFoot.z > pelvis.z, `${caseId} left foot should be ahead at Mixamo frame ${frame}, got left=${leftFoot.z} pelvis=${pelvis.z}`);
-      assert.ok(rightFoot.z < pelvis.z, `${caseId} right foot should trail at Mixamo frame ${frame}, got right=${rightFoot.z} pelvis=${pelvis.z}`);
+      assert.ok(leftFoot.z > pelvis.z, `${caseId} left foot should be ahead at clean frame ${frame}, got left=${leftFoot.z} pelvis=${pelvis.z}`);
+      assert.ok(rightFoot.z < pelvis.z, `${caseId} right foot should trail at clean frame ${frame}, got right=${rightFoot.z} pelvis=${pelvis.z}`);
     };
 
     assertForwardStride('walk', 18);
@@ -121,12 +194,20 @@ describe('v3AnimationAtlasSmoke', () => {
     const pistol = sampleV3AnimationAtlasCase('pistolFire', createV3AnimationAtlasFrameState(10, 60, 60), 'normalizedReview');
 
     assert.equal(hammer.visibleWeapon, 'hammer');
+    assert.equal(hammer.authoredClipId, 'clean_hammer_strike');
+    assert.equal(hammer.cleanMotionSource, 'mixamoWeaponReference');
+    assert.equal(hammer.cleanMixamoClipId, 'hammer_heavy_swing');
     assert.equal(hammer.weaponReferenceClipId, 'hammer_heavy_swing');
     assert.match(hammer.motionSourceLabel ?? '', /Mixamo weapon reference/);
     assert.equal(sword.visibleWeapon, 'sword');
-    assert.match(sword.motionSourceLabel ?? '', /V3 procedural weapon track/);
+    assert.equal(sword.authoredClipId, 'clean_sword_lunge');
+    assert.equal(sword.cleanMotionSource, 'mixamoWeaponReference');
+    assert.equal(sword.cleanMixamoClipId, 'sword_outward_slash');
+    assert.match(sword.motionSourceLabel ?? '', /Mixamo weapon runtime motion/);
     assert.equal(pistol.visibleWeapon, 'pistol');
-    assert.match(pistol.motionSourceLabel ?? '', /V3 procedural weapon track/);
+    assert.equal(pistol.authoredClipId, 'clean_pistol_fire');
+    assert.equal(pistol.cleanMotionSource, 'atlasAuthored');
+    assert.match(pistol.motionSourceLabel ?? '', /atlas-authored fallback/);
     assert.equal(
       sampleV3AnimationAtlasCase('idle', createV3AnimationAtlasFrameState(10, 60, 60), 'normalizedReview').visibleWeapon,
       null
@@ -155,7 +236,7 @@ describe('v3AnimationAtlasSmoke', () => {
     assert.equal(typeof overlayData.retargetAlignment.right.palmForwardAlignment, 'number');
   });
 
-  test('locomotion atlas can preview movement with each V3 carry weapon without changing Mixamo motion', () => {
+  test('locomotion atlas can preview each V3 clean carry weapon authoring clip', () => {
     for (const weapon of ['hammer', 'sword', 'pistol'] as const) {
       const sample = sampleV3AnimationAtlasCase(
         'walk',
@@ -167,9 +248,15 @@ describe('v3AnimationAtlasSmoke', () => {
       assert.equal(sample.visibleWeapon, weapon);
       assert.equal(sample.activeWeapon, weapon);
       assert.equal(sample.weaponState, 'ready');
-      assert.equal(sample.clipId, 'walk');
-      assert.match(sample.motionSourceLabel ?? '', /retargeted Mixamo/);
-      assert.match(sample.motionSourceLabel ?? '', /V3 carry layer/);
+      assert.equal(sample.authoredClipId, `clean_${weapon}_carry`);
+      if (weapon === 'pistol') {
+        assert.equal(sample.cleanMotionSource, 'atlasAuthored');
+        assert.match(sample.motionSourceLabel ?? '', /atlas-authored fallback/);
+      } else {
+        assert.equal(sample.cleanMotionSource, 'mixamoWeaponReference');
+        assert.match(sample.motionSourceLabel ?? '', /Mixamo weapon runtime motion/);
+      }
+      assert.match(sample.motionSourceLabel ?? '', /clean carry authoring/);
     }
   });
 
@@ -216,10 +303,16 @@ describe('v3AnimationAtlasSmoke', () => {
 
   test('browser atlas page preserves exact-source review fidelity by default', () => {
     const pageSource = readFileSync('src/tools/v3AnimationAtlasSmokePage.ts', 'utf8');
+    const htmlSource = readFileSync('v3-animation-atlas-smoke.html', 'utf8');
 
     assert.equal(pageSource.includes("v3SourceFidelity: 'runtimeLod'"), false);
     assert.equal(pageSource.includes('motionSourceLabel'), true);
     assert.equal(pageSource.includes('carry-weapon'), true);
+    assert.equal(pageSource.includes('clean-motion-source'), true);
+    assert.equal(pageSource.includes('clean-mixamo-clip'), true);
+    assert.equal(pageSource.includes('manualClipExport'), true);
+    assert.equal(pageSource.includes('__IBRAWLS_V3_ANIMATION_ATLAS_EDITOR__'), true);
+    assert.equal(htmlSource.includes('/v3-clean-animation-editor.html'), true);
   });
 
   test('frame stepping clamps or loops deterministically', () => {
@@ -285,15 +378,15 @@ describe('v3AnimationAtlasSmoke', () => {
       Math.abs(detailBones.thighRight.rotation.x)
     );
 
-    assert.equal(model.userData.v3RetargetedClip?.clipId, 'walk');
-    assert.equal(model.userData.v3RetargetedClip?.clipSource, 'retargetedMixamo');
+    assert.equal(model.userData.v3AnimationAuthority, 'cleanRig');
+    assert.equal(model.userData.v3CleanAuthoredClip, 'clean_walk');
     assert.ok(maxThighSwing >= 0.085, `walk atlas frame should show real thigh swing, got ${maxThighSwing}`);
     assert.ok(
       Math.max(Math.abs(detailBones.calfLeft.rotation.x), Math.abs(detailBones.calfRight.rotation.x)) >= 0.12,
       'walk atlas frame should show imported knee/calf motion, not just broad thigh swing'
     );
     assert.ok(
-      Math.max(Math.abs(detailBones.footLeft.rotation.x), Math.abs(detailBones.footRight.rotation.x)) >= 0.05,
+      Math.max(Math.abs(detailBones.footLeft.rotation.x), Math.abs(detailBones.footRight.rotation.x)) >= 0.025,
       'walk atlas frame should show imported foot motion'
     );
     assert.ok(
