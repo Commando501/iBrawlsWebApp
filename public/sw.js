@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'ibrawls-pwa-v1';
+const CACHE_VERSION = 'ibrawls-pwa-v2';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -30,6 +30,19 @@ self.addEventListener('activate', (event) => {
 });
 
 const isNavigationRequest = (request) => request.mode === 'navigate';
+const STANDALONE_DOCUMENT_PATHS = new Set([
+  '/mapmaker.html',
+  '/animation-editor.html',
+  '/armor-model-editor.html',
+  '/v3-performance-smoke.html',
+  '/v3-readiness-dashboard.html',
+  '/v3-animation-atlas-smoke.html',
+  '/v3-clean-animation-editor.html',
+]);
+const isStandaloneDocumentRequest = (request, url) =>
+  isNavigationRequest(request) &&
+  url.origin === self.location.origin &&
+  STANDALONE_DOCUMENT_PATHS.has(url.pathname);
 const isStaticAsset = (request) => {
   const destination = request.destination;
   return ['script', 'style', 'image', 'font', 'manifest'].includes(destination);
@@ -71,6 +84,11 @@ self.addEventListener('fetch', (event) => {
 
   const url = new URL(request.url);
   if (url.protocol !== 'http:' && url.protocol !== 'https:') return;
+
+  if (isStandaloneDocumentRequest(request, url)) {
+    event.respondWith(fetch(request));
+    return;
+  }
 
   if (isNavigationRequest(request)) {
     event.respondWith(networkFirst(request));
