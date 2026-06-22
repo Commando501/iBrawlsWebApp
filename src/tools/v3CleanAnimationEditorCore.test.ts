@@ -8,13 +8,25 @@ import {
   type V3AuthoredClipExport,
 } from '../components/grifball/v3AuthoredAnimationClips';
 import {
+  applyV3CleanEditorPosePreset,
+  buildV3CleanEditorValidationReport,
+  clampV3CleanEditorLoopRange,
+  commitV3CleanEditorHistory,
   createV3CleanEditorDocument,
+  createV3CleanEditorHistory,
   deleteV3CleanEditorKeyframe,
+  duplicateV3CleanEditorCustomClip,
+  markV3CleanEditorHistorySaved,
   mirrorV3CleanRigPoseFrame,
+  newV3CleanEditorClipFromCurrentFrame,
   normalizeV3AuthoredClipExport,
+  redoV3CleanEditorHistory,
   resetV3CleanEditorFrame,
   resetV3CleanEditorJoint,
+  retimeV3CleanEditorKeyframe,
   setV3CleanEditorJointEuler,
+  undoV3CleanEditorHistory,
+  V3_CLEAN_EDITOR_POSE_LIBRARY,
 } from './v3CleanAnimationEditorCore';
 
 const quatFromEuler = (x: number, y: number, z: number) => {
@@ -150,4 +162,103 @@ describe('v3CleanAnimationEditorCore', () => {
     );
   });
 
+  it('tracks editor history, undo, redo, and saved dirty state', () => {
+    const original = manualClip();
+    const history = createV3CleanEditorHistory(original);
+    const edited = setV3CleanEditorJointEuler(original, {
+      frame: 6,
+      joint: 'chest',
+      euler: [0.1, 0.2, 0.3],
+    });
+
+    const committed = commitV3CleanEditorHistory(history, edited);
+    assert.equal(committed.dirty, true);
+    assert.equal(committed.past.length, 1);
+    assert.ok(committed.present.keyframes.some((keyframe) => keyframe.frame === 6));
+
+    const undone = undoV3CleanEditorHistory(committed);
+    assert.equal(undone.present.keyframes.some((keyframe) => keyframe.frame === 6), false);
+    assert.equal(undone.future.length, 1);
+
+    const redone = redoV3CleanEditorHistory(undone);
+    assert.equal(redone.present.keyframes.some((keyframe) => keyframe.frame === 6), true);
+
+    const saved = markV3CleanEditorHistorySaved(redone);
+    assert.equal(saved.dirty, false);
+    const noOpCommit = commitV3CleanEditorHistory(saved, saved.present);
+    assert.equal(noOpCommit.dirty, false);
+    assert.equal(noOpCommit.past.length, saved.past.length);
+  });
+
+  it('clamps loop ranges and retimes keyframes with collision replacement', () => {
+    assert.deepEqual(clampV3CleanEditorLoopRange(manualClip(), { inFrame: 99, outFrame: -3 }), {
+      inFrame: 0,
+      outFrame: 12,
+    });
+
+    const retimed = retimeV3CleanEditorKeyframe(manualClip(), { fromFrame: 12, toFrame: 6 });
+    assert.deepEqual(retimed.keyframes.map((keyframe) => keyframe.frame), [0, 6]);
+
+    const replaced = retimeV3CleanEditorKeyframe(retimed, { fromFrame: 6, toFrame: 0 });
+    assert.deepEqual(replaced.keyframes.map((keyframe) => keyframe.frame), [0]);
+    assert.equal(replaced.keyframes[0].weaponPose?.position[0], 3);
+  });
+
+  it('applies built-in pose presets from authored clean clips', () => {
+    assert.ok(V3_CLEAN_EDITOR_POSE_LIBRARY.some((preset) => preset.id === 'hammer-windup'));
+
+    const applied = applyV3CleanEditorPosePreset(manualClip(), {
+      frame: 5,
+      presetId: 'hammer-windup',
+    });
+    const keyframe = applied.keyframes.find((candidate) => candidate.frame === 5);
+
+    assert.ok(keyframe);
+    assert.equal(keyframe.weaponPose?.weapon, 'hammer');
+    assert.ok(keyframe.jointQuaternions.upperArmRight);
+  });
+
+  it('creates browser-local duplicate and new-from-current clip records without changing export schema', () => {
+    const duplicated = duplicateV3CleanEditorCustomClip(manualClip(), {
+      storageId: 'custom_manual_copy',
+    });
+    assert.equal(duplicated.storageId, 'custom_manual_copy');
+    assert.equal(duplicated.clip.id, 'clean_hammer_strike');
+    assert.match(duplicated.clip.label, /Copy/);
+
+    const created = newV3CleanEditorClipFromCurrentFrame(manualClip(), {
+      frame: 12,
+      storageId: 'custom_pose_clip',
+    });
+    assert.equal(created.storageId, 'custom_pose_clip');
+    assert.equal(created.clip.keyframes.length, 1);
+    assert.equal(created.clip.keyframes[0].frame, 0);
+    assert.equal(created.clip.keyframes[0].weaponPose?.position[0], 3);
+  });
+
+  it('builds actionable validation report items for malformed draft data', () => {
+    const report = buildV3CleanEditorValidationReport({
+      ...manualClip(),
+      keyframes: [
+        { frame: 0, jointQuaternions: {} },
+        {
+          frame: 99,
+          jointQuaternions: {
+            chest: [Number.NaN, 0, 0, 1] as any,
+          },
+          weaponPose: {
+            weapon: 'hammer',
+            position: [Number.NaN, 0, 0] as any,
+            rotation: [0, 0, 0],
+            source: 'authoredCleanClip',
+          },
+        },
+      ],
+    });
+
+    assert.equal(report.ok, false);
+    assert.ok(report.items.some((item) => item.code === 'keyframe-out-of-range' && item.frame === 99));
+    assert.ok(report.items.some((item) => item.code === 'non-finite-joint-quaternion' && item.frame === 99));
+    assert.ok(report.items.some((item) => item.code === 'non-finite-weapon-position' && item.frame === 99));
+  });
 });

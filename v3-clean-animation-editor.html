@@ -65,6 +65,12 @@
         outline: none;
       }
 
+      button.active {
+        border-color: var(--cyan);
+        background: #14333b;
+        color: var(--text);
+      }
+
       label {
         display: grid;
         gap: 4px;
@@ -105,7 +111,7 @@
 
       #topbar {
         display: grid;
-        grid-template-columns: minmax(220px, auto) repeat(7, auto) minmax(220px, 1fr);
+        grid-template-columns: minmax(220px, auto) repeat(9, auto) minmax(220px, 1fr);
         align-items: center;
         gap: 8px;
         padding: 10px;
@@ -120,6 +126,7 @@
       }
 
       #status {
+        grid-column: -1;
         justify-self: end;
         color: var(--muted);
         font: 11px/1.35 "Cascadia Mono", monospace;
@@ -194,6 +201,15 @@
         letter-spacing: 0;
       }
 
+      .mini-status {
+        color: var(--muted);
+        font: 11px/1.35 "Cascadia Mono", monospace;
+      }
+
+      #dirty-indicator.dirty {
+        color: var(--amber);
+      }
+
       #viewport-wrap {
         position: relative;
         min-width: 0;
@@ -216,6 +232,62 @@
         pointer-events: none;
       }
 
+      #dope-sheet {
+        display: grid;
+        gap: 6px;
+        padding: 8px;
+        border: 1px solid #24414a;
+        border-radius: 6px;
+        background: #071014;
+      }
+
+      .dope-row {
+        display: grid;
+        grid-template-columns: 86px minmax(0, 1fr);
+        align-items: center;
+        gap: 8px;
+        min-height: 24px;
+        color: var(--muted);
+        font: 10px/1.2 "Cascadia Mono", monospace;
+      }
+
+      .dope-track {
+        position: relative;
+        height: 22px;
+        border: 1px solid #1d3841;
+        border-radius: 4px;
+        background: linear-gradient(90deg, rgb(103 232 249 / 10%), rgb(250 204 21 / 8%));
+      }
+
+      .dope-key,
+      .loop-marker {
+        position: absolute;
+        top: 50%;
+        width: 12px;
+        height: 18px;
+        min-height: 0;
+        padding: 0;
+        transform: translate(-50%, -50%);
+        border-radius: 3px;
+      }
+
+      .dope-key {
+        background: var(--cyan);
+        border-color: var(--cyan);
+      }
+
+      .dope-key.active {
+        background: var(--amber);
+        border-color: var(--amber);
+      }
+
+      .loop-marker {
+        z-index: 2;
+        background: transparent;
+        border-color: var(--amber);
+        color: var(--amber);
+      }
+
       #keyframe-list {
         max-height: 140px;
         overflow: auto;
@@ -233,13 +305,95 @@
         white-space: pre-wrap;
       }
 
+      .validation-item {
+        width: 100%;
+        height: auto;
+        min-height: 30px;
+        padding: 7px;
+        text-align: left;
+        white-space: normal;
+      }
+
+      .validation-item.error {
+        border-color: rgb(251 113 133 / 75%);
+        color: #fecdd3;
+      }
+
+      .validation-item.warning {
+        border-color: rgb(250 204 21 / 75%);
+        color: #fde68a;
+      }
+
+      #import-dropzone {
+        display: grid;
+        place-items: center;
+        min-height: 58px;
+        border: 1px dashed #2e5964;
+        border-radius: 6px;
+        color: var(--muted);
+        font: 11px/1.4 "Cascadia Mono", monospace;
+        text-align: center;
+      }
+
+      #import-dropzone.drag-over {
+        border-color: var(--cyan);
+        color: var(--cyan);
+        background: rgb(103 232 249 / 8%);
+      }
+
+      #export-panel-toggle {
+        display: none;
+      }
+
       @media (max-width: 1040px) {
+        body {
+          overflow: auto;
+        }
+
+        #topbar {
+          display: flex;
+          flex-wrap: wrap;
+          padding-right: 116px;
+        }
+
+        #topbar h1 {
+          flex: 1 1 100%;
+        }
+
+        #status {
+          flex: 1 1 100%;
+          order: 99;
+          justify-self: start;
+          white-space: normal;
+        }
+
         #workspace {
           grid-template-columns: 300px minmax(320px, 1fr);
         }
 
+        #export-panel-toggle {
+          display: inline-block;
+          position: fixed;
+          top: 58px;
+          right: 12px;
+          z-index: 35;
+        }
+
         .panel.right {
-          display: none;
+          position: fixed;
+          top: 96px;
+          right: 0;
+          bottom: 0;
+          z-index: 20;
+          display: grid;
+          width: min(390px, 94vw);
+          transform: translateX(calc(100% - 18px));
+          transition: transform 160ms ease;
+          box-shadow: -10px 0 28px rgb(0 0 0 / 32%);
+        }
+
+        #workspace.export-open .panel.right {
+          transform: translateX(0);
         }
       }
     </style>
@@ -255,12 +409,15 @@
         <button id="left-camera" type="button">Left</button>
         <button id="rear-camera" type="button">Rear</button>
         <button id="right-camera" type="button">Right</button>
+        <button id="four-view" type="button">4 View</button>
+        <button id="export-panel-toggle" type="button">Export/QA</button>
         <span id="status">Preparing editor...</span>
       </div>
       <div id="workspace">
         <aside class="panel">
           <section class="section">
             <p class="section-title">Clip</p>
+            <span id="dirty-indicator" class="mini-status">Saved</span>
             <label>
               Authored Clip
               <select id="clip-select"></select>
@@ -271,10 +428,17 @@
               <label>Speed<input id="speed-input" type="number" min="0.1" max="4" step="0.1" value="1" /></label>
             </div>
             <input id="timeline" type="range" min="0" max="120" value="0" />
+            <div class="grid-2">
+              <label>Loop In<input id="loop-in" type="number" min="0" step="1" value="0" /></label>
+              <label>Loop Out<input id="loop-out" type="number" min="0" step="1" value="120" /></label>
+            </div>
+            <div id="dope-sheet" aria-label="Animation dope sheet"></div>
             <div class="row">
               <button id="set-keyframe" type="button">Set Keyframe</button>
               <button id="delete-keyframe" type="button">Delete Keyframe</button>
               <button id="reset-frame" type="button">Reset Frame</button>
+              <button id="duplicate-clip" type="button">Duplicate Clip</button>
+              <button id="new-from-current" type="button">New From Current</button>
             </div>
           </section>
 
@@ -293,6 +457,36 @@
               <button id="apply-joint" type="button">Apply Joint</button>
               <button id="reset-joint" type="button">Reset Joint</button>
               <button id="mirror-frame" type="button">Mirror Frame</button>
+            </div>
+          </section>
+
+          <section class="section">
+            <p class="section-title">Editor Tools</p>
+            <label>
+              Gizmo Target
+              <select id="edit-target">
+                <option value="joint">Selected Joint</option>
+                <option value="root">Root Offset</option>
+                <option value="weapon">Weapon Pose</option>
+                <option value="primarySocketMarker">Primary Socket</option>
+                <option value="offhandSocketMarker">Offhand Socket</option>
+              </select>
+            </label>
+            <div class="row">
+              <button id="transform-translate" type="button">Move</button>
+              <button id="transform-rotate" type="button">Rotate</button>
+              <button id="transform-space" type="button">Local</button>
+            </div>
+            <div class="toggle-row">
+              <label><input id="auto-key" type="checkbox" checked /> Auto-key gizmo edits</label>
+              <label><input id="snap-transform" type="checkbox" checked /> Snap 0.01 / 0.05 rad</label>
+            </div>
+            <label>
+              Pose Library
+              <select id="pose-library"></select>
+            </label>
+            <div class="row">
+              <button id="apply-pose" type="button">Apply Pose</button>
             </div>
           </section>
 
@@ -348,6 +542,10 @@
           <section class="section">
             <p class="section-title">Frame Tools</p>
             <div class="row">
+              <button id="undo" type="button">Undo</button>
+              <button id="redo" type="button">Redo</button>
+            </div>
+            <div class="row">
               <button id="copy-frame" type="button">Copy Frame</button>
               <button id="paste-frame" type="button">Paste Frame</button>
               <button id="copy-prev-frame" type="button">Copy Previous</button>
@@ -375,10 +573,13 @@
               <button id="copy-json" type="button">Copy JSON</button>
               <button id="download-json" type="button">Download JSON</button>
               <button id="import-json" type="button">Import JSON</button>
+              <button id="choose-json" type="button">Choose JSON</button>
               <button id="save-local" type="button">Save Local</button>
               <button id="clear-local" type="button">Clear Local</button>
-              <button id="send-atlas" type="button">Send To Atlas</button>
+              <button id="send-atlas" type="button">Send &amp; Open Atlas</button>
             </div>
+            <input id="import-file" type="file" accept="application/json,.json" hidden />
+            <div id="import-dropzone" tabindex="0">Drop authored clip JSON here</div>
             <textarea id="json-output" spellcheck="false" aria-label="V3 clean rig authored clip JSON"></textarea>
           </section>
         </aside>
