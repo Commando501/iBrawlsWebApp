@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>V3 Mesh2Motion Rig Calibrator</title>
+    <title>V3 Mesh2Motion Retarget Calibrator</title>
     <style>
       :root {
         color-scheme: dark;
@@ -105,7 +105,7 @@
 
       #topbar {
         display: grid;
-        grid-template-columns: minmax(260px, auto) repeat(7, auto) minmax(220px, 1fr);
+        grid-template-columns: minmax(300px, auto) repeat(6, auto) minmax(220px, 1fr);
         align-items: center;
         gap: 8px;
         padding: 10px;
@@ -130,7 +130,7 @@
 
       #workspace {
         display: grid;
-        grid-template-columns: 360px minmax(420px, 1fr) 400px;
+        grid-template-columns: 390px minmax(440px, 1fr) 420px;
         min-height: 0;
       }
 
@@ -159,18 +159,6 @@
         border-radius: 8px;
       }
 
-      details.section {
-        display: block;
-      }
-
-      details.section[open] {
-        display: grid;
-      }
-
-      summary.section-title {
-        cursor: pointer;
-      }
-
       .section-title {
         margin: 0;
         color: var(--text);
@@ -197,6 +185,18 @@
         gap: 8px;
       }
 
+      .segmented {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 6px;
+      }
+
+      .segmented button {
+        min-width: 0;
+        padding: 0 6px;
+        white-space: normal;
+      }
+
       #viewport-wrap {
         position: relative;
         min-width: 0;
@@ -219,8 +219,9 @@
         pointer-events: none;
       }
 
+      #target-summary,
       #diagnostics {
-        min-height: 180px;
+        min-height: 160px;
         margin: 0;
         padding: 8px;
         overflow: auto;
@@ -232,6 +233,10 @@
         font: 11px/1.45 "Cascadia Mono", monospace;
       }
 
+      #diagnostics {
+        min-height: 220px;
+      }
+
       .warn {
         color: var(--amber);
       }
@@ -240,7 +245,7 @@
         color: var(--red);
       }
 
-      @media (max-width: 1100px) {
+      @media (max-width: 1180px) {
         body {
           overflow: auto;
         }
@@ -258,7 +263,7 @@
         }
 
         #workspace {
-          grid-template-columns: 320px minmax(360px, 1fr);
+          grid-template-columns: 340px minmax(360px, 1fr);
         }
 
         .panel.right {
@@ -272,11 +277,10 @@
   <body>
     <div id="app">
       <div id="topbar">
-        <h1>V3 Mesh2Motion Rig Calibrator</h1>
+        <h1>V3 Mesh2Motion Retarget Calibrator</h1>
         <button id="play" type="button">Play</button>
         <button id="prev-frame" type="button">Frame -</button>
         <button id="next-frame" type="button">Frame +</button>
-        <button id="reset-calibration" type="button">Reset</button>
         <button id="save-local" type="button">Save Local</button>
         <button id="copy-json" type="button">Copy JSON</button>
         <button id="download-json" type="button">Download JSON</button>
@@ -287,7 +291,7 @@
           <section class="section">
             <p class="section-title">Preview</p>
             <label>
-              Mesh2Motion Clip
+              Preview Animation
               <select id="clip-select">
                 <option value="clean_sprint">Sprint</option>
                 <option value="clean_slide">Slide</option>
@@ -305,65 +309,65 @@
           </section>
 
           <section class="section">
-            <p class="section-title">Arm Spread</p>
-            <div class="grid-2">
-              <label>Left Spread<input id="left-spread" type="number" min="0" max="0.35" step="0.01" value="0.26" /></label>
-              <label>Right Spread<input id="right-spread" type="number" min="0" max="0.35" step="0.01" value="0.26" /></label>
+            <p class="section-title">Edit Mode</p>
+            <div class="segmented" role="group" aria-label="Edit Mode">
+              <button id="mode-part-binding" type="button" class="active">V3 Part Binding</button>
+              <button id="mode-driver-joint" type="button">Mesh2Motion Bone</button>
+              <button id="mode-weapon-socket" type="button">Weapon Socket</button>
+            </div>
+            <label>
+              Target
+              <select id="target-select"></select>
+            </label>
+          </section>
+
+          <section class="section">
+            <p class="section-title">Position</p>
+            <div class="grid-3">
+              <label>X<input id="target-x" type="number" min="-0.5" max="0.5" step="0.01" value="0" /></label>
+              <label>Y<input id="target-y" type="number" min="-0.5" max="0.5" step="0.01" value="0" /></label>
+              <label>Z<input id="target-z" type="number" min="-0.5" max="0.5" step="0.01" value="0" /></label>
             </div>
           </section>
 
-          <details class="section">
-            <summary class="section-title">Advanced Arm Nudges</summary>
-            <label title="Fine adjustment for one Mesh2Motion driver joint after arm spread is applied.">
-              Driver Joint
-              <select id="joint-select">
-                <option value="clavicle_l">Left Clavicle</option>
-                <option value="upperarm_l">Left Upper Arm</option>
-                <option value="lowerarm_l">Left Forearm</option>
-                <option value="hand_l">Left Hand</option>
-                <option value="clavicle_r">Right Clavicle</option>
-                <option value="upperarm_r">Right Upper Arm</option>
-                <option value="lowerarm_r">Right Forearm</option>
-                <option value="hand_r">Right Hand</option>
-              </select>
-            </label>
+          <section class="section">
+            <p class="section-title">Rotation</p>
             <div class="grid-3">
-              <label>Nudge X<input id="joint-x" type="number" min="-0.3" max="0.3" step="0.01" value="0" /></label>
-              <label>Nudge Y<input id="joint-y" type="number" min="-0.3" max="0.3" step="0.01" value="0" /></label>
-              <label>Nudge Z<input id="joint-z" type="number" min="-0.3" max="0.3" step="0.01" value="0" /></label>
+              <label>X<input id="target-rx" type="number" min="-3.14" max="3.14" step="0.01" value="0" /></label>
+              <label>Y<input id="target-ry" type="number" min="-3.14" max="3.14" step="0.01" value="0" /></label>
+              <label>Z<input id="target-rz" type="number" min="-3.14" max="3.14" step="0.01" value="0" /></label>
             </div>
             <div class="row">
-              <button id="apply-joint" type="button">Apply Nudge</button>
-              <button id="clear-joint" type="button">Clear Nudge</button>
+              <button id="apply-target" type="button">Apply Target</button>
+              <button id="reset-target" type="button">Reset Target</button>
+              <button id="reset-mode" type="button">Reset Mode</button>
+              <button id="reset-all" type="button">Reset All</button>
             </div>
-          </details>
+            <div class="row">
+              <button id="transform-translate" type="button" class="active">Move Target</button>
+              <button id="transform-rotate" type="button">Rotate Target</button>
+            </div>
+          </section>
 
           <section class="section">
-            <p class="section-title">Right Hand Socket</p>
-            <div class="grid-3">
-              <label>Pos X<input id="socket-x" type="number" min="-0.5" max="0.5" step="0.01" value="0" /></label>
-              <label>Pos Y<input id="socket-y" type="number" min="-0.5" max="0.5" step="0.01" value="0" /></label>
-              <label>Pos Z<input id="socket-z" type="number" min="-0.5" max="0.5" step="0.01" value="0" /></label>
-            </div>
-            <div class="grid-3">
-              <label>Rot X<input id="socket-rx" type="number" min="-3.14" max="3.14" step="0.01" value="0" /></label>
-              <label>Rot Y<input id="socket-ry" type="number" min="-3.14" max="3.14" step="0.01" value="0" /></label>
-              <label>Rot Z<input id="socket-rz" type="number" min="-3.14" max="3.14" step="0.01" value="0" /></label>
-            </div>
-            <div class="row">
-              <button id="apply-socket" type="button">Apply Socket</button>
-              <button id="transform-translate" type="button">Move Socket</button>
-              <button id="transform-rotate" type="button">Rotate Socket</button>
+            <p class="section-title">Legacy Arm Spread</p>
+            <div class="grid-2">
+              <label>Left Spread<input id="left-spread" type="number" min="0" max="0.35" step="0.01" value="0.26" /></label>
+              <label>Right Spread<input id="right-spread" type="number" min="0" max="0.35" step="0.01" value="0.26" /></label>
             </div>
           </section>
         </aside>
 
         <main id="viewport-wrap">
           <canvas id="calibrator-canvas"></canvas>
-          <div id="viewport-label">Right-hand sword socket</div>
+          <div id="viewport-label">Mesh2Motion skeleton overlay and selected target handle</div>
         </main>
 
         <aside class="panel right">
+          <section class="section">
+            <p class="section-title">Selected Target</p>
+            <pre id="target-summary">No target selected.</pre>
+          </section>
           <section class="section">
             <p class="section-title">Diagnostics</p>
             <pre id="diagnostics">No diagnostics yet.</pre>

@@ -5,6 +5,7 @@ import {
   getV3Mesh2MotionCalibration,
   type V3Mesh2MotionCalibration,
   type V3Mesh2MotionCalibrationVec3,
+  type V3Mesh2MotionTransformCalibration,
 } from './v3Mesh2MotionCalibration';
 
 export type V3Mesh2MotionDriverVec3Tuple = [number, number, number];
@@ -69,7 +70,10 @@ export interface V3Mesh2MotionDriverCalibrationReport {
   calibrationVersion: V3Mesh2MotionCalibration['version'];
   armSpread: V3Mesh2MotionCalibration['armSpread'];
   calibratedJointOffsetCount: number;
-  postBindPartAdjustments: 0;
+  driverJointAdjustmentCount: number;
+  partBindingAdjustmentCount: number;
+  postBindPartAdjustments: number;
+  weaponSocketAdjustmentCount: number;
 }
 
 export interface V3Mesh2MotionDriverWeaponSocketWorldTransform {
@@ -213,6 +217,16 @@ const addVec3Tuple = (
   value.z += offset[2];
 };
 
+const quaternionFromRotationTuple = (rotation: V3Mesh2MotionCalibrationVec3): THREE.Quaternion =>
+  new THREE.Quaternion().setFromEuler(new THREE.Euler(...rotation, 'XYZ')).normalize();
+
+const adjustmentMatrix = (adjustment: V3Mesh2MotionTransformCalibration): THREE.Matrix4 =>
+  new THREE.Matrix4().compose(
+    vec3FromTuple(adjustment.position),
+    quaternionFromRotationTuple(adjustment.rotation),
+    vec3FromTuple(ONE_VEC3)
+  );
+
 const applyDriverCalibration = (
   model: THREE.Group,
   rig: V3Mesh2MotionDriverRig,
@@ -223,7 +237,10 @@ const applyDriverCalibration = (
     calibrationVersion: calibration.version,
     armSpread: { ...calibration.armSpread },
     calibratedJointOffsetCount: 0,
+    driverJointAdjustmentCount: 0,
+    partBindingAdjustmentCount: 0,
     postBindPartAdjustments: 0,
+    weaponSocketAdjustmentCount: 0,
   };
   if (pose.sourceClipName === 'TPose') return report;
 
@@ -249,11 +266,14 @@ const applyDriverCalibration = (
   applyOutwardChainSpread(leftClavicle, calibration.armSpread.left, 1);
   applyOutwardChainSpread(rightClavicle, calibration.armSpread.right, -1);
 
-  for (const [jointName, offset] of Object.entries(calibration.jointOffsets)) {
+  for (const [jointName, adjustment] of Object.entries(calibration.driverJoints)) {
     const joint = rig.joints[jointName];
-    if (!joint) continue;
-    addVec3Tuple(joint.object.position, offset);
+    if (!joint || !adjustment) continue;
+    addVec3Tuple(joint.object.position, adjustment.position);
+    joint.object.quaternion.multiply(quaternionFromRotationTuple(adjustment.rotation)).normalize();
+    joint.object.rotation.setFromQuaternion(joint.object.quaternion);
     report.calibratedJointOffsetCount += 1;
+    report.driverJointAdjustmentCount += 1;
   }
   return report;
 };
@@ -261,14 +281,25 @@ const applyDriverCalibration = (
 const applyDriverWeaponSocketCalibration = (
   rig: V3Mesh2MotionDriverRig,
   calibration: V3Mesh2MotionCalibration
-): void => {
-  const socket = rig.weaponSockets.rightHandGrip;
-  socket.object.position.fromArray(socket.restLocalPosition);
-  addVec3Tuple(socket.object.position, calibration.weaponSockets.rightHandGrip.position);
-  socket.object.quaternion.setFromEuler(
-    new THREE.Euler(...calibration.weaponSockets.rightHandGrip.rotation, 'XYZ')
-  ).normalize();
-  socket.object.rotation.setFromQuaternion(socket.object.quaternion);
+): number => {
+  let count = 0;
+  for (const [socketName, socket] of Object.entries(rig.weaponSockets) as [
+    V3Mesh2MotionDriverWeaponSocketName,
+    V3Mesh2MotionDriverWeaponSocket,
+  ][]) {
+    const adjustment = calibration.weaponSockets[socketName];
+    socket.object.position.fromArray(socket.restLocalPosition);
+    socket.object.quaternion.identity();
+    if (!adjustment) {
+      socket.object.rotation.setFromQuaternion(socket.object.quaternion);
+      continue;
+    }
+    addVec3Tuple(socket.object.position, adjustment.position);
+    socket.object.quaternion.copy(quaternionFromRotationTuple(adjustment.rotation));
+    socket.object.rotation.setFromQuaternion(socket.object.quaternion);
+    count += 1;
+  }
+  return count;
 };
 
 export function getV3Mesh2MotionDriverRig(model: THREE.Group): V3Mesh2MotionDriverRig {
@@ -401,7 +432,7 @@ export function applyV3Mesh2MotionDriverRigPose(
     joint.object.scale.fromArray(ONE_VEC3);
   }
   const calibrationReport = applyDriverCalibration(model, rig, pose, calibration);
-  applyDriverWeaponSocketCalibration(rig, calibration);
+  calibrationReport.weaponSocketAdjustmentCount = applyDriverWeaponSocketCalibration(rig, calibration);
 
   model.updateMatrixWorld(true);
   for (const binding of Object.values(rig.partBindings)) {
@@ -414,6 +445,12 @@ export function applyV3Mesh2MotionDriverRigPose(
     }
     parent.updateMatrixWorld(true);
     const targetWorldMatrix = joint.object.matrixWorld.clone().multiply(binding.bindMatrix);
+    const bindingAdjustment = calibration.partBindings[binding.slot];
+    if (bindingAdjustment) {
+      targetWorldMatrix.multiply(adjustmentMatrix(bindingAdjustment));
+      calibrationReport.partBindingAdjustmentCount += 1;
+      calibrationReport.postBindPartAdjustments += 1;
+    }
     const localMatrix = parent.matrixWorld.clone().invert().multiply(targetWorldMatrix);
     const position = new THREE.Vector3();
     const quaternion = new THREE.Quaternion();

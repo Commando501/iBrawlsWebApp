@@ -1,60 +1,84 @@
+import { V3_CHARACTER_SLOT_IDS, type V3CharacterSlotId } from '../v3/v3ModelTypes';
+import { V3_MESH2MOTION_CLIP_SET } from './v3Mesh2MotionClips.generated';
+
 export type V3Mesh2MotionCalibrationVec3 = [number, number, number];
 
 export type V3Mesh2MotionArmSide = 'left' | 'right';
 
-export type V3Mesh2MotionCalibratedJointName =
-  | 'clavicle_l'
-  | 'upperarm_l'
-  | 'lowerarm_l'
-  | 'hand_l'
-  | 'clavicle_r'
-  | 'upperarm_r'
-  | 'lowerarm_r'
-  | 'hand_r';
+export type V3Mesh2MotionDriverJointName = string;
 
-export interface V3Mesh2MotionWeaponSocketCalibration {
+export type V3Mesh2MotionWeaponSocketCalibrationName = 'rightHandGrip' | 'leftHandGrip';
+
+export type V3Mesh2MotionCalibrationTargetKind = 'partBinding' | 'driverJoint' | 'weaponSocket';
+
+export interface V3Mesh2MotionTransformCalibration {
   position: V3Mesh2MotionCalibrationVec3;
   rotation: V3Mesh2MotionCalibrationVec3;
 }
 
-export interface V3Mesh2MotionCalibration {
-  version: 'v3-mesh2motion-calibration/v1';
-  armSpread: Record<V3Mesh2MotionArmSide, number>;
-  jointOffsets: Partial<Record<V3Mesh2MotionCalibratedJointName, V3Mesh2MotionCalibrationVec3>>;
-  weaponSockets: {
-    rightHandGrip: V3Mesh2MotionWeaponSocketCalibration;
-  };
+export type V3Mesh2MotionWeaponSocketCalibration = V3Mesh2MotionTransformCalibration;
+
+export interface V3Mesh2MotionCalibrationTargetDescriptor {
+  kind: V3Mesh2MotionCalibrationTargetKind;
+  id: string;
+  label: string;
+  sourceJointName: string | null;
+  parentJointName: string | null;
+  affectedSlots: V3CharacterSlotId[];
+  hasVisibleBinding: boolean;
 }
+
+export interface V3Mesh2MotionCalibrationV2 {
+  version: 'v3-mesh2motion-calibration/v2';
+  armSpread: Record<V3Mesh2MotionArmSide, number>;
+  driverJoints: Partial<Record<V3Mesh2MotionDriverJointName, V3Mesh2MotionTransformCalibration>>;
+  partBindings: Partial<Record<V3CharacterSlotId, V3Mesh2MotionTransformCalibration>>;
+  weaponSockets: Record<V3Mesh2MotionWeaponSocketCalibrationName, V3Mesh2MotionWeaponSocketCalibration>;
+}
+
+export type V3Mesh2MotionCalibration = V3Mesh2MotionCalibrationV2;
+
+type LegacyV1JointOffsetMap = Record<string, unknown>;
+
+const ZERO_VEC3: V3Mesh2MotionCalibrationVec3 = [0, 0, 0];
+
+export const V3_MESH2MOTION_DRIVER_JOINT_NAMES = V3_MESH2MOTION_CLIP_SET.skeleton.joints
+  .map((joint) => String(joint.name));
+
+export const V3_MESH2MOTION_CALIBRATED_JOINT_NAMES = V3_MESH2MOTION_DRIVER_JOINT_NAMES;
+
+const VALID_DRIVER_JOINT_NAMES = new Set(V3_MESH2MOTION_DRIVER_JOINT_NAMES);
+const VALID_PART_BINDING_NAMES = new Set<string>(V3_CHARACTER_SLOT_IDS);
 
 export const V3_MESH2MOTION_CALIBRATION_LIMITS = {
   maxArmSpread: 0.35,
-  maxJointOffset: 0.3,
+  maxDriverJointPosition: 0.3,
+  maxPartBindingPosition: 0.5,
   maxSocketPosition: 0.5,
+  maxRotation: Math.PI,
+  maxJointOffset: 0.3,
   maxSocketRotation: Math.PI,
 } as const;
 
-export const V3_MESH2MOTION_CALIBRATED_JOINT_NAMES = [
-  'clavicle_l',
-  'upperarm_l',
-  'lowerarm_l',
-  'hand_l',
-  'clavicle_r',
-  'upperarm_r',
-  'lowerarm_r',
-  'hand_r',
-] as const satisfies readonly V3Mesh2MotionCalibratedJointName[];
-
 export const V3_MESH2MOTION_DEFAULT_CALIBRATION: V3Mesh2MotionCalibration = {
-  version: 'v3-mesh2motion-calibration/v1',
+  version: 'v3-mesh2motion-calibration/v2',
   armSpread: {
     left: 0.26,
     right: 0.26,
   },
-  jointOffsets: {
-    hand_r: [0, 0, -0.1],
+  driverJoints: {
+    hand_r: {
+      position: [0, 0, -0.1],
+      rotation: [0, 0, 0],
+    },
   },
+  partBindings: {},
   weaponSockets: {
     rightHandGrip: {
+      position: [0, 0, 0],
+      rotation: [0, 0, 0],
+    },
+    leftHandGrip: {
       position: [0, 0, 0],
       rotation: [0, 0, 0],
     },
@@ -97,42 +121,109 @@ const normalizeVec3 = (
   ];
 };
 
+const cloneTransform = (
+  transform: V3Mesh2MotionTransformCalibration
+): V3Mesh2MotionTransformCalibration => ({
+  position: [...transform.position],
+  rotation: [...transform.rotation],
+});
+
+const normalizeTransform = (
+  value: unknown,
+  fallback: V3Mesh2MotionTransformCalibration,
+  maxPositionMagnitude: number
+): V3Mesh2MotionTransformCalibration => {
+  const source = isObject(value) ? value : {};
+  return {
+    position: normalizeVec3(source.position, fallback.position, maxPositionMagnitude),
+    rotation: normalizeVec3(source.rotation, fallback.rotation, V3_MESH2MOTION_CALIBRATION_LIMITS.maxRotation),
+  };
+};
+
+const cloneTransformRecord = <Key extends string>(
+  value: Partial<Record<Key, V3Mesh2MotionTransformCalibration>>
+): Partial<Record<Key, V3Mesh2MotionTransformCalibration>> =>
+  Object.fromEntries(
+    Object.entries(value).map(([key, transform]) => [
+      key,
+      cloneTransform(transform as V3Mesh2MotionTransformCalibration),
+    ])
+  ) as Partial<Record<Key, V3Mesh2MotionTransformCalibration>>;
+
 const cloneCalibration = (calibration: V3Mesh2MotionCalibration): V3Mesh2MotionCalibration => ({
-  version: 'v3-mesh2motion-calibration/v1',
+  version: 'v3-mesh2motion-calibration/v2',
   armSpread: {
     left: calibration.armSpread.left,
     right: calibration.armSpread.right,
   },
-  jointOffsets: Object.fromEntries(
-    Object.entries(calibration.jointOffsets).map(([joint, offset]) => [joint, [...offset]])
-  ) as V3Mesh2MotionCalibration['jointOffsets'],
+  driverJoints: cloneTransformRecord(calibration.driverJoints),
+  partBindings: cloneTransformRecord(calibration.partBindings),
   weaponSockets: {
-    rightHandGrip: {
-      position: [...calibration.weaponSockets.rightHandGrip.position],
-      rotation: [...calibration.weaponSockets.rightHandGrip.rotation],
-    },
+    rightHandGrip: cloneTransform(calibration.weaponSockets.rightHandGrip),
+    leftHandGrip: cloneTransform(calibration.weaponSockets.leftHandGrip),
   },
+});
+
+const normalizeLegacyJointOffset = (
+  value: unknown,
+  fallback: V3Mesh2MotionTransformCalibration
+): V3Mesh2MotionTransformCalibration => ({
+  position: normalizeVec3(
+    value,
+    fallback.position,
+    V3_MESH2MOTION_CALIBRATION_LIMITS.maxDriverJointPosition
+  ),
+  rotation: [...ZERO_VEC3],
 });
 
 export function normalizeV3Mesh2MotionCalibration(input: unknown): V3Mesh2MotionCalibration {
   const source = isObject(input) ? input : {};
   const sourceArmSpread = isObject(source.armSpread) ? source.armSpread : {};
-  const sourceJointOffsets = isObject(source.jointOffsets) ? source.jointOffsets : {};
+  const sourceDriverJoints = isObject(source.driverJoints) ? source.driverJoints : {};
+  const sourceLegacyJointOffsets = isObject(source.jointOffsets)
+    ? source.jointOffsets as LegacyV1JointOffsetMap
+    : {};
+  const sourcePartBindings = isObject(source.partBindings) ? source.partBindings : {};
   const sourceWeaponSockets = isObject(source.weaponSockets) ? source.weaponSockets : {};
-  const sourceRightGrip = isObject(sourceWeaponSockets.rightHandGrip) ? sourceWeaponSockets.rightHandGrip : {};
 
-  const jointOffsets: V3Mesh2MotionCalibration['jointOffsets'] = {};
-  for (const jointName of V3_MESH2MOTION_CALIBRATED_JOINT_NAMES) {
-    if (!(jointName in sourceJointOffsets)) continue;
-    jointOffsets[jointName] = normalizeVec3(
-      sourceJointOffsets[jointName],
-      [0, 0, 0],
-      V3_MESH2MOTION_CALIBRATION_LIMITS.maxJointOffset
-    );
+  const driverJoints = cloneTransformRecord<string>(V3_MESH2MOTION_DEFAULT_CALIBRATION.driverJoints);
+  for (const jointName of V3_MESH2MOTION_DRIVER_JOINT_NAMES) {
+    const fallback = driverJoints[jointName] ?? { position: [...ZERO_VEC3], rotation: [...ZERO_VEC3] };
+    if (jointName in sourceDriverJoints) {
+      driverJoints[jointName] = normalizeTransform(
+        sourceDriverJoints[jointName],
+        fallback,
+        V3_MESH2MOTION_CALIBRATION_LIMITS.maxDriverJointPosition
+      );
+      continue;
+    }
+    if (jointName in sourceLegacyJointOffsets) {
+      driverJoints[jointName] = normalizeLegacyJointOffset(sourceLegacyJointOffsets[jointName], fallback);
+    }
   }
 
+  for (const jointName of Object.keys(driverJoints)) {
+    if (!VALID_DRIVER_JOINT_NAMES.has(jointName)) delete driverJoints[jointName];
+  }
+
+  const partBindings: V3Mesh2MotionCalibration['partBindings'] = {};
+  for (const slot of V3_CHARACTER_SLOT_IDS) {
+    if (!(slot in sourcePartBindings)) continue;
+    partBindings[slot] = normalizeTransform(
+      sourcePartBindings[slot],
+      { position: [...ZERO_VEC3], rotation: [...ZERO_VEC3] },
+      V3_MESH2MOTION_CALIBRATION_LIMITS.maxPartBindingPosition
+    );
+  }
+  for (const slot of Object.keys(partBindings)) {
+    if (!VALID_PART_BINDING_NAMES.has(slot)) delete partBindings[slot as V3CharacterSlotId];
+  }
+
+  const sourceRightGrip = isObject(sourceWeaponSockets.rightHandGrip) ? sourceWeaponSockets.rightHandGrip : {};
+  const sourceLeftGrip = isObject(sourceWeaponSockets.leftHandGrip) ? sourceWeaponSockets.leftHandGrip : {};
+
   return {
-    version: 'v3-mesh2motion-calibration/v1',
+    version: 'v3-mesh2motion-calibration/v2',
     armSpread: {
       left: normalizePositiveComponent(
         sourceArmSpread.left,
@@ -145,20 +236,19 @@ export function normalizeV3Mesh2MotionCalibration(input: unknown): V3Mesh2Motion
         V3_MESH2MOTION_CALIBRATION_LIMITS.maxArmSpread
       ),
     },
-    jointOffsets,
+    driverJoints,
+    partBindings,
     weaponSockets: {
-      rightHandGrip: {
-        position: normalizeVec3(
-          sourceRightGrip.position,
-          V3_MESH2MOTION_DEFAULT_CALIBRATION.weaponSockets.rightHandGrip.position,
-          V3_MESH2MOTION_CALIBRATION_LIMITS.maxSocketPosition
-        ),
-        rotation: normalizeVec3(
-          sourceRightGrip.rotation,
-          V3_MESH2MOTION_DEFAULT_CALIBRATION.weaponSockets.rightHandGrip.rotation,
-          V3_MESH2MOTION_CALIBRATION_LIMITS.maxSocketRotation
-        ),
-      },
+      rightHandGrip: normalizeTransform(
+        sourceRightGrip,
+        V3_MESH2MOTION_DEFAULT_CALIBRATION.weaponSockets.rightHandGrip,
+        V3_MESH2MOTION_CALIBRATION_LIMITS.maxSocketPosition
+      ),
+      leftHandGrip: normalizeTransform(
+        sourceLeftGrip,
+        V3_MESH2MOTION_DEFAULT_CALIBRATION.weaponSockets.leftHandGrip,
+        V3_MESH2MOTION_CALIBRATION_LIMITS.maxSocketPosition
+      ),
     },
   };
 }

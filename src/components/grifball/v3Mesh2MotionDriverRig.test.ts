@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { describe, it } from 'node:test';
+import { afterEach, describe, it } from 'node:test';
 import * as THREE from 'three';
 import { buildV3SpartanModel } from '../v3/VoxelModelsV3';
 import { buildCombatantRigForModel } from './combatantRig';
@@ -10,9 +10,14 @@ import {
 } from './v3CleanRig';
 import {
   getV3Mesh2MotionDriverRig,
+  getV3Mesh2MotionDriverWeaponSocketWorldTransform,
   resetV3Mesh2MotionDriverRigPose,
 } from './v3Mesh2MotionDriverRig';
-import { V3_MESH2MOTION_DEFAULT_CALIBRATION } from './v3Mesh2MotionCalibration';
+import {
+  V3_MESH2MOTION_DEFAULT_CALIBRATION,
+  normalizeV3Mesh2MotionCalibration,
+  setV3Mesh2MotionCalibrationOverride,
+} from './v3Mesh2MotionCalibration';
 
 const roundTuple = (value: readonly number[]): number[] =>
   value.map((component) => Number(component.toFixed(5)));
@@ -31,6 +36,10 @@ const createModel = () => {
 };
 
 describe('v3Mesh2MotionDriverRig', () => {
+  afterEach(() => {
+    setV3Mesh2MotionCalibrationOverride(null);
+  });
+
   it('builds a hidden Mesh2Motion driver skeleton with visible V3 part bindings', () => {
     const model = createModel();
     const rig = getV3Mesh2MotionDriverRig(model);
@@ -134,5 +143,119 @@ describe('v3Mesh2MotionDriverRig', () => {
       animatedForearmHandDistance <= restForearmHandDistance + 0.16,
       `right forearm/hand center distance ${animatedForearmHandDistance.toFixed(4)} should stay close to rest ${restForearmHandDistance.toFixed(4)}`
     );
+  });
+
+  it('applies driver-joint position and rotation adjustments in joint-local space before binding descendants', () => {
+    const baseline = createModel();
+    const adjusted = createModel();
+    const slash = sampleV3AuthoredClip('clean_sword_slash', { normalizedTime: 0.75 });
+
+    setV3Mesh2MotionCalibrationOverride(null);
+    applyV3CleanRigPose(baseline, slash.pose);
+    baseline.updateMatrixWorld(true);
+    const baselineRig = getV3Mesh2MotionDriverRig(baseline);
+    const baselineHand = baselineRig.joints.hand_r.object.getWorldPosition(new THREE.Vector3());
+
+    setV3Mesh2MotionCalibrationOverride({
+      ...V3_MESH2MOTION_DEFAULT_CALIBRATION,
+      driverJoints: {
+        ...V3_MESH2MOTION_DEFAULT_CALIBRATION.driverJoints,
+        upperarm_r: {
+          position: [0.04, -0.02, 0.01],
+          rotation: [0.1, -0.05, 0.35],
+        },
+      },
+    });
+    applyV3CleanRigPose(adjusted, slash.pose);
+    adjusted.updateMatrixWorld(true);
+    const adjustedRig = getV3Mesh2MotionDriverRig(adjusted);
+    const adjustedHand = adjustedRig.joints.hand_r.object.getWorldPosition(new THREE.Vector3());
+    const report = adjusted.userData.v3Mesh2MotionDriverCalibrationReport as {
+      driverJointAdjustmentCount?: number;
+      calibratedJointOffsetCount?: number;
+    } | undefined;
+
+    assert.ok(adjustedHand.distanceTo(baselineHand) > 0.02);
+    assert.equal(report?.driverJointAdjustmentCount, 2);
+    assert.equal(report?.calibratedJointOffsetCount, report?.driverJointAdjustmentCount);
+  });
+
+  it('applies part-binding adjustment only to the selected visible V3 part', () => {
+    const baseline = createModel();
+    const adjusted = createModel();
+    const slash = sampleV3AuthoredClip('clean_sword_slash', { normalizedTime: 0.5 });
+
+    setV3Mesh2MotionCalibrationOverride(null);
+    applyV3CleanRigPose(baseline, slash.pose);
+    baseline.updateMatrixWorld(true);
+    const baselineGroups = baseline.userData.v3PartGroups as Record<string, THREE.Group>;
+    const baselineRig = getV3Mesh2MotionDriverRig(baseline);
+    const baselineHandPart = worldBoxCenter(baselineGroups.handRight);
+    const baselineForearmPart = worldBoxCenter(baselineGroups.forearmRight);
+    const baselineHandJoint = baselineRig.joints.hand_r.object.getWorldPosition(new THREE.Vector3());
+
+    setV3Mesh2MotionCalibrationOverride({
+      ...V3_MESH2MOTION_DEFAULT_CALIBRATION,
+      partBindings: {
+        handRight: {
+          position: [0.18, 0.02, -0.01],
+          rotation: [0.15, 0.05, -0.1],
+        },
+      },
+    });
+    applyV3CleanRigPose(adjusted, slash.pose);
+    adjusted.updateMatrixWorld(true);
+    const adjustedGroups = adjusted.userData.v3PartGroups as Record<string, THREE.Group>;
+    const adjustedRig = getV3Mesh2MotionDriverRig(adjusted);
+    const adjustedHandPart = worldBoxCenter(adjustedGroups.handRight);
+    const adjustedForearmPart = worldBoxCenter(adjustedGroups.forearmRight);
+    const adjustedHandJoint = adjustedRig.joints.hand_r.object.getWorldPosition(new THREE.Vector3());
+    const report = adjusted.userData.v3Mesh2MotionDriverCalibrationReport as {
+      partBindingAdjustmentCount?: number;
+      postBindPartAdjustments?: number;
+    } | undefined;
+
+    assert.ok(adjustedHandPart.distanceTo(baselineHandPart) > 0.05);
+    assert.ok(adjustedForearmPart.distanceTo(baselineForearmPart) < 0.000001);
+    assert.ok(adjustedHandJoint.distanceTo(baselineHandJoint) < 0.000001);
+    assert.equal(report?.partBindingAdjustmentCount, 1);
+    assert.equal(report?.postBindPartAdjustments, 1);
+  });
+
+  it('applies right and left weapon socket adjustments under their source hand joints', () => {
+    const baseline = createModel();
+    const adjusted = createModel();
+    const carry = sampleV3AuthoredClip('clean_sword_carry', { normalizedTime: 0.25 });
+
+    setV3Mesh2MotionCalibrationOverride(null);
+    applyV3CleanRigPose(baseline, carry.pose);
+    baseline.updateMatrixWorld(true);
+    const baselineRight = getV3Mesh2MotionDriverWeaponSocketWorldTransform(baseline, 'rightHandGrip');
+    const baselineLeft = getV3Mesh2MotionDriverWeaponSocketWorldTransform(baseline, 'leftHandGrip');
+
+    setV3Mesh2MotionCalibrationOverride(normalizeV3Mesh2MotionCalibration({
+      ...V3_MESH2MOTION_DEFAULT_CALIBRATION,
+      weaponSockets: {
+        rightHandGrip: {
+          position: [0.08, -0.01, 0.02],
+          rotation: [0.2, 0.1, -0.05],
+        },
+        leftHandGrip: {
+          position: [-0.03, 0.06, 0.01],
+          rotation: [-0.1, 0.15, 0.2],
+        },
+      },
+    }));
+    applyV3CleanRigPose(adjusted, carry.pose);
+    adjusted.updateMatrixWorld(true);
+    const adjustedRight = getV3Mesh2MotionDriverWeaponSocketWorldTransform(adjusted, 'rightHandGrip');
+    const adjustedLeft = getV3Mesh2MotionDriverWeaponSocketWorldTransform(adjusted, 'leftHandGrip');
+
+    assert.ok(baselineRight && adjustedRight);
+    assert.ok(baselineLeft && adjustedLeft);
+    assert.ok(adjustedRight.position.distanceTo(baselineRight.position) > 0.03);
+    assert.ok(adjustedLeft.position.distanceTo(baselineLeft.position) > 0.03);
+    assert.ok(Math.abs(adjustedRight.quaternion.dot(baselineRight.quaternion)) < 0.999);
+    assert.ok(Math.abs(adjustedLeft.quaternion.dot(baselineLeft.quaternion)) < 0.999);
   });
 });

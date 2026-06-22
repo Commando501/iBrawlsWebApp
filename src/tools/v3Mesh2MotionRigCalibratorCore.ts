@@ -1,22 +1,33 @@
 import * as THREE from 'three';
-import type { V3WeaponId } from '../components/v3/v3ModelTypes';
+import { V3_CHARACTER_SLOT_IDS, type V3CharacterSlotId, type V3WeaponId } from '../components/v3/v3ModelTypes';
 import {
   V3_MESH2MOTION_CALIBRATION_LIMITS,
+  V3_MESH2MOTION_DRIVER_JOINT_NAMES,
   V3_MESH2MOTION_DEFAULT_CALIBRATION,
   getV3Mesh2MotionCalibration,
   normalizeV3Mesh2MotionCalibration,
   setV3Mesh2MotionCalibrationOverride,
   type V3Mesh2MotionCalibration,
+  type V3Mesh2MotionCalibrationTargetDescriptor,
 } from '../components/grifball/v3Mesh2MotionCalibration';
+import { V3_MESH2MOTION_CLIP_SET } from '../components/grifball/v3Mesh2MotionClips.generated';
+import {
+  getV3Mesh2MotionDriverRig,
+  V3_MESH2MOTION_SLOT_DRIVER_JOINTS,
+  type V3Mesh2MotionDriverRig,
+  type V3Mesh2MotionDriverWeaponSocketName,
+} from '../components/grifball/v3Mesh2MotionDriverRig';
 import { analyzeV3WeaponCarryAlignment } from '../components/grifball/v3WeaponSocketBasis';
 
 export {
   V3_MESH2MOTION_CALIBRATION_LIMITS,
+  V3_MESH2MOTION_DRIVER_JOINT_NAMES,
   V3_MESH2MOTION_DEFAULT_CALIBRATION,
   getV3Mesh2MotionCalibration,
   normalizeV3Mesh2MotionCalibration,
   setV3Mesh2MotionCalibrationOverride,
   type V3Mesh2MotionCalibration,
+  type V3Mesh2MotionCalibrationTargetDescriptor,
 };
 
 export interface V3Mesh2MotionCalibrationClearanceDiagnostic {
@@ -70,6 +81,25 @@ export interface V3Mesh2MotionSocketCalibrationTransformResult {
   rotation: [number, number, number];
 }
 
+export interface V3Mesh2MotionDriverJointAdjustmentInput {
+  parentWorldMatrix: THREE.Matrix4;
+  handleWorldMatrix: THREE.Matrix4;
+  baseLocalPosition: THREE.Vector3;
+  baseLocalQuaternion: THREE.Quaternion;
+}
+
+export interface V3Mesh2MotionPartBindingAdjustmentInput {
+  baseWorldMatrix: THREE.Matrix4;
+  handleWorldMatrix: THREE.Matrix4;
+}
+
+export interface V3Mesh2MotionCalibrationTargetWorldTransform {
+  position: THREE.Vector3;
+  quaternion: THREE.Quaternion;
+  matrix: THREE.Matrix4;
+  sourceJointName: string | null;
+}
+
 const ARM_SLOTS = {
   left: ['upperArmLeft', 'forearmLeft', 'handLeft'],
   right: ['upperArmRight', 'forearmRight', 'handRight'],
@@ -105,6 +135,124 @@ const objectBox = (object: THREE.Object3D): THREE.Box3 =>
 
 const boxCenter = (object: THREE.Object3D): THREE.Vector3 =>
   objectBox(object).getCenter(new THREE.Vector3());
+
+const DRIVER_PARENT_BY_NAME = new Map(
+  V3_MESH2MOTION_CLIP_SET.skeleton.joints.map((joint) => [String(joint.name), joint.parent ? String(joint.parent) : null])
+);
+
+const readableLabel = (value: string): string =>
+  value
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (match) => match.toUpperCase());
+
+const affectedSlotsForJoint = (sourceJointName: string): V3CharacterSlotId[] =>
+  (Object.entries(V3_MESH2MOTION_SLOT_DRIVER_JOINTS) as [V3CharacterSlotId, string][])
+    .filter(([, jointName]) => jointName === sourceJointName)
+    .map(([slot]) => slot);
+
+const rotationTupleFromQuaternion = (quaternion: THREE.Quaternion): [number, number, number] => {
+  const euler = new THREE.Euler().setFromQuaternion(quaternion.normalize(), 'XYZ');
+  return [euler.x, euler.y, euler.z];
+};
+
+const decomposeAdjustmentMatrix = (matrix: THREE.Matrix4): V3Mesh2MotionSocketCalibrationTransformResult => {
+  const position = new THREE.Vector3();
+  const quaternion = new THREE.Quaternion();
+  const scale = new THREE.Vector3();
+  matrix.decompose(position, quaternion, scale);
+  quaternion.normalize();
+  return {
+    position,
+    quaternion,
+    rotation: rotationTupleFromQuaternion(quaternion),
+  };
+};
+
+export function listV3Mesh2MotionCalibrationTargets(): V3Mesh2MotionCalibrationTargetDescriptor[] {
+  const driverTargets = V3_MESH2MOTION_DRIVER_JOINT_NAMES.map((jointName) => {
+    const affectedSlots = affectedSlotsForJoint(jointName);
+    return {
+      kind: 'driverJoint' as const,
+      id: jointName,
+      label: readableLabel(jointName),
+      sourceJointName: jointName,
+      parentJointName: DRIVER_PARENT_BY_NAME.get(jointName) ?? null,
+      affectedSlots,
+      hasVisibleBinding: affectedSlots.length > 0,
+    };
+  });
+
+  const partTargets = V3_CHARACTER_SLOT_IDS.map((slot) => {
+    const sourceJointName = V3_MESH2MOTION_SLOT_DRIVER_JOINTS[slot] ?? null;
+    return {
+      kind: 'partBinding' as const,
+      id: slot,
+      label: readableLabel(slot),
+      sourceJointName,
+      parentJointName: sourceJointName ? DRIVER_PARENT_BY_NAME.get(sourceJointName) ?? null : null,
+      affectedSlots: [slot],
+      hasVisibleBinding: true,
+    };
+  });
+
+  const socketTargets = (['rightHandGrip', 'leftHandGrip'] as const satisfies readonly V3Mesh2MotionDriverWeaponSocketName[])
+    .map((socketName) => {
+      const sourceJointName = socketName === 'rightHandGrip' ? 'hand_r' : 'hand_l';
+      const affectedSlots: V3CharacterSlotId[] = [socketName === 'rightHandGrip' ? 'handRight' : 'handLeft'];
+      return {
+        kind: 'weaponSocket' as const,
+        id: socketName,
+        label: readableLabel(socketName),
+        sourceJointName,
+        parentJointName: DRIVER_PARENT_BY_NAME.get(sourceJointName) ?? null,
+        affectedSlots,
+        hasVisibleBinding: true,
+      };
+    });
+
+  return [...partTargets, ...driverTargets, ...socketTargets];
+}
+
+export function getV3Mesh2MotionCalibrationTargetWorldTransform(
+  model: THREE.Group,
+  kind: V3Mesh2MotionCalibrationTargetDescriptor['kind'],
+  targetId: string,
+  rig: V3Mesh2MotionDriverRig = getV3Mesh2MotionDriverRig(model)
+): V3Mesh2MotionCalibrationTargetWorldTransform | null {
+  model.updateWorldMatrix(true, true);
+  if (kind === 'driverJoint') {
+    const joint = rig.joints[targetId];
+    if (!joint) return null;
+    joint.object.updateWorldMatrix(true, false);
+    return {
+      position: joint.object.getWorldPosition(new THREE.Vector3()),
+      quaternion: joint.object.getWorldQuaternion(new THREE.Quaternion()).normalize(),
+      matrix: joint.object.matrixWorld.clone(),
+      sourceJointName: joint.name,
+    };
+  }
+  if (kind === 'partBinding') {
+    const binding = rig.partBindings[targetId as V3CharacterSlotId];
+    if (!binding) return null;
+    binding.partGroup.updateWorldMatrix(true, false);
+    return {
+      position: binding.partGroup.getWorldPosition(new THREE.Vector3()),
+      quaternion: binding.partGroup.getWorldQuaternion(new THREE.Quaternion()).normalize(),
+      matrix: binding.partGroup.matrixWorld.clone(),
+      sourceJointName: binding.sourceJointName,
+    };
+  }
+  const socket = rig.weaponSockets[targetId as V3Mesh2MotionDriverWeaponSocketName];
+  if (!socket) return null;
+  socket.object.updateWorldMatrix(true, false);
+  return {
+    position: socket.object.getWorldPosition(new THREE.Vector3()),
+    quaternion: socket.object.getWorldQuaternion(new THREE.Quaternion()).normalize(),
+    matrix: socket.object.matrixWorld.clone(),
+    sourceJointName: socket.sourceJointName,
+  };
+}
 
 const diagnosticStatus = (
   value: number,
@@ -171,11 +319,12 @@ export function parseV3Mesh2MotionCalibrationJson(json: string): V3Mesh2MotionCa
   return normalizeV3Mesh2MotionCalibration(JSON.parse(json) as unknown);
 }
 
-export function computeV3Mesh2MotionSocketCalibrationFromWorldTransform({
+export function computeDriverJointAdjustmentFromWorldTransform({
   parentWorldMatrix,
   handleWorldMatrix,
-  restLocalPosition,
-}: V3Mesh2MotionSocketCalibrationTransformInput): V3Mesh2MotionSocketCalibrationTransformResult {
+  baseLocalPosition,
+  baseLocalQuaternion,
+}: V3Mesh2MotionDriverJointAdjustmentInput): V3Mesh2MotionSocketCalibrationTransformResult {
   const localMatrix = parentWorldMatrix.clone().invert().multiply(handleWorldMatrix);
   const localPosition = new THREE.Vector3();
   const localQuaternion = new THREE.Quaternion();
@@ -183,14 +332,42 @@ export function computeV3Mesh2MotionSocketCalibrationFromWorldTransform({
   localMatrix.decompose(localPosition, localQuaternion, localScale);
   localQuaternion.normalize();
 
-  const position = localPosition.sub(restLocalPosition);
-  const rotationEuler = new THREE.Euler().setFromQuaternion(localQuaternion, 'XYZ');
-
+  const quaternion = baseLocalQuaternion.clone().invert().multiply(localQuaternion).normalize();
   return {
-    position,
-    quaternion: localQuaternion,
-    rotation: [rotationEuler.x, rotationEuler.y, rotationEuler.z],
+    position: localPosition.sub(baseLocalPosition),
+    quaternion,
+    rotation: rotationTupleFromQuaternion(quaternion),
   };
+}
+
+export function computePartBindingAdjustmentFromWorldTransform({
+  baseWorldMatrix,
+  handleWorldMatrix,
+}: V3Mesh2MotionPartBindingAdjustmentInput): V3Mesh2MotionSocketCalibrationTransformResult {
+  return decomposeAdjustmentMatrix(baseWorldMatrix.clone().invert().multiply(handleWorldMatrix));
+}
+
+export function computeWeaponSocketAdjustmentFromWorldTransform({
+  parentWorldMatrix,
+  handleWorldMatrix,
+  restLocalPosition,
+}: V3Mesh2MotionSocketCalibrationTransformInput): V3Mesh2MotionSocketCalibrationTransformResult {
+  const localMatrix = parentWorldMatrix.clone().invert().multiply(handleWorldMatrix);
+  const result = decomposeAdjustmentMatrix(localMatrix);
+  result.position.sub(restLocalPosition);
+  return result;
+}
+
+export function computeV3Mesh2MotionSocketCalibrationFromWorldTransform({
+  parentWorldMatrix,
+  handleWorldMatrix,
+  restLocalPosition,
+}: V3Mesh2MotionSocketCalibrationTransformInput): V3Mesh2MotionSocketCalibrationTransformResult {
+  return computeWeaponSocketAdjustmentFromWorldTransform({
+    parentWorldMatrix,
+    handleWorldMatrix,
+    restLocalPosition,
+  });
 }
 
 export function buildV3Mesh2MotionCalibrationDiagnostics(
