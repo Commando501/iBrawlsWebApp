@@ -41,6 +41,7 @@ WATCH_TRAJECTORY = os.path.join(PROJECT_DIR, "runs", "_watch", "latest.json")
 # Guards one-time recording of a finished eval into history (keyed by its start time).
 _eval_record_lock = threading.Lock()
 _recorded_eval_key: float | None = None
+_last_eval_record: dict | None = None
 
 _CONTENT_TYPES = {
     ".html": "text/html; charset=utf-8",
@@ -105,42 +106,66 @@ def _parse_eval_sim_status(lines: list[str]) -> dict[str, int] | None:
     return None
 
 
+def _build_eval_history_record(st: dict) -> dict:
+    meta = st.get("meta", {})
+    result = st.get("result") or {}
+    key = st.get("started_at")
+    ts = (key or time.time()) + (st.get("elapsed") or 0)
+    return {
+        "ts": ts,
+        "model": result.get("model") or meta.get("model"),
+        "mode": result.get("mode") or meta.get("mode"),
+        "opponent": result.get("opponent") or meta.get("opponent"),
+        "matches": meta.get("matches"),
+        "num_envs": meta.get("num_envs"),
+        "device": meta.get("device"),
+        "win_rate": result.get("win_rate"),
+        "loss_rate": result.get("loss_rate"),
+        "draw_rate": result.get("draw_rate"),
+        "episodes": result.get("episodes"),
+        "ep_return": result.get("ep_return"),
+        "behavior": result.get("behavior"),
+        "decision_interval": result.get("decision_interval"),
+        "frame_stack": result.get("frame_stack") or meta.get("frame_stack"),
+        "observation_version": result.get("observation_version") or meta.get("observation_version"),
+        "summary": result.get("summary"),
+        "scenarios": result.get("scenarios"),
+        "mechanics_summary": result.get("mechanics_summary"),
+        "mechanics_suite": result.get("mechanics_suite"),
+        "league_snapshots": result.get("league_snapshots") or meta.get("league_snapshots"),
+        "result": result,
+    }
+
+
+def _history_has_record(record_id: str) -> bool:
+    return any(row.get("id") == record_id for row in evalhistory.load())
+
+
+def _manual_save_last_eval() -> dict:
+    with _eval_record_lock:
+        if not _last_eval_record:
+            return {"ok": False, "error": "no completed evaluation available"}
+        rec = evalhistory.normalize(_last_eval_record)
+        already_saved = _history_has_record(rec["id"])
+        saved = evalhistory.append(rec)
+        return {"ok": True, "saved": not already_saved, "record": saved}
+
+
 def _record_eval_if_new(st: dict) -> None:
-    """Append a finished grade to history exactly once (idempotent across polls)."""
-    global _recorded_eval_key
+    """Capture a finished grade and append it once when auto-save is enabled."""
+    global _recorded_eval_key, _last_eval_record
     key = st.get("started_at")
     result = st.get("result")
     if key is None or not result:
         return
     with _eval_record_lock:
+        meta = st.get("meta", {})
+        _last_eval_record = _build_eval_history_record(st)
         if _recorded_eval_key == key:
             return
         _recorded_eval_key = key
-        meta = st.get("meta", {})
-        ts = key + (st.get("elapsed") or 0)
-        evalhistory.append({
-            "ts": ts,
-            "model": result.get("model") or meta.get("model"),
-            "mode": result.get("mode") or meta.get("mode"),
-            "opponent": result.get("opponent") or meta.get("opponent"),
-            "matches": meta.get("matches"),
-            "num_envs": meta.get("num_envs"),
-            "device": meta.get("device"),
-            "win_rate": result.get("win_rate"),
-            "loss_rate": result.get("loss_rate"),
-            "draw_rate": result.get("draw_rate"),
-            "episodes": result.get("episodes"),
-            "ep_return": result.get("ep_return"),
-            "behavior": result.get("behavior"),
-            "decision_interval": result.get("decision_interval"),
-            "frame_stack": result.get("frame_stack") or meta.get("frame_stack"),
-            "observation_version": result.get("observation_version") or meta.get("observation_version"),
-            "summary": result.get("summary"),
-            "scenarios": result.get("scenarios"),
-            "mechanics_summary": result.get("mechanics_summary"),
-            "mechanics_suite": result.get("mechanics_suite"),
-            "league_snapshots": result.get("league_snapshots") or meta.get("league_snapshots"),
-        })
+        if meta.get("auto_save", True):
+            evalhistory.append(_last_eval_record)
 
 
 def _parse_eval_result(proc: ManagedProcess) -> dict | None:
@@ -273,6 +298,11 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(self._eval_start(body))
             elif path == "/api/eval/stop":
                 self._send_json(EVALER.stop())
+            elif path == "/api/eval/history/save-current":
+                self._send_json(_manual_save_last_eval())
+            elif path == "/api/eval/history/delete":
+                record_id = str(body.get("id") or "")
+                self._send_json({"ok": True, "deleted": evalhistory.delete(record_id)})
             elif path == "/api/eval/history/clear":
                 evalhistory.clear()
                 self._send_json({"ok": True})
@@ -433,6 +463,7 @@ class Handler(BaseHTTPRequestHandler):
             "frame_stack": int(body.get("frame_stack", 0) or 0),
             "observation_version": int(body.get("observation_version", 0) or 0),
             "league_snapshots": body.get("league_snapshots") or [],
+            "auto_save": bool(body.get("auto_save", True)),
         }
         return EVALER.start(args, meta=meta)
 

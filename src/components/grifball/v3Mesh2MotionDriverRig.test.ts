@@ -31,6 +31,41 @@ const worldPosition = (object: THREE.Object3D): number[] =>
 const worldBoxCenter = (object: THREE.Object3D): THREE.Vector3 =>
   new THREE.Box3().setFromObject(object).getCenter(new THREE.Vector3());
 
+const worldMatrix = (object: THREE.Object3D): THREE.Matrix4 => {
+  object.updateWorldMatrix(true, false);
+  return object.matrixWorld.clone();
+};
+
+const assertWorldMatrixClose = (
+  actual: THREE.Matrix4,
+  expected: THREE.Matrix4,
+  label: string,
+  tolerance = 0.000001
+): void => {
+  const actualPosition = new THREE.Vector3();
+  const actualQuaternion = new THREE.Quaternion();
+  const actualScale = new THREE.Vector3();
+  actual.decompose(actualPosition, actualQuaternion, actualScale);
+
+  const expectedPosition = new THREE.Vector3();
+  const expectedQuaternion = new THREE.Quaternion();
+  const expectedScale = new THREE.Vector3();
+  expected.decompose(expectedPosition, expectedQuaternion, expectedScale);
+
+  assert.ok(
+    actualPosition.distanceTo(expectedPosition) <= tolerance,
+    `${label} pivot position drift ${actualPosition.distanceTo(expectedPosition).toFixed(8)}`
+  );
+  assert.ok(
+    1 - Math.abs(actualQuaternion.dot(expectedQuaternion)) <= tolerance,
+    `${label} pivot rotation drift ${(1 - Math.abs(actualQuaternion.dot(expectedQuaternion))).toFixed(8)}`
+  );
+  assert.ok(
+    actualScale.distanceTo(expectedScale) <= tolerance,
+    `${label} pivot scale drift ${actualScale.distanceTo(expectedScale).toFixed(8)}`
+  );
+};
+
 const generatedDriverPose = (sourceClipName: string): V3Mesh2MotionDriverPose => {
   const clip = V3_MESH2MOTION_CLIP_SET.clips.find((candidate) => candidate.sourceClipName === sourceClipName);
   assert.ok(clip, `expected generated Mesh2Motion clip ${sourceClipName}`);
@@ -124,7 +159,7 @@ describe('v3Mesh2MotionDriverRig', () => {
     assert.deepEqual(roundTuple(partGroups.chest.position.toArray()), chestRestLocal);
   });
 
-  it('binds Mesh2Motion TPose visible limb parts to source skeleton segment centers', () => {
+  it('binds Mesh2Motion TPose visible limb part pivots to driver joint matrices', () => {
     const model = createModel();
     const partGroups = model.userData.v3PartGroups as Record<string, THREE.Group>;
     const pose = generatedDriverPose('TPose');
@@ -133,32 +168,99 @@ describe('v3Mesh2MotionDriverRig', () => {
 
     assert.equal(applied.ready, true, applied.warnings.join(', '));
 
-    const assertSegmentCenter = (
-      slot: string,
-      fromJointName: string,
-      toJointName: string
-    ) => {
-      const from = rig.joints[fromJointName]?.object.getWorldPosition(new THREE.Vector3());
-      const to = rig.joints[toJointName]?.object.getWorldPosition(new THREE.Vector3());
-      assert.ok(from, `missing Mesh2Motion joint ${fromJointName}`);
-      assert.ok(to, `missing Mesh2Motion joint ${toJointName}`);
-      const expected = from.clone().add(to).multiplyScalar(0.5);
-      const actual = worldBoxCenter(partGroups[slot]);
-      const distance = actual.distanceTo(expected);
-      assert.ok(
-        distance <= 0.035,
-        `${slot} center drift ${distance.toFixed(4)} from ${fromJointName}->${toJointName} TPose segment`
+    const assertSlotPivot = (slot: keyof typeof rig.partBindings) => {
+      const binding = rig.partBindings[slot];
+      assert.ok(binding, `missing Mesh2Motion part binding ${slot}`);
+      const joint = rig.joints[binding.sourceJointName];
+      assert.ok(joint, `missing Mesh2Motion joint ${binding.sourceJointName}`);
+      const expectedWorldMatrix = joint.object.matrixWorld.clone().multiply(binding.bindMatrix);
+      assertWorldMatrixClose(
+        worldMatrix(partGroups[slot]),
+        expectedWorldMatrix,
+        `${slot} pivot`
       );
     };
 
-    assertSegmentCenter('upperArmLeft', 'upperarm_l', 'lowerarm_l');
-    assertSegmentCenter('forearmLeft', 'lowerarm_l', 'hand_l');
-    assertSegmentCenter('upperArmRight', 'upperarm_r', 'lowerarm_r');
-    assertSegmentCenter('forearmRight', 'lowerarm_r', 'hand_r');
-    assertSegmentCenter('thighLeft', 'thigh_l', 'calf_l');
-    assertSegmentCenter('shinLeft', 'calf_l', 'foot_l');
-    assertSegmentCenter('thighRight', 'thigh_r', 'calf_r');
-    assertSegmentCenter('shinRight', 'calf_r', 'foot_r');
+    assertSlotPivot('upperArmLeft');
+    assertSlotPivot('forearmLeft');
+    assertSlotPivot('upperArmRight');
+    assertSlotPivot('forearmRight');
+    assertSlotPivot('thighLeft');
+    assertSlotPivot('shinLeft');
+    assertSlotPivot('thighRight');
+    assertSlotPivot('shinRight');
+  });
+
+  it('does not infer forearm placement from hand detail bones or lowerarm-to-hand segment centers', () => {
+    const model = createModel();
+    const partGroups = model.userData.v3PartGroups as Record<string, THREE.Group>;
+    const detailBones = model.userData.v3DetailBones as Record<string, THREE.Group>;
+    const pose = generatedDriverPose('TPose');
+    const baseline = applyV3Mesh2MotionDriverRigPose(model, pose);
+    const rig = getV3Mesh2MotionDriverRig(model);
+
+    assert.equal(baseline.ready, true, baseline.warnings.join(', '));
+
+    const baselineForearmWorldMatrix = worldMatrix(partGroups.forearmRight);
+    const baselineHandWorldMatrix = worldMatrix(partGroups.handRight);
+    const detailHandRestLocal = roundTuple(detailBones.handRight.position.toArray());
+    const lowerarmWorld = rig.joints.lowerarm_r.object.getWorldPosition(new THREE.Vector3());
+    const handWorld = rig.joints.hand_r.object.getWorldPosition(new THREE.Vector3());
+    const baselineSegmentCenter = lowerarmWorld.clone().add(handWorld).multiplyScalar(0.5);
+
+    const movedHandQuaternion = new THREE.Quaternion()
+      .setFromEuler(new THREE.Euler(0.2, -0.35, 0.5, 'XYZ'))
+      .normalize()
+      .toArray() as [number, number, number, number];
+    const movedPose: V3Mesh2MotionDriverPose = {
+      ...pose,
+      joints: {
+        ...pose.joints,
+        hand_r: {
+          position: [
+            pose.joints.hand_r.position[0] + 0.42,
+            pose.joints.hand_r.position[1] - 0.11,
+            pose.joints.hand_r.position[2] + 0.27,
+          ],
+          quaternion: movedHandQuaternion,
+        },
+      },
+    };
+
+    const moved = applyV3Mesh2MotionDriverRigPose(model, movedPose);
+    assert.equal(moved.ready, true, moved.warnings.join(', '));
+    model.updateMatrixWorld(true);
+
+    const movedSegmentCenter = lowerarmWorld
+      .copy(rig.joints.lowerarm_r.object.getWorldPosition(new THREE.Vector3()))
+      .add(rig.joints.hand_r.object.getWorldPosition(new THREE.Vector3()))
+      .multiplyScalar(0.5);
+    assert.ok(
+      movedSegmentCenter.distanceTo(baselineSegmentCenter) > 0.2,
+      'test setup should move the lowerarm-to-hand inferred segment center'
+    );
+
+    assertWorldMatrixClose(
+      worldMatrix(partGroups.forearmRight),
+      baselineForearmWorldMatrix,
+      'forearmRight pivot after isolated hand_r movement'
+    );
+    assert.ok(
+      worldMatrix(partGroups.handRight).elements.some((component, index) =>
+        Math.abs(component - baselineHandWorldMatrix.elements[index]) > 0.000001
+      ),
+      'handRight pivot should move with the Mesh2Motion hand_r joint'
+    );
+
+    const handBinding = rig.partBindings.handRight;
+    assert.ok(handBinding);
+    const expectedHandWorldMatrix = rig.joints.hand_r.object.matrixWorld.clone().multiply(handBinding.bindMatrix);
+    assertWorldMatrixClose(
+      worldMatrix(partGroups.handRight),
+      expectedHandWorldMatrix,
+      'handRight pivot after isolated hand_r movement'
+    );
+    assert.deepEqual(roundTuple(detailBones.handRight.position.toArray()), detailHandRestLocal);
   });
 
   it('keeps Mesh2Motion sprint arms laterally clear of the torso armor', () => {

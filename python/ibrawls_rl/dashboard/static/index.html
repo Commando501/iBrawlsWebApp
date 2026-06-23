@@ -179,6 +179,12 @@
           <div class="eval-actions">
             <button class="btn primary" id="btnEval">▶ Run evaluation</button>
             <button class="btn danger" id="btnEvalStop" disabled>■ Stop</button>
+            <label class="eval-save-toggle">
+              <span>Auto-save completed evaluations</span>
+              <span class="toggle"><input type="checkbox" id="evalAutoSave" checked /><span class="slider"></span></span>
+            </label>
+            <button class="btn ghost" id="btnEvalSaveLast" disabled>Save this result</button>
+            <span id="evalSaveState" class="muted"></span>
             <span id="evalState" class="muted"></span>
           </div>
           <div class="progress eval-progress" id="evalProgress" style="display:none">
@@ -200,6 +206,7 @@
           </span>
         </h2>
         <div id="evalHistory">Loading…</div>
+        <div id="evalHistoryDetail" class="hist-detail muted">Select a saved evaluation to inspect its full record.</div>
       </div>
       </div>
     </section>

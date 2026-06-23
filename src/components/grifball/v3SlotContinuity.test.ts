@@ -125,6 +125,14 @@ describe('V3 slot continuity analyzer', () => {
     }
   });
 
+  it('can measure armor slot continuity without weapon attachment links', () => {
+    const report = analyzeV3SlotContinuity(buildContinuityFixture(), { includeAttachments: false });
+
+    assert.equal(report.ready, true);
+    assert.equal(report.links.some((link) => link.attachment), false);
+    assert.equal(report.summary.linkCount, V3_SLOT_CONTINUITY_LINKS.filter((link) => !('attachment' in link)).length);
+  });
+
   it('flags detached slot links with stable codes and overlay connectors for failed links only', () => {
     const report = analyzeV3SlotContinuity(buildContinuityFixture('forearmRight'));
     const failedIds = report.links.filter((link) => !link.ready).map((link) => link.id);

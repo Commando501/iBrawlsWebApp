@@ -1,12 +1,16 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import {
   V3_MESH2MOTION_CLEAN_CLIP_BINDINGS,
   V3_MESH2MOTION_SOURCE_CLIP_NAMES,
+  buildV3Mesh2MotionArmorRigArtifact,
+  buildV3Mesh2MotionArmorRigGeneratedSource,
   buildV3Mesh2MotionClipSetArtifact,
   buildV3Mesh2MotionGeneratedSource,
+  parseV3Mesh2MotionImporterCliArgs,
 } from './v3Mesh2MotionImporter';
+import { V3_MESH2MOTION_ARMOR_RIG_SCHEMA } from '../components/v3/v3Mesh2MotionArmorRigContract';
 
 const sourceFilePath = join(process.cwd(), 'reference', 'mesh2motion-v3', 'exported-model.glb');
 
@@ -56,6 +60,29 @@ describe('v3Mesh2MotionImporter', () => {
     assert.equal(artifact.calibration.joints.gripRight?.sourceNodeName, 'hand_r');
     assert.equal(artifact.diagnostics.unmappedSourceJoints.includes('index_01_l'), true);
     assert.equal(artifact.diagnostics.unmappedV3Joints.length, 0);
+  });
+
+  it('builds explicit Mesh2Motion-native armor slot placement data', () => {
+    const artifact = buildV3Mesh2MotionArmorRigArtifact({ filePath: sourceFilePath, fps: 30 });
+    const source = buildV3Mesh2MotionArmorRigGeneratedSource(artifact);
+    const handRight = artifact.slots.handRight;
+    const footLeft = artifact.slots.footLeft;
+
+    assert.equal(artifact.schemaVersion, V3_MESH2MOTION_ARMOR_RIG_SCHEMA);
+    assert.equal(artifact.skeleton.sourceJointCount, 56);
+    assert.equal(Object.keys(artifact.slots).length, 19);
+    assert.equal(handRight.sourceJointName, 'hand_r');
+    assert.equal(handRight.endJointName, 'index_01_r');
+    assert.deepEqual(handRight.pivotCenter, handRight.pivotWorldPosition);
+    assert.equal(handRight.basis.xAxis.length, 3);
+    assert.equal(handRight.basis.yAxis.length, 3);
+    assert.equal(handRight.basis.zAxis.length, 3);
+    assert.equal(handRight.basis.quaternion.length, 4);
+    assert.equal(footLeft.endJointName, 'ball_l');
+    assert.equal(footLeft.basis.zAxis[2] > 0.65, true);
+    assert.equal(source.includes(process.cwd()), false);
+    assert.equal(source.includes('bufferView'), false);
+    assert.equal(source.includes('nodes'), false);
   });
 
   it('calibrates TPose to near-rest V3 clean rig output', () => {
@@ -125,5 +152,21 @@ describe('v3Mesh2MotionImporter', () => {
     assert.equal(source.includes('skins'), false);
     assert.equal(source.includes('meshes'), false);
     assert.equal(source.includes('nodes'), false);
+  });
+
+  it('parses direct importer CLI args for both clip and armor-rig outputs', () => {
+    const args = parseV3Mesh2MotionImporterCliArgs([
+      '--input',
+      sourceFilePath,
+      '--out',
+      'tmp/v3Mesh2MotionClips.generated.ts',
+      '--rig-out',
+      'tmp/v3Mesh2MotionArmorRig.generated.ts',
+    ]);
+
+    assert.equal(args.filePath, sourceFilePath);
+    assert.equal(args.outputPath, resolve('tmp/v3Mesh2MotionClips.generated.ts'));
+    assert.equal(args.rigOutputPath, resolve('tmp/v3Mesh2MotionArmorRig.generated.ts'));
+    assert.equal(args.fps, 30);
   });
 });

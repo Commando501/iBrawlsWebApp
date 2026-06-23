@@ -100,5 +100,9 @@ describe('service worker routing', () => {
       serviceWorker.fetch(createNavigationRequest('/v3-mesh2motion-rig-calibrator.html')),
       /network unavailable/
     );
+    await assert.rejects(
+      serviceWorker.fetch(createNavigationRequest('/v3-mesh2motion-tpose-bind-editor.html')),
+      /network unavailable/
+    );
   });
 });

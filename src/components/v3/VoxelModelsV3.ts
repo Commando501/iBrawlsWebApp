@@ -53,6 +53,7 @@ import {
   deriveV3CanonicalRigContract,
   type V3CanonicalRigContract,
 } from './v3CanonicalRigContract';
+import { buildV3Mesh2MotionArmorRig } from './v3Mesh2MotionArmorRig';
 import { applyV3WeaponScaleProfile } from './v3WeaponScaleProfile';
 import {
   V3_DETAIL_BONE_NAMES,
@@ -329,6 +330,50 @@ const getV3PartLocalPosition = (
   return subtractVec3Tuple(sourcePosition, bonePosition);
 };
 
+const getLocalBoundsCenter = (object: THREE.Object3D): THREE.Vector3 => {
+  object.updateWorldMatrix(true, true);
+  const bounds = new THREE.Box3().setFromObject(object);
+  if (bounds.isEmpty()) return new THREE.Vector3();
+  return object.worldToLocal(bounds.getCenter(new THREE.Vector3()));
+};
+
+const recenterV3SlotGeometry = (geometryGroup: THREE.Group): THREE.Vector3 => {
+  const center = getLocalBoundsCenter(geometryGroup);
+  if (center.lengthSq() <= 0.000000001) return center;
+  for (const child of geometryGroup.children) {
+    child.position.sub(center);
+  }
+  geometryGroup.userData.v3Mesh2MotionRawGeometryCenter = center.toArray();
+  geometryGroup.updateMatrixWorld(true);
+  return center;
+};
+
+const applyV3SlotGeometryPlacement = (
+  geometryGroup: THREE.Group,
+  placement: {
+    position: readonly number[];
+    rotation: readonly number[];
+    scale: readonly number[];
+  }
+): void => {
+  geometryGroup.position.set(
+    Number.isFinite(placement.position[0]) ? placement.position[0] : 0,
+    Number.isFinite(placement.position[1]) ? placement.position[1] : 0,
+    Number.isFinite(placement.position[2]) ? placement.position[2] : 0
+  );
+  geometryGroup.rotation.set(
+    Number.isFinite(placement.rotation[0]) ? placement.rotation[0] : 0,
+    Number.isFinite(placement.rotation[1]) ? placement.rotation[1] : 0,
+    Number.isFinite(placement.rotation[2]) ? placement.rotation[2] : 0,
+    'XYZ'
+  );
+  geometryGroup.scale.set(
+    Number.isFinite(placement.scale[0]) ? placement.scale[0] : 1,
+    Number.isFinite(placement.scale[1]) ? placement.scale[1] : 1,
+    Number.isFinite(placement.scale[2]) ? placement.scale[2] : 1
+  );
+};
+
 const V3_CACHE_PAINT_ROLES = [
   'primary',
   'secondary',
@@ -381,7 +426,12 @@ export function buildV3SpartanModel(options: V3SpartanBuildOptions = {}): THREE.
   const canonicalRigContract = deriveV3CanonicalRigContract();
   const canonicalDetailBonePositions = createCanonicalDetailBonePositions(canonicalRigContract);
   const detailBones = createV3DetailBones(segmentGroups, canonicalDetailBonePositions);
+  const mesh2MotionArmorRig = buildV3Mesh2MotionArmorRig();
   const partGroups: Partial<Record<V3CharacterSlotId, THREE.Group>> = {};
+  const partGeometryGroups: Partial<Record<V3CharacterSlotId, THREE.Group>> = {};
+
+  root.add(mesh2MotionArmorRig.skeletonRoot);
+  root.add(mesh2MotionArmorRig.armorSlotRoot);
 
   for (const [segmentName, segment] of Object.entries(segmentGroups)) {
     segment.name = `v3:${segmentName}`;
@@ -410,7 +460,7 @@ export function buildV3SpartanModel(options: V3SpartanBuildOptions = {}): THREE.
       sourceFidelity: v3SourceFidelity,
       renderStyle: v3ArmorRenderStyle,
     });
-    const group = createV3VoxelArmorGroup(voxels, {
+    const geometryGroup = createV3VoxelArmorGroup(voxels, {
       ...V3_ARMOR_SURFACE_DEFAULT_OPTIONS,
       voxelScale,
       renderStyle: v3ArmorRenderStyle,
@@ -423,6 +473,16 @@ export function buildV3SpartanModel(options: V3SpartanBuildOptions = {}): THREE.
         colors,
         paintJob
       ),
+    });
+    const slotPivot = mesh2MotionArmorRig.slotPivots[part.slot];
+    const slotPlacement = slotPivot.userData.v3Mesh2MotionSlotPlacement as
+      | { geometry?: { position: readonly number[]; rotation: readonly number[]; scale: readonly number[] } }
+      | undefined;
+    recenterV3SlotGeometry(geometryGroup);
+    applyV3SlotGeometryPlacement(geometryGroup, slotPlacement?.geometry ?? {
+      position: [0, 0, 0],
+      rotation: [0, 0, 0],
+      scale: [1, 1, 1],
     });
     const selectedLod = selectV3LodLevel({
       lods: part.lods,
@@ -445,31 +505,46 @@ export function buildV3SpartanModel(options: V3SpartanBuildOptions = {}): THREE.
           memoryEstimateKb: builtInBudget.memoryEstimateKb,
         },
       };
-    group.name = `v3:${part.slot}`;
-    group.position.set(...getV3PartLocalPosition(
-      part.slot,
-      spec,
-      canonicalDetailBonePositions,
-      !customPiece
-    ));
-    group.userData.v3PartId = part.id;
-    group.userData.v3Slot = part.slot;
-    group.userData.v3BoundsId = part.boundsId;
-    group.userData.v3QualityTier = v3QualityTier;
-    group.userData.v3Distance = v3Distance;
-    group.userData.v3SelectedLod = selectedLodWithMeasuredBudget;
-    group.userData.v3GridScale = gridScale;
-    group.userData.v3ObjSurfaceSource = !customPiece;
-    group.userData.v3ExactSourceLodQualityTier = customPiece ? undefined : v3QualityTier;
-    group.userData.v3SourceFidelity = customPiece ? undefined : v3SourceFidelity;
-    group.userData.v3VoxelScale = voxelScale;
+    geometryGroup.name = `v3:${part.slot}:geometry`;
+    const partMetadata = {
+      v3PartId: part.id,
+      v3Slot: part.slot,
+      v3BoundsId: part.boundsId,
+      v3QualityTier,
+      v3Distance,
+      v3SelectedLod: selectedLodWithMeasuredBudget,
+      v3GridScale: gridScale,
+      v3ObjSurfaceSource: !customPiece,
+      v3ExactSourceLodQualityTier: customPiece ? undefined : v3QualityTier,
+      v3SourceFidelity: customPiece ? undefined : v3SourceFidelity,
+      v3VoxelScale: voxelScale,
+    };
+    Object.assign(slotPivot.userData, geometryGroup.userData, partMetadata, {
+      v3Mesh2MotionSlotPivot: true,
+      v3Mesh2MotionSlotGeometry: geometryGroup,
+      v3Mesh2MotionPlacementAuthority: 'mesh2motion-tpose',
+      v3RenderBudgetProxyOnly: true,
+      v3LegacyDetailBone: V3_SLOT_DETAIL_BONES[part.slot],
+    });
+    Object.assign(geometryGroup.userData, partMetadata, {
+      v3Mesh2MotionSlotGeometry: true,
+      v3Mesh2MotionSlotPivot: slotPivot,
+      v3Mesh2MotionPlacementAuthority: 'mesh2motion-tpose',
+      v3LegacyDetailBone: V3_SLOT_DETAIL_BONES[part.slot],
+    });
     if (customPiece) {
-      group.userData.customArmorId = customPiece.id;
-      group.userData.customArmorName = customPiece.name;
-      group.userData.customArmorGridScale = gridScale;
+      slotPivot.userData.customArmorId = customPiece.id;
+      slotPivot.userData.customArmorName = customPiece.name;
+      slotPivot.userData.customArmorGridScale = gridScale;
+      geometryGroup.userData.customArmorId = customPiece.id;
+      geometryGroup.userData.customArmorName = customPiece.name;
+      geometryGroup.userData.customArmorGridScale = gridScale;
     }
-    detailBones[V3_SLOT_DETAIL_BONES[part.slot]].add(group);
-    partGroups[part.slot] = group;
+    slotPivot.add(geometryGroup);
+    detailBones[V3_SLOT_DETAIL_BONES[part.slot]].userData.v3Mesh2MotionSlotPivot = slotPivot;
+    detailBones[V3_SLOT_DETAIL_BONES[part.slot]].userData.v3Mesh2MotionSlotGeometry = geometryGroup;
+    partGroups[part.slot] = slotPivot;
+    partGeometryGroups[part.slot] = geometryGroup;
   }
 
   root.userData.v3CharacterLoadout = loadout;
@@ -477,8 +552,20 @@ export function buildV3SpartanModel(options: V3SpartanBuildOptions = {}): THREE.
   root.userData.v3Distance = v3Distance;
   root.userData.v3ArmorRenderStyle = v3ArmorRenderStyle;
   root.userData.v3SourceFidelity = v3SourceFidelity;
+  root.userData.v3Mesh2MotionPlacementMode = 'mesh2motion-native';
   root.userData.v3PartGroups = partGroups;
+  root.userData.v3PartGeometryGroups = partGeometryGroups;
   root.userData.v3DetailBones = detailBones;
+  root.userData.v3Mesh2MotionArmorRig = {
+    skeletonRoot: mesh2MotionArmorRig.skeletonRoot,
+    armorSlotRoot: mesh2MotionArmorRig.armorSlotRoot,
+    joints: mesh2MotionArmorRig.joints,
+    slotPivots: mesh2MotionArmorRig.slotPivots,
+  };
+  root.userData.v3Mesh2MotionSkeletonRoot = mesh2MotionArmorRig.skeletonRoot;
+  root.userData.v3ArmorSlotRoot = mesh2MotionArmorRig.armorSlotRoot;
+  root.userData.v3Mesh2MotionJoints = mesh2MotionArmorRig.joints;
+  root.userData.v3Mesh2MotionSlotPivots = mesh2MotionArmorRig.slotPivots;
   root.userData.segmentGroups = segmentGroups;
   root.userData.lowerTorso = segmentGroups.lowerTorso;
   root.userData.upperTorso = detailBones.chest;

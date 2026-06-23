@@ -39,6 +39,7 @@ export default defineConfig(() => {
           v3AnimationAtlasSmoke: path.resolve(__dirname, 'v3-animation-atlas-smoke.html'),
           v3CleanAnimationEditor: path.resolve(__dirname, 'v3-clean-animation-editor.html'),
           v3Mesh2MotionRigCalibrator: path.resolve(__dirname, 'v3-mesh2motion-rig-calibrator.html'),
+          v3Mesh2MotionTPoseBindEditor: path.resolve(__dirname, 'v3-mesh2motion-tpose-bind-editor.html'),
         },
       },
     },

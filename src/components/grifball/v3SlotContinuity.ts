@@ -79,6 +79,7 @@ export interface V3SlotContinuityReport {
 export interface V3SlotContinuityOptions {
   maxWorldGap?: number;
   maxProjectedGap?: number;
+  includeAttachments?: boolean;
 }
 
 export interface V3SlotContinuityOverlay {
@@ -358,8 +359,11 @@ export function analyzeV3SlotContinuity(
   const normalizedOptions: Required<V3SlotContinuityOptions> = {
     maxWorldGap: options.maxWorldGap ?? DEFAULT_MAX_WORLD_GAP,
     maxProjectedGap: options.maxProjectedGap ?? DEFAULT_MAX_PROJECTED_GAP,
+    includeAttachments: options.includeAttachments ?? true,
   };
-  const links = V3_SLOT_CONTINUITY_LINKS.map((definition) => analyzeLink(model, definition, normalizedOptions));
+  const links = V3_SLOT_CONTINUITY_LINKS
+    .filter((definition) => normalizedOptions.includeAttachments || !('attachment' in definition))
+    .map((definition) => analyzeLink(model, definition, normalizedOptions));
   const summary = buildSummary(links);
   return {
     ready: summary.failedLinkCount === 0,

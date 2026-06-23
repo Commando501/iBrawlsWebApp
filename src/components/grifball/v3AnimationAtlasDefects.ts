@@ -695,7 +695,7 @@ const retargetReportForCaseFrame = (
     const weaponPoint = activeWeapon && weaponModel?.visible
       ? weaponModel.getWorldPosition(new THREE.Vector3())
       : null;
-    const continuity = analyzeV3SlotContinuity(meshRig.group);
+    const continuity = analyzeV3SlotContinuity(meshRig.group, { includeAttachments: false });
     const lowerBodyContinuity = analyzeV3LowerBodyContinuity(meshRig.group, {
       maxSeamGap: lowerBodySeamLimit,
       maxProjectedSeamGap: lowerBodyProjectedSeamLimit,

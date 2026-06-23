@@ -62,6 +62,9 @@ over a **batched binary protocol** so tens of millions of steps move only flat t
 - Combat matrix evaluation can add `--mechanics-suite` to repeat the matrix over nominal,
   low-band, high-band, and live-current mechanics. The dashboard exposes this as Mechanics suite
   and ranks a model by its worst mechanics preset instead of nominal score alone.
+- The dashboard Evaluate tab stores history in `eval_history.jsonl`. Auto-save is on by
+  default, can be toggled off per run, and the last completed run can still be saved manually.
+  Saved entries can be viewed with full JSON/scenario detail or deleted one at a time.
 - Standalone and dashboard evaluations print `[eval-sims]` lifecycle telemetry with live
   `open`, `closing`, `alive`, and `closed/expected` worker counts, so long combat matrix or
   mechanics-suite shutdowns show how many Node sims remain.

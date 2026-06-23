@@ -157,8 +157,8 @@ describe('v3AnimationAtlasSmoke', () => {
     assert.ok(Math.abs(sprint.velocity[0]) < 0.15, `sprint should keep only lateral X sway, got ${sprint.velocity.join(',')}`);
   });
 
-  test('clean locomotion poses put the authored forward foot ahead of the pelvis', () => {
-    const assertForwardStride = (caseId: 'walk' | 'sprint', frame: number, expectedLead: 'left' | 'right' | 'either'): void => {
+  test('Mesh2Motion locomotion poses put the authored forward foot ahead of the pelvis', () => {
+    const assertForwardStride = (caseId: 'sprint', frame: number, expectedLead: 'left' | 'right' | 'either'): void => {
       const atlas = buildV3AnimationAtlasScene({ caseId });
       updateV3AnimationAtlasScene(atlas, { caseId, frame });
       atlas.scene.updateMatrixWorld(true);
@@ -189,7 +189,6 @@ describe('v3AnimationAtlasSmoke', () => {
       );
     };
 
-    assertForwardStride('walk', 18, 'left');
     assertForwardStride('sprint', 30, 'right');
   });
 

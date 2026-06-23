@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>V3 Mesh2Motion TPose Bind Editor</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #061116;
+        --panel: rgb(8 20 26 / 94%);
+        --panel-soft: rgb(14 32 40 / 84%);
+        --line: rgb(96 204 202 / 28%);
+        --line-strong: rgb(103 232 249 / 62%);
+        --text: #eef8fb;
+        --muted: #a8c8cf;
+        --cyan: #67e8f9;
+        --amber: #facc15;
+      }
+
+      * { box-sizing: border-box; }
+      html, body {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+        background: var(--bg);
+        color: var(--text);
+        font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+      }
+      button, input, select, textarea {
+        font: 12px/1.2 "Cascadia Mono", monospace;
+      }
+      button, select, input {
+        min-height: 30px;
+        border: 1px solid #24414a;
+        border-radius: 6px;
+        background: #10232b;
+        color: var(--text);
+      }
+      button {
+        padding: 0 9px;
+        color: var(--cyan);
+        cursor: pointer;
+      }
+      button:hover, select:focus, input:focus, textarea:focus {
+        border-color: var(--line-strong);
+        outline: none;
+      }
+      button.active {
+        border-color: var(--cyan);
+        background: #14333b;
+      }
+      label {
+        display: grid;
+        gap: 4px;
+        color: var(--cyan);
+        font: 10px/1.2 "Cascadia Mono", monospace;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+      input, select, textarea {
+        width: 100%;
+        padding: 7px;
+      }
+      textarea {
+        min-height: 260px;
+        resize: vertical;
+        white-space: pre;
+        border: 1px solid #24414a;
+        border-radius: 6px;
+        background: #071014;
+        color: #cbd5e1;
+      }
+      #app {
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr);
+        width: 100%;
+        height: 100%;
+      }
+      #topbar {
+        display: grid;
+        grid-template-columns: minmax(320px, auto) repeat(6, auto) minmax(220px, 1fr);
+        align-items: center;
+        gap: 8px;
+        padding: 10px;
+        border-bottom: 1px solid var(--line);
+        background: rgb(5 13 18 / 95%);
+      }
+      #topbar h1 {
+        margin: 0;
+        font-size: 16px;
+        letter-spacing: 0.02em;
+      }
+      #status {
+        justify-self: end;
+        color: var(--muted);
+        font: 11px/1.35 "Cascadia Mono", monospace;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      #workspace {
+        display: grid;
+        grid-template-columns: 340px minmax(460px, 1fr) 420px;
+        min-height: 0;
+      }
+      .panel {
+        display: grid;
+        align-content: start;
+        gap: 10px;
+        min-height: 0;
+        padding: 10px;
+        overflow: auto;
+        background: var(--panel);
+        border-right: 1px solid var(--line);
+      }
+      .panel.right {
+        border-right: 0;
+        border-left: 1px solid var(--line);
+      }
+      .section {
+        display: grid;
+        gap: 9px;
+        padding: 10px;
+        background: var(--panel-soft);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+      }
+      .section-title {
+        margin: 0;
+        font: 700 11px/1.2 "Cascadia Mono", monospace;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+      .grid-3 {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 8px;
+      }
+      .row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      #viewport-wrap {
+        position: relative;
+        min-width: 0;
+        min-height: 0;
+        background: #030b0f;
+      }
+      #bind-canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+      #viewport-label {
+        position: absolute;
+        left: 12px;
+        bottom: 12px;
+        color: var(--muted);
+        font: 11px/1.4 "Cascadia Mono", monospace;
+        pointer-events: none;
+      }
+      #selected-summary, #diagnostics {
+        min-height: 150px;
+        margin: 0;
+        padding: 8px;
+        overflow: auto;
+        white-space: pre-wrap;
+        color: #cbd5e1;
+        background: #071014;
+        border: 1px solid #24414a;
+        border-radius: 6px;
+        font: 11px/1.45 "Cascadia Mono", monospace;
+      }
+      #diagnostics { min-height: 210px; }
+      @media (max-width: 1120px) {
+        body { overflow: auto; }
+        #app { height: auto; min-height: 100%; }
+        #topbar { display: flex; flex-wrap: wrap; }
+        #topbar h1, #status { flex: 1 1 100%; justify-self: start; white-space: normal; }
+        #workspace { grid-template-columns: minmax(0, 1fr); }
+        #viewport-wrap { min-height: 460px; }
+        .panel.right { border-left: 0; border-top: 1px solid var(--line); }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <div id="topbar">
+        <h1>V3 Mesh2Motion TPose Bind Editor</h1>
+        <button id="save-local" type="button">Save Local</button>
+        <button id="copy-json" type="button">Copy JSON</button>
+        <button id="download-json" type="button">Download JSON</button>
+        <button id="import-json" type="button">Import JSON</button>
+        <button id="choose-json" type="button">Choose JSON</button>
+        <button id="clear-local" type="button">Clear Local</button>
+        <span id="status">Preparing TPose bind editor...</span>
+      </div>
+      <div id="workspace">
+        <aside class="panel">
+          <section class="section">
+            <p class="section-title">Slot</p>
+            <label>
+              Armor Slot
+              <select id="slot-select"></select>
+            </label>
+          </section>
+          <section class="section">
+            <p class="section-title">Position</p>
+            <div class="grid-3">
+              <label>X<input id="slot-x" type="number" min="-2" max="2" step="0.001" value="0" /></label>
+              <label>Y<input id="slot-y" type="number" min="-2" max="2" step="0.001" value="0" /></label>
+              <label>Z<input id="slot-z" type="number" min="-2" max="2" step="0.001" value="0" /></label>
+            </div>
+          </section>
+          <section class="section">
+            <p class="section-title">Rotation</p>
+            <div class="grid-3">
+              <label>X<input id="slot-rx" type="number" min="-3.14" max="3.14" step="0.001" value="0" /></label>
+              <label>Y<input id="slot-ry" type="number" min="-3.14" max="3.14" step="0.001" value="0" /></label>
+              <label>Z<input id="slot-rz" type="number" min="-3.14" max="3.14" step="0.001" value="0" /></label>
+            </div>
+          </section>
+          <section class="section">
+            <p class="section-title">Scale</p>
+            <div class="grid-3">
+              <label>X<input id="slot-sx" type="number" min="0.1" max="4" step="0.001" value="1" /></label>
+              <label>Y<input id="slot-sy" type="number" min="0.1" max="4" step="0.001" value="1" /></label>
+              <label>Z<input id="slot-sz" type="number" min="0.1" max="4" step="0.001" value="1" /></label>
+            </div>
+            <div class="row">
+              <button id="transform-translate" type="button" class="active">Move</button>
+              <button id="transform-rotate" type="button">Rotate</button>
+              <button id="transform-scale" type="button">Scale</button>
+              <button id="reset-selected" type="button">Reset Selected</button>
+              <button id="reset-all" type="button">Reset All</button>
+            </div>
+          </section>
+        </aside>
+        <main id="viewport-wrap">
+          <canvas id="bind-canvas"></canvas>
+          <div id="viewport-label">Mesh2Motion TPose skeleton, slot pivots, and editable geometry children</div>
+        </main>
+        <aside class="panel right">
+          <section class="section">
+            <p class="section-title">Selected</p>
+            <pre id="selected-summary">No slot selected.</pre>
+          </section>
+          <section class="section">
+            <p class="section-title">Diagnostics</p>
+            <pre id="diagnostics">No diagnostics yet.</pre>
+          </section>
+          <section class="section">
+            <p class="section-title">Placement JSON</p>
+            <input id="import-file" type="file" accept="application/json,.json" hidden />
+            <textarea id="json-output" spellcheck="false" aria-label="V3 Mesh2Motion TPose bind placement JSON"></textarea>
+          </section>
+        </aside>
+      </div>
+    </div>
+    <script type="module" src="/src/tools/v3Mesh2MotionTPoseBindEditor.ts"></script>
+  </body>
+</html>

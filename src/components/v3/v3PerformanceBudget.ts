@@ -38,6 +38,9 @@ export function collectV3RenderBudget(root: THREE.Object3D): V3RenderBudgetSumma
       qualityTier?: unknown;
       budget?: V3AssetBudget;
     } | undefined;
+    if (object.userData?.v3RenderBudgetProxyOnly === true) {
+      return;
+    }
     if (!selectedLod?.budget || !isV3QualityTier(selectedLod.qualityTier)) {
       return;
     }
