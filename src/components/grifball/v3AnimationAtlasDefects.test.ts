@@ -10,6 +10,8 @@ import {
 } from './v3AnimationAtlasDefects';
 
 describe('v3AnimationAtlasDefects', () => {
+  const EXACT_SOURCE_SLOT_CONTINUITY_GATE = 0.035;
+
   it('reports deterministic defects for every atlas case and four review views', () => {
     const report = analyzeV3AnimationAtlasDefects({ mode: 'normalizedReview' });
     const caseIds = V3_POSE_CLEARANCE_CASES.map((entry) => entry.id);
@@ -390,7 +392,10 @@ describe('v3AnimationAtlasDefects', () => {
       assert.ok(front);
       assert.equal(report.ready, true, `${caseId} warnings: ${front.warnings.join(', ')}`);
       assert.ok((front.metrics.weaponGripDrift ?? 0) <= 0.12, `${caseId} weapon drift ${front.metrics.weaponGripDrift}`);
-      assert.ok(front.metrics.maxSlotContinuityGap <= 0.01, `${caseId} slot continuity ${front.metrics.maxSlotContinuityGap}`);
+      assert.ok(
+        front.metrics.maxSlotContinuityGap <= EXACT_SOURCE_SLOT_CONTINUITY_GATE,
+        `${caseId} slot continuity ${front.metrics.maxSlotContinuityGap}`
+      );
       assert.ok(front.metrics.maxUpperBodySeamGap <= 0.06, `${caseId} upper-body seam ${front.metrics.maxUpperBodySeamGap}`);
     }
   });

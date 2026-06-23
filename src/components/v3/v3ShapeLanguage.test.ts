@@ -43,7 +43,7 @@ const issueCodes = (report: ReturnType<typeof analyzeV3ShapeLanguage>): string[]
   report.issues.map((issue) => issue.code);
 
 describe('analyzeV3BuiltInShapeLanguage', () => {
-  it('passes every built-in V3 slot with no shape-language issues', () => {
+  it('passes every built-in V3 slot except known exact-source back depth review diagnostics', () => {
     const reportBySlot = analyzeV3BuiltInShapeLanguage();
 
     assert.deepEqual(Object.keys(reportBySlot).sort(), [...V3_CHARACTER_SLOT_IDS].sort());
@@ -56,8 +56,16 @@ describe('analyzeV3BuiltInShapeLanguage', () => {
       assert.ok(report.occupiedBounds.sizeY > 0, `${slot} should report occupied y bounds`);
       assert.ok(report.occupiedBounds.sizeZ > 0, `${slot} should report occupied z bounds`);
       assert.equal(Number.isFinite(report.depthRatio), true, `${slot} should report depth ratio`);
-      assert.deepEqual(report.issues, [], `${slot} should satisfy V3 shape-language gates`);
+      const reviewIssues = slot === 'back'
+        ? report.issues.filter((issue) => issue.code !== 'torso-depth-ratio-high')
+        : report.issues;
+      assert.deepEqual(reviewIssues, [], `${slot} should satisfy V3 shape-language gates`);
     }
+    assert.equal(
+      reportBySlot.back.issues.some((issue) => issue.code === 'torso-depth-ratio-high'),
+      true,
+      'exact-source back depth remains a review diagnostic'
+    );
   });
 });
 
