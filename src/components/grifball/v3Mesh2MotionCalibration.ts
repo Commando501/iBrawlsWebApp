@@ -16,6 +16,10 @@ export interface V3Mesh2MotionTransformCalibration {
   rotation: V3Mesh2MotionCalibrationVec3;
 }
 
+export interface V3Mesh2MotionPartBindingCalibration extends V3Mesh2MotionTransformCalibration {
+  scale: V3Mesh2MotionCalibrationVec3;
+}
+
 export type V3Mesh2MotionWeaponSocketCalibration = V3Mesh2MotionTransformCalibration;
 
 export interface V3Mesh2MotionCalibrationTargetDescriptor {
@@ -32,7 +36,7 @@ export interface V3Mesh2MotionCalibrationV2 {
   version: 'v3-mesh2motion-calibration/v2';
   armSpread: Record<V3Mesh2MotionArmSide, number>;
   driverJoints: Partial<Record<V3Mesh2MotionDriverJointName, V3Mesh2MotionTransformCalibration>>;
-  partBindings: Partial<Record<V3CharacterSlotId, V3Mesh2MotionTransformCalibration>>;
+  partBindings: Partial<Record<V3CharacterSlotId, V3Mesh2MotionPartBindingCalibration>>;
   weaponSockets: Record<V3Mesh2MotionWeaponSocketCalibrationName, V3Mesh2MotionWeaponSocketCalibration>;
 }
 
@@ -54,6 +58,8 @@ export const V3_MESH2MOTION_CALIBRATION_LIMITS = {
   maxArmSpread: 0.35,
   maxDriverJointPosition: 0.3,
   maxPartBindingPosition: 0.5,
+  minPartBindingScale: 0.25,
+  maxPartBindingScale: 2,
   maxSocketPosition: 0.5,
   maxRotation: Math.PI,
   maxJointOffset: 0.3,
@@ -108,6 +114,15 @@ const normalizePositiveComponent = (
   maxMagnitude: number
 ): number => clamp(finiteOrFallback(value, fallback), 0, maxMagnitude);
 
+const normalizeScaleComponent = (
+  value: unknown,
+  fallback: number
+): number => clamp(
+  finiteOrFallback(value, fallback),
+  V3_MESH2MOTION_CALIBRATION_LIMITS.minPartBindingScale,
+  V3_MESH2MOTION_CALIBRATION_LIMITS.maxPartBindingScale
+);
+
 const normalizeVec3 = (
   value: unknown,
   fallback: V3Mesh2MotionCalibrationVec3,
@@ -128,6 +143,14 @@ const cloneTransform = (
   rotation: [...transform.rotation],
 });
 
+const clonePartBindingTransform = (
+  transform: V3Mesh2MotionPartBindingCalibration
+): V3Mesh2MotionPartBindingCalibration => ({
+  position: [...transform.position],
+  rotation: [...transform.rotation],
+  scale: [...transform.scale],
+});
+
 const normalizeTransform = (
   value: unknown,
   fallback: V3Mesh2MotionTransformCalibration,
@@ -137,6 +160,27 @@ const normalizeTransform = (
   return {
     position: normalizeVec3(source.position, fallback.position, maxPositionMagnitude),
     rotation: normalizeVec3(source.rotation, fallback.rotation, V3_MESH2MOTION_CALIBRATION_LIMITS.maxRotation),
+  };
+};
+
+const normalizePartBindingTransform = (
+  value: unknown,
+  fallback: V3Mesh2MotionPartBindingCalibration
+): V3Mesh2MotionPartBindingCalibration => {
+  const source = isObject(value) ? value : {};
+  const scale = Array.isArray(source.scale) ? source.scale : [];
+  return {
+    position: normalizeVec3(
+      source.position,
+      fallback.position,
+      V3_MESH2MOTION_CALIBRATION_LIMITS.maxPartBindingPosition
+    ),
+    rotation: normalizeVec3(source.rotation, fallback.rotation, V3_MESH2MOTION_CALIBRATION_LIMITS.maxRotation),
+    scale: [
+      normalizeScaleComponent(scale[0], fallback.scale[0]),
+      normalizeScaleComponent(scale[1], fallback.scale[1]),
+      normalizeScaleComponent(scale[2], fallback.scale[2]),
+    ],
   };
 };
 
@@ -150,6 +194,16 @@ const cloneTransformRecord = <Key extends string>(
     ])
   ) as Partial<Record<Key, V3Mesh2MotionTransformCalibration>>;
 
+const clonePartBindingTransformRecord = <Key extends string>(
+  value: Partial<Record<Key, V3Mesh2MotionPartBindingCalibration>>
+): Partial<Record<Key, V3Mesh2MotionPartBindingCalibration>> =>
+  Object.fromEntries(
+    Object.entries(value).map(([key, transform]) => [
+      key,
+      clonePartBindingTransform(transform as V3Mesh2MotionPartBindingCalibration),
+    ])
+  ) as Partial<Record<Key, V3Mesh2MotionPartBindingCalibration>>;
+
 const cloneCalibration = (calibration: V3Mesh2MotionCalibration): V3Mesh2MotionCalibration => ({
   version: 'v3-mesh2motion-calibration/v2',
   armSpread: {
@@ -157,7 +211,7 @@ const cloneCalibration = (calibration: V3Mesh2MotionCalibration): V3Mesh2MotionC
     right: calibration.armSpread.right,
   },
   driverJoints: cloneTransformRecord(calibration.driverJoints),
-  partBindings: cloneTransformRecord(calibration.partBindings),
+  partBindings: clonePartBindingTransformRecord(calibration.partBindings),
   weaponSockets: {
     rightHandGrip: cloneTransform(calibration.weaponSockets.rightHandGrip),
     leftHandGrip: cloneTransform(calibration.weaponSockets.leftHandGrip),
@@ -209,10 +263,9 @@ export function normalizeV3Mesh2MotionCalibration(input: unknown): V3Mesh2Motion
   const partBindings: V3Mesh2MotionCalibration['partBindings'] = {};
   for (const slot of V3_CHARACTER_SLOT_IDS) {
     if (!(slot in sourcePartBindings)) continue;
-    partBindings[slot] = normalizeTransform(
+    partBindings[slot] = normalizePartBindingTransform(
       sourcePartBindings[slot],
-      { position: [...ZERO_VEC3], rotation: [...ZERO_VEC3] },
-      V3_MESH2MOTION_CALIBRATION_LIMITS.maxPartBindingPosition
+      { position: [...ZERO_VEC3], rotation: [...ZERO_VEC3], scale: [1, 1, 1] }
     );
   }
   for (const slot of Object.keys(partBindings)) {

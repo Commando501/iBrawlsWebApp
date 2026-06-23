@@ -222,6 +222,38 @@ describe('v3Mesh2MotionDriverRig', () => {
     assert.equal(report?.postBindPartAdjustments, 1);
   });
 
+  it('applies part-binding scale calibration only to the selected visible V3 part', () => {
+    const baseline = createModel();
+    const adjusted = createModel();
+    const slash = sampleV3AuthoredClip('clean_sword_slash', { normalizedTime: 0.5 });
+
+    setV3Mesh2MotionCalibrationOverride(null);
+    applyV3CleanRigPose(baseline, slash.pose);
+    baseline.updateMatrixWorld(true);
+    const baselineGroups = baseline.userData.v3PartGroups as Record<string, THREE.Group>;
+    const baselineHandSize = new THREE.Box3().setFromObject(baselineGroups.handRight).getSize(new THREE.Vector3());
+    const baselineForearmSize = new THREE.Box3().setFromObject(baselineGroups.forearmRight).getSize(new THREE.Vector3());
+
+    setV3Mesh2MotionCalibrationOverride(normalizeV3Mesh2MotionCalibration({
+      ...V3_MESH2MOTION_DEFAULT_CALIBRATION,
+      partBindings: {
+        handRight: {
+          position: [0, 0, 0],
+          rotation: [0, 0, 0],
+          scale: [1.4, 0.75, 1.2],
+        },
+      },
+    }));
+    applyV3CleanRigPose(adjusted, slash.pose);
+    adjusted.updateMatrixWorld(true);
+    const adjustedGroups = adjusted.userData.v3PartGroups as Record<string, THREE.Group>;
+    const adjustedHandSize = new THREE.Box3().setFromObject(adjustedGroups.handRight).getSize(new THREE.Vector3());
+    const adjustedForearmSize = new THREE.Box3().setFromObject(adjustedGroups.forearmRight).getSize(new THREE.Vector3());
+
+    assert.ok(adjustedHandSize.distanceTo(baselineHandSize) > 0.02);
+    assert.ok(adjustedForearmSize.distanceTo(baselineForearmSize) < 0.000001);
+  });
+
   it('applies right and left weapon socket adjustments under their source hand joints', () => {
     const baseline = createModel();
     const adjusted = createModel();

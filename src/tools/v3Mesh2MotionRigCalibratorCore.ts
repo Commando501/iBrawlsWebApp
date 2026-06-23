@@ -79,6 +79,7 @@ export interface V3Mesh2MotionSocketCalibrationTransformResult {
   position: THREE.Vector3;
   quaternion: THREE.Quaternion;
   rotation: [number, number, number];
+  scale: THREE.Vector3;
 }
 
 export interface V3Mesh2MotionDriverJointAdjustmentInput {
@@ -93,11 +94,40 @@ export interface V3Mesh2MotionPartBindingAdjustmentInput {
   handleWorldMatrix: THREE.Matrix4;
 }
 
+export interface V3Mesh2MotionAnchoredPartBindingAdjustmentInput extends V3Mesh2MotionPartBindingAdjustmentInput {
+  anchorLocalOffset: THREE.Vector3;
+}
+
 export interface V3Mesh2MotionCalibrationTargetWorldTransform {
   position: THREE.Vector3;
   quaternion: THREE.Quaternion;
+  scale: THREE.Vector3;
   matrix: THREE.Matrix4;
   sourceJointName: string | null;
+  anchorLocalOffset?: THREE.Vector3;
+}
+
+export type V3Mesh2MotionCalibratorHotkeyAction =
+  | { type: 'togglePlay' }
+  | { type: 'stepFrame'; amount: number }
+  | { type: 'editMode'; mode: V3Mesh2MotionCalibrationTargetDescriptor['kind'] }
+  | { type: 'transformMode'; mode: 'translate' | 'rotate' | 'scale' }
+  | { type: 'autoRelocate' };
+
+export interface V3Mesh2MotionCalibratorHotkeyInput {
+  key: string;
+  shiftKey?: boolean;
+  ctrlKey?: boolean;
+  metaKey?: boolean;
+  altKey?: boolean;
+  targetTagName?: string | null;
+  targetIsContentEditable?: boolean;
+}
+
+export interface V3Mesh2MotionPartBindingAutoRelocateInput {
+  model: THREE.Group;
+  rig: V3Mesh2MotionDriverRig;
+  slot: V3CharacterSlotId;
 }
 
 const ARM_SLOTS = {
@@ -136,9 +166,55 @@ const objectBox = (object: THREE.Object3D): THREE.Box3 =>
 const boxCenter = (object: THREE.Object3D): THREE.Vector3 =>
   objectBox(object).getCenter(new THREE.Vector3());
 
+const objectWorldScale = (object: THREE.Object3D): THREE.Vector3 =>
+  object.getWorldScale(new THREE.Vector3());
+
+const localBoundsCenter = (object: THREE.Object3D): THREE.Vector3 => {
+  object.updateWorldMatrix(true, true);
+  const inverseObjectWorld = object.matrixWorld.clone().invert();
+  const bounds = new THREE.Box3();
+  const corner = new THREE.Vector3();
+  object.traverse((child) => {
+    const geometry = (child as THREE.Mesh).geometry as THREE.BufferGeometry | undefined;
+    if (!geometry) return;
+    if (!geometry.boundingBox) geometry.computeBoundingBox();
+    const geometryBounds = geometry.boundingBox;
+    if (!geometryBounds) return;
+    const childToObject = inverseObjectWorld.clone().multiply(child.matrixWorld);
+    for (const x of [geometryBounds.min.x, geometryBounds.max.x]) {
+      for (const y of [geometryBounds.min.y, geometryBounds.max.y]) {
+        for (const z of [geometryBounds.min.z, geometryBounds.max.z]) {
+          corner.set(x, y, z).applyMatrix4(childToObject);
+          bounds.expandByPoint(corner);
+        }
+      }
+    }
+  });
+  if (!bounds.isEmpty()) return bounds.getCenter(new THREE.Vector3());
+  return object.worldToLocal(boxCenter(object));
+};
+
 const DRIVER_PARENT_BY_NAME = new Map(
   V3_MESH2MOTION_CLIP_SET.skeleton.joints.map((joint) => [String(joint.name), joint.parent ? String(joint.parent) : null])
 );
+
+const DRIVER_CHILDREN_BY_NAME = new Map<string, string[]>();
+for (const joint of V3_MESH2MOTION_CLIP_SET.skeleton.joints) {
+  const parent = joint.parent ? String(joint.parent) : null;
+  if (!parent) continue;
+  DRIVER_CHILDREN_BY_NAME.set(parent, [...(DRIVER_CHILDREN_BY_NAME.get(parent) ?? []), String(joint.name)]);
+}
+
+const PRIMARY_AUTO_RELOCATE_CHILD_BY_SLOT: Partial<Record<V3CharacterSlotId, string>> = {
+  upperArmLeft: 'lowerarm_l',
+  upperArmRight: 'lowerarm_r',
+  forearmLeft: 'hand_l',
+  forearmRight: 'hand_r',
+  thighLeft: 'calf_l',
+  thighRight: 'calf_r',
+  shinLeft: 'foot_l',
+  shinRight: 'foot_r',
+};
 
 const readableLabel = (value: string): string =>
   value
@@ -166,6 +242,7 @@ const decomposeAdjustmentMatrix = (matrix: THREE.Matrix4): V3Mesh2MotionSocketCa
     position,
     quaternion,
     rotation: rotationTupleFromQuaternion(quaternion),
+    scale,
   };
 };
 
@@ -214,6 +291,45 @@ export function listV3Mesh2MotionCalibrationTargets(): V3Mesh2MotionCalibrationT
   return [...partTargets, ...driverTargets, ...socketTargets];
 }
 
+export function resolveV3Mesh2MotionCalibratorHotkey({
+  key,
+  shiftKey = false,
+  ctrlKey = false,
+  metaKey = false,
+  altKey = false,
+  targetTagName = null,
+  targetIsContentEditable = false,
+}: V3Mesh2MotionCalibratorHotkeyInput): V3Mesh2MotionCalibratorHotkeyAction | null {
+  const tagName = targetTagName?.toUpperCase() ?? '';
+  if (targetIsContentEditable || tagName === 'INPUT' || tagName === 'SELECT' || tagName === 'TEXTAREA') {
+    return null;
+  }
+  if (ctrlKey || metaKey || altKey) return null;
+
+  if (key === ' ' || key === 'Spacebar' || key === 'Space') return { type: 'togglePlay' };
+  if (key === 'ArrowLeft') return { type: 'stepFrame', amount: shiftKey ? -10 : -1 };
+  if (key === 'ArrowRight') return { type: 'stepFrame', amount: shiftKey ? 10 : 1 };
+
+  switch (key.toLowerCase()) {
+    case '1':
+      return { type: 'editMode', mode: 'partBinding' };
+    case '2':
+      return { type: 'editMode', mode: 'driverJoint' };
+    case '3':
+      return { type: 'editMode', mode: 'weaponSocket' };
+    case 'w':
+      return { type: 'transformMode', mode: 'translate' };
+    case 'e':
+      return { type: 'transformMode', mode: 'scale' };
+    case 'r':
+      return { type: 'transformMode', mode: 'rotate' };
+    case 'a':
+      return { type: 'autoRelocate' };
+    default:
+      return null;
+  }
+}
+
 export function getV3Mesh2MotionCalibrationTargetWorldTransform(
   model: THREE.Group,
   kind: V3Mesh2MotionCalibrationTargetDescriptor['kind'],
@@ -228,6 +344,7 @@ export function getV3Mesh2MotionCalibrationTargetWorldTransform(
     return {
       position: joint.object.getWorldPosition(new THREE.Vector3()),
       quaternion: joint.object.getWorldQuaternion(new THREE.Quaternion()).normalize(),
+      scale: objectWorldScale(joint.object),
       matrix: joint.object.matrixWorld.clone(),
       sourceJointName: joint.name,
     };
@@ -236,11 +353,18 @@ export function getV3Mesh2MotionCalibrationTargetWorldTransform(
     const binding = rig.partBindings[targetId as V3CharacterSlotId];
     if (!binding) return null;
     binding.partGroup.updateWorldMatrix(true, false);
+    const anchorLocalOffset = localBoundsCenter(binding.partGroup);
+    const position = binding.partGroup.localToWorld(anchorLocalOffset.clone());
+    const quaternion = binding.partGroup.getWorldQuaternion(new THREE.Quaternion()).normalize();
+    const scale = objectWorldScale(binding.partGroup);
+    const matrix = new THREE.Matrix4().compose(position, quaternion, scale);
     return {
-      position: binding.partGroup.getWorldPosition(new THREE.Vector3()),
-      quaternion: binding.partGroup.getWorldQuaternion(new THREE.Quaternion()).normalize(),
-      matrix: binding.partGroup.matrixWorld.clone(),
+      position,
+      quaternion,
+      scale,
+      matrix,
       sourceJointName: binding.sourceJointName,
+      anchorLocalOffset,
     };
   }
   const socket = rig.weaponSockets[targetId as V3Mesh2MotionDriverWeaponSocketName];
@@ -249,6 +373,7 @@ export function getV3Mesh2MotionCalibrationTargetWorldTransform(
   return {
     position: socket.object.getWorldPosition(new THREE.Vector3()),
     quaternion: socket.object.getWorldQuaternion(new THREE.Quaternion()).normalize(),
+    scale: objectWorldScale(socket.object),
     matrix: socket.object.matrixWorld.clone(),
     sourceJointName: socket.sourceJointName,
   };
@@ -337,6 +462,7 @@ export function computeDriverJointAdjustmentFromWorldTransform({
     position: localPosition.sub(baseLocalPosition),
     quaternion,
     rotation: rotationTupleFromQuaternion(quaternion),
+    scale: new THREE.Vector3(1, 1, 1),
   };
 }
 
@@ -345,6 +471,87 @@ export function computePartBindingAdjustmentFromWorldTransform({
   handleWorldMatrix,
 }: V3Mesh2MotionPartBindingAdjustmentInput): V3Mesh2MotionSocketCalibrationTransformResult {
   return decomposeAdjustmentMatrix(baseWorldMatrix.clone().invert().multiply(handleWorldMatrix));
+}
+
+export function computePartBindingAdjustmentFromAnchoredWorldTransform({
+  baseWorldMatrix,
+  handleWorldMatrix,
+  anchorLocalOffset,
+}: V3Mesh2MotionAnchoredPartBindingAdjustmentInput): V3Mesh2MotionSocketCalibrationTransformResult {
+  const desiredOriginWorldMatrix = handleWorldMatrix.clone().multiply(
+    new THREE.Matrix4().makeTranslation(-anchorLocalOffset.x, -anchorLocalOffset.y, -anchorLocalOffset.z)
+  );
+  return computePartBindingAdjustmentFromWorldTransform({
+    baseWorldMatrix,
+    handleWorldMatrix: desiredOriginWorldMatrix,
+  });
+}
+
+const jointWorldPosition = (
+  rig: V3Mesh2MotionDriverRig,
+  jointName: string
+): THREE.Vector3 | null => {
+  const joint = rig.joints[jointName];
+  if (!joint) return null;
+  joint.object.updateWorldMatrix(true, false);
+  return joint.object.getWorldPosition(new THREE.Vector3());
+};
+
+const averageJointWorldPosition = (
+  rig: V3Mesh2MotionDriverRig,
+  jointNames: readonly string[]
+): THREE.Vector3 | null => {
+  const positions = jointNames
+    .map((jointName) => jointWorldPosition(rig, jointName))
+    .filter((position): position is THREE.Vector3 => position !== null);
+  if (positions.length === 0) return null;
+  return positions.reduce((sum, position) => sum.add(position), new THREE.Vector3()).multiplyScalar(1 / positions.length);
+};
+
+const autoRelocateAnchorWorldPosition = (
+  rig: V3Mesh2MotionDriverRig,
+  slot: V3CharacterSlotId,
+  sourceJointName: string
+): THREE.Vector3 | null => {
+  const source = jointWorldPosition(rig, sourceJointName);
+  if (!source) return null;
+
+  const primaryChildName = PRIMARY_AUTO_RELOCATE_CHILD_BY_SLOT[slot];
+  const primaryChild = primaryChildName ? jointWorldPosition(rig, primaryChildName) : null;
+  if (primaryChild) return source.clone().lerp(primaryChild, 0.5);
+
+  const childAverage = averageJointWorldPosition(rig, DRIVER_CHILDREN_BY_NAME.get(sourceJointName) ?? []);
+  return childAverage ?? source;
+};
+
+export function computeV3Mesh2MotionPartBindingAutoRelocateAdjustment({
+  model,
+  rig,
+  slot,
+}: V3Mesh2MotionPartBindingAutoRelocateInput): V3Mesh2MotionSocketCalibrationTransformResult | null {
+  model.updateWorldMatrix(true, true);
+  const binding = rig.partBindings[slot];
+  const joint = binding ? rig.joints[binding.sourceJointName] : null;
+  if (!binding || !joint) return null;
+  const anchorWorldPosition = autoRelocateAnchorWorldPosition(rig, slot, binding.sourceJointName);
+  if (!anchorWorldPosition) return null;
+
+  binding.partGroup.updateWorldMatrix(true, false);
+  joint.object.updateWorldMatrix(true, false);
+  const currentTarget = getV3Mesh2MotionCalibrationTargetWorldTransform(model, 'partBinding', slot, rig);
+  if (!currentTarget?.anchorLocalOffset) return null;
+  const handleWorldMatrix = new THREE.Matrix4().compose(
+    anchorWorldPosition,
+    currentTarget.quaternion,
+    currentTarget.scale
+  );
+  const result = computePartBindingAdjustmentFromAnchoredWorldTransform({
+    baseWorldMatrix: joint.object.matrixWorld.clone().multiply(binding.bindMatrix),
+    handleWorldMatrix,
+    anchorLocalOffset: currentTarget.anchorLocalOffset,
+  });
+
+  return result;
 }
 
 export function computeWeaponSocketAdjustmentFromWorldTransform({
