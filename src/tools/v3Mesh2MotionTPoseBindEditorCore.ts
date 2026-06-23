@@ -1,4 +1,5 @@
 import { V3_CHARACTER_SLOT_IDS, type V3CharacterSlotId, type V3Vec3Tuple } from '../components/v3/v3ModelTypes';
+import { V3_MESH2MOTION_ARMOR_RIG } from '../components/v3/v3Mesh2MotionArmorRig.generated';
 
 export const V3_MESH2MOTION_TPOSE_BIND_DOCUMENT_KIND = 'v3-mesh2motion-tpose-bind/v1' as const;
 
@@ -26,6 +27,9 @@ export interface V3Mesh2MotionTPoseBindDocument {
 
 export type V3Mesh2MotionTPoseBindDiagnosticCode =
   | 'missing-placement'
+  | 'missing-source-joint'
+  | 'missing-envelope'
+  | 'outside-envelope'
   | 'mirrored-position'
   | 'mirrored-rotation'
   | 'inverted-scale'
@@ -51,6 +55,8 @@ export type V3Mesh2MotionTPoseBindEditorHotkeyAction =
   | { type: 'clearSelection' }
   | { type: 'resetSelected' }
   | { type: 'resetAll' }
+  | { type: 'mirrorSelected' }
+  | { type: 'snapSelectedToSegmentCenter' }
   | { type: 'transformMode'; mode: V3Mesh2MotionTPoseBindTransformMode }
   | { type: 'selectAdjacentSlot'; direction: -1 | 1 }
   | { type: 'commit' };
@@ -115,12 +121,19 @@ const tupleFrom = (
   ) as [number, number, number];
 };
 
-const identityPlacement = (slot: V3CharacterSlotId): V3Mesh2MotionTPoseBindPlacement => ({
-  slot,
-  position: [0, 0, 0],
-  rotation: [0, 0, 0],
-  scale: [1, 1, 1],
-});
+export function getV3Mesh2MotionTPoseBindGeneratedPlacement(
+  slot: V3CharacterSlotId
+): V3Mesh2MotionTPoseBindPlacement {
+  const geometry = V3_MESH2MOTION_ARMOR_RIG.slots[slot]?.geometry;
+  const mirrorOf = V3_MESH2MOTION_ARMOR_RIG.slots[slot]?.mirrorOf ?? undefined;
+  return {
+    slot,
+    position: tupleFrom(geometry?.position, [0, 0, 0], (value) => clamp(value, -POSITION_LIMIT, POSITION_LIMIT)),
+    rotation: tupleFrom(geometry?.rotation, [0, 0, 0], (value) => clamp(value, -Math.PI, Math.PI)),
+    scale: tupleFrom(geometry?.scale, [1, 1, 1], clampScale),
+    ...(mirrorOf ? { mirrorOf } : {}),
+  };
+}
 
 const normalizePlacement = (
   slot: V3CharacterSlotId,
@@ -233,16 +246,60 @@ export function resetV3Mesh2MotionTPoseBindPlacements(
   const next = cloneDocument(document);
   if (options.mode === 'all') {
     for (const slot of SORTED_SLOTS) {
-      next.placements[slot] = identityPlacement(slot);
+      next.placements[slot] = getV3Mesh2MotionTPoseBindGeneratedPlacement(slot);
     }
     return next;
   }
 
   const slot = options.selectedSlot ?? next.selectedSlot;
   if (isSlot(slot)) {
-    next.placements[slot] = identityPlacement(slot);
+    next.placements[slot] = getV3Mesh2MotionTPoseBindGeneratedPlacement(slot);
     next.selectedSlot = slot;
   }
+  return next;
+}
+
+const mirrorPartnerForSlot = (slot: V3CharacterSlotId): V3CharacterSlotId | null => {
+  const direct = V3_MESH2MOTION_ARMOR_RIG.slots[slot]?.mirrorOf;
+  if (direct) return direct;
+  for (const candidate of SORTED_SLOTS) {
+    if (V3_MESH2MOTION_ARMOR_RIG.slots[candidate]?.mirrorOf === slot) return candidate;
+  }
+  return null;
+};
+
+export function mirrorV3Mesh2MotionTPoseBindSelectedPlacement(
+  document: V3Mesh2MotionTPoseBindDocument,
+  selectedSlot: V3CharacterSlotId | null = document.selectedSlot
+): V3Mesh2MotionTPoseBindDocument {
+  const next = cloneDocument(document);
+  if (!isSlot(selectedSlot)) return next;
+  const partnerSlot = mirrorPartnerForSlot(selectedSlot);
+  if (!partnerSlot) return next;
+  const partner = next.placements[partnerSlot];
+  next.placements[selectedSlot] = normalizePlacement(selectedSlot, {
+    slot: selectedSlot,
+    position: [-partner.position[0], partner.position[1], partner.position[2]],
+    rotation: [partner.rotation[0], -partner.rotation[1], -partner.rotation[2]],
+    scale: partner.scale.map((value) => Math.abs(value)),
+    mirrorOf: partnerSlot,
+  });
+  next.selectedSlot = selectedSlot;
+  return next;
+}
+
+export function snapV3Mesh2MotionTPoseBindSelectedToSegmentCenter(
+  document: V3Mesh2MotionTPoseBindDocument,
+  selectedSlot: V3CharacterSlotId | null = document.selectedSlot
+): V3Mesh2MotionTPoseBindDocument {
+  const next = cloneDocument(document);
+  if (!isSlot(selectedSlot)) return next;
+  const generated = getV3Mesh2MotionTPoseBindGeneratedPlacement(selectedSlot);
+  next.placements[selectedSlot] = {
+    ...generated,
+    scale: [...next.placements[selectedSlot].scale],
+  };
+  next.selectedSlot = selectedSlot;
   return next;
 }
 
@@ -277,8 +334,20 @@ export function buildV3Mesh2MotionTPoseBindDiagnostics(
 
   for (const slot of SORTED_SLOTS) {
     const placement = normalized.placements[slot];
+    const generated = V3_MESH2MOTION_ARMOR_RIG.slots[slot];
     if (normalized.source.missingPlacementSlots?.includes(slot)) {
       addDiagnostic(items, slot, 'missing-placement', 'fail', `${slot} placement was missing from the imported bind document`);
+    }
+    if (!generated?.sourceJointName) {
+      addDiagnostic(items, slot, 'missing-source-joint', 'fail', `${slot} has no Mesh2Motion source joint`);
+    }
+    if (!generated?.localEnvelope) {
+      addDiagnostic(items, slot, 'missing-envelope', 'fail', `${slot} has no generated native slot envelope`);
+    } else {
+      const envelopeHalf = generated.localEnvelope.size.map((value) => Math.max(0.25, value * 0.5 + 0.25));
+      if (placement.position.some((value, index) => Math.abs(value) > envelopeHalf[index])) {
+        addDiagnostic(items, slot, 'outside-envelope', 'warn', `${slot} polish position is outside the native slot envelope`);
+      }
     }
     if (placement.mirrorOf) {
       const partner = normalized.placements[placement.mirrorOf];
@@ -334,6 +403,10 @@ export function resolveV3Mesh2MotionTPoseBindEditorHotkey({
   switch (key.toLowerCase()) {
     case 'r':
       return shiftKey ? { type: 'resetAll' } : { type: 'resetSelected' };
+    case 'm':
+      return { type: 'mirrorSelected' };
+    case 'c':
+      return { type: 'snapSelectedToSegmentCenter' };
     case 'w':
       return { type: 'transformMode', mode: 'translate' };
     case 'e':

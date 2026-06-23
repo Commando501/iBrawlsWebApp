@@ -5,10 +5,13 @@ import { AVAILABLE_PRESETS } from './VoxelModels';
 import { getVoxelSegmentDataV2 } from './VoxelModelsV2';
 import {
   CUSTOM_ARMOR_MAX_HISTORY,
+  convertCustomArmorV3VoxelsToNative,
   createCustomArmorPiece,
   createCustomArmorSnapshot,
   createCustomArmorThumbnail,
   duplicateCustomArmorPiece,
+  getCustomArmorV3CoordinateSpace,
+  customArmorPieceToVoxels,
   getCustomArmorSlotLabel,
   normalizeCustomArmorCatalog,
   normalizeCustomArmorSnapshot,
@@ -27,6 +30,7 @@ import {
 } from './customArmor';
 import { V3_CHARACTER_SLOT_IDS } from './v3/v3ModelTypes';
 import { getV3CharacterPartBounds } from './v3/v3PartBounds';
+import { getV3Mesh2MotionNativeSlotDimensions } from './v3/v3Mesh2MotionNativeGeometry';
 
 const cloneBuiltInPiece = (
   slot: CustomArmorSlot,
@@ -163,11 +167,11 @@ test('sanitizeCharacterLoadoutForNetwork keeps v2 model type semantics unchanged
 });
 
 test('V3 custom armor pieces validate against V3 slot bounds and budgets', () => {
-  const helmetBounds = getV3CharacterPartBounds('helmet');
+  const helmetDimensions = getV3Mesh2MotionNativeSlotDimensions('helmet');
   const validVoxels: CustomArmorVoxel[] = Array.from({ length: 130 }, (_, index) => ({
-    x: index % helmetBounds.maxDimensions.x,
-    y: Math.floor(index / helmetBounds.maxDimensions.x) % helmetBounds.maxDimensions.y,
-    z: Math.floor(index / (helmetBounds.maxDimensions.x * helmetBounds.maxDimensions.y)) % helmetBounds.maxDimensions.z,
+    x: index % helmetDimensions[0],
+    y: Math.floor(index / helmetDimensions[0]) % helmetDimensions[1],
+    z: Math.floor(index / (helmetDimensions[0] * helmetDimensions[1])) % helmetDimensions[2],
     role: index % 7 === 0 ? 'visor' : index % 5 === 0 ? 'secondary' : 'primary',
     emissive: index % 7 === 0,
   }));
@@ -176,16 +180,19 @@ test('V3 custom armor pieces validate against V3 slot bounds and budgets', () =>
   const result = validateCustomArmorPiece(piece);
 
   assert.equal(piece.modelSystem, 'v3');
+  assert.equal(piece.v3CoordinateSpace, 'mesh2motion-native');
   assert.equal(result.valid, true, result.errors.join(', '));
   assert.equal(result.stats.v3Slot, 'helmet');
 });
 
-test('new V3 custom armor drafts default to gridScale 2 while snapshots preserve it', () => {
+test('new V3 custom armor drafts default to Mesh2Motion-native grid space', () => {
   const piece = createCustomArmorPiece('helmet', 'High Density V3 Helmet', [], undefined, undefined, 'v3');
   const snapshot = createCustomArmorSnapshot(piece);
 
-  assert.equal(piece.gridScale, 2);
-  assert.equal(snapshot.gridScale, 2);
+  assert.equal(piece.gridScale, 1);
+  assert.equal(piece.v3CoordinateSpace, 'mesh2motion-native');
+  assert.equal(snapshot.gridScale, 1);
+  assert.equal(snapshot.v3CoordinateSpace, 'mesh2motion-native');
 });
 
 test('legacy V3 custom armor without gridScale normalizes as gridScale 1', () => {
@@ -209,10 +216,56 @@ test('legacy V3 custom armor without gridScale normalizes as gridScale 1', () =>
 
   assert.ok(normalized);
   assert.equal(normalized.gridScale, 1);
+  assert.equal(normalized.v3CoordinateSpace, undefined);
+  assert.equal(getCustomArmorV3CoordinateSpace(normalized), 'legacy-grid');
   assert.equal(validateCustomArmorPiece(normalized).valid, true);
 });
 
-test('gridScale 2 V3 custom armor validates against doubled local fit bounds', () => {
+test('legacy V3 custom armor renders through the native slot adapter without mutating the snapshot', () => {
+  const helmetBounds = getV3CharacterPartBounds('helmet');
+  const nativeDimensions = getV3Mesh2MotionNativeSlotDimensions('helmet');
+  const voxels: CustomArmorVoxel[] = Array.from({ length: 130 }, (_, index) => ({
+    x: index % helmetBounds.maxDimensions.x,
+    y: Math.floor(index / helmetBounds.maxDimensions.x) % helmetBounds.maxDimensions.y,
+    z: Math.floor(index / (helmetBounds.maxDimensions.x * helmetBounds.maxDimensions.y)) % helmetBounds.maxDimensions.z,
+    role: index % 7 === 0 ? 'visor' : 'primary',
+    emissive: index % 7 === 0,
+  }));
+  const legacy: CustomArmorPieceSnapshot = {
+    version: 1,
+    id: 'legacy-v3-render',
+    name: 'Legacy V3 Render',
+    slot: 'helmet',
+    modelSystem: 'v3',
+    voxels,
+    updatedAt: 1,
+  };
+  const before = JSON.stringify(legacy);
+
+  const rendered = customArmorPieceToVoxels(legacy, {
+    primary: '#111111',
+    secondary: '#222222',
+    accent: '#333333',
+    visor: '#444444',
+    dark: '#555555',
+    highlight: '#666666',
+  });
+  const converted = convertCustomArmorV3VoxelsToNative('helmet', voxels, 1, 'legacy-grid');
+  const bounds = converted.reduce((acc, voxel) => ({
+    maxX: Math.max(acc.maxX, voxel.x),
+    maxY: Math.max(acc.maxY, voxel.y),
+    maxZ: Math.max(acc.maxZ, voxel.z),
+  }), { maxX: 0, maxY: 0, maxZ: 0 });
+
+  assert.equal(JSON.stringify(legacy), before);
+  assert.equal(rendered.length, converted.length);
+  assert.ok(bounds.maxX < nativeDimensions[0]);
+  assert.ok(bounds.maxY < nativeDimensions[1]);
+  assert.ok(bounds.maxZ < nativeDimensions[2]);
+  assert.ok(rendered.some((voxel) => voxel.color === '#444444' && voxel.emissive === true));
+});
+
+test('legacy gridScale 2 V3 custom armor validates against doubled legacy fit bounds', () => {
   const helmetBounds = getV3CharacterPartBounds('helmet');
   const gridScale = 2;
   const validVoxels: CustomArmorVoxel[] = Array.from({ length: 130 }, (_, index) => ({
@@ -221,9 +274,18 @@ test('gridScale 2 V3 custom armor validates against doubled local fit bounds', (
     z: Math.floor(index / (helmetBounds.maxDimensions.x * helmetBounds.maxDimensions.y * gridScale)) % (helmetBounds.maxDimensions.z * gridScale),
     role: 'primary',
   }));
-  const validPiece = createCustomArmorPiece('helmet', 'HD Fit Helmet', validVoxels, undefined, undefined, 'v3', gridScale);
+  const validPiece: CustomArmorPieceSnapshot = {
+    version: 1,
+    id: 'legacy-grid-scale-2',
+    name: 'Legacy HD Fit Helmet',
+    slot: 'helmet',
+    modelSystem: 'v3',
+    gridScale,
+    voxels: validVoxels,
+    updatedAt: 1,
+  };
   const invalidPiece = {
-    ...createCustomArmorSnapshot(validPiece),
+    ...validPiece,
     voxels: [
       ...validVoxels,
       { x: helmetBounds.maxDimensions.x * gridScale, y: 0, z: 0, role: 'accent' as const },
@@ -235,9 +297,10 @@ test('gridScale 2 V3 custom armor validates against doubled local fit bounds', (
 });
 
 test('V3 custom armor rejects voxels outside the V3 local fit bounds', () => {
+  const helmetDimensions = getV3Mesh2MotionNativeSlotDimensions('helmet');
   const piece = createCustomArmorPiece('helmet', 'Oversized V3 Helmet', [
     { x: 0, y: 0, z: 0, role: 'primary' },
-    { x: 99, y: 0, z: 0, role: 'primary' },
+    { x: helmetDimensions[0], y: 0, z: 0, role: 'primary' },
   ], undefined, undefined, 'v3');
 
   const result = validateCustomArmorPiece(piece);
@@ -287,6 +350,8 @@ test('upsertCustomArmorPieceInCatalog inserts new V3 snapshot with gridScale and
   assert.equal(result.piece.modelSystem, 'v3');
   assert.equal(result.piece.modelType, undefined);
   assert.equal(result.piece.gridScale, 2);
+  assert.equal(result.piece.v3CoordinateSpace, 'mesh2motion-native');
+  assert.deepEqual(result.piece.voxels, convertCustomArmorV3VoxelsToNative('helmet', draft.voxels, 2, 'legacy-grid'));
   assert.equal(result.piece.thumbnail, createCustomArmorThumbnail('helmet', draft.voxels.length, 'v3'));
   assert.equal(result.piece.createdAt, now);
   assert.equal(result.piece.updatedAt, now);
@@ -326,6 +391,7 @@ test('upsertCustomArmorPieceInCatalog updates existing piece and caps prepended 
   assert.equal(result.piece.createdAt, 10);
   assert.equal(result.piece.updatedAt, 999);
   assert.equal(result.piece.name, 'Updated Helmet');
+  assert.equal(result.piece.v3CoordinateSpace, 'mesh2motion-native');
   assert.equal(result.piece.history?.length, CUSTOM_ARMOR_MAX_HISTORY);
   assert.deepEqual(result.piece.history?.[0], previousSnapshot);
   assert.deepEqual(result.piece.history?.[1], existing.history[0]);
@@ -360,16 +426,13 @@ test('upsertCustomArmorPieceInCatalog clones draft voxels before saving', () => 
   assert.notStrictEqual(result.piece.voxels, draft.voxels);
   assert.notStrictEqual(result.catalog.pieces[0].voxels[0], firstVoxel);
   assert.notStrictEqual(result.piece.voxels[0], firstVoxel);
-  assert.deepEqual(result.catalog.pieces[0].voxels, [
+  assert.equal(result.piece.v3CoordinateSpace, 'mesh2motion-native');
+  assert.deepEqual(result.catalog.pieces[0].voxels, convertCustomArmorV3VoxelsToNative('helmet', [
     { x: 0, y: 0, z: 0, role: 'primary' },
     { x: 1, y: 0, z: 0, role: 'secondary' },
     { x: 0, y: 1, z: 0, role: 'visor' },
-  ]);
-  assert.deepEqual(result.piece.voxels, [
-    { x: 0, y: 0, z: 0, role: 'primary' },
-    { x: 1, y: 0, z: 0, role: 'secondary' },
-    { x: 0, y: 1, z: 0, role: 'visor' },
-  ]);
+  ], 2, 'legacy-grid'));
+  assert.deepEqual(result.piece.voxels, result.catalog.pieces[0].voxels);
 });
 
 test('upsertCustomArmorPieceInCatalog preserves V2 modelType and leaves V3 modelType undefined', () => {

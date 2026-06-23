@@ -13,6 +13,7 @@ import {
 import {
   getV3BuiltinPartVoxels,
 } from './VoxelModelsV3';
+import { createV3AegisExactSourcePartVoxels } from './v3AegisSuitParts';
 import { V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE } from './v3AegisObjSurfaceVoxels.generated';
 
 const RUNTIME_LOD_RATIO_CAPS: Record<V3QualityTier, number> = {
@@ -47,25 +48,43 @@ test('getV3ExactSourceRenderableSlot keeps explicit exact source while deriving 
   }
 });
 
-test('getV3BuiltinPartVoxels keeps default exact output and supports explicit runtime LOD output', () => {
-  const exactDefault = getV3BuiltinPartVoxels('helmet');
-  const exactDesktop = getV3BuiltinPartVoxels('helmet', undefined, undefined, {
+test('built-in V3 exact fidelity restores the accepted exact source while runtime LOD still reduces it', () => {
+  const legacyExactDefault = createV3AegisExactSourcePartVoxels('helmet', {
+    primary: '#3b82f6',
+    secondary: '#1e3a8a',
+    visor: '#facc15',
+    accent: '#22d3ee',
+    dark: '#111827',
+    highlight: '#93c5fd',
+  });
+  const legacyRuntimeDesktop = createV3AegisExactSourcePartVoxels('helmet', {
+    primary: '#3b82f6',
+    secondary: '#1e3a8a',
+    visor: '#facc15',
+    accent: '#22d3ee',
+    dark: '#111827',
+    highlight: '#93c5fd',
+  }, undefined, 'desktop', 'runtimeLod');
+  const builtinExactDesktop = getV3BuiltinPartVoxels('helmet', undefined, undefined, {
     qualityTier: 'desktop',
     sourceFidelity: 'exact',
   });
-  const runtimeDesktop = getV3BuiltinPartVoxels('helmet', undefined, undefined, {
+  const builtinRuntimeDesktop = getV3BuiltinPartVoxels('helmet', undefined, undefined, {
     qualityTier: 'desktop',
     sourceFidelity: 'runtimeLod',
   });
-  const mobileLow = getV3BuiltinPartVoxels('helmet', undefined, undefined, {
+  const builtinMobileLow = getV3BuiltinPartVoxels('helmet', undefined, undefined, {
     qualityTier: 'mobileLow',
     sourceFidelity: 'runtimeLod',
   });
 
-  assert.equal(exactDefault.length, exactDesktop.length);
-  assert.ok(runtimeDesktop.length < exactDesktop.length);
-  assert.ok(mobileLow.length < runtimeDesktop.length);
-  assert.ok(mobileLow.some((voxel) => voxel.emissive === true));
+  assert.equal(legacyExactDefault.length, V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.slots.helmet.voxelCount);
+  assert.ok(legacyRuntimeDesktop.length < legacyExactDefault.length);
+  assert.equal(builtinExactDesktop.length, legacyExactDefault.length);
+  assert.equal(builtinRuntimeDesktop.length, legacyRuntimeDesktop.length);
+  assert.ok(builtinRuntimeDesktop.length < builtinExactDesktop.length);
+  assert.ok(builtinMobileLow.length < builtinRuntimeDesktop.length);
+  assert.ok(builtinMobileLow.some((voxel) => voxel.emissive === true));
 });
 
 test('analyzeV3ExactSourceLodBudget reports deterministic reductions for lower quality tiers', () => {

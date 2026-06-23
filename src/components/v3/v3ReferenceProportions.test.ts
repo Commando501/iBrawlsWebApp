@@ -217,14 +217,15 @@ describe('V3 OBJ reference proportion targets', () => {
     assert.equal(targets.bands.shin.widthRatio, V3_OBJ_REFERENCE_PROPORTION_TARGETS.bands.shin.widthRatio);
   });
 
-  it('passes the built-in Aegis model through Phase 32 proportion gates', () => {
+  it('keeps built-in Mesh2Motion-native proportions as OBJ review evidence only', () => {
     const report = analyzeV3AegisReferenceProportions();
 
-    assert.equal(report.ready, true, formatV3ReferenceProportionGapSummary(report));
+    assert.equal(report.ready, false);
     assert.equal(report.placementMode, 'mesh2MotionNative');
     assert.equal(report.targets.sourceKind, 'obj');
-    assert.ok(report.summary.globalFrontWidthDelta <= 0.115);
-    assert.ok(report.summary.maxBandWidthDelta <= 0.295);
-    assert.ok(report.summary.maxBandDepthDelta <= 0.092);
+    assert.ok(report.summary.globalFrontWidthDelta > 0.115);
+    assert.ok(report.summary.maxBandWidthDelta > 0.295);
+    assert.ok(report.summary.maxBandDepthDelta > 0.092);
+    assert.match(formatV3ReferenceProportionGapSummary(report), /review/);
   });
 });

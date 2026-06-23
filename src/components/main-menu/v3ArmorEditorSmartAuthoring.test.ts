@@ -7,6 +7,7 @@ import type {
 } from '../customArmor';
 import {
   getCustomArmorGridScale,
+  getCustomArmorV3CoordinateSpace,
   isVoxelInSlotBounds,
   validateCustomArmorPiece,
 } from '../customArmor';
@@ -94,9 +95,10 @@ const materialKey = (voxel: Pick<CustomArmorVoxel, 'role' | 'color' | 'emissive'
 
 const assertAllVoxelsInBounds = (draft: CustomArmorPieceSnapshot): void => {
   const gridScale = getCustomArmorGridScale(draft);
+  const coordinateSpace = getCustomArmorV3CoordinateSpace(draft) ?? 'legacy-grid';
   for (const voxel of draft.voxels) {
     assert.equal(
-      isVoxelInSlotBounds(draft.slot, voxel, 'medium', 'v3', gridScale),
+      isVoxelInSlotBounds(draft.slot, voxel, 'medium', 'v3', gridScale, coordinateSpace),
       true,
       `expected ${coordKey(voxel)} to stay inside ${draft.slot} bounds`
     );

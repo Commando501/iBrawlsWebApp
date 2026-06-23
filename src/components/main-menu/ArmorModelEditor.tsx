@@ -53,10 +53,10 @@ import {
 } from '../customArmor';
 import { getV3BuiltinPartVoxels } from '../v3/VoxelModelsV3';
 import {
-  V3_ARMOR_SURFACE_BASE_VOXEL_SCALE,
   V3_ARMOR_SURFACE_DEFAULT_OPTIONS,
   createV3VoxelArmorGroup,
 } from '../v3/v3VoxelArmorSurface';
+import { V3_MESH2MOTION_NATIVE_RENDER_VOXEL_SCALE } from '../v3/v3Mesh2MotionNativeGeometry';
 import { getV3CharacterPartBounds } from '../v3/v3PartBounds';
 import {
   getCharacterModelCollisionProfile,
@@ -1734,7 +1734,7 @@ export function ArmorModelEditor({
 
     const meshes: THREE.Mesh[] = [];
     let rigPreviewDeathBurst: V3DeathVoxelBurstInstance | null = null;
-    const baseScale = modelSystem === 'v3' ? V3_ARMOR_SURFACE_BASE_VOXEL_SCALE : 0.045;
+    const baseScale = modelSystem === 'v3' ? V3_MESH2MOTION_NATIVE_RENDER_VOXEL_SCALE : 0.045;
     const scale = modelSystem === 'v3' ? baseScale / draftGridScale : baseScale;
 
     if (viewMode === 'rig') {
@@ -1799,7 +1799,7 @@ export function ArmorModelEditor({
           partGroup.add(createV3SmartPreviewOverlayGroup(
             activeV3PreviewOverlay,
             editorPreviewPalette,
-            V3_ARMOR_SURFACE_BASE_VOXEL_SCALE / draftGridScale,
+            V3_MESH2MOTION_NATIVE_RENDER_VOXEL_SCALE / draftGridScale,
             { x: 0, y: 0, z: 0 }
           ));
         }

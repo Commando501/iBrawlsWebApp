@@ -14,7 +14,57 @@ const tupleLength = (value: readonly number[]): number =>
   Math.hypot(value[0] ?? 0, value[1] ?? 0, value[2] ?? 0);
 
 const quaternionFromTuple = (value: readonly number[]): THREE.Quaternion =>
-  new THREE.Quaternion(value[0] ?? 0, value[1] ?? 0, value[2] ?? 0, value[3] ?? 1).normalize();
+  new THREE.Quaternion(value[0] ?? 0, value[1] ?? 0, value[2] ?? 0, value[3] ?? 1);
+
+const tupleIsFinite = (value: readonly number[] | undefined, length = 3): value is readonly number[] =>
+  Array.isArray(value) && value.length === length && value.every(Number.isFinite);
+
+const assertValidEnvelope = (
+  slot: string,
+  envelope: {
+    min?: readonly number[];
+    max?: readonly number[];
+    size?: readonly number[];
+  } | undefined,
+  geometryPosition: readonly number[]
+): void => {
+  assert.ok(envelope, `${slot} localEnvelope should be present`);
+  assert.equal(tupleIsFinite(envelope.min), true, `${slot} localEnvelope min should be finite`);
+  assert.equal(tupleIsFinite(envelope.max), true, `${slot} localEnvelope max should be finite`);
+  assert.equal(tupleIsFinite(envelope.size), true, `${slot} localEnvelope size should be finite`);
+
+  for (let index = 0; index < 3; index += 1) {
+    const min = envelope.min[index];
+    const max = envelope.max[index];
+    const size = envelope.size[index];
+    assert.ok(max > min, `${slot} localEnvelope axis ${index} should have positive extent`);
+    assert.ok(Math.abs(size - (max - min)) < 0.000001, `${slot} localEnvelope axis ${index} size should match max-min`);
+    assert.ok(geometryPosition[index] >= min - 0.000001, `${slot} geometry center should be inside envelope min`);
+    assert.ok(geometryPosition[index] <= max + 0.000001, `${slot} geometry center should be inside envelope max`);
+  }
+};
+
+const EXPECTED_MIRROR_OF = {
+  helmet: null,
+  neck: null,
+  chest: null,
+  shoulderLeft: null,
+  shoulderRight: 'shoulderLeft',
+  upperArmLeft: null,
+  upperArmRight: 'upperArmLeft',
+  forearmLeft: null,
+  forearmRight: 'forearmLeft',
+  handLeft: null,
+  handRight: 'handLeft',
+  pelvis: null,
+  thighLeft: null,
+  thighRight: 'thighLeft',
+  shinLeft: null,
+  shinRight: 'shinLeft',
+  footLeft: null,
+  footRight: 'footLeft',
+  back: null,
+} as const;
 
 describe('v3Mesh2MotionArmorRig', () => {
   it('ships a V3-owned generated Mesh2Motion armor rig contract without raw source payloads', () => {
@@ -35,14 +85,23 @@ describe('v3Mesh2MotionArmorRig', () => {
   });
 
   it('defines every V3 armor slot from Mesh2Motion TPose source and segment joints', () => {
+    const jointByName = new Map(V3_MESH2MOTION_ARMOR_RIG.skeleton.joints.map((joint) => [joint.name, joint]));
+
     for (const slot of V3_CHARACTER_SLOT_IDS) {
       const spec = V3_MESH2MOTION_ARMOR_SLOT_SPECS[slot];
       const placement = V3_MESH2MOTION_ARMOR_RIG.slots[slot];
+      const sourceJoint = jointByName.get(placement.sourceJointName);
+      const endJoint = placement.endJointName ? jointByName.get(placement.endJointName) : null;
 
       assert.equal(placement.slot, slot);
       assert.equal(placement.sourceJointName, spec.sourceJointName);
       assert.equal(placement.endJointName, spec.endJointName);
       assert.deepEqual(placement.centerJointNames, spec.centerJointNames);
+      assert.ok(sourceJoint, `${slot} source joint should exist`);
+      if (placement.endJointName) assert.ok(endJoint, `${slot} end joint should exist`);
+      for (const centerJointName of placement.centerJointNames) {
+        assert.ok(jointByName.has(centerJointName), `${slot} center joint ${centerJointName} should exist`);
+      }
       assert.equal(placement.pivotCenter.length, 3);
       assert.equal(placement.pivotWorldPosition.length, 3);
       assert.equal(placement.pivotWorldQuaternion.length, 4);
@@ -56,7 +115,39 @@ describe('v3Mesh2MotionArmorRig', () => {
       assert.ok(Math.abs(tupleLength(placement.basis.xAxis) - 1) < 0.000001, `${slot} basis xAxis normalized`);
       assert.ok(Math.abs(tupleLength(placement.basis.yAxis) - 1) < 0.000001, `${slot} basis yAxis normalized`);
       assert.ok(Math.abs(tupleLength(placement.basis.zAxis) - 1) < 0.000001, `${slot} basis zAxis normalized`);
+      assert.ok(Math.abs(quaternionFromTuple(placement.basis.quaternion).length() - 1) < 0.000001, `${slot} basis quaternion normalized`);
+      assert.ok(Math.abs(quaternionFromTuple(placement.pivotWorldQuaternion).length() - 1) < 0.000001, `${slot} pivot quaternion normalized`);
       assert.ok(tupleLength(placement.pivotWorldPosition) > 0 || slot === 'pelvis');
+
+      assert.equal(Number.isFinite(placement.segmentLength), true, `${slot} segmentLength should be finite`);
+      if (sourceJoint && endJoint) {
+        const expectedSegmentLength = tupleLength([
+          endJoint.restWorldPosition[0] - sourceJoint.restWorldPosition[0],
+          endJoint.restWorldPosition[1] - sourceJoint.restWorldPosition[1],
+          endJoint.restWorldPosition[2] - sourceJoint.restWorldPosition[2],
+        ]);
+        assert.ok(placement.segmentLength > 0, `${slot} segmentLength should be positive`);
+        assert.ok(
+          Math.abs(placement.segmentLength - expectedSegmentLength) < 0.000001,
+          `${slot} segmentLength should match source-to-end joint distance`
+        );
+      } else {
+        assert.equal(placement.segmentLength, 0, `${slot} unsegmented slot should declare zero segmentLength`);
+      }
+
+      assert.equal(placement.localVoxelGridDimensions.length, 3);
+      for (const dimension of placement.localVoxelGridDimensions) {
+        assert.equal(Number.isInteger(dimension), true, `${slot} local voxel grid dimension should be an integer`);
+        assert.ok(dimension > 0, `${slot} local voxel grid dimension should be positive`);
+      }
+      assert.equal(Number.isFinite(placement.jointClearance), true, `${slot} jointClearance should be finite`);
+      assert.ok(placement.jointClearance > 0, `${slot} jointClearance should be positive`);
+      assert.equal(placement.mirrorOf, EXPECTED_MIRROR_OF[slot], `${slot} mirrorOf should be deterministic`);
+      if (placement.mirrorOf) {
+        assert.ok(V3_CHARACTER_SLOT_IDS.includes(placement.mirrorOf), `${slot} mirrorOf should reference a V3 slot`);
+        assert.notEqual(placement.mirrorOf, slot, `${slot} mirrorOf should not reference itself`);
+      }
+      assertValidEnvelope(slot, placement.localEnvelope, placement.geometry.position);
     }
   });
 

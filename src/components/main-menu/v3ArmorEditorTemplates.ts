@@ -10,7 +10,7 @@ import {
   type CustomArmorVoxel,
   type V3CustomArmorSlot,
 } from '../customArmor';
-import { getV3CharacterPartBounds } from '../v3/v3PartBounds';
+import { getV3Mesh2MotionNativeSlotDimensions } from '../v3/v3Mesh2MotionNativeGeometry';
 
 export interface V3ArmorTemplateOptions {
   hue?: number;
@@ -18,7 +18,7 @@ export interface V3ArmorTemplateOptions {
   name?: string;
 }
 
-const TEMPLATE_GRID_SCALE = 2;
+const TEMPLATE_GRID_SCALE = 1;
 const DEFAULT_TEMPLATE_HUE = 210;
 
 interface AxisRange {
@@ -149,11 +149,11 @@ function addBox(
 }
 
 function getTemplateBounds(slot: V3CustomArmorSlot): TemplateBounds {
-  const dimensions = getV3CharacterPartBounds(slot).maxDimensions;
+  const [x, y, z] = getV3Mesh2MotionNativeSlotDimensions(slot);
   return {
-    x: dimensions.x * TEMPLATE_GRID_SCALE,
-    y: dimensions.y * TEMPLATE_GRID_SCALE,
-    z: dimensions.z * TEMPLATE_GRID_SCALE,
+    x,
+    y,
+    z,
   };
 }
 
@@ -193,7 +193,7 @@ function buildCollarVoxels(bounds: TemplateBounds, hue: number): CustomArmorVoxe
 
   addBox(voxels, bounds, rangeBetween(bounds.x, 0.18, 0.34, 2), high, rear, 'secondary', hue);
   addBox(voxels, bounds, rangeBetween(bounds.x, 0.66, 0.82, 2), high, rear, 'secondary', hue);
-  addBox(voxels, bounds, rangeBetween(bounds.x, 0.28, 0.72, 3), low, rear, 'undersuit', hue);
+  addBox(voxels, bounds, rangeBetween(bounds.x, 0.28, 0.72, 3), low, rear, 'secondary', hue);
   addBox(voxels, bounds, rangeBetween(bounds.x, 0.24, 0.42, 2), low, front, 'accent', hue);
   addBox(voxels, bounds, rangeBetween(bounds.x, 0.58, 0.76, 2), low, front, 'accent', hue);
   addBox(voxels, bounds, rangeAround(bounds.x, 0.5, 0.18, 1), high, front, 'highlight', hue);
@@ -219,7 +219,12 @@ function buildChestVoxels(bounds: TemplateBounds, hue: number): CustomArmorVoxel
   addBox(voxels, bounds, rangeAround(bounds.x, 0.5, 0.16, 2), rangeBetween(bounds.y, 0.32, 0.7, 4), rear, 'undersuit', hue);
   addBox(voxels, bounds, rangeAround(bounds.x, 0.5, 0.08, 1), rangeAround(bounds.y, 0.62, 0.08, 1), front, 'fixed', hue);
 
-  return dedupeCustomArmorVoxels(voxels);
+  return dedupeCustomArmorVoxels(voxels).filter((voxel) => (
+    voxel.role === 'accent' ||
+    voxel.role === 'fixed' ||
+    voxel.role === 'highlight' ||
+    ((voxel.x * 17 + voxel.y * 31 + voxel.z * 47) % 4) !== 0
+  ));
 }
 
 function buildShoulderVoxels(bounds: TemplateBounds, hue: number): CustomArmorVoxel[] {
@@ -323,7 +328,13 @@ function buildThighVoxels(bounds: TemplateBounds, hue: number): CustomArmorVoxel
   addBox(voxels, bounds, rangeAround(bounds.x, 0.5, 0.2, 2), upper, rear, 'undersuit', hue);
   addBox(voxels, bounds, rangeBetween(bounds.x, 0.3, 0.7, 3), rangeAround(bounds.y, 0.82, 0.08, 1), front, 'highlight', hue);
 
-  return dedupeCustomArmorVoxels(voxels);
+  const reliefZ = Math.floor((bounds.z - 1) * 0.5);
+  return dedupeCustomArmorVoxels(voxels).filter((voxel) => !(
+    voxel.x >= 2 &&
+    voxel.x <= Math.max(2, bounds.x - 3) &&
+    voxel.y % 2 === 0 &&
+    voxel.z === reliefZ
+  ));
 }
 
 function buildShinVoxels(bounds: TemplateBounds, hue: number): CustomArmorVoxel[] {
@@ -371,8 +382,8 @@ function buildBackVoxels(bounds: TemplateBounds, hue: number): CustomArmorVoxel[
   const lower = rangeBetween(bounds.y, 0.18, 0.48, 3);
 
   addBox(voxels, bounds, rangeAround(bounds.x, 0.5, 0.32, 3), tall, rear, 'secondary', hue);
-  addBox(voxels, bounds, rangeBetween(bounds.x, 0.18, 0.34, 2), upper, rear, 'undersuit', hue);
-  addBox(voxels, bounds, rangeBetween(bounds.x, 0.66, 0.82, 2), upper, rear, 'undersuit', hue);
+  addBox(voxels, bounds, rangeBetween(bounds.x, 0.18, 0.34, 2), upper, rear, 'primary', hue);
+  addBox(voxels, bounds, rangeBetween(bounds.x, 0.66, 0.82, 2), upper, rear, 'primary', hue);
   addBox(voxels, bounds, rangeBetween(bounds.x, 0.2, 0.38, 2), lower, midZ, 'primary', hue);
   addBox(voxels, bounds, rangeBetween(bounds.x, 0.62, 0.8, 2), lower, midZ, 'primary', hue);
   addBox(voxels, bounds, rangeAround(bounds.x, 0.5, 0.12, 1), rangeBetween(bounds.y, 0.34, 0.72, 3), rear, 'emissive', hue, true);

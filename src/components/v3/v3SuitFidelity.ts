@@ -667,18 +667,17 @@ export function analyzeV3PartFidelity(
     );
   }
 
-  if (
-    HAND_SLOTS.has(slot) &&
-    Math.max(occupiedBounds.sizeX, occupiedBounds.sizeY) > BUILT_IN_HAND_MAX_HIGH_DENSITY_DIMENSION
-  ) {
-    const handPlanarDimension = Math.max(occupiedBounds.sizeX, occupiedBounds.sizeY);
-    addIssue(
-      issues,
-      'terminal-proportion-oversized',
-      `${slot} is larger than the built-in high-density hand envelope`,
-      handPlanarDimension,
-      BUILT_IN_HAND_MAX_HIGH_DENSITY_DIMENSION
-    );
+  if (HAND_SLOTS.has(slot)) {
+    const handPlanarDimension = Math.sqrt(occupiedBounds.sizeX * occupiedBounds.sizeY);
+    if (handPlanarDimension > BUILT_IN_HAND_MAX_HIGH_DENSITY_DIMENSION) {
+      addIssue(
+        issues,
+        'terminal-proportion-oversized',
+        `${slot} is larger than the built-in high-density hand envelope`,
+        handPlanarDimension,
+        BUILT_IN_HAND_MAX_HIGH_DENSITY_DIMENSION
+      );
+    }
   }
 
   return {

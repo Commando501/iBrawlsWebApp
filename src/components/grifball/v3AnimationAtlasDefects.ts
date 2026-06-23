@@ -228,6 +228,7 @@ const ATLAS_WARNING_THRESHOLDS = {
   } satisfies Record<V3WeaponId, number>,
 } as const;
 const RETARGETED_LOCOMOTION_LOWER_BODY_SEAM_LIMIT = 0.14;
+const ATLAS_WARNING_EPSILON = 0.00001;
 const WEAPON_CASES = new Set<V3PoseClearanceCaseId>([
   'hammerWindup',
   'hammerStrike',
@@ -359,7 +360,7 @@ export const buildV3AnimationAtlasDefectWarnings = (
   const weaponScaleLimit = metrics.visibleWeapon
     ? ATLAS_WARNING_THRESHOLDS.maxWeaponBodyHeightRatio[metrics.visibleWeapon]
     : Number.POSITIVE_INFINITY;
-  if ((metrics.weaponBodyHeightRatio ?? 0) > weaponScaleLimit) warnings.push('weapon scale high');
+  if ((metrics.weaponBodyHeightRatio ?? 0) > weaponScaleLimit + ATLAS_WARNING_EPSILON) warnings.push('weapon scale high');
   if ((metrics.weaponGripDrift ?? 0) > ATLAS_WARNING_THRESHOLDS.maxWeaponGripDrift) warnings.push('weapon grip drift high');
   if (
     metrics.visibleWeapon

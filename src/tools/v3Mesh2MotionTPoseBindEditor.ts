@@ -6,10 +6,13 @@ import { V3_MESH2MOTION_ARMOR_RIG } from '../components/v3/v3Mesh2MotionArmorRig
 import { V3_CHARACTER_SLOT_IDS, type V3CharacterSlotId } from '../components/v3/v3ModelTypes';
 import {
   buildV3Mesh2MotionTPoseBindDiagnostics,
+  getV3Mesh2MotionTPoseBindGeneratedPlacement,
+  mirrorV3Mesh2MotionTPoseBindSelectedPlacement,
   normalizeV3Mesh2MotionTPoseBindDocument,
   parseV3Mesh2MotionTPoseBindDocumentJson,
   resolveV3Mesh2MotionTPoseBindEditorHotkey,
   serializeV3Mesh2MotionTPoseBindDocument,
+  snapV3Mesh2MotionTPoseBindSelectedToSegmentCenter,
   type V3Mesh2MotionTPoseBindDocument,
   type V3Mesh2MotionTPoseBindPlacement,
   type V3Mesh2MotionTPoseBindTransformMode,
@@ -27,8 +30,14 @@ const downloadJsonButton = document.getElementById('download-json') as HTMLButto
 const importJsonButton = document.getElementById('import-json') as HTMLButtonElement;
 const chooseJsonButton = document.getElementById('choose-json') as HTMLButtonElement;
 const clearLocalButton = document.getElementById('clear-local') as HTMLButtonElement;
+const mirrorSelectedButton = document.getElementById('mirror-selected') as HTMLButtonElement;
+const snapSelectedButton = document.getElementById('snap-selected') as HTMLButtonElement;
 const resetSelectedButton = document.getElementById('reset-selected') as HTMLButtonElement;
 const resetAllButton = document.getElementById('reset-all') as HTMLButtonElement;
+const soloSelectedButton = document.getElementById('solo-selected') as HTMLButtonElement;
+const toggleSkeletonButton = document.getElementById('toggle-skeleton') as HTMLButtonElement;
+const toggleArmorButton = document.getElementById('toggle-armor') as HTMLButtonElement;
+const toggleDiagnosticsButton = document.getElementById('toggle-diagnostics') as HTMLButtonElement;
 const importFileInput = document.getElementById('import-file') as HTMLInputElement;
 const transformButtons: Record<V3Mesh2MotionTPoseBindTransformMode, HTMLButtonElement> = {
   translate: document.getElementById('transform-translate') as HTMLButtonElement,
@@ -122,26 +131,88 @@ const skeletonLines = (() => {
 })();
 scene.add(skeletonLines);
 
+const jointEndpointGroup = new THREE.Group();
+jointEndpointGroup.name = 'v3Mesh2MotionTPoseJointEndpoints';
+const jointEndpointMaterial = new THREE.MeshBasicMaterial({ color: 0x67e8f9, transparent: true, opacity: 0.9, depthTest: false });
+for (const joint of V3_MESH2MOTION_ARMOR_RIG.skeleton.joints) {
+  const endpoint = new THREE.Mesh(new THREE.SphereGeometry(0.012, 8, 6), jointEndpointMaterial);
+  endpoint.name = `v3Mesh2MotionTPoseJointEndpoint:${joint.name}`;
+  endpoint.position.fromArray(joint.restWorldPosition);
+  endpoint.renderOrder = 24;
+  jointEndpointGroup.add(endpoint);
+}
+scene.add(jointEndpointGroup);
+
 const slotMarkerMaterial = new THREE.MeshBasicMaterial({ color: 0xfacc15, depthTest: false });
+const slotDiagnosticMaterial = new THREE.MeshBasicMaterial({ color: 0xef4444, transparent: true, opacity: 0.85, depthTest: false });
+const slotEnvelopeMaterial = new THREE.LineBasicMaterial({ color: 0xfacc15, transparent: true, opacity: 0.32, depthTest: false });
+const slotSegmentMaterial = new THREE.LineBasicMaterial({ color: 0xa7f3d0, transparent: true, opacity: 0.72, depthTest: false });
+const slotEnvelopeHelpers: Partial<Record<V3CharacterSlotId, THREE.LineSegments>> = {};
+const slotAxisHelpers: Partial<Record<V3CharacterSlotId, THREE.AxesHelper>> = {};
+const slotSegmentHelpers: Partial<Record<V3CharacterSlotId, THREE.Line>> = {};
+const slotDiagnosticMarkers: Partial<Record<V3CharacterSlotId, THREE.Mesh>> = {};
+const jointByName = new Map(V3_MESH2MOTION_ARMOR_RIG.skeleton.joints.map((joint) => [joint.name, joint]));
+
 for (const slot of V3_CHARACTER_SLOT_IDS) {
   const marker = new THREE.Mesh(new THREE.SphereGeometry(0.022, 12, 8), slotMarkerMaterial);
   marker.name = `v3Mesh2MotionTPoseSlotMarker:${slot}`;
   marker.renderOrder = 25;
   slotPivots[slot].add(marker);
+
+  const generatedSlot = V3_MESH2MOTION_ARMOR_RIG.slots[slot];
+  const envelope = generatedSlot.localEnvelope;
+  const envelopeGeometry = new THREE.EdgesGeometry(new THREE.BoxGeometry(
+    envelope.size[0],
+    envelope.size[1],
+    envelope.size[2]
+  ));
+  const envelopeHelper = new THREE.LineSegments(envelopeGeometry, slotEnvelopeMaterial);
+  envelopeHelper.name = `v3Mesh2MotionTPoseSlotEnvelope:${slot}`;
+  envelopeHelper.position.set(
+    (envelope.min[0] + envelope.max[0]) * 0.5,
+    (envelope.min[1] + envelope.max[1]) * 0.5,
+    (envelope.min[2] + envelope.max[2]) * 0.5
+  );
+  envelopeHelper.renderOrder = 22;
+  slotPivots[slot].add(envelopeHelper);
+  slotEnvelopeHelpers[slot] = envelopeHelper;
+
+  const axes = new THREE.AxesHelper(0.08);
+  axes.name = `v3Mesh2MotionTPosePivotAxes:${slot}`;
+  axes.renderOrder = 23;
+  slotPivots[slot].add(axes);
+  slotAxisHelpers[slot] = axes;
+
+  const startJoint = jointByName.get(generatedSlot.sourceJointName);
+  const endJoint = generatedSlot.endJointName ? jointByName.get(generatedSlot.endJointName) : null;
+  if (startJoint && endJoint) {
+    const segmentGeometry = new THREE.BufferGeometry();
+    segmentGeometry.setAttribute('position', new THREE.Float32BufferAttribute([
+      ...startJoint.restWorldPosition,
+      ...endJoint.restWorldPosition,
+    ], 3));
+    const segmentLine = new THREE.Line(segmentGeometry, slotSegmentMaterial);
+    segmentLine.name = `v3Mesh2MotionTPoseSlotSegment:${slot}`;
+    segmentLine.renderOrder = 21;
+    scene.add(segmentLine);
+    slotSegmentHelpers[slot] = segmentLine;
+  }
+
+  const diagnosticMarker = new THREE.Mesh(new THREE.SphereGeometry(0.035, 12, 8), slotDiagnosticMaterial);
+  diagnosticMarker.name = `v3Mesh2MotionTPoseDiagnosticMarker:${slot}`;
+  diagnosticMarker.renderOrder = 30;
+  diagnosticMarker.visible = false;
+  slotPivots[slot].add(diagnosticMarker);
+  slotDiagnosticMarkers[slot] = diagnosticMarker;
 }
 
 const generatedDocument = (): V3Mesh2MotionTPoseBindDocument => normalizeV3Mesh2MotionTPoseBindDocument({
   source: { meshHash: SOURCE_HASH, authoringSpace: 'mesh2motion-native-v3' },
   selectedSlot: 'helmet',
-  placements: Object.fromEntries(V3_CHARACTER_SLOT_IDS.map((slot) => {
-    const placement = V3_MESH2MOTION_ARMOR_RIG.slots[slot].geometry;
-    return [slot, {
-      slot,
-      position: placement.position,
-      rotation: placement.rotation,
-      scale: placement.scale,
-    }];
-  })),
+  placements: Object.fromEntries(V3_CHARACTER_SLOT_IDS.map((slot) => [
+    slot,
+    getV3Mesh2MotionTPoseBindGeneratedPlacement(slot),
+  ])),
 });
 
 const sourceForCurrentMesh = (
@@ -180,6 +251,10 @@ const loadInitialDocument = (): V3Mesh2MotionTPoseBindDocument => {
 
 let bindDocument = loadInitialDocument();
 let transformMode: V3Mesh2MotionTPoseBindTransformMode = 'translate';
+let soloSelected = false;
+let showSkeleton = true;
+let showArmor = true;
+let showDiagnosticsOverlay = true;
 
 const tupleFromInputs = (inputs: readonly HTMLInputElement[]): [number, number, number] => [
   Number(inputs[0].value),
@@ -210,6 +285,30 @@ const applyDocumentToModel = (): void => {
 const selectedSlot = (): V3CharacterSlotId => bindDocument.selectedSlot;
 
 const selectedGeometry = (): THREE.Group => geometryGroups[selectedSlot()];
+
+const refreshVisualToggles = (): void => {
+  const selected = selectedSlot();
+  skeletonLines.visible = showSkeleton;
+  jointEndpointGroup.visible = showSkeleton;
+  if (skeletonRoot) skeletonRoot.visible = false;
+  soloSelectedButton.classList.toggle('active', soloSelected);
+  toggleSkeletonButton.classList.toggle('active', showSkeleton);
+  toggleArmorButton.classList.toggle('active', showArmor);
+  toggleDiagnosticsButton.classList.toggle('active', showDiagnosticsOverlay);
+
+  for (const slot of V3_CHARACTER_SLOT_IDS) {
+    const slotIsVisible = !soloSelected || slot === selected;
+    geometryGroups[slot].visible = showArmor && slotIsVisible;
+    slotPivots[slot].visible = slotIsVisible;
+    if (!showArmor) slotPivots[slot].visible = slotIsVisible;
+    if (slotEnvelopeHelpers[slot]) slotEnvelopeHelpers[slot]!.visible = showDiagnosticsOverlay && slotIsVisible;
+    if (slotAxisHelpers[slot]) slotAxisHelpers[slot]!.visible = showDiagnosticsOverlay && slotIsVisible;
+    if (slotSegmentHelpers[slot]) slotSegmentHelpers[slot]!.visible = showDiagnosticsOverlay && slotIsVisible;
+    if (slotDiagnosticMarkers[slot]) {
+      slotDiagnosticMarkers[slot]!.visible = showDiagnosticsOverlay && slotDiagnosticMarkers[slot]!.userData.hasDiagnostic === true && slotIsVisible;
+    }
+  }
+};
 
 const refreshSlotSelect = (): void => {
   slotSelect.replaceChildren(...V3_CHARACTER_SLOT_IDS.map((slot) => {
@@ -282,6 +381,12 @@ const applyInputsToSelected = (): void => {
 
 const refreshDiagnosticsAndJson = (): void => {
   const diagnostics = buildV3Mesh2MotionTPoseBindDiagnostics(bindDocument);
+  const diagnosticSlots = new Set(diagnostics.items.map((item) => item.slot));
+  for (const slot of V3_CHARACTER_SLOT_IDS) {
+    if (slotDiagnosticMarkers[slot]) {
+      slotDiagnosticMarkers[slot]!.userData.hasDiagnostic = diagnosticSlots.has(slot);
+    }
+  }
   diagnosticsElement.textContent = diagnostics.items.length === 0
     ? 'ready'
     : diagnostics.items.map((item) => `${item.severity.toUpperCase()} ${item.slot} ${item.code}: ${item.message}`).join('\n');
@@ -291,7 +396,11 @@ const refreshDiagnosticsAndJson = (): void => {
   selectedSummaryElement.textContent = [
     `slot: ${selectedSlot()}`,
     `source joint: ${pivot.sourceJointName}`,
+    `end joint: ${pivot.endJointName ?? 'none'}`,
     `center joints: ${pivot.centerJointNames.join(', ')}`,
+    `segment length: ${pivot.segmentLength.toFixed(4)}`,
+    `joint clearance: ${pivot.jointClearance.toFixed(4)}`,
+    `envelope size: ${pivot.localEnvelope.size.map((value) => value.toFixed(4)).join(', ')}`,
     `position: ${placement.position.map((value) => value.toFixed(4)).join(', ')}`,
     `rotation: ${placement.rotation.map((value) => value.toFixed(4)).join(', ')}`,
     `scale: ${placement.scale.map((value) => value.toFixed(4)).join(', ')}`,
@@ -299,6 +408,7 @@ const refreshDiagnosticsAndJson = (): void => {
   statusElement.textContent = diagnostics.ready
     ? `Editing ${selectedSlot()} from Mesh2Motion TPose (${SOURCE_HASH.slice(0, 10)})`
     : `${diagnostics.items.length} diagnostic item(s) for ${selectedSlot()}`;
+  refreshVisualToggles();
 };
 
 function refreshAll(): void {
@@ -308,6 +418,7 @@ function refreshAll(): void {
   updateTransformButtons();
   transformControls.attach(selectedGeometry());
   refreshDiagnosticsAndJson();
+  refreshVisualToggles();
 }
 
 const saveLocal = (): void => {
@@ -341,6 +452,14 @@ for (const [mode, button] of Object.entries(transformButtons) as [V3Mesh2MotionT
     updateTransformButtons();
   });
 }
+mirrorSelectedButton.addEventListener('click', () => {
+  bindDocument = mirrorV3Mesh2MotionTPoseBindSelectedPlacement(bindDocument);
+  refreshAll();
+});
+snapSelectedButton.addEventListener('click', () => {
+  bindDocument = snapV3Mesh2MotionTPoseBindSelectedToSegmentCenter(bindDocument);
+  refreshAll();
+});
 resetSelectedButton.addEventListener('click', () => {
   const slot = selectedSlot();
   const generated = generatedDocument();
@@ -357,6 +476,22 @@ resetSelectedButton.addEventListener('click', () => {
 resetAllButton.addEventListener('click', () => {
   bindDocument = generatedDocument();
   refreshAll();
+});
+soloSelectedButton.addEventListener('click', () => {
+  soloSelected = !soloSelected;
+  refreshVisualToggles();
+});
+toggleSkeletonButton.addEventListener('click', () => {
+  showSkeleton = !showSkeleton;
+  refreshVisualToggles();
+});
+toggleArmorButton.addEventListener('click', () => {
+  showArmor = !showArmor;
+  refreshVisualToggles();
+});
+toggleDiagnosticsButton.addEventListener('click', () => {
+  showDiagnosticsOverlay = !showDiagnosticsOverlay;
+  refreshVisualToggles();
 });
 saveLocalButton.addEventListener('click', saveLocal);
 clearLocalButton.addEventListener('click', () => {
@@ -413,6 +548,8 @@ window.addEventListener('keydown', (event) => {
   if (action.type === 'clearSelection') transformControls.detach();
   if (action.type === 'resetSelected') resetSelectedButton.click();
   if (action.type === 'resetAll') resetAllButton.click();
+  if (action.type === 'mirrorSelected') mirrorSelectedButton.click();
+  if (action.type === 'snapSelectedToSegmentCenter') snapSelectedButton.click();
   if (action.type === 'commit') saveLocal();
   if (action.type === 'transformMode') {
     transformMode = action.mode;

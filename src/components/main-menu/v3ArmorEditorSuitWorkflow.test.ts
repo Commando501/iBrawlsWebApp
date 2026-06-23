@@ -60,14 +60,14 @@ const legacyTorso: CustomArmorPieceSnapshot = {
   updatedAt: 99,
 };
 
-test('createV3SuitDraftMap includes every V3 slot at gridScale 2 when templates are used', () => {
+test('createV3SuitDraftMap includes every V3 slot in Mesh2Motion-native space when templates are used', () => {
   const drafts = createV3SuitDraftMap({}, catalog(), 32, 123_456);
 
   assert.deepEqual(Object.keys(drafts).sort(), [...V3_CUSTOM_ARMOR_SLOTS].sort());
   for (const slot of V3_CUSTOM_ARMOR_SLOTS) {
     assert.equal(drafts[slot].slot, slot);
     assert.equal(drafts[slot].modelSystem, 'v3');
-    assert.equal(getCustomArmorGridScale(drafts[slot]), 2);
+    assert.equal(getCustomArmorGridScale(drafts[slot]), 1);
     assert.equal(drafts[slot].updatedAt, 123_456);
   }
 });

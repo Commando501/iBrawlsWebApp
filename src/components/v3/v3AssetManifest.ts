@@ -183,7 +183,7 @@ export const BUILT_IN_V3_CHARACTER_PARTS: readonly V3CharacterPartManifest[] = [
     slot: 'chest',
     label: 'Aegis Core Chestplate',
     roles: ['undersuit', 'secondary', 'accent', 'decal', 'fixed'],
-    budget: createBudget(4800, 2500, 4, 4, 3, 1200),
+    budget: createBudget(6800, 3200, 4, 4, 3, 1600),
   }),
   createCharacterPart({
     slot: 'shoulderLeft',

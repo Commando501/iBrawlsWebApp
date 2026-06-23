@@ -8,8 +8,10 @@ import {
   getCustomArmorBounds,
   getCustomArmorGridScale,
   getCustomArmorPieceModelSystem,
+  getCustomArmorV3CoordinateSpace,
   validateCustomArmorPiece,
 } from '../customArmor';
+import { getV3Mesh2MotionNativeSlotDimensions } from '../v3/v3Mesh2MotionNativeGeometry';
 import { getV3CharacterPartBounds } from '../v3/v3PartBounds';
 import {
   V3_CHARACTER_SLOT_IDS,
@@ -300,6 +302,18 @@ function isV3Draft(draft: CustomArmorPieceSnapshot): boolean {
 
 function getSlotBounds(draft: CustomArmorPieceSnapshot): EditableBounds | undefined {
   if (!isV3Draft(draft)) return undefined;
+  const coordinateSpace = getCustomArmorV3CoordinateSpace(draft) ?? 'legacy-grid';
+  if (coordinateSpace === 'mesh2motion-native') {
+    const [x, y, z] = getV3Mesh2MotionNativeSlotDimensions(draft.slot as V3CharacterSlotId);
+    return {
+      minX: 0,
+      maxX: x - 1,
+      minY: 0,
+      maxY: y - 1,
+      minZ: 0,
+      maxZ: z - 1,
+    };
+  }
   const gridScale = getCustomArmorGridScale(draft);
   const dimensions = getV3CharacterPartBounds(draft.slot as V3CharacterSlotId).maxDimensions;
   return {

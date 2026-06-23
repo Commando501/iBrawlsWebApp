@@ -1480,6 +1480,7 @@ export const V3_MESH2MOTION_ARMOR_RIG = {
         "head",
         "head_leaf"
       ],
+      "segmentLength": 0.066586,
       "pivotCenter": [
         0,
         1.5312,
@@ -1519,11 +1520,35 @@ export const V3_MESH2MOTION_ARMOR_RIG = {
           1
         ]
       },
+      "localVoxelGridDimensions": [
+        13,
+        9,
+        10
+      ],
+      "jointClearance": 0.055,
+      "mirrorOf": null,
+      "localEnvelope": {
+        "min": [
+          -0.3575,
+          -0.2475,
+          -0.275
+        ],
+        "max": [
+          0.3575,
+          0.2475,
+          0.275
+        ],
+        "size": [
+          0.715,
+          0.495,
+          0.55
+        ]
+      },
       "geometry": {
         "position": [
-          -0.004792,
-          0.169842,
-          -0.073433
+          0,
+          0,
+          0
         ],
         "rotation": [
           0,
@@ -1545,6 +1570,7 @@ export const V3_MESH2MOTION_ARMOR_RIG = {
         "neck_01",
         "head"
       ],
+      "segmentLength": 0.125965,
       "pivotCenter": [
         0,
         1.441425,
@@ -1584,11 +1610,35 @@ export const V3_MESH2MOTION_ARMOR_RIG = {
           1
         ]
       },
+      "localVoxelGridDimensions": [
+        6,
+        4,
+        6
+      ],
+      "jointClearance": 0.055,
+      "mirrorOf": null,
+      "localEnvelope": {
+        "min": [
+          -0.165,
+          -0.11,
+          -0.165
+        ],
+        "max": [
+          0.165,
+          0.11,
+          0.165
+        ],
+        "size": [
+          0.33,
+          0.22,
+          0.33
+        ]
+      },
       "geometry": {
         "position": [
-          -0.004792,
-          0.087117,
-          0.084856
+          0,
+          0,
+          0
         ],
         "rotation": [
           0,
@@ -1610,6 +1660,7 @@ export const V3_MESH2MOTION_ARMOR_RIG = {
         "spine_03",
         "neck_01"
       ],
+      "segmentLength": 0.166728,
       "pivotCenter": [
         0,
         1.303707,
@@ -1649,11 +1700,35 @@ export const V3_MESH2MOTION_ARMOR_RIG = {
           1
         ]
       },
+      "localVoxelGridDimensions": [
+        15,
+        18,
+        12
+      ],
+      "jointClearance": 0.055,
+      "mirrorOf": null,
+      "localEnvelope": {
+        "min": [
+          -0.4125,
+          -0.495,
+          -0.33
+        ],
+        "max": [
+          0.4125,
+          0.495,
+          0.33
+        ],
+        "size": [
+          0.825,
+          0.99,
+          0.66
+        ]
+      },
       "geometry": {
         "position": [
-          -0.004792,
-          0.004418,
-          0.093899
+          0,
+          0,
+          0
         ],
         "rotation": [
           0,
@@ -1675,6 +1750,7 @@ export const V3_MESH2MOTION_ARMOR_RIG = {
         "clavicle_l",
         "upperarm_l"
       ],
+      "segmentLength": 0.221862,
       "pivotCenter": [
         0.120022,
         1.352421,
@@ -1714,11 +1790,35 @@ export const V3_MESH2MOTION_ARMOR_RIG = {
           0.668542721
         ]
       },
+      "localVoxelGridDimensions": [
+        7,
+        7,
+        8
+      ],
+      "jointClearance": 0.055,
+      "mirrorOf": null,
+      "localEnvelope": {
+        "min": [
+          -0.1925,
+          -0.1925,
+          -0.22
+        ],
+        "max": [
+          0.1925,
+          0.1925,
+          0.22
+        ],
+        "size": [
+          0.385,
+          0.385,
+          0.44
+        ]
+      },
       "geometry": {
         "position": [
-          -0.153038,
-          0.09244,
-          -0.025416
+          0,
+          0,
+          0
         ],
         "rotation": [
           0,
@@ -1740,6 +1840,7 @@ export const V3_MESH2MOTION_ARMOR_RIG = {
         "clavicle_r",
         "upperarm_r"
       ],
+      "segmentLength": 0.221862,
       "pivotCenter": [
         -0.120022,
         1.352421,
@@ -1779,11 +1880,35 @@ export const V3_MESH2MOTION_ARMOR_RIG = {
           0.668542753
         ]
       },
+      "localVoxelGridDimensions": [
+        7,
+        7,
+        8
+      ],
+      "jointClearance": 0.055,
+      "mirrorOf": "shoulderLeft",
+      "localEnvelope": {
+        "min": [
+          -0.1925,
+          -0.1925,
+          -0.22
+        ],
+        "max": [
+          0.1925,
+          0.1925,
+          0.22
+        ],
+        "size": [
+          0.385,
+          0.385,
+          0.44
+        ]
+      },
       "geometry": {
         "position": [
-          0.15371,
-          0.101259,
-          -0.021728
+          0,
+          0,
+          0
         ],
         "rotation": [
           0,
@@ -1805,6 +1930,7 @@ export const V3_MESH2MOTION_ARMOR_RIG = {
         "upperarm_l",
         "lowerarm_l"
       ],
+      "segmentLength": 0.242427,
       "pivotCenter": [
         0.343156,
         1.340465,
@@ -1844,11 +1970,35 @@ export const V3_MESH2MOTION_ARMOR_RIG = {
           0.692902562
         ]
       },
+      "localVoxelGridDimensions": [
+        5,
+        10,
+        5
+      ],
+      "jointClearance": 0.055,
+      "mirrorOf": null,
+      "localEnvelope": {
+        "min": [
+          -0.1375,
+          -0.275,
+          -0.1375
+        ],
+        "max": [
+          0.1375,
+          0.275,
+          0.1375
+        ],
+        "size": [
+          0.275,
+          0.55,
+          0.275
+        ]
+      },
       "geometry": {
         "position": [
-          0.058641,
-          -0.059549,
-          -0.037686
+          0,
+          0,
+          0
         ],
         "rotation": [
           0,
@@ -1870,6 +2020,7 @@ export const V3_MESH2MOTION_ARMOR_RIG = {
         "upperarm_r",
         "lowerarm_r"
       ],
+      "segmentLength": 0.242427,
       "pivotCenter": [
         -0.343156,
         1.340465,
@@ -1909,11 +2060,35 @@ export const V3_MESH2MOTION_ARMOR_RIG = {
           0.692902569
         ]
       },
+      "localVoxelGridDimensions": [
+        5,
+        10,
+        5
+      ],
+      "jointClearance": 0.055,
+      "mirrorOf": "upperArmLeft",
+      "localEnvelope": {
+        "min": [
+          -0.1375,
+          -0.275,
+          -0.1375
+        ],
+        "max": [
+          0.1375,
+          0.275,
+          0.1375
+        ],
+        "size": [
+          0.275,
+          0.55,
+          0.275
+        ]
+      },
       "geometry": {
         "position": [
-          -0.058451,
-          -0.054764,
-          -0.037855
+          0,
+          0,
+          0
         ],
         "rotation": [
           0,
@@ -1935,6 +2110,7 @@ export const V3_MESH2MOTION_ARMOR_RIG = {
         "lowerarm_l",
         "hand_l"
       ],
+      "segmentLength": 0.257513,
       "pivotCenter": [
         0.592395,
         1.324632,
@@ -1974,11 +2150,35 @@ export const V3_MESH2MOTION_ARMOR_RIG = {
           0.675944132
         ]
       },
+      "localVoxelGridDimensions": [
+        5,
+        10,
+        5
+      ],
+      "jointClearance": 0.055,
+      "mirrorOf": null,
+      "localEnvelope": {
+        "min": [
+          -0.1375,
+          -0.275,
+          -0.1375
+        ],
+        "max": [
+          0.1375,
+          0.275,
+          0.1375
+        ],
+        "size": [
+          0.275,
+          0.55,
+          0.275
+        ]
+      },
       "geometry": {
         "position": [
-          0.243881,
-          -0.122915,
-          0.094753
+          0,
+          0,
+          0
         ],
         "rotation": [
           0,
@@ -2000,6 +2200,7 @@ export const V3_MESH2MOTION_ARMOR_RIG = {
         "lowerarm_r",
         "hand_r"
       ],
+      "segmentLength": 0.257513,
       "pivotCenter": [
         -0.592395,
         1.324632,
@@ -2039,11 +2240,35 @@ export const V3_MESH2MOTION_ARMOR_RIG = {
           0.675944059
         ]
       },
+      "localVoxelGridDimensions": [
+        5,
+        10,
+        5
+      ],
+      "jointClearance": 0.055,
+      "mirrorOf": "forearmLeft",
+      "localEnvelope": {
+        "min": [
+          -0.1375,
+          -0.275,
+          -0.1375
+        ],
+        "max": [
+          0.1375,
+          0.275,
+          0.1375
+        ],
+        "size": [
+          0.275,
+          0.55,
+          0.275
+        ]
+      },
       "geometry": {
         "position": [
-          -0.243469,
-          -0.118319,
-          0.08979
+          0,
+          0,
+          0
         ],
         "rotation": [
           0,
@@ -2069,6 +2294,7 @@ export const V3_MESH2MOTION_ARMOR_RIG = {
         "pinky_01_l",
         "thumb_01_l"
       ],
+      "segmentLength": 0.136138,
       "pivotCenter": [
         0.813412,
         1.293895,
@@ -2108,11 +2334,35 @@ export const V3_MESH2MOTION_ARMOR_RIG = {
           0.658155366
         ]
       },
+      "localVoxelGridDimensions": [
+        5,
+        5,
+        5
+      ],
+      "jointClearance": 0.055,
+      "mirrorOf": null,
+      "localEnvelope": {
+        "min": [
+          -0.1375,
+          -0.1375,
+          -0.1375
+        ],
+        "max": [
+          0.1375,
+          0.1375,
+          0.1375
+        ],
+        "size": [
+          0.275,
+          0.275,
+          0.275
+        ]
+      },
       "geometry": {
         "position": [
-          0.315442,
-          -0.212261,
-          0.268842
+          0,
+          0,
+          0
         ],
         "rotation": [
           0,
@@ -2138,6 +2388,7 @@ export const V3_MESH2MOTION_ARMOR_RIG = {
         "pinky_01_r",
         "thumb_01_r"
       ],
+      "segmentLength": 0.136138,
       "pivotCenter": [
         -0.813412,
         1.293895,
@@ -2177,11 +2428,35 @@ export const V3_MESH2MOTION_ARMOR_RIG = {
           0.65815548
         ]
       },
+      "localVoxelGridDimensions": [
+        5,
+        5,
+        5
+      ],
+      "jointClearance": 0.055,
+      "mirrorOf": "handLeft",
+      "localEnvelope": {
+        "min": [
+          -0.1375,
+          -0.1375,
+          -0.1375
+        ],
+        "max": [
+          0.1375,
+          0.1375,
+          0.1375
+        ],
+        "size": [
+          0.275,
+          0.275,
+          0.275
+        ]
+      },
       "geometry": {
         "position": [
-          -0.314938,
-          -0.207799,
-          0.26717
+          0,
+          0,
+          0
         ],
         "rotation": [
           0,
@@ -2203,6 +2478,7 @@ export const V3_MESH2MOTION_ARMOR_RIG = {
         "pelvis",
         "spine_01"
       ],
+      "segmentLength": 0.099171,
       "pivotCenter": [
         0,
         0.922378,
@@ -2242,11 +2518,35 @@ export const V3_MESH2MOTION_ARMOR_RIG = {
           1
         ]
       },
+      "localVoxelGridDimensions": [
+        12,
+        8,
+        9
+      ],
+      "jointClearance": 0.055,
+      "mirrorOf": null,
+      "localEnvelope": {
+        "min": [
+          -0.33,
+          -0.22,
+          -0.2475
+        ],
+        "max": [
+          0.33,
+          0.22,
+          0.2475
+        ],
+        "size": [
+          0.66,
+          0.44,
+          0.495
+        ]
+      },
       "geometry": {
         "position": [
-          -0.004792,
-          0.112622,
-          -0.012511
+          0,
+          0,
+          0
         ],
         "rotation": [
           0,
@@ -2268,6 +2568,7 @@ export const V3_MESH2MOTION_ARMOR_RIG = {
         "thigh_l",
         "calf_l"
       ],
+      "segmentLength": 0.396095,
       "pivotCenter": [
         0.149492,
         0.698929,
@@ -2307,11 +2608,35 @@ export const V3_MESH2MOTION_ARMOR_RIG = {
           -0.057944417
         ]
       },
+      "localVoxelGridDimensions": [
+        6,
+        12,
+        6
+      ],
+      "jointClearance": 0.055,
+      "mirrorOf": null,
+      "localEnvelope": {
+        "min": [
+          -0.165,
+          -0.33,
+          -0.165
+        ],
+        "max": [
+          0.165,
+          0.33,
+          0.165
+        ],
+        "size": [
+          0.33,
+          0.66,
+          0.33
+        ]
+      },
       "geometry": {
         "position": [
-          0.01237,
-          -0.020713,
-          -0.05368
+          0,
+          0,
+          0
         ],
         "rotation": [
           0,
@@ -2333,6 +2658,7 @@ export const V3_MESH2MOTION_ARMOR_RIG = {
         "thigh_r",
         "calf_r"
       ],
+      "segmentLength": 0.396095,
       "pivotCenter": [
         -0.149492,
         0.698929,
@@ -2372,11 +2698,35 @@ export const V3_MESH2MOTION_ARMOR_RIG = {
           0.057944394
         ]
       },
+      "localVoxelGridDimensions": [
+        6,
+        12,
+        6
+      ],
+      "jointClearance": 0.055,
+      "mirrorOf": "thighLeft",
+      "localEnvelope": {
+        "min": [
+          -0.165,
+          -0.33,
+          -0.165
+        ],
+        "max": [
+          0.165,
+          0.33,
+          0.165
+        ],
+        "size": [
+          0.33,
+          0.66,
+          0.33
+        ]
+      },
       "geometry": {
         "position": [
-          -0.002852,
-          -0.019609,
-          -0.053563
+          0,
+          0,
+          0
         ],
         "rotation": [
           0,
@@ -2398,6 +2748,7 @@ export const V3_MESH2MOTION_ARMOR_RIG = {
         "calf_l",
         "foot_l"
       ],
+      "segmentLength": 0.397152,
       "pivotCenter": [
         0.202023,
         0.308215,
@@ -2437,11 +2788,35 @@ export const V3_MESH2MOTION_ARMOR_RIG = {
           -0.075383101
         ]
       },
+      "localVoxelGridDimensions": [
+        6,
+        12,
+        6
+      ],
+      "jointClearance": 0.055,
+      "mirrorOf": null,
+      "localEnvelope": {
+        "min": [
+          -0.165,
+          -0.33,
+          -0.165
+        ],
+        "max": [
+          0.165,
+          0.33,
+          0.165
+        ],
+        "size": [
+          0.33,
+          0.66,
+          0.33
+        ]
+      },
       "geometry": {
         "position": [
-          -0.003237,
-          -0.083724,
-          -0.061142
+          0,
+          0,
+          0
         ],
         "rotation": [
           0,
@@ -2463,6 +2838,7 @@ export const V3_MESH2MOTION_ARMOR_RIG = {
         "calf_r",
         "foot_r"
       ],
+      "segmentLength": 0.397152,
       "pivotCenter": [
         -0.202026,
         0.308214,
@@ -2502,11 +2878,35 @@ export const V3_MESH2MOTION_ARMOR_RIG = {
           0.075391284
         ]
       },
+      "localVoxelGridDimensions": [
+        6,
+        12,
+        6
+      ],
+      "jointClearance": 0.055,
+      "mirrorOf": "shinLeft",
+      "localEnvelope": {
+        "min": [
+          -0.165,
+          -0.33,
+          -0.165
+        ],
+        "max": [
+          0.165,
+          0.33,
+          0.165
+        ],
+        "size": [
+          0.33,
+          0.66,
+          0.33
+        ]
+      },
       "geometry": {
         "position": [
-          0.007972,
-          -0.083012,
-          -0.06107
+          0,
+          0,
+          0
         ],
         "rotation": [
           0,
@@ -2528,6 +2928,7 @@ export const V3_MESH2MOTION_ARMOR_RIG = {
         "foot_l",
         "ball_l"
       ],
+      "segmentLength": 0.148624,
       "pivotCenter": [
         0.232374,
         0.068388,
@@ -2567,11 +2968,35 @@ export const V3_MESH2MOTION_ARMOR_RIG = {
           0.999985517
         ]
       },
+      "localVoxelGridDimensions": [
+        7,
+        4,
+        10
+      ],
+      "jointClearance": 0.055,
+      "mirrorOf": null,
+      "localEnvelope": {
+        "min": [
+          -0.1925,
+          -0.11,
+          -0.275
+        ],
+        "max": [
+          0.1925,
+          0.11,
+          0.275
+        ],
+        "size": [
+          0.385,
+          0.22,
+          0.55
+        ]
+      },
       "geometry": {
         "position": [
-          0.0078,
-          0.032237,
-          -0.05492
+          0,
+          0,
+          0
         ],
         "rotation": [
           0,
@@ -2593,6 +3018,7 @@ export const V3_MESH2MOTION_ARMOR_RIG = {
         "foot_r",
         "ball_r"
       ],
+      "segmentLength": 0.148624,
       "pivotCenter": [
         -0.232398,
         0.068386,
@@ -2632,11 +3058,35 @@ export const V3_MESH2MOTION_ARMOR_RIG = {
           0.999984739
         ]
       },
+      "localVoxelGridDimensions": [
+        7,
+        4,
+        10
+      ],
+      "jointClearance": 0.055,
+      "mirrorOf": "footLeft",
+      "localEnvelope": {
+        "min": [
+          -0.1925,
+          -0.11,
+          -0.275
+        ],
+        "max": [
+          0.1925,
+          0.11,
+          0.275
+        ],
+        "size": [
+          0.385,
+          0.22,
+          0.55
+        ]
+      },
       "geometry": {
         "position": [
-          -0.017376,
-          0.032239,
-          -0.054844
+          0,
+          0,
+          0
         ],
         "rotation": [
           0,
@@ -2657,6 +3107,7 @@ export const V3_MESH2MOTION_ARMOR_RIG = {
       "centerJointNames": [
         "spine_03"
       ],
+      "segmentLength": 0,
       "pivotCenter": [
         0,
         1.222487,
@@ -2696,11 +3147,35 @@ export const V3_MESH2MOTION_ARMOR_RIG = {
           1
         ]
       },
+      "localVoxelGridDimensions": [
+        12,
+        14,
+        5
+      ],
+      "jointClearance": 0.055,
+      "mirrorOf": null,
+      "localEnvelope": {
+        "min": [
+          -0.33,
+          -0.385,
+          -0.1375
+        ],
+        "max": [
+          0.33,
+          0.385,
+          0.1375
+        ],
+        "size": [
+          0.66,
+          0.77,
+          0.275
+        ]
+      },
       "geometry": {
         "position": [
-          -0.004792,
-          0.171888,
-          -0.169264
+          0,
+          0,
+          0
         ],
         "rotation": [
           0,

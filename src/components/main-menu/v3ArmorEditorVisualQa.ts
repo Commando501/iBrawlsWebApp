@@ -6,9 +6,11 @@ import type {
 } from '../customArmor';
 import { customArmorPieceToVoxels } from '../customArmor';
 import type { V3CharacterSlotId } from '../v3/v3ModelTypes';
-import { getV3CharacterPartBounds } from '../v3/v3PartBounds';
 import {
-  V3_ARMOR_SURFACE_BASE_VOXEL_SCALE,
+  V3_MESH2MOTION_NATIVE_RENDER_VOXEL_SCALE,
+  getV3Mesh2MotionNativeSlotDimensions,
+} from '../v3/v3Mesh2MotionNativeGeometry';
+import {
   V3_ARMOR_SURFACE_DEFAULT_OPTIONS,
   createV3VoxelArmorGroup,
 } from '../v3/v3VoxelArmorSurface';
@@ -44,18 +46,18 @@ export const V3_ARMOR_EDITOR_VISUAL_QA_THRESHOLDS = {
 
 const clampScore = (score: number): number => Math.max(0, Math.min(100, Math.round(score)));
 
-function getSlotPivot(slot: V3CharacterSlotId, gridScale: CustomArmorGridScale): [number, number, number] {
-  const dimensions = getV3CharacterPartBounds(slot).maxDimensions;
+function getSlotPivot(slot: V3CharacterSlotId): [number, number, number] {
+  const [x, y, z] = getV3Mesh2MotionNativeSlotDimensions(slot);
   return [
-    ((dimensions.x * gridScale) - 1) / 2,
-    ((dimensions.y * gridScale) - 1) / 2,
-    ((dimensions.z * gridScale) - 1) / 2,
+    (x - 1) / 2,
+    (y - 1) / 2,
+    (z - 1) / 2,
   ];
 }
 
-function getSlotFrameHeight(slot: V3CharacterSlotId, gridScale: CustomArmorGridScale): number {
-  const dimensions = getV3CharacterPartBounds(slot).maxDimensions;
-  return dimensions.y * gridScale * (V3_ARMOR_SURFACE_BASE_VOXEL_SCALE / gridScale) * 1.18;
+function getSlotFrameHeight(slot: V3CharacterSlotId): number {
+  const [, y] = getV3Mesh2MotionNativeSlotDimensions(slot);
+  return y * V3_MESH2MOTION_NATIVE_RENDER_VOXEL_SCALE * 1.18;
 }
 
 function disposeTemporaryGroup(group: THREE.Group): void {
@@ -81,13 +83,13 @@ export function buildV3ArmorEditorVisualQa(
     ...V3_ARMOR_SURFACE_DEFAULT_OPTIONS,
     renderStyle: 'armorSurface',
     qualityTier: 'desktop',
-    voxelScale: V3_ARMOR_SURFACE_BASE_VOXEL_SCALE / input.gridScale,
-    pivot: getSlotPivot(input.slot, input.gridScale),
+    voxelScale: V3_MESH2MOTION_NATIVE_RENDER_VOXEL_SCALE,
+    pivot: getSlotPivot(input.slot),
   });
   const report = buildV3VisualQaReport(group, {
     thresholds: V3_ARMOR_EDITOR_VISUAL_QA_THRESHOLDS,
     importantPartIds: [],
-    frameHeight: getSlotFrameHeight(input.slot, input.gridScale),
+    frameHeight: getSlotFrameHeight(input.slot),
   });
   disposeTemporaryGroup(group);
 

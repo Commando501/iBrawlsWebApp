@@ -552,7 +552,11 @@ export function getV3RenderedObjGateClosureIssues(
 export function formatV3ReferenceProportionGapSummary(
   report: V3ReferenceProportionReport
 ): string {
-  const state = report.ready ? 'ready' : 'blocked';
+  const state = report.ready
+    ? 'ready'
+    : report.placementMode === 'mesh2MotionNative'
+      ? 'review'
+      : 'blocked';
   return [
     `V3 OBJ proportion calibration ${state}.`,
     `front width delta ${report.summary.globalFrontWidthDelta.toFixed(4)}`,

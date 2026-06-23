@@ -7,6 +7,7 @@ import {
   V3_MESH2MOTION_SLOT_DRIVER_JOINTS,
   type V3Mesh2MotionArmorRigArtifact,
   type V3Mesh2MotionArmorRigSkeletonJoint,
+  type V3Mesh2MotionArmorSlotEnvelope,
   type V3Mesh2MotionArmorSlotPlacement,
 } from './v3Mesh2MotionArmorRigContract';
 import {
@@ -23,6 +24,7 @@ export {
   V3_MESH2MOTION_SLOT_DRIVER_JOINTS,
   type V3Mesh2MotionArmorRigArtifact,
   type V3Mesh2MotionArmorRigSkeletonJoint,
+  type V3Mesh2MotionArmorSlotEnvelope,
   type V3Mesh2MotionArmorSlotPlacement,
 } from './v3Mesh2MotionArmorRigContract';
 
@@ -60,6 +62,9 @@ const IDENTITY_QUATERNION: V3QuatTuple = [0, 0, 0, 1];
 const finiteTuple = (value: readonly number[] | undefined, length: number): boolean =>
   Array.isArray(value) && value.length === length && value.every(Number.isFinite);
 
+const tupleLength = (value: readonly number[]): number =>
+  Math.hypot(value[0] ?? 0, value[1] ?? 0, value[2] ?? 0);
+
 const vec3Tuple = (
   value: readonly number[] | undefined,
   fallback: V3Vec3Tuple = ZERO_VEC3
@@ -91,6 +96,39 @@ const applyTupleTransform = (
   object.quaternion.fromArray(normalizedQuaternionTuple(quaternion));
   object.rotation.setFromQuaternion(object.quaternion);
   object.scale.fromArray(vec3Tuple(scale, ONE_VEC3));
+};
+
+const validateLocalEnvelope = (
+  slot: V3CharacterSlotId,
+  envelope: V3Mesh2MotionArmorSlotEnvelope | undefined,
+  geometryPosition: readonly number[] | undefined,
+  issues: string[]
+): void => {
+  if (!envelope) {
+    issues.push(`${slot} localEnvelope is missing`);
+    return;
+  }
+  if (!finiteTuple(envelope.min, 3)) issues.push(`${slot} localEnvelope min is invalid`);
+  if (!finiteTuple(envelope.max, 3)) issues.push(`${slot} localEnvelope max is invalid`);
+  if (!finiteTuple(envelope.size, 3)) issues.push(`${slot} localEnvelope size is invalid`);
+  if (!finiteTuple(envelope.min, 3) || !finiteTuple(envelope.max, 3) || !finiteTuple(envelope.size, 3)) {
+    return;
+  }
+  for (let index = 0; index < 3; index += 1) {
+    const min = envelope.min[index];
+    const max = envelope.max[index];
+    const size = envelope.size[index];
+    if (max <= min) issues.push(`${slot} localEnvelope axis ${index} has non-positive extent`);
+    if (Math.abs(size - (max - min)) > 0.000001) {
+      issues.push(`${slot} localEnvelope axis ${index} size does not match max-min`);
+    }
+    if (geometryPosition && finiteTuple(geometryPosition, 3)) {
+      const coordinate = geometryPosition[index];
+      if (coordinate < min - 0.000001 || coordinate > max + 0.000001) {
+        issues.push(`${slot} geometry position is outside localEnvelope axis ${index}`);
+      }
+    }
+  }
 };
 
 export function buildV3Mesh2MotionArmorRig(
@@ -224,17 +262,54 @@ export function analyzeV3Mesh2MotionArmorRig(
     if (Math.abs(pivotQuaternion.length() - 1) > 0.000001) {
       issues.push(`${slot} pivotWorldQuaternion is not normalized`);
     }
+    if (!Number.isFinite(placement.segmentLength) || placement.segmentLength < 0) {
+      issues.push(`${slot} segmentLength is invalid`);
+    }
+    if (placement.endJointName && placement.segmentLength <= 0) {
+      issues.push(`${slot} segmentLength must be positive when endJointName is set`);
+    }
+    if (!placement.endJointName && placement.segmentLength !== 0) {
+      issues.push(`${slot} segmentLength must be zero when endJointName is missing`);
+    }
     if (!finiteTuple(placement.basis?.xAxis, 3)) issues.push(`${slot} basis xAxis is invalid`);
     if (!finiteTuple(placement.basis?.yAxis, 3)) issues.push(`${slot} basis yAxis is invalid`);
     if (!finiteTuple(placement.basis?.zAxis, 3)) issues.push(`${slot} basis zAxis is invalid`);
     if (!finiteTuple(placement.basis?.quaternion, 4)) issues.push(`${slot} basis quaternion is invalid`);
+    if (finiteTuple(placement.basis?.xAxis, 3) && Math.abs(tupleLength(placement.basis.xAxis) - 1) > 0.000001) {
+      issues.push(`${slot} basis xAxis is not normalized`);
+    }
+    if (finiteTuple(placement.basis?.yAxis, 3) && Math.abs(tupleLength(placement.basis.yAxis) - 1) > 0.000001) {
+      issues.push(`${slot} basis yAxis is not normalized`);
+    }
+    if (finiteTuple(placement.basis?.zAxis, 3) && Math.abs(tupleLength(placement.basis.zAxis) - 1) > 0.000001) {
+      issues.push(`${slot} basis zAxis is not normalized`);
+    }
     const basisQuaternion = new THREE.Quaternion(...quatTuple(placement.basis?.quaternion));
     if (Math.abs(basisQuaternion.length() - 1) > 0.000001) {
       issues.push(`${slot} basis quaternion is not normalized`);
     }
+    if (!finiteTuple(placement.localVoxelGridDimensions, 3)) {
+      issues.push(`${slot} localVoxelGridDimensions is invalid`);
+    } else {
+      for (const [index, dimension] of placement.localVoxelGridDimensions.entries()) {
+        if (!Number.isInteger(dimension) || dimension <= 0) {
+          issues.push(`${slot} localVoxelGridDimensions axis ${index} must be a positive integer`);
+        }
+      }
+    }
+    if (!Number.isFinite(placement.jointClearance) || placement.jointClearance <= 0) {
+      issues.push(`${slot} jointClearance is invalid`);
+    }
+    if (placement.mirrorOf !== null) {
+      if (!V3_CHARACTER_SLOT_IDS.includes(placement.mirrorOf)) {
+        issues.push(`${slot} mirrorOf ${placement.mirrorOf} is not a V3 character slot`);
+      }
+      if (placement.mirrorOf === slot) issues.push(`${slot} mirrorOf references itself`);
+    }
     if (!finiteTuple(placement.geometry.position, 3)) issues.push(`${slot} geometry position is invalid`);
     if (!finiteTuple(placement.geometry.rotation, 3)) issues.push(`${slot} geometry rotation is invalid`);
     if (!finiteTuple(placement.geometry.scale, 3)) issues.push(`${slot} geometry scale is invalid`);
+    validateLocalEnvelope(slot, placement.localEnvelope, placement.geometry.position, issues);
   }
 
   return {

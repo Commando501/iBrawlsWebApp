@@ -165,6 +165,8 @@ const createAegisObjSurfaceVoxelSource = (
   ));
 };
 
+export const createV3AegisExactSourcePartVoxels = createAegisObjSurfaceVoxelSource;
+
 const clampV3VoxelCoordinate = (value: number, size: number): number =>
   Math.max(0, Math.min(size - 1, value));
 

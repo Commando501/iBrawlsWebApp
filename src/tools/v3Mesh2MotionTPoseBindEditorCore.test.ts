@@ -4,11 +4,14 @@ import { describe, it } from 'node:test';
 import {
   V3_MESH2MOTION_TPOSE_BIND_EDITOR_DEFAULT_DOCUMENT,
   buildV3Mesh2MotionTPoseBindDiagnostics,
+  getV3Mesh2MotionTPoseBindGeneratedPlacement,
+  mirrorV3Mesh2MotionTPoseBindSelectedPlacement,
   normalizeV3Mesh2MotionTPoseBindDocument,
   parseV3Mesh2MotionTPoseBindDocumentJson,
   resetV3Mesh2MotionTPoseBindPlacements,
   resolveV3Mesh2MotionTPoseBindEditorHotkey,
   serializeV3Mesh2MotionTPoseBindDocument,
+  snapV3Mesh2MotionTPoseBindSelectedToSegmentCenter,
   type V3Mesh2MotionTPoseBindDocument,
 } from './v3Mesh2MotionTPoseBindEditorCore';
 import { V3_CHARACTER_SLOT_IDS } from '../components/v3/v3ModelTypes';
@@ -94,6 +97,7 @@ describe('v3Mesh2MotionTPoseBindEditorCore', () => {
       position: [0, 0, 0],
       rotation: [0, 0, 0],
       scale: [1, 1, 1],
+      mirrorOf: 'handLeft',
     });
     assert.deepEqual(resetSelected.placements.handLeft, document.placements.handLeft);
     assert.deepEqual(resetSelected.source, document.source);
@@ -102,7 +106,40 @@ describe('v3Mesh2MotionTPoseBindEditorCore', () => {
     const resetAll = resetV3Mesh2MotionTPoseBindPlacements(document, { mode: 'all' });
     assert.deepEqual(resetAll.placements.handLeft.position, [0, 0, 0]);
     assert.deepEqual(resetAll.placements.handRight.scale, [1, 1, 1]);
+    assert.deepEqual(resetAll.placements.handRight, getV3Mesh2MotionTPoseBindGeneratedPlacement('handRight'));
     assert.deepEqual(resetAll.source, document.source);
+  });
+
+  it('mirrors selected paired slots and snaps polish placement back to generated native defaults', () => {
+    const document = normalizeV3Mesh2MotionTPoseBindDocument({
+      selectedSlot: 'handRight',
+      placements: {
+        handLeft: {
+          position: [-0.12, 0.03, 0.04],
+          rotation: [0.2, 0.15, -0.25],
+          scale: [1.1, 0.9, 1.2],
+        },
+        handRight: {
+          position: [0.5, 0.4, 0.3],
+          rotation: [0.6, 0.5, 0.4],
+          scale: [1.4, 1.3, 1.2],
+        },
+      },
+    });
+
+    const mirrored = mirrorV3Mesh2MotionTPoseBindSelectedPlacement(document);
+    assert.deepEqual(mirrored.placements.handRight, {
+      slot: 'handRight',
+      position: [0.12, 0.03, 0.04],
+      rotation: [0.2, -0.15, 0.25],
+      scale: [1.1, 0.9, 1.2],
+      mirrorOf: 'handLeft',
+    });
+
+    const snapped = snapV3Mesh2MotionTPoseBindSelectedToSegmentCenter(mirrored, 'handRight');
+    assert.deepEqual(snapped.placements.handRight.position, getV3Mesh2MotionTPoseBindGeneratedPlacement('handRight').position);
+    assert.deepEqual(snapped.placements.handRight.rotation, getV3Mesh2MotionTPoseBindGeneratedPlacement('handRight').rotation);
+    assert.deepEqual(snapped.placements.handRight.scale, mirrored.placements.handRight.scale);
   });
 
   it('diagnoses mirrored, inverted, and extreme bind slots with stable severities', () => {
@@ -138,6 +175,7 @@ describe('v3Mesh2MotionTPoseBindEditorCore', () => {
     assert.ok(report.items.some((item) => item.slot === 'helmet' && item.code === 'extreme-position'));
     assert.ok(report.items.some((item) => item.slot === 'helmet' && item.code === 'extreme-rotation'));
     assert.ok(report.items.some((item) => item.slot === 'helmet' && item.code === 'extreme-scale'));
+    assert.ok(report.items.some((item) => item.slot === 'helmet' && item.code === 'outside-envelope'));
   });
 
   it('diagnoses missing slots from sparse imported bind documents', () => {
@@ -167,6 +205,8 @@ describe('v3Mesh2MotionTPoseBindEditorCore', () => {
     assert.deepEqual(resolve({ key: 'Escape' }), { type: 'clearSelection' });
     assert.deepEqual(resolve({ key: 'r' }), { type: 'resetSelected' });
     assert.deepEqual(resolve({ key: 'R', shiftKey: true }), { type: 'resetAll' });
+    assert.deepEqual(resolve({ key: 'm' }), { type: 'mirrorSelected' });
+    assert.deepEqual(resolve({ key: 'c' }), { type: 'snapSelectedToSegmentCenter' });
     assert.deepEqual(resolve({ key: 'w' }), { type: 'transformMode', mode: 'translate' });
     assert.deepEqual(resolve({ key: 'E' }), { type: 'transformMode', mode: 'rotate' });
     assert.deepEqual(resolve({ key: 's' }), { type: 'transformMode', mode: 'scale' });
@@ -204,6 +244,12 @@ describe('v3Mesh2MotionTPoseBindEditorCore', () => {
     assert.equal(html.includes('/src/tools/v3Mesh2MotionTPoseBindEditor.ts'), true);
     assert.equal(html.includes('V3 Mesh2Motion TPose Bind Editor'), true);
     assert.equal(html.includes('slot-select'), true);
+    assert.equal(html.includes('mirror-selected'), true);
+    assert.equal(html.includes('snap-selected'), true);
+    assert.equal(html.includes('solo-selected'), true);
+    assert.equal(html.includes('toggle-skeleton'), true);
+    assert.equal(html.includes('toggle-armor'), true);
+    assert.equal(html.includes('toggle-diagnostics'), true);
     assert.equal(html.includes('json-output'), true);
     assert.equal(viteConfig.includes('v3Mesh2MotionTPoseBindEditor'), true);
     assert.equal(serviceWorker.includes('/v3-mesh2motion-tpose-bind-editor.html'), true);

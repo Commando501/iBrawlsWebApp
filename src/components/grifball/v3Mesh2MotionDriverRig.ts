@@ -41,10 +41,13 @@ export interface V3Mesh2MotionPartBinding {
   slot: V3CharacterSlotId;
   sourceJointName: string;
   partGroup: THREE.Group;
+  geometryGroup: THREE.Group | null;
   restWorldCenter: V3Mesh2MotionDriverVec3Tuple | null;
   restLocalPosition: V3Mesh2MotionDriverVec3Tuple;
   restLocalQuaternion: V3Mesh2MotionDriverQuatTuple;
   restLocalScale: V3Mesh2MotionDriverVec3Tuple;
+  restSegmentLocalOffset: V3Mesh2MotionDriverVec3Tuple | null;
+  sourceSegmentLength: number | null;
   bindMatrix: THREE.Matrix4;
 }
 
@@ -64,6 +67,7 @@ export interface V3Mesh2MotionDriverRig {
   warnings: string[];
   joints: Record<string, V3Mesh2MotionDriverJoint>;
   partBindings: Partial<Record<V3CharacterSlotId, V3Mesh2MotionPartBinding>>;
+  bindingDiagnostics: V3Mesh2MotionDriverBindingDiagnosticReport;
   weaponSockets: Record<V3Mesh2MotionDriverWeaponSocketName, V3Mesh2MotionDriverWeaponSocket>;
 }
 
@@ -72,6 +76,30 @@ export interface V3Mesh2MotionDriverApplyReport {
   warnings: string[];
   jointCount: number;
   partBindingCount: number;
+  bindingDiagnostics: V3Mesh2MotionDriverBindingDiagnosticReport;
+}
+
+export type V3Mesh2MotionDriverBindingDiagnosticCode =
+  | 'missing-part-binding'
+  | 'missing-source-joint'
+  | 'missing-bind-matrix'
+  | 'missing-geometry-child'
+  | 'legacy-placement-authority'
+  | 'malformed-scale'
+  | 'unstable-segment-local-offset';
+
+export interface V3Mesh2MotionDriverBindingDiagnosticItem {
+  slot: V3CharacterSlotId;
+  code: V3Mesh2MotionDriverBindingDiagnosticCode;
+  severity: 'warn' | 'fail';
+  message: string;
+}
+
+export interface V3Mesh2MotionDriverBindingDiagnosticReport {
+  kind: 'v3-mesh2motion-driver-binding-diagnostics';
+  version: 1;
+  ready: boolean;
+  items: V3Mesh2MotionDriverBindingDiagnosticItem[];
 }
 
 export interface V3Mesh2MotionDriverCalibrationReport {
@@ -99,6 +127,7 @@ type GeneratedSkeletonJoint = {
 type GeneratedSlotPlacement = {
   readonly slot: string;
   readonly sourceJointName: string;
+  readonly segmentLength?: number;
   readonly pivotWorldPosition?: readonly number[];
   readonly pivotWorldQuaternion?: readonly number[];
 };
@@ -155,6 +184,34 @@ const tupleFromQuaternion = (value: THREE.Quaternion): V3Mesh2MotionDriverQuatTu
   value.w,
 ];
 
+const finiteMatrix = (matrix: THREE.Matrix4): boolean =>
+  matrix.elements.every(Number.isFinite);
+
+const vectorMagnitude = (value: readonly number[]): number =>
+  Math.hypot(value[0] ?? 0, value[1] ?? 0, value[2] ?? 0);
+
+const bindingLocalOffsetFromMatrix = (
+  matrix: THREE.Matrix4
+): V3Mesh2MotionDriverVec3Tuple | null => {
+  if (!finiteMatrix(matrix)) return null;
+  const position = new THREE.Vector3();
+  const quaternion = new THREE.Quaternion();
+  const scale = new THREE.Vector3();
+  matrix.decompose(position, quaternion, scale);
+  return tupleFromVector(position);
+};
+
+const bindingScaleFromMatrix = (
+  matrix: THREE.Matrix4
+): V3Mesh2MotionDriverVec3Tuple | null => {
+  if (!finiteMatrix(matrix)) return null;
+  const position = new THREE.Vector3();
+  const quaternion = new THREE.Quaternion();
+  const scale = new THREE.Vector3();
+  matrix.decompose(position, quaternion, scale);
+  return tupleFromVector(scale);
+};
+
 const restorePartBinding = (binding: V3Mesh2MotionPartBinding): void => {
   binding.partGroup.position.fromArray(binding.restLocalPosition);
   binding.partGroup.quaternion.fromArray(binding.restLocalQuaternion);
@@ -179,6 +236,69 @@ const generatedSlotPlacement = (slot: V3CharacterSlotId): GeneratedSlotPlacement
   }
   return binding;
 };
+
+const addBindingDiagnostic = (
+  items: V3Mesh2MotionDriverBindingDiagnosticItem[],
+  slot: V3CharacterSlotId,
+  code: V3Mesh2MotionDriverBindingDiagnosticCode,
+  severity: 'warn' | 'fail',
+  message: string
+): void => {
+  items.push({ slot, code, severity, message });
+};
+
+export function buildV3Mesh2MotionDriverBindingDiagnostics(
+  rig: Pick<V3Mesh2MotionDriverRig, 'joints' | 'partBindings'>
+): V3Mesh2MotionDriverBindingDiagnosticReport {
+  const items: V3Mesh2MotionDriverBindingDiagnosticItem[] = [];
+  for (const slot of Object.keys(V3_MESH2MOTION_SLOT_DRIVER_JOINTS) as V3CharacterSlotId[]) {
+    const binding = rig.partBindings[slot];
+    if (!binding) {
+      addBindingDiagnostic(items, slot, 'missing-part-binding', 'fail', `${slot} has no Mesh2Motion part binding`);
+      continue;
+    }
+    if (!rig.joints[binding.sourceJointName]) {
+      addBindingDiagnostic(items, slot, 'missing-source-joint', 'fail', `${slot} source joint ${binding.sourceJointName} is missing`);
+    }
+    if (!finiteMatrix(binding.bindMatrix)) {
+      addBindingDiagnostic(items, slot, 'missing-bind-matrix', 'fail', `${slot} bind matrix is not finite`);
+    }
+    if (!(binding.geometryGroup instanceof THREE.Group) || binding.geometryGroup.parent !== binding.partGroup) {
+      addBindingDiagnostic(items, slot, 'missing-geometry-child', 'fail', `${slot} geometry child is not parented under its Mesh2Motion slot pivot`);
+    }
+    if (binding.partGroup.userData.v3Mesh2MotionPlacementAuthority !== 'mesh2motion-tpose') {
+      addBindingDiagnostic(items, slot, 'legacy-placement-authority', 'warn', `${slot} is not marked as Mesh2Motion TPose placement authority`);
+    }
+
+    const scale = bindingScaleFromMatrix(binding.bindMatrix);
+    if (!scale || scale.some((value) => !Number.isFinite(value) || Math.abs(value) < 0.001 || Math.abs(value) > 20)) {
+      addBindingDiagnostic(items, slot, 'malformed-scale', 'fail', `${slot} bind matrix has malformed scale`);
+    }
+
+    const segmentOffset = binding.restSegmentLocalOffset;
+    const maxOffset = Math.max(0.35, (binding.sourceSegmentLength ?? 0.8) * 2.25);
+    if (
+      !segmentOffset ||
+      !segmentOffset.every(Number.isFinite) ||
+      vectorMagnitude(segmentOffset) > maxOffset
+    ) {
+      addBindingDiagnostic(
+        items,
+        slot,
+        'unstable-segment-local-offset',
+        'fail',
+        `${slot} segment-local bind offset is outside the Mesh2Motion native envelope`
+      );
+    }
+  }
+
+  return {
+    kind: 'v3-mesh2motion-driver-binding-diagnostics',
+    version: 1,
+    ready: items.every((item) => item.severity !== 'fail'),
+    items,
+  };
+}
 
 const createDriverWeaponSockets = (
   joints: Record<string, V3Mesh2MotionDriverJoint>,
@@ -393,6 +513,7 @@ export function getV3Mesh2MotionDriverRig(model: THREE.Group): V3Mesh2MotionDriv
 
   model.updateMatrixWorld(true);
   const partGroups = model.userData.v3PartGroups as Partial<Record<V3CharacterSlotId, THREE.Group>> | undefined;
+  const geometryGroups = model.userData.v3PartGeometryGroups as Partial<Record<V3CharacterSlotId, THREE.Group>> | undefined;
   const partBindings: V3Mesh2MotionDriverRig['partBindings'] = {};
   for (const [slot, sourceJointName] of Object.entries(V3_MESH2MOTION_SLOT_DRIVER_JOINTS) as [V3CharacterSlotId, string][]) {
     const partGroup = partGroups?.[slot];
@@ -412,28 +533,39 @@ export function getV3Mesh2MotionDriverRig(model: THREE.Group): V3Mesh2MotionDriv
     }
     const partWorldMatrix = partGroup.matrixWorld.clone();
     const bindMatrix = driverJoint.object.matrixWorld.clone().invert().multiply(partWorldMatrix);
+    const geometryGroup = partGroup.userData.v3Mesh2MotionSlotGeometry instanceof THREE.Group
+      ? partGroup.userData.v3Mesh2MotionSlotGeometry as THREE.Group
+      : geometryGroups?.[slot] ?? null;
     partBindings[slot] = {
       slot,
       sourceJointName: bindingSourceJointName,
       partGroup,
+      geometryGroup,
       restWorldCenter: tupleFromVector(worldBoxCenter(partGroup)),
       restLocalPosition: tupleFromVector(partGroup.position),
       restLocalQuaternion: tupleFromQuaternion(partGroup.quaternion),
       restLocalScale: tupleFromVector(partGroup.scale),
+      restSegmentLocalOffset: bindingLocalOffsetFromMatrix(bindMatrix),
+      sourceSegmentLength: Number.isFinite(generatedPlacement?.segmentLength)
+        ? Number(generatedPlacement?.segmentLength)
+        : null,
       bindMatrix,
     };
   }
   const weaponSockets = createDriverWeaponSockets(joints, partBindings, warnings);
+  const bindingDiagnostics = buildV3Mesh2MotionDriverBindingDiagnostics({ joints, partBindings });
 
   const rig: V3Mesh2MotionDriverRig = {
     root,
-    ready: warnings.length === 0,
+    ready: warnings.length === 0 && bindingDiagnostics.ready,
     warnings,
     joints,
     partBindings,
+    bindingDiagnostics,
     weaponSockets,
   };
   model.userData.v3Mesh2MotionDriverRig = rig;
+  model.userData.v3Mesh2MotionDriverBindingDiagnostics = bindingDiagnostics;
   model.userData.v3Mesh2MotionDriverActive = false;
   return rig;
 }
@@ -526,13 +658,15 @@ export function applyV3Mesh2MotionDriverRigPose(
   model.userData.v3Mesh2MotionDriverActive = true;
   model.userData.v3Mesh2MotionDriverPose = pose;
   model.userData.v3Mesh2MotionDriverCalibrationReport = calibrationReport;
+  model.userData.v3Mesh2MotionDriverBindingDiagnostics = rig.bindingDiagnostics;
   model.updateMatrixWorld(true);
 
   return {
-    ready: rig.ready && warnings.length === 0,
+    ready: rig.ready && warnings.length === 0 && rig.bindingDiagnostics.ready,
     warnings,
     jointCount: Object.keys(rig.joints).length,
     partBindingCount: Object.keys(rig.partBindings).length,
+    bindingDiagnostics: rig.bindingDiagnostics,
   };
 }
 

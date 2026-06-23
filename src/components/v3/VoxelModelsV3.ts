@@ -21,10 +21,8 @@ import {
 } from './v3AssetManifest';
 import {
   createV3AegisPartVoxels,
-  getV3AegisPartSpec,
   getV3BuiltinPartGridScale,
   getV3BuiltinPartVoxelScale,
-  scaleV3Dimensions,
   type V3AegisPartSpec,
   type V3BuiltinPartGridScale,
 } from './v3AegisSuitParts';
@@ -40,11 +38,8 @@ import {
   normalizeV3SourceFidelity,
   type V3RenderOptions,
 } from './v3QualityTiers';
-import {
-  deriveV3ExactSourceSlotBudget,
-} from './v3ExactSourceLod';
-import { V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE } from './v3AegisObjSurfaceVoxels.generated';
 import { applyV3ExactSourceRigBinding } from './v3ExactSourceRigBinding';
+import { V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE } from './v3AegisObjSurfaceVoxels.generated';
 import { applyV3LowerBodyChainBinding } from './v3LowerBodyChain';
 import { captureV3LowerBodyRestSeamBaselines } from './v3LowerBodyContinuity';
 import { createV3LowerBodyJointBridges } from './v3LowerBodyJointBridges';
@@ -54,6 +49,12 @@ import {
   type V3CanonicalRigContract,
 } from './v3CanonicalRigContract';
 import { buildV3Mesh2MotionArmorRig } from './v3Mesh2MotionArmorRig';
+import { V3_MESH2MOTION_ARMOR_RIG } from './v3Mesh2MotionArmorRig.generated';
+import {
+  V3_MESH2MOTION_NATIVE_RENDER_VOXEL_SCALE,
+  getV3Mesh2MotionNativeSlotDimensions,
+  getV3Mesh2MotionNativeVoxelPivot,
+} from './v3Mesh2MotionNativeGeometry';
 import { applyV3WeaponScaleProfile } from './v3WeaponScaleProfile';
 import {
   V3_DETAIL_BONE_NAMES,
@@ -62,7 +63,6 @@ import {
   type V3DetailBoneName,
 } from './v3RigDetail';
 import {
-  V3_ARMOR_SURFACE_BASE_VOXEL_SCALE,
   V3_ARMOR_SURFACE_DEFAULT_OPTIONS,
   createV3VoxelArmorGroup,
 } from './v3VoxelArmorSurface';
@@ -184,10 +184,9 @@ export function getV3BuiltinPartVoxels(
   if (!part) {
     throw new Error(`Missing built-in V3 part for ${slot}`);
   }
-  const gridScale = options.gridScale ?? getV3BuiltinPartGridScale(slot);
   return createV3AegisPartVoxels(
     part,
-    scaleV3Dimensions(getV3AegisPartSpec(slot).dimensions, gridScale),
+    getV3Mesh2MotionNativeSlotDimensions(slot),
     createColors(false, customHue),
     paintJob,
     {
@@ -330,24 +329,6 @@ const getV3PartLocalPosition = (
   return subtractVec3Tuple(sourcePosition, bonePosition);
 };
 
-const getLocalBoundsCenter = (object: THREE.Object3D): THREE.Vector3 => {
-  object.updateWorldMatrix(true, true);
-  const bounds = new THREE.Box3().setFromObject(object);
-  if (bounds.isEmpty()) return new THREE.Vector3();
-  return object.worldToLocal(bounds.getCenter(new THREE.Vector3()));
-};
-
-const recenterV3SlotGeometry = (geometryGroup: THREE.Group): THREE.Vector3 => {
-  const center = getLocalBoundsCenter(geometryGroup);
-  if (center.lengthSq() <= 0.000000001) return center;
-  for (const child of geometryGroup.children) {
-    child.position.sub(center);
-  }
-  geometryGroup.userData.v3Mesh2MotionRawGeometryCenter = center.toArray();
-  geometryGroup.updateMatrixWorld(true);
-  return center;
-};
-
 const applyV3SlotGeometryPlacement = (
   geometryGroup: THREE.Group,
   placement: {
@@ -374,6 +355,15 @@ const applyV3SlotGeometryPlacement = (
   );
 };
 
+const getV3ExactSourceVisualOffset = (
+  slot: V3CharacterSlotId,
+  slotPivot: THREE.Object3D
+): THREE.Vector3Tuple => {
+  const boneName = V3_SLOT_DETAIL_BONES[slot];
+  const sourceOrigin = V3_DETAIL_BONE_SPECS[boneName].position;
+  return subtractVec3Tuple(sourceOrigin, slotPivot.position.toArray());
+};
+
 const V3_CACHE_PAINT_ROLES = [
   'primary',
   'secondary',
@@ -393,7 +383,8 @@ const createV3BuiltInGeometryCacheKey = (
   colors: SpartanColors,
   paintJob: CharacterLoadout['paintJob'] | undefined
 ): string => [
-  'v3-exact-source',
+  'v3-mesh2motion-exact-visual',
+  V3_MESH2MOTION_ARMOR_RIG.source.sha256,
   V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.source.hash,
   slot,
   sourceFidelity ?? 'runtimeLod',
@@ -429,6 +420,7 @@ export function buildV3SpartanModel(options: V3SpartanBuildOptions = {}): THREE.
   const mesh2MotionArmorRig = buildV3Mesh2MotionArmorRig();
   const partGroups: Partial<Record<V3CharacterSlotId, THREE.Group>> = {};
   const partGeometryGroups: Partial<Record<V3CharacterSlotId, THREE.Group>> = {};
+  const exactSourceVoxelPivot: THREE.Vector3Tuple = [0, 0, 0];
 
   root.add(mesh2MotionArmorRig.skeletonRoot);
   root.add(mesh2MotionArmorRig.armorSlotRoot);
@@ -439,30 +431,24 @@ export function buildV3SpartanModel(options: V3SpartanBuildOptions = {}): THREE.
   }
 
   for (const part of BUILT_IN_V3_CHARACTER_PARTS) {
-    const spec = getV3AegisPartSpec(part.slot);
     const customPiece = getValidV3CustomPiece(options.loadout, part.slot);
     const gridScale = customPiece ? getCustomArmorGridScale(customPiece) : getV3BuiltinPartGridScale(part.slot);
     const voxelScale = customPiece
-      ? V3_ARMOR_SURFACE_BASE_VOXEL_SCALE / gridScale
+      ? V3_MESH2MOTION_NATIVE_RENDER_VOXEL_SCALE
       : getV3BuiltinPartVoxelScale(part.slot);
     const voxels = customPiece
       ? customArmorPieceToVoxels(customPiece, customArmorColors)
       : createV3AegisPartVoxels(
         part,
-        scaleV3Dimensions(spec.dimensions, gridScale),
+        getV3Mesh2MotionNativeSlotDimensions(part.slot),
         colors,
         paintJob,
         { qualityTier: v3QualityTier, sourceFidelity: v3SourceFidelity }
       );
-    const builtInBudget = customPiece ? undefined : deriveV3ExactSourceSlotBudget(part.slot, {
-      ...V3_ARMOR_SURFACE_DEFAULT_OPTIONS,
-      qualityTier: v3QualityTier,
-      sourceFidelity: v3SourceFidelity,
-      renderStyle: v3ArmorRenderStyle,
-    });
     const geometryGroup = createV3VoxelArmorGroup(voxels, {
       ...V3_ARMOR_SURFACE_DEFAULT_OPTIONS,
       voxelScale,
+      pivot: customPiece ? getV3Mesh2MotionNativeVoxelPivot(part.slot) : exactSourceVoxelPivot,
       renderStyle: v3ArmorRenderStyle,
       qualityTier: v3QualityTier,
       builtInGeometryCacheKey: customPiece ? undefined : createV3BuiltInGeometryCacheKey(
@@ -478,31 +464,39 @@ export function buildV3SpartanModel(options: V3SpartanBuildOptions = {}): THREE.
     const slotPlacement = slotPivot.userData.v3Mesh2MotionSlotPlacement as
       | { geometry?: { position: readonly number[]; rotation: readonly number[]; scale: readonly number[] } }
       | undefined;
-    recenterV3SlotGeometry(geometryGroup);
     applyV3SlotGeometryPlacement(geometryGroup, slotPlacement?.geometry ?? {
       position: [0, 0, 0],
       rotation: [0, 0, 0],
       scale: [1, 1, 1],
     });
+    const exactSourceVisualOffset = customPiece
+      ? undefined
+      : getV3ExactSourceVisualOffset(part.slot, slotPivot);
+    if (exactSourceVisualOffset) {
+      geometryGroup.position.add(new THREE.Vector3().fromArray(exactSourceVisualOffset));
+    }
     const selectedLod = selectV3LodLevel({
       lods: part.lods,
       qualityTier: v3QualityTier,
       distance: v3Distance,
     });
-    const selectedLodWithMeasuredBudget = customPiece || !builtInBudget
+    const surfaceBudget = geometryGroup.userData.v3ArmorSurface as
+      | { inputVoxelCount?: number; panelCount?: number; materialGroupCount?: number }
+      | undefined;
+    const selectedLodWithMeasuredBudget = customPiece
       ? selectedLod
       : {
         ...selectedLod,
-        id: `${selectedLod.id}:${v3SourceFidelity}`,
-        sourceId: `${selectedLod.sourceId}:${v3SourceFidelity}`,
+        id: `${selectedLod.id}:mesh2motion-exact-visual:${v3SourceFidelity}`,
+        sourceId: `${selectedLod.sourceId}:mesh2motion-exact-visual:${v3SourceFidelity}`,
         qualityTier: v3QualityTier,
         budget: {
-          sourceVoxelCount: builtInBudget.sourceVoxelCount,
-          mergedBoxCount: builtInBudget.mergedBoxCount,
-          materialGroupCount: builtInBudget.materialGroupCount,
-          drawCallEstimate: builtInBudget.drawCallEstimate,
-          lodCount: builtInBudget.lodCount,
-          memoryEstimateKb: builtInBudget.memoryEstimateKb,
+          sourceVoxelCount: surfaceBudget?.inputVoxelCount ?? voxels.length,
+          mergedBoxCount: surfaceBudget?.panelCount ?? selectedLod.budget.mergedBoxCount,
+          materialGroupCount: surfaceBudget?.materialGroupCount ?? selectedLod.budget.materialGroupCount,
+          drawCallEstimate: surfaceBudget?.materialGroupCount ?? selectedLod.budget.drawCallEstimate,
+          lodCount: selectedLod.budget.lodCount,
+          memoryEstimateKb: Math.max(1, Math.ceil((surfaceBudget?.inputVoxelCount ?? voxels.length) * 0.08)),
         },
       };
     geometryGroup.name = `v3:${part.slot}:geometry`;
@@ -515,9 +509,15 @@ export function buildV3SpartanModel(options: V3SpartanBuildOptions = {}): THREE.
       v3SelectedLod: selectedLodWithMeasuredBudget,
       v3GridScale: gridScale,
       v3ObjSurfaceSource: !customPiece,
-      v3ExactSourceLodQualityTier: customPiece ? undefined : v3QualityTier,
+      v3ExactSourceLodQualityTier: undefined,
       v3SourceFidelity: customPiece ? undefined : v3SourceFidelity,
       v3VoxelScale: voxelScale,
+      v3Mesh2MotionNativeGeometry: Boolean(customPiece),
+      v3Mesh2MotionVisualSource: customPiece ? 'custom-native-slot-local' : 'exact-obj-surface',
+      v3ExactSourceVisualOffset: exactSourceVisualOffset,
+      v3NativeSlotDimensions: getV3Mesh2MotionNativeSlotDimensions(part.slot),
+      v3NativeVoxelPivot: getV3Mesh2MotionNativeVoxelPivot(part.slot),
+      v3VisualVoxelPivot: customPiece ? getV3Mesh2MotionNativeVoxelPivot(part.slot) : exactSourceVoxelPivot,
     };
     Object.assign(slotPivot.userData, geometryGroup.userData, partMetadata, {
       v3Mesh2MotionSlotPivot: true,

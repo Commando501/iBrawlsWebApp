@@ -11,6 +11,7 @@ import {
   getCustomArmorBounds,
   getCustomArmorGridScale,
   getCustomArmorPieceModelSystem,
+  getCustomArmorV3CoordinateSpace,
   isVoxelInSlotBounds,
   validateCustomArmorPiece,
 } from '../customArmor';
@@ -289,9 +290,10 @@ function normalizedVoxels(
   voxels: readonly CustomArmorVoxel[]
 ): CustomArmorVoxel[] {
   const gridScale = getCustomArmorGridScale(draft);
+  const coordinateSpace = getCustomArmorV3CoordinateSpace(draft) ?? 'legacy-grid';
   return dedupeCustomArmorVoxels(voxels
     .map(cloneVoxel)
-    .filter((voxel) => isVoxelInSlotBounds(draft.slot, voxel, 'medium', 'v3', gridScale)));
+    .filter((voxel) => isVoxelInSlotBounds(draft.slot, voxel, 'medium', 'v3', gridScale, coordinateSpace)));
 }
 
 function commitVoxels(
@@ -450,8 +452,9 @@ function raiseFootClearance(
   const voxels = normalizedVoxels(draft, draft.voxels);
   if (voxels.length === 0) return cloneDraft(draft);
   const gridScale = getCustomArmorGridScale(draft);
+  const coordinateSpace = getCustomArmorV3CoordinateSpace(draft) ?? 'legacy-grid';
   const shifted = voxels.map((voxel) => ({ ...voxel, y: voxel.y + 1 }));
-  if (!shifted.every((voxel) => isVoxelInSlotBounds(draft.slot, voxel, 'medium', 'v3', gridScale))) {
+  if (!shifted.every((voxel) => isVoxelInSlotBounds(draft.slot, voxel, 'medium', 'v3', gridScale, coordinateSpace))) {
     return cloneDraft(draft);
   }
   return commitVoxels(draft, shifted, context);

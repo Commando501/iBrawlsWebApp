@@ -11,6 +11,7 @@ import {
   parseV3Mesh2MotionImporterCliArgs,
 } from './v3Mesh2MotionImporter';
 import { V3_MESH2MOTION_ARMOR_RIG_SCHEMA } from '../components/v3/v3Mesh2MotionArmorRigContract';
+import { V3_CHARACTER_SLOT_IDS } from '../components/v3/v3ModelTypes';
 
 const sourceFilePath = join(process.cwd(), 'reference', 'mesh2motion-v3', 'exported-model.glb');
 
@@ -64,25 +65,53 @@ describe('v3Mesh2MotionImporter', () => {
 
   it('builds explicit Mesh2Motion-native armor slot placement data', () => {
     const artifact = buildV3Mesh2MotionArmorRigArtifact({ filePath: sourceFilePath, fps: 30 });
+    const repeated = buildV3Mesh2MotionArmorRigArtifact({ filePath: sourceFilePath, fps: 30 });
     const source = buildV3Mesh2MotionArmorRigGeneratedSource(artifact);
     const handRight = artifact.slots.handRight;
     const footLeft = artifact.slots.footLeft;
 
+    assert.deepEqual(repeated, artifact);
     assert.equal(artifact.schemaVersion, V3_MESH2MOTION_ARMOR_RIG_SCHEMA);
     assert.equal(artifact.skeleton.sourceJointCount, 56);
-    assert.equal(Object.keys(artifact.slots).length, 19);
+    assert.deepEqual(Object.keys(artifact.slots).sort(), [...V3_CHARACTER_SLOT_IDS].sort());
     assert.equal(handRight.sourceJointName, 'hand_r');
     assert.equal(handRight.endJointName, 'index_01_r');
     assert.deepEqual(handRight.pivotCenter, handRight.pivotWorldPosition);
+    assert.equal(handRight.segmentLength > 0, true);
+    assert.deepEqual(handRight.localVoxelGridDimensions, [5, 5, 5]);
+    assert.equal(handRight.jointClearance > 0, true);
+    assert.equal(handRight.mirrorOf, 'handLeft');
+    assert.equal(handRight.localEnvelope.size.every((value) => value > 0), true);
     assert.equal(handRight.basis.xAxis.length, 3);
     assert.equal(handRight.basis.yAxis.length, 3);
     assert.equal(handRight.basis.zAxis.length, 3);
     assert.equal(handRight.basis.quaternion.length, 4);
     assert.equal(footLeft.endJointName, 'ball_l');
+    assert.equal(footLeft.segmentLength > 0, true);
+    assert.deepEqual(footLeft.localVoxelGridDimensions, [7, 4, 10]);
+    assert.equal(footLeft.mirrorOf, null);
     assert.equal(footLeft.basis.zAxis[2] > 0.65, true);
+    for (const slot of V3_CHARACTER_SLOT_IDS) {
+      const placement = artifact.slots[slot];
+      assert.equal(
+        placement.localVoxelGridDimensions.every((value) => Number.isInteger(value) && value >= 2),
+        true,
+        `${slot} native grid dimensions`
+      );
+      assert.equal(placement.localEnvelope.size.every((value) => Number.isFinite(value) && value > 0), true, `${slot} envelope size`);
+      assert.equal(Number.isFinite(placement.jointClearance) && placement.jointClearance > 0, true, `${slot} clearance`);
+      assert.deepEqual(placement.geometry.position, [0, 0, 0], `${slot} default geometry position`);
+      assert.deepEqual(placement.geometry.rotation, [0, 0, 0], `${slot} default geometry rotation`);
+      assert.deepEqual(placement.geometry.scale, [1, 1, 1], `${slot} default geometry scale`);
+    }
     assert.equal(source.includes(process.cwd()), false);
     assert.equal(source.includes('bufferView'), false);
+    assert.equal(source.includes('buffers'), false);
     assert.equal(source.includes('nodes'), false);
+    assert.equal(source.includes('meshes'), false);
+    assert.equal(source.includes('skins'), false);
+    assert.equal(source.includes('localEnvelope'), true);
+    assert.equal(source.includes('localVoxelGridDimensions'), true);
   });
 
   it('calibrates TPose to near-rest V3 clean rig output', () => {

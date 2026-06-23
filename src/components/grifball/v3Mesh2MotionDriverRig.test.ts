@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { afterEach, describe, it } from 'node:test';
 import * as THREE from 'three';
 import { buildV3SpartanModel } from '../v3/VoxelModelsV3';
+import { V3_CHARACTER_SLOT_IDS, type V3CharacterSlotId } from '../v3/v3ModelTypes';
 import { buildCombatantRigForModel } from './combatantRig';
 import { sampleV3AuthoredClip } from './v3AuthoredAnimationClips';
 import {
@@ -10,6 +11,7 @@ import {
 } from './v3CleanRig';
 import {
   applyV3Mesh2MotionDriverRigPose,
+  buildV3Mesh2MotionDriverBindingDiagnostics,
   getV3Mesh2MotionDriverRig,
   getV3Mesh2MotionDriverWeaponSocketWorldTransform,
   resetV3Mesh2MotionDriverRigPose,
@@ -66,6 +68,15 @@ const assertWorldMatrixClose = (
   );
 };
 
+const assertFiniteSlotTransform = (slot: V3CharacterSlotId, object: THREE.Object3D): void => {
+  object.updateWorldMatrix(true, false);
+  const position = object.getWorldPosition(new THREE.Vector3());
+  const scale = object.getWorldScale(new THREE.Vector3());
+  assert.equal(position.toArray().every(Number.isFinite), true, `${slot} world position should be finite`);
+  assert.equal(scale.toArray().every((value) => Number.isFinite(value) && value > 0), true, `${slot} world scale should be finite and positive`);
+  assert.ok(object.matrixWorld.determinant() > 0, `${slot} world matrix should not be mirrored or inverted`);
+};
+
 const generatedDriverPose = (sourceClipName: string): V3Mesh2MotionDriverPose => {
   const clip = V3_MESH2MOTION_CLIP_SET.clips.find((candidate) => candidate.sourceClipName === sourceClipName);
   assert.ok(clip, `expected generated Mesh2Motion clip ${sourceClipName}`);
@@ -110,6 +121,28 @@ describe('v3Mesh2MotionDriverRig', () => {
     assert.equal(rig.partBindings.chest?.sourceJointName, 'spine_03');
     assert.equal(rig.weaponSockets.rightHandGrip.sourceJointName, 'hand_r');
     assert.equal(rig.weaponSockets.leftHandGrip.sourceJointName, 'hand_l');
+  });
+
+  it('reports clean Mesh2Motion-native binding diagnostics for every visible V3 slot pivot', () => {
+    const model = createModel();
+    const partGroups = model.userData.v3PartGroups as Record<V3CharacterSlotId, THREE.Group>;
+    const geometryGroups = model.userData.v3PartGeometryGroups as Record<V3CharacterSlotId, THREE.Group>;
+    const rig = getV3Mesh2MotionDriverRig(model);
+    const report = buildV3Mesh2MotionDriverBindingDiagnostics(rig);
+
+    assert.equal(report.ready, true, report.items.map((item) => `${item.slot}:${item.code}`).join(', '));
+    assert.equal(rig.bindingDiagnostics.ready, true);
+    assert.equal(model.userData.v3Mesh2MotionDriverBindingDiagnostics.ready, true);
+    for (const slot of V3_CHARACTER_SLOT_IDS) {
+      const binding = rig.partBindings[slot];
+      assert.ok(binding, `missing ${slot} binding`);
+      assert.equal(binding.sourceJointName, partGroups[slot].userData.v3Mesh2MotionSlotPlacement.sourceJointName);
+      assert.equal(binding.geometryGroup, geometryGroups[slot]);
+      assert.equal(binding.geometryGroup?.parent, partGroups[slot]);
+      assert.ok(binding.sourceSegmentLength === null || binding.sourceSegmentLength >= 0, `${slot} segment length`);
+      assert.ok(binding.restSegmentLocalOffset?.every(Number.isFinite), `${slot} rest segment-local offset`);
+      assert.equal(binding.bindMatrix.elements.every(Number.isFinite), true, `${slot} bind matrix should be finite`);
+    }
   });
 
   it('applies Mesh2Motion clips through the driver skeleton instead of rotating clean detail bones', () => {
@@ -275,6 +308,58 @@ describe('v3Mesh2MotionDriverRig', () => {
     for (const slot of ['upperArmLeft', 'forearmLeft', 'handLeft', 'upperArmRight', 'forearmRight', 'handRight'] as const) {
       const gap = Math.abs(worldBoxCenter(partGroups[slot]).x - chestCenter.x);
       assert.ok(gap >= 0.18, `${slot} lateral gap ${gap.toFixed(4)} should keep sprint arms out of the chest`);
+    }
+  });
+
+  it('keeps sprint, slide, and sword Mesh2Motion animations bound to native V3 slot pivots', () => {
+    const cases = [
+      ['clean_sprint', 0.5],
+      ['clean_slide', 0.5],
+      ['clean_sword_carry', 0.25],
+      ['clean_sword_lunge', 0.5],
+      ['clean_sword_slash', 0.5],
+    ] as const;
+    const seamPairs = [
+      ['shoulderLeft', 'upperArmLeft'],
+      ['upperArmLeft', 'forearmLeft'],
+      ['forearmLeft', 'handLeft'],
+      ['shoulderRight', 'upperArmRight'],
+      ['upperArmRight', 'forearmRight'],
+      ['forearmRight', 'handRight'],
+      ['thighLeft', 'shinLeft'],
+      ['shinLeft', 'footLeft'],
+      ['thighRight', 'shinRight'],
+      ['shinRight', 'footRight'],
+    ] as const;
+
+    for (const [clipId, normalizedTime] of cases) {
+      const model = createModel();
+      const partGroups = model.userData.v3PartGroups as Record<V3CharacterSlotId, THREE.Group>;
+      const geometryGroups = model.userData.v3PartGeometryGroups as Record<V3CharacterSlotId, THREE.Group>;
+      const sample = sampleV3AuthoredClip(clipId, { normalizedTime });
+      assert.equal(sample.motionSource, 'mesh2Motion', `${clipId} should use Mesh2Motion`);
+
+      const applied = applyV3CleanRigPose(model, sample.pose);
+      const rig = getV3Mesh2MotionDriverRig(model);
+      assert.equal(applied.ready, true, `${clipId} apply warnings: ${applied.warnings.join(', ')}`);
+      assert.equal(applied.mesh2MotionDriverBindingDiagnostics?.ready, true, `${clipId} binding diagnostics`);
+      assert.equal(rig.bindingDiagnostics.ready, true, `${clipId} rig binding diagnostics`);
+
+      for (const slot of V3_CHARACTER_SLOT_IDS) {
+        const binding = rig.partBindings[slot];
+        assert.ok(binding, `${clipId} missing ${slot} binding`);
+        assert.equal(binding.sourceJointName, partGroups[slot].userData.v3Mesh2MotionSlotPlacement.sourceJointName, `${clipId} ${slot} source joint`);
+        assert.equal(geometryGroups[slot].parent, partGroups[slot], `${clipId} ${slot} geometry should stay under slot pivot`);
+        assertFiniteSlotTransform(slot, partGroups[slot]);
+      }
+
+      for (const [from, to] of seamPairs) {
+        const distance = worldBoxCenter(partGroups[from]).distanceTo(worldBoxCenter(partGroups[to]));
+        assert.ok(
+          distance <= 1.25,
+          `${clipId} ${from}/${to} seam distance ${distance.toFixed(4)} should stay connected`
+        );
+      }
     }
   });
 

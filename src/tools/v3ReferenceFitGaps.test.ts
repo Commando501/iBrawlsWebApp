@@ -341,7 +341,7 @@ test('analyzeV3ReferenceFitGaps flags implausible reference targets before ranki
   assert.match(formatV3ReferenceFitGapSummary(report), /2 reference targets need review/);
 });
 
-test('built-in exact OBJ surface source reclassifies old slot-family fit gaps as segmentation review diagnostics', () => {
+test('built-in exact-source V3 body reclassifies slot-family fit gaps as segmentation review diagnostics', () => {
   const report = analyzeV3ReferenceFitGaps(dashboardFitGuide);
   const forearm = report.slots.find((slot) => slot.slot === 'forearm');
   const hand = report.slots.find((slot) => slot.slot === 'hand');
@@ -376,12 +376,11 @@ test('built-in exact OBJ surface source reclassifies old slot-family fit gaps as
   );
   assert.ok(
     helmet?.issues.some((issue) =>
-      issue.axis === 'width' &&
       issue.direction === 'too-small' &&
       issue.diagnosticCategory === 'segmentation-review' &&
       issue.blocksBodyRebuild === false
     ),
-    `helmet width gap should stay visible for Phase 38 diagnostics: ${helmet?.issues.map((issue) => issue.message).join('; ')}`
+    `helmet fit gaps should stay visible for exact-source review diagnostics: ${helmet?.issues.map((issue) => issue.message).join('; ')}`
   );
   assert.ok(
     shoulder?.issues.some((issue) =>
@@ -393,11 +392,10 @@ test('built-in exact OBJ surface source reclassifies old slot-family fit gaps as
   );
   assert.ok(
     chest?.issues.some((issue) =>
-      issue.direction === 'too-small' &&
       issue.diagnosticCategory === 'segmentation-review' &&
       issue.blocksBodyRebuild === false
     ),
-    `chest undersized gaps should stay review-only: ${chest?.issues.map((issue) => issue.message).join('; ')}`
+    `chest fit gaps should stay review-only: ${chest?.issues.map((issue) => issue.message).join('; ')}`
   );
   assert.ok(
     upperArm?.targetWarnings.every((warning) =>

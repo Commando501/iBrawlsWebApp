@@ -7,6 +7,7 @@ import {
 import {
   applyV3Mesh2MotionDriverRigPose,
   resetV3Mesh2MotionDriverRigPose,
+  type V3Mesh2MotionDriverBindingDiagnosticReport,
   type V3Mesh2MotionDriverPose,
 } from './v3Mesh2MotionDriverRig';
 
@@ -68,6 +69,7 @@ export interface V3CleanRigApplyReport {
   clipId: string;
   jointCount: number;
   warnings: string[];
+  mesh2MotionDriverBindingDiagnostics?: V3Mesh2MotionDriverBindingDiagnosticReport;
 }
 
 export interface V3CleanRigContinuityLink {
@@ -217,6 +219,7 @@ export function applyV3CleanRigPose(
   const alpha = Number.isFinite(options.alpha) ? Math.max(0, Math.min(1, Number(options.alpha))) : 1;
   const warnings: string[] = [];
   const usesMesh2MotionDriver = Boolean(pose.mesh2MotionDriverPose);
+  let mesh2MotionDriverBindingDiagnostics: V3Mesh2MotionDriverBindingDiagnosticReport | undefined;
 
   const pelvisOffset = pose.rootOffset ?? ZERO_VEC3;
   if (!usesMesh2MotionDriver && pose.rootOffset && finiteTuple(pelvisOffset)) {
@@ -247,6 +250,7 @@ export function applyV3CleanRigPose(
     }
   } else if (pose.mesh2MotionDriverPose) {
     const driverReport = applyV3Mesh2MotionDriverRigPose(model, pose.mesh2MotionDriverPose, { alpha });
+    mesh2MotionDriverBindingDiagnostics = driverReport.bindingDiagnostics;
     warnings.push(...driverReport.warnings);
   }
 
@@ -259,11 +263,12 @@ export function applyV3CleanRigPose(
   model.updateMatrixWorld(true);
 
   const report: V3CleanRigApplyReport = {
-    ready: rig.ready && warnings.length === 0,
+    ready: rig.ready && warnings.length === 0 && (mesh2MotionDriverBindingDiagnostics?.ready ?? true),
     animationAuthority: 'cleanRig',
     clipId: pose.clipId,
     jointCount: Object.keys(rig.joints).length,
     warnings,
+    ...(mesh2MotionDriverBindingDiagnostics ? { mesh2MotionDriverBindingDiagnostics } : {}),
   };
   model.userData.v3CleanRigApplyReport = report;
   return report;

@@ -13,11 +13,11 @@ import {
   type V3Mesh2MotionArmorRigArtifact,
   type V3Mesh2MotionArmorSlotPlacement,
 } from '../components/v3/v3Mesh2MotionArmorRigContract';
-import { deriveV3CanonicalRigContract } from '../components/v3/v3CanonicalRigContract';
 import {
   V3_CHARACTER_SLOT_IDS,
   type V3CharacterSlotId,
 } from '../components/v3/v3ModelTypes';
+import { deriveV3CanonicalRigContract } from '../components/v3/v3CanonicalRigContract';
 import {
   V3_DETAIL_BONE_NAMES,
   V3_DETAIL_BONE_SPECS,
@@ -955,6 +955,52 @@ const AXIAL_ARMOR_SLOTS = new Set<V3CharacterSlotId>([
   'back',
 ]);
 
+const V3_MESH2MOTION_SLOT_MIRROR_OF: Record<V3CharacterSlotId, V3CharacterSlotId | null> = {
+  helmet: null,
+  neck: null,
+  chest: null,
+  shoulderLeft: null,
+  shoulderRight: 'shoulderLeft',
+  upperArmLeft: null,
+  upperArmRight: 'upperArmLeft',
+  forearmLeft: null,
+  forearmRight: 'forearmLeft',
+  handLeft: null,
+  handRight: 'handLeft',
+  pelvis: null,
+  thighLeft: null,
+  thighRight: 'thighLeft',
+  shinLeft: null,
+  shinRight: 'shinLeft',
+  footLeft: null,
+  footRight: 'footLeft',
+  back: null,
+};
+
+const V3_MESH2MOTION_NATIVE_VOXEL_SCALE = 0.055;
+
+const V3_MESH2MOTION_NATIVE_SLOT_GRID_DIMENSIONS: Record<V3CharacterSlotId, V3Vec3Tuple> = {
+  helmet: [13, 9, 10],
+  neck: [6, 4, 6],
+  chest: [15, 18, 12],
+  shoulderLeft: [7, 7, 8],
+  shoulderRight: [7, 7, 8],
+  upperArmLeft: [5, 10, 5],
+  upperArmRight: [5, 10, 5],
+  forearmLeft: [5, 10, 5],
+  forearmRight: [5, 10, 5],
+  handLeft: [5, 5, 5],
+  handRight: [5, 5, 5],
+  pelvis: [12, 8, 9],
+  thighLeft: [6, 12, 6],
+  thighRight: [6, 12, 6],
+  shinLeft: [6, 12, 6],
+  shinRight: [6, 12, 6],
+  footLeft: [7, 4, 10],
+  footRight: [7, 4, 10],
+  back: [12, 14, 5],
+};
+
 const buildSlotBasis = (
   slot: V3CharacterSlotId,
   spec: { sourceJointName: string; centerJointNames: readonly string[] },
@@ -989,6 +1035,36 @@ const buildSlotBasis = (
   );
 };
 
+const tupleBoundsSize = (
+  min: readonly number[],
+  max: readonly number[]
+): V3Vec3Tuple => [
+  roundMetric((max[0] ?? 0) - (min[0] ?? 0)),
+  roundMetric((max[1] ?? 0) - (min[1] ?? 0)),
+  roundMetric((max[2] ?? 0) - (min[2] ?? 0)),
+];
+
+const buildLocalSlotEnvelope = (
+  dimensions: V3Vec3Tuple,
+  voxelScale: number
+): V3Mesh2MotionArmorSlotPlacement['localEnvelope'] => {
+  const maxTuple: V3Vec3Tuple = [
+    roundMetric(((dimensions[0] - 1) / 2 + 0.5) * voxelScale),
+    roundMetric(((dimensions[1] - 1) / 2 + 0.5) * voxelScale),
+    roundMetric(((dimensions[2] - 1) / 2 + 0.5) * voxelScale),
+  ];
+  const minTuple: V3Vec3Tuple = [
+    roundMetric(-maxTuple[0]),
+    roundMetric(-maxTuple[1]),
+    roundMetric(-maxTuple[2]),
+  ];
+  return {
+    min: minTuple,
+    max: maxTuple,
+    size: tupleBoundsSize(minTuple, maxTuple),
+  };
+};
+
 const buildArmorRigSkeletonArtifact = (
   skeleton: V3Mesh2MotionSkeletonArtifact
 ): V3Mesh2MotionArmorRigArtifact['skeleton'] => ({
@@ -1008,7 +1084,6 @@ const buildArmorSlotPlacementArtifact = (
 ): Record<V3CharacterSlotId, V3Mesh2MotionArmorSlotPlacement> => {
   const driverRest = buildDriverLocalTransforms(context, context.tPose, 0);
   const driverWorlds = composeDriverWorldTransforms(context, driverRest.localTransformsByIndex);
-  const canonicalContract = deriveV3CanonicalRigContract();
   const placements = {} as Record<V3CharacterSlotId, V3Mesh2MotionArmorSlotPlacement>;
   const worldForJoint = (jointName: string) => {
     const sourceIndex = context.sourceIndexByName.get(jointName);
@@ -1026,22 +1101,34 @@ const buildArmorSlotPlacementArtifact = (
     center.multiplyScalar(1 / spec.centerJointNames.length);
     const basis = buildSlotBasis(slot, spec, worldForJoint);
     const pivotWorldQuaternion = basis.quaternion;
-    const pivotQuaternion = new THREE.Quaternion(...pivotWorldQuaternion).normalize();
-    const geometryWorldCenter = new THREE.Vector3().fromArray(canonicalContract.slotGeometryOffsets[slot].geometryCenter);
-    const geometryLocalPosition = geometryWorldCenter
-      .sub(center)
-      .applyQuaternion(pivotQuaternion.clone().invert());
+    const sourceWorldPosition = worldForJoint(spec.sourceJointName).position;
+    const endWorldPosition = spec.endJointName ? worldForJoint(spec.endJointName).position : null;
+    const segmentLength = endWorldPosition
+      ? roundMetric(sourceWorldPosition.distanceTo(endWorldPosition))
+      : 0;
+    const localVoxelGridDimensions = V3_MESH2MOTION_NATIVE_SLOT_GRID_DIMENSIONS[slot];
     placements[slot] = {
       slot,
       sourceJointName: spec.sourceJointName,
       endJointName: spec.endJointName,
       centerJointNames: [...spec.centerJointNames],
+      segmentLength,
       pivotCenter: tupleVec3(center),
       pivotWorldPosition: tupleVec3(center),
       pivotWorldQuaternion,
       basis,
+      localVoxelGridDimensions,
+      jointClearance: roundMetric(Math.max(
+        V3_MESH2MOTION_NATIVE_VOXEL_SCALE,
+        Math.min(...localVoxelGridDimensions) * V3_MESH2MOTION_NATIVE_VOXEL_SCALE * 0.08
+      )),
+      mirrorOf: V3_MESH2MOTION_SLOT_MIRROR_OF[slot],
+      localEnvelope: buildLocalSlotEnvelope(
+        localVoxelGridDimensions,
+        V3_MESH2MOTION_NATIVE_VOXEL_SCALE
+      ),
       geometry: {
-        position: tupleVec3(geometryLocalPosition),
+        position: [0, 0, 0],
         rotation: [0, 0, 0],
         scale: [1, 1, 1],
       },
@@ -1488,7 +1575,7 @@ export function buildV3Mesh2MotionGeneratedSource(
   const forbiddenPatterns: Array<[RegExp, string]> = [
     [/[A-Za-z]:\\/, 'absolute Windows path'],
     [/\/Users\/|\\Users\\|\/home\/|\/tmp\//, 'private absolute path'],
-    [/bufferView|accessors|meshes|skins|nodes|ArrayBuffer/i, 'raw GLB payload'],
+    [/bufferView|buffers?|accessors|meshes|skins|nodes|scenes?|ArrayBuffer/i, 'raw GLB payload'],
   ];
   const issues = forbiddenPatterns
     .filter(([pattern]) => pattern.test(serialized))
@@ -1513,7 +1600,7 @@ export function buildV3Mesh2MotionArmorRigGeneratedSource(
   const forbiddenPatterns: Array<[RegExp, string]> = [
     [/[A-Za-z]:\\/, 'absolute Windows path'],
     [/\/Users\/|\\Users\\|\/home\/|\/tmp\//, 'private absolute path'],
-    [/bufferView|accessors|meshes|skins|nodes|ArrayBuffer/i, 'raw GLB payload'],
+    [/bufferView|buffers?|accessors|meshes|skins|nodes|scenes?|ArrayBuffer/i, 'raw GLB payload'],
   ];
   const issues = forbiddenPatterns
     .filter(([pattern]) => pattern.test(serialized))

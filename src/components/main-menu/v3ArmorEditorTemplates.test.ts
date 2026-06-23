@@ -11,13 +11,13 @@ import {
   type CustomArmorPieceSnapshot,
   type V3CustomArmorSlot,
 } from '../customArmor';
-import { getV3CharacterPartBounds } from '../v3/v3PartBounds';
+import { getV3Mesh2MotionNativeSlotDimensions } from '../v3/v3Mesh2MotionNativeGeometry';
 import {
   createV3ArmorTemplateDraft,
   getV3ArmorTemplateLabel,
 } from './v3ArmorEditorTemplates';
 
-const GRID_SCALE = 2;
+const GRID_SCALE = 1;
 const SILHOUETTE_BINS = 5;
 
 const FAMILY_SAMPLE_SLOTS: Array<{
@@ -60,11 +60,11 @@ const DARK_READ_ROLES = new Set<CustomArmorMaterialRole>(['dark', 'undersuit']);
 const EMISSIVE_READ_ROLES = new Set<CustomArmorMaterialRole>(['emissive', 'visor']);
 
 function assertWithinSlotBounds(slot: V3CustomArmorSlot, draft: CustomArmorPieceSnapshot): void {
-  const dimensions = getV3CharacterPartBounds(slot).maxDimensions;
+  const [x, y, z] = getV3Mesh2MotionNativeSlotDimensions(slot);
   for (const voxel of draft.voxels) {
-    assert.ok(voxel.x >= 0 && voxel.x < dimensions.x * GRID_SCALE, `${slot} x out of bounds: ${voxel.x}`);
-    assert.ok(voxel.y >= 0 && voxel.y < dimensions.y * GRID_SCALE, `${slot} y out of bounds: ${voxel.y}`);
-    assert.ok(voxel.z >= 0 && voxel.z < dimensions.z * GRID_SCALE, `${slot} z out of bounds: ${voxel.z}`);
+    assert.ok(voxel.x >= 0 && voxel.x < x, `${slot} x out of bounds: ${voxel.x}`);
+    assert.ok(voxel.y >= 0 && voxel.y < y, `${slot} y out of bounds: ${voxel.y}`);
+    assert.ok(voxel.z >= 0 && voxel.z < z, `${slot} z out of bounds: ${voxel.z}`);
   }
 }
 
@@ -144,7 +144,7 @@ function minimumRoleDiversity(slot: V3CustomArmorSlot): number {
   return SMALL_SLOT_ROLE_FLOOR.has(slot) ? 2 : 3;
 }
 
-test('every V3 slot creates a valid gridScale 2 starter template within slot bounds', () => {
+test('every V3 slot creates a valid Mesh2Motion-native starter template within slot bounds', () => {
   for (const slot of V3_CUSTOM_ARMOR_SLOTS) {
     const label = getV3ArmorTemplateLabel(slot);
     const draft = createV3ArmorTemplateDraft(slot, { hue: 210, now: 1_000 });

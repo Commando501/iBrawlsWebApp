@@ -41,15 +41,26 @@ export interface V3Mesh2MotionArmorSlotBasis {
   quaternion: V3QuatTuple;
 }
 
+export interface V3Mesh2MotionArmorSlotEnvelope {
+  min: V3Vec3Tuple;
+  max: V3Vec3Tuple;
+  size: V3Vec3Tuple;
+}
+
 export interface V3Mesh2MotionArmorSlotPlacement {
   slot: V3CharacterSlotId;
   sourceJointName: string;
   endJointName: string | null;
   centerJointNames: readonly string[];
+  segmentLength: number;
   pivotCenter: V3Vec3Tuple;
   pivotWorldPosition: V3Vec3Tuple;
   pivotWorldQuaternion: V3QuatTuple;
   basis: V3Mesh2MotionArmorSlotBasis;
+  localVoxelGridDimensions: V3Vec3Tuple;
+  jointClearance: number;
+  mirrorOf: V3CharacterSlotId | null;
+  localEnvelope: V3Mesh2MotionArmorSlotEnvelope;
   geometry: {
     position: V3Vec3Tuple;
     rotation: V3Vec3Tuple;

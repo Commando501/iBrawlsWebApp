@@ -181,7 +181,7 @@ const metricVector = (slotReport: ReturnType<typeof analyzeV3PartFidelity>): num
 ];
 
 describe('analyzeV3BuiltInSuitFidelity', () => {
-  it('decodes every exact OBJ-source built-in V3 slot and reports known Phase 38 fidelity blockers', () => {
+  it('analyzes every exact-source built-in V3 slot and preserves known review diagnostics', () => {
     const reports = analyzeV3BuiltInSuitFidelity();
 
     assert.deepEqual(Object.keys(reports).sort(), [...V3_CHARACTER_SLOT_IDS].sort());
@@ -200,14 +200,14 @@ describe('analyzeV3BuiltInSuitFidelity', () => {
 
     const blockedSlots = V3_CHARACTER_SLOT_IDS.filter((slot) => !reports[slot].ready);
     assert.deepEqual(blockedSlots.sort(), ['back', 'forearmLeft', 'forearmRight', 'handLeft', 'handRight']);
-    assert.ok(reports.forearmLeft.issues.some((issue) => issue.code === 'material-diversity-low'));
-    assert.ok(reports.forearmRight.issues.some((issue) => issue.code === 'material-diversity-low'));
-    assert.ok(reports.handLeft.issues.some((issue) => issue.code === 'terminal-proportion-oversized'));
-    assert.ok(reports.handRight.issues.some((issue) => issue.code === 'terminal-proportion-oversized'));
-    assert.ok(reports.back.issues.some((issue) => issue.code === 'slab-profile'));
+    assert.equal(reports.forearmLeft.issues.some((issue) => issue.code === 'material-diversity-low'), true);
+    assert.equal(reports.forearmRight.issues.some((issue) => issue.code === 'material-diversity-low'), true);
+    assert.equal(reports.handLeft.issues.some((issue) => issue.code === 'terminal-proportion-oversized'), true);
+    assert.equal(reports.handRight.issues.some((issue) => issue.code === 'terminal-proportion-oversized'), true);
+    assert.equal(reports.back.issues.some((issue) => issue.code === 'slab-profile'), true);
   });
 
-  it('keeps paired exact OBJ-source built-ins close after normalization', () => {
+  it('keeps paired exact-source built-ins close after normalization', () => {
     const reports = analyzeV3BuiltInSuitFidelity();
     const tolerances = [0.08, 0.08, 0.08, 0.08, 0.35, 0.08, 0.08];
     const pairs = [
@@ -231,15 +231,17 @@ describe('analyzeV3BuiltInSuitFidelity', () => {
     }
   });
 
-  it('keeps reference feature-match blocked with actionable exact-source gaps', () => {
+  it('keeps reference feature-match review gaps visible on the exact-source body', () => {
     const report = analyzeV3BuiltInReferenceFeatureMatch();
 
     assert.equal(report.ready, false);
     assert.ok(report.summary.slotCount >= 18, 'neck is excluded, every guided armor slot is checked');
-    assert.ok(report.summary.averageScore < 0.9, `Phase 38 should keep feature-match blockers visible: ${report.summary.averageScore}`);
+    assert.ok(report.summary.averageScore < 0.9, `exact-source body should keep feature-match review gaps visible: ${report.summary.averageScore}`);
     assert.ok(report.summary.issueCount > 0);
     assert.ok(report.issues.some((issue) => issue.code === 'missing-reference-feature' && issue.slot === 'chest'));
-    assert.ok(report.issues.some((issue) => issue.code === 'material-role-diversity-low' && issue.slot === 'forearmLeft'));
+    assert.ok(report.issues.some((issue) => issue.code === 'low-reference-feature-score' && issue.slot === 'chest'));
+    assert.ok(report.issues.some((issue) => issue.code === 'missing-reference-feature' && issue.slot === 'forearmLeft'));
+    assert.ok(report.issues.some((issue) => issue.code === 'material-role-diversity-low' && issue.slot === 'handRight'));
     assert.ok(report.issues.some((issue) => issue.code === 'slot-fidelity-blocked' && issue.slot === 'back'));
 
     const helmet = report.slots.helmet;
@@ -247,6 +249,7 @@ describe('analyzeV3BuiltInSuitFidelity', () => {
     const back = report.slots.back;
     const shin = report.slots.shinRight;
     const foot = report.slots.footRight;
+    const hand = report.slots.handRight;
 
     assert.equal(helmet?.features.find((feature) => feature.kind === 'visor')?.present, true);
     assert.equal(helmet?.features.find((feature) => feature.kind === 'jaw')?.present, true);
@@ -258,6 +261,7 @@ describe('analyzeV3BuiltInSuitFidelity', () => {
     assert.equal(back?.features.find((feature) => feature.kind === 'spine')?.present, true);
     assert.equal(shin?.features.find((feature) => feature.kind === 'knee')?.present, true);
     assert.equal(foot?.features.find((feature) => feature.kind === 'toe')?.present, false);
+    assert.equal(hand?.features.find((feature) => feature.kind === 'glove')?.present, true);
   });
 });
 
