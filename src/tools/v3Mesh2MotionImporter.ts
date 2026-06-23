@@ -7,14 +7,19 @@ import type {
   V3QuatTuple,
   V3Vec3Tuple,
 } from '../components/grifball/v3CleanRig';
+import { V3_MESH2MOTION_PART_BINDING_SPECS } from '../components/grifball/v3Mesh2MotionSlotBindings';
 import { deriveV3CanonicalRigContract } from '../components/v3/v3CanonicalRigContract';
+import {
+  V3_CHARACTER_SLOT_IDS,
+  type V3CharacterSlotId,
+} from '../components/v3/v3ModelTypes';
 import {
   V3_DETAIL_BONE_NAMES,
   V3_DETAIL_BONE_SPECS,
   type V3DetailBoneName,
 } from '../components/v3/v3RigDetail';
 
-export const V3_MESH2MOTION_CLIP_SET_SCHEMA = 'v3-mesh2motion-clip-set/v2';
+export const V3_MESH2MOTION_CLIP_SET_SCHEMA = 'v3-mesh2motion-clip-set/v3';
 
 export const V3_MESH2MOTION_SOURCE_CLIP_NAMES = [
   'Slide_Exit',
@@ -59,6 +64,14 @@ export interface V3Mesh2MotionSkeletonJoint {
 export interface V3Mesh2MotionSkeletonArtifact {
   sourceJointCount: number;
   joints: V3Mesh2MotionSkeletonJoint[];
+}
+
+export interface V3Mesh2MotionPartBindingArtifact {
+  slot: V3CharacterSlotId;
+  sourceJointName: string;
+  centerJointNames: string[];
+  restWorldPosition: V3Vec3Tuple;
+  restWorldQuaternion: V3QuatTuple;
 }
 
 export interface V3Mesh2MotionJointCalibration {
@@ -146,9 +159,10 @@ export interface V3Mesh2MotionDiagnostics {
 
 export interface V3Mesh2MotionClipSetArtifact {
   schemaVersion: typeof V3_MESH2MOTION_CLIP_SET_SCHEMA;
-  version: 2;
+  version: 3;
   source: V3Mesh2MotionSourceSummary;
   skeleton: V3Mesh2MotionSkeletonArtifact;
+  partBindings: Record<V3CharacterSlotId, V3Mesh2MotionPartBindingArtifact>;
   calibration: V3Mesh2MotionCalibrationArtifact;
   restPose: V3Mesh2MotionRestPoseArtifact;
   cleanClipBindings: typeof V3_MESH2MOTION_CLEAN_CLIP_BINDINGS;
@@ -838,6 +852,38 @@ const buildSkeletonArtifact = (
   };
 };
 
+const buildPartBindingArtifact = (
+  context: BuildContext
+): Record<V3CharacterSlotId, V3Mesh2MotionPartBindingArtifact> => {
+  const driverRest = buildDriverLocalTransforms(context, context.tPose, 0);
+  const driverWorlds = composeDriverWorldTransforms(context, driverRest.localTransformsByIndex);
+  const bindings = {} as Record<V3CharacterSlotId, V3Mesh2MotionPartBindingArtifact>;
+  const worldForJoint = (jointName: string) => {
+    const sourceIndex = context.sourceIndexByName.get(jointName);
+    const world = sourceIndex === undefined ? undefined : driverWorlds.get(sourceIndex);
+    if (!world) throw new Error(`Missing Mesh2Motion TPose world transform for ${jointName}`);
+    return world;
+  };
+
+  for (const slot of V3_CHARACTER_SLOT_IDS) {
+    const spec = V3_MESH2MOTION_PART_BINDING_SPECS[slot];
+    const center = new THREE.Vector3();
+    for (const jointName of spec.centerJointNames) {
+      center.add(worldForJoint(jointName).position);
+    }
+    center.multiplyScalar(1 / spec.centerJointNames.length);
+    bindings[slot] = {
+      slot,
+      sourceJointName: spec.sourceJointName,
+      centerJointNames: [...spec.centerJointNames],
+      restWorldPosition: tupleVec3(center),
+      restWorldQuaternion: tupleQuat(worldForJoint(spec.sourceJointName).quaternion),
+    };
+  }
+
+  return bindings;
+};
+
 const clipDuration = (clip: ClipChannels): number => Math.max(
   0,
   ...clip.channels.flatMap((channel) => channel.times)
@@ -1227,14 +1273,16 @@ export function buildV3Mesh2MotionClipSetArtifact(
   const context = buildContext(parsed);
   const fps = options.fps ?? 30;
   const skeleton = buildSkeletonArtifact(context);
+  const partBindings = buildPartBindingArtifact(context);
   const restPose = buildRestPose(context, context.tPose);
   const clips = context.clipChannels.map((clip) => buildClipArtifact(context, clip, fps));
   const tPoseClip = clips.find((clip) => clip.sourceClipName === 'TPose') ?? clips[0];
   return {
     schemaVersion: V3_MESH2MOTION_CLIP_SET_SCHEMA,
-    version: 2,
+    version: 3,
     source: parsed.source,
     skeleton,
+    partBindings,
     calibration: context.calibration,
     restPose,
     cleanClipBindings: V3_MESH2MOTION_CLEAN_CLIP_BINDINGS,

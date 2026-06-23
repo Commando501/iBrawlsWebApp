@@ -9,15 +9,18 @@ import {
   type V3CleanRigPose,
 } from './v3CleanRig';
 import {
+  applyV3Mesh2MotionDriverRigPose,
   getV3Mesh2MotionDriverRig,
   getV3Mesh2MotionDriverWeaponSocketWorldTransform,
   resetV3Mesh2MotionDriverRigPose,
+  type V3Mesh2MotionDriverPose,
 } from './v3Mesh2MotionDriverRig';
 import {
   V3_MESH2MOTION_DEFAULT_CALIBRATION,
   normalizeV3Mesh2MotionCalibration,
   setV3Mesh2MotionCalibrationOverride,
 } from './v3Mesh2MotionCalibration';
+import { V3_MESH2MOTION_CLIP_SET } from './v3Mesh2MotionClips.generated';
 
 const roundTuple = (value: readonly number[]): number[] =>
   value.map((component) => Number(component.toFixed(5)));
@@ -27,6 +30,24 @@ const worldPosition = (object: THREE.Object3D): number[] =>
 
 const worldBoxCenter = (object: THREE.Object3D): THREE.Vector3 =>
   new THREE.Box3().setFromObject(object).getCenter(new THREE.Vector3());
+
+const generatedDriverPose = (sourceClipName: string): V3Mesh2MotionDriverPose => {
+  const clip = V3_MESH2MOTION_CLIP_SET.clips.find((candidate) => candidate.sourceClipName === sourceClipName);
+  assert.ok(clip, `expected generated Mesh2Motion clip ${sourceClipName}`);
+  return {
+    sourceClipName,
+    sourceNormalizedTime: 0,
+    joints: Object.fromEntries(
+      Object.entries(clip.driverJoints).map(([jointName, track]) => [
+        jointName,
+        {
+          position: track.positions[0],
+          quaternion: track.quaternions[0],
+        },
+      ])
+    ),
+  };
+};
 
 const createModel = () => {
   const model = buildV3SpartanModel({ isEnemy: false, customHue: 192 });
@@ -101,6 +122,43 @@ describe('v3Mesh2MotionDriverRig', () => {
     resetV3Mesh2MotionDriverRigPose(model);
     assert.equal(model.userData.v3Mesh2MotionDriverActive, false);
     assert.deepEqual(roundTuple(partGroups.chest.position.toArray()), chestRestLocal);
+  });
+
+  it('binds Mesh2Motion TPose visible limb parts to source skeleton segment centers', () => {
+    const model = createModel();
+    const partGroups = model.userData.v3PartGroups as Record<string, THREE.Group>;
+    const pose = generatedDriverPose('TPose');
+    const applied = applyV3Mesh2MotionDriverRigPose(model, pose);
+    const rig = getV3Mesh2MotionDriverRig(model);
+
+    assert.equal(applied.ready, true, applied.warnings.join(', '));
+
+    const assertSegmentCenter = (
+      slot: string,
+      fromJointName: string,
+      toJointName: string
+    ) => {
+      const from = rig.joints[fromJointName]?.object.getWorldPosition(new THREE.Vector3());
+      const to = rig.joints[toJointName]?.object.getWorldPosition(new THREE.Vector3());
+      assert.ok(from, `missing Mesh2Motion joint ${fromJointName}`);
+      assert.ok(to, `missing Mesh2Motion joint ${toJointName}`);
+      const expected = from.clone().add(to).multiplyScalar(0.5);
+      const actual = worldBoxCenter(partGroups[slot]);
+      const distance = actual.distanceTo(expected);
+      assert.ok(
+        distance <= 0.035,
+        `${slot} center drift ${distance.toFixed(4)} from ${fromJointName}->${toJointName} TPose segment`
+      );
+    };
+
+    assertSegmentCenter('upperArmLeft', 'upperarm_l', 'lowerarm_l');
+    assertSegmentCenter('forearmLeft', 'lowerarm_l', 'hand_l');
+    assertSegmentCenter('upperArmRight', 'upperarm_r', 'lowerarm_r');
+    assertSegmentCenter('forearmRight', 'lowerarm_r', 'hand_r');
+    assertSegmentCenter('thighLeft', 'thigh_l', 'calf_l');
+    assertSegmentCenter('shinLeft', 'calf_l', 'foot_l');
+    assertSegmentCenter('thighRight', 'thigh_r', 'calf_r');
+    assertSegmentCenter('shinRight', 'calf_r', 'foot_r');
   });
 
   it('keeps Mesh2Motion sprint arms laterally clear of the torso armor', () => {

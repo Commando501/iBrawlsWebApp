@@ -16,7 +16,7 @@ describe('v3Mesh2MotionImporter', () => {
     const second = buildV3Mesh2MotionClipSetArtifact({ filePath: sourceFilePath, fps: 30 });
 
     assert.deepEqual(second, first);
-    assert.equal(first.schemaVersion, 'v3-mesh2motion-clip-set/v2');
+    assert.equal(first.schemaVersion, 'v3-mesh2motion-clip-set/v3');
     assert.equal(first.source.kind, 'mesh2motion-glb');
     assert.equal(first.source.fileName, 'exported-model.glb');
     assert.match(first.source.sha256, /^[a-f0-9]{64}$/);
@@ -26,6 +26,9 @@ describe('v3Mesh2MotionImporter', () => {
     assert.equal(first.skeleton.joints.some((joint) => joint.name === 'spine_03' && joint.parent === 'spine_02'), true);
     assert.equal(first.skeleton.joints.some((joint) => joint.name === 'hand_r' && joint.parent === 'lowerarm_r'), true);
     assert.equal(first.skeleton.joints.every((joint) => joint.restLocalPosition.length === 3), true);
+    assert.deepEqual(first.partBindings.upperArmLeft.centerJointNames, ['upperarm_l', 'lowerarm_l']);
+    assert.deepEqual(first.partBindings.forearmRight.centerJointNames, ['lowerarm_r', 'hand_r']);
+    assert.equal(first.partBindings.handRight.sourceJointName, 'hand_r');
     assert.equal(first.metrics.clipCount, 9);
     assert.equal(first.metrics.mappedJointCount >= 20, true);
     assert.equal(first.diagnostics.virtualAttachmentCount >= 5, true);
