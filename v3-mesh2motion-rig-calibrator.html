@@ -272,6 +272,25 @@
           border-top: 1px solid var(--line);
         }
       }
+
+      @media (max-width: 760px) {
+        #app {
+          height: auto;
+          min-height: 100%;
+        }
+
+        #workspace {
+          grid-template-columns: minmax(0, 1fr);
+        }
+
+        #viewport-wrap {
+          min-height: 420px;
+        }
+
+        .panel.right {
+          grid-column: auto;
+        }
+      }
     </style>
   </head>
   <body>
@@ -337,14 +356,25 @@
               <label>Y<input id="target-ry" type="number" min="-3.14" max="3.14" step="0.01" value="0" /></label>
               <label>Z<input id="target-rz" type="number" min="-3.14" max="3.14" step="0.01" value="0" /></label>
             </div>
+          </section>
+
+          <section class="section">
+            <p class="section-title">Scale</p>
+            <div class="grid-3">
+              <label>X<input id="target-sx" type="number" min="0.25" max="2" step="0.01" value="1" /></label>
+              <label>Y<input id="target-sy" type="number" min="0.25" max="2" step="0.01" value="1" /></label>
+              <label>Z<input id="target-sz" type="number" min="0.25" max="2" step="0.01" value="1" /></label>
+            </div>
             <div class="row">
               <button id="apply-target" type="button">Apply Target</button>
+              <button id="auto-relocate" type="button">Auto Relocate</button>
               <button id="reset-target" type="button">Reset Target</button>
               <button id="reset-mode" type="button">Reset Mode</button>
               <button id="reset-all" type="button">Reset All</button>
             </div>
             <div class="row">
               <button id="transform-translate" type="button" class="active">Move Target</button>
+              <button id="transform-scale" type="button">Resize Target</button>
               <button id="transform-rotate" type="button">Rotate Target</button>
             </div>
           </section>

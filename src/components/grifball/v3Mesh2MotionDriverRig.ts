@@ -5,6 +5,7 @@ import {
   getV3Mesh2MotionCalibration,
   type V3Mesh2MotionCalibration,
   type V3Mesh2MotionCalibrationVec3,
+  type V3Mesh2MotionPartBindingCalibration,
   type V3Mesh2MotionTransformCalibration,
 } from './v3Mesh2MotionCalibration';
 
@@ -220,11 +221,13 @@ const addVec3Tuple = (
 const quaternionFromRotationTuple = (rotation: V3Mesh2MotionCalibrationVec3): THREE.Quaternion =>
   new THREE.Quaternion().setFromEuler(new THREE.Euler(...rotation, 'XYZ')).normalize();
 
-const adjustmentMatrix = (adjustment: V3Mesh2MotionTransformCalibration): THREE.Matrix4 =>
+const adjustmentMatrix = (
+  adjustment: V3Mesh2MotionTransformCalibration | V3Mesh2MotionPartBindingCalibration
+): THREE.Matrix4 =>
   new THREE.Matrix4().compose(
     vec3FromTuple(adjustment.position),
     quaternionFromRotationTuple(adjustment.rotation),
-    vec3FromTuple(ONE_VEC3)
+    vec3FromTuple('scale' in adjustment ? adjustment.scale : ONE_VEC3)
   );
 
 const applyDriverCalibration = (

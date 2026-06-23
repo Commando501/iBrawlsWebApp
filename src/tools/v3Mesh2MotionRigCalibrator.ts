@@ -16,12 +16,14 @@ import {
   V3_MESH2MOTION_DEFAULT_CALIBRATION,
   buildV3Mesh2MotionCalibrationDiagnostics,
   computeDriverJointAdjustmentFromWorldTransform,
-  computePartBindingAdjustmentFromWorldTransform,
+  computePartBindingAdjustmentFromAnchoredWorldTransform,
+  computeV3Mesh2MotionPartBindingAutoRelocateAdjustment,
   computeWeaponSocketAdjustmentFromWorldTransform,
   getV3Mesh2MotionCalibrationTargetWorldTransform,
   listV3Mesh2MotionCalibrationTargets,
   normalizeV3Mesh2MotionCalibration,
   parseV3Mesh2MotionCalibrationJson,
+  resolveV3Mesh2MotionCalibratorHotkey,
   serializeV3Mesh2MotionCalibration,
   setV3Mesh2MotionCalibrationOverride,
   type V3Mesh2MotionCalibration,
@@ -34,8 +36,9 @@ type Mesh2MotionPreviewClipId = Extract<
 >;
 
 type EditMode = V3Mesh2MotionCalibrationTargetDescriptor['kind'];
+type TransformMode = 'translate' | 'rotate' | 'scale';
 type CalibrationTuple = [number, number, number];
-type CalibrationTransform = { position: CalibrationTuple; rotation: CalibrationTuple };
+type CalibrationTransform = { position: CalibrationTuple; rotation: CalibrationTuple; scale?: CalibrationTuple };
 
 interface PreviewClipConfig {
   id: Mesh2MotionPreviewClipId;
@@ -50,6 +53,7 @@ interface PreviewClipConfig {
 
 const LOCAL_STORAGE_KEY = 'ibrawls_v3_mesh2motion_rig_calibration';
 const ZERO_TRANSFORM: CalibrationTransform = { position: [0, 0, 0], rotation: [0, 0, 0] };
+const ZERO_PART_BINDING_TRANSFORM: CalibrationTransform = { position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] };
 const MODE_LABELS: Record<EditMode, string> = {
   partBinding: 'V3 Part Binding',
   driverJoint: 'Mesh2Motion Bone',
@@ -128,12 +132,17 @@ const targetZInput = document.getElementById('target-z') as HTMLInputElement;
 const targetRxInput = document.getElementById('target-rx') as HTMLInputElement;
 const targetRyInput = document.getElementById('target-ry') as HTMLInputElement;
 const targetRzInput = document.getElementById('target-rz') as HTMLInputElement;
+const targetSxInput = document.getElementById('target-sx') as HTMLInputElement;
+const targetSyInput = document.getElementById('target-sy') as HTMLInputElement;
+const targetSzInput = document.getElementById('target-sz') as HTMLInputElement;
 const applyTargetButton = document.getElementById('apply-target') as HTMLButtonElement;
 const resetTargetButton = document.getElementById('reset-target') as HTMLButtonElement;
 const resetModeButton = document.getElementById('reset-mode') as HTMLButtonElement;
 const resetAllButton = document.getElementById('reset-all') as HTMLButtonElement;
+const autoRelocateButton = document.getElementById('auto-relocate') as HTMLButtonElement;
 const transformTranslateButton = document.getElementById('transform-translate') as HTMLButtonElement;
 const transformRotateButton = document.getElementById('transform-rotate') as HTMLButtonElement;
+const transformScaleButton = document.getElementById('transform-scale') as HTMLButtonElement;
 const targetSummaryElement = document.getElementById('target-summary') as HTMLPreElement;
 const diagnosticsElement = document.getElementById('diagnostics') as HTMLPreElement;
 const jsonOutput = document.getElementById('json-output') as HTMLTextAreaElement;
@@ -231,6 +240,7 @@ scene.add(transformControls.getHelper());
 
 let calibration: V3Mesh2MotionCalibration = loadLocalCalibration();
 let editMode: EditMode = 'partBinding';
+let transformMode: TransformMode = 'translate';
 let currentFrame = 30;
 let playing = false;
 let frameCarry = 0;
@@ -241,6 +251,7 @@ let suppressInputCommit = false;
 const cloneTransform = (value: CalibrationTransform): CalibrationTransform => ({
   position: [...value.position],
   rotation: [...value.rotation],
+  ...(value.scale ? { scale: [...value.scale] as CalibrationTuple } : {}),
 });
 
 const vectorFromTuple = (tuple: readonly number[]): THREE.Vector3 =>
@@ -307,7 +318,7 @@ function getTargetCalibration(target = selectedTarget()): CalibrationTransform {
   }
   if (target.kind === 'partBinding') {
     const value = calibration.partBindings[target.id as V3CharacterSlotId];
-    return value ? cloneTransform(value) : cloneTransform(ZERO_TRANSFORM);
+    return value ? cloneTransform(value) : cloneTransform(ZERO_PART_BINDING_TRANSFORM);
   }
   return cloneTransform(calibration.weaponSockets[target.id as V3Mesh2MotionDriverWeaponSocketName]);
 }
@@ -318,7 +329,10 @@ function setTargetCalibration(target: V3Mesh2MotionCalibrationTargetDescriptor, 
       ...calibration,
       driverJoints: {
         ...calibration.driverJoints,
-        [target.id]: transform,
+        [target.id]: {
+          position: transform.position,
+          rotation: transform.rotation,
+        },
       },
     });
     return;
@@ -328,7 +342,11 @@ function setTargetCalibration(target: V3Mesh2MotionCalibrationTargetDescriptor, 
       ...calibration,
       partBindings: {
         ...calibration.partBindings,
-        [target.id]: transform,
+        [target.id]: {
+          position: transform.position,
+          rotation: transform.rotation,
+          scale: transform.scale ?? [1, 1, 1],
+        },
       },
     });
     return;
@@ -337,7 +355,10 @@ function setTargetCalibration(target: V3Mesh2MotionCalibrationTargetDescriptor, 
     ...calibration,
     weaponSockets: {
       ...calibration.weaponSockets,
-      [target.id]: transform,
+      [target.id]: {
+        position: transform.position,
+        rotation: transform.rotation,
+      },
     },
   });
 }
@@ -406,15 +427,24 @@ function syncInputsFromCalibration(): void {
   const transform = getTargetCalibration();
   setTupleInputs([targetXInput, targetYInput, targetZInput], transform.position);
   setTupleInputs([targetRxInput, targetRyInput, targetRzInput], transform.rotation);
+  setTupleInputs([targetSxInput, targetSyInput, targetSzInput], transform.scale ?? [1, 1, 1]);
+  for (const input of [targetSxInput, targetSyInput, targetSzInput]) {
+    input.disabled = editMode !== 'partBinding';
+  }
+  syncTransformControlAvailability();
   jsonOutput.value = serializeV3Mesh2MotionCalibration(calibration);
   suppressInputCommit = false;
 }
 
 function selectedTargetTransformFromInputs(): CalibrationTransform {
-  return {
+  const transform: CalibrationTransform = {
     position: tupleFromInputs(targetXInput, targetYInput, targetZInput),
     rotation: tupleFromInputs(targetRxInput, targetRyInput, targetRzInput),
   };
+  if (selectedTarget().kind === 'partBinding') {
+    transform.scale = tupleFromInputs(targetSxInput, targetSyInput, targetSzInput);
+  }
+  return transform;
 }
 
 function commitInputsToTarget(message = 'Target updated'): void {
@@ -563,6 +593,7 @@ function updateTargetHandle(): void {
   transformControls.enabled = true;
   targetHandle.position.copy(transform.position);
   targetHandle.quaternion.copy(transform.quaternion);
+  targetHandle.scale.copy(transform.scale);
   targetHandle.rotation.setFromQuaternion(targetHandle.quaternion);
   targetHandle.updateMatrixWorld(true);
   updateTargetTether(rig);
@@ -598,15 +629,19 @@ function commitTargetHandleToCalibration(): void {
     const binding = rig.partBindings[target.id as V3CharacterSlotId];
     const joint = binding ? rig.joints[binding.sourceJointName] : null;
     if (!binding || !joint) return;
+    const currentTarget = getV3Mesh2MotionCalibrationTargetWorldTransform(meshRig.group, target.kind, target.id, rig);
+    if (!currentTarget?.anchorLocalOffset) return;
     joint.object.updateWorldMatrix(true, false);
     const baseWorldMatrix = joint.object.matrixWorld.clone().multiply(binding.bindMatrix);
-    const next = computePartBindingAdjustmentFromWorldTransform({
+    const next = computePartBindingAdjustmentFromAnchoredWorldTransform({
       baseWorldMatrix,
       handleWorldMatrix: targetHandle.matrixWorld,
+      anchorLocalOffset: currentTarget.anchorLocalOffset,
     });
     setTargetCalibration(target, {
       position: tupleFromVector(next.position),
       rotation: next.rotation,
+      scale: tupleFromVector(next.scale),
     });
   } else {
     const socket = rig.weaponSockets[target.id as V3Mesh2MotionDriverWeaponSocketName];
@@ -666,6 +701,7 @@ function formatTargetSummary(): string {
     : [];
   const offsetMagnitude = vectorFromTuple(targetTransform.position).length();
   const rotationDegrees = targetTransform.rotation.map((value) => THREE.MathUtils.radToDeg(value).toFixed(1));
+  const scale = targetTransform.scale ?? [1, 1, 1];
   const warnings = [
     !target.hasVisibleBinding ? 'Warning: target has no directly bound visible V3 armor part.' : null,
     offsetMagnitude > 0.24 ? 'Warning: position offset is near the clamp limit.' : null,
@@ -676,8 +712,10 @@ function formatTargetSummary(): string {
     `${MODE_LABELS[target.kind]}: ${target.label}`,
     `Source joint: ${sourceJointName ?? 'none'}`,
     `Affected slots: ${target.affectedSlots.length ? target.affectedSlots.join(', ') : 'none'}`,
+    `Grab point: ${target.kind === 'partBinding' ? 'visible bounds center' : 'object origin'}`,
     `Local offset magnitude: ${offsetMagnitude.toFixed(3)}`,
     `Rotation degrees: ${rotationDegrees.join(', ')}`,
+    `Scale: ${target.kind === 'partBinding' ? scale.map((value) => value.toFixed(3)).join(', ') : 'n/a'}`,
     `Parent distance: ${parentDistance === null ? 'n/a' : parentDistance.toFixed(3)}`,
     `Child distances: ${childDistances.length ? childDistances.join('  ') : 'none'}`,
     `World position: ${worldPosition ? worldPosition.toArray().map((value) => value.toFixed(3)).join(', ') : 'n/a'}`,
@@ -796,6 +834,72 @@ function updateClipControls(): void {
   timelineInput.value = String(currentFrame);
 }
 
+function setPlaying(next: boolean): void {
+  playing = next;
+  playButton.classList.toggle('active', playing);
+}
+
+function stepFrame(amount: number, message?: string): void {
+  setPlaying(false);
+  currentFrame = safeFrame(currentFrame + amount);
+  timelineInput.value = String(currentFrame);
+  frameInput.value = String(currentFrame);
+  applyPreview(message);
+}
+
+function autoRelocateSelectedTarget(): void {
+  const target = selectedTarget();
+  if (target.kind !== 'partBinding') {
+    setStatus('Auto Relocate is available for V3 Part Binding targets only');
+    return;
+  }
+  const rig = getV3Mesh2MotionDriverRig(meshRig.group);
+  const current = getTargetCalibration(target);
+  const next = computeV3Mesh2MotionPartBindingAutoRelocateAdjustment({
+    model: meshRig.group,
+    rig,
+    slot: target.id as V3CharacterSlotId,
+  });
+  if (!next) {
+    setStatus(`Unable to auto relocate ${target.label}`);
+    return;
+  }
+  setTargetCalibration(target, {
+    position: tupleFromVector(next.position),
+    rotation: current.rotation,
+    scale: current.scale ?? tupleFromVector(next.scale),
+  });
+  syncInputsFromCalibration();
+  applyPreview(`Auto relocated ${target.label}`);
+}
+
+function handleHotkey(event: KeyboardEvent): void {
+  const target = event.target as HTMLElement | null;
+  const action = resolveV3Mesh2MotionCalibratorHotkey({
+    key: event.key,
+    shiftKey: event.shiftKey,
+    ctrlKey: event.ctrlKey,
+    metaKey: event.metaKey,
+    altKey: event.altKey,
+    targetTagName: target?.tagName ?? null,
+    targetIsContentEditable: target?.isContentEditable === true,
+  });
+  if (!action) return;
+
+  event.preventDefault();
+  if (action.type === 'togglePlay') {
+    setPlaying(!playing);
+  } else if (action.type === 'stepFrame') {
+    stepFrame(action.amount);
+  } else if (action.type === 'editMode') {
+    setMode(action.mode);
+  } else if (action.type === 'transformMode') {
+    setTransformControlMode(action.mode);
+  } else if (action.type === 'autoRelocate') {
+    autoRelocateSelectedTarget();
+  }
+}
+
 function setCalibration(next: unknown, message: string): void {
   calibration = normalizeV3Mesh2MotionCalibration(next);
   syncInputsFromCalibration();
@@ -804,11 +908,38 @@ function setCalibration(next: unknown, message: string): void {
 
 function setMode(mode: EditMode): void {
   editMode = mode;
+  if (mode !== 'partBinding' && transformMode === 'scale') {
+    setTransformControlMode('translate', false);
+  }
   syncInputsFromCalibration();
   applyPreview(`${MODE_LABELS[mode]} mode`);
 }
 
-function resize(): void {
+function setTransformControlMode(mode: TransformMode, announce = true): void {
+  if (mode === 'scale' && selectedTarget().kind !== 'partBinding') {
+    setStatus('Resize is available for V3 Part Binding targets only');
+    return;
+  }
+  transformMode = mode;
+  transformControls.setMode(mode);
+  transformTranslateButton.classList.toggle('active', mode === 'translate');
+  transformRotateButton.classList.toggle('active', mode === 'rotate');
+  transformScaleButton.classList.toggle('active', mode === 'scale');
+  transformTranslateButton.setAttribute('aria-pressed', String(mode === 'translate'));
+  transformRotateButton.setAttribute('aria-pressed', String(mode === 'rotate'));
+  transformScaleButton.setAttribute('aria-pressed', String(mode === 'scale'));
+  if (announce) {
+    setStatus(mode === 'scale' ? 'Resize target mode' : mode === 'rotate' ? 'Rotate target mode' : 'Move target mode');
+  }
+}
+
+function syncTransformControlAvailability(): void {
+  const scaleAvailable = selectedTarget().kind === 'partBinding';
+  transformScaleButton.disabled = !scaleAvailable;
+  if (!scaleAvailable && transformMode === 'scale') setTransformControlMode('translate', false);
+}
+
+function resizeViewport(): void {
   const parent = canvas.parentElement;
   const width = Math.max(1, parent?.clientWidth ?? window.innerWidth);
   const height = Math.max(1, parent?.clientHeight ?? window.innerHeight);
@@ -832,30 +963,29 @@ frameInput.addEventListener('change', () => {
   applyPreview();
 });
 playButton.addEventListener('click', () => {
-  playing = !playing;
-  playButton.classList.toggle('active', playing);
+  setPlaying(!playing);
 });
 prevFrameButton.addEventListener('click', () => {
-  playing = false;
-  playButton.classList.remove('active');
-  currentFrame = safeFrame(currentFrame - 1);
-  timelineInput.value = String(currentFrame);
-  frameInput.value = String(currentFrame);
-  applyPreview();
+  stepFrame(-1);
 });
 nextFrameButton.addEventListener('click', () => {
-  playing = false;
-  playButton.classList.remove('active');
-  currentFrame = safeFrame(currentFrame + 1);
-  timelineInput.value = String(currentFrame);
-  frameInput.value = String(currentFrame);
-  applyPreview();
+  stepFrame(1);
 });
 
 for (const input of [leftSpreadInput, rightSpreadInput]) {
   input.addEventListener('change', () => applyPreview('Arm spread updated'));
 }
-for (const input of [targetXInput, targetYInput, targetZInput, targetRxInput, targetRyInput, targetRzInput]) {
+for (const input of [
+  targetXInput,
+  targetYInput,
+  targetZInput,
+  targetRxInput,
+  targetRyInput,
+  targetRzInput,
+  targetSxInput,
+  targetSyInput,
+  targetSzInput,
+]) {
   input.addEventListener('change', () => commitInputsToTarget());
 }
 for (const [mode, button] of Object.entries(modeButtons) as [EditMode, HTMLButtonElement][]) {
@@ -878,16 +1008,10 @@ resetModeButton.addEventListener('click', () => {
   applyPreview(`Reset ${MODE_LABELS[editMode]}`);
 });
 resetAllButton.addEventListener('click', () => setCalibration(V3_MESH2MOTION_DEFAULT_CALIBRATION, 'Reset all calibration'));
-transformTranslateButton.addEventListener('click', () => {
-  transformControls.setMode('translate');
-  transformTranslateButton.classList.add('active');
-  transformRotateButton.classList.remove('active');
-});
-transformRotateButton.addEventListener('click', () => {
-  transformControls.setMode('rotate');
-  transformRotateButton.classList.add('active');
-  transformTranslateButton.classList.remove('active');
-});
+autoRelocateButton.addEventListener('click', () => autoRelocateSelectedTarget());
+transformTranslateButton.addEventListener('click', () => setTransformControlMode('translate'));
+transformRotateButton.addEventListener('click', () => setTransformControlMode('rotate'));
+transformScaleButton.addEventListener('click', () => setTransformControlMode('scale'));
 transformControls.addEventListener('dragging-changed', (event) => {
   controls.enabled = !event.value;
 });
@@ -944,7 +1068,8 @@ importFileInput.addEventListener('change', async () => {
   }
 });
 
-window.addEventListener('resize', () => resize());
+window.addEventListener('resize', () => resizeViewport());
+window.addEventListener('keydown', (event) => handleHotkey(event));
 
 function animate(timeMs: number): void {
   if (lastTimeMs === 0) lastTimeMs = timeMs;
@@ -973,7 +1098,7 @@ for (const clip of Object.values(CLIPS)) {
 }
 syncInputsFromCalibration();
 updateClipControls();
-resize();
+resizeViewport();
 applyPreview('Mesh2Motion retarget calibrator ready');
 requestAnimationFrame(animate);
 
