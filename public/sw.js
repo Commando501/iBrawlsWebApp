@@ -39,6 +39,7 @@ const STANDALONE_DOCUMENT_PATHS = new Set([
   '/v3-animation-atlas-smoke.html',
   '/v3-clean-animation-editor.html',
   '/v3-mesh2motion-rig-calibrator.html',
+  '/v3-mesh2motion-tpose-bind-editor.html',
 ]);
 const isStandaloneDocumentRequest = (request, url) =>
   isNavigationRequest(request) &&

@@ -104,6 +104,15 @@ const DEFAULT_IMPORTANT_PART_IDS = [
   'rightLeg',
 ];
 
+const IMPORTANT_PART_SLOT_ALIASES: Record<string, string> = {
+  head: 'helmet',
+  upperTorso: 'chest',
+  leftArm: 'upperArmLeft',
+  rightArm: 'upperArmRight',
+  leftLeg: 'thighLeft',
+  rightLeg: 'thighRight',
+};
+
 const VIEW_YAWS: Record<V3VisualQaViewId, number> = {
   front: 0,
   side: Math.PI / 2,
@@ -298,9 +307,9 @@ function resolveImportantPartIds(options?: V3VisualQaOptions): string[] {
 
 function findImportantPart(subject: THREE.Object3D, partId: string): THREE.Object3D | undefined {
   const direct = subject.userData[partId];
-  if (direct instanceof THREE.Object3D) return direct;
+  if (direct instanceof THREE.Object3D && !new THREE.Box3().setFromObject(direct).isEmpty()) return direct;
   const partGroups = subject.userData.v3PartGroups as Record<string, THREE.Object3D | undefined> | undefined;
-  return partGroups?.[partId];
+  return partGroups?.[partId] ?? partGroups?.[IMPORTANT_PART_SLOT_ALIASES[partId]];
 }
 
 function buildImportantPartVisibility(

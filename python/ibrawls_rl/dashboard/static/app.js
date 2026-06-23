@@ -506,6 +506,60 @@ async function renderRunComparison() {
 // ================= EVALUATE =================
 let evalTimer = null;
 let evalModelContract = null;
+let evalHistoryRows = [];
+let selectedEvalHistoryId = null;
+let lastEvalResult = null;
+let lastEvalSaved = true;
+const EVAL_AUTO_SAVE_KEY = "ibrawls.eval.autoSave";
+
+function getEvalAutoSave() {
+  const cb = $("#evalAutoSave");
+  return cb ? cb.checked : true;
+}
+
+function setEvalSaveState(text) {
+  const node = $("#evalSaveState");
+  if (node) node.textContent = text || "";
+}
+
+function updateEvalSaveButton() {
+  const btn = $("#btnEvalSaveLast");
+  if (!btn) return;
+  if (!lastEvalResult) {
+    btn.disabled = true;
+    btn.textContent = "Save this result";
+    return;
+  }
+  btn.disabled = lastEvalSaved;
+  btn.textContent = lastEvalSaved ? "Saved" : "Save this result";
+}
+
+function initEvalSaveControls() {
+  const cb = $("#evalAutoSave");
+  const saveBtn = $("#btnEvalSaveLast");
+  if (!cb || !saveBtn) return;
+  try {
+    const saved = localStorage.getItem(EVAL_AUTO_SAVE_KEY);
+    cb.checked = saved == null ? true : saved === "1";
+  } catch {}
+  cb.addEventListener("change", () => {
+    try { localStorage.setItem(EVAL_AUTO_SAVE_KEY, cb.checked ? "1" : "0"); } catch {}
+    setEvalSaveState(cb.checked ? "auto-save on" : "auto-save off");
+  });
+  saveBtn.addEventListener("click", async () => {
+    const res = await api.post("/api/eval/history/save-current", {});
+    if (!res.ok) {
+      flash(saveBtn, res.error || "Error", false);
+      return;
+    }
+    lastEvalSaved = true;
+    updateEvalSaveButton();
+    setEvalSaveState(res.saved ? "saved to history" : "already saved");
+    await loadEvalHistory();
+  });
+  updateEvalSaveButton();
+}
+
 async function loadModels() {
   const data = await api.get("/api/models");
   const sel = $("#evalModel"); sel.innerHTML = "";
@@ -605,9 +659,14 @@ $("#btnEval").addEventListener("click", async () => {
     matrix: $("#evalMatrix").checked,
     mechanics_suite: $("#evalMechanicsSuite").checked,
     league_snapshots: $("#evalLeagueSnapshots").value.split(/\r?\n|,/).map((s) => s.trim()).filter(Boolean),
+    auto_save: getEvalAutoSave(),
   };
   const res = await api.post("/api/eval/start", body);
   if (!res.ok) { $("#evalState").textContent = res.error || "error"; return; }
+  lastEvalResult = null;
+  lastEvalSaved = true;
+  updateEvalSaveButton();
+  setEvalSaveState("");
   $("#evalResult").innerHTML = ""; pollEval();
 });
 $("#btnEvalStop").addEventListener("click", async () => { await api.post("/api/eval/stop", {}); pollEval(); });
@@ -645,19 +704,25 @@ async function pollEval() {
   $("#evalLog").textContent = (st.log || []).join("\n");
   $("#evalLog").scrollTop = $("#evalLog").scrollHeight;
   if (st.result) renderEvalResult(st.result);
-  if (!st.running && st.result) loadEvalHistory();  // a grade just landed → refresh the log
+  if (!st.running && st.result) {
+    lastEvalResult = st.result;
+    lastEvalSaved = !st.meta || st.meta.auto_save !== false;
+    updateEvalSaveButton();
+    setEvalSaveState(lastEvalSaved ? "saved to history" : "not saved");
+    loadEvalHistory();  // a grade just landed; refresh the log
+  }
   clearTimeout(evalTimer);
   if (st.running) evalTimer = setTimeout(pollEval, 1200);
 }
 
 // ================= EVAL HISTORY =================
 let histSortBest = false;
-async function loadEvalHistory() {
+async function legacyLoadEvalHistory() {
   let data;
   try { data = await api.get("/api/eval/history"); } catch { return; }
   renderEvalHistory(data.history || []);
 }
-function renderEvalHistory(history) {
+function legacyRenderEvalHistory(history) {
   const root = $("#evalHistory");
   if (!history.length) { root.innerHTML = '<p class="muted">No evaluations yet — run one above and it\'ll show up here.</p>'; return; }
   const rows = history.slice();
@@ -672,7 +737,7 @@ function renderEvalHistory(history) {
     el("tbody", {}, ...rows.map((r) => histRow(r, best))));
   root.innerHTML = ""; root.append(table);
 }
-function histRow(r, best) {
+function legacyHistRow(r, best) {
   const w = ((r.win_rate ?? r.summary?.mean_win_rate) || 0) * 100;
   const d = ((r.draw_rate ?? r.summary?.mean_draw_rate) || 0) * 100;
   const l = (r.loss_rate || 0) * 100;
@@ -712,6 +777,174 @@ function promotionRankScore(r) {
     return applyMechanicsFloor(Math.min(s.anti_bait_score, floor) - trapPenalty);
   }
   return applyMechanicsFloor(r.win_rate ?? s.lone_wolf_score ?? s.promotion_score ?? 0);
+}
+
+async function loadEvalHistory() {
+  let data;
+  try { data = await api.get("/api/eval/history"); } catch { return; }
+  evalHistoryRows = data.history || [];
+  renderEvalHistory(evalHistoryRows);
+}
+
+function renderEvalHistory(history) {
+  const root = $("#evalHistory");
+  if (!history.length) {
+    root.innerHTML = '<p class="muted">No evaluations yet - run one above and it will show up here.</p>';
+    renderEvalHistoryDetail(null);
+    return;
+  }
+  const rows = history.slice();
+  const histScore = promotionRankScore;
+  if (histSortBest) rows.sort((a, b) => histScore(b) - histScore(a));
+  const best = Math.max(...rows.map(histScore));
+  const table = el("table", { class: "guide-table hist-table" },
+    el("thead", {}, el("tr", {},
+      el("th", {}, "When"), el("th", {}, "Model"), el("th", {}, "Mode"),
+      el("th", {}, "vs"), el("th", {}, "Matches"), el("th", {}, "Dev"),
+      el("th", {}, "Result - win / draw / loss"), el("th", {}, "Actions"))),
+    el("tbody", {}, ...rows.map((r) => histRow(r, best))));
+  root.innerHTML = "";
+  root.append(table);
+  if (selectedEvalHistoryId && !history.some((r) => r.id === selectedEvalHistoryId)) {
+    selectedEvalHistoryId = null;
+  }
+  if (selectedEvalHistoryId) renderEvalHistoryDetail(history.find((r) => r.id === selectedEvalHistoryId));
+}
+
+function histRow(r, best) {
+  const w = ((r.win_rate ?? r.summary?.mean_win_rate) || 0) * 100;
+  const d = ((r.draw_rate ?? r.summary?.mean_draw_rate) || 0) * 100;
+  const l = (r.loss_rate || 0) * 100;
+  const bars = el("div", { class: "mini-bars" });
+  if (w > 0) bars.append(el("div", { class: "bar win", style: `width:${w}%` }));
+  if (d > 0) bars.append(el("div", { class: "bar draw", style: `width:${d}%` }));
+  if (l > 0) bars.append(el("div", { class: "bar loss", style: `width:${l}%` }));
+  const when = r.ts ? new Date(r.ts * 1000).toLocaleString() : "-";
+  const model = (r.model || "-").replace(/^runs\//, "").replace(/\/final_model\.zip$/, " / final").replace(/\.zip$/, "");
+  const score = promotionRankScore(r);
+  const isBest = score === best && best > 0;
+  const b = r.behavior;
+  const bTip = b ? Object.entries(BEHAVIOR_INFO)
+    .filter(([k]) => b[k] != null)
+    .map(([k, info]) => `${info.label} ${Math.round(b[k] * 100)}%`).join(" | ") : "";
+  return el("tr", { class: isBest ? "best-row" : "" },
+    el("td", { class: "muted nowrap" }, when),
+    el("td", { title: bTip ? "behavior: " + bTip : "" }, model,
+      isBest ? el("span", { class: "chip best" }, "best") : null),
+    el("td", {}, r.mode || "-"),
+    el("td", {}, r.mode === "combat" ? "random (1v1)" : (r.opponent || "-")),
+    el("td", {}, fmtInt(r.matches)),
+    el("td", {}, r.device || "cpu"),
+    el("td", {}, el("div", { class: "hist-result" },
+      el("span", { class: "winpct" }, Math.round(w) + "%"), bars)),
+    el("td", { class: "hist-row-actions" },
+      el("button", { class: "btn ghost tiny", onclick: () => {
+        selectedEvalHistoryId = r.id;
+        renderEvalHistoryDetail(r);
+      } }, "View"),
+      el("button", { class: "btn danger tiny", onclick: () => deleteEvalHistoryRow(r) }, "Delete")));
+}
+
+async function deleteEvalHistoryRow(record) {
+  const label = record.model || record.id || "this evaluation";
+  if (!confirm(`Delete evaluation history entry for ${label}?`)) return;
+  const res = await api.post("/api/eval/history/delete", { id: record.id });
+  if (!res.ok || !res.deleted) return;
+  if (selectedEvalHistoryId === record.id) selectedEvalHistoryId = null;
+  await loadEvalHistory();
+}
+
+function renderEvalHistoryDetail(record) {
+  const root = $("#evalHistoryDetail");
+  if (!root) return;
+  root.innerHTML = "";
+  if (!record) {
+    root.className = "hist-detail muted";
+    root.textContent = "Select a saved evaluation to inspect its full record.";
+    return;
+  }
+  root.className = "hist-detail";
+  const result = record.result || record;
+  const when = record.ts ? new Date(record.ts * 1000).toLocaleString() : "-";
+  root.append(
+    el("div", { class: "hist-detail-head" },
+      el("div", {},
+        el("h3", {}, "Saved evaluation"),
+        el("div", { class: "muted" }, `${when} | ${record.mode || "-"} | ${record.model || "-"}`)),
+      el("button", { class: "btn danger tiny", onclick: () => deleteEvalHistoryRow(record) }, "Delete")));
+  root.append(evalHistorySummary(record, result));
+  if (Array.isArray(result.scenarios)) {
+    root.append(evalHistoryScenarioTable("Scenario results", result.scenarios));
+  }
+  if (Array.isArray(result.frozen_snapshots) && result.frozen_snapshots.length) {
+    root.append(evalHistoryScenarioTable("Frozen snapshot results", result.frozen_snapshots));
+  }
+  if (Array.isArray(result.anti_bait) && result.anti_bait.length) {
+    root.append(evalHistoryScenarioTable("Anti-bait results", result.anti_bait));
+  }
+  if (Array.isArray(result.mechanics_suite) && result.mechanics_suite.length) {
+    root.append(evalHistoryMechanicsTable(result.mechanics_suite));
+  }
+  root.append(el("details", { class: "hist-json", open: "" },
+    el("summary", {}, "Full saved JSON"),
+    el("pre", {}, JSON.stringify(record, null, 2))));
+}
+
+function evalHistorySummary(record, result) {
+  const summary = result.summary || record.summary || {};
+  const rows = [
+    ["Win", fmtNum(result.win_rate ?? record.win_rate ?? summary.mean_win_rate)],
+    ["Draw", fmtNum(result.draw_rate ?? record.draw_rate ?? summary.mean_draw_rate)],
+    ["Loss", fmtNum(result.loss_rate ?? record.loss_rate)],
+    ["Episodes", fmtInt(result.episodes ?? record.episodes ?? record.matches)],
+    ["Score", fmtNum(summary.strict_promotion_score ?? summary.promotion_score ?? summary.lone_wolf_score)],
+    ["Return", fmtNum(result.ep_return ?? record.ep_return)],
+  ];
+  return el("div", { class: "hist-kpis" },
+    ...rows.map(([label, value]) => el("div", { class: "hist-kpi" }, el("span", {}, label), el("b", {}, value))));
+}
+
+function evalHistoryScenarioTable(title, scenarios) {
+  const rows = scenarios.map((s) => {
+    const b = s.behavior || {};
+    return el("tr", {},
+      el("td", {}, s.name || "-"),
+      el("td", {}, fmtNum(s.win_score ?? s.score)),
+      el("td", {}, fmtNum(s.win_rate)),
+      el("td", {}, fmtNum(s.draw_rate)),
+      el("td", {}, fmtNum(s.loss_rate)),
+      el("td", {}, s.world_size == null ? "-" : String(s.world_size)),
+      el("td", {}, s.kill_target == null ? "-" : String(s.kill_target)),
+      el("td", {}, `${fmtNum(b.attack_rate)} / ${fmtNum(b.dash_rate)} / ${fmtNum(b.action_repeat_rate)}`));
+  });
+  return el("div", { class: "hist-section" },
+    el("h3", {}, title),
+    el("table", { class: "guide-table" },
+      el("thead", {}, el("tr", {},
+        el("th", {}, "Scenario"), el("th", {}, "Score"), el("th", {}, "Win"),
+        el("th", {}, "Draw"), el("th", {}, "Loss"), el("th", {}, "World"),
+        el("th", {}, "Kills"), el("th", {}, "Atk / dash / repeat"))),
+      el("tbody", {}, ...rows)));
+}
+
+function evalHistoryMechanicsTable(suite) {
+  const rows = suite.map((preset) => {
+    const s = preset.summary || {};
+    return el("tr", {},
+      el("td", {}, preset.name || "-"),
+      el("td", { title: preset.description || "" }, fmtNum(s.strict_promotion_score ?? s.promotion_score ?? s.mean_scenario_win_score)),
+      el("td", {}, fmtNum(s.lone_wolf_score)),
+      el("td", {}, fmtNum(s.anti_bait_score)),
+      el("td", {}, s.frozen_snapshot_score == null ? "missing" : fmtNum(s.frozen_snapshot_score)),
+      el("td", {}, fmtNum(s.trap_death_rate)));
+  });
+  return el("div", { class: "hist-section" },
+    el("h3", {}, "Mechanics suite"),
+    el("table", { class: "guide-table" },
+      el("thead", {}, el("tr", {},
+        el("th", {}, "Preset"), el("th", {}, "Score"), el("th", {}, "Lone wolf"),
+        el("th", {}, "Anti-bait"), el("th", {}, "Frozen"), el("th", {}, "Trap deaths"))),
+      el("tbody", {}, ...rows)));
 }
 $("#btnHistRefresh").addEventListener("click", loadEvalHistory);
 $("#btnHistSort").addEventListener("click", () => {
@@ -1446,6 +1679,7 @@ window.addEventListener("resize", () => {
 });
 
 // ================= boot =================
+initEvalSaveControls();
 loadConfig();
 pollTrain();
 window.addEventListener("resize", () => {

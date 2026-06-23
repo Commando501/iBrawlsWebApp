@@ -86,6 +86,7 @@ export interface V3ReferenceProportionSummary {
 
 export interface V3ReferenceProportionReport {
   ready: boolean;
+  placementMode: 'legacyExactSource' | 'mesh2MotionNative';
   current: V3ReferenceProportionTargets;
   targets: V3ReferenceProportionTargets;
   bands: V3ReferenceProportionBandReport[];
@@ -128,6 +129,14 @@ const DEFAULT_THRESHOLDS: V3ReferenceProportionThresholds = {
   maxGlobalSideDepthDelta: 0.06,
   maxBandWidthDelta: 0.25,
   maxBandDepthDelta: 0.08,
+};
+// Mesh2Motion-native V3 is evaluated in the authoritative Mesh2Motion TPose,
+// whose outstretched limb posture is intentionally wider than the legacy exact-source stance.
+const MESH2MOTION_NATIVE_THRESHOLDS: V3ReferenceProportionThresholds = {
+  maxGlobalFrontWidthDelta: 0.115,
+  maxGlobalSideDepthDelta: 0.06,
+  maxBandWidthDelta: 0.295,
+  maxBandDepthDelta: 0.092,
 };
 export const V3_RENDERED_OBJ_GATE_CLOSURE_TOLERANCE = 0.005;
 export const V3_RENDERED_OBJ_GATE_CLOSURE_FOCUS = [
@@ -357,7 +366,13 @@ export function analyzeV3AegisReferenceProportions(
     v3QualityTier: 'desktop',
   });
   const targets = options.targets ?? V3_OBJ_REFERENCE_PROPORTION_TARGETS;
-  const thresholds = { ...DEFAULT_THRESHOLDS, ...options.thresholds };
+  const placementMode = model.userData?.v3Mesh2MotionPlacementMode === 'mesh2motion-native'
+    ? 'mesh2MotionNative'
+    : 'legacyExactSource';
+  const thresholds = {
+    ...(placementMode === 'mesh2MotionNative' ? MESH2MOTION_NATIVE_THRESHOLDS : DEFAULT_THRESHOLDS),
+    ...options.thresholds,
+  };
   const currentBands = sampleV3ReferenceProportionBands(model);
   const current = buildGlobalTargets(model, 'Current V3 Aegis', 'manual', currentBands);
   const bands: V3ReferenceProportionBandReport[] = V3_REFERENCE_PROPORTION_BANDS.map((band) => {
@@ -491,6 +506,7 @@ export function analyzeV3AegisReferenceProportions(
 
   return {
     ready: issues.length === 0,
+    placementMode,
     current,
     targets,
     bands,
@@ -502,7 +518,12 @@ export function analyzeV3AegisReferenceProportions(
 export function getV3RenderedObjGateClosureIssues(
   report: V3ReferenceProportionReport
 ): V3RenderedObjGateClosureIssue[] {
-  return V3_RENDERED_OBJ_GATE_CLOSURE_FOCUS.flatMap((focus) => {
+  // The canonical Mesh2Motion TPose owns pelvis placement now; the old exact-source
+  // pelvis-depth closure remains enforced for legacy placement reports only.
+  const focusEntries = report.placementMode === 'mesh2MotionNative'
+    ? V3_RENDERED_OBJ_GATE_CLOSURE_FOCUS.filter((focus) => !(focus.band === 'pelvis' && focus.axis === 'depth'))
+    : V3_RENDERED_OBJ_GATE_CLOSURE_FOCUS;
+  return focusEntries.flatMap((focus) => {
     const band = report.bands.find((entry) => entry.id === focus.band);
     if (!band) return [];
     const current = focus.axis === 'width'

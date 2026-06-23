@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { V3CharacterSlotId } from '../v3/v3ModelTypes';
+import { V3_MESH2MOTION_ARMOR_RIG } from '../v3/v3Mesh2MotionArmorRig.generated';
 import { V3_MESH2MOTION_CLIP_SET } from './v3Mesh2MotionClips.generated';
 import {
   getV3Mesh2MotionCalibration,
@@ -8,6 +9,11 @@ import {
   type V3Mesh2MotionPartBindingCalibration,
   type V3Mesh2MotionTransformCalibration,
 } from './v3Mesh2MotionCalibration';
+import {
+  V3_MESH2MOTION_SLOT_DRIVER_JOINTS,
+} from './v3Mesh2MotionSlotBindings';
+
+export { V3_MESH2MOTION_SLOT_DRIVER_JOINTS } from './v3Mesh2MotionSlotBindings';
 
 export type V3Mesh2MotionDriverVec3Tuple = [number, number, number];
 export type V3Mesh2MotionDriverQuatTuple = [number, number, number, number];
@@ -35,6 +41,7 @@ export interface V3Mesh2MotionPartBinding {
   slot: V3CharacterSlotId;
   sourceJointName: string;
   partGroup: THREE.Group;
+  restWorldCenter: V3Mesh2MotionDriverVec3Tuple | null;
   restLocalPosition: V3Mesh2MotionDriverVec3Tuple;
   restLocalQuaternion: V3Mesh2MotionDriverQuatTuple;
   restLocalScale: V3Mesh2MotionDriverVec3Tuple;
@@ -89,27 +96,18 @@ type GeneratedSkeletonJoint = {
   readonly restLocalQuaternion?: readonly number[];
 };
 
-export const V3_MESH2MOTION_SLOT_DRIVER_JOINTS = {
-  helmet: 'head',
-  neck: 'neck_01',
-  chest: 'spine_03',
-  shoulderLeft: 'clavicle_l',
-  shoulderRight: 'clavicle_r',
-  upperArmLeft: 'upperarm_l',
-  upperArmRight: 'upperarm_r',
-  forearmLeft: 'lowerarm_l',
-  forearmRight: 'lowerarm_r',
-  handLeft: 'hand_l',
-  handRight: 'hand_r',
-  pelvis: 'pelvis',
-  thighLeft: 'thigh_l',
-  thighRight: 'thigh_r',
-  shinLeft: 'calf_l',
-  shinRight: 'calf_r',
-  footLeft: 'foot_l',
-  footRight: 'foot_r',
-  back: 'spine_03',
-} as const satisfies Record<V3CharacterSlotId, string>;
+type GeneratedSlotPlacement = {
+  readonly slot: string;
+  readonly sourceJointName: string;
+  readonly pivotWorldPosition?: readonly number[];
+  readonly pivotWorldQuaternion?: readonly number[];
+};
+
+type ExistingMesh2MotionJoint = {
+  readonly object?: THREE.Group;
+  readonly restLocalPosition?: readonly number[];
+  readonly restLocalQuaternion?: readonly number[];
+};
 
 const V3_MESH2MOTION_DRIVER_WEAPON_SOCKETS = {
   rightHandGrip: { slot: 'handRight', sourceJointName: 'hand_r' },
@@ -167,6 +165,21 @@ const restorePartBinding = (binding: V3Mesh2MotionPartBinding): void => {
 const worldBoxCenter = (object: THREE.Object3D): THREE.Vector3 =>
   new THREE.Box3().setFromObject(object).getCenter(new THREE.Vector3());
 
+const generatedSlotPlacement = (slot: V3CharacterSlotId): GeneratedSlotPlacement | null => {
+  const placements = (V3_MESH2MOTION_ARMOR_RIG as {
+    readonly slots?: Partial<Record<V3CharacterSlotId, GeneratedSlotPlacement>>;
+  }).slots;
+  const binding = placements?.[slot];
+  if (
+    !binding
+    || !finiteTuple(binding.pivotWorldPosition, 3)
+    || !finiteTuple(binding.pivotWorldQuaternion, 4)
+  ) {
+    return null;
+  }
+  return binding;
+};
+
 const createDriverWeaponSockets = (
   joints: Record<string, V3Mesh2MotionDriverJoint>,
   partBindings: Partial<Record<V3CharacterSlotId, V3Mesh2MotionPartBinding>>,
@@ -194,7 +207,9 @@ const createDriverWeaponSockets = (
       continue;
     }
     joint.object.updateWorldMatrix(true, false);
-    const centerWorld = worldBoxCenter(binding.partGroup);
+    const centerWorld = binding.restWorldCenter
+      ? vec3FromTuple(binding.restWorldCenter)
+      : worldBoxCenter(binding.partGroup);
     const restLocalPosition = tupleFromVector(joint.object.worldToLocal(centerWorld.clone()));
     socket.position.fromArray(restLocalPosition);
     joint.object.add(socket);
@@ -310,36 +325,70 @@ export function getV3Mesh2MotionDriverRig(model: THREE.Group): V3Mesh2MotionDriv
   if (cached?.root.parent === model) return cached;
 
   const warnings: string[] = [];
-  const root = new THREE.Group();
-  root.name = 'v3Mesh2MotionDriverRoot';
+  const generatedJoints = V3_MESH2MOTION_CLIP_SET.skeleton.joints as readonly GeneratedSkeletonJoint[];
+  const existingRoot = model.userData.v3Mesh2MotionSkeletonRoot as THREE.Group | undefined;
+  const existingJoints = model.userData.v3Mesh2MotionJoints as
+    | Partial<Record<string, ExistingMesh2MotionJoint>>
+    | undefined;
+  const canReuseModelSkeleton = Boolean(
+    existingRoot
+    && existingJoints
+    && generatedJoints.every((sourceJoint) => existingJoints[sourceJoint.name]?.object instanceof THREE.Group)
+  );
+  const root = canReuseModelSkeleton && existingRoot ? existingRoot : new THREE.Group();
+  root.name = canReuseModelSkeleton ? 'v3Mesh2MotionSkeletonRoot' : 'v3Mesh2MotionDriverRoot';
   root.visible = false;
   root.userData.v3Mesh2MotionDriverRoot = true;
-  model.add(root);
+  if (root.parent !== model) model.add(root);
 
-  const generatedJoints = V3_MESH2MOTION_CLIP_SET.skeleton.joints as readonly GeneratedSkeletonJoint[];
   const joints: Record<string, V3Mesh2MotionDriverJoint> = {};
-  for (const sourceJoint of generatedJoints) {
-    const object = new THREE.Group();
-    const restLocalPosition = vec3Tuple(sourceJoint.restLocalPosition);
-    const restLocalQuaternion = quatTuple(sourceJoint.restLocalQuaternion);
-    object.name = `v3Mesh2MotionDriverBone:${sourceJoint.name}`;
-    object.userData.v3Mesh2MotionDriverJoint = sourceJoint.name;
-    object.position.fromArray(restLocalPosition);
-    object.quaternion.fromArray(restLocalQuaternion);
-    object.rotation.setFromQuaternion(object.quaternion);
-    joints[sourceJoint.name] = {
-      name: sourceJoint.name,
-      parentName: sourceJoint.parent,
-      object,
-      restLocalPosition,
-      restLocalQuaternion,
-    };
+  if (canReuseModelSkeleton && existingJoints) {
+    for (const sourceJoint of generatedJoints) {
+      const existingJoint = existingJoints[sourceJoint.name];
+      const object = existingJoint?.object;
+      if (!object) continue;
+      const restLocalPosition = vec3Tuple(existingJoint.restLocalPosition ?? sourceJoint.restLocalPosition);
+      const restLocalQuaternion = quatTuple(existingJoint.restLocalQuaternion ?? sourceJoint.restLocalQuaternion);
+      object.userData.v3Mesh2MotionDriverJoint = sourceJoint.name;
+      joints[sourceJoint.name] = {
+        name: sourceJoint.name,
+        parentName: sourceJoint.parent,
+        object,
+        restLocalPosition,
+        restLocalQuaternion,
+      };
+    }
+  } else {
+    for (const sourceJoint of generatedJoints) {
+      const object = new THREE.Group();
+      const restLocalPosition = vec3Tuple(sourceJoint.restLocalPosition);
+      const restLocalQuaternion = quatTuple(sourceJoint.restLocalQuaternion);
+      object.name = `v3Mesh2MotionDriverBone:${sourceJoint.name}`;
+      object.userData.v3Mesh2MotionDriverJoint = sourceJoint.name;
+      object.position.fromArray(restLocalPosition);
+      object.quaternion.fromArray(restLocalQuaternion);
+      object.rotation.setFromQuaternion(object.quaternion);
+      joints[sourceJoint.name] = {
+        name: sourceJoint.name,
+        parentName: sourceJoint.parent,
+        object,
+        restLocalPosition,
+        restLocalQuaternion,
+      };
+    }
+
+    for (const sourceJoint of generatedJoints) {
+      const joint = joints[sourceJoint.name];
+      const parent = sourceJoint.parent ? joints[sourceJoint.parent]?.object : null;
+      (parent ?? root).add(joint.object);
+    }
   }
 
-  for (const sourceJoint of generatedJoints) {
-    const joint = joints[sourceJoint.name];
-    const parent = sourceJoint.parent ? joints[sourceJoint.parent]?.object : null;
-    (parent ?? root).add(joint.object);
+  if (!canReuseModelSkeleton) {
+    for (const sourceJoint of generatedJoints) {
+      const joint = joints[sourceJoint.name];
+      if (!joint) warnings.push(`V3 Mesh2Motion driver missing generated source joint ${sourceJoint.name}`);
+    }
   }
 
   model.updateMatrixWorld(true);
@@ -347,20 +396,27 @@ export function getV3Mesh2MotionDriverRig(model: THREE.Group): V3Mesh2MotionDriv
   const partBindings: V3Mesh2MotionDriverRig['partBindings'] = {};
   for (const [slot, sourceJointName] of Object.entries(V3_MESH2MOTION_SLOT_DRIVER_JOINTS) as [V3CharacterSlotId, string][]) {
     const partGroup = partGroups?.[slot];
-    const driverJoint = joints[sourceJointName];
+    const generatedPlacement = generatedSlotPlacement(slot);
+    const bindingSourceJointName = generatedPlacement?.sourceJointName ?? sourceJointName;
+    const driverJoint = joints[bindingSourceJointName];
     if (!partGroup) {
       warnings.push(`V3 Mesh2Motion driver missing part group ${slot}`);
       continue;
     }
     if (!driverJoint) {
-      warnings.push(`V3 Mesh2Motion driver missing source joint ${sourceJointName} for ${slot}`);
+      warnings.push(`V3 Mesh2Motion driver missing source joint ${bindingSourceJointName} for ${slot}`);
       continue;
     }
-    const bindMatrix = driverJoint.object.matrixWorld.clone().invert().multiply(partGroup.matrixWorld);
+    if (!generatedPlacement) {
+      warnings.push(`V3 Mesh2Motion driver missing generated TPose armor slot placement for ${slot}`);
+    }
+    const partWorldMatrix = partGroup.matrixWorld.clone();
+    const bindMatrix = driverJoint.object.matrixWorld.clone().invert().multiply(partWorldMatrix);
     partBindings[slot] = {
       slot,
-      sourceJointName,
+      sourceJointName: bindingSourceJointName,
       partGroup,
+      restWorldCenter: tupleFromVector(worldBoxCenter(partGroup)),
       restLocalPosition: tupleFromVector(partGroup.position),
       restLocalQuaternion: tupleFromQuaternion(partGroup.quaternion),
       restLocalScale: tupleFromVector(partGroup.scale),

@@ -52,6 +52,7 @@ export type V3SocketName = (typeof V3_SOCKET_NAMES)[number];
 export type V3AssetKind = 'characterPart' | 'weapon';
 
 export type V3Vec3Tuple = readonly [number, number, number];
+export type V3QuatTuple = readonly [number, number, number, number];
 
 export interface V3AssetBudget {
   sourceVoxelCount: number;

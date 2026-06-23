@@ -7,14 +7,24 @@ import type {
   V3QuatTuple,
   V3Vec3Tuple,
 } from '../components/grifball/v3CleanRig';
+import {
+  V3_MESH2MOTION_ARMOR_RIG_SCHEMA,
+  V3_MESH2MOTION_PART_BINDING_SPECS,
+  type V3Mesh2MotionArmorRigArtifact,
+  type V3Mesh2MotionArmorSlotPlacement,
+} from '../components/v3/v3Mesh2MotionArmorRigContract';
 import { deriveV3CanonicalRigContract } from '../components/v3/v3CanonicalRigContract';
+import {
+  V3_CHARACTER_SLOT_IDS,
+  type V3CharacterSlotId,
+} from '../components/v3/v3ModelTypes';
 import {
   V3_DETAIL_BONE_NAMES,
   V3_DETAIL_BONE_SPECS,
   type V3DetailBoneName,
 } from '../components/v3/v3RigDetail';
 
-export const V3_MESH2MOTION_CLIP_SET_SCHEMA = 'v3-mesh2motion-clip-set/v2';
+export const V3_MESH2MOTION_CLIP_SET_SCHEMA = 'v3-mesh2motion-clip-set/v3';
 
 export const V3_MESH2MOTION_SOURCE_CLIP_NAMES = [
   'Slide_Exit',
@@ -59,6 +69,14 @@ export interface V3Mesh2MotionSkeletonJoint {
 export interface V3Mesh2MotionSkeletonArtifact {
   sourceJointCount: number;
   joints: V3Mesh2MotionSkeletonJoint[];
+}
+
+export interface V3Mesh2MotionPartBindingArtifact {
+  slot: V3CharacterSlotId;
+  sourceJointName: string;
+  centerJointNames: string[];
+  restWorldPosition: V3Vec3Tuple;
+  restWorldQuaternion: V3QuatTuple;
 }
 
 export interface V3Mesh2MotionJointCalibration {
@@ -146,9 +164,10 @@ export interface V3Mesh2MotionDiagnostics {
 
 export interface V3Mesh2MotionClipSetArtifact {
   schemaVersion: typeof V3_MESH2MOTION_CLIP_SET_SCHEMA;
-  version: 2;
+  version: 3;
   source: V3Mesh2MotionSourceSummary;
   skeleton: V3Mesh2MotionSkeletonArtifact;
+  partBindings: Record<V3CharacterSlotId, V3Mesh2MotionPartBindingArtifact>;
   calibration: V3Mesh2MotionCalibrationArtifact;
   restPose: V3Mesh2MotionRestPoseArtifact;
   cleanClipBindings: typeof V3_MESH2MOTION_CLEAN_CLIP_BINDINGS;
@@ -171,6 +190,16 @@ export interface BuildV3Mesh2MotionClipSetOptions {
 export interface GenerateV3Mesh2MotionClipsOptions extends BuildV3Mesh2MotionClipSetOptions {
   outputPath: string;
   exportName?: string;
+}
+
+export interface GenerateV3Mesh2MotionArmorRigOptions extends BuildV3Mesh2MotionClipSetOptions {
+  outputPath: string;
+  exportName?: string;
+}
+
+export interface GenerateV3Mesh2MotionImporterCliOptions extends GenerateV3Mesh2MotionClipsOptions {
+  rigOutputPath: string;
+  rigExportName?: string;
 }
 
 type GltfJson = {
@@ -838,6 +867,190 @@ const buildSkeletonArtifact = (
   };
 };
 
+const buildPartBindingArtifact = (
+  context: BuildContext
+): Record<V3CharacterSlotId, V3Mesh2MotionPartBindingArtifact> => {
+  const driverRest = buildDriverLocalTransforms(context, context.tPose, 0);
+  const driverWorlds = composeDriverWorldTransforms(context, driverRest.localTransformsByIndex);
+  const bindings = {} as Record<V3CharacterSlotId, V3Mesh2MotionPartBindingArtifact>;
+  const worldForJoint = (jointName: string) => {
+    const sourceIndex = context.sourceIndexByName.get(jointName);
+    const world = sourceIndex === undefined ? undefined : driverWorlds.get(sourceIndex);
+    if (!world) throw new Error(`Missing Mesh2Motion TPose world transform for ${jointName}`);
+    return world;
+  };
+
+  for (const slot of V3_CHARACTER_SLOT_IDS) {
+    const spec = V3_MESH2MOTION_PART_BINDING_SPECS[slot];
+    const center = new THREE.Vector3();
+    for (const jointName of spec.centerJointNames) {
+      center.add(worldForJoint(jointName).position);
+    }
+    center.multiplyScalar(1 / spec.centerJointNames.length);
+    bindings[slot] = {
+      slot,
+      sourceJointName: spec.sourceJointName,
+      centerJointNames: [...spec.centerJointNames],
+      restWorldPosition: tupleVec3(center),
+      restWorldQuaternion: tupleQuat(worldForJoint(spec.sourceJointName).quaternion),
+    };
+  }
+
+  return bindings;
+};
+
+const WORLD_UP = new THREE.Vector3(0, 1, 0);
+const WORLD_FORWARD = new THREE.Vector3(0, 0, 1);
+const WORLD_RIGHT = new THREE.Vector3(1, 0, 0);
+
+const normalizedVector = (
+  value: THREE.Vector3,
+  fallback: THREE.Vector3
+): THREE.Vector3 => value.lengthSq() > 0.000001 ? value.normalize() : fallback.clone().normalize();
+
+const projectedAxis = (
+  reference: THREE.Vector3,
+  normal: THREE.Vector3,
+  fallback: THREE.Vector3
+): THREE.Vector3 => {
+  const projected = reference.clone().sub(normal.clone().multiplyScalar(reference.dot(normal)));
+  return normalizedVector(projected, fallback);
+};
+
+const slotBasisTuple = (
+  xAxis: THREE.Vector3,
+  yAxis: THREE.Vector3,
+  zAxis: THREE.Vector3
+): V3Mesh2MotionArmorSlotPlacement['basis'] => {
+  const normalizedX = normalizedVector(xAxis.clone(), WORLD_RIGHT);
+  const normalizedY = normalizedVector(yAxis.clone(), WORLD_UP);
+  const normalizedZ = normalizedVector(zAxis.clone(), WORLD_FORWARD);
+  const quaternion = new THREE.Quaternion().setFromRotationMatrix(
+    new THREE.Matrix4().makeBasis(normalizedX, normalizedY, normalizedZ)
+  ).normalize();
+  return {
+    xAxis: tupleVec3(normalizedX),
+    yAxis: tupleVec3(normalizedY),
+    zAxis: tupleVec3(normalizedZ),
+    quaternion: tupleQuat(quaternion),
+  };
+};
+
+const slotSegmentDirection = (
+  spec: { centerJointNames: readonly string[] },
+  worldForJoint: (jointName: string) => Pick<LocalTransform, 'position' | 'quaternion'>
+): THREE.Vector3 | null => {
+  if (spec.centerJointNames.length < 2) return null;
+  const from = worldForJoint(spec.centerJointNames[0]).position;
+  const to = worldForJoint(spec.centerJointNames[1]).position;
+  const direction = to.clone().sub(from);
+  return direction.lengthSq() > 0.000001 ? direction.normalize() : null;
+};
+
+const AXIAL_ARMOR_SLOTS = new Set<V3CharacterSlotId>([
+  'helmet',
+  'neck',
+  'chest',
+  'pelvis',
+  'back',
+]);
+
+const buildSlotBasis = (
+  slot: V3CharacterSlotId,
+  spec: { sourceJointName: string; centerJointNames: readonly string[] },
+  worldForJoint: (jointName: string) => Pick<LocalTransform, 'position' | 'quaternion'>
+): V3Mesh2MotionArmorSlotPlacement['basis'] => {
+  if (AXIAL_ARMOR_SLOTS.has(slot)) {
+    return slotBasisTuple(WORLD_RIGHT, WORLD_UP, WORLD_FORWARD);
+  }
+
+  const segment = slotSegmentDirection(spec, worldForJoint);
+  if ((slot === 'footLeft' || slot === 'footRight') && segment) {
+    const horizontal = segment.clone();
+    horizontal.y = 0;
+    const zAxis = normalizedVector(horizontal, WORLD_FORWARD);
+    const yAxis = projectedAxis(WORLD_UP, zAxis, WORLD_UP);
+    const xAxis = normalizedVector(yAxis.clone().cross(zAxis), WORLD_RIGHT);
+    return slotBasisTuple(xAxis, yAxis, zAxis);
+  }
+
+  if (segment) {
+    const yAxis = segment;
+    const zAxis = projectedAxis(WORLD_FORWARD, yAxis, WORLD_UP);
+    const xAxis = normalizedVector(yAxis.clone().cross(zAxis), WORLD_RIGHT);
+    return slotBasisTuple(xAxis, yAxis, zAxis);
+  }
+
+  const quaternion = worldForJoint(spec.sourceJointName).quaternion.clone().normalize();
+  return slotBasisTuple(
+    WORLD_RIGHT.clone().applyQuaternion(quaternion),
+    WORLD_UP.clone().applyQuaternion(quaternion),
+    WORLD_FORWARD.clone().applyQuaternion(quaternion)
+  );
+};
+
+const buildArmorRigSkeletonArtifact = (
+  skeleton: V3Mesh2MotionSkeletonArtifact
+): V3Mesh2MotionArmorRigArtifact['skeleton'] => ({
+  sourceJointCount: skeleton.sourceJointCount,
+  joints: skeleton.joints.map((joint) => ({
+    name: joint.name,
+    parent: joint.parent,
+    restLocalPosition: [...joint.restLocalPosition],
+    restWorldPosition: [...joint.restWorldPosition],
+    restWorldQuaternion: [...joint.restWorldQuaternion],
+    restLocalQuaternion: [...joint.restLocalQuaternion],
+  })),
+});
+
+const buildArmorSlotPlacementArtifact = (
+  context: BuildContext
+): Record<V3CharacterSlotId, V3Mesh2MotionArmorSlotPlacement> => {
+  const driverRest = buildDriverLocalTransforms(context, context.tPose, 0);
+  const driverWorlds = composeDriverWorldTransforms(context, driverRest.localTransformsByIndex);
+  const canonicalContract = deriveV3CanonicalRigContract();
+  const placements = {} as Record<V3CharacterSlotId, V3Mesh2MotionArmorSlotPlacement>;
+  const worldForJoint = (jointName: string) => {
+    const sourceIndex = context.sourceIndexByName.get(jointName);
+    const world = sourceIndex === undefined ? undefined : driverWorlds.get(sourceIndex);
+    if (!world) throw new Error(`Missing Mesh2Motion TPose world transform for ${jointName}`);
+    return world;
+  };
+
+  for (const slot of V3_CHARACTER_SLOT_IDS) {
+    const spec = V3_MESH2MOTION_PART_BINDING_SPECS[slot];
+    const center = new THREE.Vector3();
+    for (const jointName of spec.centerJointNames) {
+      center.add(worldForJoint(jointName).position);
+    }
+    center.multiplyScalar(1 / spec.centerJointNames.length);
+    const basis = buildSlotBasis(slot, spec, worldForJoint);
+    const pivotWorldQuaternion = basis.quaternion;
+    const pivotQuaternion = new THREE.Quaternion(...pivotWorldQuaternion).normalize();
+    const geometryWorldCenter = new THREE.Vector3().fromArray(canonicalContract.slotGeometryOffsets[slot].geometryCenter);
+    const geometryLocalPosition = geometryWorldCenter
+      .sub(center)
+      .applyQuaternion(pivotQuaternion.clone().invert());
+    placements[slot] = {
+      slot,
+      sourceJointName: spec.sourceJointName,
+      endJointName: spec.endJointName,
+      centerJointNames: [...spec.centerJointNames],
+      pivotCenter: tupleVec3(center),
+      pivotWorldPosition: tupleVec3(center),
+      pivotWorldQuaternion,
+      basis,
+      geometry: {
+        position: tupleVec3(geometryLocalPosition),
+        rotation: [0, 0, 0],
+        scale: [1, 1, 1],
+      },
+    };
+  }
+
+  return placements;
+};
+
 const clipDuration = (clip: ClipChannels): number => Math.max(
   0,
   ...clip.channels.flatMap((channel) => channel.times)
@@ -1227,14 +1440,16 @@ export function buildV3Mesh2MotionClipSetArtifact(
   const context = buildContext(parsed);
   const fps = options.fps ?? 30;
   const skeleton = buildSkeletonArtifact(context);
+  const partBindings = buildPartBindingArtifact(context);
   const restPose = buildRestPose(context, context.tPose);
   const clips = context.clipChannels.map((clip) => buildClipArtifact(context, clip, fps));
   const tPoseClip = clips.find((clip) => clip.sourceClipName === 'TPose') ?? clips[0];
   return {
     schemaVersion: V3_MESH2MOTION_CLIP_SET_SCHEMA,
-    version: 2,
+    version: 3,
     source: parsed.source,
     skeleton,
+    partBindings,
     calibration: context.calibration,
     restPose,
     cleanClipBindings: V3_MESH2MOTION_CLEAN_CLIP_BINDINGS,
@@ -1247,6 +1462,21 @@ export function buildV3Mesh2MotionClipSetArtifact(
       totalKeyframes: clips.reduce((total, clip) => total + clip.frameCount, 0),
       maxClipFrameCount: Math.max(...clips.map((clip) => clip.frameCount)),
     },
+  };
+}
+
+export function buildV3Mesh2MotionArmorRigArtifact(
+  options: BuildV3Mesh2MotionClipSetOptions
+): V3Mesh2MotionArmorRigArtifact {
+  const parsed = parseGlb(options.filePath);
+  const context = buildContext(parsed);
+  const skeleton = buildSkeletonArtifact(context);
+  return {
+    schemaVersion: V3_MESH2MOTION_ARMOR_RIG_SCHEMA,
+    version: 1,
+    source: parsed.source,
+    skeleton: buildArmorRigSkeletonArtifact(skeleton),
+    slots: buildArmorSlotPlacementArtifact(context),
   };
 }
 
@@ -1275,6 +1505,31 @@ export function buildV3Mesh2MotionGeneratedSource(
   ].join('\n');
 }
 
+export function buildV3Mesh2MotionArmorRigGeneratedSource(
+  artifact: V3Mesh2MotionArmorRigArtifact,
+  exportName = 'V3_MESH2MOTION_ARMOR_RIG'
+): string {
+  const serialized = JSON.stringify(artifact);
+  const forbiddenPatterns: Array<[RegExp, string]> = [
+    [/[A-Za-z]:\\/, 'absolute Windows path'],
+    [/\/Users\/|\\Users\\|\/home\/|\/tmp\//, 'private absolute path'],
+    [/bufferView|accessors|meshes|skins|nodes|ArrayBuffer/i, 'raw GLB payload'],
+  ];
+  const issues = forbiddenPatterns
+    .filter(([pattern]) => pattern.test(serialized))
+    .map(([, label]) => label);
+  if (issues.length > 0) {
+    throw new Error(`Refusing to generate unsanitized V3 Mesh2Motion armor rig: ${issues.join(', ')}`);
+  }
+  return [
+    '/* eslint-disable */',
+    '// Generated by src/tools/v3Mesh2MotionImporter.ts. Do not edit by hand.',
+    '// Source Mesh2Motion GLB files stay private/local; this file contains sanitized TPose armor rig data only.',
+    `export const ${exportName} = ${JSON.stringify(artifact, null, 2)} as const;`,
+    '',
+  ].join('\n');
+}
+
 export function generateV3Mesh2MotionClipsSourceFile(
   options: GenerateV3Mesh2MotionClipsOptions
 ): V3Mesh2MotionClipSetArtifact {
@@ -1287,29 +1542,54 @@ export function generateV3Mesh2MotionClipsSourceFile(
   return artifact;
 }
 
-function parseArgs(argv: readonly string[]): GenerateV3Mesh2MotionClipsOptions {
+export function generateV3Mesh2MotionArmorRigSourceFile(
+  options: GenerateV3Mesh2MotionArmorRigOptions
+): V3Mesh2MotionArmorRigArtifact {
+  const artifact = buildV3Mesh2MotionArmorRigArtifact(options);
+  writeFileSync(
+    options.outputPath,
+    buildV3Mesh2MotionArmorRigGeneratedSource(artifact, options.exportName),
+    'utf8'
+  );
+  return artifact;
+}
+
+export function parseV3Mesh2MotionImporterCliArgs(argv: readonly string[]): GenerateV3Mesh2MotionImporterCliOptions {
   const inputIndex = argv.indexOf('--input');
   const outputIndex = argv.indexOf('--out');
+  const rigOutputIndex = argv.indexOf('--rig-out');
   const filePath = inputIndex >= 0
     ? argv[inputIndex + 1]
     : 'reference/mesh2motion-v3/exported-model.glb';
   const outputPath = outputIndex >= 0
     ? argv[outputIndex + 1]
     : 'src/components/grifball/v3Mesh2MotionClips.generated.ts';
-  if (!filePath || !outputPath) {
-    throw new Error('Usage: node --import tsx src/tools/v3Mesh2MotionImporter.ts --input <mesh2motion glb> --out <generated ts path>');
+  const rigOutputPath = rigOutputIndex >= 0
+    ? argv[rigOutputIndex + 1]
+    : 'src/components/v3/v3Mesh2MotionArmorRig.generated.ts';
+  if (!filePath || !outputPath || !rigOutputPath) {
+    throw new Error('Usage: node --import tsx src/tools/v3Mesh2MotionImporter.ts --input <mesh2motion glb> --out <clips generated ts path> --rig-out <armor rig generated ts path>');
   }
   readFileSync(resolve(filePath));
   return {
     filePath: resolve(filePath),
     outputPath: resolve(outputPath),
+    rigOutputPath: resolve(rigOutputPath),
     fps: 30,
   };
 }
 
 if (process.argv[1]?.endsWith('v3Mesh2MotionImporter.ts')) {
-  const args = parseArgs(process.argv.slice(2));
+  const args = parseV3Mesh2MotionImporterCliArgs(process.argv.slice(2));
   const artifact = generateV3Mesh2MotionClipsSourceFile(args);
+  const armorRig = generateV3Mesh2MotionArmorRigSourceFile({
+    filePath: args.filePath,
+    outputPath: args.rigOutputPath,
+    exportName: args.rigExportName,
+    fps: args.fps,
+  });
   // eslint-disable-next-line no-console
   console.log(`Generated ${artifact.metrics.clipCount} V3 Mesh2Motion driver clips (${artifact.metrics.totalKeyframes} keyframes).`);
+  // eslint-disable-next-line no-console
+  console.log(`Generated V3 Mesh2Motion armor rig with ${armorRig.skeleton.joints.length} joints and ${Object.keys(armorRig.slots).length} slots.`);
 }

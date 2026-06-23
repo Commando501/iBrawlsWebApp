@@ -374,6 +374,8 @@ describe('buildV3SpartanModel', () => {
   it('builds reference-inspired V3 detail bones for procedural armor fit', () => {
     const model = buildV3SpartanModel({ isEnemy: false, customHue: 192 });
     const detailBones = model.userData.v3DetailBones as Record<string, THREE.Group>;
+    const partGroups = model.userData.v3PartGroups as Record<string, THREE.Group>;
+    const armorSlotRoot = model.userData.v3ArmorSlotRoot as THREE.Group;
 
     for (const boneName of [
       'pelvis',
@@ -408,13 +410,21 @@ describe('buildV3SpartanModel', () => {
       assert.equal(detailBones[boneName].userData.v3DetailBoneName, boneName);
     }
 
-    assert.equal(model.userData.v3PartGroups.helmet.parent, detailBones.helmet);
-    assert.equal(model.userData.v3PartGroups.chest.parent, detailBones.chest);
-    assert.equal(model.userData.v3PartGroups.forearmLeft.parent, detailBones.forearmLeft);
-    assert.equal(model.userData.v3PartGroups.handRight.parent, detailBones.handRight);
-    assert.equal(model.userData.v3PartGroups.shinLeft.parent, detailBones.calfLeft);
-    assert.equal(model.userData.v3PartGroups.footRight.parent, detailBones.footRight);
-    assert.equal(model.userData.v3PartGroups.back.parent, detailBones.backpack);
+    assert.equal(model.userData.v3Mesh2MotionSkeletonRoot.parent, model);
+    assert.equal(armorSlotRoot.parent, model);
+    for (const slot of ['helmet', 'chest', 'forearmLeft', 'handRight', 'shinLeft', 'footRight', 'back'] as const) {
+      const detailBone = detailBones[V3_SLOT_DETAIL_BONES[slot]];
+      const slotPivot = partGroups[slot];
+      const geometry = slotPivot.userData.v3Mesh2MotionSlotGeometry as THREE.Group;
+
+      assert.equal(slotPivot.parent, armorSlotRoot);
+      assert.equal(slotPivot.userData.v3Mesh2MotionSlotPivot, true);
+      assert.equal(slotPivot.userData.v3Mesh2MotionPlacementAuthority, 'mesh2motion-tpose');
+      assert.equal(slotPivot.userData.v3LegacyDetailBone, V3_SLOT_DETAIL_BONES[slot]);
+      assert.equal(geometry.parent, slotPivot);
+      assert.equal(detailBone.userData.v3Mesh2MotionSlotPivot, slotPivot);
+      assert.equal(detailBone.userData.v3Mesh2MotionSlotGeometry, geometry);
+    }
   });
 
   it('rebases built-in V3 detail bones onto canonical anatomical slot pivots without shifting exact-source geometry', () => {
