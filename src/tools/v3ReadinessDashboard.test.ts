@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   V3_OBJ_REFERENCE_PROPORTION_TARGETS,
 } from '../components/v3/v3ReferenceProportions';
+import { V3_ARMOR_FOUNDATION_SCHEMA } from '../components/v3/v3ArmorFoundation';
 import {
   createV3ReadinessComparisonLoadout,
   hideV3ReadinessComparisonWeapons,
@@ -137,7 +138,16 @@ test('buildV3ReadinessDashboardReport stays not-player-ready even after manual c
   assert.equal(report.evidence.suitFidelity.ready, true);
   assert.equal(report.evidence.referenceProportions.ready, true);
   assert.equal(report.evidence.referenceVoxelSource.ready, true);
+  assert.equal(report.evidence.armorFoundation.ready, true);
   assert.equal(report.evidence.referenceComparison.acknowledged, true);
+  assert.equal(
+    (report.evidence.armorFoundation.summary as { schemaVersion?: string }).schemaVersion,
+    V3_ARMOR_FOUNDATION_SCHEMA
+  );
+  assert.equal(
+    (report.evidence.armorFoundation.summary as { scope?: string }).scope,
+    'internal-v3-development-tools-only'
+  );
 });
 
 test('buildV3ReadinessDashboardReport adds automated evidence blockers without making manual checks authoritative by themselves', () => {
@@ -157,6 +167,27 @@ test('buildV3ReadinessDashboardReport adds automated evidence blockers without m
     blocker.message.includes('average FPS')
   )));
   assert.equal(report.evidence.performanceSmoke.ready, false);
+});
+
+test('buildV3ReadinessDashboardReport blocks readiness when armor foundation evidence fails', () => {
+  const report = buildV3ReadinessDashboardReport({
+    ...readyInput(),
+    armorFoundation: {
+      ready: false,
+      issues: ['helmet has 1 voxel outside the Mesh2Motion-native foundation mask'],
+      summary: {
+        schemaVersion: V3_ARMOR_FOUNDATION_SCHEMA,
+      },
+    },
+  });
+
+  assert.equal(report.ready, false);
+  assert.equal(report.status, 'not-player-ready');
+  assert.equal(report.evidence.armorFoundation.ready, false);
+  assert.ok(report.blockers.some((blocker) => (
+    blocker.id === 'armorFoundationEvidence' &&
+    blocker.message.includes('foundation mask')
+  )));
 });
 
 test('buildV3ReadinessDashboardReport keeps inspection-only reference files blocked', () => {
@@ -199,6 +230,8 @@ test('buildV3ReadinessDashboardReport blocks readiness when automated evidence i
   assert.ok(report.blockers.some((blocker) => blocker.id === 'referenceProportionsEvidence'));
   assert.ok(report.blockers.some((blocker) => blocker.id === 'referenceFeatureMatchEvidence'));
   assert.ok(report.blockers.some((blocker) => blocker.id === 'referenceVoxelSourceEvidence'));
+  assert.equal(report.evidence.armorFoundation.ready, true);
+  assert.equal(report.blockers.some((blocker) => blocker.id === 'armorFoundationEvidence'), false);
   assert.ok(report.blockers.some((blocker) => blocker.id === 'visualQaEvidence'));
   assert.ok(report.blockers.some((blocker) => blocker.id === 'poseClearanceEvidence'));
   assert.ok(report.blockers.some((blocker) => blocker.id === 'motionRetargetEvidence'));
@@ -353,7 +386,10 @@ test('buildV3ReadinessExport preserves sanitized OBJ proportion bands and strips
   assert.equal(exportObject.evidence.referenceProportions.ready, true);
   assert.equal(exportObject.evidence.referenceFeatureMatch.ready, true);
   assert.equal(exportObject.evidence.referenceVoxelSource.ready, true);
+  assert.equal(exportObject.evidence.armorFoundation.ready, true);
   assert.equal(exportedJson.includes('rawGeometry'), false);
+  assert.equal(exportedJson.includes('referenceMaskRuns'), false);
+  assert.equal(exportedJson.includes('"voxels"'), false);
   assert.equal(exportedJson.includes('do-not-export'), false);
   assert.equal(exportedJson.includes('C:\\'), false);
 });

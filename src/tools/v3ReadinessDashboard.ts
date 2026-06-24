@@ -1,3 +1,8 @@
+import {
+  V3_ARMOR_FOUNDATION,
+  analyzeV3ArmorFoundation,
+} from '../components/v3/v3ArmorFoundation';
+
 export const V3_READINESS_CHECKLIST_ITEM_IDS = [
   'baseProportions',
   'builtInArmorFidelity',
@@ -71,6 +76,7 @@ export interface V3ReadinessDashboardInput {
   referenceProportions?: V3ReadinessEvidenceSummaryInput | null;
   referenceFeatureMatch?: V3ReadinessEvidenceSummaryInput | null;
   referenceVoxelSource?: V3ReadinessEvidenceSummaryInput | null;
+  armorFoundation?: V3ReadinessEvidenceSummaryInput | null;
   visualQa?: V3ReadinessEvidenceSummaryInput | null;
   poseClearance?: V3ReadinessEvidenceSummaryInput | null;
   motionRetarget?: V3ReadinessEvidenceSummaryInput | null;
@@ -84,6 +90,7 @@ export type V3ReadinessEvidenceKey =
   | 'referenceProportions'
   | 'referenceFeatureMatch'
   | 'referenceVoxelSource'
+  | 'armorFoundation'
   | 'visualQa'
   | 'poseClearance'
   | 'motionRetarget'
@@ -112,6 +119,7 @@ export interface V3ReadinessDashboardEvidence {
   referenceProportions: V3ReadinessEvidenceSummary;
   referenceFeatureMatch: V3ReadinessEvidenceSummary;
   referenceVoxelSource: V3ReadinessEvidenceSummary;
+  armorFoundation: V3ReadinessEvidenceSummary;
   visualQa: V3ReadinessEvidenceSummary;
   poseClearance: V3ReadinessEvidenceSummary;
   motionRetarget: V3ReadinessEvidenceSummary;
@@ -178,6 +186,7 @@ const EVIDENCE_LABELS: Record<V3ReadinessEvidenceKey, string> = {
   referenceProportions: 'Reference proportions',
   referenceFeatureMatch: 'Reference feature match',
   referenceVoxelSource: 'Exact OBJ voxel source',
+  armorFoundation: 'Armor foundation',
   visualQa: 'Visual QA',
   poseClearance: 'Pose clearance',
   motionRetarget: 'Retargeted motion clips',
@@ -327,6 +336,26 @@ function normalizeEvidenceSummary(
   };
 }
 
+function buildV3ArmorFoundationEvidence(): V3ReadinessEvidenceSummaryInput {
+  const analysis = analyzeV3ArmorFoundation();
+  return {
+    ready: analysis.ready,
+    issues: analysis.issues,
+    summary: {
+      schemaVersion: V3_ARMOR_FOUNDATION.schemaVersion,
+      sourceKind: V3_ARMOR_FOUNDATION.source.kind,
+      generator: V3_ARMOR_FOUNDATION.source.generator,
+      exactObjSurfaceHash: V3_ARMOR_FOUNDATION.source.exactObjSurfaceHash,
+      mesh2MotionRigSha256: V3_ARMOR_FOUNDATION.source.mesh2MotionRigSha256,
+      slotCount: analysis.slotCount,
+      referenceVoxelCount: analysis.referenceVoxelCount,
+      roleCount: V3_ARMOR_FOUNDATION.rolePalette.length,
+      playerReadiness: 'not-player-ready',
+      scope: 'internal-v3-development-tools-only',
+    },
+  };
+}
+
 function normalizeReferenceComparison(
   input: V3ReadinessReferenceComparisonInput | null | undefined
 ): V3ReadinessReferenceComparisonEvidence {
@@ -352,6 +381,7 @@ function buildEvidence(input: V3ReadinessDashboardInput): V3ReadinessDashboardEv
     referenceProportions: normalizeEvidenceSummary(input.referenceProportions),
     referenceFeatureMatch: normalizeEvidenceSummary(input.referenceFeatureMatch),
     referenceVoxelSource: normalizeEvidenceSummary(input.referenceVoxelSource),
+    armorFoundation: normalizeEvidenceSummary(input.armorFoundation ?? buildV3ArmorFoundationEvidence()),
     visualQa: normalizeEvidenceSummary(input.visualQa),
     poseClearance: normalizeEvidenceSummary(input.poseClearance),
     motionRetarget: normalizeEvidenceSummary(input.motionRetarget),
@@ -559,6 +589,7 @@ export function buildV3ReadinessExport(
       referenceProportions: report.evidence.referenceProportions,
       referenceFeatureMatch: report.evidence.referenceFeatureMatch,
       referenceVoxelSource: report.evidence.referenceVoxelSource,
+      armorFoundation: report.evidence.armorFoundation,
       visualQa: report.evidence.visualQa,
       poseClearance: report.evidence.poseClearance,
       motionRetarget: report.evidence.motionRetarget,
