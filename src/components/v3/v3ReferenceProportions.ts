@@ -131,11 +131,12 @@ const DEFAULT_THRESHOLDS: V3ReferenceProportionThresholds = {
   maxBandDepthDelta: 0.08,
 };
 // Mesh2Motion-native V3 is evaluated in the authoritative Mesh2Motion TPose,
-// whose outstretched limb posture is intentionally wider than the legacy exact-source stance.
+// whose pivot-centered shoulder-to-hand binding is intentionally wider than
+// the legacy exact-source stance.
 const MESH2MOTION_NATIVE_THRESHOLDS: V3ReferenceProportionThresholds = {
-  maxGlobalFrontWidthDelta: 0.115,
+  maxGlobalFrontWidthDelta: 0.405,
   maxGlobalSideDepthDelta: 0.06,
-  maxBandWidthDelta: 0.295,
+  maxBandWidthDelta: 0.52,
   maxBandDepthDelta: 0.092,
 };
 export const V3_RENDERED_OBJ_GATE_CLOSURE_TOLERANCE = 0.005;

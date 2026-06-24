@@ -15,7 +15,7 @@ import {
   getV3BuiltinPartVoxels,
   getV3BuiltinWeaponVoxels,
 } from './VoxelModelsV3';
-import { V3_CHARACTER_SLOT_IDS, V3_WEAPON_IDS } from './v3ModelTypes';
+import { V3_CHARACTER_SLOT_IDS, V3_WEAPON_IDS, type V3CharacterSlotId } from './v3ModelTypes';
 import { getDefaultV3CharacterLoadout, getDefaultV3WeaponManifest, getV3CharacterPartManifest } from './v3AssetManifest';
 import {
   V3_AEGIS_SCULPT_PROFILES,
@@ -46,8 +46,20 @@ import {
 } from './v3ReferenceProportions';
 import { deriveV3ExactSourceSlotBudget } from './v3ExactSourceLod';
 import { V3_SLOT_DETAIL_BONES } from './v3RigDetail';
+import { V3_MESH2MOTION_ARMOR_SLOT_SPECS } from './v3Mesh2MotionArmorRig';
 
 const requiredSegments = ['lowerTorso', 'upperTorso', 'head', 'leftArm', 'rightArm', 'leftLeg', 'rightLeg'];
+const V3_ARM_CHAIN_BINDING_TEST_SLOTS = [
+  'shoulderLeft',
+  'shoulderRight',
+  'upperArmLeft',
+  'upperArmRight',
+  'forearmLeft',
+  'forearmRight',
+  'handLeft',
+  'handRight',
+] as const satisfies readonly V3CharacterSlotId[];
+const V3_ARM_CHAIN_BINDING_TEST_SLOT_SET = new Set<V3CharacterSlotId>(V3_ARM_CHAIN_BINDING_TEST_SLOTS);
 
 const groupContainsHexColor = (group: THREE.Object3D, color: string): boolean => {
   const target = color.replace('#', '').toLowerCase();
@@ -176,6 +188,45 @@ const getWorldBox = (object: THREE.Object3D): THREE.Box3 => {
 
 const getWorldSize = (object: THREE.Object3D): THREE.Vector3 =>
   getWorldBox(object).getSize(new THREE.Vector3());
+
+type V3Mesh2MotionJointTestMap = Record<string, { object: THREE.Object3D }>;
+
+const getObjectWorldPosition = (object: THREE.Object3D): THREE.Vector3 => {
+  object.updateWorldMatrix(true, true);
+  return object.getWorldPosition(new THREE.Vector3());
+};
+
+const getJointWorldPosition = (
+  joints: V3Mesh2MotionJointTestMap,
+  jointName: string
+): THREE.Vector3 => {
+  const joint = joints[jointName];
+  assert.ok(joint?.object instanceof THREE.Object3D, `missing Mesh2Motion joint ${jointName}`);
+  return getObjectWorldPosition(joint.object);
+};
+
+const getAverageJointWorldPosition = (
+  joints: V3Mesh2MotionJointTestMap,
+  jointNames: readonly string[]
+): THREE.Vector3 => {
+  const center = new THREE.Vector3();
+  for (const jointName of jointNames) {
+    center.add(getJointWorldPosition(joints, jointName));
+  }
+  return center.multiplyScalar(1 / jointNames.length);
+};
+
+const getDistanceToSegment = (
+  point: THREE.Vector3,
+  start: THREE.Vector3,
+  end: THREE.Vector3
+): number => {
+  const segment = end.clone().sub(start);
+  const lengthSq = segment.lengthSq();
+  if (lengthSq <= 0.000000001) return point.distanceTo(start);
+  const t = THREE.MathUtils.clamp(point.clone().sub(start).dot(segment) / lengthSq, 0, 1);
+  return point.distanceTo(start.clone().addScaledVector(segment, t));
+};
 
 const tupleCloseTo = (
   actual: readonly number[],
@@ -427,7 +478,7 @@ describe('buildV3SpartanModel', () => {
     }
   });
 
-  it('rebases built-in V3 detail bones onto canonical anatomical slot pivots without shifting exact-source geometry', () => {
+  it('rebases built-in V3 detail bones while binding arm-chain exact-source geometry to Mesh2Motion pivots', () => {
     const model = buildV3SpartanModel({
       isEnemy: false,
       customHue: 192,
@@ -437,6 +488,7 @@ describe('buildV3SpartanModel', () => {
     const report = analyzeV3CanonicalRigContract(model);
     const detailBones = model.userData.v3DetailBones as Record<string, THREE.Group>;
     const partGroups = model.userData.v3PartGroups as Record<string, THREE.Group>;
+    const partGeometryGroups = model.userData.v3PartGeometryGroups as Record<string, THREE.Group>;
     const contract = model.userData.v3CanonicalRigContract;
     const voxelScale = V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.coordinateSystem.voxelScale;
 
@@ -451,13 +503,69 @@ describe('buildV3SpartanModel', () => {
 
       const boxCenter = getWorldBox(partGroups[slot]).getCenter(new THREE.Vector3()).toArray();
       const geometryCenter = contract.slotGeometryOffsets[slot].geometryCenter as [number, number, number];
-      assert.equal(
-        tupleCloseTo(boxCenter, geometryCenter, voxelScale * 2.5),
-        true,
-        `${slot} exact-source geometry shifted from canonical source center`
-      );
+      if (V3_ARM_CHAIN_BINDING_TEST_SLOT_SET.has(slot)) {
+        const mesh2MotionPivot = getObjectWorldPosition(partGroups[slot]).toArray();
+        const geometryOrigin = getObjectWorldPosition(partGeometryGroups[slot]).toArray();
+        assert.equal(
+          tupleCloseTo(geometryOrigin, mesh2MotionPivot, 0.00001),
+          true,
+          `${slot} exact-source geometry should bind to the Mesh2Motion-native slot pivot`
+        );
+      } else {
+        assert.equal(
+          tupleCloseTo(boxCenter, geometryCenter, voxelScale * 2.5),
+          true,
+          `${slot} exact-source geometry shifted from canonical source center`
+        );
+      }
       assert.equal(partGroups[slot].userData.v3CanonicalSlotPivot, contract.slotPivots[slot]);
       assert.equal(partGroups[slot].userData.v3CanonicalSlotGeometryOffset, contract.slotGeometryOffsets[slot]);
+    }
+  });
+
+  it('binds exact-source shoulder-to-hand armor geometry directly onto Mesh2Motion arm centers', () => {
+    const model = buildV3SpartanModel({
+      isEnemy: false,
+      customHue: 192,
+      v3ArmorRenderStyle: 'voxelEdit',
+      v3SourceFidelity: 'exact',
+    });
+    const partGroups = model.userData.v3PartGroups as Record<string, THREE.Group>;
+    const partGeometryGroups = model.userData.v3PartGeometryGroups as Record<string, THREE.Group>;
+    const joints = model.userData.v3Mesh2MotionJoints as V3Mesh2MotionJointTestMap;
+
+    for (const slot of V3_ARM_CHAIN_BINDING_TEST_SLOTS) {
+      const slotPivot = partGroups[slot];
+      const geometry = partGeometryGroups[slot];
+      const spec = V3_MESH2MOTION_ARMOR_SLOT_SPECS[slot];
+      const expectedCenter = getAverageJointWorldPosition(joints, spec.centerJointNames);
+      const pivotCenter = getObjectWorldPosition(slotPivot);
+      const geometryOrigin = getObjectWorldPosition(geometry);
+
+      assert.ok(slotPivot instanceof THREE.Group, `missing ${slot} slot pivot`);
+      assert.ok(geometry instanceof THREE.Group, `missing ${slot} geometry group`);
+      assert.ok(
+        geometryOrigin.distanceTo(expectedCenter) <= 0.00001,
+        `${slot} geometry origin should sit on Mesh2Motion center ${expectedCenter.toArray()}, got ${geometryOrigin.toArray()}`
+      );
+      assert.ok(
+        geometryOrigin.distanceTo(pivotCenter) <= 0.00001,
+        `${slot} geometry origin should sit on its slot pivot ${pivotCenter.toArray()}, got ${geometryOrigin.toArray()}`
+      );
+      if (spec.endJointName) {
+        const segmentDistance = getDistanceToSegment(
+          geometryOrigin,
+          getJointWorldPosition(joints, spec.sourceJointName),
+          getJointWorldPosition(joints, spec.endJointName)
+        );
+        assert.ok(
+          segmentDistance <= 0.12,
+          `${slot} geometry origin should stay near its Mesh2Motion limb segment, distance ${segmentDistance}`
+        );
+      }
+      assert.equal(tupleCloseTo(geometry.position.toArray(), [0, 0, 0]), true, `${slot} local binding offset`);
+      assert.equal(tupleCloseTo(geometry.scale.toArray(), [1, 1, 1]), true, `${slot} scale should preserve exact voxels`);
+      assert.equal(tupleCloseTo([geometry.rotation.x, geometry.rotation.y, geometry.rotation.z], [0, 0, 0]), true, `${slot} rotation should preserve exact voxels`);
     }
   });
 

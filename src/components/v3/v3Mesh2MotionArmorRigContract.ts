@@ -205,3 +205,21 @@ export const V3_MESH2MOTION_ARMOR_SLOT_SPECS = {
 } as const satisfies Record<V3CharacterSlotId, V3Mesh2MotionArmorSlotSpec>;
 
 export const V3_MESH2MOTION_PART_BINDING_SPECS = V3_MESH2MOTION_ARMOR_SLOT_SPECS;
+
+export const V3_MESH2MOTION_NATIVE_ARM_CHAIN_SLOTS = [
+  'shoulderLeft',
+  'shoulderRight',
+  'upperArmLeft',
+  'upperArmRight',
+  'forearmLeft',
+  'forearmRight',
+  'handLeft',
+  'handRight',
+] as const satisfies readonly V3CharacterSlotId[];
+
+const V3_MESH2MOTION_NATIVE_ARM_CHAIN_SLOT_SET = new Set<V3CharacterSlotId>(
+  V3_MESH2MOTION_NATIVE_ARM_CHAIN_SLOTS
+);
+
+export const isV3Mesh2MotionNativeArmChainSlot = (slot: V3CharacterSlotId): boolean =>
+  V3_MESH2MOTION_NATIVE_ARM_CHAIN_SLOT_SET.has(slot);

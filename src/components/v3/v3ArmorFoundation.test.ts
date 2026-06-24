@@ -11,6 +11,7 @@ import {
 } from './v3ArmorFoundation';
 import { V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE } from './v3AegisObjSurfaceVoxels.generated';
 import { V3_MESH2MOTION_ARMOR_RIG } from './v3Mesh2MotionArmorRig.generated';
+import { V3_MESH2MOTION_NATIVE_ARM_CHAIN_SLOTS } from './v3Mesh2MotionArmorRig';
 import { V3_CHARACTER_SLOT_IDS } from './v3ModelTypes';
 
 type OptionalGeneratedRigSlotMetadata = {
@@ -28,6 +29,7 @@ const TEST_COLORS = {
 
 const coordSignature = (voxels: readonly { x: number; y: number; z: number }[]): string =>
   voxels.map((voxel) => `${voxel.x}:${voxel.y}:${voxel.z}`).sort().join('|');
+const ARM_CHAIN_SLOT_SET = new Set<string>(V3_MESH2MOTION_NATIVE_ARM_CHAIN_SLOTS);
 
 describe('V3 armor foundation', () => {
   it('derives an export-safe V3-only foundation from the exact OBJ source and Mesh2Motion rig', () => {
@@ -58,6 +60,9 @@ describe('V3 armor foundation', () => {
       assert.equal(foundationSlot.sourceJointName, rigSlot.sourceJointName);
       assert.equal(foundationSlot.endJointName, rigSlot.endJointName);
       assert.equal(foundationSlot.mirrorOf, optionalRigSlot.mirrorOf ?? null);
+      if (ARM_CHAIN_SLOT_SET.has(slot)) {
+        assert.deepEqual(foundationSlot.mesh2MotionGeometry.position, [0, 0, 0], `${slot} binding offset`);
+      }
       assert.match(foundationSlot.sourceHashes.exactObjSurfaceSlot, /^exact-obj-slot:fnv1a32:[0-9a-f]{8}$/);
       assert.match(foundationSlot.sourceHashes.mesh2MotionSlot, /^mesh2motion-slot:fnv1a32:[0-9a-f]{8}$/);
       assert.ok(foundationSlot.referenceMaskRuns.length > 0, `${slot} should include local mask runs`);

@@ -74,6 +74,7 @@ describe('v3Mesh2MotionImporter', () => {
     assert.equal(handRight.sourceJointName, 'hand_r');
     assert.equal(handRight.endJointName, 'index_01_r');
     assert.deepEqual(handRight.pivotCenter, handRight.pivotWorldPosition);
+    assert.deepEqual(handRight.geometry.position, [0, 0, 0]);
     assert.equal(handRight.basis.xAxis.length, 3);
     assert.equal(handRight.basis.yAxis.length, 3);
     assert.equal(handRight.basis.zAxis.length, 3);

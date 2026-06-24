@@ -5,6 +5,7 @@ import { V3_MESH2MOTION_ARMOR_RIG } from './v3Mesh2MotionArmorRig.generated';
 import {
   V3_MESH2MOTION_ARMOR_RIG_SCHEMA,
   V3_MESH2MOTION_ARMOR_SLOT_SPECS,
+  V3_MESH2MOTION_NATIVE_ARM_CHAIN_SLOTS,
   buildV3Mesh2MotionArmorRig,
   analyzeV3Mesh2MotionArmorRig,
 } from './v3Mesh2MotionArmorRig';
@@ -15,6 +16,12 @@ const tupleLength = (value: readonly number[]): number =>
 
 const quaternionFromTuple = (value: readonly number[]): THREE.Quaternion =>
   new THREE.Quaternion(value[0] ?? 0, value[1] ?? 0, value[2] ?? 0, value[3] ?? 1).normalize();
+
+const tupleCloseTo = (
+  actual: readonly number[],
+  expected: readonly number[],
+  tolerance = 0.000001
+): boolean => actual.every((value, index) => Math.abs(value - expected[index]) <= tolerance);
 
 describe('v3Mesh2MotionArmorRig', () => {
   it('ships a V3-owned generated Mesh2Motion armor rig contract without raw source payloads', () => {
@@ -87,6 +94,18 @@ describe('v3Mesh2MotionArmorRig', () => {
     assert.ok(leftArmUp.x > 0.75, `left upper arm +Y should point down the left arm: ${leftArmUp.toArray()}`);
     assert.ok(rightArmUp.x < -0.75, `right upper arm +Y should point down the right arm: ${rightArmUp.toArray()}`);
     assert.ok(Math.abs(leftArmUp.y - rightArmUp.y) < 0.1);
+  });
+
+  it('keeps shoulder-to-hand slot geometry centered on Mesh2Motion-native pivots', () => {
+    const rig = buildV3Mesh2MotionArmorRig();
+
+    for (const slot of V3_MESH2MOTION_NATIVE_ARM_CHAIN_SLOTS) {
+      const generatedPlacement = V3_MESH2MOTION_ARMOR_RIG.slots[slot];
+      const runtimePlacement = rig.slotPivots[slot].userData.v3Mesh2MotionSlotPlacement as typeof generatedPlacement;
+
+      assert.equal(tupleCloseTo(generatedPlacement.geometry.position, [0, 0, 0]), true, `${slot} generated offset`);
+      assert.equal(tupleCloseTo(runtimePlacement.geometry.position, [0, 0, 0]), true, `${slot} runtime offset`);
+    }
   });
 
   it('reports a ready contract with normalized quaternions and no missing slots', () => {

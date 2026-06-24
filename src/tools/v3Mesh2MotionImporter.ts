@@ -10,6 +10,7 @@ import type {
 import {
   V3_MESH2MOTION_ARMOR_RIG_SCHEMA,
   V3_MESH2MOTION_PART_BINDING_SPECS,
+  isV3Mesh2MotionNativeArmChainSlot,
   type V3Mesh2MotionArmorRigArtifact,
   type V3Mesh2MotionArmorSlotPlacement,
 } from '../components/v3/v3Mesh2MotionArmorRigContract';
@@ -1027,7 +1028,9 @@ const buildArmorSlotPlacementArtifact = (
     const basis = buildSlotBasis(slot, spec, worldForJoint);
     const pivotWorldQuaternion = basis.quaternion;
     const pivotQuaternion = new THREE.Quaternion(...pivotWorldQuaternion).normalize();
-    const geometryWorldCenter = new THREE.Vector3().fromArray(canonicalContract.slotGeometryOffsets[slot].geometryCenter);
+    const geometryWorldCenter = isV3Mesh2MotionNativeArmChainSlot(slot)
+      ? center.clone()
+      : new THREE.Vector3().fromArray(canonicalContract.slotGeometryOffsets[slot].geometryCenter);
     const geometryLocalPosition = geometryWorldCenter
       .sub(center)
       .applyQuaternion(pivotQuaternion.clone().invert());

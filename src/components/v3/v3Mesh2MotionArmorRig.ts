@@ -5,6 +5,8 @@ import {
   V3_MESH2MOTION_ARMOR_SLOT_SPECS,
   V3_MESH2MOTION_PART_BINDING_SPECS,
   V3_MESH2MOTION_SLOT_DRIVER_JOINTS,
+  V3_MESH2MOTION_NATIVE_ARM_CHAIN_SLOTS,
+  isV3Mesh2MotionNativeArmChainSlot,
   type V3Mesh2MotionArmorRigArtifact,
   type V3Mesh2MotionArmorRigSkeletonJoint,
   type V3Mesh2MotionArmorSlotPlacement,
@@ -21,6 +23,8 @@ export {
   V3_MESH2MOTION_ARMOR_SLOT_SPECS,
   V3_MESH2MOTION_PART_BINDING_SPECS,
   V3_MESH2MOTION_SLOT_DRIVER_JOINTS,
+  V3_MESH2MOTION_NATIVE_ARM_CHAIN_SLOTS,
+  isV3Mesh2MotionNativeArmChainSlot,
   type V3Mesh2MotionArmorRigArtifact,
   type V3Mesh2MotionArmorRigSkeletonJoint,
   type V3Mesh2MotionArmorSlotPlacement,
@@ -93,6 +97,30 @@ const applyTupleTransform = (
   object.scale.fromArray(vec3Tuple(scale, ONE_VEC3));
 };
 
+const createRuntimeSlotPlacement = (
+  slot: V3CharacterSlotId,
+  placement: V3Mesh2MotionArmorSlotPlacement
+): V3Mesh2MotionArmorSlotPlacement => ({
+  ...placement,
+  centerJointNames: [...placement.centerJointNames],
+  pivotCenter: vec3Tuple(placement.pivotCenter),
+  pivotWorldPosition: vec3Tuple(placement.pivotWorldPosition),
+  pivotWorldQuaternion: normalizedQuaternionTuple(placement.pivotWorldQuaternion),
+  basis: {
+    xAxis: vec3Tuple(placement.basis.xAxis),
+    yAxis: vec3Tuple(placement.basis.yAxis),
+    zAxis: vec3Tuple(placement.basis.zAxis),
+    quaternion: normalizedQuaternionTuple(placement.basis.quaternion),
+  },
+  geometry: {
+    position: isV3Mesh2MotionNativeArmChainSlot(slot)
+      ? [...ZERO_VEC3]
+      : vec3Tuple(placement.geometry.position),
+    rotation: vec3Tuple(placement.geometry.rotation),
+    scale: vec3Tuple(placement.geometry.scale, ONE_VEC3),
+  },
+});
+
 export function buildV3Mesh2MotionArmorRig(
   artifact: V3Mesh2MotionArmorRigArtifact = V3_MESH2MOTION_ARMOR_RIG
 ): V3Mesh2MotionArmorRigRuntime {
@@ -137,8 +165,10 @@ export function buildV3Mesh2MotionArmorRig(
   }
 
   const slotPivots = {} as Record<V3CharacterSlotId, THREE.Group>;
+  const runtimeSlots = {} as Record<V3CharacterSlotId, V3Mesh2MotionArmorSlotPlacement>;
   for (const slot of V3_CHARACTER_SLOT_IDS) {
-    const placement = artifact.slots[slot];
+    const placement = createRuntimeSlotPlacement(slot, artifact.slots[slot]);
+    runtimeSlots[slot] = placement;
     const pivot = new THREE.Group();
     pivot.name = `v3:${slot}`;
     pivot.userData.v3Slot = slot;
@@ -153,7 +183,10 @@ export function buildV3Mesh2MotionArmorRig(
     slotPivots[slot] = pivot;
   }
 
-  root.userData.v3Mesh2MotionArmorRig = artifact;
+  root.userData.v3Mesh2MotionArmorRig = {
+    ...artifact,
+    slots: runtimeSlots,
+  };
   root.userData.v3Mesh2MotionJoints = joints;
   root.userData.v3Mesh2MotionSlotPivots = slotPivots;
   root.updateMatrixWorld(true);
