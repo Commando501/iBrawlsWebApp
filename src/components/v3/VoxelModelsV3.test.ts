@@ -53,6 +53,7 @@ import {
   V3_MESH2MOTION_ARMOR_SLOT_SPECS,
   V3_MESH2MOTION_NATIVE_LIMB_CHAIN_SLOTS,
 } from './v3Mesh2MotionArmorRig';
+import { V3_MESH2MOTION_ARMOR_RIG } from './v3Mesh2MotionArmorRig.generated';
 import { V3_ARMOR_FOUNDATION } from './v3ArmorFoundation';
 
 const requiredSegments = ['lowerTorso', 'upperTorso', 'head', 'leftArm', 'rightArm', 'leftLeg', 'rightLeg'];
@@ -68,6 +69,13 @@ const V3_ARM_CHAIN_BINDING_TEST_SLOTS = [
 ] as const satisfies readonly V3CharacterSlotId[];
 const V3_ARM_CHAIN_BINDING_TEST_SLOT_SET = new Set<V3CharacterSlotId>(V3_ARM_CHAIN_BINDING_TEST_SLOTS);
 const V3_LIMB_CHAIN_BINDING_TEST_SLOT_SET = new Set<V3CharacterSlotId>(V3_MESH2MOTION_NATIVE_LIMB_CHAIN_SLOTS);
+const basisQuaternion = (basis: { quaternion: readonly number[] }): THREE.Quaternion =>
+  new THREE.Quaternion(
+    basis.quaternion[0] ?? 0,
+    basis.quaternion[1] ?? 0,
+    basis.quaternion[2] ?? 0,
+    basis.quaternion[3] ?? 1
+  ).normalize();
 const getExpectedV3BuiltinSourceSlot = (slot: V3CharacterSlotId) => (
   V3_ARM_CHAIN_BINDING_TEST_SLOT_SET.has(slot)
     ? V3_REFERENCE_LIMB_VOXELS.slots[slot as keyof typeof V3_REFERENCE_LIMB_VOXELS.slots]
@@ -584,9 +592,13 @@ describe('buildV3SpartanModel', () => {
       );
       assert.equal(tupleCloseTo(geometry.scale.toArray(), [1, 1, 1]), true, `${slot} scale should preserve exact voxels`);
       const geometryWorldQuaternion = geometry.getWorldQuaternion(new THREE.Quaternion()).normalize();
+      const mappedSourceBasis = geometryWorldQuaternion
+        .multiply(basisQuaternion(V3_ARMOR_FOUNDATION.slots[slot].exactSourceRestBasis))
+        .normalize();
+      const rigBasis = basisQuaternion(V3_MESH2MOTION_ARMOR_RIG.slots[slot].basis);
       assert.ok(
-        new THREE.Quaternion().angleTo(geometryWorldQuaternion) <= 0.00001,
-        `${slot} exact-source geometry should cancel the Mesh2Motion rest pivot`
+        rigBasis.angleTo(mappedSourceBasis) <= 0.0001,
+        `${slot} exact-source basis should align to the Mesh2Motion limb basis`
       );
     }
   });

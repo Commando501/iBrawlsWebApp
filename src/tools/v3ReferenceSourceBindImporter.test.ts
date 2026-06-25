@@ -24,7 +24,11 @@ describe('v3ReferenceSourceBindImporter', () => {
     assert.equal(first.skeleton.bones.b_l_upperarm.parent, 'b_l_clav');
     assert.equal(first.skeleton.bones.b_l_forearm.parent, 'b_l_upperarm');
     assert.equal(first.skeleton.bones.b_l_hand.parent, 'wristIK.L');
+    assert.equal(first.skeleton.bones.b_l_thigh.parent, 'b_pelvis');
+    assert.equal(first.skeleton.bones.b_l_calf.parent, 'b_l_thigh');
+    assert.equal(first.skeleton.bones.b_l_foot.parent, 'heelIK.L');
     assert.equal(first.skeleton.bones.b_r_upperarm.parent, 'b_r_clav');
+    assert.equal(first.skeleton.bones.b_r_thigh.parent, 'b_pelvis');
     assert.equal(first.diagnostics.missingRequiredBones.length, 0);
   });
 
@@ -43,7 +47,34 @@ describe('v3ReferenceSourceBindImporter', () => {
     assert.equal(leftForearm.sourceSegmentAxis[0] > 0.98, true);
     assert.equal(leftHand.sourceSegmentAxis[0] > 0.9, true);
     assert.equal(rightUpperArm.sourceSegmentAxis[0] < -0.98, true);
+    assert.equal(leftUpperArm.sourceBasis.yAxis[0] > 0.98, true);
+    assert.equal(leftUpperArm.sourceBasis.zAxis[2] < -0.85, true);
     assert.equal(artifact.diagnostics.armChainMaxVerticalDelta < 0.04, true);
+  });
+
+  it('captures lower-body bind frames with Blender roll and Mesh2Motion foot convention', () => {
+    const artifact = buildV3ReferenceSourceBindArtifact({ filePath: sourceFilePath });
+    const leftThigh = artifact.slots.thighLeft;
+    const leftShin = artifact.slots.shinLeft;
+    const leftFoot = artifact.slots.footLeft;
+    const rightThigh = artifact.slots.thighRight;
+    const rightFoot = artifact.slots.footRight;
+
+    assert.equal(leftThigh.sourceBoneName, 'b_l_thigh');
+    assert.equal(leftThigh.endBoneName, 'b_l_calf');
+    assert.equal(leftThigh.mesh2MotionJointName, 'thigh_l');
+    assert.equal(leftShin.sourceBoneName, 'b_l_calf');
+    assert.equal(leftShin.mesh2MotionJointName, 'calf_l');
+    assert.equal(leftThigh.sourceSegmentAxis[1] < -0.9, true);
+    assert.equal(rightThigh.sourceSegmentAxis[1] < -0.9, true);
+    assert.equal(leftThigh.sourceBasis.zAxis[0] < -0.9, true);
+    assert.equal(rightThigh.sourceBasis.zAxis[0] > 0.9, true);
+    assert.equal(leftFoot.sourceBoneName, 'b_l_foot');
+    assert.equal(leftFoot.mesh2MotionJointName, 'foot_l');
+    assert.equal(leftFoot.sourceBasis.yAxis[1] > 0.99, true);
+    assert.equal(leftFoot.sourceBasis.zAxis[2] > 0.95, true);
+    assert.equal(rightFoot.sourceBasis.yAxis[1] > 0.99, true);
+    assert.equal(rightFoot.sourceBasis.zAxis[2] > 0.95, true);
   });
 
   it('does not persist raw GLB payloads, private paths, meshes, skins, or scene graph nodes', () => {

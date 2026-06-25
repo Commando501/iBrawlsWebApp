@@ -341,6 +341,7 @@ const SOURCE_BIND_JOINTS = {
 const WORLD_RIGHT = new THREE.Vector3(1, 0, 0);
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
 const WORLD_FORWARD = new THREE.Vector3(0, 0, 1);
+const SHOULDER_SOURCE_ROLL_BLEND = 0.35;
 
 type V3FoundationSourceRun = readonly [number, number, number, number, number, 1?];
 
@@ -427,6 +428,15 @@ const basisFromAxes = (
     zAxis: tuple3(normalizedZ.toArray()),
     quaternion: tupleQuat(quaternion),
   };
+};
+
+const basisFromQuaternion = (quaternion: THREE.Quaternion): V3ArmorFoundationSlotBasis => {
+  const normalized = quaternion.clone().normalize();
+  return basisFromAxes(
+    WORLD_RIGHT.clone().applyQuaternion(normalized),
+    WORLD_UP.clone().applyQuaternion(normalized),
+    WORLD_FORWARD.clone().applyQuaternion(normalized)
+  );
 };
 
 const angleDegreesBetweenAxes = (first: THREE.Vector3, second: THREE.Vector3): number => {
@@ -520,35 +530,44 @@ const exactSourceRestBasisForSlot = (slot: V3CharacterSlotId): V3ArmorFoundation
     sourceContext.sourceKind === 'reference-limb' &&
     referenceSourceSlot
   ) {
-    return {
-      xAxis: tuple3(referenceSourceSlot.sourceBasis.xAxis),
-      yAxis: tuple3(referenceSourceSlot.sourceBasis.yAxis),
-      zAxis: tuple3(referenceSourceSlot.sourceBasis.zAxis),
-      quaternion: tuple4(referenceSourceSlot.sourceBasis.quaternion),
-    };
+    const sourceYAxis = new THREE.Vector3(...referenceSourceSlot.sourceBasis.yAxis).normalize();
+    const sourceZAxis = projectedAxis(WORLD_FORWARD, sourceYAxis, WORLD_UP);
+    const sourceXAxis = normalizedVector(sourceYAxis.clone().cross(sourceZAxis), WORLD_RIGHT);
+    const stableBasis = basisFromAxes(sourceXAxis, sourceYAxis, sourceZAxis);
+    if (slot !== 'shoulderLeft' && slot !== 'shoulderRight') return stableBasis;
+
+    const stableQuaternion = new THREE.Quaternion(...stableBasis.quaternion).normalize();
+    const sourceRollQuaternion = new THREE.Quaternion(...referenceSourceSlot.sourceBasis.quaternion).normalize();
+    return basisFromQuaternion(stableQuaternion.slerp(sourceRollQuaternion, SHOULDER_SOURCE_ROLL_BLEND));
   }
   if (isV3Mesh2MotionNativeArmChainSlot(slot) && referenceSourceSlot) {
     const referenceYAxis = new THREE.Vector3(...referenceSourceSlot.sourceBasis.yAxis).normalize();
     const sourceYAxis = sourceSlotMajorAxis(slot);
     if (sourceYAxis.dot(referenceYAxis) < 0) sourceYAxis.multiplyScalar(-1);
-    const sourceZAxis = projectedAxis(
-      new THREE.Vector3(...referenceSourceSlot.sourceBasis.zAxis),
-      sourceYAxis,
-      WORLD_FORWARD
-    );
+    const sourceZAxis = projectedAxis(WORLD_FORWARD, sourceYAxis, WORLD_UP);
     const sourceXAxis = normalizedVector(sourceYAxis.clone().cross(sourceZAxis), WORLD_RIGHT);
     return basisFromAxes(sourceXAxis, sourceYAxis, sourceZAxis);
   }
 
-  if (!isV3Mesh2MotionNativeArmChainSlot(slot)) {
+  const sourceBindJoints = SOURCE_BIND_JOINTS[slot as keyof typeof SOURCE_BIND_JOINTS];
+  if (!sourceBindJoints || !isV3Mesh2MotionNativeLimbChainSlot(slot)) {
     return basisFromAxes(WORLD_RIGHT, WORLD_UP, WORLD_FORWARD);
   }
 
-  const sourceAxisJoints = SOURCE_AXIS_JOINTS[slot];
   const canonicalContract = deriveV3CanonicalRigContract();
-  const from = new THREE.Vector3(...canonicalContract.joints[sourceAxisJoints[0]].position);
-  const to = new THREE.Vector3(...canonicalContract.joints[sourceAxisJoints[1]].position);
-  const yAxis = normalizedVector(to.sub(from), WORLD_UP);
+  const from = new THREE.Vector3(...canonicalContract.joints[sourceBindJoints[0]].position);
+  const to = new THREE.Vector3(...canonicalContract.joints[sourceBindJoints[1]].position);
+  const segment = normalizedVector(to.sub(from), WORLD_UP);
+  if (slot === 'footLeft' || slot === 'footRight') {
+    const horizontal = segment.clone();
+    horizontal.y = 0;
+    const zAxis = normalizedVector(horizontal, WORLD_FORWARD);
+    const yAxis = projectedAxis(WORLD_UP, zAxis, WORLD_UP);
+    const xAxis = normalizedVector(yAxis.clone().cross(zAxis), WORLD_RIGHT);
+    return basisFromAxes(xAxis, yAxis, zAxis);
+  }
+
+  const yAxis = segment;
   const zAxis = projectedAxis(WORLD_FORWARD, yAxis, WORLD_UP);
   const xAxis = normalizedVector(yAxis.clone().cross(zAxis), WORLD_RIGHT);
   return basisFromAxes(xAxis, yAxis, zAxis);
@@ -638,7 +657,7 @@ const buildFoundationSlot = (slot: V3CharacterSlotId): V3ArmorFoundationSlot => 
   const exactSourceBindPoint = exactSourceBindPointForSlot(slot);
   const exactSourceBindOffset = exactSourceBindPoint.clone().sub(exactSourceGeometryCenter);
   const nativeLimbChainSlot = isV3Mesh2MotionNativeLimbChainSlot(slot);
-  const mesh2MotionPivotInverseQuaternion = new THREE.Quaternion(...rigSlot.pivotWorldQuaternion)
+  const sourceBasisInverseQuaternion = new THREE.Quaternion(...exactSourceRestBasis.quaternion)
     .normalize()
     .invert();
   const referenceMaskRuns = sourceSlot.runs.map((run) =>
@@ -671,10 +690,10 @@ const buildFoundationSlot = (slot: V3CharacterSlotId): V3ArmorFoundationSlot => 
     mesh2MotionPivotWorldQuaternion: tuple4(rigSlot.pivotWorldQuaternion),
     mesh2MotionGeometry: {
       position: nativeLimbChainSlot
-        ? geometryPositionForSourceBindOffset(exactSourceBindOffset, mesh2MotionPivotInverseQuaternion)
+        ? geometryPositionForSourceBindOffset(exactSourceBindOffset, sourceBasisInverseQuaternion)
         : tuple3(rigSlot.geometry.position),
       rotation: nativeLimbChainSlot
-        ? inverseQuaternionEulerTuple(tuple4(rigSlot.pivotWorldQuaternion))
+        ? inverseQuaternionEulerTuple(tuple4(exactSourceRestBasis.quaternion))
         : tuple3(rigSlot.geometry.rotation),
       scale: tuple3(rigSlot.geometry.scale),
     },

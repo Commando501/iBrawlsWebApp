@@ -70,10 +70,16 @@ const SOURCE_SLOT_BONES = {
   upperArmLeft: ['b_l_upperarm', 'b_l_forearm', 'upperarm_l', 'lowerarm_l'],
   forearmLeft: ['b_l_forearm', 'b_l_hand', 'lowerarm_l', 'hand_l'],
   handLeft: ['b_l_hand', 'b_l_grip', 'hand_l', 'index_01_l'],
+  thighLeft: ['b_l_thigh', 'b_l_calf', 'thigh_l', 'calf_l'],
+  shinLeft: ['b_l_calf', 'b_l_foot', 'calf_l', 'foot_l'],
+  footLeft: ['b_l_foot', 'b_l_toe', 'foot_l', 'ball_l'],
   shoulderRight: ['b_r_clav', 'b_r_upperarm', 'clavicle_r', 'upperarm_r'],
   upperArmRight: ['b_r_upperarm', 'b_r_forearm', 'upperarm_r', 'lowerarm_r'],
   forearmRight: ['b_r_forearm', 'b_r_hand', 'lowerarm_r', 'hand_r'],
   handRight: ['b_r_hand', 'b_r_grip', 'hand_r', 'index_01_r'],
+  thighRight: ['b_r_thigh', 'b_r_calf', 'thigh_r', 'calf_r'],
+  shinRight: ['b_r_calf', 'b_r_foot', 'calf_r', 'foot_r'],
+  footRight: ['b_r_foot', 'b_r_toe', 'foot_r', 'ball_r'],
 } as const satisfies Partial<Record<
   V3CharacterSlotId,
   readonly [string, string, string, string]
@@ -217,10 +223,11 @@ const projectedAxis = (
   return normalizedVector(projected, fallback);
 };
 
-const basisFromSegment = (source: THREE.Vector3, end: THREE.Vector3): V3ReferenceSourceBindBasis => {
-  const yAxis = normalizedVector(end.clone().sub(source), WORLD_UP);
-  const zAxis = projectedAxis(WORLD_FORWARD, yAxis, WORLD_UP);
-  const xAxis = normalizedVector(yAxis.clone().cross(zAxis), WORLD_RIGHT);
+const basisFromAxes = (
+  xAxis: THREE.Vector3,
+  yAxis: THREE.Vector3,
+  zAxis: THREE.Vector3
+): V3ReferenceSourceBindBasis => {
   const quaternion = new THREE.Quaternion().setFromRotationMatrix(
     new THREE.Matrix4().makeBasis(xAxis, yAxis, zAxis)
   ).normalize();
@@ -230,6 +237,28 @@ const basisFromSegment = (source: THREE.Vector3, end: THREE.Vector3): V3Referenc
     zAxis: tupleVec3(zAxis),
     quaternion: tupleQuat(quaternion),
   };
+};
+
+const basisFromSourceBone = (
+  sourceBone: V3ReferenceSourceBindBone,
+  source: THREE.Vector3,
+  end: THREE.Vector3
+): V3ReferenceSourceBindBasis => {
+  const sourceQuaternion = new THREE.Quaternion(...sourceBone.restWorldQuaternion).normalize();
+  const yAxis = normalizedVector(end.clone().sub(source), WORLD_UP);
+  const boneZAxis = new THREE.Vector3(0, 0, 1).applyQuaternion(sourceQuaternion);
+  const zAxis = projectedAxis(boneZAxis, yAxis, WORLD_FORWARD);
+  const xAxis = normalizedVector(yAxis.clone().cross(zAxis), WORLD_RIGHT);
+  return basisFromAxes(xAxis, yAxis, zAxis);
+};
+
+const footBasisFromSegment = (source: THREE.Vector3, end: THREE.Vector3): V3ReferenceSourceBindBasis => {
+  const horizontal = end.clone().sub(source);
+  horizontal.y = 0;
+  const zAxis = normalizedVector(horizontal, WORLD_FORWARD);
+  const yAxis = projectedAxis(WORLD_UP, zAxis, WORLD_UP);
+  const xAxis = normalizedVector(yAxis.clone().cross(zAxis), WORLD_RIGHT);
+  return basisFromAxes(xAxis, yAxis, zAxis);
 };
 
 const buildParentIndexByNode = (json: GltfJson): Map<number, number> => {
@@ -329,7 +358,9 @@ const buildSlot = (
     sourceEndRestWorldPosition: endBone.restWorldPosition,
     sourceRestWorldQuaternion: sourceBone.restWorldQuaternion,
     sourceSegmentAxis: tupleVec3(normalizedVector(end.clone().sub(source), WORLD_UP)),
-    sourceBasis: basisFromSegment(source, end),
+    sourceBasis: slot === 'footLeft' || slot === 'footRight'
+      ? footBasisFromSegment(source, end)
+      : basisFromSourceBone(sourceBone, source, end),
   };
 };
 

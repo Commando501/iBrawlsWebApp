@@ -5502,9 +5502,9 @@ export const V3_REFERENCE_SOURCE_BIND = {
       ],
       "sourceBasis": {
         "xAxis": [
-          -0.145644,
-          -0.989337,
-          0
+          0.264962,
+          0.108209,
+          0.958168
         ],
         "yAxis": [
           0.958168,
@@ -5512,15 +5512,15 @@ export const V3_REFERENCE_SOURCE_BIND = {
           -0.249033
         ],
         "zAxis": [
-          0.246377,
-          -0.03627,
-          0.968495
+          0.108208,
+          0.98407,
+          -0.141056
         ],
         "quaternion": [
-          -0.082031073,
-          0.094991308,
-          -0.750865323,
-          0.64842025
+          0.621907243,
+          0.428671915,
+          0.42867145,
+          -0.495694017
         ]
       }
     },
@@ -5554,8 +5554,8 @@ export const V3_REFERENCE_SOURCE_BIND = {
       "sourceBasis": {
         "xAxis": [
           0,
-          -1,
-          0
+          0.899656,
+          0.436599
         ],
         "yAxis": [
           1,
@@ -5564,14 +5564,14 @@ export const V3_REFERENCE_SOURCE_BIND = {
         ],
         "zAxis": [
           0,
-          0,
-          1
+          0.436599,
+          -0.899656
         ],
         "quaternion": [
-          0,
-          0,
-          -0.707106781,
-          0.707106781
+          0.689140073,
+          0.689140073,
+          0.15838548,
+          -0.15838548
         ]
       }
     },
@@ -5605,8 +5605,8 @@ export const V3_REFERENCE_SOURCE_BIND = {
       "sourceBasis": {
         "xAxis": [
           0,
-          -1,
-          0
+          0.869398,
+          0.494113
         ],
         "yAxis": [
           1,
@@ -5615,14 +5615,14 @@ export const V3_REFERENCE_SOURCE_BIND = {
         ],
         "zAxis": [
           0,
-          0,
-          1
+          0.494113,
+          -0.869398
         ],
         "quaternion": [
-          0,
-          0,
-          -0.707106781,
-          0.707106781
+          0.683629566,
+          0.683629566,
+          0.180694818,
+          -0.180694818
         ]
       }
     },
@@ -5655,9 +5655,9 @@ export const V3_REFERENCE_SOURCE_BIND = {
       ],
       "sourceBasis": {
         "xAxis": [
-          -0.274347,
-          -0.961631,
-          0
+          0.274439,
+          0.948517,
+          -0.158111
         ],
         "yAxis": [
           0.96137,
@@ -5665,15 +5665,168 @@ export const V3_REFERENCE_SOURCE_BIND = {
           0.023302
         ],
         "zAxis": [
-          -0.022408,
-          0.006393,
-          0.999728
+          -0.021263,
+          -0.158398,
+          -0.987146
         ],
         "quaternion": [
-          0.00701854,
-          -0.009300929,
-          -0.798177425,
-          0.602309747
+          0.796218851,
+          0.599673847,
+          -0.056320534,
+          0.057050996
+        ]
+      }
+    },
+    "thighLeft": {
+      "slot": "thighLeft",
+      "sourceBoneName": "b_l_thigh",
+      "endBoneName": "b_l_calf",
+      "mesh2MotionJointName": "thigh_l",
+      "mesh2MotionEndJointName": "calf_l",
+      "sourceRestWorldPosition": [
+        0.123896,
+        1.113711,
+        0.021494
+      ],
+      "sourceEndRestWorldPosition": [
+        0.196465,
+        0.617125,
+        0.000043
+      ],
+      "sourceRestWorldQuaternion": [
+        -0.682197092,
+        -0.065178018,
+        0.727255746,
+        -0.03818421
+      ],
+      "sourceSegmentAxis": [
+        0.144468,
+        -0.988588,
+        -0.042704
+      ],
+      "sourceBasis": {
+        "xAxis": [
+          -0.066298,
+          0.033389,
+          -0.997241
+        ],
+        "yAxis": [
+          0.144468,
+          -0.988588,
+          -0.042704
+        ],
+        "zAxis": [
+          -0.987286,
+          -0.146901,
+          0.060718
+        ],
+        "quaternion": [
+          -0.682197085,
+          -0.065178114,
+          0.727255742,
+          -0.038184236
+        ]
+      }
+    },
+    "shinLeft": {
+      "slot": "shinLeft",
+      "sourceBoneName": "b_l_calf",
+      "endBoneName": "b_l_foot",
+      "mesh2MotionJointName": "calf_l",
+      "mesh2MotionEndJointName": "foot_l",
+      "sourceRestWorldPosition": [
+        0.196465,
+        0.617125,
+        0.000043
+      ],
+      "sourceEndRestWorldPosition": [
+        0.256608,
+        0.145105,
+        -0.071442
+      ],
+      "sourceRestWorldQuaternion": [
+        -0.638250051,
+        -0.097539334,
+        0.76362481,
+        -0.000316194
+      ],
+      "sourceSegmentAxis": [
+        0.124992,
+        -0.980972,
+        -0.148563
+      ],
+      "sourceBasis": {
+        "xAxis": [
+          -0.185274,
+          0.124026,
+          -0.974829
+        ],
+        "yAxis": [
+          0.124992,
+          -0.980972,
+          -0.148563
+        ],
+        "zAxis": [
+          -0.974705,
+          -0.14937,
+          0.166246
+        ],
+        "quaternion": [
+          -0.638250056,
+          -0.097539238,
+          0.763624818,
+          -0.000316181
+        ]
+      }
+    },
+    "footLeft": {
+      "slot": "footLeft",
+      "sourceBoneName": "b_l_foot",
+      "endBoneName": "b_l_toe",
+      "mesh2MotionJointName": "foot_l",
+      "mesh2MotionEndJointName": "ball_l",
+      "sourceRestWorldPosition": [
+        0.256608,
+        0.145105,
+        -0.071442
+      ],
+      "sourceEndRestWorldPosition": [
+        0.298403,
+        0.054693,
+        0.095597
+      ],
+      "sourceRestWorldQuaternion": [
+        0.635744038,
+        0.42919873,
+        0.572950987,
+        0.288695574
+      ],
+      "sourceSegmentAxis": [
+        0.214904,
+        -0.464887,
+        0.858893
+      ],
+      "sourceBasis": {
+        "xAxis": [
+          0.970094,
+          0,
+          -0.242728
+        ],
+        "yAxis": [
+          0,
+          1,
+          0
+        ],
+        "zAxis": [
+          0.242728,
+          0,
+          0.970094
+        ],
+        "quaternion": [
+          0,
+          0.122281822,
+          0,
+          0.992495419
         ]
       }
     },
@@ -5706,9 +5859,9 @@ export const V3_REFERENCE_SOURCE_BIND = {
       ],
       "sourceBasis": {
         "xAxis": [
-          -0.145649,
-          0.989336,
-          0
+          0.264963,
+          -0.10821,
+          -0.958168
         ],
         "yAxis": [
           -0.958167,
@@ -5716,15 +5869,15 @@ export const V3_REFERENCE_SOURCE_BIND = {
           -0.249032
         ],
         "zAxis": [
-          -0.246377,
-          -0.036271,
-          0.968495
+          -0.108212,
+          0.984069,
+          -0.141059
         ],
         "quaternion": [
-          -0.082030774,
-          -0.094991449,
-          0.750866974,
-          0.648418356
+          0.621908946,
+          -0.428671141,
+          -0.428671812,
+          -0.495692236
         ]
       }
     },
@@ -5758,8 +5911,8 @@ export const V3_REFERENCE_SOURCE_BIND = {
       "sourceBasis": {
         "xAxis": [
           0,
-          1,
-          0
+          -0.899657,
+          -0.436597
         ],
         "yAxis": [
           -1,
@@ -5768,14 +5921,14 @@ export const V3_REFERENCE_SOURCE_BIND = {
         ],
         "zAxis": [
           0,
-          0,
-          1
+          0.436597,
+          -0.899657
         ],
         "quaternion": [
-          0,
-          0,
-          0.707106781,
-          0.707106781
+          -0.689140294,
+          0.689140294,
+          0.158384516,
+          0.158384516
         ]
       }
     },
@@ -5809,8 +5962,8 @@ export const V3_REFERENCE_SOURCE_BIND = {
       "sourceBasis": {
         "xAxis": [
           0,
-          1,
-          0
+          -0.869397,
+          -0.494114
         ],
         "yAxis": [
           -1,
@@ -5819,14 +5972,14 @@ export const V3_REFERENCE_SOURCE_BIND = {
         ],
         "zAxis": [
           0,
-          0,
-          1
+          0.494114,
+          -0.869397
         ],
         "quaternion": [
-          0,
-          0,
-          0.707106781,
-          0.707106781
+          -0.683629535,
+          0.683629535,
+          0.180694934,
+          0.180694934
         ]
       }
     },
@@ -5859,9 +6012,9 @@ export const V3_REFERENCE_SOURCE_BIND = {
       ],
       "sourceBasis": {
         "xAxis": [
-          -0.274324,
-          0.961637,
-          0
+          0.274416,
+          -0.948527,
+          0.15809
         ],
         "yAxis": [
           -0.961376,
@@ -5869,15 +6022,168 @@ export const V3_REFERENCE_SOURCE_BIND = {
           0.023302
         ],
         "zAxis": [
-          0.022408,
-          0.006392,
-          0.999728
+          0.021253,
+          -0.158378,
+          -0.98715
         ],
         "quaternion": [
-          0.007018702,
-          0.009300909,
-          0.798170108,
-          0.602319442
+          0.796212175,
+          -0.599684125,
+          0.056311241,
+          0.057045304
+        ]
+      }
+    },
+    "thighRight": {
+      "slot": "thighRight",
+      "sourceBoneName": "b_r_thigh",
+      "endBoneName": "b_r_calf",
+      "mesh2MotionJointName": "thigh_r",
+      "mesh2MotionEndJointName": "calf_r",
+      "sourceRestWorldPosition": [
+        -0.123896,
+        1.11371,
+        0.021493
+      ],
+      "sourceEndRestWorldPosition": [
+        -0.196465,
+        0.617124,
+        0.000042
+      ],
+      "sourceRestWorldQuaternion": [
+        0.682200129,
+        -0.065178335,
+        0.727252879,
+        0.038184011
+      ],
+      "sourceSegmentAxis": [
+        -0.144468,
+        -0.988588,
+        -0.042704
+      ],
+      "sourceBasis": {
+        "xAxis": [
+          -0.06629,
+          -0.03339,
+          0.997242
+        ],
+        "yAxis": [
+          -0.144468,
+          -0.988588,
+          -0.042704
+        ],
+        "zAxis": [
+          0.987286,
+          -0.1469,
+          0.06071
+        ],
+        "quaternion": [
+          0.682200132,
+          -0.065178274,
+          0.727252884,
+          0.038183963
+        ]
+      }
+    },
+    "shinRight": {
+      "slot": "shinRight",
+      "sourceBoneName": "b_r_calf",
+      "endBoneName": "b_r_foot",
+      "mesh2MotionJointName": "calf_r",
+      "mesh2MotionEndJointName": "foot_r",
+      "sourceRestWorldPosition": [
+        -0.196465,
+        0.617124,
+        0.000042
+      ],
+      "sourceEndRestWorldPosition": [
+        -0.256608,
+        0.145105,
+        -0.071442
+      ],
+      "sourceRestWorldQuaternion": [
+        0.638253162,
+        -0.097539482,
+        0.763622191,
+        0.000315823
+      ],
+      "sourceSegmentAxis": [
+        -0.124992,
+        -0.980972,
+        -0.148561
+      ],
+      "sourceBasis": {
+        "xAxis": [
+          -0.185265,
+          -0.124025,
+          0.97483
+        ],
+        "yAxis": [
+          -0.124992,
+          -0.980972,
+          -0.148561
+        ],
+        "zAxis": [
+          0.974707,
+          -0.149369,
+          0.166238
+        ],
+        "quaternion": [
+          0.638253261,
+          -0.097538661,
+          0.763622213,
+          0.000316446
+        ]
+      }
+    },
+    "footRight": {
+      "slot": "footRight",
+      "sourceBoneName": "b_r_foot",
+      "endBoneName": "b_r_toe",
+      "mesh2MotionJointName": "foot_r",
+      "mesh2MotionEndJointName": "ball_r",
+      "sourceRestWorldPosition": [
+        -0.256608,
+        0.145105,
+        -0.071442
+      ],
+      "sourceEndRestWorldPosition": [
+        -0.298403,
+        0.054693,
+        0.095597
+      ],
+      "sourceRestWorldQuaternion": [
+        0.635744038,
+        -0.42919873,
+        -0.572950987,
+        0.288695574
+      ],
+      "sourceSegmentAxis": [
+        -0.214904,
+        -0.464887,
+        0.858893
+      ],
+      "sourceBasis": {
+        "xAxis": [
+          0.970094,
+          0,
+          0.242728
+        ],
+        "yAxis": [
+          0,
+          1,
+          0
+        ],
+        "zAxis": [
+          -0.242728,
+          0,
+          0.970094
+        ],
+        "quaternion": [
+          0,
+          -0.122281822,
+          0,
+          0.992495419
         ]
       }
     }

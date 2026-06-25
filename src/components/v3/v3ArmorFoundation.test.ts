@@ -79,6 +79,14 @@ const geometryWorldQuaternion = (slot: {
   return pivot.multiply(geometry).normalize();
 };
 
+const basisQuaternion = (basis: { quaternion: readonly number[] }): THREE.Quaternion =>
+  new THREE.Quaternion(
+    basis.quaternion[0] ?? 0,
+    basis.quaternion[1] ?? 0,
+    basis.quaternion[2] ?? 0,
+    basis.quaternion[3] ?? 1
+  ).normalize();
+
 const exactSourceGeometryCenterForSlot = (slot: V3CharacterSlotId): THREE.Vector3 => {
   const sourceSlot = ARM_CHAIN_SLOT_SET.has(slot)
     ? V3_REFERENCE_LIMB_VOXELS.slots[slot as keyof typeof V3_REFERENCE_LIMB_VOXELS.slots]
@@ -227,20 +235,26 @@ describe('V3 armor foundation', () => {
       assert.equal(foundationSlot.exactSourceRestBasis.quaternion.length, 4);
       assert.equal(Number.isFinite(foundationSlot.sourcePoseCorrectionAngleDegrees), true);
       assert.match(foundationSlot.sourceHashes.mesh2MotionSlot, /^mesh2motion-slot:fnv1a32:[0-9a-f]{8}$/);
-      if (V3_MESH2MOTION_NATIVE_ARM_CHAIN_SLOTS.includes(slot as (typeof V3_MESH2MOTION_NATIVE_ARM_CHAIN_SLOTS)[number])) {
+      const hasReferenceSourceBind = Boolean(
+        V3_REFERENCE_SOURCE_BIND.slots[slot as keyof typeof V3_REFERENCE_SOURCE_BIND.slots]
+      );
+      if (hasReferenceSourceBind) {
         assert.ok(foundationSlot.referenceSourceBindBasis, `${slot} should record Blender bind reference basis`);
         assert.match(
           foundationSlot.sourceHashes.referenceSourceBindSlot ?? '',
           /^reference-source-bind-slot:fnv1a32:[0-9a-f]{8}$/
         );
+      } else {
+        assert.equal(foundationSlot.referenceSourceBindBasis, null);
+        assert.equal(foundationSlot.sourcePoseCorrectionAngleDegrees, 0);
+      }
+      if (V3_MESH2MOTION_NATIVE_ARM_CHAIN_SLOTS.includes(slot as (typeof V3_MESH2MOTION_NATIVE_ARM_CHAIN_SLOTS)[number])) {
         assert.equal(foundationSlot.sourceHashes.exactObjSurfaceSlot, null);
         assert.match(
           foundationSlot.sourceHashes.referenceLimbVoxelSlot ?? '',
           /^reference-limb-voxel-slot:fnv1a32:[0-9a-f]{8}$/
         );
       } else {
-        assert.equal(foundationSlot.referenceSourceBindBasis, null);
-        assert.equal(foundationSlot.sourcePoseCorrectionAngleDegrees, 0);
         assert.match(foundationSlot.sourceHashes.exactObjSurfaceSlot ?? '', /^exact-obj-slot:fnv1a32:[0-9a-f]{8}$/);
         assert.equal(foundationSlot.sourceHashes.referenceLimbVoxelSlot, null);
       }
@@ -258,14 +272,19 @@ describe('V3 armor foundation', () => {
     assert.deepEqual(report.issues, []);
   });
 
-  it('keeps source-space limb geometry neutral under Mesh2Motion rest pivots', () => {
+  it('maps source-space limb bind bases onto Mesh2Motion rest pivots', () => {
     for (const slot of V3_MESH2MOTION_NATIVE_LIMB_CHAIN_SLOTS) {
       const foundationSlot = V3_ARMOR_FOUNDATION.slots[slot];
+      const rigSlot = V3_MESH2MOTION_ARMOR_RIG.slots[slot];
       const worldGeometryRotation = geometryWorldQuaternion(foundationSlot);
+      const mappedSourceBasis = worldGeometryRotation
+        .multiply(basisQuaternion(foundationSlot.exactSourceRestBasis))
+        .normalize();
+      const rigBasis = basisQuaternion(rigSlot.basis);
 
       assert.ok(
-        new THREE.Quaternion().angleTo(worldGeometryRotation) <= 0.00001,
-        `${slot} geometry should cancel the Mesh2Motion rest pivot in T-pose`
+        rigBasis.angleTo(mappedSourceBasis) <= 0.0001,
+        `${slot} source bind basis should align to the Mesh2Motion rest basis`
       );
     }
   });
