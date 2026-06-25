@@ -223,3 +223,20 @@ const V3_MESH2MOTION_NATIVE_ARM_CHAIN_SLOT_SET = new Set<V3CharacterSlotId>(
 
 export const isV3Mesh2MotionNativeArmChainSlot = (slot: V3CharacterSlotId): boolean =>
   V3_MESH2MOTION_NATIVE_ARM_CHAIN_SLOT_SET.has(slot);
+
+export const V3_MESH2MOTION_NATIVE_LIMB_CHAIN_SLOTS = [
+  ...V3_MESH2MOTION_NATIVE_ARM_CHAIN_SLOTS,
+  'thighLeft',
+  'thighRight',
+  'shinLeft',
+  'shinRight',
+  'footLeft',
+  'footRight',
+] as const satisfies readonly V3CharacterSlotId[];
+
+const V3_MESH2MOTION_NATIVE_LIMB_CHAIN_SLOT_SET = new Set<V3CharacterSlotId>(
+  V3_MESH2MOTION_NATIVE_LIMB_CHAIN_SLOTS
+);
+
+export const isV3Mesh2MotionNativeLimbChainSlot = (slot: V3CharacterSlotId): boolean =>
+  V3_MESH2MOTION_NATIVE_LIMB_CHAIN_SLOT_SET.has(slot);

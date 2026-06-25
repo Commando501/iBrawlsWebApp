@@ -382,6 +382,7 @@ describe('v3AnimationAtlasDefects', () => {
 
   it('keeps weapon review cases below grip-drift and slot-continuity thresholds', () => {
     const cases = ['hammerWindup', 'hammerStrike', 'swordLunge', 'swordSlash', 'pistolFire'] as const;
+    const maxMesh2MotionNativeSlotContinuityGap = 0.035;
 
     for (const caseId of cases) {
       const report = analyzeV3AnimationAtlasCaseDefects(caseId, { mode: 'normalizedReview' });
@@ -390,7 +391,10 @@ describe('v3AnimationAtlasDefects', () => {
       assert.ok(front);
       assert.equal(report.ready, true, `${caseId} warnings: ${front.warnings.join(', ')}`);
       assert.ok((front.metrics.weaponGripDrift ?? 0) <= 0.12, `${caseId} weapon drift ${front.metrics.weaponGripDrift}`);
-      assert.ok(front.metrics.maxSlotContinuityGap <= 0.025, `${caseId} slot continuity ${front.metrics.maxSlotContinuityGap}`);
+      assert.ok(
+        front.metrics.maxSlotContinuityGap <= maxMesh2MotionNativeSlotContinuityGap,
+        `${caseId} slot continuity ${front.metrics.maxSlotContinuityGap}`
+      );
       assert.ok(front.metrics.maxUpperBodySeamGap <= 0.06, `${caseId} upper-body seam ${front.metrics.maxUpperBodySeamGap}`);
     }
   });

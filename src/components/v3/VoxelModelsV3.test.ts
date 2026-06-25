@@ -28,6 +28,7 @@ import {
 import { getV3CharacterPartBounds } from './v3PartBounds';
 import { V3_AEGIS_PART_SPECS } from './v3AegisSuitParts';
 import { V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE } from './v3AegisObjSurfaceVoxels.generated';
+import { V3_REFERENCE_LIMB_VOXELS } from './v3ReferenceLimbVoxels.generated';
 import {
   V3_PRODUCTION_QUALITY_THRESHOLDS,
   analyzeV3VoxelQuality,
@@ -48,7 +49,10 @@ import {
 } from './v3ReferenceProportions';
 import { deriveV3ExactSourceSlotBudget } from './v3ExactSourceLod';
 import { V3_SLOT_DETAIL_BONES } from './v3RigDetail';
-import { V3_MESH2MOTION_ARMOR_SLOT_SPECS } from './v3Mesh2MotionArmorRig';
+import {
+  V3_MESH2MOTION_ARMOR_SLOT_SPECS,
+  V3_MESH2MOTION_NATIVE_LIMB_CHAIN_SLOTS,
+} from './v3Mesh2MotionArmorRig';
 import { V3_ARMOR_FOUNDATION } from './v3ArmorFoundation';
 
 const requiredSegments = ['lowerTorso', 'upperTorso', 'head', 'leftArm', 'rightArm', 'leftLeg', 'rightLeg'];
@@ -63,6 +67,12 @@ const V3_ARM_CHAIN_BINDING_TEST_SLOTS = [
   'handRight',
 ] as const satisfies readonly V3CharacterSlotId[];
 const V3_ARM_CHAIN_BINDING_TEST_SLOT_SET = new Set<V3CharacterSlotId>(V3_ARM_CHAIN_BINDING_TEST_SLOTS);
+const V3_LIMB_CHAIN_BINDING_TEST_SLOT_SET = new Set<V3CharacterSlotId>(V3_MESH2MOTION_NATIVE_LIMB_CHAIN_SLOTS);
+const getExpectedV3BuiltinSourceSlot = (slot: V3CharacterSlotId) => (
+  V3_ARM_CHAIN_BINDING_TEST_SLOT_SET.has(slot)
+    ? V3_REFERENCE_LIMB_VOXELS.slots[slot as keyof typeof V3_REFERENCE_LIMB_VOXELS.slots]
+    : V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.slots[slot]
+);
 const groupContainsHexColor = (group: THREE.Object3D, color: string): boolean => {
   const target = color.replace('#', '').toLowerCase();
   let found = false;
@@ -505,7 +515,7 @@ describe('buildV3SpartanModel', () => {
 
       const boxCenter = getWorldBox(partGroups[slot]).getCenter(new THREE.Vector3()).toArray();
       const geometryCenter = contract.slotGeometryOffsets[slot].geometryCenter as [number, number, number];
-      if (V3_ARM_CHAIN_BINDING_TEST_SLOT_SET.has(slot)) {
+      if (V3_LIMB_CHAIN_BINDING_TEST_SLOT_SET.has(slot)) {
         const mesh2MotionPivot = getObjectWorldPosition(partGroups[slot]).toArray();
         const sourceBindOffset = new THREE.Vector3(...V3_ARMOR_FOUNDATION.slots[slot].exactSourceBindOffset);
         const geometryBindPoint = partGeometryGroups[slot].localToWorld(sourceBindOffset).toArray();
@@ -526,7 +536,7 @@ describe('buildV3SpartanModel', () => {
     }
   });
 
-  it('binds exact-source shoulder-to-hand armor geometry directly onto Mesh2Motion arm centers', () => {
+  it('binds exact-source limb armor geometry directly onto Mesh2Motion limb centers', () => {
     const model = buildV3SpartanModel({
       isEnemy: false,
       customHue: 192,
@@ -537,7 +547,7 @@ describe('buildV3SpartanModel', () => {
     const partGeometryGroups = model.userData.v3PartGeometryGroups as Record<string, THREE.Group>;
     const joints = model.userData.v3Mesh2MotionJoints as V3Mesh2MotionJointTestMap;
 
-    for (const slot of V3_ARM_CHAIN_BINDING_TEST_SLOTS) {
+    for (const slot of V3_MESH2MOTION_NATIVE_LIMB_CHAIN_SLOTS) {
       const slotPivot = partGroups[slot];
       const geometry = partGeometryGroups[slot];
       const spec = V3_MESH2MOTION_ARMOR_SLOT_SPECS[slot];
@@ -574,16 +584,9 @@ describe('buildV3SpartanModel', () => {
       );
       assert.equal(tupleCloseTo(geometry.scale.toArray(), [1, 1, 1]), true, `${slot} scale should preserve exact voxels`);
       const geometryWorldQuaternion = geometry.getWorldQuaternion(new THREE.Quaternion()).normalize();
-      const slotPlacement = slotPivot.userData.v3Mesh2MotionSlotPlacement as {
-        basis: { yAxis: readonly number[] };
-      };
-      const transformedSourceAxis = new THREE.Vector3(...V3_ARMOR_FOUNDATION.slots[slot].exactSourceRestBasis.yAxis)
-        .applyQuaternion(geometryWorldQuaternion)
-        .normalize();
-      const targetAxis = new THREE.Vector3(...slotPlacement.basis.yAxis).normalize();
       assert.ok(
-        transformedSourceAxis.angleTo(targetAxis) <= 0.00001,
-        `${slot} exact-source rest axis should bind onto Mesh2Motion slot axis`
+        new THREE.Quaternion().angleTo(geometryWorldQuaternion) <= 0.00001,
+        `${slot} exact-source geometry should cancel the Mesh2Motion rest pivot`
       );
     }
   });
@@ -620,7 +623,7 @@ describe('buildV3SpartanModel', () => {
 
     assert.ok(chestSize.x > 0.3, `chest should stay visible from exact source (${chestSize.x})`);
     assert.ok(pelvisSize.x > 0.25, `pelvis should stay visible from exact source (${pelvisSize.x})`);
-    assert.ok(forearmSize.x > 0.1 && forearmSize.z > 0.18, `forearm should stay visible from exact source (${forearmSize.x}, ${forearmSize.z})`);
+    assert.ok(forearmSize.x > 0.1 && forearmSize.z > 0.15, `forearm should stay visible from regenerated limb source (${forearmSize.x}, ${forearmSize.z})`);
     assert.ok(handSize.x > 0.08 && handSize.z > 0.18, `hand should stay visible from exact source (${handSize.x}, ${handSize.z})`);
     assert.equal(
       partGroups.chest.userData.v3ObjSurfaceSource,
@@ -682,6 +685,7 @@ describe('buildV3SpartanModel', () => {
     const focusedIssues = getV3RenderedObjGateClosureIssues(report);
 
     assert.deepEqual(focusedIssues, [], formatV3ReferenceProportionGapSummary(report));
+    assert.ok(report.summary.maxBandWidthDelta <= 0.57);
   });
 
   it('preserves lower helmet jaw and cheek width while keeping the Phase 35 crown taper', () => {
@@ -772,7 +776,9 @@ describe('buildV3SpartanModel', () => {
       const voxels = getV3BuiltinPartVoxels(slot, 192);
       const report = analyzeV3VoxelQuality(voxels);
 
-      assert.equal(voxels.length, V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.slots[slot].voxelCount, `${slot} should decode every exact source voxel`);
+      const sourceSlot = getExpectedV3BuiltinSourceSlot(slot);
+      assert.ok(sourceSlot, `${slot} should have a resolved built-in source slot`);
+      assert.equal(voxels.length, sourceSlot.voxelCount, `${slot} should decode every resolved source voxel`);
       assert.ok(voxels.length > 0, `${slot} should decode exact source voxels`);
       assert.ok(Number.isFinite(report.occupiedDimensions.x), `${slot} should have finite x dimensions`);
       assert.ok(Number.isFinite(report.occupiedDimensions.y), `${slot} should have finite y dimensions`);
@@ -888,7 +894,7 @@ describe('buildV3SpartanModel', () => {
     assert.ok(sideLocks.length >= 200, `expected side locking coverage, found ${sideLocks.length}`);
   });
 
-  it('decodes every remaining V3 armor family from the exact OBJ source', () => {
+  it('decodes every remaining V3 armor family from the resolved built-in source', () => {
     const familySlots: readonly (typeof V3_CHARACTER_SLOT_IDS)[number][] = [
       'neck',
       'shoulderLeft',
@@ -909,17 +915,18 @@ describe('buildV3SpartanModel', () => {
     for (const slot of familySlots) {
       const voxels = getV3BuiltinPartVoxels(slot, 192, V3_SCULPT_TEST_PAINT_JOB);
       const bounds = getVoxelBounds(voxels);
-      const sourceSlot = V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.slots[slot];
+      const sourceSlot = getExpectedV3BuiltinSourceSlot(slot);
       const colors = new Set(voxels.map((voxel) => voxel.color));
 
-      assert.equal(voxels.length, sourceSlot.voxelCount, `${slot} should decode exact source voxel count`);
+      assert.ok(sourceSlot, `${slot} should have a resolved built-in source slot`);
+      assert.equal(voxels.length, sourceSlot.voxelCount, `${slot} should decode resolved source voxel count`);
       assert.ok(bounds.sizeX > 0 && bounds.sizeY > 0 && bounds.sizeZ > 0, `${slot} should have occupied bounds`);
       assert.ok(colors.size >= 1, `${slot} should preserve at least one OBJ role`);
       assert.ok(sourceSlot.runCount > 0, `${slot} should preserve compact run data`);
     }
 
     assert.ok(getV3BuiltinPartVoxels('back', 192, V3_SCULPT_TEST_PAINT_JOB).some((voxel) => voxel.emissive), 'back should preserve emissive equipment detail');
-    assert.ok(getV3BuiltinPartVoxels('handRight', 192, V3_SCULPT_TEST_PAINT_JOB).some((voxel) => voxel.color === V3_SCULPT_TEST_COLORS.fixed), 'hands should preserve glove/fixed material role');
+    assert.ok(getV3BuiltinPartVoxels('handRight', 192, V3_SCULPT_TEST_PAINT_JOB).some((voxel) => voxel.color === V3_SCULPT_TEST_COLORS.undersuit), 'hands should preserve GLB glove undersuit material role');
   });
 
   it('segments remaining V3 built-in armor faces away from broad filled rectangles', () => {

@@ -140,6 +140,34 @@ describe('v3Mesh2MotionTPoseBindEditorCore', () => {
     assert.ok(report.items.some((item) => item.slot === 'helmet' && item.code === 'extreme-scale'));
   });
 
+  it('does not flag generated source-pose correction rotations as manual extremes', () => {
+    const document: V3Mesh2MotionTPoseBindDocument = normalizeV3Mesh2MotionTPoseBindDocument({
+      placements: {
+        handLeft: {
+          rotation: [0, 0, 2.8],
+        },
+      },
+    });
+
+    const generatedReport = buildV3Mesh2MotionTPoseBindDiagnostics(document, {
+      referencePlacements: {
+        handLeft: {
+          rotation: [0, 0, 2.8],
+        },
+      },
+    });
+    const editedReport = buildV3Mesh2MotionTPoseBindDiagnostics(document, {
+      referencePlacements: {
+        handLeft: {
+          rotation: [0, 0, 2.5],
+        },
+      },
+    });
+
+    assert.equal(generatedReport.items.some((item) => item.slot === 'handLeft' && item.code === 'extreme-rotation'), false);
+    assert.equal(editedReport.items.some((item) => item.slot === 'handLeft' && item.code === 'extreme-rotation'), true);
+  });
+
   it('diagnoses missing slots from sparse imported bind documents', () => {
     const document = parseV3Mesh2MotionTPoseBindDocumentJson(JSON.stringify({
       source: { meshHash: 'source-abc', authoringSpace: 'mesh2motion-native-v3' },

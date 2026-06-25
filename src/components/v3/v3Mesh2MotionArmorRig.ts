@@ -6,7 +6,9 @@ import {
   V3_MESH2MOTION_PART_BINDING_SPECS,
   V3_MESH2MOTION_SLOT_DRIVER_JOINTS,
   V3_MESH2MOTION_NATIVE_ARM_CHAIN_SLOTS,
+  V3_MESH2MOTION_NATIVE_LIMB_CHAIN_SLOTS,
   isV3Mesh2MotionNativeArmChainSlot,
+  isV3Mesh2MotionNativeLimbChainSlot,
   type V3Mesh2MotionArmorRigArtifact,
   type V3Mesh2MotionArmorRigSkeletonJoint,
   type V3Mesh2MotionArmorSlotPlacement,
@@ -24,7 +26,9 @@ export {
   V3_MESH2MOTION_PART_BINDING_SPECS,
   V3_MESH2MOTION_SLOT_DRIVER_JOINTS,
   V3_MESH2MOTION_NATIVE_ARM_CHAIN_SLOTS,
+  V3_MESH2MOTION_NATIVE_LIMB_CHAIN_SLOTS,
   isV3Mesh2MotionNativeArmChainSlot,
+  isV3Mesh2MotionNativeLimbChainSlot,
   type V3Mesh2MotionArmorRigArtifact,
   type V3Mesh2MotionArmorRigSkeletonJoint,
   type V3Mesh2MotionArmorSlotPlacement,
@@ -119,10 +123,10 @@ const createRuntimeSlotPlacement = (
     quaternion: normalizedQuaternionTuple(placement.basis.quaternion),
   },
   geometry: {
-    position: isV3Mesh2MotionNativeArmChainSlot(slot)
+    position: isV3Mesh2MotionNativeLimbChainSlot(slot)
       ? [...ZERO_VEC3]
       : vec3Tuple(placement.geometry.position),
-    rotation: isV3Mesh2MotionNativeArmChainSlot(slot)
+    rotation: isV3Mesh2MotionNativeLimbChainSlot(slot)
       ? inverseQuaternionEulerTuple(placement.pivotWorldQuaternion)
       : vec3Tuple(placement.geometry.rotation),
     scale: vec3Tuple(placement.geometry.scale, ONE_VEC3),

@@ -5,7 +5,7 @@ import { V3_MESH2MOTION_ARMOR_RIG } from './v3Mesh2MotionArmorRig.generated';
 import {
   V3_MESH2MOTION_ARMOR_RIG_SCHEMA,
   V3_MESH2MOTION_ARMOR_SLOT_SPECS,
-  V3_MESH2MOTION_NATIVE_ARM_CHAIN_SLOTS,
+  V3_MESH2MOTION_NATIVE_LIMB_CHAIN_SLOTS,
   buildV3Mesh2MotionArmorRig,
   analyzeV3Mesh2MotionArmorRig,
 } from './v3Mesh2MotionArmorRig';
@@ -110,10 +110,10 @@ describe('v3Mesh2MotionArmorRig', () => {
     assert.ok(Math.abs(leftArmUp.y - rightArmUp.y) < 0.1);
   });
 
-  it('keeps shoulder-to-hand slot geometry centered on Mesh2Motion-native pivots', () => {
+  it('keeps articulated limb slot geometry centered on Mesh2Motion-native pivots', () => {
     const rig = buildV3Mesh2MotionArmorRig();
 
-    for (const slot of V3_MESH2MOTION_NATIVE_ARM_CHAIN_SLOTS) {
+    for (const slot of V3_MESH2MOTION_NATIVE_LIMB_CHAIN_SLOTS) {
       const generatedPlacement = V3_MESH2MOTION_ARMOR_RIG.slots[slot];
       const runtimePlacement = rig.slotPivots[slot].userData.v3Mesh2MotionSlotPlacement as typeof generatedPlacement;
 

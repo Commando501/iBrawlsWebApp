@@ -49,7 +49,7 @@ export interface V3BudgetSummary {
 
 export const V3_DEFAULT_CHARACTER_BUDGET_LIMITS: V3BudgetSummary = {
   partCount: V3_CHARACTER_SLOT_IDS.length,
-  sourceVoxelCount: 120000,
+  sourceVoxelCount: 122000,
   mergedBoxCount: 60000,
   materialGroupCount: 95,
   drawCallEstimate: 95,
@@ -189,13 +189,13 @@ export const BUILT_IN_V3_CHARACTER_PARTS: readonly V3CharacterPartManifest[] = [
     slot: 'shoulderLeft',
     label: 'Aegis Left Guard',
     roles: ['primary', 'secondary', 'accent'],
-    budget: createBudget(4300, 2400, 3, 3, 3, 1050),
+    budget: createBudget(6200, 3300, 3, 3, 3, 1450),
   }),
   createCharacterPart({
     slot: 'shoulderRight',
     label: 'Aegis Right Guard',
     roles: ['primary', 'secondary', 'accent'],
-    budget: createBudget(4300, 2400, 3, 3, 3, 1050),
+    budget: createBudget(6200, 3300, 3, 3, 3, 1450),
   }),
   createCharacterPart({
     slot: 'upperArmLeft',
@@ -213,25 +213,25 @@ export const BUILT_IN_V3_CHARACTER_PARTS: readonly V3CharacterPartManifest[] = [
     slot: 'forearmLeft',
     label: 'Aegis Left Bracer',
     roles: ['undersuit', 'accent', 'secondary'],
-    budget: createBudget(1650, 1400, 1, 1, 3, 400),
+    budget: createBudget(3900, 1700, 3, 3, 3, 900),
   }),
   createCharacterPart({
     slot: 'forearmRight',
     label: 'Aegis Right Bracer',
     roles: ['undersuit', 'accent', 'secondary'],
-    budget: createBudget(1650, 1400, 1, 1, 3, 400),
+    budget: createBudget(3900, 1700, 3, 3, 3, 900),
   }),
   createCharacterPart({
     slot: 'handLeft',
     label: 'Aegis Left Glove',
     roles: ['undersuit', 'accent', 'fixed'],
-    budget: createBudget(2100, 1300, 1, 1, 2, 500),
+    budget: createBudget(2400, 1400, 2, 2, 2, 580),
   }),
   createCharacterPart({
     slot: 'handRight',
     label: 'Aegis Right Glove',
     roles: ['undersuit', 'accent', 'fixed'],
-    budget: createBudget(2100, 1300, 1, 1, 2, 500),
+    budget: createBudget(2400, 1400, 2, 2, 2, 580),
   }),
   createCharacterPart({
     slot: 'pelvis',

@@ -2309,14 +2309,14 @@ export const V3_MESH2MOTION_ARMOR_RIG = {
       },
       "geometry": {
         "position": [
-          0.01237,
-          -0.020713,
-          -0.05368
-        ],
-        "rotation": [
           0,
           0,
           0
+        ],
+        "rotation": [
+          0.10495,
+          0,
+          3.025479
         ],
         "scale": [
           1,
@@ -2374,14 +2374,14 @@ export const V3_MESH2MOTION_ARMOR_RIG = {
       },
       "geometry": {
         "position": [
-          -0.002852,
-          -0.019609,
-          -0.053563
-        ],
-        "rotation": [
           0,
           0,
           0
+        ],
+        "rotation": [
+          0.10495,
+          0,
+          -3.025479
         ],
         "scale": [
           1,
@@ -2439,14 +2439,14 @@ export const V3_MESH2MOTION_ARMOR_RIG = {
       },
       "geometry": {
         "position": [
-          -0.003237,
-          -0.083724,
-          -0.061142
-        ],
-        "rotation": [
           0,
           0,
           0
+        ],
+        "rotation": [
+          0.111977,
+          0,
+          2.990446
         ],
         "scale": [
           1,
@@ -2504,14 +2504,14 @@ export const V3_MESH2MOTION_ARMOR_RIG = {
       },
       "geometry": {
         "position": [
-          0.007972,
-          -0.083012,
-          -0.06107
-        ],
-        "rotation": [
           0,
           0,
           0
+        ],
+        "rotation": [
+          0.111898,
+          0,
+          -2.99043
         ],
         "scale": [
           1,
@@ -2569,13 +2569,13 @@ export const V3_MESH2MOTION_ARMOR_RIG = {
       },
       "geometry": {
         "position": [
-          0.0078,
-          0.032237,
-          -0.05492
+          0,
+          0,
+          0
         ],
         "rotation": [
           0,
-          0,
+          -0.010764,
           0
         ],
         "scale": [
@@ -2634,13 +2634,13 @@ export const V3_MESH2MOTION_ARMOR_RIG = {
       },
       "geometry": {
         "position": [
-          -0.017376,
-          0.032239,
-          -0.054844
+          0,
+          0,
+          0
         ],
         "rotation": [
           0,
-          0,
+          0.011049,
           0
         ],
         "scale": [

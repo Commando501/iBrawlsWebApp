@@ -20,7 +20,11 @@ import {
 } from './v3Mesh2MotionTPoseBindEditorCore';
 
 const SOURCE_HASH = V3_MESH2MOTION_ARMOR_RIG.source.sha256;
-const FOUNDATION_HASH = V3_ARMOR_FOUNDATION.source.exactObjSurfaceHash;
+const FOUNDATION_HASH = [
+  V3_ARMOR_FOUNDATION.source.exactObjSurfaceHash,
+  V3_ARMOR_FOUNDATION.source.referenceSourceBindSha256,
+  V3_ARMOR_FOUNDATION.source.referenceLimbVoxelSha256,
+].join(':');
 const FOUNDATION_BIND_VERSION = 'blender-source-bind-v1';
 const LOCAL_STORAGE_KEY = `ibrawls_v3_mesh2motion_tpose_bind_editor:${SOURCE_HASH}:${FOUNDATION_HASH}:${FOUNDATION_BIND_VERSION}`;
 
@@ -287,7 +291,9 @@ const applyInputsToSelected = (): void => {
 };
 
 const refreshDiagnosticsAndJson = (): void => {
-  const diagnostics = buildV3Mesh2MotionTPoseBindDiagnostics(bindDocument);
+  const diagnostics = buildV3Mesh2MotionTPoseBindDiagnostics(bindDocument, {
+    referencePlacements: generatedDocument().placements,
+  });
   diagnosticsElement.textContent = diagnostics.items.length === 0
     ? 'ready'
     : diagnostics.items.map((item) => `${item.severity.toUpperCase()} ${item.slot} ${item.code}: ${item.message}`).join('\n');

@@ -47,6 +47,11 @@ export interface V3Mesh2MotionTPoseBindDiagnosticReport {
   items: V3Mesh2MotionTPoseBindDiagnosticItem[];
 }
 
+export interface V3Mesh2MotionTPoseBindDiagnosticOptions {
+  referencePlacements?: Partial<Record<V3CharacterSlotId, Pick<V3Mesh2MotionTPoseBindPlacement, 'rotation'>>>;
+  referenceRotationTolerance?: number;
+}
+
 export type V3Mesh2MotionTPoseBindEditorHotkeyAction =
   | { type: 'clearSelection' }
   | { type: 'resetSelected' }
@@ -259,6 +264,23 @@ const addDiagnostic = (
 const hasAnyMagnitudeOver = (tuple: readonly number[], threshold: number): boolean =>
   tuple.some((value) => Math.abs(value) > threshold);
 
+const tupleCloseTo = (left: readonly number[], right: readonly number[], tolerance: number): boolean =>
+  left.length === right.length &&
+  left.every((value, index) => Math.abs(value - (right[index] ?? 0)) <= tolerance);
+
+const hasExpectedSourcePoseRotation = (
+  placement: V3Mesh2MotionTPoseBindPlacement,
+  options: V3Mesh2MotionTPoseBindDiagnosticOptions
+): boolean => {
+  const reference = options.referencePlacements?.[placement.slot]?.rotation;
+  if (!reference) return false;
+  return tupleCloseTo(
+    placement.rotation,
+    reference,
+    Number.isFinite(options.referenceRotationTolerance) ? options.referenceRotationTolerance ?? 0.05 : 0.05
+  );
+};
+
 const mirrorPartnerMismatch = (
   placement: V3Mesh2MotionTPoseBindPlacement,
   partner: V3Mesh2MotionTPoseBindPlacement
@@ -270,7 +292,8 @@ const mirrorPartnerMismatch = (
 };
 
 export function buildV3Mesh2MotionTPoseBindDiagnostics(
-  document: V3Mesh2MotionTPoseBindDocument
+  document: V3Mesh2MotionTPoseBindDocument,
+  options: V3Mesh2MotionTPoseBindDiagnosticOptions = {}
 ): V3Mesh2MotionTPoseBindDiagnosticReport {
   const normalized = normalizeV3Mesh2MotionTPoseBindDocument(document);
   const items: V3Mesh2MotionTPoseBindDiagnosticItem[] = [];
@@ -295,7 +318,7 @@ export function buildV3Mesh2MotionTPoseBindDiagnostics(
     if (hasAnyMagnitudeOver(placement.position, EXTREME_POSITION)) {
       addDiagnostic(items, slot, 'extreme-position', 'warn', `${slot} position is outside the recommended bind range`);
     }
-    if (hasAnyMagnitudeOver(placement.rotation, EXTREME_ROTATION)) {
+    if (hasAnyMagnitudeOver(placement.rotation, EXTREME_ROTATION) && !hasExpectedSourcePoseRotation(placement, options)) {
       addDiagnostic(items, slot, 'extreme-rotation', 'warn', `${slot} rotation is outside the recommended bind range`);
     }
     if (placement.scale.some((value) => Math.abs(value) > EXTREME_SCALE || Math.abs(value) < 0.25)) {
