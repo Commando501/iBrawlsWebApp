@@ -66,6 +66,7 @@ import {
   V3_ARMOR_SURFACE_DEFAULT_OPTIONS,
   createV3VoxelArmorGroup,
 } from './v3VoxelArmorSurface';
+import { getV3ArmorFoundationMesh2MotionGeometry } from './v3ArmorFoundation';
 
 export interface V3SpartanBuildOptions extends V3RenderOptions {
   isEnemy?: boolean;
@@ -479,7 +480,10 @@ export function buildV3SpartanModel(options: V3SpartanBuildOptions = {}): THREE.
       | { geometry?: { position: readonly number[]; rotation: readonly number[]; scale: readonly number[] } }
       | undefined;
     recenterV3SlotGeometry(geometryGroup);
-    applyV3SlotGeometryPlacement(geometryGroup, slotPlacement?.geometry ?? {
+    const foundationGeometry = customPiece
+      ? undefined
+      : getV3ArmorFoundationMesh2MotionGeometry(part.slot);
+    applyV3SlotGeometryPlacement(geometryGroup, foundationGeometry ?? slotPlacement?.geometry ?? {
       position: [0, 0, 0],
       rotation: [0, 0, 0],
       scale: [1, 1, 1],

@@ -85,6 +85,12 @@ const normalizedQuaternionTuple = (value: readonly number[] | undefined): V3Quat
   return [quaternion.x, quaternion.y, quaternion.z, quaternion.w];
 };
 
+const inverseQuaternionEulerTuple = (value: readonly number[] | undefined): V3Vec3Tuple => {
+  const quaternion = new THREE.Quaternion(...normalizedQuaternionTuple(value)).invert().normalize();
+  const euler = new THREE.Euler().setFromQuaternion(quaternion, 'XYZ');
+  return [euler.x, euler.y, euler.z];
+};
+
 const applyTupleTransform = (
   object: THREE.Object3D,
   position: readonly number[] | undefined,
@@ -116,7 +122,9 @@ const createRuntimeSlotPlacement = (
     position: isV3Mesh2MotionNativeArmChainSlot(slot)
       ? [...ZERO_VEC3]
       : vec3Tuple(placement.geometry.position),
-    rotation: vec3Tuple(placement.geometry.rotation),
+    rotation: isV3Mesh2MotionNativeArmChainSlot(slot)
+      ? inverseQuaternionEulerTuple(placement.pivotWorldQuaternion)
+      : vec3Tuple(placement.geometry.rotation),
     scale: vec3Tuple(placement.geometry.scale, ONE_VEC3),
   },
 });

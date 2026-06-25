@@ -1721,9 +1721,9 @@ export const V3_MESH2MOTION_ARMOR_RIG = {
           0
         ],
         "rotation": [
+          0.396092,
           0,
-          0,
-          0
+          1.640957
         ],
         "scale": [
           1,
@@ -1786,9 +1786,9 @@ export const V3_MESH2MOTION_ARMOR_RIG = {
           0
         ],
         "rotation": [
+          0.396092,
           0,
-          0,
-          0
+          -1.640957
         ],
         "scale": [
           1,
@@ -1851,9 +1851,9 @@ export const V3_MESH2MOTION_ARMOR_RIG = {
           0
         ],
         "rotation": [
+          -0.035378,
           0,
-          0,
-          0
+          1.610278
         ],
         "scale": [
           1,
@@ -1916,9 +1916,9 @@ export const V3_MESH2MOTION_ARMOR_RIG = {
           0
         ],
         "rotation": [
+          -0.035378,
           0,
-          0,
-          0
+          -1.610278
         ],
         "scale": [
           1,
@@ -1981,9 +1981,9 @@ export const V3_MESH2MOTION_ARMOR_RIG = {
           0
         ],
         "rotation": [
+          -0.036468,
           0,
-          0,
-          0
+          1.656797
         ],
         "scale": [
           1,
@@ -2046,9 +2046,9 @@ export const V3_MESH2MOTION_ARMOR_RIG = {
           0
         ],
         "rotation": [
+          -0.036468,
           0,
-          0,
-          0
+          -1.656798
         ],
         "scale": [
           1,
@@ -2115,9 +2115,9 @@ export const V3_MESH2MOTION_ARMOR_RIG = {
           0
         ],
         "rotation": [
+          -0.358525,
           0,
-          0,
-          0
+          1.676207
         ],
         "scale": [
           1,
@@ -2184,9 +2184,9 @@ export const V3_MESH2MOTION_ARMOR_RIG = {
           0
         ],
         "rotation": [
+          -0.358525,
           0,
-          0,
-          0
+          -1.676207
         ],
         "scale": [
           1,

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import * as THREE from 'three';
 import {
   V3_ARMOR_FOUNDATION,
   V3_ARMOR_FOUNDATION_SCHEMA,
@@ -10,9 +11,14 @@ import {
   validateV3ArmorFoundationPiece,
 } from './v3ArmorFoundation';
 import { V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE } from './v3AegisObjSurfaceVoxels.generated';
+import {
+  deriveV3CanonicalRigContract,
+  type V3CanonicalJointName,
+} from './v3CanonicalRigContract';
 import { V3_MESH2MOTION_ARMOR_RIG } from './v3Mesh2MotionArmorRig.generated';
 import { V3_MESH2MOTION_NATIVE_ARM_CHAIN_SLOTS } from './v3Mesh2MotionArmorRig';
-import { V3_CHARACTER_SLOT_IDS } from './v3ModelTypes';
+import { V3_CHARACTER_SLOT_IDS, type V3CharacterSlotId } from './v3ModelTypes';
+import { V3_REFERENCE_SOURCE_BIND } from './v3ReferenceSourceBind.generated';
 
 type OptionalGeneratedRigSlotMetadata = {
   mirrorOf?: string | null;
@@ -29,7 +35,56 @@ const TEST_COLORS = {
 
 const coordSignature = (voxels: readonly { x: number; y: number; z: number }[]): string =>
   voxels.map((voxel) => `${voxel.x}:${voxel.y}:${voxel.z}`).sort().join('|');
-const ARM_CHAIN_SLOT_SET = new Set<string>(V3_MESH2MOTION_NATIVE_ARM_CHAIN_SLOTS);
+const SOURCE_BIND_JOINTS = {
+  upperArmLeft: ['shoulderLeft', 'elbowLeft'],
+  forearmLeft: ['elbowLeft', 'wristLeft'],
+  handLeft: ['wristLeft', 'gripLeft'],
+  upperArmRight: ['shoulderRight', 'elbowRight'],
+  forearmRight: ['elbowRight', 'wristRight'],
+  handRight: ['wristRight', 'gripRight'],
+} as const satisfies Partial<Record<
+  (typeof V3_MESH2MOTION_NATIVE_ARM_CHAIN_SLOTS)[number],
+  readonly [V3CanonicalJointName, V3CanonicalJointName]
+>>;
+
+const geometryWorldQuaternion = (slot: {
+  mesh2MotionPivotWorldQuaternion: readonly number[];
+  mesh2MotionGeometry: { rotation: readonly number[] };
+}): THREE.Quaternion => {
+  const pivot = new THREE.Quaternion(
+    slot.mesh2MotionPivotWorldQuaternion[0] ?? 0,
+    slot.mesh2MotionPivotWorldQuaternion[1] ?? 0,
+    slot.mesh2MotionPivotWorldQuaternion[2] ?? 0,
+    slot.mesh2MotionPivotWorldQuaternion[3] ?? 1
+  ).normalize();
+  const geometry = new THREE.Quaternion().setFromEuler(new THREE.Euler(
+    slot.mesh2MotionGeometry.rotation[0] ?? 0,
+    slot.mesh2MotionGeometry.rotation[1] ?? 0,
+    slot.mesh2MotionGeometry.rotation[2] ?? 0,
+    'XYZ'
+  ));
+  return pivot.multiply(geometry).normalize();
+};
+
+const exactSourceGeometryCenterForSlot = (slot: V3CharacterSlotId): THREE.Vector3 => {
+  const sourceSlot = V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.slots[slot];
+  const sourcePivot = V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.coordinateSystem.pivot;
+  const voxelScale = V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.coordinateSystem.voxelScale;
+  return new THREE.Vector3(
+    (((sourceSlot.bounds.min[0] + sourceSlot.bounds.max[0]) / 2) - sourcePivot[0]) * voxelScale,
+    ((sourceSlot.bounds.min[1] + sourceSlot.bounds.max[1]) / 2) * voxelScale,
+    (((sourceSlot.bounds.min[2] + sourceSlot.bounds.max[2]) / 2) - sourcePivot[2]) * voxelScale
+  );
+};
+
+const exactSourceBindPointForSlot = (slot: V3CharacterSlotId): THREE.Vector3 => {
+  const sourceBindJoints = SOURCE_BIND_JOINTS[slot as keyof typeof SOURCE_BIND_JOINTS];
+  if (!sourceBindJoints) return exactSourceGeometryCenterForSlot(slot);
+  const contract = deriveV3CanonicalRigContract();
+  const from = new THREE.Vector3(...contract.joints[sourceBindJoints[0]].position);
+  const to = new THREE.Vector3(...contract.joints[sourceBindJoints[1]].position);
+  return from.lerp(to, 0.5);
+};
 
 describe('V3 armor foundation', () => {
   it('derives an export-safe V3-only foundation from the exact OBJ source and Mesh2Motion rig', () => {
@@ -39,6 +94,7 @@ describe('V3 armor foundation', () => {
     assert.equal(V3_ARMOR_FOUNDATION.version, 1);
     assert.equal(V3_ARMOR_FOUNDATION.source.exactObjSurfaceHash, V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.source.hash);
     assert.equal(V3_ARMOR_FOUNDATION.source.mesh2MotionRigSha256, V3_MESH2MOTION_ARMOR_RIG.source.sha256);
+    assert.equal(V3_ARMOR_FOUNDATION.source.referenceSourceBindSha256, V3_REFERENCE_SOURCE_BIND.source.sha256);
     assert.deepEqual(Object.keys(V3_ARMOR_FOUNDATION.slots).sort(), [...V3_CHARACTER_SLOT_IDS].sort());
     assert.equal(serialized.includes('C:'), false);
     assert.equal(serialized.includes('G:'), false);
@@ -60,11 +116,21 @@ describe('V3 armor foundation', () => {
       assert.equal(foundationSlot.sourceJointName, rigSlot.sourceJointName);
       assert.equal(foundationSlot.endJointName, rigSlot.endJointName);
       assert.equal(foundationSlot.mirrorOf, optionalRigSlot.mirrorOf ?? null);
-      if (ARM_CHAIN_SLOT_SET.has(slot)) {
-        assert.deepEqual(foundationSlot.mesh2MotionGeometry.position, [0, 0, 0], `${slot} binding offset`);
-      }
+      assert.equal(foundationSlot.exactSourceGeometryCenter.length, 3);
+      assert.equal(foundationSlot.exactSourceBindPoint.length, 3);
+      assert.equal(foundationSlot.exactSourceBindOffset.length, 3);
+      assert.equal(foundationSlot.exactSourceRestBasis.xAxis.length, 3);
+      assert.equal(foundationSlot.exactSourceRestBasis.yAxis.length, 3);
+      assert.equal(foundationSlot.exactSourceRestBasis.zAxis.length, 3);
+      assert.equal(foundationSlot.exactSourceRestBasis.quaternion.length, 4);
       assert.match(foundationSlot.sourceHashes.exactObjSurfaceSlot, /^exact-obj-slot:fnv1a32:[0-9a-f]{8}$/);
       assert.match(foundationSlot.sourceHashes.mesh2MotionSlot, /^mesh2motion-slot:fnv1a32:[0-9a-f]{8}$/);
+      if (V3_MESH2MOTION_NATIVE_ARM_CHAIN_SLOTS.includes(slot as (typeof V3_MESH2MOTION_NATIVE_ARM_CHAIN_SLOTS)[number])) {
+        assert.match(
+          foundationSlot.sourceHashes.referenceSourceBindSlot ?? '',
+          /^reference-source-bind-slot:fnv1a32:[0-9a-f]{8}$/
+        );
+      }
       assert.ok(foundationSlot.referenceMaskRuns.length > 0, `${slot} should include local mask runs`);
       assert.ok(foundationSlot.jointClearance > 0, `${slot} should expose Mesh2Motion joint clearance`);
     }
@@ -77,6 +143,58 @@ describe('V3 armor foundation', () => {
     assert.equal(report.slotCount, V3_CHARACTER_SLOT_IDS.length);
     assert.equal(report.referenceVoxelCount, V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.metrics.totalVoxelCount);
     assert.deepEqual(report.issues, []);
+  });
+
+  it('maps exact-source arm-chain rest axes onto Mesh2Motion slot axes', () => {
+    for (const slot of V3_MESH2MOTION_NATIVE_ARM_CHAIN_SLOTS) {
+      const foundationSlot = V3_ARMOR_FOUNDATION.slots[slot];
+      const transformedSourceAxis = new THREE.Vector3(...foundationSlot.exactSourceRestBasis.yAxis)
+        .applyQuaternion(geometryWorldQuaternion(foundationSlot))
+        .normalize();
+      const targetAxis = new THREE.Vector3(...V3_MESH2MOTION_ARMOR_RIG.slots[slot].basis.yAxis).normalize();
+
+      assert.ok(
+        transformedSourceAxis.angleTo(targetAxis) <= 0.00001,
+        `${slot} source rest axis should bind onto Mesh2Motion slot axis`
+      );
+    }
+  });
+
+  it('uses Blender reference bind frames as the arm-chain source rest authority', () => {
+    assert.equal(V3_REFERENCE_SOURCE_BIND.diagnostics.missingRequiredBones.length, 0);
+    assert.equal(V3_REFERENCE_SOURCE_BIND.diagnostics.armChainMaxVerticalDelta < 0.04, true);
+
+    for (const slot of V3_MESH2MOTION_NATIVE_ARM_CHAIN_SLOTS) {
+      const referenceSlot = V3_REFERENCE_SOURCE_BIND.slots[slot];
+      assert.ok(referenceSlot, `${slot} should have a Blender source bind slot`);
+      assert.deepEqual(
+        V3_ARMOR_FOUNDATION.slots[slot].exactSourceRestBasis.yAxis,
+        referenceSlot.sourceBasis.yAxis
+      );
+    }
+    assert.equal(V3_ARMOR_FOUNDATION.slots.upperArmLeft.exactSourceRestBasis.yAxis[0] > 0.98, true);
+    assert.equal(V3_ARMOR_FOUNDATION.slots.upperArmRight.exactSourceRestBasis.yAxis[0] < -0.98, true);
+  });
+
+  it('maps exact-source arm-chain bind points onto Mesh2Motion pivots', () => {
+    for (const slot of V3_MESH2MOTION_NATIVE_ARM_CHAIN_SLOTS) {
+      const foundationSlot = V3_ARMOR_FOUNDATION.slots[slot];
+      const sourceBindOffset = exactSourceBindPointForSlot(slot)
+        .sub(exactSourceGeometryCenterForSlot(slot));
+      const geometryRotation = new THREE.Quaternion().setFromEuler(new THREE.Euler(
+        foundationSlot.mesh2MotionGeometry.rotation[0],
+        foundationSlot.mesh2MotionGeometry.rotation[1],
+        foundationSlot.mesh2MotionGeometry.rotation[2],
+        'XYZ'
+      ));
+      const mappedBindOffset = sourceBindOffset.applyQuaternion(geometryRotation)
+        .add(new THREE.Vector3(...foundationSlot.mesh2MotionGeometry.position));
+
+      assert.ok(
+        mappedBindOffset.length() <= 0.00001,
+        `${slot} source bind point should land on the Mesh2Motion pivot`
+      );
+    }
   });
 
   it('creates reference-locked render voxels without changing the exact OBJ silhouette', () => {

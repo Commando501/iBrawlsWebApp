@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { join, resolve } from 'node:path';
+import * as THREE from 'three';
 import {
   V3_MESH2MOTION_CLEAN_CLIP_BINDINGS,
   V3_MESH2MOTION_SOURCE_CLIP_NAMES,
@@ -13,6 +14,25 @@ import {
 import { V3_MESH2MOTION_ARMOR_RIG_SCHEMA } from '../components/v3/v3Mesh2MotionArmorRigContract';
 
 const sourceFilePath = join(process.cwd(), 'reference', 'mesh2motion-v3', 'exported-model.glb');
+
+const placementGeometryWorldQuaternion = (placement: {
+  pivotWorldQuaternion: readonly number[];
+  geometry: { rotation: readonly number[] };
+}): THREE.Quaternion => {
+  const pivot = new THREE.Quaternion(
+    placement.pivotWorldQuaternion[0] ?? 0,
+    placement.pivotWorldQuaternion[1] ?? 0,
+    placement.pivotWorldQuaternion[2] ?? 0,
+    placement.pivotWorldQuaternion[3] ?? 1
+  ).normalize();
+  const geometry = new THREE.Quaternion().setFromEuler(new THREE.Euler(
+    placement.geometry.rotation[0] ?? 0,
+    placement.geometry.rotation[1] ?? 0,
+    placement.geometry.rotation[2] ?? 0,
+    'XYZ'
+  ));
+  return pivot.multiply(geometry).normalize();
+};
 
 describe('v3Mesh2MotionImporter', () => {
   it('imports the grouped Mesh2Motion GLB into deterministic sanitized clip data', () => {
@@ -75,6 +95,10 @@ describe('v3Mesh2MotionImporter', () => {
     assert.equal(handRight.endJointName, 'index_01_r');
     assert.deepEqual(handRight.pivotCenter, handRight.pivotWorldPosition);
     assert.deepEqual(handRight.geometry.position, [0, 0, 0]);
+    assert.ok(
+      new THREE.Quaternion().angleTo(placementGeometryWorldQuaternion(handRight)) <= 0.00001,
+      'handRight geometry rotation should cancel the Mesh2Motion rest pivot'
+    );
     assert.equal(handRight.basis.xAxis.length, 3);
     assert.equal(handRight.basis.yAxis.length, 3);
     assert.equal(handRight.basis.zAxis.length, 3);

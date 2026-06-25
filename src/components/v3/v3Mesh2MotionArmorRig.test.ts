@@ -23,6 +23,20 @@ const tupleCloseTo = (
   tolerance = 0.000001
 ): boolean => actual.every((value, index) => Math.abs(value - expected[index]) <= tolerance);
 
+const geometryWorldQuaternion = (placement: {
+  pivotWorldQuaternion: readonly number[];
+  geometry: { rotation: readonly number[] };
+}): THREE.Quaternion => {
+  const pivot = quaternionFromTuple(placement.pivotWorldQuaternion);
+  const geometry = new THREE.Quaternion().setFromEuler(new THREE.Euler(
+    placement.geometry.rotation[0] ?? 0,
+    placement.geometry.rotation[1] ?? 0,
+    placement.geometry.rotation[2] ?? 0,
+    'XYZ'
+  ));
+  return pivot.multiply(geometry).normalize();
+};
+
 describe('v3Mesh2MotionArmorRig', () => {
   it('ships a V3-owned generated Mesh2Motion armor rig contract without raw source payloads', () => {
     const serialized = JSON.stringify(V3_MESH2MOTION_ARMOR_RIG);
@@ -105,6 +119,14 @@ describe('v3Mesh2MotionArmorRig', () => {
 
       assert.equal(tupleCloseTo(generatedPlacement.geometry.position, [0, 0, 0]), true, `${slot} generated offset`);
       assert.equal(tupleCloseTo(runtimePlacement.geometry.position, [0, 0, 0]), true, `${slot} runtime offset`);
+      assert.ok(
+        new THREE.Quaternion().angleTo(geometryWorldQuaternion(generatedPlacement)) <= 0.00001,
+        `${slot} generated geometry rotation should cancel the Mesh2Motion rest pivot`
+      );
+      assert.ok(
+        new THREE.Quaternion().angleTo(geometryWorldQuaternion(runtimePlacement)) <= 0.00001,
+        `${slot} runtime geometry rotation should cancel the Mesh2Motion rest pivot`
+      );
     }
   });
 

@@ -2,6 +2,10 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
 import { buildV3SpartanModel } from '../components/v3/VoxelModelsV3';
+import {
+  V3_ARMOR_FOUNDATION,
+  getV3ArmorFoundationMesh2MotionGeometry,
+} from '../components/v3/v3ArmorFoundation';
 import { V3_MESH2MOTION_ARMOR_RIG } from '../components/v3/v3Mesh2MotionArmorRig.generated';
 import { V3_CHARACTER_SLOT_IDS, type V3CharacterSlotId } from '../components/v3/v3ModelTypes';
 import {
@@ -16,7 +20,9 @@ import {
 } from './v3Mesh2MotionTPoseBindEditorCore';
 
 const SOURCE_HASH = V3_MESH2MOTION_ARMOR_RIG.source.sha256;
-const LOCAL_STORAGE_KEY = `ibrawls_v3_mesh2motion_tpose_bind_editor:${SOURCE_HASH}`;
+const FOUNDATION_HASH = V3_ARMOR_FOUNDATION.source.exactObjSurfaceHash;
+const FOUNDATION_BIND_VERSION = 'blender-source-bind-v1';
+const LOCAL_STORAGE_KEY = `ibrawls_v3_mesh2motion_tpose_bind_editor:${SOURCE_HASH}:${FOUNDATION_HASH}:${FOUNDATION_BIND_VERSION}`;
 
 const canvas = document.getElementById('bind-canvas') as HTMLCanvasElement;
 const statusElement = document.getElementById('status') as HTMLSpanElement;
@@ -134,7 +140,7 @@ const generatedDocument = (): V3Mesh2MotionTPoseBindDocument => normalizeV3Mesh2
   source: { meshHash: SOURCE_HASH, authoringSpace: 'mesh2motion-native-v3' },
   selectedSlot: 'helmet',
   placements: Object.fromEntries(V3_CHARACTER_SLOT_IDS.map((slot) => {
-    const placement = V3_MESH2MOTION_ARMOR_RIG.slots[slot].geometry;
+    const placement = getV3ArmorFoundationMesh2MotionGeometry(slot);
     return [slot, {
       slot,
       position: placement.position,

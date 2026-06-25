@@ -398,6 +398,12 @@ const tupleVec3 = (value: THREE.Vector3 | readonly number[]): V3Vec3Tuple => {
   ];
 };
 
+const inverseQuaternionEulerTuple = (quaternion: THREE.Quaternion): V3Vec3Tuple => {
+  const inverse = quaternion.clone().invert().normalize();
+  const euler = new THREE.Euler().setFromQuaternion(inverse, 'XYZ');
+  return tupleVec3([euler.x, euler.y, euler.z]);
+};
+
 const vectorFromTuple = (value: readonly number[]): THREE.Vector3 =>
   new THREE.Vector3(value[0] ?? 0, value[1] ?? 0, value[2] ?? 0);
 
@@ -1028,12 +1034,16 @@ const buildArmorSlotPlacementArtifact = (
     const basis = buildSlotBasis(slot, spec, worldForJoint);
     const pivotWorldQuaternion = basis.quaternion;
     const pivotQuaternion = new THREE.Quaternion(...pivotWorldQuaternion).normalize();
-    const geometryWorldCenter = isV3Mesh2MotionNativeArmChainSlot(slot)
+    const nativeArmChainSlot = isV3Mesh2MotionNativeArmChainSlot(slot);
+    const geometryWorldCenter = nativeArmChainSlot
       ? center.clone()
       : new THREE.Vector3().fromArray(canonicalContract.slotGeometryOffsets[slot].geometryCenter);
     const geometryLocalPosition = geometryWorldCenter
       .sub(center)
       .applyQuaternion(pivotQuaternion.clone().invert());
+    const geometryLocalRotation = nativeArmChainSlot
+      ? inverseQuaternionEulerTuple(pivotQuaternion)
+      : ZERO_VEC3;
     placements[slot] = {
       slot,
       sourceJointName: spec.sourceJointName,
@@ -1045,7 +1055,7 @@ const buildArmorSlotPlacementArtifact = (
       basis,
       geometry: {
         position: tupleVec3(geometryLocalPosition),
-        rotation: [0, 0, 0],
+        rotation: geometryLocalRotation,
         scale: [1, 1, 1],
       },
     };
