@@ -1488,6 +1488,9 @@ export function buildV3Mesh2MotionArmorRigArtifact(
     schemaVersion: V3_MESH2MOTION_ARMOR_RIG_SCHEMA,
     version: 1,
     source: parsed.source,
+    calibration: {
+      sourceToTargetScale: context.calibration.sourceToTargetScale,
+    },
     skeleton: buildArmorRigSkeletonArtifact(skeleton),
     slots: buildArmorSlotPlacementArtifact(context),
   };

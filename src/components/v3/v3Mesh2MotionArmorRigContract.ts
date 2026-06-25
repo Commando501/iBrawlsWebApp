@@ -27,6 +27,10 @@ export interface V3Mesh2MotionArmorRigSkeleton {
   joints: readonly V3Mesh2MotionArmorRigSkeletonJoint[];
 }
 
+export interface V3Mesh2MotionArmorRigCalibration {
+  sourceToTargetScale: number;
+}
+
 export interface V3Mesh2MotionArmorSlotSpec {
   slot: V3CharacterSlotId;
   sourceJointName: string;
@@ -61,6 +65,7 @@ export interface V3Mesh2MotionArmorRigArtifact {
   schemaVersion: typeof V3_MESH2MOTION_ARMOR_RIG_SCHEMA;
   version: 1;
   source: V3Mesh2MotionArmorRigSourceSummary;
+  calibration: V3Mesh2MotionArmorRigCalibration;
   skeleton: V3Mesh2MotionArmorRigSkeleton;
   slots: Readonly<Record<V3CharacterSlotId, V3Mesh2MotionArmorSlotPlacement>>;
 }

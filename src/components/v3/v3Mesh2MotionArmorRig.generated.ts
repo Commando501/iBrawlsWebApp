@@ -10,6 +10,9 @@ export const V3_MESH2MOTION_ARMOR_RIG = {
     "sha256": "30c44e6e71cf98322cad6a75978bdf36d0746fb060ac9981c42982c2c7bdc8f2",
     "generator": "THREE.GLTFExporter r183"
   },
+  "calibration": {
+    "sourceToTargetScale": 0.844085
+  },
   "skeleton": {
     "sourceJointCount": 56,
     "joints": [

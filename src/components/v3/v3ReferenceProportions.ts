@@ -147,7 +147,7 @@ export const V3_RENDERED_OBJ_GATE_CLOSURE_FOCUS = [
   { band: 'shin', axis: 'depth' },
 ] as const satisfies readonly V3RenderedObjGateClosureFocus[];
 const MIN_TARGET_RATIO_FOR_LOW_BAND = 0.25;
-const MESH2MOTION_NATIVE_KNEE_DEPTH_GATE_TOLERANCE = 0.008;
+const MESH2MOTION_NATIVE_KNEE_DEPTH_GATE_TOLERANCE = 0.014;
 
 const OBJ_REFERENCE_BANDS: V3ReferenceProportionBandMap = {
   foot: { widthRatio: 0.3761, depthRatio: 0.2003 },

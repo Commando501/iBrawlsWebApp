@@ -28,6 +28,12 @@ type OptionalGeneratedRigSlotMetadata = {
   mirrorOf?: string | null;
 };
 
+type GeneratedArmorRigWithCalibration = typeof V3_MESH2MOTION_ARMOR_RIG & {
+  calibration?: {
+    sourceToTargetScale?: number;
+  };
+};
+
 const TEST_COLORS = {
   primary: '#101010',
   secondary: '#202020',
@@ -40,6 +46,8 @@ const TEST_COLORS = {
 const coordSignature = (voxels: readonly { x: number; y: number; z: number }[]): string =>
   voxels.map((voxel) => `${voxel.x}:${voxel.y}:${voxel.z}`).sort().join('|');
 const ARM_CHAIN_SLOT_SET = new Set<V3CharacterSlotId>(V3_MESH2MOTION_NATIVE_ARM_CHAIN_SLOTS);
+const LIMB_CHAIN_SLOT_SET = new Set<V3CharacterSlotId>(V3_MESH2MOTION_NATIVE_LIMB_CHAIN_SLOTS);
+const OBJ_REFERENCE_BODY_SLOT_SET = new Set<V3CharacterSlotId>(['neck', 'chest', 'pelvis', 'back']);
 const SOURCE_BIND_JOINTS = {
   shoulderLeft: ['shoulderLeft', 'elbowLeft'],
   upperArmLeft: ['shoulderLeft', 'elbowLeft'],
@@ -88,12 +96,10 @@ const basisQuaternion = (basis: { quaternion: readonly number[] }): THREE.Quater
   ).normalize();
 
 const exactSourceGeometryCenterForSlot = (slot: V3CharacterSlotId): THREE.Vector3 => {
-  const sourceSlot = ARM_CHAIN_SLOT_SET.has(slot)
-    ? V3_REFERENCE_LIMB_VOXELS.slots[slot as keyof typeof V3_REFERENCE_LIMB_VOXELS.slots]
-    : V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.slots[slot];
-  const coordinateSystem = ARM_CHAIN_SLOT_SET.has(slot)
-    ? V3_REFERENCE_LIMB_VOXELS.coordinateSystem
-    : V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.coordinateSystem;
+  const sourceSlot = expectedFoundationSourceSlot(slot);
+  const coordinateSystem = OBJ_REFERENCE_BODY_SLOT_SET.has(slot)
+    ? V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.coordinateSystem
+    : V3_REFERENCE_LIMB_VOXELS.coordinateSystem;
   const sourcePivot = coordinateSystem.pivot;
   const voxelScale = coordinateSystem.voxelScale;
   assert.ok(sourceSlot, `${slot} should have a resolved source slot`);
@@ -108,7 +114,7 @@ const exactSourceBindPointForSlot = (slot: V3CharacterSlotId): THREE.Vector3 => 
   const referenceSourceSlot = V3_REFERENCE_SOURCE_BIND.slots[
     slot as keyof typeof V3_REFERENCE_SOURCE_BIND.slots
   ];
-  if (ARM_CHAIN_SLOT_SET.has(slot) && referenceSourceSlot) {
+  if (LIMB_CHAIN_SLOT_SET.has(slot) && referenceSourceSlot) {
     const source = new THREE.Vector3(...referenceSourceSlot.sourceRestWorldPosition);
     const end = new THREE.Vector3(...referenceSourceSlot.sourceEndRestWorldPosition);
     return source.lerp(end, 0.5);
@@ -122,12 +128,10 @@ const exactSourceBindPointForSlot = (slot: V3CharacterSlotId): THREE.Vector3 => 
 };
 
 const exactSourceVoxelMajorAxisForSlot = (slot: V3CharacterSlotId): THREE.Vector3 => {
-  const sourceSlot = ARM_CHAIN_SLOT_SET.has(slot)
-    ? V3_REFERENCE_LIMB_VOXELS.slots[slot as keyof typeof V3_REFERENCE_LIMB_VOXELS.slots]
-    : V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.slots[slot];
-  const coordinateSystem = ARM_CHAIN_SLOT_SET.has(slot)
-    ? V3_REFERENCE_LIMB_VOXELS.coordinateSystem
-    : V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.coordinateSystem;
+  const sourceSlot = expectedFoundationSourceSlot(slot);
+  const coordinateSystem = OBJ_REFERENCE_BODY_SLOT_SET.has(slot)
+    ? V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.coordinateSystem
+    : V3_REFERENCE_LIMB_VOXELS.coordinateSystem;
   const sourcePivot = coordinateSystem.pivot;
   const voxelScale = coordinateSystem.voxelScale;
   assert.ok(sourceSlot, `${slot} should have a resolved source slot`);
@@ -185,12 +189,26 @@ const exactSourceVoxelMajorAxisForSlot = (slot: V3CharacterSlotId): THREE.Vector
 };
 
 const expectedFoundationVoxelCount = (): number => V3_CHARACTER_SLOT_IDS.reduce((total, slot) => {
-  if (ARM_CHAIN_SLOT_SET.has(slot)) {
-    const limbSlot = V3_REFERENCE_LIMB_VOXELS.slots[slot as keyof typeof V3_REFERENCE_LIMB_VOXELS.slots];
-    return total + (limbSlot?.voxelCount ?? 0);
+  if (OBJ_REFERENCE_BODY_SLOT_SET.has(slot)) {
+    return total + V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.slots[slot].voxelCount;
   }
-  return total + V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.slots[slot].voxelCount;
+  const limbSlot = V3_REFERENCE_LIMB_VOXELS.slots[slot as keyof typeof V3_REFERENCE_LIMB_VOXELS.slots];
+  return total + (limbSlot?.voxelCount ?? 0);
 }, 0);
+
+const expectedFoundationSourceSlot = (slot: V3CharacterSlotId) => (
+  OBJ_REFERENCE_BODY_SLOT_SET.has(slot)
+    ? V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.slots[slot]
+    : V3_REFERENCE_LIMB_VOXELS.slots[slot as keyof typeof V3_REFERENCE_LIMB_VOXELS.slots]
+);
+
+const mesh2MotionSourceToTargetScale = (): number => {
+  const scale = (V3_MESH2MOTION_ARMOR_RIG as GeneratedArmorRigWithCalibration)
+    .calibration?.sourceToTargetScale;
+  assert.equal(Number.isFinite(scale), true, 'Mesh2Motion armor rig should expose source-to-target calibration scale');
+  assert.ok((scale ?? 0) > 0.5 && (scale ?? 0) < 1);
+  return scale ?? 1;
+};
 
 describe('V3 armor foundation', () => {
   it('derives an export-safe V3-only foundation from the exact OBJ source and Mesh2Motion rig', () => {
@@ -211,9 +229,7 @@ describe('V3 armor foundation', () => {
 
     for (const slot of V3_CHARACTER_SLOT_IDS) {
       const foundationSlot = V3_ARMOR_FOUNDATION.slots[slot];
-      const sourceSlot = ARM_CHAIN_SLOT_SET.has(slot)
-        ? V3_REFERENCE_LIMB_VOXELS.slots[slot as keyof typeof V3_REFERENCE_LIMB_VOXELS.slots]
-        : V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.slots[slot];
+      const sourceSlot = expectedFoundationSourceSlot(slot);
       const rigSlot = V3_MESH2MOTION_ARMOR_RIG.slots[slot];
       const optionalRigSlot = rigSlot as typeof rigSlot & OptionalGeneratedRigSlotMetadata;
       assert.ok(sourceSlot, `${slot} should have a resolved source slot`);
@@ -248,15 +264,20 @@ describe('V3 armor foundation', () => {
         assert.equal(foundationSlot.referenceSourceBindBasis, null);
         assert.equal(foundationSlot.sourcePoseCorrectionAngleDegrees, 0);
       }
-      if (V3_MESH2MOTION_NATIVE_ARM_CHAIN_SLOTS.includes(slot as (typeof V3_MESH2MOTION_NATIVE_ARM_CHAIN_SLOTS)[number])) {
+      if (OBJ_REFERENCE_BODY_SLOT_SET.has(slot)) {
+        assert.match(
+          foundationSlot.sourceHashes.exactObjSurfaceSlot ?? '',
+          /^exact-obj-slot:fnv1a32:[0-9a-f]{8}$/,
+          `${slot} should record the OBJ source slot hash`
+        );
+        assert.equal(foundationSlot.sourceHashes.referenceLimbVoxelSlot, null);
+      } else {
         assert.equal(foundationSlot.sourceHashes.exactObjSurfaceSlot, null);
         assert.match(
           foundationSlot.sourceHashes.referenceLimbVoxelSlot ?? '',
-          /^reference-limb-voxel-slot:fnv1a32:[0-9a-f]{8}$/
+          /^reference-limb-voxel-slot:fnv1a32:[0-9a-f]{8}$/,
+          `${slot} should record the regenerated GLB source slot hash`
         );
-      } else {
-        assert.match(foundationSlot.sourceHashes.exactObjSurfaceSlot ?? '', /^exact-obj-slot:fnv1a32:[0-9a-f]{8}$/);
-        assert.equal(foundationSlot.sourceHashes.referenceLimbVoxelSlot, null);
       }
       assert.ok(foundationSlot.referenceMaskRuns.length > 0, `${slot} should include local mask runs`);
       assert.ok(foundationSlot.jointClearance > 0, `${slot} should expose Mesh2Motion joint clearance`);
@@ -272,19 +293,68 @@ describe('V3 armor foundation', () => {
     assert.deepEqual(report.issues, []);
   });
 
-  it('maps source-space limb bind bases onto Mesh2Motion rest pivots', () => {
+  it('uses the regenerated GLB source artifact for helmet and limbs', () => {
+    for (const slot of V3_CHARACTER_SLOT_IDS) {
+      if (OBJ_REFERENCE_BODY_SLOT_SET.has(slot)) continue;
+      const sourceSlot = V3_REFERENCE_LIMB_VOXELS.slots[slot as keyof typeof V3_REFERENCE_LIMB_VOXELS.slots];
+      const foundationSlot = V3_ARMOR_FOUNDATION.slots[slot];
+
+      assert.ok(sourceSlot, `${slot} should have regenerated GLB source voxels`);
+      assert.equal(foundationSlot.sourceHashes.exactObjSurfaceSlot, null, `${slot} should not bind from the legacy OBJ source`);
+      assert.match(
+        foundationSlot.sourceHashes.referenceLimbVoxelSlot ?? '',
+        /^reference-limb-voxel-slot:fnv1a32:[0-9a-f]{8}$/,
+        `${slot} should bind from the regenerated GLB source artifact`
+      );
+    }
+  });
+
+  it('keeps core body occupancy locked to the OBJ reference instead of the underfilled rigged GLB body', () => {
+    for (const slot of OBJ_REFERENCE_BODY_SLOT_SET) {
+      const foundationSlot = V3_ARMOR_FOUNDATION.slots[slot];
+      const objSlot = V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.slots[slot];
+
+      assert.equal(foundationSlot.referenceVoxelCount, objSlot.voxelCount, `${slot} should use OBJ reference occupancy`);
+      assert.equal(foundationSlot.referenceRunCount, objSlot.runCount, `${slot} should use OBJ reference runs`);
+      assert.match(
+        foundationSlot.sourceHashes.exactObjSurfaceSlot ?? '',
+        /^exact-obj-slot:fnv1a32:[0-9a-f]{8}$/,
+        `${slot} should bind from the OBJ reference source`
+      );
+      assert.equal(
+        foundationSlot.sourceHashes.referenceLimbVoxelSlot,
+        null,
+        `${slot} should not bind from the underfilled GLB body source`
+      );
+      assert.deepEqual(
+        foundationSlot.mesh2MotionGeometry.scale,
+        [1, 1, 1],
+        `${slot} OBJ reference geometry should stay at OBJ authoring scale`
+      );
+    }
+  });
+
+  it('retargets regenerated GLB source geometry to the Mesh2Motion calibration scale', () => {
+    const scale = mesh2MotionSourceToTargetScale();
+
+    for (const slot of V3_CHARACTER_SLOT_IDS) {
+      if (OBJ_REFERENCE_BODY_SLOT_SET.has(slot)) continue;
+      assert.deepEqual(
+        V3_ARMOR_FOUNDATION.slots[slot].mesh2MotionGeometry.scale,
+        [scale, scale, scale],
+        `${slot} GLB source geometry should be scaled into Mesh2Motion target space`
+      );
+    }
+  });
+
+  it('keeps regenerated limb voxel geometry world-aligned under Mesh2Motion rest pivots', () => {
     for (const slot of V3_MESH2MOTION_NATIVE_LIMB_CHAIN_SLOTS) {
       const foundationSlot = V3_ARMOR_FOUNDATION.slots[slot];
-      const rigSlot = V3_MESH2MOTION_ARMOR_RIG.slots[slot];
       const worldGeometryRotation = geometryWorldQuaternion(foundationSlot);
-      const mappedSourceBasis = worldGeometryRotation
-        .multiply(basisQuaternion(foundationSlot.exactSourceRestBasis))
-        .normalize();
-      const rigBasis = basisQuaternion(rigSlot.basis);
 
       assert.ok(
-        rigBasis.angleTo(mappedSourceBasis) <= 0.0001,
-        `${slot} source bind basis should align to the Mesh2Motion rest basis`
+        worldGeometryRotation.angleTo(new THREE.Quaternion()) <= 0.0001,
+        `${slot} regenerated voxel geometry should not inherit palm/limb roll from the Mesh2Motion pivot`
       );
     }
   });
@@ -294,7 +364,7 @@ describe('V3 armor foundation', () => {
     assert.equal(V3_REFERENCE_SOURCE_BIND.diagnostics.armChainMaxVerticalDelta < 0.04, true);
     assert.equal(V3_REFERENCE_LIMB_VOXELS.diagnostics.missingArmMeshNodes.length, 0);
 
-    for (const slot of V3_MESH2MOTION_NATIVE_ARM_CHAIN_SLOTS) {
+    for (const slot of V3_MESH2MOTION_NATIVE_LIMB_CHAIN_SLOTS) {
       const referenceSlot = V3_REFERENCE_SOURCE_BIND.slots[slot];
       const foundationSlot = V3_ARMOR_FOUNDATION.slots[slot];
       const limbSlot = V3_REFERENCE_LIMB_VOXELS.slots[slot];
@@ -312,6 +382,10 @@ describe('V3 armor foundation', () => {
         `${slot} should bind using the regenerated GLB limb source basis`
       );
       assert.ok(
+        basisQuaternion(foundationSlot.exactSourceRestBasis).angleTo(basisQuaternion(referenceSlot.sourceBasis)) <= 0.0001,
+        `${slot} should preserve the full Blender source bind basis, including roll`
+      );
+      assert.ok(
         foundationSlot.sourcePoseCorrectionAngleDegrees < 0.001,
         `${slot} regenerated limb source should be close to the Blender T-pose basis`
       );
@@ -320,10 +394,13 @@ describe('V3 armor foundation', () => {
   });
 
   it('maps exact-source limb-chain bind points onto Mesh2Motion pivots', () => {
+    const scale = mesh2MotionSourceToTargetScale();
+
     for (const slot of V3_MESH2MOTION_NATIVE_LIMB_CHAIN_SLOTS) {
       const foundationSlot = V3_ARMOR_FOUNDATION.slots[slot];
       const sourceBindOffset = exactSourceBindPointForSlot(slot)
-        .sub(exactSourceGeometryCenterForSlot(slot));
+        .sub(exactSourceGeometryCenterForSlot(slot))
+        .multiplyScalar(scale);
       const geometryRotation = new THREE.Quaternion().setFromEuler(new THREE.Euler(
         foundationSlot.mesh2MotionGeometry.rotation[0],
         foundationSlot.mesh2MotionGeometry.rotation[1],
@@ -340,7 +417,7 @@ describe('V3 armor foundation', () => {
     }
   });
 
-  it('creates reference-locked render voxels without changing the exact OBJ silhouette', () => {
+  it('creates regenerated GLB render voxels for the helmet foundation slot', () => {
     const helmet = createV3ReferenceLockedPartVoxels('helmet', TEST_COLORS, undefined, {
       qualityTier: 'desktop',
       sourceFidelity: 'exact',
@@ -350,14 +427,19 @@ describe('V3 armor foundation', () => {
       sourceFidelity: 'runtimeLod',
     });
 
-    assert.equal(helmet.length, V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.slots.helmet.voxelCount);
+    assert.equal(helmet.length, V3_REFERENCE_LIMB_VOXELS.slots.helmet.voxelCount);
+    assert.notEqual(helmet.length, V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.slots.helmet.voxelCount);
     assert.ok(runtimeHelmet.length < helmet.length);
-    assert.ok(helmet.some((voxel) => voxel.color === TEST_COLORS.visor && voxel.emissive === true));
+    assert.ok(helmet.some((voxel) => voxel.emissive === true));
     assert.equal(new Set(helmet.map((voxel) => `${voxel.x}:${voxel.y}:${voxel.z}`)).size, helmet.length);
   });
 
-  it('creates regenerated GLB T-pose limb voxels for arm-chain slots', () => {
+  it('creates regenerated GLB T-pose limb voxels for native limb-chain slots', () => {
     const forearm = createV3ReferenceLockedPartVoxels('forearmLeft', TEST_COLORS, undefined, {
+      qualityTier: 'desktop',
+      sourceFidelity: 'exact',
+    });
+    const shin = createV3ReferenceLockedPartVoxels('shinLeft', TEST_COLORS, undefined, {
       qualityTier: 'desktop',
       sourceFidelity: 'exact',
     });
@@ -367,6 +449,9 @@ describe('V3 armor foundation', () => {
     assert.equal(new Set(forearm.map((voxel) => `${voxel.x}:${voxel.y}:${voxel.z}`)).size, forearm.length);
     assert.equal(forearm.some((voxel) => voxel.color === TEST_COLORS.secondary), true);
     assert.equal(forearm.some((voxel) => voxel.color === TEST_COLORS.dark), true);
+    assert.equal(shin.length, V3_REFERENCE_LIMB_VOXELS.slots.shinLeft.voxelCount);
+    assert.notEqual(shin.length, V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.slots.shinLeft.voxelCount);
+    assert.equal(new Set(shin.map((voxel) => `${voxel.x}:${voxel.y}:${voxel.z}`)).size, shin.length);
   });
 
   it('generates deterministic reference-locked V3 armor from theme text', () => {

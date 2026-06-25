@@ -25,7 +25,7 @@ const FOUNDATION_HASH = [
   V3_ARMOR_FOUNDATION.source.referenceSourceBindSha256,
   V3_ARMOR_FOUNDATION.source.referenceLimbVoxelSha256,
 ].join(':');
-const FOUNDATION_BIND_VERSION = 'source-bone-roll-limb-bind-v3';
+const FOUNDATION_BIND_VERSION = 'all-slot-glb-calibrated-scale-bind-v1';
 const LOCAL_STORAGE_KEY = `ibrawls_v3_mesh2motion_tpose_bind_editor:${SOURCE_HASH}:${FOUNDATION_HASH}:${FOUNDATION_BIND_VERSION}`;
 
 const canvas = document.getElementById('bind-canvas') as HTMLCanvasElement;

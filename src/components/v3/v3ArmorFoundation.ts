@@ -62,7 +62,8 @@ export interface V3ArmorFoundationSourceSummary {
   referenceSourceBindSha256: string;
   referenceLimbVoxelSchema: typeof V3_REFERENCE_LIMB_VOXELS.schemaVersion;
   referenceLimbVoxelSha256: string;
-  generator: 'sanitized-obj-surface-plus-mesh2motion-rig-plus-blender-source-bind-plus-regenerated-limb-voxels';
+  mesh2MotionSourceToTargetScale: number;
+  generator: 'sanitized-glb-source-plus-mesh2motion-rig-plus-blender-source-bind';
 }
 
 export interface V3ArmorFoundationGeometryTransform {
@@ -202,11 +203,22 @@ const resolvedSourceSlotHashPayload = (sourceSlot: V3FoundationSourceSlot) => ({
   runs: sourceSlot.runs,
 });
 
+const V3_OBJ_REFERENCE_BODY_SLOTS = new Set<V3CharacterSlotId>(['neck', 'chest', 'pelvis', 'back']);
+
 const getV3FoundationSourceContext = (slot: V3CharacterSlotId): V3FoundationSourceContext => {
+  if (V3_OBJ_REFERENCE_BODY_SLOTS.has(slot)) {
+    return {
+      sourceKind: 'exact-obj',
+      sourceSlot: V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.slots[slot],
+      rolePalette: V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.rolePalette,
+      sourcePivot: V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.coordinateSystem.pivot,
+      voxelScale: V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.coordinateSystem.voxelScale,
+    };
+  }
   const limbSlot = V3_REFERENCE_LIMB_VOXELS.slots[
     slot as keyof typeof V3_REFERENCE_LIMB_VOXELS.slots
   ] as V3FoundationSourceSlot | undefined;
-  if (isV3Mesh2MotionNativeArmChainSlot(slot) && limbSlot) {
+  if (limbSlot) {
     return {
       sourceKind: 'reference-limb',
       sourceSlot: limbSlot,
@@ -232,6 +244,7 @@ const V3_FOUNDATION_RENDERABLE_SOURCE = {
   },
   slots: {
     ...V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.slots,
+    helmet: V3_REFERENCE_LIMB_VOXELS.slots.helmet,
     shoulderLeft: V3_REFERENCE_LIMB_VOXELS.slots.shoulderLeft,
     shoulderRight: V3_REFERENCE_LIMB_VOXELS.slots.shoulderRight,
     upperArmLeft: V3_REFERENCE_LIMB_VOXELS.slots.upperArmLeft,
@@ -240,6 +253,12 @@ const V3_FOUNDATION_RENDERABLE_SOURCE = {
     forearmRight: V3_REFERENCE_LIMB_VOXELS.slots.forearmRight,
     handLeft: V3_REFERENCE_LIMB_VOXELS.slots.handLeft,
     handRight: V3_REFERENCE_LIMB_VOXELS.slots.handRight,
+    thighLeft: V3_REFERENCE_LIMB_VOXELS.slots.thighLeft,
+    thighRight: V3_REFERENCE_LIMB_VOXELS.slots.thighRight,
+    shinLeft: V3_REFERENCE_LIMB_VOXELS.slots.shinLeft,
+    shinRight: V3_REFERENCE_LIMB_VOXELS.slots.shinRight,
+    footLeft: V3_REFERENCE_LIMB_VOXELS.slots.footLeft,
+    footRight: V3_REFERENCE_LIMB_VOXELS.slots.footRight,
   },
 } as unknown as typeof V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE;
 
@@ -341,7 +360,6 @@ const SOURCE_BIND_JOINTS = {
 const WORLD_RIGHT = new THREE.Vector3(1, 0, 0);
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
 const WORLD_FORWARD = new THREE.Vector3(0, 0, 1);
-const SHOULDER_SOURCE_ROLL_BLEND = 0.35;
 
 type V3FoundationSourceRun = readonly [number, number, number, number, number, 1?];
 
@@ -397,6 +415,19 @@ const runVoxelCount = (run: V3ArmorFoundationMaskRun): number =>
 const roundMetric = (value: number): number =>
   Number.isFinite(value) ? Number(value.toFixed(6)) : 0;
 
+const mesh2MotionSourceToTargetScale = (): number => {
+  const scale = V3_MESH2MOTION_ARMOR_RIG.calibration.sourceToTargetScale;
+  return Number.isFinite(scale) && scale > 0 ? roundMetric(scale) : 1;
+};
+
+const V3_REFERENCE_GLB_TO_MESH2MOTION_SCALE = mesh2MotionSourceToTargetScale();
+
+const referenceGlbScaleTuple = (): V3Vec3Tuple => [
+  V3_REFERENCE_GLB_TO_MESH2MOTION_SCALE,
+  V3_REFERENCE_GLB_TO_MESH2MOTION_SCALE,
+  V3_REFERENCE_GLB_TO_MESH2MOTION_SCALE,
+];
+
 const normalizedVector = (
   value: THREE.Vector3,
   fallback: THREE.Vector3
@@ -428,15 +459,6 @@ const basisFromAxes = (
     zAxis: tuple3(normalizedZ.toArray()),
     quaternion: tupleQuat(quaternion),
   };
-};
-
-const basisFromQuaternion = (quaternion: THREE.Quaternion): V3ArmorFoundationSlotBasis => {
-  const normalized = quaternion.clone().normalize();
-  return basisFromAxes(
-    WORLD_RIGHT.clone().applyQuaternion(normalized),
-    WORLD_UP.clone().applyQuaternion(normalized),
-    WORLD_FORWARD.clone().applyQuaternion(normalized)
-  );
 };
 
 const angleDegreesBetweenAxes = (first: THREE.Vector3, second: THREE.Vector3): number => {
@@ -526,19 +548,11 @@ const exactSourceRestBasisForSlot = (slot: V3CharacterSlotId): V3ArmorFoundation
   ];
   const sourceContext = getV3FoundationSourceContext(slot);
   if (
-    isV3Mesh2MotionNativeArmChainSlot(slot) &&
+    isV3Mesh2MotionNativeLimbChainSlot(slot) &&
     sourceContext.sourceKind === 'reference-limb' &&
     referenceSourceSlot
   ) {
-    const sourceYAxis = new THREE.Vector3(...referenceSourceSlot.sourceBasis.yAxis).normalize();
-    const sourceZAxis = projectedAxis(WORLD_FORWARD, sourceYAxis, WORLD_UP);
-    const sourceXAxis = normalizedVector(sourceYAxis.clone().cross(sourceZAxis), WORLD_RIGHT);
-    const stableBasis = basisFromAxes(sourceXAxis, sourceYAxis, sourceZAxis);
-    if (slot !== 'shoulderLeft' && slot !== 'shoulderRight') return stableBasis;
-
-    const stableQuaternion = new THREE.Quaternion(...stableBasis.quaternion).normalize();
-    const sourceRollQuaternion = new THREE.Quaternion(...referenceSourceSlot.sourceBasis.quaternion).normalize();
-    return basisFromQuaternion(stableQuaternion.slerp(sourceRollQuaternion, SHOULDER_SOURCE_ROLL_BLEND));
+    return referenceSourceBindBasisForSlot(slot) ?? basisFromAxes(WORLD_RIGHT, WORLD_UP, WORLD_FORWARD);
   }
   if (isV3Mesh2MotionNativeArmChainSlot(slot) && referenceSourceSlot) {
     const referenceYAxis = new THREE.Vector3(...referenceSourceSlot.sourceBasis.yAxis).normalize();
@@ -595,7 +609,7 @@ const exactSourceBindPointForSlot = (slot: V3CharacterSlotId): THREE.Vector3 => 
     slot as keyof typeof V3_REFERENCE_SOURCE_BIND.slots
   ];
   if (
-    isV3Mesh2MotionNativeArmChainSlot(slot) &&
+    isV3Mesh2MotionNativeLimbChainSlot(slot) &&
     sourceContext.sourceKind === 'reference-limb' &&
     referenceSourceSlot
   ) {
@@ -611,11 +625,11 @@ const exactSourceBindPointForSlot = (slot: V3CharacterSlotId): THREE.Vector3 => 
   return from.lerp(to, 0.5);
 };
 
-const geometryPositionForSourceBindOffset = (
+const geometryPositionForWorldBindOffset = (
   sourceBindOffset: THREE.Vector3,
-  geometryRotationQuaternion: THREE.Quaternion
+  mesh2MotionPivotInverseQuaternion: THREE.Quaternion
 ): V3Vec3Tuple => {
-  return tuple3(sourceBindOffset.clone().applyQuaternion(geometryRotationQuaternion).multiplyScalar(-1).toArray());
+  return tuple3(sourceBindOffset.clone().applyQuaternion(mesh2MotionPivotInverseQuaternion).multiplyScalar(-1).toArray());
 };
 
 const deriveFallbackJointClearance = (dimensions: V3Vec3Tuple): number =>
@@ -656,8 +670,12 @@ const buildFoundationSlot = (slot: V3CharacterSlotId): V3ArmorFoundationSlot => 
   const exactSourceGeometryCenter = exactSourceGeometryCenterForSlot(slot);
   const exactSourceBindPoint = exactSourceBindPointForSlot(slot);
   const exactSourceBindOffset = exactSourceBindPoint.clone().sub(exactSourceGeometryCenter);
+  const sourceRetargetScale = sourceContext.sourceKind === 'reference-limb'
+    ? V3_REFERENCE_GLB_TO_MESH2MOTION_SCALE
+    : 1;
+  const scaledExactSourceBindOffset = exactSourceBindOffset.clone().multiplyScalar(sourceRetargetScale);
   const nativeLimbChainSlot = isV3Mesh2MotionNativeLimbChainSlot(slot);
-  const sourceBasisInverseQuaternion = new THREE.Quaternion(...exactSourceRestBasis.quaternion)
+  const mesh2MotionPivotInverseQuaternion = new THREE.Quaternion(...tuple4(rigSlot.pivotWorldQuaternion))
     .normalize()
     .invert();
   const referenceMaskRuns = sourceSlot.runs.map((run) =>
@@ -690,12 +708,14 @@ const buildFoundationSlot = (slot: V3CharacterSlotId): V3ArmorFoundationSlot => 
     mesh2MotionPivotWorldQuaternion: tuple4(rigSlot.pivotWorldQuaternion),
     mesh2MotionGeometry: {
       position: nativeLimbChainSlot
-        ? geometryPositionForSourceBindOffset(exactSourceBindOffset, sourceBasisInverseQuaternion)
+        ? geometryPositionForWorldBindOffset(scaledExactSourceBindOffset, mesh2MotionPivotInverseQuaternion)
         : tuple3(rigSlot.geometry.position),
       rotation: nativeLimbChainSlot
-        ? inverseQuaternionEulerTuple(tuple4(exactSourceRestBasis.quaternion))
+        ? inverseQuaternionEulerTuple(tuple4(rigSlot.pivotWorldQuaternion))
         : tuple3(rigSlot.geometry.rotation),
-      scale: tuple3(rigSlot.geometry.scale),
+      scale: sourceContext.sourceKind === 'reference-limb'
+        ? referenceGlbScaleTuple()
+        : tuple3(rigSlot.geometry.scale),
     },
     jointClearance: Number.isFinite(optionalRigSlot.jointClearance)
       ? roundMetric(optionalRigSlot.jointClearance ?? 0)
@@ -732,7 +752,8 @@ const buildV3ArmorFoundationArtifact = (): V3ArmorFoundationArtifact => ({
     referenceSourceBindSha256: V3_REFERENCE_SOURCE_BIND.source.sha256,
     referenceLimbVoxelSchema: V3_REFERENCE_LIMB_VOXELS.schemaVersion,
     referenceLimbVoxelSha256: V3_REFERENCE_LIMB_VOXELS.source.sha256,
-    generator: 'sanitized-obj-surface-plus-mesh2motion-rig-plus-blender-source-bind-plus-regenerated-limb-voxels',
+    mesh2MotionSourceToTargetScale: V3_REFERENCE_GLB_TO_MESH2MOTION_SCALE,
+    generator: 'sanitized-glb-source-plus-mesh2motion-rig-plus-blender-source-bind',
   },
   rolePalette: [...V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.rolePalette],
   slots: Object.fromEntries(V3_CHARACTER_SLOT_IDS.map((slot) => [

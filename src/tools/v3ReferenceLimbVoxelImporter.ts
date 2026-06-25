@@ -78,6 +78,7 @@ type ParsedGlb = {
 };
 
 type LimbSide = 'left' | 'right';
+type SourceNodeKind = 'arm' | 'body' | 'helmet' | 'back';
 
 type SlotSample = {
   roleIndex: number;
@@ -91,14 +92,19 @@ type SlotAccumulator = {
   voxels: Map<string, SlotSample>;
 };
 
-type LimbSlotName = (typeof LEFT_LIMB_SLOTS)[number] | (typeof RIGHT_LIMB_SLOTS)[number];
-
-const LEFT_LIMB_SLOTS = ['shoulderLeft', 'upperArmLeft', 'forearmLeft', 'handLeft'] as const;
-const RIGHT_LIMB_SLOTS = ['shoulderRight', 'upperArmRight', 'forearmRight', 'handRight'] as const;
-const ALL_LIMB_SLOTS = [
-  ...LEFT_LIMB_SLOTS,
-  ...RIGHT_LIMB_SLOTS,
+const LEFT_ARM_SLOTS = ['shoulderLeft', 'upperArmLeft', 'forearmLeft', 'handLeft'] as const;
+const RIGHT_ARM_SLOTS = ['shoulderRight', 'upperArmRight', 'forearmRight', 'handRight'] as const;
+const LEFT_LEG_SLOTS = ['thighLeft', 'shinLeft', 'footLeft'] as const;
+const RIGHT_LEG_SLOTS = ['thighRight', 'shinRight', 'footRight'] as const;
+const BODY_SLOTS = ['helmet', 'neck', 'chest', 'pelvis', 'back'] as const;
+const ALL_GLB_SOURCE_SLOTS = [
+  ...BODY_SLOTS,
+  ...LEFT_ARM_SLOTS,
+  ...LEFT_LEG_SLOTS,
+  ...RIGHT_ARM_SLOTS,
+  ...RIGHT_LEG_SLOTS,
 ] as const satisfies readonly V3CharacterSlotId[];
+type GlbSourceSlotName = (typeof ALL_GLB_SOURCE_SLOTS)[number];
 
 const ROLE_PALETTE = V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.rolePalette satisfies readonly V3PaintRole[];
 
@@ -273,6 +279,20 @@ const detectLimbSide = (nodeName: string, meshName: string): LimbSide | null => 
   const name = `${nodeName} ${meshName}`.toLowerCase();
   if (/\barm\s*l\b|_l\b|\.l\b/.test(name)) return 'left';
   if (/\barm\s*r\b|_r\b|\.r\b/.test(name)) return 'right';
+  if (/\bknee guards:.*\bl\b|kneepad.*_l\b/.test(name)) return 'left';
+  if (/\bknee guards:.*\br\b|kneepad.*_r\b/.test(name)) return 'right';
+  return null;
+};
+
+const detectSourceNode = (nodeName: string, meshName: string): {
+  kind: SourceNodeKind;
+  side: LimbSide | null;
+} | null => {
+  const name = `${nodeName} ${meshName}`.toLowerCase();
+  if (name.includes('male arm')) return { kind: 'arm', side: detectLimbSide(nodeName, meshName) };
+  if (name.includes('male body') || name.includes('knee guards')) return { kind: 'body', side: detectLimbSide(nodeName, meshName) };
+  if (name.includes('helmet') || name.includes('attachment: ua')) return { kind: 'helmet', side: null };
+  if (name.includes('equipment pack')) return { kind: 'back', side: null };
   return null;
 };
 
@@ -300,14 +320,17 @@ const roleIndexFor = (role: V3PaintRole): number => {
 const vectorFromTuple = (tuple: readonly number[]): THREE.Vector3 =>
   new THREE.Vector3(tuple[0] ?? 0, tuple[1] ?? 0, tuple[2] ?? 0);
 
-const sideSlots = (side: LimbSide): readonly LimbSlotName[] =>
-  side === 'left' ? LEFT_LIMB_SLOTS : RIGHT_LIMB_SLOTS;
+const sideSlots = (side: LimbSide): readonly GlbSourceSlotName[] =>
+  side === 'left' ? [...LEFT_ARM_SLOTS, ...LEFT_LEG_SLOTS] : [...RIGHT_ARM_SLOTS, ...RIGHT_LEG_SLOTS];
 
-const slotMirror = (slot: LimbSlotName): V3CharacterSlotId | null => {
+const slotMirror = (slot: GlbSourceSlotName): V3CharacterSlotId | null => {
   if (slot === 'shoulderLeft') return 'shoulderRight';
   if (slot === 'upperArmLeft') return 'upperArmRight';
   if (slot === 'forearmLeft') return 'forearmRight';
   if (slot === 'handLeft') return 'handRight';
+  if (slot === 'thighLeft') return 'thighRight';
+  if (slot === 'shinLeft') return 'shinRight';
+  if (slot === 'footLeft') return 'footRight';
   return null;
 };
 
@@ -366,7 +389,7 @@ const classifyPointToSlot = (
   side: LimbSide,
   thresholdsBySide: Record<LimbSide, ReturnType<typeof buildSlotThresholds>>,
   materialName: string | undefined
-): LimbSlotName => {
+): GlbSourceSlotName => {
   const thresholds = thresholdsBySide[side];
   const distance = signedDistanceAlongSide(point, side, thresholds.root, thresholds.axis);
   const normalizedMaterialName = (materialName ?? '').toLowerCase();
@@ -377,6 +400,73 @@ const classifyPointToSlot = (
   if (distance <= thresholds.upperForearm) return side === 'left' ? 'upperArmLeft' : 'upperArmRight';
   if (distance <= thresholds.forearmHand) return side === 'left' ? 'forearmLeft' : 'forearmRight';
   return side === 'left' ? 'handLeft' : 'handRight';
+};
+
+const lowerSlotForJointName = (jointName: string): GlbSourceSlotName | null => {
+  const normalized = jointName.toLowerCase();
+  const side = normalized.includes('_l_') ? 'left' : normalized.includes('_r_') ? 'right' : null;
+  if (!side) return null;
+  if (
+    normalized.includes('thigh') ||
+    normalized.includes('upperleg') ||
+    normalized.includes('hip_fixup')
+  ) {
+    return side === 'left' ? 'thighLeft' : 'thighRight';
+  }
+  if (
+    normalized.includes('calf') ||
+    normalized.includes('knee_fixup')
+  ) {
+    return side === 'left' ? 'shinLeft' : 'shinRight';
+  }
+  if (
+    normalized.includes('foot') ||
+    normalized.includes('toe')
+  ) {
+    return side === 'left' ? 'footLeft' : 'footRight';
+  }
+  return null;
+};
+
+const classifyDominantLowerSlot = (dominantJointNames: readonly string[]): GlbSourceSlotName | null => {
+  const counts = new Map<GlbSourceSlotName, number>();
+  for (const jointName of dominantJointNames) {
+    const slot = lowerSlotForJointName(jointName);
+    if (slot) counts.set(slot, (counts.get(slot) ?? 0) + 1);
+  }
+  let bestSlot: GlbSourceSlotName | null = null;
+  let bestCount = 0;
+  for (const [slot, count] of counts) {
+    if (count > bestCount) {
+      bestSlot = slot;
+      bestCount = count;
+    }
+  }
+  return bestSlot;
+};
+
+const classifyDominantBodySlot = (dominantJointNames: readonly string[]): GlbSourceSlotName | null => {
+  const counts = new Map<GlbSourceSlotName, number>();
+  for (const jointName of dominantJointNames) {
+    const normalized = jointName.toLowerCase();
+    const slot = lowerSlotForJointName(jointName) ??
+      (normalized.includes('collar') || normalized.includes('neck') ? 'neck' :
+        normalized.includes('torso') || normalized.includes('spine') ? 'chest' :
+          normalized.includes('pelvis') || normalized.includes('belt') ? 'pelvis' :
+            normalized.includes('backpack') ? 'back' :
+              normalized.includes('head') || normalized.includes('helmet') ? 'helmet' :
+                null);
+    if (slot) counts.set(slot, (counts.get(slot) ?? 0) + 1);
+  }
+  let bestSlot: GlbSourceSlotName | null = null;
+  let bestCount = 0;
+  for (const [slot, count] of counts) {
+    if (count > bestCount) {
+      bestSlot = slot;
+      bestCount = count;
+    }
+  }
+  return bestSlot;
 };
 
 const voxelKey = (x: number, y: number, z: number): string => `${x}:${y}:${z}`;
@@ -429,17 +519,31 @@ const sampleTriangle = (
   }
 };
 
-const createAccumulators = (): Record<LimbSlotName, SlotAccumulator> => Object.fromEntries(
-  ALL_LIMB_SLOTS.map((slot) => [
+const sourceObjectNameForSlot = (slot: GlbSourceSlotName): string => {
+  if (slot === 'helmet') return 'Helmet: Mark V [B] / attachments';
+  if (slot === 'neck') return 'Male Body / Collar';
+  if (slot === 'chest') return 'Male Body / Torso';
+  if (slot === 'pelvis') return 'Male Body / Pelvis/Belt';
+  if (slot === 'back') return 'Male Equipment Pack';
+  if (slot.startsWith('thigh') || slot.startsWith('shin') || slot.startsWith('foot')) {
+    return slot.endsWith('Left')
+      ? 'Male Body / Knee Guards: Default L'
+      : 'Male Body / Knee Guards: Default R';
+  }
+  return slot.endsWith('Left') ? 'Male Arm L' : 'Male Arm R';
+};
+
+const createAccumulators = (): Record<GlbSourceSlotName, SlotAccumulator> => Object.fromEntries(
+  ALL_GLB_SOURCE_SLOTS.map((slot) => [
     slot,
     {
       slot,
-      sourceObjectName: slot.endsWith('Left') ? 'Male Arm L' : 'Male Arm R',
+      sourceObjectName: sourceObjectNameForSlot(slot),
       mirrorOf: slotMirror(slot),
       voxels: new Map<string, SlotSample>(),
     },
   ])
-) as Record<LimbSlotName, SlotAccumulator>;
+) as Record<GlbSourceSlotName, SlotAccumulator>;
 
 const packSlotRuns = (
   voxels: Map<string, SlotSample>
@@ -565,7 +669,18 @@ export function buildV3ReferenceLimbVoxelArtifact(
   const worldForNode = buildWorldMatrixForNode(parsed.json, parentByNode);
   const jointNameBySkinIndex = (skin.joints ?? []).map((nodeIndex) => parsed.json.nodes?.[nodeIndex]?.name ?? '');
   const accumulators = createAccumulators();
-  const expectedObjectNames = ['Male Arm L', 'Male Arm R'];
+  const expectedObjectNames = [
+    'Attachment: UA [Mark V [B]]',
+    'Attachment: UA Brim [Mark V [B]]',
+    'Helmet: Mark V [B]',
+    'Knee Guards: Default L',
+    'Knee Guards: Default R',
+    'Male Arm L',
+    'Male Arm R',
+    'Male Body',
+    'Male Equipment Pack',
+    'Male Helmet Interior',
+  ];
   const sourceObjectNames: string[] = [];
   let unassignedTriangleCount = 0;
   const thresholdsBySide = {
@@ -579,8 +694,8 @@ export function buildV3ReferenceLimbVoxelArtifact(
     if (!mesh) return;
     const nodeName = node.name ?? `mesh-object-${nodeIndex}`;
     const meshName = mesh.name ?? `mesh-${node.mesh}`;
-    const side = detectLimbSide(nodeName, meshName);
-    if (!side) return;
+    const sourceNode = detectSourceNode(nodeName, meshName);
+    if (!sourceNode) return;
     sourceObjectNames.push(nodeName);
     const worldMatrix = worldForNode(nodeIndex);
 
@@ -638,10 +753,19 @@ export function buildV3ReferenceLimbVoxelArtifact(
           ? 'right'
           : dominantJointNames.some((name) => name.includes('_l_'))
             ? 'left'
-            : side;
+            : sourceNode.side ?? (a.x + b.x + c.x < 0 ? 'right' : 'left');
+        const fixedSlot: GlbSourceSlotName | null = sourceNode.kind === 'helmet'
+          ? 'helmet'
+          : sourceNode.kind === 'back'
+            ? 'back'
+            : null;
+        const bodySlot = sourceNode.kind === 'body'
+          ? classifyDominantBodySlot(dominantJointNames)
+          : null;
+        if (sourceNode.kind === 'body' && !bodySlot) continue;
         sampleTriangle(a, b, c, (point) => {
           const pointSide = point.x < 0 ? 'right' : triangleSide;
-          const slot = classifyPointToSlot(point, pointSide, thresholdsBySide, materialName);
+          const slot = fixedSlot ?? bodySlot ?? classifyPointToSlot(point, pointSide, thresholdsBySide, materialName);
           addVoxel(accumulators[slot], point, sample);
         });
       }
@@ -649,10 +773,10 @@ export function buildV3ReferenceLimbVoxelArtifact(
   });
 
   const missingArmMeshNodes = expectedObjectNames.filter((name) => !sourceObjectNames.includes(name));
-  const slots = Object.fromEntries(ALL_LIMB_SLOTS.map((slot) => [
+  const slots = Object.fromEntries(ALL_GLB_SOURCE_SLOTS.map((slot) => [
     slot,
     buildSlotArtifact(accumulators[slot]),
-  ])) as Record<LimbSlotName, V3ReferenceLimbVoxelSlot>;
+  ])) as Record<GlbSourceSlotName, V3ReferenceLimbVoxelSlot>;
   const totalVoxelCount = Object.values(slots).reduce((total, slot) => total + slot.voxelCount, 0);
   const totalRunCount = Object.values(slots).reduce((total, slot) => total + slot.runCount, 0);
   const maxSlotVoxelCount = Math.max(...Object.values(slots).map((slot) => slot.voxelCount), 0);
@@ -690,7 +814,7 @@ export function buildV3ReferenceLimbVoxelGeneratedSource(
   return [
     '/* eslint-disable */',
     '// Generated by src/tools/v3ReferenceLimbVoxelImporter.ts. Do not edit by hand.',
-    '// Source Blender GLB files stay private/local; this file contains sanitized V3 limb voxel data only.',
+    '// Source Blender GLB files stay private/local; this file contains sanitized V3 armor voxel data only.',
     `export const ${exportName} = ${JSON.stringify(artifact, null, 2)} as const;`,
     '',
   ].join('\n');

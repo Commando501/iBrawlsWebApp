@@ -66,7 +66,7 @@ import {
   V3_ARMOR_SURFACE_DEFAULT_OPTIONS,
   createV3VoxelArmorGroup,
 } from './v3VoxelArmorSurface';
-import { getV3ArmorFoundationMesh2MotionGeometry } from './v3ArmorFoundation';
+import { V3_ARMOR_FOUNDATION } from './v3ArmorFoundation';
 
 export interface V3SpartanBuildOptions extends V3RenderOptions {
   isEnemy?: boolean;
@@ -480,9 +480,11 @@ export function buildV3SpartanModel(options: V3SpartanBuildOptions = {}): THREE.
       | { geometry?: { position: readonly number[]; rotation: readonly number[]; scale: readonly number[] } }
       | undefined;
     recenterV3SlotGeometry(geometryGroup);
-    const foundationGeometry = customPiece
+    const foundationSlot = customPiece
       ? undefined
-      : getV3ArmorFoundationMesh2MotionGeometry(part.slot);
+      : V3_ARMOR_FOUNDATION.slots[part.slot];
+    const foundationGeometry = foundationSlot?.mesh2MotionGeometry;
+    const builtInUsesObjSource = Boolean(foundationSlot?.sourceHashes.exactObjSurfaceSlot);
     applyV3SlotGeometryPlacement(geometryGroup, foundationGeometry ?? slotPlacement?.geometry ?? {
       position: [0, 0, 0],
       rotation: [0, 0, 0],
@@ -518,7 +520,9 @@ export function buildV3SpartanModel(options: V3SpartanBuildOptions = {}): THREE.
       v3Distance,
       v3SelectedLod: selectedLodWithMeasuredBudget,
       v3GridScale: gridScale,
-      v3ObjSurfaceSource: !customPiece,
+      v3BuiltInSourceKind: customPiece ? undefined : builtInUsesObjSource ? 'exact-obj' : 'reference-glb',
+      v3ReferenceGlbSource: !customPiece && !builtInUsesObjSource,
+      v3ObjSurfaceSource: !customPiece && builtInUsesObjSource,
       v3ExactSourceLodQualityTier: customPiece ? undefined : v3QualityTier,
       v3SourceFidelity: customPiece ? undefined : v3SourceFidelity,
       v3VoxelScale: voxelScale,

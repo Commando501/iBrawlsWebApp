@@ -11,6 +11,12 @@ import {
 } from './v3Mesh2MotionArmorRig';
 import { V3_CHARACTER_SLOT_IDS } from './v3ModelTypes';
 
+type GeneratedArmorRigWithCalibration = typeof V3_MESH2MOTION_ARMOR_RIG & {
+  calibration?: {
+    sourceToTargetScale?: number;
+  };
+};
+
 const tupleLength = (value: readonly number[]): number =>
   Math.hypot(value[0] ?? 0, value[1] ?? 0, value[2] ?? 0);
 
@@ -46,6 +52,10 @@ describe('v3Mesh2MotionArmorRig', () => {
     assert.match(V3_MESH2MOTION_ARMOR_RIG.source.sha256, /^[a-f0-9]{64}$/);
     assert.equal(V3_MESH2MOTION_ARMOR_RIG.skeleton.joints.length >= 20, true);
     assert.deepEqual(Object.keys(V3_MESH2MOTION_ARMOR_RIG.slots).sort(), [...V3_CHARACTER_SLOT_IDS].sort());
+    const sourceToTargetScale = (V3_MESH2MOTION_ARMOR_RIG as GeneratedArmorRigWithCalibration)
+      .calibration?.sourceToTargetScale;
+    assert.equal(Number.isFinite(sourceToTargetScale), true);
+    assert.ok((sourceToTargetScale ?? 0) > 0.5 && (sourceToTargetScale ?? 0) < 1);
     assert.equal(serialized.includes(process.cwd()), false);
     assert.equal(serialized.includes('C:'), false);
     assert.equal(serialized.includes('G:'), false);
