@@ -28,7 +28,7 @@ const FOUNDATION_HASH = [
   V3_ARMOR_FOUNDATION.source.referenceSourceBindSha256,
   V3_ARMOR_FOUNDATION.source.referenceLimbVoxelSha256,
 ].join(':');
-const FOUNDATION_BIND_VERSION = 'all-slot-glb-calibrated-scale-bind-v1';
+const FOUNDATION_BIND_VERSION = 'all-slot-mannequin-envelope-fit-v2';
 const LOCAL_STORAGE_KEY = `ibrawls_v3_mesh2motion_tpose_bind_editor:${SOURCE_HASH}:${FOUNDATION_HASH}:${FOUNDATION_BIND_VERSION}`;
 const MANNEQUIN_REVIEW_QUERY = '?view=front&review=mannequin';
 
@@ -40,6 +40,12 @@ const parseReviewMode = (value: string | null): BindEditorReviewMode => {
   if (value === 'ghost' || value === 'armor-ghost') return 'ghost';
   if (value === 'armor' || value === 'armor-visible') return 'armor';
   return 'ghost';
+};
+
+const parseDebugView = (value: string | null): BindEditorDebugView | null => {
+  if (value === 'front' || value === 'left' || value === 'right' || value === 'rear') return value;
+  if (value === 'side') return 'right';
+  return null;
 };
 
 const searchParams = new URLSearchParams(window.location.search);
@@ -151,13 +157,8 @@ const setDebugCameraView = (view: BindEditorDebugView): void => {
   mannequinReviewQuery: MANNEQUIN_REVIEW_QUERY,
 };
 
-const requestedDebugView = searchParams.get('view');
-if (
-  requestedDebugView === 'front' ||
-  requestedDebugView === 'left' ||
-  requestedDebugView === 'right' ||
-  requestedDebugView === 'rear'
-) {
+const requestedDebugView = parseDebugView(searchParams.get('view'));
+if (requestedDebugView) {
   setDebugCameraView(requestedDebugView);
 }
 
@@ -320,7 +321,10 @@ const generatedDocument = (): V3Mesh2MotionTPoseBindDocument => normalizeV3Mesh2
   source: { meshHash: SOURCE_HASH, authoringSpace: 'mesh2motion-native-v3' },
   selectedSlot: 'helmet',
   placements: Object.fromEntries(V3_CHARACTER_SLOT_IDS.map((slot) => {
-    const placement = getV3ArmorFoundationMesh2MotionGeometry(slot);
+    const resolvedPlacement = geometryGroups[slot].userData.v3ResolvedMannequinFitPlacement as
+      | { position?: readonly number[]; rotation?: readonly number[]; scale?: readonly number[] }
+      | undefined;
+    const placement = resolvedPlacement ?? getV3ArmorFoundationMesh2MotionGeometry(slot);
     return [slot, {
       slot,
       position: placement.position,

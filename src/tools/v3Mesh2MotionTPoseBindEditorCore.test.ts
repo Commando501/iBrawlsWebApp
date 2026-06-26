@@ -140,11 +140,12 @@ describe('v3Mesh2MotionTPoseBindEditorCore', () => {
     assert.ok(report.items.some((item) => item.slot === 'helmet' && item.code === 'extreme-scale'));
   });
 
-  it('does not flag generated source-pose correction rotations as manual extremes', () => {
+  it('does not flag generated source-pose correction rotations or fit scales as manual extremes', () => {
     const document: V3Mesh2MotionTPoseBindDocument = normalizeV3Mesh2MotionTPoseBindDocument({
       placements: {
         handLeft: {
           rotation: [0, 0, 2.8],
+          scale: [0.2, 1, 1],
         },
       },
     });
@@ -153,6 +154,7 @@ describe('v3Mesh2MotionTPoseBindEditorCore', () => {
       referencePlacements: {
         handLeft: {
           rotation: [0, 0, 2.8],
+          scale: [0.2, 1, 1],
         },
       },
     });
@@ -160,12 +162,15 @@ describe('v3Mesh2MotionTPoseBindEditorCore', () => {
       referencePlacements: {
         handLeft: {
           rotation: [0, 0, 2.5],
+          scale: [0.35, 1, 1],
         },
       },
     });
 
     assert.equal(generatedReport.items.some((item) => item.slot === 'handLeft' && item.code === 'extreme-rotation'), false);
+    assert.equal(generatedReport.items.some((item) => item.slot === 'handLeft' && item.code === 'extreme-scale'), false);
     assert.equal(editedReport.items.some((item) => item.slot === 'handLeft' && item.code === 'extreme-rotation'), true);
+    assert.equal(editedReport.items.some((item) => item.slot === 'handLeft' && item.code === 'extreme-scale'), true);
   });
 
   it('diagnoses missing slots from sparse imported bind documents', () => {
@@ -240,6 +245,11 @@ describe('v3Mesh2MotionTPoseBindEditorCore', () => {
     assert.equal(html.includes('toggle-finger-joints'), true);
     assert.equal(html.includes('json-output'), true);
     assert.equal(readFileSync('src/tools/v3Mesh2MotionTPoseBindEditor.ts', 'utf8').includes('review=mannequin'), true);
+    assert.equal(readFileSync('src/tools/v3Mesh2MotionTPoseBindEditor.ts', 'utf8').includes("value === 'side'"), true);
+    assert.equal(
+      readFileSync('src/tools/v3Mesh2MotionTPoseBindEditor.ts', 'utf8').includes('v3ResolvedMannequinFitPlacement'),
+      true
+    );
     assert.equal(viteConfig.includes('v3Mesh2MotionTPoseBindEditor'), true);
     assert.equal(serviceWorker.includes('/v3-mesh2motion-tpose-bind-editor.html'), true);
     assert.equal(devServer.includes('/v3-mesh2motion-tpose-bind-editor.html'), true);

@@ -204,6 +204,18 @@ const resolvedSourceSlotHashPayload = (sourceSlot: V3FoundationSourceSlot) => ({
 });
 
 const getV3FoundationSourceContext = (slot: V3CharacterSlotId): V3FoundationSourceContext => {
+  const limbSlot = V3_REFERENCE_LIMB_VOXELS.slots[
+    slot as keyof typeof V3_REFERENCE_LIMB_VOXELS.slots
+  ] as V3FoundationSourceSlot | undefined;
+  if (V3_REFERENCE_ARM_ARMOR_SOURCE_SLOT_SET.has(slot) && limbSlot) {
+    return {
+      sourceKind: 'reference-limb',
+      sourceSlot: limbSlot,
+      rolePalette: V3_REFERENCE_LIMB_VOXELS.rolePalette,
+      sourcePivot: V3_REFERENCE_LIMB_VOXELS.coordinateSystem.pivot,
+      voxelScale: V3_REFERENCE_LIMB_VOXELS.coordinateSystem.voxelScale,
+    };
+  }
   const objSlot = V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.slots[slot];
   if (objSlot) {
     return {
@@ -214,9 +226,6 @@ const getV3FoundationSourceContext = (slot: V3CharacterSlotId): V3FoundationSour
       voxelScale: V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.coordinateSystem.voxelScale,
     };
   }
-  const limbSlot = V3_REFERENCE_LIMB_VOXELS.slots[
-    slot as keyof typeof V3_REFERENCE_LIMB_VOXELS.slots
-  ] as V3FoundationSourceSlot | undefined;
   if (limbSlot) {
     return {
       sourceKind: 'reference-limb',
@@ -304,6 +313,19 @@ const THEMES: readonly ThemeProfile[] = [
     emissiveEvery: 13,
   },
 ];
+
+const V3_REFERENCE_ARM_ARMOR_SOURCE_SLOTS = [
+  'upperArmLeft',
+  'upperArmRight',
+  'forearmLeft',
+  'forearmRight',
+  'handLeft',
+  'handRight',
+] as const satisfies readonly V3CharacterSlotId[];
+
+const V3_REFERENCE_ARM_ARMOR_SOURCE_SLOT_SET = new Set<V3CharacterSlotId>(
+  V3_REFERENCE_ARM_ARMOR_SOURCE_SLOTS
+);
 
 const SOURCE_AXIS_JOINTS = {
   shoulderLeft: ['shoulderLeft', 'elbowLeft'],
@@ -624,6 +646,17 @@ const buildFoundationSlot = (slot: V3CharacterSlotId): V3ArmorFoundationSlot => 
   const referenceMaskRuns = sourceSlot.runs.map((run) =>
     localRunFromSourceRun(run, sourceSlot.bounds.min)
   );
+  const mesh2MotionGeometry: V3ArmorFoundationGeometryTransform = {
+    position: nativeLimbChainSlot
+      ? geometryPositionForLocalBindOffset(scaledExactSourceBindOffset, nativeLimbGeometryQuaternion)
+      : tuple3(rigSlot.geometry.position),
+    rotation: nativeLimbChainSlot
+      ? eulerTupleFromQuaternion(nativeLimbGeometryQuaternion)
+      : tuple3(rigSlot.geometry.rotation),
+    scale: sourceContext.sourceKind === 'reference-limb'
+      ? referenceGlbScaleTuple()
+      : tuple3(rigSlot.geometry.scale),
+  };
 
   return {
     slot,
@@ -649,17 +682,7 @@ const buildFoundationSlot = (slot: V3CharacterSlotId): V3ArmorFoundationSlot => 
     sourcePoseCorrectionAngleDegrees,
     mesh2MotionPivotWorldPosition: tuple3(rigSlot.pivotWorldPosition),
     mesh2MotionPivotWorldQuaternion: tuple4(rigSlot.pivotWorldQuaternion),
-    mesh2MotionGeometry: {
-      position: nativeLimbChainSlot
-        ? geometryPositionForLocalBindOffset(scaledExactSourceBindOffset, nativeLimbGeometryQuaternion)
-        : tuple3(rigSlot.geometry.position),
-      rotation: nativeLimbChainSlot
-        ? eulerTupleFromQuaternion(nativeLimbGeometryQuaternion)
-        : tuple3(rigSlot.geometry.rotation),
-      scale: sourceContext.sourceKind === 'reference-limb'
-        ? referenceGlbScaleTuple()
-        : tuple3(rigSlot.geometry.scale),
-    },
+    mesh2MotionGeometry,
     jointClearance: Number.isFinite(optionalRigSlot.jointClearance)
       ? roundMetric(optionalRigSlot.jointClearance ?? 0)
       : deriveFallbackJointClearance(localGridDimensions),
@@ -723,6 +746,17 @@ const roleEmissive = (
   fallback: boolean
 ): boolean => resolveV3RoleEmissive(role, paintJob, fallback);
 
+const renderableSourceForFoundationContext = (
+  sourceContext: V3FoundationSourceContext
+): typeof V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE => ({
+  ...V3_FOUNDATION_RENDERABLE_SOURCE,
+  rolePalette: sourceContext.rolePalette as typeof V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.rolePalette,
+  slots: {
+    ...V3_FOUNDATION_RENDERABLE_SOURCE.slots,
+    [sourceContext.sourceSlot.slot]: sourceContext.sourceSlot,
+  },
+}) as typeof V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE;
+
 export function createV3ReferenceLockedPartVoxels(
   slot: V3CharacterSlotId,
   colors: SpartanColors,
@@ -733,7 +767,7 @@ export function createV3ReferenceLockedPartVoxels(
   const sourceSlot = getV3ExactSourceRenderableSlot(slot, {
     qualityTier: options.qualityTier,
     sourceFidelity: options.sourceFidelity,
-  }, V3_FOUNDATION_RENDERABLE_SOURCE);
+  }, renderableSourceForFoundationContext(sourceContext));
   const rolePalette = sourceContext.rolePalette;
   const sourcePivot = sourceContext.sourcePivot;
   const voxelScale = sourceContext.voxelScale;

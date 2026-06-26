@@ -48,8 +48,9 @@ export interface V3Mesh2MotionTPoseBindDiagnosticReport {
 }
 
 export interface V3Mesh2MotionTPoseBindDiagnosticOptions {
-  referencePlacements?: Partial<Record<V3CharacterSlotId, Pick<V3Mesh2MotionTPoseBindPlacement, 'rotation'>>>;
+  referencePlacements?: Partial<Record<V3CharacterSlotId, Pick<V3Mesh2MotionTPoseBindPlacement, 'rotation' | 'scale'>>>;
   referenceRotationTolerance?: number;
+  referenceScaleTolerance?: number;
 }
 
 export type V3Mesh2MotionTPoseBindEditorHotkeyAction =
@@ -281,6 +282,19 @@ const hasExpectedSourcePoseRotation = (
   );
 };
 
+const hasExpectedGeneratedScale = (
+  placement: V3Mesh2MotionTPoseBindPlacement,
+  options: V3Mesh2MotionTPoseBindDiagnosticOptions
+): boolean => {
+  const reference = options.referencePlacements?.[placement.slot]?.scale;
+  if (!reference) return false;
+  return tupleCloseTo(
+    placement.scale,
+    reference,
+    Number.isFinite(options.referenceScaleTolerance) ? options.referenceScaleTolerance ?? 0.01 : 0.01
+  );
+};
+
 const mirrorPartnerMismatch = (
   placement: V3Mesh2MotionTPoseBindPlacement,
   partner: V3Mesh2MotionTPoseBindPlacement
@@ -321,7 +335,10 @@ export function buildV3Mesh2MotionTPoseBindDiagnostics(
     if (hasAnyMagnitudeOver(placement.rotation, EXTREME_ROTATION) && !hasExpectedSourcePoseRotation(placement, options)) {
       addDiagnostic(items, slot, 'extreme-rotation', 'warn', `${slot} rotation is outside the recommended bind range`);
     }
-    if (placement.scale.some((value) => Math.abs(value) > EXTREME_SCALE || Math.abs(value) < 0.25)) {
+    if (
+      placement.scale.some((value) => Math.abs(value) > EXTREME_SCALE || Math.abs(value) < 0.25) &&
+      !hasExpectedGeneratedScale(placement, options)
+    ) {
       addDiagnostic(items, slot, 'extreme-scale', 'warn', `${slot} scale is outside the recommended bind range`);
     }
   }

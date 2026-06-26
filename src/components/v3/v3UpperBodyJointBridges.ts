@@ -311,7 +311,7 @@ export function updateV3UpperBodyJointBridges(model: THREE.Object3D, visible = t
     const outerX = shoulderCenter.x - sign * shoulderSize.x * 0.16;
     const center = new THREE.Vector3(
       (chestSideX + outerX + upperArmCenter.x) / 3,
-      Math.min(shoulderCenter.y - shoulderSize.y * 0.03, chestBox.max.y + chestSize.y * 0.13),
+      Math.min(shoulderCenter.y - shoulderSize.y * 0.03, chestBox.max.y + chestSize.y * 0.14),
       (chestCenter.z + shoulderCenter.z + upperArmCenter.z) / 3
     );
     const width = THREE.MathUtils.clamp(Math.abs(outerX - chestSideX) + 0.035, 0.1, 0.12);
@@ -322,7 +322,7 @@ export function updateV3UpperBodyJointBridges(model: THREE.Object3D, visible = t
       new THREE.Vector3(
         width,
         THREE.MathUtils.clamp(shoulderSize.y * 0.44, 0.12, 0.15),
-        THREE.MathUtils.clamp(Math.max(chestSize.z, shoulderSize.z) * 0.38, 0.17, 0.2)
+        THREE.MathUtils.clamp(Math.max(chestSize.z, shoulderSize.z) * 0.385, 0.13, 0.18)
       )
     );
   };
