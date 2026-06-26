@@ -1,6 +1,14 @@
+import {
+  normalizeCustomArmorSnapshot,
+  type CustomArmorMaterialRole,
+  type CustomArmorPieceSnapshot,
+} from '../components/customArmor';
 import { V3_CHARACTER_SLOT_IDS, type V3CharacterSlotId, type V3Vec3Tuple } from '../components/v3/v3ModelTypes';
 
-export const V3_MESH2MOTION_TPOSE_BIND_DOCUMENT_KIND = 'v3-mesh2motion-tpose-bind/v1' as const;
+export const V3_MESH2MOTION_TPOSE_BIND_LEGACY_DOCUMENT_KIND = 'v3-mesh2motion-tpose-bind/v1' as const;
+export const V3_MESH2MOTION_TPOSE_BIND_DOCUMENT_KIND = 'v3-mesh2motion-tpose-bind/v2' as const;
+export const V3_MESH2MOTION_TPOSE_BIND_LOCAL_STORAGE_KEY_PREFIX = 'ibrawls_v3_mesh2motion_tpose_bind_editor' as const;
+export const V3_MESH2MOTION_TPOSE_BIND_LOCAL_STORAGE_BIND_VERSION = 'all-slot-mannequin-envelope-fit-v2' as const;
 
 export type V3Mesh2MotionTPoseBindTransformMode = 'translate' | 'rotate' | 'scale';
 
@@ -12,9 +20,40 @@ export interface V3Mesh2MotionTPoseBindPlacement {
   mirrorOf?: V3CharacterSlotId;
 }
 
+export interface V3Mesh2MotionTPoseBindArmorSectionBounds {
+  min: [number, number, number];
+  max: [number, number, number];
+  center: [number, number, number];
+  size: [number, number, number];
+  voxelCount: number;
+  roles: CustomArmorMaterialRole[];
+}
+
+export interface V3Mesh2MotionTPoseBindArmorSection {
+  id: string;
+  label: string;
+  slot: V3CharacterSlotId;
+  voxelKeys: string[];
+  bounds: V3Mesh2MotionTPoseBindArmorSectionBounds;
+}
+
+export interface V3Mesh2MotionTPoseBindSectionTransform {
+  sectionId: string;
+  position: [number, number, number];
+  rotation: [number, number, number];
+  scale: [number, number, number];
+}
+
+export interface V3Mesh2MotionTPoseBindArmorEdit {
+  slot: V3CharacterSlotId;
+  piece: CustomArmorPieceSnapshot;
+  sections: V3Mesh2MotionTPoseBindArmorSection[];
+  sectionTransforms: Record<string, V3Mesh2MotionTPoseBindSectionTransform>;
+}
+
 export interface V3Mesh2MotionTPoseBindDocument {
   kind: typeof V3_MESH2MOTION_TPOSE_BIND_DOCUMENT_KIND;
-  version: 1;
+  version: 2;
   source: {
     meshHash: string | null;
     authoringSpace: 'mesh2motion-native-v3';
@@ -22,6 +61,9 @@ export interface V3Mesh2MotionTPoseBindDocument {
   };
   selectedSlot: V3CharacterSlotId;
   placements: Record<V3CharacterSlotId, V3Mesh2MotionTPoseBindPlacement>;
+  selectedArmorSlots: V3CharacterSlotId[];
+  selectedSectionIds: string[];
+  armorEdits: Partial<Record<V3CharacterSlotId, V3Mesh2MotionTPoseBindArmorEdit>>;
 }
 
 export type V3Mesh2MotionTPoseBindDiagnosticCode =
@@ -88,9 +130,24 @@ const EXTREME_ROTATION = Math.PI * 0.75;
 const EXTREME_SCALE = 3;
 const MIN_SCALE_MAGNITUDE = 0.1;
 const MAX_SCALE_MAGNITUDE = 4;
+const CUSTOM_ARMOR_ROLE_SET = new Set<CustomArmorMaterialRole>([
+  'primary',
+  'secondary',
+  'accent',
+  'visor',
+  'dark',
+  'highlight',
+  'undersuit',
+  'emissive',
+  'decal',
+  'fixed',
+]);
 
 const isSlot = (value: unknown): value is V3CharacterSlotId =>
   typeof value === 'string' && SLOT_SET.has(value);
+
+const isCustomArmorRole = (value: unknown): value is CustomArmorMaterialRole =>
+  typeof value === 'string' && CUSTOM_ARMOR_ROLE_SET.has(value as CustomArmorMaterialRole);
 
 const roundFinite = (value: number): number => {
   if (Math.abs(value) === Math.PI) return value;
@@ -128,6 +185,15 @@ const identityPlacement = (slot: V3CharacterSlotId): V3Mesh2MotionTPoseBindPlace
   scale: [1, 1, 1],
 });
 
+export const identityV3Mesh2MotionTPoseBindSectionTransform = (
+  sectionId: string
+): V3Mesh2MotionTPoseBindSectionTransform => ({
+  sectionId,
+  position: [0, 0, 0],
+  rotation: [0, 0, 0],
+  scale: [1, 1, 1],
+});
+
 const normalizePlacement = (
   slot: V3CharacterSlotId,
   raw: unknown
@@ -143,6 +209,152 @@ const normalizePlacement = (
     placement.mirrorOf = record.mirrorOf;
   }
   return placement;
+};
+
+const normalizeSectionId = (value: unknown): string | null => {
+  if (typeof value !== 'string') return null;
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized.slice(0, 64) : null;
+};
+
+const normalizeLabel = (value: unknown, fallback: string): string => {
+  if (typeof value !== 'string') return fallback;
+  const normalized = value.trim().replace(/\s+/g, ' ');
+  return normalized.length > 0 ? normalized.slice(0, 48) : fallback;
+};
+
+const parseVoxelKey = (key: string): [number, number, number] | null => {
+  const parts = key.split(':').map((part) => Number(part));
+  if (parts.length !== 3 || parts.some((value) => !Number.isInteger(value))) return null;
+  return [parts[0], parts[1], parts[2]];
+};
+
+const boundsFromVoxelKeys = (
+  voxelKeys: readonly string[]
+): Pick<V3Mesh2MotionTPoseBindArmorSectionBounds, 'min' | 'max' | 'center' | 'size'> => {
+  const points = voxelKeys.map(parseVoxelKey).filter((point): point is [number, number, number] => point !== null);
+  if (points.length === 0) {
+    return {
+      min: [0, 0, 0],
+      max: [0, 0, 0],
+      center: [0, 0, 0],
+      size: [1, 1, 1],
+    };
+  }
+  const min: [number, number, number] = [
+    Math.min(...points.map((point) => point[0])),
+    Math.min(...points.map((point) => point[1])),
+    Math.min(...points.map((point) => point[2])),
+  ];
+  const max: [number, number, number] = [
+    Math.max(...points.map((point) => point[0])),
+    Math.max(...points.map((point) => point[1])),
+    Math.max(...points.map((point) => point[2])),
+  ];
+  return {
+    min,
+    max,
+    center: [
+      roundFinite((min[0] + max[0]) / 2),
+      roundFinite((min[1] + max[1]) / 2),
+      roundFinite((min[2] + max[2]) / 2),
+    ],
+    size: [
+      roundFinite(max[0] - min[0] + 1),
+      roundFinite(max[1] - min[1] + 1),
+      roundFinite(max[2] - min[2] + 1),
+    ],
+  };
+};
+
+const normalizeMetricTuple = (
+  value: unknown,
+  fallback: V3Vec3Tuple,
+  normalize: (value: number) => number = (candidate) => candidate
+): [number, number, number] => tupleFrom(value, fallback, (candidate) => normalize(candidate));
+
+const normalizeSectionBounds = (
+  raw: unknown,
+  voxelKeys: readonly string[]
+): V3Mesh2MotionTPoseBindArmorSectionBounds => {
+  const record = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {};
+  const fallback = boundsFromVoxelKeys(voxelKeys);
+  const roles = Array.isArray(record.roles)
+    ? [...new Set(record.roles.filter(isCustomArmorRole))]
+    : [];
+  const voxelCount = typeof record.voxelCount === 'number' && Number.isFinite(record.voxelCount)
+    ? Math.max(0, Math.round(record.voxelCount))
+    : voxelKeys.length;
+
+  return {
+    min: normalizeMetricTuple(record.min, fallback.min),
+    max: normalizeMetricTuple(record.max, fallback.max),
+    center: normalizeMetricTuple(record.center, fallback.center),
+    size: normalizeMetricTuple(record.size, fallback.size, (candidate) => Math.max(0, candidate)),
+    voxelCount,
+    roles,
+  };
+};
+
+const normalizeArmorSection = (
+  slot: V3CharacterSlotId,
+  raw: unknown
+): V3Mesh2MotionTPoseBindArmorSection | null => {
+  const record = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {};
+  const id = normalizeSectionId(record.id);
+  if (!id) return null;
+  const rawVoxelKeys = Array.isArray(record.voxelKeys) ? record.voxelKeys : [];
+  const voxelKeys = [...new Set(rawVoxelKeys
+    .map((value) => typeof value === 'string' ? value.trim() : '')
+    .filter((value) => value.length > 0))];
+  if (voxelKeys.length === 0) return null;
+  return {
+    id,
+    label: normalizeLabel(record.label, id),
+    slot,
+    voxelKeys,
+    bounds: normalizeSectionBounds(record.bounds, voxelKeys),
+  };
+};
+
+export const normalizeV3Mesh2MotionTPoseBindSectionTransform = (
+  raw: unknown,
+  sectionId: string
+): V3Mesh2MotionTPoseBindSectionTransform => {
+  const record = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {};
+  return {
+    sectionId,
+    position: tupleFrom(record.position, [0, 0, 0], (value) => clamp(value, -POSITION_LIMIT, POSITION_LIMIT)),
+    rotation: tupleFrom(record.rotation, [0, 0, 0], (value) => clamp(value, -Math.PI, Math.PI)),
+    scale: tupleFrom(record.scale, [1, 1, 1], clampScale),
+  };
+};
+
+const normalizeArmorEdit = (
+  slot: V3CharacterSlotId,
+  raw: unknown
+): V3Mesh2MotionTPoseBindArmorEdit | null => {
+  const record = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {};
+  if (isSlot(record.slot) && record.slot !== slot) return null;
+  const piece = normalizeCustomArmorSnapshot(record.piece);
+  if (!piece || piece.slot !== slot || piece.modelSystem !== 'v3') return null;
+  const sections = Array.isArray(record.sections)
+    ? record.sections.map((section) => normalizeArmorSection(slot, section)).filter((section): section is V3Mesh2MotionTPoseBindArmorSection => section !== null)
+    : [];
+  if (sections.length === 0) return null;
+  const rawTransforms = record.sectionTransforms && typeof record.sectionTransforms === 'object'
+    ? record.sectionTransforms as Record<string, unknown>
+    : {};
+  const sectionTransforms = Object.fromEntries(sections.map((section) => [
+    section.id,
+    normalizeV3Mesh2MotionTPoseBindSectionTransform(rawTransforms[section.id], section.id),
+  ]));
+  return {
+    slot,
+    piece,
+    sections,
+    sectionTransforms,
+  };
 };
 
 const clonePlacement = (placement: V3Mesh2MotionTPoseBindPlacement): V3Mesh2MotionTPoseBindPlacement => ({
@@ -167,6 +379,33 @@ const deepFreezeDocument = (
     Object.freeze(placement);
   }
   Object.freeze(document.placements);
+  Object.freeze(document.selectedArmorSlots);
+  Object.freeze(document.selectedSectionIds);
+  for (const edit of Object.values(document.armorEdits)) {
+    if (!edit) continue;
+    Object.freeze(edit.piece.voxels);
+    Object.freeze(edit.piece);
+    for (const section of edit.sections) {
+      Object.freeze(section.voxelKeys);
+      Object.freeze(section.bounds.min);
+      Object.freeze(section.bounds.max);
+      Object.freeze(section.bounds.center);
+      Object.freeze(section.bounds.size);
+      Object.freeze(section.bounds.roles);
+      Object.freeze(section.bounds);
+      Object.freeze(section);
+    }
+    Object.freeze(edit.sections);
+    for (const transform of Object.values(edit.sectionTransforms)) {
+      Object.freeze(transform.position);
+      Object.freeze(transform.rotation);
+      Object.freeze(transform.scale);
+      Object.freeze(transform);
+    }
+    Object.freeze(edit.sectionTransforms);
+    Object.freeze(edit);
+  }
+  Object.freeze(document.armorEdits);
   return Object.freeze(document);
 };
 
@@ -185,7 +424,11 @@ function normalizeV3Mesh2MotionTPoseBindDocumentWithOptions(
   const rawPlacements = record.placements && typeof record.placements === 'object'
     ? record.placements as Record<string, unknown>
     : {};
+  const rawArmorEdits = record.armorEdits && typeof record.armorEdits === 'object'
+    ? record.armorEdits as Record<string, unknown>
+    : {};
   const placements = {} as Record<V3CharacterSlotId, V3Mesh2MotionTPoseBindPlacement>;
+  const armorEdits: Partial<Record<V3CharacterSlotId, V3Mesh2MotionTPoseBindArmorEdit>> = {};
   const missingPlacementSlots = new Set<V3CharacterSlotId>();
   if (Array.isArray(rawSource.missingPlacementSlots)) {
     for (const slot of rawSource.missingPlacementSlots) {
@@ -198,9 +441,19 @@ function normalizeV3Mesh2MotionTPoseBindDocumentWithOptions(
       missingPlacementSlots.add(slot);
     }
     placements[slot] = normalizePlacement(slot, rawPlacements[slot]);
+    const armorEdit = normalizeArmorEdit(slot, rawArmorEdits[slot]);
+    if (armorEdit) armorEdits[slot] = armorEdit;
   }
 
   const selectedSlot = isSlot(record.selectedSlot) ? record.selectedSlot : V3_CHARACTER_SLOT_IDS[0];
+  const selectedArmorSlots = Array.isArray(record.selectedArmorSlots)
+    ? [...new Set(record.selectedArmorSlots.filter(isSlot))]
+    : [];
+  const selectedSectionIds = Array.isArray(record.selectedSectionIds)
+    ? [...new Set(record.selectedSectionIds
+      .map(normalizeSectionId)
+      .filter((sectionId): sectionId is string => sectionId !== null))]
+    : [];
   const source: V3Mesh2MotionTPoseBindDocument['source'] = {
     meshHash: typeof rawSource.meshHash === 'string' && rawSource.meshHash.length > 0
       ? rawSource.meshHash
@@ -213,10 +466,13 @@ function normalizeV3Mesh2MotionTPoseBindDocumentWithOptions(
 
   return {
     kind: V3_MESH2MOTION_TPOSE_BIND_DOCUMENT_KIND,
-    version: 1,
+    version: 2,
     source,
     selectedSlot,
     placements,
+    selectedArmorSlots,
+    selectedSectionIds,
+    armorEdits,
   };
 }
 
@@ -224,6 +480,18 @@ export function serializeV3Mesh2MotionTPoseBindDocument(
   document: V3Mesh2MotionTPoseBindDocument
 ): string {
   return JSON.stringify(normalizeV3Mesh2MotionTPoseBindDocument(document), null, 2);
+}
+
+export function buildV3Mesh2MotionTPoseBindLocalStorageKey(
+  sourceHash: string,
+  foundationHash: string
+): string {
+  return [
+    V3_MESH2MOTION_TPOSE_BIND_LOCAL_STORAGE_KEY_PREFIX,
+    sourceHash,
+    foundationHash,
+    V3_MESH2MOTION_TPOSE_BIND_LOCAL_STORAGE_BIND_VERSION,
+  ].join(':');
 }
 
 export function parseV3Mesh2MotionTPoseBindDocumentJson(json: string): V3Mesh2MotionTPoseBindDocument {

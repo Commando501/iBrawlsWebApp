@@ -143,6 +143,11 @@ export interface V3ArmorThemeGenerationOptions {
   now?: number;
 }
 
+export interface V3ArmorFoundationGenerationOptions {
+  slot: V3CharacterSlotId;
+  now?: number;
+}
+
 export interface V3ArmorSuitThemeGenerationOptions extends Omit<V3ArmorThemeGenerationOptions, 'slot'> {}
 
 export interface V3ArmorFoundationValidationResult {
@@ -746,6 +751,9 @@ const roleEmissive = (
   fallback: boolean
 ): boolean => resolveV3RoleEmissive(role, paintJob, fallback);
 
+const coordKey = (voxel: Pick<CustomArmorVoxel, 'x' | 'y' | 'z'>): string =>
+  `${voxel.x}:${voxel.y}:${voxel.z}`;
+
 const renderableSourceForFoundationContext = (
   sourceContext: V3FoundationSourceContext
 ): typeof V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE => ({
@@ -756,6 +764,26 @@ const renderableSourceForFoundationContext = (
     [sourceContext.sourceSlot.slot]: sourceContext.sourceSlot,
   },
 }) as typeof V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE;
+
+const mapFoundationSourceCoordinateToRenderVoxel = (
+  slot: V3CharacterSlotId,
+  sourceContext: V3FoundationSourceContext,
+  sourceX: number,
+  sourceY: number,
+  sourceZ: number
+): Pick<VoxelData, 'x' | 'y' | 'z'> => {
+  const { sourcePivot, voxelScale } = sourceContext;
+  const boneName = V3_SLOT_DETAIL_BONES[slot];
+  const bonePosition = V3_DETAIL_BONE_SPECS[boneName].position;
+  const worldX = (sourceX - sourcePivot[0]) * voxelScale;
+  const worldY = sourceY * voxelScale;
+  const worldZ = (sourceZ - sourcePivot[2]) * voxelScale;
+  return {
+    x: Math.round((worldX - bonePosition[0]) / voxelScale),
+    y: Math.round((worldY - bonePosition[1]) / voxelScale),
+    z: Math.round((worldZ - bonePosition[2]) / voxelScale),
+  };
+};
 
 export function createV3ReferenceLockedPartVoxels(
   slot: V3CharacterSlotId,
@@ -769,10 +797,6 @@ export function createV3ReferenceLockedPartVoxels(
     sourceFidelity: options.sourceFidelity,
   }, renderableSourceForFoundationContext(sourceContext));
   const rolePalette = sourceContext.rolePalette;
-  const sourcePivot = sourceContext.sourcePivot;
-  const voxelScale = sourceContext.voxelScale;
-  const boneName = V3_SLOT_DETAIL_BONES[slot];
-  const bonePosition = V3_DETAIL_BONE_SPECS[boneName].position;
   const voxels = new Map<string, VoxelData>();
 
   for (const run of sourceSlot.runs) {
@@ -780,12 +804,13 @@ export function createV3ReferenceLockedPartVoxels(
     const color = roleColor(role, colors, paintJob);
     const emissive = run[5] === 1 || roleEmissive(role, paintJob, false);
     for (let sourceX = run[3]; sourceX <= run[4]; sourceX += 1) {
-      const worldX = (sourceX - sourcePivot[0]) * voxelScale;
-      const worldY = run[1] * voxelScale;
-      const worldZ = (run[2] - sourcePivot[2]) * voxelScale;
-      const x = Math.round((worldX - bonePosition[0]) / voxelScale);
-      const y = Math.round((worldY - bonePosition[1]) / voxelScale);
-      const z = Math.round((worldZ - bonePosition[2]) / voxelScale);
+      const { x, y, z } = mapFoundationSourceCoordinateToRenderVoxel(
+        slot,
+        sourceContext,
+        sourceX,
+        run[1],
+        run[2]
+      );
       voxels.set(`${x}:${y}:${z}`, {
         x,
         y,
@@ -805,8 +830,55 @@ export function createV3ReferenceLockedPartVoxels(
   ));
 }
 
-const coordKey = (voxel: Pick<CustomArmorVoxel, 'x' | 'y' | 'z'>): string =>
-  `${voxel.x}:${voxel.y}:${voxel.z}`;
+export function createV3FoundationRenderableCustomArmorVoxels(
+  piece: CustomArmorPieceSnapshot
+): CustomArmorVoxel[] {
+  const slot = V3_CHARACTER_SLOT_IDS.includes(piece.slot as V3CharacterSlotId)
+    ? piece.slot as V3CharacterSlotId
+    : null;
+  if (!slot) return [];
+
+  const sourceContext = getV3FoundationSourceContext(slot);
+  const { sourceSlot } = sourceContext;
+  const sourceVoxelByLocalKey = new Map(piece.voxels.map((voxel) => [
+    coordKey(voxel),
+    voxel,
+  ]));
+  const renderVoxels = new Map<string, CustomArmorVoxel>();
+
+  for (const run of sourceSlot.runs) {
+    for (let sourceX = run[3]; sourceX <= run[4]; sourceX += 1) {
+      const sourceVoxel = sourceVoxelByLocalKey.get([
+        sourceX - sourceSlot.bounds.min[0],
+        run[1] - sourceSlot.bounds.min[1],
+        run[2] - sourceSlot.bounds.min[2],
+      ].join(':'));
+      if (!sourceVoxel) continue;
+
+      const { x, y, z } = mapFoundationSourceCoordinateToRenderVoxel(
+        slot,
+        sourceContext,
+        sourceX,
+        run[1],
+        run[2]
+      );
+      renderVoxels.set(`${x}:${y}:${z}`, {
+        ...sourceVoxel,
+        x,
+        y,
+        z,
+      });
+    }
+  }
+
+  return [...renderVoxels.values()].sort((left, right) => (
+    left.y - right.y ||
+    left.z - right.z ||
+    left.x - right.x ||
+    left.role.localeCompare(right.role) ||
+    Number(left.emissive === true) - Number(right.emissive === true)
+  ));
+}
 
 const clampIntensity = (value: number | undefined): number =>
   typeof value === 'number' && Number.isFinite(value)
@@ -907,6 +979,57 @@ const selectThemeRole = (
 const buildGeneratedName = (slot: V3CharacterSlotId, theme: ThemeProfile): string =>
   `${slot} ${theme.key} foundation`;
 
+const foundationExactSignature = (slot: V3CharacterSlotId): string => {
+  const foundationSlot = V3_ARMOR_FOUNDATION.slots[slot];
+  return hashString(JSON.stringify({
+    slot,
+    localGridDimensions: foundationSlot.localGridDimensions,
+    sourceHashes: foundationSlot.sourceHashes,
+    referenceVoxelCount: foundationSlot.referenceVoxelCount,
+    referenceRunCount: foundationSlot.referenceRunCount,
+  })).toString(36).padStart(7, '0');
+};
+
+const selectExactFoundationRole = (
+  slot: V3CharacterSlotId,
+  voxel: ExpandedFoundationVoxel
+): { role: CustomArmorMaterialRole; emissive?: true } => {
+  const sourceRole = getV3FoundationSourceContext(slot).rolePalette[voxel.roleIndex];
+  if (sourceRole === 'visor') return { role: 'visor', emissive: true };
+  if (voxel.emissive || sourceRole === 'emissive') return { role: 'emissive', emissive: true };
+  return { role: normalizeCustomRole(sourceRole) };
+};
+
+export function generateV3ArmorFromFoundation(
+  options: V3ArmorFoundationGenerationOptions
+): CustomArmorPieceSnapshot {
+  const now = typeof options.now === 'number' && Number.isFinite(options.now) ? options.now : Date.now();
+  const signature = foundationExactSignature(options.slot);
+  const voxels = expandFoundationSlot(options.slot).map((voxel): CustomArmorVoxel => {
+    const exact = selectExactFoundationRole(options.slot, voxel);
+    return {
+      x: voxel.x,
+      y: voxel.y,
+      z: voxel.z,
+      role: exact.role,
+      emissive: exact.emissive,
+    };
+  });
+
+  return {
+    version: 1,
+    id: `v3_foundation_exact_${options.slot}_${signature}`,
+    name: `${options.slot} exact foundation`,
+    slot: options.slot,
+    modelSystem: 'v3',
+    gridScale: 2,
+    sourcePreset: `v3-foundation-exact:${options.slot}:${signature}`,
+    voxels,
+    thumbnail: `V3F:${options.slot}:${voxels.length}`,
+    updatedAt: now,
+  };
+}
+
 export function generateV3ArmorFromTheme(
   options: V3ArmorThemeGenerationOptions
 ): CustomArmorPieceSnapshot {
@@ -975,7 +1098,7 @@ export function validateV3ArmorFoundationPiece(
 
   if (piece.modelSystem !== 'v3') errors.push('foundation armor pieces must target the V3 model system');
   if (!slot) errors.push(`unsupported V3 foundation slot ${String(piece.slot)}`);
-  if (!piece.sourcePreset?.startsWith('v3-foundation:')) {
+  if (!piece.sourcePreset?.startsWith('v3-foundation:') && !piece.sourcePreset?.startsWith('v3-foundation-exact:')) {
     warnings.push('piece was not generated by the V3 foundation generator');
   }
 

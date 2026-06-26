@@ -1,24 +1,48 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
+import {
+  customArmorPieceToVoxels,
+  type CustomArmorColors,
+  type CustomArmorPieceSnapshot,
+} from '../components/customArmor';
 import { buildV3SpartanModel } from '../components/v3/VoxelModelsV3';
+import { getV3BuiltinPartVoxelScale } from '../components/v3/v3AegisSuitParts';
 import {
   updateV3RigFittedBaseBody,
 } from '../components/v3/v3RigFittedBaseBody';
 import {
   V3_ARMOR_FOUNDATION,
+  generateV3ArmorFromFoundation,
   getV3ArmorFoundationMesh2MotionGeometry,
 } from '../components/v3/v3ArmorFoundation';
 import { V3_MESH2MOTION_ARMOR_RIG } from '../components/v3/v3Mesh2MotionArmorRig.generated';
 import { V3_CHARACTER_SLOT_IDS, type V3CharacterSlotId } from '../components/v3/v3ModelTypes';
 import {
+  V3_ARMOR_SURFACE_DEFAULT_OPTIONS,
+  createV3VoxelArmorGroup,
+} from '../components/v3/v3VoxelArmorSurface';
+import {
+  createV3Mesh2MotionTPoseBindArmorEdit,
+  createV3Mesh2MotionTPoseBindSectionRenderPiece,
+  measureV3Mesh2MotionTPoseBindVoxelBounds,
+  mirrorV3Mesh2MotionTPoseBindTransform,
+  resolveV3Mesh2MotionTPoseBindMirrorSlot,
+} from './v3Mesh2MotionTPoseBindArmor';
+import {
+  buildV3Mesh2MotionTPoseBindLocalStorageKey,
   buildV3Mesh2MotionTPoseBindDiagnostics,
+  identityV3Mesh2MotionTPoseBindSectionTransform,
   normalizeV3Mesh2MotionTPoseBindDocument,
+  normalizeV3Mesh2MotionTPoseBindSectionTransform,
   parseV3Mesh2MotionTPoseBindDocumentJson,
   resolveV3Mesh2MotionTPoseBindEditorHotkey,
   serializeV3Mesh2MotionTPoseBindDocument,
+  type V3Mesh2MotionTPoseBindArmorEdit,
+  type V3Mesh2MotionTPoseBindArmorSection,
   type V3Mesh2MotionTPoseBindDocument,
   type V3Mesh2MotionTPoseBindPlacement,
+  type V3Mesh2MotionTPoseBindSectionTransform,
   type V3Mesh2MotionTPoseBindTransformMode,
 } from './v3Mesh2MotionTPoseBindEditorCore';
 
@@ -28,12 +52,20 @@ const FOUNDATION_HASH = [
   V3_ARMOR_FOUNDATION.source.referenceSourceBindSha256,
   V3_ARMOR_FOUNDATION.source.referenceLimbVoxelSha256,
 ].join(':');
-const FOUNDATION_BIND_VERSION = 'all-slot-mannequin-envelope-fit-v2';
-const LOCAL_STORAGE_KEY = `ibrawls_v3_mesh2motion_tpose_bind_editor:${SOURCE_HASH}:${FOUNDATION_HASH}:${FOUNDATION_BIND_VERSION}`;
+const LOCAL_STORAGE_KEY = buildV3Mesh2MotionTPoseBindLocalStorageKey(SOURCE_HASH, FOUNDATION_HASH);
 const MANNEQUIN_REVIEW_QUERY = '?view=front&review=mannequin';
+const EDITOR_CUSTOM_ARMOR_COLORS: CustomArmorColors = {
+  primary: 'hsl(188, 86%, 50%)',
+  secondary: 'hsl(188, 58%, 34%)',
+  accent: 'hsl(236, 82%, 58%)',
+  visor: 'hsl(188, 95%, 74%)',
+  dark: '#2f3f52',
+  highlight: 'hsl(188, 72%, 68%)',
+};
 
 type BindEditorDebugView = 'front' | 'left' | 'right' | 'rear';
 type BindEditorReviewMode = 'mannequin' | 'ghost' | 'armor';
+type BindEditorTransformScope = 'piece' | 'section';
 
 const parseReviewMode = (value: string | null): BindEditorReviewMode => {
   if (value === 'mannequin' || value === 'mannequin-only') return 'mannequin';
@@ -53,6 +85,16 @@ const searchParams = new URLSearchParams(window.location.search);
 const canvas = document.getElementById('bind-canvas') as HTMLCanvasElement;
 const statusElement = document.getElementById('status') as HTMLSpanElement;
 const slotSelect = document.getElementById('slot-select') as HTMLSelectElement;
+const armorSlotMenuButton = document.getElementById('armor-slot-menu-button') as HTMLButtonElement;
+const armorSlotMenu = document.getElementById('armor-slot-menu') as HTMLDivElement;
+const armorSlotOptions = document.getElementById('armor-slot-options') as HTMLDivElement;
+const armorSelectionSummary = document.getElementById('armor-selection-summary') as HTMLPreElement;
+const regenerateArmorButton = document.getElementById('regenerate-armor') as HTMLButtonElement;
+const transformScopeButtons: Record<BindEditorTransformScope, HTMLButtonElement> = {
+  piece: document.getElementById('transform-scope-piece') as HTMLButtonElement,
+  section: document.getElementById('transform-scope-section') as HTMLButtonElement,
+};
+const mirrorTransformModeButton = document.getElementById('mirror-transform-mode') as HTMLButtonElement;
 const reviewButtons: Record<BindEditorReviewMode, HTMLButtonElement> = {
   mannequin: document.getElementById('review-mannequin-only') as HTMLButtonElement,
   ghost: document.getElementById('review-armor-ghost') as HTMLButtonElement,
@@ -91,6 +133,7 @@ const scaleInputs = [
   document.getElementById('slot-sz') as HTMLInputElement,
 ] as const;
 const selectedSummaryElement = document.getElementById('selected-summary') as HTMLPreElement;
+const sectionButtonsElement = document.getElementById('section-buttons') as HTMLDivElement;
 const diagnosticsElement = document.getElementById('diagnostics') as HTMLPreElement;
 const jsonOutput = document.getElementById('json-output') as HTMLTextAreaElement;
 
@@ -187,15 +230,37 @@ if (skeletonRoot) skeletonRoot.visible = false;
 
 const slotPivots = model.userData.v3PartGroups as Record<V3CharacterSlotId, THREE.Group>;
 const geometryGroups = model.userData.v3PartGeometryGroups as Record<V3CharacterSlotId, THREE.Group>;
+const originalSlotChildren = Object.fromEntries(V3_CHARACTER_SLOT_IDS.map((slot) => [
+  slot,
+  [...geometryGroups[slot].children],
+])) as Record<V3CharacterSlotId, THREE.Object3D[]>;
+const sectionGroups = new Map<string, THREE.Group>();
+const sectionOverlayMeshes = new Map<string, THREE.Mesh[]>();
+const raycaster = new THREE.Raycaster();
+const pointer = new THREE.Vector2();
+let transformScope: BindEditorTransformScope = 'piece';
+let mirrorTransformMode = false;
+let isDraggingTransform = false;
 
 const transformControls = new TransformControls(camera, renderer.domElement);
 transformControls.setSpace('local');
 scene.add(transformControls.getHelper());
 transformControls.addEventListener('dragging-changed', (event) => {
-  controls.enabled = !(event as { value?: boolean }).value;
+  isDraggingTransform = (event as { value?: boolean }).value === true;
+  controls.enabled = !isDraggingTransform;
+  if (!isDraggingTransform) {
+    if (transformScope === 'section') captureSelectedSectionTransform();
+    else captureSelectedTransform();
+  }
 });
 transformControls.addEventListener('objectChange', () => {
-  captureSelectedTransform();
+  if (transformScope === 'section') {
+    if (isDraggingTransform) previewSelectedSectionTransform();
+    else captureSelectedSectionTransform();
+  } else {
+    if (isDraggingTransform) previewSelectedPieceTransform();
+    else captureSelectedTransform();
+  }
 });
 
 const skeletonLines = (() => {
@@ -280,6 +345,7 @@ const setArmorReviewMaterial = (ghosted: boolean): void => {
   for (const slot of V3_CHARACTER_SLOT_IDS) {
     geometryGroups[slot].traverse((object) => {
       if (!(object instanceof THREE.Mesh)) return;
+      if (object.userData.v3BindEditorSectionOverlay) return;
       if (ghosted) {
         object.material = getGhostMaterial(object);
       } else {
@@ -333,6 +399,12 @@ const generatedDocument = (): V3Mesh2MotionTPoseBindDocument => normalizeV3Mesh2
     }];
   })),
 });
+
+let referenceDocumentCache: V3Mesh2MotionTPoseBindDocument | null = null;
+const referenceDocument = (): V3Mesh2MotionTPoseBindDocument => {
+  referenceDocumentCache ??= generatedDocument();
+  return referenceDocumentCache;
+};
 
 const sourceForCurrentMesh = (
   source: V3Mesh2MotionTPoseBindDocument['source']
@@ -390,8 +462,192 @@ const applyPlacementToSlot = (slot: V3CharacterSlotId, placement: V3Mesh2MotionT
   geometry.scale.fromArray(placement.scale);
 };
 
+const sectionMapKey = (slot: V3CharacterSlotId, sectionId: string): string => `${slot}:${sectionId}`;
+
+const sectionCenterPosition = (group: THREE.Group): THREE.Vector3 => {
+  const center = group.userData.v3BindEditorSectionRenderCenter as readonly number[] | undefined;
+  const voxelScale = group.userData.v3BindEditorVoxelScale as number | undefined;
+  return new THREE.Vector3(
+    center?.[0] ?? 0,
+    center?.[1] ?? 0,
+    center?.[2] ?? 0
+  ).multiplyScalar(Number.isFinite(voxelScale) ? voxelScale ?? 1 : 1);
+};
+
+const applySectionTransformToGroup = (
+  group: THREE.Group,
+  transform: V3Mesh2MotionTPoseBindSectionTransform
+): void => {
+  group.position.copy(sectionCenterPosition(group)).add(new THREE.Vector3(...transform.position));
+  group.rotation.set(...transform.rotation, 'XYZ');
+  group.scale.fromArray(transform.scale);
+};
+
+const captureSectionTransformFromGroup = (
+  group: THREE.Group,
+  sectionId: string
+): V3Mesh2MotionTPoseBindSectionTransform => ({
+  sectionId,
+  position: group.position.clone().sub(sectionCenterPosition(group)).toArray() as [number, number, number],
+  rotation: [group.rotation.x, group.rotation.y, group.rotation.z],
+  scale: group.scale.toArray() as [number, number, number],
+});
+
+const clearRenderedSectionMaps = (slot: V3CharacterSlotId): void => {
+  for (const key of [...sectionGroups.keys()]) {
+    if (key.startsWith(`${slot}:`)) sectionGroups.delete(key);
+  }
+  for (const key of [...sectionOverlayMeshes.keys()]) {
+    if (key.startsWith(`${slot}:`)) sectionOverlayMeshes.delete(key);
+  }
+};
+
+const mirrorPlacementFromReference = (
+  slot: V3CharacterSlotId,
+  placement: V3Mesh2MotionTPoseBindPlacement
+): V3Mesh2MotionTPoseBindPlacement | null => {
+  const mirrorSlot = resolveV3Mesh2MotionTPoseBindMirrorSlot(slot);
+  if (!mirrorSlot) return null;
+  const reference = referenceDocument();
+  const base = reference.placements[slot];
+  const mirrorBase = reference.placements[mirrorSlot];
+  if (!base || !mirrorBase) return null;
+  const scaleRatio = placement.scale.map((value, index) => {
+    const baseValue = base.scale[index] ?? 1;
+    return Math.abs(baseValue) > 0.000001 ? value / baseValue : value;
+  });
+  return {
+    slot: mirrorSlot,
+    position: [
+      mirrorBase.position[0] - (placement.position[0] - base.position[0]),
+      mirrorBase.position[1] + (placement.position[1] - base.position[1]),
+      mirrorBase.position[2] + (placement.position[2] - base.position[2]),
+    ],
+    rotation: [
+      mirrorBase.rotation[0] + (placement.rotation[0] - base.rotation[0]),
+      mirrorBase.rotation[1] - (placement.rotation[1] - base.rotation[1]),
+      mirrorBase.rotation[2] - (placement.rotation[2] - base.rotation[2]),
+    ],
+    scale: [
+      mirrorBase.scale[0] * (scaleRatio[0] ?? 1),
+      mirrorBase.scale[1] * (scaleRatio[1] ?? 1),
+      mirrorBase.scale[2] * (scaleRatio[2] ?? 1),
+    ],
+  };
+};
+
+const restoreSlotGeometry = (slot: V3CharacterSlotId): void => {
+  const geometry = geometryGroups[slot];
+  geometry.clear();
+  geometry.add(...originalSlotChildren[slot]);
+  clearRenderedSectionMaps(slot);
+};
+
+const createSectionRenderGroup = (
+  edit: V3Mesh2MotionTPoseBindArmorEdit,
+  section: V3Mesh2MotionTPoseBindArmorSection,
+  selected: boolean
+): THREE.Group => {
+  const voxelScale = getV3BuiltinPartVoxelScale(edit.slot);
+  const sectionPiece = createV3Mesh2MotionTPoseBindSectionRenderPiece(edit.piece, section);
+  const renderBounds = measureV3Mesh2MotionTPoseBindVoxelBounds(sectionPiece.voxels);
+  const renderGroup = createV3VoxelArmorGroup(customArmorPieceToVoxels(sectionPiece, EDITOR_CUSTOM_ARMOR_COLORS), {
+    ...V3_ARMOR_SURFACE_DEFAULT_OPTIONS,
+    voxelScale,
+    renderStyle: 'armorSurface',
+    qualityTier: 'desktop',
+    pivot: renderBounds.center,
+  });
+  renderGroup.name = `v3Mesh2MotionRegeneratedSection:${edit.slot}:${section.id}`;
+  renderGroup.userData.v3BindEditorArmorSection = section.id;
+  renderGroup.userData.v3BindEditorArmorSlot = edit.slot;
+  renderGroup.userData.v3BindEditorSectionRenderCenter = renderBounds.center;
+  renderGroup.userData.v3BindEditorVoxelScale = voxelScale;
+
+  const overlayGroup = createV3VoxelArmorGroup(customArmorPieceToVoxels(sectionPiece, EDITOR_CUSTOM_ARMOR_COLORS), {
+    ...V3_ARMOR_SURFACE_DEFAULT_OPTIONS,
+    voxelScale,
+    renderStyle: 'armorSurface',
+    qualityTier: 'desktop',
+    pivot: renderBounds.center,
+  });
+  overlayGroup.name = `v3Mesh2MotionRegeneratedSectionOverlay:${edit.slot}:${section.id}`;
+  const overlayMaterial = new THREE.MeshBasicMaterial({
+    color: selected ? 0xfacc15 : 0x67e8f9,
+    wireframe: true,
+    transparent: true,
+    opacity: selected ? 0.92 : 0.34,
+    depthTest: false,
+  });
+  const overlayMeshes: THREE.Mesh[] = [];
+  overlayGroup.traverse((object) => {
+    if (!(object instanceof THREE.Mesh)) return;
+    object.material = overlayMaterial;
+    object.renderOrder = selected ? 42 : 38;
+    object.userData.v3BindEditorSectionOverlay = true;
+    object.userData.v3BindEditorArmorSection = section.id;
+    object.userData.v3BindEditorArmorSlot = edit.slot;
+    overlayMeshes.push(object);
+  });
+  renderGroup.add(overlayGroup);
+  sectionOverlayMeshes.set(sectionMapKey(edit.slot, section.id), overlayMeshes);
+
+  return renderGroup;
+};
+
+const activeArmorEdit = (): V3Mesh2MotionTPoseBindArmorEdit | undefined =>
+  bindDocument.armorEdits[selectedSlot()];
+
+const activeSectionIds = (): string[] => {
+  const edit = activeArmorEdit();
+  if (!edit) return [];
+  const available = new Set(edit.sections.map((section) => section.id));
+  return bindDocument.selectedSectionIds.filter((sectionId) => available.has(sectionId));
+};
+
+const firstActiveSection = (): V3Mesh2MotionTPoseBindArmorSection | null => {
+  const edit = activeArmorEdit();
+  const firstId = activeSectionIds()[0];
+  return edit?.sections.find((section) => section.id === firstId) ?? null;
+};
+
+const sectionTransformForInputs = (): V3Mesh2MotionTPoseBindSectionTransform => {
+  const edit = activeArmorEdit();
+  const section = firstActiveSection();
+  if (!edit || !section) return identityV3Mesh2MotionTPoseBindSectionTransform('section');
+  return edit.sectionTransforms[section.id] ?? identityV3Mesh2MotionTPoseBindSectionTransform(section.id);
+};
+
+const selectedSectionGroup = (): THREE.Group | null => {
+  const firstId = activeSectionIds()[0];
+  if (!firstId) return null;
+  return sectionGroups.get(sectionMapKey(selectedSlot(), firstId)) ?? null;
+};
+
+const renderArmorSlot = (slot: V3CharacterSlotId): void => {
+  const edit = bindDocument.armorEdits[slot];
+  if (!edit) {
+    restoreSlotGeometry(slot);
+    return;
+  }
+
+  const geometry = geometryGroups[slot];
+  const selectedIds = slot === selectedSlot() ? new Set(activeSectionIds()) : new Set<string>();
+  geometry.clear();
+  clearRenderedSectionMaps(slot);
+  for (const section of edit.sections) {
+    const selected = selectedIds.has(section.id);
+    const sectionGroup = createSectionRenderGroup(edit, section, selected);
+    const transform = edit.sectionTransforms[section.id] ?? identityV3Mesh2MotionTPoseBindSectionTransform(section.id);
+    applySectionTransformToGroup(sectionGroup, transform);
+    sectionGroups.set(sectionMapKey(slot, section.id), sectionGroup);
+    geometry.add(sectionGroup);
+  }
+};
+
 const applyDocumentToModel = (): void => {
   for (const slot of V3_CHARACTER_SLOT_IDS) {
+    renderArmorSlot(slot);
     applyPlacementToSlot(slot, bindDocument.placements[slot]);
   }
   model.updateWorldMatrix(true, true);
@@ -413,7 +669,81 @@ const refreshSlotSelect = (): void => {
   }));
 };
 
+const refreshArmorRegenerationControls = (): void => {
+  const selected = new Set(bindDocument.selectedArmorSlots);
+  armorSlotOptions.replaceChildren(...V3_CHARACTER_SLOT_IDS.map((slot) => {
+    const label = document.createElement('label');
+    label.className = 'check-row';
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.checked = selected.has(slot);
+    checkbox.addEventListener('change', () => {
+      const nextSelected = new Set(bindDocument.selectedArmorSlots);
+      if (checkbox.checked) nextSelected.add(slot);
+      else nextSelected.delete(slot);
+      bindDocument = normalizeV3Mesh2MotionTPoseBindDocument({
+        ...bindDocument,
+        selectedArmorSlots: V3_CHARACTER_SLOT_IDS.filter((candidate) => nextSelected.has(candidate)),
+      });
+      refreshArmorRegenerationControls();
+      refreshDiagnosticsAndJson();
+    });
+    const text = document.createElement('span');
+    text.textContent = slot;
+    label.append(checkbox, text);
+    return label;
+  }));
+  const selectedSlots = bindDocument.selectedArmorSlots;
+  armorSlotMenuButton.textContent = selectedSlots.length > 0
+    ? `${selectedSlots.length} slot${selectedSlots.length === 1 ? '' : 's'} selected`
+    : `Use current slot: ${selectedSlot()}`;
+  armorSelectionSummary.textContent = selectedSlots.length > 0
+    ? selectedSlots.join('\n')
+    : `current slot\n${selectedSlot()}`;
+};
+
+const setSelectedSection = (sectionId: string, additive: boolean): void => {
+  const edit = activeArmorEdit();
+  if (!edit || !edit.sections.some((section) => section.id === sectionId)) return;
+  const next = new Set(additive ? activeSectionIds() : []);
+  if (additive && next.has(sectionId)) next.delete(sectionId);
+  else next.add(sectionId);
+  bindDocument = normalizeV3Mesh2MotionTPoseBindDocument({
+    ...bindDocument,
+    selectedSectionIds: [...next],
+  });
+  transformScope = 'section';
+  refreshAll();
+};
+
+const refreshSectionButtons = (): void => {
+  const edit = activeArmorEdit();
+  if (!edit) {
+    const empty = document.createElement('pre');
+    empty.className = 'section-state';
+    empty.textContent = 'No regenerated armor for this slot.';
+    sectionButtonsElement.replaceChildren(empty);
+    return;
+  }
+  const selectedIds = new Set(activeSectionIds());
+  sectionButtonsElement.replaceChildren(...edit.sections.map((section) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = `${section.label} (${section.bounds.voxelCount})`;
+    button.classList.toggle('active', selectedIds.has(section.id));
+    button.addEventListener('click', (event) => setSelectedSection(section.id, (event as MouseEvent).shiftKey));
+    return button;
+  }));
+};
+
 const syncInputsFromDocument = (): void => {
+  if (transformScope === 'section') {
+    const sectionTransform = sectionTransformForInputs();
+    setTupleInputs(positionInputs, sectionTransform.position);
+    setTupleInputs(rotationInputs, sectionTransform.rotation);
+    setTupleInputs(scaleInputs, sectionTransform.scale);
+    return;
+  }
   const placement = bindDocument.placements[selectedSlot()];
   setTupleInputs(positionInputs, placement.position);
   setTupleInputs(rotationInputs, placement.rotation);
@@ -424,7 +754,29 @@ const updateTransformButtons = (): void => {
   for (const [mode, button] of Object.entries(transformButtons) as [V3Mesh2MotionTPoseBindTransformMode, HTMLButtonElement][]) {
     button.classList.toggle('active', mode === transformMode);
   }
+  for (const [scope, button] of Object.entries(transformScopeButtons) as [BindEditorTransformScope, HTMLButtonElement][]) {
+    button.classList.toggle('active', scope === transformScope);
+  }
+  mirrorTransformModeButton.classList.toggle('active', mirrorTransformMode);
   transformControls.setMode(transformMode);
+};
+
+const updateTransformAttachment = (): void => {
+  transformControls.detach();
+  if (transformScope === 'section') {
+    const sectionTarget = selectedSectionGroup();
+    if (sectionTarget) transformControls.attach(sectionTarget);
+    return;
+  }
+  transformControls.attach(selectedGeometry());
+};
+
+const setTransformScope = (scope: BindEditorTransformScope): void => {
+  transformScope = scope;
+  syncInputsFromDocument();
+  updateTransformButtons();
+  updateTransformAttachment();
+  refreshDiagnosticsAndJson();
 };
 
 const setSelectedSlot = (slot: V3CharacterSlotId): void => {
@@ -437,15 +789,20 @@ const setSelectedSlot = (slot: V3CharacterSlotId): void => {
 
 const updateSelectedPlacement = (placement: Partial<V3Mesh2MotionTPoseBindPlacement>): void => {
   const slot = selectedSlot();
+  const nextPlacement = {
+    ...bindDocument.placements[slot],
+    ...placement,
+    slot,
+  };
+  const mirroredPlacement = mirrorTransformMode
+    ? mirrorPlacementFromReference(slot, nextPlacement)
+    : null;
   bindDocument = normalizeV3Mesh2MotionTPoseBindDocument({
     ...bindDocument,
     placements: {
       ...bindDocument.placements,
-      [slot]: {
-        ...bindDocument.placements[slot],
-        ...placement,
-        slot,
-      },
+      [slot]: nextPlacement,
+      ...(mirroredPlacement ? { [mirroredPlacement.slot]: mirroredPlacement } : {}),
     },
     source: sourceClearingMissingSlot(slot),
   });
@@ -463,7 +820,137 @@ function captureSelectedTransform(): void {
   refreshDiagnosticsAndJson();
 }
 
+function previewSelectedPieceTransform(): void {
+  if (!mirrorTransformMode) return;
+  const slot = selectedSlot();
+  const mirroredPlacement = mirrorPlacementFromReference(slot, {
+    slot,
+    position: selectedGeometry().position.toArray() as [number, number, number],
+    rotation: [selectedGeometry().rotation.x, selectedGeometry().rotation.y, selectedGeometry().rotation.z],
+    scale: selectedGeometry().scale.toArray() as [number, number, number],
+  });
+  if (mirroredPlacement) applyPlacementToSlot(mirroredPlacement.slot, mirroredPlacement);
+}
+
+function previewSelectedSectionTransform(): void {
+  const edit = activeArmorEdit();
+  const section = firstActiveSection();
+  const group = selectedSectionGroup();
+  if (!edit || !section || !group) return;
+  const selectedIds = activeSectionIds();
+  const transform = normalizeV3Mesh2MotionTPoseBindSectionTransform(
+    captureSectionTransformFromGroup(group, section.id),
+    section.id
+  );
+
+  for (const sectionId of selectedIds) {
+    const target = sectionGroups.get(sectionMapKey(edit.slot, sectionId));
+    if (!target) continue;
+    applySectionTransformToGroup(target, {
+      ...transform,
+      sectionId,
+    });
+  }
+
+  if (!mirrorTransformMode) return;
+  const mirrorSlot = resolveV3Mesh2MotionTPoseBindMirrorSlot(edit.slot);
+  const mirrorEdit = mirrorSlot ? bindDocument.armorEdits[mirrorSlot] : undefined;
+  if (!mirrorSlot || !mirrorEdit) return;
+  for (const sectionId of selectedIds) {
+    if (!mirrorEdit.sections.some((candidate) => candidate.id === sectionId)) continue;
+    const target = sectionGroups.get(sectionMapKey(mirrorSlot, sectionId));
+    if (!target) continue;
+    applySectionTransformToGroup(target, mirrorV3Mesh2MotionTPoseBindTransform({
+      ...transform,
+      sectionId,
+    }));
+  }
+}
+
+const updateSelectedSectionTransforms = (
+  transform: V3Mesh2MotionTPoseBindSectionTransform
+): void => {
+  const slot = selectedSlot();
+  const edit = bindDocument.armorEdits[slot];
+  if (!edit) return;
+  const selectedIds = activeSectionIds();
+  if (selectedIds.length === 0) return;
+  const mirrorSlot = mirrorTransformMode ? resolveV3Mesh2MotionTPoseBindMirrorSlot(slot) : null;
+  const mirrorEdit = mirrorSlot ? bindDocument.armorEdits[mirrorSlot] : undefined;
+  const sectionTransforms = { ...edit.sectionTransforms };
+  const mirrorSectionTransforms = mirrorEdit ? { ...mirrorEdit.sectionTransforms } : null;
+
+  for (const sectionId of selectedIds) {
+    const section = edit.sections.find((candidate) => candidate.id === sectionId);
+    if (!section) continue;
+    const normalized = normalizeV3Mesh2MotionTPoseBindSectionTransform({
+      ...transform,
+      sectionId,
+    }, sectionId);
+    sectionTransforms[sectionId] = normalized;
+    const group = sectionGroups.get(sectionMapKey(slot, sectionId));
+    if (group) applySectionTransformToGroup(group, normalized);
+
+    if (mirrorSlot && mirrorEdit && mirrorSectionTransforms) {
+      const mirrorSection = mirrorEdit.sections.find((candidate) => candidate.id === sectionId);
+      if (!mirrorSection) continue;
+      const mirrored = mirrorV3Mesh2MotionTPoseBindTransform({
+        ...normalized,
+        sectionId,
+      });
+      mirrorSectionTransforms[sectionId] = mirrored;
+      const mirrorGroup = sectionGroups.get(sectionMapKey(mirrorSlot, sectionId));
+      if (mirrorGroup) applySectionTransformToGroup(mirrorGroup, mirrored);
+    }
+  }
+
+  bindDocument = normalizeV3Mesh2MotionTPoseBindDocument({
+    ...bindDocument,
+    armorEdits: {
+      ...bindDocument.armorEdits,
+      [slot]: {
+        ...edit,
+        sectionTransforms,
+      },
+      ...(mirrorSlot && mirrorEdit && mirrorSectionTransforms
+        ? {
+          [mirrorSlot]: {
+            ...mirrorEdit,
+            sectionTransforms: mirrorSectionTransforms,
+          },
+        }
+        : {}),
+    },
+  });
+};
+
+function captureSelectedSectionTransform(): void {
+  const edit = activeArmorEdit();
+  const section = firstActiveSection();
+  const group = selectedSectionGroup();
+  if (!edit || !section || !group) return;
+  updateSelectedSectionTransforms(captureSectionTransformFromGroup(group, section.id));
+  syncInputsFromDocument();
+  refreshDiagnosticsAndJson();
+}
+
+const updateSelectedSectionsFromInputs = (): void => {
+  const section = firstActiveSection();
+  if (!section) return;
+  updateSelectedSectionTransforms({
+    sectionId: section.id,
+    position: tupleFromInputs(positionInputs),
+    rotation: tupleFromInputs(rotationInputs),
+    scale: tupleFromInputs(scaleInputs),
+  });
+};
+
 const applyInputsToSelected = (): void => {
+  if (transformScope === 'section') {
+    updateSelectedSectionsFromInputs();
+    refreshAll();
+    return;
+  }
   updateSelectedPlacement({
     position: tupleFromInputs(positionInputs),
     rotation: tupleFromInputs(rotationInputs),
@@ -474,7 +961,7 @@ const applyInputsToSelected = (): void => {
 
 const refreshDiagnosticsAndJson = (): void => {
   const diagnostics = buildV3Mesh2MotionTPoseBindDiagnostics(bindDocument, {
-    referencePlacements: generatedDocument().placements,
+    referencePlacements: referenceDocument().placements,
   });
   diagnosticsElement.textContent = diagnostics.items.length === 0
     ? 'ready'
@@ -482,13 +969,27 @@ const refreshDiagnosticsAndJson = (): void => {
   jsonOutput.value = serializeV3Mesh2MotionTPoseBindDocument(bindDocument);
   const placement = bindDocument.placements[selectedSlot()];
   const pivot = V3_MESH2MOTION_ARMOR_RIG.slots[selectedSlot()];
+  const edit = activeArmorEdit();
+  const selectedSections = activeSectionIds();
+  const sectionTransform = sectionTransformForInputs();
   selectedSummaryElement.textContent = [
     `slot: ${selectedSlot()}`,
+    `scope: ${transformScope}`,
+    `mirror mode: ${mirrorTransformMode ? 'on' : 'off'}`,
+    `regenerated: ${edit ? `${edit.sections.length} section(s)` : 'no'}`,
+    `selected sections: ${selectedSections.length > 0 ? selectedSections.join(', ') : 'none'}`,
     `source joint: ${pivot.sourceJointName}`,
     `center joints: ${pivot.centerJointNames.join(', ')}`,
     `position: ${placement.position.map((value) => value.toFixed(4)).join(', ')}`,
     `rotation: ${placement.rotation.map((value) => value.toFixed(4)).join(', ')}`,
     `scale: ${placement.scale.map((value) => value.toFixed(4)).join(', ')}`,
+    ...(transformScope === 'section'
+      ? [
+        `section position: ${sectionTransform.position.map((value) => value.toFixed(4)).join(', ')}`,
+        `section rotation: ${sectionTransform.rotation.map((value) => value.toFixed(4)).join(', ')}`,
+        `section scale: ${sectionTransform.scale.map((value) => value.toFixed(4)).join(', ')}`,
+      ]
+      : []),
   ].join('\n');
   statusElement.textContent = diagnostics.ready
     ? `Editing ${selectedSlot()} from Mesh2Motion TPose (${SOURCE_HASH.slice(0, 10)})`
@@ -498,9 +999,11 @@ const refreshDiagnosticsAndJson = (): void => {
 function refreshAll(): void {
   applyDocumentToModel();
   refreshSlotSelect();
+  refreshArmorRegenerationControls();
+  refreshSectionButtons();
   syncInputsFromDocument();
   updateTransformButtons();
-  transformControls.attach(selectedGeometry());
+  updateTransformAttachment();
   refreshDiagnosticsAndJson();
 }
 
@@ -523,11 +1026,65 @@ const importDocumentFromText = (text: string): void => {
   }
 };
 
+const regenerateSelectedArmor = (): void => {
+  const slots = bindDocument.selectedArmorSlots.length > 0
+    ? bindDocument.selectedArmorSlots
+    : [selectedSlot()];
+  const armorEdits = { ...bindDocument.armorEdits };
+  const now = Date.now();
+
+  for (const slot of slots) {
+    armorEdits[slot] = createV3Mesh2MotionTPoseBindArmorEdit(
+      generateV3ArmorFromFoundation({ slot, now })
+    );
+  }
+
+  const nextSelectedSlot = slots.includes(selectedSlot()) ? selectedSlot() : slots[0];
+  const nextSelectedEdit = armorEdits[nextSelectedSlot];
+  bindDocument = normalizeV3Mesh2MotionTPoseBindDocument({
+    ...bindDocument,
+    selectedSlot: nextSelectedSlot,
+    selectedArmorSlots: slots,
+    selectedSectionIds: nextSelectedEdit?.sections[0] ? [nextSelectedEdit.sections[0].id] : [],
+    armorEdits,
+  });
+  transformScope = nextSelectedEdit?.sections[0] ? 'section' : 'piece';
+  refreshAll();
+  statusElement.textContent = `regenerated ${slots.length} armor slot${slots.length === 1 ? '' : 's'} from V3 foundation`;
+};
+
 slotSelect.addEventListener('change', () => {
   setSelectedSlot(slotSelect.value as V3CharacterSlotId);
 });
+armorSlotMenuButton.addEventListener('click', () => {
+  const hidden = !armorSlotMenu.hidden;
+  armorSlotMenu.hidden = hidden;
+  armorSlotMenuButton.setAttribute('aria-expanded', String(!hidden));
+});
+document.addEventListener('click', (event) => {
+  const target = event.target as Node | null;
+  if (!target || armorSlotMenu.hidden) return;
+  if (armorSlotMenu.contains(target) || armorSlotMenuButton.contains(target)) return;
+  armorSlotMenu.hidden = true;
+  armorSlotMenuButton.setAttribute('aria-expanded', 'false');
+});
+regenerateArmorButton.addEventListener('click', regenerateSelectedArmor);
+for (const [scope, button] of Object.entries(transformScopeButtons) as [BindEditorTransformScope, HTMLButtonElement][]) {
+  button.addEventListener('click', () => setTransformScope(scope));
+}
+mirrorTransformModeButton.addEventListener('click', () => {
+  mirrorTransformMode = !mirrorTransformMode;
+  updateTransformButtons();
+  refreshDiagnosticsAndJson();
+});
 for (const input of [...positionInputs, ...rotationInputs, ...scaleInputs]) {
   input.addEventListener('change', applyInputsToSelected);
+  input.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    applyInputsToSelected();
+    input.blur();
+  });
 }
 for (const [mode, button] of Object.entries(transformButtons) as [V3Mesh2MotionTPoseBindTransformMode, HTMLButtonElement][]) {
   button.addEventListener('click', () => {
@@ -552,7 +1109,7 @@ toggleFingerJointsButton.addEventListener('click', () => {
 });
 resetSelectedButton.addEventListener('click', () => {
   const slot = selectedSlot();
-  const generated = generatedDocument();
+  const generated = referenceDocument();
   bindDocument = normalizeV3Mesh2MotionTPoseBindDocument({
     ...bindDocument,
     source: sourceClearingMissingSlot(slot),
@@ -564,20 +1121,20 @@ resetSelectedButton.addEventListener('click', () => {
   refreshAll();
 });
 resetAllButton.addEventListener('click', () => {
-  bindDocument = generatedDocument();
+  bindDocument = referenceDocument();
   refreshAll();
 });
 saveLocalButton.addEventListener('click', saveLocal);
 clearLocalButton.addEventListener('click', () => {
   window.localStorage.removeItem(LOCAL_STORAGE_KEY);
-  bindDocument = generatedDocument();
+  bindDocument = referenceDocument();
   refreshAll();
 });
 copyJsonButton.addEventListener('click', async () => {
   try {
     if (!navigator.clipboard?.writeText) throw new Error('clipboard unavailable');
     await navigator.clipboard.writeText(serializeV3Mesh2MotionTPoseBindDocument(bindDocument));
-    statusElement.textContent = 'copied placement JSON';
+    statusElement.textContent = 'copied editor JSON';
   } catch (error) {
     const message = error instanceof Error ? error.message : 'clipboard unavailable';
     statusElement.textContent = `copy failed: ${message}`;
@@ -607,6 +1164,32 @@ importFileInput.addEventListener('change', async () => {
   }
 });
 
+canvas.addEventListener('pointerdown', (event) => {
+  if (event.button !== 0 || sectionOverlayMeshes.size === 0) return;
+  const rect = canvas.getBoundingClientRect();
+  pointer.x = ((event.clientX - rect.left) / Math.max(1, rect.width)) * 2 - 1;
+  pointer.y = -(((event.clientY - rect.top) / Math.max(1, rect.height)) * 2 - 1);
+  raycaster.setFromCamera(pointer, camera);
+  const hits = raycaster.intersectObjects([...sectionOverlayMeshes.values()].flat(), false);
+  const overlay = hits[0]?.object as THREE.Mesh | undefined;
+  const slot = overlay?.userData.v3BindEditorArmorSlot;
+  const sectionId = overlay?.userData.v3BindEditorArmorSection;
+  if (!slot || !sectionId || !V3_CHARACTER_SLOT_IDS.includes(slot)) return;
+
+  const additive = event.shiftKey && slot === selectedSlot();
+  const nextSelected = new Set<string>(additive ? activeSectionIds() : []);
+  if (additive && nextSelected.has(sectionId)) nextSelected.delete(sectionId);
+  else nextSelected.add(sectionId);
+  bindDocument = normalizeV3Mesh2MotionTPoseBindDocument({
+    ...bindDocument,
+    selectedSlot: slot,
+    selectedSectionIds: [...nextSelected],
+  });
+  transformScope = 'section';
+  event.preventDefault();
+  refreshAll();
+});
+
 window.addEventListener('keydown', (event) => {
   const action = resolveV3Mesh2MotionTPoseBindEditorHotkey({
     key: event.key,
@@ -619,7 +1202,14 @@ window.addEventListener('keydown', (event) => {
   });
   if (!action) return;
   event.preventDefault();
-  if (action.type === 'clearSelection') transformControls.detach();
+  if (action.type === 'clearSelection') {
+    bindDocument = normalizeV3Mesh2MotionTPoseBindDocument({
+      ...bindDocument,
+      selectedSectionIds: [],
+    });
+    transformControls.detach();
+    refreshAll();
+  }
   if (action.type === 'resetSelected') resetSelectedButton.click();
   if (action.type === 'resetAll') resetAllButton.click();
   if (action.type === 'commit') saveLocal();

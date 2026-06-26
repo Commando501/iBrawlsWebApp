@@ -6,6 +6,7 @@ import {
   V3_ARMOR_FOUNDATION_SCHEMA,
   analyzeV3ArmorFoundation,
   createV3ReferenceLockedPartVoxels,
+  createV3FoundationRenderableCustomArmorVoxels,
   generateV3ArmorFromFoundation,
   generateV3ArmorFromTheme,
   generateV3ArmorSuitFromTheme,
@@ -434,6 +435,18 @@ describe('V3 armor foundation', () => {
     assert.equal(serialized.includes('/Users/'), false);
     assert.equal(serialized.includes('"triangles"'), false);
     assert.equal(serialized.includes('"meshes"'), false);
+  });
+
+  it('maps exact foundation snapshots into the same render coordinates as reference-locked V3 armor', () => {
+    const piece = generateV3ArmorFromFoundation({ slot: 'upperArmLeft', now: 123 });
+    const renderable = createV3FoundationRenderableCustomArmorVoxels(piece);
+    const reference = createV3ReferenceLockedPartVoxels('upperArmLeft', TEST_COLORS, undefined, {
+      qualityTier: 'desktop',
+      sourceFidelity: 'exact',
+    });
+
+    assert.equal(renderable.length, reference.length);
+    assert.equal(coordSignature(renderable), coordSignature(reference));
   });
 
   it('generates a full internal V3 suit and keeps every slot on the foundation mask', () => {

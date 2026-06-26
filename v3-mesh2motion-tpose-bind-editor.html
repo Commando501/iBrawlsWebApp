@@ -152,6 +152,68 @@
         flex-wrap: wrap;
         gap: 8px;
       }
+      .menu-anchor {
+        position: relative;
+      }
+      .multi-select-button {
+        width: 100%;
+        text-align: left;
+      }
+      .multi-select-menu {
+        position: absolute;
+        z-index: 40;
+        top: calc(100% + 4px);
+        left: 0;
+        right: 0;
+        max-height: 280px;
+        overflow: auto;
+        padding: 8px;
+        border: 1px solid var(--line-strong);
+        border-radius: 6px;
+        background: #071014;
+        box-shadow: 0 12px 30px rgb(0 0 0 / 45%);
+      }
+      .multi-select-options {
+        display: grid;
+        gap: 4px;
+      }
+      .check-row {
+        display: grid;
+        grid-template-columns: 18px minmax(0, 1fr);
+        align-items: center;
+        gap: 7px;
+        min-height: 26px;
+        padding: 3px 4px;
+        color: var(--text);
+        font: 11px/1.2 "Cascadia Mono", monospace;
+        letter-spacing: 0;
+        text-transform: none;
+      }
+      .check-row input {
+        width: 16px;
+        min-height: 16px;
+        padding: 0;
+      }
+      .section-state {
+        min-height: 42px;
+        margin: 0;
+        padding: 7px;
+        color: #cbd5e1;
+        background: #071014;
+        border: 1px solid #24414a;
+        border-radius: 6px;
+        font: 11px/1.35 "Cascadia Mono", monospace;
+        white-space: pre-wrap;
+      }
+      .section-buttons {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+      }
+      .section-buttons button {
+        width: 100%;
+        min-width: 0;
+      }
       #viewport-wrap {
         position: relative;
         min-width: 0;
@@ -216,6 +278,24 @@
               <select id="slot-select"></select>
             </label>
           </section>
+          <section id="armor-regeneration-section" class="section">
+            <p class="section-title">Armor Regeneration</p>
+            <div class="menu-anchor">
+              <button id="armor-slot-menu-button" type="button" class="multi-select-button" aria-expanded="false">
+                Choose Slots
+              </button>
+              <div id="armor-slot-menu" class="multi-select-menu" hidden>
+                <div id="armor-slot-options" class="multi-select-options"></div>
+              </div>
+            </div>
+            <pre id="armor-selection-summary" class="section-state">No regenerated slots selected.</pre>
+            <div class="row">
+              <button id="regenerate-armor" type="button">Regenerate</button>
+              <button id="transform-scope-piece" type="button" class="active">Piece</button>
+              <button id="transform-scope-section" type="button">Section</button>
+              <button id="mirror-transform-mode" type="button">Mirror</button>
+            </div>
+          </section>
           <section class="section">
             <p class="section-title">Review</p>
             <div class="button-grid">
@@ -268,14 +348,18 @@
             <p class="section-title">Selected</p>
             <pre id="selected-summary">No slot selected.</pre>
           </section>
+          <section id="sections-panel" class="section">
+            <p class="section-title">Sections</p>
+            <div id="section-buttons" class="section-buttons"></div>
+          </section>
           <section class="section">
             <p class="section-title">Diagnostics</p>
             <pre id="diagnostics">No diagnostics yet.</pre>
           </section>
           <section class="section">
-            <p class="section-title">Placement JSON</p>
+            <p class="section-title">Editor JSON</p>
             <input id="import-file" type="file" accept="application/json,.json" hidden />
-            <textarea id="json-output" spellcheck="false" aria-label="V3 Mesh2Motion TPose bind placement JSON"></textarea>
+            <textarea id="json-output" spellcheck="false" aria-label="V3 Mesh2Motion TPose bind editor JSON"></textarea>
           </section>
         </aside>
       </div>
