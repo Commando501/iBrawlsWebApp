@@ -6,6 +6,7 @@ import {
   V3_ARMOR_FOUNDATION_SCHEMA,
   analyzeV3ArmorFoundation,
   createV3ReferenceLockedPartVoxels,
+  generateV3ArmorFromFoundation,
   generateV3ArmorFromTheme,
   generateV3ArmorSuitFromTheme,
   validateV3ArmorFoundationPiece,
@@ -408,6 +409,31 @@ describe('V3 armor foundation', () => {
     assert.equal(coordSignature(first.voxels), coordSignature(variant.voxels));
     assert.notDeepEqual(first.voxels.map((voxel) => voxel.role), variant.voxels.map((voxel) => voxel.role));
     assert.equal(validateV3ArmorFoundationPiece(first).valid, true);
+  });
+
+  it('regenerates deterministic exact foundation armor snapshots without unsafe source metadata', () => {
+    const first = generateV3ArmorFromFoundation({ slot: 'helmet', now: 123 });
+    const second = generateV3ArmorFromFoundation({ slot: 'helmet', now: 123 });
+    const serialized = JSON.stringify(first);
+
+    assert.deepEqual(second, first);
+    assert.equal(first.modelSystem, 'v3');
+    assert.equal(first.slot, 'helmet');
+    assert.match(first.id, /^v3_foundation_exact_helmet_[0-9a-z]+$/);
+    assert.match(first.sourcePreset ?? '', /^v3-foundation-exact:helmet:/);
+    assert.equal(first.voxels.length, V3_ARMOR_FOUNDATION.slots.helmet.referenceVoxelCount);
+    assert.equal(coordSignature(first.voxels), coordSignature(generateV3ArmorFromTheme({
+      slot: 'helmet',
+      description: 'reference mask comparator',
+      seed: 'comparison',
+      now: 123,
+    }).voxels));
+    assert.equal(validateV3ArmorFoundationPiece(first).valid, true);
+    assert.equal(serialized.includes('C:'), false);
+    assert.equal(serialized.includes('G:'), false);
+    assert.equal(serialized.includes('/Users/'), false);
+    assert.equal(serialized.includes('"triangles"'), false);
+    assert.equal(serialized.includes('"meshes"'), false);
   });
 
   it('generates a full internal V3 suit and keeps every slot on the foundation mask', () => {
