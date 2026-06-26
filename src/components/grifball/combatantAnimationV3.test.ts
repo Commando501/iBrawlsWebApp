@@ -80,6 +80,11 @@ const assertWorldYAbove = (group: THREE.Group, label: string, minimumY: number) 
 const getWorldBoxCenter = (object: THREE.Object3D): THREE.Vector3 =>
   new THREE.Box3().setFromObject(object).getCenter(new THREE.Vector3());
 
+const getWorldBox = (object: THREE.Object3D): THREE.Box3 => {
+  object.updateWorldMatrix(true, true);
+  return new THREE.Box3().setFromObject(object);
+};
+
 describe('combatantAnimationV3 body masks', () => {
   it('declares separate lower-body, upper-body, and full-body masks', () => {
     assert.deepEqual(getV3BodyMaskForLayer('locomotion'), ['lowerTorso', 'leftLeg', 'rightLeg']);
@@ -646,6 +651,38 @@ describe('animateV3CombatantModel', () => {
       settings: {},
     });
     assert.equal(isBridgeRootVisible(sprintModel), true, 'retargeted run should show lower-body bridges');
+  });
+
+  it('updates the rig-fitted base body during combatant animation', () => {
+    const model = createV3Model();
+    const refs = createInitialGrifballThreeRefs();
+
+    animateV3CombatantModel({
+      refs,
+      mesh: model,
+      vel: new THREE.Vector3(3, 0, 0),
+      yaw: 0,
+      hp: 100,
+      activeWeapon: 'hammer',
+      weaponState: 'ready',
+      weaponTimer: 0,
+      dt: 1,
+      settings: {},
+    });
+    model.updateWorldMatrix(true, true);
+
+    const baseBody = model.userData.v3RigFittedBaseBody as
+      | { root?: THREE.Group; segments?: Record<string, THREE.Mesh> }
+      | undefined;
+    const partGroups = model.userData.v3PartGroups as Record<string, THREE.Group>;
+
+    assert.ok(baseBody?.root instanceof THREE.Group, 'animated V3 model should expose a rig-fitted dummy base body');
+    assert.equal(baseBody.root.visible, true);
+    assert.ok(baseBody.segments?.torso instanceof THREE.Mesh, 'animated V3 model should keep the dummy torso segment');
+    assert.equal(getWorldBox(baseBody.segments.torso).intersectsBox(getWorldBox(partGroups.chest)), true);
+    assert.equal(getWorldBox(baseBody.segments.torso).intersectsBox(getWorldBox(partGroups.back)), true);
+    assert.equal(getWorldBox(baseBody.segments.handLeft).intersectsBox(getWorldBox(partGroups.handLeft)), true);
+    assert.equal(getWorldBox(baseBody.segments.handRight).intersectsBox(getWorldBox(partGroups.handRight)), true);
   });
 
   it('covers torso-pelvis and pelvis-thigh walk seams with readable undersuit bridges', () => {

@@ -75,6 +75,60 @@ const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.target.set(0, 0.9, 0);
 
+type BindEditorDebugView = 'front' | 'left' | 'right' | 'rear';
+const MESH2MOTION_SLOT_SKELETON_LINKS = [
+  ['pelvis', 'chest'],
+  ['chest', 'neck'],
+  ['neck', 'helmet'],
+  ['chest', 'back'],
+  ['chest', 'shoulderLeft'],
+  ['shoulderLeft', 'upperArmLeft'],
+  ['upperArmLeft', 'forearmLeft'],
+  ['forearmLeft', 'handLeft'],
+  ['chest', 'shoulderRight'],
+  ['shoulderRight', 'upperArmRight'],
+  ['upperArmRight', 'forearmRight'],
+  ['forearmRight', 'handRight'],
+  ['pelvis', 'thighLeft'],
+  ['thighLeft', 'shinLeft'],
+  ['shinLeft', 'footLeft'],
+  ['pelvis', 'thighRight'],
+  ['thighRight', 'shinRight'],
+  ['shinRight', 'footRight'],
+] as const satisfies readonly (readonly [V3CharacterSlotId, V3CharacterSlotId])[];
+
+const setDebugCameraView = (view: BindEditorDebugView): void => {
+  const target = controls.target;
+  const distance = Math.max(2.6, camera.position.distanceTo(target));
+  const height = 0.55;
+  const views: Record<BindEditorDebugView, THREE.Vector3> = {
+    front: new THREE.Vector3(0, height, distance),
+    rear: new THREE.Vector3(0, height, -distance),
+    left: new THREE.Vector3(-distance, height, 0),
+    right: new THREE.Vector3(distance, height, 0),
+  };
+  camera.position.copy(target).add(views[view]);
+  controls.update();
+};
+
+(window as typeof window & {
+  __v3Mesh2MotionBindEditorDebug?: {
+    setView: (view: BindEditorDebugView) => void;
+  };
+}).__v3Mesh2MotionBindEditorDebug = {
+  setView: setDebugCameraView,
+};
+
+const requestedDebugView = new URLSearchParams(window.location.search).get('view');
+if (
+  requestedDebugView === 'front' ||
+  requestedDebugView === 'left' ||
+  requestedDebugView === 'right' ||
+  requestedDebugView === 'rear'
+) {
+  setDebugCameraView(requestedDebugView);
+}
+
 scene.add(new THREE.HemisphereLight(0xdff9ff, 0x13242c, 1.55));
 const keyLight = new THREE.DirectionalLight(0xffffff, 2.25);
 keyLight.position.set(3, 5, 4);
@@ -112,14 +166,12 @@ transformControls.addEventListener('objectChange', () => {
 });
 
 const skeletonLines = (() => {
-  const joints = new Map<string, (typeof V3_MESH2MOTION_ARMOR_RIG.skeleton.joints)[number]>(
-    V3_MESH2MOTION_ARMOR_RIG.skeleton.joints.map((joint) => [joint.name, joint])
-  );
   const values: number[] = [];
-  for (const joint of V3_MESH2MOTION_ARMOR_RIG.skeleton.joints) {
-    const parent = joint.parent ? joints.get(joint.parent) : null;
-    if (!parent) continue;
-    values.push(...parent.restWorldPosition, ...joint.restWorldPosition);
+  model.updateWorldMatrix(true, true);
+  for (const [fromSlot, toSlot] of MESH2MOTION_SLOT_SKELETON_LINKS) {
+    const from = slotPivots[fromSlot].getWorldPosition(new THREE.Vector3());
+    const to = slotPivots[toSlot].getWorldPosition(new THREE.Vector3());
+    values.push(...from.toArray(), ...to.toArray());
   }
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(values, 3));

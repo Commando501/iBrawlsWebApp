@@ -53,7 +53,9 @@ import {
   deriveV3CanonicalRigContract,
   type V3CanonicalRigContract,
 } from './v3CanonicalRigContract';
-import { buildV3Mesh2MotionArmorRig } from './v3Mesh2MotionArmorRig';
+import {
+  buildV3Mesh2MotionArmorRig,
+} from './v3Mesh2MotionArmorRig';
 import { applyV3WeaponScaleProfile } from './v3WeaponScaleProfile';
 import {
   V3_DETAIL_BONE_NAMES,
@@ -67,6 +69,20 @@ import {
   createV3VoxelArmorGroup,
 } from './v3VoxelArmorSurface';
 import { V3_ARMOR_FOUNDATION } from './v3ArmorFoundation';
+import {
+  createV3UpperBodyJointBridges,
+  setV3UpperBodyJointBridgesVisible,
+  updateV3UpperBodyJointBridges,
+} from './v3UpperBodyJointBridges';
+import {
+  createV3UpperBodyUndersuitFill,
+  setV3UpperBodyUndersuitFillVisible,
+  updateV3UpperBodyUndersuitFill,
+} from './v3UpperBodyUndersuitFill';
+import {
+  createV3RigFittedBaseBody,
+  updateV3RigFittedBaseBody,
+} from './v3RigFittedBaseBody';
 
 export interface V3SpartanBuildOptions extends V3RenderOptions {
   isEnemy?: boolean;
@@ -96,7 +112,7 @@ const createColors = (isEnemy = false, customHue?: number): SpartanColors => ({
   secondary: customHue !== undefined ? `hsl(${customHue}, 58%, 34%)` : isEnemy ? '#7f1d1d' : '#1e3a8a',
   visor: customHue !== undefined ? `hsl(${customHue}, 95%, 74%)` : '#facc15',
   accent: customHue !== undefined ? `hsl(${(customHue + 48) % 360}, 82%, 58%)` : '#22d3ee',
-  dark: '#111827',
+  dark: '#2f3f52',
   highlight: customHue !== undefined ? `hsl(${customHue}, 72%, 68%)` : '#93c5fd',
 });
 
@@ -610,6 +626,23 @@ export function buildV3SpartanModel(options: V3SpartanBuildOptions = {}): THREE.
   const lowerBodyJointBridges = createV3LowerBodyJointBridges();
   root.userData.v3LowerBodyJointBridges = lowerBodyJointBridges;
   root.add(lowerBodyJointBridges.root);
+  const rigFittedBaseBody = createV3RigFittedBaseBody();
+  root.userData.v3RigFittedBaseBody = rigFittedBaseBody;
+  root.add(rigFittedBaseBody.root);
+  updateV3RigFittedBaseBody(root, true);
+  const upperBodyUndersuitFill = createV3UpperBodyUndersuitFill(colors, paintJob, {
+    qualityTier: v3QualityTier,
+    renderStyle: v3ArmorRenderStyle,
+  });
+  root.userData.v3UpperBodyUndersuitFill = upperBodyUndersuitFill;
+  root.add(upperBodyUndersuitFill.root);
+  updateV3UpperBodyUndersuitFill(root, true);
+  setV3UpperBodyUndersuitFillVisible(root, false);
+  const upperBodyJointBridges = createV3UpperBodyJointBridges();
+  root.userData.v3UpperBodyJointBridges = upperBodyJointBridges;
+  root.add(upperBodyJointBridges.root);
+  updateV3UpperBodyJointBridges(root, true);
+  setV3UpperBodyJointBridgesVisible(root, false);
 
   return root;
 }

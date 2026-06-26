@@ -28,7 +28,6 @@ import {
 import { getV3CharacterPartBounds } from './v3PartBounds';
 import { V3_AEGIS_PART_SPECS } from './v3AegisSuitParts';
 import { V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE } from './v3AegisObjSurfaceVoxels.generated';
-import { V3_REFERENCE_LIMB_VOXELS } from './v3ReferenceLimbVoxels.generated';
 import {
   V3_PRODUCTION_QUALITY_THRESHOLDS,
   analyzeV3VoxelQuality,
@@ -50,20 +49,40 @@ import {
 import { deriveV3ExactSourceSlotBudget } from './v3ExactSourceLod';
 import { V3_SLOT_DETAIL_BONES } from './v3RigDetail';
 import {
-  V3_MESH2MOTION_ARMOR_SLOT_SPECS,
   V3_MESH2MOTION_NATIVE_LIMB_CHAIN_SLOTS,
 } from './v3Mesh2MotionArmorRig';
+import { V3_MESH2MOTION_ARMOR_RIG } from './v3Mesh2MotionArmorRig.generated';
 import { V3_ARMOR_FOUNDATION } from './v3ArmorFoundation';
 
 const requiredSegments = ['lowerTorso', 'upperTorso', 'head', 'leftArm', 'rightArm', 'leftLeg', 'rightLeg'];
 const V3_LIMB_CHAIN_BINDING_TEST_SLOT_SET = new Set<V3CharacterSlotId>(V3_MESH2MOTION_NATIVE_LIMB_CHAIN_SLOTS);
-const V3_MESH2MOTION_SOURCE_TO_TARGET_SCALE = V3_ARMOR_FOUNDATION.source.mesh2MotionSourceToTargetScale;
-const V3_OBJ_REFERENCE_BODY_SLOT_SET = new Set<V3CharacterSlotId>(['neck', 'chest', 'pelvis', 'back']);
 const getExpectedV3BuiltinSourceSlot = (slot: V3CharacterSlotId) => (
-  V3_OBJ_REFERENCE_BODY_SLOT_SET.has(slot)
-    ? V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.slots[slot]
-    : V3_REFERENCE_LIMB_VOXELS.slots[slot as keyof typeof V3_REFERENCE_LIMB_VOXELS.slots]
+  V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.slots[slot]
 );
+const basisQuaternion = (basis: { quaternion: readonly number[] }): THREE.Quaternion =>
+  new THREE.Quaternion(
+    basis.quaternion[0] ?? 0,
+    basis.quaternion[1] ?? 0,
+    basis.quaternion[2] ?? 0,
+    basis.quaternion[3] ?? 1
+  ).normalize();
+
+const expectedMesh2MotionWorldGeometryQuaternion = (slot: V3CharacterSlotId): THREE.Quaternion => {
+  const rigSlot = V3_MESH2MOTION_ARMOR_RIG.slots[slot];
+  const pivot = new THREE.Quaternion(
+    rigSlot.pivotWorldQuaternion[0] ?? 0,
+    rigSlot.pivotWorldQuaternion[1] ?? 0,
+    rigSlot.pivotWorldQuaternion[2] ?? 0,
+    rigSlot.pivotWorldQuaternion[3] ?? 1
+  ).normalize();
+  const geometry = new THREE.Quaternion().setFromEuler(new THREE.Euler(
+    rigSlot.geometry.rotation[0] ?? 0,
+    rigSlot.geometry.rotation[1] ?? 0,
+    rigSlot.geometry.rotation[2] ?? 0,
+    'XYZ'
+  ));
+  return pivot.multiply(geometry).normalize();
+};
 const groupContainsHexColor = (group: THREE.Object3D, color: string): boolean => {
   const target = color.replace('#', '').toLowerCase();
   let found = false;
@@ -127,6 +146,12 @@ const V3_SCULPT_TEST_PAINT_JOB = {
     emissive: true,
   },
 };
+
+const maxHexColorChannel = (color: string): number => Math.max(
+  Number.parseInt(color.slice(1, 3), 16),
+  Number.parseInt(color.slice(3, 5), 16),
+  Number.parseInt(color.slice(5, 7), 16)
+);
 
 const getVoxelMaxZ = (voxels: VoxelData[]): number => Math.max(...voxels.map((voxel) => voxel.z));
 const getVoxelMinZ = (voxels: VoxelData[]): number => Math.min(...voxels.map((voxel) => voxel.z));
@@ -192,43 +217,9 @@ const getWorldBox = (object: THREE.Object3D): THREE.Box3 => {
 const getWorldSize = (object: THREE.Object3D): THREE.Vector3 =>
   getWorldBox(object).getSize(new THREE.Vector3());
 
-type V3Mesh2MotionJointTestMap = Record<string, { object: THREE.Object3D }>;
-
 const getObjectWorldPosition = (object: THREE.Object3D): THREE.Vector3 => {
   object.updateWorldMatrix(true, true);
   return object.getWorldPosition(new THREE.Vector3());
-};
-
-const getJointWorldPosition = (
-  joints: V3Mesh2MotionJointTestMap,
-  jointName: string
-): THREE.Vector3 => {
-  const joint = joints[jointName];
-  assert.ok(joint?.object instanceof THREE.Object3D, `missing Mesh2Motion joint ${jointName}`);
-  return getObjectWorldPosition(joint.object);
-};
-
-const getAverageJointWorldPosition = (
-  joints: V3Mesh2MotionJointTestMap,
-  jointNames: readonly string[]
-): THREE.Vector3 => {
-  const center = new THREE.Vector3();
-  for (const jointName of jointNames) {
-    center.add(getJointWorldPosition(joints, jointName));
-  }
-  return center.multiplyScalar(1 / jointNames.length);
-};
-
-const getDistanceToSegment = (
-  point: THREE.Vector3,
-  start: THREE.Vector3,
-  end: THREE.Vector3
-): number => {
-  const segment = end.clone().sub(start);
-  const lengthSq = segment.lengthSq();
-  if (lengthSq <= 0.000000001) return point.distanceTo(start);
-  const t = THREE.MathUtils.clamp(point.clone().sub(start).dot(segment) / lengthSq, 0, 1);
-  return point.distanceTo(start.clone().addScaledVector(segment, t));
 };
 
 const tupleCloseTo = (
@@ -236,6 +227,16 @@ const tupleCloseTo = (
   expected: readonly number[],
   tolerance = 0.000001
 ): boolean => actual.every((value, index) => Math.abs(value - expected[index]) <= tolerance);
+
+const getExactObjSlotWorldSize = (slot: V3CharacterSlotId): THREE.Vector3 => {
+  const sourceSlot = V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.slots[slot];
+  const voxelScale = V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.coordinateSystem.voxelScale;
+  return new THREE.Vector3(
+    sourceSlot.bounds.size[0] * voxelScale,
+    sourceSlot.bounds.size[1] * voxelScale,
+    sourceSlot.bounds.size[2] * voxelScale
+  );
+};
 
 describe('V3 armor sculpt helpers', () => {
   it('creates tapered shell rows from sculpt profile keyframes', () => {
@@ -333,7 +334,7 @@ describe('buildV3SpartanModel', () => {
     }
   });
 
-  it('uses OBJ body occupancy and regenerated GLB helmet/limb occupancy for built-in V3 character parts', () => {
+  it('uses OBJ occupancy for every built-in V3 character part while retaining source-bind metadata', () => {
     const model = buildV3SpartanModel({ isEnemy: false, customHue: 192 });
     const partGroups = model.userData.v3PartGroups as Record<string, THREE.Group>;
     const exactVoxelScale = V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.coordinateSystem.voxelScale;
@@ -341,14 +342,13 @@ describe('buildV3SpartanModel', () => {
     for (const slot of V3_CHARACTER_SLOT_IDS) {
       assert.equal(getV3BuiltinPartGridScale(slot), 1, `${slot} keeps gridScale compatibility metadata`);
       assert.equal(getV3BuiltinPartVoxelScale(slot), exactVoxelScale, `${slot} should use the shared exact-source voxel scale`);
-      const usesObjBodySource = V3_OBJ_REFERENCE_BODY_SLOT_SET.has(slot);
       assert.equal(
         partGroups[slot].userData.v3BuiltInSourceKind,
-        usesObjBodySource ? 'exact-obj' : 'reference-glb',
+        'exact-obj',
         `${slot} should report its active built-in source kind`
       );
-      assert.equal(partGroups[slot].userData.v3ReferenceGlbSource, !usesObjBodySource, `${slot} should expose regenerated GLB source metadata only when active`);
-      assert.equal(partGroups[slot].userData.v3ObjSurfaceSource, usesObjBodySource, `${slot} should expose OBJ source metadata only when active`);
+      assert.equal(partGroups[slot].userData.v3ReferenceGlbSource, false, `${slot} should not expose regenerated GLB as visible source metadata`);
+      assert.equal(partGroups[slot].userData.v3ObjSurfaceSource, true, `${slot} should expose OBJ source metadata as active`);
       assert.equal(partGroups[slot].userData.v3VoxelScale, exactVoxelScale, `${slot} runtime group should use shared exact-source voxel scale`);
     }
   });
@@ -488,7 +488,7 @@ describe('buildV3SpartanModel', () => {
     }
   });
 
-  it('rebases built-in V3 detail bones while binding arm-chain exact-source geometry to Mesh2Motion pivots', () => {
+  it('rebases built-in V3 detail bones while binding exact-source geometry to Mesh2Motion pivots', () => {
     const model = buildV3SpartanModel({
       isEnemy: false,
       customHue: 192,
@@ -514,13 +514,20 @@ describe('buildV3SpartanModel', () => {
       const boxCenter = getWorldBox(partGroups[slot]).getCenter(new THREE.Vector3()).toArray();
       const geometryCenter = contract.slotGeometryOffsets[slot].geometryCenter as [number, number, number];
       if (V3_LIMB_CHAIN_BINDING_TEST_SLOT_SET.has(slot)) {
-        const mesh2MotionPivot = getObjectWorldPosition(partGroups[slot]).toArray();
-        const sourceBindOffset = new THREE.Vector3(...V3_ARMOR_FOUNDATION.slots[slot].exactSourceBindOffset);
+        const foundationSlot = V3_ARMOR_FOUNDATION.slots[slot];
+        const mesh2MotionPivot = foundationSlot.mesh2MotionPivotWorldPosition;
+        const slotPivot = getObjectWorldPosition(partGroups[slot]).toArray();
+        const sourceBindOffset = new THREE.Vector3(...foundationSlot.exactSourceBindOffset);
         const geometryBindPoint = partGeometryGroups[slot].localToWorld(sourceBindOffset).toArray();
+        assert.equal(
+          tupleCloseTo(slotPivot, mesh2MotionPivot, 0.00001),
+          true,
+          `${slot} visible slot pivot should stay on the generated Mesh2Motion pivot`
+        );
         assert.equal(
           tupleCloseTo(geometryBindPoint, mesh2MotionPivot, 0.00001),
           true,
-          `${slot} exact-source bind point should bind to the Mesh2Motion-native slot pivot`
+          `${slot} exact-source bind point should bind to the generated Mesh2Motion pivot`
         );
       } else {
         assert.equal(
@@ -534,7 +541,7 @@ describe('buildV3SpartanModel', () => {
     }
   });
 
-  it('binds exact-source limb armor geometry directly onto Mesh2Motion limb centers', () => {
+  it('binds exact-source limb armor geometry to Mesh2Motion pivots with generated slot orientation', () => {
     const model = buildV3SpartanModel({
       isEnemy: false,
       customHue: 192,
@@ -543,56 +550,68 @@ describe('buildV3SpartanModel', () => {
     });
     const partGroups = model.userData.v3PartGroups as Record<string, THREE.Group>;
     const partGeometryGroups = model.userData.v3PartGeometryGroups as Record<string, THREE.Group>;
-    const joints = model.userData.v3Mesh2MotionJoints as V3Mesh2MotionJointTestMap;
 
     for (const slot of V3_MESH2MOTION_NATIVE_LIMB_CHAIN_SLOTS) {
       const slotPivot = partGroups[slot];
       const geometry = partGeometryGroups[slot];
-      const spec = V3_MESH2MOTION_ARMOR_SLOT_SPECS[slot];
-      const expectedCenter = getAverageJointWorldPosition(joints, spec.centerJointNames);
       const pivotCenter = getObjectWorldPosition(slotPivot);
+      const foundationSlot = V3_ARMOR_FOUNDATION.slots[slot];
+      const expectedBindPoint = new THREE.Vector3(...foundationSlot.mesh2MotionPivotWorldPosition);
       const sourceBindOffset = new THREE.Vector3(...V3_ARMOR_FOUNDATION.slots[slot].exactSourceBindOffset);
       const geometryBindPoint = geometry.localToWorld(sourceBindOffset.clone());
 
       assert.ok(slotPivot instanceof THREE.Group, `missing ${slot} slot pivot`);
       assert.ok(geometry instanceof THREE.Group, `missing ${slot} geometry group`);
       assert.ok(
-        geometryBindPoint.distanceTo(expectedCenter) <= 0.00001,
-        `${slot} source bind point should sit on Mesh2Motion center ${expectedCenter.toArray()}, got ${geometryBindPoint.toArray()}`
+        geometryBindPoint.distanceTo(expectedBindPoint) <= 0.00001,
+        `${slot} source bind point should sit on Mesh2Motion pivot ${expectedBindPoint.toArray()}, got ${geometryBindPoint.toArray()}`
       );
       assert.ok(
         geometryBindPoint.distanceTo(pivotCenter) <= 0.00001,
         `${slot} source bind point should sit on its slot pivot ${pivotCenter.toArray()}, got ${geometryBindPoint.toArray()}`
       );
-      if (spec.endJointName) {
-        const segmentDistance = getDistanceToSegment(
-          geometryBindPoint,
-          getJointWorldPosition(joints, spec.sourceJointName),
-          getJointWorldPosition(joints, spec.endJointName)
-        );
-        assert.ok(
-          segmentDistance <= 0.12,
-          `${slot} source bind point should stay near its Mesh2Motion limb segment, distance ${segmentDistance}`
-        );
-      }
+      assert.ok(
+        pivotCenter.distanceTo(expectedBindPoint) <= 0.00001,
+        `${slot} visible slot pivot should stay on generated Mesh2Motion pivot ${expectedBindPoint.toArray()}, got ${pivotCenter.toArray()}`
+      );
       assert.equal(
-        tupleCloseTo(geometry.position.toArray(), V3_ARMOR_FOUNDATION.slots[slot].mesh2MotionGeometry.position),
+        tupleCloseTo(geometry.position.toArray(), foundationSlot.mesh2MotionGeometry.position),
         true,
         `${slot} local binding offset`
       );
       assert.equal(
-        tupleCloseTo(geometry.scale.toArray(), [
-          V3_MESH2MOTION_SOURCE_TO_TARGET_SCALE,
-          V3_MESH2MOTION_SOURCE_TO_TARGET_SCALE,
-          V3_MESH2MOTION_SOURCE_TO_TARGET_SCALE,
-        ]),
+        tupleCloseTo(geometry.scale.toArray(), [1, 1, 1]),
         true,
-        `${slot} scale should retarget exact GLB voxels into Mesh2Motion target space`
+        `${slot} scale should keep exact OBJ visual voxels in authoring scale`
       );
       const geometryWorldQuaternion = geometry.getWorldQuaternion(new THREE.Quaternion()).normalize();
+      const expectedWorldQuaternion = expectedMesh2MotionWorldGeometryQuaternion(slot);
       assert.ok(
-        geometryWorldQuaternion.angleTo(new THREE.Quaternion()) <= 0.0001,
-        `${slot} regenerated world-authored voxels should cancel the Mesh2Motion limb pivot rotation`
+        geometryWorldQuaternion.angleTo(expectedWorldQuaternion) <= 0.0001,
+        `${slot} exact OBJ voxels should preserve the generated Mesh2Motion visual slot orientation`
+      );
+    }
+  });
+
+  it('preserves exact OBJ limb slot dimensions while binding them to Mesh2Motion pivots', () => {
+    const model = buildV3SpartanModel({
+      isEnemy: false,
+      customHue: 192,
+      v3ArmorRenderStyle: 'voxelEdit',
+      v3SourceFidelity: 'exact',
+    });
+    const partGroups = model.userData.v3PartGroups as Record<string, THREE.Group>;
+    const voxelScale = V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.coordinateSystem.voxelScale;
+
+    for (const slot of V3_MESH2MOTION_NATIVE_LIMB_CHAIN_SLOTS) {
+      const renderedSize = getWorldSize(partGroups[slot]);
+      const sourceSize = getExactObjSlotWorldSize(slot);
+
+      assert.equal(
+        tupleCloseTo(renderedSize.toArray(), sourceSize.toArray(), voxelScale * 1.5),
+        true,
+        `${slot} should keep exact OBJ source dimensions after Mesh2Motion binding; ` +
+          `got ${renderedSize.toArray()}, expected ${sourceSize.toArray()}`
       );
     }
   });
@@ -629,13 +648,363 @@ describe('buildV3SpartanModel', () => {
 
     assert.ok(chestSize.x > 0.3, `chest should stay visible from exact source (${chestSize.x})`);
     assert.ok(pelvisSize.x > 0.25, `pelvis should stay visible from exact source (${pelvisSize.x})`);
-    assert.ok(forearmSize.x > 0.1 && forearmSize.z > 0.12, `forearm should stay visible from calibrated regenerated limb source (${forearmSize.x}, ${forearmSize.z})`);
+    assert.ok(forearmSize.x > 0.1 && forearmSize.z > 0.12, `forearm should stay visible from exact OBJ source (${forearmSize.x}, ${forearmSize.z})`);
     assert.ok(handSize.x > 0.08 && handSize.z > 0.15, `hand should stay visible from calibrated exact source (${handSize.x}, ${handSize.z})`);
     assert.equal(
       partGroups.chest.userData.v3ObjSurfaceSource,
       true,
       'built-in exact-source chest should render from the restored OBJ body source without old part-box remapping'
     );
+  });
+
+  it('keeps default V3 undersuit visibly separated from the bind editor background', () => {
+    const chest = getV3BuiltinPartVoxels('chest');
+    const colors = new Set(chest.map((voxel) => voxel.color));
+
+    assert.ok(
+      colors.has('#2f3f52'),
+      'default V3 chest should include the readable undersuit base color'
+    );
+    assert.ok(
+      maxHexColorChannel('#2f3f52') - maxHexColorChannel('#061116') >= 0x30,
+      'default V3 undersuit should not visually collapse into the bind editor background'
+    );
+  });
+
+  it('builds a Mesh2Motion-fitted featureless base body under the exact armor suit', () => {
+    const model = buildV3SpartanModel({ isEnemy: false, customHue: 192 });
+    model.updateWorldMatrix(true, true);
+    const partGroups = model.userData.v3PartGroups as Record<string, THREE.Group>;
+    const baseBody = model.userData.v3RigFittedBaseBody as
+      | { root?: THREE.Group; segments?: Record<string, THREE.Mesh> }
+      | undefined;
+
+    assert.ok(baseBody?.root instanceof THREE.Group, 'V3 model should expose a rig-fitted dummy base body');
+    assert.equal(baseBody.root.visible, true, 'rig-fitted dummy base body should be visible under the armor');
+    assert.equal(baseBody.root.userData.v3RigFittedBaseBody, true);
+
+    const requiredSegments = [
+      'torso',
+      'pelvis',
+      'neck',
+      'head',
+      'shoulderLeft',
+      'shoulderRight',
+      'upperArmLeft',
+      'upperArmRight',
+      'forearmLeft',
+      'forearmRight',
+      'handLeft',
+      'handRight',
+      'thighLeft',
+      'thighRight',
+      'shinLeft',
+      'shinRight',
+      'footLeft',
+      'footRight',
+    ];
+    for (const segmentId of requiredSegments) {
+      const segment = baseBody.segments?.[segmentId];
+      assert.ok(segment instanceof THREE.Mesh, `${segmentId} dummy body segment should exist`);
+      assert.equal(segment.visible, true, `${segmentId} dummy body segment should be visible`);
+      assert.equal(segment.userData.v3RigFittedBaseBodySegment, true);
+      const material = segment.material;
+      assert.ok(material instanceof THREE.MeshStandardMaterial, `${segmentId} should use an inspectable dummy material`);
+      assert.ok(
+        maxHexColorChannel(`#${material.color.getHexString()}`) <= 0x5f,
+        `${segmentId} dummy material should stay visually subordinate to armor instead of reading as gray helper geometry`
+      );
+    }
+
+    const torsoBox = getWorldBox(baseBody.segments.torso);
+    const neckBox = getWorldBox(baseBody.segments.neck);
+    const pelvisBodyBox = getWorldBox(baseBody.segments.pelvis);
+    const chestBox = getWorldBox(partGroups.chest);
+    const backBox = getWorldBox(partGroups.back);
+    const neckArmorBox = getWorldBox(partGroups.neck);
+    const pelvisArmorBox = getWorldBox(partGroups.pelvis);
+    const shoulderLeftBox = getWorldBox(partGroups.shoulderLeft);
+    const shoulderRightBox = getWorldBox(partGroups.shoulderRight);
+    const upperArmLeftBox = getWorldBox(partGroups.upperArmLeft);
+    const upperArmRightBox = getWorldBox(partGroups.upperArmRight);
+    const sideProfileCore = new THREE.Vector3(
+      chestBox.getCenter(new THREE.Vector3()).x,
+      chestBox.getCenter(new THREE.Vector3()).y,
+      (chestBox.getCenter(new THREE.Vector3()).z + backBox.getCenter(new THREE.Vector3()).z) / 2
+    );
+
+    assert.equal(torsoBox.containsPoint(sideProfileCore), true, 'dummy torso should occupy the chest/back interior cavity');
+    assert.equal(torsoBox.intersectsBox(chestBox), true, 'dummy torso should sit inside the chest armor shell');
+    assert.equal(torsoBox.intersectsBox(backBox), true, 'dummy torso should sit inside the back armor shell');
+    assert.equal(neckBox.intersectsBox(neckArmorBox), true, 'dummy neck should sit inside the neck armor shell');
+    assert.equal(pelvisBodyBox.intersectsBox(pelvisArmorBox), true, 'dummy pelvis should sit inside the pelvis armor shell');
+
+    for (const side of ['Left', 'Right'] as const) {
+      const shoulderBodyBox = getWorldBox(baseBody.segments[`shoulder${side}`]);
+      const upperArmBodyBox = getWorldBox(baseBody.segments[`upperArm${side}`]);
+      const forearmBodyBox = getWorldBox(baseBody.segments[`forearm${side}`]);
+      const handBodyBox = getWorldBox(baseBody.segments[`hand${side}`]);
+      const thighBodyBox = getWorldBox(baseBody.segments[`thigh${side}`]);
+      const shinBodyBox = getWorldBox(baseBody.segments[`shin${side}`]);
+      const footBodyBox = getWorldBox(baseBody.segments[`foot${side}`]);
+
+      assert.equal(shoulderBodyBox.intersectsBox(side === 'Left' ? shoulderLeftBox : shoulderRightBox), true);
+      assert.equal(upperArmBodyBox.intersectsBox(side === 'Left' ? upperArmLeftBox : upperArmRightBox), true);
+      assert.equal(forearmBodyBox.intersectsBox(getWorldBox(partGroups[`forearm${side}`])), true);
+      assert.equal(handBodyBox.intersectsBox(getWorldBox(partGroups[`hand${side}`])), true);
+      assert.equal(thighBodyBox.intersectsBox(getWorldBox(partGroups[`thigh${side}`])), true);
+      assert.equal(shinBodyBox.intersectsBox(getWorldBox(partGroups[`shin${side}`])), true);
+      assert.equal(footBodyBox.intersectsBox(getWorldBox(partGroups[`foot${side}`])), true);
+      assert.ok(
+        baseBody.segments[`shoulder${side}`].scale.x <= 0.1 &&
+          baseBody.segments[`shoulder${side}`].scale.z <= 0.11,
+        `${side} dummy shoulder should stay under the shoulder armor cap instead of becoming a smooth shoulder pad`
+      );
+      assert.ok(
+        baseBody.segments[`upperArm${side}`].scale.x <= 0.14 &&
+          baseBody.segments[`upperArm${side}`].scale.z <= 0.15,
+        `${side} dummy upper arm should be an inner body limb, not a second outer armor sleeve`
+      );
+      assert.ok(
+        baseBody.segments[`forearm${side}`].scale.x <= 0.12 &&
+          baseBody.segments[`forearm${side}`].scale.z <= 0.13,
+        `${side} dummy forearm should stay visibly subordinate to the armor`
+      );
+    }
+  });
+
+  it('keeps legacy upper-body patch geometry bounded while the rig-fitted base body is visible', () => {
+    const model = buildV3SpartanModel({ isEnemy: false, customHue: 192 });
+    model.updateWorldMatrix(true, true);
+    const partGroups = model.userData.v3PartGroups as Record<string, THREE.Group>;
+    const bridgeSet = model.userData.v3UpperBodyJointBridges as
+      | { root?: THREE.Group; bridges?: Record<string, THREE.Mesh> }
+      | undefined;
+    const fillSet = model.userData.v3UpperBodyUndersuitFill as
+      | { root?: THREE.Group; geometry?: THREE.Group }
+      | undefined;
+
+    assert.ok(bridgeSet?.root instanceof THREE.Group, 'V3 model should expose upper-body undersuit bridges');
+    assert.equal(
+      bridgeSet.root.visible,
+      false,
+      'legacy upper-body patch bridges should stay hidden now that the rig-fitted base body fills the mannequin volume'
+    );
+    assert.ok(fillSet?.root instanceof THREE.Group, 'V3 model should expose generated upper-body undersuit fill');
+    assert.equal(
+      fillSet.root.visible,
+      false,
+      'legacy upper-body OBJ fill should stay hidden now that the rig-fitted base body supplies the physical structure'
+    );
+    assert.ok(fillSet.geometry instanceof THREE.Group, 'generated upper-body undersuit fill should expose render geometry');
+    assert.equal(
+      tupleCloseTo(fillSet.root.scale.toArray(), [1, 1, 1]),
+      true,
+      'generated upper-body fill should use exact OBJ authoring scale instead of old Mesh2Motion GLB scale'
+    );
+    assert.equal(
+      fillSet.geometry.userData.v3UpperBodyUndersuitFillSourceKind,
+      'exact-obj',
+      'generated upper-body fill should come from the accepted exact OBJ source'
+    );
+    assert.ok(
+      Number(fillSet.geometry.userData.v3UpperBodyUndersuitFillSideProfileCoverage) >= 0.8,
+      `generated upper-body fill should cover the accepted OBJ side silhouette, got ${
+        fillSet.geometry.userData.v3UpperBodyUndersuitFillSideProfileCoverage
+      }`
+    );
+    assert.ok(
+      Number(fillSet.geometry.userData.v3UpperBodyUndersuitFillVoxelCount) > 4500,
+      'generated upper-body fill should be a solid internal silhouette fill, not only copied surface undersuit voxels'
+    );
+    assert.ok(bridgeSet.bridges?.torsoCore instanceof THREE.Mesh, 'torso core bridge should exist');
+    assert.equal(
+      bridgeSet.bridges.torsoCore.geometry.type,
+      'SphereGeometry',
+      'torso core bridge should use a rounded undersuit volume instead of a rectangular slab'
+    );
+    assert.ok(bridgeSet.bridges?.upperYoke instanceof THREE.Mesh, 'upper yoke bridge should exist');
+    assert.ok(bridgeSet.bridges?.backCollar instanceof THREE.Mesh, 'back collar bridge should exist');
+    assert.ok(bridgeSet.bridges?.scapulaLeft instanceof THREE.Mesh, 'left scapula bridge should exist');
+    assert.ok(bridgeSet.bridges?.scapulaRight instanceof THREE.Mesh, 'right scapula bridge should exist');
+    assert.ok(bridgeSet.bridges?.clavicleLeft instanceof THREE.Mesh, 'left clavicle bridge should exist');
+    assert.ok(bridgeSet.bridges?.clavicleRight instanceof THREE.Mesh, 'right clavicle bridge should exist');
+    assert.ok(bridgeSet.bridges?.armpitLeft instanceof THREE.Mesh, 'left armpit socket bridge should exist');
+    assert.ok(bridgeSet.bridges?.armpitRight instanceof THREE.Mesh, 'right armpit socket bridge should exist');
+    for (const bridgeId of [
+      'scapulaLeft',
+      'scapulaRight',
+      'clavicleLeft',
+      'clavicleRight',
+      'shoulderSleeveLeft',
+      'shoulderSleeveRight',
+      'armpitLeft',
+      'armpitRight',
+    ]) {
+      assert.equal(
+        bridgeSet.bridges[bridgeId].geometry.type,
+        'BoxGeometry',
+        `${bridgeId} should use blocky voxel-compatible bridge geometry instead of smooth tube fill`
+      );
+    }
+    assert.equal(
+      bridgeSet.bridges.armpitLeft.geometry.type,
+      'BoxGeometry',
+      'armpit socket bridges should read as blocky voxel undersuit seams, not smooth tube fill'
+    );
+    const bridgeMaterial = bridgeSet.bridges.torsoCore.material;
+    assert.ok(bridgeMaterial instanceof THREE.MeshStandardMaterial, 'upper-body bridge material should be inspectable');
+    assert.ok(
+      bridgeMaterial.color.getHex() !== new THREE.Color('#061116').getHex(),
+      'upper-body bridge material should not collapse into the bind editor background'
+    );
+    const bridgeSrgbChannels = bridgeMaterial.color
+      .getHexString()
+      .match(/../g)
+      ?.map((channel) => Number.parseInt(channel, 16)) ?? [];
+    const bindEditorBackground = new THREE.Color('#061116');
+    const bridgeColorDistance = new THREE.Vector3(bridgeMaterial.color.r, bridgeMaterial.color.g, bridgeMaterial.color.b)
+      .distanceTo(new THREE.Vector3(bindEditorBackground.r, bindEditorBackground.g, bindEditorBackground.b));
+    assert.ok(
+      Math.max(...bridgeSrgbChannels) <= 0x60,
+      'upper-body bridge material should read as dark undersuit, not bright gray armor connectors'
+    );
+    assert.ok(
+      bridgeColorDistance >= 0.12,
+      'upper-body bridge material should remain distinct from the bind editor background'
+    );
+
+    const chestBox = getWorldBox(partGroups.chest);
+    const backBox = getWorldBox(partGroups.back);
+    const neckBox = getWorldBox(partGroups.neck);
+    const upperTorsoTargetBox = chestBox.clone().union(backBox).union(neckBox);
+    const upperTorsoTargetSize = upperTorsoTargetBox.getSize(new THREE.Vector3());
+    const fillBox = getWorldBox(fillSet.root);
+    const fillSize = fillBox.getSize(new THREE.Vector3());
+    const torsoBridgeBox = getWorldBox(bridgeSet.bridges.torsoCore);
+    const torsoBridgeSize = torsoBridgeBox.getSize(new THREE.Vector3());
+    const upperYokeBox = getWorldBox(bridgeSet.bridges.upperYoke);
+    const backCollarBox = getWorldBox(bridgeSet.bridges.backCollar);
+    const scapulaLeftBox = getWorldBox(bridgeSet.bridges.scapulaLeft);
+    const scapulaRightBox = getWorldBox(bridgeSet.bridges.scapulaRight);
+    const armpitLeftBox = getWorldBox(bridgeSet.bridges.armpitLeft);
+    const armpitRightBox = getWorldBox(bridgeSet.bridges.armpitRight);
+    const shoulderLeftBox = getWorldBox(partGroups.shoulderLeft);
+    const shoulderRightBox = getWorldBox(partGroups.shoulderRight);
+    const upperArmLeftBox = getWorldBox(partGroups.upperArmLeft);
+    const upperArmRightBox = getWorldBox(partGroups.upperArmRight);
+    const sideProfileCore = new THREE.Vector3(
+      chestBox.getCenter(new THREE.Vector3()).x,
+      chestBox.getCenter(new THREE.Vector3()).y,
+      (chestBox.getCenter(new THREE.Vector3()).z + backBox.getCenter(new THREE.Vector3()).z) / 2
+    );
+    const highBackProfileCore = new THREE.Vector3(
+      chestBox.getCenter(new THREE.Vector3()).x,
+      (neckBox.min.y + backBox.max.y) / 2,
+      (neckBox.getCenter(new THREE.Vector3()).z + backBox.getCenter(new THREE.Vector3()).z) / 2
+    );
+
+    assert.equal(
+      torsoBridgeBox.containsPoint(sideProfileCore),
+      true,
+      'torso core bridge should occupy the side-profile chest/back cavity'
+    );
+    assert.equal(fillBox.intersectsBox(chestBox), true, 'generated upper-body fill should overlap the chest shell');
+    assert.equal(fillBox.intersectsBox(backBox), true, 'generated upper-body fill should overlap the back shell');
+    assert.equal(fillBox.intersectsBox(neckBox), true, 'generated upper-body fill should overlap the neck shell');
+    assert.ok(
+      fillSize.y >= upperTorsoTargetSize.y * 0.95,
+      `generated upper-body fill should span the exact OBJ torso height, got ${fillSize.y} vs target ${upperTorsoTargetSize.y}`
+    );
+    assert.ok(fillSize.z > 0.34, `generated upper-body fill should span the side-profile torso depth, got ${fillSize.z}`);
+    assert.ok(fillSize.x > 0.28, `generated upper-body fill should span the inner torso width, got ${fillSize.x}`);
+    assert.ok(
+      fillBox.max.z <= chestBox.max.z - 0.035,
+      `generated upper-body fill should stay behind the OBJ chest surface instead of duplicating it, got max z ${fillBox.max.z} vs chest ${chestBox.max.z}`
+    );
+    assert.ok(
+      fillBox.min.z >= backBox.min.z + 0.035,
+      `generated upper-body fill should stay in front of the OBJ back surface instead of duplicating it, got min z ${fillBox.min.z} vs back ${backBox.min.z}`
+    );
+    assert.ok(
+      Math.abs(fillBox.max.y - Math.max(backBox.max.y, neckBox.max.y)) <= 0.01,
+      `generated upper-body fill should align to the Mesh2Motion torso top, got ${fillBox.max.y}`
+    );
+    assert.ok(torsoBridgeSize.y > 0.36, `torso bridge should cover upper-body height, got ${torsoBridgeSize.y}`);
+    assert.ok(torsoBridgeSize.z > 0.40, `torso bridge should cover side-profile depth, got ${torsoBridgeSize.z}`);
+    assert.ok(
+      torsoBridgeBox.max.y <= neckBox.max.y + 0.001,
+      `torso bridge should stay below the head silhouette: ${torsoBridgeBox.max.y} > ${neckBox.max.y}`
+    );
+    assert.ok(
+      torsoBridgeSize.x < chestBox.getSize(new THREE.Vector3()).x * 0.62,
+      `torso bridge should stay inside the armor shell instead of becoming a front-view panel, got ${torsoBridgeSize.x}`
+    );
+    assert.equal(upperYokeBox.intersectsBox(chestBox), true, 'upper yoke bridge should overlap the chest shell');
+    assert.ok(
+      upperYokeBox.max.y < neckBox.min.y,
+      `upper yoke bridge should not enter the neck/head silhouette: ${upperYokeBox.max.y} >= ${neckBox.min.y}`
+    );
+    assert.equal(
+      backCollarBox.containsPoint(highBackProfileCore),
+      true,
+      'back collar bridge should occupy the high side-profile void between neck and back'
+    );
+    assert.ok(
+      backCollarBox.max.y <= backBox.max.y + 0.001,
+      `back collar bridge should stay inside the back plate height, got ${backCollarBox.max.y} > ${backBox.max.y}`
+    );
+    assert.ok(
+      backCollarBox.getSize(new THREE.Vector3()).x < chestBox.getSize(new THREE.Vector3()).x * 0.5,
+      'back collar bridge should be a compact neck/back connector, not a full shoulder-width slab'
+    );
+    assert.equal(scapulaLeftBox.intersectsBox(shoulderLeftBox), true, 'left scapula bridge should touch left shoulder shell');
+    assert.equal(scapulaRightBox.intersectsBox(shoulderRightBox), true, 'right scapula bridge should touch right shoulder shell');
+    assert.equal(scapulaLeftBox.intersectsBox(backBox), true, 'left scapula bridge should touch the upper back shell');
+    assert.equal(scapulaRightBox.intersectsBox(backBox), true, 'right scapula bridge should touch the upper back shell');
+    assert.equal(armpitLeftBox.intersectsBox(chestBox), true, 'left armpit socket should touch the chest shell');
+    assert.equal(armpitRightBox.intersectsBox(chestBox), true, 'right armpit socket should touch the chest shell');
+    assert.equal(armpitLeftBox.intersectsBox(shoulderLeftBox), true, 'left armpit socket should touch the shoulder shell');
+    assert.equal(armpitRightBox.intersectsBox(shoulderRightBox), true, 'right armpit socket should touch the shoulder shell');
+    assert.equal(armpitLeftBox.intersectsBox(upperArmLeftBox), true, 'left armpit socket should touch the upper-arm shell');
+    assert.equal(armpitRightBox.intersectsBox(upperArmRightBox), true, 'right armpit socket should touch the upper-arm shell');
+    assert.ok(
+      armpitLeftBox.max.y >= shoulderLeftBox.getCenter(new THREE.Vector3()).y - 0.012 &&
+        armpitRightBox.max.y >= shoulderRightBox.getCenter(new THREE.Vector3()).y - 0.012,
+      'armpit socket seals should rise under the shoulder caps so side views do not see through the shoulder cavity'
+    );
+    assert.ok(
+      armpitLeftBox.getSize(new THREE.Vector3()).x < chestBox.getSize(new THREE.Vector3()).x * 0.7 &&
+        armpitRightBox.getSize(new THREE.Vector3()).x < chestBox.getSize(new THREE.Vector3()).x * 0.7,
+      'armpit sockets should stay compact instead of becoming full-width torso panels'
+    );
+    assert.ok(
+      armpitLeftBox.getSize(new THREE.Vector3()).z >= chestBox.getSize(new THREE.Vector3()).z * 0.72 &&
+        armpitRightBox.getSize(new THREE.Vector3()).z >= chestBox.getSize(new THREE.Vector3()).z * 0.72,
+      'armpit socket seals should cover enough side-profile depth to block background-colored shoulder holes'
+    );
+    assert.ok(
+      armpitLeftBox.getSize(new THREE.Vector3()).z <= chestBox.getSize(new THREE.Vector3()).z * 0.86 &&
+        armpitRightBox.getSize(new THREE.Vector3()).z <= chestBox.getSize(new THREE.Vector3()).z * 0.86,
+      'armpit socket seals should stay bounded instead of becoming full-depth shoulder slabs'
+    );
+    assert.ok(
+      bridgeSet.bridges.shoulderSleeveLeft.scale.x <= 0.052 &&
+        bridgeSet.bridges.shoulderSleeveRight.scale.x <= 0.052 &&
+        bridgeSet.bridges.shoulderSleeveLeft.scale.z <= 0.066 &&
+        bridgeSet.bridges.shoulderSleeveRight.scale.z <= 0.066,
+      'shoulder sleeve bridges should stay visually narrow instead of forming smooth shoulder masses'
+    );
+    assert.ok(
+      Math.min(scapulaLeftBox.min.y, scapulaRightBox.min.y) > chestBox.getCenter(new THREE.Vector3()).y,
+      'scapula bridges should cover the high shoulder/back void instead of only the lower torso'
+    );
+    assert.ok(
+      scapulaLeftBox.getSize(new THREE.Vector3()).x <= 0.11 && scapulaRightBox.getSize(new THREE.Vector3()).x <= 0.11,
+      'scapula bridges should be narrow undersuit struts instead of broad shoulder slabs'
+    );
+    assert.equal(bridgeSet.bridges.clavicleLeft.visible, false);
+    assert.equal(bridgeSet.bridges.clavicleRight.visible, false);
   });
 
   it('uses the checked-in sanitized exact OBJ surface voxel source for built-in Aegis armor', () => {
@@ -658,13 +1027,13 @@ describe('buildV3SpartanModel', () => {
     }
   });
 
-  it('decodes regenerated GLB source roles into painted V3 built-in voxels', () => {
+  it('decodes exact OBJ source roles into painted V3 built-in voxels', () => {
     const helmet = getV3BuiltinPartVoxels('helmet', 192, V3_SCULPT_TEST_PAINT_JOB);
     const chest = getV3BuiltinPartVoxels('chest', 192, V3_SCULPT_TEST_PAINT_JOB);
     const back = getV3BuiltinPartVoxels('back', 192, V3_SCULPT_TEST_PAINT_JOB);
 
-    assert.ok(helmet.some((voxel) => voxel.color === V3_SCULPT_TEST_COLORS.emissive && voxel.emissive === true), 'helmet should preserve GLB emissive detail');
-    assert.ok(helmet.some((voxel) => voxel.color === V3_SCULPT_TEST_COLORS.decal), 'helmet should preserve GLB decal detail');
+    assert.ok(helmet.some((voxel) => voxel.color === V3_SCULPT_TEST_COLORS.emissive && voxel.emissive === true), 'helmet should preserve OBJ emissive detail');
+    assert.ok(helmet.some((voxel) => voxel.color === V3_SCULPT_TEST_COLORS.decal), 'helmet should preserve OBJ decal detail');
     assert.ok(chest.some((voxel) => voxel.color === V3_SCULPT_TEST_COLORS.undersuit), 'chest should preserve rubber undersuit role');
     assert.ok(chest.some((voxel) => voxel.color === V3_SCULPT_TEST_COLORS.primary), 'chest should preserve armor shell role');
     assert.ok(back.some((voxel) => voxel.color === V3_SCULPT_TEST_COLORS.decal), 'backpack should preserve equipment decal role');
@@ -681,9 +1050,9 @@ describe('buildV3SpartanModel', () => {
     assert.ok(Math.abs(leftBounds.sizeY - rightBounds.sizeY) <= 2, `shin heights diverged (${leftBounds.sizeY} vs ${rightBounds.sizeY})`);
     assert.ok(Math.abs(leftBounds.sizeZ - rightBounds.sizeZ) <= 2, `shin depths diverged (${leftBounds.sizeZ} vs ${rightBounds.sizeZ})`);
     assert.notDeepEqual(
-      V3_REFERENCE_LIMB_VOXELS.slots.shinLeft.runs,
-      V3_REFERENCE_LIMB_VOXELS.slots.shinRight.runs,
-      'exact source should preserve GLB side data instead of fabricating mirrored runs'
+      V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.slots.shinLeft.runs,
+      V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.slots.shinRight.runs,
+      'exact source should preserve OBJ side data instead of fabricating mirrored runs'
     );
   });
 
@@ -720,7 +1089,7 @@ describe('buildV3SpartanModel', () => {
     assert.ok(getVoxelXSpan(crownRows) <= Math.ceil(bounds.sizeX * 0.6), `helmet crown taper regressed to span ${getVoxelXSpan(crownRows)}`);
     assert.ok(getVoxelXSpan(lowerCheekAndJaw) >= Math.floor(bounds.sizeX * 0.25), `lower helmet cheek/jaw span should stay wide, got ${getVoxelXSpan(lowerCheekAndJaw)}`);
     assert.ok(sideEarArmor.length >= 100, `side-ear lower helmet armor is under-modeled (${sideEarArmor.length})`);
-    assert.ok(helmet.some((voxel) => voxel.color === V3_SCULPT_TEST_COLORS.emissive && voxel.emissive === true), 'helmet should preserve GLB emissive voxels');
+    assert.ok(helmet.some((voxel) => voxel.color === V3_SCULPT_TEST_COLORS.emissive && voxel.emissive === true), 'helmet should preserve OBJ emissive voxels');
   });
 
   it('decodes the OBJ pelvis as a deep segmented source instead of procedural slab patches', () => {
@@ -736,18 +1105,18 @@ describe('buildV3SpartanModel', () => {
     assert.ok(rearCoverage <= 0.55, `pelvis rear should remain segmented, got coverage ${rearCoverage.toFixed(3)}`);
   });
 
-  it('keeps regenerated GLB shins deep and side-comparable after exact-source decoding', () => {
+  it('keeps exact OBJ shins deep and side-comparable after exact-source decoding', () => {
     const shinLeft = getV3BuiltinPartVoxels('shinLeft', 192, V3_SCULPT_TEST_PAINT_JOB);
     const shinRight = getV3BuiltinPartVoxels('shinRight', 192, V3_SCULPT_TEST_PAINT_JOB);
     const leftBounds = getVoxelBounds(shinLeft);
     const rightBounds = getVoxelBounds(shinRight);
 
-    assert.ok(rightBounds.sizeZ >= 36, `shin should preserve regenerated GLB depth, got depth ${rightBounds.sizeZ}`);
-    assert.ok(leftBounds.sizeZ >= 36, `left shin should preserve regenerated GLB depth, got depth ${leftBounds.sizeZ}`);
+    assert.ok(rightBounds.sizeZ >= 30, `shin should preserve exact OBJ depth, got depth ${rightBounds.sizeZ}`);
+    assert.ok(leftBounds.sizeZ >= 30, `left shin should preserve exact OBJ depth, got depth ${leftBounds.sizeZ}`);
     assert.ok(Math.abs(leftBounds.sizeX - rightBounds.sizeX) <= 3, `shin widths diverged (${leftBounds.sizeX} vs ${rightBounds.sizeX})`);
     assert.ok(Math.abs(leftBounds.sizeY - rightBounds.sizeY) <= 3, `shin heights diverged (${leftBounds.sizeY} vs ${rightBounds.sizeY})`);
-    assert.ok(shinRight.some((voxel) => voxel.color === V3_SCULPT_TEST_COLORS.decal), 'right shin should preserve regenerated knee/decal role');
-    assert.ok(shinLeft.some((voxel) => voxel.color === V3_SCULPT_TEST_COLORS.decal), 'left shin should preserve regenerated knee/decal role');
+    assert.ok(shinRight.some((voxel) => voxel.color === V3_SCULPT_TEST_COLORS.decal), 'right shin should preserve OBJ knee/decal role');
+    assert.ok(shinLeft.some((voxel) => voxel.color === V3_SCULPT_TEST_COLORS.decal), 'left shin should preserve OBJ knee/decal role');
     assert.equal(hasNearFullHeightFrontColumn(shinRight), false, 'shin front should not grow full-height scaffolding columns');
   });
 
@@ -848,10 +1217,10 @@ describe('buildV3SpartanModel', () => {
     );
 
     assert.equal(getV3BuiltinPartGridScale('helmet'), 1);
-    assert.equal(visor.length, 0, 'GLB helmet source no longer uses the legacy visor role bucket');
-    assert.ok(foreheadLight.length >= 1, 'helmet needs preserved GLB emissive detail');
+    assert.ok(visor.length >= 1, 'OBJ helmet source should preserve the visor role bucket');
+    assert.ok(foreheadLight.length >= 1, 'helmet needs preserved OBJ emissive detail');
     assert.ok(templeAccents.length >= 20, `expected temple/decal accents, found ${templeAccents.length}`);
-    assert.ok(crownVents.length >= 1000, `expected GLB-derived crown shell voxels, found ${crownVents.length}`);
+    assert.ok(crownVents.length >= 1000, `expected OBJ-derived crown shell voxels, found ${crownVents.length}`);
     assert.ok(jawGuards.length >= 80, `expected lower jaw/cheek voxels, found ${jawGuards.length}`);
     assert.ok(cheekPlates.filter((voxel) => voxel.x < centerX - 1).length >= 30, 'left cheek plate is under-modeled');
     assert.ok(cheekPlates.filter((voxel) => voxel.x > centerX + 1).length >= 30, 'right cheek plate is under-modeled');
@@ -889,7 +1258,7 @@ describe('buildV3SpartanModel', () => {
     assert.ok(pectoralPlates.filter((voxel) => voxel.x < centerX - 2).length >= 150, 'left pectoral plate is under-modeled');
     assert.ok(pectoralPlates.filter((voxel) => voxel.x > centerX + 2).length >= 150, 'right pectoral plate is under-modeled');
     assert.ok(centerCore.length >= 4, `expected center decal/emissive core, found ${centerCore.length}`);
-    assert.ok(undersuitPanels.length >= 1000, `expected GLB undersuit coverage, found ${undersuitPanels.length}`);
+    assert.ok(undersuitPanels.length >= 1000, `expected OBJ undersuit coverage, found ${undersuitPanels.length}`);
     assert.ok(sideLocks.length >= 200, `expected side locking coverage, found ${sideLocks.length}`);
   });
 
@@ -925,7 +1294,7 @@ describe('buildV3SpartanModel', () => {
     }
 
     assert.ok(getV3BuiltinPartVoxels('back', 192, V3_SCULPT_TEST_PAINT_JOB).some((voxel) => voxel.color === V3_SCULPT_TEST_COLORS.decal), 'back should preserve equipment decal detail');
-    assert.ok(getV3BuiltinPartVoxels('handRight', 192, V3_SCULPT_TEST_PAINT_JOB).some((voxel) => voxel.color === V3_SCULPT_TEST_COLORS.undersuit), 'hands should preserve GLB glove undersuit material role');
+    assert.ok(getV3BuiltinPartVoxels('handRight', 192, V3_SCULPT_TEST_PAINT_JOB).some((voxel) => voxel.color === V3_SCULPT_TEST_COLORS.fixed), 'hands should preserve OBJ glove fixed material role');
   });
 
   it('segments remaining V3 built-in armor faces away from broad filled rectangles', () => {
@@ -1023,7 +1392,7 @@ describe('buildV3SpartanModel', () => {
       const voxels = getV3BuiltinPartVoxels(slot, 192);
       const report = analyzeV3VoxelQuality(voxels);
 
-      assert.ok(voxels.length > 0, `${slot} should decode exact GLB source voxels`);
+      assert.ok(voxels.length > 0, `${slot} should decode exact OBJ source voxels`);
       assert.ok(report.occupiedDimensions.x > 0, `${slot} should have occupied x span`);
       assert.ok(report.occupiedDimensions.y > 0, `${slot} should have occupied y span`);
       assert.ok(report.occupiedDimensions.z > 0, `${slot} should have occupied z span`);

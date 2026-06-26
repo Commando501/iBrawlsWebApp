@@ -20,6 +20,18 @@ import {
   updateV3LowerBodyJointBridges,
 } from './v3LowerBodyJointBridges';
 import {
+  setV3UpperBodyJointBridgesVisible,
+  updateV3UpperBodyJointBridges,
+} from './v3UpperBodyJointBridges';
+import {
+  setV3UpperBodyUndersuitFillVisible,
+  updateV3UpperBodyUndersuitFill,
+} from './v3UpperBodyUndersuitFill';
+import {
+  setV3RigFittedBaseBodyVisible,
+  updateV3RigFittedBaseBody,
+} from './v3RigFittedBaseBody';
+import {
   applyV3RetargetedClipPose,
   sampleV3RetargetedClip,
   type V3RetargetedClipId,
@@ -833,6 +845,9 @@ export function animateV3CombatantModel({
     resetV3DetailBones(detailBones);
     mesh.userData.v3LowerBodyBridgeActive = false;
     setV3LowerBodyJointBridgesVisible(mesh, false);
+    setV3UpperBodyJointBridgesVisible(mesh, false);
+    setV3UpperBodyUndersuitFillVisible(mesh, false);
+    setV3RigFittedBaseBodyVisible(mesh, false);
     return true;
   }
 
@@ -871,6 +886,11 @@ export function animateV3CombatantModel({
     }
     mesh.userData.v3LowerBodyBridgeActive = false;
     setV3LowerBodyJointBridgesVisible(mesh, false);
+    updateV3RigFittedBaseBody(mesh, true);
+    updateV3UpperBodyUndersuitFill(mesh, true);
+    setV3UpperBodyUndersuitFillVisible(mesh, false);
+    updateV3UpperBodyJointBridges(mesh, true);
+    setV3UpperBodyJointBridgesVisible(mesh, false);
     if (authoredSample.weaponPose) {
       mesh.userData.v3WeaponCarry = {
         weapon: authoredSample.weaponPose.weapon,
@@ -927,6 +947,11 @@ export function animateV3CombatantModel({
   });
   mesh.userData.v3HitReactTimer = Math.max(0, hitReactTimer - dt);
   updateV3LowerBodyJointBridges(mesh, mesh.userData.v3LowerBodyBridgeActive === true);
+  updateV3RigFittedBaseBody(mesh, true);
+  updateV3UpperBodyUndersuitFill(mesh, true);
+  setV3UpperBodyUndersuitFillVisible(mesh, false);
+  updateV3UpperBodyJointBridges(mesh, true);
+  setV3UpperBodyJointBridgesVisible(mesh, false);
 
   return true;
 }
