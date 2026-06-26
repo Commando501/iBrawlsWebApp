@@ -215,6 +215,12 @@ const getWorldBox = (object: THREE.Object3D): THREE.Box3 => {
   return new THREE.Box3().setFromObject(object);
 };
 
+const boxContainsPointWithTolerance = (
+  box: THREE.Box3,
+  point: THREE.Vector3,
+  tolerance: number
+): boolean => box.clone().expandByScalar(tolerance).containsPoint(point);
+
 const getWorldSize = (object: THREE.Object3D): THREE.Vector3 =>
   getWorldBox(object).getSize(new THREE.Vector3());
 
@@ -1080,8 +1086,8 @@ describe('buildV3SpartanModel', () => {
       'torso mannequin segment length should follow the Mesh2Motion spine joint distance'
     );
     assert.ok(
-      actualWorldScale.x <= 0.17 && actualWorldScale.z <= 0.135,
-      `torso mannequin segment should be a slim inner trunk, not a round chest-front blob (${actualWorldScale.toArray().map((value) => value.toFixed(4)).join(', ')})`
+      actualWorldScale.x <= 0.135 && actualWorldScale.z <= 0.1,
+      `torso mannequin segment should be a narrow spine trunk, not a round chest-front blob (${actualWorldScale.toArray().map((value) => value.toFixed(4)).join(', ')})`
     );
     assert.equal(torsoBox.intersectsBox(chestBox), true, 'torso trunk should still sit inside the chest armor shell');
     assert.equal(torsoBox.intersectsBox(backBox), true, 'torso trunk should still sit inside the back armor shell');
@@ -1113,8 +1119,8 @@ describe('buildV3SpartanModel', () => {
       'pelvis mannequin segment should stay centered on the Mesh2Motion pelvis/spine/thigh joint cluster'
     );
     assert.ok(
-      actualWorldScale.x <= 0.32 && actualWorldScale.y <= 0.17 && actualWorldScale.z <= 0.21,
-      `pelvis mannequin segment should be a compact hip basin, not a broad waist blob (${actualWorldScale.toArray().map((value) => value.toFixed(4)).join(', ')})`
+      actualWorldScale.x <= 0.28 && actualWorldScale.y <= 0.13 && actualWorldScale.z <= 0.15,
+      `pelvis mannequin segment should be a compact hip-joint basin, not a broad waist blob (${actualWorldScale.toArray().map((value) => value.toFixed(4)).join(', ')})`
     );
     for (const [index, jointName] of ['pelvis', 'spine_01', 'thigh_l', 'thigh_r'].entries()) {
       assert.equal(
@@ -1165,8 +1171,8 @@ describe('buildV3SpartanModel', () => {
         `${side} shoulder mannequin segment length should follow the Mesh2Motion clavicle joint distance`
       );
       assert.ok(
-        actualWorldScale.x <= 0.105 && actualWorldScale.z <= 0.11,
-        `${side} shoulder mannequin segment should be a slim clavicle connector, not a shoulder armor blob (${actualWorldScale.toArray().map((value) => value.toFixed(4)).join(', ')})`
+        actualWorldScale.x <= 0.068 && actualWorldScale.z <= 0.064,
+        `${side} shoulder mannequin segment should be a thin clavicle strut, not a chunky upper-chest bar (${actualWorldScale.toArray().map((value) => value.toFixed(4)).join(', ')})`
       );
     }
   });
@@ -1210,8 +1216,8 @@ describe('buildV3SpartanModel', () => {
         `${side} thigh mannequin segment length should follow the Mesh2Motion upper-leg joint distance`
       );
       assert.ok(
-        actualWorldScale.x <= 0.19 && actualWorldScale.z <= 0.18,
-        `${side} thigh mannequin segment should be a body thigh, not a bulky armor envelope (${actualWorldScale.toArray().map((value) => value.toFixed(4)).join(', ')})`
+        actualWorldScale.x <= 0.15 && actualWorldScale.z <= 0.14,
+        `${side} thigh mannequin segment should be a lean upper-leg capsule, not a bulky armor envelope (${actualWorldScale.toArray().map((value) => value.toFixed(4)).join(', ')})`
       );
     }
   });
@@ -1255,8 +1261,8 @@ describe('buildV3SpartanModel', () => {
         `${side} upper-arm mannequin segment length should follow the Mesh2Motion upper-arm joint distance`
       );
       assert.ok(
-        actualWorldScale.x <= 0.125 && actualWorldScale.z <= 0.13,
-        `${side} upper-arm mannequin segment should be a body limb, not an upper-arm armor envelope (${actualWorldScale.toArray().map((value) => value.toFixed(4)).join(', ')})`
+        actualWorldScale.x <= 0.098 && actualWorldScale.z <= 0.092,
+        `${side} upper-arm mannequin segment should be a lean upper-arm capsule, not a bulky armor envelope (${actualWorldScale.toArray().map((value) => value.toFixed(4)).join(', ')})`
       );
     }
   });
@@ -1300,8 +1306,8 @@ describe('buildV3SpartanModel', () => {
         `${side} forearm mannequin segment length should follow the Mesh2Motion forearm joint distance`
       );
       assert.ok(
-        actualWorldScale.x <= 0.105 && actualWorldScale.z <= 0.105,
-        `${side} forearm mannequin segment should be a body limb, not a forearm armor envelope (${actualWorldScale.toArray().map((value) => value.toFixed(4)).join(', ')})`
+        actualWorldScale.x <= 0.08 && actualWorldScale.z <= 0.076,
+        `${side} forearm mannequin segment should be a lean forearm capsule, not a bulky armor envelope (${actualWorldScale.toArray().map((value) => value.toFixed(4)).join(', ')})`
       );
     }
   });
@@ -1345,8 +1351,8 @@ describe('buildV3SpartanModel', () => {
         `${side} shin mannequin segment length should follow the Mesh2Motion lower-leg joint distance`
       );
       assert.ok(
-        actualWorldScale.x <= 0.15 && actualWorldScale.z <= 0.145,
-        `${side} shin mannequin segment should be a slim lower leg, not a shin armor envelope (${actualWorldScale.toArray().map((value) => value.toFixed(4)).join(', ')})`
+        actualWorldScale.x <= 0.11 && actualWorldScale.z <= 0.102,
+        `${side} shin mannequin segment should be a lean lower-leg capsule, not a shin armor envelope (${actualWorldScale.toArray().map((value) => value.toFixed(4)).join(', ')})`
       );
     }
   });
@@ -1394,6 +1400,71 @@ describe('buildV3SpartanModel', () => {
         `${side} foot mannequin segment should be a flat mannequin foot, not a round boot blob (${actualWorldScale.toArray().map((value) => value.toFixed(4)).join(', ')})`
       );
     }
+  });
+
+  it('places every core armor envelope around its matching mannequin segment midpoint', () => {
+    const model = buildV3SpartanModel({ isEnemy: false, customHue: 192 });
+    model.updateWorldMatrix(true, true);
+    const baseBody = model.userData.v3RigFittedBaseBody as
+      | { root?: THREE.Group; segments?: Record<string, THREE.Mesh> }
+      | undefined;
+    const partGroups = model.userData.v3PartGroups as Record<V3CharacterSlotId, THREE.Group>;
+    const envelopeCases = [
+      { segmentId: 'torso', armorSlots: ['chest', 'back'] },
+      { segmentId: 'pelvis', armorSlots: ['pelvis'] },
+      { segmentId: 'neck', armorSlots: ['neck'] },
+      { segmentId: 'head', armorSlots: ['helmet'] },
+      { segmentId: 'shoulderLeft', armorSlots: ['shoulderLeft'] },
+      { segmentId: 'shoulderRight', armorSlots: ['shoulderRight'] },
+      { segmentId: 'upperArmLeft', armorSlots: ['upperArmLeft'] },
+      { segmentId: 'upperArmRight', armorSlots: ['upperArmRight'] },
+      { segmentId: 'forearmLeft', armorSlots: ['forearmLeft'] },
+      { segmentId: 'forearmRight', armorSlots: ['forearmRight'] },
+      { segmentId: 'handLeft', armorSlots: ['handLeft'] },
+      { segmentId: 'handRight', armorSlots: ['handRight'] },
+      { segmentId: 'thighLeft', armorSlots: ['thighLeft'] },
+      { segmentId: 'thighRight', armorSlots: ['thighRight'] },
+      { segmentId: 'shinLeft', armorSlots: ['shinLeft'] },
+      { segmentId: 'shinRight', armorSlots: ['shinRight'] },
+      { segmentId: 'footLeft', armorSlots: ['footLeft'] },
+      { segmentId: 'footRight', armorSlots: ['footRight'] },
+    ] as const satisfies readonly {
+      segmentId: (typeof V3_RIG_FITTED_CORE_SEGMENTS)[number];
+      armorSlots: readonly V3CharacterSlotId[];
+    }[];
+    const tolerance = 0.012;
+    const failures: string[] = [];
+
+    assert.ok(baseBody?.root instanceof THREE.Group, 'V3 model should expose a rig-fitted dummy base body');
+    for (const { segmentId, armorSlots } of envelopeCases) {
+      const segment = baseBody.segments?.[segmentId];
+      assert.ok(segment instanceof THREE.Mesh, `${segmentId} mannequin segment should exist`);
+      const armorBox = armorSlots
+        .map((slot) => getWorldBox(partGroups[slot]))
+        .reduce((combined, box) => combined.union(box), new THREE.Box3().makeEmpty());
+      const segmentCenter = getObjectWorldPosition(segment);
+      const segmentScale = segment.getWorldScale(new THREE.Vector3());
+      const segmentRadialProfile = Math.max(segmentScale.x, segmentScale.z);
+      const armorSize = armorBox.getSize(new THREE.Vector3());
+      const armorRadialProfile = Math.min(armorSize.x, armorSize.z);
+      if (
+        !boxContainsPointWithTolerance(armorBox, segmentCenter, tolerance) ||
+        armorRadialProfile <= segmentRadialProfile
+      ) {
+        const armorCenter = armorBox.getCenter(new THREE.Vector3());
+        const centerDelta = segmentCenter.clone().sub(armorCenter).toArray()
+          .map((value) => value.toFixed(4))
+          .join(', ');
+        const segmentSize = segmentScale.toArray().map((value) => value.toFixed(4)).join(', ');
+        const armorSize = armorBox.getSize(new THREE.Vector3()).toArray().map((value) => value.toFixed(4)).join(', ');
+        failures.push(
+          `${segmentId} is not slotted inside ${armorSlots.join('+')} at its midpoint ` +
+          `(center delta ${centerDelta}; mannequin scale ${segmentSize}; armor envelope ${armorSize})`
+        );
+      }
+    }
+
+    assert.deepEqual(failures, []);
   });
 
   it('keeps the rig-fitted mannequin alive when armor geometry is hidden for review', () => {

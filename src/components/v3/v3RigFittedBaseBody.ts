@@ -110,15 +110,15 @@ const FINGER_CHAIN_SPECS: readonly V3RigFittedBaseBodyFingerChainSpec[] = FINGER
 );
 const PALM_HUB_SIZE = new THREE.Vector3(0.06, 0.044, 0.052);
 const PALM_HUB_WRIST_OFFSET = 0.002;
-const TORSO_CONNECTOR_PROFILE = { width: 0.16, depth: 0.125 };
-const PELVIS_HUB_SIZE = new THREE.Vector3(0.31, 0.14, 0.18);
+const TORSO_CONNECTOR_PROFILE = { width: 0.13, depth: 0.092 };
+const PELVIS_HUB_SIZE = new THREE.Vector3(0.27, 0.12, 0.13);
 const NECK_CONNECTOR_PROFILE = { width: 0.074, depth: 0.066 };
 const HEAD_HUB_SIZE = new THREE.Vector3(0.145, 0.154, 0.14);
-const SHOULDER_CONNECTOR_PROFILE = { width: 0.082, depth: 0.078 };
-const UPPER_ARM_CONNECTOR_PROFILE = { width: 0.116, depth: 0.108 };
-const FOREARM_CONNECTOR_PROFILE = { width: 0.092, depth: 0.086 };
-const THIGH_CONNECTOR_PROFILE = { width: 0.176, depth: 0.166 };
-const SHIN_CONNECTOR_PROFILE = { width: 0.136, depth: 0.128 };
+const SHOULDER_CONNECTOR_PROFILE = { width: 0.066, depth: 0.06 };
+const UPPER_ARM_CONNECTOR_PROFILE = { width: 0.096, depth: 0.088 };
+const FOREARM_CONNECTOR_PROFILE = { width: 0.078, depth: 0.072 };
+const THIGH_CONNECTOR_PROFILE = { width: 0.146, depth: 0.136 };
+const SHIN_CONNECTOR_PROFILE = { width: 0.106, depth: 0.098 };
 const FOOT_CONNECTOR_PROFILE = { width: 0.092, depth: 0.072 };
 const SEGMENT_IDS: readonly V3RigFittedBaseBodySegmentId[] = [
   ...CORE_SEGMENT_IDS,
