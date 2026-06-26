@@ -53,6 +53,7 @@ import {
 } from './v3Mesh2MotionArmorRig';
 import { V3_MESH2MOTION_ARMOR_RIG } from './v3Mesh2MotionArmorRig.generated';
 import { V3_ARMOR_FOUNDATION } from './v3ArmorFoundation';
+import { updateV3RigFittedBaseBody } from './v3RigFittedBaseBody';
 
 const requiredSegments = ['lowerTorso', 'upperTorso', 'head', 'leftArm', 'rightArm', 'leftLeg', 'rightLeg'];
 const V3_LIMB_CHAIN_BINDING_TEST_SLOT_SET = new Set<V3CharacterSlotId>(V3_MESH2MOTION_NATIVE_LIMB_CHAIN_SLOTS);
@@ -227,6 +228,85 @@ const tupleCloseTo = (
   expected: readonly number[],
   tolerance = 0.000001
 ): boolean => actual.every((value, index) => Math.abs(value - expected[index]) <= tolerance);
+
+const V3_RIG_FITTED_FINGERS = ['thumb', 'index', 'middle', 'ring', 'pinky'] as const;
+const V3_RIG_FITTED_FINGER_SIDES = [
+  { side: 'Left', suffix: 'l', handJoint: 'hand_l' },
+  { side: 'Right', suffix: 'r', handJoint: 'hand_r' },
+] as const;
+const V3_RIG_FITTED_FINGER_CHAINS = V3_RIG_FITTED_FINGER_SIDES.flatMap(({ side, suffix, handJoint }) =>
+  V3_RIG_FITTED_FINGERS.flatMap((finger) =>
+    ([1, 2, 3] as const).map((index) => ({
+      segmentId: `${finger}${side}0${index}`,
+      fromJoint: index === 1 ? handJoint : `${finger}_0${index - 1}_${suffix}`,
+      toJoint: `${finger}_0${index}_${suffix}`,
+    }))
+  )
+);
+const V3_RIG_FITTED_CORE_SEGMENTS = [
+  'torso',
+  'pelvis',
+  'neck',
+  'head',
+  'shoulderLeft',
+  'shoulderRight',
+  'upperArmLeft',
+  'upperArmRight',
+  'forearmLeft',
+  'forearmRight',
+  'handLeft',
+  'handRight',
+  'thighLeft',
+  'thighRight',
+  'shinLeft',
+  'shinRight',
+  'footLeft',
+  'footRight',
+] as const;
+const V3_RIG_FITTED_SEGMENTS = [
+  ...V3_RIG_FITTED_CORE_SEGMENTS,
+  ...V3_RIG_FITTED_FINGER_CHAINS.map(({ segmentId }) => segmentId),
+] as const;
+
+const getMesh2MotionJointWorldPosition = (model: THREE.Object3D, jointName: string): THREE.Vector3 => {
+  const joints = model.userData.v3Mesh2MotionJoints as
+    | Record<string, { object?: THREE.Object3D }>
+    | undefined;
+  const joint = joints?.[jointName]?.object;
+  assert.ok(joint instanceof THREE.Object3D, `missing Mesh2Motion joint ${jointName}`);
+  return getObjectWorldPosition(joint);
+};
+
+const getMesh2MotionJointObject = (model: THREE.Object3D, jointName: string): THREE.Object3D => {
+  const joints = model.userData.v3Mesh2MotionJoints as
+    | Record<string, { object?: THREE.Object3D }>
+    | undefined;
+  const joint = joints?.[jointName]?.object;
+  assert.ok(joint instanceof THREE.Object3D, `missing Mesh2Motion joint ${jointName}`);
+  return joint;
+};
+
+const assertFiniteWorldTransform = (object: THREE.Object3D, label: string): void => {
+  const position = object.getWorldPosition(new THREE.Vector3());
+  const quaternion = object.getWorldQuaternion(new THREE.Quaternion());
+  const scale = object.getWorldScale(new THREE.Vector3());
+  assert.equal(
+    [
+      position.x,
+      position.y,
+      position.z,
+      quaternion.x,
+      quaternion.y,
+      quaternion.z,
+      quaternion.w,
+      scale.x,
+      scale.y,
+      scale.z,
+    ].every(Number.isFinite),
+    true,
+    `${label} world transform should stay finite`
+  );
+};
 
 const getExactObjSlotWorldSize = (slot: V3CharacterSlotId): THREE.Vector3 => {
   const sourceSlot = V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.slots[slot];
@@ -682,32 +762,18 @@ describe('buildV3SpartanModel', () => {
     assert.ok(baseBody?.root instanceof THREE.Group, 'V3 model should expose a rig-fitted dummy base body');
     assert.equal(baseBody.root.visible, true, 'rig-fitted dummy base body should be visible under the armor');
     assert.equal(baseBody.root.userData.v3RigFittedBaseBody, true);
+    assert.equal(
+      Object.keys(baseBody.segments ?? {}).length,
+      48,
+      'rig-fitted dummy base body should include torso, limbs, palms, feet, head, and 30 finger capsules'
+    );
 
-    const requiredSegments = [
-      'torso',
-      'pelvis',
-      'neck',
-      'head',
-      'shoulderLeft',
-      'shoulderRight',
-      'upperArmLeft',
-      'upperArmRight',
-      'forearmLeft',
-      'forearmRight',
-      'handLeft',
-      'handRight',
-      'thighLeft',
-      'thighRight',
-      'shinLeft',
-      'shinRight',
-      'footLeft',
-      'footRight',
-    ];
-    for (const segmentId of requiredSegments) {
+    for (const segmentId of V3_RIG_FITTED_SEGMENTS) {
       const segment = baseBody.segments?.[segmentId];
       assert.ok(segment instanceof THREE.Mesh, `${segmentId} dummy body segment should exist`);
       assert.equal(segment.visible, true, `${segmentId} dummy body segment should be visible`);
       assert.equal(segment.userData.v3RigFittedBaseBodySegment, true);
+      assertFiniteWorldTransform(segment, `${segmentId} dummy body segment`);
       const material = segment.material;
       assert.ok(material instanceof THREE.MeshStandardMaterial, `${segmentId} should use an inspectable dummy material`);
       assert.ok(
@@ -723,10 +789,6 @@ describe('buildV3SpartanModel', () => {
     const backBox = getWorldBox(partGroups.back);
     const neckArmorBox = getWorldBox(partGroups.neck);
     const pelvisArmorBox = getWorldBox(partGroups.pelvis);
-    const shoulderLeftBox = getWorldBox(partGroups.shoulderLeft);
-    const shoulderRightBox = getWorldBox(partGroups.shoulderRight);
-    const upperArmLeftBox = getWorldBox(partGroups.upperArmLeft);
-    const upperArmRightBox = getWorldBox(partGroups.upperArmRight);
     const sideProfileCore = new THREE.Vector3(
       chestBox.getCenter(new THREE.Vector3()).x,
       chestBox.getCenter(new THREE.Vector3()).y,
@@ -740,20 +802,10 @@ describe('buildV3SpartanModel', () => {
     assert.equal(pelvisBodyBox.intersectsBox(pelvisArmorBox), true, 'dummy pelvis should sit inside the pelvis armor shell');
 
     for (const side of ['Left', 'Right'] as const) {
-      const shoulderBodyBox = getWorldBox(baseBody.segments[`shoulder${side}`]);
-      const upperArmBodyBox = getWorldBox(baseBody.segments[`upperArm${side}`]);
-      const forearmBodyBox = getWorldBox(baseBody.segments[`forearm${side}`]);
       const handBodyBox = getWorldBox(baseBody.segments[`hand${side}`]);
-      const thighBodyBox = getWorldBox(baseBody.segments[`thigh${side}`]);
-      const shinBodyBox = getWorldBox(baseBody.segments[`shin${side}`]);
       const footBodyBox = getWorldBox(baseBody.segments[`foot${side}`]);
 
-      assert.equal(shoulderBodyBox.intersectsBox(side === 'Left' ? shoulderLeftBox : shoulderRightBox), true);
-      assert.equal(upperArmBodyBox.intersectsBox(side === 'Left' ? upperArmLeftBox : upperArmRightBox), true);
-      assert.equal(forearmBodyBox.intersectsBox(getWorldBox(partGroups[`forearm${side}`])), true);
       assert.equal(handBodyBox.intersectsBox(getWorldBox(partGroups[`hand${side}`])), true);
-      assert.equal(thighBodyBox.intersectsBox(getWorldBox(partGroups[`thigh${side}`])), true);
-      assert.equal(shinBodyBox.intersectsBox(getWorldBox(partGroups[`shin${side}`])), true);
       assert.equal(footBodyBox.intersectsBox(getWorldBox(partGroups[`foot${side}`])), true);
       assert.ok(
         baseBody.segments[`shoulder${side}`].scale.x <= 0.1 &&
@@ -770,6 +822,600 @@ describe('buildV3SpartanModel', () => {
           baseBody.segments[`forearm${side}`].scale.z <= 0.13,
         `${side} dummy forearm should stay visibly subordinate to the armor`
       );
+    }
+  });
+
+  it('fits every Mesh2Motion finger chain with a matching mannequin capsule', () => {
+    const model = buildV3SpartanModel({ isEnemy: false, customHue: 192 });
+    model.updateWorldMatrix(true, true);
+    const baseBody = model.userData.v3RigFittedBaseBody as
+      | { root?: THREE.Group; segments?: Record<string, THREE.Mesh> }
+      | undefined;
+
+    assert.ok(baseBody?.root instanceof THREE.Group, 'V3 model should expose a rig-fitted dummy base body');
+    for (const { segmentId, fromJoint, toJoint } of V3_RIG_FITTED_FINGER_CHAINS) {
+      const segment = baseBody.segments?.[segmentId];
+      assert.ok(segment instanceof THREE.Mesh, `${segmentId} finger mannequin capsule should exist`);
+      assert.equal(segment.visible, true, `${segmentId} finger mannequin capsule should be visible`);
+
+      const from = getMesh2MotionJointWorldPosition(model, fromJoint);
+      const to = getMesh2MotionJointWorldPosition(model, toJoint);
+      const expectedLength = from.distanceTo(to);
+      const expectedMidpoint = from.clone().add(to).multiplyScalar(0.5);
+      const expectedDirection = to.clone().sub(from).normalize();
+      const actualMidpoint = getObjectWorldPosition(segment);
+      const actualDirection = new THREE.Vector3(0, 1, 0)
+        .applyQuaternion(segment.getWorldQuaternion(new THREE.Quaternion()))
+        .normalize();
+      const actualWorldScale = segment.getWorldScale(new THREE.Vector3());
+
+      assert.ok(
+        actualMidpoint.distanceTo(expectedMidpoint) <= 0.004,
+        `${segmentId} midpoint should match ${fromJoint}->${toJoint} joint midpoint`
+      );
+      assert.ok(
+        actualDirection.dot(expectedDirection) >= 0.999,
+        `${segmentId} direction should follow ${fromJoint}->${toJoint} joint direction`
+      );
+      assert.ok(
+        Math.abs(actualWorldScale.y * 2 - expectedLength) <= 0.003,
+        `${segmentId} length should match ${fromJoint}->${toJoint} joint distance`
+      );
+    }
+  });
+
+  it('keeps palm hubs compact so the mannequin fingers read as separate chains', () => {
+    const model = buildV3SpartanModel({ isEnemy: false, customHue: 192 });
+    model.updateWorldMatrix(true, true);
+    const baseBody = model.userData.v3RigFittedBaseBody as
+      | { root?: THREE.Group; segments?: Record<string, THREE.Mesh> }
+      | undefined;
+    const sideCases = [
+      { side: 'Left', segmentId: 'handLeft', handJoint: 'hand_l', suffix: 'l' },
+      { side: 'Right', segmentId: 'handRight', handJoint: 'hand_r', suffix: 'r' },
+    ] as const;
+
+    assert.ok(baseBody?.root instanceof THREE.Group, 'V3 model should expose a rig-fitted dummy base body');
+    for (const { side, segmentId, handJoint, suffix } of sideCases) {
+      const handSegment = baseBody.segments?.[segmentId];
+      assert.ok(handSegment instanceof THREE.Mesh, `${side} palm hub should exist`);
+      const handCenter = getObjectWorldPosition(handSegment);
+      const handJointPosition = getMesh2MotionJointWorldPosition(model, handJoint);
+      const handSize = getWorldSize(handSegment);
+      const handBox = getWorldBox(handSegment);
+
+      assert.ok(
+        handCenter.distanceTo(handJointPosition) <= 0.04,
+        `${side} palm hub should stay anchored near ${handJoint}, not the full glove envelope`
+      );
+      assert.ok(
+        handSize.x <= 0.085 && handSize.y <= 0.075 && handSize.z <= 0.085,
+        `${side} palm hub should stay compact instead of swallowing the fingers (${handSize.toArray().map((value) => value.toFixed(4)).join(', ')})`
+      );
+      for (const fingerName of V3_RIG_FITTED_FINGERS) {
+        const knuckle = getMesh2MotionJointWorldPosition(model, `${fingerName}_01_${suffix}`);
+        assert.equal(
+          handBox.containsPoint(knuckle),
+          false,
+          `${side} palm hub should not contain ${fingerName}_01_${suffix}; fingers need to read as separate chains`
+        );
+      }
+    }
+  });
+
+  it('keeps palm hubs wrist-side and aimed at the Mesh2Motion finger fan', () => {
+    const model = buildV3SpartanModel({ isEnemy: false, customHue: 192 });
+    model.updateWorldMatrix(true, true);
+    const baseBody = model.userData.v3RigFittedBaseBody as
+      | { root?: THREE.Group; segments?: Record<string, THREE.Mesh> }
+      | undefined;
+    const sideCases = [
+      { side: 'Left', segmentId: 'handLeft', handJoint: 'hand_l', suffix: 'l' },
+      { side: 'Right', segmentId: 'handRight', handJoint: 'hand_r', suffix: 'r' },
+    ] as const;
+
+    assert.ok(baseBody?.root instanceof THREE.Group, 'V3 model should expose a rig-fitted dummy base body');
+    for (const { side, segmentId, handJoint, suffix } of sideCases) {
+      const handSegment = baseBody.segments?.[segmentId];
+      assert.ok(handSegment instanceof THREE.Mesh, `${side} palm hub should exist`);
+
+      const handPosition = getMesh2MotionJointWorldPosition(model, handJoint);
+      const firstKnuckles = V3_RIG_FITTED_FINGERS.map((fingerName) =>
+        getMesh2MotionJointWorldPosition(model, `${fingerName}_01_${suffix}`)
+      );
+      const knuckleCenter = firstKnuckles
+        .reduce((sum, position) => sum.add(position), new THREE.Vector3())
+        .multiplyScalar(1 / firstKnuckles.length);
+      const expectedDirection = knuckleCenter.clone().sub(handPosition).normalize();
+      const palmForward = new THREE.Vector3(1, 0, 0)
+        .applyQuaternion(handSegment.getWorldQuaternion(new THREE.Quaternion()))
+        .normalize();
+      const palmCenterProjection = getObjectWorldPosition(handSegment)
+        .sub(handPosition)
+        .dot(expectedDirection);
+      const palmForwardReach = palmCenterProjection + handSegment.getWorldScale(new THREE.Vector3()).x * 0.5;
+      const nearestKnuckleDistance = Math.min(
+        ...firstKnuckles.map((knuckle) => handPosition.distanceTo(knuckle))
+      );
+
+      assert.ok(
+        palmForward.dot(expectedDirection) >= 0.995,
+        `${side} palm hub should aim from ${handJoint} toward the first-knuckle cluster`
+      );
+      assert.ok(
+        palmCenterProjection <= 0.001,
+        `${side} palm hub should sit on the wrist side of ${handJoint}, not protrude into the finger bases`
+      );
+      assert.ok(
+        palmForwardReach <= nearestKnuckleDistance * 0.35,
+        `${side} palm hub should leave room for separate finger roots instead of overlapping them`
+      );
+    }
+  });
+
+  it('keeps the mannequin neck as a slim Mesh2Motion connector instead of a chest-front blob', () => {
+    const model = buildV3SpartanModel({ isEnemy: false, customHue: 192 });
+    model.updateWorldMatrix(true, true);
+    const baseBody = model.userData.v3RigFittedBaseBody as
+      | { root?: THREE.Group; segments?: Record<string, THREE.Mesh> }
+      | undefined;
+
+    assert.ok(baseBody?.root instanceof THREE.Group, 'V3 model should expose a rig-fitted dummy base body');
+    const neckSegment = baseBody.segments?.neck;
+    assert.ok(neckSegment instanceof THREE.Mesh, 'neck mannequin connector should exist');
+    const neckBase = getMesh2MotionJointWorldPosition(model, 'neck_01');
+    const headBase = getMesh2MotionJointWorldPosition(model, 'head');
+    const expectedMidpoint = neckBase.clone().add(headBase).multiplyScalar(0.5);
+    const expectedLength = neckBase.distanceTo(headBase);
+    const actualMidpoint = getObjectWorldPosition(neckSegment);
+    const actualWorldScale = neckSegment.getWorldScale(new THREE.Vector3());
+
+    assert.ok(
+      actualMidpoint.distanceTo(expectedMidpoint) <= 0.025,
+      'neck mannequin connector should stay centered on the Mesh2Motion neck_01->head chain'
+    );
+    assert.ok(
+      actualWorldScale.x <= 0.09 && actualWorldScale.z <= 0.085,
+      `neck mannequin connector should stay slim instead of becoming a collar blob (${actualWorldScale.toArray().map((value) => value.toFixed(4)).join(', ')})`
+    );
+    assert.ok(
+      Math.abs(actualWorldScale.y * 2 - expectedLength) <= 0.02,
+      'neck mannequin connector length should follow the Mesh2Motion neck_01->head joint distance'
+    );
+  });
+
+  it('keeps the mannequin head centered on the Mesh2Motion head chain instead of the helmet envelope', () => {
+    const model = buildV3SpartanModel({ isEnemy: false, customHue: 192 });
+    model.updateWorldMatrix(true, true);
+    const baseBody = model.userData.v3RigFittedBaseBody as
+      | { root?: THREE.Group; segments?: Record<string, THREE.Mesh> }
+      | undefined;
+
+    assert.ok(baseBody?.root instanceof THREE.Group, 'V3 model should expose a rig-fitted dummy base body');
+    const headSegment = baseBody.segments?.head;
+    assert.ok(headSegment instanceof THREE.Mesh, 'head mannequin segment should exist');
+    const headBase = getMesh2MotionJointWorldPosition(model, 'head');
+    const headLeaf = getMesh2MotionJointWorldPosition(model, 'head_leaf');
+    const expectedMidpoint = headBase.clone().add(headLeaf).multiplyScalar(0.5);
+    const actualMidpoint = getObjectWorldPosition(headSegment);
+    const actualWorldScale = headSegment.getWorldScale(new THREE.Vector3());
+
+    assert.ok(
+      actualMidpoint.distanceTo(expectedMidpoint) <= 0.035,
+      'head mannequin segment should stay centered on the Mesh2Motion head->head_leaf chain'
+    );
+    assert.ok(
+      actualWorldScale.x <= 0.165 && actualWorldScale.y <= 0.18 && actualWorldScale.z <= 0.165,
+      `head mannequin segment should be a compact blank head, not a helmet-sized blob (${actualWorldScale.toArray().map((value) => value.toFixed(4)).join(', ')})`
+    );
+    assert.ok(
+      actualMidpoint.y + actualWorldScale.y * 0.5 <= headLeaf.y + 0.11,
+      'head mannequin segment should not float far above the Mesh2Motion head leaf'
+    );
+  });
+
+  it('keeps the mannequin head aimed along the live Mesh2Motion head chain after joint poses', () => {
+    const model = buildV3SpartanModel({ isEnemy: false, customHue: 192 });
+    const headJoint = getMesh2MotionJointObject(model, 'head');
+    headJoint.rotation.x = 0.42;
+    headJoint.rotation.z = -0.18;
+    model.updateWorldMatrix(true, true);
+    updateV3RigFittedBaseBody(model);
+    model.updateWorldMatrix(true, true);
+    const baseBody = model.userData.v3RigFittedBaseBody as
+      | { root?: THREE.Group; segments?: Record<string, THREE.Mesh> }
+      | undefined;
+
+    assert.ok(baseBody?.root instanceof THREE.Group, 'V3 model should expose a rig-fitted dummy base body');
+    const headSegment = baseBody.segments?.head;
+    assert.ok(headSegment instanceof THREE.Mesh, 'head mannequin segment should exist');
+    const headBase = getMesh2MotionJointWorldPosition(model, 'head');
+    const headLeaf = getMesh2MotionJointWorldPosition(model, 'head_leaf');
+    const expectedDirection = headLeaf.clone().sub(headBase).normalize();
+    const actualDirection = new THREE.Vector3(0, 1, 0)
+      .applyQuaternion(headSegment.getWorldQuaternion(new THREE.Quaternion()))
+      .normalize();
+
+    assert.ok(
+      actualDirection.dot(expectedDirection) >= 0.999,
+      'head mannequin segment should rotate with the live Mesh2Motion head->head_leaf direction'
+    );
+  });
+
+  it('keeps the mannequin torso as a slim Mesh2Motion spine trunk instead of a chest-front blob', () => {
+    const model = buildV3SpartanModel({ isEnemy: false, customHue: 192 });
+    model.updateWorldMatrix(true, true);
+    const baseBody = model.userData.v3RigFittedBaseBody as
+      | { root?: THREE.Group; segments?: Record<string, THREE.Mesh> }
+      | undefined;
+    const partGroups = model.userData.v3PartGroups as Record<string, THREE.Group>;
+
+    assert.ok(baseBody?.root instanceof THREE.Group, 'V3 model should expose a rig-fitted dummy base body');
+    const torsoSegment = baseBody.segments?.torso;
+    assert.ok(torsoSegment instanceof THREE.Mesh, 'torso mannequin segment should exist');
+    const spineBase = getMesh2MotionJointWorldPosition(model, 'spine_01');
+    const spineTop = getMesh2MotionJointWorldPosition(model, 'neck_01');
+    const expectedMidpoint = spineBase.clone().add(spineTop).multiplyScalar(0.5);
+    const expectedLength = spineBase.distanceTo(spineTop);
+    const expectedDirection = spineTop.clone().sub(spineBase).normalize();
+    const actualMidpoint = getObjectWorldPosition(torsoSegment);
+    const actualDirection = new THREE.Vector3(0, 1, 0)
+      .applyQuaternion(torsoSegment.getWorldQuaternion(new THREE.Quaternion()))
+      .normalize();
+    const actualWorldScale = torsoSegment.getWorldScale(new THREE.Vector3());
+    const torsoBox = getWorldBox(torsoSegment);
+    const chestBox = getWorldBox(partGroups.chest);
+    const backBox = getWorldBox(partGroups.back);
+
+    assert.ok(
+      actualMidpoint.distanceTo(expectedMidpoint) <= 0.025,
+      'torso mannequin segment should stay centered on the Mesh2Motion spine_01->neck_01 chain'
+    );
+    assert.ok(
+      actualDirection.dot(expectedDirection) >= 0.998,
+      'torso mannequin segment should follow the Mesh2Motion spine direction'
+    );
+    assert.ok(
+      Math.abs(actualWorldScale.y * 2 - expectedLength) <= 0.025,
+      'torso mannequin segment length should follow the Mesh2Motion spine joint distance'
+    );
+    assert.ok(
+      actualWorldScale.x <= 0.17 && actualWorldScale.z <= 0.135,
+      `torso mannequin segment should be a slim inner trunk, not a round chest-front blob (${actualWorldScale.toArray().map((value) => value.toFixed(4)).join(', ')})`
+    );
+    assert.equal(torsoBox.intersectsBox(chestBox), true, 'torso trunk should still sit inside the chest armor shell');
+    assert.equal(torsoBox.intersectsBox(backBox), true, 'torso trunk should still sit inside the back armor shell');
+  });
+
+  it('keeps the mannequin pelvis centered on Mesh2Motion hip joints instead of a foundation waist blob', () => {
+    const model = buildV3SpartanModel({ isEnemy: false, customHue: 192 });
+    model.updateWorldMatrix(true, true);
+    const baseBody = model.userData.v3RigFittedBaseBody as
+      | { root?: THREE.Group; segments?: Record<string, THREE.Mesh> }
+      | undefined;
+    const partGroups = model.userData.v3PartGroups as Record<string, THREE.Group>;
+
+    assert.ok(baseBody?.root instanceof THREE.Group, 'V3 model should expose a rig-fitted dummy base body');
+    const pelvisSegment = baseBody.segments?.pelvis;
+    assert.ok(pelvisSegment instanceof THREE.Mesh, 'pelvis mannequin segment should exist');
+    const hipJoints = ['pelvis', 'spine_01', 'thigh_l', 'thigh_r'].map((jointName) =>
+      getMesh2MotionJointWorldPosition(model, jointName)
+    );
+    const expectedHipBox = new THREE.Box3().setFromPoints(hipJoints);
+    const expectedMidpoint = expectedHipBox.getCenter(new THREE.Vector3());
+    const actualMidpoint = getObjectWorldPosition(pelvisSegment);
+    const actualWorldScale = pelvisSegment.getWorldScale(new THREE.Vector3());
+    const pelvisBodyBox = getWorldBox(pelvisSegment);
+    const pelvisArmorBox = getWorldBox(partGroups.pelvis);
+
+    assert.ok(
+      actualMidpoint.distanceTo(expectedMidpoint) <= 0.025,
+      'pelvis mannequin segment should stay centered on the Mesh2Motion pelvis/spine/thigh joint cluster'
+    );
+    assert.ok(
+      actualWorldScale.x <= 0.32 && actualWorldScale.y <= 0.17 && actualWorldScale.z <= 0.21,
+      `pelvis mannequin segment should be a compact hip basin, not a broad waist blob (${actualWorldScale.toArray().map((value) => value.toFixed(4)).join(', ')})`
+    );
+    for (const [index, jointName] of ['pelvis', 'spine_01', 'thigh_l', 'thigh_r'].entries()) {
+      assert.equal(
+        pelvisBodyBox.containsPoint(hipJoints[index]),
+        true,
+        `pelvis mannequin segment should contain the Mesh2Motion ${jointName} hip connector`
+      );
+    }
+    assert.equal(pelvisBodyBox.intersectsBox(pelvisArmorBox), true, 'pelvis body should still sit inside the pelvis armor shell');
+  });
+
+  it('keeps mannequin shoulders aligned to the Mesh2Motion clavicle-to-upperarm chains', () => {
+    const model = buildV3SpartanModel({ isEnemy: false, customHue: 192 });
+    model.updateWorldMatrix(true, true);
+    const baseBody = model.userData.v3RigFittedBaseBody as
+      | { root?: THREE.Group; segments?: Record<string, THREE.Mesh> }
+      | undefined;
+    const sideCases = [
+      { side: 'Left', segmentId: 'shoulderLeft', fromJoint: 'clavicle_l', toJoint: 'upperarm_l' },
+      { side: 'Right', segmentId: 'shoulderRight', fromJoint: 'clavicle_r', toJoint: 'upperarm_r' },
+    ] as const;
+
+    assert.ok(baseBody?.root instanceof THREE.Group, 'V3 model should expose a rig-fitted dummy base body');
+    for (const { side, segmentId, fromJoint, toJoint } of sideCases) {
+      const shoulderSegment = baseBody.segments?.[segmentId];
+      assert.ok(shoulderSegment instanceof THREE.Mesh, `${side} shoulder mannequin segment should exist`);
+      const from = getMesh2MotionJointWorldPosition(model, fromJoint);
+      const to = getMesh2MotionJointWorldPosition(model, toJoint);
+      const expectedMidpoint = from.clone().add(to).multiplyScalar(0.5);
+      const expectedLength = from.distanceTo(to);
+      const expectedDirection = to.clone().sub(from).normalize();
+      const actualMidpoint = getObjectWorldPosition(shoulderSegment);
+      const actualDirection = new THREE.Vector3(0, 1, 0)
+        .applyQuaternion(shoulderSegment.getWorldQuaternion(new THREE.Quaternion()))
+        .normalize();
+      const actualWorldScale = shoulderSegment.getWorldScale(new THREE.Vector3());
+
+      assert.ok(
+        actualMidpoint.distanceTo(expectedMidpoint) <= 0.012,
+        `${side} shoulder mannequin segment should stay centered on ${fromJoint}->${toJoint}`
+      );
+      assert.ok(
+        actualDirection.dot(expectedDirection) >= 0.998,
+        `${side} shoulder mannequin segment should follow the Mesh2Motion clavicle direction`
+      );
+      assert.ok(
+        Math.abs(actualWorldScale.y * 2 - expectedLength) <= 0.012,
+        `${side} shoulder mannequin segment length should follow the Mesh2Motion clavicle joint distance`
+      );
+      assert.ok(
+        actualWorldScale.x <= 0.105 && actualWorldScale.z <= 0.11,
+        `${side} shoulder mannequin segment should be a slim clavicle connector, not a shoulder armor blob (${actualWorldScale.toArray().map((value) => value.toFixed(4)).join(', ')})`
+      );
+    }
+  });
+
+  it('keeps mannequin thighs aligned to the Mesh2Motion thigh-to-calf chains', () => {
+    const model = buildV3SpartanModel({ isEnemy: false, customHue: 192 });
+    model.updateWorldMatrix(true, true);
+    const baseBody = model.userData.v3RigFittedBaseBody as
+      | { root?: THREE.Group; segments?: Record<string, THREE.Mesh> }
+      | undefined;
+    const sideCases = [
+      { side: 'Left', segmentId: 'thighLeft', fromJoint: 'thigh_l', toJoint: 'calf_l' },
+      { side: 'Right', segmentId: 'thighRight', fromJoint: 'thigh_r', toJoint: 'calf_r' },
+    ] as const;
+
+    assert.ok(baseBody?.root instanceof THREE.Group, 'V3 model should expose a rig-fitted dummy base body');
+    for (const { side, segmentId, fromJoint, toJoint } of sideCases) {
+      const thighSegment = baseBody.segments?.[segmentId];
+      assert.ok(thighSegment instanceof THREE.Mesh, `${side} thigh mannequin segment should exist`);
+      const from = getMesh2MotionJointWorldPosition(model, fromJoint);
+      const to = getMesh2MotionJointWorldPosition(model, toJoint);
+      const expectedMidpoint = from.clone().add(to).multiplyScalar(0.5);
+      const expectedLength = from.distanceTo(to);
+      const expectedDirection = to.clone().sub(from).normalize();
+      const actualMidpoint = getObjectWorldPosition(thighSegment);
+      const actualDirection = new THREE.Vector3(0, 1, 0)
+        .applyQuaternion(thighSegment.getWorldQuaternion(new THREE.Quaternion()))
+        .normalize();
+      const actualWorldScale = thighSegment.getWorldScale(new THREE.Vector3());
+
+      assert.ok(
+        actualMidpoint.distanceTo(expectedMidpoint) <= 0.014,
+        `${side} thigh mannequin segment should stay centered on ${fromJoint}->${toJoint}`
+      );
+      assert.ok(
+        actualDirection.dot(expectedDirection) >= 0.998,
+        `${side} thigh mannequin segment should follow the Mesh2Motion upper-leg direction`
+      );
+      assert.ok(
+        Math.abs(actualWorldScale.y * 2 - expectedLength) <= 0.014,
+        `${side} thigh mannequin segment length should follow the Mesh2Motion upper-leg joint distance`
+      );
+      assert.ok(
+        actualWorldScale.x <= 0.19 && actualWorldScale.z <= 0.18,
+        `${side} thigh mannequin segment should be a body thigh, not a bulky armor envelope (${actualWorldScale.toArray().map((value) => value.toFixed(4)).join(', ')})`
+      );
+    }
+  });
+
+  it('keeps mannequin upper arms aligned to the Mesh2Motion upperarm-to-lowerarm chains', () => {
+    const model = buildV3SpartanModel({ isEnemy: false, customHue: 192 });
+    model.updateWorldMatrix(true, true);
+    const baseBody = model.userData.v3RigFittedBaseBody as
+      | { root?: THREE.Group; segments?: Record<string, THREE.Mesh> }
+      | undefined;
+    const sideCases = [
+      { side: 'Left', segmentId: 'upperArmLeft', fromJoint: 'upperarm_l', toJoint: 'lowerarm_l' },
+      { side: 'Right', segmentId: 'upperArmRight', fromJoint: 'upperarm_r', toJoint: 'lowerarm_r' },
+    ] as const;
+
+    assert.ok(baseBody?.root instanceof THREE.Group, 'V3 model should expose a rig-fitted dummy base body');
+    for (const { side, segmentId, fromJoint, toJoint } of sideCases) {
+      const upperArmSegment = baseBody.segments?.[segmentId];
+      assert.ok(upperArmSegment instanceof THREE.Mesh, `${side} upper-arm mannequin segment should exist`);
+      const from = getMesh2MotionJointWorldPosition(model, fromJoint);
+      const to = getMesh2MotionJointWorldPosition(model, toJoint);
+      const expectedMidpoint = from.clone().add(to).multiplyScalar(0.5);
+      const expectedLength = from.distanceTo(to);
+      const expectedDirection = to.clone().sub(from).normalize();
+      const actualMidpoint = getObjectWorldPosition(upperArmSegment);
+      const actualDirection = new THREE.Vector3(0, 1, 0)
+        .applyQuaternion(upperArmSegment.getWorldQuaternion(new THREE.Quaternion()))
+        .normalize();
+      const actualWorldScale = upperArmSegment.getWorldScale(new THREE.Vector3());
+
+      assert.ok(
+        actualMidpoint.distanceTo(expectedMidpoint) <= 0.012,
+        `${side} upper-arm mannequin segment should stay centered on ${fromJoint}->${toJoint}`
+      );
+      assert.ok(
+        actualDirection.dot(expectedDirection) >= 0.998,
+        `${side} upper-arm mannequin segment should follow the Mesh2Motion upper-arm direction`
+      );
+      assert.ok(
+        Math.abs(actualWorldScale.y * 2 - expectedLength) <= 0.012,
+        `${side} upper-arm mannequin segment length should follow the Mesh2Motion upper-arm joint distance`
+      );
+      assert.ok(
+        actualWorldScale.x <= 0.125 && actualWorldScale.z <= 0.13,
+        `${side} upper-arm mannequin segment should be a body limb, not an upper-arm armor envelope (${actualWorldScale.toArray().map((value) => value.toFixed(4)).join(', ')})`
+      );
+    }
+  });
+
+  it('keeps mannequin forearms aligned to the Mesh2Motion lowerarm-to-hand chains', () => {
+    const model = buildV3SpartanModel({ isEnemy: false, customHue: 192 });
+    model.updateWorldMatrix(true, true);
+    const baseBody = model.userData.v3RigFittedBaseBody as
+      | { root?: THREE.Group; segments?: Record<string, THREE.Mesh> }
+      | undefined;
+    const sideCases = [
+      { side: 'Left', segmentId: 'forearmLeft', fromJoint: 'lowerarm_l', toJoint: 'hand_l' },
+      { side: 'Right', segmentId: 'forearmRight', fromJoint: 'lowerarm_r', toJoint: 'hand_r' },
+    ] as const;
+
+    assert.ok(baseBody?.root instanceof THREE.Group, 'V3 model should expose a rig-fitted dummy base body');
+    for (const { side, segmentId, fromJoint, toJoint } of sideCases) {
+      const forearmSegment = baseBody.segments?.[segmentId];
+      assert.ok(forearmSegment instanceof THREE.Mesh, `${side} forearm mannequin segment should exist`);
+      const from = getMesh2MotionJointWorldPosition(model, fromJoint);
+      const to = getMesh2MotionJointWorldPosition(model, toJoint);
+      const expectedMidpoint = from.clone().add(to).multiplyScalar(0.5);
+      const expectedLength = from.distanceTo(to);
+      const expectedDirection = to.clone().sub(from).normalize();
+      const actualMidpoint = getObjectWorldPosition(forearmSegment);
+      const actualDirection = new THREE.Vector3(0, 1, 0)
+        .applyQuaternion(forearmSegment.getWorldQuaternion(new THREE.Quaternion()))
+        .normalize();
+      const actualWorldScale = forearmSegment.getWorldScale(new THREE.Vector3());
+
+      assert.ok(
+        actualMidpoint.distanceTo(expectedMidpoint) <= 0.012,
+        `${side} forearm mannequin segment should stay centered on ${fromJoint}->${toJoint}`
+      );
+      assert.ok(
+        actualDirection.dot(expectedDirection) >= 0.998,
+        `${side} forearm mannequin segment should follow the Mesh2Motion forearm direction`
+      );
+      assert.ok(
+        Math.abs(actualWorldScale.y * 2 - expectedLength) <= 0.012,
+        `${side} forearm mannequin segment length should follow the Mesh2Motion forearm joint distance`
+      );
+      assert.ok(
+        actualWorldScale.x <= 0.105 && actualWorldScale.z <= 0.105,
+        `${side} forearm mannequin segment should be a body limb, not a forearm armor envelope (${actualWorldScale.toArray().map((value) => value.toFixed(4)).join(', ')})`
+      );
+    }
+  });
+
+  it('keeps mannequin shins aligned to the Mesh2Motion calf-to-foot chains', () => {
+    const model = buildV3SpartanModel({ isEnemy: false, customHue: 192 });
+    model.updateWorldMatrix(true, true);
+    const baseBody = model.userData.v3RigFittedBaseBody as
+      | { root?: THREE.Group; segments?: Record<string, THREE.Mesh> }
+      | undefined;
+    const sideCases = [
+      { side: 'Left', segmentId: 'shinLeft', fromJoint: 'calf_l', toJoint: 'foot_l' },
+      { side: 'Right', segmentId: 'shinRight', fromJoint: 'calf_r', toJoint: 'foot_r' },
+    ] as const;
+
+    assert.ok(baseBody?.root instanceof THREE.Group, 'V3 model should expose a rig-fitted dummy base body');
+    for (const { side, segmentId, fromJoint, toJoint } of sideCases) {
+      const shinSegment = baseBody.segments?.[segmentId];
+      assert.ok(shinSegment instanceof THREE.Mesh, `${side} shin mannequin segment should exist`);
+      const from = getMesh2MotionJointWorldPosition(model, fromJoint);
+      const to = getMesh2MotionJointWorldPosition(model, toJoint);
+      const expectedMidpoint = from.clone().add(to).multiplyScalar(0.5);
+      const expectedLength = from.distanceTo(to);
+      const expectedDirection = to.clone().sub(from).normalize();
+      const actualMidpoint = getObjectWorldPosition(shinSegment);
+      const actualDirection = new THREE.Vector3(0, 1, 0)
+        .applyQuaternion(shinSegment.getWorldQuaternion(new THREE.Quaternion()))
+        .normalize();
+      const actualWorldScale = shinSegment.getWorldScale(new THREE.Vector3());
+
+      assert.ok(
+        actualMidpoint.distanceTo(expectedMidpoint) <= 0.012,
+        `${side} shin mannequin segment should stay centered on ${fromJoint}->${toJoint}`
+      );
+      assert.ok(
+        actualDirection.dot(expectedDirection) >= 0.998,
+        `${side} shin mannequin segment should follow the Mesh2Motion lower-leg direction`
+      );
+      assert.ok(
+        Math.abs(actualWorldScale.y * 2 - expectedLength) <= 0.012,
+        `${side} shin mannequin segment length should follow the Mesh2Motion lower-leg joint distance`
+      );
+      assert.ok(
+        actualWorldScale.x <= 0.15 && actualWorldScale.z <= 0.145,
+        `${side} shin mannequin segment should be a slim lower leg, not a shin armor envelope (${actualWorldScale.toArray().map((value) => value.toFixed(4)).join(', ')})`
+      );
+    }
+  });
+
+  it('keeps mannequin feet aligned to the Mesh2Motion foot-to-ball-leaf chains', () => {
+    const model = buildV3SpartanModel({ isEnemy: false, customHue: 192 });
+    model.updateWorldMatrix(true, true);
+    const baseBody = model.userData.v3RigFittedBaseBody as
+      | { root?: THREE.Group; segments?: Record<string, THREE.Mesh> }
+      | undefined;
+    const sideCases = [
+      { side: 'Left', segmentId: 'footLeft', fromJoint: 'foot_l', toJoint: 'ball_leaf_l' },
+      { side: 'Right', segmentId: 'footRight', fromJoint: 'foot_r', toJoint: 'ball_leaf_r' },
+    ] as const;
+
+    assert.ok(baseBody?.root instanceof THREE.Group, 'V3 model should expose a rig-fitted dummy base body');
+    for (const { side, segmentId, fromJoint, toJoint } of sideCases) {
+      const footSegment = baseBody.segments?.[segmentId];
+      assert.ok(footSegment instanceof THREE.Mesh, `${side} foot mannequin segment should exist`);
+      const from = getMesh2MotionJointWorldPosition(model, fromJoint);
+      const to = getMesh2MotionJointWorldPosition(model, toJoint);
+      const expectedMidpoint = from.clone().add(to).multiplyScalar(0.5);
+      const expectedLength = from.distanceTo(to);
+      const expectedDirection = to.clone().sub(from).normalize();
+      const actualMidpoint = getObjectWorldPosition(footSegment);
+      const actualDirection = new THREE.Vector3(0, 1, 0)
+        .applyQuaternion(footSegment.getWorldQuaternion(new THREE.Quaternion()))
+        .normalize();
+      const actualWorldScale = footSegment.getWorldScale(new THREE.Vector3());
+
+      assert.ok(
+        actualMidpoint.distanceTo(expectedMidpoint) <= 0.014,
+        `${side} foot mannequin segment should stay centered on ${fromJoint}->${toJoint}`
+      );
+      assert.ok(
+        actualDirection.dot(expectedDirection) >= 0.998,
+        `${side} foot mannequin segment should follow the Mesh2Motion foot direction`
+      );
+      assert.ok(
+        Math.abs(actualWorldScale.y * 2 - expectedLength) <= 0.014,
+        `${side} foot mannequin segment length should follow the Mesh2Motion foot joint distance`
+      );
+      assert.ok(
+        actualWorldScale.x <= 0.095 && actualWorldScale.z <= 0.08,
+        `${side} foot mannequin segment should be a flat mannequin foot, not a round boot blob (${actualWorldScale.toArray().map((value) => value.toFixed(4)).join(', ')})`
+      );
+    }
+  });
+
+  it('keeps the rig-fitted mannequin alive when armor geometry is hidden for review', () => {
+    const model = buildV3SpartanModel({ isEnemy: false, customHue: 192 });
+    const geometryGroups = model.userData.v3PartGeometryGroups as Record<V3CharacterSlotId, THREE.Group>;
+    for (const slot of V3_CHARACTER_SLOT_IDS) {
+      geometryGroups[slot].visible = false;
+    }
+
+    updateV3RigFittedBaseBody(model, true);
+    model.updateWorldMatrix(true, true);
+    const baseBody = model.userData.v3RigFittedBaseBody as
+      | { root?: THREE.Group; segments?: Record<string, THREE.Mesh> }
+      | undefined;
+
+    assert.ok(baseBody?.root instanceof THREE.Group, 'hidden-armor review should keep the mannequin root');
+    assert.equal(baseBody.root.visible, true, 'hidden-armor review should not hide the mannequin root');
+    for (const segmentId of ['torso', 'head', 'handLeft', 'handRight', 'thumbLeft01', 'indexRight03'] as const) {
+      const segment = baseBody.segments?.[segmentId];
+      assert.ok(segment instanceof THREE.Mesh, `${segmentId} should exist while armor geometry is hidden`);
+      assert.equal(segment.visible, true, `${segmentId} should stay visible while armor geometry is hidden`);
+      assertFiniteWorldTransform(segment, `${segmentId} hidden-armor review segment`);
     }
   });
 

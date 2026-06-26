@@ -3,6 +3,9 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
 import { buildV3SpartanModel } from '../components/v3/VoxelModelsV3';
 import {
+  updateV3RigFittedBaseBody,
+} from '../components/v3/v3RigFittedBaseBody';
+import {
   V3_ARMOR_FOUNDATION,
   getV3ArmorFoundationMesh2MotionGeometry,
 } from '../components/v3/v3ArmorFoundation';
@@ -27,10 +30,31 @@ const FOUNDATION_HASH = [
 ].join(':');
 const FOUNDATION_BIND_VERSION = 'all-slot-glb-calibrated-scale-bind-v1';
 const LOCAL_STORAGE_KEY = `ibrawls_v3_mesh2motion_tpose_bind_editor:${SOURCE_HASH}:${FOUNDATION_HASH}:${FOUNDATION_BIND_VERSION}`;
+const MANNEQUIN_REVIEW_QUERY = '?view=front&review=mannequin';
+
+type BindEditorDebugView = 'front' | 'left' | 'right' | 'rear';
+type BindEditorReviewMode = 'mannequin' | 'ghost' | 'armor';
+
+const parseReviewMode = (value: string | null): BindEditorReviewMode => {
+  if (value === 'mannequin' || value === 'mannequin-only') return 'mannequin';
+  if (value === 'ghost' || value === 'armor-ghost') return 'ghost';
+  if (value === 'armor' || value === 'armor-visible') return 'armor';
+  return 'ghost';
+};
+
+const searchParams = new URLSearchParams(window.location.search);
 
 const canvas = document.getElementById('bind-canvas') as HTMLCanvasElement;
 const statusElement = document.getElementById('status') as HTMLSpanElement;
 const slotSelect = document.getElementById('slot-select') as HTMLSelectElement;
+const reviewButtons: Record<BindEditorReviewMode, HTMLButtonElement> = {
+  mannequin: document.getElementById('review-mannequin-only') as HTMLButtonElement,
+  ghost: document.getElementById('review-armor-ghost') as HTMLButtonElement,
+  armor: document.getElementById('review-armor-visible') as HTMLButtonElement,
+};
+const toggleSkeletonLinesButton = document.getElementById('toggle-skeleton-lines') as HTMLButtonElement;
+const toggleSlotPivotsButton = document.getElementById('toggle-slot-pivots') as HTMLButtonElement;
+const toggleFingerJointsButton = document.getElementById('toggle-finger-joints') as HTMLButtonElement;
 const saveLocalButton = document.getElementById('save-local') as HTMLButtonElement;
 const copyJsonButton = document.getElementById('copy-json') as HTMLButtonElement;
 const downloadJsonButton = document.getElementById('download-json') as HTMLButtonElement;
@@ -75,7 +99,11 @@ const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.target.set(0, 0.9, 0);
 
-type BindEditorDebugView = 'front' | 'left' | 'right' | 'rear';
+let reviewMode: BindEditorReviewMode = parseReviewMode(searchParams.get('review'));
+let showSkeletonLines = true;
+let showSlotPivots = true;
+let showFingerJoints = true;
+
 const MESH2MOTION_SLOT_SKELETON_LINKS = [
   ['pelvis', 'chest'],
   ['chest', 'neck'],
@@ -114,12 +142,16 @@ const setDebugCameraView = (view: BindEditorDebugView): void => {
 (window as typeof window & {
   __v3Mesh2MotionBindEditorDebug?: {
     setView: (view: BindEditorDebugView) => void;
+    setReviewMode: (mode: BindEditorReviewMode) => void;
+    mannequinReviewQuery: string;
   };
 }).__v3Mesh2MotionBindEditorDebug = {
   setView: setDebugCameraView,
+  setReviewMode,
+  mannequinReviewQuery: MANNEQUIN_REVIEW_QUERY,
 };
 
-const requestedDebugView = new URLSearchParams(window.location.search).get('view');
+const requestedDebugView = searchParams.get('view');
 if (
   requestedDebugView === 'front' ||
   requestedDebugView === 'left' ||
@@ -185,11 +217,103 @@ const skeletonLines = (() => {
 scene.add(skeletonLines);
 
 const slotMarkerMaterial = new THREE.MeshBasicMaterial({ color: 0xfacc15, depthTest: false });
+const slotMarkers: THREE.Mesh[] = [];
 for (const slot of V3_CHARACTER_SLOT_IDS) {
   const marker = new THREE.Mesh(new THREE.SphereGeometry(0.022, 12, 8), slotMarkerMaterial);
   marker.name = `v3Mesh2MotionTPoseSlotMarker:${slot}`;
   marker.renderOrder = 25;
   slotPivots[slot].add(marker);
+  slotMarkers.push(marker);
+}
+
+const isFingerJointName = (jointName: string): boolean =>
+  jointName === 'hand_l' ||
+  jointName === 'hand_r' ||
+  /^(thumb|index|middle|ring|pinky)_0[1-3]_[lr]$/.test(jointName);
+
+const fingerJointMarkerMaterial = new THREE.MeshBasicMaterial({ color: 0xf472b6, depthTest: false });
+const fingerJointMarkers: THREE.Mesh[] = [];
+const mesh2MotionJoints = model.userData.v3Mesh2MotionJoints as
+  | Record<string, { object?: THREE.Object3D }>
+  | undefined;
+for (const [jointName, joint] of Object.entries(mesh2MotionJoints ?? {})) {
+  if (!isFingerJointName(jointName) || !(joint.object instanceof THREE.Object3D)) continue;
+  const marker = new THREE.Mesh(new THREE.SphereGeometry(0.012, 10, 6), fingerJointMarkerMaterial);
+  marker.name = `v3Mesh2MotionTPoseFingerJointMarker:${jointName}`;
+  marker.renderOrder = 26;
+  joint.object.add(marker);
+  fingerJointMarkers.push(marker);
+}
+
+const ghostMaterial = (material: THREE.Material): THREE.Material => {
+  const clone = material.clone();
+  clone.transparent = true;
+  clone.opacity = Math.min(material.opacity, 0.28);
+  clone.depthWrite = false;
+  return clone;
+};
+
+const getGhostMaterial = (mesh: THREE.Mesh): THREE.Material | THREE.Material[] => {
+  const userData = mesh.userData as {
+    v3BindEditorOriginalMaterial?: THREE.Material | THREE.Material[];
+    v3BindEditorGhostMaterial?: THREE.Material | THREE.Material[];
+  };
+  if (!userData.v3BindEditorOriginalMaterial) {
+    userData.v3BindEditorOriginalMaterial = mesh.material;
+  }
+  if (!userData.v3BindEditorGhostMaterial) {
+    userData.v3BindEditorGhostMaterial = Array.isArray(userData.v3BindEditorOriginalMaterial)
+      ? userData.v3BindEditorOriginalMaterial.map(ghostMaterial)
+      : ghostMaterial(userData.v3BindEditorOriginalMaterial);
+  }
+  return userData.v3BindEditorGhostMaterial;
+};
+
+const restoreOriginalMaterial = (mesh: THREE.Mesh): void => {
+  const original = (mesh.userData as { v3BindEditorOriginalMaterial?: THREE.Material | THREE.Material[] })
+    .v3BindEditorOriginalMaterial;
+  if (original) mesh.material = original;
+};
+
+const setArmorReviewMaterial = (ghosted: boolean): void => {
+  for (const slot of V3_CHARACTER_SLOT_IDS) {
+    geometryGroups[slot].traverse((object) => {
+      if (!(object instanceof THREE.Mesh)) return;
+      if (ghosted) {
+        object.material = getGhostMaterial(object);
+      } else {
+        restoreOriginalMaterial(object);
+      }
+    });
+  }
+};
+
+const updateReviewButtons = (): void => {
+  for (const [mode, button] of Object.entries(reviewButtons) as [BindEditorReviewMode, HTMLButtonElement][]) {
+    button.classList.toggle('active', mode === reviewMode);
+  }
+  toggleSkeletonLinesButton.classList.toggle('active', showSkeletonLines);
+  toggleSlotPivotsButton.classList.toggle('active', showSlotPivots);
+  toggleFingerJointsButton.classList.toggle('active', showFingerJoints);
+};
+
+const applyReviewVisibility = (): void => {
+  const armorVisible = reviewMode !== 'mannequin';
+  for (const slot of V3_CHARACTER_SLOT_IDS) {
+    geometryGroups[slot].visible = armorVisible;
+  }
+  setArmorReviewMaterial(reviewMode === 'ghost');
+  const baseBody = model.userData.v3RigFittedBaseBody as { root?: THREE.Group } | undefined;
+  if (baseBody?.root) baseBody.root.visible = true;
+  skeletonLines.visible = showSkeletonLines;
+  for (const marker of slotMarkers) marker.visible = showSlotPivots;
+  for (const marker of fingerJointMarkers) marker.visible = showFingerJoints;
+  updateReviewButtons();
+};
+
+function setReviewMode(mode: BindEditorReviewMode): void {
+  reviewMode = mode;
+  applyReviewVisibility();
 }
 
 const generatedDocument = (): V3Mesh2MotionTPoseBindDocument => normalizeV3Mesh2MotionTPoseBindDocument({
@@ -267,6 +391,8 @@ const applyDocumentToModel = (): void => {
     applyPlacementToSlot(slot, bindDocument.placements[slot]);
   }
   model.updateWorldMatrix(true, true);
+  updateV3RigFittedBaseBody(model, true);
+  applyReviewVisibility();
 };
 
 const selectedSlot = (): V3CharacterSlotId => bindDocument.selectedSlot;
@@ -405,6 +531,21 @@ for (const [mode, button] of Object.entries(transformButtons) as [V3Mesh2MotionT
     updateTransformButtons();
   });
 }
+for (const [mode, button] of Object.entries(reviewButtons) as [BindEditorReviewMode, HTMLButtonElement][]) {
+  button.addEventListener('click', () => setReviewMode(mode));
+}
+toggleSkeletonLinesButton.addEventListener('click', () => {
+  showSkeletonLines = !showSkeletonLines;
+  applyReviewVisibility();
+});
+toggleSlotPivotsButton.addEventListener('click', () => {
+  showSlotPivots = !showSlotPivots;
+  applyReviewVisibility();
+});
+toggleFingerJointsButton.addEventListener('click', () => {
+  showFingerJoints = !showFingerJoints;
+  applyReviewVisibility();
+});
 resetSelectedButton.addEventListener('click', () => {
   const slot = selectedSlot();
   const generated = generatedDocument();

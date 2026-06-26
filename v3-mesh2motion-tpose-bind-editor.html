@@ -138,6 +138,15 @@
         grid-template-columns: repeat(3, minmax(0, 1fr));
         gap: 8px;
       }
+      .button-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 8px;
+      }
+      .button-grid button {
+        width: 100%;
+        min-width: 0;
+      }
       .row {
         display: flex;
         flex-wrap: wrap;
@@ -206,6 +215,17 @@
               Armor Slot
               <select id="slot-select"></select>
             </label>
+          </section>
+          <section class="section">
+            <p class="section-title">Review</p>
+            <div class="button-grid">
+              <button id="review-mannequin-only" type="button">Mannequin</button>
+              <button id="review-armor-ghost" type="button">Ghost</button>
+              <button id="review-armor-visible" type="button">Armor</button>
+              <button id="toggle-skeleton-lines" type="button">Skeleton</button>
+              <button id="toggle-slot-pivots" type="button">Pivots</button>
+              <button id="toggle-finger-joints" type="button">Fingers</button>
+            </div>
           </section>
           <section class="section">
             <p class="section-title">Position</p>

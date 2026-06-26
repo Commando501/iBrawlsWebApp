@@ -232,7 +232,14 @@ describe('v3Mesh2MotionTPoseBindEditorCore', () => {
     assert.equal(html.includes('/src/tools/v3Mesh2MotionTPoseBindEditor.ts'), true);
     assert.equal(html.includes('V3 Mesh2Motion TPose Bind Editor'), true);
     assert.equal(html.includes('slot-select'), true);
+    assert.equal(html.includes('review-mannequin-only'), true);
+    assert.equal(html.includes('review-armor-ghost'), true);
+    assert.equal(html.includes('review-armor-visible'), true);
+    assert.equal(html.includes('toggle-skeleton-lines'), true);
+    assert.equal(html.includes('toggle-slot-pivots'), true);
+    assert.equal(html.includes('toggle-finger-joints'), true);
     assert.equal(html.includes('json-output'), true);
+    assert.equal(readFileSync('src/tools/v3Mesh2MotionTPoseBindEditor.ts', 'utf8').includes('review=mannequin'), true);
     assert.equal(viteConfig.includes('v3Mesh2MotionTPoseBindEditor'), true);
     assert.equal(serviceWorker.includes('/v3-mesh2motion-tpose-bind-editor.html'), true);
     assert.equal(devServer.includes('/v3-mesh2motion-tpose-bind-editor.html'), true);

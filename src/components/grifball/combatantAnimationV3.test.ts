@@ -85,6 +85,20 @@ const getWorldBox = (object: THREE.Object3D): THREE.Box3 => {
   return new THREE.Box3().setFromObject(object);
 };
 
+const getObjectWorldPosition = (object: THREE.Object3D): THREE.Vector3 => {
+  object.updateWorldMatrix(true, true);
+  return object.getWorldPosition(new THREE.Vector3());
+};
+
+const getMesh2MotionJointWorldPosition = (model: THREE.Object3D, jointName: string): THREE.Vector3 => {
+  const joints = model.userData.v3Mesh2MotionJoints as
+    | Record<string, { object?: THREE.Object3D }>
+    | undefined;
+  const joint = joints?.[jointName]?.object;
+  assert.ok(joint instanceof THREE.Object3D, `missing Mesh2Motion joint ${jointName}`);
+  return getObjectWorldPosition(joint);
+};
+
 describe('combatantAnimationV3 body masks', () => {
   it('declares separate lower-body, upper-body, and full-body masks', () => {
     assert.deepEqual(getV3BodyMaskForLayer('locomotion'), ['lowerTorso', 'leftLeg', 'rightLeg']);
@@ -683,6 +697,58 @@ describe('animateV3CombatantModel', () => {
     assert.equal(getWorldBox(baseBody.segments.torso).intersectsBox(getWorldBox(partGroups.back)), true);
     assert.equal(getWorldBox(baseBody.segments.handLeft).intersectsBox(getWorldBox(partGroups.handLeft)), true);
     assert.equal(getWorldBox(baseBody.segments.handRight).intersectsBox(getWorldBox(partGroups.handRight)), true);
+  });
+
+  it('updates the rig-fitted finger mannequin after clean Mesh2Motion driver poses', () => {
+    const model = createV3Model();
+    getV3CleanRig(model);
+    const refs = createInitialGrifballThreeRefs();
+    const normalizedTime = 0.5;
+
+    animateV3CombatantModel({
+      refs,
+      mesh: model,
+      vel: new THREE.Vector3(4, 0, 0),
+      yaw: 0,
+      hp: 100,
+      activeWeapon: 'sword',
+      weaponState: 'slashing',
+      weaponTimer: normalizedTime,
+      dt: 1,
+      settings: {},
+      animationClockMs: normalizedTime * 1000,
+      isLocalV3Animation: true,
+      v3PoseAlphaOverride: 1,
+      v3AnimationAuthority: 'cleanRig',
+      v3AuthoredClipId: 'clean_sword_slash',
+      v3AuthoredNormalizedTime: normalizedTime,
+    });
+    model.updateWorldMatrix(true, true);
+
+    const baseBody = model.userData.v3RigFittedBaseBody as
+      | { root?: THREE.Group; segments?: Record<string, THREE.Mesh> }
+      | undefined;
+    const segment = baseBody?.segments?.indexRight01;
+    assert.ok(segment instanceof THREE.Mesh, 'clean rig should keep the right index mannequin capsule');
+    assert.equal(segment.visible, true);
+
+    const from = getMesh2MotionJointWorldPosition(model, 'hand_r');
+    const to = getMesh2MotionJointWorldPosition(model, 'index_01_r');
+    const expectedMidpoint = from.clone().add(to).multiplyScalar(0.5);
+    const actualMidpoint = getObjectWorldPosition(segment);
+    const expectedDirection = to.clone().sub(from).normalize();
+    const actualDirection = new THREE.Vector3(0, 1, 0)
+      .applyQuaternion(segment.getWorldQuaternion(new THREE.Quaternion()))
+      .normalize();
+
+    assert.ok(
+      actualMidpoint.distanceTo(expectedMidpoint) <= 0.01,
+      `clean rig finger mannequin midpoint drift ${actualMidpoint.distanceTo(expectedMidpoint).toFixed(4)}`
+    );
+    assert.ok(
+      actualDirection.dot(expectedDirection) >= 0.998,
+      'clean rig finger mannequin direction should follow the live Mesh2Motion joints'
+    );
   });
 
   it('covers torso-pelvis and pelvis-thigh walk seams with readable undersuit bridges', () => {
