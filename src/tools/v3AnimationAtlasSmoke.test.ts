@@ -64,6 +64,17 @@ describe('v3AnimationAtlasSmoke', () => {
     assert.match(sample.motionSourceLabel ?? '', /retargeted Mixamo clean motion/);
   });
 
+  test('bind rest pose mode reports the authored Mesh2Motion T-pose instead of Mixamo idle', () => {
+    const sample = sampleV3AnimationAtlasCase('idle', createV3AnimationAtlasFrameState(0, 120, 60), 'bindRestPose');
+
+    assert.equal(sample.mode, 'bindRestPose');
+    assert.equal(sample.bindPoseReview, true);
+    assert.equal(sample.visibleWeapon, null);
+    assert.equal(sample.cleanMixamoClipId, undefined);
+    assert.equal(sample.cleanSourceNormalizedTime, undefined);
+    assert.match(sample.motionSourceLabel ?? '', /Mesh2Motion authored T-pose bind/);
+  });
+
   test('atlas can preview a manual clean rig clip export without Mixamo fallback', () => {
     const manualExport: V3AuthoredClipExport = {
       version: ATLAS_EDITOR_EXPORT_VERSION,
@@ -330,8 +341,22 @@ describe('v3AnimationAtlasSmoke', () => {
     assert.equal(pageSource.includes('clean-motion-source'), true);
     assert.equal(pageSource.includes('clean-mixamo-clip'), true);
     assert.equal(pageSource.includes('manualClipExport'), true);
+    assert.equal(pageSource.includes('bindRestPose'), true);
+    assert.equal(pageSource.includes('exitBindPoseReviewForAnimation'), true);
+    assert.equal(pageSource.includes("playPauseButton.disabled = atlas.clock.mode === 'bindRestPose'"), false);
+    assert.equal(pageSource.includes("playAllButton.disabled = atlas.clock.mode === 'bindRestPose'"), false);
+    assert.equal(pageSource.includes('applyReviewRotation'), true);
+    assert.equal(pageSource.includes('pointerdown'), true);
+    assert.equal(pageSource.includes('pointermove'), true);
+    assert.equal(pageSource.includes('setPointerCapture'), true);
+    assert.equal(pageSource.includes('sharedReviewRotation.y -= deltaX * dragRotationSpeed'), true);
+    assert.equal(pageSource.includes('sharedReviewRotation.x - deltaY * dragRotationSpeed'), true);
+    assert.equal(pageSource.includes('__IBRAWLS_V3_ANIMATION_ATLAS_REVIEW_ROTATION__'), true);
     assert.equal(pageSource.includes('__IBRAWLS_V3_ANIMATION_ATLAS_EDITOR__'), true);
     assert.equal(htmlSource.includes('/v3-clean-animation-editor.html'), true);
+    assert.equal(htmlSource.includes('Bind TPose'), true);
+    assert.equal(htmlSource.includes('cursor: grab'), true);
+    assert.equal(htmlSource.includes('touch-action: none'), true);
   });
 
   test('frame stepping clamps or loops deterministically', () => {
@@ -364,6 +389,32 @@ describe('v3AnimationAtlasSmoke', () => {
 
     updateV3AnimationAtlasScene(atlas, { showSlotContinuity: false });
     assert.ok(atlas.views.every((view) => view.slotContinuityOverlay.visible === false));
+  });
+
+  test('normal atlas review hides internal mannequin diagnostics unless isolation review is enabled', () => {
+    const atlas = buildV3AnimationAtlasScene({ caseId: 'walk' });
+
+    updateV3AnimationAtlasScene(atlas, { frame: 22, mode: 'normalizedReview' });
+
+    for (const view of atlas.views) {
+      const model = view.rig.group;
+      assert.equal(model.userData.v3RigFittedBaseBody?.root?.visible, false);
+      assert.equal(model.userData.v3LowerBodyJointBridges?.root?.visible, false);
+      assert.equal(model.userData.v3UpperBodyJointBridges?.root?.visible, false);
+      assert.equal(model.userData.v3UpperBodyUndersuitFill?.root?.visible, false);
+    }
+
+    updateV3AnimationAtlasScene(atlas, {
+      frame: 22,
+      mode: 'normalizedReview',
+      showUpperLowerIsolation: true,
+    });
+
+    for (const view of atlas.views) {
+      const model = view.rig.group;
+      assert.equal(model.userData.v3RigFittedBaseBody?.root?.visible, true);
+      assert.equal(model.userData.v3UpperBodyJointBridges?.root?.visible, true);
+    }
   });
 
   test('slot continuity overlay includes lower-body seam reports for walk review', () => {
@@ -412,5 +463,53 @@ describe('v3AnimationAtlasSmoke', () => {
       Math.abs((model.userData.lowerTorso as THREE.Group).position.y) <= 0.015,
       'walk atlas frame should not jump hips upward into the torso'
     );
+  });
+
+  test('walk review drives the visible Mesh2Motion bound slot pivots', () => {
+    const atlas = buildV3AnimationAtlasScene({ caseId: 'walk' });
+    const model = atlas.views[0].rig.group;
+    const partGroups = model.userData.v3PartGroups as Record<string, THREE.Group>;
+    const restThighPosition = partGroups.thighLeft.getWorldPosition(new THREE.Vector3());
+    const restThighQuaternion = partGroups.thighLeft.getWorldQuaternion(new THREE.Quaternion());
+
+    updateV3AnimationAtlasScene(atlas, { frame: 22, mode: 'normalizedReview' });
+
+    const posedThighPosition = partGroups.thighLeft.getWorldPosition(new THREE.Vector3());
+    const posedThighQuaternion = partGroups.thighLeft.getWorldQuaternion(new THREE.Quaternion());
+    const rotationDelta = 1 - Math.abs(restThighQuaternion.dot(posedThighQuaternion));
+    const positionDelta = restThighPosition.distanceTo(posedThighPosition);
+
+    assert.equal(model.userData.v3AnimationAuthority, 'cleanRig');
+    assert.equal(model.userData.v3CleanAuthoredClip, 'clean_walk');
+    assert.ok(
+      rotationDelta > 0.0005 || positionDelta > 0.005,
+      `visible Mesh2Motion thigh pivot should follow clean walk pose, got rotationDelta=${rotationDelta} positionDelta=${positionDelta}`
+    );
+  });
+
+  test('bind rest pose mode resets an animated atlas rig back to authored T-pose joints', () => {
+    const atlas = buildV3AnimationAtlasScene({ caseId: 'walk' });
+
+    updateV3AnimationAtlasScene(atlas, { frame: 22, mode: 'normalizedReview' });
+
+    const model = atlas.views[0].rig.group;
+    const detailBones = model.userData.v3DetailBones as Record<string, THREE.Group>;
+    assert.ok(Math.abs(detailBones.thighLeft.rotation.x) > 0.01);
+    assert.equal(model.userData.v3CleanAuthoredClip, 'clean_walk');
+
+    const sample = updateV3AnimationAtlasScene(atlas, { frame: 22, mode: 'bindRestPose' });
+
+    assert.equal(sample.bindPoseReview, true);
+    assert.equal(model.userData.v3BindPoseReview, true);
+    assert.equal(model.userData.v3CleanAuthoredClip, 'mesh2motion_tpose_bind');
+    assert.equal(model.userData.v3Mesh2MotionDriverActive, false);
+    for (const jointName of ['upperArmLeft', 'upperArmRight', 'thighLeft', 'thighRight', 'calfLeft', 'calfRight']) {
+      const rotation = detailBones[jointName].rotation;
+      assert.equal(
+        [rotation.x, rotation.y, rotation.z].every((value) => Math.abs(value) < 0.000001),
+        true,
+        `${jointName} should be back at rest rotation`
+      );
+    }
   });
 });

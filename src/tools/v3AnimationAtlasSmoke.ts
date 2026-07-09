@@ -39,8 +39,25 @@ import { analyzeV3RetargetJointAlignment } from '../components/grifball/v3Mixamo
 import { createInitialGrifballThreeRefs } from '../components/grifball/threeRefs';
 import {
   analyzeV3CleanRigContinuity,
+  resetV3CleanRigPose,
   type V3AnimationAuthority,
 } from '../components/grifball/v3CleanRig';
+import {
+  setV3LowerBodyJointBridgesVisible,
+  updateV3LowerBodyJointBridges,
+} from '../components/v3/v3LowerBodyJointBridges';
+import {
+  setV3UpperBodyJointBridgesVisible,
+  updateV3UpperBodyJointBridges,
+} from '../components/v3/v3UpperBodyJointBridges';
+import {
+  setV3UpperBodyUndersuitFillVisible,
+  updateV3UpperBodyUndersuitFill,
+} from '../components/v3/v3UpperBodyUndersuitFill';
+import {
+  setV3RigFittedBaseBodyVisible,
+  updateV3RigFittedBaseBody,
+} from '../components/v3/v3RigFittedBaseBody';
 import {
   ATLAS_EDITOR_EXPORT_VERSION,
   mapV3AtlasCaseToAuthoredClip,
@@ -61,9 +78,11 @@ import type { CharacterLoadout } from '../components/VoxelModels';
 import type { UniversalSettings } from '../types';
 
 export type V3AnimationAtlasCaseId = V3PoseClearanceCaseId;
-export type V3AnimationAtlasPlaybackMode = 'normalizedReview' | 'runtimeSimulation';
+export type V3AnimationAtlasPlaybackMode = 'normalizedReview' | 'runtimeSimulation' | 'bindRestPose';
 export type V3AnimationAtlasWeapon = 'hammer' | 'sword' | 'pistol';
 export type V3AnimationAtlasViewId = 'front' | 'left' | 'rear' | 'right';
+
+export const V3_ANIMATION_ATLAS_BIND_REST_POSE_ID = 'mesh2motion_tpose_bind' as const;
 
 const V3_ANIMATION_ATLAS_WEAPON_SETTINGS: Partial<UniversalSettings> = {
   hammerAttackAnimation: 'highFidelity',
@@ -148,6 +167,7 @@ export interface V3AnimationAtlasSample {
   manualClipPreviewActive?: boolean;
   manualClipLabel?: string;
   manualClipExport?: V3AuthoredClipExport;
+  bindPoseReview?: boolean;
 }
 
 export interface V3AnimationAtlasSampleOptions {
@@ -460,6 +480,37 @@ export function sampleV3AnimationAtlasCase(
   options: V3AnimationAtlasSampleOptions = {}
 ): V3AnimationAtlasSample {
   const definition = caseDefinition(caseId);
+  if (mode === 'bindRestPose') {
+    return {
+      caseId,
+      mode,
+      frame: frameState.frame,
+      fps: frameState.fps,
+      normalizedTime: 0,
+      elapsedSeconds: 0,
+      dt: 0,
+      velocity: [0, 0, 0],
+      yaw: 0,
+      hp: 'hp' in definition ? definition.hp : 100,
+      previousHp: 'previousHp' in definition ? definition.previousHp : undefined,
+      activeWeapon: definition.activeWeapon,
+      visibleWeapon: null,
+      weaponState: V3_ANIMATION_ATLAS_BIND_REST_POSE_ID,
+      weaponTimer: 0,
+      isSliding: false,
+      isSprinting: false,
+      isLunging: false,
+      deathBurstActive: false,
+      motionSourceLabel: 'Mesh2Motion authored T-pose bind/rest pose',
+      animationAuthority: 'cleanRig',
+      authoredClipId: mapV3AtlasCaseToAuthoredClip(caseId),
+      cleanMotionSource: 'atlasAuthored',
+      cleanRigReady: true,
+      jointSeamWarnings: [],
+      atlasEditorExportVersion: ATLAS_EDITOR_EXPORT_VERSION,
+      bindPoseReview: true,
+    };
+  }
   const isRuntime = mode === 'runtimeSimulation';
   const velocity = isRuntime
     ? runtimeVelocity(definition.vel, frameState.elapsedSeconds, caseId)
@@ -683,8 +734,34 @@ function applySampleToRig(
   sample: V3AnimationAtlasSample,
   qualityTier: V3QualityTier
 ): void {
+  if (sample.bindPoseReview) {
+    resetV3CleanRigPose(rig.group);
+    rig.group.userData.v3AnimationAuthority = 'cleanRig';
+    rig.group.userData.v3CleanAuthoredClip = V3_ANIMATION_ATLAS_BIND_REST_POSE_ID;
+    rig.group.userData.v3CleanMotionSource = 'mesh2motion-tpose-bind';
+    rig.group.userData.v3CleanRigPose = null;
+    rig.group.userData.v3BindPoseReview = true;
+    rig.group.userData.v3AnimationLayeredLegacyDisabled = true;
+    rig.group.userData.v3RetargetedClip = undefined;
+    rig.group.userData.v3LowerBodyBridgeActive = false;
+    delete rig.group.userData.v3CleanMixamoClipId;
+    delete rig.group.userData.v3CleanSourceNormalizedTime;
+    delete rig.group.userData.v3WeaponCarry;
+    updateV3LowerBodyJointBridges(rig.group, false);
+    updateV3RigFittedBaseBody(rig.group, true);
+    updateV3UpperBodyUndersuitFill(rig.group, true);
+    setV3UpperBodyUndersuitFillVisible(rig.group, false);
+    updateV3UpperBodyJointBridges(rig.group, true);
+    setV3UpperBodyJointBridgesVisible(rig.group, false);
+    rig.group.userData.v3CleanRigContinuity = analyzeV3CleanRigContinuity(rig.group);
+    setWeaponVisibility(rig, null);
+    rig.group.updateMatrixWorld(true);
+    return;
+  }
+
   const refs = createInitialGrifballThreeRefs();
   refs.scene = scene;
+  delete rig.group.userData.v3BindPoseReview;
   if (typeof sample.previousHp === 'number') {
     rig.group.userData.v3LastHp = sample.previousHp;
   }
@@ -736,6 +813,13 @@ function applySampleToRig(
     rig.group.userData.v3CleanRigContinuity = analyzeV3CleanRigContinuity(rig.group);
   }
   setWeaponVisibility(rig, sample.visibleWeapon);
+}
+
+function setAtlasInternalDiagnosticsVisible(model: THREE.Object3D, visible: boolean): void {
+  setV3LowerBodyJointBridgesVisible(model, visible);
+  setV3RigFittedBaseBodyVisible(model, visible);
+  setV3UpperBodyJointBridgesVisible(model, visible);
+  setV3UpperBodyUndersuitFillVisible(model, false);
 }
 
 function updateBoundsHelper(view: V3AnimationAtlasView, visible: boolean): void {
@@ -1121,6 +1205,7 @@ export function updateV3AnimationAtlasScene(
   atlas.clock.frame = frame;
   atlas.clock.mode = mode;
   atlas.animationAuthority = animationAuthority;
+  const showInternalDiagnostics = options.showUpperLowerIsolation === true;
 
   atlas.views.forEach((view, index) => {
     if (options.resetDeathBurst || caseId !== 'death') {
@@ -1146,6 +1231,7 @@ export function updateV3AnimationAtlasScene(
       view.rig.group.visible = true;
       applySampleToRig(atlas.scene, view.rig, sample, atlas.qualityTier);
     }
+    setAtlasInternalDiagnosticsVisible(view.rig.group, showInternalDiagnostics && !sample.deathBurstActive);
 
     updateBoundsHelper(view, options.showBounds === true);
     updateSlotContinuityOverlay(view, options.showSlotContinuity === true);

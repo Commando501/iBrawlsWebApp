@@ -14,6 +14,7 @@ import {
 } from './v3ArmorFoundation';
 import { V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE } from './v3AegisObjSurfaceVoxels.generated';
 import { V3_MESH2MOTION_ARMOR_RIG } from './v3Mesh2MotionArmorRig.generated';
+import { V3_MESH2MOTION_TPOSE_BIND } from './v3Mesh2MotionTPoseBind.generated';
 import { V3_MESH2MOTION_NATIVE_LIMB_CHAIN_SLOTS } from './v3Mesh2MotionArmorRig';
 import { V3_CHARACTER_SLOT_IDS, type V3CharacterSlotId } from './v3ModelTypes';
 import { V3_REFERENCE_LIMB_VOXELS } from './v3ReferenceLimbVoxels.generated';
@@ -72,23 +73,6 @@ const basisQuaternion = (basis: { quaternion: readonly number[] }): THREE.Quater
     basis.quaternion[3] ?? 1
   ).normalize();
 
-const expectedMesh2MotionWorldGeometryQuaternion = (slot: V3CharacterSlotId): THREE.Quaternion => {
-  const rigSlot = V3_MESH2MOTION_ARMOR_RIG.slots[slot];
-  const pivot = new THREE.Quaternion(
-    rigSlot.pivotWorldQuaternion[0] ?? 0,
-    rigSlot.pivotWorldQuaternion[1] ?? 0,
-    rigSlot.pivotWorldQuaternion[2] ?? 0,
-    rigSlot.pivotWorldQuaternion[3] ?? 1
-  ).normalize();
-  const geometry = new THREE.Quaternion().setFromEuler(new THREE.Euler(
-    rigSlot.geometry.rotation[0] ?? 0,
-    rigSlot.geometry.rotation[1] ?? 0,
-    rigSlot.geometry.rotation[2] ?? 0,
-    'XYZ'
-  ));
-  return pivot.multiply(geometry).normalize();
-};
-
 const expectedFoundationVoxelCount = (): number => V3_CHARACTER_SLOT_IDS.reduce((total, slot) => {
   return total + expectedFoundationSourceSlot(slot).voxelCount;
 }, 0);
@@ -103,7 +87,47 @@ const expectedFoundationObjSourceSlot = (slot: V3CharacterSlotId) => (
   V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.slots[slot]
 );
 
+const assertTupleClose = (
+  actual: readonly number[],
+  expected: readonly number[],
+  label: string,
+  tolerance = 0.000001
+): void => {
+  assert.equal(actual.length, expected.length, `${label} tuple length`);
+  for (let index = 0; index < expected.length; index += 1) {
+    assert.ok(
+      Math.abs((actual[index] ?? 0) - (expected[index] ?? 0)) <= tolerance,
+      `${label}[${index}] expected ${expected[index]}, got ${actual[index]}`
+    );
+  }
+};
+
 describe('V3 armor foundation', () => {
+  it('ships the authored Mesh2Motion T-pose bind export for the active source rig', () => {
+    assert.equal(V3_MESH2MOTION_TPOSE_BIND.kind, 'v3-mesh2motion-tpose-bind/v2');
+    assert.equal(V3_MESH2MOTION_TPOSE_BIND.version, 2);
+    assert.equal(V3_MESH2MOTION_TPOSE_BIND.source.meshHash, V3_MESH2MOTION_ARMOR_RIG.source.sha256);
+    assert.deepEqual(Object.keys(V3_MESH2MOTION_TPOSE_BIND.placements).sort(), [...V3_CHARACTER_SLOT_IDS].sort());
+    assert.deepEqual(V3_MESH2MOTION_TPOSE_BIND.placements.helmet.position, [0, 0, -0.001392]);
+    assert.deepEqual(V3_MESH2MOTION_TPOSE_BIND.placements.chest.position, [0, -0.109415, 0.103986]);
+    assertTupleClose(
+      V3_MESH2MOTION_TPOSE_BIND.placements.upperArmLeft.rotation,
+      [Math.PI, 0.451815, -1.570796],
+      'upperArmLeft authored rotation'
+    );
+  });
+
+  it('uses the authored T-pose bind placements as visible Mesh2Motion geometry authority', () => {
+    for (const slot of V3_CHARACTER_SLOT_IDS) {
+      const authoredPlacement = V3_MESH2MOTION_TPOSE_BIND.placements[slot];
+      const foundationGeometry = V3_ARMOR_FOUNDATION.slots[slot].mesh2MotionGeometry;
+
+      assertTupleClose(foundationGeometry.position, authoredPlacement.position, `${slot} position`);
+      assertTupleClose(foundationGeometry.rotation, authoredPlacement.rotation, `${slot} rotation`);
+      assertTupleClose(foundationGeometry.scale, authoredPlacement.scale, `${slot} scale`);
+    }
+  });
+
   it('derives an export-safe V3-only foundation from the exact OBJ source and Mesh2Motion rig', () => {
     const serialized = JSON.stringify(V3_ARMOR_FOUNDATION);
 
@@ -229,43 +253,47 @@ describe('V3 armor foundation', () => {
         null,
         `${slot} should not bind from the underfilled GLB body source`
       );
-      assert.deepEqual(
-        foundationSlot.mesh2MotionGeometry.scale,
-        [1, 1, 1],
-        `${slot} OBJ reference geometry should stay at OBJ authoring scale`
+    }
+  });
+
+  it('uses finite positive authored visible geometry scale for every slot', () => {
+    for (const slot of V3_CHARACTER_SLOT_IDS) {
+      const geometryScale = V3_ARMOR_FOUNDATION.slots[slot].mesh2MotionGeometry.scale;
+      assert.equal(
+        geometryScale.every((value) => Number.isFinite(value) && value > 0),
+        true,
+        `${slot} authored geometry scale should stay finite and positive`
+      );
+      assertTupleClose(
+        geometryScale,
+        V3_MESH2MOTION_TPOSE_BIND.placements[slot].scale,
+        `${slot} authored geometry scale`
       );
     }
   });
 
-  it('keeps exact OBJ visual geometry at OBJ authoring scale and regenerated arms at source-retarget scale', () => {
-    for (const slot of V3_CHARACTER_SLOT_IDS) {
-      const geometryScale = V3_ARMOR_FOUNDATION.slots[slot].mesh2MotionGeometry.scale;
-      if (V3_TEST_ARM_ARMOR_SOURCE_SLOT_SET.has(slot)) {
-        assert.equal(
-          geometryScale.every((value) => Number.isFinite(value) && value > 0 && value < 1),
-          true,
-          `${slot} regenerated arm geometry should apply the Mesh2Motion source-retarget scale`
-        );
-      } else {
-        assert.deepEqual(
-          geometryScale,
-          [1, 1, 1],
-          `${slot} OBJ visual geometry should stay at OBJ authoring scale`
-        );
-      }
-    }
-  });
-
-  it('uses generated Mesh2Motion limb slot orientation for exact OBJ visual geometry', () => {
+  it('uses authored Mesh2Motion limb slot orientation for exact OBJ visual geometry', () => {
     for (const slot of V3_MESH2MOTION_NATIVE_LIMB_CHAIN_SLOTS) {
       if (V3_TEST_ARM_ARMOR_SOURCE_SLOT_SET.has(slot)) continue;
       const foundationSlot = V3_ARMOR_FOUNDATION.slots[slot];
       const worldGeometryRotation = geometryWorldQuaternion(foundationSlot);
-      const expectedWorldRotation = expectedMesh2MotionWorldGeometryQuaternion(slot);
+      const pivot = new THREE.Quaternion(
+        foundationSlot.mesh2MotionPivotWorldQuaternion[0] ?? 0,
+        foundationSlot.mesh2MotionPivotWorldQuaternion[1] ?? 0,
+        foundationSlot.mesh2MotionPivotWorldQuaternion[2] ?? 0,
+        foundationSlot.mesh2MotionPivotWorldQuaternion[3] ?? 1
+      ).normalize();
+      const authoredRotation = new THREE.Quaternion().setFromEuler(new THREE.Euler(
+        V3_MESH2MOTION_TPOSE_BIND.placements[slot].rotation[0],
+        V3_MESH2MOTION_TPOSE_BIND.placements[slot].rotation[1],
+        V3_MESH2MOTION_TPOSE_BIND.placements[slot].rotation[2],
+        'XYZ'
+      ));
+      const expectedWorldRotation = pivot.multiply(authoredRotation).normalize();
 
       assert.ok(
         worldGeometryRotation.angleTo(expectedWorldRotation) <= 0.0001,
-        `${slot} OBJ voxel geometry should preserve the generated Mesh2Motion visual slot orientation`
+        `${slot} OBJ voxel geometry should preserve the authored Mesh2Motion visual slot orientation`
       );
     }
   });
@@ -319,7 +347,7 @@ describe('V3 armor foundation', () => {
     }
   });
 
-  it('maps exact-source limb-chain bind points onto Mesh2Motion pivots', () => {
+  it('keeps limb-chain bind metadata finite while authored placement owns visible geometry', () => {
     for (const slot of V3_MESH2MOTION_NATIVE_LIMB_CHAIN_SLOTS) {
       const foundationSlot = V3_ARMOR_FOUNDATION.slots[slot];
       const sourceRetargetScale = foundationSlot.sourceHashes.referenceLimbVoxelSlot
@@ -336,9 +364,11 @@ describe('V3 armor foundation', () => {
       const mappedBindOffset = sourceBindOffset.applyQuaternion(geometryRotation)
         .add(new THREE.Vector3(...foundationSlot.mesh2MotionGeometry.position));
 
-      assert.ok(
-        mappedBindOffset.length() <= 0.00001,
-        `${slot} source bind point should land on the Mesh2Motion pivot`
+      assert.equal(Number.isFinite(mappedBindOffset.length()), true, `${slot} bind offset should remain finite`);
+      assertTupleClose(
+        foundationSlot.mesh2MotionGeometry.position,
+        V3_MESH2MOTION_TPOSE_BIND.placements[slot].position,
+        `${slot} authored geometry position`
       );
     }
   });

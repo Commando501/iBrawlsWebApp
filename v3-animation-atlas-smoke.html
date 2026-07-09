@@ -23,6 +23,12 @@
         display: block;
         width: 100vw;
         height: 100vh;
+        cursor: grab;
+        touch-action: none;
+      }
+
+      canvas.is-dragging {
+        cursor: grabbing;
       }
 
       #hud {
@@ -260,6 +266,7 @@
           <select id="mode" aria-label="Normalized Runtime Mode Toggle">
             <option value="normalizedReview" selected>Normalized Review</option>
             <option value="runtimeSimulation">Runtime Simulation</option>
+            <option value="bindRestPose">Bind TPose</option>
           </select>
         </label>
         <label>

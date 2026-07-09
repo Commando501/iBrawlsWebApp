@@ -12,6 +12,8 @@ import {
   updateV3AnimationAtlasScene,
   type V3AnimationAtlasCaseId,
   type V3AnimationAtlasPlaybackMode,
+  type V3AnimationAtlasViewId,
+  V3_ANIMATION_ATLAS_BIND_REST_POSE_ID,
 } from './v3AnimationAtlasSmoke';
 import {
   exportV3AuthoredClipToJson,
@@ -58,6 +60,20 @@ const atlas = buildV3AnimationAtlasScene({
   caseId: 'idle',
   qualityTier: 'desktop',
 });
+const baseViewRotations = Object.fromEntries(
+  atlas.views.map((view) => [view.id, view.rig.group.rotation.y])
+) as Record<V3AnimationAtlasViewId, number>;
+const sharedReviewRotation = new THREE.Euler(0, 0, 0, 'YXZ');
+const sharedReviewQuaternion = new THREE.Quaternion();
+const baseViewQuaternion = new THREE.Quaternion();
+const dragRotationSpeed = 0.008;
+const dragPitchLimit = Math.PI / 2;
+const modelDragState = {
+  active: false,
+  pointerId: -1,
+  lastX: 0,
+  lastY: 0,
+};
 
 let playAll = false;
 let lastTimeMs = 0;
@@ -65,6 +81,7 @@ let frameCarry = 0;
 let currentDefectReport: V3AnimationAtlasDefectReport | null = null;
 let currentDefectSignature: string | null = null;
 let manualClipExport: V3AuthoredClipExport | null = null;
+let lastAnimationPlaybackMode: Exclude<V3AnimationAtlasPlaybackMode, 'bindRestPose'> = 'normalizedReview';
 const MANUAL_PREVIEW_STORAGE_KEY = 'ibrawls_v3_clean_editor_preview_clip';
 
 for (const atlasCase of atlas.cases) {
@@ -79,7 +96,15 @@ function currentCase() {
 }
 
 function currentMode(): V3AnimationAtlasPlaybackMode {
+  if (modeSelect.value === 'bindRestPose') return 'bindRestPose';
   return modeSelect.value === 'runtimeSimulation' ? 'runtimeSimulation' : 'normalizedReview';
+}
+
+function exitBindPoseReviewForAnimation(): boolean {
+  if (currentMode() !== 'bindRestPose') return false;
+  modeSelect.value = lastAnimationPlaybackMode;
+  atlas.clock.mode = lastAnimationPlaybackMode;
+  return true;
 }
 
 function currentCarryWeapon() {
@@ -123,7 +148,7 @@ function ensureDefectReport(): V3AnimationAtlasDefectReport {
   if (!currentDefectReport || currentDefectSignature !== signature) {
     currentDefectReport = analyzeV3AnimationAtlasDefects({
     caseIds: [atlas.clock.caseId],
-    mode: atlas.clock.mode,
+    mode: atlas.clock.mode === 'bindRestPose' ? 'normalizedReview' : atlas.clock.mode,
     qualityTier: atlas.qualityTier,
     v3Options: atlas.v3Options,
   });
@@ -145,6 +170,28 @@ function resize() {
   atlas.camera.left = -viewWidth / 2;
   atlas.camera.right = viewWidth / 2;
   atlas.camera.updateProjectionMatrix();
+}
+
+function reviewRotationState() {
+  return {
+    pitch: Number(sharedReviewRotation.x.toFixed(6)),
+    yaw: Number(sharedReviewRotation.y.toFixed(6)),
+  };
+}
+
+function publishReviewRotationState(): void {
+  const state = reviewRotationState();
+  (window as any).__IBRAWLS_V3_ANIMATION_ATLAS_REVIEW_ROTATION__ = state;
+  (globalThis as any).__IBRAWLS_V3_ANIMATION_ATLAS_REVIEW_ROTATION__ = state;
+}
+
+function applyReviewRotation(): void {
+  sharedReviewQuaternion.setFromEuler(sharedReviewRotation);
+  for (const view of atlas.views) {
+    baseViewQuaternion.setFromEuler(new THREE.Euler(0, baseViewRotations[view.id], 0, 'YXZ'));
+    view.rig.group.quaternion.copy(baseViewQuaternion).multiply(sharedReviewQuaternion).normalize();
+  }
+  publishReviewRotationState();
 }
 
 function publishReport() {
@@ -186,6 +233,7 @@ function publishReport() {
     clipSource: sample.clipSource ?? null,
     sourceHash: sample.sourceHash ?? null,
     viewCount: atlas.views.length,
+    reviewRotation: reviewRotationState(),
     visibleWeapon: sample.visibleWeapon,
     carryWeapon: currentCarryWeapon(),
     deathBurstActive: sample.deathBurstActive,
@@ -203,19 +251,30 @@ function publishReport() {
   const editorState = {
     ready: true,
     animationAuthority: sample.animationAuthority,
-    authoredClipId: sample.authoredClipId,
-    cleanMotionSource: sample.cleanMotionSource,
+    authoredClipId: sample.bindPoseReview ? V3_ANIMATION_ATLAS_BIND_REST_POSE_ID : sample.authoredClipId,
+    cleanMotionSource: sample.bindPoseReview ? 'mesh2motion-tpose-bind' : sample.cleanMotionSource,
     cleanMixamoClipId: sample.cleanMixamoClipId ?? null,
     cleanSourceNormalizedTime: sample.cleanSourceNormalizedTime ?? null,
     atlasEditorExportVersion: sample.atlasEditorExportVersion,
     manualClipPreviewActive: sample.manualClipPreviewActive === true,
     manualClipLabel: sample.manualClipLabel ?? null,
-    export: sample.manualClipExport ?? exportV3AuthoredClipToJson(sample.authoredClipId),
+    bindPoseReview: sample.bindPoseReview === true,
+    export: sample.bindPoseReview
+      ? {
+        kind: 'v3-animation-atlas-bind-rest-pose-preview',
+        id: V3_ANIMATION_ATLAS_BIND_REST_POSE_ID,
+        label: 'Mesh2Motion authored T-pose bind/rest pose',
+        source: 'V3_MESH2MOTION_TPOSE_BIND',
+        caseId: sample.caseId,
+      }
+      : sample.manualClipExport ?? exportV3AuthoredClipToJson(sample.authoredClipId),
   };
-  cleanAuthorityElement.value = sample.animationAuthority;
-  cleanAuthoredClipElement.value = sample.authoredClipId;
-  cleanMotionSourceElement.value = sample.cleanMotionSource;
-  cleanMixamoClipElement.value = sample.cleanMixamoClipId
+  cleanAuthorityElement.value = sample.bindPoseReview ? 'bindRestPose' : sample.animationAuthority;
+  cleanAuthoredClipElement.value = sample.bindPoseReview ? V3_ANIMATION_ATLAS_BIND_REST_POSE_ID : sample.authoredClipId;
+  cleanMotionSourceElement.value = sample.bindPoseReview ? 'mesh2motion-tpose-bind' : sample.cleanMotionSource;
+  cleanMixamoClipElement.value = sample.bindPoseReview
+    ? 'none (bind rest)'
+    : sample.cleanMixamoClipId
     ? `${sample.cleanMixamoClipId} @ ${(sample.cleanSourceNormalizedTime ?? 0).toFixed(3)}`
     : 'none';
   if (document.activeElement !== cleanEditorExportElement) {
@@ -228,6 +287,7 @@ function publishReport() {
   (globalThis as any).__IBRAWLS_V3_ANIMATION_ATLAS_DEFECTS__ = defectReport;
   (globalThis as any).__IBRAWLS_V3_ANIMATION_ATLAS_EDITOR__ = editorState;
   summary.textContent = `${report.title} | ${report.status} | ${atlasCase.label} | ${report.motionSourceLabel} | ${atlas.clock.mode} | frame ${atlas.clock.frame}/${atlasCase.durationFrames} | weapon ${sample.visibleWeapon ?? 'hidden'} | views ${atlas.views.length}`;
+  previewCleanClipButton.disabled = sample.bindPoseReview === true;
   defectReportElement.hidden = !showDefectsInput.checked;
   defectReportElement.textContent = showDefectsInput.checked
     ? `${defectSummary}\n${JSON.stringify(ensureDefectReport().summary, null, 2)}`
@@ -237,6 +297,7 @@ function publishReport() {
 function syncControls() {
   const atlasCase = currentCase();
   animationSelect.value = atlas.clock.caseId;
+  modeSelect.value = atlas.clock.mode;
   timelineInput.max = String(atlasCase.durationFrames);
   timelineInput.value = String(atlas.clock.frame);
   playPauseButton.textContent = atlas.clock.playing ? 'Pause' : 'Play';
@@ -246,10 +307,16 @@ function syncControls() {
 }
 
 function renderAtlas(resetDeathBurst = false) {
+  const mode = currentMode();
+  if (mode === 'bindRestPose') {
+    atlas.clock.playing = false;
+    playAll = false;
+    atlas.clock.frame = 0;
+  }
   updateV3AnimationAtlasScene(atlas, {
     caseId: atlas.clock.caseId,
     frame: atlas.clock.frame,
-    mode: currentMode(),
+    mode,
     resetDeathBurst,
     showBounds: boundsOverlayInput.checked,
     showFloorContact: floorOverlayInput.checked,
@@ -260,6 +327,7 @@ function renderAtlas(resetDeathBurst = false) {
     animationAuthority: atlas.animationAuthority,
     manualClipExport,
   });
+  applyReviewRotation();
   syncControls();
   renderer.render(atlas.scene, atlas.camera);
 }
@@ -282,9 +350,19 @@ function nextCase() {
   setCase(next.id);
 }
 
-animationSelect.addEventListener('change', () => setCase(animationSelect.value as V3AnimationAtlasCaseId));
-carryWeaponSelect.addEventListener('change', () => renderAtlas(true));
-modeSelect.addEventListener('change', () => renderAtlas(true));
+animationSelect.addEventListener('change', () => {
+  exitBindPoseReviewForAnimation();
+  setCase(animationSelect.value as V3AnimationAtlasCaseId);
+});
+carryWeaponSelect.addEventListener('change', () => {
+  exitBindPoseReviewForAnimation();
+  renderAtlas(true);
+});
+modeSelect.addEventListener('change', () => {
+  const mode = currentMode();
+  if (mode !== 'bindRestPose') lastAnimationPlaybackMode = mode;
+  renderAtlas(true);
+});
 loopInput.addEventListener('change', () => renderAtlas());
 boundsOverlayInput.addEventListener('change', () => renderAtlas());
 floorOverlayInput.addEventListener('change', () => renderAtlas());
@@ -293,7 +371,50 @@ isolationOverlayInput.addEventListener('change', () => renderAtlas());
 slotContinuityOverlayInput.addEventListener('change', () => renderAtlas());
 showDefectsInput.addEventListener('change', () => publishReport());
 speedInput.addEventListener('change', () => syncControls());
-timelineInput.addEventListener('input', () => setFrame(Number(timelineInput.value), atlas.clock.caseId === 'death'));
+timelineInput.addEventListener('input', () => {
+  exitBindPoseReviewForAnimation();
+  setFrame(Number(timelineInput.value), atlas.clock.caseId === 'death');
+});
+
+canvas.addEventListener('pointerdown', (event) => {
+  if (!event.isPrimary || event.button !== 0) return;
+  modelDragState.active = true;
+  modelDragState.pointerId = event.pointerId;
+  modelDragState.lastX = event.clientX;
+  modelDragState.lastY = event.clientY;
+  canvas.setPointerCapture(event.pointerId);
+  canvas.classList.add('is-dragging');
+  event.preventDefault();
+});
+
+canvas.addEventListener('pointermove', (event) => {
+  if (!modelDragState.active || event.pointerId !== modelDragState.pointerId) return;
+  const deltaX = event.clientX - modelDragState.lastX;
+  const deltaY = event.clientY - modelDragState.lastY;
+  modelDragState.lastX = event.clientX;
+  modelDragState.lastY = event.clientY;
+  sharedReviewRotation.y -= deltaX * dragRotationSpeed;
+  sharedReviewRotation.x = THREE.MathUtils.clamp(
+    sharedReviewRotation.x - deltaY * dragRotationSpeed,
+    -dragPitchLimit,
+    dragPitchLimit
+  );
+  applyReviewRotation();
+  renderer.render(atlas.scene, atlas.camera);
+  event.preventDefault();
+});
+
+function endModelDrag(event: PointerEvent): void {
+  if (!modelDragState.active || event.pointerId !== modelDragState.pointerId) return;
+  modelDragState.active = false;
+  modelDragState.pointerId = -1;
+  canvas.releasePointerCapture(event.pointerId);
+  canvas.classList.remove('is-dragging');
+  publishReport();
+}
+
+canvas.addEventListener('pointerup', endModelDrag);
+canvas.addEventListener('pointercancel', endModelDrag);
 
 copyDefectReportButton.addEventListener('click', async () => {
   const report = ensureDefectReport();
@@ -373,12 +494,18 @@ clearCleanPreviewButton.addEventListener('click', () => {
 });
 
 playPauseButton.addEventListener('click', () => {
+  const exitedBindPose = exitBindPoseReviewForAnimation();
   atlas.clock.playing = !atlas.clock.playing;
   playAll = false;
-  syncControls();
+  if (exitedBindPose) {
+    renderAtlas(true);
+  } else {
+    syncControls();
+  }
 });
 
 playAllButton.addEventListener('click', () => {
+  exitBindPoseReviewForAnimation();
   playAll = true;
   atlas.clock.playing = true;
   atlas.clock.frame = 0;
@@ -392,6 +519,7 @@ resetButton.addEventListener('click', () => {
 });
 
 framePrevButton.addEventListener('click', () => {
+  exitBindPoseReviewForAnimation();
   playAll = false;
   atlas.clock.playing = false;
   setFrame(stepV3AnimationAtlasFrame({
@@ -403,6 +531,7 @@ framePrevButton.addEventListener('click', () => {
 });
 
 frameNextButton.addEventListener('click', () => {
+  exitBindPoseReviewForAnimation();
   playAll = false;
   atlas.clock.playing = false;
   setFrame(stepV3AnimationAtlasFrame({

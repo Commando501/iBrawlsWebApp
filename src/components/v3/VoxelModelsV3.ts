@@ -518,6 +518,7 @@ const solveV3LocalScaleForWorldSize = (
   targetWorldSize: THREE.Vector3
 ): THREE.Vector3 => {
   const fitScale = geometryGroup.scale.clone();
+  const originalScale = geometryGroup.scale.clone();
   for (let iteration = 0; iteration < 8; iteration += 1) {
     geometryGroup.updateWorldMatrix(true, true);
     const currentSize = getV3ObjectWorldBox(geometryGroup).getSize(new THREE.Vector3());
@@ -545,29 +546,20 @@ const solveV3LocalScaleForWorldSize = (
     );
     geometryGroup.scale.copy(fitScale);
   }
+  geometryGroup.scale.copy(originalScale);
+  geometryGroup.updateWorldMatrix(true, true);
   return fitScale;
 };
 
 const writeResolvedV3MannequinFitPlacement = (
-  slotPivot: THREE.Group,
-  geometryGroup: THREE.Group
-): void => {
-  const placement = {
-    position: geometryGroup.position.toArray(),
-    rotation: [
-      geometryGroup.rotation.x,
-      geometryGroup.rotation.y,
-      geometryGroup.rotation.z,
-    ],
-    scale: geometryGroup.scale.toArray(),
-  };
-  geometryGroup.userData.v3ResolvedMannequinFitPlacement = placement;
-  const slotPlacement = slotPivot.userData.v3Mesh2MotionSlotPlacement as
-    | { geometry?: typeof placement }
-    | undefined;
-  if (slotPlacement) {
-    slotPlacement.geometry = placement;
+  geometryGroup: THREE.Group,
+  placement: {
+    position: readonly number[];
+    rotation: readonly number[];
+    scale: readonly number[];
   }
+): void => {
+  geometryGroup.userData.v3ResolvedMannequinFitPlacement = placement;
 };
 
 const applyV3GeneratedMannequinArmorFit = (model: THREE.Object3D): void => {
@@ -603,7 +595,8 @@ const applyV3GeneratedMannequinArmorFit = (model: THREE.Object3D): void => {
       const geometryGroup = geometryGroups[slot];
       if (!(slotPivot instanceof THREE.Group) || !(geometryGroup instanceof THREE.Group)) continue;
       const sourceFitSize = getV3AuthoritativeArmorSourceFitSize(slot);
-      geometryGroup.scale.copy(solveV3LocalScaleForWorldSize(geometryGroup, sourceFitSize));
+      const fitScale = solveV3LocalScaleForWorldSize(geometryGroup, sourceFitSize);
+      geometryGroup.userData.v3ResolvedMannequinFitScaleCandidate = fitScale.toArray();
     }
     model.updateWorldMatrix(true, true);
 
@@ -619,8 +612,16 @@ const applyV3GeneratedMannequinArmorFit = (model: THREE.Object3D): void => {
       const localDelta = worldDelta
         .clone()
         .applyQuaternion(slotPivot.getWorldQuaternion(new THREE.Quaternion()).invert());
-      geometryGroup.position.add(localDelta);
-      writeResolvedV3MannequinFitPlacement(slotPivot, geometryGroup);
+      writeResolvedV3MannequinFitPlacement(geometryGroup, {
+        position: geometryGroup.position.clone().add(localDelta).toArray(),
+        rotation: [
+          geometryGroup.rotation.x,
+          geometryGroup.rotation.y,
+          geometryGroup.rotation.z,
+        ],
+        scale: (geometryGroup.userData.v3ResolvedMannequinFitScaleCandidate as readonly number[] | undefined)
+          ?? geometryGroup.scale.toArray(),
+      });
     }
     model.updateWorldMatrix(true, true);
   }
@@ -736,11 +737,19 @@ export function buildV3SpartanModel(options: V3SpartanBuildOptions = {}): THREE.
       : V3_ARMOR_FOUNDATION.slots[part.slot];
     const foundationGeometry = foundationSlot?.mesh2MotionGeometry;
     const builtInUsesObjSource = Boolean(foundationSlot?.sourceHashes.exactObjSurfaceSlot);
-    applyV3SlotGeometryPlacement(geometryGroup, foundationGeometry ?? slotPlacement?.geometry ?? {
+    const geometryPlacement = foundationGeometry ?? slotPlacement?.geometry ?? {
       position: [0, 0, 0],
       rotation: [0, 0, 0],
       scale: [1, 1, 1],
-    });
+    };
+    applyV3SlotGeometryPlacement(geometryGroup, geometryPlacement);
+    if (slotPlacement) {
+      slotPlacement.geometry = {
+        position: [...geometryPlacement.position],
+        rotation: [...geometryPlacement.rotation],
+        scale: [...geometryPlacement.scale],
+      };
+    }
     const selectedLod = selectV3LodLevel({
       lods: part.lods,
       qualityTier: v3QualityTier,
@@ -800,8 +809,13 @@ export function buildV3SpartanModel(options: V3SpartanBuildOptions = {}): THREE.
       geometryGroup.userData.customArmorGridScale = gridScale;
     }
     slotPivot.add(geometryGroup);
-    detailBones[V3_SLOT_DETAIL_BONES[part.slot]].userData.v3Mesh2MotionSlotPivot = slotPivot;
-    detailBones[V3_SLOT_DETAIL_BONES[part.slot]].userData.v3Mesh2MotionSlotGeometry = geometryGroup;
+    const detailBone = detailBones[V3_SLOT_DETAIL_BONES[part.slot]];
+    const linkedSlotPivots = detailBone.userData.v3Mesh2MotionSlotPivots as THREE.Group[] | undefined;
+    const linkedSlotGeometries = detailBone.userData.v3Mesh2MotionSlotGeometries as THREE.Group[] | undefined;
+    detailBone.userData.v3Mesh2MotionSlotPivots = [...(linkedSlotPivots ?? []), slotPivot];
+    detailBone.userData.v3Mesh2MotionSlotGeometries = [...(linkedSlotGeometries ?? []), geometryGroup];
+    detailBone.userData.v3Mesh2MotionSlotPivot = slotPivot;
+    detailBone.userData.v3Mesh2MotionSlotGeometry = geometryGroup;
     partGroups[part.slot] = slotPivot;
     partGeometryGroups[part.slot] = geometryGroup;
   }
