@@ -73,6 +73,14 @@ import {
   type V3ArmorEditorPolishActionId,
 } from './v3ArmorEditorPolish';
 import {
+  applyV3ArmorCoveragePatch,
+  buildV3ArmorCoveragePatch,
+  buildV3ArmorCoveragePreview,
+  buildV3ArmorCoverageReport,
+  type V3ArmorCoverageReport,
+  type V3ArmorCoverageScope,
+} from './v3ArmorEditorCoverage';
+import {
   applyV3SmartAuthoringTool,
   buildV3SmartAuthoringPreview,
   type V3ArmorSmartToolId,
@@ -597,6 +605,9 @@ export function ArmorModelEditor({
   const [v3MotionQaReport, setV3MotionQaReport] = useState<V3ArmorEditorMotionQaReport | null>(null);
   const [v3MotionQaReportToken, setV3MotionQaReportToken] = useState('');
   const [v3MotionQaMode, setV3MotionQaMode] = useState<V3ArmorEditorMotionQaMode>('active-slot');
+  const [v3CoverageQaReport, setV3CoverageQaReport] = useState<V3ArmorCoverageReport | null>(null);
+  const [v3CoverageQaReportToken, setV3CoverageQaReportToken] = useState('');
+  const [v3CoverageQaMode, setV3CoverageQaMode] = useState<V3ArmorCoverageScope>('active-slot');
   const [selectedV3MotionRepairActionId, setSelectedV3MotionRepairActionId] =
     useState<V3ArmorMotionRepairActionId>('poseSafePolish');
   const [v3SuitReadinessReport, setV3SuitReadinessReport] = useState<V3SuitReadinessReport | null>(null);
@@ -718,6 +729,59 @@ export function ArmorModelEditor({
       ? buildV3SmartAuthoringFeedback(draft, v3SmartAuthoringPreview.previewDraft)
       : undefined
   ), [draft, v3SmartAuthoringPreview]);
+  const buildV3CoverageQaSourceToken = (
+    scope: V3ArmorCoverageScope,
+    stagedDraftOverride?: V3SuitDraftMap
+  ): string => {
+    const sourceDrafts = stagedDraftOverride ?? activeV3SuitDrafts;
+    const currentSlot = slot as V3CustomArmorSlot;
+    const stagedDrafts = sourceDrafts
+      ? ({
+          ...sourceDrafts,
+          [currentSlot]: cloneV3SuitDraftForSlot(currentSlot, draft),
+        } as V3SuitDraftMap)
+      : undefined;
+    const draftRows = scope === 'full-suit' && stagedDrafts
+      ? (Object.entries(stagedDrafts) as Array<[V3CustomArmorSlot, CustomArmorPieceSnapshot]>)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([draftSlot, stagedDraft]) => ({
+          slot: draftSlot,
+          id: stagedDraft.id,
+          updatedAt: stagedDraft.updatedAt,
+          voxelCount: stagedDraft.voxels.length,
+        }))
+      : [];
+    return JSON.stringify({
+      scope,
+      activeSlot: slot,
+      draft: {
+        id: draft.id,
+        slot: draft.slot,
+        updatedAt: draft.updatedAt,
+        voxelCount: draft.voxels.length,
+      },
+      stagedDrafts: draftRows,
+    });
+  };
+  const currentV3CoverageQaToken = useMemo(
+    () => buildV3CoverageQaSourceToken(v3CoverageQaMode),
+    [activeV3SuitDrafts, draft, slot, v3CoverageQaMode]
+  );
+  const v3CoverageQaIsStale = Boolean(v3CoverageQaReport) && v3CoverageQaReportToken !== currentV3CoverageQaToken;
+  const freshV3CoverageQaReport = v3CoverageQaReport && !v3CoverageQaIsStale ? v3CoverageQaReport : undefined;
+  const v3CoveragePatch = useMemo(() => (
+    freshV3CoverageQaReport ? buildV3ArmorCoveragePatch(freshV3CoverageQaReport) : undefined
+  ), [freshV3CoverageQaReport]);
+  const v3CoveragePreview = useMemo(() => (
+    modelSystem === 'v3' && v3CoveragePatch
+      ? buildV3ArmorCoveragePreview(draft, v3CoveragePatch)
+      : undefined
+  ), [draft, modelSystem, v3CoveragePatch]);
+  const v3CoveragePatchAddedCount = v3CoveragePatch
+    ? (Object.values(v3CoveragePatch.addedVoxelsBySlot) as Array<readonly unknown[] | undefined>)
+      .reduce((total, voxels) => total + (voxels?.length ?? 0), 0)
+    : 0;
+  const v3CoverageCanApply = Boolean(v3CoveragePatch?.validationResult.valid && v3CoveragePatchAddedCount > 0);
   const buildV3MotionQaSourceToken = (
     mode: V3ArmorEditorMotionQaMode,
     stagedDraftOverride?: V3SuitDraftMap
@@ -799,7 +863,9 @@ export function ArmorModelEditor({
       ? buildV3ArmorMotionRepairPreview(draft, selectedV3MotionRepairAction.id, v3MotionRepairContext)
       : undefined
   ), [draft, freshV3MotionQaReport, modelSystem, selectedV3MotionRepairAction, v3MotionRepairContext]);
-  const activeV3PreviewOverlay = v3MotionRepairPreview?.changed ? v3MotionRepairPreview : v3SmartAuthoringPreview;
+  const activeV3PreviewOverlay = v3MotionRepairPreview?.changed
+    ? v3MotionRepairPreview
+    : v3CoveragePreview?.changed ? v3CoveragePreview : v3SmartAuthoringPreview;
 
   useEffect(() => {
     paintSettingsRef.current = { tool, role, fixedColor, emissive, slot, modelType, modelSystem, gridScale: draftGridScale };
@@ -954,6 +1020,64 @@ export function ArmorModelEditor({
     setStatus(`${scopeLabel} Motion QA ${report.ready ? 'passed' : `reported ${report.issues.length} advisory issue${report.issues.length === 1 ? '' : 's'}`}.`);
   };
 
+  const runV3CoverageQa = (scope: V3ArmorCoverageScope) => {
+    if (modelSystem !== 'v3') return;
+    const stagedDrafts = scope === 'full-suit' ? createStagedV3SuitDrafts() : undefined;
+    const report = buildV3ArmorCoverageReport({
+      scope,
+      activeSlot: slot as V3CustomArmorSlot,
+      draft,
+      suitDrafts: stagedDrafts,
+    });
+    if (scope === 'full-suit' && stagedDrafts) {
+      setV3SuitDrafts(stagedDrafts);
+      setV3SuitPreviewEnabled(true);
+    }
+    setV3CoverageQaMode(scope);
+    setV3CoverageQaReport(report);
+    setV3CoverageQaReportToken(buildV3CoverageQaSourceToken(scope, stagedDrafts));
+    const scopeLabel = scope === 'full-suit' ? 'Full suit' : getV3ArmorTemplateLabel(slot as V3CustomArmorSlot);
+    setStatus(`${scopeLabel} Coverage QA ${report.ready ? 'passed' : `reported ${report.issues.length} coverage issue${report.issues.length === 1 ? '' : 's'}`}.`);
+  };
+
+  const clearV3CoverageQa = () => {
+    setV3CoverageQaReport(null);
+    setV3CoverageQaReportToken('');
+    setStatus('Coverage QA report cleared.');
+  };
+
+  const applyV3CoverageFill = () => {
+    if (!v3CoveragePatch || !freshV3CoverageQaReport) return;
+    if (!v3CoveragePatch.validationResult.valid || v3CoveragePatchAddedCount <= 0) {
+      setStatus(`Coverage fill blocked: ${v3CoveragePatch.warnings[0] ?? 'no valid fill voxels are available.'}`);
+      return;
+    }
+
+    const now = Date.now();
+    const currentSlot = slot as V3CustomArmorSlot;
+    if (v3CoverageQaMode === 'full-suit') {
+      const stagedDrafts = createStagedV3SuitDrafts();
+      const patchedDrafts = {
+        ...stagedDrafts,
+        ...applyV3ArmorCoveragePatch(stagedDrafts, v3CoveragePatch, { now }),
+      } as V3SuitDraftMap;
+      setV3SuitDrafts(patchedDrafts);
+      setV3SuitPreviewEnabled(true);
+      if (v3CoveragePatch.addedVoxelsBySlot[currentSlot]?.length) {
+        replaceDraft(patchedDrafts[currentSlot]);
+      }
+    } else {
+      const patchedDraft = applyV3ArmorCoveragePatch({ [currentSlot]: draft }, v3CoveragePatch, { now })[currentSlot];
+      if (patchedDraft) {
+        replaceDraft(patchedDraft);
+      }
+    }
+
+    setV3CoverageQaReport(null);
+    setV3CoverageQaReportToken('');
+    setStatus(`Coverage fill applied (${v3CoveragePatchAddedCount} undersuit voxel${v3CoveragePatchAddedCount === 1 ? '' : 's'}).`);
+  };
+
   const buildV3SuitVisualQaBySlot = (stagedDrafts: V3SuitDraftMap) => (
     Object.fromEntries(V3_CUSTOM_ARMOR_SLOTS.map((candidate) => {
       const candidateDraft = stagedDrafts[candidate];
@@ -980,6 +1104,12 @@ export function ArmorModelEditor({
       selectedCaseId: selectedV3PoseCaseId,
       hue: playerHue,
     });
+    const coverageQa = buildV3ArmorCoverageReport({
+      scope: 'full-suit',
+      activeSlot: slot as V3CustomArmorSlot,
+      draft,
+      suitDrafts: stagedDrafts,
+    });
     const savePlan = buildV3SuitSavePlan(catalog, playerLoadout, stagedDrafts, Date.now());
     const report = buildV3SuitReadinessReport({
       source: 'stagedSuit',
@@ -987,6 +1117,7 @@ export function ArmorModelEditor({
       suitDrafts: stagedDrafts,
       suitValidation,
       visualQaBySlot: buildV3SuitVisualQaBySlot(stagedDrafts),
+      coverageQa,
       motionQa,
       motionQaStale: false,
       saveErrors: savePlan.errors,
@@ -999,6 +1130,9 @@ export function ArmorModelEditor({
     setV3MotionQaMode('full-suit');
     setV3MotionQaReport(motionQa);
     setV3MotionQaReportToken(buildV3MotionQaSourceToken('full-suit', stagedDrafts));
+    setV3CoverageQaMode('full-suit');
+    setV3CoverageQaReport(coverageQa);
+    setV3CoverageQaReportToken(buildV3CoverageQaSourceToken('full-suit', stagedDrafts));
     setV3SuitReadinessMode('suit');
     setV3SuitReadinessReport(report);
     setStatus(`Publish Check: ${report.summary}`);
@@ -1646,6 +1780,19 @@ export function ArmorModelEditor({
     }
 
     if (
+      freshV3CoverageQaReport
+      && v3CoverageQaMode === 'full-suit'
+      && freshV3CoverageQaReport.issues.some((issue) => issue.slot === targetSlot)
+    ) {
+      labels.push('Coverage Warn');
+    } else if (
+      freshV3CoverageQaReport
+      && v3CoverageQaMode === 'full-suit'
+    ) {
+      labels.push('Coverage');
+    }
+
+    if (
       v3MotionQaReport
       && !v3MotionQaIsStale
       && v3MotionQaMode === 'full-suit'
@@ -1667,9 +1814,11 @@ export function ArmorModelEditor({
   const getV3SuitSlotStatusClass = (label: string): string => {
     if (label === 'Invalid') return 'border-red-400/40 bg-red-500/15 text-red-200';
     if (label === 'Motion Warn') return 'border-orange-400/40 bg-orange-500/15 text-orange-100';
+    if (label === 'Coverage Warn') return 'border-amber-400/40 bg-amber-500/15 text-amber-100';
     if (label === 'Warn') return 'border-amber-400/40 bg-amber-500/15 text-amber-200';
     if (label === 'Valid') return 'border-emerald-400/40 bg-emerald-500/15 text-emerald-200';
     if (label === 'Motion') return 'border-sky-400/40 bg-sky-500/15 text-sky-100';
+    if (label === 'Coverage') return 'border-teal-400/40 bg-teal-500/15 text-teal-100';
     if (label === 'Equipped') return 'border-purple-400/40 bg-purple-500/15 text-purple-100';
     return 'border-white/10 bg-black/35 text-white/45';
   };
@@ -2403,6 +2552,114 @@ export function ArmorModelEditor({
                   className="mt-2 w-full py-2 rounded border border-cyan-400/50 bg-cyan-500/20 text-cyan-100 text-[10px] font-black uppercase tracking-widest disabled:opacity-35"
                 >
                   Apply Smart Tool
+                </button>
+              </div>
+            </Panel>
+          )}
+
+          {modelSystem === 'v3' && (
+            <Panel title="Coverage QA">
+              <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-2 gap-1.5 text-[10px] font-mono">
+                  <Metric label="Coverage" value={v3CoverageQaReport ? `${v3CoverageQaReport.score}%` : '--'} />
+                  <Metric
+                    label="Issues"
+                    value={v3CoverageQaReport ? `${v3CoverageQaReport.summary.issueCount}` : '--'}
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => runV3CoverageQa('active-slot')}
+                    className="editor-chip border-cyan-400/40 text-cyan-100"
+                  >
+                    Check Active
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => runV3CoverageQa('full-suit')}
+                    className="editor-chip border-purple-400/40 text-purple-100"
+                  >
+                    Check Suit
+                  </button>
+                </div>
+              </div>
+              <div className="mt-2 flex flex-col gap-1 text-[10px] leading-relaxed">
+                {!v3CoverageQaReport ? (
+                  <span className="text-white/45">Coverage QA: scan armor fill before reviewing bind/rest pose and sprint.</span>
+                ) : v3CoverageQaIsStale ? (
+                  <span className="text-amber-300">Coverage QA: report is stale after draft or suit changes.</span>
+                ) : v3CoverageQaReport.ready ? (
+                  <span className="text-emerald-300">Coverage QA: no core armor fill gaps detected.</span>
+                ) : (
+                  <span className="text-amber-300">
+                    Coverage QA: {v3CoverageQaReport.issues[0]?.message ?? 'armor fill needs review.'}
+                  </span>
+                )}
+                {freshV3CoverageQaReport && (
+                  <span className="text-white/45">
+                    {freshV3CoverageQaReport.summary.scope === 'full-suit' ? 'Full suit' : 'Active slot'} scan - {freshV3CoverageQaReport.summary.totalMissingVoxelCount} suggested voxels.
+                  </span>
+                )}
+              </div>
+              {freshV3CoverageQaReport && freshV3CoverageQaReport.issues.length > 0 && (
+                <div className="mt-2 max-h-28 overflow-y-auto flex flex-col gap-1.5">
+                  {freshV3CoverageQaReport.issues.slice(0, 4).map((issue) => (
+                    <div key={issue.id} className="rounded border border-white/10 bg-black/25 p-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[9px] font-black uppercase tracking-widest text-white/65">
+                          {getV3ArmorTemplateLabel(issue.slot)}
+                        </span>
+                        <span className={`rounded border px-1.5 py-0.5 text-[8px] font-black uppercase tracking-widest ${
+                          issue.severity === 'high'
+                            ? 'border-red-400/40 bg-red-500/15 text-red-100'
+                            : 'border-amber-400/40 bg-amber-500/15 text-amber-100'
+                        }`}
+                        >
+                          {issue.region}
+                        </span>
+                      </div>
+                      <div className="mt-1 text-[9px] text-white/45 line-clamp-2">
+                        {issue.missingVoxelCount} undersuit voxels - {issue.reproductionHint}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {v3CoveragePatch && (
+                <div className="mt-2 rounded border border-cyan-400/20 bg-cyan-500/10 p-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-cyan-100">Fill Preview</span>
+                    <span className="text-[10px] font-mono text-white/55">{v3CoveragePatchAddedCount} voxels</span>
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-1.5 font-mono text-[10px] text-white/60">
+                    <span>{v3CoveragePreview?.added.length ?? 0} active added</span>
+                    <span>{v3CoveragePatch.issueIds.length} issues</span>
+                    <span>{v3CoveragePatch.validationResult.valid ? 'valid' : 'blocked'}</span>
+                  </div>
+                  {!v3CoveragePatch.validationResult.valid && (
+                    <div className="mt-1 text-[9px] text-red-200">
+                      {v3CoveragePatch.warnings[0] ?? 'Coverage fill failed validation.'}
+                    </div>
+                  )}
+                </div>
+              )}
+              <div className="mt-2 grid grid-cols-2 gap-1.5">
+                <button
+                  type="button"
+                  onClick={applyV3CoverageFill}
+                  disabled={!v3CoverageCanApply}
+                  className="editor-chip border-cyan-400/40 text-cyan-100 disabled:opacity-35"
+                >
+                  Apply Fill
+                </button>
+                <button
+                  type="button"
+                  onClick={clearV3CoverageQa}
+                  disabled={!v3CoverageQaReport}
+                  className="editor-chip disabled:opacity-35"
+                >
+                  Reject
                 </button>
               </div>
             </Panel>

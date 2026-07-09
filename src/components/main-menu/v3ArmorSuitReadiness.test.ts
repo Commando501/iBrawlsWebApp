@@ -9,6 +9,7 @@ import {
   type V3CustomArmorSlot,
 } from '../customArmor';
 import type { V3ArmorEditorMotionQaReport } from './v3ArmorEditorMotionQa';
+import type { V3ArmorCoverageReport } from './v3ArmorEditorCoverage';
 import type { V3ArmorEditorVisualQaReport } from './v3ArmorEditorVisualQa';
 import type {
   V3SuitDraftValidationResult,
@@ -140,6 +141,31 @@ const warningMotionQa = (): V3ArmorEditorMotionQaReport => ({
   sourceSignature: 'warning',
 });
 
+const warningCoverageQa = (): V3ArmorCoverageReport => ({
+  ready: false,
+  score: 65,
+  sourceSignature: 'coverage-warning',
+  sourceDraftsBySlot: {},
+  summary: {
+    scope: 'full-suit',
+    issueCount: 1,
+    highSeverityIssueCount: 1,
+    totalMissingVoxelCount: 42,
+    scannedSlotCount: 3,
+  },
+  issues: [{
+    id: 'coverage:chest:torsoCavity',
+    slot: 'chest',
+    region: 'torsoCavity',
+    severity: 'high',
+    classification: 'armor fill/coverage gap',
+    message: 'Chest foundation fill is missing behind the front armor shell.',
+    missingVoxelCount: 42,
+    suggestedVoxels: [],
+    reproductionHint: 'Review Mesh2Motion bind/rest pose and sprint frame 82.',
+  }],
+});
+
 const profileFor = (): V3SuitProfile => ({
   version: 1,
   id: 'profile_1',
@@ -237,6 +263,29 @@ test('visual and motion QA warnings remain advisory when normal validation passe
   assert.equal(report.firstActionSlot, 'helmet');
   assert.ok(report.warnings.some((issue) => issue.code === 'visual_qa_warning' && issue.slot === 'chest'));
   assert.ok(report.warnings.some((issue) => issue.code === 'motion_qa_warning' && issue.slot === 'helmet'));
+});
+
+test('coverage QA warnings remain advisory and point first action at the coverage slot', () => {
+  const report = buildV3SuitReadinessReport({
+    source: 'stagedSuit',
+    suitDrafts: suitDrafts(),
+    suitValidation: suitValidation(),
+    coverageQa: warningCoverageQa(),
+    motionQa: readyMotionQa(),
+  });
+
+  assert.equal(report.status, 'warnings');
+  assert.equal(report.readyToSaveSuit, true);
+  assert.equal(report.readyToSaveProfile, true);
+  assert.equal(report.readyToExportProfile, true);
+  assert.equal(report.firstActionSlot, 'chest');
+  assert.ok(report.warnings.some((issue) => (
+    issue.code === 'coverage_qa_warning' &&
+    issue.slot === 'chest' &&
+    issue.message.includes('Chest foundation fill')
+  )));
+  assert.equal(report.warnings.some((issue) => issue.code === 'visual_qa_warning'), false);
+  assert.equal(report.warnings.some((issue) => issue.code === 'motion_qa_warning'), false);
 });
 
 test('missing and stale motion QA are warnings only', () => {

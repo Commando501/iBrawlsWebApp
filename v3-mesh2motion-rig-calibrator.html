@@ -220,7 +220,8 @@
       }
 
       #target-summary,
-      #diagnostics {
+      #diagnostics,
+      #priority-report {
         min-height: 160px;
         margin: 0;
         padding: 8px;
@@ -235,6 +236,10 @@
 
       #diagnostics {
         min-height: 220px;
+      }
+
+      #priority-report {
+        min-height: 180px;
       }
 
       .warn {
@@ -328,6 +333,16 @@
           </section>
 
           <section class="section">
+            <p class="section-title">Priority Review</p>
+            <div class="row">
+              <button id="priority-prev-clip" type="button">Prev Clip</button>
+              <button id="priority-next-clip" type="button">Next Clip</button>
+              <button id="priority-prev-frame" type="button">Prev Frame</button>
+              <button id="priority-next-frame" type="button">Next Frame</button>
+            </div>
+          </section>
+
+          <section class="section">
             <p class="section-title">Edit Mode</p>
             <div class="segmented" role="group" aria-label="Edit Mode">
               <button id="mode-part-binding" type="button" class="active">V3 Part Binding</button>
@@ -401,6 +416,10 @@
           <section class="section">
             <p class="section-title">Diagnostics</p>
             <pre id="diagnostics">No diagnostics yet.</pre>
+          </section>
+          <section class="section">
+            <p class="section-title">Priority Review</p>
+            <pre id="priority-report">No priority report yet.</pre>
           </section>
           <section class="section">
             <p class="section-title">Import / Export</p>

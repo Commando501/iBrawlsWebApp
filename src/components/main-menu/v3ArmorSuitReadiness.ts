@@ -8,6 +8,7 @@ import {
   type V3CustomArmorSlot,
 } from '../customArmor';
 import type { V3ArmorEditorMotionQaReport } from './v3ArmorEditorMotionQa';
+import type { V3ArmorCoverageReport } from './v3ArmorEditorCoverage';
 import type { V3ArmorEditorVisualQaReport } from './v3ArmorEditorVisualQa';
 import type { V3SuitDraftValidationResult } from './v3ArmorEditorSuitWorkflow';
 import type {
@@ -21,6 +22,7 @@ export type V3SuitReadinessIssueCode =
   | 'normal_validation_failed'
   | 'missing_slot'
   | 'unsaved_staged_drafts'
+  | 'coverage_qa_warning'
   | 'visual_qa_warning'
   | 'motion_qa_warning'
   | 'motion_qa_missing'
@@ -67,6 +69,7 @@ export interface V3SuitReadinessInput {
   suitValidation?: V3SuitDraftValidationResult;
   profile?: V3SuitProfile;
   profileValidation?: V3SuitProfileValidationResult;
+  coverageQa?: V3ArmorCoverageReport | null;
   visualQaBySlot?: Partial<Record<V3CustomArmorSlot, V3ArmorEditorVisualQaReport>>;
   motionQa?: V3ArmorEditorMotionQaReport | null;
   motionQaStale?: boolean;
@@ -196,6 +199,23 @@ function addVisualQaIssues(
       slotIssues,
       allIssues,
       issue('visual_qa_warning', message, 'warning', slot)
+    );
+  }
+}
+
+function addCoverageQaIssues(
+  input: V3SuitReadinessInput,
+  slotIssues: Map<V3CustomArmorSlot, V3SuitReadinessIssue[]>,
+  allIssues: V3SuitReadinessIssue[]
+): void {
+  const report = input.coverageQa;
+  if (!report || (report.ready && report.issues.length === 0)) return;
+
+  for (const coverageIssue of report.issues) {
+    addIssue(
+      slotIssues,
+      allIssues,
+      issue('coverage_qa_warning', coverageIssue.message, 'warning', coverageIssue.slot)
     );
   }
 }
@@ -405,6 +425,7 @@ export function buildV3SuitReadinessReport(
   const issues: V3SuitReadinessIssue[] = [];
 
   addStagedSuitIssues(input, slotIssues, issues);
+  addCoverageQaIssues(input, slotIssues, issues);
   addVisualQaIssues(input, slotIssues, issues);
   addMotionQaIssues(input, slotIssues, issues);
   addProfileIssues(input, slotIssues, issues);

@@ -8,6 +8,7 @@ import {
 } from './replayHeatmapRuntime';
 import { type GrifballRuntimeState } from './runtimeState';
 import { type TacticalTargetCandidate } from './combatGeometry';
+import { recordCombatantDamageReceivedObservation } from './playerModelObservations';
 
 export function applyAISwordLungeHitForState({
   state,
@@ -90,6 +91,7 @@ export function applyAISwordLungeHitForState({
   if (target.id === MAIN_AI_ID) {
     if (!mainAi) return;
     mainAi.hp -= 1;
+    recordCombatantDamageReceivedObservation(state, target.id);
     finishSwordLunge(cooldownMult, 'hit', target.id);
     playExplosion();
     spawnVoxelShockwaveParticles(mainAi.pos, '#ef4444');
@@ -120,6 +122,7 @@ export function applyAISwordLungeHitForState({
   const targetBot = state.otherPlayers.get(target.id);
   if (!targetBot) return;
   targetBot.hp -= 1;
+  recordCombatantDamageReceivedObservation(state, target.id);
   finishSwordLunge(cooldownMult, 'hit', target.id);
   playExplosion();
   spawnVoxelShockwaveParticles(targetBot.pos, '#ef4444');

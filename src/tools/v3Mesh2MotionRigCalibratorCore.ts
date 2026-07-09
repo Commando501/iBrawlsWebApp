@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { V3_CHARACTER_SLOT_IDS, type V3CharacterSlotId, type V3WeaponId } from '../components/v3/v3ModelTypes';
+import type { V3AuthoredClipId } from '../components/grifball/v3AuthoredAnimationClips';
 import {
   V3_MESH2MOTION_CALIBRATION_LIMITS,
   V3_MESH2MOTION_DRIVER_JOINT_NAMES,
@@ -67,6 +68,71 @@ export interface V3Mesh2MotionCalibrationDiagnostics {
   };
   weapon: V3Mesh2MotionCalibrationWeaponDiagnostics | null;
   warnings: string[];
+}
+
+export type V3Mesh2MotionPriorityReviewClipId = Extract<
+  V3AuthoredClipId,
+  'clean_sprint' | 'clean_slide' | 'clean_sword_carry' | 'clean_sword_lunge' | 'clean_sword_slash'
+>;
+
+export interface V3Mesh2MotionCalibrationPriorityReviewClip {
+  id: V3Mesh2MotionPriorityReviewClipId;
+  label: string;
+  sourceClipName: 'Sprint_Loop' | 'Slide_Loop' | 'Sword_Idle' | 'Sword_Dash_RM' | 'Sword_Regular_B';
+  durationFrames: number;
+  frames: readonly number[];
+  activeWeapon: V3WeaponId;
+  weaponState: string;
+  isSliding?: boolean;
+  isSprinting?: boolean;
+  isLunging?: boolean;
+}
+
+export interface V3Mesh2MotionCalibrationPriorityFrameMetrics {
+  shoulderLateralDistance: { left: number; right: number };
+  handLateralDistance: { left: number; right: number };
+  handSymmetryDelta: number;
+  shoulderSymmetryDelta: number;
+  upperArmPartDrift: { left: number; right: number };
+  forearmPartDrift: { left: number; right: number };
+  footFloorClearance: number;
+  weaponPrimaryGripDrift: number;
+  weaponOffhandGripDrift: number | null;
+}
+
+export interface V3Mesh2MotionCalibrationPriorityFrameReport {
+  clipId: V3Mesh2MotionPriorityReviewClipId;
+  label: string;
+  sourceClipName: V3Mesh2MotionCalibrationPriorityReviewClip['sourceClipName'];
+  frame: number;
+  durationFrames: number;
+  normalizedTime: number;
+  status: 'pass' | 'warn' | 'fail';
+  metrics: V3Mesh2MotionCalibrationPriorityFrameMetrics;
+  warnings: string[];
+}
+
+export interface V3Mesh2MotionCalibrationPriorityReport {
+  kind: 'v3-mesh2motion-calibration-priority-report';
+  version: 1;
+  ready: boolean;
+  summary: {
+    sampleCount: number;
+    passCount: number;
+    warnCount: number;
+    failCount: number;
+    maxHandLateralDistance: number;
+    minHandLateralDistance: number;
+    maxShoulderLateralDistance: number;
+    maxHandSymmetryDelta: number;
+    maxShoulderSymmetryDelta: number;
+    maxUpperArmPartDrift: number;
+    maxForearmPartDrift: number;
+    minFootFloorClearance: number;
+    maxWeaponPrimaryGripDrift: number;
+    maxWeaponOffhandGripDrift: number;
+  };
+  samples: V3Mesh2MotionCalibrationPriorityFrameReport[];
 }
 
 export interface V3Mesh2MotionSocketCalibrationTransformInput {
@@ -147,6 +213,57 @@ const ARM_CHAIN_LINKS = {
     ['forearmRight', 'handRight'],
   ],
 } as const;
+
+export const V3_MESH2MOTION_PRIORITY_REVIEW_CLIPS: readonly V3Mesh2MotionCalibrationPriorityReviewClip[] = [
+  {
+    id: 'clean_sprint',
+    label: 'Sprint',
+    sourceClipName: 'Sprint_Loop',
+    durationFrames: 90,
+    frames: [0, 23, 45, 68, 82, 90],
+    activeWeapon: 'sword',
+    weaponState: 'ready',
+    isSprinting: true,
+  },
+  {
+    id: 'clean_slide',
+    label: 'Slide',
+    sourceClipName: 'Slide_Loop',
+    durationFrames: 72,
+    frames: [0, 18, 36, 54, 72],
+    activeWeapon: 'sword',
+    weaponState: 'ready',
+    isSliding: true,
+  },
+  {
+    id: 'clean_sword_carry',
+    label: 'Sword Carry',
+    sourceClipName: 'Sword_Idle',
+    durationFrames: 90,
+    frames: [0, 30, 60, 90],
+    activeWeapon: 'sword',
+    weaponState: 'ready',
+  },
+  {
+    id: 'clean_sword_lunge',
+    label: 'Sword Lunge',
+    sourceClipName: 'Sword_Dash_RM',
+    durationFrames: 60,
+    frames: [0, 15, 30, 45, 60],
+    activeWeapon: 'sword',
+    weaponState: 'ready',
+    isLunging: true,
+  },
+  {
+    id: 'clean_sword_slash',
+    label: 'Sword Slash',
+    sourceClipName: 'Sword_Regular_B',
+    durationFrames: 60,
+    frames: [0, 15, 30, 45, 60],
+    activeWeapon: 'sword',
+    weaponState: 'slashing',
+  },
+] as const;
 
 const roundMetric = (value: number): number => {
   if (!Number.isFinite(value)) return 0;
@@ -633,5 +750,244 @@ export function buildV3Mesh2MotionCalibrationDiagnostics(
     arms,
     weapon: weaponReport,
     warnings,
+  };
+}
+
+const priorityMax = <Sample>(
+  samples: readonly Sample[],
+  valueForSample: (sample: Sample) => number
+): number => {
+  const values = samples.map(valueForSample).filter(Number.isFinite);
+  return values.length ? roundMetric(Math.max(...values)) : 0;
+};
+
+const priorityMin = <Sample>(
+  samples: readonly Sample[],
+  valueForSample: (sample: Sample) => number
+): number => {
+  const values = samples.map(valueForSample).filter(Number.isFinite);
+  return values.length ? roundMetric(Math.min(...values)) : 0;
+};
+
+const priorityStatusRank = (status: 'pass' | 'warn' | 'fail'): number =>
+  status === 'fail' ? 2 : status === 'warn' ? 1 : 0;
+
+const maxPriorityStatus = (
+  current: 'pass' | 'warn' | 'fail',
+  next: 'pass' | 'warn' | 'fail'
+): 'pass' | 'warn' | 'fail' =>
+  priorityStatusRank(next) > priorityStatusRank(current) ? next : current;
+
+const priorityPartGroup = (
+  partGroups: Record<string, THREE.Group>,
+  slot: string,
+  warnings: string[]
+): THREE.Group | null => {
+  const part = partGroups[slot];
+  if (!part) {
+    warnings.push(`missing ${slot} part group`);
+    return null;
+  }
+  return part;
+};
+
+const lateralDistanceFromChest = (
+  modelRight: THREE.Vector3,
+  chestCenter: THREE.Vector3,
+  part: THREE.Object3D | null
+): number => {
+  if (!part) return 0;
+  return roundMetric(Math.abs(boxCenter(part).sub(chestCenter).dot(modelRight)));
+};
+
+const slotPartDrift = (
+  rig: V3Mesh2MotionDriverRig,
+  slot: V3CharacterSlotId,
+  warnings: string[]
+): number => {
+  const binding = rig.partBindings[slot];
+  const joint = binding ? rig.joints[binding.sourceJointName] : null;
+  if (!binding || !joint) {
+    warnings.push(`missing ${slot} Mesh2Motion binding`);
+    return 0;
+  }
+  binding.partGroup.updateWorldMatrix(true, false);
+  joint.object.updateWorldMatrix(true, false);
+  return roundMetric(boxCenter(binding.partGroup).distanceTo(joint.object.getWorldPosition(new THREE.Vector3())));
+};
+
+const addPriorityThresholdWarning = (
+  warnings: string[],
+  message: string,
+  status: 'pass' | 'warn' | 'fail',
+  warn: boolean,
+  fail: boolean
+): 'pass' | 'warn' | 'fail' => {
+  if (fail) {
+    warnings.push(`${message} fail`);
+    return maxPriorityStatus(status, 'fail');
+  }
+  if (warn) {
+    warnings.push(`${message} warn`);
+    return maxPriorityStatus(status, 'warn');
+  }
+  return status;
+};
+
+export function captureV3Mesh2MotionCalibrationPriorityFrame({
+  model,
+  weaponModel,
+  weapon = 'sword',
+  clip,
+  frame,
+}: {
+  model: THREE.Group;
+  weaponModel?: THREE.Object3D | null;
+  weapon?: V3WeaponId;
+  clip: V3Mesh2MotionCalibrationPriorityReviewClip;
+  frame: number;
+}): V3Mesh2MotionCalibrationPriorityFrameReport {
+  model.updateWorldMatrix(true, true);
+  weaponModel?.updateWorldMatrix(true, true);
+  const warnings: string[] = [];
+  const partGroups = model.userData.v3PartGroups as Record<string, THREE.Group> | undefined;
+  const rig = getV3Mesh2MotionDriverRig(model);
+  const normalizedTime = roundMetric(Math.max(0, Math.min(clip.durationFrames, frame)) / Math.max(1, clip.durationFrames));
+
+  if (!partGroups?.chest) {
+    return {
+      clipId: clip.id,
+      label: clip.label,
+      sourceClipName: clip.sourceClipName,
+      frame,
+      durationFrames: clip.durationFrames,
+      normalizedTime,
+      status: 'fail',
+      metrics: {
+        shoulderLateralDistance: { left: 0, right: 0 },
+        handLateralDistance: { left: 0, right: 0 },
+        handSymmetryDelta: 0,
+        shoulderSymmetryDelta: 0,
+        upperArmPartDrift: { left: 0, right: 0 },
+        forearmPartDrift: { left: 0, right: 0 },
+        footFloorClearance: 0,
+        weaponPrimaryGripDrift: 0,
+        weaponOffhandGripDrift: null,
+      },
+      warnings: ['missing V3 part groups'],
+    };
+  }
+
+  const modelRight = new THREE.Vector3(1, 0, 0)
+    .applyQuaternion(model.getWorldQuaternion(new THREE.Quaternion()))
+    .normalize();
+  const chestCenter = boxCenter(partGroups.chest);
+  const shoulderLeft = priorityPartGroup(partGroups, 'shoulderLeft', warnings);
+  const shoulderRight = priorityPartGroup(partGroups, 'shoulderRight', warnings);
+  const handLeft = priorityPartGroup(partGroups, 'handLeft', warnings);
+  const handRight = priorityPartGroup(partGroups, 'handRight', warnings);
+  const footLeft = priorityPartGroup(partGroups, 'footLeft', warnings);
+  const footRight = priorityPartGroup(partGroups, 'footRight', warnings);
+  const leftHandLateral = lateralDistanceFromChest(modelRight, chestCenter, handLeft);
+  const rightHandLateral = lateralDistanceFromChest(modelRight, chestCenter, handRight);
+  const leftShoulderLateral = lateralDistanceFromChest(modelRight, chestCenter, shoulderLeft);
+  const rightShoulderLateral = lateralDistanceFromChest(modelRight, chestCenter, shoulderRight);
+  const footFloorClearance = roundMetric(Math.min(
+    footLeft ? objectBox(footLeft).min.y : 0,
+    footRight ? objectBox(footRight).min.y : 0
+  ));
+  const diagnostics = buildV3Mesh2MotionCalibrationDiagnostics(model, weaponModel, weapon);
+
+  const metrics: V3Mesh2MotionCalibrationPriorityFrameMetrics = {
+    shoulderLateralDistance: {
+      left: leftShoulderLateral,
+      right: rightShoulderLateral,
+    },
+    handLateralDistance: {
+      left: leftHandLateral,
+      right: rightHandLateral,
+    },
+    handSymmetryDelta: roundMetric(Math.abs(leftHandLateral - rightHandLateral)),
+    shoulderSymmetryDelta: roundMetric(Math.abs(leftShoulderLateral - rightShoulderLateral)),
+    upperArmPartDrift: {
+      left: slotPartDrift(rig, 'upperArmLeft', warnings),
+      right: slotPartDrift(rig, 'upperArmRight', warnings),
+    },
+    forearmPartDrift: {
+      left: slotPartDrift(rig, 'forearmLeft', warnings),
+      right: slotPartDrift(rig, 'forearmRight', warnings),
+    },
+    footFloorClearance,
+    weaponPrimaryGripDrift: diagnostics.weapon?.primaryGripDrift ?? 0,
+    weaponOffhandGripDrift: diagnostics.weapon?.offhandGripDrift ?? null,
+  };
+
+  let status: 'pass' | 'warn' | 'fail' = 'pass';
+  const maxHandLateral = Math.max(metrics.handLateralDistance.left, metrics.handLateralDistance.right);
+  const minHandLateral = Math.min(metrics.handLateralDistance.left, metrics.handLateralDistance.right);
+  const maxUpperArmDrift = Math.max(metrics.upperArmPartDrift.left, metrics.upperArmPartDrift.right);
+  const maxForearmDrift = Math.max(metrics.forearmPartDrift.left, metrics.forearmPartDrift.right);
+  const offhandDrift = metrics.weaponOffhandGripDrift ?? 0;
+
+  status = addPriorityThresholdWarning(warnings, 'hand too close to torso', status, minHandLateral < 0.12, minHandLateral < 0.08);
+  status = addPriorityThresholdWarning(warnings, 'hand lateral spread high', status, maxHandLateral > 0.84, maxHandLateral > 0.92);
+  status = addPriorityThresholdWarning(warnings, 'hand symmetry delta high', status, metrics.handSymmetryDelta > 0.32, metrics.handSymmetryDelta > 0.42);
+  status = addPriorityThresholdWarning(warnings, 'shoulder symmetry delta high', status, metrics.shoulderSymmetryDelta > 0.18, metrics.shoulderSymmetryDelta > 0.28);
+  status = addPriorityThresholdWarning(warnings, 'upper-arm part drift high', status, maxUpperArmDrift > 0.82, maxUpperArmDrift > 1.05);
+  status = addPriorityThresholdWarning(warnings, 'forearm part drift high', status, maxForearmDrift > 0.82, maxForearmDrift > 1.05);
+  status = addPriorityThresholdWarning(warnings, 'foot floor clearance low', status, footFloorClearance < -0.04, footFloorClearance < -0.12);
+  status = addPriorityThresholdWarning(warnings, 'weapon primary grip drift high', status, metrics.weaponPrimaryGripDrift > 0.85, metrics.weaponPrimaryGripDrift > 1.1);
+  status = addPriorityThresholdWarning(warnings, 'weapon offhand grip drift high', status, offhandDrift > 1.6, offhandDrift > 1.9);
+
+  return {
+    clipId: clip.id,
+    label: clip.label,
+    sourceClipName: clip.sourceClipName,
+    frame,
+    durationFrames: clip.durationFrames,
+    normalizedTime,
+    status,
+    metrics,
+    warnings,
+  };
+}
+
+export function buildV3Mesh2MotionCalibrationPriorityReport(
+  samples: readonly V3Mesh2MotionCalibrationPriorityFrameReport[]
+): V3Mesh2MotionCalibrationPriorityReport {
+  const passCount = samples.filter((sample) => sample.status === 'pass').length;
+  const warnCount = samples.filter((sample) => sample.status === 'warn').length;
+  const failCount = samples.filter((sample) => sample.status === 'fail').length;
+  return {
+    kind: 'v3-mesh2motion-calibration-priority-report',
+    version: 1,
+    ready: failCount === 0,
+    summary: {
+      sampleCount: samples.length,
+      passCount,
+      warnCount,
+      failCount,
+      maxHandLateralDistance: priorityMax(samples, (sample) =>
+        Math.max(sample.metrics.handLateralDistance.left, sample.metrics.handLateralDistance.right)
+      ),
+      minHandLateralDistance: priorityMin(samples, (sample) =>
+        Math.min(sample.metrics.handLateralDistance.left, sample.metrics.handLateralDistance.right)
+      ),
+      maxShoulderLateralDistance: priorityMax(samples, (sample) =>
+        Math.max(sample.metrics.shoulderLateralDistance.left, sample.metrics.shoulderLateralDistance.right)
+      ),
+      maxHandSymmetryDelta: priorityMax(samples, (sample) => sample.metrics.handSymmetryDelta),
+      maxShoulderSymmetryDelta: priorityMax(samples, (sample) => sample.metrics.shoulderSymmetryDelta),
+      maxUpperArmPartDrift: priorityMax(samples, (sample) =>
+        Math.max(sample.metrics.upperArmPartDrift.left, sample.metrics.upperArmPartDrift.right)
+      ),
+      maxForearmPartDrift: priorityMax(samples, (sample) =>
+        Math.max(sample.metrics.forearmPartDrift.left, sample.metrics.forearmPartDrift.right)
+      ),
+      minFootFloorClearance: priorityMin(samples, (sample) => sample.metrics.footFloorClearance),
+      maxWeaponPrimaryGripDrift: priorityMax(samples, (sample) => sample.metrics.weaponPrimaryGripDrift),
+      maxWeaponOffhandGripDrift: priorityMax(samples, (sample) => sample.metrics.weaponOffhandGripDrift ?? 0),
+    },
+    samples: [...samples],
   };
 }

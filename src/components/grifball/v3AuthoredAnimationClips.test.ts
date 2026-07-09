@@ -92,6 +92,8 @@ describe('v3AuthoredAnimationClips', () => {
     assert.equal(sprint.motionSource, 'mesh2Motion');
     assert.equal(sprint.mixamoClipId, 'Sprint_Loop');
     assert.equal(sprint.pose.mesh2MotionDriverPose?.sourceClipName, 'Sprint_Loop');
+    assert.equal(sprint.pose.mesh2MotionDriverPose?.cleanup?.trackId, 'clean_sprint:Sprint_Loop');
+    assert.equal(sprint.pose.mesh2MotionDriverPose?.cleanup?.driverJointAdjustmentCount, 0);
     assert.ok(sprint.pose.mesh2MotionDriverPose?.joints.pelvis);
     assert.ok(sprint.pose.mesh2MotionDriverPose?.joints.hand_r);
     assert.ok(sprint.pose.jointQuaternions.thighLeft);
@@ -105,6 +107,7 @@ describe('v3AuthoredAnimationClips', () => {
     const slide = sampleV3AuthoredClip('clean_slide', { normalizedTime: 0.5 });
     assert.equal(slide.motionSource, 'mesh2Motion');
     assert.equal(slide.mixamoClipId, 'Slide_Loop');
+    assert.equal(slide.pose.mesh2MotionDriverPose?.cleanup?.trackId, 'clean_slide:Slide_Loop');
     assert.ok(slide.pose.jointQuaternions.pelvis);
     assert.ok(slide.pose.jointOffsets?.spine3);
     assert.ok((slide.pose.rootOffset?.[1] ?? 0) < 0);
@@ -112,6 +115,7 @@ describe('v3AuthoredAnimationClips', () => {
     const carry = sampleV3AuthoredClip('clean_sword_carry', { normalizedTime: 0.25 });
     assert.equal(carry.motionSource, 'mesh2Motion');
     assert.equal(carry.mixamoClipId, 'Sword_Idle');
+    assert.equal(carry.pose.mesh2MotionDriverPose?.cleanup?.trackId, 'clean_sword_carry:Sword_Idle');
     assert.equal(carry.weaponPose?.source, 'mixamoReferenceClip');
 
     const lunge = sampleV3AuthoredClip('clean_sword_lunge', { normalizedTime: 0.5 });

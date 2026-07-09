@@ -61,6 +61,44 @@ export const recordCombatantModelObservation = (
   observe(getOrCreatePlayerModel(state.aiMatchContext, botId, getObservationModelOptions(state)));
 };
 
+const recordAIControlledCombatantObservation = (
+  state: GrifballRuntimeState,
+  combatantId: string,
+  observe: PlayerModelObserver
+) => {
+  if (combatantId === LOCAL_PLAYER_ID) {
+    recordLocalPlayerModelObservation(state, observe);
+    return;
+  }
+
+  if (state.otherPlayers.get(combatantId)?.controller !== 'ai') {
+    return;
+  }
+
+  recordCombatantModelObservation(state, combatantId, observe);
+};
+
+export const recordCombatantDamageDealtObservation = (
+  state: GrifballRuntimeState,
+  combatantId: string
+) => {
+  recordAIControlledCombatantObservation(state, combatantId, (model) => observePlayerDamageDealt(model));
+};
+
+export const recordCombatantDamageReceivedObservation = (
+  state: GrifballRuntimeState,
+  combatantId: string
+) => {
+  recordAIControlledCombatantObservation(state, combatantId, (model) => observePlayerDamageReceived(model));
+};
+
+export const recordCombatantCounterSuccessObservation = (
+  state: GrifballRuntimeState,
+  combatantId: string
+) => {
+  recordAIControlledCombatantObservation(state, combatantId, (model) => observePlayerCounter(model, true));
+};
+
 export const recordLocalPlayerLungeEndObservation = (
   state: GrifballRuntimeState,
   hit: boolean

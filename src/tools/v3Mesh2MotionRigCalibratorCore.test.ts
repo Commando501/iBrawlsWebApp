@@ -9,7 +9,10 @@ import {
   V3_MESH2MOTION_CALIBRATION_LIMITS,
   V3_MESH2MOTION_DRIVER_JOINT_NAMES,
   V3_MESH2MOTION_DEFAULT_CALIBRATION,
+  V3_MESH2MOTION_PRIORITY_REVIEW_CLIPS,
+  buildV3Mesh2MotionCalibrationPriorityReport,
   buildV3Mesh2MotionCalibrationDiagnostics,
+  captureV3Mesh2MotionCalibrationPriorityFrame,
   computeDriverJointAdjustmentFromWorldTransform,
   computePartBindingAdjustmentFromWorldTransform,
   computeV3Mesh2MotionSocketCalibrationFromWorldTransform,
@@ -24,6 +27,78 @@ import * as CalibratorCore from './v3Mesh2MotionRigCalibratorCore';
 import { V3_CHARACTER_SLOT_IDS } from '../components/v3/v3ModelTypes';
 
 describe('v3Mesh2MotionRigCalibratorCore', () => {
+  const samplePriorityReviewReport = (
+    calibration = V3_MESH2MOTION_DEFAULT_CALIBRATION
+  ): ReturnType<typeof buildV3Mesh2MotionCalibrationPriorityReport> => {
+    const scene = new THREE.Scene();
+    const meshRig = createCombatantMeshRig(scene, 192, false, { modelSystem: 'v3' }, {
+      v3QualityTier: 'desktop',
+      v3Distance: 0,
+      v3SourceFidelity: 'exact',
+    });
+    const refs = createInitialGrifballThreeRefs();
+    refs.scene = scene;
+
+    CalibratorCore.setV3Mesh2MotionCalibrationOverride(calibration);
+    try {
+      const samples = V3_MESH2MOTION_PRIORITY_REVIEW_CLIPS.flatMap((clip) =>
+        clip.frames.map((frame) => {
+          const normalizedTime = frame / Math.max(1, clip.durationFrames);
+          animateV3CombatantModel({
+            refs,
+            mesh: meshRig.group,
+            vel: new THREE.Vector3(4, 0, 0),
+            yaw: 0,
+            hp: 100,
+            activeWeapon: clip.activeWeapon,
+            weaponState: clip.weaponState,
+            weaponTimer: normalizedTime,
+            dt: 1,
+            settings: {},
+            animationClockMs: normalizedTime * 1000,
+            isLocalV3Animation: true,
+            v3PoseAlphaOverride: 1,
+            v3AnimationAuthority: 'cleanRig',
+            v3AuthoredClipId: clip.id,
+            v3AuthoredNormalizedTime: normalizedTime,
+            isSliding: clip.isSliding,
+            isSprinting: clip.isSprinting,
+            isLunging: clip.isLunging,
+          });
+          animateV3WeaponMeshes({
+            hammerModel: meshRig.hammer,
+            swordModel: meshRig.sword,
+            pistolModel: meshRig.pistol,
+            activeWeapon: clip.activeWeapon,
+            weaponState: clip.weaponState,
+            weaponTimer: normalizedTime,
+            isLunging: clip.isLunging === true,
+            dt: 1,
+            settings: {},
+            combatantModel: meshRig.group,
+            v3AnimationAuthority: 'cleanRig',
+            v3AuthoredClipId: clip.id,
+            v3AuthoredNormalizedTime: normalizedTime,
+          });
+          meshRig.hammer.visible = false;
+          meshRig.sword.visible = clip.id.startsWith('clean_sword');
+          if (meshRig.pistol) meshRig.pistol.visible = false;
+          meshRig.group.updateWorldMatrix(true, true);
+          meshRig.sword.updateWorldMatrix(true, true);
+          return captureV3Mesh2MotionCalibrationPriorityFrame({
+            model: meshRig.group,
+            weaponModel: meshRig.sword,
+            clip,
+            frame,
+          });
+        })
+      );
+      return buildV3Mesh2MotionCalibrationPriorityReport(samples);
+    } finally {
+      CalibratorCore.setV3Mesh2MotionCalibrationOverride(null);
+    }
+  };
+
   it('normalizes v2 calibration values and round-trips editor JSON', () => {
     const normalized = normalizeV3Mesh2MotionCalibration({
       version: 'v3-mesh2motion-calibration/v2',
@@ -170,6 +245,66 @@ describe('v3Mesh2MotionRigCalibratorCore', () => {
     assert.ok(partTargets.some((target) => target.id === 'handRight' && target.sourceJointName === 'hand_r'));
     assert.deepEqual(socketTargets.map((target) => target.id).sort(), ['leftHandGrip', 'rightHandGrip']);
   });
+
+  it('defines Mesh2Motion priority review clips and audit frames', () => {
+    assert.deepEqual(
+      V3_MESH2MOTION_PRIORITY_REVIEW_CLIPS.map((clip) => [clip.id, clip.sourceClipName, clip.frames]),
+      [
+        ['clean_sprint', 'Sprint_Loop', [0, 23, 45, 68, 82, 90]],
+        ['clean_slide', 'Slide_Loop', [0, 18, 36, 54, 72]],
+        ['clean_sword_carry', 'Sword_Idle', [0, 30, 60, 90]],
+        ['clean_sword_lunge', 'Sword_Dash_RM', [0, 15, 30, 45, 60]],
+        ['clean_sword_slash', 'Sword_Regular_B', [0, 15, 30, 45, 60]],
+      ]
+    );
+  });
+
+  it('summarizes priority review samples with arm, drift, floor, and socket metrics', () => {
+    const report = samplePriorityReviewReport();
+    const expectedSampleCount = V3_MESH2MOTION_PRIORITY_REVIEW_CLIPS
+      .reduce((sum, clip) => sum + clip.frames.length, 0);
+
+    assert.equal(report.kind, 'v3-mesh2motion-calibration-priority-report');
+    assert.equal(report.samples.length, expectedSampleCount);
+    assert.equal(report.summary.sampleCount, expectedSampleCount);
+    assert.equal(
+      report.summary.passCount + report.summary.warnCount + report.summary.failCount,
+      expectedSampleCount
+    );
+    assert.ok(report.samples.some((sample) => sample.clipId === 'clean_sprint' && sample.frame === 82));
+    assert.equal(report.samples.every((sample) => sample.sourceClipName.length > 0), true);
+    assert.equal(Number.isFinite(report.summary.maxHandLateralDistance), true);
+    assert.equal(Number.isFinite(report.summary.maxUpperArmPartDrift), true);
+    assert.equal(Number.isFinite(report.summary.maxForearmPartDrift), true);
+    assert.equal(Number.isFinite(report.summary.minFootFloorClearance), true);
+    assert.equal(Number.isFinite(report.summary.maxWeaponPrimaryGripDrift), true);
+  });
+
+  it('narrows global arm placement versus the legacy spread without worsening weapon socket drift', () => {
+    const legacy = normalizeV3Mesh2MotionCalibration({
+      ...V3_MESH2MOTION_DEFAULT_CALIBRATION,
+      armSpread: {
+        left: 0.26,
+        right: 0.26,
+      },
+    });
+    const legacyReport = samplePriorityReviewReport(legacy);
+    const defaultReport = samplePriorityReviewReport(V3_MESH2MOTION_DEFAULT_CALIBRATION);
+
+    assert.ok(
+      defaultReport.summary.maxHandLateralDistance <= legacyReport.summary.maxHandLateralDistance - 0.06,
+      `default max hand lateral ${defaultReport.summary.maxHandLateralDistance} should improve legacy ${legacyReport.summary.maxHandLateralDistance}`
+    );
+    assert.ok(
+      defaultReport.summary.minHandLateralDistance >= 0.1,
+      `default min hand lateral ${defaultReport.summary.minHandLateralDistance} should keep hands readable outside the torso`
+    );
+    assert.ok(
+      defaultReport.summary.maxWeaponPrimaryGripDrift <= legacyReport.summary.maxWeaponPrimaryGripDrift + 0.001,
+      `default primary socket drift ${defaultReport.summary.maxWeaponPrimaryGripDrift} should not regress legacy ${legacyReport.summary.maxWeaponPrimaryGripDrift}`
+    );
+  });
+
 
   it('converts dragged world transforms into driver, part-binding, and weapon-socket adjustments', () => {
     const parent = new THREE.Group();
@@ -600,6 +735,9 @@ describe('v3Mesh2MotionRigCalibratorCore', () => {
     assert.equal(html.includes('target-sx'), true);
     assert.equal(html.includes('Auto Relocate'), true);
     assert.equal(html.includes('Resize Target'), true);
+    assert.equal(html.includes('Priority Review'), true);
+    assert.equal(html.includes('priority-next-frame'), true);
+    assert.equal(html.includes('priority-report'), true);
     assert.equal(html.includes('right-hand socket only'), false);
     assert.equal(viteConfig.includes('v3Mesh2MotionRigCalibrator'), true);
   });

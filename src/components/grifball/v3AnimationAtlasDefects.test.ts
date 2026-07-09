@@ -363,6 +363,20 @@ describe('v3AnimationAtlasDefects', () => {
     assert.equal(hammer.motionRetention, undefined);
   });
 
+  it('includes Mesh2Motion cleanup track metadata for cleanup-backed atlas cases', () => {
+    const sprint = analyzeV3AnimationAtlasCaseDefects('sprint', { mode: 'normalizedReview' });
+    const slide = analyzeV3AnimationAtlasCaseDefects('slide', { mode: 'normalizedReview' });
+    const swordSlash = analyzeV3AnimationAtlasCaseDefects('swordSlash', { mode: 'normalizedReview' });
+
+    assert.equal(sprint.mesh2MotionCleanupTrackId, 'clean_sprint:Sprint_Loop');
+    assert.equal(sprint.mesh2MotionCleanupSourceClipName, 'Sprint_Loop');
+    assert.equal(sprint.mesh2MotionCleanupDriverJointAdjustmentCount, 0);
+    assert.equal(sprint.mesh2MotionCleanupPartBindingAdjustmentCount, 0);
+    assert.equal(sprint.mesh2MotionCleanupWeaponSocketAdjustmentCount, 0);
+    assert.equal(slide.mesh2MotionCleanupTrackId, 'clean_slide:Slide_Loop');
+    assert.equal(swordSlash.mesh2MotionCleanupTrackId, 'clean_sword_slash:Sword_Regular_B');
+  });
+
   it('keeps walk visibly free of lower-body seam tears in every atlas view', () => {
     const report = analyzeV3AnimationAtlasCaseDefects('walk', { mode: 'normalizedReview' });
 

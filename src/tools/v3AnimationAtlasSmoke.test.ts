@@ -62,6 +62,18 @@ describe('v3AnimationAtlasSmoke', () => {
     assert.equal(sample.cleanRigReady, true);
     assert.equal(sample.atlasEditorExportVersion, 1);
     assert.match(sample.motionSourceLabel ?? '', /retargeted Mixamo clean motion/);
+
+    const sprint = sampleV3AnimationAtlasCase(
+      'sprint',
+      createV3AnimationAtlasFrameState(45, 90, 60),
+      'normalizedReview'
+    );
+    assert.equal(sprint.cleanMotionSource, 'mesh2Motion');
+    assert.equal(sprint.cleanMixamoClipId, 'Sprint_Loop');
+    assert.equal(sprint.mesh2MotionCleanupTrackId, 'clean_sprint:Sprint_Loop');
+    assert.equal(sprint.mesh2MotionCleanupDriverJointAdjustmentCount, 0);
+    assert.equal(sprint.mesh2MotionCleanupPartBindingAdjustmentCount, 0);
+    assert.equal(sprint.mesh2MotionCleanupWeaponSocketAdjustmentCount, 0);
   });
 
   test('bind rest pose mode reports the authored Mesh2Motion T-pose instead of Mixamo idle', () => {

@@ -32,6 +32,10 @@ import {
   type V3RetargetJointAlignmentReport,
 } from './v3MixamoRetarget';
 import type { V3WeaponReferenceClipId } from './v3WeaponReferenceClips';
+import {
+  mapV3AtlasCaseToAuthoredClip,
+  sampleV3AuthoredClip,
+} from './v3AuthoredAnimationClips';
 
 export type V3AnimationAtlasDefectViewId = 'front' | 'left' | 'rear' | 'right';
 export type V3AnimationAtlasDefectMode = 'normalizedReview' | 'runtimeSimulation';
@@ -128,6 +132,11 @@ export interface V3AnimationAtlasCaseDefectReport {
   clipReady?: boolean;
   motionRetention?: V3RetargetedMotionRetentionReport;
   motionSourceLabel?: string;
+  mesh2MotionCleanupTrackId?: string;
+  mesh2MotionCleanupSourceClipName?: string;
+  mesh2MotionCleanupDriverJointAdjustmentCount?: number;
+  mesh2MotionCleanupPartBindingAdjustmentCount?: number;
+  mesh2MotionCleanupWeaponSocketAdjustmentCount?: number;
   sampledFrameFractions: number[];
   views: V3AnimationAtlasViewDefectReport[];
 }
@@ -870,6 +879,10 @@ export function analyzeV3AnimationAtlasCaseDefects(
   const motionRetention = clipMetadata?.clipId
     ? analyzeV3RetargetedMotionRetention(clipMetadata.clipId)
     : undefined;
+  const cleanupSample = sampleV3AuthoredClip(
+    mapV3AtlasCaseToAuthoredClip(caseId),
+    { normalizedTime: 0 }
+  ).pose.mesh2MotionDriverPose?.cleanup;
   const continuity = analyzeSlotContinuitySamples(caseId, mode, options);
   const baseMetrics: V3AnimationAtlasDefectMetrics = {
     visibleWeapon,
@@ -969,6 +982,13 @@ export function analyzeV3AnimationAtlasCaseDefects(
       clipReady: clipMetadata.ready,
       ...(motionRetention ? { motionRetention } : {}),
       motionSourceLabel: clipMetadata.label,
+    } : {}),
+    ...(cleanupSample ? {
+      mesh2MotionCleanupTrackId: cleanupSample.trackId,
+      mesh2MotionCleanupSourceClipName: cleanupSample.sourceClipName,
+      mesh2MotionCleanupDriverJointAdjustmentCount: cleanupSample.driverJointAdjustmentCount,
+      mesh2MotionCleanupPartBindingAdjustmentCount: cleanupSample.partBindingAdjustmentCount,
+      mesh2MotionCleanupWeaponSocketAdjustmentCount: cleanupSample.weaponSocketAdjustmentCount,
     } : {}),
     sampledFrameFractions: continuity.sampledFrameFractions,
     views,

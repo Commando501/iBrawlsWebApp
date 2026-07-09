@@ -168,6 +168,11 @@ export interface V3AnimationAtlasSample {
   manualClipLabel?: string;
   manualClipExport?: V3AuthoredClipExport;
   bindPoseReview?: boolean;
+  mesh2MotionCleanupTrackId?: string;
+  mesh2MotionCleanupSourceClipName?: string;
+  mesh2MotionCleanupDriverJointAdjustmentCount?: number;
+  mesh2MotionCleanupPartBindingAdjustmentCount?: number;
+  mesh2MotionCleanupWeaponSocketAdjustmentCount?: number;
 }
 
 export interface V3AnimationAtlasSampleOptions {
@@ -552,6 +557,7 @@ export function sampleV3AnimationAtlasCase(
     WEAPON_REVIEW_CASES.has(caseId) ? `${authoredClipId} clean rig playback` : undefined,
     weaponReferenceClip ? `${weaponReferenceClip.label} Mixamo weapon reference overlay` : undefined,
   ].filter(Boolean).join(' + ');
+  const mesh2MotionCleanup = cleanSample.pose.mesh2MotionDriverPose?.cleanup;
 
   return {
     caseId,
@@ -580,6 +586,13 @@ export function sampleV3AnimationAtlasCase(
     ...(cleanSample.mixamoClipId ? { cleanMixamoClipId: cleanSample.mixamoClipId } : {}),
     ...(typeof cleanSample.sourceNormalizedTime === 'number' ? {
       cleanSourceNormalizedTime: cleanSample.sourceNormalizedTime,
+    } : {}),
+    ...(mesh2MotionCleanup ? {
+      mesh2MotionCleanupTrackId: mesh2MotionCleanup.trackId,
+      mesh2MotionCleanupSourceClipName: mesh2MotionCleanup.sourceClipName,
+      mesh2MotionCleanupDriverJointAdjustmentCount: mesh2MotionCleanup.driverJointAdjustmentCount,
+      mesh2MotionCleanupPartBindingAdjustmentCount: mesh2MotionCleanup.partBindingAdjustmentCount,
+      mesh2MotionCleanupWeaponSocketAdjustmentCount: mesh2MotionCleanup.weaponSocketAdjustmentCount,
     } : {}),
     cleanRigReady: true,
     jointSeamWarnings: [],

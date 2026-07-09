@@ -10,11 +10,13 @@ import {
 } from '../components/grifball/v3Mesh2MotionDriverRig';
 import { V3_MESH2MOTION_CLIP_SET } from '../components/grifball/v3Mesh2MotionClips.generated';
 import { createInitialGrifballThreeRefs } from '../components/grifball/threeRefs';
-import type { V3AuthoredClipId } from '../components/grifball/v3AuthoredAnimationClips';
-import { type V3CharacterSlotId, type V3WeaponId } from '../components/v3/v3ModelTypes';
+import { type V3CharacterSlotId } from '../components/v3/v3ModelTypes';
 import {
   V3_MESH2MOTION_DEFAULT_CALIBRATION,
+  V3_MESH2MOTION_PRIORITY_REVIEW_CLIPS,
   buildV3Mesh2MotionCalibrationDiagnostics,
+  buildV3Mesh2MotionCalibrationPriorityReport,
+  captureV3Mesh2MotionCalibrationPriorityFrame,
   computeDriverJointAdjustmentFromWorldTransform,
   computePartBindingAdjustmentFromAnchoredWorldTransform,
   computeV3Mesh2MotionPartBindingAutoRelocateAdjustment,
@@ -27,29 +29,18 @@ import {
   serializeV3Mesh2MotionCalibration,
   setV3Mesh2MotionCalibrationOverride,
   type V3Mesh2MotionCalibration,
+  type V3Mesh2MotionCalibrationPriorityReviewClip,
   type V3Mesh2MotionCalibrationTargetDescriptor,
 } from './v3Mesh2MotionRigCalibratorCore';
 
-type Mesh2MotionPreviewClipId = Extract<
-  V3AuthoredClipId,
-  'clean_sprint' | 'clean_slide' | 'clean_sword_carry' | 'clean_sword_lunge' | 'clean_sword_slash'
->;
+type Mesh2MotionPreviewClipId = V3Mesh2MotionCalibrationPriorityReviewClip['id'];
 
 type EditMode = V3Mesh2MotionCalibrationTargetDescriptor['kind'];
 type TransformMode = 'translate' | 'rotate' | 'scale';
 type CalibrationTuple = [number, number, number];
 type CalibrationTransform = { position: CalibrationTuple; rotation: CalibrationTuple; scale?: CalibrationTuple };
 
-interface PreviewClipConfig {
-  id: Mesh2MotionPreviewClipId;
-  label: string;
-  durationFrames: number;
-  activeWeapon: V3WeaponId;
-  weaponState: string;
-  isSliding?: boolean;
-  isSprinting?: boolean;
-  isLunging?: boolean;
-}
+type PreviewClipConfig = V3Mesh2MotionCalibrationPriorityReviewClip;
 
 const LOCAL_STORAGE_KEY = 'ibrawls_v3_mesh2motion_rig_calibration';
 const ZERO_TRANSFORM: CalibrationTransform = { position: [0, 0, 0], rotation: [0, 0, 0] };
@@ -60,46 +51,9 @@ const MODE_LABELS: Record<EditMode, string> = {
   weaponSocket: 'Weapon Socket',
 };
 
-const CLIPS: Record<Mesh2MotionPreviewClipId, PreviewClipConfig> = {
-  clean_sprint: {
-    id: 'clean_sprint',
-    label: 'Sprint',
-    durationFrames: 60,
-    activeWeapon: 'sword',
-    weaponState: 'ready',
-    isSprinting: true,
-  },
-  clean_slide: {
-    id: 'clean_slide',
-    label: 'Slide',
-    durationFrames: 72,
-    activeWeapon: 'sword',
-    weaponState: 'ready',
-    isSliding: true,
-  },
-  clean_sword_carry: {
-    id: 'clean_sword_carry',
-    label: 'Sword Carry',
-    durationFrames: 60,
-    activeWeapon: 'sword',
-    weaponState: 'ready',
-  },
-  clean_sword_lunge: {
-    id: 'clean_sword_lunge',
-    label: 'Sword Lunge',
-    durationFrames: 60,
-    activeWeapon: 'sword',
-    weaponState: 'ready',
-    isLunging: true,
-  },
-  clean_sword_slash: {
-    id: 'clean_sword_slash',
-    label: 'Sword Slash',
-    durationFrames: 60,
-    activeWeapon: 'sword',
-    weaponState: 'slashing',
-  },
-};
+const CLIPS: Record<Mesh2MotionPreviewClipId, PreviewClipConfig> = Object.fromEntries(
+  V3_MESH2MOTION_PRIORITY_REVIEW_CLIPS.map((clip) => [clip.id, clip])
+) as Record<Mesh2MotionPreviewClipId, PreviewClipConfig>;
 
 const canvas = document.getElementById('calibrator-canvas') as HTMLCanvasElement;
 const statusElement = document.getElementById('status') as HTMLSpanElement;
@@ -118,6 +72,10 @@ const frameInput = document.getElementById('frame-input') as HTMLInputElement;
 const durationInput = document.getElementById('duration-input') as HTMLInputElement;
 const speedInput = document.getElementById('speed-input') as HTMLInputElement;
 const timelineInput = document.getElementById('timeline') as HTMLInputElement;
+const priorityPrevClipButton = document.getElementById('priority-prev-clip') as HTMLButtonElement;
+const priorityNextClipButton = document.getElementById('priority-next-clip') as HTMLButtonElement;
+const priorityPrevFrameButton = document.getElementById('priority-prev-frame') as HTMLButtonElement;
+const priorityNextFrameButton = document.getElementById('priority-next-frame') as HTMLButtonElement;
 const leftSpreadInput = document.getElementById('left-spread') as HTMLInputElement;
 const rightSpreadInput = document.getElementById('right-spread') as HTMLInputElement;
 const modeButtons: Record<EditMode, HTMLButtonElement> = {
@@ -145,6 +103,7 @@ const transformRotateButton = document.getElementById('transform-rotate') as HTM
 const transformScaleButton = document.getElementById('transform-scale') as HTMLButtonElement;
 const targetSummaryElement = document.getElementById('target-summary') as HTMLPreElement;
 const diagnosticsElement = document.getElementById('diagnostics') as HTMLPreElement;
+const priorityReportElement = document.getElementById('priority-report') as HTMLPreElement;
 const jsonOutput = document.getElementById('json-output') as HTMLTextAreaElement;
 
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -242,6 +201,9 @@ let calibration: V3Mesh2MotionCalibration = loadLocalCalibration();
 let editMode: EditMode = 'partBinding';
 let transformMode: TransformMode = 'translate';
 let currentFrame = 30;
+let priorityClipIndex = V3_MESH2MOTION_PRIORITY_REVIEW_CLIPS.findIndex((clip) => clip.id === 'clean_sprint');
+if (priorityClipIndex < 0) priorityClipIndex = 0;
+let priorityFrameIndex = 0;
 let playing = false;
 let frameCarry = 0;
 let lastTimeMs = 0;
@@ -272,6 +234,47 @@ const selectedClip = (): PreviewClipConfig =>
 
 const safeFrame = (frame: number): number =>
   Math.max(0, Math.min(selectedClip().durationFrames, Math.round(Number.isFinite(frame) ? frame : 0)));
+
+const priorityClip = (): PreviewClipConfig =>
+  V3_MESH2MOTION_PRIORITY_REVIEW_CLIPS[priorityClipIndex] ?? V3_MESH2MOTION_PRIORITY_REVIEW_CLIPS[0];
+
+const syncPrioritySelectionFromPreview = (): void => {
+  const selected = selectedClip();
+  const clipIndex = V3_MESH2MOTION_PRIORITY_REVIEW_CLIPS.findIndex((clip) => clip.id === selected.id);
+  if (clipIndex >= 0) {
+    priorityClipIndex = clipIndex;
+    const frames = priorityClip().frames;
+    const exactFrameIndex = frames.findIndex((frame) => frame === currentFrame);
+    if (exactFrameIndex >= 0) priorityFrameIndex = exactFrameIndex;
+  }
+};
+
+function applyPriorityReviewSelection(message: string): void {
+  const clip = priorityClip();
+  const frames = clip.frames;
+  priorityFrameIndex = Math.max(0, Math.min(frames.length - 1, priorityFrameIndex));
+  clipSelect.value = clip.id;
+  currentFrame = frames[priorityFrameIndex] ?? 0;
+  updateClipControls();
+  timelineInput.value = String(currentFrame);
+  frameInput.value = String(currentFrame);
+  applyPreview(message);
+}
+
+function stepPriorityClip(delta: number): void {
+  setPlaying(false);
+  const count = V3_MESH2MOTION_PRIORITY_REVIEW_CLIPS.length;
+  priorityClipIndex = (priorityClipIndex + delta + count) % count;
+  priorityFrameIndex = 0;
+  applyPriorityReviewSelection(`Priority Review: ${priorityClip().label}`);
+}
+
+function stepPriorityFrame(delta: number): void {
+  setPlaying(false);
+  const frames = priorityClip().frames;
+  priorityFrameIndex = (priorityFrameIndex + delta + frames.length) % frames.length;
+  applyPriorityReviewSelection(`Priority Review frame ${frames[priorityFrameIndex]}`);
+}
 
 function loadLocalCalibration(): V3Mesh2MotionCalibration {
   try {
@@ -759,6 +762,38 @@ function formatDiagnostics(): string {
   ].join('\n');
 }
 
+function currentPriorityReport() {
+  const clip = selectedClip();
+  const sample = captureV3Mesh2MotionCalibrationPriorityFrame({
+    model: meshRig.group,
+    weaponModel: meshRig.sword,
+    clip,
+    frame: currentFrame,
+  });
+  return buildV3Mesh2MotionCalibrationPriorityReport([sample]);
+}
+
+function formatPriorityReport(): string {
+  const report = currentPriorityReport();
+  const sample = report.samples[0];
+  if (!sample) return 'Priority review unavailable';
+  const priorityFrames = selectedClip().frames.join(', ');
+  return [
+    `${sample.status.toUpperCase()} ${sample.label} | ${sample.sourceClipName} | frame ${sample.frame}/${sample.durationFrames}`,
+    `Priority frames: ${priorityFrames}`,
+    `Report counts: pass ${report.summary.passCount} | warn ${report.summary.warnCount} | fail ${report.summary.failCount}`,
+    `Hand lateral L/R: ${sample.metrics.handLateralDistance.left.toFixed(3)} / ${sample.metrics.handLateralDistance.right.toFixed(3)}`,
+    `Shoulder lateral L/R: ${sample.metrics.shoulderLateralDistance.left.toFixed(3)} / ${sample.metrics.shoulderLateralDistance.right.toFixed(3)}`,
+    `Hand symmetry delta: ${sample.metrics.handSymmetryDelta.toFixed(3)}`,
+    `Part drift upper L/R: ${sample.metrics.upperArmPartDrift.left.toFixed(3)} / ${sample.metrics.upperArmPartDrift.right.toFixed(3)}`,
+    `Part drift forearm L/R: ${sample.metrics.forearmPartDrift.left.toFixed(3)} / ${sample.metrics.forearmPartDrift.right.toFixed(3)}`,
+    `Foot floor clearance: ${sample.metrics.footFloorClearance.toFixed(3)}`,
+    `Weapon primary grip drift: ${sample.metrics.weaponPrimaryGripDrift.toFixed(3)}`,
+    `Weapon offhand grip drift: ${sample.metrics.weaponOffhandGripDrift === null ? 'n/a' : sample.metrics.weaponOffhandGripDrift.toFixed(3)}`,
+    sample.warnings.length ? `Warnings: ${sample.warnings.join(', ')}` : 'Warnings: none',
+  ].join('\n');
+}
+
 function updateOverlays(): void {
   const rig = getV3Mesh2MotionDriverRig(meshRig.group);
   updateSkeletonOverlay(rig);
@@ -821,6 +856,7 @@ function applyPreview(message?: string): void {
   syncInputsFromCalibration();
   targetSummaryElement.textContent = formatTargetSummary();
   diagnosticsElement.textContent = formatDiagnostics();
+  priorityReportElement.textContent = formatPriorityReport();
   if (message) setStatus(message);
 }
 
@@ -842,6 +878,7 @@ function setPlaying(next: boolean): void {
 function stepFrame(amount: number, message?: string): void {
   setPlaying(false);
   currentFrame = safeFrame(currentFrame + amount);
+  syncPrioritySelectionFromPreview();
   timelineInput.value = String(currentFrame);
   frameInput.value = String(currentFrame);
   applyPreview(message);
@@ -949,16 +986,19 @@ function resizeViewport(): void {
 }
 
 clipSelect.addEventListener('change', () => {
+  syncPrioritySelectionFromPreview();
   updateClipControls();
   applyPreview(`Loaded ${selectedClip().label}`);
 });
 timelineInput.addEventListener('input', () => {
   currentFrame = safeFrame(numberValue(timelineInput));
+  syncPrioritySelectionFromPreview();
   frameInput.value = String(currentFrame);
   applyPreview();
 });
 frameInput.addEventListener('change', () => {
   currentFrame = safeFrame(numberValue(frameInput));
+  syncPrioritySelectionFromPreview();
   timelineInput.value = String(currentFrame);
   applyPreview();
 });
@@ -970,6 +1010,18 @@ prevFrameButton.addEventListener('click', () => {
 });
 nextFrameButton.addEventListener('click', () => {
   stepFrame(1);
+});
+priorityPrevClipButton.addEventListener('click', () => {
+  stepPriorityClip(-1);
+});
+priorityNextClipButton.addEventListener('click', () => {
+  stepPriorityClip(1);
+});
+priorityPrevFrameButton.addEventListener('click', () => {
+  stepPriorityFrame(-1);
+});
+priorityNextFrameButton.addEventListener('click', () => {
+  stepPriorityFrame(1);
 });
 
 for (const input of [leftSpreadInput, rightSpreadInput]) {
@@ -1117,5 +1169,6 @@ requestAnimationFrame(animate);
     return calibration;
   },
   diagnostics: () => buildV3Mesh2MotionCalibrationDiagnostics(meshRig.group, meshRig.sword, 'sword'),
+  priorityReport: () => currentPriorityReport(),
   targets: () => listV3Mesh2MotionCalibrationTargets(),
 };

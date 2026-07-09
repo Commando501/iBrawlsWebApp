@@ -6,9 +6,12 @@ import {
   getV3Mesh2MotionCalibration,
   type V3Mesh2MotionCalibration,
   type V3Mesh2MotionCalibrationVec3,
-  type V3Mesh2MotionPartBindingCalibration,
   type V3Mesh2MotionTransformCalibration,
 } from './v3Mesh2MotionCalibration';
+import type {
+  V3Mesh2MotionCleanupSample,
+  V3Mesh2MotionPartBindingCleanup,
+} from './v3Mesh2MotionCleanupTracks';
 import {
   V3_MESH2MOTION_SLOT_DRIVER_JOINTS,
 } from './v3Mesh2MotionSlotBindings';
@@ -27,6 +30,7 @@ export interface V3Mesh2MotionDriverPose {
   sourceClipName: string;
   sourceNormalizedTime: number;
   joints: Record<string, V3Mesh2MotionDriverJointPose>;
+  cleanup?: V3Mesh2MotionCleanupSample;
 }
 
 export interface V3Mesh2MotionDriverJoint {
@@ -72,6 +76,7 @@ export interface V3Mesh2MotionDriverApplyReport {
   warnings: string[];
   jointCount: number;
   partBindingCount: number;
+  clipCleanupTrackId?: string;
 }
 
 export interface V3Mesh2MotionDriverCalibrationReport {
@@ -82,6 +87,12 @@ export interface V3Mesh2MotionDriverCalibrationReport {
   partBindingAdjustmentCount: number;
   postBindPartAdjustments: number;
   weaponSocketAdjustmentCount: number;
+  clipCleanupTrackId?: string;
+  clipCleanupSourceClipName?: string;
+  clipCleanupNormalizedTime?: number;
+  clipCleanupDriverJointAdjustmentCount: number;
+  clipCleanupPartBindingAdjustmentCount: number;
+  clipCleanupWeaponSocketAdjustmentCount: number;
 }
 
 export interface V3Mesh2MotionDriverWeaponSocketWorldTransform {
@@ -237,7 +248,7 @@ const quaternionFromRotationTuple = (rotation: V3Mesh2MotionCalibrationVec3): TH
   new THREE.Quaternion().setFromEuler(new THREE.Euler(...rotation, 'XYZ')).normalize();
 
 const adjustmentMatrix = (
-  adjustment: V3Mesh2MotionTransformCalibration | V3Mesh2MotionPartBindingCalibration
+  adjustment: V3Mesh2MotionTransformCalibration | V3Mesh2MotionPartBindingCleanup
 ): THREE.Matrix4 =>
   new THREE.Matrix4().compose(
     vec3FromTuple(adjustment.position),
@@ -259,6 +270,12 @@ const applyDriverCalibration = (
     partBindingAdjustmentCount: 0,
     postBindPartAdjustments: 0,
     weaponSocketAdjustmentCount: 0,
+    clipCleanupTrackId: pose.cleanup?.trackId,
+    clipCleanupSourceClipName: pose.cleanup?.sourceClipName,
+    clipCleanupNormalizedTime: pose.cleanup?.normalizedTime,
+    clipCleanupDriverJointAdjustmentCount: 0,
+    clipCleanupPartBindingAdjustmentCount: 0,
+    clipCleanupWeaponSocketAdjustmentCount: 0,
   };
   if (pose.sourceClipName === 'TPose') return report;
 
@@ -296,9 +313,27 @@ const applyDriverCalibration = (
   return report;
 };
 
+const applyDriverCleanup = (
+  rig: V3Mesh2MotionDriverRig,
+  cleanup: V3Mesh2MotionCleanupSample | undefined,
+  report: V3Mesh2MotionDriverCalibrationReport
+): void => {
+  if (!cleanup) return;
+  for (const [jointName, adjustment] of Object.entries(cleanup.driverJoints)) {
+    const joint = rig.joints[jointName];
+    if (!joint || !adjustment) continue;
+    addVec3Tuple(joint.object.position, adjustment.position);
+    joint.object.quaternion.multiply(quaternionFromRotationTuple(adjustment.rotation)).normalize();
+    joint.object.rotation.setFromQuaternion(joint.object.quaternion);
+    report.clipCleanupDriverJointAdjustmentCount += 1;
+  }
+};
+
 const applyDriverWeaponSocketCalibration = (
   rig: V3Mesh2MotionDriverRig,
-  calibration: V3Mesh2MotionCalibration
+  calibration: V3Mesh2MotionCalibration,
+  cleanup: V3Mesh2MotionCleanupSample | undefined,
+  report: V3Mesh2MotionDriverCalibrationReport
 ): number => {
   let count = 0;
   for (const [socketName, socket] of Object.entries(rig.weaponSockets) as [
@@ -308,14 +343,18 @@ const applyDriverWeaponSocketCalibration = (
     const adjustment = calibration.weaponSockets[socketName];
     socket.object.position.fromArray(socket.restLocalPosition);
     socket.object.quaternion.identity();
-    if (!adjustment) {
-      socket.object.rotation.setFromQuaternion(socket.object.quaternion);
-      continue;
+    if (adjustment) {
+      addVec3Tuple(socket.object.position, adjustment.position);
+      socket.object.quaternion.copy(quaternionFromRotationTuple(adjustment.rotation));
+      count += 1;
     }
-    addVec3Tuple(socket.object.position, adjustment.position);
-    socket.object.quaternion.copy(quaternionFromRotationTuple(adjustment.rotation));
+    const cleanupAdjustment = cleanup?.weaponSockets[socketName];
+    if (cleanupAdjustment) {
+      addVec3Tuple(socket.object.position, cleanupAdjustment.position);
+      socket.object.quaternion.multiply(quaternionFromRotationTuple(cleanupAdjustment.rotation)).normalize();
+      report.clipCleanupWeaponSocketAdjustmentCount += 1;
+    }
     socket.object.rotation.setFromQuaternion(socket.object.quaternion);
-    count += 1;
   }
   return count;
 };
@@ -491,7 +530,13 @@ export function applyV3Mesh2MotionDriverRigPose(
     joint.object.scale.fromArray(ONE_VEC3);
   }
   const calibrationReport = applyDriverCalibration(model, rig, pose, calibration);
-  calibrationReport.weaponSocketAdjustmentCount = applyDriverWeaponSocketCalibration(rig, calibration);
+  applyDriverCleanup(rig, pose.cleanup, calibrationReport);
+  calibrationReport.weaponSocketAdjustmentCount = applyDriverWeaponSocketCalibration(
+    rig,
+    calibration,
+    pose.cleanup,
+    calibrationReport
+  );
 
   model.updateMatrixWorld(true);
   for (const binding of Object.values(rig.partBindings)) {
@@ -508,6 +553,12 @@ export function applyV3Mesh2MotionDriverRigPose(
     if (bindingAdjustment) {
       targetWorldMatrix.multiply(adjustmentMatrix(bindingAdjustment));
       calibrationReport.partBindingAdjustmentCount += 1;
+      calibrationReport.postBindPartAdjustments += 1;
+    }
+    const cleanupAdjustment = pose.cleanup?.partBindings[binding.slot];
+    if (cleanupAdjustment) {
+      targetWorldMatrix.multiply(adjustmentMatrix(cleanupAdjustment));
+      calibrationReport.clipCleanupPartBindingAdjustmentCount += 1;
       calibrationReport.postBindPartAdjustments += 1;
     }
     const localMatrix = parent.matrixWorld.clone().invert().multiply(targetWorldMatrix);
@@ -533,6 +584,7 @@ export function applyV3Mesh2MotionDriverRigPose(
     warnings,
     jointCount: Object.keys(rig.joints).length,
     partBindingCount: Object.keys(rig.partBindings).length,
+    ...(pose.cleanup?.trackId ? { clipCleanupTrackId: pose.cleanup.trackId } : {}),
   };
 }
 

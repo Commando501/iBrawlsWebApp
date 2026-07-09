@@ -69,8 +69,8 @@ export const V3_MESH2MOTION_CALIBRATION_LIMITS = {
 export const V3_MESH2MOTION_DEFAULT_CALIBRATION: V3Mesh2MotionCalibration = {
   version: 'v3-mesh2motion-calibration/v2',
   armSpread: {
-    left: 0.26,
-    right: 0.26,
+    left: 0.18,
+    right: 0.18,
   },
   driverJoints: {
     hand_r: {
