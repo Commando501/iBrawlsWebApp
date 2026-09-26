@@ -26,6 +26,7 @@ import {
   V3_SLOT_DETAIL_BONES,
 } from './v3RigDetail';
 import { V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE } from './v3AegisObjSurfaceVoxels.generated';
+import { createV3ReferenceLockedPartVoxels } from './v3ArmorFoundation';
 import { getV3ExactSourceRenderableSlot } from './v3ExactSourceLod';
 import type { V3SourceFidelity } from './v3QualityTiers';
 
@@ -894,11 +895,13 @@ export function createV3AegisPartVoxels(
   options: { qualityTier?: V3QualityTier; sourceFidelity?: V3SourceFidelity } = {}
 ): VoxelData[] {
   void dimensions;
-  return createAegisObjSurfaceVoxelSource(
+  return createV3ReferenceLockedPartVoxels(
     part.slot,
     colors,
     paintJob,
-    options.qualityTier,
-    options.sourceFidelity
+    {
+      qualityTier: options.qualityTier,
+      sourceFidelity: options.sourceFidelity,
+    }
   );
 }

@@ -23,6 +23,8 @@ const EXPECTED_CASE_IDS = [
   'swordLunge',
   'swordSlash',
   'pistolFire',
+  'ballPunch',
+  'ballThrow',
   'hitReact',
   'death',
 ] as const;

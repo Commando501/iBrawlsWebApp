@@ -23,6 +23,12 @@
         display: block;
         width: 100vw;
         height: 100vh;
+        cursor: grab;
+        touch-action: none;
+      }
+
+      canvas.is-dragging {
+        cursor: grabbing;
       }
 
       #hud {
@@ -45,7 +51,7 @@
 
       #topbar {
         display: grid;
-        grid-template-columns: minmax(180px, 260px) minmax(150px, 190px) repeat(5, auto) minmax(160px, 1fr);
+        grid-template-columns: minmax(150px, 220px) minmax(100px, 140px) repeat(7, auto) minmax(80px, 1fr);
         align-items: end;
         gap: 8px;
         padding: 10px;
@@ -245,9 +251,12 @@
             <option value="hammer">Hammer</option>
             <option value="sword">Sword</option>
             <option value="pistol">Pistol</option>
+            <option value="ball">Ball</option>
           </select>
         </label>
         <button id="play-all" type="button">Play All</button>
+        <button id="play-hammer" type="button">Play Hammer Swing</button>
+        <button id="play-hammer-melee" type="button">Play Hammer Melee</button>
         <button id="play-pause" type="button">Play</button>
         <button id="reset" type="button">Reset</button>
         <button id="frame-prev" type="button">Frame -</button>
@@ -260,6 +269,7 @@
           <select id="mode" aria-label="Normalized Runtime Mode Toggle">
             <option value="normalizedReview" selected>Normalized Review</option>
             <option value="runtimeSimulation">Runtime Simulation</option>
+            <option value="bindRestPose">Bind TPose</option>
           </select>
         </label>
         <label>
@@ -281,13 +291,16 @@
       </div>
       <div id="defect-panel" class="panel">
         <div id="defect-actions">
+          <label><input id="blade-path" type="checkbox" checked /> Katar Blade Path</label>
           <label><input id="show-defects" type="checkbox" /> Show Defects</label>
           <button id="copy-defect-report" type="button">Copy Defect Report</button>
           <button id="download-defect-report" type="button">Download Defect Report</button>
         </div>
         <pre id="defect-report" hidden>Defect Report hidden. Enable Show Defects to measure the selected case.</pre>
       </div>
-      <div id="clean-editor-panel" class="panel">
+      <details id="clean-editor-panel" class="panel">
+        <summary>Clip export and manual overrides</summary>
+        <p>Blender clips export their baked skeleton tracks. Edit those in Blender; Preview JSON accepts clean-editor overrides.</p>
         <div id="clean-editor-actions">
           <label>
             Authority
@@ -313,7 +326,7 @@
           <a href="/v3-mesh2motion-rig-calibrator.html" target="_blank" rel="noreferrer">Open Mesh2Motion Calibrator</a>
         </div>
         <textarea id="clean-editor-export" spellcheck="false" aria-label="Clean Rig Authored Clip Export"></textarea>
-      </div>
+      </details>
     </div>
     <div id="view-labels" aria-hidden="true">
       <span>Front</span>

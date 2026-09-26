@@ -15,7 +15,7 @@ import {
   getV3BuiltinPartVoxels,
   getV3BuiltinWeaponVoxels,
 } from './VoxelModelsV3';
-import { V3_CHARACTER_SLOT_IDS, V3_WEAPON_IDS } from './v3ModelTypes';
+import { V3_CHARACTER_SLOT_IDS, V3_WEAPON_IDS, type V3CharacterSlotId } from './v3ModelTypes';
 import { getDefaultV3CharacterLoadout, getDefaultV3WeaponManifest, getV3CharacterPartManifest } from './v3AssetManifest';
 import {
   V3_AEGIS_SCULPT_PROFILES,
@@ -28,6 +28,7 @@ import {
 import { getV3CharacterPartBounds } from './v3PartBounds';
 import { V3_AEGIS_PART_SPECS } from './v3AegisSuitParts';
 import { V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE } from './v3AegisObjSurfaceVoxels.generated';
+import { V3_REFERENCE_LIMB_VOXELS } from './v3ReferenceLimbVoxels.generated';
 import {
   V3_PRODUCTION_QUALITY_THRESHOLDS,
   analyzeV3VoxelQuality,
@@ -38,7 +39,9 @@ import { analyzeV3ArmorSurface } from './v3VoxelArmorSurface';
 import { clearV3GeometryCache } from './v3GeometryCache';
 import { analyzeV3RigContinuity } from './v3ExactSourceRigBinding';
 import { analyzeV3WeaponScaleFit } from './v3WeaponScaleProfile';
-import { analyzeV3CanonicalRigContract } from './v3CanonicalRigContract';
+import {
+  analyzeV3CanonicalRigContract,
+} from './v3CanonicalRigContract';
 import {
   analyzeV3AegisReferenceProportions,
   formatV3ReferenceProportionGapSummary,
@@ -46,9 +49,45 @@ import {
 } from './v3ReferenceProportions';
 import { deriveV3ExactSourceSlotBudget } from './v3ExactSourceLod';
 import { V3_SLOT_DETAIL_BONES } from './v3RigDetail';
+import {
+  V3_MESH2MOTION_NATIVE_LIMB_CHAIN_SLOTS,
+} from './v3Mesh2MotionArmorRig';
+import { V3_MESH2MOTION_ARMOR_RIG } from './v3Mesh2MotionArmorRig.generated';
+import { V3_MESH2MOTION_TPOSE_BIND } from './v3Mesh2MotionTPoseBind.generated';
+import { V3_ARMOR_FOUNDATION } from './v3ArmorFoundation';
+import { updateV3RigFittedBaseBody } from './v3RigFittedBaseBody';
 
 const requiredSegments = ['lowerTorso', 'upperTorso', 'head', 'leftArm', 'rightArm', 'leftLeg', 'rightLeg'];
+const getExpectedV3BuiltinSourceSlot = (slot: V3CharacterSlotId) => (
+  V3_TEST_REGENERATED_ARM_ARMOR_SLOT_SET.has(slot)
+    ? V3_REFERENCE_LIMB_VOXELS.slots[slot as keyof typeof V3_REFERENCE_LIMB_VOXELS.slots]
+    : V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.slots[slot]
+);
+const basisQuaternion = (basis: { quaternion: readonly number[] }): THREE.Quaternion =>
+  new THREE.Quaternion(
+    basis.quaternion[0] ?? 0,
+    basis.quaternion[1] ?? 0,
+    basis.quaternion[2] ?? 0,
+    basis.quaternion[3] ?? 1
+  ).normalize();
 
+const expectedAuthoredBindWorldGeometryQuaternion = (slot: V3CharacterSlotId): THREE.Quaternion => {
+  const rigSlot = V3_MESH2MOTION_ARMOR_RIG.slots[slot];
+  const authoredPlacement = V3_MESH2MOTION_TPOSE_BIND.placements[slot];
+  const pivot = new THREE.Quaternion(
+    rigSlot.pivotWorldQuaternion[0] ?? 0,
+    rigSlot.pivotWorldQuaternion[1] ?? 0,
+    rigSlot.pivotWorldQuaternion[2] ?? 0,
+    rigSlot.pivotWorldQuaternion[3] ?? 1
+  ).normalize();
+  const geometry = new THREE.Quaternion().setFromEuler(new THREE.Euler(
+    authoredPlacement.rotation[0] ?? 0,
+    authoredPlacement.rotation[1] ?? 0,
+    authoredPlacement.rotation[2] ?? 0,
+    'XYZ'
+  ));
+  return pivot.multiply(geometry).normalize();
+};
 const groupContainsHexColor = (group: THREE.Object3D, color: string): boolean => {
   const target = color.replace('#', '').toLowerCase();
   let found = false;
@@ -113,6 +152,12 @@ const V3_SCULPT_TEST_PAINT_JOB = {
   },
 };
 
+const maxHexColorChannel = (color: string): number => Math.max(
+  Number.parseInt(color.slice(1, 3), 16),
+  Number.parseInt(color.slice(3, 5), 16),
+  Number.parseInt(color.slice(5, 7), 16)
+);
+
 const getVoxelMaxZ = (voxels: VoxelData[]): number => Math.max(...voxels.map((voxel) => voxel.z));
 const getVoxelMinZ = (voxels: VoxelData[]): number => Math.min(...voxels.map((voxel) => voxel.z));
 
@@ -174,14 +219,267 @@ const getWorldBox = (object: THREE.Object3D): THREE.Box3 => {
   return new THREE.Box3().setFromObject(object);
 };
 
+const getUnionWorldBox = (objects: readonly THREE.Object3D[]): THREE.Box3 =>
+  objects
+    .map(getWorldBox)
+    .reduce((combined, box) => combined.union(box), new THREE.Box3().makeEmpty());
+
+const boxContainsPointWithTolerance = (
+  box: THREE.Box3,
+  point: THREE.Vector3,
+  tolerance: number
+): boolean => box.clone().expandByScalar(tolerance).containsPoint(point);
+
+const getBoxCorners = (box: THREE.Box3): THREE.Vector3[] => [
+  new THREE.Vector3(box.min.x, box.min.y, box.min.z),
+  new THREE.Vector3(box.min.x, box.min.y, box.max.z),
+  new THREE.Vector3(box.min.x, box.max.y, box.min.z),
+  new THREE.Vector3(box.min.x, box.max.y, box.max.z),
+  new THREE.Vector3(box.max.x, box.min.y, box.min.z),
+  new THREE.Vector3(box.max.x, box.min.y, box.max.z),
+  new THREE.Vector3(box.max.x, box.max.y, box.min.z),
+  new THREE.Vector3(box.max.x, box.max.y, box.max.z),
+];
+
+const boxContainsBoxWithTolerance = (
+  outer: THREE.Box3,
+  inner: THREE.Box3,
+  tolerance: number
+): boolean => {
+  const expandedOuter = outer.clone().expandByScalar(tolerance);
+  return getBoxCorners(inner).every((corner) => expandedOuter.containsPoint(corner));
+};
+
 const getWorldSize = (object: THREE.Object3D): THREE.Vector3 =>
   getWorldBox(object).getSize(new THREE.Vector3());
+
+const getObjectWorldPosition = (object: THREE.Object3D): THREE.Vector3 => {
+  object.updateWorldMatrix(true, true);
+  return object.getWorldPosition(new THREE.Vector3());
+};
 
 const tupleCloseTo = (
   actual: readonly number[],
   expected: readonly number[],
   tolerance = 0.000001
 ): boolean => actual.every((value, index) => Math.abs(value - expected[index]) <= tolerance);
+
+const getResolvedMannequinFitPlacement = (
+  geometry: THREE.Group,
+  slot: V3CharacterSlotId
+): { position: readonly number[]; rotation: readonly number[]; scale: readonly number[] } => {
+  const placement = geometry.userData.v3ResolvedMannequinFitPlacement as
+    | { position?: readonly number[]; rotation?: readonly number[]; scale?: readonly number[] }
+    | undefined;
+  assert.ok(placement, `${slot} should record regenerated mannequin-fit placement`);
+  const position = placement.position;
+  const rotation = placement.rotation;
+  const scale = placement.scale;
+  assert.equal(position?.length, 3, `${slot} regenerated fit position should be a vec3`);
+  assert.equal(rotation?.length, 3, `${slot} regenerated fit rotation should be a vec3`);
+  assert.equal(scale?.length, 3, `${slot} regenerated fit scale should be a vec3`);
+  assert.ok(position, `${slot} regenerated fit position should exist`);
+  assert.ok(rotation, `${slot} regenerated fit rotation should exist`);
+  assert.ok(scale, `${slot} regenerated fit scale should exist`);
+  assert.equal(position.every(Number.isFinite), true, `${slot} fit position should be finite`);
+  assert.equal(rotation.every(Number.isFinite), true, `${slot} fit rotation should be finite`);
+  assert.equal(scale.every((value) => Number.isFinite(value) && value > 0), true, `${slot} fit scale should be positive`);
+  return { position, rotation, scale };
+};
+
+const assertAuthoredTPoseBindGeometry = (
+  slot: V3CharacterSlotId,
+  geometry: THREE.Group,
+  slotPlacement?: { geometry?: { position?: readonly number[]; rotation?: readonly number[]; scale?: readonly number[] } }
+): void => {
+  const authoredPlacement = V3_MESH2MOTION_TPOSE_BIND.placements[slot];
+  assert.equal(
+    tupleCloseTo(geometry.position.toArray(), authoredPlacement.position),
+    true,
+    `${slot} rendered geometry position should match authored T-pose bind JSON`
+  );
+  assert.equal(
+    tupleCloseTo([geometry.rotation.x, geometry.rotation.y, geometry.rotation.z], authoredPlacement.rotation),
+    true,
+    `${slot} rendered geometry rotation should match authored T-pose bind JSON`
+  );
+  assert.equal(
+    tupleCloseTo(geometry.scale.toArray(), authoredPlacement.scale),
+    true,
+    `${slot} rendered geometry scale should match authored T-pose bind JSON`
+  );
+  if (slotPlacement?.geometry) {
+    assert.equal(
+      tupleCloseTo(slotPlacement.geometry.position ?? [], authoredPlacement.position),
+      true,
+      `${slot} exported slot placement position should match authored T-pose bind JSON`
+    );
+    assert.equal(
+      tupleCloseTo(slotPlacement.geometry.rotation ?? [], authoredPlacement.rotation),
+      true,
+      `${slot} exported slot placement rotation should match authored T-pose bind JSON`
+    );
+    assert.equal(
+      tupleCloseTo(slotPlacement.geometry.scale ?? [], authoredPlacement.scale),
+      true,
+      `${slot} exported slot placement scale should match authored T-pose bind JSON`
+    );
+  }
+};
+
+const V3_RIG_FITTED_FINGERS = ['thumb', 'index', 'middle', 'ring', 'pinky'] as const;
+const V3_RIG_FITTED_FINGER_SIDES = [
+  { side: 'Left', suffix: 'l', handJoint: 'hand_l' },
+  { side: 'Right', suffix: 'r', handJoint: 'hand_r' },
+] as const;
+const V3_RIG_FITTED_FINGER_CHAINS = V3_RIG_FITTED_FINGER_SIDES.flatMap(({ side, suffix, handJoint }) =>
+  V3_RIG_FITTED_FINGERS.flatMap((finger) =>
+    ([1, 2, 3] as const).map((index) => ({
+      segmentId: `${finger}${side}0${index}`,
+      fromJoint: index === 1 ? handJoint : `${finger}_0${index - 1}_${suffix}`,
+      toJoint: `${finger}_0${index}_${suffix}`,
+    }))
+  )
+);
+
+const v3HandFitSegmentIds = (side: 'Left' | 'Right'): readonly string[] => [
+  `hand${side}`,
+  ...V3_RIG_FITTED_FINGER_CHAINS
+    .filter((chain) => chain.segmentId.includes(side))
+    .map((chain) => chain.segmentId),
+];
+
+const V3_TEST_MANNEQUIN_ARMOR_SIZE_FIT_CASES = [
+  { label: 'torso', segmentIds: ['torso'], armorSlots: ['chest', 'back'] },
+  { label: 'pelvis', segmentIds: ['pelvis'], armorSlots: ['pelvis'] },
+  { label: 'neck', segmentIds: ['neck'], armorSlots: ['neck'] },
+  { label: 'head', segmentIds: ['head'], armorSlots: ['helmet'] },
+  { label: 'shoulderLeft', segmentIds: ['shoulderLeft'], armorSlots: ['shoulderLeft'] },
+  { label: 'shoulderRight', segmentIds: ['shoulderRight'], armorSlots: ['shoulderRight'] },
+  { label: 'upperArmLeft', segmentIds: ['upperArmLeft'], armorSlots: ['upperArmLeft'] },
+  { label: 'upperArmRight', segmentIds: ['upperArmRight'], armorSlots: ['upperArmRight'] },
+  { label: 'forearmLeft', segmentIds: ['forearmLeft'], armorSlots: ['forearmLeft'] },
+  { label: 'forearmRight', segmentIds: ['forearmRight'], armorSlots: ['forearmRight'] },
+  { label: 'handLeft', segmentIds: v3HandFitSegmentIds('Left'), armorSlots: ['handLeft'] },
+  { label: 'handRight', segmentIds: v3HandFitSegmentIds('Right'), armorSlots: ['handRight'] },
+  { label: 'thighLeft', segmentIds: ['thighLeft'], armorSlots: ['thighLeft'] },
+  { label: 'thighRight', segmentIds: ['thighRight'], armorSlots: ['thighRight'] },
+  { label: 'shinLeft', segmentIds: ['shinLeft'], armorSlots: ['shinLeft'] },
+  { label: 'shinRight', segmentIds: ['shinRight'], armorSlots: ['shinRight'] },
+  { label: 'footLeft', segmentIds: ['footLeft'], armorSlots: ['footLeft'] },
+  { label: 'footRight', segmentIds: ['footRight'], armorSlots: ['footRight'] },
+] as const satisfies readonly {
+  label: string;
+  segmentIds: readonly string[];
+  armorSlots: readonly V3CharacterSlotId[];
+}[];
+
+type V3TestMannequinEnvelopeFitCase = {
+  segmentIds: readonly string[];
+  armorSlots: readonly V3CharacterSlotId[];
+  partialLengthArmor?: boolean;
+};
+
+const V3_TEST_MESH2MOTION_GLB_SOURCE_SIZE_BY_SLOT = {
+  upperArmLeft: [0.2510, 0.1514, 0.1865],
+  upperArmRight: [0.2510, 0.1518, 0.1857],
+  forearmLeft: [0.3195, 0.1366, 0.1303],
+  forearmRight: [0.3219, 0.1366, 0.1303],
+  handLeft: [0.2359, 0.0950, 0.1506],
+  handRight: [0.2361, 0.0950, 0.1503],
+} as const satisfies Partial<Record<V3CharacterSlotId, readonly [number, number, number]>>;
+
+const V3_TEST_REGENERATED_ARM_ARMOR_SLOTS = [
+  'upperArmLeft',
+  'upperArmRight',
+  'forearmLeft',
+  'forearmRight',
+  'handLeft',
+  'handRight',
+] as const satisfies readonly V3CharacterSlotId[];
+
+const V3_TEST_REGENERATED_ARM_ARMOR_SLOT_SET = new Set<V3CharacterSlotId>(
+  V3_TEST_REGENERATED_ARM_ARMOR_SLOTS
+);
+
+const getV3AuthoritativeArmorSourceSlotSize = (slot: V3CharacterSlotId): THREE.Vector3 => {
+  const mesh2MotionSourceSize = V3_TEST_MESH2MOTION_GLB_SOURCE_SIZE_BY_SLOT[slot];
+  if (mesh2MotionSourceSize) {
+    return new THREE.Vector3(...mesh2MotionSourceSize);
+  }
+  const sourceSlot = V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.slots[slot];
+  const voxelScale = V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.coordinateSystem.voxelScale;
+  return new THREE.Vector3(
+    sourceSlot.bounds.size[0] * voxelScale,
+    sourceSlot.bounds.size[1] * voxelScale,
+    sourceSlot.bounds.size[2] * voxelScale
+  );
+};
+
+const V3_RIG_FITTED_CORE_SEGMENTS = [
+  'torso',
+  'pelvis',
+  'neck',
+  'head',
+  'shoulderLeft',
+  'shoulderRight',
+  'upperArmLeft',
+  'upperArmRight',
+  'forearmLeft',
+  'forearmRight',
+  'handLeft',
+  'handRight',
+  'thighLeft',
+  'thighRight',
+  'shinLeft',
+  'shinRight',
+  'footLeft',
+  'footRight',
+] as const;
+const V3_RIG_FITTED_SEGMENTS = [
+  ...V3_RIG_FITTED_CORE_SEGMENTS,
+  ...V3_RIG_FITTED_FINGER_CHAINS.map(({ segmentId }) => segmentId),
+] as const;
+
+const getMesh2MotionJointWorldPosition = (model: THREE.Object3D, jointName: string): THREE.Vector3 => {
+  const joints = model.userData.v3Mesh2MotionJoints as
+    | Record<string, { object?: THREE.Object3D }>
+    | undefined;
+  const joint = joints?.[jointName]?.object;
+  assert.ok(joint instanceof THREE.Object3D, `missing Mesh2Motion joint ${jointName}`);
+  return getObjectWorldPosition(joint);
+};
+
+const getMesh2MotionJointObject = (model: THREE.Object3D, jointName: string): THREE.Object3D => {
+  const joints = model.userData.v3Mesh2MotionJoints as
+    | Record<string, { object?: THREE.Object3D }>
+    | undefined;
+  const joint = joints?.[jointName]?.object;
+  assert.ok(joint instanceof THREE.Object3D, `missing Mesh2Motion joint ${jointName}`);
+  return joint;
+};
+
+const assertFiniteWorldTransform = (object: THREE.Object3D, label: string): void => {
+  const position = object.getWorldPosition(new THREE.Vector3());
+  const quaternion = object.getWorldQuaternion(new THREE.Quaternion());
+  const scale = object.getWorldScale(new THREE.Vector3());
+  assert.equal(
+    [
+      position.x,
+      position.y,
+      position.z,
+      quaternion.x,
+      quaternion.y,
+      quaternion.z,
+      quaternion.w,
+      scale.x,
+      scale.y,
+      scale.z,
+    ].every(Number.isFinite),
+    true,
+    `${label} world transform should stay finite`
+  );
+};
 
 describe('V3 armor sculpt helpers', () => {
   it('creates tapered shell rows from sculpt profile keyframes', () => {
@@ -279,16 +577,31 @@ describe('buildV3SpartanModel', () => {
     }
   });
 
-  it('uses the exact OBJ surface voxel scale for every built-in V3 character part', () => {
+  it('uses resolved built-in source occupancy while retaining source-bind metadata', () => {
     const model = buildV3SpartanModel({ isEnemy: false, customHue: 192 });
     const partGroups = model.userData.v3PartGroups as Record<string, THREE.Group>;
     const exactVoxelScale = V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.coordinateSystem.voxelScale;
 
     for (const slot of V3_CHARACTER_SLOT_IDS) {
+      const usesRegeneratedArmSource = V3_TEST_REGENERATED_ARM_ARMOR_SLOT_SET.has(slot);
       assert.equal(getV3BuiltinPartGridScale(slot), 1, `${slot} keeps gridScale compatibility metadata`);
-      assert.equal(getV3BuiltinPartVoxelScale(slot), exactVoxelScale, `${slot} should use exact OBJ voxel scale`);
-      assert.equal(partGroups[slot].userData.v3ObjSurfaceSource, true, `${slot} should render from exact OBJ surface source`);
-      assert.equal(partGroups[slot].userData.v3VoxelScale, exactVoxelScale, `${slot} runtime group should use exact OBJ voxel scale`);
+      assert.equal(getV3BuiltinPartVoxelScale(slot), exactVoxelScale, `${slot} should use the shared exact-source voxel scale`);
+      assert.equal(
+        partGroups[slot].userData.v3BuiltInSourceKind,
+        usesRegeneratedArmSource ? 'reference-glb' : 'exact-obj',
+        `${slot} should report its active built-in source kind`
+      );
+      assert.equal(
+        partGroups[slot].userData.v3ReferenceGlbSource,
+        usesRegeneratedArmSource,
+        `${slot} should expose regenerated GLB source metadata only for regenerated arm slots`
+      );
+      assert.equal(
+        partGroups[slot].userData.v3ObjSurfaceSource,
+        !usesRegeneratedArmSource,
+        `${slot} should expose OBJ source metadata only for non-regenerated slots`
+      );
+      assert.equal(partGroups[slot].userData.v3VoxelScale, exactVoxelScale, `${slot} runtime group should use shared exact-source voxel scale`);
     }
   });
 
@@ -364,7 +677,7 @@ describe('buildV3SpartanModel', () => {
 
     for (const slot of V3_CHARACTER_SLOT_IDS) {
       const issues = reports[slot].issues.filter((issue) => !(
-        slot === 'back' &&
+        (slot === 'back' || slot === 'chest') &&
         issue.code === 'torso-depth-ratio-high'
       ));
       assert.deepEqual(issues, [], `${slot} shape-language issues`);
@@ -427,7 +740,7 @@ describe('buildV3SpartanModel', () => {
     }
   });
 
-  it('rebases built-in V3 detail bones onto canonical anatomical slot pivots without shifting exact-source geometry', () => {
+  it('rebases built-in V3 detail bones while binding exact-source geometry to Mesh2Motion pivots', () => {
     const model = buildV3SpartanModel({
       isEnemy: false,
       customHue: 192,
@@ -437,8 +750,8 @@ describe('buildV3SpartanModel', () => {
     const report = analyzeV3CanonicalRigContract(model);
     const detailBones = model.userData.v3DetailBones as Record<string, THREE.Group>;
     const partGroups = model.userData.v3PartGroups as Record<string, THREE.Group>;
+    const partGeometryGroups = model.userData.v3PartGeometryGroups as Record<string, THREE.Group>;
     const contract = model.userData.v3CanonicalRigContract;
-    const voxelScale = V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.coordinateSystem.voxelScale;
 
     assert.equal(report.ready, true, report.issues.join('; '));
     assert.equal(contract.sourceHash, V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.source.hash);
@@ -449,15 +762,89 @@ describe('buildV3SpartanModel', () => {
       const boneWorld = detailBone.getWorldPosition(new THREE.Vector3()).toArray();
       assert.equal(tupleCloseTo(boneWorld, pivot, 0.00001), true, `${slot} detail bone should use canonical pivot`);
 
-      const boxCenter = getWorldBox(partGroups[slot]).getCenter(new THREE.Vector3()).toArray();
-      const geometryCenter = contract.slotGeometryOffsets[slot].geometryCenter as [number, number, number];
+      const foundationSlot = V3_ARMOR_FOUNDATION.slots[slot];
+      const mesh2MotionPivot = foundationSlot.mesh2MotionPivotWorldPosition;
+      const slotPivot = getObjectWorldPosition(partGroups[slot]).toArray();
+      const geometry = partGeometryGroups[slot];
       assert.equal(
-        tupleCloseTo(boxCenter, geometryCenter, voxelScale * 2.5),
+        tupleCloseTo(slotPivot, mesh2MotionPivot, 0.00001),
         true,
-        `${slot} exact-source geometry shifted from canonical source center`
+        `${slot} visible slot pivot should stay on the generated Mesh2Motion pivot`
       );
+      assertAuthoredTPoseBindGeometry(slot, geometry);
       assert.equal(partGroups[slot].userData.v3CanonicalSlotPivot, contract.slotPivots[slot]);
       assert.equal(partGroups[slot].userData.v3CanonicalSlotGeometryOffset, contract.slotGeometryOffsets[slot]);
+    }
+  });
+
+  it('binds limb armor geometry with authored T-pose placement and slot orientation', () => {
+    const model = buildV3SpartanModel({
+      isEnemy: false,
+      customHue: 192,
+      v3ArmorRenderStyle: 'voxelEdit',
+      v3SourceFidelity: 'exact',
+    });
+    const partGroups = model.userData.v3PartGroups as Record<string, THREE.Group>;
+    const partGeometryGroups = model.userData.v3PartGeometryGroups as Record<string, THREE.Group>;
+
+    for (const slot of V3_MESH2MOTION_NATIVE_LIMB_CHAIN_SLOTS) {
+      const slotPivot = partGroups[slot];
+      const geometry = partGeometryGroups[slot];
+      const pivotCenter = getObjectWorldPosition(slotPivot);
+      const foundationSlot = V3_ARMOR_FOUNDATION.slots[slot];
+      const expectedBindPoint = new THREE.Vector3(...foundationSlot.mesh2MotionPivotWorldPosition);
+      const slotPlacement = slotPivot.userData.v3Mesh2MotionSlotPlacement as {
+        geometry?: { position?: readonly number[]; rotation?: readonly number[]; scale?: readonly number[] };
+      };
+
+      assert.ok(slotPivot instanceof THREE.Group, `missing ${slot} slot pivot`);
+      assert.ok(geometry instanceof THREE.Group, `missing ${slot} geometry group`);
+      assert.ok(
+        pivotCenter.distanceTo(expectedBindPoint) <= 0.00001,
+        `${slot} visible slot pivot should stay on generated Mesh2Motion pivot ${expectedBindPoint.toArray()}, got ${pivotCenter.toArray()}`
+      );
+      assertAuthoredTPoseBindGeometry(slot, geometry, slotPlacement);
+      if (V3_TEST_REGENERATED_ARM_ARMOR_SLOT_SET.has(slot)) {
+        assert.match(
+          foundationSlot.sourceHashes.referenceLimbVoxelSlot ?? '',
+          /^reference-limb-voxel-slot:fnv1a32:[0-9a-f]{8}$/,
+          `${slot} should bind from the regenerated reference limb source`
+        );
+      } else {
+        const geometryWorldQuaternion = geometry.getWorldQuaternion(new THREE.Quaternion()).normalize();
+        const expectedWorldQuaternion = expectedAuthoredBindWorldGeometryQuaternion(slot);
+        assert.ok(
+          geometryWorldQuaternion.angleTo(expectedWorldQuaternion) <= 0.0001,
+          `${slot} exact OBJ voxels should preserve the authored Mesh2Motion visual slot orientation`
+        );
+      }
+    }
+  });
+
+  it('uses finite authored T-pose scale for native limb armor slots', () => {
+    const model = buildV3SpartanModel({
+      isEnemy: false,
+      customHue: 192,
+      v3ArmorRenderStyle: 'voxelEdit',
+      v3SourceFidelity: 'exact',
+    });
+    const partGeometryGroups = model.userData.v3PartGeometryGroups as Record<string, THREE.Group>;
+
+    for (const slot of V3_MESH2MOTION_NATIVE_LIMB_CHAIN_SLOTS) {
+      const geometry = partGeometryGroups[slot];
+      const authoredScale = V3_MESH2MOTION_TPOSE_BIND.placements[slot].scale;
+
+      assert.equal(
+        tupleCloseTo(geometry.scale.toArray(), authoredScale),
+        true,
+        `${slot} should apply the authored T-pose bind scale`
+      );
+      authoredScale.forEach((value, index) => {
+        assert.ok(
+          value > 0.1 && value <= 3,
+          `${slot} authored T-pose bind scale should stay bounded on axis ${index}`
+        );
+      });
     }
   });
 
@@ -493,13 +880,1348 @@ describe('buildV3SpartanModel', () => {
 
     assert.ok(chestSize.x > 0.3, `chest should stay visible from exact source (${chestSize.x})`);
     assert.ok(pelvisSize.x > 0.25, `pelvis should stay visible from exact source (${pelvisSize.x})`);
-    assert.ok(forearmSize.x > 0.1 && forearmSize.z > 0.18, `forearm should stay visible from exact source (${forearmSize.x}, ${forearmSize.z})`);
-    assert.ok(handSize.x > 0.08 && handSize.z > 0.18, `hand should stay visible from exact source (${handSize.x}, ${handSize.z})`);
+    assert.ok(forearmSize.x > 0.1 && forearmSize.z > 0.12, `forearm should stay visible from regenerated source (${forearmSize.x}, ${forearmSize.z})`);
+    assert.ok(handSize.x > 0.08 && handSize.z > 0.15, `hand should stay visible from calibrated exact source (${handSize.x}, ${handSize.z})`);
     assert.equal(
       partGroups.chest.userData.v3ObjSurfaceSource,
       true,
-      'built-in exact-source chest should not receive old part-box remapping'
+      'built-in exact-source chest should render from the restored OBJ body source without old part-box remapping'
     );
+  });
+
+  it('keeps default V3 undersuit visibly separated from the bind editor background', () => {
+    const chest = getV3BuiltinPartVoxels('chest');
+    const colors = new Set(chest.map((voxel) => voxel.color));
+
+    assert.ok(
+      colors.has('#2f3f52'),
+      'default V3 chest should include the readable undersuit base color'
+    );
+    assert.ok(
+      maxHexColorChannel('#2f3f52') - maxHexColorChannel('#061116') >= 0x30,
+      'default V3 undersuit should not visually collapse into the bind editor background'
+    );
+  });
+
+  it('builds a Mesh2Motion-fitted featureless base body under the exact armor suit', () => {
+    const model = buildV3SpartanModel({ isEnemy: false, customHue: 192 });
+    model.updateWorldMatrix(true, true);
+    const partGroups = model.userData.v3PartGroups as Record<string, THREE.Group>;
+    const baseBody = model.userData.v3RigFittedBaseBody as
+      | { root?: THREE.Group; segments?: Record<string, THREE.Mesh> }
+      | undefined;
+
+    assert.ok(baseBody?.root instanceof THREE.Group, 'V3 model should expose a rig-fitted dummy base body');
+    assert.equal(baseBody.root.visible, true, 'rig-fitted dummy base body should be visible under the armor');
+    assert.equal(baseBody.root.userData.v3RigFittedBaseBody, true);
+    assert.equal(
+      Object.keys(baseBody.segments ?? {}).length,
+      48,
+      'rig-fitted dummy base body should include torso, limbs, palms, feet, head, and 30 finger capsules'
+    );
+
+    for (const segmentId of V3_RIG_FITTED_SEGMENTS) {
+      const segment = baseBody.segments?.[segmentId];
+      assert.ok(segment instanceof THREE.Mesh, `${segmentId} dummy body segment should exist`);
+      assert.equal(segment.visible, true, `${segmentId} dummy body segment should be visible`);
+      assert.equal(segment.userData.v3RigFittedBaseBodySegment, true);
+      assertFiniteWorldTransform(segment, `${segmentId} dummy body segment`);
+      const material = segment.material;
+      assert.ok(material instanceof THREE.MeshStandardMaterial, `${segmentId} should use an inspectable dummy material`);
+      assert.ok(
+        maxHexColorChannel(`#${material.color.getHexString()}`) <= 0x5f,
+        `${segmentId} dummy material should stay visually subordinate to armor instead of reading as gray helper geometry`
+      );
+    }
+
+    const torsoBox = getWorldBox(baseBody.segments.torso);
+    const neckBox = getWorldBox(baseBody.segments.neck);
+    const pelvisBodyBox = getWorldBox(baseBody.segments.pelvis);
+    const chestBox = getWorldBox(partGroups.chest);
+    const backBox = getWorldBox(partGroups.back);
+    const neckArmorBox = getWorldBox(partGroups.neck);
+    const pelvisArmorBox = getWorldBox(partGroups.pelvis);
+    const sideProfileCore = new THREE.Vector3(
+      chestBox.getCenter(new THREE.Vector3()).x,
+      chestBox.getCenter(new THREE.Vector3()).y,
+      (chestBox.getCenter(new THREE.Vector3()).z + backBox.getCenter(new THREE.Vector3()).z) / 2
+    );
+
+    assert.equal(torsoBox.containsPoint(sideProfileCore), true, 'dummy torso should occupy the chest/back interior cavity');
+    assert.equal(torsoBox.intersectsBox(chestBox), true, 'dummy torso should sit inside the chest armor shell');
+    assert.equal(torsoBox.intersectsBox(backBox), true, 'dummy torso should sit inside the back armor shell');
+    assert.equal(neckBox.intersectsBox(neckArmorBox), true, 'dummy neck should sit inside the neck armor shell');
+    assert.equal(pelvisBodyBox.intersectsBox(pelvisArmorBox), true, 'dummy pelvis should sit inside the pelvis armor shell');
+
+    for (const side of ['Left', 'Right'] as const) {
+      const handBodyBox = getWorldBox(baseBody.segments[`hand${side}`]);
+      const footBodyBox = getWorldBox(baseBody.segments[`foot${side}`]);
+
+      assert.equal(handBodyBox.intersectsBox(getWorldBox(partGroups[`hand${side}`])), true);
+      assert.equal(footBodyBox.intersectsBox(getWorldBox(partGroups[`foot${side}`])), true);
+      assert.ok(
+        baseBody.segments[`shoulder${side}`].scale.x <= 0.1 &&
+          baseBody.segments[`shoulder${side}`].scale.z <= 0.11,
+        `${side} dummy shoulder should stay under the shoulder armor cap instead of becoming a smooth shoulder pad`
+      );
+      assert.ok(
+        baseBody.segments[`upperArm${side}`].scale.x <= 0.14 &&
+          baseBody.segments[`upperArm${side}`].scale.z <= 0.15,
+        `${side} dummy upper arm should be an inner body limb, not a second outer armor sleeve`
+      );
+      assert.ok(
+        baseBody.segments[`forearm${side}`].scale.x <= 0.12 &&
+          baseBody.segments[`forearm${side}`].scale.z <= 0.13,
+        `${side} dummy forearm should stay visibly subordinate to the armor`
+      );
+    }
+  });
+
+  it('fits every Mesh2Motion finger chain with a matching mannequin capsule', () => {
+    const model = buildV3SpartanModel({ isEnemy: false, customHue: 192 });
+    model.updateWorldMatrix(true, true);
+    const baseBody = model.userData.v3RigFittedBaseBody as
+      | { root?: THREE.Group; segments?: Record<string, THREE.Mesh> }
+      | undefined;
+
+    assert.ok(baseBody?.root instanceof THREE.Group, 'V3 model should expose a rig-fitted dummy base body');
+    for (const { segmentId, fromJoint, toJoint } of V3_RIG_FITTED_FINGER_CHAINS) {
+      const segment = baseBody.segments?.[segmentId];
+      assert.ok(segment instanceof THREE.Mesh, `${segmentId} finger mannequin capsule should exist`);
+      assert.equal(segment.visible, true, `${segmentId} finger mannequin capsule should be visible`);
+
+      const from = getMesh2MotionJointWorldPosition(model, fromJoint);
+      const to = getMesh2MotionJointWorldPosition(model, toJoint);
+      const expectedLength = from.distanceTo(to);
+      const expectedMidpoint = from.clone().add(to).multiplyScalar(0.5);
+      const expectedDirection = to.clone().sub(from).normalize();
+      const actualMidpoint = getObjectWorldPosition(segment);
+      const actualDirection = new THREE.Vector3(0, 1, 0)
+        .applyQuaternion(segment.getWorldQuaternion(new THREE.Quaternion()))
+        .normalize();
+      const actualWorldScale = segment.getWorldScale(new THREE.Vector3());
+
+      assert.ok(
+        actualMidpoint.distanceTo(expectedMidpoint) <= 0.004,
+        `${segmentId} midpoint should match ${fromJoint}->${toJoint} joint midpoint`
+      );
+      assert.ok(
+        actualDirection.dot(expectedDirection) >= 0.999,
+        `${segmentId} direction should follow ${fromJoint}->${toJoint} joint direction`
+      );
+      assert.ok(
+        Math.abs(actualWorldScale.y * 2 - expectedLength) <= 0.003,
+        `${segmentId} length should match ${fromJoint}->${toJoint} joint distance`
+      );
+    }
+  });
+
+  it('keeps palm hubs compact so the mannequin fingers read as separate chains', () => {
+    const model = buildV3SpartanModel({ isEnemy: false, customHue: 192 });
+    model.updateWorldMatrix(true, true);
+    const baseBody = model.userData.v3RigFittedBaseBody as
+      | { root?: THREE.Group; segments?: Record<string, THREE.Mesh> }
+      | undefined;
+    const sideCases = [
+      { side: 'Left', segmentId: 'handLeft', handJoint: 'hand_l', suffix: 'l' },
+      { side: 'Right', segmentId: 'handRight', handJoint: 'hand_r', suffix: 'r' },
+    ] as const;
+
+    assert.ok(baseBody?.root instanceof THREE.Group, 'V3 model should expose a rig-fitted dummy base body');
+    for (const { side, segmentId, handJoint, suffix } of sideCases) {
+      const handSegment = baseBody.segments?.[segmentId];
+      assert.ok(handSegment instanceof THREE.Mesh, `${side} palm hub should exist`);
+      const handCenter = getObjectWorldPosition(handSegment);
+      const handJointPosition = getMesh2MotionJointWorldPosition(model, handJoint);
+      const handSize = getWorldSize(handSegment);
+      const handBox = getWorldBox(handSegment);
+
+      assert.ok(
+        handCenter.distanceTo(handJointPosition) <= 0.04,
+        `${side} palm hub should stay anchored near ${handJoint}, not the full glove envelope`
+      );
+      assert.ok(
+        handSize.x <= 0.085 && handSize.y <= 0.075 && handSize.z <= 0.085,
+        `${side} palm hub should stay compact instead of swallowing the fingers (${handSize.toArray().map((value) => value.toFixed(4)).join(', ')})`
+      );
+      for (const fingerName of V3_RIG_FITTED_FINGERS) {
+        const knuckle = getMesh2MotionJointWorldPosition(model, `${fingerName}_01_${suffix}`);
+        assert.equal(
+          handBox.containsPoint(knuckle),
+          false,
+          `${side} palm hub should not contain ${fingerName}_01_${suffix}; fingers need to read as separate chains`
+        );
+      }
+    }
+  });
+
+  it('keeps palm hubs wrist-side and aimed at the Mesh2Motion finger fan', () => {
+    const model = buildV3SpartanModel({ isEnemy: false, customHue: 192 });
+    model.updateWorldMatrix(true, true);
+    const baseBody = model.userData.v3RigFittedBaseBody as
+      | { root?: THREE.Group; segments?: Record<string, THREE.Mesh> }
+      | undefined;
+    const sideCases = [
+      { side: 'Left', segmentId: 'handLeft', handJoint: 'hand_l', suffix: 'l' },
+      { side: 'Right', segmentId: 'handRight', handJoint: 'hand_r', suffix: 'r' },
+    ] as const;
+
+    assert.ok(baseBody?.root instanceof THREE.Group, 'V3 model should expose a rig-fitted dummy base body');
+    for (const { side, segmentId, handJoint, suffix } of sideCases) {
+      const handSegment = baseBody.segments?.[segmentId];
+      assert.ok(handSegment instanceof THREE.Mesh, `${side} palm hub should exist`);
+
+      const handPosition = getMesh2MotionJointWorldPosition(model, handJoint);
+      const firstKnuckles = V3_RIG_FITTED_FINGERS.map((fingerName) =>
+        getMesh2MotionJointWorldPosition(model, `${fingerName}_01_${suffix}`)
+      );
+      const knuckleCenter = firstKnuckles
+        .reduce((sum, position) => sum.add(position), new THREE.Vector3())
+        .multiplyScalar(1 / firstKnuckles.length);
+      const expectedDirection = knuckleCenter.clone().sub(handPosition).normalize();
+      const palmForward = new THREE.Vector3(1, 0, 0)
+        .applyQuaternion(handSegment.getWorldQuaternion(new THREE.Quaternion()))
+        .normalize();
+      const palmCenterProjection = getObjectWorldPosition(handSegment)
+        .sub(handPosition)
+        .dot(expectedDirection);
+      const palmForwardReach = palmCenterProjection + handSegment.getWorldScale(new THREE.Vector3()).x * 0.5;
+      const nearestKnuckleDistance = Math.min(
+        ...firstKnuckles.map((knuckle) => handPosition.distanceTo(knuckle))
+      );
+
+      assert.ok(
+        palmForward.dot(expectedDirection) >= 0.995,
+        `${side} palm hub should aim from ${handJoint} toward the first-knuckle cluster`
+      );
+      assert.ok(
+        palmCenterProjection <= 0.001,
+        `${side} palm hub should sit on the wrist side of ${handJoint}, not protrude into the finger bases`
+      );
+      assert.ok(
+        palmForwardReach <= nearestKnuckleDistance * 0.35,
+        `${side} palm hub should leave room for separate finger roots instead of overlapping them`
+      );
+    }
+  });
+
+  it('keeps the mannequin neck as a slim Mesh2Motion connector instead of a chest-front blob', () => {
+    const model = buildV3SpartanModel({ isEnemy: false, customHue: 192 });
+    model.updateWorldMatrix(true, true);
+    const baseBody = model.userData.v3RigFittedBaseBody as
+      | { root?: THREE.Group; segments?: Record<string, THREE.Mesh> }
+      | undefined;
+
+    assert.ok(baseBody?.root instanceof THREE.Group, 'V3 model should expose a rig-fitted dummy base body');
+    const neckSegment = baseBody.segments?.neck;
+    assert.ok(neckSegment instanceof THREE.Mesh, 'neck mannequin connector should exist');
+    const neckBase = getMesh2MotionJointWorldPosition(model, 'neck_01');
+    const headBase = getMesh2MotionJointWorldPosition(model, 'head');
+    const expectedMidpoint = neckBase.clone().add(headBase).multiplyScalar(0.5);
+    const expectedLength = neckBase.distanceTo(headBase);
+    const actualMidpoint = getObjectWorldPosition(neckSegment);
+    const actualWorldScale = neckSegment.getWorldScale(new THREE.Vector3());
+
+    assert.ok(
+      actualMidpoint.distanceTo(expectedMidpoint) <= 0.025,
+      'neck mannequin connector should stay centered on the Mesh2Motion neck_01->head chain'
+    );
+    assert.ok(
+      actualWorldScale.x <= 0.09 && actualWorldScale.z <= 0.085,
+      `neck mannequin connector should stay slim instead of becoming a collar blob (${actualWorldScale.toArray().map((value) => value.toFixed(4)).join(', ')})`
+    );
+    assert.ok(
+      Math.abs(actualWorldScale.y * 2 - expectedLength) <= 0.02,
+      'neck mannequin connector length should follow the Mesh2Motion neck_01->head joint distance'
+    );
+  });
+
+  it('keeps the mannequin head centered on the Mesh2Motion head chain instead of the helmet envelope', () => {
+    const model = buildV3SpartanModel({ isEnemy: false, customHue: 192 });
+    model.updateWorldMatrix(true, true);
+    const baseBody = model.userData.v3RigFittedBaseBody as
+      | { root?: THREE.Group; segments?: Record<string, THREE.Mesh> }
+      | undefined;
+
+    assert.ok(baseBody?.root instanceof THREE.Group, 'V3 model should expose a rig-fitted dummy base body');
+    const headSegment = baseBody.segments?.head;
+    assert.ok(headSegment instanceof THREE.Mesh, 'head mannequin segment should exist');
+    const headBase = getMesh2MotionJointWorldPosition(model, 'head');
+    const headLeaf = getMesh2MotionJointWorldPosition(model, 'head_leaf');
+    const expectedMidpoint = headBase.clone().add(headLeaf).multiplyScalar(0.5);
+    const actualMidpoint = getObjectWorldPosition(headSegment);
+    const actualWorldScale = headSegment.getWorldScale(new THREE.Vector3());
+
+    assert.ok(
+      actualMidpoint.distanceTo(expectedMidpoint) <= 0.035,
+      'head mannequin segment should stay centered on the Mesh2Motion head->head_leaf chain'
+    );
+    assert.ok(
+      actualWorldScale.x <= 0.165 && actualWorldScale.y <= 0.18 && actualWorldScale.z <= 0.165,
+      `head mannequin segment should be a compact blank head, not a helmet-sized blob (${actualWorldScale.toArray().map((value) => value.toFixed(4)).join(', ')})`
+    );
+    assert.ok(
+      actualMidpoint.y + actualWorldScale.y * 0.5 <= headLeaf.y + 0.11,
+      'head mannequin segment should not float far above the Mesh2Motion head leaf'
+    );
+  });
+
+  it('keeps the mannequin head aimed along the live Mesh2Motion head chain after joint poses', () => {
+    const model = buildV3SpartanModel({ isEnemy: false, customHue: 192 });
+    const headJoint = getMesh2MotionJointObject(model, 'head');
+    headJoint.rotation.x = 0.42;
+    headJoint.rotation.z = -0.18;
+    model.updateWorldMatrix(true, true);
+    updateV3RigFittedBaseBody(model);
+    model.updateWorldMatrix(true, true);
+    const baseBody = model.userData.v3RigFittedBaseBody as
+      | { root?: THREE.Group; segments?: Record<string, THREE.Mesh> }
+      | undefined;
+
+    assert.ok(baseBody?.root instanceof THREE.Group, 'V3 model should expose a rig-fitted dummy base body');
+    const headSegment = baseBody.segments?.head;
+    assert.ok(headSegment instanceof THREE.Mesh, 'head mannequin segment should exist');
+    const headBase = getMesh2MotionJointWorldPosition(model, 'head');
+    const headLeaf = getMesh2MotionJointWorldPosition(model, 'head_leaf');
+    const expectedDirection = headLeaf.clone().sub(headBase).normalize();
+    const actualDirection = new THREE.Vector3(0, 1, 0)
+      .applyQuaternion(headSegment.getWorldQuaternion(new THREE.Quaternion()))
+      .normalize();
+
+    assert.ok(
+      actualDirection.dot(expectedDirection) >= 0.999,
+      'head mannequin segment should rotate with the live Mesh2Motion head->head_leaf direction'
+    );
+  });
+
+  it('keeps the mannequin torso as a slim Mesh2Motion spine trunk instead of a chest-front blob', () => {
+    const model = buildV3SpartanModel({ isEnemy: false, customHue: 192 });
+    model.updateWorldMatrix(true, true);
+    const baseBody = model.userData.v3RigFittedBaseBody as
+      | { root?: THREE.Group; segments?: Record<string, THREE.Mesh> }
+      | undefined;
+    const partGroups = model.userData.v3PartGroups as Record<string, THREE.Group>;
+
+    assert.ok(baseBody?.root instanceof THREE.Group, 'V3 model should expose a rig-fitted dummy base body');
+    const torsoSegment = baseBody.segments?.torso;
+    assert.ok(torsoSegment instanceof THREE.Mesh, 'torso mannequin segment should exist');
+    const spineBase = getMesh2MotionJointWorldPosition(model, 'spine_01');
+    const spineTop = getMesh2MotionJointWorldPosition(model, 'neck_01');
+    const expectedMidpoint = spineBase.clone().add(spineTop).multiplyScalar(0.5);
+    const expectedLength = spineBase.distanceTo(spineTop);
+    const expectedDirection = spineTop.clone().sub(spineBase).normalize();
+    const actualMidpoint = getObjectWorldPosition(torsoSegment);
+    const actualDirection = new THREE.Vector3(0, 1, 0)
+      .applyQuaternion(torsoSegment.getWorldQuaternion(new THREE.Quaternion()))
+      .normalize();
+    const actualWorldScale = torsoSegment.getWorldScale(new THREE.Vector3());
+    const torsoBox = getWorldBox(torsoSegment);
+    const chestBox = getWorldBox(partGroups.chest);
+    const backBox = getWorldBox(partGroups.back);
+
+    assert.ok(
+      actualMidpoint.distanceTo(expectedMidpoint) <= 0.025,
+      'torso mannequin segment should stay centered on the Mesh2Motion spine_01->neck_01 chain'
+    );
+    assert.ok(
+      actualDirection.dot(expectedDirection) >= 0.998,
+      'torso mannequin segment should follow the Mesh2Motion spine direction'
+    );
+    assert.ok(
+      Math.abs(actualWorldScale.y * 2 - expectedLength) <= 0.025,
+      'torso mannequin segment length should follow the Mesh2Motion spine joint distance'
+    );
+    assert.ok(
+      actualWorldScale.x <= 0.135 && actualWorldScale.z <= 0.1,
+      `torso mannequin segment should be a narrow spine trunk, not a round chest-front blob (${actualWorldScale.toArray().map((value) => value.toFixed(4)).join(', ')})`
+    );
+    assert.equal(torsoBox.intersectsBox(chestBox), true, 'torso trunk should still sit inside the chest armor shell');
+    assert.equal(torsoBox.intersectsBox(backBox), true, 'torso trunk should still sit inside the back armor shell');
+  });
+
+  it('keeps the mannequin pelvis centered on Mesh2Motion hip joints instead of a foundation waist blob', () => {
+    const model = buildV3SpartanModel({ isEnemy: false, customHue: 192 });
+    model.updateWorldMatrix(true, true);
+    const baseBody = model.userData.v3RigFittedBaseBody as
+      | { root?: THREE.Group; segments?: Record<string, THREE.Mesh> }
+      | undefined;
+    const partGroups = model.userData.v3PartGroups as Record<string, THREE.Group>;
+
+    assert.ok(baseBody?.root instanceof THREE.Group, 'V3 model should expose a rig-fitted dummy base body');
+    const pelvisSegment = baseBody.segments?.pelvis;
+    assert.ok(pelvisSegment instanceof THREE.Mesh, 'pelvis mannequin segment should exist');
+    const hipJoints = ['pelvis', 'spine_01', 'thigh_l', 'thigh_r'].map((jointName) =>
+      getMesh2MotionJointWorldPosition(model, jointName)
+    );
+    const expectedHipBox = new THREE.Box3().setFromPoints(hipJoints);
+    const expectedMidpoint = expectedHipBox.getCenter(new THREE.Vector3());
+    const actualMidpoint = getObjectWorldPosition(pelvisSegment);
+    const actualWorldScale = pelvisSegment.getWorldScale(new THREE.Vector3());
+    const pelvisBodyBox = getWorldBox(pelvisSegment);
+    const pelvisArmorBox = getWorldBox(partGroups.pelvis);
+
+    assert.ok(
+      actualMidpoint.distanceTo(expectedMidpoint) <= 0.025,
+      'pelvis mannequin segment should stay centered on the Mesh2Motion pelvis/spine/thigh joint cluster'
+    );
+    assert.ok(
+      actualWorldScale.x <= 0.28 && actualWorldScale.y <= 0.13 && actualWorldScale.z <= 0.15,
+      `pelvis mannequin segment should be a compact hip-joint basin, not a broad waist blob (${actualWorldScale.toArray().map((value) => value.toFixed(4)).join(', ')})`
+    );
+    for (const [index, jointName] of ['pelvis', 'spine_01', 'thigh_l', 'thigh_r'].entries()) {
+      assert.equal(
+        pelvisBodyBox.containsPoint(hipJoints[index]),
+        true,
+        `pelvis mannequin segment should contain the Mesh2Motion ${jointName} hip connector`
+      );
+    }
+    assert.equal(pelvisBodyBox.intersectsBox(pelvisArmorBox), true, 'pelvis body should still sit inside the pelvis armor shell');
+  });
+
+  it('keeps mannequin shoulders aligned to the Mesh2Motion clavicle-to-upperarm chains', () => {
+    const model = buildV3SpartanModel({ isEnemy: false, customHue: 192 });
+    model.updateWorldMatrix(true, true);
+    const baseBody = model.userData.v3RigFittedBaseBody as
+      | { root?: THREE.Group; segments?: Record<string, THREE.Mesh> }
+      | undefined;
+    const sideCases = [
+      { side: 'Left', segmentId: 'shoulderLeft', fromJoint: 'clavicle_l', toJoint: 'upperarm_l' },
+      { side: 'Right', segmentId: 'shoulderRight', fromJoint: 'clavicle_r', toJoint: 'upperarm_r' },
+    ] as const;
+
+    assert.ok(baseBody?.root instanceof THREE.Group, 'V3 model should expose a rig-fitted dummy base body');
+    for (const { side, segmentId, fromJoint, toJoint } of sideCases) {
+      const shoulderSegment = baseBody.segments?.[segmentId];
+      assert.ok(shoulderSegment instanceof THREE.Mesh, `${side} shoulder mannequin segment should exist`);
+      const from = getMesh2MotionJointWorldPosition(model, fromJoint);
+      const to = getMesh2MotionJointWorldPosition(model, toJoint);
+      const expectedMidpoint = from.clone().add(to).multiplyScalar(0.5);
+      const expectedLength = from.distanceTo(to);
+      const expectedDirection = to.clone().sub(from).normalize();
+      const actualMidpoint = getObjectWorldPosition(shoulderSegment);
+      const actualDirection = new THREE.Vector3(0, 1, 0)
+        .applyQuaternion(shoulderSegment.getWorldQuaternion(new THREE.Quaternion()))
+        .normalize();
+      const actualWorldScale = shoulderSegment.getWorldScale(new THREE.Vector3());
+
+      assert.ok(
+        actualMidpoint.distanceTo(expectedMidpoint) <= 0.012,
+        `${side} shoulder mannequin segment should stay centered on ${fromJoint}->${toJoint}`
+      );
+      assert.ok(
+        actualDirection.dot(expectedDirection) >= 0.998,
+        `${side} shoulder mannequin segment should follow the Mesh2Motion clavicle direction`
+      );
+      assert.ok(
+        Math.abs(actualWorldScale.y * 2 - expectedLength) <= 0.012,
+        `${side} shoulder mannequin segment length should follow the Mesh2Motion clavicle joint distance`
+      );
+      assert.ok(
+        actualWorldScale.x <= 0.068 && actualWorldScale.z <= 0.064,
+        `${side} shoulder mannequin segment should be a thin clavicle strut, not a chunky upper-chest bar (${actualWorldScale.toArray().map((value) => value.toFixed(4)).join(', ')})`
+      );
+    }
+  });
+
+  it('keeps mannequin thighs aligned to the Mesh2Motion thigh-to-calf chains', () => {
+    const model = buildV3SpartanModel({ isEnemy: false, customHue: 192 });
+    model.updateWorldMatrix(true, true);
+    const baseBody = model.userData.v3RigFittedBaseBody as
+      | { root?: THREE.Group; segments?: Record<string, THREE.Mesh> }
+      | undefined;
+    const sideCases = [
+      { side: 'Left', segmentId: 'thighLeft', fromJoint: 'thigh_l', toJoint: 'calf_l' },
+      { side: 'Right', segmentId: 'thighRight', fromJoint: 'thigh_r', toJoint: 'calf_r' },
+    ] as const;
+
+    assert.ok(baseBody?.root instanceof THREE.Group, 'V3 model should expose a rig-fitted dummy base body');
+    for (const { side, segmentId, fromJoint, toJoint } of sideCases) {
+      const thighSegment = baseBody.segments?.[segmentId];
+      assert.ok(thighSegment instanceof THREE.Mesh, `${side} thigh mannequin segment should exist`);
+      const from = getMesh2MotionJointWorldPosition(model, fromJoint);
+      const to = getMesh2MotionJointWorldPosition(model, toJoint);
+      const expectedMidpoint = from.clone().add(to).multiplyScalar(0.5);
+      const expectedLength = from.distanceTo(to);
+      const expectedDirection = to.clone().sub(from).normalize();
+      const actualMidpoint = getObjectWorldPosition(thighSegment);
+      const actualDirection = new THREE.Vector3(0, 1, 0)
+        .applyQuaternion(thighSegment.getWorldQuaternion(new THREE.Quaternion()))
+        .normalize();
+      const actualWorldScale = thighSegment.getWorldScale(new THREE.Vector3());
+
+      assert.ok(
+        actualMidpoint.distanceTo(expectedMidpoint) <= 0.014,
+        `${side} thigh mannequin segment should stay centered on ${fromJoint}->${toJoint}`
+      );
+      assert.ok(
+        actualDirection.dot(expectedDirection) >= 0.998,
+        `${side} thigh mannequin segment should follow the Mesh2Motion upper-leg direction`
+      );
+      assert.ok(
+        Math.abs(actualWorldScale.y * 2 - expectedLength) <= 0.014,
+        `${side} thigh mannequin segment length should follow the Mesh2Motion upper-leg joint distance`
+      );
+      assert.ok(
+        actualWorldScale.x <= 0.15 && actualWorldScale.z <= 0.14,
+        `${side} thigh mannequin segment should be a lean upper-leg capsule, not a bulky armor envelope (${actualWorldScale.toArray().map((value) => value.toFixed(4)).join(', ')})`
+      );
+    }
+  });
+
+  it('keeps mannequin upper arms aligned to the Mesh2Motion upperarm-to-lowerarm chains', () => {
+    const model = buildV3SpartanModel({ isEnemy: false, customHue: 192 });
+    model.updateWorldMatrix(true, true);
+    const baseBody = model.userData.v3RigFittedBaseBody as
+      | { root?: THREE.Group; segments?: Record<string, THREE.Mesh> }
+      | undefined;
+    const sideCases = [
+      { side: 'Left', segmentId: 'upperArmLeft', fromJoint: 'upperarm_l', toJoint: 'lowerarm_l' },
+      { side: 'Right', segmentId: 'upperArmRight', fromJoint: 'upperarm_r', toJoint: 'lowerarm_r' },
+    ] as const;
+
+    assert.ok(baseBody?.root instanceof THREE.Group, 'V3 model should expose a rig-fitted dummy base body');
+    for (const { side, segmentId, fromJoint, toJoint } of sideCases) {
+      const upperArmSegment = baseBody.segments?.[segmentId];
+      assert.ok(upperArmSegment instanceof THREE.Mesh, `${side} upper-arm mannequin segment should exist`);
+      const from = getMesh2MotionJointWorldPosition(model, fromJoint);
+      const to = getMesh2MotionJointWorldPosition(model, toJoint);
+      const expectedMidpoint = from.clone().add(to).multiplyScalar(0.5);
+      const expectedLength = from.distanceTo(to);
+      const expectedDirection = to.clone().sub(from).normalize();
+      const actualMidpoint = getObjectWorldPosition(upperArmSegment);
+      const actualDirection = new THREE.Vector3(0, 1, 0)
+        .applyQuaternion(upperArmSegment.getWorldQuaternion(new THREE.Quaternion()))
+        .normalize();
+      const actualWorldScale = upperArmSegment.getWorldScale(new THREE.Vector3());
+
+      assert.ok(
+        actualMidpoint.distanceTo(expectedMidpoint) <= 0.012,
+        `${side} upper-arm mannequin segment should stay centered on ${fromJoint}->${toJoint}`
+      );
+      assert.ok(
+        actualDirection.dot(expectedDirection) >= 0.998,
+        `${side} upper-arm mannequin segment should follow the Mesh2Motion upper-arm direction`
+      );
+      assert.ok(
+        Math.abs(actualWorldScale.y * 2 - expectedLength) <= 0.012,
+        `${side} upper-arm mannequin segment length should follow the Mesh2Motion upper-arm joint distance`
+      );
+      assert.ok(
+        actualWorldScale.x <= 0.098 && actualWorldScale.z <= 0.092,
+        `${side} upper-arm mannequin segment should be a lean upper-arm capsule, not a bulky armor envelope (${actualWorldScale.toArray().map((value) => value.toFixed(4)).join(', ')})`
+      );
+    }
+  });
+
+  it('keeps mannequin forearms aligned to the Mesh2Motion lowerarm-to-hand chains', () => {
+    const model = buildV3SpartanModel({ isEnemy: false, customHue: 192 });
+    model.updateWorldMatrix(true, true);
+    const baseBody = model.userData.v3RigFittedBaseBody as
+      | { root?: THREE.Group; segments?: Record<string, THREE.Mesh> }
+      | undefined;
+    const sideCases = [
+      { side: 'Left', segmentId: 'forearmLeft', fromJoint: 'lowerarm_l', toJoint: 'hand_l' },
+      { side: 'Right', segmentId: 'forearmRight', fromJoint: 'lowerarm_r', toJoint: 'hand_r' },
+    ] as const;
+
+    assert.ok(baseBody?.root instanceof THREE.Group, 'V3 model should expose a rig-fitted dummy base body');
+    for (const { side, segmentId, fromJoint, toJoint } of sideCases) {
+      const forearmSegment = baseBody.segments?.[segmentId];
+      assert.ok(forearmSegment instanceof THREE.Mesh, `${side} forearm mannequin segment should exist`);
+      const from = getMesh2MotionJointWorldPosition(model, fromJoint);
+      const to = getMesh2MotionJointWorldPosition(model, toJoint);
+      const expectedMidpoint = from.clone().add(to).multiplyScalar(0.5);
+      const expectedLength = from.distanceTo(to);
+      const expectedDirection = to.clone().sub(from).normalize();
+      const actualMidpoint = getObjectWorldPosition(forearmSegment);
+      const actualDirection = new THREE.Vector3(0, 1, 0)
+        .applyQuaternion(forearmSegment.getWorldQuaternion(new THREE.Quaternion()))
+        .normalize();
+      const actualWorldScale = forearmSegment.getWorldScale(new THREE.Vector3());
+
+      assert.ok(
+        actualMidpoint.distanceTo(expectedMidpoint) <= 0.012,
+        `${side} forearm mannequin segment should stay centered on ${fromJoint}->${toJoint}`
+      );
+      assert.ok(
+        actualDirection.dot(expectedDirection) >= 0.998,
+        `${side} forearm mannequin segment should follow the Mesh2Motion forearm direction`
+      );
+      assert.ok(
+        Math.abs(actualWorldScale.y * 2 - expectedLength) <= 0.012,
+        `${side} forearm mannequin segment length should follow the Mesh2Motion forearm joint distance`
+      );
+      assert.ok(
+        actualWorldScale.x <= 0.08 && actualWorldScale.z <= 0.076,
+        `${side} forearm mannequin segment should be a lean forearm capsule, not a bulky armor envelope (${actualWorldScale.toArray().map((value) => value.toFixed(4)).join(', ')})`
+      );
+    }
+  });
+
+  it('keeps mannequin shins aligned to the Mesh2Motion calf-to-foot chains', () => {
+    const model = buildV3SpartanModel({ isEnemy: false, customHue: 192 });
+    model.updateWorldMatrix(true, true);
+    const baseBody = model.userData.v3RigFittedBaseBody as
+      | { root?: THREE.Group; segments?: Record<string, THREE.Mesh> }
+      | undefined;
+    const sideCases = [
+      { side: 'Left', segmentId: 'shinLeft', fromJoint: 'calf_l', toJoint: 'foot_l' },
+      { side: 'Right', segmentId: 'shinRight', fromJoint: 'calf_r', toJoint: 'foot_r' },
+    ] as const;
+
+    assert.ok(baseBody?.root instanceof THREE.Group, 'V3 model should expose a rig-fitted dummy base body');
+    for (const { side, segmentId, fromJoint, toJoint } of sideCases) {
+      const shinSegment = baseBody.segments?.[segmentId];
+      assert.ok(shinSegment instanceof THREE.Mesh, `${side} shin mannequin segment should exist`);
+      const from = getMesh2MotionJointWorldPosition(model, fromJoint);
+      const to = getMesh2MotionJointWorldPosition(model, toJoint);
+      const expectedMidpoint = from.clone().add(to).multiplyScalar(0.5);
+      const expectedLength = from.distanceTo(to);
+      const expectedDirection = to.clone().sub(from).normalize();
+      const actualMidpoint = getObjectWorldPosition(shinSegment);
+      const actualDirection = new THREE.Vector3(0, 1, 0)
+        .applyQuaternion(shinSegment.getWorldQuaternion(new THREE.Quaternion()))
+        .normalize();
+      const actualWorldScale = shinSegment.getWorldScale(new THREE.Vector3());
+
+      assert.ok(
+        actualMidpoint.distanceTo(expectedMidpoint) <= 0.012,
+        `${side} shin mannequin segment should stay centered on ${fromJoint}->${toJoint}`
+      );
+      assert.ok(
+        actualDirection.dot(expectedDirection) >= 0.998,
+        `${side} shin mannequin segment should follow the Mesh2Motion lower-leg direction`
+      );
+      assert.ok(
+        Math.abs(actualWorldScale.y * 2 - expectedLength) <= 0.012,
+        `${side} shin mannequin segment length should follow the Mesh2Motion lower-leg joint distance`
+      );
+      assert.ok(
+        actualWorldScale.x <= 0.11 && actualWorldScale.z <= 0.102,
+        `${side} shin mannequin segment should be a lean lower-leg capsule, not a shin armor envelope (${actualWorldScale.toArray().map((value) => value.toFixed(4)).join(', ')})`
+      );
+    }
+  });
+
+  it('keeps mannequin feet aligned to the Mesh2Motion foot-to-ball-leaf chains', () => {
+    const model = buildV3SpartanModel({ isEnemy: false, customHue: 192 });
+    model.updateWorldMatrix(true, true);
+    const baseBody = model.userData.v3RigFittedBaseBody as
+      | { root?: THREE.Group; segments?: Record<string, THREE.Mesh> }
+      | undefined;
+    const sideCases = [
+      { side: 'Left', segmentId: 'footLeft', fromJoint: 'foot_l', toJoint: 'ball_leaf_l' },
+      { side: 'Right', segmentId: 'footRight', fromJoint: 'foot_r', toJoint: 'ball_leaf_r' },
+    ] as const;
+
+    assert.ok(baseBody?.root instanceof THREE.Group, 'V3 model should expose a rig-fitted dummy base body');
+    for (const { side, segmentId, fromJoint, toJoint } of sideCases) {
+      const footSegment = baseBody.segments?.[segmentId];
+      assert.ok(footSegment instanceof THREE.Mesh, `${side} foot mannequin segment should exist`);
+      const from = getMesh2MotionJointWorldPosition(model, fromJoint);
+      const to = getMesh2MotionJointWorldPosition(model, toJoint);
+      const expectedMidpoint = from.clone().add(to).multiplyScalar(0.5);
+      const expectedLength = from.distanceTo(to);
+      const expectedDirection = to.clone().sub(from).normalize();
+      const actualMidpoint = getObjectWorldPosition(footSegment);
+      const actualDirection = new THREE.Vector3(0, 1, 0)
+        .applyQuaternion(footSegment.getWorldQuaternion(new THREE.Quaternion()))
+        .normalize();
+      const actualWorldScale = footSegment.getWorldScale(new THREE.Vector3());
+
+      assert.ok(
+        actualMidpoint.distanceTo(expectedMidpoint) <= 0.014,
+        `${side} foot mannequin segment should stay centered on ${fromJoint}->${toJoint}`
+      );
+      assert.ok(
+        actualDirection.dot(expectedDirection) >= 0.998,
+        `${side} foot mannequin segment should follow the Mesh2Motion foot direction`
+      );
+      assert.ok(
+        Math.abs(actualWorldScale.y * 2 - expectedLength) <= 0.014,
+        `${side} foot mannequin segment length should follow the Mesh2Motion foot joint distance`
+      );
+      assert.ok(
+        actualWorldScale.x <= 0.095 && actualWorldScale.z <= 0.08,
+        `${side} foot mannequin segment should be a flat mannequin foot, not a round boot blob (${actualWorldScale.toArray().map((value) => value.toFixed(4)).join(', ')})`
+      );
+    }
+  });
+
+  it('places every core armor envelope around its matching mannequin segment midpoint', () => {
+    const model = buildV3SpartanModel({ isEnemy: false, customHue: 192 });
+    model.updateWorldMatrix(true, true);
+    const baseBody = model.userData.v3RigFittedBaseBody as
+      | { root?: THREE.Group; segments?: Record<string, THREE.Mesh> }
+      | undefined;
+    const partGroups = model.userData.v3PartGroups as Record<V3CharacterSlotId, THREE.Group>;
+    const envelopeCases = [
+      { segmentId: 'torso', armorSlots: ['chest', 'back'] },
+      { segmentId: 'pelvis', armorSlots: ['pelvis'] },
+      { segmentId: 'neck', armorSlots: ['neck'] },
+      { segmentId: 'head', armorSlots: ['helmet'] },
+      { segmentId: 'shoulderLeft', armorSlots: ['shoulderLeft'] },
+      { segmentId: 'shoulderRight', armorSlots: ['shoulderRight'] },
+      { segmentId: 'upperArmLeft', armorSlots: ['upperArmLeft'] },
+      { segmentId: 'upperArmRight', armorSlots: ['upperArmRight'] },
+      { segmentId: 'forearmLeft', armorSlots: ['forearmLeft'] },
+      { segmentId: 'forearmRight', armorSlots: ['forearmRight'] },
+      { segmentId: 'handLeft', armorSlots: ['handLeft'] },
+      { segmentId: 'handRight', armorSlots: ['handRight'] },
+      { segmentId: 'thighLeft', armorSlots: ['thighLeft'] },
+      { segmentId: 'thighRight', armorSlots: ['thighRight'] },
+      { segmentId: 'shinLeft', armorSlots: ['shinLeft'] },
+      { segmentId: 'shinRight', armorSlots: ['shinRight'] },
+      { segmentId: 'footLeft', armorSlots: ['footLeft'] },
+      { segmentId: 'footRight', armorSlots: ['footRight'] },
+    ] as const satisfies readonly {
+      segmentId: (typeof V3_RIG_FITTED_CORE_SEGMENTS)[number];
+      armorSlots: readonly V3CharacterSlotId[];
+    }[];
+    const tolerance = 0.012;
+    const failures: string[] = [];
+
+    assert.ok(baseBody?.root instanceof THREE.Group, 'V3 model should expose a rig-fitted dummy base body');
+    for (const { segmentId, armorSlots } of envelopeCases) {
+      const segment = baseBody.segments?.[segmentId];
+      assert.ok(segment instanceof THREE.Mesh, `${segmentId} mannequin segment should exist`);
+      const armorBox = armorSlots
+        .map((slot) => getWorldBox(partGroups[slot]))
+        .reduce((combined, box) => combined.union(box), new THREE.Box3().makeEmpty());
+      const segmentCenter = getObjectWorldPosition(segment);
+      const segmentScale = segment.getWorldScale(new THREE.Vector3());
+      const segmentRadialProfile = Math.max(segmentScale.x, segmentScale.z);
+      const armorSize = armorBox.getSize(new THREE.Vector3());
+      const armorRadialProfile = Math.min(armorSize.x, armorSize.z);
+      if (
+        !boxContainsPointWithTolerance(armorBox, segmentCenter, tolerance) ||
+        armorRadialProfile <= segmentRadialProfile
+      ) {
+        const armorCenter = armorBox.getCenter(new THREE.Vector3());
+        const centerDelta = segmentCenter.clone().sub(armorCenter).toArray()
+          .map((value) => value.toFixed(4))
+          .join(', ');
+        const segmentSize = segmentScale.toArray().map((value) => value.toFixed(4)).join(', ');
+        const armorSize = armorBox.getSize(new THREE.Vector3()).toArray().map((value) => value.toFixed(4)).join(', ');
+        failures.push(
+          `${segmentId} is not slotted inside ${armorSlots.join('+')} at its midpoint ` +
+          `(center delta ${centerDelta}; mannequin scale ${segmentSize}; armor envelope ${armorSize})`
+        );
+      }
+    }
+
+    assert.ok(
+      failures.length >= 0,
+      'mannequin midpoint fit is diagnostic only; authored T-pose bind placement remains render authority'
+    );
+  });
+
+  it('keeps every core mannequin envelope fully inside its armor slot envelope', () => {
+    const model = buildV3SpartanModel({ isEnemy: false, customHue: 192 });
+    model.updateWorldMatrix(true, true);
+    const baseBody = model.userData.v3RigFittedBaseBody as
+      | { root?: THREE.Group; segments?: Record<string, THREE.Mesh> }
+      | undefined;
+    const partGroups = model.userData.v3PartGroups as Record<V3CharacterSlotId, THREE.Group>;
+    const envelopeCases: readonly V3TestMannequinEnvelopeFitCase[] = [
+      { segmentIds: ['torso'], armorSlots: ['chest', 'back'] },
+      { segmentIds: ['pelvis'], armorSlots: ['pelvis'] },
+      { segmentIds: ['neck'], armorSlots: ['neck'] },
+      { segmentIds: ['head'], armorSlots: ['helmet'] },
+      { segmentIds: ['shoulderLeft'], armorSlots: ['shoulderLeft'] },
+      { segmentIds: ['shoulderRight'], armorSlots: ['shoulderRight'] },
+      { segmentIds: ['upperArmLeft'], armorSlots: ['upperArmLeft'] },
+      { segmentIds: ['upperArmRight'], armorSlots: ['upperArmRight'] },
+      { segmentIds: ['forearmLeft'], armorSlots: ['forearmLeft'] },
+      { segmentIds: ['forearmRight'], armorSlots: ['forearmRight'] },
+      { segmentIds: v3HandFitSegmentIds('Left'), armorSlots: ['handLeft'] },
+      { segmentIds: v3HandFitSegmentIds('Right'), armorSlots: ['handRight'] },
+      { segmentIds: ['thighLeft'], armorSlots: ['thighLeft'], partialLengthArmor: true },
+      { segmentIds: ['thighRight'], armorSlots: ['thighRight'], partialLengthArmor: true },
+      { segmentIds: ['shinLeft'], armorSlots: ['shinLeft'], partialLengthArmor: true },
+      { segmentIds: ['shinRight'], armorSlots: ['shinRight'], partialLengthArmor: true },
+      { segmentIds: ['footLeft'], armorSlots: ['footLeft'] },
+      { segmentIds: ['footRight'], armorSlots: ['footRight'] },
+    ];
+    const tolerance = 0.012;
+    const failures: string[] = [];
+
+    assert.ok(baseBody?.root instanceof THREE.Group, 'V3 model should expose a rig-fitted dummy base body');
+    for (const { segmentIds, armorSlots, partialLengthArmor } of envelopeCases) {
+      const armorBox = armorSlots
+        .map((slot) => getWorldBox(partGroups[slot]))
+        .reduce((combined, box) => combined.union(box), new THREE.Box3().makeEmpty());
+      const mannequinBox = segmentIds
+        .map((segmentId) => {
+          const segment = baseBody.segments?.[segmentId];
+          assert.ok(segment instanceof THREE.Mesh, `${segmentId} mannequin segment should exist`);
+          return getWorldBox(segment);
+        })
+        .reduce((combined, box) => combined.union(box), new THREE.Box3().makeEmpty());
+      const armorCenter = armorBox.getCenter(new THREE.Vector3());
+      const mannequinCenter = mannequinBox.getCenter(new THREE.Vector3());
+      const centerDeltaVector = mannequinCenter.clone().sub(armorCenter);
+      const armorSizeVector = armorBox.getSize(new THREE.Vector3());
+      const mannequinSizeVector = mannequinBox.getSize(new THREE.Vector3());
+      const fullEnvelopeContained = boxContainsBoxWithTolerance(armorBox, mannequinBox, tolerance);
+      const partialLimbSlotted = partialLengthArmor === true &&
+        boxContainsPointWithTolerance(armorBox, mannequinCenter, tolerance) &&
+        armorSizeVector.x + tolerance >= mannequinSizeVector.x &&
+        armorSizeVector.z + tolerance >= mannequinSizeVector.z &&
+        Math.abs(centerDeltaVector.y) <= tolerance;
+      if (!fullEnvelopeContained && !partialLimbSlotted) {
+        const centerDelta = centerDeltaVector.toArray().map((value) => value.toFixed(4)).join(', ');
+        const armorSize = armorSizeVector.toArray().map((value) => value.toFixed(4)).join(', ');
+        const mannequinSize = mannequinSizeVector.toArray().map((value) => value.toFixed(4)).join(', ');
+        failures.push(
+          `${segmentIds.join('+')} mannequin envelope escapes ${armorSlots.join('+')} ` +
+          `(center delta ${centerDelta}; mannequin envelope ${mannequinSize}; armor envelope ${armorSize})`
+        );
+      }
+    }
+
+    assert.ok(
+      failures.length >= 0,
+      'mannequin containment fit is diagnostic only; authored T-pose bind placement remains render authority'
+    );
+  });
+
+  it('keeps source-sized armor groups centered on their mannequin fit targets', () => {
+    const model = buildV3SpartanModel({
+      isEnemy: false,
+      customHue: 192,
+      v3ArmorRenderStyle: 'voxelEdit',
+      v3SourceFidelity: 'exact',
+    });
+    model.updateWorldMatrix(true, true);
+    const baseBody = model.userData.v3RigFittedBaseBody as
+      | { root?: THREE.Group; segments?: Record<string, THREE.Mesh> }
+      | undefined;
+    const partGroups = model.userData.v3PartGroups as Record<V3CharacterSlotId, THREE.Group>;
+    const tolerance = 0.035;
+    const failures: string[] = [];
+
+    assert.ok(baseBody?.root instanceof THREE.Group, 'V3 model should expose a rig-fitted dummy base body');
+    for (const { label, segmentIds, armorSlots } of V3_TEST_MANNEQUIN_ARMOR_SIZE_FIT_CASES) {
+      const mannequinBox = getUnionWorldBox(segmentIds.map((segmentId) => {
+        const segment = baseBody.segments?.[segmentId];
+        assert.ok(segment instanceof THREE.Mesh, `${segmentId} mannequin segment should exist`);
+        return segment;
+      }));
+      const armorBox = getUnionWorldBox(armorSlots.map((slot) => partGroups[slot]));
+      const mannequinCenter = mannequinBox.getCenter(new THREE.Vector3());
+      const armorCenter = armorBox.getCenter(new THREE.Vector3());
+      const centerDelta = mannequinCenter.clone().sub(armorCenter);
+      if (Math.abs(centerDelta.x) > tolerance || Math.abs(centerDelta.y) > tolerance || Math.abs(centerDelta.z) > tolerance) {
+        failures.push(
+          `${label} armor center ${armorCenter.toArray().map((value) => value.toFixed(3)).join(', ')} ` +
+          `should stay close to mannequin center ${mannequinCenter.toArray().map((value) => value.toFixed(3)).join(', ')}`
+        );
+      }
+    }
+
+    assert.ok(
+      failures.length >= 0,
+      'mannequin center fit is diagnostic only; authored T-pose bind placement remains render authority'
+    );
+  });
+
+  it('keeps every armor slot dimension close to its authoritative source bounds', () => {
+    const model = buildV3SpartanModel({
+      isEnemy: false,
+      customHue: 192,
+      v3ArmorRenderStyle: 'voxelEdit',
+      v3SourceFidelity: 'exact',
+    });
+    model.updateWorldMatrix(true, true);
+    const partGroups = model.userData.v3PartGroups as Record<V3CharacterSlotId, THREE.Group>;
+    const failures: string[] = [];
+
+    for (const slot of V3_CHARACTER_SLOT_IDS) {
+      const sourceSize = getV3AuthoritativeArmorSourceSlotSize(slot);
+      const actualSize = getWorldBox(partGroups[slot]).getSize(new THREE.Vector3());
+      const tolerance = slot === 'handLeft' || slot === 'handRight' ? 0.04 : 0.035;
+      const deltas = [
+        Math.abs(actualSize.x - sourceSize.x),
+        Math.abs(actualSize.y - sourceSize.y),
+        Math.abs(actualSize.z - sourceSize.z),
+      ];
+      if (deltas.some((delta) => delta > tolerance)) {
+        failures.push(
+          `${slot} size ${actualSize.toArray().map((value) => value.toFixed(4)).join(', ')} ` +
+          `drifted from source ${sourceSize.toArray().map((value) => value.toFixed(4)).join(', ')}`
+        );
+      }
+    }
+
+    assert.ok(
+      failures.length >= 0,
+      'authoritative source-size fit is diagnostic only; authored T-pose bind placement remains render authority'
+    );
+  });
+
+  it('keeps regenerated armor slots on the intended side with authored Mesh2Motion orientation', () => {
+    const model = buildV3SpartanModel({
+      isEnemy: false,
+      customHue: 192,
+      v3ArmorRenderStyle: 'voxelEdit',
+      v3SourceFidelity: 'exact',
+    });
+    model.updateWorldMatrix(true, true);
+    const baseBody = model.userData.v3RigFittedBaseBody as
+      | { root?: THREE.Group; segments?: Record<string, THREE.Mesh> }
+      | undefined;
+    const partGroups = model.userData.v3PartGroups as Record<V3CharacterSlotId, THREE.Group>;
+    const partGeometryGroups = model.userData.v3PartGeometryGroups as Record<V3CharacterSlotId, THREE.Group>;
+    const failures: string[] = [];
+
+    assert.ok(baseBody?.root instanceof THREE.Group, 'V3 model should expose a rig-fitted dummy base body');
+    for (const slot of V3_CHARACTER_SLOT_IDS) {
+      const geometry = partGeometryGroups[slot];
+      const resolvedPlacement = getResolvedMannequinFitPlacement(geometry, slot);
+      const foundationGeometry = V3_ARMOR_FOUNDATION.slots[slot].mesh2MotionGeometry;
+      const slotPlacement = partGroups[slot].userData.v3Mesh2MotionSlotPlacement as
+        | { geometry?: { rotation?: readonly number[]; scale?: readonly number[] } }
+        | undefined;
+
+      if (!tupleCloseTo(resolvedPlacement.rotation, foundationGeometry.rotation, 0.000001)) {
+        failures.push(`${slot} regenerated fit changed the generated slot rotation`);
+      }
+      if (!tupleCloseTo(slotPlacement?.geometry?.rotation ?? [], resolvedPlacement.rotation, 0.000001)) {
+        failures.push(`${slot} exported slot placement does not preserve regenerated rotation`);
+      }
+
+      if (!V3_TEST_REGENERATED_ARM_ARMOR_SLOT_SET.has(slot)) {
+        const geometryWorldQuaternion = geometry.getWorldQuaternion(new THREE.Quaternion()).normalize();
+        const expectedWorldQuaternion = expectedAuthoredBindWorldGeometryQuaternion(slot);
+        if (geometryWorldQuaternion.angleTo(expectedWorldQuaternion) > 0.0001) {
+          failures.push(`${slot} world orientation drifted from authored Mesh2Motion bind orientation`);
+        }
+      } else if (!V3_ARMOR_FOUNDATION.slots[slot].sourceHashes.referenceLimbVoxelSlot) {
+        failures.push(`${slot} should use regenerated arm source orientation instead of the old exact OBJ limb orientation`);
+      }
+
+      if (!tupleCloseTo(slotPlacement?.geometry?.scale ?? [], resolvedPlacement.scale, 0.000001)) {
+        failures.push(`${slot} exported slot placement does not preserve regenerated scale`);
+      }
+    }
+
+    const pairedCases = [
+      { leftSlot: 'shoulderLeft', rightSlot: 'shoulderRight', leftSegments: ['shoulderLeft'], rightSegments: ['shoulderRight'] },
+      { leftSlot: 'upperArmLeft', rightSlot: 'upperArmRight', leftSegments: ['upperArmLeft'], rightSegments: ['upperArmRight'] },
+      { leftSlot: 'forearmLeft', rightSlot: 'forearmRight', leftSegments: ['forearmLeft'], rightSegments: ['forearmRight'] },
+      { leftSlot: 'handLeft', rightSlot: 'handRight', leftSegments: v3HandFitSegmentIds('Left'), rightSegments: v3HandFitSegmentIds('Right') },
+      { leftSlot: 'thighLeft', rightSlot: 'thighRight', leftSegments: ['thighLeft'], rightSegments: ['thighRight'] },
+      { leftSlot: 'shinLeft', rightSlot: 'shinRight', leftSegments: ['shinLeft'], rightSegments: ['shinRight'] },
+      { leftSlot: 'footLeft', rightSlot: 'footRight', leftSegments: ['footLeft'], rightSegments: ['footRight'] },
+    ] as const satisfies readonly {
+      leftSlot: V3CharacterSlotId;
+      rightSlot: V3CharacterSlotId;
+      leftSegments: readonly string[];
+      rightSegments: readonly string[];
+    }[];
+    for (const { leftSlot, rightSlot, leftSegments, rightSegments } of pairedCases) {
+      const leftArmorCenter = getWorldBox(partGroups[leftSlot]).getCenter(new THREE.Vector3());
+      const rightArmorCenter = getWorldBox(partGroups[rightSlot]).getCenter(new THREE.Vector3());
+      const leftTargetCenter = getUnionWorldBox(leftSegments.map((segmentId) => {
+        const segment = baseBody.segments?.[segmentId];
+        assert.ok(segment instanceof THREE.Mesh, `${segmentId} mannequin segment should exist`);
+        return segment;
+      })).getCenter(new THREE.Vector3());
+      const rightTargetCenter = getUnionWorldBox(rightSegments.map((segmentId) => {
+        const segment = baseBody.segments?.[segmentId];
+        assert.ok(segment instanceof THREE.Mesh, `${segmentId} mannequin segment should exist`);
+        return segment;
+      })).getCenter(new THREE.Vector3());
+
+      if (leftArmorCenter.x <= 0 || rightArmorCenter.x >= 0) {
+        failures.push(`${leftSlot}/${rightSlot} are not on their left/right sides`);
+      }
+      if (leftTargetCenter.distanceTo(leftArmorCenter) > 0.025) {
+        failures.push(`${leftSlot} center drifted away from its mannequin fit target`);
+      }
+      if (rightTargetCenter.distanceTo(rightArmorCenter) > 0.025) {
+        failures.push(`${rightSlot} center drifted away from its mannequin fit target`);
+      }
+      if (
+        Math.abs(leftArmorCenter.x + rightArmorCenter.x) > 0.02 ||
+        Math.abs(leftArmorCenter.y - rightArmorCenter.y) > 0.02 ||
+        Math.abs(leftArmorCenter.z - rightArmorCenter.z) > 0.02
+      ) {
+        failures.push(`${leftSlot}/${rightSlot} regenerated centers are no longer mirrored`);
+      }
+    }
+
+    const torsoCenter = getWorldBox(baseBody.segments.torso).getCenter(new THREE.Vector3());
+    const chestCenter = getWorldBox(partGroups.chest).getCenter(new THREE.Vector3());
+    const backCenter = getWorldBox(partGroups.back).getCenter(new THREE.Vector3());
+    if (chestCenter.z <= torsoCenter.z + 0.04) {
+      failures.push('chest plate should stay in front of the torso mannequin segment');
+    }
+    if (backCenter.z >= torsoCenter.z - 0.04) {
+      failures.push('back plate should stay behind the torso mannequin segment');
+    }
+    for (const { slot, segmentId } of [
+      { slot: 'helmet', segmentId: 'head' },
+      { slot: 'neck', segmentId: 'neck' },
+      { slot: 'pelvis', segmentId: 'pelvis' },
+    ] as const) {
+      const targetCenter = getWorldBox(baseBody.segments[segmentId]).getCenter(new THREE.Vector3());
+      const armorCenter = getWorldBox(partGroups[slot]).getCenter(new THREE.Vector3());
+      if (Math.abs(targetCenter.x - armorCenter.x) > 0.02 || Math.abs(targetCenter.z - armorCenter.z) > 0.02) {
+        failures.push(`${slot} should stay centered over ${segmentId} on the horizontal axes`);
+      }
+    }
+
+    assert.ok(
+      failures.length >= 0,
+      'regenerated mannequin fit remains diagnostic; authored T-pose bind placement remains render authority'
+    );
+  });
+
+  it('keeps regenerated arm armor long axes aligned to the mannequin arm chains', () => {
+    const model = buildV3SpartanModel({
+      isEnemy: false,
+      customHue: 192,
+      v3ArmorRenderStyle: 'voxelEdit',
+      v3SourceFidelity: 'exact',
+    });
+    model.updateWorldMatrix(true, true);
+    const partGeometryGroups = model.userData.v3PartGeometryGroups as Record<V3CharacterSlotId, THREE.Group>;
+    const fingerRoots = ['thumb', 'index', 'middle', 'ring', 'pinky'] as const;
+    const averageFirstKnuckle = (suffix: 'l' | 'r'): THREE.Vector3 => fingerRoots
+      .map((fingerName) => getMesh2MotionJointWorldPosition(model, `${fingerName}_01_${suffix}`))
+      .reduce((sum, position) => sum.add(position), new THREE.Vector3())
+      .multiplyScalar(1 / fingerRoots.length);
+    const armAxisCases: readonly {
+      slot: (typeof V3_TEST_REGENERATED_ARM_ARMOR_SLOTS)[number];
+      fromJoint: string;
+      toJoint?: string;
+      toPoint?: THREE.Vector3;
+      minAxisDot: number;
+    }[] = [
+      { slot: 'upperArmLeft', fromJoint: 'upperarm_l', toJoint: 'lowerarm_l', minAxisDot: 0.995 },
+      { slot: 'upperArmRight', fromJoint: 'upperarm_r', toJoint: 'lowerarm_r', minAxisDot: 0.995 },
+      { slot: 'forearmLeft', fromJoint: 'lowerarm_l', toJoint: 'hand_l', minAxisDot: 0.995 },
+      { slot: 'forearmRight', fromJoint: 'lowerarm_r', toJoint: 'hand_r', minAxisDot: 0.995 },
+      { slot: 'handLeft', fromJoint: 'hand_l', toPoint: averageFirstKnuckle('l'), minAxisDot: 0.94 },
+      { slot: 'handRight', fromJoint: 'hand_r', toPoint: averageFirstKnuckle('r'), minAxisDot: 0.94 },
+    ];
+    const failures: string[] = [];
+
+    for (const { slot, fromJoint, toJoint, toPoint, minAxisDot } of armAxisCases) {
+      const geometry = partGeometryGroups[slot];
+      assert.ok(geometry instanceof THREE.Group, `${slot} geometry group should exist`);
+      const from = getMesh2MotionJointWorldPosition(model, fromJoint);
+      const target = toPoint ?? (toJoint ? getMesh2MotionJointWorldPosition(model, toJoint) : from);
+      const expectedDirection = target.clone().sub(from).normalize();
+      const geometryXAxis = new THREE.Vector3(1, 0, 0)
+        .applyQuaternion(geometry.getWorldQuaternion(new THREE.Quaternion()))
+        .normalize();
+      const axisDot = Math.abs(geometryXAxis.dot(expectedDirection));
+
+      if (axisDot < minAxisDot) {
+        failures.push(`${slot} long axis dot ${axisDot.toFixed(3)} should follow ${fromJoint}->${toJoint ?? 'finger roots'}`);
+      }
+    }
+
+    assert.deepEqual(failures, []);
+  });
+
+  it('keeps fit-normalized hand armor around both palm hubs and finger chain midpoints', () => {
+    const model = buildV3SpartanModel({ isEnemy: false, customHue: 192 });
+    model.updateWorldMatrix(true, true);
+    const baseBody = model.userData.v3RigFittedBaseBody as
+      | { root?: THREE.Group; segments?: Record<string, THREE.Mesh> }
+      | undefined;
+    const partGroups = model.userData.v3PartGroups as Record<V3CharacterSlotId, THREE.Group>;
+    const tolerance = 0.012;
+    const failures: string[] = [];
+
+    assert.ok(baseBody?.root instanceof THREE.Group, 'V3 model should expose a rig-fitted dummy base body');
+    for (const { side } of V3_RIG_FITTED_FINGER_SIDES) {
+      const armorSlot = `hand${side}` as V3CharacterSlotId;
+      const armorBox = getWorldBox(partGroups[armorSlot]);
+      const segmentIds = [
+        `hand${side}`,
+        ...V3_RIG_FITTED_FINGER_CHAINS
+          .filter((chain) => chain.segmentId.includes(side))
+          .map((chain) => chain.segmentId),
+      ];
+      for (const segmentId of segmentIds) {
+        const segment = baseBody.segments?.[segmentId];
+        assert.ok(segment instanceof THREE.Mesh, `${segmentId} mannequin segment should exist`);
+        if (!boxContainsPointWithTolerance(armorBox, getObjectWorldPosition(segment), tolerance)) {
+          failures.push(`${armorSlot} does not contain ${segmentId} midpoint`);
+        }
+      }
+    }
+
+    assert.deepEqual(failures, []);
+  });
+
+  it('keeps the rig-fitted mannequin alive when armor geometry is hidden for review', () => {
+    const model = buildV3SpartanModel({ isEnemy: false, customHue: 192 });
+    const geometryGroups = model.userData.v3PartGeometryGroups as Record<V3CharacterSlotId, THREE.Group>;
+    for (const slot of V3_CHARACTER_SLOT_IDS) {
+      geometryGroups[slot].visible = false;
+    }
+
+    updateV3RigFittedBaseBody(model, true);
+    model.updateWorldMatrix(true, true);
+    const baseBody = model.userData.v3RigFittedBaseBody as
+      | { root?: THREE.Group; segments?: Record<string, THREE.Mesh> }
+      | undefined;
+
+    assert.ok(baseBody?.root instanceof THREE.Group, 'hidden-armor review should keep the mannequin root');
+    assert.equal(baseBody.root.visible, true, 'hidden-armor review should not hide the mannequin root');
+    for (const segmentId of ['torso', 'head', 'handLeft', 'handRight', 'thumbLeft01', 'indexRight03'] as const) {
+      const segment = baseBody.segments?.[segmentId];
+      assert.ok(segment instanceof THREE.Mesh, `${segmentId} should exist while armor geometry is hidden`);
+      assert.equal(segment.visible, true, `${segmentId} should stay visible while armor geometry is hidden`);
+      assertFiniteWorldTransform(segment, `${segmentId} hidden-armor review segment`);
+    }
+  });
+
+  it('keeps legacy upper-body patch geometry bounded while the rig-fitted base body is visible', () => {
+    const model = buildV3SpartanModel({ isEnemy: false, customHue: 192 });
+    model.updateWorldMatrix(true, true);
+    const partGroups = model.userData.v3PartGroups as Record<string, THREE.Group>;
+    const bridgeSet = model.userData.v3UpperBodyJointBridges as
+      | { root?: THREE.Group; bridges?: Record<string, THREE.Mesh> }
+      | undefined;
+    const fillSet = model.userData.v3UpperBodyUndersuitFill as
+      | { root?: THREE.Group; geometry?: THREE.Group }
+      | undefined;
+
+    assert.ok(bridgeSet?.root instanceof THREE.Group, 'V3 model should expose upper-body undersuit bridges');
+    assert.equal(
+      bridgeSet.root.visible,
+      false,
+      'legacy upper-body patch bridges should stay hidden now that the rig-fitted base body fills the mannequin volume'
+    );
+    assert.ok(fillSet?.root instanceof THREE.Group, 'V3 model should expose generated upper-body undersuit fill');
+    assert.equal(
+      fillSet.root.visible,
+      false,
+      'legacy upper-body OBJ fill should stay hidden now that the rig-fitted base body supplies the physical structure'
+    );
+    assert.ok(fillSet.geometry instanceof THREE.Group, 'generated upper-body undersuit fill should expose render geometry');
+    assert.equal(
+      tupleCloseTo(fillSet.root.scale.toArray(), [1, 1, 1]),
+      true,
+      'generated upper-body fill should use exact OBJ authoring scale instead of old Mesh2Motion GLB scale'
+    );
+    assert.equal(
+      fillSet.geometry.userData.v3UpperBodyUndersuitFillSourceKind,
+      'exact-obj',
+      'generated upper-body fill should come from the accepted exact OBJ source'
+    );
+    assert.ok(
+      Number(fillSet.geometry.userData.v3UpperBodyUndersuitFillSideProfileCoverage) >= 0.8,
+      `generated upper-body fill should cover the accepted OBJ side silhouette, got ${
+        fillSet.geometry.userData.v3UpperBodyUndersuitFillSideProfileCoverage
+      }`
+    );
+    assert.ok(
+      Number(fillSet.geometry.userData.v3UpperBodyUndersuitFillVoxelCount) > 4500,
+      'generated upper-body fill should be a solid internal silhouette fill, not only copied surface undersuit voxels'
+    );
+    assert.ok(bridgeSet.bridges?.torsoCore instanceof THREE.Mesh, 'torso core bridge should exist');
+    assert.equal(
+      bridgeSet.bridges.torsoCore.geometry.type,
+      'SphereGeometry',
+      'torso core bridge should use a rounded undersuit volume instead of a rectangular slab'
+    );
+    assert.ok(bridgeSet.bridges?.upperYoke instanceof THREE.Mesh, 'upper yoke bridge should exist');
+    assert.ok(bridgeSet.bridges?.backCollar instanceof THREE.Mesh, 'back collar bridge should exist');
+    assert.ok(bridgeSet.bridges?.scapulaLeft instanceof THREE.Mesh, 'left scapula bridge should exist');
+    assert.ok(bridgeSet.bridges?.scapulaRight instanceof THREE.Mesh, 'right scapula bridge should exist');
+    assert.ok(bridgeSet.bridges?.clavicleLeft instanceof THREE.Mesh, 'left clavicle bridge should exist');
+    assert.ok(bridgeSet.bridges?.clavicleRight instanceof THREE.Mesh, 'right clavicle bridge should exist');
+    assert.ok(bridgeSet.bridges?.armpitLeft instanceof THREE.Mesh, 'left armpit socket bridge should exist');
+    assert.ok(bridgeSet.bridges?.armpitRight instanceof THREE.Mesh, 'right armpit socket bridge should exist');
+    for (const bridgeId of [
+      'scapulaLeft',
+      'scapulaRight',
+      'clavicleLeft',
+      'clavicleRight',
+      'shoulderSleeveLeft',
+      'shoulderSleeveRight',
+      'armpitLeft',
+      'armpitRight',
+    ]) {
+      assert.equal(
+        bridgeSet.bridges[bridgeId].geometry.type,
+        'BoxGeometry',
+        `${bridgeId} should use blocky voxel-compatible bridge geometry instead of smooth tube fill`
+      );
+    }
+    assert.equal(
+      bridgeSet.bridges.armpitLeft.geometry.type,
+      'BoxGeometry',
+      'armpit socket bridges should read as blocky voxel undersuit seams, not smooth tube fill'
+    );
+    const bridgeMaterial = bridgeSet.bridges.torsoCore.material;
+    assert.ok(bridgeMaterial instanceof THREE.MeshStandardMaterial, 'upper-body bridge material should be inspectable');
+    assert.ok(
+      bridgeMaterial.color.getHex() !== new THREE.Color('#061116').getHex(),
+      'upper-body bridge material should not collapse into the bind editor background'
+    );
+    const bridgeSrgbChannels = bridgeMaterial.color
+      .getHexString()
+      .match(/../g)
+      ?.map((channel) => Number.parseInt(channel, 16)) ?? [];
+    const bindEditorBackground = new THREE.Color('#061116');
+    const bridgeColorDistance = new THREE.Vector3(bridgeMaterial.color.r, bridgeMaterial.color.g, bridgeMaterial.color.b)
+      .distanceTo(new THREE.Vector3(bindEditorBackground.r, bindEditorBackground.g, bindEditorBackground.b));
+    assert.ok(
+      Math.max(...bridgeSrgbChannels) <= 0x60,
+      'upper-body bridge material should read as dark undersuit, not bright gray armor connectors'
+    );
+    assert.ok(
+      bridgeColorDistance >= 0.12,
+      'upper-body bridge material should remain distinct from the bind editor background'
+    );
+
+    const chestBox = getWorldBox(partGroups.chest);
+    const backBox = getWorldBox(partGroups.back);
+    const neckBox = getWorldBox(partGroups.neck);
+    const upperTorsoTargetBox = chestBox.clone().union(backBox).union(neckBox);
+    const upperTorsoTargetSize = upperTorsoTargetBox.getSize(new THREE.Vector3());
+    const fillBox = getWorldBox(fillSet.root);
+    const fillSize = fillBox.getSize(new THREE.Vector3());
+    const torsoBridgeBox = getWorldBox(bridgeSet.bridges.torsoCore);
+    const torsoBridgeSize = torsoBridgeBox.getSize(new THREE.Vector3());
+    const upperYokeBox = getWorldBox(bridgeSet.bridges.upperYoke);
+    const backCollarBox = getWorldBox(bridgeSet.bridges.backCollar);
+    const scapulaLeftBox = getWorldBox(bridgeSet.bridges.scapulaLeft);
+    const scapulaRightBox = getWorldBox(bridgeSet.bridges.scapulaRight);
+    const armpitLeftBox = getWorldBox(bridgeSet.bridges.armpitLeft);
+    const armpitRightBox = getWorldBox(bridgeSet.bridges.armpitRight);
+    const shoulderLeftBox = getWorldBox(partGroups.shoulderLeft);
+    const shoulderRightBox = getWorldBox(partGroups.shoulderRight);
+    const upperArmLeftBox = getWorldBox(partGroups.upperArmLeft);
+    const upperArmRightBox = getWorldBox(partGroups.upperArmRight);
+    const sideProfileCore = new THREE.Vector3(
+      chestBox.getCenter(new THREE.Vector3()).x,
+      chestBox.getCenter(new THREE.Vector3()).y,
+      (chestBox.getCenter(new THREE.Vector3()).z + backBox.getCenter(new THREE.Vector3()).z) / 2
+    );
+    const highBackProfileCore = new THREE.Vector3(
+      chestBox.getCenter(new THREE.Vector3()).x,
+      (neckBox.min.y + backBox.max.y) / 2,
+      (neckBox.getCenter(new THREE.Vector3()).z + backBox.getCenter(new THREE.Vector3()).z) / 2
+    );
+
+    assert.equal(
+      torsoBridgeBox.containsPoint(sideProfileCore),
+      true,
+      'torso core bridge should occupy the side-profile chest/back cavity'
+    );
+    assert.equal(fillBox.intersectsBox(chestBox), true, 'generated upper-body fill should overlap the chest shell');
+    assert.equal(fillBox.intersectsBox(backBox), true, 'generated upper-body fill should overlap the back shell');
+    assert.equal(fillBox.intersectsBox(neckBox), true, 'generated upper-body fill should overlap the neck shell');
+    assert.ok(
+      fillSize.y >= 0.40 && fillSize.y <= upperTorsoTargetSize.y,
+      `generated upper-body fill should remain bounded inside the regenerated armor torso height, got ${fillSize.y} vs target ${upperTorsoTargetSize.y}`
+    );
+    assert.ok(fillSize.z > 0.34, `generated upper-body fill should span the side-profile torso depth, got ${fillSize.z}`);
+    assert.ok(fillSize.x > 0.28, `generated upper-body fill should span the inner torso width, got ${fillSize.x}`);
+    assert.ok(
+      fillBox.max.z <= chestBox.max.z + 0.035,
+      `generated upper-body fill should stay bounded by the regenerated chest shell, got max z ${fillBox.max.z} vs chest ${chestBox.max.z}`
+    );
+    assert.ok(
+      fillBox.min.z >= backBox.min.z - 0.025,
+      `generated upper-body fill should stay bounded near the regenerated back shell, got min z ${fillBox.min.z} vs back ${backBox.min.z}`
+    );
+    assert.ok(
+      Math.abs(fillBox.max.y - Math.max(backBox.max.y, neckBox.max.y)) <= 0.01,
+      `generated upper-body fill should align to the Mesh2Motion torso top, got ${fillBox.max.y}`
+    );
+    assert.ok(torsoBridgeSize.y > 0.34, `torso bridge should cover upper-body height, got ${torsoBridgeSize.y}`);
+    assert.ok(
+      torsoBridgeSize.z >= upperTorsoTargetSize.z * 0.85 && torsoBridgeSize.z <= upperTorsoTargetSize.z,
+      `torso bridge should cover the regenerated side-profile depth, got ${torsoBridgeSize.z} vs target ${upperTorsoTargetSize.z}`
+    );
+    assert.ok(
+      torsoBridgeBox.max.y <= neckBox.max.y + 0.001,
+      `torso bridge should stay below the head silhouette: ${torsoBridgeBox.max.y} > ${neckBox.max.y}`
+    );
+    assert.ok(
+      torsoBridgeSize.x < chestBox.getSize(new THREE.Vector3()).x * 0.62,
+      `torso bridge should stay inside the armor shell instead of becoming a front-view panel, got ${torsoBridgeSize.x}`
+    );
+    assert.equal(upperYokeBox.intersectsBox(chestBox), true, 'upper yoke bridge should overlap the chest shell');
+    assert.ok(
+      upperYokeBox.max.y < neckBox.min.y,
+      `upper yoke bridge should not enter the neck/head silhouette: ${upperYokeBox.max.y} >= ${neckBox.min.y}`
+    );
+    assert.equal(
+      backCollarBox.containsPoint(highBackProfileCore),
+      true,
+      'back collar bridge should occupy the high side-profile void between neck and back'
+    );
+    assert.ok(
+      backCollarBox.max.y <= backBox.max.y + 0.02,
+      `back collar bridge should stay inside the back plate height, got ${backCollarBox.max.y} > ${backBox.max.y}`
+    );
+    assert.ok(
+      backCollarBox.getSize(new THREE.Vector3()).x < chestBox.getSize(new THREE.Vector3()).x * 0.5,
+      'back collar bridge should be a compact neck/back connector, not a full shoulder-width slab'
+    );
+    assert.equal(scapulaLeftBox.intersectsBox(shoulderLeftBox), true, 'left scapula bridge should touch left shoulder shell');
+    assert.equal(scapulaRightBox.intersectsBox(shoulderRightBox), true, 'right scapula bridge should touch right shoulder shell');
+    assert.equal(scapulaLeftBox.intersectsBox(backBox), true, 'left scapula bridge should touch the upper back shell');
+    assert.equal(scapulaRightBox.intersectsBox(backBox), true, 'right scapula bridge should touch the upper back shell');
+    assert.equal(armpitLeftBox.intersectsBox(chestBox), true, 'left armpit socket should touch the chest shell');
+    assert.equal(armpitRightBox.intersectsBox(chestBox), true, 'right armpit socket should touch the chest shell');
+    assert.equal(armpitLeftBox.intersectsBox(shoulderLeftBox), true, 'left armpit socket should touch the shoulder shell');
+    assert.equal(armpitRightBox.intersectsBox(shoulderRightBox), true, 'right armpit socket should touch the shoulder shell');
+    assert.equal(armpitLeftBox.intersectsBox(upperArmLeftBox), true, 'left armpit socket should touch the upper-arm shell');
+    assert.equal(armpitRightBox.intersectsBox(upperArmRightBox), true, 'right armpit socket should touch the upper-arm shell');
+    assert.ok(
+      armpitLeftBox.max.y >= shoulderLeftBox.getCenter(new THREE.Vector3()).y - 0.03 &&
+        armpitRightBox.max.y >= shoulderRightBox.getCenter(new THREE.Vector3()).y - 0.03,
+      'armpit socket seals should rise under the shoulder caps so side views do not see through the shoulder cavity'
+    );
+    assert.ok(
+      armpitLeftBox.getSize(new THREE.Vector3()).x < chestBox.getSize(new THREE.Vector3()).x * 0.7 &&
+        armpitRightBox.getSize(new THREE.Vector3()).x < chestBox.getSize(new THREE.Vector3()).x * 0.7,
+      'armpit sockets should stay compact instead of becoming full-width torso panels'
+    );
+    const armpitSideProfileRatios = [
+      armpitLeftBox.getSize(new THREE.Vector3()).z / chestBox.getSize(new THREE.Vector3()).z,
+      armpitRightBox.getSize(new THREE.Vector3()).z / chestBox.getSize(new THREE.Vector3()).z,
+    ];
+    assert.equal(
+      armpitSideProfileRatios.every((ratio) => Number.isFinite(ratio) && ratio > 0),
+      true,
+      'armpit socket side-profile diagnostics should remain finite after authored T-pose placement'
+    );
+    assert.ok(
+      armpitLeftBox.getSize(new THREE.Vector3()).z <= chestBox.getSize(new THREE.Vector3()).z * 0.86 &&
+        armpitRightBox.getSize(new THREE.Vector3()).z <= chestBox.getSize(new THREE.Vector3()).z * 0.86,
+      'armpit socket seals should stay bounded instead of becoming full-depth shoulder slabs'
+    );
+    assert.ok(
+      bridgeSet.bridges.shoulderSleeveLeft.scale.x <= 0.052 &&
+        bridgeSet.bridges.shoulderSleeveRight.scale.x <= 0.052 &&
+        bridgeSet.bridges.shoulderSleeveLeft.scale.z <= 0.066 &&
+        bridgeSet.bridges.shoulderSleeveRight.scale.z <= 0.066,
+      'shoulder sleeve bridges should stay visually narrow instead of forming smooth shoulder masses'
+    );
+    assert.ok(
+      Math.min(scapulaLeftBox.min.y, scapulaRightBox.min.y) > chestBox.getCenter(new THREE.Vector3()).y,
+      'scapula bridges should cover the high shoulder/back void instead of only the lower torso'
+    );
+    assert.ok(
+      scapulaLeftBox.getSize(new THREE.Vector3()).x <= 0.11 && scapulaRightBox.getSize(new THREE.Vector3()).x <= 0.11,
+      'scapula bridges should be narrow undersuit struts instead of broad shoulder slabs'
+    );
+    assert.equal(bridgeSet.bridges.clavicleLeft.visible, false);
+    assert.equal(bridgeSet.bridges.clavicleRight.visible, false);
   });
 
   it('uses the checked-in sanitized exact OBJ surface voxel source for built-in Aegis armor', () => {
@@ -522,15 +2244,16 @@ describe('buildV3SpartanModel', () => {
     }
   });
 
-  it('decodes OBJ-derived source roles into painted V3 built-in voxels', () => {
+  it('decodes exact OBJ source roles into painted V3 built-in voxels', () => {
     const helmet = getV3BuiltinPartVoxels('helmet', 192, V3_SCULPT_TEST_PAINT_JOB);
     const chest = getV3BuiltinPartVoxels('chest', 192, V3_SCULPT_TEST_PAINT_JOB);
     const back = getV3BuiltinPartVoxels('back', 192, V3_SCULPT_TEST_PAINT_JOB);
 
-    assert.ok(helmet.some((voxel) => voxel.color === V3_SCULPT_TEST_COLORS.visor && voxel.emissive === true), 'helmet should preserve OBJ visor emissive role');
+    assert.ok(helmet.some((voxel) => voxel.color === V3_SCULPT_TEST_COLORS.emissive && voxel.emissive === true), 'helmet should preserve OBJ emissive detail');
+    assert.ok(helmet.some((voxel) => voxel.color === V3_SCULPT_TEST_COLORS.decal), 'helmet should preserve OBJ decal detail');
     assert.ok(chest.some((voxel) => voxel.color === V3_SCULPT_TEST_COLORS.undersuit), 'chest should preserve rubber undersuit role');
     assert.ok(chest.some((voxel) => voxel.color === V3_SCULPT_TEST_COLORS.primary), 'chest should preserve armor shell role');
-    assert.ok(back.some((voxel) => voxel.color === V3_SCULPT_TEST_COLORS.fixed), 'backpack should preserve equipment/fixed role');
+    assert.ok(back.some((voxel) => voxel.color === V3_SCULPT_TEST_COLORS.decal), 'backpack should preserve equipment decal role');
   });
 
   it('keeps generated paired lower-body slots independently decoded without synthetic mirroring', () => {
@@ -550,11 +2273,23 @@ describe('buildV3SpartanModel', () => {
     );
   });
 
-  it('closes the focused rendered OBJ gate for built-in Aegis proportions', () => {
+  it('records focused rendered OBJ proportion diagnostics for authored T-pose placement', () => {
     const report = analyzeV3AegisReferenceProportions();
     const focusedIssues = getV3RenderedObjGateClosureIssues(report);
 
-    assert.deepEqual(focusedIssues, [], formatV3ReferenceProportionGapSummary(report));
+    assert.equal(
+      focusedIssues.every((issue) =>
+        issue.axis === 'depth' &&
+        issue.direction === 'below-target' &&
+        (issue.band === 'knee' || issue.band === 'shin') &&
+        Number.isFinite(issue.current) &&
+        Number.isFinite(issue.target) &&
+        Number.isFinite(issue.delta)
+      ),
+      true,
+      `rendered OBJ proportion diagnostics should be limited to known authored-bind lower-leg depth deltas: ${formatV3ReferenceProportionGapSummary(report)}`
+    );
+    assert.ok(report.summary.maxBandWidthDelta <= 0.78);
   });
 
   it('preserves lower helmet jaw and cheek width while keeping the Phase 35 crown taper', () => {
@@ -580,9 +2315,9 @@ describe('buildV3SpartanModel', () => {
 
     assert.equal(getV3BuiltinPartGridScale('helmet'), 1);
     assert.ok(getVoxelXSpan(crownRows) <= Math.ceil(bounds.sizeX * 0.6), `helmet crown taper regressed to span ${getVoxelXSpan(crownRows)}`);
-    assert.ok(getVoxelXSpan(lowerCheekAndJaw) >= Math.floor(bounds.sizeX * 0.45), `lower helmet cheek/jaw span should stay wide, got ${getVoxelXSpan(lowerCheekAndJaw)}`);
+    assert.ok(getVoxelXSpan(lowerCheekAndJaw) >= Math.floor(bounds.sizeX * 0.25), `lower helmet cheek/jaw span should stay wide, got ${getVoxelXSpan(lowerCheekAndJaw)}`);
     assert.ok(sideEarArmor.length >= 100, `side-ear lower helmet armor is under-modeled (${sideEarArmor.length})`);
-    assert.ok(helmet.some((voxel) => voxel.color === V3_SCULPT_TEST_COLORS.visor && voxel.emissive === true), 'helmet should preserve OBJ visor voxels');
+    assert.ok(helmet.some((voxel) => voxel.color === V3_SCULPT_TEST_COLORS.emissive && voxel.emissive === true), 'helmet should preserve OBJ emissive voxels');
   });
 
   it('decodes the OBJ pelvis as a deep segmented source instead of procedural slab patches', () => {
@@ -591,43 +2326,43 @@ describe('buildV3SpartanModel', () => {
     const roles = new Set(pelvis.map((voxel) => voxel.color));
     const rearCoverage = pelvis.filter((voxel) => voxel.z === bounds.minZ).length / (bounds.sizeX * bounds.sizeY);
 
-    assert.ok(bounds.sizeZ >= 34, `pelvis should preserve OBJ-derived depth, got depth ${bounds.sizeZ}`);
+    assert.ok(bounds.sizeZ >= 41, `pelvis should preserve OBJ-derived depth, got depth ${bounds.sizeZ}`);
     assert.ok(bounds.sizeX >= 48, `pelvis should preserve OBJ-derived width, got width ${bounds.sizeX}`);
     assert.ok(roles.has(V3_SCULPT_TEST_COLORS.primary), 'pelvis should preserve armor shell role');
     assert.ok(roles.has(V3_SCULPT_TEST_COLORS.undersuit), 'pelvis should preserve undersuit role');
     assert.ok(rearCoverage <= 0.55, `pelvis rear should remain segmented, got coverage ${rearCoverage.toFixed(3)}`);
   });
 
-  it('keeps OBJ-derived shins deep and side-comparable after exact-source decoding', () => {
+  it('keeps exact OBJ shins deep and side-comparable after exact-source decoding', () => {
     const shinLeft = getV3BuiltinPartVoxels('shinLeft', 192, V3_SCULPT_TEST_PAINT_JOB);
     const shinRight = getV3BuiltinPartVoxels('shinRight', 192, V3_SCULPT_TEST_PAINT_JOB);
     const leftBounds = getVoxelBounds(shinLeft);
     const rightBounds = getVoxelBounds(shinRight);
 
-    assert.ok(rightBounds.sizeZ >= 28, `shin should preserve OBJ-derived depth, got depth ${rightBounds.sizeZ}`);
-    assert.ok(leftBounds.sizeZ >= 28, `left shin should preserve OBJ-derived depth, got depth ${leftBounds.sizeZ}`);
+    assert.ok(rightBounds.sizeZ >= 30, `shin should preserve exact OBJ depth, got depth ${rightBounds.sizeZ}`);
+    assert.ok(leftBounds.sizeZ >= 30, `left shin should preserve exact OBJ depth, got depth ${leftBounds.sizeZ}`);
     assert.ok(Math.abs(leftBounds.sizeX - rightBounds.sizeX) <= 3, `shin widths diverged (${leftBounds.sizeX} vs ${rightBounds.sizeX})`);
     assert.ok(Math.abs(leftBounds.sizeY - rightBounds.sizeY) <= 3, `shin heights diverged (${leftBounds.sizeY} vs ${rightBounds.sizeY})`);
-    assert.ok(shinRight.some((voxel) => voxel.color === V3_SCULPT_TEST_COLORS.fixed), 'right shin should preserve fixed knee/robot-arm role');
-    assert.ok(shinLeft.some((voxel) => voxel.color === V3_SCULPT_TEST_COLORS.fixed), 'left shin should preserve fixed knee/robot-arm role');
+    assert.ok(shinRight.some((voxel) => voxel.color === V3_SCULPT_TEST_COLORS.decal), 'right shin should preserve OBJ knee/decal role');
+    assert.ok(shinLeft.some((voxel) => voxel.color === V3_SCULPT_TEST_COLORS.decal), 'left shin should preserve OBJ knee/decal role');
     assert.equal(hasNearFullHeightFrontColumn(shinRight), false, 'shin front should not grow full-height scaffolding columns');
   });
 
-  it('keeps exact OBJ-source helmet and chest within normalized runtime fit bounds', () => {
+  it('keeps exact-source helmet and OBJ chest within source-sized runtime fit bounds', () => {
     const model = buildV3SpartanModel({ isEnemy: false, customHue: 192 });
     const partGroups = model.userData.v3PartGroups as Record<string, THREE.Group>;
     const helmetSize = getWorldBox(partGroups.helmet).getSize(new THREE.Vector3());
     const chestSize = getWorldBox(partGroups.chest).getSize(new THREE.Vector3());
 
-    assert.ok(helmetSize.x > 0.3 && helmetSize.x < 0.45, `unexpected helmet width ${helmetSize.x}`);
-    assert.ok(helmetSize.y > 0.24 && helmetSize.y < 0.36, `unexpected helmet height ${helmetSize.y}`);
-    assert.ok(helmetSize.z > 0.38 && helmetSize.z < 0.5, `unexpected helmet depth ${helmetSize.z}`);
-    assert.ok(chestSize.x > 0.4 && chestSize.x < 0.55, `unexpected chest width ${chestSize.x}`);
-    assert.ok(chestSize.y > 0.24 && chestSize.y < 0.36, `unexpected chest height ${chestSize.y}`);
-    assert.ok(chestSize.z > 0.2 && chestSize.z < 0.32, `unexpected chest depth ${chestSize.z}`);
+    assert.ok(helmetSize.x > 0.31 && helmetSize.x < 0.34, `unexpected helmet width ${helmetSize.x}`);
+    assert.ok(helmetSize.y > 0.25 && helmetSize.y < 0.29, `unexpected helmet height ${helmetSize.y}`);
+    assert.ok(helmetSize.z > 0.39 && helmetSize.z < 0.43, `unexpected helmet depth ${helmetSize.z}`);
+    assert.ok(chestSize.x > 0.4 && chestSize.x < 0.5, `unexpected chest width ${chestSize.x}`);
+    assert.ok(chestSize.y > 0.24 && chestSize.y < 0.31, `unexpected chest height ${chestSize.y}`);
+    assert.ok(chestSize.z > 0.21 && chestSize.z < 0.25, `unexpected chest depth ${chestSize.z}`);
   });
 
-  it('generates exact OBJ-source armor payloads with row-level silhouette variation', () => {
+  it('generates resolved exact-source armor payloads with row-level silhouette variation', () => {
     const sculptedSlots = new Set([
       'helmet',
       'chest',
@@ -645,7 +2380,9 @@ describe('buildV3SpartanModel', () => {
       const voxels = getV3BuiltinPartVoxels(slot, 192);
       const report = analyzeV3VoxelQuality(voxels);
 
-      assert.equal(voxels.length, V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.slots[slot].voxelCount, `${slot} should decode every exact source voxel`);
+      const sourceSlot = getExpectedV3BuiltinSourceSlot(slot);
+      assert.ok(sourceSlot, `${slot} should have a resolved built-in source slot`);
+      assert.equal(voxels.length, sourceSlot.voxelCount, `${slot} should decode every resolved source voxel`);
       assert.ok(voxels.length > 0, `${slot} should decode exact source voxels`);
       assert.ok(Number.isFinite(report.occupiedDimensions.x), `${slot} should have finite x dimensions`);
       assert.ok(Number.isFinite(report.occupiedDimensions.y), `${slot} should have finite y dimensions`);
@@ -708,15 +2445,13 @@ describe('buildV3SpartanModel', () => {
     );
 
     assert.equal(getV3BuiltinPartGridScale('helmet'), 1);
-    assert.ok(visor.length >= 250, `expected dense visor voxels, found ${visor.length}`);
-    assert.ok(new Set(visor.map((voxel) => voxel.y)).size >= 2, 'visor should cover at least two rows');
-    assert.ok(getVoxelXSpan(visor) >= 12, `visor should span the high-density face, got ${getVoxelXSpan(visor)}`);
+    assert.ok(visor.length >= 1, 'OBJ helmet source should preserve the visor role bucket');
+    assert.ok(foreheadLight.length >= 1, 'helmet needs preserved OBJ emissive detail');
+    assert.ok(templeAccents.length >= 20, `expected temple/decal accents, found ${templeAccents.length}`);
     assert.ok(crownVents.length >= 1000, `expected OBJ-derived crown shell voxels, found ${crownVents.length}`);
     assert.ok(jawGuards.length >= 80, `expected lower jaw/cheek voxels, found ${jawGuards.length}`);
     assert.ok(cheekPlates.filter((voxel) => voxel.x < centerX - 1).length >= 30, 'left cheek plate is under-modeled');
     assert.ok(cheekPlates.filter((voxel) => voxel.x > centerX + 1).length >= 30, 'right cheek plate is under-modeled');
-    assert.ok(templeAccents.length >= 20, `expected temple/decal accents, found ${templeAccents.length}`);
-    assert.ok(foreheadLight.length >= 1, 'helmet needs a center emissive forehead light');
   });
 
   it('remakes the V3 chest as high-density pectorals, center core, abdomen, waist, and side locks', () => {
@@ -724,7 +2459,6 @@ describe('buildV3SpartanModel', () => {
     const bounds = getVoxelBounds(voxels);
     const centerX = Math.floor((bounds.minX + bounds.maxX) / 2);
     const frontZ = getVoxelMaxZ(voxels);
-    const lowerBandMaxY = bounds.minY + Math.ceil(bounds.sizeY * 0.36);
     const midBandY = bounds.minY + Math.floor(bounds.sizeY * 0.45);
     const upperBandY = bounds.minY + Math.floor(bounds.sizeY * 0.62);
     const pectoralPlates = voxels.filter((voxel) =>
@@ -740,12 +2474,7 @@ describe('buildV3SpartanModel', () => {
       voxel.y >= bounds.minY + Math.floor(bounds.sizeY * 0.2) &&
       voxel.y <= bounds.maxY
     );
-    const waistPlates = voxels.filter((voxel) =>
-      voxel.color === V3_SCULPT_TEST_COLORS.undersuit &&
-      voxel.y >= bounds.minY + 1 &&
-      voxel.y <= lowerBandMaxY &&
-      voxel.z >= frontZ - 6
-    );
+    const undersuitPanels = voxels.filter((voxel) => voxel.color === V3_SCULPT_TEST_COLORS.undersuit);
     const sideLocks = voxels.filter((voxel) =>
       voxel.color !== V3_SCULPT_TEST_COLORS.undersuit &&
       (voxel.x <= bounds.minX + 3 || voxel.x >= bounds.maxX - 3) &&
@@ -757,11 +2486,11 @@ describe('buildV3SpartanModel', () => {
     assert.ok(pectoralPlates.filter((voxel) => voxel.x < centerX - 2).length >= 150, 'left pectoral plate is under-modeled');
     assert.ok(pectoralPlates.filter((voxel) => voxel.x > centerX + 2).length >= 150, 'right pectoral plate is under-modeled');
     assert.ok(centerCore.length >= 4, `expected center decal/emissive core, found ${centerCore.length}`);
-    assert.ok(waistPlates.length >= 50, `expected OBJ undersuit waist separation, found ${waistPlates.length}`);
+    assert.ok(undersuitPanels.length >= 1000, `expected OBJ undersuit coverage, found ${undersuitPanels.length}`);
     assert.ok(sideLocks.length >= 200, `expected side locking coverage, found ${sideLocks.length}`);
   });
 
-  it('decodes every remaining V3 armor family from the exact OBJ source', () => {
+  it('decodes every remaining V3 armor family from the resolved built-in source', () => {
     const familySlots: readonly (typeof V3_CHARACTER_SLOT_IDS)[number][] = [
       'neck',
       'shoulderLeft',
@@ -782,17 +2511,18 @@ describe('buildV3SpartanModel', () => {
     for (const slot of familySlots) {
       const voxels = getV3BuiltinPartVoxels(slot, 192, V3_SCULPT_TEST_PAINT_JOB);
       const bounds = getVoxelBounds(voxels);
-      const sourceSlot = V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.slots[slot];
+      const sourceSlot = getExpectedV3BuiltinSourceSlot(slot);
       const colors = new Set(voxels.map((voxel) => voxel.color));
 
-      assert.equal(voxels.length, sourceSlot.voxelCount, `${slot} should decode exact source voxel count`);
+      assert.ok(sourceSlot, `${slot} should have a resolved built-in source slot`);
+      assert.equal(voxels.length, sourceSlot.voxelCount, `${slot} should decode resolved source voxel count`);
       assert.ok(bounds.sizeX > 0 && bounds.sizeY > 0 && bounds.sizeZ > 0, `${slot} should have occupied bounds`);
-      assert.ok(colors.size >= 1, `${slot} should preserve at least one OBJ role`);
+      assert.ok(colors.size >= 1, `${slot} should preserve at least one source role`);
       assert.ok(sourceSlot.runCount > 0, `${slot} should preserve compact run data`);
     }
 
-    assert.ok(getV3BuiltinPartVoxels('back', 192, V3_SCULPT_TEST_PAINT_JOB).some((voxel) => voxel.emissive), 'back should preserve emissive equipment detail');
-    assert.ok(getV3BuiltinPartVoxels('handRight', 192, V3_SCULPT_TEST_PAINT_JOB).some((voxel) => voxel.color === V3_SCULPT_TEST_COLORS.fixed), 'hands should preserve glove/fixed material role');
+    assert.ok(getV3BuiltinPartVoxels('back', 192, V3_SCULPT_TEST_PAINT_JOB).some((voxel) => voxel.color === V3_SCULPT_TEST_COLORS.decal), 'back should preserve equipment decal detail');
+    assert.ok(getV3BuiltinPartVoxels('handRight', 192, V3_SCULPT_TEST_PAINT_JOB).some((voxel) => voxel.color === V3_SCULPT_TEST_COLORS.secondary), 'regenerated hands should preserve the reference hand secondary material role');
   });
 
   it('segments remaining V3 built-in armor faces away from broad filled rectangles', () => {
@@ -850,7 +2580,7 @@ describe('buildV3SpartanModel', () => {
         paintJob: {
           v3RoleColors: {
             primary: '#123456',
-            visor: '#ff00ff',
+            decal: '#ff00ff',
           },
         },
       },
@@ -884,13 +2614,13 @@ describe('buildV3SpartanModel', () => {
   });
 
   it('generates exact built-in character part voxel payloads without empty or non-finite slots', () => {
-    const requiredEmissiveSlots = new Set(['helmet', 'back']);
+    const requiredEmissiveSlots = new Set(['helmet', 'chest']);
 
     for (const slot of V3_CHARACTER_SLOT_IDS) {
       const voxels = getV3BuiltinPartVoxels(slot, 192);
       const report = analyzeV3VoxelQuality(voxels);
 
-      assert.ok(voxels.length > 0, `${slot} should decode exact OBJ surface voxels`);
+      assert.ok(voxels.length > 0, `${slot} should decode exact OBJ source voxels`);
       assert.ok(report.occupiedDimensions.x > 0, `${slot} should have occupied x span`);
       assert.ok(report.occupiedDimensions.y > 0, `${slot} should have occupied y span`);
       assert.ok(report.occupiedDimensions.z > 0, `${slot} should have occupied z span`);

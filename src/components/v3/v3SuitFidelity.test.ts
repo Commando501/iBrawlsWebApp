@@ -199,9 +199,9 @@ describe('analyzeV3BuiltInSuitFidelity', () => {
     }
 
     const blockedSlots = V3_CHARACTER_SLOT_IDS.filter((slot) => !reports[slot].ready);
-    assert.deepEqual(blockedSlots.sort(), ['back', 'forearmLeft', 'forearmRight', 'handLeft', 'handRight']);
-    assert.ok(reports.forearmLeft.issues.some((issue) => issue.code === 'material-diversity-low'));
-    assert.ok(reports.forearmRight.issues.some((issue) => issue.code === 'material-diversity-low'));
+    assert.deepEqual(blockedSlots.sort(), ['back', 'handLeft', 'handRight']);
+    assert.equal(reports.forearmLeft.ready, true);
+    assert.equal(reports.forearmRight.ready, true);
     assert.ok(reports.handLeft.issues.some((issue) => issue.code === 'terminal-proportion-oversized'));
     assert.ok(reports.handRight.issues.some((issue) => issue.code === 'terminal-proportion-oversized'));
     assert.ok(reports.back.issues.some((issue) => issue.code === 'slab-profile'));
@@ -239,7 +239,7 @@ describe('analyzeV3BuiltInSuitFidelity', () => {
     assert.ok(report.summary.averageScore < 0.9, `Phase 38 should keep feature-match blockers visible: ${report.summary.averageScore}`);
     assert.ok(report.summary.issueCount > 0);
     assert.ok(report.issues.some((issue) => issue.code === 'missing-reference-feature' && issue.slot === 'chest'));
-    assert.ok(report.issues.some((issue) => issue.code === 'material-role-diversity-low' && issue.slot === 'forearmLeft'));
+    assert.ok(report.issues.some((issue) => issue.code === 'missing-reference-feature' && issue.slot === 'forearmLeft'));
     assert.ok(report.issues.some((issue) => issue.code === 'slot-fidelity-blocked' && issue.slot === 'back'));
 
     const helmet = report.slots.helmet;

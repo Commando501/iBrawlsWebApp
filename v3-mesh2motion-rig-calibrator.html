@@ -220,7 +220,8 @@
       }
 
       #target-summary,
-      #diagnostics {
+      #diagnostics,
+      #priority-report {
         min-height: 160px;
         margin: 0;
         padding: 8px;
@@ -235,6 +236,10 @@
 
       #diagnostics {
         min-height: 220px;
+      }
+
+      #priority-report {
+        min-height: 180px;
       }
 
       .warn {
@@ -310,13 +315,29 @@
           <section class="section">
             <p class="section-title">Preview</p>
             <label>
-              Preview Animation
+              Animation Clip
               <select id="clip-select">
-                <option value="clean_sprint">Sprint</option>
-                <option value="clean_slide">Slide</option>
-                <option value="clean_sword_carry">Sword Carry</option>
-                <option value="clean_sword_lunge">Sword Lunge</option>
-                <option value="clean_sword_slash" selected>Sword Slash</option>
+                <optgroup label="Mesh2Motion Binding Calibration">
+                  <option value="clean_sprint">Sprint</option>
+                  <option value="clean_slide">Slide</option>
+                  <option value="clean_sword_carry">Sword Carry</option>
+                  <option value="clean_sword_lunge">Sword Lunge</option>
+                  <option value="clean_sword_slash" selected>Sword Slash</option>
+                </optgroup>
+                <optgroup label="Clean Rig Track Editor">
+                  <option value="clean_idle">Idle</option>
+                  <option value="clean_walk">Walk</option>
+                  <option value="clean_hammer_carry">Hammer Carry</option>
+                  <option value="clean_hammer_windup">Hammer Windup</option>
+                  <option value="clean_hammer_strike">Hammer Strike</option>
+                  <option value="clean_hammer_recover">Hammer Recover</option>
+                  <option value="clean_hammer_melee">Hammer Melee</option>
+                  <option value="clean_hammer_melee_recover">Hammer Melee Recover</option>
+                  <option value="clean_sword_recover">Sword Recover</option>
+                  <option value="clean_pistol_carry">Pistol Carry</option>
+                  <option value="clean_pistol_fire">Pistol Fire</option>
+                  <option value="clean_hit_react">Hit React</option>
+                </optgroup>
               </select>
             </label>
             <div class="grid-3">
@@ -325,6 +346,16 @@
               <label>Speed<input id="speed-input" type="number" min="0.1" max="4" step="0.1" value="1" /></label>
             </div>
             <input id="timeline" type="range" min="0" max="60" value="30" />
+          </section>
+
+          <section class="section">
+            <p class="section-title">Priority Review</p>
+            <div class="row">
+              <button id="priority-prev-clip" type="button">Prev Clip</button>
+              <button id="priority-next-clip" type="button">Next Clip</button>
+              <button id="priority-prev-frame" type="button">Prev Frame</button>
+              <button id="priority-next-frame" type="button">Next Frame</button>
+            </div>
           </section>
 
           <section class="section">
@@ -401,6 +432,10 @@
           <section class="section">
             <p class="section-title">Diagnostics</p>
             <pre id="diagnostics">No diagnostics yet.</pre>
+          </section>
+          <section class="section">
+            <p class="section-title">Priority Review</p>
+            <pre id="priority-report">No priority report yet.</pre>
           </section>
           <section class="section">
             <p class="section-title">Import / Export</p>

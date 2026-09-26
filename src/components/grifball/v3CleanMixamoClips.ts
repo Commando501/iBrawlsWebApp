@@ -22,7 +22,7 @@ import type {
 } from './v3CleanRig';
 import type { V3WeaponReferenceClipId } from './v3WeaponReferenceClips';
 
-export type V3CleanMixamoMotionSource = 'retargetedMixamo' | 'mixamoWeaponReference' | 'mesh2Motion';
+export type V3CleanMixamoMotionSource = 'retargetedMixamo' | 'mixamoWeaponReference' | 'mesh2Motion' | 'blenderAuthored';
 export type V3CleanMixamoClipId = V3RetargetedClipId | V3WeaponReferenceClipId | V3Mesh2MotionClipId;
 
 export interface V3CleanMixamoClipSample {

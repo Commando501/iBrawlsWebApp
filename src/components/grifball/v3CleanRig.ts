@@ -47,6 +47,10 @@ export interface V3CleanRigWeaponPose {
   position: V3Vec3Tuple;
   rotation: V3Vec3Tuple;
   source: 'authoredCleanClip' | 'mixamoReferenceClip';
+  /** Blender-baked weapon transform in model space; bypass chest-relative retargeting. */
+  modelSpaceQuaternion?: V3QuatTuple;
+  /** Baked secondary contact in weapon-local coordinates, after socket basis correction. */
+  modelSpaceOffhandSocket?: V3Vec3Tuple;
   primarySocketMarker?: V3Vec3Tuple;
   offhandSocketMarker?: V3Vec3Tuple;
 }
@@ -60,6 +64,8 @@ export interface V3CleanRigPose {
   jointOffsets?: Partial<Record<V3CleanJointName, V3Vec3Tuple>>;
   mesh2MotionDriverPose?: V3Mesh2MotionDriverPose;
   weaponPose?: V3CleanRigWeaponPose;
+  /** Objective-ball transform in model space, using the game's 0.32 m radius. */
+  ballPose?: { position: V3Vec3Tuple; quaternion: V3QuatTuple; released?: boolean; releaseVelocity?: V3Vec3Tuple };
 }
 
 export interface V3CleanRigApplyReport {
@@ -146,6 +152,49 @@ const resetSegmentGroups = (model: THREE.Group): void => {
   }
 };
 
+const isObject3D = (value: unknown): value is THREE.Object3D =>
+  Boolean(value && typeof value === 'object' && (value as THREE.Object3D).isObject3D);
+
+const getCleanRigSlotPivots = (jointObject: THREE.Object3D): THREE.Object3D[] => {
+  const pivots: THREE.Object3D[] = [];
+  const addPivot = (value: unknown): void => {
+    if (isObject3D(value) && !pivots.includes(value)) pivots.push(value);
+  };
+  const storedPivots = jointObject.userData.v3Mesh2MotionSlotPivots;
+  if (Array.isArray(storedPivots)) {
+    storedPivots.forEach(addPivot);
+  }
+  addPivot(jointObject.userData.v3Mesh2MotionSlotPivot);
+  return pivots;
+};
+
+const syncCleanRigSlotPivots = (rig: V3CleanRig): void => {
+  rig.root.updateMatrixWorld(true);
+  for (const joint of Object.values(rig.joints)) {
+    for (const slotPivot of getCleanRigSlotPivots(joint.object)) {
+      const parent = slotPivot.parent;
+      if (!parent) continue;
+      const bindMatrix = slotPivot.userData.v3CleanRigSlotPivotBindMatrix instanceof THREE.Matrix4
+        ? slotPivot.userData.v3CleanRigSlotPivotBindMatrix as THREE.Matrix4
+        : joint.object.matrixWorld.clone().invert().multiply(slotPivot.matrixWorld);
+      slotPivot.userData.v3CleanRigSlotPivotBindMatrix = bindMatrix;
+      parent.updateMatrixWorld(true);
+      const targetWorldMatrix = joint.object.matrixWorld.clone().multiply(bindMatrix);
+      const localMatrix = parent.matrixWorld.clone().invert().multiply(targetWorldMatrix);
+      const position = new THREE.Vector3();
+      const quaternion = new THREE.Quaternion();
+      const scale = new THREE.Vector3();
+      localMatrix.decompose(position, quaternion, scale);
+      slotPivot.position.copy(position);
+      slotPivot.quaternion.copy(quaternion.normalize());
+      slotPivot.rotation.setFromQuaternion(slotPivot.quaternion);
+      slotPivot.scale.copy(scale);
+      slotPivot.updateMatrixWorld(true);
+    }
+  }
+  rig.root.updateMatrixWorld(true);
+};
+
 export function getV3CleanRig(model: THREE.Group): V3CleanRig {
   const cached = model.userData.v3CleanRig as V3CleanRig | undefined;
   if (cached?.root === model) return cached;
@@ -204,6 +253,7 @@ export function resetV3CleanRigPose(model: THREE.Group): V3CleanRig {
     joint.object.scale.set(1, 1, 1);
   }
   resetV3Mesh2MotionDriverRigPose(model);
+  syncCleanRigSlotPivots(rig);
   model.userData.v3LowerBodyBridgeActive = false;
   return rig;
 }
@@ -248,6 +298,10 @@ export function applyV3CleanRigPose(
   } else if (pose.mesh2MotionDriverPose) {
     const driverReport = applyV3Mesh2MotionDriverRigPose(model, pose.mesh2MotionDriverPose, { alpha });
     warnings.push(...driverReport.warnings);
+  }
+
+  if (!usesMesh2MotionDriver) {
+    syncCleanRigSlotPivots(rig);
   }
 
   model.userData.v3AnimationAuthority = 'cleanRig';

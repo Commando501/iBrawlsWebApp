@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import { buildV3CarriedBallModel, V3_BALL_CONTACTS } from './v3BallCarry';
+import { getV3Mesh2MotionDriverWeaponSocketWorldPosition } from './v3Mesh2MotionDriverRig';
 import { buildV3WeaponModel } from '../v3/VoxelModelsV3';
 import type { V3QualityTier, V3WeaponId } from '../v3/v3ModelTypes';
 import type { V3RenderOptions } from '../v3/v3QualityTiers';
@@ -32,6 +34,10 @@ import {
   type V3RetargetJointAlignmentReport,
 } from './v3MixamoRetarget';
 import type { V3WeaponReferenceClipId } from './v3WeaponReferenceClips';
+import {
+  mapV3AtlasCaseToAuthoredClip,
+  sampleV3ProductionClip as sampleV3AuthoredClip,
+} from './v3AuthoredAnimationClips';
 
 export type V3AnimationAtlasDefectViewId = 'front' | 'left' | 'rear' | 'right';
 export type V3AnimationAtlasDefectMode = 'normalizedReview' | 'runtimeSimulation';
@@ -67,7 +73,7 @@ export interface V3AnimationAtlasLowerBodySeamIssue {
 }
 
 export interface V3AnimationAtlasDefectMetrics {
-  visibleWeapon: V3WeaponId | null;
+  visibleWeapon: V3WeaponId | 'ball' | null;
   limbSeparation: number;
   slotBoneDrift: number;
   weaponBodyHeightRatio: number | null;
@@ -128,6 +134,11 @@ export interface V3AnimationAtlasCaseDefectReport {
   clipReady?: boolean;
   motionRetention?: V3RetargetedMotionRetentionReport;
   motionSourceLabel?: string;
+  mesh2MotionCleanupTrackId?: string;
+  mesh2MotionCleanupSourceClipName?: string;
+  mesh2MotionCleanupDriverJointAdjustmentCount?: number;
+  mesh2MotionCleanupPartBindingAdjustmentCount?: number;
+  mesh2MotionCleanupWeaponSocketAdjustmentCount?: number;
   sampledFrameFractions: number[];
   views: V3AnimationAtlasViewDefectReport[];
 }
@@ -225,7 +236,8 @@ const ATLAS_WARNING_THRESHOLDS = {
     hammer: 0.75,
     sword: 0.66,
     pistol: 0.24,
-  } satisfies Record<V3WeaponId, number>,
+    ball: 0.4,
+  } satisfies Record<V3WeaponId | 'ball', number>,
 } as const;
 const RETARGETED_LOCOMOTION_LOWER_BODY_SEAM_LIMIT = 0.14;
 const WEAPON_CASES = new Set<V3PoseClearanceCaseId>([
@@ -237,6 +249,8 @@ const WEAPON_CASES = new Set<V3PoseClearanceCaseId>([
   'swordLunge',
   'swordSlash',
   'pistolFire',
+  'ballPunch',
+  'ballThrow',
 ]);
 const HAMMER_TWO_HAND_READY_CASES = new Set<V3PoseClearanceCaseId>([
   'idle',
@@ -327,12 +341,12 @@ const sampleVelocity = (
 };
 
 const measureWeaponBodyHeightRatio = (
-  weapon: V3WeaponId,
+  weapon: V3WeaponId | 'ball',
   bodyHeight: number,
   options: V3AnimationAtlasDefectOptions
 ): number | null => {
   if (!Number.isFinite(bodyHeight) || bodyHeight <= 0) return null;
-  const model = buildV3WeaponModel(weapon, {
+  const model = weapon === 'ball' ? buildV3CarriedBallModel() : buildV3WeaponModel(weapon, {
     customHue: 192,
     v3QualityTier: options.qualityTier,
     ...options.v3Options,
@@ -485,10 +499,13 @@ const applyDefectSample = (
     isLocalV3Animation: true,
     v3PoseAlphaOverride: 1,
     settings: V3_ANIMATION_ATLAS_DEFECT_WEAPON_SETTINGS,
+    ...(definition.activeWeapon === 'ball' ? { v3AnimationAuthority: 'cleanRig' as const, v3AuthoredNormalizedTime: frameFraction } : {}),
   });
 
   animateV3WeaponMeshes({
     hammerModel: meshRig.hammer,
+    ballModel: meshRig.ball,
+    previewBallFlight: true,
     swordModel: meshRig.sword,
     pistolModel: meshRig.pistol,
     activeWeapon: definition.activeWeapon,
@@ -497,6 +514,7 @@ const applyDefectSample = (
     isLunging: 'isLunging' in definition ? Boolean(definition.isLunging) : false,
     dt: mode === 'runtimeSimulation' ? 1 / 60 : definition.dt,
     settings: V3_ANIMATION_ATLAS_DEFECT_WEAPON_SETTINGS,
+    ...(definition.activeWeapon === 'ball' ? { v3AnimationAuthority: 'cleanRig' as const, v3AuthoredNormalizedTime: frameFraction } : {}),
     combatantModel: meshRig.group,
   });
   meshRig.hammer.visible = definition.activeWeapon === 'hammer' && isWeaponVisible(caseId);
@@ -548,11 +566,12 @@ type V3GripConstraintReportLike = {
 
 const getRigWeaponModel = (
   meshRig: ReturnType<typeof createCombatantMeshRig>,
-  weapon: V3WeaponId | null
+  weapon: V3WeaponId | 'ball' | null
 ): THREE.Group | null | undefined => {
   if (weapon === 'hammer') return meshRig.hammer;
   if (weapon === 'sword') return meshRig.sword;
   if (weapon === 'pistol') return meshRig.pistol;
+  if (weapon === 'ball') return meshRig.ball;
   return null;
 };
 
@@ -686,7 +705,10 @@ const retargetReportForCaseFrame = (
     const gripReport = activeWeapon && weaponModel?.visible
       ? meshRig.group.userData.v3WeaponGripConstraintReport as V3GripConstraintReportLike | undefined
       : undefined;
-    const primaryGripDrift = gripReport?.results
+    const ballGripDrift = activeWeapon === 'ball' && weaponModel?.visible && !weaponModel.userData.v3BallReleased
+      ? getV3Mesh2MotionDriverWeaponSocketWorldPosition(meshRig.group, 'rightHandGrip')?.distanceTo(
+        weaponModel.localToWorld(new THREE.Vector3(...V3_BALL_CONTACTS.right))) : undefined;
+    const primaryGripDrift = ballGripDrift ?? gripReport?.results
       ?.find((result) => result.socketName === 'thirdPersonPrimaryGrip')
       ?.drift;
     const offhandGripDrift = gripReport?.results
@@ -870,6 +892,10 @@ export function analyzeV3AnimationAtlasCaseDefects(
   const motionRetention = clipMetadata?.clipId
     ? analyzeV3RetargetedMotionRetention(clipMetadata.clipId)
     : undefined;
+  const cleanupSample = sampleV3AuthoredClip(
+    mapV3AtlasCaseToAuthoredClip(caseId),
+    { normalizedTime: 0 }
+  ).pose.mesh2MotionDriverPose?.cleanup;
   const continuity = analyzeSlotContinuitySamples(caseId, mode, options);
   const baseMetrics: V3AnimationAtlasDefectMetrics = {
     visibleWeapon,
@@ -969,6 +995,13 @@ export function analyzeV3AnimationAtlasCaseDefects(
       clipReady: clipMetadata.ready,
       ...(motionRetention ? { motionRetention } : {}),
       motionSourceLabel: clipMetadata.label,
+    } : {}),
+    ...(cleanupSample ? {
+      mesh2MotionCleanupTrackId: cleanupSample.trackId,
+      mesh2MotionCleanupSourceClipName: cleanupSample.sourceClipName,
+      mesh2MotionCleanupDriverJointAdjustmentCount: cleanupSample.driverJointAdjustmentCount,
+      mesh2MotionCleanupPartBindingAdjustmentCount: cleanupSample.partBindingAdjustmentCount,
+      mesh2MotionCleanupWeaponSocketAdjustmentCount: cleanupSample.weaponSocketAdjustmentCount,
     } : {}),
     sampledFrameFractions: continuity.sampledFrameFractions,
     views,

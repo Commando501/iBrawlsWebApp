@@ -36,6 +36,7 @@ const readyExport = (): V3ReadinessDashboardExportObject => ({
     referenceProportions: readyEvidence(),
     referenceFeatureMatch: readyEvidence(),
     referenceVoxelSource: readyEvidence(),
+    armorFoundation: readyEvidence(),
     visualQa: readyEvidence(),
     poseClearance: readyEvidence(),
     motionRetarget: readyEvidence(),
@@ -212,6 +213,26 @@ test('buildV3ReadinessBaseline maps reference feature-match failures to built-in
     finding.category === 'builtInArmorFidelity' &&
     finding.severity === 'blocker' &&
     finding.message.includes('helmet missing reference jaw')
+  )));
+});
+
+test('buildV3ReadinessBaseline maps armor foundation failures to built-in armor fidelity', () => {
+  const input = readyExport();
+  input.evidence.armorFoundation = {
+    ready: false,
+    issueCount: 1,
+    issues: ['helmet foundation mask no longer matches the accepted OBJ source'],
+    summary: { schemaVersion: 'v3-internal-armor-foundation/v1' },
+  };
+
+  const report = buildV3ReadinessBaseline(input);
+
+  assert.equal(report.status, 'blocked');
+  assert.equal(report.categories.builtInArmorFidelity.ready, false);
+  assert.ok(report.findings.some((finding) => (
+    finding.category === 'builtInArmorFidelity' &&
+    finding.severity === 'blocker' &&
+    finding.message.includes('foundation mask')
   )));
 });
 

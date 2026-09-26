@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { buildV3BlenderWeapon } from './v3BlenderWeaponModels';
 import {
   createVoxelGroup,
   type CharacterLoadout,
@@ -53,7 +54,9 @@ import {
   deriveV3CanonicalRigContract,
   type V3CanonicalRigContract,
 } from './v3CanonicalRigContract';
-import { buildV3Mesh2MotionArmorRig } from './v3Mesh2MotionArmorRig';
+import {
+  buildV3Mesh2MotionArmorRig,
+} from './v3Mesh2MotionArmorRig';
 import { applyV3WeaponScaleProfile } from './v3WeaponScaleProfile';
 import {
   V3_DETAIL_BONE_NAMES,
@@ -66,6 +69,21 @@ import {
   V3_ARMOR_SURFACE_DEFAULT_OPTIONS,
   createV3VoxelArmorGroup,
 } from './v3VoxelArmorSurface';
+import { V3_ARMOR_FOUNDATION } from './v3ArmorFoundation';
+import {
+  createV3UpperBodyJointBridges,
+  setV3UpperBodyJointBridgesVisible,
+  updateV3UpperBodyJointBridges,
+} from './v3UpperBodyJointBridges';
+import {
+  createV3UpperBodyUndersuitFill,
+  setV3UpperBodyUndersuitFillVisible,
+  updateV3UpperBodyUndersuitFill,
+} from './v3UpperBodyUndersuitFill';
+import {
+  createV3RigFittedBaseBody,
+  updateV3RigFittedBaseBody,
+} from './v3RigFittedBaseBody';
 
 export interface V3SpartanBuildOptions extends V3RenderOptions {
   isEnemy?: boolean;
@@ -95,7 +113,7 @@ const createColors = (isEnemy = false, customHue?: number): SpartanColors => ({
   secondary: customHue !== undefined ? `hsl(${customHue}, 58%, 34%)` : isEnemy ? '#7f1d1d' : '#1e3a8a',
   visor: customHue !== undefined ? `hsl(${customHue}, 95%, 74%)` : '#facc15',
   accent: customHue !== undefined ? `hsl(${(customHue + 48) % 360}, 82%, 58%)` : '#22d3ee',
-  dark: '#111827',
+  dark: '#2f3f52',
   highlight: customHue !== undefined ? `hsl(${customHue}, 72%, 68%)` : '#93c5fd',
 });
 
@@ -374,6 +392,242 @@ const applyV3SlotGeometryPlacement = (
   );
 };
 
+const V3_MESH2MOTION_GLB_SOURCE_FIT_SIZE_BY_SLOT = {
+  upperArmLeft: [0.2510, 0.1514, 0.1865],
+  upperArmRight: [0.2510, 0.1518, 0.1857],
+  forearmLeft: [0.3195, 0.1366, 0.1303],
+  forearmRight: [0.3219, 0.1366, 0.1303],
+  handLeft: [0.2359, 0.0950, 0.1506],
+  handRight: [0.2361, 0.0950, 0.1503],
+} as const satisfies Partial<Record<V3CharacterSlotId, readonly [number, number, number]>>;
+
+const getV3AuthoritativeArmorSourceFitSize = (slot: V3CharacterSlotId): THREE.Vector3 => {
+  const mesh2MotionSourceSize = V3_MESH2MOTION_GLB_SOURCE_FIT_SIZE_BY_SLOT[slot];
+  if (mesh2MotionSourceSize) {
+    return new THREE.Vector3(...mesh2MotionSourceSize);
+  }
+  const sourceSlot = V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.slots[slot];
+  const voxelScale = V3_AEGIS_OBJ_SURFACE_VOXEL_SOURCE.coordinateSystem.voxelScale;
+  return new THREE.Vector3(
+    sourceSlot.bounds.size[0] * voxelScale,
+    sourceSlot.bounds.size[1] * voxelScale,
+    sourceSlot.bounds.size[2] * voxelScale
+  );
+};
+
+const V3_MANNEQUIN_ARMOR_FIT_CASES = [
+  { segmentIds: ['torso'], armorSlots: ['chest', 'back'] },
+  { segmentIds: ['pelvis'], armorSlots: ['pelvis'] },
+  { segmentIds: ['neck'], armorSlots: ['neck'] },
+  { segmentIds: ['head'], armorSlots: ['helmet'] },
+  { segmentIds: ['shoulderLeft'], armorSlots: ['shoulderLeft'] },
+  { segmentIds: ['shoulderRight'], armorSlots: ['shoulderRight'] },
+  { segmentIds: ['upperArmLeft'], armorSlots: ['upperArmLeft'] },
+  { segmentIds: ['upperArmRight'], armorSlots: ['upperArmRight'] },
+  { segmentIds: ['forearmLeft'], armorSlots: ['forearmLeft'] },
+  { segmentIds: ['forearmRight'], armorSlots: ['forearmRight'] },
+  {
+    segmentIds: [
+      'handLeft',
+      'thumbLeft01',
+      'thumbLeft02',
+      'thumbLeft03',
+      'indexLeft01',
+      'indexLeft02',
+      'indexLeft03',
+      'middleLeft01',
+      'middleLeft02',
+      'middleLeft03',
+      'ringLeft01',
+      'ringLeft02',
+      'ringLeft03',
+      'pinkyLeft01',
+      'pinkyLeft02',
+      'pinkyLeft03',
+    ],
+    armorSlots: ['handLeft'],
+  },
+  {
+    segmentIds: [
+      'handRight',
+      'thumbRight01',
+      'thumbRight02',
+      'thumbRight03',
+      'indexRight01',
+      'indexRight02',
+      'indexRight03',
+      'middleRight01',
+      'middleRight02',
+      'middleRight03',
+      'ringRight01',
+      'ringRight02',
+      'ringRight03',
+      'pinkyRight01',
+      'pinkyRight02',
+      'pinkyRight03',
+    ],
+    armorSlots: ['handRight'],
+  },
+  { segmentIds: ['thighLeft'], armorSlots: ['thighLeft'] },
+  { segmentIds: ['thighRight'], armorSlots: ['thighRight'] },
+  { segmentIds: ['shinLeft'], armorSlots: ['shinLeft'] },
+  { segmentIds: ['shinRight'], armorSlots: ['shinRight'] },
+  { segmentIds: ['footLeft'], armorSlots: ['footLeft'] },
+  { segmentIds: ['footRight'], armorSlots: ['footRight'] },
+] as const satisfies readonly {
+  segmentIds: readonly string[];
+  armorSlots: readonly V3CharacterSlotId[];
+}[];
+
+const V3_MANNEQUIN_ARMOR_FIT_CLEARANCE = 0.018;
+const V3_MANNEQUIN_ARMOR_FIT_MAX_SCALE = 2.5;
+const V3_MANNEQUIN_ARMOR_FIT_MIN_SCALE = 0.2;
+
+const getV3ObjectWorldBox = (object: THREE.Object3D): THREE.Box3 => {
+  object.updateWorldMatrix(true, true);
+  return new THREE.Box3().setFromObject(object);
+};
+
+const getV3UnionWorldBox = (objects: readonly THREE.Object3D[]): THREE.Box3 =>
+  objects
+    .map(getV3ObjectWorldBox)
+    .reduce((combined, box) => combined.union(box), new THREE.Box3().makeEmpty());
+
+const finiteBox = (box: THREE.Box3): boolean =>
+  !box.isEmpty() &&
+  Number.isFinite(box.min.x) &&
+  Number.isFinite(box.min.y) &&
+  Number.isFinite(box.min.z) &&
+  Number.isFinite(box.max.x) &&
+  Number.isFinite(box.max.y) &&
+  Number.isFinite(box.max.z);
+
+const axisFitRatio = (targetSize: number, currentSize: number): number =>
+  currentSize > 0.000001 ? targetSize / currentSize : 1;
+
+const clampV3MannequinArmorFitScale = (scale: number): number =>
+  Number.isFinite(scale)
+    ? THREE.MathUtils.clamp(
+      scale,
+      V3_MANNEQUIN_ARMOR_FIT_MIN_SCALE,
+      V3_MANNEQUIN_ARMOR_FIT_MAX_SCALE
+    )
+    : 1;
+
+const solveV3LocalScaleForWorldSize = (
+  geometryGroup: THREE.Group,
+  targetWorldSize: THREE.Vector3
+): THREE.Vector3 => {
+  const fitScale = geometryGroup.scale.clone();
+  const originalScale = geometryGroup.scale.clone();
+  for (let iteration = 0; iteration < 8; iteration += 1) {
+    geometryGroup.updateWorldMatrix(true, true);
+    const currentSize = getV3ObjectWorldBox(geometryGroup).getSize(new THREE.Vector3());
+    if (
+      currentSize.x <= 0.000001 ||
+      currentSize.y <= 0.000001 ||
+      currentSize.z <= 0.000001
+    ) {
+      break;
+    }
+    const dampedMultiplier = new THREE.Vector3(
+      Math.pow(axisFitRatio(targetWorldSize.x, currentSize.x), 0.55),
+      Math.pow(axisFitRatio(targetWorldSize.y, currentSize.y), 0.55),
+      Math.pow(axisFitRatio(targetWorldSize.z, currentSize.z), 0.55)
+    );
+    fitScale.multiply(new THREE.Vector3(
+      THREE.MathUtils.clamp(dampedMultiplier.x, 0.65, 1.55),
+      THREE.MathUtils.clamp(dampedMultiplier.y, 0.65, 1.55),
+      THREE.MathUtils.clamp(dampedMultiplier.z, 0.65, 1.55)
+    ));
+    fitScale.set(
+      clampV3MannequinArmorFitScale(fitScale.x),
+      clampV3MannequinArmorFitScale(fitScale.y),
+      clampV3MannequinArmorFitScale(fitScale.z)
+    );
+    geometryGroup.scale.copy(fitScale);
+  }
+  geometryGroup.scale.copy(originalScale);
+  geometryGroup.updateWorldMatrix(true, true);
+  return fitScale;
+};
+
+const writeResolvedV3MannequinFitPlacement = (
+  geometryGroup: THREE.Group,
+  placement: {
+    position: readonly number[];
+    rotation: readonly number[];
+    scale: readonly number[];
+  }
+): void => {
+  geometryGroup.userData.v3ResolvedMannequinFitPlacement = placement;
+};
+
+const applyV3GeneratedMannequinArmorFit = (model: THREE.Object3D): void => {
+  const baseBody = model.userData.v3RigFittedBaseBody as
+    | { segments?: Record<string, THREE.Mesh> }
+    | undefined;
+  const partGroups = model.userData.v3PartGroups as
+    | Partial<Record<V3CharacterSlotId, THREE.Group>>
+    | undefined;
+  const geometryGroups = model.userData.v3PartGeometryGroups as
+    | Partial<Record<V3CharacterSlotId, THREE.Group>>
+    | undefined;
+  if (!baseBody?.segments || !partGroups || !geometryGroups) return;
+
+  model.updateWorldMatrix(true, true);
+  for (const { segmentIds, armorSlots } of V3_MANNEQUIN_ARMOR_FIT_CASES) {
+    const targetObjects = segmentIds
+      .map((segmentId) => baseBody.segments?.[segmentId])
+      .filter((segment): segment is THREE.Mesh => segment instanceof THREE.Mesh);
+    const slotObjects = armorSlots
+      .map((slot) => partGroups[slot])
+      .filter((slotPivot): slotPivot is THREE.Group => slotPivot instanceof THREE.Group);
+    if (targetObjects.length === 0 || slotObjects.length !== armorSlots.length) continue;
+
+    const mannequinBox = getV3UnionWorldBox(targetObjects);
+    const targetBox = mannequinBox.clone().expandByScalar(V3_MANNEQUIN_ARMOR_FIT_CLEARANCE);
+    const armorBox = getV3UnionWorldBox(slotObjects);
+    if (!finiteBox(targetBox) || !finiteBox(armorBox)) continue;
+
+    const targetCenter = targetBox.getCenter(new THREE.Vector3());
+    for (const slot of armorSlots) {
+      const slotPivot = partGroups[slot];
+      const geometryGroup = geometryGroups[slot];
+      if (!(slotPivot instanceof THREE.Group) || !(geometryGroup instanceof THREE.Group)) continue;
+      const sourceFitSize = getV3AuthoritativeArmorSourceFitSize(slot);
+      const fitScale = solveV3LocalScaleForWorldSize(geometryGroup, sourceFitSize);
+      geometryGroup.userData.v3ResolvedMannequinFitScaleCandidate = fitScale.toArray();
+    }
+    model.updateWorldMatrix(true, true);
+
+    const scaledArmorBox = getV3UnionWorldBox(slotObjects);
+    if (!finiteBox(scaledArmorBox)) continue;
+    const scaledArmorCenter = scaledArmorBox.getCenter(new THREE.Vector3());
+    const worldDelta = targetCenter.sub(scaledArmorCenter);
+
+    for (const slot of armorSlots) {
+      const slotPivot = partGroups[slot];
+      const geometryGroup = geometryGroups[slot];
+      if (!(slotPivot instanceof THREE.Group) || !(geometryGroup instanceof THREE.Group)) continue;
+      const localDelta = worldDelta
+        .clone()
+        .applyQuaternion(slotPivot.getWorldQuaternion(new THREE.Quaternion()).invert());
+      writeResolvedV3MannequinFitPlacement(geometryGroup, {
+        position: geometryGroup.position.clone().add(localDelta).toArray(),
+        rotation: [
+          geometryGroup.rotation.x,
+          geometryGroup.rotation.y,
+          geometryGroup.rotation.z,
+        ],
+        scale: (geometryGroup.userData.v3ResolvedMannequinFitScaleCandidate as readonly number[] | undefined)
+          ?? geometryGroup.scale.toArray(),
+      });
+    }
+    model.updateWorldMatrix(true, true);
+  }
+};
+
 const V3_CACHE_PAINT_ROLES = [
   'primary',
   'secondary',
@@ -479,11 +733,24 @@ export function buildV3SpartanModel(options: V3SpartanBuildOptions = {}): THREE.
       | { geometry?: { position: readonly number[]; rotation: readonly number[]; scale: readonly number[] } }
       | undefined;
     recenterV3SlotGeometry(geometryGroup);
-    applyV3SlotGeometryPlacement(geometryGroup, slotPlacement?.geometry ?? {
+    const foundationSlot = customPiece
+      ? undefined
+      : V3_ARMOR_FOUNDATION.slots[part.slot];
+    const foundationGeometry = foundationSlot?.mesh2MotionGeometry;
+    const builtInUsesObjSource = Boolean(foundationSlot?.sourceHashes.exactObjSurfaceSlot);
+    const geometryPlacement = foundationGeometry ?? slotPlacement?.geometry ?? {
       position: [0, 0, 0],
       rotation: [0, 0, 0],
       scale: [1, 1, 1],
-    });
+    };
+    applyV3SlotGeometryPlacement(geometryGroup, geometryPlacement);
+    if (slotPlacement) {
+      slotPlacement.geometry = {
+        position: [...geometryPlacement.position],
+        rotation: [...geometryPlacement.rotation],
+        scale: [...geometryPlacement.scale],
+      };
+    }
     const selectedLod = selectV3LodLevel({
       lods: part.lods,
       qualityTier: v3QualityTier,
@@ -514,7 +781,9 @@ export function buildV3SpartanModel(options: V3SpartanBuildOptions = {}): THREE.
       v3Distance,
       v3SelectedLod: selectedLodWithMeasuredBudget,
       v3GridScale: gridScale,
-      v3ObjSurfaceSource: !customPiece,
+      v3BuiltInSourceKind: customPiece ? undefined : builtInUsesObjSource ? 'exact-obj' : 'reference-glb',
+      v3ReferenceGlbSource: !customPiece && !builtInUsesObjSource,
+      v3ObjSurfaceSource: !customPiece && builtInUsesObjSource,
       v3ExactSourceLodQualityTier: customPiece ? undefined : v3QualityTier,
       v3SourceFidelity: customPiece ? undefined : v3SourceFidelity,
       v3VoxelScale: voxelScale,
@@ -541,8 +810,13 @@ export function buildV3SpartanModel(options: V3SpartanBuildOptions = {}): THREE.
       geometryGroup.userData.customArmorGridScale = gridScale;
     }
     slotPivot.add(geometryGroup);
-    detailBones[V3_SLOT_DETAIL_BONES[part.slot]].userData.v3Mesh2MotionSlotPivot = slotPivot;
-    detailBones[V3_SLOT_DETAIL_BONES[part.slot]].userData.v3Mesh2MotionSlotGeometry = geometryGroup;
+    const detailBone = detailBones[V3_SLOT_DETAIL_BONES[part.slot]];
+    const linkedSlotPivots = detailBone.userData.v3Mesh2MotionSlotPivots as THREE.Group[] | undefined;
+    const linkedSlotGeometries = detailBone.userData.v3Mesh2MotionSlotGeometries as THREE.Group[] | undefined;
+    detailBone.userData.v3Mesh2MotionSlotPivots = [...(linkedSlotPivots ?? []), slotPivot];
+    detailBone.userData.v3Mesh2MotionSlotGeometries = [...(linkedSlotGeometries ?? []), geometryGroup];
+    detailBone.userData.v3Mesh2MotionSlotPivot = slotPivot;
+    detailBone.userData.v3Mesh2MotionSlotGeometry = geometryGroup;
     partGroups[part.slot] = slotPivot;
     partGeometryGroups[part.slot] = geometryGroup;
   }
@@ -602,10 +876,29 @@ export function buildV3SpartanModel(options: V3SpartanBuildOptions = {}): THREE.
   const lowerBodyJointBridges = createV3LowerBodyJointBridges();
   root.userData.v3LowerBodyJointBridges = lowerBodyJointBridges;
   root.add(lowerBodyJointBridges.root);
+  const rigFittedBaseBody = createV3RigFittedBaseBody();
+  root.userData.v3RigFittedBaseBody = rigFittedBaseBody;
+  root.add(rigFittedBaseBody.root);
+  updateV3RigFittedBaseBody(root, true);
+  applyV3GeneratedMannequinArmorFit(root);
+  const upperBodyUndersuitFill = createV3UpperBodyUndersuitFill(colors, paintJob, {
+    qualityTier: v3QualityTier,
+    renderStyle: v3ArmorRenderStyle,
+  });
+  root.userData.v3UpperBodyUndersuitFill = upperBodyUndersuitFill;
+  root.add(upperBodyUndersuitFill.root);
+  updateV3UpperBodyUndersuitFill(root, true);
+  setV3UpperBodyUndersuitFillVisible(root, false);
+  const upperBodyJointBridges = createV3UpperBodyJointBridges();
+  root.userData.v3UpperBodyJointBridges = upperBodyJointBridges;
+  root.add(upperBodyJointBridges.root);
+  updateV3UpperBodyJointBridges(root, true);
+  setV3UpperBodyJointBridgesVisible(root, false);
 
   return root;
 }
 
+/** Legacy voxel prototypes for tooling; runtime hammer/sword use Blender meshes. */
 export function getV3BuiltinWeaponVoxels(
   weapon: V3WeaponId,
   customHue?: number,
@@ -727,7 +1020,9 @@ export function buildV3WeaponModel(weapon: V3WeaponId, options: V3WeaponBuildOpt
   const manifest = getDefaultV3WeaponManifest(weapon);
   const v3QualityTier = normalizeV3QualityTier(options.v3QualityTier);
   const v3Distance = Number.isFinite(options.v3Distance) ? Math.max(0, options.v3Distance ?? 0) : 0;
-  const group = createVoxelGroup(getV3BuiltinWeaponVoxels(weapon, options.customHue, options.loadout?.paintJob), V3_WEAPON_SCALE);
+  const group = weapon === 'pistol'
+    ? createVoxelGroup(getV3BuiltinWeaponVoxels(weapon, options.customHue, options.loadout?.paintJob), V3_WEAPON_SCALE)
+    : buildV3BlenderWeapon(weapon, role => roleColor(role, createColors(false, options.customHue), options.loadout?.paintJob));
   const selectedLod = selectV3LodLevel({
     lods: manifest.lods,
     qualityTier: v3QualityTier,

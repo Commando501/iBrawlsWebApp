@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import * as THREE from 'three';
+import * as V3CleanEditorCore from './v3CleanAnimationEditorCore';
 import {
   ATLAS_EDITOR_EXPORT_VERSION,
   exportV3AuthoredClipToJson,
@@ -85,6 +86,16 @@ const manualClip = (): V3AuthoredClipExport => ({
 });
 
 describe('v3CleanAnimationEditorCore', () => {
+  it('resolves deep-linked built-in clips while falling back to idle for unknown values', () => {
+    const resolve = (V3CleanEditorCore as Record<string, unknown>).resolveV3CleanEditorInitialClipId;
+    assert.equal(typeof resolve, 'function');
+    const resolveClip = resolve as (value: string | null) => string;
+    assert.equal(resolveClip('clean_hammer_strike'), 'clean_hammer_strike');
+    assert.equal(resolveClip('clean_pistol_fire'), 'clean_pistol_fire');
+    assert.equal(resolveClip('missing_clip'), 'clean_idle');
+    assert.equal(resolveClip(null), 'clean_idle');
+  });
+
   it('normalizes editor clip JSON and samples it without Mixamo override', () => {
     const normalized = normalizeV3AuthoredClipExport({
       ...manualClip(),

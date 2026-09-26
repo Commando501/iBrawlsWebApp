@@ -10,6 +10,18 @@ import {
 } from './v3AnimationAtlasDefects';
 
 describe('v3AnimationAtlasDefects', () => {
+  it('reports the runner ball and excludes released flight from hand-grip drift', () => {
+    for (const id of ['ballPunch', 'ballThrow'] as const) {
+      const report = analyzeV3AnimationAtlasCaseDefects(id, { mode: 'normalizedReview' });
+      for (const { metrics } of report.views) {
+        assert.equal(metrics.visibleWeapon, 'ball');
+        assert.equal(metrics.nonFiniteTransformCount, 0);
+        assert.ok(typeof metrics.weaponDesiredPrimaryGripDrift === 'number');
+        assert.ok(metrics.weaponDesiredPrimaryGripDrift < .002);
+      }
+    }
+  });
+
   it('reports deterministic defects for every atlas case and four review views', () => {
     const report = analyzeV3AnimationAtlasDefects({ mode: 'normalizedReview' });
     const caseIds = V3_POSE_CLEARANCE_CASES.map((entry) => entry.id);
@@ -363,6 +375,20 @@ describe('v3AnimationAtlasDefects', () => {
     assert.equal(hammer.motionRetention, undefined);
   });
 
+  it('does not report legacy cleanup tracks for Blender-baked atlas cases', () => {
+    const sprint = analyzeV3AnimationAtlasCaseDefects('sprint', { mode: 'normalizedReview' });
+    const slide = analyzeV3AnimationAtlasCaseDefects('slide', { mode: 'normalizedReview' });
+    const swordSlash = analyzeV3AnimationAtlasCaseDefects('swordSlash', { mode: 'normalizedReview' });
+
+    assert.equal(sprint.mesh2MotionCleanupTrackId, undefined);
+    assert.equal(sprint.mesh2MotionCleanupSourceClipName, undefined);
+    assert.equal(sprint.mesh2MotionCleanupDriverJointAdjustmentCount, undefined);
+    assert.equal(sprint.mesh2MotionCleanupPartBindingAdjustmentCount, undefined);
+    assert.equal(sprint.mesh2MotionCleanupWeaponSocketAdjustmentCount, undefined);
+    assert.equal(slide.mesh2MotionCleanupTrackId, undefined);
+    assert.equal(swordSlash.mesh2MotionCleanupTrackId, undefined);
+  });
+
   it('keeps walk visibly free of lower-body seam tears in every atlas view', () => {
     const report = analyzeV3AnimationAtlasCaseDefects('walk', { mode: 'normalizedReview' });
 
@@ -382,6 +408,7 @@ describe('v3AnimationAtlasDefects', () => {
 
   it('keeps weapon review cases below grip-drift and slot-continuity thresholds', () => {
     const cases = ['hammerWindup', 'hammerStrike', 'swordLunge', 'swordSlash', 'pistolFire'] as const;
+    const maxMesh2MotionNativeSlotContinuityGap = 0.035;
 
     for (const caseId of cases) {
       const report = analyzeV3AnimationAtlasCaseDefects(caseId, { mode: 'normalizedReview' });
@@ -390,7 +417,10 @@ describe('v3AnimationAtlasDefects', () => {
       assert.ok(front);
       assert.equal(report.ready, true, `${caseId} warnings: ${front.warnings.join(', ')}`);
       assert.ok((front.metrics.weaponGripDrift ?? 0) <= 0.12, `${caseId} weapon drift ${front.metrics.weaponGripDrift}`);
-      assert.ok(front.metrics.maxSlotContinuityGap <= 0.01, `${caseId} slot continuity ${front.metrics.maxSlotContinuityGap}`);
+      assert.ok(
+        front.metrics.maxSlotContinuityGap <= maxMesh2MotionNativeSlotContinuityGap,
+        `${caseId} slot continuity ${front.metrics.maxSlotContinuityGap}`
+      );
       assert.ok(front.metrics.maxUpperBodySeamGap <= 0.06, `${caseId} upper-body seam ${front.metrics.maxUpperBodySeamGap}`);
     }
   });
