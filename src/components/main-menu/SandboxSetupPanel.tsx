@@ -18,8 +18,8 @@ export function SandboxSetupPanel({
   onOpenBotSetup,
   isAdmin = false,
 }: SandboxSetupPanelProps) {
-  const selectableVisualModelPolicyOptions = getSelectableVisualModelPolicyOptions(isAdmin);
-  const selectedVisualModelPolicy = normalizeSelectableVisualModelPolicy(visualModelPolicy, isAdmin);
+  const selectableVisualModelPolicyOptions = getSelectableVisualModelPolicyOptions(isAdmin, 'trainingSandbox');
+  const selectedVisualModelPolicy = normalizeSelectableVisualModelPolicy(visualModelPolicy, isAdmin, undefined, 'trainingSandbox');
 
   return (
     <div className="flex flex-col h-full min-h-0 justify-between">
@@ -40,11 +40,12 @@ export function SandboxSetupPanel({
               {selectedVisualModelPolicy.toUpperCase()}
             </span>
           </div>
-          <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-3">
             {selectableVisualModelPolicyOptions.map((option) => (
               <button
                 key={option.value}
                 type="button"
+                aria-pressed={selectedVisualModelPolicy === option.value}
                 onClick={() => onVisualModelPolicyChange(option.value)}
                 className={`min-h-10 rounded border px-2 text-[10px] font-black uppercase tracking-wider transition-all ${
                   selectedVisualModelPolicy === option.value
@@ -56,6 +57,11 @@ export function SandboxSetupPanel({
               </button>
             ))}
           </div>
+          {selectedVisualModelPolicy === 'v3' && (
+            <p className="mt-2 text-xs leading-relaxed text-cyan-200/75">
+              Preview V3 player and bot models with Blender-authored movement and weapon animations in local training.
+            </p>
+          )}
         </div>
       </div>
 

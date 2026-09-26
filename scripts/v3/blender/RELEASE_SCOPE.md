@@ -1,18 +1,14 @@
-# Internal V3 animation release
+# V3 gameplay animation release
 
-This release publishes the approved 26-clip Blender animation set, rebuilt hammer/katar/skull-bomb assets, native skeleton and armor binding support, and the animation review/authoring tools. It does not migrate live Grifball gameplay to V3. V2 remains the default selectable gameplay model; V3 remains internal.
+This release makes Version 3 Preview available in local training with the current 31 Blender-authored animations, rebuilt hammer/katar/pistol/skull-bomb visuals, and native skeleton/armor binding. V2 remains the default for standard matches; tournament and multiplayer setup do not opt into V3.
 
-The release branch is assembled from `main` and the V3 animation dependencies. Earlier AI damage-observation and combat-trade changes on the development branch are excluded, as are local process IDs and test scratch files.
+Gameplay uses elapsed combat timers, distance-based locomotion, slide/lunge recovery, held-ball possession, and first-person weapon playback. Crouch input drives entry, breathing hold, and recovery for every carried item, with crouch-walking, crouched attacks, reversible transitions, and replay posture. Bots and remote/observer render paths share the animation runtime. Existing damage-observation updates on the development branch are included.
 
-## Validation boundaries
+The animation atlas, clean editor, Blender authoring scripts, and generated runtime assets are included. Local process IDs, Blender review renders/backups, and temporary test artifacts are excluded.
 
-The Blender regression checks cover loop/stage joins, fixed bone lengths, soles, connected arms, wrist/elbow articulation and weapon contacts. The atlas provides visual review. These checks do not establish live gameplay readiness or custom-armor clearance.
+## Validation
 
-The broad regression run found five remaining V3 failures after correcting two outdated test fixtures:
-
-- Two character readiness failures (manifest budgets and reference proportions) reproduce on development commit `9566bce`, before the animation changes.
-- Three legacy Mixamo hammer expectations (carry direction in two tests and windup height in one) conflict with the rebuilt hammer's grip/geometry. They remain visible in the full test suite. The approved Blender clip tests validate the new motion separately; legacy gameplay retargeting has not been certified.
-
-No readiness thresholds were relaxed and no failing tests were disabled. The full suite is therefore not green. These issues remain work for the V3 migration, alongside weapon locomotion, real gameplay clocks, ball possession/release, collision-driven transitions, and local/AI/remote/replay integration.
-
-The local V2 smoke test confirmed rendering, weapon selection, sword/jump input and respawn. Codex's in-app browser rejected pointer lock, limiting manual mouse-look testing. This is not a claim that V3 works during live gameplay.
+- TypeScript and targeted gameplay, crouch, bot, remote, replay, and first-person animation checks pass.
+- Blender clip regression checks cover connected limbs, fixed bone lengths, soles, wrist articulation, and weapon contacts.
+- The V3 local-training match boots and renders without browser console errors. In-app browser pointer-lock limitations prevent claiming a complete manual combat playtest.
+- Earlier broad V3 audits reported character-readiness and legacy Mixamo/hammer expectations outside the Blender gameplay path. No audit thresholds or failing tests were disabled for this release; a green targeted run is not a claim that the entire repository suite passes.

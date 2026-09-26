@@ -3,6 +3,7 @@ import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUti
 import type { VoxelData } from '../VoxelModels';
 import {
   getOrCreateV3CachedGeometryEntries,
+  getOrCreateV3SurfaceGeometry,
   getV3CachedMaterial,
   type V3CachedGeometryEntry,
 } from './v3GeometryCache';
@@ -428,26 +429,54 @@ function createSurfacePanelGeometries(
     panelCornerStyle: V3PanelCornerStyle;
     panelDepthStyle: V3PanelDepthStyle;
     pivot: THREE.Vector3Tuple;
+    shareGeometry?: boolean;
   }
 ): Map<string, THREE.BufferGeometry[]> {
   const quality = getPanelQuality(options.qualityTier);
   const thickness = options.voxelScale * quality.thicknessFactor;
   const radius = options.voxelScale * quality.radiusFactor;
   const byMaterial = new Map<string, THREE.BufferGeometry[]>();
-
+  const panelGroups = new Map<string, SurfacePanel[]>();
   for (const panel of panels) {
-    const width = getPanelRenderDimension(panel.sizeU, options.voxelScale, options.panelDepthStyle);
-    const height = getPanelRenderDimension(panel.sizeV, options.voxelScale, options.panelDepthStyle);
-    const geometry = options.panelCornerStyle === 'clipped'
-      ? createClippedPanelGeometry(width, height, thickness, radius, quality.segments)
-      : createPanelBoxGeometry(width, height, thickness, radius, quality.segments);
-    translatePanelGeometry(geometry, panel, options.voxelScale, thickness, options.pivot);
     const key = materialKey(panel.color, panel.emissive);
-    const list = byMaterial.get(key);
-    if (list) list.push(geometry);
-    else byMaterial.set(key, [geometry]);
+    const group = panelGroups.get(key) ?? [];
+    group.push(panel);
+    panelGroups.set(key, group);
   }
-
+  // Surface panels repeat the same few dimensions thousands of times. Build
+  // each bevel once per part instead of triangulating a new shape per panel.
+  const templates = new Map<string, THREE.BufferGeometry>();
+  for (const [key, group] of panelGroups) {
+    const build = () => {
+      const geometries: THREE.BufferGeometry[] = [];
+      for (const panel of group) {
+        const width = getPanelRenderDimension(panel.sizeU, options.voxelScale, options.panelDepthStyle);
+        const height = getPanelRenderDimension(panel.sizeV, options.voxelScale, options.panelDepthStyle);
+        const keyForShape = `${width}:${height}`;
+        let template = templates.get(keyForShape);
+        if (!template) {
+          template = options.panelCornerStyle === 'clipped'
+            ? createClippedPanelGeometry(width, height, thickness, radius, quality.segments)
+            : createPanelBoxGeometry(width, height, thickness, radius, quality.segments);
+          templates.set(keyForShape, template);
+        }
+        const geometry = template.clone();
+        translatePanelGeometry(geometry, panel, options.voxelScale, thickness, options.pivot);
+        geometries.push(geometry);
+      }
+      const merged = geometries.length === 1 ? geometries[0] : BufferGeometryUtils.mergeGeometries(geometries, false)!;
+      if (geometries.length > 1) for (const geometry of geometries) geometry.dispose();
+      return merged;
+    };
+    // The full panel layout avoids hash collisions and shares only identical
+    // geometry. Hue and emissive values belong to materials, not vertex buffers.
+    const layout = options.shareGeometry ? JSON.stringify([
+      options.voxelScale, options.pivot, options.panelCornerStyle, options.panelDepthStyle, options.qualityTier,
+      group.map(p => [p.direction, p.plane, p.minU, p.minV, p.sizeU, p.sizeV]),
+    ]) : '';
+    byMaterial.set(key, [options.shareGeometry ? getOrCreateV3SurfaceGeometry(layout, build) : build()]);
+  }
+  for (const template of templates.values()) template.dispose();
   return byMaterial;
 }
 
@@ -531,7 +560,7 @@ export function createV3VoxelArmorGroup(
   const createGeometryEntries = (): V3CachedGeometryEntry[] => {
     const geometriesByMaterial = renderStyle === 'voxelEdit'
       ? createVoxelEditGeometries(voxels, { voxelScale, pivot })
-      : createSurfacePanelGeometries(panels, { voxelScale, panelCornerStyle, panelDepthStyle, pivot, qualityTier });
+      : createSurfacePanelGeometries(panels, { voxelScale, panelCornerStyle, panelDepthStyle, pivot, qualityTier, shareGeometry: Boolean(options.builtInGeometryCacheKey) });
     return createMergedGeometryEntries(geometriesByMaterial);
   };
   const geometryCacheKey = options.builtInGeometryCacheKey ?? options.cacheKey;

@@ -36,7 +36,7 @@ import { useCurrentGameStats } from './components/hud/useCurrentGameStats';
 import { useMatchLoadingGate } from './components/loading/useMatchLoadingGate';
 import { statTracker } from './stats/statTracker';
 import { useStatCloudSync } from './stats/useStatCloudSync';
-import { normalizeSelectableVisualModelPolicy } from './model/modelSystem';
+import { resolveSessionVisualModelPolicy } from './model/modelSystem';
 
 export { createHighFidelityObjectMesh } from './components/main-menu/MapPreview';
 
@@ -44,6 +44,7 @@ const APP_VERSION = '0.653e';
 
 // Visual Keyboard + Mouse keybind editor component
 export default function App() {
+  const [isLocalTrainingSession, setIsLocalTrainingSession] = useState(false);
   const {
     forceMobileControls,
     setForceMobileControls,
@@ -345,10 +346,14 @@ export default function App() {
   });
 
   const isAdmin = account?.isAdmin ?? false;
-  const activeVisualModelPolicy = useMemo(() => normalizeSelectableVisualModelPolicy(
-    matchLobbyConfig?.visualModelPolicy ?? adminSettings.visualModelPolicy,
-    isAdmin
-  ), [adminSettings.visualModelPolicy, isAdmin, matchLobbyConfig?.visualModelPolicy]);
+  const activeVisualModelPolicy = useMemo(() => resolveSessionVisualModelPolicy({
+    localPolicy: adminSettings.visualModelPolicy,
+    lobbyPolicy: matchLobbyConfig?.visualModelPolicy,
+    isAdmin,
+    isMultiplayer,
+    isLocalTraining: isLocalTrainingSession && isPlaying,
+    isReplay: Boolean(selectedReplay),
+  }), [adminSettings.visualModelPolicy, isAdmin, isMultiplayer, isLocalTrainingSession, isPlaying, selectedReplay, matchLobbyConfig?.visualModelPolicy]);
 
   const {
     gameLoadingState,
@@ -641,7 +646,7 @@ export default function App() {
   });
 
   const activeMatchSettings = useMemo(() => {
-    if (!matchLobbyConfig) {
+    if (!isMultiplayer || !matchLobbyConfig) {
       return {
         ...effectiveAdminSettings,
         visualModelPolicy: activeVisualModelPolicy,
@@ -659,7 +664,7 @@ export default function App() {
       matchTimerSeconds: matchLobbyConfig.matchTimerSeconds,
       visualModelPolicy: activeVisualModelPolicy,
     };
-  }, [activeVisualModelPolicy, effectiveAdminSettings, matchLobbyConfig]);
+  }, [activeVisualModelPolicy, effectiveAdminSettings, isMultiplayer, matchLobbyConfig]);
 
   // ── Lifetime stat tracking ────────────────────────────────────────────────
   // Open/close the tracked match on play transitions. Replays and the AI
@@ -833,7 +838,10 @@ export default function App() {
           setTournamentKillsToWin,
           tournamentRoundCount,
           setTournamentRoundCount,
-          onInitializeTournament: handleInitializeTournament,
+          onInitializeTournament: (...args) => {
+            setIsLocalTrainingSession(false);
+            handleInitializeTournament(...args);
+          },
           playerName,
           playerHue: adminSettings.playerHue ?? 200,
           selectedMap,
@@ -847,7 +855,10 @@ export default function App() {
           lobbyParticipants: multiplayerLoadingSnapshot.participants,
           chatMessages,
           isPlaying,
-          onStartTournamentMatch: handleStartTournamentMatch,
+          onStartTournamentMatch: () => {
+            setIsLocalTrainingSession(false);
+            handleStartTournamentMatch();
+          },
           onResetTournament: handleResetTournament,
           connectionMode,
           onConnectionModeChange: setConnectionMode,
@@ -1057,6 +1068,8 @@ export default function App() {
           },
           onInitializeSimulation: () => {
             setShowBotSetupMenu(false);
+            setIsLocalTrainingSession(true);
+            setSinglePlayerMode('sandbox');
             handleStartGame();
           },
         }}

@@ -12,8 +12,49 @@ import { animateV3CombatantModel, animateV3WeaponMeshes } from './combatantAnima
 import { createInitialGrifballThreeRefs } from './threeRefs';
 import { getV3WeaponSocketWorldPosition } from './v3WeaponSocketBasis';
 import { V3_BALL_CONTACTS, V3_BALL_RADIUS, applyV3BallCarryPose } from './v3BallCarry';
+import { applyV3PoseClearanceCase } from './v3PoseClearance';
 
 describe('Blender unified-rig animation bake', () => {
+  it('crouches with both feet planted and returns each item to its standing carry', () => {
+    const model = buildV3SpartanModel({ v3SourceFidelity: 'exact', v3QualityTier: 'desktop' });
+    const rig = getV3Mesh2MotionDriverRig(model);
+    for (const item of [null, 'hammer', 'sword', 'pistol', 'ball'] as const) {
+      const id = item ? `clean_crouch_${item}` as const : 'clean_crouch';
+      const crouch = V3_BLENDER_ANIMATIONS.clips[id];
+      const carry = V3_BLENDER_ANIMATIONS.clips[item ? `clean_${item}_carry` : 'clean_idle'];
+      for (const [name, track] of Object.entries(crouch.joints)) {
+        for (const index of [0, -1]) {
+          assert.ok(new THREE.Vector3(...track.positions.at(index)!).distanceTo(new THREE.Vector3(...carry.joints[name].positions[0])) < .0001, `${id}: ${name} endpoint position`);
+          assert.ok(new THREE.Quaternion(...track.quaternions.at(index)!).normalize().angleTo(new THREE.Quaternion(...carry.joints[name].quaternions[0]).normalize()) < .0001, `${id}: ${name} endpoint rotation`);
+        }
+      }
+      const joint = (name: string) => rig.joints[name].object.getWorldPosition(new THREE.Vector3());
+      applyV3CleanRigPose(model, sampleV3ProductionClip(id, { frame: 0 }).pose);
+      const feet = [joint('foot_l'), joint('foot_r')], standingHip = joint('pelvis').y;
+      let lastHip = standingHip;
+      for (let frame = 0; frame <= 120; frame++) {
+        const pose = sampleV3ProductionClip(id, { frame }).pose;
+        applyV3CleanRigPose(model, pose);
+        for (const [i, side] of ['l', 'r'].entries()) assert.ok(joint(`foot_${side}`).distanceTo(feet[i]) < .0001, `${id}:${frame} boot slides`);
+        const hip = joint('pelvis').y;
+        assert.ok(Math.abs(hip - lastHip) < .025, `${id}:${frame} hip snaps`);
+        lastHip = hip;
+        if (frame >= 39 && frame <= 78) {
+          assert.ok(standingHip - hip > .32 && standingHip - hip < .36, `${id}:${frame} crouch depth`);
+          for (const side of ['l', 'r']) assert.ok(joint(`calf_${side}`).z < joint(`foot_${side}`).z - .08, `${id}:${frame} knee must bend forward`);
+        }
+        if (item === 'ball') {
+          const grip = getV3Mesh2MotionDriverWeaponSocketWorldPosition(model, 'rightHandGrip')!;
+          const contact = new THREE.Vector3(...V3_BALL_CONTACTS.right).applyQuaternion(new THREE.Quaternion(...pose.ballPose!.quaternion)).add(new THREE.Vector3(...pose.ballPose!.position));
+          assert.ok(grip.distanceTo(contact) < .002, `${id}:${frame} ball loses contact`);
+        }
+      }
+    }
+    applyV3PoseClearanceCase({ model }, 'crouch');
+    assert.equal(model.userData.v3CleanAuthoredClip, 'clean_crouch_hammer');
+    assert.ok(rig.joints.pelvis.object.getWorldPosition(new THREE.Vector3()).y < .65, 'armor preview must apply the held crouch');
+  });
+
   it('joins attack stages and returns to ready without a body-pose jump', () => {
     const chains = [
       ['clean_hammer_carry', 'clean_hammer_windup', 'clean_hammer_strike', 'clean_hammer_recover', 'clean_hammer_carry'],

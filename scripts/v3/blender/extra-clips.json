@@ -7,5 +7,10 @@
   {"id":"clean_ball_walk","durationFrames":90,"loop":true,"weapon":"ball"},
   {"id":"clean_ball_sprint","durationFrames":90,"loop":true,"weapon":"ball"},
   {"id":"clean_ball_punch","durationFrames":72,"loop":false,"weapon":"ball"},
-  {"id":"clean_ball_throw","durationFrames":90,"loop":false,"weapon":"ball","releaseFrame":45}
+  {"id":"clean_ball_throw","durationFrames":90,"loop":false,"weapon":"ball","releaseFrame":45},
+  {"id":"clean_crouch","durationFrames":120,"loop":false,"weapon":null},
+  {"id":"clean_crouch_hammer","durationFrames":120,"loop":false,"weapon":"hammer"},
+  {"id":"clean_crouch_sword","durationFrames":120,"loop":false,"weapon":"sword"},
+  {"id":"clean_crouch_pistol","durationFrames":120,"loop":false,"weapon":"pistol"},
+  {"id":"clean_crouch_ball","durationFrames":120,"loop":false,"weapon":"ball"}
 ]

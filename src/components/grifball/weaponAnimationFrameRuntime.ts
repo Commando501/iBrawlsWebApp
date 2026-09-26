@@ -5,6 +5,8 @@ import { updatePlayerPistolAnimationForState } from './playerPistolAnimationRunt
 import { updatePlayerSwordAnimationForState } from './playerSwordAnimationRuntime';
 import { type GrifballRuntimeState } from './runtimeState';
 import { type GrifballThreeRefs } from './threeRefs';
+import { sampleV3GameplayFirstPersonWeaponPose } from './v3GameplayAnimation';
+import { applyV3WeaponSocketBasis } from './v3WeaponSocketBasis';
 
 export function updateWeaponAnimationFrameForState({
   state,
@@ -78,6 +80,9 @@ export function updateWeaponAnimationFrameForState({
   state.crosshairColor = getPlayerSwordLockTarget() ? 'red' : 'white';
 
   if (state.playerHP <= 0) {
+    for (const model of [playerHammer, playerSword, refs.playerPistol]) {
+      if (model) { delete model.userData.v3GameplayPlayback; delete model.userData.v3GameplaySample; }
+    }
     state.pWeaponState = 'ready';
     state.pWeaponTimer = 0;
     state.pWeaponReady = true;
@@ -139,4 +144,29 @@ export function updateWeaponAnimationFrameForState({
     applyEnemyHammerMeleeImpact,
     applyEnemySwordSlashImpact,
   });
+
+  const weapon = state.activeWeapon;
+  const model = weapon === 'hammer' ? refs.playerHammer : weapon === 'sword' ? refs.playerSword : weapon === 'pistol' ? refs.playerPistol : null;
+  if (model?.userData.modelSystem === 'v3' && state.playerHP > 0) {
+    // Bakes use the same corrected geometry basis as the third-person sockets.
+    if (model.userData.v3WeaponSocketBasis?.socketName !== 'thirdPersonPrimaryGrip') {
+      applyV3WeaponSocketBasis(model, weapon as 'hammer' | 'sword' | 'pistol', 'thirdPersonPrimaryGrip');
+    }
+    // Share posture across weapon swaps instead of replaying crouch entry.
+    if (refs.playerHammer?.userData.v3GameplayPlayback) model.userData.v3GameplayPlayback = refs.playerHammer.userData.v3GameplayPlayback;
+    const pose = sampleV3GameplayFirstPersonWeaponPose({
+      activeWeapon: weapon,
+      weaponState: weapon === 'sword' ? state.pSwordState : weapon === 'pistol' ? state.pPistolState : state.pWeaponState,
+      weaponTimer: weapon === 'sword' ? state.pSwordTimer : weapon === 'pistol' ? state.pPistolTimer : state.pWeaponTimer,
+      settings: state.settings, isLunging: state.isLunging, isSliding: state.playerSlideActive,
+      isCrouching: state.isCrouching,
+      // Camera movement already applies the physical crouch height.
+      eyeHeight: 1.65,
+      velocityLength: Math.hypot(state.playerVel.x, state.playerVel.z),
+    }, model, dt);
+    if (refs.playerHammer) refs.playerHammer.userData.v3GameplayPlayback = model.userData.v3GameplayPlayback;
+    model.position.set(...pose.position);
+    model.rotation.set(...pose.rotation);
+    model.userData.v3CleanMotionSource = 'blenderAuthored';
+  }
 }

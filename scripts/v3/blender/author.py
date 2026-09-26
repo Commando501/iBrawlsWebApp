@@ -238,12 +238,27 @@ sole={s:minimum_y(vertices,mat(data['rest'][s])) for s,vertices in feet.items()}
 # Authoring uses the source's +Z facing, then rotates the entire baked rig to game -Z.
 def sample(cid,t):
     carry_item=cid.removeprefix('clean_slide_') if cid.startswith('clean_slide_') else None
+    crouching=cid.startswith('clean_crouch')
+    if crouching:
+        carry_item=cid.removeprefix('clean_crouch_') if cid.startswith('clean_crouch_') else None
+        cid='clean_crouch'
     if carry_item:cid='clean_slide'
+    if crouching:cid='clean_crouch'
     if cid in ('clean_ball_walk','clean_ball_sprint'):
         carry_item='ball';cid='clean_walk' if cid=='clean_ball_walk' else 'clean_sprint'
     world=pose_world();phase=2*math.pi*t;run=cid=='clean_sprint';walk=cid=='clean_walk'
     bob=.004*math.sin(phase)
     lean=0.;twist=0.;lower=.02
+    if crouching:
+        # Planted boots, hips back, knees forward; smooth acceleration into a
+        # combat-ready squat. The torso settles slightly after the hips.
+        def ease(a,b):
+            u=max(0,min(1,(t*120-a)/(b-a)))
+            return u*u*u*(u*(u*6-15)+10)
+        crouch=ease(0,36)*(1-ease(78,116))
+        upper=ease(3,39)*(1-ease(81,120))
+        breath=.003*math.sin(math.pi*max(0,min(1,(t*120-39)/39)))**2 if 39<=t*120<=78 else 0
+        lower=.02+.34*crouch;bob=breath;lean=.30*upper
     if walk:lower=.035;bob=.015*math.cos(phase*2);twist=.05*math.sin(phase)
     if run:lower=.10;bob=.022*math.cos(phase*2);lean=.18;twist=.08*math.sin(phase)
     if cid=='clean_slide':
@@ -278,6 +293,7 @@ def sample(cid,t):
         twist=-.12*smooth(t/.25) if t<.25 else -.12+.32*smooth(min(1,(t-.25)/.53))
     if cid=='clean_sword_recover':bob=0;twist=.20*(1-smooth(t))
     world['pelvis'].translation+=v((0,-lower+bob,0))
+    if crouching:world['pelvis'].translation.z-=.10*crouch
     if cid=='clean_slide':world['pelvis'].translation+=slide_shift
     if cid=='clean_ball_throw':
         world['pelvis'].translation+=track([(0,(0,0,0)),(1/3,(-.045,0,-.07)),(.5,(.025,0,.045)),(.68,(.015,0,.025)),(1,(0,0,0))],t)
@@ -288,6 +304,8 @@ def sample(cid,t):
         world[n]=put_rotation(world[n],Quaternion((1,0,0),lean/3)@Quaternion((0,1,0),twist/3)@world[n].to_quaternion());descendants(world,n)
     if cid=='clean_slide':
         world['neck_01']=put_rotation(world['neck_01'],Quaternion((1,0,0),-lean*(.16/.34))@world['neck_01'].to_quaternion());descendants(world,'neck_01')
+    if crouching:
+        world['neck_01']=put_rotation(world['neck_01'],Quaternion((1,0,0),-lean*.8)@world['neck_01'].to_quaternion());descendants(world,'neck_01')
     errors=[]
     for side,sign,slot in [('l',1,'footLeft'),('r',-1,'footRight')]:
         foot=rest['foot_'+side].translation.copy();foot.y-=sole[slot]
@@ -327,6 +345,9 @@ def sample(cid,t):
         world['foot_'+side]=Matrix.LocRotScale(world['foot_'+side].translation,foot_q,v((1,1,1)));descendants(world,'foot_'+side)
     hand_targets={'l':v((.285,.80,.045)),'r':v((-.285,.80,.045))}
     hand_directions={'l':v((0,-1,.1)),'r':v((0,-1,.1))}
+    if crouching:
+        for side,sign in [('l',1),('r',-1)]:
+            hand_targets[side]=hand_targets[side].lerp(v((sign*.30,.59,.27)),upper)
     if walk or run:
         for side,sign in [('l',1),('r',-1)]:
             swing=math.sin(phase)*(1 if side=='l' else -1)
@@ -382,6 +403,10 @@ def sample(cid,t):
         # Align the rebuilt shaft/blade along corrected local -Z.
         source_axis=v((0,0,-1)) if weapon!='pistol' else v((-.85,.1,-1))
         q=source_axis.rotation_difference(direction.normalized())
+        if crouching:
+            # Translate each carry with the chest while keeping the weapon's
+            # existing orientation and physical grip contacts intact.
+            point+=v((0,-.29*upper+breath,.07*upper))
         if carry_item and cid=='clean_slide':
             target={'hammer':(-.18,.66,.34),'sword':(-.34,.77,.28),'pistol':(-.18,.84,.32),'ball':(-.29,.78,.42)}[carry_item]
             point=point.lerp(v(target),arm_slide)+slide_shift
@@ -468,6 +493,7 @@ def sample(cid,t):
             stable=world['upperarm_r'].translation+torso@v((-.25,-.45,-.75))
             pole=lerp(pole,stable,lunge_crouch(t))
         if cid=='clean_slide':pole=lerp(pole,(sign*.22,.46,-.12),arm_slide)+slide_shift
+        if crouching:pole=lerp(pole,(sign*.26,.60,-.10),upper)
         errors.append(ik(world,'upperarm_'+side,'lowerarm_'+side,'hand_'+side,wrist,pole))
         world['hand_'+side]=Matrix.LocRotScale(world['hand_'+side].translation,q,v((1,1,1)));descendants(world,'hand_'+side)
     # Ground correction is based on visible armor soles, never hidden bind helpers.

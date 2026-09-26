@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { applyV3BallCarryPose } from './v3BallCarry';
+import { applyV3GameplayHitReact, sampleV3GameplayAnimation } from './v3GameplayAnimation';
 import { getV3BlenderWeaponGripRotation } from './v3BlenderAnimationClips';
 import { getYawForHeading } from '../../game/yaw';
 import type { UniversalSettings } from '../../types';
@@ -66,6 +67,9 @@ export type V3BroadBodyGroupName =
   | 'rightLeg';
 
 export interface V3CombatantAnimationInput {
+  isCrouching?: boolean;
+  crouchProgress?: number;
+  gameplayPlayback?: boolean;
   refs: GrifballThreeRefs;
   mesh: THREE.Group | null | undefined;
   vel: THREE.Vector3;
@@ -799,6 +803,9 @@ const applyV3AdditiveLayer = ({
 };
 
 export function animateV3CombatantModel({
+  isCrouching = false,
+  crouchProgress,
+  gameplayPlayback = false,
   refs: _refs,
   mesh,
   vel,
@@ -846,6 +853,9 @@ export function animateV3CombatantModel({
     : hp;
 
   if (hp <= 0) {
+    delete mesh.userData.v3GameplayPlayback;
+    delete mesh.userData.v3GameplaySample;
+    delete mesh.userData.v3RunnerSample;
     mesh.userData.v3LastHp = hp;
     mesh.userData.v3HitReactTimer = 0;
     resetV3BroadGroups(groups);
@@ -868,7 +878,13 @@ export function animateV3CombatantModel({
     : dt > 0 ? Math.min(1, dt * 12) : 1;
 
   if (v3AnimationAuthority === 'cleanRig') {
-    const clipId = v3AuthoredClipId ?? mapV3RuntimeStateToAuthoredClip({
+    const runtimeSample = gameplayPlayback ? (mesh.userData.v3RunnerSample ?? sampleV3GameplayAnimation(mesh, {
+      activeWeapon, weaponState, weaponTimer, settings: { ...settings,
+        ...(hammerSlamWindupTime !== undefined ? { hammerSlamWindupTime } : {}),
+        ...(hammerSlamAttackTime !== undefined ? { hammerSlamAttackTime } : {}),
+      }, isSliding, isSprinting, isLunging, isCrouching, crouchProgress, velocityLength: Math.hypot(vel.x, vel.z),
+    }, dt)) as V3AuthoredAnimationSample : undefined;
+    const clipId = runtimeSample?.clipId ?? v3AuthoredClipId ?? mapV3RuntimeStateToAuthoredClip({
       activeWeapon,
       weaponState,
       isSliding,
@@ -877,12 +893,16 @@ export function animateV3CombatantModel({
       velocityLength: vel.length(),
     });
     const normalizedTime = authoredNormalizedTime(v3AuthoredNormalizedTime, animationClockMs, weaponTimer);
-    const authoredSample = v3AuthoredSampleOverride?.clipId === clipId
+    const authoredSample = runtimeSample ?? (v3AuthoredSampleOverride?.clipId === clipId
       ? v3AuthoredSampleOverride
-      : sampleV3AuthoredClip(clipId, { normalizedTime });
-    applyV3CleanRigPose(mesh, authoredSample.pose, { alpha });
+      : sampleV3AuthoredClip(clipId, { normalizedTime }));
+    if (gameplayPlayback && mesh.userData.v3HitReactTimer > 0) {
+      applyV3GameplayHitReact(authoredSample, 1 - mesh.userData.v3HitReactTimer / .18);
+    }
+    if (gameplayPlayback) mesh.userData.v3GameplaySample = authoredSample;
+    applyV3CleanRigPose(mesh, authoredSample.pose, { alpha: gameplayPlayback ? 1 : alpha });
     mesh.userData.v3LastHp = hp;
-    mesh.userData.v3HitReactTimer = 0;
+    mesh.userData.v3HitReactTimer = Math.max(0, Number(mesh.userData.v3HitReactTimer ?? 0) - dt);
     mesh.userData.v3CleanMotionSource = authoredSample.motionSource;
     if (authoredSample.mixamoClipId) {
       mesh.userData.v3CleanMixamoClipId = authoredSample.mixamoClipId;

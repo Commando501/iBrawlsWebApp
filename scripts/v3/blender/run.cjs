@@ -5,6 +5,7 @@ const { spawnSync } = require('node:child_process');
 const scripts = { 'review-left-arm': 'render-left-arm.py', 'review-runner': 'render-runner.py', ball: 'author-ball.py', runner: 'author.py', throw: 'author.py', punch: 'author.py', 'left-arm': 'author.py', import: 'import-review.py', author: 'author.py', hammer: 'author.py', sword: 'author.py', lunge: 'author.py', melee: 'author.py', slide: 'author.py', 'slide-recovery': 'author.py', carries: 'author.py', export: 'export-bake.py', review: 'render-review.py', weapons: 'author-weapons.py', 'review-hammer': 'render-hammer.py', 'review-sword': 'render-sword.py', 'review-lunge': 'render-lunge.py', 'review-melee': 'render-melee.py', 'review-slide': 'render-slide.py', 'review-carries': 'render-carries.py' };
 const action = process.argv[2];
 scripts.refine = 'author.py';
+scripts['review-crouch'] = 'render-crouch.py';
 scripts['audit-motion'] = 'audit-motion.py';
 scripts['review-motion'] = 'render-motion.py';
 if (!scripts[action]) throw new Error(`Usage: node scripts/v3/blender/run.cjs ${Object.keys(scripts).join('|')}`);

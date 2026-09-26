@@ -622,8 +622,9 @@ test('replay V3 body animation receives active weapon, lunge state, and pitch', 
     settings: {},
   });
 
-  assert.equal(calls.length, 1);
-  assert.equal(calls[0][9], 'sword');
-  assert.equal(calls[0][10], true);
-  assert.equal(calls[0][11], -0.15);
+  assert.equal(calls.length, 0, 'V3 replay uses the object API with recorded posture');
+  const body = refs.otherPlayerMeshes.get('player').group;
+  assert.equal(body.userData.v3GameplaySample.clipId, 'clean_sword_lunge');
+  assert.equal(body.userData.v3GameplayPlayback.weapon, 'sword');
+  assert.equal(body.userData.v3GameplayPlayback.lunging, true);
 });

@@ -254,6 +254,7 @@ const WEAPON_CASES = new Set<V3PoseClearanceCaseId>([
 ]);
 const HAMMER_TWO_HAND_READY_CASES = new Set<V3PoseClearanceCaseId>([
   'idle',
+  'crouch',
   'walk',
   'sprint',
   'slide',

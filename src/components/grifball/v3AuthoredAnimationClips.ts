@@ -46,6 +46,11 @@ export const V3_AUTHORED_ANIMATION_CLIP_IDS = [
   'clean_ball_sprint',
   'clean_ball_punch',
   'clean_ball_throw',
+  'clean_crouch',
+  'clean_crouch_hammer',
+  'clean_crouch_sword',
+  'clean_crouch_pistol',
+  'clean_crouch_ball',
 ] as const;
 
 export type V3AuthoredClipId = (typeof V3_AUTHORED_ANIMATION_CLIP_IDS)[number];
@@ -352,6 +357,11 @@ const CLIPS: Record<V3AuthoredClipId, V3AuthoredAnimationClip> = {
     }),
   ], true),
   clean_slide_hammer: clip('clean_slide_hammer', 'Slide · Hammer', 84, [cleanKeyframe(0), cleanKeyframe(84)]),
+  clean_crouch: clip('clean_crouch', 'Crouch · Unarmed', 120, [cleanKeyframe(0), cleanKeyframe(120)]),
+  clean_crouch_hammer: clip('clean_crouch_hammer', 'Crouch · Hammer', 120, [cleanKeyframe(0), cleanKeyframe(120)]),
+  clean_crouch_sword: clip('clean_crouch_sword', 'Crouch · Sword', 120, [cleanKeyframe(0), cleanKeyframe(120)]),
+  clean_crouch_pistol: clip('clean_crouch_pistol', 'Crouch · Pistol', 120, [cleanKeyframe(0), cleanKeyframe(120)]),
+  clean_crouch_ball: clip('clean_crouch_ball', 'Crouch · Ball', 120, [cleanKeyframe(0), cleanKeyframe(120)]),
   clean_slide_sword: clip('clean_slide_sword', 'Slide · Sword', 84, [cleanKeyframe(0), cleanKeyframe(84)]),
   clean_slide_pistol: clip('clean_slide_pistol', 'Slide · Pistol', 84, [cleanKeyframe(0), cleanKeyframe(84)]),
   clean_slide_ball: clip('clean_slide_ball', 'Slide · Ball', 84, [cleanKeyframe(0), cleanKeyframe(84)]),
@@ -822,6 +832,7 @@ export function mapV3AtlasCaseToAuthoredClip(
   caseId: V3PoseClearanceCaseId,
   carryWeapon?: 'hammer' | 'sword' | 'pistol' | 'ball' | null
 ): V3AuthoredClipId {
+  if (caseId === 'crouch') return carryWeapon ? `clean_crouch_${carryWeapon}` : 'clean_crouch';
   if (caseId === 'slide' && carryWeapon) return `clean_slide_${carryWeapon}`;
   if (carryWeapon === 'ball') return caseId === 'walk' ? 'clean_ball_walk' : caseId === 'sprint' ? 'clean_ball_sprint' : 'clean_ball_carry';
   if (carryWeapon === 'hammer') return 'clean_hammer_carry';

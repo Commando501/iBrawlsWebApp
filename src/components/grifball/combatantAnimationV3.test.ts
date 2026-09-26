@@ -819,7 +819,7 @@ describe('animateV3CombatantModel', () => {
     }
   });
 
-  it('animateSpartanCombatantModel dispatches V3 models to the V3 layered runtime', () => {
+  it('animateSpartanCombatantModel dispatches V3 models to the Blender gameplay runtime', () => {
     const model = createV3Model();
     const refs = createInitialGrifballThreeRefs();
 
@@ -837,7 +837,8 @@ describe('animateV3CombatantModel', () => {
     });
 
     assert.notEqual(model.userData.upperTorso.rotation.x, 0);
-    assert.equal(model.userData.v3RetargetedClip?.clipId, 'walk');
+    assert.equal(model.userData.v3CleanAuthoredClip, 'clean_pistol_fire');
+    assert.equal(model.userData.v3CleanMotionSource, 'blenderAuthored');
     const detailBones = model.userData.v3DetailBones as Record<string, THREE.Group>;
     assert.notEqual(detailBones.thighLeft.rotation.x, 0);
   });
@@ -865,16 +866,16 @@ describe('animateV3CombatantModel', () => {
       animationClockMs: 0,
       isLocalV3Animation: false,
     });
-    const firstRemotePhase = remoteModel.userData.v3RetargetedLocomotionSeconds;
-    const firstRemoteBreath = remoteModel.userData.v3BreathingPhase;
+    const firstRemotePhase = remoteModel.userData.v3GameplayPlayback.elapsed;
+    const firstRemoteBreath = remoteModel.userData.v3CleanRigPose.normalizedTime;
     animateSpartanCombatantModel({
       ...baseInput,
       mesh: remoteModel,
       animationClockMs: 20,
       isLocalV3Animation: false,
     });
-    assert.equal(remoteModel.userData.v3RetargetedLocomotionSeconds, firstRemotePhase);
-    assert.equal(remoteModel.userData.v3BreathingPhase, firstRemoteBreath);
+    assert.equal(remoteModel.userData.v3GameplayPlayback.elapsed, firstRemotePhase);
+    assert.equal(remoteModel.userData.v3CleanRigPose.normalizedTime, firstRemoteBreath);
 
     animateSpartanCombatantModel({
       ...baseInput,
@@ -882,14 +883,14 @@ describe('animateV3CombatantModel', () => {
       animationClockMs: 0,
       isLocalV3Animation: true,
     });
-    const firstLocalPhase = localModel.userData.v3RetargetedLocomotionSeconds;
+    const firstLocalPhase = localModel.userData.v3GameplayPlayback.elapsed;
     animateSpartanCombatantModel({
       ...baseInput,
       mesh: localModel,
       animationClockMs: 20,
       isLocalV3Animation: true,
     });
-    assert.notEqual(localModel.userData.v3RetargetedLocomotionSeconds, firstLocalPhase);
+    assert.notEqual(localModel.userData.v3GameplayPlayback.elapsed, firstLocalPhase);
   });
 
   it('adds V3 hit reaction when hp drops without changing lower-body locomotion phase', () => {

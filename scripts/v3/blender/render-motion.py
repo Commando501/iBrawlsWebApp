@@ -25,4 +25,4 @@ finally:
     scene.frame_set(saved[0]);scene.camera.location=saved[1];scene.camera.rotation_euler=saved[2];scene.camera.data.ortho_scale=saved[3]
     scene.render.resolution_x=saved[4];scene.render.resolution_y=saved[5];scene.cycles.samples=saved[6];scene.render.filepath=saved[7]
 (base/'motion-review-images.json').write_text(json.dumps(manifest,indent=2))
-print('Rendered three review poses for each of the 26 V3 clips')
+print(f'Rendered three review poses for each of the {len(timeline)} V3 clips')

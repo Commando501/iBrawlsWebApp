@@ -231,7 +231,7 @@ describe('V3 voxel armor surface renderer', () => {
     assert.ok(statsAfterSecond.approximateBytes > 0);
   });
 
-  it('does not hit the built-in geometry cache for different or omitted cache keys', () => {
+  it('shares identical built-in surfaces across palette keys while unkeyed geometry remains independent', () => {
     clearV3GeometryCache();
     const voxels = createPlateVoxels(2, 2);
 
@@ -251,11 +251,29 @@ describe('V3 voxel armor surface renderer', () => {
     const unkeyedBMesh = getMeshes(unkeyedB)[0];
     const stats = getV3GeometryCacheStats();
 
-    assert.notEqual(keyedAMesh.geometry, keyedBMesh.geometry);
+    assert.ok(keyedAMesh.geometry === keyedBMesh.geometry);
     assert.notEqual(unkeyedAMesh.geometry, unkeyedBMesh.geometry);
     assert.equal(stats.hits, 0);
     assert.equal(stats.misses, 2);
     assert.equal(stats.geometryEntries, getMeshes(keyedA).length + getMeshes(keyedB).length);
+  });
+
+  it('reuses vertex buffers across armor hues without sharing their colors or changed shapes', () => {
+    clearV3GeometryCache();
+    const a = getMeshes(createV3VoxelArmorGroup(createPlateVoxels(3, 2, '#ff0000'), { builtInGeometryCacheKey: 'red' }))[0];
+    const before = getV3GeometryCacheStats().approximateBytes;
+    const b = getMeshes(createV3VoxelArmorGroup(createPlateVoxels(3, 2, '#00ff00'), { builtInGeometryCacheKey: 'green' }))[0];
+    const c = getMeshes(createV3VoxelArmorGroup(createPlateVoxels(4, 2, '#00ff00'), { builtInGeometryCacheKey: 'wide' }))[0];
+    assert.ok(a.geometry === b.geometry);
+    assert.ok(a.material !== b.material);
+    assert.equal((a.material as THREE.MeshStandardMaterial).color.getHexString(), 'ff0000');
+    assert.equal((b.material as THREE.MeshStandardMaterial).color.getHexString(), '00ff00');
+    assert.ok(b.geometry !== c.geometry);
+    let disposals = 0;
+    a.geometry.addEventListener('dispose', () => disposals++);
+    assert.ok(before > 0);
+    clearV3GeometryCache();
+    assert.equal(disposals, 1);
   });
 
   it('clears disposed keyed geometry and can rebuild the same built-in cache key', () => {

@@ -7,6 +7,11 @@ import {
   type ReplayHeatmapCombatantSource,
 } from './replayHeatmapRuntime';
 import { type GrifballRuntimeState } from './runtimeState';
+import {
+  recordCombatantCounterSuccessObservation,
+  recordCombatantDamageDealtObservation,
+  recordCombatantDamageReceivedObservation,
+} from './playerModelObservations';
 
 export type CombatTradeReason = 'sword_vs_sword' | 'sword_lunge_vs_hammer';
 
@@ -132,6 +137,11 @@ export function executeCustomBotTradeForState({
     state.playerHP = Math.max(0, state.playerHP - 1);
   } else if (targetCombatant) {
     targetCombatant.hp = Math.max(0, targetCombatant.hp - 1);
+    recordCombatantDamageDealtObservation(state, attackerBot.id);
+    recordCombatantDamageReceivedObservation(state, attackerBot.id);
+    recordCombatantDamageDealtObservation(state, targetCombatant.id);
+    recordCombatantDamageReceivedObservation(state, targetCombatant.id);
+    recordCombatantCounterSuccessObservation(state, targetCombatant.id);
   }
 
   playExplosion();

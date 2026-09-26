@@ -242,6 +242,7 @@ export interface V3AnimationAtlasSceneUpdateOptions {
 
 const CASE_DURATIONS: Record<V3AnimationAtlasCaseId, number> = {
   idle: 120,
+  crouch: 120,
   walk: 90,
   sprint: 90,
   slide: 84,
@@ -261,6 +262,7 @@ const CASE_DURATIONS: Record<V3AnimationAtlasCaseId, number> = {
 
 const CASE_LABELS: Record<V3AnimationAtlasCaseId, string> = {
   idle: 'Idle',
+  crouch: 'Crouch',
   walk: 'Walk',
   sprint: 'Sprint',
   slide: 'Slide',
@@ -302,7 +304,7 @@ const WEAPON_REVIEW_CASES = new Set<V3AnimationAtlasCaseId>([
   'ballPunch',
   'ballThrow',
 ]);
-const LOCOMOTION_REVIEW_CASES = new Set<V3AnimationAtlasCaseId>(['idle', 'walk', 'sprint', 'slide']);
+const LOCOMOTION_REVIEW_CASES = new Set<V3AnimationAtlasCaseId>(['idle', 'walk', 'sprint', 'slide', 'crouch']);
 const WEAPON_REFERENCE_BY_CASE: Partial<Record<V3AnimationAtlasCaseId, V3WeaponReferenceClipId>> = {
   hammerWindup: 'hammer_heavy_swing',
   hammerStrike: 'hammer_heavy_swing',

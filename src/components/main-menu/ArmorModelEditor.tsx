@@ -246,6 +246,7 @@ const V2_POSE_OPTIONS: Array<{ id: V2PoseMode; label: string }> = [
 
 const V3_POSE_LABELS: Record<V3PoseClearanceCaseId, string> = {
   idle: 'Idle',
+  crouch: 'Crouch',
   walk: 'Walk',
   sprint: 'Sprint',
   slide: 'Slide',

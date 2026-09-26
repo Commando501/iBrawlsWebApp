@@ -243,5 +243,12 @@ export const rebuildDualWeaponCombatantModel = ({
   sword.visible = activeWeapon === 'sword';
   attachCombatantWeapon(group, rig, sword, loadout);
 
+  if (isV3Loadout(loadout)) {
+    const pistol = buildCombatantPistol(resolvedWeaponHue, loadout, v3Options);
+    prepareV3ThirdPersonWeaponBasis(pistol, 'pistol', loadout);
+    pistol.name = 'v3ObserverPistol';
+    pistol.visible = activeWeapon === 'pistol';
+    attachCombatantWeapon(group, rig, pistol, loadout);
+  }
   return { group, hammer, sword, rig };
 };

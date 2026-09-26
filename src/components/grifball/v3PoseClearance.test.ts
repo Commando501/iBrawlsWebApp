@@ -12,6 +12,7 @@ import {
 
 const EXPECTED_CASE_IDS = [
   'idle',
+  'crouch',
   'walk',
   'sprint',
   'slide',

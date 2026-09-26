@@ -2,7 +2,22 @@
 
 Run commands from the repository root. Blender must be open with the configured MCP add-on connected on its existing port. The bridge launches the installed `mcp-for-blender` server through `uvx`; set `BLENDER_MCP_UVX` to its executable path if it is not on PATH. Nothing is uploaded to an external asset service.
 
-The local review file is `output/blender-repair/ibrawls-animation-repair.blend`. It contains the original runtime armor in a hidden reference collection and a repaired collection with armor rigidly parented to one 56-joint skeleton. Timeline markers identify the 26 clips. Weapon visibility follows the timeline. All output geometry and `.blend` files are local, ignored artifacts.
+The local review file is `output/blender-repair/ibrawls-animation-repair.blend`. It contains the original runtime armor in a hidden reference collection and a repaired collection with armor rigidly parented to one 56-joint skeleton. Timeline markers identify the 31 clips. Weapon visibility follows the timeline. All output geometry and `.blend` files are local, ignored artifacts.
+
+## Crouching
+
+The five `clean_crouch` / `clean_crouch_{hammer,sword,pistol,ball}` clips share a 120-frame, 60 FPS stand → crouch → hold → stand sequence. Both boots stay planted while the hips lower 0.34 game units and move back; the torso follows with a short delay, the head counter-rotates to face forward, and the held posture has subtle breathing. Hammer and pistol keep both hand contacts; sword and ball retain their primary grip. Entry is frames 0–39, hold 39–78, and recovery 78–120. Gameplay advances entry while crouch is held, loops the breathing segment, and exits on release. Interrupted transitions reverse in place. `v3GameplayCrouch.ts` layers this posture onto attacks and solves bent legs to locomotion foot targets; the runtime shares posture across weapon changes and ball possession. Combat timers, movement physics, and collision dimensions remain authoritative.
+
+In `/v3-animation-atlas-smoke.html`, choose **Crouch** and use **Carry** to select each item or **Hidden** for unarmed. The clean animation editor also exposes all five clips. To author only these ranges in the existing Blender scene:
+
+```sh
+node scripts/v3/blender/run.cjs refine clean_crouch,clean_crouch_hammer,clean_crouch_sword,clean_crouch_pistol,clean_crouch_ball
+node scripts/v3/blender/run.cjs export
+npm run v3:generate-blender-clips -- --clips=clean_crouch,clean_crouch_hammer,clean_crouch_sword,clean_crouch_pistol,clean_crouch_ball
+node scripts/v3/blender/run.cjs review-crouch
+```
+
+The selective generator preserves the earlier 26 clips. The pre-authoring scene backup is `output/blender-repair/pre-crouch-backup.blend`; the rendered review views are `output/blender-repair/crouch-*.png`.
 
 ## Skull-bomb and runner animations
 

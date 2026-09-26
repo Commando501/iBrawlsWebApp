@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { V3BlenderAnimationSet, V3BlenderTransformTrack } from '../../src/components/grifball/v3BlenderAnimationTypes';
+import { V3_AUTHORED_ANIMATION_CLIP_IDS } from '../../src/components/grifball/v3AuthoredAnimationClips';
 
 const args = process.argv.slice(2);
 const selection = args.find(arg => arg.startsWith('--clips='))?.slice('--clips='.length).split(',');
@@ -47,7 +48,10 @@ for (const clip of source.clips) {
     ...(clip.samples[0].weapon?.offhand ? { offhandPositions: compact(clip.samples.map(s => s.weapon.offhand)) } : {}),
   };
 }
-if (Object.keys(artifact.clips).length !== 26) throw new Error('The complete bake must contain all 26 clips.');
+if (Object.keys(artifact.clips).length !== V3_AUTHORED_ANIMATION_CLIP_IDS.length
+  || V3_AUTHORED_ANIMATION_CLIP_IDS.some(id => !artifact.clips[id])) {
+  throw new Error('The complete bake must contain every registered V3 clip.');
+}
 if (selection) {
   const encoded = readFileSync(output, 'utf8').match(/export const V3_BLENDER_ANIMATIONS: V3BlenderAnimationSet = JSON.parse\((.*)\);/);
   if (!encoded) throw new Error('Partial generation requires an existing Blender artifact.');

@@ -112,6 +112,7 @@ export function updateRosterCombatantVisualsForState({
       (player.aiSlideActive ?? (playerSpeed > 2.5 && (player.isCrouching || false)));
 
     const didAnimate = animateSpartanCombatantModel({
+      isCrouching: !!player.isCrouching,
       refs,
       mesh: meshes.group,
       vel: playerVelocity,
@@ -135,7 +136,7 @@ export function updateRosterCombatantVisualsForState({
     });
 
     const isMainAiOffline = clientId === MAIN_AI_ID && !state.isMultiplayer;
-    if (didAnimate && (meshes.hammer || meshes.sword || meshes.pistol) && !isMainAiOffline) {
+    if ((didAnimate || meshes.group.userData.modelSystem === 'v3') && (meshes.hammer || meshes.sword || meshes.pistol) && (!isMainAiOffline || meshes.group.userData.modelSystem === 'v3')) {
       animateCombatantWeaponMeshes({
         hammerModel: meshes.hammer,
         swordModel: meshes.sword,

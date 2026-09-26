@@ -2,6 +2,7 @@ import * as THREE from 'three';
 
 const materialCache = new Map<string, THREE.MeshStandardMaterial>();
 const geometryCache = new Map<string, V3CachedGeometryEntry[]>();
+const surfaceGeometryCache = new Map<string, THREE.BufferGeometry>();
 let geometryHits = 0;
 let geometryMisses = 0;
 
@@ -67,20 +68,31 @@ export function getOrCreateV3CachedGeometryEntries(
   return entries;
 }
 
+/** Geometry is independent of armor hue; materials remain per palette. */
+export function getOrCreateV3SurfaceGeometry(key: string, build: () => THREE.BufferGeometry): THREE.BufferGeometry {
+  const cached = surfaceGeometryCache.get(key);
+  if (cached) return cached;
+  const geometry = build();
+  surfaceGeometryCache.set(key, geometry);
+  return geometry;
+}
+
 export function getV3GeometryCacheStats(): V3GeometryCacheStats {
   let geometryEntries = 0;
   let approximateBytes = 0;
+  const unique = new Set<THREE.BufferGeometry>();
   for (const entries of geometryCache.values()) {
     geometryEntries += entries.length;
     for (const entry of entries) {
-      approximateBytes += estimateGeometryBytes(entry.geometry);
+      if (!unique.has(entry.geometry)) approximateBytes += estimateGeometryBytes(entry.geometry);
+      unique.add(entry.geometry);
     }
   }
 
   return {
     materials: materialCache.size,
     planCount: geometryCache.size,
-    geometryCount: geometryEntries,
+    geometryCount: unique.size,
     geometryEntries,
     approximateBytes,
     hits: geometryHits,
@@ -89,12 +101,16 @@ export function getV3GeometryCacheStats(): V3GeometryCacheStats {
 }
 
 export function clearV3GeometryCache(): void {
+  const disposed = new Set<THREE.BufferGeometry>();
   for (const entries of geometryCache.values()) {
     for (const entry of entries) {
-      entry.geometry.dispose();
+      if (!disposed.has(entry.geometry)) entry.geometry.dispose();
+      disposed.add(entry.geometry);
     }
   }
   geometryCache.clear();
+  for (const geometry of surfaceGeometryCache.values()) if (!disposed.has(geometry)) geometry.dispose();
+  surfaceGeometryCache.clear();
   geometryHits = 0;
   geometryMisses = 0;
 

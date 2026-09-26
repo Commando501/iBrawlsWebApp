@@ -18,6 +18,21 @@ import {
 } from '../components/grifball/v3AuthoredAnimationClips';
 
 describe('v3AnimationAtlasSmoke', () => {
+  test('reviews every crouch carry and the unarmed variant without forward travel', () => {
+    const atlas = buildV3AnimationAtlasScene({ caseId: 'crouch' });
+    const starts = atlas.views.map(view => view.rig.group.position.clone());
+    for (const carryWeapon of ['hammer', 'sword', 'pistol', 'ball', null] as const) {
+      const sample = updateV3AnimationAtlasScene(atlas, { frame: 54, carryWeapon, showWeaponGripDrift: true });
+      assert.equal(sample.authoredClipId, carryWeapon ? `clean_crouch_${carryWeapon}` : 'clean_crouch');
+      for (const [i, { rig, weaponGripOverlay }] of atlas.views.entries()) {
+        assert.ok(rig.group.position.distanceTo(starts[i]) < .0001);
+        assert.ok(getV3Mesh2MotionDriverRig(rig.group).joints.pelvis.object.getWorldPosition(new THREE.Vector3()).y < .65);
+        for (const item of ['hammer', 'sword', 'pistol', 'ball'] as const) assert.equal(rig[item]?.visible, item === carryWeapon);
+        if (carryWeapon === 'ball') assert.ok(weaponGripOverlay.userData.v3BallCarryAlignment.right < .002);
+      }
+    }
+  });
+
   test('previews runner locomotion, ball attack, and independent throw flight', () => {
     const atlas = buildV3AnimationAtlasScene({ caseId: 'idle' });
     for (const [caseId, clip] of [['walk', 'clean_ball_walk'], ['sprint', 'clean_ball_sprint'], ['ballPunch', 'clean_ball_punch'], ['ballThrow', 'clean_ball_throw']] as const) {

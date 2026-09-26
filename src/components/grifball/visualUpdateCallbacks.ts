@@ -94,6 +94,7 @@ export function createVisualUpdateCallbacksForState({
       hammerMeleeReload: state.settings.hammerMeleeReload ?? 0.5,
       hammerSlamWindupTime: hammerSlamTiming.windupTime,
       hammerSlamAttackTime: hammerSlamTiming.attackTime,
+      settings: state.settings,
       v3QualityTier,
       isLocalV3Animation,
       animationClockMs,
