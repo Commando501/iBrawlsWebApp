@@ -85,7 +85,7 @@ test('SinglePlayerSetupPanel exposes V3 sandbox preview for admin players', () =
   assert.match(html, /Version 1 Classic/);
   assert.match(html, /Version 2 Rigged/);
   assert.match(html, /aria-pressed="true"[^>]*>Version 3 Preview/);
-  assert.match(html, /Preview V3 player and bot models in local training/);
+  assert.match(html, /Preview V3 player and bot models with Blender-authored movement and weapon animations in local training/);
   assert.doesNotMatch(html, /Version 3 Advanced/);
   assert.doesNotMatch(html, new RegExp(V3_INTERNAL_PROTOTYPE_LABEL));
 });
