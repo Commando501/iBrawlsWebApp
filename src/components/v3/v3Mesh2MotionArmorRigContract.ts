@@ -27,6 +27,10 @@ export interface V3Mesh2MotionArmorRigSkeleton {
   joints: readonly V3Mesh2MotionArmorRigSkeletonJoint[];
 }
 
+export interface V3Mesh2MotionArmorRigCalibration {
+  sourceToTargetScale: number;
+}
+
 export interface V3Mesh2MotionArmorSlotSpec {
   slot: V3CharacterSlotId;
   sourceJointName: string;
@@ -61,6 +65,7 @@ export interface V3Mesh2MotionArmorRigArtifact {
   schemaVersion: typeof V3_MESH2MOTION_ARMOR_RIG_SCHEMA;
   version: 1;
   source: V3Mesh2MotionArmorRigSourceSummary;
+  calibration: V3Mesh2MotionArmorRigCalibration;
   skeleton: V3Mesh2MotionArmorRigSkeleton;
   slots: Readonly<Record<V3CharacterSlotId, V3Mesh2MotionArmorSlotPlacement>>;
 }
@@ -205,3 +210,38 @@ export const V3_MESH2MOTION_ARMOR_SLOT_SPECS = {
 } as const satisfies Record<V3CharacterSlotId, V3Mesh2MotionArmorSlotSpec>;
 
 export const V3_MESH2MOTION_PART_BINDING_SPECS = V3_MESH2MOTION_ARMOR_SLOT_SPECS;
+
+export const V3_MESH2MOTION_NATIVE_ARM_CHAIN_SLOTS = [
+  'shoulderLeft',
+  'shoulderRight',
+  'upperArmLeft',
+  'upperArmRight',
+  'forearmLeft',
+  'forearmRight',
+  'handLeft',
+  'handRight',
+] as const satisfies readonly V3CharacterSlotId[];
+
+const V3_MESH2MOTION_NATIVE_ARM_CHAIN_SLOT_SET = new Set<V3CharacterSlotId>(
+  V3_MESH2MOTION_NATIVE_ARM_CHAIN_SLOTS
+);
+
+export const isV3Mesh2MotionNativeArmChainSlot = (slot: V3CharacterSlotId): boolean =>
+  V3_MESH2MOTION_NATIVE_ARM_CHAIN_SLOT_SET.has(slot);
+
+export const V3_MESH2MOTION_NATIVE_LIMB_CHAIN_SLOTS = [
+  ...V3_MESH2MOTION_NATIVE_ARM_CHAIN_SLOTS,
+  'thighLeft',
+  'thighRight',
+  'shinLeft',
+  'shinRight',
+  'footLeft',
+  'footRight',
+] as const satisfies readonly V3CharacterSlotId[];
+
+const V3_MESH2MOTION_NATIVE_LIMB_CHAIN_SLOT_SET = new Set<V3CharacterSlotId>(
+  V3_MESH2MOTION_NATIVE_LIMB_CHAIN_SLOTS
+);
+
+export const isV3Mesh2MotionNativeLimbChainSlot = (slot: V3CharacterSlotId): boolean =>
+  V3_MESH2MOTION_NATIVE_LIMB_CHAIN_SLOT_SET.has(slot);

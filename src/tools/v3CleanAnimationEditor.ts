@@ -40,6 +40,7 @@ import {
   redoV3CleanEditorHistory,
   resetV3CleanEditorFrame,
   resetV3CleanEditorJoint,
+  resolveV3CleanEditorInitialClipId,
   retimeV3CleanEditorKeyframe,
   setV3CleanEditorJointEuler,
   setV3CleanEditorRootOffset,
@@ -184,7 +185,10 @@ const rig = createCombatantMeshRig(scene, 192, false, { modelSystem: 'v3' }, {
 });
 rig.group.rotation.y = 0;
 
-let documentState: V3CleanEditorDocument = createV3CleanEditorDocument('clean_idle');
+const initialClipId = resolveV3CleanEditorInitialClipId(
+  new URLSearchParams(window.location.search).get('clip')
+);
+let documentState: V3CleanEditorDocument = createV3CleanEditorDocument(initialClipId);
 let historyState: V3CleanEditorHistory = createV3CleanEditorHistory(documentState.clip);
 let currentFrame = 0;
 let playing = false;
@@ -1417,7 +1421,7 @@ function animate(timeMs: number): void {
 customClips = loadCustomClips();
 refreshClipSelect();
 setCameraView('front');
-loadDocument('clean_idle');
+loadDocument(initialClipId);
 resize();
 refreshAll();
 requestAnimationFrame(animate);

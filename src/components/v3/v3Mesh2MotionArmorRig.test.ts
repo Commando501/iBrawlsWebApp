@@ -5,16 +5,43 @@ import { V3_MESH2MOTION_ARMOR_RIG } from './v3Mesh2MotionArmorRig.generated';
 import {
   V3_MESH2MOTION_ARMOR_RIG_SCHEMA,
   V3_MESH2MOTION_ARMOR_SLOT_SPECS,
+  V3_MESH2MOTION_NATIVE_LIMB_CHAIN_SLOTS,
   buildV3Mesh2MotionArmorRig,
   analyzeV3Mesh2MotionArmorRig,
 } from './v3Mesh2MotionArmorRig';
 import { V3_CHARACTER_SLOT_IDS } from './v3ModelTypes';
+
+type GeneratedArmorRigWithCalibration = typeof V3_MESH2MOTION_ARMOR_RIG & {
+  calibration?: {
+    sourceToTargetScale?: number;
+  };
+};
 
 const tupleLength = (value: readonly number[]): number =>
   Math.hypot(value[0] ?? 0, value[1] ?? 0, value[2] ?? 0);
 
 const quaternionFromTuple = (value: readonly number[]): THREE.Quaternion =>
   new THREE.Quaternion(value[0] ?? 0, value[1] ?? 0, value[2] ?? 0, value[3] ?? 1).normalize();
+
+const tupleCloseTo = (
+  actual: readonly number[],
+  expected: readonly number[],
+  tolerance = 0.000001
+): boolean => actual.every((value, index) => Math.abs(value - expected[index]) <= tolerance);
+
+const geometryWorldQuaternion = (placement: {
+  pivotWorldQuaternion: readonly number[];
+  geometry: { rotation: readonly number[] };
+}): THREE.Quaternion => {
+  const pivot = quaternionFromTuple(placement.pivotWorldQuaternion);
+  const geometry = new THREE.Quaternion().setFromEuler(new THREE.Euler(
+    placement.geometry.rotation[0] ?? 0,
+    placement.geometry.rotation[1] ?? 0,
+    placement.geometry.rotation[2] ?? 0,
+    'XYZ'
+  ));
+  return pivot.multiply(geometry).normalize();
+};
 
 describe('v3Mesh2MotionArmorRig', () => {
   it('ships a V3-owned generated Mesh2Motion armor rig contract without raw source payloads', () => {
@@ -25,6 +52,10 @@ describe('v3Mesh2MotionArmorRig', () => {
     assert.match(V3_MESH2MOTION_ARMOR_RIG.source.sha256, /^[a-f0-9]{64}$/);
     assert.equal(V3_MESH2MOTION_ARMOR_RIG.skeleton.joints.length >= 20, true);
     assert.deepEqual(Object.keys(V3_MESH2MOTION_ARMOR_RIG.slots).sort(), [...V3_CHARACTER_SLOT_IDS].sort());
+    const sourceToTargetScale = (V3_MESH2MOTION_ARMOR_RIG as GeneratedArmorRigWithCalibration)
+      .calibration?.sourceToTargetScale;
+    assert.equal(Number.isFinite(sourceToTargetScale), true);
+    assert.ok((sourceToTargetScale ?? 0) > 0.5 && (sourceToTargetScale ?? 0) < 1);
     assert.equal(serialized.includes(process.cwd()), false);
     assert.equal(serialized.includes('C:'), false);
     assert.equal(serialized.includes('G:'), false);
@@ -87,6 +118,26 @@ describe('v3Mesh2MotionArmorRig', () => {
     assert.ok(leftArmUp.x > 0.75, `left upper arm +Y should point down the left arm: ${leftArmUp.toArray()}`);
     assert.ok(rightArmUp.x < -0.75, `right upper arm +Y should point down the right arm: ${rightArmUp.toArray()}`);
     assert.ok(Math.abs(leftArmUp.y - rightArmUp.y) < 0.1);
+  });
+
+  it('keeps articulated limb slot geometry centered on Mesh2Motion-native pivots', () => {
+    const rig = buildV3Mesh2MotionArmorRig();
+
+    for (const slot of V3_MESH2MOTION_NATIVE_LIMB_CHAIN_SLOTS) {
+      const generatedPlacement = V3_MESH2MOTION_ARMOR_RIG.slots[slot];
+      const runtimePlacement = rig.slotPivots[slot].userData.v3Mesh2MotionSlotPlacement as typeof generatedPlacement;
+
+      assert.equal(tupleCloseTo(generatedPlacement.geometry.position, [0, 0, 0]), true, `${slot} generated offset`);
+      assert.equal(tupleCloseTo(runtimePlacement.geometry.position, [0, 0, 0]), true, `${slot} runtime offset`);
+      assert.ok(
+        new THREE.Quaternion().angleTo(geometryWorldQuaternion(generatedPlacement)) <= 0.00001,
+        `${slot} generated geometry rotation should cancel the Mesh2Motion rest pivot`
+      );
+      assert.ok(
+        new THREE.Quaternion().angleTo(geometryWorldQuaternion(runtimePlacement)) <= 0.00001,
+        `${slot} runtime geometry rotation should cancel the Mesh2Motion rest pivot`
+      );
+    }
   });
 
   it('reports a ready contract with normalized quaternions and no missing slots', () => {

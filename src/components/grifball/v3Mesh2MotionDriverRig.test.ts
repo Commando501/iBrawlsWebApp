@@ -340,6 +340,49 @@ describe('v3Mesh2MotionDriverRig', () => {
     assert.equal(report?.calibratedJointOffsetCount, report?.driverJointAdjustmentCount);
   });
 
+  it('applies per-clip cleanup driver-joint offsets after global calibration', () => {
+    const baseline = createModel();
+    const adjusted = createModel();
+    const pose = generatedDriverPose('Sword_Regular_B');
+
+    applyV3Mesh2MotionDriverRigPose(baseline, pose);
+    baseline.updateMatrixWorld(true);
+    const baselineRig = getV3Mesh2MotionDriverRig(baseline);
+    const baselineHand = baselineRig.joints.hand_r.object.getWorldPosition(new THREE.Vector3());
+
+    applyV3Mesh2MotionDriverRigPose(adjusted, {
+      ...pose,
+      cleanup: {
+        trackId: 'test-cleanup',
+        cleanClipId: 'clean_sword_slash',
+        sourceClipName: 'Sword_Regular_B',
+        normalizedTime: 0.5,
+        driverJoints: {
+          hand_r: {
+            position: [0.08, -0.02, 0.01],
+            rotation: [0.05, 0.1, -0.2],
+          },
+        },
+        partBindings: {},
+        weaponSockets: {},
+        driverJointAdjustmentCount: 1,
+        partBindingAdjustmentCount: 0,
+        weaponSocketAdjustmentCount: 0,
+      },
+    });
+    adjusted.updateMatrixWorld(true);
+    const adjustedRig = getV3Mesh2MotionDriverRig(adjusted);
+    const adjustedHand = adjustedRig.joints.hand_r.object.getWorldPosition(new THREE.Vector3());
+    const report = adjusted.userData.v3Mesh2MotionDriverCalibrationReport as {
+      clipCleanupTrackId?: string;
+      clipCleanupDriverJointAdjustmentCount?: number;
+    } | undefined;
+
+    assert.ok(adjustedHand.distanceTo(baselineHand) > 0.04);
+    assert.equal(report?.clipCleanupTrackId, 'test-cleanup');
+    assert.equal(report?.clipCleanupDriverJointAdjustmentCount, 1);
+  });
+
   it('applies part-binding adjustment only to the selected visible V3 part', () => {
     const baseline = createModel();
     const adjusted = createModel();
@@ -379,6 +422,58 @@ describe('v3Mesh2MotionDriverRig', () => {
     assert.ok(adjustedForearmPart.distanceTo(baselineForearmPart) < 0.000001);
     assert.ok(adjustedHandJoint.distanceTo(baselineHandJoint) < 0.000001);
     assert.equal(report?.partBindingAdjustmentCount, 1);
+    assert.equal(report?.postBindPartAdjustments, 1);
+  });
+
+  it('applies per-clip cleanup part-binding offsets only to the selected visible V3 part', () => {
+    const baseline = createModel();
+    const adjusted = createModel();
+    const pose = generatedDriverPose('Sword_Regular_B');
+
+    applyV3Mesh2MotionDriverRigPose(baseline, pose);
+    baseline.updateMatrixWorld(true);
+    const baselineGroups = baseline.userData.v3PartGroups as Record<string, THREE.Group>;
+    const baselineRig = getV3Mesh2MotionDriverRig(baseline);
+    const baselineHandPart = worldBoxCenter(baselineGroups.handRight);
+    const baselineForearmPart = worldBoxCenter(baselineGroups.forearmRight);
+    const baselineHandJoint = baselineRig.joints.hand_r.object.getWorldPosition(new THREE.Vector3());
+
+    applyV3Mesh2MotionDriverRigPose(adjusted, {
+      ...pose,
+      cleanup: {
+        trackId: 'test-cleanup',
+        cleanClipId: 'clean_sword_slash',
+        sourceClipName: 'Sword_Regular_B',
+        normalizedTime: 0.5,
+        driverJoints: {},
+        partBindings: {
+          handRight: {
+            position: [0.14, 0.02, -0.01],
+            rotation: [0.12, -0.03, 0.08],
+            scale: [1.2, 0.85, 1.05],
+          },
+        },
+        weaponSockets: {},
+        driverJointAdjustmentCount: 0,
+        partBindingAdjustmentCount: 1,
+        weaponSocketAdjustmentCount: 0,
+      },
+    });
+    adjusted.updateMatrixWorld(true);
+    const adjustedGroups = adjusted.userData.v3PartGroups as Record<string, THREE.Group>;
+    const adjustedRig = getV3Mesh2MotionDriverRig(adjusted);
+    const adjustedHandPart = worldBoxCenter(adjustedGroups.handRight);
+    const adjustedForearmPart = worldBoxCenter(adjustedGroups.forearmRight);
+    const adjustedHandJoint = adjustedRig.joints.hand_r.object.getWorldPosition(new THREE.Vector3());
+    const report = adjusted.userData.v3Mesh2MotionDriverCalibrationReport as {
+      clipCleanupPartBindingAdjustmentCount?: number;
+      postBindPartAdjustments?: number;
+    } | undefined;
+
+    assert.ok(adjustedHandPart.distanceTo(baselineHandPart) > 0.05);
+    assert.ok(adjustedForearmPart.distanceTo(baselineForearmPart) < 0.000001);
+    assert.ok(adjustedHandJoint.distanceTo(baselineHandJoint) < 0.000001);
+    assert.equal(report?.clipCleanupPartBindingAdjustmentCount, 1);
     assert.equal(report?.postBindPartAdjustments, 1);
   });
 
@@ -449,5 +544,46 @@ describe('v3Mesh2MotionDriverRig', () => {
     assert.ok(adjustedLeft.position.distanceTo(baselineLeft.position) > 0.03);
     assert.ok(Math.abs(adjustedRight.quaternion.dot(baselineRight.quaternion)) < 0.999);
     assert.ok(Math.abs(adjustedLeft.quaternion.dot(baselineLeft.quaternion)) < 0.999);
+  });
+
+  it('applies per-clip cleanup weapon socket offsets after global socket calibration', () => {
+    const baseline = createModel();
+    const adjusted = createModel();
+    const pose = generatedDriverPose('Sword_Regular_B');
+
+    applyV3Mesh2MotionDriverRigPose(baseline, pose);
+    baseline.updateMatrixWorld(true);
+    const baselineRight = getV3Mesh2MotionDriverWeaponSocketWorldTransform(baseline, 'rightHandGrip');
+
+    applyV3Mesh2MotionDriverRigPose(adjusted, {
+      ...pose,
+      cleanup: {
+        trackId: 'test-cleanup',
+        cleanClipId: 'clean_sword_slash',
+        sourceClipName: 'Sword_Regular_B',
+        normalizedTime: 0.5,
+        driverJoints: {},
+        partBindings: {},
+        weaponSockets: {
+          rightHandGrip: {
+            position: [0.05, -0.01, 0.02],
+            rotation: [0.2, -0.1, 0.15],
+          },
+        },
+        driverJointAdjustmentCount: 0,
+        partBindingAdjustmentCount: 0,
+        weaponSocketAdjustmentCount: 1,
+      },
+    });
+    adjusted.updateMatrixWorld(true);
+    const adjustedRight = getV3Mesh2MotionDriverWeaponSocketWorldTransform(adjusted, 'rightHandGrip');
+    const report = adjusted.userData.v3Mesh2MotionDriverCalibrationReport as {
+      clipCleanupWeaponSocketAdjustmentCount?: number;
+    } | undefined;
+
+    assert.ok(baselineRight && adjustedRight);
+    assert.ok(adjustedRight.position.distanceTo(baselineRight.position) > 0.03);
+    assert.ok(Math.abs(adjustedRight.quaternion.dot(baselineRight.quaternion)) < 0.999);
+    assert.equal(report?.clipCleanupWeaponSocketAdjustmentCount, 1);
   });
 });

@@ -454,6 +454,7 @@ function renderMetrics(report: V3ReadinessDashboardReport): void {
     metric('Reference Proportions', report.evidence.referenceProportions.ready ?? 'unknown'),
     metric('Reference Feature Match', report.evidence.referenceFeatureMatch.ready ?? 'unknown'),
     metric('Exact OBJ Voxel Source', report.evidence.referenceVoxelSource.ready ?? 'unknown'),
+    metric('Armor Foundation', report.evidence.armorFoundation.ready ?? 'unknown'),
     metric('Segmentation Review', exactSourceSegmentation.summary.segmentationReviewCount),
     metric('Suit Fidelity', report.evidence.suitFidelity.ready ?? 'unknown'),
     metric('Visual QA', report.evidence.visualQa.ready ?? 'unknown'),

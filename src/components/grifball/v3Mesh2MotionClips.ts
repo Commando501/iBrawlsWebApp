@@ -7,6 +7,7 @@ import type {
 import type {
   V3Mesh2MotionDriverPose,
 } from './v3Mesh2MotionDriverRig';
+import { sampleV3Mesh2MotionCleanupTrack } from './v3Mesh2MotionCleanupTracks';
 import { V3_MESH2MOTION_CLIP_SET } from './v3Mesh2MotionClips.generated';
 
 export type V3Mesh2MotionClipId = (typeof V3_MESH2MOTION_CLIP_SET.clips)[number]['sourceClipName'];
@@ -163,6 +164,7 @@ export function sampleV3CleanMesh2MotionClip(
       },
     ])
   ) as V3Mesh2MotionDriverPose['joints'];
+  const cleanup = sampleV3Mesh2MotionCleanupTrack(cleanClipId, clip.sourceClipName, safeTime);
   const rootOffset = sampleVec3Track(clip.rootOffsets, span);
   const hasRootOffset = rootOffset.some((component) => Math.abs(component) > 0.000001);
   const hasJointOffsets = Object.values(jointOffsets ?? {})
@@ -178,6 +180,7 @@ export function sampleV3CleanMesh2MotionClip(
       sourceClipName: clip.sourceClipName,
       sourceNormalizedTime: safeTime,
       joints: driverJoints,
+      ...(cleanup ? { cleanup } : {}),
     },
   };
 

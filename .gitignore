@@ -39,5 +39,7 @@ reference/mixamo-v3/*.fbx
 reference/mixamo-v3/*.FBX
 reference/mesh2motion-v3/*.glb
 reference/mesh2motion-v3/*.GLB
+reference/v3-source-bind/*.glb
+reference/v3-source-bind/*.GLB
 
 assets/

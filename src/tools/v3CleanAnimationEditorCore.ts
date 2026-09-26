@@ -4,6 +4,7 @@ import {
   exportV3AuthoredClipToJson,
   normalizeV3AuthoredClipExport as normalizeAuthoredClipExport,
   sampleV3AuthoredClipData,
+  V3_AUTHORED_ANIMATION_CLIP_IDS,
   type V3AuthoredClipExport,
   type V3AuthoredClipId,
   type V3AuthoredKeyframe,
@@ -76,6 +77,12 @@ export interface V3CleanEditorValidationReport {
   ok: boolean;
   summary: string;
   items: V3CleanEditorValidationItem[];
+}
+
+export function resolveV3CleanEditorInitialClipId(value: string | null | undefined): V3AuthoredClipId {
+  return value && V3_AUTHORED_ANIMATION_CLIP_IDS.includes(value as V3AuthoredClipId)
+    ? value as V3AuthoredClipId
+    : 'clean_idle';
 }
 
 const JOINT_NAMES = new Set<string>(V3_DETAIL_BONE_NAMES);

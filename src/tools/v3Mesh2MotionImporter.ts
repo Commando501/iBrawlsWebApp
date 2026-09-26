@@ -10,6 +10,7 @@ import type {
 import {
   V3_MESH2MOTION_ARMOR_RIG_SCHEMA,
   V3_MESH2MOTION_PART_BINDING_SPECS,
+  isV3Mesh2MotionNativeLimbChainSlot,
   type V3Mesh2MotionArmorRigArtifact,
   type V3Mesh2MotionArmorSlotPlacement,
 } from '../components/v3/v3Mesh2MotionArmorRigContract';
@@ -395,6 +396,12 @@ const tupleVec3 = (value: THREE.Vector3 | readonly number[]): V3Vec3Tuple => {
     roundMetric(value[1] ?? 0),
     roundMetric(value[2] ?? 0),
   ];
+};
+
+const inverseQuaternionEulerTuple = (quaternion: THREE.Quaternion): V3Vec3Tuple => {
+  const inverse = quaternion.clone().invert().normalize();
+  const euler = new THREE.Euler().setFromQuaternion(inverse, 'XYZ');
+  return tupleVec3([euler.x, euler.y, euler.z]);
 };
 
 const vectorFromTuple = (value: readonly number[]): THREE.Vector3 =>
@@ -1027,10 +1034,16 @@ const buildArmorSlotPlacementArtifact = (
     const basis = buildSlotBasis(slot, spec, worldForJoint);
     const pivotWorldQuaternion = basis.quaternion;
     const pivotQuaternion = new THREE.Quaternion(...pivotWorldQuaternion).normalize();
-    const geometryWorldCenter = new THREE.Vector3().fromArray(canonicalContract.slotGeometryOffsets[slot].geometryCenter);
+    const nativeLimbChainSlot = isV3Mesh2MotionNativeLimbChainSlot(slot);
+    const geometryWorldCenter = nativeLimbChainSlot
+      ? center.clone()
+      : new THREE.Vector3().fromArray(canonicalContract.slotGeometryOffsets[slot].geometryCenter);
     const geometryLocalPosition = geometryWorldCenter
       .sub(center)
       .applyQuaternion(pivotQuaternion.clone().invert());
+    const geometryLocalRotation = nativeLimbChainSlot
+      ? inverseQuaternionEulerTuple(pivotQuaternion)
+      : ZERO_VEC3;
     placements[slot] = {
       slot,
       sourceJointName: spec.sourceJointName,
@@ -1042,7 +1055,7 @@ const buildArmorSlotPlacementArtifact = (
       basis,
       geometry: {
         position: tupleVec3(geometryLocalPosition),
-        rotation: [0, 0, 0],
+        rotation: geometryLocalRotation,
         scale: [1, 1, 1],
       },
     };
@@ -1475,6 +1488,9 @@ export function buildV3Mesh2MotionArmorRigArtifact(
     schemaVersion: V3_MESH2MOTION_ARMOR_RIG_SCHEMA,
     version: 1,
     source: parsed.source,
+    calibration: {
+      sourceToTargetScale: context.calibration.sourceToTargetScale,
+    },
     skeleton: buildArmorRigSkeletonArtifact(skeleton),
     slots: buildArmorSlotPlacementArtifact(context),
   };

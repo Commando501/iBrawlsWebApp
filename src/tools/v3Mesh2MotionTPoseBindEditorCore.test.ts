@@ -2,7 +2,10 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { describe, it } from 'node:test';
 import {
+  V3_MESH2MOTION_TPOSE_BIND_DOCUMENT_KIND,
   V3_MESH2MOTION_TPOSE_BIND_EDITOR_DEFAULT_DOCUMENT,
+  V3_MESH2MOTION_TPOSE_BIND_LEGACY_DOCUMENT_KIND,
+  buildV3Mesh2MotionTPoseBindLocalStorageKey,
   buildV3Mesh2MotionTPoseBindDiagnostics,
   normalizeV3Mesh2MotionTPoseBindDocument,
   parseV3Mesh2MotionTPoseBindDocumentJson,
@@ -16,7 +19,7 @@ import { V3_CHARACTER_SLOT_IDS } from '../components/v3/v3ModelTypes';
 describe('v3Mesh2MotionTPoseBindEditorCore', () => {
   it('normalizes canonical V3 bind placement imports and round-trips deterministic JSON', () => {
     const normalized = normalizeV3Mesh2MotionTPoseBindDocument({
-      kind: 'v3-mesh2motion-tpose-bind/v1',
+      kind: V3_MESH2MOTION_TPOSE_BIND_LEGACY_DOCUMENT_KIND,
       version: 1,
       source: { meshHash: 'source-abc', authoringSpace: 'mesh2motion-native-v3' },
       selectedSlot: 'handRight',
@@ -34,10 +37,13 @@ describe('v3Mesh2MotionTPoseBindEditorCore', () => {
       },
     });
 
-    assert.equal(normalized.kind, 'v3-mesh2motion-tpose-bind/v1');
-    assert.equal(normalized.version, 1);
+    assert.equal(normalized.kind, V3_MESH2MOTION_TPOSE_BIND_DOCUMENT_KIND);
+    assert.equal(normalized.version, 2);
     assert.equal(normalized.source.meshHash, 'source-abc');
     assert.equal(normalized.selectedSlot, 'handRight');
+    assert.deepEqual(normalized.selectedArmorSlots, []);
+    assert.deepEqual(normalized.selectedSectionIds, []);
+    assert.deepEqual(normalized.armorEdits, {});
     assert.deepEqual(normalized.placements.handRight.position, [0.123457, 0, -2]);
     assert.deepEqual(normalized.placements.handRight.rotation, [Math.PI, -Math.PI, 0.333333]);
     assert.deepEqual(normalized.placements.handRight.scale, [0.1, 4, 1]);
@@ -49,6 +55,94 @@ describe('v3Mesh2MotionTPoseBindEditorCore', () => {
     );
 
     assert.deepEqual(parsed, normalized);
+  });
+
+  it('normalizes v2 editor armor edits and clamps finite section transforms', () => {
+    const normalized = normalizeV3Mesh2MotionTPoseBindDocument({
+      kind: V3_MESH2MOTION_TPOSE_BIND_DOCUMENT_KIND,
+      version: 2,
+      source: { meshHash: 'source-abc', authoringSpace: 'mesh2motion-native-v3' },
+      selectedSlot: 'helmet',
+      selectedArmorSlots: ['helmet', 'bad-slot', 'chest'],
+      selectedSectionIds: ['upper', '', 'lower'],
+      armorEdits: {
+        helmet: {
+          slot: 'helmet',
+          piece: {
+            version: 1,
+            id: 'v3_foundation_exact_helmet_test',
+            name: 'Helmet Test',
+            slot: 'helmet',
+            modelSystem: 'v3',
+            gridScale: 2,
+            sourcePreset: 'v3-foundation-exact:helmet:test',
+            voxels: [
+              { x: 0, y: 0, z: 0, role: 'primary' },
+              { x: 0, y: 1, z: 0, role: 'secondary' },
+            ],
+            updatedAt: 123,
+          },
+          sections: [
+            {
+              id: 'upper',
+              label: 'Upper',
+              slot: 'helmet',
+              voxelKeys: ['0:1:0'],
+              bounds: {
+                min: [0, 1, 0],
+                max: [0, 1, 0],
+                center: [0, 1, 0],
+                size: [1, 1, 1],
+                voxelCount: 1,
+                roles: ['secondary'],
+              },
+            },
+            {
+              id: 'lower',
+              label: 'Lower',
+              slot: 'helmet',
+              voxelKeys: ['0:0:0'],
+              bounds: {
+                min: [0, 0, 0],
+                max: [0, 0, 0],
+                center: [0, 0, 0],
+                size: [1, 1, 1],
+                voxelCount: 1,
+                roles: ['primary'],
+              },
+            },
+          ],
+          sectionTransforms: {
+            upper: {
+              sectionId: 'upper',
+              position: [99, -99, 0.1234567],
+              rotation: [99, -99, 0.5],
+              scale: [0, 10, Number.NaN],
+            },
+          },
+        },
+        footLeft: {
+          slot: 'helmet',
+        },
+      },
+    });
+
+    assert.deepEqual(normalized.selectedArmorSlots, ['helmet', 'chest']);
+    assert.deepEqual(normalized.selectedSectionIds, ['upper', 'lower']);
+    assert.equal(normalized.armorEdits.helmet?.piece.id, 'v3_foundation_exact_helmet_test');
+    assert.equal(normalized.armorEdits.footLeft, undefined);
+    assert.deepEqual(normalized.armorEdits.helmet?.sectionTransforms.upper, {
+      sectionId: 'upper',
+      position: [2, -2, 0.123457],
+      rotation: [Math.PI, -Math.PI, 0.5],
+      scale: [0.1, 4, 1],
+    });
+    assert.deepEqual(normalized.armorEdits.helmet?.sectionTransforms.lower, {
+      sectionId: 'lower',
+      position: [0, 0, 0],
+      rotation: [0, 0, 0],
+      scale: [1, 1, 1],
+    });
   });
 
   it('fills every V3 character slot with independent identity placements', () => {
@@ -140,6 +234,39 @@ describe('v3Mesh2MotionTPoseBindEditorCore', () => {
     assert.ok(report.items.some((item) => item.slot === 'helmet' && item.code === 'extreme-scale'));
   });
 
+  it('does not flag generated source-pose correction rotations or fit scales as manual extremes', () => {
+    const document: V3Mesh2MotionTPoseBindDocument = normalizeV3Mesh2MotionTPoseBindDocument({
+      placements: {
+        handLeft: {
+          rotation: [0, 0, 2.8],
+          scale: [0.2, 1, 1],
+        },
+      },
+    });
+
+    const generatedReport = buildV3Mesh2MotionTPoseBindDiagnostics(document, {
+      referencePlacements: {
+        handLeft: {
+          rotation: [0, 0, 2.8],
+          scale: [0.2, 1, 1],
+        },
+      },
+    });
+    const editedReport = buildV3Mesh2MotionTPoseBindDiagnostics(document, {
+      referencePlacements: {
+        handLeft: {
+          rotation: [0, 0, 2.5],
+          scale: [0.35, 1, 1],
+        },
+      },
+    });
+
+    assert.equal(generatedReport.items.some((item) => item.slot === 'handLeft' && item.code === 'extreme-rotation'), false);
+    assert.equal(generatedReport.items.some((item) => item.slot === 'handLeft' && item.code === 'extreme-scale'), false);
+    assert.equal(editedReport.items.some((item) => item.slot === 'handLeft' && item.code === 'extreme-rotation'), true);
+    assert.equal(editedReport.items.some((item) => item.slot === 'handLeft' && item.code === 'extreme-scale'), true);
+  });
+
   it('diagnoses missing slots from sparse imported bind documents', () => {
     const document = parseV3Mesh2MotionTPoseBindDocumentJson(JSON.stringify({
       source: { meshHash: 'source-abc', authoringSpace: 'mesh2motion-native-v3' },
@@ -180,7 +307,12 @@ describe('v3Mesh2MotionTPoseBindEditorCore', () => {
   });
 
   it('ships a frozen default document with canonical identity placements', () => {
+    assert.equal(V3_MESH2MOTION_TPOSE_BIND_EDITOR_DEFAULT_DOCUMENT.kind, V3_MESH2MOTION_TPOSE_BIND_DOCUMENT_KIND);
+    assert.equal(V3_MESH2MOTION_TPOSE_BIND_EDITOR_DEFAULT_DOCUMENT.version, 2);
     assert.equal(V3_MESH2MOTION_TPOSE_BIND_EDITOR_DEFAULT_DOCUMENT.selectedSlot, 'helmet');
+    assert.deepEqual(V3_MESH2MOTION_TPOSE_BIND_EDITOR_DEFAULT_DOCUMENT.selectedArmorSlots, []);
+    assert.deepEqual(V3_MESH2MOTION_TPOSE_BIND_EDITOR_DEFAULT_DOCUMENT.selectedSectionIds, []);
+    assert.deepEqual(V3_MESH2MOTION_TPOSE_BIND_EDITOR_DEFAULT_DOCUMENT.armorEdits, {});
     assert.deepEqual(
       V3_MESH2MOTION_TPOSE_BIND_EDITOR_DEFAULT_DOCUMENT.placements.handRight,
       {
@@ -195,6 +327,13 @@ describe('v3Mesh2MotionTPoseBindEditorCore', () => {
     });
   });
 
+  it('builds stable bind-editor local storage keys from source and foundation hashes', () => {
+    assert.equal(
+      buildV3Mesh2MotionTPoseBindLocalStorageKey('source-hash', 'foundation-hash'),
+      'ibrawls_v3_mesh2motion_tpose_bind_editor:source-hash:foundation-hash:all-slot-mannequin-envelope-fit-v2'
+    );
+  });
+
   it('wires the standalone TPose bind editor into browser and service-worker routes', () => {
     const html = readFileSync('v3-mesh2motion-tpose-bind-editor.html', 'utf8');
     const viteConfig = readFileSync('vite.config.ts', 'utf8');
@@ -204,7 +343,27 @@ describe('v3Mesh2MotionTPoseBindEditorCore', () => {
     assert.equal(html.includes('/src/tools/v3Mesh2MotionTPoseBindEditor.ts'), true);
     assert.equal(html.includes('V3 Mesh2Motion TPose Bind Editor'), true);
     assert.equal(html.includes('slot-select'), true);
+    assert.equal(html.includes('review-mannequin-only'), true);
+    assert.equal(html.includes('review-armor-ghost'), true);
+    assert.equal(html.includes('review-armor-visible'), true);
+    assert.equal(html.includes('toggle-skeleton-lines'), true);
+    assert.equal(html.includes('toggle-slot-pivots'), true);
+    assert.equal(html.includes('toggle-finger-joints'), true);
+    assert.equal(html.includes('armor-slot-menu-button'), true);
+    assert.equal(html.includes('armor-slot-options'), true);
+    assert.equal(html.includes('regenerate-armor'), true);
+    assert.equal(html.includes('transform-scope-piece'), true);
+    assert.equal(html.includes('transform-scope-section'), true);
+    assert.equal(html.includes('mirror-transform-mode'), true);
+    assert.equal(html.includes('section-buttons'), true);
+    assert.equal(html.includes('Editor JSON'), true);
     assert.equal(html.includes('json-output'), true);
+    assert.equal(readFileSync('src/tools/v3Mesh2MotionTPoseBindEditor.ts', 'utf8').includes('review=mannequin'), true);
+    assert.equal(readFileSync('src/tools/v3Mesh2MotionTPoseBindEditor.ts', 'utf8').includes("value === 'side'"), true);
+    assert.equal(
+      readFileSync('src/tools/v3Mesh2MotionTPoseBindEditor.ts', 'utf8').includes('v3ResolvedMannequinFitPlacement'),
+      true
+    );
     assert.equal(viteConfig.includes('v3Mesh2MotionTPoseBindEditor'), true);
     assert.equal(serviceWorker.includes('/v3-mesh2motion-tpose-bind-editor.html'), true);
     assert.equal(devServer.includes('/v3-mesh2motion-tpose-bind-editor.html'), true);

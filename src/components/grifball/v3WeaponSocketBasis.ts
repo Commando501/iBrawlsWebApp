@@ -262,6 +262,11 @@ const socketWorldPosition = (
   weaponModel: THREE.Object3D,
   socketName: V3SocketName
 ): THREE.Vector3 | null => {
+  const bakedOffhand = weaponModel.userData.v3BlenderOffhandSocket as number[] | undefined;
+  if (socketName === 'thirdPersonOffhandGrip' && bakedOffhand) {
+    weaponModel.updateWorldMatrix(true, false);
+    return weaponModel.localToWorld(new THREE.Vector3(...bakedOffhand));
+  }
   const socket = getSocketDefinitions(weaponModel).find((candidate) => candidate.name === socketName);
   if (!socket) return null;
   const visualRoot = getV3WeaponSocketBasisVisualRoot(weaponModel);

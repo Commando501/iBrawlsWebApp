@@ -1,0 +1,11 @@
+[
+  {"id":"clean_slide_hammer","durationFrames":84,"loop":false,"weapon":"hammer"},
+  {"id":"clean_slide_sword","durationFrames":84,"loop":false,"weapon":"sword"},
+  {"id":"clean_slide_pistol","durationFrames":84,"loop":false,"weapon":"pistol"},
+  {"id":"clean_slide_ball","durationFrames":84,"loop":false,"weapon":"ball"},
+  {"id":"clean_ball_carry","durationFrames":90,"loop":true,"weapon":"ball"},
+  {"id":"clean_ball_walk","durationFrames":90,"loop":true,"weapon":"ball"},
+  {"id":"clean_ball_sprint","durationFrames":90,"loop":true,"weapon":"ball"},
+  {"id":"clean_ball_punch","durationFrames":72,"loop":false,"weapon":"ball"},
+  {"id":"clean_ball_throw","durationFrames":90,"loop":false,"weapon":"ball","releaseFrame":45}
+]
