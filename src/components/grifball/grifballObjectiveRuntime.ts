@@ -1,3 +1,11 @@
+import { canStartAIWeaponAction } from './aiWeaponTimingRuntime';
+import { planGrifballPass } from '../../game/aiGrifballPassing';
+import { createSnapshotRouters } from '../../game/aiGrifballRunner';
+import { resolveTeamTactics } from '../../game/grifballTacticsConfig';
+import { isNeuralNetDifficulty } from '../../game/neuralBrains';
+import { observeGrifballSpace } from '../../game/aiGrifballSpace';
+import { GRAVITY_ACCELERATION, MELEE_SWORD_SLASH_REACH } from './combatGeometry';
+import { getYawForHeading } from '../../game/yaw';
 import * as THREE from 'three';
 import { enemyGoalForTeam } from '../../game/aiGrifballRoles';
 import {
@@ -303,6 +311,55 @@ export function throwPlayerGrifballPassForState({
   playSwing();
 }
 
+/** Execute a shared pass intent once per frame, after movement, through the existing throw rules. */
+export function tickScriptedGrifballPassForState(state: GrifballRuntimeState, refs: GrifballThreeRefs, dt: number): boolean {
+  const plan = state.aiMatchContext.grifballTeamPlan, ball = state.grifball.ball;
+  const bot = state.otherPlayers.get(ball.holderId ?? '');
+  const assignment = bot && plan.assignments.get(bot.id), selected = assignment?.pass?.selected;
+  const tuning = bot?.team ? resolveTeamTactics(state.grifballTactics, bot.team) : null;
+  const cancel = () => { plan.passCharge = null; for (const p of state.otherPlayers.values()) if (p.controller === 'ai' && !isNeuralNetDifficulty(p.difficulty) && !isNeuralNetDifficulty(state.settings.aiDifficulty)) p.grifballPassCharge = 0; return false; };
+  if (state.isMultiplayer || state.settings.gameMode !== 'grifball' || state.grifball.phase !== 'playing' || ball.state !== 'held' ||
+    !bot || bot.activeWeapon !== 'ball' || bot.controller !== 'ai' || isNeuralNetDifficulty(bot.difficulty) || isNeuralNetDifficulty(state.settings.aiDifficulty) ||
+    bot.hp <= 0 || (bot.respawnTimer ?? 0) > 0 || !selected || !resolveRunnerThrowAllowed(state.settings) ||
+    !tuning?.enabled || !tuning.spaceEnabled || !tuning.passingEnabled || !plan.snapshot?.geometry ||
+    bot.weaponState !== 'ready' || (bot.swapLockoutTimer ?? 0) > 0 || !canStartAIWeaponAction({ aiState: bot.aiState, timer: bot.aiTimer, swapCooldownTimer: bot.swapCooldownTimer }) ||
+    bot.isLunging || bot.isJumping || bot.pos.y > 0.01 || bot.vel.y !== 0 || (bot.aiDashRemaining ?? 0) > 0 || bot.aiSlideActive) return cancel();
+  const receiver = state.otherPlayers.get(selected.receiverId);
+  if (!receiver || receiver.hp <= 0 || (receiver.respawnTimer ?? 0) > 0 || receiver.team !== bot.team || receiver.controller !== 'ai' || isNeuralNetDifficulty(receiver.difficulty)) return cancel();
+  let charge = plan.passCharge;
+  if (!charge || charge.carrierId !== bot.id || charge.receiverId !== receiver.id || charge.speed !== selected.speed) {
+    charge = plan.passCharge = { carrierId: bot.id, receiverId: receiver.id, speed: selected.speed, elapsed: 0 };
+  }
+  charge.elapsed += Math.max(0, dt);
+  bot.grifballPassCharge = Math.min(1, charge.elapsed / Math.max(0.001, state.settings.grifballChargeMax ?? 1.2));
+  if (charge.elapsed + 1e-9 < selected.chargeSeconds) return false;
+  // The roster has moved since planning. Recheck current positions, availability and weapon timing at release.
+  const snapshot = { ...plan.snapshot, passing: { ...plan.snapshot.passing!, allowed: resolveRunnerThrowAllowed(state.settings),
+    minSpeed: state.settings.grifballPassSpeedMin ?? 9, maxSpeed: state.settings.grifballPassSpeedMax ?? 26,
+    chargeMax: state.settings.grifballChargeMax ?? 1.2, pickupRadius: state.settings.grifballPickupRadius ?? 1.6 }, players: plan.snapshot.players.flatMap(p => {
+    const live = state.otherPlayers.get(p.id);
+    if (p.id === 'player') return !state.isObserverMode && state.playerHP > 0 && state.playerRespawnTimer <= 0 ? [{ ...p,
+      pos: { x: state.playerPos.x, z: state.playerPos.z }, vel: { x: state.playerVel.x, z: state.playerVel.z },
+      space: observeGrifballSpace(state.settings, state.activeWeapon, state.activeWeapon === 'sword' ? state.pSwordState : state.pWeaponState,
+        state.activeWeapon === 'sword' ? state.pSwordTimer : state.pWeaponTimer, state.swapLockoutTimer ?? 0, state.playerPos.y, state.playerVel.y, GRAVITY_ACCELERATION, MELEE_SWORD_SLASH_REACH) }] : [];
+    return live && live.hp > 0 && (live.respawnTimer ?? 0) <= 0 && !live.isObserver ? [{ ...p,
+      pos: { x: live.pos.x, z: live.pos.z }, vel: { x: live.vel.x, z: live.vel.z }, height: live.pos.y,
+      scripted: live.controller === 'ai' && !isNeuralNetDifficulty(live.difficulty),
+      space: observeGrifballSpace(state.settings, live.activeWeapon, live.weaponState, live.weaponTimer ?? 0,
+        live.swapLockoutTimer ?? 0, live.pos.y, live.vel.y, GRAVITY_ACCELERATION, MELEE_SWORD_SLASH_REACH) }] : [];
+  }) };
+  const currentCarrier = snapshot.players.find(p => p.id === bot.id)!;
+  const fresh = planGrifballPass(snapshot, currentCarrier, tuning, createSnapshotRouters(snapshot));
+  const pass = fresh.candidates.find(c => c.receiverId === receiver.id && c.speed === selected.speed && c.viable);
+  if (!pass) { assignment!.pass = fresh; return cancel(); }
+  bot.yaw = getYawForHeading(pass.direction.x, pass.direction.z);
+  throwBall(ball, { x: bot.pos.x, y: bot.pos.y + 1.1, z: bot.pos.z }, { ...pass.direction, y: 0 }, pass.speed);
+  setGrifballCarrierForState({ state, refs, id: bot.id, carrying: false });
+  plan.passFlight = { team: bot.team!, receiverId: receiver.id, carrierId: bot.id };
+  cancel();
+  return true;
+}
+
 export function updateGrifballObjectiveForState({
   state,
   refs,
@@ -370,6 +427,7 @@ export function updateGrifballObjectiveForState({
     ? Math.min(1, ballChargeTimerRef.current / (state.settings.grifballChargeMax ?? 1.2))
     : 0;
 
+  tickScriptedGrifballPassForState(state, refs, dt);
   if (g.ball.state === 'held' && g.ball.holderId) {
     const holderId = g.ball.holderId;
     const ref = getGrifballCombatantRefForState(state, holderId);

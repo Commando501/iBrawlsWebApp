@@ -12,7 +12,7 @@ const p = (id: string, team: string, x: number, z: number): GrifballTacticalPlay
   space: { ...observeGrifballSpace(DEFAULT_ADMIN_SETTINGS, id === 'runner' ? 'ball' : 'hammer'), reach: 3, blastRadius: 1.5, attackIn: 0.4, speed: 5 } });
 const geometry = () => buildGrifballSpaceGeometry({ mapShape: 'rectangular', arenaRadius: 52, arenaHalfExtents: { x: 52, z: 23 }, objects: [] } as unknown as CustomMapData, 52);
 function scene(): GrifballTacticalSnapshot {
-  const tactics = defaultGrifballTactics(); tactics.defaults.tankDoubleThreshold = 1.5;
+  const tactics = defaultGrifballTactics(); tactics.defaults.tankDoubleThreshold = 1.5; tactics.defaults.defenseEnabled = false;
   return { round: 1, playing: true, holderId: 'runner', ball: { x: 0, z: 0 }, spacing: 4, geometry: geometry(), tactics,
     goals: { blue: { x: -47, z: 0 }, red: { x: 47, z: 0 } },
     players: [p('runner', 'blue', 0, 0), p('a', 'blue', 4, -4), p('b', 'blue', 4, 4), p('c', 'blue', -4, 0), p('enemy', 'red', 5, 0)] };
@@ -127,7 +127,7 @@ test('schema v3 migrates tanking defaults and preserves explicit existing settin
   const old: any = defaultGrifballTactics(); old.schemaVersion = 3; delete old.defaults.tankingEnabled;
   for (const [key, field] of Object.entries(TACTICS_FIELDS)) if (field.module === 'tanking') delete old.defaults[key];
   old.teams.blue = { runnerEnabled: false, runnerCutWidth: 6 };
-  const current = validateGrifballTactics(old); assert.equal(current.schemaVersion, 4); assert.equal(current.defaults.tankingEnabled, true);
+  const current = validateGrifballTactics(old); assert.equal(current.schemaVersion, 5); assert.equal(current.defaults.tankingEnabled, true);
   assert.deepEqual(current.teams.blue, old.teams.blue);
   assert.throws(() => validateGrifballTactics({ ...current, teams: { blue: { tankCommitSeconds: -1 } } }));
 });

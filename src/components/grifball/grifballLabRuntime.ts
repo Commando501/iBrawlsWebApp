@@ -12,7 +12,7 @@ import type { GrifballRuntimeState } from './runtimeState';
 import type { GrifballThreeRefs } from './threeRefs';
 
 export const LAB_TICK = 1 / 60;
-export const emptyLabMetrics = (): LabMetrics => ({ seconds: 0, goals: 0, possessionLosses: 0, roleChanges: 0, outsideSeconds: 0, botSeconds: 0, stuckSeconds: 0, sharedExposureSeconds: 0, blockedRouteSeconds: 0, runnerWaitSeconds: 0, runnerRouteChanges: 0, tankingSeconds: 0, doubleCommitSeconds: 0, delaySeconds: 0, engagementReleases: 0 });
+export const emptyLabMetrics = (): LabMetrics => ({ seconds: 0, goals: 0, possessionLosses: 0, roleChanges: 0, outsideSeconds: 0, botSeconds: 0, stuckSeconds: 0, sharedExposureSeconds: 0, blockedRouteSeconds: 0, runnerWaitSeconds: 0, runnerRouteChanges: 0, tankingSeconds: 0, doubleCommitSeconds: 0, delaySeconds: 0, engagementReleases: 0, containmentSeconds: 0, safetySeconds: 0, passes: 0, completedPasses: 0, interceptedPasses: 0 });
 
 /** Clone simulation data, retaining Three vector methods and Map/Set semantics. */
 export function cloneLabState<T>(value: T): T {
@@ -30,6 +30,7 @@ export class GrifballLabRuntime {
   private accumulator = 0;
   private tickCount = 0;
   private metrics = emptyLabMetrics();
+  private pendingPassTeam: string | null = null;
   private previousHolder: string | null = null;
   private runnerActions = new Map<string, string>();
   private roles = new Map<string, string>();
@@ -57,7 +58,7 @@ export class GrifballLabRuntime {
   }
   private resetMetrics() {
     this.tickCount = 0; this.accumulator = 0; this.random = seededRandom(this.seed);
-    this.metrics = emptyLabMetrics(); this.previousHolder = null;
+    this.metrics = emptyLabMetrics(); this.previousHolder = null; this.pendingPassTeam = null;
     this.runnerActions.clear(); this.roles.clear(); this.tankingOrders.clear(); this.positions.clear(); this.history = [];
   }
   private restore(state: GrifballRuntimeState) {
@@ -114,7 +115,7 @@ export class GrifballLabRuntime {
       if (['outnumbered', 'delay'].includes(scenario) && team === 'blue' && slot > 0) { bot.hp = 0; bot.respawnTimer = 3600; }
     }
     if (scenario !== 'pickup') {
-      const carrier = bots.find(bot => bot.team === (['escort', 'crowding', 'goal', 'lane', 'pursuit', 'rendezvous', 'tanking', 'breakthrough'].includes(scenario) ? 'blue' : 'red'))!;
+      const carrier = bots.find(bot => bot.team === (['escort', 'crowding', 'goal', 'lane', 'pursuit', 'rendezvous', 'tanking', 'breakthrough', 'pass', 'passdenied'].includes(scenario) ? 'blue' : 'red'))!;
       carrier.pos.copy(center); state.grifball.ball.holderId = carrier.id; state.grifball.ball.state = 'held';
       carrier.activeWeapon = 'ball';
       if (scenario === 'crowding') {
@@ -139,6 +140,18 @@ export class GrifballLabRuntime {
         if (scenario === 'double') { carrier.weaponState = 'recovering'; carrier.weaponTimer = 0; }
         if (scenario === 'delay') { bots.find(bot => bot.team === 'blue' && bot.hp > 0)?.pos.copy(center).addScaledVector(axis, -10); carrier.pos.copy(center); targets.filter(bot => bot !== carrier).forEach((bot, i) => bot.pos.copy(center).addScaledVector(axis, 3 + i).addScaledVector(lateral, (i % 2 ? -1 : 1) * 3)); }
       }
+      if (['cut', 'lastdefender', 'reinforcements'].includes(scenario)) {
+        const defenders = bots.filter(bot => bot.team === 'blue');
+        defenders.forEach((bot, i) => bot.pos.copy(center).addScaledVector(axis, i === 0 ? -14 : -8).addScaledVector(lateral, i === 0 ? 0 : (i % 2 ? -1 : 1) * 5));
+        carrier.vel.copy(axis).multiplyScalar(-3).addScaledVector(lateral, 3);
+        if (scenario !== 'cut') defenders.slice(1).forEach((bot, i) => { bot.hp = 0; bot.respawnTimer = scenario === 'reinforcements' ? 1 + i * 0.5 : 3600; });
+        if (scenario === 'lastdefender') carrier.pos.set(blue.x + axis.x * 7, 0, blue.z + axis.z * 7);
+      }
+      if (scenario === 'pass' || scenario === 'passdenied') {
+        carrier.pos.copy(center).addScaledVector(axis, -20);
+        bots.filter(bot => bot.team === 'blue' && bot !== carrier).forEach((bot, i) => bot.pos.copy(center).addScaledVector(axis, -8 - i * 6).addScaledVector(lateral, i * 5));
+        bots.filter(bot => bot.team === 'red').forEach((bot, i) => bot.pos.copy(center).addScaledVector(axis, scenario === 'pass' ? -40 + i * 2 : -8 + i * 3).addScaledVector(lateral, scenario === 'pass' ? 15 : (i % 2 ? -1 : 1) * 3));
+      }
       state.grifball.ball.pos = { x: carrier.pos.x, y: carrier.pos.y, z: carrier.pos.z };
     }
     this.checkpoint = cloneLabState(state); this.resetMetrics(); this.clearOverlay();
@@ -151,6 +164,16 @@ export class GrifballLabRuntime {
     const holder = state.grifball.ball.holderId;
     if (this.previousHolder && this.previousHolder !== holder && state.grifball.phase === 'playing') this.metrics.possessionLosses++;
     this.previousHolder = holder;
+    if (plan.passFlight && !this.pendingPassTeam && state.grifball.ball.state === 'thrown') {
+      this.pendingPassTeam = plan.passFlight.team; this.metrics.passes++;
+      this.history.push(`${this.metrics.seconds.toFixed(2)}s · pass released to ${plan.passFlight.receiverId}`);
+    }
+    if (this.pendingPassTeam && holder) {
+      const team = holder === 'player' ? state.localPlayerTeam : state.otherPlayers.get(holder)?.team;
+      if (team === this.pendingPassTeam) this.metrics.completedPasses++; else this.metrics.interceptedPasses++;
+      this.pendingPassTeam = null;
+    }
+    if (state.grifball.phase !== 'playing' || state.grifball.ball.state === 'idle') this.pendingPassTeam = null;
     const activeRunners = new Set<string>();
     for (const play of Object.values(plan.runnerPlans)) {
       activeRunners.add(play.carrierId);
@@ -167,6 +190,8 @@ export class GrifballLabRuntime {
     const doubleTeams = new Set<string>();
     for (const [id, assignment] of plan.assignments) {
       const bot = state.otherPlayers.get(id); if (!bot || bot.hp <= 0 || bot.respawnTimer > 0) continue;
+      if (assignment.defense?.mode === 'contain') this.metrics.containmentSeconds += LAB_TICK;
+      if (assignment.defense?.mode === 'last-defender') this.metrics.safetySeconds += LAB_TICK;
       const tank = assignment.tanking;
       if (tank) {
         const key = `${tank.mode}:${tank.targetId ?? '-'}:${tank.attack}`;
@@ -207,7 +232,7 @@ export class GrifballLabRuntime {
       const bot = state.otherPlayers.get(id);
       threats[id] = bot ? selectGrifballAssignmentThreat(assignment, bot.pos, plan.snapshot?.players ?? []) : null;
     }
-    grifballLab.update({ diagnostics: { runnerPlans: Object.values(plan.runnerPlans), assignments: [...plan.assignments.values()], snapshot: plan.snapshot, history: [...this.history], metrics: { ...this.metrics }, threats } });
+    grifballLab.update({ diagnostics: { passPlans: Object.values(plan.passPlans), runnerPlans: Object.values(plan.runnerPlans), assignments: [...plan.assignments.values()], snapshot: plan.snapshot, history: [...this.history], metrics: { ...this.metrics }, threats } });
   }
   /** Called every rendered frame, even while the host application is paused. */
   frame(state: GrifballRuntimeState, elapsed: number, tick: (dt: number) => void): void {
@@ -286,6 +311,15 @@ export class GrifballLabRuntime {
         const p = assignment.escort.destination;
         line([new THREE.Vector3(p.x - 0.5, 0.4, p.z - 0.5), new THREE.Vector3(p.x + 0.5, 0.4, p.z + 0.5)], 0xa78bfa);
         line([new THREE.Vector3(p.x - 0.5, 0.4, p.z + 0.5), new THREE.Vector3(p.x + 0.5, 0.4, p.z - 0.5)], 0xa78bfa);
+      }
+      if (lab.overlays.defense && assignment.defense) {
+        const p = assignment.defense.intercept;
+        line([bot.pos.clone().setY(0.6), new THREE.Vector3(p.x, 0.6, p.z)], assignment.defense.mode === 'last-defender' ? 0x34d399 : 0xe879f9);
+        line([new THREE.Vector3(p.x - 0.7, 0.6, p.z), new THREE.Vector3(p.x, 0.6, p.z + 0.7), new THREE.Vector3(p.x + 0.7, 0.6, p.z), new THREE.Vector3(p.x, 0.6, p.z - 0.7), new THREE.Vector3(p.x - 0.7, 0.6, p.z)], 0xe879f9);
+      }
+      if (lab.overlays.passes && assignment.pass) for (const candidate of assignment.pass.candidates) {
+        if (candidate !== assignment.pass.selected && !lab.overlays.candidates) continue;
+        line(candidate.path.map(p => new THREE.Vector3(p.x, p.y + 0.2, p.z)), candidate === assignment.pass.selected ? 0x22d3ee : candidate.viable ? 0x4ade80 : 0xf87171);
       }
       if (lab.overlays.engagements && assignment.tanking?.targetId) {
         const target = plan.snapshot?.players.find(p => p.id === assignment.tanking!.targetId);

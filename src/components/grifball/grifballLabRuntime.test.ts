@@ -79,6 +79,7 @@ test('runner scenarios expose repeatable routes and restart clears route memory'
 test('tanking scenarios restart with identical orders, metrics and coordinator ownership', () => {
   for (const scenario of ['tanking', 'double', 'breakthrough', 'delay'] as const) {
     const { state, runtime, tick } = setup();
+    const config = defaultGrifballTactics(); config.defaults.defenseEnabled = false; config.defaults.passingEnabled = false; grifballLab.setConfig(config);
     grifballLab.command({ type: 'scenario', scenario, seed: 12 }); runtime.frame(state, 0.1, tick);
     grifballLab.command({ type: 'step' }); runtime.frame(state, 0.1, tick);
     const first = cloneLabState(state.aiMatchContext);
@@ -89,6 +90,23 @@ test('tanking scenarios restart with identical orders, metrics and coordinator o
     grifballLab.command({ type: 'step' }); runtime.frame(state, 0.1, tick);
     assert.deepEqual(state.aiMatchContext, first);
     assert.deepEqual(grifballLab.getSnapshot().diagnostics!.metrics, metrics);
+    runtime.dispose(); grifballLab.close();
+  }
+});
+
+test('defense and pass scenarios restart with identical plans and cleared charge/transition memory', () => {
+  for (const scenario of ['cut', 'lastdefender', 'reinforcements', 'pass', 'passdenied'] as const) {
+    const { state, runtime, tick } = setup();
+    grifballLab.command({ type: 'scenario', scenario, seed: 15 }); runtime.frame(state, 0.1, tick);
+    grifballLab.command({ type: 'step' }); runtime.frame(state, 0.1, tick);
+    const first = cloneLabState(state.aiMatchContext), metrics = { ...grifballLab.getSnapshot().diagnostics!.metrics };
+    assert.ok([...first.grifballTeamPlan.assignments.values()].some(a => a.defense || a.pass));
+    state.aiMatchContext.grifballTeamPlan.passCharge = { carrierId: 'test', receiverId: 'test', speed: 9, elapsed: 1 };
+    grifballLab.command({ type: 'restart' }); runtime.frame(state, 0.1, tick);
+    assert.equal(state.aiMatchContext.grifballTeamPlan.passCharge, null);
+    assert.deepEqual(state.aiMatchContext.grifballTeamPlan.transition, {});
+    grifballLab.command({ type: 'step' }); runtime.frame(state, 0.1, tick);
+    assert.deepEqual(state.aiMatchContext, first); assert.deepEqual(grifballLab.getSnapshot().diagnostics!.metrics, metrics);
     runtime.dispose(); grifballLab.close();
   }
 });

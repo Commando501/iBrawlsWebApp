@@ -184,6 +184,13 @@ export function resolvePrimaryGrifballAIObjectiveMovementForCombatant({
       return true;
     }
 
+    if (assignment?.pass?.selected && canStartWeaponAction && frame.weaponState === 'ready') {
+      const direction = assignment.pass.selected.direction;
+      frame.vel.x = 0; frame.vel.z = 0;
+      frame.yaw = getYawForHeading(direction.x, direction.z);
+      settleAsApproaching(frame, true, dt);
+      return true;
+    }
     if (assignment?.runner?.selected.action === 'wait') {
       frame.vel.x = 0; frame.vel.z = 0;
       settleAsApproaching(frame, true, dt);
@@ -212,17 +219,17 @@ export function resolvePrimaryGrifballAIObjectiveMovementForCombatant({
   if (assignment && assignment.role !== 'runner') {
     const players = state.aiMatchContext.grifballTeamPlan.snapshot?.players ?? [];
     if (selectGrifballAssignmentThreat(assignment, frame.pos, players)) return false;
-    frame.pickupRequested = !heldByAnyone && assignment.role === 'retriever';
+    frame.pickupRequested = !heldByAnyone && (assignment.role === 'retriever' || !!assignment.receive);
     const spacing = getGrifballSpacingOffset(
       { x: frame.pos.x, z: frame.pos.z },
       // A retriever must be able to enter the pickup even beside a teammate.
-      assignment.role === 'retriever' ? [] : alliesList,
+      assignment.role === 'retriever' || assignment.receive ? [] : alliesList,
       assignment.tuning?.spacingEnabled === false ? 4 : (assignment.tuning?.separation ?? state.settings.grifballEscortSpacing ?? 4.0)
     );
     applySpacedGroundMove({
       frame,
-      targetX: waypoint?.x ?? (frame.pickupRequested ? ball.pos.x : assignment.destination.x),
-      targetZ: waypoint?.z ?? (frame.pickupRequested ? ball.pos.z : assignment.destination.z),
+      targetX: waypoint?.x ?? (frame.pickupRequested && !assignment.receive ? ball.pos.x : assignment.destination.x),
+      targetZ: waypoint?.z ?? (frame.pickupRequested && !assignment.receive ? ball.pos.z : assignment.destination.z),
       spacing,
       arrivalRadius: space?.route.status === 'routed' ? 0.25 : assignment.tuning?.spacingEnabled === false ? 1.5 : (assignment.tuning?.arrivalRadius ?? 1.5),
       speed: 5.2 * (state.settings.speedForward / 100),

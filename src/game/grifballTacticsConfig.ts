@@ -1,5 +1,17 @@
 /** Tactical tuning is deliberately separate from mechanics and combat personalities. */
 export const TACTICS_FIELDS = {
+  defensePressure: { label: 'Pressure preference', min: 0, max: 1, step: 0.1, value: 0.6, unit: '', module: 'defense', description: 'Higher values contest earlier; lower values contain until support arrives.' },
+  defenseLookahead: { label: 'Interception lookahead', min: 0.25, max: 3, step: 0.25, value: 1.5, unit: 's', module: 'defense', description: 'Predict visible carrier movement over this horizon; replan on each tactical update.' },
+  defenseSafetyDepth: { label: 'Last-defender depth', min: 2, max: 15, step: 0.5, value: 7, unit: 'm', module: 'defense', description: 'Keep the last defender this far goal-side of the projected carrier, capped before the goal.' },
+  defenseContainMargin: { label: 'Containment margin', min: 0.5, max: 6, step: 0.5, value: 2, unit: 'm', module: 'defense', description: 'Hold outside visible attack reach while outnumbered or regrouping.' },
+  defenseEmergencyDistance: { label: 'Goal emergency range', min: 3, max: 20, step: 1, value: 8, unit: 'm', module: 'defense', description: 'Contest immediately when the opposing carrier reaches this goal distance.' },
+  defenseRespawnWait: { label: 'Reinforcement wait', min: 0, max: 6, step: 0.5, value: 2.5, unit: 's', module: 'defense', description: 'Consider a nearby returning teammate within this estimated arrival time when containing.' },
+  defenseTransitionSeconds: { label: 'Turnover recovery time', min: 0, max: 4, step: 0.25, value: 1.5, unit: 's', module: 'defense', description: 'Briefly restore the defensive shape after losing possession.' },
+  passSafetyMargin: { label: 'Pass safety margin', min: 0, max: 3, step: 0.1, value: 0.6, unit: 's', module: 'defense', description: 'Required opponent arrival margin beyond receiver pickup time. Larger values accept less risk.' },
+  passMinProgress: { label: 'Minimum pass progress', min: 0, max: 20, step: 1, value: 5, unit: 'm', module: 'defense', description: 'Minimum goal progress from a pass before giving up possession.' },
+  passMaxReceiveSeconds: { label: 'Receiver arrival limit', min: 0.5, max: 6, step: 0.25, value: 3, unit: 's', module: 'defense', description: 'Reject passes that require a longer receiver run.' },
+  passThreatMargin: { label: 'Receiver attack margin', min: 0, max: 2, step: 0.1, value: 0.4, unit: 's', module: 'defense', description: 'Require time to collect the settled ball before an opponent can attack the receiver.' },
+
   tankCommitSeconds: { label: 'Engagement commitment', min: 0, max: 3, step: 0.1, value: 0.8, unit: 's', module: 'tanking', description: 'Keep a useful target through small score changes. Lost purpose or a recovery opening can override it.' },
   tankDoubleThreshold: { label: 'Double-team threshold', min: 0, max: 15, step: 0.5, value: 4.5, unit: 'score', module: 'tanking', description: 'Minimum value for a second attacker; also requires an opening, safe separation and recovery coverage.' },
   tankReleaseDistance: { label: 'Disengagement distance', min: 4, max: 25, step: 1, value: 10, unit: 'm', module: 'tanking', description: 'Release duels this far behind a friendly runner when the opponent cannot threaten the push soon.' },
@@ -46,24 +58,24 @@ export const TACTICS_FIELDS = {
 } as const;
 export type TacticalNumber = keyof typeof TACTICS_FIELDS;
 export type TeamTactics = Record<TacticalNumber, number> & {
-  enabled: boolean; spacingEnabled: boolean; spaceEnabled: boolean; runnerEnabled: boolean; tankingEnabled: boolean; preserveSlots: boolean; safetyFirst: boolean;
+  enabled: boolean; spacingEnabled: boolean; spaceEnabled: boolean; runnerEnabled: boolean; tankingEnabled: boolean; defenseEnabled: boolean; passingEnabled: boolean; preserveSlots: boolean; safetyFirst: boolean;
 };
 export interface GrifballTacticsConfig {
-  schemaVersion: 4;
+  schemaVersion: 5;
   defaults: TeamTactics;
   teams: { blue?: Partial<TeamTactics>; red?: Partial<TeamTactics> };
 }
 export function defaultGrifballTactics(): GrifballTacticsConfig {
-  return { schemaVersion: 4, defaults: {
+  return { schemaVersion: 5, defaults: {
     ...Object.fromEntries(Object.entries(TACTICS_FIELDS).map(([key, field]) => [key, field.value])) as Record<TacticalNumber, number>,
-    enabled: true, spacingEnabled: true, spaceEnabled: true, runnerEnabled: true, tankingEnabled: true, preserveSlots: true, safetyFirst: false,
+    enabled: true, spacingEnabled: true, spaceEnabled: true, runnerEnabled: true, tankingEnabled: true, defenseEnabled: true, passingEnabled: true, preserveSlots: true, safetyFirst: false,
   }, teams: {} };
 }
-const booleanKeys = ['enabled', 'spacingEnabled', 'spaceEnabled', 'runnerEnabled', 'tankingEnabled', 'preserveSlots', 'safetyFirst'];
+const booleanKeys = ['enabled', 'spacingEnabled', 'spaceEnabled', 'runnerEnabled', 'tankingEnabled', 'defenseEnabled', 'passingEnabled', 'preserveSlots', 'safetyFirst'];
 const object = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
 /** Reject invalid imports atomically; never silently accept misspelled or future controls. */
 export function validateGrifballTactics(value: unknown): GrifballTacticsConfig {
-  if (!object(value) || ![1, 2, 3, 4].includes(value.schemaVersion as number) || !object(value.defaults) || !object(value.teams)) throw new Error('Expected tactics schemaVersion 1, 2, 3 or 4, defaults and teams.');
+  if (!object(value) || ![1, 2, 3, 4, 5].includes(value.schemaVersion as number) || !object(value.defaults) || !object(value.teams)) throw new Error('Expected tactics schemaVersion 1, 2, 3, 4 or 5, defaults and teams.');
   if (Object.keys(value).some(key => !['schemaVersion', 'defaults', 'teams'].includes(key))) throw new Error('Unknown configuration field.');
   const validateTeam = (team: unknown, partial: boolean): Partial<TeamTactics> => {
     if (!object(team)) throw new Error('Team settings must be an object.');
@@ -75,11 +87,12 @@ export function validateGrifballTactics(value: unknown): GrifballTacticsConfig {
       }
     }
     const migrated = !partial ? {
+      ...((value.schemaVersion as number) < 5 ? { defenseEnabled: true, passingEnabled: true } : {}),
       ...(value.schemaVersion === 1 ? { spaceEnabled: true } : {}),
       ...((value.schemaVersion as number) < 3 ? { runnerEnabled: true } : {}),
       ...((value.schemaVersion as number) < 4 ? { tankingEnabled: true } : {}),
       ...Object.fromEntries(Object.entries(TACTICS_FIELDS).filter(([, field]) =>
-        value.schemaVersion === 1 && field.module === 'space' || (value.schemaVersion as number) < 3 && field.module === 'runner' || (value.schemaVersion as number) < 4 && field.module === 'tanking'
+        (value.schemaVersion as number) < 5 && field.module === 'defense' || value.schemaVersion === 1 && field.module === 'space' || (value.schemaVersion as number) < 3 && field.module === 'runner' || (value.schemaVersion as number) < 4 && field.module === 'tanking'
       ).map(([key, field]) => [key, field.value])),
       ...team,
     } : team;
@@ -92,7 +105,7 @@ export function validateGrifballTactics(value: unknown): GrifballTacticsConfig {
     if (key !== 'blue' && key !== 'red') throw new Error(`Unknown team: ${key}`);
     teams[key] = validateTeam(team, true);
   }
-  return { schemaVersion: 4, defaults, teams };
+  return { schemaVersion: 5, defaults, teams };
 }
 export function resolveTeamTactics(config: GrifballTacticsConfig, team: string): TeamTactics {
   return { ...config.defaults, ...(team === 'blue' || team === 'red' ? config.teams[team] : {}) };

@@ -123,7 +123,7 @@ test('v2 presets migrate runner defaults and retain existing explicit overrides'
   for (const [key, field] of Object.entries(TACTICS_FIELDS)) if (field.module === 'runner') delete old.defaults[key];
   old.teams.red = { spaceEnabled: false, lateralSpacing: 5 };
   const migrated = validateGrifballTactics(old);
-  assert.equal(migrated.schemaVersion, 4); assert.equal(migrated.defaults.runnerEnabled, true);
+  assert.equal(migrated.schemaVersion, 5); assert.equal(migrated.defaults.runnerEnabled, true);
   assert.deepEqual(migrated.teams.red, old.teams.red);
   assert.throws(() => validateGrifballTactics({ ...migrated, teams: { blue: { runnerMaxWait: -1 } } }));
 });

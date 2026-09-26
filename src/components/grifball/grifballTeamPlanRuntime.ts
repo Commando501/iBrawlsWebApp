@@ -1,3 +1,5 @@
+import { getGrifballTeamSpawn, createDefaultSpawnPoints } from './arenaSpawns';
+import { resolveRunnerThrowAllowed } from '../../game/runnerBallSettings';
 import { setTacticalBotEngagements, type BotCoordRole } from '../../game/aiBotCoordinator';
 import { updateGrifballTeamPlan, resetGrifballTeamPlan, selectGrifballAssignmentThreat, type GrifballTacticalPlayer } from '../../game/aiGrifballTeamPlan';
 import { isNeuralNetDifficulty } from '../../game/neuralBrains';
@@ -22,7 +24,7 @@ export function updateGrifballTeamPlanForState(
   const players: GrifballTacticalPlayer[] = [];
   const point = (p: { x: number; z: number }) => ({ x: p.x, z: p.z });
   if (!state.isObserverMode && state.playerHP > 0 && state.playerRespawnTimer <= 0) {
-    players.push({ id: 'player', team: state.localPlayerTeam, pos: point(state.playerPos), vel: point(state.playerVel), heading: { x: -Math.sin(state.yaw), z: -Math.cos(state.yaw) }, scripted: false, pickupRequested: state.playerPickupRequested });
+    players.push({ id: 'player', team: state.localPlayerTeam, pos: point(state.playerPos), vel: point(state.playerVel), heading: { x: -Math.sin(state.yaw), z: -Math.cos(state.yaw) }, scripted: false, height: state.playerPos.y, pickupRequested: state.playerPickupRequested });
     players[players.length - 1].space = observeGrifballSpace(state.settings, state.activeWeapon,
       state.activeWeapon === 'sword' ? state.pSwordState : state.pWeaponState,
       state.activeWeapon === 'sword' ? state.pSwordTimer : state.pWeaponTimer,
@@ -33,16 +35,31 @@ export function updateGrifballTeamPlanForState(
     players.push({
       id: bot.id, team: bot.team, heading: { x: -Math.sin(bot.yaw), z: -Math.cos(bot.yaw) }, pos: point(bot.pos), vel: point(bot.vel),
       scripted: bot.controller === 'ai' && !isNeuralNetDifficulty(bot.difficulty) && !isNeuralNetDifficulty(state.settings.aiDifficulty),
-      pickupRequested: bot.pickupRequested,
+      height: bot.pos.y, pickupRequested: bot.pickupRequested,
       space: observeGrifballSpace(state.settings, bot.activeWeapon, bot.weaponState, bot.weaponTimer ?? 0,
         bot.swapLockoutTimer ?? 0, bot.pos.y, bot.vel.y, GRAVITY_ACCELERATION, MELEE_SWORD_SLASH_REACH),
     });
   }
   const blue = getEnemyGoalPos('red');
   const red = getEnemyGoalPos('blue');
+  // Project the existing spawn selection from current public positions; re-evaluate as players move.
+  const spawnFor = (team: string, id: string) => getGrifballTeamSpawn(activeCustomMap, team,
+    createDefaultSpawnPoints(state.arenaRadius * 0.65), [state.playerPos, ...[...state.otherPlayers.values()]
+      .filter(p => p.id !== id && p.hp > 0 && (p.respawnTimer ?? 0) <= 0).map(p => p.pos)]);
+  const respawns = [...state.otherPlayers.values()].filter(p => !p.isObserver && p.team && (p.respawnTimer ?? 0) > 0).map(p => ({
+    id: p.id, team: p.team!, pos: point(spawnFor(p.team!, p.id)), seconds: p.respawnTimer!, speed: 5.2 * state.settings.speedForward / 100,
+  }));
+  if (!state.isObserverMode && state.playerRespawnTimer > 0) respawns.push({ id: 'player', team: state.localPlayerTeam,
+    pos: point(spawnFor(state.localPlayerTeam, 'player')), seconds: state.playerRespawnTimer, speed: 5.2 * state.settings.speedForward / 100 });
+  const ball = state.grifball.ball;
   updateGrifballTeamPlan(plan, {
     round: state.grifball.roundNumber, playing: state.grifball.phase === 'playing',
-    ball: point(state.grifball.ball.pos),
+    ball: point(ball.pos), ballPhysics: { ...ball, pos: { ...ball.pos }, vel: { ...ball.vel }, home: { ...ball.home } }, respawns,
+    passing: { allowed: resolveRunnerThrowAllowed(state.settings), minSpeed: state.settings.grifballPassSpeedMin ?? 9,
+      maxSpeed: state.settings.grifballPassSpeedMax ?? 26, chargeMax: state.settings.grifballChargeMax ?? 1.2,
+      pickupRadius: state.settings.grifballPickupRadius ?? 1.6,
+      bounds: { arenaRadius: activeCustomMap?.arenaRadius ?? state.arenaRadius, mapShape: activeCustomMap?.mapShape,
+        arenaHalfExtents: activeCustomMap?.arenaHalfExtents ? { ...activeCustomMap.arenaHalfExtents } : undefined, arenaCeiling: activeCustomMap?.arenaCeiling } },
     holderId: state.grifball.ball.state === 'held' ? state.grifball.ball.holderId : null,
     players, goals: { blue: blue ? point(blue) : null, red: red ? point(red) : null },
     tactics: state.grifballTactics,
@@ -52,9 +69,9 @@ export function updateGrifballTeamPlanForState(
   const engagements: [string, { targetId: string; role: BotCoordRole }][] = [];
   for (const a of plan.assignments.values()) {
     const bot = players.find(p => p.id === a.botId);
-    if (!bot || !a.tanking?.attack || !a.tanking.targetId) continue;
+    if (!bot) continue;
     const targetId = selectGrifballAssignmentThreat(a, bot.pos, players);
-    if (targetId === a.tanking.targetId) engagements.push([a.botId, { targetId, role: a.tanking.mode === 'punish' ? 'flanker' : 'pressure' }]);
+    if (targetId && (a.defense || a.tanking?.attack && targetId === a.tanking.targetId)) engagements.push([a.botId, { targetId, role: a.tanking?.mode === 'punish' ? 'flanker' : 'pressure' }]);
   }
   setTacticalBotEngagements(state.aiMatchContext.coordinator, engagements);
 }

@@ -1,3 +1,4 @@
+import { tickScriptedGrifballPassForState, updateGrifballObjectiveForState } from './grifballObjectiveRuntime';
 import { defaultGrifballTactics } from '../../game/grifballTacticsConfig';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -80,13 +81,13 @@ function setup() {
   state.otherPlayers.set('enemy', bot('enemy', 30, 'red'));
   return state;
 }
-function move(state: ReturnType<typeof setup>, id: string, overrides: Partial<GrifballAIObjectiveFrame> = {}, enemiesList: { x: number; z: number }[] = []) {
+function move(state: ReturnType<typeof setup>, id: string, overrides: Partial<GrifballAIObjectiveFrame> = {}, enemiesList: { x: number; z: number }[] = [], canStartWeaponAction = false) {
   const self = state.otherPlayers.get(id)!;
   const frame: GrifballAIObjectiveFrame = { pos: self.pos, vel: self.vel, yaw: 0, aiState: 'APPROACHING', timer: 0, dashRemaining: 0, slideActive: false, weaponState: 'ready', pickupRequested: false, ...overrides };
   let attacks = 0;
   const handled = resolvePrimaryGrifballAIObjectiveMovementForCombatant({
     state, botId: id, self, frame, alliesList: [], enemiesList, dt: 0.1,
-    canStartWeaponAction: false, triggerCombatantAttack: () => { attacks++; },
+    canStartWeaponAction, triggerCombatantAttack: () => { attacks++; },
     constrainCombatantToArena: () => {}, getEnemyGoalPos: goal,
   });
   return { handled, frame, attacks };
@@ -289,4 +290,73 @@ test('live tanking owns coordinator targets before combat and releases them when
   assert.equal(state.aiMatchContext.coordinator.tacticalEngagements.has(primary.botId), false);
   state.settings.gameMode = 'sandbox'; updateGrifballTeamPlanForState(state, 0.01, goal);
   assert.equal(state.aiMatchContext.coordinator.tacticalEngagements.size, 0);
+});
+
+function passingSetup() {
+  const state = setup(), carrier = state.otherPlayers.get('a')!;
+  carrier.pos.set(-20, 0, 0); carrier.activeWeapon = 'ball';
+  state.otherPlayers.get('b')!.pos.set(-8, 0, 0);
+  state.otherPlayers.get('enemy')!.pos.set(-45, 0, 18);
+  state.grifball.ball.state = 'held'; state.grifball.ball.holderId = 'a';
+  state.grifballTactics = defaultGrifballTactics();
+  updateGrifballTeamPlanForState(state, 0.2, goal);
+  return state;
+}
+test('scripted pass honors charge time, releases once and restores normal carrier health/weapon', () => {
+  const state = passingSetup(), plan = state.aiMatchContext.grifballTeamPlan, refs = createInitialGrifballThreeRefs();
+  const pass = plan.assignments.get('a')!.pass!;
+  const selected = pass.candidates.find(c => c.viable && c.chargeSeconds > 0)!; assert.ok(selected); pass.selected = selected;
+  const carrier = state.otherPlayers.get('a')!; carrier.maxHp = 2; carrier.hp = 2;
+  const result = move(state, 'a', {}, [], true); assert.equal(result.frame.vel.length(), 0);
+  assert.equal(tickScriptedGrifballPassForState(state, refs, selected.chargeSeconds / 2), false);
+  assert.equal(state.grifball.ball.state, 'held'); assert.ok(carrier.grifballPassCharge! > 0);
+  assert.equal(tickScriptedGrifballPassForState(state, refs, selected.chargeSeconds / 2), true);
+  assert.equal(state.grifball.ball.state, 'thrown'); assert.equal(state.grifball.ball.holderId, null);
+  assert.equal(carrier.activeWeapon, 'hammer'); assert.equal(carrier.maxHp, state.settings.maxHP);
+  assert.equal(carrier.hp, state.settings.maxHP); assert.equal(plan.passCharge, null); assert.equal(carrier.grifballPassCharge, 0);
+  const velocity = { ...state.grifball.ball.vel }; assert.equal(tickScriptedGrifballPassForState(state, refs, 1), false);
+  assert.deepEqual(state.grifball.ball.vel, velocity);
+});
+test('release rechecks receiver death, pressure, module/rule changes and human/neural ownership', () => {
+  for (const block of ['death', 'pressure', 'throwing', 'module', 'neural', 'remote', 'cooldown', 'airborne', 'phase'] as const) {
+    const state = passingSetup(), refs = createInitialGrifballThreeRefs(), carrier = state.otherPlayers.get('a')!;
+    const plan = state.aiMatchContext.grifballTeamPlan; assert.ok(plan.assignments.get('a')!.pass!.selected);
+    plan.passCharge = { carrierId: 'a', receiverId: 'b', speed: 9, elapsed: 1 }; carrier.grifballPassCharge = 0.5;
+    if (block === 'death') state.otherPlayers.get('b')!.hp = 0;
+    if (block === 'pressure') state.otherPlayers.get('enemy')!.pos.copy(carrier.pos);
+    if (block === 'throwing') state.settings.grifballAllowThrowing = false;
+    if (block === 'module') state.grifballTactics.defaults.passingEnabled = false;
+    if (block === 'neural') carrier.difficulty = 'neural-net';
+    if (block === 'remote') carrier.controller = 'remote';
+    if (block === 'cooldown') { carrier.aiState = 'COOLDOWN'; carrier.aiTimer = 1; }
+    if (block === 'airborne') carrier.pos.y = 1;
+    if (block === 'phase') state.grifball.phase = 'round_over' as any;
+    assert.equal(tickScriptedGrifballPassForState(state, refs, 2), false, block);
+    assert.equal(state.grifball.ball.state, 'held', block); assert.equal(plan.passCharge, null, block);
+    if (block !== 'neural' && block !== 'remote') assert.equal(carrier.grifballPassCharge, 0, block);
+  }
+});
+test('a complete scripted pass settles and is picked up by its receiver using live objective rules', () => {
+  const state = passingSetup(), refs = createInitialGrifballThreeRefs();
+  const ballMeshRef = { current: null }, ballChargingRef = { current: false }, ballChargeTimerRef = { current: 0 };
+  // Keep the opponent observed and far away while exercising real movement, ball physics and pickup.
+  state.otherPlayers.get('enemy')!.controller = 'remote';
+  let released = false, received = false;
+  for (let i = 0; i < 360; i++) {
+    updateGrifballTeamPlanForState(state, 1 / 60, goal);
+    for (const id of ['a', 'b']) { const result = move(state, id, {}, [], true); state.otherPlayers.get(id)!.pickupRequested = result.frame.pickupRequested; }
+    updateGrifballObjectiveForState({ state, refs, ballMeshRef, ballChargingRef, ballChargeTimerRef, dt: 1 / 60,
+      isMultiplayer: false, activeCustomMap: null, placeCombatantsAtGrifballSpawns: () => {}, pushStatsUpdate: () => {} });
+    if (state.grifball.ball.state === 'thrown') released = true;
+    if (released && state.grifball.ball.holderId === 'b') { received = true; break; }
+  }
+  assert.ok(released, 'pass released'); assert.ok(received, 'intended receiver picked up settled ball');
+});
+test('respawn observations are copied separately and never issue orders to dead teammates', () => {
+  const state = setup(); const bot = state.otherPlayers.get('b')!; bot.hp = 0; bot.respawnTimer = 1.5;
+  updateGrifballTeamPlanForState(state, 0.2, goal);
+  const snapshot = state.aiMatchContext.grifballTeamPlan.snapshot!;
+  assert.ok(snapshot.respawns!.some(p => p.id === 'b' && p.seconds === 1.5));
+  assert.ok(!snapshot.players.some(p => p.id === 'b')); assert.ok(!state.aiMatchContext.grifballTeamPlan.assignments.has('b'));
+  bot.respawnTimer = 0; assert.equal(snapshot.respawns!.find(p => p.id === 'b')!.seconds, 1.5);
 });

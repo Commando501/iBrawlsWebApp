@@ -12,6 +12,7 @@ for (const count of [8, 32]) for (const obstacles of [false, true]) {
     { type: 'cylinder', position: { x: 12, y: 1, z: 10 }, scale: { x: 4, y: 2, z: 4 }, isCollidable: true },
   ] : [] } as CustomMapData;
   const snapshot: GrifballTacticalSnapshot = {
+    passing: { allowed: true, minSpeed: 9, maxSpeed: 26, chargeMax: 1.2, pickupRadius: 1.6, bounds: map },
     round: 1, playing: true, ball: { x: -4, z: 0 }, holderId: 'p0', spacing: 4,
     goals: { blue: { x: -47, z: 0 }, red: { x: 47, z: 0 } }, geometry: buildGrifballSpaceGeometry(map, 52),
     players: Array.from({ length: count }, (_, i) => ({ id: `p${i}`, team: i % 2 ? 'red' : 'blue', scripted: i !== count - 1,

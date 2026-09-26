@@ -1,12 +1,13 @@
+import type { PassPlan } from './aiGrifballPassing';
 import type { RunnerPlan } from './aiGrifballRunner';
 import { defaultGrifballTactics, validateGrifballTactics, type GrifballTacticsConfig } from './grifballTacticsConfig';
 import type { GrifballAssignment, GrifballTacticalSnapshot } from './aiGrifballTeamPlan';
 import type { UniversalSettings } from '../types';
 
-export type LabScenario = 'pickup' | 'escort' | 'turnover' | 'outnumbered' | 'crowding' | 'goal' | 'lane' | 'pursuit' | 'rendezvous' | 'tanking' | 'double' | 'breakthrough' | 'delay';
+export type LabScenario = 'pickup' | 'escort' | 'turnover' | 'outnumbered' | 'crowding' | 'goal' | 'lane' | 'pursuit' | 'rendezvous' | 'tanking' | 'double' | 'breakthrough' | 'delay' | 'cut' | 'lastdefender' | 'reinforcements' | 'pass' | 'passdenied';
 export interface LabMetrics {
   seconds: number; goals: number; possessionLosses: number; roleChanges: number;
-  outsideSeconds: number; botSeconds: number; stuckSeconds: number; sharedExposureSeconds: number; blockedRouteSeconds: number; runnerWaitSeconds: number; runnerRouteChanges: number; tankingSeconds: number; doubleCommitSeconds: number; delaySeconds: number; engagementReleases: number;
+  outsideSeconds: number; botSeconds: number; stuckSeconds: number; sharedExposureSeconds: number; blockedRouteSeconds: number; runnerWaitSeconds: number; runnerRouteChanges: number; tankingSeconds: number; doubleCommitSeconds: number; delaySeconds: number; engagementReleases: number; containmentSeconds: number; safetySeconds: number; passes: number; completedPasses: number; interceptedPasses: number;
 }
 export interface LabScenarioRecord {
   map: string;
@@ -16,7 +17,7 @@ export interface LabScenarioRecord {
 }
 export interface LabResult { config: GrifballTacticsConfig; metrics: LabMetrics; seed: number; scenario: LabScenario; setup: LabScenarioRecord }
 export interface LabDiagnostics {
-  runnerPlans: RunnerPlan[];
+  runnerPlans: RunnerPlan[]; passPlans: PassPlan[];
   assignments: GrifballAssignment[]; snapshot: GrifballTacticalSnapshot | null;
   history: string[]; metrics: LabMetrics; threats: Record<string, string | null>;
 }
@@ -28,7 +29,7 @@ let snapshot = {
   open: false, running: false, connected: false, config: defaultGrifballTactics(), revision: 0,
   activePreset: 'Defaults', savedConfig: JSON.stringify(defaultGrifballTactics()), presets: [] as LabPreset[],
   diagnostics: null as LabDiagnostics | null, results: [] as LabResult[], baseline: null as GrifballTacticsConfig | null,
-  selectedBot: '', selectedTeam: 'all', overlays: { destinations: true, coverage: false, lines: true, candidates: false, routes: true, runnerRoutes: true, intercepts: true, engagements: true },
+  selectedBot: '', selectedTeam: 'all', overlays: { destinations: true, coverage: false, lines: true, candidates: false, routes: true, runnerRoutes: true, intercepts: true, engagements: true, defense: true, passes: true },
   message: '', comparing: false,
 };
 let loaded = false;
