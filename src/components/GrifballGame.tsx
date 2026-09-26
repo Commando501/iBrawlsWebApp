@@ -1,3 +1,5 @@
+import { grifballLab } from '../game/grifballLabStore';
+import { GrifballLabRuntime } from './grifball/grifballLabRuntime';
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -322,6 +324,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     multiplayerRole,
     respawnCombatant: (combatant, mesh) => respawnCombatant(combatant, mesh),
     updateSingleAIEntity: (combatantId, dt) => updateSingleAIEntity(combatantId, dt),
+    getEnemyGoalPos: (team) => grifballEnemyGoalPos(team),
+    getActiveCustomMap,
     getSpectateTargetData: (target) => getSpectateTargetData(target),
     renderSwordLungeTrailVfx: (pos, color, dir, style) =>
       renderSwordLungeTrailVfx(pos, color, dir, style),
@@ -823,9 +827,20 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     playExplosion: () => sfx.playExplosion(),
   });
 
+  const labRuntimeRef = useRef<GrifballLabRuntime | null>(null);
+  if (!labRuntimeRef.current) labRuntimeRef.current = new GrifballLabRuntime(selectedMap ?? 'Current arena', team => grifballEnemyGoalPos(team));
+  useEffect(() => {
+    grifballLab.load();
+    if (!isPlaying || isMultiplayer || replayData || adminSettings.gameMode !== 'grifball') return;
+    labRuntimeRef.current?.dispose();
+    labRuntimeRef.current = new GrifballLabRuntime(selectedMap ?? 'Current arena', team => grifballEnemyGoalPos(team));
+    grifballLab.connect(true);
+    return () => { grifballLab.connect(false); labRuntimeRef.current?.dispose(); };
+  }, [isPlaying, isMultiplayer, replayData, adminSettings.gameMode, selectedMap, aiMatchSessionKey]);
+
   // Handle active game cycles
   useEffect(() => {
-    if (!isPlaying || isPaused) return;
+    if (!isPlaying) return;
 
     initializeReplayRecording();
 
@@ -855,10 +870,10 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       if (dt > 0.1) dt = 0.1;
 
       // â”€â”€â”€ Hidden Key Combo Hold Detection (GRIFB) â”€â”€â”€
-      advanceGrifballFrameForState({
+      const tick = (tickDt: number) => advanceGrifballFrameForState({
         state: s,
         refs: threeRef.current,
-        dt,
+        dt: tickDt,
         isPlaying,
         isPausedRef,
         replayData,
@@ -890,6 +905,23 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         playRespawn: () => sfx.playRespawn(),
       });
 
+      const labActive = grifballLab.getSnapshot().open && !isMultiplayer && !replayData && s.settings.gameMode === 'grifball';
+      if (labActive) {
+        keysPressed.current = {};
+        labRuntimeRef.current!.frame(s, dt, fixedDt => {
+          const paused = isPausedRef.current;
+          isPausedRef.current = false;
+          try { tick(fixedDt); } finally { isPausedRef.current = paused; }
+        });
+        labRuntimeRef.current!.draw(s, threeRef.current);
+        renderGame();
+      } else {
+        labRuntimeRef.current!.suspend();
+        if (!isPausedRef.current) {
+          s.grifballTactics = grifballLab.getSnapshot().config;
+          tick(dt);
+        }
+      }
       requestRef.current = requestAnimationFrame(loop);
     };
 

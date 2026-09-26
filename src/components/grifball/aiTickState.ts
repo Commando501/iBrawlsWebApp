@@ -1,3 +1,4 @@
+import { simulationRandom } from '../../game/simulationRandom';
 import { type Combatant } from '../../types';
 
 export const tickCombatantInvulnerability = (
@@ -11,7 +12,7 @@ export const tickCombatantInvulnerability = (
 
 export const initializeCombatantAITickDefaults = (
   combatant: Combatant,
-  random: () => number = Math.random
+  random: () => number = simulationRandom
 ): void => {
   if (!combatant.aiState) combatant.aiState = 'APPROACHING';
   if (combatant.aiTimer === undefined) combatant.aiTimer = 0;

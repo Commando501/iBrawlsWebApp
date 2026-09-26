@@ -121,7 +121,7 @@ export const updateLiveSpectatorModelVisibilityForState = ({
 
   if (refs.hostGroup) {
     refs.hostGroup.visible =
-      (state.observerCamMode !== 'first' || state.observerTarget !== 'host') && hostData.hp > 0;
+      !state.hideLocalObserverAvatar && (state.observerCamMode !== 'first' || state.observerTarget !== 'host') && hostData.hp > 0;
 
     if (refs.hostHammer && refs.hostSword) {
       refs.hostHammer.visible = hostData.activeWeapon === 'hammer';

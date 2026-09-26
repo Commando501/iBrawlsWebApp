@@ -1,3 +1,4 @@
+import { simulationTimestamp } from '../../game/simulationRandom';
 import * as THREE from 'three';
 import { MAIN_AI_ID } from '../../game/roster';
 import { type CharacterModelType, type Combatant } from '../../types';
@@ -41,7 +42,7 @@ export function triggerPlayerHammerSwingForState({
   state.pWeaponState = 'swing_up';
   state.pWeaponTimer = 0;
   state.pWeaponReady = false;
-  state.lastPlayerHammerAttackTime = Date.now();
+  state.lastPlayerHammerAttackTime = simulationTimestamp();
   recordHammerAttack();
   playSwing();
   sendSync({ type: 'sync', action: 'swing_hammer' });
@@ -60,7 +61,7 @@ export function triggerPlayerHammerMeleeForState({
   state.pWeaponState = 'melee_swing';
   state.pWeaponTimer = 0;
   state.pWeaponReady = false;
-  state.lastPlayerHammerAttackTime = Date.now();
+  state.lastPlayerHammerAttackTime = simulationTimestamp();
   playSwing();
   sendSync({ type: 'sync', action: 'melee_hammer' });
 }
@@ -78,7 +79,7 @@ export function triggerPlayerSwordSlashForState({
   state.pSwordState = 'slashing';
   state.pSwordTimer = 0;
   state.pSwordReady = false;
-  state.lastPlayerSwordAttackTime = Date.now();
+  state.lastPlayerSwordAttackTime = simulationTimestamp();
   playSwing();
   sendSync({ type: 'sync', action: 'slash_sword' });
 }
@@ -109,7 +110,7 @@ export function triggerPlayerSwordLungeForState({
   state.lungeTargetDir.copy(lungeDir).normalize();
   recordLungeStart(lungeDistance);
   state.pSwordState = 'ready';
-  state.lastPlayerSwordAttackTime = Date.now();
+  state.lastPlayerSwordAttackTime = simulationTimestamp();
   playDash();
   sendSync({
     type: 'sync',

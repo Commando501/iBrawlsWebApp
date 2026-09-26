@@ -1,3 +1,4 @@
+import { simulationTimestamp } from '../../game/simulationRandom';
 import * as THREE from 'three';
 import { type Combatant } from '../../types';
 import { triggerCombatantAttackAction } from './combatantActions';
@@ -100,6 +101,6 @@ export function triggerEnemySwordLungeForCombatant({
   enemy.vel.y = Math.max(enemy.vel.y, lungeDir.y * lungeSpeed);
   enemy.isJumping = enemy.pos.y > 0.01 || enemy.vel.y > 0.01;
   enemy.weaponState = 'ready';
-  enemy.lastSwordAttackTime = Date.now();
+  enemy.lastSwordAttackTime = simulationTimestamp();
   playDash();
 }

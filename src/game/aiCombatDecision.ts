@@ -1,3 +1,4 @@
+import { simulationRandom } from './simulationRandom';
 import { applyPlayerModelCombatAdjustments, type PlayerModelSnapshot } from './aiPlayerModel';
 import {
   getEffectiveWeaponSwapIQ,
@@ -104,7 +105,7 @@ export function isMissedLungeMemory(memory?: AILungeMemory | null): boolean {
 }
 
 export function evaluateAICombatDecision(input: AICombatDecisionInput): AICombatDecision {
-  const random = input.random ?? Math.random;
+  const random = input.random ?? simulationRandom;
   const pSword = input.weaponPrioritization / 100;
   const swordForbidden = pSword <= 0;
   const hammerForbidden = pSword >= 1;

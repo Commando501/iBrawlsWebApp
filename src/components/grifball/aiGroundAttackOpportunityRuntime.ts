@@ -1,3 +1,4 @@
+import { simulationRandom } from '../../game/simulationRandom';
 import * as THREE from 'three';
 import {
   canAttemptLungeFakeout,
@@ -210,7 +211,7 @@ export function resolveAIGroundAttackOpportunityForCombatant({
       targetProtected,
       playstyleFactor,
     });
-    if (Math.random() < lungeChance) {
+    if (simulationRandom() < lungeChance) {
       const lungeFakeoutEligible = canAttemptLungeFakeout({
         activeWeapon: currentActiveWeapon,
         weaponReady: frame.weaponState === 'ready',

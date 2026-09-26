@@ -1,3 +1,4 @@
+import { simulationRandom } from './simulationRandom';
 import type { PlayerModelSnapshot } from './aiPlayerModel';
 import { DEFAULT_REACTION_TIME } from './aiPlayerModel';
 import { getRectHalfExtents, type ArenaHalfExtents } from './arenaDimensions';
@@ -146,7 +147,7 @@ export function pickPerpendicularDodgeDirection(input: PickDodgeDirectionInput):
     }
   }
 
-  const rng = input.rng ?? Math.random();
+  const rng = input.rng ?? simulationRandom();
   if (Math.abs(scoreA - scoreB) < 0.08) {
     return rng > 0.5 ? sideA : sideB;
   }
@@ -221,7 +222,7 @@ export function shouldAttemptBaitDodge(input: BaitDodgeInput): boolean {
   if (dist < minDist || dist > maxDist) {
     return false;
   }
-  const rng = input.rng ?? Math.random();
+  const rng = input.rng ?? simulationRandom();
   const chance = (input.spatialIQ / 100) * 0.14;
   return rng < chance;
 }

@@ -513,6 +513,8 @@ export interface GameStats {
   gameTime: number; // in seconds
   debugMode: boolean;
   debugDamageRadius: number; // constant viz size (4.5m / current attackRadius)
+  /** Local-only scripted Grifball assignments, populated only in debug mode. */
+  grifballTacticsDebug?: string[];
   weaponReady: boolean;
   weaponCooldown: number; // 0.0 to 1.0 (1.0 is full)
   lastStrikePos: [number, number, number] | null;

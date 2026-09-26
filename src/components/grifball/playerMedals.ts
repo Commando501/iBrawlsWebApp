@@ -1,3 +1,4 @@
+import { simulationTimestamp } from '../../game/simulationRandom';
 import { evaluateKillMedals } from '../../game/rewards';
 import { type Combatant, type MedalInfo } from '../../types';
 import { queueReplayHeatmapMedalEventsForState } from './replayHeatmapRuntime';
@@ -20,7 +21,7 @@ export const evaluatePlayerKillMedalsForState = ({
   playMedal,
   onPopupExpired,
 }: EvaluatePlayerKillMedalsOptions): MedalInfo[] => {
-  const now = Date.now();
+  const now = simulationTimestamp();
 
   let isLunging = false;
   let spawnTime = 0;

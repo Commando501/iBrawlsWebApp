@@ -1,3 +1,4 @@
+import { simulationTimestamp } from '../../game/simulationRandom';
 import * as THREE from 'three';
 import { MAIN_AI_ID } from '../../game/roster';
 import { type Combatant, type DeathEvent } from '../../types';
@@ -76,7 +77,7 @@ export function applyMainAISwordSlashImpactForState({
       const isPlayerSwordActiveAttack = state.settings.enableSwordTrade && state.activeWeapon === 'sword' && (
         state.isLunging ||
         state.pSwordState === 'slashing' ||
-        (Date.now() - state.lastPlayerSwordAttackTime <= swordThreshold)
+        (simulationTimestamp() - state.lastPlayerSwordAttackTime <= swordThreshold)
       );
 
       if (target.id === 'player' && isPlayerSwordActiveAttack) {

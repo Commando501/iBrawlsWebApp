@@ -1,3 +1,4 @@
+import { simulationTimestamp } from '../../game/simulationRandom';
 import * as THREE from 'three';
 import { MAIN_AI_ID } from '../../game/roster';
 import { type Combatant, type UniversalSettings } from '../../types';
@@ -84,9 +85,9 @@ export const triggerCombatantAttackAction = ({
   self.weaponState = melee ? 'melee_up' : 'swing_up';
   self.weaponTimer = 0;
   if (weapon === 'sword') {
-    self.lastSwordAttackTime = Date.now();
+    self.lastSwordAttackTime = simulationTimestamp();
   } else {
-    self.lastHammerAttackTime = Date.now();
+    self.lastHammerAttackTime = simulationTimestamp();
     recordHammerAttack(self.id);
   }
   playSwing();
@@ -115,7 +116,7 @@ export const triggerCombatantLungeAction = ({
   vel.y = Math.max(vel.y, lungeDir.y * lungeSpeed);
   self.isJumping = pos.y > 0.01 || vel.y > 0.01;
   self.weaponState = 'ready';
-  self.lastSwordAttackTime = Date.now();
+  self.lastSwordAttackTime = simulationTimestamp();
   playDash();
 };
 

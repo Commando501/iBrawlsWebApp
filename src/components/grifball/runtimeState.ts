@@ -1,3 +1,4 @@
+import type { GrifballTacticsConfig } from '../../game/grifballTacticsConfig';
 import * as THREE from 'three';
 import { createAIMatchContext, type AIMatchContext } from '../../game/aiMatchContext';
 import { createEmptyTeamScores, localPlayerTeamFromRole, type TeamId, type TeamScoresState } from '../../game/teamScoring';
@@ -6,6 +7,9 @@ import { type CharacterModelType, type Combatant, type DeathEvent, type MedalInf
 import { getInwardSpawnYaw } from './combatGeometry';
 
 export interface GrifballRuntimeState {
+  grifballTactics?: GrifballTacticsConfig;
+  /** Lab observers have no local combatant occupying the free camera. */
+  hideLocalObserverAvatar?: boolean;
   playerPos: THREE.Vector3;
   playerVel: THREE.Vector3;
   yaw: number;

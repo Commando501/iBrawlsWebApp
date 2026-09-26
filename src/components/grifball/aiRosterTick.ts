@@ -9,15 +9,15 @@ export function updateAIRosterTick({
   dt,
   respawnCombatant,
   updateSingleAIEntity,
+  beforeUpdate,
 }: {
   refs: GrifballThreeRefs;
   rosterAI: Combatant[];
   dt: number;
   respawnCombatant: (combatant: Combatant, mesh: THREE.Object3D) => void;
   updateSingleAIEntity: (combatantId: string, dt: number) => void;
+  beforeUpdate?: () => void;
 }): void {
-  if (rosterAI.length === 0) return;
-
   rosterAI.forEach((combatant) => {
     if (combatant.controller !== 'ai') return;
     const mesh = getCombatantMesh(refs, combatant.id);
@@ -30,6 +30,8 @@ export function updateAIRosterTick({
       respawnCombatant(combatant, mesh);
     }
   });
+
+  beforeUpdate?.();
 
   rosterAI.forEach((combatant) => {
     if (combatant.controller !== 'ai') return;

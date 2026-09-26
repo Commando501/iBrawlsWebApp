@@ -1,3 +1,4 @@
+import { simulationTimestamp } from '../../game/simulationRandom';
 import * as THREE from 'three';
 import { recordCalibrationDodgeFailed } from '../../game/aiSkillCalibration';
 import { resolveBehaviorTuning } from '../../game/aiBehaviorTuning';
@@ -111,12 +112,12 @@ export function updatePlayerSwordLungeForState({
         other.isLunging ||
         other.weaponState === 'swing_up' ||
         other.weaponState === 'swing_down' ||
-        (other.lastSwordAttackTime && (Date.now() - other.lastSwordAttackTime <= swordThreshold))
+        (other.lastSwordAttackTime && (simulationTimestamp() - other.lastSwordAttackTime <= swordThreshold))
       );
       const isOtherHammerActiveAttack = other && state.settings.enableHammerSwordTrade && other.activeWeapon === 'hammer' && (
         other.weaponState === 'swing_up' ||
         other.weaponState === 'swing_down' ||
-        (other.lastHammerAttackTime && (Date.now() - other.lastHammerAttackTime <= hammerThreshold))
+        (other.lastHammerAttackTime && (simulationTimestamp() - other.lastHammerAttackTime <= hammerThreshold))
       );
 
       if (isOtherSwordActiveAttack || isOtherHammerActiveAttack) {
@@ -187,12 +188,12 @@ export function updatePlayerSwordLungeForState({
           mainAi.aiState === 'LUNGING' ||
           mainAi.weaponState === 'swing_up' ||
           mainAi.weaponState === 'swing_down' ||
-          (Date.now() - mainAi.lastSwordAttackTime <= swordThreshold)
+          (simulationTimestamp() - mainAi.lastSwordAttackTime <= swordThreshold)
         );
         const isAIHammerActiveAttack = state.settings.enableHammerSwordTrade && mainAi.activeWeapon === 'hammer' && (
           mainAi.weaponState === 'swing_up' ||
           mainAi.weaponState === 'swing_down' ||
-          (Date.now() - mainAi.lastHammerAttackTime <= hammerThreshold)
+          (simulationTimestamp() - mainAi.lastHammerAttackTime <= hammerThreshold)
         );
 
         if (isAISwordActiveAttack) {

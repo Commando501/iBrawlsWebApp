@@ -1,3 +1,4 @@
+import { simulationTimestamp } from '../../game/simulationRandom';
 import * as THREE from 'three';
 import { MAIN_AI_ID } from '../../game/roster';
 import { type Combatant, type DeathEvent, type MedalInfo } from '../../types';
@@ -39,14 +40,14 @@ export function resolveSwordLungeTradeReasonForState({
     if (state.settings.enableSwordTrade && state.activeWeapon === 'sword' && (
       state.isLunging ||
       state.pSwordState === 'slashing' ||
-      (Date.now() - state.lastPlayerSwordAttackTime <= swordThreshold)
+      (simulationTimestamp() - state.lastPlayerSwordAttackTime <= swordThreshold)
     )) {
       return 'sword_vs_sword';
     }
     if (state.settings.enableHammerSwordTrade && state.activeWeapon === 'hammer' && (
       state.pWeaponState === 'swing_up' ||
       state.pWeaponState === 'swing_down' ||
-      (Date.now() - state.lastPlayerHammerAttackTime <= hammerThreshold)
+      (simulationTimestamp() - state.lastPlayerHammerAttackTime <= hammerThreshold)
     )) {
       return 'sword_lunge_vs_hammer';
     }
@@ -59,14 +60,14 @@ export function resolveSwordLungeTradeReasonForState({
       mainAi.aiState === 'LUNGING' ||
       mainAi.weaponState === 'swing_up' ||
       mainAi.weaponState === 'swing_down' ||
-      (Date.now() - mainAi.lastSwordAttackTime <= swordThreshold)
+      (simulationTimestamp() - mainAi.lastSwordAttackTime <= swordThreshold)
     )) {
       return 'sword_vs_sword';
     }
     if (state.settings.enableHammerSwordTrade && mainAi.activeWeapon === 'hammer' && (
       mainAi.weaponState === 'swing_up' ||
       mainAi.weaponState === 'swing_down' ||
-      (Date.now() - mainAi.lastHammerAttackTime <= hammerThreshold)
+      (simulationTimestamp() - mainAi.lastHammerAttackTime <= hammerThreshold)
     )) {
       return 'sword_lunge_vs_hammer';
     }

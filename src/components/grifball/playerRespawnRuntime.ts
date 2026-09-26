@@ -1,3 +1,4 @@
+import { simulationTimestamp } from '../../game/simulationRandom';
 import * as THREE from 'three';
 import { type Combatant, type CustomMapData } from '../../types';
 import { getGrifballTeamSpawn, getMultiplayerSpawnPoint, resolveActiveSpawnPoints } from './arenaSpawns';
@@ -71,7 +72,7 @@ export function updatePlayerRespawnForState({
   state.playerVel.set(0, 0, 0);
   state.pitch = 0;
   state.playerInvulnerabilityTimer = state.settings.respawnInvulnerabilityDuration;
-  state.playerSpawnTime = Date.now();
+  state.playerSpawnTime = simulationTimestamp();
   state.swapLockoutTimer = 0;
   state.swapCooldownTimer = 0;
   playRespawn();

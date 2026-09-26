@@ -1,3 +1,4 @@
+import { simulationTimestamp } from '../../game/simulationRandom';
 import * as THREE from 'three';
 import { MAIN_AI_ID } from '../../game/roster';
 import { type Combatant, type DeathEvent, type MedalInfo } from '../../types';
@@ -72,7 +73,7 @@ export function applyPlayerSwordSlashImpactForState({
           mainAI.aiState === 'LUNGING' ||
           mainAI.weaponState === 'swing_up' ||
           mainAI.weaponState === 'swing_down' ||
-          (Date.now() - mainAI.lastSwordAttackTime <= swordThreshold)
+          (simulationTimestamp() - mainAI.lastSwordAttackTime <= swordThreshold)
         );
         if (isAISwordActiveAttack) {
           executeTrade('sword_vs_sword');

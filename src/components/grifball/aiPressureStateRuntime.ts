@@ -1,3 +1,4 @@
+import { simulationRandom } from '../../game/simulationRandom';
 import * as THREE from 'three';
 import { type AICombatWeapon } from '../../game/aiCombatDecision';
 import {
@@ -159,7 +160,7 @@ export function resolveAIPressureStateForCombatant({
   if (
     (frame.dashCooldownTimer as number) <= 0 &&
     attackDistanceToTarget > resolvedAiReach + 0.8 &&
-    Math.random() < 0.06 * playstyleFactor
+    simulationRandom() < 0.06 * playstyleFactor
   ) {
     frame.dashDir.copy(lookHeading).normalize();
     frame.dashRemaining = state.settings.dashDuration || 0.25;

@@ -1,3 +1,4 @@
+import { simulationRandom } from '../../game/simulationRandom';
 import { type Combatant, type WeaponState } from '../../types';
 import { resolveScaledAIWeaponReloadTime } from './aiWeaponTimingRuntime';
 import { MELEE_HAMMER_SWIPE_REACH } from './combatGeometry';
@@ -31,7 +32,7 @@ export function resolveAIComboMeleeStrikeForCombatant({
   const isHammerMelee =
     activeWeapon === 'hammer' &&
     attackDistanceToTarget <= adjustRangeForTargetModel(MELEE_HAMMER_SWIPE_REACH, targetModelType) &&
-    Math.random() < 0.4;
+    simulationRandom() < 0.4;
 
   const timer = resolveScaledAIWeaponReloadTime(
     state.settings,

@@ -1,3 +1,4 @@
+import { simulationRandom } from '../../game/simulationRandom';
 import * as THREE from 'three';
 import { type AICombatWeapon } from '../../game/aiCombatDecision';
 import {
@@ -231,7 +232,7 @@ export function resolveAILungeEvasionForCombatant({
     if (
       !startedBulltrueCounter &&
       frame.dashCooldownTimer <= 0 &&
-      Math.random() < getEvasionDashRollChance(evasionRollInput)
+      simulationRandom() < getEvasionDashRollChance(evasionRollInput)
     ) {
       if (startSpatialDodge(incomingLunge.x, incomingLunge.z)) {
         isEvadingLunge = true;
@@ -241,7 +242,7 @@ export function resolveAILungeEvasionForCombatant({
       canStartWeaponAction &&
       activeWeapon === 'hammer' &&
       frame.weaponState === 'ready' &&
-      Math.random() < getHammerJumpEvasionChance(evasionRollInput)
+      simulationRandom() < getHammerJumpEvasionChance(evasionRollInput)
     ) {
       if (startAIHammerJump(self, frame.pos, frame.vel, undefined, 'defensive')) {
         frame.weaponState = 'swing_up';

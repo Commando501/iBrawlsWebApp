@@ -1,3 +1,4 @@
+import { simulationRandom } from './simulationRandom';
 import type { AICombatWeapon } from './aiCombatDecision';
 
 export type AIComboId = 'mixup' | 'safe_finish' | 'bait_smash' | 'double_tap';
@@ -191,7 +192,7 @@ export function pickComboOnHit(input: ComboPickInput): AIComboId | null {
     return null;
   }
 
-  const random = input.random ?? Math.random;
+  const random = input.random ?? simulationRandom;
   const candidates: AIComboId[] = [];
 
   if (input.openingWeapon === 'hammer') {
@@ -275,7 +276,7 @@ export function pickOpeningCombo(input: Omit<ComboPickInput, 'openingWeapon'>): 
     return null;
   }
 
-  const random = input.random ?? Math.random;
+  const random = input.random ?? simulationRandom;
   if (random() > 0.22 + (input.weaponSwapIQ - comboAdvancedIq) / 200) {
     return null;
   }

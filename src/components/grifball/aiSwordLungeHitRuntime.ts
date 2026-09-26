@@ -1,3 +1,4 @@
+import { simulationRandom } from '../../game/simulationRandom';
 import * as THREE from 'three';
 import { type DeathEvent, type Combatant } from '../../types';
 import { MAIN_AI_ID } from '../../game/roster';
@@ -68,7 +69,7 @@ export function applyAISwordLungeHitForState({
       playDeath();
 
       const newDeath: DeathEvent = {
-        id: Math.random().toString(36).substring(2, 9),
+        id: simulationRandom().toString(36).substring(2, 9),
         attacker: attackerBot.playerName,
         victim: state.settings.playerName || 'Blue (You)',
         weapon: 'sword',

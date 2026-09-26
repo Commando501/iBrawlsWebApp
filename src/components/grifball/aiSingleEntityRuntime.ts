@@ -1,3 +1,4 @@
+import { simulationRandom, simulationSeconds } from '../../game/simulationRandom';
 import * as THREE from 'three';
 import { type AILungeOutcome } from '../../game/aiCombatDecision';
 import {
@@ -37,6 +38,7 @@ import {
 } from '../../game/aiSkillCalibration';
 import { shouldAvoidCoinFlipTrade } from '../../game/aiTuning';
 import { isNeuralNetDifficulty } from '../../game/neuralBrains';
+import { selectGrifballAssignmentThreat } from '../../game/aiGrifballTeamPlan';
 import { type LoadedNeuralBrain } from '../../game/neuralBrainLoader';
 import { MAIN_AI_ID } from '../../game/roster';
 import { type Combatant } from '../../types';
@@ -513,6 +515,27 @@ export function createAISingleEntityUpdaterForState({
         return;
       }
   
+      if (s.settings.gameMode === 'grifball' && s.grifball.phase !== 'playing') {
+        self.pickupRequested = false;
+        vel.set(0, 0, 0);
+        syncStateAndMesh();
+        return;
+      }
+
+      // Tick mobility/swap cooldowns even when team positioning returns before combat.
+      const advanceCombatCooldowns = () => {
+        const cooldownFrame = createAIEngagementFrameFromLocals({
+          pos, vel, aiState: state, timer, dashCooldownTimer, slideCooldownTimer, hammerJumpCooldownTimer,
+        });
+        tickAIEngagementCooldowns({ frame: cooldownFrame, self, botId, mainAIId: MAIN_AI_ID, dt });
+        ({ aiState: state, timer, dashCooldownTimer, slideCooldownTimer, hammerJumpCooldownTimer } =
+          applyAIEngagementFrameToLocals(cooldownFrame));
+      };
+      if (s.settings.gameMode === 'grifball') {
+        advanceCombatCooldowns();
+        canStartWeaponAction = canStartAIWeaponAction({ aiState: state, timer, swapCooldownTimer: self.swapCooldownTimer });
+      }
+
       const {
         difficulty,
         movementComplexity,
@@ -544,7 +567,7 @@ export function createAISingleEntityUpdaterForState({
         getMatchScoreContext,
       });
   
-      if (postKillPressure) {
+      if (postKillPressure && s.settings.gameMode !== 'grifball') {
         const postKillPressureFrame = createAIPostKillPressureFrameFromLocals({
           pos,
           vel,
@@ -622,9 +645,17 @@ export function createAISingleEntityUpdaterForState({
       }
   
   
-      let target = getBestTacticalTarget(botId, pos, difficulty);
+      const teamAssignment = s.aiMatchContext.grifballTeamPlan.assignments.get(botId);
+      const assignmentThreat = teamAssignment
+        ? selectGrifballAssignmentThreat(teamAssignment, pos, s.aiMatchContext.grifballTeamPlan.snapshot?.players ?? [])
+        : null;
+      self.pickupRequested = false;
+      const finishingMovement = self.isLunging || dashRemaining > 0 || slideActive;
+      let target = teamAssignment && !finishingMovement
+        ? (assignmentThreat ? getTacticalTargetById(botId, assignmentThreat) : null)
+        : getBestTacticalTarget(botId, pos, difficulty);
       const pressureTargetId = self.aiPressureTargetId;
-      if (state === 'PRESSURING' && pressureTargetId) {
+      if (state === 'PRESSURING' && pressureTargetId && !teamAssignment) {
         const lockedTarget = getTacticalTargetById(botId, pressureTargetId);
         if (lockedTarget) {
           target = lockedTarget;
@@ -840,29 +871,11 @@ export function createAISingleEntityUpdaterForState({
         botVel: vel,
         targetId: target.id,
         distanceToTarget,
-        nowSeconds: performance.now() / 1000,
+        nowSeconds: simulationSeconds(),
         mapShape: activeCustomMap?.mapShape,
       });
   
-      const cooldownFrame = createAIEngagementFrameFromLocals({
-        pos,
-        vel,
-        aiState: state,
-        timer,
-        dashCooldownTimer,
-        slideCooldownTimer,
-        hammerJumpCooldownTimer,
-      });
-      tickAIEngagementCooldowns({
-        frame: cooldownFrame,
-        self,
-        botId,
-        mainAIId: MAIN_AI_ID,
-        dt,
-      });
-      ({ aiState: state, timer, dashCooldownTimer, slideCooldownTimer, hammerJumpCooldownTimer } =
-        applyAIEngagementFrameToLocals(cooldownFrame));
-  
+      if (s.settings.gameMode !== 'grifball') advanceCombatCooldowns();
       const aiContext = s.aiMatchContext;
       tickFeintCooldown(aiContext, botId, dt);
   
@@ -1307,7 +1320,7 @@ export function createAISingleEntityUpdaterForState({
         const coordLateral = getPincerApproachOffset(coordRoleInput);
         const totalApproachLateral = approachLateral + coordLateral;
   
-        if (weaponState === 'ready' && distanceToTarget > (resolvedDangerZone + 1.5) && distanceToTarget <= (resolvedDangerZone + 5.5) && Math.random() < 0.015 && (movementComplexity >= 40) && !targetIsProtected) {
+        if (weaponState === 'ready' && distanceToTarget > (resolvedDangerZone + 1.5) && distanceToTarget <= (resolvedDangerZone + 5.5) && simulationRandom() < 0.015 && (movementComplexity >= 40) && !targetIsProtected) {
           if (startAIHammerJump(self, pos, vel, lookHeading, 'offensive')) {
             weaponState = 'swing_up';
           }
@@ -1363,7 +1376,7 @@ export function createAISingleEntityUpdaterForState({
   
           if (!slideActive && distanceToTarget <= (resolvedDangerZone + 3.2)) {
             state = 'SIDE_STEPPING';
-            timer = Math.random() * 0.7 + 0.3;
+            timer = simulationRandom() * 0.7 + 0.3;
           }
         }
         else if (state === 'SIDE_STEPPING') {
@@ -1391,8 +1404,8 @@ export function createAISingleEntityUpdaterForState({
           }
           pos.addScaledVector(vel, dt);
   
-          if (dashCooldownTimer <= 0 && distanceToTarget < (resolvedDangerZone + 2.0) && Math.random() < 0.015 && (movementComplexity >= 40)) {
-            const sideDir = Math.random() > 0.5 ? 1 : -1;
+          if (dashCooldownTimer <= 0 && distanceToTarget < (resolvedDangerZone + 2.0) && simulationRandom() < 0.015 && (movementComplexity >= 40)) {
+            const sideDir = simulationRandom() > 0.5 ? 1 : -1;
             dashDir.copy(sidewayHeading).multiplyScalar(sideDir).normalize();
             dashRemaining = s.settings.dashDuration || 0.25;
             dashCooldownTimer = s.settings.dashCooldown || 2.0;
@@ -1412,7 +1425,7 @@ export function createAISingleEntityUpdaterForState({
               multipliers: matchMultipliers,
             });
   
-            if (shouldAvoidTrade || Math.random() < reactChance) {
+            if (shouldAvoidTrade || simulationRandom() < reactChance) {
               state = 'DANCING_BACKWARD';
               timer = effectiveReactionLatency + 0.35;
   
@@ -1435,7 +1448,7 @@ export function createAISingleEntityUpdaterForState({
               psychState.standoffTimer,
               playstyleFactor,
               matchMultipliers,
-              Math.random()
+              simulationRandom()
             );
             if (forceStandoffCommit && weaponState === 'ready' && target.hp > 0 && !targetIsProtected) {
               state = 'CHARGE_ATTACK';
@@ -1444,7 +1457,7 @@ export function createAISingleEntityUpdaterForState({
               state = 'CHARGE_ATTACK';
             } else {
               state = 'DANCING_FORWARD';
-              timer = Math.random() * 0.5 + 0.25;
+              timer = simulationRandom() * 0.5 + 0.25;
             }
           }
         } 
@@ -1471,7 +1484,7 @@ export function createAISingleEntityUpdaterForState({
           if (target.weaponState === 'swing_up' && !targetIsProtected) {
             state = 'DANCING_BACKWARD';
             timer = 0.65;
-            if (dashCooldownTimer <= 0 && Math.random() < 0.7) {
+            if (dashCooldownTimer <= 0 && simulationRandom() < 0.7) {
               dashDir.copy(lookHeading).multiplyScalar(-1).normalize();
               dashRemaining = s.settings.dashDuration || 0.25;
               dashCooldownTimer = s.settings.dashCooldown || 2.0;
@@ -1488,7 +1501,7 @@ export function createAISingleEntityUpdaterForState({
   
           if (timer <= 0) {
             state = 'SIDE_STEPPING';
-            timer = Math.random() * 0.7 + 0.3;
+            timer = simulationRandom() * 0.7 + 0.3;
           }
           }
         } 
@@ -1515,7 +1528,7 @@ export function createAISingleEntityUpdaterForState({
             }) &&
             tryFeintRoll(0.7)
           ) {
-            const sideDir = Math.random() > 0.5 ? 1 : -1;
+            const sideDir = simulationRandom() > 0.5 ? 1 : -1;
             dashDir.copy(sidewayHeading).multiplyScalar(sideDir).normalize();
             dashRemaining = s.settings.dashDuration || 0.25;
             dashCooldownTimer = s.settings.dashCooldown || 2.0;

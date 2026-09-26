@@ -1,3 +1,4 @@
+import { simulationTimestamp } from '../../game/simulationRandom';
 import * as THREE from 'three';
 import { clearBotComboState, type AIMatchContext } from '../../game/aiMatchContext';
 import { MAIN_AI_ID } from '../../game/roster';
@@ -44,7 +45,7 @@ export const respawnAICombatant = ({
   c.weaponTimer = 0;
   c.aiHammerJumpCooldownTimer = 0;
   c.invulnerabilityTimer = settings.respawnInvulnerabilityDuration;
-  c.spawnTime = Date.now();
+  c.spawnTime = simulationTimestamp();
 
   c.isLunging = false;
   c.aiState = 'APPROACHING';

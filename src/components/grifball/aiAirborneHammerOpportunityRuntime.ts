@@ -1,3 +1,4 @@
+import { simulationRandom } from '../../game/simulationRandom';
 import * as THREE from 'three';
 import { type AIBehaviorState, type Combatant, type WeaponState } from '../../types';
 import { type CombatantWeapon } from './combatantActions';
@@ -98,7 +99,7 @@ export function resolveAIAirborneHammerOpportunityForCombatant({
 
   if (
     (fallingIntoHammer || canReachBody) &&
-    Math.random() < tuning.hammerJumpReachBase + tunedAnticipationFactor * tuning.hammerJumpReachAnticipation
+    simulationRandom() < tuning.hammerJumpReachBase + tunedAnticipationFactor * tuning.hammerJumpReachAnticipation
   ) {
     frame.aiState = 'COOLDOWN';
     frame.timer = resolveScaledAIWeaponReloadTime(state.settings, 'hammer', cooldownMultiplier);
@@ -107,7 +108,7 @@ export function resolveAIAirborneHammerOpportunityForCombatant({
     !enemyInKillRange &&
     verticalDeltaToTarget > 2.0 &&
     distanceToTarget <= resolvedDangerZone + 4.5 &&
-    Math.random() < tuning.hammerJumpVerticalBase + tunedAnticipationFactor * tuning.hammerJumpVerticalAnticipation
+    simulationRandom() < tuning.hammerJumpVerticalBase + tunedAnticipationFactor * tuning.hammerJumpVerticalAnticipation
   ) {
     if (startAIHammerJump(self, frame.pos, frame.vel, toTarget, 'offensive')) {
       frame.weaponState = 'swing_up';

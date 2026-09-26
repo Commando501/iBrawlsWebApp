@@ -1,4 +1,5 @@
 import type { BotComboState } from './aiComboEngine';
+import { createGrifballTeamPlanState, resetGrifballTeamPlan, type GrifballTeamPlanState } from './aiGrifballTeamPlan';
 import type { BotCoordinatorState } from './aiBotCoordinator';
 import { createBotCoordinator, resetBotCoordinator } from './aiBotCoordinator';
 import type { BotPsychState } from './aiPsychologicalPressure';
@@ -7,6 +8,7 @@ import type { PlayerModel } from './aiPlayerModel';
 import type { BotCalibrationState } from './aiSkillCalibration';
 
 export interface AIMatchContext {
+  grifballTeamPlan: GrifballTeamPlanState;
   /** Per-player adaptive models keyed by combatant id (e.g. `player`). */
   playerModels: Map<string, PlayerModel>;
   /** Per-bot feint cooldown timers in seconds. */
@@ -25,6 +27,7 @@ export interface AIMatchContext {
 
 export function createAIMatchContext(): AIMatchContext {
   return {
+    grifballTeamPlan: createGrifballTeamPlanState(),
     playerModels: new Map(),
     feintCooldowns: new Map(),
     weaponSwapFeintTimers: new Map(),
@@ -36,6 +39,7 @@ export function createAIMatchContext(): AIMatchContext {
 }
 
 export function resetAIMatchContext(context: AIMatchContext): void {
+  resetGrifballTeamPlan(context.grifballTeamPlan);
   context.playerModels.clear();
   context.feintCooldowns.clear();
   context.weaponSwapFeintTimers.clear();
