@@ -349,7 +349,7 @@ export function tickScriptedGrifballPassForState(state: GrifballRuntimeState, re
         live.swapLockoutTimer ?? 0, live.pos.y, live.vel.y, GRAVITY_ACCELERATION, MELEE_SWORD_SLASH_REACH) }] : [];
   }) };
   const currentCarrier = snapshot.players.find(p => p.id === bot.id)!;
-  const fresh = planGrifballPass(snapshot, currentCarrier, tuning, createSnapshotRouters(snapshot));
+  const fresh = planGrifballPass(snapshot, currentCarrier, assignment?.tuning ?? tuning, createSnapshotRouters(snapshot));
   const pass = fresh.candidates.find(c => c.receiverId === receiver.id && c.speed === selected.speed && c.viable);
   if (!pass) { assignment!.pass = fresh; return cancel(); }
   bot.yaw = getYawForHeading(pass.direction.x, pass.direction.z);

@@ -110,3 +110,37 @@ test('defense and pass scenarios restart with identical plans and cleared charge
     runtime.dispose(); grifballLab.close();
   }
 });
+
+
+test('style scenarios use the requested seed, expose preferences and restart clears learned evidence', () => {
+  for (const scenario of ['stylematch', 'adaptation'] as const) {
+    const { state, runtime, tick } = setup();
+    grifballLab.command({ type: 'scenario', scenario, seed: 87 }); runtime.frame(state, 0.1, tick);
+    assert.equal(state.aiMatchContext.grifballTeamPlan.styleSeed, 87);
+    grifballLab.setRunning(true);
+    for (let i = 0; i < 60; i++) runtime.frame(state, 0.1, tick);
+    grifballLab.setRunning(false);
+    const diagnostics = grifballLab.getSnapshot().diagnostics!;
+    assert.equal(diagnostics.stylePlans.length, 2);
+    assert.ok(diagnostics.stylePlans.some(p => p.observations >= 8));
+    assert.ok(diagnostics.metrics.adaptedSeconds > 0);
+    grifballLab.command({ type: 'restart' }); runtime.frame(state, 0.1, tick);
+    assert.equal(state.aiMatchContext.grifballTeamPlan.styleSeed, 87);
+    assert.deepEqual(state.aiMatchContext.grifballTeamPlan.styleMemory, {});
+    assert.equal(grifballLab.getSnapshot().diagnostics!.metrics.adaptedSeconds, 0);
+    runtime.dispose(); grifballLab.close();
+  }
+});
+
+test('identical style A/B runs reproduce adaptation metrics and preserve the captured mechanics', () => {
+  const { state, runtime, tick } = setup(), config = defaultGrifballTactics();
+  config.teams.blue = { styleAggression: 0.85, styleVariation: 1 }; const settings = cloneLabState(state.settings);
+  grifballLab.command({ type: 'compare', seconds: 6, seed: 43, scenario: 'adaptation', baseline: config, candidate: config });
+  for (let i = 0; i < 125; i++) runtime.frame(state, 0.1, tick);
+  const results = grifballLab.getSnapshot().results;
+  assert.equal(results.length, 2); assert.deepEqual(results[0].metrics, results[1].metrics);
+  assert.ok(results[0].metrics.adaptedSeconds > 0);
+  assert.deepEqual(state.settings, settings);
+  assert.deepEqual(results[0].setup, results[1].setup);
+  runtime.dispose(); grifballLab.close();
+});

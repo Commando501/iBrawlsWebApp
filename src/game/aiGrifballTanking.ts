@@ -1,3 +1,4 @@
+import { chooseTacticalAlternative, type TacticalChoice } from './aiGrifballStyle';
 import type { FieldPoint, GrifballAssignment, GrifballTacticalPlayer, GrifballTacticalSnapshot } from './aiGrifballTeamPlan';
 import type { RunnerPlan, SpaceRouters } from './aiGrifballRunner';
 import type { TeamTactics } from './grifballTacticsConfig';
@@ -40,7 +41,7 @@ const segmentDistance = (p: FieldPoint, a: FieldPoint, b: FieldPoint) => {
 
 /** One shared engagement owner per team; combat mechanics still decide and execute attacks. */
 export function applyGrifballTanking(snapshot: GrifballTacticalSnapshot, assignments: GrifballAssignment[], runner: RunnerPlan | undefined,
-  tuning: TeamTactics, memory: TankingMemory, routers: SpaceRouters, previous: Map<string, GrifballAssignment>): void {
+  tuning: TeamTactics, memory: TankingMemory, routers: SpaceRouters, previous: Map<string, GrifballAssignment>, choice?: TacticalChoice): void {
   if (!assignments.length) return;
   const team = assignments[0].team, ownGoal = snapshot.goals[team]!;
   const teammates = snapshot.players.filter(p => p.team === team);
@@ -122,7 +123,7 @@ export function applyGrifballTanking(snapshot: GrifballTacticalSnapshot, assignm
     const options = support.filter(a => a.botId !== recoveryId && (emergency || !memory.releaseRemaining[a.botId]))
       .flatMap(a => scores.get(a.botId)!.filter(s => s.score >= tuning.tankMinimumScore).map(score => ({ a, bot: actor(a), score })));
     options.sort((a, b) => b.score.score - a.score.score || a.a.botId.localeCompare(b.a.botId) || a.score.targetId.localeCompare(b.score.targetId));
-    let primary = options[0];
+    let primary = emergency ? options[0] : chooseTacticalAlternative(options, o => o.score.score, o => `${o.a.botId}:${o.score.targetId}`, choice);
     const incumbent = options.find(o => o.a.botId === memory.primaryId && o.score.targetId === memory.targetId);
     if (incumbent && primary && memory.commitment > 0 && !recovering(incumbent.bot) &&
       primary.score.score < incumbent.score.score + 1.5) primary = incumbent;
@@ -135,7 +136,7 @@ export function applyGrifballTanking(snapshot: GrifballTacticalSnapshot, assignm
       memory.targetId = target.id; memory.primaryId = primary.a.botId;
       if (oldTarget !== target.id || oldPrimary !== primary.a.botId) memory.commitment = tuning.tankCommitSeconds;
       primary.a.tanking = { ...primary.a.tanking!, mode: 'engage', targetId: target.id, attack: true,
-        reason: emergency ? 'Contest the carrier before the goal' : oldPrimary && oldPrimary !== primary.a.botId && oldTarget === target.id ? 'Rotate a ready tank into the engagement' : 'Commit to a useful engagement' };
+        reason: emergency ? 'Contest the carrier before the goal' : oldPrimary && oldPrimary !== primary.a.botId && oldTarget === target.id ? 'Rotate a ready tank into the engagement' : `Commit to a useful engagement${primary !== options[0] && primary !== incumbent ? ' (seeded near-equal alternative)' : ''}` };
       place(primary.a, toward(target.pos, primary.bot.pos, Math.max(1, Math.min(3, (primary.bot.space?.reach ?? 2.5) * 0.7))));
       const second = options.filter(o => o.a.botId !== primary.a.botId && o.score.targetId === target.id)
         .sort((a, b) => a.score.attackETA - b.score.attackETA || a.a.botId.localeCompare(b.a.botId))[0];

@@ -1,3 +1,4 @@
+import { tacticalDifficulty } from '../../game/aiGrifballStyle';
 import { getGrifballTeamSpawn, createDefaultSpawnPoints } from './arenaSpawns';
 import { resolveRunnerThrowAllowed } from '../../game/runnerBallSettings';
 import { setTacticalBotEngagements, type BotCoordRole } from '../../game/aiBotCoordinator';
@@ -35,7 +36,7 @@ export function updateGrifballTeamPlanForState(
     players.push({
       id: bot.id, team: bot.team, heading: { x: -Math.sin(bot.yaw), z: -Math.cos(bot.yaw) }, pos: point(bot.pos), vel: point(bot.vel),
       scripted: bot.controller === 'ai' && !isNeuralNetDifficulty(bot.difficulty) && !isNeuralNetDifficulty(state.settings.aiDifficulty),
-      height: bot.pos.y, pickupRequested: bot.pickupRequested,
+      difficulty: bot.difficulty ?? state.settings.aiDifficulty, height: bot.pos.y, pickupRequested: bot.pickupRequested,
       space: observeGrifballSpace(state.settings, bot.activeWeapon, bot.weaponState, bot.weaponTimer ?? 0,
         bot.swapLockoutTimer ?? 0, bot.pos.y, bot.vel.y, GRAVITY_ACCELERATION, MELEE_SWORD_SLASH_REACH),
     });
@@ -51,8 +52,14 @@ export function updateGrifballTeamPlanForState(
   }));
   if (!state.isObserverMode && state.playerRespawnTimer > 0) respawns.push({ id: 'player', team: state.localPlayerTeam,
     pos: point(spawnFor(state.localPlayerTeam, 'player')), seconds: state.playerRespawnTimer, speed: 5.2 * state.settings.speedForward / 100 });
+  const roster = [...state.otherPlayers.values()].filter(p => !p.isObserver).sort((a, b) => a.id.localeCompare(b.id));
+  const teamDifficulty = Object.fromEntries(['blue', 'red'].map(team => {
+    const bots = roster.filter(p => p.team === team && p.controller === 'ai' && !isNeuralNetDifficulty(p.difficulty) && !isNeuralNetDifficulty(state.settings.aiDifficulty));
+    return [team, bots.length ? bots.reduce((sum, p) => sum + tacticalDifficulty(p.difficulty ?? state.settings.aiDifficulty), 0) / bots.length : 1];
+  }));
   const ball = state.grifball.ball;
   updateGrifballTeamPlan(plan, {
+    rosterKey: JSON.stringify(roster.map(p => [p.id, p.team, p.controller, p.difficulty])), teamDifficulty,
     round: state.grifball.roundNumber, playing: state.grifball.phase === 'playing',
     ball: point(ball.pos), ballPhysics: { ...ball, pos: { ...ball.pos }, vel: { ...ball.vel }, home: { ...ball.home } }, respawns,
     passing: { allowed: resolveRunnerThrowAllowed(state.settings), minSpeed: state.settings.grifballPassSpeedMin ?? 9,

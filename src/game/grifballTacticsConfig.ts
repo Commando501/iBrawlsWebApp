@@ -1,5 +1,15 @@
 /** Tactical tuning is deliberately separate from mechanics and combat personalities. */
 export const TACTICS_FIELDS = {
+  styleAggression: { label: 'Aggression', min: 0, max: 1, step: 0.05, value: 0.5, unit: '', module: 'styles', description: 'Initiate useful engagements sooner at high values; keep more coverage at low values.' },
+  stylePatience: { label: 'Patience', min: 0, max: 1, step: 0.05, value: 0.5, unit: '', module: 'styles', description: 'Allow longer coverage rendezvous and tank commitments. Progress timeouts still apply.' },
+  styleWidth: { label: 'Formation width', min: 0, max: 1, step: 0.05, value: 0.5, unit: '', module: 'styles', description: 'Widen support lanes and runner cuts. The center value preserves module tuning.' },
+  styleSupportDistance: { label: 'Support distance', min: 0, max: 1, step: 0.05, value: 0.5, unit: '', module: 'styles', description: 'Low values keep escorts close; high values spread support farther along the route.' },
+  styleRunnerRisk: { label: 'Runner risk', min: 0, max: 1, step: 0.05, value: 0.5, unit: '', module: 'styles', description: 'Higher values tolerate more estimated route risk and smaller pass margins. Pass viability is still required.' },
+  styleVariation: { label: 'Bounded variation', min: 0, max: 1, step: 0.05, value: 0.25, unit: '', module: 'styles', description: 'Seeded preference among similarly useful routes and engagements, held throughout each possession.' },
+  adaptationStrength: { label: 'Adaptation strength', min: 0, max: 1, step: 0.05, value: 0.5, unit: '', module: 'styles', description: 'Maximum response to observed opponent approach and lane width; does not alter mechanics.' },
+  adaptationConfidence: { label: 'Required confidence', min: 0.5, max: 1, step: 0.05, value: 0.7, unit: '', module: 'styles', description: 'Require consistent recent observations before adjusting preferences. Confidence is a heuristic, not a probability.' },
+  adaptationMinSamples: { label: 'Minimum observations', min: 4, max: 24, step: 1, value: 8, unit: '', module: 'styles', description: 'Moving opponents are sampled at most twice per second. More observations delay adaptation.' },
+
   defensePressure: { label: 'Pressure preference', min: 0, max: 1, step: 0.1, value: 0.6, unit: '', module: 'defense', description: 'Higher values contest earlier; lower values contain until support arrives.' },
   defenseLookahead: { label: 'Interception lookahead', min: 0.25, max: 3, step: 0.25, value: 1.5, unit: 's', module: 'defense', description: 'Predict visible carrier movement over this horizon; replan on each tactical update.' },
   defenseSafetyDepth: { label: 'Last-defender depth', min: 2, max: 15, step: 0.5, value: 7, unit: 'm', module: 'defense', description: 'Keep the last defender this far goal-side of the projected carrier, capped before the goal.' },
@@ -58,24 +68,24 @@ export const TACTICS_FIELDS = {
 } as const;
 export type TacticalNumber = keyof typeof TACTICS_FIELDS;
 export type TeamTactics = Record<TacticalNumber, number> & {
-  enabled: boolean; spacingEnabled: boolean; spaceEnabled: boolean; runnerEnabled: boolean; tankingEnabled: boolean; defenseEnabled: boolean; passingEnabled: boolean; preserveSlots: boolean; safetyFirst: boolean;
+  stylesEnabled: boolean; adaptationEnabled: boolean; enabled: boolean; spacingEnabled: boolean; spaceEnabled: boolean; runnerEnabled: boolean; tankingEnabled: boolean; defenseEnabled: boolean; passingEnabled: boolean; preserveSlots: boolean; safetyFirst: boolean;
 };
 export interface GrifballTacticsConfig {
-  schemaVersion: 5;
+  schemaVersion: 6;
   defaults: TeamTactics;
   teams: { blue?: Partial<TeamTactics>; red?: Partial<TeamTactics> };
 }
 export function defaultGrifballTactics(): GrifballTacticsConfig {
-  return { schemaVersion: 5, defaults: {
+  return { schemaVersion: 6, defaults: {
     ...Object.fromEntries(Object.entries(TACTICS_FIELDS).map(([key, field]) => [key, field.value])) as Record<TacticalNumber, number>,
-    enabled: true, spacingEnabled: true, spaceEnabled: true, runnerEnabled: true, tankingEnabled: true, defenseEnabled: true, passingEnabled: true, preserveSlots: true, safetyFirst: false,
+    stylesEnabled: true, adaptationEnabled: true, enabled: true, spacingEnabled: true, spaceEnabled: true, runnerEnabled: true, tankingEnabled: true, defenseEnabled: true, passingEnabled: true, preserveSlots: true, safetyFirst: false,
   }, teams: {} };
 }
-const booleanKeys = ['enabled', 'spacingEnabled', 'spaceEnabled', 'runnerEnabled', 'tankingEnabled', 'defenseEnabled', 'passingEnabled', 'preserveSlots', 'safetyFirst'];
+const booleanKeys = ['stylesEnabled', 'adaptationEnabled', 'enabled', 'spacingEnabled', 'spaceEnabled', 'runnerEnabled', 'tankingEnabled', 'defenseEnabled', 'passingEnabled', 'preserveSlots', 'safetyFirst'];
 const object = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
 /** Reject invalid imports atomically; never silently accept misspelled or future controls. */
 export function validateGrifballTactics(value: unknown): GrifballTacticsConfig {
-  if (!object(value) || ![1, 2, 3, 4, 5].includes(value.schemaVersion as number) || !object(value.defaults) || !object(value.teams)) throw new Error('Expected tactics schemaVersion 1, 2, 3, 4 or 5, defaults and teams.');
+  if (!object(value) || ![1, 2, 3, 4, 5, 6].includes(value.schemaVersion as number) || !object(value.defaults) || !object(value.teams)) throw new Error('Expected tactics schemaVersion 1, 2, 3, 4, 5 or 6, defaults and teams.');
   if (Object.keys(value).some(key => !['schemaVersion', 'defaults', 'teams'].includes(key))) throw new Error('Unknown configuration field.');
   const validateTeam = (team: unknown, partial: boolean): Partial<TeamTactics> => {
     if (!object(team)) throw new Error('Team settings must be an object.');
@@ -87,12 +97,13 @@ export function validateGrifballTactics(value: unknown): GrifballTacticsConfig {
       }
     }
     const migrated = !partial ? {
+      ...((value.schemaVersion as number) < 6 ? { stylesEnabled: true, adaptationEnabled: true } : {}),
       ...((value.schemaVersion as number) < 5 ? { defenseEnabled: true, passingEnabled: true } : {}),
       ...(value.schemaVersion === 1 ? { spaceEnabled: true } : {}),
       ...((value.schemaVersion as number) < 3 ? { runnerEnabled: true } : {}),
       ...((value.schemaVersion as number) < 4 ? { tankingEnabled: true } : {}),
       ...Object.fromEntries(Object.entries(TACTICS_FIELDS).filter(([, field]) =>
-        (value.schemaVersion as number) < 5 && field.module === 'defense' || value.schemaVersion === 1 && field.module === 'space' || (value.schemaVersion as number) < 3 && field.module === 'runner' || (value.schemaVersion as number) < 4 && field.module === 'tanking'
+        (value.schemaVersion as number) < 6 && field.module === 'styles' || (value.schemaVersion as number) < 5 && field.module === 'defense' || value.schemaVersion === 1 && field.module === 'space' || (value.schemaVersion as number) < 3 && field.module === 'runner' || (value.schemaVersion as number) < 4 && field.module === 'tanking'
       ).map(([key, field]) => [key, field.value])),
       ...team,
     } : team;
@@ -105,7 +116,7 @@ export function validateGrifballTactics(value: unknown): GrifballTacticsConfig {
     if (key !== 'blue' && key !== 'red') throw new Error(`Unknown team: ${key}`);
     teams[key] = validateTeam(team, true);
   }
-  return { schemaVersion: 5, defaults, teams };
+  return { schemaVersion: 6, defaults, teams };
 }
 export function resolveTeamTactics(config: GrifballTacticsConfig, team: string): TeamTactics {
   return { ...config.defaults, ...(team === 'blue' || team === 'red' ? config.teams[team] : {}) };

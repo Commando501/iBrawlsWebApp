@@ -1,3 +1,4 @@
+import { chooseTacticalAlternative, type TacticalChoice } from './aiGrifballStyle';
 import type { FieldPoint, GrifballTacticalPlayer, GrifballTacticalSnapshot, GrifballTeamRole } from './aiGrifballTeamPlan';
 import type { TeamTactics } from './grifballTacticsConfig';
 import { estimateSpaceAttackTime } from './aiGrifballSpace';
@@ -57,7 +58,7 @@ export function pointAlongRunnerRoute(start: FieldPoint, route: SpaceRoute, dist
   return { ...from };
 }
 
-export function planGrifballRunner(snapshot: GrifballTacticalSnapshot, carrier: GrifballTacticalPlayer, tuning: TeamTactics, memory: RunnerMemory, routers: SpaceRouters): RunnerPlan {
+export function planGrifballRunner(snapshot: GrifballTacticalSnapshot, carrier: GrifballTacticalPlayer, tuning: TeamTactics, memory: RunnerMemory, routers: SpaceRouters, choice?: TacticalChoice): RunnerPlan {
   const geometry = snapshot.geometry!, goal = snapshot.goals[carrier.team === 'blue' ? 'red' : 'blue']!;
   const router = routers.get(carrier.id)!, goalDistance = fieldDistance(carrier.pos, goal);
   const goalHeading = direction(carrier.pos, goal), speed = Math.max(0.1, carrier.space!.speed);
@@ -115,6 +116,10 @@ export function planGrifballRunner(snapshot: GrifballTacticalSnapshot, carrier: 
     if (c.action === 'finish' && c.route.status !== 'blocked') c.score += 3;
   }
   let selected = candidates.reduce((best, c) => c.score > best.score ? c : best);
+  const optimum = selected;
+  if (!forcedProgress && !['finish', 'wait', 'retreat'].includes(selected.action)) {
+    selected = chooseTacticalAlternative(candidates.filter(c => ['advance', 'cut-left', 'cut-right'].includes(c.action) && c.progress > 0 && c.risk <= optimum.risk + 0.05), c => c.score, c => c.action, choice) ?? selected;
+  }
   if (forcedProgress) selected = candidates.find(c => c.action === 'finish' && Number.isFinite(c.score)) ?? candidates.find(c => c.action === 'advance' && Number.isFinite(c.score)) ?? selected;
   let reason = forcedProgress ? 'Progress timeout: take the reachable forward route' : `Choose ${selected.action} for progress and coverage`;
   const previous = memory.previous;
@@ -125,6 +130,7 @@ export function planGrifballRunner(snapshot: GrifballTacticalSnapshot, carrier: 
       selected = incumbent; candidates.push(incumbent); reason = 'Keep the committed route';
     }
   }
+  if (selected !== optimum && selected !== memory.previous && reason.startsWith('Choose')) reason += ' (seeded near-equal alternative)';
   if (selected.route.status === 'blocked') reason = 'No reachable runner route; keep explicit blocked status';
   if (!previous || selected.action !== previous.action || fieldDistance(selected.destination, previous.destination) > 0.1) memory.commitRemaining = tuning.runnerCommitSeconds;
   memory.previous = selected;

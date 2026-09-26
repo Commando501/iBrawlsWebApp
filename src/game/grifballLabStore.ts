@@ -1,11 +1,13 @@
+import type { GrifballStylePlan } from './aiGrifballStyle';
 import type { PassPlan } from './aiGrifballPassing';
 import type { RunnerPlan } from './aiGrifballRunner';
 import { defaultGrifballTactics, validateGrifballTactics, type GrifballTacticsConfig } from './grifballTacticsConfig';
 import type { GrifballAssignment, GrifballTacticalSnapshot } from './aiGrifballTeamPlan';
 import type { UniversalSettings } from '../types';
 
-export type LabScenario = 'pickup' | 'escort' | 'turnover' | 'outnumbered' | 'crowding' | 'goal' | 'lane' | 'pursuit' | 'rendezvous' | 'tanking' | 'double' | 'breakthrough' | 'delay' | 'cut' | 'lastdefender' | 'reinforcements' | 'pass' | 'passdenied';
+export type LabScenario = 'pickup' | 'escort' | 'turnover' | 'outnumbered' | 'crowding' | 'goal' | 'lane' | 'pursuit' | 'rendezvous' | 'tanking' | 'double' | 'breakthrough' | 'delay' | 'cut' | 'lastdefender' | 'reinforcements' | 'pass' | 'passdenied' | 'stylematch' | 'adaptation';
 export interface LabMetrics {
+  adaptedSeconds: number; styleSeconds: number;
   seconds: number; goals: number; possessionLosses: number; roleChanges: number;
   outsideSeconds: number; botSeconds: number; stuckSeconds: number; sharedExposureSeconds: number; blockedRouteSeconds: number; runnerWaitSeconds: number; runnerRouteChanges: number; tankingSeconds: number; doubleCommitSeconds: number; delaySeconds: number; engagementReleases: number; containmentSeconds: number; safetySeconds: number; passes: number; completedPasses: number; interceptedPasses: number;
 }
@@ -17,7 +19,7 @@ export interface LabScenarioRecord {
 }
 export interface LabResult { config: GrifballTacticsConfig; metrics: LabMetrics; seed: number; scenario: LabScenario; setup: LabScenarioRecord }
 export interface LabDiagnostics {
-  runnerPlans: RunnerPlan[]; passPlans: PassPlan[];
+  stylePlans: GrifballStylePlan[]; runnerPlans: RunnerPlan[]; passPlans: PassPlan[];
   assignments: GrifballAssignment[]; snapshot: GrifballTacticalSnapshot | null;
   history: string[]; metrics: LabMetrics; threats: Record<string, string | null>;
 }
