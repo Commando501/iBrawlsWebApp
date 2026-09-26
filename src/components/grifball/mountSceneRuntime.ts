@@ -33,7 +33,9 @@ export interface GrifballMountLoadingStage {
 const yieldToBrowser = (): Promise<void> =>
   new Promise((resolve) => {
     if (typeof requestAnimationFrame === 'function') {
-      requestAnimationFrame(() => resolve());
+      // A promise resolved in rAF resumes before paint. Yield through the next
+      // frame so the stage is actually visible before synchronous scene work.
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
       return;
     }
     setTimeout(resolve, 0);

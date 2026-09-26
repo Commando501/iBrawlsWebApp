@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { buildV3BlenderWeapon } from './v3BlenderWeaponModels';
 import {
   createVoxelGroup,
   type CharacterLoadout,
@@ -897,6 +898,7 @@ export function buildV3SpartanModel(options: V3SpartanBuildOptions = {}): THREE.
   return root;
 }
 
+/** Legacy voxel prototypes for tooling; runtime hammer/sword use Blender meshes. */
 export function getV3BuiltinWeaponVoxels(
   weapon: V3WeaponId,
   customHue?: number,
@@ -1018,7 +1020,9 @@ export function buildV3WeaponModel(weapon: V3WeaponId, options: V3WeaponBuildOpt
   const manifest = getDefaultV3WeaponManifest(weapon);
   const v3QualityTier = normalizeV3QualityTier(options.v3QualityTier);
   const v3Distance = Number.isFinite(options.v3Distance) ? Math.max(0, options.v3Distance ?? 0) : 0;
-  const group = createVoxelGroup(getV3BuiltinWeaponVoxels(weapon, options.customHue, options.loadout?.paintJob), V3_WEAPON_SCALE);
+  const group = weapon === 'pistol'
+    ? createVoxelGroup(getV3BuiltinWeaponVoxels(weapon, options.customHue, options.loadout?.paintJob), V3_WEAPON_SCALE)
+    : buildV3BlenderWeapon(weapon, role => roleColor(role, createColors(false, options.customHue), options.loadout?.paintJob));
   const selectedLod = selectV3LodLevel({
     lods: manifest.lods,
     qualityTier: v3QualityTier,

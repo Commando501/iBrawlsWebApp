@@ -27,6 +27,7 @@ type RemoteCombatantUpdate = {
   maxHp?: number;
   hue?: number;
   isCrouching?: boolean;
+  isSliding?: boolean;
   activeWeapon?: string;
   respawnTimer?: number;
   invulnerabilityTimer?: number;
@@ -171,6 +172,7 @@ export function createOrUpdateRemoteCombatantForState({
   if (data.hp !== undefined) playerState.hp = data.hp;
   if (data.maxHp !== undefined) playerState.maxHp = data.maxHp;
   if (data.isCrouching !== undefined) playerState.isCrouching = data.isCrouching;
+  if (data.isSliding !== undefined) playerState.aiSlideActive = data.isSliding;
   if (data.activeWeapon !== undefined) playerState.activeWeapon = data.activeWeapon as any;
   if (data.respawnTimer !== undefined) playerState.respawnTimer = data.respawnTimer;
   if (data.hue !== undefined) playerState.hue = data.hue;
@@ -211,7 +213,7 @@ export function createOrUpdateRemoteCombatantForState({
   group.position.copy(playerState.pos);
   group.rotation.y = playerState.yaw;
 
-  if (playerState.isCrouching) {
+  if (playerState.isCrouching && group.userData.modelSystem !== 'v3') {
     group.scale.set(1, 0.65, 1);
   } else {
     group.scale.set(1, 1, 1);

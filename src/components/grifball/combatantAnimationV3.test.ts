@@ -31,7 +31,7 @@ import { getV3Mesh2MotionDriverWeaponSocketWorldTransform } from './v3Mesh2Motio
 import { getV3LowerBodySeamAnchorPair } from './v3LowerBodyContinuity';
 import { createInitialGrifballThreeRefs } from './threeRefs';
 import { getV3CleanRig } from './v3CleanRig';
-import { sampleV3AuthoredClip } from './v3AuthoredAnimationClips';
+import { sampleV3ProductionClip as sampleV3AuthoredClip } from './v3AuthoredAnimationClips';
 
 const createV3Model = () => {
   const model = buildV3SpartanModel({ isEnemy: false, customHue: 192 });
@@ -144,9 +144,9 @@ describe('animateV3CombatantModel', () => {
 
     assert.equal(model.userData.v3AnimationAuthority, 'cleanRig');
     assert.equal(model.userData.v3CleanAuthoredClip, 'clean_idle');
-    assert.equal(model.userData.v3CleanMotionSource, 'retargetedMixamo');
-    assert.equal(model.userData.v3CleanMixamoClipId, 'idle');
-    assert.equal(model.userData.v3CleanSourceNormalizedTime, 0);
+    assert.equal(model.userData.v3CleanMotionSource, 'blenderAuthored');
+    assert.equal(model.userData.v3CleanMixamoClipId, undefined);
+    assert.equal(model.userData.v3CleanSourceNormalizedTime, undefined);
     assert.equal(model.userData.v3RetargetedClip, undefined);
     assert.ok(detailBones.upperArmLeft.quaternion.angleTo(new THREE.Quaternion()) < 0.0001);
   });
@@ -461,9 +461,12 @@ describe('animateV3CombatantModel', () => {
     );
   });
 
-  it('orients Mesh2Motion sword clean clips from the driver hand socket basis', () => {
+  it('preserves Blender sword orientation and grip in combatant model space', () => {
     const scene = new THREE.Scene();
     const meshes = createCombatantMeshRig(scene, 192, false, { modelSystem: 'v3' });
+    meshes.group.position.set(.3, .7, -.4);
+    meshes.group.rotation.y = .61;
+    meshes.group.scale.setScalar(1.2);
     const normalizedTime = 0.5;
 
     animateV3CombatantModel({
@@ -501,16 +504,14 @@ describe('animateV3CombatantModel', () => {
     });
 
     const transform = getV3Mesh2MotionDriverWeaponSocketWorldTransform(meshes.group, 'rightHandGrip');
-    const alignment = analyzeV3WeaponCarryAlignment(meshes.group, meshes.sword, 'sword');
-    const socketForward = new THREE.Vector3(0, 0, -1)
-      .applyQuaternion(transform?.quaternion ?? new THREE.Quaternion())
-      .normalize();
-
     assert.ok(transform, 'Mesh2Motion driver should expose a right hand socket transform');
-    assert.ok(
-      alignment.weaponForwardWorld.dot(socketForward) > 0.82,
-      `sword forward axis should follow driver hand socket forward; dot ${alignment.weaponForwardWorld.dot(socketForward).toFixed(4)}`
-    );
+    const expected = sampleV3AuthoredClip('clean_sword_slash', { normalizedTime }).weaponPose!;
+    const worldRotation = meshes.group.getWorldQuaternion(new THREE.Quaternion())
+      .multiply(new THREE.Quaternion(...expected.modelSpaceQuaternion!)).normalize();
+    assert.ok(meshes.sword.getWorldQuaternion(new THREE.Quaternion()).angleTo(worldRotation) < .00001);
+    const primary = getV3WeaponSocketWorldPosition(meshes.sword, 'thirdPersonPrimaryGrip')!;
+    assert.ok(primary.distanceTo(transform.position) < .002,
+      `world grip ${primary.toArray()} vs hand ${transform.position.toArray()}`);
   });
 
   it('resets V3 broad rig groups on death', () => {
@@ -704,7 +705,6 @@ describe('animateV3CombatantModel', () => {
     getV3CleanRig(model);
     const refs = createInitialGrifballThreeRefs();
     const normalizedTime = 0.5;
-
     animateV3CombatantModel({
       refs,
       mesh: model,
@@ -819,7 +819,7 @@ describe('animateV3CombatantModel', () => {
     }
   });
 
-  it('animateSpartanCombatantModel dispatches V3 models to the V3 layered runtime', () => {
+  it('animateSpartanCombatantModel dispatches V3 models to the Blender gameplay runtime', () => {
     const model = createV3Model();
     const refs = createInitialGrifballThreeRefs();
 
@@ -837,7 +837,8 @@ describe('animateV3CombatantModel', () => {
     });
 
     assert.notEqual(model.userData.upperTorso.rotation.x, 0);
-    assert.equal(model.userData.v3RetargetedClip?.clipId, 'walk');
+    assert.equal(model.userData.v3CleanAuthoredClip, 'clean_pistol_fire');
+    assert.equal(model.userData.v3CleanMotionSource, 'blenderAuthored');
     const detailBones = model.userData.v3DetailBones as Record<string, THREE.Group>;
     assert.notEqual(detailBones.thighLeft.rotation.x, 0);
   });
@@ -865,16 +866,16 @@ describe('animateV3CombatantModel', () => {
       animationClockMs: 0,
       isLocalV3Animation: false,
     });
-    const firstRemotePhase = remoteModel.userData.v3RetargetedLocomotionSeconds;
-    const firstRemoteBreath = remoteModel.userData.v3BreathingPhase;
+    const firstRemotePhase = remoteModel.userData.v3GameplayPlayback.elapsed;
+    const firstRemoteBreath = remoteModel.userData.v3CleanRigPose.normalizedTime;
     animateSpartanCombatantModel({
       ...baseInput,
       mesh: remoteModel,
       animationClockMs: 20,
       isLocalV3Animation: false,
     });
-    assert.equal(remoteModel.userData.v3RetargetedLocomotionSeconds, firstRemotePhase);
-    assert.equal(remoteModel.userData.v3BreathingPhase, firstRemoteBreath);
+    assert.equal(remoteModel.userData.v3GameplayPlayback.elapsed, firstRemotePhase);
+    assert.equal(remoteModel.userData.v3CleanRigPose.normalizedTime, firstRemoteBreath);
 
     animateSpartanCombatantModel({
       ...baseInput,
@@ -882,14 +883,14 @@ describe('animateV3CombatantModel', () => {
       animationClockMs: 0,
       isLocalV3Animation: true,
     });
-    const firstLocalPhase = localModel.userData.v3RetargetedLocomotionSeconds;
+    const firstLocalPhase = localModel.userData.v3GameplayPlayback.elapsed;
     animateSpartanCombatantModel({
       ...baseInput,
       mesh: localModel,
       animationClockMs: 20,
       isLocalV3Animation: true,
     });
-    assert.notEqual(localModel.userData.v3RetargetedLocomotionSeconds, firstLocalPhase);
+    assert.notEqual(localModel.userData.v3GameplayPlayback.elapsed, firstLocalPhase);
   });
 
   it('adds V3 hit reaction when hp drops without changing lower-body locomotion phase', () => {
@@ -1114,9 +1115,9 @@ describe('animateCombatantWeaponMeshes V3 integration', () => {
     });
 
     assert.equal(hammer.userData.v3CleanAuthoredClip, 'clean_hammer_strike');
-    assert.equal(hammer.userData.v3CleanMotionSource, 'mixamoWeaponReference');
-    assert.equal(hammer.userData.v3CleanMixamoClipId, 'hammer_heavy_swing');
-    assert.equal(hammer.userData.v3CleanSourceNormalizedTime, 0.375);
+    assert.equal(hammer.userData.v3CleanMotionSource, 'blenderAuthored');
+    assert.equal(hammer.userData.v3CleanMixamoClipId, undefined);
+    assert.equal(hammer.userData.v3CleanSourceNormalizedTime, undefined);
     assert.deepEqual(
       hammer.position.toArray().map((value) => Number(value.toFixed(6))),
       expected.position.map((value) => Number(value.toFixed(6)))

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test, { describe } from 'node:test';
 import * as THREE from 'three';
+import { getV3Mesh2MotionDriverRig } from '../components/grifball/v3Mesh2MotionDriverRig';
 import { V3_POSE_CLEARANCE_CASES } from '../components/grifball/v3PoseClearance';
 import {
   buildV3AnimationAtlasCases,
@@ -17,6 +18,86 @@ import {
 } from '../components/grifball/v3AuthoredAnimationClips';
 
 describe('v3AnimationAtlasSmoke', () => {
+  test('reviews every crouch carry and the unarmed variant without forward travel', () => {
+    const atlas = buildV3AnimationAtlasScene({ caseId: 'crouch' });
+    const starts = atlas.views.map(view => view.rig.group.position.clone());
+    for (const carryWeapon of ['hammer', 'sword', 'pistol', 'ball', null] as const) {
+      const sample = updateV3AnimationAtlasScene(atlas, { frame: 54, carryWeapon, showWeaponGripDrift: true });
+      assert.equal(sample.authoredClipId, carryWeapon ? `clean_crouch_${carryWeapon}` : 'clean_crouch');
+      for (const [i, { rig, weaponGripOverlay }] of atlas.views.entries()) {
+        assert.ok(rig.group.position.distanceTo(starts[i]) < .0001);
+        assert.ok(getV3Mesh2MotionDriverRig(rig.group).joints.pelvis.object.getWorldPosition(new THREE.Vector3()).y < .65);
+        for (const item of ['hammer', 'sword', 'pistol', 'ball'] as const) assert.equal(rig[item]?.visible, item === carryWeapon);
+        if (carryWeapon === 'ball') assert.ok(weaponGripOverlay.userData.v3BallCarryAlignment.right < .002);
+      }
+    }
+  });
+
+  test('previews runner locomotion, ball attack, and independent throw flight', () => {
+    const atlas = buildV3AnimationAtlasScene({ caseId: 'idle' });
+    for (const [caseId, clip] of [['walk', 'clean_ball_walk'], ['sprint', 'clean_ball_sprint'], ['ballPunch', 'clean_ball_punch'], ['ballThrow', 'clean_ball_throw']] as const) {
+      const sample = updateV3AnimationAtlasScene(atlas, { caseId, frame: 22, carryWeapon: 'ball' });
+      assert.equal(sample.authoredClipId, clip);
+      assert.ok(atlas.views.every(view => view.rig.ball?.visible));
+    }
+    updateV3AnimationAtlasScene(atlas, { caseId: 'ballThrow', frame: 60, showWeaponGripDrift: true });
+    for (const view of atlas.views) {
+      assert.equal(view.rig.ball?.userData.v3BallReleased, true);
+      assert.equal(view.rig.ball?.visible, true);
+      assert.equal(view.weaponGripOverlay.userData.v3BallCarryAlignment, undefined);
+    }
+  });
+
+  test('switches all four slide holds without losing the slide body or leaving stale items visible', () => {
+    const atlas = buildV3AnimationAtlasScene({ caseId: 'slide' });
+    for (const carryWeapon of ['ball', 'hammer', 'sword', 'pistol', null] as const) {
+      const sample = updateV3AnimationAtlasScene(atlas, { frame: 30, carryWeapon, showWeaponGripDrift: true });
+      assert.equal(sample.authoredClipId, carryWeapon ? `clean_slide_${carryWeapon}` : 'clean_slide');
+      for (const { rig, weaponGripOverlay } of atlas.views) {
+        assert.equal(rig.group.userData.v3CleanAuthoredClip, sample.authoredClipId);
+        const driver = getV3Mesh2MotionDriverRig(rig.group);
+        assert.ok(driver.joints.pelvis.object.getWorldPosition(new THREE.Vector3()).y < .35);
+        for (const item of ['ball', 'hammer', 'sword', 'pistol'] as const) assert.equal(rig[item]?.visible, item === carryWeapon);
+        if (carryWeapon === 'ball') {
+          assert.ok(weaponGripOverlay.userData.v3BallCarryAlignment.right < .002);
+          assert.equal(weaponGripOverlay.userData.v3BallCarryAlignment.left, undefined);
+        }
+      }
+    }
+  });
+
+  test('previews a decelerating forward slide and stops travel before the standing recovery', () => {
+    const atlas = buildV3AnimationAtlasScene({ caseId: 'slide' });
+    const starts = atlas.views.map(view => view.rig.group.position.clone());
+    const distances = [12, 24, 36, 49, 84].map(frame => {
+      updateV3AnimationAtlasScene(atlas, { frame });
+      return atlas.views.map((view, i) => view.rig.group.position.distanceTo(starts[i]));
+    });
+    for (let i = 0; i < starts.length; i++) {
+      assert.ok(distances[0][i] > distances[1][i] - distances[0][i]);
+      assert.ok(distances[1][i] - distances[0][i] > distances[2][i] - distances[1][i]);
+      assert.ok(Math.abs(distances[3][i] - .95) < .0001);
+      assert.ok(Math.abs(distances[4][i] - distances[3][i]) < .0001);
+    }
+    updateV3AnimationAtlasScene(atlas, { mode: 'bindRestPose' });
+    atlas.views.forEach((view, i) => assert.ok(view.rig.group.position.distanceTo(starts[i]) < .0001));
+  });
+
+  test('previews lunge travel up to contact and resets it for other clips and bind review', () => {
+    const atlas = buildV3AnimationAtlasScene({ caseId: 'swordLunge' });
+    const start = atlas.views.map(view => view.rig.group.position.clone());
+    updateV3AnimationAtlasScene(atlas, { frame: 33 });
+    const contact = atlas.views.map(view => view.rig.group.position.clone());
+    contact.forEach((position, i) => assert.ok(Math.abs(position.distanceTo(start[i]) - .85) < .0001));
+    updateV3AnimationAtlasScene(atlas, { frame: 48 });
+    atlas.views.forEach((view, i) => assert.ok(view.rig.group.position.distanceTo(contact[i]) < .0001));
+    updateV3AnimationAtlasScene(atlas, { caseId: 'idle', frame: 0 });
+    atlas.views.forEach((view, i) => assert.ok(view.rig.group.position.distanceTo(start[i]) < .0001));
+    updateV3AnimationAtlasScene(atlas, { caseId: 'swordLunge', frame: 33 });
+    updateV3AnimationAtlasScene(atlas, { mode: 'bindRestPose' });
+    atlas.views.forEach((view, i) => assert.ok(view.rig.group.position.distanceTo(start[i]) < .0001));
+  });
+
   const slotCenter = (model: THREE.Group, slot: string): THREE.Vector3 => {
     const partGroups = model.userData.v3PartGroups as Record<string, THREE.Object3D> | undefined;
     const part = partGroups?.[slot];
@@ -31,49 +112,49 @@ describe('v3AnimationAtlasSmoke', () => {
     );
   });
 
-  test('base locomotion atlas cases are labeled with their clean external clip sources', () => {
+  test('base locomotion atlas cases identify the Blender production source', () => {
     const cases = new Map(buildV3AnimationAtlasCases().map((entry) => [entry.id, entry]));
 
     assert.equal(cases.get('idle')?.animationAuthority, 'cleanRig');
     assert.equal(cases.get('idle')?.authoredClipId, 'clean_idle');
-    assert.equal(cases.get('idle')?.cleanMotionSource, 'retargetedMixamo');
-    assert.equal(cases.get('idle')?.cleanMixamoClipId, 'idle');
-    assert.equal(cases.get('idle')?.motionSourceLabel, 'idle retargeted Mixamo clean motion');
+    assert.equal(cases.get('idle')?.cleanMotionSource, 'blenderAuthored');
+    assert.equal(cases.get('idle')?.cleanMixamoClipId, undefined);
+    assert.equal(cases.get('idle')?.motionSourceLabel, 'Blender unified-rig animation');
     assert.equal(cases.get('walk')?.animationAuthority, 'cleanRig');
     assert.equal(cases.get('walk')?.authoredClipId, 'clean_walk');
-    assert.equal(cases.get('walk')?.cleanMotionSource, 'retargetedMixamo');
-    assert.equal(cases.get('walk')?.cleanMixamoClipId, 'walk');
+    assert.equal(cases.get('walk')?.cleanMotionSource, 'blenderAuthored');
+    assert.equal(cases.get('walk')?.cleanMixamoClipId, undefined);
     assert.equal(cases.get('sprint')?.animationAuthority, 'cleanRig');
     assert.equal(cases.get('sprint')?.authoredClipId, 'clean_sprint');
-    assert.equal(cases.get('sprint')?.cleanMotionSource, 'mesh2Motion');
-    assert.equal(cases.get('sprint')?.cleanMixamoClipId, 'Sprint_Loop');
-    assert.equal(cases.get('sprint')?.motionSourceLabel, 'Sprint_Loop Mesh2Motion driver rig');
+    assert.equal(cases.get('sprint')?.cleanMotionSource, 'blenderAuthored');
+    assert.equal(cases.get('sprint')?.cleanMixamoClipId, undefined);
+    assert.equal(cases.get('sprint')?.motionSourceLabel, 'Blender unified-rig animation');
     assert.equal(cases.get('hammerStrike')?.clipSource, undefined);
   });
 
-  test('atlas samples expose clean-rig Mixamo clip metadata by default', () => {
+  test('atlas samples expose Blender clip metadata by default', () => {
     const sample = sampleV3AnimationAtlasCase('idle', createV3AnimationAtlasFrameState(0, 120, 60), 'normalizedReview');
 
     assert.equal(sample.animationAuthority, 'cleanRig');
     assert.equal(sample.authoredClipId, 'clean_idle');
-    assert.equal(sample.cleanMotionSource, 'retargetedMixamo');
-    assert.equal(sample.cleanMixamoClipId, 'idle');
-    assert.equal(sample.cleanSourceNormalizedTime, 0);
+    assert.equal(sample.cleanMotionSource, 'blenderAuthored');
+    assert.equal(sample.cleanMixamoClipId, undefined);
+    assert.equal(sample.cleanSourceNormalizedTime, undefined);
     assert.equal(sample.cleanRigReady, true);
     assert.equal(sample.atlasEditorExportVersion, 1);
-    assert.match(sample.motionSourceLabel ?? '', /retargeted Mixamo clean motion/);
+    assert.match(sample.motionSourceLabel ?? '', /Blender unified-rig animation/);
 
     const sprint = sampleV3AnimationAtlasCase(
       'sprint',
       createV3AnimationAtlasFrameState(45, 90, 60),
       'normalizedReview'
     );
-    assert.equal(sprint.cleanMotionSource, 'mesh2Motion');
-    assert.equal(sprint.cleanMixamoClipId, 'Sprint_Loop');
-    assert.equal(sprint.mesh2MotionCleanupTrackId, 'clean_sprint:Sprint_Loop');
-    assert.equal(sprint.mesh2MotionCleanupDriverJointAdjustmentCount, 0);
-    assert.equal(sprint.mesh2MotionCleanupPartBindingAdjustmentCount, 0);
-    assert.equal(sprint.mesh2MotionCleanupWeaponSocketAdjustmentCount, 0);
+    assert.equal(sprint.cleanMotionSource, 'blenderAuthored');
+    assert.equal(sprint.cleanMixamoClipId, undefined);
+    assert.equal(sprint.mesh2MotionCleanupTrackId, undefined);
+    assert.equal(sprint.mesh2MotionCleanupDriverJointAdjustmentCount, undefined);
+    assert.equal(sprint.mesh2MotionCleanupPartBindingAdjustmentCount, undefined);
+    assert.equal(sprint.mesh2MotionCleanupWeaponSocketAdjustmentCount, undefined);
   });
 
   test('bind rest pose mode reports the authored Mesh2Motion T-pose instead of Mixamo idle', () => {
@@ -212,7 +293,7 @@ describe('v3AnimationAtlasSmoke', () => {
       );
     };
 
-    assertForwardStride('sprint', 30, 'right');
+    assertForwardStride('sprint', 38, 'right');
   });
 
   test('death sampling is marked for deterministic death-burst playback', () => {
@@ -234,19 +315,19 @@ describe('v3AnimationAtlasSmoke', () => {
 
     assert.equal(hammer.visibleWeapon, 'hammer');
     assert.equal(hammer.authoredClipId, 'clean_hammer_strike');
-    assert.equal(hammer.cleanMotionSource, 'mixamoWeaponReference');
-    assert.equal(hammer.cleanMixamoClipId, 'hammer_heavy_swing');
+    assert.equal(hammer.cleanMotionSource, 'blenderAuthored');
+    assert.equal(hammer.cleanMixamoClipId, undefined);
     assert.equal(hammer.weaponReferenceClipId, 'hammer_heavy_swing');
     assert.match(hammer.motionSourceLabel ?? '', /Mixamo weapon reference/);
     assert.equal(sword.visibleWeapon, 'sword');
     assert.equal(sword.authoredClipId, 'clean_sword_lunge');
-    assert.equal(sword.cleanMotionSource, 'mesh2Motion');
-    assert.equal(sword.cleanMixamoClipId, 'Sword_Dash_RM');
-    assert.match(sword.motionSourceLabel ?? '', /Mesh2Motion driver rig/);
+    assert.equal(sword.cleanMotionSource, 'blenderAuthored');
+    assert.equal(sword.cleanMixamoClipId, undefined);
+    assert.match(sword.motionSourceLabel ?? '', /Blender unified-rig animation/);
     assert.equal(pistol.visibleWeapon, 'pistol');
     assert.equal(pistol.authoredClipId, 'clean_pistol_fire');
-    assert.equal(pistol.cleanMotionSource, 'atlasAuthored');
-    assert.match(pistol.motionSourceLabel ?? '', /atlas-authored fallback/);
+    assert.equal(pistol.cleanMotionSource, 'blenderAuthored');
+    assert.match(pistol.motionSourceLabel ?? '', /Blender unified-rig animation/);
     assert.equal(
       sampleV3AnimationAtlasCase('idle', createV3AnimationAtlasFrameState(10, 60, 60), 'normalizedReview').visibleWeapon,
       null
@@ -288,16 +369,8 @@ describe('v3AnimationAtlasSmoke', () => {
       assert.equal(sample.activeWeapon, weapon);
       assert.equal(sample.weaponState, 'ready');
       assert.equal(sample.authoredClipId, `clean_${weapon}_carry`);
-      if (weapon === 'pistol') {
-        assert.equal(sample.cleanMotionSource, 'atlasAuthored');
-        assert.match(sample.motionSourceLabel ?? '', /atlas-authored fallback/);
-      } else if (weapon === 'sword') {
-        assert.equal(sample.cleanMotionSource, 'mesh2Motion');
-        assert.match(sample.motionSourceLabel ?? '', /Mesh2Motion driver rig/);
-      } else {
-        assert.equal(sample.cleanMotionSource, 'mixamoWeaponReference');
-        assert.match(sample.motionSourceLabel ?? '', /Mixamo weapon runtime motion/);
-      }
+      assert.equal(sample.cleanMotionSource, 'blenderAuthored');
+      assert.match(sample.motionSourceLabel ?? '', /Blender unified-rig animation/);
       assert.match(sample.motionSourceLabel ?? '', /clean carry authoring/);
     }
   });
@@ -308,8 +381,8 @@ describe('v3AnimationAtlasSmoke', () => {
     assert.equal(atlas.views.length, 4);
     assert.deepEqual(atlas.views.map((view) => view.id), ['front', 'left', 'rear', 'right']);
     assert.deepEqual(
-      atlas.views.map((view) => Number(view.rig.group.rotation.y.toFixed(6))),
-      [0, Number((Math.PI / 2).toFixed(6)), Number(Math.PI.toFixed(6)), Number((-Math.PI / 2).toFixed(6))]
+      atlas.views.map((view) => new THREE.Vector3(0, 0, -1).applyQuaternion(view.rig.group.quaternion).toArray().map(v => Math.abs(v) < .5 ? 0 : Math.sign(v))),
+      [[0, 0, 1], [1, 0, 0], [0, 0, -1], [-1, 0, 0]]
     );
     assert.equal(atlas.clock.caseId, 'idle');
     assert.equal(atlas.clock.frame, 0);
@@ -454,21 +527,20 @@ describe('v3AnimationAtlasSmoke', () => {
     updateV3AnimationAtlasScene(atlas, { frame: 22, mode: 'normalizedReview' });
 
     const model = atlas.views[0].rig.group;
-    const detailBones = model.userData.v3DetailBones as Record<string, THREE.Group>;
-    const maxThighSwing = Math.max(
-      Math.abs(detailBones.thighLeft.rotation.x),
-      Math.abs(detailBones.thighRight.rotation.x)
-    );
+    const driver = getV3Mesh2MotionDriverRig(model);
+    const angleFromRest = (name: string) => driver.joints[name].object.quaternion.angleTo(
+      new THREE.Quaternion(...driver.joints[name].restLocalQuaternion));
+    const maxThighSwing = Math.max(angleFromRest('thigh_l'), angleFromRest('thigh_r'));
 
     assert.equal(model.userData.v3AnimationAuthority, 'cleanRig');
     assert.equal(model.userData.v3CleanAuthoredClip, 'clean_walk');
     assert.ok(maxThighSwing >= 0.085, `walk atlas frame should show real thigh swing, got ${maxThighSwing}`);
     assert.ok(
-      Math.max(Math.abs(detailBones.calfLeft.rotation.x), Math.abs(detailBones.calfRight.rotation.x)) >= 0.12,
+      Math.max(angleFromRest('calf_l'), angleFromRest('calf_r')) >= 0.12,
       'walk atlas frame should show imported knee/calf motion, not just broad thigh swing'
     );
     assert.ok(
-      Math.max(Math.abs(detailBones.footLeft.rotation.x), Math.abs(detailBones.footRight.rotation.x)) >= 0.025,
+      Math.max(angleFromRest('foot_l'), angleFromRest('foot_r')) >= 0.025,
       'walk atlas frame should show imported foot motion'
     );
     assert.ok(
@@ -506,7 +578,9 @@ describe('v3AnimationAtlasSmoke', () => {
 
     const model = atlas.views[0].rig.group;
     const detailBones = model.userData.v3DetailBones as Record<string, THREE.Group>;
-    assert.ok(Math.abs(detailBones.thighLeft.rotation.x) > 0.01);
+    assert.equal(model.userData.v3Mesh2MotionDriverActive, true);
+    assert.ok(getV3Mesh2MotionDriverRig(model).joints.thigh_l.object.quaternion.angleTo(
+      new THREE.Quaternion(...getV3Mesh2MotionDriverRig(model).joints.thigh_l.restLocalQuaternion)) > .01);
     assert.equal(model.userData.v3CleanAuthoredClip, 'clean_walk');
 
     const sample = updateV3AnimationAtlasScene(atlas, { frame: 22, mode: 'bindRestPose' });

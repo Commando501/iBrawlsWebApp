@@ -20,6 +20,7 @@ import { analyzeV3WeaponCarryAlignment } from './v3WeaponSocketBasis';
 
 export const V3_POSE_CLEARANCE_CASES = [
   { id: 'idle', activeWeapon: 'hammer', weaponState: 'ready', weaponTimer: 0, dt: 1, vel: [0, 0, 0] },
+  { id: 'crouch', activeWeapon: 'hammer', weaponState: 'ready', weaponTimer: 0, dt: 1, vel: [0, 0, 0] },
   { id: 'walk', activeWeapon: 'hammer', weaponState: 'ready', weaponTimer: 0, dt: 0.35, vel: [2.4, 0, 0] },
   { id: 'sprint', activeWeapon: 'hammer', weaponState: 'ready', weaponTimer: 0, dt: 0.28, vel: [4.4, 0, 0], isSprinting: true },
   { id: 'slide', activeWeapon: 'hammer', weaponState: 'ready', weaponTimer: 0, dt: 1, vel: [3.6, 0, 0], isSliding: true },
@@ -31,6 +32,8 @@ export const V3_POSE_CLEARANCE_CASES = [
   { id: 'swordLunge', activeWeapon: 'sword', weaponState: 'ready', weaponTimer: 0.12, dt: 1, vel: [0, 0, -3], isLunging: true, includeWeaponMetrics: true },
   { id: 'swordSlash', activeWeapon: 'sword', weaponState: 'swing_up', weaponTimer: 0.11, dt: 1, vel: [0, 0, 0], includeWeaponMetrics: true, expectUpperLowerIsolation: true },
   { id: 'pistolFire', activeWeapon: 'pistol', weaponState: 'firing', weaponTimer: 0.04, dt: 1, vel: [0, 0, 0], includeWeaponMetrics: true, expectUpperLowerIsolation: true },
+  { id: 'ballPunch', activeWeapon: 'ball', weaponState: 'punching', weaponTimer: .4, dt: 1, vel: [0, 0, 0] },
+  { id: 'ballThrow', activeWeapon: 'ball', weaponState: 'throwing', weaponTimer: .5, dt: 1, vel: [0, 0, 0] },
   { id: 'hitReact', activeWeapon: 'hammer', weaponState: 'ready', weaponTimer: 0, dt: 0.12, vel: [1.8, 0, 0], previousHp: 100, hp: 72 },
   { id: 'death', activeWeapon: 'hammer', weaponState: 'ready', weaponTimer: 0, dt: 1, vel: [0, 0, 0], hp: 0 },
 ] as const;
@@ -733,6 +736,11 @@ const applyPoseCase = (
   const refs = createInitialGrifballThreeRefs();
   refs.scene = subject.model.parent instanceof THREE.Scene ? subject.model.parent : null;
   const hp = 'hp' in definition ? definition.hp : 100;
+  const authoredCrouch = caseId === 'crouch' ? {
+    v3AnimationAuthority: 'cleanRig' as const,
+    v3AuthoredClipId: 'clean_crouch_hammer' as const,
+    v3AuthoredNormalizedTime: .45,
+  } : {};
   if ('previousHp' in definition) {
     subject.model.userData.v3LastHp = definition.previousHp;
   }
@@ -754,6 +762,8 @@ const applyPoseCase = (
     isLocalV3Animation: true,
     v3PoseAlphaOverride: 1,
     settings: { hammerAttackAnimation: 'highFidelity' },
+    ...(definition.activeWeapon === 'ball' ? { v3AnimationAuthority: 'cleanRig' as const, v3AuthoredNormalizedTime: definition.weaponTimer } : {}),
+    ...authoredCrouch,
   });
 
   animateV3WeaponMeshes({
@@ -766,6 +776,8 @@ const applyPoseCase = (
     isLunging: 'isLunging' in definition ? Boolean(definition.isLunging) : false,
     dt: definition.dt,
     settings: { hammerAttackAnimation: 'highFidelity' },
+    ...(definition.activeWeapon === 'ball' ? { v3AnimationAuthority: 'cleanRig' as const, v3AuthoredNormalizedTime: definition.weaponTimer } : {}),
+    ...authoredCrouch,
     combatantModel: subject.model,
   });
   subject.model.updateWorldMatrix(true, true);

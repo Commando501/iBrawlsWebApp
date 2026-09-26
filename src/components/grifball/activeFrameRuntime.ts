@@ -156,6 +156,7 @@ export function advanceGrifballFrameForState({
       hp: state.playerHP,
       maxHp: state.playerMaxHP,
       isCrouching: state.isCrouching,
+      isSliding: state.playerSlideActive,
       activeWeapon: state.activeWeapon,
       respawnTimer: state.playerRespawnTimer,
       invulnerabilityTimer: state.playerInvulnerabilityTimer,

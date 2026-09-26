@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import { V3_BALL_CONTACTS } from '../components/grifball/v3BallCarry';
+import { getV3Mesh2MotionDriverWeaponSocketWorldPosition } from '../components/grifball/v3Mesh2MotionDriverRig';
 import {
   animateV3CombatantModel,
   animateV3WeaponMeshes,
@@ -61,13 +63,12 @@ import {
 import {
   ATLAS_EDITOR_EXPORT_VERSION,
   mapV3AtlasCaseToAuthoredClip,
-  sampleV3AuthoredClip,
+  sampleV3ProductionClip as sampleV3AuthoredClip,
   sampleV3AuthoredClipData,
   type V3AuthoredClipExport,
   type V3AuthoredClipId,
 } from '../components/grifball/v3AuthoredAnimationClips';
 import {
-  getV3CleanMixamoClipBinding,
   type V3CleanMixamoClipId,
   type V3CleanMixamoMotionSource,
 } from '../components/grifball/v3CleanMixamoClips';
@@ -79,7 +80,7 @@ import type { UniversalSettings } from '../types';
 
 export type V3AnimationAtlasCaseId = V3PoseClearanceCaseId;
 export type V3AnimationAtlasPlaybackMode = 'normalizedReview' | 'runtimeSimulation' | 'bindRestPose';
-export type V3AnimationAtlasWeapon = 'hammer' | 'sword' | 'pistol';
+export type V3AnimationAtlasWeapon = 'hammer' | 'sword' | 'pistol' | 'ball';
 export type V3AnimationAtlasViewId = 'front' | 'left' | 'rear' | 'right';
 
 export const V3_ANIMATION_ATLAS_BIND_REST_POSE_ID = 'mesh2motion_tpose_bind' as const;
@@ -241,9 +242,10 @@ export interface V3AnimationAtlasSceneUpdateOptions {
 
 const CASE_DURATIONS: Record<V3AnimationAtlasCaseId, number> = {
   idle: 120,
+  crouch: 120,
   walk: 90,
   sprint: 90,
-  slide: 72,
+  slide: 84,
   hammerWindup: 60,
   hammerStrike: 48,
   hammerRecover: 60,
@@ -252,12 +254,15 @@ const CASE_DURATIONS: Record<V3AnimationAtlasCaseId, number> = {
   swordLunge: 60,
   swordSlash: 60,
   pistolFire: 42,
+  ballPunch: 72,
+  ballThrow: 90,
   hitReact: 60,
   death: 72,
 };
 
 const CASE_LABELS: Record<V3AnimationAtlasCaseId, string> = {
   idle: 'Idle',
+  crouch: 'Crouch',
   walk: 'Walk',
   sprint: 'Sprint',
   slide: 'Slide',
@@ -269,6 +274,8 @@ const CASE_LABELS: Record<V3AnimationAtlasCaseId, string> = {
   swordLunge: 'Sword Lunge',
   swordSlash: 'Sword Slash',
   pistolFire: 'Pistol Fire',
+  ballPunch: 'Runner Ball Punch',
+  ballThrow: 'Runner Overhead Throw',
   hitReact: 'Hit React',
   death: 'Death Burst',
 };
@@ -294,8 +301,10 @@ const WEAPON_REVIEW_CASES = new Set<V3AnimationAtlasCaseId>([
   'swordLunge',
   'swordSlash',
   'pistolFire',
+  'ballPunch',
+  'ballThrow',
 ]);
-const LOCOMOTION_REVIEW_CASES = new Set<V3AnimationAtlasCaseId>(['idle', 'walk', 'sprint']);
+const LOCOMOTION_REVIEW_CASES = new Set<V3AnimationAtlasCaseId>(['idle', 'walk', 'sprint', 'slide', 'crouch']);
 const WEAPON_REFERENCE_BY_CASE: Partial<Record<V3AnimationAtlasCaseId, V3WeaponReferenceClipId>> = {
   hammerWindup: 'hammer_heavy_swing',
   hammerStrike: 'hammer_heavy_swing',
@@ -309,6 +318,7 @@ const cleanMotionSourceLabel = (
   motionSource: V3CleanMixamoMotionSource | 'atlasAuthored',
   mixamoClipId?: V3CleanMixamoClipId
 ): string => {
+  if (motionSource === 'blenderAuthored') return 'Blender unified-rig animation';
   if (motionSource === 'retargetedMixamo') return `${mixamoClipId ?? 'Mixamo'} retargeted Mixamo clean motion`;
   if (motionSource === 'mixamoWeaponReference') return `${mixamoClipId ?? 'Mixamo'} Mixamo weapon runtime motion`;
   if (motionSource === 'mesh2Motion') return `${mixamoClipId ?? 'Mesh2Motion'} Mesh2Motion driver rig`;
@@ -333,8 +343,8 @@ const caseMeta = (caseId: V3AnimationAtlasCaseId): V3AnimationAtlasCaseDefinitio
   const definition = caseDefinition(caseId);
   const durationFrames = CASE_DURATIONS[caseId];
   const authoredClipId = mapV3AtlasCaseToAuthoredClip(caseId);
-  const cleanBinding = getV3CleanMixamoClipBinding(authoredClipId);
-  const cleanMotionSource = cleanBinding?.motionSource ?? 'atlasAuthored';
+  const cleanSample = sampleV3AuthoredClip(authoredClipId, { normalizedTime: 0 });
+  const cleanMotionSource = cleanSample.motionSource;
   const weaponReferenceClipId = WEAPON_REFERENCE_BY_CASE[caseId];
   const weaponReferenceClip = weaponReferenceClipId
     ? getV3WeaponReferenceClip(weaponReferenceClipId)
@@ -349,11 +359,11 @@ const caseMeta = (caseId: V3AnimationAtlasCaseId): V3AnimationAtlasCaseDefinitio
     animationAuthority: 'cleanRig',
     authoredClipId,
     cleanMotionSource,
-    ...(cleanBinding?.mixamoClipId ? { cleanMixamoClipId: cleanBinding.mixamoClipId } : {}),
+    ...(cleanSample.mixamoClipId ? { cleanMixamoClipId: cleanSample.mixamoClipId } : {}),
     cleanRigReady: true,
     jointSeamWarnings: [],
     atlasEditorExportVersion: ATLAS_EDITOR_EXPORT_VERSION,
-    motionSourceLabel: cleanMotionSourceLabel(cleanMotionSource, cleanBinding?.mixamoClipId),
+    motionSourceLabel: cleanMotionSourceLabel(cleanMotionSource, cleanSample.mixamoClipId),
     ...(weaponReferenceClip ? {
       weaponReferenceClipId,
       weaponReferenceRuntimeRole: weaponReferenceClip.runtimeRole,
@@ -729,6 +739,7 @@ function getVisibleWeaponModel(
   if (weapon === 'hammer') return rig.hammer;
   if (weapon === 'sword') return rig.sword;
   if (weapon === 'pistol') return rig.pistol ?? null;
+  if (weapon === 'ball') return rig.ball ?? null;
   return null;
 }
 
@@ -739,6 +750,7 @@ function setWeaponVisibility(
   rig.hammer.visible = visibleWeapon === 'hammer';
   rig.sword.visible = visibleWeapon === 'sword';
   if (rig.pistol) rig.pistol.visible = visibleWeapon === 'pistol';
+  if (rig.ball) rig.ball.visible = visibleWeapon === 'ball';
 }
 
 function applySampleToRig(
@@ -807,6 +819,9 @@ function applySampleToRig(
   });
 
   animateV3WeaponMeshes({
+    ballModel: rig.ball,
+    previewBallFlight: true,
+    isSliding: sample.isSliding,
     hammerModel: rig.hammer,
     swordModel: rig.sword,
     pistolModel: rig.pistol,
@@ -881,7 +896,25 @@ function updateWeaponGripOverlay(
   view.weaponGripOverlay.visible = visible;
   disposeOverlayChildren(view.weaponGripOverlay);
   delete view.weaponGripOverlay.userData.v3WeaponReferenceOverlay;
+  delete view.weaponGripOverlay.userData.v3BallCarryAlignment;
   if (!visible || !visibleWeapon) return;
+  if (visibleWeapon === 'ball') {
+    const ball = view.rig.ball;
+    if (!ball?.visible || ball.userData.v3BallReleased) return;
+    const origin = view.overlayRoot.getWorldPosition(new THREE.Vector3());
+    const drift: Partial<Record<'right' | 'left', number>> = {};
+    for (const side of ['right'] as const) {
+      const contact = ball.localToWorld(new THREE.Vector3(...V3_BALL_CONTACTS[side])).sub(origin);
+      const hand = getV3Mesh2MotionDriverWeaponSocketWorldPosition(view.rig.group, `${side}HandGrip`)?.sub(origin);
+      if (!hand) continue;
+      drift[side] = contact.distanceTo(hand);
+      view.weaponGripOverlay.add(createDiagnosticMarker(contact, `ball:${side}Contact`, '#22d3ee'));
+      view.weaponGripOverlay.add(createDiagnosticMarker(hand, `ball:${side}Hand`, '#facc15'));
+      view.weaponGripOverlay.add(createDiagnosticLine(contact, hand, '#fb923c', `ball:${side}ContactError`));
+    }
+    view.weaponGripOverlay.userData.v3BallCarryAlignment = drift;
+    return;
+  }
 
   const weaponModel = getVisibleWeaponModel(view.rig, visibleWeapon);
   if (!weaponModel) return;
@@ -1147,6 +1180,7 @@ export function buildV3AnimationAtlasScene(
     rig.group.name = `v3AnimationAtlasRig:${layout.id}`;
     rig.group.position.set(layout.x, 0, 0);
     rig.group.rotation.y = layout.rotationY;
+    rig.group.userData.v3AtlasBaseYaw = layout.rotationY;
     rig.group.userData.v3AnimationAtlasView = layout.id;
     const labelAnchor = createLabelAnchor(layout.label);
     labelAnchor.position.set(layout.x, 2.62, 0);
@@ -1221,6 +1255,24 @@ export function updateV3AnimationAtlasScene(
   const showInternalDiagnostics = options.showUpperLowerIsolation === true;
 
   atlas.views.forEach((view, index) => {
+    // Source references face +Z; baked game clips face -Z. Keep the labeled
+    // atlas views consistent when switching between those two conventions.
+    const facingOffset = sample.cleanMotionSource === 'blenderAuthored' && !sample.bindPoseReview ? Math.PI : 0;
+    const previousFacing = Number(view.rig.group.userData.v3AtlasFacingOffset ?? 0);
+    view.rig.group.rotateY(facingOffset - previousFacing);
+    view.rig.group.userData.v3AtlasFacingOffset = facingOffset;
+    // Preview travel only: the exported clip stays in place so gameplay can
+    // own travel distance. Lunges stop at contact; slides decelerate before standing.
+    view.rig.group.position.set(VIEW_LAYOUT[index].x, 0, 0);
+    if ((caseId === 'swordLunge' || caseId === 'slide') && sample.cleanMotionSource === 'blenderAuthored'
+      && !sample.bindPoseReview && !sample.manualClipPreviewActive) {
+      const travel = caseId === 'slide'
+        ? .95 * (1 - Math.pow(1 - clamp01(sample.frame / 48.96), 2))
+        : .85 * easeInOutCubic(clamp01(sample.normalizedTime / .55));
+      const forward = new THREE.Vector3(0, 0, -1)
+        .applyAxisAngle(new THREE.Vector3(0, 1, 0), VIEW_LAYOUT[index].rotationY + facingOffset);
+      view.rig.group.position.addScaledVector(forward, travel);
+    }
     if (options.resetDeathBurst || caseId !== 'death') {
       disposeViewDeathBurst(view);
     }

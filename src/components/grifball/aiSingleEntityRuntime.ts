@@ -410,7 +410,7 @@ export function createAISingleEntityUpdaterForState({
         botMesh.rotation.y = yaw;
         const neuralCrouching = action.crouch;
         self.isCrouching = neuralCrouching;
-        botMesh.scale.set(1, neuralCrouching ? 0.65 : 1, 1);
+        botMesh.scale.set(1, neuralCrouching && botMesh.userData.modelSystem !== 'v3' ? 0.65 : 1, 1);
 
         if (
           action.swapWeapon &&
@@ -779,7 +779,7 @@ export function createAISingleEntityUpdaterForState({
         movementComplexity,
       });
   
-      if (isCrouching) {
+      if (isCrouching && botMesh.userData.modelSystem !== 'v3') {
         botMesh.scale.set(1, 0.65, 1);
       } else {
         botMesh.scale.set(1, 1, 1);

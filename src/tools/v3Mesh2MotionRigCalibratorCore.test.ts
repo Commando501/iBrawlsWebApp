@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { describe, it } from 'node:test';
 import * as THREE from 'three';
 import { animateV3CombatantModel, animateV3WeaponMeshes } from '../components/grifball/combatantAnimationV3';
+import { sampleV3AuthoredClip } from '../components/grifball/v3AuthoredAnimationClips';
 import { createCombatantMeshRig } from '../components/grifball/combatantModels';
 import { createInitialGrifballThreeRefs } from '../components/grifball/threeRefs';
 import {
@@ -44,6 +45,9 @@ describe('v3Mesh2MotionRigCalibratorCore', () => {
       const samples = V3_MESH2MOTION_PRIORITY_REVIEW_CLIPS.flatMap((clip) =>
         clip.frames.map((frame) => {
           const normalizedTime = frame / Math.max(1, clip.durationFrames);
+          // Calibration edits apply to the Mesh2Motion reference. The Blender
+          // bake already includes its corrections and deliberately bypasses them.
+          const referenceSample = sampleV3AuthoredClip(clip.id, { normalizedTime });
           animateV3CombatantModel({
             refs,
             mesh: meshRig.group,
@@ -61,6 +65,7 @@ describe('v3Mesh2MotionRigCalibratorCore', () => {
             v3AnimationAuthority: 'cleanRig',
             v3AuthoredClipId: clip.id,
             v3AuthoredNormalizedTime: normalizedTime,
+            v3AuthoredSampleOverride: referenceSample,
             isSliding: clip.isSliding,
             isSprinting: clip.isSprinting,
             isLunging: clip.isLunging,
@@ -79,6 +84,7 @@ describe('v3Mesh2MotionRigCalibratorCore', () => {
             v3AnimationAuthority: 'cleanRig',
             v3AuthoredClipId: clip.id,
             v3AuthoredNormalizedTime: normalizedTime,
+            v3AuthoredSampleOverride: referenceSample,
           });
           meshRig.hammer.visible = false;
           meshRig.sword.visible = clip.id.startsWith('clean_sword');
@@ -729,7 +735,7 @@ describe('v3Mesh2MotionRigCalibratorCore', () => {
     const viteConfig = readFileSync('vite.config.ts', 'utf8');
 
     assert.equal(html.includes('/src/tools/v3Mesh2MotionRigCalibrator.ts'), true);
-    assert.equal(html.includes('Preview Animation'), true);
+    assert.equal(html.includes('Animation Clip'), true);
     assert.equal(html.includes('Edit Mode'), true);
     assert.equal(html.includes('Target'), true);
     assert.equal(html.includes('target-sx'), true);
@@ -740,5 +746,16 @@ describe('v3Mesh2MotionRigCalibratorCore', () => {
     assert.equal(html.includes('priority-report'), true);
     assert.equal(html.includes('right-hand socket only'), false);
     assert.equal(viteConfig.includes('v3Mesh2MotionRigCalibrator'), true);
+  });
+
+  it('routes non-Mesh2Motion attack choices from the primary clip picker to the clean animation editor', () => {
+    const html = readFileSync('v3-mesh2motion-rig-calibrator.html', 'utf8');
+    const tool = readFileSync('src/tools/v3Mesh2MotionRigCalibrator.ts', 'utf8');
+
+    assert.equal(html.includes('<option value="clean_hammer_strike">Hammer Strike</option>'), true);
+    assert.equal(html.includes('<option value="clean_pistol_fire">Pistol Fire</option>'), true);
+    assert.equal(html.includes('animation-clip-select'), false);
+    assert.equal(tool.includes('isMesh2MotionPreviewClip(clipId)'), true);
+    assert.equal(tool.includes('v3-clean-animation-editor.html?clip='), true);
   });
 });

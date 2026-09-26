@@ -10,6 +10,18 @@ import {
 } from './v3AnimationAtlasDefects';
 
 describe('v3AnimationAtlasDefects', () => {
+  it('reports the runner ball and excludes released flight from hand-grip drift', () => {
+    for (const id of ['ballPunch', 'ballThrow'] as const) {
+      const report = analyzeV3AnimationAtlasCaseDefects(id, { mode: 'normalizedReview' });
+      for (const { metrics } of report.views) {
+        assert.equal(metrics.visibleWeapon, 'ball');
+        assert.equal(metrics.nonFiniteTransformCount, 0);
+        assert.ok(typeof metrics.weaponDesiredPrimaryGripDrift === 'number');
+        assert.ok(metrics.weaponDesiredPrimaryGripDrift < .002);
+      }
+    }
+  });
+
   it('reports deterministic defects for every atlas case and four review views', () => {
     const report = analyzeV3AnimationAtlasDefects({ mode: 'normalizedReview' });
     const caseIds = V3_POSE_CLEARANCE_CASES.map((entry) => entry.id);
@@ -363,18 +375,18 @@ describe('v3AnimationAtlasDefects', () => {
     assert.equal(hammer.motionRetention, undefined);
   });
 
-  it('includes Mesh2Motion cleanup track metadata for cleanup-backed atlas cases', () => {
+  it('does not report legacy cleanup tracks for Blender-baked atlas cases', () => {
     const sprint = analyzeV3AnimationAtlasCaseDefects('sprint', { mode: 'normalizedReview' });
     const slide = analyzeV3AnimationAtlasCaseDefects('slide', { mode: 'normalizedReview' });
     const swordSlash = analyzeV3AnimationAtlasCaseDefects('swordSlash', { mode: 'normalizedReview' });
 
-    assert.equal(sprint.mesh2MotionCleanupTrackId, 'clean_sprint:Sprint_Loop');
-    assert.equal(sprint.mesh2MotionCleanupSourceClipName, 'Sprint_Loop');
-    assert.equal(sprint.mesh2MotionCleanupDriverJointAdjustmentCount, 0);
-    assert.equal(sprint.mesh2MotionCleanupPartBindingAdjustmentCount, 0);
-    assert.equal(sprint.mesh2MotionCleanupWeaponSocketAdjustmentCount, 0);
-    assert.equal(slide.mesh2MotionCleanupTrackId, 'clean_slide:Slide_Loop');
-    assert.equal(swordSlash.mesh2MotionCleanupTrackId, 'clean_sword_slash:Sword_Regular_B');
+    assert.equal(sprint.mesh2MotionCleanupTrackId, undefined);
+    assert.equal(sprint.mesh2MotionCleanupSourceClipName, undefined);
+    assert.equal(sprint.mesh2MotionCleanupDriverJointAdjustmentCount, undefined);
+    assert.equal(sprint.mesh2MotionCleanupPartBindingAdjustmentCount, undefined);
+    assert.equal(sprint.mesh2MotionCleanupWeaponSocketAdjustmentCount, undefined);
+    assert.equal(slide.mesh2MotionCleanupTrackId, undefined);
+    assert.equal(swordSlash.mesh2MotionCleanupTrackId, undefined);
   });
 
   it('keeps walk visibly free of lower-body seam tears in every atlas view', () => {

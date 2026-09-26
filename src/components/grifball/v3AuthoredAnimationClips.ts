@@ -15,6 +15,7 @@ import {
 } from './v3CleanMixamoClips';
 import { V3_DETAIL_BONE_NAMES } from '../v3/v3RigDetail';
 import { V3_MANUAL_AUTHORED_ANIMATION_CLIPS } from './v3ManualAuthoredAnimationClips.generated';
+import { sampleV3BlenderAnimation } from './v3BlenderAnimationClips';
 
 export const ATLAS_EDITOR_EXPORT_VERSION = 1;
 
@@ -36,6 +37,20 @@ export const V3_AUTHORED_ANIMATION_CLIP_IDS = [
   'clean_pistol_carry',
   'clean_pistol_fire',
   'clean_hit_react',
+  'clean_slide_hammer',
+  'clean_slide_sword',
+  'clean_slide_pistol',
+  'clean_slide_ball',
+  'clean_ball_carry',
+  'clean_ball_walk',
+  'clean_ball_sprint',
+  'clean_ball_punch',
+  'clean_ball_throw',
+  'clean_crouch',
+  'clean_crouch_hammer',
+  'clean_crouch_sword',
+  'clean_crouch_pistol',
+  'clean_crouch_ball',
 ] as const;
 
 export type V3AuthoredClipId = (typeof V3_AUTHORED_ANIMATION_CLIP_IDS)[number];
@@ -341,7 +356,21 @@ const CLIPS: Record<V3AuthoredClipId, V3AuthoredAnimationClip> = {
       thighRight: q(-0.78, 0, -0.05),
     }),
   ], true),
-  clean_slide: clip('clean_slide', 'Clean Slide', 72, [
+  clean_slide_hammer: clip('clean_slide_hammer', 'Slide · Hammer', 84, [cleanKeyframe(0), cleanKeyframe(84)]),
+  clean_crouch: clip('clean_crouch', 'Crouch · Unarmed', 120, [cleanKeyframe(0), cleanKeyframe(120)]),
+  clean_crouch_hammer: clip('clean_crouch_hammer', 'Crouch · Hammer', 120, [cleanKeyframe(0), cleanKeyframe(120)]),
+  clean_crouch_sword: clip('clean_crouch_sword', 'Crouch · Sword', 120, [cleanKeyframe(0), cleanKeyframe(120)]),
+  clean_crouch_pistol: clip('clean_crouch_pistol', 'Crouch · Pistol', 120, [cleanKeyframe(0), cleanKeyframe(120)]),
+  clean_crouch_ball: clip('clean_crouch_ball', 'Crouch · Ball', 120, [cleanKeyframe(0), cleanKeyframe(120)]),
+  clean_slide_sword: clip('clean_slide_sword', 'Slide · Sword', 84, [cleanKeyframe(0), cleanKeyframe(84)]),
+  clean_slide_pistol: clip('clean_slide_pistol', 'Slide · Pistol', 84, [cleanKeyframe(0), cleanKeyframe(84)]),
+  clean_slide_ball: clip('clean_slide_ball', 'Slide · Ball', 84, [cleanKeyframe(0), cleanKeyframe(84)]),
+  clean_ball_walk: clip('clean_ball_walk', 'Runner Walk', 90, [cleanKeyframe(0), cleanKeyframe(90)], true),
+  clean_ball_sprint: clip('clean_ball_sprint', 'Runner Sprint', 90, [cleanKeyframe(0), cleanKeyframe(90)], true),
+  clean_ball_punch: clip('clean_ball_punch', 'Runner Ball Punch', 72, [cleanKeyframe(0), cleanKeyframe(72)]),
+  clean_ball_throw: clip('clean_ball_throw', 'Runner Overhead Throw', 90, [cleanKeyframe(0), cleanKeyframe(90)]),
+  clean_ball_carry: clip('clean_ball_carry', 'Ball Carry', 90, [cleanKeyframe(0), cleanKeyframe(90)], true),
+  clean_slide: clip('clean_slide', 'Clean Slide', 84, [
     cleanKeyframe(0, {}),
     cleanKeyframe(36, {
       pelvis: q(-0.08, 0, 0),
@@ -353,7 +382,7 @@ const CLIPS: Record<V3AuthoredClipId, V3AuthoredAnimationClip> = {
       upperArmLeft: q(-0.18, -0.06, 0.1),
       upperArmRight: q(-0.18, 0.06, -0.1),
     }, { rootOffset: [0, -0.08, 0.05] }),
-    cleanKeyframe(72, {}),
+    cleanKeyframe(84, {}),
   ]),
   clean_hammer_carry: clip('clean_hammer_carry', 'Clean Hammer Carry', 90, [
     cleanKeyframe(0, HAMMER_CARRY_JOINTS, { weaponPose: HAMMER_CARRY_WEAPON }),
@@ -740,6 +769,22 @@ export function getV3AuthoredAnimationClip(clipId: V3AuthoredClipId): V3Authored
   return clipForId(clipId);
 }
 
+export function sampleV3ProductionClip(
+  clipId: V3AuthoredClipId,
+  options: { frame?: number; normalizedTime?: number } = {}
+): V3AuthoredAnimationSample {
+  if (manualClipForId(clipId)) return sampleV3AuthoredClip(clipId, options);
+  const clip = clipForId(clipId);
+  const normalizedTime = clamp01(options.normalizedTime ?? (options.frame ?? 0) / clip.durationFrames);
+  const pose = sampleV3BlenderAnimation(clipId, normalizedTime);
+  if (!pose) return sampleV3AuthoredClip(clipId, options);
+  return {
+    clip, clipId, frame: Math.round(normalizedTime * clip.durationFrames), normalizedTime,
+    pose, weaponPose: pose.weaponPose, motionSource: 'blenderAuthored',
+  };
+}
+
+/** Original sources remain available for legacy calibration/editor comparisons. */
 export function sampleV3AuthoredClip(
   clipId: V3AuthoredClipId,
   options: { frame?: number; normalizedTime?: number } = {}
@@ -785,8 +830,11 @@ export function sampleV3AuthoredClip(
 
 export function mapV3AtlasCaseToAuthoredClip(
   caseId: V3PoseClearanceCaseId,
-  carryWeapon?: 'hammer' | 'sword' | 'pistol' | null
+  carryWeapon?: 'hammer' | 'sword' | 'pistol' | 'ball' | null
 ): V3AuthoredClipId {
+  if (caseId === 'crouch') return carryWeapon ? `clean_crouch_${carryWeapon}` : 'clean_crouch';
+  if (caseId === 'slide' && carryWeapon) return `clean_slide_${carryWeapon}`;
+  if (carryWeapon === 'ball') return caseId === 'walk' ? 'clean_ball_walk' : caseId === 'sprint' ? 'clean_ball_sprint' : 'clean_ball_carry';
   if (carryWeapon === 'hammer') return 'clean_hammer_carry';
   if (carryWeapon === 'sword') return 'clean_sword_carry';
   if (carryWeapon === 'pistol') return 'clean_pistol_carry';
@@ -802,6 +850,8 @@ export function mapV3AtlasCaseToAuthoredClip(
     case 'swordLunge': return 'clean_sword_lunge';
     case 'swordSlash': return 'clean_sword_slash';
     case 'pistolFire': return 'clean_pistol_fire';
+    case 'ballPunch': return 'clean_ball_punch';
+    case 'ballThrow': return 'clean_ball_throw';
     case 'hitReact': return 'clean_hit_react';
     case 'death':
     case 'idle':
@@ -818,7 +868,19 @@ export function mapV3RuntimeStateToAuthoredClip(input: {
   isLunging?: boolean;
   velocityLength?: number;
 }): V3AuthoredClipId {
-  if (input.isSliding) return 'clean_slide';
+  if (input.isSliding) {
+    if (input.activeWeapon === 'hammer' || input.activeWeapon === 'sword' || input.activeWeapon === 'pistol' || input.activeWeapon === 'ball') {
+      return `clean_slide_${input.activeWeapon}`;
+    }
+    return 'clean_slide';
+  }
+  if (input.activeWeapon === 'ball') {
+    if (input.weaponState === 'throwing' || input.weaponState === 'throw') return 'clean_ball_throw';
+    if (['punch', 'punching', 'melee_swing', 'swing_up', 'swing_down'].includes(input.weaponState ?? '')) return 'clean_ball_punch';
+    if (input.isSprinting) return 'clean_ball_sprint';
+    if ((input.velocityLength ?? 0) > .1) return 'clean_ball_walk';
+    return 'clean_ball_carry';
+  }
   if (input.activeWeapon === 'hammer') {
     if (input.weaponState === 'swing_up') return 'clean_hammer_windup';
     if (input.weaponState === 'swing_down') return 'clean_hammer_strike';

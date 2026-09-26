@@ -6,7 +6,7 @@ import { updatePlayerHammerAnimationForState } from './playerHammerAnimationRunt
 import { updatePlayerPistolAnimationForState } from './playerPistolAnimationRuntime';
 import { updatePlayerSwordAnimationForState } from './playerSwordAnimationRuntime';
 import type { GrifballRuntimeState } from './runtimeState';
-import { sampleV3FirstPersonWeaponPose } from './v3AnimationFidelity';
+import { sampleV3GameplayFirstPersonWeaponPose as sampleV3FirstPersonWeaponPose } from './v3GameplayAnimation';
 
 const baseState = (): GrifballRuntimeState => ({
   activeWeapon: 'hammer',

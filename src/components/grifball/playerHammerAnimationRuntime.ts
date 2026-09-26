@@ -7,7 +7,7 @@ import {
 import { resolveHammerSlamTiming } from '../../game/hammerSlamTiming';
 import { resolvePunchCooldown } from '../../game/runnerBallSettings';
 import { type GrifballRuntimeState } from './runtimeState';
-import { sampleV3FirstPersonWeaponPose } from './v3AnimationFidelity';
+import { sampleV3GameplayFirstPersonWeaponPose as sampleV3FirstPersonWeaponPose } from './v3GameplayAnimation';
 
 const applyV3HammerPose = (
   playerHammer: THREE.Group,

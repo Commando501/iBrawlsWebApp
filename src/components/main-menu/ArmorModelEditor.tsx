@@ -246,6 +246,7 @@ const V2_POSE_OPTIONS: Array<{ id: V2PoseMode; label: string }> = [
 
 const V3_POSE_LABELS: Record<V3PoseClearanceCaseId, string> = {
   idle: 'Idle',
+  crouch: 'Crouch',
   walk: 'Walk',
   sprint: 'Sprint',
   slide: 'Slide',
@@ -257,6 +258,8 @@ const V3_POSE_LABELS: Record<V3PoseClearanceCaseId, string> = {
   swordLunge: 'Sword Lunge',
   swordSlash: 'Sword Slash',
   pistolFire: 'Pistol Fire',
+  ballPunch: 'Runner Ball Punch',
+  ballThrow: 'Runner Overhead Throw',
   hitReact: 'Hit React',
   death: 'Death',
 };

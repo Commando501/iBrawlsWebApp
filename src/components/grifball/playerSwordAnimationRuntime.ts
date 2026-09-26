@@ -6,7 +6,7 @@ import {
   getSwordAttackAnimationStyle,
 } from './attackAnimationPresets';
 import { type GrifballRuntimeState } from './runtimeState';
-import { sampleV3FirstPersonWeaponPose } from './v3AnimationFidelity';
+import { sampleV3GameplayFirstPersonWeaponPose as sampleV3FirstPersonWeaponPose } from './v3GameplayAnimation';
 
 const applyV3SwordPose = (
   playerSword: THREE.Group,

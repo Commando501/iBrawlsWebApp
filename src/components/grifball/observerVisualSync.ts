@@ -50,7 +50,9 @@ export function updateObserverCombatantVisualsForState({
           state.playerDashRemaining <= 0);
     const isHostSliding =
       state.settings.enableSlide &&
-      (multiplayerRole === 'observer' ? hostSpeed > 3.0 && hostData.isCrouching : state.playerSlideActive);
+      (multiplayerRole === 'observer'
+        ? (state.hostClientId ? state.otherPlayers.get(state.hostClientId)?.aiSlideActive : undefined) ?? (hostSpeed > 3.0 && hostData.isCrouching)
+        : state.playerSlideActive);
 
     let hostWeaponState = 'ready';
     let hostWeaponTimer = 0;
@@ -63,12 +65,13 @@ export function updateObserverCombatantVisualsForState({
         hostIsLunging = Boolean(hostPlayer.isLunging);
       }
     } else if (multiplayerRole !== 'observer') {
-      hostWeaponState = state.pWeaponState;
-      hostWeaponTimer = state.pWeaponTimer;
+      hostWeaponState = state.activeWeapon === 'sword' ? state.pSwordState : state.activeWeapon === 'pistol' ? state.pPistolState : state.pWeaponState;
+      hostWeaponTimer = state.activeWeapon === 'sword' ? state.pSwordTimer : state.activeWeapon === 'pistol' ? state.pPistolTimer : state.pWeaponTimer;
       hostIsLunging = state.isLunging;
     }
 
     const didAnimateHost = animateSpartanCombatantModel({
+      isCrouching: multiplayerRole === 'observer' ? !!hostData.isCrouching : state.isCrouching,
       refs,
       mesh: refs.hostGroup,
       vel: hostVel,
@@ -95,6 +98,7 @@ export function updateObserverCombatantVisualsForState({
       animateCombatantWeaponMeshes({
         hammerModel: refs.hostHammer,
         swordModel: refs.hostSword,
+        pistolModel: refs.hostGroup.getObjectByName('v3ObserverPistol') as THREE.Group | undefined,
         activeWeapon: hostData.activeWeapon || 'hammer',
         weaponState: hostWeaponState,
         weaponTimer: hostWeaponTimer,
@@ -138,9 +142,9 @@ export function updateObserverCombatantVisualsForState({
       const isClientSliding =
         state.settings.enableSlide &&
         (multiplayerRole === 'observer'
-          ? enemySpeed > 3.0 && clientData.isCrouching
+          ? (state.clientClientId ? state.otherPlayers.get(state.clientClientId)?.aiSlideActive : undefined) ?? (enemySpeed > 3.0 && clientData.isCrouching)
           : mainAI
-            ? mainAI.isCrouching && mainAI.aiState === 'APPROACHING' && enemySpeed > 2.0
+            ? mainAI.aiSlideActive ?? (mainAI.isCrouching && mainAI.aiState === 'APPROACHING' && enemySpeed > 2.0)
             : false);
 
       let enemyWeaponState = 'ready';
@@ -160,6 +164,7 @@ export function updateObserverCombatantVisualsForState({
       }
 
       const didAnimateEnemy = animateSpartanCombatantModel({
+        isCrouching: multiplayerRole === 'observer' ? !!clientData.isCrouching : !!mainAI?.isCrouching,
         refs,
         mesh: refs.enemyGroup,
         vel: enemyVel,
@@ -186,6 +191,7 @@ export function updateObserverCombatantVisualsForState({
         animateCombatantWeaponMeshes({
           hammerModel: refs.enemyHammer,
           swordModel: refs.enemySword,
+          pistolModel: refs.enemyGroup.getObjectByName('v3ObserverPistol') as THREE.Group | undefined,
           activeWeapon: clientData.activeWeapon || 'hammer',
           weaponState: enemyWeaponState,
           weaponTimer: enemyWeaponTimer,

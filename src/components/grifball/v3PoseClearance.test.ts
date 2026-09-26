@@ -12,6 +12,7 @@ import {
 
 const EXPECTED_CASE_IDS = [
   'idle',
+  'crouch',
   'walk',
   'sprint',
   'slide',
@@ -23,6 +24,8 @@ const EXPECTED_CASE_IDS = [
   'swordLunge',
   'swordSlash',
   'pistolFire',
+  'ballPunch',
+  'ballThrow',
   'hitReact',
   'death',
 ] as const;

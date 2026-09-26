@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { buildV3CarriedBallModel } from './v3BallCarry';
 import {
   AVAILABLE_PRESETS,
   buildGravityHammerModel,
@@ -29,6 +30,7 @@ export type CombatantMeshRig = {
   hammer: THREE.Group;
   sword: THREE.Group;
   pistol?: THREE.Group;
+  ball?: THREE.Group;
   rig: CombatantRig;
 };
 
@@ -178,7 +180,9 @@ export const createCombatantMeshRig = (
   pistol.visible = false;
   attachCombatantWeapon(group, rig, pistol, resolvedLoadout);
 
-  return { group, hammer, sword, pistol, rig };
+  const ball = isV3Loadout(resolvedLoadout) ? buildV3CarriedBallModel() : undefined;
+  if (ball) group.add(ball);
+  return { group, hammer, sword, pistol, ball, rig };
 };
 
 export const rebuildDualWeaponCombatantModel = ({
@@ -239,5 +243,12 @@ export const rebuildDualWeaponCombatantModel = ({
   sword.visible = activeWeapon === 'sword';
   attachCombatantWeapon(group, rig, sword, loadout);
 
+  if (isV3Loadout(loadout)) {
+    const pistol = buildCombatantPistol(resolvedWeaponHue, loadout, v3Options);
+    prepareV3ThirdPersonWeaponBasis(pistol, 'pistol', loadout);
+    pistol.name = 'v3ObserverPistol';
+    pistol.visible = activeWeapon === 'pistol';
+    attachCombatantWeapon(group, rig, pistol, loadout);
+  }
   return { group, hammer, sword, rig };
 };

@@ -47,6 +47,10 @@ export interface V3CleanRigWeaponPose {
   position: V3Vec3Tuple;
   rotation: V3Vec3Tuple;
   source: 'authoredCleanClip' | 'mixamoReferenceClip';
+  /** Blender-baked weapon transform in model space; bypass chest-relative retargeting. */
+  modelSpaceQuaternion?: V3QuatTuple;
+  /** Baked secondary contact in weapon-local coordinates, after socket basis correction. */
+  modelSpaceOffhandSocket?: V3Vec3Tuple;
   primarySocketMarker?: V3Vec3Tuple;
   offhandSocketMarker?: V3Vec3Tuple;
 }
@@ -60,6 +64,8 @@ export interface V3CleanRigPose {
   jointOffsets?: Partial<Record<V3CleanJointName, V3Vec3Tuple>>;
   mesh2MotionDriverPose?: V3Mesh2MotionDriverPose;
   weaponPose?: V3CleanRigWeaponPose;
+  /** Objective-ball transform in model space, using the game's 0.32 m radius. */
+  ballPose?: { position: V3Vec3Tuple; quaternion: V3QuatTuple; released?: boolean; releaseVelocity?: V3Vec3Tuple };
 }
 
 export interface V3CleanRigApplyReport {

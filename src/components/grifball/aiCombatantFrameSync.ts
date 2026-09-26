@@ -98,5 +98,5 @@ export function syncAICombatantFrameToState({
   self.aiHammerJumpCooldownTimer = hammerJumpCooldownTimer;
   self.aiPendingPostEvasionCharge = pendingPostEvasionCharge;
   self.aiCoordCommitTimer = coordCommitTimer;
-  mesh.scale.set(1, self.isCrouching ? 0.65 : 1, 1);
+  mesh.scale.set(1, self.isCrouching && mesh.userData.modelSystem !== 'v3' ? 0.65 : 1, 1);
 }

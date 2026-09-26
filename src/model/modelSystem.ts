@@ -6,6 +6,8 @@ export type ModelSystem = (typeof MODEL_SYSTEMS)[number];
 
 export type VisualModelPolicy = ModelSystem;
 
+export type VisualModelSelectionContext = 'standard' | 'trainingSandbox';
+
 export const DEFAULT_MODEL_SYSTEM: ModelSystem = 'v3';
 export const DEFAULT_VISUAL_MODEL_POLICY: VisualModelPolicy = 'v2';
 
@@ -43,10 +45,12 @@ export function normalizeVisualModelPolicy(
 export function normalizeSelectableVisualModelPolicy(
   value: unknown,
   isAdmin: boolean,
-  fallback: VisualModelPolicy = DEFAULT_VISUAL_MODEL_POLICY
+  fallback: VisualModelPolicy = DEFAULT_VISUAL_MODEL_POLICY,
+  context: VisualModelSelectionContext = 'standard'
 ): VisualModelPolicy {
   void isAdmin;
   const normalized = normalizeVisualModelPolicy(value, fallback);
+  if (context === 'trainingSandbox') return normalized;
   if (normalized !== 'v3') return normalized;
 
   const normalizedFallback = normalizeVisualModelPolicy(fallback);
@@ -54,10 +58,33 @@ export function normalizeSelectableVisualModelPolicy(
 }
 
 export function getSelectableVisualModelPolicyOptions(
-  isAdmin: boolean
+  isAdmin: boolean,
+  context: VisualModelSelectionContext = 'standard'
 ): readonly VisualModelPolicyOption[] {
   void isAdmin;
+  if (context === 'trainingSandbox') {
+    return VISUAL_MODEL_POLICY_OPTIONS.map((option) => option.value === 'v3'
+      ? { ...option, label: 'Version 3 Preview' }
+      : option);
+  }
   return VISUAL_MODEL_POLICY_OPTIONS.filter((option) => option.value !== 'v3');
+}
+
+/** Only an explicitly launched local training session can opt into V3. */
+export function resolveSessionVisualModelPolicy(input: {
+  localPolicy: unknown;
+  lobbyPolicy?: unknown;
+  isMultiplayer: boolean;
+  isLocalTraining: boolean;
+  isReplay: boolean;
+  isAdmin: boolean;
+}): VisualModelPolicy {
+  return normalizeSelectableVisualModelPolicy(
+    input.isMultiplayer ? input.lobbyPolicy ?? input.localPolicy : input.localPolicy,
+    input.isAdmin,
+    DEFAULT_VISUAL_MODEL_POLICY,
+    input.isLocalTraining && !input.isMultiplayer && !input.isReplay ? 'trainingSandbox' : 'standard'
+  );
 }
 
 export function getRecommendedVisualModelPolicy(): VisualModelPolicy {

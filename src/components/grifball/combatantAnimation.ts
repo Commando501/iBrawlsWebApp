@@ -106,6 +106,7 @@ export const applyCombatantArmPose = (
   dt: number
 ): void => {
   if (!mesh) return;
+  if (mesh.userData.modelSystem === 'v3') return;
   const rightArm = mesh.userData.rightArm as THREE.Group | undefined;
   const leftArm = mesh.userData.leftArm as THREE.Group | undefined;
   if (!rightArm || !leftArm) return;
@@ -411,6 +412,8 @@ export function animateSpartanCombatantModel({
   weaponState,
   weaponTimer,
   dt,
+  isCrouching = false,
+  crouchProgress,
   isSliding = false,
   isSprinting = false,
   isLunging = false,
@@ -433,6 +436,8 @@ export function animateSpartanCombatantModel({
   weaponState: string;
   weaponTimer: number;
   dt: number;
+  isCrouching?: boolean;
+  crouchProgress?: number;
   isSliding?: boolean;
   isSprinting?: boolean;
   isLunging?: boolean;
@@ -449,7 +454,12 @@ export function animateSpartanCombatantModel({
   if (!mesh) return false;
 
   if (mesh.userData.modelSystem === 'v3') {
+    mesh.scale.y = 1;
     return animateV3CombatantModel({
+      v3AnimationAuthority: 'cleanRig',
+      gameplayPlayback: true,
+      isCrouching,
+      crouchProgress,
       refs,
       mesh,
       vel,
@@ -670,6 +680,9 @@ export function animateCombatantWeaponMeshes({
     pistolModel?.userData.modelSystem === 'v3'
   ) {
     animateV3WeaponMeshes({
+      v3AnimationAuthority: combatantModel ? 'cleanRig' : 'legacyLayered',
+      v3AuthoredClipId: combatantModel?.userData.v3GameplaySample?.clipId,
+      v3AuthoredSampleOverride: combatantModel?.userData.v3GameplaySample,
       hammerModel,
       swordModel,
       pistolModel,

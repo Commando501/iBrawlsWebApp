@@ -1,0 +1,12 @@
+import fs from 'node:fs';
+import * as THREE from 'three';
+import {createCombatantMeshRig} from '../../../src/components/grifball/combatantModels';
+import {getV3Mesh2MotionDriverRig} from '../../../src/components/grifball/v3Mesh2MotionDriverRig';
+import {getV3WeaponSocketWorldPosition} from '../../../src/components/grifball/v3WeaponSocketBasis';
+const r=createCombatantMeshRig(new THREE.Scene(),200,false,{modelSystem:'v3'},{v3QualityTier:'desktop',v3SourceFidelity:'exact'});
+const d=getV3Mesh2MotionDriverRig(r.group);
+const weapons=Object.fromEntries((['hammer','sword','pistol'] as const).map(w=>{const m=r[w]!;m.updateWorldMatrix(true,true);return [w,{scale:m.scale.toArray(),primary:m.worldToLocal(getV3WeaponSocketWorldPosition(m,'thirdPersonPrimaryGrip')!).toArray(),offhand:m.worldToLocal(getV3WeaponSocketWorldPosition(m,'thirdPersonOffhandGrip')!).toArray()}]}));
+const bindings=Object.fromEntries(Object.entries(d.partBindings).map(([s,b])=>[s,{joint:b!.sourceJointName,matrix:b!.bindMatrix.toArray()}]));
+const sockets=Object.fromEntries(Object.entries(d.weaponSockets).map(([s,b])=>[s,{joint:b.sourceJointName,p:b.restLocalPosition}]));
+fs.writeFileSync('output/blender-repair/bind.json',JSON.stringify({bindings,weapons,sockets},null,2));
+console.log(JSON.stringify({weapons,sockets,bindings:Object.fromEntries(Object.entries(bindings).map(([k,v])=>[k,v.joint]))},null,2));

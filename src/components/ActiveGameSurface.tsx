@@ -222,7 +222,7 @@ export function ActiveGameSurface({
           isMultiplayer={isMultiplayer}
           multiplayerRole={multiplayerRole}
           multiplayerSocket={multiplayerSocket}
-          matchLobbyConfig={matchLobbyConfig}
+          matchLobbyConfig={isMultiplayer ? matchLobbyConfig : null}
           multiplayerSpawnSlot={multiplayerSpawnSlot}
           opponentClientId={opponentClientId}
           replayData={selectedReplay}

@@ -56,7 +56,7 @@ test('SinglePlayerSetupPanel exposes Sandbox Experience and AI Behavior Editor m
   assert.match(html, /Sandbox Experience[\s\S]*AI Behavior Editor[\s\S]*Training Sandbox Setup[\s\S]*Tournament Setup/);
 });
 
-test('SinglePlayerSetupPanel hides V3 sandbox visual model policy for non-admin players', () => {
+test('SinglePlayerSetupPanel exposes V3 sandbox preview for non-admin players', () => {
   const html = renderToStaticMarkup(
     <SinglePlayerSetupPanel
       {...baseSinglePlayerProps()}
@@ -67,22 +67,25 @@ test('SinglePlayerSetupPanel hides V3 sandbox visual model policy for non-admin 
   assert.match(html, /Model Set/);
   assert.match(html, /Version 1 Classic/);
   assert.match(html, /Version 2 Rigged/);
+  assert.match(html, /Version 3 Preview/);
   assert.doesNotMatch(html, /Version 3 Advanced/);
   assert.doesNotMatch(html, new RegExp(V3_INTERNAL_PROTOTYPE_LABEL));
 });
 
-test('SinglePlayerSetupPanel hides V3 sandbox visual model policy for admin players', () => {
+test('SinglePlayerSetupPanel exposes V3 sandbox preview for admin players', () => {
   const html = renderToStaticMarkup(
     <SinglePlayerSetupPanel
       {...baseSinglePlayerProps()}
       {...({ isAdmin: true } as Partial<ComponentProps<typeof SinglePlayerSetupPanel>>)}
-      adminSettings={{ ...DEFAULT_ADMIN_SETTINGS, visualModelPolicy: 'v2' }}
+      adminSettings={{ ...DEFAULT_ADMIN_SETTINGS, visualModelPolicy: 'v3' }}
     />
   );
 
   assert.match(html, /Model Set/);
   assert.match(html, /Version 1 Classic/);
   assert.match(html, /Version 2 Rigged/);
+  assert.match(html, /aria-pressed="true"[^>]*>Version 3 Preview/);
+  assert.match(html, /Preview V3 player and bot models in local training/);
   assert.doesNotMatch(html, /Version 3 Advanced/);
   assert.doesNotMatch(html, new RegExp(V3_INTERNAL_PROTOTYPE_LABEL));
 });

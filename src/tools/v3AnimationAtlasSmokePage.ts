@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { V3_BLENDER_ANIMATIONS } from '../components/grifball/v3BlenderAnimationClips.generated';
 import {
   analyzeV3AnimationAtlasDefects,
   formatV3AnimationAtlasDefectSummary,
@@ -25,6 +26,8 @@ const canvas = document.getElementById('atlas-canvas') as HTMLCanvasElement;
 const animationSelect = document.getElementById('animation-select') as HTMLSelectElement;
 const carryWeaponSelect = document.getElementById('carry-weapon') as HTMLSelectElement;
 const playAllButton = document.getElementById('play-all') as HTMLButtonElement;
+const playHammerButton = document.getElementById('play-hammer') as HTMLButtonElement;
+const playHammerMeleeButton = document.getElementById('play-hammer-melee') as HTMLButtonElement;
 const playPauseButton = document.getElementById('play-pause') as HTMLButtonElement;
 const resetButton = document.getElementById('reset') as HTMLButtonElement;
 const framePrevButton = document.getElementById('frame-prev') as HTMLButtonElement;
@@ -36,6 +39,7 @@ const loopInput = document.getElementById('loop') as HTMLInputElement;
 const boundsOverlayInput = document.getElementById('bounds-overlay') as HTMLInputElement;
 const floorOverlayInput = document.getElementById('floor-overlay') as HTMLInputElement;
 const weaponOverlayInput = document.getElementById('weapon-overlay') as HTMLInputElement;
+const bladePathInput = document.getElementById('blade-path') as HTMLInputElement;
 const isolationOverlayInput = document.getElementById('isolation-overlay') as HTMLInputElement;
 const slotContinuityOverlayInput = document.getElementById('slot-continuity-overlay') as HTMLInputElement;
 const showDefectsInput = document.getElementById('show-defects') as HTMLInputElement;
@@ -60,8 +64,34 @@ const atlas = buildV3AnimationAtlasScene({
   caseId: 'idle',
   qualityTier: 'desktop',
 });
+// Trace the actual exported blade tip during the cutting stroke, in model space.
+const katarPaths = atlas.views.map(view => {
+  const track = V3_BLENDER_ANIMATIONS.clips.clean_sword_slash.weaponTrack!;
+  const points = Array.from({ length: 33 }, (_, i) => {
+    const frame = 15 + i;
+    return new THREE.Vector3(0, 0, -.75 * view.rig.sword.scale.x)
+      .applyQuaternion(new THREE.Quaternion().fromArray(track.quaternions[Math.min(frame, track.quaternions.length - 1)]).normalize())
+      .add(new THREE.Vector3().fromArray(track.positions[Math.min(frame, track.positions.length - 1)]));
+  });
+  const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(points), new THREE.LineBasicMaterial({ color: '#ffbd59' }));
+  line.name = `katarBladeTipPath:${view.id}`;
+  line.matrixAutoUpdate = false;
+  line.visible = false;
+  atlas.scene.add(line);
+  return line;
+});
+
+function updateKatarPaths() {
+  atlas.views.forEach((view, i) => {
+    const line = katarPaths[i];
+    line.visible = bladePathInput.checked && atlas.clock.caseId === 'swordSlash' && atlas.clock.mode !== 'bindRestPose' && !manualClipExport;
+    view.rig.group.updateWorldMatrix(true, false);
+    line.matrix.copy(view.rig.group.matrixWorld);
+    line.matrixWorldNeedsUpdate = true;
+  });
+}
 const baseViewRotations = Object.fromEntries(
-  atlas.views.map((view) => [view.id, view.rig.group.rotation.y])
+  atlas.views.map((view) => [view.id, Number(view.rig.group.userData.v3AtlasBaseYaw ?? 0)])
 ) as Record<V3AnimationAtlasViewId, number>;
 const sharedReviewRotation = new THREE.Euler(0, 0, 0, 'YXZ');
 const sharedReviewQuaternion = new THREE.Quaternion();
@@ -76,6 +106,7 @@ const modelDragState = {
 };
 
 let playAll = false;
+let playHammer: false | 'swing' | 'melee' = false;
 let lastTimeMs = 0;
 let frameCarry = 0;
 let currentDefectReport: V3AnimationAtlasDefectReport | null = null;
@@ -108,7 +139,7 @@ function exitBindPoseReviewForAnimation(): boolean {
 }
 
 function currentCarryWeapon() {
-  return carryWeaponSelect.value === 'hammer' || carryWeaponSelect.value === 'sword' || carryWeaponSelect.value === 'pistol'
+  return carryWeaponSelect.value === 'hammer' || carryWeaponSelect.value === 'sword' || carryWeaponSelect.value === 'pistol' || carryWeaponSelect.value === 'ball'
     ? carryWeaponSelect.value
     : null;
 }
@@ -165,8 +196,11 @@ function resize() {
   const viewHeight = 4.4;
   const minViewWidth = 15;
   const viewWidth = Math.max(viewHeight * aspect, minViewWidth);
-  atlas.camera.top = viewHeight / 2;
-  atlas.camera.bottom = -viewHeight / 2;
+  // Match the viewport aspect even when fitting all four models horizontally.
+  // Keeping a fixed height here squeezed every character on narrower panels.
+  const fittedViewHeight = viewWidth / aspect;
+  atlas.camera.top = fittedViewHeight / 2;
+  atlas.camera.bottom = -fittedViewHeight / 2;
   atlas.camera.left = -viewWidth / 2;
   atlas.camera.right = viewWidth / 2;
   atlas.camera.updateProjectionMatrix();
@@ -188,7 +222,7 @@ function publishReviewRotationState(): void {
 function applyReviewRotation(): void {
   sharedReviewQuaternion.setFromEuler(sharedReviewRotation);
   for (const view of atlas.views) {
-    baseViewQuaternion.setFromEuler(new THREE.Euler(0, baseViewRotations[view.id], 0, 'YXZ'));
+    baseViewQuaternion.setFromEuler(new THREE.Euler(0, baseViewRotations[view.id] + Number(view.rig.group.userData.v3AtlasFacingOffset ?? 0), 0, 'YXZ'));
     view.rig.group.quaternion.copy(baseViewQuaternion).multiply(sharedReviewQuaternion).normalize();
   }
   publishReviewRotationState();
@@ -267,7 +301,10 @@ function publishReport() {
         source: 'V3_MESH2MOTION_TPOSE_BIND',
         caseId: sample.caseId,
       }
-      : sample.manualClipExport ?? exportV3AuthoredClipToJson(sample.authoredClipId),
+      : sample.manualClipExport ?? (sample.cleanMotionSource === 'blenderAuthored'
+        ? { schema: 'v3-blender-clip/v1', id: sample.authoredClipId, fps: 60,
+          ...V3_BLENDER_ANIMATIONS.clips[sample.authoredClipId] }
+        : exportV3AuthoredClipToJson(sample.authoredClipId)),
   };
   cleanAuthorityElement.value = sample.bindPoseReview ? 'bindRestPose' : sample.animationAuthority;
   cleanAuthoredClipElement.value = sample.bindPoseReview ? V3_ANIMATION_ATLAS_BIND_REST_POSE_ID : sample.authoredClipId;
@@ -277,8 +314,14 @@ function publishReport() {
     : sample.cleanMixamoClipId
     ? `${sample.cleanMixamoClipId} @ ${(sample.cleanSourceNormalizedTime ?? 0).toFixed(3)}`
     : 'none';
-  if (document.activeElement !== cleanEditorExportElement) {
+  if (document.activeElement !== cleanEditorExportElement && (
+    cleanEditorExportElement.dataset.clip !== sample.authoredClipId ||
+    cleanEditorExportElement.dataset.source !== sample.cleanMotionSource ||
+    sample.manualClipPreviewActive
+  )) {
     cleanEditorExportElement.value = JSON.stringify(editorState.export, null, 2);
+    cleanEditorExportElement.dataset.clip = sample.authoredClipId;
+    cleanEditorExportElement.dataset.source = sample.cleanMotionSource;
   }
   (window as any).__IBRAWLS_V3_ANIMATION_ATLAS_SMOKE__ = report;
   (window as any).__IBRAWLS_V3_ANIMATION_ATLAS_DEFECTS__ = defectReport;
@@ -328,6 +371,7 @@ function renderAtlas(resetDeathBurst = false) {
     manualClipExport,
   });
   applyReviewRotation();
+  updateKatarPaths();
   syncControls();
   renderer.render(atlas.scene, atlas.camera);
 }
@@ -345,12 +389,20 @@ function setFrame(frame: number, resetDeathBurst = false) {
 }
 
 function nextCase() {
+  if (playHammer) {
+    const sequence: V3AnimationAtlasCaseId[] = playHammer === 'melee'
+      ? ['idle', 'hammerMelee', 'hammerMeleeRecover']
+      : ['idle', 'hammerWindup', 'hammerStrike', 'hammerRecover'];
+    setCase(sequence[(sequence.indexOf(atlas.clock.caseId) + 1) % sequence.length]);
+    return;
+  }
   const index = atlas.cases.findIndex((entry) => entry.id === atlas.clock.caseId);
   const next = atlas.cases[(index + 1) % atlas.cases.length];
   setCase(next.id);
 }
 
 animationSelect.addEventListener('change', () => {
+  playAll = false;
   exitBindPoseReviewForAnimation();
   setCase(animationSelect.value as V3AnimationAtlasCaseId);
 });
@@ -367,6 +419,7 @@ loopInput.addEventListener('change', () => renderAtlas());
 boundsOverlayInput.addEventListener('change', () => renderAtlas());
 floorOverlayInput.addEventListener('change', () => renderAtlas());
 weaponOverlayInput.addEventListener('change', () => renderAtlas());
+bladePathInput.addEventListener('change', () => renderAtlas());
 isolationOverlayInput.addEventListener('change', () => renderAtlas());
 slotContinuityOverlayInput.addEventListener('change', () => renderAtlas());
 showDefectsInput.addEventListener('change', () => publishReport());
@@ -400,6 +453,7 @@ canvas.addEventListener('pointermove', (event) => {
     dragPitchLimit
   );
   applyReviewRotation();
+  updateKatarPaths();
   renderer.render(atlas.scene, atlas.camera);
   event.preventDefault();
 });
@@ -475,12 +529,16 @@ downloadCleanClipButton.addEventListener('click', () => {
 
 previewCleanClipButton.addEventListener('click', () => {
   try {
+    if (JSON.parse(cleanEditorExportElement.value).schema === 'v3-blender-clip/v1') {
+      throw new Error('This Blender clip is already playing. Edit its skeleton in Blender and regenerate the bake. Paste clean-editor JSON here to preview a manual override.');
+    }
     manualClipExport = normalizeV3AuthoredClipExport(cleanEditorExportElement.value);
     saveManualClipPreview();
     previewCleanClipButton.textContent = 'Previewing JSON';
     renderAtlas(true);
   } catch (error) {
     previewCleanClipButton.textContent = error instanceof Error ? error.message.slice(0, 28) : 'Invalid JSON';
+    previewCleanClipButton.title = error instanceof Error ? error.message : 'Invalid JSON';
   }
   window.setTimeout(() => {
     previewCleanClipButton.textContent = 'Preview JSON';
@@ -505,11 +563,30 @@ playPauseButton.addEventListener('click', () => {
 });
 
 playAllButton.addEventListener('click', () => {
+  playHammer = false;
   exitBindPoseReviewForAnimation();
   playAll = true;
   atlas.clock.playing = true;
   atlas.clock.frame = 0;
   renderAtlas(true);
+});
+
+playHammerButton.addEventListener('click', () => {
+  exitBindPoseReviewForAnimation();
+  carryWeaponSelect.value = 'hammer';
+  playHammer = 'swing';
+  playAll = true;
+  atlas.clock.playing = true;
+  setCase('idle');
+});
+
+playHammerMeleeButton.addEventListener('click', () => {
+  exitBindPoseReviewForAnimation();
+  carryWeaponSelect.value = 'hammer';
+  playHammer = 'melee';
+  playAll = true;
+  atlas.clock.playing = true;
+  setCase('idle');
 });
 
 resetButton.addEventListener('click', () => {

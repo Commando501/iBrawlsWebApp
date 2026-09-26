@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { resolveGrifballTeam } from '../../game/grifballTeams';
 import { type ReplayFile, type UniversalSettings } from '../../types';
-import { animateCombatantWeaponMeshes } from './combatantAnimation';
+import { animateCombatantWeaponMeshes, animateSpartanCombatantModel } from './combatantAnimation';
 import { createCombatantMeshRig } from './combatantModels';
 import { syncCombatantTeamOutline } from './combatantTeamOutlines';
 import { type SwordLungeCurrentTrailStyle } from './combatGeometry';
@@ -89,9 +89,17 @@ export function updateReplayCombatantVisualsForFrame({
     syncCombatantTeamOutline(group, teamOutlineTeam, settings);
     group.position.copy(player.pos);
     group.rotation.y = player.yaw;
-    group.scale.set(1, player.crouchScaleY, 1);
+    group.scale.set(1, group.userData.modelSystem === 'v3' ? 1 : player.crouchScaleY, 1);
 
-    animateSpartanModel(
+    if (group.userData.modelSystem === 'v3') animateSpartanCombatantModel({
+      refs, mesh: group, vel: player.vel, yaw: player.yaw, hp: player.hp,
+      weaponState: player.weaponState, weaponTimer: player.weaponTimer || 0, dt,
+      activeWeapon: player.activeWeapon, isSliding: player.isSliding, isSprinting: player.isSprinting,
+      isLunging: !!player.isLunging, isCrouching: player.isCrouching,
+      crouchProgress: (1 - player.crouchScaleY) / .35,
+      lookPitch: player.pitch, settings, isLocalV3Animation: true,
+    });
+    else animateSpartanModel(
       group,
       player.vel,
       player.yaw,
@@ -128,7 +136,7 @@ export function updateReplayCombatantVisualsForFrame({
       alive: alive && !isSpectatedInFirstPerson,
     });
 
-    if (settings) {
+    if (settings || group.userData.modelSystem === 'v3') {
       animateCombatantWeaponMeshes({
         hammerModel: hammer,
         swordModel: sword,
@@ -138,7 +146,7 @@ export function updateReplayCombatantVisualsForFrame({
         weaponTimer: player.weaponTimer || 0,
         isLunging: Boolean(player.isLunging),
         dt,
-        settings,
+        settings: settings ?? {},
         combatantModel: group,
       });
       hammer.visible = alive && player.activeWeapon === 'hammer';

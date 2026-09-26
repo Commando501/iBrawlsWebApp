@@ -32,6 +32,7 @@ import {
   updateGrifballThrowTrajectoryVisualForState,
 } from './grifballThrowTrajectoryRuntime';
 import { resolveHeldGrifballBallVisualPosition } from './grifballBallCarryVisuals';
+import { updateV3GameplayBall } from './v3GameplayBall';
 
 type MutableRef<T> = { current: T };
 
@@ -445,6 +446,7 @@ export function updateGrifballObjectiveForState({
     mesh.visible = true;
     mesh.position.copy(visualPosition);
     mesh.rotation.y += dt * 2.5;
+    updateV3GameplayBall(state, refs, mesh, dt, localPlayerModelSystem);
   }
 
   const chargingHolderId =

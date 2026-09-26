@@ -9,6 +9,9 @@ import {
   type V3Mesh2MotionDriverWeaponSocketName,
 } from '../components/grifball/v3Mesh2MotionDriverRig';
 import { V3_MESH2MOTION_CLIP_SET } from '../components/grifball/v3Mesh2MotionClips.generated';
+import {
+  type V3AuthoredClipId,
+} from '../components/grifball/v3AuthoredAnimationClips';
 import { createInitialGrifballThreeRefs } from '../components/grifball/threeRefs';
 import { type V3CharacterSlotId } from '../components/v3/v3ModelTypes';
 import {
@@ -54,6 +57,9 @@ const MODE_LABELS: Record<EditMode, string> = {
 const CLIPS: Record<Mesh2MotionPreviewClipId, PreviewClipConfig> = Object.fromEntries(
   V3_MESH2MOTION_PRIORITY_REVIEW_CLIPS.map((clip) => [clip.id, clip])
 ) as Record<Mesh2MotionPreviewClipId, PreviewClipConfig>;
+
+const isMesh2MotionPreviewClip = (clipId: string): clipId is Mesh2MotionPreviewClipId =>
+  Object.hasOwn(CLIPS, clipId);
 
 const canvas = document.getElementById('calibrator-canvas') as HTMLCanvasElement;
 const statusElement = document.getElementById('status') as HTMLSpanElement;
@@ -986,6 +992,11 @@ function resizeViewport(): void {
 }
 
 clipSelect.addEventListener('change', () => {
+  const clipId = clipSelect.value as V3AuthoredClipId;
+  if (!isMesh2MotionPreviewClip(clipId)) {
+    window.location.assign(`/v3-clean-animation-editor.html?clip=${encodeURIComponent(clipId)}`);
+    return;
+  }
   syncPrioritySelectionFromPreview();
   updateClipControls();
   applyPreview(`Loaded ${selectedClip().label}`);

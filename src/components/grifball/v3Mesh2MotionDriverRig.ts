@@ -31,6 +31,8 @@ export interface V3Mesh2MotionDriverPose {
   sourceNormalizedTime: number;
   joints: Record<string, V3Mesh2MotionDriverJointPose>;
   cleanup?: V3Mesh2MotionCleanupSample;
+  /** Authored against the actual target bind: do not apply legacy spread/offsets again. */
+  bakedCalibration?: boolean;
 }
 
 export interface V3Mesh2MotionDriverJoint {
@@ -175,6 +177,26 @@ const restorePartBinding = (binding: V3Mesh2MotionPartBinding): void => {
 
 const worldBoxCenter = (object: THREE.Object3D): THREE.Vector3 =>
   new THREE.Box3().setFromObject(object).getCenter(new THREE.Vector3());
+
+/** Measure in model coordinates so spawn yaw/scale cannot move the hand socket. */
+const modelFrameBoxCenter = (model: THREE.Group, object: THREE.Object3D): THREE.Vector3 => {
+  model.updateWorldMatrix(true, true);
+  const inverseModel = model.matrixWorld.clone().invert();
+  const bounds = new THREE.Box3();
+  object.traverse(child => {
+    if (!(child instanceof THREE.Mesh)) return;
+    let box: THREE.Box3 | null;
+    if (child instanceof THREE.InstancedMesh) {
+      if (!child.boundingBox) child.computeBoundingBox();
+      box = child.boundingBox;
+    } else {
+      if (!child.geometry.boundingBox) child.geometry.computeBoundingBox();
+      box = child.geometry.boundingBox;
+    }
+    if (box) bounds.union(box.clone().applyMatrix4(inverseModel.clone().multiply(child.matrixWorld)));
+  });
+  return bounds.getCenter(new THREE.Vector3()).applyMatrix4(model.matrixWorld);
+};
 
 const generatedSlotPlacement = (slot: V3CharacterSlotId): GeneratedSlotPlacement | null => {
   const placements = (V3_MESH2MOTION_ARMOR_RIG as {
@@ -455,7 +477,7 @@ export function getV3Mesh2MotionDriverRig(model: THREE.Group): V3Mesh2MotionDriv
       slot,
       sourceJointName: bindingSourceJointName,
       partGroup,
-      restWorldCenter: tupleFromVector(worldBoxCenter(partGroup)),
+      restWorldCenter: tupleFromVector(modelFrameBoxCenter(model, partGroup)),
       restLocalPosition: tupleFromVector(partGroup.position),
       restLocalQuaternion: tupleFromQuaternion(partGroup.quaternion),
       restLocalScale: tupleFromVector(partGroup.scale),
@@ -510,7 +532,13 @@ export function applyV3Mesh2MotionDriverRigPose(
   const rig = getV3Mesh2MotionDriverRig(model);
   const alpha = Number.isFinite(options.alpha) ? Math.max(0, Math.min(1, Number(options.alpha))) : 1;
   const warnings = [...rig.warnings];
-  const calibration = getV3Mesh2MotionCalibration();
+  const calibration: V3Mesh2MotionCalibration = pose.bakedCalibration ? {
+    version: 'v3-mesh2motion-calibration/v2', armSpread: { left: 0, right: 0 },
+    driverJoints: {}, partBindings: {}, weaponSockets: {
+      rightHandGrip: { position: [0, 0, 0], rotation: [0, 0, 0] },
+      leftHandGrip: { position: [0, 0, 0], rotation: [0, 0, 0] },
+    },
+  } : getV3Mesh2MotionCalibration();
 
   for (const joint of Object.values(rig.joints)) {
     const jointPose = pose.joints[joint.name];
@@ -519,7 +547,7 @@ export function applyV3Mesh2MotionDriverRigPose(
     const restPosition = vec3FromTuple(joint.restLocalPosition);
     const restQuaternion = normalizedQuaternionFromTuple(joint.restLocalQuaternion);
 
-    if (alpha >= 1) {
+    if (alpha >= 1 || pose.bakedCalibration) {
       joint.object.position.copy(targetPosition);
       joint.object.quaternion.copy(targetQuaternion);
     } else {

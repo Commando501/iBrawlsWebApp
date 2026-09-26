@@ -1,4 +1,7 @@
 import * as THREE from 'three';
+import { applyV3BallCarryPose } from './v3BallCarry';
+import { applyV3GameplayHitReact, sampleV3GameplayAnimation } from './v3GameplayAnimation';
+import { getV3BlenderWeaponGripRotation } from './v3BlenderAnimationClips';
 import { getYawForHeading } from '../../game/yaw';
 import type { UniversalSettings } from '../../types';
 import type { V3QualityTier, V3WeaponId } from '../v3/v3ModelTypes';
@@ -48,7 +51,7 @@ import {
 import { getV3Mesh2MotionDriverWeaponSocketWorldTransform } from './v3Mesh2MotionDriverRig';
 import {
   mapV3RuntimeStateToAuthoredClip,
-  sampleV3AuthoredClip,
+  sampleV3ProductionClip as sampleV3AuthoredClip,
   type V3AuthoredAnimationSample,
   type V3AuthoredClipId,
 } from './v3AuthoredAnimationClips';
@@ -64,6 +67,9 @@ export type V3BroadBodyGroupName =
   | 'rightLeg';
 
 export interface V3CombatantAnimationInput {
+  isCrouching?: boolean;
+  crouchProgress?: number;
+  gameplayPlayback?: boolean;
   refs: GrifballThreeRefs;
   mesh: THREE.Group | null | undefined;
   vel: THREE.Vector3;
@@ -100,6 +106,9 @@ export interface V3FirstPersonWeaponPoseInput {
 }
 
 export interface V3WeaponMeshAnimationInput {
+  previewBallFlight?: boolean;
+  ballModel?: THREE.Object3D | null;
+  isSliding?: boolean;
   hammerModel?: THREE.Group | null;
   swordModel?: THREE.Group | null;
   pistolModel?: THREE.Group | null;
@@ -196,6 +205,7 @@ const ensureV3WeaponSocketBasis = (
 const alignV3WeaponToMesh2MotionDriverHand = (
   combatantModel: THREE.Group | undefined,
   weaponModel: THREE.Group,
+  bakedWeapon?: V3WeaponId,
 ): void => {
   if (!combatantModel || combatantModel.userData.v3Mesh2MotionDriverActive !== true) return;
   const target = getV3Mesh2MotionDriverWeaponSocketWorldTransform(combatantModel, 'rightHandGrip');
@@ -205,6 +215,7 @@ const alignV3WeaponToMesh2MotionDriverHand = (
   parent.updateMatrixWorld(true);
   const parentQuaternion = parent.getWorldQuaternion(new THREE.Quaternion());
   weaponModel.quaternion.copy(parentQuaternion.invert().multiply(target.quaternion)).normalize();
+  if (bakedWeapon) weaponModel.quaternion.multiply(getV3BlenderWeaponGripRotation(bakedWeapon)).normalize();
   weaponModel.rotation.setFromQuaternion(weaponModel.quaternion);
   weaponModel.updateMatrixWorld(true);
 
@@ -792,6 +803,9 @@ const applyV3AdditiveLayer = ({
 };
 
 export function animateV3CombatantModel({
+  isCrouching = false,
+  crouchProgress,
+  gameplayPlayback = false,
   refs: _refs,
   mesh,
   vel,
@@ -839,6 +853,9 @@ export function animateV3CombatantModel({
     : hp;
 
   if (hp <= 0) {
+    delete mesh.userData.v3GameplayPlayback;
+    delete mesh.userData.v3GameplaySample;
+    delete mesh.userData.v3RunnerSample;
     mesh.userData.v3LastHp = hp;
     mesh.userData.v3HitReactTimer = 0;
     resetV3BroadGroups(groups);
@@ -861,7 +878,13 @@ export function animateV3CombatantModel({
     : dt > 0 ? Math.min(1, dt * 12) : 1;
 
   if (v3AnimationAuthority === 'cleanRig') {
-    const clipId = v3AuthoredClipId ?? mapV3RuntimeStateToAuthoredClip({
+    const runtimeSample = gameplayPlayback ? (mesh.userData.v3RunnerSample ?? sampleV3GameplayAnimation(mesh, {
+      activeWeapon, weaponState, weaponTimer, settings: { ...settings,
+        ...(hammerSlamWindupTime !== undefined ? { hammerSlamWindupTime } : {}),
+        ...(hammerSlamAttackTime !== undefined ? { hammerSlamAttackTime } : {}),
+      }, isSliding, isSprinting, isLunging, isCrouching, crouchProgress, velocityLength: Math.hypot(vel.x, vel.z),
+    }, dt)) as V3AuthoredAnimationSample : undefined;
+    const clipId = runtimeSample?.clipId ?? v3AuthoredClipId ?? mapV3RuntimeStateToAuthoredClip({
       activeWeapon,
       weaponState,
       isSliding,
@@ -870,12 +893,16 @@ export function animateV3CombatantModel({
       velocityLength: vel.length(),
     });
     const normalizedTime = authoredNormalizedTime(v3AuthoredNormalizedTime, animationClockMs, weaponTimer);
-    const authoredSample = v3AuthoredSampleOverride?.clipId === clipId
+    const authoredSample = runtimeSample ?? (v3AuthoredSampleOverride?.clipId === clipId
       ? v3AuthoredSampleOverride
-      : sampleV3AuthoredClip(clipId, { normalizedTime });
-    applyV3CleanRigPose(mesh, authoredSample.pose, { alpha });
+      : sampleV3AuthoredClip(clipId, { normalizedTime }));
+    if (gameplayPlayback && mesh.userData.v3HitReactTimer > 0) {
+      applyV3GameplayHitReact(authoredSample, 1 - mesh.userData.v3HitReactTimer / .18);
+    }
+    if (gameplayPlayback) mesh.userData.v3GameplaySample = authoredSample;
+    applyV3CleanRigPose(mesh, authoredSample.pose, { alpha: gameplayPlayback ? 1 : alpha });
     mesh.userData.v3LastHp = hp;
-    mesh.userData.v3HitReactTimer = 0;
+    mesh.userData.v3HitReactTimer = Math.max(0, Number(mesh.userData.v3HitReactTimer ?? 0) - dt);
     mesh.userData.v3CleanMotionSource = authoredSample.motionSource;
     if (authoredSample.mixamoClipId) {
       mesh.userData.v3CleanMixamoClipId = authoredSample.mixamoClipId;
@@ -973,6 +1000,9 @@ export function getFirstPersonV3WeaponPose({
 }
 
 export function animateV3WeaponMeshes({
+  previewBallFlight = false,
+  ballModel,
+  isSliding,
   hammerModel,
   swordModel,
   pistolModel,
@@ -991,24 +1021,58 @@ export function animateV3WeaponMeshes({
   if (hammerModel) hammerModel.visible = activeWeapon === 'hammer';
   if (swordModel) swordModel.visible = activeWeapon === 'sword';
   if (pistolModel) pistolModel.visible = activeWeapon === 'pistol';
+  if (ballModel) ballModel.visible = false;
 
   if (v3AnimationAuthority === 'cleanRig') {
+    const appliedPose = combatantModel?.userData.v3CleanRigPose;
     const clipId = v3AuthoredClipId ?? mapV3RuntimeStateToAuthoredClip({
       activeWeapon,
       weaponState,
       isLunging,
+      isSliding: isSliding ?? appliedPose?.clipId?.startsWith('clean_slide'),
+      isSprinting: appliedPose?.clipId === 'clean_ball_sprint',
+      velocityLength: appliedPose?.clipId === 'clean_ball_walk' ? 1 : 0,
     });
     const sample = sampleV3AuthoredClip(clipId, {
       normalizedTime: authoredNormalizedTime(v3AuthoredNormalizedTime, undefined, weaponTimer),
     });
     const resolvedSample = v3AuthoredSampleOverride?.clipId === clipId ? v3AuthoredSampleOverride : sample;
-    const pose = resolvedSample.weaponPose;
+    if (ballModel && combatantModel && activeWeapon === 'ball') {
+      const ballPose = !v3AuthoredSampleOverride && appliedPose?.clipId === clipId ? appliedPose : resolvedSample.pose;
+      ballModel.visible = applyV3BallCarryPose(combatantModel, ballModel, ballPose, previewBallFlight);
+    }
+    const pose = !v3AuthoredSampleOverride && appliedPose?.clipId === clipId && appliedPose?.mesh2MotionDriverPose?.bakedCalibration
+      ? appliedPose.weaponPose : resolvedSample.weaponPose;
     const applyCleanWeapon = (
       model: THREE.Group | null | undefined,
       weapon: V3WeaponId
     ): void => {
-      if (!model || model.userData.modelSystem !== 'v3' || activeWeapon !== weapon || pose?.weapon !== weapon) return;
+      if (!model || model.userData.modelSystem !== 'v3' || activeWeapon !== weapon) return;
       ensureV3WeaponSocketBasis(model, weapon);
+      delete model.userData.v3BlenderOffhandSocket;
+      model.userData.v3CleanAuthoredClip = clipId;
+      model.userData.v3AnimationAuthority = 'cleanRig';
+      model.userData.v3CleanMotionSource = resolvedSample.motionSource;
+      if (!resolvedSample.mixamoClipId) {
+        delete model.userData.v3CleanMixamoClipId;
+        delete model.userData.v3CleanSourceNormalizedTime;
+      }
+      if (!pose && resolvedSample.pose.mesh2MotionDriverPose?.bakedCalibration) {
+        alignV3WeaponToMesh2MotionDriverHand(combatantModel, model, weapon);
+        return;
+      }
+      if (pose?.weapon !== weapon) return;
+      if (pose.modelSpaceQuaternion && combatantModel && model.parent && model.userData.v3View !== 'firstPerson') {
+        combatantModel.updateWorldMatrix(true, false);
+        model.parent.updateWorldMatrix(true, false);
+        const matrix = model.parent.matrixWorld.clone().invert().multiply(combatantModel.matrixWorld).multiply(
+          new THREE.Matrix4().compose(new THREE.Vector3(...pose.position), new THREE.Quaternion(...pose.modelSpaceQuaternion), model.scale)
+        );
+        matrix.decompose(model.position, model.quaternion, model.scale);
+        model.updateMatrixWorld(true);
+        if (pose.modelSpaceOffhandSocket) model.userData.v3BlenderOffhandSocket = pose.modelSpaceOffhandSocket;
+        return;
+      }
       applyV3WeaponMeshPose(model, pose, weaponState, dt);
       if (resolvedSample.pose.mesh2MotionDriverPose) {
         alignV3WeaponToMesh2MotionDriverHand(combatantModel, model);
@@ -1044,7 +1108,12 @@ export function animateV3WeaponMeshes({
     } else {
       const sample = sampleV3ThirdPersonWeaponMotion(input);
       applyV3WeaponMeshPose(hammerModel, sample.weaponPose, weaponState, dt);
-      applyV3WeaponGripConstraints(combatantModel, hammerModel, sample.gripConstraints);
+      // Legacy reference motion predates the rebuilt haft. Solve its support
+      // hand to the physical handle instead of only measuring the old contact.
+      const constraints = hammerModel.userData.v3WeaponGeometrySource === 'blender-v2'
+        ? sample.gripConstraints.map(constraint => constraint.side === 'left' ? { ...constraint, mode: 'lock' as const } : constraint)
+        : sample.gripConstraints;
+      applyV3WeaponGripConstraints(combatantModel, hammerModel, constraints);
     }
   }
 
