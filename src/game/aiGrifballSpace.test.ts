@@ -10,7 +10,7 @@ import { defaultGrifballTactics, validateGrifballTactics, TACTICS_FIELDS } from 
 export const obstacle = (x: number, z: number, sx = 1, sz = 8): CustomMapObject => ({ type: 'box', position: { x, y: 1, z }, scale: { x: sx, y: 2, z: sz }, rotation: { x: 0, y: Math.PI / 4, z: 0 }, isCollidable: true } as CustomMapObject);
 export const court = (objects: CustomMapObject[] = []): CustomMapData => ({ id: 'space-test', mapShape: 'rectangular', arenaRadius: 52, arenaHalfExtents: { x: 52, z: 23 }, objects } as CustomMapData);
 export const player = (id: string, team: string, x: number, z: number): GrifballTacticalPlayer => ({ id, team, pos: { x, z }, vel: { x: 0, z: 0 }, scripted: true, space: observeGrifballSpace(settings, 'hammer', 'ready') });
-export const scene = (): GrifballTacticalSnapshot => ({ round: 1, playing: true, ball: { x: 0, z: 0 }, holderId: 'carrier', spacing: 4, goals: { blue: { x: -47, z: 0 }, red: { x: 47, z: 0 } }, tactics: defaultGrifballTactics(), geometry: buildGrifballSpaceGeometry(court(), 52), players: [player('carrier', 'blue', 0, 0), player('support', 'blue', 3, 0), player('enemy', 'red', 8, 0)] });
+export const scene = (): GrifballTacticalSnapshot => ({ round: 1, playing: true, ball: { x: 0, z: 0 }, holderId: 'carrier', spacing: 4, goals: { blue: { x: -47, z: 0 }, red: { x: 47, z: 0 } }, tactics: { ...defaultGrifballTactics(), teams: { blue: { tankingEnabled: false }, red: { tankingEnabled: false } } }, geometry: buildGrifballSpaceGeometry(court(), 52), players: [player('carrier', 'blue', 0, 0), player('support', 'blue', 3, 0), player('enemy', 'red', 8, 0)] });
 
 test('ground routes detour around thin walls, reject sealed goals, and invalidate geometry on edits', () => {
   const map = court([obstacle(0, 0, 0.01)]), start = { x: -8, z: 0 }, end = { x: 8, z: 0 };
@@ -94,6 +94,6 @@ test('v1 tactical presets migrate without losing team overrides and still reject
   for (const [key, field] of Object.entries(TACTICS_FIELDS)) if (field.module === 'space') delete old.defaults[key];
   old.teams.blue = { leadForward: 9 };
   const migrated = validateGrifballTactics(old);
-  assert.equal(migrated.schemaVersion, 3); assert.equal(migrated.defaults.spaceEnabled, true); assert.equal(migrated.teams.blue!.leadForward, 9);
+  assert.equal(migrated.schemaVersion, 4); assert.equal(migrated.defaults.spaceEnabled, true); assert.equal(migrated.teams.blue!.leadForward, 9);
   delete old.defaults.enabled; assert.throws(() => validateGrifballTactics(old));
 });

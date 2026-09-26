@@ -74,3 +74,21 @@ test('runner scenarios expose repeatable routes and restart clears route memory'
     runtime.dispose(); grifballLab.close();
   }
 });
+
+
+test('tanking scenarios restart with identical orders, metrics and coordinator ownership', () => {
+  for (const scenario of ['tanking', 'double', 'breakthrough', 'delay'] as const) {
+    const { state, runtime, tick } = setup();
+    grifballLab.command({ type: 'scenario', scenario, seed: 12 }); runtime.frame(state, 0.1, tick);
+    grifballLab.command({ type: 'step' }); runtime.frame(state, 0.1, tick);
+    const first = cloneLabState(state.aiMatchContext);
+    const metrics = { ...grifballLab.getSnapshot().diagnostics!.metrics };
+    assert.ok([...first.grifballTeamPlan.assignments.values()].some(a => a.tanking));
+    grifballLab.command({ type: 'restart' }); runtime.frame(state, 0.1, tick);
+    assert.deepEqual(state.aiMatchContext.grifballTeamPlan.tankingMemory, {});
+    grifballLab.command({ type: 'step' }); runtime.frame(state, 0.1, tick);
+    assert.deepEqual(state.aiMatchContext, first);
+    assert.deepEqual(grifballLab.getSnapshot().diagnostics!.metrics, metrics);
+    runtime.dispose(); grifballLab.close();
+  }
+});

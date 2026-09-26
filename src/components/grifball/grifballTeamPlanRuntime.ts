@@ -1,4 +1,5 @@
-import { updateGrifballTeamPlan, resetGrifballTeamPlan, type GrifballTacticalPlayer } from '../../game/aiGrifballTeamPlan';
+import { setTacticalBotEngagements, type BotCoordRole } from '../../game/aiBotCoordinator';
+import { updateGrifballTeamPlan, resetGrifballTeamPlan, selectGrifballAssignmentThreat, type GrifballTacticalPlayer } from '../../game/aiGrifballTeamPlan';
 import { isNeuralNetDifficulty } from '../../game/neuralBrains';
 import type { GrifballRuntimeState } from './runtimeState';
 import { GRAVITY_ACCELERATION, MELEE_SWORD_SLASH_REACH } from './combatGeometry';
@@ -15,6 +16,7 @@ export function updateGrifballTeamPlanForState(
   const plan = state.aiMatchContext.grifballTeamPlan;
   if (state.settings.gameMode !== 'grifball' || state.isMultiplayer) {
     resetGrifballTeamPlan(plan);
+    setTacticalBotEngagements(state.aiMatchContext.coordinator, []);
     return;
   }
   const players: GrifballTacticalPlayer[] = [];
@@ -47,4 +49,12 @@ export function updateGrifballTeamPlanForState(
     geometry: buildGrifballSpaceGeometry(activeCustomMap, state.arenaRadius),
     spacing: state.settings.grifballEscortSpacing ?? 4,
   }, dt);
+  const engagements: [string, { targetId: string; role: BotCoordRole }][] = [];
+  for (const a of plan.assignments.values()) {
+    const bot = players.find(p => p.id === a.botId);
+    if (!bot || !a.tanking?.attack || !a.tanking.targetId) continue;
+    const targetId = selectGrifballAssignmentThreat(a, bot.pos, players);
+    if (targetId === a.tanking.targetId) engagements.push([a.botId, { targetId, role: a.tanking.mode === 'punish' ? 'flanker' : 'pressure' }]);
+  }
+  setTacticalBotEngagements(state.aiMatchContext.coordinator, engagements);
 }

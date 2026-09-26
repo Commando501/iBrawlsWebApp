@@ -3,10 +3,10 @@ import { defaultGrifballTactics, validateGrifballTactics, type GrifballTacticsCo
 import type { GrifballAssignment, GrifballTacticalSnapshot } from './aiGrifballTeamPlan';
 import type { UniversalSettings } from '../types';
 
-export type LabScenario = 'pickup' | 'escort' | 'turnover' | 'outnumbered' | 'crowding' | 'goal' | 'lane' | 'pursuit' | 'rendezvous';
+export type LabScenario = 'pickup' | 'escort' | 'turnover' | 'outnumbered' | 'crowding' | 'goal' | 'lane' | 'pursuit' | 'rendezvous' | 'tanking' | 'double' | 'breakthrough' | 'delay';
 export interface LabMetrics {
   seconds: number; goals: number; possessionLosses: number; roleChanges: number;
-  outsideSeconds: number; botSeconds: number; stuckSeconds: number; sharedExposureSeconds: number; blockedRouteSeconds: number; runnerWaitSeconds: number; runnerRouteChanges: number;
+  outsideSeconds: number; botSeconds: number; stuckSeconds: number; sharedExposureSeconds: number; blockedRouteSeconds: number; runnerWaitSeconds: number; runnerRouteChanges: number; tankingSeconds: number; doubleCommitSeconds: number; delaySeconds: number; engagementReleases: number;
 }
 export interface LabScenarioRecord {
   map: string;
@@ -28,7 +28,7 @@ let snapshot = {
   open: false, running: false, connected: false, config: defaultGrifballTactics(), revision: 0,
   activePreset: 'Defaults', savedConfig: JSON.stringify(defaultGrifballTactics()), presets: [] as LabPreset[],
   diagnostics: null as LabDiagnostics | null, results: [] as LabResult[], baseline: null as GrifballTacticsConfig | null,
-  selectedBot: '', selectedTeam: 'all', overlays: { destinations: true, coverage: false, lines: true, candidates: false, routes: true, runnerRoutes: true, intercepts: true },
+  selectedBot: '', selectedTeam: 'all', overlays: { destinations: true, coverage: false, lines: true, candidates: false, routes: true, runnerRoutes: true, intercepts: true, engagements: true },
   message: '', comparing: false,
 };
 let loaded = false;

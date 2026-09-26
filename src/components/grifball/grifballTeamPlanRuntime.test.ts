@@ -262,3 +262,31 @@ test('debug HUD exposes current roles and destinations only when enabled', () =>
   state.debugMode = false;
   assert.equal(stats().grifballTacticsDebug, undefined);
 });
+
+
+test('live tanking owns coordinator targets before combat and releases them when disabled', () => {
+  const state = setup(); state.isObserverMode = false;
+  state.playerHP = 100; state.playerRespawnTimer = 0; state.localPlayerTeam = 'blue'; state.playerPos.set(0, 0, 0); state.yaw = -Math.PI / 2; state.activeWeapon = 'ball';
+  state.grifball.ball.state = 'held'; state.grifball.ball.holderId = 'player';
+  state.settings.attackRange = 1.5; state.settings.attackRadius = 1.5; state.settings.hammerReloadTime = 2;
+  state.otherPlayers.get('a')!.pos.set(3, 0, -3); state.otherPlayers.get('b')!.pos.set(3, 0, 3);
+  const c = { ...state.otherPlayers.get('a')!, id: 'c', pos: new THREE.Vector3(-8, 0, 0), vel: new THREE.Vector3() };
+  state.otherPlayers.set('c', c);
+  const enemy = state.otherPlayers.get('enemy')!; enemy.pos.set(6, 0, 0); enemy.weaponState = 'recovering'; enemy.weaponTimer = 0;
+  state.grifballTactics = defaultGrifballTactics(); Object.assign(state.grifballTactics.defaults, { tankMinimumScore: 0, tankDoubleThreshold: 0, tankProtectionWeight: 10, tankOpeningWeight: 10 });
+  updateGrifballTeamPlanForState(state, 0.2, goal);
+  const plan = state.aiMatchContext.grifballTeamPlan;
+  const primary = [...plan.assignments.values()].find(a => a.team === 'blue' && a.tanking?.mode === 'engage')!;
+  assert.ok(primary);
+  assert.equal(state.aiMatchContext.coordinator.tacticalEngagements.get(primary.botId)?.targetId, 'enemy');
+  assert.equal(move(state, primary.botId).handled, false); // Hand off to the normal combat executor.
+  const cover = [...plan.assignments.values()].find(a => a.botId === primary.tanking!.recoveryId)!;
+  const result = move(state, cover.botId, { aiState: 'COOLDOWN', timer: 0.6, weaponState: 'recovering' });
+  assert.equal(result.handled, true); assert.equal(result.frame.weaponState, 'recovering'); assert.equal(result.frame.timer, 0.5);
+  state.grifballTactics.teams.blue = { tankingEnabled: false };
+  updateGrifballTeamPlanForState(state, 0.001, goal);
+  assert.ok([...plan.assignments.values()].filter(a => a.team === 'blue').every(a => !a.tanking));
+  assert.equal(state.aiMatchContext.coordinator.tacticalEngagements.has(primary.botId), false);
+  state.settings.gameMode = 'sandbox'; updateGrifballTeamPlanForState(state, 0.01, goal);
+  assert.equal(state.aiMatchContext.coordinator.tacticalEngagements.size, 0);
+});

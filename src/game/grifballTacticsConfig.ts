@@ -1,5 +1,18 @@
 /** Tactical tuning is deliberately separate from mechanics and combat personalities. */
 export const TACTICS_FIELDS = {
+  tankCommitSeconds: { label: 'Engagement commitment', min: 0, max: 3, step: 0.1, value: 0.8, unit: 's', module: 'tanking', description: 'Keep a useful target through small score changes. Lost purpose or a recovery opening can override it.' },
+  tankDoubleThreshold: { label: 'Double-team threshold', min: 0, max: 15, step: 0.5, value: 4.5, unit: 'score', module: 'tanking', description: 'Minimum value for a second attacker; also requires an opening, safe separation and recovery coverage.' },
+  tankReleaseDistance: { label: 'Disengagement distance', min: 4, max: 25, step: 1, value: 10, unit: 'm', module: 'tanking', description: 'Release duels this far behind a friendly runner when the opponent cannot threaten the push soon.' },
+  tankReleaseSeconds: { label: 'Return-to-coverage time', min: 0, max: 3, step: 0.1, value: 0.6, unit: 's', module: 'tanking', description: 'After leaving a duel, briefly restore coverage before recommitting. Immediate defense remains available.' },
+  tankDelayMargin: { label: 'Delay spacing margin', min: 0.5, max: 5, step: 0.25, value: 1.5, unit: 'm', module: 'tanking', description: 'Outnumbered defenders stay this far outside the visible threat reach while holding the goal side.' },
+  tankEmergencyDistance: { label: 'Emergency goal distance', min: 3, max: 20, step: 1, value: 9, unit: 'm', module: 'tanking', description: 'Stop delaying and contest an enemy carrier within this distance of the defended goal.' },
+  tankMinimumScore: { label: 'Minimum engagement value', min: 0, max: 10, step: 0.25, value: 1.5, unit: 'score', module: 'tanking', description: 'Below this tactical value, preserve coverage instead of initiating a duel.' },
+  tankProtectionWeight: { label: 'Possession protection value', min: 0, max: 10, step: 0.5, value: 5, unit: '', module: 'tanking', description: 'Value of stopping a threat to the friendly carrier or challenging the opposing carrier.' },
+  tankOpeningWeight: { label: 'Route opening value', min: 0, max: 10, step: 0.5, value: 4, unit: '', module: 'tanking', description: 'Value of clearing the intended runner or ball-recovery route.' },
+  tankDelayWeight: { label: 'Defensive delay value', min: 0, max: 10, step: 0.5, value: 3, unit: '', module: 'tanking', description: 'Value of slowing an opponent on the goal side of the ball.' },
+  tankTradeWeight: { label: 'Trade value', min: 0, max: 6, step: 0.25, value: 1, unit: '', module: 'tanking', description: 'Weight of visible attack timing and the tactical value exchanged in an engagement; does not change damage.' },
+  tankCoverageWeight: { label: 'Lost coverage cost', min: 0, max: 10, step: 0.5, value: 3, unit: '', module: 'tanking', description: 'Penalty for leaving the assigned area or exposing recovery coverage.' },
+
   runnerLookahead: { label: 'Route lookahead', min: 2, max: 12, step: 0.5, value: 6, unit: 'm', module: 'runner', description: 'Distance of each short runner route.' },
   runnerCutWidth: { label: 'Cut width', min: 1, max: 10, step: 0.5, value: 4, unit: 'm', module: 'runner', description: 'Sideways distance explored when cutting around pressure.' },
   runnerMaxWait: { label: 'Coverage wait limit', min: 0, max: 4, step: 0.25, value: 1.5, unit: 's', module: 'runner', description: 'Maximum waiting or retreat time until the runner makes real goal progress.' },
@@ -33,24 +46,24 @@ export const TACTICS_FIELDS = {
 } as const;
 export type TacticalNumber = keyof typeof TACTICS_FIELDS;
 export type TeamTactics = Record<TacticalNumber, number> & {
-  enabled: boolean; spacingEnabled: boolean; spaceEnabled: boolean; runnerEnabled: boolean; preserveSlots: boolean; safetyFirst: boolean;
+  enabled: boolean; spacingEnabled: boolean; spaceEnabled: boolean; runnerEnabled: boolean; tankingEnabled: boolean; preserveSlots: boolean; safetyFirst: boolean;
 };
 export interface GrifballTacticsConfig {
-  schemaVersion: 3;
+  schemaVersion: 4;
   defaults: TeamTactics;
   teams: { blue?: Partial<TeamTactics>; red?: Partial<TeamTactics> };
 }
 export function defaultGrifballTactics(): GrifballTacticsConfig {
-  return { schemaVersion: 3, defaults: {
+  return { schemaVersion: 4, defaults: {
     ...Object.fromEntries(Object.entries(TACTICS_FIELDS).map(([key, field]) => [key, field.value])) as Record<TacticalNumber, number>,
-    enabled: true, spacingEnabled: true, spaceEnabled: true, runnerEnabled: true, preserveSlots: true, safetyFirst: false,
+    enabled: true, spacingEnabled: true, spaceEnabled: true, runnerEnabled: true, tankingEnabled: true, preserveSlots: true, safetyFirst: false,
   }, teams: {} };
 }
-const booleanKeys = ['enabled', 'spacingEnabled', 'spaceEnabled', 'runnerEnabled', 'preserveSlots', 'safetyFirst'];
+const booleanKeys = ['enabled', 'spacingEnabled', 'spaceEnabled', 'runnerEnabled', 'tankingEnabled', 'preserveSlots', 'safetyFirst'];
 const object = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
 /** Reject invalid imports atomically; never silently accept misspelled or future controls. */
 export function validateGrifballTactics(value: unknown): GrifballTacticsConfig {
-  if (!object(value) || ![1, 2, 3].includes(value.schemaVersion as number) || !object(value.defaults) || !object(value.teams)) throw new Error('Expected tactics schemaVersion 1, 2 or 3, defaults and teams.');
+  if (!object(value) || ![1, 2, 3, 4].includes(value.schemaVersion as number) || !object(value.defaults) || !object(value.teams)) throw new Error('Expected tactics schemaVersion 1, 2, 3 or 4, defaults and teams.');
   if (Object.keys(value).some(key => !['schemaVersion', 'defaults', 'teams'].includes(key))) throw new Error('Unknown configuration field.');
   const validateTeam = (team: unknown, partial: boolean): Partial<TeamTactics> => {
     if (!object(team)) throw new Error('Team settings must be an object.');
@@ -63,9 +76,10 @@ export function validateGrifballTactics(value: unknown): GrifballTacticsConfig {
     }
     const migrated = !partial ? {
       ...(value.schemaVersion === 1 ? { spaceEnabled: true } : {}),
-      ...(value.schemaVersion !== 3 ? { runnerEnabled: true } : {}),
+      ...((value.schemaVersion as number) < 3 ? { runnerEnabled: true } : {}),
+      ...((value.schemaVersion as number) < 4 ? { tankingEnabled: true } : {}),
       ...Object.fromEntries(Object.entries(TACTICS_FIELDS).filter(([, field]) =>
-        value.schemaVersion === 1 && field.module === 'space' || value.schemaVersion !== 3 && field.module === 'runner'
+        value.schemaVersion === 1 && field.module === 'space' || (value.schemaVersion as number) < 3 && field.module === 'runner' || (value.schemaVersion as number) < 4 && field.module === 'tanking'
       ).map(([key, field]) => [key, field.value])),
       ...team,
     } : team;
@@ -78,7 +92,7 @@ export function validateGrifballTactics(value: unknown): GrifballTacticsConfig {
     if (key !== 'blue' && key !== 'red') throw new Error(`Unknown team: ${key}`);
     teams[key] = validateTeam(team, true);
   }
-  return { schemaVersion: 3, defaults, teams };
+  return { schemaVersion: 4, defaults, teams };
 }
 export function resolveTeamTactics(config: GrifballTacticsConfig, team: string): TeamTactics {
   return { ...config.defaults, ...(team === 'blue' || team === 'red' ? config.teams[team] : {}) };

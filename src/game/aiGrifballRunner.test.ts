@@ -10,7 +10,7 @@ import { defaultGrifballTactics, validateGrifballTactics, TACTICS_FIELDS } from 
 const p = (id: string, team: string, x: number, z: number): GrifballTacticalPlayer => ({ id, team, pos: { x, z }, vel: { x: 0, z: 0 }, scripted: true, space: observeGrifballSpace(DEFAULT_ADMIN_SETTINGS, id === 'runner' ? 'ball' : 'hammer', 'ready') });
 function scene(): GrifballTacticalSnapshot {
   return { round: 1, playing: true, holderId: 'runner', ball: { x: 0, z: 0 }, spacing: 4,
-    goals: { blue: { x: -47, z: 0 }, red: { x: 47, z: 0 } }, tactics: defaultGrifballTactics(),
+    goals: { blue: { x: -47, z: 0 }, red: { x: 47, z: 0 } }, tactics: { ...defaultGrifballTactics(), teams: { blue: { tankingEnabled: false }, red: { tankingEnabled: false } } },
     geometry: buildGrifballSpaceGeometry({ mapShape: 'rectangular', arenaRadius: 52, arenaHalfExtents: { x: 52, z: 23 }, objects: [] } as unknown as CustomMapData, 52),
     players: [p('runner', 'blue', 0, 0), p('a', 'blue', 3, 4), p('b', 'blue', 1, -4), p('c', 'blue', -3, 0), p('enemy', 'red', 30, 0)] };
 }
@@ -123,7 +123,7 @@ test('v2 presets migrate runner defaults and retain existing explicit overrides'
   for (const [key, field] of Object.entries(TACTICS_FIELDS)) if (field.module === 'runner') delete old.defaults[key];
   old.teams.red = { spaceEnabled: false, lateralSpacing: 5 };
   const migrated = validateGrifballTactics(old);
-  assert.equal(migrated.schemaVersion, 3); assert.equal(migrated.defaults.runnerEnabled, true);
+  assert.equal(migrated.schemaVersion, 4); assert.equal(migrated.defaults.runnerEnabled, true);
   assert.deepEqual(migrated.teams.red, old.teams.red);
   assert.throws(() => validateGrifballTactics({ ...migrated, teams: { blue: { runnerMaxWait: -1 } } }));
 });
