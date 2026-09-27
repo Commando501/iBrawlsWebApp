@@ -18,7 +18,7 @@ import { type GameLoadingState } from '../loading/loadingTypes';
 import { type CharacterLoadout } from '../VoxelModels';
 
 export interface GrifballGameProps {
-  /** Dedicated development validation session only; ordinary matches never supply this. */
+  /** Private isolated session for the Lab or dedicated validation page; ordinary matches never supply this. */
   validationTrial?: {
     fixture: FrozenCase; job: ValidationJob;
     onReady: (handle: TrialHandle) => void; onError: (error: Error) => void;

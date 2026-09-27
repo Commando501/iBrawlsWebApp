@@ -126,7 +126,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
   v3QualityTier = 'desktop',
   validationTrial,
 }) => {
-  const validationActive = Boolean((import.meta.env.DEV || import.meta.env.MODE === 'validation') && validationTrial);
+  const validationActive = Boolean(validationTrial);
   const validationRuntimeRef = useRef<GrifballValidationRuntime | null>(null);
   const validationTickRef = useRef<(dt: number) => void>(() => { throw new Error('Live tick not ready'); });
   const containerRef = useRef<HTMLDivElement>(null);
@@ -945,6 +945,9 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         // Yield regularly so cancellation and the wall watchdog can run even during accelerated trials.
         for (let i = 0; i < 12 && performance.now() - started < 12; i++) validationRuntimeRef.current?.step();
         if (validationRuntimeRef.current) renderGame();
+      } else if (grifballLab.getSnapshot().validating && !isMultiplayer && !replayData) {
+        keysPressed.current = {};
+        renderGame();
       } else if (labActive) {
         keysPressed.current = {};
         labRuntimeRef.current!.frame(s, dt, fixedDt => {

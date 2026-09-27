@@ -1,3 +1,4 @@
+import { GrifballValidationPanel } from './GrifballValidationPanel';
 import { GrifballEvaluationPanel } from './GrifballEvaluationPanel';
 import { useState, useSyncExternalStore } from 'react';
 import { grifballLab, type LabScenario } from '../game/grifballLabStore';
@@ -13,6 +14,7 @@ export function GrifballAILab({ onSetup, canSetup }: { onSetup: () => void; canS
   const [scope, setScope] = useState<'both' | 'blue' | 'red'>('both');
   const [tab, setTab] = useState<(typeof tabs)[number]>('Team roles');
   const [collapsed, setCollapsed] = useState(false);
+  const [view, setView] = useState<'tuning' | 'validation'>('tuning');
   const [name, setName] = useState('');
   const [json, setJson] = useState('');
   const [error, setError] = useState('');
@@ -43,19 +45,26 @@ export function GrifballAILab({ onSetup, canSetup }: { onSetup: () => void; canS
   const advanced = new Set(['adaptationConfidence', 'adaptationMinSamples', 'defenseRespawnWait', 'defenseTransitionSeconds', 'passThreatMargin', 'runnerProgressWeight', 'runnerRiskWeight', 'runnerDangerMargin', 'runnerSwitchAdvantage', 'runnerCommitSeconds', 'tankMinimumScore', 'tankProtectionWeight', 'tankOpeningWeight', 'tankDelayWeight', 'tankTradeWeight', 'tankCoverageWeight']);
   const renderFields = (expert: boolean) => Object.entries(TACTICS_FIELDS).filter(([key, field]) => field.module === module && advanced.has(key) === expert).map(([key, field]) => <label key={key} className="block space-y-1"><span className="flex justify-between text-sm"><span>{field.label}</span><span className="text-cyan-300">{tuning[key as TacticalNumber]} {field.unit}</span></span><input aria-label={field.label} type="range" className="w-full accent-cyan-400" min={field.min} max={field.max} step={field.step} value={tuning[key as TacticalNumber]} onChange={e => edit({ [key]: Number(e.target.value) })} /><span className="block text-xs text-slate-400">{field.description} Range {field.min}–{field.max}{field.unit ? ` ${field.unit}` : ''}; default {field.value}.</span></label>);
 
-  return <aside aria-label="Grifball AI Lab" className="fixed right-0 top-0 z-[150] h-[100dvh] border-l border-cyan-500/30 bg-slate-950/95 text-slate-100 shadow-2xl flex flex-col select-text" style={{ width: collapsed ? 200 : 440, minWidth: collapsed ? 200 : 320, maxWidth: '100vw', resize: collapsed ? 'none' : 'horizontal', overflow: 'auto', direction: 'rtl' }} onKeyDown={event => event.stopPropagation()} onKeyUp={event => event.stopPropagation()} onPointerDown={event => event.stopPropagation()}>
+  return <>
+    {lab.validating && <div className="fixed inset-0 z-[149] bg-black/20" aria-hidden="true" onPointerDown={e => e.stopPropagation()}/>}
+    <aside aria-label="Grifball AI Lab" className="fixed right-0 top-0 z-[150] h-[100dvh] border-l border-cyan-500/30 bg-slate-950 text-slate-100 shadow-2xl flex flex-col select-text" style={{ width: collapsed ? 200 : 440, minWidth: collapsed ? 200 : 320, maxWidth: '100vw', resize: collapsed ? 'none' : 'horizontal', overflow: 'auto', direction: 'rtl' }} onKeyDown={event => event.stopPropagation()} onKeyUp={event => event.stopPropagation()} onPointerDown={event => event.stopPropagation()}>
     <div className="flex flex-col h-full min-h-0" style={{ direction: 'ltr' }}>
       <header className="p-4 border-b border-slate-700 flex items-center justify-between gap-2">
         <div><h2 className="font-bold text-cyan-300">Grifball AI Lab</h2><p className="text-xs text-slate-400">Offline tactical workspace</p></div>
         <button className={button} aria-label={collapsed ? 'Expand lab' : 'Collapse lab'} onClick={() => setCollapsed(!collapsed)}>{collapsed ? '+' : '−'}</button>
         <button className={button} aria-label="Close lab" onClick={() => grifballLab.close()}>×</button>
       </header>
-      {!collapsed && <>
+      {!collapsed && <div className="flex gap-2 p-3 border-b border-slate-700" role="tablist" aria-label="Lab workspace">
+        <button className={button} role="tab" aria-selected={view === 'tuning'} onClick={() => setView('tuning')}>Tuning</button>
+        <button className={button} role="tab" aria-selected={view === 'validation'} disabled={lab.comparing} onClick={() => setView('validation')}>Validation</button>
+      </div>}
+      <GrifballValidationPanel visible={!collapsed && view === 'validation'}/>
+      {!collapsed && view === 'tuning' && <>
         <div className="p-3 border-b border-slate-700 space-y-2">
           <div className="flex flex-wrap gap-2">
-            <button className={button} disabled={!lab.connected} onClick={() => grifballLab.setRunning(!lab.running)}>{lab.running ? 'Pause' : 'Run'}</button>
-            <button className={button} disabled={!lab.connected || lab.running || lab.comparing} onClick={() => grifballLab.command({ type: 'step' })}>Step 1/60 s</button>
-            <button className={button} disabled={!lab.connected} onClick={() => grifballLab.command({ type: 'restart' })}>Restart scenario</button>
+            <button className={button} disabled={!lab.connected || lab.validating} onClick={() => grifballLab.setRunning(!lab.running)}>{lab.running ? 'Pause' : 'Run'}</button>
+            <button className={button} disabled={!lab.connected || lab.running || lab.comparing || lab.validating} onClick={() => grifballLab.command({ type: 'step' })}>Step 1/60 s</button>
+            <button className={button} disabled={!lab.connected || lab.validating} onClick={() => grifballLab.command({ type: 'restart' })}>Restart scenario</button>
           </div>
           <p className="text-xs text-slate-400">{lab.connected ? `${lab.running ? 'Running' : 'Paused'} · ${lab.diagnostics?.metrics.seconds.toFixed(2) ?? '0.00'} s · edits apply at the next tick` : 'Tune here, then start an offline Grifball match to inspect and run scenarios.'}</p>
           {!lab.connected && canSetup && <button className={button} onClick={onSetup}>Set up Grifball match</button>}
@@ -101,7 +110,7 @@ export function GrifballAILab({ onSetup, canSetup }: { onSetup: () => void; canS
             <select aria-label="Scenario" className={`${input} w-full`} value={scenario} onChange={e => setScenario(e.target.value as LabScenario)}>{Object.entries(scenarios).map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select>
             <label className="flex justify-between items-center text-xs">Random seed<input className={`${input} w-36`} type="number" min={0} max={4294967295} value={seed} onChange={e => setSeed(Number(e.target.value))} /></label>
             <p className="text-xs text-slate-400">Load uses the current map, roster and mechanics. Observer is the default. Join runner is exploratory; comparisons use scripted bots. Seed and scenario changes require Load.</p>
-            <div className="flex flex-wrap gap-2"><button className={button} disabled={!lab.connected || lab.comparing} onClick={() => grifballLab.command({ type: 'scenario', scenario, seed })}>Load scenario</button><button className={button} disabled={!lab.connected || lab.comparing} onClick={() => grifballLab.command({ type: 'capture' })}>Capture current play</button><button className={button} disabled={!lab.connected || lab.comparing} onClick={() => grifballLab.command({ type: 'join' })}>Join runner</button></div>
+            <div className="flex flex-wrap gap-2"><button className={button} disabled={!lab.connected || lab.comparing || lab.validating} onClick={() => grifballLab.command({ type: 'scenario', scenario, seed })}>Load scenario</button><button className={button} disabled={!lab.connected || lab.comparing || lab.validating} onClick={() => grifballLab.command({ type: 'capture' })}>Capture current play</button><button className={button} disabled={!lab.connected || lab.comparing || lab.validating} onClick={() => grifballLab.command({ type: 'join' })}>Join runner</button></div>
           </section>
           <section aria-label="AI inspector" className="space-y-2 border-t border-slate-700 pt-4">
             <h3 className="font-semibold">Inspect decisions</h3>
@@ -125,13 +134,13 @@ export function GrifballAILab({ onSetup, canSetup }: { onSetup: () => void; canS
             <p className="text-xs text-slate-400">{lab.baseline ? 'Baseline pinned. Editing the candidate leaves it unchanged.' : 'Pin a baseline, change settings, then run both against the same scenario.'}</p>
             {lab.baseline && <details><summary className="text-xs cursor-pointer text-cyan-300">Configuration differences</summary><pre className="text-xs whitespace-pre-wrap max-h-48 overflow-auto">{(['blue', 'red'] as const).flatMap(team => { const a = resolveTeamTactics(lab.baseline!, team); const b = resolveTeamTactics(lab.config, team); return (Object.keys(a) as (keyof TeamTactics)[]).filter(key => a[key] !== b[key]).map(key => `${team} ${key}: ${a[key]} → ${b[key]}`); }).join('\n') || 'No differences'}</pre></details>}
             <label className="flex items-center justify-between text-xs">Seconds per run<input type="number" className={`${input} w-24`} min={1} max={120} value={duration} onChange={e => setDuration(Number(e.target.value))} /></label>
-            <button className={button} disabled={!lab.connected || !lab.baseline || lab.comparing} onClick={() => grifballLab.command({ type: 'compare', seconds: duration, scenario, seed, baseline: lab.baseline!, candidate: lab.config })}>Run sequential A/B</button>
+            <button className={button} disabled={!lab.connected || !lab.baseline || lab.comparing || lab.validating} onClick={() => grifballLab.command({ type: 'compare', seconds: duration, scenario, seed, baseline: lab.baseline!, candidate: lab.config })}>Run sequential A/B</button>
             {lab.results.length === 2 && <><p className="text-xs">{lab.results[0].setup.map} · {lab.results[0].setup.roster.length} bots · {scenarios[lab.results[0].scenario]} · seed {lab.results[0].seed} · {lab.results[0].metrics.seconds.toFixed(2)} s each</p><table className="w-full text-xs"><thead><tr><th className="text-left">Metric</th><th>Baseline</th><th>Candidate</th></tr></thead><tbody>{(['goals', 'possessionLosses', 'roleChanges', 'outsideSeconds', 'botSeconds', 'stuckSeconds', 'sharedExposureSeconds', 'blockedRouteSeconds', 'runnerWaitSeconds', 'runnerRouteChanges', 'tankingSeconds', 'doubleCommitSeconds', 'delaySeconds', 'engagementReleases', 'containmentSeconds', 'safetySeconds', 'passes', 'completedPasses', 'interceptedPasses', 'styleSeconds', 'adaptedSeconds'] as const).map(key => <tr key={key}><td className="py-1">{({ goals: 'Total goals', possessionLosses: 'Possession losses', roleChanges: 'Role changes', outsideSeconds: 'Outside coverage (bot·s)', botSeconds: 'Assigned alive (bot·s)', stuckSeconds: 'Stuck (bot·s)', sharedExposureSeconds: 'Shared exposure (bot·s)', blockedRouteSeconds: 'Blocked route (bot·s)', runnerWaitSeconds: 'Runner waiting (s)', runnerRouteChanges: 'Runner action changes', tankingSeconds: 'Tank commitment (bot·s)', doubleCommitSeconds: 'Double commitment (team·s)', delaySeconds: 'Defensive delay (bot·s)', engagementReleases: 'Engagement releases', containmentSeconds: 'Containment (bot·s)', safetySeconds: 'Last defender (bot·s)', passes: 'Scripted passes', completedPasses: 'Friendly pass recoveries', interceptedPasses: 'Opponent pass recoveries', styleSeconds: 'Active styles (team·s)', adaptedSeconds: 'Adapted styles (team·s)' })[key]}</td>{lab.results.map((result, i) => <td key={i} className="text-center">{result.metrics[key].toFixed(2)}</td>)}</tr>)}</tbody></table><details><summary className="text-xs cursor-pointer text-cyan-300">Retained A/B report · copy JSON</summary><textarea aria-label="A/B results JSON" readOnly className={`${input} w-full mt-2 font-mono text-xs`} rows={6} value={JSON.stringify(lab.results, null, 2)} /></details></>}
             <details><summary className="text-xs cursor-pointer text-cyan-300">Metric definitions</summary><p className="text-xs text-slate-400 mt-2">Goals: both teams combined. Possession losses: holder changes during live play, excluding scoring. Role changes: changes after initial assignment. Coverage: seconds outside the configured boundary, summed over alive assigned bots. Stuck: bot seconds after at least one second below 0.1 m/s while more than 2 m from destination. Assigned alive bot seconds is the denominator for coverage and stuck time. Shared exposure: assigned bot seconds whose selected position shares a predicted hammer blast; blocked route: assigned bot seconds with no reachable ground route. Runner waiting counts scripted carrier seconds assigned to wait. Runner action changes count action switches during the same possession, not endpoint refreshes. Tank commitment counts bot seconds assigned combat permission, including approach time. Double commitment counts team seconds with a two-player commit. Delay counts bot seconds assigned defensive delay. Releases count transitions from a commitment back toward coverage. Containment and last defender count bot seconds assigned those orders. Scripted passes count releases observed by the Lab; friendly and opponent pass recoveries count the next live pickup after each release. Active styles counts live team seconds with style-driven assignments; adapted styles is the subset that met the evidence and confidence thresholds. These are diagnostic indicators, not a win-rate ranking.</p></details>
           </section>
-          <GrifballEvaluationPanel scenario={scenario} seed={seed} />
+          <fieldset disabled={lab.validating}><GrifballEvaluationPanel scenario={scenario} seed={seed} /></fieldset>
         </div>
       </>}
     </div>
-  </aside>;
+  </aside></>;
 }

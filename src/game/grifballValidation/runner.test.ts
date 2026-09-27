@@ -109,3 +109,27 @@ test('selected execution preserves the full frozen plan and missing-job verdicts
   await assert.rejects(runValidationSuite(p, host, { jobIds: ['missing'] }), /Unknown/);
   await assert.rejects(runValidationSuite(p, host, { jobIds: [p.jobs[0].id, p.jobs[0].id] }), /duplicate/);
 });
+
+// Checkpoints and pauses belong outside the live trial and its wall watchdog.
+import { JobBoundary } from './jobBoundary';
+test('pause completes the current job, checkpoints after disposal, and resumes before loading the next', async t => {
+  const p = await plan(), gate = new JobBoundary(), abort = new AbortController();
+  const first = handle(p.jobs[0].id); let loads = 0, checkpoints = 0, waiting = false;
+  const run = runValidationSuite(p, { load: async (_f, job) => {
+    loads++; if (loads === 1) return first.h;
+    const h = handle(job.id); h.h.stop('scenario-complete'); return h.h;
+  }, unload: () => {} }, { signal: abort.signal, beforeJob: async () => { waiting = gate.paused; await gate.wait(abort.signal); },
+    onResult: async () => { assert.ok(first.disposed()); checkpoints++; } });
+  await flush(); gate.pause(); assert.equal(checkpoints, 0); first.h.stop('scenario-complete'); await flush();
+  assert.equal(loads, 1); assert.equal(checkpoints, 1); assert.ok(waiting);
+  t.mock.timers.enable({ apis: ['setTimeout'] }); t.mock.timers.tick(9999999); await flush(); assert.equal(loads, 1); t.mock.timers.reset();
+  gate.resume(); const output = await run; assert.equal(loads, 2); assert.equal(output.results.length, 2);
+});
+test('cancel while paused starts no new trial; checkpoint failure stops the queue', async () => {
+  const p = await plan(), gate = new JobBoundary(), abort = new AbortController(); gate.pause(); let loads = 0;
+  const host = { load: async (_f: unknown, job: typeof p.jobs[number]) => { loads++; const h = handle(job.id); h.h.stop('scenario-complete'); return h.h; }, unload: () => {} };
+  const run = runValidationSuite(p, host, { signal: abort.signal, beforeJob: () => gate.wait(abort.signal) });
+  await flush(); abort.abort(); assert.equal((await run).results.length, 0); assert.equal(loads, 0);
+  await assert.rejects(runValidationSuite(p, host, { onResult: async () => { throw new Error('quota exhausted'); } }), /quota exhausted/);
+  assert.equal(loads, 1);
+});

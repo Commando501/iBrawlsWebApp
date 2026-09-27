@@ -301,3 +301,26 @@ Same-build recovery was also exercised directly through `RunArtifacts.resume` af
 
 
 The end-to-end CLI pickup rerun (`vs3-fix-pickup-rerun`, `--resume vs3-fix-quick --case pickup-quick`) completed all eight selected jobs. Every initial/end frame, trace and raw metric exactly matched the corresponding repaired quick-run job. The remaining 24 jobs stayed not run in the selected-case report; previous failure count was zero. Typecheck/build/startup passed, the compatible build identity was accepted, and exit 2 correctly retained the missing-gate status.
+
+
+## VS4 Lab controls and report storage — 2026-09-27
+
+VS3 and its carrier-lifecycle follow-up were committed as `8431c90`. VS4 adds a Validation view to the existing Grifball AI Lab; the implementation roadmaps were not edited.
+
+The view offers Quick/Standard scope, explicit Acceptance manifest import, baseline/candidate sources, case removal/map overrides and manifest editing. Freezing resolves the shared immutable plan before Run; exact jobs, caps, required gates and input hashes remain inspectable. A private React arena invokes the shared live executor in production as well as development. The public automation bridge remains confined to the dedicated development/validation page. The existing offline match and its scenario commands are suspended while a suite owns the Lab.
+
+The queue awaits durable checkpoints before each arena and after disposal. Pause applies between jobs and has no active job watchdog; cancellation also releases a paused queue. Closing the Lab cancels. Reloaded running/paused records are displayed as unfinished checkpoints (possibly owned by another tab), with remaining jobs uncredited. Web Locks prevent concurrent Lab suites in tabs on the same origin. Case reruns create new reports and retain the earlier failure.
+
+IndexedDB stores at most 12 reports / 32 MiB total, with an 8 MiB report limit and 512-job browser limit. Per-report traces retain at most 1,024 frames / 64 per trial, separately preserving endpoints, metrics and failure snapshots. Storage failures stop the next job and leave unsaved evidence exportable in memory. The viewer exposes missing evidence, all gate groups including separate human review, per-case termination/diagnostics, JSON import/export, text download and deletion. Imported Lab-format JSON is validated against reconstructed frozen inputs and derived trial verdicts, receives a fresh local ID, and is reference-only. CLI directories and the development pilot's older export remain separate formats. No imported gate can become a current acceptance pass.
+
+Verification:
+
+- **116/116 focused regressions passed**, covering the manifest/planner/report contracts, runner lifecycle, pause/resume/cancel/checkpoint failure, bounded report retention, tampered imports, carrier cleanup, live validation runtime and existing Lab behavior.
+- **Two production-browser integration tests passed** on project-pinned Chromium **153.0.8010.12**. They exercise the actual visible controls and live arenas: freeze, run, pause after one completed trial, tuning edit without changing frozen inputs, resume to four completed goal trials, normal reload, JSON/text downloads, import/delete, injected invalid-state report display, and case rerun retaining the original failure.
+- An eight-scripted-bot 4v4 match produced a partial cancelled trial with all eight actors in its initial frame. Reloading another active match left an unfinished checkpoint with no fabricated job result. Cross-tab exclusion, cancellation while paused, cancellation on Lab close, and injected IndexedDB quota failure with in-memory JSON recovery also passed.
+- Desktop and **390 × 844** screenshots were inspected; the narrow validation region has no horizontal overflow. The main production page exposed no automation hook and the main browser interaction run reported no page errors.
+- TypeScript, production client, explicit validation client and relay builds passed. Vite retains its existing large-chunk advisory. Full repository tests were not repeated for this UI/storage slice; prior dated results and their scope decisions remain above.
+
+Evidence: `output/vs4-focused-tests.log`, `output/vs4-ui-test.log`, `output/vs4-typecheck.log`, build logs under `output/vs4-*`, and `output/grifball-validation/vs4-lab-ui/` (desktop/paused/eight-bot/narrow/storage-failure screenshots, downloaded reports and browser identity summary). Earlier failed UI-test locator attempts in that directory are superseded by the final two passing tests.
+
+Browser source identity remains explicitly unverified. Completed trials do not certify VS5 correctness/reproducibility, execution parity, calibrated performance, quality or human review; those gates remain not run and M7 acceptance remains incomplete. Wall-time estimates are not advertised before calibration.

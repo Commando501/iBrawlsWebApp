@@ -53,12 +53,17 @@ export interface SuiteProgress { stage: 'loading' | 'running' | 'finished'; jobI
 /** One live job at a time. Wall timers cover both arena loading and simulation stalls. */
 export async function runValidationSuite(plan: SuitePlan, host: ValidationHost, options: {
   signal?: AbortSignal; jobIds?: readonly string[]; onProgress?: (progress: SuiteProgress) => void;
+  /** Await checkpoints/pause outside the job watchdog, after the previous arena was disposed. */
+  beforeJob?: (job: ValidationJob) => Promise<void>;
+  onResult?: (result: TrialResult) => Promise<void>;
 } = {}) {
   if (options.jobIds && (new Set(options.jobIds).size !== options.jobIds.length ||
     options.jobIds.some(id => !plan.jobs.some(job => job.id === id)))) throw new Error('Unknown or duplicate selected job');
   const jobs = options.jobIds ? plan.jobs.filter(job => options.jobIds!.includes(job.id)) : plan.jobs;
   const results: TrialResult[] = [];
   for (const job of jobs) {
+    if (options.signal?.aborted) break;
+    if (options.beforeJob) await options.beforeJob(job);
     if (options.signal?.aborted) break;
     const fixture = plan.cases.find(c => c.specification.id === job.caseId && c.inputHash === job.inputHash);
     if (!fixture) throw new Error(`Missing frozen fixture for ${job.id}`);
@@ -97,6 +102,7 @@ export async function runValidationSuite(plan: SuitePlan, host: ValidationHost, 
           check: trialCheck(job.id, 'setup-error', `Cleanup failed: ${String(cleanupFailure)}`) };
       }
     }
+    await options.onResult?.(results.at(-1)!);
     if (options.signal?.aborted || cleanupFailure) break;
   }
   options.onProgress?.({ stage: 'finished', jobId: null, completed: results.length, total: jobs.length });

@@ -31,7 +31,7 @@ const listeners = new Set<() => void>();
 const STORAGE_KEY = 'ibrawls_grifball_lab_v1';
 interface LabPreset { name: string; config: GrifballTacticsConfig }
 let snapshot = {
-  open: false, running: false, connected: false, config: defaultGrifballTactics(), revision: 0,
+  open: false, running: false, connected: false, validating: false, config: defaultGrifballTactics(), revision: 0,
   activePreset: 'Defaults', savedConfig: JSON.stringify(defaultGrifballTactics()), presets: [] as LabPreset[],
   diagnostics: null as LabDiagnostics | null, results: [] as LabResult[], baseline: null as GrifballTacticsConfig | null,
   selectedBot: '', selectedTeam: 'all', overlays: { destinations: true, coverage: false, lines: true, candidates: false, routes: true, runnerRoutes: true, intercepts: true, engagements: true, defense: true, passes: true },
@@ -65,10 +65,10 @@ export const grifballLab = {
   open() { this.load(); publish({ open: true, running: false }); if (typeof document !== 'undefined') document.exitPointerLock?.(); },
   close() { commands = []; publish({ open: false, running: false, comparing: false }); },
   setConfig(value: unknown) { const config = validateGrifballTactics(value); publish({ config, revision: snapshot.revision + 1 }); persist(); },
-  setRunning(running: boolean) { publish({ running }); },
+  setRunning(running: boolean) { if (!running || !snapshot.validating) publish({ running }); },
   connect(connected: boolean) { commands = []; publish({ connected, diagnostics: null, running: false, comparing: false, results: [] }); },
   update: publish,
-  command(command: LabCommand) { if (snapshot.connected) commands.push(command); },
+  command(command: LabCommand) { if (snapshot.connected && !snapshot.validating) commands.push(command); },
   takeCommands() { const pending = commands; commands = []; return pending; },
   savePreset(name: string) {
     name = name.trim(); if (!name || name.length > 80) throw new Error('Use a preset name of 1–80 characters.');
