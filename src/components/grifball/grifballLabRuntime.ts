@@ -1,3 +1,7 @@
+import type { CustomMapData } from '../../types';
+import { createEvaluationJobs, GrifballEvaluationTracker, EVALUATION_VERSION, type EvaluationJob, type EvaluationReport, type EvaluationRosterConfig } from '../../game/grifballEvaluation';
+import { GRIFBALL_TACTICAL_CONTRACT_VERSION } from '../../game/grifballTacticalContract';
+import { createLiveGrifballTacticalSnapshot } from './grifballTeamPlanRuntime';
 import { createOfflineBotCombatant } from '../../game/roster';
 import { isNeuralNetDifficulty } from '../../game/neuralBrains';
 import * as THREE from 'three';
@@ -40,16 +44,20 @@ export class GrifballLabRuntime {
   private scenario: LabScenario = 'pickup';
   private seed = 1;
   private comparison: { command: Extract<LabCommand, { type: 'compare' }>; results: LabResult[]; ticks: number } | null = null;
+  private batch: { report: EvaluationReport; jobs: EvaluationJob[]; index: number; ticks: number;
+    random: () => number; origin: GrifballRuntimeState; state: GrifballRuntimeState; tracker: GrifballEvaluationTracker;
+    seed: number; scenario: LabScenario; secondsOrigin: number; clockEpoch: number;
+    cost: { samples: number; totalMs: number; maxMs: number } } | null = null;
   private overlay: THREE.Group | null = null;
   private overlayKey = '';
   private publishElapsed = 0;
   private secondsOrigin = 0;
   private clockEpoch = 1_000_000;
 
-  constructor(private readonly mapName = 'Current arena', private readonly getEnemyGoal?: (team: string) => { x: number; z: number } | null) {}
+  constructor(private readonly mapName = 'Current arena', private readonly getEnemyGoal?: (team: string) => { x: number; z: number } | null, private readonly getMap?: () => CustomMapData | null, private readonly getRosterConfig?: () => EvaluationRosterConfig) {}
 
-  dispose() { this.clearOverlay(); }
-  suspend() { this.comparison = null; this.checkpoint = null; this.accumulator = 0; this.clearOverlay(); }
+  dispose() { this.finishBatch('cancelled'); this.clearOverlay(); }
+  suspend() { this.finishBatch('cancelled'); this.comparison = null; this.checkpoint = null; this.accumulator = 0; this.clearOverlay(); }
   private clearOverlay() {
     this.overlay?.traverse(item => {
       if (item instanceof THREE.Line || item instanceof THREE.Mesh) { item.geometry.dispose(); (item.material as THREE.Material).dispose(); }
@@ -110,6 +118,7 @@ export class GrifballLabRuntime {
         spawnPos: center.clone().addScaledVector(axis, (team === 'blue' ? -1 : 1) * (7 + Math.floor(slot / 2) * 5)).addScaledVector(lateral, (slot % 2 ? -1 : 1) * (2 + slot)),
         yaw: Math.atan2(-axis.x * (team === 'blue' ? 1 : -1), -axis.z * (team === 'blue' ? 1 : -1)),
         hue: bot.hue, difficulty: bot.difficulty ?? 'normal', settings: { ...state.settings, maxHP: bot.maxHp }, modelType: bot.modelType });
+      fresh.modelType = bot.modelType;
       // Keep object identities but remove every per-bot decision left by the old play.
       for (const key of Object.keys(bot)) delete (bot as any)[key];
       Object.assign(bot, fresh, { spawnTime: 1_000_000, invulnerabilityTimer: 0, weaponState: 'ready', aiSwayTimer: 0 });
@@ -249,14 +258,83 @@ export class GrifballLabRuntime {
     }
     grifballLab.update({ diagnostics: { stylePlans: Object.values(plan.stylePlans), passPlans: Object.values(plan.passPlans), runnerPlans: Object.values(plan.runnerPlans), assignments: [...plan.assignments.values()], snapshot: plan.snapshot, history: [...this.history], metrics: { ...this.metrics }, threats } });
   }
+  private publishBatch() {
+    if (!this.batch) return;
+    const report = { ...this.batch.report, runs: [...this.batch.report.runs] };
+    const previous = grifballLab.getSnapshot().evaluationReports;
+    grifballLab.update({ evaluationReports: [report, ...previous.filter(p => p.status !== 'running')].slice(0, 3),
+      message: `Batch ${report.runs.length}/${report.totalRuns} runs · ${report.status}` });
+  }
+  private sampleBatch(state: GrifballRuntimeState, dt: number) {
+    if (!this.batch) return;
+    const previous = state.aiMatchContext.grifballTeamPlan.snapshot;
+    const snapshot = createLiveGrifballTacticalSnapshot(state, team => this.getEnemyGoal?.(team!) ?? previous?.goals[team === 'blue' ? 'red' : 'blue'] ?? null, this.getMap?.() ?? null);
+    const holder = snapshot.players.find(p => p.id === snapshot.holderId);
+    this.batch.tracker.sample({ phase: state.grifball.phase, holderTeam: holder?.team ?? null, holderId: snapshot.holderId,
+      players: snapshot.players, geometry: snapshot.geometry, assignments: state.aiMatchContext.grifballTeamPlan.assignments.values(),
+      goals: { blue: state.teamScores.blue.goals, red: state.teamScores.red.goals } }, dt);
+  }
+  private startBatchJob(state: GrifballRuntimeState) {
+    const batch = this.batch!; const job = batch.jobs[batch.index];
+    Object.assign(state, cloneLabState(batch.origin));
+    this.prepare(state, batch.report.request.scenario, job.seed);
+    if (job.mirrored) {
+      const blue = this.getEnemyGoal?.('red') ?? batch.origin.aiMatchContext.grifballTeamPlan.snapshot?.goals.blue;
+      const red = this.getEnemyGoal?.('blue') ?? batch.origin.aiMatchContext.grifballTeamPlan.snapshot?.goals.red;
+      const cx = blue && red ? (blue.x + red.x) / 2 : state.grifball.ball.home.x;
+      const cz = blue && red ? (blue.z + red.z) / 2 : state.grifball.ball.home.z;
+      const rotate = (p: { x: number; z: number }) => { p.x = 2 * cx - p.x; p.z = 2 * cz - p.z; };
+      for (const bot of state.otherPlayers.values()) {
+        bot.team = bot.team === 'blue' ? 'red' : 'blue'; rotate(bot.pos);
+        bot.vel.x *= -1; bot.vel.z *= -1; bot.yaw += Math.PI;
+      }
+      rotate(state.grifball.ball.pos); rotate(state.grifball.ball.home);
+      state.grifball.ball.vel.x *= -1; state.grifball.ball.vel.z *= -1;
+    }
+    state.grifballLabRosterLocked = true;
+    state.grifballTactics = cloneLabState(job.config);
+    this.checkpoint = cloneLabState(state);
+    batch.tracker = new GrifballEvaluationTracker(); batch.cost = { samples: 0, totalMs: 0, maxMs: 0 };
+    this.sampleBatch(state, 0); this.publishBatch();
+  }
+  private finishBatch(status: 'complete' | 'cancelled') {
+    const batch = this.batch; if (!batch) return;
+    batch.report.status = status; this.publishBatch();
+    Object.assign(batch.state, cloneLabState(batch.origin));
+    batch.state.grifballLabRosterLocked = batch.origin.grifballLabRosterLocked ?? false;
+    this.seed = batch.seed; this.scenario = batch.scenario; this.secondsOrigin = batch.secondsOrigin; this.clockEpoch = batch.clockEpoch;
+    this.checkpoint = cloneLabState(batch.origin); this.resetMetrics(); this.clearOverlay();
+    this.random = batch.random;
+    this.batch = null;
+    grifballLab.update({ running: false, comparing: false });
+  }
   /** Called every rendered frame, even while the host application is paused. */
   frame(state: GrifballRuntimeState, elapsed: number, tick: (dt: number) => void): void {
     const lab = grifballLab.getSnapshot();
-    if (!lab.open) { this.comparison = null; this.accumulator = 0; this.clearOverlay(); return; }
+    if (!lab.open) { this.finishBatch('cancelled'); this.comparison = null; this.accumulator = 0; this.clearOverlay(); return; }
     let steps = 0;
     const commands = grifballLab.takeCommands();
     for (const command of commands) {
       try {
+        if (command.type === 'cancelBatch') { this.finishBatch('cancelled'); continue; }
+        if (this.batch) {
+          if (command.type === 'restart') this.finishBatch('cancelled');
+          else throw new Error('Cancel the batch before changing its setup.');
+        }
+        if (command.type === 'batch') {
+          const jobs = createEvaluationJobs(command.request);
+          if ([...state.otherPlayers.values()].some(p => p.controller !== 'ai' || p.isObserver || !['blue', 'red'].includes(p.team ?? '')))
+            throw new Error('Batch evaluation requires only scripted blue/red bots in the roster.');
+          const request = cloneLabState(command.request);
+          this.comparison = null;
+          this.batch = { jobs, index: 0, ticks: Math.round(request.seconds / LAB_TICK), origin: cloneLabState(state), state, random: this.random,
+            seed: this.seed, scenario: this.scenario, secondsOrigin: this.secondsOrigin + this.tickCount * LAB_TICK, clockEpoch: this.clockEpoch,
+            tracker: new GrifballEvaluationTracker(), cost: { samples: 0, totalMs: 0, maxMs: 0 },
+            report: { schemaVersion: EVALUATION_VERSION, contractVersion: GRIFBALL_TACTICAL_CONTRACT_VERSION,
+              status: 'running', request, rosterConfig: cloneLabState(this.getRosterConfig?.()), map: cloneLabState(this.getMap?.() ?? null), mapName: this.mapName,
+              arenaRadius: state.arenaRadius, mechanics: cloneLabState(state.settings), input: 'scripted-observer', runs: [], totalRuns: jobs.length } };
+          this.startBatchJob(state); grifballLab.update({ running: true, comparing: true });
+        }
         if (command.type === 'step') steps++;
         if (command.type === 'capture') { this.capture(state); grifballLab.update({ message: 'Current simulation captured. Restart restores its mechanics, roster, timers and AI memory.' }); }
         if (command.type === 'restart') { this.comparison = null; this.restore(state); grifballLab.update({ comparing: false, running: false }); }
@@ -275,7 +353,13 @@ export class GrifballLabRuntime {
           this.comparison = { command, results: [], ticks: Math.round(command.seconds / LAB_TICK) };
           grifballLab.update({ running: true, comparing: true, results: [], message: 'Running baseline, then candidate with the same starting state and seed.' });
         }
-      } catch (error) { grifballLab.update({ message: (error as Error).message, running: false, comparing: false }); this.comparison = null; }
+      } catch (error) { this.finishBatch('cancelled'); grifballLab.update({ message: (error as Error).message, running: false, comparing: false }); this.comparison = null; }
+    }
+    if (this.batch && (JSON.stringify(this.getRosterConfig?.()) !== JSON.stringify(this.batch.report.rosterConfig) ||
+      JSON.stringify(state.settings) !== JSON.stringify(this.batch.report.mechanics))) {
+      this.finishBatch('cancelled');
+      grifballLab.update({ message: 'Batch cancelled: mechanics or combat profiles changed during a frozen trial.' });
+      steps = 0;
     }
     if (!this.checkpoint) this.capture(state);
     if (grifballLab.getSnapshot().running) {
@@ -285,9 +369,34 @@ export class GrifballLabRuntime {
     } else this.accumulator = 0;
     for (let index = 0; index < steps; index++) {
       const comparison = this.comparison;
-      state.grifballTactics = comparison ? (comparison.results.length ? comparison.command.candidate : comparison.command.baseline) : grifballLab.getSnapshot().config;
+      state.grifballTactics = this.batch ? this.batch.jobs[this.batch.index].config : comparison ? (comparison.results.length ? comparison.command.candidate : comparison.command.baseline) : grifballLab.getSnapshot().config;
+      const started = this.batch ? performance.now() : 0;
       withSimulationRandom(this.random, this.secondsOrigin + this.tickCount * LAB_TICK, () => tick(LAB_TICK), this.clockEpoch);
+      if (this.batch) {
+        const expected = this.checkpoint!.otherPlayers;
+        if (state.otherPlayers.size !== expected.size || [...expected.values()].some(p => {
+          const actual = state.otherPlayers.get(p.id);
+          return !actual || actual.team !== p.team || actual.controller !== p.controller || actual.difficulty !== p.difficulty || actual.modelType !== p.modelType;
+        })) {
+          this.finishBatch('cancelled');
+          grifballLab.update({ message: 'Batch cancelled: the live roster changed during a frozen trial. Partial results are retained.' });
+          break;
+        }
+        const cost = Math.max(0, performance.now() - started);
+        this.batch.cost.samples++; this.batch.cost.totalMs += cost; this.batch.cost.maxMs = Math.max(this.batch.cost.maxMs, cost);
+        this.sampleBatch(state, LAB_TICK);
+      }
       this.sample(state);
+      if (this.batch && this.tickCount >= this.batch.ticks) {
+        const batch = this.batch;
+        batch.report.runs.push({ job: cloneLabState(batch.jobs[batch.index]), metrics: cloneLabState(batch.tracker.teams),
+          simulationCost: { samples: batch.cost.samples, meanMs: batch.cost.totalMs / batch.cost.samples, maxMs: batch.cost.maxMs },
+          setup: { map: this.mapName, mechanics: cloneLabState(this.checkpoint!.settings), holderId: this.checkpoint!.grifball.ball.holderId, ball: cloneLabState(this.checkpoint!.grifball.ball),
+            roster: [...this.checkpoint!.otherPlayers.values()].map(bot => ({ id: bot.id, team: bot.team ?? '', difficulty: bot.difficulty ?? 'normal', position: { x: bot.pos.x, y: bot.pos.y, z: bot.pos.z }, velocity: { x: bot.vel.x, y: bot.vel.y, z: bot.vel.z }, yaw: bot.yaw, maxHp: bot.maxHp, modelType: bot.modelType, controller: bot.controller })) } });
+        batch.index++;
+        if (batch.index === batch.jobs.length) { this.finishBatch('complete'); break; }
+        this.startBatchJob(state);
+      }
       if (comparison && this.tickCount >= comparison.ticks) {
         comparison.results.push({ config: validateGrifballTactics(state.grifballTactics), seed: this.seed, scenario: this.scenario, metrics: { ...this.metrics }, setup: {
           map: this.mapName, mechanics: cloneLabState(this.checkpoint!.settings), holderId: this.checkpoint!.grifball.ball.holderId,

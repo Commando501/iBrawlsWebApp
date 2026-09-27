@@ -8,6 +8,8 @@ import { getInwardSpawnYaw } from './combatGeometry';
 
 export interface GrifballRuntimeState {
   grifballTactics?: GrifballTacticsConfig;
+  /** Local batch evaluation only; never part of settings or network state. */
+  grifballLabRosterLocked?: boolean;
   /** Lab observers have no local combatant occupying the free camera. */
   hideLocalObserverAvatar?: boolean;
   playerPos: THREE.Vector3;

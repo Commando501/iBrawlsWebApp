@@ -1,3 +1,5 @@
+import type { GrifballBall } from './grifballBall';
+import type { EvaluationReport, EvaluationRequest } from './grifballEvaluation';
 import type { GrifballStylePlan } from './aiGrifballStyle';
 import type { PassPlan } from './aiGrifballPassing';
 import type { RunnerPlan } from './aiGrifballRunner';
@@ -14,7 +16,8 @@ export interface LabMetrics {
 export interface LabScenarioRecord {
   map: string;
   mechanics: UniversalSettings;
-  roster: { id: string; team: string; difficulty: string; position: { x: number; y: number; z: number } }[];
+  roster: { id: string; team: string; difficulty: string; position: { x: number; y: number; z: number }; velocity?: { x: number; y: number; z: number }; yaw?: number; maxHp?: number; modelType?: string; controller?: string }[];
+  ball?: GrifballBall;
   holderId: string | null;
 }
 export interface LabResult { config: GrifballTacticsConfig; metrics: LabMetrics; seed: number; scenario: LabScenario; setup: LabScenarioRecord }
@@ -23,7 +26,7 @@ export interface LabDiagnostics {
   assignments: GrifballAssignment[]; snapshot: GrifballTacticalSnapshot | null;
   history: string[]; metrics: LabMetrics; threats: Record<string, string | null>;
 }
-export type LabCommand = { type: 'step' | 'restart' | 'capture' | 'join' } | { type: 'scenario'; scenario: LabScenario; seed: number } | { type: 'compare'; seconds: number; seed: number; scenario: LabScenario; baseline: GrifballTacticsConfig; candidate: GrifballTacticsConfig };
+export type LabCommand = { type: 'step' | 'restart' | 'capture' | 'join' | 'cancelBatch' } | { type: 'batch'; request: EvaluationRequest } | { type: 'scenario'; scenario: LabScenario; seed: number } | { type: 'compare'; seconds: number; seed: number; scenario: LabScenario; baseline: GrifballTacticsConfig; candidate: GrifballTacticsConfig };
 const listeners = new Set<() => void>();
 const STORAGE_KEY = 'ibrawls_grifball_lab_v1';
 interface LabPreset { name: string; config: GrifballTacticsConfig }
@@ -32,7 +35,7 @@ let snapshot = {
   activePreset: 'Defaults', savedConfig: JSON.stringify(defaultGrifballTactics()), presets: [] as LabPreset[],
   diagnostics: null as LabDiagnostics | null, results: [] as LabResult[], baseline: null as GrifballTacticsConfig | null,
   selectedBot: '', selectedTeam: 'all', overlays: { destinations: true, coverage: false, lines: true, candidates: false, routes: true, runnerRoutes: true, intercepts: true, engagements: true, defense: true, passes: true },
-  message: '', comparing: false,
+  message: '', comparing: false, evaluationReports: [] as EvaluationReport[],
 };
 let loaded = false;
 let commands: LabCommand[] = [];

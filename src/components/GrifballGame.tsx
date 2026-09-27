@@ -828,12 +828,12 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
   });
 
   const labRuntimeRef = useRef<GrifballLabRuntime | null>(null);
-  if (!labRuntimeRef.current) labRuntimeRef.current = new GrifballLabRuntime(selectedMap ?? 'Current arena', team => grifballEnemyGoalPos(team));
+  if (!labRuntimeRef.current) labRuntimeRef.current = new GrifballLabRuntime(selectedMap ?? 'Current arena', team => grifballEnemyGoalPos(team), getActiveCustomMap, () => ({ legacy: getLegacyRosterProps(), presets: aiPresets }));
   useEffect(() => {
     grifballLab.load();
     if (!isPlaying || isMultiplayer || replayData || adminSettings.gameMode !== 'grifball') return;
     labRuntimeRef.current?.dispose();
-    labRuntimeRef.current = new GrifballLabRuntime(selectedMap ?? 'Current arena', team => grifballEnemyGoalPos(team));
+    labRuntimeRef.current = new GrifballLabRuntime(selectedMap ?? 'Current arena', team => grifballEnemyGoalPos(team), getActiveCustomMap, () => ({ legacy: getLegacyRosterProps(), presets: aiPresets }));
     grifballLab.connect(true);
     return () => { grifballLab.connect(false); labRuntimeRef.current?.dispose(); };
   }, [isPlaying, isMultiplayer, replayData, adminSettings.gameMode, selectedMap, aiMatchSessionKey]);

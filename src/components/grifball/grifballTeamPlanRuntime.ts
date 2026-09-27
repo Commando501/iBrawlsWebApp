@@ -1,6 +1,5 @@
-import { tacticalDifficulty } from '../../game/aiGrifballStyle';
+import { createGrifballTacticalSnapshot } from '../../game/grifballTacticalContract';
 import { getGrifballTeamSpawn, createDefaultSpawnPoints } from './arenaSpawns';
-import { resolveRunnerThrowAllowed } from '../../game/runnerBallSettings';
 import { setTacticalBotEngagements, type BotCoordRole } from '../../game/aiBotCoordinator';
 import { updateGrifballTeamPlan, resetGrifballTeamPlan, selectGrifballAssignmentThreat, type GrifballTacticalPlayer } from '../../game/aiGrifballTeamPlan';
 import { isNeuralNetDifficulty } from '../../game/neuralBrains';
@@ -8,24 +7,17 @@ import type { GrifballRuntimeState } from './runtimeState';
 import { GRAVITY_ACCELERATION, MELEE_SWORD_SLASH_REACH } from './combatGeometry';
 import type { CustomMapData } from '../../types';
 import { observeGrifballSpace } from '../../game/aiGrifballSpace';
-import { buildGrifballSpaceGeometry } from '../../game/grifballSpaceGeometry';
 
-/** Called once after respawns, before any bot moves. No live vector references escape. */
-export function updateGrifballTeamPlanForState(
-  state: GrifballRuntimeState, dt: number,
+/** Read-only live adapter, also exercised against headless fixtures in contract tests. */
+export function createLiveGrifballTacticalSnapshot(
+  state: GrifballRuntimeState,
   getEnemyGoalPos: (team: string | undefined) => { x: number; z: number } | null,
   activeCustomMap: CustomMapData | null = null,
-): void {
-  const plan = state.aiMatchContext.grifballTeamPlan;
-  if (state.settings.gameMode !== 'grifball' || state.isMultiplayer) {
-    resetGrifballTeamPlan(plan);
-    setTacticalBotEngagements(state.aiMatchContext.coordinator, []);
-    return;
-  }
+) {
   const players: GrifballTacticalPlayer[] = [];
   const point = (p: { x: number; z: number }) => ({ x: p.x, z: p.z });
   if (!state.isObserverMode && state.playerHP > 0 && state.playerRespawnTimer <= 0) {
-    players.push({ id: 'player', team: state.localPlayerTeam, pos: point(state.playerPos), vel: point(state.playerVel), heading: { x: -Math.sin(state.yaw), z: -Math.cos(state.yaw) }, scripted: false, height: state.playerPos.y, pickupRequested: state.playerPickupRequested });
+    players.push({ id: 'player', team: state.localPlayerTeam, pos: point(state.playerPos), vel: point(state.playerVel), heading: { x: -Math.sin(state.yaw), z: -Math.cos(state.yaw) }, scripted: false, difficulty: state.settings.aiDifficulty, height: state.playerPos.y, pickupRequested: state.playerPickupRequested });
     players[players.length - 1].space = observeGrifballSpace(state.settings, state.activeWeapon,
       state.activeWeapon === 'sword' ? state.pSwordState : state.pWeaponState,
       state.activeWeapon === 'sword' ? state.pSwordTimer : state.pWeaponTimer,
@@ -53,26 +45,31 @@ export function updateGrifballTeamPlanForState(
   if (!state.isObserverMode && state.playerRespawnTimer > 0) respawns.push({ id: 'player', team: state.localPlayerTeam,
     pos: point(spawnFor(state.localPlayerTeam, 'player')), seconds: state.playerRespawnTimer, speed: 5.2 * state.settings.speedForward / 100 });
   const roster = [...state.otherPlayers.values()].filter(p => !p.isObserver).sort((a, b) => a.id.localeCompare(b.id));
-  const teamDifficulty = Object.fromEntries(['blue', 'red'].map(team => {
-    const bots = roster.filter(p => p.team === team && p.controller === 'ai' && !isNeuralNetDifficulty(p.difficulty) && !isNeuralNetDifficulty(state.settings.aiDifficulty));
-    return [team, bots.length ? bots.reduce((sum, p) => sum + tacticalDifficulty(p.difficulty ?? state.settings.aiDifficulty), 0) / bots.length : 1];
-  }));
-  const ball = state.grifball.ball;
-  updateGrifballTeamPlan(plan, {
-    rosterKey: JSON.stringify(roster.map(p => [p.id, p.team, p.controller, p.difficulty])), teamDifficulty,
-    round: state.grifball.roundNumber, playing: state.grifball.phase === 'playing',
-    ball: point(ball.pos), ballPhysics: { ...ball, pos: { ...ball.pos }, vel: { ...ball.vel }, home: { ...ball.home } }, respawns,
-    passing: { allowed: resolveRunnerThrowAllowed(state.settings), minSpeed: state.settings.grifballPassSpeedMin ?? 9,
-      maxSpeed: state.settings.grifballPassSpeedMax ?? 26, chargeMax: state.settings.grifballChargeMax ?? 1.2,
-      pickupRadius: state.settings.grifballPickupRadius ?? 1.6,
-      bounds: { arenaRadius: activeCustomMap?.arenaRadius ?? state.arenaRadius, mapShape: activeCustomMap?.mapShape,
-        arenaHalfExtents: activeCustomMap?.arenaHalfExtents ? { ...activeCustomMap.arenaHalfExtents } : undefined, arenaCeiling: activeCustomMap?.arenaCeiling } },
-    holderId: state.grifball.ball.state === 'held' ? state.grifball.ball.holderId : null,
-    players, goals: { blue: blue ? point(blue) : null, red: red ? point(red) : null },
-    tactics: state.grifballTactics,
-    geometry: buildGrifballSpaceGeometry(activeCustomMap, state.arenaRadius),
-    spacing: state.settings.grifballEscortSpacing ?? 4,
-  }, dt);
+  return createGrifballTacticalSnapshot({ match: state.grifball, settings: state.settings, map: activeCustomMap,
+    arenaRadius: state.arenaRadius, tactics: state.grifballTactics,
+    roster: [...roster.map(p => ({ id: p.id, team: p.team!, controller: p.controller,
+      difficulty: p.difficulty ?? state.settings.aiDifficulty,
+      scripted: p.controller === 'ai' && !isNeuralNetDifficulty(p.difficulty) && !isNeuralNetDifficulty(state.settings.aiDifficulty) })),
+      ...(!state.isObserverMode ? [{ id: 'player', team: state.localPlayerTeam, controller: 'remote', difficulty: state.settings.aiDifficulty, scripted: false }] : [])],
+    players, respawns, goals: { blue, red },
+  });
+}
+
+/** Called once after respawns, before any bot moves. No live vector references escape. */
+export function updateGrifballTeamPlanForState(
+  state: GrifballRuntimeState, dt: number,
+  getEnemyGoalPos: (team: string | undefined) => { x: number; z: number } | null,
+  activeCustomMap: CustomMapData | null = null,
+): void {
+  const plan = state.aiMatchContext.grifballTeamPlan;
+  if (state.settings.gameMode !== 'grifball' || state.isMultiplayer) {
+    resetGrifballTeamPlan(plan);
+    setTacticalBotEngagements(state.aiMatchContext.coordinator, []);
+    return;
+  }
+  const snapshot = createLiveGrifballTacticalSnapshot(state, getEnemyGoalPos, activeCustomMap);
+  const players = snapshot.players;
+  updateGrifballTeamPlan(plan, snapshot, dt);
   const engagements: [string, { targetId: string; role: BotCoordRole }][] = [];
   for (const a of plan.assignments.values()) {
     const bot = players.find(p => p.id === a.botId);

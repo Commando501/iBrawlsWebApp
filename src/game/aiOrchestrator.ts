@@ -37,6 +37,8 @@ export const OFFLINE_BOT_NAMES = [
 
 export interface AIOrchestratorInput {
   roster: Map<string, Combatant>;
+  /** Lab batches retain their frozen roster, including mirrored teams. */
+  rosterLocked?: boolean;
   settings: UniversalSettings;
   legacy: LegacyRosterProps;
   /** Total offline combatants including main_ai. */
@@ -262,6 +264,12 @@ export function tickAIOrchestrator(
 
   if (!isPlaying) {
     return { rosterChanged: false, totalCombatants: 1 + offlineBotCount };
+  }
+
+  if (input.rosterLocked) {
+    tickBotCoordinator(coordinator, dt, resolveBehaviorTuning(settings).priorityTargetTtl);
+    clearBotEngagements(coordinator);
+    return { rosterChanged: false, totalCombatants: 1 + roster.size };
   }
 
   let rosterChanged = false;
