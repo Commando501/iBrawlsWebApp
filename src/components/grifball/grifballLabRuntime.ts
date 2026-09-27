@@ -1,3 +1,4 @@
+import { setGrifballCarrierForState } from './grifballObjectiveRuntime';
 import type { CustomMapData } from '../../types';
 import { createEvaluationJobs, GrifballEvaluationTracker, EVALUATION_VERSION, type EvaluationJob, type EvaluationReport, type EvaluationRosterConfig } from '../../game/grifballEvaluation';
 import { GRIFBALL_TACTICAL_CONTRACT_VERSION } from '../../game/grifballTacticalContract';
@@ -117,7 +118,7 @@ export class GrifballLabRuntime {
       const fresh = createOfflineBotCombatant({ id: bot.id, playerName: bot.playerName, team: bot.team,
         spawnPos: center.clone().addScaledVector(axis, (team === 'blue' ? -1 : 1) * (7 + Math.floor(slot / 2) * 5)).addScaledVector(lateral, (slot % 2 ? -1 : 1) * (2 + slot)),
         yaw: Math.atan2(-axis.x * (team === 'blue' ? 1 : -1), -axis.z * (team === 'blue' ? 1 : -1)),
-        hue: bot.hue, difficulty: bot.difficulty ?? 'normal', settings: { ...state.settings, maxHP: bot.maxHp }, modelType: bot.modelType });
+        hue: bot.hue, difficulty: bot.difficulty ?? 'normal', settings: state.settings, modelType: bot.modelType });
       fresh.modelType = bot.modelType;
       // Keep object identities but remove every per-bot decision left by the old play.
       for (const key of Object.keys(bot)) delete (bot as any)[key];
@@ -127,7 +128,7 @@ export class GrifballLabRuntime {
     if (scenario !== 'pickup') {
       const carrier = bots.find(bot => bot.team === (['escort', 'crowding', 'goal', 'lane', 'pursuit', 'rendezvous', 'tanking', 'breakthrough', 'pass', 'passdenied', 'stylematch'].includes(scenario) ? 'blue' : 'red'))!;
       carrier.pos.copy(center); state.grifball.ball.holderId = carrier.id; state.grifball.ball.state = 'held';
-      carrier.activeWeapon = 'ball';
+      setGrifballCarrierForState({ state, id: carrier.id, carrying: true });
       if (scenario === 'crowding') {
         bots.filter(bot => bot.team === 'blue' && bot !== carrier).forEach((bot, i) => bot.pos.copy(center).addScaledVector(axis, 2).addScaledVector(lateral, (i - 1) * 0.7));
         bots.filter(bot => bot.team === 'red').forEach((bot, i) => bot.pos.copy(center).addScaledVector(axis, state.settings.attackRange + state.settings.attackRadius + 1 + i * 2));
@@ -344,7 +345,9 @@ export class GrifballLabRuntime {
           if (!carrier) throw new Error('Load an escort scenario before joining the runner.');
           state.isObserverMode = false; state.hideLocalObserverAvatar = false; state.playerHP = state.playerMaxHP; state.playerRespawnTimer = 0;
           state.localPlayerTeam = carrier.team!; state.playerPos.copy(carrier.pos); state.playerVel.set(0, 0, 0);
-          carrier.activeWeapon = 'hammer'; state.grifball.ball.holderId = 'player'; state.activeWeapon = 'ball';
+          setGrifballCarrierForState({ state, id: carrier.id, carrying: false });
+          state.grifball.ball.holderId = 'player';
+          setGrifballCarrierForState({ state, id: 'player', carrying: true });
           grifballLab.update({ message: 'Exploratory human run. Close the lab and resume to control the runner. Automated comparisons always restart in observer mode.' });
         }
         if (command.type === 'compare') {

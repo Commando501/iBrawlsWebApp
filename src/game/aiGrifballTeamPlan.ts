@@ -236,21 +236,25 @@ export function updateGrifballTeamPlan(
 
 
     if (!holder && bots.length) {
-      const ranked = [...bots].sort((a, b) => distance(a.pos, recoveryPoint) - distance(b.pos, recoveryPoint) || byId(a, b));
+      // Choose by navigable distance, so a nearby bot across a sealed wall cannot own recovery.
+      const recoveryDistances = new Map(teammates.map(p => [p.id, tuning.spaceEnabled && routers
+        ? routers.get(p.id)!(recoveryPoint, true).length : distance(p.pos, recoveryPoint)]));
+      const recoveryDistance = (p: GrifballTacticalPlayer) => recoveryDistances.get(p.id)!;
+      const ranked = [...bots].sort((a, b) => recoveryDistance(a) - recoveryDistance(b) || byId(a, b));
       let retriever = ranked[0];
       const incumbent = ranked.find(p => previous.get(p.id)?.role === 'retriever');
       // A small advantage must not cause repeated handoffs between nearby bots.
-      if (incumbent && distance(incumbent.pos, recoveryPoint) <= distance(retriever.pos, recoveryPoint) + tuning.reassignmentAdvantage) retriever = incumbent;
+      if (incumbent && Number.isFinite(recoveryDistance(incumbent)) && recoveryDistance(incumbent) <= recoveryDistance(retriever) + tuning.reassignmentAdvantage) retriever = incumbent;
       const intended = tuning.passingEnabled && state.passFlight?.team === team ? ranked.find(p => p.id === state.passFlight!.receiverId) : undefined;
       if (intended && routers?.get(intended.id)?.(recoveryPoint, true).status !== 'blocked') retriever = intended;
       const externalRetriever = teammates.find(p => {
-        if (p.scripted) return false;
+        if (p.scripted || !Number.isFinite(recoveryDistance(p))) return false;
         const d = distance(p.pos, snapshot.ball);
         const closingSpeed = ((snapshot.ball.x - p.pos.x) * p.vel.x + (snapshot.ball.z - p.pos.z) * p.vel.z) / Math.max(d, 0.001);
         return (d <= 1.5 && p.pickupRequested === true) || (d <= 10 && closingSpeed > 0.5 && d <= distance(retriever.pos, snapshot.ball) + 1);
       });
       if (!externalRetriever) {
-        add(retriever, 'retriever', -1, { ...recoveryPoint }, incumbent?.id === retriever.id ? 'Keep the ball recovery assignment' : 'Nearest available ball retriever');
+        add(retriever, 'retriever', -1, { ...recoveryPoint }, incumbent?.id === retriever.id ? 'Keep the ball recovery assignment' : 'Closest reachable ball retriever');
         if (tuning.passingEnabled && recovery?.settled) next.get(retriever.id)!.receive = { carrierId: state.passFlight?.carrierId ?? null, point: { ...recoveryPoint }, seconds: recovery.seconds };
         bots.splice(bots.indexOf(retriever), 1);
       }

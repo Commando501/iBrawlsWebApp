@@ -97,3 +97,26 @@ test('v1 tactical presets migrate without losing team overrides and still reject
   assert.equal(migrated.schemaVersion, 6); assert.equal(migrated.defaults.spaceEnabled, true); assert.equal(migrated.teams.blue!.leadForward, 9);
   delete old.defaults.enabled; assert.throws(() => validateGrifballTactics(old));
 });
+
+
+test('ball recovery replaces a blocked retriever and ignores unreachable human pickup intent', () => {
+  const s = scene(), plan = createGrifballTeamPlanState();
+  s.holderId = null; s.ball = { x: 2, z: 0 };
+  s.players = [player('near', 'blue', -2, 0), player('reachable', 'blue', 12, 0)];
+  updateGrifballTeamPlan(plan, s, 0.01);
+  assert.equal(plan.assignments.get('near')!.role, 'retriever');
+  // Closing the passage must revoke an incumbent that can no longer reach the ball.
+  s.geometry = buildGrifballSpaceGeometry(court([obstacle(0, 0, 1, 60)]), 52);
+  updateGrifballTeamPlan(plan, s, 0.001);
+  assert.equal(plan.assignments.get('reachable')!.role, 'retriever');
+  assert.notEqual(plan.assignments.get('near')!.role, 'retriever');
+  assert.equal(plan.assignments.get('reachable')!.space!.route.status, 'direct');
+  s.players[0].scripted = false; s.players[0].pickupRequested = true; s.players[0].vel.x = 3;
+  updateGrifballTeamPlan(plan, s, 0.001);
+  assert.equal(plan.assignments.get('reachable')!.role, 'retriever');
+  assert.equal(plan.assignments.has('near'), false);
+  // Disabling space awareness retains the simple distance-based fallback.
+  s.players[0].scripted = true; s.tactics!.defaults.spaceEnabled = false;
+  updateGrifballTeamPlan(plan, s, 0.001);
+  assert.equal(plan.assignments.get('near')!.role, 'retriever');
+});

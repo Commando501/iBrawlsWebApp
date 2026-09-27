@@ -164,7 +164,8 @@ export function setGrifballCarrierForState({
   carrying,
 }: {
   state: GrifballRuntimeState;
-  refs: GrifballThreeRefs;
+  /** Omit visuals when preparing a Lab scenario; carrier mechanics stay identical. */
+  refs?: GrifballThreeRefs;
   id: string;
   carrying: boolean;
 }): void {
@@ -187,8 +188,8 @@ export function setGrifballCarrierForState({
       state.pWeaponState = 'ready';
       state.pWeaponReady = true;
     }
-    if (refs.playerHammer) refs.playerHammer.visible = !carrying;
-    if (refs.playerSword) refs.playerSword.visible = false;
+    if (refs?.playerHammer) refs.playerHammer.visible = !carrying;
+    if (refs?.playerSword) refs.playerSword.visible = false;
   } else {
     const bot = state.otherPlayers.get(id);
     if (bot) {

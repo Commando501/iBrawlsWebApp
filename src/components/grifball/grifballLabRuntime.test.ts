@@ -252,3 +252,29 @@ test('batch records custom combat inputs and rejects mechanics drift', () => {
   assert.equal(grifballLab.getSnapshot().evaluationReports[0].status, 'cancelled'); assert.equal(state.settings.speedForward, speed);
   runtime.dispose(); grifballLab.close();
 });
+
+
+test('scenario resets health from mechanics and assigns carrier health exactly like a live pickup', () => {
+  const { state, runtime, tick } = setup();
+  try {
+    state.settings.maxHP = 3; state.settings.grifballRunnerHealth = 9;
+    state.otherPlayers.get('red0')!.maxHp = 99;
+    for (const scenario of ['escort', 'pickup', 'escort'] as const) {
+      grifballLab.command({ type: 'scenario', scenario, seed: 4 }); runtime.frame(state, 0, tick);
+      for (const bot of state.otherPlayers.values()) {
+        const expected = bot.id === state.grifball.ball.holderId ? 9 : 3;
+        assert.equal(bot.maxHp, expected, `${scenario}: ${bot.id} max health`);
+        assert.equal(bot.hp, expected, `${scenario}: ${bot.id} starting health`);
+      }
+    }
+    const carrier = state.otherPlayers.get(state.grifball.ball.holderId!)!;
+    state.playerMaxHP = 99; state.playerHP = 1;
+    state.playerRunnerHealDelayTimer = 5; state.playerRunnerLastHp = 1;
+    grifballLab.command({ type: 'join' }); runtime.frame(state, 0, tick);
+    assert.equal(state.grifball.ball.holderId, 'player');
+    assert.equal(state.playerHP, 9); assert.equal(state.playerMaxHP, 9);
+    assert.equal(state.playerRunnerHealDelayTimer, 0); assert.equal(state.playerRunnerLastHp, 9);
+    assert.equal(carrier.hp, 3); assert.equal(carrier.maxHp, 3);
+    assert.equal(carrier.activeWeapon, 'hammer');
+  } finally { runtime.dispose(); grifballLab.close(); }
+});
