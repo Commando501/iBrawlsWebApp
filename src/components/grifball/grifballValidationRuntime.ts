@@ -4,7 +4,7 @@ import { createOfflineBotCombatant } from '../../game/roster';
 import { seededRandom, withSimulationRandom } from '../../game/simulationRandom';
 import { GrifballEvaluationTracker } from '../../game/grifballEvaluation';
 import { freeze } from '../../game/grifballValidation/plan';
-import { trialCheck, type TrialFrame, type TrialHandle, type TrialResult, type TrialTermination } from '../../game/grifballValidation/runner';
+import { trialCheck, type TrialFailureState, type TrialFrame, type TrialHandle, type TrialResult, type TrialTermination } from '../../game/grifballValidation/runner';
 import type { FrozenCase, ValidationJob } from '../../game/grifballValidation/types';
 import { createInitialGrifballRuntimeState, type GrifballRuntimeState } from './runtimeState';
 import { createLiveGrifballTacticalSnapshot } from './grifballTeamPlanRuntime';
@@ -36,6 +36,7 @@ export class GrifballValidationRuntime implements TrialHandle {
   private result: TrialResult | null = null;
   private origin: GrifballRuntimeState;
   private tickCount = 0;
+  private stage: TrialFailureState['stage'] = 'setup';
   private random: () => number;
   private tracker = new GrifballEvaluationTracker();
   private first!: TrialFrame;
@@ -136,7 +137,7 @@ export class GrifballValidationRuntime implements TrialHandle {
     if (state.grifball.phase === 'matchEnd' && (winner !== 'blue' && winner !== 'red' ||
       state.teamScores[winner].goals < state.grifball.goalTarget)) throw new Error('Terminal phase without a goal-target winner.');
     if (ball.holderId && (ball.state !== 'held' || !state.otherPlayers.has(ball.holderId) || state.otherPlayers.get(ball.holderId)!.hp <= 0 || state.otherPlayers.get(ball.holderId)!.respawnTimer > 0))
-      throw new Error('Invalid ball holder.');
+      throw new Error(`Invalid ball holder ${ball.holderId} at tick ${this.tickCount}: state=${ball.state}, hp=${state.otherPlayers.get(ball.holderId!)?.hp}, respawn=${state.otherPlayers.get(ball.holderId!)?.respawnTimer}.`);
     if (ball.state === 'held' && !ball.holderId) throw new Error('Held ball has no owner.');
     if (previous) {
       const scoreDelta = state.teamScores.blue.goals + state.teamScores.red.goals - previous.scores.blue - previous.scores.red;
@@ -158,15 +159,37 @@ export class GrifballValidationRuntime implements TrialHandle {
       players: snapshot.players, geometry: snapshot.geometry, assignments: state.aiMatchContext.grifballTeamPlan.assignments.values(),
       goals: { blue: state.teamScores.blue.goals, red: state.teamScores.red.goals } }, dt);
   }
+  private failureState(): TrialFailureState {
+    // Keep malformed numbers explicit and capture bounded scalars only, never scene/runtime objects.
+    const number = (value: unknown): number | string | null => typeof value === 'number'
+      ? Number.isFinite(value) ? value : String(value) : null;
+    const position = (value: { x?: number; y?: number; z?: number } | undefined) =>
+      [number(value?.x), number(value?.y), number(value?.z)];
+    const result: TrialFailureState = { version: 1, stage: this.stage,
+      tick: this.tickCount + (this.stage === 'tick' ? 1 : 0), lastValidTick: this.last?.tick ?? null,
+      ball: { state: null, holderId: null, position: [] }, holder: null, actors: [], omittedActors: 0 };
+    try {
+      const state = this.port.state, ball = state.grifball?.ball;
+      result.ball = { state: ball?.state ?? null, holderId: ball?.holderId ?? null, position: position(ball?.pos) };
+      const holder = state.otherPlayers?.get(ball?.holderId ?? '');
+      if (holder) result.holder = { id: holder.id, hp: number(holder.hp), respawnTimer: number(holder.respawnTimer), weapon: holder.activeWeapon ?? null };
+      const actors = [...(state.otherPlayers?.values() ?? [])];
+      result.actors = actors.slice(0, 32).map(p => ({ id: p.id, hp: number(p.hp), respawnTimer: number(p.respawnTimer), position: position(p.pos) }));
+      result.omittedActors = Math.max(0, actors.length - result.actors.length);
+    } catch (error) { result.captureError = String(error).slice(0, 200); }
+    return result;
+  }
   step() {
     if (this.result) return;
     try {
-      this.checkInvariants(); this.port.resetControls();
+      this.stage = 'before-tick'; this.checkInvariants(); this.port.resetControls();
       const started = performance.now();
+      this.stage = 'tick';
       withSimulationRandom(this.random, this.tickCount * LAB_TICK, () => this.port.tick(LAB_TICK));
       const cost = performance.now() - started;
       this.totalCost += cost; this.maxCost = Math.max(this.maxCost, cost);
-      this.tickCount++; this.checkInvariants(this.last); this.sample(LAB_TICK);
+      this.tickCount++; this.stage = 'after-tick'; this.checkInvariants(this.last);
+      this.stage = 'sampling'; this.sample(LAB_TICK);
       const next = frame(this.port.state, this.tickCount);
       if (next.phase !== this.last.phase || next.round !== this.last.round || next.holder !== this.last.holder ||
         next.ballState !== this.last.ballState || JSON.stringify(next.scores) !== JSON.stringify(this.last.scores) ||
@@ -183,6 +206,7 @@ export class GrifballValidationRuntime implements TrialHandle {
     if (this.result) return this.result;
     this.result = freeze({ jobId: this.job.id, termination: reason, check: trialCheck(this.job.id, reason, message),
       start: this.first ?? null, end: this.last ?? null, trace: [...this.trace], droppedTraceEntries: this.dropped,
+      ...(['invalid-state', 'setup-error'].includes(reason) ? { failureState: this.failureState() } : {}),
       metrics: cloneLabState(this.tracker.teams),
       simulationCost: { samples: this.tickCount, meanMs: this.tickCount ? this.totalCost / this.tickCount : 0, maxMs: this.maxCost } });
     this.resolve(this.result); return this.result;

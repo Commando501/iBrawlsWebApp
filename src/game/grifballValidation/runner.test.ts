@@ -97,3 +97,15 @@ test('cleanup failure still unloads, retains evidence and stops before another a
   assert.match(output.results[0].check.summary, /Cleanup failed.*restore failed/);
   assert.equal(output.report.jobs[1].verdict, 'not-run'); assert.deepEqual(output.plan, p);
 });
+
+
+test('selected execution preserves the full frozen plan and missing-job verdicts', async () => {
+  const p = await plan();
+  const host = { load: async (_fixture: unknown, job: { id: string }) => { const h = handle(job.id); h.h.stop('scenario-complete'); return h.h; }, unload: () => {} };
+  const output = await runValidationSuite(p, host, { jobIds: [p.jobs[1].id] });
+  assert.deepEqual(output.plan, p); assert.equal(output.results.length, 1);
+  assert.equal(output.results[0].jobId, p.jobs[1].id);
+  assert.equal(output.report.jobs[0].verdict, 'not-run'); assert.equal(output.report.jobs[1].verdict, 'pass');
+  await assert.rejects(runValidationSuite(p, host, { jobIds: ['missing'] }), /Unknown/);
+  await assert.rejects(runValidationSuite(p, host, { jobIds: [p.jobs[0].id, p.jobs[0].id] }), /duplicate/);
+});

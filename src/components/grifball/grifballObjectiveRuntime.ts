@@ -53,7 +53,7 @@ export function getGrifballCombatantRefForState(
   state: GrifballRuntimeState,
   id: string
 ): GrifballCombatantRef | null {
-  if (id === 'player') return { pos: state.playerPos, alive: state.playerHP > 0 };
+  if (id === 'player') return { pos: state.playerPos, alive: state.playerHP > 0 && state.playerRespawnTimer <= 0 };
   const bot = state.otherPlayers.get(id);
   if (!bot) return null;
   return { pos: bot.pos, alive: bot.hp > 0 && (bot.respawnTimer ?? 0) <= 0 };
@@ -207,6 +207,46 @@ export function setGrifballCarrierForState({
       }
     }
   }
+}
+
+/** Release invalid possession without advancing objectives, physics, healing or scoring. */
+export function reconcileGrifballCarrierForState({ state, refs, ballMeshRef, ballChargingRef, ballChargeTimerRef }: {
+  state: GrifballRuntimeState;
+  refs: GrifballThreeRefs;
+  ballMeshRef: MutableRef<THREE.Mesh | null>;
+  ballChargingRef: MutableRef<boolean>;
+  ballChargeTimerRef: MutableRef<number>;
+}): boolean {
+  if (state.isMultiplayer || state.settings.gameMode !== 'grifball') return false;
+  const ball = state.grifball.ball, holderId = ball.holderId;
+  if (ball.state !== 'held' || !holderId) return false;
+  const holder = getGrifballCombatantRefForState(state, holderId);
+  if (holder?.alive) return false;
+
+  dropBall(ball, holder ? holder.pos : ball.home);
+  setGrifballCarrierForState({ state, refs, id: holderId, carrying: false });
+  if (holderId === 'player') {
+    state.playerPickupRequested = false;
+    state.grifballPassCharge = 0;
+    ballChargingRef.current = false;
+    ballChargeTimerRef.current = 0;
+  } else {
+    const bot = state.otherPlayers.get(holderId);
+    if (bot) { bot.grifballPassCharge = 0; bot.pickupRequested = false; }
+  }
+  const { coordinator, grifballTeamPlan: plan } = state.aiMatchContext;
+  if (coordinator.priorityTargetId === holderId) {
+    coordinator.priorityTargetId = undefined; coordinator.priorityAge = 0;
+  }
+  plan.passCharge = null; plan.passFlight = null; plan.passPlans = {}; plan.runnerPlans = {};
+  for (const [id, assignment] of plan.assignments) {
+    if (id === holderId || assignment.carrierId === holderId) plan.assignments.delete(id);
+  }
+  // Keep the previous snapshot for turnover detection, but rebuild orders at the next AI update.
+  plan.signature = ''; plan.untilRefresh = 0; plan.teamRefresh = {};
+  hideGrifballThrowTrajectoryVisualForRefs(refs);
+  ballMeshRef.current?.position.set(ball.pos.x, ball.pos.y, ball.pos.z);
+  return true;
 }
 
 export function ensureGrifballBallMeshForRefs({
@@ -433,12 +473,7 @@ export function updateGrifballObjectiveForState({
     const holderId = g.ball.holderId;
     const ref = getGrifballCombatantRefForState(state, holderId);
     if (!ref || !ref.alive) {
-      dropBall(g.ball, ref ? { x: ref.pos.x, y: 0, z: ref.pos.z } : g.ball.home);
-      setGrifballCarrierForState({ state, refs, id: holderId, carrying: false });
-      if (holderId === 'player') {
-        ballChargingRef.current = false;
-        ballChargeTimerRef.current = 0;
-      }
+      reconcileGrifballCarrierForState({ state, refs, ballMeshRef, ballChargingRef, ballChargeTimerRef });
     } else {
       tickGrifballRunnerHealingForState(state, holderId, dt);
       g.ball.pos.x = ref.pos.x;
@@ -457,7 +492,7 @@ export function updateGrifballObjectiveForState({
   if (isGrifballLive(g)) {
     if (isBallGrabbable(g.ball)) {
       const candidates: { id: string; pos: { x: number; y: number; z: number }; alive: boolean }[] = [];
-      if (state.playerPickupRequested && state.playerHP > 0) {
+      if (!state.isObserverMode && state.playerPickupRequested && state.playerHP > 0 && state.playerRespawnTimer <= 0) {
         candidates.push({ id: 'player', pos: { x: state.playerPos.x, y: state.playerPos.y, z: state.playerPos.z }, alive: true });
       }
       for (const bot of state.otherPlayers.values()) {

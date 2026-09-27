@@ -5,6 +5,12 @@ Milestone 6 checkpoint: `c7be970` (`feat(grifball): add team styles and adaptive
 
 This is the first implementation slice of milestone 7, not acceptance of the entire milestone. The attached implementation plan is unchanged.
 
+## Current tracking update — 2026-09-27
+
+At the user's direction, the five historical V3 animation/asset test failures are retired from the active issue list and VS3 follow-up scope. They are no longer tracked as current gameplay defects or planned V3 fixes in this workstream. The animation expectations belong to the older path preceding Blender gameplay; the asset-budget and proportion entries are also removed by this scope decision, without asserting a newly verified fix.
+
+The dated test results below are historical observations, including their original failure counts. Older statements that these V3 items remain open are superseded by this tracking update. Test code, saved reports and automated verdict rules are unchanged; retirement from the issue list does not turn a failing test run into a passing one.
+
 ## Implemented
 
 - Tactical observation contract v1: copied actor/ball/goal data, full roster identity including inactive members, explicit policy ownership, difficulty, passing rules and geometry. The live planner now uses the shared builder. The opt-in headless adapter requires an explicit scripted roster and interprets its remaining weapon timers using headless mechanics.
@@ -217,3 +223,81 @@ Verification:
 - Artifacts and logs are under `output/grifball-validation/vs2-*`, including autonomous-match, roster, recovery, cancellation and screenshot evidence.
 
 VS2 establishes live execution and useful lifecycle evidence. It does not accept M7: broad engine parity, calibrated performance, held-out improvement, browser crash handling and human teamwork/fun review remain open. VS3 supplies unattended CLI execution, verified build/runtime identity, durable incremental artifacts and the external browser watchdog; VS4 supplies the integrated Lab suite UI.
+
+
+## VS3 unattended runner validation — 2026-09-27
+
+VS2 was committed as `66c49d1` before this buildout. VS3 adds an unattended CLI, a public validation-page API shared with the live runner, exact Playwright/Chromium pinning, offline per-job contexts, an external Node watchdog, production startup and small Lab control checks, and durable evidence with strict resume/rerun compatibility. The approved implementation plans were not changed.
+
+The CLI builds normal production client/relay output and a separate explicit validation entry. The normal production page has no automation hook. Its loopback server uses port 3000; an existing listener must advertise the exact build/runtime identity to be reused. Only owned listeners/browser processes are closed. The browser job queue uses the existing gameplay tick; no substitute headless policy was added.
+
+Evidence lives in ignored `output/grifball-validation/` directories. Each run saves its complete manifest/plan, source/runtime/build hashes, command logs, checkpoints, per-job frozen fixture/seed/trace/metrics and screenshots. Completed JSON files are flushed and atomically published before proceeding. A new resume directory copies only completed compatible jobs, restarts interrupted jobs, preserves failed-attempt history and rejects changed manifests, inputs, assets, code, dependency lockfiles or browser/runtime identity. A case rerun preserves the full plan with unselected jobs marked not run.
+
+Measured checks:
+
+- 113/113 targeted tests passed across manifest/planning, CLI, evidence recovery, live runner, live runtime, Lab, team planning and service-worker routing (`vs3-focused-tests.log`).
+- Pinned-browser fault checks passed for injected invalid state, an HTTP 404 resource, a permanently blocked renderer and an actual Chromium crash (`vs3-driver-tests.log`). The invalid-state transport fixture is separate from the real live-runtime invariant tests.
+- A hard-killed writer retained its completed job. Recovery copied that file and retained the interrupted job ID. Identity mismatches and corrupted result hashes were rejected; previous failed jobs and gates remained visible across repeated resumes.
+- TypeScript, normal production client/relay build and explicit validation build passed. Production menu startup and the absence of the validation hook were checked in an isolated browser context.
+- The production Lab opened through Single Player → AI Behavior Editor. The test switched to Spacing, changed/restored Custom spacing, collapsed/expanded and closed the panel. Screenshot reviewed. This is a small control smoke, not VS4's future suite-panel acceptance test.
+- Offline validation initially caught the inherited hosted-font dependency. The dedicated page now uses self-contained styles. A separate identity-scope ordering mismatch was fixed and covered by a regression test.
+
+The complete exploratory quick run (`vs3-quick-03`) executed all 32 jobs: goal, pass and reinforcements completed (24), while all eight pickup legs failed the ball-holder invariant. Every identical-config baseline/candidate pair had exactly equal discrete frames, event traces and team metrics, excluding wall-time simulation-cost measurements (16/16 pairs). This is reproducibility evidence for this matrix, not an implemented VS5 reproducibility gate.
+
+The pickup failure was retained instead of relaxing the invariant or claiming a clean suite pass. More detailed holder health/respawn/tick diagnostics were added for the final run. The trace ends at the last valid sampled frame; the failure summary identifies the subsequent failing tick.
+
+VS5 correctness/reproducibility, execution parity, calibrated performance, held-out quality and human-review gates remain unimplemented or unverified. The current pickup failures require a gameplay follow-up. The full repository suite was not rerun during VS3; the five previously documented V3 failures remain unresolved and are not excused. Standard/acceptance executions invoke that full test command and retain its failures separately from scoped AI evidence.
+
+
+Final quick run (`vs3-quick-final`, Chromium 153.0.8010.12 / Playwright 1.63.0, Node 20.19.1 on Windows x64): all 32 jobs executed, 24 completed and eight pickup legs failed; exit 1. Typecheck/build/startup passed, all 16 null-comparison pairs had exactly equal gameplay traces/metrics, and the reviewed arena screenshots show the rendered live game. The failing carrier is `validation-red-0`, still recorded as holding the ball with HP 0 and respawn timer 2.9833333333333334. Failure occurs at tick 206 for seed 101 and tick 184 for seed 102, identically on original/mirrored sides and baseline/candidate. Investigate carrier-death cleanup around the objective/skeletal-impact ordering in `activeFrameRuntime.ts`: the objective currently updates before skeletal combat impacts.
+
+
+A separate final-build autonomous 1v1 pilot (`vs3-autonomous-match`) ran both paired jobs through the public browser API. Each reached the real 2-goal `matchEnd` at tick 2,777 (46.2833 simulated seconds), with exactly equal discrete frames, event traces and metrics. Its production Lab UI smoke also passed. A real active-run cancellation (`vs3-live-cancel`) retained the initial state and partial trace through tick 361, marked cancelled/inconclusive, and cleaned up the browser context. These artifacts do not add acceptance gates to the quick report.
+
+
+The end-to-end `--resume` check (`vs3-resume-final`) rebuilt compatible artifacts, reused all 24 completed jobs and reran the eight failed pickup jobs from their beginnings. All eight reproduced their original failing tick and holder state. The new report retained eight previous failed attempts and returned exit 1; the original report and per-job files remained intact.
+
+
+The CLI case-selection check (`vs3-case-rerun-final`, `--resume ... --case goal-quick`) executed only the eight goal legs. Each reproduced its original trace and metrics exactly; the other 24 jobs remained not run. Eight earlier pickup failures remained in the attempt history, so the rerun still returned exit 1 instead of presenting a clean first-run pass. Original, resumed and case-rerun artifacts are separate directories.
+
+
+## VS3 carrier-lifecycle repair — 2026-09-27
+
+Follow-up to the approved VS3 issue-resolution proposal. The original `vs3-quick-final`, resume and case-rerun artifacts are preserved. The implementation roadmaps were not edited.
+
+The regression reproduced the actual failure mechanism: `advanceGrifballFrameForState` runs the objective before skeletal melee impacts; the real `applyBotMeleeImpactForState` then kills the carrier, leaving ownership stale when rendering starts. The new regression failed on the dead holder before the fix and passed afterward.
+
+`reconcileGrifballCarrierForState` now reuses a narrow, idempotent release operation in objective cleanup and after combat/bounds work, before rendering, stats and replay publication. It drops possession, restores carrier weapon/health-cap bookkeeping without reviving the actor, cancels charge/pass state, clears stale priority and carrier-specific assignments, and forces the next planner update to rebuild orders. It retains the prior tactical snapshot so turnover detection still has its previous holder. It does not advance physics, phases, healing or scoring a second time. The existing goal-before-later-hit ordering is preserved. Local-player pickup and carrier validity also check respawn state; observers cannot pick up the ball.
+
+The runtime's additive, versioned `failureState` diagnostic records validation stage, failing tick, last valid tick, ball/holder state and at most 32 actor summaries. Missing actors and non-finite values remain diagnosable and JSON-safe. This snapshot is separate from valid `end` and trace frames and is retained in durable job files and resume history. Older reports may omit it; changed builds still cannot resume each other's evidence. HTML reports explain where the diagnostic lives.
+
+Verification to date:
+
+- Twelve carrier lifecycle regressions cover late/early death, charged state, order invalidation, repeated cleanup/damage credit, living recovery, local player, respawn, missing actors, round reset, terminal/countdown preservation, multiplayer/non-Grifball ownership and goal ordering.
+- The final CLI focused command passed **93/93**, including structured failure snapshots, missing-holder/non-finite/tick-exception diagnostics and durable write/resume coverage. The separate team-plan regression run passed as part of the 56-test initial focused run. Final lifecycle/evidence tests passed **19/19**.
+- Full repository command: **1,515/1,520 passed**, five failures, no skipped/cancelled tests, 386.7 seconds (`vs3-fix-repository-tests.log`). The two final added lifecycle/evidence tests were verified afterward in the final focused command. No new repository failure category appeared.
+- Fresh run `vs3-fix-quick`: **32/32 scenarios completed**, including all eight formerly failing pickup legs. At the exact former failure ticks (206 for seed 101, 184 for seed 102), pickup traces now show `ballState: loose`, `holder: null` and the dead runner absent from the alive roster. All pickup legs reached tick 300.
+- All **16/16 identical-config pairs** matched exactly in termination, initial/end frames, event traces and raw team metrics (`vs3-fix-quick/comparison.json`). Wall-time simulation cost was excluded. This is measured repeatability for this matrix, not the future VS5 gate.
+- TypeScript, production client/relay build, explicit validation build and production startup passed. Scenario maps, settings, rosters and seeds match the original frozen cases; only build-dependent input hashes changed. The planner's canonical job order ran goal/pass before pickup despite reordering the input manifest.
+- The quick run correctly exits **2 / incomplete** with no failed trials: acceptance gates remain outstanding. These runs occurred alongside other checks and are not performance measurements.
+
+Historical test observations from the repair run (retired from active tracking at the user's direction on 2026-09-27):
+
+| Test | Observed failed assertion | Tracking status |
+| --- | --- | --- |
+| `v3AnimationFidelity.test.ts:293` | Hammer carry forward direction fails `z < -0.9`. | Retired from active tracking; historical result only. |
+| `v3WeaponMotionTracks.test.ts:92` | Same hammer carry forward-direction requirement. The test name mentions grip constraints, but the failing assertion is orientation. | Retired from active tracking; historical result only. |
+| `v3WeaponMotionTracks.test.ts:166` | Hammer windup is not sufficiently high above carry. | Retired from active tracking; historical result only. |
+| `v3AssetManifest.test.ts:99` | Default source voxel count exceeds its declared limit. | Retired from active tracking; historical result only. |
+| `v3ReferenceProportions.test.ts:223` | Built-in Aegis proportion report is not ready: worst width band neck 0.6891, worst depth band waist 0.1432. | Retired from active tracking; historical result only. |
+
+Those V3 assets, animation code and assertions were not modified by this gameplay repair. Full milestone-7 acceptance, calibrated performance, execution parity, held-out quality and human teamwork/fun review remain open.
+
+
+Final-build autonomous verification (`vs3-fix-autonomous`): both 1v1 jobs reached the real two-goal `matchEnd` at tick 2,777, score 0-2, round 2. Initial/end frames, traces and raw metrics matched exactly between baseline and candidate. This matches the earlier VS3 pilot's terminal tick and score. Typecheck/build/startup passed again; exit 2 remains correct because acceptance gates are missing. The rendered pickup arena screenshot from the quick run was reviewed.
+
+
+Same-build recovery was also exercised directly through `RunArtifacts.resume` after verifying current source identity: `vs3-fix-resume-copy` retained all 32 completed compatible jobs, with no previous failures, and remained incomplete rather than promoting copied observations into acceptance gates. The original quick report was unchanged.
+
+
+The end-to-end CLI pickup rerun (`vs3-fix-pickup-rerun`, `--resume vs3-fix-quick --case pickup-quick`) completed all eight selected jobs. Every initial/end frame, trace and raw metric exactly matched the corresponding repaired quick-run job. The remaining 24 jobs stayed not run in the selected-case report; previous failure count was zero. Typecheck/build/startup passed, the compatible build identity was accepted, and exit 2 correctly retained the missing-gate status.

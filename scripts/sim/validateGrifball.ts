@@ -9,10 +9,9 @@ import { aggregateSuiteReport } from '../../src/game/grifballValidation/report';
 import { PROFILES, type CodeIdentity, type SuiteProfile } from '../../src/game/grifballValidation/types';
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
-// Source/config fingerprint scope, not a fingerprint of installed dependencies or public assets.
-// Browser/runtime/build asset identity will be added with the actual executor (VS3).
+// Installed browser, lockfile and built/public assets are fingerprinted separately by the executor.
 const CODE_SCOPE = ['src', 'scripts/sim', 'server.ts', 'package.json', 'package-lock.json',
-  'tsconfig.json', 'vite.config.ts', 'index.html'];
+  'tsconfig.json', 'vite.config.ts', 'index.html', 'grifball-validation.html'].sort();
 export function captureCodeIdentity(root: string): CodeIdentity {
   const git = (...args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024,
     stdio: ['ignore', 'pipe', 'pipe'] });
@@ -33,7 +32,7 @@ export function captureCodeIdentity(root: string): CodeIdentity {
   const workingTreeHash = createHash('sha256').update(canonicalJSON({ version: 1, commit, scope: CODE_SCOPE, changes })).digest('hex');
   return { commit, dirty: paths.length > 0, workingTreeHash, scope: [...CODE_SCOPE] };
 }
-export interface Options { suite?: SuiteProfile; manifest?: string; out?: string; writeManifest?: string; dryRun: boolean; help: boolean }
+export interface Options { suite?: SuiteProfile; manifest?: string; out?: string; writeManifest?: string; case?: string; resume?: string; dryRun: boolean; help: boolean }
 export function parseArgs(args: string[]): Options {
   const result: Options = { dryRun: false, help: false };
   const seen = new Set<string>();
@@ -43,7 +42,7 @@ export function parseArgs(args: string[]): Options {
     seen.add(arg);
     if (arg === '--dry-run') result.dryRun = true;
     else if (arg === '--help') result.help = true;
-    else if (['--suite', '--manifest', '--out', '--write-manifest'].includes(arg)) {
+    else if (['--suite', '--manifest', '--out', '--write-manifest', '--case', '--resume'].includes(arg)) {
       const value = args[++i];
       if (!value || value.startsWith('--')) throw new Error(`Missing value for ${arg}`);
       if (arg === '--suite') {
@@ -51,9 +50,13 @@ export function parseArgs(args: string[]): Options {
         result.suite = value as SuiteProfile;
       } else if (arg === '--manifest') result.manifest = value;
       else if (arg === '--out') result.out = value;
+      else if (arg === '--case') result.case = value;
+      else if (arg === '--resume') result.resume = value;
       else result.writeManifest = value;
     } else throw new Error(`Unknown option ${arg}`);
   }
+  if (result.dryRun && (result.case || result.resume)) throw new Error('--case and --resume require execution');
+  if (result.resume && !result.manifest) result.manifest = resolve(result.resume, 'manifest.json');
   return result;
 }
 function saveJSON(path: string, value: unknown) {
@@ -65,21 +68,26 @@ function saveJSON(path: string, value: unknown) {
 export async function main(args: string[]): Promise<number> {
   const options = parseArgs(args);
   if (options.help) {
-    console.log('Grifball validation suite (VS1 preview only)\n' +
+    console.log('Grifball validation suite (VS3 unattended runner)\n' +
       'npm run validate:grifball -- --suite quick|standard --dry-run [--out file.json] [--write-manifest file.json]\n' +
       'npm run validate:grifball -- --manifest file.json --dry-run [--suite acceptance]\n' +
-      'Exit: 0 preview/help succeeded (no validation ran); 2 execution unavailable; 3 invalid input/setup.');
+      'npm run validate:grifball -- --suite quick [--out NEW-DIRECTORY] [--case CASE-ID]\n' +
+      'npm run validate:grifball -- --resume OLD-DIRECTORY [--case CASE-ID] [--out NEW-DIRECTORY]\n' +
+      'Exit: 0 required automated gates passed (or preview/help); 1 failed evidence; 2 incomplete; 3 invalid input/setup.');
     return 0;
-  }
-  if (!options.dryRun) {
-    console.error('Suite execution is not implemented yet. Use --dry-run to preview; no validation has run.');
-    return 2;
   }
   if (!options.manifest && options.suite === 'acceptance') throw new Error('Acceptance requires an explicit calibrated, held-out --manifest');
   const input = options.manifest ? JSON.parse(readFileSync(resolve(options.manifest), 'utf8').replace(/^\uFEFF/, ''))
     : createSuiteManifest(options.suite === 'standard' ? 'standard' : 'quick');
   const plan = await createSuitePlan(input, captureCodeIdentity(ROOT));
   if (options.suite && options.suite !== plan.manifest.profile) throw new Error('--suite does not match manifest.profile');
+  if (!options.dryRun) {
+    console.log(`${plan.manifest.profile}: ${plan.preview.caseCount} cases, ${plan.preview.jobCount} jobs; ${plan.preview.maxSimulationSeconds}s simulation cap; ${plan.preview.maxJobWatchdogSeconds}s summed watchdog cap.`);
+    console.log(`Required gates: ${plan.manifest.requiredGates.join(', ')}. ${options.case ? `Rerun scope: ${options.case}. Other jobs stay not run.` : ''}`);
+    if (options.writeManifest) saveJSON(options.writeManifest, plan.manifest);
+    const { executeValidation } = await import('./grifballValidationExecute');
+    return executeValidation(ROOT, plan, options);
+  }
   const report = aggregateSuiteReport(plan, { planId: plan.id, jobs: [], gates: [] });
   console.log(`DRY RUN — ${plan.manifest.profile} v${plan.manifest.profileVersion}; validation verdict: ${report.verdict}`);
   console.log(`Plan ${plan.id}\nCode ${plan.code.commit}${plan.code.dirty ? ' (dirty in fingerprint scope)' : ''}; input fingerprint ${plan.code.workingTreeHash}`);
@@ -91,7 +99,7 @@ export async function main(args: string[]): Promise<number> {
   }
   for (const job of plan.jobs) console.log(`NOT RUN ${job.id}`);
   console.log(`Required gates (all NOT RUN): ${plan.manifest.requiredGates.join(', ')}`);
-  console.log('Executors are unavailable in VS1. This preview does not certify gameplay, repository health, or milestone 7.');
+  console.log('No validation ran. Remove --dry-run for unattended execution; acceptance gates remain separate.');
   if (options.out) saveJSON(options.out, { artifactVersion: 1, kind: 'dry-run', plan, report,
     environment: { node: process.version, platform: process.platform, arch: process.arch } });
   if (options.writeManifest) saveJSON(options.writeManifest, plan.manifest);

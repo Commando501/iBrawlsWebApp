@@ -5,6 +5,8 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createSuiteManifest } from '../../src/game/grifballValidation/profiles';
+import { createSuitePlan } from '../../src/game/grifballValidation/plan';
 import { captureCodeIdentity, parseArgs } from './validateGrifball';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
@@ -50,9 +52,9 @@ test('CLI exports an exact not-run preview and a reusable manifest without overw
   assert.equal(mismatch.status, 3); assert.match(mismatch.stderr, /does not match/);
 });
 
-test('CLI cannot return validation success without an executor', () => {
-  const unavailable = cli('--suite', 'quick');
-  assert.equal(unavailable.status, 2); assert.match(unavailable.stderr, /execution is not implemented/);
+test('CLI rejects unavailable resume evidence and acceptance without a manifest', () => {
+  const unavailable = cli('--suite', 'quick', '--resume', 'output/does-not-exist');
+  assert.equal(unavailable.status, 3); assert.match(unavailable.stderr, /ENOENT/);
   const acceptance = cli('--suite', 'acceptance', '--dry-run');
   assert.equal(acceptance.status, 3); assert.match(acceptance.stderr, /explicit calibrated, held-out/);
   assert.equal(cli('--typo').status, 3);
@@ -61,7 +63,7 @@ test('CLI cannot return validation success without an executor', () => {
   assert.match(standard.stdout, /scripted-4v4/); assert.match(standard.stdout, /all NOT RUN/);
 });
 
-test('source identity includes untracked edits and deleted code but excludes unrelated state', t => {
+test('source identity includes untracked edits and deleted code but excludes unrelated state', async t => {
   const dir = temporary(t);
   const git = (...args: string[]) => execFileSync('git', args, { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
   git('init', '-q'); mkdirSync(join(dir, 'src'));
@@ -69,6 +71,7 @@ test('source identity includes untracked edits and deleted code but excludes unr
   writeFileSync(file, 'export const value = 1;\n');
   git('add', '--', 'src'); git('-c', 'user.name=Validation test', '-c', 'user.email=validation@example.invalid', '-c', 'commit.gpgsign=false', 'commit', '-qm', 'fixture');
   const clean = captureCodeIdentity(dir); assert.equal(clean.dirty, false);
+  assert.deepEqual((await createSuitePlan(createSuiteManifest('quick'), clean)).code, clean);
   mkdirSync(join(dir, '.codex')); writeFileSync(join(dir, '.codex', 'state.pid'), '1234');
   assert.deepEqual(captureCodeIdentity(dir), clean);
   writeFileSync(file, 'export const value = 2;\n');

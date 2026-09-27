@@ -156,3 +156,34 @@ test('cancellation restores an existing roster and preserves a prior roster lock
   assert.deepEqual(first.state.otherPlayers, origin.otherPlayers); assert.deepEqual([...meshes], [original.id]);
   assert.equal(first.state.grifballLabRosterLocked, true); assert.equal(first.state.isObserverMode, origin.isObserverMode);
 });
+
+
+test('invalid carrier evidence preserves the failed tick separately from the valid trace', async () => {
+  const { runtime, state } = await setup('scenario', false, s => {
+    const carrier = s.otherPlayers.values().next().value!;
+    s.grifball.ball.state = 'held'; s.grifball.ball.holderId = carrier.id;
+    carrier.hp = 0; carrier.respawnTimer = 3; carrier.activeWeapon = 'ball';
+  });
+  runtime.step(); const result = await runtime.done;
+  assert.equal(result.termination, 'invalid-state'); assert.equal(result.end!.tick, 0);
+  assert.equal(result.failureState!.tick, 1); assert.equal(result.failureState!.lastValidTick, 0);
+  assert.equal(result.failureState!.stage, 'after-tick'); assert.equal(result.failureState!.holder!.hp, 0);
+  assert.equal(result.failureState!.holder!.weapon, 'ball'); assert.equal(result.trace.length, 1);
+  const snapshot = JSON.stringify(result.failureState); state.otherPlayers.clear();
+  assert.equal(JSON.stringify(result.failureState), snapshot); runtime.dispose();
+});
+
+for (const kind of ['missing-holder', 'non-finite', 'tick-exception'] as const) test(`failure evidence survives ${kind}`, async () => {
+  const { runtime } = await setup('scenario', false, s => {
+    if (kind === 'missing-holder') { s.grifball.ball.state = 'held'; s.grifball.ball.holderId = 'missing'; }
+    if (kind === 'non-finite') s.otherPlayers.values().next().value!.pos.x = NaN;
+    if (kind === 'tick-exception') throw new Error('impact exploded');
+  });
+  runtime.step(); const result = await runtime.done;
+  assert.equal(result.termination, 'invalid-state'); assert.equal(result.failureState!.tick, 1);
+  const saved = JSON.parse(JSON.stringify(result.failureState));
+  if (kind === 'missing-holder') { assert.equal(saved.holder, null); assert.equal(saved.ball.holderId, 'missing'); }
+  if (kind === 'non-finite') assert.equal(saved.actors[0].position[0], 'NaN');
+  if (kind === 'tick-exception') { assert.equal(saved.stage, 'tick'); assert.match(result.check.summary, /impact exploded/); }
+  runtime.dispose();
+});

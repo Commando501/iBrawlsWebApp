@@ -5,9 +5,10 @@ import type { GrifballGameProps } from './components/grifball/GrifballGameProps'
 import { createSuiteManifest } from './game/grifballValidation/profiles';
 import { createSuitePlan } from './game/grifballValidation/plan';
 import { runValidationSuite, type SuiteProgress, type TrialHandle } from './game/grifballValidation/runner';
-import type { SuiteManifest } from './game/grifballValidation/types';
+import type { GrifballValidationBridge } from './game/grifballValidation/browserBridge';
+import type { SuitePlan, SuiteManifest } from './game/grifballValidation/types';
 import type { GameStats } from './types';
-import './index.css';
+import './grifballValidation.css';
 
 function pilot(kind: 'scenario' | 'match' | 'rosters'): SuiteManifest {
   const manifest = createSuiteManifest(kind === 'scenario' ? 'quick' : 'standard');
@@ -35,12 +36,14 @@ function ValidationPage() {
     const timer = setInterval(() => setStats(statsRef.current), 250);
     return () => { clearInterval(timer); abortRef.current?.abort(); };
   }, []);
-  const run = async () => {
-    if (running) return;
+  const busyRef = useRef(false), preparedRef = useRef<SuitePlan | null>(null);
+  const progressRef = useRef<SuiteProgress | null>(null);
+  const execute = async (plan: SuitePlan, jobId?: string) => {
+    if (busyRef.current) throw new Error('A validation job is already running');
+    busyRef.current = true;
     setRunning(true); setError(''); setResult(null); setStats(null); statsRef.current = null;
     const abort = new AbortController(); abortRef.current = abort;
     try {
-      const plan = await createSuitePlan(JSON.parse(manifestText), { commit: null, dirty: null, workingTreeHash: null, scope: [] });
       const output = await runValidationSuite(plan, {
         load: (fixture, job, signal) => new Promise<TrialHandle>((resolve, reject) => {
           if (signal.aborted) { reject(new Error('Cancelled before arena load')); return; }
@@ -52,19 +55,51 @@ function ValidationPage() {
           });
         }),
         unload: () => setMounted(null),
-      }, { signal: abort.signal, onProgress: setProgress });
-      setResult(output);
+      }, { signal: abort.signal, jobIds: jobId ? [jobId] : undefined, onProgress: value => { progressRef.current = value; setProgress(value); } });
+      setResult(output); return output;
+    } catch (err) { setError(err instanceof Error ? err.message : String(err)); throw err; }
+    finally { busyRef.current = false; setRunning(false); setMounted(null); abortRef.current = null; }
+  };
+  const executeRef = useRef(execute); executeRef.current = execute;
+  useEffect(() => {
+    const bridge: GrifballValidationBridge = {
+      version: 1, buildId: import.meta.env.VITE_VALIDATION_BUILD_ID ?? '',
+      async prepare(manifest, code, expectedPlanId) {
+        if (busyRef.current) throw new Error('Cannot replace active inputs');
+        const plan = await createSuitePlan(manifest, code);
+        if (plan.id !== expectedPlanId) throw new Error('Browser and CLI frozen plans differ');
+        if (busyRef.current) throw new Error('Cannot replace active inputs');
+        preparedRef.current = plan;
+        return plan.jobs.map(job => job.id);
+      },
+      async runJob(jobId) {
+        const plan = preparedRef.current;
+        const job = plan?.jobs.find(job => job.id === jobId);
+        if (!plan || !job) throw new Error('Job is not in the prepared plan');
+        const output = await executeRef.current(plan, job.id);
+        if (output.results.length !== 1) throw new Error('Job produced no result');
+        return output.results[0];
+      },
+      progress: () => progressRef.current,
+      cancel: () => abortRef.current?.abort(),
+    };
+    window.__grifballValidation = bridge;
+    return () => { delete window.__grifballValidation; };
+  }, []);
+  const run = async () => {
+    try {
+      const plan = await createSuitePlan(JSON.parse(manifestText), { commit: null, dirty: null, workingTreeHash: null, scope: [] });
+      await execute(plan);
     } catch (err) { setError(err instanceof Error ? err.message : String(err)); }
-    finally { setRunning(false); setMounted(null); abortRef.current = null; }
   };
   const download = () => {
     const url = URL.createObjectURL(new Blob([JSON.stringify(result, null, 2)], { type: 'application/json' }));
     const a = document.createElement('a'); a.href = url; a.download = 'grifball-live-validation.json'; a.click(); URL.revokeObjectURL(url);
   };
   return <main style={{ color: '#e2e8f0', background: '#0f172a', minHeight: '100vh', padding: 20, fontFamily: 'system-ui' }}>
-    <h1 style={{ fontSize: 26, marginBottom: 8 }}>Grifball live validation · VS2</h1>
-    <p>Development session. Live gameplay only; repository, parity, performance and quality gates remain unverified.</p>
-    <p style={{ color: '#94a3b8', marginBottom: 12 }}>Source identity is unavailable here. Use the CLI preview to freeze verified source inputs; unattended execution follows in VS3.</p>
+    <h1 style={{ fontSize: 26, marginBottom: 8 }}>Grifball live validation</h1>
+    <p>Live gameplay trials. The CLI collects durable results and repository checks; acceptance gates remain separate.</p>
+    <p style={{ color: '#94a3b8', marginBottom: 12 }}>Manual sessions have no verified source identity. Use npm run validate:grifball for an isolated browser run with a saved report.</p>
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
       <button style={buttonStyle} disabled={running} onClick={() => setManifestText(JSON.stringify(pilot('scenario'), null, 2))}>Scenario pilot</button>
       <button style={buttonStyle} disabled={running} onClick={() => setManifestText(JSON.stringify(pilot('match'), null, 2))}>Autonomous 1v1</button>
@@ -93,4 +128,4 @@ function ValidationPage() {
     </>}
   </main>;
 }
-createRoot(document.getElementById('root')!).render(import.meta.env.DEV ? <ValidationPage/> : <p>Development validation is unavailable in this build.</p>);
+createRoot(document.getElementById('root')!).render((import.meta.env.DEV || import.meta.env.MODE === 'validation') ? <ValidationPage/> : <p>Development validation is unavailable in this build.</p>);

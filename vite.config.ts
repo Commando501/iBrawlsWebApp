@@ -3,8 +3,10 @@ import react from '@vitejs/plugin-react';
 import path from 'path';
 import { defineConfig } from 'vite';
 
-export default defineConfig(() => {
+export default defineConfig(({ mode }) => {
   return {
+    base: mode === 'validation' ? '/validation/' : '/',
+    define: { 'import.meta.env.VITE_VALIDATION_BUILD_ID': JSON.stringify(mode === 'validation' ? process.env.GRIFBALL_VALIDATION_BUILD_ID ?? '' : '') },
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {
@@ -29,7 +31,7 @@ export default defineConfig(() => {
       // block production builds on cleanup; npm run clean remains available.
       emptyOutDir: false,
       rollupOptions: {
-        input: {
+        input: mode === 'validation' ? { validation: path.resolve(__dirname, 'grifball-validation.html') } : {
           main: path.resolve(__dirname, 'index.html'),
           mapmaker: path.resolve(__dirname, 'mapmaker.html'),
           animationEditor: path.resolve(__dirname, 'animation-editor.html'),

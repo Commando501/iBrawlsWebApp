@@ -8,11 +8,16 @@ import { type GrifballRuntimeState } from './runtimeState';
 import { type GrifballThreeRefs } from './threeRefs';
 import { updateTransientVfxForFrame } from './vfxRuntime';
 
+import { reconcileGrifballCarrierForState } from './grifballObjectiveRuntime';
+
 type MutableRef<T> = { current: T };
 
 export function advanceGrifballFrameForState({
   state,
   refs,
+  ballMeshRef,
+  ballChargingRef,
+  ballChargeTimerRef,
   dt,
   isPlaying,
   isPausedRef,
@@ -46,6 +51,9 @@ export function advanceGrifballFrameForState({
 }: {
   state: GrifballRuntimeState;
   refs: GrifballThreeRefs;
+  ballMeshRef: MutableRef<THREE.Mesh | null>;
+  ballChargingRef: MutableRef<boolean>;
+  ballChargeTimerRef: MutableRef<number>;
   dt: number;
   isPlaying: boolean;
   isPausedRef: MutableRef<boolean>;
@@ -140,6 +148,9 @@ export function advanceGrifballFrameForState({
   updateTransientVfxForFrame(refs, dt);
   updateMatchTimers(dt);
   enforceArenaBounds(dt);
+  // Skeletal melee impacts can kill a carrier after the objective has already advanced.
+  // Repair ownership once all combat/bounds work is done, before rendering and recording.
+  if (!isMultiplayer) reconcileGrifballCarrierForState({ state, refs, ballMeshRef, ballChargingRef, ballChargeTimerRef });
 
   renderGame();
   updateFloatingNameplate();

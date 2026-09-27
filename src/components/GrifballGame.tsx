@@ -126,7 +126,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
   v3QualityTier = 'desktop',
   validationTrial,
 }) => {
-  const validationActive = Boolean(import.meta.env.DEV && validationTrial);
+  const validationActive = Boolean((import.meta.env.DEV || import.meta.env.MODE === 'validation') && validationTrial);
   const validationRuntimeRef = useRef<GrifballValidationRuntime | null>(null);
   const validationTickRef = useRef<(dt: number) => void>(() => { throw new Error('Live tick not ready'); });
   const containerRef = useRef<HTMLDivElement>(null);
@@ -900,6 +900,9 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       const tick = (tickDt: number) => advanceGrifballFrameForState({
         state: s,
         refs: threeRef.current,
+        ballMeshRef: grifballBallMeshRef,
+        ballChargingRef,
+        ballChargeTimerRef,
         dt: tickDt,
         isPlaying,
         isPausedRef,
