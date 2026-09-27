@@ -154,3 +154,26 @@ Both batches included mirrored legs. Matching means every raw team metric was ex
 ### Acceptance decision
 
 The first validation pass closes one concrete observer lifecycle bug and expands match-lifecycle, adapter and reproducibility evidence. It does **not** accept milestone 7 as complete. Next priorities are obstacle-route refresh cost, a true autonomous full-match batch mode (initial countdown through termination, including timeouts), broader live/headless combat and spawn parity, and candidate-versus-frozen-baseline trials on held-out scenarios/maps. Human review is still required for readable teamwork and enjoyment. Existing five V3 failures were not fixed or rerun in this pass.
+
+
+## Validation suite foundation — VS1 (2026-09-27)
+
+The pre-existing validation pass was checkpointed separately in `78aed44` (observer reset fix, lifecycle/parity regressions, benchmark and measured findings). VS1 adds the shared manifest, frozen schedule and report contracts under `src/game/grifballValidation/`, plus a preview CLI. Neither implementation plan was edited.
+
+Delivered behavior:
+
+- Strict versioned manifests with explicit scenarios/matches, supported arenas, roster ownership, seeds, styles, sides, mechanics, 60 Hz ticks, simulation caps and independent wall-clock watchdog declarations.
+- Copied effective maps/settings/combat tuning; canonical SHA-256 case/job identities; recursive freezing before exposing a plan. Existing evaluator pairing/configuration rules are reused.
+- Quick's 32 jobs and Standard's 184 jobs are fully listed by the preview. The three planned autonomous-match rosters are declarations only; no seven-bot fixture is presented as eight-bot validation.
+- Commit plus scoped working-tree content fingerprints include untracked source and tracked deletions. The fingerprint explicitly excludes installed dependencies and public assets; this is a preview contract, not executor/build compatibility evidence.
+- Separate profile, automated, repository and milestone 7 verdicts. Missing evidence remains not run; partial/cancelled evidence cannot pass. Foreign/duplicate results and impossible state/verdict combinations are rejected.
+- JSON preview/manifest exports refuse overwrite. Preview success exits 0; unavailable execution exits 2; invalid input/setup exits 3. The CLI never launches the game or substitutes the headless heuristic evaluator for live gameplay.
+
+Verification:
+
+- Focused suite contract and CLI tests: **40/40 passed**. This includes command-line exports/re-import, exact preview/job correspondence, unchanged map globals, mutation protection, mirrored focal configs, real gameplay mechanic resolution, malformed requests, incomplete results and dirty/untracked/deleted-code fingerprints.
+- TypeScript: **passed** (`tsc --noEmit`).
+- Full repository test command: **1,463/1,468 passed**, with the same five existing V3 failures (two-handed hammer pose, carry grip constraints, attack sweep amplitude, default asset budget and Aegis reference proportions). Duration: 366.9 seconds. No tests were skipped or cancelled. The final sparse-evidence rejection assertion and implementation were verified again by the focused suite and TypeScript after this full run had started.
+- Saved a real Quick dry-run preview and editable manifest under `output/grifball-validation/vs1-quick-*.json`; all executor gates remain not run. Focused/full test logs are alongside these artifacts. No browser/build rerun was needed for this new CLI/shared-contract slice; it does not change the application runtime or UI.
+
+No new gameplay, execution-parity, performance or quality evidence was collected by this preview. Existing milestone 7 limitations remain. VS2 is next: connect these contracts to the real scenario and autonomous-match runner, with explicit roster ownership and terminal/cap/cancellation handling.

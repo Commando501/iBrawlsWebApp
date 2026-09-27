@@ -232,6 +232,26 @@ Objective movement follows checked ground routes around custom-map obstacles and
 
 Run `npm run bench:grifball-space` to profile planning refreshes, including a scripted runner, tanking, defense, passing and styles, for the supported seven bots plus a human and an additional 32-participant stress case. Run `node --import tsx scripts/sim/grifballValidationBench.ts` to separately measure warm live-snapshot creation, planning refreshes, work between refreshes and evaluation sampling in fixed eight-participant fixtures. These measurements exclude rendering/combat and are not a live frame budget. See [Milestone 7 initial validation](docs/grifball-team-ai-m7-validation.md) for current measurements and verification limits. Earlier results are in [Milestone 6 validation](docs/grifball-team-ai-m6-validation.md), [Milestone 5 validation](docs/grifball-team-ai-m5-validation.md), [Milestone 4 validation](docs/grifball-team-ai-m4-validation.md), [Milestone 3 validation](docs/grifball-team-ai-m3-validation.md) and [Milestone 2 validation](docs/grifball-team-ai-m2-validation.md).
 
+### Grifball validation suite (VS1: preview)
+
+The suite foundation can validate a manifest, freeze its inputs, and list its exact scheduled work. **Gameplay execution and the Lab “Run validation suite” button are not implemented yet.** The existing Lab batch evaluator remains available above.
+
+```sh
+npm run validate:grifball -- --suite quick --dry-run
+npm run validate:grifball -- --suite standard --dry-run
+npm run validate:grifball -- --suite quick --dry-run --out output/grifball-validation/quick-preview.json --write-manifest output/grifball-validation/quick-manifest.json
+npm run validate:grifball -- --manifest output/grifball-validation/quick-manifest.json --dry-run
+npm run test:grifball-validation
+```
+
+Quick previews 4 scenarios and 32 paired jobs (160 simulated seconds maximum). Standard previews all 20 Lab scenarios plus three full-match roster fixtures, for 184 jobs (5,280 simulated seconds maximum). These are simulation caps, not completion-time estimates. Standard's planned 1v1, 3v4 and eight-bot 4v4 fixtures remain **not run**, pending live-runner support; the observer is explicitly outside each roster. Scenario fixtures use seven scripted bots, three blue and four red before mirroring.
+
+Export a manifest to edit its explicit case list, seeds, opponent styles, difficulty, tactical baseline/candidate, goal target, countdown/reset duration, throwing/thrust toggles and limits. VS1 supports Stadium and Canyon, built-in scripted difficulties, V2 Medium models, 60 Hz ticks and same-build configuration comparisons. Other maps, custom combat presets, human/neural fixtures and historical-build comparisons are rejected or outside this first slice. As in Lab batches, the resolved blue-team baseline/candidate follows the focal roster onto red in mirrored legs. Acceptance requires an explicit manifest declaring a calibrated performance budget and held-out match evidence requirements; no acceptance preset or improvement claim is generated automatically.
+
+The JSON preview contains the copied map, conservative geometry-input hash, complete effective gameplay settings, per-bot combat tuning, tactical jobs and source identity. SHA-256 fingerprints include the Git commit and tracked/untracked changes or deletions within the recorded source/config scope. Runtime versions are recorded separately. Installed dependencies, public asset changes and browser/build identity are not covered by this source fingerprint; execution-time compatibility checks arrive with the runner. JSON output uses new files only and refuses to overwrite previous evidence.
+
+Reports distinguish execution state from verdict, reject mismatched plan IDs, and retain all missing jobs/gates as **not run**. Partial or cancelled required evidence cannot produce an overall pass. Profile results, repository health, automated checks and milestone 7 acceptance remain separate. This command currently supplies no executor evidence. With `--dry-run`, exit 0 means the preview succeeded; without it, exit 2 reports unavailable execution. Invalid inputs/setup errors exit 3. The new tests also run in the main repository test command.
+
 ### Keyboard + Mouse Controls
 - **Move**: `W`, `A`, `S`, `D` (or Arrows)
 - **Jump**: `Spacebar` (Launch hammer jump if pressed immediately after Slam)
