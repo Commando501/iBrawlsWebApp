@@ -1,3 +1,5 @@
+import { createArenaOrchestratorCallbacksForState } from './arenaOrchestratorCallbacks';
+import { GrifballEvaluationTracker } from '../../game/grifballEvaluation';
 import { tickScriptedGrifballPassForState, updateGrifballObjectiveForState } from './grifballObjectiveRuntime';
 import { defaultGrifballTactics } from '../../game/grifballTacticsConfig';
 import test from 'node:test';
@@ -359,4 +361,71 @@ test('respawn observations are copied separately and never issue orders to dead 
   assert.ok(snapshot.respawns!.some(p => p.id === 'b' && p.seconds === 1.5));
   assert.ok(!snapshot.players.some(p => p.id === 'b')); assert.ok(!state.aiMatchContext.grifballTeamPlan.assignments.has('b'));
   bot.respawnTimer = 0; assert.equal(snapshot.respawns!.find(p => p.id === 'b')!.seconds, 1.5);
+});
+
+
+test('live objective lifecycle scores once, resets orders and spawns, and terminates a two-goal match', () => {
+  const state = setup(), refs = createInitialGrifballThreeRefs();
+  state.grifballTactics = defaultGrifballTactics();
+  Object.assign(state.settings, { grifballGoalTarget: 2, grifballCountdownDuration: 0.1, grifballRoundResetDelay: 0.1 });
+  state.grifball.phase = 'countdown'; state.grifball.phaseTimer = 0; state.grifball.goalTarget = 2;
+  state.playerPos.set(0, 25, 25); const camera = state.playerPos.clone();
+  const observer = { ...state.otherPlayers.get('a')!, id: 'observer', isObserver: true, pos: camera.clone(), vel: new THREE.Vector3() };
+  state.otherPlayers.set(observer.id, observer);
+  const map = { mapShape: 'rectangular', arenaRadius: 60, arenaHalfExtents: { x: 52, z: 23 },
+    teamSpawns: { blue: [{ x: -40, y: 0, z: -3 }, { x: -40, y: 0, z: 3 }], red: [{ x: 40, y: 0, z: 0 }] },
+    objects: [{ type: 'box', goalPlateTeam: 'red', position: { x: 47, y: 0, z: 0 }, scale: { x: 2, y: 0.1, z: 2 } }],
+  } as unknown as CustomMapData;
+  const { placeCombatantsAtGrifballSpawns } = createArenaOrchestratorCallbacksForState({
+    getState: () => state, getRefs: () => refs, spawnPoints: [], getActiveCustomMap: () => map,
+    getLegacyRosterProps: () => ({}), getOfflineBotCount: () => 3, isPlaying: true, opponentClientId: '',
+    constrainCombatantToArena: () => {}, getVisualModelPolicy: () => 'v1', pushStatsUpdate: () => {}, playRespawn: () => {},
+  });
+  const tracker = new GrifballEvaluationTracker(); let resets = 0;
+  const ballMeshRef = { current: null }, ballChargingRef = { current: false }, ballChargeTimerRef = { current: 0 };
+  const tick = (dt = 1 / 60) => {
+    updateGrifballObjectiveForState({ state, refs, ballMeshRef, ballChargingRef, ballChargeTimerRef, dt, isMultiplayer: false, activeCustomMap: map,
+      placeCombatantsAtGrifballSpawns: () => { resets++; placeCombatantsAtGrifballSpawns(); }, pushStatsUpdate: () => {} });
+    updateGrifballTeamPlanForState(state, dt, goal, map);
+    const plan = state.aiMatchContext.grifballTeamPlan, snapshot = plan.snapshot!;
+    tracker.sample({ phase: state.grifball.phase, holderId: snapshot.holderId,
+      holderTeam: snapshot.players.find(p => p.id === snapshot.holderId)?.team ?? null,
+      goals: { blue: state.teamScores.blue.goals, red: state.teamScores.red.goals }, players: snapshot.players, assignments: plan.assignments.values(), geometry: snapshot.geometry }, dt);
+  };
+  const runner = state.otherPlayers.get('a')!;
+  runner.pos.set(0, 0, 0); runner.pickupRequested = true; tick();
+  assert.equal(state.grifball.ball.holderId, null, 'countdown blocks pickups');
+  assert.equal(state.aiMatchContext.grifballTeamPlan.assignments.size, 0);
+  tick(0.1);
+  for (let round = 1; round <= 2; round++) {
+    assert.equal(state.grifball.phase, 'playing');
+    runner.pos.set(0, 0, 0); runner.pickupRequested = true; tick();
+    assert.equal(state.grifball.ball.holderId, 'a'); assert.equal(runner.hp, state.settings.grifballRunnerHealth);
+    state.aiMatchContext.grifballTeamPlan.passCharge = { carrierId: 'a', receiverId: 'b', elapsed: 0.01, speed: 9 };
+    runner.pos.set(47, 0, 0); tick();
+    assert.equal(state.grifball.phase, 'scored'); assert.equal(state.teamScores.blue.goals, round);
+    assert.equal(state.grifball.ball.holderId, null); assert.equal(runner.maxHp, state.settings.maxHP);
+    const plan = state.aiMatchContext.grifballTeamPlan;
+    assert.equal(plan.assignments.size, 0); assert.equal(plan.passCharge, null);
+    assert.deepEqual(plan.runnerMemory, {}); assert.deepEqual(plan.tankingMemory, {}); assert.deepEqual(plan.styleMemory, {});
+    tick(); assert.equal(state.teamScores.blue.goals, round, 'scored hold cannot award twice');
+    tick(0.1);
+    if (round === 1) {
+      assert.equal(state.grifball.phase, 'countdown'); assert.equal(state.grifball.roundNumber, 2); assert.equal(resets, 1);
+      assert.equal(runner.pos.x, -40); assert.equal(state.otherPlayers.get('enemy')!.pos.x, 40);
+      assert.equal(runner.pos.z, -3, 'observer does not reserve the first team spawn');
+      assert.deepEqual(observer.pos, camera, 'observer bots do not occupy team spawns');
+      assert.notEqual(runner.pos.z, state.otherPlayers.get('b')!.pos.z, 'bots get separate team spawns');
+      assert.deepEqual(state.playerPos, camera, 'observer camera stays in place across round reset');
+      tick(0.1);
+    }
+  }
+  assert.equal(state.grifball.phase, 'matchEnd'); assert.equal(state.grifball.winningTeam, 'blue'); assert.equal(resets, 1);
+  runner.pos.set(0, 0, 0); runner.pickupRequested = true; tick(1);
+  assert.equal(state.grifball.ball.holderId, null); assert.equal(state.aiMatchContext.grifballTeamPlan.assignments.size, 0);
+  assert.equal(tracker.teams.blue.goals, 2); assert.equal(tracker.teams.blue.completedPossessions, 2); assert.equal(tracker.teams.blue.turnovers, 0);
+  state.isObserverMode = false; placeCombatantsAtGrifballSpawns();
+  assert.equal(state.playerPos.x, -40); assert.equal(state.playerPos.y, 0);
+  assert.equal(state.playerPos.z, -3, 'a participating human still reserves the first team spawn');
+  assert.equal(runner.pos.z, 3);
 });

@@ -64,14 +64,17 @@ export function createArenaOrchestratorCallbacksForState({
     const fallback = resolveActiveSpawnPoints(activeCustomMap, spawnPoints);
     const used: THREE.Vector3[] = [];
 
-    const playerSpawn = getGrifballTeamSpawn(activeCustomMap, state.localPlayerTeam, fallback, used);
-    state.playerPos.copy(playerSpawn);
-    state.playerVel.set(0, 0, 0);
-    state.yaw = playerSpawn.spawnYaw ?? getInwardSpawnYaw(playerSpawn);
-    used.push(playerSpawn.clone());
+    // An observer is a camera, not a participant reserving a team spawn.
+    if (!state.isObserverMode) {
+      const playerSpawn = getGrifballTeamSpawn(activeCustomMap, state.localPlayerTeam, fallback, used);
+      state.playerPos.copy(playerSpawn);
+      state.playerVel.set(0, 0, 0);
+      state.yaw = playerSpawn.spawnYaw ?? getInwardSpawnYaw(playerSpawn);
+      used.push(playerSpawn.clone());
+    }
 
     for (const bot of state.otherPlayers.values()) {
-      if (bot.controller !== 'ai') continue;
+      if (bot.controller !== 'ai' || bot.isObserver) continue;
       const team = bot.team || 'red';
       const spawn = getGrifballTeamSpawn(activeCustomMap, team, fallback, used);
       bot.pos.copy(spawn);

@@ -92,3 +92,65 @@ Both regressions failed before their fixes and passed afterward. README behavior
 - Browser: Championship Stadium, classic models, seven scripted bots, escort scenario, seeds 1–2, balanced opponent, mirrored sides, five seconds per run. **8/8 runs completed**, all four baseline/candidate pairs had exactly equal counters for identical tuning. Every exported setup had carrier max health 2 and ordinary max health 1. These trials verify the harness, not improvement.
 - Browser: Load escort → Join runner → Resume showed the player holding the ball with **2/2 HP** and a 2 HP maximum. No browser console errors were returned during the batch check.
 - `git diff --check` passed. The attached implementation plan was unchanged.
+
+
+## Validation pass — lifecycle, contract and cost
+
+This pass starts from `a90ea8e`. It expands acceptance evidence without changing the attached implementation plan or the neural policy contract.
+
+### Lifecycle regression and fix
+
+A new integration test exercises the actual live objective update, team planner, spawn callback and evaluation tracker across countdown, pickup, two goals, the intermediate round reset and match termination. Carrier positions are scripted to reach the goal; combat and autonomous match success are not simulated by this test. It verifies no countdown/terminal pickup, no repeated goal during the scored hold, normal carrier health transitions, cleared orders/charge/runner/tank/style memory, separate team spawns and exactly two completed scoring possessions.
+
+The test reproduced a round-reset bug: an observer camera at `(0, 25, 25)` moved to the blue player spawn at `(-40, 0, -3)`. The spawn callback also reserved this position for the invisible observer. Round placement now preserves the observer camera, skips observer bots and allocates spawns only to participants. The regression failed before the fix and passed afterward.
+
+### Expanded parity scope
+
+Additional adapter tests compare copied observations and resulting plans across countdown, playing, scored hold, a new round and matchEnd. Another advances the shared ball physics for 660 fixed ticks through thrown, loose and idle/auto-return states, comparing snapshots and recovery plans at every tick. This validates the contract and shared ball subsystem. It does not close the documented sword/punch, combat geometry or respawn execution differences.
+
+### Isolated performance evidence
+
+Added `scripts/sim/grifballValidationBench.ts`. Reproduce with `node --import tsx scripts/sim/grifballValidationBench.ts`. It uses the live adapter, seven bots plus an observed human, default tactics, 120 warm-up ticks and 600 measured fixed ticks, with static ready actors and cached geometry. It reports each stage separately and imposes no hardware-dependent test threshold.
+
+| Eight participants | Snapshot p95 | Planner refresh median / p95 | Between-refresh p95 | Evaluation p95 |
+| --- | ---: | ---: | ---: | ---: |
+| Open fixture | 0.070 ms | 2.072 / 2.965 ms | 0.055 ms | 0.135 ms |
+| Two obstacles | 0.070 ms | 12.786 / 15.256 ms | 0.049 ms | 0.117 ms |
+
+Each fixture produced 46 refreshes during 10 measured simulation seconds. Measurements isolate warm calls in Node; they exclude the coordinator, rendering, combat, cold geometry and dynamic urgent events. A refresh runs on one tick, so averaging its cost over the refresh interval would hide possible frame stalls. The obstacle refresh consumes much of a 16.7 ms frame budget before other gameplay/rendering work, so this performance gate remains open.
+
+The existing forced-refresh benchmark also ran: 8/open median 2.13 ms, p95 3.39 ms; 8/obstacles median 12.40 ms, p95 17.45 ms; 32/open median 15.56 ms, p95 19.90 ms; 32/obstacles median 128.84 ms, p95 133.82 ms. The 32-participant case exceeds the supported roster and is a stress test.
+
+### Automated results
+
+- Gameplay/component selection excluding V3/animation suites: **471/471 passed**.
+- All `src/sim` tests: **135/135 passed** (including **6/6** tactical-adapter tests).
+- Focused live-plan/lifecycle plus adapter selection: **25/25 passed**.
+- No full repository rerun in this pass; the preceding audit's five V3 failures remain unresolved and are listed above.
+
+- TypeScript: passed with a 12 GB heap after correcting the new sparse test-map fixture's type assertion.
+- Production build: passed; existing large-chunk warnings remain.
+- After extending the lifecycle test to cover observer bots and returning to a participating human, its live-plan suite passed **19/19**. Runtime code was unchanged after the successful gameplay/type/build checks.
+- `git diff --check`: passed. The attached implementation plan remains unchanged.
+
+### Live browser results after the fix
+
+Local Vite app on port 3000, classic models, seven scripted bots in observer trials (main AI configured as custom, six other bots normal). Baseline and candidate were identical, so these trials test repeatability rather than improvement. Health mechanics were ordinary max HP 1, runner HP 2; goal target 5.
+
+| Arena | Scenario | Seeds | Opponents | Duration / run | Completed | Matching A/B pairs |
+| --- | --- | --- | --- | ---: | ---: | ---: |
+| Championship Stadium | Goal approach | 1 | Balanced | 30 s | 4/4 | 2/2 |
+| Forerunner Canyon Plateau | Respawn recovery | 21, 22 | Balanced, patient, aggressive | 4 s | 24/24 | 12/12 |
+
+Both batches included mirrored legs. Matching means every raw team metric was exactly equal between each identical-config baseline/candidate pair; machine-dependent timing was excluded. Each Stadium run recorded 1 goal and 1 completed possession per team across 1,800 ticks, exercising multiple scored holds/round resets. Each Canyon run recorded 240 ticks and no goals, as expected for a short recovery trial; its exported map had four collidable objects. The Canyon runs alone do not establish scoring or complete-match quality.
+
+- The elevated observer view remained in place after Stadium round resets. Both arenas rendered nonblank WebGL scenes, visible bots and tactical lines; screenshots were inspected.
+- Pause held the long trial at 27.25 seconds after the current frame completed; Run resumed it. Step remains disabled during batches by the current UI.
+- Team roles, Spacing, Space / threats, Runner / escort, Tanking, Defense / passing and Styles panels all opened with their controls.
+- The Stadium report survived quitting to the title and starting the Canyon arena. A single-seed report correctly displayed insufficient data for confidence intervals.
+- No browser console errors were returned. Existing Three.js material/deprecation warnings and localhost network-metadata fallback warnings were observed; these were not treated as AI correctness failures.
+- An earlier browser batch was interrupted by development-server reloads while test files changed and is excluded from these results. Final trials ran after code edits and the production build.
+
+### Acceptance decision
+
+The first validation pass closes one concrete observer lifecycle bug and expands match-lifecycle, adapter and reproducibility evidence. It does **not** accept milestone 7 as complete. Next priorities are obstacle-route refresh cost, a true autonomous full-match batch mode (initial countdown through termination, including timeouts), broader live/headless combat and spawn parity, and candidate-versus-frozen-baseline trials on held-out scenarios/maps. Human review is still required for readable teamwork and enjoyment. Existing five V3 failures were not fixed or rerun in this pass.

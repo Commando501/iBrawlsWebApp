@@ -1,3 +1,4 @@
+import { throwBall, tickBallPhysics } from '../game/grifballBall';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
@@ -84,4 +85,40 @@ test('dead members retain roster identity and use the actual headless respawn sl
   const index = sim.combatants.filter(p => p.team === c.team).indexOf(c);
   const spawn = sim.spawns[c.team][index % sim.spawns[c.team].length];
   assert.deepEqual(after.respawns![0].pos, { x: spawn.x, z: spawn.z }); assert.equal(after.respawns![0].seconds, 2);
+});
+
+
+test('contract parity survives countdown, scored hold, round changes and terminal state', () => {
+  const { sim, live, scriptedBots, goals } = fixture();
+  const a = createGrifballTeamPlanState(), b = createGrifballTeamPlanState();
+  for (const phase of ['countdown', 'playing', 'scored', 'countdown', 'playing', 'scored', 'matchEnd'] as const) {
+    if (phase === 'countdown' && sim.match.phase === 'scored') sim.match.roundNumber++;
+    sim.match.phase = phase; live.grifball = structuredClone(sim.match);
+    const headless = createSimGrifballTacticalSnapshot(sim, { scriptedBots });
+    const runtime = createLiveGrifballTacticalSnapshot(live, goals, sim.map);
+    assert.deepEqual(headless, runtime, phase);
+    updateGrifballTeamPlan(a, headless, 1 / 60); updateGrifballTeamPlan(b, runtime, 1 / 60);
+    assert.deepEqual(a, b, phase);
+    if (phase !== 'playing') assert.equal(a.assignments.size, 0, phase);
+  }
+});
+
+test('shared thrown-ball observations and recovery plans stay equal through settling and auto-return', () => {
+  const { sim, live, scriptedBots, goals } = fixture();
+  const a = createGrifballTeamPlanState(), b = createGrifballTeamPlanState();
+  throwBall(sim.match.ball, { x: 0, y: 1.1, z: 0 }, { x: 1, y: 0, z: 0 }, 9);
+  live.grifball.ball = structuredClone(sim.match.ball);
+  const seen = new Set<string>();
+  for (let i = 0; i < 660; i++) {
+    tickBallPhysics(sim.match.ball, 1 / 60, 8, sim.map);
+    tickBallPhysics(live.grifball.ball, 1 / 60, 8, sim.map);
+    seen.add(sim.match.ball.state);
+    const headless = createSimGrifballTacticalSnapshot(sim, { scriptedBots });
+    const runtime = createLiveGrifballTacticalSnapshot(live, goals, sim.map);
+    assert.deepEqual(headless, runtime);
+    updateGrifballTeamPlan(a, headless, 1 / 60); updateGrifballTeamPlan(b, runtime, 1 / 60);
+    assert.deepEqual(a, b);
+  }
+  assert.ok(seen.has('thrown')); assert.ok(seen.has('loose')); assert.ok(seen.has('idle'));
+  assert.deepEqual(sim.match.ball, live.grifball.ball);
 });
