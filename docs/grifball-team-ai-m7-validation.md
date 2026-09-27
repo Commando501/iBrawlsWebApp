@@ -177,3 +177,43 @@ Verification:
 - Saved a real Quick dry-run preview and editable manifest under `output/grifball-validation/vs1-quick-*.json`; all executor gates remain not run. Focused/full test logs are alongside these artifacts. No browser/build rerun was needed for this new CLI/shared-contract slice; it does not change the application runtime or UI.
 
 No new gameplay, execution-parity, performance or quality evidence was collected by this preview. Existing milestone 7 limitations remain. VS2 is next: connect these contracts to the real scenario and autonomous-match runner, with explicit roster ownership and terminal/cap/cancellation handling.
+
+
+## Live validation runner - VS2 (2026-09-27)
+
+VS1 was checkpointed in `7448cc5` before this implementation. VS2 connects its frozen jobs to `GrifballGame` through a serial browser host and a dedicated development page at `/grifball-validation.html`. Neither implementation plan was edited.
+
+Implemented:
+
+- Shared scenario preparation, mirroring and vector-preserving cloning retain the existing Lab pause/restart/batch behavior. A regression protects the original snapshot's goal center when a Lab caller has no map callback.
+- Full matches create fresh scripted combatants at authored spawns, neutral ball, zero goals, normal health/cooldowns/memory, the 522-second default clock and normal countdown. They use the real AI, combat, animation-triggered impacts, physics, objectives and timers. No autonomous trial inserts a carrier at a goal or injects kills.
+- Explicit 1v1, 3v4 and eight-scripted-bot 4v4 fixtures use ordinary actor creation and mesh provisioning, with an outside observer. Frozen per-actor combat profiles reach the normal roster callbacks. The existing multiplayer capacity and human/neural ownership paths are unchanged; mixed-ownership regressions remain separate from these scripted-only fixtures.
+- Each job waits for arena/roster/mesh readiness, scopes its RNG/time, locks its inputs, collects bounded lifecycle traces and team metrics, and restores its prior state on disposal. Cancellation covers loading and active play; cleanup failures fail the job and stop the queue before another arena starts.
+- Match completion, scenario completion, unfinished simulation cap, wall watchdog, cancellation, setup error and invalid state have distinct outcomes. Invariants cover required finite actor/ball state, health, ownership, meshes, frozen tuning/goal target, holder validity, pickup phase, scoring and terminal winner. Trace capacity is 512 entries with an explicit dropped-entry count.
+- The pilot page runs offline without registering human input or loading Lab presets, saving replays/player memory or submitting match telemetry. Exports contain the frozen plan and trial evidence. Unavailable browser source identity is explicitly null and cannot produce a suite acceptance pass. Remaining gates are not run.
+
+Clock audit: the offline Grifball clock is displayed and decremented, but reaching zero does not declare a winner/draw. Goal-target `matchEnd` is the real terminal condition. Evaluation caps therefore remain unfinished. The wall watchdog uses real timers and covers loading or stalled simulation progress while the browser event loop can run. A completely blocked/crashed browser requires the external process watchdog planned for VS3.
+
+Measured browser evidence (scripted Normal, V2 Medium, seed 101, balanced style, identical baseline/candidate):
+
+| Trial | Evidence |
+| --- | --- |
+| Stadium autonomous 1v1 | Both runs reached `matchEnd` at tick 2,777 (46.283 simulated seconds), score 0-2, round 2. Start clock 522, terminal clock 475.7167. Initial countdown ended at tick 181; goals at 1,139 and 2,536; round reset at 1,380. Traces and raw team metrics matched exactly across the pair. |
+| Roster/map pilot | All 12 five-second legs ran to 300-tick caps: 1v1 and 3v4 on Stadium, 4v4 on Canyon, baseline/candidate on both sides. Recorded starting actor counts were 2, 7 and 8 respectively. All caps remained inconclusive. |
+| Canyon 4v4, 20 seconds | Both 1,200-tick runs scored 0-1 and remained unfinished. Real combat reduced the alive roster from 8 to 5 at tick 707; all 8 were alive again at 798. Further death/respawn transitions occurred at 937/1,028. |
+| Stadium pass, 20 seconds | Both runs threw at tick 36, a teammate recovered at 131, scored at 481, and reset at 722. Both completed 1,200 ticks. |
+| Goal/reinforcements scenarios | Four five-second jobs completed. Goal runs scored and reset; reinforcement runs restored the scripted dead bots to the live roster. |
+| Cancellation | Cancelling while loading returned a cancelled job with no start frame and left later jobs not run. Cancelling active play retained the completed first job and the second job's partial 1,114-tick result. A fresh queue started successfully after cancellation. |
+
+WebGL screenshots were inspected for Stadium and Canyon, including the eight-actor fixture. Browser console error capture was empty during the completed pilots. Development hot reload initially interrupted exploratory runs when test files changed; those runs are excluded. Final trials use a server launched with `DISABLE_HMR=true`. Measurements collected alongside builds/tests are not performance evidence.
+
+Verification:
+
+- Focused contracts, queue/runtime, Lab, live planning/ownership and service-worker routing regressions: **106/106 passed** after the final changes. Includes readiness/late-load cleanup, cancellation, watchdog expiry without ticks, frozen combat profiles, all roster sizes/sides, post-terminal stopping, invalid states, bounded history, prior-roster restoration and cleanup failure.
+- Final TypeScript check **passed** with Node's heap raised to 8 GiB; the initial default 4 GiB attempt exhausted the heap.
+- Final production client/server build **passed** (Vite 25.55 seconds). Existing chunk-size warnings remain. The development page is not a production build entry.
+- Full repository test command: **1,484/1,489 passed**, the same five pre-existing V3 failures: two-handed hammer pose, carry grip constraints, attack sweep amplitude, default asset budget and Aegis reference proportions. Duration 505.2 seconds; no skipped/cancelled tests. Subsequent cleanup/invariant/mirroring hardening and nine additional tests were covered by the final focused run, TypeScript and build.
+- Final combined browser smoke: **10/10 jobs completed without runtime/setup errors**, with two genuine match endings, two correctly unfinished caps and six completed scenarios. All five identical-config pairs had exactly equal traces and raw team metrics. The browser Export results button produced `grifball-live-validation.json`; a verified copy at `output/grifball-validation/vs2-final-smoke.json` includes the complete frozen plan and all results. Overall status remains inconclusive because required acceptance gates are missing.
+- Artifacts and logs are under `output/grifball-validation/vs2-*`, including autonomous-match, roster, recovery, cancellation and screenshot evidence.
+
+VS2 establishes live execution and useful lifecycle evidence. It does not accept M7: broad engine parity, calibrated performance, held-out improvement, browser crash handling and human teamwork/fun review remain open. VS3 supplies unattended CLI execution, verified build/runtime identity, durable incremental artifacts and the external browser watchdog; VS4 supplies the integrated Lab suite UI.

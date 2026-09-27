@@ -38,11 +38,16 @@ export function aggregateSuiteReport(plan: SuitePlan, evidence: SuiteEvidence): 
   const gates = GATES.map(g => gateResults.get(g) ?? missing(g));
   const required = [...jobs, ...gates.filter(g => plan.manifest.requiredGates.includes(g.id as typeof GATES[number]))];
   const milestone7 = aggregateVerdict([...jobs, ...gates]);
+  const identityAvailable = Boolean(plan.code.commit && plan.code.workingTreeHash);
+  const scopedVerdict = (checks: CheckResult[]) => {
+    const result = aggregateVerdict(checks);
+    return result === 'pass' && !identityAvailable ? 'inconclusive' : result;
+  };
   return freeze({ schemaVersion: 1, planId: plan.id, profile: plan.manifest.profile, jobs, gates,
-    verdict: aggregateVerdict(required),
-    automatedVerdict: aggregateVerdict(required.filter(r => r.id !== 'human-review')),
+    verdict: scopedVerdict(required),
+    automatedVerdict: scopedVerdict(required.filter(r => r.id !== 'human-review')),
     repositoryVerdict: aggregateVerdict(gates.filter(g => ['repository-tests', 'typecheck', 'build'].includes(g.id))),
-    milestone7Verdict: milestone7 === 'pass' && plan.manifest.profile !== 'acceptance' ? 'inconclusive' : milestone7,
+    milestone7Verdict: milestone7 === 'pass' && (plan.manifest.profile !== 'acceptance' || !identityAvailable) ? 'inconclusive' : milestone7,
     missingRequired: required.filter(r => r.state !== 'completed' || r.verdict === 'not-run' || r.verdict === 'inconclusive').map(r => r.id),
   });
 }

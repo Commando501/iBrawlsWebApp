@@ -33,6 +33,8 @@ export function freeze<T>(value: T): T {
 }
 function validateCode(value: CodeIdentity): CodeIdentity {
   const c = object(value, ['commit', 'dirty', 'workingTreeHash', 'scope'], 'code identity');
+  if (c.commit === null && c.dirty === null && c.workingTreeHash === null && Array.isArray(c.scope) && c.scope.length === 0)
+    return { commit: null, dirty: null, workingTreeHash: null, scope: [] };
   const commit = nonempty(c.commit, 'commit'), workingTreeHash = nonempty(c.workingTreeHash, 'workingTreeHash');
   if (!/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(commit) || !/^[a-f0-9]{64}$/.test(workingTreeHash))
     throw new Error('Code identity requires a Git commit and SHA-256 working-tree fingerprint');

@@ -1,3 +1,5 @@
+import type { FrozenCase, ValidationJob } from '../../game/grifballValidation/types';
+import type { TrialHandle } from '../../game/grifballValidation/runner';
 import type React from 'react';
 import type { MatchLobbyConfig } from '../../network/protocol';
 import type { VisualModelPolicy } from '../../model/modelSystem';
@@ -16,6 +18,11 @@ import { type GameLoadingState } from '../loading/loadingTypes';
 import { type CharacterLoadout } from '../VoxelModels';
 
 export interface GrifballGameProps {
+  /** Dedicated development validation session only; ordinary matches never supply this. */
+  validationTrial?: {
+    fixture: FrozenCase; job: ValidationJob;
+    onReady: (handle: TrialHandle) => void; onError: (error: Error) => void;
+  };
   isPlaying: boolean;
   isPaused: boolean;
   debugMode: boolean;

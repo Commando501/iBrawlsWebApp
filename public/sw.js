@@ -32,6 +32,7 @@ self.addEventListener('activate', (event) => {
 const isNavigationRequest = (request) => request.mode === 'navigate';
 const STANDALONE_DOCUMENT_PATHS = new Set([
   '/mapmaker.html',
+  '/grifball-validation.html',
   '/animation-editor.html',
   '/armor-model-editor.html',
   '/v3-performance-smoke.html',

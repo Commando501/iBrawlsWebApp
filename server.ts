@@ -1153,6 +1153,7 @@ async function startServer() {
     };
     app.get([
       "/mapmaker.html",
+      "/grifball-validation.html",
       "/animation-editor.html",
       "/armor-model-editor.html",
       "/v3-performance-smoke.html",

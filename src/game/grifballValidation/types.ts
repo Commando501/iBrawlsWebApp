@@ -58,9 +58,10 @@ export interface SuiteManifest {
   quality: { primaryMeasure: 'goalMargin'; minIndependentSeeds: number; minEffect: number; heldOut: true } | null;
 }
 export interface CodeIdentity {
-  commit: string;
-  dirty: boolean;
-  workingTreeHash: string;
+  /** Null together only for a browser development session without verified build identity. */
+  commit: string | null;
+  dirty: boolean | null;
+  workingTreeHash: string | null;
   /** Exact paths included in the commit + changed-content fingerprint. */
   scope: string[];
 }

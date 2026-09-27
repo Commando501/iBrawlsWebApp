@@ -1,3 +1,4 @@
+import { GrifballValidationRuntime } from './grifball/grifballValidationRuntime';
 import { grifballLab } from '../game/grifballLabStore';
 import { GrifballLabRuntime } from './grifball/grifballLabRuntime';
 /**
@@ -123,7 +124,11 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
   playerLoadout,
   visualModelPolicy,
   v3QualityTier = 'desktop',
+  validationTrial,
 }) => {
+  const validationActive = Boolean(import.meta.env.DEV && validationTrial);
+  const validationRuntimeRef = useRef<GrifballValidationRuntime | null>(null);
+  const validationTickRef = useRef<(dt: number) => void>(() => { throw new Error('Live tick not ready'); });
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const nameplateContainerRef = useRef<HTMLDivElement>(null);
@@ -493,6 +498,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
   }, [adminSettings, customMap, replayData, selectedMap]);
 
   useEffect(() => {
+    if (validationActive) return;
     return resetAndLoadPersistentLocalPlayerModelForState({
       state: stateRef.current,
       replayActive: !!replayData,
@@ -727,11 +733,28 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         playDash: () => sfx.playDash(),
       });
 
-      unregisterInputEventListeners = registerGrifballInputEventListeners({
+      if (!validationActive) unregisterInputEventListeners = registerGrifballInputEventListeners({
         canvas: renderer.domElement,
         handlers: inputHandlers,
       });
 
+      if (validationActive && validationTrial) {
+        const events = buildOrchestratorEvents({ silentSpawn: true });
+        validationRuntimeRef.current = new GrifballValidationRuntime({
+          state: stateRef.current,
+          tick: dt => validationTickRef.current(dt),
+          resetControls: () => {
+            keysPressed.current = {}; isMouseDown.current = false;
+            ballChargingRef.current = false; ballChargeTimerRef.current = 0;
+            mobileJoystickRef.current = { x: 0, y: 0 }; mobileRightJoystickRef.current = { x: 0, y: 0 };
+            mobileRightJoystickActiveRef.current = false;
+          },
+          removeActor: id => events.onBotDespawned?.(id),
+          provisionActor: bot => createOrUpdateRemotePlayer(bot.id, bot),
+          hasActorMesh: id => Boolean(threeRef.current.otherPlayerMeshes.get(id)?.group),
+        }, validationTrial.fixture, validationTrial.job);
+        validationTrial.onReady(validationRuntimeRef.current);
+      }
       renderGame();
       pushStatsUpdate();
       onLoadingStateChange?.({
@@ -743,6 +766,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
     };
 
     void mountScene().catch((err) => {
+      if (validationActive) validationTrial?.onError(err instanceof Error ? err : new Error(String(err)));
       console.error('Failed to mount Grifball scene:', err);
       onLoadingStateChange?.({
         visible: true,
@@ -756,6 +780,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
 
     return () => {
       disposed = true;
+      validationRuntimeRef.current?.dispose();
+      validationRuntimeRef.current = null;
       if (secretAudioRef.current) {
         secretAudioRef.current.pause();
         secretAudioRef.current = null;
@@ -830,6 +856,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
   const labRuntimeRef = useRef<GrifballLabRuntime | null>(null);
   if (!labRuntimeRef.current) labRuntimeRef.current = new GrifballLabRuntime(selectedMap ?? 'Current arena', team => grifballEnemyGoalPos(team), getActiveCustomMap, () => ({ legacy: getLegacyRosterProps(), presets: aiPresets }));
   useEffect(() => {
+    if (validationActive) return;
     grifballLab.load();
     if (!isPlaying || isMultiplayer || replayData || adminSettings.gameMode !== 'grifball') return;
     labRuntimeRef.current?.dispose();
@@ -842,9 +869,9 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
   useEffect(() => {
     if (!isPlaying) return;
 
-    initializeReplayRecording();
+    if (!validationActive) initializeReplayRecording();
 
-    const unregisterReplayPlaybackEvents = registerReplayPlaybackEvents();
+    const unregisterReplayPlaybackEvents = validationActive ? () => {} : registerReplayPlaybackEvents();
 
     let lastTime = performance.now();
 
@@ -896,7 +923,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         updateCharacterSkeletalAnimations,
         updateMatchTimers,
         enforceArenaBounds,
-        renderGame,
+        renderGame: validationActive ? () => {} : renderGame,
         updateFloatingNameplate,
         pushStatsUpdate,
         updateRadarDOM,
@@ -905,8 +932,17 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         playRespawn: () => sfx.playRespawn(),
       });
 
+      validationTickRef.current = fixedDt => {
+        const paused = isPausedRef.current; isPausedRef.current = false;
+        try { tick(fixedDt); } finally { isPausedRef.current = paused; }
+      };
       const labActive = grifballLab.getSnapshot().open && !isMultiplayer && !replayData && s.settings.gameMode === 'grifball';
-      if (labActive) {
+      if (validationActive) {
+        const started = performance.now();
+        // Yield regularly so cancellation and the wall watchdog can run even during accelerated trials.
+        for (let i = 0; i < 12 && performance.now() - started < 12; i++) validationRuntimeRef.current?.step();
+        if (validationRuntimeRef.current) renderGame();
+      } else if (labActive) {
         keysPressed.current = {};
         labRuntimeRef.current!.frame(s, dt, fixedDt => {
           const paused = isPausedRef.current;
@@ -939,6 +975,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
   // Save compiled replay on unmount of GrifballGame
   useEffect(() => {
     return () => {
+      if (validationActive) return;
       saveCompiledReplay();
       persistLocalPlayerFingerprint();
       emitMatchTelemetry();
@@ -1199,7 +1236,7 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
       {/* Dynamic Instruction Overlay when Pointer Lock is not active.
           Suppressed on mobile/touch â€” those players look via touch swipe, so
           pointer lock is never acquired and the overlay would never clear. */}
-      {showPointerLockAlert && isPlaying && !isPaused && !(deviceInfo.isMobile || forceMobileControls) && (
+      {!validationActive && showPointerLockAlert && isPlaying && !isPaused && !(deviceInfo.isMobile || forceMobileControls) && (
         <div className="absolute inset-0 flex items-center justify-center bg-black/60 backdrop-blur-xs select-none pointer-events-none transition-all duration-300">
           <div className="bg-slate-950/80 backdrop-blur-md border border-white/10 px-8 py-5 rounded-2xl text-center max-w-sm shadow-2xl">
             <h4 className="text-xl font-display font-black tracking-widest text-blue-400 uppercase mb-2">

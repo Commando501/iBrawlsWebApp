@@ -278,3 +278,21 @@ test('scenario resets health from mechanics and assigns carrier health exactly l
     assert.equal(carrier.activeWeapon, 'hammer');
   } finally { runtime.dispose(); grifballLab.close(); }
 });
+
+
+test('batch mirroring preserves the original snapshot goal center when no map callback is supplied', () => {
+  const { state, runtime, tick } = setup(); tick(0);
+  state.aiMatchContext.grifballTeamPlan.snapshot!.goals.blue.x = 60;
+  state.aiMatchContext.grifballTeamPlan.snapshot!.goals.red.x = 140;
+  const config = defaultGrifballTactics();
+  grifballLab.command({ type: 'batch', request: { scenario: 'pickup', seed: 23, seeds: 1, seconds: 1,
+    opponents: ['balanced'], mirrored: true, baseline: config, candidate: config } });
+  for (let i = 0; i < 50; i++) runtime.frame(state, 0.1, tick);
+  const runs = grifballLab.getSnapshot().evaluationReports[0].runs;
+  assert.equal(runs.length, 4);
+  for (const bot of runs[0].setup.roster) {
+    const other = runs[2].setup.roster.find(p => p.id === bot.id)!;
+    assert.ok(Math.abs(bot.position.x + other.position.x - 200) < 1e-10);
+  }
+  runtime.dispose(); grifballLab.close();
+});

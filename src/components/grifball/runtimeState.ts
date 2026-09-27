@@ -1,3 +1,4 @@
+import type { RosterSlotConfig } from '../../game/rosterSlotConfig';
 import type { GrifballTacticsConfig } from '../../game/grifballTacticsConfig';
 import * as THREE from 'three';
 import { createAIMatchContext, type AIMatchContext } from '../../game/aiMatchContext';
@@ -8,6 +9,8 @@ import { getInwardSpawnYaw } from './combatGeometry';
 
 export interface GrifballRuntimeState {
   grifballTactics?: GrifballTacticsConfig;
+  /** Local validation-owned roster tuning; never serialized into settings/network messages. */
+  grifballValidationSlots?: Record<string, RosterSlotConfig>;
   /** Local batch evaluation only; never part of settings or network state. */
   grifballLabRosterLocked?: boolean;
   /** Lab observers have no local combatant occupying the free camera. */

@@ -69,7 +69,7 @@ export function createAIRosterCallbacksForState({
 
   const resolveRosterSlot = (botId: string) => {
     const state = getState();
-    return resolveRosterSlotForCombatant(botId, state.settings, getLegacyRosterProps());
+    return state.grifballValidationSlots?.[botId] ?? resolveRosterSlotForCombatant(botId, state.settings, getLegacyRosterProps());
   };
 
   const resolveBotArchetype = (botId: string): string | undefined => {
