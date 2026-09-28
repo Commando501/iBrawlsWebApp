@@ -17,7 +17,10 @@ import { type GoalPlate } from '../game/grifballGoals';
 export type SimWeapon = 'hammer' | 'sword' | 'ball';
 
 /** Explicit opt-in; legacy training dynamics remain the default for existing policies. */
-export type SimCombatExecution = 'legacy-v1' | 'live-player-v1' | 'live-roster-v1';
+export type SimCombatExecution = 'legacy-v1' | 'live-player-v1' | 'live-roster-v1' | 'live-roster-v2';
+
+export const isRosterExecution = (execution: SimCombatExecution | undefined) =>
+  execution === 'live-roster-v1' || execution === 'live-roster-v2';
 
 /**
  * Game mode the match is running. `grifball` = carry the ball to the enemy plate;
@@ -97,8 +100,13 @@ export interface SimCombatant {
 
   // Sword lunge flight
   isLunging: boolean;
+  /** Remaining seconds in v1 profiles; elapsed flight seconds in live-roster-v2. */
   lungeTimer: number;
   lungeDir: Vec3;
+  /** v2 locks the supplied tactical target and preserves committed flight across snapshots. */
+  lungeTargetId?: string;
+  lungeStartPos?: Vec3;
+  lungeOutcome?: 'hit' | 'miss_timeout' | 'miss_arena' | 'target_dead';
 
   // Objective
   /** True while this combatant carries the Grifball (mirror of ball.holderId). */

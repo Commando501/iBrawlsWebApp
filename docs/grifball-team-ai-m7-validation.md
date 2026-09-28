@@ -414,3 +414,31 @@ Final verification: `output/grifball-validation/m7-bot-verified/` completed with
 The development server was restored on port **3000**; `/` and `/grifball-validation.html` returned HTTP 200. `git diff --check` passed for implementation and documentation paths. Changes remain uncommitted.
 
 Evidence: `output/m7-bot-focused.log`, `output/m7-bot-repository.log`, `output/m7-bot-verified.log`, and the final directory's HTML report, gate diagnostics, source/runtime identity and raw trials. Superseded preparation and shutdown-error artifacts remain available separately. The full repository result above is separate from the Quick profile, which does not require that gate. Next acceptance work is paired lunge/trade and damage-to-respawn execution, followed by the remaining geometry/map coverage before calibrated performance and held-out quality evaluation.
+
+## M7 acceptance follow-up: committed roster flight and revival — 2026-09-27
+
+Previous VS5/M7 work was committed as `85c8831` before this slice. The implementation roadmap files were not edited.
+
+`live-roster-v2` is an explicit opt-in execution profile. V1 profiles and default training dynamics retain their prior flight/respawn behavior, including the old remaining-time lunge clock. V2 stores an explicit tactical `lungeTargetId`, start position, elapsed flight clock and completion outcome. A missing target at commitment is an error; target selection is not inferred. Mid-flight JSON restoration and round cleanup are tested.
+
+The simulator corrections follow production behavior:
+
+- Contact uses the locked target's body-center distance (1.5 for the tested medium model), stops after one hit, stops planar velocity and applies the configured lunge cooldown at completion. Arena/timeout completion uses the production 16-unit/0.8-second bounds, with contact taking precedence. These bounds currently remain independent of the configured AI initiation distance.
+- V2 revives downed actors before the AI pass and resolves each committed flight before the next actor's shield tick. This preserves the live order at the exact spawn-protection expiry boundary. Death does not consume a respawn tick in the frame that caused it.
+- Lethal sword/hammer trades use the ordinary roster target's active primary attack state, credit one kill per death and cancel dead actors' weapon actions. Carrier release happens through objective reconciliation.
+- Revival restores the actor's maximum health, retained weapon and spawn shield without adding the legacy post-spawn ready delay. This slice deliberately uses exactly one authored spawn per team, so it does not certify greedy multi-slot spawn arbitration.
+- Stationary attack behavior is retained under V2, and the weapon-swap gate also respects committed flight even though the live roster's weapon animation is idle while lunging.
+
+The gate now runs **173 paired traces**: 33 player, 84 stationary roster and **56 new flight/lifecycle traces** (14 cases across main/regular attacker slots and both views). The flight fixtures start both engines at a committed-lunge boundary through production attack entry points; they never copy state between ticks. They compare health, alive state, respawn/shield clocks, weapons, kill credit, position/velocity, active flight clock, cooldown, completion outcome, ball ownership/state/position/velocity/loose timer, and expected damage/death totals through 300 ticks. The same corrected fixture running the previous roster-v1 model exposes damage/cooldown differences, retained in gate evidence as `priorRosterCompatibility`.
+
+The live fixture reuses the production flight, finish, trade, damage, respawn, shield tick and objective functions. Tactical target choice, pressure/combo decisions and post-contact movement input are held fixed, with a neutral cooldown multiplier of 1, so these traces do not certify the complete AI orchestrator. Player flight, nonlethal trades, main-AI victims, airborne/moving targets, model/crouch variants and authored-map/multi-slot spawning remain explicit gaps. Old `live-roster-v1` flight compatibility, V2 stationary behavior, snapshot restoration and round cleanup have separate regressions. Full parity and M7 acceptance remain **inconclusive**; neural integration remains optional.
+
+Verification:
+
+- **122/122** final focused checks passed across flight parity, default/v1 weapons, simulation stepping, movement mechanics and tactical observations (`output/m7-lunge-final-focused.log`).
+- Full repository run: **1,754/1,759 passed**, with the same five retired V3 animation/asset failures listed above. This run preceded the final flight-swap regression and the explicit legacy grounded-flag guard; the final focused selection and frozen validation selection were rerun after those corrections. The raw repository check remains failed rather than waived.
+- The final frozen run, `output/grifball-validation/m7-lunge-final/`, completed with **exit 0** and successful browser cleanup. It passed **330/330** validation checks, TypeScript, production client/relay and validation builds, production startup, **16/16** live trials and **8/8** exact repeatability pairs. All **173** parity traces match. The verdict remains **inconclusive** with four explicit coverage-gap groups. This supersedes `m7-lunge-verified` and includes the legacy grounded-flag guard. No live gameplay functions changed in this slice.
+
+The final source fingerprint matches the frozen plan (`output/m7-lunge-review.json`). Browser evidence and runner output are in the final directory and `output/m7-lunge-browser-final.log`. The development server was restored on port **3000**; `/` and `/grifball-validation.html` returned HTTP 200. This new slice remains uncommitted after the prior-work commit `85c8831`.
+
+Spawn facing and post-respawn movement are outside this fixture's comparisons; AI integration, untested trade variants and wider spawn arbitration remain open.

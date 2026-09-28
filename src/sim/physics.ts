@@ -78,12 +78,14 @@ export function stepCombatantMovement(
     const speed = settings.swordLungeSpeed ?? 24.0;
     c.vel.x = c.lungeDir.x * speed;
     c.vel.z = c.lungeDir.z * speed;
-    c.vel.y = 0;
-    c.pos.y = 0;
+    if (state.combatExecution === 'live-roster-v2') {
+      c.vel.y -= GRAVITY_ACCELERATION * dt; c.pos.y += c.vel.y * dt;
+      if (c.pos.y <= 0) { c.pos.y = 0; c.vel.y = 0; }
+    } else { c.vel.y = 0; c.pos.y = 0; }
     c.pos.x += c.vel.x * dt;
     c.pos.z += c.vel.z * dt;
     constrainAndStore(state, c);
-    c.grounded = true;
+    c.grounded = state.combatExecution === 'live-roster-v2' ? c.pos.y <= .0001 : true;
     return;
   }
 

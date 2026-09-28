@@ -18,6 +18,7 @@ import { stepSimulation } from '../../src/sim/step';
 import { setSimCarrier } from '../../src/sim/grifball';
 import { setGrifballCarrierForState } from '../../src/components/grifball/grifballObjectiveRuntime';
 import type { ParityDifference } from './grifballExecutionParity';
+import type { SimCombatExecution } from '../../src/sim/simState';
 
 const noop = () => {};
 export function createBotParityFixture(id = 'bot_2', observer = true, settings: Partial<UniversalSettings> = {}) {
@@ -101,10 +102,10 @@ export const BOT_PARITY_CASES: BotParityCase[] = [
 ];
 
 /** Paired stationary attacks through the real live frame owners, without AI decisions or copied states. */
-export function runBotExecutionParityTrace(spec: BotParityCase, id: string, observer: boolean) {
+export function runBotExecutionParityTrace(spec: BotParityCase, id: string, observer: boolean, execution: SimCombatExecution = 'live-roster-v1') {
   const f = createBotParityFixture(id, observer, spec.settings);
   const { sim, bot, target, state } = f;
-  sim.combatExecution = 'live-roster-v1'; sim.match.phase = 'playing';
+  sim.combatExecution = execution; sim.match.phase = 'playing';
   const [self, rival] = sim.combatants;
   self.id = id; rival.id = target.id; self.pos = { x: 0, y: 0, z: 0 };
   const p = spec.target ?? { x: 0, z: 2 };

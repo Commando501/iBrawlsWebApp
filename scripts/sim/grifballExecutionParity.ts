@@ -22,10 +22,11 @@ import { applyPlayerHammerMeleeImpactForState } from '../../src/components/grifb
 import { updateGrifballObjectiveForState, setGrifballCarrierForState, throwPlayerGrifballPassForState } from '../../src/components/grifball/grifballObjectiveRuntime';
 import { gate } from '../../src/game/grifballValidation/gates';
 import { runBotExecutionParity } from './grifballBotExecutionParity';
+import { LUNGE_PARITY_CASES, runLungeParity, runLungeParityTrace } from './grifballLungeParity';
 
 const noop = () => {};
 export const PARITY_TOLERANCES = { position: 1e-6, velocity: 1e-6, health: 1e-9, timer: 1e-6, discrete: 0 };
-export const PARITY_GAPS = ['Paired sword lunge/trade and damaged-target respawn traces (live lifecycle regressions alone do not certify parity)',
+export const PARITY_GAPS = ['Player lunges, surviving trades, main-AI victims and airborne/moving-target flight; committed grounded roster flights and single-spawn revival are covered',
   'Moving/swept attacks, attacker pitch/crouch, target crouch and model sizes',
   'All authored maps and multi-slot spawn arbitration',
   'AI decision-to-action integration, moving attacks and mixed player/roster execution; stationary bot attacks alone are covered'];
@@ -176,12 +177,14 @@ export const PARITY_TRACE_CASES: { name: string; actionTrace: string; options?: 
 export function runExecutionParity() {
   const traces = PARITY_TRACE_CASES.map(c => ({ ...runExecutionParityTrace(c.actionTrace, c.options), name: c.name }));
   const botTraces = runBotExecutionParity();
-  const failures = [...traces, ...botTraces].filter(t => t.differenceCount);
+  const lungeTraces = runLungeParity();
+  const failures = [...traces, ...botTraces, ...lungeTraces].filter(t => t.differenceCount);
   const legacyCompatibility = ['sword-hit-recovery', 'punch-hit-recovery'].map(name => runExecutionParityTrace(name, { combatExecution: 'legacy-v1' }));
+  const priorRosterCompatibility = runLungeParityTrace(LUNGE_PARITY_CASES[0], 'bot_2', true, 'live-roster-v1');
   return gate('execution-parity', failures.length ? 'fail' : 'inconclusive',
-    `${failures.length}/${traces.length + botTraces.length} player/roster action traces differ. ${PARITY_GAPS.length} coverage gaps remain; legacy training dynamics are not certified.`,
-    { protocol: 'live-functions-vs-headless-step-v3', combatExecution: ['live-player-v1', 'live-roster-v1'], tolerances: PARITY_TOLERANCES,
+    `${failures.length}/${traces.length + botTraces.length + lungeTraces.length} player/roster action traces differ. ${PARITY_GAPS.length} coverage gaps remain; legacy training dynamics are not certified.`,
+    { protocol: 'live-functions-vs-headless-step-v4', combatExecution: ['live-player-v1', 'live-roster-v1', 'live-roster-v2'], tolerances: PARITY_TOLERANCES,
       neuralIntegration: 'Optional and not promoted: legacy training dynamics remain unchanged; their compatibility traces are diagnostic, not a required neural integration gate.',
-      scope: 'Production player movement, weapon impact/animation, objective and respawn functions plus stationary roster attacks in both viewing modes versus explicitly versioned stepSimulation; presentation effects suppressed. AI decisions, lunges/trades and damaged-target respawns are not certified.',
-      gaps: PARITY_GAPS, traces, botTraces, legacyCompatibility });
+      scope: 'Production player functions, stationary roster attacks and committed grounded roster flights through contact, lethal trades and single-authored-spawn revival versus versioned stepSimulation. Targets are supplied, AI decisions/pressure/combos and presentation effects are suppressed. Remaining gaps are not certified.',
+      gaps: PARITY_GAPS, traces, botTraces, lungeTraces, legacyCompatibility, priorRosterCompatibility });
 }

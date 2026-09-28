@@ -1,4 +1,4 @@
-import type { SimCombatant, SimState, SimCombatExecution } from './simState';
+import { isRosterExecution, type SimCombatant, type SimState, type SimCombatExecution } from './simState';
 import type { UniversalSettings } from '../types';
 import { observeGrifballSpace } from '../game/aiGrifballSpace';
 import { createGrifballTacticalSnapshot } from '../game/grifballTacticalContract';
@@ -34,7 +34,7 @@ export function observeSimGrifballSpace(c: SimCombatant, settings: UniversalSett
       observation.attackIn = Math.max(lockout, c.weaponState === 'recovering' ? c.weaponTimer : 0) + primaryImpact;
     }
   }
-  if (execution === 'live-roster-v1' && !c.isLunging) {
+  if (isRosterExecution(execution) && !c.isLunging) {
     const melee = settings.hammerMeleeSpeed ?? .24;
     const primaryImpact = c.weapon === 'hammer' ? timing.windupTime + timing.attackTime
       : c.weapon === 'sword' ? (settings.swordSlashSpeed ?? .22) * .5 : melee + Math.max(.03, melee * .5);

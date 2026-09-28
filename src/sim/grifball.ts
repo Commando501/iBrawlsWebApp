@@ -144,6 +144,10 @@ export function placeCombatantsAtSpawns(state: SimState, settings: UniversalSett
     c.hasBall = false;
     c.isLunging = false;
     c.lungeTimer = 0;
+    if (state.combatExecution === 'live-roster-v2') {
+      delete c.lungeStartPos; delete c.lungeTargetId; delete c.lungeOutcome;
+      c.attackCooldown = 0;
+    }
     c.dashRemaining = 0;
   }
 }

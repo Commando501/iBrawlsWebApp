@@ -1,8 +1,10 @@
 /**
- * `stepSimulation` — one fixed simulation tick (dt = 1/60 s). Phased to mirror the
- * live tick order: ingest actions → movement → weapons/damage → passes → grifball
+ * `stepSimulation` — one fixed simulation tick (dt = 1/60 s). The legacy profiles
+ * use actions → movement → weapons/damage → passes → grifball
  * objective (phase machine, ball, pickups, scoring) → respawns. Returns the tick's
  * events (goals, kills, pickups, phase transitions) for reward calculation.
+ * live-roster-v2 moves respawns before AI and resolves committed flights in roster
+ * order; this does not model the complete live decision or mixed-player pipeline.
  *
  * Determinism: the only randomness source is the injected RNG, whose state lives in
  * `SimState.rngState` and is restored/snapshotted every tick. A (seed + action
@@ -50,15 +52,24 @@ export function stepSimulation(
 
   const kills: KillEvent[] = [];
   const act = (id: string) => actionsById[id] ?? idleAction();
+  const rosterV2 = state.combatExecution === 'live-roster-v2';
+  const flightAdvanced = rosterV2 ? new Set<string>() : null;
+  // The live roster revives actors before their AI tick. Newly killed actors wait
+  // until the next frame, and each flight resolves before the next actor's shield tick.
+  if (rosterV2) tickRespawns(state, settings, dt);
 
   // Phase 1 — movement.
   for (const c of state.combatants) {
     stepCombatantMovement(state, c, act(c.id), settings, dt);
+    if (rosterV2 && c.alive && c.isLunging) {
+      stepCombatantWeapons(state, c, act(c.id), settings, dt, kills);
+      flightAdvanced!.add(c.id);
+    }
   }
 
   // Phase 2 — weapons / damage (resolved against post-movement positions).
   for (const c of state.combatants) {
-    stepCombatantWeapons(state, c, act(c.id), settings, dt, kills);
+    if (!flightAdvanced?.has(c.id)) stepCombatantWeapons(state, c, act(c.id), settings, dt, kills);
   }
 
   // Phase 3 — passes: hold secondary to charge the throw (grifballChargeMax), release to throw.
@@ -84,7 +95,7 @@ export function stepSimulation(
       : tickGrifballObjective(state, settings, dt, actionsById);
 
   // Phase 5 — respawns.
-  tickRespawns(state, settings, dt);
+  if (!rosterV2) tickRespawns(state, settings, dt);
 
   state.tick += 1;
   state.rngState = rng.getState();
