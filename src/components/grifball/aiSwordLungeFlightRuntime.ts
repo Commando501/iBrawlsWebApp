@@ -33,6 +33,7 @@ export function resolveAISwordLungeFlightForCombatant({
   constrainCombatantToArena,
   areCombatantsHostile,
   finishSwordLunge,
+  finishTradedTargetLunge,
   executeCustomBotTrade,
   renderSwordLungeTrailVfx,
   recordPlayerDamageTaken,
@@ -60,6 +61,7 @@ export function resolveAISwordLungeFlightForCombatant({
   constrainCombatantToArena: (pos: THREE.Vector3, vel: THREE.Vector3) => void;
   areCombatantsHostile: (attackerId: string, victimId: string) => boolean;
   finishSwordLunge: (cooldownMultiplier: number, outcome: AILungeOutcome, targetId?: string, damageAlreadyRecorded?: boolean) => void;
+  finishTradedTargetLunge: (target: Combatant, attackerId: string) => void;
   executeCustomBotTrade: (
     attackerBot: Combatant,
     target: { id: string },
@@ -123,7 +125,10 @@ export function resolveAISwordLungeFlightForCombatant({
     });
 
     if (tradeReason) {
+      const tradedTarget = state.otherPlayers.get(target.id);
+      const targetWasLunging = !!tradedTarget?.isLunging;
       executeCustomBotTrade(self, target, tradeReason);
+      if (targetWasLunging && tradedTarget && tradedTarget.hp > 0) finishTradedTargetLunge(tradedTarget, self.id);
       // Surviving a trade still consumes this flight and its reload. Dead actors
       // keep their respawn state instead of entering pressure/combo recovery.
       if (self.hp > 0) finishSwordLunge(cooldownMult, 'hit', target.id, target.id !== 'player');

@@ -159,3 +159,12 @@ export function finishAISwordLungeFrameForCombatant({
     weaponState: frame.weaponState,
   };
 }
+
+/** Finish another roster actor's traded flight before its next AI tick can hit again. */
+export function finishTradedAISwordLungeForCombatant(context: Omit<AISwordLungeFinishContext, 'outcome' | 'damageAlreadyRecorded'>): void {
+  const self = context.self;
+  const result = finishAISwordLungeFrameForCombatant({ ...context, outcome: 'hit', damageAlreadyRecorded: true,
+    pos: self.pos, vel: self.vel, aiState: self.aiState, timer: self.aiTimer ?? 0, weaponState: self.weaponState ?? 'ready' });
+  self.aiState = result.aiState;
+  self.aiTimer = result.timer;
+}

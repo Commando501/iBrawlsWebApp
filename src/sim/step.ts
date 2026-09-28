@@ -53,6 +53,14 @@ export function stepSimulation(
   const kills: KillEvent[] = [];
   const act = (id: string) => actionsById[id] ?? idleAction();
   const rosterV2 = state.combatExecution === 'live-roster-v2';
+  if (rosterV2) {
+    const nominalTimeMs = state.tick * SIM_DT * 1000;
+    const previousTimeMs = state.combatTimeMs ?? nominalTimeMs;
+    // The live fixed runner derives time from its tick. Repeated addition would
+    // turn the inclusive 350ms boundary into 350.00000000000006ms after 21 ticks.
+    state.combatTimeMs = dt === SIM_DT && previousTimeMs === nominalTimeMs
+      ? (state.tick + 1) * SIM_DT * 1000 : previousTimeMs + dt * 1000;
+  }
   const flightAdvanced = rosterV2 ? new Set<string>() : null;
   // The live roster revives actors before their AI tick. Newly killed actors wait
   // until the next frame, and each flight resolves before the next actor's shield tick.

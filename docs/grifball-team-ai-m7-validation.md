@@ -471,3 +471,28 @@ Verification:
 - The source fingerprint matches the frozen plan (`output/m7-trade-review.json`). Browser runner output is retained in `output/m7-trade-browser-final.log`; the final directory includes its report, gate evidence, frozen inputs and raw trials.
 
 The development server was restored on port **3000**; `/` and `/grifball-validation.html` returned HTTP 200. This new slice remains uncommitted after `2c3a860`. Next acceptance work is recent-attack trade windows and simultaneous-lunge coverage before broader geometry/spawn and AI integration certification.
+
+
+## M7 acceptance follow-up: trade windows and paired lunges — 2026-09-27
+
+The prior surviving-trade/main-AI slice was committed as `8b65486` before this work. The implementation roadmap files remain unchanged.
+
+The initial expanded trace run failed **76/326** checks (`output/m7-window-before.log`). Regular roster bots ignored the configured recent-attack window that main AI used; main AI also accepted a future timestamp or stale `LUNGING` behavior state. A surviving lunge defender could continue its already-traded flight, causing a second contact. These cases now have production fixes and independently stepped headless comparisons.
+
+- All AI roster slots use the same authoritative flight flag, primary attack phases and weapon-specific recent-attack timestamps. Sword and hammer retain their separate configured windows. Boundaries are inclusive; disabled trade flags, absent/zero factory history, future history, and history for the other weapon do not grant a recent counter. The separate human-player resolver is outside this slice.
+- A paired opposing lunge trade finishes both surviving flights immediately through the existing finish logic, including hit memory, velocity, cooldown and AI frame state. The defender finishes before its next flight update, so it cannot reapply the collision's damage. Death paths keep their normal respawn behavior. Both actors retain exactly one dealt/received observation; existing pressure/combo callbacks remain wired in production but are held fixed in the parity fixture.
+- `live-roster-v2` now persists `combatTimeMs`, `lastSwordAttackTimeMs` and `lastHammerAttackTimeMs`. Commitment records the applicable weapon history. Older v2 snapshots derive the starting clock from their fixed tick and do not invent missing history. Live and v2 respawns and round spawn resets clear recent attack history. Existing default/v1 dynamics and neural observation/action schemas are unchanged.
+- An additional real-action regression caught the 21-tick clock reaching `350.00000000000006` instead of `350` milliseconds and rejecting an inclusive counter. Fixed-rate v2 time now follows the live runner's tick-derived clock; custom timestep progression retains its elapsed clock. The failing boundary evidence is in `output/m7-window-clock-before.log`.
+
+Protocol `live-functions-vs-headless-step-v6` evaluates **417 paired traces**: 33 player, 84 stationary roster and **300 flight/lifecycle**. The 50 flight cases run across three attacker/victim identity pairs and both views. Added window cases cover inside/at/outside the boundary, zero and tuned windows, disabled flags, absent/future history and wrong-weapon history. Paired grounded opposing flights cover lethal, both surviving, asymmetric survival and tuned cooldown in both actor update orders. Both actors' cooldowns/outcomes/flight clocks are compared in these cases as well as damage, phase clocks, health, lifecycle, credit, movement and ball state.
+
+Recent history is supplied at a completed-attack boundary using the live action trigger and corresponding headless timestamp; no state is copied between engines during the 300-tick traces. Separate regressions verify actual headless action timestamps, the 21-tick boundary, snapshot restoration, respawn/reset cleanup, stale AI behavior state, and single-count damage observations. These are bounded two-actor grounded tests, not arbitrary multi-attacker or full AI-decision certification. Player flight, airborne and other moving-target geometry, pitch/crouch/model variants, map/spawn arbitration and mixed execution still keep M7 acceptance open.
+
+Verification:
+
+- **415/415** final focused checks passed (`output/m7-window-regression-final.log`).
+- The fresh frozen run `output/grifball-validation/m7-window-final/` completed with **exit 0** and successful browser cleanup. It passed **582/582** validation tests, TypeScript, production client/relay and validation builds, production startup, **16/16** scenario trials and **8/8** exact repeatability pairs. All **417** parity traces match; four remaining coverage groups correctly keep execution parity inconclusive.
+- The source fingerprint matches the frozen plan (`output/m7-window-review.json`). Browser runner output is retained in `output/m7-window-browser-final.log`; the final directory includes the report, gate evidence, frozen inputs and raw trials.
+- Full repository run: **2,007/2,012 passed**, with the same five historical V3 animation/asset failures listed above (`output/m7-window-repository.log`). This run used the final implementation. The raw repository result remains failed; no tests were waived or weakened.
+
+The development server was restored on port **3000**; `/` and `/grifball-validation.html` returned HTTP 200. This new slice remains uncommitted after `8b65486`. Next acceptance work is bounded model/crouch hitbox geometry, followed by airborne/moving-target and broader multi-actor/spawn coverage before full AI integration certification.

@@ -54,41 +54,21 @@ export function resolveSwordLungeTradeReasonForState({
     return null;
   }
 
-  if (target.id === MAIN_AI_ID) {
-    if (!mainAi) return null;
-    if (state.settings.enableSwordTrade && mainAi.activeWeapon === 'sword' && (
-      mainAi.aiState === 'LUNGING' ||
-      mainAi.weaponState === 'swing_up' ||
-      mainAi.weaponState === 'swing_down' ||
-      (simulationTimestamp() - mainAi.lastSwordAttackTime <= swordThreshold)
-    )) {
-      return 'sword_vs_sword';
-    }
-    if (state.settings.enableHammerSwordTrade && mainAi.activeWeapon === 'hammer' && (
-      mainAi.weaponState === 'swing_up' ||
-      mainAi.weaponState === 'swing_down' ||
-      (simulationTimestamp() - mainAi.lastHammerAttackTime <= hammerThreshold)
-    )) {
-      return 'sword_lunge_vs_hammer';
-    }
-    return null;
-  }
-
-  const targetBot = state.otherPlayers.get(target.id);
+  // All roster slots use the same live flight flag and weapon-specific history.
+  // Zero is the factory's no-attack sentinel; a future timestamp is not a counter.
+  const targetBot = target.id === MAIN_AI_ID ? mainAi : state.otherPlayers.get(target.id);
   if (!targetBot) return null;
+  const now = simulationTimestamp();
+  const recent = (time: number | undefined, window: number) =>
+    typeof time === 'number' && Number.isFinite(time) && time > 0 && now >= time && now - time <= window;
   if (state.settings.enableSwordTrade && targetBot.activeWeapon === 'sword' && (
-    targetBot.isLunging ||
-    targetBot.weaponState === 'swing_up' ||
-    targetBot.weaponState === 'swing_down'
-  )) {
-    return 'sword_vs_sword';
-  }
+    targetBot.isLunging || targetBot.weaponState === 'swing_up' || targetBot.weaponState === 'swing_down' ||
+    recent(targetBot.lastSwordAttackTime, swordThreshold)
+  )) return 'sword_vs_sword';
   if (state.settings.enableHammerSwordTrade && targetBot.activeWeapon === 'hammer' && (
-    targetBot.weaponState === 'swing_up' ||
-    targetBot.weaponState === 'swing_down'
-  )) {
-    return 'sword_lunge_vs_hammer';
-  }
+    targetBot.weaponState === 'swing_up' || targetBot.weaponState === 'swing_down' ||
+    recent(targetBot.lastHammerAttackTime, hammerThreshold)
+  )) return 'sword_lunge_vs_hammer';
   return null;
 }
 

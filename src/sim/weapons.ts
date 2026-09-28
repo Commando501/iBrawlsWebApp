@@ -295,6 +295,11 @@ function stepLiveAttack(state: SimState, c: SimCombatant, action: ActionInput,
       : action.attackPrimary ? (c.weapon === 'sword' ? 'slash' : c.weapon === 'ball' ? 'punch' : 'strike') : null;
     if (!kind) return;
     c.attackKind = kind; c.lastAttackTick = state.tick;
+    if (state.combatExecution === 'live-roster-v2') {
+      const now = state.combatTimeMs ?? state.tick * 1000 / 60;
+      if (c.weapon === 'sword') c.lastSwordAttackTimeMs = now;
+      else if (c.weapon === 'hammer') c.lastHammerAttackTimeMs = now;
+    }
     enter('windup', swingDuration());
   }
   const previous = c.weaponPhaseElapsed ?? 0;
@@ -378,24 +383,30 @@ function resolveLungeHit(
 function resolveRosterLunge(state: SimState, c: SimCombatant, settings: UniversalSettings, dt: number, events: KillEvent[]): void {
   c.lungeTimer += dt;
   const target = findCombatant(state, c.lungeTargetId!);
-  const finish = (outcome: NonNullable<SimCombatant['lungeOutcome']>) => {
-    c.isLunging = false; c.weaponState = 'idle'; c.weaponTimer = 0; c.weaponPhaseElapsed = 0;
-    c.lungeOutcome = outcome; c.attackCooldown = settings.swordLungeReload ?? 1.2;
-    c.vel.x = c.vel.z = 0;
-    if (c.pos.y > .01 || Math.abs(c.vel.y) > .01) { c.vel.y = Math.min(c.vel.y, 0); c.isJumping = true; }
-    else { c.vel.y = 0; c.isJumping = false; }
+  const finish = (outcome: NonNullable<SimCombatant['lungeOutcome']>, actor = c) => {
+    actor.isLunging = false; actor.weaponState = 'idle'; actor.weaponTimer = 0; actor.weaponPhaseElapsed = 0;
+    actor.lungeOutcome = outcome; actor.attackCooldown = settings.swordLungeReload ?? 1.2;
+    actor.vel.x = actor.vel.z = 0;
+    if (actor.pos.y > .01 || Math.abs(actor.vel.y) > .01) { actor.vel.y = Math.min(actor.vel.y, 0); actor.isJumping = true; }
+    else { actor.vel.y = 0; actor.isJumping = false; }
   };
   if (!target || !target.alive || !areHostile(c, target)) { finish('target_dead'); return; }
   const centerY = (v: SimCombatant) => v.pos.y + (v.isCrouching ? CROUCH_BODY_CENTER_HEIGHT : BODY_CENTER_HEIGHT);
   if (target.invulnerabilityTimer <= 0 && Math.hypot(target.pos.x - c.pos.x, centerY(target) - centerY(c), target.pos.z - c.pos.z) <= 1.5) {
     const primaryActive = (target.weaponState === 'windup' || target.weaponState === 'active')
       && (target.attackKind === 'slash' || target.attackKind === 'strike');
-    const trade = target.weapon === 'sword' ? settings.enableSwordTrade && (target.isLunging || primaryActive)
-      : target.weapon === 'hammer' && settings.enableHammerSwordTrade && primaryActive;
+    const now = state.combatTimeMs ?? state.tick * 1000 / 60;
+    const recent = (time: number | undefined, window: number) =>
+      time !== undefined && Number.isFinite(time) && now >= time && now - time <= window;
+    const targetWasLunging = target.isLunging;
+    const trade = target.weapon === 'sword'
+      ? settings.enableSwordTrade && (targetWasLunging || primaryActive || recent(target.lastSwordAttackTimeMs, settings.swordTradeWindow ?? 350))
+      : target.weapon === 'hammer' && settings.enableHammerSwordTrade && (primaryActive || recent(target.lastHammerAttackTimeMs, settings.hammerSwordTradeWindow ?? 350));
     strike(state, c, target, settings, events);
     if (trade) {
       strike(state, target, c, settings, events);
-      if (target.alive && primaryActive && !target.isLunging) {
+      if (target.alive && targetWasLunging) finish('hit', target);
+      else if (target.alive && primaryActive) {
         target.weaponState = 'recovering'; target.weaponPhaseElapsed = 0;
         target.weaponTimer = recoverForKind(target.attackKind, settings);
         target.attackCooldown = target.weaponTimer;
@@ -525,6 +536,7 @@ function startLunge(c: SimCombatant, settings: UniversalSettings, state?: SimSta
   if (state?.combatExecution === 'live-roster-v2') {
     if (!c.lungeTargetId || !findCombatant(state, c.lungeTargetId) || c.lungeTargetId === c.id)
       throw new Error('live-roster-v2 requires an explicit lungeTargetId before a sword lunge');
+    c.lastSwordAttackTimeMs = state.combatTimeMs ?? state.tick * 1000 / 60;
     c.isLunging = true; c.lungeTimer = 0; c.lungeStartPos = { ...c.pos }; delete c.lungeOutcome;
     c.attackKind = 'none'; c.weaponState = 'idle'; c.weaponTimer = 0; c.weaponPhaseElapsed = 0;
     const fwd = forwardDir(c.yaw); c.lungeDir = { x: fwd.x, y: 0, z: fwd.z };
@@ -577,6 +589,7 @@ export function respawnCombatant(state: SimState, c: SimCombatant, settings: Uni
   if (rosterV2) {
     c.attackCooldown = 0; c.swapLockoutTimer = 0;
     delete c.lungeTargetId; delete c.lungeStartPos; delete c.lungeOutcome;
+    delete c.lastSwordAttackTimeMs; delete c.lastHammerAttackTimeMs;
   }
   c.hammerJumpWindowTimer = 0;
   c.hammerJumpsInAir = 0;

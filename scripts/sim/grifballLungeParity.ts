@@ -1,3 +1,5 @@
+import * as THREE from 'three';
+import { triggerCombatantAttackAction, triggerCombatantLungeAction } from '../../src/components/grifball/combatantActions';
 import { lungeFixture } from './grifballLungeFixture';
 import { idleAction } from '../../src/sim/actions';
 import { stepSimulation } from '../../src/sim/step';
@@ -16,7 +18,8 @@ export interface LungeParityCase {
   name: string; target?: { x: number; z: number }; startZ?: number; hp?: number;
   trade?: 'sword' | 'hammer'; shield?: number; carrier?: boolean;
   settings?: Partial<UniversalSettings>; hits: number; deaths?: number;
-  cancel?: 'dead' | 'friendly'; attackerHp?: number; attackerHits?: number;
+  cancel?: 'dead' | 'friendly'; attackerHp?: number; attackerHits?: number; pairedLunge?: boolean; reverseOrder?: boolean;
+  window?: { weapon: 'sword' | 'hammer'; ageMs?: number; limitMs: number; enabled?: boolean; wrongWeapon?: boolean };
 }
 export const LUNGE_PARITY_CASES: LungeParityCase[] = [
   { name: 'nonlethal-contact', hits: 1 },
@@ -40,6 +43,24 @@ export const LUNGE_PARITY_CASES: LungeParityCase[] = [
     { name: `${trade}-trade-tuned-recovery`, hp: 3, trade, target: { x: 0, z: .4 }, hits: 1, attackerHits: 1,
       settings: { swordLungeReload: .35, swordSlashReload: .27, hammerReloadTime: .42 } },
   ]),
+  ...(['sword', 'hammer'] as const).flatMap(weapon => [
+    { name: `${weapon}-window-inside`, window: { weapon, ageMs: 349, limitMs: 350 }, attackerHits: 1 },
+    { name: `${weapon}-window-edge`, window: { weapon, ageMs: 350, limitMs: 350 }, attackerHits: 1 },
+    { name: `${weapon}-window-outside`, window: { weapon, ageMs: 351, limitMs: 350 }, attackerHits: 0 },
+    { name: `${weapon}-window-zero-edge`, window: { weapon, ageMs: 0, limitMs: 0 }, attackerHits: 1 },
+    { name: `${weapon}-window-tuned`, window: { weapon, ageMs: 120, limitMs: 120 }, attackerHits: 1 },
+    { name: `${weapon}-window-disabled`, window: { weapon, ageMs: 10, limitMs: 350, enabled: false }, attackerHits: 0 },
+    { name: `${weapon}-window-no-history`, window: { weapon, limitMs: 350 }, attackerHits: 0 },
+    { name: `${weapon}-window-future-history`, window: { weapon, ageMs: -1, limitMs: 350 }, attackerHits: 0 },
+    { name: `${weapon}-window-other-weapon`, window: { weapon, ageMs: 10, limitMs: 350, wrongWeapon: true }, attackerHits: 0 },
+  ].map(spec => ({ ...spec, hp: 3, hits: 1, target: { x: 0, z: .4 } }))),
+  ...[false, true].flatMap(reverseOrder => [
+    { name: 'lethal', hp: 1, deaths: 2 }, { name: 'both-survive', hp: 3 },
+    { name: 'attacker-survives', hp: 1, attackerHp: 3, deaths: 1 },
+    { name: 'target-survives', hp: 3, attackerHp: 1, deaths: 1 },
+    { name: 'tuned-reload', hp: 3, settings: { swordLungeReload: .35 } },
+  ].map(spec => ({ ...spec, name: `paired-${spec.name}-${reverseOrder ? 'reversed' : 'forward'}`,
+    pairedLunge: true, reverseOrder, hits: 1, attackerHits: 1, target: { x: 0, z: 4 } }))),
 ];
 
 /** Grounded committed flights, followed through contact, cooldown and single-spawn revival. */
@@ -77,6 +98,33 @@ export function runLungeParityTrace(spec: LungeParityCase, id = 'bot_2', observe
     rival.weaponState = 'windup'; rival.attackKind = spec.trade === 'sword' ? 'slash' : 'strike';
     rival.weaponPhaseElapsed = 0; rival.weaponTimer = spec.trade === 'sword' ? sim.settings.swordSlashSpeed * .5 : resolveHammerSlamTiming(sim.settings).windupTime;
   }
+  if (spec.window) {
+    const w = spec.window;
+    state.settings.enableSwordTrade = sim.settings.enableSwordTrade = w.enabled !== false;
+    state.settings.enableHammerSwordTrade = sim.settings.enableHammerSwordTrade = w.enabled !== false;
+    state.settings.swordTradeWindow = sim.settings.swordTradeWindow = w.limitMs;
+    state.settings.hammerSwordTradeWindow = sim.settings.hammerSwordTradeWindow = w.limitMs;
+    target.activeWeapon = rival.weapon = w.weapon;
+    // A completed attack history is supplied at the commitment boundary. Use the
+    // production trigger to record its timestamp, then begin with its animation idle.
+    if (w.ageMs !== undefined) {
+      const historyWeapon = w.wrongWeapon ? (w.weapon === 'sword' ? 'hammer' : 'sword') : w.weapon;
+      const timeMs = 1000 / 60 - w.ageMs;
+      withSimulationRandom(seededRandom(31), timeMs / 1000, () => triggerCombatantAttackAction({ self: target,
+        weapon: historyWeapon, recordHammerAttack: () => {}, playSwing: () => {} }));
+      Object.assign(rival, { [historyWeapon === 'sword' ? 'lastSwordAttackTimeMs' : 'lastHammerAttackTimeMs']: timeMs });
+      target.weaponState = 'ready'; target.weaponTimer = 0;
+    }
+  }
+  if (spec.pairedLunge) {
+    state.settings.enableSwordTrade = sim.settings.enableSwordTrade = true;
+    target.activeWeapon = rival.weapon = 'sword'; target.aiState = 'LUNGING'; rival.yaw = Math.PI;
+    withSimulationRandom(seededRandom(31), 0, () => triggerCombatantLungeAction({ self: target, settings: state.settings,
+      pos: target.pos, vel: target.vel, lungeDir: new THREE.Vector3(0, 0, -1), playDash: () => {} }));
+    rival.lungeTargetId = self.id;
+    stepCombatantWeapons(sim, rival, { ...idleAction(), attackSecondary: true }, sim.settings, 0, []);
+  }
+  if (spec.reverseOrder) sim.combatants.reverse();
   // Start through the real action entry points before observing flight tick 1.
   self.lungeTargetId = rival.id;
   stepCombatantWeapons(sim, self, { ...idleAction(), attackSecondary: true }, sim.settings, 0, []);
@@ -100,9 +148,12 @@ export function runLungeParityTrace(spec: LungeParityCase, id = 'bot_2', observe
     withSimulationRandom(random, tick / 60, () => {
       f.weaponFrame(1 / 60); f.respawns(1 / 60);
       // Live roster order matters: each AI's shield ticks immediately before its own flight.
-      for (const c of [bot, target]) if (c.hp > 0) {
+      for (const c of (spec.reverseOrder ? [target, bot] : [bot, target])) if (c.hp > 0) {
         tickCombatantInvulnerability(c, 1 / 60);
-        if (c === bot) { bot.aiTimer = Math.max(0, (bot.aiTimer ?? 0) - 1 / 60); f.flight(); }
+        if (c === bot || spec.pairedLunge) {
+          c.aiTimer = Math.max(0, (c.aiTimer ?? 0) - 1 / 60);
+          if (c === bot) f.flight(); else f.targetFlight();
+        }
       }
       updateGrifballObjectiveForState({ state, refs, ballMeshRef, ballChargingRef, ballChargeTimerRef, dt: 1 / 60,
         isMultiplayer: false, activeCustomMap: map, placeCombatantsAtGrifballSpawns: () => {}, pushStatsUpdate: () => {} });
@@ -130,6 +181,11 @@ export function runLungeParityTrace(spec: LungeParityCase, id = 'bot_2', observe
         : a.weaponState === 'swing_down' ? 'active' : 'recovering';
       compare(tick, `${index}.weaponPhase`, phase, b.weaponState);
       compare(tick, `${index}.phaseElapsed`, a.weaponTimer ?? 0, b.weaponPhaseElapsed ?? 0, 1e-6);
+      if (spec.pairedLunge) {
+        compare(tick, `${index}.cooldown`, Math.max(0, a.aiTimer ?? 0), b.attackCooldown, 1e-6);
+        compare(tick, `${index}.outcome`, a.aiLastLungeOutcome, b.lungeOutcome);
+        if (a.isLunging || b.isLunging) compare(tick, `${index}.flightElapsed`, a.lungeTimer, b.lungeTimer, 1e-6);
+      }
       compare(tick, `${index}.lunging`, !!a.isLunging, b.isLunging);
       for (const axis of ['x', 'y', 'z'] as const) {
         compare(tick, `${index}.pos.${axis}`, a.pos[axis], b.pos[axis], 1e-6);

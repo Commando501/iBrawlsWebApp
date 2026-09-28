@@ -5,6 +5,8 @@ import { lungeFixture } from './grifballLungeFixture';
 import { setGrifballCarrierForState, reconcileGrifballCarrierForState } from '../../src/components/grifball/grifballObjectiveRuntime';
 import { withSimulationRandom, seededRandom } from '../../src/game/simulationRandom';
 import { getMatchBehaviorStats } from '../../src/game/aiPlayerModel';
+import { triggerCombatantLungeAction } from '../../src/components/grifball/combatantActions';
+import { resolveSwordLungeTradeReasonForState } from '../../src/components/grifball/tradeRuntime';
 
 test('live lunge damages once, stops on contact, and applies the configured lunge cooldown', () => {
   const f = lungeFixture();
@@ -111,4 +113,35 @@ test('main-AI lunge victim stays dead for the roster delay, releases the ball an
   assert.equal(target.aiState, 'APPROACHING');
   assert.equal(target.invulnerabilityTimer, state.settings.respawnInvulnerabilityDuration);
   assert.equal(target.deaths, 1); assert.equal(state.enemyDeaths, 1);
+});
+
+test('one surviving lunge collision finishes both flights before the second actor can hit again', () => {
+  const f = lungeFixture('bot_2', true, 'main_ai');
+  f.bot.hp = f.target.hp = 3; f.target.pos.z = .4; f.target.activeWeapon = 'sword';
+  f.state.settings.enableSwordTrade = true;
+  withSimulationRandom(seededRandom(31), 0, () => triggerCombatantLungeAction({ self: f.target,
+    settings: f.state.settings, lungeDir: new THREE.Vector3(0, 0, -1), pos: f.target.pos, vel: f.target.vel, playDash: () => {} }));
+  f.flight();
+  for (const c of [f.bot, f.target]) {
+    assert.equal(c.hp, 2); assert.equal(c.isLunging, false); assert.equal(c.vel.length(), 0);
+    assert.equal(c.aiLastLungeOutcome, 'hit'); assert.equal(c.aiState, 'COOLDOWN');
+    assert.equal(c.aiTimer, f.state.settings.swordLungeReload);
+    const stats = getMatchBehaviorStats(f.state.aiMatchContext, c.id);
+    assert.equal(stats?.damageDealtCount, 1); assert.equal(stats?.damageReceivedCount, 1);
+  }
+  f.targetFlight(); assert.equal(f.bot.hp, 2); assert.equal(f.target.hp, 2);
+});
+
+test('stale main-AI LUNGING state and pre-respawn attack history cannot grant a trade', () => {
+  const f = lungeFixture('bot_2', true, 'main_ai');
+  f.target.activeWeapon = 'sword'; f.target.aiState = 'LUNGING'; f.target.isLunging = false;
+  f.state.settings.enableSwordTrade = true; f.state.settings.swordTradeWindow = 10_000;
+  const resolve = () => resolveSwordLungeTradeReasonForState({ state: f.state, target: f.target, mainAi: f.target });
+  withSimulationRandom(seededRandom(1), 0, () => {
+    assert.equal(resolve(), null);
+    f.target.lastSwordAttackTime = 999_999; assert.equal(resolve(), 'sword_vs_sword');
+    f.target.hp = 0; f.target.respawnTimer = 0; f.respawns(1 / 60);
+    assert.equal(f.target.lastSwordAttackTime, 0); assert.equal(f.target.lastHammerAttackTime, 0);
+    assert.equal(resolve(), null);
+  });
 });

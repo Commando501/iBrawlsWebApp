@@ -47,6 +47,7 @@ export const respawnAICombatant = ({
   c.invulnerabilityTimer = settings.respawnInvulnerabilityDuration;
   c.spawnTime = simulationTimestamp();
 
+  c.lastSwordAttackTime = c.lastHammerAttackTime = 0;
   c.isLunging = false;
   c.aiState = 'APPROACHING';
   c.aiTimer = 0;

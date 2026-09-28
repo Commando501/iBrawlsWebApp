@@ -84,6 +84,9 @@ export interface SimCombatant {
   attackKind: 'none' | 'strike' | 'swipe' | 'slash' | 'punch';
   /** Tick of this combatant's last landed attack (for the weapon-trade window). */
   lastAttackTick: number;
+  /** v2 weapon-specific commitment timestamps on combatTimeMs; absent means no history. */
+  lastSwordAttackTimeMs?: number;
+  lastHammerAttackTimeMs?: number;
   /** Seconds left before a freshly-swapped/spawned weapon can attack (`weaponReadyTime`). */
   weaponReadyTimer: number;
 
@@ -116,6 +119,8 @@ export interface SimCombatant {
 export interface SimState {
   /** Missing in older snapshots means legacy-v1. This is not an RL schema promotion. */
   combatExecution?: SimCombatExecution;
+  /** v2 elapsed simulation milliseconds, persisted independently of render/wall time. */
+  combatTimeMs?: number;
   /** Which game mode this match is. */
   mode: SimMode;
   /** Fixed-order combatant list. Order is stable for the life of the match. */

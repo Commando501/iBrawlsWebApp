@@ -4,7 +4,7 @@ import { LUNGE_PARITY_ACTORS, LUNGE_PARITY_CASES, runLungeParityTrace } from './
 import { createMatch } from '../../src/sim/factory';
 import { idleAction } from '../../src/sim/actions';
 import { stepSimulation } from '../../src/sim/step';
-import { stepCombatantWeapons } from '../../src/sim/weapons';
+import { stepCombatantWeapons, respawnCombatant } from '../../src/sim/weapons';
 import { placeCombatantsAtSpawns } from '../../src/sim/grifball';
 import { BOT_PARITY_CASES, runBotExecutionParityTrace } from './grifballBotExecutionParity';
 
@@ -74,4 +74,52 @@ test('v2 cannot swap weapons during committed flight even though its weapon anim
   stepCombatantWeapons(s, c, { ...idleAction(), attackSecondary: true }, s.settings, 0, []);
   stepCombatantWeapons(s, c, { ...idleAction(), swapWeapon: true }, s.settings, 1 / 60, []);
   assert.equal(c.weapon, 'sword'); assert.equal(c.swapLockoutTimer, 0);
+});
+
+test('v2 records weapon-specific commitment time, restores it with the clock, and clears history on respawn/reset', () => {
+  const s = createMatch({ seed: 1, combatExecution: 'live-roster-v2', teamSizes: { blue: 1, red: 1 } });
+  s.match.phase = 'playing'; const [c, target] = s.combatants;
+  c.weaponReadyTimer = 0; c.weapon = 'hammer';
+  stepSimulation(s, { [c.id]: { ...idleAction(), attackPrimary: true } }, { settings: s.settings, dt: .01 });
+  assert.equal(c.lastHammerAttackTimeMs, 10); assert.equal(c.lastSwordAttackTimeMs, undefined);
+  const restored = JSON.parse(JSON.stringify(s));
+  for (let i = 0; i < 100; i++) {
+    stepSimulation(s, {}, { settings: s.settings }); stepSimulation(restored, {}, { settings: restored.settings });
+    assert.deepEqual(restored, s);
+  }
+  c.weapon = 'sword'; c.lungeTargetId = target.id;
+  stepCombatantWeapons(s, c, { ...idleAction(), attackSecondary: true }, s.settings, 0, []);
+  assert.equal(c.lastSwordAttackTimeMs, s.combatTimeMs); assert.equal(c.lastHammerAttackTimeMs, 10);
+  respawnCombatant(s, c, s.settings);
+  assert.equal(c.lastSwordAttackTimeMs, undefined); assert.equal(c.lastHammerAttackTimeMs, undefined);
+  c.lastSwordAttackTimeMs = c.lastHammerAttackTimeMs = s.combatTimeMs;
+  placeCombatantsAtSpawns(s, s.settings);
+  assert.equal(c.lastSwordAttackTimeMs, undefined); assert.equal(c.lastHammerAttackTimeMs, undefined);
+});
+
+test('older v2 snapshots start the clock from their fixed tick without inventing attack history', () => {
+  const s = createMatch({ seed: 1, combatExecution: 'live-roster-v2' }); s.tick = 60;
+  stepSimulation(s, {}, { settings: s.settings, dt: .01 });
+  assert.equal(s.combatTimeMs, 1010);
+  for (const c of s.combatants) {
+    assert.equal(c.lastSwordAttackTimeMs, undefined); assert.equal(c.lastHammerAttackTimeMs, undefined);
+  }
+});
+
+test('an actual attack remains eligible exactly 21 fixed ticks into a 350ms window', () => {
+  const s = createMatch({ seed: 1, combatExecution: 'live-roster-v2', teamSizes: { blue: 1, red: 1 } });
+  s.match.phase = 'playing'; s.settings.enableSwordTrade = true; s.settings.swordTradeWindow = 350;
+  const [c, target] = s.combatants;
+  for (const actor of [c, target]) {
+    actor.weapon = 'sword'; actor.hp = actor.maxHp = 3;
+    actor.weaponReadyTimer = actor.invulnerabilityTimer = 0;
+  }
+  c.pos = { x: 0, y: 0, z: 0 }; target.pos = { x: 0, y: 0, z: 10 };
+  stepCombatantWeapons(s, target, { ...idleAction(), attackPrimary: true }, s.settings, 0, []);
+  for (let i = 0; i < 20; i++) stepSimulation(s, {}, { settings: s.settings });
+  target.pos.z = .4; c.yaw = 0; c.lungeTargetId = target.id;
+  stepCombatantWeapons(s, c, { ...idleAction(), attackSecondary: true }, s.settings, 0, []);
+  stepSimulation(s, {}, { settings: s.settings });
+  assert.equal(s.combatTimeMs, 350);
+  assert.equal(c.hp, 2); assert.equal(target.hp, 2);
 });

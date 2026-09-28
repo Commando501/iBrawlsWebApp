@@ -77,6 +77,7 @@ export function createArenaOrchestratorCallbacksForState({
       if (bot.controller !== 'ai' || bot.isObserver) continue;
       const team = bot.team || 'red';
       const spawn = getGrifballTeamSpawn(activeCustomMap, team, fallback, used);
+      bot.lastSwordAttackTime = bot.lastHammerAttackTime = 0;
       bot.pos.copy(spawn);
       bot.vel.set(0, 0, 0);
       bot.yaw = spawn.spawnYaw ?? getInwardSpawnYaw(spawn);

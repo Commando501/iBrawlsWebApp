@@ -409,8 +409,10 @@ test('live objective lifecycle scores once, resets orders and spawns, and termin
     assert.equal(plan.assignments.size, 0); assert.equal(plan.passCharge, null);
     assert.deepEqual(plan.runnerMemory, {}); assert.deepEqual(plan.tankingMemory, {}); assert.deepEqual(plan.styleMemory, {});
     tick(); assert.equal(state.teamScores.blue.goals, round, 'scored hold cannot award twice');
+    runner.lastSwordAttackTime = runner.lastHammerAttackTime = 1000;
     tick(0.1);
     if (round === 1) {
+      assert.equal(runner.lastSwordAttackTime, 0); assert.equal(runner.lastHammerAttackTime, 0);
       assert.equal(state.grifball.phase, 'countdown'); assert.equal(state.grifball.roundNumber, 2); assert.equal(resets, 1);
       assert.equal(runner.pos.x, -40); assert.equal(state.otherPlayers.get('enemy')!.pos.x, 40);
       assert.equal(runner.pos.z, -3, 'observer does not reserve the first team spawn');

@@ -70,7 +70,7 @@ import { resolveAILungeEvasionForCombatant } from './aiLungeEvasionRuntime';
 import { resolveNoTargetAIFrameForCombatant } from './aiNoTargetRuntime';
 import { resolvePostKillPressureForCombatant } from './aiPostKillPressureRuntime';
 import { resolveAIPressureStateForCombatant } from './aiPressureStateRuntime';
-import { finishAISwordLungeFrameForCombatant } from './aiSwordLungeFinishRuntime';
+import { finishAISwordLungeFrameForCombatant, finishTradedAISwordLungeForCombatant } from './aiSwordLungeFinishRuntime';
 import { resolveAISwordLungeFlightForCombatant } from './aiSwordLungeFlightRuntime';
 import { resolveAITargetPredictionFrame } from './aiTargetPredictionRuntime';
 import {
@@ -335,6 +335,10 @@ export function createAISingleEntityUpdaterForState({
               constrainCombatantToArena,
               areCombatantsHostile,
               finishSwordLunge,
+              finishTradedTargetLunge: (other, attackerId) => finishTradedAISwordLungeForCombatant({
+                state: s, self: other, botId: other.id, targetId: attackerId,
+                recordCombatantObservation, recordBotDamageTag, tryEnterPressureState, tryStartComboOnHit,
+              }),
               executeCustomBotTrade: (
                 attackerBot: Combatant,
                 tradeTarget: { id: string },
@@ -1135,6 +1139,10 @@ export function createAISingleEntityUpdaterForState({
           constrainCombatantToArena,
           areCombatantsHostile,
           finishSwordLunge,
+          finishTradedTargetLunge: (other, attackerId) => finishTradedAISwordLungeForCombatant({
+            state: s, self: other, botId: other.id, targetId: attackerId,
+            recordCombatantObservation, recordBotDamageTag, tryEnterPressureState, tryStartComboOnHit,
+          }),
           executeCustomBotTrade: (
             attackerBot: Combatant,
             tradeTarget: { id: string },
