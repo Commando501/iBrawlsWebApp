@@ -26,6 +26,7 @@ import { type UniversalSettings } from '../types';
 import { resolveHammerSlamTiming } from '../game/hammerSlamTiming';
 import { dropBall } from '../game/grifballBall';
 import { resolvePunchCooldown, resolvePunchLungeDistance } from '../game/runnerBallSettings';
+import { adjustRangeForTargetModel } from '../components/grifball/modelHitbox';
 import { awardTeamKill, recordTeamDeath } from '../game/teamScoring';
 import {
   MELEE_HAMMER_SWIPE_REACH,
@@ -261,8 +262,9 @@ function resolveRosterHit(state: SimState, c: SimCombatant, settings: UniversalS
   for (const victim of state.combatants) {
     if (!victim.alive || !areHostile(c, victim) || victim.invulnerabilityTimer > 0) continue;
     const cy = victim.pos.y + (victim.isCrouching ? CROUCH_BODY_CENTER_HEIGHT : BODY_CENTER_HEIGHT);
+    const targetRadius = state.combatExecution === 'live-roster-v2' ? adjustRangeForTargetModel(radius, victim.modelType) : radius;
     if (Math.hypot(victim.pos.x - c.pos.x - fwd.x * reach, cy - c.pos.y - 1.2,
-      victim.pos.z - c.pos.z - fwd.z * reach) <= radius) strike(state, c, victim, settings, events);
+      victim.pos.z - c.pos.z - fwd.z * reach) <= targetRadius) strike(state, c, victim, settings, events);
   }
 }
 
@@ -392,7 +394,7 @@ function resolveRosterLunge(state: SimState, c: SimCombatant, settings: Universa
   };
   if (!target || !target.alive || !areHostile(c, target)) { finish('target_dead'); return; }
   const centerY = (v: SimCombatant) => v.pos.y + (v.isCrouching ? CROUCH_BODY_CENTER_HEIGHT : BODY_CENTER_HEIGHT);
-  if (target.invulnerabilityTimer <= 0 && Math.hypot(target.pos.x - c.pos.x, centerY(target) - centerY(c), target.pos.z - c.pos.z) <= 1.5) {
+  if (target.invulnerabilityTimer <= 0 && Math.hypot(target.pos.x - c.pos.x, centerY(target) - centerY(c), target.pos.z - c.pos.z) <= adjustRangeForTargetModel(1.5, target.modelType)) {
     const primaryActive = (target.weaponState === 'windup' || target.weaponState === 'active')
       && (target.attackKind === 'slash' || target.attackKind === 'strike');
     const now = state.combatTimeMs ?? state.tick * 1000 / 60;

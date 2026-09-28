@@ -9,7 +9,7 @@ import { setSimCarrier } from '../../src/sim/grifball';
 import { setGrifballCarrierForState, reconcileGrifballCarrierForState, updateGrifballObjectiveForState } from '../../src/components/grifball/grifballObjectiveRuntime';
 import { seededRandom, withSimulationRandom } from '../../src/game/simulationRandom';
 import type { SimCombatExecution } from '../../src/sim/simState';
-import type { UniversalSettings } from '../../src/types';
+import type { CharacterModelType, UniversalSettings } from '../../src/types';
 import { defaultGrifballTactics } from '../../src/game/grifballTacticsConfig';
 import { resolveHammerSlamTiming } from '../../src/game/hammerSlamTiming';
 import type { ParityDifference } from './grifballExecutionParity';
@@ -20,6 +20,8 @@ export interface LungeParityCase {
   settings?: Partial<UniversalSettings>; hits: number; deaths?: number;
   cancel?: 'dead' | 'friendly'; attackerHp?: number; attackerHits?: number; pairedLunge?: boolean; reverseOrder?: boolean;
   window?: { weapon: 'sword' | 'hammer'; ageMs?: number; limitMs: number; enabled?: boolean; wrongWeapon?: boolean };
+  attackerModel?: CharacterModelType; targetModel?: CharacterModelType;
+  attackerCrouch?: boolean; targetCrouch?: boolean;
 }
 export const LUNGE_PARITY_CASES: LungeParityCase[] = [
   { name: 'nonlethal-contact', hits: 1 },
@@ -71,6 +73,10 @@ export function runLungeParityTrace(spec: LungeParityCase, id = 'bot_2', observe
   Object.assign(sim.settings, spec.settings); Object.assign(state.settings, spec.settings);
   sim.combatExecution = execution; sim.match.phase = state.grifball.phase = 'playing';
   const [self, rival] = sim.combatants; self.id = id; rival.id = target.id;
+  self.modelType = bot.modelType = spec.attackerModel ?? 'medium';
+  rival.modelType = target.modelType = spec.targetModel ?? 'medium';
+  self.isCrouching = bot.isCrouching = !!spec.attackerCrouch;
+  rival.isCrouching = target.isCrouching = !!spec.targetCrouch;
   // Exactly one authored spawn per team bounds this slice; multi-slot arbitration stays a gap.
   map.teamSpawns = { blue: [{ x: -10, y: 0, z: 0 }], red: [{ x: 10, y: 0, z: 0 }] };
   sim.spawns = { blue: structuredClone(map.teamSpawns.blue), red: structuredClone(map.teamSpawns.red) };
@@ -160,7 +166,8 @@ export function runLungeParityTrace(spec: LungeParityCase, id = 'bot_2', observe
       f.visuals(1 / 60);
       reconcileGrifballCarrierForState({ state, refs, ballMeshRef, ballChargingRef, ballChargeTimerRef });
     });
-    const events = stepSimulation(sim, { [rival.id]: { ...idleAction(), aim: Math.PI } }, { settings: sim.settings });
+    const events = stepSimulation(sim, { [self.id]: { ...idleAction(), crouch: !!spec.attackerCrouch },
+      [rival.id]: { ...idleAction(), aim: Math.PI, crouch: !!spec.targetCrouch } }, { settings: sim.settings });
     for (const event of events.kills) {
       killCounts.set(event.attackerId, (killCounts.get(event.attackerId) ?? 0) + 1);
       deathCounts.set(event.victimId, (deathCounts.get(event.victimId) ?? 0) + 1);
@@ -171,6 +178,8 @@ export function runLungeParityTrace(spec: LungeParityCase, id = 'bot_2', observe
       if (before[index] > 0 && a.hp <= 0) liveDeaths++;
       if (headlessBefore[index] > 0 && b.hp <= 0) simDeaths++;
       compare(tick, `${index}.health`, a.hp, b.hp, 1e-9);
+      compare(tick, `${index}.crouching`, !!a.isCrouching, b.isCrouching);
+      compare(tick, `${index}.model`, a.modelType, b.modelType);
       compare(tick, `${index}.alive`, a.hp > 0, b.alive);
       compare(tick, `${index}.respawn`, a.respawnTimer ?? 0, b.respawnTimer, 1e-6);
       compare(tick, `${index}.shield`, a.invulnerabilityTimer ?? 0, b.invulnerabilityTimer, 1e-6);
@@ -210,7 +219,8 @@ export function runLungeParityTrace(spec: LungeParityCase, id = 'bot_2', observe
   compare(300, 'expected.liveDamage', liveDamage, spec.hits); compare(300, 'expected.simDamage', simDamage, spec.hits);
   compare(300, 'expected.deathFeed', f.deaths.length, spec.deaths ?? 0);
   compare(300, 'expected.liveDeaths', liveDeaths, spec.deaths ?? 0); compare(300, 'expected.simDeaths', simDeaths, spec.deaths ?? 0);
-  return { name: `${id}->${targetId}/${observer ? 'observer' : 'player-view'}/${spec.name}`, combatExecution: execution, ticks: 300, differenceCount, differences, frames };
+  return { name: `${id}->${targetId}/${observer ? 'observer' : 'player-view'}/${spec.name}`, combatExecution: execution,
+    scenario: spec, ticks: 300, differenceCount, differences, frames };
 }
 
 export const LUNGE_PARITY_ACTORS = [

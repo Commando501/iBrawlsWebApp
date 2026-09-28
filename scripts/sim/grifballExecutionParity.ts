@@ -23,11 +23,12 @@ import { updateGrifballObjectiveForState, setGrifballCarrierForState, throwPlaye
 import { gate } from '../../src/game/grifballValidation/gates';
 import { runBotExecutionParity } from './grifballBotExecutionParity';
 import { LUNGE_PARITY_CASES, runLungeParity, runLungeParityTrace } from './grifballLungeParity';
+import { runGeometryParity } from './grifballGeometryParity';
 
 const noop = () => {};
 export const PARITY_TOLERANCES = { position: 1e-6, velocity: 1e-6, health: 1e-9, timer: 1e-6, discrete: 0 };
 export const PARITY_GAPS = ['Player lunges, airborne/moving-target flight and multi-attacker interactions; committed grounded roster flights, active-primary/recent-window trades, paired opposing lunges, main-AI victims and single-spawn revival are covered',
-  'Moving/swept attacks, attacker pitch/crouch, target crouch and model sizes',
+  'Moving/swept and player pitch/crouch/model geometry; grounded roster medium/large target boundaries and both crouch postures are covered',
   'All authored maps and multi-slot spawn arbitration',
   'AI decision-to-action integration, moving attacks and mixed player/roster execution; stationary bot attacks alone are covered'];
 export interface ParityDifference { tick: number; field: string; live: unknown; headless: unknown; tolerance: number }
@@ -178,13 +179,14 @@ export function runExecutionParity() {
   const traces = PARITY_TRACE_CASES.map(c => ({ ...runExecutionParityTrace(c.actionTrace, c.options), name: c.name }));
   const botTraces = runBotExecutionParity();
   const lungeTraces = runLungeParity();
-  const failures = [...traces, ...botTraces, ...lungeTraces].filter(t => t.differenceCount);
+  const geometryTraces = runGeometryParity();
+  const failures = [...traces, ...botTraces, ...lungeTraces, ...geometryTraces].filter(t => t.differenceCount);
   const legacyCompatibility = ['sword-hit-recovery', 'punch-hit-recovery'].map(name => runExecutionParityTrace(name, { combatExecution: 'legacy-v1' }));
   const priorRosterCompatibility = runLungeParityTrace(LUNGE_PARITY_CASES[0], 'bot_2', true, 'live-roster-v1');
   return gate('execution-parity', failures.length ? 'fail' : 'inconclusive',
-    `${failures.length}/${traces.length + botTraces.length + lungeTraces.length} player/roster action traces differ. ${PARITY_GAPS.length} coverage gaps remain; legacy training dynamics are not certified.`,
-    { protocol: 'live-functions-vs-headless-step-v6', combatExecution: ['live-player-v1', 'live-roster-v1', 'live-roster-v2'], tolerances: PARITY_TOLERANCES,
+    `${failures.length}/${traces.length + botTraces.length + lungeTraces.length + geometryTraces.length} player/roster action traces differ. ${PARITY_GAPS.length} coverage gaps remain; legacy training dynamics are not certified.`,
+    { protocol: 'live-functions-vs-headless-step-v7', combatExecution: ['live-player-v1', 'live-roster-v1', 'live-roster-v2'], tolerances: PARITY_TOLERANCES,
       neuralIntegration: 'Optional and not promoted: legacy training dynamics remain unchanged; their compatibility traces are diagnostic, not a required neural integration gate.',
-      scope: 'Production player functions, stationary roster attacks and committed grounded roster flights through contact, lethal/surviving primary/recent-window trades, paired opposing lunges, main-AI victims and single-authored-spawn revival versus versioned stepSimulation. Targets are supplied, AI decisions/pressure/combos and presentation effects are suppressed. Remaining gaps are not certified.',
-      gaps: PARITY_GAPS, traces, botTraces, lungeTraces, legacyCompatibility, priorRosterCompatibility });
+      scope: 'Production player functions, stationary roster attacks and committed grounded roster flights through contact, lethal/surviving primary/recent-window trades, paired opposing lunges, main-AI victims and single-authored-spawn revival versus versioned stepSimulation. Grounded roster geometry covers medium/large targets and standing/crouched actors at hit/miss boundaries. Targets are supplied, AI decisions/pressure/combos and presentation effects are suppressed. Remaining gaps are not certified.',
+      gaps: PARITY_GAPS, traces, botTraces, lungeTraces, geometryTraces, legacyCompatibility, priorRosterCompatibility });
 }

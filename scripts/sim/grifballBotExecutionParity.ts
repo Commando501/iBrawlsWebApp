@@ -12,7 +12,7 @@ import { applyBotMeleeImpactForState } from '../../src/components/grifball/botMe
 import { createCombatantActionCallbacksForState } from '../../src/components/grifball/combatantActionCallbacks';
 import { updateAIRosterTick } from '../../src/components/grifball/aiRosterTick';
 import { seededRandom, withSimulationRandom } from '../../src/game/simulationRandom';
-import type { UniversalSettings } from '../../src/types';
+import type { CharacterModelType, UniversalSettings } from '../../src/types';
 import { idleAction } from '../../src/sim/actions';
 import { stepSimulation } from '../../src/sim/step';
 import { setSimCarrier } from '../../src/sim/grifball';
@@ -80,6 +80,10 @@ export interface BotParityCase {
   target?: { x: number; z: number };
   aim?: number;
   shield?: boolean;
+  attackerModel?: CharacterModelType;
+  targetModel?: CharacterModelType;
+  attackerCrouch?: boolean;
+  targetCrouch?: boolean;
   hits: number;
 }
 export const BOT_PARITY_CASES: BotParityCase[] = [
@@ -108,6 +112,10 @@ export function runBotExecutionParityTrace(spec: BotParityCase, id: string, obse
   const { sim, bot, target, state } = f;
   sim.combatExecution = execution; sim.match.phase = 'playing';
   const [self, rival] = sim.combatants;
+  self.modelType = bot.modelType = spec.attackerModel ?? 'medium';
+  rival.modelType = target.modelType = spec.targetModel ?? 'medium';
+  self.isCrouching = bot.isCrouching = !!spec.attackerCrouch;
+  rival.isCrouching = target.isCrouching = !!spec.targetCrouch;
   self.id = id; rival.id = target.id; self.pos = { x: 0, y: 0, z: 0 };
   const p = spec.target ?? { x: 0, z: 2 };
   rival.pos = { x: p.x, y: 0, z: p.z }; target.pos.set(p.x, 0, p.z);
@@ -131,8 +139,9 @@ export function runBotExecutionParityTrace(spec: BotParityCase, id: string, obse
     const request = tick === 1 || !!spec.repeat;
     bot.yaw = (spec.aim ?? 0) + Math.PI;
     f.frame(request, !!spec.secondary);
-    stepSimulation(sim, { [id]: { ...idleAction(), aim: spec.aim ?? 0,
-      attackPrimary: request && !spec.secondary, attackSecondary: request && !!spec.secondary } }, { settings: sim.settings });
+    stepSimulation(sim, { [id]: { ...idleAction(), aim: spec.aim ?? 0, crouch: !!spec.attackerCrouch,
+      attackPrimary: request && !spec.secondary, attackSecondary: request && !!spec.secondary },
+      [rival.id]: { ...idleAction(), crouch: !!spec.targetCrouch } }, { settings: sim.settings });
     const phase = bot.weaponState === 'ready' ? 'idle'
       : ['swing_up', 'melee_up'].includes(bot.weaponState) ? 'windup'
       : ['swing_down', 'melee_down'].includes(bot.weaponState) ? 'active' : 'recovering';
@@ -140,6 +149,10 @@ export function runBotExecutionParityTrace(spec: BotParityCase, id: string, obse
     compare(tick, 'phaseElapsed', bot.weaponTimer, self.weaponPhaseElapsed ?? 0, 1e-6);
     compare(tick, 'target.health', target.hp, rival.hp, 1e-9);
     compare(tick, 'health', bot.hp, self.hp, 1e-9);
+    compare(tick, 'crouching', !!bot.isCrouching, self.isCrouching);
+    compare(tick, 'target.crouching', !!target.isCrouching, rival.isCrouching);
+    compare(tick, 'model', bot.modelType, self.modelType);
+    compare(tick, 'target.model', target.modelType, rival.modelType);
     for (const axis of ['x', 'y', 'z'] as const) compare(tick, `position.${axis}`, bot.pos[axis], self.pos[axis], 1e-6);
     frames.push({ tick, request, live: { weapon: bot.weaponState, elapsed: bot.weaponTimer, hp: bot.hp, targetHp: target.hp },
       headless: { weapon: self.weaponState, elapsed: self.weaponPhaseElapsed ?? 0, hp: self.hp, targetHp: rival.hp } });
@@ -147,7 +160,7 @@ export function runBotExecutionParityTrace(spec: BotParityCase, id: string, obse
   compare(240, 'expectedDamage.live', 20 - target.hp, spec.hits);
   compare(240, 'expectedDamage.headless', 20 - rival.hp, spec.hits);
   return { name: `${id}/${observer ? 'observer' : 'player-view'}/${spec.name}`, combatExecution: sim.combatExecution,
-    ticks: 240, differenceCount, differences, frames };
+    scenario: spec, ticks: 240, differenceCount, differences, frames };
 }
 
 export function runBotExecutionParity() {

@@ -8,7 +8,7 @@
  * stripped of React/THREE coupling and rendering-only fields (camera, VFX, nameplates).
  */
 
-import { type CustomMapData, type UniversalSettings } from '../types';
+import { type CharacterModelType, type CustomMapData, type UniversalSettings } from '../types';
 import { type Vec3 } from '../game/grifballBall';
 import { type TeamId, type TeamScoresState } from '../game/teamScoring';
 import { type GrifballMatchState } from '../game/grifballMatch';
@@ -47,6 +47,8 @@ export interface SimCombatant {
   pos: Vec3;
   vel: Vec3;
   yaw: number;
+  /** Effective gameplay model for v2 roster hit tests; absent in older snapshots means medium. */
+  modelType?: CharacterModelType;
   isCrouching: boolean;
   isJumping: boolean;
   /** Vertical velocity tracked separately from the planar move for jump/gravity. */

@@ -496,3 +496,28 @@ Verification:
 - Full repository run: **2,007/2,012 passed**, with the same five historical V3 animation/asset failures listed above (`output/m7-window-repository.log`). This run used the final implementation. The raw repository result remains failed; no tests were waived or weakened.
 
 The development server was restored on port **3000**; `/` and `/grifball-validation.html` returned HTTP 200. This new slice remains uncommitted after `8b65486`. Next acceptance work is bounded model/crouch hitbox geometry, followed by airborne/moving-target and broader multi-actor/spawn coverage before full AI integration certification.
+
+
+## M7 acceptance follow-up: grounded model and crouch geometry — 2026-09-27
+
+The prior trade-window/paired-lunge slice was committed as `3a13ed3` before this work. The implementation roadmap files remain unchanged.
+
+The initial geometry matrix reproduced **88 failures out of 374 checks** (`output/m7-geometry-before.log`). Production roster impacts and committed lunges already include the Large target's 0.2-unit hit-radius bonus; the headless simulator had no model metadata and omitted that bonus. The correction is confined to the explicit `live-roster-v2` execution profile. No live gameplay functions changed in this slice.
+
+- `SimCombatant.modelType` is optional effective gameplay metadata. Missing values retain Medium geometry for older snapshots. Stationary roster impacts and committed lunge contact use the existing target-model radius adjustment; attacker size does not extend reach. Default/v1 profiles retain their previous geometry even if model metadata is supplied.
+- Crouched targets use the existing 0.52 body-center height instead of 0.825. Committed flight also uses the attacker's body center. Stationary roster attacks retain the live 1.2 impact-origin height regardless of attacker posture. Tests verify these existing semantics rather than changing the live crouch design.
+- Fixtures maintain independent live and headless state over each trace, supply held crouch input to the simulator, compare both actors' posture/model metadata, and retain scenario inputs with the evidence. Expected hit/miss boundaries are calculated independently from authored dimensions, without calling either hit resolver.
+- Separate regressions cover JSON restoration of committed Large-target contact, retained model metadata on revival/round reset, older snapshots with no model field, and unchanged default/player-v1/roster-v1 behavior.
+
+Protocol `live-functions-vs-headless-step-v7` now evaluates **815 paired traces**: the existing 33 player, 84 stationary roster and 300 flight/lifecycle traces plus **398 geometry traces**. The new geometry set contains **272 stationary traces** (68 cases across main/regular attackers and both views) and **126 flight traces** (21 cases across three attacker/victim identity pairs and both views). It covers slash, slam, swipe and punch; Medium/Large targets; all four standing/crouched attacker/target combinations; just-inside/just-outside contact; exact lunge tangency; and Large-attacker/Medium-target reach guards. Stationary cases use explicit reach/radius settings; flight tangency is sampled at the first movement tick.
+
+These are grounded, fixed-posture, nonlethal geometry cases with stationary targets. They do not certify posture transitions, visual rig fidelity, body-cylinder collision, airborne/moving/swept contact, player pitch/model/crouch geometry, arbitrary multi-actor interactions, map/spawn arbitration or the full AI decision loop. The four remaining coverage groups continue to keep full M7 acceptance **inconclusive**. Neural policies and their observation/action schemas remain unchanged.
+
+Verification:
+
+- **413/413** final geometry/gate checks passed (`output/m7-geometry-gates.log`). The earlier combined geometry/stationary/flight selection passed **797/797** before the exact-tangency and snapshot/compatibility additions (`output/m7-geometry-focused.log`); those additions are included in the final frozen and full repository runs.
+- The frozen run `output/grifball-validation/m7-geometry-final/` completed with **exit 0** and successful browser cleanup: **985/985** validation tests, TypeScript, production client/relay and validation builds, production startup, **16/16** live scenario trials and **8/8** exact repeatability pairs passed. All **815** paired traces have zero differences. Four coverage-gap groups correctly retain an inconclusive execution-parity verdict.
+- Full repository run: **2,410/2,415 passed**, with the same five historical V3 animation/asset failures listed above (`output/m7-geometry-repository.log`). This run used the final implementation. Its raw result remains failed; no tests were waived or weakened.
+- The source fingerprint matches the frozen plan (`output/m7-geometry-review.json`). Runner output is retained in `output/m7-geometry-browser-final.log`; the final directory contains the HTML report, gate evidence, frozen inputs and raw trials.
+
+The development server was restored on port **3000**; `/` and `/grifball-validation.html` returned HTTP 200. Scoped `git diff --check` passed. This new slice remains uncommitted after `3a13ed3`. Next acceptance work is airborne/moving-target contact, followed by broader multi-actor/spawn coverage before full AI decision integration certification.
