@@ -637,3 +637,39 @@ Final verification:
 - Scoped `git diff --check` passed; attached implementation plans remain unchanged. The development server was restored on port **3000**, with HTTP 200 responses from `/` and `/grifball-validation.html`.
 
 The mixed-contact and evidence-writer changes remain uncommitted after `b1503fb`. Next acceptance work includes player/roster execution and full AI decision/lifecycle integration, followed by calibrated performance, held-out quality/generalization and human playtesting; moving/airborne/carrier group contact remains an explicit bounded-coverage limitation.
+
+
+## M7 acceptance follow-up: player/roster impact ownership and death lifecycle — 2026-09-28
+
+The prior mixed-contact slice was committed as `8e3ce00` (`Validate mixed lunge melee contact and stream parity evidence`). Human playtesting is explicitly deferred to the user until the remaining automated M7 acceptance work is complete.
+
+The player-impact callbacks still processed `main_ai` through both a legacy branch and the `otherPlayers` roster. When a main AI survived the first hit, the roster branch applied a second damage point from the same attack. The legacy lethal branch also set only its legacy respawn timer and death counter, leaving the actual roster timer/death count incomplete. Regular roster slash/slam/punch kills did not immediately cancel AI weapon and flight state. Main-AI eligibility omitted observer and positive-respawn-timer checks; a main AI excluded by its AI respawn state could still be hit through the roster branch. Player sword slash also lacked the dead-player guard already used by hammer attacks.
+
+The first **166 live-only regressions reproduced 56 failures** (`output/m7-player-roster-before.log`). The corrected impact paths preserve the legacy main-AI branch, including its sword-trade callback, and exclude that actor from the subsequent offline roster iteration. Shared player-melee death bookkeeping now sets the actual three-second respawn timer, clears weapon/flight state, updates the victim's roster deaths and player kill/score counts, and maintains main-AI legacy counters and calibration. Eligibility checks consistently exclude respawning/observer victims. A dead player cannot produce a slash impact. Multiplayer message and local-acknowledgement behavior is preserved.
+
+The final **174 live-only cases** are included in both `test:grifball-validation` and the full repository suite:
+
+- Four attacks (slash, slam, swipe, punch), registered main AI, unregistered legacy main AI, ordinary roster victim and roster main AI without a lookup callback.
+- Independently expected one-point damage, surviving-attack preservation, lethal cancellation, three-second respawn state, kill/death/score counters, medal/calibration/death callbacks and repeated post-death impacts.
+- Shielded, dead, respawning, observer, friendly and distant victims, plus dead-player attacks. The unregistered legacy main AI has no Grifball team lookup, so friendly-team assertions apply to registered actors only.
+- Multiple victims in both roster orders, each damaged/credited once, with main-AI legacy credit checked separately.
+- Main-AI sword-trade callback preservation and one multiplayer hit message per victim without offline kill bookkeeping.
+- Actual player action triggers and weapon-frame owner through impact/recovery, with independent tick-seven slash timing; actual roster respawn callbacks keep the victim dead until its timer expires and restore shields afterward.
+- Killed runner ownership reconciliation releases the ball exactly once before revival.
+
+These are production-function regression tests, **not new headless parity traces**. The paired total stays **1,927**, protocol `live-functions-vs-headless-step-v11`, with four gap groups and an inconclusive execution gate. The real-frame checks isolate weapon animation and then respawn ownership; they do not certify a complete player/AI match loop. Player lunges, mixed player/roster headless execution, decision-to-action/map lifecycle integration, calibrated performance and held-out quality/generalization remain automated acceptance work. Moving/airborne/carrier group contact and swept collision remain bounded-coverage limitations. Human playtesting follows that work; neural integration remains optional and unpromoted.
+
+
+Verification:
+
+- **223/223** focused checks passed, including all 174 new regressions, existing player parity and carrier lifecycle tests (`output/m7-player-roster-focused.log`). Type checking caught an invalid fixture-only `IDLE` state during development; it was corrected to the actual `APPROACHING` state before the frozen run.
+- The first frozen attempt (`output/grifball-validation/m7-player-roster-final/`) finished with **exit 1**: its writer-recovery child failed to report startup before the existing ten-second watchdog, while the large repository suite was running concurrently. It passed **2,291/2,292** validation checks, TypeScript, all builds, startup, **16/16** browser trials and **8/8** exact repeatability pairs. Its failed verdict is retained. Resource contention is a possible cause, not a proven diagnosis; no timeout or assertion was relaxed.
+- Full repository run: **3,717/3,722 passed**, with the same five historical V3 animation/asset failures (`output/m7-player-roster-repository-final.log`). Raw exit remains **1**; nothing was waived or weakened. This separate run is not imported into the CLI report's repository-tests gate.
+
+- The standalone frozen rerun `output/grifball-validation/m7-player-roster-final-r2/` finished with **exit 0**: **2,292/2,292** validation tests, TypeScript, production client/relay and validation builds, startup, **16/16** browser trials and **8/8** exact repeatability pairs passed. The successful rerun used identical source to the failed attempt; it does not erase the original timeout. This quick run does not supply calibrated performance, quality or human-review acceptance.
+- Final parity artifact re-parsed successfully: **1,927 traces**, **408,588 frames**, zero differences and four remaining gap groups (`output/m7-player-roster-parity-review-r2.json`). The execution gate remains **inconclusive**.
+- Current source matches both frozen attempts (`output/m7-player-roster-review.json`): commit `8e3ce008e4060f54b7d646846f21cc5f293638c5`, working-tree hash `53a089d2e4e39fb00826278cda0e2d6f46123ba2a99c9ceea680c61804e1c10b`.
+
+The new player/roster slice remains uncommitted after `8e3ce00`. README and these validation findings are updated; attached implementation plans remain unchanged. Next automated work is player lunge and mixed player/roster execution coverage, followed by the remaining decision/lifecycle, performance and quality acceptance. Human testing remains deferred to the user until that automated work is complete.
+
+Scoped `git diff --check` passed. The development server was restored on port **3000**; both `/` and `/grifball-validation.html` returned HTTP 200.

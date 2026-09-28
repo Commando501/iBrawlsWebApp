@@ -1,3 +1,4 @@
+import { recordPlayerMeleeKillForState } from './playerMeleeDeathRuntime';
 import * as THREE from 'three';
 import { ballAsHammer } from '../../game/weaponCompat';
 import { MAIN_AI_ID } from '../../game/roster';
@@ -127,6 +128,8 @@ export function applyHammerStrikeImpactForState({
       !isMultiplayer &&
       mainAI &&
       mainAI.hp > 0 &&
+      !mainAI.isObserver &&
+      (mainAI.respawnTimer ?? 0) <= 0 &&
       mainAI.aiState !== 'RESPAWNING' &&
       (mainAI.invulnerabilityTimer ?? 0) <= 0 &&
       areCombatantsHostile('player', MAIN_AI_ID)
@@ -142,16 +145,8 @@ export function applyHammerStrikeImpactForState({
         state.lastStrikeTick = 1.0;
 
         if (mainAI.hp <= 0) {
-          mainAI.hp = 0;
-          mainAI.aiState = 'RESPAWNING';
-          state.enemyRespawnTimer = 3.0;
-          state.scorePlayer += 1;
-          state.playerKills += 1;
-          state.enemyDeaths += 1;
-          recordBotCalibrationDeath(MAIN_AI_ID);
+          recordPlayerMeleeKillForState(state, mainAI, recordBotCalibrationDeath);
           playDeath();
-          mainAI.weaponState = 'ready';
-          mainAI.weaponTimer = 0;
 
           const medals = evaluatePlayerKillMedals(MAIN_AI_ID);
           const newDeath: DeathEvent = {
@@ -177,8 +172,11 @@ export function applyHammerStrikeImpactForState({
     }
 
     state.otherPlayers.forEach((other) => {
+      // The legacy main-AI branch owns this actor, including sword trades.
+      if (!isMultiplayer && mainAI && other.id === mainAI.id) return;
       if (
         other.hp > 0 &&
+        other.aiState !== 'RESPAWNING' &&
         !other.isObserver &&
         other.respawnTimer <= 0 &&
         (!other.invulnerabilityTimer || other.invulnerabilityTimer <= 0) &&
@@ -206,11 +204,7 @@ export function applyHammerStrikeImpactForState({
             state.lastStrikeTick = 1.0;
 
             if (other.hp <= 0) {
-              other.hp = 0;
-              other.respawnTimer = 3.0;
-              state.scorePlayer += 1;
-              state.playerKills += 1;
-              other.deaths += 1;
+              recordPlayerMeleeKillForState(state, other, recordBotCalibrationDeath);
               playDeath();
 
               const medals = evaluatePlayerKillMedals(other.id);
