@@ -109,3 +109,35 @@ test('structured failure diagnostics survive durable writes and resume history',
   assert.deepEqual(next.previous!.failures[0].failureState, result.failureState); assert.equal(next.exitCode(), 1);
   assert.match(readFileSync(join(next.directory, 'report.html'), 'utf8'), /valid frames only/);
 });
+
+
+test('parity evidence serializes bounded traces without stringifying the aggregate', async t => {
+  const { plan } = await fixture(), out = new RunArtifacts(join(temporary(t), 'run'), plan, null);
+  const traces = Array.from({ length: 80 }, (_, i) => ({ name: `trace-${i}`, frames: [{ tick: 1, optional: undefined, text: '☃\n"' }], differenceCount: 0 }));
+  const details = { protocol: 'fixture', traces, empty: [], omitted: undefined, diagnostic: null, flag: false };
+  const evaluation = { check: { id: 'execution-parity', state: 'completed' as const, verdict: 'inconclusive' as const,
+    summary: 'Bounded evidence', evidence: ['gates/execution-parity.json'] }, details };
+  const original = JSON.stringify;
+  const expected = JSON.parse(original(evaluation));
+  const stringify = t.mock.method(JSON, 'stringify', (value: unknown, replacer?: any, space?: any) => {
+    if (value === evaluation || value === details || value === traces) throw new RangeError('Aggregate exceeds string limit');
+    return original(value, replacer, space);
+  });
+  out.recordGate(evaluation);
+  stringify.mock.restore();
+  assert.deepEqual(readJSON(join(out.directory, 'gates/execution-parity.json')), expected);
+  assert.equal(out.gates.length, 1);
+});
+
+test('failed parity serialization cannot replace valid evidence or update its verdict', async t => {
+  const { plan } = await fixture(), out = new RunArtifacts(join(temporary(t), 'run'), plan, null);
+  const check = { id: 'execution-parity', state: 'completed' as const, verdict: 'inconclusive' as const,
+    summary: 'Existing evidence', evidence: ['gates/execution-parity.json'] };
+  out.recordGate({ check, details: { traces: [{ name: 'saved' }] } });
+  const path = join(out.directory, 'gates/execution-parity.json'), before = readFileSync(path, 'utf8');
+  assert.throws(() => out.recordGate({ check: { ...check, verdict: 'fail' }, details: {
+    traces: [{ name: 'partial' }, { toJSON() { throw new Error('Injected trace serialization failure'); } }],
+  } }), /Injected trace serialization failure/);
+  assert.equal(readFileSync(path, 'utf8'), before);
+  assert.deepEqual(out.gates, [check]);
+});

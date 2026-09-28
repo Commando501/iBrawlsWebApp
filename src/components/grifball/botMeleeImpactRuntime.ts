@@ -136,6 +136,9 @@ export function applyBotMeleeImpactForState({
       other.hp = 0;
       other.respawnTimer = 3.0;
       other.deaths = (other.deaths || 0) + 1;
+      // Death ends the flight immediately, even if this victim's visual tick
+      // already ran before the killer in roster order.
+      other.isLunging = false;
       if (other.controller === 'ai') {
         other.aiState = 'RESPAWNING';
         other.weaponState = 'ready';

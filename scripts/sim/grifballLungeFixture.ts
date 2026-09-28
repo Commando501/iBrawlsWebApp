@@ -59,7 +59,7 @@ export function lungeFixture(id = 'bot_2', observer = true, targetId = 'target')
     dt, gravityAcceleration: 18, recoverCombatantAltitude: () => false,
     constrainCombatantToArena: (pos, vel) => constrainCombatantToArenaBounds({ pos, vel, activeCustomMap: map, arenaRadius: map.arenaRadius }),
   });
-  return { ...f, gravityPrelude, flight: (dt = 1 / 60) => flightFor(bot, target, dt),
+  return { ...f, gravityPrelude, flightFor, flight: (dt = 1 / 60) => flightFor(bot, target, dt),
     targetFlight: (dt = 1 / 60) => flightFor(target, bot, dt), outcomes, deaths };
 }
 

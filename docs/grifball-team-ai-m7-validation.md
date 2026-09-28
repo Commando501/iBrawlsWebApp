@@ -603,3 +603,37 @@ Verification:
 - Scoped `git diff --check` passed and the attached implementation plans were not changed. Development server restored on port **3000**; `/` and `/grifball-validation.html` both returned HTTP 200.
 
 This new multi-actor/spawn slice remains uncommitted after `1e511a6`. Remaining M7 acceptance work includes mixed flight/melee and player contact, complete decision-to-action/map lifecycle coverage, calibrated performance and held-out quality/generalization, followed by human playtesting. Passing these bounded traces establishes execution evidence; it does not establish better match outcomes or enjoyable tactics.
+
+
+## M7 acceptance follow-up: mixed lunge/melee contact — 2026-09-27
+
+The prior multi-actor/spawn slice was committed as `b1503fb` (`Validate multi-actor impacts and occupied respawn arbitration`). This follow-up combines committed flights with authored melee attacks through the actual live roster frame owners and independent `stepSimulation` execution.
+
+The new matrix reproduced a live order-dependent death bug in **18 cases**: when a melee attacker killed a lunging actor whose visual update had already run, the dead victim retained `isLunging=true` until the next frame. Reversing roster order let the visual loop clear the flag and concealed the defect. `applyBotMeleeImpactForState` now clears the flight flag at lethal impact, alongside health/respawn/death bookkeeping. No simulator gameplay changes were necessary. The original diagnostic run passed 306/324; all 324 pass with the fix.
+
+Protocol `live-functions-vs-headless-step-v11` adds **324 mixed-contact traces**, bringing the paired total to **1,927**. Nine encounters run across slash/slam/swipe, both roster orders, main-AI identity as lunger/target/melee attacker, and player/observer views:
+
+- A teammate's melee kills the locked target before the lunge arrives; the flight cancels on its next tick.
+- The lunge kills before the melee impact, or both attacks reach the target on the same frame with one or two HP.
+- An enemy's melee kills or damages the actor mid-flight, preventing contact or allowing the surviving flight to finish.
+- A surviving lunge trade consumes the defender's primary attack while a third-party swing still lands. An additional bystander guards against the consumed primary damaging other actors.
+- Two allied lunges share a target with two or three HP while a teammate's melee also lands; credit follows the production flight-before-visual ordering and the configured roster order.
+
+Each trace independently advances four grounded actors for 120 ticks. Comparisons cover per-actor position/velocity, health, alive/lunging state, weapon phases and phase clocks, respawn/shield clocks, kill/death credit and legacy main-AI counters, plus flight cooldowns/outcomes. Independent expectations assert final health, exact victims and winning attackers, first-hit frames, flight-finish frames and termination outcomes. Fixed 24-unit flight speed and authored distances place contact immediately before, on or after frame-seven melee impacts. The fixtures use production action triggers at the commitment boundary, then never copy state between engines. Existing fixture flight callbacks are reused for additional registered actors.
+
+This certifies the listed grounded encounters under authored commitments, not autonomous tactical choices or arbitrary crowd combat. Moving/airborne/carrier mixed groups, player execution, swept collision and complete map/round lifecycle integration remain gaps. Calibrated performance, held-out quality/generalization and human playtesting are still required for M7 acceptance. Four coverage-gap groups keep the execution gate **inconclusive**; neural integration remains optional and unpromoted.
+
+
+The first frozen attempt (`output/grifball-validation/m7-mixed-final/`) passed 2,116 validation tests, TypeScript and all builds, then exited **3** before browser trials with `Invalid string length`. Growing parity evidence exceeded V8's limit while the artifact writer formatted the entire gate as one JSON string. The writer now serializes bounded traces individually to its temporary file, flushes it, and atomically publishes the same complete JSON schema. No frames or trace groups are discarded. Regression tests verify that aggregate serialization is never required, escaped/optional fields round-trip correctly, and a mid-trace serialization error preserves both the previous evidence file and gate verdict. All nine artifact/executor tests pass. The failed attempt is retained separately; the corrected writer requires a new frozen source identity and run directory.
+
+
+Final verification:
+
+- **334/334** mixed-contact and gate checks passed (`output/m7-mixed-focused.log`), and **9/9** artifact/executor checks passed (`output/m7-mixed-artifacts.log`).
+- The corrected frozen run `output/grifball-validation/m7-mixed-final-r2/` finished with **exit 0**: **2,118/2,118** validation tests, TypeScript, production client/relay and validation builds, startup, **16/16** scenario trials and **8/8** exact repeatability pairs passed. All **1,927** paired traces match. Four remaining coverage groups retain the inconclusive execution-parity verdict; this quick run does not supply calibrated performance, held-out quality or human-review acceptance.
+- The saved parity JSON was parsed after publication: all nine required trace groups and **408,588 frames** are present, with zero differences. The complete compact artifact is **186,956,855 bytes** (`output/m7-mixed-parity-review.json`). The failed first attempt remains preserved as setup-error evidence.
+- Final full repository run: **3,543/3,548 passed**, with the same five historical V3 animation/asset failures (`output/m7-mixed-repository-final.log`). Raw exit remains **1**; nothing was waived or weakened. This is a separate run and is not imported into the CLI report's repository-tests gate. The earlier pre-writer-fix repository run is retained separately.
+- Final source identity matches the frozen plan (`output/m7-mixed-review-final.json`): commit `b1503fb9c61ac3f2e745830e5b75eae2501ef1ef`, working-tree hash `89d39c893e0b47b1e59c9dd8f4b085c51b345ad985d5b17a22ea6a1a0f9ab763`.
+- Scoped `git diff --check` passed; attached implementation plans remain unchanged. The development server was restored on port **3000**, with HTTP 200 responses from `/` and `/grifball-validation.html`.
+
+The mixed-contact and evidence-writer changes remain uncommitted after `b1503fb`. Next acceptance work includes player/roster execution and full AI decision/lifecycle integration, followed by calibrated performance, held-out quality/generalization and human playtesting; moving/airborne/carrier group contact remains an explicit bounded-coverage limitation.

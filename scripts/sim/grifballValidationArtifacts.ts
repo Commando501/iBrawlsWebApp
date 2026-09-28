@@ -11,13 +11,41 @@ export const digest = (value: unknown) => createHash('sha256').update(canonicalJ
 export const jobFile = (id: string) => `${digest(id)}.json`;
 export function readJSON<T>(path: string): T { return JSON.parse(readFileSync(path, 'utf8')); }
 /** Flush the complete temporary file before publishing it. A killed write cannot replace valid evidence with partial JSON. */
-function atomicText(path: string, value: string) {
+function atomicText(path: string, value: string | Iterable<string>) {
   const temporary = `${path}.tmp`;
   const fd = openSync(temporary, 'w');
-  try { writeFileSync(fd, value); fsyncSync(fd); } finally { closeSync(fd); }
+  try {
+    if (typeof value === 'string') writeFileSync(fd, value);
+    else for (const chunk of value) writeFileSync(fd, chunk);
+    fsyncSync(fd);
+  } finally { closeSync(fd); }
   renameSync(temporary, path);
 }
 export function atomicJSON(path: string, value: unknown) { atomicText(path, JSON.stringify(value, null, 2) + '\n'); }
+
+/** Parity details are plain metadata plus arrays of bounded traces. Serialize each
+ * trace separately so adding coverage cannot exceed V8's single-string limit.
+ * Keep the existing JSON shape, all frames, and atomic publication semantics. */
+function* parityJSONChunks(value: GateEvaluation, details: Record<string, unknown>): Generator<string> {
+  yield `{"check":${JSON.stringify(value.check)},"details":{`;
+  let separator = '';
+  for (const [key, item] of Object.entries(details)) {
+    if (Array.isArray(item)) {
+      yield `${separator}${JSON.stringify(key)}:[`;
+      for (let i = 0; i < item.length; i++) {
+        if (i) yield ',';
+        yield JSON.stringify(item[i]) ?? 'null';
+      }
+      yield ']';
+    } else {
+      const json = JSON.stringify(item);
+      if (json === undefined) continue;
+      yield `${separator}${JSON.stringify(key)}:${json}`;
+    }
+    separator = ',';
+  }
+  yield '}}\n';
+}
 export interface RunIdentity {
   schemaVersion: 1;
   code: SuitePlan['code'];
@@ -99,7 +127,10 @@ export class RunArtifacts {
     this.checkpoint('running');
   }
   recordGate(value: GateEvaluation) {
-    atomicJSON(join(this.directory, 'gates', `${value.check.id}.json`), value);
+    const path = join(this.directory, 'gates', `${value.check.id}.json`);
+    if (value.check.id === 'execution-parity' && value.details && typeof value.details === 'object' && !Array.isArray(value.details))
+      atomicText(path, parityJSONChunks(value, value.details as Record<string, unknown>));
+    else atomicJSON(path, value);
     const index = this.gates.findIndex(g => g.id === value.check.id);
     if (index < 0) this.gates.push(value.check); else this.gates[index] = value.check;
   }
