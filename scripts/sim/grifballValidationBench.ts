@@ -16,7 +16,8 @@ const summarize = (samples: number[]) => {
   return { samples: sorted.length, medianMs: +sorted[Math.floor(sorted.length / 2)].toFixed(3),
     p95Ms: +sorted[Math.ceil(sorted.length * 0.95) - 1].toFixed(3), maxMs: +sorted[sorted.length - 1].toFixed(3) };
 };
-for (const obstacles of [false, true]) {
+for (const fixture of ['static-open', 'moving-obstacles', 'respawning-obstacles']) {
+  const obstacles = fixture !== 'static-open';
   const state = createInitialGrifballRuntimeState({ debugMode: false,
     adminSettings: { ...DEFAULT_ADMIN_SETTINGS, gameMode: 'grifball' }, isMultiplayer: false, multiplayerRole: null });
   state.grifballTactics = defaultGrifballTactics(); state.grifball.phase = 'playing'; state.arenaRadius = 52;
@@ -40,6 +41,11 @@ for (const obstacles of [false, true]) {
   const snapshotMs: number[] = [], refreshMs: number[] = [], betweenMs: number[] = [], evaluationMs: number[] = [];
   let refreshes = 0;
   for (let i = 0; i < 720; i++) {
+    if (fixture !== 'static-open') for (const [index, bot] of [...state.otherPlayers.values()].entries()) {
+      bot.pos.z = Math.sin(i / 120 + index) * 15; bot.vel.z = Math.cos(i / 120 + index) * 7.5;
+      if (fixture === 'respawning-obstacles' && index > 0) { bot.respawnTimer = i % 180 < 40 ? (40 - i % 180) / 60 : 0; bot.hp = bot.respawnTimer > 0 ? 0 : bot.maxHp; }
+    }
+    Object.assign(state.grifball.ball.pos, state.otherPlayers.get('p0')!.pos);
     const start = performance.now(), snapshot = createLiveGrifballTacticalSnapshot(state, goal, map), observed = performance.now();
     const revision = plan.revision;
     updateGrifballTeamPlan(plan, snapshot, 1 / 60); const planned = performance.now();
@@ -51,7 +57,7 @@ for (const obstacles of [false, true]) {
     if (revision !== plan.revision) { refreshMs.push(planned - observed); refreshes++; }
     else betweenMs.push(planned - observed);
   }
-  console.log(JSON.stringify({ participants: 8, obstacles, measuredSeconds: 10, refreshes,
+  console.log(JSON.stringify({ fixture, participants: 8, obstacles, measuredSeconds: 10, refreshes,
     snapshot: summarize(snapshotMs), plannerRefresh: summarize(refreshMs), plannerBetweenRefreshes: summarize(betweenMs),
     evaluator: summarize(evaluationMs) }));
 }

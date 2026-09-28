@@ -16,6 +16,9 @@ import { type GoalPlate } from '../game/grifballGoals';
 
 export type SimWeapon = 'hammer' | 'sword' | 'ball';
 
+/** Explicit opt-in; legacy training dynamics remain the default for existing policies. */
+export type SimCombatExecution = 'legacy-v1' | 'live-player-v1' | 'live-roster-v1';
+
 /**
  * Game mode the match is running. `grifball` = carry the ball to the enemy plate;
  * `combat` = deathmatch (1v1 / team / FFA), first team to the kill target wins. Both
@@ -58,6 +61,8 @@ export interface SimCombatant {
   weaponState: SimWeaponState;
   /** Seconds remaining in the current weaponState phase. */
   weaponTimer: number;
+  /** Elapsed phase time for opt-in live execution profiles; absent in legacy snapshots. */
+  weaponPhaseElapsed?: number;
   /** Seconds remaining before a weapon swap is permitted again. */
   swapLockoutTimer: number;
   /** Seconds remaining before this combatant can attack again (cooldown). */
@@ -101,6 +106,8 @@ export interface SimCombatant {
 }
 
 export interface SimState {
+  /** Missing in older snapshots means legacy-v1. This is not an RL schema promotion. */
+  combatExecution?: SimCombatExecution;
   /** Which game mode this match is. */
   mode: SimMode;
   /** Fixed-order combatant list. Order is stable for the life of the match. */

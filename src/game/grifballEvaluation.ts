@@ -133,7 +133,7 @@ export const EVALUATION_METRICS: Record<EvaluationMetric, string> = {
   goalPrevention: 'Non-scoring opponent possession fraction', uncoveredFraction: 'Uncovered / pressured carrier time',
   sharedExposureFraction: 'Shared exposure / threatened bot time', roleChangesPerMinute: 'Role changes / assigned bot minute', stuckFraction: 'Stuck / assigned bot time',
 };
-export function evaluationValue(run: EvaluationRun, key: EvaluationMetric): number | null {
+export function evaluationValue(run: Pick<EvaluationRun, 'job' | 'metrics'>, key: EvaluationMetric): number | null {
   const team = run.metrics[run.job.focalTeam], other = run.metrics[run.job.focalTeam === 'blue' ? 'red' : 'blue'];
   const ratio = (n: number, d: number) => d > 0 ? n / d : null;
   switch (key) {
@@ -165,10 +165,15 @@ export function summarizeEvaluation(report: EvaluationReport, key: EvaluationMet
   // Partial seed clusters would overweight whichever opponent happened to run first.
   const expected = report.request.opponents.length * (report.request.mirrored ? 2 : 1);
   const values = [...seeds.values()].filter(v => v.length === expected).map(v => v.reduce((sum, n) => sum + n, 0) / v.length);
+  return estimateSeedDeltas(values, pairedRuns);
+}
+
+/** Values are independent seed clusters, never frames or mirrored legs. */
+export function estimateSeedDeltas(values: number[], pairedRuns: number): PairedEstimate {
   const n = values.length, mean = n ? values.reduce((sum, v) => sum + v, 0) / n : null;
   if (n < 2) return { seeds: n, pairedRuns, mean, low: null, high: null };
   // Two-sided Student-t 0.975 quantiles for df 1–19 (batch limit is 20 seeds).
-  const critical = [0, 12.706, 4.303, 3.182, 2.776, 2.571, 2.447, 2.365, 2.306, 2.262, 2.228, 2.201, 2.179, 2.160, 2.145, 2.131, 2.120, 2.110, 2.101, 2.093][n - 1];
+  const critical = [0, 12.706, 4.303, 3.182, 2.776, 2.571, 2.447, 2.365, 2.306, 2.262, 2.228, 2.201, 2.179, 2.160, 2.145, 2.131, 2.120, 2.110, 2.101, 2.093][Math.min(n - 1, 19)];
   const variance = values.reduce((sum, v) => sum + (v - mean!) ** 2, 0) / (n - 1);
   const margin = critical * Math.sqrt(variance / n);
   return { seeds: n, pairedRuns, mean, low: mean! - margin, high: mean! + margin };

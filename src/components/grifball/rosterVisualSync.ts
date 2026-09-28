@@ -1,5 +1,4 @@
 import * as THREE from 'three';
-import { MAIN_AI_ID } from '../../game/roster';
 import { resolveHammerSlamTiming } from '../../game/hammerSlamTiming';
 import { resolvePunchCooldown } from '../../game/runnerBallSettings';
 import { animateCombatantWeaponMeshes, animateSpartanCombatantModel } from './combatantAnimation';
@@ -34,13 +33,19 @@ export function updateRosterCombatantVisualsForState({
 
     let weaponState = player.weaponState || 'ready';
     let weaponTimer = player.weaponTimer || 0;
+    const alive = player.hp > 0 && (player.respawnTimer ?? 0) <= 0;
+    if (!alive) {
+      weaponState = 'ready'; weaponTimer = 0;
+      player.isLunging = false;
+    }
 
     if (player.isLunging) {
-      player.lungeTimer = (player.lungeTimer || 0) + dt;
+      // Offline AI flight owns its clock; only network visual extrapolation ticks here.
+      if (player.controller !== 'ai') player.lungeTimer = (player.lungeTimer || 0) + dt;
       const trailPos = new THREE.Vector3(player.pos.x, player.pos.y + 0.825, player.pos.z);
       const trailDir = new THREE.Vector3(player.vel.x, player.vel.y, player.vel.z);
       renderSwordLungeTrailVfx(trailPos, '#ef4444', trailDir, 'shockwave');
-      if (player.lungeTimer > 0.8) {
+      if (player.controller !== 'ai' && player.lungeTimer > 0.8) {
         player.isLunging = false;
       }
     }
@@ -71,6 +76,17 @@ export function updateRosterCombatantVisualsForState({
         weaponState = 'recovering';
         weaponTimer = 0;
         if (!swingIsSword) applyBotMeleeImpact(clientId);
+      }
+    } else if (weaponState === 'melee_up') {
+      weaponTimer += dt;
+      const windup = state.settings.hammerMeleeSpeed ? state.settings.hammerMeleeSpeed * 0.4 : 0.1;
+      if (weaponTimer >= windup) { weaponState = 'melee_down'; weaponTimer = 0; }
+    } else if (weaponState === 'melee_down') {
+      weaponTimer += dt;
+      const strike = state.settings.hammerMeleeSpeed ? state.settings.hammerMeleeSpeed * 0.6 : 0.14;
+      if (weaponTimer >= strike) {
+        weaponState = 'melee_recover'; weaponTimer = 0;
+        applyBotMeleeImpact(clientId);
       }
     } else if (weaponState === 'melee_swing') {
       weaponTimer += dt;
@@ -135,8 +151,7 @@ export function updateRosterCombatantVisualsForState({
       animationClockMs,
     });
 
-    const isMainAiOffline = clientId === MAIN_AI_ID && !state.isMultiplayer;
-    if ((didAnimate || meshes.group.userData.modelSystem === 'v3') && (meshes.hammer || meshes.sword || meshes.pistol) && (!isMainAiOffline || meshes.group.userData.modelSystem === 'v3')) {
+    if ((didAnimate || meshes.group.userData.modelSystem === 'v3') && (meshes.hammer || meshes.sword || meshes.pistol)) {
       animateCombatantWeaponMeshes({
         hammerModel: meshes.hammer,
         swordModel: meshes.sword,
@@ -151,7 +166,6 @@ export function updateRosterCombatantVisualsForState({
       });
     }
 
-    const alive = player.hp > 0 && player.respawnTimer <= 0;
     syncV3DeathVoxelBurstForCombatant({
       refs,
       id: `combatant:${clientId}`,

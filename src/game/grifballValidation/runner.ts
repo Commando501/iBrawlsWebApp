@@ -1,3 +1,5 @@
+import { correctnessGate, reproducibilityGate } from './gates';
+import type { BehaviorEvidence, DeterminismEvidence, TimingEvidence } from './telemetry';
 import type { GrifballPhase } from '../grifballMatch';
 import type { TeamEvaluationMetrics } from '../grifballEvaluation';
 import { freeze } from './plan';
@@ -25,6 +27,9 @@ export interface TrialResult {
   start: TrialFrame | null; end: TrialFrame | null;
   trace: TrialFrame[]; droppedTraceEntries: number;
   failureState?: TrialFailureState;
+  behavior?: BehaviorEvidence;
+  deterministic?: DeterminismEvidence;
+  timings?: TimingEvidence;
   metrics: Record<'blue' | 'red', TeamEvaluationMetrics> | null;
   simulationCost: { samples: number; meanMs: number; maxMs: number };
 }
@@ -106,7 +111,8 @@ export async function runValidationSuite(plan: SuitePlan, host: ValidationHost, 
     if (options.signal?.aborted || cleanupFailure) break;
   }
   options.onProgress?.({ stage: 'finished', jobId: null, completed: results.length, total: jobs.length });
-  // Execution does not certify all scenario expectations, reproducibility, quality, or code gates.
-  const report = aggregateSuiteReport(plan, { planId: plan.id, jobs: results.map(r => r.check), gates: [] });
+  // Browser execution checks observed behavior; pinned runtime and repository evidence belong to the CLI.
+  const report = aggregateSuiteReport(plan, { planId: plan.id, jobs: results.map(r => r.check),
+    gates: [correctnessGate(plan, results).check, reproducibilityGate(plan, results, false).check] });
   return freeze({ schemaVersion: 1 as const, planId: plan.id, plan, results, report });
 }

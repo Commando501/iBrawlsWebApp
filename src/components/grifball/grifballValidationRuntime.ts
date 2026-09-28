@@ -1,3 +1,4 @@
+import { DeterministicTrace, LiveTimings, liveTimings, type BehaviorEvidence } from '../../game/grifballValidation/telemetry';
 import * as THREE from 'three';
 import type { Combatant } from '../../types';
 import { createOfflineBotCombatant } from '../../game/roster';
@@ -49,6 +50,12 @@ export class GrifballValidationRuntime implements TrialHandle {
   private settingsKey: string;
   private configKey: string;
   private slotKey = '';
+  private deterministic = new DeterministicTrace();
+  private timings = new LiveTimings();
+  private behavior: BehaviorEvidence = { version: 1, ticks: 0, pickups: 0, throws: 0, recoveries: 0, respawns: 0,
+    goals: { blue: 0, red: 0 }, roleReleases: 0, staleRoleTicks: 0 };
+  private pendingThrow = false;
+  private deadAssignments = new Map<string, number>();
 
   constructor(private port: ValidationRuntimePort, readonly fixture: FrozenCase, readonly job: ValidationJob) {
     this.origin = cloneLabState(port.state);
@@ -61,6 +68,7 @@ export class GrifballValidationRuntime implements TrialHandle {
       withSimulationRandom(this.random, 0, () => this.prepare());
       this.checkInvariants();
       this.first = this.last = frame(port.state, 0); this.trace.push(this.first); this.sample(0);
+      liveTimings.set(port.state, this.timings); this.observe();
     } catch (error) { this.stop('setup-error', error instanceof Error ? error.message : String(error)); }
   }
   private goal = (team: string) => getGrifballEnemyGoalPosForMap(team, this.fixture.map);
@@ -159,6 +167,39 @@ export class GrifballValidationRuntime implements TrialHandle {
       players: snapshot.players, geometry: snapshot.geometry, assignments: state.aiMatchContext.grifballTeamPlan.assignments.values(),
       goals: { blue: state.teamScores.blue.goals, red: state.teamScores.red.goals } }, dt);
   }
+  private observe() {
+    const s = this.port.state, next = frame(s, this.tickCount), previous = this.last;
+    const assignments = s.aiMatchContext.grifballTeamPlan.assignments;
+    if (this.tickCount) {
+      if (next.holder && next.holder !== previous.holder) {
+        this.behavior.pickups++;
+        if (this.pendingThrow) { this.behavior.recoveries++; this.pendingThrow = false; }
+      }
+      if (next.ballState === 'thrown' && previous.ballState !== 'thrown') { this.behavior.throws++; this.pendingThrow = true; }
+      if (next.phase !== 'playing') this.pendingThrow = false;
+      this.behavior.respawns += next.alive.filter(id => !previous.alive.includes(id)).length;
+      for (const team of ['blue', 'red'] as const) this.behavior.goals[team] += next.scores[team] - previous.scores[team];
+    }
+    for (const [id, since] of this.deadAssignments) {
+      if (!assignments.has(id)) { this.behavior.roleReleases++; this.deadAssignments.delete(id); }
+      else if (next.alive.includes(id)) this.deadAssignments.delete(id);
+      else if (this.tickCount - since > 60) this.behavior.staleRoleTicks++;
+    }
+    for (const id of assignments.keys()) if (!next.alive.includes(id) && !this.deadAssignments.has(id)) this.deadAssignments.set(id, this.tickCount);
+    this.behavior.ticks = this.tickCount;
+    const vector = (v: { x: number; y: number; z: number }) => [v.x, v.y, v.z];
+    this.deterministic.add({ frame: next, ball: s.grifball.ball, phaseTimer: s.grifball.phaseTimer,
+      actors: [...s.otherPlayers.values()].sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0).map(p => ({
+        id: p.id, pos: vector(p.pos), vel: vector(p.vel), yaw: p.yaw, hp: p.hp, maxHp: p.maxHp,
+        respawn: p.respawnTimer, weapon: p.activeWeapon, weaponState: p.weaponState, weaponTimer: p.weaponTimer,
+        charge: p.grifballPassCharge, dash: p.aiDashRemaining, aiState: p.aiState, swap: p.swapCooldownTimer,
+        invulnerability: p.invulnerabilityTimer, assignment: assignments.has(p.id) ? {
+          role: assignments.get(p.id)!.role, destination: assignments.get(p.id)!.destination,
+          carrierId: assignments.get(p.id)!.carrierId, slot: assignments.get(p.id)!.slot,
+        } : null,
+      })) });
+  }
+  recordRender(ms: number) { if (!this.result) this.timings.record('render', ms); }
   private failureState(): TrialFailureState {
     // Keep malformed numbers explicit and capture bounded scalars only, never scene/runtime objects.
     const number = (value: unknown): number | string | null => typeof value === 'number'
@@ -187,9 +228,13 @@ export class GrifballValidationRuntime implements TrialHandle {
       this.stage = 'tick';
       withSimulationRandom(this.random, this.tickCount * LAB_TICK, () => this.port.tick(LAB_TICK));
       const cost = performance.now() - started;
+      this.timings.record('tick', cost);
       this.totalCost += cost; this.maxCost = Math.max(this.maxCost, cost);
       this.tickCount++; this.stage = 'after-tick'; this.checkInvariants(this.last);
-      this.stage = 'sampling'; this.sample(LAB_TICK);
+      const evaluated = performance.now();
+      this.stage = 'sampling'; this.sample(LAB_TICK); this.observe();
+      this.timings.record('evaluation', performance.now() - evaluated);
+      this.timings.tick = this.tickCount;
       const next = frame(this.port.state, this.tickCount);
       if (next.phase !== this.last.phase || next.round !== this.last.round || next.holder !== this.last.holder ||
         next.ballState !== this.last.ballState || JSON.stringify(next.scores) !== JSON.stringify(this.last.scores) ||
@@ -207,13 +252,20 @@ export class GrifballValidationRuntime implements TrialHandle {
     this.result = freeze({ jobId: this.job.id, termination: reason, check: trialCheck(this.job.id, reason, message),
       start: this.first ?? null, end: this.last ?? null, trace: [...this.trace], droppedTraceEntries: this.dropped,
       ...(['invalid-state', 'setup-error'].includes(reason) ? { failureState: this.failureState() } : {}),
-      metrics: cloneLabState(this.tracker.teams),
+      metrics: cloneLabState(this.tracker.teams), behavior: cloneLabState(this.behavior), timings: this.timings.finish(),
       simulationCost: { samples: this.tickCount, meanMs: this.tickCount ? this.totalCost / this.tickCount : 0, maxMs: this.maxCost } });
-    this.resolve(this.result); return this.result;
+    const result = this.result;
+    void this.deterministic.finish().then(deterministic => {
+      this.result = freeze({ ...result, deterministic }); this.resolve(this.result);
+    }).catch(error => {
+      this.result = freeze({ ...result, deterministic: { version: 1, algorithm: 'sha256-pages-v1', ticks: 0, hash: null, error: String(error) } });
+      this.resolve(this.result);
+    });
+    return result;
   }
   dispose() {
     if (this.restored) return;
-    this.stop('cancelled'); this.restored = true;
+    this.stop('cancelled'); this.restored = true; liveTimings.delete(this.port.state);
     for (const id of this.port.state.otherPlayers.keys()) this.port.removeActor(id);
     for (const key of Object.keys(this.port.state)) if (!Object.hasOwn(this.origin, key)) delete (this.port.state as any)[key];
     Object.assign(this.port.state, cloneLabState(this.origin));

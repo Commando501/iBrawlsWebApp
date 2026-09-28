@@ -1,3 +1,8 @@
+import { cpus, totalmem, release } from 'node:os';
+import { correctnessGate, reproducibilityGate, createNullControlPlan, nullControlRequired, validateGateProtocol, gate } from '../../src/game/grifballValidation/gates';
+import { qualityGate } from '../../src/game/grifballValidation/qualityGate';
+import { performanceGate } from '../../src/game/grifballValidation/performanceGate';
+import { runExecutionParity } from './grifballExecutionParity';
 import { spawn, execFileSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { closeSync, existsSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync } from 'node:fs';
@@ -48,7 +53,12 @@ export async function executeValidation(root: string, plan: SuitePlan, options: 
   if (options.case && !plan.cases.some(c => c.specification.id === options.case)) throw new Error(`Unknown case ${options.case}`);
   if (options.resume && !existsSync(join(resolve(options.resume), 'identity.json'))) throw new Error('Resume directory lacks completed build/runtime identity');
   const directory = resolve(options.out ?? join(root, 'output/grifball-validation', new Date().toISOString().replace(/[:.]/g, '-') + '-' + randomUUID().slice(0, 8)));
+  const protocol = options.protocol ? validateGateProtocol(JSON.parse(readFileSync(resolve(options.protocol), 'utf8').replace(/^\uFEFF/, ''))) : undefined;
   const artifacts = new RunArtifacts(directory, plan, options.case ?? null);
+  atomicJSON(join(directory, 'gate-protocol.json'), protocol ?? null);
+  let testsPassed = true;
+  let environmentHash: string | null = null;
+  let control: ReturnType<typeof reproducibilityGate> | undefined;
   console.log(`Artifacts: ${directory}`);
   const abort = new AbortController();
   const cancel = () => { console.log('Cancellation requested; retaining completed evidence.'); abort.abort(); };
@@ -75,6 +85,7 @@ export async function executeValidation(root: string, plan: SuitePlan, options: 
     const testArgs = (fullTests ? pkg.scripts.test : pkg.scripts['test:grifball-validation']).split(/\s+/);
     if (testArgs.shift() !== 'node') throw new Error('Expected a Node test command');
     const tests = await command(fullTests ? 'repository-tests' : 'focused-tests', testArgs);
+    testsPassed = tests.status === 0;
     if (fullTests) artifacts.gates.push(check('repository-tests', tests.status === 0, `Repository tests exited ${tests.status}; see complete output.`, tests.log));
     else if (tests.status !== 0) artifacts.gates.push(check('correctness', false, 'Focused Node checks failed; gameplay correctness cannot pass.', tests.log));
     artifacts.checkpoint('checking');
@@ -96,7 +107,27 @@ export async function executeValidation(root: string, plan: SuitePlan, options: 
     artifacts.setIdentity({ schemaVersion: 1, code: plan.code, node: process.version, platform: process.platform, arch: process.arch,
       playwright: playwrightVersion, browser: browser.version(), executableHash: createHash('sha256').update(readFileSync(chromium.executablePath())).digest('hex'),
       launch, lockHash, productionHash: hashTree(production), validationHash: hashTree(validation), buildId });
-    if (options.resume) artifacts.resume(options.resume);
+    const probe = await browser.newContext();
+    let graphics: unknown;
+    try {
+      const page = await probe.newPage();
+      graphics = await page.evaluate(() => {
+        const gl = document.createElement('canvas').getContext('webgl2');
+        const extension = gl?.getExtension('WEBGL_debug_renderer_info');
+        return { hardwareConcurrency: navigator.hardwareConcurrency, userAgent: navigator.userAgent,
+          renderer: gl && extension ? gl.getParameter(extension.UNMASKED_RENDERER_WEBGL) : null };
+      });
+    } finally { await probe.close(); }
+    const environment = { graphics, platform: process.platform, arch: process.arch, os: release(), cpus: cpus().map(c => c.model), memory: totalmem(),
+      node: process.version, browser: browser.version(), executableHash: artifacts.identity!.executableHash, launch };
+    environmentHash = digest(environment);
+    atomicJSON(join(directory, 'measurement-environment.json'), { environment, environmentHash, protocol: protocol?.performance ?? null });
+    artifacts.recordGate(runExecutionParity());
+    if (options.resume) {
+      const oldProtocol = join(resolve(options.resume), 'gate-protocol.json');
+      if (!existsSync(oldProtocol) || canonicalJSON(JSON.parse(readFileSync(oldProtocol, 'utf8'))) !== canonicalJSON(protocol ?? null)) throw new Error('Resume gate protocol differs; use a fresh run');
+      artifacts.resume(options.resume);
+    }
     server = await startValidationServer(artifacts.identity, production, validation);
     try {
       await productionStartup(browser, server.origin, directory, abort.signal);
@@ -114,8 +145,22 @@ export async function executeValidation(root: string, plan: SuitePlan, options: 
         artifacts.gates.push(check('lab-ui', false, String(error), 'logs/lab-ui.log'));
       }
     }
+    if (nullControlRequired(plan)) {
+      const nullPlan = await createNullControlPlan(plan), controls = new RunArtifacts(join(directory, 'null-control'), nullPlan, null);
+      controls.setIdentity(artifacts.identity!);
+      for (const job of nullPlan.jobs) {
+        if (abort.signal.aborted) break;
+        console.log(`Null control ${job.id}`);
+        controls.save(await runBrowserJob(browser, server.origin, buildId, nullPlan, job, controls.directory, abort.signal));
+        if (!['scenario-complete', 'match-end', 'simulation-cap'].includes(controls.results.at(-1)!.termination)) break;
+      }
+      control = reproducibilityGate(nullPlan, controls.results, true); controls.recordGate(control); controls.checkpoint('finished');
+      artifacts.recordGate({ ...control, details: { controlPlan: nullPlan.id, directory: 'null-control', evaluation: control.details } });
+      if (control.check.verdict !== 'pass') console.log('Null control did not pass; candidate matrix remains not run.');
+    }
     artifacts.checkpoint('running');
     for (const job of plan.jobs) {
+      if (control && control.check.verdict !== 'pass') break;
       if (abort.signal.aborted) break;
       if (options.case && job.caseId !== options.case || artifacts.results.some(r => r.jobId === job.id)) continue;
       artifacts.activeJob = job.id; artifacts.checkpoint('running');
@@ -135,11 +180,16 @@ export async function executeValidation(root: string, plan: SuitePlan, options: 
     try { if (browserServer) await bounded(browserServer.kill(), 5000); }
     catch (error) { artifacts.setupError ??= `Browser cleanup failed: ${String(error)}`; }
     try { await server?.close(); } catch (error) { artifacts.setupError ??= `Server cleanup failed: ${String(error)}`; }
+    const correctness = correctnessGate(plan, artifacts.results);
+    artifacts.recordGate(testsPassed ? correctness : gate('correctness', 'fail', 'Node checks failed; see test log.', correctness.details));
+    artifacts.recordGate(control ? { ...control, details: { control: 'null-control', evaluation: control.details } } : reproducibilityGate(plan, artifacts.results, Boolean(artifacts.identity)));
+    artifacts.recordGate(qualityGate(plan, artifacts.results, artifacts.gates.find(g => g.id === 'reproducibility')!, protocol));
+    artifacts.recordGate(performanceGate(plan, artifacts.results, environmentHash, protocol));
     process.removeListener('SIGINT', cancel); process.removeListener('SIGTERM', cancel);
     artifacts.checkpoint(cancelled ? 'cancelled' : artifacts.setupError ? 'error' : 'finished');
   }
   const exitCode = artifacts.exitCode();
   if (cancelled) artifacts.checkpoint('cancelled');
-  console.log(`Report: ${join(directory, 'report.html')}\nExit ${exitCode}: ${exitCode === 0 ? 'required automated gates passed' : exitCode === 1 ? 'failed evidence' : exitCode === 2 ? 'incomplete evidence (VS5 acceptance gates remain unimplemented)' : 'runner/setup error'}`);
+  console.log(`Report: ${join(directory, 'report.html')}\nExit ${exitCode}: ${exitCode === 0 ? 'required automated gates passed' : exitCode === 1 ? 'failed evidence' : exitCode === 2 ? 'incomplete evidence' : 'runner/setup error'}`);
   return exitCode;
 }

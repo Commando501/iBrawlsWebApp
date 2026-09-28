@@ -1,3 +1,4 @@
+import type { GateEvaluation } from '../../src/game/grifballValidation/gates';
 import { createHash } from 'node:crypto';
 import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -43,7 +44,7 @@ export class RunArtifacts {
     if (existsSync(directory)) throw new Error(`Output directory already exists: ${directory}`);
     mkdirSync(resolve(directory, '..'), { recursive: true });
     mkdirSync(directory); // exclusive ownership, including a race with another runner
-    for (const sub of ['jobs', 'logs', 'screenshots']) mkdirSync(join(directory, sub));
+    for (const sub of ['jobs', 'logs', 'screenshots', 'gates']) mkdirSync(join(directory, sub));
     atomicJSON(join(directory, 'environment.json'), { node: process.version, platform: process.platform, arch: process.arch });
     atomicJSON(join(directory, 'manifest.json'), plan.manifest);
     atomicJSON(join(directory, 'plan.json'), plan);
@@ -97,6 +98,11 @@ export class RunArtifacts {
       this.save(record.result, previous);
     this.checkpoint('running');
   }
+  recordGate(value: GateEvaluation) {
+    atomicJSON(join(this.directory, 'gates', `${value.check.id}.json`), value);
+    const index = this.gates.findIndex(g => g.id === value.check.id);
+    if (index < 0) this.gates.push(value.check); else this.gates[index] = value.check;
+  }
   private status = 'preparing';
   checkpoint(status: string) {
     this.status = status;
@@ -108,9 +114,15 @@ export class RunArtifacts {
       previousRun: this.previous?.directory ?? null, previousFailures: (this.previous?.failures.length ?? 0) + (this.previous?.failedChecks.length ?? 0),
       results: this.results, report };
     atomicJSON(join(this.directory, 'summary.json'), summary);
+    if (this.identity) atomicJSON(join(this.directory, 'lab-import.json'), {
+      format: 'grifball-cli-run', version: 1, createdAt: Date.parse(this.startedAt),
+      status: status === 'finished' ? 'completed' : status === 'error' ? 'error' : status === 'cancelled' ? 'cancelled' : 'running',
+      plan: this.plan, identity: this.identity, selectedJobIds: this.plan.jobs.filter(j => !this.selectedCase || j.caseId === this.selectedCase).map(j => j.id),
+      currentJobId: this.activeJob, results: this.results, gates: report.gates, error: this.setupError, previousFailures: summary.previousFailures,
+    });
     const escape = (value: unknown) => String(value).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
-    const rows = [...report.jobs, ...report.gates].map(r => `<tr><td>${this.results.some(result => result.jobId === r.id) ? `<a href="jobs/${jobFile(r.id)}">${escape(r.id)}</a>` : escape(r.id)}</td><td>${escape(r.state)}</td><td>${escape(r.verdict)}</td><td>${escape(r.summary)}</td></tr>`).join('');
-    atomicText(join(this.directory, 'report.html'), `<!doctype html><meta charset="utf-8"><title>Grifball validation</title><style>body{font:15px system-ui;margin:32px;background:#101827;color:#e2e8f0}td,th{text-align:left;padding:10px;border-bottom:1px solid #475569;overflow-wrap:anywhere}table{width:100%;table-layout:fixed}a{color:#7dd3fc}</style><h1>Grifball validation</h1><p>${escape(status)} · profile ${escape(report.profile)} · ${escape(summary.outcome)}</p><p>Automated: ${escape(report.automatedVerdict)} · Repository: ${escape(report.repositoryVerdict)} · Milestone 7: ${escape(report.milestone7Verdict)}</p><p>Previous failed attempts: ${summary.previousFailures}. ${escape(this.setupError ?? '')}</p><p>Plan ${escape(this.plan.id)}. Case selection: ${escape(this.selectedCase ?? 'all')}.</p><p><a href="summary.json">Summary JSON</a> · <a href="plan.json">Frozen inputs</a> · <a href="identity.json">Build/runtime identity</a> · <a href="manifest.json">Manifest</a></p><p>Trial end and trace contain valid frames only. When available, failureState in job JSON records the failing tick, validation stage, ownership and actor state separately.</p><table><tr><th>Job or gate</th><th>Execution</th><th>Verdict</th><th>Evidence summary</th></tr>${rows}</table>`);
+    const rows = [...report.jobs, ...report.gates].map(r => `<tr><td>${this.results.some(result => result.jobId === r.id) ? `<a href="jobs/${jobFile(r.id)}">${escape(r.id)}</a>` : this.gates.some(g => g.id === r.id && g.evidence.includes(`gates/${g.id}.json`)) ? `<a href="gates/${escape(r.id)}.json">${escape(r.id)}</a>` : escape(r.id)}</td><td>${escape(r.state)}</td><td>${escape(r.verdict)}</td><td>${escape(r.summary)}</td></tr>`).join('');
+    atomicText(join(this.directory, 'report.html'), `<!doctype html><meta charset="utf-8"><title>Grifball validation</title><style>body{font:15px system-ui;margin:32px;background:#101827;color:#e2e8f0}td,th{text-align:left;padding:10px;border-bottom:1px solid #475569;overflow-wrap:anywhere}table{width:100%;table-layout:fixed}a{color:#7dd3fc}</style><h1>Grifball validation</h1><p>${escape(status)} · profile ${escape(report.profile)} · ${escape(summary.outcome)}</p><p>Automated: ${escape(report.automatedVerdict)} · Repository: ${escape(report.repositoryVerdict)} · Milestone 7: ${escape(report.milestone7Verdict)}</p><p>Previous failed attempts: ${summary.previousFailures}. ${escape(this.setupError ?? '')}</p><p>Plan ${escape(this.plan.id)}. Case selection: ${escape(this.selectedCase ?? 'all')}.</p><p><a href="summary.json">Summary JSON</a> · <a href="plan.json">Frozen inputs</a> · <a href="identity.json">Build/runtime identity</a> · <a href="manifest.json">Manifest</a> · <a href="lab-import.json">Import into Lab</a></p><p>Trial end and trace contain valid frames only. When available, failureState in job JSON records the failing tick, validation stage, ownership and actor state separately.</p><table><tr><th>Job or gate</th><th>Execution</th><th>Verdict</th><th>Evidence summary</th></tr>${rows}</table>`);
     return summary;
   }
   exitCode(): number {

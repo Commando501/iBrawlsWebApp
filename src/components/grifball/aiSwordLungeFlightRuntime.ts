@@ -114,7 +114,8 @@ export function resolveAISwordLungeFlightForCombatant({
   const dist = getCombatBodyCenter(pos, self.isCrouching).distanceTo(getCombatBodyCenter(target.pos, target.isCrouching));
   if (target.hp <= 0 || !areCombatantsHostile(botId, target.id)) {
     finishSwordLunge(cooldownMult, 'target_dead', target.id);
-  } else if (dist <= adjustRangeForTargetModel(1.5, target.modelType)) {
+    return 'continue';
+  } else if ((target.invulnerabilityTimer ?? 0) <= 0 && dist <= adjustRangeForTargetModel(1.5, target.modelType)) {
     const tradeReason = resolveSwordLungeTradeReasonForState({
       state,
       target,
@@ -144,6 +145,9 @@ export function resolveAISwordLungeFlightForCombatant({
       recordBotCalibrationDeath,
     });
     pushStatsUpdate();
+    // Contact already ended the flight. A boundary/timeout on this same tick must
+    // not replace hit memory, restart cooldown, or record the lunge a second time.
+    return 'continue';
   }
 
   const startDist = pos.distanceTo(new THREE.Vector3(self.lungeStartPos!.x, self.lungeStartPos!.y, self.lungeStartPos!.z));

@@ -1,5 +1,5 @@
 /**
- * Headless weapon / combat step — a distilled port of the hammer/sword/punch
+ * Headless weapon / combat step — the default legacy-v1 training model is a distilled port of the hammer/sword/punch
  * resolution from `GrifballGame.updatePhysics`. Each combatant runs a small FSM:
  *   idle --attack--> windup --(timer)--> active(one hit frame) --> recovering --> idle
  *
@@ -13,8 +13,10 @@
  *  - Reach + forward constants are reused from `combatGeometry`; the hit test is a
  *    forward-cone approximation (distance ≤ reach, facing dot ≥ threshold) rather than
  *    the live per-VFX swept volume. Pinned by fidelity spot-checks, to be tightened.
- *  - Combos, feints, weapon trades, and hammer-jump are not modelled (heuristic-AI
- *    flavour, not core objective play).
+ *  - live-player-v1 explicitly opts into player slash/swipe mid-swing impact and
+ *    two-stage slam/punch timing. It does not certify AI, lunge or trade parity.
+ *  - live-roster-v1 opts into stationary roster attack phases and projected splash
+ *    geometry. Lunge flight, trades, moving contact and respawn remain uncertified.
  */
 
 import { type UniversalSettings } from '../types';
@@ -26,6 +28,8 @@ import {
   MELEE_HAMMER_SWIPE_REACH,
   MELEE_SWORD_SLASH_REACH,
   MELEE_EYE_HEIGHT,
+  SWORD_SLASH_FORWARD_FACTOR,
+  SWORD_SLASH_RADIUS,
 } from '../components/grifball/combatGeometry';
 import { type SimState, type SimCombatant, findCombatant } from './simState';
 import { type ActionInput } from './actions';
@@ -222,6 +226,108 @@ function resolveHammerStrike(
   }
 }
 
+/** Player punch uses a 1.5-unit splash around its projected impact, not a swipe cone. */
+export function inPlayerPunchVolume(attacker: SimCombatant, victim: SimCombatant, settings: UniversalSettings): boolean {
+  const fwd = forwardDir(attacker.yaw);
+  const reach = resolvePunchLungeDistance(settings);
+  return Math.hypot(victim.pos.x - attacker.pos.x - fwd.x * reach,
+    victim.pos.y + BODY_CENTER_HEIGHT - attacker.pos.y - MELEE_EYE_HEIGHT,
+    victim.pos.z - attacker.pos.z - fwd.z * reach) <= 1.5;
+}
+
+function resolvePlayerPunch(state: SimState, c: SimCombatant, settings: UniversalSettings, events: KillEvent[]): void {
+  for (const victim of state.combatants) {
+    if (victim.alive && areHostile(c, victim) && victim.invulnerabilityTimer <= 0 && inPlayerPunchVolume(c, victim, settings)) {
+      strike(state, c, victim, settings, events);
+    }
+  }
+}
+
+/** Roster bots use a planar, body-centered splash, including sword and side-swipe. */
+function resolveRosterHit(state: SimState, c: SimCombatant, settings: UniversalSettings, events: KillEvent[]): void {
+  const reach = c.weapon === 'ball' ? resolvePunchLungeDistance(settings)
+    : strikeRange(settings) * (c.weapon === 'sword' ? SWORD_SLASH_FORWARD_FACTOR : 1);
+  const radius = c.weapon === 'ball' ? 1.5 : c.weapon === 'sword' ? SWORD_SLASH_RADIUS : strikeRadius(settings);
+  const fwd = forwardDir(c.yaw);
+  for (const victim of state.combatants) {
+    if (!victim.alive || !areHostile(c, victim) || victim.invulnerabilityTimer > 0) continue;
+    const cy = victim.pos.y + (victim.isCrouching ? CROUCH_BODY_CENTER_HEIGHT : BODY_CENTER_HEIGHT);
+    if (Math.hypot(victim.pos.x - c.pos.x - fwd.x * reach, cy - c.pos.y - 1.2,
+      victim.pos.z - c.pos.z - fwd.z * reach) <= radius) strike(state, c, victim, settings, events);
+  }
+}
+
+/**
+ * Opt-in stationary attack timing. Elapsed clocks and phase-boundary resets mirror live
+ * animation updates, including advancing a newly requested attack on this tick.
+ * Keeping the elapsed value avoids subtraction round-off moving a boundary one tick.
+ * weaponTimer remains remaining time for existing observation consumers.
+ */
+function stepLiveAttack(state: SimState, c: SimCombatant, action: ActionInput,
+  settings: UniversalSettings, dt: number, events: KillEvent[], canAttack: boolean): void {
+  const enter = (phase: SimCombatant['weaponState'], duration: number) => {
+    c.weaponState = phase; c.weaponPhaseElapsed = 0; c.weaponTimer = duration;
+  };
+  const slam = resolveHammerSlamTiming(settings);
+  const roster = state.combatExecution === 'live-roster-v1';
+  const swingDuration = () => c.attackKind === 'slash' ? (settings.swordSlashSpeed ?? .22) * (roster ? .5 : 1)
+    : roster && c.attackKind === 'swipe' ? (settings.hammerMeleeSpeed ? settings.hammerMeleeSpeed * .4 : .1)
+    : c.attackKind === 'strike' ? slam.windupTime : (settings.hammerMeleeSpeed ?? .24);
+  const strikeDuration = () => c.attackKind === 'strike' ? slam.attackTime
+    : c.attackKind === 'slash' ? (settings.swordSlashSpeed ?? .22) * .5
+    : c.attackKind === 'swipe' ? (settings.hammerMeleeSpeed ? settings.hammerMeleeSpeed * .6 : .14)
+    : Math.max(.03, (settings.hammerMeleeSpeed ?? .24) * .5);
+  if (c.weaponState === 'idle') {
+    if (!canAttack || c.dashRemaining > 0) return;
+    if (action.attackSecondary && c.weapon === 'sword') {
+      c.lastAttackTick = state.tick; startLunge(c, settings); return;
+    }
+    const kind = action.attackSecondary && c.weapon === 'hammer' ? 'swipe'
+      : action.attackPrimary ? (c.weapon === 'sword' ? 'slash' : c.weapon === 'ball' ? 'punch' : 'strike') : null;
+    if (!kind) return;
+    c.attackKind = kind; c.lastAttackTick = state.tick;
+    enter('windup', swingDuration());
+  }
+  const previous = c.weaponPhaseElapsed ?? 0;
+  const elapsed = previous + dt;
+  c.weaponPhaseElapsed = elapsed;
+  const recover = () => {
+    enter('recovering', recoverForKind(c.attackKind, settings));
+    c.attackCooldown = c.weaponTimer;
+  };
+  if (c.weaponState === 'windup') {
+    const duration = swingDuration();
+    c.weaponTimer = Math.max(0, duration - elapsed);
+    if (!roster && (c.attackKind === 'slash' || c.attackKind === 'swipe')) {
+      if (elapsed >= duration * .5 && previous < duration * .5) resolveMeleeHit(state, c, settings, events);
+      if (c.alive && elapsed >= duration) recover();
+    } else if (elapsed >= duration) {
+      enter('active', strikeDuration());
+      if (c.attackKind === 'slash') resolveRosterHit(state, c, settings, events);
+    }
+  } else if (c.weaponState === 'active') {
+    const duration = strikeDuration();
+    c.weaponTimer = Math.max(0, duration - elapsed);
+    if (elapsed >= duration) {
+      if (roster) { if (c.attackKind !== 'slash') resolveRosterHit(state, c, settings, events); }
+      else if (c.attackKind === 'punch') resolvePlayerPunch(state, c, settings, events);
+      else {
+        resolveHammerStrike(state, c, settings, events);
+        // Live hammer-jump window is based on distance from the projected impact to feet.
+        if (Math.hypot(strikeRange(settings), MELEE_EYE_HEIGHT) <= (settings.hammerJumpTriggerRadius ?? 3.5)) {
+          c.hammerJumpWindowTimer = settings.hammerJumpWindow ?? .6;
+        }
+      }
+      recover();
+    }
+  } else if (c.weaponState === 'recovering') {
+    const duration = recoverForKind(c.attackKind, settings);
+    c.weaponTimer = Math.max(0, duration - elapsed);
+    c.attackCooldown = c.weaponTimer;
+    if (elapsed >= duration) { enter('idle', 0); c.attackKind = 'none'; c.attackCooldown = 0; }
+  }
+}
+
 /** Wind-up time before an attack's active frame, by kind. */
 function windupForKind(kind: SimCombatant['attackKind'], settings: UniversalSettings): number {
   if (kind === 'slash') return settings.swordSlashSpeed ?? 0.22;
@@ -302,6 +408,11 @@ export function stepCombatantWeapons(
 
   // Attacks are blocked until the weapon is ready (post-swap / post-spawn).
   const canAttack = c.attackCooldown <= 0 && c.weaponReadyTimer <= 0;
+
+  if ((state.combatExecution === 'live-player-v1' || state.combatExecution === 'live-roster-v1') && !(c.weaponState === 'recovering' && c.attackKind === 'none')) {
+    stepLiveAttack(state, c, action, settings, dt, events, canAttack);
+    return;
+  }
 
   switch (c.weaponState) {
     case 'idle': {
@@ -402,6 +513,7 @@ export function respawnCombatant(state: SimState, c: SimCombatant, settings: Uni
   c.weapon = 'hammer';
   c.weaponState = 'idle';
   c.weaponTimer = 0;
+  delete c.weaponPhaseElapsed;
   c.attackKind = 'none';
   c.weaponReadyTimer = settings.weaponReadyTime ?? 0.5; // weapon needs to ready up after spawn
   c.hammerJumpWindowTimer = 0;

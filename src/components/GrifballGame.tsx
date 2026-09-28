@@ -944,7 +944,10 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
         const started = performance.now();
         // Yield regularly so cancellation and the wall watchdog can run even during accelerated trials.
         for (let i = 0; i < 12 && performance.now() - started < 12; i++) validationRuntimeRef.current?.step();
-        if (validationRuntimeRef.current) renderGame();
+        if (validationRuntimeRef.current) {
+          const renderStart = performance.now(); renderGame();
+          validationRuntimeRef.current.recordRender(performance.now() - renderStart);
+        }
       } else if (grifballLab.getSnapshot().validating && !isMultiplayer && !replayData) {
         keysPressed.current = {};
         renderGame();

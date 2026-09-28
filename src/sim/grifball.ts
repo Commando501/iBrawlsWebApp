@@ -78,6 +78,7 @@ export function setSimCarrier(
     c.hasBall = true;
     c.weaponState = 'idle';
     c.weaponTimer = 0;
+    delete c.weaponPhaseElapsed;
     c.runnerHealDelayTimer = 0;
     c.runnerLastHp = c.hp;
   } else {
@@ -132,6 +133,7 @@ export function placeCombatantsAtSpawns(state: SimState, settings: UniversalSett
     c.weapon = 'hammer';
     c.weaponState = 'idle';
     c.weaponTimer = 0;
+    delete c.weaponPhaseElapsed;
     c.attackKind = 'none';
     c.weaponReadyTimer = settings.weaponReadyTime ?? 0.5;
     c.hammerJumpWindowTimer = 0;

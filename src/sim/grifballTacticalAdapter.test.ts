@@ -87,6 +87,19 @@ test('dead members retain roster identity and use the actual headless respawn sl
   assert.deepEqual(after.respawns![0].pos, { x: spawn.x, z: spawn.z }); assert.equal(after.respawns![0].seconds, 2);
 });
 
+test('roster timing observes future impact and does not count slash follow-through as another hit', () => {
+  const { sim } = fixture(); const c = sim.combatants[0];
+  c.weapon = 'sword'; c.attackKind = 'slash'; c.weaponState = 'windup'; c.weaponTimer = .05;
+  assert.equal(observeSimGrifballSpace(c, sim.settings, 'live-roster-v1').attackIn, .05);
+  c.weaponState = 'active';
+  assert.ok(Math.abs(observeSimGrifballSpace(c, sim.settings, 'live-roster-v1').attackIn
+    - (.05 + sim.settings.swordSlashReload + sim.settings.swordSlashSpeed * .5)) < 1e-10);
+  c.weapon = 'hammer'; c.attackKind = 'swipe'; c.weaponState = 'windup';
+  assert.ok(Math.abs(observeSimGrifballSpace(c, sim.settings, 'live-roster-v1').attackIn
+    - (.05 + sim.settings.hammerMeleeSpeed * .6)) < 1e-10);
+  c.weaponState = 'active'; assert.equal(observeSimGrifballSpace(c, sim.settings, 'live-roster-v1').attackIn, .05);
+});
+
 
 test('contract parity survives countdown, scored hold, round changes and terminal state', () => {
   const { sim, live, scriptedBots, goals } = fixture();

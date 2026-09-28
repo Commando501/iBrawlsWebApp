@@ -1,3 +1,4 @@
+import { liveTimings } from '../../game/grifballValidation/telemetry';
 import { createGrifballTacticalSnapshot } from '../../game/grifballTacticalContract';
 import { getGrifballTeamSpawn, createDefaultSpawnPoints } from './arenaSpawns';
 import { setTacticalBotEngagements, type BotCoordRole } from '../../game/aiBotCoordinator';
@@ -67,9 +68,16 @@ export function updateGrifballTeamPlanForState(
     setTacticalBotEngagements(state.aiMatchContext.coordinator, []);
     return;
   }
+  const timing = liveTimings.get(state), started = timing ? performance.now() : 0;
+  const revision = plan.revision;
   const snapshot = createLiveGrifballTacticalSnapshot(state, getEnemyGoalPos, activeCustomMap);
+  const observed = timing ? performance.now() : 0;
   const players = snapshot.players;
   updateGrifballTeamPlan(plan, snapshot, dt);
+  const planned = timing ? performance.now() : 0;
+  timing?.record('snapshot', observed - started);
+  // Countdown/scored reset revisions are bookkeeping, not active planner refresh samples.
+  timing?.record(snapshot.playing && revision !== plan.revision ? 'plannerRefresh' : 'plannerBetween', planned - observed);
   const engagements: [string, { targetId: string; role: BotCoordRole }][] = [];
   for (const a of plan.assignments.values()) {
     const bot = players.find(p => p.id === a.botId);
@@ -78,4 +86,5 @@ export function updateGrifballTeamPlanForState(
     if (targetId && (a.defense || a.tanking?.attack && targetId === a.tanking.targetId)) engagements.push([a.botId, { targetId, role: a.tanking?.mode === 'punish' ? 'flanker' : 'pressure' }]);
   }
   setTacticalBotEngagements(state.aiMatchContext.coordinator, engagements);
+  timing?.record('coordination', performance.now() - planned);
 }

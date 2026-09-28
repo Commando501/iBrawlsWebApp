@@ -1,3 +1,4 @@
+import { nullControlRequired } from '../../src/game/grifballValidation/gates';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { lstatSync, mkdirSync, readFileSync, readlinkSync, writeFileSync } from 'node:fs';
@@ -32,7 +33,7 @@ export function captureCodeIdentity(root: string): CodeIdentity {
   const workingTreeHash = createHash('sha256').update(canonicalJSON({ version: 1, commit, scope: CODE_SCOPE, changes })).digest('hex');
   return { commit, dirty: paths.length > 0, workingTreeHash, scope: [...CODE_SCOPE] };
 }
-export interface Options { suite?: SuiteProfile; manifest?: string; out?: string; writeManifest?: string; case?: string; resume?: string; dryRun: boolean; help: boolean }
+export interface Options { suite?: SuiteProfile; manifest?: string; out?: string; writeManifest?: string; case?: string; resume?: string; protocol?: string; dryRun: boolean; help: boolean }
 export function parseArgs(args: string[]): Options {
   const result: Options = { dryRun: false, help: false };
   const seen = new Set<string>();
@@ -42,7 +43,7 @@ export function parseArgs(args: string[]): Options {
     seen.add(arg);
     if (arg === '--dry-run') result.dryRun = true;
     else if (arg === '--help') result.help = true;
-    else if (['--suite', '--manifest', '--out', '--write-manifest', '--case', '--resume'].includes(arg)) {
+    else if (['--suite', '--manifest', '--out', '--write-manifest', '--case', '--resume', '--protocol'].includes(arg)) {
       const value = args[++i];
       if (!value || value.startsWith('--')) throw new Error(`Missing value for ${arg}`);
       if (arg === '--suite') {
@@ -52,6 +53,7 @@ export function parseArgs(args: string[]): Options {
       else if (arg === '--out') result.out = value;
       else if (arg === '--case') result.case = value;
       else if (arg === '--resume') result.resume = value;
+      else if (arg === '--protocol') result.protocol = value;
       else result.writeManifest = value;
     } else throw new Error(`Unknown option ${arg}`);
   }
@@ -68,10 +70,10 @@ function saveJSON(path: string, value: unknown) {
 export async function main(args: string[]): Promise<number> {
   const options = parseArgs(args);
   if (options.help) {
-    console.log('Grifball validation suite (VS3 unattended runner)\n' +
+    console.log('Grifball validation suite (VS5 gates)\n' +
       'npm run validate:grifball -- --suite quick|standard --dry-run [--out file.json] [--write-manifest file.json]\n' +
       'npm run validate:grifball -- --manifest file.json --dry-run [--suite acceptance]\n' +
-      'npm run validate:grifball -- --suite quick [--out NEW-DIRECTORY] [--case CASE-ID]\n' +
+      'npm run validate:grifball -- --suite quick [--out NEW-DIRECTORY] [--case CASE-ID] [--protocol FILE]\n' +
       'npm run validate:grifball -- --resume OLD-DIRECTORY [--case CASE-ID] [--out NEW-DIRECTORY]\n' +
       'Exit: 0 required automated gates passed (or preview/help); 1 failed evidence; 2 incomplete; 3 invalid input/setup.');
     return 0;
@@ -81,6 +83,7 @@ export async function main(args: string[]): Promise<number> {
     : createSuiteManifest(options.suite === 'standard' ? 'standard' : 'quick');
   const plan = await createSuitePlan(input, captureCodeIdentity(ROOT));
   if (options.suite && options.suite !== plan.manifest.profile) throw new Error('--suite does not match manifest.profile');
+  if (nullControlRequired(plan)) console.log(`Null-control preflight: ${plan.preview.jobCount} additional identical-baseline jobs; ${plan.preview.maxSimulationSeconds}s additional simulation cap. Candidate trials require this control to pass.`);
   if (!options.dryRun) {
     console.log(`${plan.manifest.profile}: ${plan.preview.caseCount} cases, ${plan.preview.jobCount} jobs; ${plan.preview.maxSimulationSeconds}s simulation cap; ${plan.preview.maxJobWatchdogSeconds}s summed watchdog cap.`);
     console.log(`Required gates: ${plan.manifest.requiredGates.join(', ')}. ${options.case ? `Rerun scope: ${options.case}. Other jobs stay not run.` : ''}`);
