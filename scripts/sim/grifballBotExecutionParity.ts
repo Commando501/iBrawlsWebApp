@@ -53,13 +53,13 @@ export function createBotParityFixture(id = 'bot_2', observer = true, settings: 
     evaluatePlayerKillMedals: () => [], recordPlayerDamageTaken: noop, tryRecordCalibrationCounterSuccess: noop,
     recordBotDamageTag: noop, tryEnterPressureState: () => false, tryStartComboOnHit: noop, playJump: noop, pushStatsUpdate: noop });
   const actions = createCombatantActionCallbacksForState({ getState: () => state, getRefs: () => refs, spawnPoints: [],
-    getRosterAI: () => [bot, target], getActiveCustomMap: () => map, getOptimalSpawnPoint: () => new THREE.Vector3(),
+    getRosterAI: () => [...state.otherPlayers.values()], getActiveCustomMap: () => map, getOptimalSpawnPoint: () => new THREE.Vector3(),
     recordCombatantObservation: noop, onMainAIHammerSwing: noop, playSwing: noop, playJump: noop, playDash: noop, playRespawn: noop });
   const impact = (botId: string) => applyBotMeleeImpactForState({ state, botId, ...effects });
   const visuals = (dt: number) => updateRosterCombatantVisualsForState({ state, refs, dt, applyBotMeleeImpact: impact, renderSwordLungeTrailVfx: noop });
   const weaponFrame = (dt: number) => updateWeaponAnimationFrameForState({ state, refs, dt, mainAI: state.otherPlayers.get('main_ai'),
     getPlayerSwordLockTarget: () => null, ...impacts });
-  const respawns = (dt: number) => updateAIRosterTick({ refs, rosterAI: [bot, target], dt, respawnCombatant: actions.respawnCombatant, updateSingleAIEntity: noop });
+  const respawns = (dt: number) => updateAIRosterTick({ refs, rosterAI: [...state.otherPlayers.values()], dt, respawnCombatant: actions.respawnCombatant, updateSingleAIEntity: noop });
   const attack = (melee = false) => triggerCombatantAttackAction({ self: bot, weapon: bot.activeWeapon === 'sword' ? 'sword' : 'hammer',
     melee, recordHammerAttack: noop, playSwing: noop });
   const random = seededRandom(27);

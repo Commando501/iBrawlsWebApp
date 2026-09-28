@@ -18,7 +18,7 @@
  *  - live-roster-v1 opts into stationary roster attack phases and projected splash
  *    geometry. Lunge flight, trades, moving contact and respawn remain uncertified.
  *  - live-roster-v2 adds committed grounded flight, lethal/surviving primary trades and
- *    single-spawn revival. Supply lungeTargetId before committing a lunge. It does
+ *    greedy occupancy-aware revival. Supply lungeTargetId before committing a lunge. It does
  *    not port AI selection, pressure/combo decisions, or certify all combat paths.
  */
 
@@ -573,15 +573,28 @@ export function tickRespawns(state: SimState, settings: UniversalSettings, dt: n
   }
 }
 
-/** Revive a combatant at the next slot of its team spawn cluster. */
+/** Revive at a fixed legacy slot, or a live-roster-v2 max-clearance team spawn. */
 export function respawnCombatant(state: SimState, c: SimCombatant, settings: UniversalSettings): void {
   const rosterV2 = state.combatExecution === 'live-roster-v2';
   const cluster = state.spawns[c.team] ?? [];
   // Deterministic slot: index of this combatant among its team.
   const teammates = state.combatants.filter((m) => m.team === c.team);
   const idx = teammates.indexOf(c);
-  const spawn = cluster.length ? cluster[idx % cluster.length] : { x: 0, y: 0, z: 0 };
-  c.pos = { x: spawn.x, y: 0, z: spawn.z };
+  let spawn = cluster.length ? cluster[idx % cluster.length] : { x: 0, y: 0, z: 0 };
+  if (rosterV2) {
+    // Match live greedy arbitration in roster order. Actors revived earlier in
+    // this tick now occupy space; dead actors and absent observers do not.
+    // Strict > preserves the first authored spawn when clearance ties.
+    const occupied = state.combatants.filter(m => m !== c && m.alive && m.hp > 0 && m.respawnTimer <= 0);
+    let bestClearance = -1;
+    for (const point of cluster) {
+      let clearance = Infinity;
+      for (const other of occupied) clearance = Math.min(clearance,
+        (point.x - other.pos.x) ** 2 + (point.y - other.pos.y) ** 2 + (point.z - other.pos.z) ** 2);
+      if (clearance > bestClearance) { bestClearance = clearance; spawn = point; }
+    }
+  }
+  c.pos = { x: spawn.x, y: rosterV2 ? spawn.y : 0, z: spawn.z };
   c.vel = { x: 0, y: 0, z: 0 };
   c.yaw = inwardSpawnYaw(spawn);
   c.alive = true;

@@ -572,3 +572,34 @@ Verification:
 - The source fingerprint matches the frozen plan (`output/m7-moving-review.json`). Runner output is retained in `output/m7-moving-browser-final.log`; the final directory contains the HTML report, gate evidence, frozen inputs and raw trials.
 
 The development server was restored on port **3000**; `/` and `/grifball-validation.html` returned HTTP 200. Scoped `git diff --check` passed. This new slice remains uncommitted after `e3333fd`. Next acceptance work is broader multi-actor contact and spawn arbitration; the remaining player/swept-contact and full AI decision-integration gaps stay explicit.
+
+
+## M7 acceptance follow-up: multi-actor contact and occupied spawn arbitration — 2026-09-27
+
+The prior moving-contact slice was committed as `1e511a6` (`Validate walking and dashing target contact parity`). This follow-up adds independently stepped multi-actor contact and respawn-boundary evidence, plus fixes demonstrated by those fixtures.
+
+Production changes:
+
+- Stationary bot melee now increments the victim's roster death count for `main_ai`, alongside its existing legacy counter. Previously it updated only the legacy counter. The initial multi-actor run reproduced this omission; all 192 contact traces pass after the correction.
+- Bot respawn clearance excludes the local player only while that player is alive and participating. An observer camera or dead player previously occupied a phantom exclusion point. The actual production action callback now supplies that occupancy decision to the respawn helper.
+- Opt-in `live-roster-v2` respawns select the team spawn with greatest minimum distance from living actors, with first-authored-point tie breaking. Earlier revivals in the same roster tick become occupied points for subsequent revivals. Authored spawn height is retained. Legacy profiles keep their existing fixed team slots and height behavior; explicit compatibility tests protect that boundary.
+
+Protocol `live-functions-vs-headless-step-v10` adds **348 paired traces**, for **1,603 total**:
+
+- **192 six-actor contact traces**: sword slash, hammer slam and hammer swipe across splash kills, one-/two-HP focus fire, and opposing simultaneous attacks. Both roster orders, mirrored teams, player/observer views and main-AI attacker/victim identities are exercised. Every tick compares health, life/death, weapon phase, respawn/shield clocks and per-actor kill/death credit; legacy main-AI counters are checked too. Independent expected victims and winning attackers guard against both engines agreeing on incorrect outcomes. Friendly, shielded and out-of-range actors are present throughout. These traces stop before revival to isolate impact arbitration.
+- **156 roster spawn-boundary traces**: all eight supplied maps after normal Grifball conversion, plus empty, single, tied, fallback and elevated custom spawn lists. Three actors revive simultaneously or on consecutive ticks, with another living actor occupying space. Both teams and roster orders run with an alive, dead or observer local-player context. The fixture invokes the real roster respawn/action callback and independently invokes `tickRespawns`, comparing spawn positions, cleared velocities, health, shields, retained weapon and inward yaw before movement. Six independent numeric sequence checks pin occupancy, tie breaking and staggered selection; two compatibility checks protect legacy slots.
+
+The first map fixture draft retained optional team-spawn fields from its default arena when loading maps without those fields. Removing that stale fixture property corrected the remaining draft mismatches; no production map change was necessary. Historical diagnostic logs remain distinct from final evidence.
+
+The gate remains **inconclusive**. This evidence covers authored grounded slash/slam/swipe contact and roster revival boundaries. It does not certify mixed lunge/melee groups, autonomous decision-to-action choices, player lunges, swept collision, moving-carrier punches, initial placement, round resets, elevated-spawn landing or full matches across those maps. Calibrated performance, held-out quality/generalization and human playtest acceptance are still required. Neural integration remains optional and unpromoted.
+
+
+Verification:
+
+- **366/366** focused multi-actor, spawn and gate checks passed (`output/m7-multi-focused.log`).
+- The frozen run `output/grifball-validation/m7-multi-spawn-final/` finished with **exit 0**: **1,792/1,792** validation tests, TypeScript, production client/relay and validation builds, startup, **16/16** live scenario trials and **8/8** exact repeatability pairs passed. All **1,603** paired traces match; four remaining coverage groups retain the inconclusive execution-parity verdict. This quick run does not supply calibrated performance, quality or human-review acceptance.
+- The separate full repository run completed: **3,217/3,222 passed**, with the same five historical V3 animation/asset failures listed in earlier sections (`output/m7-multi-spawn-repository.log`). Its raw exit remains **1**; no tests were waived or weakened. That separate log is not imported into the CLI report's repository-tests gate.
+- Source identity matches the frozen plan (`output/m7-multi-spawn-review.json`): commit `1e511a61176b6f285a0986af868ffd6ee3e5e194`, working-tree hash `3efe13c0ab775f391e1fd15192ff601e86af12d7579df841ae5f4849d2156974`. The run contains its HTML report, gate evidence, raw trials and build logs.
+- Scoped `git diff --check` passed and the attached implementation plans were not changed. Development server restored on port **3000**; `/` and `/grifball-validation.html` both returned HTTP 200.
+
+This new multi-actor/spawn slice remains uncommitted after `1e511a6`. Remaining M7 acceptance work includes mixed flight/melee and player contact, complete decision-to-action/map lifecycle coverage, calibrated performance and held-out quality/generalization, followed by human playtesting. Passing these bounded traces establishes execution evidence; it does not establish better match outcomes or enjoyable tactics.

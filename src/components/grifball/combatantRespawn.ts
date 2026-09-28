@@ -13,6 +13,7 @@ export const respawnAICombatant = ({
   settings,
   aiMatchContext,
   playerPos,
+  excludePlayer = true,
   rosterAI,
   getOptimalSpawnPoint,
   playRespawn,
@@ -22,6 +23,8 @@ export const respawnAICombatant = ({
   settings: RespawnSettings;
   aiMatchContext: AIMatchContext;
   playerPos: THREE.Vector3;
+  /** Observer cameras and dead players do not occupy a spawn. */
+  excludePlayer?: boolean;
   rosterAI: Combatant[];
   getOptimalSpawnPoint: (excludePositions: THREE.Vector3[]) => THREE.Vector3;
   playRespawn: () => void;
@@ -29,7 +32,7 @@ export const respawnAICombatant = ({
   const c = combatant;
   c.hp = c.maxHp;
 
-  const exclude: THREE.Vector3[] = [playerPos];
+  const exclude: THREE.Vector3[] = excludePlayer ? [playerPos] : [];
   rosterAI.forEach((other) => {
     if (other.id !== c.id && other.hp > 0 && (other.respawnTimer ?? 0) <= 0) {
       exclude.push(new THREE.Vector3(other.pos.x, other.pos.y, other.pos.z));

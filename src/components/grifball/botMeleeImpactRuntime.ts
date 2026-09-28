@@ -135,6 +135,7 @@ export function applyBotMeleeImpactForState({
     if (other.hp <= 0) {
       other.hp = 0;
       other.respawnTimer = 3.0;
+      other.deaths = (other.deaths || 0) + 1;
       if (other.controller === 'ai') {
         other.aiState = 'RESPAWNING';
         other.weaponState = 'ready';
@@ -142,11 +143,7 @@ export function applyBotMeleeImpactForState({
         if (other.id === MAIN_AI_ID) {
           state.enemyDeaths += 1;
           recordBotCalibrationDeath(other.id);
-        } else {
-          other.deaths = (other.deaths || 0) + 1;
         }
-      } else {
-        other.deaths = (other.deaths || 0) + 1;
       }
       creditKill(otherId, other.playerName, createReplayHeatmapCombatantSource(otherId, other));
     } else {
