@@ -291,7 +291,7 @@ function stepLiveAttack(state: SimState, c: SimCombatant, action: ActionInput,
   if (c.weaponState === 'idle') {
     if (!canAttack || c.dashRemaining > 0) return;
     if (action.attackSecondary && c.weapon === 'sword') {
-      c.lastAttackTick = state.tick; startLunge(c, settings, state); return;
+      startLunge(c, settings, state); c.lastAttackTick = state.tick; return;
     }
     const kind = action.attackSecondary && c.weapon === 'hammer' ? 'swipe'
       : action.attackPrimary ? (c.weapon === 'sword' ? 'slash' : c.weapon === 'ball' ? 'punch' : 'strike') : null;
@@ -538,10 +538,17 @@ function startLunge(c: SimCombatant, settings: UniversalSettings, state?: SimSta
   if (state?.combatExecution === 'live-roster-v2') {
     if (!c.lungeTargetId || !findCombatant(state, c.lungeTargetId) || c.lungeTargetId === c.id)
       throw new Error('live-roster-v2 requires an explicit lungeTargetId before a sword lunge');
+    const aim = c.lungeAimDirection ?? forwardDir(c.yaw);
+    const length = Math.hypot(aim.x, aim.y, aim.z);
+    if (!Number.isFinite(length) || length === 0)
+      throw new Error('live-roster-v2 lungeAimDirection must be finite and nonzero');
+    const direction = { x: aim.x / length, y: aim.y / length, z: aim.z / length };
     c.lastSwordAttackTimeMs = state.combatTimeMs ?? state.tick * 1000 / 60;
     c.isLunging = true; c.lungeTimer = 0; c.lungeStartPos = { ...c.pos }; delete c.lungeOutcome;
     c.attackKind = 'none'; c.weaponState = 'idle'; c.weaponTimer = 0; c.weaponPhaseElapsed = 0;
-    const fwd = forwardDir(c.yaw); c.lungeDir = { x: fwd.x, y: 0, z: fwd.z };
+    c.lungeDir = direction; delete c.lungeAimDirection;
+    c.vel.y = Math.max(c.vel.y, direction.y * (settings.swordLungeSpeed ?? 24));
+    c.isJumping = c.pos.y > .01 || c.vel.y > .01;
     c.attackCooldown = 0;
     return;
   }
@@ -591,6 +598,7 @@ export function respawnCombatant(state: SimState, c: SimCombatant, settings: Uni
   if (rosterV2) {
     c.attackCooldown = 0; c.swapLockoutTimer = 0;
     delete c.lungeTargetId; delete c.lungeStartPos; delete c.lungeOutcome;
+    delete c.lungeAimDirection;
     delete c.lastSwordAttackTimeMs; delete c.lastHammerAttackTimeMs;
   }
   c.hammerJumpWindowTimer = 0;

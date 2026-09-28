@@ -110,6 +110,8 @@ export interface SimCombatant {
   lungeDir: Vec3;
   /** v2 locks the supplied tactical target and preserves committed flight across snapshots. */
   lungeTargetId?: string;
+  /** Optional one-shot v2 commitment heading. Normalized and consumed when flight starts. */
+  lungeAimDirection?: Vec3;
   lungeStartPos?: Vec3;
   lungeOutcome?: 'hit' | 'miss_timeout' | 'miss_arena' | 'target_dead';
 

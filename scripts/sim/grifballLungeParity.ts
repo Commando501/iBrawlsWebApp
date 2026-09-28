@@ -13,6 +13,9 @@ import type { CharacterModelType, UniversalSettings } from '../../src/types';
 import { defaultGrifballTactics } from '../../src/game/grifballTacticsConfig';
 import { resolveHammerSlamTiming } from '../../src/game/hammerSlamTiming';
 import type { ParityDifference } from './grifballExecutionParity';
+import type { Vec3 } from '../../src/game/grifballBall';
+
+export interface FlightPose { height?: number; velocityY?: number; direction?: Vec3 }
 
 export interface LungeParityCase {
   name: string; target?: { x: number; z: number }; startZ?: number; hp?: number;
@@ -22,6 +25,8 @@ export interface LungeParityCase {
   window?: { weapon: 'sword' | 'hammer'; ageMs?: number; limitMs: number; enabled?: boolean; wrongWeapon?: boolean };
   attackerModel?: CharacterModelType; targetModel?: CharacterModelType;
   attackerCrouch?: boolean; targetCrouch?: boolean;
+  motion?: { attacker?: FlightPose; target?: FlightPose };
+  expectedFirstHitTick?: number;
 }
 export const LUNGE_PARITY_CASES: LungeParityCase[] = [
   { name: 'nonlethal-contact', hits: 1 },
@@ -84,6 +89,13 @@ export function runLungeParityTrace(spec: LungeParityCase, id = 'bot_2', observe
   bot.lungeStartPos = { ...self.pos };
   const p = spec.target ?? { x: 0, z: 2 };
   rival.pos = { x: p.x, y: 0, z: p.z }; target.pos.set(p.x, 0, p.z);
+  for (const [live, headless, pose] of [[bot, self, spec.motion?.attacker], [target, rival, spec.motion?.target]] as const) {
+    live.pos.y = headless.pos.y = pose?.height ?? 0;
+    live.vel.y = headless.vel.y = pose?.velocityY ?? 0;
+    live.isJumping = headless.isJumping = live.pos.y > .01 || Math.abs(live.vel.y) > .01;
+    headless.grounded = !headless.isJumping;
+    if (pose?.direction) headless.lungeAimDirection = { ...pose.direction };
+  }
   self.weapon = bot.activeWeapon = 'sword'; self.yaw = 0;
   self.hp = self.maxHp = bot.hp = bot.maxHp = spec.attackerHp ?? spec.hp ?? 20;
   rival.hp = rival.maxHp = target.hp = target.maxHp = spec.hp ?? 20;
@@ -125,13 +137,19 @@ export function runLungeParityTrace(spec: LungeParityCase, id = 'bot_2', observe
   if (spec.pairedLunge) {
     state.settings.enableSwordTrade = sim.settings.enableSwordTrade = true;
     target.activeWeapon = rival.weapon = 'sword'; target.aiState = 'LUNGING'; rival.yaw = Math.PI;
+    const dir = spec.motion?.target?.direction ?? { x: 0, y: 0, z: -1 };
     withSimulationRandom(seededRandom(31), 0, () => triggerCombatantLungeAction({ self: target, settings: state.settings,
-      pos: target.pos, vel: target.vel, lungeDir: new THREE.Vector3(0, 0, -1), playDash: () => {} }));
+      pos: target.pos, vel: target.vel, lungeDir: new THREE.Vector3(dir.x, dir.y, dir.z).normalize(), playDash: () => {} }));
     rival.lungeTargetId = self.id;
     stepCombatantWeapons(sim, rival, { ...idleAction(), attackSecondary: true }, sim.settings, 0, []);
   }
   if (spec.reverseOrder) sim.combatants.reverse();
   // Start through the real action entry points before observing flight tick 1.
+  if (spec.motion) {
+    const dir = spec.motion.attacker?.direction ?? { x: 0, y: 0, z: 1 };
+    withSimulationRandom(seededRandom(31), 0, () => triggerCombatantLungeAction({ self: bot, settings: state.settings,
+      pos: bot.pos, vel: bot.vel, lungeDir: new THREE.Vector3(dir.x, dir.y, dir.z).normalize(), playDash: () => {} }));
+  }
   self.lungeTargetId = rival.id;
   stepCombatantWeapons(sim, self, { ...idleAction(), attackSecondary: true }, sim.settings, 0, []);
   if (spec.cancel === 'dead') {
@@ -139,6 +157,7 @@ export function runLungeParityTrace(spec: LungeParityCase, id = 'bot_2', observe
   } else if (spec.cancel === 'friendly') { target.team = bot.team; rival.team = self.team; }
   const differences: ParityDifference[] = [], frames = [];
   let liveAttackerDamage = 0, simAttackerDamage = 0;
+  let liveFirstHitTick = 0, simFirstHitTick = 0;
   let differenceCount = 0, liveDamage = 0, simDamage = 0, liveDeaths = 0, simDeaths = 0;
   const killCounts = new Map<string, number>(), deathCounts = new Map<string, number>();
   const pairs: [typeof bot, typeof self][] = [[bot, self], [target, rival]];
@@ -156,6 +175,9 @@ export function runLungeParityTrace(spec: LungeParityCase, id = 'bot_2', observe
       // Live roster order matters: each AI's shield ticks immediately before its own flight.
       for (const c of (spec.reverseOrder ? [target, bot] : [bot, target])) if (c.hp > 0) {
         tickCombatantInvulnerability(c, 1 / 60);
+        // The scripted production path calls its gravity prelude before lunge flight.
+        // After completion it owns the fall; tactical horizontal decisions stay held.
+        if (spec.motion) f.gravityPrelude(c);
         if (c === bot || spec.pairedLunge) {
           c.aiTimer = Math.max(0, (c.aiTimer ?? 0) - 1 / 60);
           if (c === bot) f.flight(); else f.targetFlight();
@@ -174,6 +196,8 @@ export function runLungeParityTrace(spec: LungeParityCase, id = 'bot_2', observe
     }
     liveAttackerDamage += Math.max(0, before[0] - bot.hp); simAttackerDamage += Math.max(0, headlessBefore[0] - self.hp);
     liveDamage += Math.max(0, before[1] - target.hp); simDamage += Math.max(0, headlessBefore[1] - rival.hp);
+    if (!liveFirstHitTick && before[1] > target.hp) liveFirstHitTick = tick;
+    if (!simFirstHitTick && headlessBefore[1] > rival.hp) simFirstHitTick = tick;
     for (const [index, [a, b]] of pairs.entries()) {
       if (before[index] > 0 && a.hp <= 0) liveDeaths++;
       if (headlessBefore[index] > 0 && b.hp <= 0) simDeaths++;
@@ -196,6 +220,7 @@ export function runLungeParityTrace(spec: LungeParityCase, id = 'bot_2', observe
         if (a.isLunging || b.isLunging) compare(tick, `${index}.flightElapsed`, a.lungeTimer, b.lungeTimer, 1e-6);
       }
       compare(tick, `${index}.lunging`, !!a.isLunging, b.isLunging);
+      if (spec.motion) compare(tick, `${index}.jumping`, !!a.isJumping, b.isJumping);
       for (const axis of ['x', 'y', 'z'] as const) {
         compare(tick, `${index}.pos.${axis}`, a.pos[axis], b.pos[axis], 1e-6);
         compare(tick, `${index}.vel.${axis}`, a.vel[axis], b.vel[axis], 1e-6);
@@ -210,8 +235,10 @@ export function runLungeParityTrace(spec: LungeParityCase, id = 'bot_2', observe
     for (const axis of ['x', 'y', 'z'] as const) for (const field of ['pos', 'vel'] as const)
       compare(tick, `ball.${field}.${axis}`, state.grifball.ball[field][axis], sim.match.ball[field][axis], 1e-6);
     frames.push({ tick, live: { pos: bot.pos.toArray(), hp: bot.hp, targetHp: target.hp, lunging: !!bot.isLunging,
+      vel: bot.vel.toArray(), targetPos: target.pos.toArray(), targetVel: target.vel.toArray(),
       cooldown: bot.aiTimer ?? 0, respawn: target.respawnTimer, outcome: bot.aiLastLungeOutcome },
       headless: { pos: { ...self.pos }, hp: self.hp, targetHp: rival.hp, lunging: self.isLunging,
+        vel: { ...self.vel }, targetPos: { ...rival.pos }, targetVel: { ...rival.vel },
         cooldown: self.attackCooldown, respawn: rival.respawnTimer, outcome: self.lungeOutcome } });
   }
   compare(300, 'expected.liveAttackerDamage', liveAttackerDamage, spec.attackerHits ?? (spec.trade ? 1 : 0));
@@ -219,6 +246,10 @@ export function runLungeParityTrace(spec: LungeParityCase, id = 'bot_2', observe
   compare(300, 'expected.liveDamage', liveDamage, spec.hits); compare(300, 'expected.simDamage', simDamage, spec.hits);
   compare(300, 'expected.deathFeed', f.deaths.length, spec.deaths ?? 0);
   compare(300, 'expected.liveDeaths', liveDeaths, spec.deaths ?? 0); compare(300, 'expected.simDeaths', simDeaths, spec.deaths ?? 0);
+  if (spec.expectedFirstHitTick !== undefined) {
+    compare(300, 'expected.liveFirstHitTick', liveFirstHitTick, spec.expectedFirstHitTick);
+    compare(300, 'expected.simFirstHitTick', simFirstHitTick, spec.expectedFirstHitTick);
+  }
   return { name: `${id}->${targetId}/${observer ? 'observer' : 'player-view'}/${spec.name}`, combatExecution: execution,
     scenario: spec, ticks: 300, differenceCount, differences, frames };
 }

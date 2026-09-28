@@ -9,6 +9,7 @@ import { constrainCombatantToArenaBounds } from '../../src/components/grifball/a
 import type { TacticalTargetCandidate } from '../../src/components/grifball/combatGeometry';
 import type { DeathEvent } from '../../src/types';
 import { recordCombatantModelObservation } from '../../src/components/grifball/playerModelObservations';
+import { integrateTargetEngagementGravityForCombatant } from '../../src/components/grifball/aiEngagementFrameRuntime';
 
 const noop = () => {};
 export function lungeFixture(id = 'bot_2', observer = true, targetId = 'target') {
@@ -52,7 +53,13 @@ export function lungeFixture(id = 'bot_2', observer = true, targetId = 'target')
       renderSwordLungeTrailVfx: noop, recordPlayerDamageTaken: noop, playExplosion: noop, playDeath: noop,
       spawnVoxelShockwaveParticles: noop, recordDeathEvent, recordBotPsychKill: noop, recordBotCalibrationDeath: noop, pushStatsUpdate: noop });
   };
-  return { ...f, flight: (dt = 1 / 60) => flightFor(bot, target, dt),
+  const gravityPrelude = (self: typeof bot, dt = 1 / 60) => integrateTargetEngagementGravityForCombatant({ self,
+    frame: { pos: self.pos, vel: self.vel, aiState: self.aiState, timer: self.aiTimer,
+      dashCooldownTimer: 0, slideCooldownTimer: 0, hammerJumpCooldownTimer: 0 },
+    dt, gravityAcceleration: 18, recoverCombatantAltitude: () => false,
+    constrainCombatantToArena: (pos, vel) => constrainCombatantToArenaBounds({ pos, vel, activeCustomMap: map, arenaRadius: map.arenaRadius }),
+  });
+  return { ...f, gravityPrelude, flight: (dt = 1 / 60) => flightFor(bot, target, dt),
     targetFlight: (dt = 1 / 60) => flightFor(target, bot, dt), outcomes, deaths };
 }
 

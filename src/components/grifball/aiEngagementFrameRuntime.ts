@@ -34,6 +34,9 @@ export function integrateTargetEngagementGravityForCombatant({
   recoverCombatantAltitude: (self: Combatant, pos: THREE.Vector3, vel: THREE.Vector3) => boolean;
   constrainCombatantToArena: (pos: THREE.Vector3, vel: THREE.Vector3) => void;
 }): void {
+  // Committed flight integrates velocity, gravity and constraints itself later in
+  // this tick. Running the engagement prelude too doubles airborne displacement.
+  if (self.isLunging) return;
   if (frame.vel.y !== 0 || frame.pos.y > 0) {
     frame.vel.y -= gravityAcceleration * dt;
     frame.pos.y += frame.vel.y * dt;
