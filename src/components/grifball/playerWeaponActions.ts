@@ -158,6 +158,9 @@ export function findPlayerSwordLungeHitTargetForState({
     !isMultiplayer &&
     mainAi &&
     mainAi.hp > 0 &&
+    !mainAi.isObserver &&
+    (mainAi.respawnTimer ?? 0) <= 0 &&
+    (mainAi.invulnerabilityTimer ?? 0) <= 0 &&
     mainAi.aiState !== 'RESPAWNING' &&
     areCombatantsHostile('player', MAIN_AI_ID)
   ) {
@@ -166,8 +169,11 @@ export function findPlayerSwordLungeHitTargetForState({
   }
 
   state.otherPlayers.forEach((other) => {
+    if (!isMultiplayer && mainAi && other.id === mainAi.id) return;
     if (
       other.hp > 0 &&
+      other.aiState !== 'RESPAWNING' &&
+      (other.invulnerabilityTimer ?? 0) <= 0 &&
       !other.isObserver &&
       other.respawnTimer <= 0 &&
       areCombatantsHostile('player', other.id)

@@ -673,3 +673,39 @@ Verification:
 The new player/roster slice remains uncommitted after `8e3ce00`. README and these validation findings are updated; attached implementation plans remain unchanged. Next automated work is player lunge and mixed player/roster execution coverage, followed by the remaining decision/lifecycle, performance and quality acceptance. Human testing remains deferred to the user until that automated work is complete.
 
 Scoped `git diff --check` passed. The development server was restored on port **3000**; both `/` and `/grifball-validation.html` returned HTTP 200.
+
+
+## M7 acceptance follow-up: player-lunge contact and roster counter trades — 2026-09-28
+
+The prior player/roster impact slice was committed as `87ce909` (`Validate player roster impacts and repair melee death lifecycle`). This slice validates the separate live player-lunge path before extending versioned headless player execution. Human testing remains deferred to the user until the remaining automated M7 work is complete.
+
+The initial 114-case fixture reproduced **89 failures** (`output/m7-player-lunge-before.log`). Player lunges could ignore main-AI shields and inactive-target state, fail to damage a roster main AI when its legacy lookup was missing, leave actual respawn/death/weapon state incomplete after kills, and publish both a hit and a miss when contact overlapped a travel, timeout or arena limit. Re-entering a completed flight function could continue moving or hitting. Surviving main-AI trades wrote false death-feed entries and bypassed player lunge recovery; main-AI roster kill/death counters were incomplete. The old counter checks also accepted future timestamps and stale AI `LUNGING` state instead of the actual flight flag.
+
+After fixing those paths, expanding trade tests to ordinary roster bots and a main AI without legacy lookup reproduced **16 further failures** (`output/m7-player-lunge-roster-before.log`). Ordinary bots' active sword/hammer counters were ignored entirely. The player-lunge path now resolves counters through the existing shared weapon/history eligibility function. The main-AI trade entry point delegates to shared player/combatant trade bookkeeping, which also handles ordinary roster victims and the missing-lookup fallback. Main-AI callback routing is preserved where available. Both participants take one point of damage, only actual deaths get feed/medal/kill/death credit, main-AI legacy counters are updated alongside roster counters, and committed defender attacks are consumed. Non-trade lethal lunges use the player-melee death helper from the prior slice. Bot-versus-bot trade execution and simulator profiles are unchanged.
+
+All contact branches now finish once and return before miss/limit checks. Valid contact still takes precedence on a frame that also reaches a limit. Target selection consistently excludes shields, dead/respawning actors, observers and teammates, without traversing main AI twice. An inactive player cancels before moving or contacting. Completed-flight calls are no-ops. After a trade, a surviving player receives the configured lunge recovery rather than an immediately ready sword. Multiplayer counter detection uses the shared recent-history rules while retaining its existing hit-message/local-acknowledgement ownership.
+
+The **195 live-only cases** run in both validation and repository suites:
+
+- Real commitment and flight functions at 24 units/s in four cardinal directions across registered main AI, unregistered legacy main AI, ordinary bots and a roster main AI with no legacy lookup. Independent frame-nine contact, one damage, kill/death credit and configured recovery expectations; actual weapon animation and registered roster respawn callbacks verify cooldown and revival.
+- Shield/dead/respawn-clock/respawn-state/observer/team exclusions, nearest eligible opponent in both roster orders, and dead/respawning/observer player cancellation. Unregistered legacy actors have no Grifball team lookup, so the friendly-team assertion is scoped to registered actors.
+- Exactly one hit or miss at time, travel-distance and circular-arena boundaries, including missing targets and repeated calls after completion.
+- Real carrier reconciliation after lethal contact; ball release occurs once before revival.
+- Sword and hammer counters across every identity with both participants at one or two HP, including one-sided and mutual deaths. Independent damage, feed totals, per-actor credit and recovery expectations.
+- Recent/expired/exact-window/zero/future/disabled counter history, actual sword-flight flag and stale AI state across every identity. Explicit hammer/sword settings remain independent.
+- Multiplayer main/regular targets with ordinary, sword/hammer trade, future-history, shield and closed-connection cases: one outgoing message when connected, no offline remote-health mutation, and local trade recovery.
+
+This is live-function regression evidence, **not additional headless parity**. The total remains **1,927 paired traces**, protocol `live-functions-vs-headless-step-v11`, with four open coverage groups. The tests isolate flight, weapon recovery and roster revival; they do not run complete player/AI matches, validate network round trips, certify swept collision, or compare player-lunge execution to an independently stepped simulator. The next automated slice is versioned player-lunge/mixed player-roster execution parity. Decision-to-action and complete map/round lifecycle integration, calibrated performance, held-out quality/generalization and broader moving/airborne/carrier mixed groups remain open. Human playtesting follows the automated work; neural integration remains optional and unpromoted.
+
+
+Verification:
+
+- **710/710** focused checks passed (`output/m7-player-lunge-focused.log`): all 195 new live player-lunge cases, prior player/roster impact regressions, roster lunge parity checks and carrier lifecycle checks.
+- Full repository suite: **3,912/3,917 passed**, with the same five historical V3 animation/asset failures (`output/m7-player-lunge-repository-final.log`). Raw exit remains **1**; no checks were waived or weakened. This separate run is not imported into the CLI report's repository-tests gate. The repository suite finished before starting frozen validation to avoid the concurrent-run writer-startup timeout seen in the previous slice.
+
+- The frozen run `output/grifball-validation/m7-player-lunge-final/` finished with **exit 0**: **2,487/2,487** validation tests, TypeScript, production client/relay and validation builds, startup, **16/16** browser trials and **8/8** exact repeatability pairs passed. This quick run does not supply calibrated performance, held-out quality or human-review acceptance.
+- The final parity artifact was re-parsed: all **1,927 traces** and **408,588 frames** are present, with zero differences and four remaining gap groups (`output/m7-player-lunge-parity-review.json`). The execution gate remains **inconclusive**.
+- Source identity matches the frozen plan (`output/m7-player-lunge-review.json`): commit `87ce909c122cbe4e4102ac0cb03732709afd6356`, working-tree hash `81ce395f03671ddc5b16cdca461da79712b459865c044132e62428143b2b0432`.
+- Scoped `git diff --check` passed. The development server was restored on port **3000**; `/` and `/grifball-validation.html` both returned HTTP 200. Attached implementation plans remain unchanged.
+
+The player-lunge and counter-trade slice remains uncommitted after `87ce909`. Next work is independently stepped player-lunge/mixed player-roster parity and the remaining automated M7 acceptance gaps. Human playtesting remains deferred until that automated work is complete.

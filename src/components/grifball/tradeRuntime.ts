@@ -1,3 +1,4 @@
+import { recordPlayerMeleeKillForState } from './playerMeleeDeathRuntime';
 import { simulationTimestamp } from '../../game/simulationRandom';
 import * as THREE from 'three';
 import { MAIN_AI_ID } from '../../game/roster';
@@ -256,18 +257,43 @@ export function executeMainAITradeForState({
   spawnVoxelShockwaveParticles: (impactCenter: THREE.Vector3, color: string) => void;
   pushStatsUpdate: () => void;
 }): void {
-  if (!mainAi) return;
+  executePlayerCombatantTradeForState({ state, combatant: mainAi, reason, evaluatePlayerKillMedals,
+    recordBotCalibrationDeath, playExplosion, playDeath, spawnVoxelShockwaveParticles, pushStatsUpdate });
+}
+
+export function executePlayerCombatantTradeForState({
+  state,
+  combatant,
+  reason,
+  evaluatePlayerKillMedals,
+  recordBotCalibrationDeath,
+  playExplosion,
+  playDeath,
+  spawnVoxelShockwaveParticles,
+  pushStatsUpdate,
+}: {
+  state: GrifballRuntimeState;
+  combatant: Combatant | undefined;
+  reason: CombatTradeReason;
+  evaluatePlayerKillMedals: (victimId: string) => MedalInfo[];
+  recordBotCalibrationDeath: (botId: string) => void;
+  playExplosion: () => void;
+  playDeath: () => void;
+  spawnVoxelShockwaveParticles: (impactCenter: THREE.Vector3, color: string) => void;
+  pushStatsUpdate: () => void;
+}): void {
+  if (!combatant || combatant.hp <= 0 || state.playerHP <= 0) return;
 
   state.playerHP = Math.max(0, state.playerHP - 1);
-  mainAi.hp = Math.max(0, mainAi.hp - 1);
+  combatant.hp = Math.max(0, combatant.hp - 1);
 
   playExplosion();
   playDeath();
 
   spawnVoxelShockwaveParticles(state.playerPos, '#3b82f6');
-  spawnVoxelShockwaveParticles(mainAi.pos, '#ef4444');
+  spawnVoxelShockwaveParticles(combatant.pos, '#ef4444');
 
-  state.lastStrikePos = mainAi.pos.clone();
+  state.lastStrikePos = combatant.pos.clone();
   state.lastStrikeTick = 1.2;
   state.lastAIStrikePos = state.playerPos.clone();
   state.lastAIStrikeTick = 1.2;
@@ -275,9 +301,11 @@ export function executeMainAITradeForState({
   if (state.playerHP <= 0) {
     state.playerHP = 0;
     state.playerRespawnTimer = 3.0;
-    state.scoreEnemy += 1;
+    if (combatant.id === MAIN_AI_ID) state.scoreEnemy += 1;
     state.playerDeaths += 1;
-    state.enemyKills += 1;
+    if (combatant.id === MAIN_AI_ID) state.enemyKills += 1;
+    combatant.kills = (combatant.kills ?? 0) + 1;
+    combatant.score = (combatant.score ?? 0) + 1;
   }
   state.pWeaponState = 'ready';
   state.pWeaponTimer = 0;
@@ -289,50 +317,51 @@ export function executeMainAITradeForState({
   state.lungeTimer = 0;
 
   let playerMedals: MedalInfo[] | undefined = undefined;
-  if (mainAi.hp <= 0) {
-    mainAi.hp = 0;
-    mainAi.aiState = 'RESPAWNING';
-    state.enemyRespawnTimer = 3.0;
-    state.scorePlayer += 1;
-    state.playerKills += 1;
-    state.enemyDeaths += 1;
-    recordBotCalibrationDeath(MAIN_AI_ID);
-    playerMedals = evaluatePlayerKillMedals(MAIN_AI_ID);
+  if (combatant.hp <= 0) {
+    recordPlayerMeleeKillForState(state, combatant, recordBotCalibrationDeath);
+    playerMedals = evaluatePlayerKillMedals(combatant.id);
   }
-  mainAi.weaponState = 'ready';
-  mainAi.weaponTimer = 0;
+  combatant.isLunging = false;
+  combatant.weaponState = 'ready';
+  combatant.weaponTimer = 0;
 
   const { text: attackerText, weapon: tradeWeapon } = getTradePresentation(reason);
+  const playerName = state.settings.playerName || 'Blue (You)';
+  const botName = combatant.playerName || 'Red (AI)';
   const newDeath1: DeathEvent = {
     id: Math.random().toString(36).substring(2, 9),
-    attacker: `Blue (You) [${attackerText}]`,
-    victim: 'Red (AI)',
+    attacker: `${playerName} [${attackerText}]`,
+    victim: botName,
     medals: playerMedals,
     weapon: tradeWeapon,
   };
   const newDeath2: DeathEvent = {
     id: Math.random().toString(36).substring(2, 9),
-    attacker: `Red (AI) [${attackerText}]`,
-    victim: 'Blue (You)',
+    attacker: `${botName} [${attackerText}]`,
+    victim: playerName,
     weapon: tradeWeapon,
   };
 
-  state.lastDeaths = [newDeath1, newDeath2, ...state.lastDeaths].slice(0, 3);
-  if (mainAi.hp <= 0) {
+  state.lastDeaths = [
+    ...(combatant.hp <= 0 ? [newDeath1] : []),
+    ...(state.playerHP <= 0 ? [newDeath2] : []),
+    ...state.lastDeaths,
+  ].slice(0, 3);
+  if (combatant.hp <= 0) {
     queueReplayHeatmapDeathEventsForState({
       state,
       attacker: createReplayHeatmapCombatantSource('player', undefined, {
         team: state.localPlayerTeam,
         pos: state.playerPos,
       }),
-      victim: createReplayHeatmapCombatantSource(MAIN_AI_ID, mainAi),
+      victim: createReplayHeatmapCombatantSource(combatant.id, combatant),
       weapon: tradeWeapon,
     });
   }
   if (state.playerHP <= 0) {
     queueReplayHeatmapDeathEventsForState({
       state,
-      attacker: createReplayHeatmapCombatantSource(MAIN_AI_ID, mainAi),
+      attacker: createReplayHeatmapCombatantSource(combatant.id, combatant),
       victim: createReplayHeatmapCombatantSource('player', undefined, {
         team: state.localPlayerTeam,
         pos: state.playerPos,
