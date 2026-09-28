@@ -545,3 +545,30 @@ Verification:
 - The source fingerprint matches the frozen plan (`output/m7-motion-review.json`). Runner output is retained in `output/m7-motion-browser-final.log`; the final directory contains the HTML report, gate evidence, frozen inputs and raw trials. Initial diagnostic runs remain in `output/m7-motion-before.log` and `output/m7-motion-focused.log`.
 
 The development server was restored on port **3000**; `/` and `/grifball-validation.html` returned HTTP 200. Scoped `git diff --check` passed. This new slice remains uncommitted after `f06dea7`. Next acceptance work is walking/dashing target contact and moving attacks, followed by broader multi-actor/spawn coverage before full AI decision integration certification.
+
+
+## M7 acceptance follow-up: assigned walking, committed dashes and moving impacts — 2026-09-27
+
+The airborne/committed-motion slice was committed as `e3333fd` before this work. The implementation roadmap files remain unchanged. This slice adds execution evidence; it required no gameplay or simulator correction.
+
+The new fixture executes production assigned-area objective movement and committed AI dash movement. Walk direction changes and dash commitment boundaries are authored inputs shared by the two independently stepped engines, not positions or velocities copied between them. The live side uses real assignment movement, dash integration and arena constraints; the headless side receives equivalent aim-relative analog input for the objective walker's 5.2-unit speed. Directional speed settings are held equal at 100 for this bounded mapping. Dash direction, duration and cooldown are supplied at the commitment boundary, so autonomous dash initiation is not certified.
+
+Protocol `live-functions-vs-headless-step-v9` evaluates **1,255 paired traces**, adding **224 moving-contact traces**:
+
+- **116 moving-impact traces**: 29 cases across main/regular attackers and both views. Slash/slam/swipe/punch targets enter or leave range by walking or dashing, or reverse their walking direction before impact. Sword/hammer attackers advance, retreat or enter a committed dash during an existing windup. Moving carrier punches are outside this fixture.
+- **108 lunge-versus-moving-target traces**: 18 cases across three attacker/victim identity pairs and both views. Walking crossing/escape/retreat cases, committed crossing/escape dashes, dash-expiry catches and tuned short dashes run in both actor orders. Exact boundary cases independently assert contact on tick 1 if the attacker advances first, or no contact if the target escapes first.
+
+The fixture compares both actors' positions, velocities, dash duration/cooldown clocks, weapon phase clocks, health and expected damage alongside prior lunge lifecycle checks. Moving-impact evidence records both actors' motion; lunge traces retain the existing full position/velocity evidence. Independent regressions pin 5.2-unit objective walking, reversal/stop distances, committed-dash expiry-frame travel and remaining cooldown. Successful sword impacts are also required on tick 7 for the authored 0.22-second slash timing. These assertions do not derive expected damage/timing from either resolver.
+
+Type checking caught incorrect live dash property names in the first fixture draft; the final fixture uses the actual `aiDashDir`, `aiDashRemaining` and `aiDashCooldownTimer` fields. An independent tuned-dash check also caught omitted simulator settings in its test call; that fixture now explicitly passes its settings. Neither issue required a runtime change. Superseded diagnostic logs remain separate from final evidence.
+
+This certifies grounded, nonlethal, two-actor execution at 60 Hz under supplied movement/attack intents. It does not certify autonomous threat/route/steering choices, dash initiation decisions, moving-carrier punch behavior, swept collision between frame samples, body-cylinder collisions, moving airborne/crouched/model combinations, arbitrary multi-attacker contact, player execution, map/spawn arbitration or the full AI loop. Current dash motion includes the frame that starts with positive remaining duration; these traces retain that existing sampled behavior. Four coverage-gap groups continue to keep full M7 acceptance **inconclusive**, and neural policy integration remains optional and unpromoted.
+
+Verification:
+
+- **236/236** final focused moving-contact and gate checks passed (`output/m7-moving-final-focused.log`). Earlier draft diagnostics, including the tuned-test settings omission, remain in separate `m7-moving-before` and `m7-moving-regression` logs.
+- The final frozen run `output/grifball-validation/m7-moving-final/` completed with **exit 0** and successful browser cleanup: **1,436/1,436** validation tests, TypeScript, production client/relay and validation builds, production startup, **16/16** live scenario trials and **8/8** exact repeatability pairs passed. All **1,255** paired traces match; four gap groups retain the inconclusive execution-parity verdict.
+- Full repository run: **2,861/2,866 passed**, with the same five historical V3 animation/asset failures listed above (`output/m7-moving-repository.log`). This run used the final implementation. Its raw result remains failed; no tests were waived or weakened.
+- The source fingerprint matches the frozen plan (`output/m7-moving-review.json`). Runner output is retained in `output/m7-moving-browser-final.log`; the final directory contains the HTML report, gate evidence, frozen inputs and raw trials.
+
+The development server was restored on port **3000**; `/` and `/grifball-validation.html` returned HTTP 200. Scoped `git diff --check` passed. This new slice remains uncommitted after `e3333fd`. Next acceptance work is broader multi-actor contact and spawn arbitration; the remaining player/swept-contact and full AI decision-integration gaps stay explicit.

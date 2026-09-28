@@ -14,6 +14,7 @@ import { defaultGrifballTactics } from '../../src/game/grifballTacticsConfig';
 import { resolveHammerSlamTiming } from '../../src/game/hammerSlamTiming';
 import type { ParityDifference } from './grifballExecutionParity';
 import type { Vec3 } from '../../src/game/grifballBall';
+import { groundMotionAction, stepLiveGroundMotion, type GroundMotion } from './grifballGroundMotion';
 
 export interface FlightPose { height?: number; velocityY?: number; direction?: Vec3 }
 
@@ -27,6 +28,7 @@ export interface LungeParityCase {
   attackerCrouch?: boolean; targetCrouch?: boolean;
   motion?: { attacker?: FlightPose; target?: FlightPose };
   expectedFirstHitTick?: number;
+  targetMovement?: GroundMotion;
 }
 export const LUNGE_PARITY_CASES: LungeParityCase[] = [
   { name: 'nonlethal-contact', hits: 1 },
@@ -178,6 +180,7 @@ export function runLungeParityTrace(spec: LungeParityCase, id = 'bot_2', observe
         // The scripted production path calls its gravity prelude before lunge flight.
         // After completion it owns the fall; tactical horizontal decisions stay held.
         if (spec.motion) f.gravityPrelude(c);
+        if (c === target && spec.targetMovement) stepLiveGroundMotion(f, c, spec.targetMovement, tick);
         if (c === bot || spec.pairedLunge) {
           c.aiTimer = Math.max(0, (c.aiTimer ?? 0) - 1 / 60);
           if (c === bot) f.flight(); else f.targetFlight();
@@ -189,7 +192,9 @@ export function runLungeParityTrace(spec: LungeParityCase, id = 'bot_2', observe
       reconcileGrifballCarrierForState({ state, refs, ballMeshRef, ballChargingRef, ballChargeTimerRef });
     });
     const events = stepSimulation(sim, { [self.id]: { ...idleAction(), crouch: !!spec.attackerCrouch },
-      [rival.id]: { ...idleAction(), aim: Math.PI, crouch: !!spec.targetCrouch } }, { settings: sim.settings });
+      [rival.id]: { ...(spec.targetMovement
+        ? groundMotionAction(rival, spec.targetMovement, tick, Math.PI, sim.settings) : idleAction()),
+        aim: Math.PI, crouch: !!spec.targetCrouch } }, { settings: sim.settings });
     for (const event of events.kills) {
       killCounts.set(event.attackerId, (killCounts.get(event.attackerId) ?? 0) + 1);
       deathCounts.set(event.victimId, (deathCounts.get(event.victimId) ?? 0) + 1);
@@ -220,6 +225,10 @@ export function runLungeParityTrace(spec: LungeParityCase, id = 'bot_2', observe
         if (a.isLunging || b.isLunging) compare(tick, `${index}.flightElapsed`, a.lungeTimer, b.lungeTimer, 1e-6);
       }
       compare(tick, `${index}.lunging`, !!a.isLunging, b.isLunging);
+      if (spec.targetMovement && index === 1) {
+        compare(tick, 'target.dashRemaining', a.aiDashRemaining ?? 0, b.dashRemaining, 1e-6);
+        compare(tick, 'target.dashCooldown', a.aiDashCooldownTimer ?? 0, b.dashCooldownTimer, 1e-6);
+      }
       if (spec.motion) compare(tick, `${index}.jumping`, !!a.isJumping, b.isJumping);
       for (const axis of ['x', 'y', 'z'] as const) {
         compare(tick, `${index}.pos.${axis}`, a.pos[axis], b.pos[axis], 1e-6);

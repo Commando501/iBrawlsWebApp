@@ -19,6 +19,7 @@ import { setSimCarrier } from '../../src/sim/grifball';
 import { setGrifballCarrierForState } from '../../src/components/grifball/grifballObjectiveRuntime';
 import type { ParityDifference } from './grifballExecutionParity';
 import type { SimCombatExecution } from '../../src/sim/simState';
+import { groundMotionAction, stepLiveGroundMotion, type GroundMotion } from './grifballGroundMotion';
 
 const noop = () => {};
 export function createBotParityFixture(id = 'bot_2', observer = true, settings: Partial<UniversalSettings> = {}, targetId = 'target') {
@@ -63,9 +64,10 @@ export function createBotParityFixture(id = 'bot_2', observer = true, settings: 
     melee, recordHammerAttack: noop, playSwing: noop });
   const random = seededRandom(27);
   let tick = 0;
-  const frame = (requestAttack = false, melee = false) => withSimulationRandom(random, ++tick / 60, () => {
+  const frame = (requestAttack = false, melee = false, move?: () => void) => withSimulationRandom(random, ++tick / 60, () => {
     weaponFrame(1 / 60); respawns(1 / 60);
     if (requestAttack && bot.hp > 0 && bot.weaponState === 'ready') attack(melee);
+    move?.();
     visuals(1 / 60);
   });
   return { state, refs, bot, target, map, sim, impact, visuals, weaponFrame, respawns, attack, frame };
@@ -84,6 +86,8 @@ export interface BotParityCase {
   targetModel?: CharacterModelType;
   attackerCrouch?: boolean;
   targetCrouch?: boolean;
+  movement?: { attacker?: GroundMotion; target?: GroundMotion };
+  expectedHitTick?: number;
   hits: number;
 }
 export const BOT_PARITY_CASES: BotParityCase[] = [
@@ -130,6 +134,7 @@ export function runBotExecutionParityTrace(spec: BotParityCase, id: string, obse
   }
   const differences: ParityDifference[] = [], frames = [];
   let differenceCount = 0;
+  let liveHitTick = 0, simHitTick = 0;
   const compare = (tick: number, field: string, live: unknown, headless: unknown, tolerance = 0) => {
     const equal = typeof live === 'number' && typeof headless === 'number'
       ? Number.isFinite(live) && Number.isFinite(headless) && Math.abs(live - headless) <= tolerance : live === headless;
@@ -138,10 +143,17 @@ export function runBotExecutionParityTrace(spec: BotParityCase, id: string, obse
   for (let tick = 1; tick <= 240; tick++) {
     const request = tick === 1 || !!spec.repeat;
     bot.yaw = (spec.aim ?? 0) + Math.PI;
-    f.frame(request, !!spec.secondary);
-    stepSimulation(sim, { [id]: { ...idleAction(), aim: spec.aim ?? 0, crouch: !!spec.attackerCrouch,
+    f.frame(request, !!spec.secondary, () => {
+      if (spec.movement?.attacker) stepLiveGroundMotion(f, bot, spec.movement.attacker, tick);
+      if (spec.movement?.target) stepLiveGroundMotion(f, target, spec.movement.target, tick);
+    });
+    stepSimulation(sim, { [id]: { ...(spec.movement?.attacker
+      ? groundMotionAction(self, spec.movement.attacker, tick, spec.aim ?? 0, sim.settings) : idleAction()), aim: spec.aim ?? 0, crouch: !!spec.attackerCrouch,
       attackPrimary: request && !spec.secondary, attackSecondary: request && !!spec.secondary },
-      [rival.id]: { ...idleAction(), crouch: !!spec.targetCrouch } }, { settings: sim.settings });
+      [rival.id]: { ...(spec.movement?.target
+        ? groundMotionAction(rival, spec.movement.target, tick, 0, sim.settings) : idleAction()), crouch: !!spec.targetCrouch } }, { settings: sim.settings });
+    if (!liveHitTick && target.hp < 20) liveHitTick = tick;
+    if (!simHitTick && rival.hp < 20) simHitTick = tick;
     const phase = bot.weaponState === 'ready' ? 'idle'
       : ['swing_up', 'melee_up'].includes(bot.weaponState) ? 'windup'
       : ['swing_down', 'melee_down'].includes(bot.weaponState) ? 'active' : 'recovering';
@@ -154,11 +166,27 @@ export function runBotExecutionParityTrace(spec: BotParityCase, id: string, obse
     compare(tick, 'model', bot.modelType, self.modelType);
     compare(tick, 'target.model', target.modelType, rival.modelType);
     for (const axis of ['x', 'y', 'z'] as const) compare(tick, `position.${axis}`, bot.pos[axis], self.pos[axis], 1e-6);
-    frames.push({ tick, request, live: { weapon: bot.weaponState, elapsed: bot.weaponTimer, hp: bot.hp, targetHp: target.hp },
-      headless: { weapon: self.weaponState, elapsed: self.weaponPhaseElapsed ?? 0, hp: self.hp, targetHp: rival.hp } });
+    if (spec.movement) for (const [index, [a, b]] of ([[bot, self], [target, rival]] as const).entries()) {
+      for (const axis of ['x', 'y', 'z'] as const) {
+        compare(tick, `${index}.pos.${axis}`, a.pos[axis], b.pos[axis], 1e-6);
+        compare(tick, `${index}.vel.${axis}`, a.vel[axis], b.vel[axis], 1e-6);
+      }
+      compare(tick, `${index}.dashRemaining`, a.aiDashRemaining ?? 0, b.dashRemaining, 1e-6);
+      compare(tick, `${index}.dashCooldown`, a.aiDashCooldownTimer ?? 0, b.dashCooldownTimer, 1e-6);
+    }
+    frames.push({ tick, request, live: { weapon: bot.weaponState, elapsed: bot.weaponTimer, hp: bot.hp, targetHp: target.hp,
+      motion: spec.movement ? [bot, target].map(c => ({ pos: c.pos.toArray(), vel: c.vel.toArray(),
+        dashRemaining: c.aiDashRemaining ?? 0, dashCooldown: c.aiDashCooldownTimer ?? 0 })) : undefined },
+      headless: { weapon: self.weaponState, elapsed: self.weaponPhaseElapsed ?? 0, hp: self.hp, targetHp: rival.hp,
+        motion: spec.movement ? [self, rival].map(c => ({ pos: { ...c.pos }, vel: { ...c.vel },
+          dashRemaining: c.dashRemaining, dashCooldown: c.dashCooldownTimer })) : undefined } });
   }
   compare(240, 'expectedDamage.live', 20 - target.hp, spec.hits);
   compare(240, 'expectedDamage.headless', 20 - rival.hp, spec.hits);
+  if (spec.expectedHitTick !== undefined) {
+    compare(240, 'expectedHitTick.live', liveHitTick, spec.expectedHitTick);
+    compare(240, 'expectedHitTick.headless', simHitTick, spec.expectedHitTick);
+  }
   return { name: `${id}/${observer ? 'observer' : 'player-view'}/${spec.name}`, combatExecution: sim.combatExecution,
     scenario: spec, ticks: 240, differenceCount, differences, frames };
 }
