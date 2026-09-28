@@ -100,6 +100,8 @@ export function applyAISwordLungeHitForState({
     if (mainAi.hp <= 0) {
       mainAi.hp = 0;
       mainAi.aiState = 'RESPAWNING';
+      mainAi.respawnTimer = 3.0;
+      mainAi.deaths = (mainAi.deaths || 0) + 1;
       state.enemyRespawnTimer = 3.0;
       attackerBot.score = (attackerBot.score || 0) + 1;
       attackerBot.kills = (attackerBot.kills || 0) + 1;

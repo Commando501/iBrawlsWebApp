@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { LUNGE_PARITY_CASES, runLungeParityTrace } from './grifballLungeParity';
+import { LUNGE_PARITY_ACTORS, LUNGE_PARITY_CASES, runLungeParityTrace } from './grifballLungeParity';
 import { createMatch } from '../../src/sim/factory';
 import { idleAction } from '../../src/sim/actions';
 import { stepSimulation } from '../../src/sim/step';
@@ -8,9 +8,9 @@ import { stepCombatantWeapons } from '../../src/sim/weapons';
 import { placeCombatantsAtSpawns } from '../../src/sim/grifball';
 import { BOT_PARITY_CASES, runBotExecutionParityTrace } from './grifballBotExecutionParity';
 
-for (const id of ['main_ai', 'bot_2']) for (const observer of [false, true]) for (const spec of LUNGE_PARITY_CASES) {
-  test(`lunge parity ${id} observer=${observer} ${spec.name}`, () => {
-    const trace = runLungeParityTrace(spec, id, observer);
+for (const { id, targetId } of LUNGE_PARITY_ACTORS) for (const observer of [false, true]) for (const spec of LUNGE_PARITY_CASES) {
+  test(`lunge parity ${id}->${targetId} observer=${observer} ${spec.name}`, () => {
+    const trace = runLungeParityTrace(spec, id, observer, 'live-roster-v2', targetId);
     assert.equal(trace.differenceCount, 0, JSON.stringify(trace.differences.slice(0, 8)));
   });
 }

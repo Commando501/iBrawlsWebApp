@@ -129,7 +129,7 @@ test('corrected player traces agree while incomplete coverage and legacy differe
   assert.ok(details.traces.every((t: any) => t.differenceCount === 0));
   assert.equal(details.botTraces.length, 84);
   assert.ok(details.botTraces.every((t: any) => t.differenceCount === 0));
-  assert.equal(details.lungeTraces.length, 56);
+  assert.equal(details.lungeTraces.length, 132);
   assert.ok(details.lungeTraces.every((t: any) => t.differenceCount === 0));
   assert.ok(details.priorRosterCompatibility.differenceCount > 0);
   for (const name of ['sword-hit-recovery', 'punch-hit-recovery']) {

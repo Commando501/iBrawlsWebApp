@@ -278,7 +278,7 @@ export function createAISingleEntityUpdaterForState({
         });
       };
   
-      const finishSwordLunge = (cooldownMultiplier = 1, outcome: AILungeOutcome = 'miss_timeout', targetId?: string) => {
+      const finishSwordLunge = (cooldownMultiplier = 1, outcome: AILungeOutcome = 'miss_timeout', targetId?: string, damageAlreadyRecorded = false) => {
         const lungeFinishFrame = finishAISwordLungeFrameForCombatant({
           state: s,
           self,
@@ -291,6 +291,7 @@ export function createAISingleEntityUpdaterForState({
           cooldownMultiplier,
           outcome,
           targetId,
+          damageAlreadyRecorded,
           recordCombatantObservation,
           recordBotDamageTag,
           tryEnterPressureState,
@@ -350,6 +351,7 @@ export function createAISingleEntityUpdaterForState({
               pushStatsUpdate,
             });
             if (lungeFlightResult === 'trade_return') {
+              if (self.hp > 0) syncStateAndMesh();
               return;
             }
           } else {
@@ -1150,6 +1152,7 @@ export function createAISingleEntityUpdaterForState({
         });
   
         if (lungeFlightResult === 'trade_return') {
+          if (self.hp > 0) syncStateAndMesh();
           return;
         }
       } else {

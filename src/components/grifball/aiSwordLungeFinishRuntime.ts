@@ -23,6 +23,7 @@ interface AISwordLungeFinishContext {
   cooldownMultiplier?: number;
   outcome?: AILungeOutcome;
   targetId?: string;
+  damageAlreadyRecorded?: boolean;
   recordCombatantObservation: (botId: string, observe: PlayerModelObserver) => void;
   recordBotDamageTag: (botId: string, targetId: string) => void;
   tryEnterPressureState: (
@@ -73,6 +74,7 @@ export function finishAISwordLungeForCombatant({
   cooldownMultiplier = 1,
   outcome = 'miss_timeout',
   targetId,
+  damageAlreadyRecorded = false,
   recordCombatantObservation,
   recordBotDamageTag,
   tryEnterPressureState,
@@ -94,7 +96,7 @@ export function finishAISwordLungeForCombatant({
   let enteredPressure = false;
   if (outcome === 'hit' && targetId) {
     recordBotDamageTag(botId, targetId);
-    recordCombatantObservation(botId, (model) => observePlayerDamageDealt(model));
+    if (!damageAlreadyRecorded) recordCombatantObservation(botId, (model) => observePlayerDamageDealt(model));
 
     const targetVitals = getCombatantTargetVitals(state, targetId);
     enteredPressure = tryEnterPressureState(

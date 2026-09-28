@@ -169,12 +169,11 @@ export function executeCustomBotTradeForState({
         victim: createReplayHeatmapCombatantSource(attackerBot.id, attackerBot),
       });
     } else if (targetCombatant) {
+      targetCombatant.score = (targetCombatant.score || 0) + 1;
+      targetCombatant.kills = (targetCombatant.kills || 0) + 1;
       if (targetCombatant.id === MAIN_AI_ID) {
         state.scoreEnemy += 1;
         state.enemyKills += 1;
-      } else {
-        targetCombatant.score = (targetCombatant.score || 0) + 1;
-        targetCombatant.kills = (targetCombatant.kills || 0) + 1;
       }
       recordDeathEvent(
         `${targetCombatant.playerName || (targetCombatant.id === MAIN_AI_ID ? 'Red (AI)' : targetCombatant.id)} [${tradeText}]`,
@@ -214,14 +213,13 @@ export function executeCustomBotTradeForState({
   } else if (targetCombatant && targetCombatant.hp <= 0) {
     targetCombatant.hp = 0;
     targetCombatant.respawnTimer = 3.0;
+    targetCombatant.deaths = (targetCombatant.deaths || 0) + 1;
     if (targetCombatant.controller === 'ai') {
       targetCombatant.aiState = 'RESPAWNING';
     }
     if (targetCombatant.id === MAIN_AI_ID) {
       state.enemyDeaths += 1;
       recordBotCalibrationDeath(targetCombatant.id);
-    } else {
-      targetCombatant.deaths = (targetCombatant.deaths || 0) + 1;
     }
     attackerBot.score = (attackerBot.score || 0) + 1;
     attackerBot.kills = (attackerBot.kills || 0) + 1;
@@ -245,6 +243,13 @@ export function executeCustomBotTradeForState({
     );
   }
 
+  // A trade has already applied the defender's committed swing. Consume that
+  // impact so a survivor cannot hit again when the animation reaches its strike.
+  if (targetCombatant && targetCombatant.hp > 0 && !targetCombatant.isLunging &&
+    (targetCombatant.weaponState === 'swing_up' || targetCombatant.weaponState === 'swing_down')) {
+    targetCombatant.weaponState = 'recovering';
+    targetCombatant.weaponTimer = 0;
+  }
   attackerBot.isLunging = false;
   attackerBot.weaponState = 'ready';
   pushStatsUpdate();

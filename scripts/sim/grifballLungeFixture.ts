@@ -7,10 +7,11 @@ import { executeCustomBotTradeForState } from '../../src/components/grifball/tra
 import { constrainCombatantToArenaBounds } from '../../src/components/grifball/arenaBounds';
 import type { TacticalTargetCandidate } from '../../src/components/grifball/combatGeometry';
 import type { DeathEvent } from '../../src/types';
+import { recordCombatantModelObservation } from '../../src/components/grifball/playerModelObservations';
 
 const noop = () => {};
-export function lungeFixture(id = 'bot_2', observer = true) {
-  const f = createBotParityFixture(id, observer);
+export function lungeFixture(id = 'bot_2', observer = true, targetId = 'target') {
+  const f = createBotParityFixture(id, observer, {}, targetId);
   const { bot, target, state, refs, map } = f;
   bot.activeWeapon = 'sword'; bot.aiState = 'LUNGING';
   const outcomes: string[] = [], deaths: DeathEvent[] = [];
@@ -25,16 +26,17 @@ export function lungeFixture(id = 'bot_2', observer = true) {
       activeWeapon: target.activeWeapon === 'sword' ? 'sword' : 'hammer', weaponState: target.weaponState,
       isLunging: !!target.isLunging, invulnerabilityTimer: target.invulnerabilityTimer,
       isCrouching: !!target.isCrouching, playerName: target.playerName, modelType: target.modelType, pos: target.pos, vel: target.vel };
-    return resolveAISwordLungeFlightForCombatant({ state, self: bot, target: snapshot, mainAi: undefined,
+    return resolveAISwordLungeFlightForCombatant({ state, self: bot, target: snapshot, mainAi: state.otherPlayers.get('main_ai'),
       botId: bot.id, botMesh: refs.otherPlayerMeshes.get(bot.id)!.group, pos: bot.pos, vel: bot.vel, dt,
       cooldownMult: 1, activeCustomMap: map, gravityAcceleration: 18, recoverCombatantAltitude: () => false,
       constrainCombatantToArena: (pos, vel) => constrainCombatantToArenaBounds({ pos, vel, activeCustomMap: map, arenaRadius: map.arenaRadius }),
       areCombatantsHostile: () => bot.team !== target.team,
-      finishSwordLunge: (cooldownMultiplier, outcome, targetId) => {
+      finishSwordLunge: (cooldownMultiplier, outcome, targetId, damageAlreadyRecorded) => {
         outcomes.push(outcome);
         const result = finishAISwordLungeFrameForCombatant({ state, self: bot, botId: bot.id, pos: bot.pos, vel: bot.vel,
-          aiState: bot.aiState, timer: bot.aiTimer ?? 0, weaponState: bot.weaponState, cooldownMultiplier, outcome, targetId,
-          recordCombatantObservation: noop, recordBotDamageTag: noop, tryEnterPressureState: () => false, tryStartComboOnHit: noop });
+          aiState: bot.aiState, timer: bot.aiTimer ?? 0, weaponState: bot.weaponState, cooldownMultiplier, outcome, targetId, damageAlreadyRecorded,
+          recordCombatantObservation: (id, observe) => recordCombatantModelObservation(state, id, observe),
+          recordBotDamageTag: noop, tryEnterPressureState: () => false, tryStartComboOnHit: noop });
         bot.aiState = result.aiState; bot.aiTimer = result.timer;
       },
       executeCustomBotTrade: (attackerBot, tradeTarget, reason) => executeCustomBotTradeForState({ state, attackerBot,

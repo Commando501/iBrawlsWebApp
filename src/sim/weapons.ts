@@ -17,7 +17,7 @@
  *    two-stage slam/punch timing. It does not certify AI, lunge or trade parity.
  *  - live-roster-v1 opts into stationary roster attack phases and projected splash
  *    geometry. Lunge flight, trades, moving contact and respawn remain uncertified.
- *  - live-roster-v2 adds committed grounded flight, lethal roster trades and
+ *  - live-roster-v2 adds committed grounded flight, lethal/surviving primary trades and
  *    single-spawn revival. Supply lungeTargetId before committing a lunge. It does
  *    not port AI selection, pressure/combo decisions, or certify all combat paths.
  */
@@ -395,7 +395,13 @@ function resolveRosterLunge(state: SimState, c: SimCombatant, settings: Universa
     strike(state, c, target, settings, events);
     if (trade) {
       strike(state, target, c, settings, events);
-      c.isLunging = false; c.weaponState = 'idle'; c.weaponTimer = 0; c.weaponPhaseElapsed = 0;
+      if (target.alive && primaryActive && !target.isLunging) {
+        target.weaponState = 'recovering'; target.weaponPhaseElapsed = 0;
+        target.weaponTimer = recoverForKind(target.attackKind, settings);
+        target.attackCooldown = target.weaponTimer;
+      }
+      if (c.alive) finish('hit');
+      else { c.isLunging = false; c.weaponState = 'idle'; c.weaponTimer = 0; c.weaponPhaseElapsed = 0; }
     } else finish('hit');
     return;
   }

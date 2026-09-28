@@ -16,7 +16,7 @@ export interface LungeParityCase {
   name: string; target?: { x: number; z: number }; startZ?: number; hp?: number;
   trade?: 'sword' | 'hammer'; shield?: number; carrier?: boolean;
   settings?: Partial<UniversalSettings>; hits: number; deaths?: number;
-  cancel?: 'dead' | 'friendly';
+  cancel?: 'dead' | 'friendly'; attackerHp?: number; attackerHits?: number;
 }
 export const LUNGE_PARITY_CASES: LungeParityCase[] = [
   { name: 'nonlethal-contact', hits: 1 },
@@ -33,12 +33,19 @@ export const LUNGE_PARITY_CASES: LungeParityCase[] = [
   { name: 'carrier-death-respawn', hp: 1, carrier: true, hits: 1, deaths: 1 },
   { name: 'sword-trade-respawn', hp: 1, trade: 'sword', target: { x: 0, z: .4 }, hits: 1, deaths: 2 },
   { name: 'hammer-trade-respawn', hp: 1, trade: 'hammer', target: { x: 0, z: .4 }, hits: 1, deaths: 2 },
+  ...(['sword', 'hammer'] as const).flatMap(trade => [
+    { name: `${trade}-trade-both-survive`, hp: 3, trade, target: { x: 0, z: .4 }, hits: 1, attackerHits: 1 },
+    { name: `${trade}-trade-attacker-survives`, hp: 1, attackerHp: 3, trade, target: { x: 0, z: .4 }, hits: 1, attackerHits: 1, deaths: 1 },
+    { name: `${trade}-trade-target-survives`, hp: 3, attackerHp: 1, trade, target: { x: 0, z: .4 }, hits: 1, attackerHits: 1, deaths: 1 },
+    { name: `${trade}-trade-tuned-recovery`, hp: 3, trade, target: { x: 0, z: .4 }, hits: 1, attackerHits: 1,
+      settings: { swordLungeReload: .35, swordSlashReload: .27, hammerReloadTime: .42 } },
+  ]),
 ];
 
 /** Grounded committed flights, followed through contact, cooldown and single-spawn revival. */
 export function runLungeParityTrace(spec: LungeParityCase, id = 'bot_2', observer = true,
-  execution: SimCombatExecution = 'live-roster-v2') {
-  const f = lungeFixture(id, observer), { sim, state, bot, target, map, refs } = f;
+  execution: SimCombatExecution = 'live-roster-v2', targetId = 'target') {
+  const f = lungeFixture(id, observer, targetId), { sim, state, bot, target, map, refs } = f;
   state.grifballTactics = defaultGrifballTactics();
   Object.assign(sim.settings, spec.settings); Object.assign(state.settings, spec.settings);
   sim.combatExecution = execution; sim.match.phase = state.grifball.phase = 'playing';
@@ -51,7 +58,7 @@ export function runLungeParityTrace(spec: LungeParityCase, id = 'bot_2', observe
   const p = spec.target ?? { x: 0, z: 2 };
   rival.pos = { x: p.x, y: 0, z: p.z }; target.pos.set(p.x, 0, p.z);
   self.weapon = bot.activeWeapon = 'sword'; self.yaw = 0;
-  self.hp = self.maxHp = bot.hp = bot.maxHp = spec.hp ?? 20;
+  self.hp = self.maxHp = bot.hp = bot.maxHp = spec.attackerHp ?? spec.hp ?? 20;
   rival.hp = rival.maxHp = target.hp = target.maxHp = spec.hp ?? 20;
   self.weaponReadyTimer = rival.weaponReadyTimer = self.invulnerabilityTimer = rival.invulnerabilityTimer = 0;
   target.invulnerabilityTimer = rival.invulnerabilityTimer = spec.shield ?? 0;
@@ -77,8 +84,9 @@ export function runLungeParityTrace(spec: LungeParityCase, id = 'bot_2', observe
     target.hp = rival.hp = 0; rival.alive = false; target.respawnTimer = rival.respawnTimer = 10;
   } else if (spec.cancel === 'friendly') { target.team = bot.team; rival.team = self.team; }
   const differences: ParityDifference[] = [], frames = [];
+  let liveAttackerDamage = 0, simAttackerDamage = 0;
   let differenceCount = 0, liveDamage = 0, simDamage = 0, liveDeaths = 0, simDeaths = 0;
-  const killCounts = new Map<string, number>();
+  const killCounts = new Map<string, number>(), deathCounts = new Map<string, number>();
   const pairs: [typeof bot, typeof self][] = [[bot, self], [target, rival]];
   const compare = (tick: number, field: string, live: unknown, headless: unknown, tolerance = 0) => {
     const same = typeof live === 'number' && typeof headless === 'number'
@@ -101,8 +109,12 @@ export function runLungeParityTrace(spec: LungeParityCase, id = 'bot_2', observe
       f.visuals(1 / 60);
       reconcileGrifballCarrierForState({ state, refs, ballMeshRef, ballChargingRef, ballChargeTimerRef });
     });
-    const events = stepSimulation(sim, {}, { settings: sim.settings });
-    for (const event of events.kills) killCounts.set(event.attackerId, (killCounts.get(event.attackerId) ?? 0) + 1);
+    const events = stepSimulation(sim, { [rival.id]: { ...idleAction(), aim: Math.PI } }, { settings: sim.settings });
+    for (const event of events.kills) {
+      killCounts.set(event.attackerId, (killCounts.get(event.attackerId) ?? 0) + 1);
+      deathCounts.set(event.victimId, (deathCounts.get(event.victimId) ?? 0) + 1);
+    }
+    liveAttackerDamage += Math.max(0, before[0] - bot.hp); simAttackerDamage += Math.max(0, headlessBefore[0] - self.hp);
     liveDamage += Math.max(0, before[1] - target.hp); simDamage += Math.max(0, headlessBefore[1] - rival.hp);
     for (const [index, [a, b]] of pairs.entries()) {
       if (before[index] > 0 && a.hp <= 0) liveDeaths++;
@@ -113,6 +125,11 @@ export function runLungeParityTrace(spec: LungeParityCase, id = 'bot_2', observe
       compare(tick, `${index}.shield`, a.invulnerabilityTimer ?? 0, b.invulnerabilityTimer, 1e-6);
       compare(tick, `${index}.weapon`, a.activeWeapon, b.weapon);
       compare(tick, `${index}.kills`, a.kills ?? 0, killCounts.get(b.id) ?? 0);
+      compare(tick, `${index}.deaths`, a.deaths ?? 0, deathCounts.get(b.id) ?? 0);
+      const phase = a.weaponState === 'ready' ? 'idle' : a.weaponState === 'swing_up' ? 'windup'
+        : a.weaponState === 'swing_down' ? 'active' : 'recovering';
+      compare(tick, `${index}.weaponPhase`, phase, b.weaponState);
+      compare(tick, `${index}.phaseElapsed`, a.weaponTimer ?? 0, b.weaponPhaseElapsed ?? 0, 1e-6);
       compare(tick, `${index}.lunging`, !!a.isLunging, b.isLunging);
       for (const axis of ['x', 'y', 'z'] as const) {
         compare(tick, `${index}.pos.${axis}`, a.pos[axis], b.pos[axis], 1e-6);
@@ -132,12 +149,19 @@ export function runLungeParityTrace(spec: LungeParityCase, id = 'bot_2', observe
       headless: { pos: { ...self.pos }, hp: self.hp, targetHp: rival.hp, lunging: self.isLunging,
         cooldown: self.attackCooldown, respawn: rival.respawnTimer, outcome: self.lungeOutcome } });
   }
+  compare(300, 'expected.liveAttackerDamage', liveAttackerDamage, spec.attackerHits ?? (spec.trade ? 1 : 0));
+  compare(300, 'expected.simAttackerDamage', simAttackerDamage, spec.attackerHits ?? (spec.trade ? 1 : 0));
   compare(300, 'expected.liveDamage', liveDamage, spec.hits); compare(300, 'expected.simDamage', simDamage, spec.hits);
+  compare(300, 'expected.deathFeed', f.deaths.length, spec.deaths ?? 0);
   compare(300, 'expected.liveDeaths', liveDeaths, spec.deaths ?? 0); compare(300, 'expected.simDeaths', simDeaths, spec.deaths ?? 0);
-  return { name: `${id}/${observer ? 'observer' : 'player-view'}/${spec.name}`, combatExecution: execution, ticks: 300, differenceCount, differences, frames };
+  return { name: `${id}->${targetId}/${observer ? 'observer' : 'player-view'}/${spec.name}`, combatExecution: execution, ticks: 300, differenceCount, differences, frames };
 }
 
+export const LUNGE_PARITY_ACTORS = [
+  { id: 'main_ai', targetId: 'target' }, { id: 'bot_2', targetId: 'target' }, { id: 'bot_2', targetId: 'main_ai' },
+];
+
 export function runLungeParity() {
-  return ['main_ai', 'bot_2'].flatMap(id => [false, true].flatMap(observer =>
-    LUNGE_PARITY_CASES.map(spec => runLungeParityTrace(spec, id, observer))));
+  return LUNGE_PARITY_ACTORS.flatMap(({ id, targetId }) => [false, true].flatMap(observer =>
+    LUNGE_PARITY_CASES.map(spec => runLungeParityTrace(spec, id, observer, 'live-roster-v2', targetId))));
 }

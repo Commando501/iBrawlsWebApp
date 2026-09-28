@@ -21,7 +21,8 @@ import type { ParityDifference } from './grifballExecutionParity';
 import type { SimCombatExecution } from '../../src/sim/simState';
 
 const noop = () => {};
-export function createBotParityFixture(id = 'bot_2', observer = true, settings: Partial<UniversalSettings> = {}) {
+export function createBotParityFixture(id = 'bot_2', observer = true, settings: Partial<UniversalSettings> = {}, targetId = 'target') {
+  if (id === targetId) throw new Error('Parity actors must have distinct IDs');
   const map = structuredClone(defaultGrifballMap());
   const sim = createMatch({ seed: 27, teamSizes: { blue: 1, red: 1 }, settings, map });
   const state = createInitialGrifballRuntimeState({ debugMode: false, adminSettings: sim.settings, isMultiplayer: false, multiplayerRole: null });
@@ -31,7 +32,7 @@ export function createBotParityFixture(id = 'bot_2', observer = true, settings: 
   refs.camera = new THREE.PerspectiveCamera(); refs.playerHammer = new THREE.Group(); refs.playerSword = new THREE.Group();
   const bot = createOfflineBotCombatant({ id, playerName: id, team: 'blue', spawnPos: new THREE.Vector3(), yaw: Math.PI,
     hue: 0, difficulty: 'normal', settings: state.settings, modelType: 'medium' });
-  const target = createOfflineBotCombatant({ id: 'target', playerName: 'Target', team: 'red', spawnPos: new THREE.Vector3(0, 0, 2), yaw: 0,
+  const target = createOfflineBotCombatant({ id: targetId, playerName: 'Target', team: 'red', spawnPos: new THREE.Vector3(0, 0, 2), yaw: 0,
     hue: 0, difficulty: 'normal', settings: state.settings, modelType: 'medium' });
   target.hp = target.maxHp = 20;
   for (const c of [bot, target]) {
@@ -42,7 +43,7 @@ export function createBotParityFixture(id = 'bot_2', observer = true, settings: 
   }
   const effects = { playExplosion: noop, playDeath: noop, playSwing: noop, spawnVoxelShockwaveParticles: noop,
     renderHammerSplashVfx: noop, recordBotCalibrationDeath: noop, recordBotPsychKill: noop };
-  const impacts = createCombatImpactCallbacksForState({ ...effects, getState: () => state, getMainAI: () => id === 'main_ai' ? bot : undefined,
+  const impacts = createCombatImpactCallbacksForState({ ...effects, getState: () => state, getMainAI: () => state.otherPlayers.get('main_ai'),
     getEnemyAITarget: () => ({ id: target.id, pos: target.pos, vel: target.vel, hp: target.hp, playerName: target.playerName,
       modelType: target.modelType, weaponState: target.weaponState ?? 'ready', isLunging: !!target.isLunging,
       isCrouching: !!target.isCrouching, isObserver: false, respawnTimer: target.respawnTimer ?? 0,
@@ -55,7 +56,7 @@ export function createBotParityFixture(id = 'bot_2', observer = true, settings: 
     recordCombatantObservation: noop, onMainAIHammerSwing: noop, playSwing: noop, playJump: noop, playDash: noop, playRespawn: noop });
   const impact = (botId: string) => applyBotMeleeImpactForState({ state, botId, ...effects });
   const visuals = (dt: number) => updateRosterCombatantVisualsForState({ state, refs, dt, applyBotMeleeImpact: impact, renderSwordLungeTrailVfx: noop });
-  const weaponFrame = (dt: number) => updateWeaponAnimationFrameForState({ state, refs, dt, mainAI: id === 'main_ai' ? bot : undefined,
+  const weaponFrame = (dt: number) => updateWeaponAnimationFrameForState({ state, refs, dt, mainAI: state.otherPlayers.get('main_ai'),
     getPlayerSwordLockTarget: () => null, ...impacts });
   const respawns = (dt: number) => updateAIRosterTick({ refs, rosterAI: [bot, target], dt, respawnCombatant: actions.respawnCombatant, updateSingleAIEntity: noop });
   const attack = (melee = false) => triggerCombatantAttackAction({ self: bot, weapon: bot.activeWeapon === 'sword' ? 'sword' : 'hammer',

@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { lungeFixture } from './grifballLungeFixture';
 import { setGrifballCarrierForState, reconcileGrifballCarrierForState } from '../../src/components/grifball/grifballObjectiveRuntime';
 import { withSimulationRandom, seededRandom } from '../../src/game/simulationRandom';
+import { getMatchBehaviorStats } from '../../src/game/aiPlayerModel';
 
 test('live lunge damages once, stops on contact, and applies the configured lunge cooldown', () => {
   const f = lungeFixture();
@@ -68,4 +69,46 @@ test('lethal lunge releases the carrier and shield blocks a fresh melee hit afte
   target.pos.copy(bot.pos).add(new THREE.Vector3(0, 0, 1)); const hp = target.hp;
   f.impact(bot.id); assert.equal(target.hp, hp);
   target.invulnerabilityTimer = 0; f.impact(bot.id); assert.equal(target.hp, hp - 1);
+});
+
+for (const weapon of ['sword', 'hammer'] as const) test(`surviving ${weapon} trade consumes both attacks and finishes the attacker's flight`, () => {
+  const f = lungeFixture('bot_2', true, 'main_ai');
+  f.bot.hp = f.bot.maxHp = f.target.hp = f.target.maxHp = 3;
+  f.target.pos.z = .4; f.target.activeWeapon = weapon; f.target.weaponState = 'swing_up';
+  f.state.settings.enableSwordTrade = f.state.settings.enableHammerSwordTrade = true;
+  f.state.settings.swordLungeReload = .35;
+  assert.equal(f.flight(), 'trade_return');
+  assert.equal(f.bot.hp, 2); assert.equal(f.target.hp, 2);
+  assert.equal(f.bot.aiState, 'COOLDOWN'); assert.equal(f.bot.aiTimer, .35);
+  assert.equal(f.bot.vel.length(), 0); assert.equal(f.bot.isLunging, false);
+  assert.deepEqual(f.outcomes, ['hit']);
+  assert.equal(f.target.weaponState, 'recovering'); assert.equal(f.target.weaponTimer, 0);
+  for (let i = 0; i < 180; i++) { f.flight(); f.visuals(1 / 60); }
+  assert.equal(f.target.weaponState, 'ready');
+  assert.equal(f.bot.hp, 2); assert.equal(f.target.hp, 2); assert.equal(f.deaths.length, 0);
+  for (const c of [f.bot, f.target]) {
+    const stats = getMatchBehaviorStats(f.state.aiMatchContext, c.id);
+    assert.equal(stats?.damageDealtCount, 1); assert.equal(stats?.damageReceivedCount, 1);
+  }
+});
+
+test('main-AI lunge victim stays dead for the roster delay, releases the ball and revives with its shield', () => {
+  const f = lungeFixture('bot_2', false, 'main_ai');
+  const { state, target, refs } = f;
+  state.grifball.ball.state = 'held'; state.grifball.ball.holderId = target.id;
+  setGrifballCarrierForState({ state, id: target.id, carrying: true });
+  target.hp = 1; target.pos.z = .4;
+  f.flight();
+  assert.equal(target.hp, 0); assert.equal(target.respawnTimer, 3);
+  assert.equal(target.deaths, 1); assert.equal(state.enemyDeaths, 1); assert.equal(f.bot.kills, 1);
+  reconcileGrifballCarrierForState({ state, refs, ballMeshRef: { current: null },
+    ballChargingRef: { current: false }, ballChargeTimerRef: { current: 0 } });
+  assert.equal(state.grifball.ball.holderId, null); assert.equal(target.activeWeapon, 'hammer');
+  for (let i = 0; i < 179; i++) f.respawns(1 / 60);
+  assert.equal(target.hp, 0); assert.equal(target.aiState, 'RESPAWNING');
+  f.respawns(1 / 60); f.respawns(1 / 60);
+  assert.equal(target.hp, target.maxHp); assert.equal(target.respawnTimer, 0);
+  assert.equal(target.aiState, 'APPROACHING');
+  assert.equal(target.invulnerabilityTimer, state.settings.respawnInvulnerabilityDuration);
+  assert.equal(target.deaths, 1); assert.equal(state.enemyDeaths, 1);
 });

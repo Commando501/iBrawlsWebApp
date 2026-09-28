@@ -442,3 +442,32 @@ Verification:
 The final source fingerprint matches the frozen plan (`output/m7-lunge-review.json`). Browser evidence and runner output are in the final directory and `output/m7-lunge-browser-final.log`. The development server was restored on port **3000**; `/` and `/grifball-validation.html` returned HTTP 200. This new slice remains uncommitted after the prior-work commit `85c8831`.
 
 Spawn facing and post-respawn movement are outside this fixture's comparisons; AI integration, untested trade variants and wider spawn arbitration remain open.
+
+
+## M7 acceptance follow-up: surviving trades and main-AI victims — 2026-09-27
+
+The prior flight/revival slice was committed as `2c3a860` before this work. The implementation roadmap files remain unchanged.
+
+The expanded fixture exposed a surviving attacker retaining flight velocity without completing its lunge cooldown, a pending defender swing dealing damage again after its trade, main-AI lunge victims reviving on the next roster tick because only the team timer was set, and missing per-actor main-AI trade credit. The initial expanded run failed 48 of 158 checks (`output/m7-trade-before.log`).
+
+Production fixes:
+
+- A surviving attacker finishes the traded flight through the normal finish callback, preserving hit memory, stopping flight movement and entering configured recovery (or existing pressure/combo behavior). Both scripted and neural live callers synchronize the resulting frame before returning. Dead attackers retain the death/respawn path.
+- A surviving defender's committed primary swing enters recovery: the trade has already applied that attack's damage, so its pending animation must not deal it again. This applies to active sword/hammer primary attacks; simultaneous lunge handling remains outside this certification.
+- Main-AI lunge deaths set the combatant's three-second respawn timer, which the roster loop actually reads, and increment its death count. Main-AI trade kills/deaths update per-actor counters as well as existing legacy counters.
+- Finishing a surviving roster trade does not duplicate the damage-dealt observation already recorded by trade resolution. A live regression asserts exactly one dealt/received sample per actor.
+
+The opt-in `live-roster-v2` simulator independently models the surviving trade finish and defender recovery. Default and v1 execution models retain their prior behavior. There is no RL observation/action schema or policy promotion.
+
+Protocol `live-functions-vs-headless-step-v5` now evaluates **249 paired traces**: 33 player, 84 stationary roster and **132 flight/lifecycle**. The latter comprises 22 cases across three attacker/victim identity pairs and both viewing modes. Added cases cover both actors surviving, only the attacker surviving, only the defender surviving, and tuned reloads for sword/hammer trades; all 22 cases also run against a main-AI victim. The fixture supplies the actual main-AI object to production callbacks and aligns both defenders' aim. Traces independently compare both actors' damage, vitals, kill/death credit, weapon phase/elapsed clock, movement, flight/cooldown/outcome, and ball state for 300 ticks, with expected damage/death/death-feed totals.
+
+The fixtures hold target selection, movement after contact, pressure/combo choices and cooldown multipliers fixed. Recent-attack trade windows, simultaneous lunges, player/airborne/moving-target flight, broader geometry, spawn arbitration and full AI decision integration remain open. Main-AI coverage here concerns committed roster lunge/trade victims, not every player-versus-main-AI damage path. Full M7 acceptance remains **inconclusive**.
+
+Verification:
+
+- **218/218** final focused checks passed (`output/m7-trade-regression-final.log`).
+- The frozen run `output/grifball-validation/m7-trade-final/` completed with **exit 0** and successful browser cleanup: **409/409** validation tests, TypeScript, production client/relay and validation builds, production startup, **16/16** scenario trials and **8/8** exact repeatability pairs passed. All **249** parity traces match; four remaining coverage groups correctly keep execution parity inconclusive.
+- Full repository run: **1,834/1,839 passed**, with the same five historical V3 animation/asset failures listed above (`output/m7-trade-repository.log`). This run started before the final damage-observation guard/assertion; the final focused and frozen selections ran afterward. The raw repository result remains failed; no tests were waived or weakened.
+- The source fingerprint matches the frozen plan (`output/m7-trade-review.json`). Browser runner output is retained in `output/m7-trade-browser-final.log`; the final directory includes its report, gate evidence, frozen inputs and raw trials.
+
+The development server was restored on port **3000**; `/` and `/grifball-validation.html` returned HTTP 200. This new slice remains uncommitted after `2c3a860`. Next acceptance work is recent-attack trade windows and simultaneous-lunge coverage before broader geometry/spawn and AI integration certification.
