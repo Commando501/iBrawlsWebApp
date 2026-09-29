@@ -486,9 +486,11 @@ export function stepCombatantWeapons(
   action: ActionInput,
   settings: UniversalSettings,
   dt: number,
-  events: KillEvent[]
+  events: KillEvent[],
+  stage: 'complete' | 'intent' | 'animation' = 'complete'
 ): void {
   if (!c.alive) return;
+  if (stage === 'animation' && c.isLunging) return;
   if (isMixedPlayer(state, c)) {
     if (c.isLunging) return;
     if (c.weaponState === 'recovering' && c.attackKind === 'none') {
@@ -500,17 +502,19 @@ export function stepCombatantWeapons(
     }
   }
 
-  if (c.swapLockoutTimer > 0) c.swapLockoutTimer = Math.max(0, c.swapLockoutTimer - dt);
-  if (c.attackCooldown > 0) c.attackCooldown = Math.max(0, c.attackCooldown - dt);
-  if (c.weaponReadyTimer > 0) c.weaponReadyTimer = Math.max(0, c.weaponReadyTimer - dt);
-  if (c.hammerJumpWindowTimer > 0) c.hammerJumpWindowTimer = Math.max(0, c.hammerJumpWindowTimer - dt);
+  if (stage !== 'animation') {
+    if (c.swapLockoutTimer > 0) c.swapLockoutTimer = Math.max(0, c.swapLockoutTimer - dt);
+    if (c.attackCooldown > 0) c.attackCooldown = Math.max(0, c.attackCooldown - dt);
+    if (c.weaponReadyTimer > 0) c.weaponReadyTimer = Math.max(0, c.weaponReadyTimer - dt);
+    if (c.hammerJumpWindowTimer > 0) c.hammerJumpWindowTimer = Math.max(0, c.hammerJumpWindowTimer - dt);
 
-  // Weapon swap (hammer <-> sword): blocked while carrying the ball, mid-action, or on lockout.
-  // A swap makes the new weapon un-ready for `weaponReadyTime` before it can fire.
-  if (action.swapWeapon && !c.isLunging && c.weapon !== 'ball' && c.weaponState === 'idle' && c.swapLockoutTimer <= 0) {
-    c.weapon = c.weapon === 'hammer' ? 'sword' : 'hammer';
-    c.swapLockoutTimer = settings.weaponSwapLockout ?? 1.0;
-    c.weaponReadyTimer = settings.weaponReadyTime ?? 0.5;
+    // Weapon swap (hammer <-> sword): blocked while carrying the ball, mid-action, or on lockout.
+    // A swap makes the new weapon un-ready for `weaponReadyTime` before it can fire.
+    if (action.swapWeapon && !c.isLunging && c.weapon !== 'ball' && c.weaponState === 'idle' && c.swapLockoutTimer <= 0) {
+      c.weapon = c.weapon === 'hammer' ? 'sword' : 'hammer';
+      c.swapLockoutTimer = settings.weaponSwapLockout ?? 1.0;
+      c.weaponReadyTimer = settings.weaponReadyTime ?? 0.5;
+    }
   }
 
   // Active lunge flight: kill-on-contact, run down the lunge timer.
@@ -530,8 +534,15 @@ export function stepCombatantWeapons(
   // Attacks are blocked until the weapon is ready (post-swap / post-spawn).
   const canAttack = c.attackCooldown <= 0 && c.weaponReadyTimer <= 0;
 
+  // Mixed frames commit the roster's requested action before objectives, but
+  // advance skeletal melee afterward. Existing complete-step callers are unchanged.
+  if (stage === 'intent') {
+    if (c.weaponState === 'idle') stepLiveAttack(state, c, action, settings, 0, events, canAttack);
+    return;
+  }
+
   if ((combatExecutionForActor(state, c) === 'live-player-v1' || isRosterExecution(combatExecutionForActor(state, c))) && !(c.weaponState === 'recovering' && c.attackKind === 'none')) {
-    stepLiveAttack(state, c, action, settings, dt, events, canAttack);
+    stepLiveAttack(state, c, action, settings, dt, events, stage !== 'animation' && canAttack);
     return;
   }
 

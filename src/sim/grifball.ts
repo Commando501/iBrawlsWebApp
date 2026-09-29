@@ -217,6 +217,18 @@ export function throwSimPass(
   setSimCarrier(c, false, settings, state);
 }
 
+/** End-of-frame repair after late skeletal damage. Does not advance ball physics,
+ * healing, pickup, phase timers or scoring a second time. */
+export function reconcileSimCarrier(state: SimState, settings: UniversalSettings): boolean {
+  const ball = state.match.ball;
+  if (state.mode !== 'grifball' || ball.state !== 'held' || !ball.holderId) return false;
+  const holder = findCombatant(state, ball.holderId);
+  if (holder && holder.alive && holder.hp > 0 && holder.respawnTimer <= 0) return false;
+  dropBall(ball, holder?.pos ?? ball.home);
+  if (holder) setSimCarrier(holder, false, settings, state);
+  return true;
+}
+
 /**
  * Advance the objective one tick: phase machine, ball follow/physics, pickups, and
  * scoring. Mirrors `updateGrifballObjectiveForState`. Returns the tick's events.

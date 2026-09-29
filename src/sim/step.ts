@@ -19,7 +19,7 @@ import { type ActionsById, idleAction } from './actions';
 import { createRng, type Rng } from './rng';
 import { stepCombatantMovement } from './physics';
 import { stepCombatantWeapons, resolveMixedPlayerLunge, tickRespawns, type KillEvent } from './weapons';
-import { tickGrifballObjective, throwSimPass, type ObjectiveEvents } from './grifball';
+import { tickGrifballObjective, throwSimPass, reconcileSimCarrier, type ObjectiveEvents } from './grifball';
 import { tickCombat } from './combat';
 
 /** Canonical fixed timestep. */
@@ -53,6 +53,7 @@ export function stepSimulation(
   const kills: KillEvent[] = [];
   const act = (id: string) => actionsById[id] ?? idleAction();
   const mixed = state.combatExecution === 'live-mixed-v1';
+  const mixedObjectiveFrame = mixed && state.mode === 'grifball';
   const player = mixed ? state.combatants.find(c => c.id === state.localPlayerId) : undefined;
   if (mixed && (!player || state.combatants.filter(c => c.id === state.localPlayerId).length !== 1))
     throw new Error('live-mixed-v1 requires exactly one explicit localPlayerId');
@@ -91,9 +92,10 @@ export function stepSimulation(
     }
   }
 
-  // Phase 2 — weapons / damage (resolved against post-movement positions).
+  // Mixed roster decisions commit before objectives; skeletal damage follows them.
+  // Other profiles retain their original combined weapons/damage phase.
   for (const c of state.combatants) {
-    if (c !== player && !flightAdvanced?.has(c.id)) stepCombatantWeapons(state, c, act(c.id), settings, dt, kills);
+    if (c !== player && !flightAdvanced?.has(c.id)) stepCombatantWeapons(state, c, act(c.id), settings, dt, kills, mixedObjectiveFrame ? 'intent' : 'complete');
   }
 
   // Phase 3 — passes: hold secondary to charge the throw (grifballChargeMax), release to throw.
@@ -117,6 +119,12 @@ export function stepSimulation(
     state.mode === 'combat'
       ? tickCombat(state, settings, dt)
       : tickGrifballObjective(state, settings, dt, actionsById);
+
+  if (mixedObjectiveFrame) {
+    for (const c of state.combatants) if (c !== player && !flightAdvanced?.has(c.id))
+      stepCombatantWeapons(state, c, act(c.id), settings, dt, kills, 'animation');
+    reconcileSimCarrier(state, settings);
+  }
 
   // Phase 5 — respawns.
   if (!rosterV2) tickRespawns(state, settings, dt);

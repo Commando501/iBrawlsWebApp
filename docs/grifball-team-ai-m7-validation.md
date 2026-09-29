@@ -805,3 +805,28 @@ Verification:
 - A full repository suite and frozen browser CLI run were not repeated for this simulator/objective-boundary slice. The previous full run's five historical V3 failures remain unresolved; no waiver or M7 acceptance is implied.
 
 Next work is integration of these objective boundaries into complete mixed movement/combat frames, particularly carrier death versus respawn, pass release and same-frame pickup/scoring. Human review remains deferred until the automated acceptance requirements are completed.
+
+
+## 2026-09-29 — mixed combat/objective frame ordering
+
+Committed opposing-flight and objective-boundary work as `3b2582c` (`Validate opposing flights and mixed objective lifecycle`). Continued with frame ordering; this new slice remains uncommitted. Human review remains deferred.
+
+Added **64 traces** plus two snapshot continuations through the actual `advanceGrifballFrameForState` coordinator. Production local movement/respawn and weapon frames, roster respawn, lunge flight, objective processing, skeletal melee and end-of-frame carrier reconciliation run independently from `stepSimulation`. Targets and attack commands are authored; the runner is grounded and stationary. Cases vary player/bot runner, lunge/newly requested slash, on/off enemy goal, one/two HP, mirrored teams and roster order. Presentation, general AI policy and match-timer callbacks are suppressed; traces stop before revival or round-reset placement.
+
+The initialized pre-fix suite passed **41/66** (`output/m7-frame-objective-before.log`). The simulator advanced roster melee before objective scoring, unlike the live coordinator, and lacked the live end-of-frame carrier repair. Mixed Grifball execution now commits roster attack intent before objectives, advances skeletal melee after objectives and repairs dead possession without running physics, healing, pickups or scoring a second time. Cooldown/swap timers advance once. Committed lunge contact stays before objectives. Other execution profiles and combat-mode ordering retain their previous behavior.
+
+Independent expectations establish that lethal early lunges deny the goal and allow same-frame recovery; late melee permits a goal already registered by the objective and allows recovery only at the next objective tick. Scoring removes runner benefits before late damage, so a two-HP runner may be clamped to one HP and killed after scoring. Both engines are checked for that outcome, exact pickup timing and a single goal notification. A render-boundary assertion ensures a dead runner never publishes possession. JSON continuations cross the first impact/pickup boundary.
+
+Protocol `live-functions-vs-headless-step-v16` adds `frameObjectiveTraces` with explicit bounded scope. **64 traces / 7,680 frames** match, bringing combined evidence to **2,651 traces / 550,668 frames**. This does not certify pass-input ordering, moving carrier crowds, autonomous decisions, observer representation, full map/round lifecycle, calibrated performance or held-out quality. The execution gate remains **inconclusive**.
+
+Verification:
+
+- **3,231/3,231** validation-suite tests passed, including the complete parity gate and all earlier trace groups (`output/m7-frame-objective-validation.log`).
+- **122/122** focused frame, simulator and live carrier regressions passed after limiting the new ordering to Grifball mode (`output/m7-frame-objective-focused.log`).
+- TypeScript passed with the validation runner's 8 GB heap allowance (`output/m7-frame-objective-typecheck.log`).
+- Production client build passed (`output/m7-frame-objective-build.log`), with the existing large-chunk warning.
+- Saved evidence: `output/m7-frame-objective-evidence.json`; summary: `output/m7-frame-objective-summary.json`. Source identity: commit `3b2582c32313e759d6fa25241d48c11c2b585b3c`, working-tree hash `4b6d1125af6a457416656965345914747a7703f9b2a72bcf8dee02ebad37a9d7`.
+- Scoped `git diff --check` passed; attached implementation plans remain unchanged.
+- Full repository and frozen browser CLI runs were not repeated for this simulator/frame-ordering slice. The previous five V3 repository failures remain unresolved, without waivers.
+
+Next work is player pass-input/charge ordering and movement across objective transitions, followed by remaining complete-frame/map/decision integration. Human testing stays deferred until the automated acceptance requirements are complete.
