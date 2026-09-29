@@ -127,6 +127,10 @@ test('corrected player traces agree while incomplete coverage and legacy differe
   assert.equal(details.traces.length, PARITY_TRACE_CASES.length); assert.ok(details.gaps.length);
   assert.deepEqual(details.combatExecution, ['live-player-v1', 'live-roster-v1', 'live-roster-v2', 'live-mixed-v1']);
   assert.ok(details.traces.every((t: any) => t.differenceCount === 0));
+  assert.equal(details.mapContestTraces.length, 40);
+  assert.ok(details.mapContestTraces.every((t: any) => t.failureCount === 0 && t.boundary === 'live-map-contest' && t.carrierDeaths.length > 0 && t.revivals.length > 0));
+  assert.equal(details.mapContestTraces.reduce((sum: number, t: any) => sum + t.frames.length, 0), 72000);
+  assert.equal(new Set(details.mapContestTraces.map((t: any) => t.mapId)).size, 5);
   assert.equal(details.mapRoutingTraces.length, 40);
   assert.ok(details.mapRoutingTraces.every((t: any) => t.failureCount === 0 && t.boundary === 'live-map-routing' && t.goalTick > t.pickupTick && t.endTick > t.goalTick));
   assert.equal(details.mapRoutingTraces.reduce((sum: number, t: any) => sum + t.frames.length, 0), 57600);
@@ -163,7 +167,7 @@ test('corrected player traces agree while incomplete coverage and legacy differe
   assert.ok(details.botTraces.every((t: any) => t.differenceCount === 0));
   assert.equal(details.lungeTraces.length, 300);
   assert.ok(details.lungeTraces.every((t: any) => t.differenceCount === 0));
-  assert.equal(details.protocol, 'live-functions-vs-headless-step-v36');
+  assert.equal(details.protocol, 'live-functions-vs-headless-step-v37');
   assert.equal(details.geometryTraces.length, 398);
   assert.ok(details.geometryTraces.every((t: any) => t.differenceCount === 0));
   assert.equal(details.motionTraces.length, 216);

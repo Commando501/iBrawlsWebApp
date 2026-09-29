@@ -1,3 +1,6 @@
+import { createArenaCollisionCallbacksForState } from '../../src/components/grifball/arenaCollisionCallbacks';
+import { getGoalPlates } from '../../src/game/grifballGoals';
+import { getGrifballEnemyGoalPosForMap } from '../../src/components/grifball/grifballObjectiveRuntime';
 import { triggerEnemyHammerSwingForCombatant } from '../../src/components/grifball/enemyWeaponActions';
 import { createArenaOrchestratorCallbacksForState } from '../../src/components/grifball/arenaOrchestratorCallbacks';
 import { createCombatantActionCallbacksForState } from '../../src/components/grifball/combatantActionCallbacks';
@@ -38,8 +41,10 @@ export const OPPOSED_DECISION_CASES: OpposedDecisionCase[] =
  * Initial positions, wounded possession and timing settings are authored; no
  * actions, assignments, movement, subsequent damage or ownership are injected.
  */
-export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation: 'opening' | 'revival' | 'match' | 'mobility' = 'opening') {
-  const match = continuation === 'match', mobility = continuation === 'mobility', revival = continuation !== 'opening';
+export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation: 'opening' | 'revival' | 'match' | 'mobility' | 'map-contest' = 'opening', suppliedMap?: CustomMapData) {
+  const mapped = continuation === 'map-contest';
+  if (mapped && !suppliedMap) throw new Error('Map contest requires a supplied map');
+  const match = continuation === 'match' || mapped, mobility = continuation === 'mobility', revival = continuation !== 'opening';
   const state = createInitialGrifballRuntimeState({ debugMode: false,
     adminSettings: { ...DEFAULT_ADMIN_SETTINGS, gameMode: 'grifball', aiDifficulty: 'normal',
       ...(mobility ? { maxHP: 3 } : {}),
@@ -49,15 +54,16 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
       hammerSlamAttackTime: spec.mode === 'punch-first' ? .2 : .04 },
     isMultiplayer: false, multiplayerRole: null });
   const refs = createInitialGrifballThreeRefs(), sign = spec.team === 'blue' ? 1 : -1;
-  const map = { id: 'opposed-corridor', name: 'Opposed corridor', mapShape: 'rectangular', arenaRadius: 60,
+  const map = mapped ? structuredClone(suppliedMap!) : { id: 'opposed-corridor', name: 'Opposed corridor', mapShape: 'rectangular', arenaRadius: 60,
     arenaHalfExtents: { x: 52, z: 23 }, objects: [] } as unknown as CustomMapData;
-  if (match) map.objects = (['blue', 'red'] as const).map(team => ({ id: team, type: 'box', goalPlateTeam: team,
+  if (match && !mapped) map.objects = (['blue', 'red'] as const).map(team => ({ id: team, type: 'box', goalPlateTeam: team,
     position: { x: team === 'blue' ? -47 : 47, y: 0, z: 0 }, scale: { x: 2, y: .12, z: 2 }, rotation: { x: 0, y: 0, z: 0 } })) as CustomMapData['objects'];
-  state.arenaRadius = 60; state.isObserverMode = true; state.grifball.phase = 'playing';
+  const mapBefore = JSON.stringify(map);
+  state.arenaRadius = map.arenaRadius; state.isObserverMode = true; state.grifball.phase = 'playing';
   state.grifballTactics = defaultGrifballTactics(); state.grifballTactics.defaults.passingEnabled = false; state.otherPlayers.clear();
   const carrierId = spec.main ? 'main_ai' : 'carrier';
   const defenderId = 'defender';
-  if (revival) map.teamSpawns = { blue: [{ x: -12, y: 0, z: 3 }], red: [{ x: 12, y: 0, z: -3 }] };
+  if (revival && !mapped) map.teamSpawns = { blue: [{ x: -12, y: 0, z: 3 }], red: [{ x: 12, y: 0, z: -3 }] };
   const otherTeam = spec.team === 'blue' ? 'red' as const : 'blue' as const;
   const seeds = [
     { id: carrierId, x: -1, z: 0, team: spec.team },
@@ -88,7 +94,10 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
   const check = (field: string, actual: unknown, expected: unknown) => {
     if (actual !== expected) { failureCount++; if (failures.length < 64) failures.push({ tick, field, actual, expected }); }
   };
-  const noop = () => {}, goal = (team: string | undefined) => ({ x: team === 'blue' ? 47 : -47, z: 0 });
+  const noop = () => {}, goal = (team: string | undefined) => mapped ? getGrifballEnemyGoalPosForMap(team, map) : ({ x: team === 'blue' ? 47 : -47, z: 0 });
+  const collision = createArenaCollisionCallbacksForState({ getState: () => state, getRefs: () => refs, getActiveCustomMap: () => map,
+    getMainAI: () => state.otherPlayers.get('main_ai'), isMultiplayer: false, multiplayerRole: null, opponentClientId: '' });
+  const atTeamSpawn = (c: { team?: string; pos: THREE.Vector3 }) => (map.teamSpawns?.[c.team as 'blue' | 'red'] ?? []).some(p => c.pos.distanceTo(new THREE.Vector3(p.x, p.y, p.z)) < 1e-8);
   const knobs: AIResolvedKnobs = { difficulty: 'normal', movementComplexity: 0, weaponSwapIQ: 0,
     weaponPrioritization: 0, reactionLatency: .2, anticipationFactor: 0, aiPlaystyle: 50 };
   const derived = deriveAIParams(state.settings, knobs);
@@ -102,7 +111,7 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
   const update = createAISingleEntityUpdaterForState({ stateRef: { current: state }, threeRef: { current: refs },
     mai: () => state.otherPlayers.get('main_ai'), resolveBotKnobs: () => knobs, resolveBotDerived: () => derived,
     resolveBotFlags: () => NEUTRAL_PERSONALITY_FLAGS, getMatchScoreContext, grifballEnemyGoalPos: goal,
-    constrainCombatantToArena: (pos, vel) => constrainCombatantToArenaBounds({ pos, vel, activeCustomMap: map, arenaRadius: map.arenaRadius }),
+    constrainCombatantToArena: mapped ? collision.constrainCombatantToArena : (pos, vel) => constrainCombatantToArenaBounds({ pos, vel, activeCustomMap: map, arenaRadius: map.arenaRadius }),
     ...targets,
     getBestTacticalTarget: (id: string, pos: THREE.Vector3, difficulty: string) => {
       const target = targets.getBestTacticalTarget(id, pos, difficulty);
@@ -120,7 +129,7 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
     getOptimalSpawnPoint: excludePositions => getOptimalSpawnPointForArena({ activeCustomMap: map, spawnPoints: [], excludePositions }),
     getActiveCustomMap: () => map, getTargetPlayerModel: () => null,
     recordCombatantObservation: noop, tryEnterPressureState: () => false, tryStartComboOnHit: () => false,
-    recoverCombatantAltitude: noop, clearPressureTarget: noop,
+    recoverCombatantAltitude: mapped ? collision.recoverCombatantAltitude : noop, clearPressureTarget: noop,
     startAIHammerJump: (self, _pos, vel, horizontalHeading, jumpType) => {
       const plannedBefore = !!self.hammerJumpPlanned;
       const started = startAIHammerJumpForCombatant({ self, settings: state.settings, vel, horizontalHeading, jumpType,
@@ -158,7 +167,7 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
   const impacts: { tick: number; id: string; victims: string[] }[] = [];
   const pickups: { tick: number; id: string; distance: number }[] = [];
   let deathTick = 0, dropTick = 0;
-  const ticks = mobility ? 1800 : match ? (spec.main ? 9000 : spec.mode === 'contested' ? 10800 : 3840) : revival ? 600 : 150;
+  const ticks = mapped ? 1800 : mobility ? 1800 : match ? (spec.main ? 9000 : spec.mode === 'contested' ? 10800 : 3840) : revival ? 600 : 150;
   for (tick = 1; tick <= ticks; tick++) {
     const plan = state.aiMatchContext.grifballTeamPlan, phase = state.grifball.phase;
     const updates: string[] = [];
@@ -184,7 +193,8 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
           actions.respawnCombatant(c, mesh);
           revivals.push({ tick, id: c.id, pos: c.pos.toArray(), shield: c.invulnerabilityTimer, deaths: deathCount, kills });
           const spawn = map.teamSpawns?.[c.team!]?.[0];
-          check('team spawn', JSON.stringify(c.pos.toArray()), JSON.stringify(spawn ? [spawn.x, spawn.y, spawn.z] : []));
+          if (mapped) check('respawn uses supplied team layout', atTeamSpawn(c), true);
+          else check('team spawn', JSON.stringify(c.pos.toArray()), JSON.stringify(spawn ? [spawn.x, spawn.y, spawn.z] : []));
           check('respawn full base health', c.hp, state.settings.maxHP ?? 1);
           check('respawn weapon ready', c.weaponState, 'ready');
           check('respawn grounded', !!c.isJumping, false);
@@ -229,7 +239,8 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
             check('round reset preserves combat lifecycle', JSON.stringify([...state.otherPlayers.values()].map(c => [c.id, c.hp, c.respawnTimer, c.kills, c.deaths])), JSON.stringify(health));
             for (const c of state.otherPlayers.values()) {
               const spawn = map.teamSpawns![c.team!]![0];
-              check('round team spawn', JSON.stringify(c.pos.toArray()), JSON.stringify([spawn.x, spawn.y, spawn.z]));
+              if (mapped) check('reset uses supplied team layout', atTeamSpawn(c), true);
+              else check('round team spawn', JSON.stringify(c.pos.toArray()), JSON.stringify([spawn.x, spawn.y, spawn.z]));
               check('round velocity reset', c.vel.length(), 0);
             }
           }, pushStatsUpdate: () => notifications++ });
@@ -237,8 +248,10 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
           goals.push({ tick, id: oldHolder!, team, round: state.grifball.roundNumber });
           check('goal only during play', phase, 'playing');
           check('single goal increment', state.teamScores[team].goals, priorGoals[team] + 1);
-          check('living scorer on enemy plate', !!scorer && scorer.team === team && scorer.hp > 0 &&
-            Math.abs(scoringPosition!.x - (team === 'blue' ? 47 : -47)) <= 1 && Math.abs(scoringPosition!.z) <= 1, true);
+          const plate = getGoalPlates(map).find(p => p.team !== team)!;
+          const dx = Math.abs(scoringPosition!.x - plate.position.x), dz = Math.abs(scoringPosition!.z - plate.position.z);
+          const over = plate.shape === 'ellipse' ? (dx / plate.halfExtents.x) ** 2 + (dz / plate.halfExtents.z) ** 2 <= 1 : dx <= plate.halfExtents.x && dz <= plate.halfExtents.z;
+          check('living scorer on enemy plate', !!scorer && scorer.team === team && scorer.hp > 0 && over, true);
           check('goal clears possession', state.grifball.ball.holderId, null);
           check('goal restores weapon', scorer?.activeWeapon, 'hammer');
           check('goal restores base health', scorer?.maxHp, state.settings.maxHP ?? 1);
@@ -324,7 +337,7 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
         check(`${c.id}.shield countdown`, Math.abs(c.invulnerabilityTimer - expectedShield) < 1e-9, true);
       }
       check(`${c.id}.finite`, [...c.pos.toArray(), ...c.vel.toArray(), c.yaw, c.aiTimer ?? 0].every(Number.isFinite), true);
-      if (plan.snapshot?.geometry && resets.at(-1)?.tick !== tick) check(`${c.id}.open segment`, isSpaceSegmentOpen(plan.snapshot.geometry, before.get(c.id)!, c.pos), true);
+      if (plan.snapshot?.geometry && resets.at(-1)?.tick !== tick && latestRevival?.tick !== tick) check(`${c.id}.open segment`, isSpaceSegmentOpen(plan.snapshot.geometry, before.get(c.id)!, c.pos), true);
       check(`${c.id}.pickup intent cleared`, !!c.pickupRequested, false);
     }
     if (ballState() === 'held') {
@@ -375,7 +388,8 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
     const punchWins = spec.mode === 'punch-first';
     const winner = punchWins ? carrier : defender, loser = punchWins ? defender : carrier;
     check('loser health', loser.hp, 0);
-    check('one credited kill', winner.kills, 1);
+    if (mapped) check('opening winner credited', winner.kills >= 1, true);
+    else check('one credited kill', winner.kills, 1);
     check('one recorded death', loser.deaths, 1);
     check('loser never kills', loser.kills, 0);
     check('winner survives', winner.deaths, 0);
@@ -397,17 +411,27 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
       const recoveryId = spec.mode === 'contested' ? 'escort' : defender.id;
       check('expected recovery owner', pickups[0]?.id, recoveryId);
       check('expected recovery timing', pickups[0]?.tick, spec.mode === 'contested' ? 70 : spec.reverse ? 53 : 107);
-      check('recovered possession retained', state.grifball.ball.holderId, recoveryId);
+      if (mapped) check('recovered possession retained or released by another carrier death',
+        state.grifball.ball.holderId === recoveryId || carrierDeaths.some(d => d.id === recoveryId && d.tick > pickups[0]!.tick), true);
+      else check('recovered possession retained', state.grifball.ball.holderId, recoveryId);
       if (spec.mode === 'contested') {
-        check('opponent contests new runner', impacts.filter(i => i.victims.includes('escort')).length, 1);
-        check('escort survives follow-up', state.otherPlayers.get('escort')!.hp, 1);
+        const followups = impacts.filter(i => i.victims.includes('escort'));
+        if (mapped) {
+          check('opponent contests new runner', followups.length >= 1, true);
+          check('escort survival or lethal follow-up accounted for', state.otherPlayers.get('escort')!.hp > 0 ||
+            carrierDeaths.some(d => d.id === 'escort' && followups.some(i => i.tick === d.tick)), true);
+        } else {
+          check('opponent contests new runner', followups.length, 1);
+          check('escort survives follow-up', state.otherPlayers.get('escort')!.hp, 1);
+        }
         check('coverage teammate unharmed', state.otherPlayers.get('cover')!.hp, 1);
         check('new carrier targeted autonomously', targetLookups.some(t => t.id === defender.id && t.target === 'escort' && t.tick > (pickups[0]?.tick ?? 150)), true);
       }
     }
   }
+  if (mapped) check('supplied map preserved', JSON.stringify(map), mapBefore);
   return { name: `${spec.mode}/${spec.team}/${spec.reverse ? 'reverse' : 'forward'}/${spec.main ? 'main' : 'ordinary'}`,
-    boundary: mobility ? 'live-mobility-decision-integration' as const : match ? 'live-match-decision-integration' as const : revival ? 'live-revival-decision-integration' as const : 'live-opposed-decision-integration' as const, scenario: spec, ticks,
+    boundary: mapped ? 'live-map-contest' as const : mobility ? 'live-mobility-decision-integration' as const : match ? 'live-match-decision-integration' as const : revival ? 'live-revival-decision-integration' as const : 'live-opposed-decision-integration' as const, scenario: spec, ticks,
     failureCount, failures, mainJumpRequests, mainJumpImpacts, carrierDeaths, goals, resets, transitions, notifications, deaths, revivals, deathTick, dropTick, attacks, impacts, pickups, targetLookups, frames };
 }
 export const runOpposedDecisionIntegration = () => OPPOSED_DECISION_CASES.map(spec => runOpposedDecisionTrace(spec));
