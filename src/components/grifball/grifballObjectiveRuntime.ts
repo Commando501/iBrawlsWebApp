@@ -520,6 +520,8 @@ export function updateGrifballObjectiveForState({
           g.ball.holderId = null;
           g.ball.pos = { x: g.ball.home.x, y: 0.35, z: g.ball.home.z };
           ballChargingRef.current = false;
+          ballChargeTimerRef.current = 0;
+          state.grifballPassCharge = 0;
           pushStatsUpdate();
         }
       }

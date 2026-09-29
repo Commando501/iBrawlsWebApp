@@ -96,6 +96,7 @@ export function setSimCarrier(
     // Live player release readies the hammer without erasing its animation clock.
     // Roster release preserves its current weapon phase.
     if (mixed && isMixedPlayer(state, c)) {
+      c.passCharging = false;
       c.weaponState = 'idle'; c.weaponTimer = 0; c.attackKind = 'none'; c.attackCooldown = 0;
     }
   }
@@ -253,6 +254,15 @@ export function tickGrifballObjective(
     if (mixed) placeMixedObjectiveActors(state, settings);
     else placeCombatantsAtSpawns(state, settings);
     returnBallHome(g.ball);
+  }
+
+  // Live pointer charging advances in the objective, after movement and AI.
+  if (mixed) {
+    const player = state.combatants.find(c => isMixedPlayer(state, c));
+    if (player) {
+      if (!resolveRunnerThrowAllowed(settings)) { player.passCharging = false; player.passChargeTimer = 0; }
+      else if (player.passCharging) player.passChargeTimer += dt;
+    }
   }
 
   // Ball follows its (living) holder, or runs free physics.

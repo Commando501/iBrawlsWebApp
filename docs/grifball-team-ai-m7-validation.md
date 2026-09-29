@@ -830,3 +830,28 @@ Verification:
 - Full repository and frozen browser CLI runs were not repeated for this simulator/frame-ordering slice. The previous five V3 repository failures remain unresolved, without waivers.
 
 Next work is player pass-input/charge ordering and movement across objective transitions, followed by remaining complete-frame/map/decision integration. Human testing stays deferred until the automated acceptance requirements are complete.
+
+
+## 2026-09-29 — pointer pass timing and moving release
+
+Committed the prior frame-ordering slice as `6db815b` (`Validate mixed combat and objective frame ordering`). Continued with local pointer pass timing. New changes remain uncommitted, and human review remains deferred.
+
+Added **64 traces**, three snapshot continuations and two hash checks. Actual pointer press/release handlers run before the live frame coordinator, followed by production local movement, weapon animation and objective processing, independently from mixed `stepSimulation`. Cases include forward/sideways movement, mirrored facing, turning at release, two maximum charge durations, overcharge, disabled/re-enabled throwing, holding before pickup, releasing/repressing after pickup and scoring during charge. There are no roster opponents in this family; combat during charging, autonomous passing and other input devices remain outside its scope.
+
+After correcting the fixture's mouse-binding identifier, the pre-fix suite passed **8/67** (`output/m7-pass-input-before.log`). Mixed simulation released after movement, capped the raw charge timer, and treated an already-held button as a new pass request after pickup or re-enabling throwing. Mixed local pass input now remembers the previous button state and active charging, accepts press edges, releases before movement using the sampled heading, and advances raw charge in the objective phase. Throw strength remains capped by existing rules. The two new flags survive snapshots and participate in mixed hashes; legacy behavior and hashes remain unchanged.
+
+The live scoring path also left the timer and displayed charge stale until a later update. It now clears both on the scoring frame. Independent checks assert release counts, pre-movement throw origins, possession retention after blocked/early holds, and immediate charge-display cleanup after a goal. Snapshot continuation crosses overcharge, held-through-pickup and disable/re-enable states.
+
+Protocol `live-functions-vs-headless-step-v17` stores `passInputTraces`: **64 traces / 7,680 frames**, zero differences. Combined evidence now totals **2,715 traces / 558,348 frames**. This samples pointer-equivalent input once per tick; sub-frame event timing, combat during charging, remote/device-specific input, remaining moving carrier interactions, autonomous decisions, complete maps/matches, calibrated performance and held-out quality are not certified. The execution gate remains **inconclusive**.
+
+Verification:
+
+- **3,300/3,300** validation-suite checks passed (`output/m7-pass-input-validation.log`), including all parity groups and acceptance-gate checks.
+- **125/125** focused pass, simulator and live carrier regressions passed (`output/m7-pass-input-focused.log`).
+- TypeScript passed with the validation runner's 8 GB heap allowance (`output/m7-pass-input-typecheck.log`).
+- Production client build passed (`output/m7-pass-input-build.log`), with the existing large-chunk warning.
+- Scoped `git diff --check` passed; attached implementation plans remain unchanged.
+- Saved and re-parsed evidence: `output/m7-pass-input-evidence.json`; summary: `output/m7-pass-input-summary.json`. Source identity: commit `6db815b6a3fb3eb861aeb6bb8569ad108bf952da`, working-tree hash `116b0dfa703fe9efa6e3ae2a3290cdbb426451d97796a8a490b608ccda7282ae`.
+- Full repository and frozen browser CLI runs were not repeated. The previous five V3 repository failures remain unresolved, without waivers or a claim of M7 acceptance.
+
+Next work is combat during charging and the remaining carrier/objective transitions, followed by broader execution and acceptance closure. Human testing stays deferred until the automated acceptance requirements are complete.

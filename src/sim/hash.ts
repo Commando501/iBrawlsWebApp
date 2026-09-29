@@ -44,7 +44,7 @@ export function serializeState(state: SimState): string {
       `execution=${state.combatExecution}:${state.localPlayerId ?? '-'}:${q(state.combatTimeMs ?? 0)}`,
       ...state.combatants.map(c => JSON.stringify([c.id, c.weaponPhaseElapsed, c.modelType,
         c.lungeTargetId, c.lungeDir, c.lungeAimDirection, c.lungeStartPos, c.lungeOutcome,
-        c.lastSwordAttackTimeMs, c.lastHammerAttackTimeMs])),
+        c.lastSwordAttackTimeMs, c.lastHammerAttackTimeMs, c.passInputHeld, c.passCharging])),
     ] : []),
     `phase=${state.match.phase}:${q(state.match.phaseTimer)}:${state.match.roundNumber}`,
     `win=${state.match.winningTeam ?? '-'}:${state.match.lastScoringTeam ?? '-'}`,

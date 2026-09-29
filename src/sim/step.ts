@@ -57,6 +57,19 @@ export function stepSimulation(
   const player = mixed ? state.combatants.find(c => c.id === state.localPlayerId) : undefined;
   if (mixed && (!player || state.combatants.filter(c => c.id === state.localPlayerId).length !== 1))
     throw new Error('live-mixed-v1 requires exactly one explicit localPlayerId');
+  // Pointer events are sampled before the frame: release from the previous
+  // position/loadout, then move. Holding across a pickup is not a new press.
+  if (mixedObjectiveFrame && player) {
+    const input = act(player.id), held = input.attackSecondary;
+    if (held && !player.passInputHeld && player.alive && player.hp > 0 && player.hasBall && resolveRunnerThrowAllowed(settings)) {
+      player.passCharging = true; player.passChargeTimer = 0;
+    } else if (!held && player.passInputHeld && player.passCharging) {
+      player.yaw = input.aim;
+      throwSimPass(state, player, player.passChargeTimer / (settings.grifballChargeMax ?? 1.2), settings);
+      player.passCharging = false; player.passChargeTimer = 0;
+    }
+    player.passInputHeld = held;
+  }
   const rosterV2 = state.combatExecution === 'live-roster-v2' || mixed;
   if (rosterV2) {
     const nominalTimeMs = state.tick * SIM_DT * 1000;
@@ -102,6 +115,7 @@ export function stepSimulation(
   const chargeMax = settings.grifballChargeMax ?? 1.2;
   const throwingAllowed = resolveRunnerThrowAllowed(settings);
   for (const c of state.combatants) {
+    if (mixedObjectiveFrame && c === player) continue;
     if (!c.alive || !c.hasBall) continue;
     const a = act(c.id);
     if (!throwingAllowed) {

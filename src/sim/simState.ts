@@ -107,6 +107,9 @@ export interface SimCombatant {
 
   // Grifball pass charge: held to wind up a throw (`grifballChargeMax`).
   passChargeTimer: number;
+  /** Mixed local pointer-equivalent pass input; absent in historical snapshots. */
+  passInputHeld?: boolean;
+  passCharging?: boolean;
   /** Runner healing delay timer while this combatant carries the ball. */
   runnerHealDelayTimer: number;
   /** Last observed runner HP, used to detect damage and restart healing delay. */
