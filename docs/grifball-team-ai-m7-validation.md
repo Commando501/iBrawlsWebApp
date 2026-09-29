@@ -901,3 +901,26 @@ Verification:
 - Production builds, full repository tests and frozen browser CLI runs were not repeated for this validation-only change. The previous five V3 repository failures remain unresolved, without waivers or a claim of M7 acceptance.
 
 Next work is moving-carrier combat and unprotected recovery interactions, followed by broader map/decision integration and the remaining acceptance gates. Human testing stays deferred until the automated acceptance requirements are complete.
+
+
+## 2026-09-29 — moving player carriers and exposed recovery candidates
+
+Committed the prior carrier-crowd slice as `858e123` (`Validate multi-attacker carrier recovery`). Continued with moving player carriers and recovery under damage. This new slice remains uncommitted; human testing remains deferred.
+
+Added **384 traces** and **48 JSON snapshot continuations** to the actual-frame versus mixed `stepSimulation` comparison. Five/six actors include a one-to-three-HP runner, two attackers, and opposing collectors without shields. The escort has one or three HP. Paired slashes or a committed lunge plus slash start immediately or at tick 12; runners are stationary players/roster bots or players crossing/retreating under continuous authored input. Mirrored teams and reversed actor order exercise eligibility and credit ordering. Moving roster carriers and autonomous steering remain outside this family.
+
+The fixture uses production local movement, roster attack/flight resolution, objective processing, skeletal melee and final carrier repair. Delayed commitments are applied independently to the live state, headless state and restored continuation. Independent assertions pin health, movement, kill/death credit, possession boundaries and collector eligibility. With pinned movement settings, a retreating runner leaves slash range at the delayed attack but crosses the pursuing lunge's contact radius on tick 17. A lethal contact there drops the ball beyond the stationary collectors' reach. Nearer contacts verify that a dead escort cannot recover, and a three-HP escort that recovers as a one-HP carrier can die from a later slash in that same frame; the opponent then recovers on the next tick. The render-boundary assertion now rejects any dead/missing published holder, including newly recovered carriers. Snapshots cross ticks 11, 12, 16 and 17 for both lethal and surviving scenarios.
+
+The initial focused run passed **288/384** (`output/m7-carrier-recovery-before.log`). The 96 retreat failures were a fixture error: its live joystick's forward axis was reversed relative to the simulator command. Correcting that input mapping produced zero differences; independent movement assertions now catch that error directly. TypeScript also found a widened string in the generated case list; explicit return typing and a typed motion filter resolved it. No production gameplay changes were needed.
+
+Protocol `live-functions-vs-headless-step-v20` stores `carrierRecoveryTraces`: **384 traces / 46,080 frames**, zero differences. Combined evidence totals **3,691 traces / 700,428 frames**. Authored grounded input does not certify moving roster carriers, carrier counterattacks, autonomous attack/pass/route decisions, airborne crowds, complete map/match execution, calibrated performance, held-out quality or final repository acceptance. Execution parity stays **inconclusive**.
+
+Verification:
+
+- **4,344/4,344** validation-suite tests passed, including previous trace families and acceptance-gate checks (`output/m7-carrier-recovery-validation.log`).
+- After the case-list type correction, **432/432** focused checks passed (`output/m7-carrier-recovery-focused.log`) and TypeScript passed with the 8 GB heap allowance (`output/m7-carrier-recovery-typecheck.log`).
+- Saved and re-parsed final evidence: `output/m7-carrier-recovery-evidence.json`; summary: `output/m7-carrier-recovery-summary.json`. Source identity: commit `858e1232bce3bad3144ee360e24b27ae7228a901`, working-tree hash `c420253e55de8afa4e787b5f3e89ac76e77f3de1a7dec071be2328049ce8ab4b`.
+- Scoped `git diff --check` passed; attached implementation plans remain unchanged. README and both explicit test command lists include the new family.
+- Production builds, full repository tests and frozen browser CLI runs were not repeated for this validation-only change. The previous five V3 repository failures remain unresolved, without waivers or a claim of M7 acceptance.
+
+Next work is moving roster carriers and carrier counterattacks, followed by broader map/decision integration and remaining acceptance gates. Human testing stays deferred until the automated acceptance requirements are complete.

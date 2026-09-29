@@ -26,9 +26,11 @@ export const FRAME_OBJECTIVE_CASES: FrameObjectiveCase[] = [false, true].flatMap
 /** Actual frame coordinator owns objective-before-skeletal-melee ordering and final
  * carrier reconciliation. Attack commitments are authored; no AI policy is certified. */
 export interface ChargeCombatCase { releaseAt: number | null; shield: boolean; moving: boolean; recovery?: 'hold' | 'repress' }
-export interface CarrierCrowdCase { secondLunge: boolean; shield: boolean; pickup: 'tie' | 'nearer-escort' }
+export interface CarrierRecoveryCase { motion: 'stationary' | 'cross' | 'retreat'; escortHp: 1 | 3; attackAt: 1 | 12 }
+export interface CarrierCrowdCase { secondLunge: boolean; shield: boolean; pickup: 'tie' | 'nearer-escort'; recovery?: CarrierRecoveryCase }
 export function runFrameObjectiveTrace(spec: FrameObjectiveCase, snapshotAt?: number, charge?: ChargeCombatCase, crowd?: CarrierCrowdCase) {
   if (crowd && (charge || spec.goal)) throw new Error('Carrier crowd fixture requires an off-goal runner without pass input');
+  if (crowd?.recovery?.motion && crowd.recovery.motion !== 'stationary' && !spec.player) throw new Error('Moving recovery requires a local player runner');
   const f = lungeFixture('attacker', false), { state, sim, bot, target, refs, map } = f;
   const [attacker, runner] = sim.combatants;
   attacker.id = bot.id; attacker.controller = 'ai'; runner.id = target.id;
@@ -77,19 +79,34 @@ export function runFrameObjectiveTrace(spec: FrameObjectiveCase, snapshotAt?: nu
     if (spec.player) state.playerInvulnerabilityTimer = runner.invulnerabilityTimer;
     else target.invulnerabilityTimer = runner.invulnerabilityTimer;
   }
-  // Lunge contact occurs in updateAI; a short slash impacts in skeletal animation on tick 1.
+  if (crowd?.recovery) {
+    for (const [a, b] of collectors) a.invulnerabilityTimer = b.invulnerabilityTimer = 0;
+    // Pin the movement/contact calibration used by the independent recovery oracle.
+    Object.assign(state.settings, { speedForward: 100, speedSide: 100, grifballRunnerSpeedForward: 130, grifballRunnerSpeedSide: 130, swordLungeSpeed: 24 });
+    Object.assign(sim.settings, state.settings);
+    collectors[0][0].hp = collectors[0][0].maxHp = collectors[0][1].hp = collectors[0][1].maxHp = crowd.recovery.escortHp;
+  }
+  const attackAt = crowd?.recovery?.attackAt ?? 1;
+  // Lunge contact occurs in updateAI; a short slash impacts in skeletal animation on the authored attack tick.
   const random = seededRandom(181);
-  withSimulationRandom(random, 0, () => {
-    for (const { live: a, headless: b, lunge } of attackers) {
-      b.lungeTargetId = runner.id; b.lungeAimDirection = { x: 0, y: 0, z: direction };
+  const commitLiveFlights = () => {
+    for (const { live: a, lunge } of attackers) {
       a.lungeTargetDir = { x: 0, y: 0, z: direction };
       if (!lunge) { a.isLunging = false; a.aiState = 'APPROACHING'; a.weaponState = 'ready'; }
       else {
         triggerCombatantLungeAction({ self: a, settings: state.settings, lungeDir: a.pos.clone().set(0, 0, direction), pos: a.pos, vel: a.vel, playDash: noop });
-        stepCombatantWeapons(sim, b, { ...idleAction(), attackSecondary: true }, sim.settings, 0, []);
       }
     }
-  });
+  };
+  const commitSimFlights = (destination: SimState) => {
+    for (const { headless: b, lunge } of attackers) if (lunge) {
+      const c = destination.combatants.find(c => c.id === b.id)!;
+      c.lungeTargetId = runner.id; c.lungeAimDirection = { x: 0, y: 0, z: direction };
+      stepCombatantWeapons(destination, c, { ...idleAction(), attackSecondary: true }, destination.settings, 0, []);
+    }
+  };
+  for (const { live: a } of attackers) { a.isLunging = false; a.aiState = 'APPROACHING'; a.weaponState = 'ready'; }
+  if (attackAt === 1) withSimulationRandom(random, 0, () => { commitLiveFlights(); commitSimFlights(sim); });
   if (spec.reverse) { sim.combatants.reverse(); state.otherPlayers = new Map([...state.otherPlayers].reverse()); }
   const ballMeshRef = { current: null }, ballChargingRef = { current: false }, ballChargeTimerRef = { current: 0 };
   const kills = new Map<string, number>(), deaths = new Map<string, number>();
@@ -113,14 +130,17 @@ export function runFrameObjectiveTrace(spec: FrameObjectiveCase, snapshotAt?: nu
   const ticks = charge ? 240 : 120;
   for (let tick = 1; tick <= ticks; tick++) {
     const held = charge?.recovery === 'repress' ? tick !== 187 && tick < 201 : !!charge && (charge.releaseAt === null || tick < charge.releaseAt);
-    const moveX = charge?.moving ? .25 : 0;
+    const moveX = charge?.moving || crowd?.recovery?.motion === 'cross' ? .25 : 0;
+    const moveZ = crowd?.recovery?.motion === 'retreat' ? 1 : 0;
+    const movingPlayer = !!charge || !!crowd?.recovery && spec.player;
     const aim = spec.mirror ? Math.PI : 0;
     // Request recovery continuously: late melee cannot be picked up until the next objective tick.
     bot.pickupRequested = !crowd && !charge?.recovery;
     for (const [c] of collectors) c.pickupRequested = true;
     state.playerPickupRequested = !!charge?.recovery && tick === 183;
     withSimulationRandom(random, tick / 60, () => {
-      if (charge) state.yaw = aim + Math.PI;
+      if (attackAt > 1 && tick === attackAt) { commitLiveFlights(); commitSimFlights(sim); if (restored) commitSimFlights(restored); }
+      if (movingPlayer) state.yaw = aim + Math.PI;
       if (charge && !previousHeld && held) handlePointerPlayerActionInputForState({ state, button: 2, keybindings: passBindings, ballChargingRef, ballChargeTimerRef,
         callbacks: { triggerPlayerHammerSwing: noop, triggerPlayerHammerMelee: noop, triggerPlayerPistolFire: noop, triggerPlayerSwordSlash: noop, triggerPlayerSwordLunge: noop } });
       if (charge && previousHeld && !held) handlePointerPlayerActionReleaseForState({ button: 2, keybindings: passBindings, ballChargingRef,
@@ -134,7 +154,7 @@ export function runFrameObjectiveTrace(spec: FrameObjectiveCase, snapshotAt?: nu
       updatePhysics: dt => {
         if (!updatePlayerRespawnForState({ state, dt, isMultiplayer: false, getMainAi: () => undefined, activeCustomMap: map, spawnPoints: [], playRespawn: noop })) {
           updatePlayerHorizontalMovementForState({ state, refs, dt, keysPressed: {}, movementKeybindings: DEFAULT_KEYBINDINGS,
-            actionKeybindings: DEFAULT_KEYBINDINGS, gamepad: null, mobileJoystick: charge ? { x: -moveX, y: 0 } : null, mobileControlsActive: !!charge,
+            actionKeybindings: DEFAULT_KEYBINDINGS, gamepad: null, mobileJoystick: movingPlayer ? { x: -moveX, y: moveZ } : null, mobileControlsActive: movingPlayer,
             sprintToggleActiveRef: { current: false }, prevSprintInputRef: { current: false } });
           updatePlayerVerticalIntegrationForState({ state, dt, gravityAcceleration: 18, constrainCombatantToArena: (pos, vel) =>
             constrainCombatantToArenaBounds({ pos, vel, activeCustomMap: map, arenaRadius: map.arenaRadius }) });
@@ -145,7 +165,7 @@ export function runFrameObjectiveTrace(spec: FrameObjectiveCase, snapshotAt?: nu
         for (const c of state.otherPlayers.values()) {
           const entry = attackers.find(a => a.live === c);
           if (!entry || c.hp <= 0) continue;
-          if (tick === 1 && !entry.lunge) triggerCombatantAttackAction({ self: c, weapon: 'sword', recordHammerAttack: noop, playSwing: noop });
+          if (tick === attackAt && !entry.lunge) triggerCombatantAttackAction({ self: c, weapon: 'sword', recordHammerAttack: noop, playSwing: noop });
           if (c.isLunging) f.flightFor(c, spec.player ? { ...target, id: 'player', hp: state.playerHP,
             pos: state.playerPos, vel: state.playerVel, team: state.localPlayerTeam, invulnerabilityTimer: state.playerInvulnerabilityTimer,
             activeWeapon: state.activeWeapon as 'ball' | 'hammer' } : target, dt);
@@ -154,15 +174,19 @@ export function runFrameObjectiveTrace(spec: FrameObjectiveCase, snapshotAt?: nu
       updateGrifball: dt => updateGrifballObjectiveForState({ state, refs, ballMeshRef, ballChargingRef, ballChargeTimerRef,
         dt, isMultiplayer: false, activeCustomMap: map, placeCombatantsAtGrifballSpawns: () => { throw new Error('Trace must stop before reset'); }, pushStatsUpdate: () => { notifications++; } }),
       updateCharacterSkeletalAnimations: f.visuals, updateMatchTimers: noop, enforceArenaBounds: noop,
-      renderGame: () => record.compare(tick, 'published.deadCarrier', state.grifball.ball.holderId === runner.id && (spec.player ? state.playerHP : target.hp) <= 0, false),
+      renderGame: () => {
+        const holder = state.grifball.ball.holderId;
+        const hp = holder === 'player' ? state.playerHP : state.otherPlayers.get(holder ?? '')?.hp;
+        record.compare(tick, 'published.deadCarrier', !!holder && (hp === undefined || hp <= 0), false);
+      },
       updateFloatingNameplate: noop, pushStatsUpdate: noop, updateRadarDOM: noop, runReplayPlaybackLoop: noop, recordReplayFrame: noop, playRespawn: noop,
       });
     });
     previousHeld = held;
-    const actions = Object.fromEntries(sim.combatants.map(c => [c.id, { ...idleAction(), aim: charge && c === player ? aim : c.yaw,
+    const actions = Object.fromEntries(sim.combatants.map(c => [c.id, { ...idleAction(), aim: movingPlayer && c === player ? aim : c.yaw,
       pickup: collectors.some(([, b]) => b === c) || (c === attacker ? !crowd && !charge?.recovery : c === player && !!charge?.recovery && tick === 183),
-      moveX: c === player ? moveX : 0, attackSecondary: c === player && held,
-      attackPrimary: tick === 1 && attackers.some(a => a.headless === c && !a.lunge) }]));
+      moveX: c === player ? moveX : 0, moveZ: c === player ? moveZ : 0, attackSecondary: c === player && held,
+      attackPrimary: tick === attackAt && attackers.some(a => a.headless === c && !a.lunge) }]));
     const events = stepSimulation(sim, actions, { settings: sim.settings });
     for (const event of events.kills) {
       kills.set(event.attackerId, (kills.get(event.attackerId) ?? 0) + 1);
@@ -172,10 +196,12 @@ export function runFrameObjectiveTrace(spec: FrameObjectiveCase, snapshotAt?: nu
       record.compare(tick, 'snapshot.state', JSON.stringify(restored), JSON.stringify(sim)); record.compare(tick, 'snapshot.events', JSON.stringify(replay), JSON.stringify(events)); }
     if (tick === snapshotAt) restored = JSON.parse(JSON.stringify(sim));
     const live = { ball: structuredClone(state.grifball.ball), phase: state.grifball.phase, goals: state.teamScores[runner.team].goals,
+      runnerDeaths: spec.player ? state.playerDeaths : target.deaths ?? 0,
       hp: spec.player ? state.playerHP : target.hp, maxHp: spec.player ? state.playerMaxHP : target.maxHp,
       respawn: Math.max(0, spec.player ? state.playerRespawnTimer : target.respawnTimer), weapon: spec.player ? state.activeWeapon : target.activeWeapon,
       attackerHp: bot.hp, attackerWeapon: bot.activeWeapon, attackerPos: bot.pos.toArray(), runnerPos: (spec.player ? state.playerPos : target.pos).toArray() };
     const headless = { ball: structuredClone(sim.match.ball), phase: sim.match.phase, goals: sim.scores[runner.team].goals,
+      runnerDeaths: deaths.get(runner.id) ?? 0,
       hp: runner.hp, maxHp: runner.maxHp, respawn: runner.respawnTimer, weapon: runner.weapon,
       attackerHp: attacker.hp, attackerWeapon: attacker.weapon, attackerPos: Object.values(attacker.pos), runnerPos: Object.values(runner.pos) };
     const compare = (key: string, a: unknown, b: unknown) => {
@@ -200,6 +226,7 @@ export function runFrameObjectiveTrace(spec: FrameObjectiveCase, snapshotAt?: nu
     if (charge) compare('charge', liveCharge, simCharge);
     compare('frame', live, headless); frames.push({ tick, live, headless, events, liveCharge, simCharge, ...(crowd ? { liveCrowd, simCrowd } : {}) });
   }
+  if (crowd?.recovery) return { name: JSON.stringify({ ...spec, crowd }), ticks, ...record.result(), frames };
   if (crowd) {
     const lethal = !crowd.shield && spec.hp <= 2;
     const winner = crowd.pickup === 'nearer-escort' || spec.reverse ? 'escort' : 'interceptor';
