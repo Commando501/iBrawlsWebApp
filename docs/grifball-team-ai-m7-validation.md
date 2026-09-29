@@ -1127,3 +1127,28 @@ Verification:
 - Full repository tests and frozen browser CLI runs were not repeated. The five previously reported V3 repository failures remain unresolved, without waivers or a claim of M7 acceptance.
 
 Next work is opposing combat decisions and contested recovery, building on these one-sided pressure responses. Human testing remains deferred until the remaining automated acceptance requirements are complete.
+
+
+## 2026-09-29 — opposing decisions and contested recovery
+
+Committed the pressure-response slice as `a9604e3` (`Validate tactical combat handoff and fix runner punch overshoot`). Added **24 live opposing-decision traces / 3,600 frames** and six repeatability checks. This slice remains uncommitted; human testing stays deferred.
+
+The production active-frame coordinator now drives these bounded autonomous fixtures: roster ticking, tactical planning, each living bot's updater, tactical target lookup and weapon selection, attack/hammer-jump actions, objective updates, skeletal melee impacts and final carrier reconciliation. All actors are AI-controlled and receive exactly one decision update per frame while alive. Initial positions, possession, wounded carrier health/heal delay and attack timings are authored; subsequent movement, actions, damage and recovery are not. Passing is disabled, movement complexity and weapon-swap IQ are zero, weapon preference is hammer-only and personality flags are neutral. Player-model observation callbacks and pressure/combo extensions remain omitted. Observer input/render and roster resizing are not exercised. The synthetic open corridor has no physical goal objects, and each 150-frame trace ends before revival.
+
+Three modes cover a fast runner punch defeating the opposing attack, a faster hammer killing the runner, and two teammates contesting recovery after the runner dies. Both team mirrors, roster orders and main/ordinary carriers run. The defender can choose a defensive dash and hammer jump when it observes a committed punch; the fixture executes the real action instead of suppressing the response. Order affects what an actor observes within a frame: the reverse-order defender commits a normal hammer attack first, while forward order chooses an evasive jump attack. Determinism is required per configuration, not identical actions across different roster orders.
+
+Assertions pin the first impact (punch tick five, hammer tick eight or nine), cancellation of the loser's unfinished attack, one kill/death credit, main-AI bookkeeping, no friendly damage, finite open movement, cleared pickup intent and a single advancing respawn clock. On carrier death, render-time checks require released possession, restored hammer, cleared assignment/charge and a fresh loose ball at the death position. The next frame must assign retrievers. Recovery requires autonomous pickup intent, a living eligible actor within range, retained possession and a runner assignment on the following frame. The duel defender recovers at tick 57 or 113 depending on its response; in the contested mode the escort wins recovery at tick 70 while both teams have retrievers, then survives one follow-up hit from the defender. No gameplay production change was needed.
+
+Protocol `live-functions-vs-headless-step-v29` retains `opposedDecisionTraces` separately from **6,027 paired traces / 980,748 frames** and the preceding live decision families. Any new trace failure fails execution acceptance. These cases exercise a slice of the live frame with genuine opposing decisions; they do not certify general simultaneous trades, obstacle/mobility combinations, respawn/reset decisions, headless autonomous execution, full matches, calibrated performance, held-out quality or final repository acceptance. The gate stays **inconclusive**, with optional neural integration unpromoted.
+
+Verification:
+
+- Final validation suite passed **7,249/7,249** tests, including all previous trace families and the aggregate gate (`output/m7-opposed-decision-validation.log`). Scoped `git diff --check` passed.
+- Focused scenarios and deterministic repeats passed **30/30** (`output/m7-opposed-decision-focused.log`).
+- TypeScript passed with the 8 GB heap allowance (`output/m7-opposed-decision-typecheck.log`).
+- Production client build passed (`output/m7-opposed-decision-build.log`), with the existing large-chunk warning.
+- Saved and re-parsed evidence: `output/m7-opposed-decision-evidence.json`; summary: `output/m7-opposed-decision-summary.json`. All 24 traces have zero failures. Source identity: commit `a9604e3c871f0823458a95529d82834e950108f5`, working-tree hash `6b223e69bdab67e182d3bc031e94b9065113f0310f58d8273815a285c287fc69`.
+- README, both explicit test commands and aggregate gate assertions include this family. Attached implementation plans remain unchanged.
+- Full repository tests and frozen browser CLI runs were not repeated. The five previously reported V3 repository failures remain unresolved, without waivers or a claim of M7 acceptance.
+
+Next work is autonomous revival and rejoining the contest after these deaths, followed by the remaining round/full-match acceptance boundaries. Human testing remains deferred until the remaining automated acceptance requirements are complete.
