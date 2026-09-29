@@ -13,7 +13,8 @@ export function runRunnerCombatTrace(spec: RunnerCombatSpec, snapshotAt?: number
   const record = parityRecorder(), { frame, runner } = spec;
   const incoming = runner.attack !== 'none', dead = incoming && frame.hp === 1;
   const counterStarted = runner.counter && !(dead && runner.attack === 'lunge' && !frame.reverse);
-  const punchHit = counterStarted && !dead && runner.punchSpeed === .04 && !runner.shield;
+  const punchHit = counterStarted && !dead && !runner.shield;
+  const impactTick = runner.punchSpeed === .04 ? 8 : 26;
   const enemyDead = punchHit && runner.enemyHp === 1;
   // A 130%-speed carrier moving first escapes the initial lunge contact by one tick;
   // pausing for the counter removes that extra movement. Slashes land after both moves.
@@ -22,20 +23,19 @@ export function runRunnerCombatTrace(spec: RunnerCombatSpec, snapshotAt?: number
   for (const side of ['live', 'headless'] as const) {
     for (const f of trace.frames) {
       const received = incoming && f.tick >= contactTick;
-      const dealt = punchHit && f.tick >= 8;
+      const dealt = punchHit && f.tick >= impactTick;
       record.compare(f.tick, `expected.${side}.health`, f[side].hp, frame.hp - Number(received));
       record.compare(f.tick, `expected.${side}.enemyHealth`, f[side].attackerHp, runner.enemyHp - Number(dealt));
       record.compare(f.tick, `expected.${side}.possession`, f[side].ball.holderId, dead && received ? null : 'target');
       record.compare(f.tick, `expected.${side}.deaths`, f[side].runnerDeaths, dead && received ? 1 : 0);
       let movingTicks = dead ? Math.min(f.tick, contactTick) : f.tick;
       if (dead && received && runner.attack === 'lunge' && !frame.reverse) movingTicks--;
-      if (counterStarted && f.tick >= 4) movingTicks--;
+      if (counterStarted) movingTicks -= Math.max(0, Math.min(movingTicks, impactTick) - 3);
       record.compare(f.tick, `expected.${side}.position`, f[side].runnerPos[2], (frame.mirror ? -1 : 1) * movingTicks * 5.8 * runner.speed / 100 / 60, 1e-6);
     }
     record.compare(120, `expected.${side}.noGoal`, trace.frames.at(-1)![side].goals, 0);
   }
-  // The quick punch impacts on tick 8; the default-duration punch reaches tick 26,
-  // after this continuously retreating runner has moved beyond the 3.3-unit volume.
+  // Both punch durations hold position through impact, then resume movement during recovery.
   for (const side of ['liveRunner', 'simRunner'] as const) {
     const last = trace.frames.at(-1)![side]!;
     record.compare(120, `expected.${side}.kills`, last.kills, enemyDead ? 1 : 0);

@@ -444,14 +444,20 @@ test('carrier counter stops its current movement without changing position', () 
   assert.deepEqual(result.frame.vel.toArray(), [0, 0, 0]);
 });
 
-test('carrier route movement preserves punch aim until weapon recovery finishes', () => {
+test('carrier holds through punch strike and resumes its route during recovery', () => {
   const state = setup(), runner = state.otherPlayers.get('a')!;
   runner.pos.set(0, 0, 0); runner.activeWeapon = 'ball';
   state.grifball.ball.state = 'held'; state.grifball.ball.holderId = 'a';
   for (const weaponState of ['swing_up', 'swing_down', 'recovering']) {
     const previousX = runner.pos.x;
     const result = move(state, 'a', { weaponState, yaw: .37 });
-    assert.equal(result.frame.yaw, .37); assert.ok(result.frame.pos.x > previousX);
+    assert.equal(result.frame.yaw, .37);
+    if (weaponState === 'recovering') assert.ok(result.frame.pos.x > previousX);
+    else {
+      assert.equal(result.frame.pos.x, previousX);
+      assert.equal(result.frame.vel.length(), 0);
+      assert.equal(result.attacks, 0, 'holding a commitment must not restart the attack');
+    }
   }
   const ready = move(state, 'a', { weaponState: 'ready', yaw: .37 });
   assert.notEqual(ready.frame.yaw, .37);

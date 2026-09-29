@@ -1099,3 +1099,31 @@ Verification:
 - Full repository tests and frozen browser CLI runs were not repeated. The five previously reported V3 repository failures remain unresolved, without waivers or a claim of M7 acceptance.
 
 Next work is tactical threat selection and combat handoff under pressure, including how a threatened pass returns control to carrying or combat. Human testing remains deferred until the remaining automated acceptance requirements are complete.
+
+
+## 2026-09-29 — tactical combat handoff under pass pressure
+
+Committed the passing slice as `1a3f8a4` (`Validate autonomous Grifball passing and reception`). Added **24 live pressure-decision traces / 4,320 frames**, three deterministic repeatability checks and a runner movement fix. This slice remains uncommitted; human testing stays deferred.
+
+Two allied bots begin a planned pass. A stationary AI opponent is placed near the runner or receiver after movement on the intended release frame (tick 36). The production pass executor rechecks current positions and cancels the unsafe throw. Subsequent planner/bot updates choose the response; production tactical target lookup, weapon choice, attack initiation, weapon animation and melee damage execute it. Both team mirrors, actor orders and main/ordinary responding bots cover runner pressure, receiver pressure and opponent withdrawal before contact. Opponent decisions are intentionally suppressed. Movement complexity and weapon-swap IQ are fixed at zero, with hammer-only preference; this is bounded grounded combat handoff, not complete autonomous opposing teams.
+
+The first fixture used a remote actor, which the offline roster melee damage path intentionally excludes. Correcting the target to a stationary AI left eight runner cases failing (`output/m7-pressure-decision-ai-target.log`). The runner autonomously started a punch but continued its route during windup, moving past the stationary close target before impact. It now holds position and facing through punch windup/strike, then resumes routing during recovery. Player input, neural execution and generic simulation movement are unchanged.
+
+The existing **576 runner-combat pairs / 69,120 frames** now supply the corresponding hold intent independently from simulator weapon state. Their movement and health oracles require the pause through tick eight for quick punches and tick 26 for normal-duration punches. Both durations now hit eligible stationary enemies when the runner survives. All 48 existing JSON continuations still cross commitment, strike or recovery. The direct movement regression checks holding, preserved aim, no repeated attack initiation and recovery movement; its 21-test runtime file is now also included in the validation command.
+
+Pressure assertions require cancellation and cleared charge/display, retained possession, one autonomous response, correct hostile target lookup, finite safe movement, no allied death, expected enemy health and single kill/death credit. Runner counters start at tick 37 and hit at tick 59. Receiver orders refresh at tick 40, hand off to combat, and hit at tick 64. Removing the runner threat at tick 40 produces a miss and no kill credit. Charging resumes after the kill or withdrawal (ticks 99, 104 and 92 respectively). Opponent placement and withdrawal are authored; pass selection, rejection and allied combat decisions are not.
+
+Protocol `live-functions-vs-headless-step-v28` stores `pressureDecisionTraces` as additional live evidence. Paired totals remain **6,027 traces / 980,748 frames**; the earlier retrieval and passing decision families remain separate. Any pressure failure fails execution acceptance. The gate remains **inconclusive** pending opposing combat choices/trades, contested recovery, broader geometry and lifecycle, full active-frame/headless autonomous execution, complete matches, calibrated performance, held-out quality and final repository acceptance. Optional neural integration remains unpromoted.
+
+Verification:
+
+- Final validation suite passed **7,219/7,219** tests, including the added runtime file and all prior acceptance families (`output/m7-pressure-decision-final-validation.log`). The preceding 7,198-test run also passed. Scoped `git diff --check` passed.
+- Pressure, paired runner-combat and snapshot checks passed **651/651** (`output/m7-pressure-decision-focused.log`) before adding exact pressure timing/single-response assertions; those are included in the later full run and saved evidence.
+- Pressure plus direct team-plan runtime checks passed **48/48** (`output/m7-pressure-decision-runtime-focused.log`), including the strengthened assertions.
+- TypeScript passed with the 8 GB heap allowance (`output/m7-pressure-decision-final-typecheck.log`).
+- Production client build passed (`output/m7-pressure-decision-build.log`), with the existing large-chunk warning.
+- Saved and re-parsed evidence: `output/m7-pressure-decision-evidence.json`; summary: `output/m7-pressure-decision-summary.json`. These retain all 24 pressure traces and all 576 updated runner-combat pairs with zero failures/differences. Source identity: commit `1a3f8a4a6dbc2ff4db23357150694a017c2cccff`, working-tree hash `c87ccabbfac26512510069a2306777d1bddbd7f975daa8b695106f11374a0824`.
+- README, both explicit test commands and aggregate gate assertions include this family. Attached implementation plans remain unchanged.
+- Full repository tests and frozen browser CLI runs were not repeated. The five previously reported V3 repository failures remain unresolved, without waivers or a claim of M7 acceptance.
+
+Next work is opposing combat decisions and contested recovery, building on these one-sided pressure responses. Human testing remains deferred until the remaining automated acceptance requirements are complete.

@@ -154,6 +154,15 @@ export function resolvePrimaryGrifballAIObjectiveMovementForCombatant({
     const goalPos = getEnemyGoalPos(self.team);
     if (!goalPos) return false;
 
+    // Finish a committed punch before resuming the route. Advancing through the
+    // windup carries the runner past a close target before the strike lands.
+    if (frame.weaponState === 'swing_up' || frame.weaponState === 'swing_down') {
+      frame.vel.x = 0; frame.vel.z = 0;
+      settleAsApproaching(frame, true, dt);
+      constrainCombatantToArena(frame.pos, frame.vel);
+      return true;
+    }
+
     let closestEnemy: { pos: THREE.Vector3 } | null = null;
     let closestDist = Infinity;
 
@@ -213,7 +222,7 @@ export function resolvePrimaryGrifballAIObjectiveMovementForCombatant({
     const attackYaw = frame.yaw;
     applyGroundDirection(frame, steer.x, steer.z, waypoint ? Math.min(speed, Math.hypot(waypoint.x - frame.pos.x, waypoint.z - frame.pos.z) / Math.max(dt, 0.001)) : speed, dt);
     validateMove();
-    // Keep the committed punch aimed at its target while the runner continues its route.
+    // Preserve the attack facing during recovery while resuming the route.
     if (frame.weaponState !== 'ready') frame.yaw = attackYaw;
     settleAsApproaching(frame, true, dt);
     self.isLunging = false;

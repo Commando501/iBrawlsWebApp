@@ -152,7 +152,9 @@ export function runFrameObjectiveTrace(spec: FrameObjectiveCase, snapshotAt?: nu
     const requestCounter = !!runnerCombat?.counter && tick === 4 && runner.alive && runner.hasBall && runner.weaponState === 'idle';
     const runnerAim = requestCounter ? Math.atan2(attacker.pos.x - runner.pos.x, attacker.pos.z - runner.pos.z)
       : runner.weaponState === 'idle' ? aim : runner.yaw;
-    const runnerMove = runnerCombat && runner.alive && runner.hasBall && !requestCounter ? direction : 0;
+    // Scripted carrier intent holds through the punch strike; player input remains unrestricted.
+    const punchCommitted = runner.weapon === 'ball' && (runner.weaponState === 'windup' || runner.weaponState === 'active');
+    const runnerMove = runnerCombat && runner.alive && runner.hasBall && !requestCounter && !punchCommitted ? direction : 0;
     withSimulationRandom(random, tick / 60, () => {
       if (attackAt > 1 && tick === attackAt) { commitLiveFlights(); commitSimFlights(sim); if (restored) commitSimFlights(restored); }
       if (movingPlayer) state.yaw = aim + Math.PI;
