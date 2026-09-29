@@ -1354,3 +1354,28 @@ Verification:
 - Production gameplay and browser UI code did not change; no new browser playtest or production build was required for these Node fixtures. Full repository tests and frozen browser CLI runs were not repeated. The five previously reported V3 repository failures remain unresolved, without waivers or a claim of M7 acceptance.
 
 Next work is complete contested supplied-map matches, carrying these scenarios through goals, round resets and stable terminal state. Human testing remains deferred until the remaining automated requirements are complete.
+
+## 2026-09-29 — complete opposing matches on supplied maps
+
+Committed the preceding short supplied-map contest slice as `771813e` (`Validate opposing AI contests on supplied maps`). This slice extends its same 40 cases across the five goal-capable supplied maps, both initial carrier teams, roster orders and main/ordinary identities through full two-goal matches.
+
+Implementation:
+
+- Added `grifballMapMatch.ts` and its tests, using the production frame/planner/AI/combat/objective/respawn owners from the shared opposing fixture. Actual map geometry and team spawns remain intact. No actions, subsequent possession, damage, movement or goals are injected.
+- Extracted `validateCompleteMatchTrace` so supplied maps and the existing synthetic matches share score/winner, exact phase timing, reset preservation, fresh retrieval/combat, respawn accounting and terminal stability assertions.
+- Matches have a thirty-minute simulated cap and stop after 181 updates following match end, allowing the normal death delay to finish. A capped unfinished match remains a failure. The initial five-minute probe found active tied contests with continuing attacks and possession exchanges; Forerunner variants finished without tuning or seed changes in the longer window.
+- Replaced the mapped contested fixture's ground-segment assertion with independent final 3D body clearance and arena-bound checks. A ground-segment oracle incorrectly rejects legal platform travel and the chord between two collision-corrected points sliding around a rounded box corner. The first observed example was Forerunner ordinary blue/forward at tick 1964. Box, cylinder, sphere and rounded-corner rejection/contact tests cover the revised oracle. This does not certify swept collision or change gameplay physics. Uncontested route and synthetic-fixture segment checks remain.
+- Aggregate protocol is `live-functions-vs-headless-step-v38`. All new match frames are validated, then only events, counts and the final frame are retained as `mapMatchTraces` to bound aggregate memory. Individual full frames remain available from `runMapMatchTrace`. Paired evidence stays at 6,027 traces / 980,748 frames; these are live-only decisions.
+
+The first full validation attempt exposed three completion-window failures at 36,000 updates: Rainy blue/forward/main and Winter blue/reverse with ordinary/main carriers. Diagnostics retained movement, combat, pickup and death evidence at the cutoff; none was an inactive stall. Without seed or tuning changes, those runs ended at ticks 36,514, 48,902 and 62,462 including the terminal observation. Their independent lifecycle checks passed. The final uniform cap is 108,000 updates; the other 37 cases already finished earlier and stop at the same frame. This observation does not establish acceptable pacing or tactical quality.
+
+Verification:
+
+- Initial complete validation suite: **7,602/7,606 passed**. Its four failures were the three 36,000-frame cutoffs and the aggregate gate containing them, not unrelated regressions. See `output/m7-map-match-validation.log`.
+- Final affected-case, repeatability, collision and aggregate selection: **12/12 passed** (46 unrelated test names skipped), in 830.76 seconds. The fresh aggregate recomputed all 40 complete matches and every existing parity family, reported no trace failures, and retained the expected **inconclusive** coverage verdict. See `output/m7-map-match-final.log`. The entire 7,606-test command was not repeated after the cap-only change; the 37 already completed matches also reran inside this passing aggregate.
+- Final TypeScript checking and implementation-path `git diff --check`: passed.
+- Final source identity: commit `771813e7dbb0cf668b06ef91905e83e21eeb8776`, dirty working tree hash `198b868beacd3e679005264d0469d6e2370193e00281707f278d51230ab060b0`.
+- Saved and reparsed verification manifest: `output/m7-map-match-verification.json`, containing the source identity, initial suite counts, final passing selection and the 37 initially completed scenario names. The three extended diagnostic event/frame records remain in `output/map-match-extended-*.json`; this is test-result evidence, not a saved full-frame export of all 40 matches.
+- No gameplay/UI code changed. A production build, browser run and whole-repository test run were not repeated for these fixture changes.
+
+M7 remains inconclusive: broader tuning/passing, headless autonomous parity, calibrated performance and held-out quality still need evidence. Human testing remains deferred. The next automated decision-integration target is passing while opposing bots are actively contesting possession; completion-window evidence here does not establish match pacing or quality.

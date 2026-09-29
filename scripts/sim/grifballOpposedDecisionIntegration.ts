@@ -1,3 +1,4 @@
+import { isMapBodyClear } from './grifballMapCollisionOracle';
 import { createArenaCollisionCallbacksForState } from '../../src/components/grifball/arenaCollisionCallbacks';
 import { getGoalPlates } from '../../src/game/grifballGoals';
 import { getGrifballEnemyGoalPosForMap } from '../../src/components/grifball/grifballObjectiveRuntime';
@@ -41,8 +42,9 @@ export const OPPOSED_DECISION_CASES: OpposedDecisionCase[] =
  * Initial positions, wounded possession and timing settings are authored; no
  * actions, assignments, movement, subsequent damage or ownership are injected.
  */
-export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation: 'opening' | 'revival' | 'match' | 'mobility' | 'map-contest' = 'opening', suppliedMap?: CustomMapData) {
-  const mapped = continuation === 'map-contest';
+export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation: 'opening' | 'revival' | 'match' | 'mobility' | 'map-contest' | 'map-match' = 'opening', suppliedMap?: CustomMapData) {
+  const mapMatch = continuation === 'map-match';
+  const mapped = continuation === 'map-contest' || mapMatch;
   if (mapped && !suppliedMap) throw new Error('Map contest requires a supplied map');
   const match = continuation === 'match' || mapped, mobility = continuation === 'mobility', revival = continuation !== 'opening';
   const state = createInitialGrifballRuntimeState({ debugMode: false,
@@ -167,7 +169,8 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
   const impacts: { tick: number; id: string; victims: string[] }[] = [];
   const pickups: { tick: number; id: string; distance: number }[] = [];
   let deathTick = 0, dropTick = 0;
-  const ticks = mapped ? 1800 : mobility ? 1800 : match ? (spec.main ? 9000 : spec.mode === 'contested' ? 10800 : 3840) : revival ? 600 : 150;
+  let terminalTick = 0;
+  let ticks = mapMatch ? 108000 : mapped ? 1800 : mobility ? 1800 : match ? (spec.main ? 9000 : spec.mode === 'contested' ? 10800 : 3840) : revival ? 600 : 150;
   for (tick = 1; tick <= ticks; tick++) {
     const plan = state.aiMatchContext.grifballTeamPlan, phase = state.grifball.phase;
     const updates: string[] = [];
@@ -337,7 +340,13 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
         check(`${c.id}.shield countdown`, Math.abs(c.invulnerabilityTimer - expectedShield) < 1e-9, true);
       }
       check(`${c.id}.finite`, [...c.pos.toArray(), ...c.vel.toArray(), c.yaw, c.aiTimer ?? 0].every(Number.isFinite), true);
-      if (plan.snapshot?.geometry && resets.at(-1)?.tick !== tick && latestRevival?.tick !== tick) check(`${c.id}.open segment`, isSpaceSegmentOpen(plan.snapshot.geometry, before.get(c.id)!, c.pos), true);
+      if (mapped) {
+        // Combat may jump onto platforms or slide around rounded obstacle corners.
+        // Ground route segments cannot describe those legal 3D collision results.
+        check(`${c.id}.clear map body`, isMapBodyClear(map, c.pos), true);
+        const geometry = plan.snapshot?.geometry;
+        if (geometry) check(`${c.id}.inside map bounds`, Math.abs(c.pos.x) <= geometry.x + 1e-8 && Math.abs(c.pos.z) <= geometry.z + 1e-8, true);
+      } else if (plan.snapshot?.geometry && resets.at(-1)?.tick !== tick && latestRevival?.tick !== tick) check(`${c.id}.open segment`, isSpaceSegmentOpen(plan.snapshot.geometry, before.get(c.id)!, c.pos), true);
       check(`${c.id}.pickup intent cleared`, !!c.pickupRequested, false);
     }
     if (ballState() === 'held') {
@@ -355,6 +364,11 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
       actors: [...state.otherPlayers.values()].map(c => ({ id: c.id, team: c.team, pos: c.pos.toArray(), vel: c.vel.toArray(),
         hp: c.hp, maxHp: c.maxHp, kills: c.kills, deaths: c.deaths, respawnTimer: c.respawnTimer, shield: c.invulnerabilityTimer, yaw: c.yaw, weapon: c.activeWeapon, weaponState: c.weaponState, weaponTimer: c.weaponTimer, isJumping: !!c.isJumping, jumpBudget: c.aiHammerJumpsInAir ?? 0, jumpPlanned: !!c.hammerJumpPlanned, aiState: c.aiState, timer: c.aiTimer ?? 0 })) });
     if (tick === 150) validateOpeningContest();
+    if (mapMatch && (state.grifball.phase as string) === 'matchEnd') {
+      terminalTick ||= tick;
+      // Retain three seconds after the winning transition, including pending respawns.
+      if (tick >= terminalTick + 181) { ticks = tick; break; }
+    }
   }
   tick = ticks;
   if (revival) {
@@ -431,7 +445,7 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
   }
   if (mapped) check('supplied map preserved', JSON.stringify(map), mapBefore);
   return { name: `${spec.mode}/${spec.team}/${spec.reverse ? 'reverse' : 'forward'}/${spec.main ? 'main' : 'ordinary'}`,
-    boundary: mapped ? 'live-map-contest' as const : mobility ? 'live-mobility-decision-integration' as const : match ? 'live-match-decision-integration' as const : revival ? 'live-revival-decision-integration' as const : 'live-opposed-decision-integration' as const, scenario: spec, ticks,
+    boundary: mapMatch ? 'live-map-match' as const : mapped ? 'live-map-contest' as const : mobility ? 'live-mobility-decision-integration' as const : match ? 'live-match-decision-integration' as const : revival ? 'live-revival-decision-integration' as const : 'live-opposed-decision-integration' as const, scenario: spec, ticks,
     failureCount, failures, mainJumpRequests, mainJumpImpacts, carrierDeaths, goals, resets, transitions, notifications, deaths, revivals, deathTick, dropTick, attacks, impacts, pickups, targetLookups, frames };
 }
 export const runOpposedDecisionIntegration = () => OPPOSED_DECISION_CASES.map(spec => runOpposedDecisionTrace(spec));

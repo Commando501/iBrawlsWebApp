@@ -7,15 +7,23 @@ export const MATCH_DECISION_CASES = OPPOSED_DECISION_CASES;
  * owners to scoring, round reset, fresh retrieval and terminal state. */
 export function runMatchDecisionTrace(spec: OpposedDecisionCase) {
   const trace = runOpposedDecisionTrace(spec, 'match');
+  if (spec.main && (spec.mode === 'contested' || spec.mode === 'hammer-first' && !spec.reverse)) {
+    if (!trace.mainJumpRequests.some(r => !r.accepted && r.dash > 0)) {
+      trace.failureCount++;
+      trace.failures.push({ tick: trace.ticks, field: 'autonomous main jump requests reach the real weapon gate', actual: false, expected: true });
+    }
+  }
+  return validateCompleteMatchTrace(trace);
+}
+
+/** Shared lifecycle acceptance for synthetic arenas and supplied maps. */
+export function validateCompleteMatchTrace<T extends ReturnType<typeof runOpposedDecisionTrace>>(trace: T): T {
   const check = (field: string, actual: unknown, expected: unknown) => {
     if (actual !== expected) {
       trace.failureCount++;
       if (trace.failures.length < 64) trace.failures.push({ tick: trace.ticks, field, actual, expected });
     }
   };
-  if (spec.main && (spec.mode === 'contested' || spec.mode === 'hammer-first' && !spec.reverse)) {
-    check('autonomous main jump requests reach the real weapon gate', trace.mainJumpRequests.some(r => !r.accepted && r.dash > 0), true);
-  }
   const end = trace.frames.at(-1)!;
   check('bounded autonomous match completes', end.phase, 'matchEnd');
   check('match has a winning team', end.winner === 'blue' || end.winner === 'red', true);
@@ -39,8 +47,8 @@ export function runMatchDecisionTrace(spec: OpposedDecisionCase) {
     const playing = trace.transitions.find(t => t.tick > reset.tick && t.to === 'playing');
     check('countdown lasts six updates', playing?.tick, reset.tick + 6);
     const next = trace.frames[reset.tick + 6];
-    check('new round has no stale runner', next.assignments.some(a => a.role === 'runner'), false);
-    check('new round assigns retrieval', next.assignments.some(a => a.role === 'retriever'), true);
+    check('new round has no stale runner', next?.assignments.some(a => a.role === 'runner'), false);
+    check('new round assigns retrieval', next?.assignments.some(a => a.role === 'retriever'), true);
     const goal = trace.goals.find(g => g.round === reset.round);
     check('new round scores autonomously', !!goal, true);
     check('fresh pickup between reset and goal', trace.pickups.some(p => p.tick > reset.tick && p.tick < (goal?.tick ?? 0)), true);
