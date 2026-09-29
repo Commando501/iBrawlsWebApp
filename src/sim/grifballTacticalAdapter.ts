@@ -67,12 +67,15 @@ export function createSimGrifballTacticalSnapshot(state: SimState, options: {
     && !isNeuralNetDifficulty(options.scriptedBots[c.id]);
   const roster = state.combatants.map(c => ({ id: c.id, team: c.team, controller: c.controller,
     difficulty: options.scriptedBots[c.id] ?? state.settings.aiDifficulty, scripted: scripted(c) }));
+  // Versioned execution aims along +sin/+cos; live model yaw is offset by PI.
+  // Preserve the original observation contract for legacy training callers.
+  const headingSign = !state.combatExecution || state.combatExecution === 'legacy-v1' ? -1 : 1;
   return createGrifballTacticalSnapshot({
     match: state.match, settings: state.settings, map: state.map, arenaRadius: state.map.arenaRadius,
     tactics: options.tactics ?? defaultGrifballTactics(), roster,
     players: state.combatants.filter(c => c.alive && c.hp > 0 && c.respawnTimer <= 0).map(c => ({
       id: c.id, team: c.team, scripted: scripted(c), difficulty: options.scriptedBots[c.id] ?? state.settings.aiDifficulty, pos: c.pos, vel: c.vel, height: c.pos.y,
-      heading: { x: -Math.sin(c.yaw), z: -Math.cos(c.yaw) }, pickupRequested: undefined,
+      heading: { x: headingSign * Math.sin(c.yaw), z: headingSign * Math.cos(c.yaw) }, pickupRequested: undefined,
       space: observeSimGrifballSpace(c, state.settings, combatExecutionForActor(state, c)),
     })),
     goals: { blue: state.goalPlates.find(p => p.team === 'blue')?.position ?? null, red: state.goalPlates.find(p => p.team === 'red')?.position ?? null },

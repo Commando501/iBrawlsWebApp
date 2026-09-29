@@ -11,6 +11,32 @@ import { createGrifballTeamPlanState, updateGrifballTeamPlan } from '../game/aiG
 import { defaultGrifballTactics } from '../game/grifballTacticsConfig';
 import { resolveHammerSlamTiming } from '../game/hammerSlamTiming';
 
+for (const execution of ['live-player-v1', 'live-roster-v1', 'live-roster-v2', 'live-mixed-v1'] as const) {
+  for (const yaw of [0, Math.PI / 2, Math.PI, -.73]) test(`${execution}: tactical heading matches actual world aim ${yaw}`, () => {
+    const { sim, live, scriptedBots, goals } = fixture();
+    sim.combatExecution = execution; sim.localPlayerId = 'player';
+    live.yaw = yaw + Math.PI;
+    for (const c of sim.combatants) {
+      c.yaw = yaw;
+      if (c.id !== 'player') live.otherPlayers.get(c.id)!.yaw = yaw + Math.PI;
+    }
+    const a = createSimGrifballTacticalSnapshot(sim, { scriptedBots });
+    const b = createLiveGrifballTacticalSnapshot(live, goals, sim.map);
+    for (const c of a.players) {
+      const expected = b.players.find(p => p.id === c.id)!;
+      assert.ok(Math.abs(c.heading!.x - Math.sin(yaw)) < 1e-10, 'simulation forward x');
+      assert.ok(Math.abs(c.heading!.z - Math.cos(yaw)) < 1e-10, 'simulation forward z');
+      assert.ok(Math.abs(c.heading!.x - expected.heading!.x) < 1e-10);
+      assert.ok(Math.abs(c.heading!.z - expected.heading!.z) < 1e-10);
+    }
+    const first = createGrifballTeamPlanState(), second = createGrifballTeamPlanState();
+    updateGrifballTeamPlan(first, a, 1 / 60); updateGrifballTeamPlan(second, b, 1 / 60);
+    const normalize = (plan: typeof first) => JSON.stringify([...plan.assignments], (_key, value) =>
+      typeof value === 'number' ? Math.round(value * 1e9) / 1e9 : value);
+    assert.equal(normalize(first), normalize(second), 'independent observations produce equivalent assignments');
+  });
+}
+
 function fixture() {
   const sim = createMatch({ seed: 17, settings: { aiDifficulty: 'normal' } });
   sim.match.phase = 'playing';
