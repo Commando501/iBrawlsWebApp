@@ -1306,3 +1306,27 @@ Verification:
 - Production gameplay and browser UI code did not change; no new browser playtest or production build was required for these Node validation fixtures. Full repository tests and frozen browser CLI runs were not repeated. The five previously reported V3 repository failures remain unresolved, without waivers or a claim of M7 acceptance.
 
 Next work is autonomous retrieval/routing on the supplied goal-capable maps, retaining actual obstacles and team spawn layouts. Human testing remains deferred until the remaining automated requirements are complete.
+
+
+## 2026-09-29 — autonomous supplied-map retrieval and routing
+
+Committed the terrain-recovery slice as `3f35c22` (`Validate AI terrain recovery across supplied maps`). Added **40 live map-routing traces / 57,600 frames**, with **44 focused tests** including three exact repeats and a matrix-coverage check. This slice remains uncommitted; human testing stays deferred.
+
+The five supplied maps with physical goals after production Grifball conversion are Forerunner Canyon, Synthwave Grid, Rainy Industrial Streets, Winter Glacier Rink and Championship Stadium. Their obstacles, goal plates and team spawn layouts are cloned without modification. Three allied bots begin at actual distinct team spawn points, with the ball at center. Both teams, roster insertion orders and main/ordinary designated carriers run for 1,440 frames. The production roster tick, tactical planner, AI updater, arena collision callback and objective loop autonomously choose retrieval, movement, pickup, carrying and scoring; nothing injects assignments or subsequent positions/actions.
+
+The initial probe incorrectly expected the closest bot by straight-line distance to retrieve on every map. On the three maps with end-zone barriers, the planner instead chose an outer-spawn teammate with a clearer route and scored successfully. The final fixtures put the designated main/ordinary actor at that real outer spawn on those maps, retain a closer but obstructed teammate, and explicitly require the route-aware choice. Winter and Championship retain the closer center spawn as retriever. This corrects the test assumption; planner behavior did not change.
+
+Assertions require one eligible retriever, one update per actor, an autonomous pickup request inside the configured radius, a next-frame runner role, configured speed bounds, safe planner segments and independent ground-obstacle clearance. Both box and cylinder footprints are checked without the production collision resolver. Runners must visibly cross the enemy barrier's X footprint outside its Z extent on the three obstructed maps. Scoring must occur over the actual enemy plate (independent ellipse/rectangle check), clear ownership and restore the hammer. Each run requires one goal notification, the correct winner, the twelve-update scored hold, stopped inactive movement, cleared terminal assignments and at least one second of stable match end. Supports stay separated and the supplied map/spawn data must remain unchanged. No gameplay fix was needed.
+
+Protocol `live-functions-vs-headless-step-v36` records `mapRoutingTraces` separately from terrain-only traces, earlier live decision families and **6,027 paired traces / 980,748 frames**. Any new routing failure fails execution acceptance; passing leaves the gate **inconclusive**. These are uncontested three-ally, one-goal runs with passing disabled and authored initial roster, seed and tuning. They do not exercise opponents, deaths/respawns, round reset, the outer frame/presentation owners, autonomous airborne map movement or headless decision execution. Calibrated performance, held-out quality and final repository acceptance remain open; optional neural integration stays unpromoted.
+
+Verification:
+
+- Focused supplied-map routing tests passed **44/44** (`output/m7-map-routing-focused.log`).
+- Full validation suite passed **7,514/7,514** tests, including the aggregate execution gate (`output/m7-map-routing-validation.log`), with an 8 GB Node heap allowance. The focused family and saved evidence were regenerated after the TypeScript phase-read adjustment.
+- TypeScript passed with the 8 GB heap allowance (`output/m7-map-routing-typecheck.log`); scoped `git diff --check` passed.
+- Saved and re-parsed `output/m7-map-routing-evidence.json`; summary: `output/m7-map-routing-summary.json`. All 40 traces / 57,600 frames have zero failures, including 24 barrier-detour cases. Source identity: commit `3f35c22fda5db82b4c03c12afe5f5549604be1fd`, working-tree hash `d25e98f8378c3e4aaa5dba464307d7af2d3f119412e9d7c8c64ee5728e804996`.
+- README, both explicit test commands and aggregate gate assertions include the new family. Attached implementation plans remain unchanged.
+- Production gameplay and browser UI code did not change; no new browser playtest or production build was required for these Node validation fixtures. Full repository tests and frozen browser CLI runs were not repeated. The five previously reported V3 repository failures remain unresolved, without waivers or a claim of M7 acceptance.
+
+Next work is opposing autonomous decisions on the supplied maps, joining these routes with combat, carrier loss, recovery and respawns. Human testing remains deferred until the remaining automated requirements are complete.
