@@ -1,7 +1,6 @@
 import { simulationTimestamp } from '../../game/simulationRandom';
 import * as THREE from 'three';
 import { clearBotComboState, type AIMatchContext } from '../../game/aiMatchContext';
-import { MAIN_AI_ID } from '../../game/roster';
 import { type Combatant, type UniversalSettings } from '../../types';
 import { getInwardSpawnYaw } from './combatGeometry';
 
@@ -64,12 +63,14 @@ export const respawnAICombatant = ({
   c.aiPressureTargetId = undefined;
   clearBotComboState(aiMatchContext, c.id);
 
-  if (c.id === MAIN_AI_ID) {
-    c.isJumping = false;
-    c.hammerJumpPlanned = false;
-    c.hammerJumpType = undefined;
-    c.swapCooldownTimer = 0;
-  }
+  // Every roster bot starts a new grounded life, including ordinary bots killed
+  // during a jump. Carrying airborne state into revival delays objective control.
+  c.isJumping = false;
+  c.aiHammerJumpsInAir = 0;
+  c.hammerJumpPlanned = false;
+  c.hammerJumpType = undefined;
+  c.hammerJumpWindowTimer = 0;
+  c.swapCooldownTimer = 0;
 
   mesh.visible = true;
   playRespawn();

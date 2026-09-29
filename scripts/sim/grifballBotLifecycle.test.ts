@@ -145,3 +145,20 @@ test('stale main-AI LUNGING state and pre-respawn attack history cannot grant a 
     assert.equal(resolve(), null);
   });
 });
+
+for (const id of ['bot_2', 'main_ai']) test(`${id} respawns without airborne commitments or an exhausted jump budget`, () => {
+  const f = lungeFixture(id);
+  Object.assign(f.bot, { hp: 0, respawnTimer: 0, isJumping: true,
+    aiHammerJumpsInAir: 1, hammerJumpPlanned: true, hammerJumpType: 'defensive',
+    hammerJumpWindowTimer: .5, swapCooldownTimer: .4 });
+  f.respawns(1 / 60);
+  assert.equal(f.bot.hp, f.bot.maxHp);
+  assert.equal(f.bot.isJumping, false);
+  assert.equal(f.bot.aiHammerJumpsInAir, 0);
+  assert.equal(f.bot.hammerJumpPlanned, false);
+  assert.equal(f.bot.hammerJumpType, undefined);
+  assert.equal(f.bot.hammerJumpWindowTimer, 0);
+  assert.equal(f.bot.swapCooldownTimer, 0);
+  assert.equal(f.bot.pos.y, 0);
+  assert.equal(f.bot.vel.length(), 0);
+});

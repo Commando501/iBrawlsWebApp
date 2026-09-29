@@ -1152,3 +1152,29 @@ Verification:
 - Full repository tests and frozen browser CLI runs were not repeated. The five previously reported V3 repository failures remain unresolved, without waivers or a claim of M7 acceptance.
 
 Next work is autonomous revival and rejoining the contest after these deaths, followed by the remaining round/full-match acceptance boundaries. Human testing remains deferred until the remaining automated acceptance requirements are complete.
+
+
+## 2026-09-29 — autonomous revival and rejoining play
+
+Committed the opposing-decision slice as `e38e0d3` (`Validate opposing Grifball decisions and contested recovery`). Added **24 live revival-decision traces / 11,520 frames**, six repeatability checks and two direct respawn regressions. This slice remains uncommitted; human testing stays deferred.
+
+The opposing-decision fixture now supports a 480-frame continuation, preserving all original opening-contest assertions at frame 150. The longer cases supply one authored spawn per team and use the production combatant-action callback factory's respawn function inside the real roster/frame loop. The same three opening contests, mirrored teams/orders and main/ordinary carriers run without injecting subsequent actions, deaths, assignments, positions or ownership. A first death at tick five, eight or nine revives at tick 186, 189 or 190: the existing repeated floating-point countdown leaves a sub-tick remainder after 180 updates, so revival occurs on update 181. All later deaths use the same independently checked delay.
+
+The initial runs caught ordinary bots retaining `isJumping` after airborne death. The production respawn reset previously cleared jumping, planned-jump fields and swap cooldown only for `main_ai`. These now reset for every AI combatant, along with the air-jump budget and hammer-jump window. The direct regressions exercise ordinary and main identities with stale airborne commitments and an exhausted jump budget. Simulation already clears its jump state on revival; no simulator change was needed.
+
+The saved continuation evidence contains **30 respawns** with zero failures. Assertions require the correct team spawn, full base health, ready weapon, cleared velocity/flight/dash/pressure/jump state, initialized protection, visible mesh and preserved kill/death credit. Revived actors get a fresh assignment and exactly one AI update in the revival frame. Protection decrements once per frame through expiry; damage callbacks must never damage protected actors. Revived bots resume movement and tactical roles. Contested and forward hammer-win cases additionally require an autonomous attack after revival; some contested cases also produce a second death, recovery or revival. Main-AI hammer-jump requests remain an explicit unsupported-fixture failure rather than a silent no-op, and none occur in these accepted traces.
+
+Protocol `live-functions-vs-headless-step-v30` stores `revivalDecisionTraces` separately from **6,027 paired traces / 980,748 frames** and the earlier live-only families. Any revival failure fails execution acceptance. The gate remains **inconclusive**: these synthetic corridors still omit full round/goal transitions, broader spawn arbitration and obstacle configurations, general main-AI jump execution, headless autonomous decisions, full matches, calibrated performance, held-out quality and final repository acceptance. Passing remains disabled and combat tuning/observer omissions are unchanged. Optional neural integration stays unpromoted.
+
+Verification:
+
+- TypeScript passed with the 8 GB heap allowance (`output/m7-revival-decision-final-typecheck.log`). The initial check caught an unsupported `findLast` API in the fixture; it now uses the existing ES2022-compatible array operations.
+- Final validation suite passed **7,281/7,281** tests, including all prior trace families and the aggregate gate (`output/m7-revival-decision-validation.log`). Scoped `git diff --check` passed.
+- Focused revival, original opposing-decision and lifecycle regressions passed **74/74** (`output/m7-revival-decision-final-focused.log`).
+- Production client build passed (`output/m7-revival-decision-build.log`), with the existing large-chunk warning.
+- Saved and re-parsed evidence: `output/m7-revival-decision-evidence.json`; summary: `output/m7-revival-decision-summary.json`. All 24 traces and 30 respawns have zero failures. Source identity: commit `e38e0d3978f4b9e14d3a6b6efec14960b1f57bd1`, working-tree hash `3696a030bc2603f34ff67a5a1428c785c94faa5b3af7dac1d8e8449becdcd575`.
+- Initial repeatability checks exposed wall-clock `spawnTime` values in newly added fixture observations. Initial timestamps are no longer serialized; production respawn timestamps are checked against the simulation clock. The final evidence remains deterministic without modifying roster initialization.
+- README, both explicit test commands and aggregate gate assertions include this family. Attached implementation plans remain unchanged.
+- Full repository tests and frozen browser CLI runs were not repeated. The five previously reported V3 repository failures remain unresolved, without waivers or a claim of M7 acceptance.
+
+Next work is autonomous goal scoring and round reset/reassignment through the live frame, building toward complete-match acceptance. Human testing remains deferred until the remaining automated requirements are complete.

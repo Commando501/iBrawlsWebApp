@@ -1,3 +1,4 @@
+import { createCombatantActionCallbacksForState } from '../../src/components/grifball/combatantActionCallbacks';
 import { advanceGrifballFrameForState } from '../../src/components/grifball/activeFrameRuntime';
 import { getOptimalSpawnPointForArena } from '../../src/components/grifball/arenaRuntime';
 import * as THREE from 'three';
@@ -35,7 +36,7 @@ export const OPPOSED_DECISION_CASES: OpposedDecisionCase[] =
  * Initial positions, wounded possession and timing settings are authored; no
  * actions, assignments, movement, subsequent damage or ownership are injected.
  */
-export function runOpposedDecisionTrace(spec: OpposedDecisionCase) {
+export function runOpposedDecisionTrace(spec: OpposedDecisionCase, revival = false) {
   const state = createInitialGrifballRuntimeState({ debugMode: false,
     adminSettings: { ...DEFAULT_ADMIN_SETTINGS, gameMode: 'grifball', aiDifficulty: 'normal',
       hammerMeleeSpeed: spec.mode === 'punch-first' ? .04 : .5,
@@ -48,10 +49,12 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase) {
   state.arenaRadius = 60; state.isObserverMode = true; state.grifball.phase = 'playing';
   state.grifballTactics = defaultGrifballTactics(); state.grifballTactics.defaults.passingEnabled = false; state.otherPlayers.clear();
   const carrierId = spec.main ? 'main_ai' : 'carrier';
+  const defenderId = 'defender';
+  if (revival) map.teamSpawns = { blue: [{ x: -12, y: 0, z: 3 }], red: [{ x: 12, y: 0, z: -3 }] };
   const otherTeam = spec.team === 'blue' ? 'red' as const : 'blue' as const;
   const seeds = [
     { id: carrierId, x: -1, z: 0, team: spec.team },
-    { id: 'defender', x: 1, z: 0, team: otherTeam },
+    { id: defenderId, x: 1, z: 0, team: otherTeam },
     ...(spec.mode === 'contested' ? [
       { id: 'escort', x: -8, z: 3, team: spec.team },
       { id: 'cover', x: 8, z: -3, team: otherTeam },
@@ -67,7 +70,7 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase) {
     const group = new THREE.Group(); group.userData.modelSystem = 'v2';
     refs.otherPlayerMeshes.set(c.id, { group, hammer: new THREE.Group(), sword: new THREE.Group(), rig: buildCombatantRigForModel(group) });
   }
-  const carrier = state.otherPlayers.get(carrierId)!, defender = state.otherPlayers.get('defender')!;
+  const carrier = state.otherPlayers.get(carrierId)!, defender = state.otherPlayers.get(defenderId)!;
   const ballState = () => state.grifball.ball.state;
   state.grifball.ball.state = 'held'; state.grifball.ball.holderId = carrierId;
   state.grifball.ball.pos = { x: carrier.pos.x, y: 1.1, z: carrier.pos.z };
@@ -112,7 +115,7 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase) {
     recoverCombatantAltitude: noop, clearPressureTarget: noop,
     startAIHammerJump: (self, _pos, vel, horizontalHeading, jumpType) => {
       const started = startAIHammerJumpForCombatant({ self, settings: state.settings, vel, horizontalHeading, jumpType,
-        onMainAIHammerSwing: noop, playSwing: noop, playJump: noop });
+        onMainAIHammerSwing: () => check('uncovered main hammer jump', true, false), playSwing: noop, playJump: noop });
       if (started) attacks.push({ tick, id: self.id, weapon: self.activeWeapon, melee: false, kind: 'hammer-jump' });
       return started;
     },
@@ -121,16 +124,23 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase) {
     spawnVoxelShockwaveParticles: noop,
     playDash: noop, playJump: noop, playExplosion: noop, playDeath: noop,
   });
+  const actions = createCombatantActionCallbacksForState({ getState: () => state, getRefs: () => refs,
+    spawnPoints: [], getRosterAI: () => [...state.otherPlayers.values()], getActiveCustomMap: () => map,
+    getOptimalSpawnPoint: excludePositions => getOptimalSpawnPointForArena({ activeCustomMap: map, spawnPoints: [], excludePositions }),
+    recordCombatantObservation: noop, onMainAIHammerSwing: () => check('uncovered main hammer jump', true, false), playSwing: noop, playJump: noop, playDash: noop, playRespawn: noop });
+  const deaths: { tick: number; id: string }[] = [];
+  const revivals: { tick: number; id: string; pos: number[]; shield: number; deaths: number; kills: number }[] = [];
   const random = seededRandom(17), dt = 1 / 60;
   const ballMeshRef = { current: null }, ballChargingRef = { current: false }, ballChargeTimerRef = { current: 0 };
   const frames = [];
   const impacts: { tick: number; id: string; victims: string[] }[] = [];
   const pickups: { tick: number; id: string; distance: number }[] = [];
   let deathTick = 0, dropTick = 0;
-  for (tick = 1; tick <= 150; tick++) {
+  const ticks = revival ? 480 : 150;
+  for (tick = 1; tick <= ticks; tick++) {
     const plan = state.aiMatchContext.grifballTeamPlan;
     const updates: string[] = [];
-    const living = [...state.otherPlayers.values()].filter(c => c.hp > 0).map(c => c.id);
+    let living = [...state.otherPlayers.values()].filter(c => c.hp > 0).map(c => c.id);
     const before = new Map([...state.otherPlayers].map(([id, c]) => [id, c.pos.clone()]));
     withSimulationRandom(random, tick * dt, () => advanceGrifballFrameForState({
       state, refs, ballMeshRef, ballChargingRef, ballChargeTimerRef, dt,
@@ -140,13 +150,42 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase) {
       replayRecordingRef: { current: null }, replayRecordingElapsedTimeRef: { current: 0 }, lastRecordTimeRef: { current: 0 },
       spawnVoxelShockwaveParticles: noop, rebuildHostModel: noop,
       // Observer fixture: no local input/weapon owner or roster resize. Bot physics
-      // execute inside the real updater; this short horizon ends before any respawn.
+      // execute inside the real updater; optional continuation includes real respawns.
       updatePhysics: noop, updateHammerAnimations: noop, runAIOrchestrator: noop,
       updateAI: delta => updateAIRosterTick({ refs, rosterAI: [...state.otherPlayers.values()], dt: delta,
-        respawnCombatant: () => check('unexpected respawn', true, false),
-        beforeUpdate: () => updateGrifballTeamPlanForState(state, delta, goal, map), updateSingleAIEntity: (id, delta) => { updates.push(id); update(id, delta); } }),
+        respawnCombatant: (c, mesh) => {
+          check('respawn continuation enabled', revival, true);
+          const death = deaths.filter(d => d.id === c.id).at(-1);
+          check('revival follows one full death delay', tick, (death?.tick ?? -181) + 181);
+          const deathCount = c.deaths, kills = c.kills;
+          actions.respawnCombatant(c, mesh);
+          revivals.push({ tick, id: c.id, pos: c.pos.toArray(), shield: c.invulnerabilityTimer, deaths: deathCount, kills });
+          const spawn = map.teamSpawns?.[c.team!]?.[0];
+          check('team spawn', JSON.stringify(c.pos.toArray()), JSON.stringify(spawn ? [spawn.x, spawn.y, spawn.z] : []));
+          check('respawn full base health', c.hp, state.settings.maxHP ?? 1);
+          check('respawn weapon ready', c.weaponState, 'ready');
+          check('respawn grounded', !!c.isJumping, false);
+          check('respawn jump plan cleared', !!c.hammerJumpPlanned, false);
+          check('respawn jump type cleared', c.hammerJumpType, undefined);
+          check('respawn jump budget reset', c.aiHammerJumpsInAir, 0);
+          check('respawn jump window cleared', c.hammerJumpWindowTimer, 0);
+          check('respawn flight cleared', !!c.isLunging, false);
+          check('respawn velocity reset', c.vel.length(), 0);
+          check('respawn dash reset', c.aiDashRemaining, 0);
+          check('respawn pressure reset', c.aiPressureTargetId, undefined);
+          check('respawn shield initialized', c.invulnerabilityTimer, state.settings.respawnInvulnerabilityDuration);
+          check('respawn visible', mesh.visible, true);
+          check('respawn timestamp uses simulation clock', c.spawnTime, 1_000_000 + tick * dt * 1000);
+          check('respawn preserves deaths', c.deaths, deathCount);
+          check('respawn preserves kills', c.kills, kills);
+        },
+        beforeUpdate: () => {
+          living = [...state.otherPlayers.values()].filter(c => c.hp > 0).map(c => c.id);
+          updateGrifballTeamPlanForState(state, delta, goal, map);
+        }, updateSingleAIEntity: (id, delta) => { updates.push(id); update(id, delta); } }),
       updateGrifball: delta => {
-        const wasHeld = ballState() === 'held';
+        const previousBallState = ballState();
+        const wasHeld = previousBallState === 'held';
         const requested = new Map([...state.otherPlayers].map(([id, c]) => [id, !!c.pickupRequested && c.hp > 0 && c.respawnTimer <= 0]));
         const ballPos = { ...state.grifball.ball.pos };
         updateGrifballObjectiveForState({ state, refs, ballMeshRef, ballChargingRef, ballChargeTimerRef, dt: delta,
@@ -155,7 +194,7 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase) {
           const id = state.grifball.ball.holderId!, c = state.otherPlayers.get(id)!;
           pickups.push({ tick, id, distance: Math.hypot(c.pos.x - ballPos.x, c.pos.z - ballPos.z) });
           check('autonomous pickup request', requested.get(id), true);
-          check('pickup begins from loose ball', wasHeld, false);
+          check('pickup begins from loose ball', previousBallState, 'loose');
           check('pickup alive', c.hp > 0 && c.respawnTimer <= 0, true);
           check('pickup range', pickups.at(-1)!.distance <= (state.settings.grifballPickupRadius ?? 1.6) + 1e-6, true);
         }
@@ -167,6 +206,8 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase) {
             playExplosion: noop, playDeath: noop, playSwing: noop, recordBotPsychKill: noop, recordBotCalibrationDeath: noop });
           const victims = [...state.otherPlayers.values()].filter(c => c.hp < health.get(c.id)!).map(c => c.id);
           impacts.push({ tick, id: botId, victims });
+          for (const id of victims) if (state.otherPlayers.get(id)!.hp <= 0) deaths.push({ tick, id });
+          check('no damage through spawn shield', victims.every(id => state.otherPlayers.get(id)!.invulnerabilityTimer <= 0), true);
           check('only enemy damage', victims.every(id => state.otherPlayers.get(id)!.team !== state.otherPlayers.get(botId)!.team), true);
         } }),
       updateMatchTimers: noop, enforceArenaBounds: noop,
@@ -188,6 +229,11 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase) {
       recordReplayFrame: noop, playRespawn: noop,
     }));
     check('one decision per living actor', JSON.stringify(updates), JSON.stringify(living));
+    for (const r of revivals.filter(r => r.tick === tick)) {
+      const c = state.otherPlayers.get(r.id)!;
+      check('revived bot receives assignment immediately', plan.assignments.has(r.id), true);
+      check('revived shield advances once', Math.abs(c.invulnerabilityTimer - (r.shield - dt)) < 1e-9, true);
+    }
     const lastPickup = pickups.at(-1);
     if (lastPickup && tick === lastPickup.tick + 1) check('new carrier becomes runner', plan.assignments.get(lastPickup.id)?.role, 'runner');
     if (dropTick && tick === dropTick + 1) {
@@ -195,6 +241,11 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase) {
       if (spec.mode === 'contested') check('ally contests loose ball', plan.assignments.get('escort')?.role, 'retriever');
     }
     for (const c of state.otherPlayers.values()) {
+      const latestRevival = revivals.filter(r => r.id === c.id).at(-1);
+      if (latestRevival && c.hp > 0) {
+        const expectedShield = Math.max(0, latestRevival.shield - (tick - latestRevival.tick + 1) * dt);
+        check(`${c.id}.shield countdown`, Math.abs(c.invulnerabilityTimer - expectedShield) < 1e-9, true);
+      }
       check(`${c.id}.finite`, [...c.pos.toArray(), ...c.vel.toArray(), c.yaw, c.aiTimer ?? 0].every(Number.isFinite), true);
       check(`${c.id}.open segment`, isSpaceSegmentOpen(plan.snapshot!.geometry!, before.get(c.id)!, c.pos), true);
       check(`${c.id}.pickup intent cleared`, !!c.pickupRequested, false);
@@ -207,47 +258,63 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase) {
     frames.push({ tick, ball: structuredClone(state.grifball.ball),
       assignments: [...plan.assignments.values()].map(a => ({ id: a.botId, role: a.role, target: state.aiMatchContext.coordinator.tacticalEngagements.get(a.botId)?.targetId ?? null })),
       actors: [...state.otherPlayers.values()].map(c => ({ id: c.id, team: c.team, pos: c.pos.toArray(), vel: c.vel.toArray(),
-        hp: c.hp, maxHp: c.maxHp, kills: c.kills, deaths: c.deaths, respawnTimer: c.respawnTimer, yaw: c.yaw, weapon: c.activeWeapon, weaponState: c.weaponState, weaponTimer: c.weaponTimer, isJumping: !!c.isJumping, aiState: c.aiState, timer: c.aiTimer ?? 0 })) });
+        hp: c.hp, maxHp: c.maxHp, kills: c.kills, deaths: c.deaths, respawnTimer: c.respawnTimer, shield: c.invulnerabilityTimer, yaw: c.yaw, weapon: c.activeWeapon, weaponState: c.weaponState, weaponTimer: c.weaponTimer, isJumping: !!c.isJumping, aiState: c.aiState, timer: c.aiTimer ?? 0 })) });
+    if (tick === 150) validateOpeningContest();
   }
-  tick = 150;
-  check('runner attacks autonomously', attacks.some(a => a.id === carrierId), true);
-  check('opponent attacks autonomously', attacks.some(a => a.id === defender.id), true);
-  check('hostile target lookups', targetLookups.every(t => state.otherPlayers.get(t.id)!.team !== state.otherPlayers.get(t.target)!.team), true);
-  const punchWins = spec.mode === 'punch-first';
-  const winner = punchWins ? carrier : defender, loser = punchWins ? defender : carrier;
-  check('loser health', loser.hp, 0);
-  check('one credited kill', winner.kills, 1);
-  check('one recorded death', loser.deaths, 1);
-  check('loser never kills', loser.kills, 0);
-  check('winner survives', winner.deaths, 0);
-  check('first impact owner', impacts[0]?.id, winner.id);
-  check('first impact victim', JSON.stringify(impacts[0]?.victims), JSON.stringify([loser.id]));
-  check('first impact timing', impacts[0]?.tick, punchWins ? 5 : spec.reverse ? 8 : 9);
-  check('loser commitment cancelled on death', impacts.some(i => i.id === loser.id), false);
-  check('no post-death attack', attacks.some(a => a.id === loser.id && a.tick > impacts[0]?.tick), false);
-  check('dead actor respawn clock advances once', Math.abs(loser.respawnTimer - (3 - (150 - (impacts[0]?.tick ?? 0)) / 60)) < 1e-9, true);
-  check('dead actor weapon ready', loser.weaponState, 'ready');
-  check('main identity kill bookkeeping', state.enemyKills, spec.main && punchWins ? 1 : 0);
-  check('main identity death bookkeeping', state.enemyDeaths, spec.main && !punchWins ? 1 : 0);
-  check('expected pickup count', pickups.length, punchWins ? 0 : 1);
-  check('same-frame death/drop', dropTick, punchWins ? 0 : impacts[0]?.tick);
-  if (punchWins) {
-    check('runner retains possession', state.grifball.ball.holderId, carrierId);
-    check('runner resumes route', carrier.pos.x * sign > 5, true);
-  } else {
-    const recoveryId = spec.mode === 'contested' ? 'escort' : defender.id;
-    check('expected recovery owner', pickups[0]?.id, recoveryId);
-    check('expected recovery timing', pickups[0]?.tick, spec.mode === 'contested' ? 70 : spec.reverse ? 57 : 113);
-    check('recovered possession retained', state.grifball.ball.holderId, recoveryId);
-    if (spec.mode === 'contested') {
-      check('opponent contests new runner', impacts.filter(i => i.victims.includes('escort')).length, 1);
-      check('escort survives follow-up', state.otherPlayers.get('escort')!.hp, 1);
-      check('coverage teammate unharmed', state.otherPlayers.get('cover')!.hp, 1);
-      check('new carrier targeted autonomously', targetLookups.some(t => t.id === defender.id && t.target === 'escort' && t.tick > (pickups[0]?.tick ?? 150)), true);
+  tick = ticks;
+  if (revival) {
+    const loser = spec.mode === 'punch-first' ? defender : carrier;
+    const first = revivals.find(r => r.id === loser.id);
+    check('first loser revives', !!first, true);
+    check('full respawn delay', first?.tick, (impacts[0]?.tick ?? 0) + 181);
+    check('revived actor resumes useful movement', frames.some(f => f.tick > (first?.tick ?? ticks) &&
+      f.actors.some(c => c.id === loser.id && c.hp > 0 && Math.hypot(c.pos[0] - first!.pos[0], c.pos[2] - first!.pos[2]) > 2)), true);
+    if (spec.mode === 'contested' || spec.mode === 'hammer-first' && !spec.reverse) {
+      check('revived actor autonomously attacks again', attacks.some(a => a.id === loser.id && a.tick > (first?.tick ?? ticks)), true);
+    }
+    check('revived actor resumes tactical role', frames.some(f => f.tick > (first?.tick ?? ticks) &&
+      f.assignments.some(a => a.id === loser.id && ['chaser', 'safety', 'lead', 'left', 'right', 'runner', 'retriever'].includes(a.role))), true);
+  }
+  function validateOpeningContest() {
+    check('runner attacks autonomously', attacks.some(a => a.id === carrierId), true);
+    check('opponent attacks autonomously', attacks.some(a => a.id === defender.id), true);
+    check('hostile target lookups', targetLookups.every(t => state.otherPlayers.get(t.id)!.team !== state.otherPlayers.get(t.target)!.team), true);
+    const punchWins = spec.mode === 'punch-first';
+    const winner = punchWins ? carrier : defender, loser = punchWins ? defender : carrier;
+    check('loser health', loser.hp, 0);
+    check('one credited kill', winner.kills, 1);
+    check('one recorded death', loser.deaths, 1);
+    check('loser never kills', loser.kills, 0);
+    check('winner survives', winner.deaths, 0);
+    check('first impact owner', impacts[0]?.id, winner.id);
+    check('first impact victim', JSON.stringify(impacts[0]?.victims), JSON.stringify([loser.id]));
+    check('first impact timing', impacts[0]?.tick, punchWins ? 5 : spec.reverse ? 8 : 9);
+    check('loser commitment cancelled on death', impacts.some(i => i.id === loser.id), false);
+    check('no post-death attack', attacks.some(a => a.id === loser.id && a.tick > impacts[0]?.tick), false);
+    check('dead actor respawn clock advances once', Math.abs(loser.respawnTimer - (3 - (150 - (impacts[0]?.tick ?? 0)) / 60)) < 1e-9, true);
+    check('dead actor weapon ready', loser.weaponState, 'ready');
+    check('main identity kill bookkeeping', state.enemyKills, winner.id === 'main_ai' ? 1 : 0);
+    check('main identity death bookkeeping', state.enemyDeaths, loser.id === 'main_ai' ? 1 : 0);
+    check('expected pickup count', pickups.length, punchWins ? 0 : 1);
+    check('same-frame death/drop', dropTick, punchWins ? 0 : impacts[0]?.tick);
+    if (punchWins) {
+      check('runner retains possession', state.grifball.ball.holderId, carrierId);
+      check('runner resumes route', carrier.pos.x * sign > 5, true);
+    } else {
+      const recoveryId = spec.mode === 'contested' ? 'escort' : defender.id;
+      check('expected recovery owner', pickups[0]?.id, recoveryId);
+      check('expected recovery timing', pickups[0]?.tick, spec.mode === 'contested' ? 70 : spec.reverse ? 57 : 113);
+      check('recovered possession retained', state.grifball.ball.holderId, recoveryId);
+      if (spec.mode === 'contested') {
+        check('opponent contests new runner', impacts.filter(i => i.victims.includes('escort')).length, 1);
+        check('escort survives follow-up', state.otherPlayers.get('escort')!.hp, 1);
+        check('coverage teammate unharmed', state.otherPlayers.get('cover')!.hp, 1);
+        check('new carrier targeted autonomously', targetLookups.some(t => t.id === defender.id && t.target === 'escort' && t.tick > (pickups[0]?.tick ?? 150)), true);
+      }
     }
   }
   return { name: `${spec.mode}/${spec.team}/${spec.reverse ? 'reverse' : 'forward'}/${spec.main ? 'main' : 'ordinary'}`,
-    boundary: 'live-opposed-decision-integration' as const, scenario: spec, ticks: 150,
-    failureCount, failures, deathTick, dropTick, attacks, impacts, pickups, targetLookups, frames };
+    boundary: revival ? 'live-revival-decision-integration' as const : 'live-opposed-decision-integration' as const, scenario: spec, ticks,
+    failureCount, failures, deaths, revivals, deathTick, dropTick, attacks, impacts, pickups, targetLookups, frames };
 }
-export const runOpposedDecisionIntegration = () => OPPOSED_DECISION_CASES.map(runOpposedDecisionTrace);
+export const runOpposedDecisionIntegration = () => OPPOSED_DECISION_CASES.map(spec => runOpposedDecisionTrace(spec));
