@@ -29,14 +29,16 @@ import { runMovingContactParity } from './grifballMovingContactParity';
 import { runMultiActorParity } from './grifballMultiActorParity';
 import { runSpawnParity } from './grifballSpawnParity';
 import { runMixedContactParity } from './grifballMixedContactParity';
+import { runObjectiveParity } from './grifballObjectiveParity';
+import { runOpposedFlightParity } from './grifballOpposedFlightParity';
 import { runMixedLifecycleParity } from './grifballMixedLifecycleParity';
 import { PLAYER_LUNGE_PARITY_CASES, runPlayerLungeParity, runPlayerLungeParityTrace } from './grifballPlayerLungeParity';
 
 const noop = () => {};
 export const PARITY_TOLERANCES = { position: 1e-6, velocity: 1e-6, health: 1e-9, timer: 1e-6, discrete: 0 };
-export const PARITY_GAPS = ['Broader mixed-player revival/maps, simultaneous opposing player/roster flights, autonomous dash/steering decisions and airborne/moving/carrier mixed flight-melee groups; bounded roster flight includes airborne, ballistic and assigned-walking/committed-dashing targets, trades and single-spawn revival',
+export const PARITY_GAPS = ['Broader mixed-player revival/maps and shielded/airborne/moving/carrier opposing player/roster flights, autonomous dash/steering decisions and airborne/moving/carrier mixed flight-melee groups; bounded roster flight includes airborne, ballistic and assigned-walking/committed-dashing targets, trades and single-spawn revival',
   'Swept collision between samples, moving-carrier punches and player pitch/crouch/model geometry; grounded roster geometry and authored moving sword/hammer impacts are covered',
-  'Full movement/combat/objective execution across all authored maps; only their roster respawn boundaries are certified',
+  'Full movement/combat/objective execution across all authored maps; roster respawns and mixed objective reset placement are covered, but full-frame combat/objective ordering remains open',
   'Full AI decision-to-action integration and complete mixed player/roster execution; authored movement/attack intents do not certify autonomous choices'];
 export interface ParityDifference { tick: number; field: string; live: unknown; headless: unknown; tolerance: number }
 export interface ParityTraceOptions {
@@ -194,13 +196,15 @@ export function runExecutionParity() {
   const mixedContactTraces = runMixedContactParity();
   const playerLungeTraces = runPlayerLungeParity();
   const mixedLifecycleTraces = runMixedLifecycleParity();
-  const failures = [...traces, ...botTraces, ...lungeTraces, ...geometryTraces, ...motionTraces, ...movingContactTraces, ...multiActorTraces, ...spawnTraces, ...mixedContactTraces, ...playerLungeTraces, ...mixedLifecycleTraces].filter(t => t.differenceCount);
+  const opposedFlightTraces = runOpposedFlightParity();
+  const objectiveTraces = runObjectiveParity();
+  const failures = [...traces, ...botTraces, ...lungeTraces, ...geometryTraces, ...motionTraces, ...movingContactTraces, ...multiActorTraces, ...spawnTraces, ...mixedContactTraces, ...playerLungeTraces, ...mixedLifecycleTraces, ...opposedFlightTraces, ...objectiveTraces].filter(t => t.differenceCount);
   const legacyCompatibility = ['sword-hit-recovery', 'punch-hit-recovery'].map(name => runExecutionParityTrace(name, { combatExecution: 'legacy-v1' }));
   const priorRosterCompatibility = runLungeParityTrace(LUNGE_PARITY_CASES[0], 'bot_2', true, 'live-roster-v1');
   const priorPlayerCompatibility = runPlayerLungeParityTrace(PLAYER_LUNGE_PARITY_CASES[0], 'live-player-v1');
   return gate('execution-parity', failures.length ? 'fail' : 'inconclusive',
-    `${failures.length}/${traces.length + botTraces.length + lungeTraces.length + geometryTraces.length + motionTraces.length + movingContactTraces.length + multiActorTraces.length + spawnTraces.length + mixedContactTraces.length + playerLungeTraces.length + mixedLifecycleTraces.length} player/roster action traces differ. ${PARITY_GAPS.length} coverage gaps remain; legacy training dynamics are not certified.`,
-    { protocol: 'live-functions-vs-headless-step-v13', combatExecution: ['live-player-v1', 'live-roster-v1', 'live-roster-v2', 'live-mixed-v1'], tolerances: PARITY_TOLERANCES,
+    `${failures.length}/${traces.length + botTraces.length + lungeTraces.length + geometryTraces.length + motionTraces.length + movingContactTraces.length + multiActorTraces.length + spawnTraces.length + mixedContactTraces.length + playerLungeTraces.length + mixedLifecycleTraces.length + opposedFlightTraces.length + objectiveTraces.length} action/objective boundary traces differ. ${PARITY_GAPS.length} coverage gaps remain; legacy training dynamics are not certified.`,
+    { protocol: 'live-functions-vs-headless-step-v15', combatExecution: ['live-player-v1', 'live-roster-v1', 'live-roster-v2', 'live-mixed-v1'], tolerances: PARITY_TOLERANCES,
       neuralIntegration: 'Optional and not promoted: legacy training dynamics remain unchanged; their compatibility traces are diagnostic, not a required neural integration gate.',
       scope: 'Production player functions, stationary roster attacks and committed roster flights through contact, lethal/surviving primary/recent-window trades, paired opposing lunges, main-AI victims and single-authored-spawn revival versus versioned stepSimulation. Grounded geometry covers medium/large targets and standing/crouched actors. Motion traces include the scripted gravity prelude, airborne commitments, ballistic targets, crossing/retreating flights and fall completion in both actor orders. Targets and headings are supplied; AI decisions/pressure/combos, post-flight horizontal steering and presentation effects are suppressed. Remaining gaps are not certified.',
       movingContactScope: 'Production assigned-area walking and committed grounded dash movement with authored intent boundaries; targets enter/leave impact range or change direction, sword/hammer attackers move during windup, and lunges resolve in both actor update orders. Dash initiation decisions, moving-carrier punches and swept collision remain outside this slice.',
@@ -209,5 +213,7 @@ export function runExecutionParity() {
       mixedContactScope: 'Four grounded actors with committed flights and authored slash/slam/swipe commands: contact before/after/same-frame melee, kill cancellation, surviving trade consumption and two allied flights sharing a target. Both roster orders, main-AI roles and views. Independent damage, credit, contact and finish-tick expectations; no autonomous choices, moving/airborne crowds, carrier or player interactions.',
       playerLungeScope: 'Three grounded actors: committed local player lunges plus roster sword/hammer attacks, hit/miss/shield/team/timeout/boundary cases, lethal/surviving counters, same-frame ordering and lethal/nonlethal mid-flight damage. Both roster orders, mirrored teams and main-AI target roles. Explicit localPlayerId and independent health, finish-frame and kill-credit expectations. Frames stop before revival; objectives, player primary attacks, incoming roster flights, moving/airborne/carrier crowds and autonomous intent selection remain uncertified.',
       mixedLifecycleScope: 'Two grounded actors: incoming main/regular roster lunges against an idle or countering player, lethal/surviving sword/hammer trades and exact/recent/expired/future/zero/disabled history, friendly/dead/shield exclusions and shield expiry. Both team mirrors and actor orders, player/roster revival, greedy occupancy at two shared authored spawns, exact revival ticks and asymmetric shield timing. Does not certify opposing player/roster flights, broader maps, airborne/carrier execution or full objective/decision integration.',
-      gaps: PARITY_GAPS, traces, botTraces, lungeTraces, geometryTraces, motionTraces, movingContactTraces, multiActorTraces, spawnTraces, mixedContactTraces, playerLungeTraces, mixedLifecycleTraces, legacyCompatibility, priorRosterCompatibility, priorPlayerCompatibility });
+      opposedFlightScope: 'Two grounded opposing player/roster lunges, player-first and roster-first contact, all one/two-HP combinations, trades enabled/disabled, main/regular identities, mirrored teams and both actor orders. Independent health, credit, flight-end and recovery-ready boundaries, tuned reload and snapshot continuation through recovery/revival. Does not certify shielded, airborne, moving-heading or carrier duels, crowd contact, telemetry callbacks or full objective/decision integration.',
+      objectiveScope: 'Mixed objective functions compared directly with tickGrifballObjective, not full stepSimulation: pickup order/eligibility/recovery, authored player and roster releases, settled-ball reception and return, carrier loss, healing, goal suppression after death/release, score/winner transitions, and round-reset placement across supplied maps. Independent expected outcomes and snapshot continuations; no movement/combat tick, AI pass selection, charge scheduling, observer-player model or complete frame ordering certification.',
+      gaps: PARITY_GAPS, traces, botTraces, lungeTraces, geometryTraces, motionTraces, movingContactTraces, multiActorTraces, spawnTraces, mixedContactTraces, playerLungeTraces, mixedLifecycleTraces, opposedFlightTraces, objectiveTraces, legacyCompatibility, priorRosterCompatibility, priorPlayerCompatibility });
 }

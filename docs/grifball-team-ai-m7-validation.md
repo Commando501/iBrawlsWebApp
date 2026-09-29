@@ -755,3 +755,53 @@ Verification:
 - Scoped `git diff --check` passed; attached implementation plans remain unchanged. The old task-owned development server was no longer running at the start of validation. A new hidden development server was started on port **3000** afterward; the game and validation page returned HTTP 200.
 
 This slice and the preceding player-lunge parity slice remain uncommitted. Next work is opposing player/roster flights and broader mixed objective/lifecycle ordering, followed by the remaining decision integration and calibrated acceptance gates. Human testing remains deferred until the automated M7 work is complete.
+
+## 2026-09-29 — opposing player/roster lunges
+
+Committed the preceding player-lunge and incoming-flight/lifecycle slices as `a70405d` (`Validate mixed player combat and respawn parity`). Continued with the next bounded acceptance slice; human testing remains deferred.
+
+The initial **88/128** paired result exposed **40 failing cases** (`output/m7-opposed-flight-before.log`). A lethal incoming roster lunge could leave the local player lunging or recovering until the next weapon frame. A surviving player hit by an incoming trade was sent through roster-style simulator flight completion, becoming ready immediately and losing the current frame's velocity instead of entering player recovery.
+
+Lethal live roster-lunge hits now immediately cancel local flight and clear weapon phases/timers. The opt-in mixed simulator handles a surviving local player's traded flight separately from roster recovery: it preserves the current frame's velocity, starts configured lunge recovery and advances that recovery on the next player weapon frame. Existing nonmixed execution profiles remain unchanged.
+
+Protocol `live-functions-vs-headless-step-v14` adds **128 traces**, totaling **2,351 paired traces**. Two starting separations select player-first or roster-first contact. Every player/bot one-/two-HP combination runs with trades enabled/disabled, main/regular opponent identity, mirrored teams and both actor orders. Both-two-HP cases use a shorter reload. Actual player commitment/flight and roster flight functions advance independently from `stepSimulation` for 300 ticks, including death countdown and revival. Independent checks pin surviving health, kill/death ownership, the contact/end frame, and the last recovering/first ready frame. Four JSON snapshot continuations cross contact/recovery or revival. The existing mixed-lifecycle fixture now supports these opposed commitments and compares local flight state each tick.
+
+**767/767** focused checks passed (`output/m7-opposed-flight-focused.log`), including the 128 new paired cases, four snapshot checks and prior mixed lifecycle, player-lunge and roster-flight parity. This remains bounded two-actor grounded execution: shielded/airborne/moving/carrier duels, group interference, complete objective/round ordering, telemetry callback completeness, autonomous decisions, calibrated performance and held-out quality remain outside this result. The four remaining coverage groups keep execution parity **inconclusive**; neural integration remains optional and unpromoted.
+
+Verification:
+
+- **142/142** acceptance-gate integration checks passed (`output/m7-opposed-flight-integration.log`).
+- Full repository suite: **4,350/4,355 passed**, raw exit **1**, with the same five historical V3 animation/asset failures (`output/m7-opposed-flight-repository-final.log`). No checks were waived or weakened. This separate run is not imported into the CLI report's repository-tests gate.
+- Frozen quick run `output/grifball-validation/m7-opposed-flight-final/` finished with **exit 0**: **2,925/2,925** validation tests, TypeScript, production client/relay and validation builds, startup, **16/16** browser trials and **8/8** exact repeatability pairs passed. Quick success does not provide calibrated performance, held-out quality or human-review acceptance.
+- The saved parity artifact was re-parsed: **2,351 traces**, **512,748 frames**, zero differences and four remaining coverage groups (`output/m7-opposed-flight-artifact-review.json`). Execution parity remains **inconclusive**.
+- Source identity matches the frozen plan (`output/m7-opposed-flight-review.json`): commit `a70405d514159f3d6acb024cb009a52bd8e0a81a`, working-tree hash `0e88278ae051f673cbb2d14156fda60363cce33a38ca5ca26ea20e1bdc47e1da`.
+- Scoped `git diff --check` passed; attached implementation plans remain unchanged. The verified task-owned development server was stopped for the frozen run and restored afterward on port **3000**. Both the game and validation page returned HTTP 200.
+
+This new slice remains uncommitted after `a70405d`. Next work is mixed carrier/objective ordering and the remaining bounded execution gaps before full decision integration, calibrated performance and held-out quality acceptance. Human testing remains deferred until the automated M7 work is complete.
+
+
+## 2026-09-29 — mixed objective lifecycle boundaries
+
+Continued on `a70405d` without committing; both the prior opposing-flight slice and this slice remain uncommitted. Human testing remains deferred.
+
+Added **236 objective boundary traces** plus four JSON snapshot checks. These compare actual `updateGrifballObjectiveForState` execution directly with `tickGrifballObjective`, independently after setup. They deliberately do not call the full movement/combat frame. Authored player releases invoke the production player pass function; authored roster releases invoke the same ball primitive and carrier transition used by scripted passing, without certifying its planning, charge scheduling or facing decisions.
+
+Coverage includes player/bot carriers, mirrored teams and reversed actor order; nearest/tied pickups, remote/respawning eligibility, request consumption and pickup during recovery; minimum/full/disabled throws, settled-ball reception and automatic return; dead/respawning/missing holders; healing delay and recovery; immediate pickup-and-score, own-goal exclusion, goal suppression after death or release, exactly one goal notification, winner transitions and reset callbacks. Round-reset placement additionally spans eight supplied maps and five spawn edge cases. Independent expected outcomes supplement paired comparisons, including preservation of injury, death countdown and weapon recovery at the reset boundary.
+
+The first initialized 216-test version passed **93/216** (`output/m7-objective-before.log`). Some failures were incorrect fixture expectations: tied pickups select the last equally near candidate, and reception waits for the thrown ball to settle. Correcting those expectations left real simulator differences in remote/respawning pickup eligibility, player-first enumeration, invalid possession, local release recovery, and reset placement/vitals. The expanded suite also checks recovery-preserving pickups and death/release on a goal plate.
+
+The opt-in mixed simulator now enumerates the local player before offline AI, applies live HP/respawn eligibility, and preserves live carrier weapon-phase transitions. Mixed round resets use greedy team-spawn placement in live participant order, retain spawn height/facing and preserve individual health, death countdown and recovery. They reposition participants rather than mass-respawn them. Legacy execution profiles remain unchanged; this slice changes simulator behavior and validation, not the production objective rules.
+
+Protocol `live-functions-vs-headless-step-v15` stores `objectiveTraces` with an explicit `objective-functions` boundary and scope. The **236 traces / 30,240 frames** have zero differences, bringing combined evidence to **2,587 traces / 542,988 frames**. The execution gate remains **inconclusive**: objective-only checks do not close full-frame carrier death/pass/pickup/score ordering, autonomous decisions, observer representation or complete map execution. Calibrated performance, held-out quality and final repository acceptance remain open.
+
+Verification:
+
+- **296/296** focused objective, carrier lifecycle and simulator regression checks passed (`output/m7-objective-focused.log`).
+- **3,165/3,165** validation-suite tests passed, including the complete parity gate and all prior trace groups (`output/m7-objective-validation.log`).
+- Final TypeScript check passed with the same 8 GB heap allowance used by the validation runner (`output/m7-objective-typecheck.log`); an initial invocation with Node's default heap exhausted memory.
+- Production client build passed (`output/m7-objective-build.log`); Vite reported its existing large-chunk warning.
+- Scoped `git diff --check` passed; attached implementation plans remain unchanged.
+- Saved objective evidence: `output/m7-objective-evidence.json`; compact summary: `output/m7-objective-summary.json`. Source identity: commit `a70405d514159f3d6acb024cb009a52bd8e0a81a`, working-tree hash `dfed442ef215ee6c1b4bae4b745da7f575f46e12638761b746720b7dc741bae6`.
+- A full repository suite and frozen browser CLI run were not repeated for this simulator/objective-boundary slice. The previous full run's five historical V3 failures remain unresolved; no waiver or M7 acceptance is implied.
+
+Next work is integration of these objective boundaries into complete mixed movement/combat frames, particularly carrier death versus respawn, pass release and same-frame pickup/scoring. Human review remains deferred until the automated acceptance requirements are completed.

@@ -58,6 +58,12 @@ export function applyAISwordLungeHitForState({
 
     if (state.playerHP <= 0) {
       state.playerHP = 0;
+      // Local weapon animation already ran this frame. Cancel now so a lethal
+      // incoming flight cannot leave a dead player lunging or recovering.
+      state.isLunging = false; state.lungeTimer = 0;
+      state.pSwordState = state.pWeaponState = 'ready';
+      state.pSwordTimer = state.pWeaponTimer = 0;
+      state.pSwordReady = state.pWeaponReady = true;
       state.playerRespawnTimer = 3.0;
       state.playerDeaths += 1;
       attackerBot.score = (attackerBot.score || 0) + 1;

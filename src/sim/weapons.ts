@@ -411,7 +411,13 @@ function resolveRosterLunge(state: SimState, c: SimCombatant, settings: Universa
     strike(state, c, target, settings, events);
     if (trade) {
       strike(state, target, c, settings, events);
-      if (target.alive && targetWasLunging) finish('hit', target);
+      if (target.alive && targetWasLunging && isMixedPlayer(state, target)) {
+        // Incoming trades consume local flight into player recovery. The live
+        // player keeps this frame's velocity until the next movement update.
+        target.isLunging = false; target.lungeTimer = 0; target.lungeOutcome = 'hit';
+        target.weaponState = 'recovering'; target.attackKind = 'none'; target.weaponPhaseElapsed = 0;
+        target.weaponTimer = target.attackCooldown = settings.swordLungeReload ?? 1.2;
+      } else if (target.alive && targetWasLunging) finish('hit', target);
       else if (target.alive && primaryActive) {
         target.weaponState = 'recovering'; target.weaponPhaseElapsed = 0;
         target.weaponTimer = recoverForKind(target.attackKind, settings);

@@ -131,7 +131,7 @@ test('corrected player traces agree while incomplete coverage and legacy differe
   assert.ok(details.botTraces.every((t: any) => t.differenceCount === 0));
   assert.equal(details.lungeTraces.length, 300);
   assert.ok(details.lungeTraces.every((t: any) => t.differenceCount === 0));
-  assert.equal(details.protocol, 'live-functions-vs-headless-step-v13');
+  assert.equal(details.protocol, 'live-functions-vs-headless-step-v15');
   assert.equal(details.geometryTraces.length, 398);
   assert.ok(details.geometryTraces.every((t: any) => t.differenceCount === 0));
   assert.equal(details.motionTraces.length, 216);
@@ -148,6 +148,10 @@ test('corrected player traces agree while incomplete coverage and legacy differe
   assert.ok(details.playerLungeTraces.every((t: any) => t.differenceCount === 0));
   assert.equal(details.mixedLifecycleTraces.length, 168);
   assert.ok(details.mixedLifecycleTraces.every((t: any) => t.differenceCount === 0));
+  assert.equal(details.opposedFlightTraces.length, 128);
+  assert.ok(details.opposedFlightTraces.every((t: any) => t.differenceCount === 0));
+  assert.equal(details.objectiveTraces.length, 236);
+  assert.ok(details.objectiveTraces.every((t: any) => t.differenceCount === 0 && t.boundary === 'objective-functions'));
   assert.ok(details.priorPlayerCompatibility.differenceCount > 0);
   assert.ok(details.priorRosterCompatibility.differenceCount > 0);
   for (const name of ['sword-hit-recovery', 'punch-hit-recovery']) {

@@ -35,7 +35,7 @@ import {
   tickGrifballMatch,
 } from '../game/grifballMatch';
 import { awardTeamGoal, type TeamId } from '../game/teamScoring';
-import { type SimState, type SimCombatant, findCombatant } from './simState';
+import { type SimState, type SimCombatant, findCombatant, isMixedPlayer } from './simState';
 import { type ActionsById } from './actions';
 import { forwardDir } from './physics';
 import { inwardSpawnYaw } from './factory';
@@ -68,17 +68,21 @@ const NO_EVENTS = (): ObjectiveEvents => ({
 export function setSimCarrier(
   c: SimCombatant,
   carrying: boolean,
-  settings: UniversalSettings
+  settings: UniversalSettings,
+  state?: SimState
 ): void {
+  const mixed = state?.combatExecution === 'live-mixed-v1';
   const baseMaxHp = settings.maxHP ?? 1;
   if (carrying) {
     c.weapon = 'ball';
     c.maxHp = resolveRunnerMaxHp(settings);
     c.hp = c.maxHp;
     c.hasBall = true;
-    c.weaponState = 'idle';
-    c.weaponTimer = 0;
-    delete c.weaponPhaseElapsed;
+    if (!mixed) {
+      c.weaponState = 'idle';
+      c.weaponTimer = 0;
+      delete c.weaponPhaseElapsed;
+    }
     c.runnerHealDelayTimer = 0;
     c.runnerLastHp = c.hp;
   } else {
@@ -89,7 +93,42 @@ export function setSimCarrier(
     c.passChargeTimer = 0;
     c.runnerHealDelayTimer = 0;
     c.runnerLastHp = c.hp;
+    // Live player release readies the hammer without erasing its animation clock.
+    // Roster release preserves its current weapon phase.
+    if (mixed && isMixedPlayer(state, c)) {
+      c.weaponState = 'idle'; c.weaponTimer = 0; c.attackKind = 'none'; c.attackCooldown = 0;
+    }
   }
+}
+
+/** Live objectives enumerate the local player before the offline AI roster.
+ * findBallPickup resolves equal distances in favour of the last candidate. */
+function mixedObjectiveActors(state: SimState): SimCombatant[] {
+  const player = state.combatants.find(c => isMixedPlayer(state, c));
+  return [...(player ? [player] : []), ...state.combatants.filter(c => !isMixedPlayer(state, c) && c.controller === 'ai')];
+}
+
+/** A live round reset repositions participants; individual death/recovery timers
+ * remain owned by their normal lifecycle. It is not a mass respawn. */
+function placeMixedObjectiveActors(state: SimState, settings: UniversalSettings): void {
+  const used: SimCombatant['pos'][] = [];
+  for (const c of mixedObjectiveActors(state)) {
+    const cluster = state.map.teamSpawns?.[c.team]?.length ? state.map.teamSpawns[c.team] : state.map.spawnPoints;
+    let spawn: { x: number; y: number; z: number; yaw?: number } = cluster[0] ?? { x: 0, y: 0, z: 0 };
+    let best = -1;
+    for (const point of cluster) {
+      const clearance = used.reduce((distance, other) => Math.min(distance,
+        Math.hypot(point.x - other.x, point.y - other.y, point.z - other.z)), Infinity);
+      if (clearance > best) { best = clearance; spawn = point; }
+    }
+    c.pos = { x: spawn.x, y: spawn.y, z: spawn.z }; c.vel = { x: 0, y: 0, z: 0 };
+    c.yaw = (spawn.yaw ?? inwardSpawnYaw(spawn)) - (isMixedPlayer(state, c) ? Math.PI : 0);
+    used.push(c.pos);
+    if (!isMixedPlayer(state, c)) { delete c.lastSwordAttackTimeMs; delete c.lastHammerAttackTimeMs; }
+  }
+  const player = state.combatants.find(c => isMixedPlayer(state, c));
+  if (player) setSimCarrier(player, false, settings, state);
+  for (const c of state.combatants) if (c.controller === 'ai' && c.weapon === 'ball') { c.weapon = 'hammer'; c.hasBall = false; }
 }
 
 export function tickSimRunnerHealing(
@@ -175,7 +214,7 @@ export function throwSimPass(
   const f = forwardDir(c.yaw);
   const heading = { x: f.x, y: 0, z: f.z };
   throwBall(ball, { x: c.pos.x, y: c.pos.y + CARRY_HEIGHT, z: c.pos.z }, heading, speed);
-  setSimCarrier(c, false, settings);
+  setSimCarrier(c, false, settings, state);
 }
 
 /**
@@ -191,22 +230,25 @@ export function tickGrifballObjective(
   const events = NO_EVENTS();
   const g = state.match;
   const config = resolveMatchConfig(settings);
+  const mixed = state.combatExecution === 'live-mixed-v1';
+  const available = (c: SimCombatant) => c.alive && (!mixed || c.hp > 0 && c.respawnTimer <= 0);
 
   const phase = tickGrifballMatch(g, dt, config);
   events.startedPlaying = phase.startedPlaying;
   events.roundReset = phase.roundReset;
   events.matchEnded = phase.matchEnded;
   if (phase.roundReset) {
-    placeCombatantsAtSpawns(state, settings);
+    if (mixed) placeMixedObjectiveActors(state, settings);
+    else placeCombatantsAtSpawns(state, settings);
     returnBallHome(g.ball);
   }
 
   // Ball follows its (living) holder, or runs free physics.
   if (g.ball.state === 'held' && g.ball.holderId) {
     const holder = findCombatant(state, g.ball.holderId);
-    if (!holder || !holder.alive) {
+    if (!holder || !available(holder)) {
       dropBall(g.ball, holder ? { x: holder.pos.x, y: 0, z: holder.pos.z } : g.ball.home);
-      if (holder) setSimCarrier(holder, false, settings);
+      if (holder) setSimCarrier(holder, false, settings, state);
     } else {
       tickSimRunnerHealing(state, settings, dt);
       g.ball.pos.x = holder.pos.x;
@@ -220,15 +262,15 @@ export function tickGrifballObjective(
   if (isGrifballLive(g)) {
     // Pickups.
     if (isBallGrabbable(g.ball)) {
-      const candidates: BallPickupCandidate[] = state.combatants
-        .filter((c) => c.alive && actionsById[c.id]?.pickup === true)
+      const candidates: BallPickupCandidate[] = (mixed ? mixedObjectiveActors(state) : state.combatants)
+        .filter((c) => available(c) && actionsById[c.id]?.pickup === true)
         .map((c) => ({ id: c.id, pos: c.pos, alive: true }));
       const grabId = findBallPickup(g.ball, candidates, settings.grifballPickupRadius ?? 1.6);
       if (grabId) {
         const grabber = findCombatant(state, grabId);
         if (grabber) {
           attachBallTo(g.ball, grabId);
-          setSimCarrier(grabber, true, settings);
+          setSimCarrier(grabber, true, settings, state);
           events.pickup = grabId;
         }
       }
@@ -237,12 +279,12 @@ export function tickGrifballObjective(
     // Scoring.
     if (g.ball.state === 'held' && g.ball.holderId) {
       const carrier = findCombatant(state, g.ball.holderId);
-      if (carrier && carrier.alive) {
+      if (carrier && available(carrier)) {
         const plate = findScoringPlate(carrier.pos.x, carrier.pos.z, carrier.team, state.goalPlates);
         if (plate) {
           const total = awardTeamGoal(state.scores, carrier.team);
           registerGoal(g, carrier.team, total, config);
-          setSimCarrier(carrier, false, settings);
+          setSimCarrier(carrier, false, settings, state);
           g.ball.state = 'idle';
           g.ball.holderId = null;
           g.ball.pos = { x: g.ball.home.x, y: 0.35, z: g.ball.home.z };
