@@ -176,6 +176,8 @@ export function resolvePrimaryGrifballAIObjectiveMovementForCombatant({
 
     if (closestEnemy && closestDist <= 2.2 && canStartWeaponAction && frame.weaponState === 'ready') {
       const toEnemy = closestEnemy.pos.clone().sub(frame.pos);
+      frame.vel.x = 0;
+      frame.vel.z = 0;
       frame.yaw = getYawForHeading(toEnemy.x, toEnemy.z);
       frame.aiState = 'COOLDOWN';
       frame.timer = resolvePunchCooldown(state.settings);
@@ -208,8 +210,11 @@ export function resolvePrimaryGrifballAIObjectiveMovementForCombatant({
     );
 
     const speed = 5.8 * resolveDirectionalSpeedMultiplier(state.settings, 'forward', true);
+    const attackYaw = frame.yaw;
     applyGroundDirection(frame, steer.x, steer.z, waypoint ? Math.min(speed, Math.hypot(waypoint.x - frame.pos.x, waypoint.z - frame.pos.z) / Math.max(dt, 0.001)) : speed, dt);
     validateMove();
+    // Keep the committed punch aimed at its target while the runner continues its route.
+    if (frame.weaponState !== 'ready') frame.yaw = attackYaw;
     settleAsApproaching(frame, true, dt);
     self.isLunging = false;
     constrainCombatantToArena(frame.pos, frame.vel);

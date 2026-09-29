@@ -924,3 +924,28 @@ Verification:
 - Production builds, full repository tests and frozen browser CLI runs were not repeated for this validation-only change. The previous five V3 repository failures remain unresolved, without waivers or a claim of M7 acceptance.
 
 Next work is moving roster carriers and carrier counterattacks, followed by broader map/decision integration and remaining acceptance gates. Human testing stays deferred until the automated acceptance requirements are complete.
+
+
+## 2026-09-29 — moving roster carriers and counterpunch execution
+
+Committed the prior carrier-recovery slice as `ab83576` (`Validate moving carriers and exposed recovery`). Continued with roster carrier movement and counterpunch execution. This new slice remains uncommitted; human testing remains deferred.
+
+Added **576 traces** plus **48 JSON snapshot continuations**. Two ordinary roster actors and an idle local player run through the actual frame coordinator independently of mixed `stepSimulation`. The production carrier movement function follows a supplied straight goal direction with an empty avoidance list; its close-enemy counter branch is made available at tick four. Incoming slashes/lunges or no attack, one/two HP on each actor, two movement speeds, quick/default punch durations, shields, mirrored teams and both roster orders cover surviving counters, death cancellation, blocked damage and movement out of punch range. Headless movement/attack intent is derived from its own state, never copied from the live frame. This tests a bounded counter branch and execution, not autonomous availability or route selection.
+
+The pre-fix run passed **320/576** (`output/m7-runner-combat-before.log`). It exposed a production bug: carrier goal movement overwrote the punch's heading on the following frame, so a committed counter turned away from the enemy before impact. Counter initiation also retained the previous horizontal velocity on a frame where no movement occurred. The production objective movement function now clears horizontal velocity when starting the counter and preserves the committed heading during movement until the weapon is ready again, including after route validation. Route movement still advances normally, so a slower punch can miss when its carrier has moved too far away; the fix does not guarantee a hit.
+
+Independent assertions pin counter-request counts, movement on every frame, incoming contact timing, damage, kill/death credit, ball retention/drop and goal absence. The quick punch lands on tick eight when the carrier survives and the target is unshielded; the default-duration punch arrives after the continuously moving carrier has left range. Roster order and counter pauses also test the one-frame contact difference for the faster runner. Snapshots cross ticks three, four, eight and 26. Two direct movement regressions verify the counter's velocity reset, preserved aim during windup/impact/recovery and resumed goal facing when ready. Per-frame evidence includes runner heading, velocity while alive, weapon phase/elapsed time and kill counters.
+
+Protocol `live-functions-vs-headless-step-v21` stores `runnerCombatTraces`: **576 traces / 69,120 frames**, zero differences. Combined evidence totals **4,267 traces / 769,548 frames**. Route selection, attack availability, repeated counters, main-AI-specific execution, moving/airborne crowds, complete map/match execution, calibrated performance, held-out quality and final repository acceptance remain uncertified. Execution parity stays **inconclusive**.
+
+Verification:
+
+- **4,968/4,968** validation-suite tests passed, including previous trace groups and acceptance-gate assertions (`output/m7-runner-combat-validation.log`).
+- **645/645** focused runner-combat and team-plan runtime checks passed, including the new direct movement regressions (`output/m7-runner-combat-focused.log`).
+- TypeScript passed with the 8 GB heap allowance (`output/m7-runner-combat-typecheck.log`).
+- Production client build passed (`output/m7-runner-combat-build.log`), with the existing large-chunk warning.
+- Saved and re-parsed evidence: `output/m7-runner-combat-evidence.json`; summary: `output/m7-runner-combat-summary.json`. Source identity: commit `ab83576c1024bb387e519646970d969a47b5c721`, working-tree hash `eb3c8a43038b0d9921c444664ae38a1e66b042839e6eb279dca47f8ad80c50c1`.
+- Scoped `git diff --check` passed; attached implementation plans remain unchanged. README and both explicit test command lists include the new family.
+- Full repository tests and frozen browser CLI runs were not repeated. The previous five V3 repository failures remain unresolved, without waivers or a claim of M7 acceptance.
+
+Next work is broader map/round execution integration and the remaining decision/acceptance gates. Human testing stays deferred until the automated acceptance requirements are complete.

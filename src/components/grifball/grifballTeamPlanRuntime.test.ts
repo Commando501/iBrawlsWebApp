@@ -431,3 +431,28 @@ test('live objective lifecycle scores once, resets orders and spawns, and termin
   assert.equal(state.playerPos.z, -3, 'a participating human still reserves the first team spawn');
   assert.equal(runner.pos.z, 3);
 });
+
+
+test('carrier counter stops its current movement without changing position', () => {
+  const state = setup(), runner = state.otherPlayers.get('a')!;
+  runner.pos.set(0, 0, 0); runner.vel.set(5.8, 0, 0); runner.activeWeapon = 'ball';
+  state.otherPlayers.get('enemy')!.pos.set(-1.5, 0, 0);
+  state.grifball.ball.state = 'held'; state.grifball.ball.holderId = 'a';
+  const result = move(state, 'a', {}, [], true);
+  assert.equal(result.attacks, 1); assert.equal(result.frame.weaponState, 'swing_up');
+  assert.deepEqual(result.frame.pos.toArray(), [0, 0, 0]);
+  assert.deepEqual(result.frame.vel.toArray(), [0, 0, 0]);
+});
+
+test('carrier route movement preserves punch aim until weapon recovery finishes', () => {
+  const state = setup(), runner = state.otherPlayers.get('a')!;
+  runner.pos.set(0, 0, 0); runner.activeWeapon = 'ball';
+  state.grifball.ball.state = 'held'; state.grifball.ball.holderId = 'a';
+  for (const weaponState of ['swing_up', 'swing_down', 'recovering']) {
+    const previousX = runner.pos.x;
+    const result = move(state, 'a', { weaponState, yaw: .37 });
+    assert.equal(result.frame.yaw, .37); assert.ok(result.frame.pos.x > previousX);
+  }
+  const ready = move(state, 'a', { weaponState: 'ready', yaw: .37 });
+  assert.notEqual(ready.frame.yaw, .37);
+});
