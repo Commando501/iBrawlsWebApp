@@ -23,7 +23,7 @@ import { type UniversalSettings } from '../types';
 import { resolveDirectionalSpeedMultiplier, resolveRunnerThrustAllowed } from '../game/runnerBallSettings';
 import { constrainCombatantToArenaBounds } from '../components/grifball/arenaBounds';
 import { GRAVITY_ACCELERATION } from '../components/grifball/combatGeometry';
-import { type SimState, type SimCombatant } from './simState';
+import { type SimState, type SimCombatant, combatExecutionForActor } from './simState';
 import { type ActionInput } from './actions';
 
 /** Base walk speed (m/s), live `updatePhysics` baseSpeed. */
@@ -75,17 +75,20 @@ export function stepCombatantMovement(
   // Sword-lunge flight overrides input: facing is locked, velocity is the committed
   // lunge heading at the configured lunge speed. The weapon FSM owns the timer/end.
   if (c.isLunging) {
+    if (state.combatExecution === 'live-mixed-v1' && c.id === state.localPlayerId) {
+      c.isCrouching = false; c.isJumping = false; c.hammerJumpsInAir = 0;
+    }
     const speed = settings.swordLungeSpeed ?? 24.0;
     c.vel.x = c.lungeDir.x * speed;
     c.vel.z = c.lungeDir.z * speed;
-    if (state.combatExecution === 'live-roster-v2') {
+    if (combatExecutionForActor(state, c) === 'live-roster-v2') {
       c.vel.y -= GRAVITY_ACCELERATION * dt; c.pos.y += c.vel.y * dt;
       if (c.pos.y <= 0) { c.pos.y = 0; c.vel.y = 0; }
     } else { c.vel.y = 0; c.pos.y = 0; }
     c.pos.x += c.vel.x * dt;
     c.pos.z += c.vel.z * dt;
     constrainAndStore(state, c);
-    c.grounded = state.combatExecution === 'live-roster-v2' ? c.pos.y <= .0001 : true;
+    c.grounded = combatExecutionForActor(state, c) === 'live-roster-v2' ? c.pos.y <= .0001 : true;
     return;
   }
 

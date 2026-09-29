@@ -18,7 +18,7 @@ import { type SimState } from './simState';
 import { type ActionsById, idleAction } from './actions';
 import { createRng, type Rng } from './rng';
 import { stepCombatantMovement } from './physics';
-import { stepCombatantWeapons, tickRespawns, type KillEvent } from './weapons';
+import { stepCombatantWeapons, resolveMixedPlayerLunge, tickRespawns, type KillEvent } from './weapons';
 import { tickGrifballObjective, throwSimPass, type ObjectiveEvents } from './grifball';
 import { tickCombat } from './combat';
 
@@ -52,7 +52,11 @@ export function stepSimulation(
 
   const kills: KillEvent[] = [];
   const act = (id: string) => actionsById[id] ?? idleAction();
-  const rosterV2 = state.combatExecution === 'live-roster-v2';
+  const mixed = state.combatExecution === 'live-mixed-v1';
+  const player = mixed ? state.combatants.find(c => c.id === state.localPlayerId) : undefined;
+  if (mixed && (!player || state.combatants.filter(c => c.id === state.localPlayerId).length !== 1))
+    throw new Error('live-mixed-v1 requires exactly one explicit localPlayerId');
+  const rosterV2 = state.combatExecution === 'live-roster-v2' || mixed;
   if (rosterV2) {
     const nominalTimeMs = state.tick * SIM_DT * 1000;
     const previousTimeMs = state.combatTimeMs ?? nominalTimeMs;
@@ -62,12 +66,24 @@ export function stepSimulation(
       ? (state.tick + 1) * SIM_DT * 1000 : previousTimeMs + dt * 1000;
   }
   const flightAdvanced = rosterV2 ? new Set<string>() : null;
+  // Local physics/contact and weapon animation precede roster respawn and AI.
+  if (player) {
+    const wasDead = !player.alive;
+    tickRespawns(state, settings, dt, [player]);
+    if (!wasDead) {
+      stepCombatantMovement(state, player, act(player.id), settings, dt);
+      if (player.isLunging) resolveMixedPlayerLunge(state, player, settings, dt, kills);
+    }
+    if (player.alive) stepCombatantWeapons(state, player, act(player.id), settings, dt, kills);
+    else { player.weaponState = 'idle'; player.weaponTimer = player.weaponPhaseElapsed = 0; player.isLunging = false; }
+  }
   // The live roster revives actors before their AI tick. Newly killed actors wait
   // until the next frame, and each flight resolves before the next actor's shield tick.
-  if (rosterV2) tickRespawns(state, settings, dt);
+  if (rosterV2) tickRespawns(state, settings, dt, state.combatants.filter(c => c !== player));
 
   // Phase 1 — movement.
   for (const c of state.combatants) {
+    if (c === player) continue;
     stepCombatantMovement(state, c, act(c.id), settings, dt);
     if (rosterV2 && c.alive && c.isLunging) {
       stepCombatantWeapons(state, c, act(c.id), settings, dt, kills);
@@ -77,7 +93,7 @@ export function stepSimulation(
 
   // Phase 2 — weapons / damage (resolved against post-movement positions).
   for (const c of state.combatants) {
-    if (!flightAdvanced?.has(c.id)) stepCombatantWeapons(state, c, act(c.id), settings, dt, kills);
+    if (c !== player && !flightAdvanced?.has(c.id)) stepCombatantWeapons(state, c, act(c.id), settings, dt, kills);
   }
 
   // Phase 3 — passes: hold secondary to charge the throw (grifballChargeMax), release to throw.

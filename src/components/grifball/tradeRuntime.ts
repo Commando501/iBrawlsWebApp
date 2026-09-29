@@ -36,19 +36,22 @@ export function resolveSwordLungeTradeReasonForState({
 }): CombatTradeReason | null {
   const swordThreshold = state.settings.swordTradeWindow ?? 350;
   const hammerThreshold = state.settings.hammerSwordTradeWindow ?? 350;
+  const now = simulationTimestamp();
+  const recent = (time: number | undefined, window: number) =>
+    typeof time === 'number' && Number.isFinite(time) && time > 0 && now >= time && now - time <= window;
 
   if (target.id === 'player') {
     if (state.settings.enableSwordTrade && state.activeWeapon === 'sword' && (
       state.isLunging ||
       state.pSwordState === 'slashing' ||
-      (simulationTimestamp() - state.lastPlayerSwordAttackTime <= swordThreshold)
+      recent(state.lastPlayerSwordAttackTime, swordThreshold)
     )) {
       return 'sword_vs_sword';
     }
     if (state.settings.enableHammerSwordTrade && state.activeWeapon === 'hammer' && (
       state.pWeaponState === 'swing_up' ||
       state.pWeaponState === 'swing_down' ||
-      (simulationTimestamp() - state.lastPlayerHammerAttackTime <= hammerThreshold)
+      recent(state.lastPlayerHammerAttackTime, hammerThreshold)
     )) {
       return 'sword_lunge_vs_hammer';
     }
@@ -59,9 +62,6 @@ export function resolveSwordLungeTradeReasonForState({
   // Zero is the factory's no-attack sentinel; a future timestamp is not a counter.
   const targetBot = target.id === MAIN_AI_ID ? mainAi : state.otherPlayers.get(target.id);
   if (!targetBot) return null;
-  const now = simulationTimestamp();
-  const recent = (time: number | undefined, window: number) =>
-    typeof time === 'number' && Number.isFinite(time) && time > 0 && now >= time && now - time <= window;
   if (state.settings.enableSwordTrade && targetBot.activeWeapon === 'sword' && (
     targetBot.isLunging || targetBot.weaponState === 'swing_up' || targetBot.weaponState === 'swing_down' ||
     recent(targetBot.lastSwordAttackTime, swordThreshold)
@@ -226,6 +226,20 @@ export function executeCustomBotTradeForState({
 
   // A trade has already applied the defender's committed swing. Consume that
   // impact so a survivor cannot hit again when the animation reaches its strike.
+  if (target.id === 'player') {
+    if (state.playerHP <= 0) {
+      state.pSwordState = state.pWeaponState = 'ready';
+      state.pSwordTimer = state.pWeaponTimer = 0;
+      state.pSwordReady = state.pWeaponReady = true;
+      state.isLunging = false; state.lungeTimer = 0;
+    } else if (state.activeWeapon === 'sword' && (state.isLunging || state.pSwordState === 'slashing')) {
+      state.pSwordRecoverDuration = state.isLunging ? state.settings.swordLungeReload : state.settings.swordSlashReload;
+      state.isLunging = false; state.lungeTimer = 0;
+      state.pSwordState = 'recovering'; state.pSwordTimer = 0; state.pSwordReady = false;
+    } else if (state.activeWeapon === 'hammer' && (state.pWeaponState === 'swing_up' || state.pWeaponState === 'swing_down')) {
+      state.pWeaponState = 'recovering'; state.pWeaponTimer = 0; state.pWeaponReady = false;
+    }
+  }
   if (targetCombatant && targetCombatant.hp > 0 && !targetCombatant.isLunging &&
     (targetCombatant.weaponState === 'swing_up' || targetCombatant.weaponState === 'swing_down')) {
     targetCombatant.weaponState = 'recovering';

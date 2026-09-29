@@ -38,6 +38,14 @@ export function serializeState(state: SimState): string {
     `t=${state.tick}`,
     `seed=${state.seed}`,
     `rng=${state.rngState}`,
+    // Preserve historical profile hashes; mixed execution also depends on actor
+    // roles, commitment headings, phase clocks and weapon-specific trade history.
+    ...(state.combatExecution === 'live-mixed-v1' ? [
+      `execution=${state.combatExecution}:${state.localPlayerId ?? '-'}:${q(state.combatTimeMs ?? 0)}`,
+      ...state.combatants.map(c => JSON.stringify([c.id, c.weaponPhaseElapsed, c.modelType,
+        c.lungeTargetId, c.lungeDir, c.lungeAimDirection, c.lungeStartPos, c.lungeOutcome,
+        c.lastSwordAttackTimeMs, c.lastHammerAttackTimeMs])),
+    ] : []),
     `phase=${state.match.phase}:${q(state.match.phaseTimer)}:${state.match.roundNumber}`,
     `win=${state.match.winningTeam ?? '-'}:${state.match.lastScoringTeam ?? '-'}`,
     `ball=${ball.state}:${ball.holderId ?? '-'}:${q(ball.pos.x)}:${q(ball.pos.y)}:${q(ball.pos.z)}:${q(ball.vel.x)}:${q(ball.vel.y)}:${q(ball.vel.z)}:${q(ball.looseTimer)}`,

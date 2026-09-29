@@ -144,7 +144,7 @@ export function placeCombatantsAtSpawns(state: SimState, settings: UniversalSett
     c.hasBall = false;
     c.isLunging = false;
     c.lungeTimer = 0;
-    if (state.combatExecution === 'live-roster-v2') {
+    if ((state.combatExecution === 'live-roster-v2' || state.combatExecution === 'live-mixed-v1')) {
       delete c.lungeStartPos; delete c.lungeTargetId; delete c.lungeOutcome;
       delete c.lungeAimDirection;
       delete c.lastSwordAttackTimeMs; delete c.lastHammerAttackTimeMs;

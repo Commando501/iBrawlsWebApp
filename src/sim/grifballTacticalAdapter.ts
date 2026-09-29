@@ -1,4 +1,4 @@
-import { isRosterExecution, type SimCombatant, type SimState, type SimCombatExecution } from './simState';
+import { combatExecutionForActor, isRosterExecution, type SimCombatant, type SimState, type SimCombatExecution } from './simState';
 import type { UniversalSettings } from '../types';
 import { observeGrifballSpace } from '../game/aiGrifballSpace';
 import { createGrifballTacticalSnapshot } from '../game/grifballTacticalContract';
@@ -73,7 +73,7 @@ export function createSimGrifballTacticalSnapshot(state: SimState, options: {
     players: state.combatants.filter(c => c.alive && c.hp > 0 && c.respawnTimer <= 0).map(c => ({
       id: c.id, team: c.team, scripted: scripted(c), difficulty: options.scriptedBots[c.id] ?? state.settings.aiDifficulty, pos: c.pos, vel: c.vel, height: c.pos.y,
       heading: { x: -Math.sin(c.yaw), z: -Math.cos(c.yaw) }, pickupRequested: undefined,
-      space: observeSimGrifballSpace(c, state.settings, state.combatExecution),
+      space: observeSimGrifballSpace(c, state.settings, combatExecutionForActor(state, c)),
     })),
     goals: { blue: state.goalPlates.find(p => p.team === 'blue')?.position ?? null, red: state.goalPlates.find(p => p.team === 'red')?.position ?? null },
     respawns: state.combatants.filter(c => !c.alive && c.respawnTimer > 0).map(c => {

@@ -17,10 +17,19 @@ import { type GoalPlate } from '../game/grifballGoals';
 export type SimWeapon = 'hammer' | 'sword' | 'ball';
 
 /** Explicit opt-in; legacy training dynamics remain the default for existing policies. */
-export type SimCombatExecution = 'legacy-v1' | 'live-player-v1' | 'live-roster-v1' | 'live-roster-v2';
+export type SimCombatExecution = 'legacy-v1' | 'live-player-v1' | 'live-roster-v1' | 'live-roster-v2' | 'live-mixed-v1';
 
 export const isRosterExecution = (execution: SimCombatExecution | undefined) =>
   execution === 'live-roster-v1' || execution === 'live-roster-v2';
+
+/** Mixed execution identifies the local player explicitly; controller is not an execution role. */
+export const isMixedPlayer = (state: SimState, c: SimCombatant) =>
+  state.combatExecution === 'live-mixed-v1' && c.id === state.localPlayerId;
+export const usesRosterLifecycle = (state: SimState) =>
+  state.combatExecution === 'live-roster-v2' || state.combatExecution === 'live-mixed-v1';
+export const combatExecutionForActor = (state: SimState, c: SimCombatant): SimCombatExecution | undefined =>
+  state.combatExecution === 'live-mixed-v1'
+    ? isMixedPlayer(state, c) ? 'live-player-v1' : 'live-roster-v2' : state.combatExecution;
 
 /**
  * Game mode the match is running. `grifball` = carry the ball to the enemy plate;
@@ -123,6 +132,8 @@ export interface SimCombatant {
 export interface SimState {
   /** Missing in older snapshots means legacy-v1. This is not an RL schema promotion. */
   combatExecution?: SimCombatExecution;
+  /** Required for live-mixed-v1; preserved in JSON snapshots. */
+  localPlayerId?: string;
   /** v2 elapsed simulation milliseconds, persisted independently of render/wall time. */
   combatTimeMs?: number;
   /** Which game mode this match is. */

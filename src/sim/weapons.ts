@@ -35,7 +35,7 @@ import {
   SWORD_SLASH_FORWARD_FACTOR,
   SWORD_SLASH_RADIUS,
 } from '../components/grifball/combatGeometry';
-import { type SimState, type SimCombatant, findCombatant, isRosterExecution } from './simState';
+import { type SimState, type SimCombatant, findCombatant, isRosterExecution, isMixedPlayer, usesRosterLifecycle, combatExecutionForActor } from './simState';
 import * as THREE from 'three';
 import { isVectorXZAtArenaBoundary } from '../components/grifball/arenaBounds';
 import { type ActionInput } from './actions';
@@ -101,14 +101,14 @@ function strike(
   victim.hp = 0;
   victim.alive = false;
   victim.respawnTimer = RESPAWN_TIME;
-  if (state.combatExecution === 'live-roster-v2') {
+  if (usesRosterLifecycle(state)) {
     victim.isLunging = false; victim.weaponState = 'idle'; victim.weaponTimer = 0;
     victim.weaponPhaseElapsed = 0; victim.attackKind = 'none'; victim.attackCooldown = 0;
   }
   awardTeamKill(state.scores, attacker.team);
   recordTeamDeath(state.scores, victim.team);
   // Carrier death drops the ball loose where they fell.
-  if (state.match.ball.holderId === victim.id && state.combatExecution !== 'live-roster-v2') {
+  if (state.match.ball.holderId === victim.id && !usesRosterLifecycle(state)) {
     dropBall(state.match.ball, { x: victim.pos.x, y: 0, z: victim.pos.z });
     victim.hasBall = false;
     victim.weapon = 'hammer';
@@ -262,7 +262,7 @@ function resolveRosterHit(state: SimState, c: SimCombatant, settings: UniversalS
   for (const victim of state.combatants) {
     if (!victim.alive || !areHostile(c, victim) || victim.invulnerabilityTimer > 0) continue;
     const cy = victim.pos.y + (victim.isCrouching ? CROUCH_BODY_CENTER_HEIGHT : BODY_CENTER_HEIGHT);
-    const targetRadius = state.combatExecution === 'live-roster-v2' ? adjustRangeForTargetModel(radius, victim.modelType) : radius;
+    const targetRadius = usesRosterLifecycle(state) ? adjustRangeForTargetModel(radius, victim.modelType) : radius;
     if (Math.hypot(victim.pos.x - c.pos.x - fwd.x * reach, cy - c.pos.y - 1.2,
       victim.pos.z - c.pos.z - fwd.z * reach) <= targetRadius) strike(state, c, victim, settings, events);
   }
@@ -280,7 +280,7 @@ function stepLiveAttack(state: SimState, c: SimCombatant, action: ActionInput,
     c.weaponState = phase; c.weaponPhaseElapsed = 0; c.weaponTimer = duration;
   };
   const slam = resolveHammerSlamTiming(settings);
-  const roster = isRosterExecution(state.combatExecution);
+  const roster = isRosterExecution(combatExecutionForActor(state, c));
   const swingDuration = () => c.attackKind === 'slash' ? (settings.swordSlashSpeed ?? .22) * (roster ? .5 : 1)
     : roster && c.attackKind === 'swipe' ? (settings.hammerMeleeSpeed ? settings.hammerMeleeSpeed * .4 : .1)
     : c.attackKind === 'strike' ? slam.windupTime : (settings.hammerMeleeSpeed ?? .24);
@@ -297,7 +297,7 @@ function stepLiveAttack(state: SimState, c: SimCombatant, action: ActionInput,
       : action.attackPrimary ? (c.weapon === 'sword' ? 'slash' : c.weapon === 'ball' ? 'punch' : 'strike') : null;
     if (!kind) return;
     c.attackKind = kind; c.lastAttackTick = state.tick;
-    if (state.combatExecution === 'live-roster-v2') {
+    if (usesRosterLifecycle(state)) {
       const now = state.combatTimeMs ?? state.tick * 1000 / 60;
       if (c.weapon === 'sword') c.lastSwordAttackTimeMs = now;
       else if (c.weapon === 'hammer') c.lastHammerAttackTimeMs = now;
@@ -340,7 +340,11 @@ function stepLiveAttack(state: SimState, c: SimCombatant, action: ActionInput,
     const duration = recoverForKind(c.attackKind, settings);
     c.weaponTimer = Math.max(0, duration - elapsed);
     c.attackCooldown = c.weaponTimer;
-    if (elapsed >= duration) { enter('idle', 0); c.attackKind = 'none'; c.attackCooldown = 0; }
+    if (elapsed >= duration) {
+      enter('idle', 0);
+      if (isMixedPlayer(state, c)) c.weaponPhaseElapsed = elapsed;
+      c.attackKind = 'none'; c.attackCooldown = 0;
+    }
   }
 }
 
@@ -425,6 +429,46 @@ function resolveRosterLunge(state: SimState, c: SimCombatant, settings: Universa
   else if (Math.hypot(c.pos.x - start.x, c.pos.y - start.y, c.pos.z - start.z) > 16 || c.lungeTimer > .8) finish('miss_timeout');
 }
 
+/** Independently resolved local-player flight for the opt-in mixed profile. */
+export function resolveMixedPlayerLunge(state: SimState, c: SimCombatant, settings: UniversalSettings, dt: number, events: KillEvent[]): void {
+  c.lungeTimer += dt;
+  const finish = (outcome: NonNullable<SimCombatant['lungeOutcome']>) => {
+    c.isLunging = false; c.lungeOutcome = outcome; c.weaponState = 'recovering'; c.attackKind = 'none';
+    c.weaponPhaseElapsed = 0; c.weaponTimer = c.attackCooldown = settings.swordLungeReload ?? 1.2;
+  };
+  const centerY = (v: SimCombatant) => v.pos.y + (v.isCrouching ? CROUCH_BODY_CENTER_HEIGHT : BODY_CENTER_HEIGHT);
+  let target: SimCombatant | undefined, distance = Infinity;
+  // Live main AI wins exact-distance ties before roster iteration.
+  const candidates = [...state.combatants].sort((a, b) => Number(b.id === 'main_ai') - Number(a.id === 'main_ai'));
+  for (const v of candidates) {
+    if (!v.alive || v.hp <= 0 || v.respawnTimer > 0 || v.invulnerabilityTimer > 0 || !areHostile(c, v)) continue;
+    const d = Math.hypot(v.pos.x - c.pos.x, centerY(v) - centerY(c), v.pos.z - c.pos.z);
+    if (d < distance) { distance = d; target = v; }
+  }
+  if (!target) { finish('target_dead'); return; }
+  if (distance <= adjustRangeForTargetModel(1.5, target.modelType)) {
+    const primary = (target.weaponState === 'windup' || target.weaponState === 'active') &&
+      (target.attackKind === 'slash' || target.attackKind === 'strike');
+    const now = state.combatTimeMs ?? state.tick * 1000 / 60;
+    const recent = (time: number | undefined, window: number) =>
+      time !== undefined && Number.isFinite(time) && now >= time && now - time <= window;
+    const trade = target.weapon === 'sword'
+      ? settings.enableSwordTrade && (target.isLunging || primary || recent(target.lastSwordAttackTimeMs, settings.swordTradeWindow ?? 350))
+      : target.weapon === 'hammer' && settings.enableHammerSwordTrade && (primary || recent(target.lastHammerAttackTimeMs, settings.hammerSwordTradeWindow ?? 350));
+    strike(state, c, target, settings, events);
+    if (trade) {
+      strike(state, target, c, settings, events);
+      target.isLunging = false; target.weaponState = 'idle'; target.weaponTimer = target.weaponPhaseElapsed = 0;
+      target.attackKind = 'none'; target.attackCooldown = 0;
+    }
+    finish('hit'); return;
+  }
+  const start = c.lungeStartPos!;
+  if (Math.hypot(c.pos.x - start.x, c.pos.y - start.y, c.pos.z - start.z) > 16 || c.lungeTimer > .8) finish('miss_timeout');
+  else if (isVectorXZAtArenaBoundary({ pos: new THREE.Vector3(c.pos.x, c.pos.y, c.pos.z), activeCustomMap: state.map,
+    arenaRadius: state.map.arenaRadius, inset: .6 })) finish('miss_arena');
+}
+
 /**
  * Advance one combatant's weapon FSM by `dt` and resolve any hits this tick.
  * Movement (including the lunge flight integration) is owned by physics; this only
@@ -439,6 +483,16 @@ export function stepCombatantWeapons(
   events: KillEvent[]
 ): void {
   if (!c.alive) return;
+  if (isMixedPlayer(state, c)) {
+    if (c.isLunging) return;
+    if (c.weaponState === 'recovering' && c.attackKind === 'none') {
+      c.weaponPhaseElapsed = (c.weaponPhaseElapsed ?? 0) + dt;
+      c.weaponTimer = Math.max(0, (settings.swordLungeReload ?? 1.2) - c.weaponPhaseElapsed);
+      c.attackCooldown = c.weaponTimer;
+      if (c.weaponTimer === 0) c.weaponState = 'idle';
+      return;
+    }
+  }
 
   if (c.swapLockoutTimer > 0) c.swapLockoutTimer = Math.max(0, c.swapLockoutTimer - dt);
   if (c.attackCooldown > 0) c.attackCooldown = Math.max(0, c.attackCooldown - dt);
@@ -455,7 +509,7 @@ export function stepCombatantWeapons(
 
   // Active lunge flight: kill-on-contact, run down the lunge timer.
   if (c.isLunging) {
-    if (state.combatExecution === 'live-roster-v2') { resolveRosterLunge(state, c, settings, dt, events); return; }
+    if (usesRosterLifecycle(state)) { resolveRosterLunge(state, c, settings, dt, events); return; }
     resolveLungeHit(state, c, settings, events);
     c.lungeTimer = Math.max(0, c.lungeTimer - dt);
     if (c.lungeTimer <= 0) {
@@ -470,7 +524,7 @@ export function stepCombatantWeapons(
   // Attacks are blocked until the weapon is ready (post-swap / post-spawn).
   const canAttack = c.attackCooldown <= 0 && c.weaponReadyTimer <= 0;
 
-  if ((state.combatExecution === 'live-player-v1' || isRosterExecution(state.combatExecution)) && !(c.weaponState === 'recovering' && c.attackKind === 'none')) {
+  if ((combatExecutionForActor(state, c) === 'live-player-v1' || isRosterExecution(combatExecutionForActor(state, c))) && !(c.weaponState === 'recovering' && c.attackKind === 'none')) {
     stepLiveAttack(state, c, action, settings, dt, events, canAttack);
     return;
   }
@@ -535,7 +589,19 @@ function beginAttack(
 }
 
 function startLunge(c: SimCombatant, settings: UniversalSettings, state?: SimState): void {
-  if (state?.combatExecution === 'live-roster-v2') {
+  if (state && isMixedPlayer(state, c)) {
+    const target = findCombatant(state, c.lungeTargetId ?? '');
+    if (!target || target.id === c.id) throw new Error('live-mixed-v1 requires an explicit lungeTargetId for commitment');
+    const aim = c.lungeAimDirection ?? { x: target.pos.x - c.pos.x, y: 0, z: target.pos.z - c.pos.z };
+    const length = Math.hypot(aim.x, aim.z);
+    if (!Number.isFinite(length) || length === 0) throw new Error('Player lunge heading must be finite and nonzero');
+    c.isLunging = true; c.lungeTimer = 0; c.lungeStartPos = { ...c.pos }; delete c.lungeOutcome;
+    c.lungeDir = { x: aim.x / length, y: 0, z: aim.z / length }; delete c.lungeAimDirection;
+    c.lastSwordAttackTimeMs = state.combatTimeMs ?? state.tick * 1000 / 60;
+    c.attackKind = 'none'; c.weaponState = 'idle'; c.weaponPhaseElapsed = c.weaponTimer = c.attackCooldown = 0;
+    return;
+  }
+  if (state && usesRosterLifecycle(state)) {
     if (!c.lungeTargetId || !findCombatant(state, c.lungeTargetId) || c.lungeTargetId === c.id)
       throw new Error('live-roster-v2 requires an explicit lungeTargetId before a sword lunge');
     const aim = c.lungeAimDirection ?? forwardDir(c.yaw);
@@ -564,8 +630,8 @@ function startLunge(c: SimCombatant, settings: UniversalSettings, state?: SimSta
 }
 
 /** Tick respawn timers; revive downed combatants at their team spawn when ready. */
-export function tickRespawns(state: SimState, settings: UniversalSettings, dt: number): void {
-  for (const c of state.combatants) {
+export function tickRespawns(state: SimState, settings: UniversalSettings, dt: number, actors = state.combatants): void {
+  for (const c of actors) {
     if (c.alive) continue;
     c.respawnTimer = Math.max(0, c.respawnTimer - dt);
     if (c.respawnTimer > 0) continue;
@@ -575,7 +641,7 @@ export function tickRespawns(state: SimState, settings: UniversalSettings, dt: n
 
 /** Revive at a fixed legacy slot, or a live-roster-v2 max-clearance team spawn. */
 export function respawnCombatant(state: SimState, c: SimCombatant, settings: UniversalSettings): void {
-  const rosterV2 = state.combatExecution === 'live-roster-v2';
+  const rosterV2 = usesRosterLifecycle(state);
   const cluster = state.spawns[c.team] ?? [];
   // Deterministic slot: index of this combatant among its team.
   const teammates = state.combatants.filter((m) => m.team === c.team);
@@ -597,6 +663,7 @@ export function respawnCombatant(state: SimState, c: SimCombatant, settings: Uni
   c.pos = { x: spawn.x, y: rosterV2 ? spawn.y : 0, z: spawn.z };
   c.vel = { x: 0, y: 0, z: 0 };
   c.yaw = inwardSpawnYaw(spawn);
+  if (isMixedPlayer(state, c)) c.yaw -= Math.PI;
   c.alive = true;
   c.hp = rosterV2 ? c.maxHp : settings.maxHP ?? 1;
   if (!rosterV2) c.maxHp = settings.maxHP ?? 1;
