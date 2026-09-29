@@ -1203,3 +1203,28 @@ Verification:
 - Full repository tests and frozen browser CLI runs were not repeated. The five previously reported V3 repository failures remain unresolved, without waivers or a claim of M7 acceptance.
 
 Next work is integrating opposing combat, respawns and goal/round transitions in the same autonomous match loop. Human testing remains deferred until the remaining automated requirements are complete.
+
+
+## 2026-09-29 — integrated autonomous contested matches
+
+Committed the scoring/reset slice as `1c80dcc` (`Validate autonomous Grifball scoring and round reassignment`). Added **12 live match-decision traces / 46,080 frames** and six deterministic repeatability checks. This slice remains uncommitted; human testing stays deferred.
+
+The existing opposing-decision fixture now has explicit opening, revival and match continuations. The match continuation retains the opening 150-frame contest assertions and subsequent revival checks, adds physical goal plates and production round placement, and runs for 3,840 updates (64 simulated seconds). Punch-first, hammer-first and four-bot contested openings cover both teams and roster orders with ordinary AI identities. The same initial possession, wounded carrier, positions and timing settings are authored; subsequent actions, damage, deaths, respawns, movement, ownership, goals and rounds are autonomous. No production gameplay change was needed.
+
+All 12 configurations finish a two-goal match. Saved evidence contains **29 goals, 17 round resets, 58 deaths and 58 respawns**, including **26 carrier deaths**. Every carrier death must release possession before rendering, drop at the death position, restore the hammer and clear stale assignment/charge. Existing checks require the full death delay, correct team spawn, restored health and attack/jump state, preserved credit, same-frame AI participation and shield countdown/protection. New checks conserve kill/death and score/notification totals, require living scorers over opposing plates, preserve health/death clocks/credit across round placement, and pin the 12-update scored hold and six-update countdown. Every new round must assign retrieval, pick up through intent/range eligibility, engage in combat and score again. Match-end score, possession and assignments remain stable for at least one further second, and inactive bots cannot start new attacks.
+
+The initial 60-second probe left the forward red four-bot case in active combat near its second goal. Its unmodified continuation scores at tick 3,605 and ends at tick 3,617 (60.28 seconds); the final 64-second window observes over three more seconds of terminal state. Other accepted cases finish between ticks 918 and 2,795. Team/order configurations need not have identical outcomes or timings; each configuration must repeat exactly. Reset pickups begin from the objective's `idle` ball state, while recovery after carrier death begins from `loose`; the fixture now checks both valid entry states for match continuations.
+
+The extended probe also exercised main-AI configurations. Several reached the fixture's explicit unsupported `onMainAIHammerSwing` callback, which the previous shorter cases never reached. Those probe failures are retained in `output/m7-match-decision-probe.json`; they are not accepted match evidence or evidence of a confirmed production defect. The accepted match matrix explicitly excludes main-AI identity until its separate weapon/jump owner is wired and validated. Main/ordinary identity coverage in the earlier short contest, revival and uncontested round families remains unchanged. Next work is integrating the main-AI jump/weapon owner into the extended match fixture and investigating any resulting production findings.
+
+Protocol `live-functions-vs-headless-step-v32` stores `matchDecisionTraces` separately from **6,027 paired traces / 980,748 frames** and all previous live-only families. Any accepted-match failure fails execution acceptance. Passing leaves the gate **inconclusive**. These matches use a synthetic flat corridor, one authored spawn per team (including shared teammate spawns), passing disabled, constrained combat tuning and the existing observer/input/render, pressure/combo and player-model omissions. Main-AI complete matches, broader maps/spawn configurations, headless autonomous decisions, calibrated performance, held-out quality and final repository acceptance remain open. Optional neural integration stays unpromoted.
+
+Verification:
+
+- Final validation suite passed **7,329/7,329** tests, including all previous trace families and the aggregate gate (`output/m7-match-decision-validation.log`). Scoped `git diff --check` passed.
+- Focused integrated match, opposing-decision and revival tests passed **78/78** (`output/m7-match-decision-focused.log`).
+- TypeScript passed with the 8 GB heap allowance (`output/m7-match-decision-typecheck.log`).
+- Production client build passed (`output/m7-match-decision-build.log`), with the existing large-chunk warning.
+- Saved and re-parsed evidence: `output/m7-match-decision-evidence.json`; summary: `output/m7-match-decision-summary.json`. All 12 traces have zero failures and finish at match end. Source identity: commit `1c80dccf93c1ab364085376c884bc6a1076622f1`, working-tree hash `622fd54fa0e999035138dc54ff02757e8fecc1d01a5ee4636fd219591144657a`.
+- README, both explicit test commands and aggregate gate assertions include this family. Attached implementation plans remain unchanged.
+- Full repository tests and frozen browser CLI runs were not repeated. The five previously reported V3 repository failures remain unresolved, without waivers or a claim of M7 acceptance.

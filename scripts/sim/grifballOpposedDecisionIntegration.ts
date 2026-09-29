@@ -1,3 +1,4 @@
+import { createArenaOrchestratorCallbacksForState } from '../../src/components/grifball/arenaOrchestratorCallbacks';
 import { createCombatantActionCallbacksForState } from '../../src/components/grifball/combatantActionCallbacks';
 import { advanceGrifballFrameForState } from '../../src/components/grifball/activeFrameRuntime';
 import { getOptimalSpawnPointForArena } from '../../src/components/grifball/arenaRuntime';
@@ -36,9 +37,11 @@ export const OPPOSED_DECISION_CASES: OpposedDecisionCase[] =
  * Initial positions, wounded possession and timing settings are authored; no
  * actions, assignments, movement, subsequent damage or ownership are injected.
  */
-export function runOpposedDecisionTrace(spec: OpposedDecisionCase, revival = false) {
+export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation: 'opening' | 'revival' | 'match' = 'opening') {
+  const match = continuation === 'match', revival = continuation !== 'opening';
   const state = createInitialGrifballRuntimeState({ debugMode: false,
     adminSettings: { ...DEFAULT_ADMIN_SETTINGS, gameMode: 'grifball', aiDifficulty: 'normal',
+      ...(match ? { grifballGoalTarget: 2, grifballRoundResetDelay: .19, grifballCountdownDuration: .09 } : {}),
       hammerMeleeSpeed: spec.mode === 'punch-first' ? .04 : .5,
       hammerSlamWindupTime: spec.mode === 'punch-first' ? .5 : .08,
       hammerSlamAttackTime: spec.mode === 'punch-first' ? .2 : .04 },
@@ -46,6 +49,8 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, revival = fal
   const refs = createInitialGrifballThreeRefs(), sign = spec.team === 'blue' ? 1 : -1;
   const map = { id: 'opposed-corridor', name: 'Opposed corridor', mapShape: 'rectangular', arenaRadius: 60,
     arenaHalfExtents: { x: 52, z: 23 }, objects: [] } as unknown as CustomMapData;
+  if (match) map.objects = (['blue', 'red'] as const).map(team => ({ id: team, type: 'box', goalPlateTeam: team,
+    position: { x: team === 'blue' ? -47 : 47, y: 0, z: 0 }, scale: { x: 2, y: .12, z: 2 }, rotation: { x: 0, y: 0, z: 0 } })) as CustomMapData['objects'];
   state.arenaRadius = 60; state.isObserverMode = true; state.grifball.phase = 'playing';
   state.grifballTactics = defaultGrifballTactics(); state.grifballTactics.defaults.passingEnabled = false; state.otherPlayers.clear();
   const carrierId = spec.main ? 'main_ai' : 'carrier';
@@ -128,18 +133,27 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, revival = fal
     spawnPoints: [], getRosterAI: () => [...state.otherPlayers.values()], getActiveCustomMap: () => map,
     getOptimalSpawnPoint: excludePositions => getOptimalSpawnPointForArena({ activeCustomMap: map, spawnPoints: [], excludePositions }),
     recordCombatantObservation: noop, onMainAIHammerSwing: () => check('uncovered main hammer jump', true, false), playSwing: noop, playJump: noop, playDash: noop, playRespawn: noop });
+  const placement = createArenaOrchestratorCallbacksForState({ getState: () => state, getRefs: () => refs, spawnPoints: [],
+    getActiveCustomMap: () => map, getLegacyRosterProps: () => ({}), getOfflineBotCount: () => state.otherPlayers.size,
+    isPlaying: true, opponentClientId: '', constrainCombatantToArena: noop, getVisualModelPolicy: () => 'v2', pushStatsUpdate: noop, playRespawn: noop });
+  const transitions: { tick: number; from: string; to: string; round: number }[] = [];
+  const goals: { tick: number; id: string; team: string; round: number }[] = [];
+  const resets: { tick: number; round: number }[] = [];
+  let notifications = 0;
   const deaths: { tick: number; id: string }[] = [];
   const revivals: { tick: number; id: string; pos: number[]; shield: number; deaths: number; kills: number }[] = [];
   const random = seededRandom(17), dt = 1 / 60;
   const ballMeshRef = { current: null }, ballChargingRef = { current: false }, ballChargeTimerRef = { current: 0 };
   const frames = [];
+  const carrierDeaths: { tick: number; id: string; pos: number[] }[] = [];
   const impacts: { tick: number; id: string; victims: string[] }[] = [];
   const pickups: { tick: number; id: string; distance: number }[] = [];
   let deathTick = 0, dropTick = 0;
-  const ticks = revival ? 480 : 150;
+  const ticks = match ? 3840 : revival ? 480 : 150;
   for (tick = 1; tick <= ticks; tick++) {
-    const plan = state.aiMatchContext.grifballTeamPlan;
+    const plan = state.aiMatchContext.grifballTeamPlan, phase = state.grifball.phase;
     const updates: string[] = [];
+    const attackCount = attacks.length;
     let living = [...state.otherPlayers.values()].filter(c => c.hp > 0).map(c => c.id);
     const before = new Map([...state.otherPlayers].map(([id, c]) => [id, c.pos.clone()]));
     withSimulationRandom(random, tick * dt, () => advanceGrifballFrameForState({
@@ -185,35 +199,75 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, revival = fal
         }, updateSingleAIEntity: (id, delta) => { updates.push(id); update(id, delta); } }),
       updateGrifball: delta => {
         const previousBallState = ballState();
+        const oldHolder = state.grifball.ball.holderId;
+        const scorer = oldHolder ? state.otherPlayers.get(oldHolder) : undefined;
+        const scoringPosition = scorer?.pos.clone();
+        const priorGoals = { blue: state.teamScores.blue.goals, red: state.teamScores.red.goals };
         const wasHeld = previousBallState === 'held';
         const requested = new Map([...state.otherPlayers].map(([id, c]) => [id, !!c.pickupRequested && c.hp > 0 && c.respawnTimer <= 0]));
         const ballPos = { ...state.grifball.ball.pos };
         updateGrifballObjectiveForState({ state, refs, ballMeshRef, ballChargingRef, ballChargeTimerRef, dt: delta,
-          isMultiplayer: false, activeCustomMap: map, placeCombatantsAtGrifballSpawns: noop, pushStatsUpdate: noop });
+          isMultiplayer: false, activeCustomMap: map, placeCombatantsAtGrifballSpawns: () => {
+            check('round continuation enabled', match, true);
+            const health = [...state.otherPlayers.values()].map(c => [c.id, c.hp, c.respawnTimer, c.kills, c.deaths]);
+            placement.placeCombatantsAtGrifballSpawns();
+            resets.push({ tick, round: state.grifball.roundNumber });
+            check('round reset preserves combat lifecycle', JSON.stringify([...state.otherPlayers.values()].map(c => [c.id, c.hp, c.respawnTimer, c.kills, c.deaths])), JSON.stringify(health));
+            for (const c of state.otherPlayers.values()) {
+              const spawn = map.teamSpawns![c.team!]![0];
+              check('round team spawn', JSON.stringify(c.pos.toArray()), JSON.stringify([spawn.x, spawn.y, spawn.z]));
+              check('round velocity reset', c.vel.length(), 0);
+            }
+          }, pushStatsUpdate: () => notifications++ });
+        for (const team of ['blue', 'red'] as const) if (state.teamScores[team].goals !== priorGoals[team]) {
+          goals.push({ tick, id: oldHolder!, team, round: state.grifball.roundNumber });
+          check('goal only during play', phase, 'playing');
+          check('single goal increment', state.teamScores[team].goals, priorGoals[team] + 1);
+          check('living scorer on enemy plate', !!scorer && scorer.team === team && scorer.hp > 0 &&
+            Math.abs(scoringPosition!.x - (team === 'blue' ? 47 : -47)) <= 1 && Math.abs(scoringPosition!.z) <= 1, true);
+          check('goal clears possession', state.grifball.ball.holderId, null);
+          check('goal restores weapon', scorer?.activeWeapon, 'hammer');
+          check('goal restores base health', scorer?.maxHp, state.settings.maxHP ?? 1);
+          check('goal clears charge', plan.passCharge, null);
+          check('goal starts scored hold', state.grifball.phase, 'scored');
+        }
         if (!wasHeld && ballState() === 'held') {
           const id = state.grifball.ball.holderId!, c = state.otherPlayers.get(id)!;
           pickups.push({ tick, id, distance: Math.hypot(c.pos.x - ballPos.x, c.pos.z - ballPos.z) });
           check('autonomous pickup request', requested.get(id), true);
-          check('pickup begins from loose ball', previousBallState, 'loose');
+          check('pickup begins from available ball', previousBallState === 'loose' || match && previousBallState === 'idle', true);
           check('pickup alive', c.hp > 0 && c.respawnTimer <= 0, true);
           check('pickup range', pickups.at(-1)!.distance <= (state.settings.grifballPickupRadius ?? 1.6) + 1e-6, true);
         }
       },
       updateCharacterSkeletalAnimations: delta => updateRosterCombatantVisualsForState({ state, refs, dt: delta,
         renderSwordLungeTrailVfx: noop, applyBotMeleeImpact: botId => {
+          const holderId = state.grifball.ball.holderId;
           const health = new Map([...state.otherPlayers].map(([id, c]) => [id, c.hp]));
           applyBotMeleeImpactForState({ state, botId, renderHammerSplashVfx: noop, spawnVoxelShockwaveParticles: noop,
             playExplosion: noop, playDeath: noop, playSwing: noop, recordBotPsychKill: noop, recordBotCalibrationDeath: noop });
           const victims = [...state.otherPlayers.values()].filter(c => c.hp < health.get(c.id)!).map(c => c.id);
           impacts.push({ tick, id: botId, victims });
-          for (const id of victims) if (state.otherPlayers.get(id)!.hp <= 0) deaths.push({ tick, id });
+          for (const id of victims) if (state.otherPlayers.get(id)!.hp <= 0) {
+            deaths.push({ tick, id });
+            if (holderId === id) carrierDeaths.push({ tick, id, pos: state.otherPlayers.get(id)!.pos.toArray() });
+          }
           check('no damage through spawn shield', victims.every(id => state.otherPlayers.get(id)!.invulnerabilityTimer <= 0), true);
           check('only enemy damage', victims.every(id => state.otherPlayers.get(id)!.team !== state.otherPlayers.get(botId)!.team), true);
         } }),
       updateMatchTimers: noop, enforceArenaBounds: noop,
       renderGame: () => {
+        const lost = carrierDeaths.at(-1);
+        if (lost?.tick === tick) {
+          check('every carrier death releases ownership before render', state.grifball.ball.holderId, null);
+          check('every carrier death drops loose ball', ballState(), 'loose');
+          check('every drop uses death position', Math.hypot(state.grifball.ball.pos.x - lost.pos[0], state.grifball.ball.pos.z - lost.pos[2]) < 1e-9, true);
+          check('every dead carrier restores hammer', state.otherPlayers.get(lost.id)!.activeWeapon, 'hammer');
+          check('every dead carrier clears assignment', plan.assignments.has(lost.id), false);
+          check('every dead carrier clears charge', plan.passCharge, null);
+        }
         if (carrier.hp <= 0 && !deathTick) deathTick = tick;
-        if (deathTick === tick) {
+        if (deathTick === tick && (!match || dropTick === 0 && tick < 150)) {
           check('dead carrier released before render', state.grifball.ball.holderId !== carrierId, true);
           if (ballState() !== 'held') dropTick = tick;
           check('dead carrier weapon restored', carrier.activeWeapon, 'hammer');
@@ -231,11 +285,11 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, revival = fal
     check('one decision per living actor', JSON.stringify(updates), JSON.stringify(living));
     for (const r of revivals.filter(r => r.tick === tick)) {
       const c = state.otherPlayers.get(r.id)!;
-      check('revived bot receives assignment immediately', plan.assignments.has(r.id), true);
+      check('revived bot assignment matches phase', plan.assignments.has(r.id), phase === 'playing' && c.hp > 0);
       check('revived shield advances once', Math.abs(c.invulnerabilityTimer - (r.shield - dt)) < 1e-9, true);
     }
     const lastPickup = pickups.at(-1);
-    if (lastPickup && tick === lastPickup.tick + 1) check('new carrier becomes runner', plan.assignments.get(lastPickup.id)?.role, 'runner');
+    if (lastPickup && tick === lastPickup.tick + 1 && phase === 'playing' && state.grifball.ball.holderId === lastPickup.id) check('new carrier becomes runner', plan.assignments.get(lastPickup.id)?.role, 'runner');
     if (dropTick && tick === dropTick + 1) {
       check('enemy recovers loose-ball assignment', plan.assignments.get(defender.id)?.role, 'retriever');
       if (spec.mode === 'contested') check('ally contests loose ball', plan.assignments.get('escort')?.role, 'retriever');
@@ -247,7 +301,7 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, revival = fal
         check(`${c.id}.shield countdown`, Math.abs(c.invulnerabilityTimer - expectedShield) < 1e-9, true);
       }
       check(`${c.id}.finite`, [...c.pos.toArray(), ...c.vel.toArray(), c.yaw, c.aiTimer ?? 0].every(Number.isFinite), true);
-      check(`${c.id}.open segment`, isSpaceSegmentOpen(plan.snapshot!.geometry!, before.get(c.id)!, c.pos), true);
+      if (plan.snapshot?.geometry && resets.at(-1)?.tick !== tick) check(`${c.id}.open segment`, isSpaceSegmentOpen(plan.snapshot.geometry, before.get(c.id)!, c.pos), true);
       check(`${c.id}.pickup intent cleared`, !!c.pickupRequested, false);
     }
     if (ballState() === 'held') {
@@ -255,7 +309,12 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, revival = fal
       check('living carrier at frame end', holder.hp > 0 && holder.respawnTimer <= 0, true);
       check('carrier loadout', holder.activeWeapon, 'ball');
     }
-    frames.push({ tick, ball: structuredClone(state.grifball.ball),
+    if (state.grifball.phase !== phase) transitions.push({ tick, from: phase, to: state.grifball.phase, round: state.grifball.roundNumber });
+    if (phase !== 'playing') {
+      check('inactive assignments cleared', plan.assignments.size, 0);
+      check('inactive bots do not start attacks', attacks.length, attackCount);
+    }
+    frames.push({ tick, phase: state.grifball.phase, round: state.grifball.roundNumber, scores: structuredClone(state.teamScores), winner: state.grifball.winningTeam, ball: structuredClone(state.grifball.ball),
       assignments: [...plan.assignments.values()].map(a => ({ id: a.botId, role: a.role, target: state.aiMatchContext.coordinator.tacticalEngagements.get(a.botId)?.targetId ?? null })),
       actors: [...state.otherPlayers.values()].map(c => ({ id: c.id, team: c.team, pos: c.pos.toArray(), vel: c.vel.toArray(),
         hp: c.hp, maxHp: c.maxHp, kills: c.kills, deaths: c.deaths, respawnTimer: c.respawnTimer, shield: c.invulnerabilityTimer, yaw: c.yaw, weapon: c.activeWeapon, weaponState: c.weaponState, weaponTimer: c.weaponTimer, isJumping: !!c.isJumping, aiState: c.aiState, timer: c.aiTimer ?? 0 })) });
@@ -314,7 +373,7 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, revival = fal
     }
   }
   return { name: `${spec.mode}/${spec.team}/${spec.reverse ? 'reverse' : 'forward'}/${spec.main ? 'main' : 'ordinary'}`,
-    boundary: revival ? 'live-revival-decision-integration' as const : 'live-opposed-decision-integration' as const, scenario: spec, ticks,
-    failureCount, failures, deaths, revivals, deathTick, dropTick, attacks, impacts, pickups, targetLookups, frames };
+    boundary: match ? 'live-match-decision-integration' as const : revival ? 'live-revival-decision-integration' as const : 'live-opposed-decision-integration' as const, scenario: spec, ticks,
+    failureCount, failures, carrierDeaths, goals, resets, transitions, notifications, deaths, revivals, deathTick, dropTick, attacks, impacts, pickups, targetLookups, frames };
 }
 export const runOpposedDecisionIntegration = () => OPPOSED_DECISION_CASES.map(spec => runOpposedDecisionTrace(spec));
