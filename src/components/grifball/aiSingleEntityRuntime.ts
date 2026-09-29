@@ -75,6 +75,7 @@ import { resolveAISwordLungeFlightForCombatant } from './aiSwordLungeFlightRunti
 import { resolveAITargetPredictionFrame } from './aiTargetPredictionRuntime';
 import {
   initializeCombatantAITickDefaults,
+  pauseInactiveGrifballAI,
   tickCombatantInvulnerability,
 } from './aiTickState';
 import {
@@ -521,9 +522,7 @@ export function createAISingleEntityUpdaterForState({
         return;
       }
   
-      if (s.settings.gameMode === 'grifball' && s.grifball.phase !== 'playing') {
-        self.pickupRequested = false;
-        vel.set(0, 0, 0);
+      if (pauseInactiveGrifballAI(s, self)) {
         syncStateAndMesh();
         return;
       }

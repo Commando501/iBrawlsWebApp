@@ -51,6 +51,9 @@ export interface SimCombatant {
   team: TeamId;
   /** 'ai' | 'remote' in the live game; here it is just bookkeeping for policies. */
   controller: 'ai' | 'remote';
+  /** Mixed execution only: ordinary AI pauses movement/intent in inactive Grifball phases.
+   * Omitted preserves the existing authored/committed-flight execution contract. */
+  pauseDuringInactiveGrifball?: boolean;
 
   // Physics / pose
   pos: Vec3;

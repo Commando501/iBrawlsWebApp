@@ -14,14 +14,20 @@ import { integrateTargetEngagementGravityForCombatant } from '../../src/componen
 const noop = () => {};
 export function lungeFixture(id = 'bot_2', observer = true, targetId = 'target') {
   const f = createBotParityFixture(id, observer, {}, targetId);
-  const { bot, target, state, refs, map } = f;
+  const { bot, state } = f;
   bot.activeWeapon = 'sword'; bot.aiState = 'LUNGING';
+  withSimulationRandom(seededRandom(31), 0, () => triggerCombatantLungeAction({ self: bot, settings: state.settings, lungeDir: new THREE.Vector3(0, 0, 1),
+    pos: bot.pos, vel: bot.vel, playDash: noop }));
+  return attachLungeRuntime(f);
+}
+
+/** Attach the production flight/finish callbacks without creating or committing actors. */
+export function attachLungeRuntime(f: ReturnType<typeof createBotParityFixture>) {
+  const { bot, target, state, refs, map } = f;
   const outcomes: string[] = [], deaths: DeathEvent[] = [];
   const recordDeathEvent = (attacker: string, victim: string): DeathEvent => {
     const event = { id: `${deaths.length}`, attacker, victim }; deaths.push(event); return event;
   };
-  withSimulationRandom(seededRandom(31), 0, () => triggerCombatantLungeAction({ self: bot, settings: state.settings, lungeDir: new THREE.Vector3(0, 0, 1),
-    pos: bot.pos, vel: bot.vel, playDash: noop }));
   const flightFor = (bot: typeof f.bot, target: typeof f.target, dt = 1 / 60) => {
     if (!bot.isLunging) return;
     const snapshot: TacticalTargetCandidate = { id: target.id, hp: target.hp, maxHp: target.maxHp,

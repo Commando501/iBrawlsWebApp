@@ -1,3 +1,4 @@
+import type { GrifballRuntimeState } from './runtimeState';
 import { simulationRandom } from '../../game/simulationRandom';
 import { type Combatant } from '../../types';
 
@@ -27,3 +28,11 @@ export const initializeCombatantAITickDefaults = (
   if (combatant.aiPostLungeDecisionTimer === undefined) combatant.aiPostLungeDecisionTimer = 0;
   if (combatant.aiPendingPostEvasionCharge === undefined) combatant.aiPendingPostEvasionCharge = false;
 };
+
+/** Ordinary AI pauses before movement/intent during inactive rounds; skeletal melee still advances later. */
+export function pauseInactiveGrifballAI(state: GrifballRuntimeState, combatant: Combatant): boolean {
+  if (state.settings.gameMode !== 'grifball' || state.grifball.phase === 'playing') return false;
+  combatant.pickupRequested = false;
+  combatant.vel.set(0, 0, 0);
+  return true;
+}

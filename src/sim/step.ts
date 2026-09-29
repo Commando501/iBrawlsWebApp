@@ -98,9 +98,22 @@ export function stepSimulation(
   // until the next frame, and each flight resolves before the next actor's shield tick.
   if (rosterV2) tickRespawns(state, settings, dt, state.combatants.filter(c => c !== player));
 
+  // Ordinary live AI returns before movement/intent in inactive Grifball phases.
+  // Capture the pre-objective phase: countdown completion resumes AI on the next frame.
+  // This is explicit per actor; existing committed-action and legacy profiles keep their behavior.
+  const phasePaused = new Set(mixedObjectiveFrame && state.match.phase !== 'playing'
+    ? state.combatants.filter(c => c !== player && c.pauseDuringInactiveGrifball).map(c => c.id) : []);
+
   // Phase 1 — movement.
   for (const c of state.combatants) {
     if (c === player) continue;
+    if (phasePaused.has(c.id)) {
+      if (c.alive) {
+        c.invulnerabilityTimer = Math.max(0, c.invulnerabilityTimer - dt);
+        c.vel.x = c.vel.y = c.vel.z = 0;
+      }
+      continue;
+    }
     stepCombatantMovement(state, c, act(c.id), settings, dt);
     if (rosterV2 && c.alive && c.isLunging) {
       stepCombatantWeapons(state, c, act(c.id), settings, dt, kills);
@@ -111,14 +124,14 @@ export function stepSimulation(
   // Mixed roster decisions commit before objectives; skeletal damage follows them.
   // Other profiles retain their original combined weapons/damage phase.
   for (const c of state.combatants) {
-    if (c !== player && !flightAdvanced?.has(c.id)) stepCombatantWeapons(state, c, act(c.id), settings, dt, kills, mixedObjectiveFrame ? 'intent' : 'complete');
+    if (c !== player && !phasePaused.has(c.id) && !flightAdvanced?.has(c.id)) stepCombatantWeapons(state, c, act(c.id), settings, dt, kills, mixedObjectiveFrame ? 'intent' : 'complete');
   }
 
   // Phase 3 — passes: hold secondary to charge the throw (grifballChargeMax), release to throw.
   const chargeMax = settings.grifballChargeMax ?? 1.2;
   const throwingAllowed = resolveRunnerThrowAllowed(settings);
   for (const c of state.combatants) {
-    if (mixedObjectiveFrame && c === player) continue;
+    if ((mixedObjectiveFrame && c === player) || phasePaused.has(c.id)) continue;
     if (!c.alive || !c.hasBall) continue;
     const a = act(c.id);
     if (!throwingAllowed) {
@@ -131,11 +144,15 @@ export function stepSimulation(
     }
   }
 
+  // A paused AI clears pickup intent even when this objective update ends countdown.
+  const objectiveActions = phasePaused.size
+    ? Object.fromEntries(Object.entries(actionsById).filter(([id]) => !phasePaused.has(id))) : actionsById;
+
   // Phase 4 — objective: grifball (ball/pickups/scoring) or combat (kill-target win).
   const objective =
     state.mode === 'combat'
       ? tickCombat(state, settings, dt)
-      : tickGrifballObjective(state, settings, dt, actionsById);
+      : tickGrifballObjective(state, settings, dt, objectiveActions);
 
   if (mixedObjectiveFrame) {
     for (const c of state.combatants) if (c !== player && !flightAdvanced?.has(c.id))

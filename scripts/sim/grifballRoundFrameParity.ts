@@ -1,4 +1,6 @@
-import { triggerCombatantAttackAction } from '../../src/components/grifball/combatantActions';
+import { attachLungeRuntime } from './grifballLungeFixture';
+import { stepCombatantWeapons } from '../../src/sim/weapons';
+import { triggerCombatantAttackAction, triggerCombatantLungeAction } from '../../src/components/grifball/combatantActions';
 import type { ActionsById } from '../../src/sim/actions';
 import { createBotParityFixture } from './grifballBotExecutionParity';
 import { addParityActor, parityRecorder } from './grifballMultiActorParity';
@@ -16,7 +18,7 @@ import { resolvePrimaryGrifballAIObjectiveMovementForCombatant } from '../../src
 import { updatePlayerHorizontalMovementForState, updatePlayerVerticalIntegrationForState } from '../../src/components/grifball/playerMovementRuntime';
 import { updatePlayerRespawnForState } from '../../src/components/grifball/playerRespawnRuntime';
 import { constrainCombatantToArenaBounds } from '../../src/components/grifball/arenaBounds';
-import { tickCombatantInvulnerability } from '../../src/components/grifball/aiTickState';
+import { tickCombatantInvulnerability, pauseInactiveGrifballAI } from '../../src/components/grifball/aiTickState';
 import { setSimCarrier } from '../../src/sim/grifball';
 import { idleAction } from '../../src/sim/actions';
 import { stepSimulation } from '../../src/sim/step';
@@ -31,12 +33,14 @@ export const ROUND_FRAME_CASES: RoundFrameCase[] = PREMADE_MAPS.map(toGrifballAr
 
 export interface RoundCombatCase { attack: 'slash' | 'slam' | 'swipe'; impactTick: 5 | 16 | 17; hp: 1 | 3 }
 
+export interface RoundFlightCase { attack: 'lunge'; impactTick: 3 | 16 | 17; hp: 1 | 3; pause: boolean }
+
 /** Full frame phase ordering with supplied movement and optional committed melee. No autonomous selection. */
-export function runRoundFrameTrace(spec: RoundFrameCase, snapshotAt?: number, combat?: RoundCombatCase) {
+export function runRoundFrameTrace(spec: RoundFrameCase, snapshotAt?: number, combat?: RoundCombatCase | RoundFlightCase) {
   const f = createBotParityFixture('runner', false, { maxHP: 2, grifballRunnerHealth: 3, grifballRunnerHealRate: 0,
     grifballRoundResetDelay: .19, grifballCountdownDuration: .09, grifballGoalTarget: spec.winner ? 1 : 2,
     respawnInvulnerabilityDuration: .5,
-    ...(combat ? { swordSlashSpeed: { 5: .15, 16: .52, 17: .55 }[combat.impactTick],
+    ...(combat?.attack === 'lunge' ? { swordLungeSpeed: 24, swordLungeReload: .39 } : combat ? { swordSlashSpeed: { 5: .15, 16: .52, 17: .55 }[combat.impactTick],
       hammerSlamWindupTime: combat.impactTick === 5 ? .05 : .2,
       hammerSlamAttackTime: { 5: .02, 16: .05, 17: .06 }[combat.impactTick],
       hammerMeleeSpeed: { 5: .06, 16: .25, 17: .26 }[combat.impactTick],
@@ -60,9 +64,13 @@ export function runRoundFrameTrace(spec: RoundFrameCase, snapshotAt?: number, co
   const victim = combat ? addParityActor(f, 'victim', team, 0, spec.mirror ? -2 : 2) : undefined;
   if (combat && victim) {
     injured.pos = { x: 0, y: 0, z: 0 }; injured.yaw = spec.mirror ? Math.PI : 0;
-    injured.weapon = target.activeWeapon = combat.attack === 'slash' ? 'sword' : 'hammer';
+    injured.weapon = target.activeWeapon = combat.attack === 'slash' || combat.attack === 'lunge' ? 'sword' : 'hammer';
     victim[0].hp = victim[0].maxHp = victim[1].hp = victim[1].maxHp = combat.hp;
     victim[1].weapon = 'hammer'; victim[1].hasBall = false;
+    if (combat.attack === 'lunge') {
+      victim[1].pos.z = (combat.impactTick * .4 + 1.3) * (spec.mirror ? -1 : 1);
+      injured.pauseDuringInactiveGrifball = combat.pause;
+    }
   }
   injured.hp = target.hp = 1; target.maxHp = 2;
   dead.hp = downed.hp = 0; dead.alive = false; dead.respawnTimer = downed.respawnTimer = .49; downed.maxHp = 2;
@@ -82,6 +90,15 @@ export function runRoundFrameTrace(spec: RoundFrameCase, snapshotAt?: number, co
   attachBallTo(state.grifball.ball, runner.id); attachBallTo(sim.match.ball, runner.id);
   setGrifballCarrierForState({ state, id: runner.id, carrying: true }); setSimCarrier(runner, true, sim.settings, sim);
   if (spec.reverse) { sim.combatants.reverse(); state.otherPlayers = new Map([...state.otherPlayers].reverse()); }
+  const flight = combat?.attack === 'lunge' ? attachLungeRuntime(f) : undefined;
+  if (flight && combat?.attack === 'lunge') withSimulationRandom(seededRandom(811), 0, () => {
+    target.aiState = 'LUNGING'; target.aiTimer = 0;
+    const dir = { x: 0, y: 0, z: spec.mirror ? -1 : 1 };
+    triggerCombatantLungeAction({ self: target, settings: state.settings, lungeDir: target.pos.clone().set(dir.x, dir.y, dir.z),
+      pos: target.pos, vel: target.vel, playDash: noop });
+    injured.lungeTargetId = victim![1].id; injured.lungeAimDirection = dir;
+    stepCombatantWeapons(sim, injured, { ...idleAction(), attackSecondary: true }, sim.settings, 0, []);
+  });
   const placement = createArenaOrchestratorCallbacksForState({ getState: () => state, getRefs: () => refs, spawnPoints: [],
     getActiveCustomMap: () => map, getLegacyRosterProps: () => ({}), getOfflineBotCount: () => state.otherPlayers.size,
     isPlaying: true, opponentClientId: '', constrainCombatantToArena: noop, getVisualModelPolicy: () => 'v2', pushStatsUpdate: noop, playRespawn: noop });
@@ -96,7 +113,7 @@ export function runRoundFrameTrace(spec: RoundFrameCase, snapshotAt?: number, co
     const moving = sim.match.phase === 'playing';
     const actions: ActionsById = moving ? { [runner.id]: runner.hasBall || spec.player
       ? { ...idleAction(), aim, moveZ: 1 } : groundMotionAction(runner, motion, tick, aim, sim.settings) } : {};
-    if (combat && tick === 1) actions[injured.id] = { ...idleAction(), aim: injured.yaw,
+    if (combat && combat.attack !== 'lunge' && tick === 1) actions[injured.id] = { ...idleAction(), aim: injured.yaw,
       attackPrimary: combat.attack !== 'swipe', attackSecondary: combat.attack === 'swipe' };
     withSimulationRandom(random, tick / 60, () => {
       const liveMoving = state.grifball.phase === 'playing';
@@ -116,9 +133,15 @@ export function runRoundFrameTrace(spec: RoundFrameCase, snapshotAt?: number, co
           }
         }, updateHammerAnimations: f.weaponFrame, runAIOrchestrator: f.respawns,
         updateAI: dt => {
-          if (combat && tick === 1) triggerCombatantAttackAction({ self: target, weapon: combat.attack === 'slash' ? 'sword' : 'hammer',
+          if (combat && combat.attack !== 'lunge' && tick === 1) triggerCombatantAttackAction({ self: target, weapon: combat.attack === 'slash' ? 'sword' : 'hammer',
             melee: combat.attack === 'swipe', recordHammerAttack: noop, playSwing: noop });
-          for (const a of state.otherPlayers.values()) if (a.hp > 0) tickCombatantInvulnerability(a, dt);
+          for (const a of state.otherPlayers.values()) if (a.hp > 0) {
+            tickCombatantInvulnerability(a, dt);
+            if (a === target && flight && combat?.attack === 'lunge') {
+              if (combat.pause && pauseInactiveGrifballAI(state, a)) continue;
+              flight.flightFor(a, victim![0], dt);
+            }
+          }
           if (!spec.player && liveMoving) {
             if (state.grifball.ball.holderId === bot.id) {
               const frame = { pos: bot.pos, vel: bot.vel, yaw: bot.yaw, aiState: bot.aiState, timer: bot.aiTimer ?? 0,
@@ -158,9 +181,15 @@ export function runRoundFrameTrace(spec: RoundFrameCase, snapshotAt?: number, co
     const combatLive = combat ? { phase: target.weaponState === 'ready' ? 'idle'
       : ['swing_up', 'melee_up'].includes(target.weaponState!) ? 'windup'
       : ['swing_down', 'melee_down'].includes(target.weaponState!) ? 'active' : 'recovering',
-      elapsed: target.weaponTimer ?? 0, kills: target.kills ?? 0, deaths: victim![0].deaths ?? 0 } : undefined;
+      elapsed: target.weaponTimer ?? 0, kills: target.kills ?? 0, deaths: victim![0].deaths ?? 0,
+      ...(flight ? { active: !!target.isLunging, time: target.lungeTimer, origin: target.lungeStartPos, direction: target.lungeTargetDir,
+        outcome: target.aiLastLungeOutcome ?? null,
+        finishReload: target.aiLastLungeOutcome && !frames.at(-1)?.live.combat?.outcome ? target.aiTimer : null } : {}) } : undefined;
     const combatHeadless = combat ? { phase: injured.weaponState, elapsed: injured.weaponPhaseElapsed ?? 0,
-      kills: combatKills, deaths: combatDeaths } : undefined;
+      kills: combatKills, deaths: combatDeaths,
+      ...(flight ? { active: injured.isLunging, time: injured.lungeTimer, origin: injured.lungeStartPos, direction: injured.lungeDir,
+        outcome: injured.lungeOutcome ?? null,
+        finishReload: injured.lungeOutcome && !frames.at(-1)?.headless.combat?.outcome ? injured.attackCooldown : null } : {}) } : undefined;
     // Live ordinary bots own kill/death credit on their roster entries; teamScores holds objective goals.
     // The simulation additionally aggregates combat totals. Compare roster credit/events above and goals here.
     const live = { combat: combatLive, match: structuredClone(state.grifball), scores: objectiveScores(state.teamScores), actors: liveActors };
@@ -172,7 +201,7 @@ export function runRoundFrameTrace(spec: RoundFrameCase, snapshotAt?: number, co
     compare('frame', live, headless); frames.push({ tick, live, headless, events, resets, notifications });
   }
   for (const side of ['live', 'headless'] as const) {
-    if (combat && victim) {
+    if (combat && combat.attack !== 'lunge' && victim) {
       const hit = spec.winner || combat.impactTick < 16;
       const readyAt = (combat.attack === 'slash' ? combat.impactTick * 2 : combat.impactTick) + 24;
       const healthAt = (tick: number) => frames[tick - 1][side].actors.find(a => a.id === victim[1].id)!.hp;
@@ -229,6 +258,6 @@ export function runRoundFrameTrace(spec: RoundFrameCase, snapshotAt?: number, co
   record.compare(120, 'expected.notifications', notifications, 1);
   record.compare(120, 'expected.resetEvents', frames.filter(f => f.events.roundReset).length, spec.winner ? 0 : 1);
   record.compare(120, 'expected.matchEndEvents', frames.filter(f => f.events.matchEnded).length, spec.winner ? 1 : 0);
-  return { name: `${spec.map.id}/${spec.player}/${spec.mirror}/${spec.reverse}/${spec.winner}${combat ? `/${combat.attack}/${combat.impactTick}/${combat.hp}` : ''}`, ticks: 120, ...record.result(), frames };
+  return { name: `${spec.map.id}/${spec.player}/${spec.mirror}/${spec.reverse}/${spec.winner}${combat ? `/${combat.attack}/${combat.impactTick}/${combat.hp}${combat.attack === 'lunge' ? `/${combat.pause}` : ''}` : ''}`, ticks: 120, ...record.result(), frames };
 }
 export const runRoundFrameParity = () => ROUND_FRAME_CASES.map(c => runRoundFrameTrace(c));
