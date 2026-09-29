@@ -1,5 +1,5 @@
 import { lungeFixture } from './grifballLungeFixture';
-import { parityRecorder } from './grifballMultiActorParity';
+import { addParityActor, parityRecorder } from './grifballMultiActorParity';
 import { advanceGrifballFrameForState } from '../../src/components/grifball/activeFrameRuntime';
 import { updateGrifballObjectiveForState, setGrifballCarrierForState, throwPlayerGrifballPassForState } from '../../src/components/grifball/grifballObjectiveRuntime';
 import { handlePointerPlayerActionInputForState, handlePointerPlayerActionReleaseForState } from '../../src/components/grifball/playerInputRuntime';
@@ -7,8 +7,8 @@ import { updatePlayerRespawnForState } from '../../src/components/grifball/playe
 import { updatePlayerHorizontalMovementForState, updatePlayerVerticalIntegrationForState } from '../../src/components/grifball/playerMovementRuntime';
 import { constrainCombatantToArenaBounds } from '../../src/components/grifball/arenaBounds';
 import { tickCombatantInvulnerability } from '../../src/components/grifball/aiTickState';
-import { triggerCombatantLungeAction } from '../../src/components/grifball/combatantActions';
-import { DEFAULT_KEYBINDINGS } from '../../src/types';
+import { triggerCombatantAttackAction, triggerCombatantLungeAction } from '../../src/components/grifball/combatantActions';
+import { DEFAULT_KEYBINDINGS, type Combatant } from '../../src/types';
 import { defaultGrifballTactics } from '../../src/game/grifballTacticsConfig';
 import { attachBallTo } from '../../src/game/grifballBall';
 import { seededRandom, withSimulationRandom } from '../../src/game/simulationRandom';
@@ -16,7 +16,7 @@ import { setSimCarrier } from '../../src/sim/grifball';
 import { stepSimulation } from '../../src/sim/step';
 import { stepCombatantWeapons } from '../../src/sim/weapons';
 import { idleAction } from '../../src/sim/actions';
-import type { SimState } from '../../src/sim/simState';
+import type { SimCombatant, SimState } from '../../src/sim/simState';
 
 const noop = () => {};
 export interface FrameObjectiveCase { player: boolean; lunge: boolean; goal: boolean; hp: number; reverse: boolean; mirror: boolean }
@@ -26,7 +26,9 @@ export const FRAME_OBJECTIVE_CASES: FrameObjectiveCase[] = [false, true].flatMap
 /** Actual frame coordinator owns objective-before-skeletal-melee ordering and final
  * carrier reconciliation. Attack commitments are authored; no AI policy is certified. */
 export interface ChargeCombatCase { releaseAt: number | null; shield: boolean; moving: boolean; recovery?: 'hold' | 'repress' }
-export function runFrameObjectiveTrace(spec: FrameObjectiveCase, snapshotAt?: number, charge?: ChargeCombatCase) {
+export interface CarrierCrowdCase { secondLunge: boolean; shield: boolean; pickup: 'tie' | 'nearer-escort' }
+export function runFrameObjectiveTrace(spec: FrameObjectiveCase, snapshotAt?: number, charge?: ChargeCombatCase, crowd?: CarrierCrowdCase) {
+  if (crowd && (charge || spec.goal)) throw new Error('Carrier crowd fixture requires an off-goal runner without pass input');
   const f = lungeFixture('attacker', false), { state, sim, bot, target, refs, map } = f;
   const [attacker, runner] = sim.combatants;
   attacker.id = bot.id; attacker.controller = 'ai'; runner.id = target.id;
@@ -35,8 +37,9 @@ export function runFrameObjectiveTrace(spec: FrameObjectiveCase, snapshotAt?: nu
   if (spec.player) { runner.id = 'player'; state.otherPlayers.delete(target.id); refs.otherPlayerMeshes.delete(target.id); }
   else sim.combatants.push(player);
   player.controller = 'remote';
-  attacker.team = bot.team = spec.mirror ? 'red' : 'blue';
-  runner.team = target.team = player.team = state.localPlayerTeam = spec.mirror ? 'blue' : 'red';
+  const attackerTeam = spec.mirror ? 'red' : 'blue', runnerTeam = spec.mirror ? 'blue' : 'red';
+  attacker.team = bot.team = attackerTeam;
+  runner.team = target.team = player.team = state.localPlayerTeam = runnerTeam;
   state.grifballTactics = defaultGrifballTactics();
   Object.assign(state.settings, { grifballRunnerHealth: spec.hp, grifballRunnerHealRate: 0, grifballRoundResetDelay: 10,
     enableSwordTrade: false, enableHammerSwordTrade: false, respawnInvulnerabilityDuration: 0, swordSlashSpeed: .02 });
@@ -58,19 +61,38 @@ export function runFrameObjectiveTrace(spec: FrameObjectiveCase, snapshotAt?: nu
   bot.hp = bot.maxHp = 1; target.hp = target.maxHp = 1;
   attachBallTo(state.grifball.ball, runner.id); attachBallTo(sim.match.ball, runner.id);
   setGrifballCarrierForState({ state, id: runner.id, carrying: true }); setSimCarrier(runner, true, sim.settings, sim);
+  const attackers: { live: Combatant; headless: SimCombatant; lunge: boolean }[] = [{ live: bot, headless: attacker, lunge: spec.lunge }];
+  const collectors: (readonly [Combatant, SimCombatant])[] = [];
+  if (crowd) {
+    const [support, simSupport] = addParityActor(f, 'support', attackerTeam, attacker.pos.x, attacker.pos.z);
+    support.yaw = bot.yaw; simSupport.yaw = attacker.yaw;
+    support.activeWeapon = simSupport.weapon = 'sword';
+    attackers.push({ live: support, headless: simSupport, lunge: crowd.secondLunge });
+    // Opposing pickup candidates remain protected during attacks. Equal distances follow
+    // roster order; a nearer escort must win regardless of insertion order.
+    collectors.push(addParityActor(f, 'escort', runnerTeam, direction * (crowd.pickup === 'tie' ? 1.2 : .6), 0));
+    collectors.push(addParityActor(f, 'interceptor', attackerTeam, direction * 1.2, 0));
+    for (const [a, b] of collectors) { a.invulnerabilityTimer = b.invulnerabilityTimer = 10; a.activeWeapon = b.weapon = 'hammer'; }
+    runner.invulnerabilityTimer = crowd.shield ? 10 : 0;
+    if (spec.player) state.playerInvulnerabilityTimer = runner.invulnerabilityTimer;
+    else target.invulnerabilityTimer = runner.invulnerabilityTimer;
+  }
   // Lunge contact occurs in updateAI; a short slash impacts in skeletal animation on tick 1.
-  attacker.lungeTargetId = runner.id; attacker.lungeAimDirection = { x: 0, y: 0, z: direction };
-  bot.lungeTargetDir = { x: 0, y: 0, z: direction };
   const random = seededRandom(181);
   withSimulationRandom(random, 0, () => {
-    if (!spec.lunge) { bot.isLunging = false; bot.aiState = 'APPROACHING'; bot.weaponState = 'ready'; }
-    else {
-      triggerCombatantLungeAction({ self: bot, settings: state.settings, lungeDir: bot.pos.clone().set(0, 0, direction), pos: bot.pos, vel: bot.vel, playDash: noop });
-      stepCombatantWeapons(sim, attacker, { ...idleAction(), attackSecondary: true }, sim.settings, 0, []);
+    for (const { live: a, headless: b, lunge } of attackers) {
+      b.lungeTargetId = runner.id; b.lungeAimDirection = { x: 0, y: 0, z: direction };
+      a.lungeTargetDir = { x: 0, y: 0, z: direction };
+      if (!lunge) { a.isLunging = false; a.aiState = 'APPROACHING'; a.weaponState = 'ready'; }
+      else {
+        triggerCombatantLungeAction({ self: a, settings: state.settings, lungeDir: a.pos.clone().set(0, 0, direction), pos: a.pos, vel: a.vel, playDash: noop });
+        stepCombatantWeapons(sim, b, { ...idleAction(), attackSecondary: true }, sim.settings, 0, []);
+      }
     }
   });
   if (spec.reverse) { sim.combatants.reverse(); state.otherPlayers = new Map([...state.otherPlayers].reverse()); }
   const ballMeshRef = { current: null }, ballChargingRef = { current: false }, ballChargeTimerRef = { current: 0 };
+  const kills = new Map<string, number>(), deaths = new Map<string, number>();
   const record = parityRecorder(), frames = []; let restored: SimState | undefined, notifications = 0, releases = 0;
   let previousHeld = !!charge;
   const passBindings = { ...DEFAULT_KEYBINDINGS, altAttack: 'rmb' };
@@ -94,7 +116,8 @@ export function runFrameObjectiveTrace(spec: FrameObjectiveCase, snapshotAt?: nu
     const moveX = charge?.moving ? .25 : 0;
     const aim = spec.mirror ? Math.PI : 0;
     // Request recovery continuously: late melee cannot be picked up until the next objective tick.
-    bot.pickupRequested = !charge?.recovery;
+    bot.pickupRequested = !crowd && !charge?.recovery;
+    for (const [c] of collectors) c.pickupRequested = true;
     state.playerPickupRequested = !!charge?.recovery && tick === 183;
     withSimulationRandom(random, tick / 60, () => {
       if (charge) state.yaw = aim + Math.PI;
@@ -119,10 +142,14 @@ export function runFrameObjectiveTrace(spec: FrameObjectiveCase, snapshotAt?: nu
       }, updateHammerAnimations: f.weaponFrame, runAIOrchestrator: f.respawns,
       updateAI: dt => {
         for (const c of state.otherPlayers.values()) if (c.hp > 0) tickCombatantInvulnerability(c, dt);
-        if (tick === 1 && !spec.lunge) f.attack();
-        if (bot.hp > 0 && bot.isLunging) f.flightFor(bot, spec.player ? { ...target, id: 'player', hp: state.playerHP,
-          pos: state.playerPos, vel: state.playerVel, team: state.localPlayerTeam, invulnerabilityTimer: state.playerInvulnerabilityTimer,
-          activeWeapon: state.activeWeapon as 'ball' | 'hammer' } : target, dt);
+        for (const c of state.otherPlayers.values()) {
+          const entry = attackers.find(a => a.live === c);
+          if (!entry || c.hp <= 0) continue;
+          if (tick === 1 && !entry.lunge) triggerCombatantAttackAction({ self: c, weapon: 'sword', recordHammerAttack: noop, playSwing: noop });
+          if (c.isLunging) f.flightFor(c, spec.player ? { ...target, id: 'player', hp: state.playerHP,
+            pos: state.playerPos, vel: state.playerVel, team: state.localPlayerTeam, invulnerabilityTimer: state.playerInvulnerabilityTimer,
+            activeWeapon: state.activeWeapon as 'ball' | 'hammer' } : target, dt);
+        }
       },
       updateGrifball: dt => updateGrifballObjectiveForState({ state, refs, ballMeshRef, ballChargingRef, ballChargeTimerRef,
         dt, isMultiplayer: false, activeCustomMap: map, placeCombatantsAtGrifballSpawns: () => { throw new Error('Trace must stop before reset'); }, pushStatsUpdate: () => { notifications++; } }),
@@ -133,10 +160,14 @@ export function runFrameObjectiveTrace(spec: FrameObjectiveCase, snapshotAt?: nu
     });
     previousHeld = held;
     const actions = Object.fromEntries(sim.combatants.map(c => [c.id, { ...idleAction(), aim: charge && c === player ? aim : c.yaw,
-      pickup: c === attacker ? !charge?.recovery : c === player && !!charge?.recovery && tick === 183,
+      pickup: collectors.some(([, b]) => b === c) || (c === attacker ? !crowd && !charge?.recovery : c === player && !!charge?.recovery && tick === 183),
       moveX: c === player ? moveX : 0, attackSecondary: c === player && held,
-      attackPrimary: tick === 1 && !spec.lunge && c === attacker }]));
+      attackPrimary: tick === 1 && attackers.some(a => a.headless === c && !a.lunge) }]));
     const events = stepSimulation(sim, actions, { settings: sim.settings });
+    for (const event of events.kills) {
+      kills.set(event.attackerId, (kills.get(event.attackerId) ?? 0) + 1);
+      deaths.set(event.victimId, (deaths.get(event.victimId) ?? 0) + 1);
+    }
     if (restored) { const replay = stepSimulation(restored, actions, { settings: restored.settings });
       record.compare(tick, 'snapshot.state', JSON.stringify(restored), JSON.stringify(sim)); record.compare(tick, 'snapshot.events', JSON.stringify(replay), JSON.stringify(events)); }
     if (tick === snapshotAt) restored = JSON.parse(JSON.stringify(sim));
@@ -154,8 +185,47 @@ export function runFrameObjectiveTrace(spec: FrameObjectiveCase, snapshotAt?: nu
     const liveCharge = { active: ballChargingRef.current, seconds: ballChargeTimerRef.current, display: state.grifballPassCharge };
     const simCharge = { active: !!player.passCharging, seconds: player.passChargeTimer,
       display: player.passCharging ? Math.min(1, player.passChargeTimer / (sim.settings.grifballChargeMax ?? 1.2)) : 0 };
+    const liveCrowd = crowd ? [...state.otherPlayers.values()].map(c => ({ id: c.id, hp: c.hp, maxHp: c.maxHp,
+      weapon: c.activeWeapon, pos: c.pos.toArray(), shield: c.invulnerabilityTimer, lunging: !!c.isLunging,
+      kills: c.kills ?? 0, deaths: c.deaths ?? 0 })) : [];
+    const simCrowd = liveCrowd.map(c => {
+      const b = sim.combatants.find(b => b.id === c.id)!;
+      return { id: b.id, hp: b.hp, maxHp: b.maxHp, weapon: b.weapon, pos: Object.values(b.pos), shield: b.invulnerabilityTimer,
+        lunging: b.isLunging, kills: kills.get(b.id) ?? 0, deaths: deaths.get(b.id) ?? 0 };
+    });
+    if (crowd) {
+      compare('crowd', liveCrowd, simCrowd);
+      record.compare(tick, 'crowd.runnerDeaths', spec.player ? state.playerDeaths : target.deaths ?? 0, deaths.get(runner.id) ?? 0);
+    }
     if (charge) compare('charge', liveCharge, simCharge);
-    compare('frame', live, headless); frames.push({ tick, live, headless, events, liveCharge, simCharge });
+    compare('frame', live, headless); frames.push({ tick, live, headless, events, liveCharge, simCharge, ...(crowd ? { liveCrowd, simCrowd } : {}) });
+  }
+  if (crowd) {
+    const lethal = !crowd.shield && spec.hp <= 2;
+    const winner = crowd.pickup === 'nearer-escort' || spec.reverse ? 'escort' : 'interceptor';
+    const earlyHits = attackers.filter(a => a.lunge).length;
+    const earlyDeath = lethal && earlyHits >= spec.hp;
+    for (const side of ['live', 'headless'] as const) {
+      record.compare(1, `expected.${side}.focusHealth`, frames[0][side].hp, crowd.shield ? spec.hp : Math.max(0, spec.hp - 2));
+      record.compare(1, `expected.${side}.firstPossession`, frames[0][side].ball.holderId, lethal ? earlyDeath ? winner : null : runner.id);
+      record.compare(2, `expected.${side}.contestedPickup`, frames[1][side].ball.holderId, lethal ? winner : runner.id);
+      record.compare(ticks, `expected.${side}.retainedPossession`, frames.at(-1)![side].ball.holderId, lethal ? winner : runner.id);
+      record.compare(ticks, `expected.${side}.noGoal`, frames.at(-1)![side].goals, 0);
+    }
+    // Flights resolve before skeletal melee regardless of insertion order. Within each
+    // phase the roster order selects which hit earns the sole kill credit.
+    const attackOrder = spec.reverse ? [...attackers].reverse() : [...attackers];
+    const contactOrder = [...attackOrder.filter(a => a.lunge), ...attackOrder.filter(a => !a.lunge)];
+    const killer = lethal ? contactOrder[spec.hp - 1].headless.id : null;
+    for (const a of attackers) {
+      record.compare(ticks, `expected.live.${a.live.id}.kills`, a.live.kills ?? 0, a.live.id === killer ? 1 : 0);
+      record.compare(ticks, `expected.headless.${a.headless.id}.kills`, kills.get(a.headless.id) ?? 0, a.headless.id === killer ? 1 : 0);
+    }
+    record.compare(ticks, 'expected.runnerDeaths', deaths.get(runner.id) ?? 0, lethal ? 1 : 0);
+    for (const [a, b] of collectors) for (const [side, hp] of [['live', a.hp], ['headless', b.hp]] as const)
+      record.compare(ticks, `expected.${side}.${a.id}.health`, hp, lethal && a.id === winner ? spec.hp : 1);
+    record.compare(ticks, 'expected.notifications', notifications, 0);
+    return { name: JSON.stringify({ ...spec, crowd }), ticks, ...record.result(), frames };
   }
   if (charge) {
     const releasedBeforeHit = charge.releaseAt === 1;

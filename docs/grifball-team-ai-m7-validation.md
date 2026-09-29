@@ -878,3 +878,26 @@ Verification:
 - Production builds, full repository tests and frozen browser CLI runs were not repeated for this validation-only change. The previous five V3 repository failures remain unresolved, without waivers or a claim of M7 acceptance.
 
 Next work is multi-actor carrier execution and the remaining broader map/decision integration. Human testing stays deferred until the automated acceptance requirements are complete.
+
+
+## 2026-09-29 — multiple attackers and contested carrier recovery
+
+Committed the prior charge/combat slice as `3579b0c` (`Validate combat during charge and carrier recovery`). Continued with multiple attackers and contested recovery. This new slice remains uncommitted; human testing remains deferred.
+
+Added **384 traces** plus **12 JSON snapshot continuations**. The existing actual-frame fixture now registers two attackers, a player or roster runner, and protected pickup candidates from opposing teams (five actors, or six with the separate idle local player). Paired slashes, paired committed lunges and mixed flight/slash focus fire cover one to four runner HP, shielded/unshielded runners, mirrored teams and reversed roster order. Collectors either stand at equal distance or put the escort closer, so the winner must follow insertion order only for a tie. Live and simulated actors advance independently after setup; targets, attack commitments and pickup requests are authored.
+
+Independent assertions verify first-contact health, exactly one credited kill and death for lethal focus fire, surviving carrier retention, same-frame recovery after an early flight death, next-frame recovery after late skeletal melee, collector health, stable possession and no goals. Kill attribution follows flight-before-skeletal ordering and roster order within each phase. Twelve snapshots cover all three attack combinations and both runner identities immediately after contact and recovery. Saved frames include every roster actor's health, weapon, position, shield, lunge state and kill/death counters, alongside ball state and simulator kill events.
+
+The first focused run failed **196/196** because newly added simulated collectors inherited the sword-equipped template while their live counterparts held hammers (`output/m7-carrier-crowd-before.log`). Explicitly initializing collector weapons fixed the fixture. The 196 initial checks then passed; adding unequal-distance cases and more snapshots expanded coverage to 396 checks. TypeScript also identified three overly broad `TeamId` arguments; using the fixture's explicit blue/red team constants resolved them. No production gameplay changes were needed.
+
+Protocol `live-functions-vs-headless-step-v19` stores `carrierCrowdTraces`: **384 traces / 46,080 frames**, zero differences. Combined evidence totals **3,307 traces / 654,348 frames**. This bounded family covers stationary targets and protected collectors. Moving/airborne crowds, unprotected recovery combat, carrier counterattacks, autonomous decisions, complete map/match execution, calibrated performance, held-out quality and final repository acceptance remain open. Execution parity stays **inconclusive**.
+
+Verification:
+
+- **3,912/3,912** validation-suite tests passed, including prior parity groups and acceptance-gate checks (`output/m7-carrier-crowd-validation.log`).
+- After narrowing the team constants, **396/396** focused checks passed (`output/m7-carrier-crowd-focused.log`) and TypeScript passed with the 8 GB heap allowance (`output/m7-carrier-crowd-typecheck.log`).
+- Saved and re-parsed final evidence: `output/m7-carrier-crowd-evidence.json`; summary: `output/m7-carrier-crowd-summary.json`. Source identity: commit `3579b0cd03513bbf16314d7668ba2328a5f25b59`, working-tree hash `1d7d118f1e9b4c8f7732728c8ca87a2b6e02f29f121180bcde869018d7820ff3`.
+- Scoped `git diff --check` passed; attached implementation plans remain unchanged. README and both explicit test command lists include the new validation coverage.
+- Production builds, full repository tests and frozen browser CLI runs were not repeated for this validation-only change. The previous five V3 repository failures remain unresolved, without waivers or a claim of M7 acceptance.
+
+Next work is moving-carrier combat and unprotected recovery interactions, followed by broader map/decision integration and the remaining acceptance gates. Human testing stays deferred until the automated acceptance requirements are complete.
