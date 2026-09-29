@@ -1178,3 +1178,28 @@ Verification:
 - Full repository tests and frozen browser CLI runs were not repeated. The five previously reported V3 repository failures remain unresolved, without waivers or a claim of M7 acceptance.
 
 Next work is autonomous goal scoring and round reset/reassignment through the live frame, building toward complete-match acceptance. Human testing remains deferred until the remaining automated requirements are complete.
+
+
+## 2026-09-29 — autonomous scoring and round reassignment
+
+Committed the revival slice as `aba056e` (`Validate autonomous Grifball revival and clear stale jump state`). Added **24 live round-decision traces / 8,640 frames** and six repeatability checks. This slice remains uncommitted; human testing stays deferred.
+
+Two allied AI bots run an uncontested scoring loop through the production frame coordinator, roster/planner/updater, objective, skeletal animation and round-placement callbacks. The synthetic court has physical goal plates and two distinct spawn points per team. Initial possession, positions, settings and map are authored; subsequent movement, scoring, reset placement, retrieval and assignments are autonomous. Passing is disabled and any combat, target selection or respawn fails the fixture. Observer input/render and roster resizing remain omitted. These are bounded round-flow cases, not complete contested-match certification.
+
+Three modes cover a one-goal win, a two-goal win after a reset and the same two-goal flow with zero reset/countdown durations. Both teams, roster orders and main/ordinary opening carriers run for 360 frames. The first goal occurs at tick 24. With 0.19-second scored hold and 0.09-second countdown, reset occurs at tick 36, play resumes at tick 42, pickup occurs at tick 93, the second goal at tick 194 and match end at tick 206. With zero durations, the phase machine still advances one phase per frame: reset at 25, play at 26, pickup at 77, second goal at 178 and match end at 179. One-goal matches end at tick 36 without resetting.
+
+Checks require eligible living scorers over the opposing plate, a single goal/notification per score, restored carrier weapon/base health, released possession, cleared charge, distinct team spawns, cleared velocity/attack history and bounded finite movement. Every actor updates once per frame; scored/countdown/match-end movement pauses and inactive assignments clear. After reset, the fresh retriever is selected from the new positions and becomes runner after its own pickup request. Reversing roster order places the support bot at the closer spawn, so it retrieves and scores the second goal instead of retaining the opening runner's role. The remaining frames verify stable terminal possession, assignments, positions and score counts. No gameplay production change was needed.
+
+The saved evidence contains **40 autonomous goals and 16 resets**, all passing. Protocol `live-functions-vs-headless-step-v31` retains `roundDecisionTraces` separately from **6,027 paired traces / 980,748 frames** and the earlier live-only families. Any failed new trace fails execution acceptance; passing leaves the gate **inconclusive**. Opposing combat and respawns across scoring/reset still need integration, along with broader maps, complete contested matches, headless autonomous execution, calibrated performance, held-out quality and final repository acceptance. Optional neural integration remains unpromoted.
+
+Verification:
+
+- Final validation suite passed **7,311/7,311** tests, including all previous trace families and the aggregate gate (`output/m7-round-decision-validation.log`). Scoped `git diff --check` passed.
+- Focused scenarios and deterministic repeats passed **30/30** (`output/m7-round-decision-focused.log`).
+- TypeScript passed with the 8 GB heap allowance (`output/m7-round-decision-typecheck.log`).
+- Production client build passed (`output/m7-round-decision-build.log`), with the existing large-chunk warning.
+- Saved and re-parsed evidence: `output/m7-round-decision-evidence.json`; summary: `output/m7-round-decision-summary.json`. All 24 traces have zero failures. Source identity: commit `aba056e500282c3deb5390bf5901d3e0d6a5ff06`, working-tree hash `976bcb8dad61b56df536384d65be395c8ac378b0e0a8f93944524a7818d6faf9`.
+- README, both explicit test commands and aggregate gate assertions include this family. Attached implementation plans remain unchanged.
+- Full repository tests and frozen browser CLI runs were not repeated. The five previously reported V3 repository failures remain unresolved, without waivers or a claim of M7 acceptance.
+
+Next work is integrating opposing combat, respawns and goal/round transitions in the same autonomous match loop. Human testing remains deferred until the remaining automated requirements are complete.
