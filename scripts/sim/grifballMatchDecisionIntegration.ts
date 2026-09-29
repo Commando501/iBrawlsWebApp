@@ -1,10 +1,8 @@
 import { OPPOSED_DECISION_CASES, runOpposedDecisionTrace, type OpposedDecisionCase } from './grifballOpposedDecisionIntegration';
 
-// Main-AI jump execution has a separate weapon owner and is not supplied by this
-// observer fixture. Keep those configurations outside this acceptance boundary.
-export const MATCH_DECISION_CASES = OPPOSED_DECISION_CASES.filter(spec => !spec.main);
+export const MATCH_DECISION_CASES = OPPOSED_DECISION_CASES;
 
-/** Complete bounded matches with opposing ordinary bots. Shared instrumentation
+/** Complete bounded matches with opposing ordinary and main-AI bots. Shared instrumentation
  * retains the opening contest and revival assertions; these checks join those
  * owners to scoring, round reset, fresh retrieval and terminal state. */
 export function runMatchDecisionTrace(spec: OpposedDecisionCase) {
@@ -15,7 +13,9 @@ export function runMatchDecisionTrace(spec: OpposedDecisionCase) {
       if (trace.failures.length < 64) trace.failures.push({ tick: trace.ticks, field, actual, expected });
     }
   };
-  check('ordinary roster boundary', spec.main, false);
+  if (spec.main && (spec.mode === 'contested' || spec.mode === 'hammer-first' && !spec.reverse)) {
+    check('autonomous main jump requests reach the real weapon gate', trace.mainJumpRequests.some(r => !r.accepted && r.dash > 0), true);
+  }
   const end = trace.frames.at(-1)!;
   check('bounded autonomous match completes', end.phase, 'matchEnd');
   check('match has a winning team', end.winner === 'blue' || end.winner === 'red', true);

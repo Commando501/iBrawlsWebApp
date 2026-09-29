@@ -8,6 +8,7 @@ import { getCombatBodyCenter } from './combatGeometry';
 import { adjustRangeForTargetModel } from './modelHitbox';
 import { createReplayHeatmapCombatantSource, queueReplayHeatmapDeathEventsForState } from './replayHeatmapRuntime';
 import { type GrifballRuntimeState } from './runtimeState';
+import { applyAIHammerJumpAtImpact } from './aiHammerJumpImpact';
 import { type EnemyAITarget } from './targetSelection';
 
 type HammerStrikeSyncPayload =
@@ -255,22 +256,10 @@ export function applyHammerStrikeImpactForState({
   const range = isBall ? resolvePunchLungeDistance(state.settings) : state.settings.attackRange * 0.875;
   const impactPos = aiEyePos.clone().addScaledVector(aiHeading3D, range);
 
-  const distToBase = impactPos.distanceTo(mainAI.pos);
-  if (distToBase <= (state.settings.hammerJumpTriggerRadius ?? 3.5)) {
-    mainAI.hammerJumpWindowTimer = state.settings.hammerJumpWindow ?? 0.6;
-    const limit = state.settings.hammerJumpAirLimit ?? 1;
-    const withinLimit = limit === 10 || (mainAI.aiHammerJumpsInAir ?? 0) < limit;
-
-    if (mainAI.hammerJumpPlanned && limit > 0 && withinLimit) {
-      mainAI.isJumping = true;
-      mainAI.vel.y = 7.2 + (state.settings.hammerJumpPower ?? 6.5);
-      mainAI.aiHammerJumpsInAir = (mainAI.aiHammerJumpsInAir ?? 0) + 1;
-      playJump();
-      spawnVoxelShockwaveParticles(mainAI.pos, '#f59e0b');
-    }
+  if (applyAIHammerJumpAtImpact(mainAI, state.settings, impactPos)) {
+    playJump();
+    spawnVoxelShockwaveParticles(mainAI.pos, '#f59e0b');
   }
-  mainAI.hammerJumpPlanned = false;
-  mainAI.hammerJumpType = undefined;
 
   const impactRadius = isBall ? 1.5 : (state.settings.attackRadius ?? 4.5);
   if (isBall) {

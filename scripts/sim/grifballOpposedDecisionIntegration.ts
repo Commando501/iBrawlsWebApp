@@ -1,3 +1,4 @@
+import { triggerEnemyHammerSwingForCombatant } from '../../src/components/grifball/enemyWeaponActions';
 import { createArenaOrchestratorCallbacksForState } from '../../src/components/grifball/arenaOrchestratorCallbacks';
 import { createCombatantActionCallbacksForState } from '../../src/components/grifball/combatantActionCallbacks';
 import { advanceGrifballFrameForState } from '../../src/components/grifball/activeFrameRuntime';
@@ -95,6 +96,7 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
     getRosterAI: () => [...state.otherPlayers.values()], resolveRosterSlot: () => ({ difficulty: 'normal' } as never),
     resolveBotKnobs: () => knobs, resolveBotDerived: () => derived, getMatchScoreContext });
   const attacks: { tick: number; id: string; weapon: string; melee: boolean; kind: 'swing' | 'hammer-jump' }[] = [];
+  const mainJumpRequests: { tick: number; accepted: boolean; dash: number; swap: number }[] = [];
   const targetLookups: { tick: number; id: string; target: string }[] = [];
   const update = createAISingleEntityUpdaterForState({ stateRef: { current: state }, threeRef: { current: refs },
     mai: () => state.otherPlayers.get('main_ai'), resolveBotKnobs: () => knobs, resolveBotDerived: () => derived,
@@ -119,8 +121,13 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
     recordCombatantObservation: noop, tryEnterPressureState: () => false, tryStartComboOnHit: () => false,
     recoverCombatantAltitude: noop, clearPressureTarget: noop,
     startAIHammerJump: (self, _pos, vel, horizontalHeading, jumpType) => {
+      const plannedBefore = !!self.hammerJumpPlanned;
       const started = startAIHammerJumpForCombatant({ self, settings: state.settings, vel, horizontalHeading, jumpType,
-        onMainAIHammerSwing: () => check('uncovered main hammer jump', true, false), playSwing: noop, playJump: noop });
+        onMainAIHammerSwing: () => triggerEnemyHammerSwingForCombatant(state.otherPlayers.get('main_ai')), playSwing: noop, playJump: noop });
+      if (self.id === 'main_ai') {
+        mainJumpRequests.push({ tick, accepted: started, dash: self.aiDashRemaining ?? 0, swap: self.swapCooldownTimer ?? 0 });
+        if (!started && !plannedBefore) check('rejected main jump leaves no latent plan', !!self.hammerJumpPlanned, false);
+      }
       if (started) attacks.push({ tick, id: self.id, weapon: self.activeWeapon, melee: false, kind: 'hammer-jump' });
       return started;
     },
@@ -132,7 +139,7 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
   const actions = createCombatantActionCallbacksForState({ getState: () => state, getRefs: () => refs,
     spawnPoints: [], getRosterAI: () => [...state.otherPlayers.values()], getActiveCustomMap: () => map,
     getOptimalSpawnPoint: excludePositions => getOptimalSpawnPointForArena({ activeCustomMap: map, spawnPoints: [], excludePositions }),
-    recordCombatantObservation: noop, onMainAIHammerSwing: () => check('uncovered main hammer jump', true, false), playSwing: noop, playJump: noop, playDash: noop, playRespawn: noop });
+    recordCombatantObservation: noop, onMainAIHammerSwing: () => triggerEnemyHammerSwingForCombatant(state.otherPlayers.get('main_ai')), playSwing: noop, playJump: noop, playDash: noop, playRespawn: noop });
   const placement = createArenaOrchestratorCallbacksForState({ getState: () => state, getRefs: () => refs, spawnPoints: [],
     getActiveCustomMap: () => map, getLegacyRosterProps: () => ({}), getOfflineBotCount: () => state.otherPlayers.size,
     isPlaying: true, opponentClientId: '', constrainCombatantToArena: noop, getVisualModelPolicy: () => 'v2', pushStatsUpdate: noop, playRespawn: noop });
@@ -145,11 +152,12 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
   const random = seededRandom(17), dt = 1 / 60;
   const ballMeshRef = { current: null }, ballChargingRef = { current: false }, ballChargeTimerRef = { current: 0 };
   const frames = [];
+  const mainJumpImpacts: { tick: number; launched: boolean; budget: number }[] = [];
   const carrierDeaths: { tick: number; id: string; pos: number[] }[] = [];
   const impacts: { tick: number; id: string; victims: string[] }[] = [];
   const pickups: { tick: number; id: string; distance: number }[] = [];
   let deathTick = 0, dropTick = 0;
-  const ticks = match ? 3840 : revival ? 480 : 150;
+  const ticks = match ? (spec.main ? 9000 : 3840) : revival ? 480 : 150;
   for (tick = 1; tick <= ticks; tick++) {
     const plan = state.aiMatchContext.grifballTeamPlan, phase = state.grifball.phase;
     const updates: string[] = [];
@@ -243,9 +251,19 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
       updateCharacterSkeletalAnimations: delta => updateRosterCombatantVisualsForState({ state, refs, dt: delta,
         renderSwordLungeTrailVfx: noop, applyBotMeleeImpact: botId => {
           const holderId = state.grifball.ball.holderId;
+          const attacker = state.otherPlayers.get(botId)!;
+          const plannedJump = botId === 'main_ai' && !!attacker.hammerJumpPlanned;
+          const jumpBudget = attacker.aiHammerJumpsInAir ?? 0;
           const health = new Map([...state.otherPlayers].map(([id, c]) => [id, c.hp]));
           applyBotMeleeImpactForState({ state, botId, renderHammerSplashVfx: noop, spawnVoxelShockwaveParticles: noop,
             playExplosion: noop, playDeath: noop, playSwing: noop, recordBotPsychKill: noop, recordBotCalibrationDeath: noop });
+          if (plannedJump) {
+            check('main jump plan consumed at impact', attacker.hammerJumpPlanned, false);
+            check('main jump type consumed at impact', attacker.hammerJumpType, undefined);
+            check('main jump applies upward impulse', attacker.vel.y, 7.2 + (state.settings.hammerJumpPower ?? 6.5));
+            check('main jump increments budget once', attacker.aiHammerJumpsInAir, jumpBudget + 1);
+            mainJumpImpacts.push({ tick, launched: !!attacker.isJumping, budget: attacker.aiHammerJumpsInAir ?? 0 });
+          }
           const victims = [...state.otherPlayers.values()].filter(c => c.hp < health.get(c.id)!).map(c => c.id);
           impacts.push({ tick, id: botId, victims });
           for (const id of victims) if (state.otherPlayers.get(id)!.hp <= 0) {
@@ -334,6 +352,17 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
     check('revived actor resumes tactical role', frames.some(f => f.tick > (first?.tick ?? ticks) &&
       f.assignments.some(a => a.id === loser.id && ['chaser', 'safety', 'lead', 'left', 'right', 'runner', 'retriever'].includes(a.role))), true);
   }
+  if (match) {
+    const main = state.otherPlayers.get('main_ai');
+    check('main identity final kill accounting', state.enemyKills, main?.kills ?? 0);
+    check('main identity final death accounting', state.enemyDeaths, main?.deaths ?? 0);
+    const jumpTicks = Math.ceil(state.settings.hammerSlamWindupTime / dt) + Math.ceil(state.settings.hammerSlamAttackTime / dt);
+    for (const request of mainJumpRequests.filter(r => r.accepted)) {
+      check('accepted main jump reaches impact or is interrupted by death',
+        mainJumpImpacts.some(j => j.tick >= request.tick && j.tick <= request.tick + jumpTicks) ||
+        deaths.some(d => d.id === 'main_ai' && d.tick >= request.tick && d.tick <= request.tick + jumpTicks), true);
+    }
+  }
   function validateOpeningContest() {
     check('runner attacks autonomously', attacks.some(a => a.id === carrierId), true);
     check('opponent attacks autonomously', attacks.some(a => a.id === defender.id), true);
@@ -374,6 +403,6 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
   }
   return { name: `${spec.mode}/${spec.team}/${spec.reverse ? 'reverse' : 'forward'}/${spec.main ? 'main' : 'ordinary'}`,
     boundary: match ? 'live-match-decision-integration' as const : revival ? 'live-revival-decision-integration' as const : 'live-opposed-decision-integration' as const, scenario: spec, ticks,
-    failureCount, failures, carrierDeaths, goals, resets, transitions, notifications, deaths, revivals, deathTick, dropTick, attacks, impacts, pickups, targetLookups, frames };
+    failureCount, failures, mainJumpRequests, mainJumpImpacts, carrierDeaths, goals, resets, transitions, notifications, deaths, revivals, deathTick, dropTick, attacks, impacts, pickups, targetLookups, frames };
 }
 export const runOpposedDecisionIntegration = () => OPPOSED_DECISION_CASES.map(spec => runOpposedDecisionTrace(spec));

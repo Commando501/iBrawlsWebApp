@@ -51,6 +51,13 @@ export const startAIHammerJumpForCombatant = ({
     self.hammerJumpPlanned = true;
     self.hammerJumpType = jumpType;
     onMainAIHammerSwing();
+    // The weapon owner can reject a swing during a dash or swap lockout.
+    // Do not report a committed jump or leave a plan for a later normal attack.
+    if (self.weaponState !== 'swing_up') {
+      self.hammerJumpPlanned = false;
+      self.hammerJumpType = undefined;
+      return false;
+    }
   } else {
     self.weaponState = 'swing_up';
     self.weaponTimer = 0;

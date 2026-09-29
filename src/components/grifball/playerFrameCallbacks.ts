@@ -141,6 +141,7 @@ export function createPlayerFrameCallbacksForState({
       playExplosion,
       playDeath,
       playSwing,
+      playJump,
       recordBotPsychKill,
       recordBotCalibrationDeath,
     });

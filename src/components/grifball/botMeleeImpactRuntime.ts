@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { applyAIHammerJumpAtImpact } from './aiHammerJumpImpact';
 import { MAIN_AI_ID, isAICombatReady } from '../../game/roster';
 import { resolvePunchLungeDistance } from '../../game/runnerBallSettings';
 import { getForwardHeadingForYaw } from '../../game/yaw';
@@ -24,6 +25,7 @@ export function applyBotMeleeImpactForState({
   playExplosion,
   playDeath,
   playSwing,
+  playJump = () => {},
   recordBotPsychKill,
   recordBotCalibrationDeath,
 }: {
@@ -34,6 +36,7 @@ export function applyBotMeleeImpactForState({
   playExplosion: () => void;
   playDeath: () => void;
   playSwing: () => void;
+  playJump?: () => void;
   recordBotPsychKill: (botId: string, victimId: string, wasLungeKill: boolean) => void;
   recordBotCalibrationDeath: (botId: string) => void;
 }): void {
@@ -58,7 +61,13 @@ export function applyBotMeleeImpactForState({
   const heading = new THREE.Vector3(forwardHeading.x, 0, forwardHeading.z);
   if (heading.lengthSq() < 1e-6) heading.set(0, 0, -1);
   heading.normalize();
+  if (isHammer && bot.hammerJumpPlanned) heading.set(0, -1, 0);
   const impactPos = eye.clone().addScaledVector(heading, forward);
+
+  if (bot.hammerJumpPlanned && applyAIHammerJumpAtImpact(bot, state.settings, impactPos)) {
+    playJump();
+    spawnVoxelShockwaveParticles(bot.pos, '#f59e0b');
+  }
 
   if (isHammer) {
     renderHammerSplashVfx(impactPos, '#f97316', radius);
