@@ -1,3 +1,6 @@
+import { triggerPlayerSwordLungeForState, swapPlayerWeaponForState } from '../../src/components/grifball/playerWeaponActions';
+import { updatePlayerSwordLungeForState } from '../../src/components/grifball/playerSwordLungeRuntime';
+import { areGrifballCombatantsHostileForState } from '../../src/components/grifball/grifballObjectiveRuntime';
 import { attachLungeRuntime } from './grifballLungeFixture';
 import { stepCombatantWeapons } from '../../src/sim/weapons';
 import { triggerCombatantAttackAction, triggerCombatantLungeAction } from '../../src/components/grifball/combatantActions';
@@ -35,17 +38,22 @@ export interface RoundCombatCase { attack: 'slash' | 'slam' | 'swipe'; impactTic
 
 export interface RoundFlightCase { attack: 'lunge'; impactTick: 3 | 16 | 17; hp: 1 | 3; pause: boolean }
 
+export interface RoundPlayerFlightCase { impactTick: 3 | 16 | 17; hp: 1 | 3; mainTarget: boolean }
+
 /** Full frame phase ordering with supplied movement and optional committed melee. No autonomous selection. */
-export function runRoundFrameTrace(spec: RoundFrameCase, snapshotAt?: number, combat?: RoundCombatCase | RoundFlightCase) {
+export function runRoundFrameTrace(spec: RoundFrameCase, snapshotAt?: number, combat?: RoundCombatCase | RoundFlightCase, playerFlight?: RoundPlayerFlightCase) {
+  if (playerFlight && (spec.player || combat)) throw new Error('Player flight requires a separate roster scorer and no roster attack');
   const f = createBotParityFixture('runner', false, { maxHP: 2, grifballRunnerHealth: 3, grifballRunnerHealRate: 0,
     grifballRoundResetDelay: .19, grifballCountdownDuration: .09, grifballGoalTarget: spec.winner ? 1 : 2,
     respawnInvulnerabilityDuration: .5,
+    ...(playerFlight ? { swordLungeSpeed: 24, swordLungeReload: .39, weaponReadyTime: 0, weaponSwapLockout: 0 } : {}),
     ...(combat?.attack === 'lunge' ? { swordLungeSpeed: 24, swordLungeReload: .39 } : combat ? { swordSlashSpeed: { 5: .15, 16: .52, 17: .55 }[combat.impactTick],
       hammerSlamWindupTime: combat.impactTick === 5 ? .05 : .2,
       hammerSlamAttackTime: { 5: .02, 16: .05, 17: .06 }[combat.impactTick],
       hammerMeleeSpeed: { 5: .06, 16: .25, 17: .26 }[combat.impactTick],
       swordSlashReload: .39, hammerMeleeReload: .39, hammerReloadTime: .39 } : {}) }, 'injured', spec.map);
   const { state, refs, sim, bot, target, map } = f;
+  const playerUsesSword = () => state.activeWeapon === 'sword';
   const [runner, injured] = sim.combatants;
   runner.id = bot.id; injured.id = target.id;
   const team = spec.mirror ? 'red' : 'blue';
@@ -61,7 +69,14 @@ export function runRoundFrameTrace(spec: RoundFrameCase, snapshotAt?: number, co
     c.pos = { x: 0, y: 0, z: 10 }; c.vel = { x: 0, y: 0, z: 0 }; c.yaw = 0;
     c.hp = c.maxHp = 2; c.invulnerabilityTimer = c.weaponReadyTimer = c.respawnTimer = 0;
   }
-  const victim = combat ? addParityActor(f, 'victim', team, 0, spec.mirror ? -2 : 2) : undefined;
+  const victim = combat ? addParityActor(f, 'victim', team, 0, spec.mirror ? -2 : 2)
+    : playerFlight ? addParityActor(f, playerFlight.mainTarget ? 'main_ai' : 'victim', injured.team as 'blue' | 'red', 0, (playerFlight.impactTick * .4 + 1.3) * (spec.mirror ? -1 : 1)) : undefined;
+  if (playerFlight && victim) {
+    player.pos = { x: 0, y: 0, z: 0 }; player.yaw = spec.mirror ? Math.PI : 0;
+    injured.pos.z = spec.mirror ? 10 : -10;
+    victim[0].hp = victim[0].maxHp = victim[1].hp = victim[1].maxHp = playerFlight.hp;
+    victim[1].weapon = 'hammer'; victim[1].hasBall = false;
+  }
   if (combat && victim) {
     injured.pos = { x: 0, y: 0, z: 0 }; injured.yaw = spec.mirror ? Math.PI : 0;
     injured.weapon = target.activeWeapon = combat.attack === 'slash' || combat.attack === 'lunge' ? 'sword' : 'hammer';
@@ -90,6 +105,13 @@ export function runRoundFrameTrace(spec: RoundFrameCase, snapshotAt?: number, co
   attachBallTo(state.grifball.ball, runner.id); attachBallTo(sim.match.ball, runner.id);
   setGrifballCarrierForState({ state, id: runner.id, carrying: true }); setSimCarrier(runner, true, sim.settings, sim);
   if (spec.reverse) { sim.combatants.reverse(); state.otherPlayers = new Map([...state.otherPlayers].reverse()); }
+  const playerEnds: boolean[] = [];
+  if (playerFlight) withSimulationRandom(seededRandom(811), 0, () => {
+    state.activeWeapon = player.weapon = 'sword';
+    triggerPlayerSwordLungeForState({ state, lockTarget: victim![0], recordLungeStart: noop, playDash: noop, sendSync: noop });
+    player.lungeTargetId = victim![1].id;
+    stepCombatantWeapons(sim, player, { ...idleAction(), attackSecondary: true }, sim.settings, 0, []);
+  });
   const flight = combat?.attack === 'lunge' ? attachLungeRuntime(f) : undefined;
   if (flight && combat?.attack === 'lunge') withSimulationRandom(seededRandom(811), 0, () => {
     target.aiState = 'LUNGING'; target.aiTimer = 0;
@@ -105,7 +127,7 @@ export function runRoundFrameTrace(spec: RoundFrameCase, snapshotAt?: number, co
   const record = parityRecorder(), random = seededRandom(811), frames = [];
   const ballMeshRef = { current: null }, ballChargingRef = { current: false }, ballChargeTimerRef = { current: 0 };
   let restored: SimState | undefined, resets = 0, notifications = 0, combatKills = 0, combatDeaths = 0;
-  const objectiveScores = (scores: typeof sim.scores) => combat
+  const objectiveScores = (scores: typeof sim.scores) => combat || playerFlight
     ? Object.fromEntries(Object.entries(scores).map(([team, tally]) => [team, { goals: tally.goals }]))
     : structuredClone(scores);
   const motion = { walk: [{ tick: 1, direction: { x: direction, z: 0 } }] };
@@ -115,7 +137,10 @@ export function runRoundFrameTrace(spec: RoundFrameCase, snapshotAt?: number, co
       ? { ...idleAction(), aim, moveZ: 1 } : groundMotionAction(runner, motion, tick, aim, sim.settings) } : {};
     if (combat && combat.attack !== 'lunge' && tick === 1) actions[injured.id] = { ...idleAction(), aim: injured.yaw,
       attackPrimary: combat.attack !== 'swipe', attackSecondary: combat.attack === 'swipe' };
+    if (playerFlight && !spec.winner && tick === 45) actions.player = { ...idleAction(), aim: player.yaw, swapWeapon: true };
     withSimulationRandom(random, tick / 60, () => {
+      if (playerFlight && !spec.winner && tick === 45) swapPlayerWeaponForState({ state, refs, type: 'sword',
+        isPaused: false, isPlaying: true, recordWeaponSwap: noop, pushStatsUpdate: noop });
       const liveMoving = state.grifball.phase === 'playing';
       if (spec.player && liveMoving) state.yaw = aim + Math.PI;
       advanceGrifballFrameForState({ state, refs, ballMeshRef, ballChargingRef, ballChargeTimerRef, dt: 1 / 60,
@@ -125,6 +150,16 @@ export function runRoundFrameTrace(spec: RoundFrameCase, snapshotAt?: number, co
         spawnVoxelShockwaveParticles: noop, rebuildHostModel: noop,
         updatePhysics: dt => {
           if (!updatePlayerRespawnForState({ state, dt, isMultiplayer: false, getMainAi: () => undefined, activeCustomMap: map, spawnPoints: [], playRespawn: noop })) {
+            if (playerFlight && state.isLunging) {
+              updatePlayerSwordLungeForState({ state, dt, isMultiplayer: false, activeCustomMap: map, multiplayerSocket: null,
+                getMainAi: () => state.otherPlayers.get('main_ai'), areCombatantsHostile: (a, b) => areGrifballCombatantsHostileForState(state, a, b),
+                constrainCombatantToArena: (pos, vel) => constrainCombatantToArenaBounds({ pos, vel, activeCustomMap: map, arenaRadius: map.arenaRadius }),
+                renderSwordLungeTrailVfx: noop, recordPlayerLungeEnd: hit => playerEnds.push(hit), recordPlayerCounterSuccess: noop,
+                recordPlayerDamageDealt: noop, applyOutgoingMultiplayerHitLocally: noop, recordBotCalibrationDeath: noop,
+                evaluatePlayerKillMedals: () => [], executeTrade: () => { throw new Error('Unexpected trade in unarmed victim fixture'); },
+                playExplosion: noop, playDeath: noop, playSwing: noop, spawnVoxelShockwaveParticles: noop, pushStatsUpdate: noop });
+              return;
+            }
             updatePlayerHorizontalMovementForState({ state, refs, dt, keysPressed: {}, movementKeybindings: DEFAULT_KEYBINDINGS,
               actionKeybindings: DEFAULT_KEYBINDINGS, gamepad: null, mobileJoystick: { x: 0, y: spec.player && liveMoving ? 1 : 0 },
               mobileControlsActive: true, sprintToggleActiveRef: { current: false }, prevSprintInputRef: { current: false } });
@@ -176,7 +211,7 @@ export function runRoundFrameTrace(spec: RoundFrameCase, snapshotAt?: number, co
     });
     const simActors = sim.combatants.map(c => ({ id: c.id, hp: c.hp, maxHp: c.maxHp, respawn: c.respawnTimer, shield: c.invulnerabilityTimer,
       weapon: c.weapon, pos: Object.values(c.pos), vel: Object.values(c.vel), heading: [Math.sin(c.yaw + Math.PI), Math.cos(c.yaw + Math.PI)] }));
-    combatKills += events.kills.filter(e => e.attackerId === injured.id).length;
+    combatKills += events.kills.filter(e => e.attackerId === (playerFlight ? player.id : injured.id)).length;
     combatDeaths += events.kills.filter(e => e.victimId === victim?.[1].id).length;
     const combatLive = combat ? { phase: target.weaponState === 'ready' ? 'idle'
       : ['swing_up', 'melee_up'].includes(target.weaponState!) ? 'windup'
@@ -192,8 +227,17 @@ export function runRoundFrameTrace(spec: RoundFrameCase, snapshotAt?: number, co
         finishReload: injured.lungeOutcome && !frames.at(-1)?.headless.combat?.outcome ? injured.attackCooldown : null } : {}) } : undefined;
     // Live ordinary bots own kill/death credit on their roster entries; teamScores holds objective goals.
     // The simulation additionally aggregates combat totals. Compare roster credit/events above and goals here.
-    const live = { combat: combatLive, match: structuredClone(state.grifball), scores: objectiveScores(state.teamScores), actors: liveActors };
-    const headless = { combat: combatHeadless, match: structuredClone(sim.match), scores: objectiveScores(sim.scores), actors: simActors };
+    const playerLive = playerFlight ? { active: state.isLunging, phase: playerUsesSword() ? state.pSwordState === 'ready' ? 'idle' : state.pSwordState : state.pWeaponState === 'ready' ? 'idle' : state.pWeaponState,
+      swordPhase: state.pSwordState === 'ready' ? 'idle' : state.pSwordState, swordElapsed: state.pSwordTimer,
+      time: state.lungeTimer, origin: state.lungeStartPos.toArray(), direction: state.lungeTargetDir.toArray(),
+      ends: playerEnds.length, hit: playerEnds.at(-1) ?? null, kills: state.playerKills, deaths: victim![0].deaths ?? 0 } : undefined;
+    const playerHeadless = playerFlight ? { active: player.isLunging, phase: player.weaponState,
+      swordPhase: player.playerSwordLungeRecovery ? player.playerSwordLungeRecovery.elapsed < player.playerSwordLungeRecovery.duration ? 'recovering' : 'idle' : player.weaponState,
+      swordElapsed: player.playerSwordLungeRecovery?.elapsed ?? player.weaponPhaseElapsed ?? 0,
+      time: player.lungeTimer, origin: Object.values(player.lungeStartPos!), direction: Object.values(player.lungeDir),
+      ends: player.lungeOutcome ? 1 : 0, hit: player.lungeOutcome ? player.lungeOutcome === 'hit' : null, kills: combatKills, deaths: combatDeaths } : undefined;
+    const live = { playerFlight: playerLive, combat: combatLive, match: structuredClone(state.grifball), scores: objectiveScores(state.teamScores), actors: liveActors };
+    const headless = { playerFlight: playerHeadless, combat: combatHeadless, match: structuredClone(sim.match), scores: objectiveScores(sim.scores), actors: simActors };
     const compare = (path: string, a: any, b: any) => {
       if (a && typeof a === 'object') for (const key of Object.keys(a)) compare(`${path}.${key}`, a[key], b?.[key]);
       else record.compare(tick, path, a, b, typeof a === 'number' ? 1e-6 : 0);
@@ -258,6 +302,6 @@ export function runRoundFrameTrace(spec: RoundFrameCase, snapshotAt?: number, co
   record.compare(120, 'expected.notifications', notifications, 1);
   record.compare(120, 'expected.resetEvents', frames.filter(f => f.events.roundReset).length, spec.winner ? 0 : 1);
   record.compare(120, 'expected.matchEndEvents', frames.filter(f => f.events.matchEnded).length, spec.winner ? 1 : 0);
-  return { name: `${spec.map.id}/${spec.player}/${spec.mirror}/${spec.reverse}/${spec.winner}${combat ? `/${combat.attack}/${combat.impactTick}/${combat.hp}${combat.attack === 'lunge' ? `/${combat.pause}` : ''}` : ''}`, ticks: 120, ...record.result(), frames };
+  return { name: `${spec.map.id}/${spec.player}/${spec.mirror}/${spec.reverse}/${spec.winner}${combat ? `/${combat.attack}/${combat.impactTick}/${combat.hp}${combat.attack === 'lunge' ? `/${combat.pause}` : ''}` : ''}${playerFlight ? `/player-flight/${playerFlight.impactTick}/${playerFlight.hp}/${playerFlight.mainTarget}` : ''}`, ticks: 120, ...record.result(), frames };
 }
 export const runRoundFrameParity = () => ROUND_FRAME_CASES.map(c => runRoundFrameTrace(c));

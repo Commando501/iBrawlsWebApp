@@ -92,7 +92,7 @@ export function stepSimulation(
       if (player.isLunging) resolveMixedPlayerLunge(state, player, settings, dt, kills);
     }
     if (player.alive) stepCombatantWeapons(state, player, act(player.id), settings, dt, kills);
-    else { player.weaponState = 'idle'; player.weaponTimer = player.weaponPhaseElapsed = 0; player.isLunging = false; }
+    else { delete player.playerSwordLungeRecovery; player.weaponState = 'idle'; player.weaponTimer = player.weaponPhaseElapsed = 0; player.isLunging = false; }
   }
   // The live roster revives actors before their AI tick. Newly killed actors wait
   // until the next frame, and each flight resolves before the next actor's shield tick.

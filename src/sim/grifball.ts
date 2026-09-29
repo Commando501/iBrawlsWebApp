@@ -73,6 +73,8 @@ export function setSimCarrier(
 ): void {
   const mixed = state?.combatExecution === 'live-mixed-v1';
   const baseMaxHp = settings.maxHP ?? 1;
+  // The live hammer has its own clock; switching away does not spend the sword recovery.
+  if (!carrying && mixed && isMixedPlayer(state, c) && c.weapon === 'sword' && c.playerSwordLungeRecovery) c.weaponPhaseElapsed = 0;
   if (carrying) {
     c.weapon = 'ball';
     c.maxHp = resolveRunnerMaxHp(settings);

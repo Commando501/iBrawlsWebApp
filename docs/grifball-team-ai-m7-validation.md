@@ -1023,3 +1023,27 @@ Verification:
 - Full repository tests and frozen browser CLI runs were not repeated. The previous five V3 repository failures remain unresolved, without waivers or a claim of M7 acceptance.
 
 Next work is local-player flight handling across round transitions, followed by the remaining decision and acceptance gates. Human testing stays deferred until the automated acceptance requirements are complete.
+
+## 2026-09-29 — local-player flight and hidden sword recovery across reset
+
+Committed the roster-flight slice as `a4b9250` (`Validate roster lunges across round transitions`). Continued with **480 traces / 57,600 frames** and **80 JSON snapshot continuations** for local-player lunges across scoring, reset and continued match-end frames. The new slice remains uncommitted; human testing stays deferred.
+
+The five goal-capable supplied maps run a separate ordinary-roster scorer alongside a committed local-player flight. Both team mirrors, actor orders, ordinary/main-AI victims and one/three-HP cases cover contact on tick three, 16 or 17. Production local flight/contact, player weapon animation, roster respawn, objectives and reset placement execute through the live frame coordinator, independently compared with mixed `stepSimulation`. Victims do not counterattack. On nonwinning rounds the player explicitly switches from the reset-equipped hammer back to sword on tick 45, with swap lockout/ready time set to zero to isolate recovery. Winning cases continue frames without an outer UI shutdown.
+
+The first run passed **180/560** tests and failed **380** (`output/m7-round-player-flight-before.log`). One harness assertion compared normalized direction JSON exactly instead of using numeric tolerance. The behavioral mismatch was separate: reset switches the player to hammer, but the live sword recovery survives and stops advancing while hidden. Mixed simulation discarded that state; when a flight finished after reset, it also put the hammer into sword recovery. Added the serialized `playerSwordLungeRecovery` record, preserving elapsed time and the duration captured at flight completion. A hidden flight finish leaves the hammer ready; equipping the sword resumes its saved recovery on that same frame. Death/revival and fresh sword actions clear stale saved recovery. Existing legacy execution remains unchanged. This is specific sword-lunge recovery support, not certification of a general bank of independent weapon animation states.
+
+Independent expectations verify finish/contact ticks, exactly one end notification, health and kill/death credit, preserved original flight origin/direction, and same-frame roster death-timer advancement after a local-player kill. Tick-16 contacts precede reset placement; tick-17 attempts miss after teleportation. Sword recovery freezes while hammer is equipped. It finishes on tick 54, 67 or 68 after swap-back, depending on contact timing; uninterrupted winning traces become ready 23 frames after contact. Eighty snapshots cross ticks 15, 16, 44 and 45. Two API regressions cover stale recovery cleanup on player death/revival and a new slash. Existing scorer, phase, placement, countdown and scheduled-revival checks remain active.
+
+Protocol `live-functions-vs-headless-step-v25` stores `roundPlayerFlightTraces`, with zero differences. Combined evidence totals **6,027 traces / 980,748 frames**. Autonomous decisions/target selection, main-AI attacker and opposing/trading/airborne transition variants, general multi-weapon animation banking, observer lifecycle, full matches, calibrated performance, held-out quality and final repository acceptance remain open. Execution parity remains **inconclusive**; optional neural integration stays unpromoted.
+
+Verification:
+
+- **7,070/7,070** validation-suite tests passed, including all prior groups, new player-flight/snapshot tests, cleanup regressions and gate assertions (`output/m7-round-player-flight-validation.log`).
+- Focused player-flight checks passed **560/560** (`output/m7-round-player-flight-focused.log`) before adding exact ready-tick/frozen-clock assertions and the two API regressions; those are included in the full run and saved evidence.
+- TypeScript initially flagged control-flow narrowing across a fixture callback; a getter resolved the typing without changing behavior. Final TypeScript passed with the 8 GB heap allowance (`output/m7-round-player-flight-final-typecheck.log`). The final getter is also exercised by the regenerated paired evidence.
+- Production client build passed (`output/m7-round-player-flight-build.log`), with the existing large-chunk warning.
+- Saved and re-parsed evidence: `output/m7-round-player-flight-evidence.json`; summary: `output/m7-round-player-flight-summary.json`. Source identity: commit `a4b9250add55db191ff251f17fd1f67f447441cc`, working-tree hash `5d2cdd0343c39d04ac1068d348a65a21c16aa7d6e5caad47a31d1b3a03097424`.
+- Scoped `git diff --check` passed. README, both explicit test commands and gate assertions include the family; attached implementation plans remain unchanged.
+- Full repository tests and frozen browser CLI runs were not repeated. The previous five V3 repository failures remain unresolved, without waivers or a claim of M7 acceptance.
+
+Next work is AI decision-to-execution integration. Remaining transition variants stay tracked as coverage gaps; this slice does not certify complete matches. Human testing remains deferred until the automated acceptance requirements are complete.

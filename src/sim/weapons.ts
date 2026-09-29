@@ -102,6 +102,7 @@ function strike(
   victim.alive = false;
   victim.respawnTimer = RESPAWN_TIME;
   if (usesRosterLifecycle(state)) {
+    delete victim.playerSwordLungeRecovery;
     victim.isLunging = false; victim.weaponState = 'idle'; victim.weaponTimer = 0;
     victim.weaponPhaseElapsed = 0; victim.attackKind = 'none'; victim.attackCooldown = 0;
   }
@@ -296,6 +297,7 @@ function stepLiveAttack(state: SimState, c: SimCombatant, action: ActionInput,
     const kind = action.attackSecondary && c.weapon === 'hammer' ? 'swipe'
       : action.attackPrimary ? (c.weapon === 'sword' ? 'slash' : c.weapon === 'ball' ? 'punch' : 'strike') : null;
     if (!kind) return;
+    if (isMixedPlayer(state, c) && kind === 'slash') delete c.playerSwordLungeRecovery;
     c.attackKind = kind; c.lastAttackTick = state.tick;
     if (usesRosterLifecycle(state)) {
       const now = state.combatTimeMs ?? state.tick * 1000 / 60;
@@ -439,8 +441,13 @@ function resolveRosterLunge(state: SimState, c: SimCombatant, settings: Universa
 export function resolveMixedPlayerLunge(state: SimState, c: SimCombatant, settings: UniversalSettings, dt: number, events: KillEvent[]): void {
   c.lungeTimer += dt;
   const finish = (outcome: NonNullable<SimCombatant['lungeOutcome']>) => {
-    c.isLunging = false; c.lungeOutcome = outcome; c.weaponState = 'recovering'; c.attackKind = 'none';
-    c.weaponPhaseElapsed = 0; c.weaponTimer = c.attackCooldown = settings.swordLungeReload ?? 1.2;
+    c.isLunging = false; c.lungeOutcome = outcome;
+    c.playerSwordLungeRecovery = { elapsed: 0, duration: settings.swordLungeReload ?? 1.2 };
+    // A reset may already have equipped the hammer. Finish the hidden sword without blocking the hammer.
+    if (c.weapon === 'sword') {
+      c.weaponState = 'recovering'; c.attackKind = 'none';
+      c.weaponPhaseElapsed = 0; c.weaponTimer = c.attackCooldown = c.playerSwordLungeRecovery.duration;
+    }
   };
   const centerY = (v: SimCombatant) => v.pos.y + (v.isCrouching ? CROUCH_BODY_CENTER_HEIGHT : BODY_CENTER_HEIGHT);
   let target: SimCombatant | undefined, distance = Infinity;
@@ -475,6 +482,16 @@ export function resolveMixedPlayerLunge(state: SimState, c: SimCombatant, settin
     arenaRadius: state.map.arenaRadius, inset: .6 })) finish('miss_arena');
 }
 
+/** Local sword animation only advances while equipped; retain elapsed time after it becomes ready. */
+function advancePlayerLungeRecovery(c: SimCombatant, settings: UniversalSettings, dt: number): void {
+  const recovery = c.playerSwordLungeRecovery ??= { elapsed: c.weaponPhaseElapsed ?? 0, duration: settings.swordLungeReload ?? 1.2 };
+  recovery.elapsed += dt;
+  c.weaponPhaseElapsed = recovery.elapsed;
+  c.weaponTimer = Math.max(0, recovery.duration - recovery.elapsed);
+  c.attackCooldown = c.weaponTimer;
+  c.weaponState = c.weaponTimer === 0 ? 'idle' : 'recovering';
+}
+
 /**
  * Advance one combatant's weapon FSM by `dt` and resolve any hits this tick.
  * Movement (including the lunge flight integration) is owned by physics; this only
@@ -494,10 +511,7 @@ export function stepCombatantWeapons(
   if (isMixedPlayer(state, c)) {
     if (c.isLunging) return;
     if (c.weaponState === 'recovering' && c.attackKind === 'none') {
-      c.weaponPhaseElapsed = (c.weaponPhaseElapsed ?? 0) + dt;
-      c.weaponTimer = Math.max(0, (settings.swordLungeReload ?? 1.2) - c.weaponPhaseElapsed);
-      c.attackCooldown = c.weaponTimer;
-      if (c.weaponTimer === 0) c.weaponState = 'idle';
+      advancePlayerLungeRecovery(c, settings, dt);
       return;
     }
   }
@@ -514,6 +528,15 @@ export function stepCombatantWeapons(
       c.weapon = c.weapon === 'hammer' ? 'sword' : 'hammer';
       c.swapLockoutTimer = settings.weaponSwapLockout ?? 1.0;
       c.weaponReadyTimer = settings.weaponReadyTime ?? 0.5;
+      if (isMixedPlayer(state, c) && c.weapon === 'sword' && c.playerSwordLungeRecovery) {
+        const recovery = c.playerSwordLungeRecovery;
+        c.weaponPhaseElapsed = recovery.elapsed;
+        if (recovery.elapsed < recovery.duration) {
+          c.attackKind = 'none';
+          advancePlayerLungeRecovery(c, settings, dt);
+          return;
+        }
+      }
     }
   }
 
@@ -612,6 +635,7 @@ function startLunge(c: SimCombatant, settings: UniversalSettings, state?: SimSta
     const aim = c.lungeAimDirection ?? { x: target.pos.x - c.pos.x, y: 0, z: target.pos.z - c.pos.z };
     const length = Math.hypot(aim.x, aim.z);
     if (!Number.isFinite(length) || length === 0) throw new Error('Player lunge heading must be finite and nonzero');
+    delete c.playerSwordLungeRecovery;
     c.isLunging = true; c.lungeTimer = 0; c.lungeStartPos = { ...c.pos }; delete c.lungeOutcome;
     c.lungeDir = { x: aim.x / length, y: 0, z: aim.z / length }; delete c.lungeAimDirection;
     c.lastSwordAttackTimeMs = state.combatTimeMs ?? state.tick * 1000 / 60;
@@ -627,6 +651,7 @@ function startLunge(c: SimCombatant, settings: UniversalSettings, state?: SimSta
       throw new Error('live-roster-v2 lungeAimDirection must be finite and nonzero');
     const direction = { x: aim.x / length, y: aim.y / length, z: aim.z / length };
     c.lastSwordAttackTimeMs = state.combatTimeMs ?? state.tick * 1000 / 60;
+    delete c.playerSwordLungeRecovery;
     c.isLunging = true; c.lungeTimer = 0; c.lungeStartPos = { ...c.pos }; delete c.lungeOutcome;
     c.attackKind = 'none'; c.weaponState = 'idle'; c.weaponTimer = 0; c.weaponPhaseElapsed = 0;
     c.lungeDir = direction; delete c.lungeAimDirection;
@@ -690,6 +715,7 @@ export function respawnCombatant(state: SimState, c: SimCombatant, settings: Uni
   if (!rosterV2) c.weapon = 'hammer';
   c.weaponState = 'idle';
   c.weaponTimer = 0;
+  delete c.playerSwordLungeRecovery;
   delete c.weaponPhaseElapsed;
   c.attackKind = 'none';
   c.weaponReadyTimer = rosterV2 ? 0 : settings.weaponReadyTime ?? 0.5;

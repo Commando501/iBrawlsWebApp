@@ -80,6 +80,8 @@ export interface SimCombatant {
   weaponTimer: number;
   /** Elapsed phase time for opt-in live execution profiles; absent in legacy snapshots. */
   weaponPhaseElapsed?: number;
+  /** Mixed local sword-lunge recovery survives forced hammer equip; hidden sword time does not advance. */
+  playerSwordLungeRecovery?: { elapsed: number; duration: number };
   /** Seconds remaining before a weapon swap is permitted again. */
   swapLockoutTimer: number;
   /** Seconds remaining before this combatant can attack again (cooldown). */
