@@ -1284,3 +1284,25 @@ Verification:
 - Full repository tests and frozen browser CLI runs were not repeated. The five previously reported V3 repository failures remain unresolved, without waivers or a claim of M7 acceptance.
 
 Next work is supplied-map mobility coverage. Human testing remains deferred until the remaining automated requirements are complete.
+
+
+## 2026-09-29 — supplied-map terrain mobility
+
+Committed the autonomous flight/landing slice as `576f1cf` (`Validate autonomous AI flights and fix landing and dodge physics`). Added **92 live terrain traces / 16,560 frames**, with **95 focused tests** including two exact-repeat checks and a coverage check. This slice remains uncommitted; human testing stays deferred.
+
+All eight supplied maps pass through the production `toGrifballArena` conversion and are cloned without flattening or removing obstacles. Every map has a floor-flight and an outward arena-boundary flight. Seven explicit elevated surfaces cover box and cylinder landings: Cyber Hex Grid's northwest pillar, Jungle Ruined Outpost's central totem, Vanguard Asteroid Mine's first asteroid, Forerunner Canyon's west barrier, Synthwave Grid's north-center pillar, Rainy Industrial Streets' northwest crate and Winter Glacier Rink's north glass board. Championship Stadium has no collidable platform. Both recovery and engagement gravity owners run for main and ordinary AI identities.
+
+Each trace authors only its initial airborne state and advances 180 production gravity/collision updates. The production arena collision callback is important: it owns grounded flags and jump-budget replenishment on raised surfaces, beyond the floor-level reset checked in the previous slice. An independent ballistic/contact oracle requires the expected height and velocity, an eventual landing, at least 60 updates of stable grounded observation, correct jump eligibility, finite positions and containment within rectangular or radial arena boundaries. Outward boundary flights must reach the wall before landing and lose their outward velocity. Elevated landings retain their horizontal location. Airborne sentinel actors require that neither the other bot's nor the local player's flags/budget be reset accidentally. Supplied maps must remain unchanged. No production gameplay change was needed.
+
+Protocol `live-functions-vs-headless-step-v35` records these as `mapMobilityTraces`, separately from autonomous decision families and **6,027 paired traces / 980,748 frames**. A terrain failure fails execution acceptance; all passing still leaves the gate **inconclusive**. These are authored flight continuations, not autonomous jump choices or headless terrain comparisons. Sphere-platform landing, stepping off platforms, ceiling/runaway recovery, autonomous routing/combat on supplied maps, calibrated performance, held-out quality and final repository acceptance remain open. Optional neural integration stays unpromoted.
+
+Verification:
+
+- Focused map mobility tests passed **95/95** (`output/m7-map-mobility-focused.log`).
+- Full validation suite passed **7,470/7,470** tests, including the aggregate execution gate (`output/m7-map-mobility-validation.log`).
+- TypeScript passed with the 8 GB heap allowance (`output/m7-map-mobility-typecheck.log`); scoped `git diff --check` passed.
+- Saved and re-parsed `output/m7-map-mobility-evidence.json`; summary: `output/m7-map-mobility-summary.json`. All 92 traces / 16,560 frames have zero failures. Source identity: commit `576f1cf5e89ea183c8c275afef32877bbd0a985a`, working-tree hash `dc0ada397ab58fcd24ae0b16ac0c765dee4362ef21ec7e80ca4d2f5ed6a8581c`.
+- README, both explicit test commands and aggregate gate assertions include this family. Attached implementation plans remain unchanged.
+- Production gameplay and browser UI code did not change; no new browser playtest or production build was required for these Node validation fixtures. Full repository tests and frozen browser CLI runs were not repeated. The five previously reported V3 repository failures remain unresolved, without waivers or a claim of M7 acceptance.
+
+Next work is autonomous retrieval/routing on the supplied goal-capable maps, retaining actual obstacles and team spawn layouts. Human testing remains deferred until the remaining automated requirements are complete.
