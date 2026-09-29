@@ -974,3 +974,26 @@ Verification:
 - Full repository tests and frozen browser CLI runs were not repeated. The previous five V3 repository failures remain unresolved, without waivers or a claim of M7 acceptance.
 
 Next work is combat across round transitions and the remaining decision/acceptance gates. Human testing stays deferred until the automated acceptance requirements are complete.
+
+## 2026-09-29 — committed melee across scoring and round transitions
+
+Committed the map/round lifecycle slice as `4aaedb6` (`Validate map and round lifecycle execution`). Continued with pending melee and recovery across the scored hold, reset/countdown and continued match-end frames. This slice remains uncommitted; human testing remains deferred.
+
+Added **720 traces / 86,400 frames** and **120 JSON snapshot continuations**. Each trace uses the real frame coordinator with the existing ordinary-roster scorer, idle local player, injured opponent and independently downed teammate, plus a separate melee victim. On all five goal-capable supplied maps, the opponent commits a sword slash, hammer slam or swipe on tick one. Authored timings land the impact on tick five (after scoring), tick 16 (reset/match end), or tick 17. Both team mirrors, roster orders, one/three-HP victims and winner/nonwinner outcomes are included. No new attacks are authored during inactive phases.
+
+Independent expectations verify no early damage, exactly one hit or a reset-induced miss, lethal/nonlethal health, attacker kill and victim death credit, a three-second death timer that continues through reset, weapon phase preservation and exact ready ticks. Previous scoring, placement, countdown, spawn-heading and scheduled-revival assertions remain active. Snapshots after ticks 15, 16, 22 and 39 continue through the transition and recovery. Early attacks land during the scored hold; later attacks miss after reset moves the duelists to opposing spawns. A continued frame at match end retains positions, so its pending hit can still resolve. This records current frame behavior, not an endorsement of post-match combat or a test of outer UI teardown.
+
+The first run passed 360/840 tests and exposed harness assumptions, not a demonstrated new gameplay defect: the slam reload setting needed the actual `hammerReloadTime` field, and raw live team combat tallies are not equivalent to simulation aggregates for ordinary roster actors. The live path stores ordinary-bot kill/death credit on roster entries; the simulator also aggregates team combat totals. The new comparison therefore checks live actor credit against simulation kill events and compares objective goals separately. Existing noncombat round traces retain their full team-tally comparison. Team combat tally aggregation is not certified by this family. Initial evidence is retained at `output/m7-round-combat-before.log`; no production gameplay or simulator behavior changed in this slice.
+
+Protocol `live-functions-vs-headless-step-v23` stores `roundCombatTraces`, with zero differences. Combined evidence totals **5,067 traces / 865,548 frames**. Flights across resets, local/main-AI attack paths across these transitions, autonomous decisions, observer/elevated-spawn lifecycle, complete matches, calibrated performance, held-out quality and final repository acceptance remain open. Execution parity stays **inconclusive**.
+
+Verification:
+
+- Validation-suite tests passed **5,940/5,940**, including all prior trace groups, the 840 new family/snapshot tests and the updated acceptance-gate assertions (`output/m7-round-combat-validation.log`).
+- Focused round-combat and prior round-frame checks passed **972/972** (`output/m7-round-combat-focused.log`), before adding the two per-trace death-timer assertions; those are included in the final validation run and saved evidence.
+- TypeScript passed with the 8 GB heap allowance (`output/m7-round-combat-typecheck.log`).
+- Saved and re-parsed evidence: `output/m7-round-combat-evidence.json`; summary: `output/m7-round-combat-summary.json`. Source identity: commit `4aaedb6134d43967fc6b660dea554aac79408d0c`, working-tree hash `baaceb7dd35b197e4d28c59a54ed4d0c630161649a2e9332407fa09bd756e44d`.
+- Scoped `git diff --check` passed. README, both explicit test command lists and gate assertions include the new family. Attached implementation plans remain unchanged.
+- Production build, full repository tests and frozen browser CLI runs were not repeated for this validation-harness-only change. The previous five V3 repository failures remain unresolved, without waivers or a claim of M7 acceptance.
+
+Next work is committed flight/lunge handling across round transitions, followed by the remaining decision and acceptance gates. Human testing stays deferred until the automated acceptance requirements are complete.
