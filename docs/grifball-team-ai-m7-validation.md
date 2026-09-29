@@ -855,3 +855,26 @@ Verification:
 - Full repository and frozen browser CLI runs were not repeated. The previous five V3 repository failures remain unresolved, without waivers or a claim of M7 acceptance.
 
 Next work is combat during charging and the remaining carrier/objective transitions, followed by broader execution and acceptance closure. Human testing stays deferred until the automated acceptance requirements are complete.
+
+
+## 2026-09-29 — combat during charge and recovery after revival
+
+Committed the prior pass-input slice as `7189398` (`Validate pointer pass input and moving release timing`). Continued with charged-player combat and revival/recovery coverage. This new slice remains uncommitted; human review remains deferred.
+
+Added **208 traces** plus eight JSON snapshot checks, extending the existing actual-frame coordinator fixture. A player begins with an authored pre-existing charge, then receives a roster slash or committed lunge while standing or strafing. Cases cover one/two HP, mirrored teams and reversed actor order, protected/unprotected targets, release immediately before contact, release after surviving contact, or continued holding through death. Traces run 240 ticks through player revival. Sixteen additional recovery cases return the player to an authored origin spawn, recover the loose ball after revival, and either keep holding the old input or release/repress to start a fresh pass.
+
+The first run passed **148/196** (`output/m7-charge-combat-before.log`). The 48 shielded-lunge failures were fixture defects: its target proxy omitted the live player shield, and its live lunge retained the helper's original start position after actors were repositioned. The fixture now supplies the current shield and calls the production lunge commitment function after setup. These fixes also strengthen the earlier frame/objective fixture. After correction, the expanded **212/212** focused checks passed (`output/m7-charge-combat-focused.log`); the final suite adds four recovery-input snapshots and further independent assertions. No production gameplay changes were needed.
+
+Independent checks pin contact health, survival of a ball released before a lethal hit, release counts, charge cancellation on death, health after revival, exact recovery/pointer-repress checkpoints, and absence of automatic recharging on pickup. Snapshots cross the first hit, the pre-revival boundary and fresh input around recovery. The live and headless states advance independently after initialization; no state copying is used between frames.
+
+Protocol `live-functions-vs-headless-step-v18` stores `chargeCombatTraces`: **208 traces / 49,920 frames**, zero differences. Combined evidence totals **2,923 traces / 608,268 frames**. This covers a single authored attacker and player runner, not multi-attacker carrier crowds, autonomous pass/attack decisions, other devices, complete map/round execution or full matches. Calibrated performance, held-out quality and final repository acceptance remain open, so execution parity stays **inconclusive**.
+
+Verification:
+
+- **3,516/3,516** validation-suite tests passed, including all prior trace groups and acceptance-gate assertions (`output/m7-charge-combat-validation.log`).
+- TypeScript passed with the validation runner's 8 GB heap allowance (`output/m7-charge-combat-typecheck.log`).
+- Saved and re-parsed evidence: `output/m7-charge-combat-evidence.json`; summary: `output/m7-charge-combat-summary.json`. Source identity: commit `7189398f46e4ad4587dcc3234438bdf787f90a0f`, working-tree hash `25f77a07ea2e623a43287a3e61ac1eef41e935b81d2d51a81fa87d0b3a410238`.
+- Scoped `git diff --check` passed; attached implementation plans remain unchanged.
+- Production builds, full repository tests and frozen browser CLI runs were not repeated for this validation-only change. The previous five V3 repository failures remain unresolved, without waivers or a claim of M7 acceptance.
+
+Next work is multi-actor carrier execution and the remaining broader map/decision integration. Human testing stays deferred until the automated acceptance requirements are complete.
