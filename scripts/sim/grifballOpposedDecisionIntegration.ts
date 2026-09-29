@@ -27,7 +27,7 @@ import { applyBotMeleeImpactForState } from '../../src/components/grifball/botMe
 
 export interface OpposedDecisionCase {
   mode: 'punch-first' | 'hammer-first' | 'contested';
-  team: 'blue' | 'red'; reverse: boolean; main: boolean;
+  team: 'blue' | 'red'; reverse: boolean; main: boolean; seed?: number;
 }
 export const OPPOSED_DECISION_CASES: OpposedDecisionCase[] =
   (['punch-first', 'hammer-first', 'contested'] as const).flatMap(mode =>
@@ -38,10 +38,11 @@ export const OPPOSED_DECISION_CASES: OpposedDecisionCase[] =
  * Initial positions, wounded possession and timing settings are authored; no
  * actions, assignments, movement, subsequent damage or ownership are injected.
  */
-export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation: 'opening' | 'revival' | 'match' = 'opening') {
-  const match = continuation === 'match', revival = continuation !== 'opening';
+export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation: 'opening' | 'revival' | 'match' | 'mobility' = 'opening') {
+  const match = continuation === 'match', mobility = continuation === 'mobility', revival = continuation !== 'opening';
   const state = createInitialGrifballRuntimeState({ debugMode: false,
     adminSettings: { ...DEFAULT_ADMIN_SETTINGS, gameMode: 'grifball', aiDifficulty: 'normal',
+      ...(mobility ? { maxHP: 3 } : {}),
       ...(match ? { grifballGoalTarget: 2, grifballRoundResetDelay: .19, grifballCountdownDuration: .09 } : {}),
       hammerMeleeSpeed: spec.mode === 'punch-first' ? .04 : .5,
       hammerSlamWindupTime: spec.mode === 'punch-first' ? .5 : .08,
@@ -71,7 +72,7 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
       spawnPos: new THREE.Vector3(s.x * sign, 0, s.z * sign), yaw: -sign * Math.PI / 2,
       hue: 0, difficulty: 'normal', settings: state.settings });
     Object.assign(c, { controller: 'ai', weaponState: 'ready', weaponTimer: 0,
-      hp: 1, maxHp: 1, invulnerabilityTimer: 0, respawnTimer: 0, swapCooldownTimer: 0 });
+      hp: 1, maxHp: mobility ? 3 : 1, invulnerabilityTimer: 0, respawnTimer: 0, swapCooldownTimer: 0 });
     state.otherPlayers.set(c.id, c);
     const group = new THREE.Group(); group.userData.modelSystem = 'v2';
     refs.otherPlayerMeshes.set(c.id, { group, hammer: new THREE.Group(), sword: new THREE.Group(), rig: buildCombatantRigForModel(group) });
@@ -149,7 +150,7 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
   let notifications = 0;
   const deaths: { tick: number; id: string }[] = [];
   const revivals: { tick: number; id: string; pos: number[]; shield: number; deaths: number; kills: number }[] = [];
-  const random = seededRandom(17), dt = 1 / 60;
+  const random = seededRandom(spec.seed ?? 17), dt = 1 / 60;
   const ballMeshRef = { current: null }, ballChargingRef = { current: false }, ballChargeTimerRef = { current: 0 };
   const frames = [];
   const mainJumpImpacts: { tick: number; launched: boolean; budget: number }[] = [];
@@ -157,7 +158,7 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
   const impacts: { tick: number; id: string; victims: string[] }[] = [];
   const pickups: { tick: number; id: string; distance: number }[] = [];
   let deathTick = 0, dropTick = 0;
-  const ticks = match ? (spec.main ? 9000 : 3840) : revival ? 480 : 150;
+  const ticks = mobility ? 1800 : match ? (spec.main ? 9000 : spec.mode === 'contested' ? 10800 : 3840) : revival ? 600 : 150;
   for (tick = 1; tick <= ticks; tick++) {
     const plan = state.aiMatchContext.grifballTeamPlan, phase = state.grifball.phase;
     const updates: string[] = [];
@@ -204,6 +205,11 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
         beforeUpdate: () => {
           living = [...state.otherPlayers.values()].filter(c => c.hp > 0).map(c => c.id);
           updateGrifballTeamPlanForState(state, delta, goal, map);
+          // Verify revival at the planner boundary, before later combat can
+          // invalidate the whole plan by killing the current carrier.
+          for (const r of revivals.filter(r => r.tick === tick)) {
+            check('revived bot assigned before decisions', plan.assignments.has(r.id), state.grifball.phase === 'playing');
+          }
         }, updateSingleAIEntity: (id, delta) => { updates.push(id); update(id, delta); } }),
       updateGrifball: delta => {
         const previousBallState = ballState();
@@ -303,7 +309,6 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
     check('one decision per living actor', JSON.stringify(updates), JSON.stringify(living));
     for (const r of revivals.filter(r => r.tick === tick)) {
       const c = state.otherPlayers.get(r.id)!;
-      check('revived bot assignment matches phase', plan.assignments.has(r.id), phase === 'playing' && c.hp > 0);
       check('revived shield advances once', Math.abs(c.invulnerabilityTimer - (r.shield - dt)) < 1e-9, true);
     }
     const lastPickup = pickups.at(-1);
@@ -335,7 +340,7 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
     frames.push({ tick, phase: state.grifball.phase, round: state.grifball.roundNumber, scores: structuredClone(state.teamScores), winner: state.grifball.winningTeam, ball: structuredClone(state.grifball.ball),
       assignments: [...plan.assignments.values()].map(a => ({ id: a.botId, role: a.role, target: state.aiMatchContext.coordinator.tacticalEngagements.get(a.botId)?.targetId ?? null })),
       actors: [...state.otherPlayers.values()].map(c => ({ id: c.id, team: c.team, pos: c.pos.toArray(), vel: c.vel.toArray(),
-        hp: c.hp, maxHp: c.maxHp, kills: c.kills, deaths: c.deaths, respawnTimer: c.respawnTimer, shield: c.invulnerabilityTimer, yaw: c.yaw, weapon: c.activeWeapon, weaponState: c.weaponState, weaponTimer: c.weaponTimer, isJumping: !!c.isJumping, aiState: c.aiState, timer: c.aiTimer ?? 0 })) });
+        hp: c.hp, maxHp: c.maxHp, kills: c.kills, deaths: c.deaths, respawnTimer: c.respawnTimer, shield: c.invulnerabilityTimer, yaw: c.yaw, weapon: c.activeWeapon, weaponState: c.weaponState, weaponTimer: c.weaponTimer, isJumping: !!c.isJumping, jumpBudget: c.aiHammerJumpsInAir ?? 0, jumpPlanned: !!c.hammerJumpPlanned, aiState: c.aiState, timer: c.aiTimer ?? 0 })) });
     if (tick === 150) validateOpeningContest();
   }
   tick = ticks;
@@ -352,7 +357,7 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
     check('revived actor resumes tactical role', frames.some(f => f.tick > (first?.tick ?? ticks) &&
       f.assignments.some(a => a.id === loser.id && ['chaser', 'safety', 'lead', 'left', 'right', 'runner', 'retriever'].includes(a.role))), true);
   }
-  if (match) {
+  if (match || mobility) {
     const main = state.otherPlayers.get('main_ai');
     check('main identity final kill accounting', state.enemyKills, main?.kills ?? 0);
     check('main identity final death accounting', state.enemyDeaths, main?.deaths ?? 0);
@@ -391,7 +396,7 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
     } else {
       const recoveryId = spec.mode === 'contested' ? 'escort' : defender.id;
       check('expected recovery owner', pickups[0]?.id, recoveryId);
-      check('expected recovery timing', pickups[0]?.tick, spec.mode === 'contested' ? 70 : spec.reverse ? 57 : 113);
+      check('expected recovery timing', pickups[0]?.tick, spec.mode === 'contested' ? 70 : spec.reverse ? 53 : 107);
       check('recovered possession retained', state.grifball.ball.holderId, recoveryId);
       if (spec.mode === 'contested') {
         check('opponent contests new runner', impacts.filter(i => i.victims.includes('escort')).length, 1);
@@ -402,7 +407,7 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
     }
   }
   return { name: `${spec.mode}/${spec.team}/${spec.reverse ? 'reverse' : 'forward'}/${spec.main ? 'main' : 'ordinary'}`,
-    boundary: match ? 'live-match-decision-integration' as const : revival ? 'live-revival-decision-integration' as const : 'live-opposed-decision-integration' as const, scenario: spec, ticks,
+    boundary: mobility ? 'live-mobility-decision-integration' as const : match ? 'live-match-decision-integration' as const : revival ? 'live-revival-decision-integration' as const : 'live-opposed-decision-integration' as const, scenario: spec, ticks,
     failureCount, failures, mainJumpRequests, mainJumpImpacts, carrierDeaths, goals, resets, transitions, notifications, deaths, revivals, deathTick, dropTick, attacks, impacts, pickups, targetLookups, frames };
 }
 export const runOpposedDecisionIntegration = () => OPPOSED_DECISION_CASES.map(spec => runOpposedDecisionTrace(spec));

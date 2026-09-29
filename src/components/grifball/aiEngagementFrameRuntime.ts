@@ -49,11 +49,13 @@ export function integrateTargetEngagementGravityForCombatant({
       frame.pos.y = 0;
       frame.vel.set(0, 0, 0);
       self.isJumping = false;
+      self.aiHammerJumpsInAir = 0;
     }
   } else {
     frame.pos.y = 0;
     frame.vel.y = 0;
     self.isJumping = false;
+    self.aiHammerJumpsInAir = 0;
   }
   constrainCombatantToArena(frame.pos, frame.vel);
 }

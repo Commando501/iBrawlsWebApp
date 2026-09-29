@@ -5,7 +5,7 @@ import { REVIVAL_DECISION_CASES, runRevivalDecisionTrace } from './grifballReviv
 for (const spec of REVIVAL_DECISION_CASES) test(`revival decision ${JSON.stringify(spec)}`, () => {
   const trace = runRevivalDecisionTrace(spec);
   assert.equal(trace.failureCount, 0, JSON.stringify(trace.failures));
-  assert.equal(trace.frames.length, 480);
+  assert.equal(trace.frames.length, 600);
 });
 for (const mode of ['punch-first', 'hammer-first', 'contested'] as const) {
   for (const reverse of [false, true]) test(`revival decisions repeat: ${mode}/${reverse}`, () => {

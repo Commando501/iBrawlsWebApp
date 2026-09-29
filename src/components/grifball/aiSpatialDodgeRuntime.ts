@@ -155,7 +155,11 @@ export function resolveAIEmergencyHopDodgeForCombatant({
     self.isJumping = true;
     vel.y = 5.5;
     playJump();
+    pos.y += vel.y * dt;
   }
-  pos.addScaledVector(vel, dt);
+  // Engagement gravity already advanced existing flight this frame. Only a
+  // newly started hop contributes vertical displacement here.
+  pos.x += vel.x * dt;
+  pos.z += vel.z * dt;
   return true;
 }

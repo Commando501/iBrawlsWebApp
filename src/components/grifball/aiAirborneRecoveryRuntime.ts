@@ -29,6 +29,7 @@ export function recoverAirborneCombatantForFrame({
     pos.y = 0;
     vel.set(0, 0, 0);
     self.isJumping = false;
+    self.aiHammerJumpsInAir = 0;
   }
   const airDamping = Math.max(0, 1 - 5 * dt);
   vel.x *= airDamping;
