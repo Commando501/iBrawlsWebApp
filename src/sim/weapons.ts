@@ -680,7 +680,8 @@ export function respawnCombatant(state: SimState, c: SimCombatant, settings: Uni
   c.pos = { x: spawn.x, y: rosterV2 ? spawn.y : 0, z: spawn.z };
   c.vel = { x: 0, y: 0, z: 0 };
   c.yaw = inwardSpawnYaw(spawn);
-  if (isMixedPlayer(state, c)) c.yaw -= Math.PI;
+  // Both player and roster actors use +Z aim in the mixed execution profile.
+  if (state.combatExecution === 'live-mixed-v1') c.yaw -= Math.PI;
   c.alive = true;
   c.hp = rosterV2 ? c.maxHp : settings.maxHP ?? 1;
   if (!rosterV2) c.maxHp = settings.maxHP ?? 1;

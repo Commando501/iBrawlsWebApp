@@ -12,7 +12,7 @@ import { applyBotMeleeImpactForState } from '../../src/components/grifball/botMe
 import { createCombatantActionCallbacksForState } from '../../src/components/grifball/combatantActionCallbacks';
 import { updateAIRosterTick } from '../../src/components/grifball/aiRosterTick';
 import { seededRandom, withSimulationRandom } from '../../src/game/simulationRandom';
-import type { CharacterModelType, UniversalSettings } from '../../src/types';
+import type { CharacterModelType, CustomMapData, UniversalSettings } from '../../src/types';
 import { idleAction } from '../../src/sim/actions';
 import { stepSimulation } from '../../src/sim/step';
 import { setSimCarrier } from '../../src/sim/grifball';
@@ -22,9 +22,9 @@ import type { SimCombatExecution } from '../../src/sim/simState';
 import { groundMotionAction, stepLiveGroundMotion, type GroundMotion } from './grifballGroundMotion';
 
 const noop = () => {};
-export function createBotParityFixture(id = 'bot_2', observer = true, settings: Partial<UniversalSettings> = {}, targetId = 'target') {
+export function createBotParityFixture(id = 'bot_2', observer = true, settings: Partial<UniversalSettings> = {}, targetId = 'target', sourceMap?: CustomMapData) {
   if (id === targetId) throw new Error('Parity actors must have distinct IDs');
-  const map = structuredClone(defaultGrifballMap());
+  const map = structuredClone(sourceMap ?? defaultGrifballMap());
   const sim = createMatch({ seed: 27, teamSizes: { blue: 1, red: 1 }, settings, map });
   const state = createInitialGrifballRuntimeState({ debugMode: false, adminSettings: sim.settings, isMultiplayer: false, multiplayerRole: null });
   state.otherPlayers.clear(); state.isObserverMode = observer; state.grifball.phase = 'playing';

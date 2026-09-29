@@ -949,3 +949,28 @@ Verification:
 - Full repository tests and frozen browser CLI runs were not repeated. The previous five V3 repository failures remain unresolved, without waivers or a claim of M7 acceptance.
 
 Next work is broader map/round execution integration and the remaining decision/acceptance gates. Human testing stays deferred until the automated acceptance requirements are complete.
+
+
+## 2026-09-29 — map scoring, round reset and scheduled revival in full frames
+
+Committed the prior runner-counter slice as `ef7544b` (`Preserve runner counterpunch aim during movement`). Continued with map/round execution integration. This new slice remains uncommitted; human testing remains deferred.
+
+Added **80 traces** plus **50 JSON snapshot continuations** on the five supplied rectangular maps with actual Grifball goal plates: Forerunner Canyon, Synthwave Grid Arena, Rainy Industrial Streets, Winter Glacier Rink and Championship Stadium. The normal map conversion leaves the other three circular arenas without goal plates; they remain covered by existing spawn-boundary tests but are excluded from this scoring/reset family. The fixture accepts the real converted map and supplies player or ordinary-roster movement into the enemy plate. Both teams and actor orders run through scoring, the scored hold and either next-round placement/countdown/resumed movement or match end. An injured opponent and independently downed teammate test lifecycle preservation and scheduled revival. These are authored movement commands, not autonomous route choices.
+
+The actual frame coordinator invokes production player physics, roster respawn, carrier/assigned-area movement, objectives, skeletal updates and end-of-frame reconciliation. The headless side independently uses mixed `stepSimulation`. Independent assertions pin goal tick four, scored-hold transition tick 16, countdown completion tick 22, resumed movement tick 23, and roster revival tick 30. They verify carrier loadout release, injury preservation, no premature revival during reset, authored spawn membership and inward facing, revival health/shield timing, one score notification, one reset or match-end event and unchanged winner/round counts. Fifty snapshots cross scoring, placement, countdown and revival. Two further API checks distinguish omitted input from explicit aim on the revival tick.
+
+The initial setup exposed two fixture issues: not every supplied map has a Grifball goal, and the simulator's renamed runner needed its offline AI controller set explicitly. The first goal-capable run still failed **80/80** (`output/m7-round-frame-before.log`, before that controller correction and the simulator fixes). Heading comparisons exposed two simulator defects: roster round-reset/respawn yaw was still in the live model convention instead of the simulator aim convention, and missing input defaulted to aim zero, overwriting newly revived facing. Mixed execution now converts both player and roster spawn headings consistently and resolves omitted input at use time to preserve current facing. Explicit aim remains authoritative. Earlier objective-only fixtures now initialize and compare equivalent facing conventions. Legacy execution profiles retain their previous defaults.
+
+Protocol `live-functions-vs-headless-step-v22` stores `roundFrameTraces`: **80 traces / 9,600 frames**, zero differences. Combined evidence totals **4,347 traces / 779,148 frames**. This closes bounded movement/objective/lifecycle integration on the five goal-capable supplied maps. It does not certify combat across resets, autonomous decisions, elevated or observer lifecycle, complete multi-round matches, calibrated performance, held-out quality or final repository acceptance. Execution parity stays **inconclusive**.
+
+Verification:
+
+- **5,100/5,100** validation-suite tests passed, including previous trace groups, acceptance-gate assertions and the two new missing/explicit-input regressions (`output/m7-round-frame-validation.log`).
+- **370/370** focused round-frame and objective-boundary checks passed before adding those two input regressions (`output/m7-round-frame-focused.log`).
+- TypeScript passed with the 8 GB heap allowance (`output/m7-round-frame-typecheck.log`).
+- Production client build passed (`output/m7-round-frame-build.log`), with the existing large-chunk warning.
+- Saved and re-parsed evidence: `output/m7-round-frame-evidence.json`; summary: `output/m7-round-frame-summary.json`. Source identity: commit `ef7544b8e03a0b616fd80f74f21b67c0f8dc7d31`, working-tree hash `59f8116495bdc4876f7ab3fea86737a50f810e8e3813e3cb569aace61f52080b`.
+- Scoped `git diff --check` passed; attached implementation plans remain unchanged. README and both explicit test command lists include the new family.
+- Full repository tests and frozen browser CLI runs were not repeated. The previous five V3 repository failures remain unresolved, without waivers or a claim of M7 acceptance.
+
+Next work is combat across round transitions and the remaining decision/acceptance gates. Human testing stays deferred until the automated acceptance requirements are complete.

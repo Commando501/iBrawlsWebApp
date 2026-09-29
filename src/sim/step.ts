@@ -51,8 +51,11 @@ export function stepSimulation(
   rng.setState(state.rngState);
 
   const kills: KillEvent[] = [];
-  const act = (id: string) => actionsById[id] ?? idleAction();
   const mixed = state.combatExecution === 'live-mixed-v1';
+  // An omitted mixed-frame command is idle, preserving a reset/respawn heading.
+  // Resolve it at use time because roster revival runs after local physics.
+  const act = (id: string) => actionsById[id] ?? (mixed
+    ? { ...idleAction(), aim: state.combatants.find(c => c.id === id)!.yaw } : idleAction());
   const mixedObjectiveFrame = mixed && state.mode === 'grifball';
   const player = mixed ? state.combatants.find(c => c.id === state.localPlayerId) : undefined;
   if (mixed && (!player || state.combatants.filter(c => c.id === state.localPlayerId).length !== 1))

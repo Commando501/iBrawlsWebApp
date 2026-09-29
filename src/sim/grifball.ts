@@ -123,7 +123,8 @@ function placeMixedObjectiveActors(state: SimState, settings: UniversalSettings)
       if (clearance > best) { best = clearance; spawn = point; }
     }
     c.pos = { x: spawn.x, y: spawn.y, z: spawn.z }; c.vel = { x: 0, y: 0, z: 0 };
-    c.yaw = (spawn.yaw ?? inwardSpawnYaw(spawn)) - (isMixedPlayer(state, c) ? Math.PI : 0);
+    // Live spawn yaw points the model's -Z forward; simulation aim uses +Z.
+    c.yaw = (spawn.yaw ?? inwardSpawnYaw(spawn)) - Math.PI;
     used.push(c.pos);
     if (!isMixedPlayer(state, c)) { delete c.lastSwordAttackTimeMs; delete c.lastHammerAttackTimeMs; }
   }

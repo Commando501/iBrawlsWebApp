@@ -85,7 +85,7 @@ export function runObjectiveParityTrace(spec: ObjectiveParityCase, snapshotAt?: 
     if (c.hasBall) setGrifballCarrierForState({ state: live, id: c.id, carrying: true });
     const a = live.otherPlayers.get(c.id);
     if (a) {
-      a.controller = c.controller; a.pos.set(c.pos.x, c.pos.y, c.pos.z); a.vel.set(c.vel.x, c.vel.y, c.vel.z);
+      a.controller = c.controller; a.yaw = c.yaw + Math.PI; a.pos.set(c.pos.x, c.pos.y, c.pos.z); a.vel.set(c.vel.x, c.vel.y, c.vel.z);
       a.hp = c.hp; a.maxHp = c.maxHp; a.respawnTimer = c.respawnTimer; a.activeWeapon = c.weapon;
       a.weaponState = c.weaponState === 'idle' ? 'ready' : 'recovering'; a.weaponTimer = c.weaponPhaseElapsed ?? 0;
       a.runnerLastHp = c.runnerLastHp; a.runnerHealDelayTimer = c.runnerHealDelayTimer;
@@ -145,7 +145,7 @@ export function runObjectiveParityTrace(spec: ObjectiveParityCase, snapshotAt?: 
     });
     const headlessActors = [player, bot, rival].map(c => ({ id: c.id, hasBall: c.hasBall, hp: c.hp, maxHp: c.maxHp, respawn: c.respawnTimer,
       weapon: c.weapon, phase: c.weaponState, elapsed: c.weaponPhaseElapsed ?? 0, pos: [c.pos.x, c.pos.y, c.pos.z],
-      yaw: c.yaw + (c.id === 'player' ? Math.PI : 0), healDelay: c.runnerHealDelayTimer, lastHp: c.runnerLastHp }));
+      yaw: c.yaw + Math.PI, healDelay: c.runnerHealDelayTimer, lastHp: c.runnerLastHp }));
     const compareTree = (path: string, a: unknown, b: unknown) => {
       if (a && typeof a === 'object') for (const key of Object.keys(a)) compareTree(`${path}.${key}`,
         (a as Record<string, unknown>)[key], (b as Record<string, unknown> | undefined)?.[key]);
