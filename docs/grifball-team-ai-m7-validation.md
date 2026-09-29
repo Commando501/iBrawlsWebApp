@@ -1074,3 +1074,28 @@ Verification:
 - Full repository tests and frozen browser CLI runs were not repeated. The five previously reported V3 repository failures remain unresolved, without waivers or a claim of M7 acceptance.
 
 Next decision-integration work is autonomous pass selection through release/reception and tactical combat handoff. These bounded live checks do not substitute for independent headless decisions or final quality/performance gates. Human testing remains deferred until automated acceptance work is complete.
+
+
+## 2026-09-29 — autonomous pass selection, release and reception
+
+Committed the retrieval/routing slice as `2817f65` (`Validate autonomous Grifball retrieval and routing`). Added **48 live pass-decision traces / 17,280 frames** and three deterministic repeatability checks. This slice remains uncommitted; human testing stays deferred.
+
+The production roster tick, tactical planner, single-bot updater and objective functions run for 360 frames at 60 Hz in an open synthetic corridor. Two allied scripted bots and a stationary remote opponent cover both teams, both actor orders and main/regular carriers. Only initial possession and external configuration/ownership events are authored: the planner chooses the receiver, throw strength and reception point; the real updater moves the actors and issues pickup intent. Combat-related tuning is constrained and unexpected combat or respawn callbacks fail the fixture.
+
+Six modes cover normal charge, a shorter charge maximum, passing disabled from the start, disabling the module on the intended release frame, changing the intended receiver to remote ownership on that frame, and re-enabling the module after cancellation. Cancellation is applied after planning and movement to test release-time guards against stale intent. It retains possession, clears the charge/display and stops controlling the newly remote receiver. Re-enabling starts a fresh charge rather than resurrecting the cancelled one.
+
+Assertions check one charge increment per frame, the displayed fraction, no early release, the selected charge threshold, exact release-frame horizontal/vertical velocity and displacement, carrier weapon/health restoration, flight receiver identity, settled-ball pickup within range, pickup-intent clearing and the next-frame runner role. Normal passes release at tick 36 and reach the receiver at tick 131. With a 0.3-second charge maximum, release is tick nine and pickup tick 109. Cancellation occurs at tick 36; re-enabling at tick 66 produces a new release at tick 101 and reception at tick 208. All team/order/identity variants agree. No production gameplay change was needed.
+
+Protocol `live-functions-vs-headless-step-v27` retains `passDecisionTraces` separately from **6,027 paired traces / 980,748 frames** and **24 retrieval decision traces / 11,520 frames**. Any failed pass trace fails execution acceptance. Passing these checks leaves the gate **inconclusive**: contested pressure/interception, obstacle/respawn passing, tactical combat handoff, the outer active frame, headless autonomous decisions, full matches, calibrated performance, held-out quality and final repository acceptance remain open. Optional neural integration remains unpromoted.
+
+Verification:
+
+- Final validation suite passed **7,171/7,171** tests, including all previous trace families and the aggregate gate (`output/m7-pass-decision-validation.log`). Scoped `git diff --check` passed.
+- Focused pass checks passed **51/51** (`output/m7-pass-decision-focused.log`), including exact normal/short release and reception ticks and release-frame cancellations.
+- TypeScript initially rejected a fixture discriminant narrowed to the initial held state across callback mutations. A runtime getter resolves that without changing behavior. Final TypeScript passed with the 8 GB heap allowance (`output/m7-pass-decision-final-typecheck.log`).
+- Production client build passed (`output/m7-pass-decision-build.log`), with the existing large-chunk warning.
+- Saved and re-parsed evidence: `output/m7-pass-decision-evidence.json`; summary: `output/m7-pass-decision-summary.json`. All 48 traces have zero failures. Source identity: commit `2817f65336f72c952abf2bf0d40dd8c8bdd318b0`, working-tree hash `b84a495db6339329bbf2e1580c4b134b1b6af75b87e631101d1a675a29091ea0`.
+- README, both explicit test commands and gate assertions include the new family. Attached implementation plans remain unchanged.
+- Full repository tests and frozen browser CLI runs were not repeated. The five previously reported V3 repository failures remain unresolved, without waivers or a claim of M7 acceptance.
+
+Next work is tactical threat selection and combat handoff under pressure, including how a threatened pass returns control to carrying or combat. Human testing remains deferred until the remaining automated acceptance requirements are complete.
