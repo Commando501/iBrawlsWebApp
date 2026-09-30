@@ -12,7 +12,10 @@ export function isMapBodyClear(map: CustomMapData, p: { x: number; y: number; z:
       return Math.hypot(dx, dy, dz) >= o.scale.x / 2 + radius - epsilon;
     }
     const top = o.position.y + o.scale.y / 2, bottom = o.position.y - o.scale.y / 2;
-    if (p.y > top - .05 + epsilon || p.y + height < bottom + .05 - epsilon) return true;
+    // The vertical skin boundary is inclusive in the live collision contract.
+    // Adding epsilon here would turn a point just outside that boundary into
+    // an overlap (for example, ascending feet at 1.9500000000000002 above a 2m box).
+    if (p.y > top - .05 || p.y + height < bottom + .05) return true;
     if (o.type === 'cylinder') return Math.hypot(dx, dz) >= o.scale.x / 2 + radius - epsilon;
     if (o.type === 'box') return Math.hypot(Math.max(0, Math.abs(dx) - o.scale.x / 2),
       Math.max(0, Math.abs(dz) - o.scale.z / 2)) >= radius - epsilon;
