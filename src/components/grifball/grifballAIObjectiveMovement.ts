@@ -167,7 +167,10 @@ export function resolvePrimaryGrifballAIObjectiveMovementForCombatant({
     const escaping = assignment?.runner && assignment.runner.selected.action !== 'wait' && waypoint && routeDistance > 0.1;
     let closestEnemy: { pos: THREE.Vector3 } | null = null;
     let closestDist = Infinity;
-    const considerEnemy = (pos: THREE.Vector3) => {
+    const considerEnemy = (pos: THREE.Vector3, invulnerabilityTimer = 0) => {
+      // Match the combat controller's current-protection rule. Reconsider after
+      // expiry instead of stopping the route to commit a punch into a shield.
+      if (invulnerabilityTimer > 0) return;
       // Keep the planned escape instead of initiating a stationary duel behind it.
       // Filter before choosing the nearest threat so a pursuer cannot hide a blocker ahead.
       if (escaping && (pos.x - frame.pos.x) * (waypoint.x - frame.pos.x) +
@@ -177,11 +180,11 @@ export function resolvePrimaryGrifballAIObjectiveMovementForCombatant({
     };
 
     if (state.playerHP > 0 && state.playerRespawnTimer <= 0 && !state.isObserverMode && state.localPlayerTeam !== self.team) {
-      considerEnemy(state.playerPos);
+      considerEnemy(state.playerPos, state.playerInvulnerabilityTimer);
     }
     state.otherPlayers.forEach((other) => {
       if (other.hp > 0 && (other.respawnTimer ?? 0) <= 0 && other.team !== self.team) {
-        considerEnemy(other.pos);
+        considerEnemy(other.pos, other.invulnerabilityTimer);
       }
     });
 

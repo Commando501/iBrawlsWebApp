@@ -163,7 +163,10 @@ export function runFrameObjectiveTrace(spec: FrameObjectiveCase, snapshotAt?: nu
     for (const [c] of collectors) c.pickupRequested = true;
     state.playerPickupRequested = !!charge?.recovery && tick === 183;
     // Compute authored headless intent from its own pre-frame state, never the live frame.
-    const requestCounter = !!runnerCombat?.counter && tick === 4 && runner.alive && runner.hasBall && runner.weaponState === 'idle';
+    // The authored bot input follows current target eligibility after the frame's
+    // protection tick. Human button input remains independent of target shields.
+    const counterTargetEligible = localRunner || attacker.invulnerabilityTimer <= 1 / 60;
+    const requestCounter = !!runnerCombat?.counter && tick === 4 && runner.alive && runner.hasBall && runner.weaponState === 'idle' && counterTargetEligible;
     const runnerAim = requestCounter ? Math.atan2(attacker.pos.x - runner.pos.x, attacker.pos.z - runner.pos.z)
       : runner.weaponState === 'idle' ? aim : runner.yaw;
     // Scripted carrier intent holds through the punch strike; player input remains unrestricted.

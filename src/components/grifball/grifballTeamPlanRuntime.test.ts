@@ -95,6 +95,71 @@ test('runner escape does not interrupt a committed punch or change the disabled-
   assert.equal(move(state, 'a', {}, [], true).attacks, 1);
 });
 
+for (const team of ['blue', 'red'] as const) for (const id of ['a', 'main_ai']) for (const local of [false, true])
+  test(`runner does not stop for a protected frontal target: ${team}/${id}/local=${local}`, () => {
+    const state = setup(), runner = state.otherPlayers.get('a')!, direction = team === 'blue' ? 1 : -1;
+    state.otherPlayers.delete('a'); runner.id = id; runner.team = team; state.otherPlayers.set(id, runner);
+    runner.pos.set(44 * direction, 0, 0); runner.activeWeapon = 'ball';
+    state.otherPlayers.get('b')!.team = team;
+    const enemy = state.otherPlayers.get('enemy')!; enemy.team = team === 'blue' ? 'red' : 'blue';
+    enemy.pos.copy(runner.pos); enemy.pos.x += 1.5 * direction;
+    enemy.invulnerabilityTimer = 2;
+    if (local) {
+      state.isObserverMode = false; state.localPlayerTeam = enemy.team;
+      state.playerPos.copy(enemy.pos); state.playerInvulnerabilityTimer = 2;
+      state.otherPlayers.delete('enemy');
+    }
+    state.grifball.ball.state = 'held'; state.grifball.ball.holderId = id;
+    state.grifballTactics = defaultGrifballTactics();
+    Object.assign(state.grifballTactics.defaults, { runnerRiskWeight: 0, styleVariation: 0 });
+    updateGrifballTeamPlanForState(state, 0.2, goal);
+    const before = runner.pos.x, targetBefore = (local ? state.playerPos : enemy.pos).clone();
+    const result = move(state, id, {}, [], true);
+    assert.equal(result.attacks, 0);
+    assert.ok((result.frame.pos.x - before) * direction > 0);
+    assert.equal(result.frame.weaponState, 'ready');
+    assert.deepEqual(local ? state.playerPos : enemy.pos, targetBefore);
+  });
+
+for (const local of [false, true]) test(`a protected nearest target cannot hide a vulnerable frontal target: local=${local}`, () => {
+  const state = setup(), runner = state.otherPlayers.get('a')!, enemy = state.otherPlayers.get('enemy')!;
+  runner.pos.set(0, 0, 0); runner.activeWeapon = 'ball';
+  enemy.pos.set(1.8, 0, 0);
+  if (local) {
+    state.isObserverMode = false; state.localPlayerTeam = 'red';
+    state.playerPos.set(0, 0, 1); state.playerInvulnerabilityTimer = 2;
+  } else state.otherPlayers.set('shielded', { ...enemy, id: 'shielded', pos: new THREE.Vector3(0, 0, 1), invulnerabilityTimer: 2 });
+  state.grifball.ball.state = 'held'; state.grifball.ball.holderId = 'a';
+  const result = move(state, 'a', {}, [], true);
+  assert.equal(result.attacks, 1);
+  assert.equal(result.frame.yaw, -Math.PI / 2);
+});
+
+for (const local of [false, true]) for (const shield of [0, 0.000001])
+  test(`runner punch uses current protection state at expiry: local=${local}/shield=${shield}`, () => {
+    const state = setup(), runner = state.otherPlayers.get('a')!, enemy = state.otherPlayers.get('enemy')!;
+    runner.pos.set(0, 0, 0); runner.activeWeapon = 'ball'; enemy.pos.set(1.5, 0, 0);
+    enemy.invulnerabilityTimer = shield;
+    if (local) {
+      state.isObserverMode = false; state.localPlayerTeam = 'red';
+      state.playerPos.copy(enemy.pos); state.playerInvulnerabilityTimer = shield;
+      state.otherPlayers.delete('enemy');
+    }
+    state.grifball.ball.state = 'held'; state.grifball.ball.holderId = 'a';
+    assert.equal(move(state, 'a', {}, [], true).attacks, shield > 0 ? 0 : 1);
+  });
+
+test('protection does not interrupt an already committed runner punch', () => {
+  const state = setup(), runner = state.otherPlayers.get('a')!, enemy = state.otherPlayers.get('enemy')!;
+  runner.pos.set(0, 0, 0); runner.activeWeapon = 'ball'; enemy.pos.set(1.5, 0, 0); enemy.invulnerabilityTimer = 2;
+  state.grifball.ball.state = 'held'; state.grifball.ball.holderId = 'a';
+  for (const weaponState of ['swing_up', 'swing_down']) {
+    const result = move(state, 'a', { weaponState, yaw: -Math.PI / 2 }, [], true);
+    assert.equal(result.attacks, 0); assert.equal(result.frame.weaponState, weaponState);
+    assert.equal(result.frame.pos.x, 0); assert.equal(result.frame.yaw, -Math.PI / 2);
+  }
+});
+
 test('coverage waiting preserves reload and leaves committed airborne movement with its executor', () => {
   const state = setup(), runner = state.otherPlayers.get('a')!;
   runner.pos.set(0, 0, 0); runner.activeWeapon = 'ball';
