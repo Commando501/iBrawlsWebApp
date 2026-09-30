@@ -8,6 +8,7 @@ import { createGrifballTeamPlanState, updateGrifballTeamPlan, resetGrifballTeamP
 import type { GrifballAssignment } from './aiGrifballTeamPlan';
 import { observeGrifballSpace } from './aiGrifballSpace';
 import { DEFAULT_ADMIN_SETTINGS } from '../settings/gameplaySettings';
+import { createInitialBall } from './grifballBall';
 
 const p = (id: string, team: string, x: number, z = 0): GrifballTacticalPlayer => ({ id, team, pos: { x, z }, vel: { x: 0, z: 0 }, scripted: true,
   space: { weapon: 'hammer', phase: 'ready', speed: 5.2, reach: 3, blastRadius: 2, attackIn: 0.3, lungeReach: 0, lungeSpeed: 0, mobileIn: 0 } });
@@ -19,6 +20,60 @@ function scene(): GrifballTacticalSnapshot {
 }
 const run = (s: GrifballTacticalSnapshot) => { const state = createGrifballTeamPlanState(); updateGrifballTeamPlan(state, s, 0.2); return state; };
 const blue = (state: ReturnType<typeof run>) => [...state.assignments.values()].filter(a => a.team === 'blue');
+
+function looseScreenScene(enemyX = 1): GrifballTacticalSnapshot {
+  const s = scene(); s.holderId = null; s.tactics!.defaults.stylesEnabled = false;
+  s.players = [p('retriever', 'blue', 0), p('left', 'blue', 3, -7), p('right', 'blue', 3, 7),
+    p('back', 'blue', -10), p('enemy', 'red', enemyX)];
+  for (const actor of s.players) actor.space = observeGrifballSpace(DEFAULT_ADMIN_SETTINGS, 'hammer', actor.id === 'enemy' ? 'recovering' : 'ready');
+  return s;
+}
+
+for (const mirror of [false, true]) for (const reverse of [false, true]) for (const enemyX of [1, 2, 4])
+  test(`loose-ball defense preserves earned screening with a separate safety: ${mirror}/${reverse}/${enemyX}`, () => {
+    const s = looseScreenScene(enemyX), team = mirror ? 'red' : 'blue';
+    if (mirror) for (const actor of s.players) {
+      actor.team = actor.team === 'blue' ? 'red' : 'blue'; actor.pos.x *= -1; actor.pos.z *= -1;
+    }
+    if (reverse) s.players.reverse();
+    const control = structuredClone(s); control.tactics!.defaults.defenseEnabled = false;
+    const earned = [...run(control).assignments.values()].filter(a => a.team === team);
+    const primary = earned.find(a => a.tanking?.mode === 'engage' && a.tanking.attack)!;
+    assert.ok(primary, 'control must earn an engagement through the tanking module');
+    const screen = earned.filter(a => a === primary || a.tanking?.mode === 'punish' && a.tanking.partnerId === primary.botId);
+    assert.equal(screen.length, enemyX === 4 ? 1 : 2);
+    assert.equal(primary.tanking!.doubleCommit, enemyX === 1);
+    const actual = [...run(s).assignments.values()].filter(a => a.team === team);
+    for (const expected of screen) {
+      const order = actual.find(a => a.botId === expected.botId)!;
+      assert.deepEqual(order.tanking, expected.tanking, 'defense must not erase an earned screen or its waiting partner');
+      assert.deepEqual(order.destination, expected.destination);
+      assert.equal(order.defense, undefined);
+    }
+    assert.equal(actual.filter(a => a.role === 'retriever').length, 1);
+    const safety = actual.filter(a => a.defense?.mode === 'last-defender');
+    assert.equal(safety.length, 1); assert.equal(safety[0].botId, 'back');
+    assert.ok(!screen.some(a => a.botId === safety[0].botId));
+  });
+
+for (const cause of ['no-backup', 'sealed-backup', 'containment', 'outnumbered', 'turnover', 'thrown'] as const)
+  test(`loose-ball screening keeps defensive precedence for ${cause}`, () => {
+    const s = looseScreenScene();
+    if (cause === 'no-backup') s.players = s.players.filter(a => a.id !== 'back');
+    if (cause === 'sealed-backup') {
+      s.players.find(a => a.id === 'back')!.pos = { x: 10, z: 20 };
+      s.geometry = { ...s.geometry!, key: 'sealed-screen-backup', blockers: [{ kind: 'box', x: -5, z: 0, hx: .5, hz: 30 }] };
+    }
+    if (cause === 'thrown') s.ballPhysics = { ...createInitialBall({ x: 0, y: .35, z: 0 }), state: 'thrown', vel: { x: 5, y: 2, z: 0 } };
+    if (cause === 'containment') s.tactics!.defaults.defensePressure = .2;
+    if (cause === 'outnumbered') for (let i = 0; i < 4; i++) s.players.push(p(`far-${i}`, 'red', 35, i * 3));
+    const state = run(cause === 'turnover' ? { ...s, holderId: 'retriever' } : s);
+    if (cause === 'turnover') updateGrifballTeamPlan(state, s, .01);
+    const orders = blue(state);
+    assert.ok(orders.every(a => !a.tanking));
+    assert.equal(orders.filter(a => a.role === 'retriever').length, 1);
+    assert.equal(orders.filter(a => a.defense?.mode === 'last-defender').length, 1);
+  });
 
 for (const mirror of [false, true]) for (const reverse of [false, true])
   for (const cause of ['pressure', 'outnumbered', 'reinforcement', 'turnover'] as const)

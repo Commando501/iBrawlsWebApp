@@ -2193,3 +2193,18 @@ An instrumented fixed-input planner diagnostic found 309 repeated exact queries 
 The subsequent isolated run `output/m7-route-cache-serial-proof/` passed Quick checks, TypeScript, builds, startup, correctness and exact original/replay agreement. Original planner p95 values were **7.2/6.7/7.4/8.0 ms**, with replay values **7.9/7.1/7.8/7.8 ms** (seed 101 baseline/candidate, seed 102 baseline/candidate). All noise-window and paired-ratio checks passed, but all eight absolute measurements failed the unchanged 4 ms budget; CLI exit **1**. Source: base `92d86fd87c611e3b4767bfed23e860467d425a75`, dirty hash `4d2f9048f7d1fa8905490c87d0919f97b05ee2783c3d13491d7c1ec37d07aca4`, including concurrent outline edits. Screenshots were inspected and every main gameplay hash matches the preceding serial runs.
 
 The live result does not support retaining the cache. The router and README routing description are restored to their preceding implementation. The query regression for metadata mutations, separate modes and signed-zero endpoints remains as a behavior guard. Performance is still failed; the experiment neither changes calibration nor supports a performance-improvement claim.
+
+## 2026-09-30 — preserve earned loose-ball screens with separate coverage
+
+Twelve new mirrored/order-varied regressions reproduced defense erasing an earned single tank, waiting partner or double commitment during loose-ball recovery (`output/m7-loose-screen-before.log`). Defense now preserves that group only when containment is inactive, the ball is not thrown and a separate defender has a reachable goal-side coverage point. The retriever remains assigned to recovery. Six controls retain defensive precedence for insufficient or blocked backup, containment pressure, numerical disadvantage, possession-loss recovery and thrown-ball recovery. Enemy-carrier defense is unchanged.
+
+All **215 focused tactical tests** pass (`output/m7-loose-screen-tests.log`). The longer roster, earned-tank, passing, revival-decision and five-map passing integration selection passes **206/206** in 548.72 seconds (`output/m7-loose-screen-integration.log`). The browser run `output/m7-loose-screen-proof/` passes **156 Quick checks**, TypeScript, all three builds, startup, correctness and **four exact replay pairs** across eight complete matches; CLI exit **0**. Startup and Stadium screenshots were inspected. Source: base `e67cc1e6ece605e3378a379f61ab555cdad2cdc9`, dirty hash `d1812547f2ab194a3eafd2f6eebb77e2791002ac01a2cca5065ac54921eca98b`, including concurrent outline work.
+
+| Seed / side | Focal score | Finish tick | Focal possessions |
+| --- | --- | --- | --- |
+| 101 original | 2–1 | 5,533 | 3 |
+| 101 mirrored | 0–2 | 2,892 | 1 |
+| 102 original | 2–1 | 5,154 | 2 |
+| 102 mirrored | 0–2 | 2,971 | 0 |
+
+These known development cases now produce two wins rather than the earlier full-defense build's one, with a regression in the seed-101 mirrored result. Both teams use the updated implementation; this is not an isolated focal-only treatment comparison. Baseline and candidate configurations are identical here to test replay agreement. Sparse decision snapshots do not establish a complete screening-opportunity count. No performance or quality gate was requested, and the concurrent integration workload makes these timings unsuitable for performance acceptance. Generalization, the failed absolute performance budget and the broader execution gaps remain open. The next investigation profiles the saved v2 performance failure without changing its build or acceptance verdict.

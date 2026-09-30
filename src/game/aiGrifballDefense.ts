@@ -34,7 +34,7 @@ export function applyGrifballDefense(snapshot: GrifballTacticalSnapshot, assignm
   const carrier = snapshot.players.find(p => p.id === snapshot.holderId);
   if (!goal || carrier?.team === team) return;
   const players = snapshot.players, allies = players.filter(p => p.team === team), enemies = players.filter(p => p.team !== team);
-  const defenders = assignments.filter(a => a.role !== 'retriever');
+  let defenders = assignments.filter(a => a.role !== 'retriever');
   if (!defenders.length) return;
   const anchor = carrier?.pos ?? snapshot.ball;
   const advantage = allies.length - enemies.length;
@@ -74,6 +74,17 @@ export function applyGrifballDefense(snapshot: GrifballTacticalSnapshot, assignm
   const safetyDepth = Math.max(tuning.defenseSafetyDepth,
     contain ? containmentDepth + (carrier && defenders.length > 1 ? tuning.lateralSpacing : 0) : 0);
   const safetyPoint = toward(projected, goal, Math.min(safetyDepth, distance(projected, goal) * 0.85));
+  if (!carrier && !contain && snapshot.ballPhysics?.state !== 'thrown') {
+    // A useful loose-ball screen has already passed tanking's readiness, route
+    // and double-commit checks. Keep its partner's wait/commit order together,
+    // provided another defender can still establish goal-side coverage.
+    const primary = defenders.find(a => a.tanking?.mode === 'engage' && a.tanking.attack);
+    if (primary) {
+      const recovery = defenders.filter(a => a !== primary && !(a.tanking?.mode === 'punish' &&
+        a.tanking.partnerId === primary.botId && a.tanking.targetId === primary.tanking!.targetId));
+      if (recovery.some(a => Number.isFinite(routeLength(a.botId, safetyPoint)))) defenders = recovery;
+    }
+  }
   const ranked = [...defenders].sort((a, b) => {
     const cost = (a: GrifballAssignment) => routeLength(a.botId, safetyPoint) - (previous.get(a.botId)?.defense?.mode === 'last-defender' ? tuning.reassignmentAdvantage : 0);
     return cost(a) - cost(b) || a.botId.localeCompare(b.botId);
