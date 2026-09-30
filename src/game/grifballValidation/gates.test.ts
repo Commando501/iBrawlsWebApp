@@ -20,7 +20,12 @@ async function fixture(matches = false) {
   const m = createSuiteManifest(matches ? 'standard' : 'quick');
   m.cases = m.cases.filter(c => matches ? c.roster === 'scripted-4v4' : c.scenario === 'pickup').slice(0, 1);
   Object.assign(m.cases[0], { seeds: [101, 102, 103], mirrored: true, opponents: ['balanced', 'patient', 'aggressive'] });
-  if (matches) { m.quality = { primaryMeasure: 'goalMargin', minIndependentSeeds: 3, minEffect: .25, heldOut: true }; m.candidate.defaults.styleAggression = .7; }
+  if (matches) {
+    m.quality = { primaryMeasure: 'goalMargin', minIndependentSeeds: 3, minEffect: .25, heldOut: true };
+    m.candidate.defaults.styleAggression = .7;
+    m.cases.push({ ...structuredClone(m.cases[0]), id: 'second-map',
+      mapId: m.cases[0].mapId === 'forerunner_canyon' ? 'championship_stadium' : 'forerunner_canyon' });
+  }
   return createSuitePlan(m, code);
 }
 function results(plan: SuitePlan): TrialResult[] {
@@ -79,12 +84,43 @@ test('different configs require a frozen null control with the same maps, mechan
 test('quality clusters mirrored/style legs within seeds and reports each stratum', async () => {
   const p = await fixture(true), r = results(p), g = qualityGate(p, r, { ...passedNull, evidence: [...passedNull.evidence] }, protocol);
   assert.equal(g.check.verdict, 'pass');
-  const d = g.details as any; assert.equal(d.estimate.seeds, 3); assert.equal(d.estimate.pairedRuns, 18);
-  assert.equal(d.strata.length, 3); assert.equal(d.estimate.mean, 2); assert.equal(d.completion.fraction, 1);
+  const d = g.details as any; assert.equal(d.estimate.seeds, 3); assert.equal(d.estimate.pairedRuns, 36);
+  assert.equal(d.strata.length, 6); assert.equal(d.estimate.mean, 2); assert.equal(d.completion.fraction, 1);
   for (const item of r) item.metrics = { blue: { ...item.metrics!.blue, goals: 1 }, red: { ...item.metrics!.red, goals: 1 } };
   assert.equal(qualityGate(p, r, { ...passedNull, evidence: [...passedNull.evidence] }, protocol).check.verdict, 'inconclusive');
   for (const [i, item] of r.entries()) if (p.jobs[i].variant === 'baseline') item.metrics![p.jobs[i].focalTeam].goals += 2;
   assert.equal(qualityGate(p, r, { ...passedNull, evidence: [...passedNull.evidence] }, protocol).check.verdict, 'fail');
+});
+
+test('quality cannot infer generalization from a single map or repeated cases on that map', async () => {
+  const p = await fixture(true), check = { ...passedNull, evidence: [...passedNull.evidence] };
+  for (const duplicate of [false, true]) {
+    const manifest = structuredClone(p.manifest);
+    if (duplicate) manifest.cases[1].mapId = manifest.cases[0].mapId;
+    else manifest.cases = manifest.cases.slice(0, 1);
+    const singleMap = await createSuitePlan(manifest, code);
+    const result = qualityGate(singleMap, results(singleMap), check, protocol);
+    assert.equal(result.check.verdict, 'inconclusive');
+    assert.match(result.check.summary, /two distinct maps/);
+  }
+});
+
+for (const [label, deltas, verdict] of [
+  ['confirmed regression', [-1, -1, -1], 'fail'],
+  ['no improvement', [0, 0, 0], 'inconclusive'],
+  ['uncertain positive mean', [-1, 1, 3], 'inconclusive'],
+] as const) test(`quality rejects pooled wins hiding a stratum with ${label}`, async () => {
+  const p = await fixture(true), r = results(p), check = { ...passedNull, evidence: [...passedNull.evidence] };
+  for (const [i, job] of p.jobs.entries()) {
+    if (job.caseId !== 'second-map' || job.opponent !== 'aggressive' || job.variant !== 'candidate') continue;
+    const delta = deltas[job.seed - 101], rival = job.focalTeam === 'blue' ? 'red' : 'blue';
+    r[i].metrics![job.focalTeam].goals = 1 + Math.max(0, delta);
+    r[i].metrics![rival].goals = 1 + Math.max(0, -delta);
+  }
+  const result = qualityGate(p, r, check, protocol), details = result.details as any;
+  assert.ok(details.estimate.low > p.manifest.quality!.minEffect, 'pooled estimate alone would pass');
+  assert.equal(result.check.verdict, verdict);
+  assert.match(result.check.summary, /second-map.*aggressive/);
 });
 test('quality rejects censoring, absent pairs/opportunities, tuning overlap and failed null checks', async () => {
   const p = await fixture(true), check = { ...passedNull, evidence: [...passedNull.evidence] };
