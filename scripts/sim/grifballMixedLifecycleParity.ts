@@ -18,6 +18,7 @@ import { stepSimulation } from '../../src/sim/step';
 import { stepCombatantWeapons } from '../../src/sim/weapons';
 import { idleAction } from '../../src/sim/actions';
 import type { SimState } from '../../src/sim/simState';
+import { applyPointerLockMouseLookForState } from '../../src/components/grifball/playerInputRuntime';
 
 const noop = () => {};
 const KINDS = ['hit-one', 'hit-two', 'sword-one', 'sword-two', 'hammer-one', 'hammer-two',
@@ -30,7 +31,7 @@ export const MIXED_LIFECYCLE_CASES: MixedLifecycleCase[] = KINDS.flatMap(kind =>
 /** Committed incoming roster flight followed through damage, revival and shield expiry.
  * The player proxy supplies a target snapshot only; live health is owned by runtime state. */
 export interface OpposedFlightMotion { playerHeight: number; playerVelocityY: number; botHeight: number; botVelocityY: number; directionY: number; directionZ: number }
-export interface OpposedFlightCase { pickup?: { actor: 'player' | 'roster'; hp: number }; motion?: OpposedFlightMotion; first: 'player' | 'roster'; playerHp: number; botHp: number; trade: boolean; reload: number; shields?: { player: number; roster: number } }
+export interface OpposedFlightCase { turnView?: boolean; pickup?: { actor: 'player' | 'roster'; hp: number }; motion?: OpposedFlightMotion; first: 'player' | 'roster'; playerHp: number; botHp: number; trade: boolean; reload: number; shields?: { player: number; roster: number } }
 export function runMixedLifecycleTrace(spec: MixedLifecycleCase, snapshotAt?: number, opposed?: OpposedFlightCase) {
   const f = lungeFixture(spec.main ? 'main_ai' : 'attacker', false);
   const { state, sim, bot, target, refs, map } = f;
@@ -135,6 +136,11 @@ export function runMixedLifecycleTrace(spec: MixedLifecycleCase, snapshotAt?: nu
   const kills = new Map<string, number>(), deaths = new Map<string, number>(), frames = [];
   let restored: SimState | undefined;
   for (let tick = 1; tick <= 300; tick++) {
+    // Pointer events precede physics. Three small inputs turn the view without
+    // replacing the already committed flight direction, then input stops.
+    const turn = opposed?.turnView && tick <= 3;
+    if (turn) applyPointerLockMouseLookForState({ state, movementX: direction * 80, movementY: -40,
+      mouseSensitivity: 1, mouseAcceleration: 0 });
     withSimulationRandom(random, tick / 60, () => {
       const physics = () => {
         const dead = updatePlayerRespawnForState({ state, dt: 1 / 60, isMultiplayer: false,
@@ -186,7 +192,9 @@ export function runMixedLifecycleTrace(spec: MixedLifecycleCase, snapshotAt?: nu
         physics(); f.weaponFrame(1 / 60); f.respawns(1 / 60); updateAI(); f.visuals(1 / 60);
       }
     });
-    const actions = Object.fromEntries(sim.combatants.map(c => [c.id, { ...idleAction(), aim: c.yaw,
+    const actions = Object.fromEntries(sim.combatants.map(c => [c.id, { ...idleAction(),
+      aim: turn && c.id === player.id ? (spec.mirror ? 0 : -Math.PI) - direction * .176 * tick : c.yaw,
+      ...(turn && c.id === player.id ? { aimPitch: .088 * tick } : {}),
       pickup: !!pickup && tick === 2 && c.id === (pickup.actor === 'player' ? player.id : self.id) }]));
     const events = stepSimulation(sim, actions, { settings: sim.settings });
     if (restored) {
@@ -200,12 +208,13 @@ export function runMixedLifecycleTrace(spec: MixedLifecycleCase, snapshotAt?: nu
     const canonical = (phase: string) => phase === 'ready' ? 'idle' : ['slashing', 'swing_up', 'swing_down'].includes(phase) ? 'attack' : phase;
     const live = { hp: state.playerHP, lunging: state.isLunging, phase: canonical(rawPhase), elapsed: state.activeWeapon === 'sword' ? state.pSwordTimer : state.pWeaponTimer,
       shield: state.playerInvulnerabilityTimer, respawn: Math.max(0, state.playerRespawnTimer), weapon: state.activeWeapon,
-      pos: state.playerPos.toArray(), vel: state.playerVel.toArray(), heading: [Math.sin(state.yaw), Math.cos(state.yaw)], kills: state.playerKills, deaths: state.playerDeaths };
+      pos: state.playerPos.toArray(), vel: state.playerVel.toArray(), pitch: state.pitch, heading: [Math.sin(state.yaw), Math.cos(state.yaw)], kills: state.playerKills, deaths: state.playerDeaths };
     const headless = { hp: player.hp, lunging: player.isLunging, phase: ['windup', 'active'].includes(player.weaponState) ? 'attack' : player.weaponState,
       elapsed: player.weaponPhaseElapsed ?? 0, shield: player.invulnerabilityTimer, respawn: player.respawnTimer, weapon: player.weapon,
-      pos: Object.values(player.pos), vel: Object.values(player.vel), heading: [Math.sin(player.yaw + Math.PI), Math.cos(player.yaw + Math.PI)], kills: kills.get('player') ?? 0, deaths: deaths.get('player') ?? 0 };
+      pos: Object.values(player.pos), vel: Object.values(player.vel), pitch: player.pitch ?? 0, heading: [Math.sin(player.yaw + Math.PI), Math.cos(player.yaw + Math.PI)], kills: kills.get('player') ?? 0, deaths: deaths.get('player') ?? 0 };
     for (const field of ['hp', 'lunging', 'phase', 'elapsed', 'shield', 'respawn', 'weapon', 'kills', 'deaths'] as const) record.compare(tick, `player.${field}`, live[field], headless[field], 1e-6);
     for (const field of ['pos', 'vel', 'heading'] as const) for (let i = 0; i < live[field].length; i++) record.compare(tick, `player.${field}.${i}`, live[field][i], headless[field][i], 1e-6);
+    record.compare(tick, 'player.pitch', live.pitch, headless.pitch, 1e-6);
     const liveBot = { hp: bot.hp, shield: bot.invulnerabilityTimer, respawn: bot.respawnTimer, pos: bot.pos.toArray(), vel: bot.vel.toArray(), cooldown: Math.max(0, bot.aiTimer ?? 0), kills: bot.kills ?? 0, deaths: bot.deaths ?? 0, lunging: !!bot.isLunging };
     const simBot = { hp: self.hp, shield: self.invulnerabilityTimer, respawn: self.respawnTimer, pos: Object.values(self.pos), vel: Object.values(self.vel), cooldown: self.attackCooldown, kills: kills.get(self.id) ?? 0, deaths: deaths.get(self.id) ?? 0, lunging: self.isLunging };
     for (const field of ['hp', 'shield', 'respawn', 'kills', 'deaths', 'lunging'] as const) record.compare(tick, `bot.${field}`, liveBot[field], simBot[field], 1e-6);

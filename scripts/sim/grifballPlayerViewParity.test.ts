@@ -124,6 +124,17 @@ test('view geometry affects versioned hashes and survives a JSON continuation', 
   self.crouchAmount = 0;
   assert.equal(hashState(sim), baseline);
 });
+for (const execution of ['live-player-v1', 'live-mixed-v1', 'legacy-v1', 'live-roster-v1', 'live-roster-v2'] as const)
+  test(`view turns during committed flight only for explicit player execution: ${execution}`, () => {
+    const { sim } = createBotParityFixture(), self = sim.combatants[0];
+    sim.combatExecution = execution; sim.localPlayerId = self.id;
+    self.pos = { x: 0, y: 0, z: 0 }; self.yaw = 0;
+    self.isLunging = true; self.lungeDir = { x: 0, y: 0, z: 1 };
+    stepCombatantMovement(sim, self, { ...idleAction(), aim: Math.PI / 2, moveX: 1, moveZ: -1 }, sim.settings, 1 / 60);
+    assert.equal(self.yaw, execution === 'live-player-v1' || execution === 'live-mixed-v1' ? Math.PI / 2 : 0);
+    assert.equal(self.pos.x, 0, 'looking or steering cannot redirect a committed lunge');
+    assert.equal(self.vel.z, sim.settings.swordLungeSpeed);
+  });
 for (const execution of ['legacy-v1', 'live-roster-v1', 'live-roster-v2'] as const)
   test(`optional player-view input cannot alter ${execution} movement or hashes`, () => {
     const { sim } = createBotParityFixture();

@@ -10,8 +10,8 @@ export const CARRIER_FLIGHT_CASES = (['player', 'roster'] as const).flatMap(acto
       opposed: { first, playerHp: 2, botHp: 2, trade, reload: .6, pickup: { actor, hp } } satisfies OpposedFlightCase,
     }))))));
 
-export function runCarrierFlightTrace(spec: typeof CARRIER_FLIGHT_CASES[number], snapshotAt?: number) {
-  const trace = runMixedLifecycleTrace({ kind: 'hit-one', main: spec.main, mirror: spec.mirror, reverse: spec.reverse }, snapshotAt, spec.opposed);
+export function runCarrierFlightTrace(spec: typeof CARRIER_FLIGHT_CASES[number], snapshotAt?: number, turnView = false) {
+  const trace = runMixedLifecycleTrace({ kind: 'hit-one', main: spec.main, mirror: spec.mirror, reverse: spec.reverse }, snapshotAt, { ...spec.opposed, turnView });
   const record = parityRecorder(), { pickup, first, trade } = spec.opposed;
   const holder = pickup.actor === 'player' ? 'player' : spec.main ? 'main_ai' : 'attacker';
   // At 24 units/second the authored 5/4.6-unit separation reaches the

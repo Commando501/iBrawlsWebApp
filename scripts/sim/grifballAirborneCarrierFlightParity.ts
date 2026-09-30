@@ -8,11 +8,11 @@ export const AIRBORNE_CARRIER_FLIGHT_CASES = (['roster-rising', 'roster-falling'
       [false, true].map(variant => ({ motion, actor, hp, first, trade,
         main: variant, mirror: variant, reverse: variant })))))));
 
-export function runAirborneCarrierFlightTrace(spec: typeof AIRBORNE_CARRIER_FLIGHT_CASES[number], snapshotAt?: number) {
+export function runAirborneCarrierFlightTrace(spec: typeof AIRBORNE_CARRIER_FLIGHT_CASES[number], snapshotAt?: number, turnView = false) {
   const motion = AIRBORNE_FLIGHT_POSES[spec.motion];
   const trace = runMixedLifecycleTrace({ kind: 'hit-one', ...spec }, snapshotAt, {
     first: spec.first, playerHp: 2, botHp: 2, trade: spec.trade, reload: .6,
-    motion, pickup: { actor: spec.actor, hp: spec.hp },
+    motion, pickup: { actor: spec.actor, hp: spec.hp }, turnView,
   });
   const record = parityRecorder();
   const holder = spec.actor === 'player' ? 'player' : spec.main ? 'main_ai' : 'attacker';

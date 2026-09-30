@@ -251,7 +251,7 @@ test('corrected player traces agree while incomplete coverage and legacy differe
   assert.ok(details.botTraces.every((t: any) => t.differenceCount === 0));
   assert.equal(details.lungeTraces.length, 300);
   assert.ok(details.lungeTraces.every((t: any) => t.differenceCount === 0));
-  assert.equal(details.protocol, 'live-functions-vs-headless-step-v63');
+  assert.equal(details.protocol, 'live-functions-vs-headless-step-v64');
   assert.deepEqual(details.revivalAttackWitnesses.missing, []);
   assert.deepEqual(details.jumpWitnesses.mobility.missing, []);
   assert.deepEqual(details.jumpWitnesses.match.missing, []);
@@ -275,8 +275,8 @@ test('corrected player traces agree while incomplete coverage and legacy differe
   assert.equal(details.mixedLifecycleTraces.length, 168);
   assert.ok(details.mixedLifecycleTraces.every((t: any) => t.differenceCount === 0));
   const sampledFamilies = Object.values(details).filter((value: any) => Array.isArray(value) && value[0]?.frameEvidence) as any[][];
-  // Includes grounded and airborne mid-flight carrier pickup families (v62/v63).
-  assert.equal(sampledFamilies.length, 44);
+  // Includes grounded/airborne pickup and mouse-turn flight families (v62-v64).
+  assert.equal(sampledFamilies.length, 45);
   for (const traces of sampledFamilies) for (const trace of traces) {
     assert.ok(trace.frameCount >= trace.frames.length);
     assert.ok(trace.frames.length <= 32);
@@ -296,6 +296,9 @@ test('corrected player traces agree while incomplete coverage and legacy differe
   assert.equal(details.shieldedFlightTraces.reduce((sum: number, t: any) => sum + t.frameCount, 0), 115200);
   assert.ok(details.shieldedFlightTraces.every((t: any) => t.differenceCount === 0));
   assert.equal(details.opposedFlightTraces.length, 128);
+  assert.equal(details.turningFlightTraces.length, 48);
+  assert.equal(details.turningFlightTraces.reduce((sum: number, t: any) => sum + t.frameCount, 0), 14400);
+  assert.ok(details.turningFlightTraces.every((t: any) => t.differenceCount === 0));
   assert.equal(details.airborneCarrierFlightTraces.length, 64);
   assert.equal(details.airborneCarrierFlightTraces.reduce((sum: number, t: any) => sum + t.frameCount, 0), 19200);
   assert.ok(details.airborneCarrierFlightTraces.every((t: any) => t.differenceCount === 0));

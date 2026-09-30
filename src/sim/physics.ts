@@ -78,9 +78,10 @@ export function stepCombatantMovement(
   if (c.dashCooldownTimer > 0) c.dashCooldownTimer = Math.max(0, c.dashCooldownTimer - dt);
   if (c.invulnerabilityTimer > 0) c.invulnerabilityTimer = Math.max(0, c.invulnerabilityTimer - dt);
 
-  // Sword-lunge flight overrides input: facing is locked, velocity is the committed
-  // lunge heading at the configured lunge speed. The weapon FSM owns the timer/end.
+  // Flight retains its launch velocity. Local mouse look still changes the view;
+  // roster/legacy facing remains committed. The weapon FSM owns the timer/end.
   if (c.isLunging) {
+    if (playerView) c.yaw = normalizeYaw(action.aim);
     if (state.combatExecution === 'live-mixed-v1' && c.id === state.localPlayerId) {
       c.isCrouching = false; c.isJumping = false; c.hammerJumpsInAir = 0;
     }
