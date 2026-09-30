@@ -2301,3 +2301,15 @@ The full aggregate launched from `031c61ed` finishes with a failing execution ve
 The failing fixture is `synthwave_grid_arena/4v4/balanced/contested/red/forward/main`: play continues at 1–1 after the unchanged 108,000-tick limit. Combat, pickups and passes still occur, so the retained evidence demonstrates a match-completion failure rather than a frozen simulation. Its 12 failed checks are completion/lifecycle consequences. The report is preserved at `output/m7-v65-aggregate/gates/execution-parity.json`, SHA-256 `f8fd96891a7644e070f215ae6c6fa7901a2077b00b5f7d0ec6fdadb8e8fea192`.
 
 Reproducing that exact case on committed carrier-recovery source `a635fcaa` produces a 2–0 result, winning goal at tick **6,233**, and all assertions pass through terminal observation at tick **6,426** (`output/m7-stalled-roster-current.json`). No seed, settings, goal target, time cap or acceptance assertion changed. This establishes the bounded current-source reproduction only; the full current-source aggregate has been launched separately under `output/m7-v65-carrier-aggregate/`. The two-map development quality comparison is also running. Two additional predeclared Stadium diagnostics isolate forecast duration (1.5 → 0.5 seconds) and safety depth (7 → 3 units), each across seeds 101/102, both sides and all three styles, with the opponent unchanged. These are development comparisons, not held-out acceptance.
+
+## 2026-09-30 — isolated defense forecast comparison
+
+`output/m7-defense-lookahead-proof/` completes **24/24** main matches and **12 exact null pairs**. The 156 Quick checks, TypeScript, three builds, startup and correctness pass; CLI exit **0**. Startup and arena screenshots were inspected. Frozen source is `a635fcaa9035edb79bf3657b1bbb696ca33dd9ec`, dirty hash `ce9e4c5047e094a2568389ddb93c85654d0f1936d1f0f6302299ae72511bf0b7`, including concurrent outline work. The only focal-team configuration difference is `defenseLookahead` **1.5 → 0.5 seconds**; opponent configuration is unchanged.
+
+| Opponent | Paired goal-margin change | Focal wins: baseline → shorter forecast | Paired possession change |
+| --- | --- | --- | --- |
+| Balanced | +0.25 | 0 → 0 | +1.00 |
+| Patient | −0.75 | 4 → 2 | +0.25 |
+| Aggressive | +1.75 | 0 → 2 | +1.00 |
+
+Each row contains four paired games (two known seeds, both sides). The opposing effects do not justify changing the global default; the original value is retained. These are exploratory means on one development map, without a quality or calibrated performance gate. The safety-depth comparison and full development quality matrix remain pending. Separately, a four-case mirrored/order reproduction confirms that independent defender/escort sorting assigns both flank defenders across the carrier lane (`output/m7-mark-crossing-before.json`); a reachable-distance marking fix is under validation and is outside every frozen build reported in this entry.
