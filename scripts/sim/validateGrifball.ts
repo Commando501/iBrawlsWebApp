@@ -1,4 +1,4 @@
-import { nullControlRequired } from '../../src/game/grifballValidation/gates';
+import { nullControlRequired, validateGateProtocol } from '../../src/game/grifballValidation/gates';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { lstatSync, mkdirSync, readFileSync, readlinkSync, writeFileSync } from 'node:fs';
@@ -87,6 +87,8 @@ export async function main(args: string[]): Promise<number> {
     : createSuiteManifest(options.suite === 'standard' ? 'standard' : 'quick');
   const plan = await createSuitePlan(input, captureCodeIdentity(ROOT));
   if (options.suite && options.suite !== plan.manifest.profile) throw new Error('--suite does not match manifest.profile');
+  const protocol = options.protocol ? validateGateProtocol(JSON.parse(readFileSync(resolve(options.protocol), 'utf8').replace(/^\uFEFF/, ''))) : undefined;
+  if (protocol?.version === 2 && plan.manifest.performance) console.log(`Performance replay: ${plan.preview.jobCount} additional jobs; ${plan.preview.maxSimulationSeconds}s additional simulation cap. Each baseline and candidate job is repeated separately.`);
   if (nullControlRequired(plan)) console.log(`Null-control preflight: ${plan.preview.jobCount} additional identical-baseline jobs; ${plan.preview.maxSimulationSeconds}s additional simulation cap. Candidate trials require this control to pass.`);
   if (!options.dryRun) {
     console.log(`${plan.manifest.profile}: ${plan.preview.caseCount} cases, ${plan.preview.jobCount} jobs; ${plan.preview.maxSimulationSeconds}s simulation cap; ${plan.preview.maxJobWatchdogSeconds}s summed watchdog cap.`);

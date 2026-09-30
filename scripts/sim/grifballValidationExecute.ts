@@ -2,6 +2,7 @@ import { cpus, totalmem, release } from 'node:os';
 import { correctnessGate, reproducibilityGate, createNullControlPlan, nullControlRequired, validateGateProtocol, gate } from '../../src/game/grifballValidation/gates';
 import { qualityGate } from '../../src/game/grifballValidation/qualityGate';
 import { performanceGate } from '../../src/game/grifballValidation/performanceGate';
+import type { PerformanceReplay } from '../../src/game/grifballValidation/performanceReplay';
 import { spawn, execFileSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { closeSync, existsSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync } from 'node:fs';
@@ -66,6 +67,7 @@ export async function executeValidation(root: string, plan: SuitePlan, options: 
   let testsPassed = true;
   let environmentHash: string | null = null;
   let control: ReturnType<typeof reproducibilityGate> | undefined;
+  let performanceReplay: PerformanceReplay | undefined;
   console.log(`Artifacts: ${directory}`);
   const abort = new AbortController();
   const cancel = () => { console.log('Cancellation requested; retaining completed evidence.'); abort.abort(); };
@@ -186,6 +188,22 @@ export async function executeValidation(root: string, plan: SuitePlan, options: 
       // A broken renderer/session must not produce cascaded misleading results for the rest of the queue.
       if (result.termination === 'watchdog' || result.termination === 'setup-error') break;
     }
+    if (protocol?.version === 2 && plan.manifest.performance && (!control || control.check.verdict === 'pass') && !abort.signal.aborted) {
+      const replays = new RunArtifacts(join(directory, 'performance-replay'), plan, options.case ?? null);
+      replays.setIdentity(artifacts.identity!);
+      performanceReplay = { planId: plan.id, environmentHash: environmentHash!, results: replays.results };
+      for (const job of plan.jobs) {
+        if (abort.signal.aborted) break;
+        const original = artifacts.results.find(r => r.jobId === job.id);
+        if (!original || !['scenario-complete', 'match-end', 'simulation-cap'].includes(original.termination)) continue;
+        replays.activeJob = job.id; replays.checkpoint('running');
+        console.log(`Performance replay ${job.id}`);
+        const result = await runBrowserJob(browser, server.origin, buildId, plan, job, replays.directory, abort.signal);
+        replays.save(result);
+        if (result.termination === 'watchdog' || result.termination === 'setup-error') break;
+      }
+      replays.checkpoint(abort.signal.aborted ? 'cancelled' : 'finished');
+    }
   } catch (error) {
     cancelled = abort.signal.aborted;
     if (!cancelled) artifacts.setupError = error instanceof Error ? error.message : String(error);
@@ -199,7 +217,7 @@ export async function executeValidation(root: string, plan: SuitePlan, options: 
     artifacts.recordGate(testsPassed ? correctness : gate('correctness', 'fail', 'Node checks failed; see test log.', correctness.details));
     artifacts.recordGate(control ? { ...control, details: { control: 'null-control', evaluation: control.details } } : reproducibilityGate(plan, artifacts.results, Boolean(artifacts.identity)));
     artifacts.recordGate(qualityGate(plan, artifacts.results, artifacts.gates.find(g => g.id === 'reproducibility')!, protocol));
-    artifacts.recordGate(performanceGate(plan, artifacts.results, environmentHash, protocol));
+    artifacts.recordGate(performanceGate(plan, artifacts.results, environmentHash, protocol, performanceReplay));
     process.removeListener('SIGINT', cancel); process.removeListener('SIGTERM', cancel);
     artifacts.checkpoint(cancelled ? 'cancelled' : artifacts.setupError ? 'error' : 'finished');
   }

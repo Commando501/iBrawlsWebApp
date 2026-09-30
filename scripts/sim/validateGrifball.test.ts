@@ -67,6 +67,23 @@ test('CLI rejects unavailable resume evidence and acceptance without a manifest'
   assert.match(standard.stdout, /scripted-4v4/); assert.match(standard.stdout, /all NOT RUN/);
 });
 
+test('CLI previews the extra performance replay budget and rejects unversioned noise changes', t => {
+  const temp = temporary(t), manifestPath = join(temp, 'manifest.json'), protocolPath = join(temp, 'protocol.json');
+  const manifest = createSuiteManifest('quick');
+  manifest.performance = { plannerRefreshP95Ms: 4, calibrationId: 'replay-preview' };
+  const protocol = { version: 2, quality: null, performance: { calibrationId: 'replay-preview',
+    environmentHash: 'c'.repeat(64), controlledSerial: true, maxBaselineRatio: 1.2, maxNoiseRatio: 3,
+    minRefreshSamples: 20, noise: { method: 'aligned-replay-windows', windowRefreshes: 8 } } };
+  writeFileSync(manifestPath, JSON.stringify(manifest)); writeFileSync(protocolPath, JSON.stringify(protocol));
+  const result = cli('--manifest', manifestPath, '--protocol', protocolPath, '--dry-run');
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /Performance replay: 32 additional jobs; 160s additional simulation cap/);
+  assert.match(result.stdout, /validation verdict: not-run/);
+  writeFileSync(protocolPath, JSON.stringify({ ...protocol, version: 1 }));
+  const invalid = cli('--manifest', manifestPath, '--protocol', protocolPath, '--dry-run');
+  assert.equal(invalid.status, 3); assert.match(invalid.stderr, /Version 1 retains/);
+});
+
 test('source identity includes untracked edits and deleted code but excludes unrelated state', async t => {
   const dir = temporary(t);
   const git = (...args: string[]) => execFileSync('git', args, { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });

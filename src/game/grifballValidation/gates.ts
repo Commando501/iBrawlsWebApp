@@ -20,6 +20,10 @@ export function indexResults(plan: SuitePlan, results: readonly TrialResult[]) {
   return indexed;
 }
 export const finished = (r: TrialResult | undefined) => r && ['match-end', 'scenario-complete', 'simulation-cap'].includes(r.termination);
+/** Shared replay payload: performance measurements are deliberately excluded. */
+export const deterministicTrialValue = (r: TrialResult) => ({ termination: r.termination, start: r.start, end: r.end,
+  deterministic: r.deterministic, behavior: r.behavior, metrics: r.metrics,
+  ...(r.localPlayer !== undefined ? { localPlayer: r.localPlayer } : {}) });
 export function correctnessGate(plan: SuitePlan, results: readonly TrialResult[]): GateEvaluation {
   if (!results.length) return gate('correctness', 'not-run', 'No live trials have run.', null);
   const indexed = indexResults(plan, results), failures: string[] = [], missing: string[] = [];
@@ -65,10 +69,7 @@ export function reproducibilityGate(plan: SuitePlan, results: readonly TrialResu
       }
     }
     pairs++;
-    const value = (r: TrialResult) => ({ termination: r.termination, start: r.start, end: r.end,
-      deterministic: r.deterministic, behavior: r.behavior, metrics: r.metrics,
-      ...(r.localPlayer !== undefined ? { localPlayer: r.localPlayer } : {}) });
-    if (canonicalJSON(value(x!)) !== canonicalJSON(value(y!))) failures.push(a.id);
+    if (canonicalJSON(deterministicTrialValue(x!)) !== canonicalJSON(deterministicTrialValue(y!))) failures.push(a.id);
   }
   return gate('reproducibility', failures.length ? 'fail' : missing.length || !pinnedRuntime ? 'inconclusive' : 'pass',
     `${pairs} null pairs compared; ${failures.length} mismatches; ${missing.length} missing pairs.${pinnedRuntime ? '' : ' Runtime is not pinned.'}`,
@@ -76,14 +77,15 @@ export function reproducibilityGate(plan: SuitePlan, results: readonly TrialResu
 }
 /** Frozen before execution; these are operator declarations, not proof of an idle machine. */
 export interface GateProtocol {
-  version: 1;
+  version: 1 | 2;
   quality: { tuningSeeds: number[]; tuningMapIds: string[] } | null;
   performance: { calibrationId: string; environmentHash: string; controlledSerial: true;
-    maxBaselineRatio: number; maxNoiseRatio: number; minRefreshSamples: number } | null;
+    maxBaselineRatio: number; maxNoiseRatio: number; minRefreshSamples: number;
+    noise?: { method: 'aligned-replay-windows'; windowRefreshes: number } } | null;
 }
 export function validateGateProtocol(raw: unknown): GateProtocol {
   const p = raw as GateProtocol;
-  if (!p || p.version !== 1 || !Object.hasOwn(p, 'quality') || !Object.hasOwn(p, 'performance')) throw new Error('Expected a version 1 gate protocol');
+  if (!p || ![1, 2].includes(p.version) || !Object.hasOwn(p, 'quality') || !Object.hasOwn(p, 'performance')) throw new Error('Expected a version 1 or 2 gate protocol');
   if (p.quality && (!Array.isArray(p.quality.tuningSeeds) || p.quality.tuningSeeds.some(n => !Number.isInteger(n) || n < 0 || n > 0xffffffff) ||
     !Array.isArray(p.quality.tuningMapIds) || p.quality.tuningMapIds.some(id => typeof id !== 'string' || !id))) throw new Error('Invalid tuning ledger');
   if (p.performance && (typeof p.performance.calibrationId !== 'string' || !p.performance.calibrationId ||
@@ -91,5 +93,12 @@ export function validateGateProtocol(raw: unknown): GateProtocol {
     !Number.isFinite(p.performance.maxBaselineRatio) || p.performance.maxBaselineRatio < 1 ||
     !Number.isFinite(p.performance.maxNoiseRatio) || p.performance.maxNoiseRatio < 1 ||
     !Number.isInteger(p.performance.minRefreshSamples) || p.performance.minRefreshSamples < 20)) throw new Error('Invalid performance calibration');
+  if (p.performance) {
+    const noise = p.performance.noise;
+    if (p.version === 1 && noise !== undefined) throw new Error('Version 1 retains the original max/median noise check');
+    if (p.version === 2 && (!noise || noise.method !== 'aligned-replay-windows' ||
+      !Number.isInteger(noise.windowRefreshes) || noise.windowRefreshes < 2 || noise.windowRefreshes > 64 ||
+      p.performance.minRefreshSamples < noise.windowRefreshes * 2)) throw new Error('Version 2 requires calibrated aligned replay windows');
+  }
   return structuredClone(p);
 }
