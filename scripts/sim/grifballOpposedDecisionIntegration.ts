@@ -222,6 +222,8 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
       const started = startAIHammerJumpForCombatant({ self, settings: state.settings, vel, horizontalHeading, jumpType,
         onMainAIHammerSwing: () => triggerEnemyHammerSwingForCombatant(state.otherPlayers.get('main_ai')), playSwing: noop, playJump: noop });
       if (self.id === 'main_ai') {
+        if ((self.aiDashRemaining ?? 0) > 0 || (self.swapCooldownTimer ?? 0) > 0)
+          check('main jump cannot bypass dash or swap lockout', started, false);
         mainJumpRequests.push({ tick, accepted: started, dash: self.aiDashRemaining ?? 0, swap: self.swapCooldownTimer ?? 0 });
         if (!started && !plannedBefore) check('rejected main jump leaves no latent plan', !!self.hammerJumpPlanned, false);
       }

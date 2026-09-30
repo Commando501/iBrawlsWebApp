@@ -7,12 +7,8 @@ export const MATCH_DECISION_CASES = OPPOSED_DECISION_CASES;
  * owners to scoring, round reset, fresh retrieval and terminal state. */
 export function runMatchDecisionTrace(spec: OpposedDecisionCase) {
   const trace = runOpposedDecisionTrace(spec, 'match');
-  if (spec.main && (spec.mode === 'contested' || spec.mode === 'hammer-first' && !spec.reverse)) {
-    if (!trace.mainJumpRequests.some(r => !r.accepted && r.dash > 0)) {
-      trace.failureCount++;
-      trace.failures.push({ tick: trace.ticks, field: 'autonomous main jump requests reach the real weapon gate', actual: false, expected: true });
-    }
-  }
+  // Rejection opportunities are required across the fixed matrix, not forced
+  // in each complete match regardless of its autonomous combat choices.
   return validateCompleteMatchTrace(trace);
 }
 

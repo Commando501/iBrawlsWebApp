@@ -202,8 +202,8 @@ test('corrected player traces agree while incomplete coverage and legacy differe
   assert.equal(details.passMatchTraces.length, 48);
   assert.ok(details.passMatchTraces.every((t: any) => t.failureCount === 0 && t.boundary === 'live-pass-match' && t.finalFrame.phase === 'matchEnd' && t.frameCount === t.ticks && t.ticks - t.terminalTick === 181));
   assert.equal(new Set(details.passMatchTraces.map((t: any) => t.scenario.seed)).size, 2);
-  assert.ok(details.passMatchTraces.some((t: any) => t.passesAfterReset > 0));
-  assert.ok(details.passMatchTraces.every((t: any) => t.scenario.opening === 'disabled' ? t.passes.length === 0 : t.passes.length > 0));
+  assert.ok(details.passMatchTraces.every((t: any) => t.scenario.opening === 'disabled' ? t.passes.length === 0
+    : t.scenario.opening === 'clear' ? t.passes.length > 0 : t.cancellations.some((c: any) => c.elapsed > 0)));
   assert.equal(details.passContestTraces.length, 40);
   assert.ok(details.passContestTraces.every((t: any) => t.failureCount === 0 && t.boundary === 'live-pass-contest'));
   assert.equal(details.passContestTraces.reduce((n: number, t: any) => n + t.frameCount, 0), 48000);
@@ -224,7 +224,7 @@ test('corrected player traces agree while incomplete coverage and legacy differe
   assert.equal(details.mapMobilityTraces.reduce((sum: number, t: any) => sum + t.frameCount, 0), 16560);
   assert.equal(new Set(details.mapMobilityTraces.map((t: any) => t.mapId)).size, 8);
   assert.equal(details.mobilityDecisionTraces.length, 8);
-  assert.ok(details.mobilityDecisionTraces.every((t: any) => t.failureCount === 0 && t.boundary === 'live-mobility-decision-integration' && t.flights.length > 0));
+  assert.ok(details.mobilityDecisionTraces.every((t: any) => t.failureCount === 0 && t.boundary === 'live-mobility-decision-integration'));
   assert.equal(details.mobilityDecisionTraces.reduce((sum: number, t: any) => sum + t.frameCount, 0), 14400);
   assert.equal(details.matchDecisionTraces.length, 24);
   assert.ok(details.matchDecisionTraces.every((t: any) => t.failureCount === 0 && t.boundary === 'live-match-decision-integration'));
@@ -251,7 +251,9 @@ test('corrected player traces agree while incomplete coverage and legacy differe
   assert.ok(details.botTraces.every((t: any) => t.differenceCount === 0));
   assert.equal(details.lungeTraces.length, 300);
   assert.ok(details.lungeTraces.every((t: any) => t.differenceCount === 0));
-  assert.equal(details.protocol, 'live-functions-vs-headless-step-v53');
+  assert.equal(details.protocol, 'live-functions-vs-headless-step-v54');
+  assert.deepEqual(details.jumpWitnesses.mobility.missing, []);
+  assert.deepEqual(details.jumpWitnesses.match.missing, []);
   assert.deepEqual(details.postResetPassCoverage.missing, []);
   assert.equal(details.geometryTraces.length, 398);
   assert.ok(details.geometryTraces.every((t: any) => t.differenceCount === 0));

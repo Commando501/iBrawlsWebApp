@@ -16,6 +16,7 @@ import { runMapContest } from './grifballMapContest';
 import { runMapRouting } from './grifballMapRouting';
 import { runMapMobility } from './grifballMapMobility';
 import { runMobilityDecisionIntegration } from './grifballMobilityDecisionIntegration';
+import { jumpCoverage } from './grifballJumpCoverage';
 import { runMatchDecisionIntegration } from './grifballMatchDecisionIntegration';
 import { runRoundDecisionIntegration } from './grifballRoundDecisionIntegration';
 import { runRevivalDecisionIntegration } from './grifballRevivalDecisionIntegration';
@@ -266,6 +267,8 @@ export function runExecutionParity() {
   const earnedTankTraces = runEarnedTankContest();
   const mapMobilityFailures = mapMobilityTraces.filter(t => t.failureCount);
   const matchDecisionTraces = compactExecutionTraces(runMatchDecisionIntegration());
+  const jumpWitnesses = { mobility: jumpCoverage(mobilityDecisionTraces, 'mobility'), match: jumpCoverage(matchDecisionTraces, 'match') };
+  const missingJumpWitnesses = jumpWitnesses.mobility.missing.length + jumpWitnesses.match.missing.length;
   const roundDecisionTraces = compactExecutionTraces(runRoundDecisionIntegration());
   const revivalDecisionTraces = compactExecutionTraces(runRevivalDecisionIntegration());
   const opposedDecisionTraces = compactExecutionTraces(runOpposedDecisionIntegration());
@@ -274,10 +277,13 @@ export function runExecutionParity() {
   const legacyCompatibility = ['sword-hit-recovery', 'punch-hit-recovery'].map(name => runExecutionParityTrace(name, { combatExecution: 'legacy-v1' }));
   const priorRosterCompatibility = runLungeParityTrace(LUNGE_PARITY_CASES[0], 'bot_2', true, 'live-roster-v1');
   const priorPlayerCompatibility = runPlayerLungeParityTrace(PLAYER_LUNGE_PARITY_CASES[0], 'live-player-v1');
-  return gate('execution-parity', failures.length || decisionFailures.length || mapMobilityFailures.length || resetPassCoverage.missing.length ? 'fail' : 'inconclusive',
+  return gate('execution-parity', failures.length || decisionFailures.length || mapMobilityFailures.length || resetPassCoverage.missing.length || missingJumpWitnesses ? 'fail' : 'inconclusive',
+    `Jump coverage misses ${missingJumpWitnesses} required groups. ` +
     `Post-reset passing misses ${resetPassCoverage.missing.length} required groups. ` +
     `${failures.length}/${traces.length + botTraces.length + lungeTraces.length + geometryTraces.length + motionTraces.length + movingContactTraces.length + multiActorTraces.length + spawnTraces.length + mixedContactTraces.length + playerLungeTraces.length + mixedLifecycleTraces.length + opposedFlightTraces.length + shieldedFlightTraces.length + airborneFlightTraces.length + objectiveTraces.length + frameObjectiveTraces.length + passInputTraces.length + chargeCombatTraces.length + carrierCrowdTraces.length + carrierRecoveryTraces.length + runnerCombatTraces.length + playerRunnerTraces.length + focusFireTraces.length + roundFrameTraces.length + roundCombatTraces.length + roundFlightTraces.length + roundPlayerFlightTraces.length} action/objective boundary traces differ. ${decisionFailures.length}/${decisionIntegrationTraces.length + passDecisionTraces.length + pressureDecisionTraces.length + opposedDecisionTraces.length + revivalDecisionTraces.length + roundDecisionTraces.length + matchDecisionTraces.length + mobilityDecisionTraces.length + mapRoutingTraces.length + mapContestTraces.length + mapMatchTraces.length + passContestTraces.length + passMatchTraces.length + mapPassMatchTraces.length + rosterContestTraces.length + tankContestTraces.length + earnedTankTraces.length + passRecoveryTraces.length + rosterMatchTraces.length} live decision integration traces fail. ${mapMobilityFailures.length}/${mapMobilityTraces.length} live map mobility traces fail. ${PARITY_GAPS.length} coverage gaps remain; legacy training dynamics are not certified.`,
-    { protocol: 'live-functions-vs-headless-step-v53', combatExecution: ['live-player-v1', 'live-roster-v1', 'live-roster-v2', 'live-mixed-v1'], tolerances: PARITY_TOLERANCES,
+    { protocol: 'live-functions-vs-headless-step-v54', combatExecution: ['live-player-v1', 'live-roster-v1', 'live-roster-v2', 'live-mixed-v1'], tolerances: PARITY_TOLERANCES,
+      jumpWitnesses,
+      jumpCoverageScope: 'Fixed eight-case mobility matrix requires completed autonomous flights and real dash-locked jump rejections across both teams and actor orders. The fixed 24-case complete-match matrix separately requires dash rejections on both teams. Every observed flight retains full commitment, impulse, trajectory, landing and resumed-movement checks; all requests enforce dash/swap lockouts. Failed traces cannot supply coverage. Individual seeds need not choose a jump or encounter a dash rejection. Missing groups fail the gate; no seeds, caps or match lifecycle requirements are removed.',
       postResetPassCoverage: resetPassCoverage,
       evidenceRetention: 'All trace validation precedes sampling. Full-history families retain at most 32 ordered frame samples, prioritizing first/last and failure context; frameCount records the complete validated history and frameEvidence holds its SHA-256 fingerprint with explicit special-number/undefined encoding. Direct trace runners still return full histories. Existing compact match families retain their event/final-frame contracts. This changes report retention, not gameplay, tolerances or gate requirements.',
       focusFireScope: "152 paired moving local-carrier focus-fire encounters / 18240 frames. Main and ordinary attackers commit slash/slash, slash/lunge, lunge/slash or lunge/lunge from the same origin. Retreat/cross/approach, one/two/three runner HP, both teams/orders; no-counter, shielded-enemy, surviving-enemy and long-punch controls. Independent contact-phase ordering, health, sole death credit, possession, movement and punch sphere checks. Six JSON continuations and three exact repeats. Grounded authored inputs, two seconds before revival; no autonomous spacing, obstacle interaction or quality claim.",
