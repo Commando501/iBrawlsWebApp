@@ -9,6 +9,8 @@ export function performanceGate(plan: SuitePlan, results: readonly TrialResult[]
     invalid.push('Missing calibration or different browser/hardware environment.');
   for (const job of plan.jobs) {
     const r = indexed.get(job.id), timing = r?.timings;
+    if (timing && (timing.version !== 2 || timing.warmupBasis !== 'playing-ticks' || timing.playingTicks < timing.warmupTicks))
+      invalid.push(`${job.id}: warmup must count actual playing ticks`);
     if (!finished(r) || !timing || timing.dropped || timing.warm.plannerRefresh.samples < (calibration?.minRefreshSamples ?? 20)) { invalid.push(`${job.id}: incomplete warm samples`); continue; }
     if (['snapshot', 'coordination', 'evaluation', 'tick', 'render'].some(c => timing.warm[c as keyof typeof timing.warm].samples < 1)) invalid.push(`${job.id}: incomplete live timing channels`);
     const refresh = timing.warm.plannerRefresh;

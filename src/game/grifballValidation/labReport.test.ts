@@ -4,6 +4,7 @@ import { createSuiteManifest } from './profiles';
 import { createSuitePlan } from './plan';
 import { appendLabResult, checkpointLabel, importLabRun, labRunReport, newLabRun, readableLabReport, retainedReports, reportBytes, UNKNOWN_CODE, type LabRuntimeIdentity } from './labReport';
 import { trialCheck, type TrialResult } from './runner';
+import { LiveTimings } from './telemetry';
 const runtime: LabRuntimeIdentity = { kind: 'lab-browser', buildId: null, userAgent: 'test-browser', fixedHz: 60, model: 'v2-medium' };
 async function fixture() {
   const manifest = createSuiteManifest('quick'); manifest.cases = manifest.cases.slice(0, 1);
@@ -38,6 +39,24 @@ test('changed frozen maps, forged trial results, duplicate jobs and unsupported 
   await mutate(r => r.runtime.fixedHz = 30);
   await mutate(r => r.results[0].end = {});
   await mutate(r => r.version = 2);
+});
+
+test('timing imports retain historical evidence and validate the playing-tick warmup contract', async () => {
+  const run = await fixture(), trial = result(run.plan.jobs[0].id), timing = new LiveTimings();
+  timing.playingTicks = 40; timing.record('plannerRefresh', 2);
+  trial.timings = timing.finish();
+  const populated = appendLabResult(run, trial);
+  assert.deepEqual((await importLabRun(JSON.stringify(populated))).results[0].timings, trial.timings);
+  for (const patch of [{ playingTicks: -1 }, { playingTicks: 61 }, { playingTicks: 1.5 },
+    { playingTicks: undefined }, { warmupBasis: 'elapsed-ticks' }, { version: 3 }]) {
+    const changed = structuredClone(populated);
+    Object.assign(changed.results[0].timings!, patch);
+    await assert.rejects(importLabRun(JSON.stringify(changed)), /Malformed timing evidence/);
+  }
+  const historical = structuredClone(populated);
+  historical.results[0].timings = { version: 1, warmupTicks: 120, dropped: 0,
+    cold: trial.timings.cold, warm: trial.timings.warm };
+  assert.equal((await importLabRun(JSON.stringify(historical))).results[0].timings!.version, 1);
 });
 test('cancelled and interrupted checkpoints retain completed evidence without crediting unrun jobs', async () => {
   let run = await fixture(); run = appendLabResult(run, result(run.plan.jobs[0].id));

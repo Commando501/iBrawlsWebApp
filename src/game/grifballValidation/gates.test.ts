@@ -102,8 +102,12 @@ test('performance enforces calibration, absolute/paired budgets and rejects nois
   const original = await fixture();
   const p = await createSuitePlan({ ...original.manifest, performance: { plannerRefreshP95Ms: 4, calibrationId: 'pilot-1' } }, code);
   const r = results(p), env = 'c'.repeat(64);
-  for (const item of r) { const timing = new LiveTimings(); timing.tick = 200; for (let i = 0; i < 30; i++) for (const channel of COST_CHANNELS) timing.record(channel, 2); item.timings = timing.finish(); }
+  for (const item of r) { const timing = new LiveTimings(); timing.playingTicks = 200; for (let i = 0; i < 30; i++) for (const channel of COST_CHANNELS) timing.record(channel, 2); item.timings = timing.finish(); }
   assert.equal(performanceGate(p, r, env, protocol).check.verdict, 'pass');
+  const current = r[0].timings!;
+  r[0].timings = { version: 1, warmupTicks: 120, dropped: current.dropped, cold: current.cold, warm: current.warm };
+  assert.equal(performanceGate(p, r, env, protocol).check.verdict, 'inconclusive', 'old countdown-based timings cannot certify warm cost');
+  r[0].timings = current;
   assert.equal(performanceGate(p, r, 'd'.repeat(64), protocol).check.verdict, 'inconclusive');
   r[1].timings!.warm.plannerRefresh = { samples: 30, p50Ms: 5, p95Ms: 5, maxMs: 5 };
   assert.equal(performanceGate(p, r, env, protocol).check.verdict, 'fail');
@@ -282,7 +286,7 @@ test('corrected player traces agree while incomplete coverage and legacy differe
 
 test('inactive phase resets cannot inflate warm active planner refresh samples', () => {
   const state = createInitialGrifballRuntimeState({ debugMode: false, adminSettings: { ...DEFAULT_ADMIN_SETTINGS, gameMode: 'grifball' }, isMultiplayer: false, multiplayerRole: null });
-  const timing = new LiveTimings(); timing.tick = 200; liveTimings.set(state, timing);
+  const timing = new LiveTimings(); timing.playingTicks = 200; liveTimings.set(state, timing);
   for (const phase of ['countdown', 'scored', 'matchEnd'] as const) {
     state.grifball.phase = phase;
     for (let i = 0; i < 30; i++) updateGrifballTeamPlanForState(state, 1 / 60, () => ({ x: 40, z: 0 }));

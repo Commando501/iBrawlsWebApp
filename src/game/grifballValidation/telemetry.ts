@@ -29,8 +29,9 @@ export class DeterministicTrace {
 export const COST_CHANNELS = ['snapshot', 'plannerRefresh', 'plannerBetween', 'coordination', 'evaluation', 'tick', 'render'] as const;
 export type CostChannel = typeof COST_CHANNELS[number];
 export interface Distribution { samples: number; p50Ms: number; p95Ms: number; maxMs: number }
-export interface TimingEvidence { version: 1; warmupTicks: 120; dropped: number;
-  cold: Record<CostChannel, Distribution>; warm: Record<CostChannel, Distribution> }
+export type TimingEvidence = { warmupTicks: 120; dropped: number;
+  cold: Record<CostChannel, Distribution>; warm: Record<CostChannel, Distribution> } &
+  ({ version: 1 } | { version: 2; warmupBasis: 'playing-ticks'; playingTicks: number });
 export function distribution(values: readonly number[]): Distribution {
   const sorted = [...values].sort((a, b) => a - b);
   return { samples: sorted.length, p50Ms: sorted[Math.max(0, Math.ceil(sorted.length * .5) - 1)] ?? 0,
@@ -38,17 +39,18 @@ export function distribution(values: readonly number[]): Distribution {
 }
 /** Opt-in live instrumentation; no profiling state is copied into game snapshots. */
 export class LiveTimings {
-  tick = 0; private dropped = 0;
+  playingTicks = 0; private dropped = 0;
   private cold = Object.fromEntries(COST_CHANNELS.map(c => [c, [] as number[]])) as Record<CostChannel, number[]>;
   private warm = Object.fromEntries(COST_CHANNELS.map(c => [c, [] as number[]])) as Record<CostChannel, number[]>;
   record(channel: CostChannel, ms: number) {
-    const values = (this.tick < 120 ? this.cold : this.warm)[channel];
+    const values = (this.playingTicks < 120 ? this.cold : this.warm)[channel];
     if (!Number.isFinite(ms) || ms < 0 || values.length >= 216000) { this.dropped++; return; }
     values.push(ms);
   }
   finish(): TimingEvidence {
     const summarize = (v: Record<CostChannel, number[]>) => Object.fromEntries(COST_CHANNELS.map(c => [c, distribution(v[c])])) as Record<CostChannel, Distribution>;
-    return { version: 1, warmupTicks: 120, dropped: this.dropped, cold: summarize(this.cold), warm: summarize(this.warm) };
+    return { version: 2, warmupBasis: 'playing-ticks', playingTicks: this.playingTicks,
+      warmupTicks: 120, dropped: this.dropped, cold: summarize(this.cold), warm: summarize(this.warm) };
   }
 }
 export const liveTimings = new WeakMap<object, LiveTimings>();

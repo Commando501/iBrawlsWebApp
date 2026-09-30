@@ -224,7 +224,7 @@ export class GrifballValidationRuntime implements TrialHandle {
     if (this.result) return;
     try {
       this.stage = 'before-tick'; this.checkInvariants(); this.port.resetControls();
-      const started = performance.now();
+      const started = performance.now(), playingBefore = this.port.state.grifball.phase === 'playing';
       this.stage = 'tick';
       withSimulationRandom(this.random, this.tickCount * LAB_TICK, () => this.port.tick(LAB_TICK));
       const cost = performance.now() - started;
@@ -234,7 +234,8 @@ export class GrifballValidationRuntime implements TrialHandle {
       const evaluated = performance.now();
       this.stage = 'sampling'; this.sample(LAB_TICK); this.observe();
       this.timings.record('evaluation', performance.now() - evaluated);
-      this.timings.tick = this.tickCount;
+      // Countdown and round-reset time cannot warm code that has not executed.
+      if (playingBefore || this.port.state.grifball.phase === 'playing') this.timings.playingTicks++;
       const next = frame(this.port.state, this.tickCount);
       if (next.phase !== this.last.phase || next.round !== this.last.round || next.holder !== this.last.holder ||
         next.ballState !== this.last.ballState || JSON.stringify(next.scores) !== JSON.stringify(this.last.scores) ||

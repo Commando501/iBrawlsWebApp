@@ -14,6 +14,7 @@ import { createAIRosterCallbacksForState } from './aiRosterCallbacks';
 import { runGrifballAIOrchestratorForState } from './aiOrchestratorBridge';
 import { updateGrifballTeamPlanForState } from './grifballTeamPlanRuntime';
 import type { GrifballThreeRefs } from './threeRefs';
+import { liveTimings } from '../../game/grifballValidation/telemetry';
 
 async function setup(roster: 'scripted-1v1' | 'scripted-3v4' | 'scripted-4v4' | 'scenario' = 'scripted-1v1', mirrored = false,
   tick?: (s: GrifballRuntimeState, dt: number) => void, seconds = 1) {
@@ -78,6 +79,35 @@ test('simulation cap remains unfinished and no ticks occur after stopping', asyn
   const result = await runtime.done;
   assert.equal(result.termination, 'simulation-cap'); assert.equal(result.check.verdict, 'inconclusive');
   assert.equal(calls(), 60); assert.equal(result.end!.tick, 60); runtime.dispose();
+});
+
+test('performance warmup counts actual play across countdown and round reset', async () => {
+  const { runtime, state } = await setup('scripted-4v4', false, (s, dt) => {
+    tickGrifballMatch(s.grifball, dt, resolveMatchConfig(s.settings));
+    updateGrifballTeamPlanForState(s, dt, team => ({ x: team === 'blue' ? 40 : -40, z: 0 }));
+  }, 10);
+  try {
+    const timing = liveTimings.get(state)!;
+    for (let i = 0; i < 180; i++) runtime.step();
+    assert.equal(timing.finish().warm.tick.samples, 0, 'countdown must not warm the planner');
+    for (let i = 0; i < 60 && state.grifball.phase === 'countdown'; i++) runtime.step();
+    assert.equal(state.grifball.phase, 'playing');
+    assert.equal(timing.playingTicks, 1);
+    assert.equal(timing.finish().cold.plannerRefresh.samples, 1, 'first live refresh is cold');
+    while (timing.playingTicks < 120) runtime.step();
+    assert.equal(timing.finish().warm.plannerRefresh.samples, 0);
+    assert.equal(timing.finish().warm.tick.samples, 0);
+    for (let i = 0; i < 20; i++) runtime.step();
+    assert.ok(timing.finish().warm.plannerRefresh.samples > 0);
+    assert.equal(timing.finish().warm.tick.samples, 20);
+    const active = timing.playingTicks;
+    state.grifball.phase = 'scored'; state.grifball.phaseTimer = 0;
+    for (let i = 0; i < 60; i++) runtime.step();
+    assert.equal(timing.playingTicks, active, 'round reset must not advance active warmup');
+    const report = timing.finish();
+    assert.equal(report.version, 2);
+    assert.equal(report.version === 2 && report.warmupBasis, 'playing-ticks');
+  } finally { runtime.dispose(); }
 });
 
 test('real phase machine reaches terminal state and prevents post-match ticks (controlled lifecycle fixture)', async () => {

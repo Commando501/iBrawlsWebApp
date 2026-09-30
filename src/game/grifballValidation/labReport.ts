@@ -108,7 +108,8 @@ export async function importLabRun(text: string): Promise<LabRun> {
       !(copy.deterministic.hash === null || /^[a-f0-9]{64}$/.test(copy.deterministic.hash)))) throw new Error('Malformed deterministic evidence');
     if (copy.timings) {
       const t = copy.timings;
-      if (t.version !== 1 || t.warmupTicks !== 120 || !Number.isInteger(t.dropped) || t.dropped < 0 ||
+      if (![1, 2].includes(t.version) || t.version === 2 && (t.warmupBasis !== 'playing-ticks' || !Number.isInteger(t.playingTicks) || t.playingTicks < 0 || t.playingTicks > (copy.end?.tick ?? 0)) ||
+        t.warmupTicks !== 120 || !Number.isInteger(t.dropped) || t.dropped < 0 ||
         !t.cold || !t.warm || [t.cold, t.warm].some(phase => COST_CHANNELS.some(channel => {
           const d = phase[channel]; return !d || !Number.isInteger(d.samples) || d.samples < 0 ||
             [d.p50Ms, d.p95Ms, d.maxMs].some(n => !Number.isFinite(n) || n < 0) || d.p50Ms > d.p95Ms || d.p95Ms > d.maxMs;
