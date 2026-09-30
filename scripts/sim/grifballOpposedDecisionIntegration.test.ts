@@ -1,6 +1,49 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { OPPOSED_DECISION_CASES, runOpposedDecisionTrace, validateOpeningCombatCredit } from './grifballOpposedDecisionIntegration';
+import { OPPOSED_DECISION_CASES, runOpposedDecisionTrace, validateOpeningCombatCredit, validateOpeningPossession } from './grifballOpposedDecisionIntegration';
+
+test('opening possession accounts for a second carrier death and pickup through every frame', () => {
+  // Retained departing-carrier replay: carrier dies at 8, escort picks up at
+  // 70 and dies at 133, then defender recovers at 150.
+  const pickups = [{ tick: 70, id: 'escort' }, { tick: 150, id: 'defender' }];
+  const deaths = [{ tick: 8, id: 'carrier' }, { tick: 133, id: 'escort' }];
+  const frames = Array.from({ length: 150 }, (_, index) => {
+    const tick = index + 1;
+    const holderId = tick < 8 ? 'carrier' : tick < 70 ? null : tick < 133 ? 'escort' : tick < 150 ? null : 'defender';
+    return { tick, ball: { state: holderId ? 'held' : 'loose', holderId },
+      actors: ['carrier', 'escort', 'defender'].map(id => ({ id,
+        hp: deaths.some(death => death.id === id && death.tick <= tick) ? 0 : 1,
+        weapon: id === holderId ? 'ball' : 'hammer' })) };
+  });
+  assert.deepEqual(validateOpeningPossession('carrier', frames, pickups, deaths), []);
+  assert.deepEqual(validateOpeningPossession('carrier', frames.slice(0, 140), pickups.slice(0, 1), deaths), []);
+  for (const defect of ['missing-pickup', 'missing-death', 'wrong-death', 'wrong-holder', 'wrong-state', 'dead-holder',
+    'wrong-weapon', 'duplicate-pickup', 'duplicate-death', 'out-of-window', 'fractional-tick', 'reordered', 'missing-frame']) {
+    const f = structuredClone(frames), p = structuredClone(pickups), d = structuredClone(deaths);
+    if (defect === 'missing-pickup') p.pop();
+    if (defect === 'missing-death') d.pop();
+    if (defect === 'wrong-death') d[1].id = 'defender';
+    if (defect === 'wrong-holder') f[149].ball.holderId = 'escort';
+    if (defect === 'wrong-state') f[149].ball.state = 'loose';
+    if (defect === 'dead-holder') f[149].actors[2].hp = 0;
+    if (defect === 'wrong-weapon') f[149].actors[2].weapon = 'hammer';
+    if (defect === 'duplicate-pickup') p.push({ ...p[1] });
+    if (defect === 'duplicate-death') d.push({ ...d[1] });
+    if (defect === 'out-of-window') p.push({ tick: 151, id: 'escort' });
+    if (defect === 'fractional-tick') p[0].tick += .5;
+    if (defect === 'reordered') p.reverse();
+    if (defect === 'missing-frame') f.splice(90, 1);
+    assert.ok(validateOpeningPossession('carrier', f, p, d).length, defect);
+  }
+  // Objective pickup precedes melee death in a frame, never the reverse.
+  const sameFrame = structuredClone(frames);
+  sameFrame[69].ball = { state: 'loose', holderId: null };
+  sameFrame[69].actors[1].hp = 0;
+  sameFrame[69].actors[1].weapon = 'hammer';
+  assert.deepEqual(validateOpeningPossession('carrier', sameFrame.slice(0, 70), pickups.slice(0, 1),
+    [deaths[0], { tick: 70, id: 'escort' }]), []);
+  assert.ok(validateOpeningPossession('carrier', sameFrame.slice(0, 70), [{ tick: 8, id: 'escort' }], deaths.slice(0, 1)).length);
+});
 
 test('opening combat credit permits a real second kill but rejects missing, duplicated or misplaced credit', () => {
   const actors = [{ id: 'defender', kills: 2, deaths: 0 }, { id: 'carrier', kills: 0, deaths: 1 }, { id: 'escort', kills: 0, deaths: 1 }];

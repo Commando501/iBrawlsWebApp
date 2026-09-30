@@ -605,18 +605,17 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
     check('dead actor weapon ready', loser.weaponState, 'ready');
     check('main identity kill bookkeeping', state.enemyKills, state.otherPlayers.get('main_ai')?.kills ?? 0);
     check('main identity death bookkeeping', state.enemyDeaths, state.otherPlayers.get('main_ai')?.deaths ?? 0);
-    check('expected pickup count', pickups.length, punchWins ? 0 : 1);
+    for (const failure of validateOpeningPossession(carrierId, frames, pickups, carrierDeaths))
+      check(failure, false, true);
     check('same-frame death/drop', dropTick, punchWins ? 0 : impacts[0]?.tick);
     if (punchWins) {
+      check('winning runner needs no recovery pickup', pickups.length, 0);
       check('runner retains possession', state.grifball.ball.holderId, carrierId);
       check('runner resumes route', carrier.pos.x * sign > 5, true);
     } else {
       const recoveryId = spec.mode === 'contested' ? 'escort' : defender.id;
       check('expected recovery owner', pickups[0]?.id, recoveryId);
       check('expected recovery timing', pickups[0]?.tick, spec.mode === 'contested' ? 70 : spec.reverse ? 53 : 107);
-      check('recovered possession retained or released by another carrier death',
-        state.grifball.ball.holderId === recoveryId || state.grifball.ball.state === 'loose' &&
-          state.grifball.ball.holderId === null && carrierDeaths.some(d => d.id === recoveryId && d.tick > pickups[0]!.tick), true);
       if (spec.mode === 'contested') {
         const followups = impacts.filter(i => i.victims.includes('escort'));
         // The fixed opening/match fixtures require a follow-up hit. Mobility
@@ -637,6 +636,40 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
     failureCount, failures, ...(earnedTank || passRecovery || rosterMatch ? { combatSettings } : {}), ...(passRecovery ? { authoredPass, releaseState } : {}), tankSamples, tankActions, tacticalSamples, passGeometry, passes, cancellations, mainJumpRequests, mainJumpImpacts, carrierDeaths, goals, resets, transitions, notifications, deaths, revivals, deathTick, dropTick, attacks, impacts, pickups, targetLookups, frames };
 }
 export const runOpposedDecisionIntegration = () => OPPOSED_DECISION_CASES.map(spec => runOpposedDecisionTrace(spec));
+
+/** These opening frames have no throws, goals or respawns. Reconstruct every
+ * holder from pickup/death events instead of assuming only one recovery. The
+ * objective runs before melee, so a pickup can precede a death in the same frame. */
+export function validateOpeningPossession(
+  initialHolder: string,
+  frames: readonly { tick: number; ball: { state: string; holderId: string | null }; actors: readonly { id: string; hp: number; weapon: string }[] }[],
+  pickups: readonly { tick: number; id: string }[],
+  carrierDeaths: readonly { tick: number; id: string }[],
+) {
+  const failures: string[] = [];
+  let holder: string | null = initialHolder;
+  for (const [kind, events] of [['pickup', pickups], ['carrier death', carrierDeaths]] as const) {
+    if (events.some((event, index) => !Number.isInteger(event.tick) || event.tick < 1 || event.tick > frames.length ||
+      index > 0 && event.tick <= events[index - 1].tick)) failures.push(`ordered in-window ${kind} events`);
+  }
+  for (const [index, frame] of frames.entries()) {
+    if (frame.tick !== index + 1) failures.push(`contiguous opening frame: ${frame.tick}`);
+    for (const pickup of pickups.filter(event => event.tick === frame.tick)) {
+      if (holder !== null) failures.push(`pickup requires released possession: ${frame.tick}`);
+      holder = pickup.id;
+    }
+    for (const death of carrierDeaths.filter(event => event.tick === frame.tick)) {
+      if (holder !== death.id || !frame.actors.some(actor => actor.id === death.id && actor.hp <= 0))
+        failures.push(`death releases the actual carrier: ${frame.tick}`);
+      holder = null;
+    }
+    if (frame.ball.holderId !== holder || frame.ball.state !== (holder === null ? 'loose' : 'held'))
+      failures.push(`event-backed opening possession: ${frame.tick}`);
+    if (holder !== null && !frame.actors.some(actor => actor.id === holder && actor.hp > 0 && actor.weapon === 'ball'))
+      failures.push(`living equipped opening holder: ${frame.tick}`);
+  }
+  return failures;
+}
 
 /** Opening fights have no respawns or environmental deaths. Every recorded
  * death must have exactly one lethal impact and its credit on that attacker. */
