@@ -19,6 +19,55 @@ function scene(): GrifballTacticalSnapshot {
 const run = (s: GrifballTacticalSnapshot) => { const state = createGrifballTeamPlanState(); updateGrifballTeamPlan(state, s, 0.2); return state; };
 const blue = (state: ReturnType<typeof run>) => [...state.assignments.values()].filter(a => a.team === 'blue');
 
+for (const mirror of [false, true]) for (const reverse of [false, true]) for (const human of [false, true])
+  test(`a persistent blocked carrier expires the motion forecast, but a brief pause does not: ${mirror}/${reverse}/${human}`, () => {
+    const s = scene(), sign = mirror ? -1 : 1;
+    s.tactics!.defaults.stylesEnabled = false;
+    s.players = [p('front', 'blue', 2, 4), p('safety', 'blue', -8, 5), p('support', 'blue', -4, -5), p('runner', 'red', 8)];
+    s.players[3].scripted = !human;
+    s.geometry = { key: `persistent-carrier-cover/${mirror}`, shape: 'rectangular', x: 52, z: 23,
+      blockers: [{ kind: 'box', x: 5 * sign, z: 0, hx: 2, hz: 3 }] };
+    if (mirror) for (const actor of s.players) {
+      actor.team = actor.team === 'blue' ? 'red' : 'blue'; actor.pos.x *= -1; actor.pos.z *= -1;
+    }
+    if (reverse) s.players.reverse();
+    const carrier = s.players.find(a => a.id === 'runner')!, state = run(s);
+    const interceptor = () => [...state.assignments.values()].find(a => a.defense?.mode === 'intercept')!;
+    for (let i = 0; i < 5; i++) updateGrifballTeamPlan(state, s, .25);
+    assert.equal(state.carrierMotion!.stationarySeconds, 1.25);
+    assert.notDeepEqual(interceptor().defense!.intercept, carrier.pos);
+    updateGrifballTeamPlan(state, s, .25);
+    assert.deepEqual(interceptor().defense!.intercept, carrier.pos);
+    assert.equal(interceptor().space!.route.status, 'routed');
+    assert.ok(Number.isFinite(interceptor().space!.route.length));
+    assert.match(interceptor().reason, /stationary carrier/);
+    assert.equal([...state.assignments.values()].filter(a => a.defense?.mode === 'last-defender').length, 1);
+    if (human) assert.equal(state.assignments.has(carrier.id), false);
+    carrier.pos.x += 2 * sign;
+    updateGrifballTeamPlan(state, s, .25);
+    assert.equal(state.carrierMotion!.stationarySeconds, 0, 'observed movement restores prediction');
+  });
+
+test('carrier motion observations reset across ownership, rounds, disabled defense and match reset', () => {
+  const s = scene(), state = run(s);
+  updateGrifballTeamPlan(state, s, .25);
+  assert.equal(state.carrierMotion!.stationarySeconds, .25);
+  updateGrifballTeamPlan(state, { ...s, holderId: 'escort' }, .25);
+  assert.equal(state.carrierMotion!.carrierId, 'escort'); assert.equal(state.carrierMotion!.stationarySeconds, 0);
+  updateGrifballTeamPlan(state, { ...s, round: 2 }, .25);
+  assert.equal(state.carrierMotion!.stationarySeconds, 0);
+  updateGrifballTeamPlan(state, { ...s, holderId: null }, .25);
+  assert.equal(state.carrierMotion, null);
+  updateGrifballTeamPlan(state, s, .25);
+  updateGrifballTeamPlan(state, { ...s, playing: false }, .25);
+  assert.equal(state.carrierMotion, null);
+  s.tactics!.defaults.defenseEnabled = false;
+  updateGrifballTeamPlan(state, s, .25); assert.equal(state.carrierMotion, null);
+  s.tactics!.defaults.defenseEnabled = true;
+  updateGrifballTeamPlan(state, s, .25); assert.equal(state.carrierMotion!.stationarySeconds, 0);
+  resetGrifballTeamPlan(state); assert.equal(state.carrierMotion, null);
+});
+
 for (const team of ['blue', 'red'] as const) for (const id of ['defender', 'main_ai'])
   for (const scenario of ['own-reach', 'enemy-reach', 'approaching-cut', 'distant-cut', 'engagement-limit', 'safety', 'blocked'] as const)
     test(`defensive combat handoff respects reach and establishes the cut: ${team}/${id}/${scenario}`, () => {

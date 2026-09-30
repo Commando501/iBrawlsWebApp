@@ -1,5 +1,5 @@
 import { observeGrifballStyle, resolveGrifballStyle, tacticalDifficulty, type GrifballStyleMemory, type GrifballStylePlan, type TacticalChoice } from './aiGrifballStyle';
-import { applyGrifballDefense, selectDefenseThreat, type DefenseOrder } from './aiGrifballDefense';
+import { applyGrifballDefense, selectDefenseThreat, observeDefenseCarrierMotion, type DefenseCarrierMotion, type DefenseOrder } from './aiGrifballDefense';
 import { planGrifballPass, predictBallRecovery, type PassingRules, type PassPlan, type PassCharge, type ReceiveOrder } from './aiGrifballPassing';
 import type { GrifballBall } from './grifballBall';
 import { applyGrifballTanking, tickTankingMemory, selectTankingThreat, type TankingMemory, type TankingOrder } from './aiGrifballTanking';
@@ -74,6 +74,7 @@ export interface GrifballTeamPlanState {
   passCharge: PassCharge | null;
   passFlight: { team: TeamId; receiverId: string; carrierId: string } | null;
   transition: Record<string, number>;
+  carrierMotion: DefenseCarrierMotion | null;
   styleSeed: number;
   stylePlay: number;
   styleMemory: Record<string, GrifballStyleMemory>;
@@ -81,7 +82,7 @@ export interface GrifballTeamPlanState {
 }
 
 export const createGrifballTeamPlanState = (): GrifballTeamPlanState => ({
-  styleSeed: 1, stylePlay: 0, styleMemory: {}, stylePlans: {}, assignments: new Map(), snapshot: null, signature: '', untilRefresh: 0, revision: 0, teamRefresh: {}, passPlans: {}, passCharge: null, passFlight: null, transition: {}, runnerMemory: {}, runnerPlans: {}, tankingMemory: {},
+  styleSeed: 1, stylePlay: 0, styleMemory: {}, stylePlans: {}, assignments: new Map(), snapshot: null, signature: '', untilRefresh: 0, revision: 0, teamRefresh: {}, passPlans: {}, passCharge: null, passFlight: null, transition: {}, carrierMotion: null, runnerMemory: {}, runnerPlans: {}, tankingMemory: {},
 });
 
 export function resetGrifballTeamPlan(state: GrifballTeamPlanState): void {
@@ -94,6 +95,7 @@ export function resetGrifballTeamPlan(state: GrifballTeamPlanState): void {
   state.teamRefresh = {};
   state.runnerMemory = {}; state.runnerPlans = {}; state.tankingMemory = {};
   state.passPlans = {}; state.passCharge = null; state.passFlight = null; state.transition = {};
+  state.carrierMotion = null;
 }
 
 const distance = (a: FieldPoint, b: FieldPoint) => Math.hypot(a.x - b.x, a.z - b.z);
@@ -144,6 +146,9 @@ export function updateGrifballTeamPlan(
   if (state.passCharge && (snapshot.holderId !== state.passCharge.carrierId || !snapshot.passing?.allowed ||
     !players.some(p => p.id === state.passCharge.receiverId && p.scripted))) state.passCharge = null;
   const holder = players.find(p => p.id === snapshot.holderId);
+  const defendingTuning = holder && resolveTeamTactics(config, otherTeam(holder.team));
+  state.carrierMotion = snapshot.playing && defendingTuning?.enabled && defendingTuning.spaceEnabled && defendingTuning.defenseEnabled
+    ? observeDefenseCarrierMotion(samePlay ? state.carrierMotion : null, holder, dt) : null;
   if (!samePlay) { state.stylePlay++; state.passPlans = {}; state.runnerMemory = {}; state.runnerPlans = {}; state.tankingMemory = {}; }
   for (const team of ['blue', 'red']) {
     const tuning = resolveTeamTactics(config, team);
@@ -290,7 +295,7 @@ export function updateGrifballTeamPlan(
     }
     const teamAssignments = [...next.values()].filter(a => a.team === team);
     if (state.tankingMemory[team] && routers) applyGrifballTanking(snapshot, teamAssignments, runnerPlay, tuning, state.tankingMemory[team], routers, previous, choice);
-    if (tuning.spaceEnabled && routers && tuning.defenseEnabled) applyGrifballDefense(snapshot, teamAssignments, tuning, routers, previous, state.transition[team] ?? 0);
+    if (tuning.spaceEnabled && routers && tuning.defenseEnabled) applyGrifballDefense(snapshot, teamAssignments, tuning, routers, previous, state.transition[team] ?? 0, state.carrierMotion?.stationarySeconds ?? 0);
     delete state.passPlans[team];
     if (friendly && holder && routers && tuning.spaceEnabled && tuning.passingEnabled) {
       const pass = planGrifballPass(snapshot, holder, tuning, routers);

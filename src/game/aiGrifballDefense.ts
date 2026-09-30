@@ -9,6 +9,18 @@ export interface DefenseOrder {
   targetId: string | null; intercept: FieldPoint; arrivalETA: number; carrierETA: number;
   advantage: number; reinforcementIn: number; emergency: boolean; transitioning: boolean;
 }
+export interface DefenseCarrierMotion {
+  carrierId: string; team: string; anchor: FieldPoint; stationarySeconds: number;
+}
+/** Track actual displacement, including a carrier whose attempted movement is blocked. */
+export function observeDefenseCarrierMotion(memory: DefenseCarrierMotion | null | undefined,
+  carrier: GrifballTacticalPlayer | undefined, dt: number): DefenseCarrierMotion | null {
+  if (!carrier) return null;
+  if (!memory || memory.carrierId !== carrier.id || memory.team !== carrier.team || distance(memory.anchor, carrier.pos) > .5)
+    return { carrierId: carrier.id, team: carrier.team, anchor: { ...carrier.pos }, stationarySeconds: 0 };
+  memory.stationarySeconds += Math.max(0, dt);
+  return memory;
+}
 const toward = (from: FieldPoint, to: FieldPoint, amount: number): FieldPoint => {
   const d = distance(from, to), scale = Math.min(d, amount) / Math.max(d, 0.001);
   return { x: from.x + (to.x - from.x) * scale, z: from.z + (to.z - from.z) * scale };
@@ -16,7 +28,7 @@ const toward = (from: FieldPoint, to: FieldPoint, amount: number): FieldPoint =>
 
 /** Defenders share one projection, one safety, and distinct marks. No orders for observed players. */
 export function applyGrifballDefense(snapshot: GrifballTacticalSnapshot, assignments: GrifballAssignment[],
-  tuning: TeamTactics, routers: SpaceRouters, previous: Map<string, GrifballAssignment>, transition: number): void {
+  tuning: TeamTactics, routers: SpaceRouters, previous: Map<string, GrifballAssignment>, transition: number, carrierStationarySeconds = 0): void {
   if (!assignments.length) return;
   const team = assignments[0].team, goal = snapshot.goals[team];
   const carrier = snapshot.players.find(p => p.id === snapshot.holderId);
@@ -34,7 +46,10 @@ export function applyGrifballDefense(snapshot: GrifballTacticalSnapshot, assignm
   const contain = !emergency && (advantage < 0 || transition > 0 || tuning.defensePressure < 0.4 ||
     (reinforcementIn <= tuning.defenseRespawnWait && advantage <= 0));
   let projected = { ...anchor };
-  if (carrier) {
+  const expiredMotion = !!carrier && carrierStationarySeconds >= tuning.defenseLookahead;
+  // A short pause retains the cut. Once observed displacement contradicts the
+  // full forecast horizon, pressure the actual position instead of waiting forever.
+  if (carrier && !expiredMotion) {
     const speed = Math.max(0.1, carrier.space?.speed ?? 5.8), velocity = Math.hypot(carrier.vel.x, carrier.vel.z);
     const scale = Math.min(1, speed / Math.max(0.001, velocity)) * tuning.defenseLookahead;
     const moving = { x: anchor.x + carrier.vel.x * scale, z: anchor.z + carrier.vel.z * scale };
@@ -84,7 +99,7 @@ export function applyGrifballDefense(snapshot: GrifballTacticalSnapshot, assignm
     a.defense = { mode, targetId: target?.id ?? null, intercept: { ...point },
       arrivalETA: estimateSpaceAttackTime(self, point, routeLength(self.id, point)), carrierETA,
       advantage, reinforcementIn, emergency, transitioning: transition > 0 };
-    a.reason = `${mode}: ${emergency ? 'contest the scoring threat' : transition > 0 ? 'recover shape after possession loss' : contain ? 'hold the goal side until pressure is safe' : 'cut the carrier route and protect the goal'}`;
+    a.reason = `${mode}: ${emergency ? 'contest the scoring threat' : transition > 0 ? 'recover shape after possession loss' : contain ? 'hold the goal side until pressure is safe' : expiredMotion ? 'pressure the stationary carrier and protect the goal' : 'cut the carrier route and protect the goal'}`;
   };
   assign(safety, 'last-defender', emergency ? anchor : safetyPoint, carrier);
   safety.role = 'safety';
