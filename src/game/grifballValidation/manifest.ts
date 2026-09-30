@@ -42,7 +42,7 @@ function parseCase(value: unknown): ValidationCase {
   const mode = choice(c.mode, ['scenario', 'match'], `${id}.mode`);
   const roster = choice(c.roster, ROSTERS, `${id}.roster`);
   if (mode === 'scenario' ? roster !== 'lab-3v4' : roster === 'lab-3v4')
-    throw new Error(`${id}: scenario fixtures require lab-3v4; matches require a scripted roster`);
+    throw new Error(`${id}: scenario fixtures require lab-3v4; matches require a scripted or local-4v4 roster`);
   if (mode === 'match' && c.scenario !== null) throw new Error(`${id}: match scenario must be null`);
   return {
     id, mode, roster,

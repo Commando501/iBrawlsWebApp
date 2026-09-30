@@ -16,21 +16,73 @@ import { updateGrifballTeamPlanForState } from './grifballTeamPlanRuntime';
 import type { GrifballThreeRefs } from './threeRefs';
 import { liveTimings } from '../../game/grifballValidation/telemetry';
 import { assertDecisionTrace } from '../../game/grifballValidation/decisionTrace';
+import type { ValidationLocalInput } from '../../game/grifballValidation/localPlayerInput';
 
-async function setup(roster: 'scripted-1v1' | 'scripted-3v4' | 'scripted-4v4' | 'scenario' = 'scripted-1v1', mirrored = false,
-  tick?: (s: GrifballRuntimeState, dt: number) => void, seconds = 1) {
+async function setup(roster: 'scripted-1v1' | 'scripted-3v4' | 'scripted-4v4' | 'local-4v4' | 'scenario' = 'scripted-1v1', mirrored = false,
+  tick?: (s: GrifballRuntimeState, dt: number) => void, seconds = 1, localAdapter = true) {
   const manifest = createSuiteManifest(roster === 'scenario' ? 'quick' : 'standard');
-  manifest.cases = [manifest.cases.find(c => roster === 'scenario' ? c.scenario === 'pickup' : c.roster === roster)!];
+  manifest.cases = [manifest.cases.find(c => roster === 'scenario' ? c.scenario === 'pickup' : c.roster === (roster === 'local-4v4' ? 'scripted-3v4' : roster))!];
+  if (roster === 'local-4v4') manifest.cases[0].roster = roster;
   Object.assign(manifest.cases[0], { seeds: [101], mirrored, simulationSeconds: seconds });
   const plan = await createSuitePlan(manifest, { commit: null, dirty: null, workingTreeHash: null, scope: [] });
   const job = plan.jobs.find(j => j.mirrored === mirrored)!;
   const state = createInitialGrifballRuntimeState({ debugMode: false, adminSettings: { ...DEFAULT_ADMIN_SETTINGS }, isMultiplayer: false, multiplayerRole: null });
   state.gameTime = 99; const origin = cloneLabState(state), meshes = new Map<string, { group: THREE.Group }>(); let calls = 0;
+  const inputs: ValidationLocalInput[] = [];
   const runtime = new GrifballValidationRuntime({ state, resetControls: () => {}, removeActor: id => { meshes.delete(id); },
     provisionActor: p => { meshes.set(p.id, { group: new THREE.Group() }); }, hasActorMesh: id => meshes.has(id),
+    ...(localAdapter ? { applyLocalInput: (input: ValidationLocalInput) => { inputs.push(input); } } : {}),
     tick: dt => { calls++; tick?.(state, dt); } }, plan.cases[0], job);
-  return { runtime, state, origin, meshes, calls: () => calls, fixture: plan.cases[0] };
+  return { runtime, state, origin, meshes, calls: () => calls, fixture: plan.cases[0], inputs };
 }
+
+for (const mirrored of [false, true]) test(`local fixture freezes seven bot owners and a separate local input owner: ${mirrored}`, async () => {
+  const { runtime, state, fixture, inputs, origin } = await setup('local-4v4', mirrored);
+  assert.equal(fixture.observer, 'local-input'); assert.equal(fixture.localInput, 'objective-walk-and-melee-v1');
+  assert.equal(state.otherPlayers.size, 7); assert.equal(state.isObserverMode, false); assert.equal(state.hideLocalObserverAvatar, false);
+  assert.equal(state.localPlayerTeam, mirrored ? 'red' : 'blue');
+  assert.equal([...state.otherPlayers.values()].filter(p => p.team === state.localPlayerTeam).length, 3);
+  assert.ok(state.playerPos.y < 1); assert.ok(state.playerHP > 0);
+  assert.ok(![...state.otherPlayers.values()].some(p => p.pos.distanceTo(state.playerPos) < .1));
+  runtime.step(); assert.deepEqual(inputs[0], { forward: false, yaw: 0, attack: null, pickup: false });
+  state.grifball.phase = 'playing'; runtime.step(); assert.equal(inputs[1].forward, true);
+  const result = runtime.stop('cancelled');
+  assert.equal(result.start!.alive.length, 8); assert.ok(result.start!.alive.includes('player'));
+  assert.equal(result.localPlayer!.inputTicks, 2); assert.equal(result.localPlayer!.movementRequests, 1);
+  runtime.dispose(); assert.equal(state.isObserverMode, origin.isObserverMode); assert.deepEqual(state.playerPos, origin.playerPos);
+});
+
+test('local fixture fails closed without its production input adapter', async () => {
+  const { runtime } = await setup('local-4v4', false, undefined, 1, false);
+  const result = await runtime.done; assert.equal(result.termination, 'setup-error'); assert.match(result.check.summary, /input adapter/); runtime.dispose();
+});
+
+for (const mutation of ['team', 'observer', 'non-finite', 'assignment', 'dead-holder'] as const)
+  test(`local ownership invariants reject ${mutation}`, async () => {
+    const { runtime, state } = await setup('local-4v4');
+    if (mutation === 'team') state.localPlayerTeam = 'red';
+    if (mutation === 'observer') state.isObserverMode = true;
+    if (mutation === 'non-finite') state.playerPos.x = NaN;
+    if (mutation === 'assignment') state.aiMatchContext.grifballTeamPlan.assignments.set('player', {} as never);
+    if (mutation === 'dead-holder') { state.playerHP = 0; state.playerRespawnTimer = 3; state.grifball.ball.state = 'held'; state.grifball.ball.holderId = 'player'; }
+    runtime.step(); const result = await runtime.done;
+    assert.equal(result.termination, 'invalid-state'); assert.ok(result.failureState!.actors.some(p => p.id === 'player'));
+    if (mutation === 'dead-holder') assert.equal(result.failureState!.holder!.hp, 0);
+    runtime.dispose();
+  });
+
+test('living local possession is valid, and local state contributes to the deterministic hash', async () => {
+  const hashes = [];
+  for (const offset of [0, 0, 1]) {
+    const { runtime, state } = await setup('local-4v4');
+    state.grifball.phase = 'playing'; state.grifball.ball.state = 'held'; state.grifball.ball.holderId = 'player';
+    state.activeWeapon = 'ball'; state.playerPos.z += offset;
+    runtime.step(); runtime.stop('cancelled'); const result = await runtime.done;
+    assert.equal(result.termination, 'cancelled'); assert.equal(result.localPlayer!.possessions, 1);
+    assert.equal(result.localPlayer!.carrierTicks, 1); hashes.push(result.deterministic!.hash); runtime.dispose();
+  }
+  assert.equal(hashes[0], hashes[1]); assert.notEqual(hashes[0], hashes[2]);
+});
 
 for (const roster of ['scripted-1v1', 'scripted-3v4', 'scripted-4v4'] as const) for (const mirrored of [false, true]) {
   test(`${roster} ${mirrored ? 'mirrored' : 'original'} starts a fresh authored match with an outside observer`, async () => {

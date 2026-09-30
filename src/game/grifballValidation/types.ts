@@ -4,6 +4,7 @@ import type { LabScenario } from '../grifballLabStore';
 import type { GrifballTacticsConfig } from '../grifballTacticsConfig';
 import type { RosterSlotConfig } from '../rosterSlotConfig';
 import type { AIResolvedKnobs, DerivedAIParams } from '../aiTuning';
+import type { LOCAL_INPUT_PROTOCOL } from './localPlayerInput';
 
 // Independent of the existing single-scenario EvaluationReport contract.
 export const SUITE_VERSION = 1 as const;
@@ -18,7 +19,7 @@ export const REQUIRED_GATES: Record<SuiteProfile, readonly Gate[]> = {
 };
 export const MAP_IDS = ['championship_stadium', 'forerunner_canyon',
   'validation-staggered-lanes-v1', 'validation-split-midfield-v1'] as const;
-export const ROSTERS = ['lab-3v4', 'scripted-1v1', 'scripted-3v4', 'scripted-4v4'] as const;
+export const ROSTERS = ['lab-3v4', 'scripted-1v1', 'scripted-3v4', 'scripted-4v4', 'local-4v4'] as const;
 export const DIFFICULTIES = ['easy', 'normal', 'hard', 'nightmare'] as const;
 export const SCENARIOS = ['pickup', 'escort', 'turnover', 'outnumbered', 'crowding', 'goal',
   'lane', 'pursuit', 'rendezvous', 'tanking', 'double', 'breakthrough', 'delay', 'cut',
@@ -81,7 +82,8 @@ export interface FrozenCase {
   map: CustomMapData;
   mechanics: UniversalSettings;
   roster: FrozenActor[];
-  observer: 'outside-roster';
+  observer: 'outside-roster' | 'local-input';
+  localInput?: typeof LOCAL_INPUT_PROTOCOL;
   combatPreset: 'built-in';
   modelPolicy: 'v2';
   modelType: 'medium';

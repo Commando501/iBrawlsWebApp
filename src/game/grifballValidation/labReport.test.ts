@@ -7,6 +7,7 @@ import { trialCheck, type TrialResult } from './runner';
 import { LiveTimings } from './telemetry';
 import { RESERVED_VALIDATION_MAPS } from './maps';
 import type { DecisionTrace } from './decisionTrace';
+import { LOCAL_INPUT_PROTOCOL } from './localPlayerInput';
 const runtime: LabRuntimeIdentity = { kind: 'lab-browser', buildId: null, userAgent: 'test-browser', fixedHz: 60, model: 'v2-medium' };
 async function fixture() {
   const manifest = createSuiteManifest('quick'); manifest.cases = manifest.cases.slice(0, 1);
@@ -19,6 +20,25 @@ function result(id: string, termination: TrialResult['termination'] = 'scenario-
   return { jobId: id, termination, check: trialCheck(id, termination, 'observed'), start: frame, end: frame,
     trace: Array.from({ length: 200 }, () => ({ ...frame })), droppedTraceEntries: 0, metrics: null, simulationCost: { samples: 60, meanMs: 1, maxMs: 2 } };
 }
+
+test('mixed local observations round-trip and reject malformed or foreign ownership evidence', async () => {
+  const manifest = createSuiteManifest('standard');
+  manifest.cases = [{ ...manifest.cases.find(c => c.roster === 'scripted-3v4')!, roster: 'local-4v4', seeds: [101] }];
+  const run = newLabRun(await createSuitePlan(manifest, UNKNOWN_CODE), runtime);
+  const trial = result(run.plan.jobs[0].id, 'simulation-cap');
+  trial.localPlayer = { protocol: LOCAL_INPUT_PROTOCOL, inputTicks: 60, movementRequests: 20, attackRequests: 3,
+    attackStarts: 1, pickupRequests: 5, distanceMoved: 2.5, possessions: 1, carrierTicks: 4, kills: 0, deaths: 1, respawns: 1, goals: 0 };
+  const populated = appendLabResult(run, trial);
+  assert.deepEqual((await importLabRun(JSON.stringify(populated))).results[0].localPlayer, trial.localPlayer);
+  for (const patch of [{ protocol: 'unknown' }, { distanceMoved: null }, { deaths: -1 }, { kills: .5 },
+    { attackStarts: 4 }, { movementRequests: 61 }, { inputTicks: 1e9 }, { pickupRequests: undefined }]) {
+    const changed = structuredClone(populated); Object.assign(changed.results[0].localPlayer!, patch);
+    await assert.rejects(importLabRun(JSON.stringify(changed)), /Malformed local player evidence/);
+  }
+  const observer = await fixture();
+  const foreign = appendLabResult(observer, { ...result(observer.plan.jobs[0].id), localPlayer: trial.localPlayer });
+  await assert.rejects(importLabRun(JSON.stringify(foreign)), /Malformed local player evidence/);
+});
 
 function decisions(): DecisionTrace {
   const frame = result('fixture').end!;

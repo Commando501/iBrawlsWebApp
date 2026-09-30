@@ -1,4 +1,5 @@
 import { GrifballValidationRuntime } from './grifball/grifballValidationRuntime';
+import { applyValidationLocalInput } from './grifball/validationLocalInputRuntime';
 import { grifballLab } from '../game/grifballLabStore';
 import { GrifballLabRuntime } from './grifball/grifballLabRuntime';
 /**
@@ -752,6 +753,8 @@ export const GrifballGame: React.FC<GrifballGameProps> = ({
           removeActor: id => events.onBotDespawned?.(id),
           provisionActor: bot => createOrUpdateRemotePlayer(bot.id, bot),
           hasActorMesh: id => Boolean(threeRef.current.otherPlayerMeshes.get(id)?.group),
+          applyLocalInput: input => applyValidationLocalInput(stateRef.current, keysPressed.current, input,
+            { triggerPlayerHammerSwing, triggerPlayerPistolFire, triggerPlayerSwordLunge }),
         }, validationTrial.fixture, validationTrial.job);
         validationTrial.onReady(validationRuntimeRef.current);
       }

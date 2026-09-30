@@ -22,6 +22,20 @@ function small(): SuiteManifest {
 const pass = (id: string): CheckResult => ({ id, state: 'completed', verdict: 'pass', summary: 'Checked fixture.', evidence: ['fixture.json'] });
 const complete = (p: SuitePlan): SuiteEvidence => ({ planId: p.id, jobs: p.jobs.map(j => pass(j.id)), gates: p.manifest.requiredGates.map(pass) });
 
+test('mixed local matches freeze the input protocol, seven bots and distinct ownership identity', async () => {
+  const manifest = createSuiteManifest('standard');
+  manifest.cases = [manifest.cases.find(c => c.roster === 'scripted-3v4')!];
+  const observer = await createSuitePlan(manifest, code);
+  manifest.cases[0].roster = 'local-4v4';
+  const local = await createSuitePlan(manifest, code), fixture = local.cases[0];
+  assert.equal(fixture.observer, 'local-input'); assert.equal(fixture.localInput, 'objective-walk-and-melee-v1');
+  assert.equal(fixture.roster.length, 7); assert.equal(fixture.roster.filter(a => a.slot.team === 'blue').length, 3);
+  assert.ok(fixture.roster.every(a => a.id !== 'player' && a.owner === 'scripted'));
+  assert.notEqual(fixture.inputHash, observer.cases[0].inputHash); assert.notEqual(local.id, observer.id);
+  manifest.cases[0].mode = 'scenario'; manifest.cases[0].scenario = 'pickup';
+  assert.throws(() => validateManifest(manifest), /roster/);
+});
+
 test('quick and standard previews count the exact jobs, ticks, rosters and watchdogs', async () => {
   for (const profile of ['quick', 'standard'] as const) {
     const plan = await createSuitePlan(createSuiteManifest(profile), code);

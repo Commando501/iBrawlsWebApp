@@ -19,6 +19,10 @@ type PlayerWeaponInputCallbacks = {
   triggerPlayerSwordLunge: () => void;
 };
 
+export function requestPlayerPickupForState(state: GrifballRuntimeState, isPaused: boolean, isPlaying: boolean): void {
+  if (state.playerHP > 0 && !isPaused && isPlaying) state.playerPickupRequested = true;
+}
+
 type PlayerKeyboardActionCallbacks = {
   onPauseToggle: () => void;
   swapPlayerWeapon: (type: 'hammer' | 'sword') => void;
@@ -495,9 +499,7 @@ export function handlePlayerKeyboardActionForState({
   }
 
   if (!repeat && key === keybindings.pickup) {
-    if (state.playerHP > 0 && !isPaused && isPlaying) {
-      state.playerPickupRequested = true;
-    }
+    requestPlayerPickupForState(state, isPaused, isPlaying);
   }
 
   if (key === keybindings.jump || key === 'spacebar') {

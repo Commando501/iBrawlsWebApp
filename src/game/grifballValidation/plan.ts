@@ -6,6 +6,7 @@ import { DEFAULT_ADMIN_SETTINGS, stripPlayerIdentitySettings } from '../../setti
 import { rosterTemplateFromSettings, resolveKnobsFromRosterSlot, resolveDerivedFromRosterSlot } from '../rosterSlotConfig';
 import { boolean, nonempty, object, validateManifest } from './manifest';
 import type { CodeIdentity, FrozenActor, FrozenCase, SuitePlan, ValidationJob } from './types';
+import { LOCAL_INPUT_PROTOCOL } from './localPlayerInput';
 
 /** Stable JSON for hashes; undefined optional object fields are omitted as in JSON. */
 export function canonicalJSON(value: unknown): string {
@@ -62,7 +63,9 @@ export async function createSuitePlan(input: unknown, identity: CodeIdentity): P
       roster.push({ id, owner: 'scripted', slot,
         effectiveKnobs: resolveKnobsFromRosterSlot(slot, [], mechanics), derived: resolveDerivedFromRosterSlot(slot, [], mechanics) });
     }
-    return { specification, map, mechanics, roster, observer: 'outside-roster' as const,
+    const local = specification.roster === 'local-4v4';
+    return { specification, map, mechanics, roster, observer: local ? 'local-input' as const : 'outside-roster' as const,
+      ...(local ? { localInput: LOCAL_INPUT_PROTOCOL } : {}),
       combatPreset: 'built-in' as const, modelPolicy: 'v2' as const, modelType: 'medium' as const };
   });
   const cases: FrozenCase[] = [];

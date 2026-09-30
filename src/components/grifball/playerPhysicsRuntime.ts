@@ -138,7 +138,8 @@ export function updatePlayerPhysicsForState({
     dt,
   });
 
-  const gamepad = getPrimaryGamepad();
+  // Frozen validation fixtures own all local inputs, including on machines with a connected controller.
+  const gamepad = state.grifballValidationSlots ? null : getPrimaryGamepad();
   applyGamepadLookForState({
     state,
     gamepad,

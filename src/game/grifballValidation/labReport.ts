@@ -1,4 +1,5 @@
 import { COST_CHANNELS } from './telemetry';
+import { LOCAL_INPUT_PROTOCOL } from './localPlayerInput';
 import { assertDecisionTrace, retainDecisionTrace } from './decisionTrace';
 import { correctnessGate, reproducibilityGate } from './gates';
 import { qualityGate } from './qualityGate';
@@ -102,6 +103,17 @@ export async function importLabRun(text: string): Promise<LabRun> {
     // Keep JSON diagnostics inert. Shape and finite numbers are checked before they can reach rendering.
     canonicalJSON(r);
     const copy = structuredClone(r);
+    if (copy.localPlayer !== undefined) {
+      const e = copy.localPlayer, job = plan.jobs.find(j => j.id === copy.jobId)!;
+      const fixture = plan.cases.find(c => c.specification.id === job.caseId)!;
+      if (fixture.observer !== 'local-input' || !e || e.protocol !== LOCAL_INPUT_PROTOCOL ||
+        !Number.isFinite(e.distanceMoved) || e.distanceMoved < 0 ||
+        [e.inputTicks, e.movementRequests, e.attackRequests, e.attackStarts, e.pickupRequests, e.possessions,
+          e.carrierTicks, e.kills, e.deaths, e.respawns, e.goals].some(v => !Number.isSafeInteger(v) || v < 0) ||
+        e.inputTicks > job.simulationTicks || e.attackStarts > e.attackRequests ||
+        [e.movementRequests, e.attackRequests, e.pickupRequests, e.carrierTicks, e.possessions].some(v => v > e.inputTicks))
+        throw new Error('Malformed local player evidence');
+    }
     if (copy.decisions !== undefined) {
       assertDecisionTrace(copy.decisions, copy.end?.tick ?? 0);
       copy.decisions.frames.forEach(sample => assertFrame(sample.frame));
