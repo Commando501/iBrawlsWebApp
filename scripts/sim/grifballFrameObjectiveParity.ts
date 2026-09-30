@@ -1,3 +1,4 @@
+import { triggerPlayerHammerSwingForState } from '../../src/components/grifball/playerWeaponActions';
 import { resolvePrimaryGrifballAIObjectiveMovementForCombatant } from '../../src/components/grifball/grifballAIObjectiveMovement';
 import { lungeFixture } from './grifballLungeFixture';
 import { addParityActor, parityRecorder } from './grifballMultiActorParity';
@@ -29,12 +30,12 @@ export const FRAME_OBJECTIVE_CASES: FrameObjectiveCase[] = [false, true].flatMap
 export interface ChargeCombatCase { releaseAt: number | null; shield: boolean; moving: boolean; recovery?: 'hold' | 'repress' }
 export interface CarrierRecoveryCase { motion: 'stationary' | 'cross' | 'retreat'; escortHp: 1 | 3; attackAt: 1 | 12 }
 export interface CarrierCrowdCase { secondLunge: boolean; shield: boolean; pickup: 'tie' | 'nearer-escort'; recovery?: CarrierRecoveryCase }
-export interface RunnerCombatCase { attack: 'none' | 'slash' | 'lunge'; counter: boolean; speed: 100 | 130; punchSpeed: .04 | .24; enemyHp: 1 | 2; shield: boolean }
+export interface RunnerCombatCase { motion?: 'retreat' | 'cross' | 'approach'; mainAttacker?: boolean; attack: 'none' | 'slash' | 'lunge'; counter: boolean; speed: 100 | 130; punchSpeed: .04 | .24; enemyHp: 1 | 2; shield: boolean }
 export function runFrameObjectiveTrace(spec: FrameObjectiveCase, snapshotAt?: number, charge?: ChargeCombatCase, crowd?: CarrierCrowdCase, runnerCombat?: RunnerCombatCase) {
-  if (runnerCombat && (spec.player || spec.goal || charge || crowd)) throw new Error('Runner combat requires an off-goal roster runner');
+  if (runnerCombat && (spec.goal || charge || crowd)) throw new Error('Runner combat requires an off-goal runner');
   if (crowd && (charge || spec.goal)) throw new Error('Carrier crowd fixture requires an off-goal runner without pass input');
   if (crowd?.recovery?.motion && crowd.recovery.motion !== 'stationary' && !spec.player) throw new Error('Moving recovery requires a local player runner');
-  const f = lungeFixture('attacker', false), { state, sim, bot, target, refs, map } = f;
+  const f = lungeFixture(runnerCombat?.mainAttacker ? 'main_ai' : 'attacker', false), { state, sim, bot, target, refs, map } = f;
   const [attacker, runner] = sim.combatants;
   attacker.id = bot.id; attacker.controller = 'ai'; runner.id = target.id;
   sim.combatExecution = 'live-mixed-v1'; sim.localPlayerId = 'player';
@@ -91,7 +92,7 @@ export function runFrameObjectiveTrace(spec: FrameObjectiveCase, snapshotAt?: nu
   }
   if (runnerCombat) {
     Object.assign(state.settings, { speedForward: 100, speedBackward: 100, grifballRunnerSpeedForward: runnerCombat.speed,
-      grifballRunnerSpeedBackward: runnerCombat.speed, hammerMeleeSpeed: runnerCombat.punchSpeed });
+      grifballRunnerSpeedBackward: runnerCombat.speed, grifballRunnerSpeedSide: runnerCombat.speed, speedSide: 100, hammerMeleeSpeed: runnerCombat.punchSpeed });
     Object.assign(sim.settings, state.settings);
     bot.hp = bot.maxHp = attacker.hp = attacker.maxHp = runnerCombat.enemyHp;
     bot.invulnerabilityTimer = attacker.invulnerabilityTimer = runnerCombat.shield ? 10 : 0;
@@ -140,10 +141,14 @@ export function runFrameObjectiveTrace(spec: FrameObjectiveCase, snapshotAt?: nu
   const ticks = charge ? 240 : 120;
   for (let tick = 1; tick <= ticks; tick++) {
     const held = charge?.recovery === 'repress' ? tick !== 187 && tick < 201 : !!charge && (charge.releaseAt === null || tick < charge.releaseAt);
-    const moveX = charge?.moving || crowd?.recovery?.motion === 'cross' ? .25 : 0;
-    const moveZ = crowd?.recovery?.motion === 'retreat' ? 1 : 0;
-    const movingPlayer = !!charge || !!crowd?.recovery && spec.player;
-    const aim = spec.mirror ? Math.PI : 0;
+    const localRunner = !!runnerCombat && spec.player;
+    const localAim = localRunner ? (spec.mirror ? Math.PI : 0) + Math.PI : 0;
+    const worldX = runnerCombat?.motion === 'cross' ? direction : 0;
+    const worldZ = runnerCombat?.motion === 'cross' ? 0 : runnerCombat?.motion === 'approach' ? -direction : direction;
+    const moveX = localRunner ? worldX * Math.cos(localAim) - worldZ * Math.sin(localAim) : charge?.moving || crowd?.recovery?.motion === 'cross' ? .25 : 0;
+    const moveZ = localRunner ? worldX * Math.sin(localAim) + worldZ * Math.cos(localAim) : crowd?.recovery?.motion === 'retreat' ? 1 : 0;
+    const movingPlayer = localRunner || !!charge || !!crowd?.recovery && spec.player;
+    const aim = localRunner ? localAim : spec.mirror ? Math.PI : 0;
     // Request recovery continuously: late melee cannot be picked up until the next objective tick.
     bot.pickupRequested = !runnerCombat && !crowd && !charge?.recovery;
     for (const [c] of collectors) c.pickupRequested = true;
@@ -158,6 +163,12 @@ export function runFrameObjectiveTrace(spec: FrameObjectiveCase, snapshotAt?: nu
     withSimulationRandom(random, tick / 60, () => {
       if (attackAt > 1 && tick === attackAt) { commitLiveFlights(); commitSimFlights(sim); if (restored) commitSimFlights(restored); }
       if (movingPlayer) state.yaw = aim + Math.PI;
+      if (localRunner && runnerCombat.counter && tick === 4) handlePointerPlayerActionInputForState({
+        state, button: 0, keybindings: DEFAULT_KEYBINDINGS, ballChargingRef, ballChargeTimerRef,
+        callbacks: { triggerPlayerHammerSwing: () => { counters++; triggerPlayerHammerSwingForState({ state,
+          recordHammerAttack: noop, playSwing: noop, sendSync: noop }); },
+          triggerPlayerHammerMelee: noop, triggerPlayerPistolFire: noop, triggerPlayerSwordSlash: noop, triggerPlayerSwordLunge: noop },
+      });
       if (charge && !previousHeld && held) handlePointerPlayerActionInputForState({ state, button: 2, keybindings: passBindings, ballChargingRef, ballChargeTimerRef,
         callbacks: { triggerPlayerHammerSwing: noop, triggerPlayerHammerMelee: noop, triggerPlayerPistolFire: noop, triggerPlayerSwordSlash: noop, triggerPlayerSwordLunge: noop } });
       if (charge && previousHeld && !held) handlePointerPlayerActionReleaseForState({ button: 2, keybindings: passBindings, ballChargingRef,
@@ -169,7 +180,7 @@ export function runFrameObjectiveTrace(spec: FrameObjectiveCase, snapshotAt?: nu
       replayRecordingRef: { current: null }, replayRecordingElapsedTimeRef: { current: 0 }, lastRecordTimeRef: { current: 0 },
       spawnVoxelShockwaveParticles: noop, rebuildHostModel: noop,
       updatePhysics: dt => {
-        if (!updatePlayerRespawnForState({ state, dt, isMultiplayer: false, getMainAi: () => undefined, activeCustomMap: map, spawnPoints: [], playRespawn: noop })) {
+        if (!updatePlayerRespawnForState({ state, dt, isMultiplayer: false, getMainAi: () => state.otherPlayers.get('main_ai'), activeCustomMap: map, spawnPoints: [], playRespawn: noop })) {
           updatePlayerHorizontalMovementForState({ state, refs, dt, keysPressed: {}, movementKeybindings: DEFAULT_KEYBINDINGS,
             actionKeybindings: DEFAULT_KEYBINDINGS, gamepad: null, mobileJoystick: movingPlayer ? { x: -moveX, y: moveZ } : null, mobileControlsActive: movingPlayer,
             sprintToggleActiveRef: { current: false }, prevSprintInputRef: { current: false } });
@@ -214,8 +225,8 @@ export function runFrameObjectiveTrace(spec: FrameObjectiveCase, snapshotAt?: nu
     const actions = Object.fromEntries(sim.combatants.map(c => [c.id, { ...idleAction(), aim: movingPlayer && c === player ? aim : c.yaw,
       pickup: collectors.some(([, b]) => b === c) || (c === attacker ? !runnerCombat && !crowd && !charge?.recovery : c === player && !!charge?.recovery && tick === 183),
       moveX: c === player ? moveX : 0, moveZ: c === player ? moveZ : 0, attackSecondary: c === player && held,
-      attackPrimary: tick === attackAt && runnerCombat?.attack !== 'none' && attackers.some(a => a.headless === c && !a.lunge),
-      ...(runnerCombat && c === runner ? { aim: runnerAim, moveX: -runnerMove * Math.sin(runnerAim), moveZ: runnerMove * Math.cos(runnerAim), attackPrimary: requestCounter } : {}) }]));
+      attackPrimary: localRunner && c === player ? requestCounter : tick === attackAt && runnerCombat?.attack !== 'none' && attackers.some(a => a.headless === c && !a.lunge),
+      ...(runnerCombat && !spec.player && c === runner ? { aim: runnerAim, moveX: -runnerMove * Math.sin(runnerAim), moveZ: runnerMove * Math.cos(runnerAim), attackPrimary: requestCounter } : {}) }]));
     const events = stepSimulation(sim, actions, { settings: sim.settings });
     for (const event of events.kills) {
       kills.set(event.attackerId, (kills.get(event.attackerId) ?? 0) + 1);
@@ -252,7 +263,10 @@ export function runFrameObjectiveTrace(spec: FrameObjectiveCase, snapshotAt?: nu
       compare('crowd', liveCrowd, simCrowd);
       record.compare(tick, 'crowd.runnerDeaths', spec.player ? state.playerDeaths : target.deaths ?? 0, deaths.get(runner.id) ?? 0);
     }
-    const liveRunner = runnerCombat ? { yaw: [Math.sin(target.yaw), Math.cos(target.yaw)], vel: target.vel.toArray(),
+    const liveRunner = runnerCombat && spec.player ? { yaw: [Math.sin(state.yaw), Math.cos(state.yaw)], vel: state.playerVel.toArray(),
+      phase: state.pWeaponState === 'ready' ? 'idle' : state.pWeaponState === 'swing_up' ? 'windup' : state.pWeaponState === 'swing_down' ? 'active' : 'recovering',
+      elapsed: state.pWeaponTimer, kills: state.playerKills, enemyKills: bot.kills ?? 0, enemyDeaths: bot.deaths ?? 0 }
+      : runnerCombat ? { yaw: [Math.sin(target.yaw), Math.cos(target.yaw)], vel: target.vel.toArray(),
       phase: target.weaponState === 'ready' ? 'idle' : target.weaponState === 'swing_up' ? 'windup' : target.weaponState === 'swing_down' ? 'active' : 'recovering',
       elapsed: target.weaponTimer ?? 0, kills: target.kills ?? 0, enemyKills: bot.kills ?? 0, enemyDeaths: bot.deaths ?? 0 } : undefined;
     const simRunner = runnerCombat ? { yaw: [Math.sin(runner.yaw + Math.PI), Math.cos(runner.yaw + Math.PI)], vel: Object.values(runner.vel),

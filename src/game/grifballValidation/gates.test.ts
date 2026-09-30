@@ -208,7 +208,7 @@ test('corrected player traces agree while incomplete coverage and legacy differe
   assert.ok(details.botTraces.every((t: any) => t.differenceCount === 0));
   assert.equal(details.lungeTraces.length, 300);
   assert.ok(details.lungeTraces.every((t: any) => t.differenceCount === 0));
-  assert.equal(details.protocol, 'live-functions-vs-headless-step-v48');
+  assert.equal(details.protocol, 'live-functions-vs-headless-step-v49');
   assert.equal(details.geometryTraces.length, 398);
   assert.ok(details.geometryTraces.every((t: any) => t.differenceCount === 0));
   assert.equal(details.motionTraces.length, 216);
@@ -225,6 +225,9 @@ test('corrected player traces agree while incomplete coverage and legacy differe
   assert.ok(details.playerLungeTraces.every((t: any) => t.differenceCount === 0));
   assert.equal(details.mixedLifecycleTraces.length, 168);
   assert.ok(details.mixedLifecycleTraces.every((t: any) => t.differenceCount === 0));
+  assert.equal(details.playerRunnerTraces.length, 864);
+  assert.equal(details.playerRunnerTraces.reduce((sum: number, t: any) => sum + t.frames.length, 0), 103680);
+  assert.ok(details.playerRunnerTraces.every((t: any) => t.differenceCount === 0));
   assert.equal(details.airborneFlightTraces.length, 512);
   assert.equal(details.airborneFlightTraces.reduce((sum: number, t: any) => sum + t.frames.length, 0), 153600);
   assert.ok(details.airborneFlightTraces.every((t: any) => t.differenceCount === 0));
