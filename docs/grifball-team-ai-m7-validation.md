@@ -2155,3 +2155,18 @@ The test command nevertheless exited 1: the retained-frame assertion still expec
 All aggregate report assertions, including those after the stale count, pass when evaluated against the saved complete v63 report with the corrected expectation (`output/m7-v63-retained-assertions.json`). Report SHA-256: `aded9357c9e2792de5ed27c158aecf00a71c29eb4cce9616c90058e5be4f6209`. The cached-map mutation assertion passed during the original execution before the count failed; it was not rerun against serialized evidence. This is a verification of the completed execution evidence, not a claim that the original test command passed or that a fresh full aggregate was rerun.
 
 The next browser run uses frozen gate-protocol v2 calibration `m7-obstacle-8bot-aligned-replay-2026-09-30-v2`: eight-refresh windows, the existing 4 ms p95 budget, 1.2 paired p95 limit, 3.0 window noise limit and at least 100 warm refreshes. A separate development-only Stadium defense ablation is prepared for afterward (seeds 101/102, aggressive opponent, both sides); only focal defense enablement differs. Neither prepared run is yet acceptance evidence.
+
+## 2026-09-30 — fresh v2 performance replay fails the absolute budget
+
+`output/m7-aligned-replay-serial-proof/` completed after the aggregate terminated, with no other agent-owned test or browser workload running during measurement. All **155 Quick checks**, TypeScript, three builds, startup, live correctness and two exact null pairs pass. Four separately persisted performance replays also match their original deterministic gameplay and complete timing traces. Startup and arena screenshots were inspected. Source: `8c67ebe20b5da03cd926c2bca0cac47cf94e5085`, dirty hash `6738345ae1fcf01bb84f11a27f4667a69925dcd8314f8840953fa6223c338dac`, including concurrent outline work. The environment hash matches the frozen calibration.
+
+| Seed / variant | Original planner p95 | Replay planner p95 | Aligned windows | Largest window ratio |
+| --- | --- | --- | --- | --- |
+| 101 baseline | 5.6 ms | 5.8 ms | 28 | 1.5152 |
+| 101 candidate | 6.4 ms | 6.4 ms | 28 | 2.0000 |
+| 102 baseline | 6.7 ms | 7.1 ms | 24 | 1.5745 |
+| 102 candidate | 6.7 ms | 6.9 ms | 24 | 1.7027 |
+
+Every noise window and paired p95 ratio meets its frozen limit, with no invalid-evidence reasons. **All eight absolute p95 measurements exceed 4 ms**, so the performance gate fails and the CLI reports **exit 1**. Cold refresh maxima across both passes are **32.4–51.3 ms**; warm maxima are **13.9–20.0 ms**. No outliers were removed and no threshold changed. This validates the new protocol's real execution path but does not certify performance.
+
+The original jobs retain the preceding serial proofs' exact gameplay hashes and 218/186 warm refresh ticks. Seed 101 reaches the intended 60-second cap with 11 respawns and a 1–1 score; seed 102 reaches match end with 10 respawns and a 2–0 score. The cost increase relative to earlier runs requires diagnosis; a matching hardware/browser identity does not prove unchanged machine load or clock behavior. A process inspection after completion found no other Node validation workload, but cannot establish conditions throughout the measurement. This failed result remains authoritative for this run. Performance, broader execution coverage and held-out quality remain open.
