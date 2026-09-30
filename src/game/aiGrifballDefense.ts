@@ -74,15 +74,37 @@ export function applyGrifballDefense(snapshot: GrifballTacticalSnapshot, assignm
   const safetyDepth = Math.max(tuning.defenseSafetyDepth,
     contain ? containmentDepth + (carrier && defenders.length > 1 ? tuning.lateralSpacing : 0) : 0);
   const safetyPoint = toward(projected, goal, Math.min(safetyDepth, distance(projected, goal) * 0.85));
-  if (!carrier && !contain && snapshot.ballPhysics?.state !== 'thrown') {
-    // A useful loose-ball screen has already passed tanking's readiness, route
-    // and double-commit checks. Keep its partner's wait/commit order together,
-    // provided another defender can still establish goal-side coverage.
-    const primary = defenders.find(a => a.tanking?.mode === 'engage' && a.tanking.attack);
+  let carrierSafety: GrifballAssignment | undefined;
+  if (!contain && !emergency && snapshot.ballPhysics?.state !== 'thrown') {
+    // Keep an earned loose-ball screen or a punishable carrier recovery window
+    // together with its partner, provided separate goal-side coverage remains.
+    // A ready carrier still requires the earliest feasible interception.
+    const primary = defenders.find(a => {
+      if (a.tanking?.mode !== 'engage' || !a.tanking.attack) return false;
+      if (!carrier) return true;
+      if (a.tanking.targetId !== carrier.id || !carrier.space?.phase.includes('recover')) return false;
+      const actor = players.find(p => p.id === a.botId)!;
+      return estimateSpaceAttackTime(actor, anchor, routeLength(actor.id, anchor)) + 0.1 < carrier.space.attackIn;
+    });
     if (primary) {
       const recovery = defenders.filter(a => a !== primary && !(a.tanking?.mode === 'punish' &&
         a.tanking.partnerId === primary.botId && a.tanking.targetId === primary.tanking!.targetId));
-      if (recovery.some(a => Number.isFinite(routeLength(a.botId, safetyPoint)))) defenders = recovery;
+      if (carrier) {
+        // A carrier commitment must keep a separate defender already goal-side
+        // who can cover the cut before the carrier arrives, including visible
+        // airborne/reload delays. Reachability alone does not establish coverage.
+        const carrierETA = routeLength(carrier.id, safetyPoint) / Math.max(.1, carrier.space?.speed ?? 5.8);
+        const coverage = recovery.map(a => {
+          const actor = players.find(p => p.id === a.botId)!;
+          const goalSide = (actor.pos.x - anchor.x) * (goal.x - anchor.x) + (actor.pos.z - anchor.z) * (goal.z - anchor.z) > 0;
+          const arrival = goalSide ? Math.max(actor.space?.mobileIn ?? Infinity,
+            routeLength(actor.id, safetyPoint) / Math.max(.1, actor.space?.speed ?? 0)) + (actor.space?.attackIn ?? Infinity) : Infinity;
+          return { assignment: a, arrival };
+        });
+        carrierSafety = coverage.filter(c => Number.isFinite(c.arrival) && c.arrival <= carrierETA)
+          .sort((a, b) => a.arrival - b.arrival || a.assignment.botId.localeCompare(b.assignment.botId))[0]?.assignment;
+        if (carrierSafety) defenders = recovery;
+      } else if (recovery.some(a => Number.isFinite(routeLength(a.botId, safetyPoint)))) defenders = recovery;
     }
   }
   const ranked = [...defenders].sort((a, b) => {
@@ -110,10 +132,10 @@ export function applyGrifballDefense(snapshot: GrifballTacticalSnapshot, assignm
     interceptions.set(a.botId, result);
     return result;
   };
-  let safety = ranked[0];
+  let safety = carrierSafety ?? ranked[0];
   // Do not reserve the only viable cut for a safety while a slower teammate tail-chases.
   // Containment and lone-defender coverage still take precedence over pressure.
-  const reachable = carrier && !contain && !emergency && defenders.length > 1
+  const reachable = carrier && !carrierSafety && !contain && !emergency && defenders.length > 1
     ? defenders.filter(a => interception(a).reachable) : [];
   if (reachable.length === 1 && reachable[0] === safety && distance(projected, goal) < distance(anchor, goal)) safety = ranked[1];
   const assign = (a: GrifballAssignment, mode: DefenseOrder['mode'], point: FieldPoint, target: GrifballTacticalPlayer | undefined, carrierETA = 0) => {
@@ -148,10 +170,12 @@ export function applyGrifballDefense(snapshot: GrifballTacticalSnapshot, assignm
       routeLength(a.botId, interception(a).point) - routeLength(b.botId, interception(b).point) : 0) ||
       routeLength(a.botId, projected) - routeLength(b.botId, projected) || a.botId.localeCompare(b.botId);
   });
-  const primary = rest.shift()!, intercept = interception(primary);
-  const containment = toward(projected, goal, containmentDepth);
-  assign(primary, contain ? 'contain' : 'intercept', emergency ? anchor : contain ? containment : intercept.point, carrier, intercept.time);
-  primary.role = 'chaser';
+  if (!carrierSafety) {
+    const primary = rest.shift()!, intercept = interception(primary);
+    const containment = toward(projected, goal, containmentDepth);
+    assign(primary, contain ? 'contain' : 'intercept', emergency ? anchor : contain ? containment : intercept.point, carrier, intercept.time);
+    primary.role = 'chaser';
+  }
   const marks = enemies.filter(p => p !== carrier).sort((a, b) => distance(a.pos, goal) - distance(b.pos, goal) || a.id.localeCompare(b.id));
   rest.forEach((a, i) => {
     const target = marks[i];

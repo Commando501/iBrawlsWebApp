@@ -9,6 +9,7 @@ import type { GrifballAssignment } from './aiGrifballTeamPlan';
 import { observeGrifballSpace } from './aiGrifballSpace';
 import { DEFAULT_ADMIN_SETTINGS } from '../settings/gameplaySettings';
 import { createInitialBall } from './grifballBall';
+import { applyGrifballDefense } from './aiGrifballDefense';
 
 const p = (id: string, team: string, x: number, z = 0): GrifballTacticalPlayer => ({ id, team, pos: { x, z }, vel: { x: 0, z: 0 }, scripted: true,
   space: { weapon: 'hammer', phase: 'ready', speed: 5.2, reach: 3, blastRadius: 2, attackIn: 0.3, lungeReach: 0, lungeSpeed: 0, mobileIn: 0 } });
@@ -28,6 +29,88 @@ function looseScreenScene(enemyX = 1): GrifballTacticalSnapshot {
   for (const actor of s.players) actor.space = observeGrifballSpace(DEFAULT_ADMIN_SETTINGS, 'hammer', actor.id === 'enemy' ? 'recovering' : 'ready');
   return s;
 }
+
+function carrierScreenScene(): GrifballTacticalSnapshot {
+  const s = looseScreenScene(); s.holderId = 'enemy';
+  const carrier = s.players.find(p => p.id === 'enemy')!;
+  carrier.space = observeGrifballSpace(DEFAULT_ADMIN_SETTINGS, 'ball', 'recovering');
+  carrier.vel.x = -carrier.space.speed;
+  return s;
+}
+
+for (const mirror of [false, true]) for (const reverse of [false, true])
+  test(`carrier defense preserves earned tanking with timely goal-side coverage: ${mirror}/${reverse}`, () => {
+    const s = carrierScreenScene(), team = mirror ? 'red' : 'blue';
+    if (mirror) for (const actor of s.players) {
+      actor.team = actor.team === 'blue' ? 'red' : 'blue'; actor.pos.x *= -1; actor.pos.z *= -1; actor.vel.x *= -1;
+    }
+    if (reverse) s.players.reverse();
+    const control = structuredClone(s); control.tactics!.defaults.defenseEnabled = false;
+    const earned = [...run(control).assignments.values()].filter(a => a.team === team);
+    const primary = earned.find(a => a.tanking?.mode === 'engage' && a.tanking.attack)!;
+    assert.ok(primary); assert.equal(primary.tanking!.targetId, 'enemy');
+    const group = earned.filter(a => a === primary || a.tanking?.mode === 'punish' && a.tanking.partnerId === primary.botId);
+    const actual = [...run(s).assignments.values()].filter(a => a.team === team);
+    for (const expected of group) {
+      const order = actual.find(a => a.botId === expected.botId)!;
+      assert.deepEqual(order.tanking, expected.tanking);
+      assert.deepEqual(order.destination, expected.destination);
+      assert.equal(order.defense, undefined);
+    }
+    const safety = actual.find(a => a.defense?.mode === 'last-defender')!;
+    assert.ok(safety && !group.some(a => a.botId === safety.botId));
+    const defender = s.players.find(p => p.id === safety.botId)!, carrier = s.players.find(p => p.id === 'enemy')!;
+    const goal = s.goals[team]!;
+    assert.ok((defender.pos.x - carrier.pos.x) * (goal.x - carrier.pos.x) +
+      (defender.pos.z - carrier.pos.z) * (goal.z - carrier.pos.z) > 0);
+    assert.ok(fieldDistance(defender.pos, safety.destination) / defender.space!.speed <=
+      fieldDistance(carrier.pos, safety.destination) / carrier.space!.speed);
+    assert.ok(actual.every(a => a.defense?.mode !== 'intercept'), 'do not add an uncoordinated third carrier attacker');
+  });
+
+test('a carrier recovery commitment returns to interception when the opening closes', () => {
+  const s = carrierScreenScene(), state = run(s);
+  assert.ok(blue(state).some(a => a.tanking?.mode === 'engage' && a.tanking.attack));
+  const carrier = s.players.find(p => p.id === 'enemy')!;
+  carrier.space = observeGrifballSpace(DEFAULT_ADMIN_SETTINGS, 'ball', 'ready');
+  updateGrifballTeamPlan(state, s, 1);
+  const orders = blue(state);
+  assert.ok(orders.every(a => !a.tanking), 'a remembered commitment cannot outlive the visible opening');
+  assert.equal(orders.filter(a => a.defense?.mode === 'intercept').length, 1);
+  assert.equal(orders.filter(a => a.defense?.mode === 'last-defender').length, 1);
+});
+
+for (const cause of ['airborne-backup', 'reloading-backup', 'combined-delay', 'late-backup', 'sealed-backup', 'containment', 'emergency', 'ready-carrier', 'closing-window', 'turnover'] as const)
+  test(`carrier tanking yields to defense when coverage is unavailable: ${cause}`, () => {
+    const s = carrierScreenScene();
+    const control = structuredClone(s); control.tactics!.defaults.defenseEnabled = false;
+    const earned = blue(run(control));
+    const primary = earned.find(a => a.tanking?.mode === 'engage' && a.tanking.attack)!;
+    assert.ok(primary, 'admission control must start with an earned engagement');
+    const group = earned.filter(a => a === primary || a.tanking?.mode === 'punish' && a.tanking.partnerId === primary.botId);
+    const backups = s.players.filter(p => p.team === 'blue' && !group.some(a => a.botId === p.id));
+    assert.ok(backups.length > 0);
+    const safety = blue(run(s)).find(a => a.defense?.mode === 'last-defender')!;
+    const carrier = s.players.find(p => p.id === 'enemy')!;
+    const carrierETA = fieldDistance(carrier.pos, safety.destination) / carrier.space!.speed;
+    if (cause === 'containment') s.tactics!.defaults.defensePressure = .2;
+    if (cause === 'emergency') s.players.find(p => p.id === 'enemy')!.pos.x = -44;
+    if (cause === 'ready-carrier') s.players.find(p => p.id === 'enemy')!.space!.phase = 'ready';
+    if (cause === 'closing-window') s.players.find(p => p.id === 'enemy')!.space!.attackIn = .01;
+    if (cause === 'sealed-backup') s.geometry!.blockers = [{ kind: 'box', x: -6, z: 0, hx: .5, hz: 30 }];
+    for (const actor of backups) {
+      if (cause === 'airborne-backup') actor.space!.mobileIn = 20;
+      if (cause === 'reloading-backup') actor.space!.attackIn = 20;
+      if (cause === 'combined-delay') {
+        actor.space!.mobileIn = carrierETA * .6; actor.space!.attackIn = carrierETA * .6;
+      }
+      if (cause === 'late-backup') actor.pos.x = 25;
+    }
+    const routers = new Map(s.players.map(p => [p.id, createSpaceRouter(s.geometry!, p.pos)]));
+    applyGrifballDefense(s, earned, s.tactics!.defaults, routers, new Map(), cause === 'turnover' ? 1 : 0);
+    assert.ok(earned.every(a => !a.tanking));
+    assert.equal(earned.filter(a => a.defense?.mode === 'last-defender').length, 1);
+  });
 
 for (const mirror of [false, true]) for (const reverse of [false, true]) for (const enemyX of [1, 2, 4])
   test(`loose-ball defense preserves earned screening with a separate safety: ${mirror}/${reverse}/${enemyX}`, () => {
