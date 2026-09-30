@@ -1,3 +1,4 @@
+import { GRIFBALL_BALL_GRAVITY, GRIFBALL_THROW_ARC } from '../../src/game/grifballBall';
 import { isMapBodyClear } from './grifballMapCollisionOracle';
 import { createArenaCollisionCallbacksForState } from '../../src/components/grifball/arenaCollisionCallbacks';
 import { getGoalPlates } from '../../src/game/grifballGoals';
@@ -42,7 +43,9 @@ export const OPPOSED_DECISION_CASES: OpposedDecisionCase[] =
  * Initial positions, wounded possession and timing settings are authored; no
  * actions, assignments, movement, subsequent damage or ownership are injected.
  */
-export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation: 'opening' | 'revival' | 'match' | 'mobility' | 'map-contest' | 'map-match' = 'opening', suppliedMap?: CustomMapData) {
+export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation: 'opening' | 'revival' | 'match' | 'mobility' | 'map-contest' | 'map-match' | 'pass-contest' = 'opening', suppliedMap?: CustomMapData, passOpening?: { defender: { x: number; z: number }; cover: { x: number; z: number }; passingEnabled?: boolean }) {
+  const passing = continuation === 'pass-contest';
+  if (passing && (!passOpening || spec.mode !== 'contested')) throw new Error('Pass contest requires four-actor opening positions');
   const mapMatch = continuation === 'map-match';
   const mapped = continuation === 'map-contest' || mapMatch;
   if (mapped && !suppliedMap) throw new Error('Map contest requires a supplied map');
@@ -62,17 +65,17 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
     position: { x: team === 'blue' ? -47 : 47, y: 0, z: 0 }, scale: { x: 2, y: .12, z: 2 }, rotation: { x: 0, y: 0, z: 0 } })) as CustomMapData['objects'];
   const mapBefore = JSON.stringify(map);
   state.arenaRadius = map.arenaRadius; state.isObserverMode = true; state.grifball.phase = 'playing';
-  state.grifballTactics = defaultGrifballTactics(); state.grifballTactics.defaults.passingEnabled = false; state.otherPlayers.clear();
+  state.grifballTactics = defaultGrifballTactics(); state.grifballTactics.defaults.passingEnabled = passing && passOpening?.passingEnabled !== false; state.otherPlayers.clear();
   const carrierId = spec.main ? 'main_ai' : 'carrier';
   const defenderId = 'defender';
   if (revival && !mapped) map.teamSpawns = { blue: [{ x: -12, y: 0, z: 3 }], red: [{ x: 12, y: 0, z: -3 }] };
   const otherTeam = spec.team === 'blue' ? 'red' as const : 'blue' as const;
   const seeds = [
-    { id: carrierId, x: -1, z: 0, team: spec.team },
-    { id: defenderId, x: 1, z: 0, team: otherTeam },
+    { id: carrierId, x: passing ? -20 : -1, z: 0, team: spec.team },
+    { id: defenderId, x: passing ? passOpening!.defender.x : 1, z: passing ? passOpening!.defender.z : 0, team: otherTeam },
     ...(spec.mode === 'contested' ? [
-      { id: 'escort', x: -8, z: 3, team: spec.team },
-      { id: 'cover', x: 8, z: -3, team: otherTeam },
+      { id: 'escort', x: -8, z: passing ? 0 : 3, team: spec.team },
+      { id: 'cover', x: passing ? passOpening!.cover.x : 8, z: passing ? passOpening!.cover.z : -3, team: otherTeam },
     ] : []),
   ];
   for (const s of spec.reverse ? [...seeds].reverse() : seeds) {
@@ -90,7 +93,7 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
   state.grifball.ball.state = 'held'; state.grifball.ball.holderId = carrierId;
   state.grifball.ball.pos = { x: carrier.pos.x, y: 1.1, z: carrier.pos.z };
   setGrifballCarrierForState({ state, refs, id: carrierId, carrying: true });
-  carrier.hp = 1; carrier.runnerLastHp = 1; carrier.runnerHealDelayTimer = 3; // Wounded carrier: one lethal hit, normal carrier mechanics.
+  if (!passing) { carrier.hp = 1; carrier.runnerLastHp = 1; carrier.runnerHealDelayTimer = 3; } // Wounded carrier: one lethal hit, normal carrier mechanics.
   let tick = 0, failureCount = 0;
   const failures: { tick: number; field: string; actual: unknown; expected: unknown }[] = [];
   const check = (field: string, actual: unknown, expected: unknown) => {
@@ -168,13 +171,16 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
   const carrierDeaths: { tick: number; id: string; pos: number[] }[] = [];
   const impacts: { tick: number; id: string; victims: string[] }[] = [];
   const pickups: { tick: number; id: string; distance: number }[] = [];
+  const passes: { tick: number; carrierId: string; receiverId: string; speed: number; chargeSeconds: number }[] = [];
+  const cancellations: { tick: number; carrierId: string; receiverId: string; elapsed: number; reason: string }[] = [];
   let deathTick = 0, dropTick = 0;
   let terminalTick = 0;
-  let ticks = mapMatch ? 108000 : mapped ? 1800 : mobility ? 1800 : match ? (spec.main ? 9000 : spec.mode === 'contested' ? 10800 : 3840) : revival ? 600 : 150;
+  let ticks = passing ? 1200 : mapMatch ? 108000 : mapped ? 1800 : mobility ? 1800 : match ? (spec.main ? 9000 : spec.mode === 'contested' ? 10800 : 3840) : revival ? 600 : 150;
   for (tick = 1; tick <= ticks; tick++) {
     const plan = state.aiMatchContext.grifballTeamPlan, phase = state.grifball.phase;
     const updates: string[] = [];
     const attackCount = attacks.length;
+    const chargeAtFrameStart = passing && plan.passCharge ? { ...plan.passCharge } : null;
     let living = [...state.otherPlayers.values()].filter(c => c.hp > 0).map(c => c.id);
     const before = new Map([...state.otherPlayers].map(([id, c]) => [id, c.pos.clone()]));
     withSimulationRandom(random, tick * dt, () => advanceGrifballFrameForState({
@@ -233,6 +239,10 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
         const wasHeld = previousBallState === 'held';
         const requested = new Map([...state.otherPlayers].map(([id, c]) => [id, !!c.pickupRequested && c.hp > 0 && c.respawnTimer <= 0]));
         const ballPos = { ...state.grifball.ball.pos };
+        const weaponBefore = scorer?.weaponState;
+        const chargeBefore = passing && plan.passCharge ? { ...plan.passCharge } : null;
+        const selected = passing && oldHolder ? plan.assignments.get(oldHolder)?.pass?.selected : null;
+        const choice = selected ? { receiverId: selected.receiverId, speed: selected.speed, chargeSeconds: selected.chargeSeconds } : null;
         updateGrifballObjectiveForState({ state, refs, ballMeshRef, ballChargingRef, ballChargeTimerRef, dt: delta,
           isMultiplayer: false, activeCustomMap: map, placeCombatantsAtGrifballSpawns: () => {
             check('round continuation enabled', match, true);
@@ -247,6 +257,35 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
               check('round velocity reset', c.vel.length(), 0);
             }
           }, pushStatsUpdate: () => notifications++ });
+        if (passing) {
+          const released = wasHeld && ballState() === 'thrown';
+          const elapsed = (chargeBefore && choice && chargeBefore.carrierId === oldHolder && chargeBefore.receiverId === choice.receiverId && chargeBefore.speed === choice.speed ? chargeBefore.elapsed : 0) + delta;
+          if (plan.passCharge) {
+            check('pass charge advances once', Math.abs(plan.passCharge.elapsed - elapsed) < 1e-9, true);
+            check('charge belongs to living holder', plan.passCharge.carrierId === state.grifball.ball.holderId && !!scorer && scorer.hp > 0, true);
+            check('charge stays below release threshold', !!choice && elapsed + 1e-9 < choice.chargeSeconds, true);
+          }
+          if (released) {
+            check('release starts from ready weapon', weaponBefore, 'ready');
+            check('release has autonomous selection', !!choice, true);
+            check('release reaches charge threshold', !!choice && elapsed + 1e-9 >= choice.chargeSeconds, true);
+            check('release clears charge', plan.passCharge, null);
+            check('release clears charge display', scorer?.grifballPassCharge, 0);
+            check('release restores hammer', scorer?.activeWeapon, 'hammer');
+            check('release restores base health', scorer?.maxHp, state.settings.maxHP);
+            check('release receiver retained', plan.passFlight?.receiverId, choice?.receiverId);
+            check('release receiver alive and allied', !!choice && state.otherPlayers.get(choice.receiverId)!.hp > 0 && state.otherPlayers.get(choice.receiverId)!.team === scorer?.team, true);
+            if (choice) {
+              passes.push({ tick, carrierId: oldHolder!, ...choice });
+              check('released horizontal speed', Math.abs(Math.hypot(state.grifball.ball.vel.x, state.grifball.ball.vel.z) - choice.speed) < 1e-9, true);
+              check('released vertical speed', Math.abs(state.grifball.ball.vel.y - (choice.speed * GRIFBALL_THROW_ARC - GRIFBALL_BALL_GRAVITY * delta)) < 1e-9, true);
+              check('release advances ball once', Math.abs(Math.hypot(state.grifball.ball.pos.x - scorer!.pos.x, state.grifball.ball.pos.z - scorer!.pos.z) - choice.speed * delta) < 1e-9, true);
+            }
+          }
+          if (chargeBefore && !plan.passCharge && !released) cancellations.push({ tick, carrierId: chargeBefore.carrierId, receiverId: chargeBefore.receiverId,
+            elapsed: chargeBefore.elapsed, reason: oldHolder ? plan.assignments.get(oldHolder)?.pass?.reason ?? 'unavailable' : 'no holder' });
+          if (ballState() === 'thrown') check('no airborne possession', state.grifball.ball.holderId, null);
+        }
         for (const team of ['blue', 'red'] as const) if (state.teamScores[team].goals !== priorGoals[team]) {
           goals.push({ tick, id: oldHolder!, team, round: state.grifball.roundNumber });
           check('goal only during play', phase, 'playing');
@@ -263,9 +302,10 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
         }
         if (!wasHeld && ballState() === 'held') {
           const id = state.grifball.ball.holderId!, c = state.otherPlayers.get(id)!;
-          pickups.push({ tick, id, distance: Math.hypot(c.pos.x - ballPos.x, c.pos.z - ballPos.z) });
+          const pickupPosition = passing ? state.grifball.ball.pos : ballPos;
+          pickups.push({ tick, id, distance: Math.hypot(c.pos.x - pickupPosition.x, c.pos.z - pickupPosition.z) });
           check('autonomous pickup request', requested.get(id), true);
-          check('pickup begins from available ball', previousBallState === 'loose' || match && previousBallState === 'idle', true);
+          check('pickup begins from available ball', previousBallState === 'loose' || (match || passing) && previousBallState === 'idle' || passing && previousBallState === 'thrown' && state.grifball.ball.pos.y <= .35 + 1e-9, true);
           check('pickup alive', c.hp > 0 && c.respawnTimer <= 0, true);
           check('pickup range', pickups.at(-1)!.distance <= (state.settings.grifballPickupRadius ?? 1.6) + 1e-6, true);
         }
@@ -307,7 +347,7 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
           check('every dead carrier clears charge', plan.passCharge, null);
         }
         if (carrier.hp <= 0 && !deathTick) deathTick = tick;
-        if (deathTick === tick && (!match || dropTick === 0 && tick < 150)) {
+        if (!passing && deathTick === tick && (!match || dropTick === 0 && tick < 150)) {
           check('dead carrier released before render', state.grifball.ball.holderId !== carrierId, true);
           if (ballState() !== 'held') dropTick = tick;
           check('dead carrier weapon restored', carrier.activeWeapon, 'hammer');
@@ -322,14 +362,25 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
       updateFloatingNameplate: noop, pushStatsUpdate: noop, updateRadarDOM: noop, runReplayPlaybackLoop: noop,
       recordReplayFrame: noop, playRespawn: noop,
     }));
+    if (chargeAtFrameStart && !plan.passCharge && passes.at(-1)?.tick !== tick && cancellations.at(-1)?.tick !== tick) {
+      cancellations.push({ tick, carrierId: chargeAtFrameStart.carrierId, receiverId: chargeAtFrameStart.receiverId, elapsed: chargeAtFrameStart.elapsed,
+        reason: plan.assignments.get(chargeAtFrameStart.carrierId)?.pass?.reason ?? 'Ownership or combat availability changed' });
+    }
+    if (passing) {
+      if (plan.passCharge) check('frame-end charge belongs to holder', plan.passCharge.carrierId, state.grifball.ball.holderId);
+      for (const c of state.otherPlayers.values()) if (plan.passCharge?.carrierId !== c.id) check('no stale charge display: ' + c.id, c.grifballPassCharge ?? 0, 0);
+    }
     check('one decision per living actor', JSON.stringify(updates), JSON.stringify(living));
     for (const r of revivals.filter(r => r.tick === tick)) {
       const c = state.otherPlayers.get(r.id)!;
       check('revived shield advances once', Math.abs(c.invulnerabilityTimer - (r.shield - dt)) < 1e-9, true);
     }
     const lastPickup = pickups.at(-1);
-    if (lastPickup && tick === lastPickup.tick + 1 && phase === 'playing' && state.grifball.ball.holderId === lastPickup.id) check('new carrier becomes runner', plan.assignments.get(lastPickup.id)?.role, 'runner');
-    if (dropTick && tick === dropTick + 1) {
+    if (lastPickup && tick === lastPickup.tick + 1 && phase === 'playing' && state.grifball.ball.holderId === lastPickup.id) {
+      check('new carrier becomes runner', plan.assignments.get(lastPickup.id)?.role, 'runner');
+      if (passing) check('reception clears old pass flight', plan.passFlight, null);
+    }
+    if (!passing && dropTick && tick === dropTick + 1) {
       check('enemy recovers loose-ball assignment', plan.assignments.get(defender.id)?.role, 'retriever');
       if (spec.mode === 'contested') check('ally contests loose ball', plan.assignments.get('escort')?.role, 'retriever');
     }
@@ -359,11 +410,12 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
       check('inactive assignments cleared', plan.assignments.size, 0);
       check('inactive bots do not start attacks', attacks.length, attackCount);
     }
-    frames.push({ tick, phase: state.grifball.phase, round: state.grifball.roundNumber, scores: structuredClone(state.teamScores), winner: state.grifball.winningTeam, ball: structuredClone(state.grifball.ball),
+    frames.push({ ...(passing ? { pass: { charge: plan.passCharge ? { ...plan.passCharge } : null, flight: plan.passFlight ? { ...plan.passFlight } : null,
+      selections: [...plan.assignments.values()].filter(a => a.pass).map(a => ({ id: a.botId, selected: a.pass!.selected ? { receiverId: a.pass!.selected.receiverId, speed: a.pass!.selected.speed } : null, reason: a.pass!.reason })) } } : {}), tick, phase: state.grifball.phase, round: state.grifball.roundNumber, scores: structuredClone(state.teamScores), winner: state.grifball.winningTeam, ball: structuredClone(state.grifball.ball),
       assignments: [...plan.assignments.values()].map(a => ({ id: a.botId, role: a.role, target: state.aiMatchContext.coordinator.tacticalEngagements.get(a.botId)?.targetId ?? null })),
       actors: [...state.otherPlayers.values()].map(c => ({ id: c.id, team: c.team, pos: c.pos.toArray(), vel: c.vel.toArray(),
         hp: c.hp, maxHp: c.maxHp, kills: c.kills, deaths: c.deaths, respawnTimer: c.respawnTimer, shield: c.invulnerabilityTimer, yaw: c.yaw, weapon: c.activeWeapon, weaponState: c.weaponState, weaponTimer: c.weaponTimer, isJumping: !!c.isJumping, jumpBudget: c.aiHammerJumpsInAir ?? 0, jumpPlanned: !!c.hammerJumpPlanned, aiState: c.aiState, timer: c.aiTimer ?? 0 })) });
-    if (tick === 150) validateOpeningContest();
+    if (!passing && tick === 150) validateOpeningContest();
     if (mapMatch && (state.grifball.phase as string) === 'matchEnd') {
       terminalTick ||= tick;
       // Retain three seconds after the winning transition, including pending respawns.
@@ -371,7 +423,7 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
     }
   }
   tick = ticks;
-  if (revival) {
+  if (revival && !passing) {
     const loser = spec.mode === 'punch-first' ? defender : carrier;
     const first = revivals.find(r => r.id === loser.id);
     check('first loser revives', !!first, true);
@@ -384,7 +436,7 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
     check('revived actor resumes tactical role', frames.some(f => f.tick > (first?.tick ?? ticks) &&
       f.assignments.some(a => a.id === loser.id && ['chaser', 'safety', 'lead', 'left', 'right', 'runner', 'retriever'].includes(a.role))), true);
   }
-  if (match || mobility) {
+  if (match || mobility || passing) {
     const main = state.otherPlayers.get('main_ai');
     check('main identity final kill accounting', state.enemyKills, main?.kills ?? 0);
     check('main identity final death accounting', state.enemyDeaths, main?.deaths ?? 0);
@@ -445,7 +497,7 @@ export function runOpposedDecisionTrace(spec: OpposedDecisionCase, continuation:
   }
   if (mapped) check('supplied map preserved', JSON.stringify(map), mapBefore);
   return { name: `${spec.mode}/${spec.team}/${spec.reverse ? 'reverse' : 'forward'}/${spec.main ? 'main' : 'ordinary'}`,
-    boundary: mapMatch ? 'live-map-match' as const : mapped ? 'live-map-contest' as const : mobility ? 'live-mobility-decision-integration' as const : match ? 'live-match-decision-integration' as const : revival ? 'live-revival-decision-integration' as const : 'live-opposed-decision-integration' as const, scenario: spec, ticks,
-    failureCount, failures, mainJumpRequests, mainJumpImpacts, carrierDeaths, goals, resets, transitions, notifications, deaths, revivals, deathTick, dropTick, attacks, impacts, pickups, targetLookups, frames };
+    boundary: passing ? 'live-pass-contest' as const : mapMatch ? 'live-map-match' as const : mapped ? 'live-map-contest' as const : mobility ? 'live-mobility-decision-integration' as const : match ? 'live-match-decision-integration' as const : revival ? 'live-revival-decision-integration' as const : 'live-opposed-decision-integration' as const, scenario: spec, ticks,
+    failureCount, failures, passes, cancellations, mainJumpRequests, mainJumpImpacts, carrierDeaths, goals, resets, transitions, notifications, deaths, revivals, deathTick, dropTick, attacks, impacts, pickups, targetLookups, frames };
 }
 export const runOpposedDecisionIntegration = () => OPPOSED_DECISION_CASES.map(spec => runOpposedDecisionTrace(spec));
