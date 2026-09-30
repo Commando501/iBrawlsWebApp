@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { CustomMapData } from '../types';
 import { defaultGrifballTactics } from './grifballTacticsConfig';
-import { buildGrifballSpaceGeometry } from './grifballSpaceGeometry';
+import { buildGrifballSpaceGeometry, createSpaceRouter, fieldDistance, isSpacePointOpen } from './grifballSpaceGeometry';
+import { pointAlongRunnerRoute } from './aiGrifballRunner';
 import { createGrifballTeamPlanState, updateGrifballTeamPlan, resetGrifballTeamPlan, selectGrifballAssignmentThreat, type GrifballTacticalPlayer, type GrifballTacticalSnapshot } from './aiGrifballTeamPlan';
 import type { GrifballAssignment } from './aiGrifballTeamPlan';
 import { observeGrifballSpace } from './aiGrifballSpace';
@@ -18,6 +19,32 @@ function scene(): GrifballTacticalSnapshot {
 }
 const run = (s: GrifballTacticalSnapshot) => { const state = createGrifballTeamPlanState(); updateGrifballTeamPlan(state, s, 0.2); return state; };
 const blue = (state: ReturnType<typeof run>) => [...state.assignments.values()].filter(a => a.team === 'blue');
+
+for (const mirror of [false, true]) for (const reverse of [false, true]) for (const motion of ['paused', 'blocked', 'visible'] as const)
+  test(`carrier cuts follow time along a route: ${mirror}/${reverse}/${motion}`, () => {
+    const s = scene(), sign = mirror ? -1 : 1, team = mirror ? 'red' : 'blue';
+    s.tactics!.defaults.stylesEnabled = false;
+    s.geometry = { key: `route-cut/${mirror}`, shape: 'rectangular', x: 52, z: 23,
+      blockers: [{ kind: 'box', x: 5 * sign, z: 0, hx: 2, hz: 3 }] };
+    s.players = [p('front', 'blue', 8, -3), p('safety', 'blue', -8, 5), p('support', 'blue', -4, -5), p('runner', 'red', 8)];
+    if (mirror) for (const actor of s.players) {
+      actor.team = actor.team === 'blue' ? 'red' : 'blue'; actor.pos.x *= -1; actor.pos.z *= -1;
+    }
+    const carrier = s.players[3], front = s.players[0];
+    carrier.vel = motion === 'blocked' ? { x: -5.2 * sign, z: 0 } : motion === 'visible' ? { x: 0, z: 5.2 * sign } : { x: 0, z: 0 };
+    const route = createSpaceRouter(s.geometry!, carrier.pos)(s.goals[team]!);
+    assert.equal(route.status, 'routed');
+    const expected = motion === 'visible' ? { x: carrier.pos.x, z: carrier.pos.z + 1.3 * sign } : pointAlongRunnerRoute(carrier.pos, route, 1.3);
+    front.pos = { ...expected };
+    if (reverse) s.players.reverse();
+    const orders = [...run(s).assignments.values()];
+    const intercept = orders.find(a => a.defense?.mode === 'intercept')!;
+    assert.equal(intercept.botId, 'front');
+    assert.equal(intercept.defense!.carrierETA, .25, 'nearby ready defender takes the first route sample');
+    assert.ok(fieldDistance(intercept.defense!.intercept, expected) < 1e-8, 'intercept follows timed carrier path');
+    assert.ok(isSpacePointOpen(s.geometry!, intercept.defense!.intercept));
+    assert.equal(orders.filter(a => a.defense?.mode === 'last-defender').length, 1);
+  });
 
 for (const mirror of [false, true]) for (const reverse of [false, true]) for (const human of [false, true])
   test(`a persistent blocked carrier expires the motion forecast, but a brief pause does not: ${mirror}/${reverse}/${human}`, () => {

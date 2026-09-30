@@ -1,7 +1,7 @@
 import type { FieldPoint, GrifballAssignment, GrifballTacticalPlayer, GrifballTacticalSnapshot } from './aiGrifballTeamPlan';
 import type { TeamTactics } from './grifballTacticsConfig';
 import { estimateSpaceAttackTime } from './aiGrifballSpace';
-import { fieldDistance as distance, isSpaceSegmentOpen, createSpaceRouter } from './grifballSpaceGeometry';
+import { fieldDistance as distance, isSpaceSegmentOpen, createSpaceRouter, type SpaceRoute } from './grifballSpaceGeometry';
 import { pointAlongRunnerRoute, type SpaceRouters } from './aiGrifballRunner';
 
 export interface DefenseOrder {
@@ -46,6 +46,7 @@ export function applyGrifballDefense(snapshot: GrifballTacticalSnapshot, assignm
   const contain = !emergency && (advantage < 0 || transition > 0 || tuning.defensePressure < 0.4 ||
     (reinforcementIn <= tuning.defenseRespawnWait && advantage <= 0));
   let projected = { ...anchor };
+  let carrierRoute: SpaceRoute | undefined, carrierTravel = 0;
   const expiredMotion = !!carrier && carrierStationarySeconds >= tuning.defenseLookahead;
   // A short pause retains the cut. Once observed displacement contradicts the
   // full forecast horizon, pressure the actual position instead of waiting forever.
@@ -54,8 +55,12 @@ export function applyGrifballDefense(snapshot: GrifballTacticalSnapshot, assignm
     const scale = Math.min(1, speed / Math.max(0.001, velocity)) * tuning.defenseLookahead;
     const moving = { x: anchor.x + carrier.vel.x * scale, z: anchor.z + carrier.vel.z * scale };
     const route = routers.get(carrier.id)!(goal);
-    projected = velocity > 0.5 && isSpaceSegmentOpen(snapshot.geometry!, anchor, moving) ? moving :
-      route.status === 'blocked' ? anchor : pointAlongRunnerRoute(anchor, route, speed * tuning.defenseLookahead);
+    if (velocity > 0.5 && isSpaceSegmentOpen(snapshot.geometry!, anchor, moving)) projected = moving;
+    else if (route.status !== 'blocked') {
+      carrierRoute = route;
+      carrierTravel = speed * tuning.defenseLookahead;
+      projected = pointAlongRunnerRoute(anchor, route, carrierTravel);
+    }
   }
   const routeLength = (id: string, point: FieldPoint) => {
     const route = routers.get(id)!(point, true); return route.status === 'blocked' ? Infinity : route.length;
@@ -74,7 +79,10 @@ export function applyGrifballDefense(snapshot: GrifballTacticalSnapshot, assignm
     const self = players.find(p => p.id === a.botId)!;
     for (let i = 1; i <= 6; i++) {
       const t = tuning.defenseLookahead * i / 6, fraction = i / 6;
-      const point = { x: anchor.x + (projected.x - anchor.x) * fraction, z: anchor.z + (projected.z - anchor.z) * fraction };
+      // A routed forecast follows its bends at carrier speed. The chord to its
+      // endpoint can cross obstacles and invent earlier interception locations.
+      const point = carrierRoute ? pointAlongRunnerRoute(anchor, carrierRoute, carrierTravel * fraction) :
+        { x: anchor.x + (projected.x - anchor.x) * fraction, z: anchor.z + (projected.z - anchor.z) * fraction };
       if (estimateSpaceAttackTime(self, point, routeLength(self.id, point)) <= t + tuning.defensePressure * 0.25) {
         const result = { point, time: t, reachable: true };
         interceptions.set(a.botId, result);
