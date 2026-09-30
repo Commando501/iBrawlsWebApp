@@ -252,6 +252,28 @@ test('only the assigned retriever requests a pickup while teammates move to supp
   assert.ok(b.frame.pos.x > -10);
 });
 
+for (const team of ['blue', 'red'] as const) for (const id of ['a', 'main_ai'])
+  test(`available teammate collects while the closer bot remains airborne: ${team}/${id}`, () => {
+    const state = setup(), airborne = state.otherPlayers.get('a')!, grounded = state.otherPlayers.get('b')!;
+    const direction = team === 'blue' ? 1 : -1;
+    state.otherPlayers.delete('a'); airborne.id = id; airborne.team = team; state.otherPlayers.set(id, airborne);
+    grounded.team = team; state.otherPlayers.get('enemy')!.team = team === 'blue' ? 'red' : 'blue';
+    airborne.pos.set(-0.5 * direction, 4, 0); airborne.vel.set(0, 8, 0); airborne.isJumping = true;
+    grounded.pos.set(-1.7 * direction, 0, 0);
+    updateGrifballTeamPlanForState(state, 0.25, goal);
+    assert.equal(state.aiMatchContext.grifballTeamPlan.assignments.get('b')?.role, 'retriever');
+    const deferred = move(state, id), recovery = move(state, 'b');
+    assert.equal(deferred.handled, false); assert.equal(deferred.frame.pickupRequested, false);
+    assert.equal(airborne.pos.y, 4); assert.equal(airborne.vel.y, 8);
+    assert.equal(recovery.handled, true); assert.equal(recovery.frame.pickupRequested, true);
+    grounded.pickupRequested = recovery.frame.pickupRequested;
+    updateGrifballObjectiveForState({ state, refs: createInitialGrifballThreeRefs(), ballMeshRef: { current: null },
+      ballChargingRef: { current: false }, ballChargeTimerRef: { current: 0 }, dt: 0.1,
+      isMultiplayer: false, activeCustomMap: null, placeCombatantsAtGrifballSpawns: () => {}, pushStatsUpdate: () => {} });
+    assert.equal(state.grifball.ball.holderId, 'b');
+    assert.equal(grounded.activeWeapon, 'ball'); assert.equal(airborne.activeWeapon, 'hammer');
+  });
+
 test('escort moves despite an unrelated nearby enemy and hands relevant threats to combat', () => {
   const state = setup();
   state.grifball.ball.state = 'held';

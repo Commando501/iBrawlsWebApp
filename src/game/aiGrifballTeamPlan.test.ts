@@ -1,5 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { observeGrifballSpace } from './aiGrifballSpace';
+import { DEFAULT_ADMIN_SETTINGS } from '../settings/gameplaySettings';
+import { defaultGrifballTactics } from './grifballTacticsConfig';
 import { createGrifballTeamPlanState, updateGrifballTeamPlan, selectGrifballAssignmentThreat, type GrifballTacticalPlayer, type GrifballTacticalSnapshot } from './aiGrifballTeamPlan';
 
 const player = (id: string, x: number, z = 0, team: 'blue' | 'red' = 'blue', scripted = true): GrifballTacticalPlayer => ({ id, team, pos: { x, z }, vel: { x: 0, z: 0 }, scripted });
@@ -12,6 +15,47 @@ const plan = (input: GrifballTacticalSnapshot) => {
   updateGrifballTeamPlan(state, input, 0.016);
   return state;
 };
+
+const recoveryPlayer = (id: string, x: number, mobileIn = 0): GrifballTacticalPlayer => ({
+  ...player(id, x), space: { ...observeGrifballSpace(DEFAULT_ADMIN_SETTINGS, 'hammer'), mobileIn },
+});
+
+test('recovery hands off an airborne incumbent when a grounded teammate can arrive substantially sooner', () => {
+  const input = snapshot([recoveryPlayer('a', -1), recoveryPlayer('b', -3)]), state = plan(input);
+  assert.equal(state.assignments.get('a')?.role, 'retriever');
+  input.players[0].space!.mobileIn = 2;
+  updateGrifballTeamPlan(state, input, 0.25);
+  assert.equal(state.assignments.get('b')?.role, 'retriever');
+  assert.equal([...state.assignments.values()].filter(a => a.role === 'retriever').length, 1);
+  updateGrifballTeamPlan(state, input, 0.25);
+  assert.equal(state.assignments.get('b')?.role, 'retriever', 'the unavailable incumbent cannot reclaim recovery');
+});
+
+test('recovery accounts for approach speed but not weapon attack readiness', () => {
+  const input = snapshot([recoveryPlayer('a', -4), recoveryPlayer('b', -6)]);
+  input.players[0].space!.speed = 2;
+  input.players[1].space!.speed = 8;
+  input.players[1].space!.attackIn = 10;
+  input.players[1].space!.phase = 'recovering';
+  assert.equal(plan(input).assignments.get('b')?.role, 'retriever');
+});
+
+test('recovery retains a nearly landed closer bot and chooses a future retriever when everyone is airborne', () => {
+  const input = snapshot([recoveryPlayer('a', -1, 0.05), recoveryPlayer('b', -3)]);
+  assert.equal(plan(input).assignments.get('a')?.role, 'retriever');
+  input.players[0].space!.mobileIn = 2;
+  input.players[1].space!.mobileIn = 0.5;
+  assert.equal(plan(input).assignments.get('b')?.role, 'retriever');
+});
+
+test('recovery availability preserves disabled-space and missing-observation distance fallbacks', () => {
+  const input = snapshot([recoveryPlayer('a', -1, 2), recoveryPlayer('b', -3)]);
+  input.tactics = defaultGrifballTactics(); input.tactics.defaults.spaceEnabled = false;
+  assert.equal(plan(input).assignments.get('a')?.role, 'retriever');
+  input.tactics.defaults.spaceEnabled = true;
+  input.players.forEach(p => { delete p.space; });
+  assert.equal(plan(input).assignments.get('a')?.role, 'retriever');
+});
 
 test('each all-bot team has one retriever and distinct support destinations', () => {
   const state = plan(snapshot([

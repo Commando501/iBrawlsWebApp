@@ -22,6 +22,7 @@ export function validateMobilityDecisionTrace(trace: ReturnType<typeof runOppose
   const mainAt = (tick: number) => trace.frames[tick - 1].actors.find(a => a.id === 'main_ai')!;
   const flights: { launch: number; landing: number; apex: number }[] = [];
   const interruptedFlights: { launch: number; death: number; revival: number | null }[] = [];
+  const partialFlights: { launch: number; landing: number | null; observedThrough: number }[] = [];
   for (const jump of trace.mainJumpImpacts) {
     const start = mainAt(jump.tick);
     // At 60 Hz, .08s windup + .04s strike takes eight updates, including
@@ -76,17 +77,28 @@ export function validateMobilityDecisionTrace(trace: ReturnType<typeof runOppose
       check(tick, 'airborne flag preserved through ascent and descent', actor.isJumping, true);
       check(tick, 'no budget refill in flight', actor.jumpBudget, 1);
     }
-    check(jump.tick, 'flight completes within two seconds or is interrupted by verified death', landing > 0 || interrupted > 0, true);
+    // The fixed recording can end during a valid flight. Keep the observed
+    // trajectory checks, but never count that prefix as a completed witness.
+    const expectedLandingOffset = Array.from({ length: 120 }, (_, i) => i + 1).find(n =>
+      start.pos[1] + n * 13.7 / 60 - 18 * n * (n + 1) / (2 * 60 * 60) <= 0);
+    const endsBeforeLanding = expectedLandingOffset !== undefined && trace.ticks < jump.tick + expectedLandingOffset;
+    check(jump.tick, 'flight completes within two seconds, is interrupted by verified death, or recording ends before landing',
+      landing > 0 || interrupted > 0 || endsBeforeLanding, true);
+    if (!landing && !interrupted && endsBeforeLanding) partialFlights.push({ launch: jump.tick, landing: null, observedThrough: trace.ticks });
     if (landing) {
       const landed = mainAt(landing);
       check(landing, 'landing retains tactical assignment', trace.frames[landing - 1].assignments.some(a => a.id === 'main_ai'), true);
-      check(landing, 'living bot resumes movement or commits a fresh jump after landing', trace.mainJumpRequests.some(r => r.accepted && r.tick >= landing && r.tick < landing + 30) || trace.frames.slice(landing, landing + 30).some(f => {
+      const resumed = trace.mainJumpRequests.some(r => r.accepted && r.tick >= landing && r.tick < landing + 30) || trace.frames.slice(landing, landing + 30).some(f => {
         const actor = f.actors.find(a => a.id === 'main_ai')!;
         return actor.hp > 0 && Math.hypot(actor.pos[0] - landed.pos[0], actor.pos[2] - landed.pos[2]) > .5;
-      }), true);
-      flights.push({ launch: jump.tick, landing, apex });
+      });
+      if (!resumed && trace.ticks < landing + 30) partialFlights.push({ launch: jump.tick, landing, observedThrough: trace.ticks });
+      else {
+        check(landing, 'living bot resumes movement or commits a fresh jump after landing', resumed, true);
+        flights.push({ launch: jump.tick, landing, apex });
+      }
     }
   }
-  return { ...trace, name: `${trace.name}/seed-${trace.scenario.seed}`, flights, interruptedFlights };
+  return { ...trace, name: `${trace.name}/seed-${trace.scenario.seed}`, flights, interruptedFlights, partialFlights };
 }
 export const runMobilityDecisionIntegration = () => MOBILITY_DECISION_CASES.map(runMobilityDecisionTrace);

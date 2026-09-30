@@ -48,6 +48,21 @@ test('flight evidence checks impulse, commitment, trajectory, landing budget and
   assert.equal(flight.failureCount, 0, JSON.stringify(flight.failures));
   assert.ok(flight.flights.length);
   const first = flight.flights[0];
+  for (const lastTick of [first.launch + 10, first.landing]) {
+    const prefix = structuredClone(flight);
+    prefix.ticks = lastTick; prefix.frames = prefix.frames.slice(0, lastTick);
+    prefix.mainJumpImpacts = prefix.mainJumpImpacts.filter(j => j.tick <= lastTick);
+    prefix.mainJumpRequests = prefix.mainJumpRequests.filter(j => j.tick <= lastTick);
+    prefix.revivals = prefix.revivals.filter(r => r.tick <= lastTick);
+    const observed = validateMobilityDecisionTrace(prefix);
+    assert.equal(observed.failureCount, 0, JSON.stringify(observed.failures));
+    assert.equal(observed.flights.length, 0, 'an unfinished observation cannot satisfy completed-flight coverage');
+    assert.equal(observed.partialFlights.length, 1);
+    assert.ok(jumpCoverage([observed], 'mobility').missing.includes(`${observed.scenario.team}/${observed.scenario.reverse}/flight`));
+    const invalid = structuredClone(prefix);
+    invalid.frames[first.launch].actors.find(a => a.id === 'main_ai')!.pos[1] += 1;
+    assert.ok(validateMobilityDecisionTrace(invalid).failureCount > 0, 'a partial flight still checks every observed ballistic step');
+  }
   for (const reason of ['impulse', 'commitment', 'trajectory', 'landing-budget', 'movement']) {
     const changed = structuredClone(flight);
     const actor = (tick: number) => changed.frames[tick - 1].actors.find(a => a.id === 'main_ai')!;
