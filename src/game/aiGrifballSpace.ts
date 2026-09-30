@@ -1,7 +1,7 @@
 import type { UniversalSettings } from '../types';
 import type { FieldPoint, GrifballAssignment, GrifballTacticalPlayer, GrifballTacticalSnapshot } from './aiGrifballTeamPlan';
 import { resolveHammerSlamTiming } from './hammerSlamTiming';
-import { resolveDirectionalSpeedMultiplier, resolvePunchLungeDistance } from './runnerBallSettings';
+import { resolveDirectionalSpeedMultiplier, resolvePunchCooldown, resolvePunchLungeDistance } from './runnerBallSettings';
 import { createSpaceRouter, fieldDistance, isSpaceSegmentOpen, type GrifballSpaceGeometry, type SpaceRoute } from './grifballSpaceGeometry';
 
 export interface SpaceObservation {
@@ -18,17 +18,39 @@ export interface GrifballSpaceDecision {
 }
 
 /** Estimates from visible weapon phases and elapsed animation time, not AI intentions. */
-export function observeGrifballSpace(settings: UniversalSettings, weapon: string, phase: string = 'ready', elapsed = 0, cooldown = 0, height = 0, verticalSpeed = 0, gravity = 18, swordReach = 2.8): SpaceObservation {
+export function observeGrifballSpace(settings: UniversalSettings, weapon: string, phase: string = 'ready', elapsed = 0, cooldown = 0, height = 0, verticalSpeed = 0, gravity = 18, swordReach = 2.8,
+  details: { lunging?: boolean; swordRecoverySeconds?: number } = {}): SpaceObservation {
   const timing = resolveHammerSlamTiming(settings);
-  const windup = weapon === 'sword' ? settings.swordSlashSpeed * 0.5 : weapon === 'ball' ? (settings.hammerMeleeSpeed ?? 0.24) : timing.windupTime;
-  const strike = weapon === 'hammer' ? timing.attackTime : weapon === 'ball' ? Math.max(0.03, (settings.hammerMeleeSpeed ?? 0.24) * 0.5) : 0;
-  const recovery = weapon === 'sword' ? settings.swordSlashReload : weapon === 'ball' ? (settings.grifballPunchCooldown ?? 0.5) : settings.hammerReloadTime;
-  let attackIn = windup + strike;
+  const melee = settings.hammerMeleeSpeed ?? .24, slash = settings.swordSlashSpeed ?? .22;
+  const windup = weapon === 'sword' ? slash * .5 : weapon === 'ball' ? melee : timing.windupTime;
+  const strike = weapon === 'hammer' ? timing.attackTime : weapon === 'ball' ? Math.max(.03, melee * .5) : 0;
+  const recovery = weapon === 'sword' ? (settings.swordSlashReload ?? .6)
+    : weapon === 'ball' ? resolvePunchCooldown(settings) : (settings.hammerReloadTime ?? .6);
+  const primary = windup + strike;
+  const nextPrimary = (remaining: number) => Math.max(0, remaining, cooldown) + primary;
+  let attackIn = nextPrimary(0);
   if (phase === 'swing_up') attackIn = Math.max(0, windup - elapsed) + strike;
-  else if (phase === 'swing_down' || phase === 'slashing') attackIn = Math.max(0, (phase === 'slashing' ? windup : strike) - elapsed);
-  else if (phase.includes('recover')) attackIn += Math.max(0, recovery - elapsed);
-  else if (phase.startsWith('melee')) attackIn = Math.max(0, settings.hammerMeleeSpeed - elapsed);
-  attackIn = Math.max(attackIn, cooldown);
+  else if (phase === 'swing_down' && weapon !== 'sword') attackIn = Math.max(0, strike - elapsed);
+  else if (phase === 'swing_down') {
+    // A roster slash already hit on entry; its visible follow-through cannot hit again.
+    attackIn = nextPrimary(Math.max(0, slash * .5 - elapsed) + recovery); phase = 'recovering';
+  } else if (phase === 'slashing' || phase === 'melee_swing') {
+    // Local slash/swipe impact occurs halfway through one continuous animation.
+    const duration = phase === 'slashing' ? slash : melee;
+    if (elapsed < duration * .5) attackIn = duration * .5 - elapsed;
+    else {
+      const reload = phase === 'slashing' ? recovery : (settings.hammerMeleeReload ?? .5);
+      attackIn = nextPrimary(Math.max(0, duration - elapsed) + reload);
+      phase = phase === 'slashing' ? 'recovering' : 'melee_recover';
+    }
+  } else if (phase === 'melee_up') attackIn = Math.max(0, (melee ? melee * .4 : .1) - elapsed) + (melee ? melee * .6 : .14);
+  else if (phase === 'melee_down') attackIn = Math.max(0, (melee ? melee * .6 : .14) - elapsed);
+  else if (phase.includes('recover')) {
+    const duration = phase === 'melee_recover' ? (settings.hammerMeleeReload ?? .5)
+      : weapon === 'sword' ? (details.swordRecoverySeconds ?? recovery) : recovery;
+    attackIn = nextPrimary(duration - elapsed);
+  }
+  if (details.lunging) { phase = 'lunging'; attackIn = 0; }
   return {
     weapon, phase, attackIn,
     reach: weapon === 'ball' ? resolvePunchLungeDistance(settings) : weapon === 'sword' ? swordReach : settings.attackRange + settings.attackRadius,

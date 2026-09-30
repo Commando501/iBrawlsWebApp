@@ -51,6 +51,22 @@ export function observeSimGrifballSpace(c: SimCombatant, settings: UniversalSett
       observation.attackIn = Math.max(lockout, c.weaponState === 'recovering' ? c.weaponTimer : 0) + primaryImpact;
     }
   }
+  if (execution !== 'legacy-v1') {
+    // Expose the same observable tactical phases as the live animation owner.
+    // Spent slash/swipe follow-through is recovery, even while the mesh still swings.
+    const swipe = c.attackKind === 'swipe';
+    observation.phase = c.weaponState === 'idle' ? 'ready'
+      : c.weaponState === 'recovering' ? swipe ? 'melee_recover' : 'recovering'
+      : c.weaponState === 'windup' ? swipe ? isRosterExecution(execution) ? 'melee_up' : 'melee_swing'
+        : c.attackKind === 'slash' && execution === 'live-player-v1' ? 'slashing' : 'swing_up'
+      : c.weaponState === 'active' ? swipe ? 'melee_down' : c.attackKind === 'slash' ? 'recovering' : 'swing_down'
+      : c.weaponState;
+    if (execution === 'live-player-v1' && c.weaponState === 'windup' && (swipe || c.attackKind === 'slash')) {
+      const duration = swipe ? (settings.hammerMeleeSpeed ?? .24) : (settings.swordSlashSpeed ?? .22);
+      if ((c.weaponPhaseElapsed ?? 0) >= duration * .5) observation.phase = swipe ? 'melee_recover' : 'recovering';
+    }
+    if (c.isLunging) observation.phase = 'lunging';
+  }
   return observation;
 }
 
