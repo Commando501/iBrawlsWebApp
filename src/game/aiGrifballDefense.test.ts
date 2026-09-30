@@ -18,14 +18,14 @@ const run = (s: GrifballTacticalSnapshot) => { const state = createGrifballTeamP
 const blue = (state: ReturnType<typeof run>) => [...state.assignments.values()].filter(a => a.team === 'blue');
 
 for (const team of ['blue', 'red'] as const) for (const id of ['defender', 'main_ai'])
-  for (const scenario of ['own-reach', 'enemy-reach', 'distant-cut', 'engagement-limit', 'safety', 'blocked'] as const)
-    test(`defensive combat handoff uses the defender's reach: ${team}/${id}/${scenario}`, () => {
+  for (const scenario of ['own-reach', 'enemy-reach', 'approaching-cut', 'distant-cut', 'engagement-limit', 'safety', 'blocked'] as const)
+    test(`defensive combat handoff respects reach and establishes the cut: ${team}/${id}/${scenario}`, () => {
       const sign = team === 'blue' ? 1 : -1;
       const self = p(id, team, 0), enemy = p('carrier', team === 'blue' ? 'red' : 'blue', 5.5 * sign);
       self.space!.reach = scenario === 'enemy-reach' ? 2 : 6;
       enemy.space!.reach = scenario === 'enemy-reach' ? 6 : 2;
       enemy.space!.weapon = 'ball';
-      const intercept = { x: (scenario === 'distant-cut' ? 10 : 5.5) * sign, z: 0 };
+      const intercept = { x: (scenario === 'distant-cut' ? 10 : ['enemy-reach', 'approaching-cut'].includes(scenario) ? 5.5 : 1.5) * sign, z: 0 };
       const a: GrifballAssignment = { botId: id, team, carrierId: enemy.id, role: 'chaser', slot: 0,
         destination: intercept, anchor: { ...enemy.pos }, reason: 'Authored cut', tuning: { ...defaultGrifballTactics().defaults },
         defense: { mode: scenario === 'safety' ? 'last-defender' : 'intercept', targetId: enemy.id, intercept,
