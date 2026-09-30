@@ -5,6 +5,8 @@ import { defaultGrifballTactics } from './grifballTacticsConfig';
 import { buildGrifballSpaceGeometry } from './grifballSpaceGeometry';
 import { createGrifballTeamPlanState, updateGrifballTeamPlan, resetGrifballTeamPlan, selectGrifballAssignmentThreat, type GrifballTacticalPlayer, type GrifballTacticalSnapshot } from './aiGrifballTeamPlan';
 import type { GrifballAssignment } from './aiGrifballTeamPlan';
+import { observeGrifballSpace } from './aiGrifballSpace';
+import { DEFAULT_ADMIN_SETTINGS } from '../settings/gameplaySettings';
 
 const p = (id: string, team: string, x: number, z = 0): GrifballTacticalPlayer => ({ id, team, pos: { x, z }, vel: { x: 0, z: 0 }, scripted: true,
   space: { weapon: 'hammer', phase: 'ready', speed: 5.2, reach: 3, blastRadius: 2, attackIn: 0.3, lungeReach: 0, lungeSpeed: 0, mobileIn: 0 } });
@@ -59,6 +61,36 @@ for (const mirror of [false, true]) for (const reverse of [false, true]) for (co
     updateGrifballTeamPlan(state, s, 1);
     assert.deepEqual([...state.assignments.values()].filter(a => a.team === team).map(a => [a.botId, a.defense!.mode]), before);
   });
+for (const mirror of [false, true]) for (const reverse of [false, true]) for (const nearId of ['near', 'main_ai'])
+  for (const scenario of ['earlier-cut', 'same-time-cut'] as const)
+    test(`interceptor uses the first reachable cut instead of the final projection: ${mirror}/${reverse}/${nearId}/${scenario}`, () => {
+      const s = scene();
+      if (scenario === 'earlier-cut') {
+        s.players = [p('safety', 'blue', -20), p(nearId, 'blue', -2), p('late', 'blue', -10), p('runner', 'red', 0)];
+        s.players[3].vel.x = -7.54; s.players[3].space!.speed = 7.54;
+      } else {
+        // Rounded positions from the retained Stadium pickup at tick 715.
+        s.players = [p(nearId, 'blue', -1.55, -.3), p('wide-a', 'blue', -4.25, -4.09),
+          p('wide-b', 'blue', -4.25, 4.08), p('safety', 'blue', -7.1, .08), p('runner', 'red', 1.55, -.3),
+          p('escort-a', 'red', 4.32, -3.68), p('escort-b', 'red', 4.28, 3.63), p('rear', 'red', 7.1, .07)];
+        for (const actor of s.players) actor.space = observeGrifballSpace(DEFAULT_ADMIN_SETTINGS, actor.id === 'runner' ? 'ball' : 'hammer', 'ready');
+        s.players.find(actor => actor.id === 'runner')!.vel = { x: -5.11, z: .98 };
+      }
+      if (mirror) for (const actor of s.players) {
+        actor.team = actor.team === 'blue' ? 'red' : 'blue';
+        actor.pos.x *= -1; actor.pos.z *= -1; actor.vel.x *= -1; actor.vel.z *= -1;
+      }
+      if (reverse) s.players.reverse();
+      const state = run(s), team = mirror ? 'red' : 'blue';
+      const orders = [...state.assignments.values()].filter(a => a.team === team);
+      assert.equal(orders.find(a => a.defense?.mode === 'intercept')!.botId, nearId);
+      assert.equal(orders.find(a => a.defense?.mode === 'last-defender')!.botId, 'safety');
+      const intercept = orders.find(a => a.botId === nearId)!.defense!;
+      assert.equal(intercept.carrierETA, .25);
+      updateGrifballTeamPlan(state, s, 1);
+      assert.equal([...state.assignments.values()].find(a => a.team === team && a.defense?.mode === 'intercept')!.botId, nearId);
+    });
+
 test('interceptor readiness takes precedence over proximity to the projected carrier', () => {
   const s = scene();
   s.players = [p('safety', 'blue', -18), p('ready', 'blue', -6), p('recovering', 'blue', -10), p('runner', 'red', 0)];

@@ -99,8 +99,15 @@ export function applyGrifballDefense(snapshot: GrifballTacticalSnapshot, assignm
   }
   // A lone defender preserves the goal side until the emergency range is reached.
   if (!rest.length) return;
-  rest.sort((a, b) => Number(reachable.includes(b)) - Number(reachable.includes(a)) ||
-    routeLength(a.botId, projected) - routeLength(b.botId, projected) || a.botId.localeCompare(b.botId));
+  rest.sort((a, b) => {
+    const aReachable = reachable.includes(a), bReachable = reachable.includes(b);
+    // Contest the earliest feasible cut. Distance to the horizon's endpoint can
+    // otherwise send the nearby defender away to mark while a later one chases.
+    return Number(bReachable) - Number(aReachable) || (aReachable && bReachable ?
+      interception(a).time - interception(b).time ||
+      routeLength(a.botId, interception(a).point) - routeLength(b.botId, interception(b).point) : 0) ||
+      routeLength(a.botId, projected) - routeLength(b.botId, projected) || a.botId.localeCompare(b.botId);
+  });
   const primary = rest.shift()!, intercept = interception(primary);
   const containment = toward(projected, goal, enemyReach + pressureMargin);
   assign(primary, contain ? 'contain' : 'intercept', emergency ? anchor : contain ? containment : intercept.point, carrier, intercept.time);
