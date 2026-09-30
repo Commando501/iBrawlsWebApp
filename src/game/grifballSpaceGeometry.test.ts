@@ -60,3 +60,18 @@ test('endpoint eviction and other geometry factories preserve reachable and bloc
   }
   assert.deepEqual(route(end), expected);
 });
+
+test('reusing a router preserves results across near, far, direct and blocked query orders', () => {
+  const geometry = wall(9), start = { x: -2, z: 9.8 };
+  const endpoints = [{ x: 2, z: 8 }, { x: 15, z: -10 }, { x: 2, z: 0 }, { x: -10, z: 8 },
+    { x: 0, z: 0 }, { x: 21, z: 0 }, { x: 2, z: -8 }, { x: 15, z: 10 }];
+  const expected = endpoints.map(end => [false, true].map(distanceOnly => createSpaceRouterFactory(geometry)(start)(end, distanceOnly)));
+  assert.ok(expected.some(pair => pair[0].status === 'routed'));
+  assert.ok(expected.some(pair => pair[0].status === 'blocked'));
+  for (const order of [[0, 1, 2, 3, 4, 5, 6, 7], [7, 6, 5, 4, 3, 2, 1, 0], [4, 3, 0, 7, 5, 2, 6, 1]]) {
+    const route = createSpaceRouterFactory(geometry)(start);
+    for (const index of [...order, ...[...order].reverse()]) for (const distanceOnly of [false, true]) {
+      assert.deepEqual(route(endpoints[index], distanceOnly), expected[index][Number(distanceOnly)]);
+    }
+  }
+});
