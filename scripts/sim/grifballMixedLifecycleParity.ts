@@ -1,3 +1,4 @@
+import { triggerCombatantLungeAction } from '../../src/components/grifball/combatantActions';
 import * as THREE from 'three';
 import { lungeFixture } from './grifballLungeFixture';
 import { parityRecorder } from './grifballMultiActorParity';
@@ -26,7 +27,8 @@ export const MIXED_LIFECYCLE_CASES: MixedLifecycleCase[] = KINDS.flatMap(kind =>
 
 /** Committed incoming roster flight followed through damage, revival and shield expiry.
  * The player proxy supplies a target snapshot only; live health is owned by runtime state. */
-export interface OpposedFlightCase { first: 'player' | 'roster'; playerHp: number; botHp: number; trade: boolean; reload: number; shields?: { player: number; roster: number } }
+export interface OpposedFlightMotion { playerHeight: number; playerVelocityY: number; botHeight: number; botVelocityY: number; directionY: number; directionZ: number }
+export interface OpposedFlightCase { motion?: OpposedFlightMotion; first: 'player' | 'roster'; playerHp: number; botHp: number; trade: boolean; reload: number; shields?: { player: number; roster: number } }
 export function runMixedLifecycleTrace(spec: MixedLifecycleCase, snapshotAt?: number, opposed?: OpposedFlightCase) {
   const f = lungeFixture(spec.main ? 'main_ai' : 'attacker', false);
   const { state, sim, bot, target, refs, map } = f;
@@ -64,8 +66,21 @@ export function runMixedLifecycleTrace(spec: MixedLifecycleCase, snapshotAt?: nu
   state.playerRespawnTimer = player.respawnTimer = 0;
   bot.lungeTargetDir = { x: 0, y: 0, z: direction }; self.lungeAimDirection = { x: 0, y: 0, z: direction };
   self.lungeTargetId = player.id;
+  if (opposed?.motion) {
+    const m = opposed.motion;
+    state.playerPos.y = player.pos.y = m.playerHeight;
+    state.playerVel.y = player.vel.y = m.playerVelocityY;
+    state.isJumping = player.isJumping = m.playerHeight > 0 || m.playerVelocityY !== 0;
+    bot.pos.y = self.pos.y = m.botHeight;
+    bot.vel.y = self.vel.y = m.botVelocityY;
+    bot.isJumping = self.isJumping = m.botHeight > 0 || m.botVelocityY !== 0;
+    self.lungeAimDirection = { x: 0, y: m.directionY, z: direction * m.directionZ };
+  }
   const random = seededRandom(83), record = parityRecorder();
   withSimulationRandom(random, 0, () => {
+    if (opposed?.motion) triggerCombatantLungeAction({ self: bot, settings: state.settings,
+      lungeDir: new THREE.Vector3(self.lungeAimDirection!.x, self.lungeAimDirection!.y, self.lungeAimDirection!.z),
+      pos: bot.pos, vel: bot.vel, playDash: noop });
     stepCombatantWeapons(sim, self, { ...idleAction(), attackSecondary: true }, sim.settings, 0, []);
     if (opposed) {
       triggerPlayerSwordLungeForState({ state, lockTarget: bot, recordLungeStart: noop, playDash: noop, sendSync: noop });
@@ -131,6 +146,7 @@ export function runMixedLifecycleTrace(spec: MixedLifecycleCase, snapshotAt?: nu
         const proxy = { ...target, id: 'player', team: state.localPlayerTeam, hp: state.playerHP, maxHp: state.playerMaxHP,
           pos: state.playerPos, vel: state.playerVel, activeWeapon: state.activeWeapon === 'sword' ? 'sword' as const : 'hammer' as const, isLunging: state.isLunging,
           invulnerabilityTimer: state.playerInvulnerabilityTimer, isCrouching: state.isCrouching };
+        if (opposed?.motion) f.gravityPrelude(bot);
         f.flightFor(bot, proxy);
       }
       f.visuals(1 / 60);
@@ -154,13 +170,17 @@ export function runMixedLifecycleTrace(spec: MixedLifecycleCase, snapshotAt?: nu
       pos: Object.values(player.pos), vel: Object.values(player.vel), heading: [Math.sin(player.yaw + Math.PI), Math.cos(player.yaw + Math.PI)], kills: kills.get('player') ?? 0, deaths: deaths.get('player') ?? 0 };
     for (const field of ['hp', 'lunging', 'phase', 'elapsed', 'shield', 'respawn', 'weapon', 'kills', 'deaths'] as const) record.compare(tick, `player.${field}`, live[field], headless[field], 1e-6);
     for (const field of ['pos', 'vel', 'heading'] as const) for (let i = 0; i < live[field].length; i++) record.compare(tick, `player.${field}.${i}`, live[field][i], headless[field][i], 1e-6);
-    const liveBot = { hp: bot.hp, shield: bot.invulnerabilityTimer, respawn: bot.respawnTimer, pos: bot.pos.toArray(), kills: bot.kills ?? 0, deaths: bot.deaths ?? 0, lunging: !!bot.isLunging };
-    const simBot = { hp: self.hp, shield: self.invulnerabilityTimer, respawn: self.respawnTimer, pos: Object.values(self.pos), kills: kills.get(self.id) ?? 0, deaths: deaths.get(self.id) ?? 0, lunging: self.isLunging };
+    const liveBot = { hp: bot.hp, shield: bot.invulnerabilityTimer, respawn: bot.respawnTimer, pos: bot.pos.toArray(), vel: bot.vel.toArray(), cooldown: Math.max(0, bot.aiTimer ?? 0), kills: bot.kills ?? 0, deaths: bot.deaths ?? 0, lunging: !!bot.isLunging };
+    const simBot = { hp: self.hp, shield: self.invulnerabilityTimer, respawn: self.respawnTimer, pos: Object.values(self.pos), vel: Object.values(self.vel), cooldown: self.attackCooldown, kills: kills.get(self.id) ?? 0, deaths: deaths.get(self.id) ?? 0, lunging: self.isLunging };
     for (const field of ['hp', 'shield', 'respawn', 'kills', 'deaths', 'lunging'] as const) record.compare(tick, `bot.${field}`, liveBot[field], simBot[field], 1e-6);
     for (let i = 0; i < 3; i++) record.compare(tick, `bot.pos.${i}`, liveBot.pos[i], simBot.pos[i], 1e-6);
+    if (opposed?.motion) {
+      for (let i = 0; i < 3; i++) record.compare(tick, `bot.vel.${i}`, liveBot.vel[i], simBot.vel[i], 1e-6);
+      if (bot.hp > 0) record.compare(tick, 'bot.cooldown', liveBot.cooldown, simBot.cooldown, 1e-6);
+    }
     frames.push({ tick, live, headless, liveBot, simBot });
   }
-  if (opposed && !opposed.shields) {
+  if (opposed && !opposed.shields && !opposed.motion) {
     const { first, playerHp, botHp, trade, reload } = opposed;
     const playerDamage = trade || first === 'roster' || botHp > 1 ? 1 : 0;
     const botDamage = trade || first === 'player' || playerHp > 1 ? 1 : 0;
@@ -185,6 +205,8 @@ export function runMixedLifecycleTrace(spec: MixedLifecycleCase, snapshotAt?: nu
     return { name: `opposed/${first}/${playerHp}-${botHp}/${trade}/${spec.main}/${spec.mirror}/${spec.reverse}`,
       scenario: { ...spec, opposed }, ticks: 300, combatExecution: 'live-mixed-v1', ...record.result(), frames };
   }
+  if (opposed?.motion) return { name: 'airborne-opposed', scenario: { ...spec, opposed },
+    ticks: 300, combatExecution: 'live-mixed-v1', ...record.result(), frames };
   if (opposed?.shields) return { name: `shielded-opposed/${opposed.first}/${spec.main}/${spec.mirror}/${spec.reverse}`,
     scenario: { ...spec, opposed }, ticks: 300, combatExecution: 'live-mixed-v1', ...record.result(), frames };
   const hit = !['shield', 'friendly', 'dead', 'double-respawn'].includes(spec.kind);

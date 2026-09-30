@@ -335,6 +335,15 @@ export function executePlayerCombatantTradeForState({
     recordPlayerMeleeKillForState(state, combatant, recordBotCalibrationDeath);
     playerMedals = evaluatePlayerKillMedals(combatant.id);
   }
+  if (combatant.hp > 0 && combatant.isLunging) {
+    // Player contact consumes the roster flight before its next physics update.
+    // Stop flight momentum and enter reload just as a roster-initiated trade does.
+    combatant.vel.x = combatant.vel.z = 0;
+    combatant.vel.y = Math.min(combatant.vel.y, 0);
+    combatant.isJumping = combatant.pos.y > .01 || Math.abs(combatant.vel.y) > .01;
+    combatant.aiState = 'COOLDOWN';
+    combatant.aiTimer = state.settings.swordLungeReload ?? 1.2;
+  }
   combatant.isLunging = false;
   combatant.weaponState = 'ready';
   combatant.weaponTimer = 0;

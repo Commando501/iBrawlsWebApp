@@ -471,8 +471,14 @@ export function resolveMixedPlayerLunge(state: SimState, c: SimCombatant, settin
     strike(state, c, target, settings, events);
     if (trade) {
       strike(state, target, c, settings, events);
+      if (target.alive && target.isLunging) {
+        target.vel.x = target.vel.z = 0;
+        target.vel.y = Math.min(target.vel.y, 0);
+        target.isJumping = target.pos.y > .01 || Math.abs(target.vel.y) > .01;
+        target.attackCooldown = settings.swordLungeReload ?? 1.2;
+      } else target.attackCooldown = 0;
       target.isLunging = false; target.weaponState = 'idle'; target.weaponTimer = target.weaponPhaseElapsed = 0;
-      target.attackKind = 'none'; target.attackCooldown = 0;
+      target.attackKind = 'none';
     }
     finish('hit'); return;
   }

@@ -49,6 +49,24 @@ function fixture(identity: Identity, hp = 2) {
   return { ...f, events, network, start, step, finish, select };
 }
 
+for (const identity of identities) for (const velocityY of [-6, 0, 6]) {
+  test(`player trade/${identity}/${velocityY}: surviving roster flight stops drifting and reloads`, () => {
+    const f = fixture(identity), { state, target } = f;
+    target.pos.set(0, velocityY === 0 ? 0 : .5, 1);
+    target.vel.set(10, velocityY, 24);
+    target.activeWeapon = 'sword'; target.isLunging = true; target.aiState = 'LUNGING';
+    state.settings.enableSwordTrade = true;
+    f.start(); f.step();
+    assert.equal(target.hp, 1); assert.equal(state.playerHP, 1);
+    assert.equal(target.isLunging, false);
+    assert.deepEqual(target.vel.toArray(), [0, Math.min(velocityY, 0), 0]);
+    assert.equal(target.isJumping, velocityY !== 0);
+    assert.equal(target.aiState, 'COOLDOWN');
+    assert.equal(target.aiTimer, state.settings.swordLungeReload);
+    assert.deepEqual(f.events.ends, [true]);
+  });
+}
+
 for (const identity of [...identities, 'remote'] as const) for (const weapon of ['sword', 'hammer'] as const)
   for (const shield of [1, 1 / 60]) test(`player flight shield/${identity}/${weapon}/${shield}: active protection and exact-frame expiry`, t => {
     const f = fixture(identity === 'remote' ? 'regular' : identity), { state, target } = f;
