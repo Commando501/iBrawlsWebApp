@@ -486,7 +486,10 @@ export function resolveMixedPlayerLunge(state: SimState, c: SimCombatant, settin
         target.vel.y = Math.min(target.vel.y, 0);
         target.isJumping = target.pos.y > .01 || Math.abs(target.vel.y) > .01;
         target.attackCooldown = settings.swordLungeReload ?? 1.2;
-      } else target.attackCooldown = 0;
+      }
+      // A recent-history counter may come from a roster actor whose flight has
+      // already ended. Live trades retain that survivor's existing reload.
+      // Lethal hits already clear cooldown through strike's death handling.
       target.isLunging = false; target.weaponState = 'idle'; target.weaponTimer = target.weaponPhaseElapsed = 0;
       target.attackKind = 'none';
     }
