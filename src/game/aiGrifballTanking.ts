@@ -141,17 +141,23 @@ export function applyGrifballTanking(snapshot: GrifballTacticalSnapshot, assignm
       const second = options.filter(o => o.a.botId !== primary.a.botId && o.score.targetId === target.id)
         .sort((a, b) => a.score.attackETA - b.score.attackETA || a.a.botId.localeCompare(b.a.botId))[0];
       if (second && recoveryId) {
+        // Evaluate both attackers at weapon-scaled standoff distances. The
+        // single-tank three-unit cap otherwise makes every default-hammer pair
+        // appear to share one blast, even when they approach opposite flanks.
+        const primaryAttackPoint = toward(target.pos, primary.bot.pos, Math.max(1, (primary.bot.space?.reach ?? 2.5) * 0.7));
         const attackPoint = toward(target.pos, second.bot.pos, Math.max(1, (second.bot.space?.reach ?? 2.5) * 0.7));
         const sharedBlast = enemies.some(e => (e.space?.blastRadius ?? 0) > 0 &&
           ((fieldDistance(primary.bot.pos, second.bot.pos) <= e.space!.blastRadius * 2 + 0.5 &&
             eta(e, primary.bot.pos) < tuning.threatHorizon && eta(e, second.bot.pos) < tuning.threatHorizon) ||
-           (fieldDistance(primary.a.destination, attackPoint) <= e.space!.blastRadius * 2 + 0.5 &&
-            eta(e, primary.a.destination) < tuning.threatHorizon && eta(e, attackPoint) < tuning.threatHorizon)));
+           (fieldDistance(primaryAttackPoint, attackPoint) <= e.space!.blastRadius * 2 + 0.5 &&
+            eta(e, primaryAttackPoint) < tuning.threatHorizon && eta(e, attackPoint) < tuning.threatHorizon)));
         const opening = recovering(target) && (target.space?.attackIn ?? 0) > second.score.attackETA + 0.1;
-        const doubleCommit = opening && coverageReady && routers.get(second.bot.id)!(attackPoint, true).status !== 'blocked' && !sharedBlast && second.score.score >= tuning.tankDoubleThreshold && !recovering(second.bot);
+        const doubleCommit = opening && coverageReady && routers.get(primary.bot.id)!(primaryAttackPoint, true).status !== 'blocked' &&
+          routers.get(second.bot.id)!(attackPoint, true).status !== 'blocked' && !sharedBlast && second.score.score >= tuning.tankDoubleThreshold && !recovering(second.bot);
         second.a.tanking = { ...second.a.tanking!, mode: 'punish', targetId: target.id, partnerId: primary.a.botId,
           attack: doubleCommit, doubleCommit, reason: doubleCommit ? 'Two-player commit: opening and recovery coverage available' : !coverageReady ? 'Wait for recovery coverage to arrive' : sharedBlast ? 'Cover the tank; avoid shared hammer exposure' : second.score.score < tuning.tankDoubleThreshold ? 'Second attacker is below the double-team value threshold' : 'Cover the tank and wait for a recovery opening' };
         primary.a.tanking.partnerId = second.a.botId; primary.a.tanking.doubleCommit = doubleCommit;
+        if (doubleCommit) place(primary.a, primaryAttackPoint);
         const reach = Math.max(target.space?.reach ?? 2.5, target.space?.lungeReach ?? 0);
         place(second.a, toward(target.pos, second.bot.pos, doubleCommit ? Math.max(1, (second.bot.space?.reach ?? 2.5) * 0.7) : reach + tuning.tankDelayMargin));
       }
@@ -178,7 +184,10 @@ export function selectTankingThreat(assignment: GrifballAssignment, self: FieldP
   const visible = (p: GrifballTacticalPlayer) => p.team !== assignment.team &&
     (!assignment.geometry || isSpaceSegmentOpen(assignment.geometry, self, p.pos));
   const target = players.find(p => p.id === order.targetId && visible(p));
-  if (order.attack && target && (order.mode !== 'punish' || recovering(target)) &&
+  const attacker = players.find(p => p.id === assignment.botId);
+  const punishOpen = target && attacker && recovering(target) && (target.space?.attackIn ?? 0) >
+    estimateSpaceAttackTime({ ...attacker, pos: self }, target.pos, fieldDistance(self, target.pos)) + 0.1;
+  if (order.attack && target && (order.mode !== 'punish' || punishOpen) &&
     fieldDistance(self, target.pos) <= (assignment.tuning?.engagementDistance ?? 6) &&
     fieldDistance(self, assignment.destination) <= (assignment.tuning?.coverageBoundary ?? 9)) return target.id;
   return players.filter(p => visible(p) && (fieldDistance(self, p.pos) <= 2.5 ||

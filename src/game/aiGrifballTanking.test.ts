@@ -20,6 +20,72 @@ function scene(): GrifballTacticalSnapshot {
 const blue = (state: ReturnType<typeof createGrifballTeamPlanState>) => [...state.assignments.values()].filter(a => a.team === 'blue' && a.tanking);
 const run = (s = scene()) => { const state = createGrifballTeamPlanState(); updateGrifballTeamPlan(state, s, 0.2); return state; };
 
+function defaultScene(): GrifballTacticalSnapshot {
+  const s = scene(); s.tactics = defaultGrifballTactics();
+  s.players[1].pos = { x: 5, z: -7 }; s.players[2].pos = { x: 5, z: 7 }; s.players[3].pos = { x: -10, z: 0 };
+  for (const player of s.players) player.space = observeGrifballSpace(DEFAULT_ADMIN_SETTINGS,
+    player.id === 'runner' ? 'ball' : 'hammer', player.id === 'enemy' ? 'recovering' : 'ready');
+  return s;
+}
+
+for (const team of ['blue', 'red'] as const) for (const reverse of [false, true]) for (const main of [false, true]) {
+  test(`default hammer pair preserves spacing and coverage: ${team}, reverse=${reverse}, main=${main}`, () => {
+    const s = defaultScene();
+    if (main) s.players[1].id = 'main_ai';
+    if (team === 'red') for (const player of s.players) {
+      player.team = player.team === 'blue' ? 'red' : 'blue';
+      player.pos = { x: -player.pos.x, z: -player.pos.z };
+    }
+    if (reverse) s.players.reverse();
+    const orders = [...run(s).assignments.values()].filter(a => a.team === team && a.tanking);
+    const pair = orders.filter(a => a.tanking!.doubleCommit);
+    assert.equal(pair.length, 2, JSON.stringify(orders.map(a => a.tanking)));
+    assert.ok(Math.hypot(pair[0].destination.x - pair[1].destination.x, pair[0].destination.z - pair[1].destination.z) > DEFAULT_ADMIN_SETTINGS.attackRadius * 2 + .5);
+    assert.equal(pair[0].tanking!.partnerId, pair[1].botId);
+    assert.equal(pair[1].tanking!.partnerId, pair[0].botId);
+    assert.ok(pair.every(a => a.tanking!.attack && a.tanking!.targetId === 'enemy'));
+    if (main) assert.ok(pair.some(a => a.botId === 'main_ai'));
+    const reserve = orders.find(a => a.botId === pair[0].tanking!.recoveryId)!;
+    assert.ok(reserve && !reserve.tanking!.attack && !pair.includes(reserve));
+  });
+}
+
+for (const unsafe of ['ready', 'closing-recovery', 'shared-blast', 'late-cover', 'blocked-primary', 'blocked-partner'] as const) {
+  test(`default hammer double commit still rejects ${unsafe}`, () => {
+    const s = defaultScene(), initial = blue(run(s));
+    assert.equal(initial.filter(a => a.tanking!.doubleCommit).length, 2, 'control must earn a commitment');
+    if (unsafe === 'ready') s.players[4].space = observeGrifballSpace(DEFAULT_ADMIN_SETTINGS, 'hammer');
+    if (unsafe === 'closing-recovery') s.players[4].space = observeGrifballSpace(DEFAULT_ADMIN_SETTINGS, 'hammer', 'recovering', .59);
+    if (unsafe === 'shared-blast') { s.players[1].pos.z = -2; s.players[2].pos.z = 2; }
+    if (unsafe === 'late-cover') s.players[3].pos.x = -30;
+    if (unsafe.startsWith('blocked-')) {
+      const destination = initial.find(a => a.tanking!.mode === (unsafe === 'blocked-primary' ? 'engage' : 'punish'))!.destination;
+      s.geometry = buildGrifballSpaceGeometry({ mapShape: 'rectangular', arenaRadius: 52,
+        arenaHalfExtents: { x: 52, z: 23 }, objects: [{ type: 'box', position: { ...destination, y: 1 }, scale: { x: .1, y: 2, z: .1 }, isCollidable: true }],
+      } as CustomMapData, 52);
+    }
+    const orders = blue(run(s));
+    assert.ok(orders.every(a => !a.tanking!.doubleCommit));
+    if (unsafe === 'ready') {
+      const primary = orders.find(a => a.tanking!.mode === 'engage')!;
+      assert.ok(Math.abs(Math.hypot(primary.destination.x - 5, primary.destination.z) - 3) < 1e-8);
+    }
+  });
+}
+
+test('a default-timing punisher rechecks the remaining recovery window between plan refreshes', () => {
+  const s = defaultScene();
+  const assignment = blue(run(s)).find(a => a.tanking!.mode === 'punish')!;
+  const actor = s.players.find(p => p.id === assignment.botId)!;
+  // Move into the engagement boundary without rebuilding the cached order.
+  actor.pos.z *= .75;
+  assert.equal(selectGrifballAssignmentThreat(assignment, actor.pos, s.players), 'enemy');
+  s.players[4].space = observeGrifballSpace(DEFAULT_ADMIN_SETTINGS, 'hammer', 'recovering', .59);
+  assert.equal(selectGrifballAssignmentThreat(assignment, actor.pos, s.players), null);
+  s.players[4].pos = { ...actor.pos, x: actor.pos.x + 1 };
+  assert.equal(selectGrifballAssignmentThreat(assignment, actor.pos, s.players), 'enemy', 'immediate self-defense remains available');
+});
+
 test('one primary tank, a waiting punisher and explicit recovery coverage are stable across roster order', () => {
   const s = scene(), state = run(s), orders = blue(state);
   assert.equal(orders.filter(a => a.tanking!.attack).length, 1);
