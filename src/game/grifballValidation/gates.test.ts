@@ -127,6 +127,11 @@ test('corrected player traces agree while incomplete coverage and legacy differe
   assert.equal(details.traces.length, PARITY_TRACE_CASES.length); assert.ok(details.gaps.length);
   assert.deepEqual(details.combatExecution, ['live-player-v1', 'live-roster-v1', 'live-roster-v2', 'live-mixed-v1']);
   assert.ok(details.traces.every((t: any) => t.differenceCount === 0));
+  assert.equal(details.passRecoveryTraces.length, 32);
+  assert.ok(details.passRecoveryTraces.every((t: any) => t.failureCount === 0 && t.boundary === 'live-pass-recovery' && t.frameCount === 600));
+  assert.equal(details.passRecoveryTraces.reduce((n: number, t: any) => n + t.frameCount, 0), 19200);
+  assert.equal(details.passRecoveryTraces.filter((t: any) => t.initialRecovery.outcome === 'interception').length, 16);
+  assert.equal(details.passRecoveryTraces.filter((t: any) => t.initialRecovery.outcome === 'reception').length, 16);
   assert.equal(details.earnedTankTraces.length, 32);
   assert.ok(details.earnedTankTraces.every((t: any) => t.failureCount === 0 && t.boundary === 'live-earned-tank-contest' && t.frameCount === 300));
   assert.equal(details.earnedTankTraces.reduce((n: number, t: any) => n + t.frameCount, 0), 9600);
@@ -198,7 +203,7 @@ test('corrected player traces agree while incomplete coverage and legacy differe
   assert.ok(details.botTraces.every((t: any) => t.differenceCount === 0));
   assert.equal(details.lungeTraces.length, 300);
   assert.ok(details.lungeTraces.every((t: any) => t.differenceCount === 0));
-  assert.equal(details.protocol, 'live-functions-vs-headless-step-v44');
+  assert.equal(details.protocol, 'live-functions-vs-headless-step-v45');
   assert.equal(details.geometryTraces.length, 398);
   assert.ok(details.geometryTraces.every((t: any) => t.differenceCount === 0));
   assert.equal(details.motionTraces.length, 216);

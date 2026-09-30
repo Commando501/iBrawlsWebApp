@@ -4,6 +4,7 @@ import { runRosterContest } from './grifballRosterContest';
 import { runMapPassMatch } from './grifballMapPassMatch';
 import { runPassMatch } from './grifballPassMatch';
 import { runPassContest } from './grifballPassContest';
+import { runPassRecovery } from './grifballPassRecovery';
 import { runMapMatch } from './grifballMapMatch';
 import { runMapContest } from './grifballMapContest';
 import { runMapRouting } from './grifballMapRouting';
@@ -245,6 +246,7 @@ export function runExecutionParity() {
   const mapContestTraces = runMapContest();
   const mapMatchTraces = runMapMatch();
   const passContestTraces = runPassContest();
+  const passRecoveryTraces = runPassRecovery();
   const passMatchTraces = runPassMatch();
   const mapPassMatchTraces = runMapPassMatch();
   const rosterContestTraces = runRosterContest();
@@ -256,13 +258,13 @@ export function runExecutionParity() {
   const revivalDecisionTraces = runRevivalDecisionIntegration();
   const opposedDecisionTraces = runOpposedDecisionIntegration();
   const pressureDecisionTraces = runPressureDecisionIntegration();
-  const decisionFailures = [...decisionIntegrationTraces, ...passDecisionTraces, ...pressureDecisionTraces, ...opposedDecisionTraces, ...revivalDecisionTraces, ...roundDecisionTraces, ...matchDecisionTraces, ...mobilityDecisionTraces, ...mapRoutingTraces, ...mapContestTraces, ...mapMatchTraces, ...passContestTraces, ...passMatchTraces, ...mapPassMatchTraces, ...rosterContestTraces, ...tankContestTraces, ...earnedTankTraces].filter(t => t.failureCount);
+  const decisionFailures = [...decisionIntegrationTraces, ...passDecisionTraces, ...pressureDecisionTraces, ...opposedDecisionTraces, ...revivalDecisionTraces, ...roundDecisionTraces, ...matchDecisionTraces, ...mobilityDecisionTraces, ...mapRoutingTraces, ...mapContestTraces, ...mapMatchTraces, ...passContestTraces, ...passMatchTraces, ...mapPassMatchTraces, ...rosterContestTraces, ...tankContestTraces, ...earnedTankTraces, ...passRecoveryTraces].filter(t => t.failureCount);
   const legacyCompatibility = ['sword-hit-recovery', 'punch-hit-recovery'].map(name => runExecutionParityTrace(name, { combatExecution: 'legacy-v1' }));
   const priorRosterCompatibility = runLungeParityTrace(LUNGE_PARITY_CASES[0], 'bot_2', true, 'live-roster-v1');
   const priorPlayerCompatibility = runPlayerLungeParityTrace(PLAYER_LUNGE_PARITY_CASES[0], 'live-player-v1');
   return gate('execution-parity', failures.length || decisionFailures.length || mapMobilityFailures.length ? 'fail' : 'inconclusive',
-    `${failures.length}/${traces.length + botTraces.length + lungeTraces.length + geometryTraces.length + motionTraces.length + movingContactTraces.length + multiActorTraces.length + spawnTraces.length + mixedContactTraces.length + playerLungeTraces.length + mixedLifecycleTraces.length + opposedFlightTraces.length + objectiveTraces.length + frameObjectiveTraces.length + passInputTraces.length + chargeCombatTraces.length + carrierCrowdTraces.length + carrierRecoveryTraces.length + runnerCombatTraces.length + roundFrameTraces.length + roundCombatTraces.length + roundFlightTraces.length + roundPlayerFlightTraces.length} action/objective boundary traces differ. ${decisionFailures.length}/${decisionIntegrationTraces.length + passDecisionTraces.length + pressureDecisionTraces.length + opposedDecisionTraces.length + revivalDecisionTraces.length + roundDecisionTraces.length + matchDecisionTraces.length + mobilityDecisionTraces.length + mapRoutingTraces.length + mapContestTraces.length + mapMatchTraces.length + passContestTraces.length + passMatchTraces.length + mapPassMatchTraces.length + rosterContestTraces.length + tankContestTraces.length + earnedTankTraces.length} live decision integration traces fail. ${mapMobilityFailures.length}/${mapMobilityTraces.length} live map mobility traces fail. ${PARITY_GAPS.length} coverage gaps remain; legacy training dynamics are not certified.`,
-    { protocol: 'live-functions-vs-headless-step-v44', combatExecution: ['live-player-v1', 'live-roster-v1', 'live-roster-v2', 'live-mixed-v1'], tolerances: PARITY_TOLERANCES,
+    `${failures.length}/${traces.length + botTraces.length + lungeTraces.length + geometryTraces.length + motionTraces.length + movingContactTraces.length + multiActorTraces.length + spawnTraces.length + mixedContactTraces.length + playerLungeTraces.length + mixedLifecycleTraces.length + opposedFlightTraces.length + objectiveTraces.length + frameObjectiveTraces.length + passInputTraces.length + chargeCombatTraces.length + carrierCrowdTraces.length + carrierRecoveryTraces.length + runnerCombatTraces.length + roundFrameTraces.length + roundCombatTraces.length + roundFlightTraces.length + roundPlayerFlightTraces.length} action/objective boundary traces differ. ${decisionFailures.length}/${decisionIntegrationTraces.length + passDecisionTraces.length + pressureDecisionTraces.length + opposedDecisionTraces.length + revivalDecisionTraces.length + roundDecisionTraces.length + matchDecisionTraces.length + mobilityDecisionTraces.length + mapRoutingTraces.length + mapContestTraces.length + mapMatchTraces.length + passContestTraces.length + passMatchTraces.length + mapPassMatchTraces.length + rosterContestTraces.length + tankContestTraces.length + earnedTankTraces.length + passRecoveryTraces.length} live decision integration traces fail. ${mapMobilityFailures.length}/${mapMobilityTraces.length} live map mobility traces fail. ${PARITY_GAPS.length} coverage gaps remain; legacy training dynamics are not certified.`,
+    { protocol: 'live-functions-vs-headless-step-v45', combatExecution: ['live-player-v1', 'live-roster-v1', 'live-roster-v2', 'live-mixed-v1'], tolerances: PARITY_TOLERANCES,
       neuralIntegration: 'Optional and not promoted: legacy training dynamics remain unchanged; their compatibility traces are diagnostic, not a required neural integration gate.',
       scope: 'Production player functions, stationary roster attacks and committed roster flights through contact, lethal/surviving primary/recent-window trades, paired opposing lunges, main-AI victims and single-authored-spawn revival versus versioned stepSimulation. Grounded geometry covers medium/large targets and standing/crouched actors. Motion traces include the scripted gravity prelude, airborne commitments, ballistic targets, crossing/retreating flights and fall completion in both actor orders. Targets and headings are supplied; AI decisions/pressure/combos, post-flight horizontal steering and presentation effects are suppressed. Remaining gaps are not certified.',
       movingContactScope: 'Production assigned-area walking and committed grounded dash movement with authored intent boundaries; targets enter/leave impact range or change direction, sword/hammer attackers move during windup, and lunges resolve in both actor update orders. Dash initiation decisions, moving-carrier punches and swept collision remain outside this slice.',
@@ -307,6 +309,8 @@ export function runExecutionParity() {
       mapPassMatchTraces,
       passMatchTraces,
       passContestTraces,
+      passRecoveryScope: '32 live-only ten-second contests / 19200 frames after an authored release through production throwBall and carrier cleanup. Release intent and receiver metadata are supplied; the AI passing planner does not choose the risky throw. Default combat and passing settings; two opponent recovery openings (medium pass and overthrow) and two allied reception controls (distant opponent and short pass). Both teams/orders and main/ordinary opposing recoverers. Live decisions anticipate landing, move, request pickup, respect settling, change carrier equipment/health, clear flight/receive state, assign runner/support/defense and make goalward progress. Per-frame combat/objective/respawn accounting and four exact repeats. This covers recovery and turnover response, not an autonomously chosen pass being intercepted, pass-selection quality, full player-input release, headless decision parity, arbitrary maps or performance.',
+      passRecoveryTraces,
       mapMatchTraces,
       mapContestTraces,
       mapRoutingTraces,
