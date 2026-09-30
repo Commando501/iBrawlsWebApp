@@ -1,0 +1,62 @@
+import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
+import test from 'node:test';
+import { PREMADE_MAPS } from './premadeMaps';
+import { toGrifballArena } from './grifballMaps';
+import { getGoalPlates } from './grifballGoals';
+import { seededRandom } from './simulationRandom';
+import { buildGrifballSpaceGeometry, createSpaceRouterFactory, isSpaceSegmentOpen, type GrifballSpaceGeometry } from './grifballSpaceGeometry';
+
+test('shared routing preserves the pre-optimization 7,200-query supplied-map corpus', () => {
+  const random = seededRandom(1907), results = [];
+  for (const map of PREMADE_MAPS.map(toGrifballArena).filter(map => getGoalPlates(map).length === 2)) {
+    const geometry = buildGrifballSpaceGeometry(map, map.arenaRadius);
+    const factory = createSpaceRouterFactory(geometry);
+    const starts = Object.values(map.teamSpawns ?? {}).flat().map(p => ({ x: p.x, z: p.z }));
+    starts.push({ x: 0, z: 0 });
+    const ends = Array.from({ length: 80 }, () => ({ x: (random() * 2 - 1) * geometry.x * 1.05, z: (random() * 2 - 1) * geometry.z * 1.05 }));
+    for (const start of starts) {
+      const route = factory(start);
+      for (const end of ends) for (const distanceOnly of [false, true]) results.push({ map: map.id, start, end, distanceOnly, route: route(end, distanceOnly) });
+    }
+  }
+  const encoded = JSON.stringify(results, (_key, v) => typeof v === 'number' && !Number.isFinite(v) ? { $number: String(v) } : v);
+  assert.equal(results.length, 7200);
+  // Captured from ed8edc3's independent per-player routers before changing routing.
+  assert.equal(createHash('sha256').update(encoded).digest('hex'), '4f5fabd210dfce3f528bd7eecbba3d97a6ce150786ed8ba02fa8af57e85b0189');
+});
+
+const wall = (height = 4): GrifballSpaceGeometry => ({ key: `router-wall-${height}`, shape: 'rectangular', x: 20, z: 12,
+  blockers: [{ kind: 'box', x: 0, z: 0, hx: .5, hz: height }] });
+
+test('shared endpoints keep each origin independent and returned paths cannot poison later queries', () => {
+  const geometry = wall(), factory = createSpaceRouterFactory(geometry);
+  const start = { x: -8, z: 0 }, end = { x: 8, z: 0 };
+  const left = factory(start), right = factory(end);
+  const expected = structuredClone(left(end));
+  assert.equal(expected.status, 'routed');
+  let from = { ...start };
+  for (const point of expected.points) { assert.ok(isSpaceSegmentOpen(geometry, from, point)); from = point; }
+  assert.deepEqual(right(end), { status: 'direct', points: [end], length: 0 });
+  const returned = left(end); returned.points[0].x = 900;
+  const originalEnd = { ...end };
+  end.z = 8; assert.notDeepEqual(left(end), expected);
+  start.x = 8; // A router belongs to the captured snapshot, not a mutable live position.
+  assert.deepEqual(left(originalEnd), expected);
+  assert.deepEqual(factory(start)(originalEnd), { status: 'direct', points: [originalEnd], length: 0 });
+});
+
+test('endpoint eviction and other geometry factories preserve reachable and blocked results', () => {
+  const geometry = wall(), route = createSpaceRouterFactory(geometry)({ x: -8, z: 0 });
+  const end = { x: 8, z: 0 }, expected = route(end);
+  // More distinct obstructed endpoints than the cache cap; eviction affects only work.
+  for (let i = 0; i < 2100; i++) assert.equal(route({ x: 8, z: i / 1000 - 1.05 }, true).status, 'routed');
+  assert.deepEqual(route(end), expected);
+  const sealed = createSpaceRouterFactory(wall(20))({ x: -8, z: 0 });
+  for (const distanceOnly of [false, true]) {
+    assert.deepEqual(sealed(end, distanceOnly), { status: 'blocked', points: [], length: Infinity });
+    assert.deepEqual(route({ x: 0, z: 0 }, distanceOnly), { status: 'blocked', points: [], length: Infinity });
+    assert.deepEqual(route({ x: 21, z: 0 }, distanceOnly), { status: 'blocked', points: [], length: Infinity });
+  }
+  assert.deepEqual(route(end), expected);
+});

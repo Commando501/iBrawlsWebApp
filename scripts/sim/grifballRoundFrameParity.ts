@@ -41,7 +41,7 @@ export interface RoundFlightCase { attack: 'lunge'; impactTick: 3 | 16 | 17; hp:
 export interface RoundPlayerFlightCase { impactTick: 3 | 16 | 17; hp: 1 | 3; mainTarget: boolean }
 
 /** Full frame phase ordering with supplied movement and optional committed melee. No autonomous selection. */
-export function runRoundFrameTrace(spec: RoundFrameCase, snapshotAt?: number, combat?: RoundCombatCase | RoundFlightCase, playerFlight?: RoundPlayerFlightCase) {
+export function runRoundFrameTrace(spec: RoundFrameCase, snapshotAt?: number, combat?: RoundCombatCase | RoundFlightCase, playerFlight?: RoundPlayerFlightCase, durationTicks = 120) {
   if (playerFlight && (spec.player || combat)) throw new Error('Player flight requires a separate roster scorer and no roster attack');
   const f = createBotParityFixture('runner', false, { maxHP: 2, grifballRunnerHealth: 3, grifballRunnerHealRate: 0,
     grifballRoundResetDelay: .19, grifballCountdownDuration: .09, grifballGoalTarget: spec.winner ? 1 : 2,
@@ -131,7 +131,7 @@ export function runRoundFrameTrace(spec: RoundFrameCase, snapshotAt?: number, co
     ? Object.fromEntries(Object.entries(scores).map(([team, tally]) => [team, { goals: tally.goals }]))
     : structuredClone(scores);
   const motion = { walk: [{ tick: 1, direction: { x: direction, z: 0 } }] };
-  for (let tick = 1; tick <= 120; tick++) {
+  for (let tick = 1; tick <= durationTicks; tick++) {
     const moving = sim.match.phase === 'playing';
     const actions: ActionsById = moving ? { [runner.id]: runner.hasBall || spec.player
       ? { ...idleAction(), aim, moveZ: 1 } : groundMotionAction(runner, motion, tick, aim, sim.settings) } : {};
@@ -302,6 +302,6 @@ export function runRoundFrameTrace(spec: RoundFrameCase, snapshotAt?: number, co
   record.compare(120, 'expected.notifications', notifications, 1);
   record.compare(120, 'expected.resetEvents', frames.filter(f => f.events.roundReset).length, spec.winner ? 0 : 1);
   record.compare(120, 'expected.matchEndEvents', frames.filter(f => f.events.matchEnded).length, spec.winner ? 1 : 0);
-  return { name: `${spec.map.id}/${spec.player}/${spec.mirror}/${spec.reverse}/${spec.winner}${combat ? `/${combat.attack}/${combat.impactTick}/${combat.hp}${combat.attack === 'lunge' ? `/${combat.pause}` : ''}` : ''}${playerFlight ? `/player-flight/${playerFlight.impactTick}/${playerFlight.hp}/${playerFlight.mainTarget}` : ''}`, ticks: 120, ...record.result(), frames };
+  return { name: `${spec.map.id}/${spec.player}/${spec.mirror}/${spec.reverse}/${spec.winner}${combat ? `/${combat.attack}/${combat.impactTick}/${combat.hp}${combat.attack === 'lunge' ? `/${combat.pause}` : ''}` : ''}${playerFlight ? `/player-flight/${playerFlight.impactTick}/${playerFlight.hp}/${playerFlight.mainTarget}` : ''}`, ticks: durationTicks, ...record.result(), frames };
 }
 export const runRoundFrameParity = () => ROUND_FRAME_CASES.map(c => runRoundFrameTrace(c));

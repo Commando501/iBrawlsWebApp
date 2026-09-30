@@ -2,7 +2,7 @@ import type { UniversalSettings } from '../types';
 import type { FieldPoint, GrifballAssignment, GrifballTacticalPlayer, GrifballTacticalSnapshot } from './aiGrifballTeamPlan';
 import { resolveHammerSlamTiming } from './hammerSlamTiming';
 import { resolveDirectionalSpeedMultiplier, resolvePunchCooldown, resolvePunchLungeDistance } from './runnerBallSettings';
-import { createSpaceRouter, fieldDistance, isSpaceSegmentOpen, type GrifballSpaceGeometry, type SpaceRoute } from './grifballSpaceGeometry';
+import { createSpaceRouter, createSpaceRouterFactory, fieldDistance, isSpaceSegmentOpen, type GrifballSpaceGeometry, type SpaceRoute } from './grifballSpaceGeometry';
 
 export interface SpaceObservation {
   weapon: string; phase: string; attackIn: number; reach: number; blastRadius: number;
@@ -77,7 +77,8 @@ export function estimateSpaceAttackTime(player: GrifballTacticalPlayer, point: F
 
 export function createGrifballSpaceEvaluator(snapshot: GrifballTacticalSnapshot, sharedRouters?: Map<string, ReturnType<typeof createSpaceRouter>>) {
   const geometry = snapshot.geometry!;
-  const routers = sharedRouters ?? new Map(snapshot.players.map(p => [p.id, createSpaceRouter(geometry, p.pos)]));
+  const createRouter = createSpaceRouterFactory(geometry);
+  const routers = sharedRouters ?? new Map(snapshot.players.map(p => [p.id, createRouter(p.pos)]));
   const ordered = [...snapshot.players].sort((a, b) => a.id.localeCompare(b.id));
   return (assignment: GrifballAssignment, player: GrifballTacticalPlayer, previous?: GrifballAssignment, fixedDestination = false): void => {
     const tuning = assignment.tuning!;

@@ -99,19 +99,41 @@ function getGrid(g: GrifballSpaceGeometry): Grid {
   grids.set(g.key, grid); return grid;
 }
 
+type GridLink = { to: number; cost: number };
+type EndpointLinks = (grid: Grid, point: FieldPoint) => readonly GridLink[];
+
+/** Share endpoint visibility and distances across players in one planning refresh.
+ * Geometry is immutable for this factory's lifetime. No threats or routes are cached. */
+export function createSpaceRouterFactory(g: GrifballSpaceGeometry) {
+  const endpoints = new Map<string, readonly GridLink[]>();
+  const links: EndpointLinks = (grid, p) => {
+    const key = `${p.x},${p.z}`;
+    const cached = endpoints.get(key);
+    if (cached) return cached;
+    const result: GridLink[] = [], cx = Math.floor((p.x + g.x) / grid.step), cz = Math.floor((p.z + g.z) / grid.step);
+    for (let x = cx - 2; x <= cx + 2; x++) for (let z = cz - 2; z <= cz + 2; z++) {
+      const to = grid.cells.get(`${x},${z}`);
+      if (to === undefined) continue;
+      const cost = fieldDistance(p, grid.points[to]);
+      if (cost <= grid.step * 2 && isSpaceSegmentOpen(g, p, grid.points[to])) result.push({ to, cost });
+    }
+    // Bound retention even if a caller keeps the factory beyond a planning refresh.
+    if (endpoints.size >= 2048) endpoints.delete(endpoints.keys().next().value!);
+    endpoints.set(key, result);
+    return result;
+  };
+  return (start: FieldPoint) => createRouter(g, { ...start }, links);
+}
+
 /** One bounded search per observed player, reused for every candidate this planning tick.
  * Coarse passages may be conservatively rejected; failure NEVER becomes a direct route. */
 export function createSpaceRouter(g: GrifballSpaceGeometry, start: FieldPoint): (end: FieldPoint, distanceOnly?: boolean) => SpaceRoute {
+  return createSpaceRouterFactory(g)(start);
+}
+
+function createRouter(g: GrifballSpaceGeometry, start: FieldPoint, links: EndpointLinks): ReturnType<typeof createSpaceRouter> {
   let search: { grid: Grid; costs: Float64Array; parents: Int32Array } | undefined;
   const blocked = (): SpaceRoute => ({ status: 'blocked', points: [], length: Infinity });
-  const links = (grid: Grid, p: FieldPoint) => {
-    const result: number[] = [], cx = Math.floor((p.x + g.x) / grid.step), cz = Math.floor((p.z + g.z) / grid.step);
-    for (let x = cx - 2; x <= cx + 2; x++) for (let z = cz - 2; z <= cz + 2; z++) {
-      const i = grid.cells.get(`${x},${z}`);
-      if (i !== undefined && fieldDistance(p, grid.points[i]) <= grid.step * 2 && isSpaceSegmentOpen(g, p, grid.points[i])) result.push(i);
-    }
-    return result;
-  };
   return (end, distanceOnly = false) => {
     if (isSpaceSegmentOpen(g, start, end)) return { status: 'direct', points: [{ ...end }], length: fieldDistance(start, end) };
     if (!isSpacePointOpen(g, start) || !isSpacePointOpen(g, end)) return blocked();
@@ -122,7 +144,7 @@ export function createSpaceRouter(g: GrifballSpaceGeometry, start: FieldPoint): 
         let i = heap.length; heap.push(entry);
         while (i > 0) { const p = (i - 1) >> 1; if (heap[p].cost <= entry.cost) break; heap[i] = heap[p]; i = p; } heap[i] = entry;
       };
-      for (const to of links(grid, start)) { costs[to] = fieldDistance(start, grid.points[to]); push({ to, cost: costs[to] }); }
+      for (const { to, cost } of links(grid, start)) { costs[to] = cost; push({ to, cost }); }
       while (heap.length) {
         const current = heap[0], last = heap.pop()!;
         if (heap.length) {
@@ -137,12 +159,12 @@ export function createSpaceRouter(g: GrifballSpaceGeometry, start: FieldPoint): 
       search = { grid, costs, parents };
     }
     const { grid, costs, parents } = search;
-    const ends = links(grid, end).filter(i => Number.isFinite(costs[i]));
-    ends.sort((a, b) => costs[a] + fieldDistance(grid.points[a], end) - costs[b] - fieldDistance(grid.points[b], end) || a - b);
+    const ends = links(grid, end).filter(link => Number.isFinite(costs[link.to]));
+    ends.sort((a, b) => costs[a.to] + a.cost - costs[b.to] - b.cost || a.to - b.to);
     if (!ends.length) return blocked();
-    if (distanceOnly) return { status: 'routed', points: [], length: costs[ends[0]] + fieldDistance(grid.points[ends[0]], end) };
+    if (distanceOnly) return { status: 'routed', points: [], length: costs[ends[0].to] + ends[0].cost };
     const path: FieldPoint[] = [{ ...end }];
-    for (let i = ends[0]; i !== -1; i = parents[i]) path.push(grid.points[i]);
+    for (let i = ends[0].to; i !== -1; i = parents[i]) path.push(grid.points[i]);
     path.reverse();
     const points: FieldPoint[] = []; let from = start;
     for (let i = 0; i < path.length;) {

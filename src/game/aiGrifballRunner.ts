@@ -2,7 +2,7 @@ import { chooseTacticalAlternative, type TacticalChoice } from './aiGrifballStyl
 import type { FieldPoint, GrifballTacticalPlayer, GrifballTacticalSnapshot, GrifballTeamRole } from './aiGrifballTeamPlan';
 import type { TeamTactics } from './grifballTacticsConfig';
 import { estimateSpaceAttackTime } from './aiGrifballSpace';
-import { createSpaceRouter, fieldDistance, isSpaceSegmentOpen, type SpaceRoute } from './grifballSpaceGeometry';
+import { createSpaceRouter, createSpaceRouterFactory, fieldDistance, isSpaceSegmentOpen, type SpaceRoute } from './grifballSpaceGeometry';
 
 export type RunnerAction = 'advance' | 'cut-left' | 'cut-right' | 'wait' | 'retreat' | 'finish' | 'observed';
 export interface RunnerCandidate {
@@ -25,7 +25,8 @@ export interface EscortOrder {
 }
 export type SpaceRouters = Map<string, ReturnType<typeof createSpaceRouter>>;
 export function createSnapshotRouters(snapshot: GrifballTacticalSnapshot): SpaceRouters {
-  return new Map(snapshot.players.map(p => [p.id, createSpaceRouter(snapshot.geometry!, p.pos)]));
+  const createRouter = createSpaceRouterFactory(snapshot.geometry!);
+  return new Map(snapshot.players.map(p => [p.id, createRouter(p.pos)]));
 }
 
 export function tickRunnerMemory(memory: RunnerMemory | undefined, carrier: GrifballTacticalPlayer, goal: FieldPoint, dt: number): RunnerMemory {
