@@ -29,7 +29,7 @@ import type { SimState } from '../../src/sim/simState';
 import { DEFAULT_KEYBINDINGS, type CustomMapData } from '../../src/types';
 
 const noop = () => {};
-export interface RoundFrameCase { map: CustomMapData; player: boolean; mirror: boolean; reverse: boolean; winner: boolean }
+export interface RoundFrameCase { map: CustomMapData; player: boolean; mirror: boolean; reverse: boolean; winner: boolean; fullRoster?: boolean }
 export const ROUND_FRAME_CASES: RoundFrameCase[] = PREMADE_MAPS.map(toGrifballArena).filter(map => getGoalPlates(map).length === 2).flatMap(map => [false, true].flatMap(player =>
   [false, true].flatMap(mirror => [false, true].flatMap(reverse => [false, true].map(winner =>
     ({ map, player, mirror, reverse, winner }))))));
@@ -87,6 +87,21 @@ export function runRoundFrameTrace(spec: RoundFrameCase, snapshotAt?: number, co
       injured.pauseDuringInactiveGrifball = combat.pause;
     }
   }
+  const movingRoster = new Set<string>();
+  if (spec.fullRoster) {
+    for (const side of ['blue', 'red'] as const) {
+      while (sim.combatants.filter(c => c.team === side).length < 4) {
+        const slot = sim.combatants.filter(c => c.team === side).length;
+        const spawn = map.teamSpawns![side][slot % map.teamSpawns![side].length];
+        const [live, simulated] = addParityActor(f, `support-${side}-${slot}`, side, spawn.x, spawn.z);
+        live.hp = live.maxHp = simulated.hp = simulated.maxHp = 2;
+        simulated.weapon = live.activeWeapon = 'hammer'; simulated.hasBall = false;
+        simulated.invulnerabilityTimer = live.invulnerabilityTimer = 0;
+        movingRoster.add(simulated.id);
+      }
+    }
+    movingRoster.add(dead.id);
+  }
   injured.hp = target.hp = 1; target.maxHp = 2;
   dead.hp = downed.hp = 0; dead.alive = false; dead.respawnTimer = downed.respawnTimer = .49; downed.maxHp = 2;
   sim.match.phase = 'playing'; state.grifball = structuredClone(sim.match); state.grifballTactics = defaultGrifballTactics();
@@ -131,10 +146,21 @@ export function runRoundFrameTrace(spec: RoundFrameCase, snapshotAt?: number, co
     ? Object.fromEntries(Object.entries(scores).map(([team, tally]) => [team, { goals: tally.goals }]))
     : structuredClone(scores);
   const motion = { walk: [{ tick: 1, direction: { x: direction, z: 0 } }] };
+  const supportMotion = (side: string) => ({ walk: [
+    { tick: 1, direction: { x: side === 'blue' ? 1 : -1, z: 0 } },
+    { tick: 80, direction: { x: side === 'blue' ? 1 : -1, z: side === 'blue' ? .4 : -.4 } },
+  ] });
   for (let tick = 1; tick <= durationTicks; tick++) {
     const moving = sim.match.phase === 'playing';
     const actions: ActionsById = moving ? { [runner.id]: runner.hasBall || spec.player
       ? { ...idleAction(), aim, moveZ: 1 } : groundMotionAction(runner, motion, tick, aim, sim.settings) } : {};
+    if (spec.fullRoster && moving) {
+      if (!spec.player) actions.player = { ...idleAction(), aim, moveZ: 1 };
+      for (const c of sim.combatants) if (movingRoster.has(c.id)) {
+        const movement = supportMotion(c.team), heading = movement.walk.filter(m => m.tick <= tick).at(-1)!.direction;
+        actions[c.id] = groundMotionAction(c, movement, tick, Math.atan2(heading.x, heading.z), sim.settings);
+      }
+    }
     if (combat && combat.attack !== 'lunge' && tick === 1) actions[injured.id] = { ...idleAction(), aim: injured.yaw,
       attackPrimary: combat.attack !== 'swipe', attackSecondary: combat.attack === 'swipe' };
     if (playerFlight && !spec.winner && tick === 45) actions.player = { ...idleAction(), aim: player.yaw, swapWeapon: true };
@@ -142,7 +168,7 @@ export function runRoundFrameTrace(spec: RoundFrameCase, snapshotAt?: number, co
       if (playerFlight && !spec.winner && tick === 45) swapPlayerWeaponForState({ state, refs, type: 'sword',
         isPaused: false, isPlaying: true, recordWeaponSwap: noop, pushStatsUpdate: noop });
       const liveMoving = state.grifball.phase === 'playing';
-      if (spec.player && liveMoving) state.yaw = aim + Math.PI;
+      if ((spec.player || spec.fullRoster) && liveMoving) state.yaw = aim + Math.PI;
       advanceGrifballFrameForState({ state, refs, ballMeshRef, ballChargingRef, ballChargeTimerRef, dt: 1 / 60,
         isPlaying: true, isPausedRef: { current: false }, replayData: null, keysPressed: { current: {} }, grifbHoldTimerRef: { current: 0 },
         secretAudioRef: { current: null }, isMultiplayer: false, multiplayerRole: null, multiplayerSocket: null,
@@ -161,7 +187,7 @@ export function runRoundFrameTrace(spec: RoundFrameCase, snapshotAt?: number, co
               return;
             }
             updatePlayerHorizontalMovementForState({ state, refs, dt, keysPressed: {}, movementKeybindings: DEFAULT_KEYBINDINGS,
-              actionKeybindings: DEFAULT_KEYBINDINGS, gamepad: null, mobileJoystick: { x: 0, y: spec.player && liveMoving ? 1 : 0 },
+              actionKeybindings: DEFAULT_KEYBINDINGS, gamepad: null, mobileJoystick: { x: 0, y: (spec.player || spec.fullRoster) && liveMoving ? 1 : 0 },
               mobileControlsActive: true, sprintToggleActiveRef: { current: false }, prevSprintInputRef: { current: false } });
             updatePlayerVerticalIntegrationForState({ state, dt, gravityAcceleration: 18,
               constrainCombatantToArena: (pos, vel) => constrainCombatantToArenaBounds({ pos, vel, activeCustomMap: map, arenaRadius: map.arenaRadius }) });
@@ -172,6 +198,10 @@ export function runRoundFrameTrace(spec: RoundFrameCase, snapshotAt?: number, co
             melee: combat.attack === 'swipe', recordHammerAttack: noop, playSwing: noop });
           for (const a of state.otherPlayers.values()) if (a.hp > 0) {
             tickCombatantInvulnerability(a, dt);
+            if (movingRoster.has(a.id)) {
+              if (liveMoving) stepLiveGroundMotion(f, a, supportMotion(a.team!), tick);
+              else { a.vel.x = 0; a.vel.z = 0; }
+            }
             if (a === target && flight && combat?.attack === 'lunge') {
               if (combat.pause && pauseInactiveGrifballAI(state, a)) continue;
               flight.flightFor(a, victim![0], dt);
@@ -295,13 +325,27 @@ export function runRoundFrameTrace(spec: RoundFrameCase, snapshotAt?: number, co
       }
     } else record.compare(120, `expected.${side}.endedRunnerStationary`, JSON.stringify(actorAt(120, runner.id).pos), JSON.stringify(actorAt(4, runner.id).pos));
     const revived = actorAt(30, dead.id), length = Math.hypot(revived.pos[0], revived.pos[2]);
-    record.compare(30, `expected.${side}.revivedHeadingX`, revived.heading[0], revived.pos[0] / length, 1e-6);
-    record.compare(30, `expected.${side}.revivedHeadingZ`, revived.heading[1], revived.pos[2] / length, 1e-6);
+    // A full-roster revival may already take its authored movement this frame.
+    record.compare(30, `expected.${side}.revivedHeadingX`, revived.heading[0], spec.fullRoster && !spec.winner ? -direction : revived.pos[0] / length, 1e-6);
+    record.compare(30, `expected.${side}.revivedHeadingZ`, revived.heading[1], spec.fullRoster && !spec.winner ? 0 : revived.pos[2] / length, 1e-6);
+    if (spec.fullRoster) {
+      record.compare(0, 'expected.oneHuman', sim.combatants.filter(c => c.controller === 'remote').length, 1);
+      for (const team of ['blue', 'red']) record.compare(0, `expected.${team}.fourParticipants`, sim.combatants.filter(c => c.team === team).length, 4);
+      for (const frame of frames) record.compare(frame.tick, `expected.${side}.eightParticipants`, frame[side].actors.length, 8);
+      if (combat && victim && durationTicks >= combat.impactTick + 181 && (spec.winner || combat.impactTick < 16)) {
+        record.compare(combat.impactTick + 180, `expected.${side}.combatVictimStillDead`, actorAt(combat.impactTick + 180, victim[1].id).hp, 0);
+        record.compare(combat.impactTick + 181, `expected.${side}.combatVictimRevives`, actorAt(combat.impactTick + 181, victim[1].id).hp, combat.hp);
+      }
+      if (!spec.winner) for (const id of movingRoster) {
+        const start = actorAt(id === dead.id ? 30 : 23, id), end = actorAt(79, id);
+        record.compare(79, `expected.${side}.${id}.movesAfterReset`, Math.hypot(end.pos[0] - start.pos[0], end.pos[2] - start.pos[2]) > .1, true);
+      }
+    }
   }
   record.compare(120, 'expected.resets', resets, spec.winner ? 0 : 1);
   record.compare(120, 'expected.notifications', notifications, 1);
   record.compare(120, 'expected.resetEvents', frames.filter(f => f.events.roundReset).length, spec.winner ? 0 : 1);
   record.compare(120, 'expected.matchEndEvents', frames.filter(f => f.events.matchEnded).length, spec.winner ? 1 : 0);
-  return { name: `${spec.map.id}/${spec.player}/${spec.mirror}/${spec.reverse}/${spec.winner}${combat ? `/${combat.attack}/${combat.impactTick}/${combat.hp}${combat.attack === 'lunge' ? `/${combat.pause}` : ''}` : ''}${playerFlight ? `/player-flight/${playerFlight.impactTick}/${playerFlight.hp}/${playerFlight.mainTarget}` : ''}`, ticks: durationTicks, ...record.result(), frames };
+  return { name: `${spec.map.id}/${spec.player}/${spec.mirror}/${spec.reverse}/${spec.winner}${combat ? `/${combat.attack}/${combat.impactTick}/${combat.hp}${combat.attack === 'lunge' ? `/${combat.pause}` : ''}` : ''}${playerFlight ? `/player-flight/${playerFlight.impactTick}/${playerFlight.hp}/${playerFlight.mainTarget}` : ''}${spec.fullRoster ? '/mixed-eight' : ''}`, ticks: durationTicks, ...record.result(), frames };
 }
 export const runRoundFrameParity = () => ROUND_FRAME_CASES.map(c => runRoundFrameTrace(c));
