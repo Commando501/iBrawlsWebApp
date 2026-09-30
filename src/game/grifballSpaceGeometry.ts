@@ -105,6 +105,10 @@ type EndpointLinks = (grid: Grid, point: FieldPoint) => readonly GridLink[];
 /** Share endpoint visibility and distances across players in one planning refresh.
  * Geometry is immutable for this factory's lifetime. No threats or routes are cached. */
 export function createSpaceRouterFactory(g: GrifballSpaceGeometry) {
+  // Prepare immutable navigation before the first obstructed query. Deferring
+  // this until players reach a wall creates a cold-build hitch mid-match.
+  // Open convex arenas need no grid because every legal segment is direct.
+  if (g.blockers.length) getGrid(g);
   const endpoints = new Map<string, readonly GridLink[]>();
   const links: EndpointLinks = (grid, p) => {
     const key = `${p.x},${p.z}`;
